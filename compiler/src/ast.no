@@ -138,6 +138,8 @@ ast {
 ; 建構
 ; ═══════════════════════════════════════════════════════════════════
 
+; 功能待補充
+; d: 返回結果
 zero-nd = () (d nd) {
     d = nd {
         kind: 0
@@ -174,6 +176,7 @@ zero-nd = () (d nd) {
 }
 
 ; 建立空 arena（索引 0 保留為「無節點」；strs/aux 的索引 0 亦保留）
+; r: 返回結果
 make = () (r ast) {
     r = ast {
         nodes: []
@@ -206,6 +209,9 @@ make = () (r ast) {
 }
 
 ; 新增節點，回傳其索引（>= 1）
+; t: 輸入
+; kind: 種類
+; idx: 索引
 add = (t ast, kind i64) (idx i64) {
     d = ast.zero-nd()
     d.kind = kind
@@ -220,6 +226,9 @@ add = (t ast, kind i64) (idx i64) {
 }
 
 ; 把子節點索引附加到節點 i 的 kids 區段
+; t: 輸入
+; i: 索引
+; c: 運算元
 kid-add = (t ast, i i64, c i64) {
     t.kids.push(c)
     d = ast.nd-at(t, i)
@@ -230,6 +239,10 @@ kid-add = (t ast, i i64, c i64) {
 }
 
 ; 第 slot 個 KIDS 指令的元素數（slot 從 0 起）
+; t: 輸入
+; i: 索引
+; slot: 數值
+; v: 值
 set-count = (t ast, i i64, slot i64, v i64) {
     d = ast.nd-at(t, i)
     {
@@ -246,6 +259,11 @@ set-count = (t ast, i i64, slot i64, v i64) {
 }
 
 ; SIG 的三組節點數（泛型參數 / 參數 / 回傳值）
+; t: 輸入
+; i: 索引
+; ng: 數值
+; np: 數值
+; nr: 數值
 set-sig = (t ast, i i64, ng i64, np i64, nr i64) {
     d = ast.nd-at(t, i)
     d.c3 = ng
@@ -255,6 +273,10 @@ set-sig = (t ast, i i64, ng i64, np i64, nr i64) {
 }
 
 ; 第 slot 個純量字串槽（slot 從 0 起；**不含** doc/cmt）
+; t: 輸入
+; i: 索引
+; slot: 數值
+; v: 值
 set-slot = (t ast, i i64, slot i64, v i64) {
     d = ast.nd-at(t, i)
     {
@@ -283,6 +305,10 @@ set-slot = (t ast, i i64, slot i64, v i64) {
 }
 
 ; SIG 的 VariadicUnion 與 IsVariadic
+; t: 輸入
+; i: 索引
+; union: 數值
+; variadic: 數值
 set-sig-extras = (t ast, i i64, union i64, variadic i64) {
     d = ast.nd-at(t, i)
     d.varunion = union
@@ -294,12 +320,19 @@ set-sig-extras = (t ast, i i64, union i64, variadic i64) {
 ; 0 = 無群組，-1 = 有群組但首條文字空 —— 見 put-doc-str）
 ; ⚠️ 渲染端（comments）對 -1 仍要印出 "Doc: //" + 換行（oracle commentGroupInline
 ;    無條件印 "//" + 首條文字 + 換行；首條文字為空 ⇒ 印 "//" 換行）
+; t: 輸入
+; i: 索引
+; v: 值
 set-doc = (t ast, i i64, v i64) {
     d = ast.nd-at(t, i)
     d.doc = v
     ast.nd-put(t, i, d)
 }
 
+; 設置 cmt
+; t: 輸入
+; i: 索引
+; v: 值
 set-cmt = (t ast, i i64, v i64) {
     d = ast.nd-at(t, i)
     d.cmt = v
@@ -307,6 +340,10 @@ set-cmt = (t ast, i i64, v i64) {
 }
 
 ; free / btw 的註解條數（-1 = 無群組）
+; t: 輸入
+; i: 索引
+; free: 數值
+; btw: 數值
 set-comments = (t ast, i i64, free i64, btw i64) {
     d = ast.nd-at(t, i)
     d.free = free
@@ -315,6 +352,9 @@ set-comments = (t ast, i i64, free i64, btw i64) {
 }
 
 ; 開始本節點的 aux 區段（trailing → closing → implements 依序 append）
+; t: 輸入
+; i: 索引
+; base: 結果數值
 aux-begin = (t ast, i i64) (base i64) {
     base = t.aux.len()
     d = ast.nd-at(t, i)
@@ -323,11 +363,18 @@ aux-begin = (t ast, i i64) (base i64) {
 }
 
 ; 追加一個 aux 值（註解文字 id / implements 字串 id）
+; t: 輸入
+; v: 值
 aux-add = (t ast, v i64) {
     t.aux.push(v)
 }
 
 ; 三段 aux 區段的條數
+; t: 輸入
+; i: 索引
+; ntrail: 數值
+; nclos: 數值
+; nimp: 數值
 set-aux-counts = (t ast, i i64, ntrail i64, nclos i64, nimp i64) {
     d = ast.nd-at(t, i)
     d.ntrail = ntrail
@@ -337,6 +384,10 @@ set-aux-counts = (t ast, i i64, ntrail i64, nclos i64, nimp i64) {
 }
 
 ; 開始本節點的 HELPER 區段（每個元素 2 個 aux 值：name-id, tnode）
+; t: 輸入
+; i: 索引
+; count: 計數
+; base: 結果數值
 helper-begin = (t ast, i i64, count i64) (base i64) {
     base = t.aux.len()
     d = ast.nd-at(t, i)
@@ -353,6 +404,8 @@ helper-begin = (t ast, i i64, count i64) (base i64) {
 ;    早期版本回傳 len（1 起算），會讓 str-at 讀到隔壁一格 —— 症狀是
 ;    `warnings: ` 少印、而 `value` 印成下一個字串的內容。
 ; ── 字串駐留：O(1) 開放定址雜湊（替代原 O(n) 線性掃描，修 parser O(n²)）──
+; sx: 字串
+; h: 結果數值
 ast-str-hash = (sx str) (h i64) {
     h = 5381
     i = 0
@@ -370,6 +423,9 @@ ast-str-hash = (sx str) (h i64) {
 }
 
 ; 不查重、直接插入 mapping s -> target（grow 重哈希時用，避免遞歸增長）
+; t: 輸入
+; s: 字串
+; target: 數值
 ast-str-intern-raw = (t ast, s str, target i64) () {
     n = t.str-k.len()
     h = ast-str-hash(s)
@@ -394,6 +450,7 @@ ast-str-intern-raw = (t ast, s str, target i64) () {
 }
 
 ; 翻倍重哈希（str-v 存的是 strs 下標，strs 本身不動）
+; t: 輸入
 ast-str-grow = (t ast) () {
     old-k = t.str-k
     old-v = t.str-v
@@ -418,6 +475,9 @@ ast-str-grow = (t ast) () {
 }
 
 ; 回傳 s 在 strs 中的駐留下標（首次出現則 append 後駐留；與原線性掃描下標完全一致）
+; t: 輸入
+; s: 字串
+; idx: 索引
 ast-str-intern = (t ast, s str) (idx i64) {
     cap = t.str-k.len()
     (t.str-n * 4 >= cap * 3) -> ast-str-grow(t)
@@ -450,6 +510,10 @@ ast-str-intern = (t ast, s str) (idx i64) {
     idx = t.strs.len() - 1
 }
 
+; 放入 str
+; t: 輸入
+; s: 字串
+; id: 結果數值
 put-str = (t ast, s str) (id i64) {
     id = 0
     s.len-bytes() == 0 -> return
@@ -464,6 +528,9 @@ put-str = (t ast, s str) (id i64) {
 ;      oracle 側的 CommentGroup 恆非空（commentGroupFromTokens 對空切片回 nil），
 ;      dump.go 的 commentGroupInline 只印首條文字 ⇒ 空文字仍印 "Doc: //"。
 ;      故以 -1 標示「群組在、首條文字空」，-1/0 兩個哨兵語意互斥。
+; t: 輸入
+; s: 字串
+; id: 結果數值
 put-doc-str = (t ast, s str) (id i64) {
     id = -1
     s.len-bytes() == 0 -> return
@@ -473,6 +540,9 @@ put-doc-str = (t ast, s str) (id i64) {
 ; ═══════════════════════════════════════════════════════════════════
 ; 存取
 ; ═══════════════════════════════════════════════════════════════════
+; t: 輸入
+; i: 索引
+; d: 返回結果
 nd-at = (t ast, i i64) (d nd) {
     d = ast.zero-nd()
     i <= 0 -> return
@@ -482,12 +552,20 @@ nd-at = (t ast, i i64) (d nd) {
     d = t.nodes[i]
 }
 
+; 功能待補充
+; t: 輸入
+; i: 索引
+; d: 輸入
 nd-put = (t ast, i i64, d nd) {
     i <= 0 -> return
     i >= t.n -> return
     t.nodes[i] = d
 }
 
+; 功能待補充
+; t: 輸入
+; i: 索引
+; v: 結果數值
 kid-at = (t ast, i i64) (v i64) {
     v = 0
     i < 0 -> return
@@ -498,6 +576,10 @@ kid-at = (t ast, i i64) (v i64) {
 }
 
 ; 第 i 條指令的第 j 欄（每條 5 個 i64）
+; t: 輸入
+; i: 索引
+; j: 索引
+; v: 結果數值
 ins = (t ast, i i64, j i64) (v i64) {
     v = 0
 
@@ -514,6 +596,10 @@ ins = (t ast, i i64, j i64) (v i64) {
 }
 
 ; 節點種類 k 的第 j 欄（每種 4 個 i64）
+; t: 輸入
+; k: 索引
+; j: 索引
+; v: 結果數值
 kind-f = (t ast, k i64, j i64) (v i64) {
     v = 0
 
@@ -529,6 +615,10 @@ kind-f = (t ast, k i64, j i64) (v i64) {
     v = t.kinds[p]
 }
 
+; 功能待補充
+; t: 輸入
+; id: 數值
+; r: 結果字串
 str-at = (t ast, id i64) (r str) {
     r = ''
     id <= 0 -> return
@@ -538,6 +628,10 @@ str-at = (t ast, id i64) (r str) {
     r = t.strs[id]
 }
 
+; 功能待補充
+; t: 輸入
+; idx: 索引
+; v: 結果數值
 aux-at = (t ast, idx i64) (v i64) {
     v = 0
     idx <= 0 -> return
@@ -547,6 +641,10 @@ aux-at = (t ast, idx i64) (v i64) {
     v = t.aux[idx]
 }
 
+; 功能待補充
+; d: 輸入
+; j: 索引
+; v: 結果數值
 nd-c = (d nd, j i64) (v i64) {
     v = 0
     {
@@ -561,6 +659,10 @@ nd-c = (d nd, j i64) (v i64) {
     }
 }
 
+; 功能待補充
+; d: 輸入
+; j: 索引
+; v: 結果數值
 nd-s = (d nd, j i64) (v i64) {
     v = 0
     {
@@ -588,6 +690,10 @@ nd-s = (d nd, j i64) (v i64) {
 }
 
 ; 預掃出來的 CHILD 節點索引陣列的第 ref 項（越界回 0）
+; t: 輸入
+; childs: 容器
+; ref: 數值
+; v: 結果數值
 child-at = (t ast, childs []i64, ref i64) (v i64) {
     v = 0
     ref < 0 -> return
@@ -598,21 +704,38 @@ child-at = (t ast, childs []i64, ref i64) (v i64) {
 }
 
 ; ── 讀回存取器（給測試與除錯用；ps.no 不需要）────────────────────
+; t: 輸入
+; i: 索引
+; v: 結果數值
 kind-at = (t ast, i i64) (v i64) {
     d = ast.nd-at(t, i)
     v = d.kind
 }
 
+; 功能待補充
+; t: 輸入
+; i: 索引
+; j: 索引
+; v: 結果數值
 slot-at = (t ast, i i64, j i64) (v i64) {
     d = ast.nd-at(t, i)
     v = ast.nd-s(d, j)
 }
 
+; 取得數量 at
+; t: 輸入
+; i: 索引
+; j: 索引
+; v: 結果數值
 count-at = (t ast, i i64, j i64) (v i64) {
     d = ast.nd-at(t, i)
     v = ast.nd-c(d, j)
 }
 
+; 功能待補充
+; t: 輸入
+; i: 索引
+; v: 結果數值
 nkid-at = (t ast, i i64) (v i64) {
     d = ast.nd-at(t, i)
     v = d.nkid
@@ -621,6 +744,8 @@ nkid-at = (t ast, i i64) (v i64) {
 ; ═══════════════════════════════════════════════════════════════════
 ; 輸出輔助
 ; ═══════════════════════════════════════════════════════════════════
+; o: 輸入
+; depth: 深度
 indent = (o sb, depth i64) {
     j = 0
     (j < depth) {
@@ -632,6 +757,9 @@ indent = (o sb, depth i64) {
 }
 
 ; 「縮排 + s + 換行」
+; o: 輸入
+; depth: 深度
+; s: 字串
 line = (o sb, depth i64, s str) {
     ast.indent(o, depth)
     o.push(s)
@@ -639,6 +767,10 @@ line = (o sb, depth i64, s str) {
 }
 
 ; 位元組切片（等價於 Go 的 s[a:b]，a/b 都是位元組索引）
+; s: 字串
+; a: 運算元
+; b: 運算元
+; r: 結果字串
 sub = (s str, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
@@ -657,6 +789,8 @@ sub = (s str, a i64, b i64) (r str) {
 }
 
 ; 去掉尾端的換行（等價於 Go 的 strings.TrimRight(s, "\n")）
+; s: 字串
+; r: 結果字串
 trim-nl = (s str) (r str) {
     n = s.len-bytes()
     (n > 0) {
@@ -687,6 +821,9 @@ trim-nl = (s str) (r str) {
 ;     StringLiteral.value / CharLiteral.value / BooleanLiteral.value 皆為 slot 0，
 ;     已由生成器逐一驗證）。BooleanLiteral 的 bool 由 parser 預先渲染成
 ;     'true'/'false'。
+; t: 輸入
+; i: 索引
+; r: 結果字串
 node-string = (t ast, i i64) (r str) {
     r = '<nil>'
     i <= 0 -> return
@@ -723,6 +860,9 @@ node-string = (t ast, i i64) (r str) {
 ;    `*parser.<型別名>`。這對 UnionType 是**精確**的（typeString 的
 ;    switch 裡沒有 UnionType），且因為 kinds 表的名字就是 Go 的結構體名，
 ;    對任何未列出的種類都精確。
+; t: 輸入
+; i: 索引
+; r: 結果字串
 type-string = (t ast, i i64) (r str) {
     r = ''
     i <= 0 -> return
@@ -765,6 +905,9 @@ type-string = (t ast, i i64) (r str) {
 }
 
 ; 等價於 parser.exprToString（ArrayType 的大小運算式）
+; t: 輸入
+; i: 索引
+; r: 結果字串
 expr-string = (t ast, i i64) (r str) {
     r = ''
     i <= 0 -> return
@@ -808,6 +951,9 @@ expr-string = (t ast, i i64) (r str) {
 ; 等價於 parser.evalConstIntExpr。可折疊時回十進位字串，否則回 ''
 ;
 ; ⚠️ 用 '' 當「不可折疊」的哨兵是安全的：成功折疊的結果一律非空（連 "0" 也非空）。
+; t: 輸入
+; d: 輸入
+; r: 結果字串
 fold-int = (t ast, d nd) (r str) {
     r = ''
     l = ast.kid-at(t, d.kid0)
@@ -856,11 +1002,16 @@ fold-int = (t ast, d nd) (r str) {
 }
 
 ; i64 → 十進位字串（避免各處重複寫 `-` 的型別推斷問題）
+; v: 值
+; r: 結果字串
 int-str = (v i64) (r str) {
     r = v.to-str()
 }
 
 ; 等價於 FunctionType.String()
+; t: 輸入
+; d: 輸入
+; r: 結果字串
 fn-str = (t ast, d nd) (r str) {
     r = 'fn('
     np = d.c0
@@ -897,6 +1048,9 @@ fn-str = (t ast, d nd) (r str) {
 }
 
 ; Parameter.Type 的 typeString（Parameter 的第一個 CHILD 就是 Type）
+; t: 輸入
+; pi: 數值
+; r: 結果字串
 param-type = (t ast, pi i64) (r str) {
     r = ''
     pi <= 0 -> return
@@ -909,6 +1063,9 @@ param-type = (t ast, pi i64) (r str) {
 ; ═══════════════════════════════════════════════════════════════════
 
 ; 走訪 root 子樹，回傳完整文字（**不帶**尾端換行，與 dump.go 相同）
+; t: 輸入
+; root: 數值
+; r: 結果字串
 dump = (t ast, root i64) (r str) {
     o = sb.init(4096)
     ast.node(t, o, root, 0)
@@ -916,16 +1073,24 @@ dump = (t ast, root i64) (r str) {
 }
 
 ; 這次 dump 遇到幾個「尚未接線」的指令（0 ⇒ dump 可信）
+; t: 輸入
+; n: 數量
 unsupported = (t ast) (n i64) {
     n = t.unsup
 }
 
 ; 幾個「不可重現」的摘要分支被命中（不影響 unsup，但值得追）
+; t: 輸入
+; n: 數量
 gaps = (t ast) (n i64) {
     n = t.gaps
 }
 
 ; 印出節點 i 及其子樹
+; t: 輸入
+; o: 輸入
+; i: 索引
+; depth: 深度
 node = (t ast, o sb, i i64, depth i64) {
     i <= 0 -> {
         ast.line(o, depth, '<nil>')
@@ -1134,6 +1299,10 @@ node = (t ast, o sb, i i64, depth i64) {
 ;    首條文字為空（裸 `;`）⇒ 輸出 "Doc: //" + 換行。
 ;    故 d.doc == -1（群組在、首條文字空）與 d.doc > 0 的差別只在「有沒有文字」，
 ;    "//" 與換行兩者都要印。
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; depth: 深度
 comments = (t ast, o sb, d nd, depth i64) {
     d.doc != 0 -> {
 
@@ -1155,6 +1324,11 @@ comments = (t ast, o sb, d nd, depth i64) {
     }
 }
 
+; 功能待補充
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; depth: 深度
 free-comments = (t ast, o sb, d nd, depth i64) {
     d.free >= 0 -> {
 
@@ -1167,6 +1341,11 @@ free-comments = (t ast, o sb, d nd, depth i64) {
     }
 }
 
+; 判斷區間 comments
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; depth: 深度
 between-comments = (t ast, o sb, d nd, depth i64) {
     d.btw >= 0 -> {
 
@@ -1180,6 +1359,10 @@ between-comments = (t ast, o sb, d nd, depth i64) {
 }
 
 ; trailing / closing：aux[ct0 .. ct0+ntrail) 與 aux[ct0+ntrail .. +nclos)
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; depth: 深度
 trailing-comments = (t ast, o sb, d nd, depth i64) {
     d.ntrail >= 0 -> {
 
@@ -1204,6 +1387,11 @@ trailing-comments = (t ast, o sb, d nd, depth i64) {
     }
 }
 
+; 功能待補充
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; depth: 深度
 closing-comments = (t ast, o sb, d nd, depth i64) {
     d.nclos >= 0 -> {
 
@@ -1235,6 +1423,10 @@ closing-comments = (t ast, o sb, d nd, depth i64) {
 }
 
 ; InterfaceDefinition.Implements []string，Go 端用 %v ⇒ "[a b c]"
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; depth: 深度
 implements = (t ast, o sb, d nd, depth i64) {
     d.nimp > 0 -> {
 
@@ -1276,6 +1468,10 @@ implements = (t ast, o sb, d nd, depth i64) {
 ; ⚠️ 注意這裡的子節點印在 **depth**（不是 depth+1），與 dump.go 一致。
 ; ⚠️ 泛型參數是 `[]*Identifier`，只印**名字**（不當節點遞迴）；
 ;    nil 元素被跳過，且分隔符以「已附加的個數」為準（= strings.Join 語意）。
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; depth: 深度
 signature = (t ast, o sb, d nd, depth i64) {
     base = d.kid0
     d.c3 > 0 -> {
@@ -1350,6 +1546,12 @@ signature = (t ast, o sb, d nd, depth i64) {
 ;       aux[hbase + 2j]     = name 的 str id
 ;       aux[hbase + 2j + 1] = Type 節點索引（0 = 無 Type，-1 = 元素本身為 nil）
 ;   matchArm:        12 個 aux 值 / 臂（見下方 s66 註解）
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; hname: 字串
+; base: 基準值
+; depth: 深度
 helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
     ; s66：matchArm —— SurfaceMatch 的臂。MatchArm **不是 Node**
     ;   （dump.go:876-877 明言：非 Node、無 dumpNode case、只經 SurfaceMatch 的
@@ -1601,6 +1803,13 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
 ;
 ; ⚠️ SCALAR 的掃描必須**以本種類的指令範圍 last 為界**，不能只靠
 ;    「下一條是不是 OP-SCALAR」——那會在跨越種類邊界時誤吞下一種的指令。
+; t: 輸入
+; o: 輸入
+; d: 輸入
+; ins: 數值
+; last: 數值
+; childs: 容器
+; depth: 深度
 header = (t ast, o sb, d nd, ins i64, last i64, childs []i64, depth i64) {
     name = ast.str-at(t, ast.ins(t, ins, 1))
     braces = ast.ins(t, ins, 2)
@@ -1658,6 +1867,12 @@ header = (t ast, o sb, d nd, ins i64, last i64, childs []i64, depth i64) {
 ; 渲染第 k 條 OP-SCALAR 指令，回傳 (是否印出, 文字)
 ;
 ; 指令欄位：(op, policy, render, of, label-id | ref<<24)
+; t: 輸入
+; d: 輸入
+; k: 索引
+; childs: 容器
+; shown: 結果數值
+; text: 結果字串
 scalar = (t ast, d nd, k i64, childs []i64) (shown i64, text str) {
     shown = 0
     text = ''
@@ -1703,6 +1918,9 @@ scalar = (t ast, d nd, k i64, childs []i64) (shown i64, text str) {
 }
 
 ; 純量印出政策（dump.go 的 kv / kvs / kvb / kvn / kvc）
+; pol: 數值
+; val: 值
+; yes: 是否成立
 wanted = (pol i64, val str) (yes i64) {
     yes = 1
     {
@@ -1736,10 +1954,16 @@ wanted = (pol i64, val str) (yes i64) {
 }
 
 ; [TEST] 結構體參數數量實驗
+; a: 運算元
+; r: 結果數值
 one-ast = (a ast) (r i64) {
     r = 0
 }
 
+; 功能待補充
+; a: 運算元
+; b: 運算元
+; r: 結果數值
 two-ast = (a ast, b ast) (r i64) {
     r = 0
 }

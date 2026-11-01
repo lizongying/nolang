@@ -125,7 +125,7 @@ stamp-traceid: FORCE
 # Regenerate the English message catalog from the source:
 #   src/i18n/catalog/locales/en.noml      from i18n.T / i18n.P / i18n.Errorf call sites
 # and prune the English doc catalog:
-#   src/i18n/catalog/locales/en.doc.noml  keys come from `; ... ; [label](#anchor)`
+#   src/i18n/catalog/locales/en-doc.noml  keys come from `; ... ; [label](#anchor)`
 #                                         doc comments, values are hand-written
 #
 # Run this after adding or editing a message or a doc comment. Messages are
@@ -140,7 +140,7 @@ i18n: FORCE
 	cd src && $(GO) run ./i18n/cmd/genen
 
 # List the doc anchors that are present in the source but still have no
-# translation in en.doc.noml.  Add them there (and to the other locales),
+# translation in en-doc.noml.  Add them there (and to the other locales),
 # then run `make i18n` again to prune orphans.
 .PHONY: i18n-missing
 i18n-missing: FORCE

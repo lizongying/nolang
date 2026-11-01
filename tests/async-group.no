@@ -2,6 +2,9 @@
 ; 默認 spawn，有依賴則退化成 await。底層仍是染色的 `-async` 無棧協程。
 ; `co f(x)` 自動單態化出 f-async 並 spawn。
 
+; 被協程組呼叫的無色函式：原樣回傳索引（co 會自動單態出 hello-async）
+; i i64: 來源索引
+; r i64: 與 i 相同的值
 hello = (i i64) (r i64) {
     r = i
 }
@@ -53,10 +56,12 @@ test-read-inside = () {
 }
 
 ; 5. 丟棄結果的 go 仍然要 await，否則任務的參數緩衝區會洩漏
+; n i64: 要印出的數值，本測試傳 5
 side = (n i64) {
     print(n); expect: 5
 }
 
+; 測試 discarded
 test-discarded = () {
     {
         co side(5)
@@ -64,10 +69,13 @@ test-discarded = () {
 }
 
 ; 6. 堆擁有參數：spawn 時深拷貝進任務自己的緩衝區
+; s str: 來源字串，spawn 時被深拷貝
+; r str: s 的副本（協程結束後取回）
 echo = (s str) (r str) {
     r = s
 }
 
+; 測試 heap-arg
 test-heap-arg = () {
     a = 'hello'
     b = 'world'

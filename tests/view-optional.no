@@ -8,6 +8,8 @@ view-node {
 }
 
 ; 找到就返回 self 的 view，找不到返回 nil
+; want i64: 要比對的目標值（與 .v 逐值比較）
+; v ?&view-node: 相等時為 ok(指向自身的借用)，否則 nil（不會回 err）
 view-node.find = (want i64) (v ?&view-node) {
     v = nil
     .v == want -> {

@@ -1,3 +1,4 @@
+; 測試 arr-sort-asc
 test-arr-sort-asc = () {
     a [5] = [3, 1, 4, 1, 5]
     a.asc()
@@ -5,6 +6,7 @@ test-arr-sort-asc = () {
     print(n)
 }
 
+; 測試 arr-to-str
 test-arr-to-str = () {
     a [3] = [1, 2, 3]
     print(a.to-str())

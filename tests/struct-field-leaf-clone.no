@@ -10,6 +10,10 @@
 ;
 ; 修復前 a1 印出空字串（父物件被銷毀），修復後印出 alice。
 
+; 檢查 str
+; name str: 這項檢查的名稱，輸出時原樣印出
+; got str: 實際取得的值
+; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check-str = (name str, got str, want str) {
     got == want -> print('ok: {name}')
 
@@ -25,6 +29,8 @@ outer {
     root i64
 }
 
+; 用區域變數建構 outer 再回傳：欄位 p 必須深拷貝到輸出身上（不得留下指向局部變數的指標）
+; out outer: p.name='alice'、root=0 的完整結構體
 mk-owned = () (out outer) {
     p = inner {
         name: 'alice'
@@ -35,6 +41,8 @@ mk-owned = () (out outer) {
     }
 }
 
+; 同樣的建構但包成 ok 選項回傳：驗證 ?outer 路徑也做欄位深拷貝
+; out ?outer: 內容為 p.name='alice'、root=0 的 ok 選項
 mk-opt = () (out ?outer) {
     p = inner {
         name: 'alice'
@@ -47,6 +55,9 @@ mk-opt = () (out ?outer) {
 }
 
 ; 從借用來的參數建一個子視圖，交還給呼叫方
+; obj outer: 父物件，p 欄位的 name 會被拷貝成子視圖自己的資料
+; i i64: 要填入 root 的編號
+; c ?outer: ok(子視圖 {p: obj.p 的副本, root: i})；非可失敗路徑，總是 ok
 get-child = (obj outer, i i64) (c ?outer) {
     c = outer {
         p: obj.p

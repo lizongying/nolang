@@ -18,10 +18,16 @@
 ; 真正的守門員是 src/mir/spawn_arg_move_test.go 的 MIR / IR 斷言，它直接檢查
 ; spawnArgMoves 的內容、drop 的數量，以及解構子落在 spawn 邊界的哪一側。
 
+; 協程：把輸入字串原樣回傳，用於觀察 spawn 邊界上字串的 move 時機
+; s str: 來源字串
+; r str: 與 s 相同的內容
 echo = (s str) (r str) {
     r = s
 }
 
+; 取首個
+; v []i64: 來源 vec（本測試用來驗證 spawn 時是 move 還是 clone）
+; r i64: v[0]；越界由 #{index-out=zero} 補零
 first = (v []i64) (r i64) {
 
     #{index-out=zero}
@@ -32,6 +38,9 @@ holder {
     s str
 }
 
+; 協程：回傳 holder.s，用於觀察結構體在 spawn 邊界被整體搬移
+; h holder: 含字串欄位 s 的結構體
+; r str: h.s 的內容
 echo-holder = (h holder) (r str) {
     r = h.s
 }

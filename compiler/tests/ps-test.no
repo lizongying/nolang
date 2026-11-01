@@ -43,6 +43,9 @@
 ; helper：parse + dump（對齊 drv.cmd-ast 的管線）
 ; ═══════════════════════════════════════════════
 
+; 解析 dump
+; src: 來源
+; out: 輸出結果
 parse-dump = (src str) (out str) {
     t = ast.make()
     p = ps.new(src)
@@ -55,6 +58,7 @@ parse-dump = (src str) (out str) {
 ;    （舊缺陷：value 丟失 + `[i]` 被拆成獨立 SliceLiteral 陳述）
 ; ═══════════════════════════════════════════════
 
+; 測試 in-index-rhs
 test-in-index-rhs = () {
     got = parse-dump('it = in[i]')
     want = 'Program{}\n    LetStatement{name: it, value: IndexExpression}\n        IndexExpression\n            Identifier{name: in}\n            Identifier{name: i}'
@@ -66,6 +70,7 @@ test-in-index-rhs = () {
 ;    （舊缺陷：args: 1 —— `in` 引數被靜默丟棄）
 ; ═══════════════════════════════════════════════
 
+; 測試 in-call-arg
 test-in-call-arg = () {
     got = parse-dump('out = enc-block(in, ek)')
     want = 'Program{}\n    LetStatement{name: out, value: CallExpression}\n        CallExpression{fn: enc-block, args: 2}\n            Identifier{name: enc-block}\n            Identifier{name: in}\n            Identifier{name: ek}'
@@ -80,6 +85,7 @@ test-in-call-arg = () {
 ;    期望值 = oracle 對 tests 用的 a1 最小復現檔的實測輸出。
 ; ═══════════════════════════════════════════════
 
+; 測試 in-grouped-inline-if
 test-in-grouped-inline-if = () {
     got = parse-dump('pad-len = 16\ni = 0\n(in[i]) != pad-len -> {\n    out-n = -1\n    return\n}')
     want = 'Program{}\n    LetStatement{name: pad-len, type: i64, value: 16}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 16, raw: 16}\n    LetStatement{name: i, type: i64, value: 0}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 0, raw: 0}\n    ExpressionStatement{IfExpression}\n        IfExpression\n            InfixExpression{op: !=}\n                GroupedExpression\n                    IndexExpression\n                        Identifier{name: in}\n                        Identifier{name: i}\n                Identifier{name: pad-len}\n            BlockStatement{}\n                LetStatement{name: out-n, value: PrefixExpression}\n                    PrefixExpression{op: -}\n                        IntegerLiteral{value: 1, raw: 1}\n                ReturnStatement{}'
@@ -90,6 +96,7 @@ test-in-grouped-inline-if = () {
 ; 4. let RHS 比較（c2 形式，無 inline-if）：同樣曾掛起
 ; ═══════════════════════════════════════════════
 
+; 測試 in-grouped-compare-let
 test-in-grouped-compare-let = () {
     got = parse-dump('x = (in[i]) != pad-len')
     want = 'Program{}\n    LetStatement{name: x, value: InfixExpression}\n        InfixExpression{op: !=}\n            GroupedExpression\n                IndexExpression\n                    Identifier{name: in}\n                    Identifier{name: i}\n            Identifier{name: pad-len}'
@@ -100,6 +107,7 @@ test-in-grouped-compare-let = () {
 ; 5. 對照組：無 `in` 的同等構造必須不受影響（零回歸錨點）
 ; ═══════════════════════════════════════════════
 
+; 測試 control-no-in
 test-control-no-in = () {
     got = parse-dump('x = (ab[i]) != pad-len')
     want = 'Program{}\n    LetStatement{name: x, value: InfixExpression}\n        InfixExpression{op: !=}\n            GroupedExpression\n                IndexExpression\n                    Identifier{name: ab}\n                    Identifier{name: i}\n            Identifier{name: pad-len}'
@@ -113,6 +121,7 @@ test-control-no-in = () {
 ;    期望含 `GenericParams: n, t` 與 self 的 ArrayType{size: n, elem t}。
 ; ═══════════════════════════════════════════════
 
+; 測試 array-recv-generic
 test-array-recv-generic = () {
     got = parse-dump('[n]t.len = () (out i64) {\n    out = n\n}')
     want = 'Program{}\n    FunctionDefinition{name: [n]t.len, methodDef: true}\n        GenericParams: n, t\n        Parameter{name: self, type: [n]t}\n            ArrayType{size: n}\n                Identifier{name: n}\n                NamedType{name: t}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, value: n}\n                Identifier{name: n}'
@@ -125,6 +134,7 @@ test-array-recv-generic = () {
 ;    退化成 dst / n / t 三個參數）
 ; ═══════════════════════════════════════════════
 
+; 測試 array-param-generic-size
 test-array-param-generic-size = () {
     got = parse-dump('[n]t.clone = () (dst [n]t) {\n    dst[0] = .[0]\n}')
     want = 'Program{}\n    FunctionDefinition{name: [n]t.clone, methodDef: true}\n        GenericParams: n, t\n        Parameter{name: self, type: [n]t}\n            ArrayType{size: n}\n                Identifier{name: n}\n                NamedType{name: t}\n        Parameter{name: dst, type: [n]t}\n            ArrayType{size: n}\n                Identifier{name: n}\n                NamedType{name: t}\n        BlockStatement{}\n            ExpressionStatement{AssignExpression}\n                AssignExpression\n                    IndexExpression\n                        Identifier{name: dst}\n                        IntegerLiteral{value: 0, raw: 0}\n                    IndexExpression\n                        Identifier{name: self}\n                        IntegerLiteral{value: 0, raw: 0}'
@@ -139,6 +149,7 @@ test-array-param-generic-size = () {
 ;       或對 SliceType 接收者播種，本檔就會多出 `GenericParams: t` 而失敗。
 ; ═══════════════════════════════════════════════
 
+; 測試 slice-recv-no-generic
 test-slice-recv-no-generic = () {
     got = parse-dump('[]t.len = () (out i64) {\n    out = 0\n}')
     want = 'Program{}\n    FunctionDefinition{name: []t.len, methodDef: true}\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}'
@@ -150,6 +161,7 @@ test-slice-recv-no-generic = () {
 ;    ⇒ GenericParams: t（來自 param `b []t`，順序在 self 之前）
 ; ═══════════════════════════════════════════════
 
+; 測試 slice-recv-generic-from-param
 test-slice-recv-generic-from-param = () {
     got = parse-dump('[]t.eq = (b []t) (eq bool) {\n    eq = true\n}')
     want = 'Program{}\n    FunctionDefinition{name: []t.eq, methodDef: true}\n        GenericParams: t\n        Parameter{name: b, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: eq, type: bool}\n            NamedType{name: bool}\n        BlockStatement{}\n            LetStatement{name: eq, type: bool, value: true}\n                NamedType{name: bool, inferred: true}\n                BooleanLiteral{true}'
@@ -163,6 +175,7 @@ test-slice-recv-generic-from-param = () {
 ;     此 `[?]t` 回傳參數取得 → GenericParams: t（鏡像 vec.no:182）。
 ; ═══════════════════════════════════════════════
 
+; 測試 param-nullable-size-array
 test-param-nullable-size-array = () {
     got = parse-dump('[]t.to-arr = () (out [?]t) {\n    out = 0\n}')
     want = 'Program{}\n    FunctionDefinition{name: []t.to-arr, methodDef: true}\n        GenericParams: t\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: out, type: [?]t}\n            ArrayType{size: <nil>}\n                NamedType{name: t}\n        BlockStatement{}\n            LetStatement{name: out, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}'
@@ -193,6 +206,7 @@ test-param-nullable-size-array()
 ;     逐位元組對齊 oracle」。
 ; ═══════════════════════════════════
 
+; 測試 match-arm-loop-fix
 test-match-arm-loop-fix = () {
     got = parse-dump('z = 1\nz: {\n    1 -> a = 1\n    _ -> a = 2\n}')
     want = 'Program{}\n    LetStatement{name: z, type: i64, value: 1}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 1, raw: 1}\n    ExpressionStatement{SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            Identifier{name: z}\n            MatchArm{binding: , bindingVariant: }\n                IntegerLiteral{value: 1, raw: 1}\n                BlockStatement{inline: true}\n                    LetStatement{name: a, type: i64, value: 1}\n                        NamedType{name: i64, inferred: true}\n                        IntegerLiteral{value: 1, raw: 1}\n            MatchArm{wildcard: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    LetStatement{name: a, type: i64, value: 2}\n                        NamedType{name: i64, inferred: true}\n                        IntegerLiteral{value: 2, raw: 2}'
@@ -209,6 +223,7 @@ test-match-arm-loop-fix()
 ;     下一節點 kid 槽別名 ⇒ dump 無限遞迴 SIGSEGV，實測踩過）。
 ; ═══════════════════════════════════
 
+; 測試 bare-match-surface
 test-bare-match-surface = () {
     got = parse-dump('f = (i i64, n i64) (val ?i64) {\n    {\n        i < 0 -> val = nil\n\n        i >= n -> val = nil\n\n        -> val = 1\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: i, type: i64}\n            NamedType{name: i64}\n        Parameter{name: n, type: i64}\n            NamedType{name: i64}\n        Parameter{name: val, type: ?i64}\n            NullableType\n                NamedType{name: i64}\n        BlockStatement{}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    MatchArm{binding: , bindingVariant: }\n                        InfixExpression{op: <}\n                            Identifier{name: i}\n                            IntegerLiteral{value: 0, raw: 0}\n                        BlockStatement{inline: true}\n                            LetStatement{name: val, value: nil}\n                                NilLiteral\n                    MatchArm{binding: , bindingVariant: }\n                        InfixExpression{op: >=}\n                            Identifier{name: i}\n                            Identifier{name: n}\n                        BlockStatement{inline: true}\n                            LetStatement{name: val, value: nil}\n                                NilLiteral\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            LetStatement{name: val, type: i64, value: 1}\n                                NamedType{name: i64, inferred: true}\n                                IntegerLiteral{value: 1, raw: 1}'
@@ -222,6 +237,7 @@ test-bare-match-surface = () {
 ;     舊缺陷：ps-parse-bare-match 對 ok-> 整體 fail=1 退讓。
 ; ═══════════════════════════════════
 
+; 測試 bare-match-ok-dotval
 test-bare-match-ok-dotval = () {
     got = parse-dump('ok = true\n{\n    ok -> print(1)\n\n    -> print(2)\n}')
     want = 'Program{}\n    LetStatement{name: ok, type: bool, value: true}\n        NamedType{name: bool, inferred: true}\n        BooleanLiteral{true}\n    ExpressionStatement{SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                Identifier{name: ok}\n                BlockStatement{inline: true}\n                    ExpressionStatement{CallExpression}\n                        CallExpression{fn: print, args: 1}\n                            Identifier{name: print}\n                            IntegerLiteral{value: 1, raw: 1}\n            MatchArm{wildcard: true, binding: , bindingVariant: }\n                BlockStatement{inline: true}\n                    ExpressionStatement{CallExpression}\n                        CallExpression{fn: print, args: 1}\n                            Identifier{name: print}\n                            IntegerLiteral{value: 2, raw: 2}'
@@ -234,6 +250,7 @@ test-bare-match-ok-dotval = () {
 ;     ⇒ `r = n: { -> 1 }` 漏 valueCtx: true（L2 flag_gap 一源）。
 ; ═══════════════════════════════════
 
+; 測試 match-valuectx-snapshot
 test-match-valuectx-snapshot = () {
     got = parse-dump('test1 = () {\n    n = 42\n    r = n: {\n        -> 1\n    }\n    print(r)\n}')
     want = 'Program{}\n    FunctionDefinition{name: test1}\n        BlockStatement{}\n            LetStatement{name: n, type: i64, value: 42}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 42, raw: 42}\n            LetStatement{name: r, value: SurfaceMatch}\n                SurfaceMatch{arms: 1}\n                    Identifier{name: n}\n                    MatchArm{wildcard: true, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n            ExpressionStatement{CallExpression}\n                CallExpression{fn: print, args: 1}\n                    Identifier{name: print}\n                    Identifier{name: r}'
@@ -251,6 +268,7 @@ test-match-valuectx-snapshot()
 ;     ⇒ typeArm/typePattern/typeBinding 全空（L2 flag_gap 一源）。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 match-type-arm
 test-match-type-arm = () {
     got = parse-dump('classify = (v i64) (out i64) {\n    out = v: {\n        v bool -> 1\n\n        -> 2\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: classify}\n        Parameter{name: v, type: i64}\n            NamedType{name: i64}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, value: SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: v}\n                    MatchArm{typeArm: true, typePattern: bool, typeBinding: v, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{wildcard: true, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{2}\n                                IntegerLiteral{value: 2, raw: 2}'
@@ -263,6 +281,7 @@ test-match-type-arm = () {
 ;     （oracle 解析期不歸一，留空 binding + CallExpression 子樹）。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 match-enum-variant-pattern
 test-match-enum-variant-pattern = () {
     got = parse-dump('kind = (s Shape) (out i64) {\n    out = s: {\n        circle(r) -> 1\n\n        rect(w, h) -> 2\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: kind}\n        Parameter{name: s, type: Shape}\n            NamedType{name: Shape}\n        Parameter{name: out, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, value: SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: s}\n                    MatchArm{valueCtx: true, binding: , bindingVariant: }\n                        CallExpression{fn: circle, args: 1}\n                            Identifier{name: circle}\n                            Identifier{name: r}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{valueCtx: true, binding: , bindingVariant: }\n                        CallExpression{fn: rect, args: 2}\n                            Identifier{name: rect}\n                            Identifier{name: w}\n                            Identifier{name: h}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{2}\n                                IntegerLiteral{value: 2, raw: 2}'
@@ -279,6 +298,7 @@ test-match-enum-variant-pattern()
 ;     空臂體被下臂吸成 if 陳述（map.no count_gap）；blockBody+inline 雙旗漏。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 match-newline-empty-arms
 test-match-newline-empty-arms = () {
     got = parse-dump('f = (val ?i64) (found bool) {\n    val: {\n        ok -> found = true\n\n        err ->\n\n        nil ->\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: val, type: ?i64}\n            NullableType\n                NamedType{name: i64}\n        Parameter{name: found, type: bool}\n            NamedType{name: bool}\n        BlockStatement{}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    Identifier{name: val}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            LetStatement{name: found, type: bool, value: true}\n                                NamedType{name: bool, inferred: true}\n                                BooleanLiteral{true}\n                    MatchArm{blockBody: true, binding: , bindingVariant: }\n                        Identifier{name: err}\n                        BlockStatement{inline: true}\n                    MatchArm{blockBody: true, binding: , bindingVariant: }\n                        NilLiteral\n                        BlockStatement{inline: true}'
@@ -291,6 +311,7 @@ test-match-newline-empty-arms = () {
 ;     SliceLiteral4（match-range-pattern.no / fmt-heuristic.no / str-order.no）。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 match-range-pattern
 test-match-range-pattern = () {
     got = parse-dump('grade = (score i64) (g i64) {\n    g = score: {\n        [0..60) -> 1\n\n        -> 2\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: grade}\n        Parameter{name: score, type: i64}\n            NamedType{name: i64}\n        Parameter{name: g, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: g, value: SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: score}\n                    MatchArm{valueCtx: true, binding: , bindingVariant: }\n                        RangeExpression{start: 0, end: 60, leftInc: true}\n                            IntegerLiteral{value: 0, raw: 0}\n                            IntegerLiteral{value: 60, raw: 60}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{1}\n                                IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{wildcard: true, valueCtx: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{2}\n                                IntegerLiteral{value: 2, raw: 2}'
@@ -307,6 +328,7 @@ test-match-range-pattern()
 ;     且 val-ctx=1 污染 MatchArm.valueCtx（match-test.no flag_gap 根因）。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 nullable-let-no-value
 test-nullable-let-no-value = () {
     got = parse-dump('test = () {\n    x ?i64\n    x: {\n        ok -> print(1)\n\n        -> print(2)\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: test}\n        BlockStatement{}\n            LetStatement{name: x, type: ?i64, value: }\n                NullableType\n                    NamedType{name: i64}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 2}\n                    Identifier{name: x}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: print, args: 1}\n                                    Identifier{name: print}\n                                    IntegerLiteral{value: 1, raw: 1}\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: print, args: 1}\n                                    Identifier{name: print}\n                                    IntegerLiteral{value: 2, raw: 2}'
@@ -321,6 +343,7 @@ test-nullable-let-no-value = () {
 ;     NEWLINE 形分支誤觸發抬 hd2。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 match-blockmatch-fallback-extract
 test-match-blockmatch-fallback-extract = () {
     got = parse-dump('f = (val ?i64) (found bool) {\n    val: {\n        ok -> found = true\n\n        err(m) -> {\n            b: {\n                ok -> found = true\n            }\n        }\n\n        nil -> found = false\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: val, type: ?i64}\n            NullableType\n                NamedType{name: i64}\n        Parameter{name: found, type: bool}\n            NamedType{name: bool}\n        BlockStatement{}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    Identifier{name: val}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            LetStatement{name: found, type: bool, value: true}\n                                NamedType{name: bool, inferred: true}\n                                BooleanLiteral{true}\n                    MatchArm{binding: m, bindingVariant: err}\n                        Identifier{name: err}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{SurfaceMatch}\n                                SurfaceMatch{arms: 1}\n                                    Identifier{name: b}\n                                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                                        BlockStatement{inline: true}\n                                            LetStatement{name: found, type: bool, value: true}\n                                                NamedType{name: bool, inferred: true}\n                                                BooleanLiteral{true}\n                    MatchArm{binding: , bindingVariant: }\n                        NilLiteral\n                        BlockStatement{inline: true}\n                            LetStatement{name: found, type: bool, value: false}\n                                NamedType{name: bool, inferred: true}\n                                BooleanLiteral{false}'
@@ -338,6 +361,7 @@ test-match-blockmatch-fallback-extract()
 ;     整塊消失、內含 match 陳述組全沒——gap I 根因）。修復：預計算 lid。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 match-nested-cond-if-chain
 test-match-nested-cond-if-chain = () {
     got = parse-dump('f = (x i64) (r i64) {\n    a [4]i64\n    x > 1 -> x < 10 -> {\n        a[0]: {\n            ok -> it = 1\n            -> _\n        }\n    }\n}')
     want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: x, type: i64}\n            NamedType{name: i64}\n        Parameter{name: r, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: a, type: [4]i64, value: }\n                ArrayType{size: 4}\n                    IntegerLiteral{value: 4, raw: 4}\n                    NamedType{name: i64}\n            ExpressionStatement{IfExpression}\n                IfExpression\n                    InfixExpression{op: >}\n                        Identifier{name: x}\n                        IntegerLiteral{value: 1, raw: 1}\n                    BlockStatement{inline: true}\n                        ExpressionStatement{IfExpression}\n                            IfExpression\n                                InfixExpression{op: <}\n                                    Identifier{name: x}\n                                    IntegerLiteral{value: 10, raw: 10}\n                                BlockStatement{}\n                                    ExpressionStatement{SurfaceMatch}\n                                        SurfaceMatch{arms: 2}\n                                            IndexExpression\n                                                Identifier{name: a}\n                                                IntegerLiteral{value: 0, raw: 0}\n                                            MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                                                BlockStatement{inline: true}\n                                                    LetStatement{name: it, type: i64, value: 1}\n                                                        NamedType{name: i64, inferred: true}\n                                                        IntegerLiteral{value: 1, raw: 1}\n                                            MatchArm{wildcard: true, binding: , bindingVariant: }\n                                                BlockStatement{inline: true}\n                                                    ExpressionStatement{nil}'
@@ -353,6 +377,7 @@ test-match-nested-cond-if-chain()
 ;     （yaml.no parse-block-scalar 級聯誤解析根因：13,831 行 dump 發散）。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 for-inline-body
 test-for-inline-body = () {
     got = parse-dump('f = (x i64) (r i64) {\n    n = 5\n    k <- [0..n):\n        r = r + 1\n        r = r + 2\n    r = 1\n}')
     want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: x, type: i64}\n            NamedType{name: i64}\n        Parameter{name: r, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: n, type: i64, value: 5}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 5, raw: 5}\n            ForStatement{label: }\n                IterationExpr{var: k}\n                    RangeExpression{start: 0, end: n, leftInc: true}\n                        IntegerLiteral{value: 0, raw: 0}\n                        Identifier{name: n}\n                BlockStatement{inline: true}\n                    LetStatement{name: r, value: InfixExpression}\n                        InfixExpression{op: +}\n                            Identifier{name: r}\n                            IntegerLiteral{value: 1, raw: 1}\n            LetStatement{name: r, value: InfixExpression}\n                InfixExpression{op: +}\n                    Identifier{name: r}\n                    IntegerLiteral{value: 2, raw: 2}\n            LetStatement{name: r, type: i64, value: 1}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 1, raw: 1}'
@@ -368,6 +393,7 @@ test-for-inline-body()
 ;     ⇒ valueCtx 全丟（build-mo flag_gap 根因）。
 ; ═══════════════════════════════════════════════════════════════════════
 
+; 測試 let-rhs-bare-match
 test-let-rhs-bare-match = () {
     got = parse-dump('x = 0\nresult = {\n    x == 0 -> 1\n\n    x == x -> 0\n}')
     want = 'Program{}\n    LetStatement{name: x, type: i64, value: 0}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 0, raw: 0}\n    LetStatement{name: result, value: SurfaceMatch}\n        SurfaceMatch{arms: 2}\n            MatchArm{valueCtx: true, binding: , bindingVariant: }\n                InfixExpression{op: ==}\n                    Identifier{name: x}\n                    IntegerLiteral{value: 0, raw: 0}\n                BlockStatement{inline: true}\n                    ExpressionStatement{1}\n                        IntegerLiteral{value: 1, raw: 1}\n            MatchArm{valueCtx: true, binding: , bindingVariant: }\n                InfixExpression{op: ==}\n                    Identifier{name: x}\n                    Identifier{name: x}\n                BlockStatement{inline: true}\n                    ExpressionStatement{0}\n                        IntegerLiteral{value: 0, raw: 0}'
@@ -386,6 +412,7 @@ test-let-rhs-bare-match()
 ;     ps-infer-type 回傳值被截成形別名長度（i64→"3"），汙染全域。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 let-idx-elem-infer
 test-let-idx-elem-infer = () {
     got = parse-dump('v = [1, 2, 3]\ne0 = v[0]\ns = ["a", "b"]\ne2 = s[0]\ng = () {\n    w = [1.5, 2.5]\n    e1 = w[0]\n}')
     want = 'Program{}\n    LetStatement{name: v, type: []i64, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: i64, inferred: true}\n        SliceLiteral{elements: 3}\n            IntegerLiteral{value: 1, raw: 1}\n            IntegerLiteral{value: 2, raw: 2}\n            IntegerLiteral{value: 3, raw: 3}\n    LetStatement{name: e0, type: i64, value: IndexExpression}\n        NamedType{name: i64, inferred: true}\n        IndexExpression\n            Identifier{name: v}\n            IntegerLiteral{value: 0, raw: 0}\n    LetStatement{name: s, type: []char, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: char, inferred: true}\n        SliceLiteral{elements: 2}\n            CharLiteral{value: a}\n            CharLiteral{value: b}\n    LetStatement{name: e2, type: char, value: IndexExpression}\n        NamedType{name: char, inferred: true}\n        IndexExpression\n            Identifier{name: s}\n            IntegerLiteral{value: 0, raw: 0}\n    FunctionDefinition{name: g}\n        BlockStatement{}\n            LetStatement{name: w, type: []f64, value: SliceLiteral}\n                SliceType{inferred: true}\n                    NamedType{name: f64, inferred: true}\n                SliceLiteral{elements: 2}\n                    FloatLiteral{value: 1.5, raw: 1.5}\n                    FloatLiteral{value: 2.5, raw: 2.5}\n            LetStatement{name: e1, value: IndexExpression}\n                IndexExpression\n                    Identifier{name: w}\n                    IntegerLiteral{value: 0, raw: 0}'
@@ -406,6 +433,7 @@ test-let-idx-elem-infer()
 ;     want 由 L2 oracle 實測取得（`./bin/no ast`）。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 let-pipeline-value
 test-let-pipeline-value = () {
     got = parse-dump('a i64 = 5\nx = 2 > 1 -> 42\nq = a > 0 -> 8 -> 9\np i64 = a > 1 -> 42\n')
     want = 'Program{}\n    LetStatement{name: a, type: i64, value: 5}\n        NamedType{name: i64}\n        IntegerLiteral{value: 5, raw: 5}\n    LetStatement{name: x, value: IfExpression}\n        IfExpression\n            InfixExpression{op: >}\n                IntegerLiteral{value: 2, raw: 2}\n                IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                ExpressionStatement{42}\n                    IntegerLiteral{value: 42, raw: 42}\n    LetStatement{name: q, value: IfExpression}\n        IfExpression\n            InfixExpression{op: >}\n                Identifier{name: a}\n                IntegerLiteral{value: 0, raw: 0}\n            BlockStatement{inline: true}\n                ExpressionStatement{IfExpression}\n                    IfExpression\n                        IntegerLiteral{value: 8, raw: 8}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{9}\n                                IntegerLiteral{value: 9, raw: 9}\n    LetStatement{name: p, type: i64, value: IfExpression}\n        NamedType{name: i64}\n        IfExpression\n            InfixExpression{op: >}\n                Identifier{name: a}\n                IntegerLiteral{value: 1, raw: 1}\n            BlockStatement{inline: true}\n                ExpressionStatement{42}\n                    IntegerLiteral{value: 42, raw: 42}'
@@ -438,6 +466,7 @@ test-let-pipeline-no-newline()
 ;   want 由 L2 oracle 實測取得（`./bin/no ast`）。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 match-unreachable-warn-option
 test-match-unreachable-warn-option = () {
     got = parse-dump('f = () {\n    x ?i64\n    x: {\n        err -> log()\n        nil -> log()\n        ok -> log()\n        -> log()\n    }\n}')
     want = 'Program{warnings: 1}\n    FunctionDefinition{name: f}\n        BlockStatement{}\n            LetStatement{name: x, type: ?i64, value: }\n                NullableType\n                    NamedType{name: i64}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 4}\n                    Identifier{name: x}\n                    MatchArm{binding: , bindingVariant: }\n                        Identifier{name: err}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{binding: , bindingVariant: }\n                        NilLiteral\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{wildcard: true, dotVal: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}'
@@ -446,6 +475,7 @@ test-match-unreachable-warn-option = () {
 
 test-match-unreachable-warn-option()
 
+; 測試 match-unreachable-warn-enum
 test-match-unreachable-warn-enum = () {
     got = parse-dump('status {\n    status1,\n    status2,\n}\ng = () {\n    s status\n    s: {\n        status1 -> log()\n        status2 -> log()\n        -> log()\n    }\n}')
     want = 'Program{warnings: 1}\n    EnumDefinition{name: status, values: 2}\n        EnumValue{name: status1, value: 0}\n        EnumValue{name: status2, value: 1}\n    FunctionDefinition{name: g}\n        BlockStatement{}\n            LetStatement{name: s, type: status, value: }\n                NamedType{name: status}\n            ExpressionStatement{SurfaceMatch}\n                SurfaceMatch{arms: 3}\n                    Identifier{name: s}\n                    MatchArm{binding: , bindingVariant: }\n                        Identifier{name: status1}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{binding: , bindingVariant: }\n                        Identifier{name: status2}\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}\n                    MatchArm{wildcard: true, binding: , bindingVariant: }\n                        BlockStatement{inline: true}\n                            ExpressionStatement{CallExpression}\n                                CallExpression{fn: log}\n                                    Identifier{name: log}'
@@ -454,6 +484,7 @@ test-match-unreachable-warn-enum = () {
 
 test-match-unreachable-warn-enum()
 
+; 測試 bare-nullable-doc-attach
 test-bare-nullable-doc-attach = () {
     got = parse-dump('d = () {\n    x ?i64\n\n    ; 這是下一陳述的 Doc\n    a i64 = 1\n}')
     want = 'Program{}\n    FunctionDefinition{name: d}\n        BlockStatement{}\n            LetStatement{name: x, type: ?i64, value: }\n                NullableType\n                    NamedType{name: i64}\n            LetStatement{name: a, type: i64, value: 1}\n                Doc: // 這是下一陳述的 Doc\n                NamedType{name: i64}\n                IntegerLiteral{value: 1, raw: 1}'
@@ -473,6 +504,7 @@ test-bare-nullable-doc-attach()
 ;     want 由 L2 oracle 實測取得。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 map-annotated-composite-value-literal
 test-map-annotated-composite-value-literal = () {
     got = parse-dump('f = () {\n    m [str][]i64 = { }\n    n [str]i64 = { \'a\': 1, \'b\': 2 }\n}')
     want = 'Program{}\n    FunctionDefinition{name: f}\n        BlockStatement{}\n            LetStatement{name: m, type: [str][]i64, value: MapLiteral}\n                MapType{}\n                    NamedType{name: str}\n                    SliceType{}\n                        NamedType{name: i64}\n                MapLiteral{}\n                    MapType{}\n                        NamedType{name: str}\n                        SliceType{}\n                            NamedType{name: i64}\n            LetStatement{name: n, type: [str]i64, value: MapLiteral}\n                MapType{}\n                    NamedType{name: str}\n                    NamedType{name: i64}\n                MapLiteral{pairs: 2}\n                    MapPair\n                        StringLiteral{value: a}\n                        IntegerLiteral{value: 1, raw: 1}\n                    MapPair\n                        StringLiteral{value: b}\n                        IntegerLiteral{value: 2, raw: 2}\n                    MapType{}\n                        NamedType{name: str}\n                        NamedType{name: i64}'
@@ -493,6 +525,7 @@ test-map-annotated-composite-value-literal()
 ;      由 self 型別查欄位型別、再以 `fieldTy.method` 查 msig。want 由 L2 oracle 實測取得。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 slice-method-param-no-propagate-local-yes
 test-slice-method-param-no-propagate-local-yes = () {
     got = parse-dump('[]t.remove = (i i64) (val ?t) {\n    j = i\n    k = 0\n    m = k\n}')
     want = 'Program{}\n    FunctionDefinition{name: []t.remove, methodDef: true}\n        GenericParams: t\n        Parameter{name: i, type: i64}\n            NamedType{name: i64}\n        Parameter{name: self, type: []t}\n            SliceType{}\n                NamedType{name: t}\n        Parameter{name: val, type: ?t}\n            NullableType\n                NamedType{name: t}\n        BlockStatement{}\n            LetStatement{name: j, value: i}\n                Identifier{name: i}\n            LetStatement{name: k, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}\n            LetStatement{name: m, type: i64, value: k}\n                NamedType{name: i64, inferred: true}\n                Identifier{name: k}'
@@ -501,6 +534,7 @@ test-slice-method-param-no-propagate-local-yes = () {
 
 test-slice-method-param-no-propagate-local-yes()
 
+; 測試 chained-self-field-method-return-infer
 test-chained-self-field-method-return-infer = () {
     got = parse-dump('dom-pool {\n    x i64\n}\ndom {\n    pool dom-pool\n}\ndom-pool.collect = () (out []i64) {\n    out = [0]\n}\ndom.f = () (o []i64) {\n    v = .pool.collect()\n}')
     want = 'Program{}\n    StructDefinition{name: dom-pool, fields: 1}\n        StructField{name: x, type: i64}\n            NamedType{name: i64}\n    StructDefinition{name: dom, fields: 1}\n        StructField{name: pool, type: dom-pool}\n            NamedType{name: dom-pool}\n    FunctionDefinition{name: dom-pool.collect, methodDef: true}\n        Parameter{name: self, type: dom-pool}\n            NamedType{name: dom-pool}\n        Parameter{name: out, type: []i64}\n            SliceType{}\n                NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: out, type: []i64, value: SliceLiteral}\n                SliceType{inferred: true}\n                    NamedType{name: i64, inferred: true}\n                SliceLiteral{elements: 1}\n                    IntegerLiteral{value: 0, raw: 0}\n    FunctionDefinition{name: dom.f, methodDef: true}\n        Parameter{name: self, type: dom}\n            NamedType{name: dom}\n        Parameter{name: o, type: []i64}\n            SliceType{}\n                NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: v, type: []i64, value: CallExpression}\n                SliceType{inferred: true}\n                    NamedType{name: i64, inferred: true}\n                CallExpression{fn: DotExpression}\n                    DotExpression{receiver: DotExpression, property: collect}\n                        DotExpression{receiver: self, property: pool}\n                            Identifier{name: self}'
@@ -525,6 +559,7 @@ test-chained-self-field-method-return-infer()
 ;      ps-var-type-strict 對齊。want 由 L2 oracle 實測取得。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 chain-bare-if-else-fold-and-warn
 test-chain-bare-if-else-fold-and-warn = () {
     got = parse-dump('f = (a bool, b bool, c bool) (w i64) {\n    a -> b -> c -> {\n        w = 1\n    } -> {\n        w = 2\n    }\n}')
     want = 'Program{warnings: 2}\n    FunctionDefinition{name: f}\n        Parameter{name: a, type: bool}\n            NamedType{name: bool}\n        Parameter{name: b, type: bool}\n            NamedType{name: bool}\n        Parameter{name: c, type: bool}\n            NamedType{name: bool}\n        Parameter{name: w, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            ExpressionStatement{IfExpression}\n                IfExpression\n                    Identifier{name: a}\n                    BlockStatement{inline: true}\n                        ExpressionStatement{IfExpression}\n                            IfExpression\n                                Identifier{name: b}\n                                BlockStatement{inline: true}\n                                    ExpressionStatement{IfExpression}\n                                        IfExpression\n                                            IfExpression\n                                                Identifier{name: c}\n                                                BlockStatement{}\n                                                    LetStatement{name: w, type: i64, value: 1}\n                                                        NamedType{name: i64, inferred: true}\n                                                        IntegerLiteral{value: 1, raw: 1}\n                                            BlockStatement{}\n                                                LetStatement{name: w, type: i64, value: 2}\n                                                    NamedType{name: i64, inferred: true}\n                                                    IntegerLiteral{value: 2, raw: 2}'
@@ -533,6 +568,7 @@ test-chain-bare-if-else-fold-and-warn = () {
 
 test-chain-bare-if-else-fold-and-warn()
 
+; 測試 slice-method-param-reassign-propagate
 test-slice-method-param-reassign-propagate = () {
     got = parse-dump('[]byte.idx = (from i64) (pos i64) {\n    from = 0\n    i = from\n}')
     want = 'Program{}\n    FunctionDefinition{name: []byte.idx, methodDef: true}\n        Parameter{name: from, type: i64}\n            NamedType{name: i64}\n        Parameter{name: self, type: []byte}\n            SliceType{}\n                NamedType{name: byte}\n        Parameter{name: pos, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: from, type: i64, value: 0}\n                NamedType{name: i64, inferred: true}\n                IntegerLiteral{value: 0, raw: 0}\n            LetStatement{name: i, type: i64, value: from}\n                NamedType{name: i64, inferred: true}\n                Identifier{name: from}'
@@ -554,6 +590,7 @@ test-slice-method-param-reassign-propagate()
 ;   want 由 L2 oracle 實測取得。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 multi-assign-index-target-no-swallow
 test-multi-assign-index-target-no-swallow = () {
     got = parse-dump('probs = [1, 2, 3]\nm = 1\nbit, probs[m] = decode-bit(probs[m])\narr = [4, 5]\ni = 0\narr[i], x = f(1)\ny, z[w] = 1, 2')
     want = 'Program{}\n    LetStatement{name: probs, type: []i64, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: i64, inferred: true}\n        SliceLiteral{elements: 3}\n            IntegerLiteral{value: 1, raw: 1}\n            IntegerLiteral{value: 2, raw: 2}\n            IntegerLiteral{value: 3, raw: 3}\n    LetStatement{name: m, type: i64, value: 1}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 1, raw: 1}\n    MultiAssignStatement{targets: 2}\n        Identifier{name: bit}\n        IndexExpression\n            Identifier{name: probs}\n            Identifier{name: m}\n        CallExpression{fn: decode-bit, args: 1}\n            Identifier{name: decode-bit}\n            IndexExpression\n                Identifier{name: probs}\n                Identifier{name: m}\n    LetStatement{name: arr, type: []i64, value: SliceLiteral}\n        SliceType{inferred: true}\n            NamedType{name: i64, inferred: true}\n        SliceLiteral{elements: 2}\n            IntegerLiteral{value: 4, raw: 4}\n            IntegerLiteral{value: 5, raw: 5}\n    LetStatement{name: i, type: i64, value: 0}\n        NamedType{name: i64, inferred: true}\n        IntegerLiteral{value: 0, raw: 0}\n    MultiAssignStatement{targets: 2}\n        IndexExpression\n            Identifier{name: arr}\n            Identifier{name: i}\n        Identifier{name: x}\n        CallExpression{fn: f, args: 1}\n            Identifier{name: f}\n            IntegerLiteral{value: 1, raw: 1}\n    MultiAssignStatement{targets: 2}\n        Identifier{name: y}\n        IndexExpression\n            Identifier{name: z}\n            Identifier{name: w}\n        IntegerLiteral{value: 1, raw: 1}\n    ExpressionStatement{2}\n        IntegerLiteral{value: 2, raw: 2}'
@@ -579,6 +616,7 @@ test-multi-assign-index-target-no-swallow()
 ;   want 由 L2 oracle 實測取得（s80 語料 DIFF=0/655）。
 ; ═══════════════════════════════════════════════════════════════════
 
+; 測試 lone-type-name-statement
 test-lone-type-name-statement = () {
     got = parse-dump('f = (x i64) {\n    u64\n    x = (x & 255) u64\n}')
     want = 'Program{}\n    FunctionDefinition{name: f}\n        Parameter{name: x, type: i64}\n            NamedType{name: i64}\n        BlockStatement{}\n            LetStatement{name: u64, type: u64, value: }\n                NamedType{name: u64}\n            LetStatement{name: x, value: GroupedExpression}\n                GroupedExpression\n                    InfixExpression{op: &}\n                        Identifier{name: x}\n                        IntegerLiteral{value: 255, raw: 255}\n            LetStatement{name: u64, type: u64, value: }\n                NamedType{name: u64}'
@@ -587,6 +625,7 @@ test-lone-type-name-statement = () {
 
 test-lone-type-name-statement()
 
+; 測試 op-overload-return-strip
 test-op-overload-return-strip = () {
     got = parse-dump('t {\n    v i64\n}\nt._mul = (b t) (c ?t) {\n}\nf = (a t, b t) (c t) {\n    c = a._mul(b)\n}')
     want = 'Program{}\n    StructDefinition{name: t, fields: 1}\n        StructField{name: v, type: i64}\n            NamedType{name: i64}\n    FunctionDefinition{name: t._mul, methodDef: true}\n        GenericParams: t\n        Parameter{name: b, type: t}\n            NamedType{name: t}\n        Parameter{name: self, type: t}\n            NamedType{name: t}\n        Parameter{name: c, type: ?t}\n            NullableType\n                NamedType{name: t}\n        BlockStatement{}\n    FunctionDefinition{name: f}\n        GenericParams: t\n        Parameter{name: a, type: t}\n            NamedType{name: t}\n        Parameter{name: b, type: t}\n            NamedType{name: t}\n        Parameter{name: c, type: t}\n            NamedType{name: t}\n        BlockStatement{}\n            LetStatement{name: c, type: t, value: CallExpression}\n                NamedType{name: t, inferred: true}\n                CallExpression{fn: DotExpression, args: 1}\n                    DotExpression{receiver: a, property: _mul}\n                        Identifier{name: a}\n                    Identifier{name: b}'
@@ -595,6 +634,7 @@ test-op-overload-return-strip = () {
 
 test-op-overload-return-strip()
 
+; 測試 iface-inherits-list
 test-iface-inherits-list = () {
     got = parse-dump('db enter, leave {\n    fs.close() (ok bool)\n    exec(sql str) (r i64)\n}')
     want = 'Program{}\n    InterfaceDefinition{name: db, methods: 2}\n        Implements: [enter leave]\n        InterfaceMethod{name: close, receiver: fs, genericReceiver: true}\n            Parameter{name: ok, type: bool}\n                NamedType{name: bool}\n        InterfaceMethod{name: exec}\n            Parameter{name: sql, type: str}\n                NamedType{name: str}\n            Parameter{name: r, type: i64}\n                NamedType{name: i64}'

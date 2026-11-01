@@ -1,6 +1,9 @@
 ; async-yield.no — async-yield 在協程內（讓出控制權）
 ; `co f(x)` 單態化出的 f-async 繼承 f 的內容，包括 async-yield() 調用。
 
+; 協程：先 async-yield() 讓出一次控制權，再回 n + 1
+; n i64: 來源數值
+; r i64: n + 1（讓出後仍能正確算完）
 yielder = (n i64) (r i64) {
     async-yield()
 

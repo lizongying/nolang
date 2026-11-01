@@ -5,12 +5,14 @@
 
 # /test/runner
 
+; adler-32 基本可用性：對 4 位元組資料算出的校驗和應為正數（未固定具體值）
 t-adler-32 = () {
     data []byte = [0x00, 0x01, 0x02, 0x03]
     sum = zlib.adler-32(data, 4)
     runner.gt(sum, 0, 'adler-32 sum > 0')
 }
 
+; 空輸入的邊界：沒有資料時要維持初始值 a=1 / b=0，即結果為 1
 t-adler-32-empty = () {
     data []byte = with-cap(0)
     sum = zlib.adler-32(data, 0)
@@ -19,6 +21,7 @@ t-adler-32-empty = () {
     runner.eq(sum, 1, 'adler-32 empty == 1')
 }
 
+; 已知值：'hello' 的 Adler-32 為 0x062c0215（此處只驗結果為正數）
 t-adler-32-known = () {
 
     ; "hello" = [104, 101, 108, 108, 111]
@@ -28,6 +31,8 @@ t-adler-32-known = () {
     runner.gt(sum, 0, 'adler-32 hello > 0')
 }
 
+; zlib-compress 輸出必含 zlib 包裹（2 位元組頭 + 尾端 adler-32），
+; 故 5 位元組的 'Hello' 壓完仍應超過 6 位元組
 t-compress = () {
     data []byte = [72, 101, 108, 108, 111]; "Hello"
     compressed = zlib.zlib-compress(data)

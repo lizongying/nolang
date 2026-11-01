@@ -5,6 +5,7 @@
 
 # /test/runner
 
+; 初始狀態：init() 後 len 為 0 且 is-empty() 為真
 t-init = () {
     s = str-set {}
     s.init()
@@ -13,6 +14,8 @@ t-init = () {
     runner.is-true(e, 'init is-empty')
 }
 
+; add 回報是否新成員：hello / world 為 true、重複加入 hello 為 false，
+; len 只計唯一字串，contains 對未加入的 zzz 回 false
 t-add-contains = () {
     s = str-set {}
     s.init()
@@ -29,6 +32,8 @@ t-add-contains = () {
     runner.is-false(no, 'not contains zzz')
 }
 
+; remove 既有成員回 true 且該成員不再被 contains，其餘成員保留；
+; remove 不存在的成員回 false
 t-remove = () {
     s = str-set {}
     s.init()
@@ -44,6 +49,7 @@ t-remove = () {
     runner.is-false(rm2, 'remove non-existent false')
 }
 
+; clear() 清空集合：len 歸零、is-empty() 為真
 t-clear = () {
     s = str-set {}
     s.init()

@@ -31,6 +31,7 @@ CK-SIG-N-MODULE = 118
 ; ck-sig-lt — 逐字節字典序（鍵全 ASCII）
 ; ═══════════════════════════════════════════════
 
+; 測試 lt
 test-lt = () {
     runner.eq(ck-sig-lt('a', 'b'), 1, 'a<b')
     runner.eq(ck-sig-lt('b', 'a'), 0, 'b<a false')
@@ -47,6 +48,8 @@ test-lt = () {
 ; 表規模（盤點氣閂）
 ; ═══════════════════════════════════════════════
 
+; 測試 sizes
+; t: 輸入
 test-sizes = (t ck-sig) {
     runner.eq(t.fk.len(), CK-SIG-N-FUNC, 'func table size')
     runner.eq(t.fp.len(), CK-SIG-N-FUNC, 'func params align')
@@ -63,6 +66,8 @@ test-sizes = (t ck-sig) {
 ; func 表查找（首/尾/中/miss）
 ; ═══════════════════════════════════════════════
 
+; 測試 find-func
+; t: 輸入
 test-find-func = (t ck-sig) {
     i = ck-sig-find-func(t, '[]byte.index')
     runner.eq(i, 0, 'first key hit at 0')
@@ -88,6 +93,8 @@ test-find-func = (t ck-sig) {
 ; method 表查找
 ; ═══════════════════════════════════════════════
 
+; 測試 find-method
+; t: 輸入
 test-find-method = (t ck-sig) {
 
     ; ⚠️ 容器方法（[]t.at 等 [ ]/n 前綴 receiver）在 authority 裡落在【funcSigs】表，
@@ -108,6 +115,8 @@ test-find-method = (t ck-sig) {
 ; struct-fields / aliases / struct-mod / enums / modules
 ; ═══════════════════════════════════════════════
 
+; 測試 find-others
+; t: 輸入
 test-find-others = (t ck-sig) {
     s = ck-sig-find-struct-field(t, 'arp-info.mac')
     runner.eq(s >= 0, 1, 'arp-info.mac hit')
@@ -135,6 +144,7 @@ test-find-others = (t ck-sig) {
 ; ck-sig-types — 逗號串 ⇒ 型串 vec
 ; ═══════════════════════════════════════════════
 
+; 測試 types
 test-types = () {
     r = ck-sig-types('')
     runner.eq(r.len(), 0, 'empty types -> 0')

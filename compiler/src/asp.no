@@ -84,6 +84,7 @@ STR-COUNT = 187
 INSTR-COUNT = 308
 
 ; 字串池（id 0 = 空字串，不在此列）
+; r: 結果容器
 strs = () (r []str) {
     r = [
         '',
@@ -277,6 +278,7 @@ strs = () (r []str) {
 }
 
 ; 扁平指令帶，每 5 個 i64 一條
+; r: 結果容器
 tape = () (r []i64) {
     r = [
         0, 1, 1, 0, 2,
@@ -591,6 +593,7 @@ tape = () (r []i64) {
 }
 
 ; 每 4 個 i64 一種節點 (name-id, first, num, reserved)
+; r: 結果容器
 kinds = () (r []i64) {
     r = [
         0, 0, 0, 0,
@@ -745,6 +748,8 @@ K-USE-STATEMENT = 71
 K-VIEW-TYPE = 72
 
 ; 節點種類 id → 型別名（供 <unknown> 與除錯用）
+; id: 數值
+; r: 結果字串
 kind-name = (id i64) (r str) {
     r = id: {
         1 -> 'AnnotationArrayValue'
@@ -824,6 +829,8 @@ kind-name = (id i64) (r str) {
 }
 
 ; 型別名 → 節點種類 id（找不到回 0）
+; name: 名稱
+; r: 結果數值
 kind-id = (name str) (r i64) {
     r = name: {
         'AnnotationArrayValue' -> 1

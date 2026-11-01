@@ -35,16 +35,25 @@
 ;
 ; 注意 1 與 3 的診斷走 fd 2，stdout 只含結果，故不影響金標。
 
+; 協程：把輸入字串原樣搬回輸出，驗證 spawn 後字串所有權歸協程、父側不再引用
+; s str: 來源字串
+; r str: 與 s 相同的內容
 echo-async = (s str) (r str) {
     r = s
 }
 
+; 取首個 async
+; v []i64: 來源 vec（協程已在 spawn 時深拷貝）
+; r i64: v[0]；越界由 #{index-out=zero} 補零
 first-async = (v []i64) (r i64) {
 
     #{index-out=zero}
     r = v[0]
 }
 
+; 協程：純量乘二，驗證標量以值捕獲進協程，父側後續改動不影響它
+; n i64: 來源數值
+; r i64: n * 2（#{overflow=wrap}）
 double-async = (n i64) (r i64) {
 
     #{overflow=wrap}
@@ -56,6 +65,9 @@ holder {
     s str
 }
 
+; 協程：讀結構體的 s 欄位，驗證整個 holder 被 spawn 搬移後欄位仍可讀
+; h holder: 含單一字串欄位 s 的結構體
+; r str: h.s 的內容
 echo-holder-async = (h holder) (r str) {
     r = h.s
 }

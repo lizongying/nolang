@@ -213,6 +213,14 @@ func (hp *HoverProvider) docLinkHover(position Position) (string, bool) {
 	sb.WriteString("**doc link** `#")
 	sb.WriteString(anchor)
 	sb.WriteString("`\n\n")
+	// The alias catalog gives this anchor a localized display name; show it
+	// only when it actually differs from the identifier fallback, so an
+	// untranslated anchor does not print the same word twice.
+	if alias := i18n.Alias(anchor); alias != "" && alias != i18n.IdentifierOf(anchor) {
+		sb.WriteString("**")
+		sb.WriteString(alias)
+		sb.WriteString("**\n\n")
+	}
 	if body != "" {
 		sb.WriteString(body)
 		sb.WriteString("\n")

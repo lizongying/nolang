@@ -38,6 +38,9 @@
 ; helper：parse 一段源碼，回傳收集器（呼叫端負責讀欄位）
 ; ═══════════════════════════════════════════════
 
+; 解析 err
+; src: 來源
+; p: 返回結果
 parse-err = (src str) (p psst) {
     t = ast.make()
     p = ps.new(src)
@@ -49,6 +52,7 @@ parse-err = (src str) (p psst) {
 ; 1. 實參缺逗號：'x = foo(1 2)' ⇒ 恰 2 條（s12：逗號錯 + 同位級聯 nil 錯）
 ; ═══════════════════════════════════════════════
 
+; 測試 call-missing-comma
 test-call-missing-comma = () {
     p = parse-err('x = foo(1 2)')
     runner.eq(ps-err-count(p), 2, 'call-comma count')
@@ -65,6 +69,7 @@ test-call-missing-comma = () {
 ; 2. let RHS 落空：'y =\n' ⇒ expected expression, got nil instead
 ; ═══════════════════════════════════════════════
 
+; 測試 let-nil-value
 test-let-nil-value = () {
     p = parse-err('y =\n')
     runner.eq(ps-err-count(p), 1, 'let-nil count')
@@ -77,6 +82,7 @@ test-let-nil-value = () {
 ; 3. 分組缺 RPAREN：'x = (1 + 2\n' ⇒ 恰 2 條（s12：2:0 括號錯 + 同位級聯 nil 錯）
 ; ═══════════════════════════════════════════════
 
+; 測試 group-missing-rparen
 test-group-missing-rparen = () {
     p = parse-err('x = (1 + 2\n')
     runner.eq(ps-err-count(p), 2, 'group count')
@@ -94,6 +100,7 @@ test-group-missing-rparen = () {
 ;      異鍵故都在；重報任一條才觸發同鍵去重）
 ; ═══════════════════════════════════════════════
 
+; 測試 dedup
 test-dedup = () {
     t = ast.make()
     p = ps.new('x = (1 + 2\n')
@@ -129,6 +136,7 @@ test-dedup = () {
 ; 5. 合法源碼零錯誤 + 空參呼叫不誤報
 ; ═══════════════════════════════════════════════
 
+; 測試 clean-no-errors
 test-clean-no-errors = () {
     p = parse-err('x = foo(1, 2)\ny = bar()\nz = (1 + 2) * 3\n')
     runner.eq(ps-err-count(p), 0, 'clean count')
@@ -138,6 +146,7 @@ test-clean-no-errors = () {
 ; 6. 多行呼叫（實參前後換行）不誤報——實參循環重寫的回歸釘樁
 ; ═══════════════════════════════════════════════
 
+; 測試 multiline-call
 test-multiline-call = () {
     p = parse-err('x = foo(\n    1,\n    2)\n')
     runner.eq(ps-err-count(p), 0, 'multiline-call count')
@@ -148,6 +157,7 @@ test-multiline-call = () {
 ;    （oracle p62：2:0 分組錯 + 2:1 逗號錯；Go「got nil」只住 parseLetStatement）
 ; ═══════════════════════════════════════════════
 
+; 測試 expr-stmt-no-cascade
 test-expr-stmt-no-cascade = () {
     p = parse-err('print((1 + 2\n')
     runner.eq(ps-err-count(p), 2, 'expr-stmt-cascade count')

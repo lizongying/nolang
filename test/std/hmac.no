@@ -6,6 +6,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -39,6 +42,7 @@ t-hmac-sha1 = () {
     runner.str-eq(bhex(out), 'b617318655057264e28bc0b6fb378c8ef146be00', 40, 'hmac-sha1 TC1')
 }
 
+; RFC 4231 TC1：key = 0x0b*20、data = 'Hi There' 的 HMAC-SHA256
 t-hmac-sha256 = () {
     k []byte = [
         0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
@@ -49,6 +53,7 @@ t-hmac-sha256 = () {
     runner.str-eq(bhex(out), 'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7', 64, 'hmac-sha256 TC1')
 }
 
+; RFC 4231 TC1 的 HMAC-SHA512（輸出 128 位元組摘要）
 t-hmac-sha512 = () {
     k []byte = [
         0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
@@ -66,6 +71,7 @@ t-hmac-sha256-tc2 = () {
     runner.str-eq(bhex(out), '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843', 64, 'hmac-sha256 TC2')
 }
 
+; 定長摘要介面：SHA-256 版本給 32 位元組、SHA-1 版本給 20 位元組
 t-hmac-fixed-len = () {
     h32 = hmac.hmac-sha256(K1, D1.to-bytes())
     runner.eq(h32.len(), 32, 'hmac-sha256 fixed digest len 32')

@@ -1,7 +1,7 @@
 ; cd src && go run ./cmd/cli/. build ../tests/match.no
 ; ../dist/match
 
-; ✅ match 语句：分支是代码块
+; ✅ match 語句：分支是代碼塊
 
 x = 3
 x: {
@@ -20,13 +20,13 @@ x: {
     -> print(333)
 }
 
-; ✅ match 表达式：分支体是单一表达式
+; ✅ match 表達式：分支體是單一表達式
 a = 100
 b = 101
 
 #{overflow=wrap}
 result = x: {
-    ; 单一值
+    ; 單一值
     1 -> 1
 
     2 -> 2 + 1; 簡單表達式

@@ -316,7 +316,8 @@ stmt-mysql sql.stmt {
 ; 以 DSN 連線 MySQL
 ; DSN 格式：user:password@host:port/dbname
 ; port 可選，預設 3306
-; 失敗時 d.fd 保持 -1，d.connected 保持 false
+; dsn str: 連線字串；缺 '@'、缺 ':' 或 ':' 位於 '@' 之後時直接返回未連線的 d
+; d db-mysql: 連線句柄；成功時 connected=true 且 fd>=0，失敗時 fd=-1、connected=false
 open = (dsn str) (d db-mysql) {
     d.fd = -1
     d.connected = false
@@ -699,10 +700,13 @@ open = (dsn str) (d db-mysql) {
 db-mysql.enter = () {
 }
 
+; 作用域退出鉤子：自動調用 .close() 關閉數據庫連線
 db-mysql.leave = () {
     .close()
 }
 
+; 關閉連線：connected 時發送 COM_QUIT 通知服務端並關閉 socket，fd 置 -1、connected 置 false
+; ok: 恆為 true（關閉流程不報告失敗）
 db-mysql.close = () (ok bool) {
     ok = true
     {
@@ -719,6 +723,9 @@ db-mysql.close = () (ok bool) {
     }
 }
 
+; 執行非查詢 SQL（INSERT/UPDATE/DDL 等）：以 COM_QUERY 發送並解析 OK 包
+; sql: 要執行的 SQL 語句文本
+; r: 執行結果（affected=受影響行數, last-id=自增主鍵；ERR 包或收發失敗時為全零結果）
 db-mysql.exec = (sql str) (r sql.result) {
     {
         .connected == false -> return
@@ -777,6 +784,9 @@ db-mysql.exec = (sql str) (r sql.result) {
     }
 }
 
+; 執行 SELECT 查詢：以 COM_QUERY 發送並接收列定義與結果行
+; sql: 查詢語句文本
+; rs: 結果集游標（經 .next() 逐行推進、scan-* 按列讀取；連線無效或握手失敗時為空游標）
 db-mysql.query = (sql str) (rs rows-mysql) {
     {
         .connected == false -> return
@@ -860,6 +870,9 @@ db-mysql.query = (sql str) (rs rows-mysql) {
     }
 }
 
+; 準備語句（客戶端假預備）：僅記錄 SQL 模板與連線資訊，不與伺服器交互
+; sql: 含 ? 佔位符的 SQL 模板
+; s: 語句句柄（後續 bind-* 逐個替換 ?，exec/query 發送替換後的完整 SQL）
 db-mysql.prepare = (sql str) (s stmt-mysql) {
     s.fd = .fd
     s.seq = 0
@@ -873,10 +886,13 @@ db-mysql.prepare = (sql str) (s stmt-mysql) {
 rows-mysql.enter = () {
 }
 
+; 作用域退出鉤子：自動調用 .close() 結束結果集遍歷
 rows-mysql.leave = () {
     .close()
 }
 
+; 取下一行：接收一個行封包供 scan-* 解析，遇 EOF 包則結束
+; ok: true=取到新一行, false=結果集已耗盡或接收失敗
 rows-mysql.next = () (ok bool) {
     ok = false
     {
@@ -922,6 +938,9 @@ rows-mysql.next = () (ok bool) {
     ok = true
 }
 
+; 掃描當前行的指定列為整數
+; col: 列下標（0 起，跳過前 col 個長度編碼欄位後解析目標列）
+; v: 列值解析結果（NULL 或無數字時為 0，支援前置負號）
 rows-mysql.scan-int = (col i64) (v i64) {
     v = 0
 
@@ -986,6 +1005,9 @@ rows-mysql.scan-int = (col i64) (v i64) {
     .row-pos = .row-pos + field-len
 }
 
+; 掃描當前行的指定列為字符串
+; col: 列下標（0 起）
+; v: 列的原始文本（NULL 時為空串）
 rows-mysql.scan-str = (col i64) (v str) {
 
     ; 跳過前 col 個欄位
@@ -1018,6 +1040,9 @@ rows-mysql.scan-str = (col i64) (v str) {
     .row-pos = .row-pos + field-len
 }
 
+; 掃描當前行的指定列為浮點數
+; col: 列下標（0 起）
+; v: 按 [-]整數[.小數] 逐位解析的 f64 值（NULL 或無數字時為 0.0）
 rows-mysql.scan-float = (col i64) (v f64) {
     v = 0.0
 
@@ -1086,6 +1111,8 @@ rows-mysql.scan-float = (col i64) (v f64) {
     .row-pos = .row-pos + field-len
 }
 
+; 關閉結果集：置 eof 結束遍歷（不關閉 fd，socket 由 db-mysql 擁有）
+; ok: 恆為 true
 rows-mysql.close = () (ok bool) {
     ok = true
 
@@ -1103,10 +1130,15 @@ rows-mysql.close = () (ok bool) {
 stmt-mysql.enter = () {
 }
 
+; 作用域退出鉤子：自動調用 .close()（客戶端假預備無服務端資源，close 為空操作）
 stmt-mysql.leave = () {
     .close()
 }
 
+; 綁定整數參數：把 SQL 模板中第一個 ? 替換為 v 的十進制文本
+; idx: 參數序號（當前實現未參與定位，始終替換第一個 ?）
+; v: 要綁定的整數值
+; ok: true=替換成功, false=模板中已無 ? 佔位符
 stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
     cur = .bound
     pos = cur.index('?')
@@ -1128,6 +1160,9 @@ stmt-mysql.bind-int = (idx i64, v i64) (ok bool) {
 
 ; 綁定字串參數（替換第一個 ?，以單引號包圍）
 ; 注意：不做 SQL 跳脫，MVP 限制
+; idx i64: 參數序號；本實現未使用（總是替換 bound 中第一個 '?'）
+; sval str: 要綁定的字串值；原樣插入，不轉義單引號
+; ok bool: true=找到 '?' 並已寫回 .bound；false=已無待綁定的 '?'
 stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
     cur = .bound
     pos = cur.index('?')
@@ -1150,6 +1185,9 @@ stmt-mysql.bind-str = (idx i64, sval str) (ok bool) {
 }
 
 ; 綁定布林參數（替換第一個 ?，true=1, false=0）
+; idx i64: 參數序號；本實現未使用（總是替換 bound 中第一個 '?'）
+; v bool: 要綁定的布林值，寫入為 SQL 字面量 '1' 或 '0'
+; ok bool: true=找到 '?' 並已寫回 .bound；false=已無待綁定的 '?'
 stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
     cur = .bound
     pos = cur.index('?')
@@ -1171,6 +1209,8 @@ stmt-mysql.bind-bool = (idx i64, v bool) (ok bool) {
     ok = true
 }
 
+; 執行已綁定參數的 SQL：以 COM_QUERY 發送 bound 文本並解析 OK 包
+; r: 執行結果（affected=受影響行數, last-id=自增主鍵；語句無效或收發失敗時為全零結果）
 stmt-mysql.exec = () (r sql.result) {
     {
         .fd < 0 -> return
@@ -1221,6 +1261,8 @@ stmt-mysql.exec = () (r sql.result) {
     }
 }
 
+; 執行已綁定參數的查詢：以 COM_QUERY 發送 bound 文本並接收結果集
+; rs: 結果集游標（語句無效或接收失敗時為空游標）
 stmt-mysql.query = () (rs rows-mysql) {
     {
         .fd < 0 -> return
@@ -1294,6 +1336,8 @@ stmt-mysql.query = () (rs rows-mysql) {
     }
 }
 
+; 關閉語句（客戶端假預備無服務端資源，空操作）
+; ok: 恆為 true
 stmt-mysql.close = () (ok bool) {
     ok = true
 }

@@ -9,6 +9,8 @@ key-holder {
 }
 
 ; 將 hex 字串轉為 [32]byte
+; hex-str str: 64 字元 hex 字串（每 2 字元一個位元組）
+; out [32]byte: 解析出的 32 位元組
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
@@ -53,6 +55,8 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
 }
 
 ; 測試 DH 金鑰交換 — 使用 RFC 7748 測試向量
+; pass bool: true=Alice/Bob 公鑰皆等於 RFC 金標，且兩端算出的共享金鑰逐位元組相同；
+;           false=公鑰不匹配或共享金鑰不一致（已印 FAIL 原因）
 test-dh = () (pass bool) {
     pass = false
 

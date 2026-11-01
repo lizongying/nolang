@@ -25,6 +25,9 @@ zs-bit-reader {
     bit-cnt i64
 }
 
+; 初始化
+; data: 待解碼的壓縮位元組流（只讀不改）
+; pos: 開始讀取的位元組偏移（解碼器從這裡進入位元流）
 zs-bit-reader.init = (data []byte, pos i64) {
     .data = data
     .pos = pos
@@ -33,7 +36,8 @@ zs-bit-reader.init = (data []byte, pos i64) {
 }
 
 ; 讀取一個位元（LSB-first）
-; [read-bit](#archive.zstd.zs-bit-reader.read-bit)
+; bit: 讀出的位元（0 或 1）；資料耗盡時返回 0
+; [read-bit](#zstd.zs-bit-reader.read-bit)
 zs-bit-reader.read-bit = () (bit i64) {
     bit = 0
     {
@@ -58,7 +62,9 @@ zs-bit-reader.read-bit = () (bit i64) {
 }
 
 ; 讀取 n 個位元（LSB-first）
-; [read-bits](#archive.zstd.zs-bit-reader.read-bits)
+; n: 要讀取的位元數（由 LSB 起逐位元拼入整數）
+; v: 讀出的 n 個位元拼合而成的整數值
+; [read-bits](#zstd.zs-bit-reader.read-bits)
 zs-bit-reader.read-bits = (n i64) (v i64) {
     v = 0
     i <- [0..n): {
@@ -68,7 +74,8 @@ zs-bit-reader.read-bits = (n i64) (v i64) {
 }
 
 ; 讀取變長整數（LSB-first，每 7 位元一組）
-; [read-varint](#archive.zstd.zs-bit-reader.read-varint)
+; v: 解出的整數值（每字節低 7 位有效、最高位 1 表示續讀）
+; [read-varint](#zstd.zs-bit-reader.read-varint)
 zs-bit-reader.read-varint = () (v i64) {
     v = 0
     shift = 0
@@ -87,7 +94,7 @@ zs-bit-reader.read-varint = () (v i64) {
 }
 
 ; 對齊到下一個位元組邊界
-; [align-to-byte](#archive.zstd.zs-bit-reader.align-to-byte)
+; [align-to-byte](#zstd.zs-bit-reader.align-to-byte)
 zs-bit-reader.align-to-byte = () {
     .bit-cnt = 0
 }
@@ -125,7 +132,7 @@ fse-table {
 ; norm-count: 各符號的正規化計數
 ; max-symbol: 最大符號值
 ; table-log: 表大小對數
-; [build](#archive.zstd.fse-table.build)
+; [build](#zstd.fse-table.build)
 fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
     .table-log = table-log
@@ -225,9 +232,11 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 }
 
 ; 計算 count 對應的位元數
-; count > 0: 返回 tableLog - floor(log2(count))
-; count <= 0: 返回 tableLog
-; [bits-for-count](#archive.zstd.bits-for-count)
+; count > 0: 返回 count 的有效位數（floor(log2(count)) + 1）
+; count <= 0: 返回 0
+; count: FSE 歸一化表中某符號的頻率計數
+; n: count 所需的最少位元數（調用端用 tableLog - n 得該狀態的額外位元數）
+; [bits-for-count](#zstd.bits-for-count)
 bits-for-count = (count i64) (n i64) {
     r-count = count
     n = 0
@@ -243,7 +252,11 @@ bits-for-count = (count i64) (n i64) {
 
 ; FSE 解碼一個符號
 ; 返回符號和新的狀態
-; [decode](#archive.zstd.fse-table.decode)
+; br: 位元讀取器，用於讀取狀態轉移到下一代所需的額外位元
+; state: 當前 FSE 解碼狀態（符號表的行索引）
+; sym: 當前狀態對應的符號
+; new-state: 轉移到下一代後的狀態（由 next-state[state] 加上讀出的額外位元值合成）
+; [decode](#zstd.fse-table.decode)
 fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
 
     ; 從當前狀態讀取符號
@@ -279,7 +292,9 @@ zs-huffman {
 ; 解碼表（簡化版：使用碼長度 + 符號映射）
 
 ; 建構 Huffman 解碼表
-; [build](#archive.zstd.zs-huffman.build)
+; lengths: 各符號的 Huffman 碼長度表（長度決定碼的分佈權重）
+; max-symbol: 符號值上界（遍歷 lengths 的終點，zstd 字節符號通常為 255）
+; [build](#zstd.zs-huffman.build)
 zs-huffman.build = (lengths []i64, max-symbol i64) {
 
     .max-symbol = max-symbol
@@ -355,7 +370,9 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 }
 
 ; 解碼一個符號
-; [decode](#archive.zstd.zs-huffman.decode)
+; br: 讀取碼位的位元讀取器（碼字從 MSB 端逐位元拼出）
+; sym: 解出的符號值；在最大碼長內未命中任何碼時返回 0
+; [decode](#zstd.zs-huffman.decode)
 zs-huffman.decode = (br zs-bit-reader) (sym i64) {
     sym = 0
 
@@ -401,7 +418,8 @@ zs-frame {
 ; 上一個 frame 的字典
 
 ; 讀取 frame header
-; [read-frame-header](#archive.zstd.zs-frame.read-frame-header)
+; ok: magic 魔數驗證通過且 header 字段解析完整時為 true（此時 pos 已推進到首個區塊起點）
+; [read-frame-header](#zstd.zs-frame.read-frame-header)
 zs-frame.read-frame-header = () (ok bool) {
 
     ok = false
@@ -511,7 +529,8 @@ zs-frame.read-frame-header = () (ok bool) {
 }
 
 ; 解碼一個區塊（回傳 last-block ?bool：some=成功並帶是否最後區塊，nil=失敗）
-; [decode-block](#archive.zstd.zs-frame.decode-block)
+; last-block: 三態結果 — ok(true) 末個區塊、ok(false) 中間區塊均解碼成功；nil 表示區塊頭不足或遇到保留區塊型別
+; [decode-block](#zstd.zs-frame.decode-block)
 zs-frame.decode-block = () (last-block ?bool) {
 
     last-block = nil
@@ -583,7 +602,8 @@ zs-frame.decode-block = () (last-block ?bool) {
 
 ; 解碼壓縮區塊
 ; block-size: 壓縮區塊大小
-; [decode-compressed-block](#archive.zstd.zs-frame.decode-compressed-block)
+; ok: 壓縮區塊的 literals 與序列段解析並展開成功時為 true（解出字節已追加到 out）
+; [decode-compressed-block](#zstd.zs-frame.decode-compressed-block)
 zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
 
     ok = false
@@ -667,7 +687,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
 ; 解壓縮 Zstandard 格式的資料
 ;   data: zstd 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
-; [zstd-decompress](#archive.zstd.zstd-decompress)
+; [zstd-decompress](#zstd.zstd-decompress)
 zstd-decompress = (data []byte) (out []byte) {
     data.len() < 4 -> return
 
@@ -730,7 +750,7 @@ zstd-decompress = (data []byte) (out []byte) {
 ;   out: zstd 壓縮後的資料 ([]byte)
 ; 注意：目前使用 raw block 的基本實現，
 ;       完整 FSE + Huffman + LZ77 壓縮待後續實現。
-; [zstd-compress](#archive.zstd.zstd-compress)
+; [zstd-compress](#zstd.zstd-compress)
 zstd-compress = (data []byte) (out []byte) {
 
     ; Zstandard magic number (小端序)

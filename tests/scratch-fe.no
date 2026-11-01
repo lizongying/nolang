@@ -2,6 +2,8 @@
 ; # std/crypto/x25519
 
 ; 列印域元素
+; label str: 行首標籤
+; h []i64: 域元素的 10 個 limb，以空格分隔逐個 eprint
 fe-print = (label str, h []i64) {
     eprint(label)
     eprint(': ')
@@ -12,6 +14,7 @@ fe-print = (label str, h []i64) {
 }
 
 ; 測試 fe-mul(2, 3) = 6
+; pass bool: true=r[0] 為 6 且 limb 1..9 全為 0；false=任一斷言失敗（已印 FAIL）
 test-fe-mul = () (pass bool) {
     pass = false
 
@@ -43,6 +46,7 @@ test-fe-mul = () (pass bool) {
 }
 
 ; 測試 fe-sq(3) = 9
+; pass bool: true=r[0] 為 9；false=平方結果不等於 9
 test-fe-sq = () (pass bool) {
     pass = false
 
@@ -61,6 +65,7 @@ test-fe-sq = () (pass bool) {
 }
 
 ; 測試 fe-add(2, 3) = 5
+; pass bool: true=r[0] 為 5；false=相加結果不等於 5
 test-fe-add = () (pass bool) {
     pass = false
 
@@ -82,6 +87,7 @@ test-fe-add = () (pass bool) {
 }
 
 ; 測試載入 basepoint (9)
+; pass bool: true=r[0] 為 9 且 limb 1..9 全為 0；false=載入錯位或殘留高位
 test-fe-frombytes = () (pass bool) {
     pass = false
 
@@ -115,6 +121,7 @@ test-fe-frombytes = () (pass bool) {
 }
 
 ; 測試 scalarmult(1, base) — 應為 9 * 2^254 mod p
+; pass bool: true=算出的 32-byte 公鑰與 RFC 7748 Alice 金標逐位元組相同；false=不匹配
 test-scalarmult-base = () (pass bool) {
     pass = false
 

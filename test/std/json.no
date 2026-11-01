@@ -9,6 +9,7 @@
 
 ; ── 解析 ──────────────────────────────────────
 
+; 解析 JSON 對象：parse 回 ok 且 is-obj 為真
 t-parse-obj = () {
     j = json.parse('{"name":"Alice","age":30}')
     ok = false
@@ -27,6 +28,7 @@ t-parse-obj = () {
     runner.is-true(is-obj, 'parsed is-obj')
 }
 
+; 解析 JSON 數組：parse 回 ok 且 is-arr 為真
 t-parse-arr = () {
     j = json.parse('[1, 2, 3]')
     ok = false
@@ -45,6 +47,7 @@ t-parse-arr = () {
     runner.is-true(is-arr, 'parsed is-arr')
 }
 
+; 解析 JSON 字符串字面量：is-str 為真
 t-parse-str = () {
     j = json.parse('"hello"')
     ok = false
@@ -58,6 +61,7 @@ t-parse-str = () {
     runner.is-true(ok, 'parse str ok')
 }
 
+; 解析 JSON 數字字面量（含小數）：is-num 為真
 t-parse-num = () {
     j = json.parse('42.5')
     ok = false
@@ -71,6 +75,7 @@ t-parse-num = () {
     runner.is-true(ok, 'parse num ok')
 }
 
+; 解析 JSON 布爾字面量 true：is-bool 為真
 t-parse-bool = () {
     j = json.parse('true')
     ok = false
@@ -84,6 +89,7 @@ t-parse-bool = () {
     runner.is-true(ok, 'parse bool ok')
 }
 
+; 解析 JSON null 字面量：is-null 為真
 t-parse-null = () {
     j = json.parse('null')
     ok = false
@@ -97,6 +103,7 @@ t-parse-null = () {
     runner.is-true(ok, 'parse null ok')
 }
 
+; 解析錯誤處理：空字串解析結果須為 err 變體
 t-parse-error = () {
     j = json.parse('')
     is-err = false
@@ -112,6 +119,7 @@ t-parse-error = () {
 
 ; ── 物件存取 ──────────────────────────────────
 
+; get-str 取對象字符串字段：键存在時回 ok 且值與源文一致
 t-get-str = () {
     j = json.parse('{"name":"Alice","age":30}')
     found = false
@@ -136,6 +144,7 @@ t-get-str = () {
     runner.str-eq(val, 'Alice', 5, 'get-str content')
 }
 
+; get-num 取對象浮點字段：值與 3.14 在誤差內相等
 t-get-num = () {
     j = json.parse('{"pi":3.14}')
     found = false
@@ -161,6 +170,7 @@ t-get-num = () {
     runner.f64-eq(val, 3.14, eps, 'get-num 3.14')
 }
 
+; get-i64 取對象整數字段：值為 42
 t-get-i64 = () {
     j = json.parse('{"count":42}')
     found = false
@@ -185,6 +195,7 @@ t-get-i64 = () {
     runner.eq(val, 42, 'get-i64 value')
 }
 
+; get-bool 取對象布爾字段：值為 true
 t-get-bool = () {
     j = json.parse('{"active":true}')
     found = false
@@ -211,6 +222,7 @@ t-get-bool = () {
 
 ; ── 陣列操作 ──────────────────────────────────
 
+; arr-len 取數組長度：5 元素數組回 5
 t-arr-len = () {
     j = json.parse('[1, 2, 3, 4, 5]')
     n = 0
@@ -224,6 +236,7 @@ t-arr-len = () {
     runner.eq(n, 5, 'arr-len == 5')
 }
 
+; arr-get 按下標取數組元素（回 ?json）：對元素呼叫 str() 解包取字符串值
 t-arr-get = () {
     j = json.parse('["a", "b", "c"]')
 
@@ -261,6 +274,7 @@ t-arr-get = () {
 
 ; ── 序列化 ────────────────────────────────────
 
+; stringify 序列化對象：输出與源文等價（键值對無多餘空白）
 t-stringify-obj = () {
     j = json.parse('{"a":1}')
     s = ''
@@ -277,6 +291,7 @@ t-stringify-obj = () {
     runner.str-eq(s, '{"a":1}', 7, 'stringify obj content')
 }
 
+; stringify 序列化數組：输出 [1,2,3]（元素間無空白）
 t-stringify-arr = () {
     j = json.parse('[1, 2, 3]')
     s = ''
@@ -294,6 +309,7 @@ t-stringify-arr = () {
 
 ; ── 構建與設定 ────────────────────────────────
 
+; 構建設置字符串字段：json.new 後 set-str，stringify 得 {"name":"Bob"}
 t-set-str = () {
     j = json.new()
     j.set-str('name', 'Bob')
@@ -301,6 +317,7 @@ t-set-str = () {
     runner.str-eq(s, '{"name":"Bob"}', 14, 'set-str stringify')
 }
 
+; 構建設置浮點字段：set-num 後 stringify 得 {"val":3.14}
 t-set-num = () {
     j = json.new()
     j.set-num('val', 3.14)
@@ -308,6 +325,7 @@ t-set-num = () {
     runner.str-eq(s, '{"val":3.14}', 11, 'set-num stringify')
 }
 
+; 構建設置整數字段：set-i64 後 stringify 得 {"count":42}
 t-set-i64 = () {
     j = json.new()
     j.set-i64('count', 42)
@@ -315,6 +333,7 @@ t-set-i64 = () {
     runner.str-eq(s, '{"count":42}', 12, 'set-i64 stringify')
 }
 
+; 構建設置布爾字段：set-bool 後 stringify 得 {"ok":true}
 t-set-bool = () {
     j = json.new()
     j.set-bool('ok', true)
@@ -324,6 +343,7 @@ t-set-bool = () {
 
 ; ── 往返測試 ──────────────────────────────────
 
+; 解析再序列化往返：多類型混合對象的 stringify 與源文逐字一致
 t-roundtrip = () {
     src = '{"x":1,"y":"abc","z":true}'
     j = json.parse(src)

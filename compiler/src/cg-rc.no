@@ -17,11 +17,13 @@
 HDR-SIZE = 16
 HDR-MAGIC = 7957698232306827265
 
-; 事件 op 编码
-OP-RETAIN = 0
-OP-RELEASE = 1
+; 事件 op 编码（⚠️ 与 mir.no 的 MIR op OP-RETAIN/OP-RELEASE 刻意错开命名空间：
+;   这里是「喂给 check-rc-balance 的账本条目码」，那里是「发射什么」）
+RC-RETAIN = 0
+RC-RELEASE = 1
 
 ; rc-alloc：@nolang_rc_alloc —— 分配 n+16 字节，rc=1，写 magic，返回 data。
+; r: 結果字串
 cg-rc-alloc = () (r str) {
     b = sb.init(512)
     b.push('define i8* @nolang_rc_alloc(i64 %n) {\n')
@@ -40,6 +42,7 @@ cg-rc-alloc = () (r str) {
 
 ; rc-retain：@nolang_rc_retain —— 增加我们分配的块的计数。
 ; 头部 magic 检查不可省（同 @nolang_free）：对非本编译器分配的指针直接返回。
+; r: 結果字串
 cg-rc-retain = () (r str) {
     b = sb.init(512)
     b.push('define void @nolang_rc_retain(i8* %p) {\n')
@@ -68,6 +71,7 @@ cg-rc-retain = () (r str) {
 }
 
 ; rc-release：@nolang_rc_release —— 返回 i1（true = 递减到 0 并已释放）。
+; r: 結果字串
 cg-rc-release = () (r str) {
     b = sb.init(512)
     b.push('define i1 @nolang_rc_release(i8* %p) {\n')
@@ -95,6 +99,7 @@ cg-rc-release = () (r str) {
 
 ; nolang-free：@nolang_free —— 编译器拥有的堆缓冲区的唯一释放入口（P4）。
 ; magic 命中 ⇒ 递减计数，归零才 free(base)；未命中 ⇒ 退化普通 @free(p)。
+; r: 結果字串
 cg-rc-nolang-free = () (r str) {
     b = sb.init(512)
     b.push('define void @nolang_free(i8* %p) {\n')
@@ -127,10 +132,13 @@ cg-rc-nolang-free = () (r str) {
 }
 
 ; 常量访问器（供测试跨模块读取，避免依赖模块级 let 的导出语义）
+; n: 數量
 cg-rc-hdr-size = () (n i64) {
     n = HDR-SIZE
 }
 
+; 功能待補充
+; n: 數量
 cg-rc-hdr-magic = () (n i64) {
     n = HDR-MAGIC
 }
@@ -139,21 +147,24 @@ cg-rc-hdr-magic = () (n i64) {
 ; vids[k] 与 ops[k] 一一对应（op: 0=retain, 1=release）。
 ; 某 vid 的 release 次数 > retain 次数 ⇒ UAF ⇒ 返回首个违例说明；
 ; 全部平衡（含过计数）⇒ 返回 ''。
+; vids: 容器
+; ops: 容器
+; r: 結果字串
 cg-rc-check-balance = (vids []i64, ops []i64) (r str) {
     r = ''
     n = vids.len()
     i <- [0..n): {
         cur = vids[i]
-        ops[i] == OP-RELEASE -> {
+        ops[i] == RC-RELEASE -> {
             nr = 0
             nd = 0
             j <- [0..n): {
                 vids[j] == cur -> {
-                    ops[j] == OP-RETAIN -> {
+                    ops[j] == RC-RETAIN -> {
                         #{overflow=wrap}
                         nr = nr + 1
                     }
-                    ops[j] == OP-RELEASE -> {
+                    ops[j] == RC-RELEASE -> {
                         #{overflow=wrap}
                         nd = nd + 1
                     }

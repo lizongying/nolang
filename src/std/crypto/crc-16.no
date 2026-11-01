@@ -5,10 +5,10 @@
 ; 用法：
 ;   h = new(data)
 
-; 計算 CRC-16-CCITT 校驗和
-; data []byte: 輸入資料
-; 返回 crc i64: 16-bit 校驗和
-; [new](#crypto.crc-16.new)
+; 計算 CRC-16-CCITT（多項式 0x1021，初值 0xFFFF）校驗和
+; data []byte: 輸入位元組，全部參與計算
+; crc i64: 16-bit 校驗和（0..65535）
+; [new](#crc-16.new)
 new = (data []byte) (crc i64) {
     crc = 65535
     i <- [0..data.len()): {
@@ -25,10 +25,10 @@ new = (data []byte) (crc i64) {
     }
 }
 
-; 計算 CRC-16 並返回 hex 字串
-; data []byte: 輸入資料
-; 返回 hex str: 4 字元 hex 字串
-; [hex](#crypto.crc-16.hex)
+; 計算 CRC-16 並返回 4 位小寫 hex 字串
+; data []byte: 輸入位元組，全部參與計算
+; hex str: 固定 4 字元的十六進位表示（高位在前，不含 0x 前綴）
+; [hex](#crc-16.hex)
 hex = (data []byte) (hex str) {
     crc = new(data)
     hex-chars = '0123456789abcdef'

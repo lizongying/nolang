@@ -1,19 +1,32 @@
 ; Implicit comptime (compile-time evaluation by inference) — no user annotation.
 ; Every expression below is folded to a constant at compile time.
 
+; 純函式：平方，推論式 comptime 在引數為常數時直接折疊
+; x i64: 底數
+; r i64: x * x
 square = (x i64) (r i64) {
     r = x * x
 }
 
+; 純函式：相加，供 compose 內層折疊
+; a i64: 第一個加數
+; b i64: 第二個加數
+; r i64: a + b
 add = (a i64, b i64) (r i64) {
     r = a + b
 }
 
+; 巢狀純呼叫：先 add 再 square，兩層都應在 comptime 折疊
+; a i64: 傳給 add 的第一個加數
+; b i64: 傳給 add 的第二個加數
+; r i64: (a + b)^2
 compose = (a i64, b i64) (r i64) {
     s = add(a, b)
     r = square(s)
 }
 
+; 區域常數傳播：k = 10 是編譯期常數，k * 2 + 1 應折成 21
+; r i64: 21
 propagate = () (r i64) {
     k = 10
     r = k * 2 + 1
@@ -46,6 +59,8 @@ point {
     y i64
 }
 
+; 以自身座標算平方距離（不開根號），示範方法可被內聯求值
+; r i64: x*x + y*y；p 為 (3, 4) 時得 25
 point.dist = () (r i64) {
     r = .x * .x + .y * .y
 }

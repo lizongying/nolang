@@ -53,7 +53,7 @@ test-map-value = () {
     list1 = [9, 9, 9]
     v = m.get('k')
     v: {
-        ok(x) -> print(x[0]); 1
+        ok -> print(it[0]); 1
 
         nil -> print('nil')
 

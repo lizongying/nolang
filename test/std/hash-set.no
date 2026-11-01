@@ -6,6 +6,7 @@
 
 # /test/runner
 
+; 初始化：size 為 0 且 is-empty 為 true
 t-init = () {
     s = hash-set {}
     s.init()
@@ -14,6 +15,7 @@ t-init = () {
     runner.is-true(yes, 'init is-empty == true')
 }
 
+; add / contains：前兩次加入為新元素（回 true），重複加入回 false；size 只計唯一鍵
 t-add-contains = () {
     s = hash-set {}
     s.init()
@@ -34,6 +36,7 @@ t-add-contains = () {
     runner.is-false(no, 'not contains 99')
 }
 
+; remove：刪除存在元素回 true 且 size 減一，再查為 false；刪除不存在元素回 false
 t-remove = () {
     s = hash-set {}
     s.init()

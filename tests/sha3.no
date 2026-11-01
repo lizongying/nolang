@@ -9,6 +9,9 @@
 # std/crypto/sha3
 
 ; 比對 got 與 want，輸出 PASS 或 FAIL
+; label str: 這項比對的名稱（如演算法 + 輸入長度），輸出時原樣印出
+; got str: 實算出的 hex 摘要
+; want str: 預期的 hex 摘要
 check = (label str, got str, want str) {
     got == want -> {
         print('PASS ')

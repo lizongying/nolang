@@ -2,7 +2,11 @@
 ;
 ; 為 os.read / os.write 提供緩衝讀寫和行讀取功能。
 
-; reader: 緩衝讀取器
+; reader: 緩衝讀取器狀態
+; fd fd: 已開啟的檔案描述符，由 fs.read 消費
+; buf []byte: 由呼叫方提供的緩衝區（容量決定單次讀取上限）
+; pos i64: 下一次從 buf 取用的下標
+; avail i64: buf 中已填充、尚未消費的位元組數
 reader {
     fd fd
     buf []byte
@@ -11,6 +15,9 @@ reader {
 }
 
 ; 建立緩衝讀取器
+; fd fd: 已開啟且可讀的檔案描述符
+; buf []byte: 專用緩衝區；長度可為 0，fill() 會使用 buf.cap 讀入
+; r reader: 初始化後的讀取器（pos=0、avail=0，不預先讀取）
 ; [init](#bufio.reader.init)
 reader.init = (fd fd, buf []byte) (r reader) {
     r.fd = fd
@@ -20,6 +27,8 @@ reader.init = (fd fd, buf []byte) (r reader) {
 }
 
 ; 填充緩衝區
+; 已有未消費資料（avail > 0）時直接複用；否則向 fd 讀一次並重置 pos/avail。
+; ok bool: true=緩衝區內有新資料可讀；false=EOF、讀取錯誤或 fd 位置無效
 ; [fill](#bufio.reader.fill)
 reader.fill = () (ok bool) {
     .pos < 0 -> return
@@ -37,7 +46,7 @@ reader.fill = () (ok bool) {
 }
 
 ; 讀取一個位元組
-; 返回 b ?byte: ok=位元組值, nil=EOF 或錯誤
+; b ?byte: ok=下一個位元組, nil=已到 EOF 或讀取失敗
 ; [read-byte](#bufio.reader.read-byte)
 reader.read-byte = () (b ?byte) {
 
@@ -53,8 +62,9 @@ reader.read-byte = () (b ?byte) {
     .pos = .pos + 1
 }
 
-; 讀取一行
-; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; 讀取一行（遇 '\n' 停止，換行符不包含在結果內）
+; 行尾無換行時返回剩餘內容；file 已空且本次未讀到任何內容時返回 nil。
+; line ?str: ok=該行文字（不帶 '\n'）, nil=EOF 且無殘餘內容
 ; [read-line](#bufio.reader.read-line)
 reader.read-line = () (line ?str) {
     line = nil
@@ -92,7 +102,8 @@ reader.read-line = () (line ?str) {
     }
 }
 
-; 關閉
+; 關閉讀取器（只關 fd，不釋放 buf；buf 由呼叫方的作用域管理）
+; 無參數與返回值；關閉失敗（如 fd 已關）不報錯
 ; [close](#bufio.reader.close)
 reader.close = () {
     fs.close(.fd)

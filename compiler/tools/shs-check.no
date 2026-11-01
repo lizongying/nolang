@@ -119,6 +119,9 @@ finding {
 ; §3.1）。本檔所有讀取都落在 `i < len` 的守衛迴圈內，nil 分支不可達；但型別上仍是
 ; option，直接餵給 shs-is-*（`(c i64)`）會被 fxxoptarg 拒絕。這支 helper 是唯一
 ; 的解包點，讓 40 餘個呼叫點維持原本的一行寫法。
+; s: 字串
+; i: 索引
+; b: 結果位元組
 shs-byte = (s str, i i64) (b i64) {
     o = s.byte(i)
     b = o: {
@@ -127,6 +130,9 @@ shs-byte = (s str, i i64) (b i64) {
     }
 }
 
+; 功能待補充
+; c: 運算元
+; yes: 是否成立
 shs-is-blank = (c i64) (yes bool) {
     yes = false
     c == B-SP -> yes = true
@@ -134,6 +140,9 @@ shs-is-blank = (c i64) (yes bool) {
     c == B-CR -> yes = true
 }
 
+; 功能待補充
+; c: 運算元
+; yes: 是否成立
 shs-is-digit = (c i64) (yes bool) {
     yes = false
     c >= B-DIG0 -> {
@@ -141,6 +150,9 @@ shs-is-digit = (c i64) (yes bool) {
     }
 }
 
+; 功能待補充
+; c: 運算元
+; yes: 是否成立
 shs-is-alpha = (c i64) (yes bool) {
     yes = false
     c >= B-UP-A -> {
@@ -152,6 +164,8 @@ shs-is-alpha = (c i64) (yes bool) {
 }
 
 ; nolang 的識別符可含 `-`（read-dir / to-str / is-no-file）
+; c: 運算元
+; yes: 是否成立
 shs-is-ident-char = (c i64) (yes bool) {
     yes = false
     shs-is-alpha(c) -> yes = true
@@ -160,6 +174,9 @@ shs-is-ident-char = (c i64) (yes bool) {
     c == B-MINUS -> yes = true
 }
 
+; 功能待補充
+; c: 運算元
+; yes: 是否成立
 shs-is-ident-start = (c i64) (yes bool) {
     yes = false
     shs-is-alpha(c) -> yes = true
@@ -171,6 +188,10 @@ shs-is-ident-start = (c i64) (yes bool) {
 ; ═══════════════════════════════════════════════════════════════════
 
 ; sub: 取 s[a..b)（用 sb 組，不依賴 str 的 substring API）
+; s: 字串
+; a: 運算元
+; b: 運算元
+; r: 結果字串
 shs-sub = (s str, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
@@ -195,6 +216,9 @@ shs-sub = (s str, a i64, b i64) (r str) {
 }
 
 ; rest-blank: 從 j 起到行尾（不含換行）是否全為空白
+; s: 字串
+; j: 索引
+; yes: 是否成立
 shs-rest-blank = (s str, j i64) (yes bool) {
     n = s.len-bytes()
     yes = true
@@ -223,6 +247,8 @@ shs-rest-blank = (s str, j i64) (yes bool) {
 ;
 ; prev 是前一個「顯著」位元組；0 表示行首/檔案開頭。
 ; 產生值的位元組（其後的 `/` 是除法）：識別符字元 / 收尾引號 / `) ] } .`
+; prev: 數值
+; yes: 是否成立
 shs-slash-regex = (prev i64) (yes bool) {
     yes = true
     prev == 0 -> return
@@ -240,6 +266,9 @@ shs-slash-regex = (prev i64) (yes bool) {
 }
 
 ; semi-block: s[i] == ';' 且 s[i+1] == ';' 且其後僅空白/換行 ⇒ 塊註釋開始
+; s: 字串
+; i: 索引
+; yes: 是否成立
 shs-semi-block = (s str, i i64) (yes bool) {
     yes = false
     n = s.len-bytes()
@@ -259,6 +288,9 @@ shs-semi-block = (s str, i i64) (yes bool) {
 }
 
 ; slash-line: s[i] == '/' 且 s[i+1] == '/' ⇒ 行註釋
+; s: 字串
+; i: 索引
+; yes: 是否成立
 shs-slash-line = (s str, i i64) (yes bool) {
     yes = false
     n = s.len-bytes()
@@ -273,6 +305,9 @@ shs-slash-line = (s str, i i64) (yes bool) {
 }
 
 ; block-end: 在塊註釋中，s[i] == ';'，是否為結束定界符（`;;` + 其後僅空白/換行）
+; s: 字串
+; i: 索引
+; yes: 是否成立
 shs-block-end = (s str, i i64) (yes bool) {
     yes = false
     n = s.len-bytes()
@@ -301,6 +336,8 @@ shs-block-end = (s str, i i64) (yes bool) {
 ;   3. 註釋區段 → 空白；字面量內容 → 'x'（引號本身保留）
 ;
 ; 每個狀態臂都以 `continue` 收尾 ⇒ 狀態機不會在同一輪重複處理同一位元組。
+; s: 字串
+; out: 輸出結果
 shs-mask = (s str) (out str) {
     n = s.len-bytes()
     b = sb.init(n)
@@ -596,6 +633,8 @@ shs-mask = (s str) (out str) {
 ; ═══════════════════════════════════════════════════════════════════
 ; 切行 / 行內工具
 ; ═══════════════════════════════════════════════════════════════════
+; s: 字串
+; out: 輸出結果
 shs-lines = (s str) (out []str) {
     out = []
     str str
@@ -621,6 +660,9 @@ shs-lines = (s str) (out []str) {
 }
 
 ; trim-range: 回 [a, b) = 第一個非空白 .. 最後一個非空白之後
+; ln: 字串
+; a: 結果數值
+; b: 結果位元組
 shs-trim-range = (ln str) (a i64, b i64) {
     n = ln.len-bytes()
     a = 0
@@ -657,6 +699,9 @@ shs-trim-range = (ln str) (a i64, b i64) {
 ; ═══════════════════════════════════════════════════════════════════
 
 ; type-decl: `name {` 且在第 0 欄 ⇒ 型別宣告
+; ln: 字串
+; yes: 是否成立
+; name: 名稱
 shs-type-decl = (ln str) (yes bool, name str) {
     yes = false
     name = ''
@@ -711,6 +756,9 @@ shs-type-decl = (ln str) (yes bool, name str) {
 }
 
 ; meth-decl: `owner.f = ...` 且在第 0 欄 ⇒ 方法宣告（回 owner）
+; ln: 字串
+; yes: 是否成立
+; owner: 結果字串
 shs-meth-decl = (ln str) (yes bool, owner str) {
     yes = false
     owner = ''
@@ -748,6 +796,10 @@ shs-meth-decl = (ln str) (yes bool, owner str) {
 ;     dotted = 定義名裡含 `.`
 ;     nout   = 第二組括號的參數個數（沒有第二組 ⇒ 0）
 ;   空括號 `()` 會被算成 1，但那只影響「是否 >= 2」的判定，不會誤報，故不特判。
+; ln: 字串
+; yes: 是否成立
+; dotted: 布林結果
+; nout: 結果數值
 shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     yes = false
     dotted = false
@@ -908,6 +960,9 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
 ; map-at: ln[i] == '['，是否為 map 型別 [X]Y
 ;   X 非空、非全數字、非 '?'  ⇒ map
 ;   X 為空（[]）/ 全數字（[3]）/ '?'（[?]）⇒ 切片或定長陣列
+; ln: 字串
+; i: 索引
+; yes: 是否成立
 shs-map-at = (ln str, i i64) (yes bool) {
     yes = false
     n = ln.len-bytes()
@@ -980,6 +1035,8 @@ shs-map-at = (ln str, i i64) (yes bool) {
 }
 
 ; line-has-map: 該行是否出現 map 型別
+; ln: 字串
+; yes: 是否成立
 shs-line-has-map = (ln str) (yes bool) {
     yes = false
     n = ln.len-bytes()
@@ -998,6 +1055,10 @@ shs-line-has-map = (ln str) (yes bool) {
 }
 
 ; find-word: 在行內找「整詞」（前後都不是識別符字元）
+; ln: 字串
+; w: 字串
+; found: 是否找到
+; col: 結果數值
 shs-find-word = (ln str, w str) (found bool, col i64) {
     found = false
     col = 0
@@ -1064,6 +1125,8 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
 }
 
 ; has-ffi-c: 該行是否出現 `#{c` 形式
+; ln: 字串
+; yes: 是否成立
 shs-has-ffi-c = (ln str) (yes bool) {
     yes = false
     n = ln.len-bytes()
@@ -1102,12 +1165,17 @@ shs-has-ffi-c = (ln str) (yes bool) {
 ; ═══════════════════════════════════════════════════════════════════
 ; 名字規則
 ; ═══════════════════════════════════════════════════════════════════
+; nm: 字串
+; yes: 是否成立
 shs-name-short = (nm str) (yes bool) {
     yes = false
     n = nm.len-bytes()
     n < 2 -> yes = true
 }
 
+; 功能待補充
+; nm: 字串
+; yes: 是否成立
 shs-name-reserved = (nm str) (yes bool) {
     yes = false
     n = nm.len-bytes()
@@ -1123,6 +1191,9 @@ shs-name-reserved = (nm str) (yes bool) {
 }
 
 ; str-gt: 字典序 a > b
+; a: 運算元
+; b: 運算元
+; yes: 是否成立
 shs-str-gt = (a str, b str) (yes bool) {
     yes = false
     na = a.len-bytes()
@@ -1148,6 +1219,9 @@ shs-str-gt = (a str, b str) (yes bool) {
 ; str-eq: a 與 b 逐位元組相等
 ; （S5 要比的是「方法擁有者」與「型別名」，是相等而非前綴 —— 曾誤用前綴比較，
 ;   於是 S5 永遠不觸發。）
+; a: 運算元
+; b: 運算元
+; yes: 是否成立
 shs-str-eq = (a str, b str) (yes bool) {
     yes = true
     na = a.len-bytes()
@@ -1181,6 +1255,8 @@ shs-str-eq = (a str, b str) (yes bool) {
 ;    ⇒ 別把「預期值有歧義的重現」當成編譯器缺陷，先確認演算法本身對不對。
 ;    本檔改用選擇排序：形狀更簡單、不需 loop-carried 索引，較難寫錯。
 ;    排序作用在**索引陣列**上，字串本身不搬移。
+; arr: 容器
+; r: 結果容器
 shs-sort-strs = (arr []str) (r []str) {
     n = arr.len()
     idx []i64 = []
@@ -1240,6 +1316,8 @@ shs-sort-strs = (arr []str) (r []str) {
 ; ═══════════════════════════════════════════════════════════════════
 ; 檔案走訪
 ; ═══════════════════════════════════════════════════════════════════
+; p: 字串
+; yes: 是否成立
 shs-is-no-file = (p str) (yes bool) {
     yes = false
     n = p.len-bytes()
@@ -1264,6 +1342,9 @@ shs-is-no-file = (p str) (yes bool) {
 }
 
 ; collect: 遞迴收集 .no 檔
+; p: 字串
+; out: 輸出結果
+; r: 結果容器
 shs-collect = (p str, out []str) (r []str) {
     r = out
     d = fs.is-dir(p)
@@ -1285,6 +1366,12 @@ shs-collect = (p str, out []str) (r []str) {
 ; ═══════════════════════════════════════════════════════════════════
 ; 檢查
 ; ═══════════════════════════════════════════════════════════════════
+; acc: 容器
+; file: 檔案
+; line: 行號
+; rule: 字串
+; msg: 訊息
+; r: 結果容器
 shs-add = (acc []finding, file str, line i64, rule str, msg str) (r []finding) {
     f = finding {
         file: file
@@ -1296,6 +1383,9 @@ shs-add = (acc []finding, file str, line i64, rule str, msg str) (r []finding) {
     r = acc
 }
 
+; 功能待補充
+; f: 回呼函式
+; r: 結果字串
 shs-render = (f finding) (r str) {
     b = sb.init(128)
     b.push(f.file)
@@ -1309,6 +1399,9 @@ shs-render = (f finding) (r str) {
 }
 
 ; check-file: 掃一個檔案，把違規併入 acc
+; path: 路徑
+; acc: 容器
+; r: 結果容器
 shs-check-file = (path str, acc []finding) (r []finding) {
     r = acc
     c = fs.read-str(path)
@@ -1507,6 +1600,7 @@ shs-check-file = (path str, acc []finding) (r []finding) {
 ; ═══════════════════════════════════════════════════════════════════
 ; 入口
 ; ═══════════════════════════════════════════════════════════════════
+; code: 狀態碼
 shs-main = () (code i64) {
     code = EXIT-OK
     n = os.args().len()

@@ -2,54 +2,93 @@ ord {
     t.gt(b t) (res bool)
 }
 
+; i8.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 i8 值
+; res: 接收者大於 b 時為 true
 i8.gt = (b i8) (res bool) {
     res = . > b
 }
 
+; i16.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 i16 值
+; res: 接收者大於 b 時為 true
 i16.gt = (b i16) (res bool) {
     res = . > b
 }
 
+; i32.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 i32 值
+; res: 接收者大於 b 時為 true
 i32.gt = (b i32) (res bool) {
     res = . > b
 }
 
+; i64.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 i64 值
+; res: 接收者大於 b 時為 true
 i64.gt = (b i64) (res bool) {
     res = . > b
 }
 
+; u8.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 u8 值
+; res: 接收者大於 b 時為 true
 u8.gt = (b u8) (res bool) {
     res = . > b
 }
 
+; u16.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 u16 值
+; res: 接收者大於 b 時為 true
 u16.gt = (b u16) (res bool) {
     res = . > b
 }
 
+; u32.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 u32 值
+; res: 接收者大於 b 時為 true
 u32.gt = (b u32) (res bool) {
     res = . > b
 }
 
+; u64.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 u64 值
+; res: 接收者大於 b 時為 true
 u64.gt = (b u64) (res bool) {
     res = . > b
 }
 
+; f32.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 f32 值
+; res: 接收者大於 b 時為 true
 f32.gt = (b f32) (res bool) {
     res = . > b
 }
 
+; f64.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的 f64 值
+; res: 接收者大於 b 時為 true
 f64.gt = (b f64) (res bool) {
     res = . > b
 }
 
+; byte.gt: ord 介面實作——判斷接收者是否大於 b
+; b: 比較的位元組值
+; res: 接收者大於 b 時為 true
 byte.gt = (b byte) (res bool) {
     res = . > b
 }
 
+; char.gt: ord 介面實作——依碼點判斷接收者是否大於 b
+; b: 比較的字符
+; res: 接收者碼點大於 b 時為 true
 char.gt = (b char) (res bool) {
     res = . > b
 }
 
+; str.gt: ord 介面實作——以字典序判斷接收者是否排在 b 之後
+; b: 比較的字符串
+; res: 接收者字典序大於 b（compare 回正值）時為 true
 str.gt = (b str) (res bool) {
 
     ; nolang 的關係運算子（< <= > >=）沒有字串字典序語意（str 只有 @str_eq

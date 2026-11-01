@@ -7,6 +7,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -23,6 +26,7 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; DES 單區塊已知答案測試：固定金鑰與明文應得密文 85e813540f0ab405
 t-enc = () {
     key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
     pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
@@ -30,6 +34,7 @@ t-enc = () {
     runner.str-eq(bhex(ct), '85e813540f0ab405', 16, 'des enc KAT')
 }
 
+; 解密還原：對加密結果再解密應得原明文 0123456789abcdef
 t-dec = () {
     key [8]byte = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1]
     pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]

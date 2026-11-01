@@ -82,7 +82,7 @@ ip-addr {
 ; 從字串解析 IPv4 地址
 ; 格式：A.B.C.D，每段 0~255
 ; 返回 ok=true=成功
-; [parse](#net.ip.ip-addr.parse)
+; [parse](#ip.ip-addr.parse)
 ip-addr.parse = (s str) (ok bool) {
     r-s = s
     ok = false
@@ -145,7 +145,9 @@ ip-addr.parse = (s str) (ok bool) {
 
 ; 從字串建立 ip-addr（靜態函數）
 ; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
-; [from-str](#net.ip.ip-addr.from-str)
+; s: IPv4 點分十進位字串（如 192.168.1.1）
+; addr: ok=解析出的地址, nil=格式非法或段值越界
+; [from-str](#ip.ip-addr.from-str)
 ip-addr.from-str = (s str) (addr ?ip-addr) {
     addr = nil
     a = ip-addr {}
@@ -162,20 +164,21 @@ ip-addr.from-str = (s str) (addr ?ip-addr) {
 ; 直接拼接四個十進位片段。舊實作靠 `out[n]: { ok -> it = 46 }` 在 len 處追加字元，
 ; 但索引寫入是**邊界檢查寫**：n == len-bytes() 時 safe-index 判越界（nil），
 ; 點號從未寫入，結果只剩第一個 octet（`192.168.1.1` → `192`）。
-; [to-str](#net.ip.ip-addr.to-str)
+; [to-str](#ip.ip-addr.to-str)
 ip-addr.to-str = () (out str) {
     out = .a.to-str() - '.' - .b.to-str() - '.' - .c.to-str() - '.' - .d.to-str()
 }
 
 ; 轉為 32 位無號整數（大端序）
 ; 返回 v: (a<<24)|(b<<16)|(c<<8)|d
-; [to-u32](#net.ip.ip-addr.to-u32)
+; [to-u32](#ip.ip-addr.to-u32)
 ip-addr.to-u32 = () (v i64) {
     v = (.a << 24) | (.b << 16) | (.c << 8) | .d
 }
 
 ; 從 32 位無號整數建立
-; [from-u32](#net.ip.ip-addr.from-u32)
+; v: 32 位無號整數值（按大端序拆為四段：a=v>>24、b=v>>16、c=v>>8、d=v，逐段掩碼 255）
+; [from-u32](#ip.ip-addr.from-u32)
 ip-addr.from-u32 = (v i64) {
     .a = (v >> 24) & 255
     .b = (v >> 16) & 255
@@ -188,7 +191,8 @@ ip-addr.from-u32 = (v i64) {
 ; ═══════════════════════════════════════════════
 
 ; 檢查所有 octet 是否在有效範圍（0~255）
-; [is-valid](#net.ip.ip-addr.is-valid)
+; yes bool: true 表示 a/b/c/d 四個分段都在 0~255 內
+; [is-valid](#ip.ip-addr.is-valid)
 ip-addr.is-valid = () (yes bool) {
     yes = true
     .a < 0 || .a > 255 -> {
@@ -211,14 +215,16 @@ ip-addr.is-valid = () (yes bool) {
 ; ═══════════════════════════════════════════════
 
 ; 是否為環回地址（127.0.0.0/8）
-; [is-loopback](#net.ip.ip-addr.is-loopback)
+; yes bool: true 表示第一段等於 127
+; [is-loopback](#ip.ip-addr.is-loopback)
 ip-addr.is-loopback = () (yes bool) {
     yes = .a == 127
 }
 
 ; 是否為私有地址
 ; 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-; [is-private](#net.ip.ip-addr.is-private)
+; yes bool: true 表示落在上述三個 RFC 1918 網段之一
+; [is-private](#ip.ip-addr.is-private)
 ip-addr.is-private = () (yes bool) {
 
     ; 10.0.0.0/8
@@ -248,43 +254,50 @@ ip-addr.is-private = () (yes bool) {
 }
 
 ; 是否為全零地址（0.0.0.0）
-; [is-zero](#net.ip.ip-addr.is-zero)
+; yes bool: true 表示四個分段全為 0（可綁定到所有網卡）
+; [is-zero](#ip.ip-addr.is-zero)
 ip-addr.is-zero = () (yes bool) {
     .a == 0 -> .b == 0 -> .c == 0 -> .d == 0 -> yes = true
 }
 
 ; 是否為廣播地址（255.255.255.255）
-; [is-broadcast](#net.ip.ip-addr.is-broadcast)
+; yes bool: true 表示四個分段全為 255
+; [is-broadcast](#ip.ip-addr.is-broadcast)
 ip-addr.is-broadcast = () (yes bool) {
     .a == 255 -> .b == 255 -> .c == 255 -> .d == 255 -> yes = true
 }
 
 ; 是否為多播地址（224.0.0.0/4）
-; [is-multicast](#net.ip.ip-addr.is-multicast)
+; yes bool: true 表示第一段落在 224~239
+; [is-multicast](#ip.ip-addr.is-multicast)
 ip-addr.is-multicast = () (yes bool) {
     .a >= 224 -> .a <= 239 -> yes = true
 }
 
 ; 是否為鏈路本地地址（169.254.0.0/16）
-; [is-link-local](#net.ip.ip-addr.is-link-local)
+; yes bool: true 表示 a==169 且 b==254（IPv4 自動組態失敗時使用）
+; [is-link-local](#ip.ip-addr.is-link-local)
 ip-addr.is-link-local = () (yes bool) {
     .a == 169 -> .b == 254 -> yes = true
 }
 
 ; 是否為 A 類地址（1.0.0.0 ~ 126.255.255.255）
-; [is-class-a](#net.ip.ip-addr.is-class-a)
+; yes bool: true 表示第一段落在 1~126（不含環回段 127）
+; [is-class-a](#ip.ip-addr.is-class-a)
 ip-addr.is-class-a = () (yes bool) {
     .a >= 1 -> .a <= 126 -> yes = true
 }
 
 ; 是否為 B 類地址（128.0.0.0 ~ 191.255.255.255）
-; [is-class-b](#net.ip.ip-addr.is-class-b)
+; yes bool: true 表示第一段落在 128~191
+; [is-class-b](#ip.ip-addr.is-class-b)
 ip-addr.is-class-b = () (yes bool) {
     .a >= 128 -> .a <= 191 -> yes = true
 }
 
 ; 是否為 C 類地址（192.0.0.0 ~ 223.255.255.255）
-; [is-class-c](#net.ip.ip-addr.is-class-c)
+; yes bool: true 表示第一段落在 192~223
+; [is-class-c](#ip.ip-addr.is-class-c)
 ip-addr.is-class-c = () (yes bool) {
     .a >= 192 -> .a <= 223 -> yes = true
 }
@@ -294,7 +307,9 @@ ip-addr.is-class-c = () (yes bool) {
 ; ═══════════════════════════════════════════════
 
 ; 比較兩個 IP 地址是否相等
-; [equal](#net.ip.ip-addr.equal)
+; other: 待比較的另一個 ip-addr
+; yes: true=兩地址的 32 位數值完全相等
+; [equal](#ip.ip-addr.equal)
 ip-addr.equal = (other ip-addr) (yes bool) {
     .a == other.a -> .b == other.b -> .c == other.c -> .d == other.d -> yes = true
 }
@@ -307,7 +322,7 @@ ip-addr.equal = (other ip-addr) (yes bool) {
 ; base: 子網基地址
 ; prefix-len: 前綴長度（0~32）
 ; 返回 yes=true=在子網內
-; [in-subnet](#net.ip.ip-addr.in-subnet)
+; [in-subnet](#ip.ip-addr.in-subnet)
 ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
     {
         prefix-len <= 0 -> {
@@ -324,7 +339,7 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
     ; 計算子網遮罩
     self-v = .to-u32()
 
-    ; 注意：在方法体内對同型參數呼叫方法（base.to-u32()）會錯誤綁定到隱式接收者，
+    ; 注意：在方法体內對同型參數呼叫方法（base.to-u32()）會錯誤綁定到隱式接收者，
     ; 導致取到 self 自己的值（實測 self-v == base-v 恆成立）；改用欄位直讀繞過。
     base-v = (base.a << 24) | (base.b << 16) | (base.c << 8) | base.d
 
@@ -355,7 +370,9 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
 
 ; 快速解析 IP 字串
 ; 返回 addr ?ip-addr: ok=解析結果, nil=解析失敗
-; [ip-parse](#net.ip.ip-parse)
+; s: 待解析的 IP 字串
+; addr: ok=解析結果, nil=解析失敗（行爲同 ip-addr.from-str）
+; [ip-parse](#ip.ip-parse)
 ip-parse = (s str) (addr ?ip-addr) {
     addr = nil
     a = ip-addr {}
@@ -365,7 +382,9 @@ ip-parse = (s str) (addr ?ip-addr) {
 }
 
 ; 快速判斷字串是否為環回地址
-; [ip-is-loopback](#net.ip.ip-is-loopback)
+; s: IP 字串（先解析再判定）
+; yes: true=解析成功且為 127.0.0.0/8 環回地址
+; [ip-is-loopback](#ip.ip-is-loopback)
 ip-is-loopback = (s str) (yes bool) {
     addr = ip-addr {}
     ok = addr.parse(s)
@@ -373,7 +392,9 @@ ip-is-loopback = (s str) (yes bool) {
 }
 
 ; 快速判斷字串是否為私有地址
-; [ip-is-private](#net.ip.ip-is-private)
+; s: IP 字串（先解析再判定）
+; yes: true=解析成功且落在 10/8、172.16/12、192.168/16 私有網段之一
+; [ip-is-private](#ip.ip-is-private)
 ip-is-private = (s str) (yes bool) {
     addr = ip-addr {}
     ok = addr.parse(s)

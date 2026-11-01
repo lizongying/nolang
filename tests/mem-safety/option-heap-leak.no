@@ -55,6 +55,8 @@ MyStruct {
     count i64
 }
 
+; 產生帶堆欄位的結構體（name 指向 'world'、count 為 42），供 ?MyStruct 包裝測試
+; out MyStruct: 新結構體；裝進 option 後離開作用域需連 name.data 一起釋放
 make-struct = () (out MyStruct) {
     out = MyStruct {
         name: 'world'
@@ -62,6 +64,7 @@ make-struct = () (out MyStruct) {
     }
 }
 
+; 測試 struct-option
 test-struct-option = () {
     u ?MyStruct = make-struct()
 
@@ -96,6 +99,7 @@ test-clone()
 print('test-clone: ok')
 
 ; 測試 5：option 賦值到 out 參數走 move
+; out ?str: 承接局部變數 a 的 'moved-out'（move 後 a 跳過 free，由呼叫者管理）
 make-opt = () (out ?str) {
     a ?str = 'moved-out'
     out = a

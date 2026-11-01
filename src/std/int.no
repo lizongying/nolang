@@ -13,6 +13,7 @@ int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 ; 直接使用算術運算，避免 int → u64 的類型轉換問題
 ; 注意：不對負數取絕對值（0 - n 在 n = i64.MIN 時會溢出），
 ; 改為直接對負數做 srem/sdiv（向零截斷），再將負餘數映射到 [0, 9]。
+; out str: 十進位表示字串，如 42 / -17；零輸出 '0'，負數帶前導 '-'
 ; [to-str](#int.to-str)
 int.to-str = () (out str) {
 
@@ -71,6 +72,8 @@ int.to-str = () (out str) {
 
 ; 整數除法，回傳商（a ÷ b）
 ; b 為 0 時回傳 err（編譯器插入的零除守衛；不是 UB）。詳見 docs/docs/lang/syntax.md〈除零〉
+; b int: 除數，型別需與被除數一致；符號跟隨 C 的向零截斷（-7 / 2 = -3）
+; q ?int: ok=商（型別同接收者）, err=除數為 0（無 nil 情形）
 ; [div](#int.div)
 int.div = (b int) (q ?int) {
     q = . / b
@@ -78,6 +81,8 @@ int.div = (b int) (q ?int) {
 
 ; 整數取模，回傳餘數（a % b）
 ; b 為 0 時回傳 err（編譯器插入的零除守衛；不是 UB）。詳見 docs/docs/lang/syntax.md〈除零〉
+; b int: 除數（不能為 0）；餘數的符號跟隨被除數（-7 % 2 = -1）
+; r ?int: ok=餘數（|r| < |b|）, err=除數為 0（無 nil 情形）
 ; [mod](#int.mod)
 int.mod = (b int) (r ?int) {
     r = . % b

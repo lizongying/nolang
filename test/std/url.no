@@ -5,17 +5,22 @@
 ;       to-str 回組（含路徑重複 bug 的回歸）、url-encode / url-decode /
 ;       url-encode-component、url-build-query、url-join、
 ;       url-basic-auth / url-parse-basic-auth
-; 註：回归點——(1) to-str 曾因群組內兩個具名條件臂同真導致 path 輸出兩次，
+; 註：回歸點——(1) to-str 曾因群組內兩個具名條件臂同真導致 path 輸出兩次，
 ;     已修正為「條件臂＋預設臂」結構；(2) url-decode 對無效 %XX 原本會靜默
 ;     寫入 NUL 字元／丟棄尾孤立 '%'，已改為直通（passthrough）語義。
 
 # /test/runner
 
+; 比較是否相等 str
+; got: 實際產生的輸出字串
+; want: 期望相符的完整字串
+; msg: 斷言失敗時的標識訊息（長度與內容兩條斷言共用）
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
+; 驗證 url-parse 完整 URL：scheme/host/port/path/query/fragment/user/password 逐字段拆取正確
 t-parse-full = () {
     u = url.url-parse('https://admin:pass@example.com:8080/api/v1?key=value&x=1#section')
     runner.is-true(u.ok, 'parse full ok')
@@ -29,6 +34,7 @@ t-parse-full = () {
     eq-str(u.password, 'pass', 'password')
 }
 
+; 驗證各 scheme 的預設端口（http/ws→80、https/wss→443、ftp→21）與無路徑、根路徑、僅 fragment 等缺省形態
 t-parse-default-ports = () {
     a = url.url-parse('http://a.com/p')
     runner.eq(a.port, 80, 'http default 80')
@@ -51,6 +57,7 @@ t-parse-default-ports = () {
     eq-str(fr.fragment, 'frag', 'frag without path')
 }
 
+; 驗證邊界輸入：空字串解析失敗（ok=false）；相對路徑解析成功、無 scheme 且整串即 path
 t-parse-edge = () {
     e = url.url-parse('')
     runner.is-false(e.ok, 'empty not ok')
@@ -60,6 +67,7 @@ t-parse-edge = () {
     runner.eq(r.scheme.len-bytes(), 0, 'relative no scheme')
 }
 
+; 驗證 get-query 命中回 ok(值)、未命中回 nil，以及 set-query 新鍵附加到 query 尾部
 t-query = () {
     u = url.url-parse('http://a.com/p?z=9')
     hit = u.get-query('z')
@@ -89,6 +97,7 @@ t-query = () {
     eq-str(u.query, 'z=9&k2=v2', 'set-query append')
 }
 
+; 驗證 to-str 重組回原串（回歸：修正前曾輸出 http://a.com/p//p?z=9 路徑重複）
 t-to-str = () {
 
     ; 回歸：修正前此處輸出 'http://a.com/p//p?z=9'（路徑重複）
@@ -100,6 +109,7 @@ t-to-str = () {
     eq-str(j.to-str(), 'http://x.com/a/b', 'to-str no query')
 }
 
+; 驗證 url-encode/url-decode：%20、+ 還原空格、大寫十六進位、壞轉義原樣透傳；encode-component 多逃 & = 等保留字符；編解碼往返一致
 t-encode-decode = () {
     eq-str(url.url-encode('hello world!'), 'hello%20world%21', 'encode')
     eq-str(url.url-decode('hello%20world'), 'hello world', 'decode')
@@ -112,6 +122,7 @@ t-encode-decode = () {
     eq-str(rt, 'a b&c=d?e#f/g%h', 'encode-decode roundtrip')
 }
 
+; 驗證 url-build-query 將鍵值對陣列拼為 a=1&b=2，url-join 解析相對與斜線開頭的絕對路徑
 t-build-join = () {
     k [16]str
     v [16]str
@@ -136,6 +147,7 @@ t-build-join = () {
     eq-str(url.url-join('http://x.com/a/b', '/root'), 'http://x.com:80/root', 'join absolute')
 }
 
+; 驗證 url-basic-auth 產生 Basic base64(user:pass) 憑證、parse-basic-auth 反解出帳號與密碼（非 Basic 前綴回空）
 t-basic-auth = () {
     eq-str(url.url-basic-auth('user', 'pass'), 'Basic dXNlcjpwYXNz', 'basic-auth')
     u = ''

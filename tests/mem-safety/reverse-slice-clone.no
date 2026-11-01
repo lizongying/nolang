@@ -2,6 +2,7 @@
 ; 驗證 start > end 時正確計算長度並反向拷貝元素
 
 ; 測試 1：vec 正向切片（回歸測試）
+; ok bool: b 為 [20, 30] 且長度 2 才為 true
 test-forward-slice = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[1..3]
@@ -11,6 +12,7 @@ test-forward-slice = () (ok bool) {
 }
 
 ; 測試 2：vec 反向切片 [3..1]（兩端包含）
+; ok bool: b 為 [40, 30, 20] 且長度 3 才為 true
 test-vec-reverse-inclusive = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[3..1]
@@ -21,6 +23,7 @@ test-vec-reverse-inclusive = () (ok bool) {
 }
 
 ; 測試 3：vec 反向切片 [3..1)（右端不包含）
+; ok bool: b 為 [40, 30] 且長度 2 才為 true
 test-vec-reverse-exclusive = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[3..1)
@@ -30,6 +33,7 @@ test-vec-reverse-exclusive = () (ok bool) {
 }
 
 ; 測試 4：vec 反向切片 (3..1]（左端不包含）
+; ok bool: b 為 [50, 40, 30, 20] 且長度 4 才為 true
 test-vec-reverse-left-excl = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a(3..1]
@@ -41,6 +45,7 @@ test-vec-reverse-left-excl = () (ok bool) {
 }
 
 ; 測試 5：str 反向切片
+; ok bool: r 逐碼點為 o,l,l,e,h（111/108/108/101/104）且長度 5 才為 true
 test-str-reverse = () (ok bool) {
     s = 'hello'
     r = s[4..0]
@@ -53,6 +58,7 @@ test-str-reverse = () (ok bool) {
 }
 
 ; 測試 6：vec 反向切片獨立性（修改源不影響結果）
+; ok bool: 把 a[0] 改成 99 後，b 首尾仍是 50 與 10 才為 true
 test-vec-reverse-independence = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[4..0]
@@ -65,6 +71,7 @@ test-vec-reverse-independence = () (ok bool) {
 }
 
 ; 測試 7：vec 反向切片字面量索引 [4..2]
+; ok bool: b 為 [50, 40, 30] 且長度 3 才為 true
 test-vec-reverse-simple = () (ok bool) {
     a = [10, 20, 30, 40, 50]
     b = a[4..2]

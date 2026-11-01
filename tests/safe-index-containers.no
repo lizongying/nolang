@@ -7,6 +7,8 @@
 ; 固定陣列 ?= 會受全域 VarTypes 同名污染（std 常見 x:str），屬另一獨立議題。
 
 ; --- 固定陣列 [N]i64：#{index-out} 預設值 ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res i64: 命中為 a[i]（i = 1 得 20），越界由 #{index-out=zero} 補零
 get-default-arr = (i i64) (res i64) {
     a = [10, 20, 30, 40]
 
@@ -15,6 +17,8 @@ get-default-arr = (i i64) (res i64) {
 }
 
 ; --- vec[T]：#{index-out} 預設值 ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res i64: 命中為 av[i]（i = 1 得 20），越界補零
 get-default-vec = (i i64) (res i64) {
     a [4] = [10, 20, 30, 40]
     av = a.to-vec()
@@ -24,12 +28,16 @@ get-default-vec = (i i64) (res i64) {
 }
 
 ; --- 固定陣列 [N]i64：?=（結果參數直接承接） ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res ?i64: 命中為 ok(a[i])，越界為 nil（不再補零）
 safe-get-arr = (i i64) (res ?i64) {
     a = [10, 20, 30, 40]
     res = a[i]; 安全索引回傳 ?i64，直接賦值給 ?i64 結果
 }
 
 ; --- vec[T]：?=（結果參數直接承接） ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res ?i64: 命中為 ok(av[i])，越界為 nil
 safe-get-vec = (i i64) (res ?i64) {
     a [4] = [10, 20, 30, 40]
     av = a.to-vec()

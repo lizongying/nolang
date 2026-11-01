@@ -40,6 +40,8 @@ big = bigint | i64
 ; ═══════════════════════════════════════════════
 
 ; 從 i64 建立 bigint
+; v: i64 原值（可為負）
+; out: 等值的 bigint（符號-絕對值表示）
 ; [from-i64](#bigint.from-i64)
 from-i64 = (v i64) (out bigint) {
     r-v = v
@@ -72,6 +74,8 @@ from-i64 = (v i64) (out bigint) {
 }
 
 ; 從無號 i64 建立 bigint（永遠正數）
+; v: 無號整數值（一律按非負數處理）
+; out: 非負 bigint（sign 恆為 1）
 ; [from-u64](#bigint.from-u64)
 from-u64 = (v i64) (out bigint) {
     out.sign = 1
@@ -93,6 +97,7 @@ from-u64 = (v i64) (out bigint) {
 }
 
 ; 建立零值 bigint
+; out: 值為 0 的 bigint（sign=1、limbs=[0]）
 ; [zero](#bigint.zero)
 zero = () (out bigint) {
     out.limbs = with-len(1)
@@ -103,6 +108,7 @@ zero = () (out bigint) {
 }
 
 ; 建立壹值 bigint
+; out: 值為 1 的 bigint
 ; [one](#bigint.one)
 one = () (out bigint) {
     out.limbs = with-len(1)
@@ -116,6 +122,7 @@ one = () (out bigint) {
 ; ⚠️ 不棄用（與 str/txt.copy 不同）：賦值 `b = a` 只複製 {sign,limbs,len} 描述符、
 ; 與 a 共享同一條 limbs 緩衝區（實測 a.limbs[0] = 99 後 b.limbs[0] 同為 99），
 ; 不具深拷貝語義。需要獨立快照時必須使用本方法。
+; out: 與 self 完全獨立的新 bigint（limbs 逐位複製，互不影響）
 ; [copy](#bigint.copy)
 bigint.copy = () (out bigint) {
     out.limbs = with-len(.len)
@@ -132,6 +139,8 @@ bigint.copy = () (out bigint) {
 ; ═══════════════════════════════════════════════
 
 ; 比較 self 和 b（1=大, 0=等, -1=小）
+; b: 要比較的 bigint
+; r: 1=self 大, 0=相等, -1=self 小（先比符號、再比絕對值）
 ; [cmp](#bigint.cmp)
 bigint.cmp = (b bigint) (r i64) {
 
@@ -146,6 +155,8 @@ bigint.cmp = (b bigint) (r i64) {
 }
 
 ; 比較 |self| 和 |b|（1=大, 0=等, -1=小）
+; b: 要比較的 bigint
+; r: 1=|self| 大, 0=絕對值相等, -1=|self| 小（忽略正負號）
 ; [abs-cmp](#bigint.abs-cmp)
 bigint.abs-cmp = (b bigint) (r i64) {
 
@@ -176,6 +187,7 @@ bigint.abs-cmp = (b bigint) (r i64) {
 }
 
 ; 是否為零
+; r: 數值是否恰為 0
 ; [is-zero](#bigint.is-zero)
 bigint.is-zero = () (r bool) {
 
@@ -183,18 +195,22 @@ bigint.is-zero = () (r bool) {
 }
 
 ; 是否為負數
+; r: sign 欄位是否為 -1（零視為非負）
 ; [is-neg](#bigint.is-neg)
 bigint.is-neg = () (r bool) {
     r = .sign == -1
 }
 
 ; 是否為正數
+; r: 是否為正數且非零
 ; [is-pos](#bigint.is-pos)
 bigint.is-pos = () (r bool) {
     r = .sign == 1 && ! .is-zero()
 }
 
 ; self == b ?
+; b: 比較對象
+; r: 符號與絕對值是否全等
 ; [eq](#bigint.eq)
 bigint.eq = (b bigint) (r bool) {
 
@@ -221,6 +237,8 @@ bigint.eq = (b bigint) (r bool) {
 ; 委派 `_add-i64`。核心不內聯於型別臂內：實測在 match 臂 BlockStatement 裡對命名輸出
 ; 形參 `c` 先 `c = expr` 再 `c.sign = ...` 的欄位突變不會回寫（符號丟失，如 -100+7
 ; 誤得 93），委派到普通方法後 `c.sign` 突變語義回歸正常（與 _mul 委派 mul-bigint 同理）。
+; b: 右運算元（bigint 或 i64，按實際型別靜態選臂）
+; c: self + b 的和（?bigint 為運算符重載簽名所需，加法恆 ok）
 ; [_add](#bigint._add)
 bigint._add = (b big) (c ?bigint) {
     b: {
@@ -236,6 +254,8 @@ bigint._add = (b big) (c ?bigint) {
 
 ; self + b 的 big⊕big 核心（普通具體方法，非運算符重載；供 _add 委派）
 ; 實參具名化：`v.abs-sub(s)` 的 s 需先 `s = .` 捕獲（裸 `.` 作方法實參有既有降級缺口）。
+; b: 右運算元 bigint
+; c: self + b 的和（含符號合成，供 _add 的 bigint 臂委派）
 ; [add-bigint](#bigint.add-bigint)
 bigint.add-bigint = (b bigint) (c bigint) {
     s = .
@@ -259,6 +279,8 @@ bigint.add-bigint = (b bigint) (c bigint) {
 }
 
 ; a - b（運算符重載；委派策略同 _add）
+; b: 減數（bigint 或 i64）
+; c: self - b 的差
 ; [_sub](#bigint._sub)
 bigint._sub = (b big) (c ?bigint) {
     b: {
@@ -273,6 +295,8 @@ bigint._sub = (b big) (c ?bigint) {
 }
 
 ; self - b 的 big⊖big 核心（普通具體方法；供 _sub 委派）
+; b: 減數 bigint
+; c: self - b 的差（供 _sub 的 bigint 臂委派）
 ; [sub-bigint](#bigint.sub-bigint)
 bigint.sub-bigint = (b bigint) (c bigint) {
     s = .
@@ -300,6 +324,8 @@ bigint.sub-bigint = (b bigint) (c bigint) {
 ; 重量級迴圈／`with-len`／`#{overflow=wrap}` 嵌在 match 臂 BlockStatement 裡
 ; 的 lowering 邊界會崩潰（實測 segfault），委派到普通方法後 `.` 接收者與輸出
 ; 形參語義回歸正常，與可用的 _add i64 臂同形。
+; b: 乘數（bigint 或 i64）
+; c: self × b 的積
 ; [_mul](#bigint._mul)
 bigint._mul = (b big) (c ?bigint) {
     b: {
@@ -314,6 +340,8 @@ bigint._mul = (b big) (c ?bigint) {
 }
 
 ; |self| * |b| 的大整數核心（普通具體方法，非運算符重載；供 _mul 委派）
+; b: 乘數 bigint（取絕對值參與核心乘法）
+; c: |self| × |b|（符號由委派方 _mul 依兩運算元符號合成）
 ; [mul-bigint](#bigint.mul-bigint)
 bigint.mul-bigint = (b bigint) (c bigint) {
 
@@ -361,6 +389,8 @@ bigint.mul-bigint = (b bigint) (c bigint) {
 }
 
 ; a / b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 _div-i64）
+; b: 除數（bigint 或 i64）
+; q: 截斷商（除零回傳 0 而非報錯，與 div-mod 一致）
 ; [_div](#bigint._div)
 bigint._div = (b big) (q ?bigint) {
     b: {
@@ -378,6 +408,8 @@ bigint._div = (b big) (q ?bigint) {
 ; a % b（運算符重載；除零依 div-mod 回傳零；路線 C i64 臂借道 _mod-i64，
 ; 其結果為 ?i64，先拆包（失敗回 0，對齊 div-mod 除零回傳零）再以 from-i64 提升為
 ; bigint 以對齊輸出形參 r）
+; b: 除數（bigint 或 i64）
+; r: 餘數（符號跟隨被除數 self；除零回傳 0）
 ; [_mod](#bigint._mod)
 bigint._mod = (b big) (r ?bigint) {
     b: {
@@ -398,6 +430,8 @@ bigint._mod = (b big) (r ?bigint) {
 }
 
 ; |self| + |b|（忽略正負號）
+; b: 加數 bigint
+; c: |self| + |b|（不處理正負號，供 _add 內部組合符號）
 ; [abs-add](#bigint.abs-add)
 bigint.abs-add = (b bigint) (c bigint) {
 
@@ -437,6 +471,8 @@ bigint.abs-add = (b bigint) (c bigint) {
 }
 
 ; |self| - |b|（假設 |self| >= |b|，忽略正負號）
+; b: 減數 bigint（呼叫前提：|self| >= |b|）
+; c: |self| - |b|（結果必非負；前提不成立時值不可靠）
 ; [abs-sub](#bigint.abs-sub)
 bigint.abs-sub = (b bigint) (c bigint) {
     borrow = 0
@@ -478,6 +514,8 @@ bigint.abs-sub = (b bigint) (c bigint) {
 ; ═══════════════════════════════════════════════
 
 ; self * v（小整數乘法）
+; v: 小整數乘數（可為負；|v| ≥ 2^32 時自動拆為兩個 32-bit limb）
+; c: self × v（符號按 v 正負翻轉）
 ; [_mul-i64](#bigint._mul-i64)
 bigint._mul-i64 = (v i64) (c bigint) {
     r-v = v
@@ -515,6 +553,9 @@ bigint._mul-i64 = (v i64) (c bigint) {
 ; ═══════════════════════════════════════════════
 
 ; self / b, 同時傳回商和餘數
+; b: 除數（為 0 時商與餘數均回傳零 bigint）
+; q: 商（截斷除）
+; r: 餘數（符號跟隨被除數；|self| < |b| 時即 self 本身）
 ; [div-mod](#bigint.div-mod)
 bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
@@ -741,6 +782,8 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 }
 
 ; q = self / v（小整數除法）
+; v: 小整數除數（取絕對值做逐 limb 長除）
+; q: self / v 的商（符號跟隨 self，不依賴 v 正負）
 ; [_div-i64](#bigint._div-i64)
 bigint._div-i64 = (v i64) (q bigint) {
     r-v = v
@@ -767,6 +810,8 @@ bigint._div-i64 = (v i64) (q bigint) {
 ; r = self % v（小整數取模）
 ; 回傳 ?i64：`cur % r-v` 依 D6 統一 option 規則本就是 ?i64（除數為 0 時失敗），
 ; 結果參數刻意宣告 plain 把它壓平會造成靜默拆包，故如實宣告為 ?i64。
+; v: 小整數除數（為 0 時 option 失敗）
+; r: |self| % |v| 的非負餘數
 ; [_mod-i64](#bigint._mod-i64)
 bigint._mod-i64 = (v i64) (r ?i64) {
     r-v = v
@@ -789,6 +834,8 @@ bigint._mod-i64 = (v i64) (r ?i64) {
 ; ═══════════════════════════════════════════════
 
 ; c = self^n（n >= 0，非負整數冪）
+; n: 非負指數（n=0 時回傳 1）
+; c: self^n（平方-乘快速冪，O(log n) 次乘法）
 ; [pow](#bigint.pow)
 bigint.pow = (n i64) (c bigint) {
     c = one()
@@ -804,6 +851,9 @@ bigint.pow = (n i64) (c bigint) {
 }
 
 ; r = self^exp mod modulus
+; exp: 指數 bigint（按位元掃描，支援任意精度）
+; modulus: 模數 bigint（為 0 時直接回傳 0）
+; r: self^exp mod modulus（平方-乘模冪，RSA 簽章/加解密核心運算）
 ; [mod-pow](#bigint.mod-pow)
 bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
 
@@ -852,6 +902,8 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
 ; ═══════════════════════════════════════════════
 
 ; g = gcd(self, b)（歐幾里得演算法）
+; b: 另一個整數
+; g: 最大公因數（恆取正值；兩者皆零時為 0）
 ; [gcd](#bigint.gcd)
 bigint.gcd = (b bigint) (g bigint) {
     x = bigint {}
@@ -873,6 +925,8 @@ bigint.gcd = (b bigint) (g bigint) {
 }
 
 ; l = lcm(self, b)
+; b: 另一個整數
+; l: 最小公倍數 = self/gcd × b（任一為零時為 0）
 ; [lcm](#bigint.lcm)
 bigint.lcm = (b bigint) (l bigint) {
     az = .is-zero()
@@ -921,8 +975,8 @@ bigint.shl1 = () {
 ; [shr1](#bigint.shr1)
 bigint.shr1 = () {
 
-    ; 高位→低位逐 limb 右移；进入当前 limb 的进位（来自更高 limb 的最低位）
-    ; 必须在当前 limb 移位「之后」放到 bit31，否则会被本 limb 的 >>1 再次右移到 bit30。
+    ; 高位→低位逐 limb 右移；進入當前 limb 的進位（來自更高 limb 的最低位）
+    ; 必須在當前 limb 移位「之後」放到 bit31，否则會被本 limb 的 >>1 再次右移到 bit30。
     inb = 0
 
     i <- [.len - 1..0]: {
@@ -934,6 +988,9 @@ bigint.shr1 = () {
 }
 
 ; c = a << n
+; a: 被移位的 bigint
+; n: 左移位數
+; c: a × 2^n（等效逐次 ×2）
 ; [shl](#bigint.shl)
 shl = (a bigint, n i64) (c bigint) {
     c = a.copy()
@@ -943,6 +1000,9 @@ shl = (a bigint, n i64) (c bigint) {
 }
 
 ; c = a >> n
+; a: 被移位的 bigint
+; n: 右移位數
+; c: a / 2^n（向下取整，等效逐次 ÷2）
 ; [shr](#bigint.shr)
 shr = (a bigint, n i64) (c bigint) {
     c = a.copy()
@@ -968,7 +1028,7 @@ bigint.normalize = () {
 }
 
 ; 將 bigint 轉為十進制字串
-; 返回 out str: 十進制字串
+; 返回 out str: 十進制字串（負數以 '-' 開頭，零為 "0"）
 ; [to-str](#bigint.to-str)
 bigint.to-str = () (out str) {
     out = with-cap(256)
@@ -1030,6 +1090,8 @@ bigint.to-str = () (out str) {
 }
 
 ; c = self + v（小整數加法）
+; v: 小整數加數
+; c: self + v（經 from-i64 提升後走 bigint 加法）
 ; [_add-i64](#bigint._add-i64)
 bigint._add-i64 = (v i64) (c bigint) {
     tmp = bigint {}
@@ -1047,6 +1109,7 @@ bigint._add-i64 = (v i64) (c bigint) {
 ; 為什麼需要它：`_mod-i64` / `_div-i64` 這類小整數快速路徑是本模組私有的（見
 ; 上方私有約定）。外部模組拿到的是運算符結果（`% / * + -`，值域天然被除數界定
 ; 在 i64 內）的 bigint，要取回 i64 必須走這個公開出口，而不是繞道呼叫私有方法。
+; v: ok=值域內的 i64, err=超出 i64 範圍（絕不靜默截斷高位）
 ; [to-i64](#bigint.to-i64)
 bigint.to-i64 = () (v ?i64) {
     ; limbs 是 32-bit 小端；先做長度守衛，才去碰 limbs。
@@ -1092,7 +1155,7 @@ bigint.to-i64 = () (v ?i64) {
 ; ═══════════════════════════════════════════════
 
 ; 將 bigint 轉為十六進制字串（小寫）
-; 返回 out str: 十六進制字串
+; 返回 out str: 十六進制字串（小寫、無 0x 前綴，負數以 '-' 開頭）
 ; [to-hex](#bigint.to-hex)
 bigint.to-hex = () (out str) {
     out = with-cap(256)

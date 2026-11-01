@@ -1,3 +1,4 @@
+; if 表達式形式：條件為真時取 then 區塊的值 'hello'，否則取 'world'，結果存進 r 再印出
 test1 = () {
     r = if 1 {
         'hello'

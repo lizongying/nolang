@@ -21,6 +21,7 @@ t-parse-spec = () {
     runner.eq(precision3, -1, 'parse-spec empty precision -1')
 }
 
+; 對齊與寬度：右（預設）/ 左 / 置中填充；寬度小於內容時原樣輸出
 t-apply-spec = () {
 
     ; 右對齊（預設）：'   42'
@@ -40,6 +41,7 @@ t-apply-spec = () {
     runner.str-eq(n, '42', 2, 'apply-spec width < len unchanged')
 }
 
+; 有號整數：寬度、左對齊、零填充（'05'）、負數與零
 t-int = () {
     a = fmt.fmt-int(42, '')
     runner.str-eq(a, '42', 2, 'fmt-int plain')
@@ -57,6 +59,7 @@ t-int = () {
     runner.str-eq(g, '0', 1, 'fmt-int zero')
 }
 
+; 無號整數：基本輸出與寬度右對齊
 t-uint = () {
     a = fmt.fmt-uint(42, '')
     runner.str-eq(a, '42', 2, 'fmt-uint plain')
@@ -64,6 +67,7 @@ t-uint = () {
     runner.str-eq(b, '  7', 3, 'fmt-uint width 3')
 }
 
+; 進位制與高位 u64：hex 大小寫、二進位、十進位、八進位，含 ≥2^63 與 u64 最大值
 t-uint-base = () {
     a = fmt.fmt-uint-base(255, 16, false)
     runner.str-eq(a, 'ff', 2, 'uint-base hex lower')
@@ -91,6 +95,7 @@ t-uint-base = () {
     runner.str-eq(j2, '1000000000000000000000', 22, 'uint-base octal 2^63')
 }
 
+; 浮點：指定精度（如 %.2f）與預設精度
 t-f64 = () {
     a = fmt.fmt-f64(3.14159, '.2f')
     runner.str-eq(a, '3.14', 4, 'fmt-f64 precision 2')
@@ -98,6 +103,7 @@ t-f64 = () {
     runner.str-eq(b, '2.5', 3, 'fmt-f64 default')
 }
 
+; 字串：寬度左對齊與精度截斷
 t-str = () {
     a = fmt.fmt-str('hi', '')
     runner.str-eq(a, 'hi', 2, 'fmt-str plain')
@@ -107,6 +113,7 @@ t-str = () {
     runner.str-eq(c, 'he', 2, 'fmt-str precision truncate')
 }
 
+; 布林：輸出 true / false 字面
 t-bool = () {
     a = fmt.fmt-bool(true, '')
     runner.str-eq(a, 'true', 4, 'fmt-bool true')

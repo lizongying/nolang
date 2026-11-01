@@ -12,6 +12,7 @@ failed = 0
 
 ; ── 基礎操作 ──────────────────────────────────
 
+; 驗證 len-bytes 對非空字串與空字串皆回傳正確的位元組數
 t-len = () {
     s = 'hello'
     runner.eq(s.len-bytes(), 5, 'str.len() hello == 5')
@@ -19,6 +20,7 @@ t-len = () {
     runner.eq(e.len-bytes(), 0, 'str.len() empty == 0')
 }
 
+; 驗證 index 回傳子串首次出現的位移；未找到回傳 -1、空子串回傳 0
 t-index = () {
     s = 'hello world'
     runner.eq(s.index('world'), 6, 'index world == 6')
@@ -27,6 +29,7 @@ t-index = () {
     runner.eq(s.index('l'), 2, 'index l first occurrence')
 }
 
+; 驗證 index-from 由指定位移起尋找子串，其後無匹配時回傳 -1
 t-index-from = () {
     s = 'abcabc'
     runner.eq(s.index-from('b', 0), 1, 'index-from b@0 == 1')
@@ -34,6 +37,7 @@ t-index-from = () {
     runner.eq(s.index-from('z', 0), -1, 'index-from z == -1')
 }
 
+; 驗證 contains 判斷子串是否存在，含頭部、中段與完全不存在的子串
 t-contains = () {
     s = 'hello world'
     runner.is-true(s.contains('world'), 'contains world')
@@ -41,6 +45,7 @@ t-contains = () {
     runner.is-true(s.contains('lo wo'), 'contains middle substring')
 }
 
+; 驗證 starts-with 與 ends-with 分別正確判定字串的前綴與後綴
 t-starts-ends = () {
     s = 'hello world'
     runner.is-true(s.starts-with('hello'), 'starts-with hello')
@@ -51,6 +56,7 @@ t-starts-ends = () {
 
 ; ── 轉換 ──────────────────────────────────────
 
+; 驗證 to-upper / to-lower 只轉換字母大小寫、不影響數字
 t-case = () {
     s = 'Hello42'
     up = s.to-upper()
@@ -59,6 +65,7 @@ t-case = () {
     runner.str-eq(low, 'hello42', 7, 'to-lower')
 }
 
+; 驗證 trim 去除首尾空白，且無首尾空白的字串保持不變
 t-trim = () {
     s1 = '  hi  '
     t1 = s1.trim()
@@ -69,6 +76,7 @@ t-trim = () {
     runner.eq(t2.len(), 2, 'trim no-space unchanged')
 }
 
+; 驗證 repeat 依重複次數串接字串，長度與內容皆符合預期
 t-repeat = () {
     space = ' '
     buf = space.repeat(8)
@@ -79,6 +87,7 @@ t-repeat = () {
     runner.str-eq(r, 'ababab', 6, 'repeat ab x3 content')
 }
 
+; 驗證 slice(start, end) 取出子字串檢視，其長度與內容正確
 t-slice = () {
     s = 'hello world'
     v = s.slice(6, 11)
@@ -88,6 +97,7 @@ t-slice = () {
     runner.str-eq(v2, 'hello', 5, 'slice from 0')
 }
 
+; 驗證 to-bytes 將字串轉為位元組陣列，首尾位元組值與來源對應
 t-to-bytes = () {
     s = 'hello'
     b = s.to-bytes()
@@ -98,6 +108,7 @@ t-to-bytes = () {
     runner.eq(b4, 111, 'to-bytes 4 == o')
 }
 
+; 驗證 to-i64 解析正負整數字串，非數字字串則得到 err
 t-to-i64 = () {
 
     ; 注意：option 值需在 match 分支內比較
@@ -134,6 +145,7 @@ t-to-i64 = () {
 
 ; ── 比較與複製 ────────────────────────────────
 
+; 驗證 eq 比對前 n 位元組：相同為真、不同為假、僅比對前綴亦為真
 t-eq = () {
     a = 'nolang'
     b = 'nolang'
@@ -143,6 +155,7 @@ t-eq = () {
     runner.is-true(a.eq('nol', 3), 'eq first 3 bytes')
 }
 
+; 驗證 copy 產出與原字串內容相等且獨立的副本（改副本不影響原字串）
 t-copy = () {
     s = 'abc'
     d = s.copy()
@@ -155,6 +168,7 @@ t-copy = () {
     runner.eq(s[0], 97, 'copy is independent (source unchanged)')
 }
 
+; 驗證 fill 以指定位元組原地填滿整個字串且長度不變
 t-fill = () {
     s = 'abc'
     s.fill(122)

@@ -1,5 +1,7 @@
 ; Example module
 
+; 印出英文問候語到標準輸出（無輸出參數，不回傳值）
+; name str: 要接在問候語後面的名字，按原樣插入
 greet = (name str) {
     print('Hello, {name}')
 }

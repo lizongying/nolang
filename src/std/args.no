@@ -9,19 +9,24 @@
 
 ; 參數數量（含程式名）
 ; 委派至 os.args() builtin（回傳完整 argv 向量，取其長度）
+; 回傳的計數包含 argv[0]（程式名），故沒有額外參數時最小值為 1。
+; n i64: argv 的總元素數（即命令列參數個數 + 1）
 ; [count](#args.count)
 count = () (n i64) {
     n = os.args().len()
 }
 
-; 獲取第 i 個參數
-; 委派至 os.arg(i) builtin（讀取 main 的 argv[i]）；越界回傳 nil
+; 獲取第 i 個原始參數（不做任何旗標 / 位置參數的解析）
+; 委派至 os.arg(i) builtin（讀取 main 的 argv[i]）。
+; i i64: 下標，0 為程式名，1 起為使用者輸入的參數
+; val ?str: ok=argv[i], nil=下標越界（負數或 ≥ 參數數量）
 ; [get](#args.get)
 get = (i i64) (val ?str) {
     val = os.arg(i)
 }
 
-; 程式名（第 0 個參數）
+; 程式名（第 0 個參數，即 argv[0] 原樣）
+; name ?str: ok=argv[0]（通常是執行檔路徑，可能含目錄）, nil=argv 為空
 ; [program](#args.program)
 program = () (name ?str) {
     name = os.arg(0)
@@ -32,6 +37,10 @@ program = () (name ?str) {
 ; ═══════════════════════════════════════════════
 
 ; 判斷標記是否存在（如 --verbose, -v）
+; 從 argv[1] 起逐一與 flag 做逐字元精確比對（非子串匹配，也不展開 --k=v）。
+; 空字串 flag 永遠不匹配。
+; flag str: 要比對的完整標記字串（含前導 - 或 --）
+; yes bool: true=argv 中存在與 flag 完全相同的元素, false=不存在
 ; [has-flag](#args.has-flag)
 has-flag = (flag str) (yes bool) {
     flagn = flag.len-bytes()
@@ -69,7 +78,10 @@ has-flag = (flag str) (yes bool) {
 ; ═══════════════════════════════════════════════
 
 ; 獲取選項值（如 --output=xxx）
-; 返回 val ?str: ok=選項值, nil=未找到
+; 逐一比對 argv[1..]，找出以 key 開頭且緊接 '='（0x3D）的參數，
+; 回傳 '=' 之後的剩餘部分（按位元組切片，可為空字串）。只取第一個匹配項。
+; key str: 選項鍵（含前導 - 或 --，如 '--output'）
+; val ?str: ok='=' 後的值（可能為 ''）, nil=沒有任何參數符合 key=...
 ; [get-option](#args.get-option)
 get-option = (key str) (val ?str) {
     val = nil
@@ -115,8 +127,12 @@ get-option = (key str) (val ?str) {
 ; 位置參數
 ; ═══════════════════════════════════════════════
 
-; 獲取第 i 個位置參數（跳過標記）
-; 返回 val ?str: ok=位置參數值, nil=不存在
+; 獲取第 idx 個位置參數（從 0 起算），期間跳過所有旗標
+; 掃描 argv[1..]：以 '-' 開頭的參數一律跳過；若它是單橫線形式（如 -o），
+; 還會額外跳過其後一個不以 '-' 開頭的參數（視為該選項的值）；
+; 雙橫線形式（如 --output=xxx）只跳過自身。其餘參數按出現順序計數。
+; idx i64: 位置參數序號，0 表示第一個非旗標參數
+; val ?str: ok=第 idx 個位置參數, nil=位置參數數量不足
 ; [get-positional](#args.get-positional)
 get-positional = (idx i64) (val ?str) {
     val = nil

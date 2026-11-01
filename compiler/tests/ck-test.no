@@ -25,6 +25,8 @@
 
 ; 源碼串 ⇒ 診斷 vec（path 固定中性 '/tmp/t.no' ⇒ curModule=''）
 ; ⚠️ ps.parse 返回值必須捕獲後顯式丟棄（裸語句調用觸發 bug #85 NoVal，實測）
+; src: 來源
+; out: 輸出結果
 ck-run = (src str) (out []str) {
     t = ast.make()
     p = ps.new(src.to-bytes())
@@ -34,6 +36,9 @@ ck-run = (src str) (out []str) {
 }
 
 ; 指定檔案路徑（測 curModule 自模組放行臂）
+; src: 來源
+; path: 路徑
+; out: 輸出結果
 ck-run-in = (src str, path str) (out []str) {
     t = ast.make()
     p = ps.new(src.to-bytes())
@@ -43,6 +48,9 @@ ck-run-in = (src str, path str) (out []str) {
 }
 
 ; vec[?] 索引回 option，兩段 match 解毒（同行 `v = x: {}` 僅裸標識符可用）
+; v: 值
+; i: 索引
+; r: 結果字串
 at = (v []str, i i64) (r str) {
     o = v[i]
     x = o: {
@@ -57,6 +65,7 @@ at = (v []str, i i64) (r str) {
 ; 沉默面：不報
 ; ═══════════════════════════════════════════════
 
+; 測試 silent
 test-silent = () {
 
     ; std 沉默名（bk 表 '-'：probe 實測 oracle 不報）
@@ -95,12 +104,14 @@ test-silent = () {
 ; 報錯面：門控帶提示 / 門控無提示 / 完全未知
 ; ═══════════════════════════════════════════════
 
+; 測試 gated-hint
 test-gated-hint = () {
     d = ck-run('x = cancelled\n')
     runner.eq(d.len(), 1, 'cancelled one diag')
     runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'cancelled\' is not defined; call it as \'async.cancelled\' (cross-module calls must be module-qualified)', 115, 'cancelled hint form')
 }
 
+; 測試 gated-nohint
 test-gated-nohint = () {
 
     ; 門控無 unique owner（僅方法短名）⇒ 裸形態（oracle smoke4 實測同文）
@@ -109,6 +120,7 @@ test-gated-nohint = () {
     runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'from-bits\' is not defined', 39, 'from-bits bare form')
 }
 
+; 測試 unknown
 test-unknown = () {
 
     ; 完全未知名（'@'）⇒ 裸形態（正主同形）
@@ -117,6 +129,7 @@ test-unknown = () {
     runner.str-eq(at(d, 0), '1|5|4bek3xc6|\'wuzzle\' is not defined', 36, 'wuzzle bare form')
 }
 
+; 測試 order
 test-order = () {
 
     ; 多條按 arena 構造序（≈源序）

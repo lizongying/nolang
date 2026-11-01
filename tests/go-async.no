@@ -6,12 +6,17 @@
 ;   - 傳遞性：worker-with-child 內部 `co child` → 自動生成 child-async
 ;
 ; 期望輸出：a=11 b=21 c=31 d=55
+; n i64: 輸入值，本檔用 10 / 20 / 30 等呼叫
+; r i64: n + 1（overflow 採 wrap）
 worker = (n i64) (r i64) {
 
     #{overflow=wrap}
     r = n + 1
 }
 
+; 無色子函式：乘十；被 worker 以 go 呼叫後會被單態成 child-async
+; n i64: 來源數值
+; r i64: n * 10（#{overflow=wrap}）
 child = (n i64) (r i64) {
 
     #{overflow=wrap}
@@ -19,6 +24,8 @@ child = (n i64) (r i64) {
 }
 
 ; worker 內部呼叫異步 child：worker 因此也被單態為 worker-async（傳遞性）
+; n i64: 來源數值
+; r i64: n + child(n) = n + n*10
 worker-with-child = (n i64) (r i64) {
     c i64
     c = co child(n)

@@ -1,3 +1,4 @@
+; 測試 fix
 test-fix = () {
     s = 'hello'
     print(s.len-bytes())

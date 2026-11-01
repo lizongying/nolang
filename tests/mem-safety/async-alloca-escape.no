@@ -30,12 +30,17 @@
 ;
 ; ═════════════════════════════════════════════════════════════════
 
+; 被協程衍生的函式：把輸入乘 2（overflow 採 wrap）
+; n i64: 輸入值，本測試傳 42
+; r i64: n * 2，即 84
 work-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     r = n * 2
 }
 
+; 只 spawn 不 awy 就返回：args/result 原本落在本函式棧上，子線程會讀到已失效的棧幀
+; out i64: 固定為 0（故意不取回協程結果）
 leak-task = () (out i64) {
     task = run work-async(42)
 

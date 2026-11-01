@@ -18,20 +18,30 @@
 ; `err.err`（err 載荷是結構化錯誤），所以 `msg = it.msg()` 才能指派；否則會誤報
 ; 「cannot assign err value to str variable」。
 
+; 檢查 str
+; name str: 這項檢查的名稱，輸出時原樣印出
+; got str: 實際取得的值
+; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check-str = (name str, got str, want str) {
     got == want -> print('ok: {name}')
 
     -> print('fail: {name} got=[{got}] want=[{want}]')
 }
 
+; 固定失敗：帶 err 訊息 'boom-i64'，用於驗證 ?i64 的 err 臂 it 是字串
+; out ?i64: 必為 err
 fail-i64 = () (out ?i64) {
     out = err('boom-i64')
 }
 
+; 固定失敗：帶 err 訊息 'boom-bool'（純量 bool 不影響 it 的型別）
+; out ?bool: 必為 err
 fail-bool = () (out ?bool) {
     out = err('boom-bool')
 }
 
+; 固定失敗：帶 err 訊息 'boom-str'（就算載荷型別是 str，it 也是訊息而非載荷）
+; out ?str: 必為 err
 fail-str = () (out ?str) {
     out = err('boom-str')
 }

@@ -1,20 +1,20 @@
-; markdown — Markdown 渲染标准库
+; markdown — Markdown 渲染標準庫
 ;
-; 这是一个无外部依赖的 CommonMark 风格渲染器，面向文档、日志和消息场景。
+; 這是一個無外部依赖的 CommonMark 風格渲染器，面向文檔、日志和消息場景。
 ; 支持：
-;   - ATX / Setext 标题、段落、硬换行、分隔线
-;   - 无序/有序列表、任务列表、引用
-;   - fenced code block（``` / ~~~，保留语言 class）与缩进代码块
-;   - 表格、粗体、斜体、删除线、行内代码
-;   - 链接、图片、自动链接、反斜杠转义
-;   - HTML 全量转义，默认不把输入当成原始 HTML 执行
+;   - ATX / Setext 標题、段落、硬換行、分隔線
+;   - 無序/有序列表、任务列表、引用
+;   - fenced code block（``` / ~~~，保留語言 class）與縮進代碼塊
+;   - 表格、粗體、斜體、刪除線、行內代碼
+;   - 鏈接、圖片、自動鏈接、反斜杠轉義
+;   - HTML 全量轉義，默認不把输入當成原始 HTML 執行
 ;
 ; 用法：
 ;   html = markdown.to-html(source)
 ;   html = markdown.render(source)
 ;   text = markdown.inline('**bold** and `code`')
 
-; 使用小型记录承载多值解析结果，避免调用方处理可选索引结果。
+; 使用小型記錄承載多值解析結果，避免調用方處理可選索引結果。
 markdown-line {
     text str
     next-pos i64
@@ -39,7 +39,9 @@ markdown-fence {
     info str
 }
 
-; 转义 HTML 文字与属性值。
+; 轉義 HTML 文字與屬性值（& < > " 四個字元；& 必須先換，否則後續替換會被二次轉義）。
+; s str: 原始文字（正文或屬性值）
+; out str: 可直接插入 HTML 的轉義結果
 ; [escape-html](#markdown.escape-html)
 markdown.escape-html = (s str) (out str) {
     out = s.replace-str('&', '&amp;')
@@ -48,13 +50,19 @@ markdown.escape-html = (s str) (out str) {
     out = out.replace-str('"', '&quot;')
 }
 
-; 判断一个 ASCII byte 是否属于单词。
+; 判斷一個 ASCII byte 是否屬於單詞。
+; c i64: 待判斷的 byte 值（0–255，直接以整數傳入，不是 char）
+; yes bool: true 表示 c 是 0-9 / A-Z / a-z；非 ASCII 與標點皆為 false
 ; [is-word-byte](#markdown.is-word-byte)
 markdown.is-word-byte = (c i64) (yes bool) {
     yes = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
 }
 
-; 统计行首连续的指定字符。
+; 統計行首連續的指定字符。
+; 逐 byte 從 0 開始比較，遇到不同字符、或到達字串結尾即停止。
+; s str: 待掃描的行（通常已 trim）
+; c i64: 要比對的 byte 值（例如 35 表示 '#'，96 表示 '`'）
+; n i64: 前綴長度；沒有任何匹配時為 0
 ; [prefix-count](#markdown.prefix-count)
 markdown.prefix-count = (s str, c i64) (n i64) {
     n = 0
@@ -67,7 +75,10 @@ markdown.prefix-count = (s str, c i64) (n i64) {
     }
 }
 
-; 取得 ATX 标题等级与标题文字。
+; 取得 ATX 標題等級與標題文字。
+; 只接受「1–6 個 # 加一個空格」的形式，並去掉結尾可選的「空格 + 連續 #」。
+; line str: 原始單行文字
+; out markdown-heading: level 為 1–6（不是標題時為 0），text 為去除前綴與尾部 # 的標題內容
 ; [heading](#markdown.heading)
 markdown.heading = (line str) (out markdown-heading) {
     level-v = 0
@@ -78,7 +89,7 @@ markdown.heading = (line str) (out markdown-heading) {
         level-v = n
         title-v = s.slice-bytes(n + 1, s.len-bytes()).trim()
 
-        ; ATX 标题允许尾部的空格加 #，但不能把正文中的 # 误删。
+        ; ATX 標题允許尾部的空格加 #，但不能把正文中的 # 誤刪。
         title-v.ends-with(' #') -> {
             end = title-v.len-bytes()
             (end > 0) {
@@ -98,7 +109,10 @@ markdown.heading = (line str) (out markdown-heading) {
     }
 }
 
-; 取得 Setext 标题等级（=== 或 ---）。
+; 取得 Setext 標題等級（=== 或 ---）。
+; 該行 trim 後須長度 ≥ 3，且從頭到尾都是同一個 '=' 或 '-'。
+; line str: 原始單行文字
+; level i64: 1 = '=' 底線（一級標題），2 = '-' 底線（二級標題），0 = 不是 Setext 標題
 ; [setext-level](#markdown.setext-level)
 markdown.setext-level = (line str) (level i64) {
     level = 0
@@ -120,7 +134,10 @@ markdown.setext-level = (line str) (level i64) {
     }
 }
 
-; 判断是否为分隔线。
+; 判斷是否為分隔線。
+; trim 後由 3 個以上的同一個 - / * / _ 構成，中間允許空格與 tab。
+; line str: 原始單行文字
+; yes bool: true 表示該行是主題分隔線（<hr>）
 ; [thematic-break](#markdown.thematic-break)
 markdown.thematic-break = (line str) (yes bool) {
     yes = false
@@ -156,7 +173,10 @@ markdown.thematic-break = (line str) (yes bool) {
     yes = count >= 3
 }
 
-; 解析列表项。kind=1 无序，kind=2 有序。
+; 解析列表項。kind=1 無序，kind=2 有序。
+; 無序項需「- / * / + 加一個空格」；有序項需「至少一位數字 + . 加一個空格」。
+; line str: 原始單行文字
+; out markdown-list: kind 為 0（不是列表項）/ 1（無序）/ 2（有序），text 為標記之後的條目內容
 ; [list-item](#markdown.list-item)
 markdown.list-item = (line str) (out markdown-list) {
     kind-v = 0
@@ -206,7 +226,10 @@ markdown.list-item = (line str) (out markdown-list) {
     }
 }
 
-; 渲染任务列表内容。
+; 渲染任務列表內容。
+; 識別 GFM 任務標記 '[ ] ' 與 '[x] ' / '[X] '，其餘內容按行內語法渲染。
+; content str: 列表項的正文（來自 markdown-list 的 text）
+; out str: 帶上 disabled checkbox 的 HTML 片段，或普通行內 HTML
 ; [list-content](#markdown.list-content)
 markdown.list-content = (content str) (out str) {
     s = content.trim()
@@ -223,7 +246,10 @@ markdown.list-content = (content str) (out str) {
     out = markdown.inline(s)
 }
 
-; 移除引用行首的 > 标记。
+; 移除引用行首的 > 標記。
+; '>' 後若只有一個空格則一併去掉；'>>' 之類的嵌套寫法保留剩餘的 '>'。
+; line str: 原始單行文字
+; out markdown-quote: yes 表示該行是引用行，text 為去掉行首標記後的內容（非引用行時為空串）
 ; [blockquote](#markdown.blockquote)
 markdown.blockquote = (line str) (out markdown-quote) {
     content-v = ''
@@ -242,7 +268,10 @@ markdown.blockquote = (line str) (out markdown-quote) {
     }
 }
 
-; 解析 fenced code block 标记。
+; 解析 fenced code block 標記。
+; 開栅行 trim 後須以 3 個以上的反引號或波浪號開頭，後續文字作為語言標籤。
+; line str: 原始單行文字
+; out markdown-fence: yes 表示是栅欄行；marker 為 96（`）或 126（~）；width 為栅欄長度；info 為語言標籤，沒有時為空串
 ; [fence](#markdown.fence)
 markdown.fence = (line str) (out markdown-fence) {
     yes-v = false
@@ -275,7 +304,12 @@ markdown.fence = (line str) (out markdown-fence) {
     }
 }
 
-; 判断当前行是否关闭指定 fence。
+; 判斷當前行是否關閉指定 fence。
+; 與 CommonMark 一致：用同種 marker 且長度不小於開栅寬度（至少 3）才能關閉。
+; line str: 待判斷的單行文字
+; marker i64: 開栅的 marker byte（96 或 126）
+; width i64: 開栅的長度
+; yes bool: true 表示該行關閉目前的代碼塊
 ; [code-close](#markdown.code-close)
 markdown.code-close = (line str, marker i64, width i64) (yes bool) {
     yes = false
@@ -284,7 +318,10 @@ markdown.code-close = (line str, marker i64, width i64) (yes bool) {
     n >= width && n >= 3 -> yes = true
 }
 
-; 判断表格分隔行。
+; 判斷表格分隔行。
+; 以 '|' 切分後，每個單元格去掉 ':' 與 '-' 後必須為空，且至少要有一個單元格。
+; line str: 待判斷的單行文字（通常是表頭下一行）
+; yes bool: true 表示是 |---|:--:| 這類表格分隔行
 ; [table-separator](#markdown.table-separator)
 markdown.table-separator = (line str) (yes bool) {
     yes = true
@@ -305,7 +342,11 @@ markdown.table-separator = (line str) (yes bool) {
     }
 }
 
-; 将 | 分隔的行渲染为 tr。
+; 將 | 分隔的行渲染為 tr。
+; 自動去掉首尾的 '|'，每個單元格按行內語法渲染後包成 <tag>。
+; line str: 表格的單行文字
+; tag str: 單元格標籤名，表頭為 'th'、資料行為 'td'
+; out str: 完整的 <tr>…</tr>\n 片段
 ; [table-row](#markdown.table-row)
 markdown.table-row = (line str, tag str) (out str) {
     s = line.trim()
@@ -324,7 +365,10 @@ markdown.table-row = (line str, tag str) (out str) {
     out = out - '</tr>\n'
 }
 
-; 渲染 Markdown 行内语法。
+; 渲染 Markdown 行內語法。
+; 支援粗體、斜體、刪除線、行內代碼、鏈接、圖片、自動鏈接與反斜杠轉義；所有文字都經 HTML 轉義，未閉合的標記在結尾自動補齊關閉標籤。
+; s str: 單行內的 Markdown 文字（不要傳入塊級語法）
+; out str: 行內 HTML 片段（不含外層 <p>）
 ; [inline](#markdown.inline)
 markdown.inline = (s str) (out str) {
     result = ''
@@ -342,7 +386,7 @@ markdown.inline = (s str) (out str) {
             -> _
         }
 
-        ; 反斜杠转义 ASCII 标记。
+        ; 反斜杠轉義 ASCII 標記。
         #{overflow=wrap}
         c == 92 && i + 1 < n -> {
 
@@ -354,7 +398,7 @@ markdown.inline = (s str) (out str) {
             continue
         }
 
-        ; code span：取下一个反引号，不解析其中的 Markdown。
+        ; code span：取下一個反引號，不解析其中的 Markdown。
         c == 96 -> {
 
             #{overflow=wrap}
@@ -376,7 +420,7 @@ markdown.inline = (s str) (out str) {
             }
         }
 
-        ; 图片与链接，目标只允许普通 URL，属性始终转义。
+        ; 圖片與鏈接，目標只允許普通 URL，屬性始終轉義。
         #{overflow=wrap}
         c == 33 && i + 1 < n && s.byte(i + 1) == 91 -> {
 
@@ -473,7 +517,7 @@ markdown.inline = (s str) (out str) {
             }
         }
 
-        ; 自动链接 <http://...> / <https://...> / <mailto:...>。
+        ; 自動鏈接 <http://...> / <https://...> / <mailto:...>。
         c == 60 -> {
 
             #{overflow=wrap}
@@ -505,7 +549,7 @@ markdown.inline = (s str) (out str) {
             }
         }
 
-        ; 删除线、粗体、斜体。
+        ; 刪除線、粗體、斜體。
 
         #{overflow=wrap}
         c == 126 && i + 1 < n && s.byte(i + 1) == 126 -> {
@@ -579,7 +623,12 @@ markdown.inline = (s str) (out str) {
     out = result
 }
 
-; 追加一行到段落，专门处理硬换行。
+; 追加一行到段落，專門處理硬換行。
+; hard-break 為 true 時，行尾兩個空格視為 <br>，從內容中去除後以 '<br>\n' 連接。
+; paragraph str: 目前累積的段落文字（空串表示新段落）
+; line str: 追加的原始行；hard-break 時結尾必須有兩個空格
+; hard-break bool: true 表示該行末有兩個空格，需要插入硬換行
+; out str: 追加後的段落文字
 ; [join-paragraph](#markdown.join-paragraph)
 markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
     clean = line.trim()
@@ -592,7 +641,11 @@ markdown.join-paragraph = (paragraph str, line str, hard-break bool) (out str) {
     out = paragraph - separator - clean
 }
 
-; 输出代码块。
+; 輸出代碼塊。
+; info 非空時作為 class="language-<info>" 掛在 <code> 上，代碼內容全量 HTML 轉義。
+; code str: 栅欄內纍積的代碼正文（不含栅欄行）
+; info str: 栅欄行尾的語言標籤，空串表示無語言
+; out str: <pre><code…></code></pre>\n 片段
 ; [render-code](#markdown.render-code)
 markdown.render-code = (code str, info str) (out str) {
     class = ''
@@ -601,7 +654,11 @@ markdown.render-code = (code str, info str) (out str) {
     out = '<pre><code' - class - '>' - markdown.escape-html(code) - '</code></pre>\n'
 }
 
-; 从 byte 游标读取一行，避免对 []str 做不安全的动态索引。
+; 從 byte 游標讀取一行，避免對 []str 做不安全的動態索引。
+; 讀到 '\n' 或字串結尾為止，不包含換行符。
+; source str: 整份 Markdown 源文字
+; pos i64: 目前讀取位置（位元組偏移，從 0 開始）
+; out markdown-line: text=該行內容；next-pos=下一行起始偏移；valid=pos 是否落在 [0, len) 內
 ; [read-line](#markdown.read-line)
 markdown.read-line = (source str, pos i64) (out markdown-line) {
     line-v = ''
@@ -638,7 +695,10 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
     }
 }
 
-; 将 Markdown 文档渲染为 HTML。
+; 將 Markdown 文檔渲染為 HTML。
+; 先將 CRLF / CR 規範化為 LF，再逐行解析塊級語法（標題、列表、引用、代碼塊、表格、分隔線、段落）。
+; source str: 完整的 Markdown 源文字
+; out str: 完整的 HTML 文檔片段
 ; [to-html](#markdown.to-html)
 markdown.to-html = (source str) (out str) {
     result = ''
@@ -819,7 +879,7 @@ markdown.to-html = (source str) (out str) {
             list-kind = 0
         }
 
-        ; 对下一行做一次无副作用的 look-ahead，识别 Setext 标题和表格。
+        ; 對下一行做一次無副作用的 look-ahead，識别 Setext 標题和表格。
         hard-break-v = line.ends-with('  ')
         look-info markdown-line = markdown.read-line(normalized, pos)
         look-line = look-info.text
@@ -864,7 +924,7 @@ markdown.to-html = (source str) (out str) {
             pending = true
         }
 
-        ; 缩进四格代码块。
+        ; 縮進四格代碼塊。
         line.starts-with('    ') -> {
             paragraph.len-bytes() > 0 -> {
 
@@ -892,7 +952,9 @@ markdown.to-html = (source str) (out str) {
     out = result
 }
 
-; to-html 的语义别名。
+; to-html 的語義別名，輸出完全一致。
+; source str: 完整的 Markdown 源文字
+; out str: 完整的 HTML 文檔片段
 ; [render](#markdown.render)
 markdown.render = (source str) (out str) {
     out = markdown.to-html(source)

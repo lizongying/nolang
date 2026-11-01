@@ -1,3 +1,6 @@
+; 字串輸出參數：把輸入 x 搬到輸出 res（呼叫方變數重複賦值不得造成懸垂）
+; x str: 來源字串（只讀）
+; res str: 與 x 內容相同的字串
 foo = (x str) (res str) {
     res = x
     print(x)

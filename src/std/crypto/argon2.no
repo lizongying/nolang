@@ -34,15 +34,26 @@ ARGON2-MASK u64 = 18446744073709551615
 ; ═══════════════════════════════════════════════
 
 ; rotr64: 64-bit 循環右移
-; [rotr](#crypto.argon2.rotr)
+; x u64: 要旋轉的 64-bit 字
+; n i64: 右移位數（1–63；0 或 64 時移位未定義）
+; r u64: (x >> n) | (x << (64-n))，只保留低 64 位
+; [rotr](#argon2.rotr)
 rotr = (x u64, n i64) (r u64) {
 
     r = ((x >> n) | (x << (64 - n))) & ARGON2-MASK
 }
 
-; Blake2b G 函數（用於 Argon2 壓縮函數）
-; 操作 8 個 u64 值（索引 a..h 在 v 陣列中）
-; [blake-g](#crypto.argon2.blake-g)
+; Blake2b G 函數（Argon2 壓縮函數的基本混合步驟）
+; 直接原地修改 v 陣列中下標 a/b/c/d 的 64 位元字（兩兩相加、異或、旋轉）。
+; v []u64: 16 字工作區（Argon2 區塊），會被原地修改
+; a i64: 下標 a（0..15）
+; b i64: 下標 b
+; c i64: 下標 c
+; d i64: 下標 d
+; x u64: 保留參數（本實作未使用；混合所需的乘數由 v[a]/v[b] 的低 32 位即時算出）
+; y u64: 保留參數（本實作未使用）
+; 無返回值：結果留在 v[a]/v[b]/v[c]/v[d]
+; [blake-g](#argon2.blake-g)
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
     #{index-out=zero}
@@ -98,11 +109,11 @@ blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 ; 可變長度 Blake2b（H'）
 ; ═══════════════════════════════════════════════
 
-; 可變長度 Blake2b
-; input []byte: 輸入資料
-; out-len i64: 輸出長度
-; 返回 out []byte: 輸出雜湊
-; [h-prime](#crypto.argon2.h-prime)
+; 可變長度 Blake2b（H'）：Argon2 用它把區塊摘要擴展成任意長度的輸出
+; input []byte: 輸入資料（通常為 64 位元組的 Blake2b 摘要）
+; out-len i64: 期望的輸出位元組數；<=64 時只需一次 Blake2b
+; out []byte: 恰好 out-len 位元組的派生結果
+; [h-prime](#argon2.h-prime)
 h-prime = (input []byte, out-len i64) (out []byte) {
     out = with-cap(out-len)
 
@@ -256,10 +267,12 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 ; ═══════════════════════════════════════════════
 
 ; Argon2 壓縮函數 G(X, Y)
+; 先把 X XOR Y 寫入暫存 r，對 r 的每個 16-word 列與行各跑一輪 blake-g，
+; 最後把結果與原 r 再 XOR 一次寫回 out。
 ; x []byte: 1024 位元組區塊 X
 ; y []byte: 1024 位元組區塊 Y
-; 返回 out []byte: 1024 位元組結果
-; [compress](#crypto.argon2.compress)
+; 返回 out []byte: 1024 位元組壓縮結果
+; [compress](#argon2.compress)
 compress = (x []byte, y []byte) (out []byte) {
     out = with-len(1024)
 
@@ -391,15 +404,17 @@ compress = (x []byte, y []byte) (out []byte) {
 ; Argon2id 公開 API
 ; ═══════════════════════════════════════════════
 
-; Argon2id 金鑰推導
-; password []byte: 密碼
-; salt []byte: 鹽值
-; time-cost i64: 時間成本（迭代次數，如 3）
-; memory-cost i64: 記憶體成本（KB，如 4096 = 4MB）
-; parallelism i64: 並行度（如 1）
-; out-len i64: 輸出長度（位元組）
-; 返回 out []byte: 推導出的金鑰
-; [id](#crypto.argon2.id)
+; Argon2id 金鑰推導（RFC 9106，Argon2id v=0x13）
+; 先算區塊數 m（向下取整到 4*parallelism 的倍數，且至少 8*parallelism），
+; 初始化 h0 後逐 lane 填塊、跑 time-cost 輪混合，最後抽出 out-len 位元組。
+; password []byte: 密碼（UTF-8 位元組序列，可為空）
+; salt []byte: 鹽值，至少 8 位元組且每帳號不同
+; time-cost i64: 時間成本（迭代輪數，如 3）；越大越慢也越安全
+; memory-cost i64: 記憶體成本（KB，如 65536 = 64MB）；過小會被提升到 8*parallelism 塊
+; parallelism i64: 平行道數（如 1）；需 ≥ 1，且決定區塊數的取整粒度
+; out-len i64: 輸出金鑰長度（位元組，常見 32）
+; 返回 out []byte: 推導出的金鑰，長度恰為 out-len
+; [id](#argon2.id)
 id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism i64, out-len i64) (out []byte) {
 
     ; 計算記憶體區塊數

@@ -132,7 +132,7 @@ func TestStrFieldReadAfterSourceDropIsNotForwarded(t *testing.T) {
 // don't project in lvalueAddrOf) verifiably consistent.
 func TestStrMethodReceiverIsTheCloneSlot(t *testing.T) {
 	ir := strFieldLvalueIR(t, strFieldDropSrc)
-	cloneStore := regexp.MustCompile(`store %str-long %lc\d+, %str-long\*\s+(%v\d+\.s)`).FindStringSubmatch(ir)
+	cloneStore := regexp.MustCompile(`store %str-long %lc\.\d+, %str-long\*\s+(%v\d+\.s)`).FindStringSubmatch(ir)
 	if cloneStore == nil {
 		t.Fatalf("no `store %%str-long %%lc<N>, %%str-long* %%v<M>.s` — emitGetField did not "+
 			"clone the owned str field, so the probe shape is gone and every assertion "+
@@ -156,7 +156,7 @@ func TestStrMethodReceiverIsTheCloneSlot(t *testing.T) {
 // tests/path-clean-dotdot.no lose their writes silently.
 func TestStrFieldReadWhileSourceAliveStillForwards(t *testing.T) {
 	ir := strFieldLvalueIR(t, strFieldLiveSrc)
-	if got := strProbeReceiver(t, ir); !regexp.MustCompile(`^%lvg\d+$`).MatchString(got) {
+	if got := strProbeReceiver(t, ir); !regexp.MustCompile(`^%lvg\.\d+$`).MatchString(got) {
 		t.Errorf("@str_probe receiver = %s, want an lvalue projection (%%lvg<N>) — the "+
 			"source has not been dropped yet, so forwarding is still correct and "+
 			"required for write-through", got)
@@ -187,7 +187,7 @@ main = () {
     print(bump())
 }
 `)
-	if !regexp.MustCompile(`%lvg\d+ = getelementptr inbounds %holder\b`).MatchString(ir) {
+	if !regexp.MustCompile(`%lvg\.\d+ = getelementptr inbounds %holder\b`).MatchString(ir) {
 		t.Errorf("no lvalue projection for the i64 field: `x.n = 7` on a copied struct would " +
 			"write a temporary and the fix has over-reached")
 	}

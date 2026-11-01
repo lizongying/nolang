@@ -1108,7 +1108,7 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 		fw, fok := intWidth(fromT)
 		if fok {
 			c.loadSeq++
-			r := fmt.Sprintf("%%cv%d", c.loadSeq)
+			r := fmt.Sprintf("%%cv.%d", c.loadSeq)
 			if fw == 64 {
 				fmt.Fprintf(c.sb, "  %s = sitofp i64 %s to double\n", r, v)
 			} else {
@@ -1125,7 +1125,7 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 			return r
 		}
 		c.loadSeq++
-		r := fmt.Sprintf("%%cv%d", c.loadSeq)
+		r := fmt.Sprintf("%%cv.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = fptosi %s %s to %s\n", r, fromT, v, toT)
 		return r
 	}
@@ -1138,7 +1138,7 @@ func (c *codegen) coerceInt(v, fromT, toT string) string {
 		return v
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%cv%d", c.loadSeq)
+	r := fmt.Sprintf("%%cv.%d", c.loadSeq)
 	if fw > tw {
 		fmt.Fprintf(c.sb, "  %s = trunc %s %s to %s\n", r, fromT, v, toT)
 	} else if fromT == "i8" || fromT == "i1" {
@@ -1169,7 +1169,7 @@ func (c *codegen) emitFptSatReg(srcTy, srcVal, toLT string, unsig bool) string {
 		return ""
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%cv%d", c.loadSeq)
+	r := fmt.Sprintf("%%cv.%d", c.loadSeq)
 	if err := c.emitFptSat(r, srcTy, srcVal, toLT, unsig); err != nil {
 		return ""
 	}
@@ -1203,7 +1203,7 @@ func (c *codegen) coerceIndexElem(dst ValueID, fromT, v, toT string) string {
 		if ct := c.tyOf(src.Raw); ct != nil {
 			if conv := ty.Convert(ct, c.tyOf(toT)); conv == ty.ConvSExt || conv == ty.ConvZExt {
 				c.loadSeq++
-				r := fmt.Sprintf("%%cv%d", c.loadSeq)
+				r := fmt.Sprintf("%%cv.%d", c.loadSeq)
 				op := "zext"
 				if conv == ty.ConvSExt {
 					op = "sext"
@@ -1234,7 +1234,7 @@ func (c *codegen) coerceIntSigned(src ValueID, v, fromT, toT string) string {
 		tw, tok := intWidth(toT)
 		if tok && tw > 8 {
 			c.loadSeq++
-			r := fmt.Sprintf("%%cv%d", c.loadSeq)
+			r := fmt.Sprintf("%%cv.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = sext i8 %s to %s\n", r, v, toT)
 			return r
 		}
@@ -1271,10 +1271,10 @@ func (c *codegen) wrapIntToStorage(raw, v string) string {
 		return v
 	}
 	c.loadSeq++
-	t := fmt.Sprintf("%%cw%d", c.loadSeq)
+	t := fmt.Sprintf("%%cw.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i%d\n", t, v, w)
 	c.loadSeq++
-	e := fmt.Sprintf("%%cw%d", c.loadSeq)
+	e := fmt.Sprintf("%%cw.%d", c.loadSeq)
 	if isUnsignedRaw(raw) {
 		fmt.Fprintf(c.sb, "  %s = zext i%d %s to i64\n", e, w, t)
 	} else {
@@ -1328,7 +1328,7 @@ func (c *codegen) coerceIndex(idxSrc ValueID, idxT, idxV string) string {
 	switch idxT {
 	case "i8", "i1", "i16", "i32":
 		c.loadSeq++
-		r := fmt.Sprintf("%%izx%d", c.loadSeq)
+		r := fmt.Sprintf("%%izx.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = zext %s %s to i64\n", r, idxT, idxV)
 		return r
 	}
@@ -1683,32 +1683,32 @@ func (c *codegen) emitArithErrBox(optSlot, msgConst string, codeVal int64) {
 		return
 	}
 	c.loadSeq++
-	sa := fmt.Sprintf("%%erbx%d", c.loadSeq)
+	sa := fmt.Sprintf("%%erbx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca %s\n", sa, errLT)
 	c.loadSeq++
-	cg := fmt.Sprintf("%%ercg%d", c.loadSeq)
+	cg := fmt.Sprintf("%%ercg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", cg, errLT, errLT, sa)
 	fmt.Fprintf(c.sb, "  store i64 %d, i64* %s\n", codeVal, cg)
 	c.loadSeq++
-	mg := fmt.Sprintf("%%ermg%d", c.loadSeq)
+	mg := fmt.Sprintf("%%ermg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", mg, errLT, errLT, sa)
 	c.loadSeq++
-	mv := fmt.Sprintf("%%ermv%d", c.loadSeq)
+	mv := fmt.Sprintf("%%ermv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %%str-long, %%str-long* %s\n", mv, msgConst)
 	fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", mv, mg)
 	c.loadSeq++
-	fg := fmt.Sprintf("%%erfg%d", c.loadSeq)
+	fg := fmt.Sprintf("%%erfg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 2\n", fg, errLT, errLT, sa)
 	c.loadSeq++
-	fv := fmt.Sprintf("%%erfv%d", c.loadSeq)
+	fv := fmt.Sprintf("%%erfv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %%str-long, %%str-long* %s\n", fv, msgConst)
 	fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", fv, fg)
 	c.loadSeq++
-	lg := fmt.Sprintf("%%erlg%d", c.loadSeq)
+	lg := fmt.Sprintf("%%erlg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 3\n", lg, errLT, errLT, sa)
 	fmt.Fprintf(c.sb, "  store i64 0, i64* %s\n", lg)
 	c.loadSeq++
-	clg := fmt.Sprintf("%%erclg%d", c.loadSeq)
+	clg := fmt.Sprintf("%%erclg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 4\n", clg, errLT, errLT, sa)
 	fmt.Fprintf(c.sb, "  store i64 0, i64* %s\n", clg)
 	// Heap-box the struct (the err payload never fits the 24-byte slot) and
@@ -1798,7 +1798,7 @@ func (c *codegen) llvmTypeSizeUpper(lt string, visited map[string]bool) (int64, 
 // the option stored at optSlot (a `%option*`).
 func (c *codegen) optSlotAddr(optSlot string) string {
 	c.loadSeq++
-	r := fmt.Sprintf("%%osl%d", c.loadSeq)
+	r := fmt.Sprintf("%%osl.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 1\n", r, optSlot)
 	return r
 }
@@ -1806,10 +1806,10 @@ func (c *codegen) optSlotAddr(optSlot string) string {
 // optLoadTag loads the option's discriminant (field 0) out of optSlot.
 func (c *codegen) optLoadTag(optSlot string) string {
 	c.loadSeq++
-	tp := fmt.Sprintf("%%otp%d", c.loadSeq)
+	tp := fmt.Sprintf("%%otp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", tp, optSlot)
 	c.loadSeq++
-	t := fmt.Sprintf("%%otg%d", c.loadSeq)
+	t := fmt.Sprintf("%%otg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", t, tp)
 	return t
 }
@@ -1826,7 +1826,7 @@ func (c *codegen) optStoreTag(optSlot string, tag int64) {
 // selected at runtime (for example division by zero -> err).
 func (c *codegen) optStoreTagValue(optSlot, tagValue string) {
 	c.loadSeq++
-	addr := fmt.Sprintf("%%ots%d", c.loadSeq)
+	addr := fmt.Sprintf("%%ots.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%option, %%option* %s, i32 0, i32 0\n", addr, optSlot)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", tagValue, addr)
 }
@@ -1836,7 +1836,7 @@ func (c *codegen) optStoreTagValue(optSlot, tagValue string) {
 // call result, a load) but the payload must be addressed by pointer.
 func (c *codegen) optSpill(val string) string {
 	c.loadSeq++
-	s := fmt.Sprintf("%%ospi%d", c.loadSeq)
+	s := fmt.Sprintf("%%ospi.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca %%option\n", s)
 	fmt.Fprintf(c.sb, "  store %%option %s, %%option* %s\n", val, s)
 	return s
@@ -2392,17 +2392,17 @@ func (c *codegen) optPayloadAddrAs(optSlot, declaredLT, readLT string) string {
 	slotAddr := c.optSlotAddr(optSlot)
 	if c.optionPayloadInline(readLT) {
 		c.loadSeq++
-		r := fmt.Sprintf("%%opa%d", c.loadSeq)
+		r := fmt.Sprintf("%%opa.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", r, c.optSlotLT, slotAddr)
 		return r
 	}
 	// slot[0] holds the box pointer — as an i64, because the slot is typed
 	// [N x i64] so that N can follow the configured threshold.
 	c.loadSeq++
-	p0 := fmt.Sprintf("%%opp%d", c.loadSeq)
+	p0 := fmt.Sprintf("%%opp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", p0, c.optSlotLT, c.optSlotLT, slotAddr)
 	c.loadSeq++
-	bx := fmt.Sprintf("%%opb%d", c.loadSeq)
+	bx := fmt.Sprintf("%%opb.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", bx, p0)
 	// Which tag means "there is a box of THIS type in slot[0]". It is not one
 	// rule for every option: a box is allocated with sizeof(whatever was
@@ -2425,7 +2425,7 @@ func (c *codegen) optPayloadAddrAs(optSlot, declaredLT, readLT string) string {
 	// a bare `err()` with no message.
 	tg := c.optLoadTag(optSlot)
 	c.loadSeq++
-	hasTag := fmt.Sprintf("%%opk%d", c.loadSeq)
+	hasTag := fmt.Sprintf("%%opk.%d", c.loadSeq)
 	// errLT is the err variant's payload type — see the "option's err payload"
 	// block above. With the historical `str` err payload errLT is %str-long and
 	// this reproduces the old two cases exactly; with a structured err.err the
@@ -2450,20 +2450,20 @@ func (c *codegen) optPayloadAddrAs(optSlot, declaredLT, readLT string) string {
 		fmt.Fprintf(c.sb, "  %s = icmp eq i64 %s, 0\n", hasTag, tg)
 	}
 	c.loadSeq++
-	nz := fmt.Sprintf("%%opn%d", c.loadSeq)
+	nz := fmt.Sprintf("%%opn.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp ne i64 %s, 0\n", nz, bx)
 	c.loadSeq++
-	has := fmt.Sprintf("%%oph%d", c.loadSeq)
+	has := fmt.Sprintf("%%oph.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = and i1 %s, %s\n", has, hasTag, nz)
 	c.loadSeq++
-	bp := fmt.Sprintf("%%opq%d", c.loadSeq)
+	bp := fmt.Sprintf("%%opq.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", bp, bx)
 	// Zero stand-in for "nothing was boxed". %str-long is registered
 	// unconditionally because an err message can be read out of ANY option,
 	// including one whose declared element is a scalar.
 	zero := c.optBoxZero[readLT]
 	c.loadSeq++
-	zg := fmt.Sprintf("%%opz%d", c.loadSeq)
+	zg := fmt.Sprintf("%%opz.%d", c.loadSeq)
 	if zero == "" {
 		c.fail("internal: no zero-initializer global for boxed option payload %s", readLT)
 		fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", zg, c.optSlotLT, slotAddr)
@@ -2471,7 +2471,7 @@ func (c *codegen) optPayloadAddrAs(optSlot, declaredLT, readLT string) string {
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, ptr %s, i64 0\n", zg, readLT, zero)
 	}
 	c.loadSeq++
-	sel := fmt.Sprintf("%%opr%d", c.loadSeq)
+	sel := fmt.Sprintf("%%opr.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i8* %s, i8* %s\n", sel, has, bp, zg)
 	return sel
 }
@@ -2481,7 +2481,7 @@ func (c *codegen) optPayloadAddrAs(optSlot, declaredLT, readLT string) string {
 func (c *codegen) optStoreInlinePayload(optSlot, payloadLT, val string) {
 	slotAddr := c.optSlotAddr(optSlot)
 	c.loadSeq++
-	p := fmt.Sprintf("%%oip%d", c.loadSeq)
+	p := fmt.Sprintf("%%oip.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to %s*\n", p, c.optSlotLT, slotAddr, payloadLT)
 	fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", payloadLT, val, payloadLT, p)
 }
@@ -2492,7 +2492,7 @@ func (c *codegen) optStoreBoxedPayload(optSlot string, tag int64, payloadLT, src
 	c.optStoreTag(optSlot, tag)
 	sz := c.typeSizeOperand(payloadLT)
 	c.loadSeq++
-	m := fmt.Sprintf("%%obm%d", c.loadSeq)
+	m := fmt.Sprintf("%%obm.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", m, sz)
 	c.emitMemcpy(m, srcAddr, sz)
 	// A bitwise memcpy shares the source's heap-owned leaves (str buffers,
@@ -2512,10 +2512,10 @@ func (c *codegen) optStoreBoxedPayload(optSlot string, tag int64, payloadLT, src
 	// cloning twice (which would leak the first clone).
 	if key := c.structKeyOfLLVM(payloadLT); key != "" {
 		c.loadSeq++
-		boxAddr := fmt.Sprintf("%%obx%d", c.loadSeq)
+		boxAddr := fmt.Sprintf("%%obx.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", boxAddr, m, payloadLT)
 		c.loadSeq++
-		srcTyped := fmt.Sprintf("%%obs%d", c.loadSeq)
+		srcTyped := fmt.Sprintf("%%obs.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", srcTyped, srcAddr, payloadLT)
 		if c.mod.StructHasPtrFields(key) {
 			c.emitPtrFieldsClone(boxAddr, srcTyped, payloadLT, key, map[string]bool{})
@@ -2525,10 +2525,10 @@ func (c *codegen) optStoreBoxedPayload(optSlot string, tag int64, payloadLT, src
 		}
 	}
 	c.loadSeq++
-	pi := fmt.Sprintf("%%obn%d", c.loadSeq)
+	pi := fmt.Sprintf("%%obn.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", pi, m)
 	c.loadSeq++
-	w := fmt.Sprintf("%%obo%d", c.loadSeq)
+	w := fmt.Sprintf("%%obo.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%option { i64 %d, %s zeroinitializer }, i64 %s, 1, 0\n", w, tag, c.optSlotLT, pi)
 	fmt.Fprintf(c.sb, "  store %%option %s, %%option* %s\n", w, optSlot)
 }
@@ -2542,18 +2542,18 @@ func (c *codegen) addrOfValue(v ValueID, lt, val string) string {
 	}
 	if s := c.valSlot[v]; s != "" {
 		c.loadSeq++
-		r := fmt.Sprintf("%%adv%d", c.loadSeq)
+		r := fmt.Sprintf("%%adv.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", r, lt, s)
 		return r
 	}
 	c.loadSeq++
-	s := fmt.Sprintf("%%ads%d", c.loadSeq)
+	s := fmt.Sprintf("%%ads.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca %s\n", s, lt)
 	if val != "" {
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", lt, val, lt, s)
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%adv%d", c.loadSeq)
+	r := fmt.Sprintf("%%adv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", r, lt, s)
 	return r
 }
@@ -2596,7 +2596,7 @@ func (c *codegen) optStoreRawBytes(optSlot string, tag int64, srcLT string, src 
 	}
 	slotAddr := c.optSlotAddr(optSlot)
 	c.loadSeq++
-	dst := fmt.Sprintf("%%orb%d", c.loadSeq)
+	dst := fmt.Sprintf("%%orb.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", dst, c.optSlotLT, slotAddr)
 	c.emitMemcpy(dst, srcAddr, fmt.Sprintf("%d", n))
 }
@@ -2618,7 +2618,7 @@ func (c *codegen) optPayloadTypedAddr(optSlot, payloadLT, wantLT string) string 
 		return raw
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%opt%d", c.loadSeq)
+	r := fmt.Sprintf("%%opt.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %s*\n", r, raw, wantLT)
 	return r
 }
@@ -2633,13 +2633,13 @@ func (c *codegen) optReadPayloadInto(optSlot, payloadLT, dstLT, dstSlot string) 
 	addr := c.optPayloadTypedAddr(optSlot, payloadLT, dstLT)
 	if dstLT == payloadLT && c.shouldUseMemcpy(dstLT) {
 		c.loadSeq++
-		d := fmt.Sprintf("%%opd%d", c.loadSeq)
+		d := fmt.Sprintf("%%opd.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", d, dstLT, dstSlot)
 		c.emitMemcpy(d, addr, c.typeSizeOperand(dstLT))
 		return true
 	}
 	c.loadSeq++
-	v := fmt.Sprintf("%%opv%d", c.loadSeq)
+	v := fmt.Sprintf("%%opv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", v, dstLT, dstLT, addr)
 	fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot)
 	return true
@@ -2681,7 +2681,7 @@ func (c *codegen) cloneOptionPayloadInto(optSlot, payloadLT, dstSlot string) {
 // mid-block: emitting new basic blocks there breaks LLVM verification.
 func (c *codegen) optBoxClone(srcSlot, dstSlot, payloadLT string) {
 	c.loadSeq++
-	v := fmt.Sprintf("%%obc%d", c.loadSeq)
+	v := fmt.Sprintf("%%obc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %%option, %%option* %s\n", v, srcSlot)
 	fmt.Fprintf(c.sb, "  store %%option %s, %%option* %s\n", v, dstSlot)
 	name, ok := c.optBoxRebox[payloadLT]
@@ -2916,14 +2916,14 @@ func (c *codegen) emitOverflowIntrinsic(unsigned bool, kind, lt, aV, bV string) 
 	}
 	tuple := fmt.Sprintf("{ %s, i1 }", lt)
 	c.loadSeq++
-	res := fmt.Sprintf("%%ovr%d", c.loadSeq)
+	res := fmt.Sprintf("%%ovr.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call %s @llvm.%s%s.with.overflow.%s(%s %s, %s %s)\n",
 		res, tuple, prefix, kind, lt, lt, aV, lt, bV)
 	c.loadSeq++
-	val := fmt.Sprintf("%%ovv%d", c.loadSeq)
+	val := fmt.Sprintf("%%ovv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", val, tuple, res)
 	c.loadSeq++
-	ovf := fmt.Sprintf("%%ovf%d", c.loadSeq)
+	ovf := fmt.Sprintf("%%ovf.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 1\n", ovf, tuple, res)
 	return val, ovf
 }
@@ -5197,7 +5197,7 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 			// KindFunc-argument branch), matching the by-reference fn param ABI.
 			if slot := c.valSlot[v]; slot != "" {
 				c.loadSeq++
-				reg := fmt.Sprintf("%%fnlv%d", c.loadSeq)
+				reg := fmt.Sprintf("%%fnlv.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", reg, fnLT, fnLT, slot)
 				return fnLT, reg
 			}
@@ -5288,16 +5288,16 @@ func (c *codegen) loadVal(v ValueID) (string, string) {
 	// 根因）。以槽位寬度載入、再零/符號擴展到值的型別。
 	if slt := c.valSlotLT[v]; slt != "" && slt != lt && isIntType(slt) && isIntType(lt) {
 		c.loadSeq++
-		nr := fmt.Sprintf("%%lvn%d", c.loadSeq)
+		nr := fmt.Sprintf("%%lvn.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", nr, slt, slt, slot)
 		c.loadSeq++
-		reg := fmt.Sprintf("%%lv%d", c.loadSeq)
+		reg := fmt.Sprintf("%%lv.%d", c.loadSeq)
 		op := intSlotCastOp(slt, lt, c.rawTypeOfValue(v))
 		fmt.Fprintf(c.sb, "  %s = %s %s %s to %s\n", reg, op, slt, nr, lt)
 		return lt, reg
 	}
 	c.loadSeq++
-	reg := fmt.Sprintf("%%lv%d", c.loadSeq)
+	reg := fmt.Sprintf("%%lv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", reg, lt, lt, slot)
 	return lt, reg
 }
@@ -5316,15 +5316,15 @@ func (c *codegen) enumTagOf(v, enumLT string) string {
 	// value, so extractvalue is not applicable — GEP field 0 and load.
 	if c.shouldUseMemcpy(enumLT) {
 		c.loadSeq++
-		gp := fmt.Sprintf("%%etg%d", c.loadSeq)
+		gp := fmt.Sprintf("%%etg.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", gp, enumLT, enumLT, v)
 		c.loadSeq++
-		r := fmt.Sprintf("%%et%d", c.loadSeq)
+		r := fmt.Sprintf("%%et.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", r, gp)
 		return r
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%et%d", c.loadSeq)
+	r := fmt.Sprintf("%%et.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", r, enumLT, v)
 	return r
 }
@@ -5335,15 +5335,15 @@ func (c *codegen) optionTag(v, optLT string) string {
 	// tag) and load the i64 directly.
 	if c.shouldUseMemcpy(optLT) {
 		c.loadSeq++
-		gp := fmt.Sprintf("%%otg%d", c.loadSeq)
+		gp := fmt.Sprintf("%%otg.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", gp, optLT, optLT, v)
 		c.loadSeq++
-		r := fmt.Sprintf("%%ot%d", c.loadSeq)
+		r := fmt.Sprintf("%%ot.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", r, gp)
 		return r
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%ot%d", c.loadSeq)
+	r := fmt.Sprintf("%%ot.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", r, optLT, v)
 	return r
 }
@@ -5371,7 +5371,7 @@ func (c *codegen) optionPayloadOf(src ValueID, val, optLT string) (string, strin
 		return addr, payload
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%op%d", c.loadSeq)
+	r := fmt.Sprintf("%%op.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", r, payload, payload, addr)
 	return r, payload
 }
@@ -5588,7 +5588,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 		arrSlot := c.valSlot[src]
 		if arrSlot == "" {
 			c.loadSeq++
-			arrSlot = fmt.Sprintf("%%owa%d", c.loadSeq)
+			arrSlot = fmt.Sprintf("%%owa.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = alloca %s\n", arrSlot, svType)
 			fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", svType, sv, svType, arrSlot)
 		}
@@ -5847,7 +5847,7 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	zeroDiv := ""
 	if !isFloat && (inst.Op == OpDiv || inst.Op == OpMod || inst.Op == OpUDiv || inst.Op == OpUMod) {
 		c.loadSeq++
-		zeroDiv = fmt.Sprintf("%%dz%d", c.loadSeq)
+		zeroDiv = fmt.Sprintf("%%dz.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = icmp eq %s %s, 0\n", zeroDiv, resLT, bV)
 		badDiv = zeroDiv
 		// `sdiv`/`srem` with (MIN, -1) is UB for the same reason (the result is
@@ -5858,21 +5858,21 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 		if inst.Op == OpDiv || inst.Op == OpMod {
 			if minLit, ok := intMinLiteral(resLT); ok {
 				c.loadSeq++
-				isMin := fmt.Sprintf("%%dmn%d", c.loadSeq)
+				isMin := fmt.Sprintf("%%dmn.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = icmp eq %s %s, %s\n", isMin, resLT, aV, minLit)
 				c.loadSeq++
-				isNeg1 := fmt.Sprintf("%%dn1%d", c.loadSeq)
+				isNeg1 := fmt.Sprintf("%%dn1.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = icmp eq %s %s, -1\n", isNeg1, resLT, bV)
 				c.loadSeq++
-				both := fmt.Sprintf("%%db%d", c.loadSeq)
+				both := fmt.Sprintf("%%db.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = and i1 %s, %s\n", both, isMin, isNeg1)
 				c.loadSeq++
-				badDiv = fmt.Sprintf("%%dall%d", c.loadSeq)
+				badDiv = fmt.Sprintf("%%dall.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = or i1 %s, %s\n", badDiv, zeroDiv, both)
 			}
 		}
 		c.loadSeq++
-		safeDivisor := fmt.Sprintf("%%ds%d", c.loadSeq)
+		safeDivisor := fmt.Sprintf("%%ds.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = select i1 %s, %s 1, %s %s\n", safeDivisor, badDiv, resLT, resLT, bV)
 		bV = safeDivisor
 		if wrapResult {
@@ -5923,11 +5923,11 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			// The two write DIFFERENT slot layouts (a box pointer vs the inline
 			// scalar), so they must be separate basic blocks, not a select.
 			c.loadSeq++
-			ebb := fmt.Sprintf("arerr%d", c.loadSeq)
+			ebb := fmt.Sprintf("arerr.%d", c.loadSeq)
 			c.loadSeq++
-			aok := fmt.Sprintf("arok%d", c.loadSeq)
+			aok := fmt.Sprintf("arok.%d", c.loadSeq)
 			c.loadSeq++
-			adone := fmt.Sprintf("ardone%d", c.loadSeq)
+			adone := fmt.Sprintf("ardone.%d", c.loadSeq)
 			// The ok-store (tag 0 + inline result) belongs to the NON-error
 			// branch ONLY. The merge block (adone) must NOT touch the slot,
 			// otherwise it unconditionally overwrites the err (tag 2) payload
@@ -5955,7 +5955,7 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 		outV := resVal
 		if zeroDiv != "" {
 			c.loadSeq++
-			zr := fmt.Sprintf("%%dzr%d", c.loadSeq)
+			zr := fmt.Sprintf("%%dzr.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, %s 0, %s %s\n", zr, zeroDiv, resLT, resLT, outV)
 			outV = zr
 			c.sb.WriteString("  " + c.divZeroReport(zeroDiv) + "\n")
@@ -6005,7 +6005,7 @@ func (c *codegen) emitNeg(inst *Inst) error {
 		c.optStoreTag(slot, 0)
 		if errCond != "" {
 			c.loadSeq++
-			errTag := fmt.Sprintf("%%de%d", c.loadSeq)
+			errTag := fmt.Sprintf("%%de.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond)
 			c.optStoreTagValue(slot, errTag)
 		}
@@ -6407,24 +6407,24 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		bSlot := c.valSlot[inst.Args[1]]
 		// bitcast both array slots to i8*
 		c.loadSeq++
-		bcA := fmt.Sprintf("%%ac%d", c.loadSeq)
+		bcA := fmt.Sprintf("%%ac.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", bcA, aT, aSlot)
 		c.loadSeq++
-		bcB := fmt.Sprintf("%%bc%d", c.loadSeq)
+		bcB := fmt.Sprintf("%%bc.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to i8*\n", bcB, bT, bSlot)
 		// size = sizeof(aT) via GEP
 		c.loadSeq++
-		endPtr := fmt.Sprintf("%%ae%d", c.loadSeq)
+		endPtr := fmt.Sprintf("%%ae.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr %s, %s* null, i64 1\n", endPtr, aT, aT)
 		c.loadSeq++
-		szInt := fmt.Sprintf("%%as%d", c.loadSeq)
+		szInt := fmt.Sprintf("%%as.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = ptrtoint %s* %s to i64\n", szInt, aT, endPtr)
 		// memcmp(a, b, size) == 0 means equal
 		c.loadSeq++
-		mr := fmt.Sprintf("%%am%d", c.loadSeq)
+		mr := fmt.Sprintf("%%am.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call i32 @memcmp(i8* %s, i8* %s, i64 %s)\n", mr, bcA, bcB, szInt)
 		c.loadSeq++
-		eqR := fmt.Sprintf("%%aq%d", c.loadSeq)
+		eqR := fmt.Sprintf("%%aq.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = icmp eq i32 %s, 0\n", eqR, mr)
 		if inst.Op == OpNe {
 			fmt.Fprintf(c.sb, "  %%c%d = xor i1 %s, true\n", inst.Dst, eqR)
@@ -6567,7 +6567,7 @@ func isUnsignedRaw(raw string) bool {
 // bring a string/int comparison onto a common %str-long type.
 func (c *codegen) emitIntToStr(v, t string) string {
 	c.loadSeq++
-	r := fmt.Sprintf("%%cis%d", c.loadSeq)
+	r := fmt.Sprintf("%%cis.%d", c.loadSeq)
 	if t == "i8" || t == "u8" {
 		fmt.Fprintf(c.sb, "  %s = call %s @str_from_char(i8 %s)\n", r, "%str-long", v)
 		return r
@@ -6627,7 +6627,7 @@ func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
 		// for the call, the variable is not reinterpreted.
 		av := c.zextCharToI64(v, vT)
 		c.loadSeq++
-		r := fmt.Sprintf("%%ccp%d", c.loadSeq)
+		r := fmt.Sprintf("%%ccp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_cp(i64 %s)\n", r, av)
 		return r
 	}
@@ -6640,7 +6640,7 @@ func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
 			fn = "@str_from_u128"
 		}
 		c.loadSeq++
-		r := fmt.Sprintf("%%ci128%d", c.loadSeq)
+		r := fmt.Sprintf("%%ci128.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %%str-long %s(i128 %s)\n", r, fn, v)
 		return r
 	}
@@ -6655,7 +6655,7 @@ func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
 func (c *codegen) zextCharToI64(v, vT string) string {
 	if vT == "i32" {
 		c.loadSeq++
-		r := fmt.Sprintf("%%czx%d", c.loadSeq)
+		r := fmt.Sprintf("%%czx.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = zext i32 %s to i64\n", r, v)
 		return r
 	}
@@ -6756,7 +6756,7 @@ func (c *codegen) emitBitwise(inst *Inst) error {
 		c.optStoreTag(slot, 0)
 		if errCond != "" {
 			c.loadSeq++
-			errTag := fmt.Sprintf("%%de%d", c.loadSeq)
+			errTag := fmt.Sprintf("%%de.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond)
 			c.optStoreTagValue(slot, errTag)
 		}
@@ -6954,13 +6954,13 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 	case "%str-long":
 		// Inline %str-long payload: free its heap data buffer (field 2).
 		c.loadSeq++
-		pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
+		pl := fmt.Sprintf("%%optpl.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %%str-long*\n", pl, c.optPayloadAddr(slot, "%str-long"))
 		c.loadSeq++
-		pv := fmt.Sprintf("%%optpv%d", c.loadSeq)
+		pv := fmt.Sprintf("%%optpv.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %%str-long, %%str-long* %s\n", pv, pl)
 		c.loadSeq++
-		pd := fmt.Sprintf("%%optpd%d", c.loadSeq)
+		pd := fmt.Sprintf("%%optpd.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", pd, pv)
 		fmt.Fprintf(c.sb, "  call void @nolang_free(i8* %s)\n", pd)
 	case "%vec":
@@ -6983,10 +6983,10 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 		// Measured: freeing the element unconditionally SIGTRAP'd
 		// `tests/mem-safety/nested-container-clone.no`; see vecDeepFree.
 		c.loadSeq++
-		pl := fmt.Sprintf("%%optpl%d", c.loadSeq)
+		pl := fmt.Sprintf("%%optpl.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast i8* %s to %%vec*\n", pl, c.optPayloadAddr(slot, "%vec"))
 		c.loadSeq++
-		pv := fmt.Sprintf("%%optpv%d", c.loadSeq)
+		pv := fmt.Sprintf("%%optpv.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %%vec, %%vec* %s\n", pv, pl)
 		if et := c.sliceElemTypeOfRaw(elemRaw); et != NoType && c.vecElemNeedsDeepFree(et) {
 			if fn := c.vecDeepFree(et, 0); fn != "" {
@@ -7500,7 +7500,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 			arrSlot := c.valSlot[src]
 			if arrSlot == "" {
 				c.loadSeq++
-				arrSlot = fmt.Sprintf("%%mva%d", c.loadSeq)
+				arrSlot = fmt.Sprintf("%%mva.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = alloca %s\n", arrSlot, srcT)
 				fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", srcT, sv, srcT, arrSlot)
 			}
@@ -7549,10 +7549,10 @@ func (c *codegen) emitMove(inst *Inst) error {
 		if payloadLT == "%str-long" && dstT == "%str-long" {
 			addr := c.optPayloadTypedAddr(optSlot, payloadLT, "%str-long")
 			c.loadSeq++
-			u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+			u1 := fmt.Sprintf("%%mvu.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = load %%str-long, %%str-long* %s\n", u1, addr)
 			c.loadSeq++
-			cl := fmt.Sprintf("%%mvucl%d", c.loadSeq)
+			cl := fmt.Sprintf("%%mvucl.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1)
 			fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", cl, dstSlot)
 			return nil
@@ -7576,10 +7576,10 @@ func (c *codegen) emitMove(inst *Inst) error {
 			if fn := c.vecDeepClone(c.optSliceElemType(inst.Args[0]), 0); fn != "" {
 				addr := c.optPayloadTypedAddr(optSlot, payloadLT, "%vec")
 				c.loadSeq++
-				u1 := fmt.Sprintf("%%mvv%d", c.loadSeq)
+				u1 := fmt.Sprintf("%%mvv.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = load %%vec, %%vec* %s\n", u1, addr)
 				c.loadSeq++
-				cl := fmt.Sprintf("%%mvvc%d", c.loadSeq)
+				cl := fmt.Sprintf("%%mvvc.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = call %%vec %s(%%vec %s)\n", cl, fn, u1)
 				fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", cl, dstSlot)
 				return nil
@@ -7610,7 +7610,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 					// the same trick emitLeafFieldsClone uses for an inline
 					// struct payload.
 					c.loadSeq++
-					ep := fmt.Sprintf("%%mvep%d", c.loadSeq)
+					ep := fmt.Sprintf("%%mvep.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to %s*\n", ep, dstT, dstSlot, dstT)
 					c.emitErrContentClone(c.sb, ep, ep)
 				case dstT == payloadLT:
@@ -7630,10 +7630,10 @@ func (c *codegen) emitMove(inst *Inst) error {
 					// makes every std call that returns `err(...)` fatal once
 					// options own their payload.
 					c.loadSeq++
-					u1 := fmt.Sprintf("%%mve%d", c.loadSeq)
+					u1 := fmt.Sprintf("%%mve.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = load %%str-long, %%str-long* %s\n", u1, dstSlot)
 					c.loadSeq++
-					cl := fmt.Sprintf("%%mvec%d", c.loadSeq)
+					cl := fmt.Sprintf("%%mvec.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %%str-long @str_clone(%%str-long %s)\n", cl, u1)
 					fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", cl, dstSlot)
 				}
@@ -7646,7 +7646,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 		// `?byte` family).
 		addr := c.optPayloadTypedAddr(optSlot, payloadLT, payloadLT)
 		c.loadSeq++
-		u1 := fmt.Sprintf("%%mvu%d", c.loadSeq)
+		u1 := fmt.Sprintf("%%mvu.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", u1, payloadLT, payloadLT, addr)
 		if cv := c.coerce(payloadLT, u1, dstT); cv != "" {
 			fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstT, cv, dstT, dstSlot)
@@ -7656,7 +7656,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 		// option): store through a bitcast pointer. Only the tag is ever read
 		// at runtime.
 		c.loadSeq++
-		bc := fmt.Sprintf("%%mvub%d", c.loadSeq)
+		bc := fmt.Sprintf("%%mvub.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast %s* %s to %s*\n", bc, dstT, dstSlot, payloadLT)
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", payloadLT, u1, payloadLT, bc)
 		return nil
@@ -7737,7 +7737,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// 再零/符號擴展到 dstT。
 	if slt := c.valSlotLT[inst.Args[0]]; slt != "" && slt != dstT && isIntType(slt) && isIntType(dstT) {
 		c.loadSeq++
-		nr := fmt.Sprintf("%%mvn%d", c.loadSeq)
+		nr := fmt.Sprintf("%%mvn.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", nr, slt, slt, srcSlot)
 		op := intSlotCastOp(slt, dstT, c.rawTypeOfValue(inst.Args[0]))
 		c.loadSeq++
@@ -8534,7 +8534,7 @@ func (c *codegen) typeSizeOperand(lt string) string {
 		return fmt.Sprintf("%d", n)
 	}
 	c.loadSeq++
-	r := fmt.Sprintf("%%tsz%d", c.loadSeq)
+	r := fmt.Sprintf("%%tsz.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", r, lt)
 	return r
 }
@@ -8806,7 +8806,7 @@ func (c *codegen) emitAllocPointee(lt string) string {
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	sz := c.typeSizeOperand(lt)
 	c.loadSeq++
-	buf := fmt.Sprintf("%%pa%d", c.loadSeq)
+	buf := fmt.Sprintf("%%pa.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sz)
 	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sz)
 	return buf
@@ -8920,7 +8920,7 @@ func (c *codegen) allocBytesOperand(capV, elemLT string) string {
 	}
 	sz := c.typeSizeOperand(elemLT)
 	c.loadSeq++
-	r := fmt.Sprintf("%%basz%d", c.loadSeq)
+	r := fmt.Sprintf("%%basz.%d", c.loadSeq)
 	if ok {
 		fmt.Fprintf(c.sb, "  %s = mul i64 %s, %d\n", r, capV, n)
 	} else {
@@ -8984,7 +8984,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 
 	// The store needs room for element idxV, i.e. idxV+1 elements.
 	c.loadSeq++
-	needReg := fmt.Sprintf("%%vbneed%d", c.loadSeq)
+	needReg := fmt.Sprintf("%%vbneed.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = add i64 %s, 1\n", needReg, idxV)
 
 	// Fresh-allocation size (case 1): the legacy default capacity, but never
@@ -8992,45 +8992,45 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	// vec must land INSIDE the fresh buffer, and the cap stored in the alloc
 	// block below must cover it (case 2 grows further on subsequent writes).
 	c.loadSeq++
-	needGtCap := fmt.Sprintf("%%vbngc%d", c.loadSeq)
+	needGtCap := fmt.Sprintf("%%vbngc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %d\n", needGtCap, needReg, vecDefaultCap)
 	c.loadSeq++
-	allocElems := fmt.Sprintf("%%vbae%d", c.loadSeq)
+	allocElems := fmt.Sprintf("%%vbae.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %d\n", allocElems, needGtCap, needReg, vecDefaultCap)
 	c.loadSeq++
-	sizeReg := fmt.Sprintf("%%vbsz%d", c.loadSeq)
+	sizeReg := fmt.Sprintf("%%vbsz.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = mul i64 %s, %s\n", sizeReg, elemSz, allocElems)
 
 	// Load data (field 2) and cap (field 1) once, in the entry block, so both
 	// dominate every branch below.
 	c.loadSeq++
-	dg := fmt.Sprintf("%%vbdg%d", c.loadSeq)
+	dg := fmt.Sprintf("%%vbdg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dg, arrSlot)
 	c.loadSeq++
-	di := fmt.Sprintf("%%vbdi%d", c.loadSeq)
+	di := fmt.Sprintf("%%vbdi.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", di, dg)
 	c.loadSeq++
-	cg := fmt.Sprintf("%%vbcg%d", c.loadSeq)
+	cg := fmt.Sprintf("%%vbcg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", cg, arrSlot)
 	c.loadSeq++
-	ci := fmt.Sprintf("%%vbci%d", c.loadSeq)
+	ci := fmt.Sprintf("%%vbci.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", ci, cg)
 
 	c.loadSeq++
-	isnull := fmt.Sprintf("%%vbnull%d", c.loadSeq)
+	isnull := fmt.Sprintf("%%vbnull.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp eq i64 %s, 0\n", isnull, di)
 
 	c.loadSeq++
-	lAlloc := fmt.Sprintf("vbA%d", c.loadSeq)
-	lCheck := fmt.Sprintf("vbC%d", c.loadSeq)
-	lGrow := fmt.Sprintf("vbG%d", c.loadSeq)
-	lDone := fmt.Sprintf("vbD%d", c.loadSeq)
+	lAlloc := fmt.Sprintf("vbA.%d", c.loadSeq)
+	lCheck := fmt.Sprintf("vbC.%d", c.loadSeq)
+	lGrow := fmt.Sprintf("vbG.%d", c.loadSeq)
+	lDone := fmt.Sprintf("vbD.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lCheck)
 
 	// alloc block (case 1): malloc the default buffer, store data + cap.
 	fmt.Fprintf(c.sb, "%s:\n", lAlloc)
 	c.loadSeq++
-	buf := fmt.Sprintf("%%vbbuf%d", c.loadSeq)
+	buf := fmt.Sprintf("%%vbbuf.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg)
 	// Zero it for the same reason as emitBuiltinAlloc: the elements are owned
 	// (e.g. []str), so the first `a[i] = v` drops the previous element and a
@@ -9038,7 +9038,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sizeReg)
 	c.loadSeq++
-	ptri := fmt.Sprintf("%%vbptri%d", c.loadSeq)
+	ptri := fmt.Sprintf("%%vbptri.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", ptri, buf)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ptri, dg)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", allocElems, cg)
@@ -9048,16 +9048,16 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	// the write is silently lost (the "未分配 vec option 写丢失" class). Lift len to
 	// at least idxV+1 (needReg) so the slot the caller just wrote is in range.
 	c.loadSeq++
-	llg := fmt.Sprintf("%%vbllg%d", c.loadSeq)
+	llg := fmt.Sprintf("%%vbllg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", llg, arrSlot)
 	c.loadSeq++
-	cl := fmt.Sprintf("%%vbcl%d", c.loadSeq)
+	cl := fmt.Sprintf("%%vbcl.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", cl, llg)
 	c.loadSeq++
-	lge := fmt.Sprintf("%%vblge%d", c.loadSeq)
+	lge := fmt.Sprintf("%%vblge.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", lge, needReg, cl)
 	c.loadSeq++
-	lmx := fmt.Sprintf("%%vblmx%d", c.loadSeq)
+	lmx := fmt.Sprintf("%%vblmx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", lmx, lge, needReg, cl)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", lmx, llg)
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
@@ -9080,13 +9080,13 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	// request a petabyte from malloc.
 	fmt.Fprintf(c.sb, "%s:\n", lCheck)
 	c.loadSeq++
-	posCap := fmt.Sprintf("%%vbpc%d", c.loadSeq)
+	posCap := fmt.Sprintf("%%vbpc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, 0\n", posCap, ci)
 	c.loadSeq++
-	full0 := fmt.Sprintf("%%vbfull%d", c.loadSeq)
+	full0 := fmt.Sprintf("%%vbfull.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", full0, needReg, ci)
 	c.loadSeq++
-	full := fmt.Sprintf("%%vbfull%d", c.loadSeq)
+	full := fmt.Sprintf("%%vbfull.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = and i1 %s, %s\n", full, posCap, full0)
 	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", full, lGrow, lDone)
 
@@ -9097,46 +9097,46 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	// only the current (new) data pointer.
 	fmt.Fprintf(c.sb, "%s:\n", lGrow)
 	c.loadSeq++
-	dbl := fmt.Sprintf("%%vbdbl%d", c.loadSeq)
+	dbl := fmt.Sprintf("%%vbdbl.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = mul i64 %s, 2\n", dbl, ci)
 	c.loadSeq++
-	over := fmt.Sprintf("%%vbov%d", c.loadSeq)
+	over := fmt.Sprintf("%%vbov.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", over, dbl, needReg)
 	c.loadSeq++
-	n1 := fmt.Sprintf("%%vbn1%d", c.loadSeq)
+	n1 := fmt.Sprintf("%%vbn1.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", n1, over, dbl, needReg)
 	c.loadSeq++
-	small := fmt.Sprintf("%%vbsm%d", c.loadSeq)
+	small := fmt.Sprintf("%%vbsm.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp slt i64 %s, %d\n", small, n1, vecMinCap)
 	c.loadSeq++
-	newCap := fmt.Sprintf("%%vbnc%d", c.loadSeq)
+	newCap := fmt.Sprintf("%%vbnc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %d, i64 %s\n", newCap, small, vecMinCap, n1)
 	c.loadSeq++
-	gsz := fmt.Sprintf("%%vbgsz%d", c.loadSeq)
+	gsz := fmt.Sprintf("%%vbgsz.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = mul i64 %s, %s\n", gsz, newCap, elemSz)
 	c.loadSeq++
-	gbuf := fmt.Sprintf("%%vbgbuf%d", c.loadSeq)
+	gbuf := fmt.Sprintf("%%vbgbuf.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", gbuf, gsz)
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", gbuf, gsz)
 	// Copy min(len, cap) elements — never more than the old buffer holds.
 	c.loadSeq++
-	lg := fmt.Sprintf("%%vblg%d", c.loadSeq)
+	lg := fmt.Sprintf("%%vblg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lg, arrSlot)
 	c.loadSeq++
-	li := fmt.Sprintf("%%vbli%d", c.loadSeq)
+	li := fmt.Sprintf("%%vbli.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", li, lg)
 	c.loadSeq++
-	lenOver := fmt.Sprintf("%%vblo%d", c.loadSeq)
+	lenOver := fmt.Sprintf("%%vblo.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", lenOver, li, ci)
 	c.loadSeq++
-	copyN := fmt.Sprintf("%%vbcn%d", c.loadSeq)
+	copyN := fmt.Sprintf("%%vbcn.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", copyN, lenOver, ci, li)
 	c.loadSeq++
-	cbytes := fmt.Sprintf("%%vbcb%d", c.loadSeq)
+	cbytes := fmt.Sprintf("%%vbcb.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = mul i64 %s, %s\n", cbytes, copyN, elemSz)
 	c.loadSeq++
-	oldp := fmt.Sprintf("%%vbop%d", c.loadSeq)
+	oldp := fmt.Sprintf("%%vbop.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", oldp, di)
 	c.decl("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)")
 	fmt.Fprintf(c.sb, "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", gbuf, oldp, cbytes)
@@ -9148,7 +9148,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	// read, which is what makes this call a safe release. See emitBuiltinVecPush.
 	fmt.Fprintf(c.sb, "  call void @nolang_free(i8* %s)\n", oldp)
 	c.loadSeq++
-	ptri2 := fmt.Sprintf("%%vbpti%d", c.loadSeq)
+	ptri2 := fmt.Sprintf("%%vbpti.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", ptri2, gbuf)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ptri2, dg)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", newCap, cg)
@@ -9188,45 +9188,45 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 
 	// need = idxV + 1 bytes at minimum.
 	c.loadSeq++
-	needReg := fmt.Sprintf("%%slbn%d", c.loadSeq)
+	needReg := fmt.Sprintf("%%slbn.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = add i64 %s, 1\n", needReg, idxV)
 
 	// Load data (field 2) and cap (field 1) once so they dominate every branch
 	// below.
 	c.loadSeq++
-	dg := fmt.Sprintf("%%slbdg%d", c.loadSeq)
+	dg := fmt.Sprintf("%%slbdg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dg, arrSlot)
 	c.loadSeq++
-	di := fmt.Sprintf("%%slbdi%d", c.loadSeq)
+	di := fmt.Sprintf("%%slbdi.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i8*, i8** %s\n", di, dg)
 	c.loadSeq++
-	cg := fmt.Sprintf("%%slbcg%d", c.loadSeq)
+	cg := fmt.Sprintf("%%slbcg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", cg, arrSlot)
 	c.loadSeq++
-	ci := fmt.Sprintf("%%slbci%d", c.loadSeq)
+	ci := fmt.Sprintf("%%slbci.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", ci, cg)
 
 	// null data -> allocate (case 1); non-null -> check for growth (case 2).
 	c.loadSeq++
-	isnull := fmt.Sprintf("%%slbnl%d", c.loadSeq)
+	isnull := fmt.Sprintf("%%slbnl.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp eq i8* %s, null\n", isnull, di)
 	c.loadSeq++
-	lAlloc := fmt.Sprintf("slbA%d", c.loadSeq)
-	lCheck := fmt.Sprintf("slbC%d", c.loadSeq)
-	lGrow := fmt.Sprintf("slbG%d", c.loadSeq)
-	lDone := fmt.Sprintf("slbD%d", c.loadSeq)
+	lAlloc := fmt.Sprintf("slbA.%d", c.loadSeq)
+	lCheck := fmt.Sprintf("slbC.%d", c.loadSeq)
+	lGrow := fmt.Sprintf("slbG.%d", c.loadSeq)
+	lDone := fmt.Sprintf("slbD.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lCheck)
 
 	// alloc block (case 1): malloc max(default, need), store data + cap.
 	fmt.Fprintf(c.sb, "%s:\n", lAlloc)
 	c.loadSeq++
-	overDefault := fmt.Sprintf("%%slbo%d", c.loadSeq)
+	overDefault := fmt.Sprintf("%%slbo.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %d\n", overDefault, needReg, strDefaultCap)
 	c.loadSeq++
-	sizeReg := fmt.Sprintf("%%slbs%d", c.loadSeq)
+	sizeReg := fmt.Sprintf("%%slbs.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %d\n", sizeReg, overDefault, needReg, strDefaultCap)
 	c.loadSeq++
-	buf := fmt.Sprintf("%%slbbuf%d", c.loadSeq)
+	buf := fmt.Sprintf("%%slbbuf.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg)
 	// Zero it: the bytes are owned, so a fresh buffer starts clean exactly like
 	// the vec path (a %str-long element that aliases a garbage pointer would
@@ -9243,13 +9243,13 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	// owns (UAF).
 	fmt.Fprintf(c.sb, "%s:\n", lCheck)
 	c.loadSeq++
-	posCap := fmt.Sprintf("%%slbpc%d", c.loadSeq)
+	posCap := fmt.Sprintf("%%slbpc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, 0\n", posCap, ci)
 	c.loadSeq++
-	full0 := fmt.Sprintf("%%slbf0%d", c.loadSeq)
+	full0 := fmt.Sprintf("%%slbf0.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", full0, needReg, ci)
 	c.loadSeq++
-	full := fmt.Sprintf("%%slbf%d", c.loadSeq)
+	full := fmt.Sprintf("%%slbf.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = and i1 %s, %s\n", full, posCap, full0)
 	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", full, lGrow, lDone)
 
@@ -9261,10 +9261,10 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	// ensureVecBuffer's grow block.
 	fmt.Fprintf(c.sb, "%s:\n", lGrow)
 	c.loadSeq++
-	dbl := fmt.Sprintf("%%slbdl%d", c.loadSeq)
+	dbl := fmt.Sprintf("%%slbdl.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = mul i64 %s, 2\n", dbl, ci)
 	c.loadSeq++
-	ovr := fmt.Sprintf("%%slbov%d", c.loadSeq)
+	ovr := fmt.Sprintf("%%slbov.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", ovr, dbl, needReg)
 	c.loadSeq++
 	// NOTE: prefix must NOT be a digit-extension of another `slb*` name.
@@ -9272,31 +9272,31 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	// `slbn1`+`963` == "slbn1963"), which is exactly the base32.no
 	// "multiple definition of local value" regression. Use `slbw` ("w" for
 	// the new width) so the textual boundary is unambiguous.
-	n1 := fmt.Sprintf("%%slbw%d", c.loadSeq)
+	n1 := fmt.Sprintf("%%slbw.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", n1, ovr, dbl, needReg)
 	c.loadSeq++
-	sm := fmt.Sprintf("%%slbsm%d", c.loadSeq)
+	sm := fmt.Sprintf("%%slbsm.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp slt i64 %s, %d\n", sm, n1, strMinCap)
 	c.loadSeq++
-	newCap := fmt.Sprintf("%%slbnc%d", c.loadSeq)
+	newCap := fmt.Sprintf("%%slbnc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %d, i64 %s\n", newCap, sm, strMinCap, n1)
 	c.loadSeq++
-	gbuf := fmt.Sprintf("%%slbgb%d", c.loadSeq)
+	gbuf := fmt.Sprintf("%%slbgb.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", gbuf, newCap)
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", gbuf, newCap)
 	// Copy min(len, cap) live bytes — never more than the old buffer holds.
 	c.loadSeq++
-	lg := fmt.Sprintf("%%slblg%d", c.loadSeq)
+	lg := fmt.Sprintf("%%slblg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lg, arrSlot)
 	c.loadSeq++
-	li := fmt.Sprintf("%%slbli%d", c.loadSeq)
+	li := fmt.Sprintf("%%slbli.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", li, lg)
 	c.loadSeq++
-	lenOver := fmt.Sprintf("%%slblo%d", c.loadSeq)
+	lenOver := fmt.Sprintf("%%slblo.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", lenOver, li, ci)
 	c.loadSeq++
-	copyN := fmt.Sprintf("%%slbcn%d", c.loadSeq)
+	copyN := fmt.Sprintf("%%slbcn.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", copyN, lenOver, ci, li)
 	c.decl("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)")
 	fmt.Fprintf(c.sb, "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", gbuf, di, copyN)
@@ -9526,7 +9526,7 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	}
 	ep := c.elemAddr(inst.Args[0], arrSlot, idxV, arrT, elemT)
 	c.loadSeq++
-	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
+	lv := fmt.Sprintf("%%lx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, elemT, elemT, ep)
 	// Owned element types (%str-long) must be DEEP CLONED on read, not just
 	// shallow-copied: `s = arr[i]` loads the {len,cap,data} triple, which
@@ -9543,7 +9543,7 @@ func (c *codegen) emitIndex(inst *Inst) error {
 	// on backtracking.
 	if elemT == "%str-long" && dstT == "%str-long" {
 		c.loadSeq++
-		cl := fmt.Sprintf("%%ixc%d", c.loadSeq)
+		cl := fmt.Sprintf("%%ixc.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %s @str_clone(%s %s)\n", cl, elemT, elemT, lv)
 		lv = cl
 	}
@@ -9807,7 +9807,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	ep := c.elemAddr(inst.Args[0], arrSlot, idxV, arrT, elemT)
 	if elemOwned {
 		c.loadSeq++
-		old := fmt.Sprintf("%%old%d", c.loadSeq)
+		old := fmt.Sprintf("%%old.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", old, elemT, elemT, ep)
 		if elemT == "%vec" {
 			if elemType := c.mod.Type(c.vecElemTypeID(inst.Args[0])); elemType != nil {
@@ -9849,7 +9849,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		dp := c.dataPtrOf(inst.Args[2])
 		if dp != "" {
 			c.loadSeq++
-			by := fmt.Sprintf("%%sby%d", c.loadSeq)
+			by := fmt.Sprintf("%%sby.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", by, dp)
 			valV = by
 		}
@@ -9862,7 +9862,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// is exactly what tests/mem-safety/element-assign-clone.no asserts.
 	if elemT == "%str-long" && valT == "%str-long" {
 		c.loadSeq++
-		cl := fmt.Sprintf("%%icl%d", c.loadSeq)
+		cl := fmt.Sprintf("%%icl.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %s @str_clone(%s %s)\n", cl, elemT, elemT, valV)
 		valV = cl
 	}
@@ -9897,7 +9897,7 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 		if et := c.vecElemTypeID(inst.Args[2]); et != NoType {
 			if fn := c.vecDeepClone(et, 0); fn != "" {
 				c.loadSeq++
-				cl := fmt.Sprintf("%%icl%d", c.loadSeq)
+				cl := fmt.Sprintf("%%icl.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = call %%vec %s(%%vec %s)\n", cl, fn, valV)
 				valV = cl
 			}
@@ -9931,19 +9931,19 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 // %vec slot, so a write past the current logical length becomes visible.
 func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
 	c.loadSeq++
-	lenGep := fmt.Sprintf("%%slg%d", c.loadSeq)
+	lenGep := fmt.Sprintf("%%slg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", lenGep, arrT, arrT, arrSlot)
 	c.loadSeq++
-	curLen := fmt.Sprintf("%%slc%d", c.loadSeq)
+	curLen := fmt.Sprintf("%%slc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", curLen, lenGep)
 	c.loadSeq++
-	idx1 := fmt.Sprintf("%%sli%d", c.loadSeq)
+	idx1 := fmt.Sprintf("%%sli.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = add i64 %s, 1\n", idx1, idxV)
 	c.loadSeq++
-	cmp := fmt.Sprintf("%%slm%d", c.loadSeq)
+	cmp := fmt.Sprintf("%%slm.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", cmp, idx1, curLen)
 	c.loadSeq++
-	newLen := fmt.Sprintf("%%sln%d", c.loadSeq)
+	newLen := fmt.Sprintf("%%sln.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", newLen, cmp, idx1, curLen)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", newLen, lenGep)
 }
@@ -10530,7 +10530,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		// recvLT is `%T*`; the slot is `%T**`, so load the POINTER (not the
 		// pointee) and GEP through it.
 		c.loadSeq++
-		pv := fmt.Sprintf("%%vld%d", c.loadSeq)
+		pv := fmt.Sprintf("%%vld.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", pv, recvLT, recvLT, recvSlot)
 		recvLT = strings.TrimSuffix(recvLT, "*")
 		recvRaw = ty.StripViewRaw(recvRaw)
@@ -10573,12 +10573,12 @@ func (c *codegen) emitGetField(inst *Inst) error {
 			// Load the view pointer out of the payload field (`%T**` -> `%T*`).
 			payloadBase = strings.TrimSuffix(payloadLT, "*")
 			c.loadSeq++
-			pv := fmt.Sprintf("%%vld%d", c.loadSeq)
+			pv := fmt.Sprintf("%%vld.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", pv, payloadBase, payloadLT, pg)
 			pg = pv
 		}
 		c.loadSeq++
-		gp := fmt.Sprintf("%%gp%d", c.loadSeq)
+		gp := fmt.Sprintf("%%gp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, payloadBase, payloadBase, pg, idx)
 		// #83 SROA guard: for large aggregate field types, use memcpy.
 		if c.shouldUseMemcpy(fieldLT) {
@@ -10587,7 +10587,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 			return nil
 		}
 		c.loadSeq++
-		lv := fmt.Sprintf("%%lx%d", c.loadSeq)
+		lv := fmt.Sprintf("%%lx.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gp)
 		// Clone exactly the owned leaf types opted in by the declaring struct.
 		// Keep this gate synchronized with isBorrowRead and projectionWasCloned:
@@ -10597,7 +10597,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 			if f, ok := c.fieldAt(structKey, idx); ok {
 				ft := c.mod.Type(c.mod.internType(f.TypeRaw))
 				c.loadSeq++
-				cl := fmt.Sprintf("%%lc%d", c.loadSeq)
+				cl := fmt.Sprintf("%%lc.%d", c.loadSeq)
 				if call := c.ownedLeafCloneCall(cl, lv, ft); call != "" {
 					c.sb.WriteString(call)
 					lv = cl
@@ -10622,7 +10622,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		fieldLT = "i64"
 	}
 	c.loadSeq++
-	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+	gep := fmt.Sprintf("%%gp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx)
 	// POINTER FIELD (Phase 1 layout flip): the slot holds a `%T*`, not the `%T`
 	// itself. Load the pointer, then read the pointee THROUGH it, so the value
@@ -10650,7 +10650,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		return nil
 	}
 	c.loadSeq++
-	lv := fmt.Sprintf("%%lx%d", c.loadSeq)
+	lv := fmt.Sprintf("%%lx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, gep)
 	// Owned leaves are read by value, so the clone dispatcher gives the result
 	// an independent allocation before insertDrops releases it.
@@ -10658,7 +10658,7 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		if f, ok := c.fieldAt(structKey, idx); ok {
 			ft := c.mod.Type(c.mod.internType(f.TypeRaw))
 			c.loadSeq++
-			cl := fmt.Sprintf("%%lc%d", c.loadSeq)
+			cl := fmt.Sprintf("%%lc.%d", c.loadSeq)
 			if call := c.ownedLeafCloneCall(cl, lv, ft); call != "" {
 				c.sb.WriteString(call)
 				lv = cl
@@ -10715,34 +10715,34 @@ func (c *codegen) ensureContainerStorageForLen(slot, recvLT string, ty *Type, nV
 	}
 	// Field 2 is data, field 1 is cap.
 	c.loadSeq++
-	dg := fmt.Sprintf("%%lsg%d", c.loadSeq)
+	dg := fmt.Sprintf("%%lsg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 2\n", dg, recvLT, recvLT, slot)
 	c.loadSeq++
-	dv := fmt.Sprintf("%%lsv%d", c.loadSeq)
+	dv := fmt.Sprintf("%%lsv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", dv, dataLT, dataLT, dg)
 	c.loadSeq++
-	cg := fmt.Sprintf("%%lcg%d", c.loadSeq)
+	cg := fmt.Sprintf("%%lcg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n", cg, recvLT, recvLT, slot)
 
 	// is-null test: %str-long holds a pointer, %vec an integer.
 	c.loadSeq++
-	isnull := fmt.Sprintf("%%lsn%d", c.loadSeq)
+	isnull := fmt.Sprintf("%%lsn.%d", c.loadSeq)
 	if dataLT == "i8*" {
 		fmt.Fprintf(c.sb, "  %s = icmp eq i8* %s, null\n", isnull, dv)
 	} else {
 		fmt.Fprintf(c.sb, "  %s = icmp eq i64 %s, 0\n", isnull, dv)
 	}
 	c.loadSeq++
-	lAlloc := fmt.Sprintf("lsA%d", c.loadSeq)
-	lDone := fmt.Sprintf("lsD%d", c.loadSeq)
+	lAlloc := fmt.Sprintf("lsA.%d", c.loadSeq)
+	lDone := fmt.Sprintf("lsD.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  br i1 %s, label %%%s, label %%%s\n", isnull, lAlloc, lDone)
 
 	fmt.Fprintf(c.sb, "%s:\n", lAlloc)
 	c.loadSeq++
-	sizeReg := fmt.Sprintf("%%lssz%d", c.loadSeq)
+	sizeReg := fmt.Sprintf("%%lssz.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = mul i64 %s, %s\n", sizeReg, nV, elemSz)
 	c.loadSeq++
-	buf := fmt.Sprintf("%%lsbuf%d", c.loadSeq)
+	buf := fmt.Sprintf("%%lsbuf.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sizeReg)
 	// Zero it: for owned element types (e.g. []str) the first `a[i] = v` drops
 	// the previous element, and garbage there would free() a wild pointer.
@@ -10752,7 +10752,7 @@ func (c *codegen) ensureContainerStorageForLen(slot, recvLT string, ty *Type, nV
 		fmt.Fprintf(c.sb, "  store i8* %s, i8** %s\n", buf, dg)
 	} else {
 		c.loadSeq++
-		ptri := fmt.Sprintf("%%lspi%d", c.loadSeq)
+		ptri := fmt.Sprintf("%%lspi.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", ptri, buf)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ptri, dg)
 	}
@@ -10803,7 +10803,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// (otherwise the store writes into the view's own slot and is lost).
 	if c.isViewValue(inst.Args[0]) && strings.HasSuffix(recvLT, "*") {
 		c.loadSeq++
-		pv := fmt.Sprintf("%%vld%d", c.loadSeq)
+		pv := fmt.Sprintf("%%vld.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", pv, recvLT, recvLT, recvSlot)
 		recvLT = strings.TrimSuffix(recvLT, "*")
 		recvRaw = ty.StripViewRaw(recvRaw)
@@ -10834,30 +10834,30 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			// already byte-sized
 		case valLT == "i32":
 			c.loadSeq++
-			t := fmt.Sprintf("%%tlx%d", c.loadSeq)
+			t := fmt.Sprintf("%%tlx.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = trunc i32 %s to i8\n", t, v)
 			v = t
 		default:
 			// i64 (and any other integral): clamp into [0, 255] first.
 			c.loadSeq++
-			lt0 := fmt.Sprintf("%%tln%d", c.loadSeq)
+			lt0 := fmt.Sprintf("%%tln.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = icmp slt i64 %s, 0\n", lt0, v)
 			c.loadSeq++
-			cl0 := fmt.Sprintf("%%tlz%d", c.loadSeq)
+			cl0 := fmt.Sprintf("%%tlz.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 0, i64 %s\n", cl0, lt0, v)
 			c.loadSeq++
-			gt := fmt.Sprintf("%%tlg%d", c.loadSeq)
+			gt := fmt.Sprintf("%%tlg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = icmp ugt i64 %s, 255\n", gt, cl0)
 			c.loadSeq++
-			cl := fmt.Sprintf("%%tlc%d", c.loadSeq)
+			cl := fmt.Sprintf("%%tlc.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 255, i64 %s\n", cl, gt, cl0)
 			c.loadSeq++
-			t := fmt.Sprintf("%%tlt%d", c.loadSeq)
+			t := fmt.Sprintf("%%tlt.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i8\n", t, cl)
 			v = t
 		}
 		c.loadSeq++
-		gep := fmt.Sprintf("%%tlp%d", c.loadSeq)
+		gep := fmt.Sprintf("%%tlp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", gep, recvSlot)
 		fmt.Fprintf(c.sb, "  store i8 %s, i8* %s\n", v, gep)
 		return nil
@@ -10914,7 +10914,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 		}
 		pg := c.optPayloadTypedAddr(recvSlot, payloadLT, payloadLT)
 		c.loadSeq++
-		gp := fmt.Sprintf("%%gp%d", c.loadSeq)
+		gp := fmt.Sprintf("%%gp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, payloadLT, payloadLT, pg, idx)
 		if c.emitOwnedLeafFieldStore(structKey, idx, fieldLT, valLT, valV, gp) {
 			return nil
@@ -10987,7 +10987,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 				c.ensureContainerStorageForLen(recvSlot, recvLT, recvTy, valV)
 			}
 			c.loadSeq++
-			gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+			gep := fmt.Sprintf("%%gp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, recvLT, recvLT, recvSlot, idx)
 			fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep)
 			return nil
@@ -11102,16 +11102,16 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	if strings.HasPrefix(fieldLT, "[") && valLT == "%vec" {
 		if vecSlot := c.valSlot[inst.Args[1]]; vecSlot != "" {
 			c.loadSeq++
-			dg := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			dg := fmt.Sprintf("%%vaf.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dg, vecSlot)
 			c.loadSeq++
-			di := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			di := fmt.Sprintf("%%vaf.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", di, dg)
 			c.loadSeq++
-			dp := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			dp := fmt.Sprintf("%%vaf.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", dp, di)
 			c.loadSeq++
-			gp := fmt.Sprintf("%%vaf%d", c.loadSeq)
+			gp := fmt.Sprintf("%%vaf.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gp, recvLT, recvLT, recvSlot, idx)
 			c.emitMemcpy(gp, dp, c.typeSizeOperand(fieldLT))
 			c.cloneStructFieldLeaves(structKey, idx, gp, fieldLT)
@@ -11120,7 +11120,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	}
 	structLT := recvLT
 	c.loadSeq++
-	gep := fmt.Sprintf("%%gp%d", c.loadSeq)
+	gep := fmt.Sprintf("%%gp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, structLT, structLT, recvSlot, idx)
 	// POINTER FIELD (Phase 1 layout flip): the slot holds a `%T*`, so the value
 	// must be written into the POINTEE -- never into the slot itself (that
@@ -11396,10 +11396,10 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 			return i18n.Errorf("bjj14xsi", "lencap slot")
 		}
 		c.loadSeq++
-		lv := fmt.Sprintf("%%lc%d", c.loadSeq)
+		lv := fmt.Sprintf("%%lc.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, recvLT, recvLT, recvSlot)
 		c.loadSeq++
-		ev := fmt.Sprintf("%%le%d", c.loadSeq)
+		ev := fmt.Sprintf("%%le.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, %d\n", ev, recvLT, lv, fieldIdx)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ev, dstSlot)
 		return nil
@@ -11412,13 +11412,13 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 				return i18n.Errorf("bjj14xsi", "lencap slot")
 			}
 			c.loadSeq++
-			lGEP := fmt.Sprintf("%%tlg%d", c.loadSeq)
+			lGEP := fmt.Sprintf("%%tlg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lGEP, recvSlot)
 			c.loadSeq++
-			lLd := fmt.Sprintf("%%tll%d", c.loadSeq)
+			lLd := fmt.Sprintf("%%tll.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", lLd, lGEP)
 			c.loadSeq++
-			lZx := fmt.Sprintf("%%tlz%d", c.loadSeq)
+			lZx := fmt.Sprintf("%%tlz.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", lZx, lLd)
 			fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", lZx, dstSlot)
 			return nil
@@ -12090,7 +12090,7 @@ func (c *codegen) emitEnumNew(inst *Inst) error {
 	v := enumVariantByTag(ei, inst.Int)
 	// Payload base: GEP to field 1 -> [N x i64]*.
 	c.loadSeq++
-	base := fmt.Sprintf("%%en%d", c.loadSeq)
+	base := fmt.Sprintf("%%en.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
 		base, dstLT, dstLT, slot)
 	arrLT := fmt.Sprintf("[%d x i64]", nSlots)
@@ -12110,7 +12110,7 @@ func (c *codegen) emitEnumNew(inst *Inst) error {
 			fieldLT = "i64"
 		}
 		c.loadSeq++
-		gp := fmt.Sprintf("%%en%d", c.loadSeq)
+		gp := fmt.Sprintf("%%en.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n",
 			gp, arrLT, arrLT, base, off)
 		storeLT, storeV := fieldLT, valV
@@ -12120,7 +12120,7 @@ func (c *codegen) emitEnumNew(inst *Inst) error {
 				storeV = cv
 			}
 			c.loadSeq++
-			bc := fmt.Sprintf("%%en%d", c.loadSeq)
+			bc := fmt.Sprintf("%%en.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = bitcast i64* %s to %s*\n", bc, gp, fieldLT)
 			ptr = bc
 		} else {
@@ -12148,7 +12148,7 @@ func (c *codegen) emitEnumTag(inst *Inst) error {
 		valT = srcT
 	}
 	c.loadSeq++
-	tv := fmt.Sprintf("%%et%d", c.loadSeq)
+	tv := fmt.Sprintf("%%et.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", tv, valT, srcV)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", tv, dstSlot)
 	return nil
@@ -12178,7 +12178,7 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 	if srcSlot == "" {
 		// Value (not address) form: extract from the register directly.
 		c.loadSeq++
-		tv := fmt.Sprintf("%%ef%d", c.loadSeq)
+		tv := fmt.Sprintf("%%ef.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, %d\n", tv, valT, srcV, inst.Int)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", tv, dstSlot)
 		return nil
@@ -12192,25 +12192,25 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 	}
 	arrLT := fmt.Sprintf("[%d x i64]", nSlots)
 	c.loadSeq++
-	base := fmt.Sprintf("%%ef%d", c.loadSeq)
+	base := fmt.Sprintf("%%ef.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 1\n",
 		base, valT, valT, srcSlot)
 	c.loadSeq++
-	gp := fmt.Sprintf("%%ef%d", c.loadSeq)
+	gp := fmt.Sprintf("%%ef.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n",
 		gp, arrLT, arrLT, base, inst.Int)
 	if fieldLT == "i64" {
 		c.loadSeq++
-		lv := fmt.Sprintf("%%ef%d", c.loadSeq)
+		lv := fmt.Sprintf("%%ef.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", lv, gp)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", lv, dstSlot)
 		return nil
 	}
 	c.loadSeq++
-	bc := fmt.Sprintf("%%ef%d", c.loadSeq)
+	bc := fmt.Sprintf("%%ef.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast i64* %s to %s*\n", bc, gp, fieldLT)
 	c.loadSeq++
-	lv := fmt.Sprintf("%%ef%d", c.loadSeq)
+	lv := fmt.Sprintf("%%ef.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, fieldLT, fieldLT, bc)
 	// OWNING ENUM: the enum frees this payload itself, so the extraction must
 	// not hand out a second reference to the same buffer. Clone owned `str`
@@ -12221,7 +12221,7 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 	// borrow and the enum's destructor is their single free site.
 	if c.mod.enumOwnsPayload[inst.Args[0]] && fieldOwned && fieldLT == "%str-long" {
 		c.loadSeq++
-		cl := fmt.Sprintf("%%ef%d", c.loadSeq)
+		cl := fmt.Sprintf("%%ef.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %s @str_clone(%s %s)\n", cl, fieldLT, fieldLT, lv)
 		lv = cl
 	} else if c.mod.enumOwnsPayload[inst.Args[0]] && fieldOwned && fieldLT == "%vec" {
@@ -12234,7 +12234,7 @@ func (c *codegen) emitEnumField(inst *Inst) error {
 			if dt := c.mod.Type(dv.Type); dt != nil && dt.Elem != NoType && c.mod.ownedVecLeafAllowed(dt.Raw) {
 				if fn := c.vecDeepClone(dt.Elem, 0); fn != "" {
 					c.loadSeq++
-					cl := fmt.Sprintf("%%ef%d", c.loadSeq)
+					cl := fmt.Sprintf("%%ef.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %s %s(%s %s)\n", cl, fieldLT, fn, fieldLT, lv)
 					lv = cl
 				}
@@ -12330,11 +12330,11 @@ func (c *codegen) emitEnumDropHelper(ei *TaggedEnumInfo, lt string) {
 			}
 			off, _ := c.enumFieldSlot(v, fi)
 			c.loadSeq++
-			gp := fmt.Sprintf("%%eg%d", c.loadSeq)
+			gp := fmt.Sprintf("%%eg.%d", c.loadSeq)
 			b.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %%bp, i64 0, i64 %d\n",
 				gp, arrLT, arrLT, off))
 			c.loadSeq++
-			bc := fmt.Sprintf("%%eg%d", c.loadSeq)
+			bc := fmt.Sprintf("%%eg.%d", c.loadSeq)
 			b.WriteString(fmt.Sprintf("  %s = bitcast i64* %s to %s*\n", bc, gp, fieldLT))
 			c.emitEnumPayloadFieldFree(&b, fieldLT, bc, vi, fi)
 		}
@@ -12476,11 +12476,11 @@ func (c *codegen) emitEnumCloneHelper(ei *TaggedEnumInfo, lt string) {
 // what emitEnumDropHelper does before freeing.
 func (c *codegen) enumPayloadSlotPtr(b *strings.Builder, arrLT, base string, off int64, fieldLT string) string {
 	c.loadSeq++
-	gp := fmt.Sprintf("%%eg%d", c.loadSeq)
+	gp := fmt.Sprintf("%%eg.%d", c.loadSeq)
 	b.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n",
 		gp, arrLT, arrLT, base, off))
 	c.loadSeq++
-	bp := fmt.Sprintf("%%eg%d", c.loadSeq)
+	bp := fmt.Sprintf("%%eg.%d", c.loadSeq)
 	b.WriteString(fmt.Sprintf("  %s = bitcast i64* %s to %s*\n", bp, gp, fieldLT))
 	return bp
 }
@@ -12609,25 +12609,25 @@ func (c *codegen) emitStrFromVec(inst *Inst) error {
 		return i18n.Errorf("l1ypawem", "str-from-vec: bad types %s -> %s", srcT, dstLT)
 	}
 	c.loadSeq++
-	lv := fmt.Sprintf("%%svl%d", c.loadSeq)
+	lv := fmt.Sprintf("%%svl.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 0\n", lv, srcV)
 	c.loadSeq++
-	cv := fmt.Sprintf("%%svc%d", c.loadSeq)
+	cv := fmt.Sprintf("%%svc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 1\n", cv, srcV)
 	c.loadSeq++
-	dv := fmt.Sprintf("%%svd%d", c.loadSeq)
+	dv := fmt.Sprintf("%%svd.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 2\n", dv, srcV)
 	c.loadSeq++
-	pv := fmt.Sprintf("%%svp%d", c.loadSeq)
+	pv := fmt.Sprintf("%%svp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", pv, dv)
 	c.loadSeq++
-	s0 := fmt.Sprintf("%%svs%d", c.loadSeq)
+	s0 := fmt.Sprintf("%%svs.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", s0, lv)
 	c.loadSeq++
-	s1 := fmt.Sprintf("%%svs%d", c.loadSeq)
+	s1 := fmt.Sprintf("%%svs.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, cv)
 	c.loadSeq++
-	s2 := fmt.Sprintf("%%svs%d", c.loadSeq)
+	s2 := fmt.Sprintf("%%svs.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, pv)
 	fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", s2, dstSlot)
 	return nil
@@ -12653,30 +12653,30 @@ func (c *codegen) emitTxtFromStr(inst *Inst) error {
 		return c.emitTxtFromTxt(inst.Args[0], srcV, dstSlot)
 	}
 	c.loadSeq++
-	sl := fmt.Sprintf("%%tls%d", c.loadSeq)
+	sl := fmt.Sprintf("%%tls.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", sl, srcT, srcV)
 	// clamp to 255 (txt is bounded at 255 bytes)
 	c.loadSeq++
-	tgt := fmt.Sprintf("%%tgt%d", c.loadSeq)
+	tgt := fmt.Sprintf("%%tgt.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp ugt i64 %s, 255\n", tgt, sl)
 	c.loadSeq++
-	cl := fmt.Sprintf("%%tlc%d", c.loadSeq)
+	cl := fmt.Sprintf("%%tlc.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 255, i64 %s\n", cl, tgt, sl)
 	// source data pointer (field 2 of %str-long)
 	c.loadSeq++
-	dp := fmt.Sprintf("%%tdp%d", c.loadSeq)
+	dp := fmt.Sprintf("%%tdp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 2\n", dp, srcT, srcV)
 	// GEP to txt.data[0]
 	c.loadSeq++
-	dx := fmt.Sprintf("%%txd%d", c.loadSeq)
+	dx := fmt.Sprintf("%%txd.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dx, dstSlot)
 	fmt.Fprintf(c.sb, "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dx, dp, cl)
 	// store len byte (i8)
 	c.loadSeq++
-	l8 := fmt.Sprintf("%%tl8%d", c.loadSeq)
+	l8 := fmt.Sprintf("%%tl8.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i8\n", l8, cl)
 	c.loadSeq++
-	lx := fmt.Sprintf("%%txl%d", c.loadSeq)
+	lx := fmt.Sprintf("%%txl.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, dstSlot)
 	fmt.Fprintf(c.sb, "  store i8 %s, i8* %s\n", l8, lx)
 	return nil
@@ -12695,37 +12695,37 @@ func (c *codegen) emitTxtFromTxt(a ValueID, srcV, dstSlot string) error {
 		// (Inline alloca matches what the rest of this backend emits, e.g.
 		// `%cresN = alloca %txt` for call results.)
 		c.loadSeq++
-		slot = fmt.Sprintf("%%ttsl%d", c.loadSeq)
+		slot = fmt.Sprintf("%%ttsl.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = alloca %%txt\n", slot)
 		fmt.Fprintf(c.sb, "  store %%txt %s, %%txt* %s\n", srcV, slot)
 	}
 	// length -> i64
 	c.loadSeq++
-	lg := fmt.Sprintf("%%ttlg%d", c.loadSeq)
+	lg := fmt.Sprintf("%%ttlg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lg, slot)
 	c.loadSeq++
-	ll := fmt.Sprintf("%%ttll%d", c.loadSeq)
+	ll := fmt.Sprintf("%%ttll.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", ll, lg)
 	c.loadSeq++
-	ln := fmt.Sprintf("%%ttl6%d", c.loadSeq)
+	ln := fmt.Sprintf("%%ttl6.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", ln, ll)
 	// source buffer -> i8*
 	c.loadSeq++
-	dg := fmt.Sprintf("%%ttdg%d", c.loadSeq)
+	dg := fmt.Sprintf("%%ttdg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dg, slot)
 	c.loadSeq++
-	dp := fmt.Sprintf("%%ttdp%d", c.loadSeq)
+	dp := fmt.Sprintf("%%ttdp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", dp, dg)
 	// dst buffer -> i8*, memcpy, then the length byte
 	c.loadSeq++
-	dx := fmt.Sprintf("%%ttdx%d", c.loadSeq)
+	dx := fmt.Sprintf("%%ttdx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dx, dstSlot)
 	fmt.Fprintf(c.sb, "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dx, dp, ln)
 	c.loadSeq++
-	l8 := fmt.Sprintf("%%ttl8%d", c.loadSeq)
+	l8 := fmt.Sprintf("%%ttl8.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i8\n", l8, ln)
 	c.loadSeq++
-	lx := fmt.Sprintf("%%ttlx%d", c.loadSeq)
+	lx := fmt.Sprintf("%%ttlx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, dstSlot)
 	fmt.Fprintf(c.sb, "  store i8 %s, i8* %s\n", l8, lx)
 	return nil
@@ -12944,28 +12944,28 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 					continue
 				}
 				c.loadSeq++
-				lGEP := fmt.Sprintf("%%ptlg%d", c.loadSeq)
+				lGEP := fmt.Sprintf("%%ptlg.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lGEP, slot)
 				c.loadSeq++
-				lLd := fmt.Sprintf("%%ptll%d", c.loadSeq)
+				lLd := fmt.Sprintf("%%ptll.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", lLd, lGEP)
 				c.loadSeq++
-				l64 := fmt.Sprintf("%%ptl6%d", c.loadSeq)
+				l64 := fmt.Sprintf("%%ptl6.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", l64, lLd)
 				c.loadSeq++
-				dGEP := fmt.Sprintf("%%ptdg%d", c.loadSeq)
+				dGEP := fmt.Sprintf("%%ptdg.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, slot)
 				c.loadSeq++
-				dPtr := fmt.Sprintf("%%ptdp%d", c.loadSeq)
+				dPtr := fmt.Sprintf("%%ptdp.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", dPtr, dGEP)
 				c.loadSeq++
-				r0 := fmt.Sprintf("%%ptr0%d", c.loadSeq)
+				r0 := fmt.Sprintf("%%ptr0.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, l64)
 				c.loadSeq++
-				r1 := fmt.Sprintf("%%ptr1%d", c.loadSeq)
+				r1 := fmt.Sprintf("%%ptr1.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, l64)
 				c.loadSeq++
-				r2 := fmt.Sprintf("%%ptr2%d", c.loadSeq)
+				r2 := fmt.Sprintf("%%ptr2.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, dPtr)
 				fmt.Fprintf(c.sb, "  call void @print_str(%%str-long %s)\n", r2)
 			case "i64":
@@ -12989,7 +12989,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 					ext = "sext"
 				}
 				c.loadSeq++
-				z := fmt.Sprintf("%%ptz%d", c.loadSeq)
+				z := fmt.Sprintf("%%ptz.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = %s i8 %s to i64\n", z, ext, argV)
 				fmt.Fprintf(c.sb, "  call void @print_i64(i64 %s)\n", z)
 			case "i32":
@@ -12998,7 +12998,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				// code point (Go-like `fmt.Println('A')` -> 65), matching what
 				// `print(c)` has always done for a char.
 				c.loadSeq++
-				z := fmt.Sprintf("%%pz3%d", c.loadSeq)
+				z := fmt.Sprintf("%%pz3.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = zext i32 %s to i64\n", z, argV)
 				fmt.Fprintf(c.sb, "  call void @print_i64(i64 %s)\n", z)
 			case "double":
@@ -13055,7 +13055,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 			return i18n.Errorf("21irdw5o", "$str_concat: argument type mismatch")
 		}
 		c.loadSeq++
-		r := fmt.Sprintf("%%cat%d", c.loadSeq)
+		r := fmt.Sprintf("%%cat.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %%str-long @_mir_str_concat(%%str-long %s, %%str-long %s)\n", r, aV, bV)
 		if len(inst.Results) > 0 && inst.Results[0] > NoVal {
 			if slot := c.valSlot[inst.Results[0]]; slot != "" {
@@ -13164,7 +13164,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 			argV = c.coerceInt(argV, argT, "i128")
 			if rlt, _ := c.ptype(inst.Results[0]); rlt != "void" && c.valSlot[inst.Results[0]] != "" {
 				c.loadSeq++
-				tmp := fmt.Sprintf("%%i128s%d", c.loadSeq)
+				tmp := fmt.Sprintf("%%i128s.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = call %%str-long %s(i128 %s)\n", tmp, fn, argV)
 				fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", tmp, c.valSlot[inst.Results[0]])
 			}
@@ -13195,16 +13195,16 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				// i64) -> opt-verify type mismatch -> MIR build failure (bug #2b).
 				if argT == "%str-long" {
 					c.loadSeq++
-					lenR := fmt.Sprintf("%%istr%d", c.loadSeq)
+					lenR := fmt.Sprintf("%%istr.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", lenR, argT, argV)
 					c.loadSeq++
-					cres := fmt.Sprintf("%%icr%d", c.loadSeq)
+					cres := fmt.Sprintf("%%icr.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = alloca %%str-long\n", cres)
 					fmt.Fprintf(c.sb, "  call void @i64_to_str(i64 %s, %%str-long* %s)\n", lenR, cres)
 					if len(inst.Results) > 0 && inst.Results[0] > NoVal {
 						if rlt, _ := c.ptype(inst.Results[0]); rlt != "void" && c.valSlot[inst.Results[0]] != "" {
 							c.loadSeq++
-							ld := fmt.Sprintf("%%icl%d", c.loadSeq)
+							ld := fmt.Sprintf("%%icl.%d", c.loadSeq)
 							fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", ld, rlt, rlt, cres)
 							fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", rlt, ld, rlt, c.valSlot[inst.Results[0]])
 						}
@@ -13236,7 +13236,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				if len(inst.Results) > 0 && inst.Results[0] > NoVal {
 					if rlt, _ := c.ptype(inst.Results[0]); rlt != "void" && c.valSlot[inst.Results[0]] != "" {
 						c.loadSeq++
-						tmp := fmt.Sprintf("%%its%d", c.loadSeq)
+						tmp := fmt.Sprintf("%%its.%d", c.loadSeq)
 						fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_i64(i64 %s)\n", tmp, argV)
 						fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", tmp, c.valSlot[inst.Results[0]])
 					}
@@ -13458,14 +13458,14 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 			callArgs = append(callArgs, "i64 "+avV)
 		case "i32", "bool":
 			c.loadSeq++
-			reg := fmt.Sprintf("%%exti%d", c.loadSeq)
+			reg := fmt.Sprintf("%%exti.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = trunc %s %s to i32\n", reg, av, avV)
 			callArgs = append(callArgs, "i32 "+reg)
 		case "f64":
 			callArgs = append(callArgs, "double "+avV)
 		case "ptr":
 			c.loadSeq++
-			reg := fmt.Sprintf("%%extp%d", c.loadSeq)
+			reg := fmt.Sprintf("%%extp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", reg, avV)
 			callArgs = append(callArgs, "i8* "+reg)
 		case "pptr":
@@ -13473,20 +13473,20 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 			// `inttoptr (i64 %lv to i8*)` 這種「常量表達式引用函式內局部值」
 			// （opt -verify: invalid use of function-local name）。
 			c.loadSeq++
-			pv := fmt.Sprintf("%%extpv%d", c.loadSeq)
+			pv := fmt.Sprintf("%%extpv.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", pv, avV)
 			c.loadSeq++
-			slot := fmt.Sprintf("%%extpp%d", c.loadSeq)
+			slot := fmt.Sprintf("%%extpp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = alloca i8*\n", slot)
 			fmt.Fprintf(c.sb, "  store i8* %s, i8** %s\n", pv, slot)
 			callArgs = append(callArgs, "i8** "+slot)
 			pptrs = append(pptrs, pptrSlot{slotReg: slot, argVal: inst.Args[i], levels: 1})
 		case "ppptr":
 			c.loadSeq++
-			pv := fmt.Sprintf("%%extpv%d", c.loadSeq)
+			pv := fmt.Sprintf("%%extpv.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8**\n", pv, avV)
 			c.loadSeq++
-			slot := fmt.Sprintf("%%extpp%d", c.loadSeq)
+			slot := fmt.Sprintf("%%extpp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = alloca i8**\n", slot)
 			fmt.Fprintf(c.sb, "  store i8** %s, i8*** %s\n", pv, slot)
 			callArgs = append(callArgs, "i8*** "+slot)
@@ -13502,7 +13502,7 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 		fmt.Fprintf(c.sb, "  call void %s(%s)\n", sym, strings.Join(callArgs, ", "))
 	} else {
 		c.loadSeq++
-		callReg = fmt.Sprintf("%%extr%d", c.loadSeq)
+		callReg = fmt.Sprintf("%%extr.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %s %s(%s)\n", callReg, retLLVM, sym, strings.Join(callArgs, ", "))
 	}
 
@@ -13514,10 +13514,10 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 			elemLT = "i8**"
 		}
 		c.loadSeq++
-		ld := fmt.Sprintf("%%extpl%d", c.loadSeq)
+		ld := fmt.Sprintf("%%extpl.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", ld, elemLT, elemLT, ps.slotReg)
 		c.loadSeq++
-		pi := fmt.Sprintf("%%extpi%d", c.loadSeq)
+		pi := fmt.Sprintf("%%extpi.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = ptrtoint %s %s to i64\n", pi, elemLT, ld)
 		if aslot := c.valSlot[ps.argVal]; aslot != "" {
 			fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", pi, aslot)
@@ -13549,30 +13549,30 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 	switch retRaw {
 	case "str":
 		c.loadSeq++
-		strReg := fmt.Sprintf("%%extrs%d", c.loadSeq)
+		strReg := fmt.Sprintf("%%extrs.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_cstr(i8* %s)\n", strReg, callReg)
 		fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", strReg, rslot)
 	case "i64":
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", callReg, rslot)
 	case "i32":
 		c.loadSeq++
-		sext := fmt.Sprintf("%%extrs%d", c.loadSeq)
+		sext := fmt.Sprintf("%%extrs.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = sext i32 %s to i64\n", sext, callReg)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", sext, rslot)
 	case "f64":
 		fmt.Fprintf(c.sb, "  store double %s, double* %s\n", callReg, rslot)
 	case "ptr", "pptr", "ppptr":
 		c.loadSeq++
-		pi := fmt.Sprintf("%%extrp%d", c.loadSeq)
+		pi := fmt.Sprintf("%%extrp.%d", c.loadSeq)
 		llvmRet := mirFFITypeToLLVM(retRaw)
 		fmt.Fprintf(c.sb, "  %s = ptrtoint %s %s to i64\n", pi, llvmRet, callReg)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", pi, rslot)
 	case "bool":
 		c.loadSeq++
-		cmp := fmt.Sprintf("%%extrb%d", c.loadSeq)
+		cmp := fmt.Sprintf("%%extrb.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = icmp ne %s %s, 0\n", cmp, retLLVM, callReg)
 		c.loadSeq++
-		ze := fmt.Sprintf("%%extrz%d", c.loadSeq)
+		ze := fmt.Sprintf("%%extrz.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = zext i1 %s to i64\n", ze, cmp)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ze, rslot)
 	default:
@@ -13599,7 +13599,7 @@ func (c *codegen) emitExternCall(f *Function, inst *Inst, cf *Function) error {
 func (c *codegen) buildVecViewFromArray(argT, arrSlot string) string {
 	s2 := c.vecViewValue(argT, arrSlot)
 	c.loadSeq++
-	slot := fmt.Sprintf("%%cav%d", c.loadSeq)
+	slot := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca %%vec\n", slot)
 	fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, slot)
 	return "%vec* " + slot
@@ -13619,19 +13619,19 @@ func (c *codegen) vecViewValue(argT, arrSlot string) string {
 		n = m
 	}
 	c.loadSeq++
-	dataPtr := fmt.Sprintf("%%cav%d", c.loadSeq)
+	dataPtr := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", dataPtr, argT, argT, arrSlot)
 	c.loadSeq++
-	pt := fmt.Sprintf("%%cav%d", c.loadSeq)
+	pt := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", pt, dataPtr)
 	c.loadSeq++
-	s0 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	s0 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n)
 	c.loadSeq++
-	s1 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	s1 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
 	c.loadSeq++
-	s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	s2 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt)
 	return s2
 }
@@ -13714,7 +13714,7 @@ func (c *codegen) vecFromArraySink(argT, arrSlot string, elemID TypeID) string {
 		if elemID != NoType {
 			if fn := c.vecDeepClone(elemID, 0); fn != "" {
 				c.loadSeq++
-				cl := fmt.Sprintf("%%vfa%d", c.loadSeq)
+				cl := fmt.Sprintf("%%vfa.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = call %%vec %s(%%vec %s)\n", cl, fn, s)
 				return cl
 			}
@@ -13745,31 +13745,31 @@ func (c *codegen) buildVecViewFromValues(elemLLT string, argLLVMs []string) stri
 	n := int64(len(argLLVMs))
 	arrType := fmt.Sprintf("[%d x %s]", n, elemLLT)
 	c.loadSeq++
-	arr := fmt.Sprintf("%%cav%d", c.loadSeq)
+	arr := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca %s\n", arr, arrType)
 	for i, av := range argLLVMs {
 		c.loadSeq++
-		elp := fmt.Sprintf("%%cav%d", c.loadSeq)
+		elp := fmt.Sprintf("%%cav.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 %d\n", elp, arrType, arrType, arr, i)
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", elemLLT, av, elemLLT, elp)
 	}
 	c.loadSeq++
-	dataPtr := fmt.Sprintf("%%cav%d", c.loadSeq)
+	dataPtr := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", dataPtr, arrType, arrType, arr)
 	c.loadSeq++
-	pt := fmt.Sprintf("%%cav%d", c.loadSeq)
+	pt := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", pt, dataPtr)
 	c.loadSeq++
-	s0 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	s0 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n)
 	c.loadSeq++
-	s1 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	s1 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
 	c.loadSeq++
-	s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
+	s2 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt)
 	c.loadSeq++
-	slot := fmt.Sprintf("%%cav%d", c.loadSeq)
+	slot := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca %%vec\n", slot)
 	fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, slot)
 	return "%vec* " + slot
@@ -13909,7 +13909,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			}
 		} else {
 			c.loadSeq++
-			slot := fmt.Sprintf("%%cself%d", c.loadSeq)
+			slot := fmt.Sprintf("%%cself.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = alloca %s\n", slot, selfLT)
 			fmt.Fprintf(c.sb, "  store %s zeroinitializer, %s* %s\n", selfLT, selfLT, slot)
 			callArgs = append(callArgs, selfLT+"* "+slot)
@@ -13969,7 +13969,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		if pt := c.mod.Type(c.mod.Value(p).Type); pt != nil && pt.Kind == KindFunc {
 			fnLT := c.llvmTypeOf(pt) // void (Param*, ...)*
 			c.loadSeq++
-			slot := fmt.Sprintf("%%fnarg%d", c.loadSeq)
+			slot := fmt.Sprintf("%%fnarg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = alloca %s\n", slot, fnLT)
 			fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", fnLT, av, fnLT, slot)
 			callArgs = append(callArgs, fnLT+"* "+slot)
@@ -14002,7 +14002,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 						callArgs = append(callArgs, plt+"* "+pg)
 					} else {
 						c.loadSeq++
-						pv := fmt.Sprintf("%%optrcvv%d", c.loadSeq)
+						pv := fmt.Sprintf("%%optrcvv.%d", c.loadSeq)
 						fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", pv, plt, plt, pg)
 						callArgs = append(callArgs, plt+" "+pv)
 					}
@@ -14069,7 +14069,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 							if t := c.mod.Type(c.mod.Value(gfRecv).Type); t != nil &&
 								(t.Kind == KindSlice || t.Kind == KindStr) {
 								c.loadSeq++
-								gep := fmt.Sprintf("%%gfrcv%d", c.loadSeq)
+								gep := fmt.Sprintf("%%gfrcv.%d", c.loadSeq)
 								fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, gfRecvLT, gfRecvLT, gfRecvSlot, idx)
 								callArgs = append(callArgs, plt+"* "+gep)
 								continue
@@ -14078,7 +14078,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 						// Regular struct field.
 						if idx, ok3 := c.mod.FieldIndex(structKey, gfFieldName); ok3 {
 							c.loadSeq++
-							gep := fmt.Sprintf("%%gfrcv%d", c.loadSeq)
+							gep := fmt.Sprintf("%%gfrcv.%d", c.loadSeq)
 							fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, gfRecvLT, gfRecvLT, gfRecvSlot, idx)
 							callArgs = append(callArgs, plt+"* "+gep)
 							continue
@@ -14128,22 +14128,22 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					}
 				}
 				c.loadSeq++
-				dataPtr := fmt.Sprintf("%%cav%d", c.loadSeq)
+				dataPtr := fmt.Sprintf("%%cav.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i64 0, i64 0\n", dataPtr, argT, argT, arrSlot)
 				c.loadSeq++
-				pt := fmt.Sprintf("%%cav%d", c.loadSeq)
+				pt := fmt.Sprintf("%%cav.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", pt, dataPtr)
 				c.loadSeq++
-				s0 := fmt.Sprintf("%%cav%d", c.loadSeq)
+				s0 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n)
 				c.loadSeq++
-				s1 := fmt.Sprintf("%%cav%d", c.loadSeq)
+				s1 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
 				c.loadSeq++
-				s2 := fmt.Sprintf("%%cav%d", c.loadSeq)
+				s2 := fmt.Sprintf("%%cav.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt)
 				c.loadSeq++
-				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+				slot := fmt.Sprintf("%%carg.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = alloca %%vec\n", slot)
 				fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, slot)
 				callArgs = append(callArgs, "%vec* "+slot)
@@ -14191,7 +14191,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					callArgs = append(callArgs, plt+"* "+argSlot)
 				} else {
 					c.loadSeq++
-					slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+					slot := fmt.Sprintf("%%carg.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = alloca %s\n", slot, plt)
 					fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", plt, av, plt, slot)
 					callArgs = append(callArgs, plt+"* "+slot)
@@ -14215,26 +14215,26 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					// @str_from_cp's IR ABI expects.
 					av = c.zextCharToI64(av, argT)
 					c.loadSeq++
-					conv := fmt.Sprintf("%%cp%d", c.loadSeq)
+					conv := fmt.Sprintf("%%cp.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_cp(i64 %s)\n", conv, av)
 					av = conv
 					argT = "%str-long"
 				} else if plt == "%str-long" && argT == "i64" {
 					c.loadSeq++
-					conv := fmt.Sprintf("%%ic%d", c.loadSeq)
+					conv := fmt.Sprintf("%%ic.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_i64(i64 %s)\n", conv, av)
 					av = conv
 					argT = "%str-long"
 				} else if plt == "%str-long" && argT == "i8" {
 					// char/byte -> str: render as a single-character string
 					c.loadSeq++
-					conv := fmt.Sprintf("%%cc%d", c.loadSeq)
+					conv := fmt.Sprintf("%%cc.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_char(i8 %s)\n", conv, av)
 					av = conv
 					argT = "%str-long"
 				} else if plt == "%str-long" && argT == "double" {
 					c.loadSeq++
-					conv := fmt.Sprintf("%%dc%d", c.loadSeq)
+					conv := fmt.Sprintf("%%dc.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_double(double %s)\n", conv, av)
 					av = conv
 					argT = "%str-long"
@@ -14243,13 +14243,13 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					c.decl("@.mir.true = private constant [4 x i8] c\"true\"")
 					c.decl("@.mir.false = private constant [5 x i8] c\"false\"")
 					c.loadSeq++
-					treg := fmt.Sprintf("%%bt%d", c.loadSeq)
+					treg := fmt.Sprintf("%%bt.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_const(ptr getelementptr inbounds ([4 x i8], ptr @.mir.true, i64 0, i64 0), i64 4)\n", treg)
 					c.loadSeq++
-					freg := fmt.Sprintf("%%bf%d", c.loadSeq)
+					freg := fmt.Sprintf("%%bf.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_const(ptr getelementptr inbounds ([5 x i8], ptr @.mir.false, i64 0, i64 0), i64 5)\n", freg)
 					c.loadSeq++
-					conv := fmt.Sprintf("%%bc%d", c.loadSeq)
+					conv := fmt.Sprintf("%%bc.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = select i1 %s, %%str-long %s, %%str-long %s\n", conv, av, treg, freg)
 					av = conv
 					argT = "%str-long"
@@ -14264,7 +14264,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 					argT = "%str-long"
 				}
 				c.loadSeq++
-				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+				slot := fmt.Sprintf("%%carg.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = alloca %s\n", slot, plt)
 				fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", plt, av, plt, slot)
 				callArgs = append(callArgs, plt+"* "+slot)
@@ -14286,29 +14286,29 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// Build a fresh %txt: memcpy at most 255 bytes of the string's data
 			// into the inline buffer, then store the (clamped) length as i8.
 			c.loadSeq++
-			sl := fmt.Sprintf("%%atxl%d", c.loadSeq)
+			sl := fmt.Sprintf("%%atxl.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", sl, av)
 			c.loadSeq++
-			gt := fmt.Sprintf("%%atxg%d", c.loadSeq)
+			gt := fmt.Sprintf("%%atxg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = icmp ugt i64 %s, 255\n", gt, sl)
 			c.loadSeq++
-			cl := fmt.Sprintf("%%atxc%d", c.loadSeq)
+			cl := fmt.Sprintf("%%atxc.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 255, i64 %s\n", cl, gt, sl)
 			c.loadSeq++
-			dp := fmt.Sprintf("%%atxd%d", c.loadSeq)
+			dp := fmt.Sprintf("%%atxd.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dp, av)
 			c.loadSeq++
-			slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+			slot := fmt.Sprintf("%%carg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = alloca %%txt\n", slot)
 			c.loadSeq++
-			dx := fmt.Sprintf("%%atxb%d", c.loadSeq)
+			dx := fmt.Sprintf("%%atxb.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dx, slot)
 			fmt.Fprintf(c.sb, "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", dx, dp, cl)
 			c.loadSeq++
-			l8 := fmt.Sprintf("%%atx8%d", c.loadSeq)
+			l8 := fmt.Sprintf("%%atx8.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i8\n", l8, cl)
 			c.loadSeq++
-			lx := fmt.Sprintf("%%atxn%d", c.loadSeq)
+			lx := fmt.Sprintf("%%atxn.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lx, slot)
 			fmt.Fprintf(c.sb, "  store i8 %s, i8* %s\n", l8, lx)
 			callArgs = append(callArgs, "%txt* "+slot)
@@ -14383,7 +14383,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				// aggregate literal to a function hit "aggregate arg has no
 				// slot" and silently fall back to the legacy backend.
 				c.loadSeq++
-				slot := fmt.Sprintf("%%carg%d", c.loadSeq)
+				slot := fmt.Sprintf("%%carg.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = alloca %s\n", slot, plt)
 				fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", plt, av, plt, slot)
 				callArgs = append(callArgs, plt+"* "+slot)
@@ -14434,7 +14434,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 		}
 		plt, _ := c.ptype(p)
 		c.loadSeq++
-		slot := fmt.Sprintf("%%cres%d", c.loadSeq)
+		slot := fmt.Sprintf("%%cres.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = alloca %s\n", slot, plt)
 		callArgs = append(callArgs, plt+"* "+slot)
 		resSlots = append(resSlots, slot)
@@ -15814,7 +15814,7 @@ func (c *codegen) emitIndirectCall(f *Function, inst *Inst) error {
 	}
 	fnPtrLT := c.llvmTypeOf(ct) // void (...)*
 	c.loadSeq++
-	fnReg := fmt.Sprintf("%%fnptr%d", c.loadSeq)
+	fnReg := fmt.Sprintf("%%fnptr.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", fnReg, fnPtrLT, fnPtrLT, slot)
 
 	cf := &Function{}
@@ -15887,24 +15887,24 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	// %str-long = { i64 len, i64 cap, i8* data } — field 0.
 	// %txt       = { [255 x i8] buf, i8 len }    — field 1, an i8.
 	c.loadSeq++
-	lenGEP := fmt.Sprintf("%%rblg%d", c.loadSeq)
+	lenGEP := fmt.Sprintf("%%rblg.%d", c.loadSeq)
 	var lenLoad, lenVal string
 	if rt == "%txt" {
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lenGEP, rslot)
 		c.loadSeq++
-		lenLoad = fmt.Sprintf("%%rbll%d", c.loadSeq)
+		lenLoad = fmt.Sprintf("%%rbll.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", lenLoad, lenGEP)
 		c.loadSeq++
-		lenVal = fmt.Sprintf("%%rblz%d", c.loadSeq)
+		lenVal = fmt.Sprintf("%%rblz.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", lenVal, lenLoad)
 	} else {
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, rslot)
 		c.loadSeq++
-		lenVal = fmt.Sprintf("%%rbll%d", c.loadSeq)
+		lenVal = fmt.Sprintf("%%rbll.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", lenVal, lenGEP)
 	}
 	c.loadSeq++
-	inb := fmt.Sprintf("%%rbi%d", c.loadSeq)
+	inb := fmt.Sprintf("%%rbi.%d", c.loadSeq)
 	// unsigned compare covers the negative-index case: a negative i64 is a
 	// huge unsigned value, so `ult` rejects it.
 	fmt.Fprintf(c.sb, "  %s = icmp ult i64 %s, %s\n", inb, idxV, lenVal)
@@ -15912,18 +15912,18 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	// --- data pointer ---
 	var dataPtr string
 	c.loadSeq++
-	dGEP := fmt.Sprintf("%%rbdg%d", c.loadSeq)
+	dGEP := fmt.Sprintf("%%rbdg.%d", c.loadSeq)
 	if rt == "%txt" {
 		// %txt = [255 x i8] at field 0; bitcast to i8*.
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, rslot)
 		c.loadSeq++
-		dataPtr = fmt.Sprintf("%%rbdp%d", c.loadSeq)
+		dataPtr = fmt.Sprintf("%%rbdp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", dataPtr, dGEP)
 	} else {
 		// %str-long = { i64 len, i64 cap, i8* data } — field 2 is the data ptr.
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dGEP, rslot)
 		c.loadSeq++
-		dataPtr = fmt.Sprintf("%%rbdp%d", c.loadSeq)
+		dataPtr = fmt.Sprintf("%%rbdp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i8*, i8** %s\n", dataPtr, dGEP)
 	}
 
@@ -15947,27 +15947,27 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	// The fallback is the destination slot itself — always mapped stack
 	// memory, whose bytes are overwritten by optStoreTag below anyway.
 	c.loadSeq++
-	fbPtr := fmt.Sprintf("%%rbf%d", c.loadSeq)
+	fbPtr := fmt.Sprintf("%%rbf.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = bitcast %%option* %s to i8*\n", fbPtr, dstSlot)
 	c.loadSeq++
-	safePtr := fmt.Sprintf("%%rbs%d", c.loadSeq)
+	safePtr := fmt.Sprintf("%%rbs.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i8* %s, i8* %s\n", safePtr, inb, dataPtr, fbPtr)
 	c.loadSeq++
-	gep := fmt.Sprintf("%%rbg%d", c.loadSeq)
+	gep := fmt.Sprintf("%%rbg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr i8, i8* %s, i64 %s\n", gep, safePtr, idxV)
 	c.loadSeq++
-	val := fmt.Sprintf("%%rbv%d", c.loadSeq)
+	val := fmt.Sprintf("%%rbv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", val, gep)
 	c.loadSeq++
-	zext := fmt.Sprintf("%%rbz%d", c.loadSeq)
+	zext := fmt.Sprintf("%%rbz.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", zext, val)
 
 	// --- assemble the option: { tag, payload } both runtime-selected ---
 	c.loadSeq++
-	tagSel := fmt.Sprintf("%%rbt%d", c.loadSeq)
+	tagSel := fmt.Sprintf("%%rbt.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 0, i64 1\n", tagSel, inb)
 	c.loadSeq++
-	paySel := fmt.Sprintf("%%rbp%d", c.loadSeq)
+	paySel := fmt.Sprintf("%%rbp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 0\n", paySel, inb, zext)
 	// optStoreTag zeroes the payload slot (clearing any stale longer payload);
 	// optStoreTagValue then installs the runtime tag, and
@@ -16070,7 +16070,7 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	}
 	var dataPtr string
 	c.loadSeq++
-	dGEP := fmt.Sprintf("%%bpg%d", c.loadSeq)
+	dGEP := fmt.Sprintf("%%bpg.%d", c.loadSeq)
 	if rt == "%txt" {
 		// %txt = [255 x i8] at field 0; the field address IS the data pointer.
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, rslot)
@@ -16079,22 +16079,22 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 		// %str-long = { i64 len, i64 cap, i8* data } — field 2 is the data ptr.
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dGEP, rslot)
 		c.loadSeq++
-		dataPtr = fmt.Sprintf("%%bpd%d", c.loadSeq)
+		dataPtr = fmt.Sprintf("%%bpd.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i8*, i8** %s\n", dataPtr, dGEP)
 	}
 	// --- capacity, for the bounds check (PHYSICAL capacity, NOT the logical ---
 	// --- len, so fill-then-set-len builders keep writing past the current len). ---
 	// %txt buffer is a fixed 255 bytes; %str-long capacity is field 1 (`cap`).
 	c.loadSeq++
-	inb := fmt.Sprintf("%%bpb%d", c.loadSeq)
+	inb := fmt.Sprintf("%%bpb.%d", c.loadSeq)
 	if rt == "%txt" {
 		fmt.Fprintf(c.sb, "  %s = icmp ult i64 %s, 255\n", inb, idxV)
 	} else {
 		c.loadSeq++
-		capGEP := fmt.Sprintf("%%bpkg%d", c.loadSeq)
+		capGEP := fmt.Sprintf("%%bpkg.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", capGEP, rslot)
 		c.loadSeq++
-		capVal := fmt.Sprintf("%%bpk%d", c.loadSeq)
+		capVal := fmt.Sprintf("%%bpk.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", capVal, capGEP)
 		// unsigned compare covers the negative-index case: a negative i64 is a
 		// huge unsigned value, so `ult` rejects it.
@@ -16106,16 +16106,16 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 	// 0, so an out-of-range (or negative) index never wild-writes; the store
 	// always executes but lands somewhere harmless when the check fails.
 	c.loadSeq++
-	scratch := fmt.Sprintf("%%bps%d", c.loadSeq)
+	scratch := fmt.Sprintf("%%bps.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca i8\n", scratch)
 	c.loadSeq++
-	safePtr := fmt.Sprintf("%%bpbp%d", c.loadSeq)
+	safePtr := fmt.Sprintf("%%bpbp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i8* %s, i8* %s\n", safePtr, inb, dataPtr, scratch)
 	c.loadSeq++
-	safeIdx := fmt.Sprintf("%%bpsi%d", c.loadSeq)
+	safeIdx := fmt.Sprintf("%%bpsi.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 0\n", safeIdx, inb, idxV)
 	c.loadSeq++
-	gep := fmt.Sprintf("%%bpv%d", c.loadSeq)
+	gep := fmt.Sprintf("%%bpv.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr i8, i8* %s, i64 %s\n", gep, safePtr, safeIdx)
 	fmt.Fprintf(c.sb, "  store i8 %s, i8* %s\n", b8, gep)
 
@@ -16135,10 +16135,10 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 			return i18n.Errorf("802t452i", "builtin %s: option result into %s dst", inst.Sym, dstLT)
 		}
 		c.loadSeq++
-		tagSel := fmt.Sprintf("%%bpt%d", c.loadSeq)
+		tagSel := fmt.Sprintf("%%bpt.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 0, i64 1\n", tagSel, inb)
 		c.loadSeq++
-		paySel := fmt.Sprintf("%%bpp%d", c.loadSeq)
+		paySel := fmt.Sprintf("%%bpp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 1, i64 0\n", paySel, inb)
 		c.optStoreTag(dstSlot, 0)
 		c.optStoreTagValue(dstSlot, tagSel)
@@ -16219,7 +16219,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 		_, valV := c.loadVal(inst.Args[1])
 		valT, _ := c.ptype(inst.Args[1])
 		c.loadSeq++
-		g := fmt.Sprintf("%%pfg%d", c.loadSeq)
+		g := fmt.Sprintf("%%pfg.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, recvName, recvName, rslot, fieldIdx)
 		if isDataPtr {
 			// Store an i8* data pointer. txt has no data-pointer field
@@ -16247,7 +16247,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 			}
 			if isTxt {
 				c.loadSeq++
-				tr := fmt.Sprintf("%%pft%d", c.loadSeq)
+				tr := fmt.Sprintf("%%pft.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i8\n", tr, v)
 				fmt.Fprintf(c.sb, "  store i8 %s, i8* %s\n", tr, g)
 			} else {
@@ -16269,19 +16269,19 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 	}
 	if isDataPtr {
 		c.loadSeq++
-		d := fmt.Sprintf("%%pfd%d", c.loadSeq)
+		d := fmt.Sprintf("%%pfd.%d", c.loadSeq)
 		if isTxt {
 			// field 0 is [255 x i8]; bitcast to i8*.
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0, i64 0\n", d, recvName, recvName, rslot)
 			c.loadSeq++
-			bc := fmt.Sprintf("%%pfbc%d", c.loadSeq)
+			bc := fmt.Sprintf("%%pfbc.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", bc, d)
 			fmt.Fprintf(c.sb, "  store i8* %s, i8** %s\n", bc, dstSlot)
 		} else {
 			// field 2 is i8*; load it.
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", d, recvName, recvName, rslot, fieldIdx)
 			c.loadSeq++
-			ld := fmt.Sprintf("%%pfld%d", c.loadSeq)
+			ld := fmt.Sprintf("%%pfld.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = load i8*, i8** %s\n", ld, d)
 			fmt.Fprintf(c.sb, "  store i8* %s, i8** %s\n", ld, dstSlot)
 		}
@@ -16289,14 +16289,14 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 	}
 	// Integer field (len/cap).
 	c.loadSeq++
-	g := fmt.Sprintf("%%pfg%d", c.loadSeq)
+	g := fmt.Sprintf("%%pfg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", g, recvName, recvName, rslot, fieldIdx)
 	c.loadSeq++
-	l := fmt.Sprintf("%%pfl%d", c.loadSeq)
+	l := fmt.Sprintf("%%pfl.%d", c.loadSeq)
 	if isTxt {
 		fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", l, g)
 		c.loadSeq++
-		z := fmt.Sprintf("%%pfz%d", c.loadSeq)
+		z := fmt.Sprintf("%%pfz.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", z, l)
 		v := c.coerce("i64", z, dstLT)
 		if v == "" {
@@ -16428,7 +16428,7 @@ func (c *codegen) emitBuiltin(f *Function, inst *Inst, bm *builtin.BuiltinMethod
 		if rl == "" {
 			rl = "double"
 		}
-		r := fmt.Sprintf("%%bi%d", c.loadSeq)
+		r := fmt.Sprintf("%%bi.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = call %s @%s(%s)\n", r, rl, callee, argStr)
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", rl, r, rl, resSlot)
@@ -16490,7 +16490,7 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	} else {
 		szStr = c.allocBytesOperand(capV, c.elemTypeOfReceiver(inst.Dst))
 	}
-	mp := fmt.Sprintf("%%ba%d", c.loadSeq)
+	mp := fmt.Sprintf("%%ba.%d", c.loadSeq)
 	c.loadSeq++
 	fmt.Fprintf(c.sb, "  %s = call i8* @nolang_rc_alloc(i64 %s)\n", mp, szStr)
 	// Zero the fresh buffer. A malloc'd block is UNINITIALIZED, and for owned
@@ -16504,27 +16504,27 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", mp, szStr)
 	if lt == "%vec" {
-		dp := fmt.Sprintf("%%ba%d", c.loadSeq)
+		dp := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", dp, mp)
-		s0 := fmt.Sprintf("%%ba%d", c.loadSeq)
+		s0 := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, lenV)
-		s1 := fmt.Sprintf("%%ba%d", c.loadSeq)
+		s1 := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, capV)
-		s2 := fmt.Sprintf("%%ba%d", c.loadSeq)
+		s2 := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp)
 		fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, slot)
 	} else {
-		s0 := fmt.Sprintf("%%ba%d", c.loadSeq)
+		s0 := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", s0, lenV)
-		s1 := fmt.Sprintf("%%ba%d", c.loadSeq)
+		s1 := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, capV)
-		s2 := fmt.Sprintf("%%ba%d", c.loadSeq)
+		s2 := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, mp)
 		fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", s2, slot)
@@ -16560,10 +16560,10 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 		}
 		switch lt {
 		case "%str-long":
-			lReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			lReg := fmt.Sprintf("%%be.%d", c.loadSeq)
 			c.loadSeq++
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", lReg, v)
-			dReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			dReg := fmt.Sprintf("%%be.%d", c.loadSeq)
 			c.loadSeq++
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dReg, v)
 			fmt.Fprintf(c.sb, "  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg)
@@ -16576,14 +16576,14 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 			// a zero-extension and prints the DECIMAL value of the code point,
 			// matching what print(c) does.
 			c.loadSeq++
-			z := fmt.Sprintf("%%pez%d", c.loadSeq)
+			z := fmt.Sprintf("%%pez.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = zext i32 %s to i64\n", z, v)
 			fmt.Fprintf(c.sb, "  call void @eprint_i64(i64 %s)\n", z)
 		case "i1":
 			// A bare bool prints as 1/0 (print_bool's convention), so widening
 			// to i64 and reusing eprint_i64 is exactly equivalent.
 			c.loadSeq++
-			z := fmt.Sprintf("%%peb%d", c.loadSeq)
+			z := fmt.Sprintf("%%peb.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = zext i1 %s to i64\n", z, v)
 			fmt.Fprintf(c.sb, "  call void @eprint_i64(i64 %s)\n", z)
 		case "%txt":
@@ -16595,33 +16595,33 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 				return i18n.Errorf("4rsqarsx", "eprint txt slot")
 			}
 			c.loadSeq++
-			lGEP := fmt.Sprintf("%%etlg%d", c.loadSeq)
+			lGEP := fmt.Sprintf("%%etlg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lGEP, slot)
 			c.loadSeq++
-			lLd := fmt.Sprintf("%%etll%d", c.loadSeq)
+			lLd := fmt.Sprintf("%%etll.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", lLd, lGEP)
 			c.loadSeq++
-			l64 := fmt.Sprintf("%%etl6%d", c.loadSeq)
+			l64 := fmt.Sprintf("%%etl6.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", l64, lLd)
 			c.loadSeq++
-			dGEP := fmt.Sprintf("%%etdg%d", c.loadSeq)
+			dGEP := fmt.Sprintf("%%etdg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, slot)
 			c.loadSeq++
-			dPtr := fmt.Sprintf("%%etdp%d", c.loadSeq)
+			dPtr := fmt.Sprintf("%%etdp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", dPtr, dGEP)
 			c.loadSeq++
-			r0 := fmt.Sprintf("%%etr0%d", c.loadSeq)
+			r0 := fmt.Sprintf("%%etr0.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, l64)
 			c.loadSeq++
-			r1 := fmt.Sprintf("%%etr1%d", c.loadSeq)
+			r1 := fmt.Sprintf("%%etr1.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, l64)
 			c.loadSeq++
-			r2 := fmt.Sprintf("%%etr2%d", c.loadSeq)
+			r2 := fmt.Sprintf("%%etr2.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, dPtr)
-			lReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			lReg := fmt.Sprintf("%%be.%d", c.loadSeq)
 			c.loadSeq++
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", lReg, r2)
-			dReg := fmt.Sprintf("%%be%d", c.loadSeq)
+			dReg := fmt.Sprintf("%%be.%d", c.loadSeq)
 			c.loadSeq++
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dReg, r2)
 			fmt.Fprintf(c.sb, "  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg)
@@ -16663,10 +16663,10 @@ func (c *codegen) emitTerm(f *Function, t *Term) error {
 				// loadVal hands back a LOADED struct here (not a slot pointer),
 				// so the tag comes from extractvalue rather than optLoadTag.
 				c.loadSeq++
-				tg := fmt.Sprintf("%%otg%d", c.loadSeq)
+				tg := fmt.Sprintf("%%otg.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = extractvalue %%option %s, 0\n", tg, v)
 				c.loadSeq++
-				nb := fmt.Sprintf("%%cb%d", c.loadSeq)
+				nb := fmt.Sprintf("%%cb.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = icmp eq i64 %s, 0\n", nb, tg)
 				vT, v = "i1", nb
 			}
@@ -16676,7 +16676,7 @@ func (c *codegen) emitTerm(f *Function, t *Term) error {
 			// i1, and both must land as i1 here.
 			if vT != "i1" {
 				c.loadSeq++
-				nb := fmt.Sprintf("%%cb%d", c.loadSeq)
+				nb := fmt.Sprintf("%%cb.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = icmp ne %s %s, 0\n", nb, vT, v)
 				v = nb
 			}

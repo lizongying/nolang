@@ -17,12 +17,18 @@
 ;   - 第 3 例（原位寫入）是 §4.2(b) 的快照守門員：閘門若失效會印 99 而不是 1；
 ;   - 第 4 例（迴圈）若 retain 與 wrapper 的 release 不平衡，會洩漏或 double free。
 
+; 取首個
+; v []i64: 來源 vec，由 run 深拷貝後交給協程
+; r i64: v[0]；越界由 #{index-out=zero} 補零
 first = (v []i64) (r i64) {
 
     #{index-out=zero}
     r = v[0]
 }
 
+; 協程：把輸入字串原樣回傳（驗證 spawn 後父側對同一字串 retain/release 正確）
+; s str: 來源字串
+; r str: 與 s 相同的內容
 echo = (s str) (r str) {
     r = s
 }

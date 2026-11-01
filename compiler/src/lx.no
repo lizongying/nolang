@@ -156,6 +156,7 @@ tk {
 }
 
 ; 建立一個空 token（避免每個呼叫端各寫一次七行字面量）
+; r: 返回結果
 tk.new = () (r tk) {
     r = tk {
         ln: 0
@@ -172,6 +173,11 @@ tk.new = () (r tk) {
 ; 位元組分類（照抄 lexer.go 的 isLetter / isDigit / isHex）
 ; ═══════════════════════════════════════════════════════════════════
 
+; 功能待補充
+; c: 運算元
+; lo: 下界
+; hi: 上界
+; yes: 是否成立
 lx-in-range = (c i64, lo i64, hi i64) (yes bool) {
     yes = false
     c < lo -> return
@@ -182,6 +188,8 @@ lx-in-range = (c i64, lo i64, hi i64) (yes bool) {
 ; isLetter：ASCII 快路徑 a-z A-Z _ -，加上 >= 0x80 的拉丁-1 字母。
 ; ⚠️ 那 65 個位元組是**實測**來的（unicode.IsLetter(rune(byte)) 的論域
 ;    只到 0xFF，所以是一張固定的 128 項表），不是從 Unicode 表推的。
+; c: 運算元
+; yes: 是否成立
 lx-is-letter = (c i64) (yes bool) {
     yes = false
     lx-in-range(c, B-LO-A, B-LO-Z) -> yes = true
@@ -197,11 +205,16 @@ lx-is-letter = (c i64) (yes bool) {
 }
 
 ; isDigit：**只有** ASCII 0-9（實測：>= 0x80 的 128 個位元組全部為 false）
+; c: 運算元
+; yes: 是否成立
 lx-is-digit = (c i64) (yes bool) {
     yes = false
     lx-in-range(c, B-DIG0, B-DIG9) -> yes = true
 }
 
+; 功能待補充
+; c: 運算元
+; yes: 是否成立
 lx-is-ident-char = (c i64) (yes bool) {
     yes = false
     a = lx-is-letter(c)
@@ -210,6 +223,9 @@ lx-is-ident-char = (c i64) (yes bool) {
     b -> yes = true
 }
 
+; 功能待補充
+; c: 運算元
+; yes: 是否成立
 lx-is-hex = (c i64) (yes bool) {
     yes = false
     d = lx-is-digit(c)
@@ -221,6 +237,8 @@ lx-is-hex = (c i64) (yes bool) {
 ; hex-val：0-15，非十六進位回 -1（照抄 lexer.go 的 hexVal）
 ; ⚠️ 每一臂都要自己的 #{overflow=wrap}：該註解只作用於**緊跟的一條敘述**，
 ;    寫在 `lx-in-range(...) ->` 之前不會生效（`no vet` 會報 option 未處理）。
+; c: 運算元
+; v: 結果數值
 lx-hex-val = (c i64) (v i64) {
     v = -1
     lx-in-range(c, B-DIG0, B-DIG9) -> {
@@ -237,6 +255,9 @@ lx-hex-val = (c i64) (v i64) {
     }
 }
 
+; 功能待補充
+; c: 運算元
+; yes: 是否成立
 lx-is-ws = (c i64) (yes bool) {
     yes = false
     c == B-SP -> yes = true
@@ -249,6 +270,10 @@ lx-is-ws = (c i64) (yes bool) {
 ; ═══════════════════════════════════════════════════════════════════
 
 ; sub：取 s[a..b)（用 sb 組，不依賴 str 的 substring API）
+; s: 字串
+; a: 運算元
+; b: 運算元
+; r: 結果字串
 lx-sub = (s []byte, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
@@ -262,12 +287,17 @@ lx-sub = (s []byte, a i64, b i64) (r str) {
 }
 
 ; ch-str：把單一位元組變成 1 字元的 str（對應 Go 的 charLits[l.ch]）
+; c: 運算元
+; r: 結果字串
 lx-ch-str = (c i64) (r str) {
     t = sb.init(1)
     t.push-byte(c)
     r = t.str()
 }
 
+; 功能待補充
+; v: 值
+; c: 結果字元
 lx-hex-digit = (v i64) (c i64) {
     #{overflow=wrap}
     c = v + B-DIG0
@@ -277,6 +307,9 @@ lx-hex-digit = (v i64) (c i64) {
     }
 }
 
+; 功能待補充
+; b: 運算元
+; c: 運算元
 lx-esc-hex = (b sb, c i64) () {
     b.push-byte(B-BS)
     b.push-byte(B-LOWER-X)
@@ -289,6 +322,8 @@ lx-esc-hex = (b sb, c i64) () {
 }
 
 ; esc-byte：把一個位元組按約定轉義後追加到 b
+; b: 運算元
+; c: 運算元
 lx-esc-byte = (b sb, c i64) () {
     c == B-BS -> {
         b.push-byte(B-BS)
@@ -323,6 +358,8 @@ lx-esc-byte = (b sb, c i64) () {
 
 ; esc：空字串 -> "-"，否則逐位元組轉義
 ; ⚠️ 入口先 to-bytes() 轉一次再遍歷：不必另外快取長度，也不必呼叫 len-bytes()。
+; s: 字串
+; r: 結果字串
 lx-esc = (s []byte) (r str) {
     n = s.len()
     n == 0 -> {
@@ -341,6 +378,9 @@ lx-esc = (s []byte) (r str) {
 ; 狀態操作（照抄 readChar / peekChar / skipWhitespace）
 ; ═══════════════════════════════════════════════════════════════════
 
+; 功能待補充
+; src: 來源
+; r: 返回結果
 lx-new = (src []byte) (r lxst) {
     r = lxst {
         input: src
@@ -358,6 +398,7 @@ lx-new = (src []byte) (r lxst) {
 
 ; readChar：前進一個位元組。column 逐位元組遞增；見到 '\n' 時 line++ 且 column 歸零。
 ; ⚠️ 這裡「先取 ch 再前進」的順序是照抄的，別改成先前進。
+; lx: 輸入
 lx-read-char = (lx lxst) () {
     n = lx.input.len()
     lx.rpos >= n -> lx.ch = 0
@@ -374,12 +415,17 @@ lx-read-char = (lx lxst) () {
     }
 }
 
+; 功能待補充
+; lx: 輸入
+; c: 結果字元
 lx-peek = (lx lxst) (c i64) {
     n = lx.input.len()
     c = 0
     lx.rpos < n -> c = lx.input[lx.rpos]
 }
 
+; 功能待補充
+; lx: 輸入
 lx-skip-ws = (lx lxst) () {
     (lx-is-ws(lx.ch)) {
         lx-read-char(lx)
@@ -387,6 +433,7 @@ lx-skip-ws = (lx lxst) () {
 }
 
 ; skip-to-eol：前進到 '\n' 或 EOF（不消耗換行）
+; lx: 輸入
 lx-skip-to-eol = (lx lxst) () {
     stop = false
     (stop == false) {
@@ -401,6 +448,9 @@ lx-skip-to-eol = (lx lxst) () {
 ; 讀取器
 ; ═══════════════════════════════════════════════════════════════════
 
+; 功能待補充
+; lx: 輸入
+; r: 結果字串
 lx-read-ident = (lx lxst) (r str) {
     start = lx.pos
     (lx-is-ident-char(lx.ch)) {
@@ -409,6 +459,9 @@ lx-read-ident = (lx lxst) (r str) {
     r = lx-sub(lx.input, start, lx.pos)
 }
 
+; 功能待補充
+; s: 字串
+; yes: 是否成立
 lx-contains-dot = (s []byte) (yes bool) {
     yes = false
     n = s.len()
@@ -418,6 +471,9 @@ lx-contains-dot = (s []byte) (yes bool) {
     }
 }
 
+; 功能待補充
+; lx: 輸入
+; r: 結果字串
 lx-read-number = (lx lxst) (r str) {
     start = lx.pos
     hex = false
@@ -454,6 +510,9 @@ lx-read-number = (lx lxst) (r str) {
 ; read-string：處理 '...' 與 "..."。回 (literal, raw)。
 ; ⚠️ Go 版有一條「無轉義」的零分配快路徑；這裡只實作一般路徑。
 ;    兩者**輸出相同**（快路徑只是省配置），所以不影響差分。
+; lx: 輸入
+; lit: 結果字串
+; raw: 結果字串
 lx-read-string = (lx lxst) (lit str, raw str) {
     quote = lx.ch
     rawstart = lx.pos
@@ -481,6 +540,8 @@ lx-read-string = (lx lxst) (lit str, raw str) {
 }
 
 ; esc-simple-ok：\n \t \r \\ \' \" \0 這七個簡單轉義
+; e: 錯誤訊息
+; yes: 是否成立
 lx-esc-simple-ok = (e i64) (yes bool) {
     yes = true
     e == B-ESC-N -> return
@@ -493,6 +554,9 @@ lx-esc-simple-ok = (e i64) (yes bool) {
     yes = false
 }
 
+; 功能待補充
+; e: 錯誤訊息
+; v: 結果數值
 lx-esc-simple = (e i64) (v i64) {
     v = e
     e == B-ESC-N -> v = B-LF
@@ -504,6 +568,9 @@ lx-esc-simple = (e i64) (v i64) {
 ; str-esc：處理一個反斜線轉義。回 trailing（true = 呼叫端還要再 readChar 一次）。
 ; ⚠️ 回 trailing=false 的路徑對應 Go 的 `continue`：它**跳過**迴圈尾端的
 ;    l.readChar()。這不是風格問題，是行為差異（`\x4Z` 會吃掉那個 '4'）。
+; lx: 輸入
+; buf: 緩衝區
+; trailing: 布林結果
 lx-str-esc = (lx lxst, buf sb) (trailing bool) {
     trailing = true
     lx-read-char(lx)
@@ -544,6 +611,8 @@ lx-str-esc = (lx lxst, buf sb) (trailing bool) {
 ;    回捲是空操作 ⇒ 每個續行先跳過前導空白、再多吃一個字元。
 ;    這裡刻意用同樣的「跳過空白後不回捲」寫法，以保證 L1 逐位元組相同。
 ;    修 Go 側的缺陷時，這裡也要一起改（並更新本註解）。
+; lx: 輸入
+; r: 結果字串
 lx-read-raw = (lx lxst) (r str) {
     lx-read-char(lx)
     lx.ch != B-LF -> {
@@ -583,6 +652,10 @@ lx-read-raw = (lx lxst) (r str) {
 
 ; read-regex：JS 風格正則 /pattern/flags。回 (pattern, flags, ok)。
 ; ok=false 表示這個 '/' 其實不是正則（未閉合 / 跨行）—— 呼叫端要退回除法。
+; lx: 輸入
+; pat: 結果字串
+; flags: 結果字串
+; ok: 是否成功
 lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
     lx-read-char(lx)
     buf = sb.init(16)
@@ -682,6 +755,8 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
 
 ; block-boundary：從第二個 ';' 之後起到行尾是否只有空白（⇒ 是塊註釋定界符）。
 ; Go 的 isBlockCommentStart 與 isBlockCommentEnd 是**同一個函式**，故合併。
+; lx: 輸入
+; yes: 是否成立
 lx-block-boundary = (lx lxst) (yes bool) {
     n = lx.input.len()
     #{overflow=wrap}
@@ -708,6 +783,9 @@ lx-block-boundary = (lx lxst) (yes bool) {
     }
 }
 
+; 功能待補充
+; lx: 輸入
+; tx: 結果字串
 lx-read-block = (lx lxst) (tx str) {
     lx-read-char(lx)
     lx-read-char(lx)
@@ -744,6 +822,9 @@ lx-read-block = (lx lxst) (tx str) {
 ; 正則 vs 除法（照抄 isRegexStart）
 ; ═══════════════════════════════════════════════════════════════════
 
+; 功能待補充
+; lx: 輸入
+; yes: 是否成立
 lx-regex-start = (lx lxst) (yes bool) {
     p = lx.prev
     yes = true
@@ -867,6 +948,8 @@ lx-regex-start = (lx lxst) (yes bool) {
 ;    用它當參數名或局部變數名會讓整個函式**不被註冊**，而錯誤訊息只會說
 ;    「'<函式名>' is not defined」——指向呼叫端，完全誤導。
 ;    這個坑讓 lx-emit 與 lx-scan-token 兩個函式同時消失（它們是唯二用到 err 的）。
+; t: 輸入
+; r: 結果字串
 lx-fmt = (t tk) (r str) {
     b = sb.init(64)
     b.push(t.ln.to-str())
@@ -892,6 +975,9 @@ lx-fmt = (t tk) (r str) {
 ; isRegexStart 讀到的永遠是**前一個** token 的型別）。
 ; Go 有若干 `return tok` 早退，這裡用 done 旗標表示「不再做尾端的 readChar」。
 
+; 功能待補充
+; lx: 輸入
+; t: 輸入
 lx-scan-token = (lx lxst, t tk) () {
     lx-skip-ws(lx)
     ln = lx.line
@@ -1452,6 +1538,8 @@ lx-scan-token = (lx lxst, t tk) () {
 ;    跨模組呼叫的寫法是 `<模組短名>.<定義名>`，所以叫 dump 才能寫成 lx.dump(src)。
 ;    若命名為 lx-dump，呼叫端就得寫 lx.lx-dump(...)（可讀性差）。
 ;    內部輔助函式一律保留 lx- 前綴（對外不可見，只為在本檔內區隔）。
+; src: 來源
+; out: 輸出結果
 dump = (src []byte) (out str) {
     lx = lx-new(src)
     b = sb.init(1024)
@@ -1478,6 +1566,8 @@ dump = (src []byte) (out str) {
 ; ⚠️ 元素型別必須由**宣告註解**決定：`out []tk = with-cap(n)`。
 ;    裸寫 `out = []tk` 會被推成 `[]i64`（實測：vec.push 報
 ;    "cannot push a value of type 'tk' into '[]i64'"）。
+; src: 來源
+; r: 結果容器
 scan-all = (src []byte) (r []tk) {
     lx = lx-new(src)
     out []tk = with-cap(256)

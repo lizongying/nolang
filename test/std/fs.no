@@ -13,6 +13,7 @@ TMP-FILE2 = '/tmp/nolang_fs_test_file2.txt'
 
 ; ── 檔案存在性檢查 ────────────────────────────
 
+; is-file：目錄 /tmp 不是普通檔案，應回 false
 t-is-file = () {
 
     ; /tmp should be a directory, not a file
@@ -20,6 +21,7 @@ t-is-file = () {
     runner.is-false(yes, 'is-file /tmp == false')
 }
 
+; is-dir：存在的目錄得 true，不存在的路徑得 false
 t-is-dir = () {
     yes bool = fs.is-dir('/tmp')
     runner.is-true(yes, 'is-dir /tmp == true')
@@ -29,6 +31,7 @@ t-is-dir = () {
 
 ; ── open + write + read + close ──────────────
 
+; 寫入再讀回：open 寫入成功 → 檔案存在 → 讀回內容一致（結束清理臨時檔）
 t-open-write-read = () {
 
     ; 清理可能殘留的檔案
@@ -91,6 +94,7 @@ t-open-write-read = () {
 
 ; ── stat-size ────────────────────────────────
 
+; stat-size：剛寫入 10 位元組的檔案應解出 ok(10)，非 nil / err
 t-stat-size = () {
 
     ; 建立檔案並檢查大小
@@ -128,6 +132,7 @@ t-stat-size = () {
 
 ; ── copy-file ────────────────────────────────
 
+; copy-file：複製 7 位元組檔案後，目標應存在且大小為 7
 t-copy-file = () {
     fs.remove(TMP-FILE)
     fs.remove(TMP-FILE2)
@@ -176,6 +181,7 @@ t-copy-file = () {
 
 ; ── list-dir ────────────────────────────────
 
+; list-dir：/tmp 應至少列出一個項目
 t-list-dir = () {
     entries = fs.list-dir('/tmp')
     runner.gt(entries.len(), 0, 'list-dir /tmp has entries')

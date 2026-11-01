@@ -9,6 +9,7 @@
 
 ; ── process.new ───────────────────────────────
 
+; 新建進程：初始 pid 為 0、running 為 false（尚未啟動）
 t-new = () {
     p = process.new()
     runner.eq(p.pid, 0, 'new process pid == 0')
@@ -18,6 +19,7 @@ t-new = () {
 
 ; ── process.shell ────────────────────────────
 
+; shell 直譯器：'true' 退出碼 0、'false' 退出碼非 0
 t-shell = () {
     code = process.shell('true')
     runner.eq(code, 0, 'shell true exit 0')
@@ -27,6 +29,7 @@ t-shell = () {
 
 ; ── process.spawn + wait ─────────────────────
 
+; spawn + wait：子進程 pid 為正，'true' 的等待狀態為 0
 t-spawn-wait = () {
     pid = process.spawn('true')
     runner.gt(pid, 0, 'spawn pid > 0')
@@ -36,6 +39,7 @@ t-spawn-wait = () {
 
 ; ── process.parent-pid ───────────────────────
 
+; parent-pid 應為正整數（當前進程的父進程號）
 t-parent-pid = () {
     pid = process.parent-pid()
     runner.gt(pid, 0, 'parent-pid > 0')
@@ -43,6 +47,7 @@ t-parent-pid = () {
 
 ; ── process.cmd (替代 output，因 output 有 codegen bug) ──
 
+; cmd：執行 echo 退出碼 0，且擷取到的標準輸出非空
 t-cmd = () {
     args = ['hello']
     out, stderr, code, err = process.cmd('echo', args, '', '', [], 0, false)

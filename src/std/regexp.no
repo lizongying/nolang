@@ -413,7 +413,7 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         return
     }
 
-    ; D6：`c = ...[...]` 的结果是 ?char；这里要的是旧的行为（plain char），显式标註 char。
+    ; D6：`c = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
     c char = pattern[i]
 
     ; . — 任意字元
@@ -485,7 +485,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 
     (ri < n) {
 
-        ; D6：`c = ...[...]` 的结果是 ?char；这里要的是旧的行为（plain char），显式标註 char。
+        ; D6：`c = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
         c char = pattern[ri]
 
         ; 結束（非首字元）
@@ -512,7 +512,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             next-c = pattern[ri + 1]
             next-c == 45 -> {
 
-                ; D6：`end-c = ...[...]` 的结果是 ?char；这里要的是旧的行为（plain char），显式标註 char。
+                ; D6：`end-c = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
                 #{overflow=wrap}
                 end-c char = pattern[ri + 2]
                 end-c != 93 -> {
@@ -539,7 +539,7 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                 next-i = ri + 1
                 ri < n -> {
 
-                    ; D6：`esc-c = ...[...]` 的结果是 ?char；这里要的是旧的行为（plain char），显式标註 char。
+                    ; D6：`esc-c = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
                     #{overflow=wrap}
                     esc-c char = pattern[ri + 1]
                     .set-class-escape(cls-idx, esc-c)
@@ -597,7 +597,7 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
         return
     }
 
-    ; D6：`c = ...[...]` 的结果是 ?char；这里要的是旧的行为（plain char），显式标註 char。
+    ; D6：`c = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
     c char = pattern[ri]
 
     ; \d — 數字
@@ -786,7 +786,7 @@ regexp.compile = () {
 
     (i < n) {
 
-        ; D6：`c = ...[...]` 的结果是 ?char；这里要的是旧的行为（plain char），显式标註 char。
+        ; D6：`c = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
         c char = pat[i]
 
         ; 預設前進 1
@@ -881,7 +881,7 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
         }
         op == RE-OP-CLASS -> sp < text.len-bytes() -> {
 
-            ; D6：`ch = ...[...]` 的结果是 ?char；这里要的是旧的行为（plain char），显式标註 char。
+            ; D6：`ch = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
             ch char = text[sp]
 
             yes = .in-class(.arg1[pc], ch)

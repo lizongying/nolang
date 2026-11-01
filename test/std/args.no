@@ -16,6 +16,7 @@
 
 # /test/runner
 
+; args.count 應等於 os.args().len，且至少為 1（含程式名，回歸：曾誤回 0）
 t-count = () {
     c i64 = args.count()
     o i64 = os.args().len()
@@ -23,6 +24,7 @@ t-count = () {
     runner.gt(c, 0, 'count >= 1 (regression: was 0)')
 }
 
+; get(0) 與 program 都應等於 os.arg(0)（即程式名）
 t-get-program = () {
     opt-p = args.program()
     p str = ''
@@ -49,6 +51,7 @@ t-get-program = () {
     runner.str-eq(p, o0, n, 'program == os.arg(0)')
 }
 
+; 無額外參數時 has-flag 對任意旗標都應為 false
 t-has-flag-absent = () {
 
     ; argv 僅含程式名，[1..n) 迴圈不執行 => 任何 flag 皆不存在
@@ -56,6 +59,7 @@ t-has-flag-absent = () {
     runner.is-false(v, 'absent flag => false')
 }
 
+; 無 --k=v 形式的參數時 get-option 應為 nil
 t-get-option-absent = () {
     ov = args.get-option('--absent')
     is-nil = false
@@ -67,6 +71,7 @@ t-get-option-absent = () {
     runner.is-true(is-nil, 'absent option => nil')
 }
 
+; 只有程式名、沒有位置參數時 get-positional 應為 nil
 t-get-positional-absent = () {
     pv = args.get-positional(0)
     is-nil = false

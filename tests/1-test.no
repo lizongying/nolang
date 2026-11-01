@@ -21,6 +21,8 @@ foo-bar = 40
 hello-world = 'Hello World'
 
 ; 函数定义
+; a i64: 第一個加數
+; b i64: 第二個加數
 add = (a i64, b i64) {
 
     #{overflow=wrap}
@@ -28,6 +30,11 @@ add = (a i64, b i64) {
     print('result: {result}')
 }
 
+; 帶輸出參數的版本：c、d 雖然宣告為輸出，但體內只顯式置 0，未把和寫回
+; a i64: 第一個加數（只參與印出）
+; b i64: 第二個加數（只參與印出）
+; c i64: 固定寫入 0，與 a+b 無關
+; d i64: 固定寫入 0，與 a+b 無關
 add2 = (a i64, b i64) (c i64, d i64) {
     c = 0
     d = 0

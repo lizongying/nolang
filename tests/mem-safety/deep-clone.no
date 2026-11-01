@@ -1,6 +1,7 @@
 ; 深層 clone 測試：b = a 後 a 和 b 各自獨立
 
 ; 測試 1：[]i64 深層 clone
+; ok bool: 改 b[0] 為 99 後，a[0] 仍是 10、b[0] 是 99 才為 true
 test-clone-vec = () (ok bool) {
     a = [10, 20, 30]
     b = a
@@ -10,6 +11,7 @@ test-clone-vec = () (ok bool) {
 }
 
 ; 測試 2：[]str 深層 clone
+; ok bool: 兩份 vec 都保持 ['hello', 'world'] 且長度 2 才為 true
 test-clone-str-vec = () (ok bool) {
     s []str
     s.push('hello')
@@ -24,6 +26,7 @@ test-clone-str-vec = () (ok bool) {
 }
 
 ; 測試 3：str 深層 clone
+; ok bool: 來源與副本的 len-bytes() 都是 5 才為 true
 test-clone-str = () (ok bool) {
     s = 'hello'
     c = s
@@ -37,6 +40,8 @@ MyData {
     value i64
 }
 
+; 測試 clone-struct
+; ok bool: 來源與副本的 value 都是 42、name 都是 'test' 才為 true
 test-clone-struct = () (ok bool) {
     d = MyData {
         name: 'test'

@@ -1,3 +1,4 @@
+; 測試 match
 test-match = () {
     n = 42
     result = n: {

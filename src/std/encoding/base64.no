@@ -20,10 +20,10 @@ PAD = 61
 ; ═══════════════════════════════════════════════
 
 ; 使用指定字母表進行 Base64 編碼
-; data []byte: 輸入資料
-; table str: Base64 字母表
-; 返回 out str: Base64 編碼字串
-; [encode](#encoding.base64.encode)
+; data []byte: 待編碼的輸入位元組
+; table str: 64 字元的字母表（標準為 A-Za-z0-9+/）；使用 URL 安全字母表時以 -_ 代替 +/
+; out str: 編碼後字串，長度為 4 的倍數，不足處以 '=' 填充
+; [encode](#base64.encode)
 encode = (data []byte, table str) (out str) {
 
     n = data.len()
@@ -103,18 +103,18 @@ encode = (data []byte, table str) (out str) {
     }
 }
 
-; 使用標準字母表編碼
-; data []byte: 輸入資料
-; 返回 out str: Base64 編碼字串
-; [encode-std](#encoding.base64.encode-std)
+; 使用標準字母表（A-Za-z0-9+/）編碼
+; data []byte: 待編碼的輸入位元組
+; out str: 標準 Base64 字串（'=' 填充）
+; [encode-std](#base64.encode-std)
 encode-std = (data []byte) (out str) {
     out = encode(data, BASE64-STD)
 }
 
-; 使用 URL 安全字母表編碼
-; data []byte: 輸入資料
-; 返回 out str: Base64 編碼字串
-; [encode-url](#encoding.base64.encode-url)
+; 使用 URL 安全字母表（A-Za-z0-9-_）編碼
+; data []byte: 待編碼的輸入位元組
+; out str: URL 安全的 Base64 字串（仍保留 '=' 填充）
+; [encode-url](#base64.encode-url)
 encode-url = (data []byte) (out str) {
     out = encode(data, BASE64-URL)
 }
@@ -124,10 +124,10 @@ encode-url = (data []byte) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; 使用指定字母表進行 Base64 解碼
-; s str: Base64 字串
-; table str: Base64 字母表
-; 返回 out ?[]byte: ok=解碼後資料, err=無效字元
-; [decode](#encoding.base64.decode)
+; s str: Base64 字串（應為 4 的倍數；不足一組的尾部字元會被忽略）
+; table str: 與編碼時相同的 64 字元字母表
+; out ?[]byte: ok=解碼後的資料（已依 '=' 填充數截短）, err=輸入包含字母表外的無效字元
+; [decode](#base64.decode)
 decode = (s str, table str) (out ?[]byte) {
 
     out = nil
@@ -236,8 +236,11 @@ decode = (s str, table str) (out ?[]byte) {
 ; ═══════════════════════════════════════════════
 
 ; 單個 Base64 字元轉數值
-; 填充字元回傳 0，無效字元回傳 -1
-; [b64-val](#encoding.base64.b64-val)
+; 填充字元 '=' 回傳 0，字母表外字元回傳 -1
+; c i64: 要查表的字元碼點
+; table str: 64 字元字母表；以線性掃描找到對應下標
+; v i64: 0..63 為字母表下標，-1 為無效字元
+; [b64-val](#base64.b64-val)
 b64-val = (c i64, table str) (v i64) {
     v = -1
     c == 61 -> {

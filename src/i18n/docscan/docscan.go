@@ -130,6 +130,19 @@ func scanFile(path, src string) []Entry {
 	return out
 }
 
+// Anchors returns the set of anchors the corpus declares, anchor -> true. The
+// alias catalogs (`<tag>-alias.noml`) are keyed by exactly this set restricted
+// to the standard library, so a gate can demand every alias key exists without
+// re-checking the block text (an anchor may legitimately map to two texts in
+// different modules; Texts would reject that, aliases do not care).
+func Anchors(entries []Entry) map[string]bool {
+	out := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		out[e.Anchor] = true
+	}
+	return out
+}
+
 // Texts collapses entries into anchor -> text, failing when one anchor carries
 // two different texts. Two identical blocks under one anchor in different files
 // share one entry, which is the intended outcome: the same paragraph should be

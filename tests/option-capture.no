@@ -7,6 +7,9 @@
 ; ── 1. 內部除零捕獲：`a = b + c / d` ────────────────────────────────
 ; 缺陷修正：以前 `a ?i64 = b + c / d` 會把 c/d 的 payload 無條件解包再包 ok，
 ; 除零得到錯誤數值、錯誤完全遺失。現在 c/d 被就地捕獲成 __cap_N。
+; b i64: 加法左運算元
+; c i64: 被除數
+; d i64: 除數（0 時 c/d 被就地捕獲成 err）
 div-capture = (b i64, c i64, d i64) {
 
     #{overflow=wrap}
@@ -23,6 +26,8 @@ div-capture = (b i64, c i64, d i64) {
 ; ── 2. 越界捕獲：`a = v[100]` → nil ─────────────────────────────────
 ; 安全索引的捕獲以「所在函式有 option 結果參數」為閘門（鏡像被取代的
 ; maybeAutoPropagateIndex 的既有範圍）。
+; i i64: 下標（容器只有 3 個元素，100 越界得到 nil）
+; res ?i64: 把捕獲後的 x 上拋給呼叫方
 oob-capture = (i i64) (res ?i64) {
     a = [10, 20, 30]
     x = a[i]
@@ -38,6 +43,7 @@ oob-capture = (i i64) (res ?i64) {
 
 ; ── 3. 溢出捕獲：option 包裝路徑上的 sadd/ssub/smul/neg ─────────────
 ; 顯式 `?T` 標註讓算術結果落在 option 包裝路徑，溢出 → err（而非靜默回繞）。
+; x i64: 要加 1 的數值（i64.MAX 觸發溢出）
 overflow-add = (x i64) {
     a ?i64 = x + 1
     a: {
@@ -49,6 +55,8 @@ overflow-add = (x i64) {
     }
 }
 
+; 乘法溢出捕獲：x * 2 落在 option 包裝路徑上，x = i64.MAX 時得 err 而非回繞
+; x i64: 要乘 2 的數值（1 走 ok、i64.MAX 觸發溢出）
 overflow-mul = (x i64) {
     a ?i64 = x * 2
     a: {
@@ -60,6 +68,8 @@ overflow-mul = (x i64) {
     }
 }
 
+; 取負溢出捕獲：-x 同樣走 option 包裝路徑，溢出則得 err
+; x i64: 要取負的數值（本檔只傳 1，驗證 ok 分支）
 overflow-neg = (x i64) {
     a ?i64 = -x
     a: {
@@ -73,11 +83,17 @@ overflow-neg = (x i64) {
 
 ; ── 4. option 函式內 `?=` 仍上拋；plain 函式內捕獲；`_ =` 捨棄 ────────
 ; `out ?= c / d`：上拋語義（要求函式有 option 結果參數），nil/err 提前 return。
+; c i64: 被除數
+; d i64: 除數（0 時產生除零 err 並提前 return）
+; out ?i64: 成功時為 c/d 的 ok 值；失敗保留 err 或 nil
 propagate = (c i64, d i64) (out ?i64) {
     out = nil
     out ?= c / d
 }
 
+; 用 `_ =` 捨棄可錯結果：除零不得中斷流程，後續語句照常執行
+; b i64: 被除數
+; c i64: 除數（本檔傳 0，錯誤被丟棄）
 discard = (b i64, c i64) {
     _ = b / c
     print('discard: no-error')

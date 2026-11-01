@@ -49,6 +49,7 @@ t-max-min = () {
     runner.f64-eq(fz, 0.3, 0.000001, 'max(0.1,0.3,0.2) == 0.3')
 }
 
+; 驗證 abs：負數取正、零與正數原樣（裸函數形式調用，點式 x.abs() 尚未支持）
 t-abs = () {
 
     #{overflow=wrap}
@@ -60,6 +61,7 @@ t-abs = () {
     runner.eq(c, 0, 'abs(0) == 0')
 }
 
+; 驗證 math.even / math.odd：偶數對 even 回 true、奇數對 odd 回 true，兩者互斥
 t-even-odd = () {
     yes1 bool = math.even(4)
     runner.is-true(yes1, 'even(4) == true')
@@ -71,6 +73,7 @@ t-even-odd = () {
     runner.is-false(no2, 'odd(4) == false')
 }
 
+; 驗證 math.gcd：12 與 8 的最大公因數為 4，互質數對回 1，gcd(0, n) 等於 n
 t-gcd = () {
     g i64 = math.gcd(12, 8)
     runner.eq(g, 4, 'gcd(12,8) == 4')
@@ -80,6 +83,7 @@ t-gcd = () {
     runner.eq(g3, 5, 'gcd(0,5) == 5')
 }
 
+; 驗證 math.lcm：4 與 6 的最小公倍數為 12，互質數對得兩數之積，任一為 0 則結果為 0
 t-lcm = () {
     l i64 = math.lcm(4, 6)
     runner.eq(l, 12, 'lcm(4,6) == 12')
@@ -89,6 +93,7 @@ t-lcm = () {
     runner.eq(l3, 0, 'lcm(0,5) == 0')
 }
 
+; 驗證 number.pow：整數冪運算（2^10=1024、3^3=27），任意數的 0 次方回 1
 t-pow = () {
     r i64 = number.pow(2, 10)
     runner.eq(r, 1024, 'pow(2,10) == 1024')
@@ -98,6 +103,7 @@ t-pow = () {
     runner.eq(r3, 1, 'pow(5,0) == 1')
 }
 
+; 驗證 math.div / math.mod：負運算元服從向零截斷語義（-7 div 2 = -3、-7 mod 2 = -1）
 t-div-mod = () {
     q i64 = math.div(7, 3)
     runner.eq(q, 2, 'div(7,3) == 2')
@@ -125,6 +131,7 @@ t-i64-to-str = () {
     runner.str-eq(z, '0', 1, 'i64-to-str 0 content')
 }
 
+; 驗證 i64 變數.to-str() 方法形態：正數、負數（帶負號）與零都轉出精確十進位字串
 t-i64-method-to-str = () {
     v = 123
     s = v.to-str()
@@ -138,6 +145,7 @@ t-i64-method-to-str = () {
     runner.str-eq(ns, '-789', 4, 'i64.to-str -789 content')
 }
 
+; 驗證 u64.to-str()：255 與 0 轉十進位字串，無符號故永不帶負號
 t-u64-to-str = () {
     u255 u64 = 255
     s = u255.to-str()
@@ -159,6 +167,7 @@ t-f64-to-str = () {
     runner.str-eq(z, '0', 1, 'f64-to-str 0.0')
 }
 
+; 驗證 f64 變數.to-str()：2.5 轉為最短十進位表示的字串 2.5
 t-f64-method-to-str = () {
     v = 2.5
     s = v.to-str()
@@ -209,6 +218,7 @@ t-int128-sqrt = () {
     runner.str-eq(s5.to-str(), '1000000000000', 13, 'u128.1e24.sqrt')
 }
 
+; 驗證 i128/u128 .is-prime()：97 與 1000003 判為質數，100 與 1e18 判為合數
 t-int128-is-prime = () {
     p97 i128 = 97
     runner.is-true(p97.is-prime(), 'i128.is-prime(97)')

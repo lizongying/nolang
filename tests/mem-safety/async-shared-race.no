@@ -25,6 +25,8 @@
 ; ═════════════════════════════════════════════════════════════════
 
 ; 測試 1：參數所有權隔離 — run 的參數被深拷貝，不共享 data
+; v []i64: 呼叫端的 vec；runtime 先深拷貝，函式內把 v[0] 改 999 不影響呼叫端
+; r i64: 修改後的 v[0]，固定 999
 modify-async = (v []i64) (r i64) {
 
     ; async runtime deep-copies v, so modifying v[0] is safe
@@ -37,6 +39,9 @@ modify-async = (v []i64) (r i64) {
     r = v[0]
 }
 
+; 主線程與協程各改各的：shared 傳給協程時深拷貝，主線程把 shared[0] 改成 100，
+; 協程在副本上改成 999，兩者互不干擾
+; out i64: 協程回傳值，固定為 999（子線程改的是副本）
 race-test = () (out i64) {
     shared = [1, 2, 3]
     task = run modify-async(shared); shared 被深拷貝，子線程不共享 data
@@ -50,6 +55,7 @@ r = race-test()
 print(r); 預期 999（子線程修改的是深拷貝副本）
 
 ; 測試 2：未 awy 的 task 被同步驅動到完成並釋放
+; out i64: 固定 42；task 未 awy 即返回，但會先被同步驅動完成
 no-await-test = () (out i64) {
     shared = [10, 20, 30]
     task = run modify-async(shared); 創建 task 但不 awy
@@ -63,10 +69,13 @@ r2 = no-await-test()
 print(r2); 預期 42（函數返回前 task 被同步驅動到完成並釋放）
 
 ; 測試 3：字串參數深拷貝
+; s str: 來源字串（本測試傳 'hello'），進入協程時已深拷貝
+; r str: s 的副本（move 到輸出參數）
 str-modify-async = (s str) (r str) {
     r = s; 字串被 move 到 out 參數
 }
 
+; 字串也走深拷貝：協程內把 'hello' move 到自己的輸出，主線程的 shared 仍可讀（兩邊都印 hello）
 str-race-test = () {
     shared = 'hello'
     task = run str-modify-async(shared); shared 被深拷貝

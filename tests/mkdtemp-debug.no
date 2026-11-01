@@ -1,5 +1,6 @@
 ; mkdtemp-debug.no — minimal repro for fs.mkdtemp multi-assign issue
 
+; 測試 mkdtemp
 test-mkdtemp = () {
 
     name-opt = fs.mkdtemp('/tmp/test.XXXXXX')

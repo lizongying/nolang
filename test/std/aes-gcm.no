@@ -8,6 +8,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -24,6 +27,8 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 驗證 seal-128 的輸出佈局與 NIST 向量
+; 輸出為 密文(16 位元組) || 認證標籤(16 位元組)，共 32 位元組、64 個 hex 字元。
 t-seal = () {
     key [16]byte = [
         0, 0, 0, 0, 0, 0, 0, 0,
@@ -41,6 +46,7 @@ t-seal = () {
     runner.str-eq(bhex(sealed), '0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf', 64, 'aes-128-gcm seal ct||tag')
 }
 
+; 以相同的 key / iv / AAD 解封，應還原 16 位元組明文
 t-open = () {
     key [16]byte = [
         0, 0, 0, 0, 0, 0, 0, 0,
@@ -59,6 +65,8 @@ t-open = () {
     runner.str-eq(bhex(back), bhex(pt), 32, 'aes-128-gcm open round-trip')
 }
 
+; 篡改檢測：翻轉密文首位元後認證必須失敗
+; 認證失敗時 open 回傳長度 0 的空切片，不會退化成部分明文。
 t-tamper = () {
     key [16]byte = [
         0, 0, 0, 0, 0, 0, 0, 0,

@@ -7,6 +7,16 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.12
+
+- feat(build,package): import .noml as typed modules and annotate noml members
+- feat(checker,build): reject scalar-into-struct assignment and promote integers to bigint
+- fix(parser,checker,mir): keep operator-overload ?T results, peel option only at consumption positions
+- feat(i18n,parser,lsp): migrate diagnostics to catalog-based i18n.T with doc-link anchors
+- feat(i18n,docs): add es/fr/ja/ko/zh-TW locales; doc catalogs hold translations only
+- docs(std,compiler,tests,example): add [label](#anchor) doc links and drop name: prefixes
+- docs(agents): split iteration from loops and fix statement-separator examples
+
 ## v0.4.11
 
 - feat(err): restructure the error type into `err` with a location payload (err.msg/code/file/line/col)

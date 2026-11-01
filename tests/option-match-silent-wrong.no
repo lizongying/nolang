@@ -24,6 +24,8 @@
 
 V ?i64 = 7
 
+; 選項作為函式參數 + match：修復前借用 clone 誤用 str_clone，觸發 opt-verify 失敗
+; r ?str: 待匹配的選項；ok 時印出內含字串，nil / err 各印標記
 g-str = (r ?str) {
     r: {
         ok(s) -> print(s)
@@ -34,14 +36,20 @@ g-str = (r ?str) {
     }
 }
 
+; 回呼：產生 ok('hello') 的 ?str（驗證參數傳遞路徑）
+; r ?str: 內容為 'hello' 的 ok 選項
 mk-str = () (r ?str) {
     r = 'hello'
 }
 
+; 回呼：產生 ok(true) 的 ?bool（回歸 2：剝殼後不得恒為 false）
+; r ?bool: 內容為 true 的 ok 選項
 mk-bt = () (r ?bool) {
     r = true
 }
 
+; 回呼：產生 ok(false) 的 ?bool（與 mk-bt 成對，驗證 true/false 都能正確剝殼）
+; r ?bool: 內容為 false 的 ok 選項
 mk-bf = () (r ?bool) {
     r = false
 }

@@ -52,6 +52,7 @@ toml-doc {
 }
 
 ; 建立空 TOML 文件
+; doc: 空的 TOML 文件（0 條目、0 表格）
 ; [new](#toml.new)
 toml.new = () (doc toml-doc) {
     doc = toml-doc {
@@ -78,6 +79,8 @@ toml.new = () (doc toml-doc) {
 }
 
 ; 讀取 canonical key。
+; e: 待讀取的 toml-entry
+; s: 條目的 canonical key（標準化點號分隔形式）
 ; [toml-entry-key](#toml.toml-entry-key)
 toml-entry-key = (e toml-entry) (s str) {
     s = with-len(e.key-len)
@@ -88,6 +91,8 @@ toml-entry-key = (e toml-entry) (s str) {
 }
 
 ; 讀取原始 TOML value。
+; e: 待讀取的 toml-entry
+; s: 原始 TOML value 字面值（未解碼）
 ; [toml-entry-value](#toml.toml-entry-value)
 toml-entry-value = (e toml-entry) (s str) {
     s = with-len(e.value-len)
@@ -98,6 +103,9 @@ toml-entry-value = (e toml-entry) (s str) {
 }
 
 ; 比較 entry key 與字串。
+; e: 待比較的 toml-entry
+; key: 要比對的鍵字串
+; same: 條目鍵與 key 是否相同
 ; [toml-entry-key-eq](#toml.toml-entry-key-eq)
 toml-entry-key-eq = (e toml-entry, key str) (same bool) {
     same = false
@@ -110,6 +118,9 @@ toml-entry-key-eq = (e toml-entry, key str) (same bool) {
 }
 
 ; 將 key/value 複製到固定緩衝區。
+; key: 鍵字串
+; value: 值字串
+; e: 鍵值複製入固定緩衝區後的新條目
 ; [toml-make-entry](#toml.toml-make-entry)
 toml-make-entry = (key str, value str) (e toml-entry) {
     e.key-len = key.len-bytes()
@@ -125,6 +136,8 @@ toml-make-entry = (key str, value str) (e toml-entry) {
 }
 
 ; 讀取表格名稱。
+; t: 待讀取的表格
+; s: 表格名稱
 ; [toml-table-name](#toml.toml-table-name)
 toml-table-name = (t toml-table) (s str) {
     s = with-len(t.name-len)
@@ -135,6 +148,8 @@ toml-table-name = (t toml-table) (s str) {
 }
 
 ; 讀取 array-of-tables 名稱。
+; t: 待讀取的 array-of-tables 記錄
+; s: 該陣列表格的名稱
 ; [toml-array-name](#toml.toml-array-name)
 toml-array-name = (t toml-array-table) (s str) {
     s = with-len(t.name-len)
@@ -145,6 +160,10 @@ toml-array-name = (t toml-array-table) (s str) {
 }
 
 ; 比較固定緩衝區中的表格名稱。
+; name: 存表格名的固定緩衝區
+; name-len: 名稱實際位元組長度
+; s: 要比對的表格名
+; same: 兩者是否逐位元組相同
 ; [toml-table-eq](#toml.toml-table-eq)
 toml-table-eq = (name [32]byte, name-len i64, s str) (same bool) {
     same = false
@@ -158,6 +177,8 @@ toml-table-eq = (name [32]byte, name-len i64, s str) (same bool) {
 }
 
 ; 找到未被引號包住的第一個等號
+; s: 待解析的鍵值行
+; pos: 第一個引號外等號的位元組位置（找不到返回 -1）
 ; [toml-find-eq](#toml.toml-find-eq)
 toml-find-eq = (s str) (pos i64) {
     pos = -1
@@ -200,6 +221,8 @@ toml-find-eq = (s str) (pos i64) {
 }
 
 ; 移除字串外的 # 註解並 trim；支援 multiline string。
+; s: 原始行文字（支援多行字串內的 #）
+; out: 去除字串外註解並 trim 後的內容
 ; [toml-strip-comment](#toml.toml-strip-comment)
 toml-strip-comment = (s str) (out str) {
     quote = 0
@@ -287,6 +310,8 @@ toml-strip-comment = (s str) (out str) {
 }
 
 ; 解析 bare / quoted / dotted key，輸出 canonical dotted key。
+; s: 原始鍵文字（bare / quoted / dotted）
+; key: ok=標準化點號鍵, nil=鍵不合法的錯誤訊息
 ; [toml-normalize-key](#toml.toml-normalize-key)
 toml-normalize-key = (s str) (key ?str) {
     k = s.trim()
@@ -314,6 +339,8 @@ toml-normalize-key = (s str) (key ?str) {
 }
 
 ; 解碼 basic/literal TOML 字串
+; raw: 帶引號的原始字串
+; value: ok=解碼後的內容, nil=非字串字面值, err=引號/跳脫非法
 ; [toml-unquote](#toml.toml-unquote)
 toml-unquote = (raw str) (value ?str) {
     s = raw.trim()
@@ -383,6 +410,8 @@ toml-unquote = (raw str) (value ?str) {
 }
 
 ; 判斷值是否已閉合；用於多行陣列、inline table、multiline string。
+; raw: 值原始文字
+; complete: 引號／括號是否已閉合（多行值讀取時決定能否結束）
 ; [toml-value-complete](#toml.toml-value-complete)
 toml-value-complete = (raw str) (complete bool) {
     complete = false
@@ -482,6 +511,8 @@ toml-value-complete = (raw str) (complete bool) {
 }
 
 ; 接受 TOML 1.0 的 scalar、array、inline table 與日期時間字面值。
+; raw: 值原始文字
+; valid: 是否符合 TOML 1.0 字面值語法
 ; [toml-valid-value](#toml.toml-valid-value)
 toml-valid-value = (raw str) (valid bool) {
     valid = false
@@ -512,6 +543,9 @@ toml-valid-value = (raw str) (valid bool) {
 }
 
 ; 記錄已定義表格，重複定義回傳 false。
+; doc: 登記目標文件
+; name: 表格名稱
+; ok: true=首次定義, false=重複定義
 ; [toml-register-table](#toml.toml-register-table)
 toml-register-table = (doc toml-doc, name str) (ok bool) {
     ok = false
@@ -533,6 +567,9 @@ toml-register-table = (doc toml-doc, name str) (ok bool) {
 }
 
 ; 將 array-of-tables 的子表解析到最近一筆元素。
+; doc: 當前文件
+; name: 待解析的段落名
+; resolved: 屬 array-of-tables 子鍵時改寫為 base[索引].後綴，否則原樣返回
 ; [toml-resolve-section](#toml.toml-resolve-section)
 toml-resolve-section = (doc toml-doc, name str) (resolved str) {
     resolved = name
@@ -556,6 +593,9 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
 }
 
 ; 取得並登記 array-of-tables 的下一個索引。
+; doc: 當前文件
+; name: array-of-tables 名稱
+; idx: ok=本筆元素的索引（自動遞增登記）, nil=同名表未找到且容量已滿
 ; [toml-next-array-table](#toml.toml-next-array-table)
 toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     i <- [0..doc.array-count): {
@@ -586,6 +626,8 @@ toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
 }
 
 ; 解析 TOML 文件，失敗返回 err(message)
+; s: TOML 全文
+; result: ok=解析後文件, err=帶原因的錯誤訊息
 ; [parse](#toml.parse)
 toml.parse = (s str) (result ?toml-doc) {
     doc = toml.new()
@@ -791,6 +833,8 @@ toml.parse = (s str) (result ?toml-doc) {
 }
 
 ; 以 TOML 1.0 語法輸出文件；array-of-tables 會還原為 [[table]] 標頭。
+; doc: 待序列化的文件
+; out: TOML 1.0 語法文字（逐條目與表格標頭輸出）
 ; [stringify](#toml.stringify)
 stringify = (doc toml-doc) (out str) {
     out = ''
@@ -841,6 +885,9 @@ stringify = (doc toml-doc) (out str) {
 
 ; 設定原始 TOML 字面值。
 ; value 可為陣列、日期時間等 TOML 語法，模組不會替它加引號。
+; key: 鍵（鍵無法標準化時失敗）
+; value: TOML 原始字面值（經語法校驗後存入）
+; ok: true=寫入成功, false=鍵非法／值非法／已滿
 ; [put](#toml.toml-doc.put)
 toml-doc.put = (key str, value str) (ok bool) {
     ok = false
@@ -871,6 +918,9 @@ toml-doc.put = (key str, value str) (ok bool) {
 
 ; 取得原始 TOML 字面值
 ; 例如陣列、日期時間等尚未轉型的值可由此取得。
+; doc: 讀取的文件
+; key: 要查詢的鍵
+; value: ok=原始字面值, nil=鍵不存在
 ; [get](#toml.get)
 get = (doc toml-doc, key str) (value ?str) {
     i <- [0..doc.count): {
@@ -884,6 +934,9 @@ get = (doc toml-doc, key str) (value ?str) {
 }
 
 ; 判斷鍵是否存在
+; doc: 檢查的文件
+; key: 要查詢的鍵
+; found: 文件中是否含該鍵
 ; [has](#toml.has)
 has = (doc toml-doc, key str) (found bool) {
     i <- [0..doc.count): {
@@ -897,6 +950,9 @@ has = (doc toml-doc, key str) (found bool) {
 }
 
 ; 取得並解碼字串值
+; doc: 讀取的文件
+; key: 要查詢的鍵
+; value: ok=解碼字串, nil=鍵不存在, err=值非合法字串
 ; [get-str](#toml.get-str)
 get-str = (doc toml-doc, key str) (value ?str) {
     raw = get(doc, key)
@@ -910,6 +966,8 @@ get-str = (doc toml-doc, key str) (value ?str) {
 }
 
 ; 支援十進位、十六進位、八進位、二進位與底線分隔。
+; s: 整數字面值文字
+; value: ok=數值, nil=空文字, err=格式非法或溢位
 ; [toml-parse-i64](#toml.toml-parse-i64)
 toml-parse-i64 = (s str) (value ?i64) {
     v = 0
@@ -1008,6 +1066,8 @@ toml-parse-i64 = (s str) (value ?i64) {
 }
 
 ; 解析浮點數
+; s: 浮點字面值文字（自動去除底線分隔）
+; value: ok=數值, err=格式非法
 ; [toml-parse-f64](#toml.toml-parse-f64)
 toml-parse-f64 = (s str) (value ?f64) {
     clean = s.replace-str('_', '')
@@ -1022,6 +1082,8 @@ toml-parse-f64 = (s str) (value ?f64) {
 }
 
 ; 解析布林值
+; s: 布林字面值文字（僅 true/false）
+; value: ok=布林值, err=非布林字面值
 ; [toml-parse-bool](#toml.toml-parse-bool)
 toml-parse-bool = (s str) (value ?bool) {
     parsed = s.to-bool()
@@ -1035,6 +1097,9 @@ toml-parse-bool = (s str) (value ?bool) {
 }
 
 ; 取得十進位整數（允許 TOML 的底線分隔）
+; doc: 讀取的文件
+; key: 要查詢的鍵
+; value: ok=整數值, err=鍵不存在或解析失敗
 ; [get-i64](#toml.get-i64)
 get-i64 = (doc toml-doc, key str) (value ?i64) {
     raw = get(doc, key)
@@ -1048,6 +1113,9 @@ get-i64 = (doc toml-doc, key str) (value ?i64) {
 }
 
 ; 取得浮點值（支援 exponent）
+; doc: 讀取的文件
+; key: 要查詢的鍵
+; value: ok=浮點值, err=鍵不存在或解析失敗
 ; [get-f64](#toml.get-f64)
 get-f64 = (doc toml-doc, key str) (value ?f64) {
     raw = get(doc, key)
@@ -1061,6 +1129,9 @@ get-f64 = (doc toml-doc, key str) (value ?f64) {
 }
 
 ; 取得 true/false
+; doc: 讀取的文件
+; key: 要查詢的鍵
+; value: ok=布林值, err=鍵不存在或非布林字面值
 ; [get-bool](#toml.get-bool)
 get-bool = (doc toml-doc, key str) (value ?bool) {
     raw = get(doc, key)

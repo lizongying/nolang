@@ -11,11 +11,13 @@
 
 ; ── 標準輸出 ──────────────────────────────────
 
+; 驗證 io.out：寫字串到 stdout，返回寫入位元組數應大於 0
 t-out = () {
     n = io.out('A')
     runner.gt(n, 0, 'out returns > 0')
 }
 
+; 驗證 io.outln：寫字串並附換行到 stdout，返回寫入位元組數應大於 0
 t-outln = () {
     n = io.outln('B')
     runner.gt(n, 0, 'outln returns > 0')
@@ -23,12 +25,14 @@ t-outln = () {
 
 ; ── 標準錯誤 ──────────────────────────────────
 
+; 驗證 io.err：寫字串到 stderr，返回位元組數非負即算成功
 t-err = () {
     n = io.err('E')
     ok = n >= 0
     runner.is-true(ok, 'err returns >= 0')
 }
 
+; 驗證 io.errln：寫字串並附換行到 stderr，返回寫入位元組數應大於 0
 t-errln = () {
     n = io.errln('F')
     runner.gt(n, 0, 'errln returns > 0')
@@ -36,18 +40,21 @@ t-errln = () {
 
 ; ── writer ────────────────────────────────────
 
+; 驗證 writer.from-stdout 建構的寫入器：write-str 輸出 hello 後返回位元組數應大於 0
 t-writer-stdout = () {
     w = writer.from-stdout()
     n = w.write-str('hello')
     runner.gt(n, 0, 'writer.write-str returns > 0')
 }
 
+; 驗證 writer.write-byte：向 stdout 寫單一位元組 65（字符 A），返回位元組數應大於 0
 t-writer-write-byte = () {
     w = writer.from-stdout()
     n = w.write-byte(65)
     runner.gt(n, 0, 'writer.write-byte(65) returns > 0')
 }
 
+; 驗證 writer.write-line：向 stdout 寫一行文字（自動附換行），返回位元組數應大於 0
 t-writer-write-line = () {
     w = writer.from-stdout()
     n = w.write-line('test')
@@ -56,6 +63,7 @@ t-writer-write-line = () {
 
 ; ── writer.stderr ─────────────────────────────
 
+; 驗證 writer.from-stderr 建構的寫入器：write-str 輸出到 stderr 後返回位元組數應大於 0
 t-writer-stderr = () {
     w = writer.from-stderr()
     n = w.write-str('error-msg')
@@ -64,6 +72,7 @@ t-writer-stderr = () {
 
 ; ── reader 建構 ───────────────────────────────
 
+; 驗證 reader.from-stdin：只檢查建構出的讀取器 fd 為 0（STDIN），實際讀取不在測試範圍
 t-reader-stdin = () {
     r = reader.from-stdin()
 

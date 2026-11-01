@@ -8,14 +8,16 @@ import (
 	"github.com/lizongying/nolang/i18n"
 )
 
-// writeLocale drops a locale file into dir/locales.
+// writeLocale drops a locale file into dir/locales. The file name comes from
+// LocaleFileName, so a `zh-CN` tag writes `zh-cn.noml` — the same lower-case
+// rule the shipped catalogs follow.
 func writeLocale(t *testing.T, dir, tag, body string) {
 	t.Helper()
 	localeDir := filepath.Join(dir, LocaleDirName)
 	if err := os.MkdirAll(localeDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(localeDir, tag+".noml"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(localeDir, LocaleFileName(tag)), []byte(body), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 }
@@ -59,7 +61,8 @@ func TestNonStringValueRejected(t *testing.T) {
 }
 
 // TestAvailableIncludesAliases: a bare "zh" request must resolve, and the
-// canonical tag must stay zh-CN so the reported language matches the file.
+// canonical tag must stay zh-CN — the FILE is `zh-cn.noml`, but the tag is what
+// Lang() reports and what the user typed, so it keeps its conventional spelling.
 func TestAvailableIncludesAliases(t *testing.T) {
 	avail := Available(nil)
 	var hasCanon, hasAlias bool

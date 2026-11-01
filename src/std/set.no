@@ -248,12 +248,14 @@ set.to-vec = () (out []t) {
 ; ═══════════════════════════════════════════════
 
 ; 返回集合大小
+; sz: 集合當前持有的元素數量
 ; [size](#set.size)
 set.size = () (sz i64) {
     sz = .size
 }
 
 ; 判斷集合是否為空
+; yes: 集合不含任何元素時為 true
 ; [is-empty](#set.is-empty)
 set.is-empty = () (yes bool) {
     yes = .size == 0

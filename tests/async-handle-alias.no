@@ -14,12 +14,17 @@
 ; after it; cases 3-6 are byte-identical either way (they are the controls that
 ; keep the new retain/release from over-reaching).
 
+; 協程：把數值乘二，供下面的 handle 別名/重複 await 測試使用
+; n i64: 來源數值
+; r i64: n * 2（#{overflow=wrap}）
 dbl-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     r = n * 2
 }
 
+; 啟動協程並把 handle 交出去（不在此 await），用於驗證多處持有同一 handle
+; h i64: run 啟動 dbl-async(21) 後回傳的協程 handle
 mk = () (h i64) {
     h = run dbl-async(21)
 }
@@ -70,6 +75,7 @@ same-slot-twice = () {
 
 ; 6. many spawn+await cycles — the count must balance or RSS grows without
 ;    bound (measured 300k cycles: 8.40 MB before, 7.96 MB after, same sum)
+; s i64: 2000 次 spawn+awy 的回傳值總和（0+1+…+1999 = 1999000）
 many = () (s i64) {
     s = 0
     i <- [0..2000): {

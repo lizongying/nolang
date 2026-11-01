@@ -28,7 +28,12 @@
 
 ; 比較兩個大數 a 和 b
 ; 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
-; [rsa-bn-cmp](#crypto.rsa.rsa-bn-cmp)
+; a: 第一個大數（32-bit limb 陣列，低位在前）
+; an: a 參與比較的有效 limb 數
+; b: 第二個大數
+; bn: b 參與比較的有效 limb 數
+; cmp: 1=a>b, 0=a==b, -1=a<b（先比 limb 數，再自最高位逐位比）
+; [rsa-bn-cmp](#rsa.rsa-bn-cmp)
 rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
     cmp = 0
 
@@ -64,7 +69,13 @@ rsa-bn-cmp = (a []i64, an i64, b []i64, bn i64) (cmp i64) {
 ; ─── 大數加法 ─────────────────────────────────────
 
 ; c = a + b
-; [rsa-bn-add](#crypto.rsa.rsa-bn-add)
+; a: 加數（唯讀，不被修改）
+; an: a 的有效 limb 數
+; b: 加數（唯讀，不被修改）
+; bn: b 的有效 limb 數
+; c: a+b 的結果（超出較長操作數的最終進位會追加一個 limb）
+; cn: c 的實際 limb 數（含進位，未修剪）
+; [rsa-bn-add](#rsa.rsa-bn-add)
 rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區（結果最多 max(an, bn) + 1 個 limb）
@@ -106,7 +117,13 @@ rsa-bn-add = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 ; ─── 大數減法 ─────────────────────────────────────
 
 ; c = a - b（需 a ≥ b）
-; [rsa-bn-sub](#crypto.rsa.rsa-bn-sub)
+; a: 被減數（須 ≥ b，否則結果按 2^32 借位迴繞）
+; an: a 的有效 limb 數（決定減法迴圈長度與輸出分配）
+; b: 減數
+; bn: b 的有效 limb 數（i ≥ bn 的部分視為 0）
+; c: a-b 的結果（已修剪前導零）
+; cn: c 修剪後的 limb 數（至少為 1）
+; [rsa-bn-sub](#rsa.rsa-bn-sub)
 rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區（多配置 1 個 limb 供後續左移使用）
@@ -168,7 +185,13 @@ rsa-bn-sub = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 ; ─── 大數乘法 ─────────────────────────────────────
 
 ; c = a × b
-; [rsa-bn-mul](#crypto.rsa.rsa-bn-mul)
+; a: 乘數
+; an: a 的有效 limb 數
+; b: 被乘數
+; bn: b 的有效 limb 數
+; c: a×b 的結果（最多 an+bn 個 limb，已修剪前導零）
+; cn: c 修剪後的 limb 數（至少為 1）
+; [rsa-bn-mul](#rsa.rsa-bn-mul)
 rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 
     ; 分配輸出緩衝區
@@ -235,7 +258,10 @@ rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
 ; ─── 大數左移 1 位元 ─────────────────────────────
 
 ; a = a << 1（原地左移 1 位元）
-; [rsa-bn-shl1](#crypto.rsa.rsa-bn-shl1)
+; a: 被移位的大數（原地修改，最高位溢出時會寫入 a[an]，呼叫端須預留空間）
+; an: 移位前的有效 limb 數
+; new-an: 移位後的 limb 數（原最高位 ≥ 2^31 時為 an+1）
+; [rsa-bn-shl1](#rsa.rsa-bn-shl1)
 rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
     carry = 0
     i <- [0..an): {
@@ -267,7 +293,10 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
 ; ─── 大數右移 1 位元 ─────────────────────────────
 
 ; a = a >> 1（原地右移 1 位元）
-; [rsa-bn-shr1](#crypto.rsa.rsa-bn-shr1)
+; a: 被移位的大數（原地修改）
+; an: 移位前的有效 limb 數
+; new-an: 移位並修剪前導零後的 limb 數（至少為 1）
+; [rsa-bn-shr1](#rsa.rsa-bn-shr1)
 rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 
     carry = 0
@@ -323,7 +352,9 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 ; b: 除數, bn: 長度
 ; q: 商數（輸出）, qn: 商長度
 ; r: 餘數（輸出）, rn: 餘長度
-; [rsa-bn-div-mod](#crypto.rsa.rsa-bn-div-mod)
+; qn: 商修剪後的 limb 數（b=0 時 q、r 全零且 qn=rn=0）
+; rn: 餘數修剪後的 limb 數（恆小於 b）
+; [rsa-bn-div-mod](#rsa.rsa-bn-div-mod)
 rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, rn i64) {
 
     ; 處理 b = 0
@@ -517,7 +548,16 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
 ; 單步平方乘（獨立函數以確保每步釋放暫存緩衝區）
 ; result = result^2 mod modulus; 若 exp-bit == 1，再 result = result * base mod modulus
-; [rsa-modpow-step](#crypto.rsa.rsa-modpow-step)
+; result: 當前累乘值（平方前的底）
+; rn: result 的 limb 數
+; base: 模冪的底，僅在 exp-bit=1 時乘入
+; bn: base 的 limb 數
+; exp-bit: 指數的當前位（1=本步額外乘 base，0=僅平方）
+; modulus: 取模用的除數
+; mn: modulus 的 limb 數
+; new-result: (result² × base^exp-bit) mod modulus
+; new-rn: new-result 的 limb 數
+; [rsa-modpow-step](#rsa.rsa-modpow-step)
 rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulus []i64, mn i64) (new-result []i64, new-rn i64) {
 
     ; t = result * result
@@ -549,7 +589,15 @@ rsa-modpow-step = (result []i64, rn i64, base []i64, bn i64, exp-bit i64, modulu
 ; 使用左右掃描平方乘（square-and-multiply）
 ; 注意：loop body 提取為 rsa-modpow-step 以確保每步釋放暫存緩衝區
 ; （Nolang heap 變數在函數返回時才釋放，若在 loop body 內分配會累積至 OOM）
-; [rsa-modpow](#crypto.rsa.rsa-modpow)
+; base: 冪的底（須小於 modulus）
+; bn: base 的 limb 數
+; exp: 指數（limb 陣列，自最高位向低位掃描）
+; en: exp 的 limb 數（用於算出實際位數）
+; modulus: 模數
+; mn: modulus 的 limb 數（結果緩衝區按此長度分配）
+; result: base^exp mod modulus（從 1 開始逐位平方乘）
+; rn: result 的 limb 數
+; [rsa-modpow](#rsa.rsa-modpow)
 rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (result []i64, rn i64) {
 
     ; 使用局部變數避免輸出參數 aliasing 問題
@@ -613,13 +661,29 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 ; ─── RSA 加密/解密（高階介面）────────────────────
 
 ; RSA 加密（c = m^e mod n）
-; [rsa-encrypt](#crypto.rsa.rsa-encrypt)
+; msg: 明文大數 m（須小於 mod，未做 PKCS#1 填充）
+; msgn: msg 的 limb 數
+; pub-exp: 公開指數 e
+; pubn: pub-exp 的 limb 數
+; mod: 模數 n
+; modn: mod 的 limb 數
+; out: 密文 c = m^e mod n
+; outn: out 的 limb 數
+; [rsa-encrypt](#rsa.rsa-encrypt)
 rsa-encrypt = (msg []i64, msgn i64, pub-exp []i64, pubn i64, mod []i64, modn i64) (out []i64, outn i64) {
     out, outn = rsa-modpow(msg, msgn, pub-exp, pubn, mod, modn)
 }
 
 ; RSA 解密（m = c^d mod n）
-; [rsa-decrypt](#crypto.rsa.rsa-decrypt)
+; ct: 密文大數 c（須小於 mod）
+; ctn: ct 的 limb 數
+; priv-exp: 私鑰指數 d
+; privn: priv-exp 的 limb 數
+; mod: 模數 n
+; modn: mod 的 limb 數
+; out: 明文 m = c^d mod n（未做 PKCS#1 去填充）
+; outn: out 的 limb 數
+; [rsa-decrypt](#rsa.rsa-decrypt)
 rsa-decrypt = (ct []i64, ctn i64, priv-exp []i64, privn i64, mod []i64, modn i64) (out []i64, outn i64) {
     out, outn = rsa-modpow(ct, ctn, priv-exp, privn, mod, modn)
 }

@@ -12,6 +12,9 @@
 # std/set
 
 ; 純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
+; cond bool: 這項斷言的結果，決定印 'ok:' 還是 'FAIL:'
+; msg str: 斷言說明，原樣接到輸出前綴之後
+; r bool: 原樣回傳 cond，供呼叫端彙整整體結果
 check = (cond bool, msg str) (r bool) {
     r = cond
     cond -> {

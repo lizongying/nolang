@@ -1,13 +1,16 @@
+; 測試 arr-index-of
 test-arr-index-of = () {
     b [3] = [1, 2, 3]
     print(b.index-of(2))
 }
 
+; 測試 arr-last-first
 test-arr-last-first = () {
     b [3] = [10, 20, 30]
     print(b.first())
 }
 
+; 測試 arr-sort-asc
 test-arr-sort-asc = () {
     b [5] = [3, 1, 4, 1, 5]
     b.asc()

@@ -4,12 +4,14 @@
 ; 全局变量释放和 ret i32 0 被删除 → SIGTRAP。
 
 ; 測試 1：函數返回 str
+; out str: 'hello world'（11 位元組），所有權交給呼叫端
 f = () (out str) {
     s = 'hello world'
     out = s
 }
 
 ; 測試 2：函數返回 vec
+; out []i64: [10, 20, 30]，所有權交給呼叫端
 g = () (out []i64) {
     v = [10, 20, 30]
     out = v

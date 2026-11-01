@@ -9,6 +9,7 @@
 
 # /test/runner
 
+; 驗證 push 於空向量的長度增長與尾插元素值正確
 t-len-push = () {
     v []i64 = with-cap(4)
     runner.eq(v.len(), 0, 'empty vec len == 0')
@@ -19,6 +20,7 @@ t-len-push = () {
     runner.eq(v[1], 20, 'push [1] == 20')
 }
 
+; 驗證 push 超出初始容量時自動擴容，仍保全部元素與順序
 t-push-grow = () {
 
     ; 超出初始容量自動擴容
@@ -34,18 +36,21 @@ t-push-grow = () {
 ; "1 output params but returned void call"、語句調用 BPT trap），
 ; 與 []t.max/min 同類，暫不測試。
 
+; 驗證 contains 判斷元素存在與否（命中為真、缺失為假）
 t-contains = () {
     v = [10, 20, 30]
     runner.is-true(v.contains(20), 'contains 20')
     runner.is-false(v.contains(99), 'not contains 99')
 }
 
+; 驗證 index-of 回傳元素首次索引，未找到時回傳 -1
 t-index-of = () {
     v = [10, 20, 30]
     runner.eq(v.index-of(20), 1, 'index-of 20 == 1')
     runner.eq(v.index-of(99), -1, 'index-of 99 == -1')
 }
 
+; 驗證 first / last 回傳首末元素的 option，空向量時為 nil
 t-first-last = () {
     v = [5, 6, 7]
     ok1 = false
@@ -75,6 +80,7 @@ t-first-last = () {
     runner.is-true(is-nil1, 'first empty == nil')
 }
 
+; 驗證 at(i) 範圍內回傳 ok 元素、越界回傳 nil
 t-at = () {
     v = [1, 2, 3]
     ok1 = false
@@ -95,6 +101,7 @@ t-at = () {
     runner.is-true(is-nil, 'at(10) OOB == nil')
 }
 
+; 驗證 insert(i, v) 於指定位置插入元素並使後續元素後移
 t-insert = () {
 
     ; 用 push 構造避免編譯期定長檢查（insert 後 len 是運行期值）
@@ -107,6 +114,7 @@ t-insert = () {
     runner.eq(v[2], 3, 'insert [2] == 3')
 }
 
+; 驗證 remove(i) 移除並回傳該索引元素，其後元素前移、長度減一
 t-remove = () {
     v = [1, 2, 3]
     ok = false
@@ -121,6 +129,7 @@ t-remove = () {
     runner.eq(v[1], 3, 'remove [1] == 3')
 }
 
+; 驗證 reverse 原地反轉向量元素順序
 t-reverse = () {
     v = [1, 2, 3, 4]
     v.reverse()
@@ -130,6 +139,7 @@ t-reverse = () {
     runner.eq(v[3], 1, 'reverse [3] == 1')
 }
 
+; 驗證 swap 交換兩索引處的元素的值
 t-swap = () {
     v = [1, 2]
     v.swap(0, 1)
@@ -137,6 +147,7 @@ t-swap = () {
     runner.eq(v[1], 1, 'swap [1] == 1')
 }
 
+; 驗證 clone 產出內容相等且獨立的副本（改副本不影響原向量）
 t-clone = () {
     v = [1, 2, 3]
     c = v.clone()
@@ -148,6 +159,7 @@ t-clone = () {
     runner.eq(v[0], 1, 'clone is independent')
 }
 
+; 驗證 fill 以指定值填滿向量所有元素
 t-fill = () {
     v = [0, 0, 0]
     v.fill(7)
@@ -155,6 +167,7 @@ t-fill = () {
     runner.eq(v[2], 7, 'fill [2] == 7')
 }
 
+; 驗證 clear 清空向量使長度歸零
 t-clear = () {
     v = [1, 2, 3]
     v.clear()

@@ -1,0 +1,512 @@
+; std-noml.no — noml 模組測試
+;
+; 執行：no test test/std/noml.no
+; 覆蓋：parse（標量/物件/陣列/註解/註解標記）、存取器（get/get-str/get-i64/
+;       get-f64/get-bool/has/is-*/kind/len/at/key）、stringify 往返、構建 API
+;       （new/new-obj/new-str/new-num/new-bool/new-nil/put/push/set-root）、
+;       註解讀寫（ann/set-ann/ann-value）、錯誤路徑（重複鍵、未閉合字串、
+;       錯位 #{...}、尾隨內容、null 被拒）。
+;
+; NOML 是合法的 Nolang 字面量語法：值為物件/陣列/單引號字串/裸數字/布林
+; true|false，以及 Nolang 的 nil（**沒有 null**）。
+
+# /test/runner
+
+; ── 解析標量 ──────────────────────────────────
+
+; 頂層 nil 解析
+t-parse-nil = () {
+    r = noml.parse('nil')
+    ok = false
+    ni = false
+    r: {
+        ok -> {
+            ok = true
+            ni = it.is-nil()
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse nil ok')
+    runner.is-true(ni, 'nil is-nil')
+}
+
+; 字串解析
+t-parse-str = () {
+    r = noml.parse('\'hello\'')
+    ok = false
+    v = ''
+    found = false
+    r: {
+        ok -> {
+            ok = it.is-str()
+            s = it.get-str('')
+            s: {
+                ok -> {
+                    found = true
+                    v = s
+                }
+                nil -> found = false
+                err -> found = false
+            }
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse str ok')
+    runner.is-true(found, 'str value found')
+    runner.str-eq(v, 'hello', 5, 'str value')
+}
+
+; 數字解析
+t-parse-num = () {
+    r = noml.parse('42')
+    ok = false
+    v = 0
+    found = false
+    r: {
+        ok -> {
+            ok = it.is-num()
+            n = it.get-i64('')
+            n: {
+                ok -> {
+                    found = true
+                    v = n
+                }
+                nil -> found = false
+                err -> found = false
+            }
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse num ok')
+    runner.is-true(found, 'num value found')
+    runner.eq(v, 42, 'num value')
+}
+
+; 布林解析
+t-parse-bool = () {
+    r = noml.parse('true')
+    ok = false
+    r: {
+        ok -> ok = it.is-bool()
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse bool true ok')
+}
+
+; ── 解析物件 / 陣列 ────────────────────────────
+
+; 物件解析與成員取值
+t-parse-obj = () {
+    r = noml.parse('{\n  a: 1\n  b: \'x\'\n  c: true\n}\n')
+    ok = false
+    p = nil
+    doc = nil
+    r: {
+        ok -> {
+            doc = it
+            p = it.pool
+            ok = it.is-obj()
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse obj ok')
+    ca = doc.get('a')
+    ai = false
+    ca: {
+        ok -> ai = p.is-num(ca)
+        nil -> ai = false
+        err -> ai = false
+    }
+    runner.is-true(ai, 'obj a is num')
+    cb = doc.get-str('b')
+    bfound = false
+    bv = ''
+    cb: {
+        ok -> {
+            bfound = true
+            bv = cb
+        }
+        nil -> bfound = false
+        err -> bfound = false
+    }
+    runner.is-true(bfound, 'obj b found')
+    runner.str-eq(bv, 'x', 1, 'obj b value')
+    cc = doc.get-bool('c')
+    cfound = false
+    cv = false
+    cc: {
+        ok -> {
+            cfound = true
+            cv = cc
+        }
+        nil -> cfound = false
+        err -> cfound = false
+    }
+    runner.is-true(cfound, 'obj c found')
+    runner.is-true(cv, 'obj c value')
+}
+
+; 陣列解析與下標取值
+t-parse-arr = () {
+    r = noml.parse('[\n  1\n  2\n  3\n]\n')
+    ok = false
+    doc = nil
+    p = nil
+    r: {
+        ok -> {
+            doc = it
+            p = it.pool
+            ok = it.is-arr()
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse arr ok')
+    runner.eq(doc.len(), 3, 'arr len')
+    e0 = doc.at(0)
+    v0 = 0
+    e0: {
+        ok -> v0 = p.val-i64(e0)
+        nil -> v0 = -1
+        err -> v0 = -1
+    }
+    runner.eq(v0, 1, 'arr[0]')
+}
+
+; 巢狀子物件 / 陣列
+t-parse-nested = () {
+    r = noml.parse('{\n  m: {\n    k: \'v\'\n  }\n  a: [1, 2]\n}\n')
+    ok = false
+    r: {
+        ok -> ok = it.is-obj()
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse nested ok')
+    s = r.stringify()
+    r2 = noml.parse(s)
+    ok2 = false
+    r2: {
+        ok -> ok2 = true
+        nil -> ok2 = false
+        err -> ok2 = false
+    }
+    runner.is-true(ok2, 'nested reparse ok')
+}
+
+; ── 註解 / 註解標記 ────────────────────────────
+
+; 行尾註解（`;`）
+t-comment = () {
+    r = noml.parse('{\n  a: 1 ; 這是註解\n  b: 2\n}\n')
+    ok = false
+    r: {
+        ok -> ok = it.is-obj()
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse comment ok')
+    runner.eq(r.len(), 2, 'comment keeps 2 members')
+}
+
+; 註解標記 `#{...}`（文件級 + 成員級）
+t-annotation = () {
+    src = '#{type = \'server\'}\n{\n  #{c}\n  host: \'localhost\'\n}\n'
+    r = noml.parse(src)
+    ok = false
+    fa = ''
+    ffound = false
+    r: {
+        ok -> {
+            ok = true
+            a = it.ann()
+            a: {
+                ok -> {
+                    ffound = true
+                    fa = a
+                }
+                nil -> ffound = false
+                err -> ffound = false
+            }
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'parse annotation ok')
+    runner.is-true(ffound, 'file ann found')
+    runner.str-eq(fa, 'type = \'server\'', 15, 'file ann text')
+    ; 成員級註解
+    doc = r
+    p = doc.pool
+    ch = doc.get('host')
+    mfound = false
+    ch: {
+        ok -> {
+            ma = p.ann(ch)
+            ma: {
+                ok -> mfound = ma.eq-full('c')
+                nil -> mfound = false
+                err -> mfound = false
+            }
+        }
+        nil -> mfound = false
+        err -> mfound = false
+    }
+    runner.is-true(mfound, 'member ann text')
+}
+
+; ── stringify 往返 ─────────────────────────────
+
+; 解析→序列化→再解析應冪等
+t-roundtrip = () {
+    src = '{\n  a: 1\n  b: \'x\'\n  c: [1, 2, 3]\n  d: nil\n}\n'
+    r = noml.parse(src)
+    ok1 = false
+    s1 = ''
+    r: {
+        ok -> {
+            ok1 = true
+            s1 = it.stringify()
+        }
+        nil -> ok1 = false
+        err -> ok1 = false
+    }
+    runner.is-true(ok1, 'roundtrip parse ok')
+    r2 = noml.parse(s1)
+    ok2 = false
+    s2 = ''
+    r2: {
+        ok -> {
+            ok2 = true
+            s2 = it.stringify()
+        }
+        nil -> ok2 = false
+        err -> ok2 = false
+    }
+    runner.is-true(ok2, 'roundtrip reparse ok')
+    runner.str-eq(s1, s2, s2.len-bytes(), 'roundtrip idempotent')
+}
+
+; ── 構建 API ──────────────────────────────────
+
+; 用構建器建立物件並序列化往返
+t-builder = () {
+    d = noml.new()
+    o = d.new-obj()
+    d.put(o, 'name', d.new-str('nolang'))
+    d.put(o, 'ver', d.new-num(1.0))
+    d.put(o, 'active', d.new-bool(true))
+    d.put(o, 'note', d.new-nil())
+    d.set-root(o)
+    runner.is-true(d.is-obj(), 'builder root is obj')
+    nm = d.get-str('name')
+    found = false
+    v = ''
+    nm: {
+        ok -> {
+            found = true
+            v = nm
+        }
+        nil -> found = false
+        err -> found = false
+    }
+    runner.is-true(found, 'builder name found')
+    runner.str-eq(v, 'nolang', 6, 'builder name value')
+    ; nil 成員
+    nn = d.get('note')
+    isn = false
+    nn: {
+        ok -> isn = d.pool.is-nil(nn)
+        nil -> isn = false
+        err -> isn = false
+    }
+    runner.is-true(isn, 'builder nil member')
+    ; 序列化後再解析
+    s = d.stringify()
+    r = noml.parse(s)
+    ok3 = false
+    r: {
+        ok -> {
+            ok3 = true
+            p = it.pool
+            cn = it.get('note')
+            cnil = false
+            cn: {
+                ok -> cnil = p.is-nil(cn)
+                nil -> cnil = false
+                err -> cnil = false
+            }
+            runner.is-true(cnil, 'reparsed nil member')
+        }
+        nil -> ok3 = false
+        err -> ok3 = false
+    }
+    runner.is-true(ok3, 'builder stringify reparse ok')
+}
+
+; 陣列構建器（push）
+t-builder-arr = () {
+    d = noml.new()
+    a = d.new-arr()
+    d.push(a, d.new-num(10.0))
+    d.push(a, d.new-num(20.0))
+    d.set-root(a)
+    runner.is-true(d.is-arr(), 'builder arr is arr')
+    runner.eq(d.len(), 2, 'builder arr len')
+}
+
+; 註解寫入
+t-ann-write = () {
+    d = noml.new()
+    o = d.new-obj()
+    d.put(o, 'host', d.new-str('localhost'))
+    d.set-root(o)
+    d.set-ann('type = \'server\'')
+    s = d.stringify()
+    r = noml.parse(s)
+    ok = false
+    fa = ''
+    ff = false
+    r: {
+        ok -> {
+            ok = true
+            a = it.ann()
+            a: {
+                ok -> {
+                    ff = true
+                    fa = a
+                }
+                nil -> ff = false
+                err -> ff = false
+            }
+        }
+        nil -> ok = false
+        err -> ok = false
+    }
+    runner.is-true(ok, 'ann-write reparse ok')
+    runner.is-true(ff, 'ann-write file ann found')
+    runner.str-eq(fa, 'type = \'server\'', 15, 'ann-write file ann text')
+    ; ann-value 取出鍵值
+    av = r.ann-value('type')
+    avf = false
+    avv = ''
+    av: {
+        ok -> {
+            avf = true
+            avv = av
+        }
+        nil -> avf = false
+        err -> avf = false
+    }
+    runner.is-true(avf, 'ann-value found')
+    runner.str-eq(avv, 'server', 6, 'ann-value text')
+}
+
+; ── 錯誤路徑 ──────────────────────────────────
+
+; 空輸入
+t-err-empty = () {
+    r = noml.parse('')
+    bad = false
+    r: {
+        ok -> bad = true
+        nil -> bad = true
+        err -> bad = false
+    }
+    runner.is-false(bad, 'empty input errors')
+}
+
+; 重複鍵
+t-err-dup = () {
+    r = noml.parse('{\n  a: 1\n  a: 2\n}\n')
+    bad = false
+    r: {
+        ok -> bad = true
+        nil -> bad = true
+        err -> bad = false
+    }
+    runner.is-false(bad, 'duplicate key errors')
+}
+
+; 未閉合字串
+t-err-unterm = () {
+    r = noml.parse('\'hello')
+    bad = false
+    r: {
+        ok -> bad = true
+        nil -> bad = true
+        err -> bad = false
+    }
+    runner.is-false(bad, 'unterminated string errors')
+}
+
+; 錯位 #{...}（寫在成員值前方同一行）
+t-err-ann-pos = () {
+    r = noml.parse('{\n  #{c} host: \'x\'\n}\n')
+    bad = false
+    r: {
+        ok -> bad = true
+        nil -> bad = true
+        err -> bad = false
+    }
+    runner.is-false(bad, 'misplaced annotation errors')
+}
+
+; 尾隨內容
+t-err-trailing = () {
+    r = noml.parse('{\n  a: 1\n}\nX')
+    bad = false
+    r: {
+        ok -> bad = true
+        nil -> bad = true
+        err -> bad = false
+    }
+    runner.is-false(bad, 'trailing content errors')
+}
+
+; null 不是合法字面量（NOML 用 nil）
+t-err-null = () {
+    r = noml.parse('{\n  a: null\n}\n')
+    bad = false
+    r: {
+        ok -> bad = true
+        nil -> bad = true
+        err -> bad = false
+    }
+    runner.is-false(bad, 'null rejected')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('noml.parse-nil', t-parse-nil)
+p2, f2 = runner.test('noml.parse-str', t-parse-str)
+p3, f3 = runner.test('noml.parse-num', t-parse-num)
+p4, f4 = runner.test('noml.parse-bool', t-parse-bool)
+p5, f5 = runner.test('noml.parse-obj', t-parse-obj)
+p6, f6 = runner.test('noml.parse-arr', t-parse-arr)
+p7, f7 = runner.test('noml.parse-nested', t-parse-nested)
+p8, f8 = runner.test('noml.comment', t-comment)
+p9, f9 = runner.test('noml.annotation', t-annotation)
+p10, f10 = runner.test('noml.roundtrip', t-roundtrip)
+p11, f11 = runner.test('noml.builder', t-builder)
+p12, f12 = runner.test('noml.builder-arr', t-builder-arr)
+p13, f13 = runner.test('noml.ann-write', t-ann-write)
+p14, f14 = runner.test('noml.err-empty', t-err-empty)
+p15, f15 = runner.test('noml.err-dup', t-err-dup)
+p16, f16 = runner.test('noml.err-unterm', t-err-unterm)
+p17, f17 = runner.test('noml.err-ann-pos', t-err-ann-pos)
+p18, f18 = runner.test('noml.err-trailing', t-err-trailing)
+p19, f19 = runner.test('noml.err-null', t-err-null)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

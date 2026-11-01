@@ -10,11 +10,13 @@ EMPTY = ''
 ABC = 'abc'
 TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
 
+; 摘要長度：MD5 固定 16 位元組（128 位元）
 t-len = () {
     h = md5.md5(ABC.to-bytes())
     runner.eq(h.len(), 16, 'md5 digest is 16 bytes')
 }
 
+; 完整摘要向量：md5('abc') = 900150983cd24fb0d6963f7d28e17f72，逐位元組比對
 t-abc-full = () {
 
     ; md5("abc") = 900150983cd24fb0d6963f7d28e17f72
@@ -37,6 +39,7 @@ t-abc-full = () {
     runner.eq(h[15], 0x72, 'md5 abc b15')
 }
 
+; 空輸入向量：md5('') = d41d8cd98f00b204e9800998ecf8427e，檢查首尾位元組
 t-empty-ends = () {
 
     ; md5("") = d41d8cd98f00b204e9800998ecf8427e
@@ -47,6 +50,7 @@ t-empty-ends = () {
     runner.eq(h[15], 0x7e, 'md5 empty b15')
 }
 
+; 跨區塊：56 位元組輸入需兩次壓縮，md5 = 8215ef0796a20bcaaae116d3876c664a
 t-twoblock-ends = () {
 
     ; md5(56-byte) = 8215ef0796a20bcaaae116d3876c664a

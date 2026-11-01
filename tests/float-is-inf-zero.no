@@ -1,6 +1,7 @@
 ; float-is-inf-zero.no — is-inf must be false for 0.0
 ; Run: no test tests/float-is-inf-zero.no
 
+; 測試 is-inf-zero
 test-is-inf-zero = () {
     z = 0.0
     nz = 0.0 - 0.0

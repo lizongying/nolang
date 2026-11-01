@@ -30,7 +30,7 @@ type Server struct {
 	// fixed at construction so a client-supplied locale in `initialize` can be
 	// resolved against exactly the same search list the process used at
 	// startup — otherwise "the editor says zh-CN" and "the project ships
-	// locales/zh-CN.noml" could disagree about which file wins.
+	// locales/zh-cn.noml" could disagree about which file wins.
 	projectDirs []string
 }
 

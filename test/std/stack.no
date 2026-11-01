@@ -5,6 +5,7 @@
 
 # /test/runner
 
+; 空棧初始狀態：預先配置 data 但 n=0，size() 回 0、empty() 回 true
 t-init-empty = () {
     buf []i64 = with-len(32)
     s = stack {
@@ -17,6 +18,8 @@ t-init-empty = () {
     runner.is-true(yes, 'init empty == true')
 }
 
+; 壓棧與出棧：push 三次後 size 為 3，之後 pop 必須按 LIFO 給 30、20、10，
+; 全部彈完後 empty() 回 true
 t-push-pop = () {
     buf []i64 = with-len(32)
     s = stack {
@@ -61,6 +64,7 @@ t-push-pop = () {
     runner.is-true(yes, 'after pop all empty == true')
 }
 
+; peek 只看棧頂（後進的 20）且不彈出，size 保持 2
 t-peek = () {
     buf []i64 = with-len(32)
     s = stack {
@@ -83,6 +87,7 @@ t-peek = () {
     runner.eq(sz, 2, 'peek does not remove, size == 2')
 }
 
+; 空棧邊界：pop 與 peek 均以 nil 表示無值，不報錯也不改狀態
 t-pop-empty = () {
     buf []i64 = with-len(32)
     s = stack {
@@ -108,6 +113,7 @@ t-pop-empty = () {
     runner.is-true(is-nil2, 'peek empty == nil')
 }
 
+; clear() 丟掉全部元素（僅重設 n，不動底層緩衝）：size 歸零、empty 為真
 t-clear = () {
     buf []i64 = with-len(32)
     s = stack {

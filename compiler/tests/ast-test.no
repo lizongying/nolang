@@ -43,6 +43,8 @@
 ;   IntegerLiteral    HDR 有 2 個純量：value(sprintf→s0)、raw(field→s1)
 ;   ExpressionStatement HDR 無純量、node_of=Expression（CHILD 序號 0）
 ;   Program           HDR 有 1 個純量：warnings(len→s0)，KIDS=Statements
+; t: 返回結果
+; root: 結果數值
 build-forty-two = () (t ast, root i64) {
     t = ast.make()
 
@@ -63,6 +65,7 @@ build-forty-two = () (t ast, root i64) {
 ; 1. 最小程式：逐位元組比對
 ; ═══════════════════════════════════════════════
 
+; 測試 minimal
 test-minimal = () {
     t, root = build-forty-two()
     got = ast.dump(t, root)
@@ -78,6 +81,7 @@ test-minimal = () {
 ;
 ; 少了這一步，每個 fixture 都會多一個空行，而 `rc` 完全測不出來。
 
+; 測試 trim
 test-trim = () {
     t, root = build-forty-two()
     got = ast.dump(t, root)
@@ -99,6 +103,7 @@ test-trim = () {
 ;    （`%T` of nil 是 "<nil>"），typeString 有（回 ""）。
 ;    兩者若混為一談，`ReturnStatement{}` 這種節點會多印或少印東西。
 
+; 測試 nil-asymmetry
 test-nil-asymmetry = () {
     t = ast.make()
     runner.is-true(ast.node-string(t, 0).eq-full('<nil>'), 'nodeString(nil) = <nil>')
@@ -113,6 +118,7 @@ test-nil-asymmetry = () {
 ; 對照 dump.go 的 kv / kvs / kvb / kvn / kvc：
 ;   always→1  nonempty→val!=""  true→val=="true"  nonzero→val!="0"  count→val!="0"
 
+; 測試 wanted
 test-wanted = () {
     runner.eq(ast.wanted(asp.P-ALWAYS, ''), 1, 'always prints empty')
     runner.eq(ast.wanted(asp.P-NON-EMPTY, ''), 0, 'nonempty drops empty')
@@ -129,6 +135,7 @@ test-wanted = () {
 ; 5. type-string：型別的摘要印法
 ; ═══════════════════════════════════════════════
 
+; 測試 type-string
 test-type-string = () {
     t = ast.make()
 
@@ -201,6 +208,7 @@ test-type-string = () {
 ; parser.exprToString 對 InfixExpression 會先試 evalConstIntExpr：
 ;   160+16 → 176（折疊成功），a+b → "a + b"（折疊失敗，退回拼接）。
 
+; 測試 expr-string
 test-expr-string = () {
     t = ast.make()
 
@@ -287,6 +295,7 @@ test-expr-string = () {
 ; 該 helper 仍未接線 ⇒ dump 必計 1 個 unsupported。這條同時證明
 ; 「計數器真的會被觸發」（否則它是個永遠為 0 的假斷言）。
 
+; 測試 unsupported-is-live
 test-unsupported-is-live = () {
     t = ast.make()
     v = ast.add(t, asp.K_ANNOTATION_STRUCT_VALUE)
@@ -298,6 +307,7 @@ test-unsupported-is-live = () {
 ; 8. 語料覆蓋：72 種節點都有 id 且名字唯一
 ; ═══════════════════════════════════════════════
 
+; 測試 kind-table
 test-kind-table = () {
     ; ⚠️ 這裡必須先把跨模組常量落到區域變數。
     ;    已實測的 src/ 缺陷（bug #85 家族，見 docs/design/nolang-selfhost.md §9）：
@@ -339,6 +349,9 @@ test-kind-table = () {
 ;     ./bin/no ast /tmp/m1.no
 ; ═══════════════════════════════════════════════
 
+; 功能待補充
+; t: 返回結果
+; root: 結果數值
 build-surface-match = () (t ast, root i64) {
     t = ast.make()
 
@@ -428,6 +441,7 @@ build-surface-match = () (t ast, root i64) {
     ast.kid-add(t, root, es)
 }
 
+; 測試 match-arm-helper
 test-match-arm-helper = () {
     t, root = build-surface-match()
     got = ast.dump(t, root)

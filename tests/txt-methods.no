@@ -32,6 +32,9 @@ outer {
     i inner
     name str
 }
+; 建立 box 並把字串寫入它的 txt 欄位 s
+; v str: 要放入的字串
+; b box: s 欄位為 v 內容的結構體
 mkbox = (v str) (b box) {
     b.s = v
 }
@@ -161,6 +164,9 @@ back7 = dst7
 print(back7)
 print(back7.len())
 
+; 經輸出參數把 str 轉成 txt（定長 256 位元組串）
+; v str: 來源字串，長度須 ≤ 256
+; out txt: 與 v 同內容的定長串
 mk7 = (v str) (out txt) {
     out = v
 }
@@ -201,6 +207,8 @@ print(e1.eq(e3))
 ; bug 11：txt 傳給宣告為 **str** 的參數（bug 2 的**反向**）。
 ; 參數 marshal 只有 int/double/bool -> %str-long 的轉換，%txt 一路落到
 ; `store %str-long %txt_value, %str-long* %carg` → opt-verify 拒絕。
+; s str: 宣告為 str 的參數，實際收到 txt（'hello-txt'）
+; n i64: s.len() 的結果，本測試得 9
 take-str = (s str) (n i64) {
     n = s.len()
 }
@@ -210,6 +218,8 @@ print(take-str(tt))
 ; bug 12：txt 指派給 **str 出參**。emitMove 的「借用參數必須 clone」guard 排在
 ; txt guard 前面，對 %txt 也照樣呼叫 `call %str-long @str_clone(%str-long %v)`
 ; —— 型別不匹配的呼叫（%txt 沒有 heap，本來就不需要 clone）。
+; v txt: 來源 txt（'hello-txt'），要拷貝進 str 輸出
+; out str: v 的內容拷成 str（堆字串）
 to-str-out = (v txt) (out str) {
     out = v
 }

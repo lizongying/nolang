@@ -1,3 +1,5 @@
+; 驗證區間上界取自變數（copy-rem）的行內遍歷：每圈把 data 的元素搬到 buf 的 base + k 位置，
+; 容器下標讀回的 option 在 place-match 的 ok 臂寫回，越界則靜默略過
 foo = () {
     buf = [0, 0, 0, 0, 0, 0, 0, 0]
     data = [10, 20, 30, 40]

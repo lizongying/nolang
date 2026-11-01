@@ -21,6 +21,7 @@
     }
 }
 
+; 測試 fill
 test-fill = () {
     data [4] = [1, 2, 3, 4]
     data.fill(42)
@@ -32,6 +33,7 @@ test-fill = () {
     print(v3)
 }
 
+; 測試 reverse
 test-reverse = () {
     data [4] = [1, 2, 3, 4]
     data.reverse()

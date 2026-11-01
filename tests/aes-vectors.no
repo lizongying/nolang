@@ -4,6 +4,9 @@
 
 g-aad-empty []byte = with-len(0)
 
+; 轉儲
+; label str: 行首標籤，如 'aes128-enc'
+; b []byte: 要印的位元組，逐個印成 2 位小寫 hex
 dump = (label str, b []byte) {
     s = format('{label}=')
     i <- [0..b.len()): {
@@ -13,6 +16,9 @@ dump = (label str, b []byte) {
     print(s)
 }
 
+; 把 16 位元組區塊印成 '{label}=<32 個 hex 字元>' 一行
+; label str: 行首標籤，後面直接接 '='
+; b [16]byte: 要列印的 AES 區塊（每字節兩位小寫 hex）
 dump16 = (label str, b [16]byte) {
     s = format('{label}=')
     i <- [0..16): {

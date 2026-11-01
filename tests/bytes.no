@@ -1,5 +1,6 @@
 ; bytes.no — 簡單的字節轉換測試
 
+; 測試 str-bytes
 test-str-bytes = () {
     s = 'abc'
     out = s.to-bytes()

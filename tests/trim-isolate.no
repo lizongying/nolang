@@ -1,3 +1,4 @@
+; 測試 trim
 test-trim = () {
     s1 = '  hello  '
     print(s1.len())
@@ -10,6 +11,7 @@ test-trim = () {
     print(t2.len())
 }
 
+; 測試 upper
 test-upper = () {
     s1 = 'hello'
     print(s1.len())

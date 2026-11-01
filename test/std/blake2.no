@@ -14,6 +14,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -30,6 +33,9 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 產生固定內容的測試資料：第 i 個位元組為 i 的低 8 位
+; n i64: 要產生的位元組數，為 0 時得空切片
+; out []byte: 長度 n 的位元組切片（0, 1, 2, ..., 255, 0, 1, ...）
 seq-bytes = (n i64) (out []byte) {
     out = with-len(n)
     i <- [0..n): {
@@ -40,14 +46,18 @@ seq-bytes = (n i64) (out []byte) {
 }
 
 ; 空輸入：在函式內局部建（全域零長 vec 傳參會踩到 MIR 已知問題）
+; out []byte: 長度 0 的位元組切片
 empty-bytes = () (out []byte) {
     out = with-len(0)
 }
 
+; 空輸入向量：BLAKE2b-512 對空字串的標準雜湊
+; [RFC 7693 附錄 A]
 t-b-empty = () {
     runner.str-eq(bhex(blake2.b(empty-bytes())), '786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce', 128, 'blake2b-512 empty')
 }
 
+; 'abc' 向量：BLAKE2b-512 對 3 位元組輸入的標準雜湊
 t-b-abc = () {
     runner.str-eq(bhex(blake2.b('abc'.to-bytes())), 'ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923', 128, 'blake2b-512 abc')
 }
@@ -57,14 +67,17 @@ t-b-multiblock = () {
     runner.str-eq(bhex(blake2.b(seq-bytes(200))), 'fb3c1f0f56a56f8e316fdf5d853c8c872c39635d083634c3904fc3ac07d1b578e85ff0e480e92d44ade33b62e893ee32343e79ddf6ef292e89b582d312502314', 128, 'blake2b-512 200B multiblock')
 }
 
+; 截斷輸出：BLAKE2b-256（參數化輸出長度）對 'abc' 的向量
 t-b-256 = () {
     runner.str-eq(bhex(blake2.b-256('abc'.to-bytes())), 'bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319', 64, 'blake2b-256 abc')
 }
 
+; 'abc' 向量：BLAKE2s-256（32 位元字版本）對 3 位元組輸入的標準雜湊
 t-s-abc = () {
     runner.str-eq(bhex(blake2.s('abc'.to-bytes())), '508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982', 64, 'blake2s-256 abc')
 }
 
+; 空輸入向量：BLAKE2s-256 對空字串的標準雜湊
 t-s-empty = () {
     runner.str-eq(bhex(blake2.s(empty-bytes())), '69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9', 64, 'blake2s-256 empty')
 }

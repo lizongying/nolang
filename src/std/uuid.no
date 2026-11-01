@@ -31,6 +31,7 @@ uuid {
 
 ; 生成隨機 UUID v4
 ; state: xorshift32 狀態（輸入/輸出，初始為非零種子）
+; out: 生成的 v4 随機 UUID（state 随 xorshift32 推進）
 ; [new-v4](#uuid.new-v4)
 new-v4 = (state i64) (out uuid) {
 
@@ -197,6 +198,10 @@ uuid.to-str-upper = () (out str) {
 }
 
 ; 大寫 hex 位元組寫入
+; b: 待轉為兩個大寫 hex 字符的字節
+; pos: out 中寫入的起始字節位置
+; out: 输出參數，就地寫入兩個 hex 字符（越界寫入被安全索引忽略）
+; table: 大寫十六進制字符表（如 '0123...ABCDEF'）
 ; [hex-byte-upper](#uuid.hex-byte-upper)
 hex-byte-upper = (b byte, pos i64, out str, table str) {
 
@@ -223,6 +228,9 @@ hex-byte-upper = (b byte, pos i64, out str, table str) {
 ; s str: UUID 字串
 ; out uuid: 輸出 UUID
 ; 返回 ok bool: true=解析成功
+; s: UUID 字串（36 字符帶連字符或 32 字符無連字符）
+; out: 输出參數，解析成功時寫入 16 字節（原內容被覆蓋）
+; ok: true=格式合法且已寫入, false=長度/字符非法
 ; [from-str](#uuid.from-str)
 from-str = (s str, out uuid) (ok bool) {
     ok = false
@@ -243,6 +251,10 @@ from-str = (s str, out uuid) (ok bool) {
 }
 
 ; 解析帶連字號的 UUID
+; s: 待解析的完整 UUID 字串
+; pos: s 中本段 36 字符的起始下標
+; out: 输出參數，成功時寫入解析出的 16 字節
+; ok: true=該段解析成功（連字符位置與 hex 字符均合法）
 ; [parse-with-dashes](#uuid.parse-with-dashes)
 parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 
@@ -518,6 +530,10 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
 }
 
 ; 解析不帶連字號的 UUID
+; s: 待解析的完整 UUID 字串
+; pos: s 中本段 32 字符的起始下標
+; out: 输出參數，成功時寫入解析出的 16 字節
+; ok: true=該段解析成功（全部為 hex 字符）
 ; [parse-no-dashes](#uuid.parse-no-dashes)
 parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
     ok = true
@@ -535,6 +551,9 @@ parse-no-dashes = (s str, pos i64, out uuid) (ok bool) {
 }
 
 ; 從字串解析兩個 hex 字元為一個位元組
+; s: 含 hex 字符的源字串
+; pos: 待讀取的首個 hex 字符下標（取 s[pos]、s[pos+1] 兩字符）
+; v: 合成後的字節數值 0~255（非法字符按 0 計）
 ; [parse-hex-byte](#uuid.parse-hex-byte)
 parse-hex-byte = (s str, pos i64) (v i64) {
 
@@ -567,6 +586,7 @@ parse-hex-byte = (s str, pos i64) (v i64) {
 ; ═══════════════════════════════════════════════
 
 ; 驗證 UUID 格式是否合法
+; ok: true=變體位合法（byte8 高 2 位為 10b，即 RFC 4122 變體）；版本號僅信息性讀取、不強制為 4
 ; [validate](#uuid.validate)
 uuid.validate = () (ok bool) {
     ok = true
@@ -583,6 +603,7 @@ uuid.validate = () (ok bool) {
 }
 
 ; 取得 UUID 版本
+; v: UUID 版本號（取 byte6 高 4 位，v4 為 4）
 ; [version](#uuid.version)
 uuid.version = () (v i64) {
 
@@ -590,6 +611,7 @@ uuid.version = () (v i64) {
 }
 
 ; 取得 UUID 變體
+; v: 變體標識（取 byte8 高 2 位，RFC 4122 為 2）
 ; [variant](#uuid.variant)
 uuid.variant = () (v i64) {
 
@@ -597,6 +619,7 @@ uuid.variant = () (v i64) {
 }
 
 ; 判斷是否為空 UUID（全零）
+; yes: 是否為 nil UUID（16 字節全零）
 ; [is-nil](#uuid.is-nil)
 uuid.is-nil = () (yes bool) {
     yes = true
@@ -613,6 +636,8 @@ uuid.is-nil = () (yes bool) {
 ; ═══════════════════════════════════════════════
 
 ; 判斷兩個 UUID 是否相等
+; b: 待比較的另一個 UUID
+; yes: true=兩 UUID 的 16 字節逐一相等
 ; [eq](#uuid.eq)
 uuid.eq = (b uuid) (yes bool) {
     yes = true
@@ -625,6 +650,8 @@ uuid.eq = (b uuid) (yes bool) {
 }
 
 ; 比較兩個 UUID（字典序）
+; b: 待比較的另一個 UUID
+; r: 字典序比較結果（-1=self<b, 0=相等, 1=self>b；逐字節比較至首個差異）
 ; [cmp](#uuid.cmp)
 uuid.cmp = (b uuid) (r i64) {
     r = 0
@@ -652,6 +679,8 @@ uuid.cmp = (b uuid) (r i64) {
 ; ═══════════════════════════════════════════════
 
 ; 單個 hex 字元轉數值
+; c: 單個 hex 字符的碼點值
+; v: 對應的 0~15 數值（非 hex 字符為 0）
 ; [hex-val](#uuid.hex-val)
 hex-val = (c i64) (v i64) {
     v = -1
@@ -679,6 +708,7 @@ hex-val = (c i64) (v i64) {
 }
 
 ; 建立空 UUID（全零）
+; out: 输出參數，被填為 16 字節全零的空 UUID
 ; [nil-uuid](#uuid.nil-uuid)
 nil-uuid = (out uuid) {
     i <- [0..16): {

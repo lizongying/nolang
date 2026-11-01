@@ -58,6 +58,8 @@ print(b3)
 print(b3.len())
 
 print('--- inside a function ---')
+; 在函式內於迴圈中重複把 b 重賦值成 a（同型別覆寫），驗證每次更換堆字串都正確處理舊緩衝
+; out i64: 迴圈結束後 b 的長度，即 'hello-world'.len() = 11
 loopy = () (out i64) {
     a = 'hello-world'
     b = 'seed'

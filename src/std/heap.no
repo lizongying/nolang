@@ -32,8 +32,8 @@ heap {
 ; ═══════════════════════════════════════════════
 
 ; 工廠 — 以呼叫者提供的元素緩衝區建立空堆積
-; data []t: 元素緩衝區（其長度即容量上限）
-; 返回 h heap: 初始化後的堆積實例
+; data []t: 元素緩衝區，其長度決定堆積容量上限（n 重置為 0，不清空緩衝區內容）
+; h heap: 初始化後的堆積實例，cap = len(data)、n = 0
 ; [init](#heap.init)
 heap.init = (data []t) (h heap) {
     h.data = data
@@ -42,7 +42,8 @@ heap.init = (data []t) (h heap) {
 }
 
 ; 向堆積推入一個元素並維持最小堆性質
-; val t: 要推入的值
+; val t: 要推入的元素，型別 t 由 heap.init 的緩衝區型別決定
+; 堆積已滿（n >= cap）時直接忽略本次推入，不報錯
 ; [push](#heap.push)
 heap.push = (val t) {
 
@@ -71,7 +72,7 @@ heap.push = (val t) {
 }
 
 ; 從堆積彈出最小元素並向下調整
-; 返回 val ?t: ok=最小值, nil=堆積為空
+; val ?t: ok=目前的堆積頂端（最小值）, nil=堆積為空
 ; [pop](#heap.pop)
 heap.pop = () (val ?t) {
     .n == 0 -> {
@@ -107,7 +108,7 @@ heap.pop = () (val ?t) {
 }
 
 ; 查看最小元素（不移除）
-; 返回 val ?t: ok=最小值, nil=堆積為空
+; val ?t: ok=目前的堆積頂端（最小值）, nil=堆積為空
 ; [peek](#heap.peek)
 heap.peek = () (val ?t) {
     .n == 0 -> {
@@ -121,13 +122,15 @@ heap.peek = () (val ?t) {
 ; 狀態查詢方法（不涉及元素型別）
 ; ═══════════════════════════════════════════════
 
-; 返回堆積大小
+; 返回堆積目前存放的元素數量
+; sz i64: 已推入且尚未彈出的元素個數（0..cap）
 ; [size](#heap.size)
 heap.size = () (sz i64) {
     sz = .n
 }
 
 ; 判斷堆積是否為空
+; yes bool: true 表示 n == 0（push 因滿被忽略不會改變此判斷）
 ; [empty](#heap.empty)
 heap.empty = () (yes bool) {
     yes = .n == 0

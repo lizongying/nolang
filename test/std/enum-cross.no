@@ -1,5 +1,6 @@
 # /test/runner
 
+; 跨模組枚舉匹配：把其他模組定義的 file-mode.write 綁到本地變數後再 match，應命中 write 臂（1537）
 t-cross-enum = () {
     m file-mode = file-mode.write
     flags = 0
@@ -15,6 +16,7 @@ t-cross-enum = () {
     runner.eq(flags, 1537, 'cross-module enum match write == 1537')
 }
 
+; 跨模組枚舉匹配（權限位）：file-perm.perm-644 應命中 perm-644 臂（420）
 t-cross-perm = () {
     pv file-perm = file-perm.perm-644
     perm-val = 0

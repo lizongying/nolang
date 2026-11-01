@@ -14,6 +14,10 @@
 ; Run it (Node, after `npm install` in this directory):
 ;   no run --js main.no          -> prints 1024
 ; ============================================================================
+; 冪運算：外部宣告 C 標準 libm 的 pow(double, double)，呼叫由 koffi 轉接到 libm
+; x f64: 底數（呼叫端傳 2.0）
+; y f64: 指數（呼叫端傳 10.0）
+; r f64: x 的 y 次方，本例為 2.0^10.0 = 1024
 
 #{bind = auto, c}
 pow = (x f64, y f64) (r f64)

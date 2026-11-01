@@ -14,6 +14,7 @@ MyType {
     items []i64
 }
 
+; 建立 []MyType：push 兩個各帶 name 與 items 的結構體，驗證釋放會進到每個欄位的堆資料
 make-struct-vec = () {
     v []MyType
     m1 = MyType {

@@ -7,6 +7,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -23,6 +26,8 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 驗證 AES-128-CTR 的密文符合 NIST SP800-38A 向量
+; CTR 是流式模式，不需要填充，16 位元組明文得 16 位元組密文
 t-enc = () {
     key [16]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -40,6 +45,7 @@ t-enc = () {
     runner.str-eq(bhex(ct), '0a852986053b9632795a3ee30a8e04a5', 32, 'aes-128-ctr enc')
 }
 
+; 往返測試：CTR 加解密是同一個操作，再套一次相同 key/計數器即還原明文
 t-roundtrip = () {
     key [16]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,

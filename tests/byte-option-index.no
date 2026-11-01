@@ -15,6 +15,10 @@
 ;
 ; 判定：f-byte 與 f-idx（走 coerceIndex 的 [i] 路徑）結果都必須是 195（'abc'[1]=98 + 'abc'[0]=97）。
 
+; 用 s.byte(j) 從尾端向前累加位元組（j 是 ?i64 下標，結果也是一段式解包）
+; all str: 來源字串
+; k i64: 要取幾個位元組（同時是迴圈次數）
+; out i64: 取到的位元組總和（'abc' 取 2 → 'abc'[1]=98 + 'abc'[0]=97 = 195）
 f-byte = (all str, k i64) (out i64) {
     s = 0
     i <- [0..k): {
@@ -29,6 +33,10 @@ f-byte = (all str, k i64) (out i64) {
     out = s
 }
 
+; 對照組：改用 [i] 安全索引做同樣的累加，結果必須與 f-byte 一致
+; all str: 來源字串
+; k i64: 要取幾個位元組
+; out i64: 取到的位元組總和（預期也是 195）
 f-idx = (all str, k i64) (out i64) {
     ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}

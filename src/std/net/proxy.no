@@ -45,14 +45,16 @@ config {
 ; ═══════════════════════════════════════════════
 
 ; 通過 HTTP CONNECT 建立代理隧道
-; proxy-host str: 代理伺服器主機
-; proxy-port i64: 代理伺服器埠號
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; username str: 認證用戶名（空=不認證）
-; password str: 認證密碼
-; 返回 fd fd: 隧道 socket fd（-1=失敗）
-; [connect](#net.proxy.connect)
+; 連上代理後發送 CONNECT target-host:target-port，收到 200 即完成握手；
+; username 非空時附帶 Basic 認證標頭。
+; proxy-host str: 代理伺服器主機名或 IP
+; proxy-port i64: 代理伺服器埠號（HTTP 代理通常為 3128 / 8080）
+; target-host str: 要穿透到的目標主機名
+; target-port i64: 目標服務埠號（如 HTTPS 的 443）
+; username str: Basic 認證用戶名；空字串表示不帶認證頭
+; password str: Basic 認證密碼（username 為空時忽略）
+; 返回 fd fd: 已建立的隧道 socket 描述符，-1=連接或握手失敗
+; [connect](#proxy.connect)
 connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
 
     fd = -1
@@ -172,25 +174,27 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
 }
 
 ; 通過代理建立 TCP 連接（便捷函數，無認證）
-; proxy-host str: 代理伺服器主機
+; 等價於 connect(..., '', '')。
+; proxy-host str: 代理伺服器主機名或 IP
 ; proxy-port i64: 代理伺服器埠號
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; 返回 fd fd: socket fd（-1=失敗）
-; [dial](#net.proxy.dial)
+; target-host str: 要穿透到的目標主機名
+; target-port i64: 目標服務埠號
+; 返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+; [dial](#proxy.dial)
 dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd fd) {
     fd = connect(proxy-host, proxy-port, target-host, target-port, '', '')
 }
 
 ; 通過代理建立 TCP 連接（含認證）
-; proxy-host str: 代理伺服器主機
+; 等價於 connect(...)，只是把帳密明寫成參數。
+; proxy-host str: 代理伺服器主機名或 IP
 ; proxy-port i64: 代理伺服器埠號
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; username str: 認證用戶名
-; password str: 認證密碼
-; 返回 fd fd: socket fd（-1=失敗）
-; [dial-auth](#net.proxy.dial-auth)
+; target-host str: 要穿透到的目標主機名
+; target-port i64: 目標服務埠號
+; username str: Basic 認證用戶名
+; password str: Basic 認證密碼
+; 返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+; [dial-auth](#proxy.dial-auth)
 dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
     fd = connect(proxy-host, proxy-port, target-host, target-port, username, password)
 }
@@ -200,12 +204,13 @@ dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port i64, u
 ; ═══════════════════════════════════════════════
 
 ; 通過代理建立 TLS 連接
-; proxy-host str: 代理伺服器主機
+; 先做 HTTP CONNECT（不帶認證）得到隧道，再在隧道上發起 TLS 握手。
+; proxy-host str: 代理伺服器主機名或 IP
 ; proxy-port i64: 代理伺服器埠號
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; 返回 tc ?tls.conn: ok=TLS 連接, nil=失敗
-; [proxy-tls-dial](#net.proxy.proxy-tls-dial)
+; target-host str: TLS 伺服器主機名（也用於握手時的 SNI / 證書校驗）
+; target-port i64: TLS 服務埠號（通常 443）
+; 返回 tc ?tls.conn: ok=在隧道上完成握手的 TLS 連接, nil=隧道或握手任一階段失敗
+; [proxy-tls-dial](#proxy.proxy-tls-dial)
 proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (tc ?tls.conn) {
     tc = nil
 
@@ -310,19 +315,21 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
 }
 
 ; 使用 config 建立代理連接
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; 返回 fd fd: socket fd（-1=失敗）
-; [connect](#net.proxy.config.connect)
+; 代理地址與帳密取自接收者（.host / .port / .username / .password）。
+; target-host str: 要穿透到的目標主機名
+; target-port i64: 目標服務埠號
+; 返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+; [connect](#proxy.config.connect)
 config.connect = (target-host str, target-port i64) (fd fd) {
     fd = connect(.host, .port, target-host, target-port, .username, .password)
 }
 
 ; 使用 config 建立代理 TLS 連接
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; 返回 tc ?tls.conn: ok=TLS 連接, nil=失敗
-; [tls-connect](#net.proxy.config.tls-connect)
+; 先用接收者的代理設定打通 CONNECT 隧道，再在隧道上完成 TLS 握手。
+; target-host str: TLS 伺服器主機名（用於 SNI / 證書校驗）
+; target-port i64: TLS 服務埠號
+; 返回 tc ?tls.conn: ok=完成握手的 TLS 連接, nil=失敗
+; [tls-connect](#proxy.config.tls-connect)
 config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
     tc = nil
     fd = connect(.host, .port, target-host, target-port, .username, .password)
@@ -430,14 +437,16 @@ SOCKS5-ATYP-IPV4 = 1
 SOCKS5-ATYP-DOMAIN = 3
 
 ; 通過 SOCKS5 代理建立連接
-; proxy-host str: SOCKS5 代理主機
-; proxy-port i64: SOCKS5 代理埠號
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; username str: 認證用戶名（空=不認證）
-; password str: 認證密碼
-; 返回 fd fd: socket fd（-1=失敗）
-; [socks5-connect](#net.proxy.socks5-connect)
+; 先做方法協商（username 非空時走 0x02 用戶名/密碼認證，否則 0x00 無認證），
+; 再用 CONNECT 命令把目標地址交給代理。
+; proxy-host str: SOCKS5 代理主機名或 IP
+; proxy-port i64: SOCKS5 代理埠號（通常 1080）
+; target-host str: 要穿透到的目標主機；非 IP 字面量時以域名字串交給代理解析
+; target-port i64: 目標服務埠號
+; username str: 用戶名；空字串表示不認證
+; password str: 密碼（username 為空時忽略）
+; 返回 fd fd: 已建立的隧道 socket 描述符，-1=協商或連接失敗
+; [socks5-connect](#proxy.socks5-connect)
 socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
 
     fd = -1
@@ -676,12 +685,13 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 }
 
 ; 通過 SOCKS5 代理建立連接（便捷函數，無認證）
-; proxy-host str: SOCKS5 代理主機
-; proxy-port i64: SOCKS5 代理埠號
-; target-host str: 目標主機
-; target-port i64: 目標埠號
-; 返回 fd fd: socket fd（-1=失敗）
-; [socks5-dial](#net.proxy.socks5-dial)
+; 等價於 socks5-connect(..., '', '')，走 0x00 無認證協商。
+; proxy-host str: SOCKS5 代理主機名或 IP
+; proxy-port i64: SOCKS5 代理埠號（通常 1080）
+; target-host str: 要穿透到的目標主機；非 IP 字面量時以域名字串交給代理解析
+; target-port i64: 目標服務埠號
+; 返回 fd fd: 已建立的隧道 socket 描述符，-1=失敗
+; [socks5-dial](#proxy.socks5-dial)
 socks5-dial = (proxy-host str, proxy-port i64, target-host str, target-port i64) (fd fd) {
     fd = socks5-connect(proxy-host, proxy-port, target-host, target-port, '', '')
 }

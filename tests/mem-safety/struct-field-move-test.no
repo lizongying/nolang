@@ -8,6 +8,9 @@ container {
     name str
 }
 
+; 只把結構體的 data 欄位 move 出去，name 仍留在原位（離開作用域時只該 free name，data 已搬走不得再 free）
+; c container: 來源結構體，data 為 5 個元素、name 為 'test'
+; out []i64: c.data 的所有權（move，不複製）
 extract-data = (c container) (out []i64) {
     out = c.data; move: c.data 的所有权转移给 out
     ; c.name 仍由 c 拥有，函数结束时应 free c.name

@@ -18,6 +18,11 @@
 ; MSB-first 位元讀取器（bzip2 使用大端序位元）
 ; ═══════════════════════════════════════════════
 
+; bz-bit-reader: bzip2 位元讀取器（MSB-first）
+; data []byte: 待解碼的原始位元組緩衝
+; pos i64: 下一個要載入 bit-buf 的位元組下標
+; bit-buf i64: 位元緩衝；只剩尚未消費的低 bit-cnt 位
+; bit-cnt i64: bit-buf 中仍可讀的位元數（0 表示需要載入下一個位元組）
 bz-bit-reader {
     data []byte
     pos i64
@@ -26,7 +31,8 @@ bz-bit-reader {
 }
 
 ; 讀取一個位元（MSB-first），越界返回 0
-; [read-bit](#archive.bzip2.bz-bit-reader.read-bit)
+; bit i64: 讀出的位元（0 或 1）；位元組耗盡後固定返回 0，不報錯
+; [read-bit](#bzip2.bz-bit-reader.read-bit)
 bz-bit-reader.read-bit = () (bit i64) {
     bit = 0
     {
@@ -51,7 +57,9 @@ bz-bit-reader.read-bit = () (bit i64) {
 }
 
 ; 讀取 n 個位元（MSB-first）
-; [read-bits](#archive.bzip2.bz-bit-reader.read-bits)
+; n i64: 要連續讀取的位元數
+; v i64: 拼出的整數；先讀到的位元放在高位
+; [read-bits](#bzip2.bz-bit-reader.read-bits)
 bz-bit-reader.read-bits = (n i64) (v i64) {
     v = 0
     i <- [0..n): {
@@ -73,6 +81,12 @@ BZ-GROUP-SIZE = 50
 ; Huffman 解碼表（bzip2 風格：base / limit / perm）
 ; ═══════════════════════════════════════════════
 
+; bz-huffman: bzip2 風格的 Huffman 解碼表（base / limit / perm 三陣列）
+; limit [24]i64: 每個碼長下可接受的最大碼值（由小到大遞增）
+; base [24]i64: 每個碼長在 perm 中的起始偏移
+; perm [258]i64: 按碼長與字典序排好的符號表
+; min-len i64: 最短碼長；為 0 表示此表為空，解碼直接失敗
+; max-len i64: 最長碼長
 bz-huffman {
     limit [24]i64
     base [24]i64
@@ -82,7 +96,10 @@ bz-huffman {
 }
 
 ; 從碼長度陣列建構 Huffman 碼表
-; [build](#archive.bzip2.bz-huffman.build)
+; 先統計各碼長個數，再累加出 limit / base，最後填 perm。
+; lengths []i64: 每個符號的碼長（0 表示該符號不使用）
+; alpha-size i64: 字母表大小（有效符號數上限，≤ 258）
+; [build](#bzip2.bz-huffman.build)
 bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
 
@@ -171,7 +188,10 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
 }
 
 ; 解碼一個符號
-; [decode](#archive.bzip2.bz-huffman.decode)
+; 先讀 min-len 位元，再逐位擴展直到落入 limit 範圍；越界或碼過長時回 -1。
+; br bz-bit-reader: 位元來源（每輪可能多讀 1 位元）
+; sym i64: 解出的符號值，-1=非法碼或空表
+; [decode](#bzip2.bz-huffman.decode)
 bz-huffman.decode = (br bz-bit-reader) (sym i64) {
 
     sym = -1
@@ -208,9 +228,11 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
     sym = .perm[idx + .base[zn] - .base[zn]]
 }
 
-; 修正: 正確的符號計算
-; sym = perm[zvec - base[zn]]
-; [decode-symbol](#archive.bzip2.bz-huffman.decode-symbol)
+; 解碼一個符號（修正版：直接用 perm[zvec - base[zn]] 取符號）
+; 與 decode 的差異只在最後一步的索引運算，其餘解碼流程相同；bzip2 主流程用此版本。
+; br bz-bit-reader: 位元來源（每輪可能多讀 1 位元）
+; sym i64: 解出的符號值，-1=非法碼或空表
+; [decode-symbol](#bzip2.bz-huffman.decode-symbol)
 bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
 
     sym = -1
@@ -249,7 +271,7 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
 ; 解壓縮 bzip2 格式的資料
 ;   data: bzip2 壓縮資料 ([]byte)
 ;   out: 解壓後的資料 ([]byte)
-; [bzip2-decompress](#archive.bzip2.bzip2-decompress)
+; [bzip2-decompress](#bzip2.bzip2-decompress)
 bzip2-decompress = (data []byte) (out []byte) {
 
     ; 檢查標頭: "BZh" + block_size_char
@@ -763,7 +785,7 @@ bzip2-decompress = (data []byte) (out []byte) {
 ;   out: bzip2 壓縮後的資料 ([]byte)
 ; 注意：目前使用 stored block 的基本實現，
 ;       完整 BWT + MTF + Huffman 壓縮待後續實現。
-; [bzip2-compress](#archive.bzip2.bzip2-compress)
+; [bzip2-compress](#bzip2.bzip2-compress)
 bzip2-compress = (data []byte) (out []byte) {
 
     ; BZIP2 標頭: "BZh9"

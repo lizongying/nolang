@@ -44,6 +44,8 @@ ck-sig {
 
 ; ── 表构造（首块字面量整賦＋余块 push 链，仿 asp.no strs/tape 形制）──
 
+; 建立
+; t: 返回結果
 ck-sig.new = () (t ck-sig) {
     t = ck-sig {
         fk: []
@@ -88,6 +90,7 @@ ck-sig.new = () (t ck-sig) {
 }
 
 ; ── 各列数据（生成区）──
+; t: 輸入
 ck-sig-fill-fk = (t ck-sig) {
     t.fk = [
         '[]byte.index',
@@ -957,6 +960,8 @@ ck-sig-fill-fk = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-fp = (t ck-sig) {
     t.fp = [
         'str',
@@ -1826,6 +1831,8 @@ ck-sig-fill-fp = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-fr = (t ck-sig) {
     t.fr = [
         'i64',
@@ -2695,6 +2702,8 @@ ck-sig-fill-fr = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-mk = (t ck-sig) {
     t.mk = [
         'arr-stack.arr-stack.clear',
@@ -5095,6 +5104,8 @@ ck-sig-fill-mk = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-mp = (t ck-sig) {
     t.mp = [
         '',
@@ -7495,6 +7506,8 @@ ck-sig-fill-mp = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-mr = (t ck-sig) {
     t.mr = [
         '',
@@ -9895,6 +9908,8 @@ ck-sig-fill-mr = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-sfk = (t ck-sig) {
     t.sfk = [
         'arp-info.flags',
@@ -10623,6 +10638,8 @@ ck-sig-fill-sfk = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-sft = (t ck-sig) {
     t.sft = [
         'str',
@@ -11351,18 +11368,24 @@ ck-sig-fill-sft = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-alk = (t ck-sig) {
     t.alk = [
         'fd'
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-alt = (t ck-sig) {
     t.alt = [
         'i64'
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-smk = (t ck-sig) {
     t.smk = [
         'arp-info',
@@ -11473,6 +11496,8 @@ ck-sig-fill-smk = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-smt = (t ck-sig) {
     t.smt = [
         'net',
@@ -11583,6 +11608,8 @@ ck-sig-fill-smt = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-evk = (t ck-sig) {
     t.evk = [
         'code',
@@ -11591,6 +11618,8 @@ ck-sig-fill-evk = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-evt = (t ck-sig) {
     t.evt = [
         'ok,not-found,permission,io,timeout,parse,invalid,overflow,unknown',
@@ -11599,6 +11628,8 @@ ck-sig-fill-evt = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-mok = (t ck-sig) {
     t.mok = [
         'aes',
@@ -11722,6 +11753,8 @@ ck-sig-fill-mok = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-moo = (t ck-sig) {
     t.moo = [
         'crypto/aes',
@@ -11845,6 +11878,8 @@ ck-sig-fill-moo = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-bk = (t ck-sig) {
     t.bk = [
         'a',
@@ -13578,6 +13613,8 @@ ck-sig-fill-bk = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-bv = (t ck-sig) {
     t.bv = [
         '',
@@ -15311,6 +15348,8 @@ ck-sig-fill-bv = (t ck-sig) {
     ]
 }
 
+; 功能待補充
+; t: 輸入
 ck-sig-fill-bo = (t ck-sig) {
     t.bo = [
         '',
@@ -17050,6 +17089,9 @@ ck-sig-fill-bo = (t ck-sig) {
 ; str 欄位安全取值。⚠️ 不用 []t.at——外掛 receiver 的泛型容器方法
 ; 單態化在當代 Go 工具鏈報 'EmitLLVM: unknown callee []t.at'（實測）；索引讀回
 ; ?str、三 tag 臂顯式窮盡（裸 -> 尾臂在 ok 走過還會再觸發——match 塊非排他）。
+; v: 值
+; i: 索引
+; r: 結果字串
 ck-sig-str-at = (v []str, i i64) (r str) {
     r = ''
     x = v[i]
@@ -17072,6 +17114,9 @@ ck-sig-str-at = (v []str, i i64) (r str) {
 ;    调用表达式之后——所得 x 在后续关系比较臂中恒假（区域变量/函数内均复现）；
 ;    两步形 `o = recv.call()` + `x = o: {match块}` 正常。byte(i) 回 ?byte，
 ;    故此处必须两步写。ast.no:362 同款内联形仅用于算术（+/*）未触雷，勿照抄。
+; a: 運算元
+; b: 運算元
+; lt: 結果數值
 ck-sig-lt = (a str, b str) (lt i64) {
     lt = 0
     an = a.len-bytes()
@@ -17109,6 +17154,9 @@ ck-sig-lt = (a str, b str) (lt i64) {
 
 ; 升序键表二分；命中回下标，未命中回 -1。
 ; 三條件臂互斥（lt 兩向 + eq），順序求值無串臂風險；鍵表無空串⇒miss 恒 -1。
+; keys: 鍵列表
+; name: 名稱
+; idx: 索引
 ck-sig-bsearch = (keys []str, name str) (idx i64) {
     idx = -1
     lo = 0
@@ -17131,31 +17179,58 @@ ck-sig-bsearch = (keys []str, name str) (idx i64) {
     }
 }
 
+; 功能待補充
+; t: 輸入
+; name: 名稱
+; idx: 索引
 ck-sig-find-func = (t ck-sig, name str) (idx i64) {
     idx = ck-sig-bsearch(t.fk, name)
 }
 
+; 功能待補充
+; t: 輸入
+; key: 鍵
+; idx: 索引
 ck-sig-find-method = (t ck-sig, key str) (idx i64) {
     idx = ck-sig-bsearch(t.mk, key)
 }
 
 ; 'Struct.field'（如 'arp-info.mac'）
+; t: 輸入
+; key: 鍵
+; idx: 索引
 ck-sig-find-struct-field = (t ck-sig, key str) (idx i64) {
     idx = ck-sig-bsearch(t.sfk, key)
 }
 
+; 功能待補充
+; t: 輸入
+; name: 名稱
+; idx: 索引
 ck-sig-find-alias = (t ck-sig, name str) (idx i64) {
     idx = ck-sig-bsearch(t.alk, name)
 }
 
+; 功能待補充
+; t: 輸入
+; name: 名稱
+; idx: 索引
 ck-sig-find-struct-mod = (t ck-sig, name str) (idx i64) {
     idx = ck-sig-bsearch(t.smk, name)
 }
 
+; 功能待補充
+; t: 輸入
+; name: 名稱
+; idx: 索引
 ck-sig-find-enum = (t ck-sig, name str) (idx i64) {
     idx = ck-sig-bsearch(t.evk, name)
 }
 
+; 功能待補充
+; t: 輸入
+; name: 名稱
+; idx: 索引
 ck-sig-find-module = (t ck-sig, name str) (idx i64) {
     idx = ck-sig-bsearch(t.mok, name)
 }
@@ -17166,6 +17241,9 @@ ck-sig-find-module = (t ck-sig, name str) (idx i64) {
 ;   owner - '&' - bo ⇒ 门控名；owner 段 = bv（提示模块，可空——无 unique owner 如
 ;              仅方法短名 'from-bits'）；bo 段 = fk unique owner（stdFuncModule 同值，
 ;              供 curModule 自模块裸调放行臂）。'&' 不在模块名字符集 ⇒ 分隔无歧义。
+; t: 輸入
+; name: 名稱
+; r: 結果字串
 ck-sig-bare = (t ck-sig, name str) (r str) {
     r = '@'
     idx = ck-sig-bsearch(t.bk, name)
@@ -17181,6 +17259,8 @@ ck-sig-bare = (t ck-sig, name str) (r str) {
 }
 
 ; 逗号串 ⇒ 型串 vec；'' ⇒ 空 vec。
+; s: 字串
+; r: 結果容器
 ck-sig-types = (s str) (r []str) {
     r []str = with-cap(2)
     s.len-bytes() > 0 -> {

@@ -30,6 +30,9 @@ count-failed = 0
 ; ═══════════════════════════════════════════════
 
 ; i64 相等斷言 a == b
+; a: 實際值（i64）
+; b: 期望值（與 a 相等才通過）
+; msg: 斷言失敗時列印的說明
 eq = (a i64, b i64, msg str) {
     {
         a != b -> {
@@ -46,6 +49,9 @@ eq = (a i64, b i64, msg str) {
 }
 
 ; i64 不等斷言 a != b
+; a: 第一運算值（i64）
+; b: 第二運算值（與 a 不等才通過）
+; msg: 斷言失敗時列印的說明
 ne = (a i64, b i64, msg str) {
     {
         a == b -> {
@@ -62,6 +68,9 @@ ne = (a i64, b i64, msg str) {
 }
 
 ; 大於斷言 a > b
+; a: 比較左值（i64）
+; b: 比較右值（a 大於 b 才通過）
+; msg: 斷言失敗時列印的說明
 gt = (a i64, b i64, msg str) {
     {
         a <= b -> {
@@ -78,6 +87,9 @@ gt = (a i64, b i64, msg str) {
 }
 
 ; 小於斷言 a < b
+; a: 比較左值（i64）
+; b: 比較右值（a 小於 b 才通過）
+; msg: 斷言失敗時列印的說明
 lt = (a i64, b i64, msg str) {
     {
         a >= b -> {
@@ -98,6 +110,8 @@ lt = (a i64, b i64, msg str) {
 ; ═══════════════════════════════════════════════
 
 ; 布林值為 true
+; val: 被斷言的布林值（為 true 才通過）
+; msg: 斷言失敗時列印的說明
 is-true = (val bool, msg str) {
     {
         val == false -> {
@@ -114,6 +128,8 @@ is-true = (val bool, msg str) {
 }
 
 ; 布林值為 false
+; val: 被斷言的布林值（為 false 才通過）
+; msg: 斷言失敗時列印的說明
 is-false = (val bool, msg str) {
     {
         val == true -> {
@@ -134,6 +150,10 @@ is-false = (val bool, msg str) {
 ; ═══════════════════════════════════════════════
 
 ; 字串相等（比較前 n 個字節）
+; a: 第一條字串
+; b: 第二條字串
+; n: 參與比較的頭部位元組數
+; msg: 斷言失敗時列印的說明
 str-eq = (a str, b str, n i64, msg str) {
     {
         a.eq(b, n) == false -> {
@@ -154,6 +174,10 @@ str-eq = (a str, b str, n i64, msg str) {
 ; ═══════════════════════════════════════════════
 
 ; 浮點近似相等 |a - b| < eps
+; a: 第一個浮點值
+; b: 第二個浮點值
+; eps: 容差（絕對差值小於此即視為相等）
+; msg: 斷言失敗時列印的說明
 f64-eq = (a f64, b f64, eps f64, msg str) {
     diff = a - b
     diff < 0.0 -> diff = 0.0 - diff
@@ -176,12 +200,14 @@ f64-eq = (a f64, b f64, eps f64, msg str) {
 ; ═══════════════════════════════════════════════
 
 ; 返回失敗計數
+; n: 迄今累計的全域失敗計數
 failed-count = () (n i64) {
     n = count-failed
 }
 
 ; 輸出測試結果彙總
 ; 不帶參數時使用全局計數器，帶參數時使用傳入的值
+; total: 通過與失敗計數之和（取自全域計數器）
 summary = () (total i64) {
     print('--- Test Summary ---')
     print('passed:', count-passed)
@@ -205,6 +231,10 @@ summary = () (total i64) {
 callback = ()
 
 ; 執行一個無參數回呼函式並計數
+; name: 測試案例名稱（執行前列印）
+; cb: 待執行的無參回呼函式（其內部斷言累加至全域計數）
+; passed: 本案例通過計數（名義恆為 1）
+; failed: 本案例失敗計數（名義恆為 0）
 test = (name str, cb callback) (passed i64, failed i64) {
     print('TEST:', name)
     cb()
@@ -213,6 +243,8 @@ test = (name str, cb callback) (passed i64, failed i64) {
 }
 
 ; 記錄一筆測試通過（兼容舊用法）
+; passed: 傳入的當前通過計數
+; new-passed: 其值加一後的結果（舊用法相容助手）
 pass = (passed i64) (new-passed i64) {
 
     #{overflow=wrap}
@@ -220,6 +252,8 @@ pass = (passed i64) (new-passed i64) {
 }
 
 ; 記錄一筆測試失敗（兼容舊用法）
+; failed: 傳入的當前失敗計數
+; new-failed: 其值加一後的結果（舊用法相容助手）
 fail = (failed i64) (new-failed i64) {
 
     #{overflow=wrap}

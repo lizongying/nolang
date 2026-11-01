@@ -24,12 +24,19 @@ matrix {
     name str
 }
 
+; 把三個整數依序 push 成 vec，驗證對未配置 vec 的隱式擴容與元素順序
+; a i64: 第 1 個元素
+; b i64: 第 2 個元素
+; c i64: 第 3 個元素
+; v []i64: 新配置的 vec，內容依序為 [a, b, c]
 make-vec3 = (a i64, b i64, c i64) (v []i64) {
     v.push(a)
     v.push(b)
     v.push(c)
 }
 
+; 測試 nested-clone-str
+; ok bool: 把 s 複製成 c 後，兩層字串仍都是 'hello' 且不受來源後續改動影響才為 true
 test-nested-clone-str = () (ok bool) {
     s [][]str
     sub1 []str
@@ -50,6 +57,8 @@ test-nested-clone-str = () (ok bool) {
     c0[0] == 'hello' -> ok = true
 }
 
+; 測試 struct-clone-vec-field
+; ok bool: 複製後 name 為 'team-a'，且 members / scores 兩個 vec 欄位都獨立才為 true
 test-struct-clone-vec-field = () (ok bool) {
     g1 group
     g1.name = 'team-a'

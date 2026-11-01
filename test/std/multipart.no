@@ -17,15 +17,23 @@
 
 # /test/runner
 
+; 斷言兩個字串等長且等內容，失敗訊息附帶 [len] 標記
+; got str: 實際字串
+; want str: 期望字串（長度與內容都以它為準）
+; msg str: 斷言描述，長度不符時自動加 ' [len]' 後綴
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
+; 產生 CRLF 序列（本檔多處用它拼 multipart 協定文字）
+; crlf str: 兩字元的 '\r\n'
 crlf-of = () (crlf str) {
     crlf = '\r' - '\n'
 }
 
+; boundary 擷取：未加引號與加引號（'Q-B'）兩種形式都要取對；無 boundary 參數時回空字串；
+; 另驗證 multipart-create 生成的 boundary 前綴與長度
 t-boundary = () {
     b1 = multipart.multipart-extract-boundary('multipart/form-data; boundary=XYZ-abc')
     eq-str(b1, 'XYZ-abc', 'unquoted boundary (regression)')
@@ -58,6 +66,7 @@ t-boundary = () {
     runner.eq(cv.len-bytes(), 34, 'created boundary len')
 }
 
+; 寫入器：write-field / write-file 成功、close 成功；關閉後再寫入與重複 close 都應被拒
 t-writer = () {
     w = multipart.multipart-create-boundary('BD')
     ok1 = w.write-field('title', 'hello')
@@ -78,6 +87,8 @@ t-writer = () {
     eq-str(w.boundary-of(), 'BD', 'boundary-of')
 }
 
+; 解析器：文字 part 與檔案 part 都能取出，is-file / has-current-part 狀態正確；
+; 缺 boundary 參數時解析回 nil
 t-reader = () {
     w = multipart.multipart-create-boundary('BD')
     w.write-field('title', 'hello')
@@ -127,6 +138,8 @@ t-reader = () {
     }
 }
 
+; 加密欄位：寫入後取出需解密成功（密文長度與明文不同）；
+; 換錯 AAD、錯 key、截斷密文都應認證失敗並回 err
 t-encrypted = () {
     key [32]byte
     iv [12]byte

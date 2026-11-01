@@ -29,6 +29,8 @@
 ;
 ; ═════════════════════════════════════════════════════════════════
 
+; 同一個 str 變數連續重賦值三次，驗證每次更換時舊 buffer 都被釋放（而非逐次累積洩漏）
+; out str: 最後一次的值 'another'
 reassign-str = () (out str) {
     s = 'old value'
     s = 'new value'; "old value" 的 buffer 洩漏

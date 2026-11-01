@@ -48,6 +48,7 @@ t-slice-write-self-rmw = () {
 }
 
 ; 4) 函數返回切片 + option 寫（忠實重現 b-state 語境）
+; h []u64: IV[..8) 的切片副本，8 個元素全被 option 寫成 999
 mk-state = () (h []u64) {
     h = IV[..8)
     i <- [0..8): {
@@ -58,6 +59,7 @@ mk-state = () (h []u64) {
         }
     }
 }
+; 函式回傳的切片再做 option 寫：mk-state 已把全元素寫成 999，這裡確認取回後仍是 999
 t-slice-write-fn-return = () {
     h []u64 = mk-state()
     runner.eq(h[0], 999, 'fn-return slice + option-write: h[0] == 999')

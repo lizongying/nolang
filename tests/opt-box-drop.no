@@ -1,38 +1,38 @@
-; test-opt-box-drop — ?T 的装箱载荷（以及载荷内容）必须被释放
+; test-opt-box-drop — ?T 的裝箱載荷（以及載荷內容）必須被释放
 ;
-; 为什么需要这个测试：统一 32 字节 %option 布局下，放不进 slot 的载荷由 codegen
-; malloc 装箱。2026-09-21 之前 `?T` 从不被认作 owned（ClassifyOwnership 不把结构体
-; 算作 owned），于是 insertDrops 不给 option 插 drop —— 装箱载荷**永不释放**，
-; 而且 optBoxClone 每次 option 拷贝还会再 malloc 一块。
+; 為什麼需要這個測試：統一 32 字節 %option 布局下，放不進 slot 的載荷由 codegen
+; malloc 裝箱。2026-09-21 之前 `?T` 從不被認作 owned（ClassifyOwnership 不把結構體
+; 算作 owned），於是 insertDrops 不給 option 插 drop —— 裝箱載荷**永不释放**，
+; 而且 optBoxClone 每次 option 拷貝還會再 malloc 一塊。
 ;
-; 修法见 docs/MIR_DESIGN.md §4.1.2：
-;   - Module.OptionOwnsHeap 把「载荷本身 owned」与「载荷必须堆装箱」都算作拥有堆；
-;   - @__nolang_opt_drop_<payload> 按 tag 释放载荷内容与箱子（tag 1 = nil 不动；
-;     默认 slot 下 err 消息内联，其前 8 字节是字符串长度而非箱子指针，所以 tag
-;     守卫必须留着）；
-;   - 载荷内容是否共享交给 insertDrops 既有的 liveness 规则（optionCopySharesHeap）：
-;     源还活着 -> OpClone 深拷进 option；源已死 -> 按位 move（所有权转移）；
-;   - 剥壳（x = opt）**不消耗** option，所以剥出来的值必须自己拥有一份内存
+; 修法見 docs/MIR_DESIGN.md §4.1.2：
+;   - Module.OptionOwnsHeap 把「載荷本身 owned」與「載荷必須堆裝箱」都算作擁有堆；
+;   - @__nolang_opt_drop_<payload> 按 tag 释放載荷內容與箱子（tag 1 = nil 不動；
+;     默認 slot 下 err 消息內聯，其前 8 字節是字符串長度而非箱子指針，所以 tag
+;     守衛必須留着）；
+;   - 載荷內容是否共享交給 insertDrops 既有的 liveness 規则（optionCopySharesHeap）：
+;     源還活着 -> OpClone 深拷進 option；源已死 -> 按位 move（所有權轉移）；
+;   - 剥殼（x = opt）**不消耗** option，所以剥出來的值必須自己擁有一份內存
 ;     （§4.3）：?str -> @str_clone、?[]T -> vecDeepClone，以及 err 臂的 it
-;     （类型双关出来的 %str-long）同样要 @str_clone —— 否则 option 与 it 共用
-;     同一条消息 buffer，两边各释放一次。
+;     （類型雙關出來的 %str-long）同樣要 @str_clone —— 否则 option 與 it 共用
+;     同一條消息 buffer，兩邊各释放一次。
 ;
-; 本测试是行为 + 内存双重回归：末尾两个大循环若重新开始泄漏，RSS 会明显上涨
-; （修前 20 万次约 104 MB，修后约 1.7 MB）。
+; 本測試是行為 + 內存雙重回歸：末尾兩個大循环若重新開始泄漏，RSS 會明顯上漲
+; （修前 20 万次約 104 MB，修後約 1.7 MB）。
 ;
-; 注意：每个小节刻意用自己的一套变量。同一 option 上再叠一次 option->option
-; 拷贝会触发一个**既有的** match 读取异常（与本次改动无关：HEAD 与修后输出
-; 完全一致，见 §4.1.2 末注），所以不把它写进本回归测试的期望里。
+; 注意：每個小節刻意用自己的一套變量。同一 option 上再叠一次 option->option
+; 拷貝會触發一個**既有的** match 讀取異常（與本次改動無關：HEAD 與修後输出
+; 完全一致，見 §4.1.2 末注），所以不把它寫進本回歸測試的期望里。
 
 print('=== opt box drop ===')
 
-; big 是 24 + 32 = 56 字节 > 默认阈值 24 -> 装箱，且带一个 owned 的 str 叶子
+; big 是 24 + 32 = 56 字節 > 默認阈值 24 -> 裝箱，且帶一個 owned 的 str 叶子
 big {
     name str
     pad [4]i64
 }
 
-; person 正好 24 字节 -> 内联，不装箱
+; person 正好 24 字節 -> 內聯，不裝箱
 person {
     name str
 }
@@ -57,7 +57,7 @@ o: {
     }
 }
 
-; 源在 wrap 之后仍被读取 -> 必须是深拷，两边各自拥有自己的 name
+; 源在 wrap 之後仍被讀取 -> 必須是深拷，兩邊各自擁有自己的 name
 print(b.name)
 
 print('--- option -> option copy, both sides live ---')
@@ -171,12 +171,12 @@ print(o2.name)
 
 print('--- err arm of a std call: it must own its own message ---')
 
-; json.parse('') 返回 err，调用方 match 到 err 臂。剥出来的 it 是 option 载荷的
-; 按位副本，而 option 自己仍然要 drop —— 修前两者共用同一条消息 buffer：drop it
-; 释放一次、option 的 drop 再释放一次 -> trace/BPT trap。这不是边角情形：
-; 任何返回 err(...) 的 std 调用只要被 match 到 err 臂就会踩到
-; （tests/mem-safety/json-parse-option.no 与 tests/sse.no 就是这么挂的）。
-; 见 docs/MIR_DESIGN.md §4.3。
+; json.parse('') 返回 err，調用方 match 到 err 臂。剥出來的 it 是 option 載荷的
+; 按位副本，而 option 自己仍然要 drop —— 修前兩者共用同一條消息 buffer：drop it
+; 释放一次、option 的 drop 再释放一次 -> trace/BPT trap。這不是邊角情形：
+; 任何返回 err(...) 的 std 調用只要被 match 到 err 臂就會踩到
+; （tests/mem-safety/json-parse-option.no 與 tests/sse.no 就是這麼掛的）。
+; 見 docs/MIR_DESIGN.md §4.3。
 j1 = json.parse('')
 j1: {
     ok -> {

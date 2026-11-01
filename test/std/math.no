@@ -16,6 +16,7 @@
 
 # /test/runner
 
+; 驗證 f64.sqrt() 對完全平方數與無理數根的近似值正確
 t-sqrt = () {
     four = 4.0
     r = four.sqrt()
@@ -25,6 +26,7 @@ t-sqrt = () {
     runner.f64-eq(r2, 1.4142135623730951, 0.000001, '2.0.sqrt()')
 }
 
+; 驗證 math.pow：正/零指數、負底數整數指符號保留、負底非整指數得 NaN
 t-pow = () {
     r f64 = math.pow(2.0, 10.0)
     runner.f64-eq(r, 1024.0, 0.000001, 'pow(2,10) == 1024')
@@ -48,11 +50,13 @@ t-pow = () {
     runner.is-true(r7 != r7, 'pow(-2,0.5) == NaN')
 }
 
+; 驗證 math.hypot(3,4) 求得斜邊長 5
 t-hypot = () {
     r f64 = math.hypot(3.0, 4.0)
     runner.f64-eq(r, 5.0, 0.000001, 'hypot(3,4) == 5')
 }
 
+; 驗證 sin/cos/tan 及 asin/acos/atan 特殊值與反函數互逆
 t-trig = () {
     z = 0.0
     s = z.sin()
@@ -77,6 +81,7 @@ t-trig = () {
     runner.f64-eq(v3, 0.4636476090008061, 0.000001, 'atan(0.5)')
 }
 
+; 驗證 math.fmod 求浮點除法的純量餘數
 t-fmod = () {
     r f64 = math.fmod(7.0, 3.0)
     runner.f64-eq(r, 1.0, 0.000001, 'fmod(7,3) == 1')
@@ -84,6 +89,7 @@ t-fmod = () {
     runner.f64-eq(r2, 1.5, 0.000001, 'fmod(9.5,2) == 1.5')
 }
 
+; 驗證 degrees()/radians() 在角度與弧度間正確往返
 t-deg-rad = () {
     pi = 3.141592653589793
     d = pi.degrees()
@@ -96,6 +102,7 @@ t-deg-rad = () {
     runner.f64-eq(d2, 0.0, 0.000001, '0.0.degrees() == 0')
 }
 
+; 驗證 math.clamp 將值限制在 [lo,hi] 區間內
 t-clamp = () {
     r1 i64 = math.clamp(10, 0, 5)
     runner.eq(r1, 5, 'clamp(10,0,5) == 5')
@@ -105,6 +112,7 @@ t-clamp = () {
     runner.eq(r3, 3, 'clamp(3,0,5) == 3')
 }
 
+; 驗證 f64.cbrt() 立方根，含負數保留符號
 t-cbrt = () {
     v27 = 27.0
     r = v27.cbrt()
@@ -114,6 +122,7 @@ t-cbrt = () {
     runner.f64-eq(n, -2.0, 0.000001, '(-8.0).cbrt() == -2')
 }
 
+; 驗證 ceil/floor/round/trunc 四種取整方向（含負值截斷）
 t-rounding = () {
     v1 = 2.1
     c = v1.ceil()
@@ -135,6 +144,7 @@ t-rounding = () {
     runner.f64-eq(n, -2.0, 0.000001, 'trunc(-2.9) == -2')
 }
 
+; 驗證 sinh/cosh/tanh 雙曲函數特殊值
 t-hyperbolic = () {
     z = 0.0
     s = z.sinh()
@@ -148,6 +158,7 @@ t-hyperbolic = () {
     runner.f64-eq(s2, 1.1752011936438014, 0.000001, 'sinh(1)')
 }
 
+; 驗證 exp 與 log/log10/log2 的對數與指數運算
 t-exp-log = () {
     z = 0.0
     e = z.exp()
@@ -166,6 +177,7 @@ t-exp-log = () {
     runner.f64-eq(l2, 3.0, 0.000001, 'log2(8) == 3')
 }
 
+; 驗證 f32 版數學方法（sqrt/sin/log/ceil/degrees/cbrt）委託 f64 且結果正確
 t-f32-math = () {
     v f32 = 4.0
     s = v.sqrt()
@@ -194,6 +206,7 @@ t-f32-math = () {
     runner.f64-eq(cbn.to-f64(), -2.0, 0.00001, 'f32: (-8.0).cbrt() == -2')
 }
 
+; 驗證 i64.sqrt() 整數平方根（含負數域為 0）與 is-prime() 質數判定
 t-i64-math = () {
     v = 100
     s i64 = v.sqrt()

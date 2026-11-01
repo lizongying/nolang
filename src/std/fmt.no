@@ -30,22 +30,26 @@
 ; 內建函數（編譯器 ForwardFunc）
 ; ═══════════════════════════════════════════════
 
-; 全局函数 print / eprint / format 的声明已移至 global.no
-; 以下为需要模块前缀的 fmt 模块函数
+; 全局函數 print / eprint / format 的声明已移至 global.no
+; 以下為需要模塊前綴的 fmt 模塊函數
 
 ; 已移除（名稱保留供解析）——呼叫即編譯錯誤，請改用 print（自動換行）或 io.out（不換行）
+; s: 格式字符串（本函數已移除，調用即編譯錯誤）
 ; [printf](#fmt.printf)
 #{buildin}
 printf = (s str) {
 }
 
 ; 已廢棄但仍可用，請改用 format
+; s: 格式規範字符串（語法同 format）
+; out: 格式化後的输出字符串
 ; [sprintf](#fmt.sprintf)
 #{buildin}
 sprintf = (s str) (out str) {
 }
 
 ; 已移除（名稱保留供解析）——呼叫即編譯錯誤，請改用 eprint（自動換行）或 io.err（不換行）
+; s: 格式字符串（本函數已移除，調用即編譯錯誤）
 ; [eprintf](#fmt.eprintf)
 #{buildin}
 eprintf = (s str) {
@@ -58,6 +62,16 @@ eprintf = (s str) {
 ; 解析格式規範字串
 ; 返回 fill/align/sign/alt/zero/width/grouping/precision/typ
 ; align/sign/grouping/typ 為字元 ASCII 值；alt/zero 為 0/1；precision=-1 表示未指定
+; spec: 待解析的格式規範字符串
+; fill: 填充字元的 ASCII 值（預設 32 即空格）
+; align: 對齊字元的 ASCII 值（60=左、62=右、94=置中、0=預設）
+; sign: 符號字元的 ASCII 值（43=+、45=-、32=空格、0=未指定）
+; alt: 是否啟用替代形式（# 前綴），1=啟用 0=否
+; zero: 是否啟用零填充（0 前綴），1=啟用 0=否
+; width: 最小欄位寬度（0=未指定）
+; grouping: 千分位分隔字元的 ASCII 值（44=逗號、95=底線、0=未指定）
+; precision: 精度（小數點後位數；-1=未指定）
+; typ: 類型字元的 ASCII 值（0=未指定）
 ; [fmt-parse-spec](#fmt.fmt-parse-spec)
 fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, width i64, grouping i64, precision i64, typ i64) {
 
@@ -213,6 +227,10 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
 ; 套用寬度、對齊與填充字元
 ; align: 60=左, 62=右, 94=置中, 0/61=右（預設）
+; s: 待套用寬度與對齊的內容字符串
+; fill: 填充字元的 ASCII 值
+; width: 目標最小寬度（字符串不足則補齊）
+; out: 補齊並對齊後的輸出字符串
 ; [fmt-apply-spec](#fmt.fmt-apply-spec)
 fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
 
@@ -287,6 +305,9 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
 
 ; 將 u64 按指定進制轉為字串
 ; base: 2/8/10/16；upper: hex 是否大寫
+; u: 待轉換的無符號整數值
+; upper: 十六進位數字是否以大寫輸出
+; out: 按指定進位轉換後的數字字符串
 ; [fmt-uint-base](#fmt.fmt-uint-base)
 fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 
@@ -456,6 +477,9 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 ;
 ; ⚠️ 必須在「零填充之後」套用：f'{1234:08,d}' 是 0001,234（先補到 8 位再分組），
 ; 先分組再補零會得到錯誤的 0001234,。
+; digits: 待分組的純數字字符串（不含符號與進制前綴）
+; sep: 千分位分隔字元的 ASCII 值（44=逗號、95=底線）
+; out: 每 3 位插入分隔字元後的字符串
 ; [fmt-group-digits](#fmt.fmt-group-digits)
 fmt-group-digits = (digits str, sep i64) (out str) {
     n = digits.len-bytes()
@@ -500,6 +524,9 @@ fmt-group-digits = (digits str, sep i64) (out str) {
 
 ; 有號整數格式化
 ; 支援 type(c/d/t/無)、sign(+/-/space)、zero、width、align、fill、千分位(,/_)
+; n: 待格式化的有符號整數值
+; spec: 格式規範字符串
+; out: 格式化後的整數字符串
 ; [fmt-int](#fmt.fmt-int)
 fmt-int = (n i64, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
@@ -613,6 +640,9 @@ fmt-int = (n i64, spec str) (out str) {
 
 ; 無號整數格式化
 ; 支援 type(b/o/d/x/X/t)、alt(#前綴)、zero、width、align、fill、千分位(,/_)
+; u: 待格式化的無符號整數值
+; spec: 格式規範字符串
+; out: 格式化後的無符號整數字符串
 ; [fmt-uint](#fmt.fmt-uint)
 fmt-uint = (u u64, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
@@ -744,6 +774,9 @@ fmt-uint = (u u64, spec str) (out str) {
 
 ; 浮點數格式化
 ; 支援 type(f/e/g/t)、precision、sign、zero、width、align、fill
+; x: 待格式化的浮點數值
+; spec: 格式規範字符串
+; out: 格式化後的浮點字符串
 ; [fmt-f64](#fmt.fmt-f64)
 fmt-f64 = (x f64, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
@@ -855,6 +888,9 @@ fmt-f64 = (x f64, spec str) (out str) {
 
 ; 字串格式化
 ; 支援 precision(截斷)、width、align、fill、type(t/v)
+; s: 待格式化的字符串值
+; spec: 格式規範字符串
+; out: 截斷與寬度對齊處理後的字符串
 ; [fmt-str](#fmt.fmt-str)
 fmt-str = (s str, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)
@@ -907,6 +943,9 @@ fmt-str = (s str, spec str) (out str) {
 
 ; 布林值格式化
 ; 支援 width、align、fill、type(t)
+; b: 待格式化的布林值
+; spec: 格式規範字符串
+; out: 格式化後的布爾字符串
 ; [fmt-bool](#fmt.fmt-bool)
 fmt-bool = (b bool, spec str) (out str) {
     fill, align, sign, alt, zero, width, grouping, precision, typ = fmt-parse-spec(spec)

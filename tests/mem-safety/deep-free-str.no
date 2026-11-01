@@ -1,6 +1,7 @@
 ; 深層 free 測試 1：[]str（vec of string）— 局部變數版本
 ; 驗證 vec 元素為 %str-long 時的深層釋放
 
+; 測試 local-str-vec
 test-local-str-vec = () {
     s []str
     s.push('hello')

@@ -11,27 +11,32 @@ ABC = 'abc'
 
 ; 56 字元 -> 跨越兩個 512-bit 區塊（padding 進位到第二塊）
 TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+; 摘要長度：SHA-256 固定 32 位元組（256 位元）
 t-hash-len = () {
     h = sha256.sha256(ABC.to-bytes())
     runner.eq(h.len(), 32, 'sha256 digest is 32 bytes')
 }
 
+; 空輸入向量：sha256-hex('') 應為 64 字元 e3b0c44298fc1c14...b855
 t-hex-empty = () {
     h = sha256.sha256-hex(EMPTY.to-bytes())
     runner.eq(h.len(), 64, 'sha256-hex("") len == 64')
     runner.str-eq(h, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 64, 'sha256-hex empty')
 }
 
+; 'abc' 向量：sha256-hex('abc') = ba7816bf8f01cfea414140de5dae2223...15ad
 t-hex-abc = () {
     h = sha256.sha256-hex(ABC.to-bytes())
     runner.str-eq(h, 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 64, 'sha256-hex abc')
 }
 
+; 跨區塊：56 位元組輸入需兩次壓縮，sha256-hex = 248d6a61d20638b8e5c026930c3e6039...06c1
 t-hex-twoblock = () {
     h = sha256.sha256-hex(TWOBLOCK.to-bytes())
     runner.str-eq(h, '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1', 64, 'sha256-hex two-block')
 }
 
+; 位元組介面與 hex 介面一致：前 4 位元組應為 ba 78 16 bf，末位元組 ad
 t-hash-bytes-match-hex = () {
 
     ; sha256() 的前 4 個位元組需與 sha256-hex() 開頭 'ba7816bf' 一致

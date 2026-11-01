@@ -5,6 +5,7 @@
 
 # /test/runner
 
+; 初始狀態：init() 後容量歸零且 is-empty() 為真（尚未插入任何鍵）
 t-init = () {
     m = linked-hash-map {}
     m.init()
@@ -13,6 +14,8 @@ t-init = () {
     runner.is-true(e, 'init is-empty')
 }
 
+; put 回報是否新鍵（1/2 皆為 true）、len 計數，get 以 ?i64 回傳值，
+; contains 對不存在鍵回 false
 t-put-get = () {
     m = linked-hash-map {}
     m.init()
@@ -44,6 +47,7 @@ t-put-get = () {
     runner.is-false(no, 'not contains 99')
 }
 
+; 同鍵重覆 put：不新增節點（回 false）、len 不變，但值被更新為 20
 t-overwrite = () {
     m = linked-hash-map {}
     m.init()
@@ -63,6 +67,8 @@ t-overwrite = () {
     runner.eq(got, 20, 'overwrite updates value')
 }
 
+; remove 既有鍵回 true 且該鍵不再被 contains，其餘鍵不受影響；
+; remove 不存在的鍵回 false（不報錯）
 t-remove = () {
     m = linked-hash-map {}
     m.init()
@@ -82,6 +88,7 @@ t-remove = () {
     runner.is-false(rm2, 'remove non-existent false')
 }
 
+; clear() 清掉所有鍵值：len 歸零且 is-empty() 回 true
 t-clear = () {
     m = linked-hash-map {}
     m.init()

@@ -151,7 +151,7 @@ client {
 ; 計算 Sec-WebSocket-Accept 值
 ; key str: 客戶端送來的 Sec-WebSocket-Key
 ; 返回 accept str: base64(sha1(key - WS-GUID))
-; [compute-accept](#net.ws.compute-accept)
+; [compute-accept](#ws.compute-accept)
 compute-accept = (key str) (accept str) {
 
     guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
@@ -179,7 +179,8 @@ compute-accept = (key str) (accept str) {
 
 ; 產生下一個偽隨機 i64
 ; 以全域計數器與簡單 LCG 組合
-; [next-rand](#net.ws.next-rand)
+; r: 新的偽隨機數（全域計數器 + LCG 輸出，非密碼學品質）
+; [next-rand](#ws.next-rand)
 next-rand = () (r i64) {
 
     ; D1：RAND-COUNTER 是全域，註解式重綁不會把結果折回 plain；
@@ -200,7 +201,7 @@ next-rand = () (r i64) {
 ; 產生 4-byte mask key 字串
 ; seed i64: 種子值
 ; 返回 key str: 4 字元字串
-; [gen-mask-key](#net.ws.gen-mask-key)
+; [gen-mask-key](#ws.gen-mask-key)
 gen-mask-key = (seed i64) (key str) {
     key str = with-len(4)
 
@@ -228,7 +229,7 @@ gen-mask-key = (seed i64) (key str) {
 ; 產生 16-byte Sec-WebSocket-Key 並 base64 編碼
 ; seed i64: 種子值
 ; 返回 key str: base64 編碼字串（24 字元含 padding）
-; [gen-client-key](#net.ws.gen-client-key)
+; [gen-client-key](#ws.gen-client-key)
 gen-client-key = (seed i64) (key str) {
     raw str = with-len(16)
     i <- [0..16): {
@@ -251,7 +252,7 @@ gen-client-key = (seed i64) (key str) {
 ; mask bool: 是否加 mask（client 必須 true，server 必須 false）
 ; mask-key str: 4-byte mask key（mask=true 時使用）
 ; 返回 frame str: 完整的 frame 字串
-; [build-frame](#net.ws.build-frame)
+; [build-frame](#ws.build-frame)
 build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
     dlen = data.len-bytes()
@@ -376,7 +377,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 ; host str: 綁定的 IP 地址（如 '0.0.0.0'）
 ; port i64: 監聽埠號
 ; 返回 ok bool: true=成功
-; [listen](#net.ws.server.listen)
+; [listen](#ws.server.listen)
 server.listen = (host str, port i64) (ok bool) {
     ok = false
     .fd = -1
@@ -390,7 +391,7 @@ server.listen = (host str, port i64) (ok bool) {
 
 ; 接受新的 WebSocket 客戶端連接並完成交握
 ; 返回 c ?server-conn: ok=已交握的客戶端, nil=失敗
-; [accept](#net.ws.server.accept)
+; [accept](#ws.server.accept)
 server.accept = () (c ?server-conn) {
     c = nil
     .fd < 0 -> return
@@ -413,7 +414,7 @@ server.accept = () (c ?server-conn) {
 }
 
 ; 關閉 WebSocket 服務端
-; [close](#net.ws.server.close)
+; [close](#ws.server.close)
 server.close = () {
     .fd >= 0 -> {
         fs.close(.fd)
@@ -428,7 +429,7 @@ server.close = () {
 ; 完成 WebSocket HTTP 交握
 ; 讀取客戶端 HTTP 升級請求，驗證必要標頭，發送 101 回應。
 ; 成功時設置 .connected = true。
-; [handshake](#net.ws.server-conn.handshake)
+; [handshake](#ws.server-conn.handshake)
 server-conn.handshake = () {
 
     .fd < 0 -> return
@@ -577,7 +578,7 @@ server-conn.handshake = () {
 ; opcode i64: 訊息類型（WS-OP-TEXT / WS-OP-BINARY / ...）
 ; data str: 訊息內容
 ; 返回 ok bool: true=成功
-; [send](#net.ws.server-conn.send)
+; [send](#ws.server-conn.send)
 server-conn.send = (opcode i64, data str) (ok bool) {
     ok = false
     .connected == false -> return
@@ -594,7 +595,7 @@ server-conn.send = (opcode i64, data str) (ok bool) {
 ; 發送文字訊息
 ; data str: 訊息內容
 ; 返回 ok bool: true=成功
-; [send-text](#net.ws.server-conn.send-text)
+; [send-text](#ws.server-conn.send-text)
 server-conn.send-text = (data str) (ok bool) {
     ok = .send(WS-OP-TEXT, data)
 }
@@ -602,7 +603,7 @@ server-conn.send-text = (data str) (ok bool) {
 ; 發送二進位訊息
 ; data str: 訊息內容
 ; 返回 ok bool: true=成功
-; [send-binary](#net.ws.server-conn.send-binary)
+; [send-binary](#ws.server-conn.send-binary)
 server-conn.send-binary = (data str) (ok bool) {
     ok = .send(WS-OP-BINARY, data)
 }
@@ -610,7 +611,7 @@ server-conn.send-binary = (data str) (ok bool) {
 ; 發送 ping
 ; data str: ping 內容
 ; 返回 ok bool: true=成功
-; [send-ping](#net.ws.server-conn.send-ping)
+; [send-ping](#ws.server-conn.send-ping)
 server-conn.send-ping = (data str) (ok bool) {
     ok = .send(WS-OP-PING, data)
 }
@@ -618,16 +619,16 @@ server-conn.send-ping = (data str) (ok bool) {
 ; 發送 pong
 ; data str: pong 內容
 ; 返回 ok bool: true=成功
-; [send-pong](#net.ws.server-conn.send-pong)
+; [send-pong](#ws.server-conn.send-pong)
 server-conn.send-pong = (data str) (ok bool) {
     ok = .send(WS-OP-PONG, data)
 }
 
 ; 發送 close 訊框
-; code i64: 關閉狀態碼（如 1000）
+; close-code i64: 關閉狀態碼（如 1000）
 ; reason str: 關閉原因
 ; 返回 ok bool: true=成功
-; [send-close](#net.ws.server-conn.send-close)
+; [send-close](#ws.server-conn.send-close)
 server-conn.send-close = (close-code i64, reason str) (ok bool) {
 
     ok = false
@@ -664,7 +665,7 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
 ;   ok = 訊息
 ;   nil = 連線已關閉
 ;   err = 錯誤
-; [recv](#net.ws.server-conn.recv)
+; [recv](#ws.server-conn.recv)
 server-conn.recv = () (msg ?message) {
 
     msg = nil
@@ -941,7 +942,7 @@ server-conn.recv = () (msg ?message) {
 ; 注意：為配合非阻塞輪詢，本方法不跨多次呼叫累積 fragmentation；
 ;       單 frame 的 text/binary 訊息（nowork 前端用法）直接成為一條訊息。
 ;       需要完整分片重組時仍請使用阻塞版 recv。
-; [recv-nb](#net.ws.server-conn.recv-nb)
+; [recv-nb](#ws.server-conn.recv-nb)
 server-conn.recv-nb = () (msg ?message) {
 
     msg = nil
@@ -1131,13 +1132,13 @@ server-conn.recv-nb = () (msg ?message) {
 
 ; 檢查連線狀態
 ; 返回 yes bool: true=已連接
-; [is-connected](#net.ws.server-conn.is-connected)
+; [is-connected](#ws.server-conn.is-connected)
 server-conn.is-connected = () (yes bool) {
     yes = .connected
 }
 
 ; 關閉客戶端連接
-; [close](#net.ws.server-conn.close)
+; [close](#ws.server-conn.close)
 server-conn.close = () {
     .fd >= 0 -> {
         fs.close(.fd)
@@ -1154,7 +1155,7 @@ server-conn.close = () {
 ; opcode i64: 訊息類型
 ; data str: 訊息內容
 ; 返回 ok bool: true=成功
-; [send](#net.ws.client.send)
+; [send](#ws.client.send)
 client.send = (opcode i64, data str) (ok bool) {
 
     ok = false
@@ -1197,34 +1198,42 @@ client.send = (opcode i64, data str) (ok bool) {
 }
 
 ; 發送文字訊息
-; [send-text](#net.ws.client.send-text)
+; data: 文字內容
+; ok: true=發送成功
+; [send-text](#ws.client.send-text)
 client.send-text = (data str) (ok bool) {
     ok = .send(WS-OP-TEXT, data)
 }
 
 ; 發送二進位訊息
-; [send-binary](#net.ws.client.send-binary)
+; data: 二進位內容（位元組序列）
+; ok: true=發送成功
+; [send-binary](#ws.client.send-binary)
 client.send-binary = (data str) (ok bool) {
     ok = .send(WS-OP-BINARY, data)
 }
 
 ; 發送 ping
-; [send-ping](#net.ws.client.send-ping)
+; data: ping 載荷（對方會原樣回 pong）
+; ok: true=發送成功
+; [send-ping](#ws.client.send-ping)
 client.send-ping = (data str) (ok bool) {
     ok = .send(WS-OP-PING, data)
 }
 
 ; 發送 pong
-; [send-pong](#net.ws.client.send-pong)
+; data: pong 載荷（通常原樣回傳收到的 ping 載荷）
+; ok: true=發送成功
+; [send-pong](#ws.client.send-pong)
 client.send-pong = (data str) (ok bool) {
     ok = .send(WS-OP-PONG, data)
 }
 
 ; 發送 close 訊框
-; code i64: 關閉狀態碼
+; close-code i64: 關閉狀態碼
 ; reason str: 關閉原因
 ; 返回 ok bool: true=成功
-; [send-close](#net.ws.client.send-close)
+; [send-close](#ws.client.send-close)
 client.send-close = (close-code i64, reason str) (ok bool) {
 
     ok = false
@@ -1259,7 +1268,7 @@ client.send-close = (close-code i64, reason str) (ok bool) {
 ;   ok = 訊息
 ;   nil = 連線已關閉
 ;   err = 錯誤
-; [recv](#net.ws.client.recv)
+; [recv](#ws.client.recv)
 client.recv = () (msg ?message) {
     msg = nil
     .connected == false -> {
@@ -1540,13 +1549,13 @@ client.recv = () (msg ?message) {
 
 ; 檢查連線狀態
 ; 返回 yes bool: true=已連接
-; [is-connected](#net.ws.client.is-connected)
+; [is-connected](#ws.client.is-connected)
 client.is-connected = () (yes bool) {
     yes = .connected
 }
 
 ; 關閉連線
-; [close](#net.ws.client.close)
+; [close](#ws.client.close)
 client.close = () {
     {
         .use-tls -> .tls-c.close()
@@ -1567,7 +1576,7 @@ client.close = () {
 ; host str: 綁定的 IP 地址（如 '0.0.0.0'）
 ; port i64: 監聽埠號
 ; 返回 s ?server: ok=服務端, nil=失敗
-; [listen-on](#net.ws.listen-on)
+; [listen-on](#ws.listen-on)
 listen-on = (host str, port i64) (s ?server) {
     s = nil
     srv = server {}
@@ -1582,7 +1591,7 @@ listen-on = (host str, port i64) (s ?server) {
 ;   ok = 已連接的客戶端
 ;   nil = 連線失敗
 ;   err = 錯誤訊息
-; [connect](#net.ws.connect)
+; [connect](#ws.connect)
 connect = (url str) (c ?client) {
 
     c = nil

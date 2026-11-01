@@ -1,0 +1,3910 @@
+; Nolang doc catalog: ja
+; Source-comment translations, keyed by the anchor an author wrote in a
+; trailing `[label](#anchor)` line. This file holds TRANSLATIONS ONLY: an
+; anchor that is absent falls back to the comment text in the .no source, so
+; untranslated blocks degrade to the author's language instead of shipping a
+; copy of it here. Every key must still exist in some .no source, or the gate
+; rejects it as an orphan.
+{
+  'args.count': `
+引数の数（プログラム名を含む）
+os.args() builtin に委譲する（argv ベクタ全体を返し、その長さを取る）
+`
+  'args.get': `
+i 番目の引数
+os.arg(i) builtin に委譲する（main の argv[i] を読む）。範囲外の i は nil を返す
+`
+  'args.get-option': `
+オプション値を取得する（例: --output=xxx）
+戻り値 val ?str: ok=オプション値, nil=見つからない
+`
+  'args.get-positional': `
+i 番目の位置引数を取得する（フラグは読み飛ばす）
+戻り値 val ?str: ok=位置引数の値, nil=存在しない
+`
+  'args.has-flag': 'フラグが存在するかを判定する（例: --verbose, -v）'
+  'args.program': 'プログラム名（0 番目の引数）'
+  'arr-stack.arr-stack.clear': 'スタックを空にする'
+  'arr-stack.arr-stack.empty': `
+スタックが空かを判定する
+戻り値 yes bool: true=空, false=空でない
+
+`
+  'arr-stack.arr-stack.full': `
+スタックが満杯かを判定する
+戻り値 yes bool: true=満杯, false=満杯でない
+
+`
+  'arr-stack.arr-stack.size': `
+スタック上の要素数を返す
+戻り値 sz i64: 要素数
+
+`
+  'arr.arr-stack-init': `
+[n]t.arr-stack-init: スタック状態を初期化する
+cap は配列サイズ n に自動設定される
+戻り値 s arr-stack: 初期化されたスタック状態
+
+`
+  'arr.arr-stack-peek': `
+[n]t.arr-stack-peek: 先頭要素を取り出さずに参照する
+s arr-stack: スタック状態
+戻り値 val ?t: ok=先頭の値, nil=スタックが空
+
+`
+  'arr.arr-stack-pop': `
+[n]t.arr-stack-pop: スタック先頭の要素を取り出す
+s arr-stack: スタック状態
+戻り値 val ?t: ok=取り出した値, nil=スタックが空
+
+`
+  'arr.arr-stack-push': `
+[n]t.arr-stack-push: スタック先頭に要素を積む
+s arr-stack: スタック状態
+val t: 積む値
+戻り値 ok bool: true=成功, false=スタックが満杯
+
+`
+  'arr.asc': '[n]t.asc: 昇順にその場でソートする（挿入ソート）'
+  'arr.at': `
+[n]t.at: 安全な添字アクセス
+i i64: インデックス
+戻り値 val ?t: 範囲外なら nil
+
+`
+  'arr.clone': '[n]t.clone: 配列を dst にコピーする'
+  'arr.contains': '[n]t.contains: 値 val が含まれるかを判定する'
+  'arr.count': `
+[n]t.count: 値の出現回数を数える
+val t: 数える値
+戻り値 cnt i64: 出現回数
+
+`
+  'arr.desc': '[n]t.desc: 降順にその場でソートする（挿入ソート）'
+  'arr.eq': '[n]t.eq: 2 つの配列が等しいかを比較する'
+  'arr.fill': '[n]t.fill: 全体を val で埋める'
+  'arr.first': '[n]t.first: 先頭要素'
+  'arr.index-of': '[n]t.index-of: 値のインデックスを返す（なければ -1）'
+  'arr.last': '[n]t.last: 末尾要素'
+  'arr.len': `
+[n]t.len: 配列の長さを返す
+注意: 出力パラメータ名は n ではなく out にしており、ジェネリックパラメータ n と衝突しない
+
+`
+  'arr.link-clear': `
+[n]t.link-clear: 連結リストを空にし、全ノードを回収する
+l link: 連結リスト状態
+
+`
+  'arr.link-find': `
+[n]t.link-find: 値の位置を探す
+l link: 連結リスト状態
+val t: 探す値
+戻り値 pos i64: 位置インデックス, -1=見つからない
+
+`
+  'arr.link-get-at': `
+[n]t.link-get-at: 位置 pos の要素を取得する
+l link: 連結リスト状態
+pos i64: 位置
+戻り値 val ?t: ok=要素の値, nil=位置が範囲外
+
+`
+  'arr.link-init': `
+[n]t.link-init: 連結リストを初期化する
+nxt []i64: 次ノードのインデックス配列（呼び出し側が用意、サイズ >= n）
+prv []i64: 前ノードのインデックス配列（呼び出し側が用意、サイズ >= n）
+戻り値 l link: 初期化された連結リスト
+
+`
+  'arr.link-insert-at': `
+[n]t.link-insert-at: 位置 pos に要素を挿入する
+l link: 連結リスト状態
+pos i64: 挿入位置（0=先頭, size=末尾）
+val t: 挿入する値
+戻り値 ok bool: true=成功, false=位置が範囲外またはノードプールが満杯
+
+`
+  'arr.link-peek-back': `
+[n]t.link-peek-back: 末尾要素を取り出さずに参照する
+l link: 連結リスト状態
+戻り値 val ?t: ok=末尾の値, nil=リストが空
+
+`
+  'arr.link-peek-front': `
+[n]t.link-peek-front: 先頭要素を取り出さずに参照する
+l link: 連結リスト状態
+戻り値 val ?t: ok=先頭の値, nil=リストが空
+
+`
+  'arr.link-pop-back': `
+[n]t.link-pop-back: 連結リスト末尾の要素を取り出す
+l link: 連結リスト状態
+戻り値 val ?t: ok=取り出した値, nil=リストが空
+
+`
+  'arr.link-pop-front': `
+[n]t.link-pop-front: 連結リスト先頭の要素を取り出す
+l link: 連結リスト状態
+戻り値 val ?t: ok=取り出した値, nil=リストが空
+
+`
+  'arr.link-push-back': `
+[n]t.link-push-back: 連結リスト末尾に要素を挿入する
+l link: 連結リスト状態
+val t: 挿入する値
+戻り値 ok bool: true=成功, false=ノードプールが満杯
+
+`
+  'arr.link-push-front': `
+[n]t.link-push-front: 連結リスト先頭に要素を挿入する
+l link: 連結リスト状態
+val t: 挿入する値
+戻り値 ok bool: true=成功, false=ノードプールが満杯
+
+`
+  'arr.link-remove-at': `
+[n]t.link-remove-at: 位置 pos の要素を削除する
+l link: 連結リスト状態
+pos i64: 削除する位置
+戻り値 val ?t: ok=削除した値, nil=位置が範囲外
+
+`
+  'arr.link-reverse': `
+[n]t.link-reverse: 連結リストを反転する
+各ノードの next/prev を入れ替え、その後 head/tail を入れ替える
+l link: 連結リスト状態
+
+`
+  'arr.link-set-at': `
+[n]t.link-set-at: 位置 pos の要素を設定する
+l link: 連結リスト状態
+pos i64: 位置
+val t: 新しい値
+戻り値 ok bool: true=成功, false=位置が範囲外
+
+`
+  'arr.max': '[n]t.max: 配列内の最大値'
+  'arr.min': '[n]t.min: 配列内の最小値'
+  'arr.queue-init': `
+[n]t.queue-init: キュー状態を初期化する
+cap は配列サイズ n に自動設定される
+戻り値 q queue: 初期化されたキュー状態
+
+`
+  'arr.queue-peek': `
+[n]t.queue-peek: 先頭要素を取り出さずに参照する
+q queue: キュー状態
+戻り値 val ?t: ok=先頭の値, nil=キューが空
+
+`
+  'arr.queue-pop': `
+[n]t.queue-pop: キューの先頭要素を取り出す
+q queue: キュー状態
+戻り値 val ?t: ok=取り出した値, nil=キューが空
+
+`
+  'arr.queue-push': `
+[n]t.queue-push: キューの末尾に要素を積む
+q queue: キュー状態
+val t: 積む値
+戻り値 ok bool: true=成功, false=キューが満杯
+
+`
+  'arr.reverse': '[n]t.reverse: 配列を反転する'
+  'arr.sum': '[n]t.sum: 配列要素の総和'
+  'arr.swap': `
+[n]t.swap: 2 つの位置の要素を入れ替える
+i i64, j i64: 位置
+
+`
+  'arr.to-str': `
+[n]t.to-str: 文字列形式
+戻り値 out str: '[1, 2, 3]' のように整形
+各要素は自身の .to-str() を呼んで文字列化される（具体的な型は number.no を参照）
+
+`
+  'arr.to-vec': '[n]t.to-vec: 配列を []t ベクタに変換する配列メソッド'
+  'arrords.asc': '[n]ord.asc: 昇順にその場でソートする（挿入ソート）'
+  'arrords.desc': '[n]ord.desc: 降順にその場でソートする（挿入ソート）'
+  'async.cancel': `
+⚠️ 非推奨: 手書きの cancel は非推奨。代わりにコルーチングループ（裸のブロック { ... }）を使う。
+cancel: run() で開始したバックグラウンドタスクをキャンセルする
+task は run() が返した不透明ハンドル（i8*）。戻り値なし。
+
+`
+  'async.cancelled': `
+⚠️ 非推奨: 手書きの cancelled は非推奨。代わりにコルーチングループ（裸のブロック { ... }）を使う。
+cancelled: 現在実行中の非同期タスクがキャンセル済みかを返す
+戻り値 bool。非同期タスク（イベントループがスケジュールした -async 関数）内でのみ意味を持つ。
+
+`
+  'base64.b64-val': `
+Base64 の 1 文字をその値に変換する
+パディング文字は 0、無効な文字は -1 を返す
+
+`
+  'base64.decode': `
+指定した辞書で Base64 をデコードする
+s str: Base64 文字列
+table str: Base64 辞書
+戻り値 out ?[]byte: ok=デコードしたデータ, err=無効な文字
+
+`
+  'base64.encode': `
+指定した辞書で Base64 にエンコードする
+data []byte: 入力データ
+table str: Base64 辞書
+戻り値 out str: Base64 エンコードされた文字列
+
+`
+  'base64.encode-std': `
+標準辞書でエンコードする
+data []byte: 入力データ
+戻り値 out str: Base64 エンコードされた文字列
+
+`
+  'base64.encode-url': `
+URL セーフ辞書でエンコードする
+data []byte: 入力データ
+戻り値 out str: Base64 エンコードされた文字列
+
+`
+  'bigint._add': 'a + b（演算子オーバーロード。?bigint と書くが、コンパイラは bigint として扱う）\n経路 C: 共用体パラメータ `(b big)` と型分解 match を使う。bigint アームは `add-bigint` に、\ni64 アームは `_add-i64` に委譲する。中核を型アームにインライン化しないのは意図的で、\n実測では match アームの BlockStatement 内で名前付き出力パラメータ `c` を `c = expr` の後に `c.sign = ...` と\n変更しても書き戻されない（符号が失われ、-100+7 が誤って 93 になる）。プレーンなメソッドに委譲すると\n`c.sign` の変更セマンティクスが復元される。_mul が mul-bigint に委譲するのも同じ理由。\n'
+  'bigint._add-i64': 'c = self + v（小さな整数の加算）'
+  'bigint._div': `
+a / b（演算子オーバーロード。ゼロ除算は div-mod に従い 0 を返す。経路 C の
+i64 アームは _div-i64 を通る）
+
+`
+  'bigint._div-i64': 'q = self / v（小さな整数の除算）'
+  'bigint._mod': `
+a % b（演算子オーバーロード。ゼロ除算は div-mod に従い 0 を返す。経路 C の
+i64 アームは _mod-i64 を通り、その結果は ?i64。結果はまず展開し（失敗は 0、div-mod のゼロ除算時の 0 と一致）、
+次に from-i64 で bigint に昇格させて出力パラメータ r と型を合わせる）。
+
+`
+  'bigint._mod-i64': `
+r = self % v（小さな整数の剰余）
+戻り値 ?i64: D6 の統一 option ルールでは `cur % r-v` はすでに ?i64（除数が 0 のとき失敗）。
+結果パラメータを平坦化のために plain で宣言すると暗黙の展開が起きるため、そのまま ?i64 で宣言する。
+
+`
+  'bigint._mul': `
+a * b（演算子オーバーロード。経路 C は _add と同じで、両アームとも具体的な
+メソッドに委譲する）
+bigint アームは mul-bigint に、i64 アームは _mul-i64 に委譲する。重いループ / `with-len` / `#{overflow=wrap}` を
+match アームの BlockStatement に埋め込むと lowering 境界でクラッシュする（実測: セグメンテーション違反）ため、
+中核は型アームにインライン化しない。プレーンなメソッドに委譲すると `.` レシーバと出力パラメータの
+セマンティクスが復元され、_add の動作する i64 アームと一致する。
+
+`
+  'bigint._mul-i64': 'self * v（小さな整数の乗算）'
+  'bigint._sub': 'a - b（演算子オーバーロード。委譲戦略は _add と同じ）'
+  'bigint.abs-add': '|self| + |b|（符号を無視）'
+  'bigint.abs-cmp': '|self| と |b| を比較する（1=大きい, 0=等しい, -1=小さい）'
+  'bigint.abs-sub': '|self| - |b|（|self| >= |b| を前提とし、符号を無視する）'
+  'bigint.add-bigint': `
+self + b の big 同士の加算の中核（演算子オーバーロードではないプレーンな具体メソッド。
+_add はここに委譲する）
+引数には名前を付ける: `v.abs-sub(s)` の s は先に `s = .` で受け取る必要がある（メソッド引数としての
+裸の `.` は既知の lowering ギャップに当たる）。
+
+`
+  'bigint.cmp': 'self と b を比較する（1=大きい, 0=等しい, -1=小さい）'
+  'bigint.copy': `
+bigint をディープコピーする
+警告: 非推奨ではない（str/txt.copy と異なる）。代入 `b = a` は {sign,limbs,len} 記述子だけをコピーし、
+同じ limbs バッファを a と共有する（実測: a.limbs[0] = 99 の後、b.limbs[0] も 99）。
+ディープコピーのセマンティクスはない。独立したスナップショットが必要なときは必ずこのメソッドを使う。
+
+`
+  'bigint.div-mod': 'self / b を計算し、商と余りの両方を返す'
+  'bigint.eq': 'self == b か'
+  'bigint.from-i64': 'i64 から bigint を構築する'
+  'bigint.from-u64': '符号なし i64 から bigint を構築する（常に正）'
+  'bigint.gcd': 'g = gcd(self, b)（ユークリッドの互除法）'
+  'bigint.is-neg': '値が負か'
+  'bigint.is-pos': '値が正か'
+  'bigint.is-zero': '値がゼロか'
+  'bigint.lcm': 'l = lcm(self, b)'
+  'bigint.mod-pow': 'r = self^exp mod modulus'
+  'bigint.mul-bigint': `
+|self| * |b| の多倍長整数の中核（演算子オーバーロードではないプレーンな具体メソッド。
+_mul はここに委譲する）
+
+`
+  'bigint.normalize': '先頭のゼロを取り除き、len >= 1 を保証する'
+  'bigint.one': '1 を保持する bigint を構築する'
+  'bigint.pow': 'c = self^n（n >= 0、非負の整数べき）'
+  'bigint.shl': 'c = a << n'
+  'bigint.shl1': 'self = self << 1'
+  'bigint.shr': 'c = a >> n'
+  'bigint.shr1': 'self = self >> 1'
+  'bigint.sub-bigint': 'self - b の big 同士の減算の中核（プレーンな具体メソッド。_sub はここに委譲する）'
+  'bigint.to-hex': `
+bigint を小文字の 16 進文字列に整形する
+戻り値 out str: 16 進文字列
+
+`
+  'bigint.to-i64': `
+これが存在する理由: `_mod-i64` / `_div-i64` のような小さな整数のファストパスはこのモジュールに
+閉じている（上のプライバシー規約を参照）。モジュール外は演算子（`% / * + -`、範囲は自然に i64 内の
+被除数で抑えられる）が返す bigint を受け取るので、i64 に戻すにはプライベートメソッドに手を伸ばすのではなく
+この公開出口を使う必要がある。
+
+`
+  'bigint.to-str': `
+bigint を 10 進文字列に整形する
+戻り値 out str: 10 進文字列
+
+`
+  'bigint.zero': 'ゼロの bigint を構築する'
+  'bool.to-str': 'bool を文字列 "true" または "false" に変換する'
+  'bufio.reader.close': 'リーダを閉じる'
+  'bufio.reader.fill': 'バッファを補充する'
+  'bufio.reader.init': 'バッファ付きリーダを生成する'
+  'bufio.reader.read-byte': `
+1 バイト読み込む
+戻り値 b ?byte: ok=バイト値, nil=EOF またはエラー
+
+`
+  'bufio.reader.read-line': `
+1 行読み込む
+戻り値 line ?str: ok=行, nil=EOF またはエラー
+
+`
+  'bytes.index': `
+[]byte.index: []byte から部分列 target を探す
+最初に見つかった位置を返し、なければ -1
+
+`
+  'bytes.index-from': `
+[]byte.index-from: from から []byte 内の部分列 target を探す
+最初に見つかった位置を返し、なければ -1
+
+`
+  'bytes.len': `
+[]byte.len: バイトスライスの長さを返す
+byte は u8 の別名ではなく独立した型なので、[]byte.len は []t.len から自動では単態化されない。
+
+`
+  'bytes.slice': `
+[]byte.slice: 部分スライス [start, end) を取る
+新しいスライスを返す
+
+`
+  'bytes.to-bytes-str': `
+[]byte.to-bytes-str: バイト単位の 1:1 コピー（元の []byte.to-str セマンティクスを保持）。
+buf がすでに有効な UTF-8 バイト列（ファイル読み込み、子プロセスの出力）で、コードポイント単位の再エンコードが不要なときに使う。
+この関数は旧 []byte.to-str と等価。
+
+`
+  'bytes.to-chars': `
+⚠️ コンパイラの制限: 旧バックエンドも MIR バックエンドも []char（i32 要素）スライスを完全にはサポートしない
+（[]byte / []i64 と違い、[]char の len/cap/stride には潜在的なコード生成バグがあり、構築した []char は実行時に
+範囲外のメモリを壊す）ため、このメソッドはまだ使えない。
+必要なのが byte -> コードポイント -> UTF-8 文字列の最終結果だけなら、b.to-str() を使えばよい。
+[]byte.to-str はそのセマンティクス（各バイトを 0..255 のコードポイントとして再エンコード）をすでにインライン化しており、[]char は不要。
+
+`
+  'bytes.to-hex': '[]byte.to-hex: []byte を大文字の 16 進文字列にエンコードする'
+  'bytes.to-hex-lower': '[]byte.to-hex-lower: []byte を小文字の 16 進文字列にエンコードする'
+  'bytes.to-i64-be': '[]byte.to-i64-be: ビッグエンディアンのバイト列を int64 に変換する（1〜8 バイト）'
+  'bytes.to-i64-le': '[]byte.to-i64-le: リトルエンディアンのバイト列を int64 に変換する（1〜8 バイト）'
+  'bytes.to-str': `
+⚠️ セマンティクス変更（2026-09-06、依頼者要望）: 以前はバイト単位の 1:1 コピーで、buf.to-str() が依存する
+契約だった（ファイルや子プロセスの出力を読むとき、buf はすでに有効な UTF-8 バイト列）。
+byte -> コードポイント -> UTF-8 の再エンコードに切り替わったため、有効なマルチバイト UTF-8 列は二重にエンコードされ壊れる
+（例: ディスクから読んだ 0xC3 0xA9 がコードポイント 0xC3 と 0xA9 として扱われ、別々に再エンコードされる）。有効な UTF-8
+バイト列の逐語コピー（ファイルや子プロセスの読み込み）が必要なら、1:1 コピーのセマンティクスを保つ b.to-bytes-str()（下記）を
+使うか、下位のスライスを直接扱うこと。
+
+`
+  'bytes.to-txt': `
+[]byte.to-txt: []byte を txt に変換する（255 バイトで切り捨て）
+戻り値 out txt: 固定 256 バイトの txt 構造体
+
+`
+  'char.is-alnum': '文字が英数字かを判定する'
+  'char.is-alpha': `
+文字が英字（A-Z a-z）かを判定する
+is-letter の別名
+
+`
+  'char.is-digit': '文字が数字（0-9）かを判定する'
+  'char.is-letter': '文字が英字（A-Z a-z）かを判定する'
+  'char.is-lower': '文字が小文字（a-z）かを判定する'
+  'char.is-space': '文字が空白文字（空白、タブ、改行、CR）かを判定する'
+  'char.is-upper': '文字が大文字（A-Z）かを判定する'
+  'char.to-bytes': 'UTF-8 エンコードしたバイト配列に変換する'
+  'char.to-lower': '小文字に変換する（ASCII のみ）'
+  'char.to-str': 'UTF-8 エンコードした文字列に変換する'
+  'char.to-txt': `
+UTF-8 エンコードした txt（固定 256 バイト構造体）に変換する
+char.to-bytes を再利用して 1〜4 バイトの UTF-8 列を取得し、それを txt バッファにバイト単位でコピーする。
+str.to-txt / []byte.to-txt と同様に plain な txt を返す（コードポイント 1 個の変換は失敗しないので ?txt にはしない）。
+これにより txt.to-upper / to-lower などを「char を取る -> char.to-lower -> char.to-txt」として書き直すことができ、
+char を返す txt[i] 経由の添字書き込みに依存しなくなる。
+
+`
+  'char.to-upper': '大文字に変換する（ASCII のみ）'
+  'chars.to-str': `
+⚠️ 注意: 2026-09-06 時点で nolang の []char スライス型のサポートは不完全なため、このメソッドはまだ使えない:
+- 旧バックエンド: []char の with-cap/push で len/cap の単位（要素数とバイト数）が食い違い、.len() が要素数を過大に報告し、
+  []char.to-str が終端を越えて読み込んでゴミを生成する（実測: push(72) 1 回で "H" に続いてゴミが出た）。[]char リテラルと
+  添字読み込みは正しい i32 ストライドを使うが、push がスライスの len フィールドを壊す。
+- MIR=3 ゲート: コンパイラは []char 要素型も新しい []t.to-chars ジェネリックメソッドもサポートせず、
+  "unknown callee []t.to-chars" をそのまま報告するため、何もコンパイルできない。
+コンパイラの []char スライスサポートが修正されるまで、to-chars / []char.to-str に依存しないこと。
+
+`
+  'csv.encode-field': `
+1 つのフィールドを CSV としてエンコードする
+カンマ、二重引用符、改行を含むフィールドは二重引用符で囲んでエスケープする
+field str: エンコードするフィールド
+戻り値 out str: CSV エンコードされた文字列
+
+`
+  'csv.parse-field': `
+1 つの CSV フィールドをパースする
+s[pos] から始まり、二重引用符とカンマを処理する
+s str: CSV テキスト
+pos i64: 開始位置
+戻り値 field str: パースしたフィールドの内容
+戻り値 new-pos i64: パース後の位置
+
+`
+  'csv.parse-line': `
+CSV テキストの 1 行をパースする
+s str: CSV テキスト
+max-fields i64: フィールドの最大数
+戻り値 fields []str: パースしたフィールド
+
+`
+  'deque.deque.clear': 'デックを空にする'
+  'deque.deque.empty': `
+デックが空かを判定する
+戻り値 true=空, false=空でない
+
+`
+  'deque.deque.peek-back': `
+末尾要素を取り出さずに参照する
+戻り値 val ?i64: ok=末尾の値, nil=デックが空
+
+`
+  'deque.deque.peek-front': `
+先頭要素を取り出さずに参照する
+戻り値 val ?i64: ok=先頭の値, nil=デックが空
+
+`
+  'deque.deque.pop-back': `
+末尾から要素を取り出す
+戻り値 val ?i64: ok=取り出した値, nil=デックが空
+
+`
+  'deque.deque.pop-front': `
+先頭から要素を取り出す
+戻り値 val ?i64: ok=取り出した値, nil=デックが空
+
+`
+  'deque.deque.push-back': '末尾に要素を積む'
+  'deque.deque.push-front': '先頭に要素を積む'
+  'deque.deque.size': 'デックのサイズを返す'
+  'dom.append-child': 'parent の子リストの末尾に子ノードを追加する（または移動する）'
+  'dom.attribute-count': '属性の数'
+  'dom.attribute-name': '文書順で i 番目の属性名。範囲外なら nil'
+  'dom.attribute-value': 'i 番目の属性値。範囲外なら nil'
+  'dom.blob-has': '空白で区切られた単語表 blob から単語 name 全体を検索する'
+  'dom.child-at': 'i 番目の子ノード。範囲外なら nil'
+  'dom.child-count': '子ノードの数'
+  'dom.class-has': 'class の値（空白区切りの単語列）に単語 cls が含まれるか'
+  'dom.cp-append': 'コードポイント cp を UTF-8 として out に追加する（新しい文字列を返す）'
+  'dom.create-comment': 'コメントノードを生成する'
+  'dom.create-element': '未接続の要素ノードを生成する（まだどこにも付いていない）'
+  'dom.create-text-node': 'テキストノードを生成する'
+  'dom.decode-entities': `
+s[from..to) 内の実体参照をデコードする（名前付き実体は DOM-ENTITY-BLOB で引き、
+数値実体は &#NN; または &#xHH;）
+html=true: 不明または未終端の実体はそのまま残す; html=false: 不明な実体はエラー
+戻り値 out=デコード結果, ok=成功したか（XML モードで不正な実体なら ok=false）
+
+`
+  'dom.document-element': 'ルート要素（最初の ELEMENT の子）'
+  'dom.dom-closers-of': `
+タグ t を開くときに先に閉じる必要がある開始タグの単語表（空文字列 = ルールなし）
+
+`
+  'dom.dom-pool.alloc': '新しいノード（names/vals の並行スロット付き）を確保し、そのインデックスを返す'
+  'dom.dom-pool.append': 'parent の子リストの末尾に child を追加する（既存の親からは先に切り離される）'
+  'dom.dom-pool.attr-edge-at': 'ノードの文書順で i 番目の属性のエッジインデックスを返す; -1=範囲外'
+  'dom.dom-pool.collect-class': `
+node の部分木で、class 属性が単語 cls を含む要素のインデックスを集める
+
+`
+  'dom.dom-pool.collect-tag': `
+node の部分木で、タグ名が want の要素のインデックスを集める（star=true なら全要素）
+
+`
+  'dom.dom-pool.detach': 'child を親から切り離し、子リストの整合性を保つ'
+  'dom.dom-pool.find-attr': 'ノードの name 属性のエッジインデックスを探す; -1 は存在しない'
+  'dom.dom-pool.find-id-node': `
+node の部分木を再帰的に探索し、id 属性が id に等しい要素を探す; -1=見つからない
+
+`
+  'dom.dom-pool.html-add-text': 's[from..to) を HTML の実体規則でデコードし、テキストノードとして parent に追加する'
+  'dom.dom-pool.html-bogus-comment': '\'<!\' で始まり \'>\' までのその他の内容はコメントとして保持する'
+  'dom.dom-pool.html-parse-attr': `
+HTML 属性をパースする（引用符なしの値も可）; 属性が重複した場合は最初のものが勝つ
+
+`
+  'dom.dom-pool.html-parse-close-name': '\'</name\' をパースし、\'>\' の後の位置と小文字化したタグ名を返す'
+  'dom.dom-pool.html-parse-comment': '<!--...--> をパースする（EOF も許容する）'
+  'dom.dom-pool.html-parse-doc': 'HTML 文書全体をパースし（絶対に失敗しない）、文書ルートのインデックスを返す'
+  'dom.dom-pool.html-parse-open': `
+開始タグをパースし、要素を cur に追加する
+戻り値 np=次の位置, el=要素インデックス, mode:
+0 = 不正な '<'（すでにテキストとして扱った）, 1 = 通常の要素（呼び出し側が積む）,
+2 = void または自己終了, 3 = raw テキストをすでに消費した
+
+`
+  'dom.dom-pool.html-parse-pi': '\'<?...>\'（HTML では偽コメントとして扱うが、ここでは PI ノードとして保持する）'
+  'dom.dom-pool.html-set-attr-once': `
+属性がまだ存在しないときだけ設定する（HTML の重複属性は最初のものが勝つ）
+
+`
+  'dom.dom-pool.init': 'ノードプールを初期化する（安全に積むにはヒープのベクタを先に初期化する必要がある）'
+  'dom.dom-pool.insert-before': `
+parent 内で ref の前に node を挿入する（ref が不正、または parent の子でない場合は末尾に追加する）
+
+`
+  'dom.dom-pool.parse-doctype-node': `
+<!DOCTYPE ...> をパースする（内部サブセットと引用文字列も含む）; XML と HTML で共用
+内容はそのまま保持する（実体はデコードしない）; name は '!' の後の最初の単語
+
+`
+  'dom.dom-pool.remove-attr': '属性を削除する; 見つかったかを返す'
+  'dom.dom-pool.ser': '単一ノードをシリアライズする（outer）'
+  'dom.dom-pool.ser-children': 'idx のすべての子ノードをシリアライズする'
+  'dom.dom-pool.set-attr': '属性を設定する: 既存なら更新し、なければ文書順に追加する'
+  'dom.dom-pool.text-of': 'idx の部分木のテキスト内容（TEXT / CDATA）を再帰的に集める'
+  'dom.dom-pool.valid': 'ノードインデックスが有効か'
+  'dom.dom-pool.xml-add-text': 's[from..to) をデコードし、テキストノードとして parent に追加する'
+  'dom.dom-pool.xml-parse-attr': `
+属性を 1 つパースする（xml=true モードでは値の引用が必須で、重複属性はエラー）
+戻り値 次の位置と成功フラグ
+
+`
+  'dom.dom-pool.xml-parse-cdata': '<![CDATA[...]]> をパースし、parent に追加する'
+  'dom.dom-pool.xml-parse-close': '終了タグ </name> をパースする。ノードのタグ名と一致しなければならない'
+  'dom.dom-pool.xml-parse-comment': '<!--...--> をパースして parent に追加し、次の位置を返す'
+  'dom.dom-pool.xml-parse-doc': 'XML 文書全体をパースし、文書ルートのインデックスを返す'
+  'dom.dom-pool.xml-parse-element': `
+要素を 1 つ（子も含めて）パースし、parent に追加する
+p は '<' を指す; depth は現在の入れ子の深さ
+
+`
+  'dom.dom-pool.xml-parse-pi': '<?target data?> をパースし、parent に追加する'
+  'dom.dom-strip-bom': 'strip-bom: 先頭の UTF-8 BOM を取り除き、開始オフセットを返す'
+  'dom.esc-attr': '属性値の &, <, > と二重引用符をエスケープする'
+  'dom.esc-text': 'テキストの &, <, > をエスケープする'
+  'dom.find-entity': '名前付き実体のコードポイントを DOM-ENTITY-BLOB で探す; -1=見つからない'
+  'dom.first-child': 'dom.first-child / last-child / next-sibling / prev-sibling'
+  'dom.get-attribute': '属性値を読む（nil=存在しない; HTML モードでは属性名の大文字小文字を区別しない）'
+  'dom.get-element-by-id': 'id 属性で要素を探す'
+  'dom.get-elements-by-class-name': '文書内で class に指定した単語を含む要素をすべて集める'
+  'dom.get-elements-by-tag-name': '指定したタグ名の要素をすべて集める; \'*\' は全要素を返す'
+  'dom.has-attribute': '属性が存在するか'
+  'dom.html-close-match': `
+s[pos..] が name の終了タグ名で始まるかを返す（大文字小文字を区別しない; 後ろは '>', '/', '=', または空白でなければならない）
+
+`
+  'dom.html-peek-name': 's[p] の \'<\' の後のタグ名（小文字）を先読みする; 不正なら空文字列を返す'
+  'dom.inner-html': 'ノードのすべての子ノードをシリアライズする'
+  'dom.insert-child-before': 'parent 内で ref の前に child を挿入する'
+  'dom.is-html': 'HTML モードか（void 要素のシリアライズと名前の大文字小文字に影響する）'
+  'dom.is-name-byte': `
+XML と HTML のタグ名・属性名に使える文字（ASCII のサブセット; UTF-8 の上位バイトは通過させる）
+
+`
+  'dom.kind': 'ノード種別（DOM-KIND-* 定数; -1=不正なインデックス）'
+  'dom.name': '要素のタグ名、PI のターゲット、または DOCTYPE の名前'
+  'dom.new-document': `
+空の文書を生成する
+使い方:
+d = dom.new-document(true)   // HTML 文書
+
+`
+  'dom.outer-html': '単一ノードを自身も含めてシリアライズする'
+  'dom.parent': '親ノードのインデックス（-1=なし）'
+  'dom.parse-html': 'HTML を寛容にパースし（絶対に失敗しない）、文書を返す'
+  'dom.parse-numeric-entity': `
+&#...; の 10 進または 16 進コードポイントをパースする; 不正なら -1
+s[pos] は数字の先頭（'x' または 'X' が先行すれば 16 進の印）で、end は ';' の位置
+
+`
+  'dom.parse-xml': 'XML を厳密にパースする; 失敗時は err（エラー位置を含む）を返す'
+  'dom.remove-attribute': '属性を削除する; 見つかったかを返す'
+  'dom.remove-child': 'child を親から切り離す'
+  'dom.replace-child': 'parent 内で old を new に置き換える'
+  'dom.set-attribute': '属性を設定する（既存なら上書きする）'
+  'dom.set-node-value': 'ノード値を設定する'
+  'dom.set-text-content': '子をすべて消し、1 つのテキストノードに置き換える'
+  'dom.text-content': '部分木のテキスト内容（TEXT / CDATA を再帰的に連結）'
+  'dom.to-string': '文書全体をシリアライズする（文書の innerHTML）'
+  'dom.value': 'ノード値（text/cdata/comment の内容、PI のデータ、または DOCTYPE の生の内容）'
+  'dom.xml-read-name': 'p から名前（名前文字の連続）を読み、終了位置を返す'
+  'dom.xml-skip-ws': 'XML の空白（空白、タブ、CR、LF）を読み飛ばす'
+  'env.get': `
+環境変数の値を取得する
+戻り値 val ?str: ok=変数の値, nil=未設定（os.get-env はそのまま option で返す）
+`
+  'env.get-with-default': '環境変数を取得し、未設定なら既定値を返す'
+  'env.is-set': `
+環境変数が設定済みかを判定する
+戻り値 true=設定済み, false=未設定
+`
+  'env.lookup': `
+環境変数の値を取得する
+戻り値 val ?str: ok=変数の値, nil=存在しない
+`
+  'env.set': `
+環境変数を設定する
+戻り値 true=成功, false=失敗
+`
+  'env.unset': `
+環境変数を削除する（空文字列にする）
+戻り値 true=成功, false=失敗
+`
+  'err._errno-to-code': 'C の errno を code 列挙に写す（モジュール内限定。from-errno だけが使う）'
+  'err.code': `
+エラーコードを返す
+戻り値 ec: コード
+
+`
+  'err.code.to-name': `
+エラーコードの列挙名を code. 接頭辞なしで返す
+戻り値 s: 列挙名（例: 'ok' / 'not-found' / 'io'）
+使い方:
+n = code.io.to-name()     ; => 'io'
+
+`
+  'err.format': `
+エラーを情報量の多い文字列として整形する
+戻り値 s: 'code.<variant>: <msg>'。位置が分かるときは ' at <file>:<line>:<col>' を末尾に付ける
+使い方:
+s = err.new('disk full', code.io).format()   ; => 'code.io: disk full'
+e = err('no such file', code.not-found)      ; コンパイラが位置を挿入する
+t = e.format()                               ; => 'code.not-found: no such file at main.no:12:3'
+メッセージだけなら err.msg()、コードだけなら err.code() を使う
+
+`
+  'err.from-errno': `
+C の errno からエラーを構築する
+errno: 標準 C のエラーコード（例: 13 = EACCES）
+
+`
+  'err.is': `
+エラーコードが一致するかを判定する
+ec: 照合するコード
+戻り値 yes: 一致したか
+
+`
+  'err.msg': `
+エラーメッセージを返す
+戻り値 msg: メッセージ
+
+`
+  'err.new': `
+エラーを構築する
+msg: エラーメッセージ
+ec: エラーコード（code.io などの code 列挙値。既定は code.unknown）
+
+`
+  'err.new-at': '位置付きでエラーを構築する（呼び出し側が位置を明示的に渡す）'
+  'float.div': '浮動小数点の除算。商を返す（a ÷ b）'
+  'float.is-inf': `
+値が無限大かを返す
+注意: `. + . == .` と書いてはいけない — これは ±0.0 でも成り立つ（0+0==0）ため、ゼロを無限大と誤判定する。
+非ゼロ判定を加えたときだけ必要十分になる（有限の非ゼロ x は x+x!=x を満たし、NaN との比較はすべて偽）。
+
+`
+  'float.is-nan': '値が NaN かを返す'
+  'fmt.eprintf': '削除済み（パースが通るよう名前だけ残している）— 呼ぶとコンパイルエラー。代わりに eprint（改行付き）か io.err（改行なし）を使う'
+  'fmt.fmt-apply-spec': `
+幅、寄せ、埋め文字を適用する
+align: 60=左寄せ, 62=右寄せ, 94=中央, 0/61=右寄せ（既定）
+
+`
+  'fmt.fmt-bool': `
+真偽値の書式整形
+幅、align、fill、型（t）に対応
+
+`
+  'fmt.fmt-f64': `
+浮動小数点の書式整形
+型（f/e/g/t）、精度、符号、ゼロ埋め、幅、align、fill に対応
+
+`
+  'fmt.fmt-group-digits': `
+⚠️ ゼロ埋めの後に適用しなければならない: f'{1234:08,d}' は 0001,234（先に 8 桁へゼロ埋めし、その後で桁区切り）。
+先に桁区切りして後からゼロ埋めすると誤った 0001234, になる。
+
+`
+  'fmt.fmt-int': `
+符号付き整数の書式整形
+型（c/d/t/なし）、符号（+/-/空白）、ゼロ埋め、幅、align、fill、桁区切り（,/_）に対応
+
+`
+  'fmt.fmt-parse-spec': `
+書式指定文字列をパースする
+戻り値 fill/align/sign/alt/zero/width/grouping/precision/typ
+align/sign/grouping/typ は文字の ASCII 値; alt/zero は 0/1; precision = -1 は未指定
+
+`
+  'fmt.fmt-str': `
+文字列の書式整形
+精度（切り詰め）、幅、align、fill、型（t/v）に対応
+
+`
+  'fmt.fmt-uint': `
+符号なし整数の書式整形
+型（b/o/d/x/X/t）、alt（# 接頭辞）、ゼロ埋め、幅、align、fill、桁区切り（,/_）に対応
+
+`
+  'fmt.fmt-uint-base': `
+u64 を指定した基数の文字列に変換する
+base: 2/8/10/16; upper: 16 進を大文字にするか
+
+`
+  'fmt.printf': '削除済み（パースが通るよう名前だけ残している）— 呼ぶとコンパイルエラー。代わりに print（改行付き）か io.out（改行なし）を使う'
+  'fmt.sprintf': '非推奨だがまだ使える。代わりに format を使う'
+  'fs.close': 'ファイルディスクリプタを閉じる'
+  'fs.copy-file': 'ファイルの内容をコピーする'
+  'fs.dir-entries': `
+使い方:
+names = dir-entries('/path/to/dir')
+i <- [0..names.len()): {
+    print(names[i])
+}
+
+`
+  'fs.exists': `
+パスが存在するかを返す（シンボリックリンクを辿る）
+成功なら true、失敗なら false を返す
+
+`
+  'fs.file-size': 'ファイルサイズを取得する（stat-size と同じ）'
+  'fs.file.append': `
+データをファイル末尾に追記する
+簡易実装: 既存の内容を読み、それを統合して書き戻す
+
+`
+  'fs.file.close': `
+ファイルを閉じる
+成功後 fd は -1 に戻る
+標準ストリーム（STDIN/STDOUT/STDERR）は閉じない
+
+`
+  'fs.file.copy-to': `
+このファイルを dst-path にコピーする
+戻り値 true=成功, false=失敗
+
+`
+  'fs.file.is-open': 'ファイルが開いているかを判定する'
+  'fs.file.read': 'ファイルから最大 n バイトを buf に読み込む'
+  'fs.file.read-bytes': `
+ファイル全体を []byte に読み込む（Rust 風のハイブリッド戦略）
+戻り値 content ?[]byte:
+ok([]byte) - 成功。ファイルの内容
+nil        - ファイルが空
+err        - ファイルが開いていない、または読み込みに失敗
+
+`
+  'fs.file.read-line': `
+ファイルから 1 行読み込む（最大 4096 バイト）
+戻り値 line ?str: ok=行, nil=EOF またはエラー
+
+`
+  'fs.file.read-str': `
+ファイル全体を文字列に読み込む
+戻り値 content ?str:
+ok(str) - 成功。ファイルの内容
+nil     - ファイルが空
+err     - ファイルが開いていない、または読み込みに失敗
+
+`
+  'fs.file.size': '開いているファイルのサイズを取得する（fstat(fd) 経由で TOCTOU を排除）'
+  'fs.file.write': 'data の先頭 n バイトをファイルに書き込む'
+  'fs.file.write-bytes': `
+[]byte をファイルに書き込む（全体を上書き）
+data []byte: 書き込むバイト配列
+戻り値 ok ?bool:
+ok(true)  - 成功
+err       - ファイルが開いていない、または書き込みに失敗
+
+`
+  'fs.file.write-str': `
+文字列をファイルに書き込む（全体を上書き）
+data str: 書き込む文字列
+戻り値 ok ?bool:
+ok(true)  - 成功
+err       - ファイルが開いていない、または書き込みに失敗
+
+`
+  'fs.fstat-size': `
+開いているファイルのサイズを取得する（fstat(fd) を使い TOCTOU を排除）
+fd: 開いているファイルディスクリプタ
+
+`
+  'fs.get-line': '標準入力から 1 行読み込む'
+  'fs.is-dir': 'パスがディレクトリかを返す'
+  'fs.is-file': 'パスが通常ファイルかを返す'
+  'fs.link': `
+ハードリンクを作成する
+oldpath: 既存ファイルのパス
+newpath: 新しいハードリンクのパス
+成功なら true、失敗なら false を返す
+
+`
+  'fs.list-dir': `
+使い方:
+names = list-dir('/path/to/dir')
+i <- [0..names.len()): {
+    print(names[i])
+}
+
+`
+  'fs.list-dir-2': `
+Windows 版: FindFirstFileA/FindNextFileA/FindClose を使う
+FindFirstFileA はパスに '\*' ワイルドカードを付ける必要がある
+
+`
+  'fs.list-dir-3': `
+WASI 版: POSIX の opendir/readdir/closedir を使う
+wasi-libc は opendir/readdir/closedir（WASI fd_readdir のラッパー）を提供する
+
+`
+  'fs.lstat': `
+シンボリックリンク自体の情報を取得する（リンクを辿らない）
+stat との違い: シンボリックリンクに対して呼ぶと、リンク先ではなくリンク自体の情報を返す
+p: ファイルパス
+成功なら true、失敗なら false を返す
+
+`
+  'fs.mkdtemp': `
+一意な一時ディレクトリを作成する
+tmpl: テンプレート文字列。末尾は 'XXXXXX' でなければならない
+成功なら実際のディレクトリ名（some）、失敗なら nil を返す
+
+`
+  'fs.mkfifo': `
+名前付きパイプ（FIFO）を作成する
+p: パイプのパス
+mode: パーミッションモード（例: 0o644 = 420）
+成功なら true、失敗なら false を返す
+
+`
+  'fs.mknod': `
+特殊ファイル（パイプ、デバイスノードなど）を作成する
+p: ファイルパス
+mode: ファイル種別とパーミッション（例: 通常ファイルは 0o644=420、FIFO は 0o666=438）
+dev: デバイス番号（通常ファイルや FIFO なら 0 を渡す）
+成功なら true、失敗なら false を返す（macOS/Windows では未対応のことがある）
+
+`
+  'fs.mkstemp': `
+一意な一時ファイルを作成して開く
+tmpl: テンプレート文字列。末尾は 'XXXXXX'（X 6 個）でなければならない
+成功なら実際のファイル名とファイルディスクリプタ、失敗なら空文字列と fd=-1 を返す
+注意: 順序は (fd, name) ではなく (name, fd)。lastBuiltinExtra の仕組みが 2 番目の戻り値を
+i64/bool にし、主たる戻り値を str にすることを要求するため
+
+`
+  'fs.open': `
+ファイルを開く（コンストラクタ）
+opts: file-opts 構造体
+成功: f = file{ fd, path }（自動的に ?file に変換される）
+失敗: f = err('エラーメッセージ')
+
+`
+  'fs.open-file': '独自のフラグとパーミッションでファイルを開く'
+  'fs.open-read': 'ファイルを読み取り専用で開く'
+  'fs.open-write': 'ファイルを書き込み用に開く（O-WRONLY|O-CREAT|O-TRUNC, 0644）'
+  'fs.read': 'ファイルディスクリプタから最大 n バイトを buf に読み込む'
+  'fs.read-bytes': `
+ファイル全体を []byte に読み込む
+p str: ファイルパス
+戻り値 content ?[]byte:
+ok([]byte) - 成功。ファイルの内容
+nil        - ファイルが空
+err        - 読み込みに失敗
+
+`
+  'fs.read-file': `
+[非推奨] read-file: 代わりに read-bytes を使う（エラーを扱い、TOCTOU 安全で、読み込みをループする）
+read-file: ファイル全体を []byte に読み込む（空スライスが失敗を意味するため、空ファイルとエラーを区別できない）
+
+`
+  'fs.read-stdin': `
+stdin をループで最後まで読み、[]byte に入れる（stat/fstat を使わないのでパイプ安全）
+戻り値 content ?[]byte:
+ok([]byte) - 成功。stdin の内容
+nil        - stdin が空
+err        - 読み込みに失敗
+
+`
+  'fs.read-stdin-str': `
+stdin をループで最後まで読み、str に入れる（stat/fstat を使わないのでパイプ安全）
+戻り値 content ?str:
+ok(str) - 成功。stdin の内容
+nil     - stdin が空
+err     - 読み込みに失敗
+
+`
+  'fs.read-str': `
+ファイル全体を文字列に読み込む
+p str: ファイルパス
+戻り値 content ?str:
+ok(str) - 成功。ファイルの内容
+nil     - ファイルが空
+err     - 読み込みに失敗
+
+`
+  'fs.readlink': `
+シンボリックリンクのリンク先パスを読む
+p: シンボリックリンクのパス
+成功ならリンク先パス（some）、失敗なら nil を返す
+
+`
+  'fs.realpath': `
+絶対パスを解決する
+p: 入力パス（相対パスや . / .. を含んでいてもよい）
+成功なら正規化した絶対パス文字列、失敗なら空文字列を返す
+
+`
+  'fs.remove': 'ファイルを削除する'
+  'fs.rename': 'ファイル名を変更する'
+  'fs.rmdir': `
+空のディレクトリを削除する
+p: ディレクトリパス（空でなければならない）
+成功なら true、失敗なら false を返す
+
+`
+  'fs.stat-size': 'ファイルサイズを取得する'
+  'fs.symlink': `
+シンボリックリンクを作成する
+target: リンク先のパス
+linkpath: シンボリックリンク自体のパス
+成功なら true、失敗なら false を返す
+
+`
+  'fs.sync': 'ファイルシステムのバッファをディスクに書き出す（戻り値なし）'
+  'fs.truncate': `
+ファイルを指定サイズに切り詰める、または拡張する
+p: ファイルパス
+length: 目標の長さ（バイト）
+成功なら true、失敗なら false を返す
+
+`
+  'fs.utime': `
+ファイルのアクセス時刻と変更時刻を設定する
+p: ファイルパス
+atime: アクセス時刻（Unix 秒）
+mtime: 変更時刻（Unix 秒）
+成功なら true、失敗なら false を返す
+
+`
+  'fs.walk': `
+使い方:
+paths = walk('/path/to/dir')
+i <- [0..paths.len()): {
+    print(paths[i])
+}
+
+`
+  'fs.walk-collect': 'walk の背後にある内部の再帰実装'
+  'fs.write': 'data の先頭 n バイトをファイルディスクリプタに書き込む'
+  'fs.write-bytes': `
+[]byte をファイルに書き込む（上書き）
+p str: ファイルパス
+data []byte: 書き込むバイト配列
+戻り値 ok ?bool:
+ok(true) - 成功
+err      - 書き込みに失敗
+
+`
+  'fs.write-file': `
+[非推奨] write-file: 代わりに write-bytes を使う（エラーを扱い、書き込みをループする）
+write-file: []byte をファイルに書き込む（上書き。部分書き込みと完全な失敗を区別できない）
+
+`
+  'fs.write-str': `
+文字列をファイルに書き込む（上書き）
+p str: ファイルパス
+data str: 書き込む文字列
+戻り値 ok ?bool:
+ok(true) - 成功
+err      - 書き込みに失敗
+
+`
+  'global.eprint': `
+文字列を標準エラー出力に改行付きで書き出す。{name:spec} の名前付き書式フィールドに対応
+eprint('error: {msg}')
+複数引数: eprint('err:', a, b) は空白で区切り、行末の改行は 1 つだけ。
+各文字列リテラルはそれぞれ独立したテンプレート（print と同じ）
+`
+  'global.exit': `
+プロセスを終了する（状態コード c で現在のプロセスを終わらせる）
+exit(0)   -> 正常終了
+exit(1)   -> 異常終了
+`
+  'global.format': `
+{name:spec} の名前付きフィールドで文字列を整形して返す（sprintf の置き換え）
+s = format('{x:.2f}')          -> '3.14'
+s = format('{name} is {age}')  -> 'Alice is 30'
+⚠️ 受け付けるのは単一の書式文字列のみ（複数引数の形式はない）
+`
+  'global.print': `
+文字列を標準出力に改行付きで書き出す。{name:spec} の名前付き書式フィールドに対応
+print('hello {name}')       -> hello world（name = 'world' のとき）
+print('{x:.2f}')            -> 3.14（x = 3.14159 のとき）
+複数引数: print(a, b, c) は空白で区切り、行末の改行は 1 つだけ。
+複数引数のとき各文字列リテラルはそれぞれ独立したテンプレート（上の「複数引数のときリテラルはテンプレート」を参照）:
+print('result={val}', 42, 'result={val}')  -> result=42 42 result=42
+`
+  'global.with-cap': `
+指定した容量の文字列またはスライスを作る（len=0）。型は代入の左辺から推論される
+s str = with-cap(256)       -> 256 バイトを先に確保した str
+v []i64 = with-cap(100)     -> 100 要素を先に確保したスライス
+`
+  'global.with-cap-len': `
+指定した容量と長さの文字列またはスライスを作る。型は代入の左辺から推論される
+v []i64 = with-cap-len(200, 100)  -> 容量 200、長さ 100 のスライス
+`
+  'global.with-len': `
+指定した長さの文字列またはスライスを作る。型は代入の左辺から推論される
+s str = with-len(10)        -> 長さ 10 の str
+v []i64 = with-len(100)     -> 長さ 100 のスライス
+`
+  'hash-set.hash-set.add': '要素を追加する; 挿入されたかを返す'
+  'hash-set.hash-set.clear': '集合を空にする'
+  'hash-set.hash-set.contains': '要素が存在するかを返す'
+  'hash-set.hash-set.for-each': 'すべての要素を走査する'
+  'hash-set.hash-set.hash': 'スロットインデックスを計算する'
+  'hash-set.hash-set.init': '集合を初期化する'
+  'hash-set.hash-set.is-empty': '集合が空か'
+  'hash-set.hash-set.len': '要素数を返す'
+  'hash-set.hash-set.remove': '要素を削除する; 削除されたかを返す'
+  'heap.empty': 'ヒープが空かを返す'
+  'heap.init': `
+ファクトリ — 呼び出し側が用意した要素バッファ上に空のヒープを構築する
+data []t: 要素バッファ（長さが容量の上限になる）
+戻り値 h heap: 初期化されたヒープインスタンス
+
+`
+  'heap.peek': `
+最小要素を取り出さずに参照する
+戻り値 val ?t: ok=最小値, nil=ヒープが空
+
+`
+  'heap.pop': `
+最小要素を取り出して sift down する
+戻り値 val ?t: ok=最小値, nil=ヒープが空
+
+`
+  'heap.push': `
+要素を積み、最小ヒープの性質を回復する
+val t: 積む値
+
+`
+  'heap.size': 'ヒープのサイズを返す'
+  'int.div': `
+整数除算。商を返す（a ÷ b）
+b が 0 のときは err を返す（コンパイラが挿入するゼロ除算ガード。UB ではない）。詳しくは docs/docs/lang/syntax.md の〈ゼロ除算〉
+`
+  'int.mod': `
+整数剰余。余りを返す（a % b）
+b が 0 のときは err を返す（コンパイラが挿入するゼロ除算ガード。UB ではない）。詳しくは docs/docs/lang/syntax.md の〈ゼロ除算〉
+`
+  'int.to-str': `
+整数を文字列に変換する（すべての整数型をカバーする共用体型メソッド）
+transpiler は i64.to-str() などを int.to-str() に解決する
+算術演算を直接使うので、int -> u64 の型変換問題を避けられる
+注意: 負数の絶対値を取らない（0 - n は n = i64.MIN のときオーバーフローする）。
+代わりに負数のまま srem/sdiv（ゼロ方向への切り捨て）を行い、負の余りを [0, 9] に写す。
+`
+  'io.err': '文字列を標準エラーに書き出す（改行なし）'
+  'io.errln': '文字列を標準エラーに改行付きで書き出す'
+  'io.out': '文字列を標準出力に書き出す（改行なし）'
+  'io.outln': '文字列を標準出力に改行付きで書き出す'
+  'io.read-line': `
+標準入力から 1 行読み込む
+戻り値 line ?str: ok=行, nil=EOF またはエラー
+
+`
+  'io.reader.from-fd': 'ファイルディスクリプタからリーダを構築する'
+  'io.reader.from-stdin': '標準入力からリーダを構築する'
+  'io.reader.read': `
+リーダから最大 n バイトを buf に読み込む
+実際に読んだバイト数を返す; 0 は EOF またはエラー
+
+`
+  'io.reader.read-all': `
+すべてを buf に読み込む（最大 size バイト）
+サイズは呼び出し側が用意する必要がある
+
+`
+  'io.reader.read-byte': `
+1 バイト読み込む
+戻り値 b ?i64: ok=バイト値, nil=EOF またはエラー
+
+`
+  'io.reader.read-line': `
+1 行読み込む（最大 4096 バイト）
+戻り値 line ?str: ok=行, nil=EOF またはエラー
+
+`
+  'io.writer.from-fd': 'ファイルディスクリプタからライタを構築する'
+  'io.writer.from-stderr': '標準エラーからライタを構築する'
+  'io.writer.from-stdout': '標準出力からライタを構築する'
+  'io.writer.write': `
+data の先頭 n バイトを書き込む
+実際に書いたバイト数を返す
+
+`
+  'io.writer.write-byte': `
+1 バイト書き込む
+実際に書いたバイト数を返す（0 または 1）
+
+`
+  'io.writer.write-line': `
+文字列を書き、改行を付ける
+実際に書いたバイト数を返す
+
+`
+  'io.writer.write-str': `
+文字列全体を書き込む
+実際に書いたバイト数を返す
+
+`
+  'json.alloc-node': `
+新しいノードを確保する（pool は #{inline=false} のポインタフィールドなので、そのまま .pool.alloc に委譲する）
+戻り値 idx: 新しいノードのインデックス
+
+`
+  'json.arr-get': `
+配列の指定インデックスの要素を json として取得する
+戻り値 child ?json: ok=見つかった, nil=見つからない、または配列でない
+使い方:
+elem = j.arr-get(0)
+elem: {
+    ok -> {
+        s, found = it.get-str('name')
+    }
+}
+
+`
+  'json.arr-len': `
+配列の長さを取得する
+戻り値 n: 要素数（配列でなければ 0）
+使い方:
+n = j.arr-len()
+
+`
+  'json.arr-push': `
+配列の末尾に要素を追加する
+戻り値 ok bool: 成功したか
+使い方:
+j.arr-push(item)
+
+`
+  'json.arr-push-bool': `
+配列の末尾に真偽値要素を追加する
+戻り値 ok bool: 成功したか
+
+`
+  'json.arr-push-idx': `
+ノードインデックスで配列の末尾に要素を追加する（json を組み立てるときにプール全体をディープコピーしない内部用ヘルパー）
+戻り値 ok bool: 成功したか
+
+`
+  'json.arr-push-num': `
+配列の末尾に数値要素を追加する
+戻り値 ok bool: 成功したか
+
+`
+  'json.arr-push-str': `
+配列の末尾に文字列要素を追加する
+戻り値 ok bool: 成功したか
+
+`
+  'json.bool': `
+真偽値を取得する（root が真偽値のとき）
+戻り値 val bool, ok bool: ok=成功
+
+`
+  'json.delete-key': `
+オブジェクトからキーを削除する
+戻り値 ok bool: ok=成功（キーが存在し、削除された）
+
+`
+  'json.get': `
+オブジェクトの子ノードを json として取得する
+child は json 自身の子（同じノードプールを再利用して root だけを子に向ける）なので、新しいオブジェクトは作られない。
+存在しない、またはオブジェクトでないときは nil を返す。
+戻り値 child ?json: ok=見つかった, nil=見つからない、またはオブジェクトでない
+使い方:
+child = j.get('key')
+child: {
+    ok -> {
+        s, found = it.get-str('sub-key')
+    }
+}
+
+`
+  'json.get-bool': `
+オブジェクトから真偽値を取得する
+戻り値 val bool, ok bool: ok=見つかり、かつ真偽値である
+
+`
+  'json.get-i64': `
+オブジェクトから整数値を取得する
+戻り値 val i64, ok bool: ok=見つかり、かつ数値である
+
+`
+  'json.get-key': `
+グローバル関数 — json オブジェクトの子ノードをキーで取得する
+戻り値 child ?json: 子ノード（存在しなければ nil）
+
+`
+  'json.get-num': `
+オブジェクトから数値を取得する
+戻り値 val f64, ok bool: ok=見つかり、かつ数値である
+
+`
+  'json.get-str': `
+オブジェクトから文字列値を取得する
+戻り値 val str, ok bool: ok=見つかり、かつ文字列である
+使い方:
+s, found = j.get-str('name')
+found -> print(s)
+
+`
+  'json.i64': `
+整数値を取得する（root が数値のとき）
+戻り値 val i64, ok bool: ok=成功
+
+`
+  'json.is-arr': '配列かを返す'
+  'json.is-bool': '真偽値かを返す'
+  'json.is-null': `
+null かを返す
+戻り値 yes: null か
+
+`
+  'json.is-num': '数値かを返す'
+  'json.is-obj': 'オブジェクトかを返す'
+  'json.is-str': '文字列かを返す'
+  'json.json-clone-tree': `
+ディープコピーが必要な理由: json.pool は #{inline=false} のポインタフィールドで、コンパイラのポインタフィールドの
+コピーにはまだ借用セマンティクスがない（copy-tree の注記と src/mir のハイブリッド所有権の議論を参照）。
+そのため素朴な `child = json { pool: .pool, ... }` は、親と子が 1 つの共有データバッファ上に別々の vec ヘッダを
+持つ状態になる。どちらかのハンドルが vec の realloc を起こした瞬間、もう一方の vec ヘッダは解放済みの古いバッファを
+指し、ぶら下がり読み込みになる（stringify が null を返す / データが文字化けする）。独立したディープコピーなら、
+双方の alloc と成長がそれぞれのバッファに書き込むので互いを乱さない。
+
+`
+  'json.json-pool.add-child': `
+子ノード child-idx（キー名 key。配列なら空文字列を渡す）をノード node-idx に接続する
+可変長の子リストをリンク形式のエッジ表で実装しているので、ノードごとの子数の上限はない
+
+`
+  'json.json-pool.alloc': '新しいノードを確保し、そのインデックスを返す（ヒープの vec は自動で伸びるので、プールはもう上限に縛られない）'
+  'json.json-pool.arr-get': `
+配列ノードの指定インデックスの子ノードを取得する
+戻り値 val-idx=子ノードのインデックス, ok=成功
+
+`
+  'json.json-pool.arr-len': '配列の長さを取得する'
+  'json.json-pool.copy-tree': `
+プール同一性を `src.id == .id` で判定してはいけない: モジュールレベルの束縛は再束縛できない（JSON-POOL-NEXT-ID の注記を参照）ため、
+どのプールの id も常に 1 になり、この判定はプールをまたぐコピーを同一プール内のコピーと誤認していた。その結果
+json.arr-get / json.get が返した部分木の root が永久に -1 のままになっていた。現在は呼び出し側で保証している:
+- json-clone-tree: レシーバは init 直後の新しいプール;
+- json.set-key: val はまず一時的な新しいプールへコピーされ（json-clone-tree）、次にレシーバへコピーされる。
+したがってどちらのコピーも両端が必ず別のプールになり、自己参照も安全である。
+
+`
+  'json.json-pool.get-bool': `
+真偽値を取得する
+戻り値 val=真偽値, ok=成功
+
+`
+  'json.json-pool.get-key': `
+オブジェクトノードのキーに対応する子ノードのインデックスを取得する
+戻り値 val-idx=子ノードのインデックス, ok=見つかった
+
+`
+  'json.json-pool.get-kind': 'ノード種別を取得する'
+  'json.json-pool.get-num': '数値を取得する'
+  'json.json-pool.get-str': `
+文字列値を取得する
+戻り値 out=文字列のコピー, ok=成功
+
+`
+  'json.json-pool.init': 'ノードプールを初期化する（安全に push するため、ヒープの vec を使用前に非 nil へ初期化する必要がある）'
+  'json.json-pool.parse': `
+文字列の位置 pos から JSON 値をパースする
+戻り値 node-idx=ルートノードのインデックス, next-pos=後続の位置, ok=成功
+
+`
+  'json.json-pool.parse-num': 'JSON の数値をパースする'
+  'json.json-pool.parse-str': 'JSON の文字列をパースする（開き引用符から始まる）'
+  'json.json-pool.set-key': `
+オブジェクトノードにキーを設定する
+戻り値 ok=成功
+
+`
+  'json.json-pool.skip-ws': '空白を読み飛ばす'
+  'json.json-pool.str-eq': `
+2 つの str 値が等しいかを比較する
+str.eq-full を通じて一律に実装している
+
+`
+  'json.json-pool.stringify': `
+ノードを文字列にシリアライズする
+戻り値 out str: シリアライズした文字列
+
+`
+  'json.kind': `
+ノード種別を取得する
+戻り値 JSON の種別定数
+
+`
+  'json.new': `
+空の json 値（null）を生成する
+使い方:
+j = new()
+j.set('key', 'value')
+s = j.stringify()
+
+`
+  'json.new-pool': `
+json-pool を生成して初期化する（低レベル API）
+使い方:
+p = new-pool()
+root, next, ok = p.parse('{"key":"value"}', 0)
+
+`
+  'json.num': `
+数値を取得する（root が数値のとき）
+戻り値 val f64, ok bool: ok=成功
+
+`
+  'json.obj-key': `
+オブジェクトの指定インデックスのキーを取得する
+戻り値 key str: キー文字列
+戻り値 ok bool: 成功したか
+
+`
+  'json.obj-keys-str': `
+オブジェクトのすべてのキーを改行区切りの文字列として取得する
+戻り値 keys str: すべてのキーを連結したもの
+
+`
+  'json.obj-len': `
+オブジェクトのキー数を取得する
+戻り値 n i64: キー数（オブジェクトでなければ 0）
+
+`
+  'json.overflowed': `
+直近の操作がプールの容量不足で失敗したかを返す
+bool を返す set / arr-push などのメソッドが、false を返した後に「容量不足」と「その他の失敗」を区別できるようにする
+使い方:
+ok = j.set('k', v)
+ok == false && j.overflowed() -> print('pool full')
+
+`
+  'json.set': `
+オブジェクトにキーを設定する（値は別の json ノード）
+戻り値 ok bool: 成功したか
+
+`
+  'json.set-bool': `
+オブジェクトに真偽値を設定する
+戻り値 ok bool: 成功したか
+使い方:
+j.set-bool('active', true)
+
+`
+  'json.set-i64': `
+オブジェクトに整数値を設定する
+戻り値 ok bool: 成功したか
+
+`
+  'json.set-key': `
+オブジェクトのキーを設定する（val に json 値を受け取る糖衣構文）
+戻り値 ok bool: ok=成功
+
+`
+  'json.set-null': `
+オブジェクトに null を設定する
+戻り値 ok bool: 成功したか
+
+`
+  'json.set-num': `
+オブジェクトに数値を設定する
+戻り値 ok bool: 成功したか
+使い方:
+j.set-num('age', 30.0)
+
+`
+  'json.set-str': `
+オブジェクトに文字列値を設定する
+戻り値 ok bool: 成功したか
+使い方:
+j.set-str('name', 'Alice')
+
+`
+  'json.str': `
+文字列値を取得する（root が文字列のとき）
+戻り値 val str, ok bool: ok=成功
+使い方:
+s, found = j.str()
+
+`
+  'json.str-val': `
+文字列ノードの値を取得する
+戻り値 val str: 文字列値
+
+`
+  'json.stringify': `
+JSON 値を文字列にシリアライズする
+戻り値 out: JSON 文字列
+使い方:
+j = new()
+s = j.stringify()
+
+`
+  'link.link.empty': `
+連結リストが空かを返す
+戻り値 yes bool: true=空, false=空でない
+
+`
+  'link.link.full': `
+ノードプールが満杯かを返す
+戻り値 yes bool: true=満杯, false=満杯でない
+
+`
+  'link.link.size': `
+連結リストの要素数を返す
+戻り値 sz i64: 要素数
+
+`
+  'linked-hash-map.linked-hash-map.clear': 'マップを空にする'
+  'linked-hash-map.linked-hash-map.contains': 'キーが存在するかを返す'
+  'linked-hash-map.linked-hash-map.for-each': '挿入順にすべての (キー, 値) 組を走査する'
+  'linked-hash-map.linked-hash-map.get': 'キーを検索して ?i64 を返す（nil=見つからない）'
+  'linked-hash-map.linked-hash-map.hash': 'スロットインデックスを計算する'
+  'linked-hash-map.linked-hash-map.init': 'ハッシュテーブルを初期化する'
+  'linked-hash-map.linked-hash-map.is-empty': 'マップが空か'
+  'linked-hash-map.linked-hash-map.len': '要素数を返す'
+  'linked-hash-map.linked-hash-map.put': 'key→value を挿入または更新する'
+  'linked-hash-map.linked-hash-map.remove': 'キーを削除する'
+  'log.get-output-fd': '現在の出力先の fd を返す（デバッグ用）'
+  'log.get-writer': '現在の出力先に対応する io.writer を返す'
+  'log.log-emit': 'FMT-FLAGS からログ 1 行を組み立て、io.writer 抽象を通して OUT-FD に書き込む'
+  'log.log-stamp': '現在のタイムスタンプ文字列（UTC, YYYY-MM-DD HH:MM:SS）'
+  'log.open-file': `
+ログファイルを追記モードで開き、出力先にする
+戻り値 ?bool: ok=true は成功、ファイルを開けないときは err
+
+`
+  'log.set-format': '出力フォーマットのビット（F-TIME / F-LEVEL / F-LOC の OR）を設定する'
+  'log.set-level': 'ログレベルを設定する'
+  'log.set-output-fd': '出力先を指定した fd に切り替える（開閉は呼び出し側が行う）'
+  'log.set-writer': `
+出力先を指定した io.writer（io インターフェースの抽象）に切り替える。
+writer が実際に包んでいるのは fd だけであり、std が永続化できるのはスカラーだけなので、その fd を保存する。
+
+`
+  'magic.detect-by-extension': `
+ファイル拡張子から種別を判定する
+ext: 拡張子（小文字）
+不明なら空文字列を返す。それ以外は種別の説明を返す
+
+`
+  'magic.detect-by-magic': `
+マジックバイトから種別を判定する
+path: ファイルパス
+不明なら空文字列を返す。それ以外は種別の説明を返す
+
+`
+  'magic.detect-type': `
+ファイル種別を判定する
+path: ファイルパス
+種別の説明を返す（例: 'PNG image', 'ELF executable', 'ASCII text',
+'directory', 'unknown'）
+
+`
+  'magic.get-extension': `
+ファイル拡張子を返す（小文字）
+path: ファイルパス
+'.' を含まない拡張子を返し、ない場合は空文字列
+
+`
+  'map.hashmap-bool-tmpl.clear': 'マップを空にする（occ の vec を再確保する）'
+  'map.hashmap-bool-tmpl.contains': 'キーが存在するかを返す'
+  'map.hashmap-bool-tmpl.for-each': 'すべての (キー, 値) 組を走査する'
+  'map.hashmap-bool-tmpl.get': 'キーを検索して ?v を返す（nil=見つからない）'
+  'map.hashmap-bool-tmpl.hash': '直接インデックス化する（true → 1, false → 0）'
+  'map.hashmap-bool-tmpl.init': 'マップを初期化する'
+  'map.hashmap-bool-tmpl.is-empty': 'マップが空か'
+  'map.hashmap-bool-tmpl.len': '要素数を返す'
+  'map.hashmap-bool-tmpl.put': 'key→value を挿入または更新する; 挿入されたかを返す（直接インデックス化、rehash なし）'
+  'map.hashmap-bool-tmpl.remove': 'キーを削除する（墓標を立てる; keys/vals は消さない）'
+  'map.hashmap-int-tmpl.clear': 'マップを空にする（occ の vec を再確保する）'
+  'map.hashmap-int-tmpl.contains': 'キーが存在するかを返す'
+  'map.hashmap-int-tmpl.for-each': 'すべての (キー, 値) 組を走査する'
+  'map.hashmap-int-tmpl.get': 'キーを検索して ?v を返す（nil=見つからない）'
+  'map.hashmap-int-tmpl.hash': 'スロットインデックスを計算する（ビットマスク）'
+  'map.hashmap-int-tmpl.init': 'マップを初期化する'
+  'map.hashmap-int-tmpl.is-empty': 'マップが空か'
+  'map.hashmap-int-tmpl.len': '要素数を返す'
+  'map.hashmap-int-tmpl.put': 'key→value を挿入または更新する; 挿入されたかを返す'
+  'map.hashmap-int-tmpl.rehash': 'テーブルを拡張し、occ==1 のすべてのエントリを再ハッシュする'
+  'map.hashmap-int-tmpl.remove': 'キーを削除する（墓標を立てる; keys/vals は消さない）'
+  'map.hashmap-str-tmpl.clear': `
+マップを空にする（occ の vec を再確保する。古い vec はコンパイラの move
+セマンティクスで解放される）
+
+`
+  'map.hashmap-str-tmpl.contains': 'キーが存在するかを返す'
+  'map.hashmap-str-tmpl.for-each': 'すべての (キー, 値) 組を走査する'
+  'map.hashmap-str-tmpl.get': 'キーを検索して ?v を返す（nil=見つからない）'
+  'map.hashmap-str-tmpl.hash': 'FNV-1a 文字列ハッシュ'
+  'map.hashmap-str-tmpl.init': 'マップを初期化する'
+  'map.hashmap-str-tmpl.is-empty': 'マップが空か'
+  'map.hashmap-str-tmpl.len': '要素数を返す'
+  'map.hashmap-str-tmpl.put': 'key→value を挿入または更新する; 挿入されたかを返す'
+  'map.hashmap-str-tmpl.rehash': 'テーブルを拡張し、occ==1 のすべてのエントリを再ハッシュする'
+  'map.hashmap-str-tmpl.remove': 'キーを削除する（墓標を立てる; keys/vals は消さない）'
+  'map.hashmap-str-tmpl.str-eq': '2 つの str が等しいかを比較する'
+  'markdown.blockquote': '引用行の先頭の > 記号を取り除く。'
+  'markdown.code-close': '現在の行が指定したフェンスを閉じるかを返す。'
+  'markdown.escape-html': 'HTML のテキストと属性値をエスケープする。'
+  'markdown.fence': 'フェンス付きコードブロックの目印をパースする。'
+  'markdown.heading': 'ATX 見出しのレベルと見出しテキストを返す。'
+  'markdown.inline': 'インラインの Markdown 記法をレンダリングする。'
+  'markdown.is-word-byte': 'ASCII バイトが単語の一部かを返す。'
+  'markdown.join-paragraph': '段落に行を追加し、強制改行を処理する。'
+  'markdown.list-content': 'タスクリスト項目の内容をレンダリングする。'
+  'markdown.list-item': 'リスト項目をパースする。kind=1 は順序なし、kind=2 は順序付き。'
+  'markdown.prefix-count': '行頭に連続する指定文字の個数を数える。'
+  'markdown.read-line': 'バイトカーソルから 1 行読み込む（[]str への危険な動的添字アクセスを避ける）。'
+  'markdown.render': 'to-html の意味的な別名。'
+  'markdown.render-code': 'コードブロックを出力する。'
+  'markdown.setext-level': 'Setext 見出しのレベル（=== または ---）を返す。'
+  'markdown.table-row': '| で区切られた行を tr としてレンダリングする。'
+  'markdown.table-separator': '行が表の区切り行かを返す。'
+  'markdown.thematic-break': '行が水平線かを返す。'
+  'markdown.to-html': 'Markdown 文書を HTML としてレンダリングする。'
+  'math.arr-zero': `
+[n]num.zero / []num.zero — ストレージを llvm.memset でゼロ埋めする
+固定長配列: 総バイト数 = n * sizeof(num) でコンパイル時定数
+ヒープのスライス: .len() * sizeof(num) を実行時に求めて llvm.memset に渡す
+
+`
+  'math.atan-kernel': `
+atan2: y/x の逆正接（libm 依存を避けた純粋な .no 実装）
+内部の atan-kernel: まず |t| を <= tan(pi/8) に落とし、テイラー級数を使う
+
+`
+  'math.char-to-str': `
+char（Unicode コードポイント）を UTF-8 エンコードした文字列に変換する
+旧来の sprintf %c（1 バイトの ASCII しか扱えなかった）を置き換える
+⚠️ 非推奨: メソッド形式 char.to-str()（std/char.no を参照）を推奨。
+例: c char = 'A'; c.to-str(); この関数は既存の呼び出し箇所のためにのみ残している。
+
+`
+  'math.clamp': `
+═══════════════════════════════════════════════
+整数演算関数（組み込み）
+═══════════════════════════════════════════════
+clamp: 値を [min, max] の範囲に制限する
+
+`
+  'math.div': `
+-7 / 2 == -3（-4 ではない: 床方向のセマンティクスが必要なら自分で符号を判定する）
+⚠️ b == 0 のときは裸の `/` と同じくトラップする（実行時のゼロ除算チェックはない）。
+
+`
+  'math.even': '値が偶数か — すべての整数型（符号なしも含む）で使える'
+  'math.fmod': `
+その他
+fmod: 浮動小数点の剰余
+
+`
+  'math.gcd': '最大公約数（ユークリッドの互除法）'
+  'math.hypot': 'ユークリッドノルム sqrt(x*x + y*y)'
+  'math.lcm': '最小公倍数'
+  'math.max': '最大値を返す（num のすべてのメンバーをカバーする可変長ジェネリック）'
+  'math.min': '最小値を返す（num のすべてのメンバーをカバーする可変長ジェネリック）'
+  'math.mod': `
+-7 % 2 == -1（床方向の剰余セマンティクスが必要なら自分で符号を判定する）
+⚠️ b == 0 のときは裸の `%` と同じくトラップする。
+
+`
+  'math.odd': '値が奇数か — すべての整数型（符号なしも含む）で使える'
+  'math.pow': `
+⚠️ 既知の制限（C の pow との差。いずれも極端な端の場合）:
+1. |y| > 2^63 のとき f64 から i64 への変換がオーバーフローして偶奇判定が誤り、inf の符号が反転することがある。
+その時点で mag はすでに inf/0 なので、影響するのは符号だけ。
+2. x==0.0 かつ y<0 のとき、C の pow は +inf を返すが、この実装は 0.0 を返す（旧来の挙動に従う）。
+
+`
+  'math.pow-int': `
+pow: 整数べき a^n（n >= 0）— すべての整数型で使える
+高速べき乗を使う。O(log n)
+⚠️ math に移していない: 名前が std/math.no の pow（f64 のべき関数）と衝突し、
+1 つのモジュールに pow の定義を 2 つ置けないため。関数形式の API を math に置くという規則の唯一の例外。
+
+`
+  'math.rotate-left': `
+[]num.zero = () {
+    i = 0
+    for i < .len() {
+        .[i] = 0
+        i = i + 1
+    }
+}
+═══════════════════════════════════════════════
+ビット演算（組み込み）
+═══════════════════════════════════════════════
+rotate-left: 整数を n ビット左へローテートする（llvm.fshl 経由で ARM64 の ROR に対応づけられる）
+
+`
+  'math.rotate-right': '整数を n ビット右へローテートする（llvm.fshr 経由で ARM64 の ROR に対応づけられる）'
+  'math.store-le-u32': 'u32 値をバイト配列の指定オフセットにリトルエンディアンで書き込む'
+  'math.swap': '2 つの値を入れ替える'
+  'num.abs': `
+絶対値 — すべての num 型（整数と浮動小数点）で使える
+呼び出し形式: abs(x)（x がレシーバ。num の 0 引数メソッドは現在この形式のみ対応。
+x.abs() のドット形式はネストした num 共用体がレシーバを単態化しないため未対応。num.sign も同じ）；
+負数は overflow=wrap で回り込ませて反転する（i64.MIN の絶対値は i64 の範囲を超える）
+`
+  'num.clamp': `
+[lo, hi] の範囲内に制限する
+使い方: x.clamp(lo, hi, r)
+`
+  'num.sign': '符号（-1, 0, 1）— すべての num 型（整数と浮動小数点）で使える'
+  'number.byte.to-str': 'byte を文字列に変換する（符号なし。u64 に拡張して再利用する）'
+  'number.exp-f64': `
+指数・対数（f64/f32 メソッド）
+exp-f64: 自由関数形式（メソッドレシーバではなく x を引数で受け取る）。
+f64.exp / cbrt / sinh / cosh / f32.exp の背後にある唯一の実装。
+注意: Nolang には現在、名前付きローカル変数へのメソッド呼び出し（例: t.exp()）で外側のレシーバを拾ってしまう
+コード生成バグがあるため、exp への間接呼び出しはすべてこの自由関数を通して回避している。
+
+`
+  'number.f32.to-f64': 'f32 を f64 に拡張する'
+  'number.f32.to-str': `
+f32 を文字列に変換する（メソッド）
+f32.to-f64（#{buildin}）で拡張し、f64.to-str の Nolang 版 %g 実装を再利用する。
+
+`
+  'number.f64.cbrt': `
+立方根（f64 メソッド）
+exp(log(|x|) / 3) として実装する; 本体は pow を呼ばない（整数 pow はこのモジュールに、f64 pow は std/math.no にある）
+
+`
+  'number.f64.ceil': '丸め（f64/f32 メソッド。整数型では丸めが恒等写像なので汎用版は用意しない）'
+  'number.f64.degrees': 'ラジアンから度へ（f64/f32 メソッド）'
+  'number.f64.radians': '度からラジアンへ（f64/f32 メソッド）'
+  'number.f64.sin': '三角関数（ラジアン; f64/f32 メソッド）'
+  'number.f64.sinh': '双曲線関数（f64/f32 メソッド）'
+  'number.f64.sqrt': 'べきと根（f64/f32 メソッド）'
+  'number.f64.tan': '正接（libm の tan。sin/cos と等価）'
+  'number.f64.to-bits': `
+f64 の 64 ビット IEEE-754 ビットパターンを u64 として取り出す（bitcast double->i64）。
+src/builtin/bits.go が ForwardFunc "f64-to-bits" として登録し、ネイティブの LLVM bitcast として実装され libm に依存しない。
+f64.to-str は先にビットパターンを取り、符号/指数/仮数を分解してから最短往復表現を展開する。
+
+`
+  'number.f64.to-f32': 'f64 を f32 に窄める（精度が落ちることがある）'
+  'number.f64.to-i32': '浮動小数点から 32 ビット符号付き整数へ（飽和）'
+  'number.f64.to-i64': '浮動小数点から整数へ（切り捨て）'
+  'number.f64.to-str': `
+f64 を文字列に変換する（Nolang による直接実装。**最短往復**の 10 進表現で、Go の %v と一致）
+double を正確に再現する最小の有効桁数（IEEE-754 のフィールド分解と bigint の厳密演算）を求め、%g の表記選択を保つ:
+E <= -5 または E >= 6 なら指数表記、それ以外は固定小数点。
+特殊値は Go と一致: NaN -> "NaN", +Inf -> "+Inf", -Inf -> "-Inf", ±0 -> "0"。
+バックエンドにネイティブの f64 フォーマッタはない（sprintf の CLibCall は削除された）ため、処理全体をメソッド本体にインライン化している。
+
+`
+  'number.f64.to-str-fixed': `
+固定小数点変換
+precision i64: 小数部の桁数（>= 0。i64 のオーバーフローを避けるため 17 以下にする）
+戻り値 out str: 文字列形式（例: "3.14", "-0.005", "100"）
+
+`
+  'number.f64.to-str-general': `
+汎用形式（固定小数点と指数表記を自動で選ぶ）
+precision i64: 有効桁数の上限（>= 1）
+戻り値 out str: 文字列形式（末尾のゼロは自動で取り除く）
+
+`
+  'number.f64.to-str-sci': `
+指数表記
+precision i64: 小数部の桁数（>= 0）
+戻り値 out str: 文字列形式（例: "3.14e+2", "-5.0e-3"）
+
+`
+  'number.f64.to-u32': '浮動小数点から 32 ビット符号なし整数へ（飽和）'
+  'number.f64.to-u64': '浮動小数点から 64 ビット符号なし整数へ（飽和）'
+  'number.i128.sqrt': '── 128 ビット整数メソッドの写し（i128 / u128）──\n128 ビット演算自体は動く（オペランドは LLVM の i128 レーンを通る）が、2 点を同時に扱う必要がある:\n(1) ローカル変数には明示的な型が必要（`n i128 = .`、`lo i128 = 1` など）。型を書かないとチェッカがリテラルと\n混ざった中間値を i64 と推論し、ループが誤った値に収束するか単にハングする（i128.MAX 上の二分探索で実測）。\n型なしの u128 も i64->u128 の代入エラーになる。\n(2) オーバーフロー注記の配置: i128 は符号付きで INT_MIN/-1 の除算がオーバーフローしうるので、すべての算術文に\n`#{overflow=wrap}` を付ける; u128 は符号なしなので ÷/% はオーバーフローせず、注記は + − とリテラルによる除算だけに\n付ける — 変数同士の ÷/% には付けない（オーバーフロー無効の警告になる）。\n注記は対象文の直前に単独行で置く（`;` 1 行に繋いだガードにすると、128 ビットのコード生成が main 本体全体を落とす）。\nこれにより codegen の isUnsignedRaw が u128 を落としていた問題も直る: u128 の比較と除算は符号付き述語を通っていたため、\nu128.MAX の範囲（>= 2^127）で値の順序が誤っていた; 修正後は u128.sqrt(u128.MAX)=2^64-1 が正確になる。\n'
+  'number.i128.to-f64': '128 ビット符号付き整数から浮動小数点へ'
+  'number.i16.sqrt': 'i16'
+  'number.i16.to-str': 'i16 を文字列に変換する（i64 に拡張して再利用する）'
+  'number.i32.sqrt': 'i32'
+  'number.i32.to-str': 'i32 を文字列に変換する（暗黙に i64 へ拡張し、ネイティブの i64.to-str 経路を再利用する）'
+  'number.i64.is-prime': `
+素数判定 — i64 メソッド
+試し割りで O(√n): まず偶数を飛ばし、次に奇数の約数を試す; ループは d <= n/d で止めるので d*d は
+オーバーフローせず、除数は常に >= 1 なのでトラップもしない（int 共用体レシーバも避けられる。上記参照）
+
+`
+  'number.i64.sqrt': '整数平方根 floor(√n) — i64 メソッド\nn < 0 は整数解を持たないので 0 を返す; 二分探索で O(log n)、mid*mid ではなく n/mid と比較するので\n何もオーバーフローしない（math.no の gcd/even と同じ wrap 注記の規約）。\nint 共用体レシーバ（どの幅でも動く）は使わない: int 別名は std/int.no で定義されており、モジュールをまたぐ\n`int.X` メソッドは prefixMethodNames で `int.int.X` と二重接頭辞化され、単態化された呼び出し側と一致せず\nunknown-callee エラーになるため。\n'
+  'number.i64.to-bytes-be': `
+int64 を 8 バイトのビッグエンディアンに変換する
+使い方:
+v = 0x1234
+out = v.to-bytes-be()   // out = [0x00,0x00,0x00,0x00,0x00,0x00,0x12,0x34]
+
+`
+  'number.i64.to-bytes-le': `
+int64 を 8 バイトのリトルエンディアンに変換する
+使い方:
+v = 0x1234
+out = v.to-bytes-le()   // out = [0x34,0x12,0x00,0x00,0x00,0x00,0x00,0x00]
+
+`
+  'number.i64.to-f64': '整数から浮動小数点へ'
+  'number.i64.to-i32': '整数幅を窄める（下位 32 ビットへ切り捨て）'
+  'number.i64.to-str': `
+i64 を文字列に変換する
+#{buildin}: ネイティブの @str_from_i64 を通る（src/builtin/strconv.go が ForwardFunc "i64-to-str" を登録し、
+codegen がその名前をネイティブのインラインパスに対応づける）。i64 にはネイティブのフォーマッタがあるため、
+Nolang のループを巻き付けない直接の builtin である。
+
+`
+  'number.i8.sqrt': 'i8（符号付き: 負数のガードを保つ）'
+  'number.i8.to-str': 'i8 を文字列に変換する（i64 に拡張して再利用する）'
+  'number.pow': `
+整数べき base^n（n >= 0, i64）— number.pow として呼ぶ（モジュール接頭辞）。
+math.no の f64 pow と同名だが別モジュールなので、ビルドが number. 接頭辞を付ける;
+math.pow-int（int 汎用の高速べき乗）と同義だが、明示的な i64 シグネチャにして
+test/std/number.no の number.pow(2, 10) のようなアサーションが成り立つようにしている。
+
+`
+  'number.u128.to-f64': '128 ビット符号なし整数から浮動小数点へ'
+  'number.u16.sqrt': 'u16'
+  'number.u16.to-str': 'u16 を文字列に変換する（u64 に拡張して再利用する）'
+  'number.u32.sqrt': 'u32'
+  'number.u32.to-str': 'u32 を文字列に変換する（暗黙に u64 へ拡張し、u64.to-str を再利用する）'
+  'number.u64.from-bits': 'f64.to-bits の逆（bitcast i64->double）。ネイティブの LLVM で実装する。'
+  'number.u64.sqrt': 'u64（範囲が i64 を超えるため、同じ幅の独立した実装が必要）'
+  'number.u64.to-f64': '符号なし整数から浮動小数点へ'
+  'number.u64.to-str': `
+u64 を文字列に変換する（Nolang による直接実装: バックエンドにネイティブの u64 フォーマッタがないため、
+旧 math.u64-to-str の 10 進ループをメソッド本体にインライン化し、削除された関数を置き換えた）
+
+`
+  'number.u8.sqrt': 'u8（符号なし: 負数のガードなし）'
+  'number.u8.to-str': 'u8 を文字列に変換する（u64 に拡張して再利用する）'
+  'ords.asc': '[]ord.asc: 昇順にその場でソートする（挿入ソート）'
+  'ords.desc': '[]ord.desc: 降順にその場でソートする（挿入ソート）'
+  'os.arg': `
+// LLVM: main から argc にアクセスする
+}
+arg: i 番目のコマンドライン引数を取得する（範囲外なら nil）
+
+`
+  'os.args': `
+═══════════════════════════════════════════════
+コマンドライン引数
+═══════════════════════════════════════════════
+args: すべてのコマンドライン引数（[]str。プログラム名を含む）
+
+`
+  'os.ch-dir': '作業ディレクトリを変更する'
+  'os.ch-mod': 'ファイルのパーミッションを変更する'
+  'os.chown': 'ファイルの所有者とグループを変更する（uid, gid）'
+  'os.chroot': `
+═══════════════════════════════════════════════
+ルートディレクトリの切り替え
+═══════════════════════════════════════════════
+chroot: ルートディレクトリを変更する（POSIX chroot(2)）
+path: 新しいルートディレクトリのパス
+成功なら true、失敗なら false を返す
+注意: root 権限が必要。呼び出し後は ch-dir('/') で作業ディレクトリを設定する
+
+`
+  'os.flock': `
+ファイルディスクリプタにアドバイザリロックをかけたり解除したりする
+fd: ファイルディスクリプタ
+op: ロック操作（1=LOCK_SH 共有, 2=LOCK_EX 排他, 4=LOCK_UN 解除, 8=LOCK_NB 非ブロッキング）
+成功なら true、失敗なら false を返す
+
+`
+  'os.get-arch': '現在の CPU アーキテクチャを取得する（コンパイル時定数。例: arm64, amd64）'
+  'os.get-domain-name': `
+NIS ドメイン名を取得する
+成功ならドメイン文字列、失敗なら空文字列を返す
+
+`
+  'os.get-env': `
+環境変数を取得する
+戻り値 val ?str: ok=値, nil=未設定
+
+`
+  'os.get-errno': '直近の errno 値を取得する'
+  'os.get-host-id': `
+ホスト識別子を取得する（32 ビット整数）
+戻り値 ホスト ID（非負の整数。エラー時の挙動はプラットフォームにより異なる）
+
+`
+  'os.get-login': `
+═══════════════════════════════════════════════
+ユーザー・システム情報の補助
+═══════════════════════════════════════════════
+get-login: 現在ログインしているユーザーの名前を取得する
+成功ならユーザー名文字列、失敗なら空文字列を返す
+
+`
+  'os.get-pid': 'プロセス ID を取得する'
+  'os.get-priority': `
+プロセスのスケジューリング優先度を取得する
+which: 対象の種類（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
+who: 対象の ID（0 は現在のプロセス/グループ/ユーザー）
+戻り値 prio ?i64: ok=優先度（-20〜19）, nil=読み取れなかった
+注意: libc は慣例的にエラー時に -1 を返して errno を設定するが、優先度が -1 であり得るため、
+errno==0 が両者を区別する。ここでは ?i64 で明示する（nil がエラー）。
+
+`
+  'os.get-wd': '現在の作業ディレクトリを取得する'
+  'os.getegid': '現在の実効グループ ID を取得する'
+  'os.geteuid': '現在の実効ユーザー ID を取得する'
+  'os.getgid': '現在のグループ ID を取得する'
+  'os.getgroups': `
+現在のユーザーが属するグループ ID を取得する
+成功ならグループ ID 配列と件数 n、失敗なら空配列と n=0 を返す
+
+`
+  'os.getuid': '現在のユーザー ID を取得する'
+  'os.host-name': 'ホスト名を取得する'
+  'os.mkdir': 'ディレクトリを作成する'
+  'os.now': `
+═══════════════════════════════════════════════
+時刻
+═══════════════════════════════════════════════
+now: 現在の Unix タイムスタンプ（秒）を取得する
+
+`
+  'os.now-ms': '現在の Unix タイムスタンプ（ミリ秒）を取得する'
+  'os.now-ns': '現在のタイムスタンプ（ナノ秒）を取得する'
+  'os.now-us': '現在の Unix タイムスタンプ（マイクロ秒）を取得する'
+  'os.num-cpu': `
+オンラインの CPU コア数を取得する
+sysconf(_SC_NPROCESSORS_ONLN) と等価; プラットフォームごとの定数はコンパイラが扱う
+
+`
+  'os.set-env': '環境変数を設定する'
+  'os.set-priority': `
+プロセスのスケジューリング優先度を設定する
+which: 対象の種類（0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER）
+who: 対象の ID（0 は現在のプロセス/グループ/ユーザー）
+prio: 優先度の値（-20 が最高、19 が最低）
+成功なら true、失敗なら false を返す
+
+`
+  'os.set-sid': `
+新しいセッションを作成し、制御端末から切り離す
+成功なら新しいプロセスグループ ID（>0）、失敗なら -1 を返す
+
+`
+  'os.signal': `
+シグナルハンドラを設定する（SIG_IGN=1 / SIG_DFL=0 だけを扱う簡易版）
+sig: シグナル番号
+handler: ハンドラ定数（0=SIG_DFL 既定, 1=SIG_IGN 無視）
+戻り値 以前のハンドラ値
+
+`
+  'os.sleep': 'n 秒スリープする'
+  'os.sleep-ns': 'n ナノ秒スリープする'
+  'os.sleep-us': 'n マイクロ秒スリープする'
+  'os.stat-gid': `
+ファイルのグループ gid を取得する
+戻り値 gid ?i64: ok=gid, nil=読み取れなかった
+
+`
+  'os.stat-mode': `
+ファイルモード（パーミッションと種別のビット）を取得する
+戻り値 mode ?i64: ok=モード値, nil=読み取れなかった
+
+`
+  'os.stat-mtime': `
+ファイルの変更時刻（Unix 秒）を取得する
+戻り値 mtime ?i64: ok=変更時刻, nil=読み取れなかった
+
+`
+  'os.stat-uid': `
+ファイルの所有者 uid を取得する
+戻り値 uid ?i64: ok=uid, nil=読み取れなかった
+
+`
+  'os.strerror': `
+POSIX の errno を人間が読めるエラーメッセージに変換する
+libc の @strerror CLibCall を置き換える Nolang のルックアップテーブルとして実装する
+標準的な POSIX errno 値（1〜40）をカバーし、未知の値は "Unknown error: N" を返す
+
+`
+  'os.sysconf': `
+システム構成の上限値を問い合わせる
+name: 構成項目（POSIX の _SC_* 定数。値はプラットフォームごとに異なる）
+_SC_NPROCESSORS_ONLN: macOS=58, Linux=84
+_SC_NPROCESSORS_CONF:  macOS=57, Linux=83
+成功なら値、失敗なら -1 を返す
+
+`
+  'os.sysctl': `
+システム制御パラメータを問い合わせる（文字列値を読む）
+name: パラメータ名（例: 'kern.ostype', 'hw.model'）
+戻り値 val ?str: ok=値の文字列, nil=問い合わせ失敗
+注意: Linux では /proc/sys に対応づけ、macOS/BSD は sysctl(2) システムコールを通る
+
+`
+  'os.syslog': `
+システムログに 1 件書き込む
+priority: ログ優先度（0=EMERG〜7=DEBUG。通常は 6=INFO）
+msg: メッセージ本文
+
+`
+  'os.ttyname': `
+端末名を取得する
+fd: ファイルディスクリプタ
+成功なら端末のパス文字列、失敗なら空文字列を返す
+
+`
+  'os.uname': `
+カーネルとアーキテクチャの情報を取得する
+戻り値 sysname/nodename/release/version/machine の 5 フィールドを持つ utsname 構造体
+
+`
+  'os.win-find-close': 'Windows のディレクトリ検索ハンドルを閉じる'
+  'os.win-find-first-file': `
+// LLVM: argv[idx] にアクセスする
+}
+═══════════════════════════════════════════════
+Windows 専用（組み込み）
+═══════════════════════════════════════════════
+win-find-first-file: Windows のディレクトリ検索（FindFirstFileA）; bufPtr を返す（0=失敗）
+
+`
+  'os.win-find-next-file': 'Windows のディレクトリエントリ名を次々に読む; name ?str を返す（nil=これ以上ない）'
+  'os.win-wsa-startup': 'Winsock 2.2 を初期化する（Windows 専用）; true=成功を返す'
+  'path.base': `
+パスの最後の要素（ファイル名）を取り出す
+戻り値 ファイル名
+
+`
+  'path.change-dir': `
+作業ディレクトリをこのパスに変更する
+戻り値 true=成功, false=失敗
+
+`
+  'path.clean': `
+パスを整理する（. と ..、重複した区切りを取り除く）
+.p をその場で変更する
+
+`
+  'path.current': `
+現在の作業ディレクトリを取得する（コンストラクタ風のメソッド）
+戻り値 新しい path 構造体
+
+`
+  'path.dir': `
+パスのディレクトリ部分を取り出す
+.p をその場で変更し、かつ変更後の .p を返す（base()/ext()/join() と一貫。join の注記を参照）
+
+`
+  'path.exists': 'パスが存在するかを調べる（ファイルでもディレクトリでも該当する）'
+  'path.ext': `
+ファイル拡張子（ドットを含む）を取り出す
+戻り値 拡張子
+
+`
+  'path.is-abs': `
+パスが絶対パスかを返す
+戻り値 true=はい, false=いいえ
+
+`
+  'path.is-dir': 'パスがディレクトリかを調べる'
+  'path.is-file': 'パスがファイルかを調べる'
+  'path.join': `
+⚠️ API の一貫性: join()/dir() はもともとその場で変更するだけで何も返さず、base()/ext() は
+str を返していたため、`x = p.join(...)` が黙って空文字列になっていた。4 つのメソッドはすべて str を
+**返す**ようになった（join/dir は従来どおり .p も更新するので、既存のその場利用も動き続ける）。
+
+`
+  'path.make-dir': `
+ディレクトリを作成する
+戻り値 true=成功, false=失敗
+
+`
+  'path.remove': `
+ファイルを削除する
+戻り値 true=成功, false=失敗
+
+`
+  'path.rename': `
+このパスを new-p に名前変更する
+戻り値 true=成功, false=失敗
+
+`
+  'path.size': 'ファイルサイズを取得する'
+  'path.split': `
+パスをディレクトリとファイル名に分割する
+.p をその場でディレクトリ部分に変更し、ファイル名を返す
+例: path{ p: '/a/b/c.txt' }.split() -> .p='/a/b', f='c.txt'
+（構造体リテラルは複数行に分ける必要がある。上は略記）
+
+`
+  'pem.pem-decode': `
+PEM 形式の文字列をパースする
+pem-str: PEM 文字列
+戻り値 ?pem-block: ok=パース成功, nil=パース失敗
+
+`
+  'pem.pem-encode': `
+生のバイト列を PEM 形式の文字列にエンコードする
+label str: PEM のラベル（例: 'CERTIFICATE' や 'RSA PRIVATE KEY'）
+data []byte: 生のバイナリデータ
+戻り値 out str: PEM 形式の文字列
+
+`
+  'process.close': 'すべてのパイプを閉じ、子プロセスを待つ'
+  'process.close-stderr': '子プロセスの stderr パイプを閉じる'
+  'process.close-stdin': '子プロセスの stdin パイプを閉じる'
+  'process.close-stdout': '子プロセスの stdout パイプを閉じる'
+  'process.cmd-2': `
+機能を備えた子プロセス起動器（実運用品質のクロスプラットフォーム実装）
+Windows 版: Win32 API（CreateProcessA、CreatePipe など）で純粋な Nolang として実装する。
+process.c ランタイムに依存せず、プロセス生成・パイプ管理・出力取得はすべて
+win-create-process、win-create-pipe、win-read-pipe のような ForwardFunc builtin を通る。
+
+`
+  'process.exec': `
+使い方:
+o = process.cmdopts{timeout: 5000}
+res = process.exec('ls', ['-la'], o)
+res.code == 0 -> print(res.stdout)
+res.code != 0 -> print('error code: ' + res.code.to-str())
+
+`
+  'process.exit-code-of': 'exit-code: 終了コードを取得する'
+  'process.find-by-name': `
+名前でプロセスの PID を探す
+name: プロセス名（部分一致、大文字小文字を区別しない）
+戻り値 一致した PID のリスト
+
+`
+  'process.find-match': `
+プロセス名の部分一致・大文字小文字を区別しない照合
+pname: プロセス名, target: 検索語
+戻り値 yes=true=一致
+
+`
+  'process.force-kill': `
+SIG-KILL を送る
+戻り値 ok=true=成功
+
+`
+  'process.is-running': '子プロセスがまだ実行中かを返す'
+  'process.kill': `
+子プロセスにシグナルを送る
+sig: シグナル番号（例: SIG-TERM=15, SIG-KILL=9）
+戻り値 ok=true=成功
+
+`
+  'process.list-all': `
+システム上のすべてのプロセスを列挙する
+Linux: /proc を走査し、各 PID ディレクトリの /proc/<pid>/comm を読んでプロセス名を得る
+macOS/Windows: 現状は空リストを返す（libproc/sysctl や CreateToolhelp32Snapshot の対応が必要）
+戻り値 proc-info のリスト
+
+`
+  'process.new': `
+プロセスインスタンスを生成して返す
+使い方: p = process.new()
+
+`
+  'process.output': `
+コマンドを実行して stdout を取得する（インスタンスメソッド）
+使い方: content, code = process.new().output('ls', '-la')
+戻り値 content=出力, code=終了コード
+
+`
+  'process.parent-pid': '親プロセスの識別子を取得する（静的メソッド）'
+  'process.pid-of': 'pid: 子プロセスの識別子を取得する'
+  'process.process-dup2': 'ファイルディスクリプタを複製する'
+  'process.process-exec': `
+現在のプロセスを置き換える
+execlp(program, program, arg, NULL) を呼ぶ
+失敗したときだけ戻る
+
+`
+  'process.process-exec-shell': `
+sh -c 経由でコマンド文字列を実行する（現在のプロセスを置き換える）
+cmd: コマンド文字列全体
+失敗時は errno だけを返す
+
+`
+  'process.process-fork': `
+現在のプロセスを fork する
+戻り値 0=子, >0=親（子の PID）, -1=エラー
+
+`
+  'process.process-getppid': '親プロセスの識別子を取得する'
+  'process.process-kill': 'プロセスにシグナルを送る'
+  'process.process-pipe': `
+パイプを作成する
+戻り値 パック値 (read_fd << 32) | write_fd
+
+`
+  'process.process-shell': `
+代替:
+out, stderr, code, err = process.cmd('ls', args, '', '', env, 5000, false)  ; 全機能
+pid = process.spawn(cmd)                                        ; 非ブロッキング
+status = process.wait(pid)                                      ; 実際の終了コードを返す
+
+`
+  'process.process-system': 'シェルコマンドを実行する'
+  'process.process-waitpid': `
+子プロセスを待つ
+戻り値 終了コード（WEXITSTATUS）
+
+`
+  'process.process-waitpid-nohang': `
+子プロセスの非ブロッキング待機（WNOHANG）
+子がまだ動作中なら -1、終了後はその終了コード、エラーなら -1 を返す。
+タイムアウトの監視スレッドがポーリングに使う。
+
+`
+  'process.read': `
+子プロセスの stdout からデータを読む
+戻り値 read-n=実際に読んだバイト数
+
+`
+  'process.read-all': `
+子プロセスの stdout 出力をすべて読む
+戻り値 content=読んだデータ, n=読んだバイト数
+
+`
+  'process.read-line': `
+子プロセスの stdout から 1 行読む
+戻り値 line ?str: ok=行, nil=EOF またはエラー
+
+`
+  'process.shell': `
+シェルコマンド文字列を実行し、終了まで待つ（spawn と wait）
+cmd: コマンド文字列全体（sh -c 経由で実行される）
+戻り値 code=終了コード（0=成功, >0=コマンド失敗, 127=exec 失敗, -1=fork 失敗）
+
+`
+  'process.shell-quote': `
+POSIX のシングルクォートによるエスケープ — 任意の文字列を、シェル（sh -c）が安全に再パースできる
+シングルクォートのリテラルで包む。埋め込まれたシングルクォートは 4 文字の並び '\''（閉じクォート、エスケープしたクォート、開きクォート）になる。
+背景: cmd() の一般分岐は組み立てたコマンドラインを process-exec-shell に渡すが、旧実装は引数を空白だけで
+連結していたため引数の境界が失われていた（空白やクォートを含む引数はシェルに再トークン化される）。この関数がその不具合を直す。
+
+`
+  'process.spawn': `
+コマンド文字列を実行する子プロセスを生成する
+cmd: コマンド文字列全体（sh -c 経由で実行される）
+戻り値 pid > 0=親（子の PID）, -1=エラー
+
+`
+  'process.start': `
+子プロセスを生成してコマンドを実行する（引数 1 つの簡易メソッド）
+program: 実行するプログラム
+arg: 渡す引数
+戻り値 ok=true=成功
+
+`
+  'process.start-with-opts': `
+run: 子プロセスを起動する（低レベルのインスタンスメソッド。待機も出力取得もしない）
+program   : 実行するプログラム（PATH から探す）
+args      : 渡す引数リスト
+dir       : 作業ディレクトリ。空なら親から継承
+input     : 子の stdin に書き込む内容。空なら stdin なし
+merge-err : true なら stderr を stdout に統合する
+戻り値 ok=true=成功; 成功時は .pid/.stdout-fd/.stdin-fd/.running を設定する
+
+`
+  'process.terminate': `
+SIG-TERM を送る
+戻り値 ok=true=成功
+
+`
+  'process.wait': `
+子プロセスの終了を待つ
+戻り値 status=終了状態（WEXITSTATUS）
+
+`
+  'process.wait-2': `
+指定した子プロセスの終了を待つ
+pid: 子プロセスの識別子
+戻り値 status=終了状態（WEXITSTATUS）
+
+`
+  'process.wait-nohang': `
+非ブロッキング待機（ポーリング）
+戻り値 status ?i64: ok=子が終了した（その終了状態）, nil=まだ動作中
+
+`
+  'process.win-close-handle': 'Windows のハンドルを閉じる（CloseHandle）'
+  'process.win-create-pipe': `
+匿名パイプを作成する（CreatePipe）
+戻り値 パック値 (read_handle << 32) | write_handle, 0=失敗
+
+`
+  'process.win-create-process': `
+子プロセスを生成する（CreateProcessA）
+cmdline: コマンドライン文字列全体
+dir: 作業ディレクトリ（空なら継承）
+stdin-handle, stdout-handle, stderr-handle: 標準ストリームのハンドル（0 は親から継承）
+戻り値 (proc-handle, status): proc-handle>0=成功, 0=失敗
+
+`
+  'process.win-get-exit-code': `
+プロセスの終了コードを取得する（GetExitCodeProcess）
+戻り値 exit-code ?i64: nil はまだ動作中を意味する
+
+`
+  'process.win-get-std-handle': `
+標準ハンドルを取得する（GetStdHandle）
+which: 0=stdin, 1=stdout, 2=stderr
+
+`
+  'process.win-read-pipe': `
+パイプ/ハンドルからデータを読む（ReadFile）
+戻り値 (data, n): n=読んだバイト数, -1=エラー
+
+`
+  'process.win-terminate-process': 'プロセスを終了させる（TerminateProcess）'
+  'process.win-wait-process': `
+プロセスの終了を待つ（WaitForSingleObject）
+timeout-ms: タイムアウト（ミリ秒。0 は無限に待つ）
+戻り値 0=タイムアウト, 1=終了した, -1=エラー
+
+`
+  'process.win-write-pipe': `
+パイプ/ハンドルにデータを書く（WriteFile）
+戻り値 書いたバイト数, -1=エラー
+
+`
+  'process.write': `
+子プロセスの stdin にデータを書く
+戻り値 written=実際に書いたバイト数
+
+`
+  'queue.queue.clear': 'キューを空にする'
+  'queue.queue.empty': `
+キューが空かを返す
+戻り値 yes bool: true=空, false=空でない
+
+`
+  'queue.queue.full': `
+キューが満杯かを返す
+戻り値 yes bool: true=満杯, false=満杯でない
+
+`
+  'queue.queue.size': `
+キューの要素数を返す
+戻り値 sz i64: 要素数
+
+`
+  'regexp.alloc-class': `
+新しい文字クラスを確保し、そのインデックスを返す
+戻り値 cls-idx i64: クラスのインデックス
+
+`
+  'regexp.clear-class-bit': `
+ビットをクリアする
+cls-idx i64: クラスのインデックス
+c i64: 文字値（0-255）
+
+`
+  'regexp.compile': 'パターン文字列を命令列にコンパイルする'
+  'regexp.emit': `
+命令を 1 つ出力する
+op i64: 命令種別
+arg1 i64: 引数 1
+arg2 i64: 引数 2
+
+`
+  'regexp.emit-atom': `
+アトム命令を出力する
+atom-type i64: アトム種別
+atom-char i64: アトムの文字値
+atom-cls i64: アトムのクラスインデックス
+
+`
+  'regexp.emit-quantized': `
+数量子に従って命令を出力する
+数量子の内部コードを .tmp-quant フィールドから読む（1=*, 2=+, 3=?）
+比較値に 1/2/3 を使い、LLVM の == 42 最適化バグを避ける
+atom-type i64: アトム種別
+atom-char i64: アトムの文字値
+atom-cls i64: アトムのクラスインデックス
+atom-i i64: アトムの後の位置
+
+`
+  'regexp.find': `
+text のうち .pattern に一致する最初の部分文字列を探す
+text str: 照合するテキスト
+戻り値 result str: 一致した部分文字列。なければ空文字列
+
+`
+  'regexp.in-class': `
+文字がクラスに属するかを調べる
+cls-idx i64: クラスのインデックス
+c i64: 文字値（0-255）
+戻り値 yes bool: true=クラスに属する
+
+`
+  'regexp.init-class-all': `
+クラスのビットマップをすべて 1 に初期化する
+cls-idx i64: クラスのインデックス
+
+`
+  'regexp.init-class-zero': `
+クラスのビットマップをすべて 0 に初期化する
+cls-idx i64: クラスのインデックス
+
+`
+  'regexp.make-class-digits': `
+数字クラス \d [0-9] を構築する
+戻り値 cls-idx i64: クラスのインデックス
+
+`
+  'regexp.make-class-nondigits': `
+非数字クラス \D を構築する
+戻り値 cls-idx i64: クラスのインデックス
+
+`
+  'regexp.make-class-nonspace': `
+非空白クラス \S を構築する
+戻り値 cls-idx i64: クラスのインデックス
+
+`
+  'regexp.make-class-nonword': `
+非単語クラス \W を構築する
+戻り値 cls-idx i64: クラスのインデックス
+
+`
+  'regexp.make-class-space': `
+空白クラス \s を構築する
+戻り値 cls-idx i64: クラスのインデックス
+
+`
+  'regexp.make-class-word': `
+単語クラス \w [a-zA-Z0-9_] を構築する
+戻り値 cls-idx i64: クラスのインデックス
+
+`
+  'regexp.match-at': `
+再帰的なバックトラック照合
+pc i64: 命令カウンタ
+sp i64: テキスト位置
+text str: 照合するテキスト
+戻り値 ok bool: true=一致
+副作用: 成功時は .match-end = sp を設定する
+
+`
+  'regexp.matches': `
+text が .pattern にどこかで一致するかを調べる
+text str: 照合するテキスト
+戻り値 matched bool: true=一致
+
+`
+  'regexp.parse-atom': `
+正規表現のアトムを 1 つパースする（命令は出力しない）
+結果を .tmp-atom-type、.tmp-atom-char、.tmp-atom-cls に格納する
+pattern str: パターン文字列
+i i64: 現在の位置
+戻り値 new-i i64: パース後の新しい位置
+
+`
+  'regexp.parse-class': `
+[...] の文字クラスをパースする
+pattern str: パターン文字列
+i i64: 現在の位置（'[' を指す）
+戻り値 new-i i64: 新しい位置（']' の次）
+副作用: 新しい文字クラスを作り、そのインデックスを .tmp-atom-cls に格納する
+
+`
+  'regexp.parse-escape': `
+\x のエスケープシーケンスをパースする
+pattern str: パターン文字列
+i i64: 現在の位置（'\' を指す）
+戻り値 new-i i64: パース後の新しい位置
+副作用: .tmp-atom-type、.tmp-atom-char、.tmp-atom-cls を設定する
+
+`
+  'regexp.regexp-compile': `
+正規表現パターンをコンパイルし、コンパイル済みの regexp インスタンスを返す。
+正規表現リテラル /pattern/ が使う: リテラルはコード生成時にこの関数の呼び出しに展開される。
+pattern str: 正規表現
+戻り値 re regexp: コンパイル済みの正規表現インスタンス
+
+`
+  'regexp.regexp-find': `
+text のうち pattern に一致する最初の部分文字列を探す
+pattern str: 正規表現
+text str: 照合するテキスト
+戻り値 result str: 一致した部分文字列。なければ空文字列
+
+`
+  'regexp.regexp-match': `
+text が pattern にどこかで一致するかを調べる
+pattern str: 正規表現
+text str: 照合するテキスト
+戻り値 matched bool: true=一致
+
+`
+  'regexp.set-class-bit': `
+ビットをセットする
+cls-idx i64: クラスのインデックス
+c i64: 文字値（0-255）
+
+`
+  'regexp.set-class-escape': `
+文字クラス内のエスケープシーケンスを処理する
+cls-idx i64: クラスのインデックス
+c i64: エスケープされた文字（例: 'd', 'w', 's'）
+
+`
+  'set.add': `
+集合に要素を追加する（なければ）
+val t: 追加する要素
+戻り値 new-size i64: 新しいサイズ
+
+`
+  'set.contains': `
+要素が集合に含まれるかを返す
+val t: 探す要素
+戻り値 yes bool: true=含まれる, false=含まれない
+
+`
+  'set.difference': `
+差集合（この集合にあり、other にない要素）を計算する
+結果は呼び出し側が用意した out バッファに書き込まれ、要素数を返す
+other []t: 相手集合の要素バッファ
+osize i64: 相手集合の要素数
+out []t: 差集合を入れるバッファ
+戻り値 cnt i64: 差集合の要素数
+
+`
+  'set.init': `
+ファクトリ — 呼び出し側が用意した要素バッファ上に空の集合を構築する
+data []t: 要素バッファ（長さが容量の上限になる）
+戻り値 s set: 初期化された集合インスタンス
+
+`
+  'set.intersection': `
+積集合（この集合と other の両方にある要素）を計算する
+結果は呼び出し側が用意した out バッファに書き込まれ、要素数を返す
+other []t: 相手集合の要素バッファ
+osize i64: 相手集合の要素数
+out []t: 積集合を入れるバッファ
+戻り値 cnt i64: 積集合の要素数
+
+`
+  'set.is-empty': '集合が空かを返す'
+  'set.remove': `
+集合から要素を削除する
+空いた位置は最後の要素で埋める（順序は保たれない）
+val t: 削除する要素
+戻り値 new-size i64: 新しいサイズ
+
+`
+  'set.size': '集合のサイズを返す'
+  'set.to-vec': `
+集合をスライスに変換する（順序なし）
+戻り値 out []t: 要素のスライス（長さ = サイズ）
+
+`
+  'set.union': `
+和集合（other のバッファのうちこの集合にない要素を追加する）を計算する
+other []t: 相手集合の要素バッファ
+osize i64: 相手集合の要素数
+戻り値 new-size i64: 和集合後のサイズ
+
+`
+  'stack.stack.clear': 'スタックを空にする'
+  'stack.stack.empty': `
+スタックが空かを返す
+戻り値 true=空, false=空でない
+
+`
+  'stack.stack.peek': `
+先頭要素を取り出さずに参照する
+戻り値 val ?i64: ok=先頭の値, nil=スタックが空
+
+`
+  'stack.stack.pop': `
+スタック先頭の要素を取り出す
+戻り値 val ?i64: ok=取り出した値, nil=スタックが空
+
+`
+  'stack.stack.push': 'スタック先頭に要素を積む'
+  'stack.stack.size': 'スタックのサイズを返す'
+  'static-hashmap.static-hashmap-bool-tmpl.clear': 'マップを空にする'
+  'static-hashmap.static-hashmap-bool-tmpl.contains': 'キーが存在するかを返す'
+  'static-hashmap.static-hashmap-bool-tmpl.for-each': 'すべての (キー, 値) 組を走査する'
+  'static-hashmap.static-hashmap-bool-tmpl.get': 'キーを検索して ?v を返す（nil=見つからない）'
+  'static-hashmap.static-hashmap-bool-tmpl.hash': '直接インデックス化する（true → 1, false → 0）'
+  'static-hashmap.static-hashmap-bool-tmpl.init': 'マップを初期化する'
+  'static-hashmap.static-hashmap-bool-tmpl.is-empty': 'マップが空か'
+  'static-hashmap.static-hashmap-bool-tmpl.len': '要素数を返す'
+  'static-hashmap.static-hashmap-bool-tmpl.put': 'key→value を挿入または更新する; 挿入されたかを返す'
+  'static-hashmap.static-hashmap-bool-tmpl.remove': 'キーを削除する（墓標を立てる）'
+  'static-hashmap.static-hashmap-int-tmpl.clear': 'マップを空にする'
+  'static-hashmap.static-hashmap-int-tmpl.contains': 'キーが存在するかを返す'
+  'static-hashmap.static-hashmap-int-tmpl.for-each': 'すべての (キー, 値) 組を走査する'
+  'static-hashmap.static-hashmap-int-tmpl.get': 'キーを検索して ?v を返す（nil=見つからない）'
+  'static-hashmap.static-hashmap-int-tmpl.hash': 'スロットインデックスを計算する（ビットマスク）'
+  'static-hashmap.static-hashmap-int-tmpl.init': 'マップを初期化する'
+  'static-hashmap.static-hashmap-int-tmpl.is-empty': 'マップが空か'
+  'static-hashmap.static-hashmap-int-tmpl.len': '要素数を返す'
+  'static-hashmap.static-hashmap-int-tmpl.put': 'key→value を挿入または更新する; 挿入されたかを返す'
+  'static-hashmap.static-hashmap-int-tmpl.remove': 'キーを削除する（墓標を立てる）'
+  'static-hashmap.static-hashmap-str-tmpl.clear': 'マップを空にする'
+  'static-hashmap.static-hashmap-str-tmpl.contains': 'キーが存在するかを返す'
+  'static-hashmap.static-hashmap-str-tmpl.for-each': 'すべての (キー, 値) 組を走査する'
+  'static-hashmap.static-hashmap-str-tmpl.get': 'キーを検索して ?v を返す（nil=見つからない）'
+  'static-hashmap.static-hashmap-str-tmpl.hash': 'FNV-1a 文字列ハッシュ'
+  'static-hashmap.static-hashmap-str-tmpl.init': 'マップを初期化する'
+  'static-hashmap.static-hashmap-str-tmpl.is-empty': 'マップが空か'
+  'static-hashmap.static-hashmap-str-tmpl.len': '要素数を返す'
+  'static-hashmap.static-hashmap-str-tmpl.put': 'key→value を挿入または更新する; 挿入されたかを返す'
+  'static-hashmap.static-hashmap-str-tmpl.remove': 'キーを削除する（墓標を立てる）'
+  'static-hashmap.static-hashmap-str-tmpl.str-eq': '2 つの str が等しいかを比較する'
+  'str-map.str-map.clear': 'マップを空にする'
+  'str-map.str-map.contains': 'キーが存在するかを返す'
+  'str-map.str-map.for-each': 'すべての (キー, 値) 組を走査する'
+  'str-map.str-map.get': 'キーを検索して ?str を返す（nil=見つからない）'
+  'str-map.str-map.hash': 'FNV-1a 文字列ハッシュ'
+  'str-map.str-map.init': 'マップを初期化する'
+  'str-map.str-map.is-empty': 'マップが空か'
+  'str-map.str-map.len': '要素数を返す'
+  'str-map.str-map.put': 'key→value を挿入または更新する; 挿入されたかを返す'
+  'str-map.str-map.remove': 'キーを削除する'
+  'str-map.str-map.str-eq': '2 つの str が等しいかを比較する'
+  'str-map.str-map.to-str': '文字列表現\n`{name: Alice, age: 18}` のように整形される\n'
+  'str-set.str-set.add': '要素を追加する; 挿入されたかを返す'
+  'str-set.str-set.clear': '集合を空にする'
+  'str-set.str-set.contains': '要素が存在するかを返す'
+  'str-set.str-set.for-each': 'すべての要素を走査する'
+  'str-set.str-set.hash': 'FNV-1a 文字列ハッシュ'
+  'str-set.str-set.init': '集合を初期化する'
+  'str-set.str-set.is-empty': '集合が空か'
+  'str-set.str-set.len': '要素数を返す'
+  'str-set.str-set.remove': '要素を削除する'
+  'str-set.str-set.str-eq': '2 つの str が等しいかを比較する'
+  'str._str-dig-val': '1 文字の数字（0-15）をその値に変換する; 無効な文字は -1 を返す'
+  'str.at': `
+[非推奨] str.at: 文字（コードポイント）単位の添字読み込み — 代わりに s[idx] を使う（ネイティブの添字アクセスで ?char を返す）
+str.at: 安全な添字アクセス（文字インデックス単位。バイトオフセットが必要なら s.byte(i) を使う）
+i i64: 文字（コードポイント）のインデックス
+戻り値 val ?byte: その文字のコードポイント値（バイト範囲を超えるときは切り詰め）; 範囲外なら nil
+
+`
+  'str.bigint-bitlen': '正の bigint のビット長を返す（floor(log2)+1）'
+  'str.byte': `
+BYTE オフセット i の生のバイト値を返す（生のバイト読み込み）
+s[i] との違い: s[i] はコードポイント単位で添字アクセスするが、このメソッドは下位の UTF-8 バッファへのバイトオフセットを取る。
+戻り値 ?byte: 範囲外なら nil（i < 0 または i >= len-bytes()）。arr[i] の安全な添字アクセスのセマンティクスに合わせる;
+呼び出し側は option を処理する必要がある（match / ?= / #{index-out = DEF}）。
+コンパイラが builtin として扱う（#{buildin}）: codegen が捕捉して境界チェックと GEP+load を展開するので std の関数本体はない。
+シグネチャは src/builtin/str.go の BuiltinMethodList にも登録されており（MethodName "byte", Intercepted）、
+裸の名前によるフォールバックが str と txt の両方をカバーする。
+
+`
+  'str.byte-index': `
+コードポイント（文字）インデックスをバイトオフセットに変換する
+cp-pos 番目のコードポイントが始まるバイト位置を返す; cp-pos が末尾を超えるときは .len を返す
+
+`
+  'str.compare': `
+2 つの文字列を辞書順に比較する
+戻り値 -1 (a<b), 0 (等しい), 1 (a>b)
+
+`
+  'str.contains': `
+s が部分文字列 target を含むかを返す
+戻り値 true=含む, false=含まない
+
+`
+  'str.copy': `
+src を dst にコピーする（文字列全体）
+⚠️ 非推奨: 代入 `dst = src` にすでにコピーのセマンティクスがある — 後で src を再び読むと、所有権解析が代入を
+ディープコピー（OpClone）に書き換えるので、手動コピーは不要。互換性のためだけに残している。
+
+`
+  'str.count': `
+文字列内の char（コードポイント）を数える
+.len がすでにバイト数を返すので、count はコードポイント数を提供する
+
+`
+  'str.cp-index': `
+バイトオフセットをコードポイント（文字）インデックスに変換する
+s[0..byte-pos) 内のコードポイント数を返す
+
+`
+  'str.decode-cp': `
+位置 i から 1 つの UTF-8 コードポイントをデコードする
+戻り値 cp=コードポイント値, clen=そのバイト列の長さ（1-4）
+
+`
+  'str.empty': `
+文字列が空かを返す
+戻り値 true=空, false=空でない
+
+`
+  'str.ends-with': `
+s が target で終わるかを返す
+戻り値 true=はい, false=いいえ
+
+`
+  'str.eq-full': `
+2 つの文字列が完全に等しいかを比較する
+b str: もう一方の文字列
+戻り値 yes bool: true=等しい, false=異なる
+
+`
+  'str.eq-raw': `
+str.eq: 2 つの文字列の先頭 n バイトを比較する
+戻り値 true=等しい, false=異なる
+
+`
+  'str.fields': `
+1 つ以上連続する空白文字で文字列を分割する
+空白文字: 空白（32）、タブ（9）、改行（10）、復帰（13）
+戻り値 out []str: 空でない部分文字列
+連続する空白は 1 つの区切りとして扱い、先頭や末尾の空白は空要素を生まない
+
+`
+  'str.fill': '文字列全体を 1 つのバイト値で埋める'
+  'str.find-byte-from': `
+str.index: s から部分文字列 target を探す
+Sunday アルゴリズムを使う。平均 O(n/m)、最悪 O(n*m)
+最初に見つかった位置を返し、なければ -1
+str.find-byte-from: 内部のバイト単位の探索（Sunday アルゴリズム）
+target が最初に現れる BYTE オフセットを返し、なければ -1
+from-byte は開始バイト位置; split のようにバイト単位で切り出す内部処理で使う
+
+`
+  'str.from-hex': `
+16 進文字列を []byte にデコードする
+戻り値 Option:
+ok(bytes) - 成功
+nil        - 空文字列
+err('msg') - 無効な 16 進文字を含む
+
+`
+  'str.index': `
+s から部分文字列 target を探す
+Sunday アルゴリズムを使う。平均 O(n/m)、最悪 O(n*m)
+最初に見つかった位置を CODE POINT（文字）単位で返す（s[i] のコードポイント添字と一致）; なければ -1
+
+`
+  'str.index-from': `
+from（コードポイント位置）から s 内の部分文字列 target を探す
+最初に見つかった位置を CODE POINT（文字）単位で返し、なければ -1
+
+`
+  'str.last-index': `
+部分文字列の最後の出現を逆方向に探す（last-index は rindex の別名）
+target str: 探す部分文字列
+戻り値 pos i64: 見つかったコードポイント（文字）位置、または -1
+
+`
+  'str.len': `
+文字列の CHARACTER（コードポイント）数を返す
+s[i] のコードポイント添字と一致; バイト数が必要なら s.len-bytes() を使う
+
+`
+  'str.lines': `
+改行で分割する
+\n と \r\n に対応
+戻り値 out []str: 行のリスト（末尾の改行は空行を生まない）
+
+`
+  'str.new': `
+str.new: char スライスから str を構築する（モジュールレベルのコンストラクタ）
+コンパイル時の builtin（ForwardFunc: chars-new）: []char をバイト単位で bytes に変換し、長さを一度に設定するので
+バイトごとの .no ループはない。str はバイトと長さをユーザーコードから操作できない builtin 型のため、
+変換全体をコンパイラが IR として出力する。
+
+`
+  'str.repeat': `
+文字列を times 回繰り返す
+戻り値 新しい文字列
+
+`
+  'str.replace-char': `
+s 内のすべての old-ch を new-ch に置き換える（UTF-8 コードポイント）
+戻り値 結果の文字列
+
+`
+  'str.replace-n': `
+回数を制限した置換
+old str: 古い部分文字列
+new str: 新しい部分文字列
+n i64: 置換の最大回数; n <= 0 は何も置換しない
+戻り値 val str: 結果の文字列
+
+`
+  'str.replace-str': `
+s 内の部分文字列 old のすべての出現を new に置き換える
+old str: 置換する部分文字列
+new str: 置換後
+戻り値 val str: 結果の文字列
+old が空文字列のときは元の文字列のコピーをそのまま返す
+
+`
+  'str.reverse': `
+文字列を反転する
+反転した s を val に書き込む
+
+`
+  'str.rfind-byte-from': `
+内部のバイト単位の逆方向探索
+target の最後の出現の BYTE オフセット（>= from-byte）を返し、なければ -1
+
+`
+  'str.rindex': `
+部分文字列の最後の出現を逆方向に探す
+target str: 探す部分文字列
+戻り値 pos i64: 見つかったコードポイント（文字）位置、または -1
+
+`
+  'str.rindex-from': `
+from（コードポイント位置）から部分文字列を逆方向に探す
+Python の rfind(target, from) と同じセマンティクス: [from, .len) の中で target の最後の出現を探す
+target str: 探す部分文字列
+from i64: 開始位置（含む下限。コードポイント単位）
+戻り値 pos i64: 見つかったコードポイント（文字）位置、または -1
+
+`
+  'str.set-byte': '戻り値 ?bool（失敗しうる）: 範囲外（i < 0 または i >= 物理容量 cap）なら nil で、書き込みは SKIP される; 成功なら some(true)。境界は len ではなく %str-long の cap（物理容量）なので、「バッファを埋めてから len を設定する」構築もそのまま動く。呼び出し側は ?bool を裸の文として捨ててよい（optunuse は束縛名だけを追跡する）。'
+  'str.slice': `
+部分文字列 [start, end) を取る。添字は CHARACTER（コードポイント）位置
+s[i] のコードポイント添字と一致; バイトオフセットで切り出すなら s.slice-bytes() を使う
+
+`
+  'str.slice-bytes': `
+部分文字列 [start, end) を BYTE オフセットで取る（内部のバイト単位処理で使う）
+s.byte(i) のセマンティクスと一致; std の split/replace などがバイト単位で切り出すときに内部的に使う
+
+`
+  'str.split': `
+区切り文字で文字列を部分文字列に分割する
+sep str: 区切り文字
+戻り値 out []str: 分割後の部分文字列
+空の区切り文字は文字列全体を 1 要素として返す
+注意: ローカルの結果スライスを作って out に代入する。出力パラメータへの out.push が効かないコンパイラの不具合を回避するため
+
+`
+  'str.split-n': `
+回数を制限した分割
+sep str: 区切り文字
+maxsplit i64: 分割の最大回数（maxsplit+1 個の要素になる）; maxsplit <= 0 は無制限
+戻り値 out []str: 結果
+
+`
+  'str.starts-with': `
+s が target で始まるかを返す
+戻り値 true=はい, false=いいえ
+
+`
+  'str.str-hex-val': `
+1 文字の 16 進文字をその値に変換する
+無効な文字は -1 を返す（以前は hex-val という名前で uuid.hex-val と衝突し、モジュールをまたぐときに
+修飾が必要だったため、txt-hex-val の慣習に合わせてモジュール接頭辞を付けるようになった）
+
+`
+  'str.to-bigint': `
+文字列を bigint にパースする。基数は自動判定
+接頭辞 0b/0B -> 2 進, 0o/0O -> 8 進, 0x/0X -> 16 進; 接頭辞なし -> 10 進
+先頭の空白と符号（+ / -）を任意で受け付ける
+戻り値 ?bigint: 成功なら ok(bigint) / 空文字列なら nil / 数字がなければ err('msg')
+
+`
+  'str.to-bool': `
+文字列 "true" / "false" を bool にパースする
+大文字小文字を区別する; 空文字列 -> nil、それ以外 -> err
+関数呼び出しをまたぐ strcmp のメモリ問題を避けるため、バイト単位の比較を使う
+
+`
+  'str.to-byte': `
+文字列を byte（u8 相当）にパースする
+戻り値 Option:
+ok(n) - 成功（0 .. 255）
+nil    - 空文字列
+err('msg') - 数字以外の文字、マイナス符号、または範囲外
+
+`
+  'str.to-bytes': '文字列をバイト配列に変換する'
+  'str.to-f32': `
+文字列を f32 にパースする
+戻り値 Option:
+ok(f) - 成功
+nil    - 空文字列
+err('msg') - 数字以外の文字を含む
+str-to-f64 の Nolang 実装と f64-to-f32 を使う（strtod の CLibCall 依存はなくなった）
+
+`
+  'str.to-f64': `
+文字列を f64 にパースする
+戻り値 Option:
+ok(f) - 成功
+nil    - 空文字列
+err('msg') - 数字以外の文字を含む
+str-to-f64 の Nolang 実装でパースする（strtod の CLibCall 依存はなくなった）
+
+`
+  'str.to-hex': `
+文字列を 16 進にエンコードする
+各バイトが 2 文字の小文字 16 進になる
+戻り値 out str: 16 進文字列
+
+`
+  'str.to-i16': `
+文字列を i16 にパースする
+戻り値 Option:
+ok(n) - 成功（-32768 .. 32767）
+nil    - 空文字列
+err('msg') - 数字以外の文字、単独の +/- 、または範囲外
+
+`
+  'str.to-i32': `
+文字列を i32 にパースする
+戻り値 Option:
+ok(n) - 成功（-2147483648 .. 2147483647）
+nil    - 空文字列
+err('msg') - 数字以外の文字、単独の +/- 、または範囲外
+
+`
+  'str.to-i64': `
+文字列を 64 ビット符号付き整数にパースする
+戻り値 Option:
+ok(n) - 成功
+nil    - 空文字列
+err('msg') - 数字以外の文字、単独の +/- 、または形式が不正
+
+`
+  'str.to-i8': `
+文字列を i8 にパースする
+戻り値 Option:
+ok(n) - 成功（-128 .. 127）
+nil    - 空文字列
+err('msg') - 数字以外の文字、単独の +/- 、または範囲外
+
+`
+  'str.to-lower': `
+文字列を小文字に変換する
+戻り値 新しい文字列
+
+`
+  'str.to-str': `
+ジェネリックな []t.to-str / [n]t.to-str テンプレートは各要素に `.[i].to-str()` を呼ぶ; 要素型が str のときここに来る。
+std には以前この名前のメソッドがなかったため、`['a','b'].to-str()` はビルド時に `unknown callee str.to-str`
+（_xstr.to-str の転送スタブから生成される）で失敗していた。
+str は不変なので自身を返せば十分（値セマンティクス: 下位バッファは共有され、コピーされない）。
+
+`
+  'str.to-txt': `
+str を txt に変換する（最大 255 バイト）
+戻り値 out ?txt: ok(txt) / nil（255 バイトより長く、txt に収まらない。もう黙って切り詰めない）
+
+`
+  'str.to-u16': `
+文字列を u16 にパースする
+戻り値 Option:
+ok(n) - 成功（0 .. 65535）
+nil    - 空文字列
+err('msg') - 数字以外の文字、単独の +/- 、または範囲外
+
+`
+  'str.to-u32': `
+文字列を u32 にパースする
+戻り値 Option:
+ok(n) - 成功（0 .. 4294967295）
+nil    - 空文字列
+err('msg') - 数字以外の文字、単独の +/- 、または範囲外
+
+`
+  'str.to-u64': `
+文字列を u64 にパースする
+マイナス符号は拒否する; i64 範囲のオーバーフローは検査しない（LLVM が自動で切り詰める）
+
+`
+  'str.to-u8': `
+文字列を u8 にパースする
+戻り値 Option:
+ok(n) - 成功（0 .. 255）
+nil    - 空文字列
+err('msg') - 数字以外の文字、単独の +/- 、または範囲外
+
+`
+  'str.to-upper': `
+文字列を大文字に変換する
+戻り値 新しい文字列
+
+`
+  'str.trim': `
+文字列の先頭と末尾の空白を取り除く
+戻り値 新しい文字列
+
+`
+  'str.trim-char': '指定した文字（UTF-8 コードポイント）を文字列の両端から取り除く'
+  'str.with-cap': `
+指定した容量の新しい文字列を作る（len=0）
+s = ''.with-cap(256)  -> 256 バイトを先に確保した空文字列
+グローバルの with-cap(cap) と等価な簡易メソッド
+
+`
+  'str.with-len': `
+指定した長さの文字列を作る
+s = ''.with-len(10)  -> 長さ 10 の文字列
+グローバルの with-len(len) と等価な簡易メソッド
+
+`
+  'str.with-len-cap': `
+指定した長さと容量の文字列を作る
+s = ''.with-len-cap(10, 256)  -> 長さ 10、容量 256 の文字列
+グローバルの with-cap-len(cap, len) と等価な簡易メソッド
+
+`
+  'strs.join': `
+[]str.join: 文字列スライスのすべての要素を区切り文字で連結する
+sep str: 区切り文字
+戻り値 out str: 連結した文字列
+
+`
+  'time.add-seconds': '秒を加えて新しい time を返す'
+  'time.date': 'date 構造体に変換する（UTC。nsec は無視）'
+  'time.date-to-unix': `
+date 構造体（UTC）を Unix タイムスタンプ（秒）に変換する
+days-from-civil アルゴリズム（Howard Hinnant）を使う
+
+`
+  'time.days-in-month-fn': '_days-in-month: 指定した年と月の日数を取得する'
+  'time.duration-between': '2 つのタイムスタンプの差を計算する（秒）'
+  'time.duration-ms-between': '2 つのタイムスタンプの差を計算する（ミリ秒）'
+  'time.duration-time': '2 つの time 値の差を計算する（秒）'
+  'time.duration-us-between': '2 つのタイムスタンプの差を計算する（マイクロ秒）'
+  'time.format': '\'YYYY-MM-DD HH:MM:SS\' として整形する（UTC。nsec は無視）'
+  'time.format-date': `
+date 構造体を文字列に整形する
+形式: YYYY-MM-DD HH:MM:SS（負の年には '-' を前置する）
+
+`
+  'time.format-duration': `
+秒数を人間が読める文字列に整形する
+例: 3661 -> '1h1m1s'
+
+`
+  'time.format-time-str': `
+Unix タイムスタンプを可読な文字列に整形する
+形式: YYYY-MM-DD HH:MM:SS (UTC)
+
+`
+  'time.is-leap': 'ある年がうるう年かを調べる'
+  'time.now-date': '現在の日時構造体を取得する（UTC）'
+  'time.now-ms': '現在の Unix タイムスタンプ（ミリ秒）'
+  'time.now-ns': '現在のタイムスタンプ（ナノ秒）'
+  'time.now-s': `
+現在の Unix タイムスタンプ（秒）
+builtin の now() を包む
+
+`
+  'time.now-time': `
+現在の時刻（UTC）
+builtin の now-ns()（CLOCK_REALTIME のナノ秒）から sec と nsec を分ける
+
+`
+  'time.now-us': '現在の Unix タイムスタンプ（マイクロ秒）'
+  'time.parse-date': `
+日付文字列を Unix タイムスタンプにパースする
+受け付ける形式: YYYY-MM-DD HH:MM:SS または YYYY-MM-DD
+戻り値 ?i64: ok=タイムスタンプ, nil=パース失敗
+
+`
+  'time.parse-time': `
+日付文字列を time にパースする
+parse-date と同じ形式を受け付ける: YYYY-MM-DD HH:MM:SS または YYYY-MM-DD
+戻り値 ?time: ok=time, nil=パース失敗
+
+`
+  'time.since-ms': 'start から現在までの経過ミリ秒'
+  'time.since-s': 'start から現在までの経過秒'
+  'time.since-time': 'start から現在までの経過秒'
+  'time.since-us': 'start から現在までの経過マイクロ秒'
+  'time.sleep-ms': `
+指定したミリ秒スリープする
+対応する builtin がないため sleep-us(ms * 1000) として実装している
+
+`
+  'time.sleep-ns': '指定したナノ秒スリープする'
+  'time.sleep-s': `
+指定した秒数スリープする
+builtin の sleep() を包む
+
+`
+  'time.sleep-us': '指定したマイクロ秒スリープする'
+  'time.sub': '別の time との差（秒, . - other）'
+  'time.timer.elapsed-ms': '経過ミリ秒'
+  'time.timer.elapsed-s': '経過秒'
+  'time.timer.elapsed-us': '経過マイクロ秒'
+  'time.timer.start': 'タイマーを開始する'
+  'time.timer.stop': 'タイマーを停止する'
+  'time.unix': 'Unix タイムスタンプを秒で取得する'
+  'time.unix-ms': 'Unix タイムスタンプをミリ秒で取得する'
+  'time.unix-to-date': `
+Unix タイムスタンプ（秒）を date 構造体（UTC）に変換する
+古典的な civil-from-days アルゴリズム（Howard Hinnant）を使う
+
+`
+  'time.unix-to-time': 'Unix タイムスタンプ（秒）から time を構築する（nsec=0）'
+  'toml.get': `
+生の TOML リテラルを返す
+配列や日付/時刻など、変換されていない値はここから取得できる。
+
+`
+  'toml.get-bool': 'true/false の値を返す'
+  'toml.get-f64': '浮動小数点を返す（指数表記に対応）'
+  'toml.get-i64': '10 進整数を返す（TOML のアンダースコア区切りも可）'
+  'toml.get-str': '文字列値をデコードして返す'
+  'toml.has': 'キーが存在するかを返す'
+  'toml.new': '空の TOML 文書を生成する'
+  'toml.parse': 'TOML 文書をパースする; 失敗時は err(message) を返す'
+  'toml.stringify': `
+文書を TOML 1.0 の構文でシリアライズする; テーブルの配列は [[table]]
+ヘッダとして復元される。
+
+`
+  'toml.toml-array-name': 'テーブルの配列の名前を読む。'
+  'toml.toml-doc.put': `
+生の TOML リテラルを設定する。
+value は配列や日付/時刻などの TOML 構文でよい; モジュールは前後に引用符を付けない。
+
+`
+  'toml.toml-entry-key': '正規化されたキーを読む。'
+  'toml.toml-entry-key-eq': 'エントリのキーを文字列と比較する。'
+  'toml.toml-entry-value': '生の TOML 値を読む。'
+  'toml.toml-find-eq': '引用符の外にある最初の等号を探す'
+  'toml.toml-make-entry': 'キー/値を固定長バッファにコピーする。'
+  'toml.toml-next-array-table': 'テーブルの配列の次のインデックスを返して登録する。'
+  'toml.toml-normalize-key': '裸・引用符付き・ドット区切りのキーをパースし、正規化したドット区切りキーを出力する。'
+  'toml.toml-parse-bool': '真偽値をパースする'
+  'toml.toml-parse-f64': '浮動小数点をパースする'
+  'toml.toml-parse-i64': '10 進・16 進・8 進・2 進のリテラルと、アンダースコア区切りに対応する。'
+  'toml.toml-register-table': '定義済みのテーブルを記録する; 二重定義なら false を返す。'
+  'toml.toml-resolve-section': 'テーブルの配列のサブテーブルを最新の要素に解決する。'
+  'toml.toml-strip-comment': '文字列の外にある # コメントを取り除いてトリムする; 複数行文字列にも対応する。'
+  'toml.toml-table-eq': '固定長バッファに保持したテーブル名を比較する。'
+  'toml.toml-table-name': 'テーブル名を読む。'
+  'toml.toml-unquote': 'TOML の基本文字列またはリテラル文字列をデコードする'
+  'toml.toml-valid-value': 'TOML 1.0 のスカラー、配列、インラインテーブル、日付/時刻リテラルを受け付ける。'
+  'toml.toml-value-complete': `
+値が閉じているかを返す; 複数行の配列、インラインテーブル、複数行
+文字列で使う。
+
+`
+  'tree-map.tree-map.alloc-node': `
+空きプールからノードを確保する
+戻り値 idx i64: ノードのインデックス、プールが満杯なら -1
+
+`
+  'tree-map.tree-map.bf': `
+平衡係数（左の高さ - 右の高さ）を返す
+idx i64: ノードのインデックス
+戻り値 b i64: 平衡係数
+
+`
+  'tree-map.tree-map.clear': 'すべての要素を削除し、空きプールを再構築する'
+  'tree-map.tree-map.contains': `
+キーが存在するかを返す
+key i64: キー
+戻り値 yes bool: true=存在する, false=存在しない
+
+`
+  'tree-map.tree-map.empty': `
+木が空かを返す
+戻り値 yes bool: true=空, false=空でない
+
+`
+  'tree-map.tree-map.first': `
+最小のキーを返す
+戻り値 key ?i64: ok=最小のキー, nil=木が空
+
+`
+  'tree-map.tree-map.for-each': `
+キーの昇順にすべてのキー/値の組を走査する
+k i64: 出力キー（要素ごとに更新）
+v i64: 出力値（要素ごとに更新）
+
+`
+  'tree-map.tree-map.free-node': `
+ノードを空きプールに戻す
+idx i64: 解放するノードのインデックス
+
+`
+  'tree-map.tree-map.full': `
+ノードプールが満杯かを返す
+戻り値 yes bool: true=満杯, false=満杯でない
+
+`
+  'tree-map.tree-map.get': `
+キーの値を検索する
+key i64: キー
+戻り値 val ?i64: ok=見つかった, nil=見つからない
+
+`
+  'tree-map.tree-map.ht': `
+ノードの高さを返す（NIL = 0）
+idx i64: ノードのインデックス
+戻り値 h i64: 高さ
+
+`
+  'tree-map.tree-map.init': '空の木とその空きノードプールを初期化する'
+  'tree-map.tree-map.last': `
+最大のキーを返す
+戻り値 key ?i64: ok=最大のキー, nil=木が空
+
+`
+  'tree-map.tree-map.lower-bound': `
+target 以上の最初のキーを探す
+target i64: 目標のキー
+戻り値 key ?i64: ok=見つかった, nil=そのようなキーはない
+
+`
+  'tree-map.tree-map.put': `
+key→value を挿入または更新する
+key i64: キー
+val i64: 値
+戻り値 ok bool: true=挿入した, false=既存キーを更新したかプールが満杯
+
+`
+  'tree-map.tree-map.rebalance': `
+ノード idx の平衡を検査して修復する
+idx i64: ノードのインデックス
+戻り値 nr i64: 再平衡後の部分木の根のインデックス
+
+`
+  'tree-map.tree-map.rebalance-up': `
+idx から上へ、階層ごとに再平衡する
+idx i64: 起点のノードのインデックス
+
+`
+  'tree-map.tree-map.remove': `
+キーを削除する
+key i64: キー
+戻り値 ok bool: true=削除した, false=見つからない
+
+`
+  'tree-map.tree-map.rot-left': `
+左回転
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: 回転の軸となるノード
+
+`
+  'tree-map.tree-map.rot-right': `
+右回転
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: 回転の軸となるノード
+
+`
+  'tree-map.tree-map.size': `
+要素数を返す
+戻り値 sz i64: 要素数
+
+`
+  'tree-map.tree-map.successor': `
+ノードの infix 順の後続を探す
+idx i64: ノードのインデックス
+戻り値 succ i64: 後続のインデックス、なければ -1
+
+`
+  'tree-map.tree-map.update-ht': `
+ノードの高さを再計算する
+idx i64: ノードのインデックス
+
+`
+  'tree-map.tree-map.upper-bound': `
+target より大きい最初のキーを探す
+target i64: 目標のキー
+戻り値 key ?i64: ok=見つかった, nil=そのようなキーはない
+
+`
+  'tree-set.tree-set.add': `
+要素を追加する
+key i64: 追加する値
+戻り値 ok bool: true=挿入した, false=すでに存在するかプールが満杯
+
+`
+  'tree-set.tree-set.alloc-node': `
+空きプールからノードを確保する
+戻り値 idx i64: ノードのインデックス、プールが満杯なら -1
+
+`
+  'tree-set.tree-set.bf': `
+平衡係数（左の高さ - 右の高さ）を返す
+idx i64: ノードのインデックス
+戻り値 b i64: 平衡係数
+
+`
+  'tree-set.tree-set.clear': 'すべての要素を削除し、空きプールを再構築する'
+  'tree-set.tree-set.contains': `
+値が存在するかを返す
+key i64: 検査する値
+戻り値 yes bool: true=存在する, false=存在しない
+
+`
+  'tree-set.tree-set.empty': `
+集合が空かを返す
+戻り値 yes bool: true=空, false=空でない
+
+`
+  'tree-set.tree-set.first': `
+最小の値を返す
+戻り値 val ?i64: ok=最小の値, nil=集合が空
+
+`
+  'tree-set.tree-set.for-each': `
+昇順にすべての要素を走査する
+val i64: 出力値（要素ごとに更新）
+
+`
+  'tree-set.tree-set.free-node': `
+ノードを空きプールに戻す
+idx i64: 解放するノードのインデックス
+
+`
+  'tree-set.tree-set.full': `
+ノードプールが満杯かを返す
+戻り値 yes bool: true=満杯, false=満杯でない
+
+`
+  'tree-set.tree-set.ht': `
+ノードの高さを返す（NIL = 0）
+idx i64: ノードのインデックス
+戻り値 h i64: 高さ
+
+`
+  'tree-set.tree-set.init': '空の木とその空きノードプールを初期化する'
+  'tree-set.tree-set.last': `
+最大の値を返す
+戻り値 val ?i64: ok=最大の値, nil=集合が空
+
+`
+  'tree-set.tree-set.lower-bound': `
+target 以上の最初の要素を探す
+target i64: 目標の値
+戻り値 val ?i64: ok=見つかった, nil=そのような要素はない
+
+`
+  'tree-set.tree-set.rebalance': `
+ノード idx の平衡を検査して修復する
+idx i64: ノードのインデックス
+戻り値 nr i64: 再平衡後の部分木の根のインデックス
+
+`
+  'tree-set.tree-set.rebalance-up': `
+idx から上へ、階層ごとに再平衡する
+idx i64: 起点のノードのインデックス
+
+`
+  'tree-set.tree-set.remove': `
+要素を削除する
+key i64: 削除する値
+戻り値 ok bool: true=削除した, false=見つからない
+
+`
+  'tree-set.tree-set.rot-left': `
+左回転
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: 回転の軸となるノード
+
+`
+  'tree-set.tree-set.rot-right': `
+右回転
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: 回転の軸となるノード
+
+`
+  'tree-set.tree-set.size': `
+要素数を返す
+戻り値 sz i64: 要素数
+
+`
+  'tree-set.tree-set.successor': `
+ノードの infix 順の後続を探す
+idx i64: ノードのインデックス
+戻り値 succ i64: 後続のインデックス、なければ -1
+
+`
+  'tree-set.tree-set.update-ht': `
+ノードの高さを再計算する
+idx i64: ノードのインデックス
+
+`
+  'tree-set.tree-set.upper-bound': `
+target より大きい最初の要素を探す
+target i64: 目標の値
+戻り値 val ?i64: ok=見つかった, nil=そのような要素はない
+
+`
+  'txt._txt-dig-val': '1 文字の数字（0-15）をその値に変換する; 無効な文字は -1 を返す'
+  'txt.append': '1 バイトを追加する（255 の上限を超えない）'
+  'txt.append-str': 'str を追加する（255 の上限を超えない）'
+  'txt.append-txt': 'txt を追加する（255 の上限を超えない）'
+  'txt.at': `
+[非推奨] txt.at: 文字（コードポイント）単位の添字読み込み — 代わりに t[idx] を使う（ネイティブの添字アクセスで ?char を返す）
+txt.at: 文字位置のコードポイント値を取得する（バイトオフセットが必要なら t.byte(i) を使う）
+戻り値 b ?byte: 範囲外なら nil; バイト範囲を超えるコードポイントは切り詰める
+
+`
+  'txt.byte': `
+BYTE オフセット i の生のバイト値を返す（生のバイト読み込み）
+txt[i] のコードポイント添字とは異なる; バッファをバイト単位で組み立てるコード向け
+戻り値 ?byte: 範囲外なら nil（i < 0 または i >= len-bytes()）。呼び出し側が option を処理する必要がある
+コンパイラが builtin として扱う（#{buildin}）: codegen が捕捉して境界チェックと GEP+load を展開し、
+std の関数本体はない; シグネチャは src/builtin/str.go の BuiltinMethodList に登録されている
+（Intercepted で、裸の名前のフォールバックにより str.byte と 1 つのエントリを共有する）
+
+`
+  'txt.clear': 'テキストを空にする（len=0）'
+  'txt.compare': `
+辞書順比較
+戻り値 -1 (a<b), 0 (等しい), 1 (a>b)
+
+`
+  'txt.contains': '部分文字列を含むか'
+  'txt.copy': `
+txt をコピーする
+⚠️ 非推奨: 代入 `a = b` にすでにコピーのセマンティクスがある — txt は値型（スタック上の 256 バイトの
+インラインバッファ、data[255] + len）なので、代入はバイト単位のコピーになる。素直な代入を使うこと; これは互換性のためだけに残している。
+
+`
+  'txt.count': 'コードポイントを数える'
+  'txt.decode-cp': `
+位置 i から 1 つの UTF-8 コードポイントをデコードする
+戻り値 cp=コードポイント値, clen=そのバイト列の長さ（1-4）
+
+`
+  'txt.empty': '空か'
+  'txt.ends-with': '指定した接尾辞で終わるか'
+  'txt.eq': `
+2 つの txt が等しいかを比較する
+⚠️ 2026-09-21 に書き直した。旧実装は単一の `->` パイプライン（`.byte(k) - b.byte(k); c != 0 -> ok = 0;
+k == an - 1 -> ok == 0 -> eq = false; k = k + 1`）で、最後のバイトでしか判定しなかった。
+そのため `t('hello').eq('world')`（同じ長さで内容が違う）は常に true を返していた。
+tests/txt.no の `neq:` 行は最初から 1 を出力しており、golden の基準に固定されていた。
+txt.compare はすでにバイト単位で比較し長さの違いも正しく分岐するので、それをそのまま再利用できる。
+
+`
+  'txt.eq-full': '2 つの txt の完全一致（長さとバイト単位の比較）'
+  'txt.fields': '空白で []txt に分割する（連続する空白は 1 つの区切りとして扱う）'
+  'txt.fill': 'データ領域全体を 1 つのバイト値で埋める'
+  'txt.from-bytes': `
+[]byte から txt を生成する（255 バイトで切り捨て）
+戻り値 txt。[]byte が 255 バイトより長いときは切り詰める
+
+`
+  'txt.from-chars': `
+char スライスから新しい txt を構築する（コードポイント単位で書き込み、UTF-8 エンコード; 255 バイトを超える分は捨てる）
+⚠️ `val[i]: { ok -> it = cs[i] }` でコードポイントを 1 つずつ書くことはできない: D9 の place-match は
+READ を条件にし、len=0 の新しい txt で `val[0]` を読むと範囲外になって nil を返すため、ok アームは決して実行されず
+関数全体が空文字列を返す（このせいで txt.from-chars はデータを黙って失っていた）。
+txt.new（ForwardFunc: chars-new）はまさにこのためにあり、すべてのコードポイントを一度に書き、バイト長を設定する。
+
+`
+  'txt.from-hex': `
+16 進テキストを txt にデコードする
+戻り値 Option: ok(txt) / nil（空） / err('msg')
+
+`
+  'txt.from-str': `
+str から txt を生成する（255 バイトで切り捨て）
+戻り値 txt。str が 255 バイトより長いときは切り詰める
+
+`
+  'txt.index': '部分文字列の位置を探す（0 から）'
+  'txt.index-from': `
+from から部分文字列を探す
+最初に見つかった位置を返し、なければ -1
+
+`
+  'txt.join': `
+[]txt.join: txt のスライスを区切り文字で連結する（255 バイトを超える分は切り詰め）
+sep txt: 区切り文字
+戻り値 out txt: 連結結果
+
+`
+  'txt.last-index': 'rindex の別名'
+  'txt.len': '文字（コードポイント）数を返す。str.len と揃えてある; バイト長が必要なら txt.len-bytes() を使う'
+  'txt.lines': '改行で []txt に分割する（\\n と \\r\\n に対応）'
+  'txt.new': `
+txt.new: char スライスから txt を構築する（具体的な txt を返すモジュールレベルのコンストラクタ）
+コンパイル時の builtin（ForwardFunc: chars-new）: []char をバイト単位で bytes に変換し、長さを一度に書き込むので
+バイトごとの .no ループはない。txt はバイトと長さをユーザーコードから操作できない builtin 型のため、
+変換全体をコンパイラが IR として出力する。
+255 バイトを超える分は自動で捨てられる（長さバイトは 255 に丸められる）。
+
+`
+  'txt.repeat': `
+内容を times 回繰り返す（255 バイトで上限）
+戻り値 新しい txt
+
+`
+  'txt.replace-char': `
+すべての old-ch を new-ch に置き換える（UTF-8 コードポイント）
+戻り値 新しい txt（255 バイトを超える分は切り詰め）
+
+`
+  'txt.replace-n': `
+回数を制限した置換
+old txt, new txt, n i64: 置換の最大回数（n<=0 は何も置換しない）
+
+`
+  'txt.replace-str': `
+部分文字列 old のすべての出現を new に置き換える
+戻り値 新しい txt（255 バイトを超える分は切り詰め）
+
+`
+  'txt.reverse': 'テキストの内容を反転する'
+  'txt.rindex': `
+部分文字列の最後の出現を逆方向に探す
+戻り値 位置、なければ -1
+
+`
+  'txt.rindex-from': 'from から部分文字列を逆方向に探す（位置 >= from で最後の出現を返す）'
+  'txt.set-byte': `
+戻り値 ?bool（失敗しうる）: 範囲外（i < 0 または i >= 255 バイトの物理容量）なら nil で、書き込みは SKIP される;
+成功なら some(true)。境界は len ではなく物理容量（txt は固定 255 バイトのバッファ）なので、
+「バッファを埋めてから len を設定する」構築（fill / from-str / to-hex / join）もそのまま動く。
+呼び出し側は ?bool を裸の文として捨ててよい（optunuse は束縛名だけを対象にする）。
+
+`
+  'txt.slice': '部分文字列 [start, end) を取って新しい txt を返す'
+  'txt.split': '区切り文字で []txt に分割する'
+  'txt.split-n': `
+回数を制限した分割
+sep txt, maxsplit i64: 分割の最大回数（<=0 は無制限）
+
+`
+  'txt.starts-with': '指定した接頭辞で始まるか'
+  'txt.to-bigint': `
+テキストを bigint にパースする。基数は自動判定
+接頭辞 0b/0B -> 2 進, 0o/0O -> 8 進, 0x/0X -> 16 進; 接頭辞なし -> 10 進
+先頭の空白と符号（+ / -）を任意で受け付ける
+戻り値 ?bigint: 成功なら ok(bigint) / 空文字列なら nil / 数字がなければ err('msg')
+
+`
+  'txt.to-bool': '文字列 "true"/"false" を bool にパースする'
+  'txt.to-byte': 'byte（u8 相当）にパースする'
+  'txt.to-bytes': 'txt を []byte に変換する'
+  'txt.to-f32': 'テキストを f32 にパースする'
+  'txt.to-f64': `
+テキストを f64 にパースする（?f64 を返す; 空文字列 -> nil、数字以外 -> err）
+str のパースを再利用する（先に str へ変換し、str.to-f64 を呼ぶ）
+
+`
+  'txt.to-hex': 'txt を 16 進文字列に変換する'
+  'txt.to-i16': 'i16 にパースする（範囲 -32768〜32767）'
+  'txt.to-i32': 'i32 にパースする（範囲 -2147483648〜2147483647）'
+  'txt.to-i64': `
+テキストを 64 ビット符号付き整数にパースする
+戻り値 Option: ok(n) / nil（空） / err('msg')
+
+`
+  'txt.to-i8': 'i8 にパースする（範囲 -128〜127）'
+  'txt.to-lower': `
+テキストを小文字に変換する（ASCII）
+戻り値 新しい txt
+
+`
+  'txt.to-str': 'txt を str に変換する'
+  'txt.to-u16': 'u16 にパースする（範囲 0〜65535）'
+  'txt.to-u32': 'u32 にパースする（範囲 0〜4294967295）'
+  'txt.to-u64': 'u64 にパースする（マイナス符号は拒否）'
+  'txt.to-u8': 'u8 にパースする（範囲 0〜255）'
+  'txt.to-upper': `
+テキストを大文字に変換する（ASCII）
+戻り値 新しい txt
+
+`
+  'txt.trim': `
+先頭と末尾の空白を取り除く
+戻り値 新しい txt
+
+`
+  'txt.trim-char': `
+指定した文字（UTF-8 コードポイント）を両端から取り除く
+戻り値 新しい txt
+
+`
+  'txt.truncate': '指定した長さに切り詰める'
+  'txt.txt-hex-val': '1 文字の 16 進文字をその値に変換する（無効な文字は -1）'
+  'uuid.cmp': '2 つの UUID を辞書順に比較する'
+  'uuid.eq': '2 つの UUID が等しいかを返す'
+  'uuid.from-str': `
+文字列から UUID をパースする
+ハイフン付き（36 文字）とハイフンなし（32 文字）の両方の形式を受け付ける
+s str: UUID 文字列
+out uuid: 結果の UUID
+戻り値 ok bool: true=パース成功
+
+`
+  'uuid.hex-byte': '1 バイトを 2 文字の 16 進として out の位置 pos に書き込む'
+  'uuid.hex-byte-upper': '1 バイトを大文字の 16 進で書き込む'
+  'uuid.hex-val': '1 文字の 16 進文字をその値に変換する'
+  'uuid.is-nil': 'nil UUID（すべてゼロ）かを返す'
+  'uuid.new-v4': `
+ランダムな UUID v4 を生成する
+state: xorshift32 の状態（入出力; 非ゼロ値で初期化する）
+
+`
+  'uuid.nil-uuid': 'nil UUID（すべてゼロ）を構築する'
+  'uuid.parse-hex-byte': '文字列の 2 文字の 16 進を 1 バイトにパースする'
+  'uuid.parse-no-dashes': 'ハイフンなしの UUID をパースする'
+  'uuid.parse-with-dashes': 'ハイフン付きの UUID をパースする'
+  'uuid.to-str': `
+UUID を標準的な文字列に整形する
+形式: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx（小文字）
+戻り値 out str: UUID 文字列
+
+`
+  'uuid.to-str-upper': `
+UUID を大文字の文字列に整形する
+戻り値 out str: 大文字の UUID 文字列
+
+`
+  'uuid.validate': 'UUID の形式を検証する'
+  'uuid.variant': 'UUID のバリアントを返す'
+  'uuid.version': 'UUID のバージョンを返す'
+  'vec.at': `
+[]t.at: 安全な添字アクセス; 範囲外なら nil
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+
+`
+  'vec.clone': '[]t.clone: スライスをコピーする'
+  'vec.contains': `
+[]t.contains: 値 val が含まれるかを返す
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+注意: range-for の上限にはローカルの sz ではなく len（.len フィールド）を使う。そうしないとコンパイラが
+誤ったループ条件 i < 0 を出力し、ループが一度も実行されない
+
+`
+  'vec.eq': `
+[]t.eq: 2 つのスライスが等しいかを比較する
+戻り値 true=等しい, false=異なる
+
+`
+  'vec.extend': `
+[]t.extend: 別のスライスのすべての要素を追加する
+注意: メソッド内部から .push() を呼ぶ既存の LLVM バグを回避するため、push のロジックをインライン化している。
+呼び出し側は十分な容量を確保しておく必要がある。
+
+`
+  'vec.fill': '[]t.fill: val で埋める'
+  'vec.first': `
+[]t.first: 先頭要素; 空のスライスは nil を返す
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+
+`
+  'vec.index-of': `
+[]t.index-of: 値のインデックスを返す、または -1
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+注意: range-for の上限にはローカルの sz ではなく len（.len フィールド）を使う
+
+`
+  'vec.insert': `
+[]t.insert: 位置 i に val を挿入する
+i >= .len() は push と同じ振る舞い
+注意: メソッド内で .push() を呼ぶと既存の LLVM バグ（_LB__RB_t.push undefined）が起きるため、
+push のロジックをインライン化している（.len = cur + 1; .[cur] = val）。呼び出し側は十分な容量を確保しておく必要がある。
+
+`
+  'vec.last': `
+[]t.last: 末尾要素; 空のスライスは nil を返す
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+
+`
+  'vec.len': '[]t.len: スライスの長さを返す'
+  'vec.max': `
+[]t.max: 最大値; 空のスライスは nil を返す
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+注意: range-for の上限にはローカルの sz ではなく len（.len フィールド）を使う
+
+`
+  'vec.min': `
+[]t.min: 最小値; 空のスライスは nil を返す
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+注意: range-for の上限にはローカルの sz ではなく len（.len フィールド）を使う
+
+`
+  'vec.pop': `
+[]t.pop: 末尾の要素を取り出す
+空のスライスは nil を返す
+
+`
+  'vec.remove': `
+[]t.remove: 位置 i の要素を取り除いて返す
+範囲外なら nil を返す
+
+`
+  'vec.reverse': '[]t.reverse: その場で反転する'
+  'vec.sum': `
+[]t.sum: 総和
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+注意: range-for の上限にはローカルの sz ではなく len（.len フィールド）を使う
+
+`
+  'vec.swap': `
+[]t.swap: 2 つの位置の要素を入れ替える
+注意: sz = .len() で self 型を vec に固定し、誤って arr 用メソッドに単態化されないようにする
+
+`
+  'vec.to-arr': '[]t.to-arr: [n]t 配列に変換するスライスメソッド'
+  'vec.to-str': `
+[]t.to-str: 文字列形式
+'[1, 2, 3]' のように整形される
+要素は各自の .to-str() を呼んで文字列化される（具体的な型は number.no を参照）
+
+`
+  'vec.truncate': '[]t.truncate: cnt 要素に切り詰める; cnt < 0 は 0 として扱い、cnt >= .len は何もしない'
+  'vec.vec-clear': `
+[]t.clear: スライスを空にする（長さをその場で 0 にする）
+ヒープは解放せず容量も縮めないので、データポインタは変わらない
+長さが非ゼロの新しい内容を書き込むときだけ成長ロジックを通る
+
+`
+  'vec.vec-push': `
+[]t.push: 末尾に要素を追加する（自動で成長する）
+成長ポリシー:
+cap == 0 -> new-cap = 4
+cap < 1024 -> new-cap = cap * 2
+cap >= 1024 -> new-cap = cap * 5 / 4
+
+`
+  'yaml.anchor': '現在のノードのアンカー名'
+  'yaml.at': 'シーケンスの要素、またはマッピングの i 番目の値を返す'
+  'yaml.bool': '真偽値を返す'
+  'yaml.doc': `
+i 番目の文書を返す
+注意: 子ノードのビューは ?yaml として返すので、呼び出し側は match で展開できる。
+
+`
+  'yaml.doc-count': '文書の数'
+  'yaml.error': `
+この文書のパースエラー（パースが成功したときは常に空文字列）
+注意: パースに失敗すると yaml.parse は err を返し、調べるべき yaml 値は存在しない。
+理由を得るには yaml.error-of(source) を使う。
+
+`
+  'yaml.error-of': 'ソーステキストをパースしてエラーメッセージを返す（成功なら空文字列）'
+  'yaml.f64': '浮動小数点値を返す'
+  'yaml.find': 'ドット区切りのパスをたどる（シーケンスの要素は数値で添字指定できる）'
+  'yaml.find-bool': 'パス上の真偽値を読む'
+  'yaml.find-f64': 'パス上の浮動小数点を読む'
+  'yaml.find-i64': 'パス上の整数を読む'
+  'yaml.find-str': 'パス上の文字列を読む'
+  'yaml.get': 'スカラーキーでマッピングの値を返す'
+  'yaml.get-bool': 'スカラーキーで真偽値を読む'
+  'yaml.get-f64': 'スカラーキーで浮動小数点を読む'
+  'yaml.get-i64': 'スカラーキーで整数を読む'
+  'yaml.get-str': 'スカラーキーで文字列を読む'
+  'yaml.i64': '整数値を返す'
+  'yaml.is-bool': 'ノードが真偽値か'
+  'yaml.is-int': 'ノードが整数か'
+  'yaml.is-map': 'ノードがマッピングか'
+  'yaml.is-nan': `
+yaml.is-float: ノードが浮動小数点か
+現在のノードが .nan か
+
+`
+  'yaml.is-null': 'ノードが null か'
+  'yaml.is-num': 'ノードが数値か'
+  'yaml.is-seq': 'ノードがシーケンスか'
+  'yaml.is-str': 'ノードが文字列か'
+  'yaml.key': 'マッピングの i 番目のキーのテキストを返す'
+  'yaml.key-node': 'マッピングの i 番目のキーノードを返す'
+  'yaml.kind': '現在のノードの種別'
+  'yaml.len': 'シーケンスの要素数、またはマッピングのエントリ数'
+  'yaml.line-of': '現在のノードの開始行'
+  'yaml.node-count': 'ノードの総数'
+  'yaml.parse': `
+YAML テキストをパースして最初の文書を返す
+ok(yaml) または err(message) を返す
+
+`
+  'yaml.parse-all': 'すべての文書をパースする'
+  'yaml.scalar-text': '現在のノードのスカラーテキスト（コンテナは ok=false を返す）'
+  'yaml.source-of': '元の入力テキスト'
+  'yaml.str': '文字列値を返す（数値と真偽値はソーステキストを返す）'
+  'yaml.stringify': 'to-yaml の別名'
+  'yaml.strip-bom': '先頭の UTF-8 BOM を取り除く'
+  'yaml.style': '現在のノードのスタイル'
+  'yaml.tag': '現在のノードの明示的なタグ'
+  'yaml.text': '現在のノードの生のスカラーテキスト'
+  'yaml.to-json': '現在の文書を JSON に変換する'
+  'yaml.to-json-all': 'すべての文書を JSON 配列に変換する'
+  'yaml.to-yaml': '現在の文書を YAML として再出力する'
+  'yaml.valid': 'この文書がパースに成功したか（yaml 値が得られたら成功）'
+  'yaml.valid-of': 'ソーステキストをパースできるか（文書は構築しない）'
+  'yaml.value': 'マッピングの i 番目のキーに対応する値ノードを返す'
+  'yaml.yaml-apply-tag': '明示的なタグからノードの種類を決める'
+  'yaml.yaml-emit': 'ノードをブロックスタイルの YAML として出力する（末尾の改行なし）'
+  'yaml.yaml-f-is-inf': `
+無限大の判定にリテラル比較は使わない: Nolang の数値リテラルは指数表記に対応しておらず（`1e308` は `1` と `e308` に分割される）。
+無限大は「非ゼロで、2 で割っても変わらない」ことで判定し、NaN は先に `x != x` で除外しておく。
+
+`
+  'yaml.yaml-f-is-nan': `
+浮動小数点が NaN か（NaN != NaN で判定する）
+レシーバー形式の `float.is-nan` はモジュール内では MIR バックエンドに解決されないため使わない。
+
+`
+  'yaml.yaml-hex-char': '1 文字の 16 進数字（0-15）をその文字に変換する'
+  'yaml.yaml-hex-digit': '16 進文字をその値に変換する; 16 進でないときは -1'
+  'yaml.yaml-inf': '正の無限大'
+  'yaml.yaml-json-escape': 'JSON 文字列をエスケープする'
+  'yaml.yaml-json-of': 'ノードを JSON に変換する'
+  'yaml.yaml-key-eq': '2 つのキーノードが等価か（スカラーテキストを比較する）'
+  'yaml.yaml-key-text-eq': 'スカラーのキーテキストが指定した文字列と等しいか'
+  'yaml.yaml-nan': `
+実行時の除算が必要: コンパイル時の定数畳み込みは `0.0 / 0.0` を 0 と評価してしまう。
+ローカル変数を経由すると畳み込みが起きず、本物の NaN が得られる（`x != x` が true）。
+
+`
+  'yaml.yaml-node-is-nan': `
+yaml-nan() が `.nan` の fval を本物の NaN で埋めるので、値（NaN != NaN）で判定できる。
+ノードの生のテキストを調べるのはフォールバック経路: タグ書き換えなどは fval を再計算せずに
+テキストだけを変えることがある。
+
+`
+  'yaml.yaml-parse-radix': '基数付き整数をパースする（アンダースコアは無視する）'
+  'yaml.yaml-parser.advance': '1 バイト進める'
+  'yaml.yaml-parser.anchor-id': 'アンカーを探す; 見つからなければ -1'
+  'yaml.yaml-parser.at': '現在位置から k バイト後のバイト'
+  'yaml.yaml-parser.at-doc-marker': '現在位置が ---（1）または ...（2）か'
+  'yaml.yaml-parser.at-eol': '位置が行末か（EOF を含む）'
+  'yaml.yaml-parser.byte-at': 'src[i] を返し、範囲外なら 0'
+  'yaml.yaml-parser.cur': '現在のバイト'
+  'yaml.yaml-parser.eof': '入力の終端に達したか'
+  'yaml.yaml-parser.fail': 'パースエラーを記録する'
+  'yaml.yaml-parser.fail-at': '位置付きでパースエラーを記録する'
+  'yaml.yaml-parser.indent-at': `
+インデントを数える前に先頭の空白をスキップする: ほぼすべての呼び出し元は skip-blank-lines() の直後で、
+その時点の pos は行頭（カラム 0）にある。そのまま差を取ると常に 0 になり、入れ子ブロックが
+「インデントされていない」と判定されてしまう。スキップ後の pos は最初の非空白文字を指し、
+後続の is-seq-dash / looks-like-map-entry / at-doc-marker の判定にもそのまま使える。
+
+`
+  'yaml.yaml-parser.is-seq-dash': '現在位置がシーケンス項目の指標 \'- \' か'
+  'yaml.yaml-parser.line-end-of': 'i を含む行の行末オフセットを返す（改行または n を指す）'
+  'yaml.yaml-parser.line-start-of': 'i を含む行の先頭オフセットを返す'
+  'yaml.yaml-parser.looks-like-map-entry': 'この行にトップレベルの \': \'、末尾の \':\'、または明示キー \'? \' があるか'
+  'yaml.yaml-parser.merge-into': 'マージキー << を処理する（マッピング、またはマッピングのシーケンス）'
+  'yaml.yaml-parser.merge-one': `
+1 つのマッピングのエントリを keys/vals にマージする（既存のキーは上書きしない）
+注意: MIR バックエンドは入力ベクタを別のベクタへ直接ムーブすることを禁じる（借用と所有権の保護）ため、
+ok-keys = keys と書かずに要素を 1 つずつコピーする。
+
+`
+  'yaml.yaml-parser.newline': '改行を 1 つ消費する（\\n または \\r\\n）'
+  'yaml.yaml-parser.parse-alias': 'エイリアス *name をパースする'
+  'yaml.yaml-parser.parse-block': 'ブロックコンテキストのノードをパースする（現在位置はノードの開始カラム）'
+  'yaml.yaml-parser.parse-block-indented': '続く、より深くインデントされた行を値としてパースする'
+  'yaml.yaml-parser.parse-block-map': 'ブロックマッピングをパースする'
+  'yaml.yaml-parser.parse-block-scalar': 'ブロックスカラー | と > をパースする'
+  'yaml.yaml-parser.parse-block-seq': 'ブロックシーケンスをパースする'
+  'yaml.yaml-parser.parse-docs': 'すべての文書をパースする'
+  'yaml.yaml-parser.parse-document': '文書を 1 つパースしてルートノードのインデックスを返す'
+  'yaml.yaml-parser.parse-double': '二重引用符付きスカラーをパースする'
+  'yaml.yaml-parser.parse-flow-map': '{k: v, ...} をパースする'
+  'yaml.yaml-parser.parse-flow-node': 'フローコンテキストのノードをパースする'
+  'yaml.yaml-parser.parse-flow-seq': '[a, b, ...] をパースする'
+  'yaml.yaml-parser.parse-plain': 'プレーンスカラーをパースする（行をまたぐ折り畳みを含む）'
+  'yaml.yaml-parser.parse-props': 'ノード先頭のアンカーとタグをパースする（順序は任意）'
+  'yaml.yaml-parser.parse-single': '一重引用符付きスカラーをパースする'
+  'yaml.yaml-parser.push-node': 'ノードを追加してそのインデックスを返す'
+  'yaml.yaml-parser.push-null': 'null ノードを追加する'
+  'yaml.yaml-parser.push-scalar': 'スタイルとタグからスカラーノードを構築する'
+  'yaml.yaml-parser.read-line-content': '現在位置から行末まで読む（末尾の空白とコメントは除去する）'
+  'yaml.yaml-parser.read-tag': 'タグを読む（!!name、!name、!<verbatim>、!）'
+  'yaml.yaml-parser.read-token': '区切り文字を含まない素のトークンを読む'
+  'yaml.yaml-parser.register-anchor': 'アンカーを登録する'
+  'yaml.yaml-parser.set-props': 'ノードにタグとアンカーを付ける（アンカーも登録する）'
+  'yaml.yaml-parser.skip-blank-lines': '空行と行全体のコメントをスキップし、次の内容行の先頭で止まる'
+  'yaml.yaml-parser.skip-doc-preamble': '空行、コメント、ディレクティブ行をスキップする'
+  'yaml.yaml-parser.skip-flow-ws': 'フローコンテキストの空白: インラインの空白、改行、コメント'
+  'yaml.yaml-parser.skip-spaces': 'インラインの空白とタブをスキップする'
+  'yaml.yaml-parser.skip-to-doc-boundary': '現在の文書の残りをスキップし、次の --- または入力の終端で止まる'
+  'yaml.yaml-parser.skip-to-eol': '末尾の空白と行コメントをスキップする（改行は消費しない）'
+  'yaml.yaml-plain-safe': 'テキストをプレーンスカラーとしてそのまま出力できるか'
+  'yaml.yaml-quote': '二重引用符付きの YAML スカラーを出力する'
+  'yaml.yaml-resolve-plain': 'コアスキーマを使ってプレーンスカラーの種類を推論する'
+  'yaml.yaml-scalar-repr': 'スカラーの YAML 表現'
+  'yaml.yaml-scan-number': `
+テキストを整数または浮動小数点としてパースしてみる
+戻り値 kind = YAML-KIND-INT、YAML-KIND-FLOAT、または YAML-KIND-STR（数値でない）
+
+`
+  'yaml.yaml-spaces': 'n 個の空白を生成する'
+  'yaml.yaml-str-at': `
+このヘルパーが必要な理由: `arr[i]`（arr は []str）は既定で option<str> を返し、その option<str> を
+呼び出し引数やメソッドのレシーバーとして使うと MIR バックエンドが不正な IR を生成する
+（%option_str が %str-long と一致しない）。文字列連結は option を自動で展開するので、
+out = out - a[i] で要素を取り出せば、展開と同時に no vet の範囲チェックも満たせる。
+
+`
+  'yaml.yaml-tag-name': 'タグ名を正規化する（!!str も tag:yaml.org,2002:str も str になる）'
+  'yaml.yaml-to-f64': 'テキストを f64 に変換する（nil は失敗）'
+  'yaml.yaml-to-i64': 'テキストを i64 に変換する; 失敗時は -1'
+  'yaml.yaml-unescape-double': '二重引用符内のエスケープシーケンスを処理する'
+}

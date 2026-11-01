@@ -22,6 +22,24 @@ test-runtime-types = () {
     runner.eq(p.contains('%str-long = type { i64, i64, i8* }'), 1, 'str type present')
     runner.eq(p.contains('%vec = type { i64, i64, i64 }'), 1, 'vec type present')
     runner.eq(p.contains('%option = type { i64, [3 x i64] }'), 1, 'option type present')
+    ; 结构体型别**不在** prelude：由 cg-runtime-struct-decls(sfc) 按描述符唯一发射
+    ; （具名型别模块内唯一，§11 B10 ⇒ 各函式不得自发型别）。
+    runner.eq(p.contains('%struct.'), 0, 'struct types not in prelude')
+    sfc []i64 = []
+    sfc.push(2)
+    sfc.push(3)
+    sfc.push(0)
+    ; sft = 各结构体字段型别码的拼接（按 id 升序）：s0 = {i64, i64}，s1 = {str, i64, i64}
+    sft []i64 = []
+    sft.push(TY-I64)
+    sft.push(TY-I64)
+    sft.push(TY-STR)
+    sft.push(TY-I64)
+    sft.push(TY-I64)
+    d = cg-runtime-struct-decls(sfc, sft)
+    runner.eq(d.contains('%struct.s0 = type { i64, i64 }'), 1, 'struct 0 decl')
+    runner.eq(d.contains('%struct.s1 = type { %str-long, i64, i64 }'), 1, 'struct 1 decl (str field)')
+    runner.eq(d.contains('%struct.s2'), 0, 'unused struct skipped')
     runner.eq(p.contains('@malloc'), 1, 'malloc decl present')
     runner.eq(p.contains('@free'), 1, 'free decl present')
 }

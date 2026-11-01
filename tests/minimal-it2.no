@@ -11,6 +11,7 @@ test-val-it = () {
     print(r)
 }
 
+; 測試 other
 test-other = () {
     print('other')
 }

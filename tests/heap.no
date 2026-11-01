@@ -10,7 +10,10 @@
 
 # std/heap
 
-; 純函數，印出結果並回傳布爾值（不可在函式內改動全域變數）
+; 純函數，印出結果並回傳布林值（不可在函式內改動全域變數）
+; cond bool: 這項斷言的結果，決定印 'ok:' 還是 'FAIL:'
+; msg str: 斷言說明，原樣接到輸出前綴之後
+; r bool: 原樣回傳 cond，供呼叫端累積成 allok
 check = (cond bool, msg str) (r bool) {
     r = cond
     cond -> {
@@ -23,6 +26,8 @@ check = (cond bool, msg str) (r bool) {
 }
 
 ; ?i64 -> i64（空/err -> -999），純函數
+; x ?i64: 待解包的選項（來自 heap.pop / peek）
+; v i64: ok 時為 it，nil 或 err 時為哨兵 -999
 deref = (x ?i64) (v i64) {
     v = -999
     x: {
@@ -35,6 +40,8 @@ deref = (x ?i64) (v i64) {
 }
 
 ; ?f64 -> f64（空/err -> -1.0），純函數
+; x ?f64: 待解包的選項（f64 堆的 pop / peek 結果）
+; v f64: ok 時為 it，nil 或 err 時為哨兵 -1.0
 deref-f = (x ?f64) (v f64) {
     v = -1.0
     x: {
@@ -91,6 +98,7 @@ allok = allok && check(h3.size() == 1, 'after 2 pops size == 1')
 ; ── 4. 泛型 f64 元素型別（驗證 t 單態化推斷）──
 ; 註：f64 陣列作為 top-level 全域 + 泛型方法寫入會觸發編譯器 codegen bug
 ;     （全域被誤標為 [N x i64]），故放入函式內以區域變數（stack alloca）避開。
+; ok bool: f64 堆三次 pop 依序得到 3.0 / 2.0 / 1.5 才為 true
 t-f64 = () (ok bool) {
     ok = true
     fdata [4]f64 = [0.0, 0.0, 0.0, 0.0]

@@ -77,12 +77,14 @@ INF = 1.0 / 0.0
 ; i64 轉字串
 ; #{buildin}：底層走原生 @str_from_i64（builtin strconv.go 註冊 ForwardFunc "i64-to-str"，
 ; 由 codegen 按名命中原生內聯路徑）。i64 有原生格式化器，故直接 builtin、不再包裝 Nolang 迴圈。
+; out: 十進位表示（原生 @str_from_i64 內聯，如 -42 → '-42'）
 ; [to-str](#number.i64.to-str)
 #{buildin}
 i64.to-str = () (out str) {
 }
 
 ; i32 轉字串（隱式拓寬至 i64 後複用 i64.to-str 原生路徑）
+; out: 十進位表示（隱式拓寬至 i64 後複用原生路徑）
 ; [to-str](#number.i32.to-str)
 i32.to-str = () (out str) {
     v i64 = .
@@ -90,6 +92,7 @@ i32.to-str = () (out str) {
 }
 
 ; i16 轉字串（拓寬至 i64 複用）
+; out: 十進位表示（拓寬至 i64 後格式化）
 ; [to-str](#number.i16.to-str)
 i16.to-str = () (out str) {
     v i64 = .
@@ -97,6 +100,7 @@ i16.to-str = () (out str) {
 }
 
 ; i8 轉字串（拓寬至 i64 複用）
+; out: 十進位表示（拓寬至 i64 後格式化）
 ; [to-str](#number.i8.to-str)
 i8.to-str = () (out str) {
     v i64 = .
@@ -105,6 +109,7 @@ i8.to-str = () (out str) {
 
 ; u64 轉字串（直接 Nolang 實現：後端無原生 u64 格式化器，
 ; 故把原 math.u64-to-str 的十進位迴圈內聯進方法本體，取代已刪除的函數）
+; out: 十進位表示（Nolang 迴圈逐位生成，後端無原生 u64 格式化器）
 ; [to-str](#number.u64.to-str)
 u64.to-str = () (out str) {
 
@@ -148,6 +153,7 @@ u64.to-str = () (out str) {
 }
 
 ; u32 轉字串（隱式拓寬至 u64 後複用 u64.to-str）
+; out: 十進位表示（隱式拓寬至 u64 後複用 u64.to-str）
 ; [to-str](#number.u32.to-str)
 u32.to-str = () (out str) {
     v u64 = .
@@ -155,6 +161,7 @@ u32.to-str = () (out str) {
 }
 
 ; u16 轉字串（拓寬至 u64 複用）
+; out: 十進位表示（拓寬至 u64 後格式化）
 ; [to-str](#number.u16.to-str)
 u16.to-str = () (out str) {
     v u64 = .
@@ -162,6 +169,7 @@ u16.to-str = () (out str) {
 }
 
 ; u8 轉字串（拓寬至 u64 複用）
+; out: 十進位表示（拓寬至 u64 後格式化）
 ; [to-str](#number.u8.to-str)
 u8.to-str = () (out str) {
     v u64 = .
@@ -169,6 +177,7 @@ u8.to-str = () (out str) {
 }
 
 ; byte 轉字串（無號，拓寬至 u64 複用）
+; out: 十進位表示（byte 按無號 0..255，拓寬至 u64 後格式化）
 ; [to-str](#number.byte.to-str)
 byte.to-str = () (out str) {
     v u64 = .
@@ -180,6 +189,7 @@ byte.to-str = () (out str) {
 ; 並沿用 %g 的記號選擇：E <= -5 或 E >= 6 用科學記號，其餘定點。
 ; 特殊值對齊 Go：NaN → "NaN"、+Inf → "+Inf"、-Inf → "-Inf"、±0 → "0"。
 ; 後端無原生 f64 格式化器（sprintf CLibCall 已移除），故整套例程內聯在方法本體。
+; out: 最短往返十進位字串（能唯一還原本 double 的最少有效位；E≤-5 或 E≥6 用科學記號，NaN/±Inf 對齊 Go）
 ; [to-str](#number.f64.to-str)
 f64.to-str = () (out str) {
 
@@ -604,6 +614,7 @@ f64.to-str = () (out str) {
 
 ; f32 轉字串（方法）
 ; 透過 f32.to-f64（#{buildin} 拓寬）後複用 f64.to-str 的 Nolang %g 實現。
+; out: 十進位字串（拓寬至 f64 後走 f64 %g 最短往返實現）
 ; [to-str](#number.f32.to-str)
 f32.to-str = () (out str) {
     d = .to-f64()
@@ -1295,30 +1306,35 @@ f64.to-str-general = (precision i64) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; 浮點轉整數（截斷）
+; out: 向零截斷後的整數（捨去小數，如 3.9→3、-3.9→-3）
 ; [to-i64](#number.f64.to-i64)
 #{buildin}
 f64.to-i64 = () (out i64) {
 }
 
 ; 整數轉浮點
+; out: 等值 f64（幅度超過 2^53 的整數可能損失精度）
 ; [to-f64](#number.i64.to-f64)
 #{buildin}
 i64.to-f64 = () (out f64) {
 }
 
 ; 將 f32 提升為 f64
+; out: 等值 f64（精確拓寬，無精度損失）
 ; [to-f64](#number.f32.to-f64)
 #{buildin}
 f32.to-f64 = () (out f64) {
 }
 
 ; 將 f64 降為 f32（可能損失精度）
+; out: 收窄後的 f32（可能損失精度或溢出為 ±Inf）
 ; [to-f32](#number.f64.to-f32)
 #{buildin}
 f64.to-f32 = () (out f32) {
 }
 
 ; 無號整數轉浮點
+; out: 等值 f64（幅度超過 2^53 的整數可能損失精度）
 ; [to-f64](#number.u64.to-f64)
 #{buildin}
 u64.to-f64 = () (out f64) {
@@ -1327,48 +1343,56 @@ u64.to-f64 = () (out f64) {
 ; 以 u64 取出 f64 的 64 位元 IEEE-754 位元模式（bitcast double→i64）。
 ; 由 src/builtin/bits.go 註冊 ForwardFunc "f64-to-bits"，原生 LLVM bitcast 實作，
 ; 不依賴 libm。f64.to-str 最短往返展開前先取位元模式，再拆 sign/exp/frac。
+; out: IEEE-754 雙精度的 64 位元模式（bitcast，非數值轉換）
 ; [to-bits](#number.f64.to-bits)
 #{buildin}
 f64.to-bits = () (out u64) {
 }
 
 ; f64.to-bits 的逆運算（bitcast i64→double），由原生 LLVM 實作。
+; out: 按該 64 位元模式重構的 f64（f64.to-bits 的逆運算）
 ; [from-bits](#number.u64.from-bits)
 #{buildin}
 u64.from-bits = () (out f64) {
 }
 
 ; 128 位有號整數轉浮點
+; out: 等值 f64（128 位幅度大時損失精度）
 ; [to-f64](#number.i128.to-f64)
 #{buildin}
 i128.to-f64 = () (out f64) {
 }
 
 ; 128 位無號整數轉浮點
+; out: 等值 f64（128 位幅度大時損失精度）
 ; [to-f64](#number.u128.to-f64)
 #{buildin}
 u128.to-f64 = () (out f64) {
 }
 
 ; 浮點轉 64 位無號整數（饱和）
+; out: 向零截斷後的 u64（負數與越界按飽和處理）
 ; [to-u64](#number.f64.to-u64)
 #{buildin}
 f64.to-u64 = () (out u64) {
 }
 
 ; 浮點轉 32 位無號整數（饱和）
+; out: 向零截斷後的 u32（越界飽和）
 ; [to-u32](#number.f64.to-u32)
 #{buildin}
 f64.to-u32 = () (out u32) {
 }
 
 ; 浮點轉 32 位有號整數（饱和）
+; out: 向零截斷後的 i32（越界飽和）
 ; [to-i32](#number.f64.to-i32)
 #{buildin}
 f64.to-i32 = () (out i32) {
 }
 
 ; 整數位寬收窄（低 32 位截斷）
+; out: 低 32 位截斷結果（高位丟棄，不做範圍檢查）
 ; [to-i32](#number.i64.to-i32)
 #{buildin}
 i64.to-i32 = () (out i32) {
@@ -1378,6 +1402,7 @@ i64.to-i32 = () (out i32) {
 ; 用法：
 ;   v = 0x1234
 ;   out = v.to-bytes-be()   // out = [0x00,0x00,0x00,0x00,0x00,0x00,0x12,0x34]
+; out: 8 位元組陣列（高位在前，大端序）
 ; [to-bytes-be](#number.i64.to-bytes-be)
 i64.to-bytes-be = () (out [?]byte) {
 
@@ -1402,6 +1427,7 @@ i64.to-bytes-be = () (out [?]byte) {
 ; 用法：
 ;   v = 0x1234
 ;   out = v.to-bytes-le()   // out = [0x34,0x12,0x00,0x00,0x00,0x00,0x00,0x00]
+; out: 8 位元組陣列（低位在前，小端序）
 ; [to-bytes-le](#number.i64.to-bytes-le)
 i64.to-bytes-le = () (out [?]byte) {
 
@@ -1436,19 +1462,23 @@ i64.to-bytes-le = () (out [?]byte) {
 ; f32*f64 混合算術會被提升成 f64，破壞「接收者 f32 → 返回 f32」。
 ; 故具體雙套（f64./f32.）是唯一穩定形態。
 
-; 幂与根（f64/f32 方法）
+; 冪與根（f64/f32 方法）
+; res: √x（libm 原生 sqrt；負數返回 NaN）
 ; [sqrt](#number.f64.sqrt)
 #{buildin}
 f64.sqrt = () (res f64) {
 }
 
+; 平方根
+; res: √x（拓寬至 f64 計算後收窄；負數返回 NaN）
 f32.sqrt = () (res f32) {
     d = .to-f64()
     res = d.sqrt().to-f32()
 }
 
 ; 立方根（f64 方法）
-; 使用 exp(log(|x|) / 3) 實現；方法體不调 pow（整數冪 pow 見本模組，f64 pow 見 std/math.no）
+; 使用 exp(log(|x|) / 3) 實現；方法體不調 pow（整數冪 pow 見本模組，f64 pow 見 std/math.no）
+; res: ³√x（以 exp(log(|x|)/3) 實現並帶符號；0 返回 0.0）
 ; [cbrt](#number.f64.cbrt)
 f64.cbrt = () (res f64) {
     . == 0.0 -> {
@@ -1471,6 +1501,8 @@ f64.cbrt = () (res f64) {
     }
 }
 
+; 立方根（f32 方法，拓寬至 f64 後複用 f64.cbrt）
+; res: ³√x（結果收窄至 f32）
 f32.cbrt = () (res f32) {
     d = .to-f64()
     res = d.cbrt().to-f32()
@@ -1480,6 +1512,9 @@ f32.cbrt = () (res f32) {
 ; 與 math.no 的 f64 pow 同名但不同模組，構建期加 number. 前綴；
 ; 與 math.pow-int（int 泛型快速冪）同義，但明確 i64 簽名以符合
 ; test/std/number.no 的 number.pow(2, 10) 等斷言。
+; base: 底數
+; n: 指數（n ≥ 0，負數結果無定義）
+; res: base 的 n 次冪（快速冪，溢出回繞）
 ; [pow](#number.pow)
 pow = (base i64, n i64) (res i64) {
     rn = n
@@ -1496,7 +1531,8 @@ pow = (base i64, n i64) (res i64) {
     }
 }
 
-; 三角函数（弧度；f64/f32 方法）
+; 三角函數（弧度；f64/f32 方法）
+; res: sin(x)（x 為弧度，多項式逼近）
 ; [sin](#number.f64.sin)
 f64.sin = () (res f64) {
     twopi = 6.283185307179586
@@ -1529,21 +1565,28 @@ f64.sin = () (res f64) {
     res = sgn * s
 }
 
+; 正弦
+; res: sin(x)（拓寬至 f64 計算後收窄）
 f32.sin = () (res f32) {
     d = .to-f64()
     res = d.sin().to-f32()
 }
 
+; 餘弦
+; res: cos(x)（x 為弧度）
 f64.cos = () (res f64) {
     res = (. + 1.5707963267948966).sin()
 }
 
+; 餘弦
+; res: cos(x)（拓寬至 f64 計算後收窄）
 f32.cos = () (res f32) {
     d = .to-f64()
     res = d.cos().to-f32()
 }
 
-; tangent（libm tan，等价于 sin/cos）
+; tangent（libm tan，等價於 sin/cos）
+; res: tan(x) = sin(x)/cos(x)（cos(x)≈0 處發散）
 ; [tan](#number.f64.tan)
 f64.tan = () (res f64) {
     s = .sin()
@@ -1551,43 +1594,58 @@ f64.tan = () (res f64) {
     res = s / c
 }
 
+; 正切
+; res: tan(x)（拓寬至 f64 計算後收窄）
 f32.tan = () (res f32) {
     d = .to-f64()
     res = d.tan().to-f32()
 }
 
+; 反正弦（asin = atan2(x, √(1-x²))）
+; res: asin(x)（主值域 [-π/2, π/2]；|x|>1 返回 NaN）
 f64.asin = () (res f64) {
     s = . * .
     one = 1.0 - s
     res = math.atan2(., one.sqrt())
 }
 
+; 反正弦（f32 方法，拓寬至 f64 後複用）
+; res: asin(x)（結果收窄至 f32）
 f32.asin = () (res f32) {
     d = .to-f64()
     res = d.asin().to-f32()
 }
 
+; 反餘弦（acos = atan2(√(1-x²), x)）
+; res: acos(x)（主值域 [0, π]；|x|>1 返回 NaN）
 f64.acos = () (res f64) {
     s = . * .
     one = 1.0 - s
     res = math.atan2(one.sqrt(), .)
 }
 
+; 反餘弦（f32 方法，拓寬至 f64 後複用）
+; res: acos(x)（結果收窄至 f32）
 f32.acos = () (res f32) {
     d = .to-f64()
     res = d.acos().to-f32()
 }
 
+; 反正切（atan = atan2(x, 1.0)）
+; res: atan(x)（值域 (-π/2, π/2)）
 f64.atan = () (res f64) {
     res = math.atan2(., 1.0)
 }
 
+; 反正切（f32 方法，拓寬至 f64 後複用）
+; res: atan(x)（結果收窄至 f32）
 f32.atan = () (res f32) {
     d = .to-f64()
     res = d.atan().to-f32()
 }
 
 ; 雙曲函數（f64/f32 方法）
+; res: sinh(x) = (eˣ - e⁻ˣ)/2
 ; [sinh](#number.f64.sinh)
 f64.sinh = () (res f64) {
     e = .exp()
@@ -1595,22 +1653,30 @@ f64.sinh = () (res f64) {
     res = (e - ei) / 2.0
 }
 
+; 雙曲正弦（f32 方法，拓寬至 f64 後複用）
+; res: sinh(x)（結果收窄至 f32）
 f32.sinh = () (res f32) {
     d = .to-f64()
     res = d.sinh().to-f32()
 }
 
+; 雙曲餘弦
+; res: cosh(x) = (eˣ + e⁻ˣ)/2
 f64.cosh = () (res f64) {
     e = .exp()
     ei = 1.0 / e
     res = (e + ei) / 2.0
 }
 
+; 雙曲餘弦（f32 方法，拓寬至 f64 後複用）
+; res: cosh(x)（結果收窄至 f32）
 f32.cosh = () (res f32) {
     d = .to-f64()
     res = d.cosh().to-f32()
 }
 
+; 雙曲正切
+; res: tanh(x) = (e²ˣ-1)/(e²ˣ+1)（值域 (-1, 1)）
 f64.tanh = () (res f64) {
     e = .exp()
 
@@ -1618,12 +1684,15 @@ f64.tanh = () (res f64) {
     res = (e * e - 1.0) / (e * e + 1.0)
 }
 
+; 雙曲正切（f32 方法，拓寬至 f64 後複用）
+; res: tanh(x)（結果收窄至 f32）
 f32.tanh = () (res f32) {
     d = .to-f64()
     res = d.tanh().to-f32()
 }
 
 ; 取整（f64/f32 方法；整數型別上取整為恆等，故不提供泛型版本）
+; res: 不小於 x 的最小整數值（向上取整，結果仍為 f64）
 ; [ceil](#number.f64.ceil)
 f64.ceil = () (res f64) {
     t = (.to-i64()).to-f64()
@@ -1639,11 +1708,15 @@ f64.ceil = () (res f64) {
     }
 }
 
+; 向上取整（f32 方法，拓寬至 f64 後複用）
+; res: ceil(x)（結果收窄至 f32）
 f32.ceil = () (res f32) {
     d = .to-f64()
     res = d.ceil().to-f32()
 }
 
+; 向下取整
+; res: 不大於 x 的最大整數值（向下取整，結果仍為 f64）
 f64.floor = () (res f64) {
     t = (.to-i64()).to-f64()
     . == t -> {
@@ -1658,11 +1731,15 @@ f64.floor = () (res f64) {
     }
 }
 
+; 向下取整（f32 方法，拓寬至 f64 後複用）
+; res: floor(x)（結果收窄至 f32）
 f32.floor = () (res f32) {
     d = .to-f64()
     res = d.floor().to-f32()
 }
 
+; 四捨五入（.5 進位，負數對稱）
+; res: 最接近 x 的整數值（|小數|≥0.5 時向遠端進位）
 f64.round = () (res f64) {
     t = (.to-i64()).to-f64()
     f = . - t
@@ -1687,26 +1764,34 @@ f64.round = () (res f64) {
     }
 }
 
+; 四捨五入（f32 方法，拓寬至 f64 後複用）
+; res: round(x)（結果收窄至 f32）
 f32.round = () (res f32) {
     d = .to-f64()
     res = d.round().to-f32()
 }
 
+; 截斷取整（捨去小數）
+; res: x 的整數部分（向零截斷，如 -3.9→-3.0）
 f64.trunc = () (res f64) {
     res = (.to-i64()).to-f64()
 }
 
+; 截斷取整（f32 方法，拓寬至 f64 後複用）
+; res: trunc(x)（結果收窄至 f32）
 f32.trunc = () (res f32) {
     d = .to-f64()
     res = d.trunc().to-f32()
 }
 
-; 指数对数（f64/f32 方法）
+; 指數與對數（f64/f32 方法）
 ; 自由函數形式（接受參數 x，而非方法接收者）。
 ; 作為 f64.exp / cbrt / sinh / cosh / f32.exp 的單一實現來源。
 ; 注意：Nolang 當前對「具名區域變數上的方法呼叫」(如 t.exp()) 有
 ; codegen bug，會誤用外層接收者；故所有對 exp 的間接呼叫都走本
 ; 自由函數，避開該問題。
+; x: 指數（f64）
+; res: e 的 x 次冪（x>709 返回 +Inf、x<-745 返回 0.0；範圍遞減後 z⁸ 泰勒級數）
 ; [exp-f64](#number.exp-f64)
 exp-f64 = (x f64) (res f64) {
     x > 709.0 -> {
@@ -1739,15 +1824,21 @@ exp-f64 = (x f64) (res f64) {
     }
 }
 
+; 指數
+; res: e 的 x 次冪（轉呼叫 exp-f64 自由函數）
 f64.exp = () (res f64) {
     res = exp-f64(.)
 }
 
+; 指數
+; res: e 的 x 次冪（拓寬至 f64 計算後收窄）
 f32.exp = () (res f32) {
     d = .to-f64()
     res = exp-f64(d).to-f32()
 }
 
+; 記錄日誌
+; res: ln(x) 自然對數（x≤0 返回 NaN；先範圍遞減至 [1,√2) 再以 z³ 級數逼近）
 f64.log = () (res f64) {
     x = .
     x <= 0.0 -> {
@@ -1787,46 +1878,62 @@ f64.log = () (res f64) {
     res = k.to-f64() * ln2 + lnf
 }
 
+; 記錄日誌
+; res: ln(x)（拓寬至 f64 計算後收窄）
 f32.log = () (res f32) {
     d = .to-f64()
     res = d.log().to-f32()
 }
 
+; 常用對數（以 10 為底）
+; res: log10(x) = ln(x)/ln(10)
 f64.log10 = () (res f64) {
     res = .log() / 2.302585092994046
 }
 
+; 常用對數（f32 方法，拓寬至 f64 後複用）
+; res: log10(x)（結果收窄至 f32）
 f32.log10 = () (res f32) {
     d = .to-f64()
     res = d.log10().to-f32()
 }
 
+; 以 2 為底的對數
+; res: log2(x) = ln(x)/ln(2)
 f64.log2 = () (res f64) {
     res = .log() / 0.6931471805599453
 }
 
+; 以 2 為底的對數（f32 方法，拓寬至 f64 後複用）
+; res: log2(x)（結果收窄至 f32）
 f32.log2 = () (res f32) {
     d = .to-f64()
     res = d.log2().to-f32()
 }
 
 ; 弧度轉角度（f64/f32 方法）
+; res: 將 x 由弧度換算為角度（× 180/π）
 ; [degrees](#number.f64.degrees)
 f64.degrees = () (res f64) {
     res = . * 180.0 / math.PI
 }
 
+; 弧度轉角度（f32 方法，拓寬至 f64 後複用）
+; res: 角度值（結果收窄至 f32）
 f32.degrees = () (res f32) {
     d = .to-f64()
     res = d.degrees().to-f32()
 }
 
 ; 角度轉弧度（f64/f32 方法）
+; res: 將 x 由角度換算為弧度（× π/180）
 ; [radians](#number.f64.radians)
 f64.radians = () (res f64) {
     res = . * math.PI / 180.0
 }
 
+; 角度轉弧度（f32 方法，拓寬至 f64 後複用）
+; res: 弧度值（結果收窄至 f32）
 f32.radians = () (res f32) {
     d = .to-f64()
     res = d.radians().to-f32()
@@ -1838,6 +1945,7 @@ f32.radians = () (res f32) {
 ; 不用 int 聯合接收者（本可全寬度通用）：int 別名定義在 std/int.no，
 ; 跨模組声明 `int.X` 方法會被 prefixMethodNames 雙重加前綴成
 ; `int.int.X`，呼叫點單態化匹配不到，報 unknown callee。
+; r: floor(√n)（n<0 返回 0；n<2 返回 n 本身；二分搜尋 O(log n)）
 ; [sqrt](#number.i64.sqrt)
 i64.sqrt = () (r i64) {
     n = .
@@ -1881,6 +1989,7 @@ i64.sqrt = () (r i64) {
 ; 是否為質數——i64 方法
 ; 試除法 O(√n)：先排除偶數，再試除奇因數；終止條件用 d <= n/d
 ; 避免 d*d 溢出，除數恆 ≥ 1 不會 trap（同樣不用 int 聯合接收者，見上）
+; yes: 是否為質數（n<2 恆 false；僅能被 1 與自身整除）
 ; [is-prime](#number.i64.is-prime)
 i64.is-prime = () (yes bool) {
     n = .
@@ -1922,7 +2031,7 @@ i64.is-prime = () (yes bool) {
 ; （int 聯合接收者不可用：別名定義在 std/int.no，跨模組声明雙重前綴，
 ; 見上方 i64.sqrt 註解）。也不能經 i64 委託：u64 值域超出 i64，
 ; 且無整數縮窄轉換內建可把 i64 結果歸還具體窄型。
-; i8/u64 曾因編譯器缺口（i8 拓寬按無符號、比較恒用有符號謂詞）暫缺，
+; i8/u64 曾因編譯器缺口（i8 拓寬按無符號、比較恆用有符號謂詞）暫缺，
 ; 修復 hir2mir 無符號比較/除法路由（含嵌套子表達式遞迴探測、接收者綁定
 ; `n T = .` 的 localRaw 回退記錄）與 codegen coerceIntSigned（i8 按宣告型
 ; sext）後已補齊。
@@ -1942,6 +2051,7 @@ i64.is-prime = () (yes bool) {
 ; 的比較，均已驗證。）
 
 ; i8（有符號：保留負數守衛）
+; r: floor(√n)（有符號，n<0 返回 0）
 ; [sqrt](#number.i8.sqrt)
 i8.sqrt = () (r i8) {
     n = .
@@ -1985,6 +2095,8 @@ i8.sqrt = () (r i8) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（n<2 恆 false）
 i8.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2023,6 +2135,7 @@ i8.is-prime = () (yes bool) {
 }
 
 ; i16
+; r: floor(√n)（有符號，n<0 返回 0）
 ; [sqrt](#number.i16.sqrt)
 i16.sqrt = () (r i16) {
     n = .
@@ -2066,6 +2179,8 @@ i16.sqrt = () (r i16) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（n<2 恆 false）
 i16.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2104,6 +2219,7 @@ i16.is-prime = () (yes bool) {
 }
 
 ; i32
+; r: floor(√n)（有符號，n<0 返回 0）
 ; [sqrt](#number.i32.sqrt)
 i32.sqrt = () (r i32) {
     n = .
@@ -2146,6 +2262,8 @@ i32.sqrt = () (r i32) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（n<2 恆 false）
 i32.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2184,6 +2302,7 @@ i32.is-prime = () (yes bool) {
 }
 
 ; u8（無符號：無負數守衛）
+; r: floor(√n)（無符號，值域 0..255）
 ; [sqrt](#number.u8.sqrt)
 u8.sqrt = () (r u8) {
     n = .
@@ -2218,6 +2337,8 @@ u8.sqrt = () (r u8) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（n<2 恆 false）
 u8.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2250,6 +2371,7 @@ u8.is-prime = () (yes bool) {
 }
 
 ; u16
+; r: floor(√n)（無符號）
 ; [sqrt](#number.u16.sqrt)
 u16.sqrt = () (r u16) {
     n = .
@@ -2284,6 +2406,8 @@ u16.sqrt = () (r u16) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（n<2 恆 false）
 u16.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2316,6 +2440,7 @@ u16.is-prime = () (yes bool) {
 }
 
 ; u32
+; r: floor(√n)（無符號）
 ; [sqrt](#number.u32.sqrt)
 u32.sqrt = () (r u32) {
     n = .
@@ -2350,6 +2475,8 @@ u32.sqrt = () (r u32) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（n<2 恆 false）
 u32.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2382,6 +2509,7 @@ u32.is-prime = () (yes bool) {
 }
 
 ; u64（值域超出 i64，必須獨立同寬實現）
+; r: floor(√n)（值域超出 i64，獨立同寬實現）
 ; [sqrt](#number.u64.sqrt)
 u64.sqrt = () (r u64) {
     n = .
@@ -2416,6 +2544,8 @@ u64.sqrt = () (r u64) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（n<2 恆 false）
 u64.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2459,6 +2589,7 @@ u64.is-prime = () (yes bool) {
 ;   128 位 codegen 丟棄整段 main）。
 ;   同時修復 codegen isUnsignedRaw 漏列 u128：u128 的比較/除法之前誤走有符
 ;   號謂詞，u128.MAX 值域（≥ 2^127）會誤序；修正後 u128.sqrt(u128.MAX)=2^64-1 精確。
+; r: floor(√n)（128 位；帶型區域變數 + 溢出回繞註解）
 ; [sqrt](#number.i128.sqrt)
 i128.sqrt = () (r i128) {
     n = .
@@ -2499,6 +2630,8 @@ i128.sqrt = () (r i128) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（128 位有符號，n<2 恆 false）
 i128.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -2534,6 +2667,8 @@ i128.is-prime = () (yes bool) {
     yes = true
 }
 
+; 平方根
+; r: floor(√n)（128 位無符號，u128.MAX 亦精確）
 u128.sqrt = () (r u128) {
     n = .
     n < 2 -> {
@@ -2567,6 +2702,8 @@ u128.sqrt = () (r u128) {
     }
 }
 
+; 判斷是否 prime
+; yes: 是否為質數（128 位無符號，n<2 恆 false）
 u128.is-prime = () (yes bool) {
     n = .
     n < 2 -> {

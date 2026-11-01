@@ -6,6 +6,9 @@
 
 # /test/runner
 
+; 把單一 16 位元組 AES 區塊格式化成 32 字元小寫 hex（供 KAT 比對）
+; a [16]byte: 區塊的位元組內容（加密輸出或解密還原值）
+; h str: 固定 32 字元的小寫 hex 字串
 hex16 = (a [16]byte) (h str) {
     hc = '0123456789abcdef'
     h str = with-len(32)
@@ -19,6 +22,8 @@ hex16 = (a [16]byte) (h str) {
     }
 }
 
+; FIPS-197 附錄 C.1 已知答案測試：key 與明文均為 000102..0f
+; 單一區塊加密結果必須是 69c4e0d86a7b0430d8cdb78070b4c55a
 t-enc-128 = () {
     key [16]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -32,6 +37,7 @@ t-enc-128 = () {
     runner.str-eq(hex16(out), '69c4e0d86a7b0430d8cdb78070b4c55a', 32, 'aes-128 enc KAT')
 }
 
+; AES-128 單區塊往返：加密後解密還原原始 16 位元組
 t-dec-128 = () {
     key [16]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -46,6 +52,7 @@ t-dec-128 = () {
     runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 32, 'aes-128 dec round-trip')
 }
 
+; FIPS-197 附錄 C.3 已知答案測試：32 位元組金鑰的 AES-256 單區塊加密
 t-enc-256 = () {
     key [32]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -61,6 +68,7 @@ t-enc-256 = () {
     runner.str-eq(hex16(out), '8ea2b7ca516745bfeafc49904b496089', 32, 'aes-256 enc KAT')
 }
 
+; AES-256 單區塊往返：驗證 14 輪子金鑰逆序使用的正確性
 t-dec-256 = () {
     key [32]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,

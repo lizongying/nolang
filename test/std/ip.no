@@ -12,6 +12,10 @@
 
 # /test/runner
 
+; 比較是否相等 str（先比位元組長度再逐字元比對）
+; got str: 實測得到的字串（to-str 等方法的輸出）
+; want str: 期望的字串，同時作為比對長度的基準
+; msg str: 斷言訊息前綴，長度不符時會附加 ' [len]'
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
@@ -21,6 +25,7 @@ eq-str = (got str, want str, msg str) {
 ; 結果本身用不到 → `_ =` 顯式丟棄（D2 的豁免路徑），避免 optunuse。
 _ = ip.ip-parse('0.0.0.0')
 
+; 解析：192.168.1.1 應拆成 4 個位元組；>255、段數不足/過多、空字串均應視為無效
 t-parse = () {
     a = ip.ip-addr {}
     ok = a.parse('192.168.1.1')
@@ -41,6 +46,8 @@ t-parse = () {
     runner.is-true(e.is-valid(), 'zero addr is-valid')
 }
 
+; 位址分類：私有段（10/8、172.16–172.31、192.168）、回環、零位址、廣播、
+; 多播（224–239）、鏈路本地（169.254）與 A/B/C 類判定
 t-classify = () {
     priv = ip.ip-addr {
         a: 192
@@ -145,6 +152,7 @@ t-classify = () {
     runner.is-true(b128.is-class-b(), '128 is class B')
 }
 
+; 轉換與相等：192.168.1.1 的大端 u32 為 3232235777，u32 往返後仍相等
 t-convert = () {
     t = ip.ip-addr {
         a: 192
@@ -166,6 +174,7 @@ t-convert = () {
     runner.is-false(t.equal(o), 'not equal')
 }
 
+; 子網判定：前綴 0 / 8 / 16 / 24 / 25 / 31 / 32 的邊界（含主機位不足的負例）
 t-subnet = () {
     sub = ip.ip-addr {
         a: 10
@@ -216,6 +225,7 @@ t-subnet = () {
     runner.is-false(a1.in-subnet(a4, 8), '192 not in 10/8')
 }
 
+; 便捷介面：ip-parse 的 option 三分支，以及 ip-is-loopback / ip-is-private 直接吃字串
 t-fast = () {
     r = ip.ip-parse('10.0.0.5')
     found = false

@@ -10,26 +10,31 @@ EMPTY = ''
 ABC = 'abc'
 TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
 
+; 摘要長度：SHA-224 固定 28 位元組（224 位元）
 t-len = () {
     h = sha224.sha224(ABC.to-bytes())
     runner.eq(h.len(), 28, 'sha224 digest is 28 bytes')
 }
 
+; 空輸入向量：sha224-hex('') = d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f
 t-hex-empty = () {
     h = sha224.sha224-hex(EMPTY.to-bytes())
     runner.str-eq(h, 'd14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f', 56, 'sha224-hex empty')
 }
 
+; 'abc' 向量：sha224-hex('abc') = 23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7
 t-hex-abc = () {
     h = sha224.sha224-hex(ABC.to-bytes())
     runner.str-eq(h, '23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7', 56, 'sha224-hex abc')
 }
 
+; 跨區塊：56 位元組輸入需兩次壓縮，sha224-hex = 75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525
 t-hex-twoblock = () {
     h = sha224.sha224-hex(TWOBLOCK.to-bytes())
     runner.str-eq(h, '75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525', 56, 'sha224-hex two-block')
 }
 
+; 位元組介面與 hex 介面一致：首位元組 0x23、末位元組 0xa7
 t-bytes-match-hex = () {
     h = sha224.sha224(ABC.to-bytes())
     runner.eq(h[0], 0x23, 'sha224 byte[0]')

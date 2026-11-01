@@ -8,6 +8,7 @@
 
 # /test/runner
 
+; add / contains：唯一元素使 size 遞增，重複加入不變；contains 命中 2、不含 99
 t-add-contains = () {
     buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
     s = set.init(buf)
@@ -23,6 +24,7 @@ t-add-contains = () {
     runner.is-false(no, 'not contains 99')
 }
 
+; remove：刪除後 size 減一、再查為 false；size 欄位與 empty 狀態同步
 t-remove-size = () {
     buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
     s = set.init(buf)
@@ -39,6 +41,7 @@ t-remove-size = () {
     runner.is-false(empty, 'non-empty == false')
 }
 
+; is-empty：新集合為 true 且 size 為 0
 t-is-empty = () {
     buf [4]i64 = [0, 0, 0, 0]
     s = set.init(buf)

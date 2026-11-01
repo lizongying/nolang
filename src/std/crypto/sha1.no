@@ -18,10 +18,11 @@
 ;   h4 = 3285377520
 ;   sha1-block(block, h0, h1, h2, h3, h4)
 
-; 處理一個 512-bit 區塊
-; s []u32: 16 個 32-bit 字 (big-endian)
-; h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 輸入/輸出 160-bit 哈希狀態
-; [sha1-block](#crypto.sha1.sha1-block)
+; 處理一個 512-bit 區塊（80 輪壓縮，FIPS 180-4）
+; s []u32: 16 個 32-bit 大端訊息字（已由呼叫方從位元組解包）
+; h0 u32, h1 u32, h2 u32, h3 u32, h4 u32: 進入本區塊前的 160-bit 哈希狀態
+; r0 u32, r1 u32, r2 u32, r3 u32, r4 u32: 壓縮後的新狀態（工作變數加回輸入狀態並模 2^32）
+; [sha1-block](#sha1.sha1-block)
 sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, r2 u32, r3 u32, r4 u32) {
 
     mask u32 = 4294967295
@@ -1133,9 +1134,10 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
 }
 
 ; 計算 SHA-1 雜湊（含填充與多區塊處理）
-; data []byte: 輸入位元組陣列
-; 返回 hash [20]byte: 20 位元組雜湊值
-; [sha1](#crypto.sha1.sha1)
+; data []byte: 輸入位元組陣列（任意長度）
+; hash [20]byte: 160-bit 摘要，按 FIPS 180-4 定義的大端序存放
+; 注意：SHA-1 已不具碰撞安全性，僅供相容舊協議 / 校驗使用
+; [sha1](#sha1.sha1)
 sha1 = (data []byte) (hash [20]byte) {
 
     ; SHA-1 初始狀態
@@ -1265,9 +1267,9 @@ sha1 = (data []byte) (hash [20]byte) {
 }
 
 ; 計算 SHA-1 雜湊並返回 hex 字串
-; data []byte: 輸入位元組陣列
-; 返回 hex str: 40 字元小寫 hex 字串
-; [sha1-hex](#crypto.sha1.sha1-hex)
+; data []byte: 輸入位元組陣列（任意長度）
+; hex str: 40 字元小寫十六進位摘要
+; [sha1-hex](#sha1.sha1-hex)
 sha1-hex = (data []byte) (hex str) {
     hash = sha1(data)
 

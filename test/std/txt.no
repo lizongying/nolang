@@ -60,6 +60,9 @@
 
 ; 取 ?byte 的值；nil（越界）時回傳 dflt。
 ; txt.at 已廢棄（字符索引、?byte、越界 nil），斷言前先攤平。
+; b: txt.at 取回的 ?byte（越界為 nil）
+; dflt: b 為 nil 時改用的回傳值
+; v: b=ok 時的實際位元組值，否則 dflt
 at-or = (b ?byte, dflt i64) (v i64) {
     v = dflt
     b: {
@@ -70,6 +73,7 @@ at-or = (b ?byte, dflt i64) (v i64) {
 
 ; ── 長度 / 空值 ────────────────────────────────
 
+; 長度/空值斷言：'Hello, World' 長度 12，空 txt 長度 0 且 empty 為真、非空 empty 為假
 t-len = () {
     t txt = 'Hello, World'
     runner.eq(t.len(), 12, 'txt.len == 12')
@@ -81,6 +85,7 @@ t-len = () {
 
 ; ── 比較 ───────────────────────────────────────
 
+; eq/compare 斷言：eq 判同異，compare 相等得 0、較小得 -1、較大得 1
 t-eq-compare = () {
     t txt = 'abc'
     runner.is-true(t.eq('abc'), 'txt.eq same')
@@ -92,6 +97,7 @@ t-eq-compare = () {
 
 ; ── 轉換 ───────────────────────────────────────
 
+; 轉換斷言：to-str/to-bytes/to-hex 各輸出正確內容（含 to-bytes 修復的迴歸釘）
 t-convert = () {
     t txt = 'Hello, World'
     s = t.to-str()
@@ -127,6 +133,7 @@ t-to-bytes-semantics = () {
     runner.eq(b[11], 100, 'byte-loop [11] == 100 (d)')
 }
 
+; 構造斷言：txt.from-str / from-bytes / from-chars 產生長度與內容正確的 txt（from-chars 回傳 ?txt）
 t-from = () {
     a txt = txt.from-str('from-str')
     runner.eq(a.len(), 8, 'txt.from-str len == 8')
@@ -154,6 +161,7 @@ t-from = () {
 
 ; ── 搜尋 ───────────────────────────────────────
 
+; 搜尋斷言：逐一校驗 index/index-from/last-index/rindex/rindex-from（from 起最後一次出現之意語）/contains/starts-with/ends-with
 t-search = () {
     t txt = 'Hello, World'
     runner.eq(t.index('World'), 7, 'index World == 7')
@@ -181,6 +189,7 @@ t-search = () {
 
 ; ── 切片 / 索引 ────────────────────────────────
 
+; 切片/索引斷言：slice 取區間、at（碼點索引、回傳 ?byte、越界 nil）經 at-or 攤平、decode-cp 回傳碼點與位元組長度
 t-slice-at = () {
     t txt = 'Hello, World'
     a = t.slice(0, 5)
@@ -198,6 +207,7 @@ t-slice-at = () {
 
 ; ── 大小寫 / trim ──────────────────────────────
 
+; 大小寫/修剪斷言：to-upper/to-lower 轉大小寫、trim 去空白、trim-char 去指定字符
 t-case-trim = () {
     t txt = 'Hello, World'
     runner.str-eq(t.to-upper().to-str(), 'HELLO, WORLD', 12, 'to-upper')
@@ -210,6 +220,7 @@ t-case-trim = () {
 
 ; ── 修改 ───────────────────────────────────────
 
+; 追加斷言：append 單位元組、append-str 字串、append-txt 另一 txt，逐步校驗長度與內容
 t-append = () {
     t txt = 'ab'
     t.append(99)
@@ -224,6 +235,7 @@ t-append = () {
     runner.str-eq(t.to-str(), 'abcdeFG', 7, 'append-txt value')
 }
 
+; 截斷斷言：truncate(5) 保留前 5 字元、truncate(0) 清空為長度 0 且 empty
 t-truncate = () {
     t txt = 'abcdefgh'
     t.truncate(5)
@@ -234,6 +246,7 @@ t-truncate = () {
     runner.is-true(t.empty(), 'truncate(0) empty')
 }
 
+; 複製/填充/清空斷言：copy 獨立於來源、fill 覆寫各字節且保留長度、clear 長度歸 0
 t-copy-fill-clear = () {
     t txt = 'abc'
     c = t.copy()
@@ -247,6 +260,7 @@ t-copy-fill-clear = () {
     runner.eq(c.len(), 0, 'clear len == 0')
 }
 
+; 重複/計數/反轉斷言：repeat(3) 串 3 份、count 取碼點數、reverse 反轉字元順序
 t-repeat-count-reverse = () {
     t txt = 'ab'
     r = t.repeat(3)
@@ -258,6 +272,7 @@ t-repeat-count-reverse = () {
 
 ; ── 數值解析 ───────────────────────────────────
 
+; 數值解析斷言：to-i64 及委派它的 to-i8/i16/i32 加範圍檢查，對合法/越界輸入回傳正確 ?整數
 t-to-int = () {
     t txt = '12345'
     v = t.to-i64()
@@ -380,6 +395,7 @@ t-to-int = () {
 
 ; ── 取代 ───────────────────────────────────────
 
+; 取代斷言：replace-char（char 引數）保長度、replace-str 全數取代、replace-n 依 n 限次（0=不變、無匹配=不變）
 t-replace = () {
     t txt = 'a-b-c'
     runner.str-eq(t.replace-char("-", "+").to-str(), 'a+b+c', 5, 'replace-char - -> +')
@@ -396,6 +412,7 @@ t-replace = () {
 
 ; ── 分割 ───────────────────────────────────────
 
+; 分割斷言：split 逐分隔符（前導/尾隨/相鄰產生空元素）、split-n 限最大段數、fields 按空白分段、lines 切 \n 與 \r\n，並釘住空區間 slice(x,x) 長度 0
 t-split = () {
     t txt = 'a,b,c'
     p = t.split(',')
@@ -456,6 +473,7 @@ t-split = () {
 
 ; ── hex / 相等 / 邊界 ──────────────────────────
 
+; hex/相等/邊界斷言：from-hex 解合法十六進位得內容、奇數長度或非法字元回 err，及各 txt 相等邊界情形
 t-hex-and-eq = () {
     h ?txt = txt.from-str('48656C6C6F').from-hex()
     h: {

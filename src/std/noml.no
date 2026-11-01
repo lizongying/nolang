@@ -1,0 +1,2146 @@
+; noml — NOML 配置檔解析與產生
+;
+; NOML 是 Nolang 工具鏈的設定格式（package.noml / workspace.noml /
+; nolang.lock.noml / 語言包 locales/*.noml）。
+;
+; NOML 實際就是**合法的 Nolang 字面量語法**：物件 `{...}`、陣列 `[...]`、
+; 單引號字串 `'...'`、裸數字、布林 `true`/`false`，以及 Nolang 的 `nil`
+; （**沒有 `null`**——Nolang 的「空值」就是 `nil`）。所以 NOML 文件既能由
+; 本模組在執行期解析，也能直接當作 Nolang 字面量被編譯器讀取。語法要點：
+;   - 頂層通常是物件：`{` 與 `}` 各佔一行，成員一行一個，換行即分隔，不用逗號。
+;   - 鍵：裸識別符（下劃線或小寫字母開頭，中間可含小寫字母、數字、中劃線），
+;     不符合規則時寫成單引號字串。
+;   - 值：單引號字串（`\'` `\\` `\/` `\n` `\r` `\t` `\0` `\uXXXX`）、反引號
+;     原始串、true/false/nil、裸數字、物件、陣列（逗號分隔，允許尾隨逗號）。
+;   - 註解：`;` 到行尾。
+;   - 註解標記：`#{key = value, ...}` 只能獨立成行寫在成員上方，或寫在成員
+;     同一行的尾隨位置；寫在成員前方同一行是語法錯誤。
+;
+; 用法：
+;   r = noml.parse('{\nname: \'nolang\'\n}')
+;   r: {
+;       ok -> {
+;           v, found = it.get-str(it.root(), 'name')
+;           found -> print(v)
+;       }
+;       err -> print(it)
+;   }
+;
+; 樹以「節點索引」尋址，而不是像 json 那樣回傳子句柄。`noml-doc` 內含一個
+; 節點池（`#{inline=false}` 指標欄位），`get` 回傳 i64 索引。索引比句柄便宜，
+; 也避開了「父子句柄各持一份 vec 頭、共享同一 data 緩衝」的別名問題。
+;
+; 成員上的 `#{...}` 註解原文（不含 `#{` 與 `}`）隨節點保存，`ann` 可讀回、
+; `set-ann` 可寫入；`ann-value` 按鍵取出註解裡的值。序列化時註解輸出在成員
+; 上方獨立一行，因此 `parse` → `stringify` 可完整往返。
+
+; ═══════════════════════════════════════════════
+; 節點類型
+; ═══════════════════════════════════════════════
+
+; noml-kind: 節點種類（用常量而非枚舉，與 json 模組一致）
+NOML-KIND-NIL = 0
+NOML-KIND-BOOL = 1
+NOML-KIND-NUM = 2
+NOML-KIND-STR = 3
+NOML-KIND-ARR = 4
+NOML-KIND-OBJ = 5
+
+; noml-value: 節點（純標量欄位，可安全存放於堆 vec）
+; kind/num-val/bool-val: 標量值
+; count: 陣列/物件的子元素數量
+; first/last: 子元素在邊表的單向鏈表首/尾邊索引（-1=無子元素）
+noml-value {
+    kind i64
+    num-val f64
+    bool-val bool
+    count i64
+    first i64
+    last i64
+}
+
+; noml-pool: 節點池（堆 vec，無容量上限）
+; nodes: 節點平行陣列
+; strs: 每個節點的字串值（與 nodes 同索引）
+; anns: 每個節點的 `#{...}` 註解原文（空字串＝無註解，與 nodes 同索引）
+; ec/ek/en: 邊表——子節點索引、鍵名、下一同級邊索引
+; err: 最近一次解析失敗的訊息（帶行號），由 parse 讀出
+noml-pool {
+    nodes []noml-value
+    strs []str
+    anns []str
+    ec []i64
+    ek []str
+    en []i64
+    err str
+}
+
+; noml-doc: 一份 NOML 文件（節點池 + 根節點索引）
+; 用法：
+;   d = noml.new()
+;   k = d.new-str('nolang')
+;   o = d.new-obj()
+;   d.put(o, 'name', k)
+;   d.set-root(o)
+;   print(d.stringify())
+noml-doc {
+    pool noml-pool #{inline=false}
+    root i64
+}
+
+; ═══════════════════════════════════════════════
+; 詞法輔助
+; ═══════════════════════════════════════════════
+
+; 是否可作裸鍵首字元（下劃線或小寫字母，不能以數字開頭）
+; c: 位元組值
+; yes: true=可作首字元
+; [is-ident-start](#noml.is-ident-start)
+is-ident-start = (c i64) (yes bool) {
+    yes = c == 95 || (c >= 97 && c <= 122)
+}
+
+; 是否可作裸鍵後續字元（小寫字母、數字、下劃線、中劃線）
+; c: 位元組值
+; yes: true=可作後續字元
+; [is-ident-char](#noml.is-ident-char)
+is-ident-char = (c i64) (yes bool) {
+    yes = c == 95 || c == 45 || (c >= 97 && c <= 122) || (c >= 48 && c <= 57)
+}
+
+; 十六進位數字元轉數值
+; c: 位元組值
+; d: 0~15；非十六進位字元為 -1
+; [hex-digit](#noml.hex-digit)
+hex-digit = (c i64) (d i64) {
+    d = -1
+    {
+        c >= 48 && c <= 57 -> d = c - 48
+        c >= 97 && c <= 102 -> d = c - 87
+        c >= 65 && c <= 70 -> d = c - 55
+        -> d = -1
+    }
+}
+
+; 數值 0~15 轉十六進位字元位元組
+; d: 0~15
+; c: 對應的 ASCII 位元組值
+; [hex-char](#noml.hex-char)
+hex-char = (d i64) (c i64) {
+    c = 48
+    d >= 10 -> c = 87 + d
+    d < 10 -> c = 48 + d
+}
+
+; 是否可寫成裸鍵
+; k: 鍵名
+; yes: true=可寫成裸鍵（否則序列化時要加單引號）
+; [is-ident-key](#noml.is-ident-key)
+is-ident-key = (k str) (yes bool) {
+    yes = false
+    n = k.len-bytes()
+    n == 0 -> return
+    is-ident-start(k.byte(0)) == false -> return
+    yes = true
+    i <- [1..n): {
+        is-ident-char(k.byte(i)) == false -> {
+            yes = false
+            return
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 節點池
+; ═══════════════════════════════════════════════
+
+; 初始化節點池（堆 vec 需先初始化為非 nil 才能安全 push）
+; [init](#noml.noml-pool.init)
+noml-pool.init = () {
+    .nodes = with-len(0)
+    .strs = with-len(0)
+    .anns = with-len(0)
+    .ec = with-len(0)
+    .ek = with-len(0)
+    .en = with-len(0)
+    .err = ''
+}
+
+; 分配新節點（kind=nil、無子節點）
+; idx: 新節點索引
+; [alloc](#noml.noml-pool.alloc)
+noml-pool.alloc = () (idx i64) {
+    idx = .nodes.len()
+    v noml-value
+    v.kind = NOML-KIND-NIL
+    v.num-val = 0.0
+    v.bool-val = false
+    v.count = 0
+    v.first = -1
+    v.last = -1
+    .nodes.push(v)
+    .strs.push('')
+    .anns.push('')
+}
+
+; 將子節點附加到父節點（以邊表單向鏈表實作可變長子元素）
+; node-idx: 父節點索引
+; child-idx: 子節點索引
+; key: 邊上的鍵名（物件子節點用；陣列傳空字串）
+; [add-child](#noml.noml-pool.add-child)
+noml-pool.add-child = (node-idx i64, child-idx i64, key str) {
+    e = .ec.len()
+    .ec.push(child-idx)
+    .ek.push(key)
+    .en.push(-1)
+    last = .nodes[node-idx].last
+    last >= 0 -> {
+        .en[last] = e
+    }
+    last < 0 -> {
+        .nodes[node-idx].first = e
+    }
+    .nodes[node-idx].last = e
+    .nodes[node-idx].count = .nodes[node-idx].count + 1
+}
+
+; 物件是否已有同名成員（重複鍵報錯）
+; obj-idx: 物件節點索引
+; key: 鍵名
+; found: true=已有同名成員
+; [has-key](#noml.noml-pool.has-key)
+noml-pool.has-key = (obj-idx i64, key str) (found bool) {
+    found = false
+    e = .nodes[obj-idx].first
+    (e >= 0) {
+        .ek[e].eq-full(key) -> {
+            found = true
+            return
+        }
+        e = .en[e]
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 游標與錯誤
+; ═══════════════════════════════════════════════
+
+; 跳過空白（含換行）與 `;` 行註解
+; s: 來源文字
+; pos: 起始位置
+; p: 第一個有效字元的位置（全為空白時為字串尾）
+; [skip-trivia](#noml.noml-pool.skip-trivia)
+noml-pool.skip-trivia = (s str, pos i64) (p i64) {
+    p = pos
+    sn = s.len-bytes()
+    (p < sn) {
+        c = s.byte(p)
+        {
+            c == 32 || c == 9 || c == 10 || c == 13 -> p = p + 1
+            c == 59 -> {
+                (p < sn && s.byte(p) != 10) {
+                    p = p + 1
+                }
+            }
+            -> break
+        }
+    }
+}
+
+; 只跳過行內空白（空格與 Tab），不跨越換行
+; s: 來源文字
+; pos: 起始位置
+; p: 第一個非空白字元的位置
+; [skip-blanks](#noml.noml-pool.skip-blanks)
+noml-pool.skip-blanks = (s str, pos i64) (p i64) {
+    p = pos
+    sn = s.len-bytes()
+    (p < sn) {
+        c = s.byte(p)
+        (c == 32 || c == 9) -> {
+            p = p + 1
+        }
+        -> break
+    }
+}
+
+; 位置是否在行首（其前只有空白）
+; s: 來源文字
+; pos: 位置
+; yes: true=本行尚未出現過非空白字元
+; [at-line-start](#noml.noml-pool.at-line-start)
+noml-pool.at-line-start = (s str, pos i64) (yes bool) {
+    yes = true
+    i = pos
+    (i > 0) {
+        c = s.byte(i - 1)
+        {
+            c == 10 -> return
+            c == 32 || c == 9 || c == 13 -> i = i - 1
+            -> {
+                yes = false
+                return
+            }
+        }
+    }
+}
+
+; 位置所在的行號（從 1 起算）
+; s: 來源文字
+; pos: 位置
+; line: 行號
+; [line-of](#noml.noml-pool.line-of)
+noml-pool.line-of = (s str, pos i64) (line i64) {
+    line = 1
+    sn = s.len-bytes()
+    n = pos
+    n > sn -> n = sn
+    n < 0 -> n = 0
+    i <- [0..n): {
+        s.byte(i) == 10 -> line = line + 1
+    }
+}
+
+; 記錄一則帶行號的解析錯誤並回傳 false
+; s: 來源文字
+; pos: 出錯位置
+; msg: 訊息（不含位置前綴）
+; ok: 恆為 false（便於 `ok = .fail(...)`）
+; [fail](#noml.noml-pool.fail)
+noml-pool.fail = (s str, pos i64, msg str) (ok bool) {
+    .err = 'noml: line ' - .line-of(s, pos).to-str() - ': ' - msg
+    ok = false
+}
+
+; 從 `'` 掃到下一個未轉義的 `'` 之後
+; s: 來源文字
+; pos: 開引號位置
+; next: 閉引號之後的位置；-1=未閉合
+; [scan-quote](#noml.noml-pool.scan-quote)
+noml-pool.scan-quote = (s str, pos i64) (next i64) {
+    next = -1
+    sn = s.len-bytes()
+    p = pos + 1
+    (p < sn) {
+        c = s.byte(p)
+        {
+            c == 92 -> p = p + 2
+            c == 39 -> {
+                next = p + 1
+                return
+            }
+            c == 10 -> return
+            -> p = p + 1
+        }
+    }
+}
+
+; 從反引號掃到單獨成行的收尾反引號之後
+; s: 來源文字
+; pos: 開引號位置
+; next: 收尾反引號之後的位置；-1=未閉合
+; [scan-raw](#noml.noml-pool.scan-raw)
+noml-pool.scan-raw = (s str, pos i64) (next i64) {
+    next = -1
+    sn = s.len-bytes()
+    p = pos + 1
+    p >= sn -> return
+    s.byte(p) != 10 -> return
+    p = p + 1
+    (p < sn) {
+        c = s.byte(p)
+        c == 10 -> {
+            j = p + 1
+            (j < sn) {
+                cc = s.byte(j)
+                (cc == 32 || cc == 9 || cc == 13) -> {
+                    j = j + 1
+                }
+                -> break
+            }
+            (j < sn && s.byte(j) == 96) -> {
+                next = j + 1
+                return
+            }
+            p = p + 1
+        }
+        -> p = p + 1
+    }
+}
+
+; 掃過一組 `#{...}`，回傳 `}` 之後的位置（僅校驗結構，不解析條目）
+; s: 來源文字
+; pos: `#` 所在位置
+; next: `}` 之後的位置；-1=不是註解或未閉合
+; [scan-ann](#noml.noml-pool.scan-ann)
+noml-pool.scan-ann = (s str, pos i64) (next i64) {
+    next = -1
+    sn = s.len-bytes()
+    pos + 1 >= sn -> return
+    s.byte(pos) != 35 -> return
+    s.byte(pos + 1) != 123 -> return
+    p = pos + 2
+    depth = 0
+    (p < sn) {
+        c = s.byte(p)
+        {
+            c == 39 -> {
+                p = .scan-quote(s, p)
+                p < 0 -> return
+            }
+            c == 96 -> {
+                p = .scan-raw(s, p)
+                p < 0 -> return
+            }
+            c == 91 || c == 123 -> {
+                depth = depth + 1
+                p = p + 1
+            }
+            c == 93 -> {
+                depth > 0 -> depth = depth - 1
+                p = p + 1
+            }
+            c == 125 -> {
+                depth == 0 -> {
+                    next = p + 1
+                    return
+                }
+                depth = depth - 1
+                p = p + 1
+            }
+            -> p = p + 1
+        }
+    }
+}
+
+; 合併兩段註解原文（多組註解以 ", " 連接）
+; cur: 已累積的原文（可為空）
+; add: 新增的原文
+; out: 合併結果
+; [join-ann](#noml.noml-pool.join-ann)
+noml-pool.join-ann = (cur str, add str) (out str) {
+    out = add
+    cur.len-bytes() > 0 -> out = cur - ', ' - add
+}
+
+; ═══════════════════════════════════════════════
+; 解析
+; ═══════════════════════════════════════════════
+
+; 解析整份文件（含文件級註解與頂層值的尾隨註解）
+; s: 來源文字
+; idx: 根節點索引；-1=失敗
+; ok: true=解析成功
+; [parse](#noml.noml-pool.parse)
+noml-pool.parse = (s str) (idx i64, ok bool) {
+    idx = -1
+    ok = false
+    sn = s.len-bytes()
+    p = .skip-trivia(s, 0)
+    ann = ''
+    (p < sn) {
+        p >= sn -> break
+        s.byte(p) != 35 -> break
+        .at-line-start(s, p) == false -> {
+            ok = .fail(s, p, '`#{...}` must be on its own line above the value, or trailing on the value\'s line')
+            return
+        }
+        an = .scan-ann(s, p)
+        an < 0 -> {
+            ok = .fail(s, p, 'unterminated annotation')
+            return
+        }
+        ann = .join-ann(ann, s.slice-bytes(p + 2, an - 1))
+        lq = .skip-blanks(s, an)
+        lq < sn && s.byte(lq) != 10 -> {
+            ok = .fail(s, lq, '`#{...}` must not share its line with the value')
+            return
+        }
+        p = .skip-trivia(s, an)
+    }
+    p >= sn -> {
+        msg = 'unexpected end of input'
+        ann.len-bytes() > 0 -> msg = 'annotation without a value to attach to'
+        ok = .fail(s, p, msg)
+        return
+    }
+    idx, np, vok = .parse-value(s, p)
+    vok == false -> {
+        idx = -1
+        return
+    }
+    ann.len-bytes() > 0 -> .anns[idx] = ann
+    q = .skip-blanks(s, np)
+    (q < sn && s.byte(q) == 35) {
+        np2 = .scan-ann(s, q)
+        np2 < 0 -> {
+            ok = .fail(s, q, 'unterminated annotation')
+            return
+        }
+        .anns[idx] = .join-ann(.anns[idx], s.slice-bytes(q + 2, np2 - 1))
+        q = .skip-blanks(s, np2)
+    }
+    q = .skip-trivia(s, q)
+    q != sn -> {
+        ok = .fail(s, q, 'unexpected content after the top-level value')
+        return
+    }
+    ok = true
+}
+
+; 解析一個值
+; s: 來源文字
+; pos: 值的起始位置
+; idx: 節點索引；-1=失敗
+; next: 值之後的位置
+; ok: true=解析成功
+; [parse-value](#noml.noml-pool.parse-value)
+noml-pool.parse-value = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = -1
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    p = .skip-trivia(s, pos)
+    p >= sn -> {
+        ok = .fail(s, p, 'unexpected end of input, expected a value')
+        return
+    }
+    c = s.byte(p)
+    {
+        c == 123 -> idx, next, ok = .parse-object(s, p)
+        c == 91 -> idx, next, ok = .parse-array(s, p)
+        c == 39 -> idx, next, ok = .parse-str-node(s, p)
+        c == 96 -> idx, next, ok = .parse-raw-node(s, p)
+        c == 116 || c == 102 -> idx, next, ok = .parse-bool-node(s, p)
+        c == 110 -> idx, next, ok = .parse-nil-node(s, p)
+        c == 45 || (c >= 48 && c <= 57) -> idx, next, ok = .parse-num-node(s, p)
+        c == 35 -> ok = .fail(s, p, '`#{...}` must be on its own line above the member, or trailing on the member\'s line')
+        -> {
+            ch = s.slice-bytes(p, p + 1)
+            ok = .fail(s, p, 'unexpected character \'' - ch - '\' in value')
+        }
+    }
+}
+
+; 解析物件 `{ 成員... }`（成員以換行分隔，無逗號）
+; s: 來源文字
+; pos: `{` 所在位置
+; idx: 物件節點索引；-1=失敗
+; next: `}` 之後的位置
+; ok: true=解析成功
+; [parse-object](#noml.noml-pool.parse-object)
+noml-pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = .alloc()
+    .nodes[idx].kind = NOML-KIND-OBJ
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    p = pos + 1
+    ann = ''
+    key = ''
+    child = -1
+    cnext = 0
+    cok = false
+    (p < sn) {
+        p = .skip-trivia(s, p)
+        p >= sn -> {
+            ok = .fail(s, p, 'unexpected end of input in object')
+            return
+        }
+        s.byte(p) == 125 -> {
+            next = p + 1
+            ok = true
+            return
+        }
+        ann = ''
+        (p < sn && s.byte(p) == 35) {
+            .at-line-start(s, p) == false -> {
+                ok = .fail(s, p, '`#{...}` must be on its own line above the member, or trailing on the member\'s line')
+                return
+            }
+            np = .scan-ann(s, p)
+            np < 0 -> {
+                ok = .fail(s, p, 'unterminated annotation')
+                return
+            }
+            ann = .join-ann(ann, s.slice-bytes(p + 2, np - 1))
+            q = .skip-blanks(s, np)
+            q < sn && s.byte(q) != 10 -> {
+                ok = .fail(s, q, '`#{...}` must not share its line with the member')
+                return
+            }
+            p = .skip-trivia(s, np)
+        }
+        p >= sn -> {
+            ok = .fail(s, p, 'annotation without a member to attach to')
+            return
+        }
+        key, knext, kok = .parse-key(s, p)
+        kok == false -> return
+        .has-key(idx, key) -> {
+            ok = .fail(s, p, 'duplicate key \'' - key - '\'')
+            return
+        }
+        p = .skip-blanks(s, knext)
+        p >= sn -> {
+            ok = .fail(s, p, 'unexpected end of input, expected \':\'')
+            return
+        }
+        s.byte(p) != 58 -> {
+            ok = .fail(s, p, 'expected \':\' after key \'' - key - '\'')
+            return
+        }
+        child, cnext, cok = .parse-value(s, p + 1)
+        cok == false -> return
+        .add-child(idx, child, key)
+        p = .skip-blanks(s, cnext)
+        (p < sn && s.byte(p) == 35) {
+            np = .scan-ann(s, p)
+            np < 0 -> {
+                ok = .fail(s, p, 'unterminated annotation')
+                return
+            }
+            ann = .join-ann(ann, s.slice-bytes(p + 2, np - 1))
+            p = .skip-blanks(s, np)
+        }
+        ann.len-bytes() > 0 -> .anns[child] = ann
+        p, eok = .require-end(s, p, key)
+        eok == false -> {
+            ok = false
+            return
+        }
+    }
+    ok = .fail(s, p, 'unexpected end of input in object')
+}
+
+; 解析陣列 `[ 元素, ... ]`（逗號分隔，允許尾隨逗號）
+; s: 來源文字
+; pos: `[` 所在位置
+; idx: 陣列節點索引；-1=失敗
+; next: `]` 之後的位置
+; ok: true=解析成功
+; [parse-array](#noml.noml-pool.parse-array)
+noml-pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = .alloc()
+    .nodes[idx].kind = NOML-KIND-ARR
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    p = pos + 1
+    child = -1
+    cnext = 0
+    cok = false
+    (p < sn) {
+        p = .skip-trivia(s, p)
+        p >= sn -> {
+            ok = .fail(s, p, 'unexpected end of input in array')
+            return
+        }
+        s.byte(p) == 93 -> {
+            next = p + 1
+            ok = true
+            return
+        }
+        child, cnext, cok = .parse-value(s, p)
+        cok == false -> return
+        .add-child(idx, child, '')
+        p = .skip-trivia(s, cnext)
+        p >= sn -> {
+            ok = .fail(s, p, 'unexpected end of input in array')
+            return
+        }
+        c = s.byte(p)
+        {
+            c == 44 -> p = p + 1
+            c == 93 -> {
+                next = p + 1
+                ok = true
+                return
+            }
+            -> {
+                ok = .fail(s, p, 'expected \',\' or \']\' in array')
+                return
+            }
+        }
+    }
+    ok = .fail(s, p, 'unexpected end of input in array')
+}
+
+; 成員結束校驗：之後只允許行內空白、換行、`;` 註解或容器閉合
+; s: 來源文字
+; pos: 值之後的位置
+; key: 成員鍵名（僅用於錯誤訊息）
+; next: 換行之後（或 `}`）的位置
+; ok: true=合法
+; [require-end](#noml.noml-pool.require-end)
+noml-pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    (pos < sn) {
+        pos >= sn -> break
+        c = s.byte(pos)
+        {
+            c == 32 || c == 9 || c == 13 -> pos = pos + 1
+            c == 10 -> {
+                next = pos + 1
+                ok = true
+                return
+            }
+            c == 125 -> {
+                next = pos
+                ok = true
+                return
+            }
+            c == 59 -> {
+                (pos < sn && s.byte(pos) != 10) {
+                    pos = pos + 1
+                }
+                pos < sn -> {
+                    next = pos + 1
+                    ok = true
+                    return
+                }
+                next = pos
+                ok = true
+                return
+            }
+            -> {
+                ok = .fail(s, pos, 'expected newline after member \'' - key - '\' (object members are newline-separated)')
+                return
+            }
+        }
+    }
+}
+
+; 解析鍵（裸識別符或單引號字串）
+; s: 來源文字
+; pos: 鍵的起始位置
+; key: 鍵名
+; next: 鍵之後的位置
+; ok: true=解析成功
+; [parse-key](#noml.noml-pool.parse-key)
+noml-pool.parse-key = (s str, pos i64) (key str, next i64, ok bool) {
+    key = ''
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    pos >= sn -> {
+        ok = .fail(s, pos, 'unexpected end of input, expected key')
+        return
+    }
+    s.byte(pos) == 39 -> {
+        key, next, ok = .parse-str(s, pos)
+        return
+    }
+    is-ident-start(s.byte(pos)) == false -> {
+        ok = .fail(s, pos, 'expected key (non-identifier keys must be single-quoted)')
+        return
+    }
+    p = pos
+    (p < sn && is-ident-char(s.byte(p))) {
+        p = p + 1
+    }
+    key = s.slice-bytes(pos, p)
+    next = p
+    ok = true
+}
+
+; 解析單引號字串（含 `\\` 轉義）
+; 以「片段拼接」而非位元組緩衝建構：每個轉義點切一段，段與解碼結果直接串接，
+; 因此不需要預先估算容量，也不會出現緩衝視圖的生命週期問題。
+; s: 來源文字
+; pos: 開引號位置
+; val: 解出的字串
+; next: 閉引號之後的位置
+; ok: true=解析成功
+; [parse-str](#noml.noml-pool.parse-str)
+noml-pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
+    val = ''
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    pos >= sn -> return
+    s.byte(pos) != 39 -> return
+    p = pos + 1
+    seg = p
+    dec = ''
+    np = p
+    dok = false
+    (p < sn) {
+        c = s.byte(p)
+        {
+            c == 39 -> {
+                val = val - s.slice-bytes(seg, p)
+                next = p + 1
+                ok = true
+                return
+            }
+            c == 10 -> {
+                ok = .fail(s, p, 'unterminated string')
+                return
+            }
+            c == 92 -> {
+                dec, np, dok = .decode-escape(s, p)
+                dok == false -> {
+                    ok = false
+                    return
+                }
+                val = val - s.slice-bytes(seg, p) - dec
+                p = np
+                seg = p
+            }
+            -> p = p + 1
+        }
+    }
+    ok = .fail(s, pos, 'unterminated string')
+}
+
+; 解碼一個轉義序列（`\\'` `\\\\` `\\/` `\\n` `\\r` `\\t` `\\uXXXX`）
+; s: 來源文字
+; pos: 反斜線所在位置
+; val: 解出的字串（單一碼點）
+; next: 轉義序列之後的位置
+; ok: true=解碼成功
+; [decode-escape](#noml.noml-pool.decode-escape)
+noml-pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
+    val = ''
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    pos + 1 >= sn -> {
+        ok = .fail(s, pos, 'unexpected end of input in string escape')
+        return
+    }
+    e = s.byte(pos + 1)
+    next = pos + 2
+    ok = true
+    {
+        e == 39 -> val = '\''
+        e == 92 -> val = '\\'
+        e == 47 -> val = '/'
+        e == 110 -> val = '\n'
+        e == 114 -> val = '\r'
+        e == 116 -> val = '\t'
+        e == 117 -> {
+            code = .hex4(s, pos + 2)
+            code < 0 -> {
+                ok = .fail(s, pos, 'invalid unicode escape')
+                next = pos
+                return
+            }
+            next = pos + 6
+            ch char = code
+            val = ch.to-str()
+        }
+        -> {
+            ok = .fail(s, pos, 'invalid escape sequence')
+            next = pos
+        }
+    }
+}
+
+; 讀取 4 位十六進位碼位
+; s: 來源文字
+; pos: 第一位數字的位置
+; code: 0~0xFFFF；-1=格式非法
+; [hex4](#noml.noml-pool.hex4)
+noml-pool.hex4 = (s str, pos i64) (code i64) {
+    code = -1
+    sn = s.len-bytes()
+    pos < 0 -> return
+    pos + 4 > sn -> return
+    v = 0
+    i <- [pos..pos + 4): {
+        d = hex-digit(s.byte(i))
+        d < 0 -> return
+        v = v * 16 + d
+    }
+    code = v
+}
+
+; 解析反引號原始串（開頭 ` 後必須緊跟換行；結尾 ` 必須單獨成行）
+; s: 來源文字
+; pos: 開引號位置
+; val: 原樣內容（不做轉義解析）
+; next: 收尾反引號之後的位置
+; ok: true=解析成功
+; [parse-raw](#noml.noml-pool.parse-raw)
+noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
+    val = ''
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    pos >= sn -> return
+    s.byte(pos) != 96 -> return
+    p = pos + 1
+    p >= sn -> {
+        ok = .fail(s, pos, 'raw string: the opening \'`\' must be followed by a newline')
+        return
+    }
+    s.byte(p) != 10 -> {
+        ok = .fail(s, p, 'raw string: the opening \'`\' must be followed by a newline')
+        return
+    }
+    p = p + 1
+    buf str = with-len(sn - p)
+    k = 0
+    (p < sn) {
+        c = s.byte(p)
+        c == 10 -> {
+            j = p + 1
+            (j < sn) {
+                cc = s.byte(j)
+                (cc == 32 || cc == 9 || cc == 13) -> {
+                    j = j + 1
+                }
+                -> break
+            }
+            (j < sn && s.byte(j) == 96) -> {
+                next = j + 1
+                ok = true
+                val = buf.slice-bytes(0, k)
+                return
+            }
+            buf[k]: {
+                ok -> it = 10
+            }
+            k = k + 1
+            p = p + 1
+        }
+        c == 13 && p + 1 < sn && s.byte(p + 1) == 10 -> p = p + 1
+        -> {
+            buf[k]: {
+                ok -> it = c
+            }
+            k = k + 1
+            p = p + 1
+        }
+    }
+    ok = .fail(s, pos, 'unterminated raw string (the closing \'`\' must be alone on its own line)')
+}
+
+; 解析數字面值（整數 / 小數 / 科學記號，允許前導 '-'，不接受 '+'）
+; 只吃掉構成數字本身的位元組，遇到其他字元即停，不要求分隔符
+; s str: 來源全文
+; pos i64: 數字起始的位元組下標
+; val f64: 解析出的數值（NOML 只有一種數字型別，整數亦以 f64 存放）
+; next i64: 數字結束後的位元組下標（失敗時停在出錯位置，供 .fail 標記）
+; ok bool: true=解析成功, false=語法錯誤（無整數位、'.' 後無小數位、指數無位數）
+; [parse-num](#noml.noml-pool.parse-num)
+noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
+    val = 0.0
+    next = pos
+    ok = false
+    sn = s.len-bytes()
+    i = pos
+    negative = false
+    c = 0
+    digits = 0
+    s.byte(i) == 45 -> {
+        negative = true
+        i = i + 1
+    }
+    (i < sn) {
+        i >= sn -> break
+        c = s.byte(i)
+        c < 48 || c > 57 -> break
+        val = val * 10.0 + (c - 48)
+        digits = digits + 1
+        i = i + 1
+    }
+    digits == 0 -> {
+        ok = .fail(s, pos, 'invalid number')
+        return
+    }
+    (i < sn && s.byte(i) == 46) {
+        i = i + 1
+        frac = 0.1
+        fd = 0
+        (i < sn) {
+            i >= sn -> break
+            c = s.byte(i)
+            c < 48 || c > 57 -> break
+            val = val + frac * (c - 48)
+            frac = frac * 0.1
+            fd = fd + 1
+            i = i + 1
+        }
+        fd == 0 -> {
+            ok = .fail(s, i, 'invalid number (digits expected after \'.\')')
+            return
+        }
+    }
+    (i < sn && (s.byte(i) == 101 || s.byte(i) == 69)) {
+        i = i + 1
+        sign = 1
+        (i < sn && (s.byte(i) == 43 || s.byte(i) == 45)) {
+            s.byte(i) == 45 -> sign = -1
+            i = i + 1
+        }
+        ev = 0
+        ed = 0
+        (i < sn) {
+            i >= sn -> break
+            c = s.byte(i)
+            c < 48 || c > 57 -> break
+            ev = ev * 10 + (c - 48)
+            ed = ed + 1
+            i = i + 1
+        }
+        ed == 0 -> {
+            ok = .fail(s, i, 'invalid number (digits expected in exponent)')
+            return
+        }
+        scale = 1.0
+        k <- [0..ev): {
+            scale = scale * 10.0
+        }
+        sign > 0 -> val = val * scale
+        sign < 0 -> val = val / scale
+    }
+    negative -> val = 0.0 - val
+    next = i
+    ok = true
+}
+
+; 解析 true/false
+; s str: 完整來源文字
+; pos i64: 字面量起始位置（指向 t 或 f）
+; val bool: 解析出的布林值；ok=false 時固定為 false
+; next i64: 字面量之後的位置；ok=false 時回原 pos
+; ok bool: true=解析成功，false=此處不是 true/false（已呼叫 fail 記錄錯誤）
+; [parse-bool](#noml.noml-pool.parse-bool)
+noml-pool.parse-bool = (s str, pos i64) (val bool, next i64, ok bool) {
+    val = false
+    next = pos
+    ok = false
+    n = .match-kw(s, pos, 'true')
+    n >= 0 -> {
+        val = true
+        next = n
+        ok = true
+        return
+    }
+    n = .match-kw(s, pos, 'false')
+    n >= 0 -> {
+        val = false
+        next = n
+        ok = true
+        return
+    }
+    ok = .fail(s, pos, 'invalid boolean literal')
+}
+
+; 匹配裸關鍵字（其後不得緊接識別符字元）
+; s: 來源文字
+; pos: 起始位置
+; kw: 關鍵字
+; next: 關鍵字之後的位置；-1=不匹配
+; [match-kw](#noml.noml-pool.match-kw)
+noml-pool.match-kw = (s str, pos i64, kw str) (next i64) {
+    next = -1
+    sn = s.len-bytes()
+    kn = kw.len-bytes()
+    pos + kn > sn -> return
+    s.slice-bytes(pos, pos + kn).eq-full(kw) == false -> return
+    pos + kn < sn -> {
+        is-ident-char(s.byte(pos + kn)) -> return
+    }
+    next = pos + kn
+}
+
+; ═══════════════════════════════════════════════
+; 值節點包裝（解析純量並落地成節點）
+; ═══════════════════════════════════════════════
+
+; 解析字串值並落地成節點
+; s: 來源文字
+; pos: 開引號位置
+; idx: 節點索引；-1=失敗
+; next: 值之後的位置
+; ok: true=解析成功
+; [parse-str-node](#noml.noml-pool.parse-str-node)
+noml-pool.parse-str-node = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = -1
+    v, np, vok = .parse-str(s, pos)
+    next = np
+    ok = vok
+    vok == false -> return
+    idx = .alloc()
+    .nodes[idx].kind = NOML-KIND-STR
+    .strs[idx] = v
+}
+
+; 解析原始串值並落地成節點
+; s: 來源文字
+; pos: 開引號位置
+; idx: 節點索引；-1=失敗
+; next: 值之後的位置
+; ok: true=解析成功
+; [parse-raw-node](#noml.noml-pool.parse-raw-node)
+noml-pool.parse-raw-node = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = -1
+    v, np, vok = .parse-raw(s, pos)
+    next = np
+    ok = vok
+    vok == false -> return
+    idx = .alloc()
+    .nodes[idx].kind = NOML-KIND-STR
+    .strs[idx] = v
+}
+
+; 解析布林值並落地成節點
+; s: 來源文字
+; pos: 字面量起始位置
+; idx: 節點索引；-1=失敗
+; next: 值之後的位置
+; ok: true=解析成功
+; [parse-bool-node](#noml.noml-pool.parse-bool-node)
+noml-pool.parse-bool-node = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = -1
+    v, np, vok = .parse-bool(s, pos)
+    next = np
+    ok = vok
+    vok == false -> return
+    idx = .alloc()
+    .nodes[idx].kind = NOML-KIND-BOOL
+    .nodes[idx].bool-val = v
+}
+
+; 解析 nil 值並落地成節點
+; s: 來源文字
+; pos: 字面量起始位置
+; idx: 節點索引；-1=失敗
+; next: 值之後的位置
+; ok: true=解析成功
+; [parse-nil-node](#noml.noml-pool.parse-nil-node)
+noml-pool.parse-nil-node = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = -1
+    next = pos
+    ok = false
+    n = .match-kw(s, pos, 'nil')
+    n < 0 -> {
+        ok = .fail(s, pos, 'invalid nil literal')
+        return
+    }
+    idx = .alloc()
+    next = n
+    ok = true
+}
+
+; 解析數字值並落地成節點
+; s: 來源文字
+; pos: 數字起始位置
+; idx: 節點索引；-1=失敗
+; next: 值之後的位置
+; ok: true=解析成功
+; [parse-num-node](#noml.noml-pool.parse-num-node)
+noml-pool.parse-num-node = (s str, pos i64) (idx i64, next i64, ok bool) {
+    idx = -1
+    v, np, vok = .parse-num(s, pos)
+    next = np
+    ok = vok
+    vok == false -> return
+    idx = .alloc()
+    .nodes[idx].kind = NOML-KIND-NUM
+    .nodes[idx].num-val = v
+}
+
+; ═══════════════════════════════════════════════
+; 序列化
+; ═══════════════════════════════════════════════
+
+; 掃描原始位元組，判斷是否出現指定值（逐位元組比對，不按碼點）
+; s str: 要掃描的文字
+; target i64: 要比對的位元組值，取值 0–255（如 10 = '\n'、96 = '`'）
+; yes bool: true=至少出現一次, false=完全不含該位元組（空字串必得 false）
+; [has-byte](#noml.noml-pool.has-byte)
+noml-pool.has-byte = (s str, target i64) (yes bool) {
+    yes = false
+    i <- [0..s.len-bytes()): {
+        s.byte(i) == target -> {
+            yes = true
+            return
+        }
+    }
+}
+
+; 判斷內容能否放進反引號原始串後原樣取回
+; 出現下列任一情形即不可用：空字串、首或末位元組為 LF、含 CR、
+; 任一行去掉前導空白（空白 / TAB / CR）後以 '`' 開頭（會被誤認為結束標記）。
+; s str: 待序列化的內容
+; yes bool: true=可安全包成 '`\n' + s + '\n`', false=須改用單引號轉義形式
+; [raw-safe](#noml.noml-pool.raw-safe)
+noml-pool.raw-safe = (s str) (yes bool) {
+    yes = true
+    sn = s.len-bytes()
+    sn == 0 -> {
+        yes = false
+        return
+    }
+    ; 首/末位元組是換行時，原始串會把該行當成空行或提前收尾，內容無法原樣往返
+    (s.byte(0) == 10 || s.byte(sn - 1) == 10) -> {
+        yes = false
+        return
+    }
+    ; 含 CR 時原始串會被解析端正規化成 LF，改用轉義形式
+    .has-byte(s, 13) -> {
+        yes = false
+        return
+    }
+    i = 0
+    (i < sn) {
+        (i == 0 || s.byte(i - 1) == 10) -> {
+            j = i
+            (j < sn) {
+                c = s.byte(j)
+                (c == 32 || c == 9 || c == 13) -> {
+                    j = j + 1
+                }
+                -> break
+            }
+            (j < sn && s.byte(j) == 96) -> {
+                yes = false
+                return
+            }
+        }
+        i = i + 1
+    }
+}
+
+; 產生單引號字串面值（含轉義）
+; 轉義規則：'\'' 與 '\\' 前加反斜線，LF / CR / TAB 寫成 \n \r \t，
+; 其餘 < 0x20 的控制位元組寫成 \u00XX；輸出緩衝預留 n*6+2（每位元組最壞 6 字元）。
+; s str: 原始內容（允許任意位元組，不要求合法 UTF-8）
+; out str: 首尾各加一個單引號、內部已轉義的面值
+; [quote](#noml.noml-pool.quote)
+noml-pool.quote = (s str) (out str) {
+    n = s.len-bytes()
+    buf str = with-len(n * 6 + 2)
+    k = 0
+    buf[k]: {
+        ok -> it = 39
+    }
+    k = k + 1
+    i <- [0..n): {
+        c = s.byte(i)
+        {
+            c == 39 -> {
+                buf[k]: {
+                    ok -> it = 92
+                }
+                buf[k + 1]: {
+                    ok -> it = 39
+                }
+                k = k + 2
+            }
+            c == 92 -> {
+                buf[k]: {
+                    ok -> it = 92
+                }
+                buf[k + 1]: {
+                    ok -> it = 92
+                }
+                k = k + 2
+            }
+            c == 10 -> {
+                buf[k]: {
+                    ok -> it = 92
+                }
+                buf[k + 1]: {
+                    ok -> it = 110
+                }
+                k = k + 2
+            }
+            c == 13 -> {
+                buf[k]: {
+                    ok -> it = 92
+                }
+                buf[k + 1]: {
+                    ok -> it = 114
+                }
+                k = k + 2
+            }
+            c == 9 -> {
+                buf[k]: {
+                    ok -> it = 92
+                }
+                buf[k + 1]: {
+                    ok -> it = 116
+                }
+                k = k + 2
+            }
+            c < 32 -> {
+                buf[k]: {
+                    ok -> it = 92
+                }
+                buf[k + 1]: {
+                    ok -> it = 117
+                }
+                buf[k + 2]: {
+                    ok -> it = 48
+                }
+                buf[k + 3]: {
+                    ok -> it = 48
+                }
+                buf[k + 4]: {
+                    ok -> it = hex-char(c >> 4)
+                }
+                buf[k + 5]: {
+                    ok -> it = hex-char(c & 15)
+                }
+                k = k + 6
+            }
+            -> {
+                buf[k]: {
+                    ok -> it = c
+                }
+                k = k + 1
+            }
+        }
+    }
+    buf[k]: {
+        ok -> it = 39
+    }
+    k = k + 1
+    out = buf.slice-bytes(0, k)
+}
+
+; 依內容挑選最簡形式產生字串面值
+; 預設走 .quote()；含 LF 且通過 .raw-safe() 時改用反引號原始串，保留原換行。
+; s str: 原始內容
+; out str: 可直接寫進 .noml 的文字面值（單引號轉義形式或 '`' 原始串）
+; [quote-value](#noml.noml-pool.quote-value)
+noml-pool.quote-value = (s str) (out str) {
+    out = .quote(s)
+    .has-byte(s, 10) -> {
+        .raw-safe(s) -> out = '`\n' - s - '\n`'
+    }
+}
+
+; 產生數字面值（整值不帶小數點）
+; 落在 ±1e15 內、且取整後能還原（i.to-f64() == n）時輸出整數寫法，
+; 否則保留 n.to-str() 的結果。
+; n f64: 要序列化的數值
+; out str: 數字面值（如 '42' 或 '3.14'）
+; [fmt-num](#noml.noml-pool.fmt-num)
+noml-pool.fmt-num = (n f64) (out str) {
+    out = n.to-str()
+    in-range = n >= -1000000000000000.0 && n <= 1000000000000000.0
+    in-range -> {
+        i = n.to-i64()
+        i.to-f64() == n -> out = i.to-str()
+    }
+}
+
+; 產生鍵面值（不合裸鍵規則時加引號）
+; k: 鍵名
+; out: NOML 鍵面值
+; [fmt-key](#noml.noml-pool.fmt-key)
+noml-pool.fmt-key = (k str) (out str) {
+    out = k
+    is-ident-key(k) == false -> out = .quote(k)
+}
+
+; 序列化子樹
+; idx: 子樹根索引
+; indent: 縮排層級（每層兩空格）
+; out: NOML 文字（索引無效時為空字串）
+; [stringify](#noml.noml-pool.stringify)
+noml-pool.stringify = (idx i64, indent i64) (out str) {
+    out = ''
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    k = .nodes[idx].kind
+    {
+        k == NOML-KIND-NIL -> out = 'nil'
+        k == NOML-KIND-BOOL -> {
+            .nodes[idx].bool-val -> out = 'true'
+            -> out = 'false'
+        }
+        k == NOML-KIND-NUM -> out = .fmt-num(.nodes[idx].num-val)
+        k == NOML-KIND-STR -> out = .quote-value(.strs[idx])
+        k == NOML-KIND-ARR -> out = .stringify-arr(idx, indent)
+        k == NOML-KIND-OBJ -> out = .stringify-obj(idx, indent)
+        -> out = 'nil'
+    }
+}
+
+; 序列化物件（每個成員一行，註解輸出在成員上方）
+; idx: 物件節點索引
+; indent: 縮排層級
+; out: NOML 文字
+; [stringify-obj](#noml.noml-pool.stringify-obj)
+noml-pool.stringify-obj = (idx i64, indent i64) (out str) {
+    out = '{}'
+    e = .nodes[idx].first
+    e < 0 -> return
+    pad = '  '.repeat(indent + 1)
+    out = '{\n'
+    (e >= 0) {
+        c = .ec[e]
+        .anns[c].len-bytes() > 0 -> out = out - pad - '#{' - .anns[c] - '}\n'
+        out = out - pad - .fmt-key(.ek[e]) - ': ' - .stringify(c, indent + 1) - '\n'
+        e = .en[e]
+    }
+    out = out - '  '.repeat(indent) - '}'
+}
+
+; 序列化陣列（每個元素一行，帶尾隨逗號）
+; idx: 陣列節點索引
+; indent: 縮排層級
+; out: NOML 文字
+; [stringify-arr](#noml.noml-pool.stringify-arr)
+noml-pool.stringify-arr = (idx i64, indent i64) (out str) {
+    out = '[]'
+    e = .nodes[idx].first
+    e < 0 -> return
+    pad = '  '.repeat(indent + 1)
+    out = '[\n'
+    (e >= 0) {
+        out = out - pad - .stringify(.ec[e], indent + 1) - ',\n'
+        e = .en[e]
+    }
+    out = out - '  '.repeat(indent) - ']'
+}
+
+; ═══════════════════════════════════════════════
+; ═══════════════════════════════════════════════
+; 節點訪問（索引級，noml-pool）
+; ═══════════════════════════════════════════════
+
+; 節點種類
+; idx: 節點索引
+; k: NOML-KIND-*；索引無效時為 NOML-KIND-NIL
+; [kind](#noml.noml-pool.kind)
+noml-pool.kind = (idx i64) (k i64) {
+    k = NOML-KIND-NIL
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    k = .nodes[idx].kind
+}
+
+; 是否 nil
+; idx: 節點索引
+; yes: true=值為 nil
+; [is-nil](#noml.noml-pool.is-nil)
+noml-pool.is-nil = (idx i64) (yes bool) {
+    yes = .kind(idx) == NOML-KIND-NIL
+}
+
+; 是否物件
+; idx: 節點索引
+; yes: true=值為物件
+; [is-obj](#noml.noml-pool.is-obj)
+noml-pool.is-obj = (idx i64) (yes bool) {
+    yes = .kind(idx) == NOML-KIND-OBJ
+}
+
+; 是否陣列
+; idx: 節點索引
+; yes: true=值為陣列
+; [is-arr](#noml.noml-pool.is-arr)
+noml-pool.is-arr = (idx i64) (yes bool) {
+    yes = .kind(idx) == NOML-KIND-ARR
+}
+
+; 是否字串
+; idx: 節點索引
+; yes: true=值為字串（單引號串或原始串）
+; [is-str](#noml.noml-pool.is-str)
+noml-pool.is-str = (idx i64) (yes bool) {
+    yes = .kind(idx) == NOML-KIND-STR
+}
+
+; 是否數字
+; idx: 節點索引
+; yes: true=值為數字
+; [is-num](#noml.noml-pool.is-num)
+noml-pool.is-num = (idx i64) (yes bool) {
+    yes = .kind(idx) == NOML-KIND-NUM
+}
+
+; 是否布林
+; idx: 節點索引
+; yes: true=值為布林
+; [is-bool](#noml.noml-pool.is-bool)
+noml-pool.is-bool = (idx i64) (yes bool) {
+    yes = .kind(idx) == NOML-KIND-BOOL
+}
+
+; 子元素數量（物件成員數或陣列長度，其餘為 0）
+; idx: 節點索引
+; n: 子元素數量
+; [len](#noml.noml-pool.len)
+noml-pool.len = (idx i64) (n i64) {
+    n = 0
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    n = .nodes[idx].count
+}
+
+; 按鍵取子節點索引
+; idx: 物件節點索引
+; key: 鍵名
+; child: ok=子節點索引, nil=非物件或鍵不存在
+; [get](#noml.noml-pool.get)
+noml-pool.get = (idx i64, key str) (child ?i64) {
+    child = nil
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    .nodes[idx].kind != NOML-KIND-OBJ -> return
+    e = .nodes[idx].first
+    (e >= 0) {
+        .ek[e].eq-full(key) -> {
+            child = .ec[e]
+            return
+        }
+        e = .en[e]
+    }
+}
+
+; 按位置取陣列元素索引
+; idx: 陣列節點索引
+; i: 元素下標（0 起算）
+; child: ok=元素節點索引, nil=非陣列或下標越界
+; [at](#noml.noml-pool.at)
+noml-pool.at = (idx i64, i i64) (child ?i64) {
+    child = nil
+    i < 0 -> return
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    .nodes[idx].kind != NOML-KIND-ARR -> return
+    e = .nodes[idx].first
+    k = 0
+    (e >= 0) {
+        k == i -> {
+            child = .ec[e]
+            return
+        }
+        k = k + 1
+        e = .en[e]
+    }
+}
+
+; 按位置取物件鍵名
+; idx: 物件節點索引
+; i: 成員下標（0 起算，依檔案順序）
+; key: ok=鍵名, nil=非物件或下標越界
+; [key](#noml.noml-pool.key)
+noml-pool.key = (idx i64, i i64) (key ?str) {
+    key = nil
+    i < 0 -> return
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    .nodes[idx].kind != NOML-KIND-OBJ -> return
+    e = .nodes[idx].first
+    k = 0
+    (e >= 0) {
+        k == i -> {
+            key = .ek[e]
+            return
+        }
+        k = k + 1
+        e = .en[e]
+    }
+}
+
+; 取字串值
+; idx: 節點索引
+; v: ok=字串內容, nil=值非字串
+; [val-str](#noml.noml-pool.val-str)
+noml-pool.val-str = (idx i64) (v ?str) {
+    v = nil
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    .nodes[idx].kind != NOML-KIND-STR -> return
+    v = .strs[idx]
+}
+
+; 取數值
+; idx: 節點索引
+; v: ok=數值, nil=值非數字
+; [val-num](#noml.noml-pool.val-num)
+noml-pool.val-num = (idx i64) (v ?f64) {
+    v = nil
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    .nodes[idx].kind != NOML-KIND-NUM -> return
+    v = .nodes[idx].num-val
+}
+
+; 取整數值（截斷小數）
+; idx: 節點索引
+; v: ok=截斷後的整數, nil=值非數字
+; [val-i64](#noml.noml-pool.val-i64)
+noml-pool.val-i64 = (idx i64) (v ?i64) {
+    v = nil
+    f = .val-num(idx)
+    f: {
+        ok -> v = it.to-i64()
+        -> v = nil
+    }
+}
+
+; 取布林值
+; idx: 節點索引
+; v: ok=布林值, nil=值非布林
+; [val-bool](#noml.noml-pool.val-bool)
+noml-pool.val-bool = (idx i64) (v ?bool) {
+    v = nil
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    .nodes[idx].kind != NOML-KIND-BOOL -> return
+    v = .nodes[idx].bool-val
+}
+
+; 按鍵取字串值
+; idx: 物件節點索引
+; key: 鍵名
+; v: ok=字串內容, nil=鍵不存在或值非字串
+; [get-str](#noml.noml-pool.get-str)
+noml-pool.get-str = (idx i64, key str) (v ?str) {
+    v = nil
+    c = .get(idx, key)
+    c: {
+        ok -> v = .val-str(it)
+        -> v = nil
+    }
+}
+
+; 按鍵取數值
+; idx: 物件節點索引
+; key: 鍵名
+; v: ok=數值, nil=鍵不存在或值非數字
+; [get-f64](#noml.noml-pool.get-f64)
+noml-pool.get-f64 = (idx i64, key str) (v ?f64) {
+    v = nil
+    c = .get(idx, key)
+    c: {
+        ok -> v = .val-num(it)
+        -> v = nil
+    }
+}
+
+; 按鍵取整數值（截斷小數）
+; idx: 物件節點索引
+; key: 鍵名
+; v: ok=截斷後的整數, nil=鍵不存在或值非數字
+; [get-i64](#noml.noml-pool.get-i64)
+noml-pool.get-i64 = (idx i64, key str) (v ?i64) {
+    v = nil
+    c = .get(idx, key)
+    c: {
+        ok -> v = .val-i64(it)
+        -> v = nil
+    }
+}
+
+; 按鍵取布林值
+; idx: 物件節點索引
+; key: 鍵名
+; v: ok=布林值, nil=鍵不存在或值非布林
+; [get-bool](#noml.noml-pool.get-bool)
+noml-pool.get-bool = (idx i64, key str) (v ?bool) {
+    v = nil
+    c = .get(idx, key)
+    c: {
+        ok -> v = .val-bool(it)
+        -> v = nil
+    }
+}
+
+; 物件是否有該鍵
+; idx: 物件節點索引
+; key: 鍵名
+; found: true=存在
+; [has](#noml.noml-pool.has)
+noml-pool.has = (idx i64, key str) (found bool) {
+    found = false
+    c = .get(idx, key)
+    c: {
+        ok -> found = true
+        -> found = false
+    }
+}
+
+; 取節點的 `#{...}` 註解原文（不含 `#{` 與 `}`）
+; idx: 節點索引
+; v: ok=註解原文, nil=該節點沒有註解
+; [ann](#noml.noml-pool.ann)
+noml-pool.ann = (idx i64) (v ?str) {
+    v = nil
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    a = .anns[idx]
+    a.len-bytes() > 0 -> v = a
+}
+
+; 設定節點的 `#{...}` 註解原文（空字串＝移除）
+; idx: 節點索引
+; text: 註解原文（不含 `#{` 與 `}`）
+; ok: true=已寫入
+; [set-ann](#noml.noml-pool.set-ann)
+noml-pool.set-ann = (idx i64, text str) (ok bool) {
+    ok = false
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    .anns[idx] = text
+    ok = true
+}
+
+; 取註解中某個鍵的值（值為單引號串時去引號，其餘回傳原文）
+; idx: 節點索引
+; key: 註解鍵（如 'type'）
+; v: ok=值, nil=該鍵不存在
+; [ann-value](#noml.noml-pool.ann-value)
+noml-pool.ann-value = (idx i64, key str) (v ?str) {
+    v = nil
+    idx < 0 -> return
+    idx >= .nodes.len() -> return
+    body = .anns[idx]
+    n = body.len-bytes()
+    kn = key.len-bytes()
+    kn == 0 -> return
+    i = 0
+    (i < n) {
+        c = body.byte(i)
+        (c == 32 || c == 9 || c == 10 || c == 13 || c == 44) -> {
+            i = i + 1
+        }
+        -> {
+            j = i
+            (j < n) {
+                cc = body.byte(j)
+                (cc == 32 || cc == 9 || cc == 10 || cc == 13 || cc == 44 || cc == 61 || cc == 91 || cc == 93 || cc == 39) -> break
+                j = j + 1
+            }
+            kend = j
+            k = .skip-blanks(body, kend)
+            has-eq = k < n && body.byte(k) == 61
+            same = (kend - i) == kn && body.slice-bytes(i, kend).eq-full(key)
+            same && has-eq -> {
+                k = k + 1
+                k = .skip-blanks(body, k)
+                v = .ann-literal(body, k)
+                return
+            }
+            i = .skip-ann-value(body, i)
+            i < 0 -> return
+        }
+    }
+}
+
+; 讀取註解值面值：單引號串去引號，其餘回傳原文
+; body: 註解原文
+; pos: 值起始位置
+; v: ok=值, nil=格式非法
+; [ann-literal](#noml.noml-pool.ann-literal)
+noml-pool.ann-literal = (body str, pos i64) (v ?str) {
+    v = nil
+    n = body.len-bytes()
+    pos >= n -> return
+    c = body.byte(pos)
+    c == 39 -> {
+        s, np, ok = .parse-str(body, pos)
+        ok -> v = s
+        return
+    }
+    e = pos
+    (e < n) {
+        cc = body.byte(e)
+        (cc == 44 || cc == 93) -> break
+        e = e + 1
+    }
+    t = body.slice-bytes(pos, e)
+    t = t.trim()
+    t.len-bytes() > 0 -> v = t
+}
+
+; 跳過一個註解值（字串/陣列/裸值），回傳其後的位置
+; body: 註解原文
+; pos: 值起始位置
+; next: 值之後的位置；-1=格式非法
+; [skip-ann-value](#noml.noml-pool.skip-ann-value)
+noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
+    next = -1
+    n = body.len-bytes()
+    pos >= n -> return
+    c = body.byte(pos)
+    c == 39 -> {
+        next = .scan-quote(body, pos)
+        return
+    }
+    c == 96 -> {
+        next = .scan-raw(body, pos)
+        return
+    }
+    depth = 0
+    p = pos
+    (p < n) {
+        cc = body.byte(p)
+        {
+            cc == 39 -> {
+                p = .scan-quote(body, p)
+                p < 0 -> return
+            }
+            cc == 91 || cc == 123 -> {
+                depth = depth + 1
+                p = p + 1
+            }
+            cc == 93 || cc == 125 -> {
+                depth == 0 -> {
+                    next = p
+                    return
+                }
+                depth = depth - 1
+                p = p + 1
+            }
+            cc == 44 -> {
+                depth == 0 -> {
+                    next = p + 1
+                    return
+                }
+                p = p + 1
+            }
+            -> p = p + 1
+        }
+    }
+    next = p
+}
+
+; ═══════════════════════════════════════════════
+; 高級 API（根節點級，noml-doc）
+; ═══════════════════════════════════════════════
+
+; 建立空文件（根節點為 -1，即空）
+; 用法：
+;   d = noml.new()
+;   o = d.new-obj()
+;   d.put(o, 'name', d.new-str('nolang'))
+;   d.set-root(o)
+; d: 池已初始化、root=-1 的新文件
+; [new](#noml.new)
+new = () (d noml-doc) {
+    d.root = -1
+    d.pool.init()
+}
+
+; 解析 NOML 文字
+; 用法：
+;   r = noml.parse('{\nname: \'nolang\'\n}')
+;   r: {
+;       ok -> print(it.stringify())
+;       err -> print(it)
+;   }
+; s: 完整 NOML 文字（首尾空白會被跳過）
+; result: ok=解析出的文件, err(帶行號的訊息)=語法錯誤
+; [parse](#noml.parse)
+parse = (s str) (result ?noml-doc) {
+    result = nil
+    s.len-bytes() == 0 -> {
+        result = err('noml: empty input')
+        return
+    }
+    d noml-doc
+    d = new()
+    root, ok = d.pool.parse(s)
+    ok == false -> {
+        result = err(d.pool.err)
+        return
+    }
+    d.root = root
+    result = d
+}
+
+; 根節點索引（空文件為 -1）
+; idx: 根節點索引
+; [root-index](#noml.noml-doc.root-index)
+noml-doc.root-index = () (idx i64) {
+    idx = .root
+}
+
+; 設定根節點
+; idx: 節點索引
+; [set-root](#noml.noml-doc.set-root)
+noml-doc.set-root = (idx i64) {
+    .root = idx
+}
+
+; 根節點種類
+; k: NOML-KIND-*；根無效時為 NOML-KIND-NIL
+; [kind](#noml.noml-doc.kind)
+noml-doc.kind = () (k i64) {
+    k = .pool.kind(.root)
+}
+
+; 根是否 nil
+; yes: true=根為 nil
+; [is-nil](#noml.noml-doc.is-nil)
+noml-doc.is-nil = () (yes bool) {
+    yes = .pool.is-nil(.root)
+}
+
+; 根是否物件
+; yes: true=根為物件
+; [is-obj](#noml.noml-doc.is-obj)
+noml-doc.is-obj = () (yes bool) {
+    yes = .pool.is-obj(.root)
+}
+
+; 根是否陣列
+; yes: true=根為陣列
+; [is-arr](#noml.noml-doc.is-arr)
+noml-doc.is-arr = () (yes bool) {
+    yes = .pool.is-arr(.root)
+}
+
+; 根是否字串
+; yes: true=根為字串
+; [is-str](#noml.noml-doc.is-str)
+noml-doc.is-str = () (yes bool) {
+    yes = .pool.is-str(.root)
+}
+
+; 根是否數字
+; yes: true=根為數字
+; [is-num](#noml.noml-doc.is-num)
+noml-doc.is-num = () (yes bool) {
+    yes = .pool.is-num(.root)
+}
+
+; 根是否布林
+; yes: true=根為布林
+; [is-bool](#noml-doc.is-bool)
+noml-doc.is-bool = () (yes bool) {
+    yes = .pool.is-bool(.root)
+}
+
+; 根節點的子元素數量（物件成員數或陣列長度）
+; n: 子元素數量
+; [len](#noml.noml-doc.len)
+noml-doc.len = () (n i64) {
+    n = .pool.len(.root)
+}
+
+; 按鍵取根物件成員的節點索引
+; key: 鍵名
+; child: ok=子節點索引, nil=根非物件或鍵不存在
+; [get](#noml.noml-doc.get)
+noml-doc.get = (key str) (child ?i64) {
+    child = .pool.get(.root, key)
+}
+
+; 按位置取根陣列元素的節點索引
+; i: 元素下標（0 起算）
+; child: ok=元素節點索引, nil=根非陣列或下標越界
+; [at](#noml.noml-doc.at)
+noml-doc.at = (i i64) (child ?i64) {
+    child = .pool.at(.root, i)
+}
+
+; 按位置取根物件成員的鍵名
+; i: 成員下標（0 起算，依檔案順序）
+; key: ok=鍵名, nil=根非物件或下標越界
+; [key](#noml.noml-doc.key)
+noml-doc.key = (i i64) (key ?str) {
+    key = .pool.key(.root, i)
+}
+
+; 取根的字串值
+; v: ok=字串內容, nil=根非字串
+; [str](#noml.noml-doc.str)
+noml-doc.str = () (v ?str) {
+    v = .pool.val-str(.root)
+}
+
+; 取根的數值
+; v: ok=數值, nil=根非數字
+; [num](#noml.noml-doc.num)
+noml-doc.num = () (v ?f64) {
+    v = .pool.val-num(.root)
+}
+
+; 取根的整數值（截斷小數）
+; v: ok=整數, nil=根非數字
+; [i64](#noml.noml-doc.i64)
+noml-doc.i64 = () (v ?i64) {
+    v = .pool.val-i64(.root)
+}
+
+; 取根的布林值
+; v: ok=布林值, nil=根非布林
+; [bool](#noml.noml-doc.bool)
+noml-doc.bool = () (v ?bool) {
+    v = .pool.val-bool(.root)
+}
+
+; 按鍵取根物件成員的字串值
+; key: 鍵名
+; v: ok=字串內容, nil=鍵不存在或值非字串
+; [get-str](#noml.noml-doc.get-str)
+noml-doc.get-str = (key str) (v ?str) {
+    v = .pool.get-str(.root, key)
+}
+
+; 按鍵取根物件成員的數值
+; key: 鍵名
+; v: ok=數值, nil=鍵不存在或值非數字
+; [get-f64](#noml.noml-doc.get-f64)
+noml-doc.get-f64 = (key str) (v ?f64) {
+    v = .pool.get-f64(.root, key)
+}
+
+; 按鍵取根物件成員的整數值（截斷小數）
+; key: 鍵名
+; v: ok=整數, nil=鍵不存在或值非數字
+; [get-i64](#noml.noml-doc.get-i64)
+noml-doc.get-i64 = (key str) (v ?i64) {
+    v = .pool.get-i64(.root, key)
+}
+
+; 按鍵取根物件成員的布林值
+; key: 鍵名
+; v: ok=布林值, nil=鍵不存在或值非布林
+; [get-bool](#noml.noml-doc.get-bool)
+noml-doc.get-bool = (key str) (v ?bool) {
+    v = .pool.get-bool(.root, key)
+}
+
+; 根物件是否有該鍵
+; key: 鍵名
+; found: true=存在
+; [has](#noml.noml-doc.has)
+noml-doc.has = (key str) (found bool) {
+    found = .pool.has(.root, key)
+}
+
+; 取根節點的 `#{...}` 註解原文
+; v: ok=註解原文, nil=根沒有註解
+; [ann](#noml.noml-doc.ann)
+noml-doc.ann = () (v ?str) {
+    v = .pool.ann(.root)
+}
+
+; 設定根節點的 `#{...}` 註解原文（空字串＝移除）
+; text: 註解原文（不含 `#{` 與 `}`）
+; ok: true=已寫入
+; [set-ann](#noml.noml-doc.set-ann)
+noml-doc.set-ann = (text str) (ok bool) {
+    ok = .pool.set-ann(.root, text)
+}
+
+; 取根節點註解中某個鍵的值
+; key: 註解鍵
+; v: ok=值, nil=該鍵不存在
+; [ann-value](#noml.noml-doc.ann-value)
+noml-doc.ann-value = (key str) (v ?str) {
+    v = .pool.ann-value(.root, key)
+}
+
+; 序列化整份文件（根節點上方輸出文件級註解）
+; out: NOML 文字（root 無效時為空字串）
+; [stringify](#noml.noml-doc.stringify)
+noml-doc.stringify = () (out str) {
+    out = ''
+    r = .root
+    r < 0 -> return
+    r >= .pool.anns.len() -> return
+    .pool.anns[r].len-bytes() > 0 -> out = '#{' - .pool.anns[r] - '}\n'
+    out = out - .pool.stringify(r, 0)
+}
+
+; 序列化任意子樹
+; idx: 子樹根索引
+; out: NOML 文字（索引無效時為空字串）
+; [stringify-node](#noml.noml-doc.stringify-node)
+noml-doc.stringify-node = (idx i64) (out str) {
+    out = .pool.stringify(idx, 0)
+}
+
+; ═══════════════════════════════════════════════
+; 建樹 API
+; ═══════════════════════════════════════════════
+
+; 建立空物件節點
+; idx: 新節點索引
+; [new-obj](#noml.noml-doc.new-obj)
+noml-doc.new-obj = () (idx i64) {
+    idx = .pool.alloc()
+    .pool.nodes[idx].kind = NOML-KIND-OBJ
+}
+
+; 建立空陣列節點
+; idx: 新節點索引
+; [new-arr](#noml.noml-doc.new-arr)
+noml-doc.new-arr = () (idx i64) {
+    idx = .pool.alloc()
+    .pool.nodes[idx].kind = NOML-KIND-ARR
+}
+
+; 建立字串節點
+; v: 字串內容
+; idx: 新節點索引
+; [new-str](#noml.noml-doc.new-str)
+noml-doc.new-str = (v str) (idx i64) {
+    idx = .pool.alloc()
+    .pool.nodes[idx].kind = NOML-KIND-STR
+    .pool.strs[idx] = v
+}
+
+; 建立數字節點
+; v f64: 節點儲存的數值（整數與小數共用同一種節點型別）
+; idx i64: 新節點在池中的下標，供呼叫方掛接子樹
+; [new-num](#noml.noml-doc.new-num)
+noml-doc.new-num = (v f64) (idx i64) {
+    idx = .pool.alloc()
+    .pool.nodes[idx].kind = NOML-KIND-NUM
+    .pool.nodes[idx].num-val = v
+}
+
+; 建立布林節點
+; v bool: 要存入節點的布林值
+; idx i64: 新節點在池中的下標，供呼叫方掛接子樹
+; [new-bool](#noml.noml-doc.new-bool)
+noml-doc.new-bool = (v bool) (idx i64) {
+    idx = .pool.alloc()
+    .pool.nodes[idx].kind = NOML-KIND-BOOL
+    .pool.nodes[idx].bool-val = v
+}
+
+; 建立 nil 節點
+; idx: 新節點索引
+; [new-nil](#noml.noml-doc.new-nil)
+noml-doc.new-nil = () (idx i64) {
+    idx = .pool.alloc()
+}
+
+; 在物件中放入成員（child 須屬同一文件）
+; obj: 物件節點索引
+; key: 鍵名
+; child: 子節點索引
+; ok: true=已寫入；false=obj 不是物件
+; [put](#noml.noml-doc.put)
+noml-doc.put = (obj i64, key str, child i64) (ok bool) {
+    ok = false
+    obj < 0 -> return
+    obj >= .pool.nodes.len() -> return
+    .pool.nodes[obj].kind != NOML-KIND-OBJ -> return
+    .pool.add-child(obj, child, key)
+    ok = true
+}
+
+; 在陣列末尾追加元素（child 須屬同一文件）
+; arr: 陣列節點索引
+; child: 子節點索引
+; ok: true=已追加；false=arr 不是陣列
+; [push](#noml.noml-doc.push)
+noml-doc.push = (arr i64, child i64) (ok bool) {
+    ok = false
+    arr < 0 -> return
+    arr >= .pool.nodes.len() -> return
+    .pool.nodes[arr].kind != NOML-KIND-ARR -> return
+    .pool.add-child(arr, child, '')
+    ok = true
+}

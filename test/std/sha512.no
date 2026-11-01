@@ -12,35 +12,42 @@ TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
 
 ; 112 個 'a' -> 超過 128 位元組區塊的 padding 閾值，強制兩個 1024-bit 區塊
 A112 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+; 摘要長度：SHA-512 固定 64 位元組（512 位元）
 t-len = () {
     h = sha512.sha512(ABC.to-bytes())
     runner.eq(h.len(), 64, 'sha512 digest is 64 bytes')
 }
 
+; 前提檢查：A112 字面量必須確實是 112 位元組（padding 進位用的邊界長度）
 t-input-len = () {
     runner.eq(A112.len(), 112, 'A112 literal is 112 bytes')
 }
 
+; 空輸入向量：sha512-hex('') = cf83e1357eefb8bd...27da3e
 t-hex-empty = () {
     h = sha512.sha512-hex(EMPTY.to-bytes())
     runner.str-eq(h, 'cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e', 128, 'sha512-hex empty')
 }
 
+; 'abc' 向量：sha512-hex('abc') = ddaf35a193617aba...54ca49f
 t-hex-abc = () {
     h = sha512.sha512-hex(ABC.to-bytes())
     runner.str-eq(h, 'ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f', 128, 'sha512-hex abc')
 }
 
+; 跨區塊：56 位元組輸入需兩次壓縮，sha512-hex = 204a8fc6...8ca3445
 t-hex-twoblock = () {
     h = sha512.sha512-hex(TWOBLOCK.to-bytes())
     runner.str-eq(h, '204a8fc6dda82f0a0ced7beb8e08a41657c16ef468b228a8279be331a703c33596fd15c13b1b07f9aa1d3bea57789ca031ad85c7a71dd70354ec631238ca3445', 128, 'sha512-hex 56-byte')
 }
 
+; 112 位元組輸入：padding 進位到第二個 128 位元組區塊的邊界案例
 t-hex-112a = () {
     h = sha512.sha512-hex(A112.to-bytes())
     runner.str-eq(h, 'c01d080efd492776a1c43bd23dd99d0a2e626d481e16782e75d54c2503b5dc32bd05f0f1ba33e568b88fd2d970929b719ecbb152f58f130a407c8830604b70ca', 128, 'sha512-hex 112a (two 1024-bit blocks)')
 }
 
+; 位元組介面與 hex 介面一致：首位元組 0xdd、末位元組 0x9f
 t-bytes-match-hex = () {
     h = sha512.sha512(ABC.to-bytes())
     runner.eq(h[0], 0xdd, 'sha512 byte[0]')

@@ -4,16 +4,28 @@
 ;  3) option 函式內裸 x = v[i] -> 自動轉為 x ?= v[i]
 ;  4) 範圍內取值正確（含各元素型別）
 
+; 安全讀取 arr[i]：範圍內回傳 ok，越界時以 ?= 向上傳播 err
+; arr: 待讀取的 i64 向量
+; i: 下標位置
+; res: ?i64 結果 — ok=元素值, err=越界
 safe-get = (arr []i64, i i64) (res ?i64) {
     x ?= arr[i]
 }
 
+; 取得 default
+; arr: 待讀取的 i64 向量
+; i: 下標位置
+; res: 範圍內元素值；越界時回傳 i64 零值（index-out=zero）
 get-default = (arr []i64, i i64) (res i64) {
 
     #{index-out=zero}
     res = arr[i]
 }
 
+; 驗證 option 函式內裸 x = arr[i] 會自動轉為 ?= 就地捕獲、越界不崩潰
+; arr: 待讀取的 i64 向量
+; i: 下標位置
+; res: ?i64 結果（本函式僅丟棄捕獲值，只測不崩潰、不驗取值）
 auto-prop = (arr []i64, i i64) (res ?i64) {
     x = arr[i]
 
@@ -24,6 +36,8 @@ auto-prop = (arr []i64, i i64) (res ?i64) {
 
 ; 顯式識別符 RHS 的 ?= 解箱（inner ?= res 形）：驗證 Identifier-RHS 路徑
 ; 不會因 elemType 未推導而把 inner 誤型別成被污染的全域同名型別（預存崩潰）。
+; v: 原始 i64 值（放入 res 後再以 ?= 解箱出 inner）
+; res: ?i64 — 供解箱的來源，確認 inner 型別推導未被污染
 unwrap-ident = (v i64) (res ?i64) {
     res = v
     inner ?= res
@@ -37,12 +51,16 @@ unwrap-ident = (v i64) (res ?i64) {
 ; `%a.val defined with type '%str-long' but expected 'i64'`；含 option 子表達式
 ; 的算術 RHS 未解箱）。現經 lowerUnwrapAssign 對 *CallExpression / *InfixExpression
 ; 設 elemType + SetFuncVarType 修復，並由本節迴歸鎖定。
+; n: 大於 0 時產生 ok(n)、否則 nil，用作選項值的來源
+; r: ?i64 — n>0 給 ok(n)，其餘給 nil
 opt-f = (n i64) (r ?i64) {
     r = nil
     n > 0 -> r = n
 }
 
 ; A) 新變數 LHS + 函式呼叫 RHS：預期 21
+; n: 傳給 opt-f 產生選項值的整數
+; r: ?i64 — 呼叫形態 RHS 經 ?= 解箱後的 ok 值（預期 21）
 unwrap-call-rhs = (n i64) (r ?i64) {
     r = nil
     a ?= opt-f(n)
@@ -53,6 +71,8 @@ unwrap-call-rhs = (n i64) (r ?i64) {
 }
 
 ; B) 變數 RHS（?i64 變數）：預期 21
+; n: 傳給 opt-f 產生選項值的整數
+; r: ?i64 — 變數形態 ?T RHS 經 ?= 解箱後的 ok 值（預期 21）
 unwrap-var-rhs = (n i64) (r ?i64) {
     r = nil
     v = opt-f(n)
@@ -64,6 +84,8 @@ unwrap-var-rhs = (n i64) (r ?i64) {
 }
 
 ; C) 算術 RHS 含 option 子表達式：自動解箱各項後相加，預期 63
+; n: 各傳給三次 opt-f 產生三個選項子表達式
+; r: ?i64 — 含 option 子表達式的算術 RHS 自動逐項解箱後相加的 ok 值（預期 63）
 unwrap-infix-rhs = (n i64) (r ?i64) {
     r = nil
     b = opt-f(n)
@@ -77,6 +99,9 @@ unwrap-infix-rhs = (n i64) (r ?i64) {
 }
 
 ; float 元素 + 浮點預設值
+; arr: 待讀取的 f64 向量
+; i: 下標位置
+; res: 範圍內元素值；越界時回傳字面量 1.5
 get-default-f = (arr []f64, i i64) (res f64) {
 
     #{index-out=1.5}
@@ -84,6 +109,9 @@ get-default-f = (arr []f64, i i64) (res f64) {
 }
 
 ; str 元素 + 字串預設值
+; arr: 待讀取的 str 向量
+; i: 下標位置
+; res: 範圍內元素值；越界時回傳字面量「-」
 get-default-str = (arr []str, i i64) (res str) {
 
     #{index-out='-'}
@@ -91,6 +119,9 @@ get-default-str = (arr []str, i i64) (res str) {
 }
 
 ; bool 元素 + 布林預設值
+; arr: 待讀取的 bool 向量
+; i: 下標位置
+; res: 範圍內元素值；越界時回傳 true
 get-default-bool = (arr []bool, i i64) (res bool) {
 
     #{index-out=true}
@@ -98,6 +129,9 @@ get-default-bool = (arr []bool, i i64) (res bool) {
 }
 
 ; byte(u8) 元素 + 整數預設值
+; arr: 待讀取的 u8（byte）向量
+; i: 下標位置
+; res: 範圍內元素值；越界時回傳 byte 零值（index-out=zero）
 get-default-byte = (arr []u8, i i64) (res u8) {
 
     #{index-out=zero}
@@ -105,6 +139,9 @@ get-default-byte = (arr []u8, i i64) (res u8) {
 }
 
 ; char 元素 + 字元預設值（字面量）
+; arr: 待讀取的 char 向量
+; i: 下標位置
+; res: 範圍內元素值；越界時回傳字面量「x」
 get-default-char = (arr []char, i i64) (res char) {
 
     #{index-out='x'}

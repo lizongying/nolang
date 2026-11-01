@@ -3,6 +3,7 @@
 ; 修復後：ensureStrLongBuffer 增長分支在 idxV+1 > cap 時 realloc 並拷貝
 
 ; 測試 1：with-cap(n) 字串用動態索引寫到超過 cap — 必須增長，不溢出
+; ok bool: 寫入 a~g 後逐字元讀回都正確（含 i=5 越過 cap=4 的那筆）才為 true
 test-str-grow = () (ok bool) {
     s str = with-cap(4)
     n = 5
@@ -28,6 +29,7 @@ test-str-grow = () (ok bool) {
 
 ; 測試 2：字串字面量（cap==len）動態遠越界 — 修復前必 SIGSEGV（offset 100000 跨分頁寫入未映射記憶體）
 ; 讀回 s[i] 使 store 存活（避免被 opt 當死代碼刪除），並作為增長後正確性的觀察點
+; ok bool: 遠越界寫入後 s[100000] 讀回仍是 'X' 才為 true
 test-str-far-oob = () (ok bool) {
     s = 'abc'; len=3, cap=3, 非 null 3 字節堆緩衝
     i = 100000

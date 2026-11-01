@@ -5,12 +5,14 @@ test-arr-index-of = () {
     print(b.index-of(99))
 }
 
+; 測試 arr-last-first
 test-arr-last-first = () {
     b [3] = [10, 20, 30]
     print(b.first())
     print(b.last())
 }
 
+; 測試 arr-sort-asc
 test-arr-sort-asc = () {
     b [5] = [3, 1, 4, 1, 5]
     b.asc()
@@ -21,6 +23,7 @@ test-arr-sort-asc = () {
     print(b[4])
 }
 
+; 測試 arr-sort-desc
 test-arr-sort-desc = () {
     b [5] = [3, 1, 4, 1, 5]
     b.desc()

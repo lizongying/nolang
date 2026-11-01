@@ -8,6 +8,8 @@
 
 ; ── get-extension ─────────────────────────────
 
+; 副檔名取用：'file.txt' → 'txt'、'file.json' → 'json'；
+; 無副檔名或路徑中含 '.' 的目錄名時回空字串
 t-get-extension = () {
     ext = magic.get-extension('file.txt')
     runner.str-eq(ext, 'txt', 3, 'get-extension file.txt == txt')
@@ -21,6 +23,7 @@ t-get-extension = () {
 
 ; ── detect-by-extension ──────────────────────
 
+; 依副檔名判定類型：txt → 'ASCII text'、json → 'JSON data'、no → 'Nolang source'，未知得空字串
 t-detect-by-extension = () {
     kind = magic.detect-by-extension('txt')
     runner.str-eq(kind, 'ASCII text', 10, 'detect ext txt == ASCII text')
@@ -34,6 +37,7 @@ t-detect-by-extension = () {
 
 ; ── detect-type (extension-based, via temp file) ──
 
+; detect-type 綜合判定：暫時的 .txt 檔（含內容）應判定為 'ASCII text'
 t-detect-type-txt = () {
 
     ; 使用 open/write 建立臨時檔案
@@ -63,6 +67,7 @@ t-detect-type-txt = () {
 
 ; ── detect-type (directory) ──────────────────
 
+; detect-type 對目錄應回 'directory'（目錄判斷優先於內容偵測）
 t-detect-type-dir = () {
     kind = magic.detect-type('/tmp')
     runner.str-eq(kind, 'directory', 9, 'detect-type /tmp == directory')
@@ -70,6 +75,7 @@ t-detect-type-dir = () {
 
 ; ── detect-type (nonexistent) ────────────────
 
+; detect-type 對不存在的路徑應回 'unknown (not found)'
 t-detect-type-nonexistent = () {
     kind = magic.detect-type('/nonexistent/path/xyz123')
     runner.str-eq(kind, 'unknown (not found)', 19, 'detect-type nonexistent')

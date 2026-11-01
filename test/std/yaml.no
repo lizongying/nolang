@@ -4,15 +4,20 @@
 ; 覆蓋：parse、kind、find-str/i64/f64/bool、get、at、len、key、text、str、
 ;       is-null、to-json、stringify；型別推斷（負數/十六進位/底線/null/bool/float）；
 ;       流式集合 [..]/{..}、巢狀、雙引號轉義、錨點/別名；
-;       回歸：未闭合流式集合不再無限迴圈卡死（skip-flow-ws EOF 修復）。
+;       回歸：未閉合流式集合不再無限迴圈卡死（skip-flow-ws EOF 修復）。
 
 # /test/runner
 
+; 比較是否相等 str
+; got: 實際產生的輸出字串
+; want: 期望相符的完整字串
+; msg: 斷言失敗時的標識訊息（長度與內容兩條斷言共用）
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
+; 驗證 yaml.parse 標量取值：巢狀 map 根節點 kind 正確，find-str/i64/f64/bool 各按型別取到值
 t-scalars = () {
     r = yaml.parse('name: nolang
 port: 8080
@@ -68,6 +73,7 @@ server:
     }
 }
 
+; 驗證區塊序列解析：get 出的 list 為 seq、長度與 at(i) 索引取值、元素 text()/str() 皆正確
 t-seq = () {
     r = yaml.parse('list:
   - a
@@ -115,6 +121,7 @@ t-seq = () {
     }
 }
 
+; 驗證標量型別推斷：負數、false、浮點、off、十六進位 0x1F、底線 1_000、null 各落入正確型別
 t-type-inference = () {
     r = yaml.parse('a: -5
 b: false
@@ -169,6 +176,7 @@ nul: null')
     }
 }
 
+; 驗證 to-json：文件轉為緊湊 JSON，數值/布林直出、off 保留為字串
 t-to-json = () {
     r = yaml.parse('a: -5
 b: false
@@ -187,6 +195,7 @@ d: off')
     }
 }
 
+; 驗證流式集合：[1, 2, 3] 解析為 seq、{a: 1, b: two} 解析為 map，元素型別推斷正確
 t-flow = () {
     r = yaml.parse('top: [1, 2, 3]
 fm: {a: 1, b: two}')
@@ -241,6 +250,7 @@ fm: {a: 1, b: two}')
     }
 }
 
+; 驗證雙引號轉義與錨點：\n 還原為真實換行（長 11），別名 *b 解析為錨點 &b 的原值
 t-quoted-anchor = () {
     r = yaml.parse('dq: "line1\nline2"
 base: &b hello
@@ -266,6 +276,7 @@ alias: *b')
     }
 }
 
+; 驗證 stringify：解析後重新序列化與原文完全一致（縮排與序列破折號保留）
 t-stringify = () {
     r = yaml.parse('list:
   - a
@@ -289,13 +300,14 @@ m: 1', 'stringify roundtrip')
     }
 }
 
+; 驗證 valid-of 與錯誤回歸：未閉合 [/{ 不再無限迴圈卡死，未閉合雙引號字串如實報 err
 t-error-and-nohang = () {
 
     ; valid-of: 良好輸入 true
     g = yaml.valid-of('a: 1')
     runner.is-true(g, 'valid-of good')
 
-    ; 回歸：未闭合流式集合不得無限迴圈卡死（skip-flow-ws EOF 修復）
+    ; 回歸：未閉合流式集合不得無限迴圈卡死（skip-flow-ws EOF 修復）
     r1 = yaml.parse('x: [1, 2')
     r1: {
         ok -> runner.is-true(true, 'unterminated seq terminated (no hang)')
@@ -313,7 +325,7 @@ t-error-and-nohang = () {
         err -> runner.is-true(true, 'unterminated map terminated (no hang)')
     }
 
-    ; 未闭合雙引號字串應報 err
+    ; 未閉合雙引號字串應報 err
     r3 = yaml.parse('z: "abc')
     r3: {
         ok -> runner.is-true(false, 'unterminated dq should be err')

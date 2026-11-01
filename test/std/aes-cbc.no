@@ -8,6 +8,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -24,6 +27,8 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 驗證 AES-128-CBC 首個密文區塊符合 NIST SP800-38A 向量
+; 16 位元組明文經 PKCS#7 補滿一整塊，密文變 32 位元組，只比對前 32 個 hex 字元
 t-first-block = () {
     key [16]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -43,6 +48,7 @@ t-first-block = () {
     runner.str-eq(bhex(ct), '76d0627da1d290436e21a4af7fca94b7', 32, 'aes-128-cbc first block')
 }
 
+; 往返測試：加密後再解密應還原原文（PKCS#7 填充已在解密時剝除）
 t-roundtrip = () {
     key [16]byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,

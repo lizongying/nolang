@@ -21,6 +21,7 @@
 ; 編號（iota 順序，錯一位就會讓 L1 全線 DIFF）
 ; ═══════════════════════════════════════════════
 
+; 測試 numbering
 test-numbering = () {
     runner.eq(tok.ILLEGAL, 0, 'ILLEGAL = 0')
     runner.eq(tok.EOF, 1, 'EOF = 1')
@@ -46,6 +47,7 @@ test-numbering = () {
 ; 名字表：0..91 全部有名字（不得回 UNKNOWN）
 ; ═══════════════════════════════════════════════
 
+; 測試 names-cover-all
 test-names-cover-all = () {
     bad = 0
     i <- [0..92): {
@@ -69,6 +71,7 @@ test-names-cover-all = () {
 ; str-eq：位元組相等，且**前綴不得誤判**（少了長度比較就會錯）
 ; ═══════════════════════════════════════════════
 
+; 測試 str-eq
 test-str-eq = () {
     runner.eq(tok.str-eq('', ''), true, 'empty equals empty')
     runner.eq(tok.str-eq('a', 'a'), true, 'single byte equal')
@@ -85,6 +88,7 @@ test-str-eq = () {
 ; keyword：23 個關鍵字 + while 別名 FOR + 非關鍵字回 ILLEGAL
 ; ═══════════════════════════════════════════════
 
+; 測試 keyword
 test-keyword = () {
     runner.eq(tok.keyword('if'), tok.IF, 'kw if')
     runner.eq(tok.keyword('elif'), tok.ELIF, 'kw elif')

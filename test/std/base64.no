@@ -10,6 +10,7 @@ failed = 0
 
 ; ── 標準編碼 ──────────────────────────────────
 
+; 標準字母表：3 位元組 'ABC' → 'QUJD'（整塊無填充）
 t-encode-std-3bytes = () {
     data []byte = [65, 66, 67]
     s = base64.encode-std(data)
@@ -17,6 +18,7 @@ t-encode-std-3bytes = () {
     runner.str-eq(s, 'QUJD', 4, 'encode-std ABC')
 }
 
+; 1 位元組尾塊：'A' → 'QQ=='（補兩個 '='）
 t-encode-std-1byte = () {
     data []byte = [65]
     s = base64.encode-std(data)
@@ -24,6 +26,7 @@ t-encode-std-1byte = () {
     runner.str-eq(s, 'QQ==', 4, 'encode-std A')
 }
 
+; 2 位元組尾塊：'AB' → 'QUI='（補一個 '='）
 t-encode-std-2bytes = () {
     data []byte = [65, 66]
     s = base64.encode-std(data)
@@ -31,6 +34,7 @@ t-encode-std-2bytes = () {
     runner.str-eq(s, 'QUI=', 4, 'encode-std AB')
 }
 
+; 空輸入應編碼為空字串
 t-encode-std-empty = () {
     data []byte = with-cap(0)
     s = base64.encode-std(data)
@@ -39,6 +43,7 @@ t-encode-std-empty = () {
 
 ; ── URL 安全編碼 ──────────────────────────────
 
+; URL 安全字母表：以 '-' / '_' 取代 '+' / '/'，且不產生填充
 t-encode-url-3bytes = () {
     data []byte = [0xfb, 0xff, 0xbf]
     s = base64.encode-url(data)
@@ -48,6 +53,7 @@ t-encode-url-3bytes = () {
 
 ; ── 解碼 ──────────────────────────────────────
 
+; 標準解碼：'QUJD' 應得長度 3 且內容為 'ABC'
 t-decode-std = () {
     s = 'QUJD'
     result = base64.decode(s, base64.BASE64-STD)
@@ -73,6 +79,7 @@ t-decode-std = () {
     runner.is-true(ok2, 'decode QUJD content == ABC')
 }
 
+; 帶填充解碼：'QQ==' 應得 1 位元組 'A'
 t-decode-padding = () {
     s = 'QQ=='
     result = base64.decode(s, base64.BASE64-STD)
@@ -89,6 +96,7 @@ t-decode-padding = () {
 
 ; ── 往返測試 ──────────────────────────────────
 
+; 往返：10 位元組任意資料編碼後再解碼應完全還原
 t-roundtrip = () {
     data []byte = [
         1, 2, 3, 4, 5, 6, 7, 8,

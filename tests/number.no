@@ -1,5 +1,7 @@
 ; number.no — 數字操作測試（max/min 已移至 math 模組）
 
+; 示範 math.max / math.min：結果經輸出參數回寫，不做斷言
+; （max → 20， min → 10，依序印出）
 demo-number = () {
     r = 0
     math.max(10, 20, r)

@@ -11,6 +11,8 @@
 ; 旧版分析：a = [1,2,3] 被视为引用 → clone（性能损失）
 ; 新版分析：a = [1,2,3] 是纯写 → move（安全，freeOldHeapValue 跳过 moved 变量）
 
+; 改進 1：b = a 後 a 只被純寫重賦值（無讀引用），應允許 move 而非多餘的 clone
+; out []i64: 原 a 的 [1, 2, 3]（已搬進 out）
 reassign-after-move = () (out []i64) {
     a = [1, 2, 3]
     b = a; move a→b（a 后续只有纯写重赋值，无读引用）
@@ -24,6 +26,8 @@ r1.len() == 3 -> print('test1 pass: len=3')
 ; ---- 改进 1b：读写区分，RHS 引用源变量仍然阻止 move ----
 ; a = a.len() 这种 RHS 引用 a 的情况，move 应被拒绝。
 
+; 改進 1b：a 在後續 RHS（a.len()）中被讀，move 必須被拒絕，b 應拿到獨立副本
+; out []i64: [1, 2, 3] 的副本
 rhs-read-source = () (out []i64) {
     a = [1, 2, 3]
     b = a; 应 clone（a 在后续 RHS 中被读取）
@@ -40,6 +44,9 @@ r1b.len() == 3 -> print('test1b pass: len=3')
 ; 新版分析：then 和 else 互斥 → move（then 分支的 out=a 运行时，else 不执行）
 ; 注意：分支感知仅对 move-to-out 安全（有运行时位图追踪）
 
+; 改進 2：then 分支 move a 到 out、else 分支只讀 a，兩者互斥故不阻擋 move
+; flag bool: true 走 then（move），false 走 else（讀 a.len() 後再 out = a）
+; out []i64: a 的內容 [10, 20, 30]
 mutual-exclusive-branch = (flag bool) (out []i64) {
     a = [10, 20, 30]
     {
@@ -64,6 +71,8 @@ r2b.len() == 3 -> print('test2b pass: len=3')
 ; b = a 后 a 在循环体内被读取，move 应被拒绝。
 ; 保守策略：循环体可能多次执行，move 后 a 不再拥有 data → use-after-free
 
+; 改進 3：a 在迴圈體內被讀，保守策略必須拒絕 move（b 拿副本），避免 use-after-free
+; out i64: 迴圈後 a[0]，應為 1
 loop-body-read = () (out i64) {
     a = [1, 2, 3]
     b = a; 应 clone（a 在循环体内被读取）
@@ -81,6 +90,9 @@ r3 == 1 -> print('test3 pass: loop-body-read')
 ; b = a 在顶层（不在分支内），if 分支内读 a → 阻止 move
 ; 因为 if 分支在运行时可能执行
 
+; 回歸：b = a 在頂層，之後的 if 分支會讀 a，move 必須被拒絕
+; flag bool: 為 true 時分支內讀 a.len()（真假都不影響 b 是副本）
+; out []i64: b，內容 [1, 2, 3]
 non-exclusive-branch = (flag bool) (out []i64) {
     a = [1, 2, 3]
     b = a; 应 clone（a 在后续 if 分支中被读取）
@@ -98,6 +110,9 @@ r4.len() == 3 -> print('test4 pass: len=3')
 ; ---- 回归测试：move-clone-liveness 场景 ----
 ; 同一源变量先 clone 再 move
 
+; 複製 then-move
+; a []i64: 獨立擁有的 [10, 20, 30]（clone，x 後面還要被 b = x 引用）
+; b []i64: 接管 x 原 data（move，x 後續未引用）
 clone-then-move = () (a []i64, b []i64) {
     x = [10, 20, 30]
     a = x; clone（x 后续被 b = x 引用）

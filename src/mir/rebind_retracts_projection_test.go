@@ -171,7 +171,7 @@ func TestReboundFieldViewIsNotProjected(t *testing.T) {
 // singleDefElementSrc.
 func TestSingleDefinitionElementViewStillProjects(t *testing.T) {
 	ir := rebindIR(t, singleDefElementSrc)
-	if got := receiverOf(t, ir, "str_pset"); !regexp.MustCompile(`^%ep\d+$`).MatchString(got) {
+	if got := receiverOf(t, ir, "str_pset"); !regexp.MustCompile(`^%ep\.\d+$`).MatchString(got) {
 		t.Errorf("@str_pset receiver = %s, want an element projection (%%ep<N>) — the "+
 			"value is defined exactly once, so forwarding is what lets a mutating "+
 			"method write through to the element", got)

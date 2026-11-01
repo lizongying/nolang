@@ -10,6 +10,7 @@
 
 # /test/runner
 
+; size：3 個節點回 3，空表回 0
 t-size = () {
     l = link {
         head: 0
@@ -27,6 +28,7 @@ t-size = () {
     runner.eq(l0.size(), 0, 'size == 0')
 }
 
+; empty：size 為 0 時 true，有 3 個節點時 false
 t-empty = () {
     le = link {
         head: -1
@@ -54,6 +56,7 @@ t-empty = () {
     runner.is-false(e3, 'size 3 => not empty')
 }
 
+; full：節點池耗盡（free-head < 0）才算滿，還有空閒槽位則不算
 t-full = () {
 
     ; free-head < 0 表示節點池已耗盡
@@ -83,6 +86,7 @@ t-full = () {
     runner.is-false(f3, 'fresh pool not full')
 }
 
+; 狀態一致性：push 3 次後 size=3、非空非滿；把 cap=3 的池填滿後 free-head=-1 即為滿
 t-state-consistency = () {
 
     ; 模擬 push-back 3 次後的狀態：size=3, free-head 前進到 3, tail=2

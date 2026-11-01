@@ -19,7 +19,7 @@ hash-set {
 }
 
 ; 初始化
-; [init](#collection.hash-set.hash-set.init)
+; [init](#hash-set.hash-set.init)
 hash-set.init = () {
     .cap = 64
     .size = 0
@@ -30,14 +30,20 @@ hash-set.init = () {
 }
 
 ; 計算索引
-; [hash](#collection.hash-set.hash-set.hash)
+; key i64: 要散列的鍵（此集合只收 i64）
+; idx i64: key 在 [0, cap) 內的初始槽位（key & (cap-1)，要求 cap 為 2 的冪）
+; [hash](#hash-set.hash-set.hash)
 hash-set.hash = (key i64) (idx i64) {
 
     idx = key & (.cap - 1)
 }
 
 ; 加入元素，回傳是否新增
-; [add](#collection.hash-set.hash-set.add)
+; 線性探測找空槽；重複加入同一個 key 不會改變集合，只回 false。
+; 表已滿且 key 不存在時探測會無限循環，呼叫方需自行控制裝載因子。
+; key i64: 要加入的元素
+; is-new bool: true=原先不存在、已插入, false=已存在，未改動
+; [add](#hash-set.hash-set.add)
 hash-set.add = (key i64) (is-new bool) {
 
     idx = .hash(key)
@@ -64,7 +70,9 @@ hash-set.add = (key i64) (is-new bool) {
 }
 
 ; 檢查元素是否存在
-; [contains](#collection.hash-set.hash-set.contains)
+; key i64: 要查詢的元素
+; found bool: true=集合中存在該元素, false=不存在（集合為空時直接回 false）
+; [contains](#hash-set.hash-set.contains)
 hash-set.contains = (key i64) (found bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -83,7 +91,10 @@ hash-set.contains = (key i64) (found bool) {
 }
 
 ; 刪除元素，回傳是否刪除
-; [remove](#collection.hash-set.hash-set.remove)
+; 僅把該槽位的佔用標記清零，不做探測鏈的後續重排；同 key 再次 add 即可重新使用該槽。
+; key i64: 要刪除的元素
+; removed bool: true=找到並刪除, false=不存在
+; [remove](#hash-set.hash-set.remove)
 hash-set.remove = (key i64) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -106,7 +117,7 @@ hash-set.remove = (key i64) (removed bool) {
 }
 
 ; 清空
-; [clear](#collection.hash-set.hash-set.clear)
+; [clear](#hash-set.hash-set.clear)
 hash-set.clear = () {
     i <- [0...cap): {
 
@@ -116,19 +127,25 @@ hash-set.clear = () {
 }
 
 ; 返回元素數量
-; [len](#collection.hash-set.hash-set.len)
+; n i64: 集合中目前存在的元素個數（add 新元素 +1，成功 remove −1）
+; [len](#hash-set.hash-set.len)
 hash-set.len = () (n i64) {
     n = .size
 }
 
 ; 是否為空
-; [is-empty](#collection.hash-set.hash-set.is-empty)
+; empty bool: true=size == 0, false=還有元素
+; [is-empty](#hash-set.hash-set.is-empty)
 hash-set.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; 遍歷所有元素
-; [for-each](#collection.hash-set.hash-set.for-each)
+; 依槽位下標順序（非插入順序）走完 [0, cap)，把每個已佔用槽的 key 依次賦給 val。
+; 本語言無回呼，函式返回時 val 停在最後一個非空槽位的元素上；
+; 需逐個處理時請改用下標迴圈配合 contains / .keys 訪問。
+; val i64: 當前槽位的元素值（最後一次賦值）
+; [for-each](#hash-set.hash-set.for-each)
 hash-set.for-each = () (val i64) {
     i <- [0...cap): {
         .occ[i] == 1 -> {

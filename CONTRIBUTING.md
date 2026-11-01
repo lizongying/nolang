@@ -147,6 +147,14 @@ Rules, all of them load-bearing:
   catalog is keyed by — nothing is derived from the text, so editing the prose
   never orphans a translation. Anchors allow `[A-Za-z0-9._-]` and are global;
   prefix them with the module (`args.get`, not `get`) to keep them unique.
+- **Prefix with the flattened module name, not the directory.** The compiler
+  flattens a std file to its basename: `std/collection/linked-hash-map.no` is the
+  module `linked-hash-map`, and `use std/collection` never puts `collection.` in
+  front of a symbol. So the anchor for `linked-hash-map.clear` is
+  `linked-hash-map.linked-hash-map.clear` (module, then the name as written),
+  **not** `collection.linked-hash-map.linked-hash-map.clear`. Directory segments
+  (`collection`, `net`, `crypto`, `archive`, `encoding`, `database`) are not part
+  of any symbol and must not appear in an anchor.
 - **The label is decorative.** `[get]` is a hint for whoever reads the source;
   the whole link line is stripped from the hover either way. `[](#args.get)` is
   legal.
@@ -154,7 +162,7 @@ Rules, all of them load-bearing:
   shows the anchor and that entry's text in the active language, so a reader can
   check a translation without leaving the comment.
 
-`make i18n` scans every `.no` file and writes `src/i18n/catalog/locales/en.doc.noml`
+`make i18n` scans every `.no` file and writes `src/i18n/catalog/locales/en-doc.noml`
 (a *separate* file from `en.noml`). That file holds **translations only**. Seeding
 every anchor with its source text would put Chinese into the English catalog —
 the exact failure `en.noml` was already fixed for — and would make the catalog
@@ -162,8 +170,12 @@ claim a translation nobody wrote. An anchor that is absent simply falls back to
 the comment text, so an untranslated block degrades to the author's language.
 A committed value is preserved verbatim even if the comment is reworded, because
 the anchor rather than the text is the key (`catalog.PruneDocTranslations`).
-Translations go in `locales/<tag>.doc.noml`; a key that no longer exists in any
-`.no` source is rejected as an orphan.
+Translations go in `locales/<tag>-doc.noml`; a key that no longer exists in any
+`.no` source is rejected as an orphan. The file name follows the `.no` naming
+rule — lowercase letters, digits and single hyphens — so the tag is lowercased
+and the separator is `-`: `--lang=zh-CN` reads `zh-cn-doc.noml`, not
+`zh-CN-doc.noml`. `catalog.DocCatalogName(tag)` is the only place that builds
+this name.
 
 `go run ./i18n/cmd/genen -doc-missing` lists the anchors still waiting for a
 translation, so the remaining work is visible without diffing two files.
@@ -184,7 +196,9 @@ Japanese system locale is honoured without a flag (`zh_CN.UTF-8` → `zh-CN`).
 Aliases resolve onto the catalog that actually exists: `zh`/`zh-Hans` → `zh-CN`,
 `zh-Hant`/`zh-Hant-TW`/`zh-HK`/`zh-MO` → `zh-TW`. A project may drop
 `locales/<tag>.noml` at its root to override the built-in catalogs (project-local
-wins). Built-in catalogs live in `src/i18n/catalog/locales/` and are embedded with
+wins); the file name is the tag lowercased, so the `zh-CN` override is
+`locales/zh-cn.noml` (`catalog.LocaleFileName` is the only place that builds this
+name). Built-in catalogs live in `src/i18n/catalog/locales/` and are embedded with
 `go:embed`.
 
 The LSP has no `--lang` flag. It resolves the language at startup from the same
@@ -202,20 +216,21 @@ the checker and the build/package wrappers; anything not yet translated falls
 back to English at runtime, per message, with no failure.
 
 Doc comments are tracked separately. Every documented std function or method
-carries an anchor (2009 of them), so the LSP can translate any of them the
-moment a translation lands. `en.doc.noml` and `zh-CN.doc.noml` cover, end to end:
+carries an anchor (about 2000 of them; a handful are link-only and have no prose
+to translate), so the LSP can translate any of them the moment a translation
+lands. `en-doc.noml` and `zh-cn-doc.noml` cover, end to end:
 `args`, `global`, `io`, `fmt`, `str`, `txt`, `json`, `regexp`, `time`, `vec`,
 `arr`, `byte`, `char`, `number`, `int`, `num`, `float`, `math`, `os`, `fs`,
 `process`, `env`, `set`, `heap`, `bufio`, `path`, `err`, `log`, `bool`, `async`,
 `sort`, plus `collection`, `dom`, `yaml`, `toml`, `markdown`, `uuid`, `encoding`,
-`bigint` and `magic` — 1186 of the 1995 anchors. `zh-TW`, `ja`, `ko`, `fr` and
-`es` ship a starter set (the `args`/`global`/`env`/`bool`/`num`/`int` surface)
-and fall back to the source comment for the rest. The `net`, `crypto` and
-`archive` modules are anchored but not translated yet; run
+`bigint` and `magic` — 1186 of the 1997 anchors that carry prose. `zh-TW`, `ja`,
+`ko`, `fr` and `es` ship a starter set (the `args`/`global`/`env`/`bool`/`num`/
+`int` surface) and fall back to the source comment for the rest. The `net`,
+`crypto` and `archive` modules are anchored but not translated yet; run
 `go run ./i18n/cmd/genen -doc-missing` (or `make i18n-missing`) for the exact
 list.
 
-`go test ./i18n/...` is the gate: it checks `en.noml` and `en.doc.noml`
+`go test ./i18n/...` is the gate: it checks `en.noml` and `en-doc.noml`
 freshness, key well-formedness, absence of orphans in both, and verb-signature
 equality for every locale. A doc catalog is free to translate an anchor English
 has not reached yet — orphans are checked against the source, not against `en`.

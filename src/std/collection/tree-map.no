@@ -58,7 +58,7 @@ tree-map {
 ; ═══════════════════════════════════════════════
 
 ; 初始化空樹與空閒節點池
-; [init](#collection.tree-map.tree-map.init)
+; [init](#tree-map.tree-map.init)
 tree-map.init = () {
 
     .root = -1
@@ -82,7 +82,7 @@ tree-map.init = () {
 
 ; 從空閒池分配節點
 ; 返回 idx i64: 節點索引，-1=池已滿
-; [alloc-node](#collection.tree-map.tree-map.alloc-node)
+; [alloc-node](#tree-map.tree-map.alloc-node)
 tree-map.alloc-node = () (idx i64) {
     idx = .free-head
     idx < 0 -> return
@@ -100,7 +100,7 @@ tree-map.alloc-node = () (idx i64) {
 
 ; 將節點歸還空閒池
 ; idx i64: 要釋放的節點索引
-; [free-node](#collection.tree-map.tree-map.free-node)
+; [free-node](#tree-map.tree-map.free-node)
 tree-map.free-node = (idx i64) {
 
     .left[idx] = .free-head
@@ -114,7 +114,7 @@ tree-map.free-node = (idx i64) {
 ; 取得節點高度（NIL=0）
 ; idx i64: 節點索引
 ; 返回 h i64: 高度
-; [ht](#collection.tree-map.tree-map.ht)
+; [ht](#tree-map.tree-map.ht)
 tree-map.ht = (idx i64) (h i64) {
     h = 0
     idx < 0 -> return
@@ -124,7 +124,7 @@ tree-map.ht = (idx i64) (h i64) {
 
 ; 重新計算節點高度
 ; idx i64: 節點索引
-; [update-ht](#collection.tree-map.tree-map.update-ht)
+; [update-ht](#tree-map.tree-map.update-ht)
 tree-map.update-ht = (idx i64) {
 
     lh = .ht(.left[idx])
@@ -138,7 +138,7 @@ tree-map.update-ht = (idx i64) {
 ; 取得平衡因子（左高 - 右高）
 ; idx i64: 節點索引
 ; 返回 b i64: 平衡因子
-; [bf](#collection.tree-map.tree-map.bf)
+; [bf](#tree-map.tree-map.bf)
 tree-map.bf = (idx i64) (b i64) {
 
     lh = .ht(.left[idx])
@@ -160,7 +160,7 @@ tree-map.bf = (idx i64) (b i64) {
 ;      / \          / \
 ;     b   c        a   b
 ; x i64: 旋轉軸節點
-; [rot-left](#collection.tree-map.tree-map.rot-left)
+; [rot-left](#tree-map.tree-map.rot-left)
 tree-map.rot-left = (x i64) {
 
     y = .right[x]
@@ -204,7 +204,7 @@ tree-map.rot-left = (x i64) {
 ;    / \                / \
 ;   a   b              b   c
 ; x i64: 旋轉軸節點
-; [rot-right](#collection.tree-map.tree-map.rot-right)
+; [rot-right](#tree-map.tree-map.rot-right)
 tree-map.rot-right = (x i64) {
 
     y = .left[x]
@@ -248,7 +248,7 @@ tree-map.rot-right = (x i64) {
 ; 在節點 idx 檢查並修復平衡
 ; idx i64: 節點索引
 ; 返回 nr i64: 再平衡後的子樹根索引
-; [rebalance](#collection.tree-map.tree-map.rebalance)
+; [rebalance](#tree-map.tree-map.rebalance)
 tree-map.rebalance = (idx i64) (nr i64) {
     nr = idx
     b = .bf(idx)
@@ -287,7 +287,7 @@ tree-map.rebalance = (idx i64) (nr i64) {
 
 ; 從 idx 向上逐層再平衡
 ; idx i64: 起始節點索引
-; [rebalance-up](#collection.tree-map.tree-map.rebalance-up)
+; [rebalance-up](#tree-map.tree-map.rebalance-up)
 tree-map.rebalance-up = (idx i64) {
     r-idx = idx
     (r-idx >= 0) {
@@ -300,7 +300,7 @@ tree-map.rebalance-up = (idx i64) {
 ; 求節點的中序後繼
 ; idx i64: 節點索引
 ; 返回 succ i64: 後繼索引，-1=無後繼
-; [successor](#collection.tree-map.tree-map.successor)
+; [successor](#tree-map.tree-map.successor)
 tree-map.successor = (idx i64) (succ i64) {
     r-idx = idx
     succ = -1
@@ -335,7 +335,7 @@ tree-map.successor = (idx i64) (succ i64) {
 ; key i64: 鍵
 ; val i64: 值
 ; 返回 ok bool: true=新增, false=更新已存在鍵或池已滿
-; [put](#collection.tree-map.tree-map.put)
+; [put](#tree-map.tree-map.put)
 tree-map.put = (key i64, val i64) (ok bool) {
     ok = false
 
@@ -416,7 +416,7 @@ tree-map.put = (key i64, val i64) (ok bool) {
 ; 查找鍵對應的值
 ; key i64: 鍵
 ; 返回 val ?i64: ok=找到, nil=未找到
-; [get](#collection.tree-map.tree-map.get)
+; [get](#tree-map.tree-map.get)
 tree-map.get = (key i64) (val ?i64) {
     idx = .root
     (idx >= 0) {
@@ -441,7 +441,7 @@ tree-map.get = (key i64) (val ?i64) {
 ; 檢查鍵是否存在
 ; key i64: 鍵
 ; 返回 yes bool: true=存在, false=不存在
-; [contains](#collection.tree-map.tree-map.contains)
+; [contains](#tree-map.tree-map.contains)
 tree-map.contains = (key i64) (yes bool) {
     idx = .root
     (idx >= 0) {
@@ -464,7 +464,7 @@ tree-map.contains = (key i64) (yes bool) {
 ; 刪除鍵
 ; key i64: 鍵
 ; 返回 ok bool: true=已刪除, false=未找到
-; [remove](#collection.tree-map.tree-map.remove)
+; [remove](#tree-map.tree-map.remove)
 tree-map.remove = (key i64) (ok bool) {
 
     ok = false
@@ -545,7 +545,7 @@ tree-map.remove = (key i64) (ok bool) {
 
 ; 取得最小鍵
 ; 返回 key ?i64: ok=最小鍵, nil=空樹
-; [first](#collection.tree-map.tree-map.first)
+; [first](#tree-map.tree-map.first)
 tree-map.first = () (key ?i64) {
     idx = .root
     idx < 0 -> {
@@ -562,7 +562,7 @@ tree-map.first = () (key ?i64) {
 
 ; 取得最大鍵
 ; 返回 key ?i64: ok=最大鍵, nil=空樹
-; [last](#collection.tree-map.tree-map.last)
+; [last](#tree-map.tree-map.last)
 tree-map.last = () (key ?i64) {
     idx = .root
     idx < 0 -> {
@@ -580,7 +580,7 @@ tree-map.last = () (key ?i64) {
 ; 找第一個 ≥ target 的鍵
 ; target i64: 目標鍵
 ; 返回 key ?i64: ok=找到, nil=無此鍵
-; [lower-bound](#collection.tree-map.tree-map.lower-bound)
+; [lower-bound](#tree-map.tree-map.lower-bound)
 tree-map.lower-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root
@@ -608,7 +608,7 @@ tree-map.lower-bound = (target i64) (key ?i64) {
 ; 找第一個 > target 的鍵
 ; target i64: 目標鍵
 ; 返回 key ?i64: ok=找到, nil=無此鍵
-; [upper-bound](#collection.tree-map.tree-map.upper-bound)
+; [upper-bound](#tree-map.tree-map.upper-bound)
 tree-map.upper-bound = (target i64) (key ?i64) {
     result = -1
     idx = .root
@@ -636,7 +636,7 @@ tree-map.upper-bound = (target i64) (key ?i64) {
 ; 按鍵升序遍歷所有鍵值對
 ; k i64: 輸出鍵（每個元素更新）
 ; v i64: 輸出值（每個元素更新）
-; [for-each](#collection.tree-map.tree-map.for-each)
+; [for-each](#tree-map.tree-map.for-each)
 tree-map.for-each = () (k i64, v i64) {
     idx = .root
     idx < 0 -> return
@@ -662,7 +662,7 @@ tree-map.for-each = () (k i64, v i64) {
 ; ═══════════════════════════════════════════════
 
 ; 清空所有元素，重建空閒池
-; [clear](#collection.tree-map.tree-map.clear)
+; [clear](#tree-map.tree-map.clear)
 tree-map.clear = () {
 
     .root = -1
@@ -682,21 +682,21 @@ tree-map.clear = () {
 
 ; 返回元素數量
 ; 返回 sz i64: 元素數量
-; [size](#collection.tree-map.tree-map.size)
+; [size](#tree-map.tree-map.size)
 tree-map.size = () (sz i64) {
     sz = .size
 }
 
 ; 判斷是否為空
 ; 返回 yes bool: true=空, false=非空
-; [empty](#collection.tree-map.tree-map.empty)
+; [empty](#tree-map.tree-map.empty)
 tree-map.empty = () (yes bool) {
     yes = .size <= 0
 }
 
 ; 判斷節點池是否已滿
 ; 返回 yes bool: true=已滿, false=未滿
-; [full](#collection.tree-map.tree-map.full)
+; [full](#tree-map.tree-map.full)
 tree-map.full = () (yes bool) {
     yes = .free-head < 0
 }

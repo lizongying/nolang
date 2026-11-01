@@ -33,10 +33,14 @@ EXIT-NOTIMPL = 3
 NOC-NAME = 'noc'
 NOC-VERSION = 'v0.0.1-m0'
 
+; 功能待補充
+; r: 結果字串
 drv.name = () (r str) {
     r = NOC-NAME
 }
 
+; 功能待補充
+; r: 結果字串
 drv.version = () (r str) {
     r = NOC-VERSION
 }
@@ -56,11 +60,14 @@ drv.usage = () {
     print('  build <file|dir>   compile to executable (not implemented in M0)')
 }
 
+; 功能待補充
 drv.cmd-version = () {
     print(NOC-NAME - ' ' - NOC-VERSION)
 }
 
 ; 統一的「未實作」出口
+; what: 字串
+; code: 狀態碼
 drv.not-implemented = (what str) (code i64) {
     eprint(NOC-NAME - ': command "' - what - '" is not implemented yet (M0 skeleton)')
     code = EXIT-NOTIMPL
@@ -70,6 +77,7 @@ drv.not-implemented = (what str) (code i64) {
 ; 輸出格式與 L1 oracle 逐位元組相同（見 compiler/src/lx.no 檔頭）。
 ; ⚠️ 不要用 print 印「已帶尾端 \n 的字串」——print 自己會補一個 \n，
 ;    那會多出一個空行。lx.dump 回的字串刻意**不帶**尾端 \n。
+; code: 狀態碼
 drv.cmd-tokens = () (code i64) {
     code = EXIT-OK
     n = args.count()
@@ -122,6 +130,7 @@ drv.cmd-tokens = () (code i64) {
 ; 解析並 dump AST（M2）
 ; 輸出與 L2 oracle `no ast <file>` 逐位元組相同（見 compiler/src/ast.no 檔頭）。
 ; 讀檔走 read-bytes + to-bytes-str（與 cmd-tokens 同理由，§8 P0-⑥）。
+; code: 狀態碼
 drv.cmd-ast = () (code i64) {
     code = EXIT-OK
     n = args.count()
@@ -172,6 +181,7 @@ drv.cmd-ast = () (code i64) {
 ;                  摘要「\nN error(s), W warning(s), H hint(s)」走 stderr；rc=1（鉗制，見下）
 ;   s10 起的診斷源 = ps.no 的語法錯誤收集器（三站點：分組缺 RPAREN、實參缺逗號、
 ;   let RHS 落空）；checker 未實作 ⇒ WARNING/HINT 恆 0，LINT 族留 M3-c 後續增量。
+; code: 狀態碼
 drv.cmd-vet = () (code i64) {
     code = EXIT-OK
     n = args.count()
@@ -325,6 +335,7 @@ drv.cmd-vet = () (code i64) {
 }
 
 ; 依 argv[1] 分派；回傳行程退出碼
+; code: 狀態碼
 drv.dispatch = () (code i64) {
     code = EXIT-OK
     n = args.count()

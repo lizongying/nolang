@@ -1,5 +1,8 @@
 ; Fibonacci — Nolang 版本，純計算無 I/O（附編譯屏障）
 
+; 功能待補充
+; n: 數量
+; o: 結果數值
 fib = (n i64) (o i64) {
     a = 0
     b = 1

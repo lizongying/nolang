@@ -1,12 +1,17 @@
 ; helper module for bug13: cross-module bool coercion test
 
 ; returns a str
+; prefix str: 拼接前綴，例如 'x'
+; s str: prefix 接上固定後綴 '-1234567890abcdef' 的結果
 compute-str = (prefix str) (s str) {
 
     s = prefix - '-1234567890abcdef'
 }
 
 ; takes a str param and returns bool
+; s str: 待檢查字串；只要非空就回 true
+; n i64: 佔位用的整數參數（此實作未使用）
+; ok bool: s.len-bytes() > 0 的結果
 use-str-and-bool = (s str, n i64) (ok bool) {
     ok = s.len-bytes() > 0
 }

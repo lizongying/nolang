@@ -4,6 +4,7 @@
 ; 底層表示：i1（1 byte，0 或 1）
 
 ; 將 bool 轉為字串 "true" 或 "false"
+; out str: true → 'true'、false → 'false'（長度 4 或 5）
 ; [to-str](#bool.to-str)
 #{buildin}
 bool.to-str = () (out str) {

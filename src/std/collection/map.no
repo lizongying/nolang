@@ -38,7 +38,7 @@ hashmap-str-tmpl {
 }
 
 ; 初始化
-; [init](#collection.map.hashmap-str-tmpl.init)
+; [init](#map.hashmap-str-tmpl.init)
 hashmap-str-tmpl.init = () {
     .cap = 16
     .size = 0
@@ -48,7 +48,9 @@ hashmap-str-tmpl.init = () {
 }
 
 ; FNV-1a 字串雜湊
-; [hash](#collection.map.hashmap-str-tmpl.hash)
+; key: 待計算雜湊的字串鍵
+; idx: FNV-1a 雜湊後掩碼到槽位範圍的索引
+; [hash](#map.hashmap-str-tmpl.hash)
 hashmap-str-tmpl.hash = (key str) (idx i64) {
 
     h = FNV-OFFSET
@@ -64,7 +66,10 @@ hashmap-str-tmpl.hash = (key str) (idx i64) {
 }
 
 ; 比較兩個 str 是否相等
-; [str-eq](#collection.map.hashmap-str-tmpl.str-eq)
+; a: 第一個字串
+; b: 第二個字串
+; eq: 兩者是否逐位元組相等
+; [str-eq](#map.hashmap-str-tmpl.str-eq)
 hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
@@ -77,7 +82,10 @@ hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
 }
 
 ; 插入或更新 key→value，回傳是否新增
-; [put](#collection.map.hashmap-str-tmpl.put)
+; key: 要插入的字串鍵
+; val: 要儲存的值
+; is-new: true=插入新鍵, false=覆寫既有值
+; [put](#map.hashmap-str-tmpl.put)
 hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
     ; 若未初始化，自動初始化
@@ -130,7 +138,9 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
-; [get](#collection.map.hashmap-str-tmpl.get)
+; key: 要查找的鍵
+; result: ok=儲存的值, nil=鍵不存在
+; [get](#map.hashmap-str-tmpl.get)
 hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
@@ -155,7 +165,9 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 }
 
 ; 檢查 key 是否存在
-; [contains](#collection.map.hashmap-str-tmpl.contains)
+; key: 要檢查的鍵
+; found: 表中是否存在該鍵
+; [contains](#map.hashmap-str-tmpl.contains)
 hashmap-str-tmpl.contains = (key str) (found bool) {
     val = .get(key)
     val: {
@@ -168,7 +180,9 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 }
 
 ; 刪除 key（標記墓碑，不清 keys/vals）
-; [remove](#collection.map.hashmap-str-tmpl.remove)
+; key: 要刪除的鍵
+; removed: 是否實際刪除（鍵不存在時不變）
+; [remove](#map.hashmap-str-tmpl.remove)
 hashmap-str-tmpl.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -196,26 +210,30 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
 }
 
 ; 清空（重新配置 occ vec，舊 vec 由編譯器 move 語義釋放）
-; [clear](#collection.map.hashmap-str-tmpl.clear)
+; [clear](#map.hashmap-str-tmpl.clear)
 hashmap-str-tmpl.clear = () {
     .occ = with-len(.cap)
     .size = 0
 }
 
 ; 返回元素數量
-; [len](#collection.map.hashmap-str-tmpl.len)
+; n: 當前有效鍵值對數量
+; [len](#map.hashmap-str-tmpl.len)
 hashmap-str-tmpl.len = () (n i64) {
     n = .size
 }
 
 ; 是否為空
-; [is-empty](#collection.map.hashmap-str-tmpl.is-empty)
+; empty: 是否不含任何元素
+; [is-empty](#map.hashmap-str-tmpl.is-empty)
 hashmap-str-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; 遍歷所有 (key, value)
-; [for-each](#collection.map.hashmap-str-tmpl.for-each)
+; k: 本次迭代的鍵
+; v: 本次迭代的值
+; [for-each](#map.hashmap-str-tmpl.for-each)
 hashmap-str-tmpl.for-each = () (k str, v v) {
     n = .cap
     i <- [0..n): {
@@ -233,7 +251,8 @@ hashmap-str-tmpl.for-each = () (k str, v v) {
 }
 
 ; 擴容並重新雜湊所有 occ==1 條目
-; [rehash](#collection.map.hashmap-str-tmpl.rehash)
+; new-cap: 擴容後的容量（通常為當前容量倍）
+; [rehash](#map.hashmap-str-tmpl.rehash)
 hashmap-str-tmpl.rehash = (new-cap i64) {
 
     ; 保存舊資料
@@ -295,7 +314,7 @@ hashmap-int-tmpl {
 }
 
 ; 初始化
-; [init](#collection.map.hashmap-int-tmpl.init)
+; [init](#map.hashmap-int-tmpl.init)
 hashmap-int-tmpl.init = () {
     .cap = 16
     .size = 0
@@ -305,14 +324,19 @@ hashmap-int-tmpl.init = () {
 }
 
 ; 計算索引（位元遮罩）
-; [hash](#collection.map.hashmap-int-tmpl.hash)
+; key: 整數鍵
+; idx: 鍵經容量掩碼後的槽位索引
+; [hash](#map.hashmap-int-tmpl.hash)
 hashmap-int-tmpl.hash = (key k) (idx i64) {
 
     idx = key & (.cap - 1)
 }
 
 ; 插入或更新 key→value，回傳是否新增
-; [put](#collection.map.hashmap-int-tmpl.put)
+; key: 要插入的整數鍵
+; val: 要儲存的值
+; is-new: true=插入新鍵, false=覆寫既有值
+; [put](#map.hashmap-int-tmpl.put)
 hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
     ; 若未初始化，自動初始化
@@ -361,7 +385,9 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
-; [get](#collection.map.hashmap-int-tmpl.get)
+; key: 要查找的鍵
+; result: ok=儲存的值, nil=鍵不存在
+; [get](#map.hashmap-int-tmpl.get)
 hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
@@ -384,7 +410,9 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
 }
 
 ; 檢查 key 是否存在
-; [contains](#collection.map.hashmap-int-tmpl.contains)
+; key: 要檢查的鍵
+; found: 表中是否存在該鍵
+; [contains](#map.hashmap-int-tmpl.contains)
 hashmap-int-tmpl.contains = (key k) (found bool) {
     val = .get(key)
     val: {
@@ -397,7 +425,9 @@ hashmap-int-tmpl.contains = (key k) (found bool) {
 }
 
 ; 刪除 key（標記墓碑，不清 keys/vals）
-; [remove](#collection.map.hashmap-int-tmpl.remove)
+; key: 要刪除的鍵
+; removed: 是否實際刪除（鍵不存在時不變）
+; [remove](#map.hashmap-int-tmpl.remove)
 hashmap-int-tmpl.remove = (key k) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -423,26 +453,30 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
 }
 
 ; 清空（重新配置 occ vec）
-; [clear](#collection.map.hashmap-int-tmpl.clear)
+; [clear](#map.hashmap-int-tmpl.clear)
 hashmap-int-tmpl.clear = () {
     .occ = with-len(.cap)
     .size = 0
 }
 
 ; 返回元素數量
-; [len](#collection.map.hashmap-int-tmpl.len)
+; n: 當前有效鍵值對數量
+; [len](#map.hashmap-int-tmpl.len)
 hashmap-int-tmpl.len = () (n i64) {
     n = .size
 }
 
 ; 是否為空
-; [is-empty](#collection.map.hashmap-int-tmpl.is-empty)
+; empty: 是否不含任何元素
+; [is-empty](#map.hashmap-int-tmpl.is-empty)
 hashmap-int-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; 遍歷所有 (key, value)
-; [for-each](#collection.map.hashmap-int-tmpl.for-each)
+; k: 本次迭代的鍵
+; v: 本次迭代的值
+; [for-each](#map.hashmap-int-tmpl.for-each)
 hashmap-int-tmpl.for-each = () (k k, v v) {
     n = .cap
     i <- [0..n): {
@@ -456,7 +490,8 @@ hashmap-int-tmpl.for-each = () (k k, v v) {
 }
 
 ; 擴容並重新雜湊所有 occ==1 條目
-; [rehash](#collection.map.hashmap-int-tmpl.rehash)
+; new-cap: 擴容後的容量（通常為當前容量倍）
+; [rehash](#map.hashmap-int-tmpl.rehash)
 hashmap-int-tmpl.rehash = (new-cap i64) {
 
     ; 保存舊資料
@@ -517,7 +552,7 @@ hashmap-bool-tmpl {
 }
 
 ; 初始化
-; [init](#collection.map.hashmap-bool-tmpl.init)
+; [init](#map.hashmap-bool-tmpl.init)
 hashmap-bool-tmpl.init = () {
     .cap = 2
     .size = 0
@@ -527,7 +562,9 @@ hashmap-bool-tmpl.init = () {
 }
 
 ; 直接索引（true→1，false→0）
-; [hash](#collection.map.hashmap-bool-tmpl.hash)
+; key: 布林鍵
+; idx: 固定槽位索引（true→1、false→0）
+; [hash](#map.hashmap-bool-tmpl.hash)
 hashmap-bool-tmpl.hash = (key bool) (idx i64) {
     {
         key == true -> idx = 1
@@ -537,7 +574,10 @@ hashmap-bool-tmpl.hash = (key bool) (idx i64) {
 }
 
 ; 插入或更新 key→value，回傳是否新增（直接索引，無 rehash）
-; [put](#collection.map.hashmap-bool-tmpl.put)
+; key: 要插入的布林鍵
+; val: 要儲存的值
+; is-new: true=插入新鍵, false=覆寫既有值
+; [put](#map.hashmap-bool-tmpl.put)
 hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     .cap == 0 -> .init()
 
@@ -562,7 +602,9 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
-; [get](#collection.map.hashmap-bool-tmpl.get)
+; key: 要查找的鍵
+; result: ok=儲存的值, nil=鍵不存在
+; [get](#map.hashmap-bool-tmpl.get)
 hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
@@ -575,7 +617,9 @@ hashmap-bool-tmpl.get = (key bool) (result ?v) {
 }
 
 ; 檢查 key 是否存在
-; [contains](#collection.map.hashmap-bool-tmpl.contains)
+; key: 要檢查的鍵
+; found: 表中是否存在該鍵
+; [contains](#map.hashmap-bool-tmpl.contains)
 hashmap-bool-tmpl.contains = (key bool) (found bool) {
     val = .get(key)
     val: {
@@ -588,7 +632,9 @@ hashmap-bool-tmpl.contains = (key bool) (found bool) {
 }
 
 ; 刪除 key（標記墓碑，不清 keys/vals）
-; [remove](#collection.map.hashmap-bool-tmpl.remove)
+; key: 要刪除的鍵
+; removed: 是否實際刪除（鍵不存在時不變）
+; [remove](#map.hashmap-bool-tmpl.remove)
 hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -604,26 +650,30 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
 }
 
 ; 清空（重新配置 occ vec）
-; [clear](#collection.map.hashmap-bool-tmpl.clear)
+; [clear](#map.hashmap-bool-tmpl.clear)
 hashmap-bool-tmpl.clear = () {
     .occ = with-len(.cap)
     .size = 0
 }
 
 ; 返回元素數量
-; [len](#collection.map.hashmap-bool-tmpl.len)
+; n: 已存放的元素數（0~2）
+; [len](#map.hashmap-bool-tmpl.len)
 hashmap-bool-tmpl.len = () (n i64) {
     n = .size
 }
 
 ; 是否為空
-; [is-empty](#collection.map.hashmap-bool-tmpl.is-empty)
+; empty: 兩個槽位是否皆為空
+; [is-empty](#map.hashmap-bool-tmpl.is-empty)
 hashmap-bool-tmpl.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; 遍歷所有 (key, value)
-; [for-each](#collection.map.hashmap-bool-tmpl.for-each)
+; k: 本次迭代的鍵
+; v: 本次迭代的值
+; [for-each](#map.hashmap-bool-tmpl.for-each)
 hashmap-bool-tmpl.for-each = () (k bool, v v) {
     n = .cap
     i <- [0..n): {

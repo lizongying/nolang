@@ -10,8 +10,321 @@
 # /test/runner.summary
 # /compiler/src/cg
 # /compiler/src/mir
+# /compiler/src/cg-rc
 
 ; ── func three() -> 3 ───────────────────────────────────
+test-alu = () {
+    ; 12 条 ALU op 各钉一条**指令文本**：v<dst> ← 运算(a, b)。
+    ; 值 id：v1 = 左、v2 = 右；每条 op 的 dst 顺次取 3..14。
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0/k1: CONST v1 = 100、v2 = 7
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(100)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    ; k2..k13: 位运算 / 移位 / 除余 / 比较
+    ops.push(OP-AND)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-OR)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-XOR)
+    dsts.push(5)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-SHL)
+    dsts.push(6)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-SHR)
+    dsts.push(7)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-DIV)
+    dsts.push(8)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-MOD)
+    dsts.push(9)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPEQ)
+    dsts.push(10)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPNE)
+    dsts.push(11)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPLE)
+    dsts.push(12)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPGT)
+    dsts.push(13)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPGE)
+    dsts.push(14)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(14)
+    bs.push(0)
+    syms.push('')
+    ptyps []i64 = []
+    vty []i64 = []
+    j = 0
+    (j < 15) {
+        vty.push(TY-I64)
+        #{overflow=wrap}
+        j = j + 1
+    }
+    cty []i64 = []
+    blks []i64 = []
+    n = ops.len()
+    i <- [0..n): {
+        cty.push(TY-I64)
+        blks.push(0)
+    }
+    s = cg-emit-cfg-t('alu', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%v3 = and i64 %v1, %v2'), 1, 'and')
+    runner.eq(s.contains('%v4 = or i64 %v1, %v2'), 1, 'or')
+    runner.eq(s.contains('%v5 = xor i64 %v1, %v2'), 1, 'xor')
+    runner.eq(s.contains('%v6 = shl i64 %v1, %v2'), 1, 'shl')
+    ; 移位必须是有符号（ashr），不是 lshr
+    runner.eq(s.contains('%v7 = ashr i64 %v1, %v2'), 1, 'shr ashr')
+    runner.eq(s.contains('lshr'), 0, 'shr not lshr')
+    runner.eq(s.contains('%v8 = sdiv i64 %v1, %v2'), 1, 'div sdiv')
+    runner.eq(s.contains('%v9 = srem i64 %v1, %v2'), 1, 'mod srem')
+    ; 比较：icmp <pred> + zext，结果 0/1；中间名 %c<k> 按下标
+    runner.eq(s.contains('%c9 = icmp eq i64 %v1, %v2'), 1, 'cmpeq icmp')
+    runner.eq(s.contains('%v10 = zext i1 %c9 to i64'), 1, 'cmpeq zext')
+    runner.eq(s.contains('%c10 = icmp ne i64 %v1, %v2'), 1, 'cmpne icmp')
+    runner.eq(s.contains('%c11 = icmp sle i64 %v1, %v2'), 1, 'cmple icmp')
+    runner.eq(s.contains('%c12 = icmp sgt i64 %v1, %v2'), 1, 'cmpgt icmp')
+    runner.eq(s.contains('%c13 = icmp sge i64 %v1, %v2'), 1, 'cmpge icmp')
+}
+
+test-struct-param-ret = () {
+    ; 形参侧：nargs=1、ptyps[0] = TY-STRUCT-BASE ⇒ define 签名里是 %struct.s0 %st1
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: STRUCT-GET v2 = st1.0
+    ops.push(OP-STRUCT-GET)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ptyps []i64 = []
+    ptyps.push(TY-STRUCT-BASE)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    blks []i64 = []
+    blks.push(0)
+    blks.push(0)
+    s = cg-emit-cfg-t('take', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('define i64 @take(%struct.s0 %st1) {'), 1, 'struct param sig')
+    runner.eq(s.contains('%v2 = extractvalue %struct.s0 %st1, 0'), 1, 'struct param get')
+
+    ; 返回值侧：retty = TY-STRUCT-BASE ⇒ define ... %struct.s0、ret %struct.s0 %st1
+    ops2 []i64 = []
+    dsts2 []i64 = []
+    xa2 []i64 = []
+    bs2 []i64 = []
+    syms2 []str = []
+    ops2.push(OP-RET)
+    dsts2.push(0)
+    xa2.push(1)
+    bs2.push(0)
+    syms2.push('')
+    vty2 []i64 = []
+    vty2.push(TY-I64)
+    vty2.push(TY-STRUCT-BASE)
+    cty2 []i64 = []
+    cty2.push(TY-I64)
+    blks2 []i64 = []
+    blks2.push(0)
+    s2 = cg-emit-cfg-t('give', TY-STRUCT-BASE, 1, ptyps, vty2, cty2, blks2, ops2, dsts2, xa2, bs2, syms2)
+    runner.eq(s2.contains('define %struct.s0 @give(%struct.s0 %st1) {'), 1, 'struct ret sig')
+    runner.eq(s2.contains('ret %struct.s0 %st1'), 1, 'struct ret value')
+
+    ; 调用侧：实参型别取 vty[q]、结果取 cty[k] ⇒ call %struct.s0 ... 落 %st
+    ops3 []i64 = []
+    dsts3 []i64 = []
+    xa3 []i64 = []
+    bs3 []i64 = []
+    syms3 []str = []
+    ops3.push(OP-CALL)
+    dsts3.push(2)
+    xa3.push(1)
+    bs3.push(1)
+    syms3.push('give')
+    ops3.push(OP-RET)
+    dsts3.push(0)
+    xa3.push(2)
+    bs3.push(0)
+    syms3.push('')
+    vty3 []i64 = []
+    vty3.push(TY-I64)
+    vty3.push(TY-STRUCT-BASE)
+    vty3.push(TY-STRUCT-BASE)
+    cty3 []i64 = []
+    cty3.push(TY-STRUCT-BASE)
+    cty3.push(TY-I64)
+    blks3 []i64 = []
+    blks3.push(0)
+    blks3.push(0)
+    s3 = cg-emit-cfg-t('roundtrip', TY-STRUCT-BASE, 1, ptyps, vty3, cty3, blks3, ops3, dsts3, xa3, bs3, syms3)
+    runner.eq(s3.contains('define %struct.s0 @roundtrip(%struct.s0 %st1) {'), 1, 'struct call sig')
+    runner.eq(s3.contains('%st2 = call %struct.s0 @give(%struct.s0 %st1)'), 1, 'struct call arg')
+    runner.eq(s3.contains('ret %struct.s0 %st2'), 1, 'struct call ret')
+}
+
+test-struct-nested = () {
+    ; 声明侧：struct#1 的字段 0 是 struct#0（sft 里就是 TY-STRUCT-BASE + 0）
+    sfc []i64 = [1, 2]
+    sft []i64 = [TY-I64, TY-STRUCT-BASE, TY-I64]
+    d = cg-runtime-struct-decls(sfc, sft)
+    runner.eq(d.contains('%struct.s0 = type { i64 }'), 1, 'nested child decl')
+    runner.eq(d.contains('%struct.s1 = type { %struct.s0, i64 }'), 1, 'nested parent decl')
+
+    ; 发射侧：MK 的字段值 id 是结构体 ⇒ 型别名与前缀取自 vty（%struct.s0 + %st）
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: CONST v1 = 7
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    ; k1: STRUCT-MK st2 = struct#0{ v1 }
+    ops.push(OP-STRUCT-MK)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    ; k2: CONST v3 = 9
+    ops.push(OP-CONST)
+    dsts.push(3)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    ; k3: STRUCT-MK st4 = struct#1{ st2, v3 }
+    ops.push(OP-STRUCT-MK)
+    dsts.push(4)
+    xa.push(2)
+    bs.push(2)
+    syms.push('')
+    ; k4: STRUCT-GET st5 = st4.0（字段是结构体 ⇒ dst 落 %st）
+    ops.push(OP-STRUCT-GET)
+    dsts.push(5)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    ; k5: STRUCT-GET v6 = st5.0
+    ops.push(OP-STRUCT-GET)
+    dsts.push(6)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ; k6: STRUCT-GET v7 = st4.1
+    ops.push(OP-STRUCT-GET)
+    dsts.push(7)
+    xa.push(4)
+    bs.push(1)
+    syms.push('')
+    ; k7: ADD v8 = v6 + v7
+    ops.push(OP-ADD)
+    dsts.push(8)
+    xa.push(6)
+    bs.push(7)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(8)
+    bs.push(0)
+    syms.push('')
+    ptyps []i64 = []
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE + 1)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    cty.push(TY-STRUCT-BASE)
+    cty.push(TY-STRUCT-BASE + 1)
+    cty.push(TY-STRUCT-BASE)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    blks []i64 = []
+    j = 0
+    n = ops.len()
+    (j < n) {
+        blks.push(0)
+        #{overflow=wrap}
+        j = j + 1
+    }
+    s = cg-emit-cfg-t('nest', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    ; 嵌套字段的 insertvalue：型别名 %struct.s0、值前缀 %st2
+    runner.eq(s.contains('%sm3_0 = insertvalue %struct.s1 zeroinitializer, %struct.s0 %st2, 0'), 1, 'nested field mk')
+    runner.eq(s.contains('%st4 = insertvalue %struct.s1 %sm3_0, i64 %v3, 1'), 1, 'nested second field')
+    ; 取嵌套字段：dst 由 cty 决定 ⇒ %st5（不是 %v5）
+    runner.eq(s.contains('%st5 = extractvalue %struct.s1 %st4, 0'), 1, 'nested field get struct')
+    runner.eq(s.contains('%v6 = extractvalue %struct.s0 %st5, 0'), 1, 'nested field get leaf')
+}
+
 test-const-ret = () {
     ops []i64 = []
     dsts []i64 = []
@@ -432,7 +745,7 @@ test-string = () {
     bs.push(0)
     syms.push('')
     s = cg-emit-cfg('slen', 0, blks, ops, dsts, xa, bs, syms)
-    runner.eq(s.contains('@.s0 = private unnamed_addr constant [4 x i8] c"abc\\00"'), 1, 'global literal')
+    runner.eq(s.contains('@.s.slen.0 = private unnamed_addr constant [4 x i8] c"abc\\00"'), 1, 'global literal')
     runner.eq(s.contains('getelementptr inbounds [4 x i8]'), 1, 'gep')
     runner.eq(s.contains('%q0 = insertvalue %str-long undef, i64 3, 0'), 1, 'len field')
     runner.eq(s.contains('%r0 = insertvalue %str-long %q0, i64 3, 1'), 1, 'cap field')
@@ -486,11 +799,154 @@ test-strcat = () {
     bs.push(0)
     syms.push('')
     s = cg-emit-cfg('cat', 0, blks, ops, dsts, xa, bs, syms)
-    runner.eq(s.contains('@.s0 = private unnamed_addr constant [3 x i8] c"ab\\00"'), 1, 'left literal')
-    runner.eq(s.contains('@.s1 = private unnamed_addr constant [3 x i8] c"cd\\00"'), 1, 'right literal')
+    runner.eq(s.contains('@.s.cat.0 = private unnamed_addr constant [3 x i8] c"ab\\00"'), 1, 'left literal')
+    runner.eq(s.contains('@.s.cat.1 = private unnamed_addr constant [3 x i8] c"cd\\00"'), 1, 'right literal')
     runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'strcat call')
     runner.eq(s.contains('%v4 = extractvalue %str-long %sv3, 0'), 1, 'len of result')
     runner.eq(s.contains('ret i64 %v4'), 1, 'ret v4')
+}
+
+; ── func optstr() -> (some('ab'+'cd') 取出 str).len；option 内联 str 载荷 ──
+; 证明 option 的 str 载荷读写（B8，s28）：%str-long 恰 24B，内联进 [3 x i64] 槽，
+; 逐字段 extractvalue + data 指针 bitcast 互转（槽是 i64 数组、字段 2 是 i8*，必須 bitcast）；
+; 选项取得所有权须紧接 RETAIN（rc=2），scope 退出释放其份额 + 原拥有者份额（rc=0）。
+test-option-str = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+    ; vty 按值 id 索引：0 占位 / 1=sv1(STR)/2=sv2(STR)/3=sv3(STR,STRCAT)/4=op1(OPT)/5=sv6(STR)/6=v7(I64)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-OPT)
+    vty.push(TY-STR)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-STR)   ; k0 STRCONST sv1
+    cty.push(TY-STR)   ; k1 STRCONST sv2
+    cty.push(TY-STR)   ; k2 STRCAT sv3
+    cty.push(TY-I64)   ; k3 RETAIN sv3（@str_concat 隐式 rc=1）
+    cty.push(TY-OPT)   ; k4 OPTMKSTR op1（src sv3，内联存储，不 retain）
+    cty.push(TY-I64)   ; k5 RETAIN sv3（选项取得所有权，rc=2）
+    cty.push(TY-STR)   ; k6 OPTGETSTR sv6（src op1，共享 data 指针）
+    cty.push(TY-I64)   ; k7 STRLEN v7
+    cty.push(TY-I64)   ; k8 RELEASE sv3（选项释放份额，rc=1）
+    cty.push(TY-I64)   ; k9 RELEASE sv3（原拥有者释放，rc=0）
+    cty.push(TY-I64)   ; k10 RET v7
+    ; k0: STRCONST sv1 = 'ab'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    ; k1: STRCONST sv2 = 'cd'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('cd')
+    ; k2: STRCAT sv3 = sv1 + sv2（堆上、rc=1、拥有）
+    blks.push(0)
+    ops.push(OP-STRCAT)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: RETAIN sv3（记录 @str_concat 的隐式 rc=1 拥有）
+    blks.push(0)
+    ops.push(OP-RETAIN)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k4: OPTMKSTR op1 = some(sv3)（内联存储 %str-long 到 [3 x i64] 槽；本 op 不 retain）
+    blks.push(0)
+    ops.push(OP-OPTMKSTR)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k5: RETAIN sv3（选项取得所有权份额，rc=2）
+    blks.push(0)
+    ops.push(OP-RETAIN)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k6: OPTGETSTR sv6 = 从 op1 取出 str（共享同一 data 指针）
+    blks.push(0)
+    ops.push(OP-OPTGETSTR)
+    dsts.push(5)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    ; k7: STRLEN v7 = sv6.len = 4
+    blks.push(0)
+    ops.push(OP-STRLEN)
+    dsts.push(6)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ; k8: RELEASE sv3（选项释放其所有权份额，rc=1）
+    blks.push(0)
+    ops.push(OP-RELEASE)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k9: RELEASE sv3（原拥有者释放，rc=0）
+    blks.push(0)
+    ops.push(OP-RELEASE)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k10: RET v7
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(6)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg-t('optstr', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    ; OPTMKSTR：tag=0 + 逐字段内联进槽（data 指针须 ptrtoint i8* -> i64；中间步用 %om0/%om1/%om2，末步落到 %op4）
+    runner.eq(s.contains('%om04 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 0, 0'), 1, 'optmkstr tag')
+    runner.eq(s.contains('%ol2b4 = ptrtoint i8* %ol24 to i64'), 1, 'optmkstr data ptrtoint to i64')
+    runner.eq(s.contains('%op4 = insertvalue %option %om24, i64 %ol2b4, 1, 2'), 1, 'optmkstr store data field')
+    ; OPTGETSTR：从槽取字段 + 重建 %str-long（data 指针 inttoptr 回 i8*；末步落到 %sv5）
+    runner.eq(s.contains('%ol2b6 = inttoptr i64 %ol26 to i8*'), 1, 'optgetstr data inttoptr to i8*')
+    runner.eq(s.contains('%sv5 = insertvalue %str-long %og16, i8* %ol2b6, 2'), 1, 'optgetstr rebuild data field')
+    ; RC 平衡：sv3 两次 RETAIN（strcat 隐式 + 选项拥有）对应两次 RELEASE
+    ev []i64 = []
+    eo []i64 = []
+    ev.push(3)
+    eo.push(RC-RETAIN)
+    ev.push(3)
+    eo.push(RC-RETAIN)
+    ev.push(3)
+    eo.push(RC-RELEASE)
+    ev.push(3)
+    eo.push(RC-RELEASE)
+    bal = cg-rc-check-balance(ev, eo)
+    runner.eq(bal.len-bytes(), 0, 'rc balanced (option str payload)')
+    ; 选项取得所有权后对 sv3 发了 RELEASE 却无对应 RETAIN（释放多于拥有 ⇒ UAF 方向）⇒ 欠计数，必须报错。
+    ; ⚠️ 注意「忘 release 选项的拥有份额」属【过计数＝泄漏】，依 §1.3.1 不被本校验器报；
+    ;   此处用真正 UAF 方向（release 无对应 retain）验证逐值账本对 str 载荷场景仍生效。
+    ev2 []i64 = []
+    eo2 []i64 = []
+    ev2.push(3)
+    eo2.push(RC-RELEASE)
+    bad = cg-rc-check-balance(ev2, eo2)
+    runner.eq(bad.len-bytes() > 0, 1, 'rc under-count on option share caught')
+    runner.eq(bad.contains('under-count'), 1, 'under-count message')
 }
 
 ; ── func pick(c) { s='ab'; c ? s='abcdef'; return s.len } ──
@@ -1021,7 +1477,750 @@ test-option-read = () {
     runner.eq(s.contains('%v4 = extractvalue %option %op1, 1, 0'), 1, 'payload slot0')
 }
 
+; ── func catrc() -> ('ab' + 'cd').len，且 strcat 结果在 scope 退出时 release ──
+; 证明 STRCAT 的 RC 发射原语（OP-RETAIN/OP-RELEASE）：结果带 RC 头（rc=1），
+; 拿到即记 RETAIN 事件、scope 退出 RELEASE；check-rc-balance 平衡通过，且能抓出漏 retain。
+test-strcat-rc = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+    ; vty 按值 id 索引：0 占位 / 1=sv1(STR) / 2=sv2(STR) / 3=sv3(STR) / 4=v4(I64)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-I64)
+    ; cty 按指令序（仅 OP-CALL/RET 用，retain/release 无结果填 I64）
+    cty []i64 = []
+    cty.push(TY-STR)   ; k0 STRCONST sv1
+    cty.push(TY-STR)   ; k1 STRCONST sv2
+    cty.push(TY-STR)   ; k2 STRCAT sv3
+    cty.push(TY-I64)   ; k3 RETAIN sv3
+    cty.push(TY-I64)   ; k4 STRLEN v4
+    cty.push(TY-I64)   ; k5 RELEASE sv3
+    cty.push(TY-I64)   ; k6 RET v4
+    ; k0: STRCONST sv1 = 'ab'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    ; k1: STRCONST sv2 = 'cd'
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('cd')
+    ; k2: STRCAT sv3 = sv1 + sv2（堆上、rc=1、拥有）
+    blks.push(0)
+    ops.push(OP-STRCAT)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: RETAIN sv3（记录 @str_concat 的隐式 rc=1 拥有）
+    blks.push(0)
+    ops.push(OP-RETAIN)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k4: STRLEN v4 = sv3.len
+    blks.push(0)
+    ops.push(OP-STRLEN)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k5: RELEASE sv3（scope 退出）
+    blks.push(0)
+    ops.push(OP-RELEASE)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k6: RET v4
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg-t('catrc', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'strcat call')
+    ; RETAIN：取 data 指针 + call retain
+    runner.eq(s.contains('%dp3 = extractvalue %str-long %sv3, 2'), 1, 'retain extract data ptr')
+    runner.eq(s.contains('call void @nolang_rc_retain(i8* %dp3)'), 1, 'retain call')
+    ; RELEASE：取 data 指针 + call release
+    runner.eq(s.contains('%dp5 = extractvalue %str-long %sv3, 2'), 1, 'release extract data ptr')
+    runner.eq(s.contains('%rel5 = call i1 @nolang_rc_release(i8* %dp5)'), 1, 'release call')
+    ; RC 平衡：strcat 的 rc=1 记 RETAIN、scope 退出 RELEASE ⇒ 平衡通过
+    ev []i64 = []
+    eo []i64 = []
+    ev.push(3)
+    eo.push(RC-RETAIN)
+    ev.push(3)
+    eo.push(RC-RELEASE)
+    bal = cg-rc-check-balance(ev, eo)
+    runner.eq(bal.len-bytes(), 0, 'rc balanced (retain+release)')
+    ; 漏 retain（只 release）⇒ 欠计数，必须报错（R3：漏 retain = UAF）
+    ev2 []i64 = []
+    eo2 []i64 = []
+    ev2.push(3)
+    eo2.push(RC-RELEASE)
+    bad = cg-rc-check-balance(ev2, eo2)
+    runner.eq(bad.len-bytes() > 0, 1, 'rc under-count caught')
+    runner.eq(bad.contains('under-count'), 1, 'under-count message')
+}
+
+; ── func catnested() -> (('ab' + 'cd') + 'ef').len，中间堆串必须释放 ──
+; 证明 STRCAT 的实参为「变量（堆上结果）」时的 RC 生命周期（M4-c 续件，s27）：
+;   sv1/sv2/sv4 是 STRCONST（全局常量，无 RC 头，绝不 release）；
+;   sv3 = sv1+sv2、sv5 = sv3+sv4 都是堆上 rc=1 结果，各自记 RETAIN、scope 退出 RELEASE。
+;   漏掉中间 sv3 的 RELEASE ⇒ 欠计数（UAF）必须被 check-rc-balance 抓出。
+test-strcat-rc-nested = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+    ; vty 按值 id 索引：0 占位 / 1=sv1(STR)/2=sv2(STR)/3=sv3(STR)/4=sv4(STR)/5=sv5(STR)/6=v6(I64)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-STR)
+    vty.push(TY-I64)
+    ; cty 按指令序（retain/release 无结果填 I64）
+    cty []i64 = []
+    cty.push(TY-STR)   ; k0 STRCONST sv1
+    cty.push(TY-STR)   ; k1 STRCONST sv2
+    cty.push(TY-STR)   ; k2 STRCAT sv3
+    cty.push(TY-I64)   ; k3 RETAIN sv3
+    cty.push(TY-STR)   ; k4 STRCONST sv4
+    cty.push(TY-STR)   ; k5 STRCAT sv5
+    cty.push(TY-I64)   ; k6 RETAIN sv5
+    cty.push(TY-I64)   ; k7 STRLEN v6
+    cty.push(TY-I64)   ; k8 RELEASE sv5
+    cty.push(TY-I64)   ; k9 RELEASE sv3
+    cty.push(TY-I64)   ; k10 RET v6
+    ; k0: STRCONST sv1 = 'ab'（全局常量，无 RC）
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    ; k1: STRCONST sv2 = 'cd'（全局常量，无 RC）
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('cd')
+    ; k2: STRCAT sv3 = sv1 + sv2（堆上、rc=1、拥有）
+    blks.push(0)
+    ops.push(OP-STRCAT)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: RETAIN sv3（记录 @str_concat 的隐式 rc=1 拥有）
+    blks.push(0)
+    ops.push(OP-RETAIN)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k4: STRCONST sv4 = 'ef'（全局常量，无 RC）
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(4)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ef')
+    ; k5: STRCAT sv5 = sv3 + sv4（sv3 是堆上变量实参，borrow；sv5 堆上 rc=1）
+    blks.push(0)
+    ops.push(OP-STRCAT)
+    dsts.push(5)
+    xa.push(3)
+    bs.push(4)
+    syms.push('')
+    ; k6: RETAIN sv5
+    blks.push(0)
+    ops.push(OP-RETAIN)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ; k7: STRLEN v6 = sv5.len = 6
+    blks.push(0)
+    ops.push(OP-STRLEN)
+    dsts.push(6)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ; k8: RELEASE sv5（scope 退出）
+    blks.push(0)
+    ops.push(OP-RELEASE)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ; k9: RELEASE sv3（中间堆串，易漏；漏则欠计数）
+    blks.push(0)
+    ops.push(OP-RELEASE)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k10: RET v6
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(6)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg-t('catnested', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'inner strcat')
+    runner.eq(s.contains('%sv5 = call %str-long @str_concat(%str-long %sv3, %str-long %sv4)'), 1, 'outer strcat uses heap var')
+    ; RETAIN sv3
+    runner.eq(s.contains('%dp3 = extractvalue %str-long %sv3, 2'), 1, 'retain sv3 extract')
+    runner.eq(s.contains('call void @nolang_rc_retain(i8* %dp3)'), 1, 'retain sv3 call')
+    ; RETAIN sv5
+    runner.eq(s.contains('%dp6 = extractvalue %str-long %sv5, 2'), 1, 'retain sv5 extract')
+    runner.eq(s.contains('call void @nolang_rc_retain(i8* %dp6)'), 1, 'retain sv5 call')
+    ; RELEASE sv5
+    runner.eq(s.contains('%dp8 = extractvalue %str-long %sv5, 2'), 1, 'release sv5 extract')
+    runner.eq(s.contains('%rel8 = call i1 @nolang_rc_release(i8* %dp8)'), 1, 'release sv5 call')
+    ; RELEASE sv3（中间）
+    runner.eq(s.contains('%dp9 = extractvalue %str-long %sv3, 2'), 1, 'release sv3 extract')
+    runner.eq(s.contains('%rel9 = call i1 @nolang_rc_release(i8* %dp9)'), 1, 'release sv3 call')
+    ; RC 平衡：sv3 与 sv5 各自 retain+release（常量 sv1/sv2/sv4 无 RC，不进账本）
+    ev []i64 = []
+    eo []i64 = []
+    ev.push(3)
+    eo.push(RC-RETAIN)
+    ev.push(3)
+    eo.push(RC-RELEASE)
+    ev.push(5)
+    eo.push(RC-RETAIN)
+    ev.push(5)
+    eo.push(RC-RELEASE)
+    bal = cg-rc-check-balance(ev, eo)
+    runner.eq(bal.len-bytes(), 0, 'rc balanced (nested)')
+    ; 释放多于拥有（UAF 方向：对 sv3 发了 RELEASE 却无对应 RETAIN）⇒ 欠计数，必须报错
+    ; （R3：漏 retain/release = UAF）。⚠️ 注意「忘 release 中间 sv3」属【过计数=泄漏】，
+    ;   依 §1.3.1 不被本校验器报（只查欠计数），此处用真正 UAF 方向验证逐值账本仍生效。
+    ev2 []i64 = []
+    eo2 []i64 = []
+    ev2.push(3)
+    eo2.push(RC-RELEASE)
+    bad = cg-rc-check-balance(ev2, eo2)
+    runner.eq(bad.len-bytes() > 0, 1, 'rc under-count on intermediate caught')
+    runner.eq(bad.contains('under-count'), 1, 'under-count message')
+}
+
+; ── 结构体：pt() 构造 point{3,4} 并读回 v4*10+v7 ───────────────
+; 值命名空间：结构体住 %st<id>（第六个），字段读出是 i64 住 %v<id>。
+; 中间构造步用 %sm0<k>（k = 指令下标），最后一步才落到 %st<dst>。
+test-struct-mk-get = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: CONST v1 = 3（字段 0）
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k1: CONST v2 = 4（字段 1）
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    ; k2: STRUCT-MK st3 = {v1, v2}（xa = 字段0 值 id，bs = 字段数）
+    ops.push(OP-STRUCT-MK)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: STRUCT-GET v4 = st3.0
+    ops.push(OP-STRUCT-GET)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k4: CONST v5 = 10
+    ops.push(OP-CONST)
+    dsts.push(5)
+    xa.push(10)
+    bs.push(0)
+    syms.push('')
+    ; k5: MUL v6 = v4 * v5
+    ops.push(OP-MUL)
+    dsts.push(6)
+    xa.push(4)
+    bs.push(5)
+    syms.push('')
+    ; k6: STRUCT-GET v7 = st3.1
+    ops.push(OP-STRUCT-GET)
+    dsts.push(7)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+    ; k7: ADD v8 = v6 + v7
+    ops.push(OP-ADD)
+    dsts.push(8)
+    xa.push(6)
+    bs.push(7)
+    syms.push('')
+    ; k8: RET v8
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(8)
+    bs.push(0)
+    syms.push('')
+    ; vty 按值 id 索引：v3 是结构体，其余 i64
+    ptyps []i64 = []
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    ; cty 按指令序
+    cty []i64 = []
+    cty.push(TY-I64)     ; k0 CONST
+    cty.push(TY-I64)     ; k1 CONST
+    cty.push(TY-STRUCT-BASE)  ; k2 STRUCT-MK
+    cty.push(TY-I64)     ; k3 STRUCT-GET
+    cty.push(TY-I64)     ; k4 CONST
+    cty.push(TY-I64)     ; k5 MUL
+    cty.push(TY-I64)     ; k6 STRUCT-GET
+    cty.push(TY-I64)     ; k7 ADD
+    cty.push(TY-I64)     ; k8 RET
+    blks []i64 = []
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    s = cg-emit-cfg-t('pt', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    ; 构造：链式 insertvalue，中间步 %sm2_0（k=2, j=0），末步落 %st3（s31 起初值用 zeroinitializer）
+    runner.eq(s.contains('%sm2_0 = insertvalue %struct.s0 zeroinitializer, i64 %v1, 0'), 1, 'struct field0')
+    runner.eq(s.contains('%st3 = insertvalue %struct.s0 %sm2_0, i64 %v2, 1'), 1, 'struct field1')
+    ; 读字段：extractvalue 从 %st3 取，结果落 i64 命名空间
+    runner.eq(s.contains('%v4 = extractvalue %struct.s0 %st3, 0'), 1, 'get field0')
+    runner.eq(s.contains('%v7 = extractvalue %struct.s0 %st3, 1'), 1, 'get field1')
+    ; 型别声明不在函式体内发（由 cg-runtime-struct-decls 唯一发射，见 §11 B10）
+    runner.eq(s.contains('%struct.s0 = type'), 0, 'no per-func type decl')
+}
+
+; ── 结构体写字段 + 槽：st5 = set(st3, 1, 42)；槽 20 存 st5 再 load ──
+; 断言重点：SET 是【读旧出新值】（旧 %st3 仍在），槽住 %sts<id> 与值 %st<id> 不混。
+test-struct-set = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: CONST v1 = 7
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    ; k1: CONST v2 = 9
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    ; k2: STRUCT-MK st3 = {v1, v2}
+    ops.push(OP-STRUCT-MK)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: CONST v4 = 42
+    ops.push(OP-CONST)
+    dsts.push(4)
+    xa.push(42)
+    bs.push(0)
+    syms.push('')
+    ; k4: STRUCT-SET st5 = set(st3, 字段 1, v4)；xa=3 ⇒ 新字段值取 v4
+    ops.push(OP-STRUCT-SET)
+    dsts.push(5)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+    ; k5: STRUCT-GET v6 = st5.1（应读到 42）
+    ops.push(OP-STRUCT-GET)
+    dsts.push(6)
+    xa.push(5)
+    bs.push(1)
+    syms.push('')
+    ; k6: STALLOC 槽 20
+    ops.push(OP-STALLOC)
+    dsts.push(20)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    ; k7: STSTORE st5 → 槽 20
+    ops.push(OP-STSTORE)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(20)
+    syms.push('')
+    ; k8: STLOAD st8 ← 槽 20
+    ops.push(OP-STLOAD)
+    dsts.push(8)
+    xa.push(20)
+    bs.push(0)
+    syms.push('')
+    ; k9: STRUCT-GET v9 = st8.0（应读到 7）
+    ops.push(OP-STRUCT-GET)
+    dsts.push(9)
+    xa.push(8)
+    bs.push(0)
+    syms.push('')
+    ; k10: ADD v10 = v6 + v9
+    ops.push(OP-ADD)
+    dsts.push(10)
+    xa.push(6)
+    bs.push(9)
+    syms.push('')
+    ; k11: RET v10
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(10)
+    bs.push(0)
+    syms.push('')
+    ptyps []i64 = []
+    ; vty 按值 id 索引：3/5/8 是结构体（槽 20 不是值，不占 vty）
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-I64)     ; k0 CONST
+    cty.push(TY-I64)     ; k1 CONST
+    cty.push(TY-STRUCT-BASE)  ; k2 STRUCT-MK
+    cty.push(TY-I64)     ; k3 CONST
+    cty.push(TY-STRUCT-BASE)  ; k4 STRUCT-SET
+    cty.push(TY-I64)     ; k5 STRUCT-GET
+    cty.push(TY-I64)     ; k6 STALLOC（无值结果，占位 I64）
+    cty.push(TY-I64)     ; k7 STSTORE
+    cty.push(TY-STRUCT-BASE)  ; k8 STLOAD
+    cty.push(TY-I64)     ; k9 STRUCT-GET
+    cty.push(TY-I64)     ; k10 ADD
+    cty.push(TY-I64)     ; k11 RET
+    blks []i64 = []
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    s = cg-emit-cfg-t('bump', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    ; SET：读旧 %st3 + 新字段值 %v4 + 下标 1，产出 %st5（旧值未被改写）
+    runner.eq(s.contains('%st5 = insertvalue %struct.s0 %st3, i64 %v4, 1'), 1, 'struct set reads old value')
+    ; 槽三件套：%sts20 是槽命名空间（不是 %st20）；型别来自 bs[k]=结构体 id 0
+    runner.eq(s.contains('%sts20 = alloca %struct.s0'), 1, 'struct slot alloca')
+    runner.eq(s.contains('store %struct.s0 %st5, %struct.s0* %sts20'), 1, 'struct slot store')
+    runner.eq(s.contains('%st8 = load %struct.s0, %struct.s0* %sts20'), 1, 'struct slot load')
+    ; 读回：SET 之后读字段 1 = 42；槽里存的也是 st5，load 后字段 0 = 7
+    runner.eq(s.contains('%v6 = extractvalue %struct.s0 %st5, 1'), 1, 'read set field')
+    runner.eq(s.contains('%v9 = extractvalue %struct.s0 %st8, 0'), 1, 'read loaded field')
+    ; SET 不得发 store（它是纯 SSA 的读旧出新值；「就地」由 STSTORE 负责）
+    runner.eq(s.contains('store %struct.s0 %st3'), 0, 'set emits no store')
+}
+
+; ── 多结构体 + 任意字段数：struct1{1,2,3} 读字段 2（s31 泛化）─────
+; 型别码 = TY-STRUCT-BASE + 结构体 id ⇒ 型别名 %struct.s1；MK 按 bs[k] 的字段数链式展开。
+test-struct-wide = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-CONST)
+    dsts.push(3)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k3: STRUCT-MK st4 = {v1,v2,v3}，字段数 3、结构体 #1
+    ops.push(OP-STRUCT-MK)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(3)
+    syms.push('')
+    ; k4: STRUCT-GET v5 = st4.2
+    ops.push(OP-STRUCT-GET)
+    dsts.push(5)
+    xa.push(4)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ptyps []i64 = []
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE + 1)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    cty.push(TY-STRUCT-BASE + 1)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    blks []i64 = []
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    s = cg-emit-cfg-t('wide', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    ; 三步链：j=0/1 用中间名 %sm3_0 / %sm3_1，j=2 落 %st4
+    runner.eq(s.contains('%sm3_0 = insertvalue %struct.s1 zeroinitializer, i64 %v1, 0'), 1, 'wide field0')
+    runner.eq(s.contains('%sm3_1 = insertvalue %struct.s1 %sm3_0, i64 %v2, 1'), 1, 'wide field1')
+    runner.eq(s.contains('%st4 = insertvalue %struct.s1 %sm3_1, i64 %v3, 2'), 1, 'wide field2')
+    ; 任意字段下标可读；型别名跟着结构体 id 走（s1 而不是 s0）
+    runner.eq(s.contains('%v5 = extractvalue %struct.s1 %st4, 2'), 1, 'wide get field2')
+}
+
+; ── 结构体带 str 字段：st3 = {'abcd', 9} 读字段 0 的 .len（s32 字段型别）──
+; 字段型别取自**值自身**的 vty：字段 0 是 %str-long ⇒ insertvalue 的操作数型别与前缀
+; 跟着变（%sv），字段 1 仍是 i64/%v；读出时 dst 的命名空间由 cty 决定。
+test-struct-str-field = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: STRCONST sv1 = 'abcd'
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('abcd')
+    ; k1: CONST v2 = 9
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    ; k2: STRUCT-MK st3 = {sv1, v2}（结构体 #1：{str, i64}）
+    ops.push(OP-STRUCT-MK)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ; k3: STRUCT-GET sv4 = st3.0（str 字段）
+    ops.push(OP-STRUCT-GET)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    ; k4: STRLEN v5 = sv4.len
+    ops.push(OP-STRLEN)
+    dsts.push(5)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ptyps []i64 = []
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-STR)
+    vty.push(TY-I64)
+    vty.push(TY-STRUCT-BASE + 1)
+    vty.push(TY-STR)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-STR)
+    cty.push(TY-I64)
+    cty.push(TY-STRUCT-BASE + 1)
+    cty.push(TY-STR)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    blks []i64 = []
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    s = cg-emit-cfg-t('hold', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    ; 字段 0 是 %str-long：型别名与前缀都取自 vty[1]（不是硬编 i64 %v）
+    runner.eq(s.contains('%sm2_0 = insertvalue %struct.s1 zeroinitializer, %str-long %sv1, 0'), 1, 'str field mk')
+    runner.eq(s.contains('%st3 = insertvalue %struct.s1 %sm2_0, i64 %v2, 1'), 1, 'i64 field mk')
+    ; 读 str 字段：dst 落 %sv（cty = TY-STR）
+    runner.eq(s.contains('%sv4 = extractvalue %struct.s1 %st3, 0'), 1, 'str field get')
+    runner.eq(s.contains('%v5 = extractvalue %str-long %sv4, 0'), 1, 'str field len')
+}
+
+; ── 结构体字段 RC：st2 = {'abcd'} 的 retain / release（s33，§11 B11 第一块）──
+; 掩码 bit0 置位 ⇒ 字段 0（str）参与；每步三步：struct → %str-long → i8* data → call。
+test-struct-field-rc = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; k0: STRCONST sv1 = 'abcd'
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('abcd')
+    ; k1: STRUCT-MK st2 = {sv1}（结构体 #0 = {%str-long}；MK 本身不发 retain）
+    ops.push(OP-STRUCT-MK)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    ; k2: STRUCT-RETAIN st2（掩码 1 ⇒ 只处理字段 0）
+    ops.push(OP-STRUCT-RETAIN)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(1)
+    syms.push('')
+    ; k3: RELEASE sv1（释放调用方自己那份）
+    ops.push(OP-RELEASE)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    ; k4: STRUCT-GET sv4 = st2.0
+    ops.push(OP-STRUCT-GET)
+    dsts.push(4)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ; k5: STRLEN v5 = sv4.len
+    ops.push(OP-STRLEN)
+    dsts.push(5)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    ; k6: STRUCT-RELEASE st2
+    ops.push(OP-STRUCT-RELEASE)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(1)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    ptyps []i64 = []
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-STR)
+    vty.push(TY-STRUCT-BASE)
+    vty.push(TY-I64)
+    vty.push(TY-STR)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-STR)
+    cty.push(TY-STRUCT-BASE)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    cty.push(TY-STR)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    cty.push(TY-I64)
+    blks []i64 = []
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    blks.push(0)
+    s = cg-emit-cfg-t('keep', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    ; RETAIN（k=2）：struct → %str-long → data 指针 → call
+    runner.eq(s.contains('%rf2_0 = extractvalue %struct.s0 %st2, 0'), 1, 'rc retain extract struct')
+    runner.eq(s.contains('%rp2_0 = extractvalue %str-long %rf2_0, 2'), 1, 'rc retain extract data')
+    runner.eq(s.contains('call void @nolang_rc_retain(i8* %rp2_0)'), 1, 'rc retain call')
+    ; RELEASE（k=6）
+    runner.eq(s.contains('%rf6_0 = extractvalue %struct.s0 %st2, 0'), 1, 'rc release extract struct')
+    runner.eq(s.contains('%rl6_0 = call i1 @nolang_rc_release(i8* %rp6_0)'), 1, 'rc release call')
+    ; 掩码只置了 bit0 ⇒ 不得出现字段 1 的指令（没有那个字段，也不该被遍历到）
+    runner.eq(s.contains('%rf6_1'), 0, 'mask bit1 not set')
+}
+
 test-const-ret()
+test-struct-mk-get()
+test-struct-set()
+test-struct-wide()
+test-struct-str-field()
+test-struct-field-rc()
+test-struct-param-ret()
+test-struct-nested()
+test-alu()
 test-arith()
 test-call()
 test-call2()
@@ -1030,6 +2229,9 @@ test-cfg()
 test-loop()
 test-string()
 test-strcat()
+test-strcat-rc()
+test-strcat-rc-nested()
+test-option-str()
 test-str-slot()
 test-vec()
 test-vec-len()

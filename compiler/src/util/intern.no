@@ -38,6 +38,7 @@ itab {
 }
 
 ; 建立空的駐留表
+; r: 返回結果
 intern.make = () (r itab) {
     r = itab {
         pool: []str
@@ -46,6 +47,9 @@ intern.make = () (r itab) {
 }
 
 ; 回傳 s 在 pool 中的下標；不存在回 -1
+; t: 輸入
+; s: 字串
+; slot: 結果數值
 intern.find = (t itab, s str) (slot i64) {
     slot = -1
     n = t.cnt
@@ -61,6 +65,9 @@ intern.find = (t itab, s str) (slot i64) {
 
 ; 取得 s 的駐留 id；未駐留回 0（不登記）
 ; id 從 1 開始，0 是保留值（「無／空字串」）
+; t: 輸入
+; s: 字串
+; id: 結果數值
 intern.get = (t itab, s str) (id i64) {
     id = 0
     s.len-bytes() == 0 -> return
@@ -71,6 +78,9 @@ intern.get = (t itab, s str) (id i64) {
 }
 
 ; 取得 s 的駐留 id；未駐留則登記
+; t: 輸入
+; s: 字串
+; id: 結果數值
 intern.put = (t itab, s str) (id i64) {
     id = 0
     s.len-bytes() == 0 -> return
@@ -90,11 +100,16 @@ intern.put = (t itab, s str) (id i64) {
 }
 
 ; 已駐留的字串數
+; t: 輸入
+; n: 數量
 intern.count = (t itab) (n i64) {
     n = t.cnt
 }
 
 ; 取回 id 對應的字串（id 從 1 開始；越界回空字串）
+; t: 輸入
+; id: 數值
+; r: 結果字串
 intern.at = (t itab, id i64) (r str) {
     r = ''
     {

@@ -60,24 +60,28 @@ OUT-FD fd = fs.STDERR-FD
 ; ═══════════════════════════════════════════════
 
 ; 設定日誌級別
+; l: 目標級別（LEVEL-DEBUG..FATAL，0–4；僅輸出小於等於此級別的日誌）
 ; [set-level](#log.set-level)
 set-level = (l i64) {
     LEVEL = l
 }
 
 ; 設定輸出格式位（F-TIME / F-LEVEL / F-LOC 的或運算）
+; flags: F-TIME / F-LEVEL / F-LOC 以 | 組合的格式位元遮罩
 ; [set-format](#log.set-format)
 set-format = (flags i64) {
     FMT-FLAGS = flags
 }
 
 ; 切換輸出目標到指定 fd（呼叫端負責開啟/關閉）
+; new-fd: 新的輸出目標檔案描述符（其開啟與關閉由呼叫端負責）
 ; [set-output-fd](#log.set-output-fd)
 set-output-fd = (new-fd fd) {
     OUT-FD = new-fd
 }
 
 ; 回傳目前輸出目標的 fd（除錯用）
+; cur: 目前輸出目標的 fd（預設為標準錯誤）
 ; [get-output-fd](#log.get-output-fd)
 get-output-fd = () (cur fd) {
     cur = OUT-FD
@@ -85,12 +89,14 @@ get-output-fd = () (cur fd) {
 
 ; 切換輸出目標到指定 io.writer（io 介面的抽象寫入器）。
 ; writer 本質只包一個 fd，std 中唯一可持久化的是標量，故儲存其 fd。
+; w: 目標 io.writer（內部僅取其 fd 欄位作持久儲存）
 ; [set-writer](#log.set-writer)
 set-writer = (w io.writer) {
     OUT-FD = w.fd
 }
 
 ; 回傳目前輸出目標對應的 io.writer
+; w: 由目前 OUT-FD 組裝而來的 io.writer 抽象
 ; [get-writer](#log.get-writer)
 get-writer = () (w io.writer) {
     w = writer.from-fd(OUT-FD)
@@ -98,6 +104,8 @@ get-writer = () (w io.writer) {
 
 ; 以追加模式開啟日誌檔案並設為輸出目標
 ; 回傳 ?bool：ok=true 成功、err 開啟失敗
+; path: 要以追加模式開啟並設為輸出目標的日誌檔案路徑
+; res: ok=true 開啟成功, err=開啟失敗
 ; [open-file](#log.open-file)
 open-file = (path str) (res ?bool) {
     res = nil
@@ -115,12 +123,16 @@ open-file = (path str) (res ?bool) {
 ; ═══════════════════════════════════════════════
 
 ; 目前時間戳字串（UTC，YYYY-MM-DD HH:MM:SS）
+; s: UTC 時間戳字串（格式 YYYY-MM-DD HH:MM:SS）
 ; [log-stamp](#log.log-stamp)
 log-stamp = () (s str) {
     s = time.format-time-str(time.now-s())
 }
 
 ; 依 FMT-FLAGS 組裝單行日誌，經 io.writer 抽象寫入 OUT-FD
+; tag: 級別標籤（如 DEBUG/INFO，僅 F-LEVEL 置位時以 [tag] 前置）
+; msg: 日誌正文
+; loc: 呼叫點字串（F-LOC 置位且非空時以 [loc] 前置，由上層注入）
 ; [log-emit](#log.log-emit)
 log-emit = (tag str, msg str, loc str) {
     buf = ''
@@ -140,6 +152,8 @@ log-emit = (tag str, msg str, loc str) {
 
 ; debug: 輸出 DEBUG 級別日誌
 ; [debug](#log.debug)
+; msg: 日誌正文
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
 
 #{track-caller}
 debug = (msg str, loc str = '') {
@@ -148,6 +162,8 @@ debug = (msg str, loc str = '') {
 
 ; info: 輸出 INFO 級別日誌
 ; [info](#log.info)
+; msg: 日誌正文
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
 
 #{track-caller}
 info = (msg str, loc str = '') {
@@ -156,6 +172,8 @@ info = (msg str, loc str = '') {
 
 ; warn: 輸出 WARN 級別日誌
 ; [warn](#log.warn)
+; msg: 日誌正文
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
 
 #{track-caller}
 warn = (msg str, loc str = '') {
@@ -164,6 +182,8 @@ warn = (msg str, loc str = '') {
 
 ; error: 輸出 ERROR 級別日誌
 ; [error](#log.error)
+; msg: 日誌正文
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
 
 #{track-caller}
 error = (msg str, loc str = '') {
@@ -172,6 +192,9 @@ error = (msg str, loc str = '') {
 
 ; fatal: 輸出 FATAL 級別日誌並退出
 ; [fatal](#log.fatal)
+; msg: 日誌正文
+; code: 輸出後傳給 exit 的進程結束狀態碼
+; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
 
 #{track-caller}
 fatal = (msg str, code i64, loc str = '') {

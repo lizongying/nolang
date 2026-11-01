@@ -15,6 +15,8 @@
 
 # /test/runner
 
+; 前綴整數編碼：10 以 5-bit 前綴得單 byte 0x0A
+; 高位前綴位（如 1xxxxxxx 的 indexed 表示）須被保留
 t-int-prefix = () {
 
     ; RFC 7541 §5.1 範例：10 以 5-bit 前綴編碼 = 0x0A
@@ -31,6 +33,8 @@ t-int-prefix = () {
     runner.eq(ep.byte(0), 42, 'pfx or high bits')
 }
 
+; 邊界值：等於 max-prefix（31 / 127 / 255）時須輸出 [prefix, 0x00] 兩 byte；
+; 126 以 7-bit 前綴仍是單 byte（回歸點）
 t-int-boundary = () {
 
     ; val == max-prefix（31, 5-bit）：必須輸出 [0x1F, 0x00] 兩 byte
@@ -60,6 +64,7 @@ t-int-boundary = () {
     runner.eq(v126, 126, '126/7 roundtrip')
 }
 
+; 多位元組編碼：RFC 7541 §5.1 的 400 / 5-bit = 1F F1 02，以及 300 / 7-bit = 7F AD 01
 t-int-multi = () {
 
     ; RFC 7541 §5.1 範例：400 以 5-bit 前綴 = 0x1F 0xF1 0x02
@@ -82,6 +87,7 @@ t-int-multi = () {
     runner.eq(v3, 300, '300/7 roundtrip')
 }
 
+; 錯誤處理：起點越界，或多 byte 編碼被截斷，next-pos 均應回 -1
 t-int-err = () {
 
     ; 起點越界 → next-pos = -1
@@ -95,6 +101,7 @@ t-int-err = () {
     runner.eq(p1, -1, 'truncated pos')
 }
 
+; 字串編碼：長度前綴加原始位元組，解碼應還原文並回報消耗位置
 t-str-codec = () {
     es = hpack.encode-str('Custom-Header')
     runner.eq(es.len-bytes(), 14, 'enc len')
@@ -106,9 +113,10 @@ t-str-codec = () {
     runner.eq(dp, 14, 'roundtrip pos')
 }
 
+; 空字串：仍須輸出 1 byte 的 0x00 長度前綴，解碼得空字串與 next-pos 1
 t-str-empty = () {
 
-    ; 空字串：必須產生 1 byte 0x00 長度前綴（回归點）
+    ; 空字串：必須產生 1 byte 0x00 長度前綴（回歸點）
     ez = hpack.encode-str('')
     runner.eq(ez.len-bytes(), 1, 'empty enc len (regression)')
     runner.eq(ez.byte(0), 0, 'empty enc byte')
@@ -117,6 +125,8 @@ t-str-empty = () {
     runner.eq(dp, 1, 'empty dec pos')
 }
 
+; 長字串：200 字元使長度前綴需 2 byte（0x7F, 73），總長 202；
+; 宣告長度超出資料範圍時 next-pos 回 -1
 t-str-long = () {
 
     ; 200 字元跨越 7-bit 前綴：長度編碼 2 byte（0x7F, 73）

@@ -17,6 +17,7 @@
 ; sb — 字串構建器
 ; ═══════════════════════════════════════════════
 
+; 測試 sb
 test-sb = () {
     b = sb.init(64)
     runner.eq(b.len(), 0, 'sb.init -> len 0')
@@ -52,6 +53,7 @@ test-sb = () {
 ; intern — 字串駐留（M0 線性掃描；雜湊版待缺陷修復，見 src/util/intern.no 檔頭）
 ; ═══════════════════════════════════════════════
 
+; 測試 intern
 test-intern = () {
     t = intern.make()
     runner.eq(intern.count(t), 0, 'intern.make -> count 0')

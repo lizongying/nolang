@@ -7,6 +7,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -23,11 +26,13 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 已知答案：key = 'Key'、明文 = 'Plaintext' 的密文應為 bbf316e8d940af0ad3
 t-vector = () {
     out = rc4.rc4('Plaintext'.to-bytes(), 'Key'.to-bytes())
     runner.str-eq(bhex(out), 'bbf316e8d940af0ad3', 20, 'rc4 Key/Plaintext KAT')
 }
 
+; RC4 對稱：用同一把金鑰再加密一次即還原明文
 t-roundtrip = () {
     pt = 'Attack at dawn'.to-bytes()
     key = 'Secret'.to-bytes()

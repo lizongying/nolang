@@ -8,6 +8,7 @@ test-str-eq = () {
     }
 }
 
+; 測試 str-eq-2
 test-str-eq-2 = () {
     s = 'false'
     {
@@ -17,6 +18,7 @@ test-str-eq-2 = () {
     }
 }
 
+; 測試 str-len
 test-str-len = () {
     s = 'true'
     print(s.len-bytes())

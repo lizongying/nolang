@@ -24,6 +24,7 @@
 
 ; ── 容量 / 長度構造 ────────────────────────────
 
+; with-len：長度為 n 且內容零初始化（str 與 vec 皆同）
 t-with-len = () {
     s str = with-len(5)
     runner.eq(s.len(), 5, 'with-len(5) str len == 5')
@@ -37,6 +38,7 @@ t-with-len = () {
     runner.eq(z.len(), 0, 'with-len(0) str len == 0')
 }
 
+; with-cap：只預留容量，長度必為 0
 t-with-cap = () {
 
     ; with-cap 只給容量，**長度必須是 0**
@@ -48,6 +50,7 @@ t-with-cap = () {
     runner.eq(z.len(), 0, 'with-cap(0) str len == 0')
 }
 
+; with-cap-len：長度由第二個引數決定，容量僅影響配置；含 len==cap 與 len==0
 t-with-cap-len = () {
 
     ; with-cap-len(cap, len)：長度由第二個引數決定，容量只影響配置
@@ -68,6 +71,7 @@ t-with-cap-len = () {
 
 ; ── format：整數基數 ───────────────────────────
 
+; format 的基數指定：:d / :b / :o / :x / :X / :#x，負數非十進位基數按 64 位補碼位元樣式輸出
 t-format-radix = () {
     x = 42
     runner.str-eq(format('{x}'), '42', 2, 'plain {x}')
@@ -98,6 +102,9 @@ t-format-radix = () {
 
 ; ── format：寬度 / 對齊 / 填充 / 補零 / 正負號 ──
 
+; 寬度與對齊：0 前綴是補零旗標，> / < / ^ 分別右、左、置中，
+; 自訂填充字元須與對齊符連用，寬度小於數值時不截斷，
+; 另驗 {x:+} 強制帶正負號
 t-format-layout = () {
     x = 42
 
@@ -131,6 +138,8 @@ t-format-layout = () {
 
 ; ── format：浮點 ───────────────────────────────
 
+; 浮點精度：.Nf 指定小數位（會四捨五入），.Ne 走科學記號，:f 預設 6 位；
+; f32 與 f64 共用同一條格式化路徑
 t-format-float = () {
     pi = 3.14159
     runner.str-eq(format('{pi:.2f}'), '3.14', 4, ':.2f')
@@ -146,6 +155,7 @@ t-format-float = () {
 
 ; ── format：字串 ───────────────────────────────
 
+; 字串欄位：.N 截到 N 個位元組以內，< / > 在指定寬度內補空白，空字串不報錯
 t-format-str = () {
     h = 'hello'
     runner.str-eq(format('{h}'), 'hello', 5, 'plain str')
@@ -163,6 +173,8 @@ t-format-str = () {
 
 ; ── format：轉義 / 多欄位 ──────────────────────
 
+; 跳脫與多欄位：同一字串存在真實欄位時 {{ }} 才轉義，孤立大括號原樣輸出，
+; 同一欄位可重複引用
 t-format-misc = () {
     x = 42
 

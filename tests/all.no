@@ -12,6 +12,8 @@ foo-bar = 42
 hello-world = 'Hello World'
 
 ; 函数定义
+; a i64: 第一個加數
+; b i64: 第二個加數
 add = (a i64, b i64) {
 
     #{overflow=wrap}
@@ -19,6 +21,11 @@ add = (a i64, b i64) {
     print('result: {result}')
 }
 
+; 帶輸出參數的版本：c、d 宣告為輸出，但體內只置 0，未寫回和
+; a i64: 第一個加數（只參與印出）
+; b i64: 第二個加數（只參與印出）
+; c i64: 固定寫入 0
+; d i64: 固定寫入 0
 add1 = (a i64, b i64) (c i64, d i64) {
     c = 0
     d = 0
@@ -29,6 +36,9 @@ add1 = (a i64, b i64) (c i64, d i64) {
 }
 
 ; 匿名函数赋值
+; 匿名函式賦值給 f：兩個參數都只讀，本體只印出 out
+; x i64: 第一個參數，本體未使用
+; out i64: 要印出的數值
 f = (x i64, out i64) {
     print('doubled: {out}')
 }

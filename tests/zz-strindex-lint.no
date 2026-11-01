@@ -1,8 +1,8 @@
-; zz-strindex-lint.no — 验证 s[i] 性能告警（STR_INDEX_COMPLEXITY）的**不告警**侧
-;   - 单独一次 s[i]（循环外）：不告警（即使非 ASCII）
-;   - 手动按下标遍历但串可证明 ASCII：for j <- [0..a.count()): { x = a[j] } → 不告警
-;   - 直接遍历字符串 for c <- s：无 s[i]，不告警（内部按码点迭代）
-;   - 字节访问 s.byte(i)：不是 IndexExpression，不告警（非 ASCII 串按下标遍历的推荐写法）
+; zz-strindex-lint.no — 驗證 s[i] 性能告警（STR_INDEX_COMPLEXITY）的**不告警**侧
+;   - 單獨一次 s[i]（循环外）：不告警（即使非 ASCII）
+;   - 手動按下標遍歷但串可證明 ASCII：for j <- [0..a.count()): { x = a[j] } → 不告警
+;   - 直接遍歷字符串 for c <- s：無 s[i]，不告警（內部按碼點迭代）
+;   - 字節訪問 s.byte(i)：不是 IndexExpression，不告警（非 ASCII 串按下標遍歷的推荐寫法）
 ;
 ; ⚠️ 本語料已不再保留「故意違規」的分支：告警側（未證明 ASCII 的 str 在迴圈內
 ; 用 s[i]）由 Go 單測 src/checker/str_index_complexity_test.go 把守——
@@ -14,19 +14,19 @@
 ; CI 門禁失去意義，故改由單測承擔覆蓋。
 test-str-index-lint = () {
 
-    ; ASCII 字面量：a[i] 单独一次，不告警
+    ; ASCII 字面量：a[i] 單獨一次，不告警
     a = 'hello'
     xa char = a[1]
 
-    ; 非 ASCII 字面量（é 多字节）：b[i] 单独一次，不告警（不在循环里）
+    ; 非 ASCII 字面量（é 多字節）：b[i] 單獨一次，不告警（不在循环里）
     b = 'héllo'
     yb char = b[1]
 
-    ; 标识符传播：c 继承 b 的非 ASCII，c[i] 单独一次，不告警
+    ; 標識符傳播：c 繼承 b 的非 ASCII，c[i] 單獨一次，不告警
     c = b
     zc char = c[2]
 
-    ; 手动按下标遍历 非 ASCII 串 → 走字节访问逃生舱 s.byte(i)，不告警
+    ; 手動按下標遍歷 非 ASCII 串 → 走字節訪問逃生舱 s.byte(i)，不告警
     sum-b = 0
     for i <- [0..b.count()): {
         _ = b.byte(i)
@@ -36,7 +36,7 @@ test-str-index-lint = () {
     }
     print(sum-b)
 
-    ; 手动按下标遍历 ASCII 串 → 不告警（可证明 ASCII，O(1)）
+    ; 手動按下標遍歷 ASCII 串 → 不告警（可證明 ASCII，O(1)）
     sum-a = 0
     for j <- [0..a.count()): {
         ch2 char = a[j]
@@ -46,7 +46,7 @@ test-str-index-lint = () {
     }
     print(sum-a)
 
-    ; 直接遍历字符串：无 s[i]，不告警
+    ; 直接遍歷字符串：無 s[i]，不告警
     sum-c = 0
     for cc <- b: {
 
@@ -55,7 +55,7 @@ test-str-index-lint = () {
     }
     print(sum-c)
 
-    ; 字节访问逃生舱：不是 IndexExpression，不告警
+    ; 字節訪問逃生舱：不是 IndexExpression，不告警
     w = b.byte(0)
 
     print(xa)

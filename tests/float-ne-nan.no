@@ -4,17 +4,24 @@
 ; 後果不只是比較錯：`f64-to-str` 用 `x != x` 判斷 NaN，於是 NaN 被印成 "0"，
 ; 看起來像「後端用 fast-math、運行期產生不出 NaN」。實際上 NaN 一直都存在。
 
+; 單行判定輔助：cond 為真印 ok，否則印 fail
+; name str: 檢查項目名稱，直接插入訊息
+; cond bool: 判定結果
 check = (name str, cond bool) {
     cond -> print('ok: {name}')
 
     -> print('fail: {name}')
 }
 
+; 產生 NaN：0.0 / 0.0 在執行期得到 NaN（不是 0）
+; v f64: 必為 NaN
 nan-of = () (v f64) {
     zero = 0.0
     v = zero / zero
 }
 
+; 產生正無窮：1.0 / 0.0
+; v f64: +inf
 inf-of = () (v f64) {
     v = 1.0 / 0.0
 }

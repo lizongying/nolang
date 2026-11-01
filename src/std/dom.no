@@ -142,6 +142,8 @@ dom-pool.init = () {
 }
 
 ; 分配新節點（附帶平行 names/vals 槽位），返回索引
+; k: 節點類型（DOM-KIND-* 常量）
+; idx: 新分配節點的池索引
 ; [alloc](#dom.dom-pool.alloc)
 dom-pool.alloc = (k i64) (idx i64) {
     idx = .nodes.len()
@@ -162,12 +164,16 @@ dom-pool.alloc = (k i64) (idx i64) {
 }
 
 ; 節點索引是否合法
+; idx: 待校驗的節點池索引
+; yes: 索引是否在池長度範圍內且非負
 ; [valid](#dom.dom-pool.valid)
 dom-pool.valid = (idx i64) (yes bool) {
     yes = idx >= 0 && idx < .nodes.len()
 }
 
 ; 將 child 附加到 parent 子鏈表尾端（已有父節點先摘除）
+; parent: 父節點索引
+; child: 待附加到子鏈表尾端的節點索引
 ; [append](#dom.dom-pool.append)
 dom-pool.append = (parent i64, child i64) {
     parent < 0 || child < 0 -> return
@@ -190,6 +196,7 @@ dom-pool.append = (parent i64, child i64) {
 }
 
 ; 從父節點摘除 child（保持子鏈表完整）
+; child: 待從其父節點摘除的節點索引
 ; [detach](#dom.dom-pool.detach)
 dom-pool.detach = (child i64) {
     .valid(child) == false -> return
@@ -218,6 +225,9 @@ dom-pool.detach = (child i64) {
 }
 
 ; 將 node 插入 parent 的 ref 之前（ref 非法或非 parent 之子時附加到尾端）
+; parent: 目標父節點索引
+; node: 待插入的節點索引
+; ref: 參照節點索引（node 插到它之前；非法時附加到尾端）
 ; [insert-before](#dom.dom-pool.insert-before)
 dom-pool.insert-before = (parent i64, node i64, ref i64) {
     parent < 0 || node < 0 -> return
@@ -249,6 +259,9 @@ dom-pool.insert-before = (parent i64, node i64, ref i64) {
 ; ═══════════════════════════════════════════════
 
 ; 查找節點 name 屬性對應的邊索引，返回 -1 表示不存在
+; node: 目標元素節點索引
+; name: 屬性名
+; e: 命中的屬性邊表索引；-1=不存在
 ; [find-attr](#dom.dom-pool.find-attr)
 dom-pool.find-attr = (node i64, name str) (e i64) {
     e = -1
@@ -264,6 +277,9 @@ dom-pool.find-attr = (node i64, name str) (e i64) {
 }
 
 ; 設定屬性（存在則改值，否則按文檔順序附加到尾端）
+; node: 目標元素節點索引
+; name: 屬性名
+; val: 屬性值
 ; [set-attr](#dom.dom-pool.set-attr)
 dom-pool.set-attr = (node i64, name str, val str) {
     .valid(node) == false -> return
@@ -290,6 +306,9 @@ dom-pool.set-attr = (node i64, name str, val str) {
 }
 
 ; 移除屬性，返回是否找到
+; node: 目標元素節點索引
+; name: 待移除的屬性名
+; yes: 是否找到並移除
 ; [remove-attr](#dom.dom-pool.remove-attr)
 dom-pool.remove-attr = (node i64, name str) (yes bool) {
     yes = false
@@ -325,6 +344,9 @@ dom-pool.remove-attr = (node i64, name str) (yes bool) {
 }
 
 ; 取節點第 i 條屬性邊索引（按文檔順序），-1=越界
+; node: 目標元素節點索引
+; i: 屬性序號（0 起，按文檔順序）
+; e: 第 i 條屬性的邊表索引；-1=越界
 ; [attr-edge-at](#dom.dom-pool.attr-edge-at)
 dom-pool.attr-edge-at = (node i64, i i64) (e i64) {
     e = -1
@@ -342,6 +364,9 @@ dom-pool.attr-edge-at = (node i64, i i64) (e i64) {
 ; ═══════════════════════════════════════════════
 
 ; 在空格補齊的詞表 blob 中查找整詞 name
+; blob: 前後補空格的整詞表字串
+; name: 待查找的整詞
+; yes: 詞表中是否含該整詞
 ; [blob-has](#dom.blob-has)
 blob-has = (blob str, name str) (yes bool) {
     yes = false
@@ -351,6 +376,8 @@ blob-has = (blob str, name str) (yes bool) {
 }
 
 ; XML/HTML 標籤與屬性名字元（ASCII 子集 + UTF-8 高位元組放行）
+; c: 待判定的位元組值
+; yes: 是否可作為標籤/屬性的名字元
 ; [is-name-byte](#dom.is-name-byte)
 is-name-byte = (c i64) (yes bool) {
     yes = false
@@ -374,6 +401,8 @@ is-name-byte = (c i64) (yes bool) {
 }
 
 ; 在 DOM-ENTITY-BLOB 中查找命名實體碼點，-1=未找到
+; name: 實體名（不含 & 與 ;）
+; cp: 對應的 Unicode 碼點；-1=未找到
 ; [find-entity](#dom.find-entity)
 find-entity = (name str) (cp i64) {
     cp = -1
@@ -407,6 +436,9 @@ find-entity = (name str) (cp i64) {
 }
 
 ; 把碼點 cp 以 UTF-8 追加到 out（返回新字串）
+; out: 既有字串緩衝
+; cp: 待追加的 Unicode 碼點
+; res: 追加 UTF-8 編碼後的新字串
 ; [cp-append](#dom.cp-append)
 cp-append = (out str, cp i64) (res str) {
     res = out
@@ -418,6 +450,11 @@ cp-append = (out str, cp i64) (res str) {
 ; 解碼 s[from..to) 的實體（命名實體查 DOM-ENTITY-BLOB，數字實體 &#NN;/&#xHH;）
 ;   html=true：未知/未闭合實體按原文保留；html=false：未知實體判為錯誤
 ; 返回 out=解碼結果, ok=是否成功（XML 模式下非法實體 ok=false）
+; s: 來源字串
+; from: 待解碼片段的起始位元組索引（含）
+; to: 結束位元組索引（不含）
+; html: HTML 寬鬆模式（true=未知實體保留原文）
+; out: 解碼後的字串（nil=未找到實體）
 ; [decode-entities](#dom.decode-entities)
 decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
     acc str = ''
@@ -519,6 +556,10 @@ decode-entities = (s str, from i64, to i64, html bool) (out ?str) {
 
 ; 解析 &#...; 的十進位/十六進位碼點，非法返回 -1
 ;   s[pos] 起為數字部分（可 'x'/'X' 開頭表示十六進位），end 為 ';' 位置
+; s: 來源字串
+; pos: 數字部分起始位址（&# 之後）
+; end: 結束分號 ';' 的位置
+; cp: 解析出的碼點；-1=非法
 ; [parse-numeric-entity](#dom.parse-numeric-entity)
 parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
     cp = -1
@@ -566,6 +607,9 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 ; ═══════════════════════════════════════════════
 
 ; 跳過 XML 空白（空格/Tab/CR/LF）
+; s: 來源字串
+; p: 起始位元組位置
+; np: 跳過空白後的首個非空白位元組位置
 ; [xml-skip-ws](#dom.xml-skip-ws)
 xml-skip-ws = (s str, p i64) (np i64) {
     np = p
@@ -579,6 +623,9 @@ xml-skip-ws = (s str, p i64) (np i64) {
 }
 
 ; 從 p 讀取名字（名字元序列），返回結束位置
+; s: 來源字串
+; p: 名字起始位元組位置
+; np: 名字結束位置（nil=首字元即非名字元）
 ; [xml-read-name](#dom.xml-read-name)
 xml-read-name = (s str, p i64) (np ?i64) {
     n = s.len-bytes()
@@ -594,6 +641,8 @@ xml-read-name = (s str, p i64) (np ?i64) {
 }
 
 ; strip-bom: 去掉開頭 UTF-8 BOM，返回起始偏移
+; s: 來源字串
+; p: BOM 後的起始偏移（0=無 BOM，3=已去 BOM）
 ; [dom-strip-bom](#dom.dom-strip-bom)
 dom-strip-bom = (s str) (p i64) {
     p = 0
@@ -605,6 +654,11 @@ dom-strip-bom = (s str) (p i64) {
 ; ═══════════════════════════════════════════════
 
 ; 把 s[from..to) 解碼為文字節點附加到 parent
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; from: 文字片段起始（含）
+; to: 文字片段結束（不含）
+; ok: 是否成功附加（false=實體解碼失敗）
 ; [xml-add-text](#dom.dom-pool.xml-add-text)
 dom-pool.xml-add-text = (parent i64, s str, from i64, to i64) (ok bool) {
     ok = false
@@ -625,6 +679,10 @@ dom-pool.xml-add-text = (parent i64, s str, from i64, to i64) (ok bool) {
 }
 
 ; 解析 <!--...-->，附加到 parent，返回下一位置
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; p: 註解起始 '<!--' 的位置
+; np: '-->' 之後的位置（nil=註解未闭合）
 ; [xml-parse-comment](#dom.dom-pool.xml-parse-comment)
 dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
@@ -647,6 +705,10 @@ dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np ?i64) {
 }
 
 ; 解析 <![CDATA[...]]>，附加到 parent
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; p: CDATA 起始 '<![CDATA[' 的位置
+; np: ']]>' 之後的位置（nil=未闭合）
 ; [xml-parse-cdata](#dom.dom-pool.xml-parse-cdata)
 dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
@@ -669,6 +731,10 @@ dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
 }
 
 ; 解析 <?target data?>，附加到 parent
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; p: 處理指令起始 '<?' 的位置
+; np: '?>' 之後的位置（nil=未闭合或無目標名）
 ; [xml-parse-pi](#dom.dom-pool.xml-parse-pi)
 dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
@@ -704,6 +770,10 @@ dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
 
 ; 解析 <!DOCTYPE ...>（含內部子集與引號），XML/HTML 共用
 ;   內容原樣存放（不解實體）；名稱為 '!' 後的第一個詞
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; p: '<!DOCTYPE' 中 '<' 的位置
+; np: '>' 之後的位置（nil=未闭合）
 ; [parse-doctype-node](#dom.dom-pool.parse-doctype-node)
 dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
@@ -763,6 +833,11 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
 
 ; 解析一個屬性（xml=true 時值必須加引號且重複屬性判錯）
 ;   返回下一位置與成功標誌
+; node: 承載屬性的元素節點索引
+; s: 來源字串
+; p: 屬性名起始位置
+; xml: XML 嚴謹模式（值必須加引號、重複屬性判錯）
+; np: 該屬性結束後的位址（nil=解析失敗）
 ; [xml-parse-attr](#dom.dom-pool.xml-parse-attr)
 dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
     n = s.len-bytes()
@@ -841,6 +916,10 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
 }
 
 ; 解析結尾標籤 </name>，必須與 node 的標籤名相符
+; node: 待闭合的元素節點索引
+; s: 來源字串
+; p: '</' 的位置
+; np: '>' 之後的位置（nil=名稱不符或格式錯誤）
 ; [xml-parse-close](#dom.dom-pool.xml-parse-close)
 dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
@@ -862,6 +941,11 @@ dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
 
 ; 解析一個元素（含子節點），附加到 parent
 ;   p 指向 '<'；depth 為當前嵌套深度
+; s: 來源字串
+; parent: 附加目標的父節點索引
+; p: 起始 '<' 的位置
+; depth: 當前嵌套深度（超過 DOM-MAX-DEPTH 判失敗）
+; np: 元素結尾標籤之後的位置（nil=解析失敗）
 ; [xml-parse-element](#dom.dom-pool.xml-parse-element)
 dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
     n = s.len-bytes()
@@ -989,6 +1073,10 @@ dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
 }
 
 ; 解析整份 XML 文檔，返回 document 根索引
+; s: XML 源文本
+; root: document 根節點索引
+; failpos: 解析失敗的位元組位置（-1=成功）
+; ok: 整份文檔是否解析成功
 ; [xml-parse-doc](#dom.dom-pool.xml-parse-doc)
 dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
     ok = false
@@ -1083,6 +1171,10 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
 
 ; 判斷 s[pos..] 是否為 name 的結尾標籤名（大小寫不敏感，
 ;   結束後必須紧跟 '>'、'/'、'=' 或空白）
+; s: 來源字串
+; pos: 標籤名起始位元組位置（'</' 之後）
+; name: 待匹配的標籤名
+; yes: 是否為該標籤的結尾標籤名
 ; [html-close-match](#dom.html-close-match)
 html-close-match = (s str, pos i64, name str) (yes bool) {
     yes = false
@@ -1110,6 +1202,8 @@ html-close-match = (s str, pos i64, name str) (yes bool) {
 }
 
 ; 打開標籤 t 時應先閉合的開放標籤詞表（空串=無規則）
+; t: 新打開的標籤名（小寫）
+; blob: 應先隱式閉合的開放標籤詞表（空串=無規則）
 ; [dom-closers-of](#dom.dom-closers-of)
 dom-closers-of = (t str) (blob str) {
     blob = ''
@@ -1125,6 +1219,9 @@ dom-closers-of = (t str) (blob str) {
 }
 
 ; 查看 s[p] 起的 '<' 之後的標籤名（小寫），非法返回空串
+; s: 來源字串
+; p: '<' 的位元組位置
+; nm: 標籤名（已轉小寫；空串=非法標籤）
 ; [html-peek-name](#dom.html-peek-name)
 html-peek-name = (s str, p i64) (nm str) {
     nm = ''
@@ -1141,6 +1238,10 @@ html-peek-name = (s str, p i64) (nm str) {
 }
 
 ; 把 s[from..to) 按 HTML 實體規則解碼為文字節點附加到 parent
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; from: 文字片段起始（含）
+; to: 文字片段結束（不含）
 ; [html-add-text](#dom.dom-pool.html-add-text)
 dom-pool.html-add-text = (parent i64, s str, from i64, to i64) {
     to <= from -> return
@@ -1156,6 +1257,10 @@ dom-pool.html-add-text = (parent i64, s str, from i64, to i64) {
 }
 
 ; 解析 <!--...-->，EOF 容錯
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; p: 註解起始 '<!--' 的位置
+; np: '-->' 之後的位置（未闭合則到 EOF）
 ; [html-parse-comment](#dom.dom-pool.html-parse-comment)
 dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
     n = s.len-bytes()
@@ -1186,6 +1291,10 @@ dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
 }
 
 ; '<!' 開頭的其他內容，直到 '>'，作為註解保存
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; p: '<!' 的位置
+; np: '>' 之後的位置（無 '>' 則到 EOF）
 ; [html-bogus-comment](#dom.dom-pool.html-bogus-comment)
 dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
     n = s.len-bytes()
@@ -1205,6 +1314,10 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
 }
 
 ; '<?...>'（HTML 中按bogus comment 處理，此處保存為 PI 節點）
+; parent: 附加目標的父節點索引
+; s: 來源字串
+; p: 處理指令起始 '<?' 的位置
+; np: '>' 之後的位置（未闭合則到 EOF）
 ; [html-parse-pi](#dom.dom-pool.html-parse-pi)
 dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
     n = s.len-bytes()
@@ -1251,6 +1364,10 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
 }
 
 ; 解析 HTML 屬性（支持無引號值），重複屬性首個為準
+; node: 承載屬性的元素節點索引
+; s: 來源字串
+; p: 屬性名起始位置
+; np: 該屬性結束後的位址（nil=非法屬性名）
 ; [html-parse-attr](#dom.dom-pool.html-parse-attr)
 dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
     n = s.len-bytes()
@@ -1334,6 +1451,9 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
 }
 
 ; 僅當屬性不存在時設定（HTML 重複屬性首個為準）
+; node: 目標元素節點索引
+; name: 屬性名（已轉小寫）
+; val: 屬性值
 ; [html-set-attr-once](#dom.dom-pool.html-set-attr-once)
 dom-pool.html-set-attr-once = (node i64, name str, val str) {
     ex = .find-attr(node, name)
@@ -1344,6 +1464,12 @@ dom-pool.html-set-attr-once = (node i64, name str, val str) {
 ; 解析開始標籤並附加元素到 cur
 ;   返回 np=下一位置、el=元素索引、mode：
 ;   0=非法 '<'（已作文字）、1=普通元素（調用方入棧）、2=void/自閉合、3=raw-text 已吞內容
+; s: 來源字串
+; p: 起始 '<' 的位置
+; cur: 當前插入位置節點索引
+; np: 開始標籤之後的位元組位置
+; el: 新建元素節點索引（-1=非法 '<' 已作文字）
+; mode: 0=非法文字 1=普通元素(入棧) 2=void/自閉合 3=raw-text 已吞內容
 ; [html-parse-open](#dom.dom-pool.html-parse-open)
 dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
     n = s.len-bytes()
@@ -1460,6 +1586,11 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 }
 
 ; 解析 '</name'，返回 '>' 之後位置與小寫標籤名
+; s: 來源字串
+; p: '</' 的位置
+; np: '>' 之後的位置
+; nm: 結尾標籤名（已轉小寫）
+; ok: 是否讀到標籤名（false=無名當註解跳過）
 ; [html-parse-close-name](#dom.dom-pool.html-parse-close-name)
 dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
     n = s.len-bytes()
@@ -1500,6 +1631,8 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
 }
 
 ; 解析整份 HTML 文檔（永不失敗），返回 document 根索引
+; s: HTML 源文本
+; root: document 根節點索引
 ; [html-parse-doc](#dom.dom-pool.html-parse-doc)
 dom-pool.html-parse-doc = (s str) (root i64) {
     root = .alloc(DOM-KIND-DOCUMENT)
@@ -1640,6 +1773,8 @@ dom-pool.html-parse-doc = (s str) (root i64) {
 ; ═══════════════════════════════════════════════
 
 ; 轉義文字中的 & < >
+; s: 原文字
+; out: 轉義後的文字
 ; [esc-text](#dom.esc-text)
 esc-text = (s str) (out str) {
     out = ''
@@ -1672,6 +1807,8 @@ esc-text = (s str) (out str) {
 }
 
 ; 轉義屬性值中的 & < > "
+; s: 原屬性值
+; out: 轉義後的屬性值
 ; [esc-attr](#dom.esc-attr)
 esc-attr = (s str) (out str) {
     out = ''
@@ -1709,6 +1846,9 @@ esc-attr = (s str) (out str) {
 }
 
 ; 序列化 idx 的全部子節點
+; idx: 待序列化父節點的索引
+; html: HTML 輸出模式（影響 void 元素與空元素闭合）
+; out: 子節點序列化結果（inner）
 ; [ser-children](#dom.dom-pool.ser-children)
 dom-pool.ser-children = (idx i64, html bool) (out str) {
     out = ''
@@ -1721,6 +1861,9 @@ dom-pool.ser-children = (idx i64, html bool) (out str) {
 }
 
 ; 序列化單個節點（outer）
+; idx: 待序列化節點的索引
+; html: HTML 輸出模式（影響 void 元素與空元素闭合）
+; out: 該節點的 outer 序列化字串
 ; [ser](#dom.dom-pool.ser)
 dom-pool.ser = (idx i64, html bool) (out str) {
     out = ''
@@ -1808,6 +1951,8 @@ dom-pool.ser = (idx i64, html bool) (out str) {
 }
 
 ; 遞歸收集 idx 子樹的文本內容（TEXT/CDATA）
+; idx: 子樹根節點索引
+; out: 子樹內 TEXT/CDATA 串接後的文字
 ; [text-of](#dom.dom-pool.text-of)
 dom-pool.text-of = (idx i64) (out str) {
     out = ''
@@ -1831,6 +1976,10 @@ dom-pool.text-of = (idx i64) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; 收集 node 子樹中標籤名為 want（star=true 时所有元素）的元素索引
+; node: 查找子樹的根節點索引
+; want: 目標標籤名
+; star: 匹配所有元素（want 作 '*' 看待）
+; out: 命中元素節點索引列表
 ; [collect-tag](#dom.dom-pool.collect-tag)
 dom-pool.collect-tag = (node i64, want str, star bool) (out []i64) {
     out = with-len(0)
@@ -1853,6 +2002,9 @@ dom-pool.collect-tag = (node i64, want str, star bool) (out []i64) {
 }
 
 ; 收集 node 子樹中 class 屬性含 cls 詞的元素索引
+; node: 查找子樹的根節點索引
+; cls: 待匹配的 class 詞
+; out: 含該 class 詞的元素索引列表
 ; [collect-class](#dom.dom-pool.collect-class)
 dom-pool.collect-class = (node i64, cls str) (out []i64) {
     out = with-len(0)
@@ -1878,6 +2030,9 @@ dom-pool.collect-class = (node i64, cls str) (out []i64) {
 }
 
 ; 在 node 子樹中遞歸查找 id 屬性等於 id 的元素，-1=未找到
+; node: 查找子樹的根節點索引
+; id: 目標 id 值
+; idx: 命中元素節點索引；-1=未找到
 ; [find-id-node](#dom.dom-pool.find-id-node)
 dom-pool.find-id-node = (node i64, id str) (idx i64) {
     idx = -1
@@ -1906,6 +2061,9 @@ dom-pool.find-id-node = (node i64, id str) (idx i64) {
 }
 
 ; class 值（空白分隔多詞）是否含詞 cls
+; val: class 屬性值（空白分隔多詞）
+; cls: 待匹配的詞
+; yes: 是否含該詞
 ; [class-has](#dom.class-has)
 class-has = (val str, cls str) (yes bool) {
     yes = false
@@ -1933,6 +2091,8 @@ class-has = (val str, cls str) (yes bool) {
 ; ═══════════════════════════════════════════════
 
 ; 嚴謹解析 XML，失敗返回 err(含錯誤位置)
+; source: XML 源文本
+; out: 解析出的文檔（err 含錯誤位址）
 ; [parse-xml](#dom.parse-xml)
 dom.parse-xml = (source str) (out ?dom) {
     out = nil
@@ -1949,6 +2109,8 @@ dom.parse-xml = (source str) (out ?dom) {
 }
 
 ; 寬鬆解析 HTML（永不失敗），返回 document
+; source: HTML 源文本
+; out: 解析出的文檔（寬鬆模式恆為 ok）
 ; [parse-html](#dom.parse-html)
 dom.parse-html = (source str) (out ?dom) {
     out = nil
@@ -1962,6 +2124,8 @@ dom.parse-html = (source str) (out ?dom) {
 ; 建立空文檔
 ; 用法：
 ;   d = dom.new-document(true)   // HTML 文檔
+; html: 是否建立 HTML 格式文檔
+; d: 新建的空文檔
 ; [new-document](#dom.new-document)
 dom.new-document = (html bool) (d dom) {
     d.pool.init()
@@ -1976,6 +2140,8 @@ dom.new-document = (html bool) (d dom) {
 ; ═══════════════════════════════════════════════
 
 ; 節點類型（DOM-KIND-* 常量，-1=非法索引）
+; idx: 節點索引
+; k: 節點類型（DOM-KIND-*；-1=非法索引）
 ; [kind](#dom.kind)
 dom.kind = (idx i64) (k i64) {
     k = -1
@@ -1984,6 +2150,8 @@ dom.kind = (idx i64) (k i64) {
 }
 
 ; 元素標籤名 / PI 目標 / DOCTYPE 名稱
+; idx: 節點索引
+; nm: 標籤名 / PI 目標 / DOCTYPE 名稱
 ; [name](#dom.name)
 dom.name = (idx i64) (nm str) {
     nm = ''
@@ -1992,6 +2160,8 @@ dom.name = (idx i64) (nm str) {
 }
 
 ; 節點值（text/cdata/comment 內容、PI 數據、DOCTYPE 原始內容）
+; idx: 節點索引
+; v: 節點值內容
 ; [value](#dom.value)
 dom.value = (idx i64) (v str) {
     v = ''
@@ -2000,6 +2170,8 @@ dom.value = (idx i64) (v str) {
 }
 
 ; 設定節點值
+; idx: 節點索引
+; v: 新值
 ; [set-node-value](#dom.set-node-value)
 dom.set-node-value = (idx i64, v str) {
     .pool.valid(idx) == false -> return
@@ -2007,6 +2179,8 @@ dom.set-node-value = (idx i64, v str) {
 }
 
 ; 父節點索引（-1=無）
+; idx: 節點索引
+; p: 父節點索引（-1=無父節點）
 ; [parent](#dom.parent)
 dom.parent = (idx i64) (p i64) {
     p = -1
@@ -2015,6 +2189,8 @@ dom.parent = (idx i64) (p i64) {
 }
 
 ; dom.first-child / last-child / next-sibling / prev-sibling
+; idx: 節點索引
+; c: 首個子節點索引（-1=無）
 ; [first-child](#dom.first-child)
 dom.first-child = (idx i64) (c i64) {
     c = -1
@@ -2022,18 +2198,27 @@ dom.first-child = (idx i64) (c i64) {
     c = .pool.nodes[idx].first
 }
 
+; 取末個 child
+; idx: 節點索引
+; c: 末個子節點索引（-1=無）
 dom.last-child = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
     c = .pool.nodes[idx].last
 }
 
+; 取下一個 sibling
+; idx: 節點索引
+; c: .nextSibling 節點索引（-1=無）
 dom.next-sibling = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
     c = .pool.nodes[idx].next
 }
 
+; 取上一個 sibling
+; idx: 節點索引
+; c: 上一個兄弟節點索引（-1=無）
 dom.prev-sibling = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
@@ -2041,6 +2226,8 @@ dom.prev-sibling = (idx i64) (c i64) {
 }
 
 ; 子節點數
+; idx: 節點索引
+; n: 子節點個數
 ; [child-count](#dom.child-count)
 dom.child-count = (idx i64) (n i64) {
     n = 0
@@ -2049,6 +2236,9 @@ dom.child-count = (idx i64) (n i64) {
 }
 
 ; 第 i 個子節點（越界返回 nil）
+; idx: 父節點索引
+; i: 子節點序號（0 起）
+; out: 子節點索引（nil=越界）
 ; [child-at](#dom.child-at)
 dom.child-at = (idx i64, i i64) (out ?i64) {
     out = nil
@@ -2062,6 +2252,7 @@ dom.child-at = (idx i64, i i64) (out ?i64) {
 }
 
 ; 根元素（第一個 ELEMENT 子節點）
+; idx: 根元素索引（nil=不存在）
 ; [document-element](#dom.document-element)
 dom.document-element = () (idx ?i64) {
     idx = nil
@@ -2081,6 +2272,9 @@ dom.document-element = () (idx ?i64) {
 ; ═══════════════════════════════════════════════
 
 ; 讀取屬性值（nil=不存在；HTML 模式下名字大小寫不敏感）
+; idx: 元素節點索引
+; name: 屬性名
+; val: 屬性值（nil=不存在）
 ; [get-attribute](#dom.get-attribute)
 dom.get-attribute = (idx i64, name str) (val ?str) {
     val = nil
@@ -2093,6 +2287,9 @@ dom.get-attribute = (idx i64, name str) (val ?str) {
 }
 
 ; 是否存在屬性
+; idx: 元素節點索引
+; name: 屬性名
+; yes: 該屬性是否存在
 ; [has-attribute](#dom.has-attribute)
 dom.has-attribute = (idx i64, name str) (yes bool) {
     yes = false
@@ -2103,6 +2300,9 @@ dom.has-attribute = (idx i64, name str) (yes bool) {
 }
 
 ; 設定屬性（存在則覆蓋）
+; idx: 元素節點索引
+; name: 屬性名
+; val: 屬性值
 ; [set-attribute](#dom.set-attribute)
 dom.set-attribute = (idx i64, name str, val str) {
     .pool.valid(idx) == false -> return
@@ -2112,6 +2312,9 @@ dom.set-attribute = (idx i64, name str, val str) {
 }
 
 ; 移除屬性，返回是否找到
+; idx: 元素節點索引
+; name: 待移除的屬性名
+; yes: 是否找到並移除
 ; [remove-attribute](#dom.remove-attribute)
 dom.remove-attribute = (idx i64, name str) (yes bool) {
     want str = name
@@ -2120,6 +2323,8 @@ dom.remove-attribute = (idx i64, name str) (yes bool) {
 }
 
 ; 屬性數量
+; idx: 元素節點索引
+; n: 屬性個數
 ; [attribute-count](#dom.attribute-count)
 dom.attribute-count = (idx i64) (n i64) {
     n = 0
@@ -2128,6 +2333,9 @@ dom.attribute-count = (idx i64) (n i64) {
 }
 
 ; 第 i 個屬性名（按文檔順序，越界 nil）
+; idx: 元素節點索引
+; i: 屬性序號（0 起）
+; nm: 屬性名（nil=越界）
 ; [attribute-name](#dom.attribute-name)
 dom.attribute-name = (idx i64, i i64) (nm ?str) {
     nm = nil
@@ -2138,6 +2346,9 @@ dom.attribute-name = (idx i64, i i64) (nm ?str) {
 }
 
 ; 第 i 個屬性值（越界 nil）
+; idx: 元素節點索引
+; i: 屬性序號（0 起）
+; val: 屬性值（nil=越界）
 ; [attribute-value](#dom.attribute-value)
 dom.attribute-value = (idx i64, i i64) (val ?str) {
     val = nil
@@ -2152,6 +2363,8 @@ dom.attribute-value = (idx i64, i i64) (val ?str) {
 ; ═══════════════════════════════════════════════
 
 ; 按 id 屬性查找元素
+; id: 目標 id 值
+; idx: 命中元素索引（nil=未找到）
 ; [get-element-by-id](#dom.get-element-by-id)
 dom.get-element-by-id = (id str) (idx ?i64) {
     idx = nil
@@ -2162,6 +2375,8 @@ dom.get-element-by-id = (id str) (idx ?i64) {
 }
 
 ; 全文檔收集指定標籤名元素；'*' 返回全部元素
+; name: 標籤名（'*'=全部）
+; out: 命中元素索引列表
 ; [get-elements-by-tag-name](#dom.get-elements-by-tag-name)
 dom.get-elements-by-tag-name = (name str) (out []i64) {
     want str = name
@@ -2171,12 +2386,16 @@ dom.get-elements-by-tag-name = (name str) (out []i64) {
 }
 
 ; 全文檔收集 class 含指定詞的元素
+; cls: 待匹配的 class 詞
+; out: 命中元素索引列表
 ; [get-elements-by-class-name](#dom.get-elements-by-class-name)
 dom.get-elements-by-class-name = (cls str) (out []i64) {
     out = .pool.collect-class(.root, cls)
 }
 
 ; 子樹文本內容（TEXT/CDATA 遞歸串接）
+; idx: 子樹根節點索引
+; out: 串接後的文本內容
 ; [text-content](#dom.text-content)
 dom.text-content = (idx i64) (out str) {
     out = .pool.text-of(idx)
@@ -2187,6 +2406,8 @@ dom.text-content = (idx i64) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; 建立游離元素節點（尚未附加）
+; name: 標籤名（HTML 模式轉小寫）
+; idx: 新元素節點索引
 ; [create-element](#dom.create-element)
 dom.create-element = (name str) (idx i64) {
     nm str = name
@@ -2196,6 +2417,8 @@ dom.create-element = (name str) (idx i64) {
 }
 
 ; 建立文字節點
+; data: 文字內容
+; idx: 新文字節點索引
 ; [create-text-node](#dom.create-text-node)
 dom.create-text-node = (data str) (idx i64) {
     idx = .pool.alloc(DOM-KIND-TEXT)
@@ -2203,6 +2426,8 @@ dom.create-text-node = (data str) (idx i64) {
 }
 
 ; 建立註解節點
+; data: 註解內容
+; idx: 新註解節點索引
 ; [create-comment](#dom.create-comment)
 dom.create-comment = (data str) (idx i64) {
     idx = .pool.alloc(DOM-KIND-COMMENT)
@@ -2210,24 +2435,34 @@ dom.create-comment = (data str) (idx i64) {
 }
 
 ; 附加（或移動）子節點到 parent 尾端
+; parent: 目標父節點索引
+; child: 待附加的子節點索引
 ; [append-child](#dom.append-child)
 dom.append-child = (parent i64, child i64) {
     .pool.append(parent, child)
 }
 
 ; 將 child 插入 parent 的 ref 之前
+; parent: 目標父節點索引
+; child: 待插入的子節點索引
+; ref: 參照子節點索引（child 插到它之前）
 ; [insert-child-before](#dom.insert-child-before)
 dom.insert-child-before = (parent i64, child i64, ref i64) {
     .pool.insert-before(parent, child, ref)
 }
 
 ; 從 parent 摘除 child
+; parent: 父節點索引
+; child: 待摘除的子節點索引
 ; [remove-child](#dom.remove-child)
 dom.remove-child = (parent i64, child i64) {
     .pool.detach(child)
 }
 
 ; 用 new 替换 parent 的 old
+; parent: 父節點索引
+; new: 替换節點索引
+; old: 被替换節點索引
 ; [replace-child](#dom.replace-child)
 dom.replace-child = (parent i64, new i64, old i64) {
     .pool.insert-before(parent, new, old)
@@ -2235,6 +2470,8 @@ dom.replace-child = (parent i64, new i64, old i64) {
 }
 
 ; 清空子節點並設為單一文字節點
+; idx: 目標節點索引
+; text: 新文字內容（空串=僅清空）
 ; [set-text-content](#dom.set-text-content)
 dom.set-text-content = (idx i64, text str) {
     .pool.valid(idx) == false -> return
@@ -2253,24 +2490,30 @@ dom.set-text-content = (idx i64, text str) {
 ; ═══════════════════════════════════════════════
 
 ; 是否為 HTML 模式（影響 void 元素序列化與名字大小寫）
+; yes: 文檔格式是否為 HTML
 ; [is-html](#dom.is-html)
 dom.is-html = () (yes bool) {
     yes = .format == 1
 }
 
 ; 序列化整份文檔（innerHTML of document）
+; out: 整份文檔的序列化字串
 ; [to-string](#dom.to-string)
 dom.to-string = () (out str) {
     out = .pool.ser-children(.root, .format == 1)
 }
 
 ; 序列化單個節點（含自身）
+; idx: 節點索引
+; out: 該節點的 outer 序列化字串
 ; [outer-html](#dom.outer-html)
 dom.outer-html = (idx i64) (out str) {
     out = .pool.ser(idx, .format == 1)
 }
 
 ; 序列化節點的全部子節點
+; idx: 節點索引
+; out: 子節點序列化字串（inner）
 ; [inner-html](#dom.inner-html)
 dom.inner-html = (idx i64) (out str) {
     out = .pool.ser-children(idx, .format == 1)

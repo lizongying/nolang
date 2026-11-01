@@ -6,16 +6,19 @@
 
 # /test/runner
 
+; CRC-32 檢查值（check value）：'123456789' 應得 0xCBF43926
 t-check = () {
     crc = crc-32.new('123456789'.to-bytes(), 9)
     runner.eq(crc, 3421780262, 'crc32("123456789") == 0xCBF43926')
 }
 
+; 空輸入回傳 0（初值與最終 XOR 相互抵消）
 t-empty = () {
     crc = crc-32.new(''.to-bytes(), 0)
     runner.eq(crc, 0, 'crc32("") == 0')
 }
 
+; 一般字串向量：'hello' 應得 0x3610A686
 t-hello = () {
     crc = crc-32.new('hello'.to-bytes(), 5)
     runner.eq(crc, 907060870, 'crc32("hello") == 0x3610A686')

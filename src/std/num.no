@@ -10,6 +10,11 @@ num = int | float
 
 ; 限制在 [lo, hi] 範圍內
 ; 用法：x.clamp(lo, hi, r)
+; 判斷按順序短路：先比下界，再比上界。故 lo > hi（區間反向）時下界優先，
+; 小於 lo 的值被抬到 lo，大於 hi 的值被壓到 hi。
+; lo num: 下界（含）；輸入小於 lo 時以 lo 作為結果
+; hi num: 上界（含）；輸入大於 hi 時以 hi 作為結果
+; r num: 夾取後的數值，落在 [lo, hi]（區間反向時落在 {lo, hi} 其中一個）
 ; [clamp](#num.clamp)
 num.clamp = (lo num, hi num) (r num) {
     {
@@ -22,6 +27,8 @@ num.clamp = (lo num, hi num) (r num) {
 }
 
 ; 符號（-1, 0, 1）— 對所有 num 型別（整數與浮點）通用
+; 接受 ±0.0 與各種整數型別；NaN 因兩個比較皆為 false 而落入 0。
+; r num: 1=大於零, -1=小於零, 0=等於零（含 ±0.0、NaN 走 else 分支）
 ; [sign](#num.sign)
 num.sign = () (r num) {
     {
@@ -41,6 +48,7 @@ num.sign = () (r num) {
 ; 調用形式：abs(x)（x 為接收者；num 零參方法目前僅支持此形式，`x.abs()`
 ; 點式因嵌套 num 聯合尚未单態化接收者而不支持，同 num.sign）；
 ; 負數以 overflow=wrap 回繞取反（i64.MIN 的絕對值超出 i64 範圍）
+; r num: 非負數原樣回傳；負數回傳取反結果（最小負整數會回繞為自身，仍為負）
 ; [abs](#num.abs)
 num.abs = () (r num) {
     {

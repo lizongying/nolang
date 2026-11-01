@@ -104,27 +104,30 @@ arr-stack {
 
 ; 返回堆疊中元素數量
 ; 返回 sz i64: 元素數量
-; [size](#collection.arr-stack.arr-stack.size)
+; sz i64: 目前堆疊深度（即 top 指標），不包含已出棧的空槽位
+; [size](#arr-stack.arr-stack.size)
 arr-stack.size = () (sz i64) {
     sz = .top
 }
 
 ; 判斷堆疊是否為空
 ; 返回 yes bool: true=空, false=非空
-; [empty](#collection.arr-stack.arr-stack.empty)
+; yes bool: true=top <= 0（尚未壓入任何元素或已被清空）
+; [empty](#arr-stack.arr-stack.empty)
 arr-stack.empty = () (yes bool) {
     yes = .top <= 0
 }
 
 ; 判斷堆疊是否已滿
 ; 返回 yes bool: true=已滿, false=未滿
-; [full](#collection.arr-stack.arr-stack.full)
+; yes bool: true=top >= cap（再 push 會失敗或溢出，應先 pop）
+; [full](#arr-stack.arr-stack.full)
 arr-stack.full = () (yes bool) {
     yes = .top >= .cap
 }
 
 ; 清空堆疊
-; [clear](#collection.arr-stack.arr-stack.clear)
+; [clear](#arr-stack.arr-stack.clear)
 arr-stack.clear = () {
     .top = 0
 }

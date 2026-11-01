@@ -7,10 +7,13 @@
 ;   - 成員方法（str.*/txt.* 原版）不受別名影響
 
 ; ── union 參數：str 實參單態化 ──
+; s string: 要量長度的字串；本檔用 'hello' 與 txt 各呼叫一次
+; n i64: len(s) 的結果，'hello' 得 5
 take-bytes = (s string) (n i64) {
     n = len(s)
 }
 
+; 測試 str-arg
 test-str-arg = () {
     a = 'hello'
     n = take-bytes(a)
@@ -37,10 +40,14 @@ test-txt-arg()
 print(1)
 
 ; ── union 返回值：pick 按實參型別單態化，str/txt 各自保留原型別 ──
+; a string: 首選字串，本測試傳 'hello'
+; b string: 備選字串 'world'（此實作未使用，僅示範多參數單態化）
+; r string: 直接回傳 a，型別與實參一致
 pick = (a string, b string) (r string) {
     r = a
 }
 
+; 測試 pick
 test-pick = () {
     a = 'hello'
     b = 'world'

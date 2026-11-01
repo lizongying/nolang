@@ -1,5 +1,6 @@
 ; mkstemp-debug.no — minimal repro for fs.mkstemp multi-assign issue
 
+; 測試 mkstemp
 test-mkstemp = () {
 
     name, fd = fs.mkstemp('/tmp/test.XXXXXX')

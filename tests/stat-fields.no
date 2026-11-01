@@ -1,10 +1,10 @@
-; test-stat-fields — 新增 fs.stat-{nlink,ino,atime,ctime,blocks,blksize} 内建
+; test-stat-fields — 新增 fs.stat-{nlink,ino,atime,ctime,blocks,blksize} 內建
 ;
-; 这些 builtin 走 cRetField 路径：按 struct stat 的「字段偏移 + 原生位宽」读取。
-; 位宽读错会把相邻字段折进结果（stat-mode 曾因按 64-bit 读 16-bit st_mode 返回垃圾）。
-; 本测试验证：(a) 每个字段读出合理值；(b) 不同文件的 st_ino 不同——若 ino 被折叠/
-; 读成常数就会相等，可借此钉住偏移/位宽正确性。所有值已在 darwin 上逐一对照 BSD
-; `stat -f` 确认一致（nlink/ino/atime/ctime/blocks/blksize 全等）。
+; 這些 builtin 走 cRetField 路径：按 struct stat 的「字段偏移 + 原生位寬」讀取。
+; 位寬讀錯會把相鄰字段折進結果（stat-mode 曾因按 64-bit 讀 16-bit st_mode 返回垃圾）。
+; 本測試驗證：(a) 每個字段讀出合理值；(b) 不同文件的 st_ino 不同——若 ino 被摺疊/
+; 讀成常數就會相等，可借此钉住偏移/位寬正確性。所有值已在 darwin 上逐一對照 BSD
+; `stat -f` 確認一致（nlink/ino/atime/ctime/blocks/blksize 全等）。
 
 ls = '/bin/ls'
 
@@ -23,10 +23,10 @@ blocks <= 0 -> exit(5)
 mtime <= 0 -> exit(6)
 ctime <= 0 -> exit(7)
 
-; atime 在 noatime/relatime 挂载下可能为 0，只读取不强求 >0
+; atime 在 noatime/relatime 掛載下可能為 0，只讀取不強求 >0
 atime < 0 -> exit(8)
 
-; 不同 inode：ino 字段未被折叠成常数
+; 不同 inode：ino 字段未被摺疊成常數
 tmp = '/tmp'
 dino = fs.stat-ino(tmp)
 dino == ino -> exit(9)

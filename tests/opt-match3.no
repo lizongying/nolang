@@ -1,3 +1,4 @@
+; err / nil 臂名列但皆不命中（n 為 ok(42)），最終落到 catch-all 臂印出 'got-val'
 test1 = () {
     n ?i64 = 42
     r = n: {

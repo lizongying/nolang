@@ -34,6 +34,9 @@ person {
     age i64
 }
 
+; 設定結構體欄位後轉成一般輸出參數，驗證欄位字串與來源互相解耦
+; n str: 要寫進 name 的字串，本測試傳 'C' 等短字串
+; out person: name = n、age = 7
 mkplain = (n str) (out person) {
     p person
     p.name = n
@@ -41,6 +44,9 @@ mkplain = (n str) (out person) {
     out = p
 }
 
+; 同上改用 ?person 回傳（隱式 ok 裝箱），驗證 option 路徑也複製欄位字串
+; n str: 要寫進 name 的字串
+; out ?person: ok(person)，其中 name = n、age = 7
 mkopt = (n str) (out ?person) {
     p person
     p.name = n
@@ -49,6 +55,7 @@ mkopt = (n str) (out ?person) {
 }
 
 ; 測試 1：字段寫入後源 local 被重新賦值 —— 字段必須保留舊值
+; ok bool: 把 s 改成 'D' 後 p.name 仍是 'C' 才為 true
 test-field-survives-source-reassign = () (ok bool) {
     s = 'C'
     p person
@@ -59,6 +66,7 @@ test-field-survives-source-reassign = () (ok bool) {
 }
 
 ; 測試 2：直接寫字面量（對照組，修復前也是對的）
+; ok bool: p.name 等於 'B' 才為 true
 test-field-from-literal = () (ok bool) {
     p person
     p.name = 'B'
@@ -67,12 +75,14 @@ test-field-from-literal = () (ok bool) {
 }
 
 ; 測試 3：str 參數 -> 字段 -> 結構體返回
+; ok bool: mkplain('A') 回傳的 name 仍是 'A' 才為 true
 test-param-into-field-plain = () (ok bool) {
     q = mkplain('A')
     q.name == 'A' -> ok = true
 }
 
 ; 測試 4：str 參數 -> 字段 -> option 結構體返回
+; ok bool: mkopt('B') 解出 name 為 'B' 且 got 未被佔位值 'zzz' 殘留才為 true
 test-param-into-field-option = () (ok bool) {
     got = 'zzz'
     q = mkopt('B')

@@ -59,11 +59,11 @@ QPACK-LITERAL-PREFIX i64 = 0x20
 ; ═══════════════════════════════════════════════
 
 ; 將單個標頭編碼為 QPACK 字面格式
-; name str: 標頭名稱
-; value str: 標頭值
-; 返回 buf []byte: 編碼結果
-; 返回 n i64: 編碼長度
-; [encode-header](#net.http3.encode-header)
+; name: 標頭名稱（以字面值編碼，不走靜態表）
+; value: 標頭值
+; 返回 buf []byte: QPACK 字面編碼後的位元組緩衝
+; 返回 n i64: 寫入 buf 的實際位元組數
+; [encode-header](#http3.encode-header)
 encode-header = (name str, value str) (buf []byte, n i64) {
 
     pos = 0
@@ -145,12 +145,12 @@ encode-header = (name str, value str) (buf []byte, n i64) {
 }
 
 ; 編碼多個標頭
-; names [16]str: 標頭名稱陣列
-; values [16]str: 標頭值陣列
-; count i64: 標頭數量
-; 返回 buf []byte: 編碼結果
-; 返回 n i64: 編碼長度
-; [encode-headers](#net.http3.encode-headers)
+; names: 前 count 項有效的標頭名稱陣列（定長 [16]str）
+; values: 與 names 一一對應的標頭值陣列（定長 [16]str）
+; count: 本批次要編碼的標頭對數量（≤16）
+; 返回 buf []byte: 依序拼接各標頭 QPACK 編碼的位元組緩衝
+; 返回 n i64: 編碼寫入 buf 的總位元組數
+; [encode-headers](#http3.encode-headers)
 encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) {
     pos = 0
 
@@ -180,12 +180,12 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
 }
 
 ; 從 buf 的 pos 位置解碼一個標頭
-; buf []byte: 資料緩衝區
-; pos i64: 起始位置
-; 返回 name str: 標頭名稱
-; 返回 value str: 標頭值
-; 返回 next-pos i64: 下一個位置（-1=錯誤）
-; [decode-header](#net.http3.decode-header)
+; buf: 待解碼的 QPACK 位元組緩衝
+; pos: 本次解碼在 buf 中的起始位移
+; 返回 name str: 解出的標頭名稱
+; 返回 value str: 解出的標頭值
+; 返回 next-pos i64: 下一個標頭起始位移；-1 表示資料不足或格式錯誤
+; [decode-header](#http3.decode-header)
 decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos = pos
 
@@ -247,11 +247,11 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 ; ═══════════════════════════════════════════════
 
 ; 編碼 HTTP/3 影格
-; frame-type i64: 影格類型
-; payload []byte: 影格資料
-; 返回 buf []byte: 編碼結果
-; 返回 n i64: 編碼長度
-; [encode-frame](#net.http3.encode-frame)
+; frame-type: HTTP/3 影格類型碼（varint 編碼，如 0x00 DATA、0x01 HEADERS）
+; payload: 影格負載位元組（其長度以 varint 前置）
+; 返回 buf []byte: 類型＋長度＋負載串接後的完整影格緩衝
+; 返回 n i64: 編碼後的影格總位元組數
+; [encode-frame](#http3.encode-frame)
 encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
 
     pos = 0
@@ -296,12 +296,12 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
 }
 
 ; 編碼 HEADERS 影格
-; names [16]str: 標頭名稱陣列
-; values [16]str: 標頭值陣列
-; count i64: 標頭數量
-; 返回 buf []byte: 編碼結果
-; 返回 n i64: 編碼長度
-; [encode-headers-frame](#net.http3.encode-headers-frame)
+; names: 標頭名稱陣列（定長 [16]str，取前 count 項）
+; values: 對應的標頭值陣列（定長 [16]str）
+; count: 要編碼的標頭對數量
+; 返回 buf []byte: 類型為 HEADERS(0x01)、負載為 QPACK 標頭區塊的影格緩衝
+; 返回 n i64: 影格總位元組數
+; [encode-headers-frame](#http3.encode-headers-frame)
 encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n i64) {
 
     ; 先編碼 QPACK 標頭區塊
@@ -313,19 +313,19 @@ encode-headers-frame = (names [16]str, values [16]str, count i64) (buf []byte, n
 }
 
 ; 編碼 DATA 影格
-; data str: 資料
-; 返回 buf []byte: 編碼結果
-; 返回 n i64: 編碼長度
-; [encode-data-frame](#net.http3.encode-data-frame)
+; data: 要放入 DATA 影格的請求／回應主體字串
+; 返回 buf []byte: 類型為 DATA(0x00)、負載為 data 位元組的影格緩衝
+; 返回 n i64: 影格總位元組數
+; [encode-data-frame](#http3.encode-data-frame)
 encode-data-frame = (data str) (buf []byte, n i64) {
     payload = data.to-bytes()
     buf, n = encode-frame(0x00, payload)
 }
 
 ; 編碼 SETTINGS 影格（空設定）
-; 返回 buf []byte: 編碼結果
-; 返回 n i64: 編碼長度
-; [encode-settings-frame](#net.http3.encode-settings-frame)
+; 返回 buf []byte: 空 SETTINGS 影格（類型 0x04＋長度 0，共 2 位元組）
+; 返回 n i64: 影格總位元組數（恆為 2）
+; [encode-settings-frame](#http3.encode-settings-frame)
 encode-settings-frame = () (buf []byte, n i64) {
 
     ; 空 SETTINGS（無參數）
@@ -338,12 +338,12 @@ encode-settings-frame = () (buf []byte, n i64) {
 }
 
 ; 從 buf 的 pos 位置解析一個 HTTP/3 影格
-; buf []byte: 資料緩衝區
-; pos i64: 起始位置
-; 返回 frame-type i64: 影格類型
-; 返回 payload []byte: 影格資料
-; 返回 next-pos i64: 下一個位置（-1=錯誤）
-; [parse-frame](#net.http3.parse-frame)
+; buf: 含一個或多個 HTTP/3 影格的位元組緩衝
+; pos: 本次解析在 buf 中的起始位移
+; 返回 frame-type i64: 解出的影格類型碼
+; 返回 payload []byte: 影格負載位元組切片
+; 返回 next-pos i64: 下一個影格起始位移；-1 表示資料不足或格式錯誤
+; [parse-frame](#http3.parse-frame)
 parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i64) {
     r-pos = pos
 
@@ -395,9 +395,9 @@ response {
 }
 
 ; 取得標頭值
-; name str: 標頭名稱（不區分大小寫）
-; 返回 val ?str: ok=值, nil=未找到
-; [get-header](#net.http3.response.get-header)
+; name: 要查詢的標頭名稱（比對時不區分大小寫）
+; 返回 val ?str: ok=對應標頭值, nil=未找到該標頭
+; [get-header](#http3.response.get-header)
 response.get-header = (name str) (val ?str) {
     val = nil
     target = name.to-lower()
@@ -417,12 +417,12 @@ response.get-header = (name str) (val ?str) {
 ; ═══════════════════════════════════════════════
 
 ; 解析 HTTPS URL
-; url str: 完整 URL（如 https://host:port/path）
-; 返回 host str: 主機名
-; 返回 port i64: 埠號
-; 返回 path str: 路徑
-; 返回 ok bool: true=成功
-; [parse-url](#net.http3.parse-url)
+; url: 以 'https://' 開頭的完整 URL（如 https://host:port/path）
+; 返回 host str: 剝除埠號後的主機名
+; 返回 port i64: 埠號（URL 未附埠號時為 HTTP3-DEFAULT-PORT）
+; 返回 path str: 請求路徑（無路徑時為 '/'）
+; 返回 ok bool: true=解析成功, false=前綴非法或埠號含非數字
+; [parse-url](#http3.parse-url)
 parse-url = (url str) (host str, port i64, path str, ok bool) {
     ok = false
     port = HTTP3-DEFAULT-PORT
@@ -468,22 +468,22 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; 建立 HTTP/3 連線
-; host str: 伺服器主機名或 IP
-; port i64: 埠號
-; 返回 conn ?quic.conn: ok=連線, nil=失敗
-; [connect](#net.http3.connect)
+; host: 伺服器主機名或 IP
+; port: HTTP/3（QUIC/UDP）埠號
+; 返回 conn ?quic.conn: ok=已建立的 QUIC 連線, nil/err=撥接失敗
+; [connect](#http3.connect)
 connect = (host str, port i64) (conn ?quic.conn) {
     conn = quic.dial(host, port)
 }
 
 ; 在 QUIC 連線上發送 HTTP/3 請求
-; conn quic.conn: QUIC 連線
-; method str: HTTP 方法
-; path str: 請求路徑
-; host str: 主機名
-; body str: 請求主體（空字串=無主體）
-; 返回 resp ?response: ok=回應, nil=失敗
-; [send-request](#net.http3.send-request)
+; conn: 已建立的 QUIC 連線（於其串流上收發）
+; method: HTTP 方法（填入 :method 標頭）
+; path: 請求路徑（填入 :path 標頭）
+; host: 主機名（填入 :authority 標頭）
+; body: 請求主體字串（空字串表示無主體）
+; 返回 resp ?response: ok=解析後的回應, nil=傳送或接收失敗
+; [send-request](#http3.send-request)
 send-request = (conn quic.conn, method str, path str, host str, body str) (resp ?response) {
 
     resp = nil
@@ -791,9 +791,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 ; ═══════════════════════════════════════════════
 
 ; 發送 HTTP/3 GET 請求
-; url str: 完整 URL（如 https://example.com/path）
-; 返回 resp ?response: ok=回應, nil=失敗
-; [get](#net.http3.get)
+; url: 完整 URL（如 https://example.com/path）
+; 返回 resp ?response: ok=GET 回應, nil=URL 非法／連線失敗／無回應
+; [get](#http3.get)
 get = (url str) (resp ?response) {
     resp = nil
     host = ''
@@ -813,10 +813,10 @@ get = (url str) (resp ?response) {
 }
 
 ; 發送 HTTP/3 POST 請求
-; url str: 完整 URL
-; body str: 請求主體
-; 返回 resp ?response: ok=回應, nil=失敗
-; [post](#net.http3.post)
+; url: 完整 URL
+; body: POST 請求主體字串
+; 返回 resp ?response: ok=POST 回應, nil=URL 非法／連線失敗／無回應
+; [post](#http3.post)
 post = (url str, body str) (resp ?response) {
     resp = nil
     host = ''
@@ -836,11 +836,11 @@ post = (url str, body str) (resp ?response) {
 }
 
 ; 發送一般 HTTP/3 請求
-; method str: HTTP 方法（GET、POST、PUT、DELETE 等）
-; url str: 完整 URL
-; body str: 請求主體（空字串=無主體）
-; 返回 resp ?response: ok=回應, nil=失敗
-; [http3-do](#net.http3.http3-do)
+; method: HTTP 方法（GET、POST、PUT、DELETE 等）
+; url: 完整 URL
+; body: 請求主體字串（空字串表示無主體）
+; 返回 resp ?response: ok=回應, nil=URL 非法／連線失敗／無回應
+; [http3-do](#http3.http3-do)
 http3-do = (method str, url str, body str) (resp ?response) {
     resp = nil
     host = ''

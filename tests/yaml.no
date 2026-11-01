@@ -1,26 +1,33 @@
-; yaml.no — YAML 标准库模块测试
+; yaml.no — YAML 標準庫模塊測試
 ;
-; 覆盖 YAML 1.2 core schema 的主要特性：
-;   块映射 / 块序列 / 流式集合 / 三种引号标量 / 块标量 | 与 >
-;   注释与空行 / 文档标记与多文档 / 锚点与别名 / 合并键 << / 显式键 ? k
-;   core schema 类型推断 / 点号路径查询 / JSON 与 YAML 序列化 / 错误报告
+; 覆蓋 YAML 1.2 core schema 的主要特性：
+;   塊映射 / 塊序列 / 流式集合 / 三種引號標量 / 塊標量 | 與 >
+;   注释與空行 / 文檔標記與多文檔 / 锚點與别名 / 合並键 << / 顯式键 ? k
+;   core schema 類型推斷 / 點號路径查詢 / JSON 與 YAML 序列化 / 錯誤報告
 ;
-; 子节点视图以 (out yaml, ok bool) 返回，不用 ?yaml —— MIR 后端目前不能安全地
-; 把含 vec 的节点池装进 option 交还调用方（调用方释放时会连带释放父文档缓冲）。
+; 子節點視圖以 (out yaml, ok bool) 返回，不用 ?yaml —— MIR 後端目前不能安全地
+; 把含 vec 的節點池裝進 option 交還調用方（調用方释放時會連帶释放父文檔緩衝）。
 ;
-; 本测试为纯计算，不需要网络，可直接执行。
+; 本測試為純計算，不需要網絡，可直接執行。
 
 ; ═══════════════════════════════════════════════
 ; 辅助
 ; ═══════════════════════════════════════════════
 
+; 基礎斷言：依布林結果印出帶測試項名的 ok/fail 行
+; name: 測試項顯示名稱（原樣印入 ok/fail 行）
+; cond: true 印 ok、false 印 fail 的斷言結果
 check = (name str, cond bool) {
     cond -> print('ok: {name}')
 
     -> print('fail: {name}')
 }
 
-; 断言字符串路径等于期望值
+; 解析 src 後斷言 path 處的字串值與 want 相等
+; name: 測試項顯示名稱
+; src: 待解析的 YAML 原文
+; path: 以點分隔的取值路徑（如 a.b.0）
+; want: 期望字串值（與 find-str 結果相符才算通過）
 check-str = (name str, src str, path str, want str) {
     d = yaml.parse(src)
     d: {
@@ -49,7 +56,11 @@ check-str = (name str, src str, path str, want str) {
     }
 }
 
-; 断言整数路径等于期望值
+; 解析 src 後斷言 path 處的整數值與 want 相等
+; name: 測試項顯示名稱
+; src: 待解析的 YAML 原文
+; path: 以點分隔的取值路徑
+; want: 期望整數值（與 find-i64 結果相符才算通過）
 check-i64 = (name str, src str, path str, want i64) {
     d = yaml.parse(src)
     d: {
@@ -79,9 +90,10 @@ check-i64 = (name str, src str, path str, want i64) {
 }
 
 ; ═══════════════════════════════════════════════
-; 1. 块映射 + core schema 类型推断
+; 1. 塊映射 + core schema 類型推斷
 ; ═══════════════════════════════════════════════
 
+; 標量測試：校驗 core schema 對 null/~/(空)/true/FALSE/yes/整數/負數/hex/八進位/千分位/浮點/指數/.inf/.nan 的類型推斷與 str 取值
 t-scalars = () {
     src = 'a-null: null\nb-tilde: ~\nc-empty:\nd-true: true\ne-false: FALSE\nf-yes: yes\ng-int: 42\nh-neg: -7\ni-hex: 0x1F\nj-oct: 0o17\nk-sep: 1_000\nl-float: 1.5\nm-exp: 1e3\nn-inf: .inf\no-nan: .nan\n'
     d = yaml.parse(src)
@@ -98,7 +110,7 @@ t-scalars = () {
 
         -> {
 
-            ; null 家族：str() 应当失败
+            ; null 家族：str() 應當失败
             o-a-null = it.find-str('a-null')
             f1 = false
             o-a-null: {
@@ -147,7 +159,7 @@ t-scalars = () {
             check('bool true', g1 && b1)
             check('bool FALSE', g2 && ! b2)
 
-            ; YAML 1.2 core schema：yes 是字符串（不是 YAML 1.1 的布尔）
+            ; YAML 1.2 core schema：yes 是字符串（不是 YAML 1.1 的布爾）
             o-f-yes = it.find-str('f-yes')
             s1 = ''
             h1 = false
@@ -206,7 +218,7 @@ t-scalars = () {
             }
             check('.inf', p3 && r3 > 1000000000.0)
 
-            ; .nan：后端无法产生真正的 NaN，用 is-nan() 判定
+            ; .nan：後端無法產生真正的 NaN，用 is-nan() 判定
             o-nan = it.find('o-nan')
             o-nan: {
                 ok -> check('.nan', it.is-nan())
@@ -221,9 +233,10 @@ t-scalars = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 2. 块序列与嵌套
+; 2. 塊序列與嵌套
 ; ═══════════════════════════════════════════════
 
+; 塊序列與嵌套：校驗 top.N、嵌套 matrix 路徑取值，以及 len/is-seq/is-map/at 的行為
 t-block-seq = () {
     src = 'top:\n  - one\n  - two\n  - three\nnums:\n  - 1\n  - 2\n  - 3\npeople:\n  - name: Alice\n    age: 30\n  - name: Bob\n    age: 25\nmatrix:\n  - - 1\n    - 2\n  - - 3\n    - 4\n'
     d = yaml.parse(src)
@@ -275,6 +288,7 @@ t-block-seq = () {
 ; 3. 流式集合
 ; ═══════════════════════════════════════════════
 
+; 流式集合：校驗流式序列 [] 與流式映射 {}、巢狀結構、跨行流序列及空 []/{} 的解析
 t-flow = () {
     src = 'flow-seq: [1, 2, three]\nflow-map: {a: 1, b: two}\nnested: {list: [1, {k: v}], n: 5}\nmultiline: [\n  1,\n  2\n]\nempty-seq: []\nempty-map: {}\n'
     d = yaml.parse(src)
@@ -310,9 +324,10 @@ t-flow = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 4. 引号标量
+; 4. 引號標量
 ; ═══════════════════════════════════════════════
 
+; 引號標量：校驗單引號  轉義、雙引號 \t \n \" 轉義、引號內 # 與冒號的處理，以及被引號的數字/布林仍作字串
 t-quoted = () {
     src = 'single: \'it\'\'s ok\'\ndouble: "a\\tb\\nc"\nplain-hash: a # comment\nquoted-hash: \'a # not comment\'\ndq-quote: "say \\"hi\\""\nempty-s: \'\'\nnum-as-str: \'123\'\nbool-as-str: "true"\ncolon-in-sq: \'a: b\'\n'
     d = yaml.parse(src)
@@ -336,9 +351,10 @@ t-quoted = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 5. 块标量 | 与 >
+; 5. 塊標量 | 與 >
 ; ═══════════════════════════════════════════════
 
+; 塊標量：校驗字面 | 與摺號 > 塊語義，及 |- (chomp 去除) 與 |+ (chomp 保留) 三種修剪模式
 t-block-scalar = () {
     src = 'literal: |\n  line1\n  line2\nfolded: >\n  word1\n  word2\nstrip: |-\n  tail\nkeep: |+\n  kept\n\n'
     d = yaml.parse(src)
@@ -362,9 +378,10 @@ t-block-scalar = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 6. 注释、空行、文档标记
+; 6. 注释、空行、文檔標記
 ; ═══════════════════════════════════════════════
 
+; 註釋與文件標記：校驗前導/行末註釋被剝離、空行，以及 --- / ... 標記間仍可取值
 t-comments = () {
     src = '# leading comment\n\n---\n# comment inside\nkey: value   # trailing\n\nother: 1\n...\n'
     d = yaml.parse(src)
@@ -381,9 +398,10 @@ t-comments = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 7. 多文档
+; 7. 多文檔
 ; ═══════════════════════════════════════════════
 
+; 多文件：以 --- 分隔的多文件經 parse-all 拆分，校驗 doc-count 與各 doc(i) 的 name
 t-multi-doc = () {
     src = '---\nname: first\n---\nname: second\n---\nname: third\n'
     all = yaml.parse-all(src)
@@ -453,9 +471,10 @@ t-multi-doc = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 8. 锚点 / 别名 / 合并键 / 显式键
+; 8. 锚點 / 别名 / 合並键 / 顯式键
 ; ═══════════════════════════════════════════════
 
+; 錨點、別名與合併鍵：校驗 &b 定義、*b 別名引用、<< 合併鍵繼承與本地覆蓋、顯式鍵 ? k，以及 anchor()/line-of()
 t-anchor-merge = () {
     src = 'base: &b\n  x: 1\n  y: 2\nref: *b\nmerged:\n  <<: *b\n  y: 9\nexplicit:\n  ? complex key\n  : complex value\n'
     d = yaml.parse(src)
@@ -487,9 +506,10 @@ t-anchor-merge = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 9. 遍历 API
+; 9. 遍歷 API
 ; ═══════════════════════════════════════════════
 
+; 遍歷 API：校驗映射的 key(i) 逐一取鍵與 len 條目數（a/b/c 三鍵文件）
 t-walk = () {
     src = 'a: 1\nb: two\nc: true\n'
     d = yaml.parse(src)
@@ -578,10 +598,10 @@ t-walk = () {
                 -> _
             }
 
-            ; 取完子节点后父文档仍可用
+            ; 取完子節點後父文檔仍可用
             check('父文档在取子节点后仍可用', it.len() == 3)
 
-            ; 越界访问
+            ; 越界訪問
             vx = it.at(99)
             at99 = false
             vx: {
@@ -619,6 +639,7 @@ t-walk = () {
 ; 10. 序列化
 ; ═══════════════════════════════════════════════
 
+; 序列化與往返：校驗 to-json/stringify 依類型輸出正確 JSON/YAML 文本，且 stringify 可再解析取回等值
 t-serialize = () {
     src = 'name: Alice\nage: 30\nactive: true\nnone: null\ntags:\n  - a\n  - b\n'
     d = yaml.parse(src)
@@ -639,7 +660,7 @@ t-serialize = () {
             check('stringify 保留键值', ys.contains('name: Alice'))
             check('stringify 缩进序列', ys.contains('- a'))
 
-            ; 往返：把输出重新解析，值应一致
+            ; 往返：把输出重新解析，值應一致
             again ?yaml = yaml.parse(ys)
             again: {
                 nil -> print('fail: round-trip (nil)')
@@ -678,9 +699,10 @@ t-serialize = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 11. 错误报告
+; 11. 錯誤報告
 ; ═══════════════════════════════════════════════
 
+; 錯誤報告：校驗 valid-of/error-of 對合法與非法 YAML 的判定與原因給出，且 parse 對非法輸入返回 err（而非 nil）
 t-errors = () {
     good = 'a: 1\n'
     bad = 'a: 1\n  b: 2\n'
@@ -701,9 +723,10 @@ t-errors = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 12. 综合文档与输出往返
+; 12. 综合文檔與输出往返
 ; ═══════════════════════════════════════════════
 
+; 綜合大文件往返：解析含巢狀映射/序列/流式/塊標量/hex/空集合的混合文件，校驗 to-yaml 輸出可被自身重新解析且值一致
 t-round-trip = () {
     src = '# app config\nversion: 2\nname: "demo app"\ndebug: false\nratio: 0.75\nhex: 0xFF\nserver:\n  host: localhost\n  port: 8080\n  tags:\n    - web\n    - api\n  limits: {cpu: 2, mem: 512}\nusers:\n  - name: alice\n    roles: [admin, dev]\n  - name: bob\n    roles: []\ndesc: |\n  line one\n  line two\nempty-map: {}\nempty-seq: []\n'
     d = yaml.parse(src)
@@ -727,7 +750,7 @@ t-round-trip = () {
             check('to-yaml 空序列内联', ys.contains('empty-seq: []'))
             check('to-yaml 序列内映射不重复缩进', ys.contains('- name: alice'))
 
-            ; 输出必须能被自己重新解析，且值保持一致
+            ; 输出必須能被自己重新解析，且值保持一致
             again ?yaml = yaml.parse(ys)
             again: {
                 nil -> print('fail: big round-trip (nil)')
@@ -781,6 +804,7 @@ t-round-trip = () {
 ; 13. BOM
 ; ═══════════════════════════════════════════════
 
+; BOM 處理：校驗 strip-bom 去除開頭 UTF-8 BOM，且帶 BOM 輸入仍能正常解析
 t-bom = () {
     raw = '\xEF\xBB\xBFa: 1\n'
     check('strip-bom 去掉 BOM', yaml.strip-bom(raw) == 'a: 1\n')
@@ -808,7 +832,7 @@ t-bom = () {
 }
 
 ; ═══════════════════════════════════════════════
-; 驱动
+; 驱動
 ; ═══════════════════════════════════════════════
 
 print('start')

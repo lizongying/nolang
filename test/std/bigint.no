@@ -20,6 +20,7 @@
 
 ; ── 建構 ──────────────────────────────────────
 
+; 驗證 from-i64 構造 bigint 後 to-str 對正/負/零皆正確往返
 t-from-i64 = () {
     a = bigint.from-i64(42)
     s = a.to-str()
@@ -32,6 +33,7 @@ t-from-i64 = () {
     runner.str-eq(s3, '0', 1, 'from-i64(0) to-str')
 }
 
+; 驗證 zero() / one() 兩個構造子分別產出字串 0 與 1
 t-zero-one = () {
     z = bigint.zero()
     zs = z.to-str()
@@ -43,6 +45,7 @@ t-zero-one = () {
 
 ; ── 比較 ──────────────────────────────────────
 
+; 驗證 cmp 比較兩值：小於回 -1、相等回 0、大於回 1
 t-cmp = () {
     a = bigint.from-i64(10)
     b = bigint.from-i64(20)
@@ -54,6 +57,7 @@ t-cmp = () {
     runner.eq(r3, 0, 'cmp(10, 10) == 0')
 }
 
+; 驗證 eq 判定兩個 bigint 是否相等
 t-eq = () {
     a = bigint.from-i64(42)
     b = bigint.from-i64(42)
@@ -64,6 +68,7 @@ t-eq = () {
     runner.is-false(yes2, 'eq(42, 43) == false')
 }
 
+; 驗證 is-zero 判定是否為零值
 t-is-zero = () {
     z = bigint.zero()
     yes1 = z.is-zero()
@@ -73,6 +78,7 @@ t-is-zero = () {
     runner.is-false(yes2, '5 is-zero == false')
 }
 
+; 驗證 is-neg 判定是否為負數
 t-is-neg = () {
     n = bigint.from-i64(-42)
     yes1 = n.is-neg()
@@ -84,6 +90,7 @@ t-is-neg = () {
 
 ; ── 加減法 ────────────────────────────────────
 
+; 驗證 + 運算子相加兩個 bigint（含正負混合）
 t-add = () {
     a = bigint.from-i64(10)
     b = bigint.from-i64(20)
@@ -97,6 +104,7 @@ t-add = () {
     runner.str-eq(s2, '3', 1, 'add(-5, 8) == 3')
 }
 
+; 驗證 - 運算子相減兩個 bigint，小減大得負值
 t-sub = () {
     a = bigint.from-i64(20)
     b = bigint.from-i64(10)
@@ -112,6 +120,7 @@ t-sub = () {
 
 ; ── 乘法 ──────────────────────────────────────
 
+; 驗證 * 運算子相乘兩個 bigint（負因式保留符號）
 t-mul = () {
     a = bigint.from-i64(6)
     b = bigint.from-i64(7)
@@ -127,6 +136,7 @@ t-mul = () {
 
 ; ── 除法 ──────────────────────────────────────
 
+; 驗證 div-mod 同時回傳商與餘數（100 除以 7 得 14 餘 2）
 t-div-mod = () {
     a = bigint.from-i64(100)
     b = bigint.from-i64(7)
@@ -149,7 +159,7 @@ t-mod-public = () {
     runner.str-eq(z.to-str(), '0', 1, '100 % 0 == 0（除零回傳零，對齊 div-mod）')
 }
 
-; to-i64：把值域受限的 bigint 取回 i64 的公開出口。測的是「不静默截断」這個契約。
+; to-i64：把值域受限的 bigint 取回 i64 的公開出口。測的是「不靜默截斷」這個契約。
 t-to-i64 = () {
     a = bigint.from-i64(4503599627370496)
     av ?i64 = a.to-i64()
@@ -167,7 +177,7 @@ t-to-i64 = () {
     }
     runner.eq(nrv, -123, 'to-i64 keeps the sign')
 
-    ; 2^63（正）出界：必須 err，不能截断成低位
+    ; 2^63（正）出界：必須 err，不能截斷成低位
     p63 = bigint.shl(bigint.one(), 63)
     o63 ?i64 = p63.to-i64()
     ok63 = o63: {
@@ -176,7 +186,7 @@ t-to-i64 = () {
     }
     runner.eq(ok63, 0, 'to-i64(2^63) is err, not a truncated value')
 
-    ; 3 個 limb（2^64）由長度守衛直接挡掉
+    ; 3 個 limb（2^64）由長度守衛直接擋掉
     p64 = bigint.shl(bigint.one(), 64)
     o64 ?i64 = p64.to-i64()
     ok64 = o64: {
@@ -199,6 +209,7 @@ t-to-i64 = () {
 
 ; ── 冪運算 ────────────────────────────────────
 
+; 驗證 pow 求整數冪（含零次冪恆為 1）
 t-pow = () {
     a = bigint.from-i64(2)
     c = a.pow(10)
@@ -212,6 +223,7 @@ t-pow = () {
 
 ; ── GCD/LCM ───────────────────────────────────
 
+; 驗證 gcd 求兩數最大公因數
 t-gcd = () {
     a = bigint.from-i64(12)
     b = bigint.from-i64(8)
@@ -220,6 +232,7 @@ t-gcd = () {
     runner.str-eq(s, '4', 1, 'gcd(12, 8) == 4')
 }
 
+; 驗證 lcm 求兩數最小公倍數
 t-lcm = () {
     a = bigint.from-i64(4)
     b = bigint.from-i64(6)

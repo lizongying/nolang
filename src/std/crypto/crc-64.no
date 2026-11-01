@@ -9,10 +9,10 @@
 ; CRC-64 反射多項式（0xC96C5795D7870F42 = reflect(0x42F0E1EBA9EA3693)）
 ; 由於 64-bit 常量可能溢出，使用多項式逐位計算
 
-; 計算 CRC-64 校驗和（ECMA-182，反射）
-; data []byte: 輸入資料
-; 返回 crc u64: 64-bit 校驗和
-; [new](#crypto.crc-64.new)
+; 計算 CRC-64/ECMA-182（反射多項式 0xC96C5795D7870F42，初值全 1）校驗和
+; data []byte: 輸入位元組，全部參與計算
+; crc u64: 64-bit 校驗和（已做最終 xorout）
+; [new](#crc-64.new)
 new = (data []byte) (crc u64) {
     mask u64 = 18446744073709551615
 
@@ -36,10 +36,10 @@ new = (data []byte) (crc u64) {
     }
 }
 
-; 計算 CRC-64 並返回 hex 字串
-; data []byte: 輸入資料
-; 返回 hex str: 16 字元 hex 字串
-; [hex](#crypto.crc-64.hex)
+; 計算 CRC-64 並返回 16 位小寫 hex 字串
+; data []byte: 輸入位元組，全部參與計算
+; hex str: 固定 16 字元的十六進位表示（高位在前，不含 0x 前綴）
+; [hex](#crc-64.hex)
 hex = (data []byte) (hex str) {
     crc = new(data)
     hex-chars = '0123456789abcdef'

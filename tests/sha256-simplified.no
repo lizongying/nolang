@@ -17,6 +17,8 @@ bit-len = dlen * 8
 print('bit-len')
 print(bit-len)
 
+; 取餘 val-opt
+; dlen 為前面的資料長度（位元組）；(dlen + 9) % 64 是補上 0x80 與 8 位元組長度後的餘數
 mod-val-opt = (dlen + 9) % 64
 mod-val i64 = 0
 mod-val-opt: {

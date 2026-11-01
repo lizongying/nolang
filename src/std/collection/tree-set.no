@@ -56,7 +56,7 @@ tree-set {
 ; ═══════════════════════════════════════════════
 
 ; 初始化空樹與空閒節點池
-; [init](#collection.tree-set.tree-set.init)
+; [init](#tree-set.tree-set.init)
 tree-set.init = () {
 
     .root = -1
@@ -80,7 +80,7 @@ tree-set.init = () {
 
 ; 從空閒池分配節點
 ; 返回 idx i64: 節點索引，-1=池已滿
-; [alloc-node](#collection.tree-set.tree-set.alloc-node)
+; [alloc-node](#tree-set.tree-set.alloc-node)
 tree-set.alloc-node = () (idx i64) {
     idx = .free-head
     idx < 0 -> return
@@ -98,7 +98,7 @@ tree-set.alloc-node = () (idx i64) {
 
 ; 將節點歸還空閒池
 ; idx i64: 要釋放的節點索引
-; [free-node](#collection.tree-set.tree-set.free-node)
+; [free-node](#tree-set.tree-set.free-node)
 tree-set.free-node = (idx i64) {
 
     .left[idx] = .free-head
@@ -112,7 +112,7 @@ tree-set.free-node = (idx i64) {
 ; 取得節點高度（NIL=0）
 ; idx i64: 節點索引
 ; 返回 h i64: 高度
-; [ht](#collection.tree-set.tree-set.ht)
+; [ht](#tree-set.tree-set.ht)
 tree-set.ht = (idx i64) (h i64) {
     h = 0
     idx < 0 -> return
@@ -122,7 +122,7 @@ tree-set.ht = (idx i64) (h i64) {
 
 ; 重新計算節點高度
 ; idx i64: 節點索引
-; [update-ht](#collection.tree-set.tree-set.update-ht)
+; [update-ht](#tree-set.tree-set.update-ht)
 tree-set.update-ht = (idx i64) {
 
     lh = .ht(.left[idx])
@@ -136,7 +136,7 @@ tree-set.update-ht = (idx i64) {
 ; 取得平衡因子（左高 - 右高）
 ; idx i64: 節點索引
 ; 返回 b i64: 平衡因子
-; [bf](#collection.tree-set.tree-set.bf)
+; [bf](#tree-set.tree-set.bf)
 tree-set.bf = (idx i64) (b i64) {
 
     lh = .ht(.left[idx])
@@ -158,7 +158,7 @@ tree-set.bf = (idx i64) (b i64) {
 ;      / \          / \
 ;     b   c        a   b
 ; x i64: 旋轉軸節點
-; [rot-left](#collection.tree-set.tree-set.rot-left)
+; [rot-left](#tree-set.tree-set.rot-left)
 tree-set.rot-left = (x i64) {
 
     y = .right[x]
@@ -202,7 +202,7 @@ tree-set.rot-left = (x i64) {
 ;    / \                / \
 ;   a   b              b   c
 ; x i64: 旋轉軸節點
-; [rot-right](#collection.tree-set.tree-set.rot-right)
+; [rot-right](#tree-set.tree-set.rot-right)
 tree-set.rot-right = (x i64) {
 
     y = .left[x]
@@ -246,7 +246,7 @@ tree-set.rot-right = (x i64) {
 ; 在節點 idx 檢查並修復平衡
 ; idx i64: 節點索引
 ; 返回 nr i64: 再平衡後的子樹根索引
-; [rebalance](#collection.tree-set.tree-set.rebalance)
+; [rebalance](#tree-set.tree-set.rebalance)
 tree-set.rebalance = (idx i64) (nr i64) {
     nr = idx
     b = .bf(idx)
@@ -285,7 +285,7 @@ tree-set.rebalance = (idx i64) (nr i64) {
 
 ; 從 idx 向上逐層再平衡
 ; idx i64: 起始節點索引
-; [rebalance-up](#collection.tree-set.tree-set.rebalance-up)
+; [rebalance-up](#tree-set.tree-set.rebalance-up)
 tree-set.rebalance-up = (idx i64) {
     r-idx = idx
     (r-idx >= 0) {
@@ -298,7 +298,7 @@ tree-set.rebalance-up = (idx i64) {
 ; 求節點的中序後繼
 ; idx i64: 節點索引
 ; 返回 succ i64: 後繼索引，-1=無後繼
-; [successor](#collection.tree-set.tree-set.successor)
+; [successor](#tree-set.tree-set.successor)
 tree-set.successor = (idx i64) (succ i64) {
     r-idx = idx
     succ = -1
@@ -332,7 +332,7 @@ tree-set.successor = (idx i64) (succ i64) {
 ; 加入元素
 ; key i64: 要加入的值
 ; 返回 ok bool: true=新增, false=已存在或池已滿
-; [add](#collection.tree-set.tree-set.add)
+; [add](#tree-set.tree-set.add)
 tree-set.add = (key i64) (ok bool) {
 
     ; 空樹
@@ -405,7 +405,7 @@ tree-set.add = (key i64) (ok bool) {
 ; 檢查元素是否存在
 ; key i64: 要檢查的值
 ; 返回 yes bool: true=存在, false=不存在
-; [contains](#collection.tree-set.tree-set.contains)
+; [contains](#tree-set.tree-set.contains)
 tree-set.contains = (key i64) (yes bool) {
     idx = .root
     (idx >= 0) {
@@ -428,7 +428,7 @@ tree-set.contains = (key i64) (yes bool) {
 ; 刪除元素
 ; key i64: 要刪除的值
 ; 返回 ok bool: true=已刪除, false=未找到
-; [remove](#collection.tree-set.tree-set.remove)
+; [remove](#tree-set.tree-set.remove)
 tree-set.remove = (key i64) (ok bool) {
 
     ; BST 搜尋
@@ -505,7 +505,7 @@ tree-set.remove = (key i64) (ok bool) {
 
 ; 取得最小值
 ; 返回 val ?i64: ok=最小值, nil=空集合
-; [first](#collection.tree-set.tree-set.first)
+; [first](#tree-set.tree-set.first)
 tree-set.first = () (val ?i64) {
     idx = .root
     idx < 0 -> {
@@ -522,7 +522,7 @@ tree-set.first = () (val ?i64) {
 
 ; 取得最大值
 ; 返回 val ?i64: ok=最大值, nil=空集合
-; [last](#collection.tree-set.tree-set.last)
+; [last](#tree-set.tree-set.last)
 tree-set.last = () (val ?i64) {
     idx = .root
     idx < 0 -> {
@@ -540,7 +540,7 @@ tree-set.last = () (val ?i64) {
 ; 找第一個 ≥ target 的元素
 ; target i64: 目標值
 ; 返回 val ?i64: ok=找到, nil=無此元素
-; [lower-bound](#collection.tree-set.tree-set.lower-bound)
+; [lower-bound](#tree-set.tree-set.lower-bound)
 tree-set.lower-bound = (target i64) (val ?i64) {
     result = -1
     idx = .root
@@ -568,7 +568,7 @@ tree-set.lower-bound = (target i64) (val ?i64) {
 ; 找第一個 > target 的元素
 ; target i64: 目標值
 ; 返回 val ?i64: ok=找到, nil=無此元素
-; [upper-bound](#collection.tree-set.tree-set.upper-bound)
+; [upper-bound](#tree-set.tree-set.upper-bound)
 tree-set.upper-bound = (target i64) (val ?i64) {
     result = -1
     idx = .root
@@ -595,7 +595,7 @@ tree-set.upper-bound = (target i64) (val ?i64) {
 
 ; 按升序遍歷所有元素
 ; val i64: 輸出值（每個元素更新）
-; [for-each](#collection.tree-set.tree-set.for-each)
+; [for-each](#tree-set.tree-set.for-each)
 tree-set.for-each = () (val i64) {
     idx = .root
     idx < 0 -> return
@@ -619,7 +619,7 @@ tree-set.for-each = () (val i64) {
 ; ═══════════════════════════════════════════════
 
 ; 清空所有元素，重建空閒池
-; [clear](#collection.tree-set.tree-set.clear)
+; [clear](#tree-set.tree-set.clear)
 tree-set.clear = () {
 
     .root = -1
@@ -639,21 +639,21 @@ tree-set.clear = () {
 
 ; 返回元素數量
 ; 返回 sz i64: 元素數量
-; [size](#collection.tree-set.tree-set.size)
+; [size](#tree-set.tree-set.size)
 tree-set.size = () (sz i64) {
     sz = .size
 }
 
 ; 判斷是否為空
 ; 返回 yes bool: true=空, false=非空
-; [empty](#collection.tree-set.tree-set.empty)
+; [empty](#tree-set.tree-set.empty)
 tree-set.empty = () (yes bool) {
     yes = .size <= 0
 }
 
 ; 判斷節點池是否已滿
 ; 返回 yes bool: true=已滿, false=未滿
-; [full](#collection.tree-set.tree-set.full)
+; [full](#tree-set.tree-set.full)
 tree-set.full = () (yes bool) {
     yes = .free-head < 0
 }

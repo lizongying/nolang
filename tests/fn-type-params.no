@@ -8,23 +8,38 @@
 ; 在預設開關關閉下亦可運作。
 
 ; 具名函式型別定義
+; 具名函式型別：無參數、無輸出的回呼簽名
 greet-cb = ()
+; 具名函式型別：吃一個 i64、回一個 i64 的回呼簽名
+; n i64: 回呼會收到的輸入
+; r i64: 回呼要產生的結果
 compute-cb = (n i64) (r i64)
 
+; 回呼實作：只印 'hi'，不接參數也不回傳值
 greet = () {
     print('hi')
 }
 
+; 呼叫一次無參回呼（name 只當標籤）
+; name str: 呼叫標籤，本體未使用
+; cb greet-cb: 要執行的回呼
 test-run = (name str, cb greet-cb) {
     cb()
 }
 
+; 回呼實作：把輸入加一
+; n i64: 來源數值
+; r i64: n + 1（#{overflow=wrap}）
 add-one = (n i64) (r i64) {
 
     #{overflow=wrap}
     r = n + 1
 }
 
+; 把 cb 套用到 n：以函式型別參數做間接呼叫
+; n i64: 傳給回呼的數值
+; cb compute-cb: 回呼參考（具名函式型別）
+; out i64: 回呼回傳的結果
 apply = (n i64, cb compute-cb) (out i64) {
     out = cb(n)
 }

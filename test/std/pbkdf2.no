@@ -6,6 +6,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -24,26 +27,31 @@ bhex = (data []byte) (hex str) {
 PW = 'password'
 SALT = 'salt'
 
+; PBKDF2-HMAC-SHA256 向量（password='password'、salt='salt'、c=1、dk-len=32）
 t-sha256-c1 = () {
     out = pbkdf2.pbkdf2-hmac-sha256(PW.to-bytes(), SALT.to-bytes(), 1, 32)
     runner.str-eq(bhex(out), '120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b', 64, 'pbkdf2-sha256 c=1')
 }
 
+; 同一組輸入但 c=2：驗證多輪迭代（U1 XOR U2）的累加路徑
 t-sha256-c2 = () {
     out = pbkdf2.pbkdf2-hmac-sha256(PW.to-bytes(), SALT.to-bytes(), 2, 32)
     runner.str-eq(bhex(out), 'ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43', 64, 'pbkdf2-sha256 c=2')
 }
 
+; PBKDF2-HMAC-SHA1 向量（c=1，輸出 20 位元組）
 t-sha1-c1 = () {
     out = pbkdf2.pbkdf2-hmac-sha1(PW.to-bytes(), SALT.to-bytes(), 1, 20)
     runner.str-eq(bhex(out), '0c60c80f961f0e71f3a9b524af6012062fe037a6', 40, 'pbkdf2-sha1 c=1')
 }
 
+; PBKDF2-HMAC-SHA512（c=2）：檢驗 128 位元組摘要衍生與多區塊切分
 t-sha512-c2 = () {
     out = pbkdf2.pbkdf2-hmac-sha512(PW.to-bytes(), SALT.to-bytes(), 2, 64)
     runner.str-eq(bhex(out), 'e1d9c16aa681708a45f5c7c4e215ceb66e011a2e9f0040713f18aefdb866d53cf76cab2868a39b9f7840edce4fef5a82be67335c77a6068e04112754f27ccf4e', 128, 'pbkdf2-sha512 c=2')
 }
 
+; 輸出長度：要求 40 位元組（超過單一摘要區塊）應精確得到 40 位元組
 t-key-len = () {
     out = pbkdf2.pbkdf2-hmac-sha256(PW.to-bytes(), SALT.to-bytes(), 1, 40)
     runner.eq(out.len(), 40, 'pbkdf2 output length 40 honored')

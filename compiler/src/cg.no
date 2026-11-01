@@ -9,31 +9,62 @@
 ;   SALLOC / SSTORE / SLOAD（%str-long 跨基本块走 alloca，无 PHI）
 ;   VECNEW / VECPUSH / VECLEN / VECGET（%vec，元素仅 i64）
 ;   OPTNONE / OPTSOME / OPTTAG / OPTISOK / OPTGET（%option，i64 载荷）
+;   OPTMKSTR / OPTGETSTR（%option，str 载荷内联；%str-long 恰 24B = [3 x i64] 槽）
+;   STRUCT-MK / STRUCT-GET / STRUCT-SET（%struct.point，值语义；SET 是「读旧出新值」）
+;   STALLOC / STSTORE / STLOAD（%struct.point 跨基本块走 alloca %struct.point，无 PHI）
+;   RETAIN / RELEASE（%str-long 的 RC 发射原语；取 data 指针 call @nolang_rc_retain/release）
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
-; 向量值 → %vc<id>；option 值 → %op<id>；函数参数即值 id 1..nargs，其命名空间由 ptyps[] 决定。
+; 向量值 → %vc<id>；option 值 → %op<id>；结构体值 → %st<id>；结构体槽 → %sts<id>；
+; 函数参数即值 id 1..nargs，其命名空间由 ptyps[] 决定。
 ; 块标签：id 0 → entry，其余 → bb<id>。
 ;
 ; ⚠️ 本模块刻意【惰性】：目前只被 compiler/tests/cg-test.no 引用，尚未接 drv。
 
 # /compiler/src/util/sb.sb
 # /compiler/src/mir
+# /compiler/src/cg-runtime
 
 ; 块 id → LLVM 标签名（0 → entry，其余 → bb<id>）。
+; id: 數值
+; s: 結果字串
 cg-label = (id i64) (s str) {
     s = 'bb' + id.to-str()
     id == 0 -> s = 'entry'
 }
 
 ; 字符串字面量的数组长度（字节数 + 1，含结尾 NUL）。
+; t: 字串
+; n: 數量
 cg-strlen1 = (t str) (n i64) {
     n = t.len-bytes()
+
     #{overflow=wrap}
     n = n + 1
 }
 
+; 字面量全局符号名：`@.s.<函式名>.<指令下标>`（s34）。
+;   ⚠️ 全局符号在**模块**内唯一，而发射器是**逐函式**调用的 ⇒ 只按下标命名时，
+;      两个函数各自第 k 条 STRCONST 会撞成同名 ⇒ `opt: redefinition of global '@.s1'`。
+;      函式名在同一模块内唯一，前缀它即可零状态（不需要模块级计数器）。
+;   ⚠️ 带函式名还顺带让 IR 可读：一眼能看出字面量属于哪个函数。
+; fname: 字串
+; k: 數值
+; r: 結果字串
+cg-lit-name = (fname str, k i64) (r str) {
+    r = '@.s.' - fname - '.' - k.to-str()
+}
+
 ; 单块便捷入口（全部指令属块 0）。保留 M4-b 的 7 参数 API。
+; name: 名稱
+; nargs: 數值
+; ops: 容器
+; dsts: 容器
+; xa: 容器
+; bs: 容器
+; syms: 容器
+; r: 結果字串
 cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
     n = ops.len()
     z []i64 = [].with-len(n)
@@ -41,27 +72,41 @@ cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, 
 }
 
 ; 型别码 → LLVM 型别名（TY-I64 → 'i64'，其余是 prelude 里的具名型）。
+;   ⚠️ 实现已迁到 cg-runtime（s32）：结构体型别声明也要用它，而声明属于模块级装配点，
+;      不能反向依赖发射器 ⇒ 全库只有 cg-runtime-ty-name 一份映射，这里只做转发。
+; t: 數值
+; s: 結果字串
 cg-ty-name = (t i64) (s str) {
-    s = 'i64'
-    t == TY-STR -> s = '%str-long'
-    t == TY-VEC -> s = '%vec'
-    t == TY-OPT -> s = '%option'
+    s = cg-runtime-ty-name(t)
 }
 
-; 型别码 → 值命名空间前缀（%v / %sv / %vc / %op）。
+; 型别码 → 值命名空间前缀（%v / %sv / %vc / %op / %st）。
 ;   LLVM 里 SSA 名全局唯一，同名不同型直接报错 ⇒ 前缀必须跟着型别走。
+; t: 數值
+; s: 結果字串
 cg-val-prefix = (t i64) (s str) {
     s = '%v'
     t == TY-STR -> s = '%sv'
     t == TY-VEC -> s = '%vc'
     t == TY-OPT -> s = '%op'
+    t >= TY-STRUCT-BASE -> s = '%st'
 }
 
 ; 全部形参/返回值/值都是 i64 的便捷入口（M4-b 起的 8 参数 API）。
 ;   ⚠️ 这里**自己构造**全 0 的型别表（而不是让发射器「空表就当 i64」）——
 ;   s20 的教训：靠「空/0 即默认」的隐式约定，漏填就是静默退化。
+; name: 名稱
+; nargs: 數值
+; blks: 容器
+; ops: 容器
+; dsts: 容器
+; xa: 容器
+; bs: 容器
+; syms: 容器
+; r: 結果字串
 cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
     n = ops.len()
+
     #{overflow=wrap}
     m = n + 1
     ty []i64 = [].with-len(nargs)
@@ -76,15 +121,30 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
 ;            CALL 的实参型别与值命名空间都从这里取，不需要额外的调用点签名。
 ; cty[k]   = 第 k 条指令**结果**的型别码（CALL 的结果型别靠它）。
 ; blks[k]  = 第 k 条指令所属块 id；块切换处发标签。
+; name: 名稱
+; retty: 數值
+; nargs: 數值
+; ptyps: 容器
+; vty: 容器
+; cty: 容器
+; blks: 容器
+; ops: 容器
+; dsts: 容器
+; xa: 容器
+; bs: 容器
+; syms: 容器
+; r: 結果字串
 cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
     b = sb.init(1024)
     n = ops.len()
-    ; 前置：为每个 OP-STRCONST 发字符串字面量全局（顶层，须在 define 之前）。
+
+    ; 前置：每个 OP-STRCONST 的字符串字面量全局（顶层实体，必须在 define 之前）。
+    ; ⚠️ 结构体型别 `%struct.point` **不在这里发**——它由 prelude（cg-runtime-struct-type）
+    ;    唯一发射。若每函式各发一次，多函式模块会报 "redefinition of type named"。
     g <- [0..n): {
         ops[g] == OP-STRCONST -> {
             t = syms[g]
-            b.push('@.s')
-            b.push(g.to-str())
+            b.push(cg-lit-name(name, g))
             b.push(' = private unnamed_addr constant [')
             b.push(cg-strlen1(t).to-str())
             b.push(' x i8] c"')
@@ -99,6 +159,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
     b.push('(')
     q = 0
     p = 1
+
     #{overflow=wrap}
     (q < nargs) {
         q > 0 -> b.push(', ')
@@ -107,8 +168,10 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         b.push(' ')
         b.push(cg-val-prefix(pt))
         b.push(p.to-str())
+
         #{overflow=wrap}
         q = q + 1
+
         #{overflow=wrap}
         p = p + 1
     }
@@ -158,6 +221,69 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(y.to-str())
             b.push('\n')
         }
+        op == OP-AND -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = and i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-OR -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = or i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-XOR -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = xor i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-SHL -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = shl i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-SHR -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = ashr i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-DIV -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = sdiv i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-MOD -> {
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = srem i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n')
+        }
         op == OP-CALL -> {
             rt = cty[k]
             b.push('\t')
@@ -168,6 +294,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' @')
             b.push(syms[k])
             b.push('(')
+
             ; 参数：值 id x .. x+y-1（连续），y = bs[k] 个；每个的型别查 vty[]
             q = x
             j = 0
@@ -178,8 +305,10 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 b.push(' ')
                 b.push(cg-val-prefix(at))
                 b.push(q.to-str())
+
                 #{overflow=wrap}
                 q = q + 1
+
                 #{overflow=wrap}
                 j = j + 1
             }
@@ -217,6 +346,71 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(' to i64\n')
         }
+        op == OP-CMPEQ -> {
+            b.push('\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp eq i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %c')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-CMPNE -> {
+            b.push('\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp ne i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %c')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-CMPLE -> {
+            b.push('\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp sle i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %c')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-CMPGT -> {
+            b.push('\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp sgt i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %c')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-CMPGE -> {
+            b.push('\t%c')
+            b.push(k.to-str())
+            b.push(' = icmp sge i64 %v')
+            b.push(x.to-str())
+            b.push(', %v')
+            b.push(y.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %c')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
         op == OP-BR -> {
             b.push('\tbr label %')
             b.push(cg-label(x))
@@ -243,8 +437,8 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(cg-strlen1(t).to-str())
             b.push(' x i8], [')
             b.push(cg-strlen1(t).to-str())
-            b.push(' x i8]* @.s')
-            b.push(k.to-str())
+            b.push(' x i8]* ')
+            b.push(cg-lit-name(name, k))
             b.push(', i64 0, i64 0\n')
             b.push('\t%q')
             b.push(k.to-str())
@@ -371,6 +565,317 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = extractvalue %option %op')
             b.push(x.to-str())
             b.push(', 1, 0\n')
+        }
+        op == OP-OPTMKSTR -> {
+
+            ; dst = option 值 id；x = 字符串值 id。tag=0 + 把 %str-long 的 3 个 i64 字段逐字段 insertvalue 进 slot[0..2]。
+            ; ⚠️ 不能把同一本地名 %op<d> 复用为多步 insertvalue 的输出（LLVM 报 multiple definition），
+            ;   故中间步用 %om0<k>/%om1<k>/%om2<k>，最后一步才落到规范的 %op<d>。
+            ; ⚠️ 字段 2 是 i8*（data 指针），但槽是 i64 数组 ⇒ 必须 ptrtoint/inttoptr（bitcast 不能指针<->整数）。
+            ; 命名空间 %ol0<k>/%ol1<k>/%ol2<k>/%ol2b<k>/%om0<k>/%om1<k>/%om2<k> 按指令下标 k。
+            b.push('\t%om0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 0, 0\n')
+            b.push('\t%ol0')
+            b.push(k.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 0\n\t%ol1')
+            b.push(k.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 1\n\t%ol2')
+            b.push(k.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 2\n\t%ol2b')
+            b.push(k.to-str())
+            b.push(' = ptrtoint i8* %ol2')
+            b.push(k.to-str())
+            b.push(' to i64\n\t%om1')
+            b.push(k.to-str())
+            b.push(' = insertvalue %option %om0')
+            b.push(k.to-str())
+            b.push(', i64 %ol0')
+            b.push(k.to-str())
+            b.push(', 1, 0\n\t%om2')
+            b.push(k.to-str())
+            b.push(' = insertvalue %option %om1')
+            b.push(k.to-str())
+            b.push(', i64 %ol1')
+            b.push(k.to-str())
+            b.push(', 1, 1\n\t%op')
+            b.push(d.to-str())
+            b.push(' = insertvalue %option %om2')
+            b.push(k.to-str())
+            b.push(', i64 %ol2b')
+            b.push(k.to-str())
+            b.push(', 1, 2\n')
+        }
+        op == OP-OPTGETSTR -> {
+
+            ; dst = 字符串值 id；x = option 值 id。从 slot[0..2] 取 3 个 i64 字段，逐字段 insertvalue 重建 %str-long。
+            ; ⚠️ 同 OPTMKSTR：中间步用 %og0<k>/%og1<k>，最后一步才落到规范的 %sv<d>；data 指针字段须 inttoptr。
+            ; 命名空间 %ol0<k>/%ol1<k>/%ol2<k>/%ol2b<k>/%og0<k>/%og1<k> 按指令下标 k。
+            b.push('\t%ol0')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%ol1')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 1\n\t%ol2')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 2\n\t%ol2b')
+            b.push(k.to-str())
+            b.push(' = inttoptr i64 %ol2')
+            b.push(k.to-str())
+            b.push(' to i8*\n\t%og0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %ol0')
+            b.push(k.to-str())
+            b.push(', 0\n\t%og1')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long %og0')
+            b.push(k.to-str())
+            b.push(', i64 %ol1')
+            b.push(k.to-str())
+            b.push(', 1\n\t%sv')
+            b.push(d.to-str())
+            b.push(' = insertvalue %str-long %og1')
+            b.push(k.to-str())
+            b.push(', i8* %ol2b')
+            b.push(k.to-str())
+            b.push(', 2\n')
+        }
+        op == OP-STRUCT-MK -> {
+
+            ; dst = 结构体值 id；xa[k] = 字段0 值 id、字段值 id **连续**（xa..xa+nf-1）；bs[k] = 字段数 nf。
+            ; 结构体 id 取 cty[k] - TY-STRUCT-BASE（型别码里编了 id，见 mir.no）。
+            ; 初值用 zeroinitializer：字段数由型别声明决定，不必逐字段写 0 字面量（s31 泛化）；
+            ;   s29 用的 `{ i64 0, i64 0 }` 只能表达 2 字段，已废弃。
+            ; ⚠️ 中间步名 %sm<k>_<j>（k = 指令下标、j = 字段下标），**最后一步**才落 %st<dst>：
+            ;   同一本地名复用为多步 insertvalue 的输出会报 multiple definition。
+            tn = cg-ty-name(cty[k])
+            nf = y
+            prev = ''
+            j = 0
+            (j < nf) {
+                nm = '%sm' - k.to-str() - '_' - j.to-str()
+                j + 1 == nf -> nm = '%st' - d.to-str()
+                fv = x
+
+                #{overflow=wrap}
+                fv = fv + j
+                b.push('\t')
+                b.push(nm)
+                b.push(' = insertvalue ')
+                b.push(tn)
+                b.push(' ')
+                prev.len-bytes() == 0 -> b.push('zeroinitializer')
+                prev.len-bytes() > 0 -> b.push(prev)
+                b.push(', ')
+                b.push(cg-ty-name(vty[fv]))
+                b.push(' ')
+                b.push(cg-val-prefix(vty[fv]))
+                b.push(fv.to-str())
+                b.push(', ')
+                b.push(j.to-str())
+                b.push('\n')
+                prev = nm
+                #{overflow=wrap}
+                j = j + 1
+            }
+        }
+        op == OP-STRUCT-GET -> {
+
+            ; dst 的型别 = cty[k]（字段可能是 i64，也可能是 %str-long ⇒ 命名空间随之变）
+            ; ⚠️ 结构体值住 %st 命名空间，读出的字段按**字段型别**落 %v / %sv / %vc / %op。
+            b.push('\t')
+            b.push(cg-val-prefix(cty[k]))
+            b.push(d.to-str())
+            b.push(' = extractvalue ')
+            b.push(cg-ty-name(vty[x]))
+            b.push(' %st')
+            b.push(x.to-str())
+            b.push(', ')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-STRUCT-SET -> {
+
+            ; dst = 新结构体值 id；xa[k] = 旧结构体值 id；xa[k]+1 = 新字段值 id；bs[k] = 字段下标。
+            ; LLVM 结构不可变 ⇒ 只能是「读旧 + insertvalue 出新值」，旧值仍可用。
+            ; 结构体 id 取 vty[xa[k]] - TY-STRUCT-BASE。
+            ; ⚠️ 新字段值 id 按【连续】约定取 xa[k]+1（与 OP-CALL 的实参同形），不是另开一槽。
+            vf = x
+
+            #{overflow=wrap}
+            vf = vf + 1
+            b.push('\t%st')
+            b.push(d.to-str())
+            b.push(' = insertvalue ')
+            b.push(cg-ty-name(vty[x]))
+            b.push(' %st')
+            b.push(x.to-str())
+            b.push(', ')
+            b.push(cg-ty-name(vty[vf]))
+            b.push(' ')
+            b.push(cg-val-prefix(vty[vf]))
+            b.push(vf.to-str())
+            b.push(', ')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-STALLOC -> {
+
+            ; dst = 结构体槽 id；bs[k] = 结构体 id（本 op 无值操作数，故 id 放 bs）。
+            ; 槽住 %sts<id>，与结构体值 %st<id> 只差一个 s，写错就是拿值名当指针（LLVM 报 not a pointer）。
+            b.push('\t%sts')
+            b.push(d.to-str())
+            b.push(' = alloca ')
+            b.push(cg-ty-name(TY-STRUCT-BASE + y))
+            b.push('\n')
+        }
+        op == OP-STSTORE -> {
+
+            ; xa[k] = 结构体值 id；bs[k] = 槽 id。无结果（与 str 的 SSTORE 同形）。
+            ; 结构体 id 取 vty[xa[k]] - TY-STRUCT-BASE。
+            tn = cg-ty-name(vty[x])
+            b.push('\tstore ')
+            b.push(tn)
+            b.push(' %st')
+            b.push(x.to-str())
+            b.push(', ')
+            b.push(tn)
+            b.push('* %sts')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-STLOAD -> {
+
+            ; dst = 结构体值 id；xa[k] = 槽 id（与 SLOAD 同形：槽在 a、结果在 dst）。
+            ; 结构体 id 取 cty[k] - TY-STRUCT-BASE（**结果**的型别）。
+            tn = cg-ty-name(cty[k])
+            b.push('\t%st')
+            b.push(d.to-str())
+            b.push(' = load ')
+            b.push(tn)
+            b.push(', ')
+            b.push(tn)
+            b.push('* %sts')
+            b.push(x.to-str())
+            b.push('\n')
+        }
+        op == OP-STRUCT-RETAIN -> {
+
+            ; xa[k] = 结构体值 id；bs[k] = 字段掩码（bit j ⇒ 字段 j 持有堆，且必须是 str 字段）。
+            ; 每个置位字段发三步：struct → %str-long → i8* data → call @nolang_rc_retain。
+            ; ⚠️ 这是**机械动作**，不做策略判断（MK 不自动 retain，见 mir.no 的说明）。
+            tnr = cg-ty-name(vty[x])
+            mkr = y
+            jr = 0
+            (jr < 64) {
+                bitr = mkr >> jr
+                bitr = bitr & 1
+                bitr == 1 -> {
+                    b.push('\t%rf')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jr.to-str())
+                    b.push(' = extractvalue ')
+                    b.push(tnr)
+                    b.push(' %st')
+                    b.push(x.to-str())
+                    b.push(', ')
+                    b.push(jr.to-str())
+                    b.push('\n\t%rp')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jr.to-str())
+                    b.push(' = extractvalue %str-long %rf')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jr.to-str())
+                    b.push(', 2\n\tcall void @nolang_rc_retain(i8* %rp')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jr.to-str())
+                    b.push(')\n')
+                }
+                #{overflow=wrap}
+                jr = jr + 1
+            }
+        }
+        op == OP-STRUCT-RELEASE -> {
+
+            ; 同 RETAIN，改 call @nolang_rc_release（返回 i1，丢弃）。临时值 %rl<k>_<j>。
+            tnl = cg-ty-name(vty[x])
+            mkl = y
+            jl = 0
+            (jl < 64) {
+                bitl = mkl >> jl
+                bitl = bitl & 1
+                bitl == 1 -> {
+                    b.push('\t%rf')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jl.to-str())
+                    b.push(' = extractvalue ')
+                    b.push(tnl)
+                    b.push(' %st')
+                    b.push(x.to-str())
+                    b.push(', ')
+                    b.push(jl.to-str())
+                    b.push('\n\t%rp')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jl.to-str())
+                    b.push(' = extractvalue %str-long %rf')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jl.to-str())
+                    b.push(', 2\n\t%rl')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jl.to-str())
+                    b.push(' = call i1 @nolang_rc_release(i8* %rp')
+                    b.push(k.to-str())
+                    b.push('_')
+                    b.push(jl.to-str())
+                    b.push(')\n')
+                }
+                #{overflow=wrap}
+                jl = jl + 1
+            }
+        }
+        op == OP-RETAIN -> {
+
+            ; x = 字符串值 id（TY-STR）。取 data 指针（%str-long 字段 2 = i8* data = RC 头 +16），call retain。
+            ; 命名空间 %dp<k> 与 OPTISOK 的 %c<k> 不冲突（RETAIN/RELEASE 各自独占一条指令的 k）。
+            b.push('\t%dp')
+            b.push(k.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 2\n\tcall void @nolang_rc_retain(i8* %dp')
+            b.push(k.to-str())
+            b.push(')\n')
+        }
+        op == OP-RELEASE -> {
+
+            ; x = 字符串值 id（TY-STR）。取 data 指针 + call release（返回 i1，丢弃）。
+            b.push('\t%dp')
+            b.push(k.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 2\n\t%rel')
+            b.push(k.to-str())
+            b.push(' = call i1 @nolang_rc_release(i8* %dp')
+            b.push(k.to-str())
+            b.push(')\n')
         }
         op == OP-RET -> {
             b.push('\tret ')

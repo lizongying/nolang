@@ -307,9 +307,26 @@ func (c *codegen) structKeyOf(raw string) string {
 }
 
 // treg mints a unique virtual register with a readable prefix.
+//
+// ⚠️ 命名格式是 `%<前缀>.<序号>`，**分隔符不能省**。
+//
+// 這個前綴集合有 1000+ 項，其中 41 對是「一個前綴是另一個前綴 + 純數字後綴」的
+// 關係（`vpc`/`vpc2`/`vpc3`、`c`/`c64`、`rmb`/`rmb1`、`rmd`/`rmd2`、`sc.len`/
+// `sc.len2` …）。若名字是「前綴直接接序號」，這些前綴在序號跨到四位數時必然碰撞：
+//
+//	treg("vpc")  + 2949  →  %vpc2949
+//	treg("vpc2") +  949  →  %vpc2949      ← 同一函式內重複定義
+//
+// 2026-11-01 實測：`tmp/probe-s35.no`（單一 `_nolang_main` 內約 60 次 vec.push）
+// 觸發 `opt: multiple definition of local value named 'vpc2949'`。這與任何型別/
+// 語意都無關，純粹是名字空間算術；函式越長越容易撞，是規模上去以後的定時炸彈。
+//
+// ⇒ 不變量：**所有**「前綴 + c.loadSeq」的臨時值/標籤名一律寫成 `<前綴>.<序號>`。
+// 新增站點若用 `fmt.Sprintf("%%foo%d", c.loadSeq)` 就是引入同一類 bug；
+// 請改用 treg / label，或照樣帶 `.`。
 func (c *codegen) treg(prefix string) string {
 	c.loadSeq++
-	return fmt.Sprintf("%%%s%d", prefix, c.loadSeq)
+	return fmt.Sprintf("%%%s.%d", prefix, c.loadSeq)
 }
 
 // global adds a module-level global definition, emitted after the prelude.
@@ -1963,7 +1980,7 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 		// the payload struct.
 		pg := c.optPayloadTypedAddr(gfRecvSlot, payloadLT, payloadLT)
 		c.loadSeq++
-		gep := fmt.Sprintf("%%brf%d", c.loadSeq)
+		gep := fmt.Sprintf("%%brf.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, payloadLT, payloadLT, pg, idx))
 		return gep, true
 	}
@@ -1977,7 +1994,7 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 		if t := c.mod.Type(c.mod.Value(gfRecv).Type); t != nil &&
 			(t.Kind == KindSlice || t.Kind == KindStr) {
 			c.loadSeq++
-			gep := fmt.Sprintf("%%brf%d", c.loadSeq)
+			gep := fmt.Sprintf("%%brf.%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, gfRecvLT, gfRecvLT, gfRecvSlot, idx))
 			return gep, true
 		}
@@ -1985,7 +2002,7 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 	// Regular struct field.
 	if idx, ok3 := c.mod.FieldIndex(structKey, gfFieldName); ok3 {
 		c.loadSeq++
-		gep := fmt.Sprintf("%%brf%d", c.loadSeq)
+		gep := fmt.Sprintf("%%brf.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, gfRecvLT, gfRecvLT, gfRecvSlot, idx))
 		return gep, true
 	}
@@ -2076,7 +2093,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	if elemLL == "i8" && elemTy == "%str-long" {
 		if dp := c.dataPtrOf(elem); dp != "" {
 			c.loadSeq++
-			by := fmt.Sprintf("%%vby%d", c.loadSeq)
+			by := fmt.Sprintf("%%vby.%d", c.loadSeq)
 			c.sb.WriteString(fmt.Sprintf("  %s = load i8, i8* %s\n", by, dp))
 			elemV = by
 			elemTy = "i8"
@@ -2270,7 +2287,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 // without a leading %, unlike value registers).
 func (c *codegen) label(prefix string) string {
 	c.loadSeq++
-	return fmt.Sprintf("%s%d", prefix, c.loadSeq)
+	return fmt.Sprintf("%s.%d", prefix, c.loadSeq)
 }
 
 // elemInfoOfVec returns the LLVM element type and byte stride for a %vec
@@ -2396,22 +2413,22 @@ func (c *codegen) emitBuiltinArrZero(inst *Inst) error {
 		// the legacy %vec branch of genArrZero.
 		_, stride := c.elemInfoOfVec(recv)
 		c.loadSeq++
-		lg := fmt.Sprintf("%%azlg%d", c.loadSeq)
+		lg := fmt.Sprintf("%%azlg.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lg, slot))
 		c.loadSeq++
-		lv := fmt.Sprintf("%%azlv%d", c.loadSeq)
+		lv := fmt.Sprintf("%%azlv.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", lv, lg))
 		c.loadSeq++
-		dg := fmt.Sprintf("%%azdg%d", c.loadSeq)
+		dg := fmt.Sprintf("%%azdg.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dg, slot))
 		c.loadSeq++
-		dv := fmt.Sprintf("%%azdv%d", c.loadSeq)
+		dv := fmt.Sprintf("%%azdv.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", dv, dg))
 		c.loadSeq++
-		dp := fmt.Sprintf("%%azdp%d", c.loadSeq)
+		dp := fmt.Sprintf("%%azdp.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dp, dv))
 		c.loadSeq++
-		tb := fmt.Sprintf("%%aztb%d", c.loadSeq)
+		tb := fmt.Sprintf("%%aztb.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, %d\n", tb, lv, stride))
 		c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", dp, tb))
 		return nil
@@ -2421,19 +2438,19 @@ func (c *codegen) emitBuiltinArrZero(inst *Inst) error {
 	// (slot+1 minus slot) so we never have to parse N/E by hand, then memset.
 	ll, _ := c.ptype(recv)
 	c.loadSeq++
-	stI := fmt.Sprintf("%%azst%d", c.loadSeq)
+	stI := fmt.Sprintf("%%azst.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint %s* %s to i64\n", stI, ll, slot))
 	c.loadSeq++
-	endG := fmt.Sprintf("%%azeg%d", c.loadSeq)
+	endG := fmt.Sprintf("%%azeg.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %s, %s* %s, i64 1\n", endG, ll, ll, slot))
 	c.loadSeq++
-	endI := fmt.Sprintf("%%azei%d", c.loadSeq)
+	endI := fmt.Sprintf("%%azei.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint %s* %s to i64\n", endI, ll, endG))
 	c.loadSeq++
-	nb := fmt.Sprintf("%%aznb%d", c.loadSeq)
+	nb := fmt.Sprintf("%%aznb.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = sub i64 %s, %s\n", nb, endI, stI))
 	c.loadSeq++
-	bc := fmt.Sprintf("%%azbc%d", c.loadSeq)
+	bc := fmt.Sprintf("%%azbc.%d", c.loadSeq)
 	c.sb.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", bc, ll, slot))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", bc, nb))
 	return nil

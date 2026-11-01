@@ -14,6 +14,7 @@ test-to-i8-127 = () {
     }
 }
 
+; 測試 to-i8-minmax
 test-to-i8-minmax = () {
 
     ; 直接測試 i8.MIN 和 i8.MAX 常數
@@ -29,6 +30,7 @@ test-to-i8-minmax = () {
     }
 }
 
+; 測試 to-i8-range
 test-to-i8-range = () {
     n = 127
     {

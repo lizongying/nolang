@@ -23,7 +23,7 @@ str-map {
 }
 
 ; 初始化
-; [init](#collection.str-map.str-map.init)
+; [init](#str-map.str-map.init)
 str-map.init = () {
     .cap = 256
     .size = 0
@@ -38,7 +38,9 @@ str-map.init = () {
 }
 
 ; FNV-1a 字串雜湊
-; [hash](#collection.str-map.str-map.hash)
+; key: 要計算雜湊的鍵字串
+; idx: FNV-1a 雜湊值對容量取模後的桶索引（h & (cap - 1)，cap 須為 2 的冪）
+; [hash](#str-map.str-map.hash)
 str-map.hash = (key str) (idx i64) {
 
     h = FNV-OFFSET
@@ -54,7 +56,10 @@ str-map.hash = (key str) (idx i64) {
 }
 
 ; 比較兩個 str 是否相等
-; [str-eq](#collection.str-map.str-map.str-eq)
+; a: 待比較的左字串
+; b: 待比較的右字串
+; eq: 兩字串逐位元組完全相同時為 true
+; [str-eq](#str-map.str-map.str-eq)
 str-map.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
@@ -67,7 +72,10 @@ str-map.str-eq = (a str, b str) (eq bool) {
 }
 
 ; 插入或更新 key→value，回傳是否新增
-; [put](#collection.str-map.str-map.put)
+; key: 要插入或更新鍵值對的鍵
+; val: 寫入的字串值（覆寫時取代舊值）
+; is-new: 首次插入新鍵時為 true，覆寫既有鍵時為 false
+; [put](#str-map.str-map.put)
 str-map.put = (key str, val str) (is-new bool) {
 
     idx = .hash(key)
@@ -104,7 +112,9 @@ str-map.put = (key str, val str) (is-new bool) {
 }
 
 ; 查找 key，返回 ?str（nil=未找到）
-; [get](#collection.str-map.str-map.get)
+; key: 要查詢的鍵
+; result: 命中時 ok(對應值)，未找到時 nil
+; [get](#str-map.str-map.get)
 str-map.get = (key str) (result ?str) {
     .size == 0 -> return
     idx = .hash(key)
@@ -125,7 +135,9 @@ str-map.get = (key str) (result ?str) {
 }
 
 ; 檢查 key 是否存在
-; [contains](#collection.str-map.str-map.contains)
+; key: 要檢查是否存在於表中的鍵
+; found: 表內已有該鍵時為 true
+; [contains](#str-map.str-map.contains)
 str-map.contains = (key str) (found bool) {
     val = .get(key)
     val: {
@@ -138,7 +150,9 @@ str-map.contains = (key str) (found bool) {
 }
 
 ; 刪除 key
-; [remove](#collection.str-map.str-map.remove)
+; key: 要刪除的鍵
+; removed: 確有條目被移除時為 true，鍵不存在時為 false
+; [remove](#str-map.str-map.remove)
 str-map.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
@@ -167,7 +181,7 @@ str-map.remove = (key str) (removed bool) {
 }
 
 ; 清空
-; [clear](#collection.str-map.str-map.clear)
+; [clear](#str-map.str-map.clear)
 str-map.clear = () {
     i <- [0...cap): {
 
@@ -181,19 +195,23 @@ str-map.clear = () {
 }
 
 ; 返回元素數量
-; [len](#collection.str-map.str-map.len)
+; n: 表中當前存活的鍵值對數量
+; [len](#str-map.str-map.len)
 str-map.len = () (n i64) {
     n = .size
 }
 
 ; 是否為空
-; [is-empty](#collection.str-map.str-map.is-empty)
+; empty: 表內沒有任何元素時為 true
+; [is-empty](#str-map.str-map.is-empty)
 str-map.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; 遍歷所有 (key, value)
-; [for-each](#collection.str-map.str-map.for-each)
+; k: 掃描到的佔用條目的鍵（occ 標記為 1 的槽位）
+; v: 該佔用條目對應的值
+; [for-each](#str-map.str-map.for-each)
 str-map.for-each = () (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
@@ -207,7 +225,8 @@ str-map.for-each = () (k str, v str) {
 
 ; 字串表示
 ; 格式如 `{name: Alice, age: 18}`
-; [to-str](#collection.str-map.str-map.to-str)
+; out: 以 {鍵: 值, ...} 形式串出的可讀字串
+; [to-str](#str-map.str-map.to-str)
 str-map.to-str = () (out str) {
     out = '{'
     first = true

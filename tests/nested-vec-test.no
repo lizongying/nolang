@@ -1,8 +1,14 @@
+; 建一個含兩個元素的新 vec（逐個 push）
+; a i64: 第一個元素
+; b i64: 第二個元素
+; v []i64: 長度 2 的新 vec，內容 [a, b]
 make-vec2 = (a i64, b i64) (v []i64) {
     v.push(a)
     v.push(b)
 }
 
+; 巢狀 vec：a 推入 make-vec2 後再拷給 b，改 b[0] 內層的元素不得影響原始 a[0]
+; ok bool: true = b0 長度變成 3 且 b0[2] == 100（拷貝後各自獨立）
 test1 = () (ok bool) {
     a [][]i64
     a.push(make-vec2(1, 2))

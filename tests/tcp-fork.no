@@ -2,7 +2,10 @@
 ; # std/net
 ; # std/process
 
-; 基本 TCP fork 測試
+; 基本 TCP fork 測試：父進程 fork 出子進程做 server，父進程當 client 連上並互發訊息
+; pass bool: true=父進程從 socket 收到位元組（子進程回的 'hello from server'）；
+;           false=listen / fork / dial 任一失敗，或父進程 recv 回 0
+; 註：listen 埠固定 9555，失敗時直接 return（pass 保持 false）
 test-tcp-fork-basic = () (pass bool) {
     pass = false
 

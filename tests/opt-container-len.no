@@ -12,10 +12,14 @@
 ; 修法：receiver 是 option 而 self 是內層型別時，改傳 payload 地址
 ; （optPayloadTypedAddr，與 emitGetField 處理 `?T.field` 的剝殼一致）。
 
+; 填充 slice
+; out ?[]i64: ok([10, 20, 30])，用來驗證 v.len() 能剝殼取得 3
 fill-slice = () (out ?[]i64) {
     out = [10, 20, 30]
 }
 
+; 填充 str
+; out ?str: ok('hello')，用來驗證 v.len() 能剝殼取得 5
 fill-str = () (out ?str) {
     out = 'hello'
 }
@@ -63,9 +67,13 @@ i <- [0..3): {
 }
 print('ok: peel borrows, buffer survives len()')
 
+; 純量選項（不涉及借用）：直接回 ok(42)，作為容器型的對照組
+; out ?i64: 內容為 42 的 ok 選項
 scalar-opt = () (out ?i64) {
     out = 42
 }
 
+; 空函式體：輸出參數延遲零值，?[]i64 未賦值即為 nil（不需手寫 out = nil）
+; out ?[]i64: 必為 nil
 empty-slice = () (out ?[]i64) {
 }

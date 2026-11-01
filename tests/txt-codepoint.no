@@ -1,6 +1,9 @@
 ; test-txt-codepoint: txt 码点索引回归（读 + 写，MIR 后端）
 ; 每次 `no run` 输出应为纯 ok 行；任何 FAIL 行都代表回归。
 
+; 單行判定：條件為假才印 FAIL；本檔要求輸出全部是 ok 行
+; label str: 檢查項目名稱，直接接在 FAIL / ok 後面
+; cond bool: 判定結果，true 印 ok、false 印 FAIL
 ck = (label str, cond bool) {
     ! cond -> print('FAIL', label)
     cond -> print('ok', label)

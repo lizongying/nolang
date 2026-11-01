@@ -13,11 +13,12 @@
 ;   out = tdes-dec(cipher, cipher.len(), key) // 解密
 
 ; Triple DES 加密（ECB 模式）
-; in []byte: 輸入資料（長度需為 8 的倍數）
-; n i64: 資料長度
-; key [24]byte: 金鑰（K1 || K2 || K3）
-; 返回 out []byte: 加密後的資料
-; [tdes-enc](#crypto.tdes.tdes-enc)
+; 對每個 8 位元組區塊執行 E_K1 → D_K2 → E_K3，區塊之間互不影響（相同明文得到相同密文）。
+; in []byte: 輸入資料（長度需為 8 的倍數；不足一區塊的尾部不會被處理）
+; n i64: 實際要處理的位元組數（通常為 in.len()）
+; key [24]byte: 金鑰（K1 || K2 || K3，每段 8 位元組）
+; 返回 out []byte: 加密後的資料，長度與 n 相同
+; [tdes-enc](#tdes.tdes-enc)
 tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
     ; 提取三個金鑰
@@ -85,11 +86,12 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 }
 
 ; Triple DES 解密（ECB 模式）
+; 與加密相反：D_K3 → E_K2 → D_K1；同樣逐 8 位元組區塊獨立處理。
 ; in []byte: 輸入密文（長度需為 8 的倍數）
-; n i64: 資料長度
-; key [24]byte: 金鑰（K1 || K2 || K3）
-; 返回 out []byte: 解密後的資料
-; [tdes-dec](#crypto.tdes.tdes-dec)
+; n i64: 實際要處理的位元組數（通常為 in.len()）
+; key [24]byte: 金鑰（K1 || K2 || K3），必須與加密時一致
+; 返回 out []byte: 解密後的資料，長度與 n 相同
+; [tdes-dec](#tdes.tdes-dec)
 tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     k1 [8]byte
     k2 [8]byte
@@ -155,11 +157,13 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
 ; ═══════════════════════════════════════════════
 
 ; Triple DES-CBC 加密
+; 每個區塊先與前一區塊的密文（首塊為 iv）異或再走 3DES-ECB，
+; 因此相同明文在不同 iv 下得到不同密文。
 ; in []byte: 輸入資料（長度需為 8 的倍數）
-; key [24]byte: 金鑰
-; iv [8]byte: 初始向量
-; 返回 out []byte: 加密後的資料
-; [tdes-cbc-enc](#crypto.tdes.tdes-cbc-enc)
+; key [24]byte: 金鑰（K1 || K2 || K3）
+; iv [8]byte: 初始向量，每個訊息應唯一
+; 返回 out []byte: 加密後的資料，長度與 in 相同
+; [tdes-cbc-enc](#tdes.tdes-cbc-enc)
 tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {
@@ -207,11 +211,12 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 }
 
 ; Triple DES-CBC 解密
+; 每塊先做 3DES-ECB 解密，再與前一段密文（首塊為 iv）異或還原明文。
 ; in []byte: 輸入密文（長度需為 8 的倍數）
-; key [24]byte: 金鑰
-; iv [8]byte: 初始向量
-; 返回 out []byte: 解密後的資料
-; [tdes-cbc-dec](#crypto.tdes.tdes-cbc-dec)
+; key [24]byte: 金鑰（K1 || K2 || K3），必須與加密時一致
+; iv [8]byte: 初始向量，必須與加密時相同
+; 返回 out []byte: 解密後的資料，長度與 in 相同
+; [tdes-cbc-dec](#tdes.tdes-cbc-dec)
 tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
     prev [8]byte
     i <- [0..8): {

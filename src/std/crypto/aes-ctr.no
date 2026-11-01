@@ -14,7 +14,8 @@
 ;   ; AES-256 改用 key [32]byte 與 crypt-256
 
 ; 計數器遞增（大端序，先加最低 32 位元，進位再往高位傳播）
-; [ctr-inc](#crypto.aes-ctr.ctr-inc)
+; cb []byte: 16 位元組計數器區塊，原地修改；只會動到後 4 位元組（下標 12–15）
+; [ctr-inc](#aes-ctr.ctr-inc)
 ctr-inc = (cb []byte) {
     j = 15
     (j >= 12) {
@@ -54,11 +55,12 @@ ctr-inc = (cb []byte) {
 }
 
 ; CTR 加解密核心（輪金鑰由呼叫端展開一次）
-; in []byte: 輸入資料（任意長度）
-; iv [16]byte: 初始計數器值
-; ek []byte: aes.key-expand / aes.key-expand-256 的結果
-; 返回 out []byte: 輸出資料
-; [ctr-crypt](#crypto.aes-ctr.ctr-crypt)
+; 每個計數器值加密後與明文異或，因此任意長度皆可，且加解密同一個函式。
+; in []byte: 輸入資料（任意長度，不足一塊的尾部只異或前 n 個位元組）
+; iv [16]byte: 初始計數器值；同一金鑰下絕不可重複使用
+; ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
+; 返回 out []byte: 與 in 等長的輸出（加密或解密結果）
+; [ctr-crypt](#aes-ctr.ctr-crypt)
 ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
     ; 計數器（初始為 IV）
@@ -105,22 +107,24 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 }
 
 ; AES-128-CTR 加密/解密（對稱操作）
-; in []byte: 輸入資料
-; key [16]byte: 金鑰
-; iv [16]byte: 初始計數器值
-; 返回 out []byte: 輸出資料
-; [crypt-128](#crypto.aes-ctr.crypt-128)
+; 用同一把金鑰與同一個 iv（nonce）呼叫兩次即可還原；絕不可重用 (key, iv) 組合。
+; in []byte: 輸入資料（任意長度）
+; key [16]byte: 128-bit 金鑰
+; iv [16]byte: 初始計數器值（nonce），必須唯一
+; 返回 out []byte: 與 in 等長的輸出
+; [crypt-128](#aes-ctr.crypt-128)
 crypt-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand(key)
     out = ctr-crypt(in, iv, ek)
 }
 
 ; AES-256-CTR 加密/解密（對稱操作）
-; in []byte: 輸入資料
-; key [32]byte: 金鑰
-; iv [16]byte: 初始計數器值
-; 返回 out []byte: 輸出資料
-; [crypt-256](#crypto.aes-ctr.crypt-256)
+; 行為同 crypt-128，只是金鑰展開為 32 位元組（14 輪）。
+; in []byte: 輸入資料（任意長度）
+; key [32]byte: 256-bit 金鑰
+; iv [16]byte: 初始計數器值（nonce），必須唯一
+; 返回 out []byte: 與 in 等長的輸出
+; [crypt-256](#aes-ctr.crypt-256)
 crypt-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand-256(key)
     out = ctr-crypt(in, iv, ek)

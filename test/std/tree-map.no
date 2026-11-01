@@ -6,6 +6,10 @@
 
 # /test/runner
 
+; 把 ?i64 解成「是否命中 + 值」兩個輸出，未命中時值固定為哨兵 -999
+; v ?i64: get / first / last / lower-bound / upper-bound 的返回值
+; found bool: true=回傳 ok，false=nil 或 err
+; x i64: 命中時為解出的鍵，未命中為 -999
 unwrap = (v ?i64) (found bool, x i64) {
     x = -999
     v: {
@@ -20,6 +24,7 @@ unwrap = (v ?i64) (found bool, x i64) {
     }
 }
 
+; 空 AVL 樹：init() 後 size() 回 0、empty() 為真
 t-init = () {
     m = tree-map {}
     m.init()
@@ -28,6 +33,8 @@ t-init = () {
     runner.is-true(e, 'init empty')
 }
 
+; put 回報是否新鍵且 size 隨插入成長；get 命中回 300、缺失回 nil，
+; contains 與 get 結果一致
 t-put-get = () {
     m = tree-map {}
     m.init()
@@ -53,6 +60,7 @@ t-put-get = () {
     runner.is-false(fn, 'get missing => nil')
 }
 
+; 同鍵重覆 put 只更新值：不新增節點（回 false、size 仍為 1），get 讀回新值 2
 t-overwrite = () {
     m = tree-map {}
     m.init()
@@ -67,6 +75,7 @@ t-overwrite = () {
     runner.is-true(f, 'overwrite still found')
 }
 
+; 有序性：亂序插入 30/10/40/5 後，first() 必為最小鍵 5、last() 為最大鍵 40
 t-order = () {
     m = tree-map {}
     m.init()
@@ -84,6 +93,8 @@ t-order = () {
     runner.eq(mxk, 40, 'last key == 40')
 }
 
+; lower-bound 取 >= 目標的最小鍵（15→20），upper-bound 取 > 目標的最小鍵（20→30）；
+; 超出範圍（100）回 nil
 t-bound = () {
     m = tree-map {}
     m.init()
@@ -105,6 +116,8 @@ t-bound = () {
     runner.is-false(o3, 'lower-bound 100 => nil')
 }
 
+; remove 分別覆蓋葉子（25）與內部節點（30，刪 25 後只剩右子 35），需由 AVL 旋轉保持平衡；
+; 不存在的鍵回 false，其餘鍵仍可查且 size 正確
 t-remove = () {
     m = tree-map {}
     m.init()
@@ -129,6 +142,7 @@ t-remove = () {
     runner.is-true(m.contains(35), '35 present')
 }
 
+; clear() 清空整棵樹：size 歸零、empty 為真、原鍵不再 contains
 t-clear = () {
     m = tree-map {}
     m.init()

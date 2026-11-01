@@ -8,6 +8,7 @@
 
 # /test/runner
 
+; 初始化：size == 0、empty 為 true、full 為 false
 t-init-empty = () {
     s = arr-stack {
         cap: 16
@@ -21,6 +22,7 @@ t-init-empty = () {
     runner.is-false(no, 'init not full')
 }
 
+; push 3 個元素（top = 3）後 size 應為 3，且不再是空棧
 t-size-after-push = () {
 
     ; 模擬 push 3 個元素：top = 3
@@ -34,6 +36,7 @@ t-size-after-push = () {
     runner.is-false(yes, 'not empty after pushes')
 }
 
+; full 判定：top 達到 cap 時為 true，但此時仍不算 empty
 t-full = () {
     s = arr-stack {
         cap: 4
@@ -45,6 +48,7 @@ t-full = () {
     runner.is-false(no, 'full stack not empty')
 }
 
+; clear 後 size 歸零並回到 empty
 t-clear = () {
     s = arr-stack {
         cap: 16

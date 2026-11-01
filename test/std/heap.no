@@ -8,6 +8,7 @@
 
 # /test/runner
 
+; push 4 個元素（5, 3, 7, 1）後 size 為 4 且 empty 為 false
 t-push-pop = () {
     data [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
     h = heap.init(data)
@@ -21,6 +22,7 @@ t-push-pop = () {
     runner.is-false(yes, 'not empty')
 }
 
+; 空堆：size 為 0、empty 為 true
 t-size-empty = () {
     data [4]i64 = [0, 0, 0, 0]
     h = heap.init(data)

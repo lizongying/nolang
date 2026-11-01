@@ -1,5 +1,6 @@
 ; 最小化测试: ?str 类型的 match 解构
 
+; 測試 simple
 test-simple = () {
     m [str]str = { }
     m.init()

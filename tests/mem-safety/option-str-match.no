@@ -1,6 +1,7 @@
 ; 测试 ?str 类型的 match 解构
 ; 验证 synthetic it = val 的 LLVM 类型匹配
 
+; 測試 simple
 test-simple = () {
     m [str]str = { }
     m.init()

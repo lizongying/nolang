@@ -14,10 +14,10 @@
 ; ═══════════════════════════════════════════════
 
 ; HKDF-Extract（RFC 5869 §2.2）
-; salt []byte: 鹽值（可為空）
-; ikm []byte: 輸入金鑰材料
-; 返回 prk [32]byte: 偽隨機金鑰
-; [hkdf-extract](#crypto.hkdf.hkdf-extract)
+; salt []byte: 鹽值（可為空；空時以 32 個零位元組代替）
+; ikm []byte: 輸入金鑰材料（任意長度）
+; 返回 prk [32]byte: HMAC-SHA256(salt, IKM) 算出的偽隨機金鑰
+; [hkdf-extract](#hkdf.hkdf-extract)
 hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 
     ; PRK = HMAC-SHA256(salt, IKM)
@@ -57,10 +57,10 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 ; prk-vec []byte: 金鑰（32 位元組）
 ; t-data []byte: T(i) 前綴（可為空，長度由 t-len 決定）
 ; t-len i64: T(i) 的有效長度
-; info []byte: info 字串
-; counter i64: 計數器位元組（1-255），0 表示不加
-; 返回 out [32]byte: HMAC 結果
-; [hkdf-expand-hmac](#crypto.hkdf.hkdf-expand-hmac)
+; info []byte: 上下文資訊（可為空）
+; counter i64: 計數器位元組（RFC 要求 1–255），0 表示不加這個位元組
+; 返回 out [32]byte: HMAC-SHA256(prk, T(i-1) || info || counter) 的結果
+; [hkdf-expand-hmac](#hkdf.hkdf-expand-hmac)
 hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, counter i64) (out [32]byte) {
 
     ; 計算訊息長度: t-len + info.len() + (counter > 0 ? 1 : 0)
@@ -100,10 +100,10 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
 
 ; HKDF-Expand（RFC 5869 §2.3）
 ; prk [32]byte: 偽隨機金鑰
-; info []byte: 上下文資訊（可為空）
-; out-len i64: 需要的輸出長度（最大 255*32 = 8160）
-; 返回 okm []byte: 展開後的金鑰材料
-; [hkdf-expand](#crypto.hkdf.hkdf-expand)
+; info []byte: 上下文資訊（可為空，參與每一輪 HMAC）
+; out-len i64: 需要的輸出長度；RFC 5869 上限為 255*32 = 8160，超過後 counter 會回繞，結果不再符合規範
+; 返回 okm []byte: 展開後的金鑰材料（長度恰為 out-len）
+; [hkdf-expand](#hkdf.hkdf-expand)
 hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
     ; 將 prk 轉為 []byte
@@ -180,12 +180,13 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 ; ═══════════════════════════════════════════════
 
 ; TLS 1.3 HKDF-Expand-Label（RFC 8446 §7.1）
-; prk [32]byte: 偽隨機金鑰
-; label str: 標籤（不含 "tls13 " 前綴）
-; context []byte: 上下文（可為空）
-; out-len i64: 需要的輸出長度
-; 返回 okm []byte: 展開後的金鑰材料
-; [hkdf-expand-label](#crypto.hkdf.hkdf-expand-label)
+; 先按 HkdfLabel 結構組出 info（length + "tls13 "+label + context），再調用 HKDF-Expand。
+; prk [32]byte: 偽隨機金鑰（32 位元組，通常來自 HKDF-Extract）
+; label str: 標籤（不含 "tls13 " 前綴，本文會自動補上）
+; context []byte: 上下文（通常為交握訊息雜湊；可為空）
+; out-len i64: 需要的輸出位元組數
+; okm []byte: 展開後的金鑰材料，長度恰為 out-len
+; [hkdf-expand-label](#hkdf.hkdf-expand-label)
 hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm []byte) {
 
     ; HkdfLabel struct:
@@ -257,13 +258,13 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     okm = hkdf-expand(prk, info, out-len)
 }
 
-; 與 hkdf-expand-label 相同，但 prk 以 []byte 接收
-; prk []byte: 偽隨機金鑰（32 位元組）
-; label str: 標籤
-; context []byte: 上下文
-; out-len i64: 輸出長度
-; 返回 okm []byte: 展開後的金鑰材料
-; [hkdf-expand-label-vec](#crypto.hkdf.hkdf-expand-label-vec)
+; 與 hkdf-expand-label 相同，但 prk 以 []byte 接收（不足 32 位元組的尾部以 0 補齊）
+; prk []byte: 偽隨機金鑰，取前 32 位元組使用
+; label str: 標籤（不含 "tls13 " 前綴）
+; context []byte: 上下文（可為空）
+; out-len i64: 需要的輸出位元組數
+; okm []byte: 展開後的金鑰材料，長度恰為 out-len
+; [hkdf-expand-label-vec](#hkdf.hkdf-expand-label-vec)
 hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (okm []byte) {
     prk-arr [32]byte
     i <- [0..32): {
@@ -281,12 +282,13 @@ hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (ok
 ; 輔助：Derive-Secret（TLS 1.3 §7.1）
 ; ═══════════════════════════════════════════════
 
-; Derive-Secret(Secret, Label, Messages)
+; Derive-Secret(Secret, Label, Messages)（TLS 1.3 §7.1）
+; 等同 hkdf-expand-label-vec(secret, label, messages, 32)。
 ; secret []byte: 32 位元組金鑰
-; label str: 標籤
-; messages []byte: 交握訊息雜湊（SHA-256 的輸出）
-; 返回 out []byte: 32 位元組推導金鑰
-; [hkdf-derive-secret](#crypto.hkdf.hkdf-derive-secret)
+; label str: 標籤（不含 "tls13 " 前綴）
+; messages []byte: 交握訊息雜湊（SHA-256 的輸出，作為 context）
+; out []byte: 32 位元組推導金鑰
+; [hkdf-derive-secret](#hkdf.hkdf-derive-secret)
 hkdf-derive-secret = (secret []byte, label str, messages []byte) (out []byte) {
     out = hkdf-expand-label-vec(secret, label, messages, 32)
 }

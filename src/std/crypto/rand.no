@@ -6,10 +6,11 @@
 ;   seed = 123456789
 ;   r = rand(seed)    // r = 隨機數 0..4294967295
 
-; 產生下一個偽隨機數（32-bit 無號整數）
-; state: 輸入/輸出狀態變數，初始為任意非零種子
-; r: 輸出隨機值 (0..4294967295)
-; [rand](#crypto.rand.rand)
+; 產生下一個偽隨機數（xorshift32）
+; state i64: 輸入狀態（任意非零種子；內部先裁到 32 位元，且每一步都重新遮罩）
+; new-state i64: 更新後的狀態（32 位元），供下一次調用作為種子
+; r i64: 本次輸出值（0..4294967295）
+; [rand](#rand.rand)
 rand = (state i64) (new-state i64, r i64) {
 
     ; xorshift32 必須每一步都裁到 32-bit，否則 i64 不溢位會讓 state 無限增長、
@@ -30,7 +31,7 @@ rand = (state i64) (new-state i64, r i64) {
 ; n: 產生的字元數
 ; s: 輸出字串（長度 n）
 ; chars: 可用字元集 (A-Z a-z 0-9)
-; [rand-str](#crypto.rand.rand-str)
+; [rand-str](#rand.rand-str)
 rand-str = (state i64, n i64) (s str) {
     chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     r = 0

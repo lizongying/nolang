@@ -41,15 +41,15 @@
     }
 }
 
-; []byte.to-chars: 将字节切片转为字符切片（每个字节当作一个 char 码点，0~255）
-; 返回 []char。char 在 nolang 中是 32 位码点类型；byte（0~255）被当作单字节码点，
-; 故推送前用 &0xff 拓宽为 0~255 的码点值，保证 []char 槽被完整填充。
+; []byte.to-chars: 將字節切片轉為字符切片（每個字節當作一個 char 碼點，0~255）
+; 返回 []char。char 在 nolang 中是 32 位碼點類型；byte（0~255）被當作單字節碼點，
+; 故推送前用 &0xff 拓寬為 0~255 的碼點值，保證 []char 槽被完整填充。
 ;
-; ⚠️ 编译器限制：当前 legacy 与 MIR 后端对 []char（i32 元素）切片的支持均不完整
-; （与 []byte / []i64 不同，[]char 的 len/cap/stride 在 codegen 中存在隐性错误，
-; 构造成的 []char 运行期会越界损坏），故本方法暂不可用。
-; 若只需要「byte→码点→UTF-8 字符串」的最终结果，直接用 b.to-str() 即可——
-; []byte.to-str 已内联本语义（每个 byte 当 0~255 码点重新 UTF-8 编码），无需经过 []char。
+; ⚠️ 編譯器限制：當前 legacy 與 MIR 後端對 []char（i32 元素）切片的支持均不完整
+; （與 []byte / []i64 不同，[]char 的 len/cap/stride 在 codegen 中存在隱性錯誤，
+; 構造成的 []char 運行期會越界損壞），故本方法暂不可用。
+; 若只需要「byte→碼點→UTF-8 字符串」的最終結果，直接用 b.to-str() 即可——
+; []byte.to-str 已內聯本語義（每個 byte 當 0~255 碼點重新 UTF-8 編碼），無需經過 []char。
 ; [to-chars](#bytes.to-chars)
 []byte.to-chars = () (out []char) {
     n = .len()
@@ -60,22 +60,22 @@
     out = cs
 }
 
-; []byte.to-str: 将字节切片按「先 to-chars 再 to-str」语义转成字符串。
-; 每个字节被当作一个 0~255 的 Unicode 码点，再按 UTF-8 编码成 1~4 字节。
-; 即本方法等价于 b.to-chars().to-str()：byte 0xC3 → 码点 0xC3 → UTF-8 字节 0xC3 0x83。
+; []byte.to-str: 將字節切片按「先 to-chars 再 to-str」語義轉成字符串。
+; 每個字節被當作一個 0~255 的 Unicode 碼點，再按 UTF-8 編碼成 1~4 字節。
+; 即本方法等價於 b.to-chars().to-str()：byte 0xC3 → 碼點 0xC3 → UTF-8 字節 0xC3 0x83。
 ;
-; 实现说明（2026-09-06）：legacy 后端对「返回字符串 out 做变量下标赋值 out[pos]=」不会
-; 维护字符串长度（会带出尾部空字节），但对「字面下标 s[0]/s[1]/…」会正确维护长度（见
-; char.to-str：with-cap(4) + 字面下标，返回长度正确）。故本实现逐字节构造一个
-; with-cap(4) 的局部 seg（用字面下标写入 UTF-8 字节），再用字符串拼接 out = out - seg
-; 累积（拼接模式与 vec.no 的 []t.to-str 一致，已验证可靠）。不使用变量下标，规避长度 bug。
+; 實現说明（2026-09-06）：legacy 後端對「返回字符串 out 做變量下標賦值 out[pos]=」不會
+; 维護字符串長度（會帶出尾部空字節），但對「字面下標 s[0]/s[1]/…」會正確维護長度（見
+; char.to-str：with-cap(4) + 字面下標，返回長度正確）。故本實現逐字節構造一個
+; with-cap(4) 的局部 seg（用字面下標寫入 UTF-8 字節），再用字符串拼接 out = out - seg
+; 累积（拼接模式與 vec.no 的 []t.to-str 一致，已驗證可靠）。不使用變量下標，規避長度 bug。
 ;
-; ⚠️ 语义变更（2026-09-06，应需求方要求）：此前本方法是「1:1 逐字节拷贝」，是
-; buf.to-str()（读取文件 / 子进程输出，buf 已是合法 UTF-8 字节流）所依赖的契约。
-; 改为「byte→码点→UTF-8 重新编码」后，对合法的多字节 UTF-8 字节流会做二次编码而损坏
-; （例如磁盘上读到的 0xC3 0xA9 会被当成码点 0xC3、0xA9 各自重编码）。若需「原样拷贝
-; 合法 UTF-8 字节流」（文件 / 子进程读取场景），请改用保留了 1:1 拷贝语义的
-; b.to-bytes-str()（见下方），或直接使用底层切片。
+; ⚠️ 語義變更（2026-09-06，應需求方要求）：此前本方法是「1:1 逐字節拷貝」，是
+; buf.to-str()（讀取文件 / 子進程输出，buf 已是合法 UTF-8 字節流）所依赖的契約。
+; 改為「byte→碼點→UTF-8 重新編碼」後，對合法的多字節 UTF-8 字節流會做二次編碼而損壞
+; （例如磁盘上讀到的 0xC3 0xA9 會被當成碼點 0xC3、0xA9 各自重編碼）。若需「原樣拷貝
+; 合法 UTF-8 字節流」（文件 / 子進程讀取場景），請改用保留了 1:1 拷貝語義的
+; b.to-bytes-str()（見下方），或直接使用底層切片。
 ; [to-str](#bytes.to-str)
 []byte.to-str = () (out ?str) {
     n = .len()
@@ -121,9 +121,9 @@
     out = r
 }
 
-; []byte.to-bytes-str: 1:1 逐字节拷贝（保留原 []byte.to-str 语义）。
-; 用于 buf 已经是合法 UTF-8 字节流的场景（读取文件 / 子进程输出），不需要按码点重编码。
-; 该函数等价于旧版 []byte.to-str。
+; []byte.to-bytes-str: 1:1 逐字節拷貝（保留原 []byte.to-str 語義）。
+; 用於 buf 已經是合法 UTF-8 字節流的場景（讀取文件 / 子進程输出），不需要按碼點重編碼。
+; 該函數等價於舊版 []byte.to-str。
 ; [to-bytes-str](#bytes.to-bytes-str)
 []byte.to-bytes-str = () (out str) {
     n = .len()
@@ -135,7 +135,7 @@
 }
 
 ; []byte.index: 在 []byte 中查找 target 子串
-; 返回首次出现的位置，未找到返回 -1
+; 返回首次出現的位置，未找到返回 -1
 ; [index](#bytes.index)
 []byte.index = (target str) (pos i64) {
 
@@ -289,11 +289,11 @@ HEX-LOWER = '0123456789abcdef'
 ; }
 
 ; ═══════════════════════════════════════════════
-; txt 转换
+; txt 轉換
 ; ═══════════════════════════════════════════════
 
-; []byte.to-txt: 将 []byte 转换为 txt（截断至 255 字节）
-; 返回 out txt: 固定 256 字节的 txt 结构
+; []byte.to-txt: 將 []byte 轉換為 txt（截斷至 255 字節）
+; 返回 out txt: 固定 256 字節的 txt 結構
 ; [to-txt](#bytes.to-txt)
 []byte.to-txt = () (out txt) {
     n = .len()

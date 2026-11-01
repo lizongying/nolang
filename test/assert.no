@@ -13,6 +13,10 @@
 ; ═══════════════════════════════════════════════
 
 ; a == b
+; a: 實際值（泛型 t）
+; b: 期望值（與 a 同型）
+; msg: 斷言失敗時列印的說明
+; ok: true=a==b 通過；false=不相等且已印 FAIL
 eq = (a t, b t, msg str) (ok bool) {
     {
         a != b -> {
@@ -26,6 +30,10 @@ eq = (a t, b t, msg str) (ok bool) {
 }
 
 ; a != b
+; a: 第一運算值（泛型 t）
+; b: 第二運算值（與 a 同型）
+; msg: 斷言失敗時列印的說明
+; ok: true=a!=b 通過；false=相等且已印 FAIL
 ne = (a t, b t, msg str) (ok bool) {
     {
         a == b -> {
@@ -39,6 +47,9 @@ ne = (a t, b t, msg str) (ok bool) {
 }
 
 ; val == true
+; val: 被斷言的布林值（為真才通過）
+; msg: 斷言失敗時列印的說明
+; ok: true=val 為 true；false=val 為 false 且已印 FAIL
 true = (val bool, msg str) (ok bool) {
     {
         val == false -> {
@@ -52,6 +63,9 @@ true = (val bool, msg str) (ok bool) {
 }
 
 ; val == false
+; val: 被斷言的布林值（為假才通過）
+; msg: 斷言失敗時列印的說明
+; ok: true=val 為 false；false=val 為 true 且已印 FAIL
 false = (val bool, msg str) (ok bool) {
     {
         val == true -> {
@@ -65,6 +79,10 @@ false = (val bool, msg str) (ok bool) {
 }
 
 ; a > b
+; a: 比較左值（泛型 t）
+; b: 比較右值
+; msg: 斷言失敗時列印的說明
+; ok: true=a>b 通過；false=a<=b 且已印 FAIL
 gt = (a t, b t, msg str) (ok bool) {
     {
         a <= b -> {
@@ -78,6 +96,10 @@ gt = (a t, b t, msg str) (ok bool) {
 }
 
 ; a >= b
+; a: 比較左值
+; b: 比較右值
+; msg: 斷言失敗時列印的說明
+; ok: true=a>=b 通過；false=a<b 且已印 FAIL
 ge = (a t, b t, msg str) (ok bool) {
     {
         a < b -> {
@@ -91,6 +113,10 @@ ge = (a t, b t, msg str) (ok bool) {
 }
 
 ; a < b
+; a: 比較左值
+; b: 比較右值
+; msg: 斷言失敗時列印的說明
+; ok: true=a<b 通過；false=a>=b 且已印 FAIL
 lt = (a t, b t, msg str) (ok bool) {
     {
         a >= b -> {
@@ -104,6 +130,10 @@ lt = (a t, b t, msg str) (ok bool) {
 }
 
 ; a <= b
+; a: 比較左值
+; b: 比較右值
+; msg: 斷言失敗時列印的說明
+; ok: true=a<=b 通過；false=a>b 且已印 FAIL
 le = (a t, b t, msg str) (ok bool) {
     {
         a > b -> {
@@ -121,6 +151,11 @@ le = (a t, b t, msg str) (ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; |a - b| < eps
+; a: 第一個浮點值
+; b: 第二個浮點值
+; eps: 容差（絕對差值門檻）
+; msg: 斷言失敗時列印的說明
+; ok: true=|a-b|<eps 視為相等；false=差值未小於 eps 且已印 FAIL
 f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
     diff = a - b
     diff < 0.0 -> diff = 0.0 - diff
@@ -136,6 +171,11 @@ f64-eq = (a f64, b f64, eps f64, msg str) (ok bool) {
 }
 
 ; 浮點不相等
+; a: 第一個浮點值
+; b: 第二個浮點值
+; eps: 容差（絕對差值門檻）
+; msg: 斷言失敗時列印的說明
+; ok: true=|a-b|>=eps 視為不等；false=差值過小且已印 FAIL
 f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
     diff = a - b
     diff < 0.0 -> diff = 0.0 - diff
@@ -155,6 +195,11 @@ f64-ne = (a f64, b f64, eps f64, msg str) (ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; 字串相等（比較前 n 個字節）
+; a: 第一條字串
+; b: 第二條字串
+; n: 參與比較的頭部位元組數
+; msg: 斷言失敗時列印的說明
+; ok: true=a、b 前 n 位元組相同；false=不同且已印 FAIL
 str-eq = (a str, b str, n i64, msg str) (ok bool) {
     {
         a.eq(b, n) == false -> {
@@ -168,6 +213,11 @@ str-eq = (a str, b str, n i64, msg str) (ok bool) {
 }
 
 ; 字串不相等
+; a: 第一條字串
+; b: 第二條字串
+; n: 參與比較的頭部位元組數
+; msg: 斷言失敗時列印的說明
+; ok: true=a、b 前 n 位元組不同；false=相同且已印 FAIL
 str-ne = (a str, b str, n i64, msg str) (ok bool) {
     {
         a.eq(b, n) == true -> {
@@ -181,6 +231,10 @@ str-ne = (a str, b str, n i64, msg str) (ok bool) {
 }
 
 ; 字串為空（n == 0）
+; s: 目標字串（供失敗資訊上下文）
+; n: 待判定的長度（為 0 才通過）
+; msg: 斷言失敗時列印的說明
+; ok: true=n==0 為空；false=n!=0 且已印 FAIL
 str-empty = (s str, n i64, msg str) (ok bool) {
     {
         n != 0 -> {
@@ -194,6 +248,10 @@ str-empty = (s str, n i64, msg str) (ok bool) {
 }
 
 ; 字串非空
+; s: 目標字串（供失敗資訊上下文）
+; n: 待判定的長度（非 0 才通過）
+; msg: 斷言失敗時列印的說明
+; ok: true=n!=0 非空；false=n==0 且已印 FAIL
 str-not-empty = (s str, n i64, msg str) (ok bool) {
     {
         n == 0 -> {
@@ -211,6 +269,9 @@ str-not-empty = (s str, n i64, msg str) (ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; nil: 指標為空
+; p: 以整數表示的指標值（為 0 才通過）
+; msg: 斷言失敗時列印的說明
+; ok: true=p==0 空指標；false=p!=0 且已印 FAIL
 is-nil = (p i64, msg str) (ok bool) {
     {
         p != 0 -> {
@@ -224,6 +285,9 @@ is-nil = (p i64, msg str) (ok bool) {
 }
 
 ; 指標非空
+; p: 以整數表示的指標值（非 0 才通過）
+; msg: 斷言失敗時列印的說明
+; ok: true=p!=0 非空指標；false=p==0 且已印 FAIL
 not-nil = (p i64, msg str) (ok bool) {
     {
         p == 0 -> {

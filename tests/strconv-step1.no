@@ -4,6 +4,7 @@ test-str-to-i64 = () {
     print(n)
 }
 
+; 測試 str-to-i32
 test-str-to-i32 = () {
     s = '32767'
     n i32 = 0
@@ -11,6 +12,7 @@ test-str-to-i32 = () {
     print(n)
 }
 
+; 測試 str-to-i16
 test-str-to-i16 = () {
     s = '100'
     n i16 = 0
@@ -18,6 +20,7 @@ test-str-to-i16 = () {
     print(n)
 }
 
+; 測試 str-to-i8
 test-str-to-i8 = () {
     s = '127'
     n i8 = 0
@@ -25,6 +28,7 @@ test-str-to-i8 = () {
     print(n)
 }
 
+; 測試 str-to-u64
 test-str-to-u64 = () {
     s = '99999'
     n u64 = 0
@@ -32,6 +36,7 @@ test-str-to-u64 = () {
     print(n)
 }
 
+; 測試 str-to-f64
 test-str-to-f64 = () {
     s = '3.14'
     f = s.to-f64()
@@ -39,6 +44,7 @@ test-str-to-f64 = () {
     print(s2)
 }
 
+; 測試 str-to-bool
 test-str-to-bool = () {
     b = 'true'.to-bool()
     {
@@ -48,47 +54,55 @@ test-str-to-bool = () {
     }
 }
 
+; 測試 str-to-byte
 test-str-to-byte = () {
     b = '65'.to-byte()
     print(b)
 }
 
+; 測試 i64-to-str
 test-i64-to-str = () {
     n i64 = 42
     s = n.to-str()
     print(s)
 }
 
+; 測試 i32-to-str
 test-i32-to-str = () {
     n i32 = 999
     s = n.to-str()
     print(s)
 }
 
+; 測試 u64-to-str
 test-u64-to-str = () {
     n u64 = 12345
     s = n.to-str()
     print(s)
 }
 
+; 測試 f64-to-str
 test-f64-to-str = () {
     f f64 = 3.14
     s = f.to-str()
     print(s)
 }
 
+; 測試 bool-to-str
 test-bool-to-str = () {
     b bool = true
     s = b.to-str()
     print(s)
 }
 
+; 測試 byte-to-str
 test-byte-to-str = () {
     b byte = 65
     s = b.to-str()
     print(s)
 }
 
+; 測試 roundtrip-i64
 test-roundtrip-i64 = () {
     n0 i64 = 12345
     s = n0.to-str()
@@ -96,6 +110,7 @@ test-roundtrip-i64 = () {
     print(n)
 }
 
+; 測試 roundtrip-f64
 test-roundtrip-f64 = () {
     f = '3.14'.to-f64()
     s = f.to-str()

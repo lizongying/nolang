@@ -30,11 +30,11 @@ embed {
     dataLens []i64
 }
 
-; embed.read: 讀取嵌入的文件
-; path str: 文件路徑（相對於嵌入目錄，如 'index.html'）
-; 返回 data ?[]byte: 找到則為文件內容（some），未找到為 nil
+; embed.read: 讀取嵌入的文件（線性比對路徑後從 blob 切片返回）
+; path str: 文件路徑（相對於嵌入目錄，如 'index.html'；含路徑分隔符）
+; data ?[]byte: ok=文件內容（blob 上的切片，不複製）, nil=路徑不存在
+; 注意：返回值指向嵌入區，請勿修改其內容。
 ; [read](#embed.read)
-
 embed.read = (path str) (data ?[]byte) {
     data = nil
     path-len = path.len()
@@ -72,10 +72,10 @@ embed.read = (path str) (data ?[]byte) {
 }
 
 ; embed.exists: 檢查嵌入的文件是否存在
-; path str: 文件路徑
-; 返回 yes bool: 是否存在
+; 與 read 相同的線性比對邏輯，但不取內容。
+; path str: 文件路徑（相對於嵌入目錄）
+; yes bool: true=嵌入清單中存在完全相同的路徑
 ; [exists](#embed.exists)
-
 embed.exists = (path str) (yes bool) {
     path-len = path.len()
     i <- [0...count): {

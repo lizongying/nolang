@@ -9,11 +9,13 @@ view-point {
 }
 
 ; 返回 self 的視圖
+; v &view-point: 指向 self 的借用（與呼叫端實例同一塊記憶體，無拷貝、無分配）
 view-point.self-view = () (v &view-point) {
     v = .
 }
 
 ; 一般方法，用來驗證透過 view 呼叫方法
+; s i64: x + y 的結果（overflow 採 wrap）；p 為 (7, 9) 時得 16
 view-point.sum = () (s i64) {
 
     #{overflow=wrap}

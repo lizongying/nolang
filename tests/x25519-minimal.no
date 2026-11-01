@@ -7,6 +7,8 @@ key-holder {
 }
 
 ; 將 hex 字串轉為 [32]byte
+; hex-str str: 64 字元 hex 字串（每 2 字元一個位元組）
+; out [32]byte: 解析出的 32 位元組
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
@@ -50,6 +52,8 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
     }
 }
 
+; 測試 min：最小重現——在同一作用域內先讀 alice-priv 的位元組，再呼叫 scalarmult-base
+; pass bool: true=alice-pub[0] 為 133（金標 0x85）；false=公鑰首 byte 不符
 test-min = () (pass bool) {
     pass = false
     alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')

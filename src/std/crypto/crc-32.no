@@ -5,10 +5,11 @@
 ; 用法：
 ;   h = new('hello', 5)
 
-; 計算 CRC32 校驗和
-; s: 輸入字串, n: 字串長度
-; 返回 crc: 輸出校驗和
-; [new](#crypto.crc-32.new)
+; 計算 CRC-32（IEEE 802.3，反射多項式 0xEDB88320）校驗和
+; s []byte: 輸入位元組緩衝區
+; n i64: 實際參與計算的位元組數（可小於 s 的長度）；只掃描 s[0..n)
+; crc i64: 32-bit 校驗和（已做最終 xorout 0xFFFFFFFF），範圍 0..4294967295
+; [new](#crc-32.new)
 new = (s []byte, n i64) (crc i64) {
     crc = 4294967295
     i <- [0..n): {

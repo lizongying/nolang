@@ -1,5 +1,8 @@
 ; async-cancel.no — async-cancel / cancelled / async-yield 探针
 
+; 協程：把數值乘二，供取消後確認結果回零值使用
+; n i64: 來源數值
+; r i64: n * 2；未完成前被取消則為 0
 worker-async = (n i64) (r i64) {
 
     #{overflow=wrap}

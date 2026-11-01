@@ -13,21 +13,30 @@
 ;
 ; 修復前「again」那幾條印出內層值（7 / child），修復後印出外層值（42 / root）。
 
+; 檢查 str
+; name str: 這項檢查的名稱，輸出時原樣印出
+; got str: 實際取得的值
+; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check-str = (name str, got str, want str) {
     got == want -> print('ok: {name}')
 
     -> print('fail: {name} got=[{got}] want=[{want}]')
 }
 
+; 外層選項：固定回 ok(42)，供巢狀 match 的外層使用
+; out ?i64: 內容為 42 的 ok 選項
 mk-outer = () (out ?i64) {
     out = 42
 }
 
+; 內層選項：固定回 ok(7)，供巢狀 match 的內層使用
+; out ?i64: 內容為 7 的 ok 選項
 mk-inner = () (out ?i64) {
     out = 7
 }
 
 ; 最小重現：兩層 option match
+; out str: 內外層都命中 ok 時的組合字串（外層 it 在內層結束後要還原成 42）
 probe-min = () (out str) {
     out = ''
     a = mk-outer()
@@ -56,7 +65,8 @@ probe-min = () (out str) {
     }
 }
 
-; 三層巢狀：每一層都要各自還原
+; 三層巢狀：每一層的 it 都要各自還原
+; out str: 三層都命中 ok 時的組合字串
 probe-deep = () (out str) {
     out = ''
     a = mk-outer()
@@ -96,6 +106,7 @@ probe-deep = () (out str) {
 }
 
 ; else 臂（wildcard）裡的巢狀 match 也要還原
+; out str: 巢狀 match 結束後應保留外層 it（42），而不是內層的值
 probe-else = () (out str) {
     out = ''
     a = mk-outer()

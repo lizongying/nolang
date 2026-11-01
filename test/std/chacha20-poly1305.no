@@ -6,6 +6,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -22,6 +25,7 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 密封輸出佈局：45 位元組明文 → 密文 45 + Poly1305 標籤 16 = 61 位元組
 t-seal = () {
     key [32]byte = [
         0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
@@ -43,6 +47,7 @@ t-seal = () {
     runner.str-eq(bhex(sealed), 'dc13883e699c728a38b2e0974fb0399ef4e0c97a48454eaab8f9a4a723e760d121eceb5ec3fc7e45d7b6d3619d8381201392ca82f46516577efe95d888', 122, 'ccpoly seal ct||tag')
 }
 
+; 以相同 key / nonce / AAD 解封應還原明文（需認證通過才輸出）
 t-open = () {
     key [32]byte = [
         0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,

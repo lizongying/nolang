@@ -178,10 +178,14 @@ SHIFT-TBL [16]byte = [
 
 ; ─── 位元排列輔助 ──────────────────────────────
 
-; 根據排列表提取位元
-; tbl 使用標準 DES 1-indexed MSB 位元編號（1..width）。
-; width 為輸入位元寬度。輸出為 MSB-first（第 0 個表項 → 最高位）。
-; [permute](#crypto.des.permute)
+; 根據排列表提取並重排位元
+; tbl 使用標準 DES 1-indexed MSB 位元編號（1..width）；輸出為 MSB-first（表第 0 項 → 最高位）。
+; input i64: 待排列的輸入值（只取低 width 位元）
+; tbl []byte: 排列表，每個元素是 1-indexed 的來源位元位置
+; n i64: 參與排列的位元數（等於 tbl 的有效長度）
+; width i64: 輸入位元寬度（決定位元位置基准，如 64 / 56 / 48 / 32）
+; r i64: 排列結果，第 0 個表項佔最高位
+; [permute](#des.permute)
 permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
@@ -199,9 +203,11 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
 }
 
 ; 查詢 S-box
-; input 為 6 位元值（MSB-first），b1 b2 b3 b4 b5 b6。
-; row = b1*2 + b6，col = b2 b3 b4 b5。
-; [sbox-lookup](#crypto.des.sbox-lookup)
+; input 為 6 位元值（MSB-first），b1 b2 b3 b4 b5 b6；row = b1*2 + b6，col = b2b3b4b5。
+; input i64: 6 位元的 S-box 輸入（只取低 6 位元）
+; box []byte: 64 項 S-box 表（4 列 × 16 欄扁平存放）
+; r i64: 查表得到的 4 位元輸出
+; [sbox-lookup](#des.sbox-lookup)
 sbox-lookup = (input i64, box []byte) (r i64) {
 
     v = input & 63
@@ -216,8 +222,13 @@ sbox-lookup = (input i64, box []byte) (r i64) {
 
 ; ─── Feistel 輪函數 ──────────────────────────────
 
-; DES 輪函數
-; [f](#crypto.des.f)
+; DES 輪函數 F(R, K)
+; 對 32-bit 半區 R 做 E 擴展到 48 位，與 48-bit 子金鑰 K 異或後過 8 個 S 盒，
+; 最後用 P 置換得到 32-bit 輸出。
+; r i64: 右半區（低 32 位有效）
+; k i64: 48-bit 子金鑰（低 48 位有效）
+; 返回 out i64: F 函數結果（低 32 位有效）
+; [f](#des.f)
 f = (r i64, k i64) (out i64) {
     er = 0
     s0 = 0
@@ -253,7 +264,11 @@ f = (r i64, k i64) (out i64) {
 ; ─── 金鑰排程 ──────────────────────────────────────
 
 ; 產生 16 個 48-bit 子金鑰
-; [des-key-schedule](#crypto.des.des-key-schedule)
+; 依 PC-1 壓縮 64-bit 金鑰成 56 位，拆成 C/D 兩半，每輪按輪次表循環左移，
+; 再用 PC-2 選出 48 位，共 16 組按大端順序寫入 ks（每組 6 位元組）。
+; key [8]byte: 8 位元組 DES 金鑰（含奇偶校驗位，不校驗）
+; 返回 ks [96]byte: 16 × 6 位元組子金鑰序列（第 i 組在 ks[i*6 .. i*6+6)）
+; [des-key-schedule](#des.des-key-schedule)
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     i <- [0..8): {
@@ -315,7 +330,13 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 ; ─── 單區塊加密/解密 ──────────────────────────────
 
 ; DES 單區塊處理（通用）
-; [des-block](#crypto.des.des-block)
+; 讀入首 8 位元組 → IP 置換 → 16 輪 Feistel → FP 置換 → 寫回 8 位元組結果。
+; in []byte: 輸入資料，只取前 n 位元組（通常為 8）
+; n i64: 要處理的位元組數（一般為 8）
+; ks [96]byte: 由 des-key-schedule 產生的 16 組子金鑰
+; encrypt i64: 1=加密（子金鑰正序）, 其他值=解密（子金鑰逆序）
+; 返回 out []byte: 8 位元組結果輸出
+; [des-block](#des.des-block)
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
@@ -365,7 +386,12 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
 }
 
 ; 加密一個 8-byte 區塊
-; [des-enc](#crypto.des.des-enc)
+; 內部先展開金鑰排程再呼叫 des-block(encrypt=1)。
+; in []byte: 輸入明文，只取首 8 位元組
+; n i64: 要處理的位元組數（一般為 8）
+; key [8]byte: 8 位元組 DES 金鑰
+; 返回 out []byte: 8 位元組密文
+; [des-enc](#des.des-enc)
 des-enc = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)
@@ -373,7 +399,12 @@ des-enc = (in []byte, n i64, key [8]byte) (out []byte) {
 }
 
 ; 解密一個 8-byte 區塊
-; [des-dec](#crypto.des.des-dec)
+; 與 des-enc 相同，只是把 16 組子金鑰逆序使用（des-block(encrypt=0)）。
+; in []byte: 輸入密文，只取首 8 位元組
+; n i64: 要處理的位元組數（一般為 8）
+; key [8]byte: 8 位元組 DES 金鑰，必須與加密時一致
+; 返回 out []byte: 8 位元組明文
+; [des-dec](#des.des-dec)
 des-dec = (in []byte, n i64, key [8]byte) (out []byte) {
     ks [96]byte
     ks = des-key-schedule(key)

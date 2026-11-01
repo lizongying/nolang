@@ -76,7 +76,10 @@ ED-L [32]byte = [
 ; ═══════════════════════════════════════════════
 
 ; 將 10-limb 域元素 src 寫入點 p 的偏移 off 處
-; [set-coord](#crypto.ed25519.set-coord)
+; p: 目標點緩衝（40 limb：X‖Y‖Z‖T 各 10 limb 串接）
+; off: 寫入 p 的起始 limb 位移
+; src: 待寫入的域元素（10 limb）
+; [set-coord](#ed25519.set-coord)
 set-coord = (p []i64, off i64, src []i64) {
 
     i <- [0..10): {
@@ -90,7 +93,9 @@ set-coord = (p []i64, off i64, src []i64) {
 }
 
 ; 整點複製 dst = src（40 limb）
-; [pcopy](#crypto.ed25519.pcopy)
+; dst: 目的點（40 limb）
+; src: 來源點（40 limb）
+; [pcopy](#ed25519.pcopy)
 pcopy = (dst []i64, src []i64) {
 
     i <- [0..40): {
@@ -104,19 +109,23 @@ pcopy = (dst []i64, src []i64) {
 }
 
 ; 回傳曲線常數 d 的域元素
-; [ed-d](#crypto.ed25519.ed-d)
+; h: 曲線常數 d 的域元素（10 limb，小端）
+; [ed-d](#ed25519.ed-d)
 ed-d = () (h []i64) {
     h = x25519.fe-frombytes-v(ED-D-BYTES)
 }
 
 ; 回傳 sqrt(-1) 的域元素
-; [ed-sqm1](#crypto.ed25519.ed-sqm1)
+; h: sqrt(-1) mod p 的域元素（10 limb）
+; [ed-sqm1](#ed25519.ed-sqm1)
 ed-sqm1 = () (h []i64) {
     h = x25519.fe-frombytes-v(ED-SQM1-BYTES)
 }
 
 ; 32 位元組全為 0 回傳 1，否則 0
-; [is-zero-arr](#crypto.ed25519.is-zero-arr)
+; a: 待檢測的 32 位元組陣列
+; z: 1=32 位元組全為 0, 0=存在非零位元組
+; [is-zero-arr](#ed25519.is-zero-arr)
 is-zero-arr = (a [32]byte) (z i64) {
 
     z = 1
@@ -134,7 +143,10 @@ is-zero-arr = (a [32]byte) (z i64) {
 ; ═══════════════════════════════════════════════
 
 ; R = P + Q（add-2008-hwcd, a=-1 完整加法法）
-; [ge-add](#crypto.ed25519.ge-add)
+; r: 輸出點 R = P + Q（40 limb expanded 座標）
+; p: 加數點（40 limb expanded 座標）
+; q: 加數點（40 limb expanded 座標）
+; [ge-add](#ed25519.ge-add)
 ge-add = (r []i64, p []i64, q []i64) {
 
     d = ed-d()
@@ -169,7 +181,9 @@ ge-add = (r []i64, p []i64, q []i64) {
 
 ; R = scalar * P（double-and-add，逐位元 254..0）
 ; scalar: []byte（小端，長度 >= 32）
-; [ge-scalar-mult](#crypto.ed25519.ge-scalar-mult)
+; r: 輸出點 R = scalar * P（40 limb expanded 座標）
+; p: 被乘基點（40 limb expanded 座標）
+; [ge-scalar-mult](#ed25519.ge-scalar-mult)
 ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 
     ; 初始化 R 為單位元 (0,1,1,0)
@@ -206,7 +220,9 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 ; ═══════════════════════════════════════════════
 
 ; 點壓縮為 32 位元組（y 的小端編碼，最高位為 x 符號位）
-; [ge-pack](#crypto.ed25519.ge-pack)
+; p: 待壓縮點（40 limb expanded 座標）
+; out: 壓縮後 32 位元組（y 的小端編碼，最高位為 x 符號位）
+; [ge-pack](#ed25519.ge-pack)
 ge-pack = (p []i64) (out [32]byte) {
 
     zinv = x25519.fe-invert-v(p[20..])
@@ -223,7 +239,10 @@ ge-pack = (p []i64) (out [32]byte) {
 }
 
 ; 回傳 base^e（e 為小端 32 位元組指數，平方-乘法）
-; [fe-pow](#crypto.ed25519.fe-pow)
+; base: 底數域元素（10 limb）
+; e: 指數（32 位元組小端）
+; out: base^e 的結果域元素（10 limb）
+; [fe-pow](#ed25519.fe-pow)
 fe-pow = (base []i64, e [32]byte) (out []i64) {
 
     out = x25519.fe-one-v()
@@ -245,7 +264,10 @@ fe-pow = (base []i64, e [32]byte) (out []i64) {
 }
 
 ; 從 32 位元組解壓縮點。回傳 ok(1/0)、p(長度 40 的點)
-; [ge-unpack](#crypto.ed25519.ge-unpack)
+; s: 壓縮點 32 位元組（y 的小端編碼，最高位為 x 符號位）
+; ok: 1=解壓成功（為有效 y 座標）, 0=非平方剩餘/無效
+; p: 解壓出的點（40 limb expanded 座標；ok=0 時內容不保證有效）
+; [ge-unpack](#ed25519.ge-unpack)
 ge-unpack = (s [32]byte) (ok i64, p []i64) {
 
     p = with-len(40)
@@ -313,7 +335,8 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 ; ═══════════════════════════════════════════════
 
 ; 回傳基點 B 的 extended 座標（長度 40）
-; [ge-basepoint](#crypto.ed25519.ge-basepoint)
+; bp: 基點 B 的 expanded 座標（長度 40 的點緩衝）
+; [ge-basepoint](#ed25519.ge-basepoint)
 ge-basepoint = () (bp []i64) {
 
     bp = with-len(40)
@@ -332,7 +355,9 @@ ge-basepoint = () (bp []i64) {
 ; ═══════════════════════════════════════════════
 
 ; 比較 acc(32 byte) >= L 回傳 1 否則 0
-; [sc-ge-l](#crypto.ed25519.sc-ge-l)
+; acc: 待比較純量的逐位元組序列（長度 32，小端）
+; ge: 1=acc >= L（群階）, 0=acc < L
+; [sc-ge-l](#ed25519.sc-ge-l)
 sc-ge-l = (acc []i64) (ge i64) {
 
     ge = 1
@@ -362,7 +387,9 @@ sc-ge-l = (acc []i64) (ge i64) {
 
 ; 將 s（小端整數，長度任意）規約 mod L，回傳 [32]byte
 ; 逐位元 long division：acc 恆 < L，acc=acc*2+bit 後若 >= L 則減 L
-; [sc-reduce](#crypto.ed25519.sc-reduce)
+; s: 待約簡的小端純量位元組串（長度任意）
+; out: s mod L 的 32 位元組結果
+; [sc-reduce](#ed25519.sc-reduce)
 sc-reduce = (s []byte) (out [32]byte) {
     acc []i64 = with-len(32)
 
@@ -430,7 +457,11 @@ sc-reduce = (s []byte) (out [32]byte) {
 }
 
 ; 回傳 (a*b + c) mod L（a,b,c 各 [32]byte）
-; [sc-muladd](#crypto.ed25519.sc-muladd)
+; a: 乘數純量（32 位元組小端）
+; b: 乘數純量（32 位元組小端）
+; c: 加數純量（32 位元組小端）
+; s: (a * b + c) mod L 的結果純量（32 位元組）
+; [sc-muladd](#ed25519.sc-muladd)
 sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
 
     prod []i64 = with-len(64)
@@ -526,7 +557,9 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
 ; ═══════════════════════════════════════════════
 
 ; 從種子計算公鑰
-; [ed25519-publickey](#crypto.ed25519.ed25519-publickey)
+; seed: 32 位元組私鑰種子
+; pub: 由種子導出的公鑰（32 位元組壓縮點）
+; [ed25519-publickey](#ed25519.ed25519-publickey)
 ed25519-publickey = (seed [32]byte) (pub [32]byte) {
 
     h = sha512.sha512(seed)
@@ -562,7 +595,10 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
 }
 
 ; 簽名，回傳 R || S（64 位元組）
-; [ed25519-sign](#crypto.ed25519.ed25519-sign)
+; seed: 32 位元組私鑰種子
+; msg: 待簽名訊息
+; sig: 簽名 R ‖ S（64 位元組）
+; [ed25519-sign](#ed25519.ed25519-sign)
 ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 
     h = sha512.sha512(seed)
@@ -704,7 +740,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 }
 
 ; 驗證簽名，回傳 ok（1=有效, 0=無效）
-; [ed25519-verify](#crypto.ed25519.ed25519-verify)
+; pub: 簽署方公鑰（32 位元組壓縮點）
+; msg: 待驗證的原始訊息
+; sig: 待驗證簽名 R ‖ S（64 位元組）
+; ok: 1=簽名有效, 0=無效
+; [ed25519-verify](#ed25519.ed25519-verify)
 ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
     ; R = sig[0:32], S = sig[32:64]

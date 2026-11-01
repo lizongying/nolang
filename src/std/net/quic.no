@@ -72,10 +72,10 @@ QUIC-MAX-FRAMES = 32
 ; ═══════════════════════════════════════════════
 
 ; 將 i64 編碼為 QUIC 變長整數
-; val i64: 要編碼的值
+; val: 要編碼為變長整數的非負 i64 值
 ; 返回 buf []byte: 編碼結果（1/2/4/8 位元組）
-; 返回 n i64: 編碼長度
-; [varint-encode](#net.quic.varint-encode)
+; 返回 n i64: buf 中實際寫入的編碼位元組數
+; [varint-encode](#quic.varint-encode)
 varint-encode = (val i64) (buf []byte, n i64) {
     n = 0
     {
@@ -124,11 +124,11 @@ varint-encode = (val i64) (buf []byte, n i64) {
 }
 
 ; 從 buf 的 pos 位置解碼 QUIC 變長整數
-; buf []byte: 資料緩衝區
-; pos i64: 起始位置
-; 返回 val i64: 解碼值
+; buf: 存放變長整數的資料緩衝區
+; pos: 開始解碼的位元組偏移
+; 返回 val i64: 解碼得到的整數值
 ; 返回 next-pos i64: 下一個位置（-1=錯誤）
-; [varint-decode](#net.quic.varint-decode)
+; [varint-decode](#quic.varint-decode)
 varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     next-pos = -1
     val = 0
@@ -214,9 +214,9 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 ; ═══════════════════════════════════════════════
 
 ; 生成隨機 Connection ID
-; len i64: CID 長度（通常 8）
-; 返回 cid []byte: 隨機 CID
-; [gen-cid](#net.quic.gen-cid)
+; len: 欲生成的 CID 位元組長度（通常 8）
+; 返回 cid []byte: 隨機生成的 Connection ID 位元組
+; [gen-cid](#quic.gen-cid)
 gen-cid = (len i64) (cid []byte) {
 
     ; xorshift32 的 0 是固定點（0 永遠產生 0），必須以非零種子起算。
@@ -251,12 +251,12 @@ frame {
 }
 
 ; 從 buf 的 pos 位置開始解析所有影格
-; buf []byte: 資料緩衝區
-; pos i64: 起始位置
-; end i64: 結束位置
+; buf: 含 QUIC 影格的資料緩衝區
+; pos: 開始解析的位元組偏移
+; end: 解析終止的位元組偏移（不含）
 ; 返回 frames [32]frame: 解析出的影格陣列
 ; 返回 count i64: 影格數量（-1=錯誤）
-; [parse-frames](#net.quic.parse-frames)
+; [parse-frames](#quic.parse-frames)
 parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
     r-pos = pos
     count = 0
@@ -417,12 +417,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 ; ═══════════════════════════════════════════════
 
 ; 從 Destination CID 推導 Initial 金鑰
-; dst-cid []byte: 目標 Connection ID
-; is-client bool: true=客戶端金鑰, false=伺服器端金鑰
+; dst-cid: 對端（目標）Connection ID 位元組
+; is-client: 為 true 推導客戶端金鑰，false 推導伺服器端金鑰
 ; 返回 key [16]byte: AEAD 金鑰
 ; 返回 iv [12]byte: AEAD IV
 ; 返回 hp [16]byte: 標頭保護金鑰
-; [derive-initial-keys](#net.quic.derive-initial-keys)
+; [derive-initial-keys](#quic.derive-initial-keys)
 derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byte, hp [16]byte) {
 
     ; 1. Initial Secret = HKDF-Extract(Initial_Salt, dst_cid)
@@ -479,11 +479,11 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
 ; ═══════════════════════════════════════════════
 
 ; 對封包應用/移除標頭保護
-; packet []byte: 封包資料（就地修改）
-; pn-offset i64: 封包號碼偏移量
-; hp [16]byte: 標頭保護金鑰
-; is-long-header bool: 是否為 Long Header
-; [apply-header-protection](#net.quic.apply-header-protection)
+; packet: 待處理的封包資料（就地修改）
+; pn-offset: 封包號碼在封包中的位元組偏移
+; hp: 用於標頭保護的 16 位元組金鑰
+; is-long-header: 是否為 Long Header 封包
+; [apply-header-protection](#quic.apply-header-protection)
 apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
 
     #{overflow=wrap}
@@ -536,22 +536,22 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
 }
 
 ; 移除標頭保護（同 apply，XOR 對稱）
-; packet []byte: 封包資料
-; pn-offset i64: 封包號碼偏移量
-; hp [16]byte: 標頭保護金鑰
-; is-long-header bool: 是否為 Long Header
-; [remove-header-protection](#net.quic.remove-header-protection)
+; packet: 待處理的封包資料（就地修改）
+; pn-offset: 封包號碼在封包中的位元組偏移
+; hp: 用於標頭保護的 16 位元組金鑰
+; is-long-header: 是否為 Long Header 封包
+; [remove-header-protection](#quic.remove-header-protection)
 remove-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-header bool) {
     apply-header-protection(packet, pn-offset, hp, is-long-header)
 }
 
 ; 從封包中解碼封包號碼
-; packet []byte: 封包資料（已移除標頭保護）
-; pn-offset i64: 封包號碼偏移量
-; largest-pn i64: 之前接收到的最大封包號碼
-; 返回 pn i64: 封包號碼
-; 返回 pn-len i64: 封包號碼位元組數
-; [decode-packet-number](#net.quic.decode-packet-number)
+; packet: 已移除標頭保護的封包資料
+; pn-offset: 封包號碼在封包中的位元組偏移
+; largest-pn: 之前成功解碼出的最大封包號碼（用於推斷高位）
+; 返回 pn i64: 完整封包號碼
+; 返回 pn-len i64: 封包號碼欄位佔用的位元組數
+; [decode-packet-number](#quic.decode-packet-number)
 decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, pn-len i64) {
 
     pn = 0
@@ -673,7 +673,7 @@ QUIC-STATE-HANDSHAKE = 3
 QUIC-STATE-CONNECTED = 4
 
 ; 初始化連線
-; [init](#net.quic.conn.init)
+; [init](#quic.conn.init)
 conn.init = () {
     .fd = -1
     .state = QUIC-STATE-NEW
@@ -688,7 +688,7 @@ conn.init = () {
 }
 
 ; 關閉連線
-; [close](#net.quic.conn.close)
+; [close](#quic.conn.close)
 conn.close = () {
     .fd >= 0 -> {
         fs.close(.fd)
@@ -702,9 +702,9 @@ conn.close = () {
 ; ═══════════════════════════════════════════════
 
 ; quic-build-initial-packet: 構建 QUIC Initial 封包
-; crypto-data []byte: CRYPTO 影格資料（TLS ClientHello）
+; crypto-data: 待承載的 CRYPTO 影格資料（TLS ClientHello）
 ; 返回 out ?[]byte: 成功則為完整 Initial 封包（已加密），失敗為 nil
-; [build-initial-packet](#net.quic.conn.build-initial-packet)
+; [build-initial-packet](#quic.conn.build-initial-packet)
 conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
     out = nil
@@ -948,7 +948,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 ; 返回 frames [32]frame: 解析出的影格
 ; 返回 count i64: 影格數量（-1=錯誤）
 ; 返回 ok bool: true=成功
-; [recv-initial](#net.quic.conn.recv-initial)
+; [recv-initial](#quic.conn.recv-initial)
 conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     ok = false
@@ -1072,9 +1072,9 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 }
 
 ; conn.recv-packet: 接收任意 QUIC 封包
-; 返回 buf []byte: 原始封包
+; 返回 buf []byte: 收到的原始封包位元組
 ; 返回 n i64: 接收位元組數（-1=錯誤, 0=逾時）
-; [recv-raw](#net.quic.conn.recv-raw)
+; [recv-raw](#quic.conn.recv-raw)
 conn.recv-raw = () (buf []byte, n i64) {
     buf = with-len(QUIC-MAX-PACKET-SIZE)
     n = net.net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
@@ -1085,10 +1085,10 @@ conn.recv-raw = () (buf []byte, n i64) {
 ; ═══════════════════════════════════════════════
 
 ; 建立 QUIC 連線
-; host str: 伺服器主機名或 IP
-; port i64: 埠號
-; 返回 conn ?conn: ok=連線, nil=失敗
-; [dial](#net.quic.dial)
+; host: 伺服器主機名稱或 IP 位址
+; port: 伺服器 UDP 埠號
+; 返回 conn ?conn: ok=已建立的連線, nil=失敗
+; [dial](#quic.dial)
 dial = (host str, port i64) (conn ?conn) {
     conn = nil
     c conn

@@ -501,21 +501,24 @@ link {
 
 ; 返回鏈結串列中元素數量
 ; 返回 sz i64: 元素數量
-; [size](#collection.link.link.size)
+; sz i64: 目前有效節點個數（尚未加入任何節點時為 0）
+; [size](#link.link.size)
 link.size = () (sz i64) {
     sz = .size
 }
 
 ; 判斷鏈結串列是否為空
 ; 返回 yes bool: true=空, false=非空
-; [empty](#collection.link.link.empty)
+; yes bool: true=size <= 0（頭尾指標均為 -1）
+; [empty](#link.link.empty)
 link.empty = () (yes bool) {
     yes = .size <= 0
 }
 
 ; 判斷節點池是否已滿
 ; 返回 yes bool: true=已滿, false=未滿
-; [full](#collection.link.link.full)
+; yes bool: true=free-head < 0（空閒鏈已耗盡，後續 insert 拿不到新節點）
+; [full](#link.link.full)
 link.full = () (yes bool) {
     yes = .free-head < 0
 }

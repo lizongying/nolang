@@ -56,9 +56,9 @@ url-info {
 ; ═══════════════════════════════════════════════
 
 ; 解析 URL 字串
-; url-str str: 完整 URL
+; url-str: 待解析的完整 URL 字符串
 ; 返回 u url-info: 解析結果（u.ok=true=成功）
-; [url-parse](#net.url.url-parse)
+; [url-parse](#url.url-parse)
 url-parse = (url-str str) (u url-info) {
 
     u.ok = false
@@ -177,9 +177,9 @@ url-parse = (url-str str) (u url-info) {
 }
 
 ; 取得查詢參數值
-; key str: 參數名
+; key: 要讀取的查詢參數名
 ; 返回 val ?str: ok=參數值, nil=未找到
-; [get-query](#net.url.url-info.get-query)
+; [get-query](#url.url-info.get-query)
 url-info.get-query = (key str) (val ?str) {
     val = nil
     .query.len-bytes() == 0 -> return
@@ -222,9 +222,9 @@ url-info.get-query = (key str) (val ?str) {
 }
 
 ; 設定查詢參數值
-; key str: 參數名
-; value str: 參數值
-; [set-query](#net.url.url-info.set-query)
+; key: 要設定的查詢參數名
+; value: 該參數的新值
+; [set-query](#url.url-info.set-query)
 url-info.set-query = (key str, value str) {
 
     .query.len-bytes() == 0 -> {
@@ -282,8 +282,8 @@ url-info.set-query = (key str, value str) {
 }
 
 ; 將 URL 重新組裝為字串
-; 返回 out str: 完整 URL
-; [to-str](#net.url.url-info.to-str)
+; 返回 out str: 組裝後的完整 URL
+; [to-str](#url.url-info.to-str)
 url-info.to-str = () (out str) {
 
     out = ''
@@ -343,9 +343,9 @@ url-info.to-str = () (out str) {
 ; ═══════════════════════════════════════════════
 
 ; URL 編碼（百分號編碼）
-; s str: 原始字串
-; 返回 out str: 編碼後字串
-; [url-encode](#net.url.url-encode)
+; s: 待編碼的原始字符串
+; 返回 out str: 百分號編碼後的字符串
+; [url-encode](#url.url-encode)
 url-encode = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
 
@@ -390,9 +390,9 @@ url-encode = (s str) (out str) {
 }
 
 ; URL 編碼（元件模式，也編碼 / 和 ?）
-; s str: 原始字串
-; 返回 out str: 編碼後字串
-; [url-encode-component](#net.url.url-encode-component)
+; s: 待編碼的原始字符串
+; 返回 out str: 百分號編碼後的字符串
+; [url-encode-component](#url.url-encode-component)
 url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
     #{overflow=wrap}
@@ -433,9 +433,9 @@ url-encode-component = (s str) (out str) {
 }
 
 ; URL 解碼（百分號解碼）
-; s str: 編碼字串
-; 返回 out str: 解碼後字串
-; [url-decode](#net.url.url-decode)
+; s: 待解碼的百分號編碼字符串
+; 返回 out str: 解碼後的原始字符串
+; [url-decode](#url.url-decode)
 url-decode = (s str) (out str) {
     out = with-cap(s.len-bytes() + 1)
     i = 0
@@ -447,7 +447,7 @@ url-decode = (s str) (out str) {
         {
             c == 37 && i + 2 < s.len-bytes() -> {
 
-                ; %XX（僅當後兩字节均為有效十六進位才解碼，否則直通 '%'）
+                ; %XX（僅當後兩字節均為有效十六進位才解碼，否則直通 '%'）
 
                 #{overflow=wrap}
                 h1-opt = s.byte(i + 1)
@@ -515,11 +515,11 @@ url-decode = (s str) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; 從鍵值對建構查詢字串
-; keys [16]str: 鍵陣列
-; values [16]str: 值陣列
-; count i64: 鍵值對數量
+; keys: 鍵陣列（前 count 項有效）
+; values: 值陣列（與 keys 一一對應）
+; count: 有效鍵值對的數量
 ; 返回 out str: 查詢字串（如 key1=val1&key2=val2）
-; [url-build-query](#net.url.url-build-query)
+; [url-build-query](#url.url-build-query)
 url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
@@ -541,10 +541,10 @@ url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
 }
 
 ; 連接基礎 URL 和路徑
-; base str: 基礎 URL
-; path-str str: 要附加的路徑
-; 返回 out str: 完整 URL
-; [url-join](#net.url.url-join)
+; base: 基礎 URL
+; path-str: 要附加到末尾的路徑
+; 返回 out str: 連接後的完整 URL
+; [url-join](#url.url-join)
 url-join = (base str, path-str str) (out str) {
 
     ; 如果 path-str 是完整 URL，直接返回
@@ -611,10 +611,10 @@ url-join = (base str, path-str str) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; 產生 HTTP Basic 認證標頭值
-; user str: 用戶名
-; password str: 密碼
+; user: 用戶名
+; password: 密碼
 ; 返回 out str: 標頭值（如 'Basic dXNlcjpwYXNz'）
-; [url-basic-auth](#net.url.url-basic-auth)
+; [url-basic-auth](#url.url-basic-auth)
 url-basic-auth = (user str, password str) (out str) {
 
     ; 拼接 user:password
@@ -626,10 +626,10 @@ url-basic-auth = (user str, password str) (out str) {
 }
 
 ; 解析 HTTP Basic 認證標頭
-; header str: Authorization 標頭值（如 'Basic dXNlcjpwYXNz'）
+; header: Authorization 標頭值（如 'Basic dXNlcjpwYXNz'）
 ; 返回 user str: 用戶名（空=解析失敗）
 ; 返回 password str: 密碼
-; [url-parse-basic-auth](#net.url.url-parse-basic-auth)
+; [url-parse-basic-auth](#url.url-parse-basic-auth)
 url-parse-basic-auth = (header str) (user str, password str) {
 
     user = ''

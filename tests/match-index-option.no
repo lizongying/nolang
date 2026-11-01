@@ -52,6 +52,7 @@ t-replace-n = () {
     runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'txt.replace-n 2x')
 }
 
+; txt.split 得到 []txt 後呼叫 join('.'): 'a-b-c-d' → 'a.b.c.d'
 t-join = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')
@@ -79,6 +80,7 @@ t-literal-in-bounds = () {
     runner.str-eq(p, 'b', 1, 'literal in-bounds payload == b')
 }
 
+; 字面量陣列越界：下標 9 應落進 nil 臂（p 取得 'OOB'），不得崩潰
 t-literal-out-of-bounds = () {
     parts = ['a', 'b', 'c', 'd']
     j = 9

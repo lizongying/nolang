@@ -5,6 +5,8 @@
 g-priv [32]byte
 
 ; 將 hex 字串轉為 [32]byte
+; hex-str str: 64 字元 hex 字串（每 2 字元一個位元組）
+; out [32]byte: 解析出的 32 位元組
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
@@ -49,6 +51,9 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
 }
 
 ; 比較兩個 [32]byte 是否相等
+; a [32]byte: 第一個緩衝區（例如預期值）
+; b [32]byte: 第二個緩衝區（例如實算結果）
+; eq bool: 32 個位元組全部相同才為 true（遇差異立即 break）
 bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
     eq = true
     i <- [0..32): {

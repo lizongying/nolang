@@ -12,10 +12,11 @@
 ;   plain = rc4(cipher, key)   // 解密（相同操作）
 
 ; RC4 加密/解密
-; in []byte: 輸入資料
-; key []byte: 金鑰（1-256 位元組）
-; 返回 out []byte: 輸出資料
-; [rc4](#crypto.rc4.rc4)
+; 同一函式既加密也解密：out = in XOR 金鑰流，對 out 再跑一次即還原 in。
+; in []byte: 輸入資料（明文或密文，長度不變）
+; key []byte: 金鑰（1–256 位元組）；為空時內部索引會越界，呼叫方需自行保證非空
+; 返回 out []byte: 與 in 等長的金鑰流異或結果
+; [rc4](#rc4.rc4)
 rc4 = (in []byte, key []byte) (out []byte) {
 
     ; KSA: 金鑰排程

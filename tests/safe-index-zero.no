@@ -2,36 +2,60 @@
 ; 與指定字面量預設值不同，zero 不需知道型別細節，一律回傳該元素型別的零值：
 ;   i64→0  f64→0.0  bool→false  str→''  char→'\0'  byte→0
 
+; 越界取 i64 元素零值：下標 9 遠超長度 3 時得 0，不崩潰
+; arr []i64: 來源向量
+; i i64: 下標，允許越界
+; res i64: arr[i]，越界時為 0
 z-i64 = (arr []i64, i i64) (res i64) {
 
     #{index-out=zero}
     res = arr[i]
 }
 
+; 越界取 f64 元素零值：得 0.0（不是 NaN、不沿用其他元素的值）
+; arr []f64: 來源向量
+; i i64: 下標，允許越界
+; res f64: arr[i]，越界時為 0.0
 z-f64 = (arr []f64, i i64) (res f64) {
 
     #{index-out=zero}
     res = arr[i]
 }
 
+; 越界取 bool 元素零值：得 false（容器原本全是 true，可驗證不是抄了別的元素）
+; arr []bool: 來源向量
+; i i64: 下標，允許越界
+; res bool: arr[i]，越界時為 false
 z-bool = (arr []bool, i i64) (res bool) {
 
     #{index-out=zero}
     res = arr[i]
 }
 
+; 越界取 str 元素零值：得空字串 ''（非 nil）
+; arr []str: 來源向量
+; i i64: 下標，允許越界
+; res str: arr[i]，越界時為 ''
 z-str = (arr []str, i i64) (res str) {
 
     #{index-out=zero}
     res = arr[i]
 }
 
+; 越界取 char 元素零值：得 '\0'（碼點 0）
+; arr []char: 來源向量
+; i i64: 下標，允許越界
+; res char: arr[i]，越界時為 '\0'
 z-char = (arr []char, i i64) (res char) {
 
     #{index-out=zero}
     res = arr[i]
 }
 
+; 越界取 byte 元素零值：得 0
+; arr []u8: 來源向量
+; i i64: 下標，允許越界
+; res u8: arr[i]，越界時為 0
 z-byte = (arr []u8, i i64) (res u8) {
 
     #{index-out=zero}

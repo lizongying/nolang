@@ -7,6 +7,7 @@
 
 ; ── parse-line ────────────────────────────────
 
+; 驗證未加引號的行「a,b,c」被解析為三個欄位 a、b、c
 t-parse-simple = () {
     fields = csv.parse-line('a,b,c', 16)
     runner.eq(fields.len(), 3, 'parse a,b,c len == 3')
@@ -15,6 +16,7 @@ t-parse-simple = () {
     runner.str-eq(fields[2], 'c', 1, 'field 2 == c')
 }
 
+; 驗證中空欄位（「a,,c」）仍解析為三個欄位，其間欄位為空串
 t-parse-empty-fields = () {
     fields = csv.parse-line('a,,c', 16)
     runner.eq(fields.len(), 3, 'parse a,,c len == 3')
@@ -23,6 +25,7 @@ t-parse-empty-fields = () {
     runner.str-eq(fields[2], 'c', 1, 'field 2 == c')
 }
 
+; 驗證引號內的逗號不作分隔——帶引號欄位保留「hello,world」原文
 t-parse-quoted = () {
     fields = csv.parse-line('"hello,world","test"', 16)
     runner.eq(fields.len(), 2, 'parse quoted len == 2')
@@ -30,18 +33,21 @@ t-parse-quoted = () {
     runner.str-eq(fields[1], 'test', 4, 'quoted field 1 == test')
 }
 
+; 驗證引號內的雙引號轉義（成對 "" 還原為單個 "），「say ""hi""" 解析為 say "hi"
 t-parse-escaped-quote = () {
     fields = csv.parse-line('"say ""hi"""', 16)
     runner.eq(fields.len(), 1, 'parse escaped quote len == 1')
     runner.str-eq(fields[0], 'say "hi"', 8, 'escaped quote field == say "hi"')
 }
 
+; 驗證不含逗號的單欄行解析為長度 1 的欄位數組
 t-parse-single = () {
     fields = csv.parse-line('only', 16)
     runner.eq(fields.len(), 1, 'parse single len == 1')
     runner.str-eq(fields[0], 'only', 4, 'single field == only')
 }
 
+; 驗證空行解析為 0 個欄位
 t-parse_empty_line = () {
     fields = csv.parse-line('', 16)
     runner.eq(fields.len(), 0, 'parse empty line len == 0')
@@ -52,6 +58,7 @@ t-parse_empty_line = () {
 ; 與回傳的多值都正確；這是 fields[n], pos = parse-field(...) 多返回值
 ; 寫入陣列元素下沉限制的守衛。
 
+; 驗證 parse-field 自指定位置逐欄解析，回傳欄位值與下一欄起點（守衛陣列元素下沉修復）
 t-parse-field-basic = () {
     f, np = csv.parse-field('a,b,c', 0)
     runner.str-eq(f, 'a', 1, 'parse-field basic field == a')
@@ -64,12 +71,14 @@ t-parse-field-basic = () {
     runner.eq(np3, 5, 'parse-field third new-pos == 5')
 }
 
+; 驗證 parse-field 解析帶引號欄位時剝除外層引號並回傳其後位置
 t-parse-field-quoted = () {
     f, np = csv.parse-field('"hello,world"', 0)
     runner.str-eq(f, 'hello,world', 11, 'parse-field quoted == hello,world')
     runner.eq(np, 13, 'parse-field quoted new-pos == 13')
 }
 
+; 驗證 parse-field 解析空輸入得空欄位且位置仍為 0
 t-parse-field-empty = () {
     f, np = csv.parse-field('', 0)
     runner.eq(f.len(), 0, 'parse-field empty field len == 0')
@@ -78,17 +87,20 @@ t-parse-field-empty = () {
 
 ; ── encode-field ─────────────────────────────
 
+; 驗證無需轉義的欄位原樣編碼輸出（hello → hello）
 t-encode-simple = () {
     out = csv.encode-field('hello')
     runner.str-eq(out, 'hello', 5, 'encode simple == hello')
 }
 
+; 驗證含逗號的欄位編碼時被引號包裹（a,b → "a,b"）
 t-encode-comma = () {
     out = csv.encode-field('a,b')
     runner.eq(out.len(), 5, 'encode comma len == 5')
     runner.str-eq(out, '"a,b"', 5, 'encode comma == "a,b"')
 }
 
+; 驗證含引號的欄位編碼時內部引號加倍並整體包裹（say "hi" → "say ""hi"""）
 t-encode-quote = () {
     out = csv.encode-field('say "hi"')
     runner.str-eq(out, '"say ""hi"""', 11, 'encode quote == "say ""hi"""')

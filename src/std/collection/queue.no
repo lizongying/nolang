@@ -139,7 +139,8 @@ queue {
 
 ; 返回佇列中元素數量
 ; 返回 sz i64: 元素數量
-; [size](#collection.queue.queue.size)
+; sz i64: tail - head，即目前排隊中的元素個數（不包含空槽位）
+; [size](#queue.queue.size)
 queue.size = () (sz i64) {
 
     #{overflow=wrap}
@@ -148,14 +149,16 @@ queue.size = () (sz i64) {
 
 ; 判斷佇列是否為空
 ; 返回 yes bool: true=空, false=非空
-; [empty](#collection.queue.queue.empty)
+; yes bool: true=tail <= head（沒有待出佇元素）
+; [empty](#queue.queue.empty)
 queue.empty = () (yes bool) {
     yes = .tail <= .head
 }
 
 ; 判斷佇列是否已滿
-; 返回 yes bool: true=已滿, false=未滿
-; [full](#collection.queue.queue.full)
+; 環形緩衝區永遠保留一個空槽位以區分「空」與「滿」，因此可容納的元素上限是 cap-1。
+; yes bool: true=tail - head >= cap - 1（已滿，再 push 會覆寫或失敗）, false=還有空位
+; [full](#queue.queue.full)
 queue.full = () (yes bool) {
 
     #{overflow=wrap}
@@ -163,7 +166,7 @@ queue.full = () (yes bool) {
 }
 
 ; 清空佇列
-; [clear](#collection.queue.queue.clear)
+; [clear](#queue.queue.clear)
 queue.clear = () {
     .head = 0
     .tail = 0

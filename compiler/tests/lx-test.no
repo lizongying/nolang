@@ -32,6 +32,7 @@
 ; 1. 空輸入：恰好一個 EOF
 ; ═══════════════════════════════════════════════
 
+; 測試 empty
 test-empty = () {
     ts = lx.scan-all('')
     runner.eq(ts.len(), 1, 'empty source -> exactly 1 token')
@@ -48,6 +49,7 @@ test-empty = () {
 ;    三個元素都會讀到最後一次的 'ghi'。
 ; ═══════════════════════════════════════════════
 
+; 測試 no-alias
 test-no-alias = () {
     ts = lx.scan-all('abc def ghi')
     runner.eq(ts.len(), 4, 'abc def ghi -> 4 tokens')
@@ -72,6 +74,7 @@ test-no-alias = () {
 ; 3. 型別序列：a = 1
 ; ═══════════════════════════════════════════════
 
+; 測試 assign
 test-assign = () {
     ts = lx.scan-all('a = 1')
     runner.eq(ts.len(), 4, 'a = 1 -> 4 tokens')
@@ -97,6 +100,7 @@ test-assign = () {
 ; 4. 換行 token：'1 + 2\n'
 ; ═══════════════════════════════════════════════
 
+; 測試 newline
 test-newline = () {
     ts = lx.scan-all('1 + 2\n')
     runner.eq(ts.len(), 5, '1 + 2 NL -> 5 tokens')
@@ -123,6 +127,7 @@ test-newline = () {
 ; 5. char（雙引號）vs string（單引號）
 ; ═══════════════════════════════════════════════
 
+; 測試 char-vs-string
 test-char-vs-string = () {
     cs = lx.scan-all('"x"')
     runner.eq(cs.len(), 2, 'char literal -> 2 tokens')
@@ -145,6 +150,7 @@ test-char-vs-string = () {
 ; 6. 註釋：marker 欄位區分 `;` 與 `//`
 ; ═══════════════════════════════════════════════
 
+; 測試 comment-marker
 test-comment-marker = () {
     ts = lx.scan-all('; hi\n')
     runner.eq(ts.len(), 3, 'semicolon comment + NL -> 3 tokens')

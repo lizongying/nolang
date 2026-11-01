@@ -1,21 +1,36 @@
+; 兩數相加（結果寫入輸出參數），本檔所有呼叫壓力的基礎函式
+; a i64: 第一個加數
+; b i64: 第二個加數
+; r i64: a + b（#{overflow=wrap}）
 add = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     r = a + b
 }
 
+; 兩數相減
+; a i64: 被減數
+; b i64: 減數
+; r i64: a - b（#{overflow=wrap}）
 sub = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     r = a - b
 }
 
+; 兩數相乘
+; a i64: 第一個因數
+; b i64: 第二個因數
+; r i64: a * b（#{overflow=wrap}）
 mul = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     r = a * b
 }
 
+; 遞迴費氏數列：驗證遞迴呼叫下堆疊/暫存值不被覆蓋
+; n i64: 項數，n < 2 時直接回 n
+; r i64: F(n) = F(n-1) + F(n-2)
 fib = (n i64) (r i64) {
     n < 2 -> r = n
 
@@ -23,15 +38,26 @@ fib = (n i64) (r i64) {
     n >= 2 -> r = fib(n - 1) + fib(n - 2)
 }
 
+; 用兩個輸出參數完成交換：x 取 b、y 取 a
+; a i64: 第一個輸入
+; b i64: 第二個輸入
+; x i64: 等於 b
+; y i64: 等於 a
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
     y = a
 }
 
+; 字串識別：輸出 out 直接接收輸入 s，驗證 str 參數/輸出的 move
+; s str: 來源字串（只讀）
+; out str: 與 s 內容相同的字串
 str-id = (s str) (out str) {
     out = s
 }
 
+; 固定區間求和：迴圈寫死 [0,1,2,3,4]，與參數 n 無關（驗證迴圈變數不會溢出作用域）
+; n i64: 參數，本體未使用
+; r i64: 0+1+2+3+4 = 10
 sum-to = (n i64) (r i64) {
     r = 0
     for i <- [0, 1, 2, 3, 4]: {

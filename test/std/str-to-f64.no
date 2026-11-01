@@ -9,7 +9,9 @@
 
 # /test/runner
 
-; 解析字串、拆開 option、取出 IEEE-754 位元模式
+; 解析字串、拆開 option、取出 IEEE-754 位元模式（解析失敗時 f 固定為 0.0）
+; s str: 待解析的數字文本，如 '1.5'、'-2e3'、'  0.25 '
+; b u64: 解析結果 f64 的 64 位元 IEEE-754 位模式（供與金標常數逐位元比對）
 fbits = (s str) (b u64) {
     v = s.to-f64()
     f f64 = v: {
@@ -25,6 +27,7 @@ failed = 0
 
 ; ── 基本解析 ──────────────────────────────────
 
+; 基本形式：整數 / 小數 / 正負號 / 指數 / 前後空白 / 極小數，比對 IEEE-754 位元模式
 t-basic = () {
     runner.is-true(fbits('0.1') == 0x3FB999999999999A, 'basic 0.1')
     runner.is-true(fbits('42') == 0x4045000000000000, 'basic 42')
@@ -41,6 +44,7 @@ t-basic = () {
 
 ; ── 17 位精度（舊 f64 累積實作會差 1 ULP 的案例）──
 
+; 17 位以上有效數字的捨入：含 ties-to-even 與 1e23 這類累積誤差經典案例
 t-precision = () {
     runner.is-true(fbits('9007199254740993') == 0x4340000000000000, '2^53+1 ties-even')
     runner.is-true(fbits('4503599627370497') == 0x4330000000000001, '2^52+1')
@@ -55,6 +59,7 @@ t-precision = () {
 
 ; ── 次正規 ────────────────────────────────────
 
+; 次正規數：最小次正規 5e-324、向下捨入與完全下溢至零的邊界
 t-subnormal = () {
     runner.is-true(fbits('5e-324') == 0x0000000000000001, 'min subnormal')
     runner.is-true(fbits('4.9406564584124654e-324') == 0x0000000000000001, 'exact min subnormal')
@@ -65,6 +70,7 @@ t-subnormal = () {
 
 ; ── 上下溢 / INF ──────────────────────────────
 
+; 上溢 / 飽和：超過 DBL-MAX 得 ±inf，最大有限值仍可精確解析
 t-inf = () {
     runner.is-true(fbits('1e309') == 0x7FF0000000000000, 'overflow +inf')
     runner.is-true(fbits('-1e309') == 0xFFF0000000000000, 'overflow -inf')
@@ -75,6 +81,7 @@ t-inf = () {
 
 ; ── 零符號（位元模式直接驗證 -0.0）───────────
 
+; 零的符號位：'-0.0' 與 '-0e5' 保留符號位，'0' / '+0.0' 不得有符號位
 t-zero-sign = () {
     runner.is-true(fbits('-0.0') == 0x8000000000000000, '-0.0 sign bit')
     runner.is-true(fbits('+0.0') == 0x0000000000000000, '+0.0 no sign bit')
@@ -84,6 +91,7 @@ t-zero-sign = () {
 
 ; ── to-str 往返（shortest round-trip）─────────
 
+; to-str / to-f64 往返：任意 f64 格式化後再解析應得完全相同的位元模式
 t-roundtrip = () {
     x = 0.1
     runner.is-true(fbits(x.to-str()) == x.to-bits(), 'roundtrip 0.1')
@@ -106,6 +114,7 @@ t-roundtrip = () {
 
 ; ── option 語義 ───────────────────────────────
 
+; option 語義：空字串得 nil、無法解析得 err、合法輸入得 ok
 t-option = () {
     e = ''.to-f64()
     runner.is-true(e == nil, 'empty -> nil')

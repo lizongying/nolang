@@ -14,6 +14,7 @@ person {
 }
 
 ; 測試 1：push 之後覆寫來源的欄位 ⇒ 元素不受影響
+; ok bool: v[0] 仍是 {Alice, 30}、來源變成 'Bob' 才為 true
 test-push-struct-leaf-independent = () (ok bool) {
     v []person
     p person
@@ -32,6 +33,7 @@ test-push-struct-leaf-independent = () (ok bool) {
 }
 
 ; 測試 2：push 兩個元素，兩個都必須獨立
+; ok bool: v[0] 為 {Alice, 30}、v[1] 為 {Bob, 25} 且長度 2 才為 true
 test-push-two-structs = () (ok bool) {
     v []person
     p person
@@ -56,6 +58,7 @@ test-push-two-structs = () (ok bool) {
 }
 
 ; 測試 3：`v[i] = p` 下標寫入同樣必須深拷貝
+; ok bool: 來源改成 'Dave' 後 v[0] 仍是 {Carol, 40} 才為 true
 test-index-store-struct-leaf = () (ok bool) {
     v []person = with-len(2)
     p person
@@ -70,6 +73,7 @@ test-index-store-struct-leaf = () (ok bool) {
 }
 
 ; 測試 4：insert 同樣必須深拷貝
+; ok bool: 插入後的元素保持原值、不受後續來源修改影響才為 true
 test-insert-struct-leaf = () (ok bool) {
     v []person
     p person

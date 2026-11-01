@@ -1160,7 +1160,6 @@ Use the `?=` operator to automatically unwrap an option or propagate the error t
 ```no
 ; ✅ Error propagation with ?= — concise and readable
 process-file = (path str) (result ?str) {
-    result = nil
     f ?= open(path)             ; fails → result = f; return
     line ?= f.read-line()       ; EOF or error → auto-propagate
     result = line
@@ -1168,7 +1167,6 @@ process-file = (path str) (result ?str) {
 
 ; ✅ Chaining multiple ?= — pipeline error propagation
 pipeline = (input str) (result ?str) {
-    result = nil
     a ?= step1(input)           ; fails → propagate
     b ?= step2(a)               ; fails → propagate
     result = b
@@ -1710,14 +1708,17 @@ val: {
 
 ```no
 ; it scoping: nested matches restore level by level
+; (the placeholder function is named keep -- `use` is the import keyword and cannot be
+;  a function name; and a bare `->` arm may not read `it` unless nil/err are both claimed,
+;  so every level here writes `ok ->`)
 outer: {
-    -> {
-        use(it)             ; outer it
+    ok -> {
+        keep(it)            ; outer it
         inner ?T = f(it)
         inner: {
-            -> use(it)      ; inner it = unwrapped `inner`
+            ok -> keep(it)  ; inner it = unwrapped `inner`
         }
-        use(it)             ; ✅ it is the outer value again
+        keep(it)            ; ✅ it is the outer value again
     }
 }
 ```
@@ -1726,6 +1727,15 @@ outer: {
 > `it` still holds the last arm's value — do not use `it` outside a match. To carry the value
 > across levels, copy it into a named local (`doc = it`) or use a destructuring binding
 > `ok(v) -> ...`.
+
+> **Best practice — prefer `it` for option unwrapping**: when the matched value is an
+> **option `?t`**, write `ok -> ...(it)...` rather than `ok(v) -> ...(v)...`. It introduces no
+> extra binding name, which sidesteps the "same-named local across arms corrupts codegen"
+> pitfall. Keep a **named binding** `ok(v) ->` only when: (1) the scrutinee is a
+> **user-defined enum variant** (`res { ok(v str) }`, `shape { rect(w, h) }`) — there `it` is
+> the **whole enum**, not the payload, so the payload can only be extracted by name; or
+> (2) the value is needed **after a nested match** — the inner match rebinds `it`, so use a
+> named binding or copy `it` into a named local first.
 
 ### `it` is only usable in an arm with a single provable case
 
@@ -3897,7 +3907,6 @@ d: {
 
 ```no
 sub-safe = (a i64, b i64) (result ?i64) {
-    result = nil
     v ?= a - b            ; under/over-flow → err auto-propagated; else v = inner i64
     result = v
 }

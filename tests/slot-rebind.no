@@ -5,11 +5,16 @@
 ; 期望输出（每行一个）:
 ; 42 7 1 1 17 5 5 10 100 99 84
 
+; 源是函式參數：禁用棧槽重綁定，必須降級成完整 copy，回傳 100 不受後續影響
+; val i64: 來源參數（唯讀）
+; ret i64: 與 val 相同的值
 pm_fn = (val i64) (ret i64) {
     local = val; val 是参数 → 禁用重绑定 → 降级 copy
     ret = local
 }
 
+; 重綁後又對目標重新賦值：舊別名必須失效，ret 回傳 99（不是先前的 1）
+; ret i64: 重新賦值後的值 99
 rr_fn = () (ret i64) {
     a = 1
     b = a; rebind b->a（a 后续无引用）
@@ -17,6 +22,9 @@ rr_fn = () (ret i64) {
     ret = b
 }
 
+; 傳參消費：用 x + 42 驗證重綁後的 m 值仍完整（42 + 42 = 84）
+; x i64: 傳入的數值
+; ret i64: x + 42（#{overflow=wrap}）
 consume = (x i64) (ret i64) {
 
     #{overflow=wrap}

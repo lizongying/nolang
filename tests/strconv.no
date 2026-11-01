@@ -1,9 +1,9 @@
-; strconv.no — 字符串类型转换完整测试
+; strconv.no — 字符串類型轉換完整測試
 ;
-; 测试覆盖:
-;   str → int (正/负/零) — 返回 Option
+; 測試覆蓋:
+;   str → int (正/負/零) — 返回 Option
 ;   str → uint
-;   str → float (通过 f→str 往返验证)
+;   str → float (通過 f→str 往返驗證)
 ;   str → bool — 返回 Option
 ;   str → byte — 返回 Option
 ;   int → str
@@ -11,7 +11,7 @@
 ;   float → str
 ;   bool → str
 ;   byte → str
-;   往返转换 (str ↔ int, str ↔ float)
+;   往返轉換 (str ↔ int, str ↔ float)
 
 ; ===== str → i64 =====
 test-str-to-i64 = () {
@@ -272,7 +272,7 @@ test-roundtrip-f64 = () {
     }
 }
 
-; ===== 边界: i64 极值 =====
+; ===== 邊界: i64 極值 =====
 test-edge-i64 = () {
     n i64 = 9223372036854775807
     s = n.to-str()
@@ -296,6 +296,7 @@ test-from-hex-odd = () {
     }
 }
 
+; 測試 from-hex-even
 test-from-hex-even = () {
     b = '6162'.from-hex()
     b: {
@@ -322,6 +323,7 @@ test-to-f32-valid = () {
     }
 }
 
+; 測試 to-f32-invalid
 test-to-f32-invalid = () {
     f = 'abc'.to-f32()
     {
@@ -333,7 +335,7 @@ test-to-f32-invalid = () {
     }
 }
 
-; ===== 运行测试 =====
+; ===== 運行測試 =====
 test-str-to-i64()
 test-str-to-i32()
 test-str-to-i16()

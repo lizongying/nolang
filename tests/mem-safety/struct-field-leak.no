@@ -40,6 +40,8 @@ MyType {
     items []i64
 }
 
+; 產生帶堆欄位的結構體（name 為 'hello'、items 為 [1,2,3]），驗證回傳結構體時欄位資料是否被釋放
+; out MyType: 新結構體，其 name 與 items 各自擁有堆資料
 make-struct = () (out MyType) {
     out = MyType {
         name: 'hello'

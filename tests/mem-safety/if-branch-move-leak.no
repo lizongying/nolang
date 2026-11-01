@@ -32,6 +32,9 @@
 ;
 ; ═════════════════════════════════════════════════════════════════
 
+; 兩個分支各自 move 不同的字串到 out，驗證未執行分支的變數不會被誤標成已搬走（否則洩漏）
+; cond bool: true 走 then（move x），false 走 else（move y）
+; out str: 'from x' 或 'from y'
 branch-move = (cond bool) (out str) {
     x = 'from x'
     y = 'from y'

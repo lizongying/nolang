@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -51,6 +52,12 @@ type Options struct {
 	// a translation target and DOES need one). A missing doc catalog is not an
 	// error: nil, nil means "no doc translations for this tag".
 	DocLoad func(tag string) (map[string]string, error)
+	// AliasLoad returns the ALIAS catalog for a resolved tag — the localized
+	// display names (别名) of std functions/methods, keyed by the same doc
+	// anchors Doc uses. Like DocLoad, a missing table is not an error:
+	// nil, nil means "no aliases for this tag" and Alias falls back to the
+	// identifier itself.
+	AliasLoad func(tag string) (map[string]string, error)
 	// Canonical maps an alias onto the tag whose catalog file actually exists
 	// (e.g. "zh" -> "zh-CN"). Nil means identity. It is applied after Resolve
 	// and before Load, so the reported language is always the file's own tag.
@@ -77,6 +84,9 @@ var (
 	// under "en" (English is a translation target for source comments, which
 	// are authored in whatever language their writer used).
 	docMsgs map[string]string
+	// aliasMsgs is the catalog Alias() reads: anchor -> localized display
+	// name. Same English rule as docMsgs — "en" has a table too.
+	aliasMsgs map[string]string
 
 	missMu sync.Mutex
 	missed map[string]struct{}
@@ -106,6 +116,7 @@ func SetLang(tag string) {
 	msgMu.Lock()
 	msgs = nil
 	docMsgs = nil
+	aliasMsgs = nil
 	msgMu.Unlock()
 }
 
@@ -233,6 +244,58 @@ func Errorf(id, def string, args ...any) error {
 	return NewError(id, newError(format, args))
 }
 
+// SetAliasCatalog installs the table Alias reads. Like SetDocCatalog it is
+// installed under every language including "en"; a nil or empty table means
+// "no aliases", so Alias falls back to the identifier.
+func SetAliasCatalog(table map[string]string) {
+	if len(table) == 0 {
+		msgMu.Lock()
+		aliasMsgs = nil
+		msgMu.Unlock()
+		return
+	}
+	cp := make(map[string]string, len(table))
+	for k, v := range table {
+		cp[k] = v
+	}
+	msgMu.Lock()
+	aliasMsgs = cp
+	msgMu.Unlock()
+}
+
+// Alias returns the localized display name for a std function/method keyed by
+// its doc anchor (`args.get` -> 获取参数 under zh-CN).
+//
+// The fallback when the anchor has no translation is the anchor's final dotted
+// segment — the identifier itself (`get`) — which is always readable and is
+// exactly what the source comment's link label already shows. Missing keys are
+// not recorded in the fallback log: unlike Doc, a missing alias has no
+// author-language text to be "untranslated" from; the identifier IS English.
+func Alias(anchor string) string {
+	if anchor == "" {
+		return ""
+	}
+	msgMu.RLock()
+	t := aliasMsgs[anchor]
+	msgMu.RUnlock()
+	if t != "" {
+		return t
+	}
+	return IdentifierOf(anchor)
+}
+
+// IdentifierOf extracts the final dotted segment of a doc anchor — the raw
+// function/method identifier the author wrote in the link label
+// (`arr.arr-stack-pop` -> `arr-stack-pop`). Alias uses it as the fallback
+// display name; callers use it to tell a real translation apart from the
+// fallback.
+func IdentifierOf(anchor string) string {
+	if i := strings.LastIndexByte(anchor, '.'); i >= 0 {
+		return anchor[i+1:]
+	}
+	return anchor
+}
+
 // Missing reports the IDs that fell back to English, sorted. It is diagnostic
 // only (surfaced under -v); a missing translation never fails a build.
 func Missing() []string {
@@ -279,6 +342,7 @@ func Init(o Options) error {
 	// Docs come second on purpose: every message installer calls SetLang, which
 	// clears both tables, so installing docs first would wipe them immediately.
 	installDocs(o, tag)
+	installAliases(o, tag)
 	return err
 }
 
@@ -315,6 +379,23 @@ func installDocs(o Options, tag string) {
 	SetDocCatalog(table)
 }
 
+// installAliases resolves the alias catalog. Same non-fatal rule as
+// installDocs: an alias is a presentation nicety, so a malformed alias file
+// degrades to showing the identifier instead of stopping the toolchain.
+func installAliases(o Options, tag string) {
+	if o.AliasLoad == nil {
+		return
+	}
+	table, err := o.AliasLoad(tag)
+	if err != nil {
+		if o.Warn != nil {
+			o.Warn(fmt.Sprintf("alias names for %q unavailable, identifiers will be shown: %v", tag, err))
+		}
+		return
+	}
+	SetAliasCatalog(table)
+}
+
 // WithLang runs fn with tag active and restores the previous language and
 // catalog afterwards. Tests must use it instead of bare SetLang so that a
 // forgotten restore cannot leak into a sibling test.
@@ -323,12 +404,14 @@ func WithLang(tag string, fn func()) {
 	msgMu.RLock()
 	prevMsgs := msgs
 	prevDocs := docMsgs
+	prevAliases := aliasMsgs
 	msgMu.RUnlock()
 	defer func() {
 		langVal.Store(prevLang)
 		msgMu.Lock()
 		msgs = prevMsgs
 		docMsgs = prevDocs
+		aliasMsgs = prevAliases
 		msgMu.Unlock()
 	}()
 	SetLang(tag)

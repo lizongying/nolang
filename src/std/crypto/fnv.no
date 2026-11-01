@@ -15,10 +15,10 @@ FNV32-PRIME = 16777619
 FNV64-OFFSET u64 = 14695981039346656037
 FNV64-PRIME u64 = 1099511628211
 
-; 計算 FNV-1a 32-bit 哈希
-; data []byte: 輸入資料
-; 返回 hash i64: 32-bit 哈希值
-; [fnv-1a-32](#crypto.fnv.fnv-1a-32)
+; 計算 FNV-1a 32-bit 哈希（offset basis 2166136261、prime 16777619）
+; data []byte: 輸入位元組，全部參與計算
+; hash i64: 32-bit 哈希值（每步乘積後 & 0xFFFFFFFF）
+; [fnv-1a-32](#fnv.fnv-1a-32)
 fnv-1a-32 = (data []byte) (hash i64) {
     hash = FNV32-OFFSET
     i <- [0..data.len()): {
@@ -30,10 +30,10 @@ fnv-1a-32 = (data []byte) (hash i64) {
     }
 }
 
-; 計算 FNV-1a 64-bit 哈希
-; data []byte: 輸入資料
-; 返回 hash u64: 64-bit 哈希值
-; [fnv-1a-64](#crypto.fnv.fnv-1a-64)
+; 計算 FNV-1a 64-bit 哈希（offset basis 14695981039346656037、prime 1099511628211）
+; data []byte: 輸入位元組，全部參與計算
+; hash u64: 64-bit 哈希值（每步乘法以 mask 截回 64 位元）
+; [fnv-1a-64](#fnv.fnv-1a-64)
 fnv-1a-64 = (data []byte) (hash u64) {
     mask u64 = 18446744073709551615
     hash = FNV64-OFFSET

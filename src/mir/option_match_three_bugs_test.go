@@ -56,7 +56,7 @@ main = () {
 // i64 through a bitcast pointer into a 1-byte slot; the following `load i1`
 // then read 0. `print(x)` still said `true` (print_option_bool truncates
 // correctly), which is what made this so confusing.
-var optionBoolPeelTrunc = regexp.MustCompile(`trunc i64 %mvu\d+ to i1`)
+var optionBoolPeelTrunc = regexp.MustCompile(`trunc i64 %mvu\.\d+ to i1`)
 
 func TestOptionBoolPeelTruncatesToI1(t *testing.T) {
 	mod := lowerForTest(t, `mk = () (r ?bool) { r = true }

@@ -60,13 +60,14 @@ TAR-TYPE-DIR = "5"
 ; 從 gzip 壓縮資料建立 tar 視圖（.tar.gz）
 ;   gz-data: gzip 壓縮的 tar 資料 ([]byte)
 ;   archive: 解壓後的 tar 歸檔
-; [tar-open-gz](#archive.tar.tar-open-gz)
+; [tar-open-gz](#tar.tar-open-gz)
 tar-open-gz = (gz-data []byte) (archive tar) {
     archive.data = gzip.gzip-decompress(gz-data)
 }
 
 ; 計算 TAR 中的有效條目數
-; [count](#archive.tar.tar.count)
+; count: 結束標記（全零區塊）前的條目數量
+; [count](#tar.tar.count)
 tar.count = () (count i64) {
     count = 0
     off = 0
@@ -111,7 +112,9 @@ tar.count = () (count i64) {
 }
 
 ; 計算第 idx 個條目的實際位元組偏移（遍歷前面所有條目）
-; [offset](#archive.tar.tar.offset)
+; idx: 條目序號（0 ~ 數量-1）
+; off: 該條目標頭在歸檔資料中的起始位元組偏移
+; [offset](#tar.tar.offset)
 tar.offset = (idx i64) (off i64) {
     off = 0
     i <- [0..idx): {
@@ -136,14 +139,18 @@ tar.offset = (idx i64) (off i64) {
 }
 
 ; 取得第 idx 個條目
-; [entry](#archive.tar.tar.entry)
+; idx: 條目序號
+; e: 指向該 512 位元組標頭的 tar-entry（再經其方法讀欄位）
+; [entry](#tar.tar.entry)
 tar.entry = (idx i64) (e tar-entry) {
     e.data = .data
     e.idx = .offset(idx)
 }
 
 ; 讀取第 idx 個條目的檔名
-; [name](#archive.tar.tar.name)
+; idx: 條目序號
+; name: 檔名（標頭 name 欄，遇 NUL/空白截斷）
+; [name](#tar.tar.name)
 tar.name = (idx i64) (name str) {
     hdr = .offset(idx)
     name = ''
@@ -158,7 +165,9 @@ tar.name = (idx i64) (name str) {
 }
 
 ; 讀取第 idx 個條目的檔案大小（八進制）
-; [size](#archive.tar.tar.size)
+; idx: 條目序號
+; sz: 檔案原始位元組數（size 欄八進位解碼）
+; [size](#tar.tar.size)
 tar.size = (idx i64) (sz i64) {
     hdr = .offset(idx)
     sz = 0
@@ -174,7 +183,9 @@ tar.size = (idx i64) (sz i64) {
 
 ; 讀取第 idx 個條目的類型字串
 ; 返回 "file"、"dir" 或 "unknown"
-; [type](#archive.tar.tar.type)
+; idx: 條目序號
+; typ: 條目型別字串（依 typeflag 映射為 "file"、"dir" 或 "unknown"）
+; [type](#tar.tar.type)
 tar.type = (idx i64) (typ str) {
 
     hdr = .offset(idx)
@@ -190,7 +201,9 @@ tar.type = (idx i64) (typ str) {
 }
 
 ; 判斷第 idx 個條目是否為目錄
-; [is-dir](#archive.tar.tar.is-dir)
+; idx: 條目序號
+; yes: 是否為目錄條目（typeflag 為 5）
+; [is-dir](#tar.tar.is-dir)
 tar.is-dir = (idx i64) (yes bool) {
 
     hdr = .offset(idx)
@@ -201,7 +214,9 @@ tar.is-dir = (idx i64) (yes bool) {
 }
 
 ; 判斷第 idx 個條目是否為普通檔案
-; [is-file](#archive.tar.tar.is-file)
+; idx: 條目序號
+; yes: 是否為普通檔案條目（typeflag 為 0）
+; [is-file](#tar.tar.is-file)
 tar.is-file = (idx i64) (yes bool) {
 
     hdr = .offset(idx)
@@ -212,7 +227,9 @@ tar.is-file = (idx i64) (yes bool) {
 }
 
 ; 提取第 idx 個條目的內容
-; [read](#archive.tar.tar.read)
+; idx: 條目序號
+; out: 條目內容位元組（依 size 欄長度讀取，目錄為空）
+; [read](#tar.tar.read)
 tar.read = (idx i64) (out []byte) {
     sz = .size(idx)
     hdr = .offset(idx)
@@ -226,7 +243,9 @@ tar.read = (idx i64) (out []byte) {
 }
 
 ; 讀取第 idx 個條目的權限（八進制）
-; [mode](#archive.tar.tar.mode)
+; idx: 條目序號
+; mode: 檔案權限位元（mode 欄八進位解碼，如 0o644）
+; [mode](#tar.tar.mode)
 tar.mode = (idx i64) (mode i64) {
     hdr = .offset(idx)
     mode = 0
@@ -241,7 +260,9 @@ tar.mode = (idx i64) (mode i64) {
 }
 
 ; 讀取第 idx 個條目的修改時間（八進制 Unix 時間戳）
-; [mtime](#archive.tar.tar.mtime)
+; idx: 條目序號
+; ts: 修改時間（Unix 秒，mtime 欄八進位解碼）
+; [mtime](#tar.tar.mtime)
 tar.mtime = (idx i64) (ts i64) {
     hdr = .offset(idx)
     ts = 0
@@ -258,7 +279,8 @@ tar.mtime = (idx i64) (ts i64) {
 ; ─── tar-entry 方法 ───────────────────────────
 
 ; 讀取條目檔名
-; [name](#archive.tar.tar-entry.name)
+; name: 該條目的檔名
+; [name](#tar.tar-entry.name)
 tar-entry.name = () (name str) {
     hdr = .idx
     name = ''
@@ -273,7 +295,8 @@ tar-entry.name = () (name str) {
 }
 
 ; 讀取條目檔案大小
-; [size](#archive.tar.tar-entry.size)
+; sz: 條目原始位元組數
+; [size](#tar.tar-entry.size)
 tar-entry.size = () (sz i64) {
     hdr = .idx
     sz = 0
@@ -288,7 +311,8 @@ tar-entry.size = () (sz i64) {
 }
 
 ; 讀取條目類型
-; [type](#archive.tar.tar-entry.type)
+; typ: 型別字串（"file"、"dir" 或 "unknown"）
+; [type](#tar.tar-entry.type)
 tar-entry.type = () (typ str) {
 
     hdr = .idx
@@ -304,7 +328,8 @@ tar-entry.type = () (typ str) {
 }
 
 ; 判斷是否為目錄
-; [is-dir](#archive.tar.tar-entry.is-dir)
+; yes: 該條目是否為目錄
+; [is-dir](#tar.tar-entry.is-dir)
 tar-entry.is-dir = () (yes bool) {
 
     hdr = .idx
@@ -315,7 +340,8 @@ tar-entry.is-dir = () (yes bool) {
 }
 
 ; 判斷是否為普通檔案
-; [is-file](#archive.tar.tar-entry.is-file)
+; yes: 該條目是否為普通檔案
+; [is-file](#tar.tar-entry.is-file)
 tar-entry.is-file = () (yes bool) {
 
     hdr = .idx
@@ -326,7 +352,8 @@ tar-entry.is-file = () (yes bool) {
 }
 
 ; 提取條目內容
-; [read](#archive.tar.tar-entry.read)
+; out: 條目內容位元組（目錄為空）
+; [read](#tar.tar-entry.read)
 tar-entry.read = () (out []byte) {
     sz = .size()
     hdr = .idx
@@ -340,7 +367,8 @@ tar-entry.read = () (out []byte) {
 }
 
 ; 讀取條目權限
-; [mode](#archive.tar.tar-entry.mode)
+; mode: 權限位元（八進位解碼）
+; [mode](#tar.tar-entry.mode)
 tar-entry.mode = () (mode i64) {
     hdr = .idx
     mode = 0
@@ -355,7 +383,8 @@ tar-entry.mode = () (mode i64) {
 }
 
 ; 讀取條目修改時間
-; [mtime](#archive.tar.tar-entry.mtime)
+; ts: 修改時間（Unix 秒，八進位解碼）
+; [mtime](#tar.tar-entry.mtime)
 tar-entry.mtime = () (ts i64) {
     hdr = .idx
     ts = 0
@@ -372,7 +401,8 @@ tar-entry.mtime = () (ts i64) {
 ; ─── tar-builder 方法 ─────────────────────────
 
 ; 預分配緩衝區（用局部變數 push，避免結構體欄位 push 限制）
-; [pre-alloc](#archive.tar.tar-builder.pre-alloc)
+; size: 預分配的緩衝區位元組數（零填充至該長度）
+; [pre-alloc](#tar.tar-builder.pre-alloc)
 tar-builder.pre-alloc = (size i64) {
     buf []byte
     i <- [0..size): {
@@ -382,7 +412,9 @@ tar-builder.pre-alloc = (size i64) {
 }
 
 ; 新增檔案條目
-; [add-file](#archive.tar.tar-builder.add-file)
+; name: 檔名（寫入標頭 name 欄）
+; content: 檔案內容（寫入後補零對齊 512 位元組邊界）
+; [add-file](#tar.tar-builder.add-file)
 tar-builder.add-file = (name str, content []byte) {
 
     .write-header(name, TAR-TYPE-FILE, len(content))
@@ -416,13 +448,17 @@ tar-builder.add-file = (name str, content []byte) {
 }
 
 ; 新增目錄條目
-; [add-dir](#archive.tar.tar-builder.add-dir)
+; name: 目錄名（慣例以 / 結尾，無內容區）
+; [add-dir](#tar.tar-builder.add-dir)
 tar-builder.add-dir = (name str) {
     .write-header(name, TAR-TYPE-DIR, 0)
 }
 
 ; 新增原始位元組條目
-; [add-bytes](#archive.tar.tar-builder.add-bytes)
+; name: 條目名
+; content: 條目內容位元組
+; typ: 條目型別碼（TAR-TYPE-FILE / TAR-TYPE-DIR）
+; [add-bytes](#tar.tar-builder.add-bytes)
 tar-builder.add-bytes = (name str, content []byte, typ i64) {
 
     .write-header(name, typ, len(content))
@@ -454,7 +490,10 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
 }
 
 ; 寫入 512 位元組 header（內部方法）
-; [write-header](#archive.tar.tar-builder.write-header)
+; name: 檔名（寫入標頭偏移 0）
+; typ: typeflag 字元碼（48=檔案、53=目錄）
+; sz: 內容位元組數（以八進位寫入 size 欄）
+; [write-header](#tar.tar-builder.write-header)
 tar-builder.write-header = (name str, typ i64, sz i64) {
 
     ; 清零 header 區
@@ -558,7 +597,10 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 }
 
 ; 在指定偏移寫入八進制數字（內部方法）
-; [write-octal](#archive.tar.tar-builder.write-octal)
+; offset: 欄位在當前標頭區塊內的偏移
+; width: 欄位寬度（右對齊八進位數字、左側補空白）
+; val: 待編碼的整數值（區塊尾另補 NUL）
+; [write-octal](#tar.tar-builder.write-octal)
 tar-builder.write-octal = (offset i64, width i64, val i64) {
 
     #{overflow=wrap}
@@ -593,7 +635,8 @@ tar-builder.write-octal = (offset i64, width i64, val i64) {
 }
 
 ; 結束建構，寫入結束標記並返回 tar 歸檔
-; [finish](#archive.tar.tar-builder.finish)
+; archive: 含兩個全零結束區塊的 tar 唯讀視圖
+; [finish](#tar.tar-builder.finish)
 tar-builder.finish = () (archive tar) {
 
     ; 寫入兩個全零區塊作為結束標記

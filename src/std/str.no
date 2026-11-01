@@ -1,7 +1,7 @@
-; str — 字符串操作标准库
+; str — 字串操作標準庫
 ;
-; str 是对外统一的字符串类型
-; 内部实现：str-long（堆分配）
+; str 是對外統一的字串類型
+; 內部實現：str-long（堆分配）
 ;
 ; 切片是視圖，非獨立類型：對 str 進行切片操作（如 s[1..3]）仍產生 str 視圖，
 ; 共享 str 的底層記憶體，不複製資料。
@@ -9,16 +9,16 @@
 ; 均適用於 str 的切片視圖。通過切片修改元素會影響原始 str。
 ;
 ; str {
-;     len i64 read-only       // 对外：i64 长度
-;     cap i64 read-only       // 对外：i64 容量（仅 str-long 有效）
-;     data *byte sealed       // 对外：数据指针
+;     len i64 read-only       // 對外：i64 長度
+;     cap i64 read-only       // 對外：i64 容量（僅 str-long 有效）
+;     data *byte sealed       // 對外：數據指標
 ; }
 
 ; ═══════════════════════════════════════════════
 ; 基础操作
 ; ═══════════════════════════════════════════════
 
-; string = str | txt —— 字符串族聯合類型別名（對標 number.no 的 num = int | float）
+; string = str | txt —— 字串族聯合類型別名（對標 number.no 的 num = int | float）
 ; 用法：函數參數/返回值聲稱 string，調用時傳入 str 或 txt 實參，
 ; 編譯期按實參具體型別單態化（ValidateUnionTypes + FlattenUnion + clone），
 ; 每個成員各生成一份具體函數（如 f__str / f__txt）。
@@ -27,26 +27,27 @@
 ;     （單態化名限定缺陷），請改用全域內建（len(s) 為字節數）或拆成
 ;     str/txt 兩個具體函數；
 ;   - 聯合變數聲明（s string = 'x'）尚不支持；
-;   - 不要定義 string.len 这类「與成員同名」的別名方法：會接管 s.len()
-;     調用且方法體遞迴分发回自身（段錯誤）。成员方法請直接用 str.*/txt.* 原版。
+;   - 不要定義 string.len 這類「與成員同名」的別名方法：會接管 s.len()
+;     調用且方法體遞迴分發回自身（段錯誤）。成員方法請直接用 str.*/txt.* 原版。
 string = str | txt
 
-; str.len-bytes(): 返回字符串的「字節數量」（底層 UTF-8 緩衝區長度）
+; str.len-bytes(): 返回字串的「字節數量」（底層 UTF-8 緩衝區長度）
 ; 由編譯器內建處理（build-in，等同舊 .len 結構體字段）；標準庫內部位元組級迴圈/切片請用本方法
 ; build-in
 ; str.len-bytes = () (n i64) {
 ;    n = .len
 ; }
 
-; 返回字符串的「字符（碼點）數量」
+; 返回字串的「字符（碼點）數量」
 ; 與 s[i] 的碼點索引語義一致；要字節數請用 s.len-bytes()
+; n: 碼點（字符）數量（與 s[i] 索引語義一致）
 ; [len](#str.len)
 str.len = () (n i64) {
     n = .cp-index(.len-bytes())
 }
 
-; str.cap: 返回字符串容量（内置字段访问，s.cap 直接可用）
-; 返回堆缓冲区容量
+; str.cap: 返回字串容量（內置字段訪問，s.cap 直接可用）
+; 返回堆緩衝區容量
 ; build-in
 ; str.cap = () (n int64) {
 ;    n = .cap
@@ -59,6 +60,8 @@ str.len = () (n i64) {
 ; 由編譯器內建處理（#{buildin}）：codegen 攔截後展開為「邊界檢查 + GEP+load」，
 ; 不存在 std 函式體；簽名同時註冊於 src/builtin/str.go 的 BuiltinMethodList
 ; （MethodName "byte"，Intercepted，經 bare-name 回落同時覆蓋 str 與 txt）
+; i: 位元組下標（非碼點）
+; c: ok=該位置原始位元組值, nil=i 越界
 ; [byte](#str.byte)
 #{buildin}
 str.byte = (i i64) (c ?byte) {
@@ -74,23 +77,30 @@ str.byte = (i i64) (c ?byte) {
 ; 這與 src/builtin/str.go 的 BuiltinMethodList 條目一致。
 ;
 ; 回傳 ?bool（可失敗）：越界（i < 0 或 i >= 實體容量 cap）時回傳 nil 並**跳過寫入**，
-; 成功回傳 some(true)。邊界以 %str-long 的 cap（實體容量）為準而非 len，故「先填缓冲
+; 成功回傳 some(true)。邊界以 %str-long 的 cap（實體容量）為準而非 len，故「先填緩衝
 ; 再 set len」的構建程式照舊可用。呼叫端以裸陳述丟棄 ?bool 合法（optunuse 只管綁定名）。
+; i: 位元組下標
+; b: 寫入的位元組值
+; ok: ok=true=寫入成功, nil=i 越界（跳過寫入）
 ; [set-byte](#str.set-byte)
 #{buildin}
 str.set-byte = (i i64, b byte) (ok ?bool) {
 }
 
-; str.eq: 比较两个字符串的前 n 个字节是否相等
+; str.eq: 比較兩個字串的前 n 個位元組是否相等
 ; 返回 true=相等, false=不相等
+; b: 比較的目標字串
+; n: 比較位元組數
+; eq: true=接收者與 b 的前 n 位元組全等
 ; [eq-raw](#str.eq-raw)
 #{buildin}
 eq-raw = (b str, n i64) (eq bool) {
 }
 
-; 将 src 复制到 dst（整個字串）
+; 將 src 複製到 dst（整個字串）
 ; ⚠️ 已棄用（DEPRECATED）：賦值 `dst = src` 即為複製語義——所有權分析會在 src
 ; 後續仍被讀取時自動改寫為深拷貝（OpClone），無需手動 copy。保留僅為兼容。
+; dst: 副本（已棄用：直接賦值即深拷貝語義）
 ; [copy](#str.copy)
 str.copy = () (dst str) {
     dst = with-cap(.len-bytes())
@@ -101,6 +111,7 @@ str.copy = () (dst str) {
 }
 
 ; 用 byte 值填充整個字串
+; val: 用於填充整個字串的位元組值
 ; [fill](#str.fill)
 str.fill = (val byte) {
     i <- [0...len-bytes()): {
@@ -114,6 +125,9 @@ str.fill = (val byte) {
 
 ; 從位置 i 解碼一個 UTF-8 碼點
 ; 返回 cp=碼點值, clen=序列位元組長度（1~4）
+; i: 起解碼的位元組下標
+; cp: 解出的碼點值
+; clen: 該碼點 UTF-8 序列的位元組長度（1~4）
 ; [decode-cp](#str.decode-cp)
 str.decode-cp = (i i64) (cp i64, clen i64) {
     b-opt = .byte(i)
@@ -157,6 +171,9 @@ str.decode-cp = (i i64) (cp i64, clen i64) {
 ; 內部字節級查找（Sunday 算法）
 ; 返回 target 首次出現的「字節偏移」，未找到返回 -1
 ; from-byte 為起始字節位置；split 等內部按字節切片時使用
+; target: 要查找的子串
+; from-byte: 起始位元組偏移
+; pos: target 首次出現的位元組偏移，未找到 -1
 ; [find-byte-from](#str.find-byte-from)
 str.find-byte-from = (target str, from-byte i64) (pos i64) {
     r-from = from-byte
@@ -195,6 +212,9 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
 
 ; 內部字節級反向查找
 ; 返回 target 最後一次出現的「字節偏移」（>= from-byte），未找到返回 -1
+; target: 要查找的子串
+; from-byte: 反向查找的下界位元組偏移
+; pos: target 最後一次出現（>= from-byte）的位元組偏移，未找到 -1
 ; [rfind-byte-from](#str.rfind-byte-from)
 str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
     r-from = from-byte
@@ -238,6 +258,8 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
 
 ; 將字節偏移轉為碼點（字符）下標
 ; 返回 s[0..byte-pos) 內的碼點數量
+; byte-pos: 位元組偏移
+; cp: s[0..byte-pos) 內的碼點數量
 ; [cp-index](#str.cp-index)
 str.cp-index = (byte-pos i64) (cp i64) {
     cp = 0
@@ -255,6 +277,8 @@ str.cp-index = (byte-pos i64) (cp i64) {
 
 ; 將碼點（字符）下標轉為字節偏移
 ; 返回第 cp-pos 個碼點起始的字節位置；越界（cp-pos 超出）返回 .len
+; cp-pos: 碼點（字符）下標
+; byte: 位元組
 ; [byte-index](#str.byte-index)
 str.byte-index = (cp-pos i64) (byte i64) {
     byte = 0
@@ -288,6 +312,8 @@ str.byte-index = (cp-pos i64) (byte i64) {
 ; 在 s 中查找 target 子串
 ; 使用 Sunday 算法，平均 O(n/m)，最壞 O(n*m)
 ; 返回首次出現的「碼點（字符）位置」，與 s[i] 碼點索引語義一致；未找到返回 -1
+; target: 要查找的子串
+; pos: 首次出現的碼點位置，未找到 -1
 ; [index](#str.index)
 str.index = (target str) (pos i64) {
     b = .find-byte-from(target, 0)
@@ -300,6 +326,9 @@ str.index = (target str) (pos i64) {
 
 ; 在 s 中從 from（碼點位置）開始查找 target 子串
 ; 返回首次出現的「碼點（字符）位置」，未找到返回 -1
+; target: 要查找的子串
+; from: 起始碼點位置（含）
+; pos: 首次出現的碼點位置，未找到 -1
 ; [index-from](#str.index-from)
 str.index-from = (target str, from i64) (pos i64) {
     fb = .byte-index(from)
@@ -311,16 +340,20 @@ str.index-from = (target str, from i64) (pos i64) {
     pos = .cp-index(b)
 }
 
-; 判断 s 是否包含 target 子串
+; 判斷 s 是否包含 target 子串
 ; 返回 true=包含, false=不包含
+; target: 要查找的子串
+; yes: s 是否含有 target
 ; [contains](#str.contains)
 str.contains = (target str) (yes bool) {
     pos = .index(target)
     pos >= 0 -> yes = true
 }
 
-; 判断 s 是否以 target 开头
+; 判斷 s 是否以 target 開頭
 ; 返回 true=是, false=否
+; target: 前綴子串
+; yes: s 是否以 target 開頭
 ; [starts-with](#str.starts-with)
 str.starts-with = (target str) (yes bool) {
     yes = true
@@ -338,8 +371,10 @@ str.starts-with = (target str) (yes bool) {
     }
 }
 
-; 判断 s 是否以 target 结尾
+; 判斷 s 是否以 target 結尾
 ; 返回 true=是, false=否
+; target: 後綴子串
+; yes: s 是否以 target 結尾
 ; [ends-with](#str.ends-with)
 str.ends-with = (target str) (yes bool) {
 
@@ -364,11 +399,12 @@ str.ends-with = (target str) (yes bool) {
 }
 
 ; ═══════════════════════════════════════════════
-; 转换
+; 轉換
 ; ═══════════════════════════════════════════════
 
-; 将字符串转为大写
-; 返回新字符串
+; 將字串轉為大寫
+; 返回新字串
+; val: 英文小寫轉大寫後的副本（其餘碼點原樣保留）
 ; [to-upper](#str.to-upper)
 str.to-upper = () (val str) {
     val = with-cap(.len-bytes())
@@ -388,8 +424,9 @@ str.to-upper = () (val str) {
     }
 }
 
-; 将字符串转为小写
-; 返回新字符串
+; 將字串轉為小寫
+; 返回新字串
+; val: 英文大寫轉小寫後的副本（其餘碼點原樣保留）
 ; [to-lower](#str.to-lower)
 str.to-lower = () (val str) {
     val = with-cap(.len-bytes())
@@ -409,8 +446,9 @@ str.to-lower = () (val str) {
     }
 }
 
-; 去除字符串首尾空白字符
-; 返回新字符串
+; 去除字串首尾空白字符
+; 返回新字串
+; val: 去除首尾空白後的副本
 ; [trim](#str.trim)
 str.trim = () (val str) {
     start <- [0...len-bytes()): {
@@ -442,11 +480,13 @@ str.trim = () (val str) {
 }
 
 ; ═══════════════════════════════════════════════
-; 重复与切片
+; 重複與切片
 ; ═══════════════════════════════════════════════
 
-; 将字符串重复 times 次
-; 返回新字符串
+; 將字串重複 times 次
+; 返回新字串
+; times: 重複次數（<= 0 得空字串）
+; val: 串接 times 份後的副本
 ; [repeat](#str.repeat)
 str.repeat = (times i64) (val str) {
 
@@ -463,6 +503,9 @@ str.repeat = (times i64) (val str) {
 
 ; 截取子串 [start, end)，下標為「字符（碼點）位置」
 ; 與 s[i] 碼點索引語義一致；要按字節偏移切片請用 s.slice-bytes()
+; start: 起始碼點下標（含）
+; end: 結束碼點下標（不含）
+; val: 按碼點範圍 [start,end) 截取的子串副本
 ; [slice](#str.slice)
 str.slice = (start i64, end i64) (val str) {
     r-start = start
@@ -487,6 +530,9 @@ str.slice = (start i64, end i64) (val str) {
 
 ; 按「字節偏移」截取子串 [start, end)（內部位元組級使用）
 ; 與 s.byte(i) 語義一致；標準庫 split/replace 等內部按字節切片時使用
+; start: 起始位元組偏移（含）
+; end: 結束位元組偏移（不含）
+; val: 按位元組範圍 [start,end) 截取的子串副本
 ; [slice-bytes](#str.slice-bytes)
 str.slice-bytes = (start i64, end i64) (val str) {
     r-start = start
@@ -507,7 +553,7 @@ str.slice-bytes = (start i64, end i64) (val str) {
 }
 
 ; ═══════════════════════════════════════════════
-; 类型转换
+; 類型轉換
 ; ═══════════════════════════════════════════════
 
 ; 恆等轉換（字串轉字串即自身）
@@ -516,12 +562,14 @@ str.slice-bytes = (start i64, end i64) (val str) {
 ; 就落到本方法。此前 std 沒有它，`['a','b'].to-str()` 在建置期報
 ; `unknown callee str.to-str`（產生自 _xstr.to-str 轉發樁）。
 ; str 不可變，回傳自身即可（值語義：共享底層緩衝，不複製）。
+; out: 自身（str 不可變，值語義共享底層緩衝、不複製）
 ; [to-str](#str.to-str)
 str.to-str = () (out str) {
     out = .
 }
 
-; 将字符串转为字节数组
+; 將字串轉為位元組陣列
+; val: 底層 UTF-8 位元組副本
 ; [to-bytes](#str.to-bytes)
 str.to-bytes = () (val []byte) {
     val = with-len(.len-bytes())
@@ -536,6 +584,7 @@ str.to-bytes = () (val []byte) {
 ;   ok(n) - 成功
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或格式錯誤
+; val: ok=解析出的 i64, nil=空字串, err=含非數字字元/孤立 +/-/超範圍
 ; [to-i64](#str.to-i64)
 str.to-i64 = () (val ?i64) {
 
@@ -632,6 +681,7 @@ str.to-i64 = () (val ?i64) {
 ;   ok(n) - 成功（-128 ~ 127）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; val: ok=範圍內（-128~127）的 i8, nil=空字串, err=非法或超出範圍
 ; [to-i8](#str.to-i8)
 str.to-i8 = () (val ?i8) {
     v = .to-i64()
@@ -656,6 +706,7 @@ str.to-i8 = () (val ?i8) {
 ;   ok(n) - 成功（-32768 ~ 32767）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; val: ok=範圍內（-32768~32767）的 i16, nil=空字串, err=非法或超出範圍
 ; [to-i16](#str.to-i16)
 str.to-i16 = () (val ?i16) {
     v = .to-i64()
@@ -680,6 +731,7 @@ str.to-i16 = () (val ?i16) {
 ;   ok(n) - 成功（-2147483648 ~ 2147483647）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; val: ok=範圍內的 i32, nil=空字串, err=非法或超出範圍
 ; [to-i32](#str.to-i32)
 str.to-i32 = () (val ?i32) {
     v = .to-i64()
@@ -704,6 +756,7 @@ str.to-i32 = () (val ?i32) {
 ;   ok(n) - 成功（0 ~ 255）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; val: ok=範圍內（0~255）的 u8, nil=空字串, err=非法或超出範圍
 ; [to-u8](#str.to-u8)
 str.to-u8 = () (val ?u8) {
     .len-bytes() == 0 -> {
@@ -750,6 +803,7 @@ str.to-u8 = () (val ?u8) {
 ;   ok(n) - 成功（0 ~ 65535）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; val: ok=範圍內（0~65535）的 u16, nil=空字串, err=非法或超出範圍
 ; [to-u16](#str.to-u16)
 str.to-u16 = () (val ?u16) {
     .len-bytes() == 0 -> {
@@ -796,6 +850,7 @@ str.to-u16 = () (val ?u16) {
 ;   ok(n) - 成功（0 ~ 4294967295）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、孤立 +/- 或超出範圍
+; val: ok=範圍內的 u32, nil=空字串, err=非法或超出範圍
 ; [to-u32](#str.to-u32)
 str.to-u32 = () (val ?u32) {
     .len-bytes() == 0 -> {
@@ -839,6 +894,7 @@ str.to-u32 = () (val ?u32) {
 
 ; 將字串解析為 u64
 ; 拒絕負號；不檢查 i64 範圍溢位（截斷由 LLVM 自動處理）
+; val: ok=非負整數（拒絕負號）, nil=空字串, err=含非數字字元
 ; [to-u64](#str.to-u64)
 str.to-u64 = () (val ?u64) {
     .len-bytes() == 0 -> {
@@ -872,6 +928,7 @@ str.to-u64 = () (val ?u64) {
 ;   ok(n) - 成功（0 ~ 255）
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元、負號或超出範圍
+; val: ok=範圍內（0~255）的 byte, nil=空字串, err=非法或超出範圍
 ; [to-byte](#str.to-byte)
 str.to-byte = () (val ?byte) {
     .len-bytes() == 0 -> {
@@ -918,6 +975,8 @@ str.to-byte = () (val ?byte) {
 ; 取代原本 f64 累積（17 位字面量會差 1 ULP）。支援 [+-][數字][.數字][eE[+-]數字]。
 
 ; 回傳正 bigint 的位元長度（floor(log2)+1）
+; b: 正 bigint 值
+; out: 位元長度（floor(log2)+1）
 ; [bigint-bitlen](#str.bigint-bitlen)
 bigint-bitlen = (b bigint) (out i64) {
     bm = 4294967295
@@ -932,6 +991,9 @@ bigint-bitlen = (b bigint) (out i64) {
     out = out + sh
 }
 
+; 將十進位/科學記號文本解析為 f64（Nolang 實作，不依賴 strtod）
+; s: 數字文本
+; result: 解析得到的 f64（合法性由呼叫端 to-f64 先行校驗）
 str-to-f64 = (s str) (result f64) {
 
     n i64 = s.len-bytes()
@@ -1202,6 +1264,7 @@ str-to-f64 = (s str) (result f64) {
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元
 ; 使用 Nolang 實作 str-to-f64 進行解析（已移除 strtod CLibCall 依賴）
+; val: ok=解析出的 f64, nil=空字串, err=含非數字字元
 ; [to-f64](#str.to-f64)
 str.to-f64 = () (val ?f64) {
     .len-bytes() == 0 -> {
@@ -1257,6 +1320,7 @@ str.to-f64 = () (val ?f64) {
 ;   nil    - 空字串
 ;   err('msg') - 含非數字字元
 ; 使用 Nolang 實作 str-to-f64 + f64-to-f32（已移除 strtod CLibCall 依賴）
+; val: ok=單精度 f32（經 str-to-f64 再收窄）, nil=空字串, err=含非數字字元
 ; [to-f32](#str.to-f32)
 str.to-f32 = () (val ?f32) {
     f = .to-f64()
@@ -1277,6 +1341,7 @@ str.to-f32 = () (val ?f32) {
 ; 將字串 "true" / "false" 解析為 bool
 ; 大小寫敏感；空字串 → nil，其他 → err
 ; 使用逐字節比較以避免 strcmp 在跨函數呼叫時的記憶體問題
+; val: ok=true/false（僅認 '"true"'/'"false"'，大小寫敏感）, nil=空字串, err=其他
 ; [to-bool](#str.to-bool)
 str.to-bool = () (val ?bool) {
     {
@@ -1307,11 +1372,12 @@ str.to-bool = () (val ?bool) {
 }
 
 ; ═══════════════════════════════════════════════
-; 反转与比较
+; 反轉與比較
 ; ═══════════════════════════════════════════════
 
-; 反转字符串
-; 将 s 反转后写入 val
+; 反轉字串
+; 將 s 反轉後寫入 val
+; val: 反轉後的副本（按位元組逆序寫入）
 ; [reverse](#str.reverse)
 str.reverse = () (val str) {
     val = with-cap(.len-bytes())
@@ -1322,8 +1388,10 @@ str.reverse = () (val str) {
     }
 }
 
-; 字典序比较两个字符串
+; 字典序比較兩個字串
 ; 返回 -1(a<b), 0(相等), 1(a>b)
+; b: 比較目標串
+; r: 字典序 -1(接收者<b)/0(相等)/1(>)
 ; [compare](#str.compare)
 str.compare = (b str) (r i64) {
     an = .len-bytes()
@@ -1355,11 +1423,12 @@ str.compare = (b str) (r i64) {
 }
 
 ; ═══════════════════════════════════════════════
-; 统计
+; 統計
 ; ═══════════════════════════════════════════════
 
-; 统计字串中的 char（code point）數量
+; 統計字串中的 char（code point）數量
 ; 因為 .len 已經是 byte 數，count 提供 code point 數
+; cnt: 碼點（char）數量
 ; [count](#str.count)
 str.count = () (cnt i64) {
     cnt = 0
@@ -1384,11 +1453,14 @@ str.count = () (cnt i64) {
 }
 
 ; ═══════════════════════════════════════════════
-; 替换
+; 替換
 ; ═══════════════════════════════════════════════
 
-; 将 s 中所有 old-ch 替换为 new-ch（UTF-8 码点）
-; 返回结果字符串
+; 將 s 中所有 old-ch 替換為 new-ch（UTF-8 碼點）
+; 返回結果字串
+; old-ch: 被替換的碼點
+; new-ch: 替換後的碼點
+; val: 逐碼點替換後的副本
 ; [replace-char](#str.replace-char)
 str.replace-char = (old-ch char, new-ch char) (val str) {
 
@@ -1445,7 +1517,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         i = i + clen
     }
 
-    ; 第二遍：写入输出
+    ; 第二遍：寫入输出
     val str = with-cap(out-n)
     j = 0
     i = 0
@@ -1531,11 +1603,13 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 ; 裁剪（指定字符）
 ; ═══════════════════════════════════════════════
 
-; 去除字符串首尾指定字符（UTF-8 码点）
+; 去除字串首尾指定字符（UTF-8 碼點）
+; ch: 首尾要去除的碼點
+; val: 去除首尾 ch 後的副本
 ; [trim-char](#str.trim-char)
 str.trim-char = (ch char) (val str) {
 
-    ; 前向裁剪：跳过所有等于 ch 的 code point
+    ; 前向裁剪：跳過所有等於 ch 的 code point
     start = 0
     (start < .len-bytes()) {
         b-opt = .byte(start)
@@ -1629,35 +1703,38 @@ str.trim-char = (ch char) (val str) {
 ; 判空
 ; ═══════════════════════════════════════════════
 
-; 判断字符串是否为空
+; 判斷字串是否為空
 ; 返回 true=空, false=非空
+; yes: 字串長度是否為 0
 ; [empty](#str.empty)
 str.empty = () (yes bool) {
     yes = true
     .len-bytes() != 0 -> yes = false
 }
 
-; str.clear: 清空字符串（原地修改长度为 0）
-; 不 free 堆、不改变 cap/ptr，仅 len=0
-; 只有写入带长度新内容（拼接、赋值非空字符串、填充等）时，才走扩容/缩容逻辑
+; str.clear: 清空字串（原地修改長度為 0）
+; 不 free 堆、不改變 cap/ptr，僅 len=0
+; 只有寫入帶長度新內容（拼接、賦值非空字串、填充等）時，才走擴容/縮容邏輯
 ; build-in
 ; str.clear = () { }
 
 ; str.truncate: 原地截斷字串至至多 n 個位元組（len = min(len, n)）
-; 不 free 堆、不改变 cap/ptr，仅调整 len
-; 替代低阶 s.len = n 写法（验证器拒绝直接修改 .len）
+; 不 free 堆、不改變 cap/ptr，僅調整 len
+; 替代低阶 s.len = n 寫法（驗證器拒绝直接修改 .len）
 ; build-in
 ; str.truncate = (n i64) { }
 
-; 全局函数 with-cap / with-len / with-cap-len 的声明已移至 global.no
+; 全局函數 with-cap / with-len / with-cap-len 的声明已移至 global.no
 
 ; ═══════════════════════════════════════════════
-; 便捷构造方法（方法形式的全局 with-cap / with-len / with-cap-len）
+; 便捷構造方法（方法形式的全局 with-cap / with-len / with-cap-len）
 ; ═══════════════════════════════════════════════
 
 ; 建立指定容量的新字串（len=0）
 ;   s = ''.with-cap(256)  → 預分配 256 位元組的空字串
 ; 便捷方法，等同全域 with-cap(cap)
+; cap: 預分配容量（位元組）
+; out: len=0、已分配 cap 的新空字串
 ; [with-cap](#str.with-cap)
 str.with-cap = (cap i64) (out str) {
     out = with-cap(cap)
@@ -1666,6 +1743,8 @@ str.with-cap = (cap i64) (out str) {
 ; 建立指定長度的字串
 ;   s = ''.with-len(10)  → 長度為 10 的字串
 ; 便捷方法，等同全域 with-len(len)
+; len: 初始長度（位元組）
+; out: 指定長度的新字串
 ; [with-len](#str.with-len)
 str.with-len = (len i64) (out str) {
     out = with-len(len)
@@ -1674,6 +1753,9 @@ str.with-len = (len i64) (out str) {
 ; 建立指定長度和容量的字串
 ;   s = ''.with-len-cap(10, 256)  → 長度 10、容量 256 的字串
 ; 便捷方法，等同全域 with-cap-len(cap, len)
+; len: 長度（位元組）
+; cap: 容量（位元組）
+; out: 指定長度與容量的新字串
 ; [with-len-cap](#str.with-len-cap)
 str.with-len-cap = (len i64, cap i64) (out str) {
     out = with-cap-len(cap, len)
@@ -1682,6 +1764,8 @@ str.with-len-cap = (len i64, cap i64) (out str) {
 ; str.new: 從 char 切片構造 str（模組級構造器）
 ; 編譯期內建（ForwardFunc: chars-new）：[]char 直接逐位元組轉成 bytes 並一次性設定長度，
 ; 無逐位元組 .no 迴圈。str 是內建類型，位元組/長度無法在用戶代碼裡操作，故整體轉換由編譯器生成 IR。
+; cs: 碼點切片（[]char）
+; s: 逐位元組重編碼後的 str
 ; [new](#str.new)
 #{buildin}
 new = (cs []char) (s str) {
@@ -1693,6 +1777,8 @@ new = (cs []char) (s str) {
 
 ; 單個十六進制字元轉數值
 ; 無效字元回傳 -1（原名 hex-val 與 uuid.hex-val 撞名，跨模組解析會被要求限定，改掛模組前綴同 txt-hex-val 慣例）
+; c: 十六進位字元的碼點值
+; v: 0~15；無效字元返回 -1
 ; [str-hex-val](#str.str-hex-val)
 str-hex-val = (c i64) (v i64) {
     v = -1
@@ -1724,6 +1810,7 @@ str-hex-val = (c i64) (v i64) {
 ;   ok(bytes) - 成功
 ;   nil        - 空字串
 ;   err('msg') - 含無效十六進制字元
+; out: ok=解碼後的位元組, nil=空字串, err=含非法十六進制字元或奇數長度
 ; [from-hex](#str.from-hex)
 str.from-hex = () (out ?[]byte) {
     n = .len-bytes()
@@ -1760,6 +1847,8 @@ str.from-hex = () (out ?[]byte) {
 ; ═══════════════════════════════════════════════
 
 ; 單個數字字元轉數值（0-15），無效字元回傳 -1
+; c: 數字字元的碼點值
+; d: 0~15；無效字元返回 -1
 ; [_str-dig-val](#str._str-dig-val)
 _str-dig-val = (c i64) (d i64) {
     d = -1
@@ -1790,6 +1879,7 @@ _str-dig-val = (c i64) (d i64) {
 ;   前綴 0b/0B → 二進位、0o/0O → 八進位、0x/0X → 十六進位；無前綴 → 十進位
 ;   支援可選前導空白與正負號（+ / -）
 ; 返回 ?bigint：ok(bigint) 成功 / nil 空字串 / err('msg') 無有效數字
+; out: ok=按前綴進位制（0b/0o/0x 或十進）解析的大整數, nil=空字串, err=無有效數字
 ; [to-bigint](#str.to-bigint)
 str.to-bigint = () (out ?bigint) {
     n = .len-bytes()
@@ -2360,11 +2450,11 @@ str.at = (i i64) (val ?byte) {
 }
 
 ; ═══════════════════════════════════════════════
-; txt 转换
+; txt 轉換
 ; ═══════════════════════════════════════════════
 
-; 将 str 转换为 txt（最长 255 字节）
-; 返回 out ?txt: ok(txt) / nil（超过 255 字节，txt 容纳不下，不再静默截断）
+; 將 str 轉換為 txt（最長 255 位元組）
+; 返回 out ?txt: ok(txt) / nil（超過 255 位元組，txt 容納不下，不再靜默截斷）
 ; [to-txt](#str.to-txt)
 str.to-txt = () (out ?txt) {
     n = .len-bytes()

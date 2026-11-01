@@ -20,11 +20,12 @@
 AES-BLOCK-SIZE = 16
 
 ; CBC 加密核心（輪金鑰由呼叫端展開一次）
+; 每塊先與前一段密文異或再跑 AES-ECB；不做填充，不足 16 位元組的尾部會被丟棄。
 ; in []byte: 輸入資料（長度需為 16 的倍數）
-; iv [16]byte: 初始向量
-; ek []byte: aes.key-expand / aes.key-expand-256 的結果
-; 返回 out []byte: 加密後的資料
-; [cbc-enc](#crypto.aes-cbc.cbc-enc)
+; iv [16]byte: 初始向量；同一金鑰下不可重複使用
+; ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
+; 返回 out []byte: 加密後的密文，長度與 in 相同
+; [cbc-enc](#aes-cbc.cbc-enc)
 cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
     ; 上一個密文區塊（初始為 IV）
@@ -80,11 +81,12 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 }
 
 ; CBC 解密核心（輪金鑰由呼叫端展開一次）
+; 每塊先跑 AES-ECB 解密，再與前一段密文異或；不校驗填充。
 ; in []byte: 輸入密文（長度需為 16 的倍數）
-; iv [16]byte: 初始向量
-; ek []byte: aes.key-expand / aes.key-expand-256 的結果
-; 返回 out []byte: 解密後的資料
-; [cbc-dec](#crypto.aes-cbc.cbc-dec)
+; iv [16]byte: 初始向量，必須與加密時相同
+; ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
+; 返回 out []byte: 解密後的明文，長度與 in 相同（仍帶著 PKCS#7 填充）
+; [cbc-dec](#aes-cbc.cbc-dec)
 cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
     ; 上一個密文區塊（初始為 IV）
@@ -139,11 +141,12 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 }
 
 ; AES-128-CBC 加密
+; 展開 16 位元組金鑰後走 cbc-enc；不做填充，明文長度需自行補到 16 的倍數。
 ; in []byte: 輸入資料（長度需為 16 的倍數）
-; key [16]byte: 金鑰
-; iv [16]byte: 初始向量
-; 返回 out []byte: 加密後的資料
-; [enc-128](#crypto.aes-cbc.enc-128)
+; key [16]byte: 128-bit 金鑰
+; iv [16]byte: 初始向量，每個訊息應隨機且唯一
+; 返回 out []byte: 加密後的密文，長度與 in 相同
+; [enc-128](#aes-cbc.enc-128)
 enc-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand(key)
     out = cbc-enc(in, iv, ek)
@@ -151,21 +154,22 @@ enc-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 
 ; AES-128-CBC 解密
 ; in []byte: 輸入密文（長度需為 16 的倍數）
-; key [16]byte: 金鑰
-; iv [16]byte: 初始向量
-; 返回 out []byte: 解密後的資料
-; [dec-128](#crypto.aes-cbc.dec-128)
+; key [16]byte: 128-bit 金鑰，必須與加密時一致
+; iv [16]byte: 初始向量，必須與加密時一致
+; 返回 out []byte: 解密結果（仍含 PKCS#7 填充，需再用 pkcs7-unpad 去除）
+; [dec-128](#aes-cbc.dec-128)
 dec-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand(key)
     out = cbc-dec(in, iv, ek)
 }
 
 ; AES-256-CBC 加密
+; 使用 32 位元組（14 輪）金鑰；其餘行為同 enc-128。
 ; in []byte: 輸入資料（長度需為 16 的倍數）
-; key [32]byte: 金鑰
-; iv [16]byte: 初始向量
-; 返回 out []byte: 加密後的資料
-; [enc-256](#crypto.aes-cbc.enc-256)
+; key [32]byte: 256-bit 金鑰
+; iv [16]byte: 初始向量，每個訊息應隨機且唯一
+; 返回 out []byte: 加密後的密文，長度與 in 相同
+; [enc-256](#aes-cbc.enc-256)
 enc-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand-256(key)
     out = cbc-enc(in, iv, ek)
@@ -173,19 +177,20 @@ enc-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
 
 ; AES-256-CBC 解密
 ; in []byte: 輸入密文（長度需為 16 的倍數）
-; key [32]byte: 金鑰
-; iv [16]byte: 初始向量
-; 返回 out []byte: 解密後的資料
-; [dec-256](#crypto.aes-cbc.dec-256)
+; key [32]byte: 256-bit 金鑰，必須與加密時一致
+; iv [16]byte: 初始向量，必須與加密時一致
+; 返回 out []byte: 解密結果（仍含 PKCS#7 填充，需再用 pkcs7-unpad 去除）
+; [dec-256](#aes-cbc.dec-256)
 dec-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand-256(key)
     out = cbc-dec(in, iv, ek)
 }
 
 ; PKCS#7 填充
+; 總是追加 1–16 個值為 n 的位元組（明文已是 16 的倍數時追加一整塊 16）。
 ; in []byte: 輸入資料
-; 返回 out []byte: 填充後的資料（長度為 16 的倍數）
-; [pkcs7-pad](#crypto.aes-cbc.pkcs7-pad)
+; 返回 out []byte: 填充後的資料（長度為 16 的倍數，且嚴格大於原長）
+; [pkcs7-pad](#aes-cbc.pkcs7-pad)
 pkcs7-pad = (in []byte) (out []byte) {
 
     #{overflow=wrap}
@@ -207,9 +212,10 @@ pkcs7-pad = (in []byte) (out []byte) {
 }
 
 ; PKCS#7 去填充
-; in []byte: 輸入資料（含填充）
-; 返回 out-n i64: 去填充後的長度（-1=填充錯誤）
-; [pkcs7-unpad](#crypto.aes-cbc.pkcs7-unpad)
+; 讀取最後一個位元組作為填充長度，並校驗末尾 pad-len 個位元組都等於該值。
+; in []byte: 解密後的資料（含 PKCS#7 填充；長度為 0 視為填充錯誤）
+; out-n i64: 去填充後的有效長度；填充值非法、越界或校驗不符時為 -1
+; [pkcs7-unpad](#aes-cbc.pkcs7-unpad)
 pkcs7-unpad = (in []byte) (out-n i64) {
 
     in.len() == 0 -> {

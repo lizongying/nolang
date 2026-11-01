@@ -30,6 +30,7 @@ json-pool {
     count i64
 }
 
+; 初始化
 json-pool.init = () {
     .count = 0
     i <- [0..4): {
@@ -42,6 +43,8 @@ json-pool.init = () {
     }
 }
 
+; 配置下一個節點槽並回傳索引，同時把新節點的 count / kind / str-val 重設為初值
+; idx i64: 新節點的索引；池已滿（.count >= 4）時為 -1 且 .count 不變
 json-pool.alloc = () (idx i64) {
     idx = -1
     .count >= 4 -> return

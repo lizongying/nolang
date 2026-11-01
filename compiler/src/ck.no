@@ -45,6 +45,9 @@
 ; 对 parse 产物执行 not-defined 族检查（drv.cmd-vet 在 ps 错误数==0 时调用）。
 ;   正主 runParseGate 语义（p90 实证）：有 parse 错 ⇒ 整族跳过，此处同。
 ;   回值：诊断条目 vec（'L|C|CODE|MSG'），顺序 = arena 构造序（≈源序）。
+; t: 輸入
+; path: 路徑
+; out: 輸出結果
 check = (t ast, path str) (out []str) {
     out []str = with-cap(4)
     sig = ck-sig.new()
@@ -287,6 +290,8 @@ check = (t ast, path str) (out []str) {
 
 ; 固定字符集放行名（关键字 val/err/ok/nil/it/self + 内建型名 + char）。
 ;   正主 8239-8243（关键字）与 8261（isBuiltinType+char；char 不在 isBuiltinType 但确是型）。
+; nm: 字串
+; r: 結果數值
 ck-name-silent = (nm str) (r i64) {
     r = nm: {
         'val' -> 1
@@ -319,6 +324,9 @@ ck-name-silent = (nm str) (r i64) {
 
 ; 值是否在 vec 中（线性扫描——defs/rcv 皆无升序保证，见第一遍注释；
 ;   实测 s13：重复串回旧小 id 破单调 ⇒ 二分前提不成立）。
+; v: 值
+; id: 數值
+; r: 結果數值
 ck-def-has = (v []i64, id i64) (r i64) {
     r = 0
     i = 0
@@ -336,6 +344,8 @@ ck-def-has = (v []i64, id i64) (r i64) {
 
 ; 正主 isAllCapsConst（checker.go:1327）——非空、含至少一大写、
 ;   其余仅 [0-9A-Z-]；否则 false。
+; nm: 字串
+; r: 結果數值
 ck-allcaps = (nm str) (r i64) {
     r = 0
     has-upper = 0
@@ -360,6 +370,9 @@ ck-allcaps = (nm str) (r i64) {
 
 ; 字节取值——越界/空回 0（哨兵 cls 非法侧，保守不放行）。
 ;   ⚠️ s.byte(i) 回 ?byte 且「内联 call(): {match}」有毒（ck-sig-lt 同款两步形注释）。
+; s: 字串
+; i: 索引
+; r: 結果數值
 ck-byte-at = (s str, i i64) (r i64) {
     r = 0
     o = s.byte(i)
@@ -374,6 +387,8 @@ ck-byte-at = (s str, i i64) (r i64) {
 }
 
 ; 0=非法（小写或其他）/ 1=大写 A-Z / 2=数字 / 3=连字符 '-'。
+; c: 運算元
+; r: 結果數值
 ck-char-cls = (c i64) (r i64) {
     r = 0
     c >= 65 && c <= 90 -> {
@@ -392,6 +407,9 @@ ck-char-cls = (c i64) (r i64) {
 
 ; vec 索引安全取值（越界回 ''）。⚠️ 不用外掛容器泛型方法（.at/.sort
 ;   单態化 codegen 坑，实测 s13）；索引形回 option，两步 match 形解毒。
+; v: 值
+; i: 索引
+; r: 結果字串
 ck-str-at = (v []str, i i64) (r str) {
     r = ''
     o = v[i]
@@ -406,6 +424,9 @@ ck-str-at = (v []str, i i64) (r str) {
 }
 
 ; i64 vec 索引安全取值（越界回 -1——intern id 恒 >0，哨兵无碰撞）。
+; v: 值
+; i: 索引
+; r: 結果數值
 ck-i64-at = (v []i64, i i64) (r i64) {
     r = -1
     o = v[i]

@@ -11,7 +11,9 @@
 
 hex-chars = '0123456789abcdef'
 
-; 位元組陣列 → hex 字串（逐字元建構）
+; 位元組陣列 → hex 字串（逐字元建構，小寫、每 byte 兩位）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個 byte
 bhex = (data []byte) (hex str) {
     n = data.len()
 
@@ -28,6 +30,8 @@ bhex = (data []byte) (hex str) {
 }
 
 ; 固定 [512]byte → []byte 檢視（每次複製到新 vec，避免全域 slice 突變）
+; a [512]byte: 來源固定陣列（DER 憑證原始位元組）
+; v []byte: 長度 512、內容逐位元組複製的切片
 arr512 = (a [512]byte) (v []byte) {
     v = with-len(512)
     i <- [0..512): {

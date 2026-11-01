@@ -11,6 +11,9 @@
 ;     8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a，與 RFC 完全一致
 ; 所以壞的是這個測試的期望常數，不是 std 的 x25519 實作。
 
+; 把 64 字元的十六進位字串解成 32 位元組（小寫 a-f 與大寫 A-F 都接受）
+; hex-str str: 長度至少 64 的 ASCII hex 字串
+; out [32]byte: 第 i 個位元組 = hex-str[2i] 與 hex-str[2i+1] 合起來的高/低位
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}

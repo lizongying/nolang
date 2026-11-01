@@ -38,7 +38,9 @@ client {
 ; 連接到指定主機與埠號
 ; 記錄 host/port 供後續 reconnect 使用
 ; 返回 ok=true=成功
-; [connect](#net.client.client.connect)
+; host: 目標伺服器位址
+; port: 目標伺服器埠號
+; [connect](#client.client.connect)
 client.connect = (host str, port i64) (ok bool) {
     ok = false
     .host = host
@@ -52,7 +54,8 @@ client.connect = (host str, port i64) (ok bool) {
 ; 使用已記錄的 host/port 重新連接
 ; 先關閉舊連接（避免 fd 洩漏），再重新 dial
 ; 返回 ok=true=成功
-; [reconnect](#net.client.client.reconnect)
+; ok: 以先前記錄的 host/port 重新撥號成功時為 true
+; [reconnect](#client.client.reconnect)
 client.reconnect = () (ok bool) {
     ok = false
     .host.len-bytes() == 0 -> return
@@ -66,7 +69,8 @@ client.reconnect = () (ok bool) {
 
 ; 發送字串資料
 ; 返回 written=實際發送位元組數（-1=錯誤）
-; [send](#net.client.client.send)
+; data: 要發送的位元組內容字串
+; [send](#client.client.send)
 client.send = (data str) (written i64) {
     written = -1
     print('DBG client.send connected=', .connected)
@@ -79,7 +83,7 @@ client.send = (data str) (written i64) {
 ; buf: 接收緩衝區（str）
 ; n: 最多接收的位元組數
 ; 返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
-; [recv](#net.client.client.recv)
+; [recv](#client.client.recv)
 client.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
     .connected == false -> return
@@ -88,7 +92,7 @@ client.recv = (buf str, n i64) (read-n i64) {
 
 ; 接收一行資料（最多 NET-BUF-SIZE 位元組）
 ; 返回 line ?str: ok=接收內容, nil=失敗或連接關閉
-; [recv-line](#net.client.client.recv-line)
+; [recv-line](#client.client.recv-line)
 client.recv-line = () (line ?str) {
     line = nil
     .connected == false -> return
@@ -98,7 +102,8 @@ client.recv-line = () (line ?str) {
 ; 請求-回應模式
 ; 發送資料後接收全部回應直到連接關閉
 ; 返回 response ?str: ok=回應內容, nil=失敗
-; [request](#net.client.client.request)
+; data: 要發送的請求內容
+; [request](#client.client.request)
 client.request = (data str) (response ?str) {
     response = nil
     .connected == false -> return
@@ -112,7 +117,8 @@ client.request = (data str) (response ?str) {
 
 ; 發送一行（附加換行符 \n）
 ; 返回 written=實際發送位元組數（-1=錯誤）
-; [send-line](#net.client.client.send-line)
+; line: 要發送的行文字（自動附加換行符）
+; [send-line](#client.client.send-line)
 client.send-line = (line str) (written i64) {
 
     written = -1
@@ -126,13 +132,13 @@ client.send-line = (line str) (written i64) {
 
 ; 檢查連接狀態
 ; 返回 yes=true=已連接
-; [is-connected](#net.client.client.is-connected)
+; [is-connected](#client.client.is-connected)
 client.is-connected = () (yes bool) {
     yes = .connected
 }
 
 ; 關閉連接並重置狀態
-; [close](#net.client.client.close)
+; [close](#client.client.close)
 client.close = () {
     .connected -> {
         .c.close()
@@ -146,7 +152,9 @@ client.close = () {
 
 ; 建立客戶端並連接
 ; 返回 c ?client: ok=客戶端, nil=失敗
-; [client-create](#net.client.client-create)
+; host: 目標伺服器位址
+; port: 目標伺服器埠號
+; [client-create](#client.client-create)
 client-create = (host str, port i64) (c ?client) {
     c = nil
     cl = client {}

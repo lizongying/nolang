@@ -6,6 +6,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -71,6 +74,7 @@ t-extract = () {
     runner.str-eq(bhex(pv), '077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5', 64, 'hkdf-extract PRK')
 }
 
+; RFC 5869 TC1 的 expand：L=42 時 OKM 應等於向量（42 位元組 = 84 個 hex 字元）
 t-expand = () {
     salt []byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -90,6 +94,7 @@ t-expand = () {
     runner.str-eq(bhex(okm), '3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865', 84, 'hkdf-expand OKM 42')
 }
 
+; out-len 決定 OKM 長度：要求 20 就只得 20 位元組
 t-expand-len = () {
     salt []byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,

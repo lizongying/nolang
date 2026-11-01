@@ -6,6 +6,7 @@
 
 # /test/runner
 
+; err.new：建立帶 code 的錯誤，is() 應匹配該 code，msg() 應保留原文
 t-new = () {
     e = err.new('disk full', code.io)
     yes = e.is(code.io)
@@ -14,23 +15,26 @@ t-new = () {
     runner.str-eq(msg, 'disk full', 9, 'err.msg content')
 }
 
+; err.is：僅當錯誤碼相同時為 true
 t-is = () {
     e = err.new('timed out', code.timeout)
     yes = e.is(code.timeout)
     runner.is-true(yes, 'is(timeout) matches')
 }
 
+; err.msg：回傳建立時傳入的訊息原文
 t-msg = () {
     e = err.new('bad json', code.parse)
     msg = e.msg()
     runner.str-eq(msg, 'bad json', 8, 'msg content')
 }
 
+; err.format：輸出格式為 'code.<名稱>: <訊息>'，err.new 不帶位置故 loc 為空
 t-format = () {
     e = err.new('read error', code.io)
     s = e.format()
-    ; err.format() 产出 'code.<名称>: <msg>'（见 src/std/err.no 文件头注释）；
-    ; err.new 不注入位置，故 loc 为空。整串即 'code.io: read error'（19 字节）。
+    ; err.format() 產生 'code.<名稱>: <訊息>'（見 src/std/err.no 文件頭註解）；
+    ; err.new 不注入位置，故 loc 為空。整串即 'code.io: read error'（19 位元組）。
     runner.str-eq(s, 'code.io: read error', 19, 'format content')
 }
 

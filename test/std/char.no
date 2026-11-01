@@ -19,6 +19,7 @@
 
 ; ── 分類：ASCII 邊界 ───────────────────────────
 
+; 驗證 is-digit：0-9 回 true，邊界外（斜線、冒號）與字母、空白皆回 false
 t-is-digit = () {
 
     ; '0'=48 .. '9'=57
@@ -33,6 +34,7 @@ t-is-digit = () {
     runner.is-false(" ".is-digit(), 'is-digit space false')
 }
 
+; 驗證 is-letter：A-Z 與 a-z 回 true，邊界 @ [ 反引號 { 、數字及非 ASCII（中）回 false（ASCII-only）
 t-is-letter = () {
 
     ; 'A'=65 'Z'=90 'a'=97 'z'=122
@@ -52,6 +54,7 @@ t-is-letter = () {
     runner.is-false("中".is-letter(), 'is-letter non-ASCII false')
 }
 
+; 驗證 is-alpha：語義同 is-letter，字母回 true、數字與空白回 false
 t-is-alpha = () {
     runner.is-true("A".is-alpha(), 'is-alpha "A"')
     runner.is-true("z".is-alpha(), 'is-alpha "z"')
@@ -59,6 +62,7 @@ t-is-alpha = () {
     runner.is-false(" ".is-alpha(), 'is-alpha space false')
 }
 
+; 驗證 is-alnum：字母與數字回 true，空白、底線、連字符回 false
 t-is-alnum = () {
     runner.is-true("A".is-alnum(), 'is-alnum "A"')
     runner.is-true("z".is-alnum(), 'is-alnum "z"')
@@ -69,6 +73,7 @@ t-is-alnum = () {
     runner.is-false("-".is-alnum(), 'is-alnum "-" false')
 }
 
+; 驗證 is-space：空格、Tab、換行、回車符回 true，字母與數字回 false
 t-is-space = () {
     runner.is-true(" ".is-space(), 'is-space space')
     runner.is-true("\t".is-space(), 'is-space tab')
@@ -78,6 +83,7 @@ t-is-space = () {
     runner.is-false("0".is-space(), 'is-space "0" false')
 }
 
+; 驗證 is-upper / is-lower：僅字母據大小寫各自回 true，數字對兩者皆回 false
 t-is-case = () {
 
     ; is-upper
@@ -95,6 +101,7 @@ t-is-case = () {
 
 ; ── 轉換 ───────────────────────────────────────
 
+; 驗證 char.to-upper：小寫轉大寫（碼點減 32），非小寫原樣返回，轉後 to-str 得字串 A
 t-to-upper = () {
 
     ; 'a'=97 -> 'A'=65，差 32
@@ -113,6 +120,7 @@ t-to-upper = () {
     runner.str-eq("a".to-upper().to-str(), 'A', 1, 'to-upper "a" to-str')
 }
 
+; 驗證 char.to-lower：大寫轉小寫（碼點加 32），非大寫原樣返回，邊界 @ 不被轉換
 t-to-lower = () {
     runner.eq("A".to-lower(), 97, 'to-lower "A" == 97')
     runner.eq("Z".to-lower(), 122, 'to-lower "Z" == 122')
@@ -124,6 +132,7 @@ t-to-lower = () {
     runner.str-eq("A".to-lower().to-str(), 'a', 1, 'to-lower "A" to-str')
 }
 
+; 驗證 char.to-str：產生單字符 str；str.len 回的是碼點數而非位元組數，位元組數須經 to-bytes/to-hex（中→3 位元組 e4b8ad）
 t-to-str = () {
     runner.str-eq("A".to-str(), 'A', 1, 'to-str "A"')
     runner.str-eq("5".to-str(), '5', 1, 'to-str "5"')
@@ -143,6 +152,7 @@ t-to-str = () {
     runner.is-true("A".to-str().eq('A', 1), 'to-str roundtrip via str.eq')
 }
 
+; 驗證 char.to-bytes：回 UTF-8 位元組序列，ASCII 佔 1 位元組、漢字佔 3 位元組（中 = E4 B8 AD）
 t-to-bytes = () {
     b []byte = "A".to-bytes()
     runner.eq(b.len(), 1, 'to-bytes "A" len == 1')
@@ -156,6 +166,7 @@ t-to-bytes = () {
     runner.eq(c[2], 173, 'to-bytes non-ASCII[2] == 173')
 }
 
+; 驗證 to-txt：不超過 255 位元組回 ok(txt)，超過則回 nil（不再靜默截斷）
 t-to-txt = () {
     ; str.to-txt 回傳 ?txt：<= 255 位元組為 ok(txt)
     a ?txt = "A".to-txt()

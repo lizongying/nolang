@@ -1,6 +1,9 @@
 ; 測試 emitContainerClone 重置 is_moved 的修復
 ; 場景：move 後再深拷貝，確保 is_moved 被重置為 false
 
+; 複製 after-move
+; flag i64: 1 時先 move b 到 out，再讓 b 從 a 深拷貝
+; out []i64: flag == 1 時為被 move 出去的 [1, 2, 3]；深拷貝後 b 必須重新可被釋放
 clone-after-move = (flag i64) (out []i64) {
     a = [10, 20, 30]
     b = [1, 2, 3]

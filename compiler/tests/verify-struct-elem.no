@@ -22,6 +22,10 @@
 # /compiler/src/ps
 
 ; 回傳 target 具名 let 的 type 子節點索引（找不到回 0）
+; t: 輸入
+; root: 數值
+; target: 字串
+; ftype: 結果數值
 find-type = (t ast, root i64, target str) (ftype i64) {
     ftype = 0
     rnode = ast.nd-at(t, root)

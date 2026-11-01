@@ -10,34 +10,54 @@
 
 # /compiler/src/util/sb.sb
 # /compiler/src/cg-rc
+# /compiler/src/mir
+
+; ty-name：型别码 → LLVM 型名。**全库唯一**的一份映射（s32 从 cg.no 迁到这里：
+;   struct 型别声明也要用它，而声明属于模块级装配点，不能反向依赖发射器）。
+;   i64 / %str-long / %vec / %option / %struct.s<结构体 id>。
+; t: 數值
+; s: 結果字串
+cg-runtime-ty-name = (t i64) (s str) {
+    s = 'i64'
+    t == TY-STR -> s = '%str-long'
+    t == TY-VEC -> s = '%vec'
+    t == TY-OPT -> s = '%option'
+    t >= TY-STRUCT-BASE -> s = '%struct.s' - (t - TY-STRUCT-BASE).to-str()
+}
 
 ; hdr-type：16 字节头类型。rc@base+0，magic@base+8，data=base+16。
+; r: 結果字串
 cg-runtime-hdr-type = () (r str) {
     r = '%nolang_hdr = type { i64, i64 }'
 }
 
 ; task-type：协程任务（32 字节）。
+; r: 結果字串
 cg-runtime-task-type = () (r str) {
     r = '%task = type { void (i8*)*, i64, i1, i1, i8* }'
 }
 
 ; str-type：字符串（len, cap, data）。与 Go emitPrelude 的 %str-long 逐字相同。
+; r: 結果字串
 cg-runtime-str-type = () (r str) {
     r = '%str-long = type { i64, i64, i8* }   ; len, cap, data'
 }
 
 ; decls：libc 外部声明。
+; r: 結果字串
 cg-runtime-decls = () (r str) {
     r = 'declare i8* @malloc(i64)\ndeclare void @free(i8*)\n'
 }
 
 ; memcpy-decl：llvm.memcpy 声明（Go codegen.go:2987 同形）。
+; r: 結果字串
 cg-runtime-memcpy-decl = () (r str) {
     r = 'declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)'
 }
 
 ; str-concat：@str_concat —— 堆上拼接两个 %str-long（Go codegen.go:3139 逐字）。
 ; 2 空格缩进（与 Go 该处一致，不是 tab）；依赖 @nolang_rc_alloc（见 cg-rc.no）。
+; r: 結果字串
 cg-runtime-str-concat = () (r str) {
     b = sb.init(1024)
     b.push('define %str-long @str_concat(%str-long %a, %str-long %b) {\n')
@@ -59,6 +79,7 @@ cg-runtime-str-concat = () (r str) {
 }
 
 ; vec-type：向量（Go codegen.go:2936 逐字）。len, cap, data（data 存成 i64 裸指针）。
+; r: 結果字串
 cg-runtime-vec-type = () (r str) {
     r = '%vec = type { i64, i64, i64 }'
 }
@@ -67,8 +88,60 @@ cg-runtime-vec-type = () (r str) {
 ; 32 字节 = 8 字节 tag + 24 字节 payload slot；slot 是 `[3 x i64]`，
 ; 所以能内联 <=24 字节的载荷（i64 / %str-long 都装得下），更大的走堆上装箱。
 ; tag：0 = ok、1 = nil、2 = err。
+; r: 結果字串
 cg-runtime-option-type = () (r str) {
     r = '%option = type { i64, [3 x i64] }    ; tag, 24-byte payload slot (32 bytes total)'
+}
+
+; struct-decl：单个结构体的型别声明（M4-c 续件 s31/s32）。
+; id: 结构体 id（对应型别码 TY-STRUCT-BASE + id）
+; nf: 字段数（0 ⇒ 该结构体未被使用，由 struct-decls 跳过）
+; ft: 容器 —— 该结构体的字段型别码（长度 == nf）
+; r: 結果字串
+cg-runtime-struct-decl = (id i64, nf i64, ft []i64) (r str) {
+    b = sb.init(256)
+    b.push('%struct.s')
+    b.push(id.to-str())
+    b.push(' = type { ')
+    j = 0
+    (j < nf) {
+        j > 0 -> b.push(', ')
+        b.push(cg-runtime-ty-name(ft[j]))
+        #{overflow=wrap}
+        j = j + 1
+    }
+    b.push(' }')
+    r = b.str()
+}
+
+; struct-decls：模块内**全部**结构体型别声明（唯一装配点）。
+; sfc: 容器 —— sfc[id] = 该结构体的字段数（0 = 未使用 ⇒ 跳过）
+; sft: 容器 —— 各结构体字段型别码的**拼接**（按 id 升序，长度 == Σ sfc）
+; r: 結果字串
+; ⚠️ 具名型别在 LLVM 模块内唯一（§11 B10）：这里一次性发全部，各函式**不得**再发。
+; ⚠️ sft 是「拼接表」而不是二维表：nolang 的容器没有二维形态，用「计数 + 游标」展开
+;    比「id*stride + j」少一个隐式上限（stride 一写死，struct 就不能超那个字段数）。
+cg-runtime-struct-decls = (sfc []i64, sft []i64) (r str) {
+    b = sb.init(1024)
+    n = sfc.len()
+    off = 0
+    i <- [0..n): {
+        nf = sfc[i]
+        nf > 0 -> {
+            ft []i64 = []
+            j = 0
+            (j < nf) {
+                ft.push(sft[off])
+                #{overflow=wrap}
+                j = j + 1
+                #{overflow=wrap}
+                off = off + 1
+            }
+            b.push(cg-runtime-struct-decl(i, nf, ft))
+            b.push('\n')
+        }
+    }
+    r = b.str()
 }
 
 ; ── 向量 helper（M4-c 第六件；**刻意不照抄 Go 的 inline 展开**）──────────
@@ -80,6 +153,7 @@ cg-runtime-option-type = () (r str) {
 ; ⚠️ 数据缓冲用**裸 @malloc**（不带 RC 头）——元素目前只有 i64，无 RC 需求；
 ;    扩容后 @free 旧缓冲，故不会无界泄漏。等元素变成 str/vec 时要换成
 ;    @nolang_rc_alloc + 逐元素 retain/release（记入 §11）。
+; r: 結果字串
 cg-runtime-vec-new = () (r str) {
     b = sb.init(256)
     b.push('define %vec @vec_new() {\n')
@@ -88,6 +162,8 @@ cg-runtime-vec-new = () (r str) {
     r = b.str()
 }
 
+; 功能待補充
+; r: 結果字串
 cg-runtime-vec-len = () (r str) {
     b = sb.init(256)
     b.push('define i64 @vec_len(%vec %v) {\n')
@@ -97,6 +173,8 @@ cg-runtime-vec-len = () (r str) {
     r = b.str()
 }
 
+; 功能待補充
+; r: 結果字串
 cg-runtime-vec-get = () (r str) {
     b = sb.init(512)
     b.push('define i64 @vec_get_i64(%vec %v, i64 %i) {\n')
@@ -112,6 +190,7 @@ cg-runtime-vec-get = () (r str) {
 }
 
 ; push：满则翻倍（下限 4）→ 新 malloc + memcpy + free 旧 → 写尾部 → len+1。
+; r: 結果字串
 cg-runtime-vec-push = () (r str) {
     b = sb.init(1024)
     b.push('define %vec @vec_push_i64(%vec %v, i64 %x) {\n')
@@ -153,6 +232,7 @@ cg-runtime-vec-push = () (r str) {
 }
 
 ; prelude：类型 + 声明（RC helper 见 cg-rc.no）。M4-a 的「最小 prelude」。
+; r: 結果字串
 cg-runtime-prelude = () (r str) {
     b = sb.init(256)
     b.push(cg-runtime-hdr-type())
@@ -173,6 +253,7 @@ cg-runtime-prelude = () (r str) {
 ;   类型 → libc 声明 → memcpy 声明 → RC helper → 字符串 helper → 向量 helper。
 ; @str_concat 调 @nolang_rc_alloc，故必须排在 RC 之后（LLVM 允许前向引用，
 ; 但保持与 Go 发射顺序一致便于逐字节对照）。
+; r: 結果字串
 cg-runtime-prelude-full = () (r str) {
     b = sb.init(8192)
     b.push(cg-runtime-prelude())

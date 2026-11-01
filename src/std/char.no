@@ -14,12 +14,14 @@
 ; ═══════════════════════════════════════════════
 
 ; 判斷是否為數字（0-9）
+; result: 接收者為數字字符（0-9）時回 true
 ; [is-digit](#char.is-digit)
 char.is-digit = () (result bool) {
     . >= 48 && . <= 57 -> result = true
 }
 
 ; 判斷是否為字母（A-Z a-z）
+; result: 接收者為英文字母（A-Z 或 a-z）時回 true
 ; [is-letter](#char.is-letter)
 char.is-letter = () (result bool) {
     . >= 65 && . <= 90 -> {
@@ -31,6 +33,7 @@ char.is-letter = () (result bool) {
 
 ; 判斷是否為字母（A-Z a-z）
 ; is-letter 的別名
+; result: 接收者為英文字母時回 true（語義同 is-letter）
 ; [is-alpha](#char.is-alpha)
 char.is-alpha = () (result bool) {
     . >= 65 && . <= 90 -> {
@@ -41,24 +44,28 @@ char.is-alpha = () (result bool) {
 }
 
 ; 判斷是否為字母或數字
+; result: 接收者為字母或數字時回 true
 ; [is-alnum](#char.is-alnum)
 char.is-alnum = () (result bool) {
     .is-digit() || .is-alpha() -> result = true
 }
 
 ; 判斷是否為空白字元（space tab newline cr）
+; result: 接收者為空白類字符（空格/Tab/換行/回車）時回 true
 ; [is-space](#char.is-space)
 char.is-space = () (result bool) {
     . == 32 || . == 9 || . == 10 || . == 13 -> result = true
 }
 
 ; 判斷是否為大寫字母（A-Z）
+; result: 接收者為大寫字母（A-Z）時回 true
 ; [is-upper](#char.is-upper)
 char.is-upper = () (result bool) {
     . >= 65 && . <= 90 -> result = true
 }
 
 ; 判斷是否為小寫字母（a-z）
+; result: 接收者為小寫字母（a-z）時回 true
 ; [is-lower](#char.is-lower)
 char.is-lower = () (result bool) {
     . >= 97 && . <= 122 -> result = true
@@ -69,6 +76,7 @@ char.is-lower = () (result bool) {
 ; ═══════════════════════════════════════════════
 
 ; 轉為大寫（僅 ASCII）
+; result: 小寫轉大寫後的字符（非 a-z 者原樣返回）
 ; [to-upper](#char.to-upper)
 char.to-upper = () (result char) {
     {
@@ -83,6 +91,7 @@ char.to-upper = () (result char) {
 }
 
 ; 轉為小寫（僅 ASCII）
+; result: 大寫轉小寫後的字符（非 A-Z 者原樣返回）
 ; [to-lower](#char.to-lower)
 char.to-lower = () (result char) {
     {
@@ -101,6 +110,7 @@ char.to-lower = () (result char) {
 ; ═══════════════════════════════════════════════
 
 ; 轉為 UTF-8 編碼的位元組陣列
+; out: 該碼點 UTF-8 編碼後的 1~4 位元組序列
 ; [to-bytes](#char.to-bytes)
 char.to-bytes = () (out []byte) {
     buf [4]byte = [0x00, 0x00, 0x00, 0x00]
@@ -172,6 +182,7 @@ char.to-bytes = () (out []byte) {
 }
 
 ; 轉為 UTF-8 編碼的字串
+; s: 由該碼點構成的單字符 UTF-8 字符串
 ; [to-str](#char.to-str)
 char.to-str = () (s str) {
     s = with-cap(4)
@@ -211,6 +222,7 @@ char.to-str = () (s str) {
 ; 與 str.to-txt / []byte.to-txt 一致，回傳普通 txt（單碼點轉換不會失敗，無需 ?txt）。
 ; 有了它，txt.to-upper / to-lower 等可透過「取 char → char.to-lower → char.to-txt 串接」
 ; 重寫，無須再依賴會回傳 char 的 txt[i] 下標寫入。
+; out: 載入該碼點 UTF-8 序列的 txt（其餘位元組零填充）
 ; [to-txt](#char.to-txt)
 char.to-txt = () (out txt) {
     b = .to-bytes()
@@ -221,18 +233,18 @@ char.to-txt = () (out txt) {
 ; []char 切片 → 字符串
 ; ═══════════════════════════════════════════════
 
-; []char.to-str: 将字符切片转为字符串（按 UTF-8 编码每个码点）
-; 每个码点按 UTF-8 写成 1~4 字节，push 进一个 []byte 临时切片；最后用循环下标
-; 把临时字节切片一次性拷入 out（out[j] = tmp[j]，下标用循环变量 j）。
+; []char.to-str: 將字符切片轉為字符串（按 UTF-8 編碼每個碼點）
+; 每個碼點按 UTF-8 寫成 1~4 字節，push 進一個 []byte 临時切片；最後用循环下標
+; 把临時字節切片一次性拷入 out（out[j] = tmp[j]，下標用循环變量 j）。
 ;
-; ⚠️ 注意：截至 2026-09-06，nolang 编译器对 []char 切片类型的支持不完整，本方法尚不可用：
-;   - legacy 后端：[]char 的 with-cap/push 对 len/cap 的单位（元素数 vs 字节数）处理有误，
-;     导致 .len() 返回的元素数偏大，[]char.to-str 会越界读取产生乱码（实测单个 push(72)
-;     也输出 "H"+乱码）。[]char 字面量与索引读取本身是 i32 stride 正确的，但 push 构造出的
-;     切片 len 字段被破坏。
-;   - MIR=3 门禁：编译器对 []char 元素类型与新增的 []t.to-chars 泛型方法均无支持，
-;     直接报 "unknown callee []t.to-chars"，无法编译通过。
-; 在编译器修复 []char 切片支持前，请勿依赖 to-chars / []char.to-str。
+; ⚠️ 注意：截至 2026-09-06，nolang 編譯器對 []char 切片類型的支持不完整，本方法尚不可用：
+;   - legacy 後端：[]char 的 with-cap/push 對 len/cap 的單位（元素數 vs 字節數）處理有誤，
+;     導致 .len() 返回的元素數偏大，[]char.to-str 會越界讀取產生乱碼（實測單個 push(72)
+;     也输出 "H"+乱碼）。[]char 字面量與索引讀取本身是 i32 stride 正確的，但 push 構造出的
+;     切片 len 字段被破壞。
+;   - MIR=3 門禁：編譯器對 []char 元素類型與新增的 []t.to-chars 泛型方法均無支持，
+;     直接報 "unknown callee []t.to-chars"，無法編譯通過。
+; 在編譯器修複 []char 切片支持前，請勿依赖 to-chars / []char.to-str。
 ; [to-str](#chars.to-str)
 []char.to-str = () (out str) {
 

@@ -1,5 +1,7 @@
 ; 测试 option match 是否正常工作
 
+; 測試 fn
+; result ?str: 先設 nil 再改為 'hello'，回傳時應為 ok('hello')
 test-fn = () (result ?str) {
     result = nil
     result = 'hello'

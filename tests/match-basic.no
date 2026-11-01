@@ -1,3 +1,4 @@
+; 裸 match（只有 catch-all 臂）：任何主體值都應落進 `-> 'ok'` 並印出 ok
 test1 = () {
     n = 42
     r = n: {

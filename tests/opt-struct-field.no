@@ -13,6 +13,8 @@ conn {
     port i64
 }
 
+; 產生 ok(conn) 的 ?conn：path='/api/health'、port=8080
+; result ?conn: 內容為上述 conn 的 ok 選項
 make-conn = () (result ?conn) {
     result = nil
 
@@ -52,6 +54,8 @@ server {
     connections i64
 }
 
+; 產生 ok(server) 的 ?server：host='localhost'、connections=42
+; result ?server: 內容為上述 server 的 ok 選項
 make-server = () (result ?server) {
     result = nil
     s = server {
@@ -61,6 +65,7 @@ make-server = () (result ?server) {
     result = s
 }
 
+; 測試 opt-multi
 test-opt-multi = () {
     a = make-conn()
     b = make-server()

@@ -4,12 +4,16 @@
 ; 期望輸出必須與 baseline（純 copy 語意）完全一致。
 
 ; 異步函數（模組級聲明，供 run 引用）
+; n i64: 輸入值，本測試傳 7
+; r i64: n * 2（overflow 採 wrap），即 14
 double-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     r = n * 2
 }
 
+; 驗證協程引數與呼叫端變數不共用槽位：y 先複製 x（7），再 spawn double-async(x) 跨執行緒讀 x，
+; 回填後 y 必須仍是 7、協程結果為 14
 coro-capture = () {
     x = 7
     y = x; 若誤重綁定：y 別名 x

@@ -14,6 +14,9 @@ container {
     name str
 }
 
+; 示範淺拷貝：out = c.data 只複製指標，c 離開作用域後 d 仍指向同一塊已釋放記憶體
+; c container: 來源結構體，data 為 [100..500]、name 為 'test'
+; out []i64: 與 c.data 共享同一塊堆（淺拷貝，非獨立副本）
 extract-data = (c container) (out []i64) {
     out = c.data; 浅拷贝！out 与 c.data 共享 data 指针
 }

@@ -117,6 +117,9 @@ TILDE = 91
 ; ── str-eq：逐位元組比較 ──
 ; ⚠️ 必須先比 len-bytes()，否則前綴相同的短字串會誤判相等。
 ;    注意 str.len() 回的是【碼點數】，不是位元組數。
+; a: 運算元
+; b: 運算元
+; yes: 是否成立
 str-eq = (a str, b str) (yes bool) {
     yes = false
     na = a.len-bytes()
@@ -145,6 +148,8 @@ str-eq = (a str, b str) (yes bool) {
 }
 
 ; ── name：code -> 識別符名（L1 差分實際比較的就是它）──
+; c: 運算元
+; r: 結果字串
 name = (c i64) (r str) {
     r = c: {
         ILLEGAL -> 'ILLEGAL'
@@ -246,6 +251,8 @@ name = (c i64) (r str) {
 ; ── keyword：識別符 -> 關鍵字 code（照抄 src/lexer/token.go 的 lookupKeyword）──
 ; 回 ILLEGAL(0) 表示不是關鍵字，呼叫端應視為 IDENT。
 ; 刻意用值匹配而非 map：SHS 禁「map 欄位 + 方法」，且只有 23 個關鍵字。
+; s: 字串
+; r: 結果數值
 keyword = (s str) (r i64) {
     r = s: {
         'if' -> IF

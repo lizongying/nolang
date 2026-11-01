@@ -6,6 +6,7 @@
 
 # /test/runner
 
+; 驗證 uuid.new-v4(seed)：以指定種子生成 v4 UUID，version 欄位為 4、variant 為 2（RFC 4122）
 t-new-v4 = () {
     u = uuid.new-v4(12345)
     v = u.version()
@@ -14,6 +15,7 @@ t-new-v4 = () {
     runner.eq(var, 2, 'new-v4 variant == 2 (RFC4122)')
 }
 
+; 驗證 uuid.to-str：序列化為 36 字元規範形式，連字符固定出現在 8/13/18/23 位（8-4-4-4-12 分段）
 t-to-str = () {
     u = uuid.new-v4(42)
     s = u.to-str()
@@ -30,12 +32,14 @@ t-to-str = () {
     runner.eq(dash3, 45, 'to-str [23] == dash')
 }
 
+; 驗證 uuid.validate：new-v4 產出的 UUID 其版本與變體欄位均合法，validate 回 true
 t-validate = () {
     u = uuid.new-v4(99)
     ok = u.validate()
     runner.is-true(ok, 'new-v4 validate ok')
 }
 
+; 驗證 uuid.from-str：由 to-str 字串反解析回填結構體並回 true，往返（roundtrip）後與原值 eq 相等
 t-from-str = () {
     u = uuid.new-v4(77)
     s = u.to-str()
@@ -46,6 +50,7 @@ t-from-str = () {
     runner.is-true(yes, 'from-str roundtrip eq')
 }
 
+; 驗證 uuid.from-str 解析帶連字符字串：標準 8-4-4-4-12 格式可成功解析，版本欄位為 4
 t-from-str-dashes = () {
     u uuid
     ok = uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u)
@@ -54,6 +59,7 @@ t-from-str-dashes = () {
     runner.eq(v, 4, 'parsed version == 4')
 }
 
+; 驗證 uuid.is-nil：nil-uuid 置零後 is-nil 回 true；new-v4 產出的非零值 is-nil 回 false
 t-is-nil = () {
     u uuid
     uuid.nil-uuid(u)
@@ -64,6 +70,7 @@ t-is-nil = () {
     runner.is-false(no, 'new-v4 not nil')
 }
 
+; 驗證 uuid.eq：相同種子生成的兩個 UUID 相等，不同種子則不相等
 t-eq = () {
     u1 = uuid.new-v4(11)
     u2 = uuid.new-v4(11)
@@ -74,6 +81,7 @@ t-eq = () {
     runner.is-false(no, 'different seed not eq')
 }
 
+; 驗證 uuid.cmp：nil UUID（全零）與非 nil 值比較回負數，可按位元組序排列
 t-cmp = () {
     u1 uuid
     uuid.nil-uuid(u1)

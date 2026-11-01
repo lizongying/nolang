@@ -11,6 +11,7 @@ uninit-struct {
 }
 
 ; Case 7: 先賦值再用 → 允許
+; out ?uninit-struct: ok({val: 42, data: [1, 2, 3]})，供呼叫端讀 out.val
 case7-assign-then-read = () (out ?uninit-struct) {
     out =  {
         val: 42
@@ -21,6 +22,7 @@ case7-assign-then-read = () (out ?uninit-struct) {
 }
 
 ; Case 7 變體：先賦 nil 再做 nil 檢查
+; out ?uninit-struct: 固定為 nil，故 out != nil 不成立，應印 'is nil'
 case7-nil-check = () (out ?uninit-struct) {
     out = nil
     if out != nil {
@@ -30,14 +32,17 @@ case7-nil-check = () (out ?uninit-struct) {
 }
 
 ; Case 8: 空函數體 → 返回 nil
+; out ?uninit-struct: 函式體不賦值，由返回值延遲零值填成 nil
 case8-empty = () (out ?uninit-struct) {
 }
 
 ; Case 3: ?[]i64 返回 nil
+; out ?[]i64: 空函數體 → nil，不得是空 vec
 case3-return-nil = () (out ?[]i64) {
 }
 
 ; Case 7: ?[]i64 先賦值再用
+; out ?[]i64: ok([10, 20, 30])，供呼叫端取 len() 得 3
 case7-slice = () (out ?[]i64) {
     out = [10, 20, 30]
     n = out.len()

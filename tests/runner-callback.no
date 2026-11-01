@@ -6,10 +6,12 @@
 
 # /test/runner
 
+; 被測回呼：只印一行，用來確認 runner.test 真的執行了傳入的函式
 greet = () {
     print('hi from greet')
 }
 
+; 第二個被測回呼：與 greet 分開，驗證計數器不會把兩次呼叫累加到一起
 test1 = () {
     print('test1 running')
 }

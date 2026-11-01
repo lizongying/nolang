@@ -12,6 +12,8 @@
 hex-chars = '0123456789abcdef'
 
 ; 小端位元組陣列 → hex 字串（逐字元建構，避免格式化補零問題）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個 byte
 bhex = (data []byte) (hex str) {
     n = data.len()
 
@@ -27,6 +29,9 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 固定 64 位元組陣列 → 同內容的動態位元組切片（簽名 R||S）
+; a [64]byte: 來源固定陣列
+; v []byte: 長度 64、內容逐位元組複製的切片
 arr64 = (a [64]byte) (v []byte) {
     v = with-len(64)
     i <- [0..64): {
@@ -36,6 +41,9 @@ arr64 = (a [64]byte) (v []byte) {
     }
 }
 
+; 固定 32 位元組陣列 → 同內容的動態位元組切片（公鑰 / RFC 8032 測試向量）
+; a [32]byte: 來源固定陣列
+; v []byte: 長度 32、內容逐位元組複製的切片
 arr32 = (a [32]byte) (v []byte) {
     v = with-len(32)
     i <- [0..32): {

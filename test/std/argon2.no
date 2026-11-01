@@ -13,6 +13,8 @@
 
 # /test/runner
 
+; 建立固定鹽：16 位元組，內容為 0x00–0x0f
+; s []byte: 長度 16 的位元組切片（同一份鹽供多組 argon2id 測試重用）
 salt16 = () (s []byte) {
     s = with-cap(16)
     i <- [0..16): {
@@ -22,6 +24,9 @@ salt16 = () (s []byte) {
     }
 }
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -38,6 +43,7 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 輸出長度：out-len 32 與 48 應分別得到 32 / 48 位元組的 tag
 t-out-len = () {
     s = salt16()
     out = argon2.id('password'.to-bytes(), s, 2, 64, 1, 32)
@@ -46,6 +52,7 @@ t-out-len = () {
     runner.eq(out2.len(), 48, 'argon2id honors out-len 48')
 }
 
+; 確定性：相同 password / salt / 參數重複計算應得完全相同的 tag
 t-deterministic = () {
     s = salt16()
     a = bhex(argon2.id('password'.to-bytes(), s, 2, 64, 1, 32))
@@ -54,6 +61,7 @@ t-deterministic = () {
     runner.str-eq(a, c, 64, 'argon2id deterministic for same inputs')
 }
 
+; 鹽敏感性：只換 salt 就必須改變 tag（差異位元組數 > 0）
 t-salt-sensitive = () {
     s = salt16()
     s3 []byte = [

@@ -11,11 +11,17 @@
 
 # /test/runner
 
+; 比較是否相等 str（先比位元組長度再逐字元比對）
+; got str: 實測得到的字串（parse-set 解出的 name/value/path 等欄位）
+; want str: 期望的字串，同時作為比對長度的基準
+; msg str: 斷言訊息前綴，長度不符時會附加 ' [len]'
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
+; Set-Cookie 解析：完整屬性（Path/Domain/Max-Age/Secure/HttpOnly/SameSite）、
+; 最小形式、缺 '='、空字串、前後空白等邊界
 t-parse-set = () {
     c = cookie.parse-set('sessionid=abc123; Path=/app; Domain=example.com; HttpOnly; Secure; Max-Age=3600; SameSite=Strict')
     runner.is-true(c.valid, 'parse full valid')
@@ -44,11 +50,13 @@ t-parse-set = () {
     runner.is-true(d.secure, 'trim secure')
 }
 
+; 序列化往返：解析完整 Set-Cookie 後重建，屬性順序為 Path/Domain/Max-Age/Secure/HttpOnly/SameSite
 t-build-set-full = () {
     c = cookie.parse-set('sessionid=abc123; Path=/app; Domain=example.com; HttpOnly; Secure; Max-Age=3600; SameSite=Strict')
     eq-str(cookie.build-set(c), 'sessionid=abc123; Path=/app; Domain=example.com; Max-Age=3600; Secure; HttpOnly; SameSite=Strict', 'build-set full')
 }
 
+; 簽名 / 校驗：對 HMAC-SHA256 golden 向量驗證；篡改值、錯誤名稱、缺 '.' 的都應被拒
 t-sign-verify = () {
     key = 'secretkey1234567'.to-bytes()
     sg = cookie.cookie-sign('sid', 'v1', key)
@@ -75,6 +83,7 @@ t-sign-verify = () {
     runner.is-false(okv4, 'no dot rejected')
 }
 
+; Cookie Jar 整合：建立/覆寫/依域名與路徑取用、刪除、清空、簽名往返、Set-Cookie 回應存入
 t-jar = () {
     j = cookie.jar {}
     runner.eq(j.count-of(), 0, 'empty jar')

@@ -6,6 +6,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供解析結果比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -22,23 +25,28 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; RFC 4648 向量：'a' → 'ME======'（不足 5 位元組以 '=' 補滿 8 字元）
 t-enc-a = () {
     runner.str-eq(base32.encode('a'.to-bytes()), 'ME======', 8, 'base32("a")')
 }
 
+; RFC 4648 向量：'ab' → 'MFRA===='
 t-enc-ab = () {
     runner.str-eq(base32.encode('ab'.to-bytes()), 'MFRA====', 8, 'base32("ab")')
 }
 
+; 跨塊邊界：7 位元組 = 1 個完整 5 位元組塊 + 2 位元組尾塊，應得 'MFRGGZDFMZTQ===='
 t-enc-abcdefg = () {
     runner.str-eq(base32.encode('abcdefg'.to-bytes()), 'MFRGGZDFMZTQ====', 16, 'base32("abcdefg")')
 }
 
+; 空輸入應編碼為空字串（不產生填充）
 t-enc-empty = () {
     e = base32.encode(''.to-bytes())
     runner.eq(e.len-bytes(), 0, 'base32("") is empty')
 }
 
+; 編碼再解碼的位元組應與原文完全一致（以 hex 比對）
 t-roundtrip = () {
     s = 'Hello, Base32!'
     e = base32.encode(s.to-bytes())

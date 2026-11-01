@@ -6,6 +6,8 @@
 ; self-recursion: a stack-overflow SIGSEGV at runtime (no compile error).
 ; The std builtin stub (#{buildin}) is never merged, so no `fs`-owned
 ; definition exists and the qualified call must route to the builtin.
+; p str: 要檢查的路徑
+; ok bool: fs.is-file(p) 的結果；本函式名故意與 builtin 同名以驗證解析不串錯
 is-file = (p str) (ok bool) {
     ok = fs.is-file(p)
 }

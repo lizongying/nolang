@@ -21,10 +21,11 @@
 ;   h7 = 1541459225
 ;   sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
-; 處理一個 512-bit 區塊
-; s []u32: 16 個 32-bit 字 (big-endian)
-; h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32: 輸入/輸出 256-bit 哈希狀態
-; [sha256-block](#crypto.sha256.sha256-block)
+; 處理一個 512-bit 區塊（64 輪壓縮，FIPS 180-4）
+; s []u32: 16 個 32-bit 大端訊息字（已由呼叫方從位元組解包）
+; h0 u32..h7 u32: 進入本區塊前的 256-bit 哈希狀態（a..h 的初值）
+; r0 u32..r7 u32: 壓縮後的新狀態（工作變數加回輸入狀態並模 2^32）
+; [sha256-block](#sha256.sha256-block)
 sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32) (r0 u32, r1 u32, r2 u32, r3 u32, r4 u32, r5 u32, r6 u32, r7 u32) {
 
     mask u32 = 4294967295
@@ -2108,9 +2109,9 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
 }
 
 ; 計算 SHA-256 雜湊（含填充與多區塊處理）
-; data []byte: 輸入位元組陣列
-; 返回 hash [32]byte: 32 位元組雜湊值
-; [sha256](#crypto.sha256.sha256)
+; data []byte: 輸入位元組陣列（任意長度）
+; hash [32]byte: 256-bit 摘要，按 FIPS 180-4 定義的大端序存放
+; [sha256](#sha256.sha256)
 sha256 = (data []byte) (hash [32]byte) {
 
     ; SHA-256 初始狀態
@@ -2285,9 +2286,9 @@ sha256 = (data []byte) (hash [32]byte) {
 }
 
 ; 計算 SHA-256 雜湊並返回 hex 字串
-; data []byte: 輸入位元組陣列
-; 返回 hex str: 64 字元小寫 hex 字串
-; [sha256-hex](#crypto.sha256.sha256-hex)
+; data []byte: 輸入位元組陣列（任意長度）
+; hex str: 64 字元小寫十六進位摘要
+; [sha256-hex](#sha256.sha256-hex)
 sha256-hex = (data []byte) (hex str) {
     hash = sha256(data)
 

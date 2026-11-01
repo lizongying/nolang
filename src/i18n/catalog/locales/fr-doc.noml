@@ -1,0 +1,3929 @@
+; Nolang doc catalog: fr
+; Source-comment translations, keyed by the anchor an author wrote in a
+; trailing `[label](#anchor)` line. This file holds TRANSLATIONS ONLY: an
+; anchor that is absent falls back to the comment text in the .no source, so
+; untranslated blocks degrade to the author's language instead of shipping a
+; copy of it here. Every key must still exist in some .no source, or the gate
+; rejects it as an orphan.
+{
+  'args.count': `
+nombre d'arguments, nom du programme compris
+délègue au builtin os.args(), qui renvoie le vecteur argv complet ; on en prend la longueur
+`
+  'args.get': `
+le i-ème argument
+délègue au builtin os.arg(i), qui lit argv[i] de main ; un i hors bornes renvoie nil
+`
+  'args.get-option': `
+lit la valeur d'une option (par ex. --output=xxx)
+renvoie val ?str: ok = la valeur de l'option, nil = introuvable
+`
+  'args.get-positional': `
+lit le i-ème argument positionnel, en sautant les options
+renvoie val ?str: ok = la valeur positionnelle, nil = absent
+`
+  'args.has-flag': 'indique si une option est présente (par ex. --verbose, -v)'
+  'args.program': 'le nom du programme (argument 0)'
+  'arr-stack.arr-stack.clear': 'vide la pile'
+  'arr-stack.arr-stack.empty': `
+indique si la pile est vide
+renvoie yes bool: true = vide, false = non vide
+
+`
+  'arr-stack.arr-stack.full': `
+indique si la pile est pleine
+renvoie yes bool: true = pleine, false = non pleine
+
+`
+  'arr-stack.arr-stack.size': `
+renvoie le nombre d'éléments de la pile
+renvoie sz i64: le nombre d'éléments
+
+`
+  'arr.arr-stack-init': `
+[n]t.arr-stack-init: initialise l'état de la pile
+cap est automatiquement fixé à la taille n du tableau
+renvoie s arr-stack: l'état de pile initialisé
+
+`
+  'arr.arr-stack-peek': `
+[n]t.arr-stack-peek: consulte l'élément au sommet sans le retirer
+s arr-stack: l'état de la pile
+renvoie val ?t: ok = la valeur au sommet, nil = la pile est vide
+
+`
+  'arr.arr-stack-pop': `
+[n]t.arr-stack-pop: dépile l'élément au sommet
+s arr-stack: l'état de la pile
+renvoie val ?t: ok = la valeur dépilée, nil = la pile est vide
+
+`
+  'arr.arr-stack-push': `
+[n]t.arr-stack-push: empile un élément
+s arr-stack: l'état de la pile
+val t: la valeur à empiler
+renvoie ok bool: true = succès, false = la pile est pleine
+
+`
+  'arr.asc': '[n]t.asc: trie par ordre croissant sur place (tri par insertion)'
+  'arr.at': `
+[n]t.at: accès indexé sûr
+i i64: l'indice
+renvoie val ?t: nil hors bornes
+
+`
+  'arr.clone': '[n]t.clone: copie le tableau dans dst'
+  'arr.contains': '[n]t.contains: indique si la valeur val est présente'
+  'arr.count': `
+[n]t.count: compte les occurrences d'une valeur
+val t: la valeur à compter
+renvoie cnt i64: le nombre d'occurrences
+
+`
+  'arr.desc': '[n]t.desc: trie par ordre décroissant sur place (tri par insertion)'
+  'arr.eq': '[n]t.eq: compare deux tableaux pour l\'égalité'
+  'arr.fill': '[n]t.fill: remplit tout avec val'
+  'arr.first': '[n]t.first: le premier élément'
+  'arr.index-of': '[n]t.index-of: renvoie l\'indice d\'une valeur, ou -1'
+  'arr.last': '[n]t.last: le dernier élément'
+  'arr.len': `
+[n]t.len: renvoie la longueur du tableau
+Note: le paramètre de sortie s'appelle out et non n pour ne pas entrer en collision avec le paramètre générique n
+
+`
+  'arr.link-clear': `
+[n]t.link-clear: vide la liste chaînée et récupère tous les nœuds
+l link: l'état de la liste chaînée
+
+`
+  'arr.link-find': `
+[n]t.link-find: trouve la position d'une valeur
+l link: l'état de la liste chaînée
+val t: la valeur à trouver
+renvoie pos i64: l'indice de position, -1 = introuvable
+
+`
+  'arr.link-get-at': `
+[n]t.link-get-at: obtient l'élément à une position
+l link: l'état de la liste chaînée
+pos i64: la position
+renvoie val ?t: ok = la valeur de l'élément, nil = la position est hors bornes
+
+`
+  'arr.link-init': `
+[n]t.link-init: initialise une liste chaînée
+nxt []i64: le tableau des indices suivants (fourni par l'appelant, taille >= n)
+prv []i64: le tableau des indices précédents (fourni par l'appelant, taille >= n)
+renvoie l link: la liste chaînée initialisée
+
+`
+  'arr.link-insert-at': `
+[n]t.link-insert-at: insère un élément à une position
+l link: l'état de la liste chaînée
+pos i64: la position d'insertion (0 = tête, size = queue)
+val t: la valeur à insérer
+renvoie ok bool: true = succès, false = la position est hors bornes ou le pool de nœuds est plein
+
+`
+  'arr.link-peek-back': `
+[n]t.link-peek-back: consulte l'élément de queue sans le retirer
+l link: l'état de la liste chaînée
+renvoie val ?t: ok = la valeur de queue, nil = la liste est vide
+
+`
+  'arr.link-peek-front': `
+[n]t.link-peek-front: consulte l'élément de tête sans le retirer
+l link: l'état de la liste chaînée
+renvoie val ?t: ok = la valeur de tête, nil = la liste est vide
+
+`
+  'arr.link-pop-back': `
+[n]t.link-pop-back: retire l'élément en queue de la liste chaînée
+l link: l'état de la liste chaînée
+renvoie val ?t: ok = la valeur retirée, nil = la liste est vide
+
+`
+  'arr.link-pop-front': `
+[n]t.link-pop-front: retire l'élément en tête de la liste chaînée
+l link: l'état de la liste chaînée
+renvoie val ?t: ok = la valeur retirée, nil = la liste est vide
+
+`
+  'arr.link-push-back': `
+[n]t.link-push-back: insère un élément en queue de la liste chaînée
+l link: l'état de la liste chaînée
+val t: la valeur à insérer
+renvoie ok bool: true = succès, false = le pool de nœuds est plein
+
+`
+  'arr.link-push-front': `
+[n]t.link-push-front: insère un élément en tête de la liste chaînée
+l link: l'état de la liste chaînée
+val t: la valeur à insérer
+renvoie ok bool: true = succès, false = le pool de nœuds est plein
+
+`
+  'arr.link-remove-at': `
+[n]t.link-remove-at: supprime l'élément à une position
+l link: l'état de la liste chaînée
+pos i64: la position à supprimer
+renvoie val ?t: ok = la valeur supprimée, nil = la position est hors bornes
+
+`
+  'arr.link-reverse': `
+[n]t.link-reverse: inverse la liste chaînée
+Échange les next/prev de chaque nœud, puis échange head/tail
+l link: l'état de la liste chaînée
+
+`
+  'arr.link-set-at': `
+[n]t.link-set-at: fixe l'élément à une position
+l link: l'état de la liste chaînée
+pos i64: la position
+val t: la nouvelle valeur
+renvoie ok bool: true = succès, false = la position est hors bornes
+
+`
+  'arr.max': '[n]t.max: la valeur maximale du tableau'
+  'arr.min': '[n]t.min: la valeur minimale du tableau'
+  'arr.queue-init': `
+[n]t.queue-init: initialise l'état de la file
+cap est automatiquement fixé à la taille n du tableau
+renvoie q queue: l'état de file initialisé
+
+`
+  'arr.queue-peek': `
+[n]t.queue-peek: consulte l'élément de tête sans le retirer
+q queue: l'état de la file
+renvoie val ?t: ok = la valeur de tête, nil = la file est vide
+
+`
+  'arr.queue-pop': `
+[n]t.queue-pop: retire l'élément en tête de la file
+q queue: l'état de la file
+renvoie val ?t: ok = la valeur retirée, nil = la file est vide
+
+`
+  'arr.queue-push': `
+[n]t.queue-push: ajoute un élément en queue de la file
+q queue: l'état de la file
+val t: la valeur à ajouter
+renvoie ok bool: true = succès, false = la file est pleine
+
+`
+  'arr.reverse': '[n]t.reverse: inverse le tableau'
+  'arr.sum': '[n]t.sum: la somme des éléments du tableau'
+  'arr.swap': `
+[n]t.swap: échange les éléments de deux positions
+i i64, j i64: les positions
+
+`
+  'arr.to-str': `
+[n]t.to-str: la forme sous forme de chaîne
+renvoie out str: formatée comme '[1, 2, 3]'
+Les éléments sont convertis en appelant le .to-str() de chacun (voir number.no pour les types concrets)
+
+`
+  'arr.to-vec': '[n]t.to-vec: une méthode de tableau qui convertit en vec []t'
+  'arrords.asc': '[n]ord.asc: trie par ordre croissant sur place (tri par insertion)'
+  'arrords.desc': '[n]ord.desc: trie par ordre décroissant sur place (tri par insertion)'
+  'async.cancel': `
+⚠️ obsolète: l'annulation écrite à la main est obsolète; utilisez plutôt un groupe de coroutines (un bloc nu { ... }).
+cancel: annule une tâche d'arrière-plan lancée par run()
+task est le handle opaque renvoyé par run() (i8*). Renvoie void.
+
+`
+  'async.cancelled': `
+⚠️ obsolète: le cancelled écrit à la main est obsolète; utilisez plutôt un groupe de coroutines (un bloc nu { ... }).
+cancelled: indique si la tâche asynchrone en cours d'exécution a été annulée
+renvoie bool. N'a de sens qu'à l'intérieur d'une tâche asynchrone (une fonction -async planifiée par la boucle d'événements).
+
+`
+  'base64.b64-val': `
+Convertit un caractère Base64 unique en sa valeur
+Les caractères de remplissage renvoient 0, les caractères invalides renvoient -1
+
+`
+  'base64.decode': `
+Décode du Base64 avec l'alphabet donné
+s str: la chaîne Base64
+table str: l'alphabet Base64
+Renvoie out ?[]byte: ok = les données décodées, err = caractère invalide
+
+`
+  'base64.encode': `
+Encode en Base64 avec l'alphabet donné
+data []byte: les données d'entrée
+table str: l'alphabet Base64
+Renvoie out str: la chaîne encodée en Base64
+
+`
+  'base64.encode-std': `
+Encode avec l'alphabet standard
+data []byte: les données d'entrée
+Renvoie out str: la chaîne encodée en Base64
+
+`
+  'base64.encode-url': `
+Encode avec l'alphabet sûr pour les URL
+data []byte: les données d'entrée
+Renvoie out str: la chaîne encodée en Base64
+
+`
+  'bigint._add': `
+a + b (surcharge d'opérateur; écrit ?bigint, que le compilateur traite comme bigint)
+Route C: un paramètre union `(b big)` plus un match de déstructuration de type. La branche bigint délègue
+à `add-bigint`, la branche i64 à `_add-i64`. Le cœur n'est délibérément pas intégré dans la branche
+de type: il est mesuré qu'à l'intérieur d'un BlockStatement d'une branche de match, muter le paramètre
+de sortie nommé `c` par `c = expr` puis `c.sign = ...` ne réécrit rien (le signe est perdu, d'où
+-100+7 donnant faussement 93). Déléguer à une méthode normale restaure la sémantique de mutation
+de `c.sign`, pour la même raison que _mul délègue à mul-bigint.
+
+`
+  'bigint._add-i64': 'c = self + v (addition de petits entiers)'
+  'bigint._div': `
+a / b (surcharge d'opérateur; une division par zéro renvoie zéro, conformément à div-mod; la branche
+i64 de la route C passe par _div-i64)
+
+`
+  'bigint._div-i64': 'q = self / v (division de petits entiers)'
+  'bigint._mod': `
+a % b (surcharge d'opérateur; une division par zéro renvoie zéro, conformément à div-mod; la branche
+i64 de la route C passe par _mod-i64, dont le résultat est ?i64. Ce résultat est d'abord déballé (un échec
+donne 0, comme le zéro de div-mod en cas de division par zéro) puis promu avec from-i64 en
+bigint pour correspondre au paramètre de sortie r).
+
+`
+  'bigint._mod-i64': `
+r = self % v (reste de petits entiers)
+Renvoie ?i64: selon la règle d'option unifiée D6, `cur % r-v` est déjà ?i64 (il échoue quand le
+diviseur vaut 0). Déclarer volontairement le paramètre de résultat comme simple pour l'aplatir
+provoquerait un déballage silencieux, il est donc déclaré ?i64 tel quel.
+
+`
+  'bigint._mul': `
+a * b (surcharge d'opérateur; la route C est la même que pour _add, les deux branches délèguent à une
+méthode concrète)
+La branche bigint délègue à mul-bigint, la branche i64 à _mul-i64. Le cœur n'est pas intégré dans
+la branche de type car une boucle lourde / `with-len` / `#{overflow=wrap}` embarquée dans un
+BlockStatement de branche de match casse la frontière du lowering (mesuré: segfault). Déléguer à une
+méthode normale restaure la sémantique du récepteur `.` et des paramètres de sortie, comme la
+branche i64 de _add qui fonctionne.
+
+`
+  'bigint._mul-i64': 'self * v (multiplication de petits entiers)'
+  'bigint._sub': 'a - b (surcharge d\'opérateur; la stratégie de délégation est la même que pour _add)'
+  'bigint.abs-add': '|self| + |b| (les signes sont ignorés)'
+  'bigint.abs-cmp': 'Compare |self| avec |b| (1 = plus grand, 0 = égal, -1 = plus petit)'
+  'bigint.abs-sub': '|self| - |b| (suppose |self| >= |b|, les signes sont ignorés)'
+  'bigint.add-bigint': `
+Le cœur big-plus-big de self + b (une méthode concrète normale, pas une surcharge d'opérateur; _add
+délègue ici)
+Les arguments sont nommés: le s de `v.abs-sub(s)` doit d'abord être capturé par `s = .` (un `.`
+nu en argument de méthode bute sur une lacune connue du lowering).
+
+`
+  'bigint.cmp': 'Compare self avec b (1 = plus grand, 0 = égal, -1 = plus petit)'
+  'bigint.copy': `
+Copie profonde d'un bigint
+Avertissement: non obsolète (contrairement à str/txt.copy). L'affectation `b = a` ne copie que le
+descripteur {sign,limbs,len} et partage le même tampon limbs avec a (mesuré: après
+a.limbs[0] = 99, b.limbs[0] vaut aussi 99), elle n'a donc pas de sémantique de copie profonde. Utilisez cette méthode
+chaque fois que vous avez besoin d'un instantané indépendant.
+
+`
+  'bigint.div-mod': 'self / b, en renvoyant à la fois le quotient et le reste'
+  'bigint.eq': 'self == b ?'
+  'bigint.from-i64': 'Construit un bigint à partir d\'un i64'
+  'bigint.from-u64': 'Construit un bigint à partir d\'un i64 non signé (toujours positif)'
+  'bigint.gcd': 'g = gcd(self, b) (algorithme d\'Euclide)'
+  'bigint.is-neg': 'Si la valeur est négative'
+  'bigint.is-pos': 'Si la valeur est positive'
+  'bigint.is-zero': 'Si la valeur est nulle'
+  'bigint.lcm': 'l = lcm(self, b)'
+  'bigint.mod-pow': 'r = self^exp mod modulus'
+  'bigint.mul-bigint': `
+Le cœur grand entier de |self| * |b| (une méthode concrète normale, pas une surcharge d'opérateur;
+_mul délègue ici)
+
+`
+  'bigint.normalize': 'Supprime les zéros de tête et garantit len >= 1'
+  'bigint.one': 'Construit un bigint valant un'
+  'bigint.pow': 'c = self^n (n >= 0, une puissance d\'exposant entier non négatif)'
+  'bigint.shl': 'c = a << n'
+  'bigint.shl1': 'self = self << 1'
+  'bigint.shr': 'c = a >> n'
+  'bigint.shr1': 'self = self >> 1'
+  'bigint.sub-bigint': 'Le cœur big-minus-big de self - b (une méthode concrète normale; _sub délègue ici)'
+  'bigint.to-hex': `
+Formate un bigint en chaîne hexadécimale minuscule
+Renvoie out str: la chaîne hexadécimale
+
+`
+  'bigint.to-i64': `
+Pourquoi cela existe: les chemins rapides pour petits entiers comme `_mod-i64` / `_div-i64` sont privés de ce
+module (voir la convention de confidentialité ci-dessus). Les modules extérieurs reçoivent un bigint produit par un
+opérateur (`% / * + -`, dont la plage est naturellement bornée par le dividende dans i64); pour récupérer un
+i64 ils doivent utiliser cette sortie publique plutôt que d'aller chercher une méthode privée.
+
+`
+  'bigint.to-str': `
+Formate un bigint en chaîne décimale
+Renvoie out str: la chaîne décimale
+
+`
+  'bigint.zero': 'Construit un bigint nul'
+  'bool.to-str': 'convertit un bool en la chaîne "true" ou "false"'
+  'bufio.reader.close': 'ferme le lecteur'
+  'bufio.reader.fill': 'remplit à nouveau le tampon'
+  'bufio.reader.init': 'crée un lecteur tamponné'
+  'bufio.reader.read-byte': `
+lit un octet
+renvoie b ?byte: ok = la valeur de l'octet, nil = EOF ou erreur
+
+`
+  'bufio.reader.read-line': `
+lit une ligne
+renvoie line ?str: ok = la ligne, nil = EOF ou erreur
+
+`
+  'bytes.index': `
+[]byte.index: recherche dans un []byte la sous-chaîne target
+Renvoie la position de la première occurrence, ou -1 si absente
+
+`
+  'bytes.index-from': `
+[]byte.index-from: recherche dans un []byte la sous-chaîne target à partir de from
+Renvoie la position de la première occurrence, ou -1 si absente
+
+`
+  'bytes.len': `
+[]byte.len: renvoie la longueur de la tranche d'octets
+byte est un type distinct et non un alias de u8, donc []byte.len n'est pas instancié automatiquement depuis []t.len.
+
+`
+  'bytes.slice': `
+[]byte.slice: prend la sous-tranche [start, end)
+Renvoie une nouvelle tranche
+
+`
+  'bytes.to-bytes-str': `
+[]byte.to-bytes-str: une copie 1:1 octet par octet (conservant la sémantique d'origine de []byte.to-str).
+Utilisée quand buf est déjà un flux d'octets UTF-8 valide (une lecture de fichier, la sortie d'un sous-processus) et que l'on ne
+veut pas réencoder par point de code. Cette fonction équivaut à l'ancienne []byte.to-str.
+
+`
+  'bytes.to-chars': `
+⚠️ limitation du compilateur: ni le backend historique ni le MIR ne prennent complètement en charge les tranches []char (élément i32)
+(contrairement à []byte / []i64, len/cap/stride de []char ont des erreurs latentes de codegen, et un []char construit corrompt
+la mémoire hors bornes à l'exécution), donc cette méthode n'est pas encore utilisable.
+Si tout ce qu'il vous faut est le résultat final octet -> point de code -> chaîne UTF-8, utilisez simplement b.to-str() —
+[]byte.to-str intègre déjà cette sémantique (chaque octet réencodé comme un point de code 0..255) et n'a pas besoin de []char.
+
+`
+  'bytes.to-hex': '[]byte.to-hex: encode un []byte en chaîne hexadécimale majuscule'
+  'bytes.to-hex-lower': '[]byte.to-hex-lower: encode un []byte en chaîne hexadécimale minuscule'
+  'bytes.to-i64-be': '[]byte.to-i64-be: convertit des octets big-endian en int64 (de 1 à 8 octets)'
+  'bytes.to-i64-le': '[]byte.to-i64-le: convertit des octets little-endian en int64 (de 1 à 8 octets)'
+  'bytes.to-str': `
+⚠️ changement de sémantique (2026-09-06, à la demande du demandeur): cette méthode était une copie 1:1 octet par octet, le contrat sur lequel repose buf.to-str() (lire un fichier ou la sortie d'un sous-processus, où buf est déjà un flux d'octets UTF-8 valide).
+Avec le passage au réencodage octet -> point de code -> UTF-8, un flux UTF-8 multioctet valide est encodé deux fois et corrompu
+(par exemple 0xC3 0xA9 lu depuis le disque est traité comme les points de code 0xC3 et 0xA9 puis réencodé séparément). Si vous avez besoin d'une copie littérale d'un
+flux d'octets UTF-8 valide (lectures de fichier ou de sous-processus), utilisez b.to-bytes-str() (voir ci-dessous), qui conserve la sémantique de copie 1:1, ou travaillez directement avec la tranche sous-jacente.
+
+`
+  'bytes.to-txt': `
+[]byte.to-txt: convertit un []byte en txt (tronqué à 255 octets)
+renvoie out txt: une structure txt fixe de 256 octets
+
+`
+  'char.is-alnum': 'indique si le caractère est une lettre ou un chiffre'
+  'char.is-alpha': `
+indique si le caractère est une lettre (A-Z a-z)
+un alias de is-letter
+
+`
+  'char.is-digit': 'indique si le caractère est un chiffre (0-9)'
+  'char.is-letter': 'indique si le caractère est une lettre (A-Z a-z)'
+  'char.is-lower': 'indique si le caractère est une lettre minuscule (a-z)'
+  'char.is-space': 'indique si le caractère est un espace blanc (espace, tabulation, saut de ligne, cr)'
+  'char.is-upper': 'indique si le caractère est une lettre majuscule (A-Z)'
+  'char.to-bytes': 'convertit en tableau d\'octets encodé en UTF-8'
+  'char.to-lower': 'convertit en minuscule (ASCII uniquement)'
+  'char.to-str': 'convertit en chaîne encodée en UTF-8'
+  'char.to-txt': `
+convertit en txt encodé en UTF-8 (la structure fixe de 256 octets)
+Réutilise char.to-bytes pour obtenir la séquence UTF-8 de 1 à 4 octets, puis la copie dans le tampon du txt octet par octet.
+Cohérent avec str.to-txt / []byte.to-txt, elle renvoie un txt simple (convertir un seul point de code ne peut pas échouer, donc pas de ?txt).
+Avec elle, txt.to-upper / to-lower et compagnie peuvent être réécrits en "prendre un char -> char.to-lower -> char.to-txt",
+sans plus dépendre d'écritures indexées via txt[i], qui renvoie un char.
+
+`
+  'char.to-upper': 'convertit en majuscule (ASCII uniquement)'
+  'chars.to-str': `
+⚠️ note: depuis le 2026-09-06, la prise en charge du type tranche []char par nolang est incomplète, donc cette méthode n'est pas encore utilisable:
+- backend historique: with-cap/push sur []char ne s'accordent pas sur l'unité de len/cap (éléments ou octets), donc .len() signale trop d'éléments et []char.to-str lit au-delà de la fin et produit des déchets (un seul push(72) a été mesuré émettant "H" plus des déchets). Les littéraux []char et les lectures indexées utilisent bien le stride i32 correct, mais push corrompt le champ len de la tranche.
+- porte MIR=3: le compilateur ne prend en charge ni le type d'élément []char ni la nouvelle méthode générique []t.to-chars et signale carrément "unknown callee []t.to-chars", donc rien ne compile.
+Ne vous appuyez pas sur to-chars / []char.to-str tant que la prise en charge des tranches []char par le compilateur n'est pas corrigée.
+
+`
+  'csv.encode-field': `
+Encode un champ en CSV
+Un champ contenant une virgule, un guillemet double ou un saut de ligne est entouré de guillemets doubles et
+échappé
+field str: le champ à encoder
+Renvoie out str: la chaîne encodée en CSV
+
+`
+  'csv.parse-field': `
+Analyse un champ CSV
+Commence à s[pos] et gère les guillemets doubles et les virgules
+s str: le texte CSV
+pos i64: la position de départ
+Renvoie field str: le contenu du champ analysé
+Renvoie new-pos i64: la position après l'analyse
+
+`
+  'csv.parse-line': `
+Analyse une ligne de texte CSV
+s str: le texte CSV
+max-fields i64: le nombre maximal de champs
+Renvoie fields []str: les champs analysés
+
+`
+  'deque.deque.clear': 'Vide la deque'
+  'deque.deque.empty': `
+Indique si la deque est vide
+Renvoie true = vide, false = non vide
+
+`
+  'deque.deque.peek-back': `
+Consulte l'élément de queue sans le retirer
+Renvoie val ?i64: ok = la valeur de queue, nil = la deque est vide
+
+`
+  'deque.deque.peek-front': `
+Consulte l'élément de tête sans le retirer
+Renvoie val ?i64: ok = la valeur de tête, nil = la deque est vide
+
+`
+  'deque.deque.pop-back': `
+Retire un élément à la queue
+Renvoie val ?i64: ok = la valeur retirée, nil = la deque est vide
+
+`
+  'deque.deque.pop-front': `
+Retire un élément en tête
+Renvoie val ?i64: ok = la valeur retirée, nil = la deque est vide
+
+`
+  'deque.deque.push-back': 'Ajoute un élément à la queue'
+  'deque.deque.push-front': 'Ajoute un élément en tête'
+  'deque.deque.size': 'Renvoie la taille de la deque'
+  'dom.append-child': 'Ajoute (ou déplace) un nœud enfant à la fin de la liste d\'enfants de parent'
+  'dom.attribute-count': 'Le nombre d\'attributs'
+  'dom.attribute-name': 'Le i-ème nom d\'attribut dans l\'ordre du document, ou nil hors bornes'
+  'dom.attribute-value': 'La i-ème valeur d\'attribut, ou nil hors bornes'
+  'dom.blob-has': 'Recherche le mot entier name dans un blob de table de mots complété par des espaces'
+  'dom.child-at': 'Le i-ème nœud enfant, ou nil hors bornes'
+  'dom.child-count': 'Le nombre de nœuds enfants'
+  'dom.class-has': 'Indique si la valeur class (mots séparés par des espaces) contient le mot cls'
+  'dom.cp-append': 'Ajoute le point de code cp à out en UTF-8 (renvoie la nouvelle chaîne)'
+  'dom.create-comment': 'Crée un nœud commentaire'
+  'dom.create-element': 'Crée un nœud élément détaché (pas encore rattaché)'
+  'dom.create-text-node': 'Crée un nœud texte'
+  'dom.decode-entities': `
+Décode les entités dans s[from..to) (les entités nommées sont cherchées dans DOM-ENTITY-BLOB,
+les numériques sont &#NN; ou &#xHH;)
+html=true: les entités inconnues ou non terminées sont conservées telles quelles; html=false: une entité inconnue
+est une erreur
+Renvoie out = le résultat décodé, ok = si l'opération a réussi (en mode XML une entité illégale
+donne ok=false)
+
+`
+  'dom.document-element': 'L\'élément racine (le premier enfant ELEMENT)'
+  'dom.dom-closers-of': `
+La table de mots des balises ouvertes qui doivent être fermées d'abord quand la balise t est ouverte (chaîne vide =
+aucune règle)
+
+`
+  'dom.dom-pool.alloc': 'Alloue un nouveau nœud (avec des emplacements names/vals parallèles) et renvoie son indice'
+  'dom.dom-pool.append': 'Ajoute child à la fin de la liste d\'enfants de parent (un parent existant est d\'abord détaché)'
+  'dom.dom-pool.attr-edge-at': 'Renvoie l\'indice d\'arête du i-ème attribut du nœud dans l\'ordre du document; -1 = hors bornes'
+  'dom.dom-pool.collect-class': `
+Collecte les indices des éléments du sous-arbre de node dont l'attribut class contient le mot
+cls
+
+`
+  'dom.dom-pool.collect-tag': `
+Collecte les indices des éléments du sous-arbre de node dont le nom de balise est want (star=true signifie
+tous les éléments)
+
+`
+  'dom.dom-pool.detach': 'Détache child de son parent, en gardant la liste d\'enfants cohérente'
+  'dom.dom-pool.find-attr': 'Trouve l\'indice d\'arête de l\'attribut name du nœud; -1 signifie qu\'il n\'existe pas'
+  'dom.dom-pool.find-id-node': `
+Cherche récursivement dans le sous-arbre de node un élément dont l'attribut id vaut id; -1 =
+introuvable
+
+`
+  'dom.dom-pool.html-add-text': 'Décode s[from..to) selon les règles d\'entités HTML et l\'ajoute à parent comme nœud texte'
+  'dom.dom-pool.html-bogus-comment': 'Tout autre contenu commençant par \'<!\' jusqu\'à \'>\' est conservé comme commentaire'
+  'dom.dom-pool.html-parse-attr': `
+Analyse un attribut HTML (valeurs non entre guillemets prises en charge); pour les attributs en double, le premier
+l'emporte
+
+`
+  'dom.dom-pool.html-parse-close-name': 'Analyse \'</name\' et renvoie la position après \'>\' plus le nom de balise en minuscules'
+  'dom.dom-pool.html-parse-comment': 'Analyse <!--...-->, en tolérant l\'EOF'
+  'dom.dom-pool.html-parse-doc': 'Analyse un document HTML entier (n\'échoue jamais) et renvoie l\'indice de la racine du document'
+  'dom.dom-pool.html-parse-open': `
+Analyse une balise ouvrante et ajoute l'élément à cur
+Renvoie np = la position suivante, el = l'indice de l'élément, et mode:
+0 = un '<' illégal (déjà traité comme du texte), 1 = un élément ordinaire (l'appelant l'empile),
+2 = vide ou auto-fermant, 3 = texte brut déjà consommé
+
+`
+  'dom.dom-pool.html-parse-pi': '\'<?...>\' (HTML traite cela comme un commentaire factice; ici c\'est conservé comme nœud PI)'
+  'dom.dom-pool.html-set-attr-once': `
+Fixe l'attribut seulement s'il n'existe pas déjà (pour les attributs HTML en double, le
+premier l'emporte)
+
+`
+  'dom.dom-pool.init': 'Initialise le pool de nœuds (le vec du tas doit être initialisé avant d\'empiler en toute sécurité)'
+  'dom.dom-pool.insert-before': `
+Insère node avant ref dans parent (ajoute à la fin quand ref est illégal ou n'est pas un enfant de
+parent)
+
+`
+  'dom.dom-pool.parse-doctype-node': `
+Analyse <!DOCTYPE ...> (y compris un sous-ensemble interne et des chaînes entre guillemets); partagé par XML et
+HTML
+Le contenu est stocké tel quel (les entités ne sont pas décodées); le nom est le premier mot après '!'
+
+`
+  'dom.dom-pool.remove-attr': 'Supprime un attribut; renvoie s\'il a été trouvé'
+  'dom.dom-pool.ser': 'Sérialise un seul nœud (extérieur)'
+  'dom.dom-pool.ser-children': 'Sérialise tous les nœuds enfants de idx'
+  'dom.dom-pool.set-attr': 'Fixe un attribut: un attribut existant est mis à jour, sinon il est ajouté dans l\'ordre du document'
+  'dom.dom-pool.text-of': 'Collecte récursivement le contenu textuel (TEXT / CDATA) du sous-arbre de idx'
+  'dom.dom-pool.valid': 'Indique si l\'indice de nœud est valide'
+  'dom.dom-pool.xml-add-text': 'Décode s[from..to) et l\'ajoute à parent comme nœud texte'
+  'dom.dom-pool.xml-parse-attr': `
+Analyse un attribut (en mode xml=true la valeur doit être entre guillemets et un attribut en double est
+une erreur)
+Renvoie la position suivante et un indicateur de succès
+
+`
+  'dom.dom-pool.xml-parse-cdata': 'Analyse <![CDATA[...]]> et l\'ajoute à parent'
+  'dom.dom-pool.xml-parse-close': 'Analyse la balise fermante </name>, qui doit correspondre au nom de balise de node'
+  'dom.dom-pool.xml-parse-comment': 'Analyse <!--...-->, l\'ajoute à parent et renvoie la position suivante'
+  'dom.dom-pool.xml-parse-doc': 'Analyse un document XML entier et renvoie l\'indice de la racine du document'
+  'dom.dom-pool.xml-parse-element': `
+Analyse un élément (y compris ses enfants) et l'ajoute à parent
+p pointe sur '<'; depth est la profondeur d'imbrication courante
+
+`
+  'dom.dom-pool.xml-parse-pi': 'Analyse <?target data?> et l\'ajoute à parent'
+  'dom.dom-strip-bom': 'strip-bom: supprime un BOM UTF-8 de tête et renvoie l\'offset de départ'
+  'dom.esc-attr': 'Échappe &, <, > et le guillemet double dans une valeur d\'attribut'
+  'dom.esc-text': 'Échappe &, < et > dans le texte'
+  'dom.find-entity': 'Cherche le point de code d\'une entité nommée dans DOM-ENTITY-BLOB; -1 = introuvable'
+  'dom.first-child': 'dom.first-child / last-child / next-sibling / prev-sibling'
+  'dom.get-attribute': 'Lit une valeur d\'attribut (nil = absent; en mode HTML le nom est insensible à la casse)'
+  'dom.get-element-by-id': 'Trouve un élément par son attribut id'
+  'dom.get-elements-by-class-name': 'Collecte tous les éléments du document dont la classe contient le mot donné'
+  'dom.get-elements-by-tag-name': 'Collecte tous les éléments portant le nom de balise donné; \'*\' renvoie tous les éléments'
+  'dom.has-attribute': 'Indique si un attribut existe'
+  'dom.html-close-match': `
+Indique si s[pos..] commence le nom de balise fermante pour name (insensible à la casse; il doit être
+suivi de '>', '/', '=', ou d'un espace)
+
+`
+  'dom.html-peek-name': 'Consulte le nom de balise (en minuscules) après le \'<\' à s[p]; renvoie une chaîne vide si illégal'
+  'dom.inner-html': 'Sérialise tous les nœuds enfants du nœud'
+  'dom.insert-child-before': 'Insère child avant ref dans parent'
+  'dom.is-html': 'Indique si l\'on est en mode HTML (affecte la sérialisation des éléments vides et la casse des noms)'
+  'dom.is-name-byte': `
+Caractères de nom de balise et d'attribut pour XML et HTML (un sous-ensemble ASCII; les octets hauts UTF-8 sont
+autorisés)
+
+`
+  'dom.kind': 'Le type de nœud (une constante DOM-KIND-*; -1 = indice illégal)'
+  'dom.name': 'Le nom de balise de l\'élément, la cible du PI, ou le nom du DOCTYPE'
+  'dom.new-document': `
+Crée un document vide
+Utilisation:
+d = dom.new-document(true)   ; un document HTML
+
+`
+  'dom.outer-html': 'Sérialise un seul nœud, lui-même compris'
+  'dom.parent': 'L\'indice du nœud parent (-1 = aucun)'
+  'dom.parse-html': 'Analyse du HTML de façon tolérante (n\'échoue jamais) et renvoie le document'
+  'dom.parse-numeric-entity': `
+Analyse le point de code décimal ou hexadécimal de &#...;; -1 quand illégal
+s[pos] est le début des chiffres ('x' ou 'X' peut ouvrir pour marquer l'hexadécimal) et end est la
+position du ';'
+
+`
+  'dom.parse-xml': 'Analyse du XML de façon stricte; renvoie err (position de l\'erreur comprise) en cas d\'échec'
+  'dom.remove-attribute': 'Supprime un attribut; renvoie s\'il a été trouvé'
+  'dom.remove-child': 'Détache child de parent'
+  'dom.replace-child': 'Remplace old par new dans parent'
+  'dom.set-attribute': 'Fixe un attribut (un attribut existant est écrasé)'
+  'dom.set-node-value': 'Fixe la valeur du nœud'
+  'dom.set-text-content': 'Efface les enfants et les remplace par un unique nœud texte'
+  'dom.text-content': 'Le contenu textuel du sous-arbre (TEXT / CDATA concaténés récursivement)'
+  'dom.to-string': 'Sérialise le document entier (l\'innerHTML du document)'
+  'dom.value': 'La valeur du nœud (contenu text/cdata/comment, données PI, ou le contenu brut du DOCTYPE)'
+  'dom.xml-read-name': 'Lit un nom (une suite de caractères de nom) à partir de p et renvoie la position de fin'
+  'dom.xml-skip-ws': 'Saute les espaces blancs XML (espace, tabulation, CR, LF)'
+  'env.get': `
+lit une variable d'environnement
+renvoie val ?str: ok = la valeur, nil = non définie (os.get-env renvoie déjà une option)
+`
+  'env.get-with-default': 'lit une variable d\'environnement et renvoie une valeur par défaut si elle n\'est pas définie'
+  'env.is-set': `
+indique si une variable d'environnement est définie
+renvoie true = définie, false = non définie
+`
+  'env.lookup': `
+lit une variable d'environnement
+renvoie val ?str: ok = la valeur, nil = absente
+`
+  'env.set': `
+définit une variable d'environnement
+renvoie true = succès, false = échec
+`
+  'env.unset': `
+supprime une variable d'environnement (la met à la chaîne vide)
+renvoie true = succès, false = échec
+`
+  'err._errno-to-code': 'associe un errno C à l\'énumération code (privé au module, utilisé seulement par from-errno)'
+  'err.code': `
+renvoie le code d'erreur
+renvoie ec: le code
+
+`
+  'err.code.to-name': `
+renvoie le nom de variante d'un code d'erreur, sans le préfixe code.
+renvoie s: le nom de la variante (par ex. 'ok' / 'not-found' / 'io')
+utilisation:
+n = code.io.to-name()     ; => 'io'
+
+`
+  'err.format': `
+représente l'erreur sous forme d'une chaîne d'information complète
+renvoie s: 'code.<variant>: <msg>', avec ' at <file>:<line>:<col>' ajouté quand la position est connue
+utilisation:
+s = err.new('disk full', code.io).format()   ; => 'code.io: disk full'
+e = err('no such file', code.not-found)      ; le compilateur injecte la position
+t = e.format()                               ; => 'code.not-found: no such file at main.no:12:3'
+Utilisez err.msg() pour le message simple, err.code() pour le code seul
+
+`
+  'err.from-errno': `
+construit une erreur à partir d'un errno C
+errno: un code d'erreur C standard (par ex. 13 = EACCES)
+
+`
+  'err.is': `
+vérifie si le code de l'erreur correspond
+ec: le code à comparer
+renvoie yes: si cela correspond
+
+`
+  'err.msg': `
+renvoie le message de l'erreur
+renvoie msg: le message
+
+`
+  'err.new': `
+construit une erreur
+msg: le message d'erreur
+ec: le code d'erreur (une valeur de l'énumération code, comme code.io; par défaut code.unknown)
+
+`
+  'err.new-at': 'construit une erreur avec position (l\'appelant fournit la position explicitement)'
+  'float.div': 'division en virgule flottante, renvoie le quotient (a ÷ b)'
+  'float.is-inf': `
+indique si la valeur est infinie
+note: n'écrivez pas `. + . == .` — cela vaut aussi pour ±0.0 (0+0==0), donc zéro serait signalé à tort comme infini. Avec un test de non-nullité ajouté, c'est nécessaire et suffisant (un x fini non nul vérifie x+x!=x; toute comparaison avec NaN est fausse).
+
+`
+  'float.is-nan': 'indique si la valeur est NaN'
+  'fmt.eprintf': 'supprimé (le nom est conservé pour que l\'analyse syntaxique fonctionne toujours) — l\'appeler est une erreur de compilation; utilisez eprint (ajoute un saut de ligne) ou io.err (sans saut) à la place'
+  'fmt.fmt-apply-spec': `
+applique la largeur, l'alignement et le caractère de remplissage
+align: 60 = gauche, 62 = droite, 94 = centre, 0/61 = droite (la valeur par défaut)
+
+`
+  'fmt.fmt-bool': `
+formatage des booléens
+prend en charge largeur, alignement, remplissage et type (t)
+
+`
+  'fmt.fmt-f64': `
+formatage en virgule flottante
+prend en charge type (f/e/g/t), précision, signe, zero, largeur, alignement et remplissage
+
+`
+  'fmt.fmt-group-digits': `
+⚠️ doit être appliqué APRÈS le remplissage par des zéros: f'{1234:08,d}' vaut 0001,234 (remplir d'abord à 8 chiffres, puis grouper).
+Grouper d'abord et remplir ensuite produit le 0001234, erroné.
+
+`
+  'fmt.fmt-int': `
+formatage des entiers signés
+prend en charge type (c/d/t/aucun), signe (+/-/espace), zero, largeur, alignement, remplissage et groupement des chiffres (,/_)
+
+`
+  'fmt.fmt-parse-spec': `
+analyse une chaîne de spécification de format
+renvoie fill/align/sign/alt/zero/width/grouping/precision/typ
+align/sign/grouping/typ sont des valeurs ASCII de caractère; alt/zero valent 0/1; precision = -1 signifie non spécifiée
+
+`
+  'fmt.fmt-str': `
+formatage des chaînes
+prend en charge la précision (troncature), largeur, alignement, remplissage et type (t/v)
+
+`
+  'fmt.fmt-uint': `
+formatage des entiers non signés
+prend en charge type (b/o/d/x/X/t), alt (préfixe #), zero, largeur, alignement, remplissage et groupement des chiffres (,/_)
+
+`
+  'fmt.fmt-uint-base': `
+convertit un u64 en chaîne dans la base donnée
+base: 2/8/10/16; upper: si l'hexadécimal est en majuscules
+
+`
+  'fmt.printf': 'supprimé (le nom est conservé pour que l\'analyse syntaxique fonctionne toujours) — l\'appeler est une erreur de compilation; utilisez print (ajoute un saut de ligne) ou io.out (sans saut) à la place'
+  'fmt.sprintf': 'obsolète mais encore utilisable; utilisez format à la place'
+  'fs.close': 'ferme un descripteur de fichier'
+  'fs.copy-file': 'copie le contenu d\'un fichier'
+  'fs.dir-entries': `
+utilisation:
+names = dir-entries('/path/to/dir')
+i <- [0..names.len()): {
+print(names[i])
+}
+
+`
+  'fs.exists': `
+indique si un chemin existe (en suivant les liens symboliques)
+renvoie true si l'opération a réussi, false en cas d'échec
+
+`
+  'fs.file-size': 'obtient la taille du fichier (identique à stat-size)'
+  'fs.file.append': `
+ajoute des données à la fin du fichier
+Une implémentation simplifiée: lit le contenu existant puis le réécrit fusionné
+
+`
+  'fs.file.close': `
+ferme le fichier
+Après succès, fd est remis à -1
+Les fichiers standard (STDIN/STDOUT/STDERR) ne sont pas fermés
+
+`
+  'fs.file.copy-to': `
+copie ce fichier vers dst-path
+renvoie true = succès, false = échec
+
+`
+  'fs.file.is-open': 'indique si le fichier est ouvert'
+  'fs.file.read': 'lit au plus n octets du fichier dans buf'
+  'fs.file.read-bytes': `
+lit le fichier entier dans un []byte (la stratégie hybride de Rust)
+renvoie content ?[]byte:
+ok([]byte) - succès, avec le contenu du fichier
+nil        - le fichier est vide
+err        - le fichier n'est pas ouvert ou la lecture a échoué
+
+`
+  'fs.file.read-line': `
+lit une ligne du fichier (au plus 4096 octets)
+renvoie line ?str: ok = la ligne, nil = EOF ou erreur
+
+`
+  'fs.file.read-str': `
+lit le fichier entier dans une chaîne
+renvoie content ?str:
+ok(str) - succès, avec le contenu du fichier
+nil     - le fichier est vide
+err     - le fichier n'est pas ouvert ou la lecture a échoué
+
+`
+  'fs.file.size': 'obtient la taille du fichier ouvert (via fstat(fd), ce qui élimine le TOCTOU)'
+  'fs.file.write': 'écrit les n premiers octets de data dans le fichier'
+  'fs.file.write-bytes': `
+écrit un []byte dans le fichier (en l'écrasant entièrement)
+data []byte: le tableau d'octets à écrire
+renvoie ok ?bool:
+ok(true)  - succès
+err       - le fichier n'est pas ouvert ou l'écriture a échoué
+
+`
+  'fs.file.write-str': `
+écrit une chaîne dans le fichier (en l'écrasant entièrement)
+data str: la chaîne à écrire
+renvoie ok ?bool:
+ok(true)  - succès
+err       - le fichier n'est pas ouvert ou l'écriture a échoué
+
+`
+  'fs.fstat-size': `
+obtient la taille d'un fichier ouvert (avec fstat(fd), ce qui élimine le TOCTOU)
+fd: le descripteur de fichier ouvert
+
+`
+  'fs.get-line': 'lit une ligne de l\'entrée standard'
+  'fs.is-dir': 'indique si le chemin est un répertoire'
+  'fs.is-file': 'indique si le chemin est un fichier régulier'
+  'fs.link': `
+crée un lien matériel
+oldpath: le chemin du fichier existant
+newpath: le chemin du nouveau lien matériel
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'fs.list-dir': `
+utilisation:
+names = list-dir('/path/to/dir')
+i <- [0..names.len()): {
+print(names[i])
+}
+
+`
+  'fs.list-dir-2': `
+Version Windows: utilise FindFirstFileA/FindNextFileA/FindClose
+FindFirstFileA exige que le joker '\*' soit ajouté au chemin
+
+`
+  'fs.list-dir-3': `
+Version WASI: utilise opendir/readdir/closedir de POSIX
+wasi-libc fournit opendir/readdir/closedir (qui enveloppent fd_readdir de WASI)
+
+`
+  'fs.lstat': `
+obtient des informations sur le lien symbolique lui-même (sans le suivre)
+Contrairement à stat: appelé sur un lien symbolique, il renvoie les informations du lien, pas de la cible
+p: le chemin du fichier
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'fs.mkdtemp': `
+crée un répertoire temporaire unique
+tmpl: la chaîne modèle, qui doit se terminer par 'XXXXXX'
+renvoie le nom réel du répertoire (some) en cas de succès, nil en cas d'échec
+
+`
+  'fs.mkfifo': `
+crée un tube nommé (FIFO)
+p: le chemin du tube
+mode: le mode de permissions (par ex. 0o644 = 420)
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'fs.mknod': `
+crée un fichier spécial (un tube, un nœud de périphérique, etc.)
+p: le chemin du fichier
+mode: le type de fichier et les permissions (par ex. 0o644=420 pour un fichier régulier, 0o666=438 pour une FIFO)
+dev: le numéro de périphérique (passez 0 pour un fichier régulier ou une FIFO)
+renvoie true en cas de succès, false en cas d'échec (peut ne pas être pris en charge sous macOS/Windows)
+
+`
+  'fs.mkstemp': `
+crée et ouvre un fichier temporaire unique
+tmpl: la chaîne modèle, qui doit se terminer par 'XXXXXX' (six X)
+renvoie le nom réel du fichier et le descripteur en cas de succès, une chaîne vide et fd=-1 en cas d'échec
+Note: l'ordre est (name, fd) et non (fd, name), car le mécanisme lastBuiltinExtra exige
+que la deuxième valeur renvoyée soit un i64/bool et qu'un str soit la valeur principale
+
+`
+  'fs.open': `
+ouvre un fichier (un constructeur)
+opts: la struct file-opts
+succès: f = file{ fd, path } (converti automatiquement en ?file)
+échec: f = err('le message d'erreur')
+
+`
+  'fs.open-file': 'ouvre un fichier avec des drapeaux et permissions personnalisés'
+  'fs.open-read': 'ouvre un fichier en lecture seule'
+  'fs.open-write': 'ouvre un fichier en écriture (O-WRONLY|O-CREAT|O-TRUNC, 0644)'
+  'fs.read': 'lit au plus n octets d\'un descripteur de fichier dans buf'
+  'fs.read-bytes': `
+lit le fichier entier dans un []byte
+p str: le chemin du fichier
+renvoie content ?[]byte:
+ok([]byte) - succès, avec le contenu du fichier
+nil        - le fichier est vide
+err        - la lecture a échoué
+
+`
+  'fs.read-file': `
+[obsolète] read-file: utilisez read-bytes à la place (il gère les erreurs, est sûr face au TOCTOU et boucle sur les lectures)
+read-file: lit le fichier entier dans un []byte (une tranche vide signifie échec, un fichier vide est donc indiscernable d'une erreur)
+
+`
+  'fs.read-stdin': `
+boucle sur stdin et lit tout dans un []byte (sans stat/fstat, donc sûr avec les tubes)
+renvoie content ?[]byte:
+ok([]byte) - succès, avec le contenu de stdin
+nil        - stdin est vide
+err        - la lecture a échoué
+
+`
+  'fs.read-stdin-str': `
+boucle sur stdin et lit tout dans un str (sans stat/fstat, donc sûr avec les tubes)
+renvoie content ?str:
+ok(str) - succès, avec le contenu de stdin
+nil     - stdin est vide
+err     - la lecture a échoué
+
+`
+  'fs.read-str': `
+lit le fichier entier dans une chaîne
+p str: le chemin du fichier
+renvoie content ?str:
+ok(str) - succès, avec le contenu du fichier
+nil     - le fichier est vide
+err     - la lecture a échoué
+
+`
+  'fs.readlink': `
+lit le chemin cible d'un lien symbolique
+p: le chemin du lien symbolique
+renvoie le chemin cible (some) en cas de succès, nil en cas d'échec
+
+`
+  'fs.realpath': `
+résout un chemin absolu
+p: le chemin d'entrée (éventuellement relatif, ou contenant . / ..)
+renvoie la chaîne de chemin absolu normalisée en cas de succès, une chaîne vide en cas d'échec
+
+`
+  'fs.remove': 'supprime un fichier'
+  'fs.rename': 'renomme un fichier'
+  'fs.rmdir': `
+supprime un répertoire vide
+p: le chemin du répertoire (il doit être vide)
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'fs.stat-size': 'obtient la taille du fichier'
+  'fs.symlink': `
+crée un lien symbolique
+target: le chemin vers lequel pointe le lien
+linkpath: le chemin du lien symbolique lui-même
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'fs.sync': 'vide les tampons du système de fichiers vers le disque (sans valeur de retour)'
+  'fs.truncate': `
+tronque ou étend un fichier à la taille donnée
+p: le chemin du fichier
+length: la longueur cible (octets)
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'fs.utime': `
+fixe les heures d'accès et de modification d'un fichier
+p: le chemin du fichier
+atime: l'heure d'accès (secondes Unix)
+mtime: l'heure de modification (secondes Unix)
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'fs.walk': `
+utilisation:
+paths = walk('/path/to/dir')
+i <- [0..paths.len()): {
+print(paths[i])
+}
+
+`
+  'fs.walk-collect': 'l\'implémentation récursive interne derrière walk'
+  'fs.write': 'écrit les n premiers octets de data dans un descripteur de fichier'
+  'fs.write-bytes': `
+écrit un []byte dans un fichier (en l'écrasant)
+p str: le chemin du fichier
+data []byte: le tableau d'octets à écrire
+renvoie ok ?bool:
+ok(true) - succès
+err      - l'écriture a échoué
+
+`
+  'fs.write-file': `
+[obsolète] write-file: utilisez write-bytes à la place (il gère les erreurs et boucle sur les écritures)
+write-file: écrit un []byte dans un fichier (en l'écrasant; il ne distingue pas une écriture partielle d'un échec total)
+
+`
+  'fs.write-str': `
+écrit une chaîne dans un fichier (en l'écrasant)
+p str: le chemin du fichier
+data str: la chaîne à écrire
+renvoie ok ?bool:
+ok(true) - succès
+err      - l'écriture a échoué
+
+`
+  'global.eprint': `
+écrit une ligne sur la sortie d'erreur, avec les champs nommés {name:spec}
+eprint('error: {msg}')
+plusieurs arguments : eprint('err:', a, b) les joint par des espaces et n'émet qu'un seul saut de ligne en fin de ligne ;
+chaque littéral de chaîne est son propre modèle (comme print)
+`
+  'global.exit': `
+termine le processus (le termine avec le code de statut c)
+exit(0)   -> sortie normale
+exit(1)   -> sortie anormale
+`
+  'global.format': `
+formate une chaîne avec les champs nommés {name:spec} et la renvoie (remplace sprintf)
+s = format('{x:.2f}')          -> '3.14'
+s = format('{name} is {age}')  -> 'Alice is 30'
+⚠️ n'accepte qu'une seule chaîne de format (il n'y a pas de forme à plusieurs arguments)
+`
+  'global.print': `
+écrit une ligne sur la sortie standard, avec les champs nommés {name:spec}
+print('hello {name}')       -> hello world (quand name = 'world')
+print('{x:.2f}')            -> 3.14 (quand x = 3.14159)
+plusieurs arguments : print(a, b, c) les joint par des espaces et n'émet qu'un seul saut de ligne en fin de ligne.
+Avec plusieurs arguments, chaque littéral de chaîne est son propre modèle (voir « avec plusieurs arguments, les littéraux sont des modèles » ci-dessus) :
+print('result={val}', 42, 'result={val}')  -> result=42 42 result=42
+`
+  'global.with-cap': `
+crée une chaîne ou une tranche de capacité donnée (len=0) ; le type vient du membre de gauche de l'affectation
+s str = with-cap(256)       -> un str pré-allouant 256 octets
+v []i64 = with-cap(100)     -> une tranche pré-allouant 100 éléments
+`
+  'global.with-cap-len': `
+crée une chaîne ou une tranche de capacité et de longueur données ; le type vient du membre de gauche de l'affectation
+v []i64 = with-cap-len(200, 100)  -> une tranche de capacité 200 et de longueur 100
+`
+  'global.with-len': `
+crée une chaîne ou une tranche de longueur donnée ; le type vient du membre de gauche de l'affectation
+s str = with-len(10)        -> un str de longueur 10
+v []i64 = with-len(100)     -> une tranche de longueur 100
+`
+  'hash-set.hash-set.add': 'Ajoute un élément; renvoie s\'il a été inséré'
+  'hash-set.hash-set.clear': 'Vide l\'ensemble'
+  'hash-set.hash-set.contains': 'Indique si un élément existe'
+  'hash-set.hash-set.for-each': 'Parcourt tous les éléments'
+  'hash-set.hash-set.hash': 'Calcule l\'indice de seau'
+  'hash-set.hash-set.init': 'Initialise l\'ensemble'
+  'hash-set.hash-set.is-empty': 'Si l\'ensemble est vide'
+  'hash-set.hash-set.len': 'Renvoie le nombre d\'éléments'
+  'hash-set.hash-set.remove': 'Supprime un élément; renvoie s\'il a été supprimé'
+  'heap.empty': 'indique si le tas est vide'
+  'heap.init': `
+factory — construit un tas vide sur un tampon d'éléments fourni par l'appelant
+data []t: le tampon d'éléments (sa longueur est le plafond de capacité)
+renvoie h heap: l'instance de tas initialisée
+
+`
+  'heap.peek': `
+consulte le plus petit élément sans le retirer
+renvoie val ?t: ok = le minimum, nil = le tas est vide
+
+`
+  'heap.pop': `
+retire le plus petit élément et réorganise vers le bas
+renvoie val ?t: ok = le minimum, nil = le tas est vide
+
+`
+  'heap.push': `
+insère un élément et restaure la propriété de tas-min
+val t: la valeur à insérer
+
+`
+  'heap.size': 'renvoie la taille du tas'
+  'int.div': `
+division entière, renvoie le quotient (a ÷ b)
+renvoie err quand b vaut 0 (le garde de division par zéro inséré par le compilateur ; ce n'est pas un UB). Voir docs/docs/lang/syntax.md, « division par zéro »
+`
+  'int.mod': `
+modulo entier, renvoie le reste (a % b)
+renvoie err quand b vaut 0 (le garde de division par zéro inséré par le compilateur ; ce n'est pas un UB). Voir docs/docs/lang/syntax.md, « division par zéro »
+`
+  'int.to-str': `
+convertit un entier en chaîne (une méthode de type union couvrant tous les types entiers)
+le transpileur résout i64.to-str() et consorts vers int.to-str()
+elle utilise directement l'arithmétique, ce qui évite le problème de conversion int -> u64
+remarque : elle ne prend pas la valeur absolue des négatifs (0 - n déborde quand n = i64.MIN) ;
+elle applique plutôt srem/sdiv à la valeur négative (troncature vers zéro) puis ramène le reste négatif dans [0, 9]
+`
+  'io.err': 'écrit une chaîne sur la sortie d\'erreur standard (sans saut de ligne)'
+  'io.errln': 'écrit une chaîne sur la sortie d\'erreur standard suivie d\'un saut de ligne'
+  'io.out': 'écrit une chaîne sur la sortie standard (sans saut de ligne)'
+  'io.outln': 'écrit une chaîne sur la sortie standard suivie d\'un saut de ligne'
+  'io.read-line': `
+lit une ligne de l'entrée standard
+renvoie line ?str: ok = la ligne, nil = EOF ou erreur
+
+`
+  'io.reader.from-fd': 'construit un lecteur à partir d\'un descripteur de fichier'
+  'io.reader.from-stdin': 'construit un lecteur à partir de l\'entrée standard'
+  'io.reader.read': `
+lit au plus n octets du lecteur dans buf
+renvoie le nombre d'octets réellement lus; 0 signifie EOF ou erreur
+
+`
+  'io.reader.read-all': `
+lit tout dans buf (au plus size octets)
+l'appelant doit fournir la taille
+
+`
+  'io.reader.read-byte': `
+lit un octet
+renvoie b ?i64: ok = la valeur de l'octet, nil = EOF ou erreur
+
+`
+  'io.reader.read-line': `
+lit une ligne (au plus 4096 octets)
+renvoie line ?str: ok = la ligne, nil = EOF ou erreur
+
+`
+  'io.writer.from-fd': 'construit un écrivain à partir d\'un descripteur de fichier'
+  'io.writer.from-stderr': 'construit un écrivain à partir de la sortie d\'erreur standard'
+  'io.writer.from-stdout': 'construit un écrivain à partir de la sortie standard'
+  'io.writer.write': `
+écrit les n premiers octets de data
+renvoie le nombre d'octets réellement écrits
+
+`
+  'io.writer.write-byte': `
+écrit un octet
+renvoie le nombre d'octets réellement écrits (0 ou 1)
+
+`
+  'io.writer.write-line': `
+écrit une chaîne et ajoute un saut de ligne
+renvoie le nombre d'octets réellement écrits
+
+`
+  'io.writer.write-str': `
+écrit la chaîne entière
+renvoie le nombre d'octets réellement écrits
+
+`
+  'json.alloc-node': `
+alloue un nouveau nœud (le pool est un champ pointeur #{inline=false}, il délègue donc directement à .pool.alloc)
+renvoie idx: l'indice du nouveau nœud
+
+`
+  'json.arr-get': `
+obtient l'élément à un indice d'un tableau sous forme de json
+renvoie child ?json: ok = trouvé, nil = introuvable ou ce n'est pas un tableau
+utilisation:
+elem = j.arr-get(0)
+elem: {
+ok -> {
+s, found = it.get-str('name')
+}
+}
+
+`
+  'json.arr-len': `
+obtient la longueur du tableau
+renvoie n: le nombre d'éléments (0 quand ce n'est pas un tableau)
+utilisation:
+n = j.arr-len()
+
+`
+  'json.arr-push': `
+ajoute un élément à la fin d'un tableau
+renvoie ok bool: si l'opération a réussi
+utilisation:
+j.arr-push(item)
+
+`
+  'json.arr-push-bool': `
+ajoute un élément booléen à la fin d'un tableau
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.arr-push-idx': `
+ajoute un élément à la fin d'un tableau par indice de nœud (un utilitaire interne qui évite de copier en profondeur tout le pool lors de la construction d'un json)
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.arr-push-num': `
+ajoute un élément numérique à la fin d'un tableau
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.arr-push-str': `
+ajoute un élément chaîne à la fin d'un tableau
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.bool': `
+obtient la valeur booléenne (quand la racine est un booléen)
+renvoie val bool, ok bool: ok = succès
+
+`
+  'json.delete-key': `
+supprime une clé d'un objet
+renvoie ok bool: ok = succès (la clé existait et a été supprimée)
+
+`
+  'json.get': `
+obtient un nœud enfant d'un objet sous forme de json
+child est un enfant de json lui-même (il réutilise le même pool de nœuds et ne fait que pointer root vers l'enfant),
+donc aucun nouvel objet n'est créé; quand il est absent ou que ce n'est pas un objet, il renvoie nil.
+renvoie child ?json: ok = trouvé, nil = introuvable ou ce n'est pas un objet
+utilisation:
+child = j.get('key')
+child: {
+ok -> {
+s, found = it.get-str('sub-key')
+}
+}
+
+`
+  'json.get-bool': `
+obtient une valeur booléenne d'un objet
+renvoie val bool, ok bool: ok = trouvée et c'est un booléen
+
+`
+  'json.get-i64': `
+obtient une valeur entière d'un objet
+renvoie val i64, ok bool: ok = trouvée et c'est un nombre
+
+`
+  'json.get-key': `
+une fonction globale — obtient un nœud enfant d'un objet json par clé
+renvoie child ?json: le nœud enfant (nil quand absent)
+
+`
+  'json.get-num': `
+obtient une valeur numérique d'un objet
+renvoie val f64, ok bool: ok = trouvée et c'est un nombre
+
+`
+  'json.get-str': `
+obtient une valeur chaîne d'un objet
+renvoie val str, ok bool: ok = trouvée et c'est une chaîne
+utilisation:
+s, found = j.get-str('name')
+found -> print(s)
+
+`
+  'json.i64': `
+obtient la valeur entière (quand la racine est un nombre)
+renvoie val i64, ok bool: ok = succès
+
+`
+  'json.is-arr': 'indique si c\'est un tableau'
+  'json.is-bool': 'indique si c\'est un booléen'
+  'json.is-null': `
+indique si c'est null
+renvoie yes: si c'est null
+
+`
+  'json.is-num': 'indique si c\'est un nombre'
+  'json.is-obj': 'indique si c\'est un objet'
+  'json.is-str': 'indique si c\'est une chaîne'
+  'json.json-clone-tree': `
+Pourquoi la copie profonde est nécessaire: json.pool est un champ pointeur #{inline=false}, et la copie des champs
+pointeurs du compilateur n'a pas encore de sémantique d'emprunt (voir la note copy-tree et la discussion sur la propriété hybride dans src/mir),
+donc un simple `child = json { pool: .pool, ... }` laisse parent et enfant avec des en-têtes de vec distincts sur un même
+tampon de données partagé; dès que l'un des handles déclenche un realloc du vec, l'en-tête de vec de l'autre handle pointe vers l'ancien
+tampon libéré -> une lecture pendante (stringify renvoie null / les données sortent mélangées). Avec une copie profonde indépendante,
+l'allocation et la croissance de chaque côté écrivent dans son propre tampon et ne perturbent pas l'autre.
+
+`
+  'json.json-pool.add-child': `
+attache le nœud enfant child-idx (nom de clé key; passez la chaîne vide pour les tableaux) au nœud node-idx
+Implémente la liste d'enfants de longueur variable comme une table d'arêtes chaînée, donc aucun nœud n'a de limite fixe d'enfants
+
+`
+  'json.json-pool.alloc': 'alloue un nouveau nœud et renvoie son indice (le vec du tas grandit automatiquement, le pool n\'est donc plus borné)'
+  'json.json-pool.arr-get': `
+obtient le nœud enfant à un indice d'un nœud tableau
+renvoie val-idx = l'indice du nœud enfant, ok = succès
+
+`
+  'json.json-pool.arr-len': 'obtient la longueur du tableau'
+  'json.json-pool.copy-tree': `
+L'identité de pool ne peut pas reposer sur `src.id == .id`: une liaison au niveau du module ne peut pas être réaffectée (voir la note JSON-POOL-NEXT-ID),
+donc l'id de chaque pool vaut toujours 1, et ce test prenait à tort toute copie entre pools pour une copie intra-pool, laissant la racine du
+sous-arbre renvoyé par json.arr-get / json.get définitivement à -1. C'est désormais garanti aux points d'appel:
+- json-clone-tree: le récepteur est un pool tout neuf sorti de init;
+- json.set-key: val est d'abord copié dans un pool temporaire neuf (json-clone-tree) puis recopié dans le récepteur,
+si bien que les deux extrémités de l'une ou l'autre copie sont nécessairement des pools différents, et une auto-référence reste sûre.
+
+`
+  'json.json-pool.get-bool': `
+obtient la valeur booléenne
+renvoie val = le booléen, ok = succès
+
+`
+  'json.json-pool.get-key': `
+obtient l'indice du nœud enfant d'une clé d'un nœud objet
+renvoie val-idx = l'indice du nœud enfant, ok = trouvé
+
+`
+  'json.json-pool.get-kind': 'obtient le type de nœud'
+  'json.json-pool.get-num': 'obtient la valeur numérique'
+  'json.json-pool.get-str': `
+obtient la valeur chaîne
+renvoie out = une copie de la chaîne, ok = succès
+
+`
+  'json.json-pool.init': 'initialise le pool de nœuds (le vec du tas doit être initialisé à une valeur non nulle avant utilisation pour que push soit sûr)'
+  'json.json-pool.parse': `
+analyse une valeur JSON à partir de la position pos de la chaîne
+renvoie node-idx = l'indice du nœud racine, next-pos = la position suivante, ok = succès
+
+`
+  'json.json-pool.parse-num': 'analyse un nombre JSON'
+  'json.json-pool.parse-str': 'analyse une chaîne JSON (à partir du guillemet ouvrant)'
+  'json.json-pool.set-key': `
+fixe une clé sur un nœud objet
+renvoie ok = succès
+
+`
+  'json.json-pool.skip-ws': 'saute les espaces blancs'
+  'json.json-pool.str-eq': `
+compare deux valeurs str pour l'égalité
+Implémenté uniformément via str.eq-full
+
+`
+  'json.json-pool.stringify': `
+sérialise le nœud en chaîne
+renvoie out str: la chaîne sérialisée
+
+`
+  'json.kind': `
+obtient le type de nœud
+renvoie la constante de type JSON
+
+`
+  'json.new': `
+crée une valeur json vide (null)
+utilisation:
+j = new()
+j.set('key', 'value')
+s = j.stringify()
+
+`
+  'json.new-pool': `
+crée et initialise un json-pool (une API de bas niveau)
+utilisation:
+p = new-pool()
+root, next, ok = p.parse('{"key":"value"}', 0)
+
+`
+  'json.num': `
+obtient la valeur numérique (quand la racine est un nombre)
+renvoie val f64, ok bool: ok = succès
+
+`
+  'json.obj-key': `
+obtient la clé à un indice donné d'un objet
+renvoie key str: la chaîne de clé
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.obj-keys-str': `
+obtient toutes les clés d'un objet, renvoyées sous forme de chaîne séparée par des sauts de ligne
+renvoie keys str: toutes les clés concaténées
+
+`
+  'json.obj-len': `
+obtient le nombre de clés d'un objet
+renvoie n i64: le nombre de clés (0 quand ce n'est pas un objet)
+
+`
+  'json.overflowed': `
+indique si l'opération la plus récente a échoué parce que le pool a manqué de capacité
+Permet aux méthodes comme set / arr-push, qui renvoient un bool, de distinguer "débordement" de "un autre échec" après avoir renvoyé false
+utilisation:
+ok = j.set('k', v)
+ok == false && j.overflowed() -> print('pool full')
+
+`
+  'json.set': `
+fixe une clé dans un objet (la valeur est un autre nœud json)
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.set-bool': `
+fixe une valeur booléenne dans un objet
+renvoie ok bool: si l'opération a réussi
+utilisation:
+j.set-bool('active', true)
+
+`
+  'json.set-i64': `
+fixe une valeur entière dans un objet
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.set-key': `
+fixe une clé d'objet (un sucre qui accepte une valeur json comme val)
+renvoie ok bool: ok = succès
+
+`
+  'json.set-null': `
+fixe une valeur null dans un objet
+renvoie ok bool: si l'opération a réussi
+
+`
+  'json.set-num': `
+fixe une valeur numérique dans un objet
+renvoie ok bool: si l'opération a réussi
+utilisation:
+j.set-num('age', 30.0)
+
+`
+  'json.set-str': `
+fixe une valeur chaîne dans un objet
+renvoie ok bool: si l'opération a réussi
+utilisation:
+j.set-str('name', 'Alice')
+
+`
+  'json.str': `
+obtient la valeur chaîne (quand la racine est une chaîne)
+renvoie val str, ok bool: ok = succès
+utilisation:
+s, found = j.str()
+
+`
+  'json.str-val': `
+obtient la valeur d'un nœud chaîne
+renvoie val str: la valeur chaîne
+
+`
+  'json.stringify': `
+sérialise la valeur JSON en chaîne
+renvoie out: la chaîne JSON
+utilisation:
+j = new()
+s = j.stringify()
+
+`
+  'link.link.empty': `
+Indique si la liste chaînée est vide
+Renvoie yes bool: true = vide, false = non vide
+
+`
+  'link.link.full': `
+Indique si le pool de nœuds est plein
+Renvoie yes bool: true = plein, false = non plein
+
+`
+  'link.link.size': `
+Renvoie le nombre d'éléments de la liste chaînée
+Renvoie sz i64: le nombre d'éléments
+
+`
+  'linked-hash-map.linked-hash-map.clear': 'Vide la table'
+  'linked-hash-map.linked-hash-map.contains': 'Indique si une clé existe'
+  'linked-hash-map.linked-hash-map.for-each': 'Parcourt tous les couples (clé, valeur) dans l\'ordre d\'insertion'
+  'linked-hash-map.linked-hash-map.get': 'Recherche une clé et renvoie ?i64 (nil = introuvable)'
+  'linked-hash-map.linked-hash-map.hash': 'Calcule l\'indice de seau'
+  'linked-hash-map.linked-hash-map.init': 'Initialise la table de hachage'
+  'linked-hash-map.linked-hash-map.is-empty': 'Si la table est vide'
+  'linked-hash-map.linked-hash-map.len': 'Renvoie le nombre d\'éléments'
+  'linked-hash-map.linked-hash-map.put': 'Insère ou met à jour key→value'
+  'linked-hash-map.linked-hash-map.remove': 'Supprime une clé'
+  'log.get-output-fd': 'renvoie le fd de la cible de sortie courante (pour le débogage)'
+  'log.get-writer': 'renvoie l\'io.writer correspondant à la cible de sortie courante'
+  'log.log-emit': 'assemble une ligne de journal à partir de FMT-FLAGS et l\'écrit dans OUT-FD via l\'abstraction io.writer'
+  'log.log-stamp': 'la chaîne d\'horodatage courante (UTC, YYYY-MM-DD HH:MM:SS)'
+  'log.open-file': `
+ouvre un fichier de journal en mode ajout et en fait la cible de sortie
+renvoie ?bool: ok = true en cas de succès, err quand le fichier ne peut pas être ouvert
+
+`
+  'log.set-format': 'fixe les bits du format de sortie (un OU de F-TIME / F-LEVEL / F-LOC)'
+  'log.set-level': 'fixe le niveau de journalisation'
+  'log.set-output-fd': 'bascule la cible de sortie sur le fd donné (l\'appelant l\'ouvre et le ferme)'
+  'log.set-writer': `
+bascule la cible de sortie sur l'io.writer donné (l'abstraction de l'interface io).
+Un writer n'enveloppe en réalité qu'un fd, et la seule chose que std puisse persister soit un scalaire, c'est donc son fd qui est stocké.
+
+`
+  'magic.detect-by-extension': `
+Détecte le type à partir de l'extension du fichier
+ext: l'extension (en minuscules)
+Renvoie une description de type, ou une chaîne vide si inconnu
+
+`
+  'magic.detect-by-magic': `
+Détecte le type à partir des octets magiques
+path: le chemin du fichier
+Renvoie une description de type, ou une chaîne vide si inconnu
+
+`
+  'magic.detect-type': `
+Détecte le type de fichier
+path: le chemin du fichier
+Renvoie une description de type (par exemple 'PNG image', 'ELF executable', 'ASCII text',
+'directory', ou 'unknown')
+
+`
+  'magic.get-extension': `
+Renvoie l'extension du fichier (en minuscules)
+path: le chemin du fichier
+Renvoie l'extension sans le '.', ou une chaîne vide s'il n'y en a pas
+
+`
+  'map.hashmap-bool-tmpl.clear': 'Vide la table (réalloue le vec occ)'
+  'map.hashmap-bool-tmpl.contains': 'Indique si une clé existe'
+  'map.hashmap-bool-tmpl.for-each': 'Parcourt tous les couples (clé, valeur)'
+  'map.hashmap-bool-tmpl.get': 'Recherche une clé et renvoie ?v (nil = introuvable)'
+  'map.hashmap-bool-tmpl.hash': 'Indexation directe (true → 1, false → 0)'
+  'map.hashmap-bool-tmpl.init': 'Initialise la table'
+  'map.hashmap-bool-tmpl.is-empty': 'Si la table est vide'
+  'map.hashmap-bool-tmpl.len': 'Renvoie le nombre d\'éléments'
+  'map.hashmap-bool-tmpl.put': 'Insère ou met à jour key→value; renvoie s\'il a été inséré (indexation directe, sans rehash)'
+  'map.hashmap-bool-tmpl.remove': 'Supprime une clé (marque une pierre tombale; keys/vals ne sont pas effacés)'
+  'map.hashmap-int-tmpl.clear': 'Vide la table (réalloue le vec occ)'
+  'map.hashmap-int-tmpl.contains': 'Indique si une clé existe'
+  'map.hashmap-int-tmpl.for-each': 'Parcourt tous les couples (clé, valeur)'
+  'map.hashmap-int-tmpl.get': 'Recherche une clé et renvoie ?v (nil = introuvable)'
+  'map.hashmap-int-tmpl.hash': 'Calcule l\'indice de seau (masque de bits)'
+  'map.hashmap-int-tmpl.init': 'Initialise la table'
+  'map.hashmap-int-tmpl.is-empty': 'Si la table est vide'
+  'map.hashmap-int-tmpl.len': 'Renvoie le nombre d\'éléments'
+  'map.hashmap-int-tmpl.put': 'Insère ou met à jour key→value; renvoie s\'il a été inséré'
+  'map.hashmap-int-tmpl.rehash': 'Agrandit la table et rehashe toutes les entrées occ==1'
+  'map.hashmap-int-tmpl.remove': 'Supprime une clé (marque une pierre tombale; keys/vals ne sont pas effacés)'
+  'map.hashmap-str-tmpl.clear': `
+Vide la table (réalloue le vec occ; l'ancien vec est libéré par la sémantique
+de move du compilateur)
+
+`
+  'map.hashmap-str-tmpl.contains': 'Indique si une clé existe'
+  'map.hashmap-str-tmpl.for-each': 'Parcourt tous les couples (clé, valeur)'
+  'map.hashmap-str-tmpl.get': 'Recherche une clé et renvoie ?v (nil = introuvable)'
+  'map.hashmap-str-tmpl.hash': 'Hachage de chaînes FNV-1a'
+  'map.hashmap-str-tmpl.init': 'Initialise la table'
+  'map.hashmap-str-tmpl.is-empty': 'Si la table est vide'
+  'map.hashmap-str-tmpl.len': 'Renvoie le nombre d\'éléments'
+  'map.hashmap-str-tmpl.put': 'Insère ou met à jour key→value; renvoie s\'il a été inséré'
+  'map.hashmap-str-tmpl.rehash': 'Agrandit la table et rehashe toutes les entrées occ==1'
+  'map.hashmap-str-tmpl.remove': 'Supprime une clé (marque une pierre tombale; keys/vals ne sont pas effacés)'
+  'map.hashmap-str-tmpl.str-eq': 'Compare deux strs pour l\'égalité'
+  'markdown.blockquote': 'Supprime le marqueur > initial d\'une ligne de citation.'
+  'markdown.code-close': 'Indique si la ligne courante ferme la clôture donnée.'
+  'markdown.escape-html': 'Échappe le texte HTML et les valeurs d\'attribut.'
+  'markdown.fence': 'Analyse le marqueur d\'un bloc de code clôturé.'
+  'markdown.heading': 'Renvoie le niveau de titre ATX et le texte du titre.'
+  'markdown.inline': 'Rend la syntaxe Markdown en ligne.'
+  'markdown.is-word-byte': 'Indique si un octet ASCII fait partie d\'un mot.'
+  'markdown.join-paragraph': 'Ajoute une ligne à un paragraphe, en gérant les sauts de ligne durs.'
+  'markdown.list-content': 'Rend le contenu d\'un élément de liste de tâches.'
+  'markdown.list-item': 'Analyse un élément de liste. kind=1 est non ordonnée, kind=2 est ordonnée.'
+  'markdown.prefix-count': 'Compte la suite d\'un caractère donné au début d\'une ligne.'
+  'markdown.read-line': 'Lit une ligne d\'un curseur d\'octets, en évitant l\'indexation dynamique non sûre dans []str.'
+  'markdown.render': 'Alias sémantique de to-html.'
+  'markdown.render-code': 'Émet un bloc de code.'
+  'markdown.setext-level': 'Renvoie le niveau de titre Setext (=== ou ---).'
+  'markdown.table-row': 'Rend une ligne séparée par | comme un tr.'
+  'markdown.table-separator': 'Indique si une ligne est un séparateur de tableau.'
+  'markdown.thematic-break': 'Indique si une ligne est une rupture thématique.'
+  'markdown.to-html': 'Rend un document Markdown en HTML.'
+  'math.arr-zero': `
+[n]num.zero / []num.zero — met à zéro le stockage avec llvm.memset
+tableau de taille fixe: total d'octets = n * sizeof(num), une constante à la compilation
+tranche sur le tas: .len() * sizeof(num) est pris à l'exécution et passé à llvm.memset
+
+`
+  'math.atan-kernel': `
+atan2: l'arc tangente de y/x (une implémentation pure en .no, sans dépendre de libm)
+noyau interne atan-kernel: réduit d'abord |t| à <= tan(pi/8), puis utilise une série de Taylor
+
+`
+  'math.char-to-str': `
+convertit un char (point de code Unicode) en chaîne encodée en UTF-8
+remplace l'ancien sprintf %c (qui ne gérait que l'ASCII sur un octet)
+⚠️ OBSOLÈTE: préférez la forme méthode char.to-str() (voir std/char.no),
+par ex. c char = 'A'; c.to-str(); cette fonction n'est conservée que pour les appels existants.
+
+`
+  'math.clamp': `
+═══════════════════════════════════════════════
+fonctions mathématiques entières (built-in)
+═══════════════════════════════════════════════
+clamp: contraint une valeur à [min, max]
+
+`
+  'math.div': `
+-7 / 2 == -3 (et non -4: pour une sémantique plancher, faites vous-même la vérification de signe)
+⚠️ quand b == 0, cela piège comme un `/` nu (il n'y a pas de vérification de division par zéro à l'exécution).
+
+`
+  'math.even': 'si la valeur est paire — fonctionne pour tous les types entiers (non signés compris)'
+  'math.fmod': `
+divers
+fmod: reste en virgule flottante
+
+`
+  'math.gcd': 'plus grand commun diviseur (algorithme d\'Euclide)'
+  'math.hypot': 'la norme euclidienne sqrt(x*x + y*y)'
+  'math.lcm': 'plus petit commun multiple'
+  'math.max': 'renvoie la plus grande valeur (une générique variadique couvrant tous les membres de num)'
+  'math.min': 'renvoie la plus petite valeur (une générique variadique couvrant tous les membres de num)'
+  'math.mod': `
+-7 % 2 == -1 (pour une sémantique de modulo plancher, faites vous-même la vérification de signe)
+⚠️ quand b == 0, cela piège comme un `%` nu.
+
+`
+  'math.odd': 'si la valeur est impaire — fonctionne pour tous les types entiers (non signés compris)'
+  'math.pow': `
+⚠️ limitations connues (différences avec le pow de C, toutes aux extrémités):
+1. Quand |y| > 2^63 la conversion f64→i64 déborde et le test de parité est faux, donc le signe de inf peut s'inverser.
+À ce stade mag vaut déjà inf/0, seul le signe est donc affecté.
+2. Quand x==0.0 et y<0, le pow de C renvoie +inf alors que cette implémentation renvoie 0.0 (comportement ancien conservé).
+
+`
+  'math.pow-int': `
+pow: puissance entière a^n (n >= 0) — fonctionne pour tous les types entiers
+Utilise l'exponentiation rapide, O(log n)
+⚠️ non déplacée dans math: le nom entre en collision avec le pow de std/math.no (la fonction de puissance f64),
+et un module ne peut pas contenir deux définitions de pow; c'est la seule exception à la règle selon laquelle les API sous forme de fonction vivent dans math.
+
+`
+  'math.rotate-left': `
+[]num.zero = () {
+i = 0
+for i < .len() {
+.[i] = 0
+i = i + 1
+}
+}
+═══════════════════════════════════════════════
+opérations sur les bits (built-in)
+═══════════════════════════════════════════════
+rotate-left: fait tourner un entier de n bits vers la gauche (mappé sur ROR d'ARM64 via llvm.fshl)
+
+`
+  'math.rotate-right': 'fait tourner un entier de n bits vers la droite (mappé sur ROR d\'ARM64 via llvm.fshr)'
+  'math.store-le-u32': 'écrit une valeur u32 en little-endian à l\'offset donné d\'un tableau d\'octets'
+  'math.swap': 'échange deux valeurs'
+  'num.abs': `
+valeur absolue — fonctionne pour tous les types num (entiers et flottants)
+forme d'appel : abs(x) (x est le receveur ; une méthode num sans argument n'accepte aujourd'hui que cette forme, car
+la forme pointée x.abs() n'est pas prise en charge — l'union num imbriquée ne monomorphise pas encore le receveur — idem pour num.sign) ;
+les négatifs sont repliés avec overflow=wrap (la valeur absolue de i64.MIN sort de la plage i64)
+`
+  'num.clamp': `
+contraint dans [lo, hi]
+usage : x.clamp(lo, hi, r)
+`
+  'num.sign': 'le signe (-1, 0, 1) — fonctionne pour tous les types num (entiers et flottants)'
+  'number.byte.to-str': 'convertit un byte en chaîne (non signé; élargi en u64 et réutilisé)'
+  'number.exp-f64': `
+Exponentielle et logarithme (méthodes f64/f32)
+exp-f64: forme fonction libre (prend x en argument au lieu du récepteur de méthode).
+Sert d'implémentation unique derrière f64.exp / cbrt / sinh / cosh / f32.exp.
+Note: Nolang a actuellement un bug de codegen sur les appels de méthode à des variables locales nommées (par ex. t.exp()) qui prend le récepteur extérieur, donc tout appel indirect à exp passe par cette fonction libre pour le contourner.
+
+`
+  'number.f32.to-f64': 'élargit un f32 en f64'
+  'number.f32.to-str': `
+convertit un f32 en chaîne (méthode)
+Élargit via f32.to-f64 (un #{buildin}) et réutilise l'implémentation %g de Nolang de f64.to-str.
+
+`
+  'number.f64.cbrt': `
+racine cubique (méthode f64)
+Implémentée comme exp(log(|x|) / 3); le corps n'appelle pas pow (le pow entier vit dans ce module, le pow f64 dans std/math.no)
+
+`
+  'number.f64.ceil': 'Arrondi (méthodes f64/f32; sur les types entiers l\'arrondi est l\'identité, aucune version générique n\'est donc proposée)'
+  'number.f64.degrees': 'radians en degrés (méthode f64/f32)'
+  'number.f64.radians': 'degrés en radians (méthode f64/f32)'
+  'number.f64.sin': 'Fonctions trigonométriques (radians; méthodes f64/f32)'
+  'number.f64.sinh': 'Fonctions hyperboliques (méthodes f64/f32)'
+  'number.f64.sqrt': 'Puissances et racines (méthodes f64/f32)'
+  'number.f64.tan': 'tangente (tan de libm, équivalent à sin/cos)'
+  'number.f64.to-bits': `
+extrait le motif de bits IEEE-754 sur 64 bits d'un f64 sous forme d'u64 (bitcast double->i64).
+Enregistré comme ForwardFunc "f64-to-bits" par src/builtin/bits.go, implémenté comme un bitcast LLVM natif et indépendant de libm.
+f64.to-str prend d'abord le motif de bits, puis sépare signe/exp/frac, avant de développer la forme aller-retour la plus courte.
+
+`
+  'number.f64.to-f32': 'rétrecit un f64 en f32 (peut perdre de la précision)'
+  'number.f64.to-i32': 'flottant vers entier signé sur 32 bits (avec saturation)'
+  'number.f64.to-i64': 'flottant vers entier (par troncature)'
+  'number.f64.to-str': `
+convertit un f64 en chaîne (implémentation directe en Nolang, décimal **le plus court en aller-retour**, comme le %v de Go)
+Prend le minimum de chiffres significatifs qui reproduisent exactement le double (décomposition des champs IEEE-754 plus arithmétique exacte en bigint) et conserve le choix de notation de %g: notation scientifique quand E <= -5 ou E >= 6, point fixe sinon.
+Les valeurs spéciales concordent avec Go: NaN -> "NaN", +Inf -> "+Inf", -Inf -> "-Inf", ±0 -> "0".
+Le backend n'a pas de formateur f64 natif (la CLibCall sprintf a été supprimée), toute la routine est donc déroulée dans le corps de la méthode.
+
+`
+  'number.f64.to-str-fixed': `
+conversion en point fixe
+precision i64: nombre de chiffres fractionnaires (>= 0; gardez <= 17 pour éviter un débordement d'i64)
+renvoie out str: la forme en chaîne (par ex. "3.14", "-0.005", "100")
+
+`
+  'number.f64.to-str-general': `
+format général (choisit automatiquement le point fixe ou la notation scientifique)
+precision i64: nombre maximal de chiffres significatifs (>= 1)
+renvoie out str: la forme en chaîne (les zéros de fin sont supprimés automatiquement)
+
+`
+  'number.f64.to-str-sci': `
+notation scientifique
+precision i64: nombre de chiffres fractionnaires (>= 0)
+renvoie out str: la forme en chaîne (par ex. "3.14e+2", "-5.0e-3")
+
+`
+  'number.f64.to-u32': 'flottant vers entier non signé sur 32 bits (avec saturation)'
+  'number.f64.to-u64': 'flottant vers entier non signé sur 64 bits (avec saturation)'
+  'number.i128.sqrt': `
+── copies de méthodes pour les entiers 128 bits (i128 / u128) ──
+L'arithmétique 128 bits fonctionne (les opérandes voyagent sur le rail i128 de LLVM), mais deux choses doivent être traitées ensemble:
+(1) Les variables locales ont besoin de types explicites (`n i128 = .`, `lo i128 = 1`, ...). Sans type, le checker infère i64 pour les intermédiaires mêlés à des littéraux, donc la boucle converge vers une valeur fausse ou se bloque carrément (mesuré avec une recherche binaire sur i128.MAX). Un u128 sans type déclenche aussi une erreur d'affectation i64->u128.
+(2) Disposition des annotations de débordement: i128 est signé et la division peut déborder sur INT_MIN/-1, donc chaque instruction arithmétique reçoit `#{overflow=wrap}`; u128 est non signé, donc ÷/% ne peuvent pas déborder et l'annotation ne va que sur + − et sur les divisions par un littéral — pas sur ÷/% entre variables, qui déclencherait un avertissement de débordement ineffectif.
+L'annotation doit être sur sa propre ligne juste avant l'instruction cible (une garde enchaînée sur une seule ligne avec `;` fait que le codegen 128 bits abandonne tout le corps principal).
+Cela corrige aussi l'omission d'u128 par isUnsignedRaw du codegen: les comparaisons et divisions sur u128 passaient par le prédicat signé, ce qui désordonnait les valeurs de la plage de u128.MAX (>= 2^127); après correction u128.sqrt(u128.MAX)=2^64-1 exactement.
+
+`
+  'number.i128.to-f64': 'entier signé 128 bits vers flottant'
+  'number.i16.sqrt': 'i16'
+  'number.i16.to-str': 'convertit un i16 en chaîne (élargi en i64 et réutilisé)'
+  'number.i32.sqrt': 'i32'
+  'number.i32.to-str': 'convertit un i32 en chaîne (élargi implicitement en i64, puis réutilise le chemin natif i64.to-str)'
+  'number.i64.is-prime': `
+test de primalité — une méthode i64
+Division par essais, O(√n): on saute d'abord les nombres pairs, puis on essaie les diviseurs impairs; la boucle s'arrête à d <= n/d pour que d*d ne puisse pas déborder, et le diviseur est toujours >= 1 pour qu'il ne puisse pas piéger (cela évite aussi un récepteur union int, voir ci-dessus)
+
+`
+  'number.i64.sqrt': `
+racine carrée entière floor(√n) — une méthode i64
+n < 0 n'a pas de solution dans les entiers et renvoie 0; recherche binaire, O(log n), en comparant avec n/mid plutôt que mid*mid pour que rien ne déborde (même convention d'annotation wrap que gcd/even dans math.no).
+N'utilise pas de récepteur union int (qui fonctionnerait pour toute largeur): l'alias int est défini dans std/int.no, et une méthode `int.X` inter-module reçoit un double préfixe de prefixMethodNames et devient `int.int.X`, qu'aucun site d'appel monomorphisé ne trouve, produisant une erreur de callee inconnu.
+
+`
+  'number.i64.to-bytes-be': `
+convertit un int64 en 8 octets big-endian
+utilisation:
+v = 0x1234
+out = v.to-bytes-be()   ; out = [0x00,0x00,0x00,0x00,0x00,0x00,0x12,0x34]
+
+`
+  'number.i64.to-bytes-le': `
+convertit un int64 en 8 octets little-endian
+utilisation:
+v = 0x1234
+out = v.to-bytes-le()   ; out = [0x34,0x12,0x00,0x00,0x00,0x00,0x00,0x00]
+
+`
+  'number.i64.to-f64': 'entier vers flottant'
+  'number.i64.to-i32': 'rétrecit la largeur de l\'entier (troncature aux 32 bits de poids faible)'
+  'number.i64.to-str': `
+convertit un i64 en chaîne
+#{buildin}: passe par le @str_from_i64 natif (src/builtin/strconv.go enregistre ForwardFunc "i64-to-str", et le codegen associe ce nom au chemin inline natif). i64 a un formateur natif, c'est donc un builtin direct sans boucle Nolang autour.
+
+`
+  'number.i8.sqrt': 'i8 (signé: conserve la garde négative)'
+  'number.i8.to-str': 'convertit un i8 en chaîne (élargi en i64 et réutilisé)'
+  'number.pow': `
+puissance entière base^n (n >= 0, i64) — appelée sous la forme number.pow (préfixe de module).
+Même nom que le pow f64 de math.no mais module différent, la construction ajoute donc un préfixe number.;
+synonyme de math.pow-int (la puissance rapide générique int), mais avec une signature i64 explicite pour que
+les assertions comme number.pow(2, 10) de test/std/number.no tiennent.
+
+`
+  'number.u128.to-f64': 'entier non signé 128 bits vers flottant'
+  'number.u16.sqrt': 'u16'
+  'number.u16.to-str': 'convertit un u16 en chaîne (élargi en u64 et réutilisé)'
+  'number.u32.sqrt': 'u32'
+  'number.u32.to-str': 'convertit un u32 en chaîne (élargi implicitement en u64, puis réutilise u64.to-str)'
+  'number.u64.from-bits': 'l\'inverse de f64.to-bits (bitcast i64->double), implémenté nativement par LLVM.'
+  'number.u64.sqrt': 'u64 (sa plage dépasse celle d\'i64, il a donc besoin d\'une implémentation indépendante de même largeur)'
+  'number.u64.to-f64': 'entier non signé vers flottant'
+  'number.u64.to-str': `
+convertit un u64 en chaîne (une implémentation directe en Nolang: le backend n'a pas de formateur u64 natif,
+donc la boucle décimale de l'ancien math.u64-to-str est déroulée dans le corps de la méthode, remplaçant la fonction supprimée)
+
+`
+  'number.u8.sqrt': 'u8 (non signé: pas de garde négative)'
+  'number.u8.to-str': 'convertit un u8 en chaîne (élargi en u64 et réutilisé)'
+  'ords.asc': '[]ord.asc: trie par ordre croissant sur place (tri par insertion)'
+  'ords.desc': '[]ord.desc: trie par ordre décroissant sur place (tri par insertion)'
+  'os.arg': `
+; LLVM: accède à argc depuis main
+}
+arg: obtient le i-ème argument de la ligne de commande (nil hors bornes)
+
+`
+  'os.args': `
+═══════════════════════════════════════════════
+arguments de la ligne de commande
+═══════════════════════════════════════════════
+args: tous les arguments de la ligne de commande ([]str, nom du programme compris)
+
+`
+  'os.ch-dir': 'change le répertoire de travail'
+  'os.ch-mod': 'change les permissions d\'un fichier'
+  'os.chown': 'change le propriétaire et le groupe d\'un fichier (uid, gid)'
+  'os.chroot': `
+═══════════════════════════════════════════════
+changement de répertoire racine
+═══════════════════════════════════════════════
+chroot: change le répertoire racine (POSIX chroot(2))
+path: le chemin du nouveau répertoire racine
+renvoie true en cas de succès, false en cas d'échec
+Note: nécessite les privilèges root; après l'appel, fixez le répertoire de travail avec ch-dir('/')
+
+`
+  'os.flock': `
+applique ou libère un verrou consultatif sur un descripteur de fichier
+fd: le descripteur de fichier
+op: l'opération de verrouillage (1=LOCK_SH partagé, 2=LOCK_EX exclusif, 4=LOCK_UN déverrouiller, 8=LOCK_NB non bloquant)
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'os.get-arch': 'obtient l\'architecture CPU courante (une constante de compilation, par ex. arm64, amd64)'
+  'os.get-domain-name': `
+obtient le nom de domaine NIS
+renvoie la chaîne de domaine en cas de succès, une chaîne vide en cas d'échec
+
+`
+  'os.get-env': `
+obtient une variable d'environnement
+renvoie val ?str: ok = la valeur, nil = non définie
+
+`
+  'os.get-errno': 'obtient la dernière valeur d\'errno'
+  'os.get-host-id': `
+obtient l'identifiant d'hôte (un entier 32 bits)
+renvoie l'identifiant d'hôte (un entier non négatif; les plateformes diffèrent en cas d'erreur)
+
+`
+  'os.get-login': `
+═══════════════════════════════════════════════
+informations utilisateur et système supplémentaires
+═══════════════════════════════════════════════
+get-login: obtient le nom de l'utilisateur actuellement connecté
+renvoie la chaîne du nom d'utilisateur en cas de succès, une chaîne vide en cas d'échec
+
+`
+  'os.get-pid': 'obtient l\'identifiant du processus'
+  'os.get-priority': `
+obtient la priorité d'ordonnancement d'un processus
+which: le type de cible (0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER)
+who: l'identifiant de la cible (0 signifie le processus/groupe/utilisateur courant)
+renvoie prio ?i64: ok = la priorité (-20 à 19), nil = lecture impossible
+Note: libc renvoie conventionnellement -1 et fixe errno en cas d'erreur, mais une priorité peut légitimement valoir -1, c'est donc
+errno==0 qui les distingue. Ici ?i64 l'exprime explicitement (nil signifie erreur).
+
+`
+  'os.get-wd': 'obtient le répertoire de travail courant'
+  'os.getegid': 'obtient l\'identifiant de groupe effectif courant'
+  'os.geteuid': 'obtient l\'identifiant d\'utilisateur effectif courant'
+  'os.getgid': 'obtient l\'identifiant de groupe courant'
+  'os.getgroups': `
+obtient les identifiants de groupe auxquels appartient l'utilisateur courant
+renvoie le tableau des identifiants de groupe et le compte n en cas de succès, un tableau vide et n=0 en cas d'échec
+
+`
+  'os.getuid': 'obtient l\'identifiant d\'utilisateur courant'
+  'os.host-name': 'obtient le nom d\'hôte'
+  'os.mkdir': 'crée un répertoire'
+  'os.now': `
+═══════════════════════════════════════════════
+temps
+═══════════════════════════════════════════════
+now: obtient l'horodatage Unix courant (secondes)
+
+`
+  'os.now-ms': 'obtient l\'horodatage Unix courant (millisecondes)'
+  'os.now-ns': 'obtient l\'horodatage courant (nanosecondes)'
+  'os.now-us': 'obtient l\'horodatage Unix courant (microsecondes)'
+  'os.num-cpu': `
+obtient le nombre de cœurs CPU en ligne
+Équivalent à sysconf(_SC_NPROCESSORS_ONLN); le compilateur gère les constantes par plateforme
+
+`
+  'os.set-env': 'fixe une variable d\'environnement'
+  'os.set-priority': `
+fixe la priorité d'ordonnancement d'un processus
+which: le type de cible (0=PRIO_PROCESS, 1=PRIO_PGRP, 2=PRIO_USER)
+who: l'identifiant de la cible (0 signifie le processus/groupe/utilisateur courant)
+prio: la valeur de priorité (-20 la plus haute à 19 la plus basse)
+renvoie true en cas de succès, false en cas d'échec
+
+`
+  'os.set-sid': `
+crée une nouvelle session et se détache du terminal de contrôle
+renvoie le nouvel identifiant de groupe de processus (>0) en cas de succès, -1 en cas d'échec
+
+`
+  'os.signal': `
+installe un gestionnaire de signal (une version simplifiée qui ne prend en charge que SIG_IGN=1 / SIG_DFL=0)
+sig: le numéro de signal
+handler: la constante de gestionnaire (0=SIG_DFL par défaut, 1=SIG_IGN ignorer)
+renvoie la valeur précédente du gestionnaire
+
+`
+  'os.sleep': 'dort pendant n secondes'
+  'os.sleep-ns': 'dort pendant n nanosecondes'
+  'os.sleep-us': 'dort pendant n microsecondes'
+  'os.stat-gid': `
+obtient le gid de groupe d'un fichier
+renvoie gid ?i64: ok = le gid, nil = lecture impossible
+
+`
+  'os.stat-mode': `
+obtient le mode du fichier (bits de permission et de type)
+renvoie mode ?i64: ok = la valeur du mode, nil = lecture impossible
+
+`
+  'os.stat-mtime': `
+obtient l'heure de modification du fichier (secondes Unix)
+renvoie mtime ?i64: ok = l'heure de modification, nil = lecture impossible
+
+`
+  'os.stat-uid': `
+obtient l'uid du propriétaire d'un fichier
+renvoie uid ?i64: ok = l'uid, nil = lecture impossible
+
+`
+  'os.strerror': `
+transforme un errno POSIX en message d'erreur lisible
+Implémenté comme une table de correspondance Nolang, remplaçant la CLibCall @strerror de libc
+Couvre les valeurs d'errno POSIX standard (1-40); une valeur inconnue renvoie "Unknown error: N"
+
+`
+  'os.sysconf': `
+interroge une limite de configuration système
+name: l'élément de configuration (une constante POSIX _SC_*; les nombres diffèrent selon la plateforme)
+_SC_NPROCESSORS_ONLN: macOS=58, Linux=84
+_SC_NPROCESSORS_CONF:  macOS=57, Linux=83
+renvoie la valeur en cas de succès, -1 en cas d'échec
+
+`
+  'os.sysctl': `
+interroge un paramètre de contrôle système (lecture d'une valeur chaîne)
+name: le nom du paramètre (par ex. 'kern.ostype', 'hw.model')
+renvoie val ?str: ok = la chaîne de valeur, nil = la requête a échoué
+Note: sous Linux cela passe par /proc/sys; macOS/BSD passent par l'appel système sysctl(2)
+
+`
+  'os.syslog': `
+écrit une entrée de journal système
+priority: la priorité de journalisation (0=EMERG à 7=DEBUG, 6=INFO étant la plus courante)
+msg: le corps du message
+
+`
+  'os.ttyname': `
+obtient le nom du terminal
+fd: le descripteur de fichier
+renvoie la chaîne du chemin du terminal en cas de succès, une chaîne vide en cas d'échec
+
+`
+  'os.uname': `
+obtient les informations de noyau et d'architecture
+renvoie une struct utsname avec les cinq champs sysname/nodename/release/version/machine
+
+`
+  'os.win-find-close': 'ferme un handle de recherche de répertoire Windows'
+  'os.win-find-first-file': `
+; LLVM: accède à argv[idx]
+}
+═══════════════════════════════════════════════
+Windows uniquement (built-in)
+═══════════════════════════════════════════════
+win-find-first-file: recherche de répertoire Windows (FindFirstFileA); renvoie bufPtr (0 = échec)
+
+`
+  'os.win-find-next-file': 'lit le nom de l\'entrée de répertoire Windows suivante; renvoie name ?str (nil = plus d\'entrées)'
+  'os.win-wsa-startup': 'initialise Winsock 2.2 (Windows uniquement); renvoie true = succès'
+  'path.base': `
+prend le dernier élément du chemin (le nom du fichier)
+renvoie le nom du fichier
+
+`
+  'path.change-dir': `
+change le répertoire de travail vers ce chemin
+renvoie true = succès, false = échec
+
+`
+  'path.clean': `
+nettoie le chemin (supprime . et .. et les séparateurs en double)
+Modifie .p sur place
+
+`
+  'path.current': `
+obtient le répertoire de travail courant (une méthode de style constructeur)
+renvoie une nouvelle struct path
+
+`
+  'path.dir': `
+prend la partie répertoire du chemin
+Modifie .p sur place ET renvoie le .p modifié (cohérent avec base()/ext()/join(); voir la note sur join)
+
+`
+  'path.exists': 'vérifie si le chemin existe (un fichier ou un répertoire comptent tous les deux)'
+  'path.ext': `
+prend l'extension du fichier (le point compris)
+renvoie l'extension
+
+`
+  'path.is-abs': `
+indique si le chemin est absolu
+renvoie true = oui, false = non
+
+`
+  'path.is-dir': 'vérifie si le chemin est un répertoire'
+  'path.is-file': 'vérifie si le chemin est un fichier'
+  'path.join': `
+⚠️ cohérence d'API: join()/dir() ne modifiaient au départ que sur place et ne renvoyaient rien, alors que base()/ext()
+renvoyaient un str, ce qui faisait que `x = p.join(...)` produisait silencieusement une chaîne vide. Les quatre méthodes RENVOIENT
+désormais un str (join/dir mettent toujours à jour .p aussi, donc l'usage en place existant continue de fonctionner).
+
+`
+  'path.make-dir': `
+crée le répertoire
+renvoie true = succès, false = échec
+
+`
+  'path.remove': `
+supprime le fichier
+renvoie true = succès, false = échec
+
+`
+  'path.rename': `
+renomme ce chemin en new-p
+renvoie true = succès, false = échec
+
+`
+  'path.size': 'obtient la taille du fichier'
+  'path.split': `
+sépare le chemin en un répertoire et un nom de fichier
+Modifie .p sur place pour la partie répertoire et renvoie le nom de fichier
+par ex. path{ p: '/a/b/c.txt' }.split() -> .p='/a/b', f='c.txt'
+(les littéraux de struct doivent s'étendre sur plusieurs lignes; ce qui précède est un raccourci)
+
+`
+  'pem.pem-decode': `
+Analyse une chaîne au format PEM
+pem-str: la chaîne PEM
+Renvoie ?pem-block: ok = analyse réussie, nil = analyse échouée
+
+`
+  'pem.pem-encode': `
+Encode des octets bruts en chaîne au format PEM
+label str: le libellé PEM (par exemple 'CERTIFICATE' ou 'RSA PRIVATE KEY')
+data []byte: les données binaires brutes
+Renvoie out str: la chaîne au format PEM
+
+`
+  'process.close': 'ferme tous les tubes et attend le processus enfant'
+  'process.close-stderr': 'ferme le tube stderr de l\'enfant'
+  'process.close-stdin': 'ferme le tube stdin de l\'enfant'
+  'process.close-stdout': 'ferme le tube stdout de l\'enfant'
+  'process.cmd-2': `
+un lanceur de processus enfant complet (une implémentation multiplateforme de qualité production)
+Version Windows: implémentée en Nolang pur sur l'API Win32 (CreateProcessA, CreatePipe et compagnie).
+Elle ne dépend pas du runtime process.c; la création de processus, la gestion des tubes et la capture de sortie passent toutes par
+des builtins ForwardFunc comme win-create-process, win-create-pipe et win-read-pipe.
+
+`
+  'process.exec': `
+utilisation:
+o = process.cmdopts{timeout: 5000}
+res = process.exec('ls', ['-la'], o)
+res.code == 0 -> print(res.stdout)
+res.code != 0 -> print('error code: ' + res.code.to-str())
+
+`
+  'process.exit-code-of': 'exit-code: obtient le code de sortie'
+  'process.find-by-name': `
+trouve les PID des processus par nom
+name: le nom du processus (correspondance partielle, insensible à la casse)
+renvoie la liste des PID correspondants
+
+`
+  'process.find-match': `
+correspondance partielle et insensible à la casse sur un nom de processus
+pname: le nom du processus, target: le mot recherché
+renvoie yes = true = correspond
+
+`
+  'process.force-kill': `
+envoie SIG-KILL
+renvoie ok = true = succès
+
+`
+  'process.is-running': 'indique si le processus enfant est toujours en cours d\'exécution'
+  'process.kill': `
+envoie un signal au processus enfant
+sig: le numéro de signal (par ex. SIG-TERM=15, SIG-KILL=9)
+renvoie ok = true = succès
+
+`
+  'process.list-all': `
+liste tous les processus du système
+Linux: parcourt /proc et lit /proc/<pid>/comm sous chaque répertoire de PID pour le nom du processus
+macOS/Windows: renvoie une liste vide pour l'instant (cela demande la prise en charge de libproc/sysctl ou CreateToolhelp32Snapshot)
+renvoie la liste proc-info
+
+`
+  'process.new': `
+crée et renvoie une instance de processus
+utilisation: p = process.new()
+
+`
+  'process.output': `
+exécute une commande et capture son stdout (méthode d'instance)
+utilisation: content, code = process.new().output('ls', '-la')
+renvoie content = la sortie, code = le code de sortie
+
+`
+  'process.parent-pid': 'obtient l\'identifiant du processus parent (méthode statique)'
+  'process.pid-of': 'pid: obtient l\'identifiant du processus enfant'
+  'process.process-dup2': 'duplique un descripteur de fichier'
+  'process.process-exec': `
+remplace le processus courant
+Appelle execlp(program, program, arg, NULL)
+Ne revient qu'en cas d'échec
+
+`
+  'process.process-exec-shell': `
+exécute une chaîne de commande via sh -c (en remplaçant le processus courant)
+cmd: la chaîne de commande complète
+Ne renvoie qu'un errno en cas d'échec
+
+`
+  'process.process-fork': `
+bifurque le processus courant
+renvoie 0 = enfant, >0 = parent (le PID de l'enfant), -1 = erreur
+
+`
+  'process.process-getppid': 'obtient l\'identifiant du processus parent'
+  'process.process-kill': 'envoie un signal à un processus'
+  'process.process-pipe': `
+crée un tube
+renvoie la valeur empaquetée (read_fd << 32) | write_fd
+
+`
+  'process.process-shell': `
+alternative:
+out, stderr, code, err = process.cmd('ls', args, '', '', env, 5000, false)  ; toutes les fonctions
+pid = process.spawn(cmd)                                        ; non bloquant
+status = process.wait(pid)                                      ; renvoie le vrai code de sortie
+
+`
+  'process.process-system': 'exécute une commande shell'
+  'process.process-waitpid': `
+attend un processus enfant
+renvoie le code de sortie (WEXITSTATUS)
+
+`
+  'process.process-waitpid-nohang': `
+attente non bloquante d'un processus enfant (WNOHANG)
+Renvoie -1 tant que l'enfant tourne encore, son code de sortie une fois terminé, et -1 en cas d'erreur.
+Utilisé par le chien de garde de timeout pour l'interrogation.
+
+`
+  'process.read': `
+lit des données du stdout de l'enfant
+renvoie read-n = le nombre d'octets réellement lus
+
+`
+  'process.read-all': `
+lit toute la sortie stdout de l'enfant
+renvoie content = les données lues, n = le nombre d'octets lus
+
+`
+  'process.read-line': `
+lit une ligne du stdout de l'enfant
+renvoie line ?str: ok = la ligne, nil = EOF ou erreur
+
+`
+  'process.shell': `
+exécute une chaîne de commande shell et attend qu'elle se termine (spawn plus wait)
+cmd: la chaîne de commande complète (exécutée via sh -c)
+renvoie code = le code de sortie (0 = succès, >0 = la commande a échoué, 127 = échec d'exec, -1 = échec de fork)
+
+`
+  'process.shell-quote': `
+échappement par apostrophes de POSIX — enveloppe n'importe quelle chaîne dans un littéral entre apostrophes qu'un shell (sh -c) peut réanalyser en toute sécurité.
+Une apostrophe embarquée devient la séquence de quatre caractères '\'' (apostrophe fermante, apostrophe échappée, apostrophe ouvrante).
+Contexte: la branche générale de cmd() passe la ligne de commande assemblée par process-exec-shell, et l'ancienne implémentation
+joignait les arguments avec de simples espaces, perdant les frontières entre arguments (un argument contenant des espaces ou des apostrophes était re-tokenisé par le shell). Cette fonction corrige ce défaut.
+
+`
+  'process.spawn': `
+crée un processus enfant exécutant une chaîne de commande
+cmd: la chaîne de commande complète (exécutée via sh -c)
+renvoie pid > 0 = parent (le PID de l'enfant), -1 = erreur
+
+`
+  'process.start': `
+crée un processus enfant et exécute une commande (méthode de commodité à un argument)
+program: le programme à exécuter
+arg: l'argument qui lui est passé
+renvoie ok = true = succès
+
+`
+  'process.start-with-opts': `
+run: démarre un processus enfant (méthode d'instance de bas niveau; elle n'attend pas et ne lit pas la sortie)
+program   : le programme à exécuter (recherché dans PATH)
+args      : la liste d'arguments qui lui est passée
+dir       : le répertoire de travail; vide = hérite celui du parent
+input     : contenu écrit sur le stdin de l'enfant; vide = pas de stdin
+merge-err : true = fusionne stderr dans stdout
+renvoie ok = true = succès; en cas de succès il fixe .pid/.stdout-fd/.stdin-fd/.running
+
+`
+  'process.terminate': `
+envoie SIG-TERM
+renvoie ok = true = succès
+
+`
+  'process.wait': `
+attend que le processus enfant se termine
+renvoie status = l'état de sortie (WEXITSTATUS)
+
+`
+  'process.wait-2': `
+attend que le processus enfant donné se termine
+pid: l'identifiant du processus enfant
+renvoie status = l'état de sortie (WEXITSTATUS)
+
+`
+  'process.wait-nohang': `
+attente non bloquante (interrogation)
+renvoie status ?i64: ok = l'enfant a terminé (son état de sortie), nil = toujours en cours
+
+`
+  'process.win-close-handle': 'ferme un handle Windows (CloseHandle)'
+  'process.win-create-pipe': `
+crée un tube anonyme (CreatePipe)
+renvoie la valeur empaquetée (read_handle << 32) | write_handle, 0 = échec
+
+`
+  'process.win-create-process': `
+crée un processus enfant (CreateProcessA)
+cmdline: la chaîne de ligne de commande complète
+dir: le répertoire de travail (vide = hérite)
+stdin-handle, stdout-handle, stderr-handle: les handles des flux standard (0 = hérite du parent)
+renvoie (proc-handle, status): proc-handle>0 = succès, 0 = échec
+
+`
+  'process.win-get-exit-code': `
+obtient le code de sortie d'un processus (GetExitCodeProcess)
+renvoie exit-code ?i64: nil signifie qu'il tourne encore
+
+`
+  'process.win-get-std-handle': `
+obtient un handle standard (GetStdHandle)
+which: 0=stdin, 1=stdout, 2=stderr
+
+`
+  'process.win-read-pipe': `
+lit des données d'un tube/handle (ReadFile)
+renvoie (data, n): n = le nombre d'octets lus, -1 = erreur
+
+`
+  'process.win-terminate-process': 'termine un processus (TerminateProcess)'
+  'process.win-wait-process': `
+attend la fin d'un processus (WaitForSingleObject)
+timeout-ms: le timeout en millisecondes (0 = attendre indéfiniment)
+renvoie 0 = timeout, 1 = il a terminé, -1 = erreur
+
+`
+  'process.win-write-pipe': `
+écrit des données dans un tube/handle (WriteFile)
+renvoie le nombre d'octets écrits, -1 = erreur
+
+`
+  'process.write': `
+écrit des données sur le stdin de l'enfant
+renvoie written = le nombre d'octets réellement écrits
+
+`
+  'queue.queue.clear': 'Vide la file'
+  'queue.queue.empty': `
+Indique si la file est vide
+Renvoie yes bool: true = vide, false = non vide
+
+`
+  'queue.queue.full': `
+Indique si la file est pleine
+Renvoie yes bool: true = pleine, false = non pleine
+
+`
+  'queue.queue.size': `
+Renvoie le nombre d'éléments de la file
+Renvoie sz i64: le nombre d'éléments
+
+`
+  'regexp.alloc-class': `
+alloue une nouvelle classe de caractères et renvoie son indice
+renvoie cls-idx i64: l'indice de la classe
+
+`
+  'regexp.clear-class-bit': `
+efface un bit
+cls-idx i64: l'indice de la classe
+c i64: la valeur du caractère (0-255)
+
+`
+  'regexp.compile': 'compile la chaîne de motif en une séquence d\'instructions'
+  'regexp.emit': `
+émet une instruction
+op i64: le type d'instruction
+arg1 i64: l'argument 1
+arg2 i64: l'argument 2
+
+`
+  'regexp.emit-atom': `
+émet une instruction d'atome
+atom-type i64: le type d'atome
+atom-char i64: la valeur de caractère de l'atome
+atom-cls i64: l'indice de classe de l'atome
+
+`
+  'regexp.emit-quantized': `
+émet des instructions selon le quantificateur
+Lit le code interne du quantificateur dans le champ .tmp-quant (1=*, 2=+, 3=?)
+Utilise 1/2/3 comme valeurs de comparaison, en évitant le bug d'optimisation == 42 de LLVM
+atom-type i64: le type d'atome
+atom-char i64: la valeur de caractère de l'atome
+atom-cls i64: l'indice de classe de l'atome
+atom-i i64: la position après l'atome
+
+`
+  'regexp.find': `
+trouve la première sous-chaîne de text qui correspond à .pattern
+text str: le texte à rechercher
+renvoie result str: la sous-chaîne trouvée, ou une chaîne vide si absente
+
+`
+  'regexp.in-class': `
+teste si un caractère appartient à la classe
+cls-idx i64: l'indice de la classe
+c i64: la valeur du caractère (0-255)
+renvoie yes bool: true = dans la classe
+
+`
+  'regexp.init-class-all': `
+initialise le bitmap d'une classe à tout à un
+cls-idx i64: l'indice de la classe
+
+`
+  'regexp.init-class-zero': `
+initialise le bitmap d'une classe à tout à zéro
+cls-idx i64: l'indice de la classe
+
+`
+  'regexp.make-class-digits': `
+construit la classe de chiffres \d [0-9]
+renvoie cls-idx i64: l'indice de la classe
+
+`
+  'regexp.make-class-nondigits': `
+construit la classe de non-chiffres \D
+renvoie cls-idx i64: l'indice de la classe
+
+`
+  'regexp.make-class-nonspace': `
+construit la classe de non-espaces \S
+renvoie cls-idx i64: l'indice de la classe
+
+`
+  'regexp.make-class-nonword': `
+construit la classe de non-mots \W
+renvoie cls-idx i64: l'indice de la classe
+
+`
+  'regexp.make-class-space': `
+construit la classe d'espaces \s
+renvoie cls-idx i64: l'indice de la classe
+
+`
+  'regexp.make-class-word': `
+construit la classe de mots \w [a-zA-Z0-9_]
+renvoie cls-idx i64: l'indice de la classe
+
+`
+  'regexp.match-at': `
+correspondance récursive avec retour arrière
+pc i64: le compteur d'instructions
+sp i64: la position dans le texte
+text str: le texte à rechercher
+renvoie ok bool: true = correspond
+effet de bord: en cas de succès, fixe .match-end = sp
+
+`
+  'regexp.matches': `
+teste si text correspond à .pattern n'importe où
+text str: le texte à rechercher
+renvoie matched bool: true = correspond
+
+`
+  'regexp.parse-atom': `
+analyse un seul atome de regex (sans émettre d'instructions)
+Stocke le résultat dans .tmp-atom-type, .tmp-atom-char et .tmp-atom-cls
+pattern str: la chaîne de motif
+i i64: la position courante
+renvoie new-i i64: la nouvelle position après l'analyse
+
+`
+  'regexp.parse-class': `
+analyse une classe de caractères [...]
+pattern str: la chaîne de motif
+i i64: la position courante (pointant sur '[')
+renvoie new-i i64: la nouvelle position (après ']')
+effet de bord: crée une nouvelle classe de caractères et stocke son indice dans .tmp-atom-cls
+
+`
+  'regexp.parse-escape': `
+analyse une séquence d'échappement \x
+pattern str: la chaîne de motif
+i i64: la position courante (pointant sur '\')
+renvoie new-i i64: la nouvelle position après l'analyse
+effet de bord: fixe .tmp-atom-type, .tmp-atom-char et .tmp-atom-cls
+
+`
+  'regexp.regexp-compile': `
+compile un motif d'expression régulière et renvoie une instance regexp compilée.
+Utilisé par le littéral de regex /pattern/: le littéral est désucré en un appel à cette fonction pendant le codegen.
+pattern str: l'expression régulière
+renvoie re regexp: l'instance d'expression régulière compilée
+
+`
+  'regexp.regexp-find': `
+trouve la première sous-chaîne de text qui correspond à pattern
+pattern str: l'expression régulière
+text str: le texte à rechercher
+renvoie result str: la sous-chaîne trouvée, ou une chaîne vide si absente
+
+`
+  'regexp.regexp-match': `
+teste si text correspond à pattern n'importe où
+pattern str: l'expression régulière
+text str: le texte à rechercher
+renvoie matched bool: true = correspond
+
+`
+  'regexp.set-class-bit': `
+fixe un bit
+cls-idx i64: l'indice de la classe
+c i64: la valeur du caractère (0-255)
+
+`
+  'regexp.set-class-escape': `
+gère une séquence d'échappement à l'intérieur d'une classe de caractères
+cls-idx i64: l'indice de la classe
+c i64: le caractère échappé (par ex. 'd', 'w', 's')
+
+`
+  'set.add': `
+ajoute un élément à l'ensemble (s'il est absent)
+val t: l'élément à ajouter
+renvoie new-size i64: la nouvelle taille
+
+`
+  'set.contains': `
+indique si un élément est dans l'ensemble
+val t: l'élément à rechercher
+renvoie yes bool: true = présent, false = absent
+
+`
+  'set.difference': `
+calcule la différence (dans cet ensemble mais pas dans other)
+le résultat est écrit dans le tampon out fourni par l'appelant et le nombre d'éléments est renvoyé
+other []t: le tampon d'éléments de l'autre ensemble
+osize i64: le nombre d'éléments de l'autre ensemble
+out []t: le tampon pour la différence
+renvoie cnt i64: le nombre d'éléments de la différence
+
+`
+  'set.init': `
+factory — construit un ensemble vide sur un tampon d'éléments fourni par l'appelant
+data []t: le tampon d'éléments (sa longueur est le plafond de capacité)
+renvoie s set: l'instance d'ensemble initialisée
+
+`
+  'set.intersection': `
+calcule l'intersection (éléments présents à la fois dans cet ensemble et dans other)
+le résultat est écrit dans le tampon out fourni par l'appelant et le nombre d'éléments est renvoyé
+other []t: le tampon d'éléments de l'autre ensemble
+osize i64: le nombre d'éléments de l'autre ensemble
+out []t: le tampon pour l'intersection
+renvoie cnt i64: le nombre d'éléments de l'intersection
+
+`
+  'set.is-empty': 'indique si l\'ensemble est vide'
+  'set.remove': `
+supprime un élément de l'ensemble
+remplit le trou avec le dernier élément (l'ordre n'est donc pas conservé)
+val t: l'élément à supprimer
+renvoie new-size i64: la nouvelle taille
+
+`
+  'set.size': 'renvoie la taille de l\'ensemble'
+  'set.to-vec': `
+convertit l'ensemble en tranche (sans ordre)
+renvoie out []t: la tranche d'éléments (longueur = size)
+
+`
+  'set.union': `
+calcule l'union (ajoute les éléments du tampon de other qui manquent à cet ensemble)
+other []t: le tampon d'éléments de l'autre ensemble
+osize i64: le nombre d'éléments de l'autre ensemble
+renvoie new-size i64: la taille après l'union
+
+`
+  'stack.stack.clear': 'Vide la pile'
+  'stack.stack.empty': `
+Indique si la pile est vide
+Renvoie true = vide, false = non vide
+
+`
+  'stack.stack.peek': `
+Consulte l'élément au sommet sans le retirer
+Renvoie val ?i64: ok = la valeur au sommet, nil = la pile est vide
+
+`
+  'stack.stack.pop': `
+Retire un élément du sommet de la pile
+Renvoie val ?i64: ok = la valeur retirée, nil = la pile est vide
+
+`
+  'stack.stack.push': 'Empile un élément sur le sommet de la pile'
+  'stack.stack.size': 'Renvoie la taille de la pile'
+  'static-hashmap.static-hashmap-bool-tmpl.clear': 'Vide la table'
+  'static-hashmap.static-hashmap-bool-tmpl.contains': 'Indique si une clé existe'
+  'static-hashmap.static-hashmap-bool-tmpl.for-each': 'Parcourt tous les couples (clé, valeur)'
+  'static-hashmap.static-hashmap-bool-tmpl.get': 'Recherche une clé et renvoie ?v (nil = introuvable)'
+  'static-hashmap.static-hashmap-bool-tmpl.hash': 'Indexation directe (true → 1, false → 0)'
+  'static-hashmap.static-hashmap-bool-tmpl.init': 'Initialise la table'
+  'static-hashmap.static-hashmap-bool-tmpl.is-empty': 'Si la table est vide'
+  'static-hashmap.static-hashmap-bool-tmpl.len': 'Renvoie le nombre d\'éléments'
+  'static-hashmap.static-hashmap-bool-tmpl.put': 'Insère ou met à jour key→value; renvoie s\'il a été inséré'
+  'static-hashmap.static-hashmap-bool-tmpl.remove': 'Supprime une clé (marque une pierre tombale)'
+  'static-hashmap.static-hashmap-int-tmpl.clear': 'Vide la table'
+  'static-hashmap.static-hashmap-int-tmpl.contains': 'Indique si une clé existe'
+  'static-hashmap.static-hashmap-int-tmpl.for-each': 'Parcourt tous les couples (clé, valeur)'
+  'static-hashmap.static-hashmap-int-tmpl.get': 'Recherche une clé et renvoie ?v (nil = introuvable)'
+  'static-hashmap.static-hashmap-int-tmpl.hash': 'Calcule l\'indice de seau (masque de bits)'
+  'static-hashmap.static-hashmap-int-tmpl.init': 'Initialise la table'
+  'static-hashmap.static-hashmap-int-tmpl.is-empty': 'Si la table est vide'
+  'static-hashmap.static-hashmap-int-tmpl.len': 'Renvoie le nombre d\'éléments'
+  'static-hashmap.static-hashmap-int-tmpl.put': 'Insère ou met à jour key→value; renvoie s\'il a été inséré'
+  'static-hashmap.static-hashmap-int-tmpl.remove': 'Supprime une clé (marque une pierre tombale)'
+  'static-hashmap.static-hashmap-str-tmpl.clear': 'Vide la table'
+  'static-hashmap.static-hashmap-str-tmpl.contains': 'Indique si une clé existe'
+  'static-hashmap.static-hashmap-str-tmpl.for-each': 'Parcourt tous les couples (clé, valeur)'
+  'static-hashmap.static-hashmap-str-tmpl.get': 'Recherche une clé et renvoie ?v (nil = introuvable)'
+  'static-hashmap.static-hashmap-str-tmpl.hash': 'Hachage de chaînes FNV-1a'
+  'static-hashmap.static-hashmap-str-tmpl.init': 'Initialise la table'
+  'static-hashmap.static-hashmap-str-tmpl.is-empty': 'Si la table est vide'
+  'static-hashmap.static-hashmap-str-tmpl.len': 'Renvoie le nombre d\'éléments'
+  'static-hashmap.static-hashmap-str-tmpl.put': 'Insère ou met à jour key→value; renvoie s\'il a été inséré'
+  'static-hashmap.static-hashmap-str-tmpl.remove': 'Supprime une clé (marque une pierre tombale)'
+  'static-hashmap.static-hashmap-str-tmpl.str-eq': 'Compare deux strs pour l\'égalité'
+  'str-map.str-map.clear': 'Vide la table'
+  'str-map.str-map.contains': 'Indique si une clé existe'
+  'str-map.str-map.for-each': 'Parcourt tous les couples (clé, valeur)'
+  'str-map.str-map.get': 'Recherche une clé et renvoie ?str (nil = introuvable)'
+  'str-map.str-map.hash': 'Hachage de chaînes FNV-1a'
+  'str-map.str-map.init': 'Initialise la table'
+  'str-map.str-map.is-empty': 'Si la table est vide'
+  'str-map.str-map.len': 'Renvoie le nombre d\'éléments'
+  'str-map.str-map.put': 'Insère ou met à jour key→value; renvoie s\'il a été inséré'
+  'str-map.str-map.remove': 'Supprime une clé'
+  'str-map.str-map.str-eq': 'Compare deux strs pour l\'égalité'
+  'str-map.str-map.to-str': `
+Une représentation sous forme de chaîne
+Formatée comme `{name: Alice, age: 18}`
+
+`
+  'str-set.str-set.add': 'Ajoute un élément; renvoie s\'il a été inséré'
+  'str-set.str-set.clear': 'Vide l\'ensemble'
+  'str-set.str-set.contains': 'Indique si un élément existe'
+  'str-set.str-set.for-each': 'Parcourt tous les éléments'
+  'str-set.str-set.hash': 'Hachage de chaînes FNV-1a'
+  'str-set.str-set.init': 'Initialise l\'ensemble'
+  'str-set.str-set.is-empty': 'Si l\'ensemble est vide'
+  'str-set.str-set.len': 'Renvoie le nombre d\'éléments'
+  'str-set.str-set.remove': 'Supprime un élément'
+  'str-set.str-set.str-eq': 'Compare deux strs pour l\'égalité'
+  'str._str-dig-val': 'convertit un caractère de chiffre unique (0-15) en sa valeur; un caractère invalide renvoie -1'
+  'str.at': `
+[obsolète] str.at: lecture indexée par caractère (point de code) — utilisez plutôt s[idx] (indexation native, renvoie ?char)
+str.at: accès indexé sûr (par indice de caractère; pour un décalage d'octet, utilisez s.byte(i))
+i i64: l'indice du caractère (point de code)
+renvoie val ?byte: la valeur du point de code de ce caractère (tronquée quand elle dépasse la plage d'un octet); nil hors bornes
+
+`
+  'str.bigint-bitlen': 'renvoie la longueur en bits d\'un bigint positif (floor(log2)+1)'
+  'str.byte': `
+renvoie la valeur d'octet brute au décalage d'OCTET i (une lecture d'octet brute)
+Contrairement à s[i]: s[i] indexe par point de code, alors que cette méthode prend un décalage d'octet dans le tampon UTF-8 sous-jacent.
+Renvoie ?byte: nil hors bornes (i < 0 ou i >= len-bytes()), conformément à la sémantique d'indexation sûre de arr[i]; l'appelant doit gérer l'option (match / ?= / #{index-out = DEF}).
+Géré par le compilateur comme builtin (#{buildin}): le codegen l'intercepte et développe une vérification de bornes plus GEP+load, il n'y a donc pas de corps de fonction std. La signature est aussi enregistrée dans BuiltinMethodList de src/builtin/str.go (MethodName "byte", Intercepted), et le repli par nom nu couvre à la fois str et txt.
+
+`
+  'str.byte-index': `
+convertit un indice de caractère (point de code) en décalage d'octet
+Renvoie la position d'octet où commence le cp-pos-ième point de code; quand cp-pos dépasse la fin, renvoie .len
+
+`
+  'str.compare': `
+compare deux chaînes lexicographiquement
+renvoie -1 (a<b), 0 (égal), 1 (a>b)
+
+`
+  'str.contains': `
+indique si s contient la sous-chaîne target
+renvoie true = contient, false = ne contient pas
+
+`
+  'str.copy': `
+copie src dans dst (la chaîne entière)
+⚠️ OBSOLÈTE: l'affectation `dst = src` a déjà une sémantique de copie — quand src est relu plus tard, l'analyse de propriété réécrit l'affectation en copie profonde (OpClone), une copie manuelle est donc inutile. Conservée uniquement pour compatibilité.
+
+`
+  'str.count': `
+compte les chars (points de code) d'une chaîne
+.len donne déjà le nombre d'octets, donc count fournit le nombre de points de code
+
+`
+  'str.cp-index': `
+convertit un décalage d'octet en indice de point de code (caractère)
+Renvoie le nombre de points de code dans s[0..byte-pos)
+
+`
+  'str.decode-cp': `
+décode un point de code UTF-8 à partir de la position i
+renvoie cp = la valeur du point de code, clen = la longueur de la séquence en octets (1-4)
+
+`
+  'str.empty': `
+indique si la chaîne est vide
+renvoie true = vide, false = non vide
+
+`
+  'str.ends-with': `
+indique si s se termine par target
+renvoie true = oui, false = non
+
+`
+  'str.eq-full': `
+compare deux chaînes pour une égalité exacte
+b str: l'autre chaîne
+renvoie yes bool: true = égales, false = différentes
+
+`
+  'str.eq-raw': `
+str.eq: compare les n premiers octets de deux chaînes
+renvoie true = égales, false = différentes
+
+`
+  'str.fields': `
+découpe la chaîne sur une ou plusieurs espaces blanches consécutives
+Espaces blanches: espace (32), tabulation (9), saut de ligne (10), retour chariot (13)
+renvoie out []str: les sous-chaînes non vides
+Des espaces blanches consécutives comptent pour un seul séparateur, et les espaces de début ou de fin ne produisent aucun élément vide
+
+`
+  'str.fill': 'remplit toute la chaîne avec une valeur d\'octet'
+  'str.find-byte-from': `
+str.index: recherche dans s la sous-chaîne target
+Utilise l'algorithme de Sunday, O(n/m) en moyenne et O(n*m) dans le pire cas
+Renvoie la position de la première occurrence, ou -1 si absente
+str.find-byte-from: la recherche interne au niveau des octets (algorithme de Sunday)
+Renvoie le décalage en OCTETS de la première occurrence de target, ou -1 si absente
+from-byte est la position d'octet de départ; utilisé en interne lors du découpage par octets, comme le fait split
+
+`
+  'str.from-hex': `
+décode une chaîne hexadécimale en []byte
+renvoie Option:
+ok(bytes) - succès
+nil        - chaîne vide
+err('msg') - contient un caractère hexadécimal invalide
+
+`
+  'str.index': `
+recherche dans s la sous-chaîne target
+Utilise l'algorithme de Sunday, O(n/m) en moyenne et O(n*m) dans le pire cas
+Renvoie la position en POINTS DE CODE (caractères) de la première occurrence, conformément à l'indexation par point de code de s[i]; -1 si absente
+
+`
+  'str.index-from': `
+recherche dans s la sous-chaîne target à partir de from (une position en points de code)
+Renvoie la position en POINTS DE CODE (caractères) de la première occurrence, ou -1 si absente
+
+`
+  'str.last-index': `
+recherche inverse de la dernière occurrence d'une sous-chaîne (last-index est un alias de rindex)
+target str: la sous-chaîne à chercher
+renvoie pos i64: la position en point de code (caractère) trouvée, ou -1
+
+`
+  'str.len': `
+renvoie le nombre de CARACTÈRES (points de code) de la chaîne
+Conforme à l'indexation par point de code de s[i]; pour un nombre d'octets, utilisez s.len-bytes()
+
+`
+  'str.lines': `
+découpe sur les sauts de ligne
+Prend en charge \n et \r\n
+renvoie out []str: la liste des lignes (un saut de ligne final ne produit pas de ligne vide)
+
+`
+  'str.new': `
+str.new: construit un str à partir d'une tranche de char (un constructeur au niveau du module)
+Un builtin de compilation (ForwardFunc: chars-new): []char est converti octet par octet en bytes et la longueur est fixée d'un coup, sans boucle .no par octet. str est un type builtin dont les octets et la longueur ne peuvent pas être manipulés depuis le code utilisateur, toute la conversion est donc émise en IR par le compilateur.
+
+`
+  'str.repeat': `
+répète la chaîne times fois
+renvoie une nouvelle chaîne
+
+`
+  'str.replace-char': `
+remplace chaque old-ch de s par new-ch (points de code UTF-8)
+renvoie la chaîne résultante
+
+`
+  'str.replace-n': `
+remplacement avec un nombre borné
+old str: l'ancienne sous-chaîne
+new str: la nouvelle sous-chaîne
+n i64: le nombre maximal de remplacements; n <= 0 ne remplace rien
+renvoie val str: la chaîne résultante
+
+`
+  'str.replace-str': `
+remplace chaque occurrence de la sous-chaîne old dans s par new
+old str: la sous-chaîne à remplacer
+new str: le remplacement
+renvoie val str: la chaîne résultante
+Quand old est la chaîne vide, renvoie une copie de la chaîne d'origine inchangée
+
+`
+  'str.reverse': `
+inverse la chaîne
+Écrit la s inversée dans val
+
+`
+  'str.rfind-byte-from': `
+la recherche inverse interne au niveau des octets
+Renvoie le décalage en OCTETS de la dernière occurrence de target (>= from-byte), ou -1 si absente
+
+`
+  'str.rindex': `
+recherche inverse de la dernière occurrence d'une sous-chaîne
+target str: la sous-chaîne à chercher
+renvoie pos i64: la position en point de code (caractère) trouvée, ou -1
+
+`
+  'str.rindex-from': `
+recherche inverse d'une sous-chaîne à partir de from (une position en points de code)
+Même sémantique que le rfind(target, from) de Python: cherche dans [from, .len) la dernière occurrence de target
+target str: la sous-chaîne à chercher
+from i64: la position de départ (borne inférieure incluse, en points de code)
+renvoie pos i64: la position en point de code (caractère) trouvée, ou -1
+
+`
+  'str.set-byte': 'Renvoie ?bool (l\'opération peut échouer): nil hors bornes (i < 0 ou i >= la capacité physique cap), et l\'écriture est IGNORÉE; some(true) en cas de succès. La borne est la cap de %str-long (capacité physique) et non len, donc la construction "remplir le tampon, puis fixer len" fonctionne toujours. Un appelant peut ignorer le ?bool en instruction nue (optunuse ne suit que les noms liés).'
+  'str.slice': `
+prend la sous-chaîne [start, end), avec des indices exprimés en positions de CARACTÈRE (point de code)
+Conforme à l'indexation par point de code de s[i]; pour découper par décalage d'octet, utilisez s.slice-bytes()
+
+`
+  'str.slice-bytes': `
+prend la sous-chaîne [start, end) par décalages d'OCTETS (utilisé en interne au niveau des octets)
+Conforme à la sémantique de s.byte(i); utilisé en interne quand le split/replace de std découpent par octets
+
+`
+  'str.split': `
+découpe la chaîne en sous-chaînes sur un séparateur
+sep str: le séparateur
+renvoie out []str: les sous-chaînes résultantes
+Un séparateur vide renvoie la chaîne entière comme élément unique
+Note: construit une tranche de résultat locale et l'affecte à out, contournant un bug du compilateur où out.push sur un paramètre de sortie ne prend pas effet
+
+`
+  'str.split-n': `
+découpage avec un nombre borné
+sep str: le séparateur
+maxsplit i64: le nombre maximal de découpages (produisant maxsplit+1 éléments); maxsplit <= 0 signifie illimité
+renvoie out []str: le résultat
+
+`
+  'str.starts-with': `
+indique si s commence par target
+renvoie true = oui, false = non
+
+`
+  'str.str-hex-val': 'convertit un caractère hexadécimal unique en sa valeur; un caractère invalide renvoie -1 (elle s\'appelait avant hex-val, ce qui entrait en collision avec uuid.hex-val et forçait une qualification inter-module, elle porte donc désormais le préfixe de module suivant la convention txt-hex-val)'
+  'str.to-bigint': `
+analyse une chaîne en bigint, en détectant la base automatiquement
+Préfixes 0b/0B -> binaire, 0o/0O -> octal, 0x/0X -> hexadécimal; sans préfixe -> décimal
+Accepte des espaces blancs de tête facultatifs et un signe (+ / -)
+renvoie ?bigint: ok(bigint) en cas de succès / nil pour une chaîne vide / err('msg') quand il n'y a pas de chiffres
+
+`
+  'str.to-bool': `
+analyse la chaîne "true" / "false" en bool
+Sensible à la casse; une chaîne vide -> nil, tout le reste -> err
+Utilise une comparaison octet par octet pour éviter les problèmes mémoire de strcmp entre appels de fonction
+
+`
+  'str.to-byte': `
+analyse la chaîne en byte (équivalent à u8)
+renvoie Option:
+ok(n) - succès (0 .. 255)
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe moins, ou est hors bornes
+
+`
+  'str.to-bytes': 'convertit la chaîne en tableau d\'octets'
+  'str.to-f32': `
+analyse la chaîne en f32
+renvoie Option:
+ok(f) - succès
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique
+Utilise l'implémentation Nolang de str-to-f64 plus f64-to-f32 (la dépendance à la CLibCall strtod a disparu)
+
+`
+  'str.to-f64': `
+analyse la chaîne en f64
+renvoie Option:
+ok(f) - succès
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique
+Analyse avec l'implémentation Nolang de str-to-f64 (la dépendance à la CLibCall strtod a disparu)
+
+`
+  'str.to-hex': `
+encode la chaîne en hexadécimal
+Chaque octet devient deux caractères hexadécimaux minuscules
+renvoie out str: la chaîne hexadécimale
+
+`
+  'str.to-i16': `
+analyse la chaîne en i16
+renvoie Option:
+ok(n) - succès (-32768 .. 32767)
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe +/- seul, ou est hors bornes
+
+`
+  'str.to-i32': `
+analyse la chaîne en i32
+renvoie Option:
+ok(n) - succès (-2147483648 .. 2147483647)
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe +/- seul, ou est hors bornes
+
+`
+  'str.to-i64': `
+analyse la chaîne en entier signé 64 bits
+renvoie Option:
+ok(n) - succès
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe +/- seul, ou est mal formée
+
+`
+  'str.to-i8': `
+analyse la chaîne en i8
+renvoie Option:
+ok(n) - succès (-128 .. 127)
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe +/- seul, ou est hors bornes
+
+`
+  'str.to-lower': `
+convertit la chaîne en minuscules
+renvoie une nouvelle chaîne
+
+`
+  'str.to-str': `
+Le modèle générique []t.to-str / [n]t.to-str appelle `.[i].to-str()` sur chaque élément; quand le type d'élément est str, on arrive ici. std n'avait aucune méthode de ce nom auparavant, donc `['a','b'].to-str()` échouait à la compilation avec `unknown callee str.to-str` (généré depuis le stub de transfert _xstr.to-str).
+str est immuable, se renvoyer soi-même suffit donc (sémantique de valeur: le tampon sous-jacent est partagé, pas copié).
+
+`
+  'str.to-txt': `
+convertit un str en txt (au plus 255 octets)
+renvoie out ?txt: ok(txt) / nil (plus long que 255 octets, ce qu'un txt ne peut pas contenir; il n'est plus tronqué silencieusement)
+
+`
+  'str.to-u16': `
+analyse la chaîne en u16
+renvoie Option:
+ok(n) - succès (0 .. 65535)
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe +/- seul, ou est hors bornes
+
+`
+  'str.to-u32': `
+analyse la chaîne en u32
+renvoie Option:
+ok(n) - succès (0 .. 4294967295)
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe +/- seul, ou est hors bornes
+
+`
+  'str.to-u64': `
+analyse la chaîne en u64
+Rejette le signe moins; le débordement de la plage i64 n'est pas vérifié (LLVM tronque automatiquement)
+
+`
+  'str.to-u8': `
+analyse la chaîne en u8
+renvoie Option:
+ok(n) - succès (0 .. 255)
+nil    - chaîne vide
+err('msg') - contient un caractère non numérique, un signe +/- seul, ou est hors bornes
+
+`
+  'str.to-upper': `
+convertit la chaîne en majuscules
+renvoie une nouvelle chaîne
+
+`
+  'str.trim': `
+supprime les espaces blancs de début et de fin de la chaîne
+renvoie une nouvelle chaîne
+
+`
+  'str.trim-char': 'supprime le caractère donné (point de code UTF-8) des deux extrémités de la chaîne'
+  'str.with-cap': `
+crée une nouvelle chaîne avec la capacité donnée (len=0)
+s = ''.with-cap(256)  -> une chaîne vide préallouant 256 octets
+Une méthode de commodité, équivalente au with-cap(cap) global
+
+`
+  'str.with-len': `
+crée une chaîne de la longueur donnée
+s = ''.with-len(10)  -> une chaîne de longueur 10
+Une méthode de commodité, équivalente au with-len(len) global
+
+`
+  'str.with-len-cap': `
+crée une chaîne avec la longueur et la capacité données
+s = ''.with-len-cap(10, 256)  -> une chaîne de longueur 10 et de capacité 256
+Une méthode de commodité, équivalente au with-cap-len(cap, len) global
+
+`
+  'strs.join': `
+[]str.join: joint tous les éléments d'une tranche de chaînes avec un séparateur
+sep str: le séparateur
+renvoie out str: la chaîne jointe
+
+`
+  'time.add-seconds': 'ajoute des secondes et renvoie un nouveau time'
+  'time.date': 'convertit en struct date (UTC, nsec ignoré)'
+  'time.date-to-unix': `
+convertit une struct date (UTC) en horodatage Unix (secondes)
+Utilise l'algorithme days-from-civil (Howard Hinnant)
+
+`
+  'time.days-in-month-fn': '_days-in-month: obtient le nombre de jours de l\'année et du mois donnés'
+  'time.duration-between': 'calcule la différence entre deux horodatages (secondes)'
+  'time.duration-ms-between': 'calcule la différence entre deux horodatages (millisecondes)'
+  'time.duration-time': 'calcule la différence entre deux valeurs de temps (secondes)'
+  'time.duration-us-between': 'calcule la différence entre deux horodatages (microsecondes)'
+  'time.format': 'formate comme \'YYYY-MM-DD HH:MM:SS\' (UTC, nsec ignoré)'
+  'time.format-date': `
+formate une struct date en chaîne
+Format: YYYY-MM-DD HH:MM:SS (une année négative reçoit le préfixe '-')
+
+`
+  'time.format-duration': `
+formate un nombre de secondes en chaîne lisible
+par ex. 3661 -> '1h1m1s'
+
+`
+  'time.format-time-str': `
+formate un horodatage Unix en chaîne lisible
+Format: YYYY-MM-DD HH:MM:SS (UTC)
+
+`
+  'time.is-leap': 'teste si une année est bissextile'
+  'time.now-date': 'obtient la struct date-heure courante (UTC)'
+  'time.now-ms': 'l\'horodatage Unix courant (millisecondes)'
+  'time.now-ns': 'l\'horodatage courant (nanosecondes)'
+  'time.now-s': `
+l'horodatage Unix courant (secondes)
+Enveloppe le builtin now()
+
+`
+  'time.now-time': `
+l'instant courant (UTC)
+Sépare sec et nsec à partir du builtin now-ns() (nanosecondes de CLOCK_REALTIME)
+
+`
+  'time.now-us': 'l\'horodatage Unix courant (microsecondes)'
+  'time.parse-date': `
+analyse une chaîne de date en horodatage Unix
+Formats acceptés: YYYY-MM-DD HH:MM:SS ou YYYY-MM-DD
+renvoie ?i64: ok = l'horodatage, nil = analyse échouée
+
+`
+  'time.parse-time': `
+analyse une chaîne de date en time
+Accepte les mêmes formats que parse-date: YYYY-MM-DD HH:MM:SS ou YYYY-MM-DD
+renvoie ?time: ok = le time, nil = analyse échouée
+
+`
+  'time.since-ms': 'millisecondes écoulées depuis start jusqu\'à maintenant'
+  'time.since-s': 'secondes écoulées depuis start jusqu\'à maintenant'
+  'time.since-time': 'secondes écoulées depuis start jusqu\'à maintenant'
+  'time.since-us': 'microsecondes écoulées depuis start jusqu\'à maintenant'
+  'time.sleep-ms': `
+dort le nombre de millisecondes donné
+Il n'y a pas de builtin correspondant, c'est donc implémenté comme sleep-us(ms * 1000)
+
+`
+  'time.sleep-ns': 'dort le nombre de nanosecondes donné'
+  'time.sleep-s': `
+dort le nombre de secondes donné
+Enveloppe le builtin sleep()
+
+`
+  'time.sleep-us': 'dort le nombre de microsecondes donné'
+  'time.sub': 'la différence avec un autre temps (secondes, . - other)'
+  'time.timer.elapsed-ms': 'millisecondes écoulées'
+  'time.timer.elapsed-s': 'secondes écoulées'
+  'time.timer.elapsed-us': 'microsecondes écoulées'
+  'time.timer.start': 'démarre le minuteur'
+  'time.timer.stop': 'arrête le minuteur'
+  'time.unix': 'obtient l\'horodatage Unix en secondes'
+  'time.unix-ms': 'obtient l\'horodatage Unix en millisecondes'
+  'time.unix-to-date': `
+convertit un horodatage Unix (secondes) en struct date (UTC)
+Utilise l'algorithme classique civil-from-days (Howard Hinnant)
+
+`
+  'time.unix-to-time': 'construit un time à partir d\'un horodatage Unix en secondes (nsec=0)'
+  'toml.get': `
+Renvoie le littéral TOML brut
+Les valeurs non converties, comme les tableaux et les dates/heures, sont accessibles ici.
+
+`
+  'toml.get-bool': 'Renvoie une valeur true/false'
+  'toml.get-f64': 'Renvoie un flottant (notation exponentielle prise en charge)'
+  'toml.get-i64': 'Renvoie un entier décimal (séparateurs par souligné TOML autorisés)'
+  'toml.get-str': 'Renvoie et décode une valeur chaîne'
+  'toml.has': 'Indique si une clé existe'
+  'toml.new': 'Crée un document TOML vide'
+  'toml.parse': 'Analyse un document TOML; renvoie err(message) en cas d\'échec'
+  'toml.stringify': `
+Sérialise le document avec la syntaxe TOML 1.0; les tableaux de tables sont restaurés comme en-têtes
+[[table]].
+
+`
+  'toml.toml-array-name': 'Lit le nom d\'un tableau de tables.'
+  'toml.toml-doc.put': `
+Fixe un littéral TOML brut.
+value peut être de la syntaxe TOML comme un tableau ou une date/heure; le module n'ajoutera pas de guillemets
+autour.
+
+`
+  'toml.toml-entry-key': 'Lit la clé canonique.'
+  'toml.toml-entry-key-eq': 'Compare la clé d\'une entrée avec une chaîne.'
+  'toml.toml-entry-value': 'Lit la valeur TOML brute.'
+  'toml.toml-find-eq': 'Trouve le premier signe égal qui n\'est pas entre guillemets'
+  'toml.toml-make-entry': 'Copie clé/valeur dans un tampon de taille fixe.'
+  'toml.toml-next-array-table': 'Renvoie et enregistre l\'indice suivant d\'un tableau de tables.'
+  'toml.toml-normalize-key': 'Analyse une clé nue, entre guillemets ou pointée et émet la clé pointée canonique.'
+  'toml.toml-parse-bool': 'Analyse un booléen'
+  'toml.toml-parse-f64': 'Analyse un flottant'
+  'toml.toml-parse-i64': 'Prend en charge les littéraux décimaux, hexadécimaux, octaux et binaires, ainsi que les séparateurs par souligné.'
+  'toml.toml-register-table': 'Enregistre une table définie; renvoie false quand elle est définie deux fois.'
+  'toml.toml-resolve-section': 'Résout une sous-table d\'un tableau de tables sur l\'élément le plus récent.'
+  'toml.toml-strip-comment': 'Supprime les commentaires # hors des chaînes et rogne; les chaînes multilignes sont prises en charge.'
+  'toml.toml-table-eq': 'Compare des noms de table conservés dans des tampons de taille fixe.'
+  'toml.toml-table-name': 'Lit un nom de table.'
+  'toml.toml-unquote': 'Décode une chaîne TOML basique ou littérale'
+  'toml.toml-valid-value': 'Accepte les scalaires, tableaux, tables en ligne et littéraux de date/heure de TOML 1.0.'
+  'toml.toml-value-complete': `
+Indique si une valeur est fermée; utilisé pour les tableaux multilignes, les tables en ligne et les chaînes
+multilignes.
+
+`
+  'tree-map.tree-map.alloc-node': `
+Alloue un nœud depuis le pool libre
+Renvoie idx i64: l'indice du nœud, ou -1 quand le pool est plein
+
+`
+  'tree-map.tree-map.bf': `
+Renvoie le facteur d'équilibre (hauteur gauche moins hauteur droite)
+idx i64: l'indice du nœud
+Renvoie b i64: le facteur d'équilibre
+
+`
+  'tree-map.tree-map.clear': 'Supprime tous les éléments et reconstruit le pool libre'
+  'tree-map.tree-map.contains': `
+Indique si une clé existe
+key i64: la clé
+Renvoie yes bool: true = présente, false = absente
+
+`
+  'tree-map.tree-map.empty': `
+Indique si l'arbre est vide
+Renvoie yes bool: true = vide, false = non vide
+
+`
+  'tree-map.tree-map.first': `
+Renvoie la plus petite clé
+Renvoie key ?i64: ok = la plus petite clé, nil = l'arbre est vide
+
+`
+  'tree-map.tree-map.for-each': `
+Parcourt tous les couples clé/valeur dans l'ordre croissant des clés
+k i64: la clé de sortie (mise à jour par élément)
+v i64: la valeur de sortie (mise à jour par élément)
+
+`
+  'tree-map.tree-map.free-node': `
+Renvoie un nœud au pool libre
+idx i64: l'indice du nœud à libérer
+
+`
+  'tree-map.tree-map.full': `
+Indique si le pool de nœuds est plein
+Renvoie yes bool: true = plein, false = non plein
+
+`
+  'tree-map.tree-map.get': `
+Recherche la valeur d'une clé
+key i64: la clé
+Renvoie val ?i64: ok = trouvé, nil = introuvable
+
+`
+  'tree-map.tree-map.ht': `
+Renvoie la hauteur du nœud (NIL = 0)
+idx i64: l'indice du nœud
+Renvoie h i64: la hauteur
+
+`
+  'tree-map.tree-map.init': 'Initialise un arbre vide et son pool de nœuds libres'
+  'tree-map.tree-map.last': `
+Renvoie la plus grande clé
+Renvoie key ?i64: ok = la plus grande clé, nil = l'arbre est vide
+
+`
+  'tree-map.tree-map.lower-bound': `
+Trouve la première clé >= target
+target i64: la clé cible
+Renvoie key ?i64: ok = trouvée, nil = aucune clé de ce type
+
+`
+  'tree-map.tree-map.put': `
+Insère ou met à jour key→value
+key i64: la clé
+val i64: la valeur
+Renvoie ok bool: true = inséré, false = une clé existante a été mise à jour ou le pool est plein
+
+`
+  'tree-map.tree-map.rebalance': `
+Vérifie et répare l'équilibre au nœud idx
+idx i64: l'indice du nœud
+Renvoie nr i64: l'indice de la racine du sous-arbre après rééquilibrage
+
+`
+  'tree-map.tree-map.rebalance-up': `
+Rééquilibre niveau par niveau vers le haut depuis idx
+idx i64: l'indice du nœud de départ
+
+`
+  'tree-map.tree-map.remove': `
+Supprime une clé
+key i64: la clé
+Renvoie ok bool: true = supprimée, false = introuvable
+
+`
+  'tree-map.tree-map.rot-left': `
+Rotation à gauche
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: le nœud pivot
+
+`
+  'tree-map.tree-map.rot-right': `
+Rotation à droite
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: le nœud pivot
+
+`
+  'tree-map.tree-map.size': `
+Renvoie le nombre d'éléments
+Renvoie sz i64: le nombre d'éléments
+
+`
+  'tree-map.tree-map.successor': `
+Trouve le successeur en ordre infixe d'un nœud
+idx i64: l'indice du nœud
+Renvoie succ i64: l'indice du successeur, ou -1 s'il n'y en a pas
+
+`
+  'tree-map.tree-map.update-ht': `
+Recalcule la hauteur du nœud
+idx i64: l'indice du nœud
+
+`
+  'tree-map.tree-map.upper-bound': `
+Trouve la première clé > target
+target i64: la clé cible
+Renvoie key ?i64: ok = trouvée, nil = aucune clé de ce type
+
+`
+  'tree-set.tree-set.add': `
+Ajoute un élément
+key i64: la valeur à ajouter
+Renvoie ok bool: true = inséré, false = déjà présent ou le pool est plein
+
+`
+  'tree-set.tree-set.alloc-node': `
+Alloue un nœud depuis le pool libre
+Renvoie idx i64: l'indice du nœud, ou -1 quand le pool est plein
+
+`
+  'tree-set.tree-set.bf': `
+Renvoie le facteur d'équilibre (hauteur gauche moins hauteur droite)
+idx i64: l'indice du nœud
+Renvoie b i64: le facteur d'équilibre
+
+`
+  'tree-set.tree-set.clear': 'Supprime tous les éléments et reconstruit le pool libre'
+  'tree-set.tree-set.contains': `
+Indique si une valeur est présente
+key i64: la valeur à vérifier
+Renvoie yes bool: true = présente, false = absente
+
+`
+  'tree-set.tree-set.empty': `
+Indique si l'ensemble est vide
+Renvoie yes bool: true = vide, false = non vide
+
+`
+  'tree-set.tree-set.first': `
+Renvoie la plus petite valeur
+Renvoie val ?i64: ok = la plus petite valeur, nil = l'ensemble est vide
+
+`
+  'tree-set.tree-set.for-each': `
+Parcourt tous les éléments par ordre croissant
+val i64: la valeur de sortie (mise à jour à chaque élément)
+
+`
+  'tree-set.tree-set.free-node': `
+Rend un nœud au pool libre
+idx i64: l'indice du nœud à libérer
+
+`
+  'tree-set.tree-set.full': `
+Indique si le pool de nœuds est plein
+Renvoie yes bool: true = plein, false = non plein
+
+`
+  'tree-set.tree-set.ht': `
+Renvoie la hauteur du nœud (NIL = 0)
+idx i64: l'indice du nœud
+Renvoie h i64: la hauteur
+
+`
+  'tree-set.tree-set.init': 'Initialise un arbre vide et son pool de nœuds libres'
+  'tree-set.tree-set.last': `
+Renvoie la plus grande valeur
+Renvoie val ?i64: ok = la plus grande valeur, nil = l'ensemble est vide
+
+`
+  'tree-set.tree-set.lower-bound': `
+Trouve le premier élément >= target
+target i64: la valeur cible
+Renvoie val ?i64: ok = trouvé, nil = aucun élément de ce type
+
+`
+  'tree-set.tree-set.rebalance': `
+Vérifie et répare l'équilibre au nœud idx
+idx i64: l'indice du nœud
+Renvoie nr i64: l'indice de la racine du sous-arbre après rééquilibrage
+
+`
+  'tree-set.tree-set.rebalance-up': `
+Rééquilibre niveau par niveau vers le haut depuis idx
+idx i64: l'indice du nœud de départ
+
+`
+  'tree-set.tree-set.remove': `
+Supprime un élément
+key i64: la valeur à supprimer
+Renvoie ok bool: true = supprimé, false = introuvable
+
+`
+  'tree-set.tree-set.rot-left': `
+Rotation à gauche
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: le nœud pivot
+
+`
+  'tree-set.tree-set.rot-right': `
+Rotation à droite
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: le nœud pivot
+
+`
+  'tree-set.tree-set.size': `
+Renvoie le nombre d'éléments
+Renvoie sz i64: le nombre d'éléments
+
+`
+  'tree-set.tree-set.successor': `
+Trouve le successeur en ordre infixe d'un nœud
+idx i64: l'indice du nœud
+Renvoie succ i64: l'indice du successeur, ou -1 s'il n'y en a pas
+
+`
+  'tree-set.tree-set.update-ht': `
+Recalcule la hauteur du nœud
+idx i64: l'indice du nœud
+
+`
+  'tree-set.tree-set.upper-bound': `
+Trouve le premier élément > target
+target i64: la valeur cible
+Renvoie val ?i64: ok = trouvé, nil = aucun élément de ce type
+
+`
+  'txt._txt-dig-val': 'convertit un caractère de chiffre unique (0-15) en sa valeur; un caractère invalide renvoie -1'
+  'txt.append': 'ajoute un octet (sans dépasser la limite de 255)'
+  'txt.append-str': 'ajoute un str (sans dépasser la limite de 255)'
+  'txt.append-txt': 'ajoute un txt (sans dépasser la limite de 255)'
+  'txt.at': `
+[obsolète] txt.at: lecture indexée par caractère (point de code) — utilisez plutôt t[idx] (indexation native, renvoie ?char)
+txt.at: obtient la valeur du point de code à une position de caractère (pour un décalage d'octet, utilisez t.byte(i))
+renvoie b ?byte: nil hors bornes; un point de code au-delà de la plage d'un octet est tronqué
+
+`
+  'txt.byte': `
+renvoie la valeur d'octet brute au décalage d'OCTET i (une lecture d'octet brute)
+À la différence de l'indexation par point de code de txt[i]; destiné au code qui construit le tampon octet par octet
+Renvoie ?byte: nil hors bornes (i < 0 ou i >= len-bytes()), et l'appelant doit gérer l'option
+Géré par le compilateur comme builtin (#{buildin}): le codegen l'intercepte et développe une vérification de bornes plus GEP+load, sans
+corps de fonction std; la signature est enregistrée dans BuiltinMethodList de src/builtin/str.go
+(Intercepted, partageant une entrée avec str.byte via le repli par nom nu)
+
+`
+  'txt.clear': 'vide le texte (len=0)'
+  'txt.compare': `
+comparaison lexicographique
+renvoie -1 (a<b), 0 (égal), 1 (a>b)
+
+`
+  'txt.contains': 'indique si la sous-chaîne est présente'
+  'txt.copy': `
+copie un txt
+⚠️ OBSOLÈTE: l'affectation `a = b` a déjà une sémantique de copie — txt est un type valeur (un tampon inline
+de 256 octets sur la pile, data[255] + len), l'affectation copie donc octet par octet. Utilisez une simple affectation; ceci n'est conservé que pour compatibilité.
+
+`
+  'txt.count': 'compte les points de code'
+  'txt.decode-cp': `
+décode un point de code UTF-8 à partir de la position i
+renvoie cp = la valeur du point de code, clen = la longueur de la séquence en octets (1-4)
+
+`
+  'txt.empty': 'indique s\'il est vide'
+  'txt.ends-with': 'indique s\'il se termine par le suffixe donné'
+  'txt.eq': `
+compare deux valeurs txt pour l'égalité
+⚠️ réécrit le 2026-09-21. L'ancienne implémentation utilisait une seule pipeline `->` (`.byte(k) - b.byte(k); c != 0 -> ok = 0;
+k == an - 1 -> ok == 0 -> eq = false; k = k + 1`) qui ne décidait qu'au DERNIER octet,
+si bien que `t('hello').eq('world')` — même longueur, contenu différent — renvoyait toujours true.
+La ligne `neq:` de tests/txt.no imprimait 1 depuis le début et a été figée dans la référence golden.
+txt.compare compare déjà octet par octet et branche correctement sur une longueur différente, on peut donc simplement la réutiliser.
+
+`
+  'txt.eq-full': 'égalité exacte de deux valeurs txt (longueur plus comparaison octet par octet)'
+  'txt.fields': 'découpe sur les espaces blanches en []txt (des espaces blanches consécutives comptent pour un seul séparateur)'
+  'txt.fill': 'remplit toute la zone de données avec une valeur d\'octet'
+  'txt.from-bytes': `
+crée un txt à partir d'un []byte (tronqué à 255 octets)
+renvoie un txt, tronqué quand le []byte dépasse 255 octets
+
+`
+  'txt.from-chars': `
+construit un nouveau txt à partir d'une tranche de char (écrit point de code par point de code, encodé en UTF-8; tout ce qui dépasse 255 octets est abandonné)
+⚠️ impossible d'écrire les points de code un par un avec `val[i]: { ok -> it = cs[i] }`: la place-match de D9 est conditionnée par une
+LECTURE, et lire `val[0]` sur un txt neuf de len=0 sort des bornes et renvoie nil, l'arm ok ne s'exécute donc jamais et
+la fonction entière renvoie une chaîne vide (txt.from-chars perdait silencieusement des données à cause de cela).
+txt.new (ForwardFunc: chars-new) existe précisément pour cela: il écrit tous les points de code d'un coup et fixe la longueur en octets.
+
+`
+  'txt.from-hex': `
+décode un texte hexadécimal en txt
+renvoie Option: ok(txt) / nil (vide) / err('msg')
+
+`
+  'txt.from-str': `
+crée un txt à partir d'un str (tronqué à 255 octets)
+renvoie un txt, tronqué quand le str dépasse 255 octets
+
+`
+  'txt.index': 'trouve la position d\'une sous-chaîne (en partant de 0)'
+  'txt.index-from': `
+recherche une sous-chaîne à partir de from
+Renvoie la position de la première occurrence, ou -1 si absente
+
+`
+  'txt.join': `
+[]txt.join: joint une tranche de txt avec un séparateur (tronqué au-delà de 255 octets)
+sep txt: le séparateur
+renvoie out txt: le résultat joint
+
+`
+  'txt.last-index': 'un alias de rindex'
+  'txt.len': 'renvoie le nombre de caractères (points de code), aligné sur str.len; pour la longueur en octets, utilisez txt.len-bytes()'
+  'txt.lines': 'découpe sur les sauts de ligne en []txt (prend en charge \\n et \\r\\n)'
+  'txt.new': `
+txt.new: construit un txt à partir d'une tranche de char (un constructeur au niveau du module renvoyant un txt concret)
+Un builtin de compilation (ForwardFunc: chars-new): []char est converti octet par octet en bytes et la longueur est écrite d'un coup,
+sans boucle .no par octet. txt est un type builtin dont les octets et la longueur ne peuvent pas être manipulés depuis le code utilisateur, toute la conversion est donc émise en IR par le compilateur.
+Tout ce qui dépasse 255 octets est abandonné automatiquement (l'octet de longueur est borné à 255).
+
+`
+  'txt.repeat': `
+répète le contenu times fois (plafonné à 255 octets)
+renvoie un nouveau txt
+
+`
+  'txt.replace-char': `
+remplace chaque old-ch par new-ch (points de code UTF-8)
+renvoie un nouveau txt (tronqué au-delà de 255 octets)
+
+`
+  'txt.replace-n': `
+remplacement avec un nombre borné
+old txt, new txt, n i64: le nombre maximal de remplacements (n<=0 ne remplace rien)
+
+`
+  'txt.replace-str': `
+remplace chaque occurrence de la sous-chaîne old par new
+renvoie un nouveau txt (tronqué au-delà de 255 octets)
+
+`
+  'txt.reverse': 'inverse le contenu du texte'
+  'txt.rindex': `
+recherche inverse de la dernière occurrence d'une sous-chaîne
+renvoie la position, ou -1 si absente
+
+`
+  'txt.rindex-from': 'recherche inverse d\'une sous-chaîne à partir de from (renvoie la dernière occurrence à une position >= from)'
+  'txt.set-byte': `
+Renvoie ?bool (peut échouer): nil hors bornes (i < 0 ou i >= la capacité physique de 255 octets), et l'écriture est IGNORÉE;
+some(true) en cas de succès. La borne est la capacité physique (un txt est un tampon fixe de 255 octets) plutôt que
+len, de sorte que la construction « remplir le tampon, puis fixer len » (fill / from-str / to-hex / join) fonctionne toujours.
+Un appelant peut ignorer le ?bool en instruction nue (optunuse ne couvre que les noms liés).
+
+`
+  'txt.slice': 'prend la sous-chaîne [start, end) et renvoie un nouveau txt'
+  'txt.split': 'découpe sur un séparateur en []txt'
+  'txt.split-n': `
+découpage avec un nombre borné
+sep txt, maxsplit i64: le nombre maximal de découpages (<=0 signifie illimité)
+
+`
+  'txt.starts-with': 'indique s\'il commence par le préfixe donné'
+  'txt.to-bigint': `
+analyse le texte en bigint, en détectant la base automatiquement
+Préfixes 0b/0B -> binaire, 0o/0O -> octal, 0x/0X -> hexadécimal; sans préfixe -> décimal
+Accepte des espaces blanches de début facultatives et un signe (+ / -)
+renvoie ?bigint: ok(bigint) en cas de succès / nil pour une chaîne vide / err('msg') quand il n'y a aucun chiffre
+
+`
+  'txt.to-bool': 'analyse "true"/"false" en bool'
+  'txt.to-byte': 'analyse en byte (équivalent à u8)'
+  'txt.to-bytes': 'convertit un txt en []byte'
+  'txt.to-f32': 'analyse le texte en f32'
+  'txt.to-f64': `
+analyse le texte en f64 (renvoie ?f64; chaîne vide -> nil, non numérique -> err)
+Réutilise l'analyse de str (convertir en str d'abord, puis appeler str.to-f64)
+
+`
+  'txt.to-hex': 'convertit un txt en chaîne hexadécimale'
+  'txt.to-i16': 'analyse en i16 (plage -32768 à 32767)'
+  'txt.to-i32': 'analyse en i32 (plage -2147483648 à 2147483647)'
+  'txt.to-i64': `
+analyse le texte en entier signé 64 bits
+renvoie Option: ok(n) / nil (vide) / err('msg')
+
+`
+  'txt.to-i8': 'analyse en i8 (plage -128 à 127)'
+  'txt.to-lower': `
+convertit le texte en minuscules (ASCII)
+renvoie un nouveau txt
+
+`
+  'txt.to-str': 'convertit un txt en str'
+  'txt.to-u16': 'analyse en u16 (plage 0 à 65535)'
+  'txt.to-u32': 'analyse en u32 (plage 0 à 4294967295)'
+  'txt.to-u64': 'analyse en u64 (rejette le signe moins)'
+  'txt.to-u8': 'analyse en u8 (plage 0 à 255)'
+  'txt.to-upper': `
+convertit le texte en majuscules (ASCII)
+renvoie un nouveau txt
+
+`
+  'txt.trim': `
+supprime les espaces blanches de début et de fin
+renvoie un nouveau txt
+
+`
+  'txt.trim-char': `
+supprime le caractère donné (point de code UTF-8) des deux extrémités
+renvoie un nouveau txt
+
+`
+  'txt.truncate': 'tronque à la longueur donnée'
+  'txt.txt-hex-val': 'convertit un caractère hexadécimal unique en sa valeur (un caractère invalide renvoie -1)'
+  'uuid.cmp': 'Compare deux UUID lexicographiquement'
+  'uuid.eq': 'Indique si deux UUID sont égaux'
+  'uuid.from-str': `
+Analyse un UUID à partir d'une chaîne
+Accepte la forme avec traits d'union (36 caractères) et la forme simple (32 caractères)
+s str: la chaîne UUID
+out uuid: l'UUID résultant
+Renvoie ok bool: true = analyse réussie
+
+`
+  'uuid.hex-byte': 'Écrit un octet sous forme de deux caractères hexadécimaux à la position pos de out'
+  'uuid.hex-byte-upper': 'Écrit un octet en hexadécimal majuscule'
+  'uuid.hex-val': 'Convertit un caractère hexadécimal unique en sa valeur'
+  'uuid.is-nil': 'Indique s\'il s\'agit de l\'UUID nil (tout à zéro)'
+  'uuid.new-v4': `
+Génère un UUID v4 aléatoire
+state: l'état xorshift32 (entrée/sortie; l'initialiser avec une valeur non nulle)
+
+`
+  'uuid.nil-uuid': 'Construit l\'UUID nil (tout à zéro)'
+  'uuid.parse-hex-byte': 'Analyse deux caractères hexadécimaux d\'une chaîne en un octet'
+  'uuid.parse-no-dashes': 'Analyse un UUID sans traits d\'union'
+  'uuid.parse-with-dashes': 'Analyse un UUID avec traits d\'union'
+  'uuid.to-str': `
+Formate un UUID en chaîne standard
+Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (minuscules)
+Renvoie out str: la chaîne UUID
+
+`
+  'uuid.to-str-upper': `
+Formate un UUID en chaîne majuscule
+Renvoie out str: la chaîne UUID majuscule
+
+`
+  'uuid.validate': 'Valide le format d\'un UUID'
+  'uuid.variant': 'Renvoie la variante de l\'UUID'
+  'uuid.version': 'Renvoie la version de l\'UUID'
+  'vec.at': `
+[]t.at: accès indexé sûr; nil hors bornes
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+
+`
+  'vec.clone': '[]t.clone: copie la tranche'
+  'vec.contains': `
+[]t.contains: indique si la valeur val est présente
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+Remarque: la borne du range-for doit utiliser len (le champ .len), et non la variable locale sz, sinon le compilateur émet une condition de boucle erronée i < 0 et la boucle ne s'exécute jamais
+
+`
+  'vec.eq': `
+[]t.eq: compare deux tranches pour l'égalité
+renvoie true = égales, false = différentes
+
+`
+  'vec.extend': `
+[]t.extend: ajoute tous les éléments d'une autre tranche
+Remarque: la logique de push est intégrée sur place pour contourner un bug LLVM préexistant sur l'appel à .push() depuis l'intérieur d'une méthode.
+L'appelant doit garantir une capacité suffisante.
+
+`
+  'vec.fill': '[]t.fill: remplit avec val'
+  'vec.first': `
+[]t.first: le premier élément; une tranche vide renvoie nil
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+
+`
+  'vec.index-of': `
+[]t.index-of: renvoie l'indice d'une valeur, ou -1
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+Remarque: la borne du range-for doit utiliser len (le champ .len), et non la variable locale sz
+
+`
+  'vec.insert': `
+[]t.insert: insère val à la position i
+i >= .len() se comporte comme un push
+Remarque: la logique de push est intégrée sur place (.len = cur + 1; .[cur] = val) pour contourner un bug LLVM préexistant
+(_LB__RB_t.push undefined) déclenché par un appel à .push() dans une méthode. L'appelant doit garantir une capacité suffisante.
+
+`
+  'vec.last': `
+[]t.last: le dernier élément; une tranche vide renvoie nil
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+
+`
+  'vec.len': '[]t.len: renvoie la longueur de la tranche'
+  'vec.max': `
+[]t.max: la valeur maximale; une tranche vide renvoie nil
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+Remarque: la borne du range-for doit utiliser len (le champ .len), et non la variable locale sz
+
+`
+  'vec.min': `
+[]t.min: la valeur minimale; une tranche vide renvoie nil
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+Remarque: la borne du range-for doit utiliser len (le champ .len), et non la variable locale sz
+
+`
+  'vec.pop': `
+[]t.pop: retire l'élément en fin de tranche
+Une tranche vide renvoie nil
+
+`
+  'vec.remove': `
+[]t.remove: retire l'élément à la position i et le renvoie
+Hors bornes renvoie nil
+
+`
+  'vec.reverse': '[]t.reverse: inverse sur place'
+  'vec.sum': `
+[]t.sum: la somme
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+Remarque: la borne du range-for doit utiliser len (le champ .len), et non la variable locale sz
+
+`
+  'vec.swap': `
+[]t.swap: échange les éléments de deux positions
+Remarque: sz = .len() force le type self vec, pour que la méthode ne soit pas spécialisée par erreur en méthode arr
+
+`
+  'vec.to-arr': '[]t.to-arr: une méthode de tranche qui convertit en tableau [n]t'
+  'vec.to-str': `
+[]t.to-str: la forme chaîne
+Formatée comme '[1, 2, 3]'
+Les éléments sont convertis en chaîne en appelant leur propre .to-str() (voir number.no pour les types concrets)
+
+`
+  'vec.truncate': '[]t.truncate: tronque à cnt éléments; cnt < 0 est traité comme 0, et cnt >= .len ne fait rien'
+  'vec.vec-clear': `
+[]t.clear: vide la tranche (met la longueur à 0 sur place)
+Ne libère pas le tas et ne réduit pas la capacité, le pointeur de données reste donc inchangé
+Seule une écriture de contenu nouveau de longueur non nulle passe par la logique de croissance
+
+`
+  'vec.vec-push': `
+[]t.push: ajoute un élément en fin de tranche (croissance automatique)
+Politique de croissance:
+cap == 0 -> new-cap = 4
+cap < 1024 -> new-cap = cap * 2
+cap >= 1024 -> new-cap = cap * 5 / 4
+
+`
+  'yaml.anchor': 'Le nom d\'ancre du nœud courant'
+  'yaml.at': 'Renvoie un élément de séquence, ou la i-ème valeur d\'un mapping'
+  'yaml.bool': 'Renvoie une valeur booléenne'
+  'yaml.doc': `
+Renvoie le i-ème document
+Remarque: la vue du nœud enfant est renvoyée en ?yaml pour que l'appelant puisse la déballer avec match.
+
+`
+  'yaml.doc-count': 'Le nombre de documents'
+  'yaml.error': `
+L'erreur d'analyse de ce document (toujours une chaîne vide quand l'analyse a réussi)
+Remarque: en cas d'échec, yaml.parse renvoie err et il n'y a aucune valeur yaml à inspecter; utilisez
+yaml.error-of(source) pour obtenir la raison.
+
+`
+  'yaml.error-of': 'Analyse le texte source et renvoie le message d\'erreur (une chaîne vide en cas de succès)'
+  'yaml.f64': 'Renvoie une valeur flottante'
+  'yaml.find': 'Cherche un chemin pointé (les éléments de séquence peuvent être indexés numériquement)'
+  'yaml.find-bool': 'Lit un booléen à un chemin'
+  'yaml.find-f64': 'Lit un flottant à un chemin'
+  'yaml.find-i64': 'Lit un entier à un chemin'
+  'yaml.find-str': 'Lit une chaîne à un chemin'
+  'yaml.get': 'Renvoie la valeur d\'un mapping par clé scalaire'
+  'yaml.get-bool': 'Lit un booléen par clé scalaire'
+  'yaml.get-f64': 'Lit un flottant par clé scalaire'
+  'yaml.get-i64': 'Lit un entier par clé scalaire'
+  'yaml.get-str': 'Lit une chaîne par clé scalaire'
+  'yaml.i64': 'Renvoie une valeur entière'
+  'yaml.is-bool': 'Indique si le nœud est un booléen'
+  'yaml.is-int': 'Indique si le nœud est un entier'
+  'yaml.is-map': 'Indique si le nœud est un mapping'
+  'yaml.is-nan': `
+yaml.is-float: indique si le nœud est un flottant
+Indique si le nœud courant est .nan
+
+`
+  'yaml.is-null': 'Indique si le nœud est null'
+  'yaml.is-num': 'Indique si le nœud est numérique'
+  'yaml.is-seq': 'Indique si le nœud est une séquence'
+  'yaml.is-str': 'Indique si le nœud est une chaîne'
+  'yaml.key': 'Renvoie le texte de la i-ème clé d\'un mapping'
+  'yaml.key-node': 'Renvoie le i-ème nœud clé d\'un mapping'
+  'yaml.kind': 'Le genre du nœud courant'
+  'yaml.len': 'Le nombre d\'éléments de séquence ou d\'entrées de mapping'
+  'yaml.line-of': 'La ligne de début du nœud courant'
+  'yaml.node-count': 'Le nombre total de nœuds'
+  'yaml.parse': `
+Analyse un texte YAML et renvoie le premier document
+Renvoie ok(yaml) ou err(message)
+
+`
+  'yaml.parse-all': 'Analyse tous les documents'
+  'yaml.scalar-text': 'Le texte scalaire du nœud courant (un conteneur renvoie ok=false)'
+  'yaml.source-of': 'Le texte d\'entrée d\'origine'
+  'yaml.str': 'Renvoie une valeur chaîne (les nombres et les booléens renvoient leur texte source)'
+  'yaml.stringify': 'Alias de to-yaml'
+  'yaml.strip-bom': 'Supprime un BOM UTF-8 en tête'
+  'yaml.style': 'Le style du nœud courant'
+  'yaml.tag': 'Le tag explicite du nœud courant'
+  'yaml.text': 'Le texte scalaire brut du nœud courant'
+  'yaml.to-json': 'Convertit le document courant en JSON'
+  'yaml.to-json-all': 'Convertit tous les documents en un tableau JSON'
+  'yaml.to-yaml': 'Ré-émet le document courant en YAML'
+  'yaml.valid': 'Indique si ce document a été analysé avec succès (obtenir une valeur yaml signifie un succès)'
+  'yaml.valid-of': 'Indique si le texte source peut être analysé (aucun document n\'est construit)'
+  'yaml.value': 'Renvoie le nœud valeur de la i-ème clé d\'un mapping'
+  'yaml.yaml-apply-tag': 'Choisit le genre du nœud à partir du tag explicite'
+  'yaml.yaml-emit': 'Émet un nœud en YAML style bloc (sans saut de ligne final)'
+  'yaml.yaml-f-is-inf': `
+Pas de comparaison littérale: les littéraux numériques Nolang ne prennent pas en charge les exposants (`1e308` est découpé
+en `1` et `e308`). L'infini est détecté comme non nul et inchangé après division par deux; NaN est
+écarté d'abord avec `x != x`.
+
+`
+  'yaml.yaml-f-is-nan': 'Indique si un flottant est NaN (NaN != NaN)\n`float.is-nan` n\'est pas utilisé: les appels de style récepteur à l\'intérieur du module ne sont pas résolus par le\nbackend MIR.\n'
+  'yaml.yaml-hex-char': 'Convertit un chiffre hexadécimal unique (0-15) en son caractère'
+  'yaml.yaml-hex-digit': 'Convertit un caractère hexadécimal en sa valeur; -1 quand il n\'est pas hexadécimal'
+  'yaml.yaml-inf': 'Infini positif'
+  'yaml.yaml-json-escape': 'Échappe une chaîne JSON'
+  'yaml.yaml-json-of': 'Convertit un nœud en JSON'
+  'yaml.yaml-key-eq': 'Indique si deux nœuds clé sont équivalents (compare le texte scalaire)'
+  'yaml.yaml-key-text-eq': 'Indique si le texte de la clé scalaire est égal à la chaîne donnée'
+  'yaml.yaml-nan': `
+Une division à l'exécution est nécessaire: le pliage de constantes à la compilation évalue `0.0 / 0.0` à 0.
+Passer par une variable locale évite le pliage et produit un vrai NaN (`x != x` est vrai).
+
+`
+  'yaml.yaml-node-is-nan': `
+Le fval de `.nan` est rempli d'un vrai NaN par yaml-nan(), il est donc détecté par valeur
+(NaN != NaN). Vérifier le texte brut du nœud est le repli: des chemins comme la réécriture de tags peuvent
+changer le texte sans recalculer fval.
+
+`
+  'yaml.yaml-parse-radix': 'Analyse un entier en base donnée (les soulignés sont ignorés)'
+  'yaml.yaml-parser.advance': 'Avance d\'un octet'
+  'yaml.yaml-parser.anchor-id': 'Cherche une ancre; -1 quand elle est introuvable'
+  'yaml.yaml-parser.at': 'L\'octet au décalage k depuis la position courante'
+  'yaml.yaml-parser.at-doc-marker': 'Indique si la position courante contient --- (1) ou ... (2)'
+  'yaml.yaml-parser.at-eol': 'Indique si la position est en fin de ligne (EOF compris)'
+  'yaml.yaml-parser.byte-at': 'Renvoie src[i], ou 0 hors bornes'
+  'yaml.yaml-parser.cur': 'L\'octet courant'
+  'yaml.yaml-parser.eof': 'Indique si la fin de l\'entrée est atteinte'
+  'yaml.yaml-parser.fail': 'Enregistre une erreur d\'analyse'
+  'yaml.yaml-parser.fail-at': 'Enregistre une erreur d\'analyse avec une position'
+  'yaml.yaml-parser.indent-at': `
+Ignore les espaces de tête avant de compter: presque tous les sites d'appel suivent skip-blank-lines(), et
+pos se trouve alors au début d'une ligne (colonne 0). Soustraire directement donnerait toujours
+0 et les blocs imbriqués seraient jugés non indentés. Après le saut, pos se trouve sur le premier
+caractère non espace, dont les vérifications suivantes is-seq-dash / looks-like-map-entry / at-doc-marker
+ont aussi besoin.
+
+`
+  'yaml.yaml-parser.is-seq-dash': 'Indique si la position courante contient l\'indicateur d\'élément de séquence \'- \''
+  'yaml.yaml-parser.line-end-of': 'Renvoie le décalage de fin de ligne de la ligne contenant i (pointant sur le saut de ligne ou n)'
+  'yaml.yaml-parser.line-start-of': 'Renvoie le décalage de début de la ligne contenant i'
+  'yaml.yaml-parser.looks-like-map-entry': 'Indique si cette ligne comporte un \': \' de premier niveau, un \':\' final, ou une clé explicite \'? \''
+  'yaml.yaml-parser.merge-into': 'Traite la clé de fusion << (un mapping ou une séquence de mappings)'
+  'yaml.yaml-parser.merge-one': `
+Fusionne les entrées d'un mapping dans keys/vals (les clés existantes ne sont pas écrasées)
+Remarque: le backend MIR interdit de déplacer directement un vec d'entrée dans un autre vec (protection
+des emprunts et de la propriété), les éléments sont donc copiés un par un au lieu d'écrire ok-keys = keys.
+
+`
+  'yaml.yaml-parser.newline': 'Consomme un saut de ligne (\\n ou \\r\\n)'
+  'yaml.yaml-parser.parse-alias': 'Analyse l\'alias *name'
+  'yaml.yaml-parser.parse-block': 'Analyse un nœud en contexte bloc (la position courante est la colonne de début du nœud)'
+  'yaml.yaml-parser.parse-block-indented': 'Analyse les lignes suivantes, plus profondément indentées, comme valeur'
+  'yaml.yaml-parser.parse-block-map': 'Analyse un mapping bloc'
+  'yaml.yaml-parser.parse-block-scalar': 'Analyse les scalaires bloc | et >'
+  'yaml.yaml-parser.parse-block-seq': 'Analyse une séquence bloc'
+  'yaml.yaml-parser.parse-docs': 'Analyse tous les documents'
+  'yaml.yaml-parser.parse-document': 'Analyse un document et renvoie l\'indice du nœud racine'
+  'yaml.yaml-parser.parse-double': 'Analyse un scalaire entre guillemets doubles'
+  'yaml.yaml-parser.parse-flow-map': 'Analyse {k: v, ...}'
+  'yaml.yaml-parser.parse-flow-node': 'Analyse un nœud en contexte flux'
+  'yaml.yaml-parser.parse-flow-seq': 'Analyse [a, b, ...]'
+  'yaml.yaml-parser.parse-plain': 'Analyse un scalaire nu (y compris le repli sur plusieurs lignes)'
+  'yaml.yaml-parser.parse-props': 'Analyse l\'ancre et le tag de tête d\'un nœud (dans n\'importe quel ordre)'
+  'yaml.yaml-parser.parse-single': 'Analyse un scalaire entre guillemets simples'
+  'yaml.yaml-parser.push-node': 'Ajoute un nœud et renvoie son indice'
+  'yaml.yaml-parser.push-null': 'Ajoute un nœud null'
+  'yaml.yaml-parser.push-scalar': 'Construit un nœud scalaire à partir de son style et de son tag'
+  'yaml.yaml-parser.read-line-content': 'Lit de la position courante jusqu\'à la fin de ligne (espaces de fin et commentaires retirés)'
+  'yaml.yaml-parser.read-tag': 'Lit un tag (!!name, !name, !<verbatim>, ou !)'
+  'yaml.yaml-parser.read-token': 'Lit un jeton nu ne contenant aucun séparateur'
+  'yaml.yaml-parser.register-anchor': 'Enregistre une ancre'
+  'yaml.yaml-parser.set-props': 'Attache un tag et une ancre à un nœud (et enregistre l\'ancre)'
+  'yaml.yaml-parser.skip-blank-lines': 'Saute les lignes vides et les commentaires de ligne entière, en s\'arrêtant au début de la ligne de contenu suivante'
+  'yaml.yaml-parser.skip-doc-preamble': 'Saute les lignes vides, les commentaires et les lignes de directive'
+  'yaml.yaml-parser.skip-flow-ws': 'Espaces blancs en contexte flux: espaces en ligne, sauts de ligne et commentaires'
+  'yaml.yaml-parser.skip-spaces': 'Saute les espaces et tabulations en ligne'
+  'yaml.yaml-parser.skip-to-doc-boundary': 'Saute le reste du document courant, en s\'arrêtant au --- suivant ou à la fin de l\'entrée'
+  'yaml.yaml-parser.skip-to-eol': 'Saute les espaces de fin et les commentaires de ligne (le saut de ligne n\'est pas consommé)'
+  'yaml.yaml-plain-safe': 'Indique si le texte peut être émis tel quel comme scalaire nu'
+  'yaml.yaml-quote': 'Émet un scalaire YAML entre guillemets doubles'
+  'yaml.yaml-resolve-plain': 'Déduit le genre du scalaire nu avec le schéma core'
+  'yaml.yaml-scalar-repr': 'La représentation YAML d\'un scalaire'
+  'yaml.yaml-scan-number': `
+Tente d'analyser le texte comme entier ou flottant
+Renvoie kind = YAML-KIND-INT, YAML-KIND-FLOAT, ou YAML-KIND-STR (pas un nombre)
+
+`
+  'yaml.yaml-spaces': 'Produit n espaces'
+  'yaml.yaml-str-at': `
+Pourquoi cet utilitaire existe: `arr[i]` (avec arr un []str) renvoie option<str> par défaut, et le
+backend MIR produit de l'IR illégal quand un option<str> sert d'argument d'appel ou de récepteur
+de méthode (%option_str ne correspond pas à %str-long). La concaténation de chaînes déballe l'option
+automatiquement, l'élément est donc récupéré avec `out = out - a[i]`, ce qui le déballe et
+satisfait la vérification de bornes de `no vet`.
+
+`
+  'yaml.yaml-tag-name': 'Normalise un nom de tag (!!str et tag:yaml.org,2002:str deviennent tous deux str)'
+  'yaml.yaml-to-f64': 'Convertit du texte en f64 (nil signifie un échec)'
+  'yaml.yaml-to-i64': 'Convertit du texte en i64; -1 en cas d\'échec'
+  'yaml.yaml-unescape-double': 'Traite les séquences d\'échappement entre guillemets doubles'
+}

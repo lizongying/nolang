@@ -9,6 +9,8 @@ data {
 }
 
 ; Bug: creating local struct then passing to another function — crash
+; raw str: 原始記錄字串 '100644 file1.txt\0<20 bytes>'
+; s str: 空格之後、NUL 之前的子串，預期 'file1.txt'
 pass-struct = (raw str) (s str) {
     t = data {
         raw: raw
@@ -18,6 +20,8 @@ pass-struct = (raw str) (s str) {
 }
 
 ; Access struct field and do str-range — previously crashed
+; t data: 帶 raw 與 n 的結構體；本測試 raw 同上、n 固定為 5
+; s str: t.raw 中空格之後的子串（拷貝，不可指向結構體的堆）
 use-struct = (t data) (s str) {
     sp = -1
     i <- [0..t.raw.len-bytes()): {
@@ -39,6 +43,8 @@ use-struct = (t data) (s str) {
 }
 
 ; Safe: directly use parameter — works
+; raw str: 直接傳入的記錄字串（不經結構體）
+; s str: 同樣取空格後到 NUL 的子串，預期 'file1.txt'
 pass-direct = (raw str) (s str) {
     ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}

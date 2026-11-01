@@ -24,6 +24,19 @@ returns val ?str: ok = the positional value, nil = absent
 `
   'args.has-flag': 'reports whether a flag is present (e.g. --verbose, -v)'
   'args.program': 'the program name (argument 0)'
+  'arr-stack.arr-stack.clear': 'Clears the stack'
+  'arr-stack.arr-stack.empty': `
+Reports whether the stack is empty
+Returns yes bool: true = empty, false = not empty
+`
+  'arr-stack.arr-stack.full': `
+Reports whether the stack is full
+Returns yes bool: true = full, false = not full
+`
+  'arr-stack.arr-stack.size': `
+Returns the number of elements on the stack
+Returns sz i64: the element count
+`
   'arr.arr-stack-init': `
 [n]t.arr-stack-init: initialises the stack state
 cap is set to the array size n automatically
@@ -193,6 +206,32 @@ task is the opaque handle run() returned (i8*). Returns void.
 ⚠️ deprecated: a hand-rolled cancelled is deprecated; use a coroutine group (a bare block { ... }) instead.
 cancelled: reports whether the async task currently executing has been cancelled
 returns bool. Only meaningful inside an async task (an -async function scheduled by the event loop).
+`
+  'base64.b64-val': `
+Converts a single Base64 character to its value
+Padding characters return 0, invalid characters return -1
+`
+  'base64.decode': `
+Decodes Base64 using the given alphabet
+s str: the Base64 string
+table str: the Base64 alphabet
+Returns out ?[]byte: ok = the decoded data, err = invalid character
+`
+  'base64.encode': `
+Encodes Base64 using the given alphabet
+data []byte: the input data
+table str: the Base64 alphabet
+Returns out str: the Base64-encoded string
+`
+  'base64.encode-std': `
+Encodes with the standard alphabet
+data []byte: the input data
+Returns out str: the Base64-encoded string
+`
+  'base64.encode-url': `
+Encodes with the URL-safe alphabet
+data []byte: the input data
+Returns out str: the Base64-encoded string
 `
   'bigint._add': `
 a + b (operator overload; written ?bigint, which the compiler treats as bigint)
@@ -366,411 +405,51 @@ no longer depending on indexed writes through txt[i], which returns a char.
 - MIR=3 gate: the compiler supports neither the []char element type nor the new []t.to-chars generic method and reports "unknown callee []t.to-chars" outright, so nothing compiles.
 Do not rely on to-chars / []char.to-str until the compiler's []char slice support is fixed.
 `
-  'collection.arr-stack.arr-stack.clear': 'Clears the stack'
-  'collection.arr-stack.arr-stack.empty': `
-Reports whether the stack is empty
-Returns yes bool: true = empty, false = not empty
+  'csv.encode-field': `
+Encodes one field as CSV
+A field containing a comma, a double quote, or a newline is wrapped in double quotes and
+escaped
+field str: the field to encode
+Returns out str: the CSV-encoded string
 `
-  'collection.arr-stack.arr-stack.full': `
-Reports whether the stack is full
-Returns yes bool: true = full, false = not full
+  'csv.parse-field': `
+Parses one CSV field
+Starts at s[pos] and handles double quotes and commas
+s str: the CSV text
+pos i64: the start position
+Returns field str: the parsed field contents
+Returns new-pos i64: the position after parsing
 `
-  'collection.arr-stack.arr-stack.size': `
-Returns the number of elements on the stack
-Returns sz i64: the element count
+  'csv.parse-line': `
+Parses one line of CSV text
+s str: the CSV text
+max-fields i64: the maximum number of fields
+Returns fields []str: the parsed fields
 `
-  'collection.deque.deque.clear': 'Clears the deque'
-  'collection.deque.deque.empty': `
+  'deque.deque.clear': 'Clears the deque'
+  'deque.deque.empty': `
 Reports whether the deque is empty
 Returns true = empty, false = not empty
 `
-  'collection.deque.deque.peek-back': `
+  'deque.deque.peek-back': `
 Peeks at the back element without removing it
 Returns val ?i64: ok = the back value, nil = the deque is empty
 `
-  'collection.deque.deque.peek-front': `
+  'deque.deque.peek-front': `
 Peeks at the front element without removing it
 Returns val ?i64: ok = the front value, nil = the deque is empty
 `
-  'collection.deque.deque.pop-back': `
+  'deque.deque.pop-back': `
 Pops an element from the back
 Returns val ?i64: ok = the popped value, nil = the deque is empty
 `
-  'collection.deque.deque.pop-front': `
+  'deque.deque.pop-front': `
 Pops an element from the front
 Returns val ?i64: ok = the popped value, nil = the deque is empty
 `
-  'collection.deque.deque.push-back': 'Pushes an element onto the back'
-  'collection.deque.deque.push-front': 'Pushes an element onto the front'
-  'collection.deque.deque.size': 'Returns the size of the deque'
-  'collection.hash-set.hash-set.add': 'Adds an element; returns whether it was inserted'
-  'collection.hash-set.hash-set.clear': 'Clears the set'
-  'collection.hash-set.hash-set.contains': 'Reports whether an element exists'
-  'collection.hash-set.hash-set.for-each': 'Iterates over every element'
-  'collection.hash-set.hash-set.hash': 'Computes the slot index'
-  'collection.hash-set.hash-set.init': 'Initialises the set'
-  'collection.hash-set.hash-set.is-empty': 'Whether the set is empty'
-  'collection.hash-set.hash-set.len': 'Returns the number of elements'
-  'collection.hash-set.hash-set.remove': 'Removes an element; returns whether it was removed'
-  'collection.link.link.empty': `
-Reports whether the linked list is empty
-Returns yes bool: true = empty, false = not empty
-`
-  'collection.link.link.full': `
-Reports whether the node pool is full
-Returns yes bool: true = full, false = not full
-`
-  'collection.link.link.size': `
-Returns the number of elements in the linked list
-Returns sz i64: the element count
-`
-  'collection.linked-hash-map.linked-hash-map.clear': 'Clears the map'
-  'collection.linked-hash-map.linked-hash-map.contains': 'Reports whether a key exists'
-  'collection.linked-hash-map.linked-hash-map.for-each': 'Iterates over every (key, value) pair in insertion order'
-  'collection.linked-hash-map.linked-hash-map.get': 'Looks up a key and returns ?i64 (nil = not found)'
-  'collection.linked-hash-map.linked-hash-map.hash': 'Computes the slot index'
-  'collection.linked-hash-map.linked-hash-map.init': 'Initialises the hash table'
-  'collection.linked-hash-map.linked-hash-map.is-empty': 'Whether the map is empty'
-  'collection.linked-hash-map.linked-hash-map.len': 'Returns the number of elements'
-  'collection.linked-hash-map.linked-hash-map.put': 'Inserts or updates key→value'
-  'collection.linked-hash-map.linked-hash-map.remove': 'Removes a key'
-  'collection.map.hashmap-bool-tmpl.clear': 'Clears the map (reallocates the occ vec)'
-  'collection.map.hashmap-bool-tmpl.contains': 'Reports whether a key exists'
-  'collection.map.hashmap-bool-tmpl.for-each': 'Iterates over every (key, value) pair'
-  'collection.map.hashmap-bool-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
-  'collection.map.hashmap-bool-tmpl.hash': 'Direct indexing (true → 1, false → 0)'
-  'collection.map.hashmap-bool-tmpl.init': 'Initialises the map'
-  'collection.map.hashmap-bool-tmpl.is-empty': 'Whether the map is empty'
-  'collection.map.hashmap-bool-tmpl.len': 'Returns the number of elements'
-  'collection.map.hashmap-bool-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted (direct indexing, no rehash)'
-  'collection.map.hashmap-bool-tmpl.remove': 'Removes a key (marks a tombstone; keys/vals are not cleared)'
-  'collection.map.hashmap-int-tmpl.clear': 'Clears the map (reallocates the occ vec)'
-  'collection.map.hashmap-int-tmpl.contains': 'Reports whether a key exists'
-  'collection.map.hashmap-int-tmpl.for-each': 'Iterates over every (key, value) pair'
-  'collection.map.hashmap-int-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
-  'collection.map.hashmap-int-tmpl.hash': 'Computes the slot index (bit mask)'
-  'collection.map.hashmap-int-tmpl.init': 'Initialises the map'
-  'collection.map.hashmap-int-tmpl.is-empty': 'Whether the map is empty'
-  'collection.map.hashmap-int-tmpl.len': 'Returns the number of elements'
-  'collection.map.hashmap-int-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
-  'collection.map.hashmap-int-tmpl.rehash': 'Grows the table and rehashes every occ==1 entry'
-  'collection.map.hashmap-int-tmpl.remove': 'Removes a key (marks a tombstone; keys/vals are not cleared)'
-  'collection.map.hashmap-str-tmpl.clear': `
-Clears the map (reallocates the occ vec; the old vec is released by the compiler's move
-semantics)
-`
-  'collection.map.hashmap-str-tmpl.contains': 'Reports whether a key exists'
-  'collection.map.hashmap-str-tmpl.for-each': 'Iterates over every (key, value) pair'
-  'collection.map.hashmap-str-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
-  'collection.map.hashmap-str-tmpl.hash': 'FNV-1a string hash'
-  'collection.map.hashmap-str-tmpl.init': 'Initialises the map'
-  'collection.map.hashmap-str-tmpl.is-empty': 'Whether the map is empty'
-  'collection.map.hashmap-str-tmpl.len': 'Returns the number of elements'
-  'collection.map.hashmap-str-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
-  'collection.map.hashmap-str-tmpl.rehash': 'Grows the table and rehashes every occ==1 entry'
-  'collection.map.hashmap-str-tmpl.remove': 'Removes a key (marks a tombstone; keys/vals are not cleared)'
-  'collection.map.hashmap-str-tmpl.str-eq': 'Compares two strs for equality'
-  'collection.queue.queue.clear': 'Clears the queue'
-  'collection.queue.queue.empty': `
-Reports whether the queue is empty
-Returns yes bool: true = empty, false = not empty
-`
-  'collection.queue.queue.full': `
-Reports whether the queue is full
-Returns yes bool: true = full, false = not full
-`
-  'collection.queue.queue.size': `
-Returns the number of elements in the queue
-Returns sz i64: the element count
-`
-  'collection.stack.stack.clear': 'Clears the stack'
-  'collection.stack.stack.empty': `
-Reports whether the stack is empty
-Returns true = empty, false = not empty
-`
-  'collection.stack.stack.peek': `
-Peeks at the top element without removing it
-Returns val ?i64: ok = the top value, nil = the stack is empty
-`
-  'collection.stack.stack.pop': `
-Pops an element from the top of the stack
-Returns val ?i64: ok = the popped value, nil = the stack is empty
-`
-  'collection.stack.stack.push': 'Pushes an element onto the top of the stack'
-  'collection.stack.stack.size': 'Returns the size of the stack'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.clear': 'Clears the map'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.contains': 'Reports whether a key exists'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.for-each': 'Iterates over every (key, value) pair'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.hash': 'Direct indexing (true → 1, false → 0)'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.init': 'Initialises the map'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.is-empty': 'Whether the map is empty'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.len': 'Returns the number of elements'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
-  'collection.static-hashmap.static-hashmap-bool-tmpl.remove': 'Removes a key (marks a tombstone)'
-  'collection.static-hashmap.static-hashmap-int-tmpl.clear': 'Clears the map'
-  'collection.static-hashmap.static-hashmap-int-tmpl.contains': 'Reports whether a key exists'
-  'collection.static-hashmap.static-hashmap-int-tmpl.for-each': 'Iterates over every (key, value) pair'
-  'collection.static-hashmap.static-hashmap-int-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
-  'collection.static-hashmap.static-hashmap-int-tmpl.hash': 'Computes the slot index (bit mask)'
-  'collection.static-hashmap.static-hashmap-int-tmpl.init': 'Initialises the map'
-  'collection.static-hashmap.static-hashmap-int-tmpl.is-empty': 'Whether the map is empty'
-  'collection.static-hashmap.static-hashmap-int-tmpl.len': 'Returns the number of elements'
-  'collection.static-hashmap.static-hashmap-int-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
-  'collection.static-hashmap.static-hashmap-int-tmpl.remove': 'Removes a key (marks a tombstone)'
-  'collection.static-hashmap.static-hashmap-str-tmpl.clear': 'Clears the map'
-  'collection.static-hashmap.static-hashmap-str-tmpl.contains': 'Reports whether a key exists'
-  'collection.static-hashmap.static-hashmap-str-tmpl.for-each': 'Iterates over every (key, value) pair'
-  'collection.static-hashmap.static-hashmap-str-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
-  'collection.static-hashmap.static-hashmap-str-tmpl.hash': 'FNV-1a string hash'
-  'collection.static-hashmap.static-hashmap-str-tmpl.init': 'Initialises the map'
-  'collection.static-hashmap.static-hashmap-str-tmpl.is-empty': 'Whether the map is empty'
-  'collection.static-hashmap.static-hashmap-str-tmpl.len': 'Returns the number of elements'
-  'collection.static-hashmap.static-hashmap-str-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
-  'collection.static-hashmap.static-hashmap-str-tmpl.remove': 'Removes a key (marks a tombstone)'
-  'collection.static-hashmap.static-hashmap-str-tmpl.str-eq': 'Compares two strs for equality'
-  'collection.str-map.str-map.clear': 'Clears the map'
-  'collection.str-map.str-map.contains': 'Reports whether a key exists'
-  'collection.str-map.str-map.for-each': 'Iterates over every (key, value) pair'
-  'collection.str-map.str-map.get': 'Looks up a key and returns ?str (nil = not found)'
-  'collection.str-map.str-map.hash': 'FNV-1a string hash'
-  'collection.str-map.str-map.init': 'Initialises the map'
-  'collection.str-map.str-map.is-empty': 'Whether the map is empty'
-  'collection.str-map.str-map.len': 'Returns the number of elements'
-  'collection.str-map.str-map.put': 'Inserts or updates key→value; returns whether it was inserted'
-  'collection.str-map.str-map.remove': 'Removes a key'
-  'collection.str-map.str-map.str-eq': 'Compares two strs for equality'
-  'collection.str-map.str-map.to-str': `
-A string representation
-Formatted like `{name: Alice, age: 18}`
-`
-  'collection.str-set.str-set.add': 'Adds an element; returns whether it was inserted'
-  'collection.str-set.str-set.clear': 'Clears the set'
-  'collection.str-set.str-set.contains': 'Reports whether an element exists'
-  'collection.str-set.str-set.for-each': 'Iterates over every element'
-  'collection.str-set.str-set.hash': 'FNV-1a string hash'
-  'collection.str-set.str-set.init': 'Initialises the set'
-  'collection.str-set.str-set.is-empty': 'Whether the set is empty'
-  'collection.str-set.str-set.len': 'Returns the number of elements'
-  'collection.str-set.str-set.remove': 'Removes an element'
-  'collection.str-set.str-set.str-eq': 'Compares two strs for equality'
-  'collection.tree-map.tree-map.alloc-node': `
-Allocates a node from the free pool
-Returns idx i64: the node index, or -1 when the pool is full
-`
-  'collection.tree-map.tree-map.bf': `
-Returns the balance factor (left height minus right height)
-idx i64: the node index
-Returns b i64: the balance factor
-`
-  'collection.tree-map.tree-map.clear': 'Removes every element and rebuilds the free pool'
-  'collection.tree-map.tree-map.contains': `
-Reports whether a key exists
-key i64: the key
-Returns yes bool: true = present, false = absent
-`
-  'collection.tree-map.tree-map.empty': `
-Reports whether the tree is empty
-Returns yes bool: true = empty, false = not empty
-`
-  'collection.tree-map.tree-map.first': `
-Returns the smallest key
-Returns key ?i64: ok = the smallest key, nil = the tree is empty
-`
-  'collection.tree-map.tree-map.for-each': `
-Iterates over every key/value pair in ascending key order
-k i64: the output key (updated per element)
-v i64: the output value (updated per element)
-`
-  'collection.tree-map.tree-map.free-node': `
-Returns a node to the free pool
-idx i64: the index of the node to release
-`
-  'collection.tree-map.tree-map.full': `
-Reports whether the node pool is full
-Returns yes bool: true = full, false = not full
-`
-  'collection.tree-map.tree-map.get': `
-Looks up the value for a key
-key i64: the key
-Returns val ?i64: ok = found, nil = not found
-`
-  'collection.tree-map.tree-map.ht': `
-Returns the node height (NIL = 0)
-idx i64: the node index
-Returns h i64: the height
-`
-  'collection.tree-map.tree-map.init': 'Initialises an empty tree and its free node pool'
-  'collection.tree-map.tree-map.last': `
-Returns the largest key
-Returns key ?i64: ok = the largest key, nil = the tree is empty
-`
-  'collection.tree-map.tree-map.lower-bound': `
-Finds the first key >= target
-target i64: the target key
-Returns key ?i64: ok = found, nil = no such key
-`
-  'collection.tree-map.tree-map.put': `
-Inserts or updates key→value
-key i64: the key
-val i64: the value
-Returns ok bool: true = inserted, false = an existing key was updated or the pool is full
-`
-  'collection.tree-map.tree-map.rebalance': `
-Checks and repairs the balance at node idx
-idx i64: the node index
-Returns nr i64: the subtree root index after rebalancing
-`
-  'collection.tree-map.tree-map.rebalance-up': `
-Rebalances level by level upwards from idx
-idx i64: the starting node index
-`
-  'collection.tree-map.tree-map.remove': `
-Removes a key
-key i64: the key
-Returns ok bool: true = removed, false = not found
-`
-  'collection.tree-map.tree-map.rot-left': `
-Left rotation
-x                y
-/ \              / \
-a   y     =>     x   c
-/ \          / \
-b   c        a   b
-x i64: the pivot node
-`
-  'collection.tree-map.tree-map.rot-right': `
-Right rotation
-x              y
-/ \            / \
-y   c   =>     a   x
-/ \                / \
-a   b              b   c
-x i64: the pivot node
-`
-  'collection.tree-map.tree-map.size': `
-Returns the number of elements
-Returns sz i64: the element count
-`
-  'collection.tree-map.tree-map.successor': `
-Finds the in-order successor of a node
-idx i64: the node index
-Returns succ i64: the successor index, or -1 when there is none
-`
-  'collection.tree-map.tree-map.update-ht': `
-Recomputes the node height
-idx i64: the node index
-`
-  'collection.tree-map.tree-map.upper-bound': `
-Finds the first key > target
-target i64: the target key
-Returns key ?i64: ok = found, nil = no such key
-`
-  'collection.tree-set.tree-set.add': `
-Adds an element
-key i64: the value to add
-Returns ok bool: true = inserted, false = already present or the pool is full
-`
-  'collection.tree-set.tree-set.alloc-node': `
-Allocates a node from the free pool
-Returns idx i64: the node index, or -1 when the pool is full
-`
-  'collection.tree-set.tree-set.bf': `
-Returns the balance factor (left height minus right height)
-idx i64: the node index
-Returns b i64: the balance factor
-`
-  'collection.tree-set.tree-set.clear': 'Removes every element and rebuilds the free pool'
-  'collection.tree-set.tree-set.contains': `
-Reports whether an element exists
-key i64: the value to check
-Returns yes bool: true = present, false = absent
-`
-  'collection.tree-set.tree-set.empty': `
-Reports whether the set is empty
-Returns yes bool: true = empty, false = not empty
-`
-  'collection.tree-set.tree-set.first': `
-Returns the smallest value
-Returns val ?i64: ok = the smallest value, nil = the set is empty
-`
-  'collection.tree-set.tree-set.for-each': `
-Iterates over every element in ascending order
-val i64: the output value (updated per element)
-`
-  'collection.tree-set.tree-set.free-node': `
-Returns a node to the free pool
-idx i64: the index of the node to release
-`
-  'collection.tree-set.tree-set.full': `
-Reports whether the node pool is full
-Returns yes bool: true = full, false = not full
-`
-  'collection.tree-set.tree-set.ht': `
-Returns the node height (NIL = 0)
-idx i64: the node index
-Returns h i64: the height
-`
-  'collection.tree-set.tree-set.init': 'Initialises an empty tree and its free node pool'
-  'collection.tree-set.tree-set.last': `
-Returns the largest value
-Returns val ?i64: ok = the largest value, nil = the set is empty
-`
-  'collection.tree-set.tree-set.lower-bound': `
-Finds the first element >= target
-target i64: the target value
-Returns val ?i64: ok = found, nil = no such element
-`
-  'collection.tree-set.tree-set.rebalance': `
-Checks and repairs the balance at node idx
-idx i64: the node index
-Returns nr i64: the subtree root index after rebalancing
-`
-  'collection.tree-set.tree-set.rebalance-up': `
-Rebalances level by level upwards from idx
-idx i64: the starting node index
-`
-  'collection.tree-set.tree-set.remove': `
-Removes an element
-key i64: the value to remove
-Returns ok bool: true = removed, false = not found
-`
-  'collection.tree-set.tree-set.rot-left': `
-Left rotation
-x                y
-/ \              / \
-a   y     =>     x   c
-/ \          / \
-b   c        a   b
-x i64: the pivot node
-`
-  'collection.tree-set.tree-set.rot-right': `
-Right rotation
-x              y
-/ \            / \
-y   c   =>     a   x
-/ \                / \
-a   b              b   c
-x i64: the pivot node
-`
-  'collection.tree-set.tree-set.size': `
-Returns the number of elements
-Returns sz i64: the element count
-`
-  'collection.tree-set.tree-set.successor': `
-Finds the in-order successor of a node
-idx i64: the node index
-Returns succ i64: the successor index, or -1 when there is none
-`
-  'collection.tree-set.tree-set.update-ht': `
-Recomputes the node height
-idx i64: the node index
-`
-  'collection.tree-set.tree-set.upper-bound': `
-Finds the first element > target
-target i64: the target value
-Returns val ?i64: ok = found, nil = no such element
-`
+  'deque.deque.push-back': 'Pushes an element onto the back'
+  'deque.deque.push-front': 'Pushes an element onto the front'
+  'deque.deque.size': 'Returns the size of the deque'
   'dom.append-child': 'Appends (or moves) a child node to the end of parent\'s child list'
   'dom.attribute-count': 'The number of attributes'
   'dom.attribute-name': 'The i-th attribute name in document order, or nil when out of range'
@@ -913,64 +592,6 @@ position of ';'
   'dom.value': 'The node value (text/cdata/comment content, PI data, or the raw DOCTYPE content)'
   'dom.xml-read-name': 'Reads a name (a run of name characters) from p and returns the end position'
   'dom.xml-skip-ws': 'Skips XML whitespace (space, tab, CR, LF)'
-  'encoding.base64.b64-val': `
-Converts a single Base64 character to its value
-Padding characters return 0, invalid characters return -1
-`
-  'encoding.base64.decode': `
-Decodes Base64 using the given alphabet
-s str: the Base64 string
-table str: the Base64 alphabet
-Returns out ?[]byte: ok = the decoded data, err = invalid character
-`
-  'encoding.base64.encode': `
-Encodes Base64 using the given alphabet
-data []byte: the input data
-table str: the Base64 alphabet
-Returns out str: the Base64-encoded string
-`
-  'encoding.base64.encode-std': `
-Encodes with the standard alphabet
-data []byte: the input data
-Returns out str: the Base64-encoded string
-`
-  'encoding.base64.encode-url': `
-Encodes with the URL-safe alphabet
-data []byte: the input data
-Returns out str: the Base64-encoded string
-`
-  'encoding.csv.encode-field': `
-Encodes one field as CSV
-A field containing a comma, a double quote, or a newline is wrapped in double quotes and
-escaped
-field str: the field to encode
-Returns out str: the CSV-encoded string
-`
-  'encoding.csv.parse-field': `
-Parses one CSV field
-Starts at s[pos] and handles double quotes and commas
-s str: the CSV text
-pos i64: the start position
-Returns field str: the parsed field contents
-Returns new-pos i64: the position after parsing
-`
-  'encoding.csv.parse-line': `
-Parses one line of CSV text
-s str: the CSV text
-max-fields i64: the maximum number of fields
-Returns fields []str: the parsed fields
-`
-  'encoding.pem.pem-decode': `
-Parses a PEM-formatted string
-pem-str: the PEM string
-Returns ?pem-block: ok = parsed successfully, nil = parsing failed
-`
-  'encoding.pem.pem-encode': `
-Encodes raw bytes as a PEM-formatted string
-label str: the PEM label (for example 'CERTIFICATE' or 'RSA PRIVATE KEY')
-data []byte: the raw binary data
-Returns out str: the PEM-formatted string
-`
   'env.get': `
 reads an environment variable
 returns val ?str: ok = the value, nil = unset (os.get-env already returns an option)
@@ -1349,6 +970,15 @@ creates a string or slice with the given length; the type comes from the left-ha
 s str = with-len(10)        -> a str of length 10
 v []i64 = with-len(100)     -> a slice of length 100
 `
+  'hash-set.hash-set.add': 'Adds an element; returns whether it was inserted'
+  'hash-set.hash-set.clear': 'Clears the set'
+  'hash-set.hash-set.contains': 'Reports whether an element exists'
+  'hash-set.hash-set.for-each': 'Iterates over every element'
+  'hash-set.hash-set.hash': 'Computes the slot index'
+  'hash-set.hash-set.init': 'Initialises the set'
+  'hash-set.hash-set.is-empty': 'Whether the set is empty'
+  'hash-set.hash-set.len': 'Returns the number of elements'
+  'hash-set.hash-set.remove': 'Removes an element; returns whether it was removed'
   'heap.empty': 'reports whether the heap is empty'
   'heap.init': `
 factory — builds an empty heap on a caller-supplied element buffer
@@ -1680,6 +1310,28 @@ usage:
 j = new()
 s = j.stringify()
 `
+  'link.link.empty': `
+Reports whether the linked list is empty
+Returns yes bool: true = empty, false = not empty
+`
+  'link.link.full': `
+Reports whether the node pool is full
+Returns yes bool: true = full, false = not full
+`
+  'link.link.size': `
+Returns the number of elements in the linked list
+Returns sz i64: the element count
+`
+  'linked-hash-map.linked-hash-map.clear': 'Clears the map'
+  'linked-hash-map.linked-hash-map.contains': 'Reports whether a key exists'
+  'linked-hash-map.linked-hash-map.for-each': 'Iterates over every (key, value) pair in insertion order'
+  'linked-hash-map.linked-hash-map.get': 'Looks up a key and returns ?i64 (nil = not found)'
+  'linked-hash-map.linked-hash-map.hash': 'Computes the slot index'
+  'linked-hash-map.linked-hash-map.init': 'Initialises the hash table'
+  'linked-hash-map.linked-hash-map.is-empty': 'Whether the map is empty'
+  'linked-hash-map.linked-hash-map.len': 'Returns the number of elements'
+  'linked-hash-map.linked-hash-map.put': 'Inserts or updates key→value'
+  'linked-hash-map.linked-hash-map.remove': 'Removes a key'
   'log.get-output-fd': 'returns the fd of the current output target (for debugging)'
   'log.get-writer': 'returns the io.writer matching the current output target'
   'log.log-emit': 'assembles one log line from FMT-FLAGS and writes it to OUT-FD through the io.writer abstraction'
@@ -1716,6 +1368,42 @@ Returns the file extension (lowercase)
 path: the file path
 Returns the extension without the '.', or an empty string when there is none
 `
+  'map.hashmap-bool-tmpl.clear': 'Clears the map (reallocates the occ vec)'
+  'map.hashmap-bool-tmpl.contains': 'Reports whether a key exists'
+  'map.hashmap-bool-tmpl.for-each': 'Iterates over every (key, value) pair'
+  'map.hashmap-bool-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
+  'map.hashmap-bool-tmpl.hash': 'Direct indexing (true → 1, false → 0)'
+  'map.hashmap-bool-tmpl.init': 'Initialises the map'
+  'map.hashmap-bool-tmpl.is-empty': 'Whether the map is empty'
+  'map.hashmap-bool-tmpl.len': 'Returns the number of elements'
+  'map.hashmap-bool-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted (direct indexing, no rehash)'
+  'map.hashmap-bool-tmpl.remove': 'Removes a key (marks a tombstone; keys/vals are not cleared)'
+  'map.hashmap-int-tmpl.clear': 'Clears the map (reallocates the occ vec)'
+  'map.hashmap-int-tmpl.contains': 'Reports whether a key exists'
+  'map.hashmap-int-tmpl.for-each': 'Iterates over every (key, value) pair'
+  'map.hashmap-int-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
+  'map.hashmap-int-tmpl.hash': 'Computes the slot index (bit mask)'
+  'map.hashmap-int-tmpl.init': 'Initialises the map'
+  'map.hashmap-int-tmpl.is-empty': 'Whether the map is empty'
+  'map.hashmap-int-tmpl.len': 'Returns the number of elements'
+  'map.hashmap-int-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
+  'map.hashmap-int-tmpl.rehash': 'Grows the table and rehashes every occ==1 entry'
+  'map.hashmap-int-tmpl.remove': 'Removes a key (marks a tombstone; keys/vals are not cleared)'
+  'map.hashmap-str-tmpl.clear': `
+Clears the map (reallocates the occ vec; the old vec is released by the compiler's move
+semantics)
+`
+  'map.hashmap-str-tmpl.contains': 'Reports whether a key exists'
+  'map.hashmap-str-tmpl.for-each': 'Iterates over every (key, value) pair'
+  'map.hashmap-str-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
+  'map.hashmap-str-tmpl.hash': 'FNV-1a string hash'
+  'map.hashmap-str-tmpl.init': 'Initialises the map'
+  'map.hashmap-str-tmpl.is-empty': 'Whether the map is empty'
+  'map.hashmap-str-tmpl.len': 'Returns the number of elements'
+  'map.hashmap-str-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
+  'map.hashmap-str-tmpl.rehash': 'Grows the table and rehashes every occ==1 entry'
+  'map.hashmap-str-tmpl.remove': 'Removes a key (marks a tombstone; keys/vals are not cleared)'
+  'map.hashmap-str-tmpl.str-eq': 'Compares two strs for equality'
   'markdown.blockquote': 'Removes the leading > marker from a blockquote line.'
   'markdown.code-close': 'Reports whether the current line closes the given fence.'
   'markdown.escape-html': 'Escapes HTML text and attribute values.'
@@ -2150,6 +1838,17 @@ Modifies .p in place to the directory part and returns the file name
 e.g. path{ p: '/a/b/c.txt' }.split() -> .p='/a/b', f='c.txt'
 (struct literals must span several lines; the above is shorthand)
 `
+  'pem.pem-decode': `
+Parses a PEM-formatted string
+pem-str: the PEM string
+Returns ?pem-block: ok = parsed successfully, nil = parsing failed
+`
+  'pem.pem-encode': `
+Encodes raw bytes as a PEM-formatted string
+label str: the PEM label (for example 'CERTIFICATE' or 'RSA PRIVATE KEY')
+data []byte: the raw binary data
+Returns out str: the PEM-formatted string
+`
   'process.close': 'closes every pipe and waits for the child process'
   'process.close-stderr': 'closes the child\'s stderr pipe'
   'process.close-stdin': 'closes the child\'s stdin pipe'
@@ -2340,6 +2039,19 @@ returns the number of bytes written, -1 = error
 writes data to the child's stdin
 returns written = the number of bytes actually written
 `
+  'queue.queue.clear': 'Clears the queue'
+  'queue.queue.empty': `
+Reports whether the queue is empty
+Returns yes bool: true = empty, false = not empty
+`
+  'queue.queue.full': `
+Reports whether the queue is full
+Returns yes bool: true = full, false = not full
+`
+  'queue.queue.size': `
+Returns the number of elements in the queue
+Returns sz i64: the element count
+`
   'regexp.alloc-class': `
 allocates a new character class and returns its index
 returns cls-idx i64: the class index
@@ -2525,6 +2237,77 @@ other []t: the other set's element buffer
 osize i64: the other set's element count
 returns new-size i64: the size after the union
 `
+  'stack.stack.clear': 'Clears the stack'
+  'stack.stack.empty': `
+Reports whether the stack is empty
+Returns true = empty, false = not empty
+`
+  'stack.stack.peek': `
+Peeks at the top element without removing it
+Returns val ?i64: ok = the top value, nil = the stack is empty
+`
+  'stack.stack.pop': `
+Pops an element from the top of the stack
+Returns val ?i64: ok = the popped value, nil = the stack is empty
+`
+  'stack.stack.push': 'Pushes an element onto the top of the stack'
+  'stack.stack.size': 'Returns the size of the stack'
+  'static-hashmap.static-hashmap-bool-tmpl.clear': 'Clears the map'
+  'static-hashmap.static-hashmap-bool-tmpl.contains': 'Reports whether a key exists'
+  'static-hashmap.static-hashmap-bool-tmpl.for-each': 'Iterates over every (key, value) pair'
+  'static-hashmap.static-hashmap-bool-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
+  'static-hashmap.static-hashmap-bool-tmpl.hash': 'Direct indexing (true → 1, false → 0)'
+  'static-hashmap.static-hashmap-bool-tmpl.init': 'Initialises the map'
+  'static-hashmap.static-hashmap-bool-tmpl.is-empty': 'Whether the map is empty'
+  'static-hashmap.static-hashmap-bool-tmpl.len': 'Returns the number of elements'
+  'static-hashmap.static-hashmap-bool-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
+  'static-hashmap.static-hashmap-bool-tmpl.remove': 'Removes a key (marks a tombstone)'
+  'static-hashmap.static-hashmap-int-tmpl.clear': 'Clears the map'
+  'static-hashmap.static-hashmap-int-tmpl.contains': 'Reports whether a key exists'
+  'static-hashmap.static-hashmap-int-tmpl.for-each': 'Iterates over every (key, value) pair'
+  'static-hashmap.static-hashmap-int-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
+  'static-hashmap.static-hashmap-int-tmpl.hash': 'Computes the slot index (bit mask)'
+  'static-hashmap.static-hashmap-int-tmpl.init': 'Initialises the map'
+  'static-hashmap.static-hashmap-int-tmpl.is-empty': 'Whether the map is empty'
+  'static-hashmap.static-hashmap-int-tmpl.len': 'Returns the number of elements'
+  'static-hashmap.static-hashmap-int-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
+  'static-hashmap.static-hashmap-int-tmpl.remove': 'Removes a key (marks a tombstone)'
+  'static-hashmap.static-hashmap-str-tmpl.clear': 'Clears the map'
+  'static-hashmap.static-hashmap-str-tmpl.contains': 'Reports whether a key exists'
+  'static-hashmap.static-hashmap-str-tmpl.for-each': 'Iterates over every (key, value) pair'
+  'static-hashmap.static-hashmap-str-tmpl.get': 'Looks up a key and returns ?v (nil = not found)'
+  'static-hashmap.static-hashmap-str-tmpl.hash': 'FNV-1a string hash'
+  'static-hashmap.static-hashmap-str-tmpl.init': 'Initialises the map'
+  'static-hashmap.static-hashmap-str-tmpl.is-empty': 'Whether the map is empty'
+  'static-hashmap.static-hashmap-str-tmpl.len': 'Returns the number of elements'
+  'static-hashmap.static-hashmap-str-tmpl.put': 'Inserts or updates key→value; returns whether it was inserted'
+  'static-hashmap.static-hashmap-str-tmpl.remove': 'Removes a key (marks a tombstone)'
+  'static-hashmap.static-hashmap-str-tmpl.str-eq': 'Compares two strs for equality'
+  'str-map.str-map.clear': 'Clears the map'
+  'str-map.str-map.contains': 'Reports whether a key exists'
+  'str-map.str-map.for-each': 'Iterates over every (key, value) pair'
+  'str-map.str-map.get': 'Looks up a key and returns ?str (nil = not found)'
+  'str-map.str-map.hash': 'FNV-1a string hash'
+  'str-map.str-map.init': 'Initialises the map'
+  'str-map.str-map.is-empty': 'Whether the map is empty'
+  'str-map.str-map.len': 'Returns the number of elements'
+  'str-map.str-map.put': 'Inserts or updates key→value; returns whether it was inserted'
+  'str-map.str-map.remove': 'Removes a key'
+  'str-map.str-map.str-eq': 'Compares two strs for equality'
+  'str-map.str-map.to-str': `
+A string representation
+Formatted like `{name: Alice, age: 18}`
+`
+  'str-set.str-set.add': 'Adds an element; returns whether it was inserted'
+  'str-set.str-set.clear': 'Clears the set'
+  'str-set.str-set.contains': 'Reports whether an element exists'
+  'str-set.str-set.for-each': 'Iterates over every element'
+  'str-set.str-set.hash': 'FNV-1a string hash'
+  'str-set.str-set.init': 'Initialises the set'
+  'str-set.str-set.is-empty': 'Whether the set is empty'
+  'str-set.str-set.len': 'Returns the number of elements'
+  'str-set.str-set.remove': 'Removes an element'
+  'str-set.str-set.str-eq': 'Compares two strs for equality'
   'str._str-dig-val': 'converts a single digit character (0-15) to its value; an invalid character returns -1'
   'str.at': `
 [deprecated] str.at: character (code point) index read — use s[idx] instead (native indexing, returns ?char)
@@ -2954,6 +2737,223 @@ around it.
   'toml.toml-value-complete': `
 Reports whether a value is closed; used for multiline arrays, inline tables, and multiline
 strings.
+`
+  'tree-map.tree-map.alloc-node': `
+Allocates a node from the free pool
+Returns idx i64: the node index, or -1 when the pool is full
+`
+  'tree-map.tree-map.bf': `
+Returns the balance factor (left height minus right height)
+idx i64: the node index
+Returns b i64: the balance factor
+`
+  'tree-map.tree-map.clear': 'Removes every element and rebuilds the free pool'
+  'tree-map.tree-map.contains': `
+Reports whether a key exists
+key i64: the key
+Returns yes bool: true = present, false = absent
+`
+  'tree-map.tree-map.empty': `
+Reports whether the tree is empty
+Returns yes bool: true = empty, false = not empty
+`
+  'tree-map.tree-map.first': `
+Returns the smallest key
+Returns key ?i64: ok = the smallest key, nil = the tree is empty
+`
+  'tree-map.tree-map.for-each': `
+Iterates over every key/value pair in ascending key order
+k i64: the output key (updated per element)
+v i64: the output value (updated per element)
+`
+  'tree-map.tree-map.free-node': `
+Returns a node to the free pool
+idx i64: the index of the node to release
+`
+  'tree-map.tree-map.full': `
+Reports whether the node pool is full
+Returns yes bool: true = full, false = not full
+`
+  'tree-map.tree-map.get': `
+Looks up the value for a key
+key i64: the key
+Returns val ?i64: ok = found, nil = not found
+`
+  'tree-map.tree-map.ht': `
+Returns the node height (NIL = 0)
+idx i64: the node index
+Returns h i64: the height
+`
+  'tree-map.tree-map.init': 'Initialises an empty tree and its free node pool'
+  'tree-map.tree-map.last': `
+Returns the largest key
+Returns key ?i64: ok = the largest key, nil = the tree is empty
+`
+  'tree-map.tree-map.lower-bound': `
+Finds the first key >= target
+target i64: the target key
+Returns key ?i64: ok = found, nil = no such key
+`
+  'tree-map.tree-map.put': `
+Inserts or updates key→value
+key i64: the key
+val i64: the value
+Returns ok bool: true = inserted, false = an existing key was updated or the pool is full
+`
+  'tree-map.tree-map.rebalance': `
+Checks and repairs the balance at node idx
+idx i64: the node index
+Returns nr i64: the subtree root index after rebalancing
+`
+  'tree-map.tree-map.rebalance-up': `
+Rebalances level by level upwards from idx
+idx i64: the starting node index
+`
+  'tree-map.tree-map.remove': `
+Removes a key
+key i64: the key
+Returns ok bool: true = removed, false = not found
+`
+  'tree-map.tree-map.rot-left': `
+Left rotation
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: the pivot node
+`
+  'tree-map.tree-map.rot-right': `
+Right rotation
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: the pivot node
+`
+  'tree-map.tree-map.size': `
+Returns the number of elements
+Returns sz i64: the element count
+`
+  'tree-map.tree-map.successor': `
+Finds the in-order successor of a node
+idx i64: the node index
+Returns succ i64: the successor index, or -1 when there is none
+`
+  'tree-map.tree-map.update-ht': `
+Recomputes the node height
+idx i64: the node index
+`
+  'tree-map.tree-map.upper-bound': `
+Finds the first key > target
+target i64: the target key
+Returns key ?i64: ok = found, nil = no such key
+`
+  'tree-set.tree-set.add': `
+Adds an element
+key i64: the value to add
+Returns ok bool: true = inserted, false = already present or the pool is full
+`
+  'tree-set.tree-set.alloc-node': `
+Allocates a node from the free pool
+Returns idx i64: the node index, or -1 when the pool is full
+`
+  'tree-set.tree-set.bf': `
+Returns the balance factor (left height minus right height)
+idx i64: the node index
+Returns b i64: the balance factor
+`
+  'tree-set.tree-set.clear': 'Removes every element and rebuilds the free pool'
+  'tree-set.tree-set.contains': `
+Reports whether an element exists
+key i64: the value to check
+Returns yes bool: true = present, false = absent
+`
+  'tree-set.tree-set.empty': `
+Reports whether the set is empty
+Returns yes bool: true = empty, false = not empty
+`
+  'tree-set.tree-set.first': `
+Returns the smallest value
+Returns val ?i64: ok = the smallest value, nil = the set is empty
+`
+  'tree-set.tree-set.for-each': `
+Iterates over every element in ascending order
+val i64: the output value (updated per element)
+`
+  'tree-set.tree-set.free-node': `
+Returns a node to the free pool
+idx i64: the index of the node to release
+`
+  'tree-set.tree-set.full': `
+Reports whether the node pool is full
+Returns yes bool: true = full, false = not full
+`
+  'tree-set.tree-set.ht': `
+Returns the node height (NIL = 0)
+idx i64: the node index
+Returns h i64: the height
+`
+  'tree-set.tree-set.init': 'Initialises an empty tree and its free node pool'
+  'tree-set.tree-set.last': `
+Returns the largest value
+Returns val ?i64: ok = the largest value, nil = the set is empty
+`
+  'tree-set.tree-set.lower-bound': `
+Finds the first element >= target
+target i64: the target value
+Returns val ?i64: ok = found, nil = no such element
+`
+  'tree-set.tree-set.rebalance': `
+Checks and repairs the balance at node idx
+idx i64: the node index
+Returns nr i64: the subtree root index after rebalancing
+`
+  'tree-set.tree-set.rebalance-up': `
+Rebalances level by level upwards from idx
+idx i64: the starting node index
+`
+  'tree-set.tree-set.remove': `
+Removes an element
+key i64: the value to remove
+Returns ok bool: true = removed, false = not found
+`
+  'tree-set.tree-set.rot-left': `
+Left rotation
+x                y
+/ \              / \
+a   y     =>     x   c
+/ \          / \
+b   c        a   b
+x i64: the pivot node
+`
+  'tree-set.tree-set.rot-right': `
+Right rotation
+x              y
+/ \            / \
+y   c   =>     a   x
+/ \                / \
+a   b              b   c
+x i64: the pivot node
+`
+  'tree-set.tree-set.size': `
+Returns the number of elements
+Returns sz i64: the element count
+`
+  'tree-set.tree-set.successor': `
+Finds the in-order successor of a node
+idx i64: the node index
+Returns succ i64: the successor index, or -1 when there is none
+`
+  'tree-set.tree-set.update-ht': `
+Recomputes the node height
+idx i64: the node index
+`
+  'tree-set.tree-set.upper-bound': `
+Finds the first element > target
+target i64: the target value
+Returns val ?i64: ok = found, nil = no such element
 `
   'txt._txt-dig-val': 'converts a single digit character (0-15) to its value; an invalid character returns -1'
   'txt.append': 'appends a byte (without exceeding the 255 limit)'

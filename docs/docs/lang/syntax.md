@@ -548,10 +548,11 @@ get = (i i64) (val ?str) {
 - 連結必須是註解群組的**最後一行**，且獨佔一行；它上方的所有行構成一個整體，作為一條訊息整段翻譯
 - 目標必須是 `#` 開頭的錨點（同一份目錄內的條目）。`[說明](https://example.com)` 這類外鏈是寫給人看的普通連結，**不會**被當成翻譯標記
 - 錨點即鍵（`args.get`）。它由作者指定、譯者在目錄裡看到，不從文字派生——所以改寫措辭不會讓既有譯文失效。錨點允許字母、數字、`.`、`_`、`-`，並且是全域的，建議加上模組前綴
+- 前綴用**打平後的模組名**，不是目錄名。編譯器把 std 檔案打平成它的檔名：`std/collection/linked-hash-map.no` 的模組就是 `linked-hash-map`，`use std/collection` 也不會給符號加 `collection.` 前綴。所以 `linked-hash-map.clear` 的錨點是 `linked-hash-map.linked-hash-map.clear`（模組名 + 原樣的名字），**不是** `collection.linked-hash-map.linked-hash-map.clear`。`collection`／`net`／`crypto`／`archive`／`encoding`／`database` 這些目錄段不屬於任何符號，不該出現在錨點裡
 - 方括號裡的字（`[get]`）只是給讀原始碼的人看的提示，顯示時整行都會被剝掉；`[](#args.get)` 也合法
 - 只有 `;` 單行註解可以帶連結（`;;` 與 `;;block` 不算）
 
-譯文放在 `locales/<語言>.doc.noml`，以錨點為鍵。缺少譯文時回退到註解原文，不會變成空白。
+譯文放在 `locales/<語言>-doc.noml`，以錨點為鍵。缺少譯文時回退到註解原文，不會變成空白。檔名遵循 `.no` 的命名規則（小寫字母、數字、單一中劃線），所以標籤一律小寫、分隔符是 `-`：`--lang=zh-CN` 讀的是 `zh-cn-doc.noml`。
 
 標準庫裡每個有註解的函數與方法都已帶上錨點（約 2000 條），所以任何一條譯文一落地，LSP 立刻就能用。`make i18n` 只把**已翻譯**的條目寫進目錄，不會把原文當成譯文塞進去——否則英文目錄裡又會出現中文。`go run ./i18n/cmd/genen -doc-missing` 會列出還沒翻譯的錨點。
 
@@ -965,14 +966,21 @@ i <- [0..10): {
 > }
 > ```
 >
-> 正確寫法（先給結果參數賦值，再裸 `return` 提前終止）：
+> 正確寫法（先給結果參數賦值，再裸 `return` 提前終止；臂體裡的多條語句只能各佔一行）：
 >
 > ```no
 > has = (n i64) (r i64) {
->     n == 0 -> { r = 0; return }   ; ✓
+>     n == 0 -> {
+>         r = 0
+>         return
+>     }
 >     r = n
 > }
 > ```
+>
+> ⚠️ 壓成一行寫 `n == 0 -> { r = 0; return }` 不是簡寫：`; return }` 整段是註釋，
+> 塊因此永不閉合，後續所有語句（常是整個函數體的剩餘部分）都被靜默吞進這個臂裡 ——
+> 實測 `no vet` 不報錯，函數從未被呼叫。
 
 ### Match
 
@@ -1151,14 +1159,16 @@ val: {
 
 ```no
 ; it 的作用域：巢狀 match 按層還原
+; （佔位函數名寫 keep —— `use` 是導入關鍵字，不能當函數名；
+;   且裸 `->` 臂在 nil/err 未同時認領時讀 it 是編譯錯誤，故各層都寫 ok ->）
 outer: {
-    -> {
-        use(it)             ; 外層 it
+    ok -> {
+        keep(it)            ; 外層 it
         inner ?T = f(it)
         inner: {
-            -> use(it)      ; 內層 it = inner 的解包值
+            ok -> keep(it)  ; 內層 it = inner 的解包值
         }
-        use(it)             ; ✅ 內層臂結束後 it 已還原成外層值
+        keep(it)            ; ✅ 內層臂結束後 it 已還原成外層值
     }
 }
 ```
@@ -1166,6 +1176,12 @@ outer: {
 > **注意**：還原只發生在**巢狀**的 match。最外層 match 結束後 `it` 仍保留最後一個臂的值，  
 > 不要在 match 之外使用 `it`。需要跨層使用時請存到具名變數（`doc = it`），或用析構綁定  
 > `ok(v) -> ...` 把載荷綁到自己的名字上。
+
+> **最佳實踐（option 解包首選 `it`）**：被匹配值是 **option `?t`** 時，優先寫 `ok -> ...(it)...`  
+> 而非 `ok(v) -> ...(v)...`——不引入額外綁定名，也就自然避開「不同臂同名變量導致 codegen 串型」的坑。  
+> 只有兩種情形必須保留**具名綁定** `ok(v) ->`：(1) 被匹配值是**用戶自定義枚舉變體**（如  
+> `res { ok(v str) }`、`shape { rect(w, h) }`）——那裡的 `it` 是**整個枚舉**而非載荷，取載荷只能具名；  
+> (2) 需要在**巢狀 match 之後**繼續使用該值——內層 match 會重綁 `it`，請用具名綁定或先複製到具名局部。
 
 ### 下標寫入必須顯式解包
 
@@ -1479,7 +1495,7 @@ print(r1.to-str() + ' ' + r2.to-str())
 - **單態化**：`co worker(1)` 會自動生成 `worker-async`（複製 `worker` 的本體、改名）。若 `worker` 同時也被同步呼叫，則 `worker` 與 `worker-async` 兩個方法共存。
 - **傳遞性**：若某函式內部呼叫了異步函式（例如 `worker` 內 `co child(...)`），則 `worker` 也會被單態為 `worker-async`，異步染色沿呼叫鏈向上傳遞。
 - **語句級 `co`（協程組之外）**：當 `co` 出現在協程組之外（例如在函式體裡 `d = co worker(5)`），編譯器會把它包成 `run worker-async(5)` + `awy` 的內聯 await，使 `d` 取到的是結果值而非 task 句柄。
-- **底層仍是染色無棧協程**：`co` 只是語法糖。`{ r1 = co worker(1); r2 = co worker(2) }` 等價於協程組展開——先後 spawn `worker-async`，最後一起 `awy`。
+- **底層仍是染色無棧協程**：`co` 只是語法糖。協程組內 `r1 = co worker(1)` 與 `r2 = co worker(2)` 各佔一行（`;` 是註釋，不能當語句分隔符），等價於協程組展開——先後 spawn `worker-async`，最後一起 `awy`。
 
 ### 多重賦值
 
@@ -2687,12 +2703,13 @@ v ?= expr
 
 **限制：** `?=` 只能在具有 option 類型結果參數的函數中使用。如果當前函數沒有 option 結果參數，編譯器會報錯。
 
+**結果參數無需預先賦值：** 函式 prologue 不做零初始化，但 return 時未顯式賦值的輸出參數會被自動零填充（整數 → `0`、`str` / 結構體 → 零值、option → `nil`），因此示例裡不寫 `result = nil` 樣板，只寫成功路徑的賦值即可。
+
 **示例：**
 
 ```no
 ; 逐行讀取檔案並處理 — 使用 ?= 簡化錯誤傳播
 process-file = (path str) (result ?str) {
-    result = nil
     f ?= open(path)             ; 失敗時自動 result = f; return
     line ?= f.read-line()      ; EOF 或錯誤時自動上拋
     result = line
@@ -2728,7 +2745,6 @@ process-file = (path str) (result ?str) {
 
 ```no
 pipeline = (input str) (result ?str) {
-    result = nil
     a ?= step1(input)     ; 失敗則上拋
     b ?= step2(a)         ; 失敗則上拋
     result = b
@@ -2740,13 +2756,11 @@ pipeline = (input str) (result ?str) {
 ```no
 ; 溢出時自動 result = err; return，正常時 v 解包為內部值
 sub-safe = (a i64, b i64) (result ?i64) {
-    result = nil
     v ?= a - b          ; 下溢/上溢 → err 自動上拋；否則 v = 內部 i64
     result = v
 }
 
 add-safe = (a i64, b i64) (result ?i64) {
-    result = nil
     v ?= a + b          ; 同上，適用於 + * 與有號 /
     result = v
 }
@@ -2759,8 +2773,14 @@ sub-safe = (a i64, b i64) (result ?i64) {
     result = nil
     __unwrap = a - b            ; option<i64>
     __unwrap: {
-        nil -> { result = __unwrap; return }
-        err -> { result = __unwrap; return }
+        nil -> {
+            result = __unwrap
+            return
+        }
+        err -> {
+            result = __unwrap
+            return
+        }
         -> v = it               ; ok(value)：解包內部值
     }
     result = v
@@ -2771,7 +2791,6 @@ sub-safe = (a i64, b i64) (result ?i64) {
 
 ```no
 sum3 = () (result ?i64) {
-    result = nil
     a ?i64 = ok(10)
     b ?i64 = ok(20)
     c ?i64 = ok(30)
@@ -2780,7 +2799,6 @@ sum3 = () (result ?i64) {
 }
 
 comp = () (result ?i64) {
-    result = nil
     a ?i64 = ok(4)
     b ?i64 = ok(6)
     v ?= dbl(a + b)            ; a + b 可能是 option，同樣自動解包並傳播

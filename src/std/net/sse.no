@@ -103,7 +103,7 @@ client {
 ;   ok = 事件
 ;   nil   = 連線已關閉（EOF）
 ;   err = 錯誤
-; [next-event](#net.sse.client.next-event)
+; [next-event](#sse.client.next-event)
 client.next-event = () (ev ?event) {
 
     ev = nil
@@ -302,7 +302,7 @@ client.next-event = () (ev ?event) {
 }
 
 ; 關閉 SSE 連線
-; [close](#net.sse.client.close)
+; [close](#sse.client.close)
 client.close = () {
     .connected -> {
         .use-tls -> .tls-c.close()
@@ -314,14 +314,14 @@ client.close = () {
 
 ; 檢查連線狀態
 ; 返回 yes bool: true=已連接
-; [is-connected](#net.sse.client.is-connected)
+; [is-connected](#sse.client.is-connected)
 client.is-connected = () (yes bool) {
     yes = .connected
 }
 
 ; 重新連線（使用 last-event-id 繼續接收）
 ; 返回 ok bool: true=成功
-; [reconnect](#net.sse.client.reconnect)
+; [reconnect](#sse.client.reconnect)
 client.reconnect = () (ok bool) {
 
     ok = false
@@ -513,12 +513,12 @@ client.reconnect = () (ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; 連接到 SSE 端點
-; url str: SSE 端點 URL（http://host:port/path 或 https://host:port/path）
+; url: SSE 端點 URL（http://host:port/path 或 https://host:port/path）
 ; 返回 client ?client:
 ;   ok = 已連接的客戶端
 ;   nil   = 連線失敗
 ;   err = 錯誤訊息
-; [sse-connect](#net.sse.sse-connect)
+; [sse-connect](#sse.sse-connect)
 sse-connect = (url str) (client ?client) {
 
     client = nil
@@ -814,10 +814,10 @@ server-conn {
 ; ═══════════════════════════════════════════════
 
 ; 開始監聽
-; host str: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
-; port i64: 監聽埠號
+; host: 綁定的 IP 地址（如 '0.0.0.0' 或 '127.0.0.1'）
+; port: 監聽埠號
 ; 返回 ok bool: true=成功
-; [listen](#net.sse.server.listen)
+; [listen](#sse.server.listen)
 server.listen = (host str, port i64) (ok bool) {
     ok = false
     .fd = -1
@@ -831,7 +831,7 @@ server.listen = (host str, port i64) (ok bool) {
 
 ; 接受新的 SSE 客戶端連接並完成 HTTP 交握
 ; 返回 c ?server-conn: ok=已交握的客戶端, nil=失敗
-; [accept](#net.sse.server.accept)
+; [accept](#sse.server.accept)
 server.accept = () (c ?server-conn) {
     c = nil
     .fd < 0 -> return
@@ -851,7 +851,7 @@ server.accept = () (c ?server-conn) {
 }
 
 ; 關閉 SSE 服務端
-; [close](#net.sse.server.close)
+; [close](#sse.server.close)
 server.close = () {
     .fd >= 0 -> {
         fs.close(.fd)
@@ -866,7 +866,7 @@ server.close = () {
 ; 完成 SSE HTTP 交握
 ; 讀取客戶端 HTTP 請求，驗證方法為 GET，發送 SSE 回應標頭。
 ; 返回 ok bool: true=成功
-; [handshake](#net.sse.server-conn.handshake)
+; [handshake](#sse.server-conn.handshake)
 server-conn.handshake = () (ok bool) {
 
     ok = false
@@ -946,12 +946,12 @@ server-conn.handshake = () (ok bool) {
 }
 
 ; 發送 SSE 事件
-; event str: 事件類型（空字串=不發送 event 欄位，使用預設 'message'）
-; data str: 事件資料（可多行，每行以 data: 前綴發送）
-; id str: 事件 ID（空字串=不發送 id 欄位）
-; retry i64: 重連等待毫秒數（-1=不發送 retry 欄位）
+; event: 事件類型（空字符串=不發送 event 欄位，使用預設 'message'）
+; data: 事件數據（可多行，每行以 data: 前綴發送）
+; id: 事件 ID（空字符串=不發送 id 欄位）
+; retry: 重連等待毫秒數（-1=不發送 retry 欄位）
 ; 返回 ok bool: true=成功
-; [send-event](#net.sse.server-conn.send-event)
+; [send-event](#sse.server-conn.send-event)
 server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
 
     ok = false
@@ -1002,9 +1002,9 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
 }
 
 ; 發送 SSE 註解（用於心跳保活）
-; comment str: 註解內容
+; comment: 註解內容
 ; 返回 ok bool: true=成功
-; [send-comment](#net.sse.server-conn.send-comment)
+; [send-comment](#sse.server-conn.send-comment)
 server-conn.send-comment = (comment str) (ok bool) {
 
     ok = false
@@ -1023,13 +1023,13 @@ server-conn.send-comment = (comment str) (ok bool) {
 
 ; 檢查連線狀態
 ; 返回 yes bool: true=已連接
-; [is-connected](#net.sse.server-conn.is-connected)
+; [is-connected](#sse.server-conn.is-connected)
 server-conn.is-connected = () (yes bool) {
     yes = .connected
 }
 
 ; 關閉客戶端連接
-; [close](#net.sse.server-conn.close)
+; [close](#sse.server-conn.close)
 server-conn.close = () {
     .fd >= 0 -> {
         fs.close(.fd)
@@ -1043,10 +1043,10 @@ server-conn.close = () {
 ; ═══════════════════════════════════════════════
 
 ; 建立 SSE 服務端並開始監聽
-; host str: 綁定的 IP 地址（如 '0.0.0.0'）
-; port i64: 監聽埠號
+; host: 綁定的 IP 地址（如 '0.0.0.0'）
+; port: 監聽埠號
 ; 返回 s ?server: ok=服務端, nil=失敗
-; [listen-on](#net.sse.listen-on)
+; [listen-on](#sse.listen-on)
 listen-on = (host str, port i64) (s ?server) {
     s = nil
     srv = server {}

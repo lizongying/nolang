@@ -25,12 +25,13 @@ DOT-BYTE = 46
 ; path 結構體：封裝路徑字串
 ; ═══════════════════════════════════════════════
 
-; path: 路徑
+; path: 以字串欄位 p 承載一條路徑的值物件（各方法皆作用於 .p）
 path {
     p str
 }
 
 ; 檢查路徑是否存在（檔案或目錄均算存在）
+; yes: true=該路徑（檔案或目錄）存在
 ; [exists](#path.exists)
 path.exists = () (yes bool) {
     yes = fs.is-file(.p)
@@ -38,18 +39,21 @@ path.exists = () (yes bool) {
 }
 
 ; 檢查路徑是否為目錄
+; yes: true=.p 指向一個目錄
 ; [is-dir](#path.is-dir)
 path.is-dir = () (yes bool) {
     yes = fs.is-dir(.p)
 }
 
 ; 檢查路徑是否為檔案
+; yes: true=.p 指向一個普通檔案
 ; [is-file](#path.is-file)
 path.is-file = () (yes bool) {
     yes = fs.is-file(.p)
 }
 
 ; 取得檔案大小
+; sz: .p 指向檔案的位元組大小
 ; [size](#path.size)
 path.size = () (sz i64) {
     sz = fs.stat-size(.p)
@@ -57,6 +61,7 @@ path.size = () (sz i64) {
 
 ; 建立目錄
 ; 返回 true=成功, false=失敗
+; ok: true=目錄建立成功, false=失敗
 ; [make-dir](#path.make-dir)
 path.make-dir = () (ok bool) {
     ok = os.mkdir(.p, 511)
@@ -64,6 +69,7 @@ path.make-dir = () (ok bool) {
 
 ; 刪除檔案
 ; 返回 true=成功, false=失敗
+; ok: true=檔案刪除成功, false=失敗
 ; [remove](#path.remove)
 path.remove = () (ok bool) {
     ok = fs.remove(.p)
@@ -71,6 +77,8 @@ path.remove = () (ok bool) {
 
 ; 將本路徑重新命名為 new-p
 ; 返回 true=成功, false=失敗
+; new-p: 重命名後的目標路徑字串
+; ok: true=重命名成功, false=失敗
 ; [rename](#path.rename)
 path.rename = (new-p str) (ok bool) {
     ok = fs.rename(.p, new-p)
@@ -78,6 +86,7 @@ path.rename = (new-p str) (ok bool) {
 
 ; 切換工作目錄到本路徑
 ; 返回 true=成功, false=失敗
+; ok: true=工作目錄已切至 .p, false=失敗
 ; [change-dir](#path.change-dir)
 path.change-dir = () (ok bool) {
     ok = os.ch-dir(.p)
@@ -85,6 +94,7 @@ path.change-dir = () (ok bool) {
 
 ; 取得當前工作目錄（建構型方法）
 ; 返回新的 path 結構體
+; out: 封裝當前工作目錄路徑的新 path 結構體
 ; [current](#path.current)
 path.current = () (out path) {
     dir = os.get-wd()
@@ -102,6 +112,8 @@ path.current = () (out path) {
 ; ⚠️ API 一致性：早期 join()/dir() 只做原地修改、沒有回傳值，而 base()/ext()
 ; 是回傳 str，導致 `x = p.join(...)` 拿到空字串這種陷阱。現在四個方法**都回傳**
 ; str（join/dir 仍會一併更新 .p，保留既有的原地用法）。
+; b: 拼接到 .p 末尾的路徑元素
+; out: 處理首尾斜線後拼接完成的完整路徑字串（同時原地更新 .p）
 ; [join](#path.join)
 path.join = (b str) (out str) {
     bn = b.len-bytes()
@@ -154,6 +166,7 @@ path.join = (b str) (out str) {
 
 ; 取出路徑的最後一個元素（檔名）
 ; 返回檔名字串
+; out: 路徑最後一段（檔名）字串
 ; [base](#path.base)
 path.base = () (out str) {
 
@@ -180,6 +193,7 @@ path.base = () (out str) {
 
 ; 取出路徑的目錄部分
 ; 原地修改 .p；**並回傳修改後的 .p**（與 base()/ext()/join() 一致，見 join 上的說明）
+; out: 去除檔名後的目錄部分（原地更新 .p 並回傳）
 ; [dir](#path.dir)
 path.dir = () (out str) {
 
@@ -218,6 +232,7 @@ path.dir = () (out str) {
 
 ; 取出檔案副檔名（含點）
 ; 返回副檔名字串
+; out: 含前導點的副檔名（無副檔名時為空字串）
 ; [ext](#path.ext)
 path.ext = () (out str) {
 
@@ -267,6 +282,7 @@ path.ext = () (out str) {
 
 ; 判斷路徑是否為絕對路徑
 ; 返回 true=是, false=否
+; yes: true=.p 為絕對路徑, false=相對路徑
 ; [is-abs](#path.is-abs)
 path.is-abs = () (yes bool) {
     .p.len-bytes() > 0 -> {
@@ -440,6 +456,7 @@ path.clean = () {
 ; 原地修改 .p 為目錄部分，返回檔名
 ; 例：path{ p: '/a/b/c.txt' }.split() → .p='/a/b', f='c.txt'
 ; （結構體字面量必須多行，此處為簡寫示意）
+; f: 分割出的檔名（.p 原地改為其目錄部分）
 ; [split](#path.split)
 path.split = () (f str) {
 

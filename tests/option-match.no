@@ -6,6 +6,7 @@
 ;          -> body }
 ; 其中 err/nil 為 option 分支，-> 為預設（ok/val）分支
 
+; 測試 err
 test-err = () {
     n ?str
     n = err('boom')
@@ -20,6 +21,7 @@ test-err = () {
     print(r)
 }
 
+; 測試 nil
 test-nil = () {
     n ?str
     n = nil
@@ -34,6 +36,7 @@ test-nil = () {
     print(r)
 }
 
+; 測試 val
 test-val = () {
     n ?i64
     n = 42
@@ -48,6 +51,7 @@ test-val = () {
     print(r)
 }
 
+; 測試 err-only
 test-err-only = () {
     n ?str
     n = err('boom')

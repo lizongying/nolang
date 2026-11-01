@@ -2,17 +2,21 @@
 ; （底層仍 desugar 成 run/awy，所以與手寫 run/awy 的行為一致）
 ; 場景 1：簡單字串返回
 
+; 場景 1：協程直接回傳字面量字串，驗證 awy 取回後指標仍有效
+; s str: 固定的 'hello from async'
 str-producer = () (s str) {
     s = 'hello from async'
 }
 
 ; 場景 2：局部變數 move 到輸出參數
+; s str: 協程返回的字串 'world from local'（先在函式內建立局部再 move 到輸出，驗證 transfer 後仍完整）
 str-producer2 = () (s str) {
     local = 'world from local'
     s = local
 }
 
 ; 場景 3：vec 返回
+; v []i64: 協程返回的 vec，內容固定為 [10, 20, 30]
 vec-producer = () (v []i64) {
     v = [10, 20, 30]
 }

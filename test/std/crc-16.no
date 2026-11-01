@@ -6,16 +6,19 @@
 
 # /test/runner
 
+; CRC-16 檢查值（check value）：'123456789' 應得 0x29B1（10673）
 t-check = () {
     crc = crc-16.new('123456789'.to-bytes())
     runner.eq(crc, 10673, 'crc16("123456789") == 0x29B1')
 }
 
+; hex 便利介面：同一輸入應輸出 4 字元小寫 '29b1'
 t-check-hex = () {
     h = crc-16.hex('123456789'.to-bytes())
     runner.str-eq(h, '29b1', 4, 'crc16.hex("123456789") == "29b1"')
 }
 
+; 空輸入不進入任何迭代，應直接回傳初始值 0xFFFF
 t-empty = () {
     crc = crc-16.new(''.to-bytes())
     runner.eq(crc, 65535, 'crc16("") == 0xFFFF (init unchanged)')

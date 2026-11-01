@@ -2,6 +2,10 @@
 num = i32 | i64 | f64
 
 ; 用戶範例：按被匹配值的具體型別靜態選臂
+; x num: 被匹配的值，i32 與 i64 走不同臂、其餘走 catch-all
+; lo num: i32 臂要回傳的下界值
+; hi num: i64 臂要回傳的上界值
+; r num: 依 x 的具體型別選出的 lo / hi / x
 clamp0 = (x num, lo num, hi num) (r num) {
   r = x: {
     i32 -> lo
@@ -11,6 +15,7 @@ clamp0 = (x num, lo num, hi num) (r num) {
 }
 
 ; 帶綁定型別臂 + 預設臂
+; x num: 被匹配的 union 值；i64 / i32 / f64 臂各自具名綁定 v 取載荷，其餘落 catch-all
 classify = (x num) {
   y = x: {
     v i64 -> v.to-str()
@@ -22,6 +27,7 @@ classify = (x num) {
 }
 
 ; 各臂回傳不同值，驗證確實選對臂
+; x num: 被匹配的 union 值；i64 臂 +1、i32 臂 +2、f64 臂 +3.0，其餘回 0
 add1 = (x num) {
   r = x: {
     w i64 -> w + 1

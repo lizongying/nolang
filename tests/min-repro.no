@@ -2,6 +2,8 @@ test-struct {
     result i64
 }
 
+; 方法分派的最小復現：按 quant 逐值比對寫入 .result，其餘值落到 99
+; quant i64: 要分派的數量，0 / 42 / 43 / 63 有專門分支
 test-struct.dispatch = (quant i64) {
     {
         quant == 0 -> .result = 0

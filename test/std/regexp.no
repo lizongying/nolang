@@ -9,6 +9,7 @@
 
 ; ── 基本匹配 ──────────────────────────────────
 
+; 驗證 regexp-match 對字面子串在開頭與中段皆可匹配、無匹配時回傳 false
 t-match-literal = () {
     matched = regexp-match('hello', 'hello world')
     runner.is-true(matched, 'match literal hello')
@@ -18,6 +19,7 @@ t-match-literal = () {
     runner.is-false(matched3, 'no match xyz')
 }
 
+; 驗證 regexp-find 回傳首個匹配子串的字串；未匹配時回傳空字串
 t-find-literal = () {
     result = regexp-find('world', 'hello world')
     runner.eq(result.len(), 5, 'find world len == 5')
@@ -28,6 +30,7 @@ t-find-literal = () {
 
 ; ── 量詞 ──────────────────────────────────────
 
+; 驗證量詞 * 匹配零次或多次：ab*c 同時匹配 ac 與 abc
 t-star = () {
     matched = regexp-match('ab*c', 'ac')
     runner.is-true(matched, 'star: ab*c matches ac')
@@ -35,6 +38,7 @@ t-star = () {
     runner.is-true(matched3, 'star: ab*c matches abc')
 }
 
+; 驗證量詞 + 至少匹配一次：ab+c 不匹配 ac、匹配 abbc
 t-plus = () {
     matched = regexp-match('ab+c', 'ac')
     runner.is-false(matched, 'plus: ab+c not match ac')
@@ -42,6 +46,7 @@ t-plus = () {
     runner.is-true(matched2, 'plus: ab+c matches abbc')
 }
 
+; 驗證量詞 ? 匹配零或一次：匹配 ac 與 abc 但拒絕 abbc
 t-question = () {
     matched = regexp-match('ab?c', 'ac')
     runner.is-true(matched, 'question: ab?c matches ac')
@@ -53,6 +58,7 @@ t-question = () {
 
 ; ── 任意字元 ──────────────────────────────────
 
+; 驗證句點 . 匹配任意單一字元，字元數不符的目標則不匹配
 t-dot = () {
     matched = regexp-match('h.llo', 'hello')
     runner.is-true(matched, 'dot: h.llo matches hello')
@@ -64,6 +70,7 @@ t-dot = () {
 
 ; ── 字元類別 ──────────────────────────────────
 
+; 驗證字元類別匹配集合內任一字元，含列舉 [abc] 與範圍 [a-z]
 t-char-class = () {
     matched = regexp-match('[abc]', 'a')
     runner.is-true(matched, 'class: [abc] matches a')
@@ -75,6 +82,7 @@ t-char-class = () {
     runner.is-false(matched4, 'class: [a-z] not match 5')
 }
 
+; 驗證 ^ 開頭的反向字元類別（如 [^abc]）匹配集合外的字元
 t-negated-class = () {
     matched = regexp-match('[^abc]', 'd')
     runner.is-true(matched, 'negated: [^abc] matches d')
@@ -82,6 +90,7 @@ t-negated-class = () {
     runner.is-false(matched2, 'negated: [^abc] not match a')
 }
 
+; 驗證反斜線 d 數字類別匹配數位元，並能從字母混雜字串中 find 出連續數字
 t-digit-class = () {
     matched = regexp-match('\\d+', 'abc123def')
     runner.is-true(matched, 'digit: \\d+ matches in abc123')
@@ -92,6 +101,7 @@ t-digit-class = () {
     runner.str-eq(result, '123', 3, 'digit find content == 123')
 }
 
+; 驗證反斜線 w 字元類別匹配字元組成、不匹配純空白
 t-word-class = () {
     matched = regexp-match('\\w+', 'hello')
     runner.is-true(matched, 'word: \\w+ matches hello')
@@ -101,6 +111,7 @@ t-word-class = () {
 
 ; ── 錨點 ──────────────────────────────────────
 
+; 驗證起首錨點 ^ 僅在目標開頭匹配，出現在中段或尾部時不匹配
 t-start-anchor = () {
     matched = regexp-match('^hello', 'hello world')
     runner.is-true(matched, 'anchor: ^hello matches at start')
@@ -108,6 +119,7 @@ t-start-anchor = () {
     runner.is-false(matched2, 'anchor: ^hello not match at end')
 }
 
+; 驗證結尾錨點 $ 僅在目標結尾匹配，出現在開頭時不匹配
 t-end-anchor = () {
     matched = regexp-match('world$', 'hello world')
     runner.is-true(matched, 'anchor: world$ matches at end')
@@ -117,12 +129,14 @@ t-end-anchor = () {
 
 ; ── 便捷函數 find ─────────────────────────────
 
+; 驗證 find 搭配類別 [0-9]+ 抽出首段連續數字子串
 t-find-digits = () {
     result = regexp-find('[0-9]+', 'abc123def456')
     runner.eq(result.len(), 3, 'find [0-9]+ len == 3')
     runner.str-eq(result, '123', 3, 'find [0-9]+ content == 123')
 }
 
+; 驗證 find 完全無匹配時回傳長度為 0 的空字串
 t-find-not-found = () {
     result = regexp-find('xyz', 'hello world')
     runner.eq(result.len(), 0, 'find not found len == 0')

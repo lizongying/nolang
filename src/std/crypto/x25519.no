@@ -27,7 +27,8 @@ X25519-A24 = 121665
 ; ═══════════════════════════════════════════════
 
 ; 零元素
-; [fe-zero](#crypto.x25519.fe-zero)
+; h: 被寫成零元素的域元素（10 個 limb 全部置 0）
+; [fe-zero](#x25519.fe-zero)
 fe-zero = (h []i64) {
 
     h[0]: {
@@ -82,7 +83,8 @@ fe-zero = (h []i64) {
 }
 
 ; 一元素
-; [fe-one](#crypto.x25519.fe-one)
+; h: 被寫成單位元的域元素（limb0=1，其餘 0）
+; [fe-one](#x25519.fe-one)
 fe-one = (h []i64) {
 
     h[0]: {
@@ -137,7 +139,9 @@ fe-one = (h []i64) {
 }
 
 ; 複製域元素
-; [fe-copy](#crypto.x25519.fe-copy)
+; h: 目的域元素（原地被填入 f 的 10 個 limb）
+; f: 來源域元素
+; [fe-copy](#x25519.fe-copy)
 fe-copy = (h []i64, f []i64) {
 
     #{index-out=zero}
@@ -202,7 +206,10 @@ fe-copy = (h []i64, f []i64) {
 }
 
 ; 域元素加法 h = f + g
-; [fe-add](#crypto.x25519.fe-add)
+; h: 逐 limb 相加的結果（未做進位傳播，等價性由後續乘/序列化保證）
+; f: 左加數
+; g: 右加數
+; [fe-add](#x25519.fe-add)
 fe-add = (h []i64, f []i64, g []i64) {
 
     #{index-out=zero, overflow=wrap}
@@ -267,7 +274,10 @@ fe-add = (h []i64, f []i64, g []i64) {
 }
 
 ; 域元素減法 h = f - g
-; [fe-sub](#crypto.x25519.fe-sub)
+; h: 逐 limb 相減的結果（limb 可為負，靠後續規約轉回正代表）
+; f: 被減數
+; g: 減數
+; [fe-sub](#x25519.fe-sub)
 fe-sub = (h []i64, f []i64, g []i64) {
 
     #{index-out=zero, overflow=wrap}
@@ -333,7 +343,10 @@ fe-sub = (h []i64, f []i64, g []i64) {
 
 ; 條件交換（Montgomery ladder 使用）
 ; 掩碼 b: 0=不交換, 1=交換
-; [fe-cswap](#crypto.x25519.fe-cswap)
+; a: 第一個域元素（原地參與交換）
+; b: 第二個域元素（原地參與交換）
+; mask: 0=不交換, 1=交換（內部展成全 1 遮碼，維持常數時間）
+; [fe-cswap](#x25519.fe-cswap)
 fe-cswap = (a []i64, b []i64, mask i64) {
 
     ; 常數時間：mask=0 時不交換，mask=-1（即全1）時交換
@@ -366,7 +379,10 @@ fe-cswap = (a []i64, b []i64, mask i64) {
 ; 域元素乘法 h = f * g mod p
 ; 使用 ref10 交叉項展開
 ; 注意：使用陣列 t[] 儲存中間結果以避免編譯器最佳化問題
-; [fe-mul](#crypto.x25519.fe-mul)
+; h: 乘積域元素（f × g mod p）
+; f: 因數（10 limb）
+; g: 因數（10 limb）
+; [fe-mul](#x25519.fe-mul)
 fe-mul = (h []i64, f []i64, g []i64) {
 
     ; 提取 f 的各 limb
@@ -833,7 +849,9 @@ fe-mul = (h []i64, f []i64, g []i64) {
 
 ; 域元素平方 h = f^2 mod p
 ; 直接使用 fe-mul
-; [fe-sq](#crypto.x25519.fe-sq)
+; h: 平方結果（f² mod p）
+; f: 被平方的域元素
+; [fe-sq](#x25519.fe-sq)
 fe-sq = (h []i64, f []i64) {
     fe-mul(h, f, f)
 }
@@ -842,7 +860,9 @@ fe-sq = (h []i64, f []i64) {
 ; Montgomery ladder 倍點公式 z2 = E*(AA + a24*E) 中 a24 必須是 121665，
 ; 不是 121666。121666 會讓 ladder 倍點錯誤（某些純量下輸出全零/錯誤）。
 ; 使用陣列儲存中間結果以避免編譯器最佳化問題
-; [fe-mul121665](#crypto.x25519.fe-mul121665)
+; h: 乘以 121665 後的域元素
+; f: 被乘的域元素
+; [fe-mul121665](#x25519.fe-mul121665)
 fe-mul121665 = (h []i64, f []i64) {
 
     t []i64 = with-len(10)
@@ -1183,7 +1203,9 @@ fe-mul121665 = (h []i64, f []i64) {
 ; 計算 a^(-1) mod p
 ; 使用 ref10 加法鏈計算 a^(p-2) = a^(2^255-21)
 ; 完整對齊 libsodium fe25519_invert 的加法鏈
-; [fe-invert](#crypto.x25519.fe-invert)
+; out: 寫入結果的域元素（10 limb）
+; a: 待求逆的域元素（不可為零元素）
+; [fe-invert](#x25519.fe-invert)
 fe-invert = (out []i64, a []i64) {
     t0 []i64 = with-len(10)
     t1 []i64 = with-len(10)
@@ -1292,7 +1314,9 @@ fe-invert = (out []i64, a []i64) {
 ; 使用 ref10 風格：先以位移載入未遮罩的 limb，再做進位傳播
 ; 進位傳播使用捨入常數 (1<<(bits-1))，產生「半規約」形式（limb 可為小負數）
 ; 此形式與 fe-tobytes 的預期輸入一致，確保 round-trip 正確
-; [fe-frombytes](#crypto.x25519.fe-frombytes)
+; h: 載入後的域元素（10 limb，已做半規約進位傳播）
+; s: 32 位元組小端編碼（最高位元 bit255 會被遮掉）
+; [fe-frombytes](#x25519.fe-frombytes)
 fe-frombytes = (h []i64, s [32]byte) {
 
     ; 載入未遮罩 limb（每個 limb 包含「跨界」位元，由後續進位傳播規整）
@@ -1575,7 +1599,9 @@ fe-frombytes = (h []i64, s [32]byte) {
 ; 將域元素序列化為 32 位元組（小端序）
 ; 使用無捨入常數的 floor division 進位傳播
 ; 先將 limbs 規約到 [0, 2^bits-1]，再用 +19 測試是否 >= p
-; [fe-tobytes](#crypto.x25519.fe-tobytes)
+; s: 寫入序列化結果的 32 位元組緩衝區
+; h: 待序列化的域元素（先規約到 [0,p) 再輸出）
+; [fe-tobytes](#x25519.fe-tobytes)
 fe-tobytes = (s [32]byte, h []i64) {
 
     ; 複製到局部陣列
@@ -2165,7 +2191,7 @@ fe-tobytes = (s [32]byte, h []i64) {
 ; scalar [32]byte: 純量（私鑰）
 ; point [32]byte: 點座標（公鑰）
 ; 返回 out [32]byte: 結果
-; [x25519-scalarmult](#crypto.x25519.x25519-scalarmult)
+; [x25519-scalarmult](#x25519.x25519-scalarmult)
 x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
     ; Clamping: 固定純量的某些位元
@@ -2320,7 +2346,8 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 ; ═══════════════════════════════════════════════
 
 ; 返回基點 u 座標 (9, 0, 0, ..., 0)
-; [x25519-get-basepoint](#crypto.x25519.x25519-get-basepoint)
+; base: 基點 u=9 的 32 位元組小端編碼
+; [x25519-get-basepoint](#x25519.x25519-get-basepoint)
 x25519-get-basepoint = () (base [32]byte) {
 
     ; [32]byte 不自動零初始化，需顯式清零
@@ -2335,7 +2362,7 @@ x25519-get-basepoint = () (base [32]byte) {
 ; 計算純量 * 基點
 ; scalar [32]byte: 純量（私鑰）
 ; 返回 out [32]byte: 公鑰
-; [x25519-scalarmult-base](#crypto.x25519.x25519-scalarmult-base)
+; [x25519-scalarmult-base](#x25519.x25519-scalarmult-base)
 x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
     base [32]byte
     base = x25519-get-basepoint()
@@ -2350,7 +2377,7 @@ x25519-scalarmult-base = (scalar [32]byte) (out [32]byte) {
 ; scalar []byte: 純量（私鑰，長度 32）
 ; point []byte: 點座標（公鑰，長度 32）
 ; 返回 out []byte: 結果（長度 32）
-; [x25519-scalarmult-bytes](#crypto.x25519.x25519-scalarmult-bytes)
+; [x25519-scalarmult-bytes](#x25519.x25519-scalarmult-bytes)
 x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 
     ; Clamping
@@ -2493,7 +2520,7 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 ; 計算純量 * 基點（[]byte 版本）
 ; scalar []byte: 純量（私鑰，長度 32）
 ; 返回 out []byte: 公鑰（長度 32）
-; [x25519-scalarmult-base-bytes](#crypto.x25519.x25519-scalarmult-base-bytes)
+; [x25519-scalarmult-base-bytes](#x25519.x25519-scalarmult-base-bytes)
 x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
     base []byte = with-len(32)
     i <- [0..32): {
@@ -2519,7 +2546,10 @@ x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
 ; seed i64: 隨機種子
 ; 返回 priv [32]byte: 私鑰
 ; 返回 pub [32]byte: 公鑰
-; [x25519-gen-keypair](#crypto.x25519.x25519-gen-keypair)
+; seed: rand 種子（決定私鑰；真實場景需以系統亂源注入）
+; priv: 私鑰（已 clamp：bit0-2 清零、bit254 置 1、bit255 清零）
+; pub: 對應公鑰（priv × 基點）
+; [x25519-gen-keypair](#x25519.x25519-gen-keypair)
 x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
 
     ; 用 PRNG 生成 32 位元組私鑰
@@ -2551,56 +2581,73 @@ x25519-gen-keypair = (seed i64) (priv [32]byte, pub [32]byte) {
 ; 再以「新配置的 []i64（長度 10）」或 [32]byte 回傳，呼叫端只需依賴回值。
 
 ; 回傳零域元素
-; [fe-zero-v](#crypto.x25519.fe-zero-v)
+; h: 新建的零域元素（長度 10）
+; [fe-zero-v](#x25519.fe-zero-v)
 fe-zero-v = () (h []i64) {
     h = with-len(10)
     fe-zero(h)
 }
 
 ; 回傳一域元素
-; [fe-one-v](#crypto.x25519.fe-one-v)
+; h: 新建的單位元域元素（長度 10）
+; [fe-one-v](#x25519.fe-one-v)
 fe-one-v = () (h []i64) {
     h = with-len(10)
     fe-one(h)
 }
 
 ; 回傳 a + b
-; [fe-add-v](#crypto.x25519.fe-add-v)
+; a: 左加數
+; b: 右加數
+; h: 新建的和域元素
+; [fe-add-v](#x25519.fe-add-v)
 fe-add-v = (a []i64, b []i64) (h []i64) {
     h = with-len(10)
     fe-add(h, a, b)
 }
 
 ; 回傳 a - b
-; [fe-sub-v](#crypto.x25519.fe-sub-v)
+; a: 被減數
+; b: 減數
+; h: 新建的差域元素
+; [fe-sub-v](#x25519.fe-sub-v)
 fe-sub-v = (a []i64, b []i64) (h []i64) {
     h = with-len(10)
     fe-sub(h, a, b)
 }
 
 ; 回傳 a * b mod p
-; [fe-mul-v](#crypto.x25519.fe-mul-v)
+; a: 因數
+; b: 因數
+; h: 新建的積域元素（a × b mod p）
+; [fe-mul-v](#x25519.fe-mul-v)
 fe-mul-v = (a []i64, b []i64) (h []i64) {
     h = with-len(10)
     fe-mul(h, a, b)
 }
 
 ; 回傳 a^2 mod p
-; [fe-sq-v](#crypto.x25519.fe-sq-v)
+; a: 被平方的域元素
+; h: 新建的平方結果
+; [fe-sq-v](#x25519.fe-sq-v)
 fe-sq-v = (a []i64) (h []i64) {
     h = with-len(10)
     fe-sq(h, a)
 }
 
 ; 回傳 a^(-1) mod p
-; [fe-invert-v](#crypto.x25519.fe-invert-v)
+; a: 待求逆的域元素
+; h: 新建的逆元（a^(p-2)）
+; [fe-invert-v](#x25519.fe-invert-v)
 fe-invert-v = (a []i64) (h []i64) {
     h = with-len(10)
     fe-invert(h, a)
 }
 
 ; 從 32 位元組（小端）回傳域元素
-; [fe-frombytes-v](#crypto.x25519.fe-frombytes-v)
+; s: 32 位元組小端編碼（bit255 無效）
+; h: 新建的域元素
+; [fe-frombytes-v](#x25519.fe-frombytes-v)
 fe-frombytes-v = (s [32]byte) (h []i64) {
     h = with-len(10)
     fe-frombytes(h, s)
@@ -2608,8 +2655,10 @@ fe-frombytes-v = (s [32]byte) (h []i64) {
 
 ; 將域元素序列化為 32 位元組（小端）回傳
 ; [32]byte 為值傳遞，直接 fe-tobytes(s, h) 不會寫回回傳槽，
-; 故先寫入局部陣列再整体賦值給回傳值 s。
-; [fe-tobytes-v](#crypto.x25519.fe-tobytes-v)
+; 故先寫入局部陣列再整體賦值給回傳值 s。
+; h: 待序列化的域元素
+; s: 新建的 32 位元組小端編碼
+; [fe-tobytes-v](#x25519.fe-tobytes-v)
 fe-tobytes-v = (h []i64) (s [32]byte) {
     t [32]byte
     fe-tobytes(t, h)

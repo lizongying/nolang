@@ -7,7 +7,8 @@ key-holder {
     pub [32]byte
 }
 
-; 測試從結構體欄位讀取私鑰並計算公鑰
+; 測試從結構體欄位讀取私鑰並計算公鑰（kh.priv 逐位元組寫入後直接當參數）
+; pass bool: true=kh.pub 與 RFC 7748 Alice 金標 32 位元組完全相同；false=任一位置不符
 test-struct-field = () (pass bool) {
     pass = false
 
@@ -89,6 +90,8 @@ test-struct-field = () (pass bool) {
 
 ; test-func-output: 測試從函數輸出參數取得 [32]byte 後傳給 scalarmult-base
 ; 將 hex 字串轉為 [32]byte
+; hex-str str: 64 字元 hex 字串（每 2 字元一個位元組）
+; out [32]byte: 解析出的 32 位元組
 hex-to-bytes = (hex-str str) (out [32]byte) {
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
@@ -132,6 +135,8 @@ hex-to-bytes = (hex-str str) (out [32]byte) {
     }
 }
 
+; 測試 func-output：用函數（hex-to-bytes）回傳的 32 位元組直接當 scalarmult-base 參數
+; pass bool: true=算出公鑰與 expected 32 位元組逐一相同；false=match-val 被置 0
 test-func-output = () (pass bool) {
     pass = false
 

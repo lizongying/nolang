@@ -17,6 +17,7 @@ test-to-i64-ok = () {
     }
 }
 
+; 測試 to-i64-neg
 test-to-i64-neg = () {
     n = '-42'.to-i64()
     {
@@ -31,6 +32,7 @@ test-to-i64-neg = () {
     }
 }
 
+; 測試 to-i64-empty
 test-to-i64-empty = () {
     n = ''.to-i64()
     {
@@ -45,6 +47,7 @@ test-to-i64-empty = () {
     }
 }
 
+; 測試 to-i64-invalid
 test-to-i64-invalid = () {
     n = 'abc'.to-i64()
     {
@@ -74,6 +77,7 @@ test-to-i8-ok = () {
     }
 }
 
+; 測試 to-i8-neg
 test-to-i8-neg = () {
     n = '-128'.to-i8()
     {
@@ -88,6 +92,7 @@ test-to-i8-neg = () {
     }
 }
 
+; 測試 to-i8-overflow
 test-to-i8-overflow = () {
     n = '128'.to-i8()
     {
@@ -102,6 +107,7 @@ test-to-i8-overflow = () {
     }
 }
 
+; 測試 to-i8-invalid
 test-to-i8-invalid = () {
     n = '12a'.to-i8()
     {
@@ -131,6 +137,7 @@ test-to-i16-ok = () {
     }
 }
 
+; 測試 to-i16-overflow
 test-to-i16-overflow = () {
     n = '32768'.to-i16()
     {
@@ -160,6 +167,7 @@ test-to-i32-ok = () {
     }
 }
 
+; 測試 to-i32-overflow
 test-to-i32-overflow = () {
     n = '2147483648'.to-i32()
     {
@@ -189,6 +197,7 @@ test-to-u8-ok = () {
     }
 }
 
+; 測試 to-u8-overflow
 test-to-u8-overflow = () {
     n = '256'.to-u8()
     {
@@ -203,6 +212,7 @@ test-to-u8-overflow = () {
     }
 }
 
+; 測試 to-u8-negative
 test-to-u8-negative = () {
     n = '-1'.to-u8()
     {
@@ -232,6 +242,7 @@ test-to-u16-ok = () {
     }
 }
 
+; 測試 to-u16-overflow
 test-to-u16-overflow = () {
     n = '65536'.to-u16()
     {
@@ -261,6 +272,7 @@ test-to-u32-ok = () {
     }
 }
 
+; 測試 to-u32-overflow
 test-to-u32-overflow = () {
     n = '4294967296'.to-u32()
     {
@@ -290,6 +302,7 @@ test-to-u64-ok = () {
     }
 }
 
+; 測試 to-u64-negative
 test-to-u64-negative = () {
     n = '-1'.to-u64()
     {
@@ -319,6 +332,7 @@ test-to-bool-true = () {
     }
 }
 
+; 測試 to-bool-false
 test-to-bool-false = () {
     b = 'false'.to-bool()
     {
@@ -333,6 +347,7 @@ test-to-bool-false = () {
     }
 }
 
+; 測試 to-bool-empty
 test-to-bool-empty = () {
     b = ''.to-bool()
     {
@@ -347,6 +362,7 @@ test-to-bool-empty = () {
     }
 }
 
+; 測試 to-bool-invalid
 test-to-bool-invalid = () {
     b = 'yes'.to-bool()
     {

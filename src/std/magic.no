@@ -12,8 +12,10 @@
 ; ═══════════════════════════════════════════════
 
 ; 檢測檔案類型
-; path: 檔案路徑
+; path str: 欲檢測的路徑（目錄、普通檔案皆可）
 ; 返回類型描述字串（如 'PNG image'、'ELF executable'、'ASCII text'、'directory'、'unknown'）
+; 判定順序：目錄 > 非普通檔案 > 副檔名 > 魔數 > 預設 'data'。
+; kind str: 'directory'、'unknown (not found)'、由副檔名或魔數命中的描述，或預設的 'data'
 ; [detect-type](#magic.detect-type)
 detect-type = (path str) (kind str) {
     kind = 'unknown'
@@ -56,8 +58,9 @@ detect-type = (path str) (kind str) {
 ; ═══════════════════════════════════════════════
 
 ; 取得檔案副檔名（小寫）
-; path: 檔案路徑
+; path str: 檔案路徑（可含目錄）；從末尾往前找最後一個 '.'，遇到 '/' 即停止
 ; 返回副檔名（不含 '.'），無副檔名返回空串
+; ext str: 小寫副檔名；無 '.'、'.' 後為空、或 '.' 只出現在目錄部分時為 ''
 ; [get-extension](#magic.get-extension)
 get-extension = (path str) (ext str) {
 
@@ -87,8 +90,9 @@ get-extension = (path str) (ext str) {
 }
 
 ; 基於副檔名判斷類型
-; ext: 副檔名（小寫）
+; ext str: 小寫副檔名（不含 '.'，如 'png'、'json'）
 ; 返回類型描述，未知返回空串
+; kind str: 對應的類型描述（如 'PNG image'）；未收錄的副檔名為 ''
 ; [detect-by-extension](#magic.detect-by-extension)
 detect-by-extension = (ext str) (kind str) {
     {
@@ -199,8 +203,9 @@ detect-by-extension = (ext str) (kind str) {
 }
 
 ; 基於魔數判斷類型
-; path: 檔案路徑
+; path str: 檔案路徑；只讀取前 64 字節用於比對
 ; 返回類型描述，未知返回空串
+; kind str: 命中魔數的類型描述；檔案打不開或不足 4 字節時為 ''
 ; [detect-by-magic](#magic.detect-by-magic)
 detect-by-magic = (path str) (kind str) {
     kind = ''

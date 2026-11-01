@@ -3,6 +3,7 @@
 ; # std/net/tls
 
 ; 測試 HTTPS 伺服器可以建立監聽
+; pass bool: true=listen('127.0.0.1', 9443) 回 ok，close 前未報錯；false=bind/listen 失敗
 test-https-listen = () (pass bool) {
     pass = false
     srv = https-server {}
@@ -16,6 +17,8 @@ test-https-listen = () (pass bool) {
 }
 
 ; 測試 TLS 伺服器連線初始化（憑證生成、金鑰設定）
+; pass bool: true=server-init(-1) 回 ok，cert 非空且 RSA 的 n/d 各為 256 位元組；
+;           false=回 nil/err 或憑證、金鑰尺寸不符
 test-tls-server-init = () (pass bool) {
     pass = false
 
@@ -60,6 +63,7 @@ test-tls-server-init = () (pass bool) {
 }
 
 ; 測試 https-server-conn 結構體可建立
+; pass bool: true=以 tls.server-conn 為欄位組出結構體後 method 為空字串（長度 0）
 test-https-server-struct = () (pass bool) {
     pass = false
     space = ' '
@@ -83,9 +87,9 @@ test-https-server-struct = () (pass bool) {
 
 ; 父進程客戶端邏輯
 ; 使用局部變數 tc 操作 TLS 連線，避開全域變數跨函式 bug。
-; host str: 伺服器主機
-; port i64: 伺服器埠號
-; 返回 ok bool: true=成功收到預期回應
+; host str: 伺服器主機（本機測試為 127.0.0.1）
+; port i64: 伺服器監聽埠號
+; ok bool: true 表示 TLS 握手完成且收到預期的 HTTP 回應
 run-https-e2e-client = (host str, port i64) (ok bool) {
     ok = false
 
@@ -176,6 +180,8 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
 
 ; 端到端測試 — fork 伺服器 + TLS 客戶端連線
 ; 驗證: TLS 1.3 交握 + HTTP 請求/回應 through加密通道
+; pass bool: true=父進程客戶端收到含預期內容的 HTTP 回應（run-https-e2e-client 回 true）；
+;           false=listen/fork/交握失敗或回應內容不符
 test-https-e2e = () (pass bool) {
     pass = false
 
@@ -220,9 +226,9 @@ test-https-e2e = () (pass bool) {
 
 ; 父進程客戶端邏輯（TLS 1.2）
 ; 使用 dial-12 發送純 TLS 1.2 ClientHello（無 supported_versions 擴展）。
-; host str: 伺服器主機
-; port i64: 伺服器埠號
-; 返回 ok bool: true=成功收到預期回應
+; host str: 伺服器主機（本機測試為 127.0.0.1）
+; port i64: 伺服器監聽埠號
+; ok bool: true 表示 TLS 1.2 握手完成且收到預期的 HTTP 回應
 run-https-e2e-client-12 = (host str, port i64) (ok bool) {
     ok = false
 
@@ -313,6 +319,7 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
 
 ; 端到端測試 — TLS 1.2 交握
 ; 驗證: TLS 1.2 交握 + HTTP 請求/回應 through加密通道
+; pass bool: true=客戶端在收到位元組中找得到 'hello from nolang https 1.2'；false=交握或內容比對失敗
 test-https-e2e-12 = () (pass bool) {
     pass = false
 

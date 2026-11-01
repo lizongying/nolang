@@ -17,6 +17,7 @@ jv-pool {
 }
 _p jv-pool
 
+; 初始化全域池 _p：擴出 1 個節點，再用「局部 vec + 整欄位重賦值 + 寫回」把 keys 設成 1..4
 seed = () {
     _p.nodes = with-len(1)
     ks []i64 = with-len(4)
@@ -28,6 +29,8 @@ seed = () {
 }
 
 ; rebuild keys excluding `drop`, via local copy + wholesale field reassign + writeback
+; i i64: 要處理的節點下標（本測試為 0）
+; drop i64: 要剔除的鍵值，例如 2
 del-via-copy = (i i64, drop i64) {
     node jv-value = _p.nodes[i]
     nk []i64 = with-len(0)

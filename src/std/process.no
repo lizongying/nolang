@@ -39,6 +39,7 @@
 
 ; fork 當前進程
 ; 返回 0=子進程, >0=父進程(子PID), -1=錯誤
+; pid: fork 結果（0=子進程, >0=子 PID, -1=錯誤）
 ; [process-fork](#process.process-fork)
 #{buildin}
 process-fork = () (pid i64) {
@@ -46,6 +47,7 @@ process-fork = () (pid i64) {
 
 ; 建立管道
 ; 返回打包值 (read_fd << 32) | write_fd
+; fds: 打包的管道描述符 (read_fd<<32)|write_fd（<0=錯誤）
 ; [process-pipe](#process.process-pipe)
 #{buildin}
 process-pipe = () (fds i64) {
@@ -53,6 +55,9 @@ process-pipe = () (fds i64) {
 
 ; 等待子進程
 ; 返回退出碼 (WEXITSTATUS)
+; pid: 要等待回收的子進程 ID
+; options: waitpid 選項（0=阻塞, WNOHANG=非阻塞）
+; code: 解碼後的退出碼（WEXITSTATUS）
 ; [process-waitpid](#process.process-waitpid)
 #{buildin}
 process-waitpid = (pid i64, options i64) (code i64) {
@@ -61,6 +66,8 @@ process-waitpid = (pid i64, options i64) (code i64) {
 ; 非阻塞等待子進程 (WNOHANG)
 ; 子進程仍在執行時返回 -1；已退出時返回其退出碼；錯誤時返回 -1。
 ; 用於 timeout 看門狗輪詢。
+; pid: 待輪詢的子進程 ID
+; code: 退出碼（-1=仍在執行或錯誤）
 ; [process-waitpid-nohang](#process.process-waitpid-nohang)
 #{buildin}
 process-waitpid-nohang = (pid i64) (code i64) {
@@ -69,30 +76,42 @@ process-waitpid-nohang = (pid i64) (code i64) {
 ; 替換當前進程
 ; 呼叫 execlp(program, program, arg, NULL)
 ; 僅在失敗時返回
+; program: 要執行的程式名（PATH 搜尋）
+; arg: 傳給程式的首個參數
+; err: 僅在 exec 失敗時返回的 errno
 ; [process-exec](#process.process-exec)
 #{buildin}
 process-exec = (program str, arg str) (err i64) {
 }
 
 ; 發送信號給進程
+; pid: 目標進程 ID
+; sig: 信號編號（如 SIG-KILL=9）
+; ok: 信號是否發送成功
 ; [process-kill](#process.process-kill)
 #{buildin}
 process-kill = (pid i64, sig i64) (ok bool) {
 }
 
 ; 複製檔案描述符
+; oldfd: 來源檔案描述符
+; newfd: 目標檔案描述符
+; ret: 複製後的描述符（-1=錯誤）
 ; [process-dup2](#process.process-dup2)
 #{buildin}
 process-dup2 = (oldfd i64, newfd i64) (ret i64) {
 }
 
 ; 取得父進程 ID
+; pid: 父進程 ID
 ; [process-getppid](#process.process-getppid)
 #{buildin}
 process-getppid = () (pid i64) {
 }
 
 ; 執行 shell 命令
+; cmd: 交给 sh 的完整命令字串
+; status: C system() 的原始 wait 狀態（非退出碼，需 >>8）
 ; [process-system](#process.process-system)
 #{buildin}
 process-system = (cmd str) (status i64) {
@@ -101,6 +120,7 @@ process-system = (cmd str) (status i64) {
 ; 用 sh -c 執行命令字串（替換當前進程）
 ; cmd: 完整命令字串
 ; 僅在失敗時返回 errno
+; err: 僅在 exec 失敗時返回的 errno
 ; [process-exec-shell](#process.process-exec-shell)
 #{buildin}
 process-exec-shell = (cmd str) (err i64) {
@@ -113,12 +133,15 @@ process-exec-shell = (cmd str) (err i64) {
 
 ; 建立匿名管道（CreatePipe）
 ; 返回打包值 (read_handle << 32) | write_handle，0=失敗
+; handles: 打包的管道 handle (read<<32)|write（0=失敗）
 ; [win-create-pipe](#process.win-create-pipe)
 #{buildin}
 win-create-pipe = () (handles i64) {
 }
 
 ; 關閉 Windows handle（CloseHandle）
+; handle: 待關閉的 Windows handle
+; ok: 關閉是否成功
 ; [win-close-handle](#process.win-close-handle)
 #{buildin}
 win-close-handle = (handle i64) (ok bool) {
@@ -126,6 +149,9 @@ win-close-handle = (handle i64) (ok bool) {
 
 ; 寫入資料到管道/handle（WriteFile）
 ; 返回寫入位元組數，-1=錯誤
+; handle: 寫入目標 handle
+; data: 待寫入的資料
+; written: 實際寫入位元組數（-1=錯誤）
 ; [win-write-pipe](#process.win-write-pipe)
 #{buildin}
 win-write-pipe = (handle i64, data str) (written i64) {
@@ -133,6 +159,10 @@ win-write-pipe = (handle i64, data str) (written i64) {
 
 ; 從管道/handle 讀取資料（ReadFile）
 ; 返回 (data, n)：n=讀取位元組數，-1=錯誤
+; handle: 讀取來源 handle
+; max-bytes: 單次最大讀取位元組數
+; data: 讀取到的資料
+; n: 實際讀取位元組數（-1=錯誤, 0=EOF）
 ; [win-read-pipe](#process.win-read-pipe)
 #{buildin}
 win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) {
@@ -143,6 +173,11 @@ win-read-pipe = (handle i64, max-bytes i64) (data str, n i64) {
 ; dir: 工作目錄（空=繼承）
 ; stdin-handle, stdout-handle, stderr-handle: 標準流 handle（0=繼承父進程）
 ; 返回 (proc-handle, status)：proc-handle>0=成功, 0=失敗
+; stdin-handle: 子進程 stdin handle（0=繼承父進程）
+; stdout-handle: 子進程 stdout handle（0=繼承父進程）
+; stderr-handle: 子進程 stderr handle（0=繼承父進程）
+; proc-handle: 子進程 handle（>0=成功, 0=失敗）
+; status: CreateProcessA 的返回狀態
 ; [win-create-process](#process.win-create-process)
 #{buildin}
 win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64, stderr-handle i64) (proc-handle i64, status i64) {
@@ -151,6 +186,8 @@ win-create-process = (cmdline str, dir str, stdin-handle i64, stdout-handle i64,
 ; 等待進程結束（WaitForSingleObject）
 ; timeout-ms: 超時毫秒（0=無限等待）
 ; 返回 0=超時, 1=已退出, -1=錯誤
+; proc-handle: 子進程 handle
+; status: 等待結果（0=超時, 1=已退出, -1=錯誤）
 ; [win-wait-process](#process.win-wait-process)
 #{buildin}
 win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) {
@@ -158,12 +195,17 @@ win-wait-process = (proc-handle i64, timeout-ms i64) (status i64) {
 
 ; 取得進程退出碼（GetExitCodeProcess）
 ; 返回 exit-code ?i64：nil 表示仍在執行
+; proc-handle: 子進程 handle
+; exit-code: 進程退出碼（nil=仍在執行）
 ; [win-get-exit-code](#process.win-get-exit-code)
 #{buildin}
 win-get-exit-code = (proc-handle i64) (exit-code ?i64) {
 }
 
 ; 終止進程（TerminateProcess）
+; proc-handle: 子進程 handle
+; exit-code: 終止時設定給進程的退出碼
+; ok: 終止是否成功
 ; [win-terminate-process](#process.win-terminate-process)
 #{buildin}
 win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) {
@@ -171,6 +213,7 @@ win-terminate-process = (proc-handle i64, exit-code i64) (ok bool) {
 
 ; 取得標準 handle（GetStdHandle）
 ; which: 0=stdin, 1=stdout, 2=stderr
+; handle: 取得的標準 handle（0=失敗）
 ; [win-get-std-handle](#process.win-get-std-handle)
 #{buildin}
 win-get-std-handle = (which i64) (handle i64) {
@@ -235,6 +278,7 @@ process {
 ; input     : 寫入子進程 stdin 的內容；空字串 = 不提供 stdin
 ; merge-err : true = 將 stderr 合併到 stdout
 ; 返回 ok=true=成功；成功時設定 .pid/.stdout-fd/.stdin-fd/.running
+; ok: true=子進程已 fork 並啟動
 ; [start-with-opts](#process.start-with-opts)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.start-with-opts = (program str, args []str, dir str, input str, merge-err bool) (ok bool) {
@@ -429,6 +473,13 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     .running = 1
     ok = true
 }
+; Windows 變體：尚未實裝（恆返回 false），Windows 上請改用 process.cmd()
+; program: 要執行的程式名
+; args: 傳給程式的參數列表
+; dir: 工作目錄；空字串 = 繼承父進程
+; input: 寫入子進程 stdin 的內容；空字串 = 不提供
+; merge-err: true = 將 stderr 合併到 stdout
+; ok: 是否成功（Windows 變體恆為 false）
 
 #{win-amd64, win-arm64}
 process.start-with-opts = (program str, args []str, dir str, input str, merge-err bool) (ok bool) {
@@ -439,6 +490,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 ; program: 要執行的程式名
 ; arg: 傳給程式的參數
 ; 返回 ok=true=成功
+; ok: 子進程是否啟動成功
 ; [start](#process.start)
 process.start = (program str, arg str) (ok bool) {
     ok = .start-with-opts(program, [arg], '', '', false)
@@ -450,6 +502,7 @@ process.start = (program str, arg str) (ok bool) {
 
 ; 等待子進程結束
 ; 返回 status=退出狀態碼（WEXITSTATUS）
+; status: 子進程退出碼（已結束過則直接返回記錄值）
 ; [wait](#process.wait)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.wait = () (status i64) {
@@ -462,6 +515,8 @@ process.wait = () (status i64) {
     .exit-code = status
     .running = 0
 }
+; Windows 變體：不阻塞，直接返回實例記錄的退出碼
+; status: .exit-code 記錄值（啟動失敗或未記錄時為 0）
 
 #{win-amd64, win-arm64}
 process.wait = () (status i64) {
@@ -470,6 +525,7 @@ process.wait = () (status i64) {
 
 ; 非阻塞等待（輪詢）
 ; 返回 status ?i64: ok=子進程已結束(退出狀態碼), nil=仍在執行
+; status: 已結束時的退出碼；nil=仍在執行
 ; [wait-nohang](#process.wait-nohang)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.wait-nohang = () (status ?i64) {
@@ -489,6 +545,8 @@ process.wait-nohang = () (status ?i64) {
     .running = 0
     status = code
 }
+; Windows 變體：未實裝輪詢，恆返回 nil（呼叫方會視為仍在執行）
+; status: 退出碼（Windows 恆為 nil）
 
 #{win-amd64, win-arm64}
 process.wait-nohang = () (status ?i64) {
@@ -502,11 +560,15 @@ process.wait-nohang = () (status ?i64) {
 ; 發送信號給子進程
 ; sig: 信號編號（如 SIG-TERM=15, SIG-KILL=9）
 ; 返回 ok=true=成功
+; ok: 信號是否發送成功
 ; [kill](#process.kill)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 process.kill = (sig i64) (ok bool) {
     ok = process-kill(.pid, sig)
 }
+; Windows 變體：未實裝 POSIX 信號語義，恆返回 false（可改用 terminate/force-kill 的 Windows 對應）
+; sig: 信號編號（POSIX 語義，Windows 未處理）
+; ok: 是否成功（Windows 恆為 false）
 
 #{win-amd64, win-arm64}
 process.kill = (sig i64) (ok bool) {
@@ -515,6 +577,7 @@ process.kill = (sig i64) (ok bool) {
 
 ; 發送 SIG-TERM 信號
 ; 返回 ok=true=成功
+; ok: SIG-TERM 是否發送成功
 ; [terminate](#process.terminate)
 process.terminate = () (ok bool) {
     ok = .kill(SIG-TERM)
@@ -522,6 +585,7 @@ process.terminate = () (ok bool) {
 
 ; 發送 SIG-KILL 信號
 ; 返回 ok=true=成功
+; ok: SIG-KILL 是否發送成功
 ; [force-kill](#process.force-kill)
 process.force-kill = () (ok bool) {
     ok = .kill(SIG-KILL)
@@ -533,6 +597,9 @@ process.force-kill = () (ok bool) {
 
 ; 從子進程的 stdout 讀取資料
 ; 返回 read-n=實際讀取位元組數
+; buf: 存放讀取資料的位元組緩衝區
+; n: 期望讀取的最大位元組數
+; read-n: 實際讀取位元組數（0=EOF 或未連接 stdout）
 ; [read](#process.read)
 process.read = (buf []byte, n i64) (read-n i64) {
     read-n = 0
@@ -542,6 +609,7 @@ process.read = (buf []byte, n i64) (read-n i64) {
 
 ; 從子進程的 stdout 讀取一行
 ; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
+; line: 讀取到的一行（nil=EOF、錯誤或未連接 stdout）
 ; [read-line](#process.read-line)
 process.read-line = () (line ?str) {
     line = nil
@@ -553,6 +621,8 @@ process.read-line = () (line ?str) {
 
 ; 讀取子進程的所有 stdout 輸出
 ; 返回 content=讀取內容, n=讀取位元組數
+; content: 捕獲的全部 stdout 輸出
+; n: 讀取總位元組數
 ; [read-all](#process.read-all)
 process.read-all = () (content str, n i64) {
     n = 0
@@ -572,6 +642,9 @@ process.read-all = () (content str, n i64) {
 
 ; 寫入資料到子進程的 stdin
 ; 返回 written=實際寫入位元組數
+; data: 待寫入的資料字串
+; n: 期望寫入的位元組數
+; written: 實際寫入位元組數（0=未連接 stdin）
 ; [write](#process.write)
 process.write = (data str, n i64) (written i64) {
     written = 0
@@ -617,19 +690,22 @@ process.pid-of = () (pid i64) {
     pid = .pid
 }
 
-; exit-code: 取得退出碼
+; 取得子進程退出碼（須先 wait 後才有效）
+; code: 已記錄的退出碼（尚未等待時為 0）
 ; [exit-code-of](#process.exit-code-of)
 process.exit-code-of = () (code i64) {
     code = .exit-code
 }
 
 ; 判斷子進程是否仍在執行
+; yes: .running==1，即已啟動且尚未經 wait 回收
 ; [is-running](#process.is-running)
 process.is-running = () (yes bool) {
     yes = .running == 1
 }
 
 ; 取得父進程 ID（靜態方法）
+; pid: 當前進程的父進程 ID（getppid）
 ; [parent-pid](#process.parent-pid)
 process.parent-pid = () (pid i64) {
     pid = process-getppid()
@@ -666,6 +742,8 @@ process.close = () {
 ;   out, stderr, code, err = process.cmd('ls', args, '', '', env, 5000, false)  ; 完整功能
 ;   pid = process.spawn(cmd)                                        ; 非阻塞
 ;   status = process.wait(pid)                                      ; 返回正確退出碼
+; cmd: 交給 sh 執行的完整命令字串
+; status: C system() 的原始 wait 狀態（退出碼需 >>8，故此函數已棄用）
 ; [process-shell](#process.process-shell)
 process-shell = (cmd str) (status i64) {
     status = process-system(cmd)
@@ -675,6 +753,8 @@ process-shell = (cmd str) (status i64) {
 ; 內部單引號替換為 '\'' 四字符序列（結尾引號+轉義引號+開始引號）。
 ; 背景：cmd() 通用分支透過 process-exec-shell 執行拼接後的命令列，舊實作把參數裸空格
 ; 拼接會丟失參數邊界（含空格/引號的 arg 被殼層重新分詞），本函數修復該缺陷。
+; s: 待轉義的原始字串
+; out: 單引號包裹、可安全嵌入 sh 命令列的字面量
 ; [shell-quote](#process.shell-quote)
 shell-quote = (s str) (out str) {
     q = '\''
@@ -692,10 +772,11 @@ shell-quote = (s str) (out str) {
 ; env       : 環境變數（["K=V", ...]）；空陣列 = 繼承父進程環境
 ; timeout   : 超時時間（毫秒），<=0 = 無限等待
 ; merge-err : true = 將 stderr 合併到捕獲的 out 中
-; 返回 out=捕獲的 stdout（merge-err 時含 stderr），stderr=捕獲的 stderr 輸出，code=退出碼，err=錯誤訊息
-;   code >= 0 : 正常退出碼
-;   code == -1 : 啟動 / exec 失敗
-;   code == -2 : 超時（子進程已被殺死）
+; 返回值：
+;   out str: 子進程標準輸出全文（merge-err 為 true 時為 stdout+stderr 的交錯結果）
+;   stderr str: 子進程標準錯誤全文（merge-err 為 true 時為空串）
+;   code i64: 退出碼；>=0 為正常退出，-1 表示啟動 / exec 失敗，-2 表示超時（子進程已被殺死）
+;   err str: 啟動失敗或超時的錯誤描述；成功時為空串
 
 ; POSIX 版本：使用純 Nolang 實現（process-fork/pipe/dup2/exec-shell/waitpid）。
 ; 不依賴 process.c C runtime，與 Windows 版本對稱。
@@ -1013,6 +1094,17 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 ; Windows 版本：使用 Win32 API（CreateProcessA、CreatePipe 等）以純 Nolang 實現。
 ; 不依賴 process.c C runtime，所有進程創建、管道管理、輸出捕獲均透過
 ; win-create-process、win-create-pipe、win-read-pipe 等 ForwardFunc 內建完成。
+; program   : 要執行的程式名（拼入命令列交由 CreateProcessA 啟動）
+; args      : 傳給程式的參數列表（含空格者自動加雙引號）
+; dir       : 工作目錄；空字串 = 繼承父進程工作目錄
+; input     : 寫入子進程 stdin 的內容；空字串 = 不提供 stdin
+; env       : 環境變數（Windows 變體暫未套用到子進程）
+; timeout   : 超時時間（毫秒），<=0 = 無限等待；超時會強制終止進程
+; merge-err : true = 將 stderr 合併到捕獲的 out 中
+; out       : 捕獲的 stdout（merge-err 時含 stderr）
+; stderr    : 捕獲的 stderr（merge-err 時為空）
+; code      : 退出碼（-1=建管道/建進程/取退出碼失敗, -2=超時）
+; err       : 錯誤訊息（空=無錯誤）
 ; [cmd](#process.cmd-2)
 #{win-amd64, win-arm64}
 cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err bool) (out str, stderr str, code i64, err str) {
@@ -1248,6 +1340,10 @@ exec-result {
 ;   res = process.exec('ls', ['-la'], o)
 ;   res.code == 0 -> print(res.stdout)
 ;   res.code != 0 -> print('error code: ' + res.code.to-str())
+; program: 要執行的程式名
+; args: 傳給程式的參數列表
+; o: 執行選項（dir/stdin/env/timeout/merge-err）
+; res: 執行結果結構體（stdout/stderr/code）
 ; [exec](#process.exec)
 exec = (program str, args []str, o cmdopts) (res exec-result) {
     out, stderr, code, err = cmd(program, args, o.dir, o.stdin, o.env, o.timeout, o.merge-err)
@@ -1260,6 +1356,7 @@ exec = (program str, args []str, o cmdopts) (res exec-result) {
 
 ; 建立並返回一個 process 實例
 ; 用法：p = process.new()
+; p: 新建的 process 實例（尚未啟動，欄位為零值）
 ; [new](#process.new)
 new = () (p process) {
     p = process {}
@@ -1268,6 +1365,10 @@ new = () (p process) {
 ; 執行命令並捕獲 stdout 輸出（實例方法）
 ; 用法：content, code = process.new().output('ls', '-la')
 ; 返回 content=輸出內容, code=退出碼
+; program: 要執行的程式名
+; arg: 傳給程式的單一參數
+; content: 捕獲的 stdout 輸出
+; code: 子進程退出碼
 ; [output](#process.output)
 process.output = (program str, arg str) (content str, code i64) {
     .start-with-opts(program, [arg], '', '', false)
@@ -1292,6 +1393,7 @@ proc-info {
 ; Linux: 遍歷 /proc，讀取每個 PID 目錄下的 /proc/<pid>/comm 取得進程名
 ; macOS/Windows: 暫時返回空列表（需 libproc/sysctl 或 CreateToolhelp32Snapshot 支持）
 ; 返回 proc-info 列表
+; procs: 系統全部進程的 (pid, name) 列表
 ; [list-all](#process.list-all)
 #{linux-amd64, linux-arm64}
 list-all = () (procs []proc-info) {
@@ -1321,6 +1423,8 @@ list-all = () (procs []proc-info) {
         }
     }
 }
+; macOS 變體：未實裝，返回空列表（需 libproc proc_listallpids 或 sysctl）
+; procs: 空的進程列表
 
 #{mac-amd64, mac-arm64}
 list-all = () (procs []proc-info) {
@@ -1328,6 +1432,8 @@ list-all = () (procs []proc-info) {
     ; macOS 暫時返回空列表（需 libproc proc_listallpids 或 sysctl KERN_PROC）
     procs = []
 }
+; Windows 變體：未實裝，返回空列表（需 CreateToolhelp32Snapshot）
+; procs: 空的進程列表
 
 #{win-amd64, win-arm64}
 list-all = () (procs []proc-info) {
@@ -1337,8 +1443,10 @@ list-all = () (procs []proc-info) {
 }
 
 ; 進程名稱部分匹配（大小寫不敏感）
-; pname: 進程名稱, target: 查找關鍵字
+; pname: 進程名稱
+; target: 查找關鍵字（子串）
 ; 返回 yes=true=匹配成功
+; yes: pname 轉小寫後是否包含轉小寫的 target
 ; [find-match](#process.find-match)
 find-match = (pname str, target str) (yes bool) {
 
@@ -1351,6 +1459,7 @@ find-match = (pname str, target str) (yes bool) {
 ; 按名稱查找進程 PID
 ; name: 進程名稱（部分匹配，大小寫不敏感）
 ; 返回匹配的 PID 列表
+; pids: 名稱部分匹配（忽略大小寫）的進程 PID
 ; [find-by-name](#process.find-by-name)
 find-by-name = (name str) (pids []i64) {
     all = list-all()
@@ -1370,6 +1479,7 @@ find-by-name = (name str) (pids []i64) {
 ; 創建子進程執行命令字串
 ; cmd: 完整命令字串（將透過 sh -c 執行）
 ; 返回 pid > 0=父進程(子PID), -1=錯誤
+; pid: 子進程 PID（-1=fork 失敗）
 ; [spawn](#process.spawn)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 spawn = (cmd str) (pid i64) {
@@ -1393,6 +1503,9 @@ spawn = (cmd str) (pid i64) {
         }
     }
 }
+; Windows 變體：未實裝，恆返回 -1
+; cmd: 完整命令字串（Windows 未處理）
+; pid: 恆為 -1（未實裝）
 
 #{win-amd64, win-arm64}
 spawn = (cmd str) (pid i64) {
@@ -1402,11 +1515,15 @@ spawn = (cmd str) (pid i64) {
 ; 等待指定子進程結束
 ; pid: 子進程 ID
 ; 返回 status=退出狀態碼（WEXITSTATUS）
+; status: 該 PID 的退出碼
 ; [wait](#process.wait-2)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 wait = (pid i64) (status i64) {
     status = process-waitpid(pid, 0)
 }
+; Windows 變體：未實裝，恆返回 -1
+; pid: 子進程 ID（Windows 未處理）
+; status: 恆為 -1（未實裝）
 
 #{win-amd64, win-arm64}
 wait = (pid i64) (status i64) {
@@ -1416,6 +1533,7 @@ wait = (pid i64) (status i64) {
 ; 執行 shell 命令字串並等待完成（spawn + wait 組合）
 ; cmd: 完整命令字串（將透過 sh -c 執行）
 ; 返回 code=退出碼（0=成功, >0=命令錯誤, 127=exec 失敗, -1=fork 失敗）
+; code: spawn 成功後 wait 取得的退出碼；fork 失敗為 -1
 ; [shell](#process.shell)
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 shell = (cmd str) (code i64) {
@@ -1426,6 +1544,9 @@ shell = (cmd str) (code i64) {
         pid < 0 -> code = -1
     }
 }
+; Windows 變體：未實裝，恆返回 -1
+; cmd: 完整命令字串（Windows 未處理）
+; code: 恆為 -1（未實裝）
 
 #{win-amd64, win-arm64}
 shell = (cmd str) (code i64) {

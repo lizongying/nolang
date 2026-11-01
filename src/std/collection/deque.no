@@ -16,7 +16,11 @@
 ;       -> print(it)
 ;   }
 
-; deque: 雙端佇列
+; deque: 雙端佇列狀態
+; buf []i64: 環形緩衝區，容量 = cap（由呼叫方提供並保活）
+; cap i64: 佇列容量上限（等於 buf 長度）
+; head i64: 前端虛擬下標；實際儲存下標為 head mod cap
+; tail i64: 後端虛擬下標；tail - head = 元素數量
 deque {
     buf []i64
     cap i64
@@ -25,7 +29,9 @@ deque {
 }
 
 ; 從前端推入元素
-; [push-front](#collection.deque.deque.push-front)
+; 佇列已滿（元素數 >= cap）時直接忽略本次推入，不報錯。
+; val i64: 要放在前端的值
+; [push-front](#deque.deque.push-front)
 deque.push-front = (val i64) {
 
     #{overflow=wrap}
@@ -44,7 +50,9 @@ deque.push-front = (val i64) {
 }
 
 ; 從後端推入元素
-; [push-back](#collection.deque.deque.push-back)
+; 佇列已滿（元素數 >= cap）時直接忽略本次推入，不報錯。
+; val i64: 要放在後端的值
+; [push-back](#deque.deque.push-back)
 deque.push-back = (val i64) {
 
     #{overflow=wrap}
@@ -66,8 +74,8 @@ deque.push-back = (val i64) {
 }
 
 ; 從前端彈出元素
-; 返回 val ?i64: ok=彈出值, nil=佇列為空
-; [pop-front](#collection.deque.deque.pop-front)
+; val ?i64: ok=原前端元素（已移除）, nil=佇列為空
+; [pop-front](#deque.deque.pop-front)
 deque.pop-front = () (val ?i64) {
 
     #{overflow=wrap}
@@ -92,8 +100,8 @@ deque.pop-front = () (val ?i64) {
 }
 
 ; 從後端彈出元素
-; 返回 val ?i64: ok=彈出值, nil=佇列為空
-; [pop-back](#collection.deque.deque.pop-back)
+; val ?i64: ok=原後端元素（已移除）, nil=佇列為空
+; [pop-back](#deque.deque.pop-back)
 deque.pop-back = () (val ?i64) {
 
     #{overflow=wrap}
@@ -119,8 +127,8 @@ deque.pop-back = () (val ?i64) {
 }
 
 ; 查看前端元素（不移除）
-; 返回 val ?i64: ok=前端值, nil=佇列為空
-; [peek-front](#collection.deque.deque.peek-front)
+; val ?i64: ok=目前前端元素, nil=佇列為空
+; [peek-front](#deque.deque.peek-front)
 deque.peek-front = () (val ?i64) {
 
     #{overflow=wrap}
@@ -142,8 +150,8 @@ deque.peek-front = () (val ?i64) {
 }
 
 ; 查看後端元素（不移除）
-; 返回 val ?i64: ok=後端值, nil=佇列為空
-; [peek-back](#collection.deque.deque.peek-back)
+; val ?i64: ok=目前後端元素, nil=佇列為空
+; [peek-back](#deque.deque.peek-back)
 deque.peek-back = () (val ?i64) {
 
     #{overflow=wrap}
@@ -166,8 +174,9 @@ deque.peek-back = () (val ?i64) {
     val = .buf[idx]
 }
 
-; 返回雙端佇列大小
-; [size](#collection.deque.deque.size)
+; 返回雙端佇列目前元素數量
+; sz i64: tail - head（元素存續期間不會回到負值）
+; [size](#deque.deque.size)
 deque.size = () (sz i64) {
 
     #{overflow=wrap}
@@ -175,14 +184,15 @@ deque.size = () (sz i64) {
 }
 
 ; 判斷雙端佇列是否為空
-; 返回 true=空, false=非空
-; [empty](#collection.deque.deque.empty)
+; yes bool: true 表示 tail <= head（沒有可取的元素）
+; [empty](#deque.deque.empty)
 deque.empty = () (yes bool) {
     yes = .tail <= .head
 }
 
-; 清空雙端佇列
-; [clear](#collection.deque.deque.clear)
+; 清空雙端佇列（tail 回到 head，不釋放 buf、不重置 head）
+; 無參數與返回值；清空後 size() 為 0
+; [clear](#deque.deque.clear)
 deque.clear = () {
     .tail = .head
 }

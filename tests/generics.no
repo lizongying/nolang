@@ -8,18 +8,30 @@
 
 ; ── i64 型別的「泛型」函式 ──
 
+; 模擬泛型的 i64 加法（Nolang 不支援隱式型別參數，故按型別各寫一份）
+; a i64: 第一個加數
+; b i64: 第二個加數
+; r i64: a + b（#{overflow=wrap}）
 gen-add-i64 = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     r = a + b
 }
 
+; 模擬泛型的 i64 減法：結果可直接當相等比較用（差為 0 即相等）
+; a i64: 被減數
+; b i64: 減數
+; d i64: a - b
 gen-sub-i64 = (a i64, b i64) (d i64) {
 
     #{overflow=wrap}
     d = a - b
 }
 
+; 模擬泛型的 i64 乘法
+; a i64: 第一個因數
+; b i64: 第二個因數
+; r i64: a * b
 gen-mul-i64 = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
@@ -28,12 +40,20 @@ gen-mul-i64 = (a i64, b i64) (r i64) {
 
 ; ── i32 型別的「泛型」函式 ──
 
+; 跨型別的 i32 加法：證明同名邏輯可為不同寬度各寫一份
+; a i32: 第一個加數
+; b i32: 第二個加數
+; r i32: a + b（#{overflow=wrap}）
 gen-add-i32 = (a i32, b i32) (r i32) {
 
     #{overflow=wrap}
     r = a + b
 }
 
+; i32 版的減法：用於 i32 相等性驗證（差為 0 即相等）
+; a i32: 被減數
+; b i32: 減數
+; d i32: a - b
 gen-sub-i32 = (a i32, b i32) (d i32) {
 
     #{overflow=wrap}

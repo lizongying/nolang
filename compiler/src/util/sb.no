@@ -18,6 +18,8 @@ sb {
 }
 
 ; 建立預分配 cap 位元組的構建器
+; cap: 容量
+; r: 返回結果
 sb.init = (cap i64) (r sb) {
     r = sb {
         buf: with-cap(cap)
@@ -31,6 +33,7 @@ sb.init = (cap i64) (r sb) {
 ;    （'hello-world' ⇒ len=11、內容只有一個 104），ast.dump 全線失真，複雜樹
 ;    甚至 SIGTRAP / SIGKILL。故必須先解包，nil ⇒ 0。
 ;    同源 bug 見 tok.no str-eq（兩個 ?byte 比較永不等 ⇒ 只比長度）。
+; s: 字串
 sb.push = (s str) {
     i <- [0..s.len-bytes()): {
         b-opt = s.byte(i)
@@ -44,16 +47,19 @@ sb.push = (s str) {
 }
 
 ; 追加單一位元組
+; b: 運算元
 sb.push-byte = (b i64) {
     .buf.push(b)
 }
 
 ; 轉為 str（一次拷貝）
+; r: 結果字串
 sb.str = () (r str) {
     r = .buf.to-bytes-str()
 }
 
 ; 目前位元組數
+; n: 數量
 sb.len = () (n i64) {
     n = .buf.len()
 }

@@ -16,10 +16,14 @@
 
 ; peek 把 map 下標讀取的 ?V 原樣傳出。必須在 ?T 結果函式內讀，才能得到
 ; option 語意（與 arr/vec/slice 的安全索引完全同一條規則）。
+; m [str]i64: 待下標讀取的 map（鍵 str、值 i64）
+; k str: 要查詢的鍵，可能不存在
+; r ?i64: 命中時為 ok(值)，缺席時為 nil（不會回 err）
 peek = (m [str]i64, k str) (r ?i64) {
     r = m[k]
 }
 
+; 下標寫入：m['a'] = 1、m['b'] = 2 應插入兩個鍵，len 為 2
 t-write-insert = () {
     m [str]i64 = {}
     m['a'] = 1
@@ -29,6 +33,7 @@ t-write-insert = () {
     runner.is-true(m.contains('b'), 'key b present after subscript write')
 }
 
+; 覆寫：同一鍵再寫入只更新值，len 保持 1
 t-write-overwrite = () {
     m [str]i64 = { 'k': 1 }
     m['k'] = 42
@@ -41,6 +46,7 @@ t-write-overwrite = () {
     }
 }
 
+; 下標讀取存在的鍵應解出 ok(7)
 t-read-present = () {
     m [str]i64 = { 'a': 7 }
     r = peek(m, 'a')
@@ -51,6 +57,7 @@ t-read-present = () {
     }
 }
 
+; 下標讀取不存在的鍵應得 nil（而非 0 或 err）
 t-read-absent = () {
     m [str]i64 = { 'a': 7 }
     r = peek(m, 'missing')
@@ -61,7 +68,7 @@ t-read-absent = () {
     }
 }
 
-; m[k] 与 .put/.get 必须等价：同一次写入两条路径看到同一个值。
+; m[k] 與 .put / .get 必須等價：同一次寫入只能有一個值，兩條路徑讀到的一致
 t-eq-put-get = () {
     m [str]i64 = {}
     m['x'] = 3
@@ -81,7 +88,7 @@ t-eq-put-get = () {
     runner.eq(m.len(), 2, 'both keys counted once')
 }
 
-; i64 键 + str 值：证明特化命名 hashmap-i64-str 也走同一条下标路径。
+; i64 鍵 + str 值：證明特化命名 hashmap-i64-str 也走同一條下標路徑
 t-i64-key-str-val = () {
     m [i64]str = {}
     m[1] = 'one'
@@ -96,12 +103,15 @@ t-i64-key-str-val = () {
     }
 }
 
-; 多赋值目标：x, m[k] = f() —— 写侧必须同样落到 put。
+; 多目標賦值的來源：固定回傳 1 與 2，供 x, m[k] = f() 的寫側驗證
+; a i64: 第一個輸出，被指派給普通變數 x
+; b i64: 第二個輸出，被指派給 m[k] 作為值
 two = () (a i64, b i64) {
     a = 1
     b = 2
 }
 
+; 多目標賦值：x, m[k] = f() 的寫側必須同樣落到 put（m 應新增該鍵）
 t-multi-assign-target = () {
     m [str]i64 = {}
     x, m['k'] = two()

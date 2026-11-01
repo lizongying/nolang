@@ -39,6 +39,7 @@ person {
 }
 
 ; 測試 1：結構體元素，push 一次（cap=1）後 insert —— 修復前 segfault
+; ok bool: 插入後長度 2 且兩個元素都是 {A, 1} 才為 true
 test-struct-insert-after-push = () (ok bool) {
     people []person
     a person
@@ -54,6 +55,7 @@ test-struct-insert-after-push = () (ok bool) {
 
 ; 測試 2：push 4 次把 cap 撐到 4（1→2→4），此時 len==cap==4，
 ;         insert 寫下標 4 —— 證明與「初始 cap 是多少」無關
+; ok bool: 長度 5、新元素在末尾且原有 n0…n3 順序未變才為 true
 test-insert-when-len-equals-cap = () (ok bool) {
     people []person
     p0 person
@@ -81,6 +83,7 @@ test-insert-when-len-equals-cap = () (ok bool) {
 }
 
 ; 測試 3：[]i64 —— 修復前「靠 malloc 餘量僥倖正確」，修復後必須真的正確
+; ok bool: 插入後 v 為 [99, 10]、長度 2 才為 true
 test-i64-insert-after-push = () (ok bool) {
     v []i64
     v.push(10)
@@ -92,6 +95,7 @@ test-i64-insert-after-push = () (ok bool) {
 }
 
 ; 測試 4：insert 到中間（非 append 分支），並確認擴容後舊元素沒有遺失
+; ok bool: 插入 99 後 v 為 [1, 99, 2, 3]、長度 4 才為 true
 test-insert-middle-keeps-elements = () (ok bool) {
     v []i64
     v.push(1)

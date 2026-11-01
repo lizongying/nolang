@@ -1,5 +1,6 @@
 ; 最小化测试：m [str]str 只 put，不 get/print
 
+; 測試 minimal
 test-minimal = () {
     m [str]str = { }
     m.init()

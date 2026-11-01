@@ -13,8 +13,10 @@
 ;   data [16]i64 = [0:16]
 ;   data = vec-create(10, 42)
 ;
-; vec-slice
-;
+; vec-slice — 切片視圖的寫法一覽
+; 以下各形式都產生 []t 視圖（共享底層緩衝，不複製）：
+; 全範圍、只給起點、只給終點、同時給兩端，各有四種開閉組合，
+; 端點可省略為無界（..）。視圖自身的 len() 為區間長度。
 ; []t[..]
 ; []t[..)
 ; []t(..]
@@ -35,8 +37,9 @@
 ; []t(n0..n1]
 ; []t(n0..n1)
 
-; []t.eq: 比較兩個切片是否相等
-; 返回 true=相等, false=不相等
+; []t.eq: 比較兩個切片是否相等（逐元素比較，不比較容量與來源）
+; b []t: 另一側切片；長度不同時直接返回 false
+; eq bool: true=長度與所有對應元素都相等（元素以 != 比較）
 ; [eq](#vec.eq)
 []t.eq = (b []t) (eq bool) {
     eq = true
@@ -81,30 +84,35 @@
 ;     data *any sealed
 ; }
 
-; []t.len: 回傳切片長度
+; []t.len: 回傳切片元素個數（不區分元素型別，與位元組數無關）
+; out i64: 目前的長度，取值範圍 0..cap
 ; [len](#vec.len)
 []t.len = () (out i64) {
     out = .len()
 }
 
-; []t.push: 在末尾追加元素（自動擴容）
+; []t.push: 在末尾追加元素（自動擴容）— builtin，函數體由 codegen 展開
 ; 擴容策略：
 ;   cap == 0 → new-cap = 4
 ;   cap < 1024 → new-cap = cap * 2
 ;   cap >= 1024 → new-cap = cap * 5 / 4
+; val t: 要追加的元素；型別由接收者切片的元素型別決定
+; 追加後 .len 增加 1；擴容時既有元素搬到新緩衝區，舊緩衝區隨之釋放
 ; [vec-push](#vec.vec-push)
 #{buildin}
 vec-push = (val t) {
 }
 
+; （上為舊版純 Nolang 實作片段，現由 codegen 直接展開，僅供對照）
 ;     n = .len()
 ;     .len = n + 1
 ;     .[n] = val
 ; }
 
-; []t.clear: 清空切片（原地修改長度為 0）
+; []t.clear: 清空切片（原地修改長度為 0）— builtin，函數體由 codegen 展開
 ; 不 free 堆、不縮 cap，data 指標完全不變
 ; 只有寫入帶長度新內容時才走擴容邏輯
+; 無參數與返回值：清空是對接收者自身的原地修改
 ; [vec-clear](#vec.vec-clear)
 #{buildin}
 vec-clear = () {

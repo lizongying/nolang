@@ -10,10 +10,10 @@
 ; Base32 字母表
 BASE32-ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 
-; Base32 編碼
-; data []byte: 輸入資料
-; 返回 out str: Base32 編碼字串
-; [encode](#crypto.base32.encode)
+; Base32 編碼（RFC 4648 標準字母表，每 5 位元一組，末尾以 '=' 補齊到 8 的倍數）
+; data []byte: 待編碼的輸入位元組
+; out str: 編碼後的字串，長度為 8 的倍數（空輸入對應空字串）
+; [encode](#base32.encode)
 encode = (data []byte) (out str) {
 
     dlen = data.len()
@@ -290,10 +290,11 @@ encode = (data []byte) (out str) {
     }
 }
 
-; Base32 解碼
-; in str: Base32 編碼字串
-; 返回 out []byte: 解碼後的資料
-; [decode](#crypto.base32.decode)
+; Base32 解碼（依末尾 '=' 填充數截短結果；字母表外的字元一律按 0 處理，不報錯）
+; 注意：長度不是 8 的倍數的殘餘字元會被忽略。
+; in str: Base32 編碼字串（通常為 ASCII）
+; out []byte: 解碼後的原始位元組，長度已扣除填充所佔的位元組
+; [decode](#base32.decode)
 decode = (in str) (out []byte) {
 
     #{overflow=wrap}

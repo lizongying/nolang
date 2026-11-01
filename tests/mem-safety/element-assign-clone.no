@@ -11,6 +11,7 @@
 
 ; 測試 1：vec[i] = strVar — 獨立性驗證
 ; s[0] = a 後，a 重新賦值不應影響 s[0]
+; ok bool: s 仍為 ['original', 'world'] 才為 true
 test-vec-str-assign = () (ok bool) {
     s []str
     s.push('hello')
@@ -28,6 +29,7 @@ test-vec-str-assign = () (ok bool) {
 }
 
 ; 測試 2：vec[i] = strVar — 反覆賦值同一索引（驗證釋放舊值，不洩漏）
+; ok bool: 三次寫入後 s 為 ['ccc', 'second'] 才為 true
 test-vec-str-reassign = () (ok bool) {
     s []str
     s.push('first')
@@ -54,6 +56,7 @@ test-vec-str-reassign = () (ok bool) {
 }
 
 ; 測試 3：vec[i] = '字串字面量' — 指標載入 + deep clone
+; ok bool: s[0] 為 'literal value' 且 s[1] 仍為 'keep' 才為 true
 test-vec-str-literal = () (ok bool) {
     s []str
     s.push('placeholder')
@@ -74,6 +77,8 @@ DataHolder {
     items []i64
 }
 
+; 測試 struct-str-field
+; ok bool: 把來源改成 'changed' 後 d.name 仍是 'field value'，且 items[0] 為 1 才為 true
 test-struct-str-field = () (ok bool) {
     d = DataHolder {
         name: 'old'
@@ -89,6 +94,7 @@ test-struct-str-field = () (ok bool) {
 }
 
 ; 測試 5：多次函數呼叫不 double-free（驗證跨函數邊界安全）
+; out []str: 新 vec ['a', 'b']，所有權隨返回值移交給呼叫端
 make-str-vec = () (out []str) {
     s []str
     s.push('a')
@@ -96,6 +102,8 @@ make-str-vec = () (out []str) {
     out = s
 }
 
+; 測試 multi-call
+; ok bool: v1 與 v2 各自獨立地為 ['a', 'b'] 才為 true
 test-multi-call = () (ok bool) {
     v1 = make-str-vec()
     v2 = make-str-vec()

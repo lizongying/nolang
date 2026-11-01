@@ -8,11 +8,15 @@
 # /test/runner
 
 ; 完整字串相等：先比長度再比前 n 字節
+; got: 實際產生的輸出字串
+; want: 期望相符的完整字串
+; msg: 斷言失敗時的標識訊息（長度與內容兩條斷言共用）
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
+; 驗證 markdown.escape-html：< > & " 分別轉為 &lt; &gt; &amp; &quot; 實體，純文字原樣通過
 t-escape = () {
     out = markdown.escape-html('a < b & c > d "q"')
     eq-str(out, 'a &lt; b &amp; c &gt; d &quot;q&quot;', 'escape-html')
@@ -20,6 +24,7 @@ t-escape = () {
     eq-str(p, 'plain text', 'escape-html noop')
 }
 
+; 驗證 markdown.prefix-count：統計行首連續指定字符數（### 得 3），無匹配時得 0
 t-prefix = () {
     n i64 = markdown.prefix-count('### x', 35)
     runner.eq(n, 3, 'prefix-count # == 3')
@@ -27,6 +32,7 @@ t-prefix = () {
     runner.eq(z, 0, 'prefix-count none == 0')
 }
 
+; 驗證 markdown.heading：ATX 標題解析出層級與文字（### 為 3 級），非標題行層級為 0
 t-heading = () {
     hd = markdown.heading('### Hi there')
     runner.eq(hd.level, 3, 'heading level 3')
@@ -38,6 +44,7 @@ t-heading = () {
     eq-str(h1.text, 'Title', 'h1 text')
 }
 
+; 驗證 setext-level 與 thematic-break：===== 判 setext 一級、----- 判二級，--- 行判為水平分隔線
 t-setext-thematic = () {
     runner.eq(markdown.setext-level('====='), 1, 'setext === => 1')
     runner.eq(markdown.setext-level('-----'), 2, 'setext --- => 2')
@@ -48,6 +55,7 @@ t-setext-thematic = () {
     runner.is-false(nb, 'thematic text false')
 }
 
+; 驗證區塊結構解析器：list-item 區分無序(kind 1)/有序(kind 2)並取文字、blockquote 識別 > 抽內文、fence 解析 ``` 語言資訊/寬度/標記、table-separator 認出 | 分隔行
 t-block-structs = () {
     li = markdown.list-item('- item')
     runner.eq(li.kind, 1, 'list-item kind unordered')
@@ -72,12 +80,14 @@ t-block-structs = () {
     runner.is-true(ts, 'table-separator true')
 }
 
+; 驗證 markdown.inline：行內 **粗體** 轉 strong、`代碼` 轉 code、*強調* 轉 em、~~刪除線~~ 轉 del、[t](url) 轉 a 連結
 t-inline = () {
     eq-str(markdown.inline('**bold** and `code`'), '<strong>bold</strong> and <code>code</code>', 'inline bold+code')
     eq-str(markdown.inline('*it* and ~~del~~'), '<em>it</em> and <del>del</del>', 'inline em+del')
     eq-str(markdown.inline('[t](http://u.com)'), '<a href="http://u.com">t</a>', 'inline link')
 }
 
+; 驗證 markdown.to-html 文件渲染：段落、h1、無序/有序列表、引用、連結與強調都產出含換行的完整 HTML
 t-to-html = () {
     eq-str(markdown.to-html('hello world'), '<p>hello world</p>\n', 'to-html paragraph')
     eq-str(markdown.to-html('# Title'), '<h1>Title</h1>\n', 'to-html h1')
@@ -99,6 +109,7 @@ hi
     eq-str(markdown.to-html('*it* and ~~del~~'), '<p><em>it</em> and <del>del</del></p>\n', 'to-html emphasis')
 }
 
+; 驗證 markdown.to-html 圍欄代碼塊：```js 產出 <pre><code class="language-js"> 且保留內容換行
 t-to-html-code = () {
     eq-str(markdown.to-html('```js
 var a = 1
@@ -106,6 +117,7 @@ var a = 1
 </code></pre>\n', 'to-html fenced code')
 }
 
+; 驗證 markdown.to-html 表格：分隔行驅動 <table>/<thead>/<th> 結構，資料行成 <tbody>/<td>
 t-to-html-table = () {
     eq-str(markdown.to-html('a | b
 --- | ---

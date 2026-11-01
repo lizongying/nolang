@@ -13,6 +13,7 @@ test-u8-ok = () {
     }
 }
 
+; 測試 u8-fail
 test-u8-fail = () {
     n = '256'.to-u8()
     {
@@ -27,6 +28,7 @@ test-u8-fail = () {
     }
 }
 
+; 測試 u8-zero
 test-u8-zero = () {
     n = '0'.to-u8()
     {
@@ -41,6 +43,7 @@ test-u8-zero = () {
     }
 }
 
+; 測試 u8-bool-true
 test-u8-bool-true = () {
     b = 'true'.to-bool()
     {
@@ -55,6 +58,7 @@ test-u8-bool-true = () {
     }
 }
 
+; 測試 u8-u32
 test-u8-u32 = () {
     n = '4294967295'.to-u32()
     {
@@ -69,6 +73,7 @@ test-u8-u32 = () {
     }
 }
 
+; 測試 u8-u32-overflow
 test-u8-u32-overflow = () {
     n = '4294967296'.to-u32()
     {

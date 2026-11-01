@@ -1,5 +1,6 @@
 ; realpath-debug.no — minimal test for fs.realpath single-return
 
+; 測試 realpath
 test-realpath = () {
     abs = fs.realpath('/tmp')
     print(abs)

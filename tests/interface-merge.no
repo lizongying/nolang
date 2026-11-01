@@ -52,14 +52,20 @@ user serialize, roundtrip {
     age i64
 }
 
+; 轉換為 json
+; s str: 'json:' 接上 name（例如 'json:alice'）
 user.to-json = () (s str) {
     s = 'json:' - .name
 }
 
+; 轉換為 noml
+; s str: 'noml:<name>:<age>' 形式（例如 'noml:alice:30'）
 user.to-noml = () (s str) {
     s = 'noml:' - .name - ':' - .age.to-str()
 }
 
+; 把兩個介面方法的輸出拼起來，證明 json 與 noml 兩介面可在同一型別上共存
+; s str: '<json 形式>/<noml 形式>' 的組合字串
 user.roundtrip = () (s str) {
     s = .to-json() - '/' - .to-noml()
 }

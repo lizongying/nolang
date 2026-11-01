@@ -12,6 +12,7 @@
 
 ; ── 切片排序 ──────────────────────────────────
 
+; 動態切片升冪：asc() 原地重排，亂序 7 個元素應得到 1,2,3,5,7,8,9
 t-slice-sort-asc = () {
     v = [5, 3, 8, 1, 9, 2, 7]
     v.asc()
@@ -24,6 +25,7 @@ t-slice-sort-asc = () {
     runner.eq(v[6], 9, 'sort-asc [6] == 9')
 }
 
+; 動態切片降冪：desc() 原地重排，同一組元素應得到 9,8,7,5,3,2,1
 t-slice-sort-desc = () {
     v = [5, 3, 8, 1, 9, 2, 7]
     v.desc()
@@ -34,6 +36,7 @@ t-slice-sort-desc = () {
     runner.eq(v[6], 1, 'sort-desc [6] == 1')
 }
 
+; 兩個元素的邊界案例：只需一次比較即可交換成升冪
 t-slice-sort-two = () {
     v = [2, 1]
     v.asc()
@@ -41,12 +44,14 @@ t-slice-sort-two = () {
     runner.eq(v[1], 2, 'sort-asc two [1] == 2')
 }
 
+; 單元素切片：沒有任何可比較物件，元素必須原樣保留
 t-slice-sort-single = () {
     v = [42]
     v.asc()
     runner.eq(v[0], 42, 'sort-asc single == 42')
 }
 
+; 重複元素：相等值不參與交換，結果為 1,1,3,3,3（排序需容忍重複）
 t-slice-sort-duplicates = () {
     v = [3, 1, 3, 1, 3]
     v.asc()
@@ -59,6 +64,7 @@ t-slice-sort-duplicates = () {
 
 ; ── 固定陣列排序 ──────────────────────────────
 
+; 固定陣列升冪：長度 8 的 [8]i64 同樣支援原地 asc()，結果 1,2,3,4,5,7,8,9
 t-array-sort-asc = () {
     a = [5, 3, 8, 1, 9, 2, 7, 4]
     a.asc()
@@ -72,6 +78,7 @@ t-array-sort-asc = () {
     runner.eq(a[7], 9, 'array sort-asc [7] == 9')
 }
 
+; 固定陣列降冪：desc() 後首元素為最大值 9、末元素為最小值 1
 t-array-sort-desc = () {
     a = [5, 3, 8, 1, 9, 2, 7, 4]
     a.desc()
@@ -81,6 +88,7 @@ t-array-sort-desc = () {
 
 ; ── i64.gt 比較 ────────────────────────────────
 
+; i64.gt 是嚴格大於：5.gt(3) 真、3.gt(5) 假、5.gt(5) 假（相等不算大於）
 t-i64-gt = () {
     yes1 bool = (5).gt(3)
     runner.is-true(yes1, '5.gt(3) == true')

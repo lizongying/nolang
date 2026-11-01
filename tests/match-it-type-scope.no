@@ -20,6 +20,10 @@
 ; 與 MIR 端對 `it` **值**的還原（hir2mir lowerIf）對稱。
 ; 註：寫成 `w = it.get()`（不帶 ?T）本來就正常，這裡刻意保留 ?T 以守住回歸。
 
+; 檢查 str
+; name str: 這項檢查的名稱，輸出時原樣印出
+; got str: 實際取得的值
+; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check-str = (name str, got str, want str) {
     got == want -> print('ok: {name}')
 
@@ -30,14 +34,20 @@ thing {
     n i64
 }
 
+; 取得
+; out ?bool: 固定為 ok(true)，供外層以 ?T 形式呼叫 thing.get()
 thing.get = () (out ?bool) {
     out = true
 }
 
+; 顯示
+; out str: 'n=' 接上 n 的十進位表示（n = 7 時為 'n=7'）
 thing.show = () (out str) {
     out = 'n=' - .n.to-str()
 }
 
+; 產生 ok(thing) 的 ?thing：thing 只有一個 i64 欄位 n，值固定 7
+; out ?thing: 內容為 n=7 的 ok 選項
 mk = () (out ?thing) {
     out = thing {
         n: 7

@@ -1,44 +1,107 @@
+; FFI sqlite3_open：開啟（或建立）資料庫檔案，取得連線控制代碼
+; filename: 資料庫路徑；填入 :memory: 則為記憶體資料庫
+; db: 輸出參數（**byte）：成功時寫入 sqlite3* 控制代碼
+; rc: SQLite 結果碼（0=SQLITE-OK 為成功）
 #{c}
 _sqlite3-open = (filename str, db **byte) (rc i32)
+; FFI sqlite3_close：關閉連線並釋放其資源
+; db: sqlite3_open 取得的連線控制代碼
+; rc: 結果碼（仍有未 finalize 的陳述式時為 SQLITE-BUSY）
 
 #{c}
 _sqlite3-close = (db *byte) (rc i32)
+; FFI sqlite3_exec：直接執行 SQL（可含多條陳述式），不取回列
+; db: 連線控制代碼
+; sql: SQL 文字
+; callback: 每列回呼指標（本驅動傳 nil，不用結果集）
+; arg: 傳給 callback 的使用者指標（nil）
+; errmsg: 輸出參數：失敗時填入錯誤訊息指標（本驅動傳 nil）
+; rc: 結果碼（0=各條陳述式皆成功）
 
 #{c}
 _sqlite3-exec = (db *byte, sql str, callback *byte, arg *byte, errmsg *byte) (rc i32)
+; FFI sqlite3_prepare_v2：把 SQL 編譯成預編譯陳述式
+; db: 連線控制代碼
+; sql: SQL 文字
+; n-bytes: sql 的有效位元組數（-1=遇到 NUL 自行結束）
+; stmt: 輸出參數（**byte）：編譯成功時寫入 sqlite3_stmt*
+; tail: 輸出參數：指向未編譯到的剩餘 SQL（本驅動傳 nil）
+; rc: 結果碼（0=編譯成功）
 
 #{c}
 _sqlite3-prepare-v2 = (db *byte, sql str, n-bytes i32, stmt **byte, tail *byte) (rc i32)
+; FFI sqlite3_step：執行陳述式推進一步，取得下一列
+; stmt: 預編譯陳述式控制代碼
+; rc: SQLITE-ROW=取到一列, SQLITE-DONE=已執行完, 其他=錯誤
 
 #{c}
 _sqlite3-step = (stmt *byte) (rc i32)
+; FFI sqlite3_column_count：回報結果集的欄位數
+; stmt: 已 prepare 的陳述式
+; n: 欄位數（非 SELECT 語句為 0）
 
 #{c}
 _sqlite3-column-count = (stmt *byte) (n i32)
+; FFI sqlite3_column_int64：讀取當前列的 64 位元整數欄位
+; stmt: 已 step 到某列的陳述式
+; col: 欄位索引（0 起算）
+; v: 欄位值（NULL 或無法轉為整數時為 0）
 
 #{c}
 _sqlite3-column-int64 = (stmt *byte, col i32) (v i64)
+; FFI sqlite3_column_text：讀取當前列的文字欄位
+; stmt: 已 step 到某列的陳述式
+; col: 欄位索引（0 起算）
+; s: 欄位文字（NULL 時為空串；緩衝區由 SQLite 持有，不可自行釋放）
 
 #{c}
 _sqlite3-column-text = (stmt *byte, col i32) (s str)
+; FFI sqlite3_column_double：讀取當前列的浮點欄位
+; stmt: 已 step 到某列的陳述式
+; col: 欄位索引（0 起算）
+; v: 欄位值（NULL 或無法轉為數值時為 0.0）
 
 #{c}
 _sqlite3-column-double = (stmt *byte, col i32) (v f64)
+; FFI sqlite3_finalize：釋放預編譯陳述式
+; stmt: 要釋放的陳述式控制代碼
+; rc: 結果碼（若釋放時最後一次 step 出錯，會回傳那個錯誤碼）
 
 #{c}
 _sqlite3-finalize = (stmt *byte) (rc i32)
+; FFI sqlite3_last_insert_rowid：取本連線最近一次插入列的 rowid
+; db: 連線控制代碼
+; id: 剛插入列的 rowid（本連線尚無插入時為 0）
 
 #{c}
 _sqlite3-last-insert-rowid = (db *byte) (id i64)
+; FFI sqlite3_changes：回報最近一條 INSERT/UPDATE/DELETE 影響的列數
+; db: 連線控制代碼
+; n: 受影響列數（不含 trigger 造成的變動）
 
 #{c}
 _sqlite3-changes = (db *byte) (n i32)
+; FFI sqlite3_bind_int64：綁定整數參數
+; stmt: 預編譯陳述式
+; idx: 參數索引（SQL 中 ? 自 1 起算）
+; v: 要綁定的 64 位元整數
+; rc: 結果碼（0=綁定成功）
 
 #{c}
 _sqlite3-bind-int64 = (stmt *byte, idx i32, v i64) (rc i32)
+; FFI sqlite3_bind_text：綁定文字參數
+; stmt: 預編譯陳述式
+; idx: 參數索引（自 1 起算）
+; s: 要綁定的文字
+; n: 文字的位元組數（-1=遇到 NUL 自行結束）
+; destructor: 緩衝區處置策略指標（傳 SQLITE_TRANSIENT 讓 SQLite 立即複製）
+; rc: 結果碼（0=綁定成功）
 
 #{c}
 _sqlite3-bind-text = (stmt *byte, idx i32, s str, n i32, destructor *byte) (rc i32)
+; FFI sqlite3_errmsg：取本連線最近一次操作的錯誤訊息
+; db: 連線控制代碼
+; s: 錯誤文字（最近一次操作成功時回報 "not an error"）
 
 #{c}
 _sqlite3-errmsg = (db *byte) (s str)
@@ -104,9 +167,11 @@ open = (dsn str) (d db-sqlite) {
 ; 方法：db-sqlite — 實作 sql.db 介面
 ; ============================================================================
 
+; 進入作用域時自動呼叫（連線已在 open 建好，此處無需動作）
 db-sqlite.enter = () {
 }
 
+; 離開作用域時自動呼叫：關閉連線
 db-sqlite.leave = () {
     .close()
 }
@@ -158,9 +223,11 @@ db-sqlite.prepare = (sql str) (s stmt-sqlite) {
 ; 方法：rows-sqlite — 實作 sql.rows 介面
 ; ============================================================================
 
+; 進入作用域時自動呼叫（結果集無需預備動作，僅湊齊 sql.rows 介面）
 rows-sqlite.enter = () {
 }
 
+; 離開作用域時自動呼叫：關閉結果集（owned=true 時才 finalize）
 rows-sqlite.leave = () {
     .close()
 }
@@ -209,9 +276,11 @@ rows-sqlite.close = () (ok bool) {
 ; 方法：stmt-sqlite — 實作 sql.stmt 介面
 ; ============================================================================
 
+; 進入作用域時自動呼叫（陳述式無需預備動作，僅湊齊 sql.stmt 介面）
 stmt-sqlite.enter = () {
 }
 
+; 離開作用域時自動呼叫：finalize 預編譯陳述式
 stmt-sqlite.leave = () {
     .close()
 }

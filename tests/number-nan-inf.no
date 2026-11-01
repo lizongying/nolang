@@ -1,5 +1,6 @@
 ; number-nan-inf.no — 測試 float.is-nan 和 float.is-inf
 
+; 測試 nan-inf
 test-nan-inf = () {
 
     ; 正常數值

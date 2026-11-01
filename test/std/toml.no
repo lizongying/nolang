@@ -8,11 +8,17 @@
 
 # /test/runner
 
+; 斷言兩個字串等長且等內容（TOML 往返產生多行字串，長度不符時容易誤判成內容差異）
+; got str: 實際字串
+; want str: 期望字串（長度與內容都以它為準）
+; msg str: 斷言描述，長度不符時自動加 ' [len]' 後綴
 eq-str = (got str, want str, msg str) {
     runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
+; 純量解析：字串 / 整數 / 布林 / 浮點四種型別都要能由 get-* 正確解出，
+; has 對存在鍵回 true、對缺失鍵回 false
 t-parse-scalars = () {
     r = toml.parse('name = "nolang"
 port = 8080
@@ -80,6 +86,7 @@ ratio = 1.5')
     }
 }
 
+; 負號與 false：get-i64 需保留 -42 的符號，get-bool 需把 off = false 解成 false（非預設值）
 t-parse-neg-bool = () {
     r = toml.parse('neg = -42
 off = false')
@@ -118,6 +125,8 @@ off = false')
     }
 }
 
+; 表頭與註解：[server] 後面的鍵可改用點號路徑（server.host）查詢；
+; 頂部註解不產生條目，行尾註解不得污染數值（server.port 仍是 8080）
 t-parse-table = () {
     r = toml.parse('# top comment
 [server]
@@ -155,6 +164,7 @@ port = 8080 # inline comment')
     }
 }
 
+; get 拿原始字面而不做類型轉換：[1, 2, 3] 原樣保留，缺失鍵回 nil 而非空字串
 t-raw-literal = () {
     r = toml.parse('arr = [1, 2, 3]')
     r: {
@@ -184,6 +194,7 @@ t-raw-literal = () {
     }
 }
 
+; 畸形輸入必須以 err 報錯，不能默默回 ok 或 nil
 t-parse-error = () {
     bad = toml.parse('this is not toml =')
     bad: {
@@ -195,6 +206,8 @@ t-parse-error = () {
     }
 }
 
+; 單項輔助函式：toml-unquote 去引號、toml-strip-comment 去行尾註解、
+; toml-parse-i64 支援十六進位（0xFF=255）、底線分隔（1_000=1000）與負數
 t-helpers = () {
     u = ''
     uo = false
@@ -245,6 +258,7 @@ t-helpers = () {
     runner.eq(dv, -123, 'decimal -123')
 }
 
+; 建構回環：new + put 組出文件後，get-str 能解出 hello，stringify 輸出與原輸入逐字相等
 t-build-roundtrip = () {
     doc = toml.new()
     o1 bool = doc.put('title', '"hello"')

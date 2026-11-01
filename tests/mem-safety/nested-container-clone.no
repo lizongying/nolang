@@ -1,18 +1,27 @@
 ; 嵌套容器深層 clone 測試：[][]i64、[][]str、struct 含嵌套容器、map 深拷貝
 
 ; 輔助函數：建立一個包含三個元素的子切片
+; a: 第一元素
+; b: 第二元素
+; c: 第三元素
+; v: 含三個 i64 元素的向量（作嵌套切片測試的構造塊）
 make-vec3 = (a i64, b i64, c i64) (v []i64) {
     v.push(a)
     v.push(b)
     v.push(c)
 }
 
+; 辅助函數：構造含兩個元素的子切片
+; a: 第一元素
+; b: 第二元素
+; v: 含兩個 i64 元素的向量
 make-vec2 = (a i64, b i64) (v []i64) {
     v.push(a)
     v.push(b)
 }
 
 ; 測試 1：[][]i64 深層 clone — b = a 後 a 和 b 獨立
+; ok: 克隆後讀寫雙方全程無悬垂引用、子切片互相獨立時為 true
 test-nested-clone-vec = () (ok bool) {
     a [][]i64
     a.push(make-vec3(1, 2, 3))
@@ -40,6 +49,7 @@ test-nested-clone-vec = () (ok bool) {
 }
 
 ; 測試 2：[][]i64 深層 clone — 修改子切片長度
+; ok: 修改 b 內子切片長度後 a 仍保持原長度時為 true
 test-nested-clone-modify = () (ok bool) {
     a [][]i64
     a.push(make-vec2(1, 2))
@@ -70,6 +80,7 @@ test-nested-clone-modify = () (ok bool) {
 }
 
 ; 測試 3：嵌套容器元素賦值 — x = nested[i]
+; ok: x = nested[i] 元素賦值取出獨立副本、原容器不受影響時為 true
 test-nested-element-assign = () (ok bool) {
     a [][]i64
     a.push(make-vec3(1, 2, 3))
@@ -92,6 +103,7 @@ test-nested-element-assign = () (ok bool) {
 }
 
 ; 測試 4：多層嵌套容器深層 clone — 重複賦值不導致 double-free
+; ok: 多層嵌套容器重複整表賦值不触發 double-free、內容仍正確時為 true
 test-nested-reassign = () (ok bool) {
     a [][]i64
     a.push(make-vec2(1, 2))
@@ -115,6 +127,7 @@ test-nested-reassign = () (ok bool) {
 }
 
 ; 測試 5：[][]str 深層 clone — 字串嵌套容器的深拷貝
+; ok: [][]str 深拷貝後改寫副本字符串不影響原容器時為 true
 test-nested-clone-str = () (ok bool) {
     s [][]str
     sub1 []str
@@ -153,6 +166,8 @@ person {
     age i64
 }
 
+; 測試 struct-clone-str
+; ok: person 結構體賦值取副本、改 p2 的 name 不影響 p1 時為 true
 test-struct-clone-str = () (ok bool) {
     p1 person
     p1.name = 'Alice'
@@ -180,6 +195,8 @@ group {
     scores []i64
 }
 
+; 測試 struct-clone-vec-field
+; ok: group 含 []str/[]i64 切片字段的深拷貝後長度獨立、原值不變時為 true
 test-struct-clone-vec-field = () (ok bool) {
     g1 group
     g1.name = 'team-a'
@@ -219,6 +236,8 @@ employee {
     addr address
 }
 
+; 測試 nested-struct-clone
+; ok: employee 含嵌套 address 字段深拷貝後改 e2.addr 不影響 e1.addr 時為 true
 test-nested-struct-clone = () (ok bool) {
     e1 employee
     e1.name = 'John'
@@ -243,6 +262,7 @@ test-nested-struct-clone = () (ok bool) {
 ; ============================================================
 ; 測試 9：map[str, i64] 的深拷貝
 ; ============================================================
+; ok: map[str,i64] 深拷貝後副本增刪不影響原表、既有键值一致時為 true
 test-map-clone = () (ok bool) {
     m1 [str]i64
     m1.put('a', 1)
@@ -305,6 +325,7 @@ test-map-clone = () (ok bool) {
 ; ============================================================
 ; 測試 10：map[str, []str]（map 值為切片）的深拷貝
 ; ============================================================
+; ok: map[str,[]str] 深拷貝後副本的切片值獨立、原表切片不悬垂時為 true
 test-map-vec-value-clone = () (ok bool) {
     m1 [str][]str
     list1 []str
@@ -347,6 +368,8 @@ matrix {
     name str
 }
 
+; 測試 struct-nested-vec-clone
+; ok: matrix 含 [][]str 嵌套切片字段深拷貝後行列獨立時為 true
 test-struct-nested-vec-clone = () (ok bool) {
     m1 matrix
     m1.name = 'data'
@@ -376,8 +399,9 @@ test-struct-nested-vec-clone = () (ok bool) {
 }
 
 ; ============================================================
-; 測試 12：person struct 数组 — []person 的深拷貝
+; 測試 12：person struct 數組 — []person 的深拷貝
 ; ============================================================
+; ok: []person 結構體數組深拷貝後改副本元素不影響原數組時為 true
 test-struct-array-clone = () (ok bool) {
     people []person
     p1 person
@@ -414,6 +438,7 @@ test-struct-array-clone = () (ok bool) {
 ; 漏掉 clone 的：insert 只 clone %str-long 元素，對 %vec（嵌套切片）元素共享
 ; 來源緩衝區，來源 drop 後容器元素懸垂（UAF / double-free）。
 ; ============================================================
+; ok: 嵌套切片經 insert 插入後來源重新賦值不產生 UAF/double-free 時為 true
 test-insert-nested-clone = () (ok bool) {
     outer [][]i64
     inner = [7, 8, 9]
@@ -445,6 +470,7 @@ test-insert-nested-clone = () (ok bool) {
 ; ============================================================
 ; 測試 14：[][]str 透過 insert 深層 clone — 字串元素 insert 同樣須獨立拷貝
 ; ============================================================
+; ok: [][]str 經 insert 插入後元素為獨立拷貝、來源释放後仍可讀時為 true
 test-insert-nested-str-clone = () (ok bool) {
     outer [][]str
     inner = ['a', 'b', 'c']
@@ -466,12 +492,15 @@ test-insert-nested-str-clone = () (ok bool) {
 ; （指向 arr 的堆疊儲存），s 會在讀取前懸垂（UAF）；deep-clone 讓 s 持有
 ; 自己的拷貝。這是 vecFromArraySink 懸垂記憶體安全項的釘子測試。
 ; ============================================================
+; s: 固定數組轉成的向量（deep-clone 持有自己的字符串緩衝，不悬垂於已退出的數組框）
 build-from-fixed = () (s []str) {
     arr [3]str = ['p', 'q', 'r']
     s = arr
     return
 }
 
+; 測試 fixed-array-sink-clone
+; ok: 讀取 build-from-fixed 返回的向量內容仍為原字符串時為 true
 test-fixed-array-sink-clone = () (ok bool) {
     s = build-from-fixed()
 

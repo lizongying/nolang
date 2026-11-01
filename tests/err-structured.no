@@ -9,12 +9,18 @@
 ;
 ; 只改其中任一處的症狀：讀到指標（亂碼）、漏釋放、或 trace/BPT trap。
 
+; 檢查
+; name str: 這項檢查的名稱，輸出時原樣印出
+; got str: 實際取得的值
+; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check = (name str, got str, want str) {
     got == want -> print('ok: {name}')
 
     -> print('fail: {name} got=[{got}] want=[{want}]')
 }
 
+; 固定失敗的函式：用 err 狀態帶上訊息 'boom' 與錯誤碼 code.io
+; out ?i64: 必為 err（不提供 ok 值），供上層 match 驗證 err 分支
 fail-i64 = () (out ?i64) {
     out = err('boom', code.io)
 }
@@ -57,6 +63,7 @@ a3: {
 check('file', got3, 'err-structured.no')
 
 ; ── 4. 透傳：err(err.err) 必須保留 code 與位置，不能退化成「重建一則訊息」 ──
+; out ?bool: 收到 err 時原樣透傳（保留 code）；非 err 時為 ok(true)
 rethrow = () (out ?bool) {
     m = fail-i64()
     m: {

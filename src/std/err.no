@@ -58,7 +58,7 @@ code.to-name = () (s str) {
 
 ; err: 結構化錯誤
 ; code: 錯誤碼（code 枚舉值）
-; msg: 錯誤訊息
+; msg: 人類可讀的錯誤描述文本
 ; file / line / col: 錯誤發生位置（由編譯器在構造點自動注入；手動建構時留空字串與 0）
 err {
     code code
@@ -73,8 +73,9 @@ err {
 ; ═══════════════════════════════════════════════
 
 ; 建立錯誤
-; msg: 錯誤訊息
+; msg: 寫入錯誤實例的描述文本
 ; ec: 錯誤碼（code 枚舉值，如 code.io；省略時為 code.unknown）
+; e: 構造出的錯誤實例（位置字段留空）
 ; [new](#err.new)
 new = (msg str, ec code = code.unknown) (e err) {
     e = err {
@@ -87,6 +88,12 @@ new = (msg str, ec code = code.unknown) (e err) {
 }
 
 ; 建立帶位置的錯誤（位置由呼叫方明確提供）
+; msg: 寫入錯誤實例的描述文本
+; ec: 要附著的錯誤碼（code 枚舉值）
+; file: 錯誤發生的源檔名
+; line: 錯誤發生的行號
+; col: 錯誤發生的列號
+; e: 帶完整位置資訊的錯誤實例
 ; [new-at](#err.new-at)
 new-at = (msg str, ec code, file str, line i64, col i64) (e err) {
     e = err {
@@ -99,6 +106,8 @@ new-at = (msg str, ec code, file str, line i64, col i64) (e err) {
 }
 
 ; 將 C errno 對映為 code 列舉（模組內私有，僅 from-errno 使用）
+; errno: 待對映的 C errno 數值（如 2=ENOENT、13=EACCES）
+; ec: 對應的 code 枚舉值（未收錄的 errno 一律落到 code.unknown）
 ; [_errno-to-code](#err._errno-to-code)
 _errno-to-code = (errno i64) (ec code) {
     {
@@ -122,6 +131,7 @@ _errno-to-code = (errno i64) (ec code) {
 
 ; 從 C errno 建立錯誤
 ; errno: C 標準錯誤碼（如 13 = EACCES）
+; e: 錯誤實例（msg 取自 os.strerror(errno)、code 經 _errno-to-code 對映，無位置資訊）
 ; [from-errno](#err.from-errno)
 from-errno = (errno i64) (e err) {
     msg = os.strerror(errno)
@@ -174,9 +184,9 @@ err.code = () (ec code) {
 ; [format](#err.format)
 err.format = () (s str) {
     cn = .code.to-name()
-    ; format() 的 {…} 欄位目前只認「简单标识符」，不解析接收者的 `.field`
-    ; 存取（MIR lowerFormatField 会对 `{.file}` 报 unresolved format field）。
-    ; 故先把接收者欄位绑到局部变量，再以简单名插值；cn/loc 已示范简单名可用。
+    ; format() 的 {…} 欄位目前只認「簡單標識符」，不解析接收者的 `.field`
+    ; 存取（MIR lowerFormatField 會對 `{.file}` 報 unresolved format field）。
+    ; 故先把接收者欄位绑到局部變量，再以簡單名插值；cn/loc 已示範簡單名可用。
     fn = .file
     ln = .line
     cl = .col

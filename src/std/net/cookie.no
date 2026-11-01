@@ -81,9 +81,9 @@ jar {
 ; ═══════════════════════════════════════════════
 
 ; 解析 Set-Cookie 標頭值
-; set-cookie-str str: Set-Cookie 標頭值（如 'name=value; Path=/; HttpOnly'）
-; 返回 c cookie: 解析結果
-; [parse-set](#net.cookie.parse-set)
+; set-cookie-str: 單條 Set-Cookie 標頭值（如 name=value; Path=/; HttpOnly）
+; 返回 c cookie: 解析出的 cookie 結構體（含 name/value/domain/path/max-age/secure 等欄位）
+; [parse-set](#cookie.parse-set)
 parse-set = (set-cookie-str str) (c cookie) {
 
     c.valid = false
@@ -209,11 +209,11 @@ parse-set = (set-cookie-str str) (c cookie) {
 }
 
 ; 解析 Cookie 請求標頭
-; cookie-header str: Cookie 標頭值（如 'name1=val1; name2=val2'）
-; names [16]str: 輸出名稱陣列
-; values [16]str: 輸出值陣列
-; 返回 count i64: 解析出的 Cookie 數量
-; [parse-header](#net.cookie.parse-header)
+; cookie-header: 請求端的 Cookie 標頭值（如 name1=val1; name2=val2）
+; names: 輸出陣列，填入各 Cookie 名稱（定長 [16]str）
+; values: 輸出陣列，填入與 names 一一對應的 Cookie 值（定長 [16]str）
+; 返回 count i64: 實際解析出的 Cookie 對數量（≤16）
+; [parse-header](#cookie.parse-header)
 parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
     count = 0
     cookie-header.len-bytes() == 0 -> return
@@ -257,9 +257,9 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
 ; ═══════════════════════════════════════════════
 
 ; 建構 Set-Cookie 標頭值
-; c cookie: Cookie 結構體
-; 返回 out str: Set-Cookie 標頭值
-; [build-set](#net.cookie.build-set)
+; c: 待序列化的 cookie 結構體
+; 返回 out str: 組裝好的 Set-Cookie 標頭值字串
+; [build-set](#cookie.build-set)
 build-set = (c cookie) (out str) {
 
     out = c.name - '=' - c.value
@@ -282,11 +282,11 @@ build-set = (c cookie) (out str) {
 }
 
 ; 建構 Cookie 請求標頭
-; names [16]str: Cookie 名稱陣列
-; values [16]str: Cookie 值陣列
-; count i64: Cookie 數量
-; 返回 out str: Cookie 標頭值（如 'name1=val1; name2=val2'）
-; [build-header](#net.cookie.build-header)
+; names: Cookie 名稱陣列（定長 [16]str，取前 count 項）
+; values: 對應的 Cookie 值陣列（定長 [16]str）
+; count: 要輸出的 Cookie 對數量
+; 返回 out str: 串接後的 Cookie 請求標頭值（如 name1=val1; name2=val2）
+; [build-header](#cookie.build-header)
 build-header = (names [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
@@ -303,12 +303,13 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
 ; ═══════════════════════════════════════════════
 
 ; 設定 Cookie
+; 同名（name + domain + path 都相同）的 Cookie 會被就地覆寫，不新增槽位。
 ; name str: Cookie 名稱
-; value str: Cookie 值
-; domain str: 域名
-; path str: 路徑
-; max-age i64: 最大存活秒數
-; [set](#net.cookie.jar.set)
+; value str: Cookie 值（未簽名原文）
+; domain str: 所屬域名，用於匹配請求目標
+; path str: 所屬路徑前綴
+; max-age i64: 最大存活秒數（-1=未設定，由會話級別決定生命週期）
+; [set](#cookie.jar.set)
 jar.set = (name str, value str, domain str, path str, max-age i64) {
 
     ; 檢查是否已存在同名 Cookie
@@ -337,11 +338,11 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
 }
 
 ; 取得 Cookie 值
-; name str: Cookie 名稱
-; domain str: 域名
-; path str: 路徑
-; 返回 val ?str: ok=Cookie 值, nil=未找到
-; [get](#net.cookie.jar.get)
+; name: 要查詢的 Cookie 名稱
+; domain: 請求目標域名（以精確、子域名或空域名匹配）
+; path: 請求目標路徑（以前綴匹配，'/' 匹配全部）
+; 返回 val ?str: ok=符合條件的 Cookie 值, nil=未找到
+; [get](#cookie.jar.get)
 jar.get = (name str, domain str, path str) (val ?str) {
     val = nil
     i <- [0...count): {
@@ -386,10 +387,10 @@ jar.get = (name str, domain str, path str) (val ?str) {
 }
 
 ; 刪除 Cookie
-; name str: Cookie 名稱
-; domain str: 域名
-; path str: 路徑
-; [delete](#net.cookie.jar.delete)
+; name: 要刪除的 Cookie 名稱
+; domain: 所屬域名（須精確相符）
+; path: 所屬路徑（須精確相符；name/domain/path 三者全等才刪除）
+; [delete](#cookie.jar.delete)
 jar.delete = (name str, domain str, path str) {
     i <- [0...count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
@@ -416,10 +417,10 @@ jar.delete = (name str, domain str, path str) {
 }
 
 ; 建構符合條件的 Cookie 請求標頭
-; domain str: 請求目標域名
-; path str: 請求目標路徑
-; 返回 out str: Cookie 標頭值
-; [build-header](#net.cookie.jar.build-header)
+; domain: 請求目標域名（篩選匹配該域名的 Cookie）
+; path: 請求目標路徑（篩選匹配該路徑前綴的 Cookie）
+; 返回 out str: 串接所有符合域名/路徑條件 Cookie 的標頭字串
+; [build-header](#cookie.jar.build-header)
 jar.build-header = (domain str, path str) (out str) {
     out = ''
     i <- [0...count): {
@@ -462,10 +463,10 @@ jar.build-header = (domain str, path str) (out str) {
 }
 
 ; 從 HTTP 回應的 Set-Cookie 標頭解析並存儲 Cookie
-; set-cookie-str str: Set-Cookie 標頭值
-; domain str: 回應來源的域名
-; path str: 回應來源的路徑
-; [parse-response](#net.cookie.jar.parse-response)
+; set-cookie-str: 回應的 Set-Cookie 標頭值（單條）
+; domain: 回應來源域名（作為儲存 Cookie 的歸屬域名）
+; path: 回應來源路徑（作為儲存 Cookie 的歸屬路徑）
+; [parse-response](#cookie.jar.parse-response)
 jar.parse-response = (set-cookie-str str, domain str, path str) {
     c cookie
     c = parse-set(set-cookie-str)
@@ -505,14 +506,14 @@ jar.parse-response = (set-cookie-str str, domain str, path str) {
 }
 
 ; 清空 Cookie Jar
-; [clear](#net.cookie.jar.clear)
+; [clear](#cookie.jar.clear)
 jar.clear = () {
     .count = 0
 }
 
 ; 取得 Cookie 數量
-; 返回 n i64: Cookie 數量
-; [count-of](#net.cookie.jar.count-of)
+; 返回 n i64: jar 中目前已儲存的 Cookie 數量
+; [count-of](#cookie.jar.count-of)
 jar.count-of = () (n i64) {
     n = .count
 }
@@ -522,13 +523,13 @@ jar.count-of = () (n i64) {
 ; ═══════════════════════════════════════════════
 
 ; 對 Cookie 值進行 HMAC-SHA256 簽名
-; 註：原名 sign 会与 num.sign 方法符號衝突（跨模組呼叫被解析為 signum，
+; 註：原名 sign 會與 num.sign 方法符號衝突（跨模組呼叫被解析為 signum，
 ; 靜默返回 1），故改帶 cookie- 前綴（與 url.no 的 url- 前綴慣例一致）。
-; name str: Cookie 名稱
-; value str: Cookie 值
-; key []byte: 簽名金鑰
+; name: Cookie 名稱（與 value 組成 name=value 參與 HMAC 運算）
+; value: 待簽名的原始 Cookie 值
+; key: HMAC-SHA256 簽名金鑰
 ; 返回 signed str: 簽名後的值（格式: value.hex-hmac）
-; [cookie-sign](#net.cookie.cookie-sign)
+; [cookie-sign](#cookie.cookie-sign)
 cookie-sign = (name str, value str, key []byte) (signed str) {
 
     ; 簽名內容 = name=value
@@ -558,12 +559,12 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
 }
 
 ; 驗證簽名 Cookie
-; name str: Cookie 名稱
-; signed-value str: 簽名後的值（格式: value.hex-hmac）
-; key []byte: 簽名金鑰
-; 返回 ok bool: true=驗證通過
-; 返回 value str: 原始 Cookie 值（驗證失敗時為空）
-; [cookie-verify](#net.cookie.cookie-verify)
+; name: Cookie 名稱（須與簽名時一致，否則重算簽名不符）
+; signed-value: 待驗證的簽名值（格式: value.hex-hmac）
+; key: HMAC-SHA256 簽名金鑰
+; 返回 ok bool: true=簽名比對通過（常數時間比較）
+; 返回 value str: 剝離簽名後的原始 Cookie 值（驗證失敗時為空）
+; [cookie-verify](#cookie.cookie-verify)
 cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
 
     ok = false
@@ -617,25 +618,26 @@ cookie-verify = (name str, signed-value str, key []byte) (ok bool, value str) {
 }
 
 ; 設定簽名 Cookie
-; name str: Cookie 名稱
-; value str: Cookie 值
-; domain str: 域名
-; path str: 路徑
-; max-age i64: 最大存活秒數
-; key []byte: 簽名金鑰
-; [set-signed](#net.cookie.jar.set-signed)
+; 儲存的是 cookie-sign(name, value, key) 的結果，讀取時需用同一把 key 驗簽。
+; name str: Cookie 名稱（同時參與 HMAC 計算）
+; value str: 簽名前的 Cookie 值（自動簽名後存入 jar）
+; domain str: 所屬域名
+; path str: 所屬路徑前綴
+; max-age i64: 最大存活秒數（-1=未設定）
+; key []byte: HMAC-SHA256 簽名金鑰
+; [set-signed](#cookie.jar.set-signed)
 jar.set-signed = (name str, value str, domain str, path str, max-age i64, key []byte) {
     signed-value = cookie-sign(name, value, key)
     .set(name, signed-value, domain, path, max-age)
 }
 
 ; 取得並驗證簽名 Cookie
-; name str: Cookie 名稱
-; domain str: 域名
-; path str: 路徑
-; key []byte: 簽名金鑰
-; 返回 val ?str: ok=原始 Cookie 值, nil=未找到或驗證失敗
-; [get-verified](#net.cookie.jar.get-verified)
+; name: 要查詢的 Cookie 名稱
+; domain: 請求目標域名
+; path: 請求目標路徑
+; key: 用於驗證的簽名金鑰
+; 返回 val ?str: ok=剝離簽名且驗證通過的原始值, nil=未找到或驗證失敗
+; [get-verified](#cookie.jar.get-verified)
 jar.get-verified = (name str, domain str, path str, key []byte) (val ?str) {
     val = nil
     signed-val = .get(name, domain, path)

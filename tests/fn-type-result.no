@@ -35,36 +35,48 @@
 ; 具名函式型別：無參，返回 i64
 ret-cb = () (i64)
 
+; 回呼實作：固定回 111（第一份回呼）
+; r i64: 固定值 111
 mk-1 = () (r i64) {
     r = 111
 }
 
+; 回呼實作：固定回 222（第二份回呼，不得與 mk-1 串值）
+; r i64: 固定值 222
 mk-2 = () (r i64) {
     r = 222
 }
 
+; 回呼實作：固定回 333（第三份回呼）
+; r i64: 固定值 333
 mk-3 = () (r i64) {
     r = 333
 }
 
+; 以函式型別參數做間接呼叫，並把結果接住回傳（回歸點：Dst 必須被取出）
+; cb ret-cb: 無參、回 i64 的回呼參考
+; out i64: cb() 的回傳值
 apply-cb = (cb ret-cb) (out i64) {
     out = cb()
 }
 
 ; 測試 1：單次呼叫（修復前也能過——垃圾值碰巧正確）
+; ok bool: true = apply-cb(mk-1) 得到 111
 test-single-callback = () (ok bool) {
     a = apply-cb(mk-1)
     a == 111 -> ok = true
 }
 
-; 測試 2：兩次不同回調，第二個必須拿到自己的值
+; 測試 2：兩次不同回調，第二次必須拿到自己的值 222
+; ok bool: true = 111 與 222 各自接住、互不覆蓋
 test-two-callbacks = () (ok bool) {
     a = apply-cb(mk-1)
     b = apply-cb(mk-2)
     a == 111 && b == 222 -> ok = true
 }
 
-; 測試 3：三次不同回調
+; 測試 3：三次不同回調，每次都要拿到自己那份結果
+; ok bool: true = 111 / 222 / 333 三值全部正確
 test-three-callbacks = () (ok bool) {
     a = apply-cb(mk-1)
     b = apply-cb(mk-2)

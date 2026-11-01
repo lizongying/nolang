@@ -20,6 +20,9 @@
 ;                只是**不再 spawn**（這條無法從 stdout 觀察，由
 ;                src/parser/stmt_boundary_block_test.go 的 AST 斷言釘住）。
 
+; 被協程衍生的簡單函式：把輸入乘 2（overflow 採 wrap），用來觀察引數是否被搬走 / 誤用指標
+; n i64: 輸入值
+; r i64: n * 2
 dbl-async = (n i64) (r i64) {
 
     #{overflow=wrap}
@@ -28,6 +31,7 @@ dbl-async = (n i64) (r i64) {
 
 ; ── 缺陷 1：裸 { } 區塊不吞後續語句 ─────────────────────────────────
 
+; 測試 bare-block
 test-bare-block = () {
     x = 1
     {

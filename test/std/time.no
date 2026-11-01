@@ -9,11 +9,13 @@
 
 ; ── 時間戳 ────────────────────────────────────
 
+; 驗證 now-s 回傳當前 Unix 秒級時間戳（大於 1e9）
 t-now-s = () {
     ts = time.now-s()
     runner.gt(ts, 1000000000, 'now-s > 1e9 (post-2001)')
 }
 
+; 驗證 duration-between 求兩時間點差值，反向時得負值
 t-duration-between = () {
     d = time.duration-between(100, 150)
     runner.eq(d, 50, 'duration-between 100..150 == 50')
@@ -23,6 +25,7 @@ t-duration-between = () {
 
 ; ── 閏年 ──────────────────────────────────────
 
+; 驗證 is-leap 判定閏年（2000/2024 為真、1900/2023 為假）
 t-is-leap = () {
     yes2000 = time.is-leap(2000)
     runner.is-true(yes2000, '2000 is leap')
@@ -34,6 +37,7 @@ t-is-leap = () {
     runner.is-false(no2023, '2023 not leap')
 }
 
+; 驗證 days-in-month-fn 依年月回傳正確天數（含閏年二月）
 t-days-in-month = () {
     d1 = time.days-in-month-fn(2024, 2)
     runner.eq(d1, 29, '2024 Feb has 29 days')
@@ -47,6 +51,7 @@ t-days-in-month = () {
 
 ; ── 日期轉換 ──────────────────────────────────
 
+; 驗證 unix-to-date(0) 拆解出 1970-01-01 星期四的各日期欄位
 t-unix-to-date = () {
     d date
     d = time.unix-to-date(0)
@@ -59,6 +64,7 @@ t-unix-to-date = () {
     runner.eq(d.wday, 4, 'unix-to-date(0) wday == 4 (Thursday)')
 }
 
+; 驗證 date-to-unix 由 date 結構體換算回 Unix 秒（紀元與 2024 兩例）
 t-date-to-unix = () {
     d date
     d.year = 1970
@@ -81,6 +87,7 @@ t-date-to-unix = () {
     runner.gt(ts2, 1700000000, 'date-to-unix 2024-01-01 > 1.7e9')
 }
 
+; 驗證 unix-to-date 與 date-to-unix 往返一致（同一時間戳可還原）
 t-roundtrip = () {
     orig = 1700000000
     d date
@@ -91,6 +98,7 @@ t-roundtrip = () {
 
 ; ── 格式化 ────────────────────────────────────
 
+; 驗證 format-date 將 date 格式化為 YYYY-MM-DD HH:MM:SS 字串
 t-format-date = () {
     d date
     d.year = 2024
@@ -103,6 +111,7 @@ t-format-date = () {
     runner.str-eq(s, '2024-01-15 12:30:45', 19, 'format-date')
 }
 
+; 驗證 format-time-str 將 Unix 秒格式化為 UTC 日期時間字串
 t-format-time-str = () {
     s = time.format-time-str(0)
     runner.str-eq(s, '1970-01-01 00:00:00', 19, 'format-time-str(0)')
@@ -110,6 +119,7 @@ t-format-time-str = () {
 
 ; ── 解析 ──────────────────────────────────────
 
+; 驗證 parse-date 解析含/不含時間的字串為 Unix 秒，無效格式得 nil
 t-parse-date = () {
     ok = false
     ts = time.parse-date('2024-01-15 12:30:45')
@@ -142,6 +152,7 @@ t-parse-date = () {
 
 ; ── 計時器 ────────────────────────────────────
 
+; 驗證 timer 依 start-ts/end-ts 計算 elapsed-ms 與 elapsed-s
 t-timer = () {
     tm = time.timer {
         start-ts: 1000
@@ -153,6 +164,7 @@ t-timer = () {
     runner.eq(s, 0, 'timer elapsed-s == 0')
 }
 
+; 驗證 format-duration 將秒數格式化為 NhNmNs（含超過 24 小時）
 t-format-duration = () {
     s1 = time.format-duration(3661)
     runner.str-eq(s1, '1h1m1s', 7, 'format-duration(3661) == 1h1m1s')
@@ -164,6 +176,7 @@ t-format-duration = () {
 
 ; ── time 結構體 ────────────────────────────────
 
+; 驗證 time 結構體的 unix/date/format/add-seconds/sub 等方法往返正確
 t-time-struct = () {
 
     ; unix-to-time / .unix 往返

@@ -14,18 +14,21 @@ failed = 0
 
 ; ── 位元組與整數轉換 ─────────────────────────
 
+; 大端解讀：高空位元組在前（0x12,0x34,0x56）應得 0x123456
 t-to-i64-be = () {
     data []byte = [0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56]
     v = data.to-i64-be()
     runner.eq(v, 0x123456, 'to-i64-be == 0x123456')
 }
 
+; 小端解讀：低位元組在前，同一位元組序列仍得 0x123456
 t-to-i64-le = () {
     data []byte = [0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00]
     v = data.to-i64-le()
     runner.eq(v, 0x123456, 'to-i64-le == 0x123456')
 }
 
+; 短切片：只有 2 個位元組時只組出 0x1234，不越界讀取
 t-to-i64-le-short = () {
     data []byte = [0x34, 0x12]
     v = data.to-i64-le()
@@ -34,6 +37,7 @@ t-to-i64-le-short = () {
 
 ; ── 十六進制編碼 ─────────────────────────────
 
+; to-hex 輸出大寫十六進位：0x12,0xAB,0xCD 應得 6 字元 '12ABCD'
 t-to-hex = () {
     data []byte = [0x12, 0xab, 0xcd]
     s = data.to-hex()
@@ -41,6 +45,7 @@ t-to-hex = () {
     runner.str-eq(s, '12ABCD', 6, 'to-hex content')
 }
 
+; to-hex-lower 輸出小寫且高位補零：0xFF,0x00,0x0A 應得 'ff000a'
 t-to-hex-lower = () {
     data []byte = [0xff, 0x00, 0x0a]
     s = data.to-hex-lower()
@@ -50,6 +55,7 @@ t-to-hex-lower = () {
 
 ; ── 查找與切片 ───────────────────────────────
 
+; 子序列查找：'HIJK' 中找 'HI' 得 0，找不到 'xyz' 得 -1
 t-index = () {
     data []byte = [72, 73, 0, 72, 73]
     pos = data.index('HI')
@@ -58,6 +64,7 @@ t-index = () {
     runner.eq(pos2, -1, 'index xyz == -1')
 }
 
+; 指定起始位置查找：從下標 1 起找 'AB' 得 2，從 0 起得 0
 t-index-from = () {
     data []byte = [65, 66, 65, 66]
     pos = data.index-from('AB', 1)
@@ -66,6 +73,7 @@ t-index-from = () {
     runner.eq(pos2, 0, 'index-from AB@0 == 0')
 }
 
+; 切片視圖：切出下標 1..4 應得長 3，元素為 20,30,40
 t-slice = () {
     data []byte = [10, 20, 30, 40, 50]
     sub = data.slice(1, 4)

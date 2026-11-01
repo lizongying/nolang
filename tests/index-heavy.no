@@ -1,9 +1,18 @@
+; 帶安全下標的取值：越界時取元素零值（0）而不是越界讀寫
+; arr [5]i64: 來源固定陣列
+; i i64: 下標，可由 #{index-out=zero} 兜底
+; r i64: arr[i]；下標越界時為 0
 get-at = (arr [5]i64, i i64) (r i64) {
 
     #{index-out=zero}
     r = arr[i]
 }
 
+; 兩次下標相加：驗證同一式內連續取用的暫存值不互相覆蓋
+; arr [5]i64: 來源固定陣列
+; i i64: 第一個下標
+; j i64: 第二個下標
+; r i64: arr[i] + arr[j]
 sum-at = (arr [5]i64, i i64, j i64) (r i64) {
 
     #{overflow=wrap}

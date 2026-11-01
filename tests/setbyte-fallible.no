@@ -6,6 +6,9 @@
 ; 邊界以實體容量為準（txt 固定 255、%str-long 用 cap），而非 len。
 ; 每次 `no run` 輸出應為純 ok 行；任何 FAIL 行都代表回歸。
 
+; 斷言小工具：條件成立印 'ok'，不成立印 'FAIL'，方便逐行看出哪一項回歸
+; label str: 該項檢查的名稱，輸出時原樣印出
+; cond bool: 檢查結果，false 視為失敗
 ck = (label str, cond bool) {
     !cond -> print('FAIL', label)
     cond -> print('ok', label)

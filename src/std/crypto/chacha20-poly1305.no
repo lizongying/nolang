@@ -31,14 +31,22 @@ CC-MASK32 u32 = 4294967295
 ; ═══════════════════════════════════════════════
 
 ; 32-bit 循環左移
-; [rotl32](#crypto.chacha20-poly1305.rotl32)
+; x: 待循環左移的 32 位元無符號值
+; n: 左移量（位元數，調用端保證小於 32，函式內不做取模）
+; r: 循環左移後的結果（已掩碼至 32 位元）
+; [rotl32](#chacha20-poly1305.rotl32)
 rotl32 = (x u32, n i64) (r u32) {
 
     r = ((x << n) | (x >> (32 - n))) & CC-MASK32
 }
 
 ; quarter-round: ChaCha20 四分之一輪
-; [qr](#crypto.chacha20-poly1305.qr)
+; state: ChaCha20 的 16 個 u32 字狀態陣列（原地更新）
+; a: 累加器 a 的字索引（加法式操作的起點）
+; b: 累加器 b 的字索引（提供加數，輪中後段被異或並循環左移 8/7 位）
+; c: 累加器 c 的字索引（第二輪加法的被加數）
+; d: 累加器 d 的字索引（被異或後循環左移 16/12 位）
+; [qr](#chacha20-poly1305.qr)
 qr = (state []u32, a i64, b i64, c i64, d i64) {
 
     #{index-out=zero}
@@ -101,7 +109,7 @@ qr = (state []u32, a i64, b i64, c i64, d i64) {
 ; counter u32: 區塊計數器
 ; nonce [12]byte: 96-bit nonce
 ; 返回 out [64]byte: 密鑰流
-; [chacha20-block](#crypto.chacha20-poly1305.chacha20-block)
+; [chacha20-block](#chacha20-poly1305.chacha20-block)
 chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 
     ; 初始化狀態（16 個 32-bit 字）
@@ -211,7 +219,7 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
 ; nonce [12]byte: nonce
 ; data []byte: 輸入資料
 ; 返回 out []byte: XOR 後的資料
-; [chacha20-xor](#crypto.chacha20-poly1305.chacha20-xor)
+; [chacha20-xor](#chacha20-poly1305.chacha20-xor)
 chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []byte) {
     out = with-len(data.len())
     pos = 0
@@ -242,10 +250,12 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
 ; Poly1305 MAC
 ; ═══════════════════════════════════════════════
 
-; 将 x 约简到 [0, 2^130-5)
-; 利用 2^130 ≡ 5 (mod p) 的折叠约简，仅使用已验证的 bigint 运算
-; 不用 bigint.mod —— 其 div-mod 对多 limb 除数存在未还原 normalize shift 的错误
-; [poly1305-reduce](#crypto.chacha20-poly1305.poly1305-reduce)
+; 將 x 約簡到 [0, 2^130-5)
+; 利用 2^130 ≡ 5 (mod p) 的摺疊約簡，僅使用已驗證的 bigint 運算
+; 不用 bigint.mod —— 其 div-mod 對多 limb 除數存在未還原 normalize shift 的錯誤
+; x: 待約簡的大整數（Poly1305 累乘結果，可能遠超 130 位）
+; out: 約簡後的值，落在 [0, 2^130-5) 區間內
+; [poly1305-reduce](#chacha20-poly1305.poly1305-reduce)
 poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
     out = x
     hi = bigint.shr(out, 130)
@@ -262,14 +272,14 @@ poly1305-reduce = (x bigint.bigint) (out bigint.bigint) {
 ; key [32]byte: 一次性金鑰（前 16 位元組為 r，後 16 位元組為 s）
 ; data []byte: 輸入資料
 ; 返回 tag [16]byte: 16 位元組認證標籤
-; [poly1305](#crypto.chacha20-poly1305.poly1305)
+; [poly1305](#chacha20-poly1305.poly1305)
 poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 
-    ; 用 bigint 直接表达 Poly1305 数学：tag = (h + s) mod 2^128
+    ; 用 bigint 直接表達 Poly1305 數学：tag = (h + s) mod 2^128
     ;   h = Σ c_i · r^(n-1-i) mod (2^130 - 5)
 
     ; r = clamp(key[0..16])（小端 128-bit）
-    ; 字节 3,7,11,15 高两位清零（& 15）；字节 4,8,12 低两位清零（& 252）
+    ; 字節 3,7,11,15 高兩位清零（& 15）；字節 4,8,12 低兩位清零（& 252）
     r = bigint.zero()
     i <- [15..0]: {
         bvr i64 = key[i]
@@ -281,7 +291,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         r = r * 256 + bigint.from-i64(bvr)
     }
 
-    ; s = key[16..32]（小端 128-bit，无 clamp）
+    ; s = key[16..32]（小端 128-bit，無 clamp）
     s = bigint.zero()
     j <- [31..16]: {
         bvs i64 = key[j]
@@ -291,7 +301,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     ; 累加器 h = 0
     h = bigint.zero()
 
-    ; 逐 16 字节区块：h = (h + c) * r mod p
+    ; 逐 16 字節區塊：h = (h + c) * r mod p
     pos = 0
     (pos < data.len()) {
         n = 16
@@ -299,7 +309,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         #{overflow=wrap}
         pos + n > data.len() -> n = data.len() - pos
 
-        ; c = 区块小端值 + 2^(8n)（最高位 1）
+        ; c = 區塊小端值 + 2^(8n)（最高位 1）
         c bigint.bigint = bigint.zero()
 
         #{overflow=wrap}
@@ -319,9 +329,9 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         pos = pos + 16
     }
 
-    ; tag = (h + s) 的低 128 位，小端输出（逐字节）
-    ; 注意：不可用 2^32 取 32-bit limb —— 除数 2^32 会让 _mod-i64 内部 rem<<32 溢出 i64。
-    ; 改用 shr + `% 256`：小除数保证 rem<256，rem<<32 不溢出。
+    ; tag = (h + s) 的低 128 位，小端输出（逐字節）
+    ; 注意：不可用 2^32 取 32-bit limb —— 除數 2^32 會讓 _mod-i64 內部 rem<<32 溢出 i64。
+    ; 改用 shr + `% 256`：小除數保證 rem<256，rem<<32 不溢出。
     hs = h._add(s)
     out <- [0..16): {
 
@@ -345,7 +355,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
 ; key [32]byte: ChaCha20 金鑰
 ; nonce [12]byte: nonce
 ; 返回 otk [32]byte: 一次性 Poly1305 金鑰
-; [poly1305-key-gen](#crypto.chacha20-poly1305.poly1305-key-gen)
+; [poly1305-key-gen](#chacha20-poly1305.poly1305-key-gen)
 poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 
     ; 使用 ChaCha20(block_counter=0) 生成 64 位元組
@@ -363,7 +373,7 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
 ; aad []byte: 額外認證資料
 ; plain []byte: 明文
 ; 返回 sealed []byte: 密文 + 16 位元組 tag
-; [chacha20-poly1305-seal](#crypto.chacha20-poly1305.chacha20-poly1305-seal)
+; [chacha20-poly1305-seal](#chacha20-poly1305.chacha20-poly1305-seal)
 chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte) (sealed []byte) {
 
     ; 1. 生成 Poly1305 金鑰
@@ -577,7 +587,7 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 ; aad []byte: 額外認證資料
 ; sealed []byte: 密文 + 16 位元組 tag
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
-; [chacha20-poly1305-open](#crypto.chacha20-poly1305.chacha20-poly1305-open)
+; [chacha20-poly1305-open](#chacha20-poly1305.chacha20-poly1305-open)
 chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byte) (plain []byte) {
     sealed.len() < 16 -> return
 

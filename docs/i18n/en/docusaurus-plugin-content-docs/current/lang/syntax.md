@@ -550,12 +550,23 @@ get = (i i64) (val ?str) {
   it in the catalog; it is not derived from the text, so rewording never orphans an
   existing translation. Anchors allow letters, digits, `.`, `_` and `-`, are global,
   and should carry the module prefix
+- The prefix is the **flattened module name**, not the directory. The compiler
+  flattens a std file to its basename: `std/collection/linked-hash-map.no` is the
+  module `linked-hash-map`, and `use std/collection` never puts `collection.` in
+  front of a symbol. So the anchor for `linked-hash-map.clear` is
+  `linked-hash-map.linked-hash-map.clear` (module, then the name as written),
+  **not** `collection.linked-hash-map.linked-hash-map.clear`. The directory
+  segments `collection` / `net` / `crypto` / `archive` / `encoding` / `database`
+  are not part of any symbol and must not appear in an anchor
 - The label (`[get]`) is only a hint for whoever reads the source; the whole link
   line is stripped from the display. `[](#args.get)` is equally valid
 - Only `;` single-line comments can carry a link (`;;` and `;;block` cannot)
 
-Translations live in `locales/<language>.doc.noml`, keyed by the anchor. A missing
-translation falls back to the comment's own text rather than becoming blank.
+Translations live in `locales/<language>-doc.noml`, keyed by the anchor. A missing
+translation falls back to the comment's own text rather than becoming blank. The
+file name follows the `.no` naming rule (lowercase letters, digits, single
+hyphens), so the tag is lowercased and the separator is `-`: `--lang=zh-CN` reads
+`zh-cn-doc.noml`.
 
 Every documented function and method in the standard library already carries an
 anchor (about 2000 of them), so a translation becomes visible in the LSP the moment
@@ -967,13 +978,21 @@ i <- [0..10): {
 >     r = n
 > }
 > ```
-> Correct (assign the result parameter first, then use a bare `return` to terminate early):
+> Correct (assign the result parameter first, then use a bare `return` to terminate early;
+> the statements inside an arm body each need their own line):
 > ```no
 > has = (n i64) (r i64) {
->     n == 0 -> { r = 0; return }   ; ✓
+>     n == 0 -> {
+>         r = 0
+>         return
+>     }
 >     r = n
 > }
 > ```
+> ⚠️ Collapsing it to one line as `n == 0 -> { r = 0; return }` is not a shorthand: `; return }`
+> is entirely comment, so the block never closes and every following statement (usually the
+> rest of the function body) is silently swallowed into that arm — verified: `no vet` reports
+> no issue and the function is never called.
 
 ### Match
 
@@ -1152,14 +1171,17 @@ val: {
 
 ```no
 ; it scoping: nested matches restore level by level
+; (the placeholder function is named keep -- `use` is the import keyword and cannot be
+;  a function name; and a bare `->` arm may not read `it` unless nil/err are both claimed,
+;  so every level here writes `ok ->`)
 outer: {
-    -> {
-        use(it)             ; outer it
+    ok -> {
+        keep(it)            ; outer it
         inner ?T = f(it)
         inner: {
-            -> use(it)      ; inner it = unwrapped `inner`
+            ok -> keep(it)  ; inner it = unwrapped `inner`
         }
-        use(it)             ; ✅ it is the outer value again
+        keep(it)            ; ✅ it is the outer value again
     }
 }
 ```
@@ -1168,6 +1190,15 @@ outer: {
 > `it` still holds the last arm's value — do not use `it` outside a match. To carry the value
 > across levels, copy it into a named local (`doc = it`) or use a destructuring binding
 > `ok(v) -> ...` to bind the payload to your own name.
+
+> **Best practice — prefer `it` for option unwrapping**: when the matched value is an
+> **option `?t`**, write `ok -> ...(it)...` rather than `ok(v) -> ...(v)...`. Introducing no
+> extra binding name naturally sidesteps the "same-named local across arms corrupts codegen"
+> pitfall. Keep a **named binding** `ok(v) ->` only when: (1) the scrutinee is a
+> **user-defined enum variant** (`res { ok(v str) }`, `shape { rect(w, h) }`) — there `it` is
+> the **whole enum**, not the payload, so the payload can only be extracted by name; or
+> (2) the value is needed **after a nested match** — the inner match rebinds `it`, so use a
+> named binding or copy `it` into a named local first.
 
 ### `it` is only usable in an arm with a single provable case
 
@@ -1548,8 +1579,10 @@ Rules:
   wraps it as `run worker-async(5)` + `awy` inline-await, so `d` receives the
   result value, not a task handle.
 - **Underlying still colored stackless coroutines.** `co` is just sugar.
-  `{ r1 = co worker(1); r2 = co worker(2) }` lowers like a coroutine group — the
-  two `worker-async` tasks are spawned first, then `awy`-ed together.
+  Inside a coroutine group, `r1 = co worker(1)` and `r2 = co worker(2)` each occupy
+  their own line (`;` is a comment marker, never a statement separator); this lowers
+  like a coroutine group — the two `worker-async` tasks are spawned first, then
+  `awy`-ed together.
 
 ## Operator Overloading
 
@@ -2808,6 +2841,11 @@ v ?= expr
 
 **Restriction:** `?=` can only be used inside a function that has an option-typed result parameter. If the current function has no option result parameter, the compiler reports an error.
 
+**No pre-initialization needed:** the function prologue does not zero-initialize out parameters, but at return
+time any out parameter that was never explicitly assigned is auto-filled with its type's zero value (integer →
+`0`, `str` / struct → zeroinitializer, option → `nil`). That is why the examples below carry no `result = nil`
+boilerplate — write only the success-path assignments.
+
 > **Capture vs. propagate:** `?=` means "throw the error upward" — it requires an option result param and performs an early `return` on failure. If you want to handle the failure **in place** and keep going, use plain `=` instead (see *Error Capture Assignment* below).
 
 **Example:**
@@ -2815,7 +2853,6 @@ v ?= expr
 ```no
 ; Read a file line by line and process it — using ?= to simplify error propagation
 process-file = (path str) (result ?str) {
-    result = nil
     f ?= open(path)             ; on failure, result = f automatically; return
     line ?= f.read-line()      ; EOF or error propagates automatically
     result = line
@@ -2851,7 +2888,6 @@ process-file = (path str) (result ?str) {
 
 ```no
 pipeline = (input str) (result ?str) {
-    result = nil
     a ?= step1(input)     ; propagate on failure
     b ?= step2(a)         ; propagate on failure
     result = b
@@ -2865,13 +2901,11 @@ intermediate variable first:
 ```no
 ; on overflow, result = err automatically; return; otherwise v unwraps to the inner value
 sub-safe = (a i64, b i64) (result ?i64) {
-    result = nil
     v ?= a - b          ; underflow/overflow → err propagates; otherwise v = the inner i64
     result = v
 }
 
 add-safe = (a i64, b i64) (result ?i64) {
-    result = nil
     v ?= a + b          ; same as above; applies to + * and signed /
     result = v
 }
@@ -2884,8 +2918,14 @@ sub-safe = (a i64, b i64) (result ?i64) {
     result = nil
     __unwrap = a - b            ; option<i64>
     __unwrap: {
-        nil -> { result = __unwrap; return }
-        err -> { result = __unwrap; return }
+        nil -> {
+            result = __unwrap
+            return
+        }
+        err -> {
+            result = __unwrap
+            return
+        }
         -> v = it               ; ok(value): unwrap the inner value
     }
     result = v
@@ -2899,7 +2939,6 @@ the inner value assigned to the LHS:
 
 ```no
 sum3 = () (result ?i64) {
-    result = nil
     a ?i64 = ok(10)
     b ?i64 = ok(20)
     c ?i64 = ok(30)
@@ -2908,7 +2947,6 @@ sum3 = () (result ?i64) {
 }
 
 comp = () (result ?i64) {
-    result = nil
     a ?i64 = ok(4)
     b ?i64 = ok(6)
     v ?= dbl(a + b)            ; a + b may be an option; it is likewise unwrapped and propagated automatically

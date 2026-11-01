@@ -31,7 +31,10 @@ zip-entry {
 ; ─── 位元組輔助 ─────────────────────────────
 
 ; 讀取 4 位元組小端序無號整數
-; [u32le](#archive.zip.u32le)
+; data: ZIP 檔案位元組陣列
+; off: 讀取起始位置（0 起始）
+; v: 4 位元組小端序無號整數（0 ~ 2^32-1）
+; [u32le](#zip.u32le)
 u32le = (data []byte, off i64) (v i64) {
 
     #{overflow=wrap}
@@ -58,7 +61,10 @@ u32le = (data []byte, off i64) (v i64) {
 }
 
 ; 讀取 2 位元組小端序無號整數
-; [u16le](#archive.zip.u16le)
+; data: 待讀取的位元組陣列
+; off: 讀取起始位置（0 起始）
+; v: 2 位元組小端序無號整數（0 ~ 65535）
+; [u16le](#zip.u16le)
 u16le = (data []byte, off i64) (v i64) {
 
     #{overflow=wrap}
@@ -75,7 +81,8 @@ u16le = (data []byte, off i64) (v i64) {
 ; ─── zip 方法 ─────────────────────────────────
 
 ; 從結尾搜尋 EOCD 簽名
-; [find-eocd](#archive.zip.zip.find-eocd)
+; off: EOCD 簽名所在偏移（找不到返回 -1）
+; [find-eocd](#zip.zip.find-eocd)
 zip.find-eocd = () (off i64) {
 
     off = -1
@@ -98,7 +105,8 @@ zip.find-eocd = () (off i64) {
 }
 
 ; 讀取中央目錄偏移（單值返回，避免多值 compiler bug）
-; [get-cd-off](#archive.zip.zip.get-cd-off)
+; cd-off: 中央目錄的起始偏移（無 EOCD 時返回 0）
+; [get-cd-off](#zip.zip.get-cd-off)
 zip.get-cd-off = () (cd-off i64) {
 
     eocd = .find-eocd()
@@ -113,7 +121,8 @@ zip.get-cd-off = () (cd-off i64) {
 }
 
 ; 讀取條目數（單值返回）
-; [get-total](#archive.zip.zip.get-total)
+; total: 歸檔內的條目總數（無 EOCD 時返回 0）
+; [get-total](#zip.zip.get-total)
 zip.get-total = () (total i64) {
 
     eocd = .find-eocd()
@@ -128,7 +137,9 @@ zip.get-total = () (total i64) {
 }
 
 ; 第 idx 個 central directory 條目的偏移
-; [entry-off](#archive.zip.zip.entry-off)
+; idx: 條目序號（0 ~ 總數-1）
+; off: 該中央目錄條目在檔案資料中的絕對偏移
+; [entry-off](#zip.zip.entry-off)
 zip.entry-off = (idx i64) (off i64) {
     cd-off = .get-cd-off()
     total = .get-total()
@@ -159,20 +170,25 @@ zip.entry-off = (idx i64) (off i64) {
 }
 
 ; 傳回 ZIP 中的條目數
-; [count](#archive.zip.zip.count)
+; count: 條目總數（歸檔損壞時為 0）
+; [count](#zip.zip.count)
 zip.count = () (count i64) {
     count = .get-total()
 }
 
 ; 取得第 idx 個條目
-; [entry](#archive.zip.zip.entry)
+; idx: 條目序號
+; e: 綁定該條目偏移的 zip-entry 句柄（再經其方法讀欄位）
+; [entry](#zip.zip.entry)
 zip.entry = (idx i64) (e zip-entry) {
     e.data = .data
     e.off = .entry-off(idx)
 }
 
 ; 第 idx 個條目的檔名
-; [name](#archive.zip.zip.name)
+; idx: 條目序號
+; name: 檔名（可含以 / 分隔的相對路徑）
+; [name](#zip.zip.name)
 zip.name = (idx i64) (name str) {
 
     off = .entry-off(idx)
@@ -196,7 +212,9 @@ zip.name = (idx i64) (name str) {
 }
 
 ; 原始大小
-; [size](#archive.zip.zip.size)
+; idx: 條目序號
+; sz: 壓縮前的原始位元組數
+; [size](#zip.zip.size)
 zip.size = (idx i64) (sz i64) {
 
     off = .entry-off(idx)
@@ -207,7 +225,9 @@ zip.size = (idx i64) (sz i64) {
 }
 
 ; 壓縮後大小
-; [compressed-size](#archive.zip.zip.compressed-size)
+; idx: 條目序號
+; csz: 壓縮後的位元組數（stored 時與原始相同）
+; [compressed-size](#zip.zip.compressed-size)
 zip.compressed-size = (idx i64) (csz i64) {
 
     off = .entry-off(idx)
@@ -218,7 +238,9 @@ zip.compressed-size = (idx i64) (csz i64) {
 }
 
 ; 壓縮方式（0=stored, 8=deflate）
-; [method](#archive.zip.zip.method)
+; idx: 條目序號
+; method: 壓縮方式（0=stored 未壓縮、8=deflate）
+; [method](#zip.zip.method)
 zip.method = (idx i64) (method i64) {
 
     off = .entry-off(idx)
@@ -229,7 +251,9 @@ zip.method = (idx i64) (method i64) {
 }
 
 ; 提取第 idx 個條目的內容（stored 和 deflate）
-; [extract](#archive.zip.zip.extract)
+; idx: 條目序號
+; out: 解壓後的原始位元組（stored 直接拷貝、deflate 自動 inflate）
+; [extract](#zip.zip.extract)
 zip.extract = (idx i64) (out []byte) {
 
     off = .entry-off(idx)
@@ -298,7 +322,8 @@ zip.extract = (idx i64) (out []byte) {
 ; ─── zip-entry 方法 ───────────────────────────
 
 ; 讀取條目檔名
-; [name](#archive.zip.zip-entry.name)
+; name: 該條目的檔名
+; [name](#zip.zip-entry.name)
 zip-entry.name = () (name str) {
 
     off = .off
@@ -322,7 +347,8 @@ zip-entry.name = () (name str) {
 }
 
 ; 讀取條目原始大小
-; [size](#archive.zip.zip-entry.size)
+; sz: 壓縮前的原始位元組數
+; [size](#zip.zip-entry.size)
 zip-entry.size = () (sz i64) {
 
     #{overflow=wrap}
@@ -331,7 +357,8 @@ zip-entry.size = () (sz i64) {
 }
 
 ; 讀取條目壓縮後大小
-; [compressed-size](#archive.zip.zip-entry.compressed-size)
+; csz: 壓縮後的位元組數
+; [compressed-size](#zip.zip-entry.compressed-size)
 zip-entry.compressed-size = () (csz i64) {
 
     #{overflow=wrap}
@@ -340,7 +367,8 @@ zip-entry.compressed-size = () (csz i64) {
 }
 
 ; 讀取條目壓縮方式（0=stored, 8=deflate）
-; [method](#archive.zip.zip-entry.method)
+; method: 壓縮方式（0=stored、8=deflate）
+; [method](#zip.zip-entry.method)
 zip-entry.method = () (method i64) {
 
     #{overflow=wrap}
@@ -349,7 +377,8 @@ zip-entry.method = () (method i64) {
 }
 
 ; 提取條目內容（stored 和 deflate）
-; [extract](#archive.zip.zip-entry.extract)
+; out: 解壓後的原始位元組（stored 直接拷貝、deflate 自動 inflate）
+; [extract](#zip.zip-entry.extract)
 zip-entry.extract = () (out []byte) {
 
     off = .off
@@ -433,7 +462,9 @@ zip-writer {
 }
 
 ; 添加檔案到歸檔（自動計算 CRC32）
-; [add-file](#archive.zip.zip-writer.add-file)
+; name: 歸檔內儲存的路徑名
+; content: 檔案內容（以 stored 方式原樣儲存，自動計算 CRC32）
+; [add-file](#zip.zip-writer.add-file)
 zip-writer.add-file = (name str, content []byte) {
 
     crc = crc-32.new(content, content.len())
@@ -446,7 +477,8 @@ zip-writer.add-file = (name str, content []byte) {
 }
 
 ; 添加目錄條目
-; [add-dir](#archive.zip.zip-writer.add-dir)
+; name: 目錄名（未以 / 結尾時自動補上）
+; [add-dir](#zip.zip-writer.add-dir)
 zip-writer.add-dir = (name str) {
 
     dname = name
@@ -462,7 +494,8 @@ zip-writer.add-dir = (name str) {
 }
 
 ; 追加一個位元組到 data（透過局部變數支援 push）
-; [put](#archive.zip.zip-writer.put)
+; b: 待追加的位元組值（取低 8 位寫入本地資料區）
+; [put](#zip.zip-writer.put)
 zip-writer.put = (b i64) {
     d []byte
     d = .data
@@ -471,7 +504,8 @@ zip-writer.put = (b i64) {
 }
 
 ; 追加一個位元組到 cd-data
-; [cd-put](#archive.zip.zip-writer.cd-put)
+; b: 待追加的位元組值（取低 8 位寫入中央目錄緩衝）
+; [cd-put](#zip.zip-writer.cd-put)
 zip-writer.cd-put = (b i64) {
     d []byte
     d = .cd-data
@@ -480,7 +514,8 @@ zip-writer.cd-put = (b i64) {
 }
 
 ; 寫入中央目錄和 EOCD，返回完整歸檔資料
-; [finalize](#archive.zip.zip-writer.finalize)
+; out: 完整 ZIP 歸檔位元組（本地資料 + 中央目錄 + EOCD）
+; [finalize](#zip.zip-writer.finalize)
 zip-writer.finalize = () (out []byte) {
     cd-offset = .data.len()
     cd-size = .cd-data.len()
@@ -498,14 +533,16 @@ zip-writer.finalize = () (out []byte) {
 }
 
 ; 寫入 2 位元組小端序整數
-; [write-u16](#archive.zip.zip-writer.write-u16)
+; v: 待寫入整數（取低 16 位以小端序追加）
+; [write-u16](#zip.zip-writer.write-u16)
 zip-writer.write-u16 = (v i64) {
     .put(v & 255)
     .put((v >> 8) & 255)
 }
 
 ; 寫入 4 位元組小端序整數
-; [write-u32](#archive.zip.zip-writer.write-u32)
+; v: 待寫入整數（取低 32 位以小端序追加）
+; [write-u32](#zip.zip-writer.write-u32)
 zip-writer.write-u32 = (v i64) {
     .put(v & 255)
     .put((v >> 8) & 255)
@@ -514,7 +551,10 @@ zip-writer.write-u32 = (v i64) {
 }
 
 ; 寫入本地檔案標頭和內容
-; [write-local-file](#archive.zip.zip-writer.write-local-file)
+; name: 檔名（寫入標頭與資料區）
+; content: 檔案內容（不壓縮、原樣 stored 寫入）
+; crc: 內容的 CRC32 校驗值
+; [write-local-file](#zip.zip-writer.write-local-file)
 zip-writer.write-local-file = (name str, content []byte, crc i64) {
 
     ; 簽名 PK\x03\x04
@@ -569,14 +609,16 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
 }
 
 ; 寫入 2 位元組小端序整數到中央目錄
-; [cd-write-u16](#archive.zip.zip-writer.cd-write-u16)
+; v: 待寫入整數（取低 16 位以小端序追加到中央目錄緩衝）
+; [cd-write-u16](#zip.zip-writer.cd-write-u16)
 zip-writer.cd-write-u16 = (v i64) {
     .cd-put(v & 255)
     .cd-put((v >> 8) & 255)
 }
 
 ; 寫入 4 位元組小端序整數到中央目錄
-; [cd-write-u32](#archive.zip.zip-writer.cd-write-u32)
+; v: 待寫入整數（取低 32 位以小端序追加到中央目錄緩衝）
+; [cd-write-u32](#zip.zip-writer.cd-write-u32)
 zip-writer.cd-write-u32 = (v i64) {
     .cd-put(v & 255)
     .cd-put((v >> 8) & 255)
@@ -585,7 +627,12 @@ zip-writer.cd-write-u32 = (v i64) {
 }
 
 ; 寫入中央目錄條目
-; [write-cd-entry](#archive.zip.zip-writer.write-cd-entry)
+; name: 檔名
+; offset: 該條目本地檔案標頭的起始偏移
+; size: 壓縮前大小
+; compressed-size: 壓縮後大小
+; crc: 內容的 CRC32 校驗值
+; [write-cd-entry](#zip.zip-writer.write-cd-entry)
 zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64, crc i64) {
 
     ; 簽名 PK\x01\x02
@@ -651,7 +698,9 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
 }
 
 ; 寫入結束記錄 (End of Central Directory)
-; [write-eocd](#archive.zip.zip-writer.write-eocd)
+; cd-offset: 中央目錄的起始偏移
+; cd-size: 中央目錄的總位元組數
+; [write-eocd](#zip.zip-writer.write-eocd)
 zip-writer.write-eocd = (cd-offset i64, cd-size i64) {
 
     ; 簽名 PK\x05\x06

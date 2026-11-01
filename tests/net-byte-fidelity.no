@@ -49,6 +49,7 @@ hdr[4] = 0x94
 
 h = hdr.to-bytes-str()
 
+; 以 .byte(i) 組出 16-bit 大端長度：0x00 << 8 | 0x94 = 148（若誤用碼點讀取會得到 1 或 20）
 rlen = ((h.byte(3)) << 8) | (h.byte(4))
 
 rlen == 148 -> print('PASS: 3 tls record rlen=148')

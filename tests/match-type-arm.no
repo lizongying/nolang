@@ -27,6 +27,8 @@ num = i32 | i64 | f64
 mixed = num | bool
 
 ; (5) bool 上的值 match（P1 形態，由型別臂呼叫）
+; b bool: 待轉字串的布林
+; r str: true 為 'yes'、false 為 'no'
 bool-str = (b bool) (r str) {
     r = b: {
         true -> 'yes'
@@ -40,6 +42,9 @@ bool-str = (b bool) (r str) {
 ; 走 buildTypeMatchDesugar 的主體型別派發路徑（與外層 mixed 同形）。
 gi64 i64 = 7
 
+; 巢狀型別 match：外層對 mixed 判 bool，內層再對 union 別名 num 判具體寬度
+; a mixed: 外層要判型別的 union 值
+; r str: bool 臂回 'bool+<內層型別>'，其餘成員回 'bare-i64' / 'bare-i32' / 'bare-f64'，都不符則 'other'
 nested = (a mixed) (r str) {
     r = a: {
         v bool -> {

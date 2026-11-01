@@ -69,6 +69,8 @@ t-negative-index = () {
 ; 5) 忠實重現 blake2 b-compress 的初始化形態：未分配 vec + #{index-out=zero} +
 ;    RHS 含下標讀（觸發 desugarIndexOutReads）+ 迴圈 + 函數返回該 vec
 WV [8]u64 = [1, 2, 3, 4, 5, 6, 7, 8]
+; 重現 blake2 compress 的初始化形態：未配置 vec + #{index-out=zero} + RHS 下標讀 + 迴圈 + 返回
+; st []u64: 長度 16 的 vec；[0..8) 為 WV[i]*10，[8..16) 為 WV[i]+100
 b-state-like = () (st []u64) {
     v []u64
     i <- [0..8): {
@@ -87,6 +89,7 @@ b-state-like = () (st []u64) {
     }
     st = v
 }
+; 承接返回的 vec：v[0]=10、v[7]=80、v[8]=101、v[15]=108，len 為 16
 t-blake2-like = () {
     st []u64 = b-state-like()
     runner.eq(st[0], 10, 'blake2-like: v[0] == 10')

@@ -7,15 +7,21 @@
 test-cb = ()
 
 ; 具名函式型別：帶參帶返回
+; n i64: 宣告用的參數名（此處只宣告型別，不存在函式體）
+; r i64: 宣告用的返回名；實作見下方 my-compute
 compute = (n i64) (r i64)
 
 ; 使用具名函式型別作為參數型別
+; setup test-cb: 進入時呼叫的無參回呼，本測試傳 my-setup
+; teardown test-cb: 尾聲呼叫的無參回呼，本測試傳 my-teardown
 run-suite = (setup test-cb, teardown test-cb) {
     setup()
     teardown()
 }
 
 ; 使用具名函式型別作為參數型別，並帶返回值
+; cb compute: 具名型別的計算回呼，固定以 41 呼叫
+; out i64: cb(41) 的回傳值；配合 my-compute 得到 42
 apply-compute = (cb compute) (out i64) {
     out = cb(41)
 }
@@ -25,10 +31,14 @@ my-setup = () {
     print('setup called')
 }
 
+; teardown 回呼實作：只印一行，證明 run-suite 在 setup 之後也真的呼叫了它
 my-teardown = () {
     print('teardown called')
 }
 
+; compute 回呼實作：把輸入加一（41 → 42）
+; n i64: 來源數值
+; r i64: n + 1（#{overflow=wrap}）
 my-compute = (n i64) (r i64) {
 
     #{overflow=wrap}

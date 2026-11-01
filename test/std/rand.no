@@ -7,6 +7,7 @@
 
 # /test/runner
 
+; xorshift32：固定種子的前兩步等於 golden 值，且輸出落在 0..2^32-1
 t-xorshift = () {
     st, r = rand.rand(123456789)
     runner.eq(r, 2714967881, 'xorshift32 step1')
@@ -23,6 +24,7 @@ t-xorshift = () {
     }
 }
 
+; 隨機字串：同種子應得 10 字元 golden 字串 'aZWqBKc0UW'
 t-str = () {
     s = rand.rand-str(12345, 10)
     runner.eq(s.len(), 10, 'rand-str length')

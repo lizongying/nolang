@@ -8,6 +8,9 @@
 
 # /test/runner
 
+; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
+; data []byte: 待格式化的位元組，可為空
+; hex str: 長度為 data.len()*2 的 hex 字串，每 2 字元對應一個位元組
 bhex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     n = data.len()
@@ -24,6 +27,8 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; 3DES-EDE 加密 KAT：24 位元組金鑰 + 一個 8 位元組區塊 → 1a4d672dca6cb335
+; （K1 != K3，排除退化成單 DES 的可能）
 t-enc = () {
     key [24]byte = [
         0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
@@ -35,6 +40,7 @@ t-enc = () {
     runner.str-eq(bhex(ct), '1a4d672dca6cb335', 16, '3des enc KAT')
 }
 
+; 3DES-EDE 解密：同一金鑰對密文解密應還原出明文 0123456789abcdef
 t-dec = () {
     key [24]byte = [
         0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,

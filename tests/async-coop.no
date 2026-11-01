@@ -1,6 +1,8 @@
 ; async-coop.no — 協作式自我取消檢查（cancelled 在 -async 目標內）
 
 ; 目標函數在入口檢查自身是否已被取消；未取消則返回 n，已取消則返回 0。
+; n i64: 未取消時要回傳的數值，本測試傳 7
+; r i64: 未取消為 n；async.cancelled() 為 true 時為 0
 selfcheck-async = (n i64) (r i64) {
     c = async.cancelled()
     r = n

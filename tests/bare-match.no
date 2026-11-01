@@ -9,6 +9,9 @@ tree-set {
     right [4]i64
 }
 
+; 測試 match
+; key i64: 要比較的鍵，僅用來選左/右子節點
+; ok bool: 本實作固定回 true（方法可正常呼叫並走完裸臂 match）
 tree-set.test-match = (key i64) (ok bool) {
     ok = false
     cur = .root

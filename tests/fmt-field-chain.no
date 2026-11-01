@@ -30,7 +30,7 @@ print('4: {p.name.len-bytes()}\n')
 ; 5) err 臂：it.msg.len()——原本報 interp: unresolved format field
 c ?str = err('oops')
 c: {
-    ok(v) -> print('5: fail {v}\n')
+    ok -> print('5: fail {it}\n')
 
     nil -> print('5: nil\n')
 

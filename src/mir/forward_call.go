@@ -757,7 +757,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 	var sretSlot string
 	if spec.Ret.Kind == cRetSret {
 		c.loadSeq++
-		sretSlot = fmt.Sprintf("%%sret%d", c.loadSeq)
+		sretSlot = fmt.Sprintf("%%sret.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = alloca %s\n", sretSlot, spec.Ret.RetType))
 		callArgs = append([]string{spec.Ret.RetType + "* " + sretSlot}, callArgs...)
 	}

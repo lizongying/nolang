@@ -11,6 +11,8 @@
 ;      src/parser/dump/hir_subform_coverage_test.go。
 
 ; (1)(2)(3) 多條 raw-cond + 複合條件，值回傳
+; score ?i64: 待評分的選項；ok 時以 it 參與條件判斷
+; r str: 90+ 為 'A'、80~89 為 'B'、60~79 為 'C'，其餘（含 nil/err）為 'F'
 grade = (score ?i64) (r str) {
     r = score: {
         ok(it >= 90) -> 'A'
@@ -21,6 +23,8 @@ grade = (score ?i64) (r str) {
 }
 
 ; (4) raw-cond 巢狀於值 match 的臂體內；外層預設臂兜住 nil/err
+; v ?i64: 待分類的選項，ok 時以 it 判斷正負
+; r str: 負數細分 'very-negative'（< -100）或 'negative'，其餘見實作
 classify = (v ?i64) (r str) {
     r = v: {
         ok(it < 0) -> {
@@ -35,10 +39,17 @@ classify = (v ?i64) (r str) {
 }
 
 ; (5) ?= 傳播的原始碼形態（option 結果參數函式內解箱賦值）
+; 正數才回傳 n * 2，其餘維持 nil（供 _ ?= 上拋測試）
+; n i64: 來源數值
+; r ?i64: n > 0 時為 n*2 的 ok 值，否則為 nil
 double = (n i64) (r ?i64) {
     r = nil
     n > 0 -> r = n * 2
 }
+; 兩個選項相加：用 ?= 依序解箱，任一側不是 ok 就提前上拋
+; a ?i64: 第一個選項
+; b ?i64: 第二個選項
+; r ?i64: a + b 的 ok 值；任一側非 ok 時保留其 nil / err
 sum-two = (a ?i64, b ?i64) (r ?i64) {
     x ?= a
     y ?= b
@@ -47,7 +58,9 @@ sum-two = (a ?i64, b ?i64) (r ?i64) {
 ; ?= 只能在有 option 結果參數的函式內使用，故傳播驅動也包一層。
 ; 注意 a / b 用普通 = 綁定（保留 ?i64 option 型別）；?= 是解箱語義。
 ; double 的實參走普通變數：option 函式的裸算術實數會被 f10x20nf 規則
-; 要求先 ?= 解箱（checker/funcargs.go），与本档主题无关，故不觸發。
+; 要求先 ?= 解箱（見 checker/funcargs.go），與本檔主題無關，故不觸發。
+; 驅動 ?= 傳播：用兩個普通變數綁定 option 結果，再交給 sum-two 解箱
+; r ?i64: 21 → 42（ok），但 -1 → nil，故 sum-two 上拋 nil（整體為 nil）
 drive = () (r ?i64) {
     n1 i64 = 21
     n2 i64 = -1
@@ -85,12 +98,12 @@ io.out('classify 7 -> ')
 print(classify(c-pos))       ; -> non-negative
 
 ; ---- ?= 傳播：double(-1) 回傳 nil，x ?= a 向上傳播，sum-two 落到 nil ----
-; 注：臂內插值用裸 {v} 而非 {v.to-str()}——後者撞上既有 MIR 缺陷
+; 注：臂內插值用裸 {it} 而非 {it.to-str()}——後者撞上既有 MIR 缺陷
 ; （i64-to-str: no result slot，HEAD 同形態亦壞，見 unknown callee fmt-str），
 ; 与本档主题无关，故不觸發。
 res = drive()
 res: {
-    ok(v) -> print('sum ok: {v}')
+    ok -> print('sum ok: {it}')
 
     err -> print('sum err')
 

@@ -29,6 +29,7 @@
 ; level-name — 三個級別的名字
 ; ═══════════════════════════════════════════════
 
+; 測試 level-name
 test-level-name = () {
     d = diag {
         file: 'x.no'
@@ -50,6 +51,7 @@ test-level-name = () {
 ; render — 面向使用者的行形（含 line==0 檔案級分支）
 ; ═══════════════════════════════════════════════
 
+; 測試 render
 test-render = () {
     d = diag {
         file: 'x.no'
@@ -81,6 +83,7 @@ test-render = () {
 ; render-mid — 中間編譯錯誤串的一條（無檔名前綴）
 ; ═══════════════════════════════════════════════
 
+; 測試 render-mid
 test-render-mid = () {
     d = diag {
         file: 'x.no'

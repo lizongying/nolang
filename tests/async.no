@@ -4,6 +4,8 @@
 ; 協程組（語句位置的裸塊）內的 `go` 預設並發 spawn，遇到依賴則退化成 await。
 
 ; 同步函數：返回輸入值的兩倍
+; n i64: 輸入值，本檔用 21 / 10 / 20 / 25 等值呼叫
+; r i64: n * 2（overflow 採 wrap）
 compute = (n i64) (r i64) {
 
     #{overflow=wrap}
@@ -11,6 +13,9 @@ compute = (n i64) (r i64) {
 }
 
 ; 多參數
+; a i64: 第一個加數，本測試傳 15
+; b i64: 第二個加數，本測試傳 27
+; r i64: a + b（overflow 採 wrap），即 42
 add = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
@@ -18,6 +23,8 @@ add = (a i64, b i64) (r i64) {
 }
 
 ; 條件邏輯
+; n i64: 待分類的數值，本檔用 5 / -3 / 0
+; r i64: n > 0 為 1、n < 0 為 -1、n == 0 為 0
 classify = (n i64) (r i64) {
     {
         n > 0 -> r = 1

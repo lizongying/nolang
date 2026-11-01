@@ -47,6 +47,7 @@ test-scope()
 print('test-scope: ok')
 
 ; 測試 2：map 賦值到 out 參數走 move（涵蓋 hashmap move 路徑）
+; out [str]i64: {x: 10, y: 20}，鍵為堆字串，由呼叫者負責釋放
 make-map = () (out [str]i64) {
     out [str]i64 = { 'x': 10, 'y': 20 }
     ; out 走 move，由呼叫者管理

@@ -9,6 +9,16 @@
 ;   val = m.get(42)   // val = ok(100) 或 nil
 ;   m.for-each(key, val)
 
+; linked-hash-map: 依插入順序維護的 i64→i64 哈希表實例
+; cap i64: 槽位總數（固定 64，須為 2 的冪）
+; keys [64]i64: 各槽位存放的鍵；只有 occ[i] == 1 的槽才是有效的
+; vals [64]i64: 與 keys 一一對應的值
+; occ [64]i64: 佔用標記，1=該槽已被佔用（可能是探測到的位置）, 0=空槽
+; nxt [64]i64: 鏈表中該槽的後繼槽位下標，-1=尾節點
+; prv [64]i64: 鏈表中該槽的前驅槽位下標，-1=頭節點
+; head i64: 鏈表頭槽位下標（最早插入的鍵），-1=空表
+; tail i64: 鏈表尾槽位下標（最後插入的鍵），-1=空表
+; size i64: 目前鍵值對數量
 linked-hash-map {
     cap i64
     keys [64]i64
@@ -22,7 +32,7 @@ linked-hash-map {
 }
 
 ; 初始化哈希表
-; [init](#collection.linked-hash-map.linked-hash-map.init)
+; [init](#linked-hash-map.linked-hash-map.init)
 linked-hash-map.init = () {
     .cap = 64
     .head = -1
@@ -39,14 +49,21 @@ linked-hash-map.init = () {
 }
 
 ; 計算索引
-; [hash](#collection.linked-hash-map.linked-hash-map.hash)
+; key i64: 要散列的鍵
+; idx i64: key 在 [0, cap) 內的初始探測位置（key & (cap-1)）
+; [hash](#linked-hash-map.linked-hash-map.hash)
 linked-hash-map.hash = (key i64) (idx i64) {
 
     idx = key & (.cap - 1)
 }
 
 ; 插入或更新 key→value
-; [put](#collection.linked-hash-map.linked-hash-map.put)
+; 線性探測找槽位：命中同名 key 則只更新值並保留原有鏈表位置（不移動到尾部）；
+; 新 key 插到鏈表尾部。表已滿且 key 不存在時探測會無限循環，需控制裝載因子。
+; key i64: 鍵
+; val i64: 要寫入的值（同名 key 會被覆蓋）
+; is-new bool: true=新插入的鍵, false=已存在，僅更新了值
+; [put](#linked-hash-map.linked-hash-map.put)
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
 
     idx = .hash(key)
@@ -93,7 +110,9 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
 }
 
 ; 查找 key，返回 ?i64（nil=未找到）
-; [get](#collection.linked-hash-map.linked-hash-map.get)
+; key i64: 要查詢的鍵
+; result ?i64: ok=對應的值, nil=不存在（表為空時不探測直接返回）
+; [get](#linked-hash-map.linked-hash-map.get)
 linked-hash-map.get = (key i64) (result ?i64) {
     .size == 0 -> return
     idx = .hash(key)
@@ -113,7 +132,10 @@ linked-hash-map.get = (key i64) (result ?i64) {
 }
 
 ; 檢查 key 是否存在
-; [contains](#collection.linked-hash-map.linked-hash-map.contains)
+; 以 get 的結果判定：只有 ok 才算存在（err / nil 均為 false）。
+; key i64: 要檢查的鍵
+; found bool: true=存在, false=不存在
+; [contains](#linked-hash-map.linked-hash-map.contains)
 linked-hash-map.contains = (key i64) (found bool) {
     val = .get(key)
     val: {
@@ -126,7 +148,10 @@ linked-hash-map.contains = (key i64) (found bool) {
 }
 
 ; 刪除 key
-; [remove](#collection.linked-hash-map.linked-hash-map.remove)
+; 清空槽位並把該節點從雙向鏈表中摘除，同時更新 head / tail。
+; key i64: 要刪除的鍵
+; removed bool: true=找到並刪除, false=鍵不存在
+; [remove](#linked-hash-map.linked-hash-map.remove)
 linked-hash-map.remove = (key i64) (removed bool) {
     idx = .hash(key)
 
@@ -166,7 +191,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
 }
 
 ; 清空
-; [clear](#collection.linked-hash-map.linked-hash-map.clear)
+; [clear](#linked-hash-map.linked-hash-map.clear)
 linked-hash-map.clear = () {
     i <- [0...cap): {
 
@@ -178,19 +203,25 @@ linked-hash-map.clear = () {
 }
 
 ; 返回元素數量
-; [len](#collection.linked-hash-map.linked-hash-map.len)
+; n i64: 目前鍵值對個數（put 新鍵 +1，remove 成功 −1）
+; [len](#linked-hash-map.linked-hash-map.len)
 linked-hash-map.len = () (n i64) {
     n = .size
 }
 
 ; 是否為空
-; [is-empty](#collection.linked-hash-map.linked-hash-map.is-empty)
+; empty bool: true=size == 0, false=還有鍵值對
+; [is-empty](#linked-hash-map.linked-hash-map.is-empty)
 linked-hash-map.is-empty = () (empty bool) {
     empty = .size == 0
 }
 
 ; 按插入順序遍歷所有 (key, value)
-; [for-each](#collection.linked-hash-map.linked-hash-map.for-each)
+; 順著 head → tail 的 next 指標走完整條鏈表，每步把節點賦給 k / v。
+; 本語言無回呼，函式返回時 k / v 停在尾節點（最後插入的鍵值對）。
+; k i64: 當前節點的鍵
+; v i64: 當前節點的值
+; [for-each](#linked-hash-map.linked-hash-map.for-each)
 linked-hash-map.for-each = () (k i64, v i64) {
     idx = .head
     (idx != -1) {

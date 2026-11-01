@@ -5,10 +5,11 @@
 ; 用法：
 ;   h = fnv-1a-32('hello', 5)
 
-; 32-bit FNV-1a 哈希
-; s: 輸入字串, n: 字串長度
-; 返回 h: 輸出哈希值
-; [fnv-1a-32](#crypto.fnv-1a-32.fnv-1a-32)
+; 計算 32-bit FNV-1a 哈希（offset basis 2166136261、prime 16777619）
+; s []byte: 輸入位元組緩衝區
+; n i64: 實際參與計算的位元組數；只掃描 s[0..n)
+; h i64: 32-bit 哈希值（每步乘積後 & 0xFFFFFFFF），範圍 0..4294967295
+; [fnv-1a-32](#fnv-1a-32.fnv-1a-32)
 fnv-1a-32 = (s []byte, n i64) (h i64) {
     h = 2166136261
     i <- [0..n): {

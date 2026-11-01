@@ -14,8 +14,11 @@
 ;   derived = scrypt(password, salt, N, r, p, key-len)
 
 ; ═══════════════════════════════════════════════
-; 32-bit 循環左移（Salsa20 quarter-round 需旋轉，非左移）
-; [rotl32](#crypto.scrypt.rotl32)
+; 32-bit 循環左移（用於 Salsa20 quarter-round 的旋轉）
+; x u32: 要旋轉的 32 位元值
+; n i64: 左旋位元數（0..31；32 會使移位量溢出）
+; r u32: 左旋結果，已 & 0xFFFFFFFF
+; [rotl32](#scrypt.rotl32)
 rotl32 = (x u32, n i64) (r u32) {
     mask u32 = 4294967295
 
@@ -26,8 +29,9 @@ rotl32 = (x u32, n i64) (r u32) {
 ; ═══════════════════════════════════════════════
 
 ; Salsa20/8 核心：對 64 位元組區塊進行 8 輪混合
-; block []byte: 64 位元組輸入/輸出（原地修改）
-; [salsa20-8-core](#crypto.scrypt.salsa20-8-core)
+; 先讀入 16 個小端 32-bit 字，執行 8 輪 add-rotate-xor 後再與原值相加並寫回。
+; block []byte: 64 位元組輸入/輸出；原地修改，少於 64 位元組時缺失部分按 0 處理
+; [salsa20-8-core](#scrypt.salsa20-8-core)
 salsa20-8-core = (block []byte) {
 
     ; 載入 16 個 32-bit 字（小端序）
@@ -239,11 +243,13 @@ salsa20-8-core = (block []byte) {
 ; BlockMix
 ; ═══════════════════════════════════════════════
 
-; 區塊混合函數
-; B []byte: 輸入區塊（128*r 位元組）
-; r i64: 區塊大小參數
-; 返回 out []byte: 混合後的區塊（128*r 位元組）
-; [scrypt-blockmix](#crypto.scrypt.scrypt-blockmix)
+; 區塊混合函數（RFC 7914 §4）
+; 以尾部 64 位元組為初始 X，對 2r 個 64 位元組子區塊迭代 Salsa20/8，
+; 偶數塊放前半、奇數塊放後半，得到新的 128*r 位元組輸出。
+; b []byte: 輸入區塊（128*r 位元組）
+; r i64: 區塊大小參數（每個子區塊 64 位元組，共 2r 塊）
+; 返回 out []byte: 混合後的區塊（長度 128*r）
+; [scrypt-blockmix](#scrypt.scrypt-blockmix)
 scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
     #{overflow=wrap}
@@ -315,12 +321,13 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 ; ROMix
 ; ═══════════════════════════════════════════════
 
-; 記憶體困難混合函數
+; 記憶體困難混合函數（RFC 7914 §5，亦稱 ROMix）
+; 先填充 n 個區塊的 V 表，再做 n 次隨機索引讀取 + BlockMix，最終得到新的 128*r 位元組。
 ; b []byte: 輸入區塊（128*r 位元組）
-; n i64: CPU/記憶體參數（2 的冪）
-; r i64: 區塊大小參數
-; 返回 out []byte: 混合後的區塊
-; [scrypt-romix](#crypto.scrypt.scrypt-romix)
+; n i64: CPU/記憶體成本參數，須為大於 1 的 2 的冪（如 16384）
+; r i64: 區塊大小參數，決定每個子區塊的 64 位元組塊數
+; 返回 out []byte: 混合後的區塊（長度 128*r）
+; [scrypt-romix](#scrypt.scrypt-romix)
 scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
     #{overflow=wrap}
@@ -434,15 +441,17 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 ; Scrypt 公開 API
 ; ═══════════════════════════════════════════════
 
-; Scrypt 金鑰推導
-; password []byte: 密碼
-; salt []byte: 鹽值
-; n i64: CPU/記憶體參數（2 的冪，如 16384）
-; r i64: 區塊大小參數（如 8）
-; p i64: 並行參數（如 1）
-; key-len i64: 期望金鑰長度
-; 返回 out []byte: 推導出的金鑰
-; [scrypt](#crypto.scrypt.scrypt)
+; Scrypt 金鑰推導（RFC 7914 §7）
+; 先以 PBKDF2-HMAC-SHA256(迭代 1 次) 把密碼展開為 p*128*r 位元組，
+; 逐段做 ROMix，最後再做一輪 PBKDF2 輸出 key-len 位元組。
+; password []byte: 密碼（UTF-8 位元組序列）
+; salt []byte: 鹽值，建議 16 位元組以上且每帳號不同
+; n i64: CPU/記憶體成本，須為大於 1 的 2 的冪；越大越安全也越慢
+; r i64: 區塊大小（如 8），與 n 共同決定記憶體用量 128*n*r 位元組
+; p i64: 並行度（如 1），影響 CPU 時間
+; key-len i64: 期望金鑰長度（位元組）
+; 返回 out []byte: 推導出的金鑰，長度恰為 key-len
+; [scrypt](#scrypt.scrypt)
 scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out []byte) {
 
     ; 1. B = PBKDF2-HMAC-SHA256(password, salt, 1, p * 128 * r)

@@ -10,6 +10,7 @@
 
 ; ── 環境變數 ──────────────────────────────────
 
+; set-env 之後 get-env 應讀回剛寫入的 'xyz'
 t-get-env = () {
     os.set-env('NOLANG_OS_TEST', 'xyz')
     val = os.get-env('NOLANG_OS_TEST')
@@ -22,6 +23,7 @@ t-get-env = () {
     runner.str-eq(got, 'xyz', 3, 'get-env after set-env')
 }
 
+; 未設定的變數應回 nil（而非空字串）
 t-get-env-unset = () {
     val = os.get-env('NOLANG_NONEXISTENT_GETENV')
     is-nil = false
@@ -35,6 +37,7 @@ t-get-env-unset = () {
 
 ; ── 工作目錄 ──────────────────────────────────
 
+; get-wd 應回非空的工作目錄路徑
 t-get-wd = () {
     dir = os.get-wd()
     runner.gt(dir.len(), 0, 'get-wd len > 0')
@@ -42,6 +45,7 @@ t-get-wd = () {
 
 ; ── 進程 ──────────────────────────────────────
 
+; get-pid 應為正整數（當前進程號）
 t-get-pid = () {
     pid = os.get-pid()
     runner.gt(pid, 0, 'get-pid > 0')
@@ -49,11 +53,13 @@ t-get-pid = () {
 
 ; ── 系統資訊 ──────────────────────────────────
 
+; host-name 應回非空主機名
 t-host-name = () {
     name = os.host-name()
     runner.gt(name.len(), 0, 'host-name len > 0')
 }
 
+; num-cpu 應回可用的 CPU 數，至少為 1
 t-num-cpu = () {
     n = os.num-cpu()
     runner.gt(n, 0, 'num-cpu > 0')
@@ -61,6 +67,7 @@ t-num-cpu = () {
 
 ; ── 行程優先級（?i64 option）──────────────────
 
+; get-priority：應解出 ok，且 nice 值落在合法範圍 -20..19
 t-get-priority = () {
     prio-opt = os.get-priority(0, 0)
     found = false

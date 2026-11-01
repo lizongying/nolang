@@ -3,6 +3,7 @@
 
 ; 填充 [32]byte 陣列，每個位置填入 i+1
 ; 測試函數返回的 [32]byte 是否正確
+; out [32]byte: 第 i 個位元組為 (i + 1) & 255，前 8 bytes 不得為零
 fill-bytes = () (out [32]byte) {
     i <- [0..32): {
 
@@ -11,6 +12,7 @@ fill-bytes = () (out [32]byte) {
 }
 
 ; 輸出填充好的 [32]byte
+; out [32]byte: 第 i 個位元組為 (i + 100) & 255
 fill-bytes-param = () (out [32]byte) {
     i <- [0..32): {
 
@@ -18,7 +20,8 @@ fill-bytes-param = () (out [32]byte) {
     }
 }
 
-; 測試直接返回 [32]byte
+; 測試直接返回 [32]byte：fill-bytes() 的返回值直接接到 arr
+; pass bool: true=arr[0..8) 依序為 1..8；false=返回值丟失或錯位
 test-direct-return = () (pass bool) {
     pass = false
 
@@ -54,7 +57,8 @@ test-direct-return = () (pass bool) {
     pass = true
 }
 
-; 測試通過參數填充 [32]byte
+; 測試通過參數填充 [32]byte：fill-bytes-param() 在函式內寫入 out 再回傳
+; pass bool: true=arr[0..8) 依序為 100..107（i+100）；false=寫入未回到呼叫端
 test-param-pass = () (pass bool) {
     pass = false
 
