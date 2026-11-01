@@ -606,15 +606,22 @@ lx-str-esc = (lx lxst, buf sb) (trailing bool) {
 }
 
 ; read-raw：反引號 raw string。
-; ⚠️ 照抄 src/lexer/lexer.go 的 readRawString —— **包含它的缺陷**。
-;    Go 用 SaveState/RestoreState「回捲」，但那個 state 不含字元位置，
-;    回捲是空操作 ⇒ 每個續行先跳過前導空白、再多吃一個字元。
-;    這裡刻意用同樣的「跳過空白後不回捲」寫法，以保證 L1 逐位元組相同。
-;    修 Go 側的缺陷時，這裡也要一起改（並更新本註解）。
+; ⚠️ 照抄 src/lexer/lexer.go 的 readRawString，**必須逐位元組一致**：L1 比的是
+;    詞法 dump，兩側在邊界情形上分岔就會紅。
+;    歷史：舊版刻意照抄了 Go 的兩個缺陷，Go 側已於 2026-11-01 修掉，此處同步：
+;      ① 續行首字符被吞：舊 Go 用 SaveState/RestoreState「回捲」跳過換行與前導
+;         空白，但 LexerState 只存 token 游標，回捲是空操作 ⇒ 每行多吃一個字符
+;         （`line1\nline2` → `line1\nine2`）。現在改成「只看不消費」：判定為結尾
+;         行才收尾，否則只補一個 LF，把當前字符留給下一輪 push。
+;      ② CR：一律丟棄（與 Go 規範一致），故 CRLF 源碼與 LF 源碼得到相同的值；
+;         開頭 ` 後允許緊跟 CRLF。
 ; lx: 輸入
 ; r: 結果字串
 lx-read-raw = (lx lxst) (r str) {
     lx-read-char(lx)
+
+    ; 開頭 ` 後必須緊跟換行：LF，或 Windows 源碼的 CRLF
+    lx.ch == B-CR && lx-peek(lx) == B-LF -> lx-read-char(lx)
     lx.ch != B-LF -> {
         lx-skip-to-eol(lx)
         r = ''
@@ -629,22 +636,27 @@ lx-read-raw = (lx lxst) (r str) {
             stop = true
         }
         (lx.ch == 0) == false -> {
-            lx.ch == B-LF -> {
-                lx-read-char(lx)
-                lx-skip-ws(lx)
-                lx.ch == B-BT -> {
+            ; CR 丟棄：CRLF 與 LF 得到相同的字串值
+            lx.ch == B-CR -> lx-read-char(lx)
+
+            (lx.ch == B-CR) == false -> {
+                lx.ch == B-LF -> {
                     lx-read-char(lx)
-                    r = buf.str()
-                    stop = true
+                    lx-skip-ws(lx)
+                    lx.ch == B-BT -> {
+                        lx-read-char(lx)
+                        r = buf.str()
+                        stop = true
+                    }
+
+                    ; 不是結尾行：只補 LF。當前字符（下一行首個非空白）**不可**再
+                    ; 讀掉——留給下一輪 push，否則就是 ① 的吞首字符缺陷。
+                    (lx.ch == B-BT) == false -> buf.push-byte(B-LF)
                 }
-                (lx.ch == B-BT) == false -> {
-                    buf.push-byte(B-LF)
+                (lx.ch == B-LF) == false -> {
+                    buf.push-byte(lx.ch)
                     lx-read-char(lx)
                 }
-            }
-            (lx.ch == B-LF) == false -> {
-                buf.push-byte(lx.ch)
-                lx-read-char(lx)
             }
         }
     }

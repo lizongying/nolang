@@ -305,11 +305,11 @@ WHERE id > 100
 
 ### Mandatory Formatting Rules
 
-1. The **opening** `` ` `` must be **immediately followed by a source newline**;
+1. The **opening** `` ` `` must be **immediately followed by a source newline** (LF; CRLF in Windows files is accepted too);
 2. The **closing** `` ` `` must **sit on a line of its own**, and that line may contain nothing but whitespace plus the closing backtick;
 3. **The two backtick lines are not part of the string content** — they serve only as delimiters;
 4. **Escaping:** every `\`, `\n`, `\t`, `\'`, `\"` inside is **kept verbatim**, with no escape processing of any kind;
-5. **Source newlines and indentation are preserved exactly** in the string's bytes;
+5. **Source newlines and indentation are preserved exactly** in the string's bytes — except CR (`\r`), which is **always dropped**, so a CRLF file yields byte-for-byte the same value as an LF file;
 6. **A backtick character cannot be embedded directly.** If you need one, concatenate an ordinary single-quoted string instead.
 
 ### Example

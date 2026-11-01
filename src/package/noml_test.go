@@ -546,6 +546,36 @@ func TestNomlRawStringErrors(t *testing.T) {
 	}
 }
 
+// TestNomlRawStringCRLF pins the Windows case: the opening backtick may be
+// followed by CRLF, CRs are dropped from the body, and a CRLF file yields
+// exactly the same value as the LF file. Before this, a CRLF package.noml /
+// catalog was rejected with "the opening ` must be followed by a newline".
+func TestNomlRawStringCRLF(t *testing.T) {
+	lf := "{\n  doc: `\nline one\nline two\n`\n}"
+	crlf := "{\r\n  doc: `\r\nline one\r\nline two\r\n`\r\n}"
+	want := "line one\nline two"
+
+	vlf, err := ParseNoml([]byte(lf))
+	if err != nil {
+		t.Fatalf("parse lf: %v", err)
+	}
+	vcrlf, err := ParseNoml([]byte(crlf))
+	if err != nil {
+		t.Fatalf("parse crlf: %v", err)
+	}
+	gotLF := vlf.(map[string]any)["doc"]
+	gotCRLF := vcrlf.(map[string]any)["doc"]
+	if gotLF != want {
+		t.Fatalf("lf doc = %q, want %q", gotLF, want)
+	}
+	if gotCRLF != want {
+		t.Fatalf("crlf doc = %q, want %q", gotCRLF, want)
+	}
+	if gotLF != gotCRLF {
+		t.Fatalf("crlf doc = %q, lf doc = %q; want identical", gotCRLF, gotLF)
+	}
+}
+
 // TestNomlRawStringAnnotation covers the case the syntax exists for: a multi-line
 // doc annotation on a member (module / method / function documentation).
 func TestNomlRawStringAnnotation(t *testing.T) {

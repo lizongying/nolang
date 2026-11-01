@@ -934,11 +934,18 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
         ok = .fail(s, pos, 'raw string: the opening \'`\' must be followed by a newline')
         return
     }
-    s.byte(p) != 10 -> {
-        ok = .fail(s, p, 'raw string: the opening \'`\' must be followed by a newline')
-        return
+
+    ; 開頭換行：接受 LF，也接受 Windows 來源的 CRLF
+    {
+        p + 1 < sn && s.byte(p) == 13 && s.byte(p + 1) == 10 -> p = p + 2
+
+        s.byte(p) == 10 -> p = p + 1
+
+        -> {
+            ok = .fail(s, p, 'raw string: the opening \'`\' must be followed by a newline')
+            return
+        }
     }
-    p = p + 1
     buf str = with-len(sn - p)
     k = 0
     (p < sn) {
@@ -970,6 +977,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                 p = p + 1
             }
 
+            ; CR 丟棄：CRLF 與 LF 來源得到相同的值（與 src/lexer、src/package 同口徑）
             c == 13 -> p = p + 1
 
             -> {

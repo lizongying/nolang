@@ -676,22 +676,24 @@ func (p *nomlParser) parseString() (string, error) {
 
 // parseRawString 解析反引號原始字串，語法與 nolang 原始碼的反引號字面量完全一致：
 //
-//   - 開頭 ` 後必須緊跟一個換行
+//   - 開頭 ` 後必須緊跟一個換行（LF，或 Windows 檔案的 CRLF）
 //   - 結尾 ` 必須單獨佔一行（該行只允許空白 + `）
 //   - 首尾兩行不計入內容
-//   - 內部所有字元原樣保留，**不做任何轉義解析**（所以 `\n` 就是反斜線加 n）
+//   - 內部除 CR 外所有字元原樣保留，**不做任何轉義解析**（所以 `\n` 就是反斜線加 n）
+//     CR 一律丟棄，故 CRLF 檔案與 LF 檔案得到逐位元組相同的值
 //
 // 存在的理由：單引號字串禁止跨行，長文案（診斷訊息、模組/函式說明）只能寫成
 // `\n` 轉義，既不可讀也容易被翻譯者改壞。原始字串讓多行文案保持原樣。
-//
-// 唯一的偏離：CRLF 檔案裡緊跟換行的 `\r` 會被丟棄。原始碼 lexer 保留它，但那
-// 會讓每個 Windows 換行都變成譯文裡的一個真實 `\r`，而 .noml 是資料而非程式。
 func (p *nomlParser) parseRawString() (string, error) {
 	if p.pos >= len(p.data) || p.data[p.pos] != '`' {
 		return "", p.errf("expected \"`\"")
 	}
 	p.advance() // 跳過開頭 `
 
+	// 開頭 ` 後必須緊跟換行：LF，或 CRLF（Windows 檔案）
+	if p.pos+1 < len(p.data) && p.data[p.pos] == '\r' && p.data[p.pos+1] == '\n' {
+		p.advance() // 吃掉 CR，下面只認 LF
+	}
 	if p.pos >= len(p.data) || p.data[p.pos] != '\n' {
 		return "", p.errf("raw string: the opening ` must be followed by a newline")
 	}
@@ -717,7 +719,8 @@ func (p *nomlParser) parseRawString() (string, error) {
 			p.advance()
 			continue
 		}
-		if c == '\r' && p.pos+1 < len(p.data) && p.data[p.pos+1] == '\n' {
+		if c == '\r' {
+			// CR 一律丟棄（與原始碼 lexer 同口徑）：CRLF 與 LF 檔案得到相同的值。
 			p.advance()
 			continue
 		}

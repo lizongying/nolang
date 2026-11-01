@@ -1,0 +1,52 @@
+; std-noml-raw.no — noml 反引號原始字串的行尾處理
+;
+; 執行：no test test/std/noml-raw.no
+; 覆蓋：CRLF 來源（Windows 檔）與 LF 來源必須得到**逐位元組相同**的值；
+;       開頭 ` 後允許緊跟 CRLF；串內 CR 一律丟棄。
+;
+; 為什麼單獨一份：這組斷言釘的是 parse-raw 的行尾規則，與 noml.no 的
+; parse/stringify/構建 API 無關；行尾規則同時出現在三處（src/lexer
+; readRawString、src/package parseRawString、src/std/noml.no parse-raw），
+; 改一處必須三處一起驗。
+
+# /test/runner
+
+; 開頭 ` 後的 CRLF 與串內 CRLF：值必須等於 LF 版本
+t-raw-crlf = () {
+    ; stringify 不補尾隨換行：內容為 {\n  s: `\nline1\nline2\n`\n}
+    want = '{\n  s: `\nline1\nline2\n`\n}'
+    lf = '{\n  s: `\nline1\nline2\n`\n}\n'
+    crlf = '{\r\n  s: `\r\nline1\r\nline2\r\n`\r\n}\r\n'
+    s1 = ''
+    s2 = ''
+    r1 = noml.parse(lf)
+    r1: {
+        ok -> s1 = it.stringify()
+
+        nil -> s1 = ''
+
+        err -> s1 = ''
+    }
+    r2 = noml.parse(crlf)
+    r2: {
+        ok -> s2 = it.stringify()
+
+        nil -> s2 = ''
+
+        err -> s2 = ''
+    }
+    ; LF 版逐字符比對：舊版會丟掉每個續行的首字符（line2 → ine2）
+    runner.str-eq(s1, want, want.len-bytes(), 'raw lf keeps every char')
+    ; CRLF 版與 LF 版逐字符比對：舊版在開頭 ` 後遇 CRLF 直接判失敗
+    runner.str-eq(s2, want, want.len-bytes(), 'raw crlf equals raw lf')
+}
+
+p1, f1 = runner.test('noml.raw-crlf', t-raw-crlf)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

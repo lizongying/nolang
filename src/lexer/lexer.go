@@ -8,8 +8,9 @@ import (
 // 之後僅暴露 NextToken() 作為「token 流」產出介面（O(1) 陣列索引存取）。
 // 這消除了原始 LookAhead 的 O(n²) 詞法重算問題，也讓 parser 能以
 // 定長 ring buffer 做前瞻與回溯，而不必向 lexer 回寫任何狀態。
-// 舊有的 LookAhead/PeekToken 已移除；SaveState/RestoreState 僅保留供
-// lexer 內部（raw string 續行掃描）自用，parser 不再呼叫。
+// 舊有的 LookAhead/PeekToken 已移除。SaveState/RestoreState 只快照 **token
+// 游標**（pos/prevTokenType），不含字符位置——raw string 續行掃描曾誤用它回卷，
+// 導致每行丟首字符（見 readRawString 註釋）；現在該路徑改為不消費的窺探。
 type Lexer struct {
 	// 預掃描結果（含 COMMENT）
 	allTokens []Token
@@ -265,14 +266,27 @@ func hexVal(c byte) int {
 
 // readRawString 读取反引号原始字符串。
 // 语法要求：
-//   - 开头 ` 后必须紧跟源码换行
+//   - 开头 ` 后必须紧跟源码换行（LF，或 Windows 源码的 CRLF）
 //   - 结尾 ` 必须单独占一行（该行仅允许空白 + `）
 //   - 首尾两行的反引号所在行不计入字符串内容
-//   - 内部所有字符原样保留，不做任何转义解析
+//   - 内部除 CR 外所有字符原样保留，不做任何转义解析；CR 一律丢弃
+//     （与 Go 规范一致：CRLF 源码与 LF 源码得到**逐字节相同**的字符串值）
+//
+// ⚠️ 历史缺陷（本次修复）：旧实现在续行用 SaveState/RestoreState 回卷，
+// 但 LexerState 只存 pos/prevTokenType，**不含 ch/position/readPosition**，
+// 回卷是空操作，于是「跳过换行 → 跳过空白 → 不是结尾 → 回卷 → 多读一个字符」
+// 每行都吃掉首字符（`line1\nline2` → `line1\nine2`，共 10 字节而非 11）。
+// 现改为不消费的窥探（closingRawBacktick 直接读 l.input），不再依赖回卷。
+// 开头 ` 后紧跟 CRLF 曾被误判为「没有紧跟换行」，整段反引号内容退化成
+// 若干条普通陈述（`'line1' is not defined`）。
+// compiler/src/lx.no 的 lx-read-raw 是这里的镜像，改此处须同步（含本注释）。
 func (l *Lexer) readRawString() string {
 	l.readChar() // 跳过开头的 `
 
-	// 开头 ` 后必须紧跟换行
+	// 开头 ` 后必须紧跟换行：LF，或 CRLF（Windows 源码）。
+	if l.ch == '\r' && l.peekChar() == '\n' {
+		l.readChar() // 吃掉 CR，让下一句只认 LF
+	}
 	if l.ch != '\n' {
 		// 跳过到 EOF 或换行，避免后续解析混乱
 		for l.ch != 0 && l.ch != '\n' {
@@ -283,33 +297,45 @@ func (l *Lexer) readRawString() string {
 	l.readChar() // 跳过开头换行
 
 	var buf []byte
-	for {
-		if l.ch == 0 {
-			// 未终止的原始字符串
-			return string(buf)
+	for l.ch != 0 {
+		if l.ch == '\r' {
+			// CR 丢弃：CRLF 源码与 LF 源码得到相同的字符串值。
+			l.readChar()
+			continue
 		}
 		if l.ch == '\n' {
-			// 检查下一行是否为「仅空白 + `」
-			savedState := l.SaveState()
-			l.readChar() // 跳过换行
-			// 跳过空白
-			for l.ch == ' ' || l.ch == '\t' {
-				l.readChar()
-			}
-			if l.ch == '`' {
-				// 找到结束标记
+			if end, ok := l.closingRawBacktick(); ok {
+				// 找到结束标记：推进到结尾 ` 之后。
+				for l.position < end {
+					l.readChar()
+				}
 				l.readChar() // 跳过结尾 `
 				return string(buf)
 			}
-			// 不是结束标记，恢复并继续
-			l.RestoreState(savedState)
-			buf = append(buf, '\n')
-			l.readChar()
-		} else {
-			buf = append(buf, l.ch)
-			l.readChar()
 		}
+		buf = append(buf, l.ch)
+		l.readChar()
 	}
+	// 未终止的原始字符串
+	return string(buf)
+}
+
+// closingRawBacktick 判断当前换行（l.ch == '\n'）之后的那一行是否为
+// 「仅空白 + `」，是则返回结尾反引号的字节下标（不消费输入）。
+// 只窥探 l.input，改动字符位置一律交给调用方，避免再次踩到 SaveState
+// 不含字符位置的老坑。
+func (l *Lexer) closingRawBacktick() (int, bool) {
+	i := l.position + 1 // l.position 即当前 '\n' 的下标
+	for i < len(l.input) {
+		if c := l.input[i]; c != ' ' && c != '\t' && c != '\r' {
+			break
+		}
+		i++
+	}
+	if i < len(l.input) && l.input[i] == '`' {
+		return i, true
+	}
+	return 0, false
 }
 
 // readRegex reads a JS-style regex literal starting from the opening '/'.
