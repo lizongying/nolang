@@ -943,36 +943,44 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
     k = 0
     (p < sn) {
         c = s.byte(p)
-        c == 10 -> {
-            j = p + 1
-            (j < sn) {
-                cc = s.byte(j)
-                (cc == 32 || cc == 9 || cc == 13) -> {
+
+        ; 三種情形互斥，必須包在 `{}` 裡才是短路鏈：裸寫的 `cond -> body` 是
+        ; **獨立的 if**，末尾那個 `-> { ... }` 會無條件再跑一次——每個 LF 因此
+        ; 被寫兩遍、並吃掉緊跟其後的一個位元組（`line1\nline2` → `line1\n\nine2`）。
+        {
+            c == 10 -> {
+
+                ; 收尾反引號判定：LF 之後跳過空白，若緊接 ` 就是結束標記
+                j = p + 1
+                (j < sn && (s.byte(j) == 32 || s.byte(j) == 9 || s.byte(j) == 13)) {
                     j = j + 1
                 }
+                (j < sn && s.byte(j) == 96) -> {
+                    next = j + 1
+                    ok = true
+                    val = buf.slice-bytes(0, k)
+                    return
+                }
+                buf[k]: {
+                    ok -> it = 10
 
-                -> break
+                    -> _
+                }
+                k = k + 1
+                p = p + 1
             }
-            (j < sn && s.byte(j) == 96) -> {
-                next = j + 1
-                ok = true
-                val = buf.slice-bytes(0, k)
-                return
-            }
-            buf[k]: {
-                ok -> it = 10
-            }
-            k = k + 1
-            p = p + 1
-        }
-        c == 13 && p + 1 < sn && s.byte(p + 1) == 10 -> p = p + 1
 
-        -> {
-            buf[k]: {
-                ok -> it = c
+            c == 13 -> p = p + 1
+
+            -> {
+                buf[k]: {
+                    ok -> it = c
+
+                    -> _
+                }
+                k = k + 1
+                p = p + 1
             }
-            k = k + 1
-            p = p + 1
         }
     }
     ok = .fail(s, pos, 'unterminated raw string (the closing \'`\' must be alone on its own line)')
@@ -1282,6 +1290,8 @@ noml-pool.quote = (s str) (out str) {
     k = 0
     buf[k]: {
         ok -> it = 39
+
+        -> _
     }
     k = k + 1
     i <- [0..n): {
@@ -1290,9 +1300,13 @@ noml-pool.quote = (s str) (out str) {
             c == 39 -> {
                 buf[k]: {
                     ok -> it = 92
+
+                    -> _
                 }
                 buf[k + 1]: {
                     ok -> it = 39
+
+                    -> _
                 }
                 k = k + 2
             }
@@ -1300,9 +1314,13 @@ noml-pool.quote = (s str) (out str) {
             c == 92 -> {
                 buf[k]: {
                     ok -> it = 92
+
+                    -> _
                 }
                 buf[k + 1]: {
                     ok -> it = 92
+
+                    -> _
                 }
                 k = k + 2
             }
@@ -1310,9 +1328,13 @@ noml-pool.quote = (s str) (out str) {
             c == 10 -> {
                 buf[k]: {
                     ok -> it = 92
+
+                    -> _
                 }
                 buf[k + 1]: {
                     ok -> it = 110
+
+                    -> _
                 }
                 k = k + 2
             }
@@ -1320,9 +1342,13 @@ noml-pool.quote = (s str) (out str) {
             c == 13 -> {
                 buf[k]: {
                     ok -> it = 92
+
+                    -> _
                 }
                 buf[k + 1]: {
                     ok -> it = 114
+
+                    -> _
                 }
                 k = k + 2
             }
@@ -1330,9 +1356,13 @@ noml-pool.quote = (s str) (out str) {
             c == 9 -> {
                 buf[k]: {
                     ok -> it = 92
+
+                    -> _
                 }
                 buf[k + 1]: {
                     ok -> it = 116
+
+                    -> _
                 }
                 k = k + 2
             }
@@ -1347,21 +1377,33 @@ noml-pool.quote = (s str) (out str) {
                 }
                 buf[k]: {
                     ok -> it = 92
+
+                    -> _
                 }
                 buf[k + 1]: {
                     ok -> it = 117
+
+                    -> _
                 }
                 buf[k + 2]: {
                     ok -> it = 48
+
+                    -> _
                 }
                 buf[k + 3]: {
                     ok -> it = 48
+
+                    -> _
                 }
                 buf[k + 4]: {
                     ok -> it = hex-char(cvv >> 4)
+
+                    -> _
                 }
                 buf[k + 5]: {
                     ok -> it = hex-char(cvv & 15)
+
+                    -> _
                 }
                 k = k + 6
             }
@@ -1369,6 +1411,8 @@ noml-pool.quote = (s str) (out str) {
             -> {
                 buf[k]: {
                     ok -> it = c
+
+                    -> _
                 }
                 k = k + 1
             }
@@ -1376,6 +1420,8 @@ noml-pool.quote = (s str) (out str) {
     }
     buf[k]: {
         ok -> it = 39
+
+        -> _
     }
     k = k + 1
     out = buf.slice-bytes(0, k)
