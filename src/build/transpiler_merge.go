@@ -273,11 +273,14 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	if nomlPath := t.nomlImportForUse(use); nomlPath != "" {
 		return a.mergeNomlModule(use, nomlPath)
 	}
-	// 只有路徑沒有函數名時，別名無對象可導入（別名適用於 `.noml` 導入或
-	// `# path.fn as alias`）。以前這種寫法是語法錯誤，現在路徑後可跟 as，
-	// 必須明確拒絕而不是默默什麼都不導入。
+	// 模組別名：`# std/err error`（有別名、沒有函數名）＝把**整個模組**綁到
+	// 別名下，之後用 `<alias>.<member>` 呼叫（`error.new(...)`、型別 `error.err`）。
+	// 這是 parser 允許的寫法之一（路徑同行緊跟的 path-ident 即別名），先前合併
+	// 階段一律當成錯誤（別名只對 `.noml` 或 `# path.fn as alias` 有意義），
+	// 導致 src/std/global.no 的 `# std/err error` 無法通過 `no vet src/std`。
+	moduleAlias := ""
 	if use.Alias != "" && use.Function == "" {
-		return i18n.Errorf("l9ef35lt", "import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
+		moduleAlias = use.Alias
 	}
 	modProg, err := t.resolveUse(use)
 	if err != nil {
@@ -299,6 +302,10 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 	}
 	// 為導入模組的型別定義加上模組前綴（如 result → sql.result）
 	useModShort := checker.ModuleShortName(use.Path)
+	if moduleAlias != "" {
+		// 模組別名導入：前綴用別名，`error.err` / `error.new` 才能解析。
+		useModShort = moduleAlias
+	}
 	prefixModuleStatements(modProg.Statements, useModShort, a.typeOwner)
 	// 將模組中的 FunctionDefinition 和 LetStatement（常量）加入 merged
 	for _, ms := range modProg.Statements {
@@ -339,7 +346,7 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 			// 主檔根本沒有的行號（實報 tests/ffi-mysql.no:1098:5，該檔僅 126 行，
 			// 1098 行在 example/mysql-driver/src/mysql.no）。
 			// If alias is specified, only import the specific function under the alias name
-			if use.Alias != "" {
+			if use.Function != "" && use.Alias != "" {
 				if use.Function != "" && fd.Name == use.Function {
 					fd.Name = use.Alias
 					a.merged.Statements = append(a.merged.Statements, fd)
@@ -355,7 +362,7 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 		}
 		if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 			// If alias is specified, only import the specific function under the alias name
-			if use.Alias != "" {
+			if use.Function != "" && use.Alias != "" {
 				if use.Function != "" && ls.Name.Value == use.Function {
 					if _, ok := ls.Value.(*parser.FunctionLiteral); ok {
 						ls.Name.Value = use.Alias
@@ -392,7 +399,10 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 				}
 			}
 		}
-		if use.Alias == "" {
+		// 型別/常量聲明隨「整個模組導入」一起合併——含模組別名導入
+		// （`# std/err error`：別名只換前綴，不改變「導入整個模組」的語義）。
+		// 只有單函數導入（`# path.fn as alias`）才跳過。
+		if use.Function == "" {
 			if sd, ok := ms.(*parser.StructDefinition); ok {
 				a.merged.Statements = append(a.merged.Statements, sd)
 				a.merged.Sem.SetSourceFileOf(sd, modFile)

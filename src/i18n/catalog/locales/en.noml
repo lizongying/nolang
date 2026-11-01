@@ -430,7 +430,6 @@ clang not detected; check that the LLVM toolchain is fully installed
   'l48rpvr9': 'expected \')\' to close loop condition, got %s'
   'l62tgcu4': 'import %q: %w'
   'l90oz2gr': 'sysctl: cannot marshal name as C string'
-  'l9ef35lt': 'import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file'
   'l9eytl0v': 'expected \'(\''
   'l9lio3b1': 'net-dial: cannot marshal host as C string'
   'ldfvpa0x': '; an option cannot be unwrapped implicitly (this is only a copy, so the failure branch is discarded). %s If you meant wraparound or clamping, `#{overflow = wrap` only changes the value taken on overflow; the result is still `?%s` and still has to be unwrapped.'

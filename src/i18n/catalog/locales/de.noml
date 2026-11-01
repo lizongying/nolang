@@ -430,7 +430,6 @@ clang nicht erkannt; prüfen Sie, ob die LLVM-Toolchain vollständig installiert
   'l48rpvr9': '\')\' zum Schließen der Schleifenbedingung erwartet, %s erhalten'
   'l62tgcu4': 'Import %q: %w'
   'l90oz2gr': 'sysctl: Name kann nicht als C-Zeichenkette marshalled werden'
-  'l9ef35lt': 'Import %s: Alias %q erfordert einen Funktionsnamen (`# path.fn as alias`) oder eine .noml-Datei'
   'l9eytl0v': '\'(\' erwartet'
   'l9lio3b1': 'net-dial: Host kann nicht als C-Zeichenkette marshalled werden'
   'ldfvpa0x': '; eine option kann nicht implizit entpackt werden (dies ist nur eine Kopie, daher wird der Fehlerzweig verworfen). %s Wenn Sie Umkippen oder Begrenzen meinten, ändert `#{overflow = wrap` nur den beim Überlauf angenommenen Wert; das Ergebnis bleibt `?%s` und muss weiterhin entpackt werden.'

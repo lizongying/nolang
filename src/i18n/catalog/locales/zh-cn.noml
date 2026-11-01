@@ -430,7 +430,6 @@
   'l48rpvr9': '期望以 \')\' 结束循环条件，实际得到 %s'
   'l62tgcu4': '导入 %q: %w'
   'l90oz2gr': 'sysctl: 无法将 name 编组为 C 字符串'
-  'l9ef35lt': '导入 %s: 别名 %q 需要函数名（`# path.fn as alias`）或一个 .noml 文件'
   'l9eytl0v': '期望 \'(\''
   'l9lio3b1': 'net-dial: 无法将 host 编组为 C 字符串'
   'ldfvpa0x': '；option 不能隐式解包（这只是拷贝，失败分支会被丢弃）。%s若本意是回绕/钳位，`#{overflow = wrap` 只改变溢出时的取值，结果仍是 `?%s`，仍须解包。'

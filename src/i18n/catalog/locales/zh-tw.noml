@@ -430,7 +430,6 @@
   'l48rpvr9': '預期以 \')\' 結束迴圈條件，實際得到 %s'
   'l62tgcu4': '匯入 %q: %w'
   'l90oz2gr': 'sysctl: 無法將 name 編組為 C 字串'
-  'l9ef35lt': '匯入 %s: 別名 %q 需要函式名稱（`# path.fn as alias`）或一個 .noml 檔案'
   'l9eytl0v': '預期 \'(\''
   'l9lio3b1': 'net-dial: 無法將 host 編組為 C 字串'
   'ldfvpa0x': '；option 不能隱式解包（這只是拷貝，失敗分支會被丟棄）。%s若本意是迴繞/鉗位，`#{overflow = wrap` 只改變溢出時的取值，結果仍是 `?%s`，仍須解包。'

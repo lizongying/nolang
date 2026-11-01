@@ -38,6 +38,10 @@ func TestUseSyntax(t *testing.T) {
 		{"# npm/@scope/pkg", "npm/@scope/pkg", "", "", false},
 		{"# npm/@scope/pkg.run as r", "npm/@scope/pkg", "run", "r", true},
 		{"# npm/lodash/fp.get as get", "npm/lodash/fp", "get", "get", true},
+		// 模組別名（無 `as`、無函數名）：`# std/err error` 把整個模組綁到
+		// `error` 下（`error.new(...)`、型別 `error.err`）。這一行原本會被
+		// 拆成「`# std/err` + 獨立陳述 `error`」，`no fmt` 於是把它印成兩行。
+		{"# std/err error", "std/err", "", "error", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

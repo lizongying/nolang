@@ -430,7 +430,6 @@ clang não detectado; verifique se a cadeia de ferramentas LLVM está totalmente
   'l48rpvr9': 'esperado \')\' para fechar a condição do laço, obtido %s'
   'l62tgcu4': 'importação %q: %w'
   'l90oz2gr': 'sysctl: não é possível marshalar o nome como string C'
-  'l9ef35lt': 'import %s: o apelido %q requer um nome de função (`# path.fn as alias`) ou um arquivo .noml'
   'l9eytl0v': 'esperado \'(\''
   'l9lio3b1': 'net-dial: não é possível marshalar host como string C'
   'ldfvpa0x': '; um option não pode ser desencapsulado implicitamente (isto é apenas uma cópia, então o ramo de falha é descartado). %s Se quisera dar a volta (wrap) ou limitar (clamp), `#{overflow = wrap` só altera o valor tomado no transbordamento; o resultado ainda é `?%s` e ainda precisa ser desencapsulado.'

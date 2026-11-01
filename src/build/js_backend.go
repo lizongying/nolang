@@ -291,6 +291,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 	// non-UseStatement statements into merged, and collects its UseStatements
 	// for transitive processing.
 	var pendingUses []*parser.UseStatement
+	// jsImportedModules 收集本次合併涉及的本模組名與模組別名，供結尾把
+	// `mod.fn()` / `mod.CONST` 攤平成扁平引用（JS 沒有模組命名空間）。
+	var jsImportedModules []string
 	// esmSeen deduplicates ESM use statements (the same import reached from
 	// the main program and a transitively-imported module).
 	esmSeen := make(map[string]bool)
@@ -336,6 +339,15 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 			return nil
 		}
 
+		// 記錄本次導入的模組名（含模組別名），供最後統一攤平 `mod.fn` 呼叫。
+		// JS 輸出是扁平函數集、沒有模組命名空間，所以 `hx.h-fn(41)` 必須被
+		// 改寫成 `h-fn(41)`，否則產出物會留下 `hx.hFn(...)` → ReferenceError。
+		// 別名（`# /util/helper hx`）在此也算一個可解析的模組名。
+		jsImportedModules = append(jsImportedModules, checker.ModuleShortName(use.Path))
+		if use.Alias != "" && use.Function == "" {
+			jsImportedModules = append(jsImportedModules, use.Alias)
+		}
+
 		modulePath := resolveModulePath(use.Path)
 		isNoml := strings.HasSuffix(modulePath, ".noml")
 		// 與 LLVM 端同口徑：無別名的導入去重。.noml 的 `as` 別名導入只是在同一份
@@ -345,9 +357,14 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 		}
 		loadedModules[modulePath] = true
 
-		// 只有路徑沒有函數名時，別名無對象可導入（.noml 除外，見下方 isNoml）。
+		// 模組別名導入（`# /util/helper hx`，有別名無函數名）：JS 後端不做模組
+		// 前綴改寫，別名只影響呼叫側前綴（`hx.h-fn`），由結尾的
+		// checker.ResolveModuleCalls 攤平成裸名。因此這裡按「導入整個模組」
+		// 處理，不再拒絕。單函數導入（`# path.fn as alias`）仍走下面只導入
+		// 指名函數的分支。
+		jsOwner := checker.ModuleShortName(use.Path)
 		if use.Alias != "" && use.Function == "" && !isNoml {
-			return i18n.Errorf("l9ef35lt", "import %s: alias %q requires a function name (`# path.fn as alias`) or a .noml file", use.Path, use.Alias)
+			jsOwner = use.Alias
 		}
 
 		modProg, err := parseModuleFile(modulePath)
@@ -377,8 +394,9 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 
 			// When alias is specified, only import the specific function/constant.
 			// .noml 例外：別名只改寫頂層值綁定名，結構體定義照常合併（結構體名
-			// 預設就是文件名，可被頂部註解改寫）。
-			if use.Alias != "" && !isNoml {
+			// 預設就是文件名，可被頂部註解改寫）。模組別名（moduleAlias）同樣
+			// 不算「只導入指名函數」——它的別名是呼叫側前綴，不是新綁定名。
+			if use.Function != "" && use.Alias != "" && !isNoml {
 				if fd, ok := ms.(*parser.FunctionDefinition); ok {
 					if use.Function != "" && fd.Name == use.Function {
 						fd.Name = use.Alias
@@ -415,13 +433,17 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 
 			// No alias: merge all non-UseStatement statements.
 			// Skip variables/functions that already exist in the main program.
+			// 合併時一併記下來源模組（有模組別名時記別名）：結尾的
+			// ResolveModuleCalls 靠這個 owner 判定 `mod.fn()` 該不該攤平。
 			if fd, ok := ms.(*parser.FunctionDefinition); ok {
 				if !mainVarNames[fd.Name] {
 					merged.Statements = append(merged.Statements, fd)
+					merged.Sem.SetModuleOwnerOf(fd, jsOwner)
 				}
 			} else if ls, ok := ms.(*parser.LetStatement); ok && ls.Name != nil {
 				if !mainVarNames[ls.Name.Value] {
 					merged.Statements = append(merged.Statements, ls)
+					merged.Sem.SetModuleOwnerOf(ls, jsOwner)
 				}
 			} else if sd, ok := ms.(*parser.StructDefinition); ok {
 				merged.Statements = append(merged.Statements, sd)
@@ -460,6 +482,12 @@ func resolveAndMergeJSModules(program *parser.Program, inputPath string, pkgConf
 			return nil, err
 		}
 	}
+
+	// 攤平跨模組限定的引用（`hx.h-fn()` → `h-fn()`、`helper.CONST` → `CONST`），
+	// 與 LLVM 端 transpiler 的 ResolveModuleCalls 同口徑：只有當成員確實屬於
+	// 該模組時才攤平（owner 檢查在 resolveModuleCalls 內），因此不會誤傷同名
+	// 的主程式函數或 `str.len(...)` 這類方法呼叫。
+	checker.ResolveModuleCalls(merged, jsImportedModules, nil)
 
 	return merged, nil
 }

@@ -484,6 +484,13 @@ func collectEntryProgramFacts(program *parser.Program, isUserCode bool) (varType
 		// (3) 收集導入的模塊路徑
 		if use, ok := stmt.(*parser.UseStatement); ok {
 			importedModules = append(importedModules, checker.ModuleShortName(use.Path))
+			// 模組別名導入（`# /util/helper hx`）：跨模組呼叫寫的是別名前綴
+			// （`hx.h-fn`），所以別名本身也要登記成可解析的模組名，否則
+			// resolveModuleCalls 不會把 `hx.h-fn` 攤平成 `h-fn`，JS 後端
+			// （不做模組前綴改寫）會留下一個不存在的 `hx.h-fn` 呼叫。
+			if use.Alias != "" && use.Function == "" {
+				importedModules = append(importedModules, use.Alias)
+			}
 		}
 	}
 	return varTypes, globalVarTypes, importedModules, mainVarNames, nil

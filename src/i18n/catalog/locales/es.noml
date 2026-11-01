@@ -432,7 +432,6 @@ clang no detectado; comprueba que la cadena de herramientas LLVM esté completam
   'l48rpvr9': 'se esperaba \')\' para cerrar la condición del bucle, se obtuvo %s'
   'l62tgcu4': 'import %q: %w'
   'l90oz2gr': 'sysctl: no se puede convertir el nombre a una cadena C'
-  'l9ef35lt': 'import %s: el alias %q requiere un nombre de función (`# path.fn as alias`) o un archivo .noml'
   'l9eytl0v': 'se esperaba \'(\''
   'l9lio3b1': 'net-dial: no se puede convertir el host a una cadena C'
   'ldfvpa0x': '; una option no se puede desempaquetar implícitamente (esto solo es una copia, así que la rama de fallo se descarta). %s Si querías envolver o recortar, `#{overflow = wrap` solo cambia el valor tomado al desbordarse; el resultado sigue siendo `?%s` y aún hay que desempaquetarlo.'
