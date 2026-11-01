@@ -1,2115 +1,2134 @@
 ; Nolang alias catalog: es
-; Localized display names (别名) for every std function/method, keyed by
-; the same doc anchor its `; [label](#anchor)` comment uses, so an alias and
-; its documentation block always agree on the key. Values are short, pure
-; translated names — the identifier itself remains the only spelling that
-; compiles. Keys must exist as an anchor in some src/std .no source, or the
-; gate rejects the catalog; `make i18n -alias-missing` lists what is left.
+; Display names (别名) and keystroke columns for every std function/method,
+; keyed by the same doc anchor its `; [label](#anchor)` comment uses, so an
+; alias and its documentation block always agree on the key. One row per
+; anchor, as a POSITIONAL array:
+;
+;   'args.get': ['获取参数', 'g', 'hqcs', 'huoqucanshu']   zh-CN, with pinyin
+;   'args.get': ['取得參數', 'g', 'qdhs', 'fm32k6h0gj4']   zh-TW, with zhuyin
+;   'args.get': ['Get argument', 'g', 'ga']                every other locale
+;
+;   [0] alias   display name shown by hover
+;   [1] enkeys  initials of the identifier — required, same in every locale
+;   [2] keys    initials of the localized name — required
+;   [3] full    full keystrokes — optional: pinyin (zh-CN) or zhuyin key
+;               positions on a Dachen keyboard (zh-TW). No other locale
+;               carries it, so its presence is what marks a Chinese catalog.
+;
+; The order is a contract, not a convention: a row must have 3 or 4 elements
+; and every element must be a string. enkeys and keys are ASCII [a-z0-9];
+; full also uses the punctuation keys that carry bopomofo
+; (ㄝ=, ㄡ=. ㄤ=; ㄥ=/ ㄦ=-). Completion compares these byte for byte against
+; what the editor reports as typed, so a non-ASCII cell would silently never
+; match. The identifier itself remains the only spelling that compiles —
+; these columns only tell the completion provider which identifier the reader
+; is reaching for. Keys must exist as an anchor in some src/std .no source, or
+; the gate rejects the catalog; `make i18n -alias-missing` lists what is left.
 {
-  'aes-cbc.cbc-dec': 'CBC-dec'
-  'aes-cbc.cbc-enc': 'CBC-enc'
-  'aes-cbc.dec-128': 'descifrado-128'
-  'aes-cbc.dec-256': 'descifrado-256'
-  'aes-cbc.enc-128': 'cifrado-128'
-  'aes-cbc.enc-256': 'cifrado-256'
-  'aes-cbc.pkcs7-pad': 'PKCS#7-pad'
-  'aes-cbc.pkcs7-unpad': 'PKCS#7-unpad'
-  'aes-ctr.crypt-128': 'cripto-128'
-  'aes-ctr.crypt-256': 'cripto-256'
-  'aes-ctr.ctr-crypt': 'CTR-crypt'
-  'aes-ctr.ctr-inc': 'CTR-inc'
-  'aes-gcm.ctr-xor': 'CTR-xor'
-  'aes-gcm.gcm-h': 'GCM-h'
-  'aes-gcm.gcm-j0': 'GCM-j0'
-  'aes-gcm.gcm-open': 'GCM-open'
-  'aes-gcm.gcm-seal': 'GCM-seal'
-  'aes-gcm.ghash': 'ghash'
-  'aes-gcm.ghash-mul': 'ghash-mul'
-  'aes-gcm.open-128': 'abrir-128'
-  'aes-gcm.open-256': 'abrir-256'
-  'aes-gcm.seal-128': 'sellar-128'
-  'aes-gcm.seal-256': 'sellar-256'
-  'aes.add-round-key': 'añadir-round-key'
-  'aes.add-round-key-at': 'añadir-round-key-at'
-  'aes.dec-128': 'descifrado-128'
-  'aes.dec-256': 'descifrado-256'
-  'aes.dec-block': 'descifrado-block'
-  'aes.enc-128': 'cifrado-128'
-  'aes.enc-256': 'cifrado-256'
-  'aes.enc-block': 'cifrado-block'
-  'aes.gf-mul2': 'campo-finito-mul2'
-  'aes.inv-mix-col': 'inverso-mix-col'
-  'aes.inv-mix-columns': 'inverso-mix-columns'
-  'aes.inv-shift-rows': 'inverso-shift-rows'
-  'aes.inv-sub-bytes': 'inverso-sub-bytes'
-  'aes.key-expand': 'clave-expand'
-  'aes.key-expand-256': 'clave-expand-256'
-  'aes.mix-col': 'mix-col'
-  'aes.mix-columns': 'mix-columns'
-  'aes.rcon-val': 'rcon-val'
-  'aes.shift-rows': 'desplazar-rows'
-  'aes.sub-bytes': 'resta-bytes'
-  'argon2.blake-g': 'blake-g'
-  'argon2.compress': 'comprimir'
-  'argon2.h-prime': 'hash-prime'
-  'argon2.id': 'id'
-  'argon2.rotr': 'rot-der'
-  'args.count': 'recuento'
-  'args.get': 'obtener'
-  'args.get-option': 'obtener-option'
-  'args.get-positional': 'obtener-positional'
-  'args.has-flag': 'tiene-flag'
-  'args.program': 'programa'
-  'arr-stack.arr-stack.clear': 'limpiar'
-  'arr-stack.arr-stack.empty': 'empty'
-  'arr-stack.arr-stack.full': 'full'
-  'arr-stack.arr-stack.size': 'tamaño'
-  'arr.arr-stack-init': 'arr-stack-init'
-  'arr.arr-stack-peek': 'arr-stack-peek'
-  'arr.arr-stack-pop': 'arr-stack-pop'
-  'arr.arr-stack-push': 'arr-stack-push'
-  'arr.asc': 'asc'
-  'arr.at': 'en'
-  'arr.clone': 'clonar'
-  'arr.contains': 'contiene'
-  'arr.count': 'recuento'
-  'arr.desc': 'desc'
-  'arr.eq': 'igual'
-  'arr.fill': 'rellenar'
-  'arr.first': 'primero'
-  'arr.index-of': 'índice-of'
-  'arr.last': 'último'
-  'arr.len': 'longitud'
-  'arr.link-clear': 'enlace-clear'
-  'arr.link-find': 'enlace-find'
-  'arr.link-get-at': 'enlace-get-at'
-  'arr.link-init': 'enlace-init'
-  'arr.link-insert-at': 'enlace-insert-at'
-  'arr.link-peek-back': 'enlace-peek-back'
-  'arr.link-peek-front': 'enlace-peek-front'
-  'arr.link-pop-back': 'enlace-pop-back'
-  'arr.link-pop-front': 'enlace-pop-front'
-  'arr.link-push-back': 'enlace-push-back'
-  'arr.link-push-front': 'enlace-push-front'
-  'arr.link-remove-at': 'enlace-remove-at'
-  'arr.link-reverse': 'enlace-reverse'
-  'arr.link-set-at': 'enlace-set-at'
-  'arr.max': 'máx'
-  'arr.min': 'mín'
-  'arr.queue-init': 'cola-init'
-  'arr.queue-peek': 'cola-peek'
-  'arr.queue-pop': 'cola-pop'
-  'arr.queue-push': 'cola-push'
-  'arr.reverse': 'invertir'
-  'arr.sum': 'suma'
-  'arr.swap': 'intercambiar'
-  'arr.to-str': 'conversión a str'
-  'arr.to-vec': 'conversión a vec'
-  'arrords.asc': 'asc'
-  'arrords.desc': 'desc'
-  'async.cancel': 'cancelar'
-  'async.cancelled': 'cancelado'
-  'base32.decode': 'decodificar'
-  'base32.encode': 'codificar'
-  'base64.b64-val': 'base64-val'
-  'base64.decode': 'decodificar'
-  'base64.encode': 'codificar'
-  'base64.encode-std': 'codificar-std'
-  'base64.encode-url': 'codificar-url'
-  'bigint._add': '_add'
-  'bigint._add-i64': '_add-i64'
-  'bigint._div': '_div'
-  'bigint._div-i64': '_div-i64'
-  'bigint._mod': '_mod'
-  'bigint._mod-i64': '_mod-i64'
-  'bigint._mul': '_mul'
-  'bigint._mul-i64': '_mul-i64'
-  'bigint._sub': '_sub'
-  'bigint.abs-add': 'abs-add'
-  'bigint.abs-cmp': 'abs-cmp'
-  'bigint.abs-sub': 'abs-sub'
-  'bigint.add-bigint': 'añadir-bigint'
-  'bigint.cmp': 'cmp'
-  'bigint.copy': 'copiar'
-  'bigint.div-mod': 'dividir-mod'
-  'bigint.eq': 'igual'
-  'bigint.from-i64': 'conversión desde i64'
-  'bigint.from-u64': 'conversión desde u64'
-  'bigint.gcd': 'mcd'
-  'bigint.is-neg': '¿ neg?'
-  'bigint.is-pos': '¿ pos?'
-  'bigint.is-zero': '¿ zero?'
-  'bigint.lcm': 'mcm'
-  'bigint.mod-pow': 'mod-pow'
-  'bigint.mul-bigint': 'multiplicar-bigint'
-  'bigint.normalize': 'normalizar'
-  'bigint.one': 'uno'
-  'bigint.pow': 'potencia'
-  'bigint.shl': 'despl-izq'
-  'bigint.shl1': 'despl-izq-1'
-  'bigint.shr': 'despl-der'
-  'bigint.shr1': 'despl-der-1'
-  'bigint.sub-bigint': 'resta-bigint'
-  'bigint.to-hex': 'conversión a hex'
-  'bigint.to-i64': 'conversión a i64'
-  'bigint.to-str': 'conversión a str'
-  'bigint.zero': 'cero'
-  'blake2.b': 'byte'
-  'blake2.b-256': 'byte-256'
-  'blake2.b-256-hex': 'byte-256-hex'
-  'blake2.b-compress': 'byte-compress'
-  'blake2.b-g': 'byte-g'
-  'blake2.b-hex': 'byte-hex'
-  'blake2.b-state': 'byte-state'
-  'blake2.rotr32': 'rotr32'
-  'blake2.rotr64': 'rotr64'
-  'blake2.s': 'plural'
-  'blake2.s-compress': 'plural-compress'
-  'blake2.s-g': 'plural-g'
-  'blake2.s-hex': 'plural-hex'
-  'blake2.s-state': 'plural-state'
-  'bool.to-str': 'conversión a str'
-  'bufio.reader.close': 'cerrar'
-  'bufio.reader.fill': 'rellenar'
-  'bufio.reader.init': 'init'
-  'bufio.reader.read-byte': 'leer-byte'
-  'bufio.reader.read-line': 'leer-line'
-  'bytes.index': 'índice'
-  'bytes.index-from': 'índice-from'
-  'bytes.len': 'longitud'
-  'bytes.slice': 'rebanada'
-  'bytes.to-bytes-str': 'conversión a bytes-str'
-  'bytes.to-chars': 'conversión a chars'
-  'bytes.to-hex': 'conversión a hex'
-  'bytes.to-hex-lower': 'conversión a hex-lower'
-  'bytes.to-i64-be': 'conversión a i64-be'
-  'bytes.to-i64-le': 'conversión a i64-le'
-  'bytes.to-str': 'conversión a str'
-  'bytes.to-txt': 'conversión a txt'
-  'bzip2.bz-bit-reader.read-bit': 'leer-bit'
-  'bzip2.bz-bit-reader.read-bits': 'leer-bits'
-  'bzip2.bz-huffman.build': 'construir'
-  'bzip2.bz-huffman.decode': 'decodificar'
-  'bzip2.bz-huffman.decode-symbol': 'decodificar-symbol'
-  'bzip2.bzip2-compress': 'bzip2-compress'
-  'bzip2.bzip2-decompress': 'bzip2-decompress'
-  'chacha20-poly1305.chacha20-block': 'chacha20-block'
-  'chacha20-poly1305.chacha20-poly1305-open': 'chacha20-poly1305-open'
-  'chacha20-poly1305.chacha20-poly1305-seal': 'chacha20-poly1305-seal'
-  'chacha20-poly1305.chacha20-xor': 'chacha20-xor'
-  'chacha20-poly1305.poly1305': 'poly1305'
-  'chacha20-poly1305.poly1305-key-gen': 'poly1305-key-gen'
-  'chacha20-poly1305.poly1305-reduce': 'poly1305-reduce'
-  'chacha20-poly1305.qr': 'qr'
-  'chacha20-poly1305.rotl32': 'rotl32'
-  'char.is-alnum': '¿ alnum?'
-  'char.is-alpha': '¿ alpha?'
-  'char.is-digit': '¿ digit?'
-  'char.is-letter': '¿ letter?'
-  'char.is-lower': '¿ lower?'
-  'char.is-space': '¿ space?'
-  'char.is-upper': '¿ upper?'
-  'char.to-bytes': 'conversión a bytes'
-  'char.to-lower': 'conversión a lower'
-  'char.to-str': 'conversión a str'
-  'char.to-txt': 'conversión a txt'
-  'char.to-upper': 'conversión a upper'
-  'chars.to-str': 'conversión a str'
-  'client.client-create': 'cliente-create'
-  'client.client.close': 'cerrar'
-  'client.client.connect': 'conectar'
-  'client.client.is-connected': '¿ connected?'
-  'client.client.reconnect': 'reconectar'
-  'client.client.recv': 'recibir'
-  'client.client.recv-line': 'recibir-line'
-  'client.client.request': 'solicitud'
-  'client.client.send': 'enviar'
-  'client.client.send-line': 'enviar-line'
-  'cookie.build-header': 'construir-header'
-  'cookie.build-set': 'construir-set'
-  'cookie.cookie-sign': 'cookie-sign'
-  'cookie.cookie-verify': 'cookie-verify'
-  'cookie.jar.build-header': 'construir-header'
-  'cookie.jar.clear': 'limpiar'
-  'cookie.jar.count-of': 'recuento-of'
-  'cookie.jar.delete': 'eliminar'
-  'cookie.jar.get': 'obtener'
-  'cookie.jar.get-verified': 'obtener-verified'
-  'cookie.jar.parse-response': 'análisis-response'
-  'cookie.jar.set': 'establecer'
-  'cookie.jar.set-signed': 'establecer-signed'
-  'cookie.parse-header': 'análisis-header'
-  'cookie.parse-set': 'análisis-set'
-  'crc-16.hex': 'hex'
-  'crc-16.new': 'nuevo'
-  'crc-32.new': 'nuevo'
-  'crc-64.hex': 'hex'
-  'crc-64.new': 'nuevo'
-  'csv.encode-field': 'codificar-field'
-  'csv.parse-field': 'análisis-field'
-  'csv.parse-line': 'análisis-line'
-  'deque.deque.clear': 'limpiar'
-  'deque.deque.empty': 'empty'
-  'deque.deque.peek-back': 'mirar-back'
-  'deque.deque.peek-front': 'mirar-front'
-  'deque.deque.pop-back': 'sacar-back'
-  'deque.deque.pop-front': 'sacar-front'
-  'deque.deque.push-back': 'empujar-back'
-  'deque.deque.push-front': 'empujar-front'
-  'deque.deque.size': 'tamaño'
-  'des.des-block': 'DES-block'
-  'des.des-dec': 'DES-dec'
-  'des.des-enc': 'DES-enc'
-  'des.des-key-schedule': 'DES-key-schedule'
-  'des.f': 'flotante'
-  'des.permute': 'permutar'
-  'des.sbox-lookup': 'sbox-lookup'
-  'dns.build-query': 'construir-query'
-  'dns.dial': 'marcar'
-  'dns.parse-name': 'análisis-name'
-  'dns.parse-response': 'análisis-response'
-  'dns.resolve': 'resolve'
-  'dns.resolve-all': 'resolve-all'
-  'dns.resolve-from': 'resolve-from'
-  'dom.append-child': 'anexar-child'
-  'dom.attribute-count': 'atributo-count'
-  'dom.attribute-name': 'atributo-name'
-  'dom.attribute-value': 'atributo-value'
-  'dom.blob-has': 'blob-has'
-  'dom.child-at': 'hijo-at'
-  'dom.child-count': 'hijo-count'
-  'dom.class-has': 'clase-has'
-  'dom.cp-append': 'cp-append'
-  'dom.create-comment': 'crear-comment'
-  'dom.create-element': 'crear-element'
-  'dom.create-text-node': 'crear-text-node'
-  'dom.decode-entities': 'decodificar-entities'
-  'dom.document-element': 'documento-element'
-  'dom.dom-closers-of': 'DOM-closers-of'
-  'dom.dom-pool.alloc': 'asignar'
-  'dom.dom-pool.append': 'anexar'
-  'dom.dom-pool.attr-edge-at': 'atributo-edge-at'
-  'dom.dom-pool.collect-class': 'recoger-class'
-  'dom.dom-pool.collect-tag': 'recoger-tag'
-  'dom.dom-pool.detach': 'separar'
-  'dom.dom-pool.find-attr': 'buscar-attr'
-  'dom.dom-pool.find-id-node': 'buscar-id-node'
-  'dom.dom-pool.html-add-text': 'html-add-text'
-  'dom.dom-pool.html-bogus-comment': 'html-bogus-comment'
-  'dom.dom-pool.html-parse-attr': 'html-parse-attr'
-  'dom.dom-pool.html-parse-close-name': 'html-parse-close-name'
-  'dom.dom-pool.html-parse-comment': 'html-parse-comment'
-  'dom.dom-pool.html-parse-doc': 'html-parse-doc'
-  'dom.dom-pool.html-parse-open': 'html-parse-open'
-  'dom.dom-pool.html-parse-pi': 'html-parse-pi'
-  'dom.dom-pool.html-set-attr-once': 'html-set-attr-once'
-  'dom.dom-pool.init': 'init'
-  'dom.dom-pool.insert-before': 'insertar-before'
-  'dom.dom-pool.parse-doctype-node': 'análisis-doctype-node'
-  'dom.dom-pool.remove-attr': 'quitar-attr'
-  'dom.dom-pool.ser': 'serializar'
-  'dom.dom-pool.ser-children': 'serializar-children'
-  'dom.dom-pool.set-attr': 'establecer-attr'
-  'dom.dom-pool.text-of': 'texto-of'
-  'dom.dom-pool.valid': 'válido'
-  'dom.dom-pool.xml-add-text': 'xml-add-text'
-  'dom.dom-pool.xml-parse-attr': 'xml-parse-attr'
-  'dom.dom-pool.xml-parse-cdata': 'xml-parse-cdata'
-  'dom.dom-pool.xml-parse-close': 'xml-parse-close'
-  'dom.dom-pool.xml-parse-comment': 'xml-parse-comment'
-  'dom.dom-pool.xml-parse-doc': 'xml-parse-doc'
-  'dom.dom-pool.xml-parse-element': 'xml-parse-element'
-  'dom.dom-pool.xml-parse-pi': 'xml-parse-pi'
-  'dom.dom-strip-bom': 'DOM-strip-bom'
-  'dom.esc-attr': 'escape-attr'
-  'dom.esc-text': 'escape-text'
-  'dom.find-entity': 'buscar-entity'
-  'dom.first-child': 'primero-child'
-  'dom.get-attribute': 'obtener-attribute'
-  'dom.get-element-by-id': 'obtener-element-by-id'
-  'dom.get-elements-by-class-name': 'obtener-elements-by-class-name'
-  'dom.get-elements-by-tag-name': 'obtener-elements-by-tag-name'
-  'dom.has-attribute': 'tiene-attribute'
-  'dom.html-close-match': 'html-close-match'
-  'dom.html-peek-name': 'html-peek-name'
-  'dom.inner-html': 'interno-html'
-  'dom.insert-child-before': 'insertar-child-before'
-  'dom.is-html': '¿ html?'
-  'dom.is-name-byte': '¿ name-byte?'
-  'dom.kind': 'tipo'
-  'dom.name': 'nombre'
-  'dom.new-document': 'nuevo-document'
-  'dom.outer-html': 'externo-html'
-  'dom.parent': 'padre'
-  'dom.parse-html': 'análisis-html'
-  'dom.parse-numeric-entity': 'análisis-numeric-entity'
-  'dom.parse-xml': 'análisis-xml'
-  'dom.remove-attribute': 'quitar-attribute'
-  'dom.remove-child': 'quitar-child'
-  'dom.replace-child': 'reemplazar-child'
-  'dom.set-attribute': 'establecer-attribute'
-  'dom.set-node-value': 'establecer-node-value'
-  'dom.set-text-content': 'establecer-text-content'
-  'dom.text-content': 'texto-content'
-  'dom.to-string': 'conversión a string'
-  'dom.value': 'valor'
-  'dom.xml-read-name': 'xml-read-name'
-  'dom.xml-skip-ws': 'xml-skip-ws'
-  'ecdsa.bn-add': 'big-num-add'
-  'ecdsa.bn-addmod': 'big-num-addmod'
-  'ecdsa.bn-cmp': 'big-num-cmp'
-  'ecdsa.bn-invmod': 'big-num-invmod'
-  'ecdsa.bn-mod': 'big-num-mod'
-  'ecdsa.bn-mulmod': 'big-num-mulmod'
-  'ecdsa.bn-sub': 'big-num-sub'
-  'ecdsa.bn-submod': 'big-num-submod'
-  'ecdsa.ec-bytes-to-point': 'ec-bytes-to-point'
-  'ecdsa.ec-get-basepoint': 'ec-get-basepoint'
-  'ecdsa.ec-point-add': 'ec-point-add'
-  'ecdsa.ec-point-double': 'ec-point-double'
-  'ecdsa.ec-point-to-bytes': 'ec-point-to-bytes'
-  'ecdsa.ec-scalar-mult': 'ec-scalar-mult'
-  'ecdsa.ecdh-p256': 'ECDH-p256'
-  'ecdsa.ecdsa-publickey': 'ECDSA-publickey'
-  'ecdsa.ecdsa-sign': 'ECDSA-sign'
-  'ecdsa.ecdsa-verify': 'ECDSA-verify'
-  'ed25519.ed-d': 'ed-d'
-  'ed25519.ed-sqm1': 'ed-sqm1'
-  'ed25519.ed25519-publickey': 'ed25519-publickey'
-  'ed25519.ed25519-sign': 'ed25519-sign'
-  'ed25519.ed25519-verify': 'ed25519-verify'
-  'ed25519.fe-pow': 'campo-pow'
-  'ed25519.ge-add': 'ge-add'
-  'ed25519.ge-basepoint': 'ge-basepoint'
-  'ed25519.ge-pack': 'ge-pack'
-  'ed25519.ge-scalar-mult': 'ge-scalar-mult'
-  'ed25519.ge-unpack': 'ge-unpack'
-  'ed25519.is-zero-arr': '¿ zero-arr?'
-  'ed25519.pcopy': 'copia-parcial'
-  'ed25519.sc-ge-l': 'sc-ge-l'
-  'ed25519.sc-muladd': 'sc-muladd'
-  'ed25519.sc-reduce': 'sc-reduce'
-  'ed25519.set-coord': 'establecer-coord'
-  'embed.exists': 'existe'
-  'embed.read': 'leer'
-  'env.get': 'obtener'
-  'env.get-with-default': 'obtener-with-default'
-  'env.is-set': '¿ set?'
-  'env.lookup': 'buscar'
-  'env.set': 'establecer'
-  'env.unset': 'unset'
-  'err._errno-to-code': 'errno-to-code'
-  'err.code': 'código'
-  'err.code.to-name': 'conversión a name'
-  'err.format': 'formatear'
-  'err.from-errno': 'conversión desde errno'
-  'err.is': 'es'
-  'err.msg': 'msg'
-  'err.new': 'nuevo'
-  'err.new-at': 'nuevo-at'
-  'float.div': 'dividir'
-  'float.is-inf': '¿ inf?'
-  'float.is-nan': '¿ nan?'
-  'fmt.eprintf': 'eprintf'
-  'fmt.fmt-apply-spec': 'fmt-apply-spec'
-  'fmt.fmt-bool': 'fmt-bool'
-  'fmt.fmt-f64': 'fmt-f64'
-  'fmt.fmt-group-digits': 'fmt-group-digits'
-  'fmt.fmt-int': 'fmt-int'
-  'fmt.fmt-parse-spec': 'fmt-parse-spec'
-  'fmt.fmt-str': 'fmt-str'
-  'fmt.fmt-uint': 'fmt-uint'
-  'fmt.fmt-uint-base': 'fmt-uint-base'
-  'fmt.printf': 'printf'
-  'fmt.sprintf': 'sprintf'
-  'fnv-1a-32.fnv-1a-32': 'fnv-1a-32'
-  'fnv.fnv-1a-32': 'fnv-1a-32'
-  'fnv.fnv-1a-64': 'fnv-1a-64'
-  'fs.close': 'cerrar'
-  'fs.copy-file': 'copiar-file'
-  'fs.dir-entries': 'directorio-entries'
-  'fs.exists': 'existe'
-  'fs.file-size': 'archivo-size'
-  'fs.file.append': 'anexar'
-  'fs.file.close': 'cerrar'
-  'fs.file.copy-to': 'copiar-to'
-  'fs.file.is-open': '¿ open?'
-  'fs.file.read': 'leer'
-  'fs.file.read-bytes': 'leer-bytes'
-  'fs.file.read-line': 'leer-line'
-  'fs.file.read-str': 'leer-str'
-  'fs.file.size': 'tamaño'
-  'fs.file.write': 'escribir'
-  'fs.file.write-bytes': 'escribir-bytes'
-  'fs.file.write-str': 'escribir-str'
-  'fs.fstat-size': 'fstat-size'
-  'fs.get-line': 'obtener-line'
-  'fs.is-dir': '¿ dir?'
-  'fs.is-file': '¿ file?'
-  'fs.link': 'enlace'
-  'fs.list-dir': 'lista-dir'
-  'fs.list-dir-2': 'lista-dir'
-  'fs.list-dir-3': 'lista-dir'
-  'fs.lstat': 'lstat'
-  'fs.mkdtemp': 'mkdtemp'
-  'fs.mkfifo': 'mkfifo'
-  'fs.mknod': 'mknod'
-  'fs.mkstemp': 'mkstemp'
-  'fs.open': 'abrir'
-  'fs.open-file': 'abrir-file'
-  'fs.open-read': 'abrir-read'
-  'fs.open-write': 'abrir-write'
-  'fs.read': 'leer'
-  'fs.read-bytes': 'leer-bytes'
-  'fs.read-file': 'leer-file'
-  'fs.read-stdin': 'leer-stdin'
-  'fs.read-stdin-str': 'leer-stdin-str'
-  'fs.read-str': 'leer-str'
-  'fs.readlink': 'readlink'
-  'fs.realpath': 'realpath'
-  'fs.remove': 'quitar'
-  'fs.rename': 'rename'
-  'fs.rmdir': 'rmdir'
-  'fs.stat-size': 'stat-size'
-  'fs.symlink': 'symlink'
-  'fs.sync': 'sync'
-  'fs.truncate': 'truncate'
-  'fs.utime': 'utime'
-  'fs.walk': 'walk'
-  'fs.walk-collect': 'walk-collect'
-  'fs.write': 'escribir'
-  'fs.write-bytes': 'escribir-bytes'
-  'fs.write-file': 'escribir-file'
-  'fs.write-str': 'escribir-str'
-  'global.eprint': 'eprint'
-  'global.exit': 'salir'
-  'global.format': 'formatear'
-  'global.print': 'imprimir'
-  'global.with-cap': 'con-cap'
-  'global.with-cap-len': 'con-cap-len'
-  'global.with-len': 'con-len'
-  'gzip.bit-reader.read-bit': 'leer-bit'
-  'gzip.bit-reader.read-bits': 'leer-bits'
-  'gzip.bit-reader.read-u16-le': 'leer-u16-le'
-  'gzip.bit-reader.skip-to-byte': 'omitir-to-byte'
-  'gzip.build-dynamic': 'construir-dynamic'
-  'gzip.build-fixed': 'construir-fixed'
-  'gzip.deflate-stored': 'deflate-stored'
-  'gzip.gzip-compress': 'gzip-compress'
-  'gzip.gzip-decompress': 'gzip-decompress'
-  'gzip.huffman.build': 'construir'
-  'gzip.huffman.decode': 'decodificar'
-  'gzip.inflate-decompress': 'inflate-decompress'
-  'hash-set.hash-set.add': 'añadir'
-  'hash-set.hash-set.clear': 'limpiar'
-  'hash-set.hash-set.contains': 'contiene'
-  'hash-set.hash-set.for-each': 'para-each'
-  'hash-set.hash-set.hash': 'hash'
-  'hash-set.hash-set.init': 'init'
-  'hash-set.hash-set.is-empty': '¿ empty?'
-  'hash-set.hash-set.len': 'longitud'
-  'hash-set.hash-set.remove': 'quitar'
-  'heap.empty': 'empty'
-  'heap.init': 'init'
-  'heap.peek': 'mirar'
-  'heap.pop': 'sacar'
-  'heap.push': 'empujar'
-  'heap.size': 'tamaño'
-  'hkdf.hkdf-derive-secret': 'hkdf-derive-secret'
-  'hkdf.hkdf-expand': 'hkdf-expand'
-  'hkdf.hkdf-expand-hmac': 'hkdf-expand-hmac'
-  'hkdf.hkdf-expand-label': 'hkdf-expand-label'
-  'hkdf.hkdf-expand-label-vec': 'hkdf-expand-label-vec'
-  'hkdf.hkdf-extract': 'hkdf-extract'
-  'hmac.hmac-md5': 'HMAC-md5'
-  'hmac.hmac-md5-vec': 'HMAC-md5-vec'
-  'hmac.hmac-sha1': 'HMAC-sha1'
-  'hmac.hmac-sha1-vec': 'HMAC-sha1-vec'
-  'hmac.hmac-sha256': 'HMAC-sha256'
-  'hmac.hmac-sha256-vec': 'HMAC-sha256-vec'
-  'hmac.hmac-sha384': 'HMAC-sha384'
-  'hmac.hmac-sha384-vec': 'HMAC-sha384-vec'
-  'hmac.hmac-sha512': 'HMAC-sha512'
-  'hmac.hmac-sha512-vec': 'HMAC-sha512-vec'
-  'hpack.decode-int': 'decodificar-int'
-  'hpack.decode-str': 'decodificar-str'
-  'hpack.encode-int': 'codificar-int'
-  'hpack.encode-str': 'codificar-str'
-  'hpack.tables.decode-headers': 'decodificar-headers'
-  'hpack.tables.dyn-add': 'dyn-add'
-  'hpack.tables.encode-header': 'codificar-header'
-  'hpack.tables.find': 'buscar'
-  'hpack.tables.find-name': 'buscar-name'
-  'hpack.tables.init': 'init'
-  'hpack.tables.lookup': 'buscar'
-  'http.delete': 'eliminar'
-  'http.do': 'hacer'
-  'http.do-req': 'hacer-req'
-  'http.download': 'descargar'
-  'http.get': 'obtener'
-  'http.get-auth': 'obtener-auth'
-  'http.http-dl-dechunk': 'HTTP-dl-dechunk'
-  'http.http-dl-location': 'HTTP-dl-location'
-  'http.http-dl-open': 'HTTP-dl-open'
-  'http.http-dl-resolve': 'HTTP-dl-resolve'
-  'http.http-write-ok': 'HTTP-write-ok'
-  'http.patch': 'parchear'
-  'http.ping': 'ping'
-  'http.post': 'post'
-  'http.post-auth': 'post-auth'
-  'http.put': 'poner'
-  'http.request.add-header': 'añadir-header'
-  'http.request.init': 'init'
-  'http.response.get-header': 'obtener-header'
-  'http.response.parse-headers': 'análisis-headers'
-  'http.set-api-key': 'establecer-api-key'
-  'http.set-basic-auth': 'establecer-basic-auth'
-  'http.set-bearer-auth': 'establecer-bearer-auth'
-  'http.upload-put': 'subir-put'
-  'http2.conn.close': 'cerrar'
-  'http2.conn.init': 'init'
-  'http2.conn.recv-frame': 'recibir-frame'
-  'http2.conn.request': 'solicitud'
-  'http2.conn.send-data': 'enviar-data'
-  'http2.conn.send-frame': 'enviar-frame'
-  'http2.conn.send-headers': 'enviar-headers'
-  'http2.conn.send-settings': 'enviar-settings'
-  'http2.connect': 'conectar'
-  'http2.connect-tls': 'conectar-tls'
-  'http2.delete': 'eliminar'
-  'http2.do': 'hacer'
-  'http2.do-req': 'hacer-req'
-  'http2.frame.parse': 'análisis'
-  'http2.frame.serialize': 'serializar'
-  'http2.get': 'obtener'
-  'http2.patch': 'parchear'
-  'http2.post': 'post'
-  'http2.put': 'poner'
-  'http3.connect': 'conectar'
-  'http3.decode-header': 'decodificar-header'
-  'http3.encode-data-frame': 'codificar-data-frame'
-  'http3.encode-frame': 'codificar-frame'
-  'http3.encode-header': 'codificar-header'
-  'http3.encode-headers': 'codificar-headers'
-  'http3.encode-headers-frame': 'codificar-headers-frame'
-  'http3.encode-settings-frame': 'codificar-settings-frame'
-  'http3.get': 'obtener'
-  'http3.http3-do': 'http3-do'
-  'http3.parse-frame': 'análisis-frame'
-  'http3.parse-url': 'análisis-url'
-  'http3.post': 'post'
-  'http3.response.get-header': 'obtener-header'
-  'http3.send-request': 'enviar-request'
-  'int.div': 'dividir'
-  'int.mod': 'mod'
-  'int.to-str': 'conversión a str'
-  'io.err': 'error'
-  'io.errln': 'errln'
-  'io.out': 'salida'
-  'io.outln': 'outln'
-  'io.read-line': 'leer-line'
-  'io.reader.from-fd': 'conversión desde fd'
-  'io.reader.from-stdin': 'conversión desde stdin'
-  'io.reader.read': 'leer'
-  'io.reader.read-all': 'leer-all'
-  'io.reader.read-byte': 'leer-byte'
-  'io.reader.read-line': 'leer-line'
-  'io.writer.from-fd': 'conversión desde fd'
-  'io.writer.from-stderr': 'conversión desde stderr'
-  'io.writer.from-stdout': 'conversión desde stdout'
-  'io.writer.write': 'escribir'
-  'io.writer.write-byte': 'escribir-byte'
-  'io.writer.write-line': 'escribir-line'
-  'io.writer.write-str': 'escribir-str'
-  'ip.ip-addr.equal': 'igual'
-  'ip.ip-addr.from-str': 'conversión desde str'
-  'ip.ip-addr.from-u32': 'conversión desde u32'
-  'ip.ip-addr.in-subnet': 'en-subnet'
-  'ip.ip-addr.is-broadcast': '¿ broadcast?'
-  'ip.ip-addr.is-class-a': '¿ class-a?'
-  'ip.ip-addr.is-class-b': '¿ class-b?'
-  'ip.ip-addr.is-class-c': '¿ class-c?'
-  'ip.ip-addr.is-link-local': '¿ link-local?'
-  'ip.ip-addr.is-loopback': '¿ loopback?'
-  'ip.ip-addr.is-multicast': '¿ multicast?'
-  'ip.ip-addr.is-private': '¿ private?'
-  'ip.ip-addr.is-valid': '¿ valid?'
-  'ip.ip-addr.is-zero': '¿ zero?'
-  'ip.ip-addr.parse': 'análisis'
-  'ip.ip-addr.to-str': 'conversión a str'
-  'ip.ip-addr.to-u32': 'conversión a u32'
-  'ip.ip-is-loopback': 'ip-is-loopback'
-  'ip.ip-is-private': 'ip-is-private'
-  'ip.ip-parse': 'ip-parse'
-  'json.alloc-node': 'asignar-node'
-  'json.arr-get': 'arr-get'
-  'json.arr-len': 'arr-len'
-  'json.arr-push': 'arr-push'
-  'json.arr-push-bool': 'arr-push-bool'
-  'json.arr-push-idx': 'arr-push-idx'
-  'json.arr-push-num': 'arr-push-num'
-  'json.arr-push-str': 'arr-push-str'
-  'json.bool': 'bool'
-  'json.delete-key': 'eliminar-key'
-  'json.get': 'obtener'
-  'json.get-bool': 'obtener-bool'
-  'json.get-i64': 'obtener-i64'
-  'json.get-key': 'obtener-key'
-  'json.get-num': 'obtener-num'
-  'json.get-str': 'obtener-str'
-  'json.i64': 'i64'
-  'json.is-arr': '¿ arr?'
-  'json.is-bool': '¿ bool?'
-  'json.is-null': '¿ null?'
-  'json.is-num': '¿ num?'
-  'json.is-obj': '¿ obj?'
-  'json.is-str': '¿ str?'
-  'json.json-clone-tree': 'json-clone-tree'
-  'json.json-pool.add-child': 'añadir-child'
-  'json.json-pool.alloc': 'asignar'
-  'json.json-pool.arr-get': 'arr-get'
-  'json.json-pool.arr-len': 'arr-len'
-  'json.json-pool.copy-tree': 'copiar-tree'
-  'json.json-pool.get-bool': 'obtener-bool'
-  'json.json-pool.get-key': 'obtener-key'
-  'json.json-pool.get-kind': 'obtener-kind'
-  'json.json-pool.get-num': 'obtener-num'
-  'json.json-pool.get-str': 'obtener-str'
-  'json.json-pool.init': 'init'
-  'json.json-pool.parse': 'análisis'
-  'json.json-pool.parse-num': 'análisis-num'
-  'json.json-pool.parse-str': 'análisis-str'
-  'json.json-pool.set-key': 'establecer-key'
-  'json.json-pool.skip-ws': 'omitir-ws'
-  'json.json-pool.str-eq': 'cadena-eq'
-  'json.json-pool.stringify': 'cadenaizar'
-  'json.kind': 'tipo'
-  'json.new': 'nuevo'
-  'json.new-pool': 'nuevo-pool'
-  'json.num': 'número'
-  'json.obj-key': 'obj-key'
-  'json.obj-keys-str': 'obj-keys-str'
-  'json.obj-len': 'obj-len'
-  'json.overflowed': 'desbordado'
-  'json.set': 'establecer'
-  'json.set-bool': 'establecer-bool'
-  'json.set-i64': 'establecer-i64'
-  'json.set-key': 'establecer-key'
-  'json.set-null': 'establecer-null'
-  'json.set-num': 'establecer-num'
-  'json.set-str': 'establecer-str'
-  'json.str': 'cadena'
-  'json.str-val': 'cadena-val'
-  'json.stringify': 'cadenaizar'
-  'link.link.empty': 'empty'
-  'link.link.full': 'full'
-  'link.link.size': 'tamaño'
-  'linked-hash-map.linked-hash-map.clear': 'limpiar'
-  'linked-hash-map.linked-hash-map.contains': 'contiene'
-  'linked-hash-map.linked-hash-map.for-each': 'para-each'
-  'linked-hash-map.linked-hash-map.get': 'obtener'
-  'linked-hash-map.linked-hash-map.hash': 'hash'
-  'linked-hash-map.linked-hash-map.init': 'init'
-  'linked-hash-map.linked-hash-map.is-empty': '¿ empty?'
-  'linked-hash-map.linked-hash-map.len': 'longitud'
-  'linked-hash-map.linked-hash-map.put': 'poner'
-  'linked-hash-map.linked-hash-map.remove': 'quitar'
-  'log.get-output-fd': 'obtener-output-fd'
-  'log.get-writer': 'obtener-writer'
-  'log.log-emit': 'registro-emit'
-  'log.log-stamp': 'registro-stamp'
-  'log.open-file': 'abrir-file'
-  'log.set-format': 'establecer-format'
-  'log.set-level': 'establecer-level'
-  'log.set-output-fd': 'establecer-output-fd'
-  'log.set-writer': 'establecer-writer'
-  'magic.detect-by-extension': 'detectar-by-extension'
-  'magic.detect-by-magic': 'detectar-by-magic'
-  'magic.detect-type': 'detectar-type'
-  'magic.get-extension': 'obtener-extension'
-  'map.hashmap-bool-tmpl.clear': 'limpiar'
-  'map.hashmap-bool-tmpl.contains': 'contiene'
-  'map.hashmap-bool-tmpl.for-each': 'para-each'
-  'map.hashmap-bool-tmpl.get': 'obtener'
-  'map.hashmap-bool-tmpl.hash': 'hash'
-  'map.hashmap-bool-tmpl.init': 'init'
-  'map.hashmap-bool-tmpl.is-empty': '¿ empty?'
-  'map.hashmap-bool-tmpl.len': 'longitud'
-  'map.hashmap-bool-tmpl.put': 'poner'
-  'map.hashmap-bool-tmpl.remove': 'quitar'
-  'map.hashmap-int-tmpl.clear': 'limpiar'
-  'map.hashmap-int-tmpl.contains': 'contiene'
-  'map.hashmap-int-tmpl.for-each': 'para-each'
-  'map.hashmap-int-tmpl.get': 'obtener'
-  'map.hashmap-int-tmpl.hash': 'hash'
-  'map.hashmap-int-tmpl.init': 'init'
-  'map.hashmap-int-tmpl.is-empty': '¿ empty?'
-  'map.hashmap-int-tmpl.len': 'longitud'
-  'map.hashmap-int-tmpl.put': 'poner'
-  'map.hashmap-int-tmpl.rehash': 'rehash'
-  'map.hashmap-int-tmpl.remove': 'quitar'
-  'map.hashmap-str-tmpl.clear': 'limpiar'
-  'map.hashmap-str-tmpl.contains': 'contiene'
-  'map.hashmap-str-tmpl.for-each': 'para-each'
-  'map.hashmap-str-tmpl.get': 'obtener'
-  'map.hashmap-str-tmpl.hash': 'hash'
-  'map.hashmap-str-tmpl.init': 'init'
-  'map.hashmap-str-tmpl.is-empty': '¿ empty?'
-  'map.hashmap-str-tmpl.len': 'longitud'
-  'map.hashmap-str-tmpl.put': 'poner'
-  'map.hashmap-str-tmpl.rehash': 'rehash'
-  'map.hashmap-str-tmpl.remove': 'quitar'
-  'map.hashmap-str-tmpl.str-eq': 'cadena-eq'
-  'markdown.blockquote': 'cita'
-  'markdown.code-close': 'código-close'
-  'markdown.escape-html': 'escapar-html'
-  'markdown.fence': 'cerca'
-  'markdown.heading': 'encabezado'
-  'markdown.inline': 'inline'
-  'markdown.is-word-byte': '¿ word-byte?'
-  'markdown.join-paragraph': 'unir-paragraph'
-  'markdown.list-content': 'lista-content'
-  'markdown.list-item': 'lista-item'
-  'markdown.prefix-count': 'prefijo-count'
-  'markdown.read-line': 'leer-line'
-  'markdown.render': 'renderizar'
-  'markdown.render-code': 'renderizar-code'
-  'markdown.setext-level': 'setext-level'
-  'markdown.table-row': 'tabla-row'
-  'markdown.table-separator': 'tabla-separator'
-  'markdown.thematic-break': 'thematic-break'
-  'markdown.to-html': 'conversión a html'
-  'math.arr-zero': 'arr-zero'
-  'math.atan-kernel': 'arcotangente-kernel'
-  'math.char-to-str': 'carácter-to-str'
-  'math.clamp': 'clamp'
-  'math.div': 'dividir'
-  'math.even': 'par'
-  'math.fmod': 'fmod'
-  'math.gcd': 'mcd'
-  'math.hypot': 'hipotenusa'
-  'math.lcm': 'mcm'
-  'math.max': 'máx'
-  'math.min': 'mín'
-  'math.mod': 'mod'
-  'math.odd': 'impar'
-  'math.pow': 'potencia'
-  'math.pow-int': 'potencia-int'
-  'math.rotate-left': 'rotar-left'
-  'math.rotate-right': 'rotar-right'
-  'math.store-le-u32': 'almacenar-le-u32'
-  'math.swap': 'intercambiar'
-  'md5.md5': 'MD5'
-  'md5.md5-rotl': 'MD5-rotl'
-  'multipart.multipart-create': 'multipart-create'
-  'multipart.multipart-create-boundary': 'multipart-create-boundary'
-  'multipart.multipart-decrypt-field': 'multipart-decrypt-field'
-  'multipart.multipart-extract-boundary': 'multipart-extract-boundary'
-  'multipart.multipart-gen-boundary': 'multipart-gen-boundary'
-  'multipart.multipart-parse': 'multipart-parse'
-  'multipart.multipart-reader.field-content-type': 'campo-content-type'
-  'multipart.multipart-reader.field-data': 'campo-data'
-  'multipart.multipart-reader.field-filename': 'campo-filename'
-  'multipart.multipart-reader.field-name': 'campo-name'
-  'multipart.multipart-reader.has-current-part': 'tiene-current-part'
-  'multipart.multipart-reader.init': 'init'
-  'multipart.multipart-reader.is-file': '¿ file?'
-  'multipart.multipart-reader.next': 'siguiente'
-  'multipart.multipart-reader.parse-header-line': 'análisis-header-line'
-  'multipart.multipart-reader.parse-headers': 'análisis-headers'
-  'multipart.multipart-writer.body-of': 'cuerpo-of'
-  'multipart.multipart-writer.boundary-of': 'frontera-of'
-  'multipart.multipart-writer.close-form': 'cerrar-form'
-  'multipart.multipart-writer.content-type': 'contenido-type'
-  'multipart.multipart-writer.init': 'init'
-  'multipart.multipart-writer.init-boundary': 'init-boundary'
-  'multipart.multipart-writer.write-encrypted-field': 'escribir-encrypted-field'
-  'multipart.multipart-writer.write-encrypted-file': 'escribir-encrypted-file'
-  'multipart.multipart-writer.write-field': 'escribir-field'
-  'multipart.multipart-writer.write-file': 'escribir-file'
-  'net.close': 'cerrar'
-  'net.conn.close': 'cerrar'
-  'net.conn.dial': 'marcar'
-  'net.conn.fd-of': 'fd-of'
-  'net.conn.recv': 'recibir'
-  'net.conn.recv-all': 'recibir-all'
-  'net.conn.recv-line': 'recibir-line'
-  'net.conn.recv-with-timeout': 'recibir-with-timeout'
-  'net.conn.send': 'enviar'
-  'net.conn.send-with-timeout': 'enviar-with-timeout'
-  'net.conn.set-recv-timeout': 'establecer-recv-timeout'
-  'net.conn.set-timeout': 'establecer-timeout'
-  'net.dial-timeout': 'marcar-timeout'
-  'net.dial-to': 'marcar-to'
-  'net.enc-accept': 'cifrado-accept'
-  'net.enc-conn.close': 'cerrar'
-  'net.enc-conn.gen-iv': 'gen-iv'
-  'net.enc-conn.init': 'init'
-  'net.enc-conn.recv-encrypted': 'recibir-encrypted'
-  'net.enc-conn.send-encrypted': 'enviar-encrypted'
-  'net.enc-dial': 'cifrado-dial'
-  'net.icmp-checksum': 'ICMP-checksum'
-  'net.icmp-conn.build-echo': 'construir-echo'
-  'net.icmp-conn.close': 'cerrar'
-  'net.icmp-conn.open': 'abrir'
-  'net.icmp-conn.ping-host': 'ping-host'
-  'net.icmp-conn.ping-once': 'ping-once'
-  'net.listen-on': 'escuchar-on'
-  'net.listener.accept': 'aceptar'
-  'net.listener.accept-with-timeout': 'aceptar-with-timeout'
-  'net.listener.close': 'cerrar'
-  'net.listener.fd-of': 'fd-of'
-  'net.listener.listen': 'escuchar'
-  'net.listener.set-timeout': 'establecer-timeout'
-  'net.net-accept': 'red-accept'
-  'net.net-accept-nb': 'red-accept-nb'
-  'net.net-dial': 'red-dial'
-  'net.net-icmp-open': 'red-icmp-open'
-  'net.net-listen': 'red-listen'
-  'net.net-recv': 'red-recv'
-  'net.net-send': 'red-send'
-  'net.net-set-recv-timeout': 'red-set-recv-timeout'
-  'net.net-udp-open': 'red-udp-open'
-  'net.net-udp-recvfrom': 'red-udp-recvfrom'
-  'net.net-udp-sendto': 'red-udp-sendto'
-  'net.ping': 'ping'
-  'net.ping-count': 'ping-count'
-  'net.split-ws': 'dividir-ws'
-  'net.udp-conn.close': 'cerrar'
-  'net.udp-conn.fd-of': 'fd-of'
-  'net.udp-conn.open': 'abrir'
-  'net.udp-conn.recv': 'recibir'
-  'net.udp-conn.recv-bytes': 'recibir-bytes'
-  'net.udp-conn.send': 'enviar'
-  'net.udp-conn.send-bytes': 'enviar-bytes'
-  'net.udp-conn.set-timeout': 'establecer-timeout'
-  'net.udp-dial-to': 'UDP-dial-to'
-  'noml.hex-char': 'hex-char'
-  'noml.hex-digit': 'hex-digit'
-  'noml.is-ident-char': '¿ ident-char?'
-  'noml.is-ident-key': '¿ ident-key?'
-  'noml.is-ident-start': '¿ ident-start?'
-  'noml.new': 'nuevo'
-  'noml.noml-doc.ann': 'anotación'
-  'noml.noml-doc.ann-value': 'anotación-value'
-  'noml.noml-doc.at': 'en'
-  'noml.noml-doc.bool': 'bool'
-  'noml.noml-doc.get': 'obtener'
-  'noml.noml-doc.get-bool': 'obtener-bool'
-  'noml.noml-doc.get-f64': 'obtener-f64'
-  'noml.noml-doc.get-i64': 'obtener-i64'
-  'noml.noml-doc.get-str': 'obtener-str'
-  'noml.noml-doc.has': 'tiene'
-  'noml.noml-doc.i64': 'i64'
-  'noml.noml-doc.is-arr': '¿ arr?'
-  'noml.noml-doc.is-bool': '¿ bool?'
-  'noml.noml-doc.is-nil': '¿ nil?'
-  'noml.noml-doc.is-num': '¿ num?'
-  'noml.noml-doc.is-obj': '¿ obj?'
-  'noml.noml-doc.is-str': '¿ str?'
-  'noml.noml-doc.key': 'clave'
-  'noml.noml-doc.kind': 'tipo'
-  'noml.noml-doc.len': 'longitud'
-  'noml.noml-doc.new-arr': 'nuevo-arr'
-  'noml.noml-doc.new-bool': 'nuevo-bool'
-  'noml.noml-doc.new-nil': 'nuevo-nil'
-  'noml.noml-doc.new-num': 'nuevo-num'
-  'noml.noml-doc.new-obj': 'nuevo-obj'
-  'noml.noml-doc.new-str': 'nuevo-str'
-  'noml.noml-doc.num': 'número'
-  'noml.noml-doc.push': 'empujar'
-  'noml.noml-doc.put': 'poner'
-  'noml.noml-doc.root-index': 'raíz-index'
-  'noml.noml-doc.set-ann': 'establecer-ann'
-  'noml.noml-doc.set-root': 'establecer-root'
-  'noml.noml-doc.str': 'cadena'
-  'noml.noml-doc.stringify': 'cadenaizar'
-  'noml.noml-doc.stringify-node': 'cadenaizar-node'
-  'noml.noml-pool.add-child': 'añadir-child'
-  'noml.noml-pool.alloc': 'asignar'
-  'noml.noml-pool.ann': 'anotación'
-  'noml.noml-pool.ann-literal': 'anotación-literal'
-  'noml.noml-pool.ann-value': 'anotación-value'
-  'noml.noml-pool.at': 'en'
-  'noml.noml-pool.at-line-start': 'en-line-start'
-  'noml.noml-pool.decode-escape': 'decodificar-escape'
-  'noml.noml-pool.fail': 'fallo'
-  'noml.noml-pool.fmt-key': 'fmt-key'
-  'noml.noml-pool.fmt-num': 'fmt-num'
-  'noml.noml-pool.get': 'obtener'
-  'noml.noml-pool.get-bool': 'obtener-bool'
-  'noml.noml-pool.get-f64': 'obtener-f64'
-  'noml.noml-pool.get-i64': 'obtener-i64'
-  'noml.noml-pool.get-str': 'obtener-str'
-  'noml.noml-pool.has': 'tiene'
-  'noml.noml-pool.has-byte': 'tiene-byte'
-  'noml.noml-pool.has-key': 'tiene-key'
-  'noml.noml-pool.hex4': 'hex4'
-  'noml.noml-pool.init': 'init'
-  'noml.noml-pool.is-arr': '¿ arr?'
-  'noml.noml-pool.is-bool': '¿ bool?'
-  'noml.noml-pool.is-nil': '¿ nil?'
-  'noml.noml-pool.is-num': '¿ num?'
-  'noml.noml-pool.is-obj': '¿ obj?'
-  'noml.noml-pool.is-str': '¿ str?'
-  'noml.noml-pool.join-ann': 'unir-ann'
-  'noml.noml-pool.key': 'clave'
-  'noml.noml-pool.kind': 'tipo'
-  'noml.noml-pool.len': 'longitud'
-  'noml.noml-pool.line-of': 'línea-of'
-  'noml.noml-pool.match-kw': 'coincidir-kw'
-  'noml.noml-pool.parse': 'análisis'
-  'noml.noml-pool.parse-array': 'análisis-array'
-  'noml.noml-pool.parse-bool': 'análisis-bool'
-  'noml.noml-pool.parse-bool-node': 'análisis-bool-node'
-  'noml.noml-pool.parse-key': 'análisis-key'
-  'noml.noml-pool.parse-nil-node': 'análisis-nil-node'
-  'noml.noml-pool.parse-num': 'análisis-num'
-  'noml.noml-pool.parse-num-node': 'análisis-num-node'
-  'noml.noml-pool.parse-object': 'análisis-object'
-  'noml.noml-pool.parse-raw': 'análisis-raw'
-  'noml.noml-pool.parse-raw-node': 'análisis-raw-node'
-  'noml.noml-pool.parse-str': 'análisis-str'
-  'noml.noml-pool.parse-str-node': 'análisis-str-node'
-  'noml.noml-pool.parse-value': 'análisis-value'
-  'noml.noml-pool.quote': 'comilla'
-  'noml.noml-pool.quote-value': 'comilla-value'
-  'noml.noml-pool.raw-safe': 'sin-procesar-safe'
-  'noml.noml-pool.require-end': 'requiere-end'
-  'noml.noml-pool.scan-ann': 'escanear-ann'
-  'noml.noml-pool.scan-quote': 'escanear-quote'
-  'noml.noml-pool.scan-raw': 'escanear-raw'
-  'noml.noml-pool.set-ann': 'establecer-ann'
-  'noml.noml-pool.skip-ann-value': 'omitir-ann-value'
-  'noml.noml-pool.skip-blanks': 'omitir-blanks'
-  'noml.noml-pool.skip-trivia': 'omitir-trivia'
-  'noml.noml-pool.stringify': 'cadenaizar'
-  'noml.noml-pool.stringify-arr': 'cadenaizar-arr'
-  'noml.noml-pool.stringify-obj': 'cadenaizar-obj'
-  'noml.noml-pool.val-bool': 'val-bool'
-  'noml.noml-pool.val-i64': 'val-i64'
-  'noml.noml-pool.val-num': 'val-num'
-  'noml.noml-pool.val-str': 'val-str'
-  'noml.parse': 'análisis'
-  'num.abs': 'abs'
-  'num.clamp': 'clamp'
-  'num.sign': 'firmar'
-  'number.byte.to-str': 'conversión a str'
-  'number.exp-f64': 'exp-f64'
-  'number.f32.to-f64': 'conversión a f64'
-  'number.f32.to-str': 'conversión a str'
-  'number.f64.cbrt': 'raíz-cúbica'
-  'number.f64.ceil': 'techo'
-  'number.f64.degrees': 'grados'
-  'number.f64.radians': 'radianes'
-  'number.f64.sin': 'seno'
-  'number.f64.sinh': 'seno-hip'
-  'number.f64.sqrt': 'raíz'
-  'number.f64.tan': 'tangente'
-  'number.f64.to-bits': 'conversión a bits'
-  'number.f64.to-f32': 'conversión a f32'
-  'number.f64.to-i32': 'conversión a i32'
-  'number.f64.to-i64': 'conversión a i64'
-  'number.f64.to-str': 'conversión a str'
-  'number.f64.to-str-fixed': 'conversión a str-fixed'
-  'number.f64.to-str-general': 'conversión a str-general'
-  'number.f64.to-str-sci': 'conversión a str-sci'
-  'number.f64.to-u32': 'conversión a u32'
-  'number.f64.to-u64': 'conversión a u64'
-  'number.i128.sqrt': 'raíz'
-  'number.i128.to-f64': 'conversión a f64'
-  'number.i16.sqrt': 'raíz'
-  'number.i16.to-str': 'conversión a str'
-  'number.i32.sqrt': 'raíz'
-  'number.i32.to-str': 'conversión a str'
-  'number.i64.is-prime': '¿ prime?'
-  'number.i64.sqrt': 'raíz'
-  'number.i64.to-bytes-be': 'conversión a bytes-be'
-  'number.i64.to-bytes-le': 'conversión a bytes-le'
-  'number.i64.to-f64': 'conversión a f64'
-  'number.i64.to-i32': 'conversión a i32'
-  'number.i64.to-str': 'conversión a str'
-  'number.i8.sqrt': 'raíz'
-  'number.i8.to-str': 'conversión a str'
-  'number.pow': 'potencia'
-  'number.u128.to-f64': 'conversión a f64'
-  'number.u16.sqrt': 'raíz'
-  'number.u16.to-str': 'conversión a str'
-  'number.u32.sqrt': 'raíz'
-  'number.u32.to-str': 'conversión a str'
-  'number.u64.from-bits': 'conversión desde bits'
-  'number.u64.sqrt': 'raíz'
-  'number.u64.to-f64': 'conversión a f64'
-  'number.u64.to-str': 'conversión a str'
-  'number.u8.sqrt': 'raíz'
-  'number.u8.to-str': 'conversión a str'
-  'ords.asc': 'asc'
-  'ords.desc': 'desc'
-  'os.arg': 'arg'
-  'os.args': 'args'
-  'os.ch-dir': 'ch-dir'
-  'os.ch-mod': 'ch-mod'
-  'os.chown': 'chown'
-  'os.chroot': 'chroot'
-  'os.flock': 'flock'
-  'os.get-arch': 'obtener-arch'
-  'os.get-domain-name': 'obtener-domain-name'
-  'os.get-env': 'obtener-env'
-  'os.get-errno': 'obtener-errno'
-  'os.get-host-id': 'obtener-host-id'
-  'os.get-login': 'obtener-login'
-  'os.get-pid': 'obtener-pid'
-  'os.get-priority': 'obtener-priority'
-  'os.get-wd': 'obtener-wd'
-  'os.getegid': 'obtener-egid'
-  'os.geteuid': 'obtener-euid'
-  'os.getgid': 'obtener-gid'
-  'os.getgroups': 'obtener-grupos'
-  'os.getuid': 'obtener-uid'
-  'os.host-name': 'host-name'
-  'os.mkdir': 'mkdir'
-  'os.now': 'ahora'
-  'os.now-ms': 'ahora-ms'
-  'os.now-ns': 'ahora-ns'
-  'os.now-us': 'ahora-us'
-  'os.num-cpu': 'número-cpu'
-  'os.set-env': 'establecer-env'
-  'os.set-priority': 'establecer-priority'
-  'os.set-sid': 'establecer-sid'
-  'os.signal': 'señal'
-  'os.sleep': 'dormir'
-  'os.sleep-ns': 'dormir-ns'
-  'os.sleep-us': 'dormir-us'
-  'os.stat-gid': 'stat-gid'
-  'os.stat-mode': 'stat-mode'
-  'os.stat-mtime': 'stat-mtime'
-  'os.stat-uid': 'stat-uid'
-  'os.strerror': 'strerror'
-  'os.sysconf': 'sysconf'
-  'os.sysctl': 'sysctl'
-  'os.syslog': 'syslog'
-  'os.ttyname': 'nombre-tty'
-  'os.uname': 'uname'
-  'os.win-find-close': 'ventana-find-close'
-  'os.win-find-first-file': 'ventana-find-first-file'
-  'os.win-find-next-file': 'ventana-find-next-file'
-  'os.win-wsa-startup': 'ventana-wsa-startup'
-  'path.base': 'base'
-  'path.change-dir': 'change-dir'
-  'path.clean': 'clean'
-  'path.current': 'actual'
-  'path.dir': 'directorio'
-  'path.exists': 'existe'
-  'path.ext': 'ext'
-  'path.is-abs': '¿ abs?'
-  'path.is-dir': '¿ dir?'
-  'path.is-file': '¿ file?'
-  'path.join': 'unir'
-  'path.make-dir': 'crear-dir'
-  'path.remove': 'quitar'
-  'path.rename': 'rename'
-  'path.size': 'tamaño'
-  'path.split': 'dividir'
-  'pbkdf2.pbkdf2-hmac-sha1': 'pbkdf2-hmac-sha1'
-  'pbkdf2.pbkdf2-hmac-sha256': 'pbkdf2-hmac-sha256'
-  'pbkdf2.pbkdf2-hmac-sha512': 'pbkdf2-hmac-sha512'
-  'pem.pem-decode': 'PEM-decode'
-  'pem.pem-encode': 'PEM-encode'
-  'pool.create': 'crear'
-  'pool.pool.active-count': 'activo-count'
-  'pool.pool.close-all': 'cerrar-all'
-  'pool.pool.close-conn': 'cerrar-conn'
-  'pool.pool.get': 'obtener'
-  'pool.pool.idle-count': 'ocioso-count'
-  'pool.pool.init': 'init'
-  'pool.pool.put': 'poner'
-  'pool.pool.total-count': 'total-count'
-  'pool.with-size': 'con-size'
-  'process.close': 'cerrar'
-  'process.close-stderr': 'cerrar-stderr'
-  'process.close-stdin': 'cerrar-stdin'
-  'process.close-stdout': 'cerrar-stdout'
-  'process.cmd-2': 'cmd'
-  'process.exec': 'exec'
-  'process.exit-code-of': 'salir-code-of'
-  'process.find-by-name': 'buscar-by-name'
-  'process.find-match': 'buscar-match'
-  'process.force-kill': 'force-kill'
-  'process.is-running': '¿ running?'
-  'process.kill': 'matar'
-  'process.list-all': 'lista-all'
-  'process.new': 'nuevo'
-  'process.output': 'output'
-  'process.parent-pid': 'padre-pid'
-  'process.pid-of': 'pid-of'
-  'process.process-dup2': 'proceso-dup2'
-  'process.process-exec': 'proceso-exec'
-  'process.process-exec-shell': 'proceso-exec-shell'
-  'process.process-fork': 'proceso-fork'
-  'process.process-getppid': 'proceso-getppid'
-  'process.process-kill': 'proceso-kill'
-  'process.process-pipe': 'proceso-pipe'
-  'process.process-shell': 'proceso-shell'
-  'process.process-system': 'proceso-system'
-  'process.process-waitpid': 'proceso-waitpid'
-  'process.process-waitpid-nohang': 'proceso-waitpid-nohang'
-  'process.read': 'leer'
-  'process.read-all': 'leer-all'
-  'process.read-line': 'leer-line'
-  'process.shell': 'shell'
-  'process.shell-quote': 'shell-quote'
-  'process.spawn': 'generar'
-  'process.start': 'inicio'
-  'process.start-with-opts': 'inicio-with-opts'
-  'process.terminate': 'terminate'
-  'process.wait': 'esperar'
-  'process.wait-2': 'esperar'
-  'process.wait-nohang': 'esperar-nohang'
-  'process.win-close-handle': 'ventana-close-handle'
-  'process.win-create-pipe': 'ventana-create-pipe'
-  'process.win-create-process': 'ventana-create-process'
-  'process.win-get-exit-code': 'ventana-get-exit-code'
-  'process.win-get-std-handle': 'ventana-get-std-handle'
-  'process.win-read-pipe': 'ventana-read-pipe'
-  'process.win-terminate-process': 'ventana-terminate-process'
-  'process.win-wait-process': 'ventana-wait-process'
-  'process.win-write-pipe': 'ventana-write-pipe'
-  'process.write': 'escribir'
-  'proxy.config.connect': 'conectar'
-  'proxy.config.tls-connect': 'TLS-connect'
-  'proxy.connect': 'conectar'
-  'proxy.dial': 'marcar'
-  'proxy.dial-auth': 'marcar-auth'
-  'proxy.proxy-tls-dial': 'proxy-tls-dial'
-  'proxy.socks5-connect': 'SOCKS5-connect'
-  'proxy.socks5-dial': 'SOCKS5-dial'
-  'queue.queue.clear': 'limpiar'
-  'queue.queue.empty': 'empty'
-  'queue.queue.full': 'full'
-  'queue.queue.size': 'tamaño'
-  'quic.apply-header-protection': 'aplicar-header-protection'
-  'quic.conn.build-initial-packet': 'construir-initial-packet'
-  'quic.conn.close': 'cerrar'
-  'quic.conn.init': 'init'
-  'quic.conn.recv-initial': 'recibir-initial'
-  'quic.conn.recv-raw': 'recibir-raw'
-  'quic.decode-packet-number': 'decodificar-packet-number'
-  'quic.derive-initial-keys': 'derivar-initial-keys'
-  'quic.dial': 'marcar'
-  'quic.gen-cid': 'gen-cid'
-  'quic.parse-frames': 'análisis-frames'
-  'quic.remove-header-protection': 'quitar-header-protection'
-  'quic.varint-decode': 'entero-var-decode'
-  'quic.varint-encode': 'entero-var-encode'
-  'rand.rand': 'aleatorio'
-  'rand.rand-str': 'aleatorio-str'
-  'rc4.rc4': 'RC4'
-  'regexp.alloc-class': 'asignar-class'
-  'regexp.clear-class-bit': 'limpiar-class-bit'
-  'regexp.compile': 'compile'
-  'regexp.emit': 'emitir'
-  'regexp.emit-atom': 'emitir-atom'
-  'regexp.emit-quantized': 'emitir-quantized'
-  'regexp.find': 'buscar'
-  'regexp.in-class': 'en-class'
-  'regexp.init-class-all': 'init-class-all'
-  'regexp.init-class-zero': 'init-class-zero'
-  'regexp.make-class-digits': 'crear-class-digits'
-  'regexp.make-class-nondigits': 'crear-class-nondigits'
-  'regexp.make-class-nonspace': 'crear-class-nonspace'
-  'regexp.make-class-nonword': 'crear-class-nonword'
-  'regexp.make-class-space': 'crear-class-space'
-  'regexp.make-class-word': 'crear-class-word'
-  'regexp.match-at': 'coincidir-at'
-  'regexp.matches': 'coincidencia'
-  'regexp.parse-atom': 'análisis-atom'
-  'regexp.parse-class': 'análisis-class'
-  'regexp.parse-escape': 'análisis-escape'
-  'regexp.regexp-compile': 'regexp-compile'
-  'regexp.regexp-find': 'regexp-find'
-  'regexp.regexp-match': 'regexp-match'
-  'regexp.set-class-bit': 'establecer-class-bit'
-  'regexp.set-class-escape': 'establecer-class-escape'
-  'rsa.rsa-bn-add': 'RSA-bn-add'
-  'rsa.rsa-bn-cmp': 'RSA-bn-cmp'
-  'rsa.rsa-bn-div-mod': 'RSA-bn-div-mod'
-  'rsa.rsa-bn-mul': 'RSA-bn-mul'
-  'rsa.rsa-bn-shl1': 'RSA-bn-shl1'
-  'rsa.rsa-bn-shr1': 'RSA-bn-shr1'
-  'rsa.rsa-bn-sub': 'RSA-bn-sub'
-  'rsa.rsa-decrypt': 'RSA-decrypt'
-  'rsa.rsa-encrypt': 'RSA-encrypt'
-  'rsa.rsa-modpow': 'RSA-modpow'
-  'rsa.rsa-modpow-step': 'RSA-modpow-step'
-  'scrypt.rotl32': 'rotl32'
-  'scrypt.salsa20-8-core': 'salsa20-8-core'
-  'scrypt.scrypt': 'scrypt'
-  'scrypt.scrypt-blockmix': 'scrypt-blockmix'
-  'scrypt.scrypt-romix': 'scrypt-romix'
-  'server.https-listen-on': 'HTTPS-listen-on'
-  'server.https-server-conn.close': 'cerrar'
-  'server.https-server-conn.get-header': 'obtener-header'
-  'server.https-server-conn.parse': 'análisis'
-  'server.https-server-conn.recv-more': 'recibir-more'
-  'server.https-server-conn.reset': 'restablecer'
-  'server.https-server-conn.write-body': 'escribir-body'
-  'server.https-server-conn.write-header': 'escribir-header'
-  'server.https-server-conn.write-headers-done': 'escribir-headers-done'
-  'server.https-server-conn.write-html': 'escribir-html'
-  'server.https-server-conn.write-json': 'escribir-json'
-  'server.https-server-conn.write-status': 'escribir-status'
-  'server.https-server-conn.write-text': 'escribir-text'
-  'server.https-server.accept': 'aceptar'
-  'server.https-server.close': 'cerrar'
-  'server.https-server.listen': 'escuchar'
-  'server.listen-on': 'escuchar-on'
-  'server.secure-compare': 'seguro-compare'
-  'server.server-conn.close': 'cerrar'
-  'server.server-conn.get-cookie': 'obtener-cookie'
-  'server.server-conn.get-header': 'obtener-header'
-  'server.server-conn.get-signed-cookie': 'obtener-signed-cookie'
-  'server.server-conn.parse': 'análisis'
-  'server.server-conn.recv-more': 'recibir-more'
-  'server.server-conn.reset': 'restablecer'
-  'server.server-conn.set-signed-cookie': 'establecer-signed-cookie'
-  'server.server-conn.verify-basic-auth': 'verificar-basic-auth'
-  'server.server-conn.write-body': 'escribir-body'
-  'server.server-conn.write-error': 'escribir-error'
-  'server.server-conn.write-header': 'escribir-header'
-  'server.server-conn.write-headers-done': 'escribir-headers-done'
-  'server.server-conn.write-html': 'escribir-html'
-  'server.server-conn.write-json': 'escribir-json'
-  'server.server-conn.write-redirect': 'escribir-redirect'
-  'server.server-conn.write-status': 'escribir-status'
-  'server.server-conn.write-text': 'escribir-text'
-  'server.server.accept': 'aceptar'
-  'server.server.accept-nb': 'aceptar-nb'
-  'server.server.close': 'cerrar'
-  'server.server.fd-of': 'fd-of'
-  'server.server.listen': 'escuchar'
-  'set.add': 'añadir'
-  'set.contains': 'contiene'
-  'set.difference': 'difference'
-  'set.init': 'init'
-  'set.intersection': 'intersección'
-  'set.is-empty': '¿ empty?'
-  'set.remove': 'quitar'
-  'set.size': 'tamaño'
-  'set.to-vec': 'conversión a vec'
-  'set.union': 'unión'
-  'sha1.sha1': 'SHA-1'
-  'sha1.sha1-block': 'SHA-1-block'
-  'sha1.sha1-hex': 'SHA-1-hex'
-  'sha224.sha224': 'sha224'
-  'sha224.sha224-hex': 'sha224-hex'
-  'sha256.sha256': 'sha256'
-  'sha256.sha256-block': 'sha256-block'
-  'sha256.sha256-hex': 'sha256-hex'
-  'sha3.keccak-f1600': 'keccak-f1600'
-  'sha3.keccak-sponge': 'keccak-sponge'
-  'sha3.rotl64': 'rotl64'
-  'sha3.sha3-224': 'SHA-3-224'
-  'sha3.sha3-224-hex': 'SHA-3-224-hex'
-  'sha3.sha3-256': 'SHA-3-256'
-  'sha3.sha3-256-hex': 'SHA-3-256-hex'
-  'sha3.sha3-384': 'SHA-3-384'
-  'sha3.sha3-384-hex': 'SHA-3-384-hex'
-  'sha3.sha3-512': 'SHA-3-512'
-  'sha3.sha3-512-hex': 'SHA-3-512-hex'
-  'sha384.sha384': 'sha384'
-  'sha384.sha384-hex': 'sha384-hex'
-  'sha512.sha512': 'sha512'
-  'sha512.sha512-block': 'sha512-block'
-  'sha512.sha512-hex': 'sha512-hex'
-  'sse.client.close': 'cerrar'
-  'sse.client.is-connected': '¿ connected?'
-  'sse.client.next-event': 'siguiente-event'
-  'sse.client.reconnect': 'reconectar'
-  'sse.listen-on': 'escuchar-on'
-  'sse.server-conn.close': 'cerrar'
-  'sse.server-conn.handshake': 'handshake'
-  'sse.server-conn.is-connected': '¿ connected?'
-  'sse.server-conn.send-comment': 'enviar-comment'
-  'sse.server-conn.send-event': 'enviar-event'
-  'sse.server.accept': 'aceptar'
-  'sse.server.close': 'cerrar'
-  'sse.server.listen': 'escuchar'
-  'sse.sse-connect': 'SSE-connect'
-  'stack.stack.clear': 'limpiar'
-  'stack.stack.empty': 'empty'
-  'stack.stack.peek': 'mirar'
-  'stack.stack.pop': 'sacar'
-  'stack.stack.push': 'empujar'
-  'stack.stack.size': 'tamaño'
-  'static-hashmap.static-hashmap-bool-tmpl.clear': 'limpiar'
-  'static-hashmap.static-hashmap-bool-tmpl.contains': 'contiene'
-  'static-hashmap.static-hashmap-bool-tmpl.for-each': 'para-each'
-  'static-hashmap.static-hashmap-bool-tmpl.get': 'obtener'
-  'static-hashmap.static-hashmap-bool-tmpl.hash': 'hash'
-  'static-hashmap.static-hashmap-bool-tmpl.init': 'init'
-  'static-hashmap.static-hashmap-bool-tmpl.is-empty': '¿ empty?'
-  'static-hashmap.static-hashmap-bool-tmpl.len': 'longitud'
-  'static-hashmap.static-hashmap-bool-tmpl.put': 'poner'
-  'static-hashmap.static-hashmap-bool-tmpl.remove': 'quitar'
-  'static-hashmap.static-hashmap-int-tmpl.clear': 'limpiar'
-  'static-hashmap.static-hashmap-int-tmpl.contains': 'contiene'
-  'static-hashmap.static-hashmap-int-tmpl.for-each': 'para-each'
-  'static-hashmap.static-hashmap-int-tmpl.get': 'obtener'
-  'static-hashmap.static-hashmap-int-tmpl.hash': 'hash'
-  'static-hashmap.static-hashmap-int-tmpl.init': 'init'
-  'static-hashmap.static-hashmap-int-tmpl.is-empty': '¿ empty?'
-  'static-hashmap.static-hashmap-int-tmpl.len': 'longitud'
-  'static-hashmap.static-hashmap-int-tmpl.put': 'poner'
-  'static-hashmap.static-hashmap-int-tmpl.remove': 'quitar'
-  'static-hashmap.static-hashmap-str-tmpl.clear': 'limpiar'
-  'static-hashmap.static-hashmap-str-tmpl.contains': 'contiene'
-  'static-hashmap.static-hashmap-str-tmpl.for-each': 'para-each'
-  'static-hashmap.static-hashmap-str-tmpl.get': 'obtener'
-  'static-hashmap.static-hashmap-str-tmpl.hash': 'hash'
-  'static-hashmap.static-hashmap-str-tmpl.init': 'init'
-  'static-hashmap.static-hashmap-str-tmpl.is-empty': '¿ empty?'
-  'static-hashmap.static-hashmap-str-tmpl.len': 'longitud'
-  'static-hashmap.static-hashmap-str-tmpl.put': 'poner'
-  'static-hashmap.static-hashmap-str-tmpl.remove': 'quitar'
-  'static-hashmap.static-hashmap-str-tmpl.str-eq': 'cadena-eq'
-  'str-map.str-map.clear': 'limpiar'
-  'str-map.str-map.contains': 'contiene'
-  'str-map.str-map.for-each': 'para-each'
-  'str-map.str-map.get': 'obtener'
-  'str-map.str-map.hash': 'hash'
-  'str-map.str-map.init': 'init'
-  'str-map.str-map.is-empty': '¿ empty?'
-  'str-map.str-map.len': 'longitud'
-  'str-map.str-map.put': 'poner'
-  'str-map.str-map.remove': 'quitar'
-  'str-map.str-map.str-eq': 'cadena-eq'
-  'str-map.str-map.to-str': 'conversión a str'
-  'str-set.str-set.add': 'añadir'
-  'str-set.str-set.clear': 'limpiar'
-  'str-set.str-set.contains': 'contiene'
-  'str-set.str-set.for-each': 'para-each'
-  'str-set.str-set.hash': 'hash'
-  'str-set.str-set.init': 'init'
-  'str-set.str-set.is-empty': '¿ empty?'
-  'str-set.str-set.len': 'longitud'
-  'str-set.str-set.remove': 'quitar'
-  'str-set.str-set.str-eq': 'cadena-eq'
-  'str._str-dig-val': '_str-dig-val'
-  'str.at': 'en'
-  'str.bigint-bitlen': 'bigint-bitlen'
-  'str.byte': 'byte'
-  'str.byte-index': 'byte-index'
-  'str.compare': 'comparar'
-  'str.contains': 'contiene'
-  'str.copy': 'copiar'
-  'str.count': 'recuento'
-  'str.cp-index': 'cp-index'
-  'str.decode-cp': 'decodificar-cp'
-  'str.empty': 'empty'
-  'str.ends-with': 'extremos-with'
-  'str.eq-full': 'igual-full'
-  'str.eq-raw': 'igual-raw'
-  'str.fields': 'campos'
-  'str.fill': 'rellenar'
-  'str.find-byte-from': 'buscar-byte-from'
-  'str.from-hex': 'conversión desde hex'
-  'str.index': 'índice'
-  'str.index-from': 'índice-from'
-  'str.last-index': 'último-index'
-  'str.len': 'longitud'
-  'str.lines': 'líneas'
-  'str.new': 'nuevo'
-  'str.repeat': 'repetir'
-  'str.replace-char': 'reemplazar-char'
-  'str.replace-n': 'reemplazar-n'
-  'str.replace-str': 'reemplazar-str'
-  'str.reverse': 'invertir'
-  'str.rfind-byte-from': 'buscar-rev-byte-from'
-  'str.rindex': 'índice-rev'
-  'str.rindex-from': 'índice-rev-from'
-  'str.set-byte': 'establecer-byte'
-  'str.slice': 'rebanada'
-  'str.slice-bytes': 'rebanada-bytes'
-  'str.split': 'dividir'
-  'str.split-n': 'dividir-n'
-  'str.starts-with': 'starts-with'
-  'str.str-hex-val': 'cadena-hex-val'
-  'str.to-bigint': 'conversión a bigint'
-  'str.to-bool': 'conversión a bool'
-  'str.to-byte': 'conversión a byte'
-  'str.to-bytes': 'conversión a bytes'
-  'str.to-f32': 'conversión a f32'
-  'str.to-f64': 'conversión a f64'
-  'str.to-hex': 'conversión a hex'
-  'str.to-i16': 'conversión a i16'
-  'str.to-i32': 'conversión a i32'
-  'str.to-i64': 'conversión a i64'
-  'str.to-i8': 'conversión a i8'
-  'str.to-lower': 'conversión a lower'
-  'str.to-str': 'conversión a str'
-  'str.to-txt': 'conversión a txt'
-  'str.to-u16': 'conversión a u16'
-  'str.to-u32': 'conversión a u32'
-  'str.to-u64': 'conversión a u64'
-  'str.to-u8': 'conversión a u8'
-  'str.to-upper': 'conversión a upper'
-  'str.trim': 'recortar'
-  'str.trim-char': 'recortar-char'
-  'str.with-cap': 'con-cap'
-  'str.with-len': 'con-len'
-  'str.with-len-cap': 'con-len-cap'
-  'strs.join': 'unir'
-  'tar.tar-builder.add-bytes': 'añadir-bytes'
-  'tar.tar-builder.add-dir': 'añadir-dir'
-  'tar.tar-builder.add-file': 'añadir-file'
-  'tar.tar-builder.finish': 'terminar'
-  'tar.tar-builder.pre-alloc': 'pre-alloc'
-  'tar.tar-builder.write-header': 'escribir-header'
-  'tar.tar-builder.write-octal': 'escribir-octal'
-  'tar.tar-entry.is-dir': '¿ dir?'
-  'tar.tar-entry.is-file': '¿ file?'
-  'tar.tar-entry.mode': 'modo'
-  'tar.tar-entry.mtime': 'mtime'
-  'tar.tar-entry.name': 'nombre'
-  'tar.tar-entry.read': 'leer'
-  'tar.tar-entry.size': 'tamaño'
-  'tar.tar-entry.type': 'tipo'
-  'tar.tar-open-gz': 'tar-open-gz'
-  'tar.tar.count': 'recuento'
-  'tar.tar.entry': 'entrada'
-  'tar.tar.is-dir': '¿ dir?'
-  'tar.tar.is-file': '¿ file?'
-  'tar.tar.mode': 'modo'
-  'tar.tar.mtime': 'mtime'
-  'tar.tar.name': 'nombre'
-  'tar.tar.offset': 'desplazamiento'
-  'tar.tar.read': 'leer'
-  'tar.tar.size': 'tamaño'
-  'tar.tar.type': 'tipo'
-  'tdes.tdes-cbc-dec': '3DES-cbc-dec'
-  'tdes.tdes-cbc-enc': '3DES-cbc-enc'
-  'tdes.tdes-dec': '3DES-dec'
-  'tdes.tdes-enc': '3DES-enc'
-  'time.add-seconds': 'añadir-seconds'
-  'time.date': 'fecha'
-  'time.date-to-unix': 'fecha-to-unix'
-  'time.days-in-month-fn': 'días-in-month-fn'
-  'time.duration-between': 'duración-between'
-  'time.duration-ms-between': 'duración-ms-between'
-  'time.duration-time': 'duración-time'
-  'time.duration-us-between': 'duración-us-between'
-  'time.format': 'formatear'
-  'time.format-date': 'formatear-date'
-  'time.format-duration': 'formatear-duration'
-  'time.format-time-str': 'formatear-time-str'
-  'time.is-leap': '¿ leap?'
-  'time.now-date': 'ahora-date'
-  'time.now-ms': 'ahora-ms'
-  'time.now-ns': 'ahora-ns'
-  'time.now-s': 'ahora-s'
-  'time.now-time': 'ahora-time'
-  'time.now-us': 'ahora-us'
-  'time.parse-date': 'análisis-date'
-  'time.parse-time': 'análisis-time'
-  'time.since-ms': 'desde-ms'
-  'time.since-s': 'desde-s'
-  'time.since-time': 'desde-time'
-  'time.since-us': 'desde-us'
-  'time.sleep-ms': 'dormir-ms'
-  'time.sleep-ns': 'dormir-ns'
-  'time.sleep-s': 'dormir-s'
-  'time.sleep-us': 'dormir-us'
-  'time.sub': 'resta'
-  'time.timer.elapsed-ms': 'transcurrido-ms'
-  'time.timer.elapsed-s': 'transcurrido-s'
-  'time.timer.elapsed-us': 'transcurrido-us'
-  'time.timer.start': 'inicio'
-  'time.timer.stop': 'parar'
-  'time.unix': 'unix'
-  'time.unix-ms': 'unix-ms'
-  'time.unix-to-date': 'unix-to-date'
-  'time.unix-to-time': 'unix-to-time'
-  'tls.bn-to-bytes': 'big-num-to-bytes'
-  'tls.build-nonce': 'construir-nonce'
-  'tls.bytes-cat': 'bytes-cat'
-  'tls.bytes-to-bn': 'bytes-to-bn'
-  'tls.cipher-is-ecdhe': 'cifrador-is-ecdhe'
-  'tls.cipher-is-gcm': 'cifrador-is-gcm'
-  'tls.conn.append-hs': 'anexar-hs'
-  'tls.conn.append-hs-from': 'anexar-hs-from'
-  'tls.conn.close': 'cerrar'
-  'tls.conn.compute-shared-secret-13': 'calcular-shared-secret-13'
-  'tls.conn.connect': 'conectar'
-  'tls.conn.connect-12': 'conectar-12'
-  'tls.conn.connect-13': 'conectar-13'
-  'tls.conn.decrypt-record': 'descifrar-record'
-  'tls.conn.decrypt-record-13': 'descifrar-record-13'
-  'tls.conn.decrypt-record-gcm': 'descifrar-record-gcm'
-  'tls.conn.derive-application-keys-13': 'derivar-application-keys-13'
-  'tls.conn.derive-handshake-keys-13': 'derivar-handshake-keys-13'
-  'tls.conn.derive-keys': 'derivar-keys'
-  'tls.conn.encrypt-record': 'cifrar-record'
-  'tls.conn.encrypt-record-13': 'cifrar-record-13'
-  'tls.conn.encrypt-record-gcm': 'cifrar-record-gcm'
-  'tls.conn.gen-p256-keypair': 'gen-p256-keypair'
-  'tls.conn.gen-x25519-keypair': 'gen-x25519-keypair'
-  'tls.conn.get-fd': 'obtener-fd'
-  'tls.conn.handshake-12-body': 'handshake-12-body'
-  'tls.conn.init': 'init'
-  'tls.conn.read-certificate': 'leer-certificate'
-  'tls.conn.read-change-cipher-spec': 'leer-change-cipher-spec'
-  'tls.conn.read-encrypted-handshake-13': 'leer-encrypted-handshake-13'
-  'tls.conn.read-encrypted-record-13': 'leer-encrypted-record-13'
-  'tls.conn.read-finished': 'leer-finished'
-  'tls.conn.read-server-hello': 'leer-server-hello'
-  'tls.conn.read-server-hello-13': 'leer-server-hello-13'
-  'tls.conn.read-server-hello-done': 'leer-server-hello-done'
-  'tls.conn.read-server-key-exchange': 'leer-server-key-exchange'
-  'tls.conn.send': 'enviar'
-  'tls.conn.send-change-cipher-spec': 'enviar-change-cipher-spec'
-  'tls.conn.send-client-hello': 'enviar-client-hello'
-  'tls.conn.send-client-hello-13': 'enviar-client-hello-13'
-  'tls.conn.send-client-key-exchange': 'enviar-client-key-exchange'
-  'tls.conn.send-finished': 'enviar-finished'
-  'tls.conn.send-finished-13': 'enviar-finished-13'
-  'tls.dial': 'marcar'
-  'tls.dial-12': 'marcar-12'
-  'tls.get-u16': 'obtener-u16'
-  'tls.get-u24': 'obtener-u24'
-  'tls.https-serve-once': 'HTTPS-serve-once'
-  'tls.net-recv-wait': 'red-recv-wait'
-  'tls.prf': 'prf'
-  'tls.put-u16': 'poner-u16'
-  'tls.put-u24': 'poner-u24'
-  'tls.rand-bytes': 'aleatorio-bytes'
-  'tls.read-record': 'leer-record'
-  'tls.recv-n': 'recibir-n'
-  'tls.rsa-pkcs1-decrypt': 'RSA-pkcs1-decrypt'
-  'tls.rsa-pkcs1-encrypt': 'RSA-pkcs1-encrypt'
-  'tls.send-raw': 'enviar-raw'
-  'tls.server-accept': 'servidor-accept'
-  'tls.server-conn.append-hs': 'anexar-hs'
-  'tls.server-conn.append-hs-from': 'anexar-hs-from'
-  'tls.server-conn.close': 'cerrar'
-  'tls.server-conn.compute-shared-secret-13': 'calcular-shared-secret-13'
-  'tls.server-conn.decrypt-record': 'descifrar-record'
-  'tls.server-conn.decrypt-record-13': 'descifrar-record-13'
-  'tls.server-conn.derive-application-keys-13': 'derivar-application-keys-13'
-  'tls.server-conn.derive-handshake-keys-13': 'derivar-handshake-keys-13'
-  'tls.server-conn.derive-keys': 'derivar-keys'
-  'tls.server-conn.encrypt-record': 'cifrar-record'
-  'tls.server-conn.encrypt-record-13': 'cifrar-record-13'
-  'tls.server-conn.handshake': 'handshake'
-  'tls.server-conn.handshake-13': 'handshake-13'
-  'tls.server-conn.read-change-cipher-spec': 'leer-change-cipher-spec'
-  'tls.server-conn.read-client-finished-13': 'leer-client-finished-13'
-  'tls.server-conn.read-client-hello': 'leer-client-hello'
-  'tls.server-conn.read-client-key-exchange': 'leer-client-key-exchange'
-  'tls.server-conn.read-encrypted-handshake-13': 'leer-encrypted-handshake-13'
-  'tls.server-conn.read-encrypted-record-13': 'leer-encrypted-record-13'
-  'tls.server-conn.read-finished': 'leer-finished'
-  'tls.server-conn.recv': 'recibir'
-  'tls.server-conn.send': 'enviar'
-  'tls.server-conn.send-certificate': 'enviar-certificate'
-  'tls.server-conn.send-certificate-13': 'enviar-certificate-13'
-  'tls.server-conn.send-change-cipher-spec': 'enviar-change-cipher-spec'
-  'tls.server-conn.send-encrypted-extensions-13': 'enviar-encrypted-extensions-13'
-  'tls.server-conn.send-finished': 'enviar-finished'
-  'tls.server-conn.send-finished-13': 'enviar-finished-13'
-  'tls.server-conn.send-server-hello': 'enviar-server-hello'
-  'tls.server-conn.send-server-hello-13': 'enviar-server-hello-13'
-  'tls.server-conn.send-server-hello-done': 'enviar-server-hello-done'
-  'tls.server-init': 'servidor-init'
-  'tls.server-listen': 'servidor-listen'
-  'tls.tls-pad': 'TLS-pad'
-  'tls.tls-unpad': 'TLS-unpad'
-  'toml.get': 'obtener'
-  'toml.get-bool': 'obtener-bool'
-  'toml.get-f64': 'obtener-f64'
-  'toml.get-i64': 'obtener-i64'
-  'toml.get-str': 'obtener-str'
-  'toml.has': 'tiene'
-  'toml.new': 'nuevo'
-  'toml.parse': 'análisis'
-  'toml.stringify': 'cadenaizar'
-  'toml.toml-array-name': 'toml-array-name'
-  'toml.toml-doc.put': 'poner'
-  'toml.toml-entry-key': 'toml-entry-key'
-  'toml.toml-entry-key-eq': 'toml-entry-key-eq'
-  'toml.toml-entry-value': 'toml-entry-value'
-  'toml.toml-find-eq': 'toml-find-eq'
-  'toml.toml-make-entry': 'toml-make-entry'
-  'toml.toml-next-array-table': 'toml-next-array-table'
-  'toml.toml-normalize-key': 'toml-normalize-key'
-  'toml.toml-parse-bool': 'toml-parse-bool'
-  'toml.toml-parse-f64': 'toml-parse-f64'
-  'toml.toml-parse-i64': 'toml-parse-i64'
-  'toml.toml-register-table': 'toml-register-table'
-  'toml.toml-resolve-section': 'toml-resolve-section'
-  'toml.toml-strip-comment': 'toml-strip-comment'
-  'toml.toml-table-eq': 'toml-table-eq'
-  'toml.toml-table-name': 'toml-table-name'
-  'toml.toml-unquote': 'toml-unquote'
-  'toml.toml-valid-value': 'toml-valid-value'
-  'toml.toml-value-complete': 'toml-value-complete'
-  'tree-map.tree-map.alloc-node': 'asignar-node'
-  'tree-map.tree-map.bf': 'bf'
-  'tree-map.tree-map.clear': 'limpiar'
-  'tree-map.tree-map.contains': 'contiene'
-  'tree-map.tree-map.empty': 'empty'
-  'tree-map.tree-map.first': 'primero'
-  'tree-map.tree-map.for-each': 'para-each'
-  'tree-map.tree-map.free-node': 'liberar-node'
-  'tree-map.tree-map.full': 'full'
-  'tree-map.tree-map.get': 'obtener'
-  'tree-map.tree-map.ht': 'tabulador'
-  'tree-map.tree-map.init': 'init'
-  'tree-map.tree-map.last': 'último'
-  'tree-map.tree-map.lower-bound': 'minúsculas-bound'
-  'tree-map.tree-map.put': 'poner'
-  'tree-map.tree-map.rebalance': 'rebalance'
-  'tree-map.tree-map.rebalance-up': 'rebalance-up'
-  'tree-map.tree-map.remove': 'quitar'
-  'tree-map.tree-map.rot-left': 'rot-left'
-  'tree-map.tree-map.rot-right': 'rot-right'
-  'tree-map.tree-map.size': 'tamaño'
-  'tree-map.tree-map.successor': 'sucesor'
-  'tree-map.tree-map.update-ht': 'actualizar-ht'
-  'tree-map.tree-map.upper-bound': 'mayúsculas-bound'
-  'tree-set.tree-set.add': 'añadir'
-  'tree-set.tree-set.alloc-node': 'asignar-node'
-  'tree-set.tree-set.bf': 'bf'
-  'tree-set.tree-set.clear': 'limpiar'
-  'tree-set.tree-set.contains': 'contiene'
-  'tree-set.tree-set.empty': 'empty'
-  'tree-set.tree-set.first': 'primero'
-  'tree-set.tree-set.for-each': 'para-each'
-  'tree-set.tree-set.free-node': 'liberar-node'
-  'tree-set.tree-set.full': 'full'
-  'tree-set.tree-set.ht': 'tabulador'
-  'tree-set.tree-set.init': 'init'
-  'tree-set.tree-set.last': 'último'
-  'tree-set.tree-set.lower-bound': 'minúsculas-bound'
-  'tree-set.tree-set.rebalance': 'rebalance'
-  'tree-set.tree-set.rebalance-up': 'rebalance-up'
-  'tree-set.tree-set.remove': 'quitar'
-  'tree-set.tree-set.rot-left': 'rot-left'
-  'tree-set.tree-set.rot-right': 'rot-right'
-  'tree-set.tree-set.size': 'tamaño'
-  'tree-set.tree-set.successor': 'sucesor'
-  'tree-set.tree-set.update-ht': 'actualizar-ht'
-  'tree-set.tree-set.upper-bound': 'mayúsculas-bound'
-  'txt._txt-dig-val': '_txt-dig-val'
-  'txt.append': 'anexar'
-  'txt.append-str': 'anexar-str'
-  'txt.append-txt': 'anexar-txt'
-  'txt.at': 'en'
-  'txt.byte': 'byte'
-  'txt.clear': 'limpiar'
-  'txt.compare': 'comparar'
-  'txt.contains': 'contiene'
-  'txt.copy': 'copiar'
-  'txt.count': 'recuento'
-  'txt.decode-cp': 'decodificar-cp'
-  'txt.empty': 'empty'
-  'txt.ends-with': 'extremos-with'
-  'txt.eq': 'igual'
-  'txt.eq-full': 'igual-full'
-  'txt.fields': 'campos'
-  'txt.fill': 'rellenar'
-  'txt.from-bytes': 'conversión desde bytes'
-  'txt.from-chars': 'conversión desde chars'
-  'txt.from-hex': 'conversión desde hex'
-  'txt.from-str': 'conversión desde str'
-  'txt.index': 'índice'
-  'txt.index-from': 'índice-from'
-  'txt.join': 'unir'
-  'txt.last-index': 'último-index'
-  'txt.len': 'longitud'
-  'txt.lines': 'líneas'
-  'txt.new': 'nuevo'
-  'txt.repeat': 'repetir'
-  'txt.replace-char': 'reemplazar-char'
-  'txt.replace-n': 'reemplazar-n'
-  'txt.replace-str': 'reemplazar-str'
-  'txt.reverse': 'invertir'
-  'txt.rindex': 'índice-rev'
-  'txt.rindex-from': 'índice-rev-from'
-  'txt.set-byte': 'establecer-byte'
-  'txt.slice': 'rebanada'
-  'txt.split': 'dividir'
-  'txt.split-n': 'dividir-n'
-  'txt.starts-with': 'starts-with'
-  'txt.to-bigint': 'conversión a bigint'
-  'txt.to-bool': 'conversión a bool'
-  'txt.to-byte': 'conversión a byte'
-  'txt.to-bytes': 'conversión a bytes'
-  'txt.to-f32': 'conversión a f32'
-  'txt.to-f64': 'conversión a f64'
-  'txt.to-hex': 'conversión a hex'
-  'txt.to-i16': 'conversión a i16'
-  'txt.to-i32': 'conversión a i32'
-  'txt.to-i64': 'conversión a i64'
-  'txt.to-i8': 'conversión a i8'
-  'txt.to-lower': 'conversión a lower'
-  'txt.to-str': 'conversión a str'
-  'txt.to-u16': 'conversión a u16'
-  'txt.to-u32': 'conversión a u32'
-  'txt.to-u64': 'conversión a u64'
-  'txt.to-u8': 'conversión a u8'
-  'txt.to-upper': 'conversión a upper'
-  'txt.trim': 'recortar'
-  'txt.trim-char': 'recortar-char'
-  'txt.truncate': 'truncate'
-  'txt.txt-hex-val': 'texto-hex-val'
-  'unix.unix-conn.close': 'cerrar'
-  'unix.unix-conn.dial': 'marcar'
-  'unix.unix-conn.fd-of': 'fd-of'
-  'unix.unix-conn.recv': 'recibir'
-  'unix.unix-conn.recv-all': 'recibir-all'
-  'unix.unix-conn.recv-with-timeout': 'recibir-with-timeout'
-  'unix.unix-conn.send': 'enviar'
-  'unix.unix-conn.set-recv-timeout': 'establecer-recv-timeout'
-  'unix.unix-conn.set-timeout': 'establecer-timeout'
-  'unix.unix-dial': 'unix-dial'
-  'unix.unix-dial-timeout': 'unix-dial-timeout'
-  'unix.unix-dial-to': 'unix-dial-to'
-  'unix.unix-listen': 'unix-listen'
-  'unix.unix-listen-on': 'unix-listen-on'
-  'unix.unix-listener.accept': 'aceptar'
-  'unix.unix-listener.accept-with-timeout': 'aceptar-with-timeout'
-  'unix.unix-listener.close': 'cerrar'
-  'unix.unix-listener.fd-of': 'fd-of'
-  'unix.unix-listener.listen': 'escuchar'
-  'unix.unix-listener.path-of': 'ruta-of'
-  'unix.unix-listener.set-timeout': 'establecer-timeout'
-  'url.url-basic-auth': 'url-basic-auth'
-  'url.url-build-query': 'url-build-query'
-  'url.url-decode': 'url-decode'
-  'url.url-encode': 'url-encode'
-  'url.url-encode-component': 'url-encode-component'
-  'url.url-info.get-query': 'obtener-query'
-  'url.url-info.set-query': 'establecer-query'
-  'url.url-info.to-str': 'conversión a str'
-  'url.url-join': 'url-join'
-  'url.url-parse': 'url-parse'
-  'url.url-parse-basic-auth': 'url-parse-basic-auth'
-  'uuid.cmp': 'cmp'
-  'uuid.eq': 'igual'
-  'uuid.from-str': 'conversión desde str'
-  'uuid.hex-byte': 'hex-byte'
-  'uuid.hex-byte-upper': 'hex-byte-upper'
-  'uuid.hex-val': 'hex-val'
-  'uuid.is-nil': '¿ nil?'
-  'uuid.new-v4': 'nuevo-v4'
-  'uuid.nil-uuid': 'nil-uuid'
-  'uuid.parse-hex-byte': 'análisis-hex-byte'
-  'uuid.parse-no-dashes': 'análisis-no-dashes'
-  'uuid.parse-with-dashes': 'análisis-with-dashes'
-  'uuid.to-str': 'conversión a str'
-  'uuid.to-str-upper': 'conversión a str-upper'
-  'uuid.validate': 'validar'
-  'uuid.variant': 'variante'
-  'uuid.version': 'versión'
-  'vec.at': 'en'
-  'vec.clone': 'clonar'
-  'vec.contains': 'contiene'
-  'vec.eq': 'igual'
-  'vec.extend': 'extender'
-  'vec.fill': 'rellenar'
-  'vec.first': 'primero'
-  'vec.index-of': 'índice-of'
-  'vec.insert': 'insertar'
-  'vec.last': 'último'
-  'vec.len': 'longitud'
-  'vec.max': 'máx'
-  'vec.min': 'mín'
-  'vec.pop': 'sacar'
-  'vec.remove': 'quitar'
-  'vec.reverse': 'invertir'
-  'vec.sum': 'suma'
-  'vec.swap': 'intercambiar'
-  'vec.to-arr': 'conversión a arr'
-  'vec.to-str': 'conversión a str'
-  'vec.truncate': 'truncate'
-  'vec.vec-clear': 'vec-clear'
-  'vec.vec-push': 'vec-push'
-  'ws.build-frame': 'construir-frame'
-  'ws.client.close': 'cerrar'
-  'ws.client.is-connected': '¿ connected?'
-  'ws.client.recv': 'recibir'
-  'ws.client.send': 'enviar'
-  'ws.client.send-binary': 'enviar-binary'
-  'ws.client.send-close': 'enviar-close'
-  'ws.client.send-ping': 'enviar-ping'
-  'ws.client.send-pong': 'enviar-pong'
-  'ws.client.send-text': 'enviar-text'
-  'ws.compute-accept': 'calcular-accept'
-  'ws.connect': 'conectar'
-  'ws.gen-client-key': 'gen-client-key'
-  'ws.gen-mask-key': 'gen-mask-key'
-  'ws.listen-on': 'escuchar-on'
-  'ws.next-rand': 'siguiente-rand'
-  'ws.server-conn.close': 'cerrar'
-  'ws.server-conn.handshake': 'handshake'
-  'ws.server-conn.is-connected': '¿ connected?'
-  'ws.server-conn.recv': 'recibir'
-  'ws.server-conn.recv-nb': 'recibir-nb'
-  'ws.server-conn.send': 'enviar'
-  'ws.server-conn.send-binary': 'enviar-binary'
-  'ws.server-conn.send-close': 'enviar-close'
-  'ws.server-conn.send-ping': 'enviar-ping'
-  'ws.server-conn.send-pong': 'enviar-pong'
-  'ws.server-conn.send-text': 'enviar-text'
-  'ws.server.accept': 'aceptar'
-  'ws.server.close': 'cerrar'
-  'ws.server.listen': 'escuchar'
-  'x25519.fe-add': 'campo-add'
-  'x25519.fe-add-v': 'campo-add-v'
-  'x25519.fe-copy': 'campo-copy'
-  'x25519.fe-cswap': 'campo-cswap'
-  'x25519.fe-frombytes': 'campo-frombytes'
-  'x25519.fe-frombytes-v': 'campo-frombytes-v'
-  'x25519.fe-invert': 'campo-invert'
-  'x25519.fe-invert-v': 'campo-invert-v'
-  'x25519.fe-mul': 'campo-mul'
-  'x25519.fe-mul-v': 'campo-mul-v'
-  'x25519.fe-mul121665': 'campo-mul121665'
-  'x25519.fe-one': 'campo-one'
-  'x25519.fe-one-v': 'campo-one-v'
-  'x25519.fe-sq': 'campo-sq'
-  'x25519.fe-sq-v': 'campo-sq-v'
-  'x25519.fe-sub': 'campo-sub'
-  'x25519.fe-sub-v': 'campo-sub-v'
-  'x25519.fe-tobytes': 'campo-tobytes'
-  'x25519.fe-tobytes-v': 'campo-tobytes-v'
-  'x25519.fe-zero': 'campo-zero'
-  'x25519.fe-zero-v': 'campo-zero-v'
-  'x25519.x25519-gen-keypair': 'x25519-gen-keypair'
-  'x25519.x25519-get-basepoint': 'x25519-get-basepoint'
-  'x25519.x25519-scalarmult': 'x25519-scalarmult'
-  'x25519.x25519-scalarmult-base': 'x25519-scalarmult-base'
-  'x25519.x25519-scalarmult-base-bytes': 'x25519-scalarmult-base-bytes'
-  'x25519.x25519-scalarmult-bytes': 'x25519-scalarmult-bytes'
-  'x509.alg-id-rsa-encryption': 'alg-id-rsa-encryption'
-  'x509.alg-id-sha256-with-rsa': 'alg-id-sha256-with-rsa'
-  'x509.der-enc-bitstring': 'DER-enc-bitstring'
-  'x509.der-enc-explicit': 'DER-enc-explicit'
-  'x509.der-enc-integer-bytes': 'DER-enc-integer-bytes'
-  'x509.der-enc-integer-i64': 'DER-enc-integer-i64'
-  'x509.der-enc-len': 'DER-enc-len'
-  'x509.der-enc-null': 'DER-enc-null'
-  'x509.der-enc-octetstring': 'DER-enc-octetstring'
-  'x509.der-enc-oid-raw': 'DER-enc-oid-raw'
-  'x509.der-enc-printablestring': 'DER-enc-printablestring'
-  'x509.der-enc-sequence': 'DER-enc-sequence'
-  'x509.der-enc-set': 'DER-enc-set'
-  'x509.der-enc-tlv': 'DER-enc-tlv'
-  'x509.der-enc-utctime': 'DER-enc-utctime'
-  'x509.der-len': 'DER-len'
-  'x509.der-skip': 'DER-skip'
-  'x509.der-tag': 'DER-tag'
-  'x509.rsa-pkcs1-sign-sha256': 'RSA-pkcs1-sign-sha256'
-  'x509.sha256-compress': 'sha256-compress'
-  'x509.x509-build-name-cn': 'X.509-build-name-cn'
-  'x509.x509-build-rsa-public-key': 'X.509-build-rsa-public-key'
-  'x509.x509-build-self-signed-cert': 'X.509-build-self-signed-cert'
-  'x509.x509-build-spki': 'X.509-build-spki'
-  'x509.x509-build-tbs': 'X.509-build-tbs'
-  'x509.x509-build-validity': 'X.509-build-validity'
-  'x509.x509-bytes-to-bn': 'X.509-bytes-to-bn'
-  'x509.x509-fingerprint': 'X.509-fingerprint'
-  'x509.x509-rsa-e': 'X.509-rsa-e'
-  'x509.x509-rsa-n': 'X.509-rsa-n'
-  'x509.x509-serial': 'X.509-serial'
-  'x509.x509-tbs-range': 'X.509-tbs-range'
-  'xz.lzma-decoder.decode': 'decodificar'
-  'xz.lzma-decoder.decode-distance': 'decodificar-distance'
-  'xz.lzma-decoder.decode-length': 'decodificar-length'
-  'xz.lzma-decoder.decode-literal': 'decodificar-literal'
-  'xz.lzma-decoder.init-probs': 'init-probs'
-  'xz.lzma-decoder.update-state-literal': 'actualizar-state-literal'
-  'xz.lzma-decoder.update-state-match': 'actualizar-state-match'
-  'xz.lzma-decoder.update-state-rep': 'actualizar-state-rep'
-  'xz.lzma-decoder.update-state-shortrep': 'actualizar-state-shortrep'
-  'xz.lzma-decompress': 'lzma-decompress'
-  'xz.lzma-rd.decode-bit': 'decodificar-bit'
-  'xz.lzma-rd.decode-bit-tree': 'decodificar-bit-tree'
-  'xz.lzma-rd.decode-direct-bits': 'decodificar-direct-bits'
-  'xz.lzma-rd.decode-reverse-bit-tree': 'decodificar-reverse-bit-tree'
-  'xz.lzma-rd.init': 'init'
-  'xz.lzma-rd.normalize': 'normalizar'
-  'xz.lzma2-decompress-stream': 'lzma2-decompress-stream'
-  'xz.xz-compress': 'xz-compress'
-  'xz.xz-decompress': 'xz-decompress'
-  'yaml.anchor': 'ancla'
-  'yaml.at': 'en'
-  'yaml.bool': 'bool'
-  'yaml.doc': 'doc'
-  'yaml.doc-count': 'doc-count'
-  'yaml.error': 'error'
-  'yaml.error-of': 'error-of'
-  'yaml.f64': 'f64'
-  'yaml.find': 'buscar'
-  'yaml.find-bool': 'buscar-bool'
-  'yaml.find-f64': 'buscar-f64'
-  'yaml.find-i64': 'buscar-i64'
-  'yaml.find-str': 'buscar-str'
-  'yaml.get': 'obtener'
-  'yaml.get-bool': 'obtener-bool'
-  'yaml.get-f64': 'obtener-f64'
-  'yaml.get-i64': 'obtener-i64'
-  'yaml.get-str': 'obtener-str'
-  'yaml.i64': 'i64'
-  'yaml.is-bool': '¿ bool?'
-  'yaml.is-int': '¿ int?'
-  'yaml.is-map': '¿ map?'
-  'yaml.is-nan': '¿ nan?'
-  'yaml.is-null': '¿ null?'
-  'yaml.is-num': '¿ num?'
-  'yaml.is-seq': '¿ seq?'
-  'yaml.is-str': '¿ str?'
-  'yaml.key': 'clave'
-  'yaml.key-node': 'clave-node'
-  'yaml.kind': 'tipo'
-  'yaml.len': 'longitud'
-  'yaml.line-of': 'línea-of'
-  'yaml.node-count': 'nodo-count'
-  'yaml.parse': 'análisis'
-  'yaml.parse-all': 'análisis-all'
-  'yaml.scalar-text': 'escalar-text'
-  'yaml.source-of': 'source-of'
-  'yaml.str': 'cadena'
-  'yaml.stringify': 'cadenaizar'
-  'yaml.strip-bom': 'despojar-bom'
-  'yaml.style': 'estilo'
-  'yaml.tag': 'etiqueta'
-  'yaml.text': 'texto'
-  'yaml.to-json': 'conversión a json'
-  'yaml.to-json-all': 'conversión a json-all'
-  'yaml.to-yaml': 'conversión a yaml'
-  'yaml.valid': 'válido'
-  'yaml.valid-of': 'válido-of'
-  'yaml.value': 'valor'
-  'yaml.yaml-apply-tag': 'yaml-apply-tag'
-  'yaml.yaml-emit': 'yaml-emit'
-  'yaml.yaml-f-is-inf': 'yaml-f-is-inf'
-  'yaml.yaml-f-is-nan': 'yaml-f-is-nan'
-  'yaml.yaml-hex-char': 'yaml-hex-char'
-  'yaml.yaml-hex-digit': 'yaml-hex-digit'
-  'yaml.yaml-inf': 'yaml-inf'
-  'yaml.yaml-json-escape': 'yaml-json-escape'
-  'yaml.yaml-json-of': 'yaml-json-of'
-  'yaml.yaml-key-eq': 'yaml-key-eq'
-  'yaml.yaml-key-text-eq': 'yaml-key-text-eq'
-  'yaml.yaml-nan': 'yaml-nan'
-  'yaml.yaml-node-is-nan': 'yaml-node-is-nan'
-  'yaml.yaml-parse-radix': 'yaml-parse-radix'
-  'yaml.yaml-parser.advance': 'avanzar'
-  'yaml.yaml-parser.anchor-id': 'ancla-id'
-  'yaml.yaml-parser.at': 'en'
-  'yaml.yaml-parser.at-doc-marker': 'en-doc-marker'
-  'yaml.yaml-parser.at-eol': 'en-eol'
-  'yaml.yaml-parser.byte-at': 'byte-at'
-  'yaml.yaml-parser.cur': 'cur'
-  'yaml.yaml-parser.eof': 'eof'
-  'yaml.yaml-parser.fail': 'fallo'
-  'yaml.yaml-parser.fail-at': 'fallo-at'
-  'yaml.yaml-parser.indent-at': 'indentar-at'
-  'yaml.yaml-parser.is-seq-dash': '¿ seq-dash?'
-  'yaml.yaml-parser.line-end-of': 'línea-end-of'
-  'yaml.yaml-parser.line-start-of': 'línea-start-of'
-  'yaml.yaml-parser.looks-like-map-entry': 'aspecto-like-map-entry'
-  'yaml.yaml-parser.merge-into': 'fusionar-into'
-  'yaml.yaml-parser.merge-one': 'fusionar-one'
-  'yaml.yaml-parser.newline': 'salto de línea'
-  'yaml.yaml-parser.parse-alias': 'análisis-alias'
-  'yaml.yaml-parser.parse-block': 'análisis-block'
-  'yaml.yaml-parser.parse-block-indented': 'análisis-block-indented'
-  'yaml.yaml-parser.parse-block-map': 'análisis-block-map'
-  'yaml.yaml-parser.parse-block-scalar': 'análisis-block-scalar'
-  'yaml.yaml-parser.parse-block-seq': 'análisis-block-seq'
-  'yaml.yaml-parser.parse-docs': 'análisis-docs'
-  'yaml.yaml-parser.parse-document': 'análisis-document'
-  'yaml.yaml-parser.parse-double': 'análisis-double'
-  'yaml.yaml-parser.parse-flow-map': 'análisis-flow-map'
-  'yaml.yaml-parser.parse-flow-node': 'análisis-flow-node'
-  'yaml.yaml-parser.parse-flow-seq': 'análisis-flow-seq'
-  'yaml.yaml-parser.parse-plain': 'análisis-plain'
-  'yaml.yaml-parser.parse-props': 'análisis-props'
-  'yaml.yaml-parser.parse-single': 'análisis-single'
-  'yaml.yaml-parser.push-node': 'empujar-node'
-  'yaml.yaml-parser.push-null': 'empujar-null'
-  'yaml.yaml-parser.push-scalar': 'empujar-scalar'
-  'yaml.yaml-parser.read-line-content': 'leer-line-content'
-  'yaml.yaml-parser.read-tag': 'leer-tag'
-  'yaml.yaml-parser.read-token': 'leer-token'
-  'yaml.yaml-parser.register-anchor': 'registrar-anchor'
-  'yaml.yaml-parser.set-props': 'establecer-props'
-  'yaml.yaml-parser.skip-blank-lines': 'omitir-blank-lines'
-  'yaml.yaml-parser.skip-doc-preamble': 'omitir-doc-preamble'
-  'yaml.yaml-parser.skip-flow-ws': 'omitir-flow-ws'
-  'yaml.yaml-parser.skip-spaces': 'omitir-spaces'
-  'yaml.yaml-parser.skip-to-doc-boundary': 'omitir-to-doc-boundary'
-  'yaml.yaml-parser.skip-to-eol': 'omitir-to-eol'
-  'yaml.yaml-plain-safe': 'yaml-plain-safe'
-  'yaml.yaml-quote': 'yaml-quote'
-  'yaml.yaml-resolve-plain': 'yaml-resolve-plain'
-  'yaml.yaml-scalar-repr': 'yaml-scalar-repr'
-  'yaml.yaml-scan-number': 'yaml-scan-number'
-  'yaml.yaml-spaces': 'yaml-spaces'
-  'yaml.yaml-str-at': 'yaml-str-at'
-  'yaml.yaml-tag-name': 'yaml-tag-name'
-  'yaml.yaml-to-f64': 'yaml-to-f64'
-  'yaml.yaml-to-i64': 'yaml-to-i64'
-  'yaml.yaml-unescape-double': 'yaml-unescape-double'
-  'zip.u16le': 'u16le'
-  'zip.u32le': 'u32le'
-  'zip.zip-entry.compressed-size': 'comprimido-size'
-  'zip.zip-entry.extract': 'extraer'
-  'zip.zip-entry.method': 'method'
-  'zip.zip-entry.name': 'nombre'
-  'zip.zip-entry.size': 'tamaño'
-  'zip.zip-writer.add-dir': 'añadir-dir'
-  'zip.zip-writer.add-file': 'añadir-file'
-  'zip.zip-writer.cd-put': 'cd-put'
-  'zip.zip-writer.cd-write-u16': 'cd-write-u16'
-  'zip.zip-writer.cd-write-u32': 'cd-write-u32'
-  'zip.zip-writer.finalize': 'finalizar'
-  'zip.zip-writer.put': 'poner'
-  'zip.zip-writer.write-cd-entry': 'escribir-cd-entry'
-  'zip.zip-writer.write-eocd': 'escribir-eocd'
-  'zip.zip-writer.write-local-file': 'escribir-local-file'
-  'zip.zip-writer.write-u16': 'escribir-u16'
-  'zip.zip-writer.write-u32': 'escribir-u32'
-  'zip.zip.compressed-size': 'comprimido-size'
-  'zip.zip.count': 'recuento'
-  'zip.zip.entry': 'entrada'
-  'zip.zip.entry-off': 'entrada-off'
-  'zip.zip.extract': 'extraer'
-  'zip.zip.find-eocd': 'buscar-eocd'
-  'zip.zip.get-cd-off': 'obtener-cd-off'
-  'zip.zip.get-total': 'obtener-total'
-  'zip.zip.method': 'method'
-  'zip.zip.name': 'nombre'
-  'zip.zip.size': 'tamaño'
-  'zlib.adler-32': 'adler-32'
-  'zlib.zlib-compress': 'zlib-compress'
-  'zlib.zlib-consumed-stored': 'zlib-consumed-stored'
-  'zlib.zlib-decompress': 'zlib-decompress'
-  'zlib.zlib-decompress-stored': 'zlib-decompress-stored'
-  'zstd.bits-for-count': 'bits-for-count'
-  'zstd.fse-table.build': 'construir'
-  'zstd.fse-table.decode': 'decodificar'
-  'zstd.zs-bit-reader.align-to-byte': 'alinear-to-byte'
-  'zstd.zs-bit-reader.read-bit': 'leer-bit'
-  'zstd.zs-bit-reader.read-bits': 'leer-bits'
-  'zstd.zs-bit-reader.read-varint': 'leer-varint'
-  'zstd.zs-frame.decode-block': 'decodificar-block'
-  'zstd.zs-frame.decode-compressed-block': 'decodificar-compressed-block'
-  'zstd.zs-frame.read-frame-header': 'leer-frame-header'
-  'zstd.zs-huffman.build': 'construir'
-  'zstd.zs-huffman.decode': 'decodificar'
-  'zstd.zstd-compress': 'zstd-compress'
-  'zstd.zstd-decompress': 'zstd-decompress'
+  'aes-cbc.cbc-dec': ['CBC-dec', 'cd', 'cd']
+  'aes-cbc.cbc-enc': ['CBC-enc', 'ce', 'ce']
+  'aes-cbc.dec-128': ['descifrado-128', 'd1', 'd1']
+  'aes-cbc.dec-256': ['descifrado-256', 'd2', 'd2']
+  'aes-cbc.enc-128': ['cifrado-128', 'e1', 'c1']
+  'aes-cbc.enc-256': ['cifrado-256', 'e2', 'c2']
+  'aes-cbc.pkcs7-pad': ['PKCS#7-pad', 'pp', 'p7p']
+  'aes-cbc.pkcs7-unpad': ['PKCS#7-unpad', 'pu', 'p7u']
+  'aes-ctr.crypt-128': ['cripto-128', 'c1', 'c1']
+  'aes-ctr.crypt-256': ['cripto-256', 'c2', 'c2']
+  'aes-ctr.ctr-crypt': ['CTR-crypt', 'cc', 'cc']
+  'aes-ctr.ctr-inc': ['CTR-inc', 'ci', 'ci']
+  'aes-gcm.ctr-xor': ['CTR-xor', 'cx', 'cx']
+  'aes-gcm.gcm-h': ['GCM-h', 'gh', 'gh']
+  'aes-gcm.gcm-j0': ['GCM-j0', 'gj', 'gj0']
+  'aes-gcm.gcm-open': ['GCM-open', 'go', 'go']
+  'aes-gcm.gcm-seal': ['GCM-seal', 'gs', 'gs']
+  'aes-gcm.ghash': ['ghash', 'g', 'g']
+  'aes-gcm.ghash-mul': ['ghash-mul', 'gm', 'gm']
+  'aes-gcm.open-128': ['abrir-128', 'o1', 'a1']
+  'aes-gcm.open-256': ['abrir-256', 'o2', 'a2']
+  'aes-gcm.seal-128': ['sellar-128', 's1', 's1']
+  'aes-gcm.seal-256': ['sellar-256', 's2', 's2']
+  'aes.add-round-key': ['añadir-round-key', 'ark', 'ark']
+  'aes.add-round-key-at': ['añadir-round-key-at', 'arka', 'arka']
+  'aes.dec-128': ['descifrado-128', 'd1', 'd1']
+  'aes.dec-256': ['descifrado-256', 'd2', 'd2']
+  'aes.dec-block': ['descifrado-block', 'db', 'db']
+  'aes.enc-128': ['cifrado-128', 'e1', 'c1']
+  'aes.enc-256': ['cifrado-256', 'e2', 'c2']
+  'aes.enc-block': ['cifrado-block', 'eb', 'cb']
+  'aes.gf-mul2': ['campo-finito-mul2', 'gm', 'cfm2']
+  'aes.inv-mix-col': ['inverso-mix-col', 'imc', 'imc']
+  'aes.inv-mix-columns': ['inverso-mix-columns', 'imc', 'imc']
+  'aes.inv-shift-rows': ['inverso-shift-rows', 'isr', 'isr']
+  'aes.inv-sub-bytes': ['inverso-sub-bytes', 'isb', 'isb']
+  'aes.key-expand': ['clave-expand', 'ke', 'ce']
+  'aes.key-expand-256': ['clave-expand-256', 'ke2', 'ce2']
+  'aes.mix-col': ['mix-col', 'mc', 'mc']
+  'aes.mix-columns': ['mix-columns', 'mc', 'mc']
+  'aes.rcon-val': ['rcon-val', 'rv', 'rv']
+  'aes.shift-rows': ['desplazar-rows', 'sr', 'dr']
+  'aes.sub-bytes': ['resta-bytes', 'sb', 'rb']
+  'argon2.blake-g': ['blake-g', 'bg', 'bg']
+  'argon2.compress': ['comprimir', 'c', 'c']
+  'argon2.h-prime': ['hash-prime', 'hp', 'hp']
+  'argon2.id': ['id', 'i', 'i']
+  'argon2.rotr': ['rot-der', 'r', 'rd']
+  'args.count': ['recuento', 'c', 'r']
+  'args.get': ['obtener', 'g', 'o']
+  'args.get-option': ['obtener-option', 'go', 'oo']
+  'args.get-positional': ['obtener-positional', 'gp', 'op']
+  'args.has-flag': ['tiene-flag', 'hf', 'tf']
+  'args.program': ['programa', 'p', 'p']
+  'arr-stack.arr-stack.clear': ['limpiar', 'c', 'l']
+  'arr-stack.arr-stack.empty': ['empty', 'e', 'e']
+  'arr-stack.arr-stack.full': ['full', 'f', 'f']
+  'arr-stack.arr-stack.size': ['tamaño', 's', 't']
+  'arr.arr-stack-init': ['arr-stack-init', 'asi', 'asi']
+  'arr.arr-stack-peek': ['arr-stack-peek', 'asp', 'asp']
+  'arr.arr-stack-pop': ['arr-stack-pop', 'asp', 'asp']
+  'arr.arr-stack-push': ['arr-stack-push', 'asp', 'asp']
+  'arr.asc': ['asc', 'a', 'a']
+  'arr.at': ['en', 'a', 'e']
+  'arr.clone': ['clonar', 'c', 'c']
+  'arr.contains': ['contiene', 'c', 'c']
+  'arr.count': ['recuento', 'c', 'r']
+  'arr.desc': ['desc', 'd', 'd']
+  'arr.eq': ['igual', 'e', 'i']
+  'arr.fill': ['rellenar', 'f', 'r']
+  'arr.first': ['primero', 'f', 'p']
+  'arr.index-of': ['índice-of', 'io', 'io']
+  'arr.last': ['último', 'l', 'u']
+  'arr.len': ['longitud', 'l', 'l']
+  'arr.link-clear': ['enlace-clear', 'lc', 'ec']
+  'arr.link-find': ['enlace-find', 'lf', 'ef']
+  'arr.link-get-at': ['enlace-get-at', 'lga', 'ega']
+  'arr.link-init': ['enlace-init', 'li', 'ei']
+  'arr.link-insert-at': ['enlace-insert-at', 'lia', 'eia']
+  'arr.link-peek-back': ['enlace-peek-back', 'lpb', 'epb']
+  'arr.link-peek-front': ['enlace-peek-front', 'lpf', 'epf']
+  'arr.link-pop-back': ['enlace-pop-back', 'lpb', 'epb']
+  'arr.link-pop-front': ['enlace-pop-front', 'lpf', 'epf']
+  'arr.link-push-back': ['enlace-push-back', 'lpb', 'epb']
+  'arr.link-push-front': ['enlace-push-front', 'lpf', 'epf']
+  'arr.link-remove-at': ['enlace-remove-at', 'lra', 'era']
+  'arr.link-reverse': ['enlace-reverse', 'lr', 'er']
+  'arr.link-set-at': ['enlace-set-at', 'lsa', 'esa']
+  'arr.max': ['máx', 'm', 'm']
+  'arr.min': ['mín', 'm', 'm']
+  'arr.queue-init': ['cola-init', 'qi', 'ci']
+  'arr.queue-peek': ['cola-peek', 'qp', 'cp']
+  'arr.queue-pop': ['cola-pop', 'qp', 'cp']
+  'arr.queue-push': ['cola-push', 'qp', 'cp']
+  'arr.reverse': ['invertir', 'r', 'i']
+  'arr.sum': ['suma', 's', 's']
+  'arr.swap': ['intercambiar', 's', 'i']
+  'arr.to-str': ['conversión a str', 'ts', 'cas']
+  'arr.to-vec': ['conversión a vec', 'tv', 'cav']
+  'arrords.asc': ['asc', 'a', 'a']
+  'arrords.desc': ['desc', 'd', 'd']
+  'async.cancel': ['cancelar', 'c', 'c']
+  'async.cancelled': ['cancelado', 'c', 'c']
+  'base32.decode': ['decodificar', 'd', 'd']
+  'base32.encode': ['codificar', 'e', 'c']
+  'base64.b64-val': ['base64-val', 'bv', 'b6v']
+  'base64.decode': ['decodificar', 'd', 'd']
+  'base64.encode': ['codificar', 'e', 'c']
+  'base64.encode-std': ['codificar-std', 'es', 'cs']
+  'base64.encode-url': ['codificar-url', 'eu', 'cu']
+  'bigint._add': ['_add', 'a', 'a']
+  'bigint._add-i64': ['_add-i64', 'ai', 'ai6']
+  'bigint._div': ['_div', 'd', 'd']
+  'bigint._div-i64': ['_div-i64', 'di', 'di6']
+  'bigint._mod': ['_mod', 'm', 'm']
+  'bigint._mod-i64': ['_mod-i64', 'mi', 'mi6']
+  'bigint._mul': ['_mul', 'm', 'm']
+  'bigint._mul-i64': ['_mul-i64', 'mi', 'mi6']
+  'bigint._sub': ['_sub', 's', 's']
+  'bigint.abs-add': ['abs-add', 'aa', 'aa']
+  'bigint.abs-cmp': ['abs-cmp', 'ac', 'ac']
+  'bigint.abs-sub': ['abs-sub', 'as', 'as']
+  'bigint.add-bigint': ['añadir-bigint', 'ab', 'ab']
+  'bigint.cmp': ['cmp', 'c', 'c']
+  'bigint.copy': ['copiar', 'c', 'c']
+  'bigint.div-mod': ['dividir-mod', 'dm', 'dm']
+  'bigint.eq': ['igual', 'e', 'i']
+  'bigint.from-i64': ['conversión desde i64', 'fi', 'cdi6']
+  'bigint.from-u64': ['conversión desde u64', 'fu', 'cdu6']
+  'bigint.gcd': ['mcd', 'g', 'm']
+  'bigint.is-neg': ['¿ neg?', 'in', 'n']
+  'bigint.is-pos': ['¿ pos?', 'ip', 'p']
+  'bigint.is-zero': ['¿ zero?', 'iz', 'z']
+  'bigint.lcm': ['mcm', 'l', 'm']
+  'bigint.mod-pow': ['mod-pow', 'mp', 'mp']
+  'bigint.mul-bigint': ['multiplicar-bigint', 'mb', 'mb']
+  'bigint.normalize': ['normalizar', 'n', 'n']
+  'bigint.one': ['uno', 'o', 'u']
+  'bigint.pow': ['potencia', 'p', 'p']
+  'bigint.shl': ['despl-izq', 's', 'di']
+  'bigint.shl1': ['despl-izq-1', 's', 'di1']
+  'bigint.shr': ['despl-der', 's', 'dd']
+  'bigint.shr1': ['despl-der-1', 's', 'dd1']
+  'bigint.sub-bigint': ['resta-bigint', 'sb', 'rb']
+  'bigint.to-hex': ['conversión a hex', 'th', 'cah']
+  'bigint.to-i64': ['conversión a i64', 'ti', 'cai6']
+  'bigint.to-str': ['conversión a str', 'ts', 'cas']
+  'bigint.zero': ['cero', 'z', 'c']
+  'blake2.b': ['byte', 'b', 'b']
+  'blake2.b-256': ['byte-256', 'b2', 'b2']
+  'blake2.b-256-hex': ['byte-256-hex', 'b2h', 'b2h']
+  'blake2.b-compress': ['byte-compress', 'bc', 'bc']
+  'blake2.b-g': ['byte-g', 'bg', 'bg']
+  'blake2.b-hex': ['byte-hex', 'bh', 'bh']
+  'blake2.b-state': ['byte-state', 'bs', 'bs']
+  'blake2.rotr32': ['rotr32', 'r', 'r3']
+  'blake2.rotr64': ['rotr64', 'r', 'r6']
+  'blake2.s': ['plural', 's', 'p']
+  'blake2.s-compress': ['plural-compress', 'sc', 'pc']
+  'blake2.s-g': ['plural-g', 'sg', 'pg']
+  'blake2.s-hex': ['plural-hex', 'sh', 'ph']
+  'blake2.s-state': ['plural-state', 'ss', 'ps']
+  'bool.to-str': ['conversión a str', 'ts', 'cas']
+  'bufio.reader.close': ['cerrar', 'c', 'c']
+  'bufio.reader.fill': ['rellenar', 'f', 'r']
+  'bufio.reader.init': ['init', 'i', 'i']
+  'bufio.reader.read-byte': ['leer-byte', 'rb', 'lb']
+  'bufio.reader.read-line': ['leer-line', 'rl', 'll']
+  'bytes.index': ['índice', 'i', 'i']
+  'bytes.index-from': ['índice-from', 'if', 'if']
+  'bytes.len': ['longitud', 'l', 'l']
+  'bytes.slice': ['rebanada', 's', 'r']
+  'bytes.to-bytes-str': ['conversión a bytes-str', 'tbs', 'cabs']
+  'bytes.to-chars': ['conversión a chars', 'tc', 'cac']
+  'bytes.to-hex': ['conversión a hex', 'th', 'cah']
+  'bytes.to-hex-lower': ['conversión a hex-lower', 'thl', 'cahl']
+  'bytes.to-i64-be': ['conversión a i64-be', 'tib', 'cai6b']
+  'bytes.to-i64-le': ['conversión a i64-le', 'til', 'cai6l']
+  'bytes.to-str': ['conversión a str', 'ts', 'cas']
+  'bytes.to-txt': ['conversión a txt', 'tt', 'cat']
+  'bzip2.bz-bit-reader.read-bit': ['leer-bit', 'rb', 'lb']
+  'bzip2.bz-bit-reader.read-bits': ['leer-bits', 'rb', 'lb']
+  'bzip2.bz-huffman.build': ['construir', 'b', 'c']
+  'bzip2.bz-huffman.decode': ['decodificar', 'd', 'd']
+  'bzip2.bz-huffman.decode-symbol': ['decodificar-symbol', 'ds', 'ds']
+  'bzip2.bzip2-compress': ['bzip2-compress', 'bc', 'b2c']
+  'bzip2.bzip2-decompress': ['bzip2-decompress', 'bd', 'b2d']
+  'chacha20-poly1305.chacha20-block': ['chacha20-block', 'cb', 'c2b']
+  'chacha20-poly1305.chacha20-poly1305-open': ['chacha20-poly1305-open', 'cpo', 'c2p1o']
+  'chacha20-poly1305.chacha20-poly1305-seal': ['chacha20-poly1305-seal', 'cps', 'c2p1s']
+  'chacha20-poly1305.chacha20-xor': ['chacha20-xor', 'cx', 'c2x']
+  'chacha20-poly1305.poly1305': ['poly1305', 'p', 'p1']
+  'chacha20-poly1305.poly1305-key-gen': ['poly1305-key-gen', 'pkg', 'p1kg']
+  'chacha20-poly1305.poly1305-reduce': ['poly1305-reduce', 'pr', 'p1r']
+  'chacha20-poly1305.qr': ['qr', 'q', 'q']
+  'chacha20-poly1305.rotl32': ['rotl32', 'r', 'r3']
+  'char.is-alnum': ['¿ alnum?', 'ia', 'a']
+  'char.is-alpha': ['¿ alpha?', 'ia', 'a']
+  'char.is-digit': ['¿ digit?', 'id', 'd']
+  'char.is-letter': ['¿ letter?', 'il', 'l']
+  'char.is-lower': ['¿ lower?', 'il', 'l']
+  'char.is-space': ['¿ space?', 'is', 's']
+  'char.is-upper': ['¿ upper?', 'iu', 'u']
+  'char.to-bytes': ['conversión a bytes', 'tb', 'cab']
+  'char.to-lower': ['conversión a lower', 'tl', 'cal']
+  'char.to-str': ['conversión a str', 'ts', 'cas']
+  'char.to-txt': ['conversión a txt', 'tt', 'cat']
+  'char.to-upper': ['conversión a upper', 'tu', 'cau']
+  'chars.to-str': ['conversión a str', 'ts', 'cas']
+  'client.client-create': ['cliente-create', 'cc', 'cc']
+  'client.client.close': ['cerrar', 'c', 'c']
+  'client.client.connect': ['conectar', 'c', 'c']
+  'client.client.is-connected': ['¿ connected?', 'ic', 'c']
+  'client.client.reconnect': ['reconectar', 'r', 'r']
+  'client.client.recv': ['recibir', 'r', 'r']
+  'client.client.recv-line': ['recibir-line', 'rl', 'rl']
+  'client.client.request': ['solicitud', 'r', 's']
+  'client.client.send': ['enviar', 's', 'e']
+  'client.client.send-line': ['enviar-line', 'sl', 'el']
+  'cookie.build-header': ['construir-header', 'bh', 'ch']
+  'cookie.build-set': ['construir-set', 'bs', 'cs']
+  'cookie.cookie-sign': ['cookie-sign', 'cs', 'cs']
+  'cookie.cookie-verify': ['cookie-verify', 'cv', 'cv']
+  'cookie.jar.build-header': ['construir-header', 'bh', 'ch']
+  'cookie.jar.clear': ['limpiar', 'c', 'l']
+  'cookie.jar.count-of': ['recuento-of', 'co', 'ro']
+  'cookie.jar.delete': ['eliminar', 'd', 'e']
+  'cookie.jar.get': ['obtener', 'g', 'o']
+  'cookie.jar.get-verified': ['obtener-verified', 'gv', 'ov']
+  'cookie.jar.parse-response': ['análisis-response', 'pr', 'ar']
+  'cookie.jar.set': ['establecer', 's', 'e']
+  'cookie.jar.set-signed': ['establecer-signed', 'ss', 'es']
+  'cookie.parse-header': ['análisis-header', 'ph', 'ah']
+  'cookie.parse-set': ['análisis-set', 'ps', 'as']
+  'crc-16.hex': ['hex', 'h', 'h']
+  'crc-16.new': ['nuevo', 'n', 'n']
+  'crc-32.new': ['nuevo', 'n', 'n']
+  'crc-64.hex': ['hex', 'h', 'h']
+  'crc-64.new': ['nuevo', 'n', 'n']
+  'csv.encode-field': ['codificar-field', 'ef', 'cf']
+  'csv.parse-field': ['análisis-field', 'pf', 'af']
+  'csv.parse-line': ['análisis-line', 'pl', 'al']
+  'deque.deque.clear': ['limpiar', 'c', 'l']
+  'deque.deque.empty': ['empty', 'e', 'e']
+  'deque.deque.peek-back': ['mirar-back', 'pb', 'mb']
+  'deque.deque.peek-front': ['mirar-front', 'pf', 'mf']
+  'deque.deque.pop-back': ['sacar-back', 'pb', 'sb']
+  'deque.deque.pop-front': ['sacar-front', 'pf', 'sf']
+  'deque.deque.push-back': ['empujar-back', 'pb', 'eb']
+  'deque.deque.push-front': ['empujar-front', 'pf', 'ef']
+  'deque.deque.size': ['tamaño', 's', 't']
+  'des.des-block': ['DES-block', 'db', 'db']
+  'des.des-dec': ['DES-dec', 'dd', 'dd']
+  'des.des-enc': ['DES-enc', 'de', 'de']
+  'des.des-key-schedule': ['DES-key-schedule', 'dks', 'dks']
+  'des.f': ['flotante', 'f', 'f']
+  'des.permute': ['permutar', 'p', 'p']
+  'des.sbox-lookup': ['sbox-lookup', 'sl', 'sl']
+  'dns.build-query': ['construir-query', 'bq', 'cq']
+  'dns.dial': ['marcar', 'd', 'm']
+  'dns.parse-name': ['análisis-name', 'pn', 'an']
+  'dns.parse-response': ['análisis-response', 'pr', 'ar']
+  'dns.resolve': ['resolve', 'r', 'r']
+  'dns.resolve-all': ['resolve-all', 'ra', 'ra']
+  'dns.resolve-from': ['resolve-from', 'rf', 'rf']
+  'dom.append-child': ['anexar-child', 'ac', 'ac']
+  'dom.attribute-count': ['atributo-count', 'ac', 'ac']
+  'dom.attribute-name': ['atributo-name', 'an', 'an']
+  'dom.attribute-value': ['atributo-value', 'av', 'av']
+  'dom.blob-has': ['blob-has', 'bh', 'bh']
+  'dom.child-at': ['hijo-at', 'ca', 'ha']
+  'dom.child-count': ['hijo-count', 'cc', 'hc']
+  'dom.class-has': ['clase-has', 'ch', 'ch']
+  'dom.cp-append': ['cp-append', 'ca', 'ca']
+  'dom.create-comment': ['crear-comment', 'cc', 'cc']
+  'dom.create-element': ['crear-element', 'ce', 'ce']
+  'dom.create-text-node': ['crear-text-node', 'ctn', 'ctn']
+  'dom.decode-entities': ['decodificar-entities', 'de', 'de']
+  'dom.document-element': ['documento-element', 'de', 'de']
+  'dom.dom-closers-of': ['DOM-closers-of', 'dco', 'dco']
+  'dom.dom-pool.alloc': ['asignar', 'a', 'a']
+  'dom.dom-pool.append': ['anexar', 'a', 'a']
+  'dom.dom-pool.attr-edge-at': ['atributo-edge-at', 'aea', 'aea']
+  'dom.dom-pool.collect-class': ['recoger-class', 'cc', 'rc']
+  'dom.dom-pool.collect-tag': ['recoger-tag', 'ct', 'rt']
+  'dom.dom-pool.detach': ['separar', 'd', 's']
+  'dom.dom-pool.find-attr': ['buscar-attr', 'fa', 'ba']
+  'dom.dom-pool.find-id-node': ['buscar-id-node', 'fin', 'bin']
+  'dom.dom-pool.html-add-text': ['html-add-text', 'hat', 'hat']
+  'dom.dom-pool.html-bogus-comment': ['html-bogus-comment', 'hbc', 'hbc']
+  'dom.dom-pool.html-parse-attr': ['html-parse-attr', 'hpa', 'hpa']
+  'dom.dom-pool.html-parse-close-name': ['html-parse-close-name', 'hpcn', 'hpcn']
+  'dom.dom-pool.html-parse-comment': ['html-parse-comment', 'hpc', 'hpc']
+  'dom.dom-pool.html-parse-doc': ['html-parse-doc', 'hpd', 'hpd']
+  'dom.dom-pool.html-parse-open': ['html-parse-open', 'hpo', 'hpo']
+  'dom.dom-pool.html-parse-pi': ['html-parse-pi', 'hpp', 'hpp']
+  'dom.dom-pool.html-set-attr-once': ['html-set-attr-once', 'hsao', 'hsao']
+  'dom.dom-pool.init': ['init', 'i', 'i']
+  'dom.dom-pool.insert-before': ['insertar-before', 'ib', 'ib']
+  'dom.dom-pool.parse-doctype-node': ['análisis-doctype-node', 'pdn', 'adn']
+  'dom.dom-pool.remove-attr': ['quitar-attr', 'ra', 'qa']
+  'dom.dom-pool.ser': ['serializar', 's', 's']
+  'dom.dom-pool.ser-children': ['serializar-children', 'sc', 'sc']
+  'dom.dom-pool.set-attr': ['establecer-attr', 'sa', 'ea']
+  'dom.dom-pool.text-of': ['texto-of', 'to', 'to']
+  'dom.dom-pool.valid': ['válido', 'v', 'v']
+  'dom.dom-pool.xml-add-text': ['xml-add-text', 'xat', 'xat']
+  'dom.dom-pool.xml-parse-attr': ['xml-parse-attr', 'xpa', 'xpa']
+  'dom.dom-pool.xml-parse-cdata': ['xml-parse-cdata', 'xpc', 'xpc']
+  'dom.dom-pool.xml-parse-close': ['xml-parse-close', 'xpc', 'xpc']
+  'dom.dom-pool.xml-parse-comment': ['xml-parse-comment', 'xpc', 'xpc']
+  'dom.dom-pool.xml-parse-doc': ['xml-parse-doc', 'xpd', 'xpd']
+  'dom.dom-pool.xml-parse-element': ['xml-parse-element', 'xpe', 'xpe']
+  'dom.dom-pool.xml-parse-pi': ['xml-parse-pi', 'xpp', 'xpp']
+  'dom.dom-strip-bom': ['DOM-strip-bom', 'dsb', 'dsb']
+  'dom.esc-attr': ['escape-attr', 'ea', 'ea']
+  'dom.esc-text': ['escape-text', 'et', 'et']
+  'dom.find-entity': ['buscar-entity', 'fe', 'be']
+  'dom.first-child': ['primero-child', 'fc', 'pc']
+  'dom.get-attribute': ['obtener-attribute', 'ga', 'oa']
+  'dom.get-element-by-id': ['obtener-element-by-id', 'gebi', 'oebi']
+  'dom.get-elements-by-class-name': ['obtener-elements-by-class-name', 'gebcn', 'oebcn']
+  'dom.get-elements-by-tag-name': ['obtener-elements-by-tag-name', 'gebtn', 'oebtn']
+  'dom.has-attribute': ['tiene-attribute', 'ha', 'ta']
+  'dom.html-close-match': ['html-close-match', 'hcm', 'hcm']
+  'dom.html-peek-name': ['html-peek-name', 'hpn', 'hpn']
+  'dom.inner-html': ['interno-html', 'ih', 'ih']
+  'dom.insert-child-before': ['insertar-child-before', 'icb', 'icb']
+  'dom.is-html': ['¿ html?', 'ih', 'h']
+  'dom.is-name-byte': ['¿ name-byte?', 'inb', 'nb']
+  'dom.kind': ['tipo', 'k', 't']
+  'dom.name': ['nombre', 'n', 'n']
+  'dom.new-document': ['nuevo-document', 'nd', 'nd']
+  'dom.outer-html': ['externo-html', 'oh', 'eh']
+  'dom.parent': ['padre', 'p', 'p']
+  'dom.parse-html': ['análisis-html', 'ph', 'ah']
+  'dom.parse-numeric-entity': ['análisis-numeric-entity', 'pne', 'ane']
+  'dom.parse-xml': ['análisis-xml', 'px', 'ax']
+  'dom.remove-attribute': ['quitar-attribute', 'ra', 'qa']
+  'dom.remove-child': ['quitar-child', 'rc', 'qc']
+  'dom.replace-child': ['reemplazar-child', 'rc', 'rc']
+  'dom.set-attribute': ['establecer-attribute', 'sa', 'ea']
+  'dom.set-node-value': ['establecer-node-value', 'snv', 'env']
+  'dom.set-text-content': ['establecer-text-content', 'stc', 'etc']
+  'dom.text-content': ['texto-content', 'tc', 'tc']
+  'dom.to-string': ['conversión a string', 'ts', 'cas']
+  'dom.value': ['valor', 'v', 'v']
+  'dom.xml-read-name': ['xml-read-name', 'xrn', 'xrn']
+  'dom.xml-skip-ws': ['xml-skip-ws', 'xsw', 'xsw']
+  'ecdsa.bn-add': ['big-num-add', 'ba', 'bna']
+  'ecdsa.bn-addmod': ['big-num-addmod', 'ba', 'bna']
+  'ecdsa.bn-cmp': ['big-num-cmp', 'bc', 'bnc']
+  'ecdsa.bn-invmod': ['big-num-invmod', 'bi', 'bni']
+  'ecdsa.bn-mod': ['big-num-mod', 'bm', 'bnm']
+  'ecdsa.bn-mulmod': ['big-num-mulmod', 'bm', 'bnm']
+  'ecdsa.bn-sub': ['big-num-sub', 'bs', 'bns']
+  'ecdsa.bn-submod': ['big-num-submod', 'bs', 'bns']
+  'ecdsa.ec-bytes-to-point': ['ec-bytes-to-point', 'ebtp', 'ebtp']
+  'ecdsa.ec-get-basepoint': ['ec-get-basepoint', 'egb', 'egb']
+  'ecdsa.ec-point-add': ['ec-point-add', 'epa', 'epa']
+  'ecdsa.ec-point-double': ['ec-point-double', 'epd', 'epd']
+  'ecdsa.ec-point-to-bytes': ['ec-point-to-bytes', 'eptb', 'eptb']
+  'ecdsa.ec-scalar-mult': ['ec-scalar-mult', 'esm', 'esm']
+  'ecdsa.ecdh-p256': ['ECDH-p256', 'ep', 'ep2']
+  'ecdsa.ecdsa-publickey': ['ECDSA-publickey', 'ep', 'ep']
+  'ecdsa.ecdsa-sign': ['ECDSA-sign', 'es', 'es']
+  'ecdsa.ecdsa-verify': ['ECDSA-verify', 'ev', 'ev']
+  'ed25519.ed-d': ['ed-d', 'ed', 'ed']
+  'ed25519.ed-sqm1': ['ed-sqm1', 'es', 'es1']
+  'ed25519.ed25519-publickey': ['ed25519-publickey', 'ep', 'e2p']
+  'ed25519.ed25519-sign': ['ed25519-sign', 'es', 'e2s']
+  'ed25519.ed25519-verify': ['ed25519-verify', 'ev', 'e2v']
+  'ed25519.fe-pow': ['campo-pow', 'fp', 'cp']
+  'ed25519.ge-add': ['ge-add', 'ga', 'ga']
+  'ed25519.ge-basepoint': ['ge-basepoint', 'gb', 'gb']
+  'ed25519.ge-pack': ['ge-pack', 'gp', 'gp']
+  'ed25519.ge-scalar-mult': ['ge-scalar-mult', 'gsm', 'gsm']
+  'ed25519.ge-unpack': ['ge-unpack', 'gu', 'gu']
+  'ed25519.is-zero-arr': ['¿ zero-arr?', 'iza', 'za']
+  'ed25519.pcopy': ['copia-parcial', 'p', 'cp']
+  'ed25519.sc-ge-l': ['sc-ge-l', 'sgl', 'sgl']
+  'ed25519.sc-muladd': ['sc-muladd', 'sm', 'sm']
+  'ed25519.sc-reduce': ['sc-reduce', 'sr', 'sr']
+  'ed25519.set-coord': ['establecer-coord', 'sc', 'ec']
+  'embed.exists': ['existe', 'e', 'e']
+  'embed.read': ['leer', 'r', 'l']
+  'env.get': ['obtener', 'g', 'o']
+  'env.get-with-default': ['obtener-with-default', 'gwd', 'owd']
+  'env.is-set': ['¿ set?', 'is', 's']
+  'env.lookup': ['buscar', 'l', 'b']
+  'env.set': ['establecer', 's', 'e']
+  'env.unset': ['unset', 'u', 'u']
+  'err._errno-to-code': ['errno-to-code', 'etc', 'etc']
+  'err.code': ['código', 'c', 'c']
+  'err.code.to-name': ['conversión a name', 'tn', 'can']
+  'err.format': ['formatear', 'f', 'f']
+  'err.from-errno': ['conversión desde errno', 'fe', 'cde']
+  'err.is': ['es', 'i', 'e']
+  'err.msg': ['msg', 'm', 'm']
+  'err.new': ['nuevo', 'n', 'n']
+  'err.new-at': ['nuevo-at', 'na', 'na']
+  'float.div': ['dividir', 'd', 'd']
+  'float.is-inf': ['¿ inf?', 'ii', 'i']
+  'float.is-nan': ['¿ nan?', 'in', 'n']
+  'fmt.eprintf': ['eprintf', 'e', 'e']
+  'fmt.fmt-apply-spec': ['fmt-apply-spec', 'fas', 'fas']
+  'fmt.fmt-bool': ['fmt-bool', 'fb', 'fb']
+  'fmt.fmt-f64': ['fmt-f64', 'ff', 'ff6']
+  'fmt.fmt-group-digits': ['fmt-group-digits', 'fgd', 'fgd']
+  'fmt.fmt-int': ['fmt-int', 'fi', 'fi']
+  'fmt.fmt-parse-spec': ['fmt-parse-spec', 'fps', 'fps']
+  'fmt.fmt-str': ['fmt-str', 'fs', 'fs']
+  'fmt.fmt-uint': ['fmt-uint', 'fu', 'fu']
+  'fmt.fmt-uint-base': ['fmt-uint-base', 'fub', 'fub']
+  'fmt.printf': ['printf', 'p', 'p']
+  'fmt.sprintf': ['sprintf', 's', 's']
+  'fnv-1a-32.fnv-1a-32': ['fnv-1a-32', 'f13', 'f1a3']
+  'fnv.fnv-1a-32': ['fnv-1a-32', 'f13', 'f1a3']
+  'fnv.fnv-1a-64': ['fnv-1a-64', 'f16', 'f1a6']
+  'fs.close': ['cerrar', 'c', 'c']
+  'fs.copy-file': ['copiar-file', 'cf', 'cf']
+  'fs.dir-entries': ['directorio-entries', 'de', 'de']
+  'fs.exists': ['existe', 'e', 'e']
+  'fs.file-size': ['archivo-size', 'fs', 'as']
+  'fs.file.append': ['anexar', 'a', 'a']
+  'fs.file.close': ['cerrar', 'c', 'c']
+  'fs.file.copy-to': ['copiar-to', 'ct', 'ct']
+  'fs.file.is-open': ['¿ open?', 'io', 'o']
+  'fs.file.read': ['leer', 'r', 'l']
+  'fs.file.read-bytes': ['leer-bytes', 'rb', 'lb']
+  'fs.file.read-line': ['leer-line', 'rl', 'll']
+  'fs.file.read-str': ['leer-str', 'rs', 'ls']
+  'fs.file.size': ['tamaño', 's', 't']
+  'fs.file.write': ['escribir', 'w', 'e']
+  'fs.file.write-bytes': ['escribir-bytes', 'wb', 'eb']
+  'fs.file.write-str': ['escribir-str', 'ws', 'es']
+  'fs.fstat-size': ['fstat-size', 'fs', 'fs']
+  'fs.get-line': ['obtener-line', 'gl', 'ol']
+  'fs.is-dir': ['¿ dir?', 'id', 'd']
+  'fs.is-file': ['¿ file?', 'if', 'f']
+  'fs.link': ['enlace', 'l', 'e']
+  'fs.list-dir': ['lista-dir', 'ld', 'ld']
+  'fs.list-dir-2': ['lista-dir', 'ld2', 'ld']
+  'fs.list-dir-3': ['lista-dir', 'ld3', 'ld']
+  'fs.lstat': ['lstat', 'l', 'l']
+  'fs.mkdtemp': ['mkdtemp', 'm', 'm']
+  'fs.mkfifo': ['mkfifo', 'm', 'm']
+  'fs.mknod': ['mknod', 'm', 'm']
+  'fs.mkstemp': ['mkstemp', 'm', 'm']
+  'fs.open': ['abrir', 'o', 'a']
+  'fs.open-file': ['abrir-file', 'of', 'af']
+  'fs.open-read': ['abrir-read', 'or', 'ar']
+  'fs.open-write': ['abrir-write', 'ow', 'aw']
+  'fs.read': ['leer', 'r', 'l']
+  'fs.read-bytes': ['leer-bytes', 'rb', 'lb']
+  'fs.read-file': ['leer-file', 'rf', 'lf']
+  'fs.read-stdin': ['leer-stdin', 'rs', 'ls']
+  'fs.read-stdin-str': ['leer-stdin-str', 'rss', 'lss']
+  'fs.read-str': ['leer-str', 'rs', 'ls']
+  'fs.readlink': ['readlink', 'r', 'r']
+  'fs.realpath': ['realpath', 'r', 'r']
+  'fs.remove': ['quitar', 'r', 'q']
+  'fs.rename': ['rename', 'r', 'r']
+  'fs.rmdir': ['rmdir', 'r', 'r']
+  'fs.stat-size': ['stat-size', 'ss', 'ss']
+  'fs.symlink': ['symlink', 's', 's']
+  'fs.sync': ['sync', 's', 's']
+  'fs.truncate': ['truncate', 't', 't']
+  'fs.utime': ['utime', 'u', 'u']
+  'fs.walk': ['walk', 'w', 'w']
+  'fs.walk-collect': ['walk-collect', 'wc', 'wc']
+  'fs.write': ['escribir', 'w', 'e']
+  'fs.write-bytes': ['escribir-bytes', 'wb', 'eb']
+  'fs.write-file': ['escribir-file', 'wf', 'ef']
+  'fs.write-str': ['escribir-str', 'ws', 'es']
+  'global.eprint': ['eprint', 'e', 'e']
+  'global.exit': ['salir', 'e', 's']
+  'global.format': ['formatear', 'f', 'f']
+  'global.print': ['imprimir', 'p', 'i']
+  'global.with-cap': ['con-cap', 'wc', 'cc']
+  'global.with-cap-len': ['con-cap-len', 'wcl', 'ccl']
+  'global.with-len': ['con-len', 'wl', 'cl']
+  'gzip.bit-reader.read-bit': ['leer-bit', 'rb', 'lb']
+  'gzip.bit-reader.read-bits': ['leer-bits', 'rb', 'lb']
+  'gzip.bit-reader.read-u16-le': ['leer-u16-le', 'rul', 'lu1l']
+  'gzip.bit-reader.skip-to-byte': ['omitir-to-byte', 'stb', 'otb']
+  'gzip.build-dynamic': ['construir-dynamic', 'bd', 'cd']
+  'gzip.build-fixed': ['construir-fixed', 'bf', 'cf']
+  'gzip.deflate-stored': ['deflate-stored', 'ds', 'ds']
+  'gzip.gzip-compress': ['gzip-compress', 'gc', 'gc']
+  'gzip.gzip-decompress': ['gzip-decompress', 'gd', 'gd']
+  'gzip.huffman.build': ['construir', 'b', 'c']
+  'gzip.huffman.decode': ['decodificar', 'd', 'd']
+  'gzip.inflate-decompress': ['inflate-decompress', 'id', 'id']
+  'hash-set.hash-set.add': ['añadir', 'a', 'a']
+  'hash-set.hash-set.clear': ['limpiar', 'c', 'l']
+  'hash-set.hash-set.contains': ['contiene', 'c', 'c']
+  'hash-set.hash-set.for-each': ['para-each', 'fe', 'pe']
+  'hash-set.hash-set.hash': ['hash', 'h', 'h']
+  'hash-set.hash-set.init': ['init', 'i', 'i']
+  'hash-set.hash-set.is-empty': ['¿ empty?', 'ie', 'e']
+  'hash-set.hash-set.len': ['longitud', 'l', 'l']
+  'hash-set.hash-set.remove': ['quitar', 'r', 'q']
+  'heap.empty': ['empty', 'e', 'e']
+  'heap.init': ['init', 'i', 'i']
+  'heap.peek': ['mirar', 'p', 'm']
+  'heap.pop': ['sacar', 'p', 's']
+  'heap.push': ['empujar', 'p', 'e']
+  'heap.size': ['tamaño', 's', 't']
+  'hkdf.hkdf-derive-secret': ['hkdf-derive-secret', 'hds', 'hds']
+  'hkdf.hkdf-expand': ['hkdf-expand', 'he', 'he']
+  'hkdf.hkdf-expand-hmac': ['hkdf-expand-hmac', 'heh', 'heh']
+  'hkdf.hkdf-expand-label': ['hkdf-expand-label', 'hel', 'hel']
+  'hkdf.hkdf-expand-label-vec': ['hkdf-expand-label-vec', 'helv', 'helv']
+  'hkdf.hkdf-extract': ['hkdf-extract', 'he', 'he']
+  'hmac.hmac-md5': ['HMAC-md5', 'hm', 'hm5']
+  'hmac.hmac-md5-vec': ['HMAC-md5-vec', 'hmv', 'hm5v']
+  'hmac.hmac-sha1': ['HMAC-sha1', 'hs', 'hs1']
+  'hmac.hmac-sha1-vec': ['HMAC-sha1-vec', 'hsv', 'hs1v']
+  'hmac.hmac-sha256': ['HMAC-sha256', 'hs', 'hs2']
+  'hmac.hmac-sha256-vec': ['HMAC-sha256-vec', 'hsv', 'hs2v']
+  'hmac.hmac-sha384': ['HMAC-sha384', 'hs', 'hs3']
+  'hmac.hmac-sha384-vec': ['HMAC-sha384-vec', 'hsv', 'hs3v']
+  'hmac.hmac-sha512': ['HMAC-sha512', 'hs', 'hs5']
+  'hmac.hmac-sha512-vec': ['HMAC-sha512-vec', 'hsv', 'hs5v']
+  'hpack.decode-int': ['decodificar-int', 'di', 'di']
+  'hpack.decode-str': ['decodificar-str', 'ds', 'ds']
+  'hpack.encode-int': ['codificar-int', 'ei', 'ci']
+  'hpack.encode-str': ['codificar-str', 'es', 'cs']
+  'hpack.tables.decode-headers': ['decodificar-headers', 'dh', 'dh']
+  'hpack.tables.dyn-add': ['dyn-add', 'da', 'da']
+  'hpack.tables.encode-header': ['codificar-header', 'eh', 'ch']
+  'hpack.tables.find': ['buscar', 'f', 'b']
+  'hpack.tables.find-name': ['buscar-name', 'fn', 'bn']
+  'hpack.tables.init': ['init', 'i', 'i']
+  'hpack.tables.lookup': ['buscar', 'l', 'b']
+  'http.delete': ['eliminar', 'd', 'e']
+  'http.do': ['hacer', 'd', 'h']
+  'http.do-req': ['hacer-req', 'dr', 'hr']
+  'http.download': ['descargar', 'd', 'd']
+  'http.get': ['obtener', 'g', 'o']
+  'http.get-auth': ['obtener-auth', 'ga', 'oa']
+  'http.http-dl-dechunk': ['HTTP-dl-dechunk', 'hdd', 'hdd']
+  'http.http-dl-location': ['HTTP-dl-location', 'hdl', 'hdl']
+  'http.http-dl-open': ['HTTP-dl-open', 'hdo', 'hdo']
+  'http.http-dl-resolve': ['HTTP-dl-resolve', 'hdr', 'hdr']
+  'http.http-write-ok': ['HTTP-write-ok', 'hwo', 'hwo']
+  'http.patch': ['parchear', 'p', 'p']
+  'http.ping': ['ping', 'p', 'p']
+  'http.post': ['post', 'p', 'p']
+  'http.post-auth': ['post-auth', 'pa', 'pa']
+  'http.put': ['poner', 'p', 'p']
+  'http.request.add-header': ['añadir-header', 'ah', 'ah']
+  'http.request.init': ['init', 'i', 'i']
+  'http.response.get-header': ['obtener-header', 'gh', 'oh']
+  'http.response.parse-headers': ['análisis-headers', 'ph', 'ah']
+  'http.set-api-key': ['establecer-api-key', 'sak', 'eak']
+  'http.set-basic-auth': ['establecer-basic-auth', 'sba', 'eba']
+  'http.set-bearer-auth': ['establecer-bearer-auth', 'sba', 'eba']
+  'http.upload-put': ['subir-put', 'up', 'sp']
+  'http2.conn.close': ['cerrar', 'c', 'c']
+  'http2.conn.init': ['init', 'i', 'i']
+  'http2.conn.recv-frame': ['recibir-frame', 'rf', 'rf']
+  'http2.conn.request': ['solicitud', 'r', 's']
+  'http2.conn.send-data': ['enviar-data', 'sd', 'ed']
+  'http2.conn.send-frame': ['enviar-frame', 'sf', 'ef']
+  'http2.conn.send-headers': ['enviar-headers', 'sh', 'eh']
+  'http2.conn.send-settings': ['enviar-settings', 'ss', 'es']
+  'http2.connect': ['conectar', 'c', 'c']
+  'http2.connect-tls': ['conectar-tls', 'ct', 'ct']
+  'http2.delete': ['eliminar', 'd', 'e']
+  'http2.do': ['hacer', 'd', 'h']
+  'http2.do-req': ['hacer-req', 'dr', 'hr']
+  'http2.frame.parse': ['análisis', 'p', 'a']
+  'http2.frame.serialize': ['serializar', 's', 's']
+  'http2.get': ['obtener', 'g', 'o']
+  'http2.patch': ['parchear', 'p', 'p']
+  'http2.post': ['post', 'p', 'p']
+  'http2.put': ['poner', 'p', 'p']
+  'http3.connect': ['conectar', 'c', 'c']
+  'http3.decode-header': ['decodificar-header', 'dh', 'dh']
+  'http3.encode-data-frame': ['codificar-data-frame', 'edf', 'cdf']
+  'http3.encode-frame': ['codificar-frame', 'ef', 'cf']
+  'http3.encode-header': ['codificar-header', 'eh', 'ch']
+  'http3.encode-headers': ['codificar-headers', 'eh', 'ch']
+  'http3.encode-headers-frame': ['codificar-headers-frame', 'ehf', 'chf']
+  'http3.encode-settings-frame': ['codificar-settings-frame', 'esf', 'csf']
+  'http3.get': ['obtener', 'g', 'o']
+  'http3.http3-do': ['http3-do', 'hd', 'h3d']
+  'http3.parse-frame': ['análisis-frame', 'pf', 'af']
+  'http3.parse-url': ['análisis-url', 'pu', 'au']
+  'http3.post': ['post', 'p', 'p']
+  'http3.response.get-header': ['obtener-header', 'gh', 'oh']
+  'http3.send-request': ['enviar-request', 'sr', 'er']
+  'int.div': ['dividir', 'd', 'd']
+  'int.mod': ['mod', 'm', 'm']
+  'int.to-str': ['conversión a str', 'ts', 'cas']
+  'io.err': ['error', 'e', 'e']
+  'io.errln': ['errln', 'e', 'e']
+  'io.out': ['salida', 'o', 's']
+  'io.outln': ['outln', 'o', 'o']
+  'io.read-line': ['leer-line', 'rl', 'll']
+  'io.reader.from-fd': ['conversión desde fd', 'ff', 'cdf']
+  'io.reader.from-stdin': ['conversión desde stdin', 'fs', 'cds']
+  'io.reader.read': ['leer', 'r', 'l']
+  'io.reader.read-all': ['leer-all', 'ra', 'la']
+  'io.reader.read-byte': ['leer-byte', 'rb', 'lb']
+  'io.reader.read-line': ['leer-line', 'rl', 'll']
+  'io.writer.from-fd': ['conversión desde fd', 'ff', 'cdf']
+  'io.writer.from-stderr': ['conversión desde stderr', 'fs', 'cds']
+  'io.writer.from-stdout': ['conversión desde stdout', 'fs', 'cds']
+  'io.writer.write': ['escribir', 'w', 'e']
+  'io.writer.write-byte': ['escribir-byte', 'wb', 'eb']
+  'io.writer.write-line': ['escribir-line', 'wl', 'el']
+  'io.writer.write-str': ['escribir-str', 'ws', 'es']
+  'ip.ip-addr.equal': ['igual', 'e', 'i']
+  'ip.ip-addr.from-str': ['conversión desde str', 'fs', 'cds']
+  'ip.ip-addr.from-u32': ['conversión desde u32', 'fu', 'cdu3']
+  'ip.ip-addr.in-subnet': ['en-subnet', 'is', 'es']
+  'ip.ip-addr.is-broadcast': ['¿ broadcast?', 'ib', 'b']
+  'ip.ip-addr.is-class-a': ['¿ class-a?', 'ica', 'ca']
+  'ip.ip-addr.is-class-b': ['¿ class-b?', 'icb', 'cb']
+  'ip.ip-addr.is-class-c': ['¿ class-c?', 'icc', 'cc']
+  'ip.ip-addr.is-link-local': ['¿ link-local?', 'ill', 'll']
+  'ip.ip-addr.is-loopback': ['¿ loopback?', 'il', 'l']
+  'ip.ip-addr.is-multicast': ['¿ multicast?', 'im', 'm']
+  'ip.ip-addr.is-private': ['¿ private?', 'ip', 'p']
+  'ip.ip-addr.is-valid': ['¿ valid?', 'iv', 'v']
+  'ip.ip-addr.is-zero': ['¿ zero?', 'iz', 'z']
+  'ip.ip-addr.parse': ['análisis', 'p', 'a']
+  'ip.ip-addr.to-str': ['conversión a str', 'ts', 'cas']
+  'ip.ip-addr.to-u32': ['conversión a u32', 'tu', 'cau3']
+  'ip.ip-is-loopback': ['ip-is-loopback', 'iil', 'iil']
+  'ip.ip-is-private': ['ip-is-private', 'iip', 'iip']
+  'ip.ip-parse': ['ip-parse', 'ip', 'ip']
+  'json.alloc-node': ['asignar-node', 'an', 'an']
+  'json.arr-get': ['arr-get', 'ag', 'ag']
+  'json.arr-len': ['arr-len', 'al', 'al']
+  'json.arr-push': ['arr-push', 'ap', 'ap']
+  'json.arr-push-bool': ['arr-push-bool', 'apb', 'apb']
+  'json.arr-push-idx': ['arr-push-idx', 'api', 'api']
+  'json.arr-push-num': ['arr-push-num', 'apn', 'apn']
+  'json.arr-push-str': ['arr-push-str', 'aps', 'aps']
+  'json.bool': ['bool', 'b', 'b']
+  'json.delete-key': ['eliminar-key', 'dk', 'ek']
+  'json.get': ['obtener', 'g', 'o']
+  'json.get-bool': ['obtener-bool', 'gb', 'ob']
+  'json.get-i64': ['obtener-i64', 'gi', 'oi6']
+  'json.get-key': ['obtener-key', 'gk', 'ok']
+  'json.get-num': ['obtener-num', 'gn', 'on']
+  'json.get-str': ['obtener-str', 'gs', 'os']
+  'json.i64': ['i64', 'i', 'i6']
+  'json.is-arr': ['¿ arr?', 'ia', 'a']
+  'json.is-bool': ['¿ bool?', 'ib', 'b']
+  'json.is-null': ['¿ null?', 'in', 'n']
+  'json.is-num': ['¿ num?', 'in', 'n']
+  'json.is-obj': ['¿ obj?', 'io', 'o']
+  'json.is-str': ['¿ str?', 'is', 's']
+  'json.json-clone-tree': ['json-clone-tree', 'jct', 'jct']
+  'json.json-pool.add-child': ['añadir-child', 'ac', 'ac']
+  'json.json-pool.alloc': ['asignar', 'a', 'a']
+  'json.json-pool.arr-get': ['arr-get', 'ag', 'ag']
+  'json.json-pool.arr-len': ['arr-len', 'al', 'al']
+  'json.json-pool.copy-tree': ['copiar-tree', 'ct', 'ct']
+  'json.json-pool.get-bool': ['obtener-bool', 'gb', 'ob']
+  'json.json-pool.get-key': ['obtener-key', 'gk', 'ok']
+  'json.json-pool.get-kind': ['obtener-kind', 'gk', 'ok']
+  'json.json-pool.get-num': ['obtener-num', 'gn', 'on']
+  'json.json-pool.get-str': ['obtener-str', 'gs', 'os']
+  'json.json-pool.init': ['init', 'i', 'i']
+  'json.json-pool.parse': ['análisis', 'p', 'a']
+  'json.json-pool.parse-num': ['análisis-num', 'pn', 'an']
+  'json.json-pool.parse-str': ['análisis-str', 'ps', 'as']
+  'json.json-pool.set-key': ['establecer-key', 'sk', 'ek']
+  'json.json-pool.skip-ws': ['omitir-ws', 'sw', 'ow']
+  'json.json-pool.str-eq': ['cadena-eq', 'se', 'ce']
+  'json.json-pool.stringify': ['cadenaizar', 's', 'c']
+  'json.kind': ['tipo', 'k', 't']
+  'json.new': ['nuevo', 'n', 'n']
+  'json.new-pool': ['nuevo-pool', 'np', 'np']
+  'json.num': ['número', 'n', 'n']
+  'json.obj-key': ['obj-key', 'ok', 'ok']
+  'json.obj-keys-str': ['obj-keys-str', 'oks', 'oks']
+  'json.obj-len': ['obj-len', 'ol', 'ol']
+  'json.overflowed': ['desbordado', 'o', 'd']
+  'json.set': ['establecer', 's', 'e']
+  'json.set-bool': ['establecer-bool', 'sb', 'eb']
+  'json.set-i64': ['establecer-i64', 'si', 'ei6']
+  'json.set-key': ['establecer-key', 'sk', 'ek']
+  'json.set-null': ['establecer-null', 'sn', 'en']
+  'json.set-num': ['establecer-num', 'sn', 'en']
+  'json.set-str': ['establecer-str', 'ss', 'es']
+  'json.str': ['cadena', 's', 'c']
+  'json.str-val': ['cadena-val', 'sv', 'cv']
+  'json.stringify': ['cadenaizar', 's', 'c']
+  'link.link.empty': ['empty', 'e', 'e']
+  'link.link.full': ['full', 'f', 'f']
+  'link.link.size': ['tamaño', 's', 't']
+  'linked-hash-map.linked-hash-map.clear': ['limpiar', 'c', 'l']
+  'linked-hash-map.linked-hash-map.contains': ['contiene', 'c', 'c']
+  'linked-hash-map.linked-hash-map.for-each': ['para-each', 'fe', 'pe']
+  'linked-hash-map.linked-hash-map.get': ['obtener', 'g', 'o']
+  'linked-hash-map.linked-hash-map.hash': ['hash', 'h', 'h']
+  'linked-hash-map.linked-hash-map.init': ['init', 'i', 'i']
+  'linked-hash-map.linked-hash-map.is-empty': ['¿ empty?', 'ie', 'e']
+  'linked-hash-map.linked-hash-map.len': ['longitud', 'l', 'l']
+  'linked-hash-map.linked-hash-map.put': ['poner', 'p', 'p']
+  'linked-hash-map.linked-hash-map.remove': ['quitar', 'r', 'q']
+  'log.get-output-fd': ['obtener-output-fd', 'gof', 'oof']
+  'log.get-writer': ['obtener-writer', 'gw', 'ow']
+  'log.log-emit': ['registro-emit', 'le', 're']
+  'log.log-stamp': ['registro-stamp', 'ls', 'rs']
+  'log.open-file': ['abrir-file', 'of', 'af']
+  'log.set-format': ['establecer-format', 'sf', 'ef']
+  'log.set-level': ['establecer-level', 'sl', 'el']
+  'log.set-output-fd': ['establecer-output-fd', 'sof', 'eof']
+  'log.set-writer': ['establecer-writer', 'sw', 'ew']
+  'magic.detect-by-extension': ['detectar-by-extension', 'dbe', 'dbe']
+  'magic.detect-by-magic': ['detectar-by-magic', 'dbm', 'dbm']
+  'magic.detect-type': ['detectar-type', 'dt', 'dt']
+  'magic.get-extension': ['obtener-extension', 'ge', 'oe']
+  'map.hashmap-bool-tmpl.clear': ['limpiar', 'c', 'l']
+  'map.hashmap-bool-tmpl.contains': ['contiene', 'c', 'c']
+  'map.hashmap-bool-tmpl.for-each': ['para-each', 'fe', 'pe']
+  'map.hashmap-bool-tmpl.get': ['obtener', 'g', 'o']
+  'map.hashmap-bool-tmpl.hash': ['hash', 'h', 'h']
+  'map.hashmap-bool-tmpl.init': ['init', 'i', 'i']
+  'map.hashmap-bool-tmpl.is-empty': ['¿ empty?', 'ie', 'e']
+  'map.hashmap-bool-tmpl.len': ['longitud', 'l', 'l']
+  'map.hashmap-bool-tmpl.put': ['poner', 'p', 'p']
+  'map.hashmap-bool-tmpl.remove': ['quitar', 'r', 'q']
+  'map.hashmap-int-tmpl.clear': ['limpiar', 'c', 'l']
+  'map.hashmap-int-tmpl.contains': ['contiene', 'c', 'c']
+  'map.hashmap-int-tmpl.for-each': ['para-each', 'fe', 'pe']
+  'map.hashmap-int-tmpl.get': ['obtener', 'g', 'o']
+  'map.hashmap-int-tmpl.hash': ['hash', 'h', 'h']
+  'map.hashmap-int-tmpl.init': ['init', 'i', 'i']
+  'map.hashmap-int-tmpl.is-empty': ['¿ empty?', 'ie', 'e']
+  'map.hashmap-int-tmpl.len': ['longitud', 'l', 'l']
+  'map.hashmap-int-tmpl.put': ['poner', 'p', 'p']
+  'map.hashmap-int-tmpl.rehash': ['rehash', 'r', 'r']
+  'map.hashmap-int-tmpl.remove': ['quitar', 'r', 'q']
+  'map.hashmap-str-tmpl.clear': ['limpiar', 'c', 'l']
+  'map.hashmap-str-tmpl.contains': ['contiene', 'c', 'c']
+  'map.hashmap-str-tmpl.for-each': ['para-each', 'fe', 'pe']
+  'map.hashmap-str-tmpl.get': ['obtener', 'g', 'o']
+  'map.hashmap-str-tmpl.hash': ['hash', 'h', 'h']
+  'map.hashmap-str-tmpl.init': ['init', 'i', 'i']
+  'map.hashmap-str-tmpl.is-empty': ['¿ empty?', 'ie', 'e']
+  'map.hashmap-str-tmpl.len': ['longitud', 'l', 'l']
+  'map.hashmap-str-tmpl.put': ['poner', 'p', 'p']
+  'map.hashmap-str-tmpl.rehash': ['rehash', 'r', 'r']
+  'map.hashmap-str-tmpl.remove': ['quitar', 'r', 'q']
+  'map.hashmap-str-tmpl.str-eq': ['cadena-eq', 'se', 'ce']
+  'markdown.blockquote': ['cita', 'b', 'c']
+  'markdown.code-close': ['código-close', 'cc', 'cc']
+  'markdown.escape-html': ['escapar-html', 'eh', 'eh']
+  'markdown.fence': ['cerca', 'f', 'c']
+  'markdown.heading': ['encabezado', 'h', 'e']
+  'markdown.inline': ['inline', 'i', 'i']
+  'markdown.is-word-byte': ['¿ word-byte?', 'iwb', 'wb']
+  'markdown.join-paragraph': ['unir-paragraph', 'jp', 'up']
+  'markdown.list-content': ['lista-content', 'lc', 'lc']
+  'markdown.list-item': ['lista-item', 'li', 'li']
+  'markdown.prefix-count': ['prefijo-count', 'pc', 'pc']
+  'markdown.read-line': ['leer-line', 'rl', 'll']
+  'markdown.render': ['renderizar', 'r', 'r']
+  'markdown.render-code': ['renderizar-code', 'rc', 'rc']
+  'markdown.setext-level': ['setext-level', 'sl', 'sl']
+  'markdown.table-row': ['tabla-row', 'tr', 'tr']
+  'markdown.table-separator': ['tabla-separator', 'ts', 'ts']
+  'markdown.thematic-break': ['thematic-break', 'tb', 'tb']
+  'markdown.to-html': ['conversión a html', 'th', 'cah']
+  'math.arr-zero': ['arr-zero', 'az', 'az']
+  'math.atan-kernel': ['arcotangente-kernel', 'ak', 'ak']
+  'math.char-to-str': ['carácter-to-str', 'cts', 'cts']
+  'math.clamp': ['clamp', 'c', 'c']
+  'math.div': ['dividir', 'd', 'd']
+  'math.even': ['par', 'e', 'p']
+  'math.fmod': ['fmod', 'f', 'f']
+  'math.gcd': ['mcd', 'g', 'm']
+  'math.hypot': ['hipotenusa', 'h', 'h']
+  'math.lcm': ['mcm', 'l', 'm']
+  'math.max': ['máx', 'm', 'm']
+  'math.min': ['mín', 'm', 'm']
+  'math.mod': ['mod', 'm', 'm']
+  'math.odd': ['impar', 'o', 'i']
+  'math.pow': ['potencia', 'p', 'p']
+  'math.pow-int': ['potencia-int', 'pi', 'pi']
+  'math.rotate-left': ['rotar-left', 'rl', 'rl']
+  'math.rotate-right': ['rotar-right', 'rr', 'rr']
+  'math.store-le-u32': ['almacenar-le-u32', 'slu', 'alu3']
+  'math.swap': ['intercambiar', 's', 'i']
+  'md5.md5': ['MD5', 'm', 'm5']
+  'md5.md5-rotl': ['MD5-rotl', 'mr', 'm5r']
+  'multipart.multipart-create': ['multipart-create', 'mc', 'mc']
+  'multipart.multipart-create-boundary': ['multipart-create-boundary', 'mcb', 'mcb']
+  'multipart.multipart-decrypt-field': ['multipart-decrypt-field', 'mdf', 'mdf']
+  'multipart.multipart-extract-boundary': ['multipart-extract-boundary', 'meb', 'meb']
+  'multipart.multipart-gen-boundary': ['multipart-gen-boundary', 'mgb', 'mgb']
+  'multipart.multipart-parse': ['multipart-parse', 'mp', 'mp']
+  'multipart.multipart-reader.field-content-type': ['campo-content-type', 'fct', 'cct']
+  'multipart.multipart-reader.field-data': ['campo-data', 'fd', 'cd']
+  'multipart.multipart-reader.field-filename': ['campo-filename', 'ff', 'cf']
+  'multipart.multipart-reader.field-name': ['campo-name', 'fn', 'cn']
+  'multipart.multipart-reader.has-current-part': ['tiene-current-part', 'hcp', 'tcp']
+  'multipart.multipart-reader.init': ['init', 'i', 'i']
+  'multipart.multipart-reader.is-file': ['¿ file?', 'if', 'f']
+  'multipart.multipart-reader.next': ['siguiente', 'n', 's']
+  'multipart.multipart-reader.parse-header-line': ['análisis-header-line', 'phl', 'ahl']
+  'multipart.multipart-reader.parse-headers': ['análisis-headers', 'ph', 'ah']
+  'multipart.multipart-writer.body-of': ['cuerpo-of', 'bo', 'co']
+  'multipart.multipart-writer.boundary-of': ['frontera-of', 'bo', 'fo']
+  'multipart.multipart-writer.close-form': ['cerrar-form', 'cf', 'cf']
+  'multipart.multipart-writer.content-type': ['contenido-type', 'ct', 'ct']
+  'multipart.multipart-writer.init': ['init', 'i', 'i']
+  'multipart.multipart-writer.init-boundary': ['init-boundary', 'ib', 'ib']
+  'multipart.multipart-writer.write-encrypted-field': ['escribir-encrypted-field', 'wef', 'eef']
+  'multipart.multipart-writer.write-encrypted-file': ['escribir-encrypted-file', 'wef', 'eef']
+  'multipart.multipart-writer.write-field': ['escribir-field', 'wf', 'ef']
+  'multipart.multipart-writer.write-file': ['escribir-file', 'wf', 'ef']
+  'net.close': ['cerrar', 'c', 'c']
+  'net.conn.close': ['cerrar', 'c', 'c']
+  'net.conn.dial': ['marcar', 'd', 'm']
+  'net.conn.fd-of': ['fd-of', 'fo', 'fo']
+  'net.conn.recv': ['recibir', 'r', 'r']
+  'net.conn.recv-all': ['recibir-all', 'ra', 'ra']
+  'net.conn.recv-line': ['recibir-line', 'rl', 'rl']
+  'net.conn.recv-with-timeout': ['recibir-with-timeout', 'rwt', 'rwt']
+  'net.conn.send': ['enviar', 's', 'e']
+  'net.conn.send-with-timeout': ['enviar-with-timeout', 'swt', 'ewt']
+  'net.conn.set-recv-timeout': ['establecer-recv-timeout', 'srt', 'ert']
+  'net.conn.set-timeout': ['establecer-timeout', 'st', 'et']
+  'net.dial-timeout': ['marcar-timeout', 'dt', 'mt']
+  'net.dial-to': ['marcar-to', 'dt', 'mt']
+  'net.enc-accept': ['cifrado-accept', 'ea', 'ca']
+  'net.enc-conn.close': ['cerrar', 'c', 'c']
+  'net.enc-conn.gen-iv': ['gen-iv', 'gi', 'gi']
+  'net.enc-conn.init': ['init', 'i', 'i']
+  'net.enc-conn.recv-encrypted': ['recibir-encrypted', 're', 're']
+  'net.enc-conn.send-encrypted': ['enviar-encrypted', 'se', 'ee']
+  'net.enc-dial': ['cifrado-dial', 'ed', 'cd']
+  'net.icmp-checksum': ['ICMP-checksum', 'ic', 'ic']
+  'net.icmp-conn.build-echo': ['construir-echo', 'be', 'ce']
+  'net.icmp-conn.close': ['cerrar', 'c', 'c']
+  'net.icmp-conn.open': ['abrir', 'o', 'a']
+  'net.icmp-conn.ping-host': ['ping-host', 'ph', 'ph']
+  'net.icmp-conn.ping-once': ['ping-once', 'po', 'po']
+  'net.listen-on': ['escuchar-on', 'lo', 'eo']
+  'net.listener.accept': ['aceptar', 'a', 'a']
+  'net.listener.accept-with-timeout': ['aceptar-with-timeout', 'awt', 'awt']
+  'net.listener.close': ['cerrar', 'c', 'c']
+  'net.listener.fd-of': ['fd-of', 'fo', 'fo']
+  'net.listener.listen': ['escuchar', 'l', 'e']
+  'net.listener.set-timeout': ['establecer-timeout', 'st', 'et']
+  'net.net-accept': ['red-accept', 'na', 'ra']
+  'net.net-accept-nb': ['red-accept-nb', 'nan', 'ran']
+  'net.net-dial': ['red-dial', 'nd', 'rd']
+  'net.net-icmp-open': ['red-icmp-open', 'nio', 'rio']
+  'net.net-listen': ['red-listen', 'nl', 'rl']
+  'net.net-recv': ['red-recv', 'nr', 'rr']
+  'net.net-send': ['red-send', 'ns', 'rs']
+  'net.net-set-recv-timeout': ['red-set-recv-timeout', 'nsrt', 'rsrt']
+  'net.net-udp-open': ['red-udp-open', 'nuo', 'ruo']
+  'net.net-udp-recvfrom': ['red-udp-recvfrom', 'nur', 'rur']
+  'net.net-udp-sendto': ['red-udp-sendto', 'nus', 'rus']
+  'net.ping': ['ping', 'p', 'p']
+  'net.ping-count': ['ping-count', 'pc', 'pc']
+  'net.split-ws': ['dividir-ws', 'sw', 'dw']
+  'net.udp-conn.close': ['cerrar', 'c', 'c']
+  'net.udp-conn.fd-of': ['fd-of', 'fo', 'fo']
+  'net.udp-conn.open': ['abrir', 'o', 'a']
+  'net.udp-conn.recv': ['recibir', 'r', 'r']
+  'net.udp-conn.recv-bytes': ['recibir-bytes', 'rb', 'rb']
+  'net.udp-conn.send': ['enviar', 's', 'e']
+  'net.udp-conn.send-bytes': ['enviar-bytes', 'sb', 'eb']
+  'net.udp-conn.set-timeout': ['establecer-timeout', 'st', 'et']
+  'net.udp-dial-to': ['UDP-dial-to', 'udt', 'udt']
+  'noml.hex-char': ['hex-char', 'hc', 'hc']
+  'noml.hex-digit': ['hex-digit', 'hd', 'hd']
+  'noml.is-ident-char': ['¿ ident-char?', 'iic', 'ic']
+  'noml.is-ident-key': ['¿ ident-key?', 'iik', 'ik']
+  'noml.is-ident-start': ['¿ ident-start?', 'iis', 'is']
+  'noml.new': ['nuevo', 'n', 'n']
+  'noml.noml-doc.ann': ['anotación', 'a', 'a']
+  'noml.noml-doc.ann-value': ['anotación-value', 'av', 'av']
+  'noml.noml-doc.at': ['en', 'a', 'e']
+  'noml.noml-doc.bool': ['bool', 'b', 'b']
+  'noml.noml-doc.get': ['obtener', 'g', 'o']
+  'noml.noml-doc.get-bool': ['obtener-bool', 'gb', 'ob']
+  'noml.noml-doc.get-f64': ['obtener-f64', 'gf', 'of6']
+  'noml.noml-doc.get-i64': ['obtener-i64', 'gi', 'oi6']
+  'noml.noml-doc.get-str': ['obtener-str', 'gs', 'os']
+  'noml.noml-doc.has': ['tiene', 'h', 't']
+  'noml.noml-doc.i64': ['i64', 'i', 'i6']
+  'noml.noml-doc.is-arr': ['¿ arr?', 'ia', 'a']
+  'noml.noml-doc.is-bool': ['¿ bool?', 'ib', 'b']
+  'noml.noml-doc.is-nil': ['¿ nil?', 'in', 'n']
+  'noml.noml-doc.is-num': ['¿ num?', 'in', 'n']
+  'noml.noml-doc.is-obj': ['¿ obj?', 'io', 'o']
+  'noml.noml-doc.is-str': ['¿ str?', 'is', 's']
+  'noml.noml-doc.key': ['clave', 'k', 'c']
+  'noml.noml-doc.kind': ['tipo', 'k', 't']
+  'noml.noml-doc.len': ['longitud', 'l', 'l']
+  'noml.noml-doc.new-arr': ['nuevo-arr', 'na', 'na']
+  'noml.noml-doc.new-bool': ['nuevo-bool', 'nb', 'nb']
+  'noml.noml-doc.new-nil': ['nuevo-nil', 'nn', 'nn']
+  'noml.noml-doc.new-num': ['nuevo-num', 'nn', 'nn']
+  'noml.noml-doc.new-obj': ['nuevo-obj', 'no', 'no']
+  'noml.noml-doc.new-str': ['nuevo-str', 'ns', 'ns']
+  'noml.noml-doc.num': ['número', 'n', 'n']
+  'noml.noml-doc.push': ['empujar', 'p', 'e']
+  'noml.noml-doc.put': ['poner', 'p', 'p']
+  'noml.noml-doc.root-index': ['raíz-index', 'ri', 'ri']
+  'noml.noml-doc.set-ann': ['establecer-ann', 'sa', 'ea']
+  'noml.noml-doc.set-root': ['establecer-root', 'sr', 'er']
+  'noml.noml-doc.str': ['cadena', 's', 'c']
+  'noml.noml-doc.stringify': ['cadenaizar', 's', 'c']
+  'noml.noml-doc.stringify-node': ['cadenaizar-node', 'sn', 'cn']
+  'noml.noml-pool.add-child': ['añadir-child', 'ac', 'ac']
+  'noml.noml-pool.alloc': ['asignar', 'a', 'a']
+  'noml.noml-pool.ann': ['anotación', 'a', 'a']
+  'noml.noml-pool.ann-literal': ['anotación-literal', 'al', 'al']
+  'noml.noml-pool.ann-value': ['anotación-value', 'av', 'av']
+  'noml.noml-pool.at': ['en', 'a', 'e']
+  'noml.noml-pool.at-line-start': ['en-line-start', 'als', 'els']
+  'noml.noml-pool.decode-escape': ['decodificar-escape', 'de', 'de']
+  'noml.noml-pool.fail': ['fallo', 'f', 'f']
+  'noml.noml-pool.fmt-key': ['fmt-key', 'fk', 'fk']
+  'noml.noml-pool.fmt-num': ['fmt-num', 'fn', 'fn']
+  'noml.noml-pool.get': ['obtener', 'g', 'o']
+  'noml.noml-pool.get-bool': ['obtener-bool', 'gb', 'ob']
+  'noml.noml-pool.get-f64': ['obtener-f64', 'gf', 'of6']
+  'noml.noml-pool.get-i64': ['obtener-i64', 'gi', 'oi6']
+  'noml.noml-pool.get-str': ['obtener-str', 'gs', 'os']
+  'noml.noml-pool.has': ['tiene', 'h', 't']
+  'noml.noml-pool.has-byte': ['tiene-byte', 'hb', 'tb']
+  'noml.noml-pool.has-key': ['tiene-key', 'hk', 'tk']
+  'noml.noml-pool.hex4': ['hex4', 'h', 'h4']
+  'noml.noml-pool.init': ['init', 'i', 'i']
+  'noml.noml-pool.is-arr': ['¿ arr?', 'ia', 'a']
+  'noml.noml-pool.is-bool': ['¿ bool?', 'ib', 'b']
+  'noml.noml-pool.is-nil': ['¿ nil?', 'in', 'n']
+  'noml.noml-pool.is-num': ['¿ num?', 'in', 'n']
+  'noml.noml-pool.is-obj': ['¿ obj?', 'io', 'o']
+  'noml.noml-pool.is-str': ['¿ str?', 'is', 's']
+  'noml.noml-pool.join-ann': ['unir-ann', 'ja', 'ua']
+  'noml.noml-pool.key': ['clave', 'k', 'c']
+  'noml.noml-pool.kind': ['tipo', 'k', 't']
+  'noml.noml-pool.len': ['longitud', 'l', 'l']
+  'noml.noml-pool.line-of': ['línea-of', 'lo', 'lo']
+  'noml.noml-pool.match-kw': ['coincidir-kw', 'mk', 'ck']
+  'noml.noml-pool.parse': ['análisis', 'p', 'a']
+  'noml.noml-pool.parse-array': ['análisis-array', 'pa', 'aa']
+  'noml.noml-pool.parse-bool': ['análisis-bool', 'pb', 'ab']
+  'noml.noml-pool.parse-bool-node': ['análisis-bool-node', 'pbn', 'abn']
+  'noml.noml-pool.parse-key': ['análisis-key', 'pk', 'ak']
+  'noml.noml-pool.parse-nil-node': ['análisis-nil-node', 'pnn', 'ann']
+  'noml.noml-pool.parse-num': ['análisis-num', 'pn', 'an']
+  'noml.noml-pool.parse-num-node': ['análisis-num-node', 'pnn', 'ann']
+  'noml.noml-pool.parse-object': ['análisis-object', 'po', 'ao']
+  'noml.noml-pool.parse-raw': ['análisis-raw', 'pr', 'ar']
+  'noml.noml-pool.parse-raw-node': ['análisis-raw-node', 'prn', 'arn']
+  'noml.noml-pool.parse-str': ['análisis-str', 'ps', 'as']
+  'noml.noml-pool.parse-str-node': ['análisis-str-node', 'psn', 'asn']
+  'noml.noml-pool.parse-value': ['análisis-value', 'pv', 'av']
+  'noml.noml-pool.quote': ['comilla', 'q', 'c']
+  'noml.noml-pool.quote-value': ['comilla-value', 'qv', 'cv']
+  'noml.noml-pool.raw-safe': ['sin-procesar-safe', 'rs', 'sps']
+  'noml.noml-pool.require-end': ['requiere-end', 're', 're']
+  'noml.noml-pool.scan-ann': ['escanear-ann', 'sa', 'ea']
+  'noml.noml-pool.scan-quote': ['escanear-quote', 'sq', 'eq']
+  'noml.noml-pool.scan-raw': ['escanear-raw', 'sr', 'er']
+  'noml.noml-pool.set-ann': ['establecer-ann', 'sa', 'ea']
+  'noml.noml-pool.skip-ann-value': ['omitir-ann-value', 'sav', 'oav']
+  'noml.noml-pool.skip-blanks': ['omitir-blanks', 'sb', 'ob']
+  'noml.noml-pool.skip-trivia': ['omitir-trivia', 'st', 'ot']
+  'noml.noml-pool.stringify': ['cadenaizar', 's', 'c']
+  'noml.noml-pool.stringify-arr': ['cadenaizar-arr', 'sa', 'ca']
+  'noml.noml-pool.stringify-obj': ['cadenaizar-obj', 'so', 'co']
+  'noml.noml-pool.val-bool': ['val-bool', 'vb', 'vb']
+  'noml.noml-pool.val-i64': ['val-i64', 'vi', 'vi6']
+  'noml.noml-pool.val-num': ['val-num', 'vn', 'vn']
+  'noml.noml-pool.val-str': ['val-str', 'vs', 'vs']
+  'noml.parse': ['análisis', 'p', 'a']
+  'num.abs': ['abs', 'a', 'a']
+  'num.clamp': ['clamp', 'c', 'c']
+  'num.sign': ['firmar', 's', 'f']
+  'number.byte.to-str': ['conversión a str', 'ts', 'cas']
+  'number.exp-f64': ['exp-f64', 'ef', 'ef6']
+  'number.f32.to-f64': ['conversión a f64', 'tf', 'caf6']
+  'number.f32.to-str': ['conversión a str', 'ts', 'cas']
+  'number.f64.cbrt': ['raíz-cúbica', 'c', 'rc']
+  'number.f64.ceil': ['techo', 'c', 't']
+  'number.f64.degrees': ['grados', 'd', 'g']
+  'number.f64.radians': ['radianes', 'r', 'r']
+  'number.f64.sin': ['seno', 's', 's']
+  'number.f64.sinh': ['seno-hip', 's', 'sh']
+  'number.f64.sqrt': ['raíz', 's', 'r']
+  'number.f64.tan': ['tangente', 't', 't']
+  'number.f64.to-bits': ['conversión a bits', 'tb', 'cab']
+  'number.f64.to-f32': ['conversión a f32', 'tf', 'caf3']
+  'number.f64.to-i32': ['conversión a i32', 'ti', 'cai3']
+  'number.f64.to-i64': ['conversión a i64', 'ti', 'cai6']
+  'number.f64.to-str': ['conversión a str', 'ts', 'cas']
+  'number.f64.to-str-fixed': ['conversión a str-fixed', 'tsf', 'casf']
+  'number.f64.to-str-general': ['conversión a str-general', 'tsg', 'casg']
+  'number.f64.to-str-sci': ['conversión a str-sci', 'tss', 'cass']
+  'number.f64.to-u32': ['conversión a u32', 'tu', 'cau3']
+  'number.f64.to-u64': ['conversión a u64', 'tu', 'cau6']
+  'number.i128.sqrt': ['raíz', 's', 'r']
+  'number.i128.to-f64': ['conversión a f64', 'tf', 'caf6']
+  'number.i16.sqrt': ['raíz', 's', 'r']
+  'number.i16.to-str': ['conversión a str', 'ts', 'cas']
+  'number.i32.sqrt': ['raíz', 's', 'r']
+  'number.i32.to-str': ['conversión a str', 'ts', 'cas']
+  'number.i64.is-prime': ['¿ prime?', 'ip', 'p']
+  'number.i64.sqrt': ['raíz', 's', 'r']
+  'number.i64.to-bytes-be': ['conversión a bytes-be', 'tbb', 'cabb']
+  'number.i64.to-bytes-le': ['conversión a bytes-le', 'tbl', 'cabl']
+  'number.i64.to-f64': ['conversión a f64', 'tf', 'caf6']
+  'number.i64.to-i32': ['conversión a i32', 'ti', 'cai3']
+  'number.i64.to-str': ['conversión a str', 'ts', 'cas']
+  'number.i8.sqrt': ['raíz', 's', 'r']
+  'number.i8.to-str': ['conversión a str', 'ts', 'cas']
+  'number.pow': ['potencia', 'p', 'p']
+  'number.u128.to-f64': ['conversión a f64', 'tf', 'caf6']
+  'number.u16.sqrt': ['raíz', 's', 'r']
+  'number.u16.to-str': ['conversión a str', 'ts', 'cas']
+  'number.u32.sqrt': ['raíz', 's', 'r']
+  'number.u32.to-str': ['conversión a str', 'ts', 'cas']
+  'number.u64.from-bits': ['conversión desde bits', 'fb', 'cdb']
+  'number.u64.sqrt': ['raíz', 's', 'r']
+  'number.u64.to-f64': ['conversión a f64', 'tf', 'caf6']
+  'number.u64.to-str': ['conversión a str', 'ts', 'cas']
+  'number.u8.sqrt': ['raíz', 's', 'r']
+  'number.u8.to-str': ['conversión a str', 'ts', 'cas']
+  'ords.asc': ['asc', 'a', 'a']
+  'ords.desc': ['desc', 'd', 'd']
+  'os.arg': ['arg', 'a', 'a']
+  'os.args': ['args', 'a', 'a']
+  'os.ch-dir': ['ch-dir', 'cd', 'cd']
+  'os.ch-mod': ['ch-mod', 'cm', 'cm']
+  'os.chown': ['chown', 'c', 'c']
+  'os.chroot': ['chroot', 'c', 'c']
+  'os.flock': ['flock', 'f', 'f']
+  'os.get-arch': ['obtener-arch', 'ga', 'oa']
+  'os.get-domain-name': ['obtener-domain-name', 'gdn', 'odn']
+  'os.get-env': ['obtener-env', 'ge', 'oe']
+  'os.get-errno': ['obtener-errno', 'ge', 'oe']
+  'os.get-host-id': ['obtener-host-id', 'ghi', 'ohi']
+  'os.get-login': ['obtener-login', 'gl', 'ol']
+  'os.get-pid': ['obtener-pid', 'gp', 'op']
+  'os.get-priority': ['obtener-priority', 'gp', 'op']
+  'os.get-wd': ['obtener-wd', 'gw', 'ow']
+  'os.getegid': ['obtener-egid', 'g', 'oe']
+  'os.geteuid': ['obtener-euid', 'g', 'oe']
+  'os.getgid': ['obtener-gid', 'g', 'og']
+  'os.getgroups': ['obtener-grupos', 'g', 'og']
+  'os.getuid': ['obtener-uid', 'g', 'ou']
+  'os.host-name': ['host-name', 'hn', 'hn']
+  'os.mkdir': ['mkdir', 'm', 'm']
+  'os.now': ['ahora', 'n', 'a']
+  'os.now-ms': ['ahora-ms', 'nm', 'am']
+  'os.now-ns': ['ahora-ns', 'nn', 'an']
+  'os.now-us': ['ahora-us', 'nu', 'au']
+  'os.num-cpu': ['número-cpu', 'nc', 'nc']
+  'os.set-env': ['establecer-env', 'se', 'ee']
+  'os.set-priority': ['establecer-priority', 'sp', 'ep']
+  'os.set-sid': ['establecer-sid', 'ss', 'es']
+  'os.signal': ['señal', 's', 's']
+  'os.sleep': ['dormir', 's', 'd']
+  'os.sleep-ns': ['dormir-ns', 'sn', 'dn']
+  'os.sleep-us': ['dormir-us', 'su', 'du']
+  'os.stat-gid': ['stat-gid', 'sg', 'sg']
+  'os.stat-mode': ['stat-mode', 'sm', 'sm']
+  'os.stat-mtime': ['stat-mtime', 'sm', 'sm']
+  'os.stat-uid': ['stat-uid', 'su', 'su']
+  'os.strerror': ['strerror', 's', 's']
+  'os.sysconf': ['sysconf', 's', 's']
+  'os.sysctl': ['sysctl', 's', 's']
+  'os.syslog': ['syslog', 's', 's']
+  'os.ttyname': ['nombre-tty', 't', 'nt']
+  'os.uname': ['uname', 'u', 'u']
+  'os.win-find-close': ['ventana-find-close', 'wfc', 'vfc']
+  'os.win-find-first-file': ['ventana-find-first-file', 'wfff', 'vfff']
+  'os.win-find-next-file': ['ventana-find-next-file', 'wfnf', 'vfnf']
+  'os.win-wsa-startup': ['ventana-wsa-startup', 'wws', 'vws']
+  'path.base': ['base', 'b', 'b']
+  'path.change-dir': ['change-dir', 'cd', 'cd']
+  'path.clean': ['clean', 'c', 'c']
+  'path.current': ['actual', 'c', 'a']
+  'path.dir': ['directorio', 'd', 'd']
+  'path.exists': ['existe', 'e', 'e']
+  'path.ext': ['ext', 'e', 'e']
+  'path.is-abs': ['¿ abs?', 'ia', 'a']
+  'path.is-dir': ['¿ dir?', 'id', 'd']
+  'path.is-file': ['¿ file?', 'if', 'f']
+  'path.join': ['unir', 'j', 'u']
+  'path.make-dir': ['crear-dir', 'md', 'cd']
+  'path.remove': ['quitar', 'r', 'q']
+  'path.rename': ['rename', 'r', 'r']
+  'path.size': ['tamaño', 's', 't']
+  'path.split': ['dividir', 's', 'd']
+  'pbkdf2.pbkdf2-hmac-sha1': ['pbkdf2-hmac-sha1', 'phs', 'p2hs1']
+  'pbkdf2.pbkdf2-hmac-sha256': ['pbkdf2-hmac-sha256', 'phs', 'p2hs2']
+  'pbkdf2.pbkdf2-hmac-sha512': ['pbkdf2-hmac-sha512', 'phs', 'p2hs5']
+  'pem.pem-decode': ['PEM-decode', 'pd', 'pd']
+  'pem.pem-encode': ['PEM-encode', 'pe', 'pe']
+  'pool.create': ['crear', 'c', 'c']
+  'pool.pool.active-count': ['activo-count', 'ac', 'ac']
+  'pool.pool.close-all': ['cerrar-all', 'ca', 'ca']
+  'pool.pool.close-conn': ['cerrar-conn', 'cc', 'cc']
+  'pool.pool.get': ['obtener', 'g', 'o']
+  'pool.pool.idle-count': ['ocioso-count', 'ic', 'oc']
+  'pool.pool.init': ['init', 'i', 'i']
+  'pool.pool.put': ['poner', 'p', 'p']
+  'pool.pool.total-count': ['total-count', 'tc', 'tc']
+  'pool.with-size': ['con-size', 'ws', 'cs']
+  'process.close': ['cerrar', 'c', 'c']
+  'process.close-stderr': ['cerrar-stderr', 'cs', 'cs']
+  'process.close-stdin': ['cerrar-stdin', 'cs', 'cs']
+  'process.close-stdout': ['cerrar-stdout', 'cs', 'cs']
+  'process.cmd-2': ['cmd', 'c2', 'c']
+  'process.exec': ['exec', 'e', 'e']
+  'process.exit-code-of': ['salir-code-of', 'eco', 'sco']
+  'process.find-by-name': ['buscar-by-name', 'fbn', 'bbn']
+  'process.find-match': ['buscar-match', 'fm', 'bm']
+  'process.force-kill': ['force-kill', 'fk', 'fk']
+  'process.is-running': ['¿ running?', 'ir', 'r']
+  'process.kill': ['matar', 'k', 'm']
+  'process.list-all': ['lista-all', 'la', 'la']
+  'process.new': ['nuevo', 'n', 'n']
+  'process.output': ['output', 'o', 'o']
+  'process.parent-pid': ['padre-pid', 'pp', 'pp']
+  'process.pid-of': ['pid-of', 'po', 'po']
+  'process.process-dup2': ['proceso-dup2', 'pd', 'pd2']
+  'process.process-exec': ['proceso-exec', 'pe', 'pe']
+  'process.process-exec-shell': ['proceso-exec-shell', 'pes', 'pes']
+  'process.process-fork': ['proceso-fork', 'pf', 'pf']
+  'process.process-getppid': ['proceso-getppid', 'pg', 'pg']
+  'process.process-kill': ['proceso-kill', 'pk', 'pk']
+  'process.process-pipe': ['proceso-pipe', 'pp', 'pp']
+  'process.process-shell': ['proceso-shell', 'ps', 'ps']
+  'process.process-system': ['proceso-system', 'ps', 'ps']
+  'process.process-waitpid': ['proceso-waitpid', 'pw', 'pw']
+  'process.process-waitpid-nohang': ['proceso-waitpid-nohang', 'pwn', 'pwn']
+  'process.read': ['leer', 'r', 'l']
+  'process.read-all': ['leer-all', 'ra', 'la']
+  'process.read-line': ['leer-line', 'rl', 'll']
+  'process.shell': ['shell', 's', 's']
+  'process.shell-quote': ['shell-quote', 'sq', 'sq']
+  'process.spawn': ['generar', 's', 'g']
+  'process.start': ['inicio', 's', 'i']
+  'process.start-with-opts': ['inicio-with-opts', 'swo', 'iwo']
+  'process.terminate': ['terminate', 't', 't']
+  'process.wait': ['esperar', 'w', 'e']
+  'process.wait-2': ['esperar', 'w2', 'e']
+  'process.wait-nohang': ['esperar-nohang', 'wn', 'en']
+  'process.win-close-handle': ['ventana-close-handle', 'wch', 'vch']
+  'process.win-create-pipe': ['ventana-create-pipe', 'wcp', 'vcp']
+  'process.win-create-process': ['ventana-create-process', 'wcp', 'vcp']
+  'process.win-get-exit-code': ['ventana-get-exit-code', 'wgec', 'vgec']
+  'process.win-get-std-handle': ['ventana-get-std-handle', 'wgsh', 'vgsh']
+  'process.win-read-pipe': ['ventana-read-pipe', 'wrp', 'vrp']
+  'process.win-terminate-process': ['ventana-terminate-process', 'wtp', 'vtp']
+  'process.win-wait-process': ['ventana-wait-process', 'wwp', 'vwp']
+  'process.win-write-pipe': ['ventana-write-pipe', 'wwp', 'vwp']
+  'process.write': ['escribir', 'w', 'e']
+  'proxy.config.connect': ['conectar', 'c', 'c']
+  'proxy.config.tls-connect': ['TLS-connect', 'tc', 'tc']
+  'proxy.connect': ['conectar', 'c', 'c']
+  'proxy.dial': ['marcar', 'd', 'm']
+  'proxy.dial-auth': ['marcar-auth', 'da', 'ma']
+  'proxy.proxy-tls-dial': ['proxy-tls-dial', 'ptd', 'ptd']
+  'proxy.socks5-connect': ['SOCKS5-connect', 'sc', 's5c']
+  'proxy.socks5-dial': ['SOCKS5-dial', 'sd', 's5d']
+  'queue.queue.clear': ['limpiar', 'c', 'l']
+  'queue.queue.empty': ['empty', 'e', 'e']
+  'queue.queue.full': ['full', 'f', 'f']
+  'queue.queue.size': ['tamaño', 's', 't']
+  'quic.apply-header-protection': ['aplicar-header-protection', 'ahp', 'ahp']
+  'quic.conn.build-initial-packet': ['construir-initial-packet', 'bip', 'cip']
+  'quic.conn.close': ['cerrar', 'c', 'c']
+  'quic.conn.init': ['init', 'i', 'i']
+  'quic.conn.recv-initial': ['recibir-initial', 'ri', 'ri']
+  'quic.conn.recv-raw': ['recibir-raw', 'rr', 'rr']
+  'quic.decode-packet-number': ['decodificar-packet-number', 'dpn', 'dpn']
+  'quic.derive-initial-keys': ['derivar-initial-keys', 'dik', 'dik']
+  'quic.dial': ['marcar', 'd', 'm']
+  'quic.gen-cid': ['gen-cid', 'gc', 'gc']
+  'quic.parse-frames': ['análisis-frames', 'pf', 'af']
+  'quic.remove-header-protection': ['quitar-header-protection', 'rhp', 'qhp']
+  'quic.varint-decode': ['entero-var-decode', 'vd', 'evd']
+  'quic.varint-encode': ['entero-var-encode', 've', 'eve']
+  'rand.rand': ['aleatorio', 'r', 'a']
+  'rand.rand-str': ['aleatorio-str', 'rs', 'as']
+  'rc4.rc4': ['RC4', 'r', 'r4']
+  'regexp.alloc-class': ['asignar-class', 'ac', 'ac']
+  'regexp.clear-class-bit': ['limpiar-class-bit', 'ccb', 'lcb']
+  'regexp.compile': ['compile', 'c', 'c']
+  'regexp.emit': ['emitir', 'e', 'e']
+  'regexp.emit-atom': ['emitir-atom', 'ea', 'ea']
+  'regexp.emit-quantized': ['emitir-quantized', 'eq', 'eq']
+  'regexp.find': ['buscar', 'f', 'b']
+  'regexp.in-class': ['en-class', 'ic', 'ec']
+  'regexp.init-class-all': ['init-class-all', 'ica', 'ica']
+  'regexp.init-class-zero': ['init-class-zero', 'icz', 'icz']
+  'regexp.make-class-digits': ['crear-class-digits', 'mcd', 'ccd']
+  'regexp.make-class-nondigits': ['crear-class-nondigits', 'mcn', 'ccn']
+  'regexp.make-class-nonspace': ['crear-class-nonspace', 'mcn', 'ccn']
+  'regexp.make-class-nonword': ['crear-class-nonword', 'mcn', 'ccn']
+  'regexp.make-class-space': ['crear-class-space', 'mcs', 'ccs']
+  'regexp.make-class-word': ['crear-class-word', 'mcw', 'ccw']
+  'regexp.match-at': ['coincidir-at', 'ma', 'ca']
+  'regexp.matches': ['coincidencia', 'm', 'c']
+  'regexp.parse-atom': ['análisis-atom', 'pa', 'aa']
+  'regexp.parse-class': ['análisis-class', 'pc', 'ac']
+  'regexp.parse-escape': ['análisis-escape', 'pe', 'ae']
+  'regexp.regexp-compile': ['regexp-compile', 'rc', 'rc']
+  'regexp.regexp-find': ['regexp-find', 'rf', 'rf']
+  'regexp.regexp-match': ['regexp-match', 'rm', 'rm']
+  'regexp.set-class-bit': ['establecer-class-bit', 'scb', 'ecb']
+  'regexp.set-class-escape': ['establecer-class-escape', 'sce', 'ece']
+  'rsa.rsa-bn-add': ['RSA-bn-add', 'rba', 'rba']
+  'rsa.rsa-bn-cmp': ['RSA-bn-cmp', 'rbc', 'rbc']
+  'rsa.rsa-bn-div-mod': ['RSA-bn-div-mod', 'rbdm', 'rbdm']
+  'rsa.rsa-bn-mul': ['RSA-bn-mul', 'rbm', 'rbm']
+  'rsa.rsa-bn-shl1': ['RSA-bn-shl1', 'rbs', 'rbs1']
+  'rsa.rsa-bn-shr1': ['RSA-bn-shr1', 'rbs', 'rbs1']
+  'rsa.rsa-bn-sub': ['RSA-bn-sub', 'rbs', 'rbs']
+  'rsa.rsa-decrypt': ['RSA-decrypt', 'rd', 'rd']
+  'rsa.rsa-encrypt': ['RSA-encrypt', 're', 're']
+  'rsa.rsa-modpow': ['RSA-modpow', 'rm', 'rm']
+  'rsa.rsa-modpow-step': ['RSA-modpow-step', 'rms', 'rms']
+  'scrypt.rotl32': ['rotl32', 'r', 'r3']
+  'scrypt.salsa20-8-core': ['salsa20-8-core', 's8c', 's28c']
+  'scrypt.scrypt': ['scrypt', 's', 's']
+  'scrypt.scrypt-blockmix': ['scrypt-blockmix', 'sb', 'sb']
+  'scrypt.scrypt-romix': ['scrypt-romix', 'sr', 'sr']
+  'server.https-listen-on': ['HTTPS-listen-on', 'hlo', 'hlo']
+  'server.https-server-conn.close': ['cerrar', 'c', 'c']
+  'server.https-server-conn.get-header': ['obtener-header', 'gh', 'oh']
+  'server.https-server-conn.parse': ['análisis', 'p', 'a']
+  'server.https-server-conn.recv-more': ['recibir-more', 'rm', 'rm']
+  'server.https-server-conn.reset': ['restablecer', 'r', 'r']
+  'server.https-server-conn.write-body': ['escribir-body', 'wb', 'eb']
+  'server.https-server-conn.write-header': ['escribir-header', 'wh', 'eh']
+  'server.https-server-conn.write-headers-done': ['escribir-headers-done', 'whd', 'ehd']
+  'server.https-server-conn.write-html': ['escribir-html', 'wh', 'eh']
+  'server.https-server-conn.write-json': ['escribir-json', 'wj', 'ej']
+  'server.https-server-conn.write-status': ['escribir-status', 'ws', 'es']
+  'server.https-server-conn.write-text': ['escribir-text', 'wt', 'et']
+  'server.https-server.accept': ['aceptar', 'a', 'a']
+  'server.https-server.close': ['cerrar', 'c', 'c']
+  'server.https-server.listen': ['escuchar', 'l', 'e']
+  'server.listen-on': ['escuchar-on', 'lo', 'eo']
+  'server.secure-compare': ['seguro-compare', 'sc', 'sc']
+  'server.server-conn.close': ['cerrar', 'c', 'c']
+  'server.server-conn.get-cookie': ['obtener-cookie', 'gc', 'oc']
+  'server.server-conn.get-header': ['obtener-header', 'gh', 'oh']
+  'server.server-conn.get-signed-cookie': ['obtener-signed-cookie', 'gsc', 'osc']
+  'server.server-conn.parse': ['análisis', 'p', 'a']
+  'server.server-conn.recv-more': ['recibir-more', 'rm', 'rm']
+  'server.server-conn.reset': ['restablecer', 'r', 'r']
+  'server.server-conn.set-signed-cookie': ['establecer-signed-cookie', 'ssc', 'esc']
+  'server.server-conn.verify-basic-auth': ['verificar-basic-auth', 'vba', 'vba']
+  'server.server-conn.write-body': ['escribir-body', 'wb', 'eb']
+  'server.server-conn.write-error': ['escribir-error', 'we', 'ee']
+  'server.server-conn.write-header': ['escribir-header', 'wh', 'eh']
+  'server.server-conn.write-headers-done': ['escribir-headers-done', 'whd', 'ehd']
+  'server.server-conn.write-html': ['escribir-html', 'wh', 'eh']
+  'server.server-conn.write-json': ['escribir-json', 'wj', 'ej']
+  'server.server-conn.write-redirect': ['escribir-redirect', 'wr', 'er']
+  'server.server-conn.write-status': ['escribir-status', 'ws', 'es']
+  'server.server-conn.write-text': ['escribir-text', 'wt', 'et']
+  'server.server.accept': ['aceptar', 'a', 'a']
+  'server.server.accept-nb': ['aceptar-nb', 'an', 'an']
+  'server.server.close': ['cerrar', 'c', 'c']
+  'server.server.fd-of': ['fd-of', 'fo', 'fo']
+  'server.server.listen': ['escuchar', 'l', 'e']
+  'set.add': ['añadir', 'a', 'a']
+  'set.contains': ['contiene', 'c', 'c']
+  'set.difference': ['difference', 'd', 'd']
+  'set.init': ['init', 'i', 'i']
+  'set.intersection': ['intersección', 'i', 'i']
+  'set.is-empty': ['¿ empty?', 'ie', 'e']
+  'set.remove': ['quitar', 'r', 'q']
+  'set.size': ['tamaño', 's', 't']
+  'set.to-vec': ['conversión a vec', 'tv', 'cav']
+  'set.union': ['unión', 'u', 'u']
+  'sha1.sha1': ['SHA-1', 's', 's1']
+  'sha1.sha1-block': ['SHA-1-block', 'sb', 's1b']
+  'sha1.sha1-hex': ['SHA-1-hex', 'sh', 's1h']
+  'sha224.sha224': ['sha224', 's', 's2']
+  'sha224.sha224-hex': ['sha224-hex', 'sh', 's2h']
+  'sha256.sha256': ['sha256', 's', 's2']
+  'sha256.sha256-block': ['sha256-block', 'sb', 's2b']
+  'sha256.sha256-hex': ['sha256-hex', 'sh', 's2h']
+  'sha3.keccak-f1600': ['keccak-f1600', 'kf', 'kf1']
+  'sha3.keccak-sponge': ['keccak-sponge', 'ks', 'ks']
+  'sha3.rotl64': ['rotl64', 'r', 'r6']
+  'sha3.sha3-224': ['SHA-3-224', 's2', 's32']
+  'sha3.sha3-224-hex': ['SHA-3-224-hex', 's2h', 's32h']
+  'sha3.sha3-256': ['SHA-3-256', 's2', 's32']
+  'sha3.sha3-256-hex': ['SHA-3-256-hex', 's2h', 's32h']
+  'sha3.sha3-384': ['SHA-3-384', 's3', 's33']
+  'sha3.sha3-384-hex': ['SHA-3-384-hex', 's3h', 's33h']
+  'sha3.sha3-512': ['SHA-3-512', 's5', 's35']
+  'sha3.sha3-512-hex': ['SHA-3-512-hex', 's5h', 's35h']
+  'sha384.sha384': ['sha384', 's', 's3']
+  'sha384.sha384-hex': ['sha384-hex', 'sh', 's3h']
+  'sha512.sha512': ['sha512', 's', 's5']
+  'sha512.sha512-block': ['sha512-block', 'sb', 's5b']
+  'sha512.sha512-hex': ['sha512-hex', 'sh', 's5h']
+  'sse.client.close': ['cerrar', 'c', 'c']
+  'sse.client.is-connected': ['¿ connected?', 'ic', 'c']
+  'sse.client.next-event': ['siguiente-event', 'ne', 'se']
+  'sse.client.reconnect': ['reconectar', 'r', 'r']
+  'sse.listen-on': ['escuchar-on', 'lo', 'eo']
+  'sse.server-conn.close': ['cerrar', 'c', 'c']
+  'sse.server-conn.handshake': ['handshake', 'h', 'h']
+  'sse.server-conn.is-connected': ['¿ connected?', 'ic', 'c']
+  'sse.server-conn.send-comment': ['enviar-comment', 'sc', 'ec']
+  'sse.server-conn.send-event': ['enviar-event', 'se', 'ee']
+  'sse.server.accept': ['aceptar', 'a', 'a']
+  'sse.server.close': ['cerrar', 'c', 'c']
+  'sse.server.listen': ['escuchar', 'l', 'e']
+  'sse.sse-connect': ['SSE-connect', 'sc', 'sc']
+  'stack.stack.clear': ['limpiar', 'c', 'l']
+  'stack.stack.empty': ['empty', 'e', 'e']
+  'stack.stack.peek': ['mirar', 'p', 'm']
+  'stack.stack.pop': ['sacar', 'p', 's']
+  'stack.stack.push': ['empujar', 'p', 'e']
+  'stack.stack.size': ['tamaño', 's', 't']
+  'static-hashmap.static-hashmap-bool-tmpl.clear': ['limpiar', 'c', 'l']
+  'static-hashmap.static-hashmap-bool-tmpl.contains': ['contiene', 'c', 'c']
+  'static-hashmap.static-hashmap-bool-tmpl.for-each': ['para-each', 'fe', 'pe']
+  'static-hashmap.static-hashmap-bool-tmpl.get': ['obtener', 'g', 'o']
+  'static-hashmap.static-hashmap-bool-tmpl.hash': ['hash', 'h', 'h']
+  'static-hashmap.static-hashmap-bool-tmpl.init': ['init', 'i', 'i']
+  'static-hashmap.static-hashmap-bool-tmpl.is-empty': ['¿ empty?', 'ie', 'e']
+  'static-hashmap.static-hashmap-bool-tmpl.len': ['longitud', 'l', 'l']
+  'static-hashmap.static-hashmap-bool-tmpl.put': ['poner', 'p', 'p']
+  'static-hashmap.static-hashmap-bool-tmpl.remove': ['quitar', 'r', 'q']
+  'static-hashmap.static-hashmap-int-tmpl.clear': ['limpiar', 'c', 'l']
+  'static-hashmap.static-hashmap-int-tmpl.contains': ['contiene', 'c', 'c']
+  'static-hashmap.static-hashmap-int-tmpl.for-each': ['para-each', 'fe', 'pe']
+  'static-hashmap.static-hashmap-int-tmpl.get': ['obtener', 'g', 'o']
+  'static-hashmap.static-hashmap-int-tmpl.hash': ['hash', 'h', 'h']
+  'static-hashmap.static-hashmap-int-tmpl.init': ['init', 'i', 'i']
+  'static-hashmap.static-hashmap-int-tmpl.is-empty': ['¿ empty?', 'ie', 'e']
+  'static-hashmap.static-hashmap-int-tmpl.len': ['longitud', 'l', 'l']
+  'static-hashmap.static-hashmap-int-tmpl.put': ['poner', 'p', 'p']
+  'static-hashmap.static-hashmap-int-tmpl.remove': ['quitar', 'r', 'q']
+  'static-hashmap.static-hashmap-str-tmpl.clear': ['limpiar', 'c', 'l']
+  'static-hashmap.static-hashmap-str-tmpl.contains': ['contiene', 'c', 'c']
+  'static-hashmap.static-hashmap-str-tmpl.for-each': ['para-each', 'fe', 'pe']
+  'static-hashmap.static-hashmap-str-tmpl.get': ['obtener', 'g', 'o']
+  'static-hashmap.static-hashmap-str-tmpl.hash': ['hash', 'h', 'h']
+  'static-hashmap.static-hashmap-str-tmpl.init': ['init', 'i', 'i']
+  'static-hashmap.static-hashmap-str-tmpl.is-empty': ['¿ empty?', 'ie', 'e']
+  'static-hashmap.static-hashmap-str-tmpl.len': ['longitud', 'l', 'l']
+  'static-hashmap.static-hashmap-str-tmpl.put': ['poner', 'p', 'p']
+  'static-hashmap.static-hashmap-str-tmpl.remove': ['quitar', 'r', 'q']
+  'static-hashmap.static-hashmap-str-tmpl.str-eq': ['cadena-eq', 'se', 'ce']
+  'str-map.str-map.clear': ['limpiar', 'c', 'l']
+  'str-map.str-map.contains': ['contiene', 'c', 'c']
+  'str-map.str-map.for-each': ['para-each', 'fe', 'pe']
+  'str-map.str-map.get': ['obtener', 'g', 'o']
+  'str-map.str-map.hash': ['hash', 'h', 'h']
+  'str-map.str-map.init': ['init', 'i', 'i']
+  'str-map.str-map.is-empty': ['¿ empty?', 'ie', 'e']
+  'str-map.str-map.len': ['longitud', 'l', 'l']
+  'str-map.str-map.put': ['poner', 'p', 'p']
+  'str-map.str-map.remove': ['quitar', 'r', 'q']
+  'str-map.str-map.str-eq': ['cadena-eq', 'se', 'ce']
+  'str-map.str-map.to-str': ['conversión a str', 'ts', 'cas']
+  'str-set.str-set.add': ['añadir', 'a', 'a']
+  'str-set.str-set.clear': ['limpiar', 'c', 'l']
+  'str-set.str-set.contains': ['contiene', 'c', 'c']
+  'str-set.str-set.for-each': ['para-each', 'fe', 'pe']
+  'str-set.str-set.hash': ['hash', 'h', 'h']
+  'str-set.str-set.init': ['init', 'i', 'i']
+  'str-set.str-set.is-empty': ['¿ empty?', 'ie', 'e']
+  'str-set.str-set.len': ['longitud', 'l', 'l']
+  'str-set.str-set.remove': ['quitar', 'r', 'q']
+  'str-set.str-set.str-eq': ['cadena-eq', 'se', 'ce']
+  'str._str-dig-val': ['_str-dig-val', 'sdv', 'sdv']
+  'str.at': ['en', 'a', 'e']
+  'str.bigint-bitlen': ['bigint-bitlen', 'bb', 'bb']
+  'str.byte': ['byte', 'b', 'b']
+  'str.byte-index': ['byte-index', 'bi', 'bi']
+  'str.compare': ['comparar', 'c', 'c']
+  'str.contains': ['contiene', 'c', 'c']
+  'str.copy': ['copiar', 'c', 'c']
+  'str.count': ['recuento', 'c', 'r']
+  'str.cp-index': ['cp-index', 'ci', 'ci']
+  'str.decode-cp': ['decodificar-cp', 'dc', 'dc']
+  'str.empty': ['empty', 'e', 'e']
+  'str.ends-with': ['extremos-with', 'ew', 'ew']
+  'str.eq-full': ['igual-full', 'ef', 'if']
+  'str.eq-raw': ['igual-raw', 'er', 'ir']
+  'str.fields': ['campos', 'f', 'c']
+  'str.fill': ['rellenar', 'f', 'r']
+  'str.find-byte-from': ['buscar-byte-from', 'fbf', 'bbf']
+  'str.from-hex': ['conversión desde hex', 'fh', 'cdh']
+  'str.index': ['índice', 'i', 'i']
+  'str.index-from': ['índice-from', 'if', 'if']
+  'str.last-index': ['último-index', 'li', 'ui']
+  'str.len': ['longitud', 'l', 'l']
+  'str.lines': ['líneas', 'l', 'l']
+  'str.new': ['nuevo', 'n', 'n']
+  'str.repeat': ['repetir', 'r', 'r']
+  'str.replace-char': ['reemplazar-char', 'rc', 'rc']
+  'str.replace-n': ['reemplazar-n', 'rn', 'rn']
+  'str.replace-str': ['reemplazar-str', 'rs', 'rs']
+  'str.reverse': ['invertir', 'r', 'i']
+  'str.rfind-byte-from': ['buscar-rev-byte-from', 'rbf', 'brbf']
+  'str.rindex': ['índice-rev', 'r', 'ir']
+  'str.rindex-from': ['índice-rev-from', 'rf', 'irf']
+  'str.set-byte': ['establecer-byte', 'sb', 'eb']
+  'str.slice': ['rebanada', 's', 'r']
+  'str.slice-bytes': ['rebanada-bytes', 'sb', 'rb']
+  'str.split': ['dividir', 's', 'd']
+  'str.split-n': ['dividir-n', 'sn', 'dn']
+  'str.starts-with': ['starts-with', 'sw', 'sw']
+  'str.str-hex-val': ['cadena-hex-val', 'shv', 'chv']
+  'str.to-bigint': ['conversión a bigint', 'tb', 'cab']
+  'str.to-bool': ['conversión a bool', 'tb', 'cab']
+  'str.to-byte': ['conversión a byte', 'tb', 'cab']
+  'str.to-bytes': ['conversión a bytes', 'tb', 'cab']
+  'str.to-f32': ['conversión a f32', 'tf', 'caf3']
+  'str.to-f64': ['conversión a f64', 'tf', 'caf6']
+  'str.to-hex': ['conversión a hex', 'th', 'cah']
+  'str.to-i16': ['conversión a i16', 'ti', 'cai1']
+  'str.to-i32': ['conversión a i32', 'ti', 'cai3']
+  'str.to-i64': ['conversión a i64', 'ti', 'cai6']
+  'str.to-i8': ['conversión a i8', 'ti', 'cai8']
+  'str.to-lower': ['conversión a lower', 'tl', 'cal']
+  'str.to-str': ['conversión a str', 'ts', 'cas']
+  'str.to-txt': ['conversión a txt', 'tt', 'cat']
+  'str.to-u16': ['conversión a u16', 'tu', 'cau1']
+  'str.to-u32': ['conversión a u32', 'tu', 'cau3']
+  'str.to-u64': ['conversión a u64', 'tu', 'cau6']
+  'str.to-u8': ['conversión a u8', 'tu', 'cau8']
+  'str.to-upper': ['conversión a upper', 'tu', 'cau']
+  'str.trim': ['recortar', 't', 'r']
+  'str.trim-char': ['recortar-char', 'tc', 'rc']
+  'str.with-cap': ['con-cap', 'wc', 'cc']
+  'str.with-len': ['con-len', 'wl', 'cl']
+  'str.with-len-cap': ['con-len-cap', 'wlc', 'clc']
+  'strs.join': ['unir', 'j', 'u']
+  'tar.tar-builder.add-bytes': ['añadir-bytes', 'ab', 'ab']
+  'tar.tar-builder.add-dir': ['añadir-dir', 'ad', 'ad']
+  'tar.tar-builder.add-file': ['añadir-file', 'af', 'af']
+  'tar.tar-builder.finish': ['terminar', 'f', 't']
+  'tar.tar-builder.pre-alloc': ['pre-alloc', 'pa', 'pa']
+  'tar.tar-builder.write-header': ['escribir-header', 'wh', 'eh']
+  'tar.tar-builder.write-octal': ['escribir-octal', 'wo', 'eo']
+  'tar.tar-entry.is-dir': ['¿ dir?', 'id', 'd']
+  'tar.tar-entry.is-file': ['¿ file?', 'if', 'f']
+  'tar.tar-entry.mode': ['modo', 'm', 'm']
+  'tar.tar-entry.mtime': ['mtime', 'm', 'm']
+  'tar.tar-entry.name': ['nombre', 'n', 'n']
+  'tar.tar-entry.read': ['leer', 'r', 'l']
+  'tar.tar-entry.size': ['tamaño', 's', 't']
+  'tar.tar-entry.type': ['tipo', 't', 't']
+  'tar.tar-open-gz': ['tar-open-gz', 'tog', 'tog']
+  'tar.tar.count': ['recuento', 'c', 'r']
+  'tar.tar.entry': ['entrada', 'e', 'e']
+  'tar.tar.is-dir': ['¿ dir?', 'id', 'd']
+  'tar.tar.is-file': ['¿ file?', 'if', 'f']
+  'tar.tar.mode': ['modo', 'm', 'm']
+  'tar.tar.mtime': ['mtime', 'm', 'm']
+  'tar.tar.name': ['nombre', 'n', 'n']
+  'tar.tar.offset': ['desplazamiento', 'o', 'd']
+  'tar.tar.read': ['leer', 'r', 'l']
+  'tar.tar.size': ['tamaño', 's', 't']
+  'tar.tar.type': ['tipo', 't', 't']
+  'tdes.tdes-cbc-dec': ['3DES-cbc-dec', 'tcd', '3dcd']
+  'tdes.tdes-cbc-enc': ['3DES-cbc-enc', 'tce', '3dce']
+  'tdes.tdes-dec': ['3DES-dec', 'td', '3dd']
+  'tdes.tdes-enc': ['3DES-enc', 'te', '3de']
+  'time.add-seconds': ['añadir-seconds', 'as', 'as']
+  'time.date': ['fecha', 'd', 'f']
+  'time.date-to-unix': ['fecha-to-unix', 'dtu', 'ftu']
+  'time.days-in-month-fn': ['días-in-month-fn', 'dimf', 'dimf']
+  'time.duration-between': ['duración-between', 'db', 'db']
+  'time.duration-ms-between': ['duración-ms-between', 'dmb', 'dmb']
+  'time.duration-time': ['duración-time', 'dt', 'dt']
+  'time.duration-us-between': ['duración-us-between', 'dub', 'dub']
+  'time.format': ['formatear', 'f', 'f']
+  'time.format-date': ['formatear-date', 'fd', 'fd']
+  'time.format-duration': ['formatear-duration', 'fd', 'fd']
+  'time.format-time-str': ['formatear-time-str', 'fts', 'fts']
+  'time.is-leap': ['¿ leap?', 'il', 'l']
+  'time.now-date': ['ahora-date', 'nd', 'ad']
+  'time.now-ms': ['ahora-ms', 'nm', 'am']
+  'time.now-ns': ['ahora-ns', 'nn', 'an']
+  'time.now-s': ['ahora-s', 'ns', 'as']
+  'time.now-time': ['ahora-time', 'nt', 'at']
+  'time.now-us': ['ahora-us', 'nu', 'au']
+  'time.parse-date': ['análisis-date', 'pd', 'ad']
+  'time.parse-time': ['análisis-time', 'pt', 'at']
+  'time.since-ms': ['desde-ms', 'sm', 'dm']
+  'time.since-s': ['desde-s', 'ss', 'ds']
+  'time.since-time': ['desde-time', 'st', 'dt']
+  'time.since-us': ['desde-us', 'su', 'du']
+  'time.sleep-ms': ['dormir-ms', 'sm', 'dm']
+  'time.sleep-ns': ['dormir-ns', 'sn', 'dn']
+  'time.sleep-s': ['dormir-s', 'ss', 'ds']
+  'time.sleep-us': ['dormir-us', 'su', 'du']
+  'time.sub': ['resta', 's', 'r']
+  'time.timer.elapsed-ms': ['transcurrido-ms', 'em', 'tm']
+  'time.timer.elapsed-s': ['transcurrido-s', 'es', 'ts']
+  'time.timer.elapsed-us': ['transcurrido-us', 'eu', 'tu']
+  'time.timer.start': ['inicio', 's', 'i']
+  'time.timer.stop': ['parar', 's', 'p']
+  'time.unix': ['unix', 'u', 'u']
+  'time.unix-ms': ['unix-ms', 'um', 'um']
+  'time.unix-to-date': ['unix-to-date', 'utd', 'utd']
+  'time.unix-to-time': ['unix-to-time', 'utt', 'utt']
+  'tls.bn-to-bytes': ['big-num-to-bytes', 'btb', 'bntb']
+  'tls.build-nonce': ['construir-nonce', 'bn', 'cn']
+  'tls.bytes-cat': ['bytes-cat', 'bc', 'bc']
+  'tls.bytes-to-bn': ['bytes-to-bn', 'btb', 'btb']
+  'tls.cipher-is-ecdhe': ['cifrador-is-ecdhe', 'cie', 'cie']
+  'tls.cipher-is-gcm': ['cifrador-is-gcm', 'cig', 'cig']
+  'tls.conn.append-hs': ['anexar-hs', 'ah', 'ah']
+  'tls.conn.append-hs-from': ['anexar-hs-from', 'ahf', 'ahf']
+  'tls.conn.close': ['cerrar', 'c', 'c']
+  'tls.conn.compute-shared-secret-13': ['calcular-shared-secret-13', 'css1', 'css1']
+  'tls.conn.connect': ['conectar', 'c', 'c']
+  'tls.conn.connect-12': ['conectar-12', 'c1', 'c1']
+  'tls.conn.connect-13': ['conectar-13', 'c1', 'c1']
+  'tls.conn.decrypt-record': ['descifrar-record', 'dr', 'dr']
+  'tls.conn.decrypt-record-13': ['descifrar-record-13', 'dr1', 'dr1']
+  'tls.conn.decrypt-record-gcm': ['descifrar-record-gcm', 'drg', 'drg']
+  'tls.conn.derive-application-keys-13': ['derivar-application-keys-13', 'dak1', 'dak1']
+  'tls.conn.derive-handshake-keys-13': ['derivar-handshake-keys-13', 'dhk1', 'dhk1']
+  'tls.conn.derive-keys': ['derivar-keys', 'dk', 'dk']
+  'tls.conn.encrypt-record': ['cifrar-record', 'er', 'cr']
+  'tls.conn.encrypt-record-13': ['cifrar-record-13', 'er1', 'cr1']
+  'tls.conn.encrypt-record-gcm': ['cifrar-record-gcm', 'erg', 'crg']
+  'tls.conn.gen-p256-keypair': ['gen-p256-keypair', 'gpk', 'gp2k']
+  'tls.conn.gen-x25519-keypair': ['gen-x25519-keypair', 'gxk', 'gx2k']
+  'tls.conn.get-fd': ['obtener-fd', 'gf', 'of']
+  'tls.conn.handshake-12-body': ['handshake-12-body', 'h1b', 'h1b']
+  'tls.conn.init': ['init', 'i', 'i']
+  'tls.conn.read-certificate': ['leer-certificate', 'rc', 'lc']
+  'tls.conn.read-change-cipher-spec': ['leer-change-cipher-spec', 'rccs', 'lccs']
+  'tls.conn.read-encrypted-handshake-13': ['leer-encrypted-handshake-13', 'reh1', 'leh1']
+  'tls.conn.read-encrypted-record-13': ['leer-encrypted-record-13', 'rer1', 'ler1']
+  'tls.conn.read-finished': ['leer-finished', 'rf', 'lf']
+  'tls.conn.read-server-hello': ['leer-server-hello', 'rsh', 'lsh']
+  'tls.conn.read-server-hello-13': ['leer-server-hello-13', 'rsh1', 'lsh1']
+  'tls.conn.read-server-hello-done': ['leer-server-hello-done', 'rshd', 'lshd']
+  'tls.conn.read-server-key-exchange': ['leer-server-key-exchange', 'rske', 'lske']
+  'tls.conn.send': ['enviar', 's', 'e']
+  'tls.conn.send-change-cipher-spec': ['enviar-change-cipher-spec', 'sccs', 'eccs']
+  'tls.conn.send-client-hello': ['enviar-client-hello', 'sch', 'ech']
+  'tls.conn.send-client-hello-13': ['enviar-client-hello-13', 'sch1', 'ech1']
+  'tls.conn.send-client-key-exchange': ['enviar-client-key-exchange', 'scke', 'ecke']
+  'tls.conn.send-finished': ['enviar-finished', 'sf', 'ef']
+  'tls.conn.send-finished-13': ['enviar-finished-13', 'sf1', 'ef1']
+  'tls.dial': ['marcar', 'd', 'm']
+  'tls.dial-12': ['marcar-12', 'd1', 'm1']
+  'tls.get-u16': ['obtener-u16', 'gu', 'ou1']
+  'tls.get-u24': ['obtener-u24', 'gu', 'ou2']
+  'tls.https-serve-once': ['HTTPS-serve-once', 'hso', 'hso']
+  'tls.net-recv-wait': ['red-recv-wait', 'nrw', 'rrw']
+  'tls.prf': ['prf', 'p', 'p']
+  'tls.put-u16': ['poner-u16', 'pu', 'pu1']
+  'tls.put-u24': ['poner-u24', 'pu', 'pu2']
+  'tls.rand-bytes': ['aleatorio-bytes', 'rb', 'ab']
+  'tls.read-record': ['leer-record', 'rr', 'lr']
+  'tls.recv-n': ['recibir-n', 'rn', 'rn']
+  'tls.rsa-pkcs1-decrypt': ['RSA-pkcs1-decrypt', 'rpd', 'rp1d']
+  'tls.rsa-pkcs1-encrypt': ['RSA-pkcs1-encrypt', 'rpe', 'rp1e']
+  'tls.send-raw': ['enviar-raw', 'sr', 'er']
+  'tls.server-accept': ['servidor-accept', 'sa', 'sa']
+  'tls.server-conn.append-hs': ['anexar-hs', 'ah', 'ah']
+  'tls.server-conn.append-hs-from': ['anexar-hs-from', 'ahf', 'ahf']
+  'tls.server-conn.close': ['cerrar', 'c', 'c']
+  'tls.server-conn.compute-shared-secret-13': ['calcular-shared-secret-13', 'css1', 'css1']
+  'tls.server-conn.decrypt-record': ['descifrar-record', 'dr', 'dr']
+  'tls.server-conn.decrypt-record-13': ['descifrar-record-13', 'dr1', 'dr1']
+  'tls.server-conn.derive-application-keys-13': ['derivar-application-keys-13', 'dak1', 'dak1']
+  'tls.server-conn.derive-handshake-keys-13': ['derivar-handshake-keys-13', 'dhk1', 'dhk1']
+  'tls.server-conn.derive-keys': ['derivar-keys', 'dk', 'dk']
+  'tls.server-conn.encrypt-record': ['cifrar-record', 'er', 'cr']
+  'tls.server-conn.encrypt-record-13': ['cifrar-record-13', 'er1', 'cr1']
+  'tls.server-conn.handshake': ['handshake', 'h', 'h']
+  'tls.server-conn.handshake-13': ['handshake-13', 'h1', 'h1']
+  'tls.server-conn.read-change-cipher-spec': ['leer-change-cipher-spec', 'rccs', 'lccs']
+  'tls.server-conn.read-client-finished-13': ['leer-client-finished-13', 'rcf1', 'lcf1']
+  'tls.server-conn.read-client-hello': ['leer-client-hello', 'rch', 'lch']
+  'tls.server-conn.read-client-key-exchange': ['leer-client-key-exchange', 'rcke', 'lcke']
+  'tls.server-conn.read-encrypted-handshake-13': ['leer-encrypted-handshake-13', 'reh1', 'leh1']
+  'tls.server-conn.read-encrypted-record-13': ['leer-encrypted-record-13', 'rer1', 'ler1']
+  'tls.server-conn.read-finished': ['leer-finished', 'rf', 'lf']
+  'tls.server-conn.recv': ['recibir', 'r', 'r']
+  'tls.server-conn.send': ['enviar', 's', 'e']
+  'tls.server-conn.send-certificate': ['enviar-certificate', 'sc', 'ec']
+  'tls.server-conn.send-certificate-13': ['enviar-certificate-13', 'sc1', 'ec1']
+  'tls.server-conn.send-change-cipher-spec': ['enviar-change-cipher-spec', 'sccs', 'eccs']
+  'tls.server-conn.send-encrypted-extensions-13': ['enviar-encrypted-extensions-13', 'see1', 'eee1']
+  'tls.server-conn.send-finished': ['enviar-finished', 'sf', 'ef']
+  'tls.server-conn.send-finished-13': ['enviar-finished-13', 'sf1', 'ef1']
+  'tls.server-conn.send-server-hello': ['enviar-server-hello', 'ssh', 'esh']
+  'tls.server-conn.send-server-hello-13': ['enviar-server-hello-13', 'ssh1', 'esh1']
+  'tls.server-conn.send-server-hello-done': ['enviar-server-hello-done', 'sshd', 'eshd']
+  'tls.server-init': ['servidor-init', 'si', 'si']
+  'tls.server-listen': ['servidor-listen', 'sl', 'sl']
+  'tls.tls-pad': ['TLS-pad', 'tp', 'tp']
+  'tls.tls-unpad': ['TLS-unpad', 'tu', 'tu']
+  'toml.get': ['obtener', 'g', 'o']
+  'toml.get-bool': ['obtener-bool', 'gb', 'ob']
+  'toml.get-f64': ['obtener-f64', 'gf', 'of6']
+  'toml.get-i64': ['obtener-i64', 'gi', 'oi6']
+  'toml.get-str': ['obtener-str', 'gs', 'os']
+  'toml.has': ['tiene', 'h', 't']
+  'toml.new': ['nuevo', 'n', 'n']
+  'toml.parse': ['análisis', 'p', 'a']
+  'toml.stringify': ['cadenaizar', 's', 'c']
+  'toml.toml-array-name': ['toml-array-name', 'tan', 'tan']
+  'toml.toml-doc.put': ['poner', 'p', 'p']
+  'toml.toml-entry-key': ['toml-entry-key', 'tek', 'tek']
+  'toml.toml-entry-key-eq': ['toml-entry-key-eq', 'teke', 'teke']
+  'toml.toml-entry-value': ['toml-entry-value', 'tev', 'tev']
+  'toml.toml-find-eq': ['toml-find-eq', 'tfe', 'tfe']
+  'toml.toml-make-entry': ['toml-make-entry', 'tme', 'tme']
+  'toml.toml-next-array-table': ['toml-next-array-table', 'tnat', 'tnat']
+  'toml.toml-normalize-key': ['toml-normalize-key', 'tnk', 'tnk']
+  'toml.toml-parse-bool': ['toml-parse-bool', 'tpb', 'tpb']
+  'toml.toml-parse-f64': ['toml-parse-f64', 'tpf', 'tpf6']
+  'toml.toml-parse-i64': ['toml-parse-i64', 'tpi', 'tpi6']
+  'toml.toml-register-table': ['toml-register-table', 'trt', 'trt']
+  'toml.toml-resolve-section': ['toml-resolve-section', 'trs', 'trs']
+  'toml.toml-strip-comment': ['toml-strip-comment', 'tsc', 'tsc']
+  'toml.toml-table-eq': ['toml-table-eq', 'tte', 'tte']
+  'toml.toml-table-name': ['toml-table-name', 'ttn', 'ttn']
+  'toml.toml-unquote': ['toml-unquote', 'tu', 'tu']
+  'toml.toml-valid-value': ['toml-valid-value', 'tvv', 'tvv']
+  'toml.toml-value-complete': ['toml-value-complete', 'tvc', 'tvc']
+  'tree-map.tree-map.alloc-node': ['asignar-node', 'an', 'an']
+  'tree-map.tree-map.bf': ['bf', 'b', 'b']
+  'tree-map.tree-map.clear': ['limpiar', 'c', 'l']
+  'tree-map.tree-map.contains': ['contiene', 'c', 'c']
+  'tree-map.tree-map.empty': ['empty', 'e', 'e']
+  'tree-map.tree-map.first': ['primero', 'f', 'p']
+  'tree-map.tree-map.for-each': ['para-each', 'fe', 'pe']
+  'tree-map.tree-map.free-node': ['liberar-node', 'fn', 'ln']
+  'tree-map.tree-map.full': ['full', 'f', 'f']
+  'tree-map.tree-map.get': ['obtener', 'g', 'o']
+  'tree-map.tree-map.ht': ['tabulador', 'h', 't']
+  'tree-map.tree-map.init': ['init', 'i', 'i']
+  'tree-map.tree-map.last': ['último', 'l', 'u']
+  'tree-map.tree-map.lower-bound': ['minúsculas-bound', 'lb', 'mb']
+  'tree-map.tree-map.put': ['poner', 'p', 'p']
+  'tree-map.tree-map.rebalance': ['rebalance', 'r', 'r']
+  'tree-map.tree-map.rebalance-up': ['rebalance-up', 'ru', 'ru']
+  'tree-map.tree-map.remove': ['quitar', 'r', 'q']
+  'tree-map.tree-map.rot-left': ['rot-left', 'rl', 'rl']
+  'tree-map.tree-map.rot-right': ['rot-right', 'rr', 'rr']
+  'tree-map.tree-map.size': ['tamaño', 's', 't']
+  'tree-map.tree-map.successor': ['sucesor', 's', 's']
+  'tree-map.tree-map.update-ht': ['actualizar-ht', 'uh', 'ah']
+  'tree-map.tree-map.upper-bound': ['mayúsculas-bound', 'ub', 'mb']
+  'tree-set.tree-set.add': ['añadir', 'a', 'a']
+  'tree-set.tree-set.alloc-node': ['asignar-node', 'an', 'an']
+  'tree-set.tree-set.bf': ['bf', 'b', 'b']
+  'tree-set.tree-set.clear': ['limpiar', 'c', 'l']
+  'tree-set.tree-set.contains': ['contiene', 'c', 'c']
+  'tree-set.tree-set.empty': ['empty', 'e', 'e']
+  'tree-set.tree-set.first': ['primero', 'f', 'p']
+  'tree-set.tree-set.for-each': ['para-each', 'fe', 'pe']
+  'tree-set.tree-set.free-node': ['liberar-node', 'fn', 'ln']
+  'tree-set.tree-set.full': ['full', 'f', 'f']
+  'tree-set.tree-set.ht': ['tabulador', 'h', 't']
+  'tree-set.tree-set.init': ['init', 'i', 'i']
+  'tree-set.tree-set.last': ['último', 'l', 'u']
+  'tree-set.tree-set.lower-bound': ['minúsculas-bound', 'lb', 'mb']
+  'tree-set.tree-set.rebalance': ['rebalance', 'r', 'r']
+  'tree-set.tree-set.rebalance-up': ['rebalance-up', 'ru', 'ru']
+  'tree-set.tree-set.remove': ['quitar', 'r', 'q']
+  'tree-set.tree-set.rot-left': ['rot-left', 'rl', 'rl']
+  'tree-set.tree-set.rot-right': ['rot-right', 'rr', 'rr']
+  'tree-set.tree-set.size': ['tamaño', 's', 't']
+  'tree-set.tree-set.successor': ['sucesor', 's', 's']
+  'tree-set.tree-set.update-ht': ['actualizar-ht', 'uh', 'ah']
+  'tree-set.tree-set.upper-bound': ['mayúsculas-bound', 'ub', 'mb']
+  'txt._txt-dig-val': ['_txt-dig-val', 'tdv', 'tdv']
+  'txt.append': ['anexar', 'a', 'a']
+  'txt.append-str': ['anexar-str', 'as', 'as']
+  'txt.append-txt': ['anexar-txt', 'at', 'at']
+  'txt.at': ['en', 'a', 'e']
+  'txt.byte': ['byte', 'b', 'b']
+  'txt.clear': ['limpiar', 'c', 'l']
+  'txt.compare': ['comparar', 'c', 'c']
+  'txt.contains': ['contiene', 'c', 'c']
+  'txt.copy': ['copiar', 'c', 'c']
+  'txt.count': ['recuento', 'c', 'r']
+  'txt.decode-cp': ['decodificar-cp', 'dc', 'dc']
+  'txt.empty': ['empty', 'e', 'e']
+  'txt.ends-with': ['extremos-with', 'ew', 'ew']
+  'txt.eq': ['igual', 'e', 'i']
+  'txt.eq-full': ['igual-full', 'ef', 'if']
+  'txt.fields': ['campos', 'f', 'c']
+  'txt.fill': ['rellenar', 'f', 'r']
+  'txt.from-bytes': ['conversión desde bytes', 'fb', 'cdb']
+  'txt.from-chars': ['conversión desde chars', 'fc', 'cdc']
+  'txt.from-hex': ['conversión desde hex', 'fh', 'cdh']
+  'txt.from-str': ['conversión desde str', 'fs', 'cds']
+  'txt.index': ['índice', 'i', 'i']
+  'txt.index-from': ['índice-from', 'if', 'if']
+  'txt.join': ['unir', 'j', 'u']
+  'txt.last-index': ['último-index', 'li', 'ui']
+  'txt.len': ['longitud', 'l', 'l']
+  'txt.lines': ['líneas', 'l', 'l']
+  'txt.new': ['nuevo', 'n', 'n']
+  'txt.repeat': ['repetir', 'r', 'r']
+  'txt.replace-char': ['reemplazar-char', 'rc', 'rc']
+  'txt.replace-n': ['reemplazar-n', 'rn', 'rn']
+  'txt.replace-str': ['reemplazar-str', 'rs', 'rs']
+  'txt.reverse': ['invertir', 'r', 'i']
+  'txt.rindex': ['índice-rev', 'r', 'ir']
+  'txt.rindex-from': ['índice-rev-from', 'rf', 'irf']
+  'txt.set-byte': ['establecer-byte', 'sb', 'eb']
+  'txt.slice': ['rebanada', 's', 'r']
+  'txt.split': ['dividir', 's', 'd']
+  'txt.split-n': ['dividir-n', 'sn', 'dn']
+  'txt.starts-with': ['starts-with', 'sw', 'sw']
+  'txt.to-bigint': ['conversión a bigint', 'tb', 'cab']
+  'txt.to-bool': ['conversión a bool', 'tb', 'cab']
+  'txt.to-byte': ['conversión a byte', 'tb', 'cab']
+  'txt.to-bytes': ['conversión a bytes', 'tb', 'cab']
+  'txt.to-f32': ['conversión a f32', 'tf', 'caf3']
+  'txt.to-f64': ['conversión a f64', 'tf', 'caf6']
+  'txt.to-hex': ['conversión a hex', 'th', 'cah']
+  'txt.to-i16': ['conversión a i16', 'ti', 'cai1']
+  'txt.to-i32': ['conversión a i32', 'ti', 'cai3']
+  'txt.to-i64': ['conversión a i64', 'ti', 'cai6']
+  'txt.to-i8': ['conversión a i8', 'ti', 'cai8']
+  'txt.to-lower': ['conversión a lower', 'tl', 'cal']
+  'txt.to-str': ['conversión a str', 'ts', 'cas']
+  'txt.to-u16': ['conversión a u16', 'tu', 'cau1']
+  'txt.to-u32': ['conversión a u32', 'tu', 'cau3']
+  'txt.to-u64': ['conversión a u64', 'tu', 'cau6']
+  'txt.to-u8': ['conversión a u8', 'tu', 'cau8']
+  'txt.to-upper': ['conversión a upper', 'tu', 'cau']
+  'txt.trim': ['recortar', 't', 'r']
+  'txt.trim-char': ['recortar-char', 'tc', 'rc']
+  'txt.truncate': ['truncate', 't', 't']
+  'txt.txt-hex-val': ['texto-hex-val', 'thv', 'thv']
+  'unix.unix-conn.close': ['cerrar', 'c', 'c']
+  'unix.unix-conn.dial': ['marcar', 'd', 'm']
+  'unix.unix-conn.fd-of': ['fd-of', 'fo', 'fo']
+  'unix.unix-conn.recv': ['recibir', 'r', 'r']
+  'unix.unix-conn.recv-all': ['recibir-all', 'ra', 'ra']
+  'unix.unix-conn.recv-with-timeout': ['recibir-with-timeout', 'rwt', 'rwt']
+  'unix.unix-conn.send': ['enviar', 's', 'e']
+  'unix.unix-conn.set-recv-timeout': ['establecer-recv-timeout', 'srt', 'ert']
+  'unix.unix-conn.set-timeout': ['establecer-timeout', 'st', 'et']
+  'unix.unix-dial': ['unix-dial', 'ud', 'ud']
+  'unix.unix-dial-timeout': ['unix-dial-timeout', 'udt', 'udt']
+  'unix.unix-dial-to': ['unix-dial-to', 'udt', 'udt']
+  'unix.unix-listen': ['unix-listen', 'ul', 'ul']
+  'unix.unix-listen-on': ['unix-listen-on', 'ulo', 'ulo']
+  'unix.unix-listener.accept': ['aceptar', 'a', 'a']
+  'unix.unix-listener.accept-with-timeout': ['aceptar-with-timeout', 'awt', 'awt']
+  'unix.unix-listener.close': ['cerrar', 'c', 'c']
+  'unix.unix-listener.fd-of': ['fd-of', 'fo', 'fo']
+  'unix.unix-listener.listen': ['escuchar', 'l', 'e']
+  'unix.unix-listener.path-of': ['ruta-of', 'po', 'ro']
+  'unix.unix-listener.set-timeout': ['establecer-timeout', 'st', 'et']
+  'url.url-basic-auth': ['url-basic-auth', 'uba', 'uba']
+  'url.url-build-query': ['url-build-query', 'ubq', 'ubq']
+  'url.url-decode': ['url-decode', 'ud', 'ud']
+  'url.url-encode': ['url-encode', 'ue', 'ue']
+  'url.url-encode-component': ['url-encode-component', 'uec', 'uec']
+  'url.url-info.get-query': ['obtener-query', 'gq', 'oq']
+  'url.url-info.set-query': ['establecer-query', 'sq', 'eq']
+  'url.url-info.to-str': ['conversión a str', 'ts', 'cas']
+  'url.url-join': ['url-join', 'uj', 'uj']
+  'url.url-parse': ['url-parse', 'up', 'up']
+  'url.url-parse-basic-auth': ['url-parse-basic-auth', 'upba', 'upba']
+  'uuid.cmp': ['cmp', 'c', 'c']
+  'uuid.eq': ['igual', 'e', 'i']
+  'uuid.from-str': ['conversión desde str', 'fs', 'cds']
+  'uuid.hex-byte': ['hex-byte', 'hb', 'hb']
+  'uuid.hex-byte-upper': ['hex-byte-upper', 'hbu', 'hbu']
+  'uuid.hex-val': ['hex-val', 'hv', 'hv']
+  'uuid.is-nil': ['¿ nil?', 'in', 'n']
+  'uuid.new-v4': ['nuevo-v4', 'nv', 'nv4']
+  'uuid.nil-uuid': ['nil-uuid', 'nu', 'nu']
+  'uuid.parse-hex-byte': ['análisis-hex-byte', 'phb', 'ahb']
+  'uuid.parse-no-dashes': ['análisis-no-dashes', 'pnd', 'and']
+  'uuid.parse-with-dashes': ['análisis-with-dashes', 'pwd', 'awd']
+  'uuid.to-str': ['conversión a str', 'ts', 'cas']
+  'uuid.to-str-upper': ['conversión a str-upper', 'tsu', 'casu']
+  'uuid.validate': ['validar', 'v', 'v']
+  'uuid.variant': ['variante', 'v', 'v']
+  'uuid.version': ['versión', 'v', 'v']
+  'vec.at': ['en', 'a', 'e']
+  'vec.clone': ['clonar', 'c', 'c']
+  'vec.contains': ['contiene', 'c', 'c']
+  'vec.eq': ['igual', 'e', 'i']
+  'vec.extend': ['extender', 'e', 'e']
+  'vec.fill': ['rellenar', 'f', 'r']
+  'vec.first': ['primero', 'f', 'p']
+  'vec.index-of': ['índice-of', 'io', 'io']
+  'vec.insert': ['insertar', 'i', 'i']
+  'vec.last': ['último', 'l', 'u']
+  'vec.len': ['longitud', 'l', 'l']
+  'vec.max': ['máx', 'm', 'm']
+  'vec.min': ['mín', 'm', 'm']
+  'vec.pop': ['sacar', 'p', 's']
+  'vec.remove': ['quitar', 'r', 'q']
+  'vec.reverse': ['invertir', 'r', 'i']
+  'vec.sum': ['suma', 's', 's']
+  'vec.swap': ['intercambiar', 's', 'i']
+  'vec.to-arr': ['conversión a arr', 'ta', 'caa']
+  'vec.to-str': ['conversión a str', 'ts', 'cas']
+  'vec.truncate': ['truncate', 't', 't']
+  'vec.vec-clear': ['vec-clear', 'vc', 'vc']
+  'vec.vec-push': ['vec-push', 'vp', 'vp']
+  'ws.build-frame': ['construir-frame', 'bf', 'cf']
+  'ws.client.close': ['cerrar', 'c', 'c']
+  'ws.client.is-connected': ['¿ connected?', 'ic', 'c']
+  'ws.client.recv': ['recibir', 'r', 'r']
+  'ws.client.send': ['enviar', 's', 'e']
+  'ws.client.send-binary': ['enviar-binary', 'sb', 'eb']
+  'ws.client.send-close': ['enviar-close', 'sc', 'ec']
+  'ws.client.send-ping': ['enviar-ping', 'sp', 'ep']
+  'ws.client.send-pong': ['enviar-pong', 'sp', 'ep']
+  'ws.client.send-text': ['enviar-text', 'st', 'et']
+  'ws.compute-accept': ['calcular-accept', 'ca', 'ca']
+  'ws.connect': ['conectar', 'c', 'c']
+  'ws.gen-client-key': ['gen-client-key', 'gck', 'gck']
+  'ws.gen-mask-key': ['gen-mask-key', 'gmk', 'gmk']
+  'ws.listen-on': ['escuchar-on', 'lo', 'eo']
+  'ws.next-rand': ['siguiente-rand', 'nr', 'sr']
+  'ws.server-conn.close': ['cerrar', 'c', 'c']
+  'ws.server-conn.handshake': ['handshake', 'h', 'h']
+  'ws.server-conn.is-connected': ['¿ connected?', 'ic', 'c']
+  'ws.server-conn.recv': ['recibir', 'r', 'r']
+  'ws.server-conn.recv-nb': ['recibir-nb', 'rn', 'rn']
+  'ws.server-conn.send': ['enviar', 's', 'e']
+  'ws.server-conn.send-binary': ['enviar-binary', 'sb', 'eb']
+  'ws.server-conn.send-close': ['enviar-close', 'sc', 'ec']
+  'ws.server-conn.send-ping': ['enviar-ping', 'sp', 'ep']
+  'ws.server-conn.send-pong': ['enviar-pong', 'sp', 'ep']
+  'ws.server-conn.send-text': ['enviar-text', 'st', 'et']
+  'ws.server.accept': ['aceptar', 'a', 'a']
+  'ws.server.close': ['cerrar', 'c', 'c']
+  'ws.server.listen': ['escuchar', 'l', 'e']
+  'x25519.fe-add': ['campo-add', 'fa', 'ca']
+  'x25519.fe-add-v': ['campo-add-v', 'fav', 'cav']
+  'x25519.fe-copy': ['campo-copy', 'fc', 'cc']
+  'x25519.fe-cswap': ['campo-cswap', 'fc', 'cc']
+  'x25519.fe-frombytes': ['campo-frombytes', 'ff', 'cf']
+  'x25519.fe-frombytes-v': ['campo-frombytes-v', 'ffv', 'cfv']
+  'x25519.fe-invert': ['campo-invert', 'fi', 'ci']
+  'x25519.fe-invert-v': ['campo-invert-v', 'fiv', 'civ']
+  'x25519.fe-mul': ['campo-mul', 'fm', 'cm']
+  'x25519.fe-mul-v': ['campo-mul-v', 'fmv', 'cmv']
+  'x25519.fe-mul121665': ['campo-mul121665', 'fm', 'cm1']
+  'x25519.fe-one': ['campo-one', 'fo', 'co']
+  'x25519.fe-one-v': ['campo-one-v', 'fov', 'cov']
+  'x25519.fe-sq': ['campo-sq', 'fs', 'cs']
+  'x25519.fe-sq-v': ['campo-sq-v', 'fsv', 'csv']
+  'x25519.fe-sub': ['campo-sub', 'fs', 'cs']
+  'x25519.fe-sub-v': ['campo-sub-v', 'fsv', 'csv']
+  'x25519.fe-tobytes': ['campo-tobytes', 'ft', 'ct']
+  'x25519.fe-tobytes-v': ['campo-tobytes-v', 'ftv', 'ctv']
+  'x25519.fe-zero': ['campo-zero', 'fz', 'cz']
+  'x25519.fe-zero-v': ['campo-zero-v', 'fzv', 'czv']
+  'x25519.x25519-gen-keypair': ['x25519-gen-keypair', 'xgk', 'x2gk']
+  'x25519.x25519-get-basepoint': ['x25519-get-basepoint', 'xgb', 'x2gb']
+  'x25519.x25519-scalarmult': ['x25519-scalarmult', 'xs', 'x2s']
+  'x25519.x25519-scalarmult-base': ['x25519-scalarmult-base', 'xsb', 'x2sb']
+  'x25519.x25519-scalarmult-base-bytes': ['x25519-scalarmult-base-bytes', 'xsbb', 'x2sbb']
+  'x25519.x25519-scalarmult-bytes': ['x25519-scalarmult-bytes', 'xsb', 'x2sb']
+  'x509.alg-id-rsa-encryption': ['alg-id-rsa-encryption', 'aire', 'aire']
+  'x509.alg-id-sha256-with-rsa': ['alg-id-sha256-with-rsa', 'aiswr', 'ais2wr']
+  'x509.der-enc-bitstring': ['DER-enc-bitstring', 'deb', 'deb']
+  'x509.der-enc-explicit': ['DER-enc-explicit', 'dee', 'dee']
+  'x509.der-enc-integer-bytes': ['DER-enc-integer-bytes', 'deib', 'deib']
+  'x509.der-enc-integer-i64': ['DER-enc-integer-i64', 'deii', 'deii6']
+  'x509.der-enc-len': ['DER-enc-len', 'del', 'del']
+  'x509.der-enc-null': ['DER-enc-null', 'den', 'den']
+  'x509.der-enc-octetstring': ['DER-enc-octetstring', 'deo', 'deo']
+  'x509.der-enc-oid-raw': ['DER-enc-oid-raw', 'deor', 'deor']
+  'x509.der-enc-printablestring': ['DER-enc-printablestring', 'dep', 'dep']
+  'x509.der-enc-sequence': ['DER-enc-sequence', 'des', 'des']
+  'x509.der-enc-set': ['DER-enc-set', 'des', 'des']
+  'x509.der-enc-tlv': ['DER-enc-tlv', 'det', 'det']
+  'x509.der-enc-utctime': ['DER-enc-utctime', 'deu', 'deu']
+  'x509.der-len': ['DER-len', 'dl', 'dl']
+  'x509.der-skip': ['DER-skip', 'ds', 'ds']
+  'x509.der-tag': ['DER-tag', 'dt', 'dt']
+  'x509.rsa-pkcs1-sign-sha256': ['RSA-pkcs1-sign-sha256', 'rpss', 'rp1ss2']
+  'x509.sha256-compress': ['sha256-compress', 'sc', 's2c']
+  'x509.x509-build-name-cn': ['X.509-build-name-cn', 'xbnc', 'x5bnc']
+  'x509.x509-build-rsa-public-key': ['X.509-build-rsa-public-key', 'xbrpk', 'x5brpk']
+  'x509.x509-build-self-signed-cert': ['X.509-build-self-signed-cert', 'xbssc', 'x5bssc']
+  'x509.x509-build-spki': ['X.509-build-spki', 'xbs', 'x5bs']
+  'x509.x509-build-tbs': ['X.509-build-tbs', 'xbt', 'x5bt']
+  'x509.x509-build-validity': ['X.509-build-validity', 'xbv', 'x5bv']
+  'x509.x509-bytes-to-bn': ['X.509-bytes-to-bn', 'xbtb', 'x5btb']
+  'x509.x509-fingerprint': ['X.509-fingerprint', 'xf', 'x5f']
+  'x509.x509-rsa-e': ['X.509-rsa-e', 'xre', 'x5re']
+  'x509.x509-rsa-n': ['X.509-rsa-n', 'xrn', 'x5rn']
+  'x509.x509-serial': ['X.509-serial', 'xs', 'x5s']
+  'x509.x509-tbs-range': ['X.509-tbs-range', 'xtr', 'x5tr']
+  'xz.lzma-decoder.decode': ['decodificar', 'd', 'd']
+  'xz.lzma-decoder.decode-distance': ['decodificar-distance', 'dd', 'dd']
+  'xz.lzma-decoder.decode-length': ['decodificar-length', 'dl', 'dl']
+  'xz.lzma-decoder.decode-literal': ['decodificar-literal', 'dl', 'dl']
+  'xz.lzma-decoder.init-probs': ['init-probs', 'ip', 'ip']
+  'xz.lzma-decoder.update-state-literal': ['actualizar-state-literal', 'usl', 'asl']
+  'xz.lzma-decoder.update-state-match': ['actualizar-state-match', 'usm', 'asm']
+  'xz.lzma-decoder.update-state-rep': ['actualizar-state-rep', 'usr', 'asr']
+  'xz.lzma-decoder.update-state-shortrep': ['actualizar-state-shortrep', 'uss', 'ass']
+  'xz.lzma-decompress': ['lzma-decompress', 'ld', 'ld']
+  'xz.lzma-rd.decode-bit': ['decodificar-bit', 'db', 'db']
+  'xz.lzma-rd.decode-bit-tree': ['decodificar-bit-tree', 'dbt', 'dbt']
+  'xz.lzma-rd.decode-direct-bits': ['decodificar-direct-bits', 'ddb', 'ddb']
+  'xz.lzma-rd.decode-reverse-bit-tree': ['decodificar-reverse-bit-tree', 'drbt', 'drbt']
+  'xz.lzma-rd.init': ['init', 'i', 'i']
+  'xz.lzma-rd.normalize': ['normalizar', 'n', 'n']
+  'xz.lzma2-decompress-stream': ['lzma2-decompress-stream', 'lds', 'l2ds']
+  'xz.xz-compress': ['xz-compress', 'xc', 'xc']
+  'xz.xz-decompress': ['xz-decompress', 'xd', 'xd']
+  'yaml.anchor': ['ancla', 'a', 'a']
+  'yaml.at': ['en', 'a', 'e']
+  'yaml.bool': ['bool', 'b', 'b']
+  'yaml.doc': ['doc', 'd', 'd']
+  'yaml.doc-count': ['doc-count', 'dc', 'dc']
+  'yaml.error': ['error', 'e', 'e']
+  'yaml.error-of': ['error-of', 'eo', 'eo']
+  'yaml.f64': ['f64', 'f', 'f6']
+  'yaml.find': ['buscar', 'f', 'b']
+  'yaml.find-bool': ['buscar-bool', 'fb', 'bb']
+  'yaml.find-f64': ['buscar-f64', 'ff', 'bf6']
+  'yaml.find-i64': ['buscar-i64', 'fi', 'bi6']
+  'yaml.find-str': ['buscar-str', 'fs', 'bs']
+  'yaml.get': ['obtener', 'g', 'o']
+  'yaml.get-bool': ['obtener-bool', 'gb', 'ob']
+  'yaml.get-f64': ['obtener-f64', 'gf', 'of6']
+  'yaml.get-i64': ['obtener-i64', 'gi', 'oi6']
+  'yaml.get-str': ['obtener-str', 'gs', 'os']
+  'yaml.i64': ['i64', 'i', 'i6']
+  'yaml.is-bool': ['¿ bool?', 'ib', 'b']
+  'yaml.is-int': ['¿ int?', 'ii', 'i']
+  'yaml.is-map': ['¿ map?', 'im', 'm']
+  'yaml.is-nan': ['¿ nan?', 'in', 'n']
+  'yaml.is-null': ['¿ null?', 'in', 'n']
+  'yaml.is-num': ['¿ num?', 'in', 'n']
+  'yaml.is-seq': ['¿ seq?', 'is', 's']
+  'yaml.is-str': ['¿ str?', 'is', 's']
+  'yaml.key': ['clave', 'k', 'c']
+  'yaml.key-node': ['clave-node', 'kn', 'cn']
+  'yaml.kind': ['tipo', 'k', 't']
+  'yaml.len': ['longitud', 'l', 'l']
+  'yaml.line-of': ['línea-of', 'lo', 'lo']
+  'yaml.node-count': ['nodo-count', 'nc', 'nc']
+  'yaml.parse': ['análisis', 'p', 'a']
+  'yaml.parse-all': ['análisis-all', 'pa', 'aa']
+  'yaml.scalar-text': ['escalar-text', 'st', 'et']
+  'yaml.source-of': ['source-of', 'so', 'so']
+  'yaml.str': ['cadena', 's', 'c']
+  'yaml.stringify': ['cadenaizar', 's', 'c']
+  'yaml.strip-bom': ['despojar-bom', 'sb', 'db']
+  'yaml.style': ['estilo', 's', 'e']
+  'yaml.tag': ['etiqueta', 't', 'e']
+  'yaml.text': ['texto', 't', 't']
+  'yaml.to-json': ['conversión a json', 'tj', 'caj']
+  'yaml.to-json-all': ['conversión a json-all', 'tja', 'caja']
+  'yaml.to-yaml': ['conversión a yaml', 'ty', 'cay']
+  'yaml.valid': ['válido', 'v', 'v']
+  'yaml.valid-of': ['válido-of', 'vo', 'vo']
+  'yaml.value': ['valor', 'v', 'v']
+  'yaml.yaml-apply-tag': ['yaml-apply-tag', 'yat', 'yat']
+  'yaml.yaml-emit': ['yaml-emit', 'ye', 'ye']
+  'yaml.yaml-f-is-inf': ['yaml-f-is-inf', 'yfii', 'yfii']
+  'yaml.yaml-f-is-nan': ['yaml-f-is-nan', 'yfin', 'yfin']
+  'yaml.yaml-hex-char': ['yaml-hex-char', 'yhc', 'yhc']
+  'yaml.yaml-hex-digit': ['yaml-hex-digit', 'yhd', 'yhd']
+  'yaml.yaml-inf': ['yaml-inf', 'yi', 'yi']
+  'yaml.yaml-json-escape': ['yaml-json-escape', 'yje', 'yje']
+  'yaml.yaml-json-of': ['yaml-json-of', 'yjo', 'yjo']
+  'yaml.yaml-key-eq': ['yaml-key-eq', 'yke', 'yke']
+  'yaml.yaml-key-text-eq': ['yaml-key-text-eq', 'ykte', 'ykte']
+  'yaml.yaml-nan': ['yaml-nan', 'yn', 'yn']
+  'yaml.yaml-node-is-nan': ['yaml-node-is-nan', 'ynin', 'ynin']
+  'yaml.yaml-parse-radix': ['yaml-parse-radix', 'ypr', 'ypr']
+  'yaml.yaml-parser.advance': ['avanzar', 'a', 'a']
+  'yaml.yaml-parser.anchor-id': ['ancla-id', 'ai', 'ai']
+  'yaml.yaml-parser.at': ['en', 'a', 'e']
+  'yaml.yaml-parser.at-doc-marker': ['en-doc-marker', 'adm', 'edm']
+  'yaml.yaml-parser.at-eol': ['en-eol', 'ae', 'ee']
+  'yaml.yaml-parser.byte-at': ['byte-at', 'ba', 'ba']
+  'yaml.yaml-parser.cur': ['cur', 'c', 'c']
+  'yaml.yaml-parser.eof': ['eof', 'e', 'e']
+  'yaml.yaml-parser.fail': ['fallo', 'f', 'f']
+  'yaml.yaml-parser.fail-at': ['fallo-at', 'fa', 'fa']
+  'yaml.yaml-parser.indent-at': ['indentar-at', 'ia', 'ia']
+  'yaml.yaml-parser.is-seq-dash': ['¿ seq-dash?', 'isd', 'sd']
+  'yaml.yaml-parser.line-end-of': ['línea-end-of', 'leo', 'leo']
+  'yaml.yaml-parser.line-start-of': ['línea-start-of', 'lso', 'lso']
+  'yaml.yaml-parser.looks-like-map-entry': ['aspecto-like-map-entry', 'llme', 'alme']
+  'yaml.yaml-parser.merge-into': ['fusionar-into', 'mi', 'fi']
+  'yaml.yaml-parser.merge-one': ['fusionar-one', 'mo', 'fo']
+  'yaml.yaml-parser.newline': ['salto de línea', 'n', 'sdl']
+  'yaml.yaml-parser.parse-alias': ['análisis-alias', 'pa', 'aa']
+  'yaml.yaml-parser.parse-block': ['análisis-block', 'pb', 'ab']
+  'yaml.yaml-parser.parse-block-indented': ['análisis-block-indented', 'pbi', 'abi']
+  'yaml.yaml-parser.parse-block-map': ['análisis-block-map', 'pbm', 'abm']
+  'yaml.yaml-parser.parse-block-scalar': ['análisis-block-scalar', 'pbs', 'abs']
+  'yaml.yaml-parser.parse-block-seq': ['análisis-block-seq', 'pbs', 'abs']
+  'yaml.yaml-parser.parse-docs': ['análisis-docs', 'pd', 'ad']
+  'yaml.yaml-parser.parse-document': ['análisis-document', 'pd', 'ad']
+  'yaml.yaml-parser.parse-double': ['análisis-double', 'pd', 'ad']
+  'yaml.yaml-parser.parse-flow-map': ['análisis-flow-map', 'pfm', 'afm']
+  'yaml.yaml-parser.parse-flow-node': ['análisis-flow-node', 'pfn', 'afn']
+  'yaml.yaml-parser.parse-flow-seq': ['análisis-flow-seq', 'pfs', 'afs']
+  'yaml.yaml-parser.parse-plain': ['análisis-plain', 'pp', 'ap']
+  'yaml.yaml-parser.parse-props': ['análisis-props', 'pp', 'ap']
+  'yaml.yaml-parser.parse-single': ['análisis-single', 'ps', 'as']
+  'yaml.yaml-parser.push-node': ['empujar-node', 'pn', 'en']
+  'yaml.yaml-parser.push-null': ['empujar-null', 'pn', 'en']
+  'yaml.yaml-parser.push-scalar': ['empujar-scalar', 'ps', 'es']
+  'yaml.yaml-parser.read-line-content': ['leer-line-content', 'rlc', 'llc']
+  'yaml.yaml-parser.read-tag': ['leer-tag', 'rt', 'lt']
+  'yaml.yaml-parser.read-token': ['leer-token', 'rt', 'lt']
+  'yaml.yaml-parser.register-anchor': ['registrar-anchor', 'ra', 'ra']
+  'yaml.yaml-parser.set-props': ['establecer-props', 'sp', 'ep']
+  'yaml.yaml-parser.skip-blank-lines': ['omitir-blank-lines', 'sbl', 'obl']
+  'yaml.yaml-parser.skip-doc-preamble': ['omitir-doc-preamble', 'sdp', 'odp']
+  'yaml.yaml-parser.skip-flow-ws': ['omitir-flow-ws', 'sfw', 'ofw']
+  'yaml.yaml-parser.skip-spaces': ['omitir-spaces', 'ss', 'os']
+  'yaml.yaml-parser.skip-to-doc-boundary': ['omitir-to-doc-boundary', 'stdb', 'otdb']
+  'yaml.yaml-parser.skip-to-eol': ['omitir-to-eol', 'ste', 'ote']
+  'yaml.yaml-plain-safe': ['yaml-plain-safe', 'yps', 'yps']
+  'yaml.yaml-quote': ['yaml-quote', 'yq', 'yq']
+  'yaml.yaml-resolve-plain': ['yaml-resolve-plain', 'yrp', 'yrp']
+  'yaml.yaml-scalar-repr': ['yaml-scalar-repr', 'ysr', 'ysr']
+  'yaml.yaml-scan-number': ['yaml-scan-number', 'ysn', 'ysn']
+  'yaml.yaml-spaces': ['yaml-spaces', 'ys', 'ys']
+  'yaml.yaml-str-at': ['yaml-str-at', 'ysa', 'ysa']
+  'yaml.yaml-tag-name': ['yaml-tag-name', 'ytn', 'ytn']
+  'yaml.yaml-to-f64': ['yaml-to-f64', 'ytf', 'ytf6']
+  'yaml.yaml-to-i64': ['yaml-to-i64', 'yti', 'yti6']
+  'yaml.yaml-unescape-double': ['yaml-unescape-double', 'yud', 'yud']
+  'zip.u16le': ['u16le', 'u', 'u1l']
+  'zip.u32le': ['u32le', 'u', 'u3l']
+  'zip.zip-entry.compressed-size': ['comprimido-size', 'cs', 'cs']
+  'zip.zip-entry.extract': ['extraer', 'e', 'e']
+  'zip.zip-entry.method': ['method', 'm', 'm']
+  'zip.zip-entry.name': ['nombre', 'n', 'n']
+  'zip.zip-entry.size': ['tamaño', 's', 't']
+  'zip.zip-writer.add-dir': ['añadir-dir', 'ad', 'ad']
+  'zip.zip-writer.add-file': ['añadir-file', 'af', 'af']
+  'zip.zip-writer.cd-put': ['cd-put', 'cp', 'cp']
+  'zip.zip-writer.cd-write-u16': ['cd-write-u16', 'cwu', 'cwu1']
+  'zip.zip-writer.cd-write-u32': ['cd-write-u32', 'cwu', 'cwu3']
+  'zip.zip-writer.finalize': ['finalizar', 'f', 'f']
+  'zip.zip-writer.put': ['poner', 'p', 'p']
+  'zip.zip-writer.write-cd-entry': ['escribir-cd-entry', 'wce', 'ece']
+  'zip.zip-writer.write-eocd': ['escribir-eocd', 'we', 'ee']
+  'zip.zip-writer.write-local-file': ['escribir-local-file', 'wlf', 'elf']
+  'zip.zip-writer.write-u16': ['escribir-u16', 'wu', 'eu1']
+  'zip.zip-writer.write-u32': ['escribir-u32', 'wu', 'eu3']
+  'zip.zip.compressed-size': ['comprimido-size', 'cs', 'cs']
+  'zip.zip.count': ['recuento', 'c', 'r']
+  'zip.zip.entry': ['entrada', 'e', 'e']
+  'zip.zip.entry-off': ['entrada-off', 'eo', 'eo']
+  'zip.zip.extract': ['extraer', 'e', 'e']
+  'zip.zip.find-eocd': ['buscar-eocd', 'fe', 'be']
+  'zip.zip.get-cd-off': ['obtener-cd-off', 'gco', 'oco']
+  'zip.zip.get-total': ['obtener-total', 'gt', 'ot']
+  'zip.zip.method': ['method', 'm', 'm']
+  'zip.zip.name': ['nombre', 'n', 'n']
+  'zip.zip.size': ['tamaño', 's', 't']
+  'zlib.adler-32': ['adler-32', 'a3', 'a3']
+  'zlib.zlib-compress': ['zlib-compress', 'zc', 'zc']
+  'zlib.zlib-consumed-stored': ['zlib-consumed-stored', 'zcs', 'zcs']
+  'zlib.zlib-decompress': ['zlib-decompress', 'zd', 'zd']
+  'zlib.zlib-decompress-stored': ['zlib-decompress-stored', 'zds', 'zds']
+  'zstd.bits-for-count': ['bits-for-count', 'bfc', 'bfc']
+  'zstd.fse-table.build': ['construir', 'b', 'c']
+  'zstd.fse-table.decode': ['decodificar', 'd', 'd']
+  'zstd.zs-bit-reader.align-to-byte': ['alinear-to-byte', 'atb', 'atb']
+  'zstd.zs-bit-reader.read-bit': ['leer-bit', 'rb', 'lb']
+  'zstd.zs-bit-reader.read-bits': ['leer-bits', 'rb', 'lb']
+  'zstd.zs-bit-reader.read-varint': ['leer-varint', 'rv', 'lv']
+  'zstd.zs-frame.decode-block': ['decodificar-block', 'db', 'db']
+  'zstd.zs-frame.decode-compressed-block': ['decodificar-compressed-block', 'dcb', 'dcb']
+  'zstd.zs-frame.read-frame-header': ['leer-frame-header', 'rfh', 'lfh']
+  'zstd.zs-huffman.build': ['construir', 'b', 'c']
+  'zstd.zs-huffman.decode': ['decodificar', 'd', 'd']
+  'zstd.zstd-compress': ['zstd-compress', 'zc', 'zc']
+  'zstd.zstd-decompress': ['zstd-decompress', 'zd', 'zd']
 }

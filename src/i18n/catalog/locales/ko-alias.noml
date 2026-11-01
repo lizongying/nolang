@@ -1,2115 +1,2134 @@
 ; Nolang alias catalog: ko
-; Localized display names (别名) for every std function/method, keyed by
-; the same doc anchor its `; [label](#anchor)` comment uses, so an alias and
-; its documentation block always agree on the key. Values are short, pure
-; translated names — the identifier itself remains the only spelling that
-; compiles. Keys must exist as an anchor in some src/std .no source, or the
-; gate rejects the catalog; `make i18n -alias-missing` lists what is left.
+; Display names (别名) and keystroke columns for every std function/method,
+; keyed by the same doc anchor its `; [label](#anchor)` comment uses, so an
+; alias and its documentation block always agree on the key. One row per
+; anchor, as a POSITIONAL array:
+;
+;   'args.get': ['获取参数', 'g', 'hqcs', 'huoqucanshu']   zh-CN, with pinyin
+;   'args.get': ['取得參數', 'g', 'qdhs', 'fm32k6h0gj4']   zh-TW, with zhuyin
+;   'args.get': ['Get argument', 'g', 'ga']                every other locale
+;
+;   [0] alias   display name shown by hover
+;   [1] enkeys  initials of the identifier — required, same in every locale
+;   [2] keys    initials of the localized name — required
+;   [3] full    full keystrokes — optional: pinyin (zh-CN) or zhuyin key
+;               positions on a Dachen keyboard (zh-TW). No other locale
+;               carries it, so its presence is what marks a Chinese catalog.
+;
+; The order is a contract, not a convention: a row must have 3 or 4 elements
+; and every element must be a string. enkeys and keys are ASCII [a-z0-9];
+; full also uses the punctuation keys that carry bopomofo
+; (ㄝ=, ㄡ=. ㄤ=; ㄥ=/ ㄦ=-). Completion compares these byte for byte against
+; what the editor reports as typed, so a non-ASCII cell would silently never
+; match. The identifier itself remains the only spelling that compiles —
+; these columns only tell the completion provider which identifier the reader
+; is reaching for. Keys must exist as an anchor in some src/std .no source, or
+; the gate rejects the catalog; `make i18n -alias-missing` lists what is left.
 {
-  'aes-cbc.cbc-dec': 'CBC 복호화'
-  'aes-cbc.cbc-enc': 'CBC 암호화'
-  'aes-cbc.dec-128': '복호화 128'
-  'aes-cbc.dec-256': '복호화 256'
-  'aes-cbc.enc-128': '암호화 128'
-  'aes-cbc.enc-256': '암호화 256'
-  'aes-cbc.pkcs7-pad': 'PKCS#7 패딩'
-  'aes-cbc.pkcs7-unpad': 'PKCS#7 패딩 제거'
-  'aes-ctr.crypt-128': '암호 128'
-  'aes-ctr.crypt-256': '암호 256'
-  'aes-ctr.ctr-crypt': 'CTR 암호'
-  'aes-ctr.ctr-inc': 'CTR inc'
-  'aes-gcm.ctr-xor': 'CTR xor'
-  'aes-gcm.gcm-h': 'GCM 해시'
-  'aes-gcm.gcm-j0': 'GCM j0'
-  'aes-gcm.gcm-open': 'GCM 열기'
-  'aes-gcm.gcm-seal': 'GCM 봉인'
-  'aes-gcm.ghash': 'ghash'
-  'aes-gcm.ghash-mul': 'ghash 곱셈'
-  'aes-gcm.open-128': '열기 128'
-  'aes-gcm.open-256': '열기 256'
-  'aes-gcm.seal-128': '봉인 128'
-  'aes-gcm.seal-256': '봉인 256'
-  'aes.add-round-key': '추가 반올림 키'
-  'aes.add-round-key-at': '추가 반올림 키 위치'
-  'aes.dec-128': '복호화 128'
-  'aes.dec-256': '복호화 256'
-  'aes.dec-block': '복호화 블록'
-  'aes.enc-128': '암호화 128'
-  'aes.enc-256': '암호화 256'
-  'aes.enc-block': '암호화 블록'
-  'aes.gf-mul2': '유한 체 x2'
-  'aes.inv-mix-col': '역원 mix 열'
-  'aes.inv-mix-columns': '역원 mix 열'
-  'aes.inv-shift-rows': '역원 시프트 행'
-  'aes.inv-sub-bytes': '역원 뺄셈 바이트'
-  'aes.key-expand': '키 확장'
-  'aes.key-expand-256': '키 확장 256'
-  'aes.mix-col': 'mix 열'
-  'aes.mix-columns': 'mix 열'
-  'aes.rcon-val': '라운드 상수 값'
-  'aes.shift-rows': '시프트 행'
-  'aes.sub-bytes': '뺄셈 바이트'
-  'argon2.blake-g': 'blake 생성원'
-  'argon2.compress': '압축'
-  'argon2.h-prime': '해시 prime'
-  'argon2.id': 'id'
-  'argon2.rotr': '우회전'
-  'args.count': '개수'
-  'args.get': '취득'
-  'args.get-option': '취득 option'
-  'args.get-positional': '취득 positional'
-  'args.has-flag': '.has flag'
-  'args.program': '프로그램'
-  'arr-stack.arr-stack.clear': '비우기'
-  'arr-stack.arr-stack.empty': 'empty'
-  'arr-stack.arr-stack.full': 'full'
-  'arr-stack.arr-stack.size': '크기'
-  'arr.arr-stack-init': '배열 스택 초기화'
-  'arr.arr-stack-peek': '배열 스택 확인'
-  'arr.arr-stack-pop': '배열 스택 팝'
-  'arr.arr-stack-push': '배열 스택 푸시'
-  'arr.asc': '오름차순'
-  'arr.at': '위치'
-  'arr.clone': '복제'
-  'arr.contains': '포함'
-  'arr.count': '개수'
-  'arr.desc': '내림차순'
-  'arr.eq': '동등'
-  'arr.fill': '채우기'
-  'arr.first': '첫째'
-  'arr.index-of': '인덱스 의'
-  'arr.last': '마지막'
-  'arr.len': '길이'
-  'arr.link-clear': '링크 비우기'
-  'arr.link-find': '링크 찾기'
-  'arr.link-get-at': '링크 취득 위치'
-  'arr.link-init': '링크 초기화'
-  'arr.link-insert-at': '링크 삽입 위치'
-  'arr.link-peek-back': '링크 확인 뒤쪽'
-  'arr.link-peek-front': '링크 확인 앞쪽'
-  'arr.link-pop-back': '링크 팝 뒤쪽'
-  'arr.link-pop-front': '링크 팝 앞쪽'
-  'arr.link-push-back': '링크 푸시 뒤쪽'
-  'arr.link-push-front': '링크 푸시 앞쪽'
-  'arr.link-remove-at': '링크 제거 위치'
-  'arr.link-reverse': '링크 뒤집기'
-  'arr.link-set-at': '링크 설정 위치'
-  'arr.max': '최대'
-  'arr.min': '최소'
-  'arr.queue-init': '큐 초기화'
-  'arr.queue-peek': '큐 확인'
-  'arr.queue-pop': '큐 팝'
-  'arr.queue-push': '큐 푸시'
-  'arr.reverse': '뒤집기'
-  'arr.sum': '합계'
-  'arr.swap': '스왑'
-  'arr.to-str': 'str 변환'
-  'arr.to-vec': 'vec 변환'
-  'arrords.asc': '오름차순'
-  'arrords.desc': '내림차순'
-  'async.cancel': '취소'
-  'async.cancelled': '취소됨'
-  'base32.decode': '디코딩'
-  'base32.encode': '인코딩'
-  'base64.b64-val': 'base64 값'
-  'base64.decode': '디코딩'
-  'base64.encode': '인코딩'
-  'base64.encode-std': '인코딩 std'
-  'base64.encode-url': '인코딩 url'
-  'bigint._add': '_add'
-  'bigint._add-i64': '_add i64'
-  'bigint._div': '_div'
-  'bigint._div-i64': '_div i64'
-  'bigint._mod': '_mod'
-  'bigint._mod-i64': '_mod i64'
-  'bigint._mul': '_mul'
-  'bigint._mul-i64': '_mul i64'
-  'bigint._sub': '_sub'
-  'bigint.abs-add': '절대값 추가'
-  'bigint.abs-cmp': '절대값 비교'
-  'bigint.abs-sub': '절대값 뺄셈'
-  'bigint.add-bigint': '추가 큰 정수'
-  'bigint.cmp': '비교'
-  'bigint.copy': '복사'
-  'bigint.div-mod': '나눗셈 나머지'
-  'bigint.eq': '동등'
-  'bigint.from-i64': 'i64에서 변환'
-  'bigint.from-u64': 'u64에서 변환'
-  'bigint.gcd': '최대공약수'
-  'bigint.is-neg': '부호 반전 여부'
-  'bigint.is-pos': '양수 여부'
-  'bigint.is-zero': '영 여부'
-  'bigint.lcm': '최소공배수'
-  'bigint.mod-pow': '나머지 거듭제곱'
-  'bigint.mul-bigint': '곱셈 큰 정수'
-  'bigint.normalize': '정규화'
-  'bigint.one': '단일'
-  'bigint.pow': '거듭제곱'
-  'bigint.shl': '왼쪽 이동'
-  'bigint.shl1': '왼쪽 이동 1'
-  'bigint.shr': '오른쪽 이동'
-  'bigint.shr1': '오른쪽 이동 1'
-  'bigint.sub-bigint': '뺄셈 큰 정수'
-  'bigint.to-hex': 'hex 변환'
-  'bigint.to-i64': 'i64 변환'
-  'bigint.to-str': 'str 변환'
-  'bigint.zero': '영'
-  'blake2.b': '바이트'
-  'blake2.b-256': '바이트 256'
-  'blake2.b-256-hex': '바이트 256 16진수'
-  'blake2.b-compress': '바이트 압축'
-  'blake2.b-g': '바이트 생성원'
-  'blake2.b-hex': '바이트 16진수'
-  'blake2.b-state': '바이트 상태'
-  'blake2.rotr32': 'rotr32'
-  'blake2.rotr64': 'rotr64'
-  'blake2.s': '복수'
-  'blake2.s-compress': '복수 압축'
-  'blake2.s-g': '복수 생성원'
-  'blake2.s-hex': '복수 16진수'
-  'blake2.s-state': '복수 상태'
-  'bool.to-str': 'str 변환'
-  'bufio.reader.close': '닫기'
-  'bufio.reader.fill': '채우기'
-  'bufio.reader.init': '초기화'
-  'bufio.reader.read-byte': '읽기 바이트'
-  'bufio.reader.read-line': '읽기 줄'
-  'bytes.index': '인덱스'
-  'bytes.index-from': '인덱스 from'
-  'bytes.len': '길이'
-  'bytes.slice': '슬라이스'
-  'bytes.to-bytes-str': 'bytes-str 변환'
-  'bytes.to-chars': 'chars 변환'
-  'bytes.to-hex': 'hex 변환'
-  'bytes.to-hex-lower': 'hex-lower 변환'
-  'bytes.to-i64-be': 'i64-be 변환'
-  'bytes.to-i64-le': 'i64-le 변환'
-  'bytes.to-str': 'str 변환'
-  'bytes.to-txt': 'txt 변환'
-  'bzip2.bz-bit-reader.read-bit': '읽기 비트'
-  'bzip2.bz-bit-reader.read-bits': '읽기 비트'
-  'bzip2.bz-huffman.build': '구축'
-  'bzip2.bz-huffman.decode': '디코딩'
-  'bzip2.bz-huffman.decode-symbol': '디코딩 심볼'
-  'bzip2.bzip2-compress': 'bzip2 압축'
-  'bzip2.bzip2-decompress': 'bzip2 해제'
-  'chacha20-poly1305.chacha20-block': 'chacha20 블록'
-  'chacha20-poly1305.chacha20-poly1305-open': 'chacha20 poly1305 열기'
-  'chacha20-poly1305.chacha20-poly1305-seal': 'chacha20 poly1305 봉인'
-  'chacha20-poly1305.chacha20-xor': 'chacha20 xor'
-  'chacha20-poly1305.poly1305': 'poly1305'
-  'chacha20-poly1305.poly1305-key-gen': 'poly1305 키 생성'
-  'chacha20-poly1305.poly1305-reduce': 'poly1305 환원'
-  'chacha20-poly1305.qr': 'qr'
-  'chacha20-poly1305.rotl32': 'rotl32'
-  'char.is-alnum': '영숫자 여부'
-  'char.is-alpha': '알파 여부'
-  'char.is-digit': '숫자 여부'
-  'char.is-letter': 'letter 여부'
-  'char.is-lower': '소문자 여부'
-  'char.is-space': '공백 여부'
-  'char.is-upper': '대문자 여부'
-  'char.to-bytes': 'bytes 변환'
-  'char.to-lower': 'lower 변환'
-  'char.to-str': 'str 변환'
-  'char.to-txt': 'txt 변환'
-  'char.to-upper': 'upper 변환'
-  'chars.to-str': 'str 변환'
-  'client.client-create': '클라이언트 생성'
-  'client.client.close': '닫기'
-  'client.client.connect': '연결'
-  'client.client.is-connected': '연결됨 여부'
-  'client.client.reconnect': '재연결'
-  'client.client.recv': '수신'
-  'client.client.recv-line': '수신 줄'
-  'client.client.request': '요청'
-  'client.client.send': '전송'
-  'client.client.send-line': '전송 줄'
-  'cookie.build-header': '구축 헤더'
-  'cookie.build-set': '구축 설정'
-  'cookie.cookie-sign': 'cookie 서명'
-  'cookie.cookie-verify': 'cookie 검증'
-  'cookie.jar.build-header': '구축 헤더'
-  'cookie.jar.clear': '비우기'
-  'cookie.jar.count-of': '개수 의'
-  'cookie.jar.delete': '삭제'
-  'cookie.jar.get': '취득'
-  'cookie.jar.get-verified': '취득 검증됨'
-  'cookie.jar.parse-response': '파싱 응답'
-  'cookie.jar.set': '설정'
-  'cookie.jar.set-signed': '설정 부호 있음'
-  'cookie.parse-header': '파싱 헤더'
-  'cookie.parse-set': '파싱 설정'
-  'crc-16.hex': '16진수'
-  'crc-16.new': '신규'
-  'crc-32.new': '신규'
-  'crc-64.hex': '16진수'
-  'crc-64.new': '신규'
-  'csv.encode-field': '인코딩 필드'
-  'csv.parse-field': '파싱 필드'
-  'csv.parse-line': '파싱 줄'
-  'deque.deque.clear': '비우기'
-  'deque.deque.empty': 'empty'
-  'deque.deque.peek-back': '확인 뒤쪽'
-  'deque.deque.peek-front': '확인 앞쪽'
-  'deque.deque.pop-back': '팝 뒤쪽'
-  'deque.deque.pop-front': '팝 앞쪽'
-  'deque.deque.push-back': '푸시 뒤쪽'
-  'deque.deque.push-front': '푸시 앞쪽'
-  'deque.deque.size': '크기'
-  'des.des-block': 'DES 블록'
-  'des.des-dec': 'DES 복호화'
-  'des.des-enc': 'DES 암호화'
-  'des.des-key-schedule': 'DES 키 스케줄'
-  'des.f': '부동 소수'
-  'des.permute': '치환'
-  'des.sbox-lookup': 'S박스 조회'
-  'dns.build-query': '구축 쿼리'
-  'dns.dial': '다이얼'
-  'dns.parse-name': '파싱 이름'
-  'dns.parse-response': '파싱 응답'
-  'dns.resolve': 'resolve'
-  'dns.resolve-all': 'resolve 전체'
-  'dns.resolve-from': 'resolve from'
-  'dom.append-child': '추가 자식'
-  'dom.attribute-count': '속성 개수'
-  'dom.attribute-name': '속성 이름'
-  'dom.attribute-value': '속성 값'
-  'dom.blob-has': 'blob .has'
-  'dom.child-at': '자식 위치'
-  'dom.child-count': '자식 개수'
-  'dom.class-has': '등급 .has'
-  'dom.cp-append': 'cp 추가'
-  'dom.create-comment': '생성 주석'
-  'dom.create-element': '생성 요소'
-  'dom.create-text-node': '생성 텍스트 노드'
-  'dom.decode-entities': '디코딩 엔티티'
-  'dom.document-element': '문서 요소'
-  'dom.dom-closers-of': 'DOM 닫개 의'
-  'dom.dom-pool.alloc': '할당'
-  'dom.dom-pool.append': '추가'
-  'dom.dom-pool.attr-edge-at': '속성 간선 위치'
-  'dom.dom-pool.collect-class': '수집 등급'
-  'dom.dom-pool.collect-tag': '수집 태그'
-  'dom.dom-pool.detach': '분리'
-  'dom.dom-pool.find-attr': '찾기 속성'
-  'dom.dom-pool.find-id-node': '찾기 id 노드'
-  'dom.dom-pool.html-add-text': 'html 추가 텍스트'
-  'dom.dom-pool.html-bogus-comment': 'html 위조 주석'
-  'dom.dom-pool.html-parse-attr': 'html 파싱 속성'
-  'dom.dom-pool.html-parse-close-name': 'html 파싱 닫기 이름'
-  'dom.dom-pool.html-parse-comment': 'html 파싱 주석'
-  'dom.dom-pool.html-parse-doc': 'html 파싱 문서'
-  'dom.dom-pool.html-parse-open': 'html 파싱 열기'
-  'dom.dom-pool.html-parse-pi': 'html 파싱 pi'
-  'dom.dom-pool.html-set-attr-once': 'html 설정 속성 한 번'
-  'dom.dom-pool.init': '초기화'
-  'dom.dom-pool.insert-before': '삽입 이전'
-  'dom.dom-pool.parse-doctype-node': '파싱 doctype 노드'
-  'dom.dom-pool.remove-attr': '제거 속성'
-  'dom.dom-pool.ser': '직렬화'
-  'dom.dom-pool.ser-children': '직렬화 자식'
-  'dom.dom-pool.set-attr': '설정 속성'
-  'dom.dom-pool.text-of': '텍스트 의'
-  'dom.dom-pool.valid': '유효'
-  'dom.dom-pool.xml-add-text': 'xml 추가 텍스트'
-  'dom.dom-pool.xml-parse-attr': 'xml 파싱 속성'
-  'dom.dom-pool.xml-parse-cdata': 'xml 파싱 CDATA'
-  'dom.dom-pool.xml-parse-close': 'xml 파싱 닫기'
-  'dom.dom-pool.xml-parse-comment': 'xml 파싱 주석'
-  'dom.dom-pool.xml-parse-doc': 'xml 파싱 문서'
-  'dom.dom-pool.xml-parse-element': 'xml 파싱 요소'
-  'dom.dom-pool.xml-parse-pi': 'xml 파싱 pi'
-  'dom.dom-strip-bom': 'DOM 제거 BOM'
-  'dom.esc-attr': '이스케이프 속성'
-  'dom.esc-text': '이스케이프 텍스트'
-  'dom.find-entity': '찾기 엔티티'
-  'dom.first-child': '첫째 자식'
-  'dom.get-attribute': '취득 속성'
-  'dom.get-element-by-id': '취득 요소 기준 id'
-  'dom.get-elements-by-class-name': '취득 요소 기준 등급 이름'
-  'dom.get-elements-by-tag-name': '취득 요소 기준 태그 이름'
-  'dom.has-attribute': '.has 속성'
-  'dom.html-close-match': 'html 닫기 일치'
-  'dom.html-peek-name': 'html 확인 이름'
-  'dom.inner-html': '내부 html'
-  'dom.insert-child-before': '삽입 자식 이전'
-  'dom.is-html': 'html 여부'
-  'dom.is-name-byte': '이름 바이트 여부'
-  'dom.kind': '종류'
-  'dom.name': '이름'
-  'dom.new-document': '신규 문서'
-  'dom.outer-html': '외부 html'
-  'dom.parent': '부모'
-  'dom.parse-html': '파싱 html'
-  'dom.parse-numeric-entity': '파싱 숫자 엔티티'
-  'dom.parse-xml': '파싱 xml'
-  'dom.remove-attribute': '제거 속성'
-  'dom.remove-child': '제거 자식'
-  'dom.replace-child': '치환 자식'
-  'dom.set-attribute': '설정 속성'
-  'dom.set-node-value': '설정 노드 값'
-  'dom.set-text-content': '설정 텍스트 콘텐츠'
-  'dom.text-content': '텍스트 콘텐츠'
-  'dom.to-string': 'string 변환'
-  'dom.value': '값'
-  'dom.xml-read-name': 'xml 읽기 이름'
-  'dom.xml-skip-ws': 'xml 건너뛰기 웹소켓'
-  'ecdsa.bn-add': '큰 수 추가'
-  'ecdsa.bn-addmod': '큰 수 모듈러 덧셈'
-  'ecdsa.bn-cmp': '큰 수 비교'
-  'ecdsa.bn-invmod': '큰 수 모듈러 역원'
-  'ecdsa.bn-mod': '큰 수 나머지'
-  'ecdsa.bn-mulmod': '큰 수 모듈러 곱셈'
-  'ecdsa.bn-sub': '큰 수 뺄셈'
-  'ecdsa.bn-submod': '큰 수 모듈러 뺄셈'
-  'ecdsa.ec-bytes-to-point': 'ec 바이트 to 점'
-  'ecdsa.ec-get-basepoint': 'ec 취득 기준점'
-  'ecdsa.ec-point-add': 'ec 점 추가'
-  'ecdsa.ec-point-double': 'ec 점 배점'
-  'ecdsa.ec-point-to-bytes': 'ec 점 to 바이트'
-  'ecdsa.ec-scalar-mult': 'ec 스칼라 mult'
-  'ecdsa.ecdh-p256': 'ECDH p256'
-  'ecdsa.ecdsa-publickey': 'ECDSA publickey'
-  'ecdsa.ecdsa-sign': 'ECDSA 서명'
-  'ecdsa.ecdsa-verify': 'ECDSA 검증'
-  'ed25519.ed-d': 'ed 거리'
-  'ed25519.ed-sqm1': 'ed 제곱-1'
-  'ed25519.ed25519-publickey': 'ed25519 publickey'
-  'ed25519.ed25519-sign': 'ed25519 서명'
-  'ed25519.ed25519-verify': 'ed25519 검증'
-  'ed25519.fe-pow': '체 원소 거듭제곱'
-  'ed25519.ge-add': 'ge 추가'
-  'ed25519.ge-basepoint': 'ge 기준점'
-  'ed25519.ge-pack': 'ge pack'
-  'ed25519.ge-scalar-mult': 'ge 스칼라 mult'
-  'ed25519.ge-unpack': 'ge unpack'
-  'ed25519.is-zero-arr': '영 배열 여부'
-  'ed25519.pcopy': '부분 복사'
-  'ed25519.sc-ge-l': 'sc ge l'
-  'ed25519.sc-muladd': 'sc 곱셈 덧셈'
-  'ed25519.sc-reduce': 'sc 환원'
-  'ed25519.set-coord': '설정 coord'
-  'embed.exists': '존재'
-  'embed.read': '읽기'
-  'env.get': '취득'
-  'env.get-with-default': '취득 동반 기본'
-  'env.is-set': '설정 여부'
-  'env.lookup': '조회'
-  'env.set': '설정'
-  'env.unset': 'unset'
-  'err._errno-to-code': '에러번호 to 코드'
-  'err.code': '코드'
-  'err.code.to-name': 'name 변환'
-  'err.format': '포맷'
-  'err.from-errno': 'errno에서 변환'
-  'err.is': '여부'
-  'err.msg': 'msg'
-  'err.new': '신규'
-  'err.new-at': '신규 위치'
-  'float.div': '나눗셈'
-  'float.is-inf': '무한 여부'
-  'float.is-nan': 'NaN 여부'
-  'fmt.eprintf': 'eprintf'
-  'fmt.fmt-apply-spec': 'fmt 적용 spec'
-  'fmt.fmt-bool': 'fmt bool'
-  'fmt.fmt-f64': 'fmt f64'
-  'fmt.fmt-group-digits': 'fmt 그룹 숫자'
-  'fmt.fmt-int': 'fmt 정수'
-  'fmt.fmt-parse-spec': 'fmt 파싱 spec'
-  'fmt.fmt-str': 'fmt 문자열'
-  'fmt.fmt-uint': 'fmt 부호 없는 정수'
-  'fmt.fmt-uint-base': 'fmt 부호 없는 정수 base'
-  'fmt.printf': 'printf'
-  'fmt.sprintf': 'sprintf'
-  'fnv-1a-32.fnv-1a-32': 'fnv 1a 32'
-  'fnv.fnv-1a-32': 'fnv 1a 32'
-  'fnv.fnv-1a-64': 'fnv 1a 64'
-  'fs.close': '닫기'
-  'fs.copy-file': '복사 파일'
-  'fs.dir-entries': '디렉터리 항목'
-  'fs.exists': '존재'
-  'fs.file-size': '파일 크기'
-  'fs.file.append': '추가'
-  'fs.file.close': '닫기'
-  'fs.file.copy-to': '복사 to'
-  'fs.file.is-open': '열기 여부'
-  'fs.file.read': '읽기'
-  'fs.file.read-bytes': '읽기 바이트'
-  'fs.file.read-line': '읽기 줄'
-  'fs.file.read-str': '읽기 문자열'
-  'fs.file.size': '크기'
-  'fs.file.write': '쓰기'
-  'fs.file.write-bytes': '쓰기 바이트'
-  'fs.file.write-str': '쓰기 문자열'
-  'fs.fstat-size': 'fstat 크기'
-  'fs.get-line': '취득 줄'
-  'fs.is-dir': '디렉터리 여부'
-  'fs.is-file': '파일 여부'
-  'fs.link': '링크'
-  'fs.list-dir': '리스트 디렉터리'
-  'fs.list-dir-2': '리스트 디렉터리'
-  'fs.list-dir-3': '리스트 디렉터리'
-  'fs.lstat': 'lstat'
-  'fs.mkdtemp': 'mkdtemp'
-  'fs.mkfifo': 'mkfifo'
-  'fs.mknod': 'mknod'
-  'fs.mkstemp': 'mkstemp'
-  'fs.open': '열기'
-  'fs.open-file': '열기 파일'
-  'fs.open-read': '열기 읽기'
-  'fs.open-write': '열기 쓰기'
-  'fs.read': '읽기'
-  'fs.read-bytes': '읽기 바이트'
-  'fs.read-file': '읽기 파일'
-  'fs.read-stdin': '읽기 표준 입력'
-  'fs.read-stdin-str': '읽기 표준 입력 문자열'
-  'fs.read-str': '읽기 문자열'
-  'fs.readlink': '심볼릭 읽기'
-  'fs.realpath': '실제 경로'
-  'fs.remove': '제거'
-  'fs.rename': 'rename'
-  'fs.rmdir': 'rmdir'
-  'fs.stat-size': 'stat 크기'
-  'fs.symlink': '심볼릭 링크'
-  'fs.sync': 'sync'
-  'fs.truncate': 'truncate'
-  'fs.utime': '접근 시간'
-  'fs.walk': 'walk'
-  'fs.walk-collect': 'walk 수집'
-  'fs.write': '쓰기'
-  'fs.write-bytes': '쓰기 바이트'
-  'fs.write-file': '쓰기 파일'
-  'fs.write-str': '쓰기 문자열'
-  'global.eprint': 'eprint'
-  'global.exit': '종료'
-  'global.format': '포맷'
-  'global.print': '인쇄'
-  'global.with-cap': '동반 용량'
-  'global.with-cap-len': '동반 용량 길이'
-  'global.with-len': '동반 길이'
-  'gzip.bit-reader.read-bit': '읽기 비트'
-  'gzip.bit-reader.read-bits': '읽기 비트'
-  'gzip.bit-reader.read-u16-le': '읽기 u16 리틀 엔디안'
-  'gzip.bit-reader.skip-to-byte': '건너뛰기 to 바이트'
-  'gzip.build-dynamic': '구축 동적'
-  'gzip.build-fixed': '구축 고정'
-  'gzip.deflate-stored': '디플레이트 stored'
-  'gzip.gzip-compress': 'gzip 압축'
-  'gzip.gzip-decompress': 'gzip 해제'
-  'gzip.huffman.build': '구축'
-  'gzip.huffman.decode': '디코딩'
-  'gzip.inflate-decompress': '인플레이트 해제'
-  'hash-set.hash-set.add': '추가'
-  'hash-set.hash-set.clear': '비우기'
-  'hash-set.hash-set.contains': '포함'
-  'hash-set.hash-set.for-each': '용 각'
-  'hash-set.hash-set.hash': '해시'
-  'hash-set.hash-set.init': '초기화'
-  'hash-set.hash-set.is-empty': 'empty 여부'
-  'hash-set.hash-set.len': '길이'
-  'hash-set.hash-set.remove': '제거'
-  'heap.empty': 'empty'
-  'heap.init': '초기화'
-  'heap.peek': '확인'
-  'heap.pop': '팝'
-  'heap.push': '푸시'
-  'heap.size': '크기'
-  'hkdf.hkdf-derive-secret': 'hkdf 유도 비밀'
-  'hkdf.hkdf-expand': 'hkdf 확장'
-  'hkdf.hkdf-expand-hmac': 'hkdf 확장 HMAC'
-  'hkdf.hkdf-expand-label': 'hkdf 확장 레이블'
-  'hkdf.hkdf-expand-label-vec': 'hkdf 확장 레이블 벡터'
-  'hkdf.hkdf-extract': 'hkdf 추출'
-  'hmac.hmac-md5': 'HMAC MD5'
-  'hmac.hmac-md5-vec': 'HMAC MD5 벡터'
-  'hmac.hmac-sha1': 'HMAC SHA-1'
-  'hmac.hmac-sha1-vec': 'HMAC SHA-1 벡터'
-  'hmac.hmac-sha256': 'HMAC sha256'
-  'hmac.hmac-sha256-vec': 'HMAC sha256 벡터'
-  'hmac.hmac-sha384': 'HMAC sha384'
-  'hmac.hmac-sha384-vec': 'HMAC sha384 벡터'
-  'hmac.hmac-sha512': 'HMAC sha512'
-  'hmac.hmac-sha512-vec': 'HMAC sha512 벡터'
-  'hpack.decode-int': '디코딩 정수'
-  'hpack.decode-str': '디코딩 문자열'
-  'hpack.encode-int': '인코딩 정수'
-  'hpack.encode-str': '인코딩 문자열'
-  'hpack.tables.decode-headers': '디코딩 헤더'
-  'hpack.tables.dyn-add': '동적 추가'
-  'hpack.tables.encode-header': '인코딩 헤더'
-  'hpack.tables.find': '찾기'
-  'hpack.tables.find-name': '찾기 이름'
-  'hpack.tables.init': '초기화'
-  'hpack.tables.lookup': '조회'
-  'http.delete': '삭제'
-  'http.do': '실행'
-  'http.do-req': '실행 요청'
-  'http.download': '다운로드'
-  'http.get': '취득'
-  'http.get-auth': '취득 인증'
-  'http.http-dl-dechunk': 'HTTP dl dechunk'
-  'http.http-dl-location': 'HTTP dl location'
-  'http.http-dl-open': 'HTTP dl 열기'
-  'http.http-dl-resolve': 'HTTP dl resolve'
-  'http.http-write-ok': 'HTTP 쓰기 완료'
-  'http.patch': '패치'
-  'http.ping': '핑'
-  'http.post': '후치'
-  'http.post-auth': '후치 인증'
-  'http.put': '넣기'
-  'http.request.add-header': '추가 헤더'
-  'http.request.init': '초기화'
-  'http.response.get-header': '취득 헤더'
-  'http.response.parse-headers': '파싱 헤더'
-  'http.set-api-key': '설정 API 키'
-  'http.set-basic-auth': '설정 기본 인증'
-  'http.set-bearer-auth': '설정 bearer 인증'
-  'http.upload-put': '업로드 넣기'
-  'http2.conn.close': '닫기'
-  'http2.conn.init': '초기화'
-  'http2.conn.recv-frame': '수신 프레임'
-  'http2.conn.request': '요청'
-  'http2.conn.send-data': '전송 데이터'
-  'http2.conn.send-frame': '전송 프레임'
-  'http2.conn.send-headers': '전송 헤더'
-  'http2.conn.send-settings': '전송 settings'
-  'http2.connect': '연결'
-  'http2.connect-tls': '연결 TLS'
-  'http2.delete': '삭제'
-  'http2.do': '실행'
-  'http2.do-req': '실행 요청'
-  'http2.frame.parse': '파싱'
-  'http2.frame.serialize': '직렬화'
-  'http2.get': '취득'
-  'http2.patch': '패치'
-  'http2.post': '후치'
-  'http2.put': '넣기'
-  'http3.connect': '연결'
-  'http3.decode-header': '디코딩 헤더'
-  'http3.encode-data-frame': '인코딩 데이터 프레임'
-  'http3.encode-frame': '인코딩 프레임'
-  'http3.encode-header': '인코딩 헤더'
-  'http3.encode-headers': '인코딩 헤더'
-  'http3.encode-headers-frame': '인코딩 헤더 프레임'
-  'http3.encode-settings-frame': '인코딩 settings 프레임'
-  'http3.get': '취득'
-  'http3.http3-do': 'http3 실행'
-  'http3.parse-frame': '파싱 프레임'
-  'http3.parse-url': '파싱 url'
-  'http3.post': '후치'
-  'http3.response.get-header': '취득 헤더'
-  'http3.send-request': '전송 요청'
-  'int.div': '나눗셈'
-  'int.mod': '나머지'
-  'int.to-str': 'str 변환'
-  'io.err': '오류'
-  'io.errln': 'errln'
-  'io.out': '출력'
-  'io.outln': 'outln'
-  'io.read-line': '읽기 줄'
-  'io.reader.from-fd': 'fd에서 변환'
-  'io.reader.from-stdin': 'stdin에서 변환'
-  'io.reader.read': '읽기'
-  'io.reader.read-all': '읽기 전체'
-  'io.reader.read-byte': '읽기 바이트'
-  'io.reader.read-line': '읽기 줄'
-  'io.writer.from-fd': 'fd에서 변환'
-  'io.writer.from-stderr': 'stderr에서 변환'
-  'io.writer.from-stdout': 'stdout에서 변환'
-  'io.writer.write': '쓰기'
-  'io.writer.write-byte': '쓰기 바이트'
-  'io.writer.write-line': '쓰기 줄'
-  'io.writer.write-str': '쓰기 문자열'
-  'ip.ip-addr.equal': '동등'
-  'ip.ip-addr.from-str': 'str에서 변환'
-  'ip.ip-addr.from-u32': 'u32에서 변환'
-  'ip.ip-addr.in-subnet': '내 서브넷'
-  'ip.ip-addr.is-broadcast': '브로드캐스트 여부'
-  'ip.ip-addr.is-class-a': '등급 전체 여부'
-  'ip.ip-addr.is-class-b': '등급 바이트 여부'
-  'ip.ip-addr.is-class-c': '등급 용량 여부'
-  'ip.ip-addr.is-link-local': '링크 로컬 여부'
-  'ip.ip-addr.is-loopback': '루프백 여부'
-  'ip.ip-addr.is-multicast': '멀티캐스트 여부'
-  'ip.ip-addr.is-private': '비공개 여부'
-  'ip.ip-addr.is-valid': '유효 여부'
-  'ip.ip-addr.is-zero': '영 여부'
-  'ip.ip-addr.parse': '파싱'
-  'ip.ip-addr.to-str': 'str 변환'
-  'ip.ip-addr.to-u32': 'u32 변환'
-  'ip.ip-is-loopback': 'ip 여부 루프백'
-  'ip.ip-is-private': 'ip 여부 비공개'
-  'ip.ip-parse': 'ip 파싱'
-  'json.alloc-node': '할당 노드'
-  'json.arr-get': '배열 취득'
-  'json.arr-len': '배열 길이'
-  'json.arr-push': '배열 푸시'
-  'json.arr-push-bool': '배열 푸시 bool'
-  'json.arr-push-idx': '배열 푸시 인덱스'
-  'json.arr-push-num': '배열 푸시 숫자'
-  'json.arr-push-str': '배열 푸시 문자열'
-  'json.bool': 'bool'
-  'json.delete-key': '삭제 키'
-  'json.get': '취득'
-  'json.get-bool': '취득 bool'
-  'json.get-i64': '취득 i64'
-  'json.get-key': '취득 키'
-  'json.get-num': '취득 숫자'
-  'json.get-str': '취득 문자열'
-  'json.i64': 'i64'
-  'json.is-arr': '배열 여부'
-  'json.is-bool': 'bool 여부'
-  'json.is-null': 'null 여부'
-  'json.is-num': '숫자 여부'
-  'json.is-obj': 'obj 여부'
-  'json.is-str': '문자열 여부'
-  'json.json-clone-tree': 'json 복제 트리'
-  'json.json-pool.add-child': '추가 자식'
-  'json.json-pool.alloc': '할당'
-  'json.json-pool.arr-get': '배열 취득'
-  'json.json-pool.arr-len': '배열 길이'
-  'json.json-pool.copy-tree': '복사 트리'
-  'json.json-pool.get-bool': '취득 bool'
-  'json.json-pool.get-key': '취득 키'
-  'json.json-pool.get-kind': '취득 종류'
-  'json.json-pool.get-num': '취득 숫자'
-  'json.json-pool.get-str': '취득 문자열'
-  'json.json-pool.init': '초기화'
-  'json.json-pool.parse': '파싱'
-  'json.json-pool.parse-num': '파싱 숫자'
-  'json.json-pool.parse-str': '파싱 문자열'
-  'json.json-pool.set-key': '설정 키'
-  'json.json-pool.skip-ws': '건너뛰기 웹소켓'
-  'json.json-pool.str-eq': '문자열 동등'
-  'json.json-pool.stringify': '문자열화'
-  'json.kind': '종류'
-  'json.new': '신규'
-  'json.new-pool': '신규 풀'
-  'json.num': '숫자'
-  'json.obj-key': 'obj 키'
-  'json.obj-keys-str': 'obj 키들 문자열'
-  'json.obj-len': 'obj 길이'
-  'json.overflowed': '오버플로'
-  'json.set': '설정'
-  'json.set-bool': '설정 bool'
-  'json.set-i64': '설정 i64'
-  'json.set-key': '설정 키'
-  'json.set-null': '설정 null'
-  'json.set-num': '설정 숫자'
-  'json.set-str': '설정 문자열'
-  'json.str': '문자열'
-  'json.str-val': '문자열 값'
-  'json.stringify': '문자열화'
-  'link.link.empty': 'empty'
-  'link.link.full': 'full'
-  'link.link.size': '크기'
-  'linked-hash-map.linked-hash-map.clear': '비우기'
-  'linked-hash-map.linked-hash-map.contains': '포함'
-  'linked-hash-map.linked-hash-map.for-each': '용 각'
-  'linked-hash-map.linked-hash-map.get': '취득'
-  'linked-hash-map.linked-hash-map.hash': '해시'
-  'linked-hash-map.linked-hash-map.init': '초기화'
-  'linked-hash-map.linked-hash-map.is-empty': 'empty 여부'
-  'linked-hash-map.linked-hash-map.len': '길이'
-  'linked-hash-map.linked-hash-map.put': '넣기'
-  'linked-hash-map.linked-hash-map.remove': '제거'
-  'log.get-output-fd': '취득 output 디스크립터'
-  'log.get-writer': '취득 쓰기'
-  'log.log-emit': '로그 발생'
-  'log.log-stamp': '로그 스탬프'
-  'log.open-file': '열기 파일'
-  'log.set-format': '설정 포맷'
-  'log.set-level': '설정 레벨'
-  'log.set-output-fd': '설정 output 디스크립터'
-  'log.set-writer': '설정 쓰기'
-  'magic.detect-by-extension': '감지 기준 확장'
-  'magic.detect-by-magic': '감지 기준 매직'
-  'magic.detect-type': '감지 타입'
-  'magic.get-extension': '취득 확장'
-  'map.hashmap-bool-tmpl.clear': '비우기'
-  'map.hashmap-bool-tmpl.contains': '포함'
-  'map.hashmap-bool-tmpl.for-each': '용 각'
-  'map.hashmap-bool-tmpl.get': '취득'
-  'map.hashmap-bool-tmpl.hash': '해시'
-  'map.hashmap-bool-tmpl.init': '초기화'
-  'map.hashmap-bool-tmpl.is-empty': 'empty 여부'
-  'map.hashmap-bool-tmpl.len': '길이'
-  'map.hashmap-bool-tmpl.put': '넣기'
-  'map.hashmap-bool-tmpl.remove': '제거'
-  'map.hashmap-int-tmpl.clear': '비우기'
-  'map.hashmap-int-tmpl.contains': '포함'
-  'map.hashmap-int-tmpl.for-each': '용 각'
-  'map.hashmap-int-tmpl.get': '취득'
-  'map.hashmap-int-tmpl.hash': '해시'
-  'map.hashmap-int-tmpl.init': '초기화'
-  'map.hashmap-int-tmpl.is-empty': 'empty 여부'
-  'map.hashmap-int-tmpl.len': '길이'
-  'map.hashmap-int-tmpl.put': '넣기'
-  'map.hashmap-int-tmpl.rehash': '재해싱'
-  'map.hashmap-int-tmpl.remove': '제거'
-  'map.hashmap-str-tmpl.clear': '비우기'
-  'map.hashmap-str-tmpl.contains': '포함'
-  'map.hashmap-str-tmpl.for-each': '용 각'
-  'map.hashmap-str-tmpl.get': '취득'
-  'map.hashmap-str-tmpl.hash': '해시'
-  'map.hashmap-str-tmpl.init': '초기화'
-  'map.hashmap-str-tmpl.is-empty': 'empty 여부'
-  'map.hashmap-str-tmpl.len': '길이'
-  'map.hashmap-str-tmpl.put': '넣기'
-  'map.hashmap-str-tmpl.rehash': '재해싱'
-  'map.hashmap-str-tmpl.remove': '제거'
-  'map.hashmap-str-tmpl.str-eq': '문자열 동등'
-  'markdown.blockquote': '인용 블록'
-  'markdown.code-close': '코드 닫기'
-  'markdown.escape-html': '이스케이프 html'
-  'markdown.fence': '펜스'
-  'markdown.heading': '제목'
-  'markdown.inline': 'inline'
-  'markdown.is-word-byte': '단어 바이트 여부'
-  'markdown.join-paragraph': '결합 문단'
-  'markdown.list-content': '리스트 콘텐츠'
-  'markdown.list-item': '리스트 item'
-  'markdown.prefix-count': '접두사 개수'
-  'markdown.read-line': '읽기 줄'
-  'markdown.render': '렌더링'
-  'markdown.render-code': '렌더링 코드'
-  'markdown.setext-level': 'setext 레벨'
-  'markdown.table-row': '테이블 행'
-  'markdown.table-separator': '테이블 구분자'
-  'markdown.thematic-break': 'thematic break'
-  'markdown.to-html': 'html 변환'
-  'math.arr-zero': '배열 영'
-  'math.atan-kernel': '아크탄젠트 커널'
-  'math.char-to-str': '문자 to 문자열'
-  'math.clamp': 'clamp'
-  'math.div': '나눗셈'
-  'math.even': '짝수'
-  'math.fmod': '부동 소수 나머지'
-  'math.gcd': '최대공약수'
-  'math.hypot': '빗변'
-  'math.lcm': '최소공배수'
-  'math.max': '최대'
-  'math.min': '최소'
-  'math.mod': '나머지'
-  'math.odd': '홀수'
-  'math.pow': '거듭제곱'
-  'math.pow-int': '거듭제곱 정수'
-  'math.rotate-left': '회전 왼쪽'
-  'math.rotate-right': '회전 오른쪽'
-  'math.store-le-u32': '저장 리틀 엔디안 u32'
-  'math.swap': '스왑'
-  'md5.md5': 'MD5'
-  'md5.md5-rotl': 'MD5 좌회전'
-  'multipart.multipart-create': 'multipart 생성'
-  'multipart.multipart-create-boundary': 'multipart 생성 경계'
-  'multipart.multipart-decrypt-field': 'multipart 복호화 필드'
-  'multipart.multipart-extract-boundary': 'multipart 추출 경계'
-  'multipart.multipart-gen-boundary': 'multipart 생성 경계'
-  'multipart.multipart-parse': 'multipart 파싱'
-  'multipart.multipart-reader.field-content-type': '필드 콘텐츠 타입'
-  'multipart.multipart-reader.field-data': '필드 데이터'
-  'multipart.multipart-reader.field-filename': '필드 파일명'
-  'multipart.multipart-reader.field-name': '필드 이름'
-  'multipart.multipart-reader.has-current-part': '.has 현재 부분'
-  'multipart.multipart-reader.init': '초기화'
-  'multipart.multipart-reader.is-file': '파일 여부'
-  'multipart.multipart-reader.next': '다음'
-  'multipart.multipart-reader.parse-header-line': '파싱 헤더 줄'
-  'multipart.multipart-reader.parse-headers': '파싱 헤더'
-  'multipart.multipart-writer.body-of': '본문 의'
-  'multipart.multipart-writer.boundary-of': '경계 의'
-  'multipart.multipart-writer.close-form': '닫기 형식'
-  'multipart.multipart-writer.content-type': '콘텐츠 타입'
-  'multipart.multipart-writer.init': '초기화'
-  'multipart.multipart-writer.init-boundary': '초기화 경계'
-  'multipart.multipart-writer.write-encrypted-field': '쓰기 암호화됨 필드'
-  'multipart.multipart-writer.write-encrypted-file': '쓰기 암호화됨 파일'
-  'multipart.multipart-writer.write-field': '쓰기 필드'
-  'multipart.multipart-writer.write-file': '쓰기 파일'
-  'net.close': '닫기'
-  'net.conn.close': '닫기'
-  'net.conn.dial': '다이얼'
-  'net.conn.fd-of': '디스크립터 의'
-  'net.conn.recv': '수신'
-  'net.conn.recv-all': '수신 전체'
-  'net.conn.recv-line': '수신 줄'
-  'net.conn.recv-with-timeout': '수신 동반 시간 초과'
-  'net.conn.send': '전송'
-  'net.conn.send-with-timeout': '전송 동반 시간 초과'
-  'net.conn.set-recv-timeout': '설정 수신 시간 초과'
-  'net.conn.set-timeout': '설정 시간 초과'
-  'net.dial-timeout': '다이얼 시간 초과'
-  'net.dial-to': '다이얼 to'
-  'net.enc-accept': '암호화 수락'
-  'net.enc-conn.close': '닫기'
-  'net.enc-conn.gen-iv': '생성 초기 벡터'
-  'net.enc-conn.init': '초기화'
-  'net.enc-conn.recv-encrypted': '수신 암호화됨'
-  'net.enc-conn.send-encrypted': '전송 암호화됨'
-  'net.enc-dial': '암호화 다이얼'
-  'net.icmp-checksum': 'ICMP 체크섬'
-  'net.icmp-conn.build-echo': '구축 에코'
-  'net.icmp-conn.close': '닫기'
-  'net.icmp-conn.open': '열기'
-  'net.icmp-conn.ping-host': '핑 호스트'
-  'net.icmp-conn.ping-once': '핑 한 번'
-  'net.listen-on': '대기 위'
-  'net.listener.accept': '수락'
-  'net.listener.accept-with-timeout': '수락 동반 시간 초과'
-  'net.listener.close': '닫기'
-  'net.listener.fd-of': '디스크립터 의'
-  'net.listener.listen': '대기'
-  'net.listener.set-timeout': '설정 시간 초과'
-  'net.net-accept': '네트워크 수락'
-  'net.net-accept-nb': '네트워크 수락 nb'
-  'net.net-dial': '네트워크 다이얼'
-  'net.net-icmp-open': '네트워크 ICMP 열기'
-  'net.net-listen': '네트워크 대기'
-  'net.net-recv': '네트워크 수신'
-  'net.net-send': '네트워크 전송'
-  'net.net-set-recv-timeout': '네트워크 설정 수신 시간 초과'
-  'net.net-udp-open': '네트워크 UDP 열기'
-  'net.net-udp-recvfrom': '네트워크 UDP 수신원'
-  'net.net-udp-sendto': '네트워크 UDP 송신'
-  'net.ping': '핑'
-  'net.ping-count': '핑 개수'
-  'net.split-ws': '분할 웹소켓'
-  'net.udp-conn.close': '닫기'
-  'net.udp-conn.fd-of': '디스크립터 의'
-  'net.udp-conn.open': '열기'
-  'net.udp-conn.recv': '수신'
-  'net.udp-conn.recv-bytes': '수신 바이트'
-  'net.udp-conn.send': '전송'
-  'net.udp-conn.send-bytes': '전송 바이트'
-  'net.udp-conn.set-timeout': '설정 시간 초과'
-  'net.udp-dial-to': 'UDP 다이얼 to'
-  'noml.hex-char': '16진수 문자'
-  'noml.hex-digit': '16진수 숫자'
-  'noml.is-ident-char': '식별자 문자 여부'
-  'noml.is-ident-key': '식별자 키 여부'
-  'noml.is-ident-start': '식별자 시작 여부'
-  'noml.new': '신규'
-  'noml.noml-doc.ann': '주해'
-  'noml.noml-doc.ann-value': '주해 값'
-  'noml.noml-doc.at': '위치'
-  'noml.noml-doc.bool': 'bool'
-  'noml.noml-doc.get': '취득'
-  'noml.noml-doc.get-bool': '취득 bool'
-  'noml.noml-doc.get-f64': '취득 f64'
-  'noml.noml-doc.get-i64': '취득 i64'
-  'noml.noml-doc.get-str': '취득 문자열'
-  'noml.noml-doc.has': '.has'
-  'noml.noml-doc.i64': 'i64'
-  'noml.noml-doc.is-arr': '배열 여부'
-  'noml.noml-doc.is-bool': 'bool 여부'
-  'noml.noml-doc.is-nil': 'nil 여부'
-  'noml.noml-doc.is-num': '숫자 여부'
-  'noml.noml-doc.is-obj': 'obj 여부'
-  'noml.noml-doc.is-str': '문자열 여부'
-  'noml.noml-doc.key': '키'
-  'noml.noml-doc.kind': '종류'
-  'noml.noml-doc.len': '길이'
-  'noml.noml-doc.new-arr': '신규 배열'
-  'noml.noml-doc.new-bool': '신규 bool'
-  'noml.noml-doc.new-nil': '신규 nil'
-  'noml.noml-doc.new-num': '신규 숫자'
-  'noml.noml-doc.new-obj': '신규 obj'
-  'noml.noml-doc.new-str': '신규 문자열'
-  'noml.noml-doc.num': '숫자'
-  'noml.noml-doc.push': '푸시'
-  'noml.noml-doc.put': '넣기'
-  'noml.noml-doc.root-index': '루트 인덱스'
-  'noml.noml-doc.set-ann': '설정 주해'
-  'noml.noml-doc.set-root': '설정 루트'
-  'noml.noml-doc.str': '문자열'
-  'noml.noml-doc.stringify': '문자열화'
-  'noml.noml-doc.stringify-node': '문자열화 노드'
-  'noml.noml-pool.add-child': '추가 자식'
-  'noml.noml-pool.alloc': '할당'
-  'noml.noml-pool.ann': '주해'
-  'noml.noml-pool.ann-literal': '주해 리터럴'
-  'noml.noml-pool.ann-value': '주해 값'
-  'noml.noml-pool.at': '위치'
-  'noml.noml-pool.at-line-start': '위치 줄 시작'
-  'noml.noml-pool.decode-escape': '디코딩 이스케이프'
-  'noml.noml-pool.fail': '실패'
-  'noml.noml-pool.fmt-key': 'fmt 키'
-  'noml.noml-pool.fmt-num': 'fmt 숫자'
-  'noml.noml-pool.get': '취득'
-  'noml.noml-pool.get-bool': '취득 bool'
-  'noml.noml-pool.get-f64': '취득 f64'
-  'noml.noml-pool.get-i64': '취득 i64'
-  'noml.noml-pool.get-str': '취득 문자열'
-  'noml.noml-pool.has': '.has'
-  'noml.noml-pool.has-byte': '.has 바이트'
-  'noml.noml-pool.has-key': '.has 키'
-  'noml.noml-pool.hex4': 'hex4'
-  'noml.noml-pool.init': '초기화'
-  'noml.noml-pool.is-arr': '배열 여부'
-  'noml.noml-pool.is-bool': 'bool 여부'
-  'noml.noml-pool.is-nil': 'nil 여부'
-  'noml.noml-pool.is-num': '숫자 여부'
-  'noml.noml-pool.is-obj': 'obj 여부'
-  'noml.noml-pool.is-str': '문자열 여부'
-  'noml.noml-pool.join-ann': '결합 주해'
-  'noml.noml-pool.key': '키'
-  'noml.noml-pool.kind': '종류'
-  'noml.noml-pool.len': '길이'
-  'noml.noml-pool.line-of': '줄 의'
-  'noml.noml-pool.match-kw': '일치 키워드'
-  'noml.noml-pool.parse': '파싱'
-  'noml.noml-pool.parse-array': '파싱 배열'
-  'noml.noml-pool.parse-bool': '파싱 bool'
-  'noml.noml-pool.parse-bool-node': '파싱 bool 노드'
-  'noml.noml-pool.parse-key': '파싱 키'
-  'noml.noml-pool.parse-nil-node': '파싱 nil 노드'
-  'noml.noml-pool.parse-num': '파싱 숫자'
-  'noml.noml-pool.parse-num-node': '파싱 숫자 노드'
-  'noml.noml-pool.parse-object': '파싱 object'
-  'noml.noml-pool.parse-raw': '파싱 원시'
-  'noml.noml-pool.parse-raw-node': '파싱 원시 노드'
-  'noml.noml-pool.parse-str': '파싱 문자열'
-  'noml.noml-pool.parse-str-node': '파싱 문자열 노드'
-  'noml.noml-pool.parse-value': '파싱 값'
-  'noml.noml-pool.quote': '인용부호'
-  'noml.noml-pool.quote-value': '인용부호 값'
-  'noml.noml-pool.raw-safe': '원시 안전'
-  'noml.noml-pool.require-end': '필요 종료'
-  'noml.noml-pool.scan-ann': '스캔 주해'
-  'noml.noml-pool.scan-quote': '스캔 인용부호'
-  'noml.noml-pool.scan-raw': '스캔 원시'
-  'noml.noml-pool.set-ann': '설정 주해'
-  'noml.noml-pool.skip-ann-value': '건너뛰기 주해 값'
-  'noml.noml-pool.skip-blanks': '건너뛰기 빈칸'
-  'noml.noml-pool.skip-trivia': '건너뛰기 자명'
-  'noml.noml-pool.stringify': '문자열화'
-  'noml.noml-pool.stringify-arr': '문자열화 배열'
-  'noml.noml-pool.stringify-obj': '문자열화 obj'
-  'noml.noml-pool.val-bool': '값 bool'
-  'noml.noml-pool.val-i64': '값 i64'
-  'noml.noml-pool.val-num': '값 숫자'
-  'noml.noml-pool.val-str': '값 문자열'
-  'noml.parse': '파싱'
-  'num.abs': '절대값'
-  'num.clamp': 'clamp'
-  'num.sign': '서명'
-  'number.byte.to-str': 'str 변환'
-  'number.exp-f64': '지수 f64'
-  'number.f32.to-f64': 'f64 변환'
-  'number.f32.to-str': 'str 변환'
-  'number.f64.cbrt': '세제곱근'
-  'number.f64.ceil': '천장'
-  'number.f64.degrees': '도'
-  'number.f64.radians': '래디안'
-  'number.f64.sin': '사인'
-  'number.f64.sinh': '쌍곡선 사인'
-  'number.f64.sqrt': '제곱근'
-  'number.f64.tan': '탄젠트'
-  'number.f64.to-bits': 'bits 변환'
-  'number.f64.to-f32': 'f32 변환'
-  'number.f64.to-i32': 'i32 변환'
-  'number.f64.to-i64': 'i64 변환'
-  'number.f64.to-str': 'str 변환'
-  'number.f64.to-str-fixed': 'str-fixed 변환'
-  'number.f64.to-str-general': 'str-general 변환'
-  'number.f64.to-str-sci': 'str-sci 변환'
-  'number.f64.to-u32': 'u32 변환'
-  'number.f64.to-u64': 'u64 변환'
-  'number.i128.sqrt': '제곱근'
-  'number.i128.to-f64': 'f64 변환'
-  'number.i16.sqrt': '제곱근'
-  'number.i16.to-str': 'str 변환'
-  'number.i32.sqrt': '제곱근'
-  'number.i32.to-str': 'str 변환'
-  'number.i64.is-prime': 'prime 여부'
-  'number.i64.sqrt': '제곱근'
-  'number.i64.to-bytes-be': 'bytes-be 변환'
-  'number.i64.to-bytes-le': 'bytes-le 변환'
-  'number.i64.to-f64': 'f64 변환'
-  'number.i64.to-i32': 'i32 변환'
-  'number.i64.to-str': 'str 변환'
-  'number.i8.sqrt': '제곱근'
-  'number.i8.to-str': 'str 변환'
-  'number.pow': '거듭제곱'
-  'number.u128.to-f64': 'f64 변환'
-  'number.u16.sqrt': '제곱근'
-  'number.u16.to-str': 'str 변환'
-  'number.u32.sqrt': '제곱근'
-  'number.u32.to-str': 'str 변환'
-  'number.u64.from-bits': 'bits에서 변환'
-  'number.u64.sqrt': '제곱근'
-  'number.u64.to-f64': 'f64 변환'
-  'number.u64.to-str': 'str 변환'
-  'number.u8.sqrt': '제곱근'
-  'number.u8.to-str': 'str 변환'
-  'ords.asc': '오름차순'
-  'ords.desc': '내림차순'
-  'os.arg': '인자'
-  'os.args': '인자'
-  'os.ch-dir': 'ch 디렉터리'
-  'os.ch-mod': 'ch 나머지'
-  'os.chown': '소유자 변경'
-  'os.chroot': '루트 변경'
-  'os.flock': '파일 잠금'
-  'os.get-arch': '취득 아키텍처'
-  'os.get-domain-name': '취득 도메인 이름'
-  'os.get-env': '취득 환경'
-  'os.get-errno': '취득 에러번호'
-  'os.get-host-id': '취득 호스트 id'
-  'os.get-login': '취득 로그인'
-  'os.get-pid': '취득 pid'
-  'os.get-priority': '취득 priority'
-  'os.get-wd': '취득 wd'
-  'os.getegid': 'egid 획득'
-  'os.geteuid': 'euid 획득'
-  'os.getgid': 'gid 획득'
-  'os.getgroups': '그룹 조회'
-  'os.getuid': 'uid 획득'
-  'os.host-name': '호스트 이름'
-  'os.mkdir': 'mkdir'
-  'os.now': '현재'
-  'os.now-ms': '현재 밀리초'
-  'os.now-ns': '현재 나노초'
-  'os.now-us': '현재 마이크로초'
-  'os.num-cpu': '숫자 CPU'
-  'os.set-env': '설정 환경'
-  'os.set-priority': '설정 priority'
-  'os.set-sid': '설정 세션 ID'
-  'os.signal': '신호'
-  'os.sleep': '절전'
-  'os.sleep-ns': '절전 나노초'
-  'os.sleep-us': '절전 마이크로초'
-  'os.stat-gid': 'stat GID'
-  'os.stat-mode': 'stat 모드'
-  'os.stat-mtime': 'stat 수정 시간'
-  'os.stat-uid': 'stat UID'
-  'os.strerror': 'strerror'
-  'os.sysconf': '시스템 설정'
-  'os.sysctl': 'sysctl'
-  'os.syslog': 'syslog'
-  'os.ttyname': 'tty 이름'
-  'os.uname': 'uname'
-  'os.win-find-close': '창 찾기 닫기'
-  'os.win-find-first-file': '창 찾기 첫째 파일'
-  'os.win-find-next-file': '창 찾기 다음 파일'
-  'os.win-wsa-startup': '창 wsa 시작'
-  'path.base': 'base'
-  'path.change-dir': 'change 디렉터리'
-  'path.clean': 'clean'
-  'path.current': '현재'
-  'path.dir': '디렉터리'
-  'path.exists': '존재'
-  'path.ext': 'ext'
-  'path.is-abs': '절대값 여부'
-  'path.is-dir': '디렉터리 여부'
-  'path.is-file': '파일 여부'
-  'path.join': '결합'
-  'path.make-dir': '생성 디렉터리'
-  'path.remove': '제거'
-  'path.rename': 'rename'
-  'path.size': '크기'
-  'path.split': '분할'
-  'pbkdf2.pbkdf2-hmac-sha1': 'pbkdf2 HMAC SHA-1'
-  'pbkdf2.pbkdf2-hmac-sha256': 'pbkdf2 HMAC sha256'
-  'pbkdf2.pbkdf2-hmac-sha512': 'pbkdf2 HMAC sha512'
-  'pem.pem-decode': 'PEM 디코딩'
-  'pem.pem-encode': 'PEM 인코딩'
-  'pool.create': '생성'
-  'pool.pool.active-count': '활성 개수'
-  'pool.pool.close-all': '닫기 전체'
-  'pool.pool.close-conn': '닫기 연결'
-  'pool.pool.get': '취득'
-  'pool.pool.idle-count': '유휴 개수'
-  'pool.pool.init': '초기화'
-  'pool.pool.put': '넣기'
-  'pool.pool.total-count': 'total 개수'
-  'pool.with-size': '동반 크기'
-  'process.close': '닫기'
-  'process.close-stderr': '닫기 표준 오류'
-  'process.close-stdin': '닫기 표준 입력'
-  'process.close-stdout': '닫기 표준 출력'
-  'process.cmd-2': '명령'
-  'process.exec': '실행'
-  'process.exit-code-of': '종료 코드 의'
-  'process.find-by-name': '찾기 기준 이름'
-  'process.find-match': '찾기 일치'
-  'process.force-kill': 'force 종료'
-  'process.is-running': '실행 중 여부'
-  'process.kill': '종료'
-  'process.list-all': '리스트 전체'
-  'process.new': '신규'
-  'process.output': 'output'
-  'process.parent-pid': '부모 pid'
-  'process.pid-of': 'pid 의'
-  'process.process-dup2': '프로세스 복사 2'
-  'process.process-exec': '프로세스 실행'
-  'process.process-exec-shell': '프로세스 실행 셸'
-  'process.process-fork': '프로세스 포크'
-  'process.process-getppid': '프로세스 부모 PID'
-  'process.process-kill': '프로세스 종료'
-  'process.process-pipe': '프로세스 파이프'
-  'process.process-shell': '프로세스 셸'
-  'process.process-system': '프로세스 시스템'
-  'process.process-waitpid': '프로세스 자식 대기'
-  'process.process-waitpid-nohang': '프로세스 자식 대기 일시 정지 안함'
-  'process.read': '읽기'
-  'process.read-all': '읽기 전체'
-  'process.read-line': '읽기 줄'
-  'process.shell': '셸'
-  'process.shell-quote': '셸 인용부호'
-  'process.spawn': '스폰'
-  'process.start': '시작'
-  'process.start-with-opts': '시작 동반 opts'
-  'process.terminate': 'terminate'
-  'process.wait': '대기'
-  'process.wait-2': '대기'
-  'process.wait-nohang': '대기 일시 정지 안함'
-  'process.win-close-handle': '창 닫기 핸들'
-  'process.win-create-pipe': '창 생성 파이프'
-  'process.win-create-process': '창 생성 프로세스'
-  'process.win-get-exit-code': '창 취득 종료 코드'
-  'process.win-get-std-handle': '창 취득 std 핸들'
-  'process.win-read-pipe': '창 읽기 파이프'
-  'process.win-terminate-process': '창 terminate 프로세스'
-  'process.win-wait-process': '창 대기 프로세스'
-  'process.win-write-pipe': '창 쓰기 파이프'
-  'process.write': '쓰기'
-  'proxy.config.connect': '연결'
-  'proxy.config.tls-connect': 'TLS 연결'
-  'proxy.connect': '연결'
-  'proxy.dial': '다이얼'
-  'proxy.dial-auth': '다이얼 인증'
-  'proxy.proxy-tls-dial': '프록시 TLS 다이얼'
-  'proxy.socks5-connect': 'SOCKS5 연결'
-  'proxy.socks5-dial': 'SOCKS5 다이얼'
-  'queue.queue.clear': '비우기'
-  'queue.queue.empty': 'empty'
-  'queue.queue.full': 'full'
-  'queue.queue.size': '크기'
-  'quic.apply-header-protection': '적용 헤더 protection'
-  'quic.conn.build-initial-packet': '구축 initial 패킷'
-  'quic.conn.close': '닫기'
-  'quic.conn.init': '초기화'
-  'quic.conn.recv-initial': '수신 initial'
-  'quic.conn.recv-raw': '수신 원시'
-  'quic.decode-packet-number': '디코딩 패킷 숫자'
-  'quic.derive-initial-keys': '유도 initial 키들'
-  'quic.dial': '다이얼'
-  'quic.gen-cid': '생성 연결 ID'
-  'quic.parse-frames': '파싱 프레임'
-  'quic.remove-header-protection': '제거 헤더 protection'
-  'quic.varint-decode': '가변 정수 디코딩'
-  'quic.varint-encode': '가변 정수 인코딩'
-  'rand.rand': '랜덤'
-  'rand.rand-str': '랜덤 문자열'
-  'rc4.rc4': 'RC4'
-  'regexp.alloc-class': '할당 등급'
-  'regexp.clear-class-bit': '비우기 등급 비트'
-  'regexp.compile': 'compile'
-  'regexp.emit': '발생'
-  'regexp.emit-atom': '발생 atom'
-  'regexp.emit-quantized': '발생 양자화'
-  'regexp.find': '찾기'
-  'regexp.in-class': '내 등급'
-  'regexp.init-class-all': '초기화 등급 전체'
-  'regexp.init-class-zero': '초기화 등급 영'
-  'regexp.make-class-digits': '생성 등급 숫자'
-  'regexp.make-class-nondigits': '생성 등급 비숫자'
-  'regexp.make-class-nonspace': '생성 등급 비공백'
-  'regexp.make-class-nonword': '생성 등급 비단어'
-  'regexp.make-class-space': '생성 등급 공백'
-  'regexp.make-class-word': '생성 등급 단어'
-  'regexp.match-at': '일치 위치'
-  'regexp.matches': '일치'
-  'regexp.parse-atom': '파싱 atom'
-  'regexp.parse-class': '파싱 등급'
-  'regexp.parse-escape': '파싱 이스케이프'
-  'regexp.regexp-compile': 'regexp compile'
-  'regexp.regexp-find': 'regexp 찾기'
-  'regexp.regexp-match': 'regexp 일치'
-  'regexp.set-class-bit': '설정 등급 비트'
-  'regexp.set-class-escape': '설정 등급 이스케이프'
-  'rsa.rsa-bn-add': 'RSA 큰 수 추가'
-  'rsa.rsa-bn-cmp': 'RSA 큰 수 비교'
-  'rsa.rsa-bn-div-mod': 'RSA 큰 수 나눗셈 나머지'
-  'rsa.rsa-bn-mul': 'RSA 큰 수 곱셈'
-  'rsa.rsa-bn-shl1': 'RSA 큰 수 왼쪽 이동 1'
-  'rsa.rsa-bn-shr1': 'RSA 큰 수 오른쪽 이동 1'
-  'rsa.rsa-bn-sub': 'RSA 큰 수 뺄셈'
-  'rsa.rsa-decrypt': 'RSA 복호화'
-  'rsa.rsa-encrypt': 'RSA 암호화'
-  'rsa.rsa-modpow': 'RSA 모듈러 거듭제곱'
-  'rsa.rsa-modpow-step': 'RSA 모듈러 거듭제곱 스테프'
-  'scrypt.rotl32': 'rotl32'
-  'scrypt.salsa20-8-core': 'salsa20 8 코어'
-  'scrypt.scrypt': 'scrypt'
-  'scrypt.scrypt-blockmix': 'scrypt 블록 혼합'
-  'scrypt.scrypt-romix': 'scrypt romix'
-  'server.https-listen-on': 'HTTPS 대기 위'
-  'server.https-server-conn.close': '닫기'
-  'server.https-server-conn.get-header': '취득 헤더'
-  'server.https-server-conn.parse': '파싱'
-  'server.https-server-conn.recv-more': '수신 추가'
-  'server.https-server-conn.reset': '초기화'
-  'server.https-server-conn.write-body': '쓰기 본문'
-  'server.https-server-conn.write-header': '쓰기 헤더'
-  'server.https-server-conn.write-headers-done': '쓰기 헤더 완료'
-  'server.https-server-conn.write-html': '쓰기 html'
-  'server.https-server-conn.write-json': '쓰기 json'
-  'server.https-server-conn.write-status': '쓰기 상태'
-  'server.https-server-conn.write-text': '쓰기 텍스트'
-  'server.https-server.accept': '수락'
-  'server.https-server.close': '닫기'
-  'server.https-server.listen': '대기'
-  'server.listen-on': '대기 위'
-  'server.secure-compare': '보안 비교'
-  'server.server-conn.close': '닫기'
-  'server.server-conn.get-cookie': '취득 cookie'
-  'server.server-conn.get-header': '취득 헤더'
-  'server.server-conn.get-signed-cookie': '취득 부호 있음 cookie'
-  'server.server-conn.parse': '파싱'
-  'server.server-conn.recv-more': '수신 추가'
-  'server.server-conn.reset': '초기화'
-  'server.server-conn.set-signed-cookie': '설정 부호 있음 cookie'
-  'server.server-conn.verify-basic-auth': '검증 기본 인증'
-  'server.server-conn.write-body': '쓰기 본문'
-  'server.server-conn.write-error': '쓰기 오류'
-  'server.server-conn.write-header': '쓰기 헤더'
-  'server.server-conn.write-headers-done': '쓰기 헤더 완료'
-  'server.server-conn.write-html': '쓰기 html'
-  'server.server-conn.write-json': '쓰기 json'
-  'server.server-conn.write-redirect': '쓰기 리다이렉트'
-  'server.server-conn.write-status': '쓰기 상태'
-  'server.server-conn.write-text': '쓰기 텍스트'
-  'server.server.accept': '수락'
-  'server.server.accept-nb': '수락 nb'
-  'server.server.close': '닫기'
-  'server.server.fd-of': '디스크립터 의'
-  'server.server.listen': '대기'
-  'set.add': '추가'
-  'set.contains': '포함'
-  'set.difference': 'difference'
-  'set.init': '초기화'
-  'set.intersection': '교집합'
-  'set.is-empty': 'empty 여부'
-  'set.remove': '제거'
-  'set.size': '크기'
-  'set.to-vec': 'vec 변환'
-  'set.union': '합집합'
-  'sha1.sha1': 'SHA-1'
-  'sha1.sha1-block': 'SHA-1 블록'
-  'sha1.sha1-hex': 'SHA-1 16진수'
-  'sha224.sha224': 'sha224'
-  'sha224.sha224-hex': 'sha224 16진수'
-  'sha256.sha256': 'sha256'
-  'sha256.sha256-block': 'sha256 블록'
-  'sha256.sha256-hex': 'sha256 16진수'
-  'sha3.keccak-f1600': 'keccak f1600'
-  'sha3.keccak-sponge': 'keccak 스펀지'
-  'sha3.rotl64': 'rotl64'
-  'sha3.sha3-224': 'SHA-3 224'
-  'sha3.sha3-224-hex': 'SHA-3 224 16진수'
-  'sha3.sha3-256': 'SHA-3 256'
-  'sha3.sha3-256-hex': 'SHA-3 256 16진수'
-  'sha3.sha3-384': 'SHA-3 384'
-  'sha3.sha3-384-hex': 'SHA-3 384 16진수'
-  'sha3.sha3-512': 'SHA-3 512'
-  'sha3.sha3-512-hex': 'SHA-3 512 16진수'
-  'sha384.sha384': 'sha384'
-  'sha384.sha384-hex': 'sha384 16진수'
-  'sha512.sha512': 'sha512'
-  'sha512.sha512-block': 'sha512 블록'
-  'sha512.sha512-hex': 'sha512 16진수'
-  'sse.client.close': '닫기'
-  'sse.client.is-connected': '연결됨 여부'
-  'sse.client.next-event': '다음 event'
-  'sse.client.reconnect': '재연결'
-  'sse.listen-on': '대기 위'
-  'sse.server-conn.close': '닫기'
-  'sse.server-conn.handshake': 'handshake'
-  'sse.server-conn.is-connected': '연결됨 여부'
-  'sse.server-conn.send-comment': '전송 주석'
-  'sse.server-conn.send-event': '전송 event'
-  'sse.server.accept': '수락'
-  'sse.server.close': '닫기'
-  'sse.server.listen': '대기'
-  'sse.sse-connect': 'SSE 연결'
-  'stack.stack.clear': '비우기'
-  'stack.stack.empty': 'empty'
-  'stack.stack.peek': '확인'
-  'stack.stack.pop': '팝'
-  'stack.stack.push': '푸시'
-  'stack.stack.size': '크기'
-  'static-hashmap.static-hashmap-bool-tmpl.clear': '비우기'
-  'static-hashmap.static-hashmap-bool-tmpl.contains': '포함'
-  'static-hashmap.static-hashmap-bool-tmpl.for-each': '용 각'
-  'static-hashmap.static-hashmap-bool-tmpl.get': '취득'
-  'static-hashmap.static-hashmap-bool-tmpl.hash': '해시'
-  'static-hashmap.static-hashmap-bool-tmpl.init': '초기화'
-  'static-hashmap.static-hashmap-bool-tmpl.is-empty': 'empty 여부'
-  'static-hashmap.static-hashmap-bool-tmpl.len': '길이'
-  'static-hashmap.static-hashmap-bool-tmpl.put': '넣기'
-  'static-hashmap.static-hashmap-bool-tmpl.remove': '제거'
-  'static-hashmap.static-hashmap-int-tmpl.clear': '비우기'
-  'static-hashmap.static-hashmap-int-tmpl.contains': '포함'
-  'static-hashmap.static-hashmap-int-tmpl.for-each': '용 각'
-  'static-hashmap.static-hashmap-int-tmpl.get': '취득'
-  'static-hashmap.static-hashmap-int-tmpl.hash': '해시'
-  'static-hashmap.static-hashmap-int-tmpl.init': '초기화'
-  'static-hashmap.static-hashmap-int-tmpl.is-empty': 'empty 여부'
-  'static-hashmap.static-hashmap-int-tmpl.len': '길이'
-  'static-hashmap.static-hashmap-int-tmpl.put': '넣기'
-  'static-hashmap.static-hashmap-int-tmpl.remove': '제거'
-  'static-hashmap.static-hashmap-str-tmpl.clear': '비우기'
-  'static-hashmap.static-hashmap-str-tmpl.contains': '포함'
-  'static-hashmap.static-hashmap-str-tmpl.for-each': '용 각'
-  'static-hashmap.static-hashmap-str-tmpl.get': '취득'
-  'static-hashmap.static-hashmap-str-tmpl.hash': '해시'
-  'static-hashmap.static-hashmap-str-tmpl.init': '초기화'
-  'static-hashmap.static-hashmap-str-tmpl.is-empty': 'empty 여부'
-  'static-hashmap.static-hashmap-str-tmpl.len': '길이'
-  'static-hashmap.static-hashmap-str-tmpl.put': '넣기'
-  'static-hashmap.static-hashmap-str-tmpl.remove': '제거'
-  'static-hashmap.static-hashmap-str-tmpl.str-eq': '문자열 동등'
-  'str-map.str-map.clear': '비우기'
-  'str-map.str-map.contains': '포함'
-  'str-map.str-map.for-each': '용 각'
-  'str-map.str-map.get': '취득'
-  'str-map.str-map.hash': '해시'
-  'str-map.str-map.init': '초기화'
-  'str-map.str-map.is-empty': 'empty 여부'
-  'str-map.str-map.len': '길이'
-  'str-map.str-map.put': '넣기'
-  'str-map.str-map.remove': '제거'
-  'str-map.str-map.str-eq': '문자열 동등'
-  'str-map.str-map.to-str': 'str 변환'
-  'str-set.str-set.add': '추가'
-  'str-set.str-set.clear': '비우기'
-  'str-set.str-set.contains': '포함'
-  'str-set.str-set.for-each': '용 각'
-  'str-set.str-set.hash': '해시'
-  'str-set.str-set.init': '초기화'
-  'str-set.str-set.is-empty': 'empty 여부'
-  'str-set.str-set.len': '길이'
-  'str-set.str-set.remove': '제거'
-  'str-set.str-set.str-eq': '문자열 동등'
-  'str._str-dig-val': '_str dig 값'
-  'str.at': '위치'
-  'str.bigint-bitlen': '큰 정수 비트 길이'
-  'str.byte': '바이트'
-  'str.byte-index': '바이트 인덱스'
-  'str.compare': '비교'
-  'str.contains': '포함'
-  'str.copy': '복사'
-  'str.count': '개수'
-  'str.cp-index': 'cp 인덱스'
-  'str.decode-cp': '디코딩 cp'
-  'str.empty': 'empty'
-  'str.ends-with': '끝 동반'
-  'str.eq-full': '동등 full'
-  'str.eq-raw': '동등 원시'
-  'str.fields': '필드'
-  'str.fill': '채우기'
-  'str.find-byte-from': '찾기 바이트 from'
-  'str.from-hex': 'hex에서 변환'
-  'str.index': '인덱스'
-  'str.index-from': '인덱스 from'
-  'str.last-index': '마지막 인덱스'
-  'str.len': '길이'
-  'str.lines': '줄'
-  'str.new': '신규'
-  'str.repeat': '반복'
-  'str.replace-char': '치환 문자'
-  'str.replace-n': '치환 수량'
-  'str.replace-str': '치환 문자열'
-  'str.reverse': '뒤집기'
-  'str.rfind-byte-from': '역찾기 바이트 from'
-  'str.rindex': '역인덱스'
-  'str.rindex-from': '역인덱스 from'
-  'str.set-byte': '설정 바이트'
-  'str.slice': '슬라이스'
-  'str.slice-bytes': '슬라이스 바이트'
-  'str.split': '분할'
-  'str.split-n': '분할 수량'
-  'str.starts-with': 'starts 동반'
-  'str.str-hex-val': '문자열 16진수 값'
-  'str.to-bigint': 'bigint 변환'
-  'str.to-bool': 'bool 변환'
-  'str.to-byte': 'byte 변환'
-  'str.to-bytes': 'bytes 변환'
-  'str.to-f32': 'f32 변환'
-  'str.to-f64': 'f64 변환'
-  'str.to-hex': 'hex 변환'
-  'str.to-i16': 'i16 변환'
-  'str.to-i32': 'i32 변환'
-  'str.to-i64': 'i64 변환'
-  'str.to-i8': 'i8 변환'
-  'str.to-lower': 'lower 변환'
-  'str.to-str': 'str 변환'
-  'str.to-txt': 'txt 변환'
-  'str.to-u16': 'u16 변환'
-  'str.to-u32': 'u32 변환'
-  'str.to-u64': 'u64 변환'
-  'str.to-u8': 'u8 변환'
-  'str.to-upper': 'upper 변환'
-  'str.trim': '트리밍'
-  'str.trim-char': '트리밍 문자'
-  'str.with-cap': '동반 용량'
-  'str.with-len': '동반 길이'
-  'str.with-len-cap': '동반 길이 용량'
-  'strs.join': '결합'
-  'tar.tar-builder.add-bytes': '추가 바이트'
-  'tar.tar-builder.add-dir': '추가 디렉터리'
-  'tar.tar-builder.add-file': '추가 파일'
-  'tar.tar-builder.finish': '완료'
-  'tar.tar-builder.pre-alloc': '접두 할당'
-  'tar.tar-builder.write-header': '쓰기 헤더'
-  'tar.tar-builder.write-octal': '쓰기 8진수'
-  'tar.tar-entry.is-dir': '디렉터리 여부'
-  'tar.tar-entry.is-file': '파일 여부'
-  'tar.tar-entry.mode': '모드'
-  'tar.tar-entry.mtime': '수정 시간'
-  'tar.tar-entry.name': '이름'
-  'tar.tar-entry.read': '읽기'
-  'tar.tar-entry.size': '크기'
-  'tar.tar-entry.type': '타입'
-  'tar.tar-open-gz': 'tar 열기 gz'
-  'tar.tar.count': '개수'
-  'tar.tar.entry': '항목'
-  'tar.tar.is-dir': '디렉터리 여부'
-  'tar.tar.is-file': '파일 여부'
-  'tar.tar.mode': '모드'
-  'tar.tar.mtime': '수정 시간'
-  'tar.tar.name': '이름'
-  'tar.tar.offset': '오프셋'
-  'tar.tar.read': '읽기'
-  'tar.tar.size': '크기'
-  'tar.tar.type': '타입'
-  'tdes.tdes-cbc-dec': '3DES CBC 복호화'
-  'tdes.tdes-cbc-enc': '3DES CBC 암호화'
-  'tdes.tdes-dec': '3DES 복호화'
-  'tdes.tdes-enc': '3DES 암호화'
-  'time.add-seconds': '추가 초'
-  'time.date': '날짜'
-  'time.date-to-unix': '날짜 to unix'
-  'time.days-in-month-fn': '일수 내 월 fn'
-  'time.duration-between': '지속 시간 사이'
-  'time.duration-ms-between': '지속 시간 밀리초 사이'
-  'time.duration-time': '지속 시간 시간'
-  'time.duration-us-between': '지속 시간 마이크로초 사이'
-  'time.format': '포맷'
-  'time.format-date': '포맷 날짜'
-  'time.format-duration': '포맷 지속 시간'
-  'time.format-time-str': '포맷 시간 문자열'
-  'time.is-leap': 'leap 여부'
-  'time.now-date': '현재 날짜'
-  'time.now-ms': '현재 밀리초'
-  'time.now-ns': '현재 나노초'
-  'time.now-s': '현재 복수'
-  'time.now-time': '현재 시간'
-  'time.now-us': '현재 마이크로초'
-  'time.parse-date': '파싱 날짜'
-  'time.parse-time': '파싱 시간'
-  'time.since-ms': '이후 밀리초'
-  'time.since-s': '이후 복수'
-  'time.since-time': '이후 시간'
-  'time.since-us': '이후 마이크로초'
-  'time.sleep-ms': '절전 밀리초'
-  'time.sleep-ns': '절전 나노초'
-  'time.sleep-s': '절전 복수'
-  'time.sleep-us': '절전 마이크로초'
-  'time.sub': '뺄셈'
-  'time.timer.elapsed-ms': '경과 밀리초'
-  'time.timer.elapsed-s': '경과 복수'
-  'time.timer.elapsed-us': '경과 마이크로초'
-  'time.timer.start': '시작'
-  'time.timer.stop': '정지'
-  'time.unix': 'unix'
-  'time.unix-ms': 'unix 밀리초'
-  'time.unix-to-date': 'unix to 날짜'
-  'time.unix-to-time': 'unix to 시간'
-  'tls.bn-to-bytes': '큰 수 to 바이트'
-  'tls.build-nonce': '구축 논스'
-  'tls.bytes-cat': '바이트 cat'
-  'tls.bytes-to-bn': '바이트 to 큰 수'
-  'tls.cipher-is-ecdhe': '암호 여부 ecdhe'
-  'tls.cipher-is-gcm': '암호 여부 GCM'
-  'tls.conn.append-hs': '추가 hs'
-  'tls.conn.append-hs-from': '추가 hs from'
-  'tls.conn.close': '닫기'
-  'tls.conn.compute-shared-secret-13': '계산 공유 비밀 13'
-  'tls.conn.connect': '연결'
-  'tls.conn.connect-12': '연결 12'
-  'tls.conn.connect-13': '연결 13'
-  'tls.conn.decrypt-record': '복호화 레코드'
-  'tls.conn.decrypt-record-13': '복호화 레코드 13'
-  'tls.conn.decrypt-record-gcm': '복호화 레코드 GCM'
-  'tls.conn.derive-application-keys-13': '유도 application 키들 13'
-  'tls.conn.derive-handshake-keys-13': '유도 handshake 키들 13'
-  'tls.conn.derive-keys': '유도 키들'
-  'tls.conn.encrypt-record': '암호화 레코드'
-  'tls.conn.encrypt-record-13': '암호화 레코드 13'
-  'tls.conn.encrypt-record-gcm': '암호화 레코드 GCM'
-  'tls.conn.gen-p256-keypair': '생성 p256 키쌍'
-  'tls.conn.gen-x25519-keypair': '생성 x25519 키쌍'
-  'tls.conn.get-fd': '취득 디스크립터'
-  'tls.conn.handshake-12-body': 'handshake 12 본문'
-  'tls.conn.init': '초기화'
-  'tls.conn.read-certificate': '읽기 인증서'
-  'tls.conn.read-change-cipher-spec': '읽기 change 암호 spec'
-  'tls.conn.read-encrypted-handshake-13': '읽기 암호화됨 handshake 13'
-  'tls.conn.read-encrypted-record-13': '읽기 암호화됨 레코드 13'
-  'tls.conn.read-finished': '읽기 완료됨'
-  'tls.conn.read-server-hello': '읽기 서버 hello'
-  'tls.conn.read-server-hello-13': '읽기 서버 hello 13'
-  'tls.conn.read-server-hello-done': '읽기 서버 hello 완료'
-  'tls.conn.read-server-key-exchange': '읽기 서버 키 교환'
-  'tls.conn.send': '전송'
-  'tls.conn.send-change-cipher-spec': '전송 change 암호 spec'
-  'tls.conn.send-client-hello': '전송 클라이언트 hello'
-  'tls.conn.send-client-hello-13': '전송 클라이언트 hello 13'
-  'tls.conn.send-client-key-exchange': '전송 클라이언트 키 교환'
-  'tls.conn.send-finished': '전송 완료됨'
-  'tls.conn.send-finished-13': '전송 완료됨 13'
-  'tls.dial': '다이얼'
-  'tls.dial-12': '다이얼 12'
-  'tls.get-u16': '취득 u16'
-  'tls.get-u24': '취득 u24'
-  'tls.https-serve-once': 'HTTPS 서빙 한 번'
-  'tls.net-recv-wait': '네트워크 수신 대기'
-  'tls.prf': 'prf'
-  'tls.put-u16': '넣기 u16'
-  'tls.put-u24': '넣기 u24'
-  'tls.rand-bytes': '랜덤 바이트'
-  'tls.read-record': '읽기 레코드'
-  'tls.recv-n': '수신 수량'
-  'tls.rsa-pkcs1-decrypt': 'RSA PKCS#1 복호화'
-  'tls.rsa-pkcs1-encrypt': 'RSA PKCS#1 암호화'
-  'tls.send-raw': '전송 원시'
-  'tls.server-accept': '서버 수락'
-  'tls.server-conn.append-hs': '추가 hs'
-  'tls.server-conn.append-hs-from': '추가 hs from'
-  'tls.server-conn.close': '닫기'
-  'tls.server-conn.compute-shared-secret-13': '계산 공유 비밀 13'
-  'tls.server-conn.decrypt-record': '복호화 레코드'
-  'tls.server-conn.decrypt-record-13': '복호화 레코드 13'
-  'tls.server-conn.derive-application-keys-13': '유도 application 키들 13'
-  'tls.server-conn.derive-handshake-keys-13': '유도 handshake 키들 13'
-  'tls.server-conn.derive-keys': '유도 키들'
-  'tls.server-conn.encrypt-record': '암호화 레코드'
-  'tls.server-conn.encrypt-record-13': '암호화 레코드 13'
-  'tls.server-conn.handshake': 'handshake'
-  'tls.server-conn.handshake-13': 'handshake 13'
-  'tls.server-conn.read-change-cipher-spec': '읽기 change 암호 spec'
-  'tls.server-conn.read-client-finished-13': '읽기 클라이언트 완료됨 13'
-  'tls.server-conn.read-client-hello': '읽기 클라이언트 hello'
-  'tls.server-conn.read-client-key-exchange': '읽기 클라이언트 키 교환'
-  'tls.server-conn.read-encrypted-handshake-13': '읽기 암호화됨 handshake 13'
-  'tls.server-conn.read-encrypted-record-13': '읽기 암호화됨 레코드 13'
-  'tls.server-conn.read-finished': '읽기 완료됨'
-  'tls.server-conn.recv': '수신'
-  'tls.server-conn.send': '전송'
-  'tls.server-conn.send-certificate': '전송 인증서'
-  'tls.server-conn.send-certificate-13': '전송 인증서 13'
-  'tls.server-conn.send-change-cipher-spec': '전송 change 암호 spec'
-  'tls.server-conn.send-encrypted-extensions-13': '전송 암호화됨 확장 13'
-  'tls.server-conn.send-finished': '전송 완료됨'
-  'tls.server-conn.send-finished-13': '전송 완료됨 13'
-  'tls.server-conn.send-server-hello': '전송 서버 hello'
-  'tls.server-conn.send-server-hello-13': '전송 서버 hello 13'
-  'tls.server-conn.send-server-hello-done': '전송 서버 hello 완료'
-  'tls.server-init': '서버 초기화'
-  'tls.server-listen': '서버 대기'
-  'tls.tls-pad': 'TLS 패딩'
-  'tls.tls-unpad': 'TLS 패딩 제거'
-  'toml.get': '취득'
-  'toml.get-bool': '취득 bool'
-  'toml.get-f64': '취득 f64'
-  'toml.get-i64': '취득 i64'
-  'toml.get-str': '취득 문자열'
-  'toml.has': '.has'
-  'toml.new': '신규'
-  'toml.parse': '파싱'
-  'toml.stringify': '문자열화'
-  'toml.toml-array-name': 'toml 배열 이름'
-  'toml.toml-doc.put': '넣기'
-  'toml.toml-entry-key': 'toml 항목 키'
-  'toml.toml-entry-key-eq': 'toml 항목 키 동등'
-  'toml.toml-entry-value': 'toml 항목 값'
-  'toml.toml-find-eq': 'toml 찾기 동등'
-  'toml.toml-make-entry': 'toml 생성 항목'
-  'toml.toml-next-array-table': 'toml 다음 배열 테이블'
-  'toml.toml-normalize-key': 'toml 정규화 키'
-  'toml.toml-parse-bool': 'toml 파싱 bool'
-  'toml.toml-parse-f64': 'toml 파싱 f64'
-  'toml.toml-parse-i64': 'toml 파싱 i64'
-  'toml.toml-register-table': 'toml 등록 테이블'
-  'toml.toml-resolve-section': 'toml resolve 섹션'
-  'toml.toml-strip-comment': 'toml 제거 주석'
-  'toml.toml-table-eq': 'toml 테이블 동등'
-  'toml.toml-table-name': 'toml 테이블 이름'
-  'toml.toml-unquote': 'toml 인용 제거'
-  'toml.toml-valid-value': 'toml 유효 값'
-  'toml.toml-value-complete': 'toml 값 완료'
-  'tree-map.tree-map.alloc-node': '할당 노드'
-  'tree-map.tree-map.bf': 'bf'
-  'tree-map.tree-map.clear': '비우기'
-  'tree-map.tree-map.contains': '포함'
-  'tree-map.tree-map.empty': 'empty'
-  'tree-map.tree-map.first': '첫째'
-  'tree-map.tree-map.for-each': '용 각'
-  'tree-map.tree-map.free-node': '해제 노드'
-  'tree-map.tree-map.full': 'full'
-  'tree-map.tree-map.get': '취득'
-  'tree-map.tree-map.ht': '탭'
-  'tree-map.tree-map.init': '초기화'
-  'tree-map.tree-map.last': '마지막'
-  'tree-map.tree-map.lower-bound': '소문자 경계'
-  'tree-map.tree-map.put': '넣기'
-  'tree-map.tree-map.rebalance': 'rebalance'
-  'tree-map.tree-map.rebalance-up': 'rebalance 위로'
-  'tree-map.tree-map.remove': '제거'
-  'tree-map.tree-map.rot-left': '회전 왼쪽'
-  'tree-map.tree-map.rot-right': '회전 오른쪽'
-  'tree-map.tree-map.size': '크기'
-  'tree-map.tree-map.successor': '후계'
-  'tree-map.tree-map.update-ht': '갱신 탭'
-  'tree-map.tree-map.upper-bound': '대문자 경계'
-  'tree-set.tree-set.add': '추가'
-  'tree-set.tree-set.alloc-node': '할당 노드'
-  'tree-set.tree-set.bf': 'bf'
-  'tree-set.tree-set.clear': '비우기'
-  'tree-set.tree-set.contains': '포함'
-  'tree-set.tree-set.empty': 'empty'
-  'tree-set.tree-set.first': '첫째'
-  'tree-set.tree-set.for-each': '용 각'
-  'tree-set.tree-set.free-node': '해제 노드'
-  'tree-set.tree-set.full': 'full'
-  'tree-set.tree-set.ht': '탭'
-  'tree-set.tree-set.init': '초기화'
-  'tree-set.tree-set.last': '마지막'
-  'tree-set.tree-set.lower-bound': '소문자 경계'
-  'tree-set.tree-set.rebalance': 'rebalance'
-  'tree-set.tree-set.rebalance-up': 'rebalance 위로'
-  'tree-set.tree-set.remove': '제거'
-  'tree-set.tree-set.rot-left': '회전 왼쪽'
-  'tree-set.tree-set.rot-right': '회전 오른쪽'
-  'tree-set.tree-set.size': '크기'
-  'tree-set.tree-set.successor': '후계'
-  'tree-set.tree-set.update-ht': '갱신 탭'
-  'tree-set.tree-set.upper-bound': '대문자 경계'
-  'txt._txt-dig-val': '_txt dig 값'
-  'txt.append': '추가'
-  'txt.append-str': '추가 문자열'
-  'txt.append-txt': '추가 텍스트'
-  'txt.at': '위치'
-  'txt.byte': '바이트'
-  'txt.clear': '비우기'
-  'txt.compare': '비교'
-  'txt.contains': '포함'
-  'txt.copy': '복사'
-  'txt.count': '개수'
-  'txt.decode-cp': '디코딩 cp'
-  'txt.empty': 'empty'
-  'txt.ends-with': '끝 동반'
-  'txt.eq': '동등'
-  'txt.eq-full': '동등 full'
-  'txt.fields': '필드'
-  'txt.fill': '채우기'
-  'txt.from-bytes': 'bytes에서 변환'
-  'txt.from-chars': 'chars에서 변환'
-  'txt.from-hex': 'hex에서 변환'
-  'txt.from-str': 'str에서 변환'
-  'txt.index': '인덱스'
-  'txt.index-from': '인덱스 from'
-  'txt.join': '결합'
-  'txt.last-index': '마지막 인덱스'
-  'txt.len': '길이'
-  'txt.lines': '줄'
-  'txt.new': '신규'
-  'txt.repeat': '반복'
-  'txt.replace-char': '치환 문자'
-  'txt.replace-n': '치환 수량'
-  'txt.replace-str': '치환 문자열'
-  'txt.reverse': '뒤집기'
-  'txt.rindex': '역인덱스'
-  'txt.rindex-from': '역인덱스 from'
-  'txt.set-byte': '설정 바이트'
-  'txt.slice': '슬라이스'
-  'txt.split': '분할'
-  'txt.split-n': '분할 수량'
-  'txt.starts-with': 'starts 동반'
-  'txt.to-bigint': 'bigint 변환'
-  'txt.to-bool': 'bool 변환'
-  'txt.to-byte': 'byte 변환'
-  'txt.to-bytes': 'bytes 변환'
-  'txt.to-f32': 'f32 변환'
-  'txt.to-f64': 'f64 변환'
-  'txt.to-hex': 'hex 변환'
-  'txt.to-i16': 'i16 변환'
-  'txt.to-i32': 'i32 변환'
-  'txt.to-i64': 'i64 변환'
-  'txt.to-i8': 'i8 변환'
-  'txt.to-lower': 'lower 변환'
-  'txt.to-str': 'str 변환'
-  'txt.to-u16': 'u16 변환'
-  'txt.to-u32': 'u32 변환'
-  'txt.to-u64': 'u64 변환'
-  'txt.to-u8': 'u8 변환'
-  'txt.to-upper': 'upper 변환'
-  'txt.trim': '트리밍'
-  'txt.trim-char': '트리밍 문자'
-  'txt.truncate': 'truncate'
-  'txt.txt-hex-val': '텍스트 16진수 값'
-  'unix.unix-conn.close': '닫기'
-  'unix.unix-conn.dial': '다이얼'
-  'unix.unix-conn.fd-of': '디스크립터 의'
-  'unix.unix-conn.recv': '수신'
-  'unix.unix-conn.recv-all': '수신 전체'
-  'unix.unix-conn.recv-with-timeout': '수신 동반 시간 초과'
-  'unix.unix-conn.send': '전송'
-  'unix.unix-conn.set-recv-timeout': '설정 수신 시간 초과'
-  'unix.unix-conn.set-timeout': '설정 시간 초과'
-  'unix.unix-dial': 'unix 다이얼'
-  'unix.unix-dial-timeout': 'unix 다이얼 시간 초과'
-  'unix.unix-dial-to': 'unix 다이얼 to'
-  'unix.unix-listen': 'unix 대기'
-  'unix.unix-listen-on': 'unix 대기 위'
-  'unix.unix-listener.accept': '수락'
-  'unix.unix-listener.accept-with-timeout': '수락 동반 시간 초과'
-  'unix.unix-listener.close': '닫기'
-  'unix.unix-listener.fd-of': '디스크립터 의'
-  'unix.unix-listener.listen': '대기'
-  'unix.unix-listener.path-of': '경로 의'
-  'unix.unix-listener.set-timeout': '설정 시간 초과'
-  'url.url-basic-auth': 'url 기본 인증'
-  'url.url-build-query': 'url 구축 쿼리'
-  'url.url-decode': 'url 디코딩'
-  'url.url-encode': 'url 인코딩'
-  'url.url-encode-component': 'url 인코딩 component'
-  'url.url-info.get-query': '취득 쿼리'
-  'url.url-info.set-query': '설정 쿼리'
-  'url.url-info.to-str': 'str 변환'
-  'url.url-join': 'url 결합'
-  'url.url-parse': 'url 파싱'
-  'url.url-parse-basic-auth': 'url 파싱 기본 인증'
-  'uuid.cmp': '비교'
-  'uuid.eq': '동등'
-  'uuid.from-str': 'str에서 변환'
-  'uuid.hex-byte': '16진수 바이트'
-  'uuid.hex-byte-upper': '16진수 바이트 대문자'
-  'uuid.hex-val': '16진수 값'
-  'uuid.is-nil': 'nil 여부'
-  'uuid.new-v4': '신규 v4'
-  'uuid.nil-uuid': 'nil uuid'
-  'uuid.parse-hex-byte': '파싱 16진수 바이트'
-  'uuid.parse-no-dashes': '파싱 없음 대시'
-  'uuid.parse-with-dashes': '파싱 동반 대시'
-  'uuid.to-str': 'str 변환'
-  'uuid.to-str-upper': 'str-upper 변환'
-  'uuid.validate': '검증'
-  'uuid.variant': '변형'
-  'uuid.version': '버전'
-  'vec.at': '위치'
-  'vec.clone': '복제'
-  'vec.contains': '포함'
-  'vec.eq': '동등'
-  'vec.extend': '연장'
-  'vec.fill': '채우기'
-  'vec.first': '첫째'
-  'vec.index-of': '인덱스 의'
-  'vec.insert': '삽입'
-  'vec.last': '마지막'
-  'vec.len': '길이'
-  'vec.max': '최대'
-  'vec.min': '최소'
-  'vec.pop': '팝'
-  'vec.remove': '제거'
-  'vec.reverse': '뒤집기'
-  'vec.sum': '합계'
-  'vec.swap': '스왑'
-  'vec.to-arr': 'arr 변환'
-  'vec.to-str': 'str 변환'
-  'vec.truncate': 'truncate'
-  'vec.vec-clear': '벡터 비우기'
-  'vec.vec-push': '벡터 푸시'
-  'ws.build-frame': '구축 프레임'
-  'ws.client.close': '닫기'
-  'ws.client.is-connected': '연결됨 여부'
-  'ws.client.recv': '수신'
-  'ws.client.send': '전송'
-  'ws.client.send-binary': '전송 2진법'
-  'ws.client.send-close': '전송 닫기'
-  'ws.client.send-ping': '전송 핑'
-  'ws.client.send-pong': '전송 팽'
-  'ws.client.send-text': '전송 텍스트'
-  'ws.compute-accept': '계산 수락'
-  'ws.connect': '연결'
-  'ws.gen-client-key': '생성 클라이언트 키'
-  'ws.gen-mask-key': '생성 마스크 키'
-  'ws.listen-on': '대기 위'
-  'ws.next-rand': '다음 랜덤'
-  'ws.server-conn.close': '닫기'
-  'ws.server-conn.handshake': 'handshake'
-  'ws.server-conn.is-connected': '연결됨 여부'
-  'ws.server-conn.recv': '수신'
-  'ws.server-conn.recv-nb': '수신 nb'
-  'ws.server-conn.send': '전송'
-  'ws.server-conn.send-binary': '전송 2진법'
-  'ws.server-conn.send-close': '전송 닫기'
-  'ws.server-conn.send-ping': '전송 핑'
-  'ws.server-conn.send-pong': '전송 팽'
-  'ws.server-conn.send-text': '전송 텍스트'
-  'ws.server.accept': '수락'
-  'ws.server.close': '닫기'
-  'ws.server.listen': '대기'
-  'x25519.fe-add': '체 원소 추가'
-  'x25519.fe-add-v': '체 원소 추가 버전'
-  'x25519.fe-copy': '체 원소 복사'
-  'x25519.fe-cswap': '체 원소 cswap'
-  'x25519.fe-frombytes': '체 원소 frombytes'
-  'x25519.fe-frombytes-v': '체 원소 frombytes 버전'
-  'x25519.fe-invert': '체 원소 역전'
-  'x25519.fe-invert-v': '체 원소 역전 버전'
-  'x25519.fe-mul': '체 원소 곱셈'
-  'x25519.fe-mul-v': '체 원소 곱셈 버전'
-  'x25519.fe-mul121665': '체 원소 x121665'
-  'x25519.fe-one': '체 원소 단일'
-  'x25519.fe-one-v': '체 원소 단일 버전'
-  'x25519.fe-sq': '체 원소 제곱'
-  'x25519.fe-sq-v': '체 원소 제곱 버전'
-  'x25519.fe-sub': '체 원소 뺄셈'
-  'x25519.fe-sub-v': '체 원소 뺄셈 버전'
-  'x25519.fe-tobytes': '체 원소 tobytes'
-  'x25519.fe-tobytes-v': '체 원소 tobytes 버전'
-  'x25519.fe-zero': '체 원소 영'
-  'x25519.fe-zero-v': '체 원소 영 버전'
-  'x25519.x25519-gen-keypair': 'x25519 생성 키쌍'
-  'x25519.x25519-get-basepoint': 'x25519 취득 기준점'
-  'x25519.x25519-scalarmult': 'x25519 스칼라 곱'
-  'x25519.x25519-scalarmult-base': 'x25519 스칼라 곱 base'
-  'x25519.x25519-scalarmult-base-bytes': 'x25519 스칼라 곱 base 바이트'
-  'x25519.x25519-scalarmult-bytes': 'x25519 스칼라 곱 바이트'
-  'x509.alg-id-rsa-encryption': 'alg id RSA 암호화'
-  'x509.alg-id-sha256-with-rsa': 'alg id sha256 동반 RSA'
-  'x509.der-enc-bitstring': 'DER 암호화 비트 문자열'
-  'x509.der-enc-explicit': 'DER 암호화 명시적'
-  'x509.der-enc-integer-bytes': 'DER 암호화 정수 바이트'
-  'x509.der-enc-integer-i64': 'DER 암호화 정수 i64'
-  'x509.der-enc-len': 'DER 암호화 길이'
-  'x509.der-enc-null': 'DER 암호화 null'
-  'x509.der-enc-octetstring': 'DER 암호화 옥텟 문자열'
-  'x509.der-enc-oid-raw': 'DER 암호화 OID 원시'
-  'x509.der-enc-printablestring': 'DER 암호화 인쇄 가능 문자열'
-  'x509.der-enc-sequence': 'DER 암호화 시퀀스'
-  'x509.der-enc-set': 'DER 암호화 설정'
-  'x509.der-enc-tlv': 'DER 암호화 TLV'
-  'x509.der-enc-utctime': 'DER 암호화 UTC 시간'
-  'x509.der-len': 'DER 길이'
-  'x509.der-skip': 'DER 건너뛰기'
-  'x509.der-tag': 'DER 태그'
-  'x509.rsa-pkcs1-sign-sha256': 'RSA PKCS#1 서명 sha256'
-  'x509.sha256-compress': 'sha256 압축'
-  'x509.x509-build-name-cn': 'X.509 구축 이름 cn'
-  'x509.x509-build-rsa-public-key': 'X.509 구축 RSA 공개 키'
-  'x509.x509-build-self-signed-cert': 'X.509 구축 self 부호 있음 인증서'
-  'x509.x509-build-spki': 'X.509 구축 공개키 정보'
-  'x509.x509-build-tbs': 'X.509 구축 서명 대상'
-  'x509.x509-build-validity': 'X.509 구축 유효 기간'
-  'x509.x509-bytes-to-bn': 'X.509 바이트 to 큰 수'
-  'x509.x509-fingerprint': 'X.509 지문'
-  'x509.x509-rsa-e': 'X.509 RSA 지수'
-  'x509.x509-rsa-n': 'X.509 RSA 수량'
-  'x509.x509-serial': 'X.509 시리얼'
-  'x509.x509-tbs-range': 'X.509 서명 대상 range'
-  'xz.lzma-decoder.decode': '디코딩'
-  'xz.lzma-decoder.decode-distance': '디코딩 거리'
-  'xz.lzma-decoder.decode-length': '디코딩 길이'
-  'xz.lzma-decoder.decode-literal': '디코딩 리터럴'
-  'xz.lzma-decoder.init-probs': '초기화 확률'
-  'xz.lzma-decoder.update-state-literal': '갱신 상태 리터럴'
-  'xz.lzma-decoder.update-state-match': '갱신 상태 일치'
-  'xz.lzma-decoder.update-state-rep': '갱신 상태 반복'
-  'xz.lzma-decoder.update-state-shortrep': '갱신 상태 짧은 반복'
-  'xz.lzma-decompress': 'lzma 해제'
-  'xz.lzma-rd.decode-bit': '디코딩 비트'
-  'xz.lzma-rd.decode-bit-tree': '디코딩 비트 트리'
-  'xz.lzma-rd.decode-direct-bits': '디코딩 direct 비트'
-  'xz.lzma-rd.decode-reverse-bit-tree': '디코딩 뒤집기 비트 트리'
-  'xz.lzma-rd.init': '초기화'
-  'xz.lzma-rd.normalize': '정규화'
-  'xz.lzma2-decompress-stream': 'lzma2 해제 스트림'
-  'xz.xz-compress': 'xz 압축'
-  'xz.xz-decompress': 'xz 해제'
-  'yaml.anchor': '앵커'
-  'yaml.at': '위치'
-  'yaml.bool': 'bool'
-  'yaml.doc': '문서'
-  'yaml.doc-count': '문서 개수'
-  'yaml.error': '오류'
-  'yaml.error-of': '오류 의'
-  'yaml.f64': 'f64'
-  'yaml.find': '찾기'
-  'yaml.find-bool': '찾기 bool'
-  'yaml.find-f64': '찾기 f64'
-  'yaml.find-i64': '찾기 i64'
-  'yaml.find-str': '찾기 문자열'
-  'yaml.get': '취득'
-  'yaml.get-bool': '취득 bool'
-  'yaml.get-f64': '취득 f64'
-  'yaml.get-i64': '취득 i64'
-  'yaml.get-str': '취득 문자열'
-  'yaml.i64': 'i64'
-  'yaml.is-bool': 'bool 여부'
-  'yaml.is-int': '정수 여부'
-  'yaml.is-map': '맵 여부'
-  'yaml.is-nan': 'NaN 여부'
-  'yaml.is-null': 'null 여부'
-  'yaml.is-num': '숫자 여부'
-  'yaml.is-seq': 'seq 여부'
-  'yaml.is-str': '문자열 여부'
-  'yaml.key': '키'
-  'yaml.key-node': '키 노드'
-  'yaml.kind': '종류'
-  'yaml.len': '길이'
-  'yaml.line-of': '줄 의'
-  'yaml.node-count': '노드 개수'
-  'yaml.parse': '파싱'
-  'yaml.parse-all': '파싱 전체'
-  'yaml.scalar-text': '스칼라 텍스트'
-  'yaml.source-of': 'source 의'
-  'yaml.str': '문자열'
-  'yaml.stringify': '문자열화'
-  'yaml.strip-bom': '제거 BOM'
-  'yaml.style': '스타일'
-  'yaml.tag': '태그'
-  'yaml.text': '텍스트'
-  'yaml.to-json': 'json 변환'
-  'yaml.to-json-all': 'json-all 변환'
-  'yaml.to-yaml': 'yaml 변환'
-  'yaml.valid': '유효'
-  'yaml.valid-of': '유효 의'
-  'yaml.value': '값'
-  'yaml.yaml-apply-tag': 'yaml 적용 태그'
-  'yaml.yaml-emit': 'yaml 발생'
-  'yaml.yaml-f-is-inf': 'yaml 부동 소수 여부 무한'
-  'yaml.yaml-f-is-nan': 'yaml 부동 소수 여부 NaN'
-  'yaml.yaml-hex-char': 'yaml 16진수 문자'
-  'yaml.yaml-hex-digit': 'yaml 16진수 숫자'
-  'yaml.yaml-inf': 'yaml 무한'
-  'yaml.yaml-json-escape': 'yaml json 이스케이프'
-  'yaml.yaml-json-of': 'yaml json 의'
-  'yaml.yaml-key-eq': 'yaml 키 동등'
-  'yaml.yaml-key-text-eq': 'yaml 키 텍스트 동등'
-  'yaml.yaml-nan': 'yaml NaN'
-  'yaml.yaml-node-is-nan': 'yaml 노드 여부 NaN'
-  'yaml.yaml-parse-radix': 'yaml 파싱 근수'
-  'yaml.yaml-parser.advance': '전진'
-  'yaml.yaml-parser.anchor-id': '앵커 id'
-  'yaml.yaml-parser.at': '위치'
-  'yaml.yaml-parser.at-doc-marker': '위치 문서 마커'
-  'yaml.yaml-parser.at-eol': '위치 줄 끝'
-  'yaml.yaml-parser.byte-at': '바이트 위치'
-  'yaml.yaml-parser.cur': '현재'
-  'yaml.yaml-parser.eof': 'eof'
-  'yaml.yaml-parser.fail': '실패'
-  'yaml.yaml-parser.fail-at': '실패 위치'
-  'yaml.yaml-parser.indent-at': '들여쓰기 위치'
-  'yaml.yaml-parser.is-seq-dash': 'seq 대시 여부'
-  'yaml.yaml-parser.line-end-of': '줄 종료 의'
-  'yaml.yaml-parser.line-start-of': '줄 시작 의'
-  'yaml.yaml-parser.looks-like-map-entry': '모양 같은 맵 항목'
-  'yaml.yaml-parser.merge-into': '병합 로'
-  'yaml.yaml-parser.merge-one': '병합 단일'
-  'yaml.yaml-parser.newline': '개행'
-  'yaml.yaml-parser.parse-alias': '파싱 alias'
-  'yaml.yaml-parser.parse-block': '파싱 블록'
-  'yaml.yaml-parser.parse-block-indented': '파싱 블록 들여쓰기'
-  'yaml.yaml-parser.parse-block-map': '파싱 블록 맵'
-  'yaml.yaml-parser.parse-block-scalar': '파싱 블록 스칼라'
-  'yaml.yaml-parser.parse-block-seq': '파싱 블록 seq'
-  'yaml.yaml-parser.parse-docs': '파싱 문서'
-  'yaml.yaml-parser.parse-document': '파싱 문서'
-  'yaml.yaml-parser.parse-double': '파싱 배점'
-  'yaml.yaml-parser.parse-flow-map': '파싱 flow 맵'
-  'yaml.yaml-parser.parse-flow-node': '파싱 flow 노드'
-  'yaml.yaml-parser.parse-flow-seq': '파싱 flow seq'
-  'yaml.yaml-parser.parse-plain': '파싱 plain'
-  'yaml.yaml-parser.parse-props': '파싱 프로퍼티'
-  'yaml.yaml-parser.parse-single': '파싱 단일'
-  'yaml.yaml-parser.push-node': '푸시 노드'
-  'yaml.yaml-parser.push-null': '푸시 null'
-  'yaml.yaml-parser.push-scalar': '푸시 스칼라'
-  'yaml.yaml-parser.read-line-content': '읽기 줄 콘텐츠'
-  'yaml.yaml-parser.read-tag': '읽기 태그'
-  'yaml.yaml-parser.read-token': '읽기 토큰'
-  'yaml.yaml-parser.register-anchor': '등록 앵커'
-  'yaml.yaml-parser.set-props': '설정 프로퍼티'
-  'yaml.yaml-parser.skip-blank-lines': '건너뛰기 빈칸 줄'
-  'yaml.yaml-parser.skip-doc-preamble': '건너뛰기 문서 서문'
-  'yaml.yaml-parser.skip-flow-ws': '건너뛰기 flow 웹소켓'
-  'yaml.yaml-parser.skip-spaces': '건너뛰기 공백'
-  'yaml.yaml-parser.skip-to-doc-boundary': '건너뛰기 to 문서 경계'
-  'yaml.yaml-parser.skip-to-eol': '건너뛰기 to 줄 끝'
-  'yaml.yaml-plain-safe': 'yaml plain 안전'
-  'yaml.yaml-quote': 'yaml 인용부호'
-  'yaml.yaml-resolve-plain': 'yaml resolve plain'
-  'yaml.yaml-scalar-repr': 'yaml 스칼라 표현'
-  'yaml.yaml-scan-number': 'yaml 스캔 숫자'
-  'yaml.yaml-spaces': 'yaml 공백'
-  'yaml.yaml-str-at': 'yaml 문자열 위치'
-  'yaml.yaml-tag-name': 'yaml 태그 이름'
-  'yaml.yaml-to-f64': 'yaml to f64'
-  'yaml.yaml-to-i64': 'yaml to i64'
-  'yaml.yaml-unescape-double': 'yaml 역이스케이프 배점'
-  'zip.u16le': 'u16le'
-  'zip.u32le': 'u32le'
-  'zip.zip-entry.compressed-size': '압축됨 크기'
-  'zip.zip-entry.extract': '추출'
-  'zip.zip-entry.method': 'method'
-  'zip.zip-entry.name': '이름'
-  'zip.zip-entry.size': '크기'
-  'zip.zip-writer.add-dir': '추가 디렉터리'
-  'zip.zip-writer.add-file': '추가 파일'
-  'zip.zip-writer.cd-put': 'cd 넣기'
-  'zip.zip-writer.cd-write-u16': 'cd 쓰기 u16'
-  'zip.zip-writer.cd-write-u32': 'cd 쓰기 u32'
-  'zip.zip-writer.finalize': '마감'
-  'zip.zip-writer.put': '넣기'
-  'zip.zip-writer.write-cd-entry': '쓰기 cd 항목'
-  'zip.zip-writer.write-eocd': '쓰기 EOCD'
-  'zip.zip-writer.write-local-file': '쓰기 로컬 파일'
-  'zip.zip-writer.write-u16': '쓰기 u16'
-  'zip.zip-writer.write-u32': '쓰기 u32'
-  'zip.zip.compressed-size': '압축됨 크기'
-  'zip.zip.count': '개수'
-  'zip.zip.entry': '항목'
-  'zip.zip.entry-off': '항목 off'
-  'zip.zip.extract': '추출'
-  'zip.zip.find-eocd': '찾기 EOCD'
-  'zip.zip.get-cd-off': '취득 cd off'
-  'zip.zip.get-total': '취득 total'
-  'zip.zip.method': 'method'
-  'zip.zip.name': '이름'
-  'zip.zip.size': '크기'
-  'zlib.adler-32': 'adler 32'
-  'zlib.zlib-compress': 'zlib 압축'
-  'zlib.zlib-consumed-stored': 'zlib 소비됨 stored'
-  'zlib.zlib-decompress': 'zlib 해제'
-  'zlib.zlib-decompress-stored': 'zlib 해제 stored'
-  'zstd.bits-for-count': '비트 용 개수'
-  'zstd.fse-table.build': '구축'
-  'zstd.fse-table.decode': '디코딩'
-  'zstd.zs-bit-reader.align-to-byte': '정렬 to 바이트'
-  'zstd.zs-bit-reader.read-bit': '읽기 비트'
-  'zstd.zs-bit-reader.read-bits': '읽기 비트'
-  'zstd.zs-bit-reader.read-varint': '읽기 가변 정수'
-  'zstd.zs-frame.decode-block': '디코딩 블록'
-  'zstd.zs-frame.decode-compressed-block': '디코딩 압축됨 블록'
-  'zstd.zs-frame.read-frame-header': '읽기 프레임 헤더'
-  'zstd.zs-huffman.build': '구축'
-  'zstd.zs-huffman.decode': '디코딩'
-  'zstd.zstd-compress': 'zstd 압축'
-  'zstd.zstd-decompress': 'zstd 해제'
+  'aes-cbc.cbc-dec': ['CBC 복호화', 'cd', 'cbhh']
+  'aes-cbc.cbc-enc': ['CBC 암호화', 'ce', 'chh']
+  'aes-cbc.dec-128': ['복호화 128', 'd1', 'bhh1']
+  'aes-cbc.dec-256': ['복호화 256', 'd2', 'bhh2']
+  'aes-cbc.enc-128': ['암호화 128', 'e1', 'hh1']
+  'aes-cbc.enc-256': ['암호화 256', 'e2', 'hh2']
+  'aes-cbc.pkcs7-pad': ['PKCS#7 패딩', 'pp', 'p7pd']
+  'aes-cbc.pkcs7-unpad': ['PKCS#7 패딩 제거', 'pu', 'p7pdjg']
+  'aes-ctr.crypt-128': ['암호 128', 'c1', 'h1']
+  'aes-ctr.crypt-256': ['암호 256', 'c2', 'h2']
+  'aes-ctr.ctr-crypt': ['CTR 암호', 'cc', 'ch']
+  'aes-ctr.ctr-inc': ['CTR inc', 'ci', 'ci']
+  'aes-gcm.ctr-xor': ['CTR xor', 'cx', 'cx']
+  'aes-gcm.gcm-h': ['GCM 해시', 'gh', 'ghs']
+  'aes-gcm.gcm-j0': ['GCM j0', 'gj', 'gj0']
+  'aes-gcm.gcm-open': ['GCM 열기', 'go', 'gg']
+  'aes-gcm.gcm-seal': ['GCM 봉인', 'gs', 'gb']
+  'aes-gcm.ghash': ['ghash', 'g', 'g']
+  'aes-gcm.ghash-mul': ['ghash 곱셈', 'gm', 'ggs']
+  'aes-gcm.open-128': ['열기 128', 'o1', 'g1']
+  'aes-gcm.open-256': ['열기 256', 'o2', 'g2']
+  'aes-gcm.seal-128': ['봉인 128', 's1', 'b1']
+  'aes-gcm.seal-256': ['봉인 256', 's2', 'b2']
+  'aes.add-round-key': ['추가 반올림 키', 'ark', 'cgbrk']
+  'aes.add-round-key-at': ['추가 반올림 키 위치', 'arka', 'cgbrkc']
+  'aes.dec-128': ['복호화 128', 'd1', 'bhh1']
+  'aes.dec-256': ['복호화 256', 'd2', 'bhh2']
+  'aes.dec-block': ['복호화 블록', 'db', 'bhhbr']
+  'aes.enc-128': ['암호화 128', 'e1', 'hh1']
+  'aes.enc-256': ['암호화 256', 'e2', 'hh2']
+  'aes.enc-block': ['암호화 블록', 'eb', 'hhbr']
+  'aes.gf-mul2': ['유한 체 x2', 'gm', 'hcx2']
+  'aes.inv-mix-col': ['역원 mix 열', 'imc', 'm']
+  'aes.inv-mix-columns': ['역원 mix 열', 'imc', 'm']
+  'aes.inv-shift-rows': ['역원 시프트 행', 'isr', 'spth']
+  'aes.inv-sub-bytes': ['역원 뺄셈 바이트', 'isb', 'psbt']
+  'aes.key-expand': ['키 확장', 'ke', 'khj']
+  'aes.key-expand-256': ['키 확장 256', 'ke2', 'khj2']
+  'aes.mix-col': ['mix 열', 'mc', 'm']
+  'aes.mix-columns': ['mix 열', 'mc', 'm']
+  'aes.rcon-val': ['라운드 상수 값', 'rv', 'rdssg']
+  'aes.shift-rows': ['시프트 행', 'sr', 'spth']
+  'aes.sub-bytes': ['뺄셈 바이트', 'sb', 'psbt']
+  'argon2.blake-g': ['blake 생성원', 'bg', 'bss']
+  'argon2.compress': ['압축', 'c', 'c']
+  'argon2.h-prime': ['해시 prime', 'hp', 'hsp']
+  'argon2.id': ['id', 'i', 'i']
+  'argon2.rotr': ['우회전', 'r', 'hj']
+  'args.count': ['개수', 'c', 'gs']
+  'args.get': ['취득', 'g', 'cd']
+  'args.get-option': ['취득 option', 'go', 'cdo']
+  'args.get-positional': ['취득 positional', 'gp', 'cdp']
+  'args.has-flag': ['.has flag', 'hf', 'hf']
+  'args.program': ['프로그램', 'p', 'prgr']
+  'arr-stack.arr-stack.clear': ['비우기', 'c', 'bg']
+  'arr-stack.arr-stack.empty': ['empty', 'e', 'e']
+  'arr-stack.arr-stack.full': ['full', 'f', 'f']
+  'arr-stack.arr-stack.size': ['크기', 's', 'kg']
+  'arr.arr-stack-init': ['배열 스택 초기화', 'asi', 'bstcgh']
+  'arr.arr-stack-peek': ['배열 스택 확인', 'asp', 'bsth']
+  'arr.arr-stack-pop': ['배열 스택 팝', 'asp', 'bstp']
+  'arr.arr-stack-push': ['배열 스택 푸시', 'asp', 'bstps']
+  'arr.asc': ['오름차순', 'a', 'rcs']
+  'arr.at': ['위치', 'a', 'c']
+  'arr.clone': ['복제', 'c', 'bj']
+  'arr.contains': ['포함', 'c', 'ph']
+  'arr.count': ['개수', 'c', 'gs']
+  'arr.desc': ['내림차순', 'd', 'nrcs']
+  'arr.eq': ['동등', 'e', 'dd']
+  'arr.fill': ['채우기', 'f', 'cg']
+  'arr.first': ['첫째', 'f', 'cj']
+  'arr.index-of': ['인덱스 의', 'io', 'ds']
+  'arr.last': ['마지막', 'l', 'mjm']
+  'arr.len': ['길이', 'l', 'g']
+  'arr.link-clear': ['링크 비우기', 'lc', 'rkbg']
+  'arr.link-find': ['링크 찾기', 'lf', 'rkcg']
+  'arr.link-get-at': ['링크 취득 위치', 'lga', 'rkcdc']
+  'arr.link-init': ['링크 초기화', 'li', 'rkcgh']
+  'arr.link-insert-at': ['링크 삽입 위치', 'lia', 'rksc']
+  'arr.link-peek-back': ['링크 확인 뒤쪽', 'lpb', 'rkhdj']
+  'arr.link-peek-front': ['링크 확인 앞쪽', 'lpf', 'rkhj']
+  'arr.link-pop-back': ['링크 팝 뒤쪽', 'lpb', 'rkpdj']
+  'arr.link-pop-front': ['링크 팝 앞쪽', 'lpf', 'rkpj']
+  'arr.link-push-back': ['링크 푸시 뒤쪽', 'lpb', 'rkpsdj']
+  'arr.link-push-front': ['링크 푸시 앞쪽', 'lpf', 'rkpsj']
+  'arr.link-remove-at': ['링크 제거 위치', 'lra', 'rkjgc']
+  'arr.link-reverse': ['링크 뒤집기', 'lr', 'rkdjg']
+  'arr.link-set-at': ['링크 설정 위치', 'lsa', 'rksjc']
+  'arr.max': ['최대', 'm', 'cd']
+  'arr.min': ['최소', 'm', 'cs']
+  'arr.queue-init': ['큐 초기화', 'qi', 'kcgh']
+  'arr.queue-peek': ['큐 확인', 'qp', 'kh']
+  'arr.queue-pop': ['큐 팝', 'qp', 'kp']
+  'arr.queue-push': ['큐 푸시', 'qp', 'kps']
+  'arr.reverse': ['뒤집기', 'r', 'djg']
+  'arr.sum': ['합계', 's', 'hg']
+  'arr.swap': ['스왑', 's', 's']
+  'arr.to-str': ['str 변환', 'ts', 'sbh']
+  'arr.to-vec': ['vec 변환', 'tv', 'vbh']
+  'arrords.asc': ['오름차순', 'a', 'rcs']
+  'arrords.desc': ['내림차순', 'd', 'nrcs']
+  'async.cancel': ['취소', 'c', 'cs']
+  'async.cancelled': ['취소됨', 'c', 'csd']
+  'base32.decode': ['디코딩', 'd', 'dkd']
+  'base32.encode': ['인코딩', 'e', 'kd']
+  'base64.b64-val': ['base64 값', 'bv', 'b6g']
+  'base64.decode': ['디코딩', 'd', 'dkd']
+  'base64.encode': ['인코딩', 'e', 'kd']
+  'base64.encode-std': ['인코딩 std', 'es', 'kds']
+  'base64.encode-url': ['인코딩 url', 'eu', 'kdu']
+  'bigint._add': ['_add', 'a', 'a']
+  'bigint._add-i64': ['_add i64', 'ai', 'ai6']
+  'bigint._div': ['_div', 'd', 'd']
+  'bigint._div-i64': ['_div i64', 'di', 'di6']
+  'bigint._mod': ['_mod', 'm', 'm']
+  'bigint._mod-i64': ['_mod i64', 'mi', 'mi6']
+  'bigint._mul': ['_mul', 'm', 'm']
+  'bigint._mul-i64': ['_mul i64', 'mi', 'mi6']
+  'bigint._sub': ['_sub', 's', 's']
+  'bigint.abs-add': ['절대값 추가', 'aa', 'jdgcg']
+  'bigint.abs-cmp': ['절대값 비교', 'ac', 'jdgbg']
+  'bigint.abs-sub': ['절대값 뺄셈', 'as', 'jdgps']
+  'bigint.add-bigint': ['추가 큰 정수', 'ab', 'cgkjs']
+  'bigint.cmp': ['비교', 'c', 'bg']
+  'bigint.copy': ['복사', 'c', 'bs']
+  'bigint.div-mod': ['나눗셈 나머지', 'dm', 'nnsnmj']
+  'bigint.eq': ['동등', 'e', 'dd']
+  'bigint.from-i64': ['i64에서 변환', 'fi', 'i6sbh']
+  'bigint.from-u64': ['u64에서 변환', 'fu', 'u6sbh']
+  'bigint.gcd': ['최대공약수', 'g', 'cdgs']
+  'bigint.is-neg': ['부호 반전 여부', 'in', 'bhbjb']
+  'bigint.is-pos': ['양수 여부', 'ip', 'sb']
+  'bigint.is-zero': ['영 여부', 'iz', 'b']
+  'bigint.lcm': ['최소공배수', 'l', 'csgbs']
+  'bigint.mod-pow': ['나머지 거듭제곱', 'mp', 'nmjgdjg']
+  'bigint.mul-bigint': ['곱셈 큰 정수', 'mb', 'gskjs']
+  'bigint.normalize': ['정규화', 'n', 'jgh']
+  'bigint.one': ['단일', 'o', 'd']
+  'bigint.pow': ['거듭제곱', 'p', 'gdjg']
+  'bigint.shl': ['왼쪽 이동', 's', 'jd']
+  'bigint.shl1': ['왼쪽 이동 1', 's', 'jd1']
+  'bigint.shr': ['오른쪽 이동', 's', 'rjd']
+  'bigint.shr1': ['오른쪽 이동 1', 's', 'rjd1']
+  'bigint.sub-bigint': ['뺄셈 큰 정수', 'sb', 'pskjs']
+  'bigint.to-hex': ['hex 변환', 'th', 'hbh']
+  'bigint.to-i64': ['i64 변환', 'ti', 'i6bh']
+  'bigint.to-str': ['str 변환', 'ts', 'sbh']
+  'bigint.zero': ['영', 'z', 'z']
+  'blake2.b': ['바이트', 'b', 'bt']
+  'blake2.b-256': ['바이트 256', 'b2', 'bt2']
+  'blake2.b-256-hex': ['바이트 256 16진수', 'b2h', 'bt21js']
+  'blake2.b-compress': ['바이트 압축', 'bc', 'btc']
+  'blake2.b-g': ['바이트 생성원', 'bg', 'btss']
+  'blake2.b-hex': ['바이트 16진수', 'bh', 'bt1js']
+  'blake2.b-state': ['바이트 상태', 'bs', 'btst']
+  'blake2.rotr32': ['rotr32', 'r', 'r3']
+  'blake2.rotr64': ['rotr64', 'r', 'r6']
+  'blake2.s': ['복수', 's', 'bs']
+  'blake2.s-compress': ['복수 압축', 'sc', 'bsc']
+  'blake2.s-g': ['복수 생성원', 'sg', 'bsss']
+  'blake2.s-hex': ['복수 16진수', 'sh', 'bs1js']
+  'blake2.s-state': ['복수 상태', 'ss', 'bsst']
+  'bool.to-str': ['str 변환', 'ts', 'sbh']
+  'bufio.reader.close': ['닫기', 'c', 'dg']
+  'bufio.reader.fill': ['채우기', 'f', 'cg']
+  'bufio.reader.init': ['초기화', 'i', 'cgh']
+  'bufio.reader.read-byte': ['읽기 바이트', 'rb', 'gbt']
+  'bufio.reader.read-line': ['읽기 줄', 'rl', 'gj']
+  'bytes.index': ['인덱스', 'i', 'ds']
+  'bytes.index-from': ['인덱스 from', 'if', 'dsf']
+  'bytes.len': ['길이', 'l', 'g']
+  'bytes.slice': ['슬라이스', 's', 'srs']
+  'bytes.to-bytes-str': ['bytes-str 변환', 'tbs', 'bsbh']
+  'bytes.to-chars': ['chars 변환', 'tc', 'cbh']
+  'bytes.to-hex': ['hex 변환', 'th', 'hbh']
+  'bytes.to-hex-lower': ['hex-lower 변환', 'thl', 'hlbh']
+  'bytes.to-i64-be': ['i64-be 변환', 'tib', 'i6bbh']
+  'bytes.to-i64-le': ['i64-le 변환', 'til', 'i6lbh']
+  'bytes.to-str': ['str 변환', 'ts', 'sbh']
+  'bytes.to-txt': ['txt 변환', 'tt', 'tbh']
+  'bzip2.bz-bit-reader.read-bit': ['읽기 비트', 'rb', 'gbt']
+  'bzip2.bz-bit-reader.read-bits': ['읽기 비트', 'rb', 'gbt']
+  'bzip2.bz-huffman.build': ['구축', 'b', 'gc']
+  'bzip2.bz-huffman.decode': ['디코딩', 'd', 'dkd']
+  'bzip2.bz-huffman.decode-symbol': ['디코딩 심볼', 'ds', 'dkdsb']
+  'bzip2.bzip2-compress': ['bzip2 압축', 'bc', 'b2c']
+  'bzip2.bzip2-decompress': ['bzip2 해제', 'bd', 'b2hj']
+  'chacha20-poly1305.chacha20-block': ['chacha20 블록', 'cb', 'c2br']
+  'chacha20-poly1305.chacha20-poly1305-open': ['chacha20 poly1305 열기', 'cpo', 'c2p1g']
+  'chacha20-poly1305.chacha20-poly1305-seal': ['chacha20 poly1305 봉인', 'cps', 'c2p1b']
+  'chacha20-poly1305.chacha20-xor': ['chacha20 xor', 'cx', 'c2x']
+  'chacha20-poly1305.poly1305': ['poly1305', 'p', 'p1']
+  'chacha20-poly1305.poly1305-key-gen': ['poly1305 키 생성', 'pkg', 'p1kss']
+  'chacha20-poly1305.poly1305-reduce': ['poly1305 환원', 'pr', 'p1h']
+  'chacha20-poly1305.qr': ['qr', 'q', 'q']
+  'chacha20-poly1305.rotl32': ['rotl32', 'r', 'r3']
+  'char.is-alnum': ['영숫자 여부', 'ia', 'sjb']
+  'char.is-alpha': ['알파 여부', 'ia', 'pb']
+  'char.is-digit': ['숫자 여부', 'id', 'sjb']
+  'char.is-letter': ['letter 여부', 'il', 'lb']
+  'char.is-lower': ['소문자 여부', 'il', 'smjb']
+  'char.is-space': ['공백 여부', 'is', 'gbb']
+  'char.is-upper': ['대문자 여부', 'iu', 'dmjb']
+  'char.to-bytes': ['bytes 변환', 'tb', 'bbh']
+  'char.to-lower': ['lower 변환', 'tl', 'lbh']
+  'char.to-str': ['str 변환', 'ts', 'sbh']
+  'char.to-txt': ['txt 변환', 'tt', 'tbh']
+  'char.to-upper': ['upper 변환', 'tu', 'ubh']
+  'chars.to-str': ['str 변환', 'ts', 'sbh']
+  'client.client-create': ['클라이언트 생성', 'cc', 'krtss']
+  'client.client.close': ['닫기', 'c', 'dg']
+  'client.client.connect': ['연결', 'c', 'g']
+  'client.client.is-connected': ['연결됨 여부', 'ic', 'gdb']
+  'client.client.reconnect': ['재연결', 'r', 'jg']
+  'client.client.recv': ['수신', 'r', 'ss']
+  'client.client.recv-line': ['수신 줄', 'rl', 'ssj']
+  'client.client.request': ['요청', 'r', 'c']
+  'client.client.send': ['전송', 's', 'js']
+  'client.client.send-line': ['전송 줄', 'sl', 'jsj']
+  'cookie.build-header': ['구축 헤더', 'bh', 'gchd']
+  'cookie.build-set': ['구축 설정', 'bs', 'gcsj']
+  'cookie.cookie-sign': ['cookie 서명', 'cs', 'csm']
+  'cookie.cookie-verify': ['cookie 검증', 'cv', 'cgj']
+  'cookie.jar.build-header': ['구축 헤더', 'bh', 'gchd']
+  'cookie.jar.clear': ['비우기', 'c', 'bg']
+  'cookie.jar.count-of': ['개수 의', 'co', 'gs']
+  'cookie.jar.delete': ['삭제', 'd', 'sj']
+  'cookie.jar.get': ['취득', 'g', 'cd']
+  'cookie.jar.get-verified': ['취득 검증됨', 'gv', 'cdgjd']
+  'cookie.jar.parse-response': ['파싱 응답', 'pr', 'psd']
+  'cookie.jar.set': ['설정', 's', 'sj']
+  'cookie.jar.set-signed': ['설정 부호 있음', 'ss', 'sjbh']
+  'cookie.parse-header': ['파싱 헤더', 'ph', 'pshd']
+  'cookie.parse-set': ['파싱 설정', 'ps', 'pssj']
+  'crc-16.hex': ['16진수', 'h', '1js']
+  'crc-16.new': ['신규', 'n', 'sg']
+  'crc-32.new': ['신규', 'n', 'sg']
+  'crc-64.hex': ['16진수', 'h', '1js']
+  'crc-64.new': ['신규', 'n', 'sg']
+  'csv.encode-field': ['인코딩 필드', 'ef', 'kdpd']
+  'csv.parse-field': ['파싱 필드', 'pf', 'pspd']
+  'csv.parse-line': ['파싱 줄', 'pl', 'psj']
+  'deque.deque.clear': ['비우기', 'c', 'bg']
+  'deque.deque.empty': ['empty', 'e', 'e']
+  'deque.deque.peek-back': ['확인 뒤쪽', 'pb', 'hdj']
+  'deque.deque.peek-front': ['확인 앞쪽', 'pf', 'hj']
+  'deque.deque.pop-back': ['팝 뒤쪽', 'pb', 'pdj']
+  'deque.deque.pop-front': ['팝 앞쪽', 'pf', 'pj']
+  'deque.deque.push-back': ['푸시 뒤쪽', 'pb', 'psdj']
+  'deque.deque.push-front': ['푸시 앞쪽', 'pf', 'psj']
+  'deque.deque.size': ['크기', 's', 'kg']
+  'des.des-block': ['DES 블록', 'db', 'dbr']
+  'des.des-dec': ['DES 복호화', 'dd', 'dbhh']
+  'des.des-enc': ['DES 암호화', 'de', 'dhh']
+  'des.des-key-schedule': ['DES 키 스케줄', 'dks', 'dkskj']
+  'des.f': ['부동 소수', 'f', 'bdss']
+  'des.permute': ['치환', 'p', 'ch']
+  'des.sbox-lookup': ['S박스 조회', 'sl', 'sbsjh']
+  'dns.build-query': ['구축 쿼리', 'bq', 'gckr']
+  'dns.dial': ['다이얼', 'd', 'd']
+  'dns.parse-name': ['파싱 이름', 'pn', 'psr']
+  'dns.parse-response': ['파싱 응답', 'pr', 'psd']
+  'dns.resolve': ['resolve', 'r', 'r']
+  'dns.resolve-all': ['resolve 전체', 'ra', 'rjc']
+  'dns.resolve-from': ['resolve from', 'rf', 'rf']
+  'dom.append-child': ['추가 자식', 'ac', 'cgjs']
+  'dom.attribute-count': ['속성 개수', 'ac', 'ssgs']
+  'dom.attribute-name': ['속성 이름', 'an', 'ssr']
+  'dom.attribute-value': ['속성 값', 'av', 'ssg']
+  'dom.blob-has': ['blob .has', 'bh', 'bh']
+  'dom.child-at': ['자식 위치', 'ca', 'jsc']
+  'dom.child-count': ['자식 개수', 'cc', 'jsgs']
+  'dom.class-has': ['등급 .has', 'ch', 'dgh']
+  'dom.cp-append': ['cp 추가', 'ca', 'ccg']
+  'dom.create-comment': ['생성 주석', 'cc', 'ssjs']
+  'dom.create-element': ['생성 요소', 'ce', 'sss']
+  'dom.create-text-node': ['생성 텍스트 노드', 'ctn', 'sststnd']
+  'dom.decode-entities': ['디코딩 엔티티', 'de', 'dkdtt']
+  'dom.document-element': ['문서 요소', 'de', 'mss']
+  'dom.dom-closers-of': ['DOM 닫개 의', 'dco', 'ddg']
+  'dom.dom-pool.alloc': ['할당', 'a', 'hd']
+  'dom.dom-pool.append': ['추가', 'a', 'cg']
+  'dom.dom-pool.attr-edge-at': ['속성 간선 위치', 'aea', 'ssgsc']
+  'dom.dom-pool.collect-class': ['수집 등급', 'cc', 'sjdg']
+  'dom.dom-pool.collect-tag': ['수집 태그', 'ct', 'sjtg']
+  'dom.dom-pool.detach': ['분리', 'd', 'br']
+  'dom.dom-pool.find-attr': ['찾기 속성', 'fa', 'cgss']
+  'dom.dom-pool.find-id-node': ['찾기 id 노드', 'fin', 'cgind']
+  'dom.dom-pool.html-add-text': ['html 추가 텍스트', 'hat', 'hcgtst']
+  'dom.dom-pool.html-bogus-comment': ['html 위조 주석', 'hbc', 'hjjs']
+  'dom.dom-pool.html-parse-attr': ['html 파싱 속성', 'hpa', 'hpsss']
+  'dom.dom-pool.html-parse-close-name': ['html 파싱 닫기 이름', 'hpcn', 'hpsdgr']
+  'dom.dom-pool.html-parse-comment': ['html 파싱 주석', 'hpc', 'hpsjs']
+  'dom.dom-pool.html-parse-doc': ['html 파싱 문서', 'hpd', 'hpsms']
+  'dom.dom-pool.html-parse-open': ['html 파싱 열기', 'hpo', 'hpsg']
+  'dom.dom-pool.html-parse-pi': ['html 파싱 pi', 'hpp', 'hpsp']
+  'dom.dom-pool.html-set-attr-once': ['html 설정 속성 한 번', 'hsao', 'hsjsshb']
+  'dom.dom-pool.init': ['초기화', 'i', 'cgh']
+  'dom.dom-pool.insert-before': ['삽입 이전', 'ib', 'sj']
+  'dom.dom-pool.parse-doctype-node': ['파싱 doctype 노드', 'pdn', 'psdnd']
+  'dom.dom-pool.remove-attr': ['제거 속성', 'ra', 'jgss']
+  'dom.dom-pool.ser': ['직렬화', 's', 'jrh']
+  'dom.dom-pool.ser-children': ['직렬화 자식', 'sc', 'jrhjs']
+  'dom.dom-pool.set-attr': ['설정 속성', 'sa', 'sjss']
+  'dom.dom-pool.text-of': ['텍스트 의', 'to', 'tst']
+  'dom.dom-pool.valid': ['유효', 'v', 'h']
+  'dom.dom-pool.xml-add-text': ['xml 추가 텍스트', 'xat', 'xcgtst']
+  'dom.dom-pool.xml-parse-attr': ['xml 파싱 속성', 'xpa', 'xpsss']
+  'dom.dom-pool.xml-parse-cdata': ['xml 파싱 CDATA', 'xpc', 'xpsc']
+  'dom.dom-pool.xml-parse-close': ['xml 파싱 닫기', 'xpc', 'xpsdg']
+  'dom.dom-pool.xml-parse-comment': ['xml 파싱 주석', 'xpc', 'xpsjs']
+  'dom.dom-pool.xml-parse-doc': ['xml 파싱 문서', 'xpd', 'xpsms']
+  'dom.dom-pool.xml-parse-element': ['xml 파싱 요소', 'xpe', 'xpss']
+  'dom.dom-pool.xml-parse-pi': ['xml 파싱 pi', 'xpp', 'xpsp']
+  'dom.dom-strip-bom': ['DOM 제거 BOM', 'dsb', 'djgb']
+  'dom.esc-attr': ['이스케이프 속성', 'ea', 'skpss']
+  'dom.esc-text': ['이스케이프 텍스트', 'et', 'skptst']
+  'dom.find-entity': ['찾기 엔티티', 'fe', 'cgtt']
+  'dom.first-child': ['첫째 자식', 'fc', 'cjjs']
+  'dom.get-attribute': ['취득 속성', 'ga', 'cdss']
+  'dom.get-element-by-id': ['취득 요소 기준 id', 'gebi', 'cdsgji']
+  'dom.get-elements-by-class-name': ['취득 요소 기준 등급 이름', 'gebcn', 'cdsgjdgr']
+  'dom.get-elements-by-tag-name': ['취득 요소 기준 태그 이름', 'gebtn', 'cdsgjtgr']
+  'dom.has-attribute': ['.has 속성', 'ha', 'hss']
+  'dom.html-close-match': ['html 닫기 일치', 'hcm', 'hdgc']
+  'dom.html-peek-name': ['html 확인 이름', 'hpn', 'hhr']
+  'dom.inner-html': ['내부 html', 'ih', 'nbh']
+  'dom.insert-child-before': ['삽입 자식 이전', 'icb', 'sjsj']
+  'dom.is-html': ['html 여부', 'ih', 'hb']
+  'dom.is-name-byte': ['이름 바이트 여부', 'inb', 'rbtb']
+  'dom.kind': ['종류', 'k', 'jr']
+  'dom.name': ['이름', 'n', 'r']
+  'dom.new-document': ['신규 문서', 'nd', 'sgms']
+  'dom.outer-html': ['외부 html', 'oh', 'bh']
+  'dom.parent': ['부모', 'p', 'bm']
+  'dom.parse-html': ['파싱 html', 'ph', 'psh']
+  'dom.parse-numeric-entity': ['파싱 숫자 엔티티', 'pne', 'pssjtt']
+  'dom.parse-xml': ['파싱 xml', 'px', 'psx']
+  'dom.remove-attribute': ['제거 속성', 'ra', 'jgss']
+  'dom.remove-child': ['제거 자식', 'rc', 'jgjs']
+  'dom.replace-child': ['치환 자식', 'rc', 'chjs']
+  'dom.set-attribute': ['설정 속성', 'sa', 'sjss']
+  'dom.set-node-value': ['설정 노드 값', 'snv', 'sjndg']
+  'dom.set-text-content': ['설정 텍스트 콘텐츠', 'stc', 'sjtstktc']
+  'dom.text-content': ['텍스트 콘텐츠', 'tc', 'tstktc']
+  'dom.to-string': ['string 변환', 'ts', 'sbh']
+  'dom.value': ['값', 'v', 'g']
+  'dom.xml-read-name': ['xml 읽기 이름', 'xrn', 'xgr']
+  'dom.xml-skip-ws': ['xml 건너뛰기 웹소켓', 'xsw', 'xgntgsk']
+  'ecdsa.bn-add': ['큰 수 추가', 'ba', 'kscg']
+  'ecdsa.bn-addmod': ['큰 수 모듈러 덧셈', 'ba', 'ksmdrds']
+  'ecdsa.bn-cmp': ['큰 수 비교', 'bc', 'ksbg']
+  'ecdsa.bn-invmod': ['큰 수 모듈러 역원', 'bi', 'ksmdr']
+  'ecdsa.bn-mod': ['큰 수 나머지', 'bm', 'ksnmj']
+  'ecdsa.bn-mulmod': ['큰 수 모듈러 곱셈', 'bm', 'ksmdrgs']
+  'ecdsa.bn-sub': ['큰 수 뺄셈', 'bs', 'ksps']
+  'ecdsa.bn-submod': ['큰 수 모듈러 뺄셈', 'bs', 'ksmdrps']
+  'ecdsa.ec-bytes-to-point': ['ec 바이트 to 점', 'ebtp', 'ebttj']
+  'ecdsa.ec-get-basepoint': ['ec 취득 기준점', 'egb', 'ecdgjj']
+  'ecdsa.ec-point-add': ['ec 점 추가', 'epa', 'ejcg']
+  'ecdsa.ec-point-double': ['ec 점 배점', 'epd', 'ejbj']
+  'ecdsa.ec-point-to-bytes': ['ec 점 to 바이트', 'eptb', 'ejtbt']
+  'ecdsa.ec-scalar-mult': ['ec 스칼라 mult', 'esm', 'eskrm']
+  'ecdsa.ecdh-p256': ['ECDH p256', 'ep', 'ep2']
+  'ecdsa.ecdsa-publickey': ['ECDSA publickey', 'ep', 'ep']
+  'ecdsa.ecdsa-sign': ['ECDSA 서명', 'es', 'esm']
+  'ecdsa.ecdsa-verify': ['ECDSA 검증', 'ev', 'egj']
+  'ed25519.ed-d': ['ed 거리', 'ed', 'egr']
+  'ed25519.ed-sqm1': ['ed 제곱-1', 'es', 'ejg1']
+  'ed25519.ed25519-publickey': ['ed25519 publickey', 'ep', 'e2p']
+  'ed25519.ed25519-sign': ['ed25519 서명', 'es', 'e2sm']
+  'ed25519.ed25519-verify': ['ed25519 검증', 'ev', 'e2gj']
+  'ed25519.fe-pow': ['체 원소 거듭제곱', 'fp', 'csgdjg']
+  'ed25519.ge-add': ['ge 추가', 'ga', 'gcg']
+  'ed25519.ge-basepoint': ['ge 기준점', 'gb', 'ggjj']
+  'ed25519.ge-pack': ['ge pack', 'gp', 'gp']
+  'ed25519.ge-scalar-mult': ['ge 스칼라 mult', 'gsm', 'gskrm']
+  'ed25519.ge-unpack': ['ge unpack', 'gu', 'gu']
+  'ed25519.is-zero-arr': ['영 배열 여부', 'iza', 'bb']
+  'ed25519.pcopy': ['부분 복사', 'p', 'bbbs']
+  'ed25519.sc-ge-l': ['sc ge l', 'sgl', 'sgl']
+  'ed25519.sc-muladd': ['sc 곱셈 덧셈', 'sm', 'sgsds']
+  'ed25519.sc-reduce': ['sc 환원', 'sr', 'sh']
+  'ed25519.set-coord': ['설정 coord', 'sc', 'sjc']
+  'embed.exists': ['존재', 'e', 'jj']
+  'embed.read': ['읽기', 'r', 'g']
+  'env.get': ['취득', 'g', 'cd']
+  'env.get-with-default': ['취득 동반 기본', 'gwd', 'cddbgb']
+  'env.is-set': ['설정 여부', 'is', 'sjb']
+  'env.lookup': ['조회', 'l', 'jh']
+  'env.set': ['설정', 's', 'sj']
+  'env.unset': ['unset', 'u', 'u']
+  'err._errno-to-code': ['에러번호 to 코드', 'etc', 'rbhtkd']
+  'err.code': ['코드', 'c', 'kd']
+  'err.code.to-name': ['name 변환', 'tn', 'nbh']
+  'err.format': ['포맷', 'f', 'pm']
+  'err.from-errno': ['errno에서 변환', 'fe', 'esbh']
+  'err.is': ['여부', 'i', 'b']
+  'err.msg': ['msg', 'm', 'm']
+  'err.new': ['신규', 'n', 'sg']
+  'err.new-at': ['신규 위치', 'na', 'sgc']
+  'float.div': ['나눗셈', 'd', 'nns']
+  'float.is-inf': ['무한 여부', 'ii', 'mhb']
+  'float.is-nan': ['NaN 여부', 'in', 'nb']
+  'fmt.eprintf': ['eprintf', 'e', 'e']
+  'fmt.fmt-apply-spec': ['fmt 적용 spec', 'fas', 'fjs']
+  'fmt.fmt-bool': ['fmt bool', 'fb', 'fb']
+  'fmt.fmt-f64': ['fmt f64', 'ff', 'ff6']
+  'fmt.fmt-group-digits': ['fmt 그룹 숫자', 'fgd', 'fgrsj']
+  'fmt.fmt-int': ['fmt 정수', 'fi', 'fjs']
+  'fmt.fmt-parse-spec': ['fmt 파싱 spec', 'fps', 'fpss']
+  'fmt.fmt-str': ['fmt 문자열', 'fs', 'fmj']
+  'fmt.fmt-uint': ['fmt 부호 없는 정수', 'fu', 'fbhnjs']
+  'fmt.fmt-uint-base': ['fmt 부호 없는 정수 base', 'fub', 'fbhnjsb']
+  'fmt.printf': ['printf', 'p', 'p']
+  'fmt.sprintf': ['sprintf', 's', 's']
+  'fnv-1a-32.fnv-1a-32': ['fnv 1a 32', 'f13', 'f1a3']
+  'fnv.fnv-1a-32': ['fnv 1a 32', 'f13', 'f1a3']
+  'fnv.fnv-1a-64': ['fnv 1a 64', 'f16', 'f1a6']
+  'fs.close': ['닫기', 'c', 'dg']
+  'fs.copy-file': ['복사 파일', 'cf', 'bsp']
+  'fs.dir-entries': ['디렉터리 항목', 'de', 'drtrhm']
+  'fs.exists': ['존재', 'e', 'jj']
+  'fs.file-size': ['파일 크기', 'fs', 'pkg']
+  'fs.file.append': ['추가', 'a', 'cg']
+  'fs.file.close': ['닫기', 'c', 'dg']
+  'fs.file.copy-to': ['복사 to', 'ct', 'bst']
+  'fs.file.is-open': ['열기 여부', 'io', 'gb']
+  'fs.file.read': ['읽기', 'r', 'g']
+  'fs.file.read-bytes': ['읽기 바이트', 'rb', 'gbt']
+  'fs.file.read-line': ['읽기 줄', 'rl', 'gj']
+  'fs.file.read-str': ['읽기 문자열', 'rs', 'gmj']
+  'fs.file.size': ['크기', 's', 'kg']
+  'fs.file.write': ['쓰기', 'w', 'sg']
+  'fs.file.write-bytes': ['쓰기 바이트', 'wb', 'sgbt']
+  'fs.file.write-str': ['쓰기 문자열', 'ws', 'sgmj']
+  'fs.fstat-size': ['fstat 크기', 'fs', 'fkg']
+  'fs.get-line': ['취득 줄', 'gl', 'cdj']
+  'fs.is-dir': ['디렉터리 여부', 'id', 'drtrb']
+  'fs.is-file': ['파일 여부', 'if', 'pb']
+  'fs.link': ['링크', 'l', 'rk']
+  'fs.list-dir': ['리스트 디렉터리', 'ld', 'rstdrtr']
+  'fs.list-dir-2': ['리스트 디렉터리', 'ld2', 'rstdrtr']
+  'fs.list-dir-3': ['리스트 디렉터리', 'ld3', 'rstdrtr']
+  'fs.lstat': ['lstat', 'l', 'l']
+  'fs.mkdtemp': ['mkdtemp', 'm', 'm']
+  'fs.mkfifo': ['mkfifo', 'm', 'm']
+  'fs.mknod': ['mknod', 'm', 'm']
+  'fs.mkstemp': ['mkstemp', 'm', 'm']
+  'fs.open': ['열기', 'o', 'g']
+  'fs.open-file': ['열기 파일', 'of', 'gp']
+  'fs.open-read': ['열기 읽기', 'or', 'gg']
+  'fs.open-write': ['열기 쓰기', 'ow', 'gsg']
+  'fs.read': ['읽기', 'r', 'g']
+  'fs.read-bytes': ['읽기 바이트', 'rb', 'gbt']
+  'fs.read-file': ['읽기 파일', 'rf', 'gp']
+  'fs.read-stdin': ['읽기 표준 입력', 'rs', 'gpjr']
+  'fs.read-stdin-str': ['읽기 표준 입력 문자열', 'rss', 'gpjrmj']
+  'fs.read-str': ['읽기 문자열', 'rs', 'gmj']
+  'fs.readlink': ['심볼릭 읽기', 'r', 'sbrg']
+  'fs.realpath': ['실제 경로', 'r', 'sjgr']
+  'fs.remove': ['제거', 'r', 'jg']
+  'fs.rename': ['rename', 'r', 'r']
+  'fs.rmdir': ['rmdir', 'r', 'r']
+  'fs.stat-size': ['stat 크기', 'ss', 'skg']
+  'fs.symlink': ['심볼릭 링크', 's', 'sbrrk']
+  'fs.sync': ['sync', 's', 's']
+  'fs.truncate': ['truncate', 't', 't']
+  'fs.utime': ['접근 시간', 'u', 'jgsg']
+  'fs.walk': ['walk', 'w', 'w']
+  'fs.walk-collect': ['walk 수집', 'wc', 'wsj']
+  'fs.write': ['쓰기', 'w', 'sg']
+  'fs.write-bytes': ['쓰기 바이트', 'wb', 'sgbt']
+  'fs.write-file': ['쓰기 파일', 'wf', 'sgp']
+  'fs.write-str': ['쓰기 문자열', 'ws', 'sgmj']
+  'global.eprint': ['eprint', 'e', 'e']
+  'global.exit': ['종료', 'e', 'jr']
+  'global.format': ['포맷', 'f', 'pm']
+  'global.print': ['인쇄', 'p', 's']
+  'global.with-cap': ['동반 용량', 'wc', 'dbr']
+  'global.with-cap-len': ['동반 용량 길이', 'wcl', 'dbrg']
+  'global.with-len': ['동반 길이', 'wl', 'dbg']
+  'gzip.bit-reader.read-bit': ['읽기 비트', 'rb', 'gbt']
+  'gzip.bit-reader.read-bits': ['읽기 비트', 'rb', 'gbt']
+  'gzip.bit-reader.read-u16-le': ['읽기 u16 리틀 엔디안', 'rul', 'gu1rtd']
+  'gzip.bit-reader.skip-to-byte': ['건너뛰기 to 바이트', 'stb', 'gntgtbt']
+  'gzip.build-dynamic': ['구축 동적', 'bd', 'gcdj']
+  'gzip.build-fixed': ['구축 고정', 'bf', 'gcgj']
+  'gzip.deflate-stored': ['디플레이트 stored', 'ds', 'dprts']
+  'gzip.gzip-compress': ['gzip 압축', 'gc', 'gc']
+  'gzip.gzip-decompress': ['gzip 해제', 'gd', 'ghj']
+  'gzip.huffman.build': ['구축', 'b', 'gc']
+  'gzip.huffman.decode': ['디코딩', 'd', 'dkd']
+  'gzip.inflate-decompress': ['인플레이트 해제', 'id', 'prthj']
+  'hash-set.hash-set.add': ['추가', 'a', 'cg']
+  'hash-set.hash-set.clear': ['비우기', 'c', 'bg']
+  'hash-set.hash-set.contains': ['포함', 'c', 'ph']
+  'hash-set.hash-set.for-each': ['용 각', 'fe', 'g']
+  'hash-set.hash-set.hash': ['해시', 'h', 'hs']
+  'hash-set.hash-set.init': ['초기화', 'i', 'cgh']
+  'hash-set.hash-set.is-empty': ['empty 여부', 'ie', 'eb']
+  'hash-set.hash-set.len': ['길이', 'l', 'g']
+  'hash-set.hash-set.remove': ['제거', 'r', 'jg']
+  'heap.empty': ['empty', 'e', 'e']
+  'heap.init': ['초기화', 'i', 'cgh']
+  'heap.peek': ['확인', 'p', 'h']
+  'heap.pop': ['팝', 'p', 'p']
+  'heap.push': ['푸시', 'p', 'ps']
+  'heap.size': ['크기', 's', 'kg']
+  'hkdf.hkdf-derive-secret': ['hkdf 유도 비밀', 'hds', 'hdbm']
+  'hkdf.hkdf-expand': ['hkdf 확장', 'he', 'hhj']
+  'hkdf.hkdf-expand-hmac': ['hkdf 확장 HMAC', 'heh', 'hhjh']
+  'hkdf.hkdf-expand-label': ['hkdf 확장 레이블', 'hel', 'hhjrb']
+  'hkdf.hkdf-expand-label-vec': ['hkdf 확장 레이블 벡터', 'helv', 'hhjrbbt']
+  'hkdf.hkdf-extract': ['hkdf 추출', 'he', 'hcc']
+  'hmac.hmac-md5': ['HMAC MD5', 'hm', 'hm5']
+  'hmac.hmac-md5-vec': ['HMAC MD5 벡터', 'hmv', 'hm5bt']
+  'hmac.hmac-sha1': ['HMAC SHA-1', 'hs', 'hs1']
+  'hmac.hmac-sha1-vec': ['HMAC SHA-1 벡터', 'hsv', 'hs1bt']
+  'hmac.hmac-sha256': ['HMAC sha256', 'hs', 'hs2']
+  'hmac.hmac-sha256-vec': ['HMAC sha256 벡터', 'hsv', 'hs2bt']
+  'hmac.hmac-sha384': ['HMAC sha384', 'hs', 'hs3']
+  'hmac.hmac-sha384-vec': ['HMAC sha384 벡터', 'hsv', 'hs3bt']
+  'hmac.hmac-sha512': ['HMAC sha512', 'hs', 'hs5']
+  'hmac.hmac-sha512-vec': ['HMAC sha512 벡터', 'hsv', 'hs5bt']
+  'hpack.decode-int': ['디코딩 정수', 'di', 'dkdjs']
+  'hpack.decode-str': ['디코딩 문자열', 'ds', 'dkdmj']
+  'hpack.encode-int': ['인코딩 정수', 'ei', 'kdjs']
+  'hpack.encode-str': ['인코딩 문자열', 'es', 'kdmj']
+  'hpack.tables.decode-headers': ['디코딩 헤더', 'dh', 'dkdhd']
+  'hpack.tables.dyn-add': ['동적 추가', 'da', 'djcg']
+  'hpack.tables.encode-header': ['인코딩 헤더', 'eh', 'kdhd']
+  'hpack.tables.find': ['찾기', 'f', 'cg']
+  'hpack.tables.find-name': ['찾기 이름', 'fn', 'cgr']
+  'hpack.tables.init': ['초기화', 'i', 'cgh']
+  'hpack.tables.lookup': ['조회', 'l', 'jh']
+  'http.delete': ['삭제', 'd', 'sj']
+  'http.do': ['실행', 'd', 'sh']
+  'http.do-req': ['실행 요청', 'dr', 'shc']
+  'http.download': ['다운로드', 'd', 'drd']
+  'http.get': ['취득', 'g', 'cd']
+  'http.get-auth': ['취득 인증', 'ga', 'cdj']
+  'http.http-dl-dechunk': ['HTTP dl dechunk', 'hdd', 'hdd']
+  'http.http-dl-location': ['HTTP dl location', 'hdl', 'hdl']
+  'http.http-dl-open': ['HTTP dl 열기', 'hdo', 'hdg']
+  'http.http-dl-resolve': ['HTTP dl resolve', 'hdr', 'hdr']
+  'http.http-write-ok': ['HTTP 쓰기 완료', 'hwo', 'hsgr']
+  'http.patch': ['패치', 'p', 'pc']
+  'http.ping': ['핑', 'p', 'p']
+  'http.post': ['후치', 'p', 'hc']
+  'http.post-auth': ['후치 인증', 'pa', 'hcj']
+  'http.put': ['넣기', 'p', 'ng']
+  'http.request.add-header': ['추가 헤더', 'ah', 'cghd']
+  'http.request.init': ['초기화', 'i', 'cgh']
+  'http.response.get-header': ['취득 헤더', 'gh', 'cdhd']
+  'http.response.parse-headers': ['파싱 헤더', 'ph', 'pshd']
+  'http.set-api-key': ['설정 API 키', 'sak', 'sjak']
+  'http.set-basic-auth': ['설정 기본 인증', 'sba', 'sjgbj']
+  'http.set-bearer-auth': ['설정 bearer 인증', 'sba', 'sjbj']
+  'http.upload-put': ['업로드 넣기', 'up', 'rdng']
+  'http2.conn.close': ['닫기', 'c', 'dg']
+  'http2.conn.init': ['초기화', 'i', 'cgh']
+  'http2.conn.recv-frame': ['수신 프레임', 'rf', 'sspr']
+  'http2.conn.request': ['요청', 'r', 'c']
+  'http2.conn.send-data': ['전송 데이터', 'sd', 'jsdt']
+  'http2.conn.send-frame': ['전송 프레임', 'sf', 'jspr']
+  'http2.conn.send-headers': ['전송 헤더', 'sh', 'jshd']
+  'http2.conn.send-settings': ['전송 settings', 'ss', 'jss']
+  'http2.connect': ['연결', 'c', 'g']
+  'http2.connect-tls': ['연결 TLS', 'ct', 'gt']
+  'http2.delete': ['삭제', 'd', 'sj']
+  'http2.do': ['실행', 'd', 'sh']
+  'http2.do-req': ['실행 요청', 'dr', 'shc']
+  'http2.frame.parse': ['파싱', 'p', 'ps']
+  'http2.frame.serialize': ['직렬화', 's', 'jrh']
+  'http2.get': ['취득', 'g', 'cd']
+  'http2.patch': ['패치', 'p', 'pc']
+  'http2.post': ['후치', 'p', 'hc']
+  'http2.put': ['넣기', 'p', 'ng']
+  'http3.connect': ['연결', 'c', 'g']
+  'http3.decode-header': ['디코딩 헤더', 'dh', 'dkdhd']
+  'http3.encode-data-frame': ['인코딩 데이터 프레임', 'edf', 'kddtpr']
+  'http3.encode-frame': ['인코딩 프레임', 'ef', 'kdpr']
+  'http3.encode-header': ['인코딩 헤더', 'eh', 'kdhd']
+  'http3.encode-headers': ['인코딩 헤더', 'eh', 'kdhd']
+  'http3.encode-headers-frame': ['인코딩 헤더 프레임', 'ehf', 'kdhdpr']
+  'http3.encode-settings-frame': ['인코딩 settings 프레임', 'esf', 'kdspr']
+  'http3.get': ['취득', 'g', 'cd']
+  'http3.http3-do': ['http3 실행', 'hd', 'h3sh']
+  'http3.parse-frame': ['파싱 프레임', 'pf', 'pspr']
+  'http3.parse-url': ['파싱 url', 'pu', 'psu']
+  'http3.post': ['후치', 'p', 'hc']
+  'http3.response.get-header': ['취득 헤더', 'gh', 'cdhd']
+  'http3.send-request': ['전송 요청', 'sr', 'jsc']
+  'int.div': ['나눗셈', 'd', 'nns']
+  'int.mod': ['나머지', 'm', 'nmj']
+  'int.to-str': ['str 변환', 'ts', 'sbh']
+  'io.err': ['오류', 'e', 'r']
+  'io.errln': ['errln', 'e', 'e']
+  'io.out': ['출력', 'o', 'cr']
+  'io.outln': ['outln', 'o', 'o']
+  'io.read-line': ['읽기 줄', 'rl', 'gj']
+  'io.reader.from-fd': ['fd에서 변환', 'ff', 'fsbh']
+  'io.reader.from-stdin': ['stdin에서 변환', 'fs', 'ssbh']
+  'io.reader.read': ['읽기', 'r', 'g']
+  'io.reader.read-all': ['읽기 전체', 'ra', 'gjc']
+  'io.reader.read-byte': ['읽기 바이트', 'rb', 'gbt']
+  'io.reader.read-line': ['읽기 줄', 'rl', 'gj']
+  'io.writer.from-fd': ['fd에서 변환', 'ff', 'fsbh']
+  'io.writer.from-stderr': ['stderr에서 변환', 'fs', 'ssbh']
+  'io.writer.from-stdout': ['stdout에서 변환', 'fs', 'ssbh']
+  'io.writer.write': ['쓰기', 'w', 'sg']
+  'io.writer.write-byte': ['쓰기 바이트', 'wb', 'sgbt']
+  'io.writer.write-line': ['쓰기 줄', 'wl', 'sgj']
+  'io.writer.write-str': ['쓰기 문자열', 'ws', 'sgmj']
+  'ip.ip-addr.equal': ['동등', 'e', 'dd']
+  'ip.ip-addr.from-str': ['str에서 변환', 'fs', 'ssbh']
+  'ip.ip-addr.from-u32': ['u32에서 변환', 'fu', 'u3sbh']
+  'ip.ip-addr.in-subnet': ['내 서브넷', 'is', 'nsbn']
+  'ip.ip-addr.is-broadcast': ['브로드캐스트 여부', 'ib', 'brdkstb']
+  'ip.ip-addr.is-class-a': ['등급 전체 여부', 'ica', 'dgjcb']
+  'ip.ip-addr.is-class-b': ['등급 바이트 여부', 'icb', 'dgbtb']
+  'ip.ip-addr.is-class-c': ['등급 용량 여부', 'icc', 'dgrb']
+  'ip.ip-addr.is-link-local': ['링크 로컬 여부', 'ill', 'rkrkb']
+  'ip.ip-addr.is-loopback': ['루프백 여부', 'il', 'rpbb']
+  'ip.ip-addr.is-multicast': ['멀티캐스트 여부', 'im', 'mtkstb']
+  'ip.ip-addr.is-private': ['비공개 여부', 'ip', 'bggb']
+  'ip.ip-addr.is-valid': ['유효 여부', 'iv', 'hb']
+  'ip.ip-addr.is-zero': ['영 여부', 'iz', 'b']
+  'ip.ip-addr.parse': ['파싱', 'p', 'ps']
+  'ip.ip-addr.to-str': ['str 변환', 'ts', 'sbh']
+  'ip.ip-addr.to-u32': ['u32 변환', 'tu', 'u3bh']
+  'ip.ip-is-loopback': ['ip 여부 루프백', 'iil', 'ibrpb']
+  'ip.ip-is-private': ['ip 여부 비공개', 'iip', 'ibbgg']
+  'ip.ip-parse': ['ip 파싱', 'ip', 'ips']
+  'json.alloc-node': ['할당 노드', 'an', 'hdnd']
+  'json.arr-get': ['배열 취득', 'ag', 'bcd']
+  'json.arr-len': ['배열 길이', 'al', 'bg']
+  'json.arr-push': ['배열 푸시', 'ap', 'bps']
+  'json.arr-push-bool': ['배열 푸시 bool', 'apb', 'bpsb']
+  'json.arr-push-idx': ['배열 푸시 인덱스', 'api', 'bpsds']
+  'json.arr-push-num': ['배열 푸시 숫자', 'apn', 'bpssj']
+  'json.arr-push-str': ['배열 푸시 문자열', 'aps', 'bpsmj']
+  'json.bool': ['bool', 'b', 'b']
+  'json.delete-key': ['삭제 키', 'dk', 'sjk']
+  'json.get': ['취득', 'g', 'cd']
+  'json.get-bool': ['취득 bool', 'gb', 'cdb']
+  'json.get-i64': ['취득 i64', 'gi', 'cdi6']
+  'json.get-key': ['취득 키', 'gk', 'cdk']
+  'json.get-num': ['취득 숫자', 'gn', 'cdsj']
+  'json.get-str': ['취득 문자열', 'gs', 'cdmj']
+  'json.i64': ['i64', 'i', 'i6']
+  'json.is-arr': ['배열 여부', 'ia', 'bb']
+  'json.is-bool': ['bool 여부', 'ib', 'bb']
+  'json.is-null': ['null 여부', 'in', 'nb']
+  'json.is-num': ['숫자 여부', 'in', 'sjb']
+  'json.is-obj': ['obj 여부', 'io', 'ob']
+  'json.is-str': ['문자열 여부', 'is', 'mjb']
+  'json.json-clone-tree': ['json 복제 트리', 'jct', 'jbjtr']
+  'json.json-pool.add-child': ['추가 자식', 'ac', 'cgjs']
+  'json.json-pool.alloc': ['할당', 'a', 'hd']
+  'json.json-pool.arr-get': ['배열 취득', 'ag', 'bcd']
+  'json.json-pool.arr-len': ['배열 길이', 'al', 'bg']
+  'json.json-pool.copy-tree': ['복사 트리', 'ct', 'bstr']
+  'json.json-pool.get-bool': ['취득 bool', 'gb', 'cdb']
+  'json.json-pool.get-key': ['취득 키', 'gk', 'cdk']
+  'json.json-pool.get-kind': ['취득 종류', 'gk', 'cdjr']
+  'json.json-pool.get-num': ['취득 숫자', 'gn', 'cdsj']
+  'json.json-pool.get-str': ['취득 문자열', 'gs', 'cdmj']
+  'json.json-pool.init': ['초기화', 'i', 'cgh']
+  'json.json-pool.parse': ['파싱', 'p', 'ps']
+  'json.json-pool.parse-num': ['파싱 숫자', 'pn', 'pssj']
+  'json.json-pool.parse-str': ['파싱 문자열', 'ps', 'psmj']
+  'json.json-pool.set-key': ['설정 키', 'sk', 'sjk']
+  'json.json-pool.skip-ws': ['건너뛰기 웹소켓', 'sw', 'gntgsk']
+  'json.json-pool.str-eq': ['문자열 동등', 'se', 'mjdd']
+  'json.json-pool.stringify': ['문자열화', 's', 'mjh']
+  'json.kind': ['종류', 'k', 'jr']
+  'json.new': ['신규', 'n', 'sg']
+  'json.new-pool': ['신규 풀', 'np', 'sgp']
+  'json.num': ['숫자', 'n', 'sj']
+  'json.obj-key': ['obj 키', 'ok', 'ok']
+  'json.obj-keys-str': ['obj 키들 문자열', 'oks', 'okdmj']
+  'json.obj-len': ['obj 길이', 'ol', 'og']
+  'json.overflowed': ['오버플로', 'o', 'bpr']
+  'json.set': ['설정', 's', 'sj']
+  'json.set-bool': ['설정 bool', 'sb', 'sjb']
+  'json.set-i64': ['설정 i64', 'si', 'sji6']
+  'json.set-key': ['설정 키', 'sk', 'sjk']
+  'json.set-null': ['설정 null', 'sn', 'sjn']
+  'json.set-num': ['설정 숫자', 'sn', 'sjsj']
+  'json.set-str': ['설정 문자열', 'ss', 'sjmj']
+  'json.str': ['문자열', 's', 'mj']
+  'json.str-val': ['문자열 값', 'sv', 'mjg']
+  'json.stringify': ['문자열화', 's', 'mjh']
+  'link.link.empty': ['empty', 'e', 'e']
+  'link.link.full': ['full', 'f', 'f']
+  'link.link.size': ['크기', 's', 'kg']
+  'linked-hash-map.linked-hash-map.clear': ['비우기', 'c', 'bg']
+  'linked-hash-map.linked-hash-map.contains': ['포함', 'c', 'ph']
+  'linked-hash-map.linked-hash-map.for-each': ['용 각', 'fe', 'g']
+  'linked-hash-map.linked-hash-map.get': ['취득', 'g', 'cd']
+  'linked-hash-map.linked-hash-map.hash': ['해시', 'h', 'hs']
+  'linked-hash-map.linked-hash-map.init': ['초기화', 'i', 'cgh']
+  'linked-hash-map.linked-hash-map.is-empty': ['empty 여부', 'ie', 'eb']
+  'linked-hash-map.linked-hash-map.len': ['길이', 'l', 'g']
+  'linked-hash-map.linked-hash-map.put': ['넣기', 'p', 'ng']
+  'linked-hash-map.linked-hash-map.remove': ['제거', 'r', 'jg']
+  'log.get-output-fd': ['취득 output 디스크립터', 'gof', 'cdodskrt']
+  'log.get-writer': ['취득 쓰기', 'gw', 'cdsg']
+  'log.log-emit': ['로그 발생', 'le', 'rgbs']
+  'log.log-stamp': ['로그 스탬프', 'ls', 'rgstp']
+  'log.open-file': ['열기 파일', 'of', 'gp']
+  'log.set-format': ['설정 포맷', 'sf', 'sjpm']
+  'log.set-level': ['설정 레벨', 'sl', 'sjrb']
+  'log.set-output-fd': ['설정 output 디스크립터', 'sof', 'sjodskrt']
+  'log.set-writer': ['설정 쓰기', 'sw', 'sjsg']
+  'magic.detect-by-extension': ['감지 기준 확장', 'dbe', 'gjgjhj']
+  'magic.detect-by-magic': ['감지 기준 매직', 'dbm', 'gjgjmj']
+  'magic.detect-type': ['감지 타입', 'dt', 'gjt']
+  'magic.get-extension': ['취득 확장', 'ge', 'cdhj']
+  'map.hashmap-bool-tmpl.clear': ['비우기', 'c', 'bg']
+  'map.hashmap-bool-tmpl.contains': ['포함', 'c', 'ph']
+  'map.hashmap-bool-tmpl.for-each': ['용 각', 'fe', 'g']
+  'map.hashmap-bool-tmpl.get': ['취득', 'g', 'cd']
+  'map.hashmap-bool-tmpl.hash': ['해시', 'h', 'hs']
+  'map.hashmap-bool-tmpl.init': ['초기화', 'i', 'cgh']
+  'map.hashmap-bool-tmpl.is-empty': ['empty 여부', 'ie', 'eb']
+  'map.hashmap-bool-tmpl.len': ['길이', 'l', 'g']
+  'map.hashmap-bool-tmpl.put': ['넣기', 'p', 'ng']
+  'map.hashmap-bool-tmpl.remove': ['제거', 'r', 'jg']
+  'map.hashmap-int-tmpl.clear': ['비우기', 'c', 'bg']
+  'map.hashmap-int-tmpl.contains': ['포함', 'c', 'ph']
+  'map.hashmap-int-tmpl.for-each': ['용 각', 'fe', 'g']
+  'map.hashmap-int-tmpl.get': ['취득', 'g', 'cd']
+  'map.hashmap-int-tmpl.hash': ['해시', 'h', 'hs']
+  'map.hashmap-int-tmpl.init': ['초기화', 'i', 'cgh']
+  'map.hashmap-int-tmpl.is-empty': ['empty 여부', 'ie', 'eb']
+  'map.hashmap-int-tmpl.len': ['길이', 'l', 'g']
+  'map.hashmap-int-tmpl.put': ['넣기', 'p', 'ng']
+  'map.hashmap-int-tmpl.rehash': ['재해싱', 'r', 'jhs']
+  'map.hashmap-int-tmpl.remove': ['제거', 'r', 'jg']
+  'map.hashmap-str-tmpl.clear': ['비우기', 'c', 'bg']
+  'map.hashmap-str-tmpl.contains': ['포함', 'c', 'ph']
+  'map.hashmap-str-tmpl.for-each': ['용 각', 'fe', 'g']
+  'map.hashmap-str-tmpl.get': ['취득', 'g', 'cd']
+  'map.hashmap-str-tmpl.hash': ['해시', 'h', 'hs']
+  'map.hashmap-str-tmpl.init': ['초기화', 'i', 'cgh']
+  'map.hashmap-str-tmpl.is-empty': ['empty 여부', 'ie', 'eb']
+  'map.hashmap-str-tmpl.len': ['길이', 'l', 'g']
+  'map.hashmap-str-tmpl.put': ['넣기', 'p', 'ng']
+  'map.hashmap-str-tmpl.rehash': ['재해싱', 'r', 'jhs']
+  'map.hashmap-str-tmpl.remove': ['제거', 'r', 'jg']
+  'map.hashmap-str-tmpl.str-eq': ['문자열 동등', 'se', 'mjdd']
+  'markdown.blockquote': ['인용 블록', 'b', 'br']
+  'markdown.code-close': ['코드 닫기', 'cc', 'kddg']
+  'markdown.escape-html': ['이스케이프 html', 'eh', 'skph']
+  'markdown.fence': ['펜스', 'f', 'ps']
+  'markdown.heading': ['제목', 'h', 'jm']
+  'markdown.inline': ['inline', 'i', 'i']
+  'markdown.is-word-byte': ['단어 바이트 여부', 'iwb', 'dbtb']
+  'markdown.join-paragraph': ['결합 문단', 'jp', 'ghmd']
+  'markdown.list-content': ['리스트 콘텐츠', 'lc', 'rstktc']
+  'markdown.list-item': ['리스트 item', 'li', 'rsti']
+  'markdown.prefix-count': ['접두사 개수', 'pc', 'jdsgs']
+  'markdown.read-line': ['읽기 줄', 'rl', 'gj']
+  'markdown.render': ['렌더링', 'r', 'rdr']
+  'markdown.render-code': ['렌더링 코드', 'rc', 'rdrkd']
+  'markdown.setext-level': ['setext 레벨', 'sl', 'srb']
+  'markdown.table-row': ['테이블 행', 'tr', 'tbh']
+  'markdown.table-separator': ['테이블 구분자', 'ts', 'tbgbj']
+  'markdown.thematic-break': ['thematic break', 'tb', 'tb']
+  'markdown.to-html': ['html 변환', 'th', 'hbh']
+  'math.arr-zero': ['배열 영', 'az', 'b']
+  'math.atan-kernel': ['아크탄젠트 커널', 'ak', 'ktjtkn']
+  'math.char-to-str': ['문자 to 문자열', 'cts', 'mjtmj']
+  'math.clamp': ['clamp', 'c', 'c']
+  'math.div': ['나눗셈', 'd', 'nns']
+  'math.even': ['짝수', 'e', 'js']
+  'math.fmod': ['부동 소수 나머지', 'f', 'bdssnmj']
+  'math.gcd': ['최대공약수', 'g', 'cdgs']
+  'math.hypot': ['빗변', 'h', 'bb']
+  'math.lcm': ['최소공배수', 'l', 'csgbs']
+  'math.max': ['최대', 'm', 'cd']
+  'math.min': ['최소', 'm', 'cs']
+  'math.mod': ['나머지', 'm', 'nmj']
+  'math.odd': ['홀수', 'o', 'hs']
+  'math.pow': ['거듭제곱', 'p', 'gdjg']
+  'math.pow-int': ['거듭제곱 정수', 'pi', 'gdjgjs']
+  'math.rotate-left': ['회전 왼쪽', 'rl', 'hjj']
+  'math.rotate-right': ['회전 오른쪽', 'rr', 'hjrj']
+  'math.store-le-u32': ['저장 리틀 엔디안 u32', 'slu', 'jjrtdu3']
+  'math.swap': ['스왑', 's', 's']
+  'md5.md5': ['MD5', 'm', 'm5']
+  'md5.md5-rotl': ['MD5 좌회전', 'mr', 'm5jhj']
+  'multipart.multipart-create': ['multipart 생성', 'mc', 'mss']
+  'multipart.multipart-create-boundary': ['multipart 생성 경계', 'mcb', 'mssgg']
+  'multipart.multipart-decrypt-field': ['multipart 복호화 필드', 'mdf', 'mbhhpd']
+  'multipart.multipart-extract-boundary': ['multipart 추출 경계', 'meb', 'mccgg']
+  'multipart.multipart-gen-boundary': ['multipart 생성 경계', 'mgb', 'mssgg']
+  'multipart.multipart-parse': ['multipart 파싱', 'mp', 'mps']
+  'multipart.multipart-reader.field-content-type': ['필드 콘텐츠 타입', 'fct', 'pdktct']
+  'multipart.multipart-reader.field-data': ['필드 데이터', 'fd', 'pddt']
+  'multipart.multipart-reader.field-filename': ['필드 파일명', 'ff', 'pdpm']
+  'multipart.multipart-reader.field-name': ['필드 이름', 'fn', 'pdr']
+  'multipart.multipart-reader.has-current-part': ['.has 현재 부분', 'hcp', 'hhjbb']
+  'multipart.multipart-reader.init': ['초기화', 'i', 'cgh']
+  'multipart.multipart-reader.is-file': ['파일 여부', 'if', 'pb']
+  'multipart.multipart-reader.next': ['다음', 'n', 'd']
+  'multipart.multipart-reader.parse-header-line': ['파싱 헤더 줄', 'phl', 'pshdj']
+  'multipart.multipart-reader.parse-headers': ['파싱 헤더', 'ph', 'pshd']
+  'multipart.multipart-writer.body-of': ['본문 의', 'bo', 'bm']
+  'multipart.multipart-writer.boundary-of': ['경계 의', 'bo', 'gg']
+  'multipart.multipart-writer.close-form': ['닫기 형식', 'cf', 'dghs']
+  'multipart.multipart-writer.content-type': ['콘텐츠 타입', 'ct', 'ktct']
+  'multipart.multipart-writer.init': ['초기화', 'i', 'cgh']
+  'multipart.multipart-writer.init-boundary': ['초기화 경계', 'ib', 'cghgg']
+  'multipart.multipart-writer.write-encrypted-field': ['쓰기 암호화됨 필드', 'wef', 'sghhdpd']
+  'multipart.multipart-writer.write-encrypted-file': ['쓰기 암호화됨 파일', 'wef', 'sghhdp']
+  'multipart.multipart-writer.write-field': ['쓰기 필드', 'wf', 'sgpd']
+  'multipart.multipart-writer.write-file': ['쓰기 파일', 'wf', 'sgp']
+  'net.close': ['닫기', 'c', 'dg']
+  'net.conn.close': ['닫기', 'c', 'dg']
+  'net.conn.dial': ['다이얼', 'd', 'd']
+  'net.conn.fd-of': ['디스크립터 의', 'fo', 'dskrt']
+  'net.conn.recv': ['수신', 'r', 'ss']
+  'net.conn.recv-all': ['수신 전체', 'ra', 'ssjc']
+  'net.conn.recv-line': ['수신 줄', 'rl', 'ssj']
+  'net.conn.recv-with-timeout': ['수신 동반 시간 초과', 'rwt', 'ssdbsgcg']
+  'net.conn.send': ['전송', 's', 'js']
+  'net.conn.send-with-timeout': ['전송 동반 시간 초과', 'swt', 'jsdbsgcg']
+  'net.conn.set-recv-timeout': ['설정 수신 시간 초과', 'srt', 'sjsssgcg']
+  'net.conn.set-timeout': ['설정 시간 초과', 'st', 'sjsgcg']
+  'net.dial-timeout': ['다이얼 시간 초과', 'dt', 'dsgcg']
+  'net.dial-to': ['다이얼 to', 'dt', 'dt']
+  'net.enc-accept': ['암호화 수락', 'ea', 'hhsr']
+  'net.enc-conn.close': ['닫기', 'c', 'dg']
+  'net.enc-conn.gen-iv': ['생성 초기 벡터', 'gi', 'sscgbt']
+  'net.enc-conn.init': ['초기화', 'i', 'cgh']
+  'net.enc-conn.recv-encrypted': ['수신 암호화됨', 're', 'sshhd']
+  'net.enc-conn.send-encrypted': ['전송 암호화됨', 'se', 'jshhd']
+  'net.enc-dial': ['암호화 다이얼', 'ed', 'hhd']
+  'net.icmp-checksum': ['ICMP 체크섬', 'ic', 'icks']
+  'net.icmp-conn.build-echo': ['구축 에코', 'be', 'gck']
+  'net.icmp-conn.close': ['닫기', 'c', 'dg']
+  'net.icmp-conn.open': ['열기', 'o', 'g']
+  'net.icmp-conn.ping-host': ['핑 호스트', 'ph', 'phst']
+  'net.icmp-conn.ping-once': ['핑 한 번', 'po', 'phb']
+  'net.listen-on': ['대기 위', 'lo', 'dg']
+  'net.listener.accept': ['수락', 'a', 'sr']
+  'net.listener.accept-with-timeout': ['수락 동반 시간 초과', 'awt', 'srdbsgcg']
+  'net.listener.close': ['닫기', 'c', 'dg']
+  'net.listener.fd-of': ['디스크립터 의', 'fo', 'dskrt']
+  'net.listener.listen': ['대기', 'l', 'dg']
+  'net.listener.set-timeout': ['설정 시간 초과', 'st', 'sjsgcg']
+  'net.net-accept': ['네트워크 수락', 'na', 'ntksr']
+  'net.net-accept-nb': ['네트워크 수락 nb', 'nan', 'ntksrn']
+  'net.net-dial': ['네트워크 다이얼', 'nd', 'ntkd']
+  'net.net-icmp-open': ['네트워크 ICMP 열기', 'nio', 'ntkig']
+  'net.net-listen': ['네트워크 대기', 'nl', 'ntkdg']
+  'net.net-recv': ['네트워크 수신', 'nr', 'ntkss']
+  'net.net-send': ['네트워크 전송', 'ns', 'ntkjs']
+  'net.net-set-recv-timeout': ['네트워크 설정 수신 시간 초과', 'nsrt', 'ntksjsssgcg']
+  'net.net-udp-open': ['네트워크 UDP 열기', 'nuo', 'ntkug']
+  'net.net-udp-recvfrom': ['네트워크 UDP 수신원', 'nur', 'ntkuss']
+  'net.net-udp-sendto': ['네트워크 UDP 송신', 'nus', 'ntkuss']
+  'net.ping': ['핑', 'p', 'p']
+  'net.ping-count': ['핑 개수', 'pc', 'pgs']
+  'net.split-ws': ['분할 웹소켓', 'sw', 'bhsk']
+  'net.udp-conn.close': ['닫기', 'c', 'dg']
+  'net.udp-conn.fd-of': ['디스크립터 의', 'fo', 'dskrt']
+  'net.udp-conn.open': ['열기', 'o', 'g']
+  'net.udp-conn.recv': ['수신', 'r', 'ss']
+  'net.udp-conn.recv-bytes': ['수신 바이트', 'rb', 'ssbt']
+  'net.udp-conn.send': ['전송', 's', 'js']
+  'net.udp-conn.send-bytes': ['전송 바이트', 'sb', 'jsbt']
+  'net.udp-conn.set-timeout': ['설정 시간 초과', 'st', 'sjsgcg']
+  'net.udp-dial-to': ['UDP 다이얼 to', 'udt', 'udt']
+  'noml.hex-char': ['16진수 문자', 'hc', '1jsmj']
+  'noml.hex-digit': ['16진수 숫자', 'hd', '1jssj']
+  'noml.is-ident-char': ['식별자 문자 여부', 'iic', 'sbjmjb']
+  'noml.is-ident-key': ['식별자 키 여부', 'iik', 'sbjkb']
+  'noml.is-ident-start': ['식별자 시작 여부', 'iis', 'sbjsjb']
+  'noml.new': ['신규', 'n', 'sg']
+  'noml.noml-doc.ann': ['주해', 'a', 'jh']
+  'noml.noml-doc.ann-value': ['주해 값', 'av', 'jhg']
+  'noml.noml-doc.at': ['위치', 'a', 'c']
+  'noml.noml-doc.bool': ['bool', 'b', 'b']
+  'noml.noml-doc.get': ['취득', 'g', 'cd']
+  'noml.noml-doc.get-bool': ['취득 bool', 'gb', 'cdb']
+  'noml.noml-doc.get-f64': ['취득 f64', 'gf', 'cdf6']
+  'noml.noml-doc.get-i64': ['취득 i64', 'gi', 'cdi6']
+  'noml.noml-doc.get-str': ['취득 문자열', 'gs', 'cdmj']
+  'noml.noml-doc.has': ['.has', 'h', 'h']
+  'noml.noml-doc.i64': ['i64', 'i', 'i6']
+  'noml.noml-doc.is-arr': ['배열 여부', 'ia', 'bb']
+  'noml.noml-doc.is-bool': ['bool 여부', 'ib', 'bb']
+  'noml.noml-doc.is-nil': ['nil 여부', 'in', 'nb']
+  'noml.noml-doc.is-num': ['숫자 여부', 'in', 'sjb']
+  'noml.noml-doc.is-obj': ['obj 여부', 'io', 'ob']
+  'noml.noml-doc.is-str': ['문자열 여부', 'is', 'mjb']
+  'noml.noml-doc.key': ['키', 'k', 'k']
+  'noml.noml-doc.kind': ['종류', 'k', 'jr']
+  'noml.noml-doc.len': ['길이', 'l', 'g']
+  'noml.noml-doc.new-arr': ['신규 배열', 'na', 'sgb']
+  'noml.noml-doc.new-bool': ['신규 bool', 'nb', 'sgb']
+  'noml.noml-doc.new-nil': ['신규 nil', 'nn', 'sgn']
+  'noml.noml-doc.new-num': ['신규 숫자', 'nn', 'sgsj']
+  'noml.noml-doc.new-obj': ['신규 obj', 'no', 'sgo']
+  'noml.noml-doc.new-str': ['신규 문자열', 'ns', 'sgmj']
+  'noml.noml-doc.num': ['숫자', 'n', 'sj']
+  'noml.noml-doc.push': ['푸시', 'p', 'ps']
+  'noml.noml-doc.put': ['넣기', 'p', 'ng']
+  'noml.noml-doc.root-index': ['루트 인덱스', 'ri', 'rtds']
+  'noml.noml-doc.set-ann': ['설정 주해', 'sa', 'sjjh']
+  'noml.noml-doc.set-root': ['설정 루트', 'sr', 'sjrt']
+  'noml.noml-doc.str': ['문자열', 's', 'mj']
+  'noml.noml-doc.stringify': ['문자열화', 's', 'mjh']
+  'noml.noml-doc.stringify-node': ['문자열화 노드', 'sn', 'mjhnd']
+  'noml.noml-pool.add-child': ['추가 자식', 'ac', 'cgjs']
+  'noml.noml-pool.alloc': ['할당', 'a', 'hd']
+  'noml.noml-pool.ann': ['주해', 'a', 'jh']
+  'noml.noml-pool.ann-literal': ['주해 리터럴', 'al', 'jhrtr']
+  'noml.noml-pool.ann-value': ['주해 값', 'av', 'jhg']
+  'noml.noml-pool.at': ['위치', 'a', 'c']
+  'noml.noml-pool.at-line-start': ['위치 줄 시작', 'als', 'cjsj']
+  'noml.noml-pool.decode-escape': ['디코딩 이스케이프', 'de', 'dkdskp']
+  'noml.noml-pool.fail': ['실패', 'f', 'sp']
+  'noml.noml-pool.fmt-key': ['fmt 키', 'fk', 'fk']
+  'noml.noml-pool.fmt-num': ['fmt 숫자', 'fn', 'fsj']
+  'noml.noml-pool.get': ['취득', 'g', 'cd']
+  'noml.noml-pool.get-bool': ['취득 bool', 'gb', 'cdb']
+  'noml.noml-pool.get-f64': ['취득 f64', 'gf', 'cdf6']
+  'noml.noml-pool.get-i64': ['취득 i64', 'gi', 'cdi6']
+  'noml.noml-pool.get-str': ['취득 문자열', 'gs', 'cdmj']
+  'noml.noml-pool.has': ['.has', 'h', 'h']
+  'noml.noml-pool.has-byte': ['.has 바이트', 'hb', 'hbt']
+  'noml.noml-pool.has-key': ['.has 키', 'hk', 'hk']
+  'noml.noml-pool.hex4': ['hex4', 'h', 'h4']
+  'noml.noml-pool.init': ['초기화', 'i', 'cgh']
+  'noml.noml-pool.is-arr': ['배열 여부', 'ia', 'bb']
+  'noml.noml-pool.is-bool': ['bool 여부', 'ib', 'bb']
+  'noml.noml-pool.is-nil': ['nil 여부', 'in', 'nb']
+  'noml.noml-pool.is-num': ['숫자 여부', 'in', 'sjb']
+  'noml.noml-pool.is-obj': ['obj 여부', 'io', 'ob']
+  'noml.noml-pool.is-str': ['문자열 여부', 'is', 'mjb']
+  'noml.noml-pool.join-ann': ['결합 주해', 'ja', 'ghjh']
+  'noml.noml-pool.key': ['키', 'k', 'k']
+  'noml.noml-pool.kind': ['종류', 'k', 'jr']
+  'noml.noml-pool.len': ['길이', 'l', 'g']
+  'noml.noml-pool.line-of': ['줄 의', 'lo', 'j']
+  'noml.noml-pool.match-kw': ['일치 키워드', 'mk', 'ckd']
+  'noml.noml-pool.parse': ['파싱', 'p', 'ps']
+  'noml.noml-pool.parse-array': ['파싱 배열', 'pa', 'psb']
+  'noml.noml-pool.parse-bool': ['파싱 bool', 'pb', 'psb']
+  'noml.noml-pool.parse-bool-node': ['파싱 bool 노드', 'pbn', 'psbnd']
+  'noml.noml-pool.parse-key': ['파싱 키', 'pk', 'psk']
+  'noml.noml-pool.parse-nil-node': ['파싱 nil 노드', 'pnn', 'psnnd']
+  'noml.noml-pool.parse-num': ['파싱 숫자', 'pn', 'pssj']
+  'noml.noml-pool.parse-num-node': ['파싱 숫자 노드', 'pnn', 'pssjnd']
+  'noml.noml-pool.parse-object': ['파싱 object', 'po', 'pso']
+  'noml.noml-pool.parse-raw': ['파싱 원시', 'pr', 'pss']
+  'noml.noml-pool.parse-raw-node': ['파싱 원시 노드', 'prn', 'pssnd']
+  'noml.noml-pool.parse-str': ['파싱 문자열', 'ps', 'psmj']
+  'noml.noml-pool.parse-str-node': ['파싱 문자열 노드', 'psn', 'psmjnd']
+  'noml.noml-pool.parse-value': ['파싱 값', 'pv', 'psg']
+  'noml.noml-pool.quote': ['인용부호', 'q', 'bh']
+  'noml.noml-pool.quote-value': ['인용부호 값', 'qv', 'bhg']
+  'noml.noml-pool.raw-safe': ['원시 안전', 'rs', 'sj']
+  'noml.noml-pool.require-end': ['필요 종료', 're', 'pjr']
+  'noml.noml-pool.scan-ann': ['스캔 주해', 'sa', 'skjh']
+  'noml.noml-pool.scan-quote': ['스캔 인용부호', 'sq', 'skbh']
+  'noml.noml-pool.scan-raw': ['스캔 원시', 'sr', 'sks']
+  'noml.noml-pool.set-ann': ['설정 주해', 'sa', 'sjjh']
+  'noml.noml-pool.skip-ann-value': ['건너뛰기 주해 값', 'sav', 'gntgjhg']
+  'noml.noml-pool.skip-blanks': ['건너뛰기 빈칸', 'sb', 'gntgbk']
+  'noml.noml-pool.skip-trivia': ['건너뛰기 자명', 'st', 'gntgjm']
+  'noml.noml-pool.stringify': ['문자열화', 's', 'mjh']
+  'noml.noml-pool.stringify-arr': ['문자열화 배열', 'sa', 'mjhb']
+  'noml.noml-pool.stringify-obj': ['문자열화 obj', 'so', 'mjho']
+  'noml.noml-pool.val-bool': ['값 bool', 'vb', 'gb']
+  'noml.noml-pool.val-i64': ['값 i64', 'vi', 'gi6']
+  'noml.noml-pool.val-num': ['값 숫자', 'vn', 'gsj']
+  'noml.noml-pool.val-str': ['값 문자열', 'vs', 'gmj']
+  'noml.parse': ['파싱', 'p', 'ps']
+  'num.abs': ['절대값', 'a', 'jdg']
+  'num.clamp': ['clamp', 'c', 'c']
+  'num.sign': ['서명', 's', 'sm']
+  'number.byte.to-str': ['str 변환', 'ts', 'sbh']
+  'number.exp-f64': ['지수 f64', 'ef', 'jsf6']
+  'number.f32.to-f64': ['f64 변환', 'tf', 'f6bh']
+  'number.f32.to-str': ['str 변환', 'ts', 'sbh']
+  'number.f64.cbrt': ['세제곱근', 'c', 'sjgg']
+  'number.f64.ceil': ['천장', 'c', 'cj']
+  'number.f64.degrees': ['도', 'd', 'd']
+  'number.f64.radians': ['래디안', 'r', 'rd']
+  'number.f64.sin': ['사인', 's', 's']
+  'number.f64.sinh': ['쌍곡선 사인', 's', 'sgss']
+  'number.f64.sqrt': ['제곱근', 's', 'jgg']
+  'number.f64.tan': ['탄젠트', 't', 'tjt']
+  'number.f64.to-bits': ['bits 변환', 'tb', 'bbh']
+  'number.f64.to-f32': ['f32 변환', 'tf', 'f3bh']
+  'number.f64.to-i32': ['i32 변환', 'ti', 'i3bh']
+  'number.f64.to-i64': ['i64 변환', 'ti', 'i6bh']
+  'number.f64.to-str': ['str 변환', 'ts', 'sbh']
+  'number.f64.to-str-fixed': ['str-fixed 변환', 'tsf', 'sfbh']
+  'number.f64.to-str-general': ['str-general 변환', 'tsg', 'sgbh']
+  'number.f64.to-str-sci': ['str-sci 변환', 'tss', 'ssbh']
+  'number.f64.to-u32': ['u32 변환', 'tu', 'u3bh']
+  'number.f64.to-u64': ['u64 변환', 'tu', 'u6bh']
+  'number.i128.sqrt': ['제곱근', 's', 'jgg']
+  'number.i128.to-f64': ['f64 변환', 'tf', 'f6bh']
+  'number.i16.sqrt': ['제곱근', 's', 'jgg']
+  'number.i16.to-str': ['str 변환', 'ts', 'sbh']
+  'number.i32.sqrt': ['제곱근', 's', 'jgg']
+  'number.i32.to-str': ['str 변환', 'ts', 'sbh']
+  'number.i64.is-prime': ['prime 여부', 'ip', 'pb']
+  'number.i64.sqrt': ['제곱근', 's', 'jgg']
+  'number.i64.to-bytes-be': ['bytes-be 변환', 'tbb', 'bbbh']
+  'number.i64.to-bytes-le': ['bytes-le 변환', 'tbl', 'blbh']
+  'number.i64.to-f64': ['f64 변환', 'tf', 'f6bh']
+  'number.i64.to-i32': ['i32 변환', 'ti', 'i3bh']
+  'number.i64.to-str': ['str 변환', 'ts', 'sbh']
+  'number.i8.sqrt': ['제곱근', 's', 'jgg']
+  'number.i8.to-str': ['str 변환', 'ts', 'sbh']
+  'number.pow': ['거듭제곱', 'p', 'gdjg']
+  'number.u128.to-f64': ['f64 변환', 'tf', 'f6bh']
+  'number.u16.sqrt': ['제곱근', 's', 'jgg']
+  'number.u16.to-str': ['str 변환', 'ts', 'sbh']
+  'number.u32.sqrt': ['제곱근', 's', 'jgg']
+  'number.u32.to-str': ['str 변환', 'ts', 'sbh']
+  'number.u64.from-bits': ['bits에서 변환', 'fb', 'bsbh']
+  'number.u64.sqrt': ['제곱근', 's', 'jgg']
+  'number.u64.to-f64': ['f64 변환', 'tf', 'f6bh']
+  'number.u64.to-str': ['str 변환', 'ts', 'sbh']
+  'number.u8.sqrt': ['제곱근', 's', 'jgg']
+  'number.u8.to-str': ['str 변환', 'ts', 'sbh']
+  'ords.asc': ['오름차순', 'a', 'rcs']
+  'ords.desc': ['내림차순', 'd', 'nrcs']
+  'os.arg': ['인자', 'a', 'j']
+  'os.args': ['인자', 'a', 'j']
+  'os.ch-dir': ['ch 디렉터리', 'cd', 'cdrtr']
+  'os.ch-mod': ['ch 나머지', 'cm', 'cnmj']
+  'os.chown': ['소유자 변경', 'c', 'sjbg']
+  'os.chroot': ['루트 변경', 'c', 'rtbg']
+  'os.flock': ['파일 잠금', 'f', 'pjg']
+  'os.get-arch': ['취득 아키텍처', 'ga', 'cdktc']
+  'os.get-domain-name': ['취득 도메인 이름', 'gdn', 'cddmr']
+  'os.get-env': ['취득 환경', 'ge', 'cdhg']
+  'os.get-errno': ['취득 에러번호', 'ge', 'cdrbh']
+  'os.get-host-id': ['취득 호스트 id', 'ghi', 'cdhsti']
+  'os.get-login': ['취득 로그인', 'gl', 'cdrg']
+  'os.get-pid': ['취득 pid', 'gp', 'cdp']
+  'os.get-priority': ['취득 priority', 'gp', 'cdp']
+  'os.get-wd': ['취득 wd', 'gw', 'cdw']
+  'os.getegid': ['egid 획득', 'g', 'ehd']
+  'os.geteuid': ['euid 획득', 'g', 'ehd']
+  'os.getgid': ['gid 획득', 'g', 'ghd']
+  'os.getgroups': ['그룹 조회', 'g', 'grjh']
+  'os.getuid': ['uid 획득', 'g', 'uhd']
+  'os.host-name': ['호스트 이름', 'hn', 'hstr']
+  'os.mkdir': ['mkdir', 'm', 'm']
+  'os.now': ['현재', 'n', 'hj']
+  'os.now-ms': ['현재 밀리초', 'nm', 'hjmrc']
+  'os.now-ns': ['현재 나노초', 'nn', 'hjnnc']
+  'os.now-us': ['현재 마이크로초', 'nu', 'hjmkrc']
+  'os.num-cpu': ['숫자 CPU', 'nc', 'sjc']
+  'os.set-env': ['설정 환경', 'se', 'sjhg']
+  'os.set-priority': ['설정 priority', 'sp', 'sjp']
+  'os.set-sid': ['설정 세션 ID', 'ss', 'sjssi']
+  'os.signal': ['신호', 's', 'sh']
+  'os.sleep': ['절전', 's', 'jj']
+  'os.sleep-ns': ['절전 나노초', 'sn', 'jjnnc']
+  'os.sleep-us': ['절전 마이크로초', 'su', 'jjmkrc']
+  'os.stat-gid': ['stat GID', 'sg', 'sg']
+  'os.stat-mode': ['stat 모드', 'sm', 'smd']
+  'os.stat-mtime': ['stat 수정 시간', 'sm', 'ssjsg']
+  'os.stat-uid': ['stat UID', 'su', 'su']
+  'os.strerror': ['strerror', 's', 's']
+  'os.sysconf': ['시스템 설정', 's', 'sstsj']
+  'os.sysctl': ['sysctl', 's', 's']
+  'os.syslog': ['syslog', 's', 's']
+  'os.ttyname': ['tty 이름', 't', 'tr']
+  'os.uname': ['uname', 'u', 'u']
+  'os.win-find-close': ['창 찾기 닫기', 'wfc', 'ccgdg']
+  'os.win-find-first-file': ['창 찾기 첫째 파일', 'wfff', 'ccgcjp']
+  'os.win-find-next-file': ['창 찾기 다음 파일', 'wfnf', 'ccgdp']
+  'os.win-wsa-startup': ['창 wsa 시작', 'wws', 'cwsj']
+  'path.base': ['base', 'b', 'b']
+  'path.change-dir': ['change 디렉터리', 'cd', 'cdrtr']
+  'path.clean': ['clean', 'c', 'c']
+  'path.current': ['현재', 'c', 'hj']
+  'path.dir': ['디렉터리', 'd', 'drtr']
+  'path.exists': ['존재', 'e', 'jj']
+  'path.ext': ['ext', 'e', 'e']
+  'path.is-abs': ['절대값 여부', 'ia', 'jdgb']
+  'path.is-dir': ['디렉터리 여부', 'id', 'drtrb']
+  'path.is-file': ['파일 여부', 'if', 'pb']
+  'path.join': ['결합', 'j', 'gh']
+  'path.make-dir': ['생성 디렉터리', 'md', 'ssdrtr']
+  'path.remove': ['제거', 'r', 'jg']
+  'path.rename': ['rename', 'r', 'r']
+  'path.size': ['크기', 's', 'kg']
+  'path.split': ['분할', 's', 'bh']
+  'pbkdf2.pbkdf2-hmac-sha1': ['pbkdf2 HMAC SHA-1', 'phs', 'p2hs1']
+  'pbkdf2.pbkdf2-hmac-sha256': ['pbkdf2 HMAC sha256', 'phs', 'p2hs2']
+  'pbkdf2.pbkdf2-hmac-sha512': ['pbkdf2 HMAC sha512', 'phs', 'p2hs5']
+  'pem.pem-decode': ['PEM 디코딩', 'pd', 'pdkd']
+  'pem.pem-encode': ['PEM 인코딩', 'pe', 'pkd']
+  'pool.create': ['생성', 'c', 'ss']
+  'pool.pool.active-count': ['활성 개수', 'ac', 'hsgs']
+  'pool.pool.close-all': ['닫기 전체', 'ca', 'dgjc']
+  'pool.pool.close-conn': ['닫기 연결', 'cc', 'dgg']
+  'pool.pool.get': ['취득', 'g', 'cd']
+  'pool.pool.idle-count': ['유휴 개수', 'ic', 'hgs']
+  'pool.pool.init': ['초기화', 'i', 'cgh']
+  'pool.pool.put': ['넣기', 'p', 'ng']
+  'pool.pool.total-count': ['total 개수', 'tc', 'tgs']
+  'pool.with-size': ['동반 크기', 'ws', 'dbkg']
+  'process.close': ['닫기', 'c', 'dg']
+  'process.close-stderr': ['닫기 표준 오류', 'cs', 'dgpjr']
+  'process.close-stdin': ['닫기 표준 입력', 'cs', 'dgpjr']
+  'process.close-stdout': ['닫기 표준 출력', 'cs', 'dgpjcr']
+  'process.cmd-2': ['명령', 'c2', 'mr']
+  'process.exec': ['실행', 'e', 'sh']
+  'process.exit-code-of': ['종료 코드 의', 'eco', 'jrkd']
+  'process.find-by-name': ['찾기 기준 이름', 'fbn', 'cggjr']
+  'process.find-match': ['찾기 일치', 'fm', 'cgc']
+  'process.force-kill': ['force 종료', 'fk', 'fjr']
+  'process.is-running': ['실행 중 여부', 'ir', 'shjb']
+  'process.kill': ['종료', 'k', 'jr']
+  'process.list-all': ['리스트 전체', 'la', 'rstjc']
+  'process.new': ['신규', 'n', 'sg']
+  'process.output': ['output', 'o', 'o']
+  'process.parent-pid': ['부모 pid', 'pp', 'bmp']
+  'process.pid-of': ['pid 의', 'po', 'p']
+  'process.process-dup2': ['프로세스 복사 2', 'pd', 'prssbs2']
+  'process.process-exec': ['프로세스 실행', 'pe', 'prsssh']
+  'process.process-exec-shell': ['프로세스 실행 셸', 'pes', 'prssshs']
+  'process.process-fork': ['프로세스 포크', 'pf', 'prsspk']
+  'process.process-getppid': ['프로세스 부모 PID', 'pg', 'prssbmp']
+  'process.process-kill': ['프로세스 종료', 'pk', 'prssjr']
+  'process.process-pipe': ['프로세스 파이프', 'pp', 'prsspp']
+  'process.process-shell': ['프로세스 셸', 'ps', 'prsss']
+  'process.process-system': ['프로세스 시스템', 'ps', 'prsssst']
+  'process.process-waitpid': ['프로세스 자식 대기', 'pw', 'prssjsdg']
+  'process.process-waitpid-nohang': ['프로세스 자식 대기 일시 정지 안함', 'pwn', 'prssjsdgsjjh']
+  'process.read': ['읽기', 'r', 'g']
+  'process.read-all': ['읽기 전체', 'ra', 'gjc']
+  'process.read-line': ['읽기 줄', 'rl', 'gj']
+  'process.shell': ['셸', 's', 's']
+  'process.shell-quote': ['셸 인용부호', 'sq', 'sbh']
+  'process.spawn': ['스폰', 's', 'sp']
+  'process.start': ['시작', 's', 'sj']
+  'process.start-with-opts': ['시작 동반 opts', 'swo', 'sjdbo']
+  'process.terminate': ['terminate', 't', 't']
+  'process.wait': ['대기', 'w', 'dg']
+  'process.wait-2': ['대기', 'w2', 'dg']
+  'process.wait-nohang': ['대기 일시 정지 안함', 'wn', 'dgsjjh']
+  'process.win-close-handle': ['창 닫기 핸들', 'wch', 'cdghd']
+  'process.win-create-pipe': ['창 생성 파이프', 'wcp', 'csspp']
+  'process.win-create-process': ['창 생성 프로세스', 'wcp', 'cssprss']
+  'process.win-get-exit-code': ['창 취득 종료 코드', 'wgec', 'ccdjrkd']
+  'process.win-get-std-handle': ['창 취득 std 핸들', 'wgsh', 'ccdshd']
+  'process.win-read-pipe': ['창 읽기 파이프', 'wrp', 'cgpp']
+  'process.win-terminate-process': ['창 terminate 프로세스', 'wtp', 'ctprss']
+  'process.win-wait-process': ['창 대기 프로세스', 'wwp', 'cdgprss']
+  'process.win-write-pipe': ['창 쓰기 파이프', 'wwp', 'csgpp']
+  'process.write': ['쓰기', 'w', 'sg']
+  'proxy.config.connect': ['연결', 'c', 'g']
+  'proxy.config.tls-connect': ['TLS 연결', 'tc', 'tg']
+  'proxy.connect': ['연결', 'c', 'g']
+  'proxy.dial': ['다이얼', 'd', 'd']
+  'proxy.dial-auth': ['다이얼 인증', 'da', 'dj']
+  'proxy.proxy-tls-dial': ['프록시 TLS 다이얼', 'ptd', 'prstd']
+  'proxy.socks5-connect': ['SOCKS5 연결', 'sc', 's5g']
+  'proxy.socks5-dial': ['SOCKS5 다이얼', 'sd', 's5d']
+  'queue.queue.clear': ['비우기', 'c', 'bg']
+  'queue.queue.empty': ['empty', 'e', 'e']
+  'queue.queue.full': ['full', 'f', 'f']
+  'queue.queue.size': ['크기', 's', 'kg']
+  'quic.apply-header-protection': ['적용 헤더 protection', 'ahp', 'jhdp']
+  'quic.conn.build-initial-packet': ['구축 initial 패킷', 'bip', 'gcipk']
+  'quic.conn.close': ['닫기', 'c', 'dg']
+  'quic.conn.init': ['초기화', 'i', 'cgh']
+  'quic.conn.recv-initial': ['수신 initial', 'ri', 'ssi']
+  'quic.conn.recv-raw': ['수신 원시', 'rr', 'sss']
+  'quic.decode-packet-number': ['디코딩 패킷 숫자', 'dpn', 'dkdpksj']
+  'quic.derive-initial-keys': ['유도 initial 키들', 'dik', 'dikd']
+  'quic.dial': ['다이얼', 'd', 'd']
+  'quic.gen-cid': ['생성 연결 ID', 'gc', 'ssgi']
+  'quic.parse-frames': ['파싱 프레임', 'pf', 'pspr']
+  'quic.remove-header-protection': ['제거 헤더 protection', 'rhp', 'jghdp']
+  'quic.varint-decode': ['가변 정수 디코딩', 'vd', 'gbjsdkd']
+  'quic.varint-encode': ['가변 정수 인코딩', 've', 'gbjskd']
+  'rand.rand': ['랜덤', 'r', 'rd']
+  'rand.rand-str': ['랜덤 문자열', 'rs', 'rdmj']
+  'rc4.rc4': ['RC4', 'r', 'r4']
+  'regexp.alloc-class': ['할당 등급', 'ac', 'hddg']
+  'regexp.clear-class-bit': ['비우기 등급 비트', 'ccb', 'bgdgbt']
+  'regexp.compile': ['compile', 'c', 'c']
+  'regexp.emit': ['발생', 'e', 'bs']
+  'regexp.emit-atom': ['발생 atom', 'ea', 'bsa']
+  'regexp.emit-quantized': ['발생 양자화', 'eq', 'bsjh']
+  'regexp.find': ['찾기', 'f', 'cg']
+  'regexp.in-class': ['내 등급', 'ic', 'ndg']
+  'regexp.init-class-all': ['초기화 등급 전체', 'ica', 'cghdgjc']
+  'regexp.init-class-zero': ['초기화 등급 영', 'icz', 'cghdg']
+  'regexp.make-class-digits': ['생성 등급 숫자', 'mcd', 'ssdgsj']
+  'regexp.make-class-nondigits': ['생성 등급 비숫자', 'mcn', 'ssdgbsj']
+  'regexp.make-class-nonspace': ['생성 등급 비공백', 'mcn', 'ssdgbgb']
+  'regexp.make-class-nonword': ['생성 등급 비단어', 'mcn', 'ssdgbd']
+  'regexp.make-class-space': ['생성 등급 공백', 'mcs', 'ssdggb']
+  'regexp.make-class-word': ['생성 등급 단어', 'mcw', 'ssdgd']
+  'regexp.match-at': ['일치 위치', 'ma', 'cc']
+  'regexp.matches': ['일치', 'm', 'c']
+  'regexp.parse-atom': ['파싱 atom', 'pa', 'psa']
+  'regexp.parse-class': ['파싱 등급', 'pc', 'psdg']
+  'regexp.parse-escape': ['파싱 이스케이프', 'pe', 'psskp']
+  'regexp.regexp-compile': ['regexp compile', 'rc', 'rc']
+  'regexp.regexp-find': ['regexp 찾기', 'rf', 'rcg']
+  'regexp.regexp-match': ['regexp 일치', 'rm', 'rc']
+  'regexp.set-class-bit': ['설정 등급 비트', 'scb', 'sjdgbt']
+  'regexp.set-class-escape': ['설정 등급 이스케이프', 'sce', 'sjdgskp']
+  'rsa.rsa-bn-add': ['RSA 큰 수 추가', 'rba', 'rkscg']
+  'rsa.rsa-bn-cmp': ['RSA 큰 수 비교', 'rbc', 'rksbg']
+  'rsa.rsa-bn-div-mod': ['RSA 큰 수 나눗셈 나머지', 'rbdm', 'rksnnsnmj']
+  'rsa.rsa-bn-mul': ['RSA 큰 수 곱셈', 'rbm', 'rksgs']
+  'rsa.rsa-bn-shl1': ['RSA 큰 수 왼쪽 이동 1', 'rbs', 'rksjd1']
+  'rsa.rsa-bn-shr1': ['RSA 큰 수 오른쪽 이동 1', 'rbs', 'rksrjd1']
+  'rsa.rsa-bn-sub': ['RSA 큰 수 뺄셈', 'rbs', 'rksps']
+  'rsa.rsa-decrypt': ['RSA 복호화', 'rd', 'rbhh']
+  'rsa.rsa-encrypt': ['RSA 암호화', 're', 'rhh']
+  'rsa.rsa-modpow': ['RSA 모듈러 거듭제곱', 'rm', 'rmdrgdjg']
+  'rsa.rsa-modpow-step': ['RSA 모듈러 거듭제곱 스테프', 'rms', 'rmdrgdjgstp']
+  'scrypt.rotl32': ['rotl32', 'r', 'r3']
+  'scrypt.salsa20-8-core': ['salsa20 8 코어', 's8c', 's28k']
+  'scrypt.scrypt': ['scrypt', 's', 's']
+  'scrypt.scrypt-blockmix': ['scrypt 블록 혼합', 'sb', 'sbrhh']
+  'scrypt.scrypt-romix': ['scrypt romix', 'sr', 'sr']
+  'server.https-listen-on': ['HTTPS 대기 위', 'hlo', 'hdg']
+  'server.https-server-conn.close': ['닫기', 'c', 'dg']
+  'server.https-server-conn.get-header': ['취득 헤더', 'gh', 'cdhd']
+  'server.https-server-conn.parse': ['파싱', 'p', 'ps']
+  'server.https-server-conn.recv-more': ['수신 추가', 'rm', 'sscg']
+  'server.https-server-conn.reset': ['초기화', 'r', 'cgh']
+  'server.https-server-conn.write-body': ['쓰기 본문', 'wb', 'sgbm']
+  'server.https-server-conn.write-header': ['쓰기 헤더', 'wh', 'sghd']
+  'server.https-server-conn.write-headers-done': ['쓰기 헤더 완료', 'whd', 'sghdr']
+  'server.https-server-conn.write-html': ['쓰기 html', 'wh', 'sgh']
+  'server.https-server-conn.write-json': ['쓰기 json', 'wj', 'sgj']
+  'server.https-server-conn.write-status': ['쓰기 상태', 'ws', 'sgst']
+  'server.https-server-conn.write-text': ['쓰기 텍스트', 'wt', 'sgtst']
+  'server.https-server.accept': ['수락', 'a', 'sr']
+  'server.https-server.close': ['닫기', 'c', 'dg']
+  'server.https-server.listen': ['대기', 'l', 'dg']
+  'server.listen-on': ['대기 위', 'lo', 'dg']
+  'server.secure-compare': ['보안 비교', 'sc', 'bbg']
+  'server.server-conn.close': ['닫기', 'c', 'dg']
+  'server.server-conn.get-cookie': ['취득 cookie', 'gc', 'cdc']
+  'server.server-conn.get-header': ['취득 헤더', 'gh', 'cdhd']
+  'server.server-conn.get-signed-cookie': ['취득 부호 있음 cookie', 'gsc', 'cdbhc']
+  'server.server-conn.parse': ['파싱', 'p', 'ps']
+  'server.server-conn.recv-more': ['수신 추가', 'rm', 'sscg']
+  'server.server-conn.reset': ['초기화', 'r', 'cgh']
+  'server.server-conn.set-signed-cookie': ['설정 부호 있음 cookie', 'ssc', 'sjbhc']
+  'server.server-conn.verify-basic-auth': ['검증 기본 인증', 'vba', 'gjgbj']
+  'server.server-conn.write-body': ['쓰기 본문', 'wb', 'sgbm']
+  'server.server-conn.write-error': ['쓰기 오류', 'we', 'sgr']
+  'server.server-conn.write-header': ['쓰기 헤더', 'wh', 'sghd']
+  'server.server-conn.write-headers-done': ['쓰기 헤더 완료', 'whd', 'sghdr']
+  'server.server-conn.write-html': ['쓰기 html', 'wh', 'sgh']
+  'server.server-conn.write-json': ['쓰기 json', 'wj', 'sgj']
+  'server.server-conn.write-redirect': ['쓰기 리다이렉트', 'wr', 'sgrdrt']
+  'server.server-conn.write-status': ['쓰기 상태', 'ws', 'sgst']
+  'server.server-conn.write-text': ['쓰기 텍스트', 'wt', 'sgtst']
+  'server.server.accept': ['수락', 'a', 'sr']
+  'server.server.accept-nb': ['수락 nb', 'an', 'srn']
+  'server.server.close': ['닫기', 'c', 'dg']
+  'server.server.fd-of': ['디스크립터 의', 'fo', 'dskrt']
+  'server.server.listen': ['대기', 'l', 'dg']
+  'set.add': ['추가', 'a', 'cg']
+  'set.contains': ['포함', 'c', 'ph']
+  'set.difference': ['difference', 'd', 'd']
+  'set.init': ['초기화', 'i', 'cgh']
+  'set.intersection': ['교집합', 'i', 'gjh']
+  'set.is-empty': ['empty 여부', 'ie', 'eb']
+  'set.remove': ['제거', 'r', 'jg']
+  'set.size': ['크기', 's', 'kg']
+  'set.to-vec': ['vec 변환', 'tv', 'vbh']
+  'set.union': ['합집합', 'u', 'hjh']
+  'sha1.sha1': ['SHA-1', 's', 's1']
+  'sha1.sha1-block': ['SHA-1 블록', 'sb', 's1br']
+  'sha1.sha1-hex': ['SHA-1 16진수', 'sh', 's11js']
+  'sha224.sha224': ['sha224', 's', 's2']
+  'sha224.sha224-hex': ['sha224 16진수', 'sh', 's21js']
+  'sha256.sha256': ['sha256', 's', 's2']
+  'sha256.sha256-block': ['sha256 블록', 'sb', 's2br']
+  'sha256.sha256-hex': ['sha256 16진수', 'sh', 's21js']
+  'sha3.keccak-f1600': ['keccak f1600', 'kf', 'kf1']
+  'sha3.keccak-sponge': ['keccak 스펀지', 'ks', 'kspj']
+  'sha3.rotl64': ['rotl64', 'r', 'r6']
+  'sha3.sha3-224': ['SHA-3 224', 's2', 's32']
+  'sha3.sha3-224-hex': ['SHA-3 224 16진수', 's2h', 's321js']
+  'sha3.sha3-256': ['SHA-3 256', 's2', 's32']
+  'sha3.sha3-256-hex': ['SHA-3 256 16진수', 's2h', 's321js']
+  'sha3.sha3-384': ['SHA-3 384', 's3', 's33']
+  'sha3.sha3-384-hex': ['SHA-3 384 16진수', 's3h', 's331js']
+  'sha3.sha3-512': ['SHA-3 512', 's5', 's35']
+  'sha3.sha3-512-hex': ['SHA-3 512 16진수', 's5h', 's351js']
+  'sha384.sha384': ['sha384', 's', 's3']
+  'sha384.sha384-hex': ['sha384 16진수', 'sh', 's31js']
+  'sha512.sha512': ['sha512', 's', 's5']
+  'sha512.sha512-block': ['sha512 블록', 'sb', 's5br']
+  'sha512.sha512-hex': ['sha512 16진수', 'sh', 's51js']
+  'sse.client.close': ['닫기', 'c', 'dg']
+  'sse.client.is-connected': ['연결됨 여부', 'ic', 'gdb']
+  'sse.client.next-event': ['다음 event', 'ne', 'de']
+  'sse.client.reconnect': ['재연결', 'r', 'jg']
+  'sse.listen-on': ['대기 위', 'lo', 'dg']
+  'sse.server-conn.close': ['닫기', 'c', 'dg']
+  'sse.server-conn.handshake': ['handshake', 'h', 'h']
+  'sse.server-conn.is-connected': ['연결됨 여부', 'ic', 'gdb']
+  'sse.server-conn.send-comment': ['전송 주석', 'sc', 'jsjs']
+  'sse.server-conn.send-event': ['전송 event', 'se', 'jse']
+  'sse.server.accept': ['수락', 'a', 'sr']
+  'sse.server.close': ['닫기', 'c', 'dg']
+  'sse.server.listen': ['대기', 'l', 'dg']
+  'sse.sse-connect': ['SSE 연결', 'sc', 'sg']
+  'stack.stack.clear': ['비우기', 'c', 'bg']
+  'stack.stack.empty': ['empty', 'e', 'e']
+  'stack.stack.peek': ['확인', 'p', 'h']
+  'stack.stack.pop': ['팝', 'p', 'p']
+  'stack.stack.push': ['푸시', 'p', 'ps']
+  'stack.stack.size': ['크기', 's', 'kg']
+  'static-hashmap.static-hashmap-bool-tmpl.clear': ['비우기', 'c', 'bg']
+  'static-hashmap.static-hashmap-bool-tmpl.contains': ['포함', 'c', 'ph']
+  'static-hashmap.static-hashmap-bool-tmpl.for-each': ['용 각', 'fe', 'g']
+  'static-hashmap.static-hashmap-bool-tmpl.get': ['취득', 'g', 'cd']
+  'static-hashmap.static-hashmap-bool-tmpl.hash': ['해시', 'h', 'hs']
+  'static-hashmap.static-hashmap-bool-tmpl.init': ['초기화', 'i', 'cgh']
+  'static-hashmap.static-hashmap-bool-tmpl.is-empty': ['empty 여부', 'ie', 'eb']
+  'static-hashmap.static-hashmap-bool-tmpl.len': ['길이', 'l', 'g']
+  'static-hashmap.static-hashmap-bool-tmpl.put': ['넣기', 'p', 'ng']
+  'static-hashmap.static-hashmap-bool-tmpl.remove': ['제거', 'r', 'jg']
+  'static-hashmap.static-hashmap-int-tmpl.clear': ['비우기', 'c', 'bg']
+  'static-hashmap.static-hashmap-int-tmpl.contains': ['포함', 'c', 'ph']
+  'static-hashmap.static-hashmap-int-tmpl.for-each': ['용 각', 'fe', 'g']
+  'static-hashmap.static-hashmap-int-tmpl.get': ['취득', 'g', 'cd']
+  'static-hashmap.static-hashmap-int-tmpl.hash': ['해시', 'h', 'hs']
+  'static-hashmap.static-hashmap-int-tmpl.init': ['초기화', 'i', 'cgh']
+  'static-hashmap.static-hashmap-int-tmpl.is-empty': ['empty 여부', 'ie', 'eb']
+  'static-hashmap.static-hashmap-int-tmpl.len': ['길이', 'l', 'g']
+  'static-hashmap.static-hashmap-int-tmpl.put': ['넣기', 'p', 'ng']
+  'static-hashmap.static-hashmap-int-tmpl.remove': ['제거', 'r', 'jg']
+  'static-hashmap.static-hashmap-str-tmpl.clear': ['비우기', 'c', 'bg']
+  'static-hashmap.static-hashmap-str-tmpl.contains': ['포함', 'c', 'ph']
+  'static-hashmap.static-hashmap-str-tmpl.for-each': ['용 각', 'fe', 'g']
+  'static-hashmap.static-hashmap-str-tmpl.get': ['취득', 'g', 'cd']
+  'static-hashmap.static-hashmap-str-tmpl.hash': ['해시', 'h', 'hs']
+  'static-hashmap.static-hashmap-str-tmpl.init': ['초기화', 'i', 'cgh']
+  'static-hashmap.static-hashmap-str-tmpl.is-empty': ['empty 여부', 'ie', 'eb']
+  'static-hashmap.static-hashmap-str-tmpl.len': ['길이', 'l', 'g']
+  'static-hashmap.static-hashmap-str-tmpl.put': ['넣기', 'p', 'ng']
+  'static-hashmap.static-hashmap-str-tmpl.remove': ['제거', 'r', 'jg']
+  'static-hashmap.static-hashmap-str-tmpl.str-eq': ['문자열 동등', 'se', 'mjdd']
+  'str-map.str-map.clear': ['비우기', 'c', 'bg']
+  'str-map.str-map.contains': ['포함', 'c', 'ph']
+  'str-map.str-map.for-each': ['용 각', 'fe', 'g']
+  'str-map.str-map.get': ['취득', 'g', 'cd']
+  'str-map.str-map.hash': ['해시', 'h', 'hs']
+  'str-map.str-map.init': ['초기화', 'i', 'cgh']
+  'str-map.str-map.is-empty': ['empty 여부', 'ie', 'eb']
+  'str-map.str-map.len': ['길이', 'l', 'g']
+  'str-map.str-map.put': ['넣기', 'p', 'ng']
+  'str-map.str-map.remove': ['제거', 'r', 'jg']
+  'str-map.str-map.str-eq': ['문자열 동등', 'se', 'mjdd']
+  'str-map.str-map.to-str': ['str 변환', 'ts', 'sbh']
+  'str-set.str-set.add': ['추가', 'a', 'cg']
+  'str-set.str-set.clear': ['비우기', 'c', 'bg']
+  'str-set.str-set.contains': ['포함', 'c', 'ph']
+  'str-set.str-set.for-each': ['용 각', 'fe', 'g']
+  'str-set.str-set.hash': ['해시', 'h', 'hs']
+  'str-set.str-set.init': ['초기화', 'i', 'cgh']
+  'str-set.str-set.is-empty': ['empty 여부', 'ie', 'eb']
+  'str-set.str-set.len': ['길이', 'l', 'g']
+  'str-set.str-set.remove': ['제거', 'r', 'jg']
+  'str-set.str-set.str-eq': ['문자열 동등', 'se', 'mjdd']
+  'str._str-dig-val': ['_str dig 값', 'sdv', 'sdg']
+  'str.at': ['위치', 'a', 'c']
+  'str.bigint-bitlen': ['큰 정수 비트 길이', 'bb', 'kjsbtg']
+  'str.byte': ['바이트', 'b', 'bt']
+  'str.byte-index': ['바이트 인덱스', 'bi', 'btds']
+  'str.compare': ['비교', 'c', 'bg']
+  'str.contains': ['포함', 'c', 'ph']
+  'str.copy': ['복사', 'c', 'bs']
+  'str.count': ['개수', 'c', 'gs']
+  'str.cp-index': ['cp 인덱스', 'ci', 'cds']
+  'str.decode-cp': ['디코딩 cp', 'dc', 'dkdc']
+  'str.empty': ['empty', 'e', 'e']
+  'str.ends-with': ['끝 동반', 'ew', 'kdb']
+  'str.eq-full': ['동등 full', 'ef', 'ddf']
+  'str.eq-raw': ['동등 원시', 'er', 'dds']
+  'str.fields': ['필드', 'f', 'pd']
+  'str.fill': ['채우기', 'f', 'cg']
+  'str.find-byte-from': ['찾기 바이트 from', 'fbf', 'cgbtf']
+  'str.from-hex': ['hex에서 변환', 'fh', 'hsbh']
+  'str.index': ['인덱스', 'i', 'ds']
+  'str.index-from': ['인덱스 from', 'if', 'dsf']
+  'str.last-index': ['마지막 인덱스', 'li', 'mjmds']
+  'str.len': ['길이', 'l', 'g']
+  'str.lines': ['줄', 'l', 'j']
+  'str.new': ['신규', 'n', 'sg']
+  'str.repeat': ['반복', 'r', 'bb']
+  'str.replace-char': ['치환 문자', 'rc', 'chmj']
+  'str.replace-n': ['치환 수량', 'rn', 'chsr']
+  'str.replace-str': ['치환 문자열', 'rs', 'chmj']
+  'str.reverse': ['뒤집기', 'r', 'djg']
+  'str.rfind-byte-from': ['역찾기 바이트 from', 'rbf', 'cgbtf']
+  'str.rindex': ['역인덱스', 'r', 'ds']
+  'str.rindex-from': ['역인덱스 from', 'rf', 'dsf']
+  'str.set-byte': ['설정 바이트', 'sb', 'sjbt']
+  'str.slice': ['슬라이스', 's', 'srs']
+  'str.slice-bytes': ['슬라이스 바이트', 'sb', 'srsbt']
+  'str.split': ['분할', 's', 'bh']
+  'str.split-n': ['분할 수량', 'sn', 'bhsr']
+  'str.starts-with': ['starts 동반', 'sw', 'sdb']
+  'str.str-hex-val': ['문자열 16진수 값', 'shv', 'mj1jsg']
+  'str.to-bigint': ['bigint 변환', 'tb', 'bbh']
+  'str.to-bool': ['bool 변환', 'tb', 'bbh']
+  'str.to-byte': ['byte 변환', 'tb', 'bbh']
+  'str.to-bytes': ['bytes 변환', 'tb', 'bbh']
+  'str.to-f32': ['f32 변환', 'tf', 'f3bh']
+  'str.to-f64': ['f64 변환', 'tf', 'f6bh']
+  'str.to-hex': ['hex 변환', 'th', 'hbh']
+  'str.to-i16': ['i16 변환', 'ti', 'i1bh']
+  'str.to-i32': ['i32 변환', 'ti', 'i3bh']
+  'str.to-i64': ['i64 변환', 'ti', 'i6bh']
+  'str.to-i8': ['i8 변환', 'ti', 'i8bh']
+  'str.to-lower': ['lower 변환', 'tl', 'lbh']
+  'str.to-str': ['str 변환', 'ts', 'sbh']
+  'str.to-txt': ['txt 변환', 'tt', 'tbh']
+  'str.to-u16': ['u16 변환', 'tu', 'u1bh']
+  'str.to-u32': ['u32 변환', 'tu', 'u3bh']
+  'str.to-u64': ['u64 변환', 'tu', 'u6bh']
+  'str.to-u8': ['u8 변환', 'tu', 'u8bh']
+  'str.to-upper': ['upper 변환', 'tu', 'ubh']
+  'str.trim': ['트리밍', 't', 'trm']
+  'str.trim-char': ['트리밍 문자', 'tc', 'trmmj']
+  'str.with-cap': ['동반 용량', 'wc', 'dbr']
+  'str.with-len': ['동반 길이', 'wl', 'dbg']
+  'str.with-len-cap': ['동반 길이 용량', 'wlc', 'dbgr']
+  'strs.join': ['결합', 'j', 'gh']
+  'tar.tar-builder.add-bytes': ['추가 바이트', 'ab', 'cgbt']
+  'tar.tar-builder.add-dir': ['추가 디렉터리', 'ad', 'cgdrtr']
+  'tar.tar-builder.add-file': ['추가 파일', 'af', 'cgp']
+  'tar.tar-builder.finish': ['완료', 'f', 'r']
+  'tar.tar-builder.pre-alloc': ['접두 할당', 'pa', 'jdhd']
+  'tar.tar-builder.write-header': ['쓰기 헤더', 'wh', 'sghd']
+  'tar.tar-builder.write-octal': ['쓰기 8진수', 'wo', 'sg8js']
+  'tar.tar-entry.is-dir': ['디렉터리 여부', 'id', 'drtrb']
+  'tar.tar-entry.is-file': ['파일 여부', 'if', 'pb']
+  'tar.tar-entry.mode': ['모드', 'm', 'md']
+  'tar.tar-entry.mtime': ['수정 시간', 'm', 'sjsg']
+  'tar.tar-entry.name': ['이름', 'n', 'r']
+  'tar.tar-entry.read': ['읽기', 'r', 'g']
+  'tar.tar-entry.size': ['크기', 's', 'kg']
+  'tar.tar-entry.type': ['타입', 't', 't']
+  'tar.tar-open-gz': ['tar 열기 gz', 'tog', 'tgg']
+  'tar.tar.count': ['개수', 'c', 'gs']
+  'tar.tar.entry': ['항목', 'e', 'hm']
+  'tar.tar.is-dir': ['디렉터리 여부', 'id', 'drtrb']
+  'tar.tar.is-file': ['파일 여부', 'if', 'pb']
+  'tar.tar.mode': ['모드', 'm', 'md']
+  'tar.tar.mtime': ['수정 시간', 'm', 'sjsg']
+  'tar.tar.name': ['이름', 'n', 'r']
+  'tar.tar.offset': ['오프셋', 'o', 'ps']
+  'tar.tar.read': ['읽기', 'r', 'g']
+  'tar.tar.size': ['크기', 's', 'kg']
+  'tar.tar.type': ['타입', 't', 't']
+  'tdes.tdes-cbc-dec': ['3DES CBC 복호화', 'tcd', '3dcbhh']
+  'tdes.tdes-cbc-enc': ['3DES CBC 암호화', 'tce', '3dchh']
+  'tdes.tdes-dec': ['3DES 복호화', 'td', '3dbhh']
+  'tdes.tdes-enc': ['3DES 암호화', 'te', '3dhh']
+  'time.add-seconds': ['추가 초', 'as', 'cgc']
+  'time.date': ['날짜', 'd', 'nj']
+  'time.date-to-unix': ['날짜 to unix', 'dtu', 'njtu']
+  'time.days-in-month-fn': ['일수 내 월 fn', 'dimf', 'snf']
+  'time.duration-between': ['지속 시간 사이', 'db', 'jssgs']
+  'time.duration-ms-between': ['지속 시간 밀리초 사이', 'dmb', 'jssgmrcs']
+  'time.duration-time': ['지속 시간 시간', 'dt', 'jssgsg']
+  'time.duration-us-between': ['지속 시간 마이크로초 사이', 'dub', 'jssgmkrcs']
+  'time.format': ['포맷', 'f', 'pm']
+  'time.format-date': ['포맷 날짜', 'fd', 'pmnj']
+  'time.format-duration': ['포맷 지속 시간', 'fd', 'pmjssg']
+  'time.format-time-str': ['포맷 시간 문자열', 'fts', 'pmsgmj']
+  'time.is-leap': ['leap 여부', 'il', 'lb']
+  'time.now-date': ['현재 날짜', 'nd', 'hjnj']
+  'time.now-ms': ['현재 밀리초', 'nm', 'hjmrc']
+  'time.now-ns': ['현재 나노초', 'nn', 'hjnnc']
+  'time.now-s': ['현재 복수', 'ns', 'hjbs']
+  'time.now-time': ['현재 시간', 'nt', 'hjsg']
+  'time.now-us': ['현재 마이크로초', 'nu', 'hjmkrc']
+  'time.parse-date': ['파싱 날짜', 'pd', 'psnj']
+  'time.parse-time': ['파싱 시간', 'pt', 'pssg']
+  'time.since-ms': ['이후 밀리초', 'sm', 'hmrc']
+  'time.since-s': ['이후 복수', 'ss', 'hbs']
+  'time.since-time': ['이후 시간', 'st', 'hsg']
+  'time.since-us': ['이후 마이크로초', 'su', 'hmkrc']
+  'time.sleep-ms': ['절전 밀리초', 'sm', 'jjmrc']
+  'time.sleep-ns': ['절전 나노초', 'sn', 'jjnnc']
+  'time.sleep-s': ['절전 복수', 'ss', 'jjbs']
+  'time.sleep-us': ['절전 마이크로초', 'su', 'jjmkrc']
+  'time.sub': ['뺄셈', 's', 'ps']
+  'time.timer.elapsed-ms': ['경과 밀리초', 'em', 'ggmrc']
+  'time.timer.elapsed-s': ['경과 복수', 'es', 'ggbs']
+  'time.timer.elapsed-us': ['경과 마이크로초', 'eu', 'ggmkrc']
+  'time.timer.start': ['시작', 's', 'sj']
+  'time.timer.stop': ['정지', 's', 'jj']
+  'time.unix': ['unix', 'u', 'u']
+  'time.unix-ms': ['unix 밀리초', 'um', 'umrc']
+  'time.unix-to-date': ['unix to 날짜', 'utd', 'utnj']
+  'time.unix-to-time': ['unix to 시간', 'utt', 'utsg']
+  'tls.bn-to-bytes': ['큰 수 to 바이트', 'btb', 'kstbt']
+  'tls.build-nonce': ['구축 논스', 'bn', 'gcns']
+  'tls.bytes-cat': ['바이트 cat', 'bc', 'btc']
+  'tls.bytes-to-bn': ['바이트 to 큰 수', 'btb', 'bttks']
+  'tls.cipher-is-ecdhe': ['암호 여부 ecdhe', 'cie', 'hbe']
+  'tls.cipher-is-gcm': ['암호 여부 GCM', 'cig', 'hbg']
+  'tls.conn.append-hs': ['추가 hs', 'ah', 'cgh']
+  'tls.conn.append-hs-from': ['추가 hs from', 'ahf', 'cghf']
+  'tls.conn.close': ['닫기', 'c', 'dg']
+  'tls.conn.compute-shared-secret-13': ['계산 공유 비밀 13', 'css1', 'gsgbm1']
+  'tls.conn.connect': ['연결', 'c', 'g']
+  'tls.conn.connect-12': ['연결 12', 'c1', 'g1']
+  'tls.conn.connect-13': ['연결 13', 'c1', 'g1']
+  'tls.conn.decrypt-record': ['복호화 레코드', 'dr', 'bhhrkd']
+  'tls.conn.decrypt-record-13': ['복호화 레코드 13', 'dr1', 'bhhrkd1']
+  'tls.conn.decrypt-record-gcm': ['복호화 레코드 GCM', 'drg', 'bhhrkdg']
+  'tls.conn.derive-application-keys-13': ['유도 application 키들 13', 'dak1', 'dakd1']
+  'tls.conn.derive-handshake-keys-13': ['유도 handshake 키들 13', 'dhk1', 'dhkd1']
+  'tls.conn.derive-keys': ['유도 키들', 'dk', 'dkd']
+  'tls.conn.encrypt-record': ['암호화 레코드', 'er', 'hhrkd']
+  'tls.conn.encrypt-record-13': ['암호화 레코드 13', 'er1', 'hhrkd1']
+  'tls.conn.encrypt-record-gcm': ['암호화 레코드 GCM', 'erg', 'hhrkdg']
+  'tls.conn.gen-p256-keypair': ['생성 p256 키쌍', 'gpk', 'ssp2ks']
+  'tls.conn.gen-x25519-keypair': ['생성 x25519 키쌍', 'gxk', 'ssx2ks']
+  'tls.conn.get-fd': ['취득 디스크립터', 'gf', 'cddskrt']
+  'tls.conn.handshake-12-body': ['handshake 12 본문', 'h1b', 'h1bm']
+  'tls.conn.init': ['초기화', 'i', 'cgh']
+  'tls.conn.read-certificate': ['읽기 인증서', 'rc', 'gjs']
+  'tls.conn.read-change-cipher-spec': ['읽기 change 암호 spec', 'rccs', 'gchs']
+  'tls.conn.read-encrypted-handshake-13': ['읽기 암호화됨 handshake 13', 'reh1', 'ghhdh1']
+  'tls.conn.read-encrypted-record-13': ['읽기 암호화됨 레코드 13', 'rer1', 'ghhdrkd1']
+  'tls.conn.read-finished': ['읽기 완료됨', 'rf', 'grd']
+  'tls.conn.read-server-hello': ['읽기 서버 hello', 'rsh', 'gsbh']
+  'tls.conn.read-server-hello-13': ['읽기 서버 hello 13', 'rsh1', 'gsbh1']
+  'tls.conn.read-server-hello-done': ['읽기 서버 hello 완료', 'rshd', 'gsbhr']
+  'tls.conn.read-server-key-exchange': ['읽기 서버 키 교환', 'rske', 'gsbkgh']
+  'tls.conn.send': ['전송', 's', 'js']
+  'tls.conn.send-change-cipher-spec': ['전송 change 암호 spec', 'sccs', 'jschs']
+  'tls.conn.send-client-hello': ['전송 클라이언트 hello', 'sch', 'jskrth']
+  'tls.conn.send-client-hello-13': ['전송 클라이언트 hello 13', 'sch1', 'jskrth1']
+  'tls.conn.send-client-key-exchange': ['전송 클라이언트 키 교환', 'scke', 'jskrtkgh']
+  'tls.conn.send-finished': ['전송 완료됨', 'sf', 'jsrd']
+  'tls.conn.send-finished-13': ['전송 완료됨 13', 'sf1', 'jsrd1']
+  'tls.dial': ['다이얼', 'd', 'd']
+  'tls.dial-12': ['다이얼 12', 'd1', 'd1']
+  'tls.get-u16': ['취득 u16', 'gu', 'cdu1']
+  'tls.get-u24': ['취득 u24', 'gu', 'cdu2']
+  'tls.https-serve-once': ['HTTPS 서빙 한 번', 'hso', 'hsbhb']
+  'tls.net-recv-wait': ['네트워크 수신 대기', 'nrw', 'ntkssdg']
+  'tls.prf': ['prf', 'p', 'p']
+  'tls.put-u16': ['넣기 u16', 'pu', 'ngu1']
+  'tls.put-u24': ['넣기 u24', 'pu', 'ngu2']
+  'tls.rand-bytes': ['랜덤 바이트', 'rb', 'rdbt']
+  'tls.read-record': ['읽기 레코드', 'rr', 'grkd']
+  'tls.recv-n': ['수신 수량', 'rn', 'sssr']
+  'tls.rsa-pkcs1-decrypt': ['RSA PKCS#1 복호화', 'rpd', 'rp1bhh']
+  'tls.rsa-pkcs1-encrypt': ['RSA PKCS#1 암호화', 'rpe', 'rp1hh']
+  'tls.send-raw': ['전송 원시', 'sr', 'jss']
+  'tls.server-accept': ['서버 수락', 'sa', 'sbsr']
+  'tls.server-conn.append-hs': ['추가 hs', 'ah', 'cgh']
+  'tls.server-conn.append-hs-from': ['추가 hs from', 'ahf', 'cghf']
+  'tls.server-conn.close': ['닫기', 'c', 'dg']
+  'tls.server-conn.compute-shared-secret-13': ['계산 공유 비밀 13', 'css1', 'gsgbm1']
+  'tls.server-conn.decrypt-record': ['복호화 레코드', 'dr', 'bhhrkd']
+  'tls.server-conn.decrypt-record-13': ['복호화 레코드 13', 'dr1', 'bhhrkd1']
+  'tls.server-conn.derive-application-keys-13': ['유도 application 키들 13', 'dak1', 'dakd1']
+  'tls.server-conn.derive-handshake-keys-13': ['유도 handshake 키들 13', 'dhk1', 'dhkd1']
+  'tls.server-conn.derive-keys': ['유도 키들', 'dk', 'dkd']
+  'tls.server-conn.encrypt-record': ['암호화 레코드', 'er', 'hhrkd']
+  'tls.server-conn.encrypt-record-13': ['암호화 레코드 13', 'er1', 'hhrkd1']
+  'tls.server-conn.handshake': ['handshake', 'h', 'h']
+  'tls.server-conn.handshake-13': ['handshake 13', 'h1', 'h1']
+  'tls.server-conn.read-change-cipher-spec': ['읽기 change 암호 spec', 'rccs', 'gchs']
+  'tls.server-conn.read-client-finished-13': ['읽기 클라이언트 완료됨 13', 'rcf1', 'gkrtrd1']
+  'tls.server-conn.read-client-hello': ['읽기 클라이언트 hello', 'rch', 'gkrth']
+  'tls.server-conn.read-client-key-exchange': ['읽기 클라이언트 키 교환', 'rcke', 'gkrtkgh']
+  'tls.server-conn.read-encrypted-handshake-13': ['읽기 암호화됨 handshake 13', 'reh1', 'ghhdh1']
+  'tls.server-conn.read-encrypted-record-13': ['읽기 암호화됨 레코드 13', 'rer1', 'ghhdrkd1']
+  'tls.server-conn.read-finished': ['읽기 완료됨', 'rf', 'grd']
+  'tls.server-conn.recv': ['수신', 'r', 'ss']
+  'tls.server-conn.send': ['전송', 's', 'js']
+  'tls.server-conn.send-certificate': ['전송 인증서', 'sc', 'jsjs']
+  'tls.server-conn.send-certificate-13': ['전송 인증서 13', 'sc1', 'jsjs1']
+  'tls.server-conn.send-change-cipher-spec': ['전송 change 암호 spec', 'sccs', 'jschs']
+  'tls.server-conn.send-encrypted-extensions-13': ['전송 암호화됨 확장 13', 'see1', 'jshhdhj1']
+  'tls.server-conn.send-finished': ['전송 완료됨', 'sf', 'jsrd']
+  'tls.server-conn.send-finished-13': ['전송 완료됨 13', 'sf1', 'jsrd1']
+  'tls.server-conn.send-server-hello': ['전송 서버 hello', 'ssh', 'jssbh']
+  'tls.server-conn.send-server-hello-13': ['전송 서버 hello 13', 'ssh1', 'jssbh1']
+  'tls.server-conn.send-server-hello-done': ['전송 서버 hello 완료', 'sshd', 'jssbhr']
+  'tls.server-init': ['서버 초기화', 'si', 'sbcgh']
+  'tls.server-listen': ['서버 대기', 'sl', 'sbdg']
+  'tls.tls-pad': ['TLS 패딩', 'tp', 'tpd']
+  'tls.tls-unpad': ['TLS 패딩 제거', 'tu', 'tpdjg']
+  'toml.get': ['취득', 'g', 'cd']
+  'toml.get-bool': ['취득 bool', 'gb', 'cdb']
+  'toml.get-f64': ['취득 f64', 'gf', 'cdf6']
+  'toml.get-i64': ['취득 i64', 'gi', 'cdi6']
+  'toml.get-str': ['취득 문자열', 'gs', 'cdmj']
+  'toml.has': ['.has', 'h', 'h']
+  'toml.new': ['신규', 'n', 'sg']
+  'toml.parse': ['파싱', 'p', 'ps']
+  'toml.stringify': ['문자열화', 's', 'mjh']
+  'toml.toml-array-name': ['toml 배열 이름', 'tan', 'tbr']
+  'toml.toml-doc.put': ['넣기', 'p', 'ng']
+  'toml.toml-entry-key': ['toml 항목 키', 'tek', 'thmk']
+  'toml.toml-entry-key-eq': ['toml 항목 키 동등', 'teke', 'thmkdd']
+  'toml.toml-entry-value': ['toml 항목 값', 'tev', 'thmg']
+  'toml.toml-find-eq': ['toml 찾기 동등', 'tfe', 'tcgdd']
+  'toml.toml-make-entry': ['toml 생성 항목', 'tme', 'tsshm']
+  'toml.toml-next-array-table': ['toml 다음 배열 테이블', 'tnat', 'tdbtb']
+  'toml.toml-normalize-key': ['toml 정규화 키', 'tnk', 'tjghk']
+  'toml.toml-parse-bool': ['toml 파싱 bool', 'tpb', 'tpsb']
+  'toml.toml-parse-f64': ['toml 파싱 f64', 'tpf', 'tpsf6']
+  'toml.toml-parse-i64': ['toml 파싱 i64', 'tpi', 'tpsi6']
+  'toml.toml-register-table': ['toml 등록 테이블', 'trt', 'tdrtb']
+  'toml.toml-resolve-section': ['toml resolve 섹션', 'trs', 'trss']
+  'toml.toml-strip-comment': ['toml 제거 주석', 'tsc', 'tjgjs']
+  'toml.toml-table-eq': ['toml 테이블 동등', 'tte', 'ttbdd']
+  'toml.toml-table-name': ['toml 테이블 이름', 'ttn', 'ttbr']
+  'toml.toml-unquote': ['toml 인용 제거', 'tu', 'tjg']
+  'toml.toml-valid-value': ['toml 유효 값', 'tvv', 'thg']
+  'toml.toml-value-complete': ['toml 값 완료', 'tvc', 'tgr']
+  'tree-map.tree-map.alloc-node': ['할당 노드', 'an', 'hdnd']
+  'tree-map.tree-map.bf': ['bf', 'b', 'b']
+  'tree-map.tree-map.clear': ['비우기', 'c', 'bg']
+  'tree-map.tree-map.contains': ['포함', 'c', 'ph']
+  'tree-map.tree-map.empty': ['empty', 'e', 'e']
+  'tree-map.tree-map.first': ['첫째', 'f', 'cj']
+  'tree-map.tree-map.for-each': ['용 각', 'fe', 'g']
+  'tree-map.tree-map.free-node': ['해제 노드', 'fn', 'hjnd']
+  'tree-map.tree-map.full': ['full', 'f', 'f']
+  'tree-map.tree-map.get': ['취득', 'g', 'cd']
+  'tree-map.tree-map.ht': ['탭', 'h', 't']
+  'tree-map.tree-map.init': ['초기화', 'i', 'cgh']
+  'tree-map.tree-map.last': ['마지막', 'l', 'mjm']
+  'tree-map.tree-map.lower-bound': ['소문자 경계', 'lb', 'smjgg']
+  'tree-map.tree-map.put': ['넣기', 'p', 'ng']
+  'tree-map.tree-map.rebalance': ['rebalance', 'r', 'r']
+  'tree-map.tree-map.rebalance-up': ['rebalance 위로', 'ru', 'rr']
+  'tree-map.tree-map.remove': ['제거', 'r', 'jg']
+  'tree-map.tree-map.rot-left': ['회전 왼쪽', 'rl', 'hjj']
+  'tree-map.tree-map.rot-right': ['회전 오른쪽', 'rr', 'hjrj']
+  'tree-map.tree-map.size': ['크기', 's', 'kg']
+  'tree-map.tree-map.successor': ['후계', 's', 'hg']
+  'tree-map.tree-map.update-ht': ['갱신 탭', 'uh', 'gst']
+  'tree-map.tree-map.upper-bound': ['대문자 경계', 'ub', 'dmjgg']
+  'tree-set.tree-set.add': ['추가', 'a', 'cg']
+  'tree-set.tree-set.alloc-node': ['할당 노드', 'an', 'hdnd']
+  'tree-set.tree-set.bf': ['bf', 'b', 'b']
+  'tree-set.tree-set.clear': ['비우기', 'c', 'bg']
+  'tree-set.tree-set.contains': ['포함', 'c', 'ph']
+  'tree-set.tree-set.empty': ['empty', 'e', 'e']
+  'tree-set.tree-set.first': ['첫째', 'f', 'cj']
+  'tree-set.tree-set.for-each': ['용 각', 'fe', 'g']
+  'tree-set.tree-set.free-node': ['해제 노드', 'fn', 'hjnd']
+  'tree-set.tree-set.full': ['full', 'f', 'f']
+  'tree-set.tree-set.ht': ['탭', 'h', 't']
+  'tree-set.tree-set.init': ['초기화', 'i', 'cgh']
+  'tree-set.tree-set.last': ['마지막', 'l', 'mjm']
+  'tree-set.tree-set.lower-bound': ['소문자 경계', 'lb', 'smjgg']
+  'tree-set.tree-set.rebalance': ['rebalance', 'r', 'r']
+  'tree-set.tree-set.rebalance-up': ['rebalance 위로', 'ru', 'rr']
+  'tree-set.tree-set.remove': ['제거', 'r', 'jg']
+  'tree-set.tree-set.rot-left': ['회전 왼쪽', 'rl', 'hjj']
+  'tree-set.tree-set.rot-right': ['회전 오른쪽', 'rr', 'hjrj']
+  'tree-set.tree-set.size': ['크기', 's', 'kg']
+  'tree-set.tree-set.successor': ['후계', 's', 'hg']
+  'tree-set.tree-set.update-ht': ['갱신 탭', 'uh', 'gst']
+  'tree-set.tree-set.upper-bound': ['대문자 경계', 'ub', 'dmjgg']
+  'txt._txt-dig-val': ['_txt dig 값', 'tdv', 'tdg']
+  'txt.append': ['추가', 'a', 'cg']
+  'txt.append-str': ['추가 문자열', 'as', 'cgmj']
+  'txt.append-txt': ['추가 텍스트', 'at', 'cgtst']
+  'txt.at': ['위치', 'a', 'c']
+  'txt.byte': ['바이트', 'b', 'bt']
+  'txt.clear': ['비우기', 'c', 'bg']
+  'txt.compare': ['비교', 'c', 'bg']
+  'txt.contains': ['포함', 'c', 'ph']
+  'txt.copy': ['복사', 'c', 'bs']
+  'txt.count': ['개수', 'c', 'gs']
+  'txt.decode-cp': ['디코딩 cp', 'dc', 'dkdc']
+  'txt.empty': ['empty', 'e', 'e']
+  'txt.ends-with': ['끝 동반', 'ew', 'kdb']
+  'txt.eq': ['동등', 'e', 'dd']
+  'txt.eq-full': ['동등 full', 'ef', 'ddf']
+  'txt.fields': ['필드', 'f', 'pd']
+  'txt.fill': ['채우기', 'f', 'cg']
+  'txt.from-bytes': ['bytes에서 변환', 'fb', 'bsbh']
+  'txt.from-chars': ['chars에서 변환', 'fc', 'csbh']
+  'txt.from-hex': ['hex에서 변환', 'fh', 'hsbh']
+  'txt.from-str': ['str에서 변환', 'fs', 'ssbh']
+  'txt.index': ['인덱스', 'i', 'ds']
+  'txt.index-from': ['인덱스 from', 'if', 'dsf']
+  'txt.join': ['결합', 'j', 'gh']
+  'txt.last-index': ['마지막 인덱스', 'li', 'mjmds']
+  'txt.len': ['길이', 'l', 'g']
+  'txt.lines': ['줄', 'l', 'j']
+  'txt.new': ['신규', 'n', 'sg']
+  'txt.repeat': ['반복', 'r', 'bb']
+  'txt.replace-char': ['치환 문자', 'rc', 'chmj']
+  'txt.replace-n': ['치환 수량', 'rn', 'chsr']
+  'txt.replace-str': ['치환 문자열', 'rs', 'chmj']
+  'txt.reverse': ['뒤집기', 'r', 'djg']
+  'txt.rindex': ['역인덱스', 'r', 'ds']
+  'txt.rindex-from': ['역인덱스 from', 'rf', 'dsf']
+  'txt.set-byte': ['설정 바이트', 'sb', 'sjbt']
+  'txt.slice': ['슬라이스', 's', 'srs']
+  'txt.split': ['분할', 's', 'bh']
+  'txt.split-n': ['분할 수량', 'sn', 'bhsr']
+  'txt.starts-with': ['starts 동반', 'sw', 'sdb']
+  'txt.to-bigint': ['bigint 변환', 'tb', 'bbh']
+  'txt.to-bool': ['bool 변환', 'tb', 'bbh']
+  'txt.to-byte': ['byte 변환', 'tb', 'bbh']
+  'txt.to-bytes': ['bytes 변환', 'tb', 'bbh']
+  'txt.to-f32': ['f32 변환', 'tf', 'f3bh']
+  'txt.to-f64': ['f64 변환', 'tf', 'f6bh']
+  'txt.to-hex': ['hex 변환', 'th', 'hbh']
+  'txt.to-i16': ['i16 변환', 'ti', 'i1bh']
+  'txt.to-i32': ['i32 변환', 'ti', 'i3bh']
+  'txt.to-i64': ['i64 변환', 'ti', 'i6bh']
+  'txt.to-i8': ['i8 변환', 'ti', 'i8bh']
+  'txt.to-lower': ['lower 변환', 'tl', 'lbh']
+  'txt.to-str': ['str 변환', 'ts', 'sbh']
+  'txt.to-u16': ['u16 변환', 'tu', 'u1bh']
+  'txt.to-u32': ['u32 변환', 'tu', 'u3bh']
+  'txt.to-u64': ['u64 변환', 'tu', 'u6bh']
+  'txt.to-u8': ['u8 변환', 'tu', 'u8bh']
+  'txt.to-upper': ['upper 변환', 'tu', 'ubh']
+  'txt.trim': ['트리밍', 't', 'trm']
+  'txt.trim-char': ['트리밍 문자', 'tc', 'trmmj']
+  'txt.truncate': ['truncate', 't', 't']
+  'txt.txt-hex-val': ['텍스트 16진수 값', 'thv', 'tst1jsg']
+  'unix.unix-conn.close': ['닫기', 'c', 'dg']
+  'unix.unix-conn.dial': ['다이얼', 'd', 'd']
+  'unix.unix-conn.fd-of': ['디스크립터 의', 'fo', 'dskrt']
+  'unix.unix-conn.recv': ['수신', 'r', 'ss']
+  'unix.unix-conn.recv-all': ['수신 전체', 'ra', 'ssjc']
+  'unix.unix-conn.recv-with-timeout': ['수신 동반 시간 초과', 'rwt', 'ssdbsgcg']
+  'unix.unix-conn.send': ['전송', 's', 'js']
+  'unix.unix-conn.set-recv-timeout': ['설정 수신 시간 초과', 'srt', 'sjsssgcg']
+  'unix.unix-conn.set-timeout': ['설정 시간 초과', 'st', 'sjsgcg']
+  'unix.unix-dial': ['unix 다이얼', 'ud', 'ud']
+  'unix.unix-dial-timeout': ['unix 다이얼 시간 초과', 'udt', 'udsgcg']
+  'unix.unix-dial-to': ['unix 다이얼 to', 'udt', 'udt']
+  'unix.unix-listen': ['unix 대기', 'ul', 'udg']
+  'unix.unix-listen-on': ['unix 대기 위', 'ulo', 'udg']
+  'unix.unix-listener.accept': ['수락', 'a', 'sr']
+  'unix.unix-listener.accept-with-timeout': ['수락 동반 시간 초과', 'awt', 'srdbsgcg']
+  'unix.unix-listener.close': ['닫기', 'c', 'dg']
+  'unix.unix-listener.fd-of': ['디스크립터 의', 'fo', 'dskrt']
+  'unix.unix-listener.listen': ['대기', 'l', 'dg']
+  'unix.unix-listener.path-of': ['경로 의', 'po', 'gr']
+  'unix.unix-listener.set-timeout': ['설정 시간 초과', 'st', 'sjsgcg']
+  'url.url-basic-auth': ['url 기본 인증', 'uba', 'ugbj']
+  'url.url-build-query': ['url 구축 쿼리', 'ubq', 'ugckr']
+  'url.url-decode': ['url 디코딩', 'ud', 'udkd']
+  'url.url-encode': ['url 인코딩', 'ue', 'ukd']
+  'url.url-encode-component': ['url 인코딩 component', 'uec', 'ukdc']
+  'url.url-info.get-query': ['취득 쿼리', 'gq', 'cdkr']
+  'url.url-info.set-query': ['설정 쿼리', 'sq', 'sjkr']
+  'url.url-info.to-str': ['str 변환', 'ts', 'sbh']
+  'url.url-join': ['url 결합', 'uj', 'ugh']
+  'url.url-parse': ['url 파싱', 'up', 'ups']
+  'url.url-parse-basic-auth': ['url 파싱 기본 인증', 'upba', 'upsgbj']
+  'uuid.cmp': ['비교', 'c', 'bg']
+  'uuid.eq': ['동등', 'e', 'dd']
+  'uuid.from-str': ['str에서 변환', 'fs', 'ssbh']
+  'uuid.hex-byte': ['16진수 바이트', 'hb', '1jsbt']
+  'uuid.hex-byte-upper': ['16진수 바이트 대문자', 'hbu', '1jsbtdmj']
+  'uuid.hex-val': ['16진수 값', 'hv', '1jsg']
+  'uuid.is-nil': ['nil 여부', 'in', 'nb']
+  'uuid.new-v4': ['신규 v4', 'nv', 'sgv4']
+  'uuid.nil-uuid': ['nil uuid', 'nu', 'nu']
+  'uuid.parse-hex-byte': ['파싱 16진수 바이트', 'phb', 'ps1jsbt']
+  'uuid.parse-no-dashes': ['파싱 없음 대시', 'pnd', 'psds']
+  'uuid.parse-with-dashes': ['파싱 동반 대시', 'pwd', 'psdbds']
+  'uuid.to-str': ['str 변환', 'ts', 'sbh']
+  'uuid.to-str-upper': ['str-upper 변환', 'tsu', 'subh']
+  'uuid.validate': ['검증', 'v', 'gj']
+  'uuid.variant': ['변형', 'v', 'bh']
+  'uuid.version': ['버전', 'v', 'bj']
+  'vec.at': ['위치', 'a', 'c']
+  'vec.clone': ['복제', 'c', 'bj']
+  'vec.contains': ['포함', 'c', 'ph']
+  'vec.eq': ['동등', 'e', 'dd']
+  'vec.extend': ['연장', 'e', 'j']
+  'vec.fill': ['채우기', 'f', 'cg']
+  'vec.first': ['첫째', 'f', 'cj']
+  'vec.index-of': ['인덱스 의', 'io', 'ds']
+  'vec.insert': ['삽입', 'i', 's']
+  'vec.last': ['마지막', 'l', 'mjm']
+  'vec.len': ['길이', 'l', 'g']
+  'vec.max': ['최대', 'm', 'cd']
+  'vec.min': ['최소', 'm', 'cs']
+  'vec.pop': ['팝', 'p', 'p']
+  'vec.remove': ['제거', 'r', 'jg']
+  'vec.reverse': ['뒤집기', 'r', 'djg']
+  'vec.sum': ['합계', 's', 'hg']
+  'vec.swap': ['스왑', 's', 's']
+  'vec.to-arr': ['arr 변환', 'ta', 'abh']
+  'vec.to-str': ['str 변환', 'ts', 'sbh']
+  'vec.truncate': ['truncate', 't', 't']
+  'vec.vec-clear': ['벡터 비우기', 'vc', 'btbg']
+  'vec.vec-push': ['벡터 푸시', 'vp', 'btps']
+  'ws.build-frame': ['구축 프레임', 'bf', 'gcpr']
+  'ws.client.close': ['닫기', 'c', 'dg']
+  'ws.client.is-connected': ['연결됨 여부', 'ic', 'gdb']
+  'ws.client.recv': ['수신', 'r', 'ss']
+  'ws.client.send': ['전송', 's', 'js']
+  'ws.client.send-binary': ['전송 2진법', 'sb', 'js2jb']
+  'ws.client.send-close': ['전송 닫기', 'sc', 'jsdg']
+  'ws.client.send-ping': ['전송 핑', 'sp', 'jsp']
+  'ws.client.send-pong': ['전송 팽', 'sp', 'jsp']
+  'ws.client.send-text': ['전송 텍스트', 'st', 'jstst']
+  'ws.compute-accept': ['계산 수락', 'ca', 'gssr']
+  'ws.connect': ['연결', 'c', 'g']
+  'ws.gen-client-key': ['생성 클라이언트 키', 'gck', 'sskrtk']
+  'ws.gen-mask-key': ['생성 마스크 키', 'gmk', 'ssmskk']
+  'ws.listen-on': ['대기 위', 'lo', 'dg']
+  'ws.next-rand': ['다음 랜덤', 'nr', 'drd']
+  'ws.server-conn.close': ['닫기', 'c', 'dg']
+  'ws.server-conn.handshake': ['handshake', 'h', 'h']
+  'ws.server-conn.is-connected': ['연결됨 여부', 'ic', 'gdb']
+  'ws.server-conn.recv': ['수신', 'r', 'ss']
+  'ws.server-conn.recv-nb': ['수신 nb', 'rn', 'ssn']
+  'ws.server-conn.send': ['전송', 's', 'js']
+  'ws.server-conn.send-binary': ['전송 2진법', 'sb', 'js2jb']
+  'ws.server-conn.send-close': ['전송 닫기', 'sc', 'jsdg']
+  'ws.server-conn.send-ping': ['전송 핑', 'sp', 'jsp']
+  'ws.server-conn.send-pong': ['전송 팽', 'sp', 'jsp']
+  'ws.server-conn.send-text': ['전송 텍스트', 'st', 'jstst']
+  'ws.server.accept': ['수락', 'a', 'sr']
+  'ws.server.close': ['닫기', 'c', 'dg']
+  'ws.server.listen': ['대기', 'l', 'dg']
+  'x25519.fe-add': ['체 원소 추가', 'fa', 'cscg']
+  'x25519.fe-add-v': ['체 원소 추가 버전', 'fav', 'cscgbj']
+  'x25519.fe-copy': ['체 원소 복사', 'fc', 'csbs']
+  'x25519.fe-cswap': ['체 원소 cswap', 'fc', 'csc']
+  'x25519.fe-frombytes': ['체 원소 frombytes', 'ff', 'csf']
+  'x25519.fe-frombytes-v': ['체 원소 frombytes 버전', 'ffv', 'csfbj']
+  'x25519.fe-invert': ['체 원소 역전', 'fi', 'csj']
+  'x25519.fe-invert-v': ['체 원소 역전 버전', 'fiv', 'csjbj']
+  'x25519.fe-mul': ['체 원소 곱셈', 'fm', 'csgs']
+  'x25519.fe-mul-v': ['체 원소 곱셈 버전', 'fmv', 'csgsbj']
+  'x25519.fe-mul121665': ['체 원소 x121665', 'fm', 'csx1']
+  'x25519.fe-one': ['체 원소 단일', 'fo', 'csd']
+  'x25519.fe-one-v': ['체 원소 단일 버전', 'fov', 'csdbj']
+  'x25519.fe-sq': ['체 원소 제곱', 'fs', 'csjg']
+  'x25519.fe-sq-v': ['체 원소 제곱 버전', 'fsv', 'csjgbj']
+  'x25519.fe-sub': ['체 원소 뺄셈', 'fs', 'csps']
+  'x25519.fe-sub-v': ['체 원소 뺄셈 버전', 'fsv', 'cspsbj']
+  'x25519.fe-tobytes': ['체 원소 tobytes', 'ft', 'cst']
+  'x25519.fe-tobytes-v': ['체 원소 tobytes 버전', 'ftv', 'cstbj']
+  'x25519.fe-zero': ['체 원소 영', 'fz', 'cs']
+  'x25519.fe-zero-v': ['체 원소 영 버전', 'fzv', 'csbj']
+  'x25519.x25519-gen-keypair': ['x25519 생성 키쌍', 'xgk', 'x2ssks']
+  'x25519.x25519-get-basepoint': ['x25519 취득 기준점', 'xgb', 'x2cdgjj']
+  'x25519.x25519-scalarmult': ['x25519 스칼라 곱', 'xs', 'x2skrg']
+  'x25519.x25519-scalarmult-base': ['x25519 스칼라 곱 base', 'xsb', 'x2skrgb']
+  'x25519.x25519-scalarmult-base-bytes': ['x25519 스칼라 곱 base 바이트', 'xsbb', 'x2skrgbbt']
+  'x25519.x25519-scalarmult-bytes': ['x25519 스칼라 곱 바이트', 'xsb', 'x2skrgbt']
+  'x509.alg-id-rsa-encryption': ['alg id RSA 암호화', 'aire', 'airhh']
+  'x509.alg-id-sha256-with-rsa': ['alg id sha256 동반 RSA', 'aiswr', 'ais2dbr']
+  'x509.der-enc-bitstring': ['DER 암호화 비트 문자열', 'deb', 'dhhbtmj']
+  'x509.der-enc-explicit': ['DER 암호화 명시적', 'dee', 'dhhmsj']
+  'x509.der-enc-integer-bytes': ['DER 암호화 정수 바이트', 'deib', 'dhhjsbt']
+  'x509.der-enc-integer-i64': ['DER 암호화 정수 i64', 'deii', 'dhhjsi6']
+  'x509.der-enc-len': ['DER 암호화 길이', 'del', 'dhhg']
+  'x509.der-enc-null': ['DER 암호화 null', 'den', 'dhhn']
+  'x509.der-enc-octetstring': ['DER 암호화 옥텟 문자열', 'deo', 'dhhtmj']
+  'x509.der-enc-oid-raw': ['DER 암호화 OID 원시', 'deor', 'dhhos']
+  'x509.der-enc-printablestring': ['DER 암호화 인쇄 가능 문자열', 'dep', 'dhhsgnmj']
+  'x509.der-enc-sequence': ['DER 암호화 시퀀스', 'des', 'dhhsks']
+  'x509.der-enc-set': ['DER 암호화 설정', 'des', 'dhhsj']
+  'x509.der-enc-tlv': ['DER 암호화 TLV', 'det', 'dhht']
+  'x509.der-enc-utctime': ['DER 암호화 UTC 시간', 'deu', 'dhhusg']
+  'x509.der-len': ['DER 길이', 'dl', 'dg']
+  'x509.der-skip': ['DER 건너뛰기', 'ds', 'dgntg']
+  'x509.der-tag': ['DER 태그', 'dt', 'dtg']
+  'x509.rsa-pkcs1-sign-sha256': ['RSA PKCS#1 서명 sha256', 'rpss', 'rp1sms2']
+  'x509.sha256-compress': ['sha256 압축', 'sc', 's2c']
+  'x509.x509-build-name-cn': ['X.509 구축 이름 cn', 'xbnc', 'x5gcrc']
+  'x509.x509-build-rsa-public-key': ['X.509 구축 RSA 공개 키', 'xbrpk', 'x5gcrggk']
+  'x509.x509-build-self-signed-cert': ['X.509 구축 self 부호 있음 인증서', 'xbssc', 'x5gcsbhjs']
+  'x509.x509-build-spki': ['X.509 구축 공개키 정보', 'xbs', 'x5gcggkjb']
+  'x509.x509-build-tbs': ['X.509 구축 서명 대상', 'xbt', 'x5gcsmds']
+  'x509.x509-build-validity': ['X.509 구축 유효 기간', 'xbv', 'x5gchgg']
+  'x509.x509-bytes-to-bn': ['X.509 바이트 to 큰 수', 'xbtb', 'x5bttks']
+  'x509.x509-fingerprint': ['X.509 지문', 'xf', 'x5jm']
+  'x509.x509-rsa-e': ['X.509 RSA 지수', 'xre', 'x5rjs']
+  'x509.x509-rsa-n': ['X.509 RSA 수량', 'xrn', 'x5rsr']
+  'x509.x509-serial': ['X.509 시리얼', 'xs', 'x5sr']
+  'x509.x509-tbs-range': ['X.509 서명 대상 range', 'xtr', 'x5smdsr']
+  'xz.lzma-decoder.decode': ['디코딩', 'd', 'dkd']
+  'xz.lzma-decoder.decode-distance': ['디코딩 거리', 'dd', 'dkdgr']
+  'xz.lzma-decoder.decode-length': ['디코딩 길이', 'dl', 'dkdg']
+  'xz.lzma-decoder.decode-literal': ['디코딩 리터럴', 'dl', 'dkdrtr']
+  'xz.lzma-decoder.init-probs': ['초기화 확률', 'ip', 'cghhr']
+  'xz.lzma-decoder.update-state-literal': ['갱신 상태 리터럴', 'usl', 'gsstrtr']
+  'xz.lzma-decoder.update-state-match': ['갱신 상태 일치', 'usm', 'gsstc']
+  'xz.lzma-decoder.update-state-rep': ['갱신 상태 반복', 'usr', 'gsstbb']
+  'xz.lzma-decoder.update-state-shortrep': ['갱신 상태 짧은 반복', 'uss', 'gsstjbb']
+  'xz.lzma-decompress': ['lzma 해제', 'ld', 'lhj']
+  'xz.lzma-rd.decode-bit': ['디코딩 비트', 'db', 'dkdbt']
+  'xz.lzma-rd.decode-bit-tree': ['디코딩 비트 트리', 'dbt', 'dkdbttr']
+  'xz.lzma-rd.decode-direct-bits': ['디코딩 direct 비트', 'ddb', 'dkddbt']
+  'xz.lzma-rd.decode-reverse-bit-tree': ['디코딩 뒤집기 비트 트리', 'drbt', 'dkddjgbttr']
+  'xz.lzma-rd.init': ['초기화', 'i', 'cgh']
+  'xz.lzma-rd.normalize': ['정규화', 'n', 'jgh']
+  'xz.lzma2-decompress-stream': ['lzma2 해제 스트림', 'lds', 'l2hjstr']
+  'xz.xz-compress': ['xz 압축', 'xc', 'xc']
+  'xz.xz-decompress': ['xz 해제', 'xd', 'xhj']
+  'yaml.anchor': ['앵커', 'a', 'k']
+  'yaml.at': ['위치', 'a', 'c']
+  'yaml.bool': ['bool', 'b', 'b']
+  'yaml.doc': ['문서', 'd', 'ms']
+  'yaml.doc-count': ['문서 개수', 'dc', 'msgs']
+  'yaml.error': ['오류', 'e', 'r']
+  'yaml.error-of': ['오류 의', 'eo', 'r']
+  'yaml.f64': ['f64', 'f', 'f6']
+  'yaml.find': ['찾기', 'f', 'cg']
+  'yaml.find-bool': ['찾기 bool', 'fb', 'cgb']
+  'yaml.find-f64': ['찾기 f64', 'ff', 'cgf6']
+  'yaml.find-i64': ['찾기 i64', 'fi', 'cgi6']
+  'yaml.find-str': ['찾기 문자열', 'fs', 'cgmj']
+  'yaml.get': ['취득', 'g', 'cd']
+  'yaml.get-bool': ['취득 bool', 'gb', 'cdb']
+  'yaml.get-f64': ['취득 f64', 'gf', 'cdf6']
+  'yaml.get-i64': ['취득 i64', 'gi', 'cdi6']
+  'yaml.get-str': ['취득 문자열', 'gs', 'cdmj']
+  'yaml.i64': ['i64', 'i', 'i6']
+  'yaml.is-bool': ['bool 여부', 'ib', 'bb']
+  'yaml.is-int': ['정수 여부', 'ii', 'jsb']
+  'yaml.is-map': ['맵 여부', 'im', 'mb']
+  'yaml.is-nan': ['NaN 여부', 'in', 'nb']
+  'yaml.is-null': ['null 여부', 'in', 'nb']
+  'yaml.is-num': ['숫자 여부', 'in', 'sjb']
+  'yaml.is-seq': ['seq 여부', 'is', 'sb']
+  'yaml.is-str': ['문자열 여부', 'is', 'mjb']
+  'yaml.key': ['키', 'k', 'k']
+  'yaml.key-node': ['키 노드', 'kn', 'knd']
+  'yaml.kind': ['종류', 'k', 'jr']
+  'yaml.len': ['길이', 'l', 'g']
+  'yaml.line-of': ['줄 의', 'lo', 'j']
+  'yaml.node-count': ['노드 개수', 'nc', 'ndgs']
+  'yaml.parse': ['파싱', 'p', 'ps']
+  'yaml.parse-all': ['파싱 전체', 'pa', 'psjc']
+  'yaml.scalar-text': ['스칼라 텍스트', 'st', 'skrtst']
+  'yaml.source-of': ['source 의', 'so', 's']
+  'yaml.str': ['문자열', 's', 'mj']
+  'yaml.stringify': ['문자열화', 's', 'mjh']
+  'yaml.strip-bom': ['제거 BOM', 'sb', 'jgb']
+  'yaml.style': ['스타일', 's', 'st']
+  'yaml.tag': ['태그', 't', 'tg']
+  'yaml.text': ['텍스트', 't', 'tst']
+  'yaml.to-json': ['json 변환', 'tj', 'jbh']
+  'yaml.to-json-all': ['json-all 변환', 'tja', 'jabh']
+  'yaml.to-yaml': ['yaml 변환', 'ty', 'ybh']
+  'yaml.valid': ['유효', 'v', 'h']
+  'yaml.valid-of': ['유효 의', 'vo', 'h']
+  'yaml.value': ['값', 'v', 'g']
+  'yaml.yaml-apply-tag': ['yaml 적용 태그', 'yat', 'yjtg']
+  'yaml.yaml-emit': ['yaml 발생', 'ye', 'ybs']
+  'yaml.yaml-f-is-inf': ['yaml 부동 소수 여부 무한', 'yfii', 'ybdssbmh']
+  'yaml.yaml-f-is-nan': ['yaml 부동 소수 여부 NaN', 'yfin', 'ybdssbn']
+  'yaml.yaml-hex-char': ['yaml 16진수 문자', 'yhc', 'y1jsmj']
+  'yaml.yaml-hex-digit': ['yaml 16진수 숫자', 'yhd', 'y1jssj']
+  'yaml.yaml-inf': ['yaml 무한', 'yi', 'ymh']
+  'yaml.yaml-json-escape': ['yaml json 이스케이프', 'yje', 'yjskp']
+  'yaml.yaml-json-of': ['yaml json 의', 'yjo', 'yj']
+  'yaml.yaml-key-eq': ['yaml 키 동등', 'yke', 'ykdd']
+  'yaml.yaml-key-text-eq': ['yaml 키 텍스트 동등', 'ykte', 'yktstdd']
+  'yaml.yaml-nan': ['yaml NaN', 'yn', 'yn']
+  'yaml.yaml-node-is-nan': ['yaml 노드 여부 NaN', 'ynin', 'yndbn']
+  'yaml.yaml-parse-radix': ['yaml 파싱 근수', 'ypr', 'ypsgs']
+  'yaml.yaml-parser.advance': ['전진', 'a', 'jj']
+  'yaml.yaml-parser.anchor-id': ['앵커 id', 'ai', 'ki']
+  'yaml.yaml-parser.at': ['위치', 'a', 'c']
+  'yaml.yaml-parser.at-doc-marker': ['위치 문서 마커', 'adm', 'cmsmk']
+  'yaml.yaml-parser.at-eol': ['위치 줄 끝', 'ae', 'cjk']
+  'yaml.yaml-parser.byte-at': ['바이트 위치', 'ba', 'btc']
+  'yaml.yaml-parser.cur': ['현재', 'c', 'hj']
+  'yaml.yaml-parser.eof': ['eof', 'e', 'e']
+  'yaml.yaml-parser.fail': ['실패', 'f', 'sp']
+  'yaml.yaml-parser.fail-at': ['실패 위치', 'fa', 'spc']
+  'yaml.yaml-parser.indent-at': ['들여쓰기 위치', 'ia', 'dsgc']
+  'yaml.yaml-parser.is-seq-dash': ['seq 대시 여부', 'isd', 'sdsb']
+  'yaml.yaml-parser.line-end-of': ['줄 종료 의', 'leo', 'jjr']
+  'yaml.yaml-parser.line-start-of': ['줄 시작 의', 'lso', 'jsj']
+  'yaml.yaml-parser.looks-like-map-entry': ['모양 같은 맵 항목', 'llme', 'mgmhm']
+  'yaml.yaml-parser.merge-into': ['병합 로', 'mi', 'bhr']
+  'yaml.yaml-parser.merge-one': ['병합 단일', 'mo', 'bhd']
+  'yaml.yaml-parser.newline': ['개행', 'n', 'gh']
+  'yaml.yaml-parser.parse-alias': ['파싱 alias', 'pa', 'psa']
+  'yaml.yaml-parser.parse-block': ['파싱 블록', 'pb', 'psbr']
+  'yaml.yaml-parser.parse-block-indented': ['파싱 블록 들여쓰기', 'pbi', 'psbrdsg']
+  'yaml.yaml-parser.parse-block-map': ['파싱 블록 맵', 'pbm', 'psbrm']
+  'yaml.yaml-parser.parse-block-scalar': ['파싱 블록 스칼라', 'pbs', 'psbrskr']
+  'yaml.yaml-parser.parse-block-seq': ['파싱 블록 seq', 'pbs', 'psbrs']
+  'yaml.yaml-parser.parse-docs': ['파싱 문서', 'pd', 'psms']
+  'yaml.yaml-parser.parse-document': ['파싱 문서', 'pd', 'psms']
+  'yaml.yaml-parser.parse-double': ['파싱 배점', 'pd', 'psbj']
+  'yaml.yaml-parser.parse-flow-map': ['파싱 flow 맵', 'pfm', 'psfm']
+  'yaml.yaml-parser.parse-flow-node': ['파싱 flow 노드', 'pfn', 'psfnd']
+  'yaml.yaml-parser.parse-flow-seq': ['파싱 flow seq', 'pfs', 'psfs']
+  'yaml.yaml-parser.parse-plain': ['파싱 plain', 'pp', 'psp']
+  'yaml.yaml-parser.parse-props': ['파싱 프로퍼티', 'pp', 'psprpt']
+  'yaml.yaml-parser.parse-single': ['파싱 단일', 'ps', 'psd']
+  'yaml.yaml-parser.push-node': ['푸시 노드', 'pn', 'psnd']
+  'yaml.yaml-parser.push-null': ['푸시 null', 'pn', 'psn']
+  'yaml.yaml-parser.push-scalar': ['푸시 스칼라', 'ps', 'psskr']
+  'yaml.yaml-parser.read-line-content': ['읽기 줄 콘텐츠', 'rlc', 'gjktc']
+  'yaml.yaml-parser.read-tag': ['읽기 태그', 'rt', 'gtg']
+  'yaml.yaml-parser.read-token': ['읽기 토큰', 'rt', 'gtk']
+  'yaml.yaml-parser.register-anchor': ['등록 앵커', 'ra', 'drk']
+  'yaml.yaml-parser.set-props': ['설정 프로퍼티', 'sp', 'sjprpt']
+  'yaml.yaml-parser.skip-blank-lines': ['건너뛰기 빈칸 줄', 'sbl', 'gntgbkj']
+  'yaml.yaml-parser.skip-doc-preamble': ['건너뛰기 문서 서문', 'sdp', 'gntgmssm']
+  'yaml.yaml-parser.skip-flow-ws': ['건너뛰기 flow 웹소켓', 'sfw', 'gntgfsk']
+  'yaml.yaml-parser.skip-spaces': ['건너뛰기 공백', 'ss', 'gntggb']
+  'yaml.yaml-parser.skip-to-doc-boundary': ['건너뛰기 to 문서 경계', 'stdb', 'gntgtmsgg']
+  'yaml.yaml-parser.skip-to-eol': ['건너뛰기 to 줄 끝', 'ste', 'gntgtjk']
+  'yaml.yaml-plain-safe': ['yaml plain 안전', 'yps', 'ypj']
+  'yaml.yaml-quote': ['yaml 인용부호', 'yq', 'ybh']
+  'yaml.yaml-resolve-plain': ['yaml resolve plain', 'yrp', 'yrp']
+  'yaml.yaml-scalar-repr': ['yaml 스칼라 표현', 'ysr', 'yskrph']
+  'yaml.yaml-scan-number': ['yaml 스캔 숫자', 'ysn', 'ysksj']
+  'yaml.yaml-spaces': ['yaml 공백', 'ys', 'ygb']
+  'yaml.yaml-str-at': ['yaml 문자열 위치', 'ysa', 'ymjc']
+  'yaml.yaml-tag-name': ['yaml 태그 이름', 'ytn', 'ytgr']
+  'yaml.yaml-to-f64': ['yaml to f64', 'ytf', 'ytf6']
+  'yaml.yaml-to-i64': ['yaml to i64', 'yti', 'yti6']
+  'yaml.yaml-unescape-double': ['yaml 역이스케이프 배점', 'yud', 'yskpbj']
+  'zip.u16le': ['u16le', 'u', 'u1l']
+  'zip.u32le': ['u32le', 'u', 'u3l']
+  'zip.zip-entry.compressed-size': ['압축됨 크기', 'cs', 'cdkg']
+  'zip.zip-entry.extract': ['추출', 'e', 'cc']
+  'zip.zip-entry.method': ['method', 'm', 'm']
+  'zip.zip-entry.name': ['이름', 'n', 'r']
+  'zip.zip-entry.size': ['크기', 's', 'kg']
+  'zip.zip-writer.add-dir': ['추가 디렉터리', 'ad', 'cgdrtr']
+  'zip.zip-writer.add-file': ['추가 파일', 'af', 'cgp']
+  'zip.zip-writer.cd-put': ['cd 넣기', 'cp', 'cng']
+  'zip.zip-writer.cd-write-u16': ['cd 쓰기 u16', 'cwu', 'csgu1']
+  'zip.zip-writer.cd-write-u32': ['cd 쓰기 u32', 'cwu', 'csgu3']
+  'zip.zip-writer.finalize': ['마감', 'f', 'mg']
+  'zip.zip-writer.put': ['넣기', 'p', 'ng']
+  'zip.zip-writer.write-cd-entry': ['쓰기 cd 항목', 'wce', 'sgchm']
+  'zip.zip-writer.write-eocd': ['쓰기 EOCD', 'we', 'sge']
+  'zip.zip-writer.write-local-file': ['쓰기 로컬 파일', 'wlf', 'sgrkp']
+  'zip.zip-writer.write-u16': ['쓰기 u16', 'wu', 'sgu1']
+  'zip.zip-writer.write-u32': ['쓰기 u32', 'wu', 'sgu3']
+  'zip.zip.compressed-size': ['압축됨 크기', 'cs', 'cdkg']
+  'zip.zip.count': ['개수', 'c', 'gs']
+  'zip.zip.entry': ['항목', 'e', 'hm']
+  'zip.zip.entry-off': ['항목 off', 'eo', 'hmo']
+  'zip.zip.extract': ['추출', 'e', 'cc']
+  'zip.zip.find-eocd': ['찾기 EOCD', 'fe', 'cge']
+  'zip.zip.get-cd-off': ['취득 cd off', 'gco', 'cdco']
+  'zip.zip.get-total': ['취득 total', 'gt', 'cdt']
+  'zip.zip.method': ['method', 'm', 'm']
+  'zip.zip.name': ['이름', 'n', 'r']
+  'zip.zip.size': ['크기', 's', 'kg']
+  'zlib.adler-32': ['adler 32', 'a3', 'a3']
+  'zlib.zlib-compress': ['zlib 압축', 'zc', 'zc']
+  'zlib.zlib-consumed-stored': ['zlib 소비됨 stored', 'zcs', 'zsbds']
+  'zlib.zlib-decompress': ['zlib 해제', 'zd', 'zhj']
+  'zlib.zlib-decompress-stored': ['zlib 해제 stored', 'zds', 'zhjs']
+  'zstd.bits-for-count': ['비트 용 개수', 'bfc', 'btgs']
+  'zstd.fse-table.build': ['구축', 'b', 'gc']
+  'zstd.fse-table.decode': ['디코딩', 'd', 'dkd']
+  'zstd.zs-bit-reader.align-to-byte': ['정렬 to 바이트', 'atb', 'jrtbt']
+  'zstd.zs-bit-reader.read-bit': ['읽기 비트', 'rb', 'gbt']
+  'zstd.zs-bit-reader.read-bits': ['읽기 비트', 'rb', 'gbt']
+  'zstd.zs-bit-reader.read-varint': ['읽기 가변 정수', 'rv', 'ggbjs']
+  'zstd.zs-frame.decode-block': ['디코딩 블록', 'db', 'dkdbr']
+  'zstd.zs-frame.decode-compressed-block': ['디코딩 압축됨 블록', 'dcb', 'dkdcdbr']
+  'zstd.zs-frame.read-frame-header': ['읽기 프레임 헤더', 'rfh', 'gprhd']
+  'zstd.zs-huffman.build': ['구축', 'b', 'gc']
+  'zstd.zs-huffman.decode': ['디코딩', 'd', 'dkd']
+  'zstd.zstd-compress': ['zstd 압축', 'zc', 'zc']
+  'zstd.zstd-decompress': ['zstd 해제', 'zd', 'zhj']
 }

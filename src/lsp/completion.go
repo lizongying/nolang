@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/builtin"
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -86,6 +87,9 @@ func (cp *CompletionProvider) getAllCompletions(position Position) []CompletionI
 	items = append(items, cp.getKeywordCompletions()...)
 	items = append(items, cp.getTypeCompletions()...)
 	items = append(items, cp.getIdentifierCompletions(position)...)
+	// The alias suggestions filter themselves by the word before the cursor, so
+	// this stays a no-op unless something has actually been typed.
+	items = append(items, cp.getAliasCompletions(position)...)
 	return items
 }
 
@@ -98,11 +102,197 @@ func (cp *CompletionProvider) getWordBasedCompletions(position Position) []Compl
 	items = append(items, cp.getKeywordCompletionsWithFilter(word)...)
 	items = append(items, cp.getTypeCompletionsWithFilter(word)...)
 	items = append(items, cp.getIdentifierCompletionsWithFilter(position, word)...)
+	items = append(items, cp.getAliasCompletions(position)...)
 	return items
 }
 
 func (cp *CompletionProvider) getCurrentWord(position Position) string {
 	return getWordAtPosition(cp.doc.Text, position)
+}
+
+// maxAliasCompletions caps how many std-alias suggestions one request may
+// return. The catalog holds ~2100 rows, so a single-letter query matches a lot
+// of them; capping keeps the response small without hiding anything a reader
+// would actually scroll to.
+const maxAliasCompletions = 200
+
+// getAliasCompletions proposes standard English identifiers from the localized
+// alias catalog: the reader types what they CAN spell — full pinyin (huoqu),
+// the name's initials (hqcs), zhuyin key positions (fm3), or a word from their
+// own language — and the item inserts the identifier the compiler actually
+// accepts (get). This is the whole reason the alias catalog grew its keystroke
+// columns.
+//
+// The prefix comes from the line, not from getWordAtPosition: that helper
+// returns "" when the cursor sits just past the last character, which is exactly
+// where someone who just finished typing `hqcs` is.
+func (cp *CompletionProvider) getAliasCompletions(position Position) []CompletionItem {
+	entries := i18n.AliasEntries()
+	if len(entries) == 0 {
+		return nil
+	}
+	rng := cp.aliasReplaceRange(position)
+	filter := cp.textInRange(rng)
+	if filter == "" {
+		return nil
+	}
+	query := toLowerStr(filter)
+	if !isAliasQuery(query) {
+		return nil
+	}
+	// A doc comment or an import path is text, not code: suggesting `get` there
+	// is noise at best.
+	if cp.inCommentOrImport(position) {
+		return nil
+	}
+	// `-` is a word character here (arr-stack-pop), so the typed word may carry
+	// one that no keystroke column does; match both spellings.
+	plain := strings.ReplaceAll(query, "-", "")
+	seen := make(map[string]bool, 16)
+	var items []CompletionItem
+	for _, e := range entries {
+		ident := i18n.IdentifierOf(e.Anchor)
+		display := e.Display()
+		if !aliasMatches(e, display, ident, query, plain) {
+			continue
+		}
+		// Different modules may expose the same identifier with the same name
+		// (`args.get` / `map.get`): one item is enough, since inserting either
+		// produces the same text.
+		key := ident + "\x00" + display
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		items = append(items, CompletionItem{
+			Label:  display,
+			Kind:   CompletionItemKindFunction,
+			Detail: e.Anchor,
+			// SortText keeps same-named suggestions adjacent instead of
+			// scattering them by display name.
+			SortText: ident,
+			// FilterText is load-bearing: clients fuzzy-match the LABEL by
+			// default, and a Chinese label does not contain `hqcs`, so without
+			// this the item is dropped client-side right after we return it.
+			FilterText: strings.Join(nonEmptyStrings(display, e.Keys, e.EnKeys, e.Full, ident), " "),
+			// Replace the typed keystrokes rather than inserting after them,
+			// otherwise `hqcs` + `get` becomes `hqcsget`.
+			TextEdit: &TextEdit{Range: rng, NewText: ident},
+		})
+		if len(items) >= maxAliasCompletions {
+			break
+		}
+	}
+	return items
+}
+
+// aliasMatches reports whether any spellable form of a row starts with the
+// typed query. Comparison is byte-wise and case-insensitive, which is why the
+// catalog gate restricts the columns to ASCII.
+func aliasMatches(e i18n.AliasEntry, display, ident, query, plain string) bool {
+	if aliasPrefix(e, display, ident, query) {
+		return true
+	}
+	return plain != query && aliasPrefix(e, display, ident, plain)
+}
+
+func aliasPrefix(e i18n.AliasEntry, display, ident, prefix string) bool {
+	return hasPrefixIgnoreCase(e.Keys, prefix) ||
+		hasPrefixIgnoreCase(e.EnKeys, prefix) ||
+		hasPrefixIgnoreCase(e.Full, prefix) ||
+		hasPrefixIgnoreCase(display, prefix) ||
+		hasPrefixIgnoreCase(ident, prefix)
+}
+
+// isAliasQuery reports whether a typed word can possibly match a keystroke
+// column. Non-ASCII input (a reader typing 中文 directly) cannot: every column is
+// ASCII by construction, and the byte-indexed word range would mis-slice it.
+func isAliasQuery(query string) bool {
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// inCommentOrImport reports whether the cursor sits in a `;` comment or on a
+// `#` import line, where code completion does not belong.
+func (cp *CompletionProvider) inCommentOrImport(position Position) bool {
+	lines := getLines(cp.doc.Text)
+	if int(position.Line) >= len(lines) {
+		return false
+	}
+	line := lines[position.Line]
+	col := int(position.Character)
+	if col > len(line) {
+		col = len(line)
+	}
+	trimmed := strings.TrimSpace(line[:col])
+	return strings.HasPrefix(trimmed, ";") || strings.HasPrefix(trimmed, "#")
+}
+
+func nonEmptyStrings(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// aliasReplaceRange returns the span a suggestion replaces — the whole word
+// around the cursor, including a cursor sitting just past the last character.
+//
+// getWordRange cannot be used here: it returns an empty range when the cursor
+// is at end of line, which is exactly where someone finishing a keystroke
+// sequence is. Inserting there would append the identifier to what was typed
+// (`hqcs` + `get`) instead of replacing it.
+func (cp *CompletionProvider) aliasReplaceRange(position Position) Range {
+	lines := getLines(cp.doc.Text)
+	if int(position.Line) >= len(lines) {
+		return Range{Start: position, End: position}
+	}
+	line := lines[position.Line]
+	col := int(position.Character)
+	if col > len(line) {
+		col = len(line)
+	}
+	start, end := col, col
+	for start > 0 && isWordChar(line[start-1]) {
+		start--
+	}
+	for end < len(line) && isWordChar(line[end]) {
+		end++
+	}
+	return Range{
+		Start: Position{Line: position.Line, Character: uint32(start)},
+		End:   Position{Line: position.Line, Character: uint32(end)},
+	}
+}
+
+// textInRange returns the document text a range covers, clamped to the document
+// (a client may send a position one past the last character).
+func (cp *CompletionProvider) textInRange(r Range) string {
+	lines := getLines(cp.doc.Text)
+	if int(r.Start.Line) >= len(lines) || r.Start.Line != r.End.Line {
+		return ""
+	}
+	line := lines[r.Start.Line]
+	start, end := int(r.Start.Character), int(r.End.Character)
+	if start > len(line) {
+		start = len(line)
+	}
+	if end > len(line) {
+		end = len(line)
+	}
+	if start >= end {
+		return ""
+	}
+	return line[start:end]
 }
 
 func (cp *CompletionProvider) getKeywordCompletions() []CompletionItem {

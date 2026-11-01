@@ -82,31 +82,30 @@ type Options struct {
 // — the full pinyin / zhuyin keystrokes lets completion propose the identifier
 // instead.
 //
-//   - Alias  — 别名, e.g. ["获取参数"]. Alias[0] is what hover shows.
-//   - Keys   — initials of the localized name: `hqcs`.
+//   - Alias  — 别名, e.g. 获取参数. It is what hover shows.
 //   - EnKeys — initials of the identifier, language-independent: `g`.
-//   - Pinyin — full pinyin keystrokes, zh-CN only: `huoqucanshu`.
-//   - Zhuyin — zhuyin keyboard key positions, zh-TW only: `fm32k6h0gj4`.
+//   - Keys   — initials of the localized name: `hqcs`.
+//   - Full   — full keystrokes, Chinese only: pinyin for zh-CN
+//     (`huoqucanshu`), zhuyin key positions for zh-TW (`fm32k6h0gj4`).
 //
-// Every keystroke column is ASCII `[a-z0-9]`, because completion compares them
-// byte for byte against what the editor reports as typed text.
+// The on-disk order is [alias, enkeys, keys, full], documented in
+// catalog.RenderAlias. Every keystroke column is ASCII `[a-z0-9]` (Full also
+// uses the punctuation keys that carry bopomofo), because completion compares
+// them byte for byte against what the editor reports as typed text.
 type AliasEntry struct {
 	Anchor string
-	Alias  []string
-	Keys   string
+	Alias  string
 	EnKeys string
-	Pinyin string
-	Zhuyin string
+	Keys   string
+	Full   string
 }
 
-// Display returns the display name for hover: the first non-empty alias, or the
+// Display returns the display name for hover: the row's alias, or the
 // identifier itself when the row has no translation. It never returns an empty
 // string for a non-empty anchor, so a caller can concatenate it unconditionally.
 func (e AliasEntry) Display() string {
-	for _, a := range e.Alias {
-		if a != "" {
-			return a
-		}
+	if e.Alias != "" {
+		return e.Alias
 	}
 	return IdentifierOf(e.Anchor)
 }
@@ -327,10 +326,8 @@ func Errorf(id, def string, args ...any) error {
 // installed under every language including "en"; a nil or empty table means
 // "no aliases", so Alias falls back to the identifier.
 //
-// The table is deep-copied (including each Alias slice) because the caller — a
-// catalog loader — may reuse its buffers, and a completion provider hands the
-// entries out on a hot path where a torn read would be invisible until a user
-// saw a garbled suggestion.
+// The rows are copied into a fresh map and a sorted slice, so the caller may
+// reuse or mutate its own table afterwards.
 func SetAliasCatalog(table map[string]AliasEntry) {
 	if len(table) == 0 {
 		msgMu.Lock()
@@ -345,14 +342,12 @@ func SetAliasCatalog(table map[string]AliasEntry) {
 		// An anchor with no display name carries nothing Alias() could use;
 		// dropping it keeps AliasEntries() free of rows that would only ever
 		// suggest the identifier back to the user.
-		if anchor == "" || len(e.Alias) == 0 {
+		if anchor == "" || e.Alias == "" {
 			continue
 		}
-		cp := e
-		cp.Anchor = anchor
-		cp.Alias = append([]string(nil), e.Alias...)
-		byAnchor[anchor] = cp
-		list = append(list, cp)
+		e.Anchor = anchor
+		byAnchor[anchor] = e
+		list = append(list, e)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Anchor < list[j].Anchor })
 	msgMu.Lock()

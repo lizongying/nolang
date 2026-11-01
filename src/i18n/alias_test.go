@@ -9,7 +9,7 @@ import (
 // a real catalog row always carries them (the parser rejects a row without
 // them); the values themselves do not matter unless a test reads them.
 func entry(display string) AliasEntry {
-	return AliasEntry{Alias: []string{display}, Keys: "x", EnKeys: "e"}
+	return AliasEntry{Alias: display, Keys: "x", EnKeys: "e"}
 }
 
 // TestAliasTranslatesEveryLanguage mirrors TestDocTranslatesIntoEnglish: the
@@ -138,7 +138,7 @@ func TestAliasUsesFirstAlias(t *testing.T) {
 	defer reset(t)
 
 	SetAliasCatalog(map[string]AliasEntry{
-		"args.get": {Alias: []string{"获取参数", "取得参数"}, Keys: "hqcs", EnKeys: "g"},
+		"args.get": {Alias: "获取参数", Keys: "hqcs", EnKeys: "g"},
 	})
 	if got := Alias("args.get"); got != "获取参数" {
 		t.Fatalf("Alias = %q, want the first alias", got)
@@ -163,30 +163,28 @@ func TestAliasFallsBackWhenAliasListEmpty(t *testing.T) {
 	}
 }
 
-// TestSetAliasCatalogCopiesAndSorts: the table is copied (a caller reusing its
-// slices cannot corrupt the installed one) and AliasEntries is ordered by
-// anchor, because a completion list that reshuffles between keystrokes is
-// unusable.
+// TestSetAliasCatalogCopiesAndSorts: the table is copied (a caller mutating its
+// own map afterwards cannot corrupt the installed one) and AliasEntries is
+// ordered by anchor, because a completion list that reshuffles between
+// keystrokes is unusable.
 func TestSetAliasCatalogCopiesAndSorts(t *testing.T) {
 	reset(t)
 	defer reset(t)
 
-	aliases := []string{"参数"}
-	SetAliasCatalog(map[string]AliasEntry{
-		"zip.zip.count": {Alias: aliases, Keys: "sl", EnKeys: "c"},
-		"args.get":      {Alias: []string{"获取参数"}, Keys: "hqcs", EnKeys: "g"},
-	})
-	aliases[0] = "mutated"
+	table := map[string]AliasEntry{
+		"zip.zip.count": {Alias: "计数", Keys: "js", EnKeys: "c"},
+		"args.get":      {Alias: "获取参数", Keys: "hqcs", EnKeys: "g"},
+	}
+	SetAliasCatalog(table)
+	table["args.get"] = AliasEntry{Alias: "mutated", Keys: "zz", EnKeys: "zz"}
+	table["new.anchor"] = AliasEntry{Alias: "新增", Keys: "xz", EnKeys: "xz"}
 
-	if got := Alias("zip.zip.count"); got != "参数" {
+	if got := Alias("args.get"); got != "获取参数" {
 		t.Fatalf("Alias = %q, want the value captured at install time", got)
 	}
 	got := AliasEntries()
 	if len(got) != 2 || got[0].Anchor != "args.get" || got[1].Anchor != "zip.zip.count" {
 		t.Fatalf("AliasEntries = %v, want ascending anchors [args.get zip.zip.count]", got)
-	}
-	if ok := got[1].Alias[0] == "参数"; !ok {
-		t.Fatalf("installed Alias slice shares the caller's backing array: %v", got[1].Alias)
 	}
 }
 
@@ -198,7 +196,7 @@ func TestEnKeysOf(t *testing.T) {
 		"args.get":          "g",
 		"arr.arr-stack-pop": "asp",
 		"aes-cbc.dec-128":   "d1",
-		"no-dot-at-all":     "nda",
+		"no-dot-at-all":     "ndaa",
 		"sse.server.close":  "c",
 		"mod.underscore_io": "ui",
 		"mod.weird--double": "wd",

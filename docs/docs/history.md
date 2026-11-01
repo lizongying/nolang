@@ -6,6 +6,18 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.14
+
+- feat(i18n): add an alias catalog of localized display names and keystroke columns for std
+- feat(lsp): complete std identifiers from alias keystrokes (initials, pinyin, zhuyin)
+- refactor(i18n): store alias rows as positional arrays and merge pinyin/zhuyin into one full column
+- feat(build): accept module-alias imports (`# path alias`) on both backends
+- feat(mir): render bool as true/false and char as signed decimal on every str path
+- feat(checker): reject arithmetic mixing char with non-numeric operands
+- refactor(fmt): collapse short multi-line infix expressions onto a single line
+- fix(lexer): accept CRLF raw strings and stop eating the first byte of continuation lines
+- fix(std): make noml index writes exhaustive and fix parse-raw dropping every other byte
+
 ## v0.4.13
 
 - feat(i18n): add German, Portuguese and Russian locales and sync documentation catalogs across all languages

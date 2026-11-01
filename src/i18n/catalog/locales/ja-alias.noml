@@ -1,2115 +1,2134 @@
 ; Nolang alias catalog: ja
-; Localized display names (别名) for every std function/method, keyed by
-; the same doc anchor its `; [label](#anchor)` comment uses, so an alias and
-; its documentation block always agree on the key. Values are short, pure
-; translated names — the identifier itself remains the only spelling that
-; compiles. Keys must exist as an anchor in some src/std .no source, or the
-; gate rejects the catalog; `make i18n -alias-missing` lists what is left.
+; Display names (别名) and keystroke columns for every std function/method,
+; keyed by the same doc anchor its `; [label](#anchor)` comment uses, so an
+; alias and its documentation block always agree on the key. One row per
+; anchor, as a POSITIONAL array:
+;
+;   'args.get': ['获取参数', 'g', 'hqcs', 'huoqucanshu']   zh-CN, with pinyin
+;   'args.get': ['取得參數', 'g', 'qdhs', 'fm32k6h0gj4']   zh-TW, with zhuyin
+;   'args.get': ['Get argument', 'g', 'ga']                every other locale
+;
+;   [0] alias   display name shown by hover
+;   [1] enkeys  initials of the identifier — required, same in every locale
+;   [2] keys    initials of the localized name — required
+;   [3] full    full keystrokes — optional: pinyin (zh-CN) or zhuyin key
+;               positions on a Dachen keyboard (zh-TW). No other locale
+;               carries it, so its presence is what marks a Chinese catalog.
+;
+; The order is a contract, not a convention: a row must have 3 or 4 elements
+; and every element must be a string. enkeys and keys are ASCII [a-z0-9];
+; full also uses the punctuation keys that carry bopomofo
+; (ㄝ=, ㄡ=. ㄤ=; ㄥ=/ ㄦ=-). Completion compares these byte for byte against
+; what the editor reports as typed, so a non-ASCII cell would silently never
+; match. The identifier itself remains the only spelling that compiles —
+; these columns only tell the completion provider which identifier the reader
+; is reaching for. Keys must exist as an anchor in some src/std .no source, or
+; the gate rejects the catalog; `make i18n -alias-missing` lists what is left.
 {
-  'aes-cbc.cbc-dec': 'CBC復号'
-  'aes-cbc.cbc-enc': 'CBC暗号化'
-  'aes-cbc.dec-128': '復号128'
-  'aes-cbc.dec-256': '復号256'
-  'aes-cbc.enc-128': '暗号化128'
-  'aes-cbc.enc-256': '暗号化256'
-  'aes-cbc.pkcs7-pad': 'PKCS#7パディング'
-  'aes-cbc.pkcs7-unpad': 'PKCS#7パディング除去'
-  'aes-ctr.crypt-128': '暗号128'
-  'aes-ctr.crypt-256': '暗号256'
-  'aes-ctr.ctr-crypt': 'CTR暗号'
-  'aes-ctr.ctr-inc': 'CTRinc'
-  'aes-gcm.ctr-xor': 'CTRxor'
-  'aes-gcm.gcm-h': 'GCMハッシュ'
-  'aes-gcm.gcm-j0': 'GCMj0'
-  'aes-gcm.gcm-open': 'GCMオープン'
-  'aes-gcm.gcm-seal': 'GCMシーリング'
-  'aes-gcm.ghash': 'ghash'
-  'aes-gcm.ghash-mul': 'ghash乗算'
-  'aes-gcm.open-128': 'オープン128'
-  'aes-gcm.open-256': 'オープン256'
-  'aes-gcm.seal-128': 'シーリング128'
-  'aes-gcm.seal-256': 'シーリング256'
-  'aes.add-round-key': '追加丸めキー'
-  'aes.add-round-key-at': '追加丸めキー位置'
-  'aes.dec-128': '復号128'
-  'aes.dec-256': '復号256'
-  'aes.dec-block': '復号ブロック'
-  'aes.enc-128': '暗号化128'
-  'aes.enc-256': '暗号化256'
-  'aes.enc-block': '暗号化ブロック'
-  'aes.gf-mul2': '有限体x2'
-  'aes.inv-mix-col': '逆元mix列'
-  'aes.inv-mix-columns': '逆元mix列'
-  'aes.inv-shift-rows': '逆元シフト行'
-  'aes.inv-sub-bytes': '逆元減算バイト'
-  'aes.key-expand': 'キー拡張'
-  'aes.key-expand-256': 'キー拡張256'
-  'aes.mix-col': 'mix列'
-  'aes.mix-columns': 'mix列'
-  'aes.rcon-val': 'ラウンド定数値'
-  'aes.shift-rows': 'シフト行'
-  'aes.sub-bytes': '減算バイト'
-  'argon2.blake-g': 'blake生成元'
-  'argon2.compress': '圧縮'
-  'argon2.h-prime': 'ハッシュprime'
-  'argon2.id': 'id'
-  'argon2.rotr': '右回転'
-  'args.count': 'カウント'
-  'args.get': '取得'
-  'args.get-option': '取得option'
-  'args.get-positional': '取得positional'
-  'args.has-flag': '.hasflag'
-  'args.program': 'プログラム'
-  'arr-stack.arr-stack.clear': 'クリア'
-  'arr-stack.arr-stack.empty': 'empty'
-  'arr-stack.arr-stack.full': 'full'
-  'arr-stack.arr-stack.size': 'サイズ'
-  'arr.arr-stack-init': '配列スタック初期化'
-  'arr.arr-stack-peek': '配列スタック覗き'
-  'arr.arr-stack-pop': '配列スタックポップ'
-  'arr.arr-stack-push': '配列スタックプッシュ'
-  'arr.asc': '昇順'
-  'arr.at': '位置'
-  'arr.clone': 'クローン'
-  'arr.contains': '含む'
-  'arr.count': 'カウント'
-  'arr.desc': '降順'
-  'arr.eq': '等値'
-  'arr.fill': '充填'
-  'arr.first': '先頭'
-  'arr.index-of': 'インデックスの'
-  'arr.last': '末尾'
-  'arr.len': '長さ'
-  'arr.link-clear': 'リンククリア'
-  'arr.link-find': 'リンク検索'
-  'arr.link-get-at': 'リンク取得位置'
-  'arr.link-init': 'リンク初期化'
-  'arr.link-insert-at': 'リンク挿入位置'
-  'arr.link-peek-back': 'リンク覗き後端'
-  'arr.link-peek-front': 'リンク覗き前端'
-  'arr.link-pop-back': 'リンクポップ後端'
-  'arr.link-pop-front': 'リンクポップ前端'
-  'arr.link-push-back': 'リンクプッシュ後端'
-  'arr.link-push-front': 'リンクプッシュ前端'
-  'arr.link-remove-at': 'リンク削除位置'
-  'arr.link-reverse': 'リンク反転'
-  'arr.link-set-at': 'リンク設定位置'
-  'arr.max': '最大'
-  'arr.min': '最小'
-  'arr.queue-init': 'キュー初期化'
-  'arr.queue-peek': 'キュー覗き'
-  'arr.queue-pop': 'キューポップ'
-  'arr.queue-push': 'キュープッシュ'
-  'arr.reverse': '反転'
-  'arr.sum': '合計'
-  'arr.swap': 'スワップ'
-  'arr.to-str': 'strへ変換'
-  'arr.to-vec': 'vecへ変換'
-  'arrords.asc': '昇順'
-  'arrords.desc': '降順'
-  'async.cancel': 'キャンセル'
-  'async.cancelled': 'キャンセル済み'
-  'base32.decode': 'デコード'
-  'base32.encode': 'エンコード'
-  'base64.b64-val': 'base64値'
-  'base64.decode': 'デコード'
-  'base64.encode': 'エンコード'
-  'base64.encode-std': 'エンコードstd'
-  'base64.encode-url': 'エンコードurl'
-  'bigint._add': '_add'
-  'bigint._add-i64': '_addi64'
-  'bigint._div': '_div'
-  'bigint._div-i64': '_divi64'
-  'bigint._mod': '_mod'
-  'bigint._mod-i64': '_modi64'
-  'bigint._mul': '_mul'
-  'bigint._mul-i64': '_muli64'
-  'bigint._sub': '_sub'
-  'bigint.abs-add': '絶対値追加'
-  'bigint.abs-cmp': '絶対値比較'
-  'bigint.abs-sub': '絶対値減算'
-  'bigint.add-bigint': '追加大整数'
-  'bigint.cmp': '比較'
-  'bigint.copy': 'コピー'
-  'bigint.div-mod': '除算モッド'
-  'bigint.eq': '等値'
-  'bigint.from-i64': 'i64から変換'
-  'bigint.from-u64': 'u64から変換'
-  'bigint.gcd': '最大公約数'
-  'bigint.is-neg': '否定か'
-  'bigint.is-pos': '正か'
-  'bigint.is-zero': 'ゼロか'
-  'bigint.lcm': '最小公倍数'
-  'bigint.mod-pow': 'モッド幂'
-  'bigint.mul-bigint': '乗算大整数'
-  'bigint.normalize': '正規化'
-  'bigint.one': '単一'
-  'bigint.pow': '幂'
-  'bigint.shl': '左シフト'
-  'bigint.shl1': '左シフト1'
-  'bigint.shr': '右シフト'
-  'bigint.shr1': '右シフト1'
-  'bigint.sub-bigint': '減算大整数'
-  'bigint.to-hex': 'hexへ変換'
-  'bigint.to-i64': 'i64へ変換'
-  'bigint.to-str': 'strへ変換'
-  'bigint.zero': 'ゼロ'
-  'blake2.b': 'バイト'
-  'blake2.b-256': 'バイト256'
-  'blake2.b-256-hex': 'バイト25616進'
-  'blake2.b-compress': 'バイト圧縮'
-  'blake2.b-g': 'バイト生成元'
-  'blake2.b-hex': 'バイト16進'
-  'blake2.b-state': 'バイト状態'
-  'blake2.rotr32': 'rotr32'
-  'blake2.rotr64': 'rotr64'
-  'blake2.s': '複数'
-  'blake2.s-compress': '複数圧縮'
-  'blake2.s-g': '複数生成元'
-  'blake2.s-hex': '複数16進'
-  'blake2.s-state': '複数状態'
-  'bool.to-str': 'strへ変換'
-  'bufio.reader.close': 'クローズ'
-  'bufio.reader.fill': '充填'
-  'bufio.reader.init': '初期化'
-  'bufio.reader.read-byte': '読みバイト'
-  'bufio.reader.read-line': '読み行'
-  'bytes.index': 'インデックス'
-  'bytes.index-from': 'インデックスfrom'
-  'bytes.len': '長さ'
-  'bytes.slice': 'スライス'
-  'bytes.to-bytes-str': 'bytes-strへ変換'
-  'bytes.to-chars': 'charsへ変換'
-  'bytes.to-hex': 'hexへ変換'
-  'bytes.to-hex-lower': 'hex-lowerへ変換'
-  'bytes.to-i64-be': 'i64-beへ変換'
-  'bytes.to-i64-le': 'i64-leへ変換'
-  'bytes.to-str': 'strへ変換'
-  'bytes.to-txt': 'txtへ変換'
-  'bzip2.bz-bit-reader.read-bit': '読みビット'
-  'bzip2.bz-bit-reader.read-bits': '読みビット'
-  'bzip2.bz-huffman.build': '構築'
-  'bzip2.bz-huffman.decode': 'デコード'
-  'bzip2.bz-huffman.decode-symbol': 'デコードシンボル'
-  'bzip2.bzip2-compress': 'bzip2圧縮'
-  'bzip2.bzip2-decompress': 'bzip2解凍'
-  'chacha20-poly1305.chacha20-block': 'chacha20ブロック'
-  'chacha20-poly1305.chacha20-poly1305-open': 'chacha20poly1305オープン'
-  'chacha20-poly1305.chacha20-poly1305-seal': 'chacha20poly1305シーリング'
-  'chacha20-poly1305.chacha20-xor': 'chacha20xor'
-  'chacha20-poly1305.poly1305': 'poly1305'
-  'chacha20-poly1305.poly1305-key-gen': 'poly1305キー生成'
-  'chacha20-poly1305.poly1305-reduce': 'poly1305.reduce'
-  'chacha20-poly1305.qr': 'qr'
-  'chacha20-poly1305.rotl32': 'rotl32'
-  'char.is-alnum': '英数字か'
-  'char.is-alpha': 'アルファか'
-  'char.is-digit': '数字か'
-  'char.is-letter': 'letterか'
-  'char.is-lower': '小文字か'
-  'char.is-space': 'スペースか'
-  'char.is-upper': '大文字か'
-  'char.to-bytes': 'bytesへ変換'
-  'char.to-lower': 'lowerへ変換'
-  'char.to-str': 'strへ変換'
-  'char.to-txt': 'txtへ変換'
-  'char.to-upper': 'upperへ変換'
-  'chars.to-str': 'strへ変換'
-  'client.client-create': 'クライアント作成'
-  'client.client.close': 'クローズ'
-  'client.client.connect': '接続'
-  'client.client.is-connected': '接続済みか'
-  'client.client.reconnect': '再接続'
-  'client.client.recv': '受信'
-  'client.client.recv-line': '受信行'
-  'client.client.request': 'リクエスト'
-  'client.client.send': '送信'
-  'client.client.send-line': '送信行'
-  'cookie.build-header': '構築ヘッダ'
-  'cookie.build-set': '構築設定'
-  'cookie.cookie-sign': 'cookie署名'
-  'cookie.cookie-verify': 'cookie検証'
-  'cookie.jar.build-header': '構築ヘッダ'
-  'cookie.jar.clear': 'クリア'
-  'cookie.jar.count-of': 'カウントの'
-  'cookie.jar.delete': '削除'
-  'cookie.jar.get': '取得'
-  'cookie.jar.get-verified': '取得検証済み'
-  'cookie.jar.parse-response': '解析レスポンス'
-  'cookie.jar.set': '設定'
-  'cookie.jar.set-signed': '設定符号付き'
-  'cookie.parse-header': '解析ヘッダ'
-  'cookie.parse-set': '解析設定'
-  'crc-16.hex': '16進'
-  'crc-16.new': '新規'
-  'crc-32.new': '新規'
-  'crc-64.hex': '16進'
-  'crc-64.new': '新規'
-  'csv.encode-field': 'エンコードフィールド'
-  'csv.parse-field': '解析フィールド'
-  'csv.parse-line': '解析行'
-  'deque.deque.clear': 'クリア'
-  'deque.deque.empty': 'empty'
-  'deque.deque.peek-back': '覗き後端'
-  'deque.deque.peek-front': '覗き前端'
-  'deque.deque.pop-back': 'ポップ後端'
-  'deque.deque.pop-front': 'ポップ前端'
-  'deque.deque.push-back': 'プッシュ後端'
-  'deque.deque.push-front': 'プッシュ前端'
-  'deque.deque.size': 'サイズ'
-  'des.des-block': 'DESブロック'
-  'des.des-dec': 'DES復号'
-  'des.des-enc': 'DES暗号化'
-  'des.des-key-schedule': 'DESキースケジュール'
-  'des.f': '浮動小数'
-  'des.permute': '置换'
-  'des.sbox-lookup': 'S盒引き'
-  'dns.build-query': '構築クエリ'
-  'dns.dial': 'ダイヤル'
-  'dns.parse-name': '解析名前'
-  'dns.parse-response': '解析レスポンス'
-  'dns.resolve': 'resolve'
-  'dns.resolve-all': 'resolve全て'
-  'dns.resolve-from': 'resolvefrom'
-  'dom.append-child': '追加子'
-  'dom.attribute-count': '属性カウント'
-  'dom.attribute-name': '属性名前'
-  'dom.attribute-value': '属性値'
-  'dom.blob-has': 'blob.has'
-  'dom.child-at': '子位置'
-  'dom.child-count': '子カウント'
-  'dom.class-has': 'クラス.has'
-  'dom.cp-append': 'cp追加'
-  'dom.create-comment': '作成コメント'
-  'dom.create-element': '作成要素'
-  'dom.create-text-node': '作成テキストノード'
-  'dom.decode-entities': 'デコードエンティティ'
-  'dom.document-element': 'ドキュメント要素'
-  'dom.dom-closers-of': 'DOMクローザの'
-  'dom.dom-pool.alloc': '確保'
-  'dom.dom-pool.append': '追加'
-  'dom.dom-pool.attr-edge-at': '属性辺位置'
-  'dom.dom-pool.collect-class': '収集クラス'
-  'dom.dom-pool.collect-tag': '収集タグ'
-  'dom.dom-pool.detach': 'デタッチ'
-  'dom.dom-pool.find-attr': '検索属性'
-  'dom.dom-pool.find-id-node': '検索idノード'
-  'dom.dom-pool.html-add-text': 'html追加テキスト'
-  'dom.dom-pool.html-bogus-comment': 'html偽コメント'
-  'dom.dom-pool.html-parse-attr': 'html解析属性'
-  'dom.dom-pool.html-parse-close-name': 'html解析クローズ名前'
-  'dom.dom-pool.html-parse-comment': 'html解析コメント'
-  'dom.dom-pool.html-parse-doc': 'html解析ドキュメント'
-  'dom.dom-pool.html-parse-open': 'html解析オープン'
-  'dom.dom-pool.html-parse-pi': 'html解析pi'
-  'dom.dom-pool.html-set-attr-once': 'html設定属性一度'
-  'dom.dom-pool.init': '初期化'
-  'dom.dom-pool.insert-before': '挿入前方'
-  'dom.dom-pool.parse-doctype-node': '解析doctypeノード'
-  'dom.dom-pool.remove-attr': '削除属性'
-  'dom.dom-pool.ser': 'シリアライズ'
-  'dom.dom-pool.ser-children': 'シリアライズ子'
-  'dom.dom-pool.set-attr': '設定属性'
-  'dom.dom-pool.text-of': 'テキストの'
-  'dom.dom-pool.valid': '有効'
-  'dom.dom-pool.xml-add-text': 'xml追加テキスト'
-  'dom.dom-pool.xml-parse-attr': 'xml解析属性'
-  'dom.dom-pool.xml-parse-cdata': 'xml解析CDATA'
-  'dom.dom-pool.xml-parse-close': 'xml解析クローズ'
-  'dom.dom-pool.xml-parse-comment': 'xml解析コメント'
-  'dom.dom-pool.xml-parse-doc': 'xml解析ドキュメント'
-  'dom.dom-pool.xml-parse-element': 'xml解析要素'
-  'dom.dom-pool.xml-parse-pi': 'xml解析pi'
-  'dom.dom-strip-bom': 'DOM除去BOM'
-  'dom.esc-attr': 'エスケープ属性'
-  'dom.esc-text': 'エスケープテキスト'
-  'dom.find-entity': '検索エンティティ'
-  'dom.first-child': '先頭子'
-  'dom.get-attribute': '取得属性'
-  'dom.get-element-by-id': '取得要素でid'
-  'dom.get-elements-by-class-name': '取得要素でクラス名前'
-  'dom.get-elements-by-tag-name': '取得要素でタグ名前'
-  'dom.has-attribute': '.has属性'
-  'dom.html-close-match': 'htmlクローズ一致'
-  'dom.html-peek-name': 'html覗き名前'
-  'dom.inner-html': '内側html'
-  'dom.insert-child-before': '挿入子前方'
-  'dom.is-html': 'htmlか'
-  'dom.is-name-byte': '名前バイトか'
-  'dom.kind': '種別'
-  'dom.name': '名前'
-  'dom.new-document': '新規ドキュメント'
-  'dom.outer-html': '外側html'
-  'dom.parent': '親'
-  'dom.parse-html': '解析html'
-  'dom.parse-numeric-entity': '解析数値エンティティ'
-  'dom.parse-xml': '解析xml'
-  'dom.remove-attribute': '削除属性'
-  'dom.remove-child': '削除子'
-  'dom.replace-child': '置換子'
-  'dom.set-attribute': '設定属性'
-  'dom.set-node-value': '設定ノード値'
-  'dom.set-text-content': '設定テキストコンテンツ'
-  'dom.text-content': 'テキストコンテンツ'
-  'dom.to-string': 'stringへ変換'
-  'dom.value': '値'
-  'dom.xml-read-name': 'xml読み名前'
-  'dom.xml-skip-ws': 'xmlスキップWebSocket'
-  'ecdsa.bn-add': '大数追加'
-  'ecdsa.bn-addmod': '大数モジュラ加算'
-  'ecdsa.bn-cmp': '大数比較'
-  'ecdsa.bn-invmod': '大数モジュラ逆元'
-  'ecdsa.bn-mod': '大数モッド'
-  'ecdsa.bn-mulmod': '大数모듈러 곱셈'
-  'ecdsa.bn-sub': '大数減算'
-  'ecdsa.bn-submod': '大数モジュラ減算'
-  'ecdsa.ec-bytes-to-point': 'ecバイトto点'
-  'ecdsa.ec-get-basepoint': 'ec取得基準点'
-  'ecdsa.ec-point-add': 'ec点追加'
-  'ecdsa.ec-point-double': 'ec点倍点'
-  'ecdsa.ec-point-to-bytes': 'ec点toバイト'
-  'ecdsa.ec-scalar-mult': 'ecスカラーmult'
-  'ecdsa.ecdh-p256': 'ECDHp256'
-  'ecdsa.ecdsa-publickey': 'ECDSApublickey'
-  'ecdsa.ecdsa-sign': 'ECDSA署名'
-  'ecdsa.ecdsa-verify': 'ECDSA検証'
-  'ed25519.ed-d': 'ed距離'
-  'ed25519.ed-sqm1': 'ed二乗-1'
-  'ed25519.ed25519-publickey': 'ed25519publickey'
-  'ed25519.ed25519-sign': 'ed25519署名'
-  'ed25519.ed25519-verify': 'ed25519検証'
-  'ed25519.fe-pow': '体要素幂'
-  'ed25519.ge-add': 'ge追加'
-  'ed25519.ge-basepoint': 'ge基準点'
-  'ed25519.ge-pack': 'gepack'
-  'ed25519.ge-scalar-mult': 'geスカラーmult'
-  'ed25519.ge-unpack': 'geunpack'
-  'ed25519.is-zero-arr': 'ゼロ配列か'
-  'ed25519.pcopy': '部分コピー'
-  'ed25519.sc-ge-l': 'scgel'
-  'ed25519.sc-muladd': 'sc乗算加算'
-  'ed25519.sc-reduce': 'sc.reduce'
-  'ed25519.set-coord': '設定coord'
-  'embed.exists': '存在'
-  'embed.read': '読み'
-  'env.get': '取得'
-  'env.get-with-default': '取得付きデフォルト'
-  'env.is-set': '設定か'
-  'env.lookup': '引き'
-  'env.set': '設定'
-  'env.unset': 'unset'
-  'err._errno-to-code': 'errnotoコード'
-  'err.code': 'コード'
-  'err.code.to-name': 'nameへ変換'
-  'err.format': 'フォーマット'
-  'err.from-errno': 'errnoから変換'
-  'err.is': '是否'
-  'err.msg': 'msg'
-  'err.new': '新規'
-  'err.new-at': '新規位置'
-  'float.div': '除算'
-  'float.is-inf': '無限か'
-  'float.is-nan': 'NaNか'
-  'fmt.eprintf': 'eprintf'
-  'fmt.fmt-apply-spec': 'fmt適用spec'
-  'fmt.fmt-bool': 'fmtbool'
-  'fmt.fmt-f64': 'fmtf64'
-  'fmt.fmt-group-digits': 'fmtグループ数字'
-  'fmt.fmt-int': 'fmt整数'
-  'fmt.fmt-parse-spec': 'fmt解析spec'
-  'fmt.fmt-str': 'fmt文字列'
-  'fmt.fmt-uint': 'fmt符号なし整数'
-  'fmt.fmt-uint-base': 'fmt符号なし整数base'
-  'fmt.printf': 'printf'
-  'fmt.sprintf': 'sprintf'
-  'fnv-1a-32.fnv-1a-32': 'fnv1a32'
-  'fnv.fnv-1a-32': 'fnv1a32'
-  'fnv.fnv-1a-64': 'fnv1a64'
-  'fs.close': 'クローズ'
-  'fs.copy-file': 'コピーファイル'
-  'fs.dir-entries': 'ディレクトリエントリ'
-  'fs.exists': '存在'
-  'fs.file-size': 'ファイルサイズ'
-  'fs.file.append': '追加'
-  'fs.file.close': 'クローズ'
-  'fs.file.copy-to': 'コピーto'
-  'fs.file.is-open': 'オープンか'
-  'fs.file.read': '読み'
-  'fs.file.read-bytes': '読みバイト'
-  'fs.file.read-line': '読み行'
-  'fs.file.read-str': '読み文字列'
-  'fs.file.size': 'サイズ'
-  'fs.file.write': '書き'
-  'fs.file.write-bytes': '書きバイト'
-  'fs.file.write-str': '書き文字列'
-  'fs.fstat-size': 'fstatサイズ'
-  'fs.get-line': '取得行'
-  'fs.is-dir': 'ディレクトリか'
-  'fs.is-file': 'ファイルか'
-  'fs.link': 'リンク'
-  'fs.list-dir': 'リストディレクトリ'
-  'fs.list-dir-2': 'リストディレクトリ'
-  'fs.list-dir-3': 'リストディレクトリ'
-  'fs.lstat': 'lstat'
-  'fs.mkdtemp': 'mkdtemp'
-  'fs.mkfifo': 'mkfifo'
-  'fs.mknod': 'mknod'
-  'fs.mkstemp': 'mkstemp'
-  'fs.open': 'オープン'
-  'fs.open-file': 'オープンファイル'
-  'fs.open-read': 'オープン読み'
-  'fs.open-write': 'オープン書き'
-  'fs.read': '読み'
-  'fs.read-bytes': '読みバイト'
-  'fs.read-file': '読みファイル'
-  'fs.read-stdin': '読み標準入力'
-  'fs.read-stdin-str': '読み標準入力文字列'
-  'fs.read-str': '読み文字列'
-  'fs.readlink': 'readlink'
-  'fs.realpath': 'realpath'
-  'fs.remove': '削除'
-  'fs.rename': 'rename'
-  'fs.rmdir': 'rmdir'
-  'fs.stat-size': 'statサイズ'
-  'fs.symlink': 'symlink'
-  'fs.sync': 'sync'
-  'fs.truncate': 'truncate'
-  'fs.utime': 'アクセス時刻'
-  'fs.walk': 'walk'
-  'fs.walk-collect': 'walk収集'
-  'fs.write': '書き'
-  'fs.write-bytes': '書きバイト'
-  'fs.write-file': '書きファイル'
-  'fs.write-str': '書き文字列'
-  'global.eprint': 'eprint'
-  'global.exit': '終了'
-  'global.format': 'フォーマット'
-  'global.print': '印刷'
-  'global.with-cap': '付き容量'
-  'global.with-cap-len': '付き容量長さ'
-  'global.with-len': '付き長さ'
-  'gzip.bit-reader.read-bit': '読みビット'
-  'gzip.bit-reader.read-bits': '読みビット'
-  'gzip.bit-reader.read-u16-le': '読みu16リトルエンディアン'
-  'gzip.bit-reader.skip-to-byte': 'スキップtoバイト'
-  'gzip.build-dynamic': '構築動的'
-  'gzip.build-fixed': '構築固定'
-  'gzip.deflate-stored': '.deflatestored'
-  'gzip.gzip-compress': 'gzip圧縮'
-  'gzip.gzip-decompress': 'gzip解凍'
-  'gzip.huffman.build': '構築'
-  'gzip.huffman.decode': 'デコード'
-  'gzip.inflate-decompress': 'インフレ解凍'
-  'hash-set.hash-set.add': '追加'
-  'hash-set.hash-set.clear': 'クリア'
-  'hash-set.hash-set.contains': '含む'
-  'hash-set.hash-set.for-each': '用各'
-  'hash-set.hash-set.hash': 'ハッシュ'
-  'hash-set.hash-set.init': '初期化'
-  'hash-set.hash-set.is-empty': 'emptyか'
-  'hash-set.hash-set.len': '長さ'
-  'hash-set.hash-set.remove': '削除'
-  'heap.empty': 'empty'
-  'heap.init': '初期化'
-  'heap.peek': '覗き'
-  'heap.pop': 'ポップ'
-  'heap.push': 'プッシュ'
-  'heap.size': 'サイズ'
-  'hkdf.hkdf-derive-secret': 'hkdf導出秘密'
-  'hkdf.hkdf-expand': 'hkdf拡張'
-  'hkdf.hkdf-expand-hmac': 'hkdf拡張HMAC'
-  'hkdf.hkdf-expand-label': 'hkdf拡張ラベル'
-  'hkdf.hkdf-expand-label-vec': 'hkdf拡張ラベルベクトル'
-  'hkdf.hkdf-extract': 'hkdf抽出'
-  'hmac.hmac-md5': 'HMACMD5'
-  'hmac.hmac-md5-vec': 'HMACMD5ベクトル'
-  'hmac.hmac-sha1': 'HMACSHA-1'
-  'hmac.hmac-sha1-vec': 'HMACSHA-1ベクトル'
-  'hmac.hmac-sha256': 'HMACsha256'
-  'hmac.hmac-sha256-vec': 'HMACsha256ベクトル'
-  'hmac.hmac-sha384': 'HMACsha384'
-  'hmac.hmac-sha384-vec': 'HMACsha384ベクトル'
-  'hmac.hmac-sha512': 'HMACsha512'
-  'hmac.hmac-sha512-vec': 'HMACsha512ベクトル'
-  'hpack.decode-int': 'デコード整数'
-  'hpack.decode-str': 'デコード文字列'
-  'hpack.encode-int': 'エンコード整数'
-  'hpack.encode-str': 'エンコード文字列'
-  'hpack.tables.decode-headers': 'デコードヘッダ'
-  'hpack.tables.dyn-add': '動追加'
-  'hpack.tables.encode-header': 'エンコードヘッダ'
-  'hpack.tables.find': '検索'
-  'hpack.tables.find-name': '検索名前'
-  'hpack.tables.init': '初期化'
-  'hpack.tables.lookup': '引き'
-  'http.delete': '削除'
-  'http.do': '実行'
-  'http.do-req': '実行リクエスト'
-  'http.download': 'ダウンロード'
-  'http.get': '取得'
-  'http.get-auth': '取得認証'
-  'http.http-dl-dechunk': 'HTTPdldechunk'
-  'http.http-dl-location': 'HTTPdllocation'
-  'http.http-dl-open': 'HTTPdlオープン'
-  'http.http-dl-resolve': 'HTTPdlresolve'
-  'http.http-write-ok': 'HTTP書きOK'
-  'http.patch': 'パッチ'
-  'http.ping': 'ping'
-  'http.post': '後置'
-  'http.post-auth': '後置認証'
-  'http.put': '投入'
-  'http.request.add-header': '追加ヘッダ'
-  'http.request.init': '初期化'
-  'http.response.get-header': '取得ヘッダ'
-  'http.response.parse-headers': '解析ヘッダ'
-  'http.set-api-key': '設定APIキー'
-  'http.set-basic-auth': '設定基本認証'
-  'http.set-bearer-auth': '設定bearer認証'
-  'http.upload-put': 'アップロード投入'
-  'http2.conn.close': 'クローズ'
-  'http2.conn.init': '初期化'
-  'http2.conn.recv-frame': '受信フレーム'
-  'http2.conn.request': 'リクエスト'
-  'http2.conn.send-data': '送信データ'
-  'http2.conn.send-frame': '送信フレーム'
-  'http2.conn.send-headers': '送信ヘッダ'
-  'http2.conn.send-settings': '送信settings'
-  'http2.connect': '接続'
-  'http2.connect-tls': '接続TLS'
-  'http2.delete': '削除'
-  'http2.do': '実行'
-  'http2.do-req': '実行リクエスト'
-  'http2.frame.parse': '解析'
-  'http2.frame.serialize': 'シリアライズ'
-  'http2.get': '取得'
-  'http2.patch': 'パッチ'
-  'http2.post': '後置'
-  'http2.put': '投入'
-  'http3.connect': '接続'
-  'http3.decode-header': 'デコードヘッダ'
-  'http3.encode-data-frame': 'エンコードデータフレーム'
-  'http3.encode-frame': 'エンコードフレーム'
-  'http3.encode-header': 'エンコードヘッダ'
-  'http3.encode-headers': 'エンコードヘッダ'
-  'http3.encode-headers-frame': 'エンコードヘッダフレーム'
-  'http3.encode-settings-frame': 'エンコードsettingsフレーム'
-  'http3.get': '取得'
-  'http3.http3-do': 'http3実行'
-  'http3.parse-frame': '解析フレーム'
-  'http3.parse-url': '解析url'
-  'http3.post': '後置'
-  'http3.response.get-header': '取得ヘッダ'
-  'http3.send-request': '送信リクエスト'
-  'int.div': '除算'
-  'int.mod': 'モッド'
-  'int.to-str': 'strへ変換'
-  'io.err': 'エラー'
-  'io.errln': 'errln'
-  'io.out': '出力'
-  'io.outln': 'outln'
-  'io.read-line': '読み行'
-  'io.reader.from-fd': 'fdから変換'
-  'io.reader.from-stdin': 'stdinから変換'
-  'io.reader.read': '読み'
-  'io.reader.read-all': '読み全て'
-  'io.reader.read-byte': '読みバイト'
-  'io.reader.read-line': '読み行'
-  'io.writer.from-fd': 'fdから変換'
-  'io.writer.from-stderr': 'stderrから変換'
-  'io.writer.from-stdout': 'stdoutから変換'
-  'io.writer.write': '書き'
-  'io.writer.write-byte': '書きバイト'
-  'io.writer.write-line': '書き行'
-  'io.writer.write-str': '書き文字列'
-  'ip.ip-addr.equal': '等値'
-  'ip.ip-addr.from-str': 'strから変換'
-  'ip.ip-addr.from-u32': 'u32から変換'
-  'ip.ip-addr.in-subnet': '内サブネット'
-  'ip.ip-addr.is-broadcast': 'ブロードキャストか'
-  'ip.ip-addr.is-class-a': 'クラス全か'
-  'ip.ip-addr.is-class-b': 'クラスバイトか'
-  'ip.ip-addr.is-class-c': 'クラス容量か'
-  'ip.ip-addr.is-link-local': 'リンクローカルか'
-  'ip.ip-addr.is-loopback': 'ループバックか'
-  'ip.ip-addr.is-multicast': 'マルチキャストか'
-  'ip.ip-addr.is-private': '私有か'
-  'ip.ip-addr.is-valid': '有効か'
-  'ip.ip-addr.is-zero': 'ゼロか'
-  'ip.ip-addr.parse': '解析'
-  'ip.ip-addr.to-str': 'strへ変換'
-  'ip.ip-addr.to-u32': 'u32へ変換'
-  'ip.ip-is-loopback': 'ip是否ループバック'
-  'ip.ip-is-private': 'ip是否私有'
-  'ip.ip-parse': 'ip解析'
-  'json.alloc-node': '確保ノード'
-  'json.arr-get': '配列取得'
-  'json.arr-len': '配列長さ'
-  'json.arr-push': '配列プッシュ'
-  'json.arr-push-bool': '配列プッシュbool'
-  'json.arr-push-idx': '配列プッシュindex'
-  'json.arr-push-num': '配列プッシュ数値'
-  'json.arr-push-str': '配列プッシュ文字列'
-  'json.bool': 'bool'
-  'json.delete-key': '削除キー'
-  'json.get': '取得'
-  'json.get-bool': '取得bool'
-  'json.get-i64': '取得i64'
-  'json.get-key': '取得キー'
-  'json.get-num': '取得数値'
-  'json.get-str': '取得文字列'
-  'json.i64': 'i64'
-  'json.is-arr': '配列か'
-  'json.is-bool': 'boolか'
-  'json.is-null': 'nullか'
-  'json.is-num': '数値か'
-  'json.is-obj': 'objか'
-  'json.is-str': '文字列か'
-  'json.json-clone-tree': 'jsonクローンツリー'
-  'json.json-pool.add-child': '追加子'
-  'json.json-pool.alloc': '確保'
-  'json.json-pool.arr-get': '配列取得'
-  'json.json-pool.arr-len': '配列長さ'
-  'json.json-pool.copy-tree': 'コピーツリー'
-  'json.json-pool.get-bool': '取得bool'
-  'json.json-pool.get-key': '取得キー'
-  'json.json-pool.get-kind': '取得種別'
-  'json.json-pool.get-num': '取得数値'
-  'json.json-pool.get-str': '取得文字列'
-  'json.json-pool.init': '初期化'
-  'json.json-pool.parse': '解析'
-  'json.json-pool.parse-num': '解析数値'
-  'json.json-pool.parse-str': '解析文字列'
-  'json.json-pool.set-key': '設定キー'
-  'json.json-pool.skip-ws': 'スキップWebSocket'
-  'json.json-pool.str-eq': '文字列等値'
-  'json.json-pool.stringify': '文字列化'
-  'json.kind': '種別'
-  'json.new': '新規'
-  'json.new-pool': '新規プール'
-  'json.num': '数値'
-  'json.obj-key': 'objキー'
-  'json.obj-keys-str': 'objキー文字列'
-  'json.obj-len': 'obj長さ'
-  'json.overflowed': 'オーバーフロー'
-  'json.set': '設定'
-  'json.set-bool': '設定bool'
-  'json.set-i64': '設定i64'
-  'json.set-key': '設定キー'
-  'json.set-null': '設定null'
-  'json.set-num': '設定数値'
-  'json.set-str': '設定文字列'
-  'json.str': '文字列'
-  'json.str-val': '文字列値'
-  'json.stringify': '文字列化'
-  'link.link.empty': 'empty'
-  'link.link.full': 'full'
-  'link.link.size': 'サイズ'
-  'linked-hash-map.linked-hash-map.clear': 'クリア'
-  'linked-hash-map.linked-hash-map.contains': '含む'
-  'linked-hash-map.linked-hash-map.for-each': '用各'
-  'linked-hash-map.linked-hash-map.get': '取得'
-  'linked-hash-map.linked-hash-map.hash': 'ハッシュ'
-  'linked-hash-map.linked-hash-map.init': '初期化'
-  'linked-hash-map.linked-hash-map.is-empty': 'emptyか'
-  'linked-hash-map.linked-hash-map.len': '長さ'
-  'linked-hash-map.linked-hash-map.put': '投入'
-  'linked-hash-map.linked-hash-map.remove': '削除'
-  'log.get-output-fd': '取得outputfd'
-  'log.get-writer': '取得ライタ'
-  'log.log-emit': 'ログ发出'
-  'log.log-stamp': 'ログスタンプ'
-  'log.open-file': 'オープンファイル'
-  'log.set-format': '設定フォーマット'
-  'log.set-level': '設定レベル'
-  'log.set-output-fd': '設定outputfd'
-  'log.set-writer': '設定ライタ'
-  'magic.detect-by-extension': '検出で拡張'
-  'magic.detect-by-magic': '検出でマジック'
-  'magic.detect-type': '検出型'
-  'magic.get-extension': '取得拡張'
-  'map.hashmap-bool-tmpl.clear': 'クリア'
-  'map.hashmap-bool-tmpl.contains': '含む'
-  'map.hashmap-bool-tmpl.for-each': '用各'
-  'map.hashmap-bool-tmpl.get': '取得'
-  'map.hashmap-bool-tmpl.hash': 'ハッシュ'
-  'map.hashmap-bool-tmpl.init': '初期化'
-  'map.hashmap-bool-tmpl.is-empty': 'emptyか'
-  'map.hashmap-bool-tmpl.len': '長さ'
-  'map.hashmap-bool-tmpl.put': '投入'
-  'map.hashmap-bool-tmpl.remove': '削除'
-  'map.hashmap-int-tmpl.clear': 'クリア'
-  'map.hashmap-int-tmpl.contains': '含む'
-  'map.hashmap-int-tmpl.for-each': '用各'
-  'map.hashmap-int-tmpl.get': '取得'
-  'map.hashmap-int-tmpl.hash': 'ハッシュ'
-  'map.hashmap-int-tmpl.init': '初期化'
-  'map.hashmap-int-tmpl.is-empty': 'emptyか'
-  'map.hashmap-int-tmpl.len': '長さ'
-  'map.hashmap-int-tmpl.put': '投入'
-  'map.hashmap-int-tmpl.rehash': '再ハッシュ'
-  'map.hashmap-int-tmpl.remove': '削除'
-  'map.hashmap-str-tmpl.clear': 'クリア'
-  'map.hashmap-str-tmpl.contains': '含む'
-  'map.hashmap-str-tmpl.for-each': '用各'
-  'map.hashmap-str-tmpl.get': '取得'
-  'map.hashmap-str-tmpl.hash': 'ハッシュ'
-  'map.hashmap-str-tmpl.init': '初期化'
-  'map.hashmap-str-tmpl.is-empty': 'emptyか'
-  'map.hashmap-str-tmpl.len': '長さ'
-  'map.hashmap-str-tmpl.put': '投入'
-  'map.hashmap-str-tmpl.rehash': '再ハッシュ'
-  'map.hashmap-str-tmpl.remove': '削除'
-  'map.hashmap-str-tmpl.str-eq': '文字列等値'
-  'markdown.blockquote': '引用ブロック'
-  'markdown.code-close': 'コードクローズ'
-  'markdown.escape-html': 'エスケープhtml'
-  'markdown.fence': 'フェンス'
-  'markdown.heading': '見出し'
-  'markdown.inline': 'inline'
-  'markdown.is-word-byte': '単語バイトか'
-  'markdown.join-paragraph': '結合段落'
-  'markdown.list-content': 'リストコンテンツ'
-  'markdown.list-item': 'リストitem'
-  'markdown.prefix-count': 'プレフィックスカウント'
-  'markdown.read-line': '読み行'
-  'markdown.render': '描画'
-  'markdown.render-code': '描画コード'
-  'markdown.setext-level': 'Setextレベル'
-  'markdown.table-row': 'テーブル行'
-  'markdown.table-separator': 'テーブル区切り'
-  'markdown.thematic-break': 'thematicbreak'
-  'markdown.to-html': 'htmlへ変換'
-  'math.arr-zero': '配列ゼロ'
-  'math.atan-kernel': '逆正接カーネル'
-  'math.char-to-str': '文字to文字列'
-  'math.clamp': 'clamp'
-  'math.div': '除算'
-  'math.even': '偶数'
-  'math.fmod': '浮動少数モッド'
-  'math.gcd': '最大公約数'
-  'math.hypot': '三平方'
-  'math.lcm': '最小公倍数'
-  'math.max': '最大'
-  'math.min': '最小'
-  'math.mod': 'モッド'
-  'math.odd': '奇数'
-  'math.pow': '幂'
-  'math.pow-int': '幂整数'
-  'math.rotate-left': '回転左'
-  'math.rotate-right': '回転右'
-  'math.store-le-u32': '保存リトルエンディアンu32'
-  'math.swap': 'スワップ'
-  'md5.md5': 'MD5'
-  'md5.md5-rotl': 'MD5左回転'
-  'multipart.multipart-create': 'multipart作成'
-  'multipart.multipart-create-boundary': 'multipart作成境界'
-  'multipart.multipart-decrypt-field': 'multipart復号フィールド'
-  'multipart.multipart-extract-boundary': 'multipart抽出境界'
-  'multipart.multipart-gen-boundary': 'multipart生成境界'
-  'multipart.multipart-parse': 'multipart解析'
-  'multipart.multipart-reader.field-content-type': 'フィールドコンテンツ型'
-  'multipart.multipart-reader.field-data': 'フィールドデータ'
-  'multipart.multipart-reader.field-filename': 'フィールドファイル名'
-  'multipart.multipart-reader.field-name': 'フィールド名前'
-  'multipart.multipart-reader.has-current-part': '.has現在部分'
-  'multipart.multipart-reader.init': '初期化'
-  'multipart.multipart-reader.is-file': 'ファイルか'
-  'multipart.multipart-reader.next': '次'
-  'multipart.multipart-reader.parse-header-line': '解析ヘッダ行'
-  'multipart.multipart-reader.parse-headers': '解析ヘッダ'
-  'multipart.multipart-writer.body-of': 'ボディの'
-  'multipart.multipart-writer.boundary-of': '境界の'
-  'multipart.multipart-writer.close-form': 'クローズ形式'
-  'multipart.multipart-writer.content-type': 'コンテンツ型'
-  'multipart.multipart-writer.init': '初期化'
-  'multipart.multipart-writer.init-boundary': '初期化境界'
-  'multipart.multipart-writer.write-encrypted-field': '書き暗号化済みフィールド'
-  'multipart.multipart-writer.write-encrypted-file': '書き暗号化済みファイル'
-  'multipart.multipart-writer.write-field': '書きフィールド'
-  'multipart.multipart-writer.write-file': '書きファイル'
-  'net.close': 'クローズ'
-  'net.conn.close': 'クローズ'
-  'net.conn.dial': 'ダイヤル'
-  'net.conn.fd-of': 'fdの'
-  'net.conn.recv': '受信'
-  'net.conn.recv-all': '受信全て'
-  'net.conn.recv-line': '受信行'
-  'net.conn.recv-with-timeout': '受信付き타임아웃'
-  'net.conn.send': '送信'
-  'net.conn.send-with-timeout': '送信付き타임아웃'
-  'net.conn.set-recv-timeout': '設定受信타임아웃'
-  'net.conn.set-timeout': '設定타임아웃'
-  'net.dial-timeout': 'ダイヤル타임아웃'
-  'net.dial-to': 'ダイヤルto'
-  'net.enc-accept': '暗号化受付'
-  'net.enc-conn.close': 'クローズ'
-  'net.enc-conn.gen-iv': '生成IV'
-  'net.enc-conn.init': '初期化'
-  'net.enc-conn.recv-encrypted': '受信暗号化済み'
-  'net.enc-conn.send-encrypted': '送信暗号化済み'
-  'net.enc-dial': '暗号化ダイヤル'
-  'net.icmp-checksum': 'ICMPチェックサム'
-  'net.icmp-conn.build-echo': '構築エコー'
-  'net.icmp-conn.close': 'クローズ'
-  'net.icmp-conn.open': 'オープン'
-  'net.icmp-conn.ping-host': 'pingホスト'
-  'net.icmp-conn.ping-once': 'ping一度'
-  'net.listen-on': 'リッスン上'
-  'net.listener.accept': '受付'
-  'net.listener.accept-with-timeout': '受付付き타임아웃'
-  'net.listener.close': 'クローズ'
-  'net.listener.fd-of': 'fdの'
-  'net.listener.listen': 'リッスン'
-  'net.listener.set-timeout': '設定타임아웃'
-  'net.net-accept': 'ネットワーク受付'
-  'net.net-accept-nb': 'ネットワーク受付nb'
-  'net.net-dial': 'ネットワークダイヤル'
-  'net.net-icmp-open': 'ネットワークICMPオープン'
-  'net.net-listen': 'ネットワークリッスン'
-  'net.net-recv': 'ネットワーク受信'
-  'net.net-send': 'ネットワーク送信'
-  'net.net-set-recv-timeout': 'ネットワーク設定受信타임아웃'
-  'net.net-udp-open': 'ネットワークUDPオープン'
-  'net.net-udp-recvfrom': 'ネットワークUDP受信元'
-  'net.net-udp-sendto': 'ネットワークUDP送信先'
-  'net.ping': 'ping'
-  'net.ping-count': 'pingカウント'
-  'net.split-ws': '分割WebSocket'
-  'net.udp-conn.close': 'クローズ'
-  'net.udp-conn.fd-of': 'fdの'
-  'net.udp-conn.open': 'オープン'
-  'net.udp-conn.recv': '受信'
-  'net.udp-conn.recv-bytes': '受信バイト'
-  'net.udp-conn.send': '送信'
-  'net.udp-conn.send-bytes': '送信バイト'
-  'net.udp-conn.set-timeout': '設定타임아웃'
-  'net.udp-dial-to': 'UDPダイヤルto'
-  'noml.hex-char': '16進文字'
-  'noml.hex-digit': '16進数字'
-  'noml.is-ident-char': '識別子文字か'
-  'noml.is-ident-key': '識別子キーか'
-  'noml.is-ident-start': '識別子開始か'
-  'noml.new': '新規'
-  'noml.noml-doc.ann': 'アノテーション'
-  'noml.noml-doc.ann-value': 'アノテーション値'
-  'noml.noml-doc.at': '位置'
-  'noml.noml-doc.bool': 'bool'
-  'noml.noml-doc.get': '取得'
-  'noml.noml-doc.get-bool': '取得bool'
-  'noml.noml-doc.get-f64': '取得f64'
-  'noml.noml-doc.get-i64': '取得i64'
-  'noml.noml-doc.get-str': '取得文字列'
-  'noml.noml-doc.has': '.has'
-  'noml.noml-doc.i64': 'i64'
-  'noml.noml-doc.is-arr': '配列か'
-  'noml.noml-doc.is-bool': 'boolか'
-  'noml.noml-doc.is-nil': 'nilか'
-  'noml.noml-doc.is-num': '数値か'
-  'noml.noml-doc.is-obj': 'objか'
-  'noml.noml-doc.is-str': '文字列か'
-  'noml.noml-doc.key': 'キー'
-  'noml.noml-doc.kind': '種別'
-  'noml.noml-doc.len': '長さ'
-  'noml.noml-doc.new-arr': '新規配列'
-  'noml.noml-doc.new-bool': '新規bool'
-  'noml.noml-doc.new-nil': '新規nil'
-  'noml.noml-doc.new-num': '新規数値'
-  'noml.noml-doc.new-obj': '新規obj'
-  'noml.noml-doc.new-str': '新規文字列'
-  'noml.noml-doc.num': '数値'
-  'noml.noml-doc.push': 'プッシュ'
-  'noml.noml-doc.put': '投入'
-  'noml.noml-doc.root-index': 'ルートインデックス'
-  'noml.noml-doc.set-ann': '設定アノテーション'
-  'noml.noml-doc.set-root': '設定ルート'
-  'noml.noml-doc.str': '文字列'
-  'noml.noml-doc.stringify': '文字列化'
-  'noml.noml-doc.stringify-node': '文字列化ノード'
-  'noml.noml-pool.add-child': '追加子'
-  'noml.noml-pool.alloc': '確保'
-  'noml.noml-pool.ann': 'アノテーション'
-  'noml.noml-pool.ann-literal': 'アノテーションリテラル'
-  'noml.noml-pool.ann-value': 'アノテーション値'
-  'noml.noml-pool.at': '位置'
-  'noml.noml-pool.at-line-start': '位置行開始'
-  'noml.noml-pool.decode-escape': 'デコードエスケープ'
-  'noml.noml-pool.fail': '失敗'
-  'noml.noml-pool.fmt-key': 'fmtキー'
-  'noml.noml-pool.fmt-num': 'fmt数値'
-  'noml.noml-pool.get': '取得'
-  'noml.noml-pool.get-bool': '取得bool'
-  'noml.noml-pool.get-f64': '取得f64'
-  'noml.noml-pool.get-i64': '取得i64'
-  'noml.noml-pool.get-str': '取得文字列'
-  'noml.noml-pool.has': '.has'
-  'noml.noml-pool.has-byte': '.hasバイト'
-  'noml.noml-pool.has-key': '.hasキー'
-  'noml.noml-pool.hex4': 'hex4'
-  'noml.noml-pool.init': '初期化'
-  'noml.noml-pool.is-arr': '配列か'
-  'noml.noml-pool.is-bool': 'boolか'
-  'noml.noml-pool.is-nil': 'nilか'
-  'noml.noml-pool.is-num': '数値か'
-  'noml.noml-pool.is-obj': 'objか'
-  'noml.noml-pool.is-str': '文字列か'
-  'noml.noml-pool.join-ann': '結合アノテーション'
-  'noml.noml-pool.key': 'キー'
-  'noml.noml-pool.kind': '種別'
-  'noml.noml-pool.len': '長さ'
-  'noml.noml-pool.line-of': '行の'
-  'noml.noml-pool.match-kw': '一致キーワード'
-  'noml.noml-pool.parse': '解析'
-  'noml.noml-pool.parse-array': '解析配列'
-  'noml.noml-pool.parse-bool': '解析bool'
-  'noml.noml-pool.parse-bool-node': '解析boolノード'
-  'noml.noml-pool.parse-key': '解析キー'
-  'noml.noml-pool.parse-nil-node': '解析nilノード'
-  'noml.noml-pool.parse-num': '解析数値'
-  'noml.noml-pool.parse-num-node': '解析数値ノード'
-  'noml.noml-pool.parse-object': '解析object'
-  'noml.noml-pool.parse-raw': '解析生の'
-  'noml.noml-pool.parse-raw-node': '解析生のノード'
-  'noml.noml-pool.parse-str': '解析文字列'
-  'noml.noml-pool.parse-str-node': '解析文字列ノード'
-  'noml.noml-pool.parse-value': '解析値'
-  'noml.noml-pool.quote': 'クォート'
-  'noml.noml-pool.quote-value': 'クォート値'
-  'noml.noml-pool.raw-safe': '生の安全'
-  'noml.noml-pool.require-end': '必要終了'
-  'noml.noml-pool.scan-ann': 'スキャンアノテーション'
-  'noml.noml-pool.scan-quote': 'スキャンクォート'
-  'noml.noml-pool.scan-raw': 'スキャン生の'
-  'noml.noml-pool.set-ann': '設定アノテーション'
-  'noml.noml-pool.skip-ann-value': 'スキップアノテーション値'
-  'noml.noml-pool.skip-blanks': 'スキップ空白'
-  'noml.noml-pool.skip-trivia': 'スキップ自明'
-  'noml.noml-pool.stringify': '文字列化'
-  'noml.noml-pool.stringify-arr': '文字列化配列'
-  'noml.noml-pool.stringify-obj': '文字列化obj'
-  'noml.noml-pool.val-bool': '値bool'
-  'noml.noml-pool.val-i64': '値i64'
-  'noml.noml-pool.val-num': '値数値'
-  'noml.noml-pool.val-str': '値文字列'
-  'noml.parse': '解析'
-  'num.abs': '絶対値'
-  'num.clamp': 'clamp'
-  'num.sign': '署名'
-  'number.byte.to-str': 'strへ変換'
-  'number.exp-f64': '指数f64'
-  'number.f32.to-f64': 'f64へ変換'
-  'number.f32.to-str': 'strへ変換'
-  'number.f64.cbrt': '立方根'
-  'number.f64.ceil': '天井'
-  'number.f64.degrees': '度数'
-  'number.f64.radians': 'ラジアン'
-  'number.f64.sin': '正弦'
-  'number.f64.sinh': '双曲正弦'
-  'number.f64.sqrt': '平方根'
-  'number.f64.tan': '正接'
-  'number.f64.to-bits': 'bitsへ変換'
-  'number.f64.to-f32': 'f32へ変換'
-  'number.f64.to-i32': 'i32へ変換'
-  'number.f64.to-i64': 'i64へ変換'
-  'number.f64.to-str': 'strへ変換'
-  'number.f64.to-str-fixed': 'str-fixedへ変換'
-  'number.f64.to-str-general': 'str-generalへ変換'
-  'number.f64.to-str-sci': 'str-sciへ変換'
-  'number.f64.to-u32': 'u32へ変換'
-  'number.f64.to-u64': 'u64へ変換'
-  'number.i128.sqrt': '平方根'
-  'number.i128.to-f64': 'f64へ変換'
-  'number.i16.sqrt': '平方根'
-  'number.i16.to-str': 'strへ変換'
-  'number.i32.sqrt': '平方根'
-  'number.i32.to-str': 'strへ変換'
-  'number.i64.is-prime': 'primeか'
-  'number.i64.sqrt': '平方根'
-  'number.i64.to-bytes-be': 'bytes-beへ変換'
-  'number.i64.to-bytes-le': 'bytes-leへ変換'
-  'number.i64.to-f64': 'f64へ変換'
-  'number.i64.to-i32': 'i32へ変換'
-  'number.i64.to-str': 'strへ変換'
-  'number.i8.sqrt': '平方根'
-  'number.i8.to-str': 'strへ変換'
-  'number.pow': '幂'
-  'number.u128.to-f64': 'f64へ変換'
-  'number.u16.sqrt': '平方根'
-  'number.u16.to-str': 'strへ変換'
-  'number.u32.sqrt': '平方根'
-  'number.u32.to-str': 'strへ変換'
-  'number.u64.from-bits': 'bitsから変換'
-  'number.u64.sqrt': '平方根'
-  'number.u64.to-f64': 'f64へ変換'
-  'number.u64.to-str': 'strへ変換'
-  'number.u8.sqrt': '平方根'
-  'number.u8.to-str': 'strへ変換'
-  'ords.asc': '昇順'
-  'ords.desc': '降順'
-  'os.arg': '引数'
-  'os.args': '引数'
-  'os.ch-dir': 'chディレクトリ'
-  'os.ch-mod': 'chモッド'
-  'os.chown': 'chown'
-  'os.chroot': 'chroot'
-  'os.flock': 'ファイルロック'
-  'os.get-arch': '取得アーキテクチャ'
-  'os.get-domain-name': '取得ドメイン名前'
-  'os.get-env': '取得環境'
-  'os.get-errno': '取得errno'
-  'os.get-host-id': '取得ホストid'
-  'os.get-login': '取得ログイン'
-  'os.get-pid': '取得pid'
-  'os.get-priority': '取得priority'
-  'os.get-wd': '取得wd'
-  'os.getegid': 'egid 取得'
-  'os.geteuid': 'euid 取得'
-  'os.getgid': 'gid 取得'
-  'os.getgroups': 'グループ取得'
-  'os.getuid': 'uid 取得'
-  'os.host-name': 'ホスト名前'
-  'os.mkdir': 'mkdir'
-  'os.now': '現在'
-  'os.now-ms': '現在ミリ秒'
-  'os.now-ns': '現在ナノ秒'
-  'os.now-us': '現在マイクロ秒'
-  'os.num-cpu': '数値CPU'
-  'os.set-env': '設定環境'
-  'os.set-priority': '設定priority'
-  'os.set-sid': '設定セッション ID'
-  'os.signal': 'シグナル'
-  'os.sleep': 'スリー프'
-  'os.sleep-ns': 'スリー프ナノ秒'
-  'os.sleep-us': 'スリー프マイクロ秒'
-  'os.stat-gid': 'statGID'
-  'os.stat-mode': 'statモード'
-  'os.stat-mtime': 'stat更新時刻'
-  'os.stat-uid': 'statUID'
-  'os.strerror': 'strerror'
-  'os.sysconf': 'システム設定'
-  'os.sysctl': 'sysctl'
-  'os.syslog': 'syslog'
-  'os.ttyname': 'tty名'
-  'os.uname': 'uname'
-  'os.win-find-close': 'ウィンドウ検索クローズ'
-  'os.win-find-first-file': 'ウィンドウ検索先頭ファイル'
-  'os.win-find-next-file': 'ウィンドウ検索次ファイル'
-  'os.win-wsa-startup': 'ウィンドウwsa起動'
-  'path.base': 'base'
-  'path.change-dir': 'changeディレクトリ'
-  'path.clean': 'clean'
-  'path.current': '現在'
-  'path.dir': 'ディレクトリ'
-  'path.exists': '存在'
-  'path.ext': 'ext'
-  'path.is-abs': '絶対値か'
-  'path.is-dir': 'ディレクトリか'
-  'path.is-file': 'ファイルか'
-  'path.join': '結合'
-  'path.make-dir': '生成ディレクトリ'
-  'path.remove': '削除'
-  'path.rename': 'rename'
-  'path.size': 'サイズ'
-  'path.split': '分割'
-  'pbkdf2.pbkdf2-hmac-sha1': 'pbkdf2HMACSHA-1'
-  'pbkdf2.pbkdf2-hmac-sha256': 'pbkdf2HMACsha256'
-  'pbkdf2.pbkdf2-hmac-sha512': 'pbkdf2HMACsha512'
-  'pem.pem-decode': 'PEMデコード'
-  'pem.pem-encode': 'PEMエンコード'
-  'pool.create': '作成'
-  'pool.pool.active-count': 'アクティブカウント'
-  'pool.pool.close-all': 'クローズ全て'
-  'pool.pool.close-conn': 'クローズ接続'
-  'pool.pool.get': '取得'
-  'pool.pool.idle-count': 'アイドルカウント'
-  'pool.pool.init': '初期化'
-  'pool.pool.put': '投入'
-  'pool.pool.total-count': 'totalカウント'
-  'pool.with-size': '付きサイズ'
-  'process.close': 'クローズ'
-  'process.close-stderr': 'クローズ標準エラー'
-  'process.close-stdin': 'クローズ標準入力'
-  'process.close-stdout': 'クローズ標準出力'
-  'process.cmd-2': 'コマンド'
-  'process.exec': '実行'
-  'process.exit-code-of': '終了コードの'
-  'process.find-by-name': '検索で名前'
-  'process.find-match': '検索一致'
-  'process.force-kill': 'forceキル'
-  'process.is-running': '実行中か'
-  'process.kill': 'キル'
-  'process.list-all': 'リスト全て'
-  'process.new': '新規'
-  'process.output': 'output'
-  'process.parent-pid': '親pid'
-  'process.pid-of': 'pidの'
-  'process.process-dup2': 'プロセスデュプリケート2'
-  'process.process-exec': 'プロセス実行'
-  'process.process-exec-shell': 'プロセス実行シェル'
-  'process.process-fork': 'プロセスフォーク'
-  'process.process-getppid': 'プロセス親プロセス ID'
-  'process.process-kill': 'プロセスキル'
-  'process.process-pipe': 'プロセスパイプ'
-  'process.process-shell': 'プロセスシェル'
-  'process.process-system': 'プロセスシステム'
-  'process.process-waitpid': 'プロセス子プロセス待ち'
-  'process.process-waitpid-nohang': 'プロセス子プロセス待ち非停止'
-  'process.read': '読み'
-  'process.read-all': '読み全て'
-  'process.read-line': '読み行'
-  'process.shell': 'シェル'
-  'process.shell-quote': 'シェルクォート'
-  'process.spawn': 'スポーン'
-  'process.start': '開始'
-  'process.start-with-opts': '開始付きopts'
-  'process.terminate': 'terminate'
-  'process.wait': '待ち'
-  'process.wait-2': '待ち'
-  'process.wait-nohang': '待ち非停止'
-  'process.win-close-handle': 'ウィンドウクローズハンドル'
-  'process.win-create-pipe': 'ウィンドウ作成パイプ'
-  'process.win-create-process': 'ウィンドウ作成プロセス'
-  'process.win-get-exit-code': 'ウィンドウ取得終了コード'
-  'process.win-get-std-handle': 'ウィンドウ取得stdハンドル'
-  'process.win-read-pipe': 'ウィンドウ読みパイプ'
-  'process.win-terminate-process': 'ウィンドウterminateプロセス'
-  'process.win-wait-process': 'ウィンドウ待ちプロセス'
-  'process.win-write-pipe': 'ウィンドウ書きパイプ'
-  'process.write': '書き'
-  'proxy.config.connect': '接続'
-  'proxy.config.tls-connect': 'TLS接続'
-  'proxy.connect': '接続'
-  'proxy.dial': 'ダイヤル'
-  'proxy.dial-auth': 'ダイヤル認証'
-  'proxy.proxy-tls-dial': 'プロキシTLSダイヤル'
-  'proxy.socks5-connect': 'SOCKS5接続'
-  'proxy.socks5-dial': 'SOCKS5ダイヤル'
-  'queue.queue.clear': 'クリア'
-  'queue.queue.empty': 'empty'
-  'queue.queue.full': 'full'
-  'queue.queue.size': 'サイズ'
-  'quic.apply-header-protection': '適用ヘッダprotection'
-  'quic.conn.build-initial-packet': '構築initialパケット'
-  'quic.conn.close': 'クローズ'
-  'quic.conn.init': '初期化'
-  'quic.conn.recv-initial': '受信initial'
-  'quic.conn.recv-raw': '受信生の'
-  'quic.decode-packet-number': 'デコードパケット数値'
-  'quic.derive-initial-keys': '導出initialキー'
-  'quic.dial': 'ダイヤル'
-  'quic.gen-cid': '生成接続 ID'
-  'quic.parse-frames': '解析フレーム'
-  'quic.remove-header-protection': '削除ヘッダprotection'
-  'quic.varint-decode': '可変長整数デコード'
-  'quic.varint-encode': '可変長整数エンコード'
-  'rand.rand': '乱数'
-  'rand.rand-str': '乱数文字列'
-  'rc4.rc4': 'RC4'
-  'regexp.alloc-class': '確保クラス'
-  'regexp.clear-class-bit': 'クリアクラスビット'
-  'regexp.compile': 'compile'
-  'regexp.emit': '发出'
-  'regexp.emit-atom': '发出atom'
-  'regexp.emit-quantized': '发出量子化'
-  'regexp.find': '検索'
-  'regexp.in-class': '内クラス'
-  'regexp.init-class-all': '初期化クラス全て'
-  'regexp.init-class-zero': '初期化クラスゼロ'
-  'regexp.make-class-digits': '生成クラス数字'
-  'regexp.make-class-nondigits': '生成クラス非数字'
-  'regexp.make-class-nonspace': '生成クラス非空白'
-  'regexp.make-class-nonword': '生成クラス非単語'
-  'regexp.make-class-space': '生成クラススペース'
-  'regexp.make-class-word': '生成クラス単語'
-  'regexp.match-at': '一致位置'
-  'regexp.matches': '一致'
-  'regexp.parse-atom': '解析atom'
-  'regexp.parse-class': '解析クラス'
-  'regexp.parse-escape': '解析エスケープ'
-  'regexp.regexp-compile': 'regexpcompile'
-  'regexp.regexp-find': 'regexp検索'
-  'regexp.regexp-match': 'regexp一致'
-  'regexp.set-class-bit': '設定クラスビット'
-  'regexp.set-class-escape': '設定クラスエスケープ'
-  'rsa.rsa-bn-add': 'RSA大数追加'
-  'rsa.rsa-bn-cmp': 'RSA大数比較'
-  'rsa.rsa-bn-div-mod': 'RSA大数除算モッド'
-  'rsa.rsa-bn-mul': 'RSA大数乗算'
-  'rsa.rsa-bn-shl1': 'RSA大数左シフト1'
-  'rsa.rsa-bn-shr1': 'RSA大数右シフト1'
-  'rsa.rsa-bn-sub': 'RSA大数減算'
-  'rsa.rsa-decrypt': 'RSA復号'
-  'rsa.rsa-encrypt': 'RSA暗号化'
-  'rsa.rsa-modpow': 'RSAモジュラ幂'
-  'rsa.rsa-modpow-step': 'RSAモジュラ幂ステップ'
-  'scrypt.rotl32': 'rotl32'
-  'scrypt.salsa20-8-core': 'salsa208コア'
-  'scrypt.scrypt': 'scrypt'
-  'scrypt.scrypt-blockmix': 'scryptブロック混合'
-  'scrypt.scrypt-romix': 'scryptromix'
-  'server.https-listen-on': 'HTTPSリッスン上'
-  'server.https-server-conn.close': 'クローズ'
-  'server.https-server-conn.get-header': '取得ヘッダ'
-  'server.https-server-conn.parse': '解析'
-  'server.https-server-conn.recv-more': '受信もっと'
-  'server.https-server-conn.reset': 'リセット'
-  'server.https-server-conn.write-body': '書きボディ'
-  'server.https-server-conn.write-header': '書きヘッダ'
-  'server.https-server-conn.write-headers-done': '書きヘッダ完了'
-  'server.https-server-conn.write-html': '書きhtml'
-  'server.https-server-conn.write-json': '書きjson'
-  'server.https-server-conn.write-status': '書きステータス'
-  'server.https-server-conn.write-text': '書きテキスト'
-  'server.https-server.accept': '受付'
-  'server.https-server.close': 'クローズ'
-  'server.https-server.listen': 'リッスン'
-  'server.listen-on': 'リッスン上'
-  'server.secure-compare': 'セキュア比較'
-  'server.server-conn.close': 'クローズ'
-  'server.server-conn.get-cookie': '取得cookie'
-  'server.server-conn.get-header': '取得ヘッダ'
-  'server.server-conn.get-signed-cookie': '取得符号付きcookie'
-  'server.server-conn.parse': '解析'
-  'server.server-conn.recv-more': '受信もっと'
-  'server.server-conn.reset': 'リセット'
-  'server.server-conn.set-signed-cookie': '設定符号付きcookie'
-  'server.server-conn.verify-basic-auth': '検証基本認証'
-  'server.server-conn.write-body': '書きボディ'
-  'server.server-conn.write-error': '書きエラー'
-  'server.server-conn.write-header': '書きヘッダ'
-  'server.server-conn.write-headers-done': '書きヘッダ完了'
-  'server.server-conn.write-html': '書きhtml'
-  'server.server-conn.write-json': '書きjson'
-  'server.server-conn.write-redirect': '書きリダイレクト'
-  'server.server-conn.write-status': '書きステータス'
-  'server.server-conn.write-text': '書きテキスト'
-  'server.server.accept': '受付'
-  'server.server.accept-nb': '受付nb'
-  'server.server.close': 'クローズ'
-  'server.server.fd-of': 'fdの'
-  'server.server.listen': 'リッスン'
-  'set.add': '追加'
-  'set.contains': '含む'
-  'set.difference': 'difference'
-  'set.init': '初期化'
-  'set.intersection': '積集合'
-  'set.is-empty': 'emptyか'
-  'set.remove': '削除'
-  'set.size': 'サイズ'
-  'set.to-vec': 'vecへ変換'
-  'set.union': '和集合'
-  'sha1.sha1': 'SHA-1'
-  'sha1.sha1-block': 'SHA-1ブロック'
-  'sha1.sha1-hex': 'SHA-116進'
-  'sha224.sha224': 'sha224'
-  'sha224.sha224-hex': 'sha22416進'
-  'sha256.sha256': 'sha256'
-  'sha256.sha256-block': 'sha256ブロック'
-  'sha256.sha256-hex': 'sha25616進'
-  'sha3.keccak-f1600': 'keccakf1600'
-  'sha3.keccak-sponge': 'keccakスポンジ'
-  'sha3.rotl64': 'rotl64'
-  'sha3.sha3-224': 'SHA-3224'
-  'sha3.sha3-224-hex': 'SHA-322416進'
-  'sha3.sha3-256': 'SHA-3256'
-  'sha3.sha3-256-hex': 'SHA-325616進'
-  'sha3.sha3-384': 'SHA-3384'
-  'sha3.sha3-384-hex': 'SHA-338416進'
-  'sha3.sha3-512': 'SHA-3512'
-  'sha3.sha3-512-hex': 'SHA-351216進'
-  'sha384.sha384': 'sha384'
-  'sha384.sha384-hex': 'sha38416進'
-  'sha512.sha512': 'sha512'
-  'sha512.sha512-block': 'sha512ブロック'
-  'sha512.sha512-hex': 'sha51216進'
-  'sse.client.close': 'クローズ'
-  'sse.client.is-connected': '接続済みか'
-  'sse.client.next-event': '次event'
-  'sse.client.reconnect': '再接続'
-  'sse.listen-on': 'リッスン上'
-  'sse.server-conn.close': 'クローズ'
-  'sse.server-conn.handshake': 'handshake'
-  'sse.server-conn.is-connected': '接続済みか'
-  'sse.server-conn.send-comment': '送信コメント'
-  'sse.server-conn.send-event': '送信event'
-  'sse.server.accept': '受付'
-  'sse.server.close': 'クローズ'
-  'sse.server.listen': 'リッスン'
-  'sse.sse-connect': 'SSE接続'
-  'stack.stack.clear': 'クリア'
-  'stack.stack.empty': 'empty'
-  'stack.stack.peek': '覗き'
-  'stack.stack.pop': 'ポップ'
-  'stack.stack.push': 'プッシュ'
-  'stack.stack.size': 'サイズ'
-  'static-hashmap.static-hashmap-bool-tmpl.clear': 'クリア'
-  'static-hashmap.static-hashmap-bool-tmpl.contains': '含む'
-  'static-hashmap.static-hashmap-bool-tmpl.for-each': '用各'
-  'static-hashmap.static-hashmap-bool-tmpl.get': '取得'
-  'static-hashmap.static-hashmap-bool-tmpl.hash': 'ハッシュ'
-  'static-hashmap.static-hashmap-bool-tmpl.init': '初期化'
-  'static-hashmap.static-hashmap-bool-tmpl.is-empty': 'emptyか'
-  'static-hashmap.static-hashmap-bool-tmpl.len': '長さ'
-  'static-hashmap.static-hashmap-bool-tmpl.put': '投入'
-  'static-hashmap.static-hashmap-bool-tmpl.remove': '削除'
-  'static-hashmap.static-hashmap-int-tmpl.clear': 'クリア'
-  'static-hashmap.static-hashmap-int-tmpl.contains': '含む'
-  'static-hashmap.static-hashmap-int-tmpl.for-each': '用各'
-  'static-hashmap.static-hashmap-int-tmpl.get': '取得'
-  'static-hashmap.static-hashmap-int-tmpl.hash': 'ハッシュ'
-  'static-hashmap.static-hashmap-int-tmpl.init': '初期化'
-  'static-hashmap.static-hashmap-int-tmpl.is-empty': 'emptyか'
-  'static-hashmap.static-hashmap-int-tmpl.len': '長さ'
-  'static-hashmap.static-hashmap-int-tmpl.put': '投入'
-  'static-hashmap.static-hashmap-int-tmpl.remove': '削除'
-  'static-hashmap.static-hashmap-str-tmpl.clear': 'クリア'
-  'static-hashmap.static-hashmap-str-tmpl.contains': '含む'
-  'static-hashmap.static-hashmap-str-tmpl.for-each': '用各'
-  'static-hashmap.static-hashmap-str-tmpl.get': '取得'
-  'static-hashmap.static-hashmap-str-tmpl.hash': 'ハッシュ'
-  'static-hashmap.static-hashmap-str-tmpl.init': '初期化'
-  'static-hashmap.static-hashmap-str-tmpl.is-empty': 'emptyか'
-  'static-hashmap.static-hashmap-str-tmpl.len': '長さ'
-  'static-hashmap.static-hashmap-str-tmpl.put': '投入'
-  'static-hashmap.static-hashmap-str-tmpl.remove': '削除'
-  'static-hashmap.static-hashmap-str-tmpl.str-eq': '文字列等値'
-  'str-map.str-map.clear': 'クリア'
-  'str-map.str-map.contains': '含む'
-  'str-map.str-map.for-each': '用各'
-  'str-map.str-map.get': '取得'
-  'str-map.str-map.hash': 'ハッシュ'
-  'str-map.str-map.init': '初期化'
-  'str-map.str-map.is-empty': 'emptyか'
-  'str-map.str-map.len': '長さ'
-  'str-map.str-map.put': '投入'
-  'str-map.str-map.remove': '削除'
-  'str-map.str-map.str-eq': '文字列等値'
-  'str-map.str-map.to-str': 'strへ変換'
-  'str-set.str-set.add': '追加'
-  'str-set.str-set.clear': 'クリア'
-  'str-set.str-set.contains': '含む'
-  'str-set.str-set.for-each': '用各'
-  'str-set.str-set.hash': 'ハッシュ'
-  'str-set.str-set.init': '初期化'
-  'str-set.str-set.is-empty': 'emptyか'
-  'str-set.str-set.len': '長さ'
-  'str-set.str-set.remove': '削除'
-  'str-set.str-set.str-eq': '文字列等値'
-  'str._str-dig-val': '_strdig値'
-  'str.at': '位置'
-  'str.bigint-bitlen': '大整数ビット長'
-  'str.byte': 'バイト'
-  'str.byte-index': 'バイトインデックス'
-  'str.compare': '比較'
-  'str.contains': '含む'
-  'str.copy': 'コピー'
-  'str.count': 'カウント'
-  'str.cp-index': 'cpインデックス'
-  'str.decode-cp': 'デコードcp'
-  'str.empty': 'empty'
-  'str.ends-with': '終端付き'
-  'str.eq-full': '等値full'
-  'str.eq-raw': '等値生の'
-  'str.fields': 'フィールド'
-  'str.fill': '充填'
-  'str.find-byte-from': '検索バイトfrom'
-  'str.from-hex': 'hexから変換'
-  'str.index': 'インデックス'
-  'str.index-from': 'インデックスfrom'
-  'str.last-index': '末尾インデックス'
-  'str.len': '長さ'
-  'str.lines': '行'
-  'str.new': '新規'
-  'str.repeat': 'リピート'
-  'str.replace-char': '置換文字'
-  'str.replace-n': '置換数'
-  'str.replace-str': '置換文字列'
-  'str.reverse': '反転'
-  'str.rfind-byte-from': '逆検索バイトfrom'
-  'str.rindex': '逆索引'
-  'str.rindex-from': '逆索引from'
-  'str.set-byte': '設定バイト'
-  'str.slice': 'スライス'
-  'str.slice-bytes': 'スライスバイト'
-  'str.split': '分割'
-  'str.split-n': '分割数'
-  'str.starts-with': 'starts付き'
-  'str.str-hex-val': '文字列16進値'
-  'str.to-bigint': 'bigintへ変換'
-  'str.to-bool': 'boolへ変換'
-  'str.to-byte': 'byteへ変換'
-  'str.to-bytes': 'bytesへ変換'
-  'str.to-f32': 'f32へ変換'
-  'str.to-f64': 'f64へ変換'
-  'str.to-hex': 'hexへ変換'
-  'str.to-i16': 'i16へ変換'
-  'str.to-i32': 'i32へ変換'
-  'str.to-i64': 'i64へ変換'
-  'str.to-i8': 'i8へ変換'
-  'str.to-lower': 'lowerへ変換'
-  'str.to-str': 'strへ変換'
-  'str.to-txt': 'txtへ変換'
-  'str.to-u16': 'u16へ変換'
-  'str.to-u32': 'u32へ変換'
-  'str.to-u64': 'u64へ変換'
-  'str.to-u8': 'u8へ変換'
-  'str.to-upper': 'upperへ変換'
-  'str.trim': 'トリム'
-  'str.trim-char': 'トリム文字'
-  'str.with-cap': '付き容量'
-  'str.with-len': '付き長さ'
-  'str.with-len-cap': '付き長さ容量'
-  'strs.join': '結合'
-  'tar.tar-builder.add-bytes': '追加バイト'
-  'tar.tar-builder.add-dir': '追加ディレクトリ'
-  'tar.tar-builder.add-file': '追加ファイル'
-  'tar.tar-builder.finish': '完了'
-  'tar.tar-builder.pre-alloc': '前置確保'
-  'tar.tar-builder.write-header': '書きヘッダ'
-  'tar.tar-builder.write-octal': '書き8進'
-  'tar.tar-entry.is-dir': 'ディレクトリか'
-  'tar.tar-entry.is-file': 'ファイルか'
-  'tar.tar-entry.mode': 'モード'
-  'tar.tar-entry.mtime': '更新時刻'
-  'tar.tar-entry.name': '名前'
-  'tar.tar-entry.read': '読み'
-  'tar.tar-entry.size': 'サイズ'
-  'tar.tar-entry.type': '型'
-  'tar.tar-open-gz': 'tarオープンgz'
-  'tar.tar.count': 'カウント'
-  'tar.tar.entry': 'エントリ'
-  'tar.tar.is-dir': 'ディレクトリか'
-  'tar.tar.is-file': 'ファイルか'
-  'tar.tar.mode': 'モード'
-  'tar.tar.mtime': '更新時刻'
-  'tar.tar.name': '名前'
-  'tar.tar.offset': 'オフセット'
-  'tar.tar.read': '読み'
-  'tar.tar.size': 'サイズ'
-  'tar.tar.type': '型'
-  'tdes.tdes-cbc-dec': '3DESCBC復号'
-  'tdes.tdes-cbc-enc': '3DESCBC暗号化'
-  'tdes.tdes-dec': '3DES復号'
-  'tdes.tdes-enc': '3DES暗号化'
-  'time.add-seconds': '追加秒'
-  'time.date': '日付'
-  'time.date-to-unix': '日付tounix'
-  'time.days-in-month-fn': '日数内月fn'
-  'time.duration-between': '持续时间間'
-  'time.duration-ms-between': '持续时间ミリ秒間'
-  'time.duration-time': '持续时间時間'
-  'time.duration-us-between': '持续时间マイクロ秒間'
-  'time.format': 'フォーマット'
-  'time.format-date': 'フォーマット日付'
-  'time.format-duration': 'フォーマット持续时间'
-  'time.format-time-str': 'フォーマット時間文字列'
-  'time.is-leap': 'leapか'
-  'time.now-date': '現在日付'
-  'time.now-ms': '現在ミリ秒'
-  'time.now-ns': '現在ナノ秒'
-  'time.now-s': '現在複数'
-  'time.now-time': '現在時間'
-  'time.now-us': '現在マイクロ秒'
-  'time.parse-date': '解析日付'
-  'time.parse-time': '解析時間'
-  'time.since-ms': '以来ミリ秒'
-  'time.since-s': '以来複数'
-  'time.since-time': '以来時間'
-  'time.since-us': '以来マイクロ秒'
-  'time.sleep-ms': 'スリー프ミリ秒'
-  'time.sleep-ns': 'スリー프ナノ秒'
-  'time.sleep-s': 'スリー프複数'
-  'time.sleep-us': 'スリー프マイクロ秒'
-  'time.sub': '減算'
-  'time.timer.elapsed-ms': '経過ミリ秒'
-  'time.timer.elapsed-s': '経過複数'
-  'time.timer.elapsed-us': '経過マイクロ秒'
-  'time.timer.start': '開始'
-  'time.timer.stop': '停止'
-  'time.unix': 'unix'
-  'time.unix-ms': 'unixミリ秒'
-  'time.unix-to-date': 'unixto日付'
-  'time.unix-to-time': 'unixto時間'
-  'tls.bn-to-bytes': '大数toバイト'
-  'tls.build-nonce': '構築ナンス'
-  'tls.bytes-cat': 'バイトcat'
-  'tls.bytes-to-bn': 'バイトto大数'
-  'tls.cipher-is-ecdhe': '暗号是否ecdhe'
-  'tls.cipher-is-gcm': '暗号是否GCM'
-  'tls.conn.append-hs': '追加hs'
-  'tls.conn.append-hs-from': '追加hsfrom'
-  'tls.conn.close': 'クローズ'
-  'tls.conn.compute-shared-secret-13': '計算共有秘密13'
-  'tls.conn.connect': '接続'
-  'tls.conn.connect-12': '接続12'
-  'tls.conn.connect-13': '接続13'
-  'tls.conn.decrypt-record': '復号レコード'
-  'tls.conn.decrypt-record-13': '復号レコード13'
-  'tls.conn.decrypt-record-gcm': '復号レコードGCM'
-  'tls.conn.derive-application-keys-13': '導出applicationキー13'
-  'tls.conn.derive-handshake-keys-13': '導出handshakeキー13'
-  'tls.conn.derive-keys': '導出キー'
-  'tls.conn.encrypt-record': '暗号化レコード'
-  'tls.conn.encrypt-record-13': '暗号化レコード13'
-  'tls.conn.encrypt-record-gcm': '暗号化レコードGCM'
-  'tls.conn.gen-p256-keypair': '生成p256鍵ペア'
-  'tls.conn.gen-x25519-keypair': '生成x25519鍵ペア'
-  'tls.conn.get-fd': '取得fd'
-  'tls.conn.handshake-12-body': 'handshake12ボディ'
-  'tls.conn.init': '初期化'
-  'tls.conn.read-certificate': '読み証明書'
-  'tls.conn.read-change-cipher-spec': '読みchange暗号spec'
-  'tls.conn.read-encrypted-handshake-13': '読み暗号化済みhandshake13'
-  'tls.conn.read-encrypted-record-13': '読み暗号化済みレコード13'
-  'tls.conn.read-finished': '読み完了済み'
-  'tls.conn.read-server-hello': '読みサーバーhello'
-  'tls.conn.read-server-hello-13': '読みサーバーhello13'
-  'tls.conn.read-server-hello-done': '読みサーバーhello完了'
-  'tls.conn.read-server-key-exchange': '読みサーバーキー交換'
-  'tls.conn.send': '送信'
-  'tls.conn.send-change-cipher-spec': '送信change暗号spec'
-  'tls.conn.send-client-hello': '送信クライアントhello'
-  'tls.conn.send-client-hello-13': '送信クライアントhello13'
-  'tls.conn.send-client-key-exchange': '送信クライアントキー交換'
-  'tls.conn.send-finished': '送信完了済み'
-  'tls.conn.send-finished-13': '送信完了済み13'
-  'tls.dial': 'ダイヤル'
-  'tls.dial-12': 'ダイヤル12'
-  'tls.get-u16': '取得u16'
-  'tls.get-u24': '取得u24'
-  'tls.https-serve-once': 'HTTPSサーブ一度'
-  'tls.net-recv-wait': 'ネットワーク受信待ち'
-  'tls.prf': 'prf'
-  'tls.put-u16': '投入u16'
-  'tls.put-u24': '投入u24'
-  'tls.rand-bytes': '乱数バイト'
-  'tls.read-record': '読みレコード'
-  'tls.recv-n': '受信数'
-  'tls.rsa-pkcs1-decrypt': 'RSAPKCS#1復号'
-  'tls.rsa-pkcs1-encrypt': 'RSAPKCS#1暗号化'
-  'tls.send-raw': '送信生の'
-  'tls.server-accept': 'サーバー受付'
-  'tls.server-conn.append-hs': '追加hs'
-  'tls.server-conn.append-hs-from': '追加hsfrom'
-  'tls.server-conn.close': 'クローズ'
-  'tls.server-conn.compute-shared-secret-13': '計算共有秘密13'
-  'tls.server-conn.decrypt-record': '復号レコード'
-  'tls.server-conn.decrypt-record-13': '復号レコード13'
-  'tls.server-conn.derive-application-keys-13': '導出applicationキー13'
-  'tls.server-conn.derive-handshake-keys-13': '導出handshakeキー13'
-  'tls.server-conn.derive-keys': '導出キー'
-  'tls.server-conn.encrypt-record': '暗号化レコード'
-  'tls.server-conn.encrypt-record-13': '暗号化レコード13'
-  'tls.server-conn.handshake': 'handshake'
-  'tls.server-conn.handshake-13': 'handshake13'
-  'tls.server-conn.read-change-cipher-spec': '読みchange暗号spec'
-  'tls.server-conn.read-client-finished-13': '読みクライアント完了済み13'
-  'tls.server-conn.read-client-hello': '読みクライアントhello'
-  'tls.server-conn.read-client-key-exchange': '読みクライアントキー交換'
-  'tls.server-conn.read-encrypted-handshake-13': '読み暗号化済みhandshake13'
-  'tls.server-conn.read-encrypted-record-13': '読み暗号化済みレコード13'
-  'tls.server-conn.read-finished': '読み完了済み'
-  'tls.server-conn.recv': '受信'
-  'tls.server-conn.send': '送信'
-  'tls.server-conn.send-certificate': '送信証明書'
-  'tls.server-conn.send-certificate-13': '送信証明書13'
-  'tls.server-conn.send-change-cipher-spec': '送信change暗号spec'
-  'tls.server-conn.send-encrypted-extensions-13': '送信暗号化済み拡張13'
-  'tls.server-conn.send-finished': '送信完了済み'
-  'tls.server-conn.send-finished-13': '送信完了済み13'
-  'tls.server-conn.send-server-hello': '送信サーバーhello'
-  'tls.server-conn.send-server-hello-13': '送信サーバーhello13'
-  'tls.server-conn.send-server-hello-done': '送信サーバーhello完了'
-  'tls.server-init': 'サーバー初期化'
-  'tls.server-listen': 'サーバーリッスン'
-  'tls.tls-pad': 'TLSパディング'
-  'tls.tls-unpad': 'TLSパディング除去'
-  'toml.get': '取得'
-  'toml.get-bool': '取得bool'
-  'toml.get-f64': '取得f64'
-  'toml.get-i64': '取得i64'
-  'toml.get-str': '取得文字列'
-  'toml.has': '.has'
-  'toml.new': '新規'
-  'toml.parse': '解析'
-  'toml.stringify': '文字列化'
-  'toml.toml-array-name': 'toml配列名前'
-  'toml.toml-doc.put': '投入'
-  'toml.toml-entry-key': 'tomlエントリキー'
-  'toml.toml-entry-key-eq': 'tomlエントリキー等値'
-  'toml.toml-entry-value': 'tomlエントリ値'
-  'toml.toml-find-eq': 'toml検索等値'
-  'toml.toml-make-entry': 'toml生成エントリ'
-  'toml.toml-next-array-table': 'toml次配列テーブル'
-  'toml.toml-normalize-key': 'toml正規化キー'
-  'toml.toml-parse-bool': 'toml解析bool'
-  'toml.toml-parse-f64': 'toml解析f64'
-  'toml.toml-parse-i64': 'toml解析i64'
-  'toml.toml-register-table': 'toml登録テーブル'
-  'toml.toml-resolve-section': 'tomlresolveセクション'
-  'toml.toml-strip-comment': 'toml除去コメント'
-  'toml.toml-table-eq': 'tomlテーブル等値'
-  'toml.toml-table-name': 'tomlテーブル名前'
-  'toml.toml-unquote': 'tomlクォート除去'
-  'toml.toml-valid-value': 'toml有効値'
-  'toml.toml-value-complete': 'toml値完了'
-  'tree-map.tree-map.alloc-node': '確保ノード'
-  'tree-map.tree-map.bf': 'bf'
-  'tree-map.tree-map.clear': 'クリア'
-  'tree-map.tree-map.contains': '含む'
-  'tree-map.tree-map.empty': 'empty'
-  'tree-map.tree-map.first': '先頭'
-  'tree-map.tree-map.for-each': '用各'
-  'tree-map.tree-map.free-node': '解放ノード'
-  'tree-map.tree-map.full': 'full'
-  'tree-map.tree-map.get': '取得'
-  'tree-map.tree-map.ht': 'タブ'
-  'tree-map.tree-map.init': '初期化'
-  'tree-map.tree-map.last': '末尾'
-  'tree-map.tree-map.lower-bound': '小文字バウンド'
-  'tree-map.tree-map.put': '投入'
-  'tree-map.tree-map.rebalance': 'rebalance'
-  'tree-map.tree-map.rebalance-up': 'rebalance上へ'
-  'tree-map.tree-map.remove': '削除'
-  'tree-map.tree-map.rot-left': 'rot左'
-  'tree-map.tree-map.rot-right': 'rot右'
-  'tree-map.tree-map.size': 'サイズ'
-  'tree-map.tree-map.successor': '後続'
-  'tree-map.tree-map.update-ht': '更新タブ'
-  'tree-map.tree-map.upper-bound': '大文字バウンド'
-  'tree-set.tree-set.add': '追加'
-  'tree-set.tree-set.alloc-node': '確保ノード'
-  'tree-set.tree-set.bf': 'bf'
-  'tree-set.tree-set.clear': 'クリア'
-  'tree-set.tree-set.contains': '含む'
-  'tree-set.tree-set.empty': 'empty'
-  'tree-set.tree-set.first': '先頭'
-  'tree-set.tree-set.for-each': '用各'
-  'tree-set.tree-set.free-node': '解放ノード'
-  'tree-set.tree-set.full': 'full'
-  'tree-set.tree-set.ht': 'タブ'
-  'tree-set.tree-set.init': '初期化'
-  'tree-set.tree-set.last': '末尾'
-  'tree-set.tree-set.lower-bound': '小文字バウンド'
-  'tree-set.tree-set.rebalance': 'rebalance'
-  'tree-set.tree-set.rebalance-up': 'rebalance上へ'
-  'tree-set.tree-set.remove': '削除'
-  'tree-set.tree-set.rot-left': 'rot左'
-  'tree-set.tree-set.rot-right': 'rot右'
-  'tree-set.tree-set.size': 'サイズ'
-  'tree-set.tree-set.successor': '後続'
-  'tree-set.tree-set.update-ht': '更新タブ'
-  'tree-set.tree-set.upper-bound': '大文字バウンド'
-  'txt._txt-dig-val': '_txtdig値'
-  'txt.append': '追加'
-  'txt.append-str': '追加文字列'
-  'txt.append-txt': '追加テキスト'
-  'txt.at': '位置'
-  'txt.byte': 'バイト'
-  'txt.clear': 'クリア'
-  'txt.compare': '比較'
-  'txt.contains': '含む'
-  'txt.copy': 'コピー'
-  'txt.count': 'カウント'
-  'txt.decode-cp': 'デコードcp'
-  'txt.empty': 'empty'
-  'txt.ends-with': '終端付き'
-  'txt.eq': '等値'
-  'txt.eq-full': '等値full'
-  'txt.fields': 'フィールド'
-  'txt.fill': '充填'
-  'txt.from-bytes': 'bytesから変換'
-  'txt.from-chars': 'charsから変換'
-  'txt.from-hex': 'hexから変換'
-  'txt.from-str': 'strから変換'
-  'txt.index': 'インデックス'
-  'txt.index-from': 'インデックスfrom'
-  'txt.join': '結合'
-  'txt.last-index': '末尾インデックス'
-  'txt.len': '長さ'
-  'txt.lines': '行'
-  'txt.new': '新規'
-  'txt.repeat': 'リピート'
-  'txt.replace-char': '置換文字'
-  'txt.replace-n': '置換数'
-  'txt.replace-str': '置換文字列'
-  'txt.reverse': '反転'
-  'txt.rindex': '逆索引'
-  'txt.rindex-from': '逆索引from'
-  'txt.set-byte': '設定バイト'
-  'txt.slice': 'スライス'
-  'txt.split': '分割'
-  'txt.split-n': '分割数'
-  'txt.starts-with': 'starts付き'
-  'txt.to-bigint': 'bigintへ変換'
-  'txt.to-bool': 'boolへ変換'
-  'txt.to-byte': 'byteへ変換'
-  'txt.to-bytes': 'bytesへ変換'
-  'txt.to-f32': 'f32へ変換'
-  'txt.to-f64': 'f64へ変換'
-  'txt.to-hex': 'hexへ変換'
-  'txt.to-i16': 'i16へ変換'
-  'txt.to-i32': 'i32へ変換'
-  'txt.to-i64': 'i64へ変換'
-  'txt.to-i8': 'i8へ変換'
-  'txt.to-lower': 'lowerへ変換'
-  'txt.to-str': 'strへ変換'
-  'txt.to-u16': 'u16へ変換'
-  'txt.to-u32': 'u32へ変換'
-  'txt.to-u64': 'u64へ変換'
-  'txt.to-u8': 'u8へ変換'
-  'txt.to-upper': 'upperへ変換'
-  'txt.trim': 'トリム'
-  'txt.trim-char': 'トリム文字'
-  'txt.truncate': 'truncate'
-  'txt.txt-hex-val': 'テキスト16進値'
-  'unix.unix-conn.close': 'クローズ'
-  'unix.unix-conn.dial': 'ダイヤル'
-  'unix.unix-conn.fd-of': 'fdの'
-  'unix.unix-conn.recv': '受信'
-  'unix.unix-conn.recv-all': '受信全て'
-  'unix.unix-conn.recv-with-timeout': '受信付き타임아웃'
-  'unix.unix-conn.send': '送信'
-  'unix.unix-conn.set-recv-timeout': '設定受信타임아웃'
-  'unix.unix-conn.set-timeout': '設定타임아웃'
-  'unix.unix-dial': 'unixダイヤル'
-  'unix.unix-dial-timeout': 'unixダイヤル타임아웃'
-  'unix.unix-dial-to': 'unixダイヤルto'
-  'unix.unix-listen': 'unixリッスン'
-  'unix.unix-listen-on': 'unixリッスン上'
-  'unix.unix-listener.accept': '受付'
-  'unix.unix-listener.accept-with-timeout': '受付付き타임아웃'
-  'unix.unix-listener.close': 'クローズ'
-  'unix.unix-listener.fd-of': 'fdの'
-  'unix.unix-listener.listen': 'リッスン'
-  'unix.unix-listener.path-of': 'パスの'
-  'unix.unix-listener.set-timeout': '設定타임아웃'
-  'url.url-basic-auth': 'url基本認証'
-  'url.url-build-query': 'url構築クエリ'
-  'url.url-decode': 'urlデコード'
-  'url.url-encode': 'urlエンコード'
-  'url.url-encode-component': 'urlエンコードcomponent'
-  'url.url-info.get-query': '取得クエリ'
-  'url.url-info.set-query': '設定クエリ'
-  'url.url-info.to-str': 'strへ変換'
-  'url.url-join': 'url結合'
-  'url.url-parse': 'url解析'
-  'url.url-parse-basic-auth': 'url解析基本認証'
-  'uuid.cmp': '比較'
-  'uuid.eq': '等値'
-  'uuid.from-str': 'strから変換'
-  'uuid.hex-byte': '16進バイト'
-  'uuid.hex-byte-upper': '16進バイト大文字'
-  'uuid.hex-val': '16進値'
-  'uuid.is-nil': 'nilか'
-  'uuid.new-v4': '新規v4'
-  'uuid.nil-uuid': 'niluuid'
-  'uuid.parse-hex-byte': '解析16進バイト'
-  'uuid.parse-no-dashes': '解析なしダッシュ'
-  'uuid.parse-with-dashes': '解析付きダッシュ'
-  'uuid.to-str': 'strへ変換'
-  'uuid.to-str-upper': 'str-upperへ変換'
-  'uuid.validate': '検証'
-  'uuid.variant': 'バリアント'
-  'uuid.version': 'バージョン'
-  'vec.at': '位置'
-  'vec.clone': 'クローン'
-  'vec.contains': '含む'
-  'vec.eq': '等値'
-  'vec.extend': '拡張'
-  'vec.fill': '充填'
-  'vec.first': '先頭'
-  'vec.index-of': 'インデックスの'
-  'vec.insert': '挿入'
-  'vec.last': '末尾'
-  'vec.len': '長さ'
-  'vec.max': '最大'
-  'vec.min': '最小'
-  'vec.pop': 'ポップ'
-  'vec.remove': '削除'
-  'vec.reverse': '反転'
-  'vec.sum': '合計'
-  'vec.swap': 'スワップ'
-  'vec.to-arr': 'arrへ変換'
-  'vec.to-str': 'strへ変換'
-  'vec.truncate': 'truncate'
-  'vec.vec-clear': 'ベクトルクリア'
-  'vec.vec-push': 'ベクトルプッシュ'
-  'ws.build-frame': '構築フレーム'
-  'ws.client.close': 'クローズ'
-  'ws.client.is-connected': '接続済みか'
-  'ws.client.recv': '受信'
-  'ws.client.send': '送信'
-  'ws.client.send-binary': '送信2進'
-  'ws.client.send-close': '送信クローズ'
-  'ws.client.send-ping': '送信ping'
-  'ws.client.send-pong': '送信pong'
-  'ws.client.send-text': '送信テキスト'
-  'ws.compute-accept': '計算受付'
-  'ws.connect': '接続'
-  'ws.gen-client-key': '生成クライアントキー'
-  'ws.gen-mask-key': '生成マスクキー'
-  'ws.listen-on': 'リッスン上'
-  'ws.next-rand': '次乱数'
-  'ws.server-conn.close': 'クローズ'
-  'ws.server-conn.handshake': 'handshake'
-  'ws.server-conn.is-connected': '接続済みか'
-  'ws.server-conn.recv': '受信'
-  'ws.server-conn.recv-nb': '受信nb'
-  'ws.server-conn.send': '送信'
-  'ws.server-conn.send-binary': '送信2進'
-  'ws.server-conn.send-close': '送信クローズ'
-  'ws.server-conn.send-ping': '送信ping'
-  'ws.server-conn.send-pong': '送信pong'
-  'ws.server-conn.send-text': '送信テキスト'
-  'ws.server.accept': '受付'
-  'ws.server.close': 'クローズ'
-  'ws.server.listen': 'リッスン'
-  'x25519.fe-add': '体要素追加'
-  'x25519.fe-add-v': '体要素追加版'
-  'x25519.fe-copy': '体要素コピー'
-  'x25519.fe-cswap': '体要素cswap'
-  'x25519.fe-frombytes': '体要素frombytes'
-  'x25519.fe-frombytes-v': '体要素frombytes版'
-  'x25519.fe-invert': '体要素逆転'
-  'x25519.fe-invert-v': '体要素逆転版'
-  'x25519.fe-mul': '体要素乗算'
-  'x25519.fe-mul-v': '体要素乗算版'
-  'x25519.fe-mul121665': '体要素x121665'
-  'x25519.fe-one': '体要素単一'
-  'x25519.fe-one-v': '体要素単一版'
-  'x25519.fe-sq': '体要素二乗'
-  'x25519.fe-sq-v': '体要素二乗版'
-  'x25519.fe-sub': '体要素減算'
-  'x25519.fe-sub-v': '体要素減算版'
-  'x25519.fe-tobytes': '体要素tobytes'
-  'x25519.fe-tobytes-v': '体要素tobytes版'
-  'x25519.fe-zero': '体要素ゼロ'
-  'x25519.fe-zero-v': '体要素ゼロ版'
-  'x25519.x25519-gen-keypair': 'x25519生成鍵ペア'
-  'x25519.x25519-get-basepoint': 'x25519取得基準点'
-  'x25519.x25519-scalarmult': 'x25519スカラー乗算'
-  'x25519.x25519-scalarmult-base': 'x25519スカラー乗算base'
-  'x25519.x25519-scalarmult-base-bytes': 'x25519スカラー乗算baseバイト'
-  'x25519.x25519-scalarmult-bytes': 'x25519スカラー乗算バイト'
-  'x509.alg-id-rsa-encryption': 'algidRSA暗号化'
-  'x509.alg-id-sha256-with-rsa': 'algidsha256付きRSA'
-  'x509.der-enc-bitstring': 'DER暗号化ビット列'
-  'x509.der-enc-explicit': 'DER暗号化明示的'
-  'x509.der-enc-integer-bytes': 'DER暗号化整数バイト'
-  'x509.der-enc-integer-i64': 'DER暗号化整数i64'
-  'x509.der-enc-len': 'DER暗号化長さ'
-  'x509.der-enc-null': 'DER暗号化null'
-  'x509.der-enc-octetstring': 'DER暗号化オクテット列'
-  'x509.der-enc-oid-raw': 'DER暗号化OID生の'
-  'x509.der-enc-printablestring': 'DER暗号化印刷可能列'
-  'x509.der-enc-sequence': 'DER暗号化シーケンス'
-  'x509.der-enc-set': 'DER暗号化設定'
-  'x509.der-enc-tlv': 'DER暗号化TLV'
-  'x509.der-enc-utctime': 'DER暗号化UTC時刻'
-  'x509.der-len': 'DER長さ'
-  'x509.der-skip': 'DERスキップ'
-  'x509.der-tag': 'DERタグ'
-  'x509.rsa-pkcs1-sign-sha256': 'RSAPKCS#1署名sha256'
-  'x509.sha256-compress': 'sha256圧縮'
-  'x509.x509-build-name-cn': 'X.509構築名前cn'
-  'x509.x509-build-rsa-public-key': 'X.509構築RSA公開キー'
-  'x509.x509-build-self-signed-cert': 'X.509構築self符号付き証明書'
-  'x509.x509-build-spki': 'X.509構築公開鍵情報'
-  'x509.x509-build-tbs': 'X.509構築署名対象'
-  'x509.x509-build-validity': 'X.509構築有効期間'
-  'x509.x509-bytes-to-bn': 'X.509バイトto大数'
-  'x509.x509-fingerprint': 'X.509指紋'
-  'x509.x509-rsa-e': 'X.509RSA指数'
-  'x509.x509-rsa-n': 'X.509RSA数'
-  'x509.x509-serial': 'X.509シリアル'
-  'x509.x509-tbs-range': 'X.509署名対象range'
-  'xz.lzma-decoder.decode': 'デコード'
-  'xz.lzma-decoder.decode-distance': 'デコード距離'
-  'xz.lzma-decoder.decode-length': 'デコード長さ'
-  'xz.lzma-decoder.decode-literal': 'デコードリテラル'
-  'xz.lzma-decoder.init-probs': '初期化確率'
-  'xz.lzma-decoder.update-state-literal': '更新状態リテラル'
-  'xz.lzma-decoder.update-state-match': '更新状態一致'
-  'xz.lzma-decoder.update-state-rep': '更新状態リピート'
-  'xz.lzma-decoder.update-state-shortrep': '更新状態短リピート'
-  'xz.lzma-decompress': 'lzma解凍'
-  'xz.lzma-rd.decode-bit': 'デコードビット'
-  'xz.lzma-rd.decode-bit-tree': 'デコードビットツリー'
-  'xz.lzma-rd.decode-direct-bits': 'デコードdirectビット'
-  'xz.lzma-rd.decode-reverse-bit-tree': 'デコード反転ビットツリー'
-  'xz.lzma-rd.init': '初期化'
-  'xz.lzma-rd.normalize': '正規化'
-  'xz.lzma2-decompress-stream': 'lzma2解凍ストリーム'
-  'xz.xz-compress': 'xz圧縮'
-  'xz.xz-decompress': 'xz解凍'
-  'yaml.anchor': 'アンカー'
-  'yaml.at': '位置'
-  'yaml.bool': 'bool'
-  'yaml.doc': 'ドキュメント'
-  'yaml.doc-count': 'ドキュメントカウント'
-  'yaml.error': 'エラー'
-  'yaml.error-of': 'エラーの'
-  'yaml.f64': 'f64'
-  'yaml.find': '検索'
-  'yaml.find-bool': '検索bool'
-  'yaml.find-f64': '検索f64'
-  'yaml.find-i64': '検索i64'
-  'yaml.find-str': '検索文字列'
-  'yaml.get': '取得'
-  'yaml.get-bool': '取得bool'
-  'yaml.get-f64': '取得f64'
-  'yaml.get-i64': '取得i64'
-  'yaml.get-str': '取得文字列'
-  'yaml.i64': 'i64'
-  'yaml.is-bool': 'boolか'
-  'yaml.is-int': '整数か'
-  'yaml.is-map': 'マップか'
-  'yaml.is-nan': 'NaNか'
-  'yaml.is-null': 'nullか'
-  'yaml.is-num': '数値か'
-  'yaml.is-seq': 'seqか'
-  'yaml.is-str': '文字列か'
-  'yaml.key': 'キー'
-  'yaml.key-node': 'キーノード'
-  'yaml.kind': '種別'
-  'yaml.len': '長さ'
-  'yaml.line-of': '行の'
-  'yaml.node-count': 'ノードカウント'
-  'yaml.parse': '解析'
-  'yaml.parse-all': '解析全て'
-  'yaml.scalar-text': 'スカラーテキスト'
-  'yaml.source-of': 'sourceの'
-  'yaml.str': '文字列'
-  'yaml.stringify': '文字列化'
-  'yaml.strip-bom': '除去BOM'
-  'yaml.style': 'スタイル'
-  'yaml.tag': 'タグ'
-  'yaml.text': 'テキスト'
-  'yaml.to-json': 'jsonへ変換'
-  'yaml.to-json-all': 'json-allへ変換'
-  'yaml.to-yaml': 'yamlへ変換'
-  'yaml.valid': '有効'
-  'yaml.valid-of': '有効の'
-  'yaml.value': '値'
-  'yaml.yaml-apply-tag': 'yaml適用タグ'
-  'yaml.yaml-emit': 'yaml发出'
-  'yaml.yaml-f-is-inf': 'yaml浮動小数是否無限'
-  'yaml.yaml-f-is-nan': 'yaml浮動小数是否NaN'
-  'yaml.yaml-hex-char': 'yaml16進文字'
-  'yaml.yaml-hex-digit': 'yaml16進数字'
-  'yaml.yaml-inf': 'yaml無限'
-  'yaml.yaml-json-escape': 'yamljsonエスケープ'
-  'yaml.yaml-json-of': 'yamljsonの'
-  'yaml.yaml-key-eq': 'yamlキー等値'
-  'yaml.yaml-key-text-eq': 'yamlキーテキスト等値'
-  'yaml.yaml-nan': 'yamlNaN'
-  'yaml.yaml-node-is-nan': 'yamlノード是否NaN'
-  'yaml.yaml-parse-radix': 'yaml解析基数'
-  'yaml.yaml-parser.advance': '前進'
-  'yaml.yaml-parser.anchor-id': 'アンカーid'
-  'yaml.yaml-parser.at': '位置'
-  'yaml.yaml-parser.at-doc-marker': '位置ドキュメントマーカー'
-  'yaml.yaml-parser.at-eol': '位置行末'
-  'yaml.yaml-parser.byte-at': 'バイト位置'
-  'yaml.yaml-parser.cur': '現在'
-  'yaml.yaml-parser.eof': 'eof'
-  'yaml.yaml-parser.fail': '失敗'
-  'yaml.yaml-parser.fail-at': '失敗位置'
-  'yaml.yaml-parser.indent-at': 'インデント位置'
-  'yaml.yaml-parser.is-seq-dash': 'seqダッシュか'
-  'yaml.yaml-parser.line-end-of': '行終了の'
-  'yaml.yaml-parser.line-start-of': '行開始の'
-  'yaml.yaml-parser.looks-like-map-entry': '見た目-likeマップエントリ'
-  'yaml.yaml-parser.merge-into': 'マージへ'
-  'yaml.yaml-parser.merge-one': 'マージ単一'
-  'yaml.yaml-parser.newline': '改行'
-  'yaml.yaml-parser.parse-alias': '解析alias'
-  'yaml.yaml-parser.parse-block': '解析ブロック'
-  'yaml.yaml-parser.parse-block-indented': '解析ブロックインデント'
-  'yaml.yaml-parser.parse-block-map': '解析ブロックマップ'
-  'yaml.yaml-parser.parse-block-scalar': '解析ブロックスカラー'
-  'yaml.yaml-parser.parse-block-seq': '解析ブロックseq'
-  'yaml.yaml-parser.parse-docs': '解析ドキュメント'
-  'yaml.yaml-parser.parse-document': '解析ドキュメント'
-  'yaml.yaml-parser.parse-double': '解析倍点'
-  'yaml.yaml-parser.parse-flow-map': '解析flowマップ'
-  'yaml.yaml-parser.parse-flow-node': '解析flowノード'
-  'yaml.yaml-parser.parse-flow-seq': '解析flowseq'
-  'yaml.yaml-parser.parse-plain': '解析plain'
-  'yaml.yaml-parser.parse-props': '解析プロパティ'
-  'yaml.yaml-parser.parse-single': '解析単一'
-  'yaml.yaml-parser.push-node': 'プッシュノード'
-  'yaml.yaml-parser.push-null': 'プッシュnull'
-  'yaml.yaml-parser.push-scalar': 'プッシュスカラー'
-  'yaml.yaml-parser.read-line-content': '読み行コンテンツ'
-  'yaml.yaml-parser.read-tag': '読みタグ'
-  'yaml.yaml-parser.read-token': '読みトークン'
-  'yaml.yaml-parser.register-anchor': '登録アンカー'
-  'yaml.yaml-parser.set-props': '設定プロパティ'
-  'yaml.yaml-parser.skip-blank-lines': 'スキップ空白行'
-  'yaml.yaml-parser.skip-doc-preamble': 'スキップドキュメント前置文'
-  'yaml.yaml-parser.skip-flow-ws': 'スキップflowWebSocket'
-  'yaml.yaml-parser.skip-spaces': 'スキップスペース'
-  'yaml.yaml-parser.skip-to-doc-boundary': 'スキップtoドキュメント境界'
-  'yaml.yaml-parser.skip-to-eol': 'スキップto行末'
-  'yaml.yaml-plain-safe': 'yamlplain安全'
-  'yaml.yaml-quote': 'yamlクォート'
-  'yaml.yaml-resolve-plain': 'yamlresolveplain'
-  'yaml.yaml-scalar-repr': 'yamlスカラー表現'
-  'yaml.yaml-scan-number': 'yamlスキャン数値'
-  'yaml.yaml-spaces': 'yamlスペース'
-  'yaml.yaml-str-at': 'yaml文字列位置'
-  'yaml.yaml-tag-name': 'yamlタグ名前'
-  'yaml.yaml-to-f64': 'yamltof64'
-  'yaml.yaml-to-i64': 'yamltoi64'
-  'yaml.yaml-unescape-double': 'yaml逆エスケープ倍点'
-  'zip.u16le': 'u16le'
-  'zip.u32le': 'u32le'
-  'zip.zip-entry.compressed-size': '圧縮済みサイズ'
-  'zip.zip-entry.extract': '抽出'
-  'zip.zip-entry.method': 'method'
-  'zip.zip-entry.name': '名前'
-  'zip.zip-entry.size': 'サイズ'
-  'zip.zip-writer.add-dir': '追加ディレクトリ'
-  'zip.zip-writer.add-file': '追加ファイル'
-  'zip.zip-writer.cd-put': 'cd投入'
-  'zip.zip-writer.cd-write-u16': 'cd書きu16'
-  'zip.zip-writer.cd-write-u32': 'cd書きu32'
-  'zip.zip-writer.finalize': '最終化'
-  'zip.zip-writer.put': '投入'
-  'zip.zip-writer.write-cd-entry': '書きcdエントリ'
-  'zip.zip-writer.write-eocd': '書きEOCD'
-  'zip.zip-writer.write-local-file': '書きローカルファイル'
-  'zip.zip-writer.write-u16': '書きu16'
-  'zip.zip-writer.write-u32': '書きu32'
-  'zip.zip.compressed-size': '圧縮済みサイズ'
-  'zip.zip.count': 'カウント'
-  'zip.zip.entry': 'エントリ'
-  'zip.zip.entry-off': 'エントリoff'
-  'zip.zip.extract': '抽出'
-  'zip.zip.find-eocd': '検索EOCD'
-  'zip.zip.get-cd-off': '取得cdoff'
-  'zip.zip.get-total': '取得total'
-  'zip.zip.method': 'method'
-  'zip.zip.name': '名前'
-  'zip.zip.size': 'サイズ'
-  'zlib.adler-32': 'adler32'
-  'zlib.zlib-compress': 'zlib圧縮'
-  'zlib.zlib-consumed-stored': 'zlib消費済みstored'
-  'zlib.zlib-decompress': 'zlib解凍'
-  'zlib.zlib-decompress-stored': 'zlib解凍stored'
-  'zstd.bits-for-count': 'ビット用カウント'
-  'zstd.fse-table.build': '構築'
-  'zstd.fse-table.decode': 'デコード'
-  'zstd.zs-bit-reader.align-to-byte': 'アラインtoバイト'
-  'zstd.zs-bit-reader.read-bit': '読みビット'
-  'zstd.zs-bit-reader.read-bits': '読みビット'
-  'zstd.zs-bit-reader.read-varint': '読み可変長整数'
-  'zstd.zs-frame.decode-block': 'デコードブロック'
-  'zstd.zs-frame.decode-compressed-block': 'デコード圧縮済みブロック'
-  'zstd.zs-frame.read-frame-header': '読みフレームヘッダ'
-  'zstd.zs-huffman.build': '構築'
-  'zstd.zs-huffman.decode': 'デコード'
-  'zstd.zstd-compress': 'zstd圧縮'
-  'zstd.zstd-decompress': 'zstd解凍'
+  'aes-cbc.cbc-dec': ['CBC復号', 'cd', 'cf']
+  'aes-cbc.cbc-enc': ['CBC暗号化', 'ce', 'ca']
+  'aes-cbc.dec-128': ['復号128', 'd1', 'f1']
+  'aes-cbc.dec-256': ['復号256', 'd2', 'f2']
+  'aes-cbc.enc-128': ['暗号化128', 'e1', 'a1']
+  'aes-cbc.enc-256': ['暗号化256', 'e2', 'a2']
+  'aes-cbc.pkcs7-pad': ['PKCS#7パディング', 'pp', 'pp']
+  'aes-cbc.pkcs7-unpad': ['PKCS#7パディング除去', 'pu', 'ppj']
+  'aes-ctr.crypt-128': ['暗号128', 'c1', 'a1']
+  'aes-ctr.crypt-256': ['暗号256', 'c2', 'a2']
+  'aes-ctr.ctr-crypt': ['CTR暗号', 'cc', 'ca']
+  'aes-ctr.ctr-inc': ['CTRinc', 'ci', 'c']
+  'aes-gcm.ctr-xor': ['CTRxor', 'cx', 'c']
+  'aes-gcm.gcm-h': ['GCMハッシュ', 'gh', 'gh']
+  'aes-gcm.gcm-j0': ['GCMj0', 'gj', 'g']
+  'aes-gcm.gcm-open': ['GCMオープン', 'go', 'go']
+  'aes-gcm.gcm-seal': ['GCMシーリング', 'gs', 'gs']
+  'aes-gcm.ghash': ['ghash', 'g', 'g']
+  'aes-gcm.ghash-mul': ['ghash乗算', 'gm', 'gj']
+  'aes-gcm.open-128': ['オープン128', 'o1', 'o1']
+  'aes-gcm.open-256': ['オープン256', 'o2', 'o2']
+  'aes-gcm.seal-128': ['シーリング128', 's1', 's1']
+  'aes-gcm.seal-256': ['シーリング256', 's2', 's2']
+  'aes.add-round-key': ['追加丸めキー', 'ark', 'tmk']
+  'aes.add-round-key-at': ['追加丸めキー位置', 'arka', 'tmki']
+  'aes.dec-128': ['復号128', 'd1', 'f1']
+  'aes.dec-256': ['復号256', 'd2', 'f2']
+  'aes.dec-block': ['復号ブロック', 'db', 'fb']
+  'aes.enc-128': ['暗号化128', 'e1', 'a1']
+  'aes.enc-256': ['暗号化256', 'e2', 'a2']
+  'aes.enc-block': ['暗号化ブロック', 'eb', 'ab']
+  'aes.gf-mul2': ['有限体x2', 'gm', 'ykx']
+  'aes.inv-mix-col': ['逆元mix列', 'imc', 'gmr']
+  'aes.inv-mix-columns': ['逆元mix列', 'imc', 'gmr']
+  'aes.inv-shift-rows': ['逆元シフト行', 'isr', 'gsg']
+  'aes.inv-sub-bytes': ['逆元減算バイト', 'isb', 'ggb']
+  'aes.key-expand': ['キー拡張', 'ke', 'kk']
+  'aes.key-expand-256': ['キー拡張256', 'ke2', 'kk2']
+  'aes.mix-col': ['mix列', 'mc', 'mr']
+  'aes.mix-columns': ['mix列', 'mc', 'mr']
+  'aes.rcon-val': ['ラウンド定数値', 'rv', 'rj']
+  'aes.shift-rows': ['シフト行', 'sr', 'sg']
+  'aes.sub-bytes': ['減算バイト', 'sb', 'gb']
+  'argon2.blake-g': ['blake生成元', 'bg', 'bs']
+  'argon2.compress': ['圧縮', 'c', 'a']
+  'argon2.h-prime': ['ハッシュprime', 'hp', 'hp']
+  'argon2.id': ['id', 'i', 'i']
+  'argon2.rotr': ['右回転', 'r', 'mk']
+  'args.count': ['カウント', 'c', 'k']
+  'args.get': ['取得', 'g', 's']
+  'args.get-option': ['取得option', 'go', 'so']
+  'args.get-positional': ['取得positional', 'gp', 'sp']
+  'args.has-flag': ['.hasflag', 'hf', 'h']
+  'args.program': ['プログラム', 'p', 'p']
+  'arr-stack.arr-stack.clear': ['クリア', 'c', 'k']
+  'arr-stack.arr-stack.empty': ['empty', 'e', 'e']
+  'arr-stack.arr-stack.full': ['full', 'f', 'f']
+  'arr-stack.arr-stack.size': ['サイズ', 's', 's']
+  'arr.arr-stack-init': ['配列スタック初期化', 'asi', 'hss']
+  'arr.arr-stack-peek': ['配列スタック覗き', 'asp', 'hsn']
+  'arr.arr-stack-pop': ['配列スタックポップ', 'asp', 'hs']
+  'arr.arr-stack-push': ['配列スタックプッシュ', 'asp', 'hs']
+  'arr.asc': ['昇順', 'a', 's']
+  'arr.at': ['位置', 'a', 'i']
+  'arr.clone': ['クローン', 'c', 'k']
+  'arr.contains': ['含む', 'c', 'f']
+  'arr.count': ['カウント', 'c', 'k']
+  'arr.desc': ['降順', 'd', 'k']
+  'arr.eq': ['等値', 'e', 't']
+  'arr.fill': ['充填', 'f', 'j']
+  'arr.first': ['先頭', 'f', 's']
+  'arr.index-of': ['インデックスの', 'io', 'in']
+  'arr.last': ['末尾', 'l', 'm']
+  'arr.len': ['長さ', 'l', 'n']
+  'arr.link-clear': ['リンククリア', 'lc', 'r']
+  'arr.link-find': ['リンク検索', 'lf', 'rk']
+  'arr.link-get-at': ['リンク取得位置', 'lga', 'rsi']
+  'arr.link-init': ['リンク初期化', 'li', 'rs']
+  'arr.link-insert-at': ['リンク挿入位置', 'lia', 'rsi']
+  'arr.link-peek-back': ['リンク覗き後端', 'lpb', 'rnk']
+  'arr.link-peek-front': ['リンク覗き前端', 'lpf', 'rnz']
+  'arr.link-pop-back': ['リンクポップ後端', 'lpb', 'rk']
+  'arr.link-pop-front': ['リンクポップ前端', 'lpf', 'rz']
+  'arr.link-push-back': ['リンクプッシュ後端', 'lpb', 'rk']
+  'arr.link-push-front': ['リンクプッシュ前端', 'lpf', 'rz']
+  'arr.link-remove-at': ['リンク削除位置', 'lra', 'rsi']
+  'arr.link-reverse': ['リンク反転', 'lr', 'rh']
+  'arr.link-set-at': ['リンク設定位置', 'lsa', 'rsi']
+  'arr.max': ['最大', 'm', 's']
+  'arr.min': ['最小', 'm', 's']
+  'arr.queue-init': ['キュー初期化', 'qi', 'ks']
+  'arr.queue-peek': ['キュー覗き', 'qp', 'kn']
+  'arr.queue-pop': ['キューポップ', 'qp', 'k']
+  'arr.queue-push': ['キュープッシュ', 'qp', 'k']
+  'arr.reverse': ['反転', 'r', 'h']
+  'arr.sum': ['合計', 's', 'g']
+  'arr.swap': ['スワップ', 's', 's']
+  'arr.to-str': ['strへ変換', 'ts', 'shh']
+  'arr.to-vec': ['vecへ変換', 'tv', 'vhh']
+  'arrords.asc': ['昇順', 'a', 's']
+  'arrords.desc': ['降順', 'd', 'k']
+  'async.cancel': ['キャンセル', 'c', 'k']
+  'async.cancelled': ['キャンセル済み', 'c', 'ks']
+  'base32.decode': ['デコード', 'd', 'd']
+  'base32.encode': ['エンコード', 'e', 'e']
+  'base64.b64-val': ['base64値', 'bv', 'ba']
+  'base64.decode': ['デコード', 'd', 'd']
+  'base64.encode': ['エンコード', 'e', 'e']
+  'base64.encode-std': ['エンコードstd', 'es', 'es']
+  'base64.encode-url': ['エンコードurl', 'eu', 'eu']
+  'bigint._add': ['_add', 'a', 'a']
+  'bigint._add-i64': ['_addi64', 'ai', 'ai']
+  'bigint._div': ['_div', 'd', 'd']
+  'bigint._div-i64': ['_divi64', 'di', 'di']
+  'bigint._mod': ['_mod', 'm', 'm']
+  'bigint._mod-i64': ['_modi64', 'mi', 'mi']
+  'bigint._mul': ['_mul', 'm', 'm']
+  'bigint._mul-i64': ['_muli64', 'mi', 'mi']
+  'bigint._sub': ['_sub', 's', 's']
+  'bigint.abs-add': ['絶対値追加', 'aa', 'zt']
+  'bigint.abs-cmp': ['絶対値比較', 'ac', 'zh']
+  'bigint.abs-sub': ['絶対値減算', 'as', 'zg']
+  'bigint.add-bigint': ['追加大整数', 'ab', 'tds']
+  'bigint.cmp': ['比較', 'c', 'h']
+  'bigint.copy': ['コピー', 'c', 'k']
+  'bigint.div-mod': ['除算モッド', 'dm', 'jm']
+  'bigint.eq': ['等値', 'e', 't']
+  'bigint.from-i64': ['i64から変換', 'fi', 'ikh']
+  'bigint.from-u64': ['u64から変換', 'fu', 'ukh']
+  'bigint.gcd': ['最大公約数', 'g', 's']
+  'bigint.is-neg': ['否定か', 'in', 'hk']
+  'bigint.is-pos': ['正か', 'ip', 't']
+  'bigint.is-zero': ['ゼロか', 'iz', 'zk']
+  'bigint.lcm': ['最小公倍数', 'l', 's']
+  'bigint.mod-pow': ['モッド幂', 'mp', 'm']
+  'bigint.mul-bigint': ['乗算大整数', 'mb', 'jds']
+  'bigint.normalize': ['正規化', 'n', 's']
+  'bigint.one': ['単一', 'o', 't']
+  'bigint.pow': ['幂', 'p', 'p']
+  'bigint.shl': ['左シフト', 's', 'hs']
+  'bigint.shl1': ['左シフト1', 's', 'hs1']
+  'bigint.shr': ['右シフト', 's', 'ms']
+  'bigint.shr1': ['右シフト1', 's', 'ms1']
+  'bigint.sub-bigint': ['減算大整数', 'sb', 'gds']
+  'bigint.to-hex': ['hexへ変換', 'th', 'hhh']
+  'bigint.to-i64': ['i64へ変換', 'ti', 'ihh']
+  'bigint.to-str': ['strへ変換', 'ts', 'shh']
+  'bigint.zero': ['ゼロ', 'z', 'z']
+  'blake2.b': ['バイト', 'b', 'b']
+  'blake2.b-256': ['バイト256', 'b2', 'b2']
+  'blake2.b-256-hex': ['バイト25616進', 'b2h', 'b2s']
+  'blake2.b-compress': ['バイト圧縮', 'bc', 'ba']
+  'blake2.b-g': ['バイト生成元', 'bg', 'bs']
+  'blake2.b-hex': ['バイト16進', 'bh', 'b1s']
+  'blake2.b-state': ['バイト状態', 'bs', 'bj']
+  'blake2.rotr32': ['rotr32', 'r', 'r']
+  'blake2.rotr64': ['rotr64', 'r', 'r']
+  'blake2.s': ['複数', 's', 'f']
+  'blake2.s-compress': ['複数圧縮', 'sc', 'fa']
+  'blake2.s-g': ['複数生成元', 'sg', 'fs']
+  'blake2.s-hex': ['複数16進', 'sh', 'f1s']
+  'blake2.s-state': ['複数状態', 'ss', 'fj']
+  'bool.to-str': ['strへ変換', 'ts', 'shh']
+  'bufio.reader.close': ['クローズ', 'c', 'k']
+  'bufio.reader.fill': ['充填', 'f', 'j']
+  'bufio.reader.init': ['初期化', 'i', 's']
+  'bufio.reader.read-byte': ['読みバイト', 'rb', 'yb']
+  'bufio.reader.read-line': ['読み行', 'rl', 'yg']
+  'bytes.index': ['インデックス', 'i', 'i']
+  'bytes.index-from': ['インデックスfrom', 'if', 'if']
+  'bytes.len': ['長さ', 'l', 'n']
+  'bytes.slice': ['スライス', 's', 's']
+  'bytes.to-bytes-str': ['bytes-strへ変換', 'tbs', 'bhh']
+  'bytes.to-chars': ['charsへ変換', 'tc', 'chh']
+  'bytes.to-hex': ['hexへ変換', 'th', 'hhh']
+  'bytes.to-hex-lower': ['hex-lowerへ変換', 'thl', 'hhh']
+  'bytes.to-i64-be': ['i64-beへ変換', 'tib', 'ihh']
+  'bytes.to-i64-le': ['i64-leへ変換', 'til', 'ihh']
+  'bytes.to-str': ['strへ変換', 'ts', 'shh']
+  'bytes.to-txt': ['txtへ変換', 'tt', 'thh']
+  'bzip2.bz-bit-reader.read-bit': ['読みビット', 'rb', 'yb']
+  'bzip2.bz-bit-reader.read-bits': ['読みビット', 'rb', 'yb']
+  'bzip2.bz-huffman.build': ['構築', 'b', 'k']
+  'bzip2.bz-huffman.decode': ['デコード', 'd', 'd']
+  'bzip2.bz-huffman.decode-symbol': ['デコードシンボル', 'ds', 'd']
+  'bzip2.bzip2-compress': ['bzip2圧縮', 'bc', 'ba']
+  'bzip2.bzip2-decompress': ['bzip2解凍', 'bd', 'bk']
+  'chacha20-poly1305.chacha20-block': ['chacha20ブロック', 'cb', 'cb']
+  'chacha20-poly1305.chacha20-poly1305-open': ['chacha20poly1305オープン', 'cpo', 'co']
+  'chacha20-poly1305.chacha20-poly1305-seal': ['chacha20poly1305シーリング', 'cps', 'cs']
+  'chacha20-poly1305.chacha20-xor': ['chacha20xor', 'cx', 'c']
+  'chacha20-poly1305.poly1305': ['poly1305', 'p', 'p']
+  'chacha20-poly1305.poly1305-key-gen': ['poly1305キー生成', 'pkg', 'pks']
+  'chacha20-poly1305.poly1305-reduce': ['poly1305.reduce', 'pr', 'pr']
+  'chacha20-poly1305.qr': ['qr', 'q', 'q']
+  'chacha20-poly1305.rotl32': ['rotl32', 'r', 'r']
+  'char.is-alnum': ['英数字か', 'ia', 'ek']
+  'char.is-alpha': ['アルファか', 'ia', 'ak']
+  'char.is-digit': ['数字か', 'id', 'sk']
+  'char.is-letter': ['letterか', 'il', 'lk']
+  'char.is-lower': ['小文字か', 'il', 'kk']
+  'char.is-space': ['スペースか', 'is', 'sk']
+  'char.is-upper': ['大文字か', 'iu', 'ok']
+  'char.to-bytes': ['bytesへ変換', 'tb', 'bhh']
+  'char.to-lower': ['lowerへ変換', 'tl', 'lhh']
+  'char.to-str': ['strへ変換', 'ts', 'shh']
+  'char.to-txt': ['txtへ変換', 'tt', 'thh']
+  'char.to-upper': ['upperへ変換', 'tu', 'uhh']
+  'chars.to-str': ['strへ変換', 'ts', 'shh']
+  'client.client-create': ['クライアント作成', 'cc', 'ks']
+  'client.client.close': ['クローズ', 'c', 'k']
+  'client.client.connect': ['接続', 'c', 's']
+  'client.client.is-connected': ['接続済みか', 'ic', 'sm']
+  'client.client.reconnect': ['再接続', 'r', 's']
+  'client.client.recv': ['受信', 'r', 'j']
+  'client.client.recv-line': ['受信行', 'rl', 'jg']
+  'client.client.request': ['リクエスト', 'r', 'r']
+  'client.client.send': ['送信', 's', 's']
+  'client.client.send-line': ['送信行', 'sl', 's']
+  'cookie.build-header': ['構築ヘッダ', 'bh', 'kh']
+  'cookie.build-set': ['構築設定', 'bs', 'ks']
+  'cookie.cookie-sign': ['cookie署名', 'cs', 'cs']
+  'cookie.cookie-verify': ['cookie検証', 'cv', 'ck']
+  'cookie.jar.build-header': ['構築ヘッダ', 'bh', 'kh']
+  'cookie.jar.clear': ['クリア', 'c', 'k']
+  'cookie.jar.count-of': ['カウントの', 'co', 'kn']
+  'cookie.jar.delete': ['削除', 'd', 's']
+  'cookie.jar.get': ['取得', 'g', 's']
+  'cookie.jar.get-verified': ['取得検証済み', 'gv', 'sk']
+  'cookie.jar.parse-response': ['解析レスポンス', 'pr', 'kr']
+  'cookie.jar.set': ['設定', 's', 's']
+  'cookie.jar.set-signed': ['設定符号付き', 'ss', 'sft']
+  'cookie.parse-header': ['解析ヘッダ', 'ph', 'kh']
+  'cookie.parse-set': ['解析設定', 'ps', 'ks']
+  'crc-16.hex': ['16進', 'h', '1s']
+  'crc-16.new': ['新規', 'n', 's']
+  'crc-32.new': ['新規', 'n', 's']
+  'crc-64.hex': ['16進', 'h', '1s']
+  'crc-64.new': ['新規', 'n', 's']
+  'csv.encode-field': ['エンコードフィールド', 'ef', 'e']
+  'csv.parse-field': ['解析フィールド', 'pf', 'kf']
+  'csv.parse-line': ['解析行', 'pl', 'kg']
+  'deque.deque.clear': ['クリア', 'c', 'k']
+  'deque.deque.empty': ['empty', 'e', 'e']
+  'deque.deque.peek-back': ['覗き後端', 'pb', 'nk']
+  'deque.deque.peek-front': ['覗き前端', 'pf', 'nz']
+  'deque.deque.pop-back': ['ポップ後端', 'pb', 'pk']
+  'deque.deque.pop-front': ['ポップ前端', 'pf', 'pz']
+  'deque.deque.push-back': ['プッシュ後端', 'pb', 'pk']
+  'deque.deque.push-front': ['プッシュ前端', 'pf', 'pz']
+  'deque.deque.size': ['サイズ', 's', 's']
+  'des.des-block': ['DESブロック', 'db', 'db']
+  'des.des-dec': ['DES復号', 'dd', 'df']
+  'des.des-enc': ['DES暗号化', 'de', 'da']
+  'des.des-key-schedule': ['DESキースケジュール', 'dks', 'dk']
+  'des.f': ['浮動小数', 'f', 'f']
+  'des.permute': ['置换', 'p', 'c']
+  'des.sbox-lookup': ['S盒引き', 'sl', 'sgh']
+  'dns.build-query': ['構築クエリ', 'bq', 'kk']
+  'dns.dial': ['ダイヤル', 'd', 'd']
+  'dns.parse-name': ['解析名前', 'pn', 'kn']
+  'dns.parse-response': ['解析レスポンス', 'pr', 'kr']
+  'dns.resolve': ['resolve', 'r', 'r']
+  'dns.resolve-all': ['resolve全て', 'ra', 'rs']
+  'dns.resolve-from': ['resolvefrom', 'rf', 'r']
+  'dom.append-child': ['追加子', 'ac', 'tk']
+  'dom.attribute-count': ['属性カウント', 'ac', 'zk']
+  'dom.attribute-name': ['属性名前', 'an', 'zn']
+  'dom.attribute-value': ['属性値', 'av', 'z']
+  'dom.blob-has': ['blob.has', 'bh', 'bh']
+  'dom.child-at': ['子位置', 'ca', 'ki']
+  'dom.child-count': ['子カウント', 'cc', 'kk']
+  'dom.class-has': ['クラス.has', 'ch', 'kh']
+  'dom.cp-append': ['cp追加', 'ca', 'ct']
+  'dom.create-comment': ['作成コメント', 'cc', 'sk']
+  'dom.create-element': ['作成要素', 'ce', 'sy']
+  'dom.create-text-node': ['作成テキストノード', 'ctn', 'st']
+  'dom.decode-entities': ['デコードエンティティ', 'de', 'd']
+  'dom.document-element': ['ドキュメント要素', 'de', 'dy']
+  'dom.dom-closers-of': ['DOMクローザの', 'dco', 'dkn']
+  'dom.dom-pool.alloc': ['確保', 'a', 'k']
+  'dom.dom-pool.append': ['追加', 'a', 't']
+  'dom.dom-pool.attr-edge-at': ['属性辺位置', 'aea', 'zhi']
+  'dom.dom-pool.collect-class': ['収集クラス', 'cc', 'sk']
+  'dom.dom-pool.collect-tag': ['収集タグ', 'ct', 'st']
+  'dom.dom-pool.detach': ['デタッチ', 'd', 'd']
+  'dom.dom-pool.find-attr': ['検索属性', 'fa', 'kz']
+  'dom.dom-pool.find-id-node': ['検索idノード', 'fin', 'kin']
+  'dom.dom-pool.html-add-text': ['html追加テキスト', 'hat', 'htt']
+  'dom.dom-pool.html-bogus-comment': ['html偽コメント', 'hbc', 'hnk']
+  'dom.dom-pool.html-parse-attr': ['html解析属性', 'hpa', 'hkz']
+  'dom.dom-pool.html-parse-close-name': ['html解析クローズ名前', 'hpcn', 'hkkn']
+  'dom.dom-pool.html-parse-comment': ['html解析コメント', 'hpc', 'hkk']
+  'dom.dom-pool.html-parse-doc': ['html解析ドキュメント', 'hpd', 'hkd']
+  'dom.dom-pool.html-parse-open': ['html解析オープン', 'hpo', 'hko']
+  'dom.dom-pool.html-parse-pi': ['html解析pi', 'hpp', 'hkp']
+  'dom.dom-pool.html-set-attr-once': ['html設定属性一度', 'hsao', 'hszi']
+  'dom.dom-pool.init': ['初期化', 'i', 's']
+  'dom.dom-pool.insert-before': ['挿入前方', 'ib', 'sz']
+  'dom.dom-pool.parse-doctype-node': ['解析doctypeノード', 'pdn', 'kdn']
+  'dom.dom-pool.remove-attr': ['削除属性', 'ra', 'sz']
+  'dom.dom-pool.ser': ['シリアライズ', 's', 's']
+  'dom.dom-pool.ser-children': ['シリアライズ子', 'sc', 'sk']
+  'dom.dom-pool.set-attr': ['設定属性', 'sa', 'sz']
+  'dom.dom-pool.text-of': ['テキストの', 'to', 'tn']
+  'dom.dom-pool.valid': ['有効', 'v', 'y']
+  'dom.dom-pool.xml-add-text': ['xml追加テキスト', 'xat', 'xtt']
+  'dom.dom-pool.xml-parse-attr': ['xml解析属性', 'xpa', 'xkz']
+  'dom.dom-pool.xml-parse-cdata': ['xml解析CDATA', 'xpc', 'xkc']
+  'dom.dom-pool.xml-parse-close': ['xml解析クローズ', 'xpc', 'xkk']
+  'dom.dom-pool.xml-parse-comment': ['xml解析コメント', 'xpc', 'xkk']
+  'dom.dom-pool.xml-parse-doc': ['xml解析ドキュメント', 'xpd', 'xkd']
+  'dom.dom-pool.xml-parse-element': ['xml解析要素', 'xpe', 'xky']
+  'dom.dom-pool.xml-parse-pi': ['xml解析pi', 'xpp', 'xkp']
+  'dom.dom-strip-bom': ['DOM除去BOM', 'dsb', 'djb']
+  'dom.esc-attr': ['エスケープ属性', 'ea', 'ez']
+  'dom.esc-text': ['エスケープテキスト', 'et', 'e']
+  'dom.find-entity': ['検索エンティティ', 'fe', 'ke']
+  'dom.first-child': ['先頭子', 'fc', 'sk']
+  'dom.get-attribute': ['取得属性', 'ga', 'sz']
+  'dom.get-element-by-id': ['取得要素でid', 'gebi', 'sydi']
+  'dom.get-elements-by-class-name': ['取得要素でクラス名前', 'gebcn', 'sydkn']
+  'dom.get-elements-by-tag-name': ['取得要素でタグ名前', 'gebtn', 'sydtn']
+  'dom.has-attribute': ['.has属性', 'ha', 'hz']
+  'dom.html-close-match': ['htmlクローズ一致', 'hcm', 'hki']
+  'dom.html-peek-name': ['html覗き名前', 'hpn', 'hnn']
+  'dom.inner-html': ['内側html', 'ih', 'uh']
+  'dom.insert-child-before': ['挿入子前方', 'icb', 'skz']
+  'dom.is-html': ['htmlか', 'ih', 'hk']
+  'dom.is-name-byte': ['名前バイトか', 'inb', 'nbk']
+  'dom.kind': ['種別', 'k', 's']
+  'dom.name': ['名前', 'n', 'n']
+  'dom.new-document': ['新規ドキュメント', 'nd', 'sd']
+  'dom.outer-html': ['外側html', 'oh', 'sh']
+  'dom.parent': ['親', 'p', 'o']
+  'dom.parse-html': ['解析html', 'ph', 'kh']
+  'dom.parse-numeric-entity': ['解析数値エンティティ', 'pne', 'kse']
+  'dom.parse-xml': ['解析xml', 'px', 'kx']
+  'dom.remove-attribute': ['削除属性', 'ra', 'sz']
+  'dom.remove-child': ['削除子', 'rc', 'sk']
+  'dom.replace-child': ['置換子', 'rc', 'c']
+  'dom.set-attribute': ['設定属性', 'sa', 'sz']
+  'dom.set-node-value': ['設定ノード値', 'snv', 'sna']
+  'dom.set-text-content': ['設定テキストコンテンツ', 'stc', 'st']
+  'dom.text-content': ['テキストコンテンツ', 'tc', 't']
+  'dom.to-string': ['stringへ変換', 'ts', 'shh']
+  'dom.value': ['値', 'v', 'a']
+  'dom.xml-read-name': ['xml読み名前', 'xrn', 'xyn']
+  'dom.xml-skip-ws': ['xmlスキップWebSocket', 'xsw', 'xsw']
+  'ecdsa.bn-add': ['大数追加', 'ba', 'dt']
+  'ecdsa.bn-addmod': ['大数モジュラ加算', 'ba', 'dmk']
+  'ecdsa.bn-cmp': ['大数比較', 'bc', 'dh']
+  'ecdsa.bn-invmod': ['大数モジュラ逆元', 'bi', 'dmg']
+  'ecdsa.bn-mod': ['大数モッド', 'bm', 'dm']
+  'ecdsa.bn-mulmod': ['大数모듈러 곱셈', 'bm', 'd']
+  'ecdsa.bn-sub': ['大数減算', 'bs', 'dg']
+  'ecdsa.bn-submod': ['大数モジュラ減算', 'bs', 'dmg']
+  'ecdsa.ec-bytes-to-point': ['ecバイトto点', 'ebtp', 'ebtt']
+  'ecdsa.ec-get-basepoint': ['ec取得基準点', 'egb', 'esk']
+  'ecdsa.ec-point-add': ['ec点追加', 'epa', 'ett']
+  'ecdsa.ec-point-double': ['ec点倍点', 'epd', 'etbt']
+  'ecdsa.ec-point-to-bytes': ['ec点toバイト', 'eptb', 'ettb']
+  'ecdsa.ec-scalar-mult': ['ecスカラーmult', 'esm', 'esm']
+  'ecdsa.ecdh-p256': ['ECDHp256', 'ep', 'e']
+  'ecdsa.ecdsa-publickey': ['ECDSApublickey', 'ep', 'e']
+  'ecdsa.ecdsa-sign': ['ECDSA署名', 'es', 'es']
+  'ecdsa.ecdsa-verify': ['ECDSA検証', 'ev', 'ek']
+  'ed25519.ed-d': ['ed距離', 'ed', 'ek']
+  'ed25519.ed-sqm1': ['ed二乗-1', 'es', 'en']
+  'ed25519.ed25519-publickey': ['ed25519publickey', 'ep', 'e']
+  'ed25519.ed25519-sign': ['ed25519署名', 'es', 'es']
+  'ed25519.ed25519-verify': ['ed25519検証', 'ev', 'ek']
+  'ed25519.fe-pow': ['体要素幂', 'fp', 'ky']
+  'ed25519.ge-add': ['ge追加', 'ga', 'gt']
+  'ed25519.ge-basepoint': ['ge基準点', 'gb', 'gk']
+  'ed25519.ge-pack': ['gepack', 'gp', 'g']
+  'ed25519.ge-scalar-mult': ['geスカラーmult', 'gsm', 'gsm']
+  'ed25519.ge-unpack': ['geunpack', 'gu', 'g']
+  'ed25519.is-zero-arr': ['ゼロ配列か', 'iza', 'zhk']
+  'ed25519.pcopy': ['部分コピー', 'p', 'bk']
+  'ed25519.sc-ge-l': ['scgel', 'sgl', 's']
+  'ed25519.sc-muladd': ['sc乗算加算', 'sm', 'sjk']
+  'ed25519.sc-reduce': ['sc.reduce', 'sr', 'sr']
+  'ed25519.set-coord': ['設定coord', 'sc', 'sc']
+  'embed.exists': ['存在', 'e', 's']
+  'embed.read': ['読み', 'r', 'y']
+  'env.get': ['取得', 'g', 's']
+  'env.get-with-default': ['取得付きデフォルト', 'gwd', 'std']
+  'env.is-set': ['設定か', 'is', 'sk']
+  'env.lookup': ['引き', 'l', 'h']
+  'env.set': ['設定', 's', 's']
+  'env.unset': ['unset', 'u', 'u']
+  'err._errno-to-code': ['errnotoコード', 'etc', 'ek']
+  'err.code': ['コード', 'c', 'k']
+  'err.code.to-name': ['nameへ変換', 'tn', 'nhh']
+  'err.format': ['フォーマット', 'f', 'f']
+  'err.from-errno': ['errnoから変換', 'fe', 'ekh']
+  'err.is': ['是否', 'i', 'kh']
+  'err.msg': ['msg', 'm', 'm']
+  'err.new': ['新規', 'n', 's']
+  'err.new-at': ['新規位置', 'na', 'si']
+  'float.div': ['除算', 'd', 'j']
+  'float.is-inf': ['無限か', 'ii', 'mk']
+  'float.is-nan': ['NaNか', 'in', 'nk']
+  'fmt.eprintf': ['eprintf', 'e', 'e']
+  'fmt.fmt-apply-spec': ['fmt適用spec', 'fas', 'fts']
+  'fmt.fmt-bool': ['fmtbool', 'fb', 'f']
+  'fmt.fmt-f64': ['fmtf64', 'ff', 'f']
+  'fmt.fmt-group-digits': ['fmtグループ数字', 'fgd', 'fgs']
+  'fmt.fmt-int': ['fmt整数', 'fi', 'fs']
+  'fmt.fmt-parse-spec': ['fmt解析spec', 'fps', 'fks']
+  'fmt.fmt-str': ['fmt文字列', 'fs', 'fm']
+  'fmt.fmt-uint': ['fmt符号なし整数', 'fu', 'ffns']
+  'fmt.fmt-uint-base': ['fmt符号なし整数base', 'fub', 'ffnsb']
+  'fmt.printf': ['printf', 'p', 'p']
+  'fmt.sprintf': ['sprintf', 's', 's']
+  'fnv-1a-32.fnv-1a-32': ['fnv1a32', 'f13', 'f']
+  'fnv.fnv-1a-32': ['fnv1a32', 'f13', 'f']
+  'fnv.fnv-1a-64': ['fnv1a64', 'f16', 'f']
+  'fs.close': ['クローズ', 'c', 'k']
+  'fs.copy-file': ['コピーファイル', 'cf', 'k']
+  'fs.dir-entries': ['ディレクトリエントリ', 'de', 'd']
+  'fs.exists': ['存在', 'e', 's']
+  'fs.file-size': ['ファイルサイズ', 'fs', 'f']
+  'fs.file.append': ['追加', 'a', 't']
+  'fs.file.close': ['クローズ', 'c', 'k']
+  'fs.file.copy-to': ['コピーto', 'ct', 'kt']
+  'fs.file.is-open': ['オープンか', 'io', 'ok']
+  'fs.file.read': ['読み', 'r', 'y']
+  'fs.file.read-bytes': ['読みバイト', 'rb', 'yb']
+  'fs.file.read-line': ['読み行', 'rl', 'yg']
+  'fs.file.read-str': ['読み文字列', 'rs', 'ym']
+  'fs.file.size': ['サイズ', 's', 's']
+  'fs.file.write': ['書き', 'w', 'k']
+  'fs.file.write-bytes': ['書きバイト', 'wb', 'kb']
+  'fs.file.write-str': ['書き文字列', 'ws', 'km']
+  'fs.fstat-size': ['fstatサイズ', 'fs', 'fs']
+  'fs.get-line': ['取得行', 'gl', 'sg']
+  'fs.is-dir': ['ディレクトリか', 'id', 'dk']
+  'fs.is-file': ['ファイルか', 'if', 'fk']
+  'fs.link': ['リンク', 'l', 'r']
+  'fs.list-dir': ['リストディレクトリ', 'ld', 'r']
+  'fs.list-dir-2': ['リストディレクトリ', 'ld2', 'r']
+  'fs.list-dir-3': ['リストディレクトリ', 'ld3', 'r']
+  'fs.lstat': ['lstat', 'l', 'l']
+  'fs.mkdtemp': ['mkdtemp', 'm', 'm']
+  'fs.mkfifo': ['mkfifo', 'm', 'm']
+  'fs.mknod': ['mknod', 'm', 'm']
+  'fs.mkstemp': ['mkstemp', 'm', 'm']
+  'fs.open': ['オープン', 'o', 'o']
+  'fs.open-file': ['オープンファイル', 'of', 'o']
+  'fs.open-read': ['オープン読み', 'or', 'oy']
+  'fs.open-write': ['オープン書き', 'ow', 'ok']
+  'fs.read': ['読み', 'r', 'y']
+  'fs.read-bytes': ['読みバイト', 'rb', 'yb']
+  'fs.read-file': ['読みファイル', 'rf', 'yf']
+  'fs.read-stdin': ['読み標準入力', 'rs', 'yh']
+  'fs.read-stdin-str': ['読み標準入力文字列', 'rss', 'yhm']
+  'fs.read-str': ['読み文字列', 'rs', 'ym']
+  'fs.readlink': ['readlink', 'r', 'r']
+  'fs.realpath': ['realpath', 'r', 'r']
+  'fs.remove': ['削除', 'r', 's']
+  'fs.rename': ['rename', 'r', 'r']
+  'fs.rmdir': ['rmdir', 'r', 'r']
+  'fs.stat-size': ['statサイズ', 'ss', 'ss']
+  'fs.symlink': ['symlink', 's', 's']
+  'fs.sync': ['sync', 's', 's']
+  'fs.truncate': ['truncate', 't', 't']
+  'fs.utime': ['アクセス時刻', 'u', 'aj']
+  'fs.walk': ['walk', 'w', 'w']
+  'fs.walk-collect': ['walk収集', 'wc', 'ws']
+  'fs.write': ['書き', 'w', 'k']
+  'fs.write-bytes': ['書きバイト', 'wb', 'kb']
+  'fs.write-file': ['書きファイル', 'wf', 'kf']
+  'fs.write-str': ['書き文字列', 'ws', 'km']
+  'global.eprint': ['eprint', 'e', 'e']
+  'global.exit': ['終了', 'e', 's']
+  'global.format': ['フォーマット', 'f', 'f']
+  'global.print': ['印刷', 'p', 'i']
+  'global.with-cap': ['付き容量', 'wc', 'ty']
+  'global.with-cap-len': ['付き容量長さ', 'wcl', 'tyn']
+  'global.with-len': ['付き長さ', 'wl', 'tn']
+  'gzip.bit-reader.read-bit': ['読みビット', 'rb', 'yb']
+  'gzip.bit-reader.read-bits': ['読みビット', 'rb', 'yb']
+  'gzip.bit-reader.read-u16-le': ['読みu16リトルエンディアン', 'rul', 'yur']
+  'gzip.bit-reader.skip-to-byte': ['スキップtoバイト', 'stb', 'stb']
+  'gzip.build-dynamic': ['構築動的', 'bd', 'kd']
+  'gzip.build-fixed': ['構築固定', 'bf', 'kk']
+  'gzip.deflate-stored': ['.deflatestored', 'ds', 'd']
+  'gzip.gzip-compress': ['gzip圧縮', 'gc', 'ga']
+  'gzip.gzip-decompress': ['gzip解凍', 'gd', 'gk']
+  'gzip.huffman.build': ['構築', 'b', 'k']
+  'gzip.huffman.decode': ['デコード', 'd', 'd']
+  'gzip.inflate-decompress': ['インフレ解凍', 'id', 'ik']
+  'hash-set.hash-set.add': ['追加', 'a', 't']
+  'hash-set.hash-set.clear': ['クリア', 'c', 'k']
+  'hash-set.hash-set.contains': ['含む', 'c', 'f']
+  'hash-set.hash-set.for-each': ['用各', 'fe', 'yk']
+  'hash-set.hash-set.hash': ['ハッシュ', 'h', 'h']
+  'hash-set.hash-set.init': ['初期化', 'i', 's']
+  'hash-set.hash-set.is-empty': ['emptyか', 'ie', 'ek']
+  'hash-set.hash-set.len': ['長さ', 'l', 'n']
+  'hash-set.hash-set.remove': ['削除', 'r', 's']
+  'heap.empty': ['empty', 'e', 'e']
+  'heap.init': ['初期化', 'i', 's']
+  'heap.peek': ['覗き', 'p', 'n']
+  'heap.pop': ['ポップ', 'p', 'p']
+  'heap.push': ['プッシュ', 'p', 'p']
+  'heap.size': ['サイズ', 's', 's']
+  'hkdf.hkdf-derive-secret': ['hkdf導出秘密', 'hds', 'hdh']
+  'hkdf.hkdf-expand': ['hkdf拡張', 'he', 'hk']
+  'hkdf.hkdf-expand-hmac': ['hkdf拡張HMAC', 'heh', 'hkh']
+  'hkdf.hkdf-expand-label': ['hkdf拡張ラベル', 'hel', 'hkr']
+  'hkdf.hkdf-expand-label-vec': ['hkdf拡張ラベルベクトル', 'helv', 'hkr']
+  'hkdf.hkdf-extract': ['hkdf抽出', 'he', 'hc']
+  'hmac.hmac-md5': ['HMACMD5', 'hm', 'h']
+  'hmac.hmac-md5-vec': ['HMACMD5ベクトル', 'hmv', 'hb']
+  'hmac.hmac-sha1': ['HMACSHA-1', 'hs', 'h']
+  'hmac.hmac-sha1-vec': ['HMACSHA-1ベクトル', 'hsv', 'hb']
+  'hmac.hmac-sha256': ['HMACsha256', 'hs', 'h']
+  'hmac.hmac-sha256-vec': ['HMACsha256ベクトル', 'hsv', 'hb']
+  'hmac.hmac-sha384': ['HMACsha384', 'hs', 'h']
+  'hmac.hmac-sha384-vec': ['HMACsha384ベクトル', 'hsv', 'hb']
+  'hmac.hmac-sha512': ['HMACsha512', 'hs', 'h']
+  'hmac.hmac-sha512-vec': ['HMACsha512ベクトル', 'hsv', 'hb']
+  'hpack.decode-int': ['デコード整数', 'di', 'ds']
+  'hpack.decode-str': ['デコード文字列', 'ds', 'dm']
+  'hpack.encode-int': ['エンコード整数', 'ei', 'es']
+  'hpack.encode-str': ['エンコード文字列', 'es', 'em']
+  'hpack.tables.decode-headers': ['デコードヘッダ', 'dh', 'd']
+  'hpack.tables.dyn-add': ['動追加', 'da', 'dt']
+  'hpack.tables.encode-header': ['エンコードヘッダ', 'eh', 'e']
+  'hpack.tables.find': ['検索', 'f', 'k']
+  'hpack.tables.find-name': ['検索名前', 'fn', 'kn']
+  'hpack.tables.init': ['初期化', 'i', 's']
+  'hpack.tables.lookup': ['引き', 'l', 'h']
+  'http.delete': ['削除', 'd', 's']
+  'http.do': ['実行', 'd', 'j']
+  'http.do-req': ['実行リクエスト', 'dr', 'jr']
+  'http.download': ['ダウンロード', 'd', 'd']
+  'http.get': ['取得', 'g', 's']
+  'http.get-auth': ['取得認証', 'ga', 'sn']
+  'http.http-dl-dechunk': ['HTTPdldechunk', 'hdd', 'h']
+  'http.http-dl-location': ['HTTPdllocation', 'hdl', 'h']
+  'http.http-dl-open': ['HTTPdlオープン', 'hdo', 'ho']
+  'http.http-dl-resolve': ['HTTPdlresolve', 'hdr', 'h']
+  'http.http-write-ok': ['HTTP書きOK', 'hwo', 'hko']
+  'http.patch': ['パッチ', 'p', 'p']
+  'http.ping': ['ping', 'p', 'p']
+  'http.post': ['後置', 'p', 'k']
+  'http.post-auth': ['後置認証', 'pa', 'kn']
+  'http.put': ['投入', 'p', 't']
+  'http.request.add-header': ['追加ヘッダ', 'ah', 'th']
+  'http.request.init': ['初期化', 'i', 's']
+  'http.response.get-header': ['取得ヘッダ', 'gh', 'sh']
+  'http.response.parse-headers': ['解析ヘッダ', 'ph', 'kh']
+  'http.set-api-key': ['設定APIキー', 'sak', 'sak']
+  'http.set-basic-auth': ['設定基本認証', 'sba', 'skn']
+  'http.set-bearer-auth': ['設定bearer認証', 'sba', 'sbn']
+  'http.upload-put': ['アップロード投入', 'up', 'at']
+  'http2.conn.close': ['クローズ', 'c', 'k']
+  'http2.conn.init': ['初期化', 'i', 's']
+  'http2.conn.recv-frame': ['受信フレーム', 'rf', 'jf']
+  'http2.conn.request': ['リクエスト', 'r', 'r']
+  'http2.conn.send-data': ['送信データ', 'sd', 'sd']
+  'http2.conn.send-frame': ['送信フレーム', 'sf', 'sf']
+  'http2.conn.send-headers': ['送信ヘッダ', 'sh', 'sh']
+  'http2.conn.send-settings': ['送信settings', 'ss', 'ss']
+  'http2.connect': ['接続', 'c', 's']
+  'http2.connect-tls': ['接続TLS', 'ct', 'st']
+  'http2.delete': ['削除', 'd', 's']
+  'http2.do': ['実行', 'd', 'j']
+  'http2.do-req': ['実行リクエスト', 'dr', 'jr']
+  'http2.frame.parse': ['解析', 'p', 'k']
+  'http2.frame.serialize': ['シリアライズ', 's', 's']
+  'http2.get': ['取得', 'g', 's']
+  'http2.patch': ['パッチ', 'p', 'p']
+  'http2.post': ['後置', 'p', 'k']
+  'http2.put': ['投入', 'p', 't']
+  'http3.connect': ['接続', 'c', 's']
+  'http3.decode-header': ['デコードヘッダ', 'dh', 'd']
+  'http3.encode-data-frame': ['エンコードデータフレーム', 'edf', 'e']
+  'http3.encode-frame': ['エンコードフレーム', 'ef', 'e']
+  'http3.encode-header': ['エンコードヘッダ', 'eh', 'e']
+  'http3.encode-headers': ['エンコードヘッダ', 'eh', 'e']
+  'http3.encode-headers-frame': ['エンコードヘッダフレーム', 'ehf', 'e']
+  'http3.encode-settings-frame': ['エンコードsettingsフレーム', 'esf', 'esf']
+  'http3.get': ['取得', 'g', 's']
+  'http3.http3-do': ['http3実行', 'hd', 'hj']
+  'http3.parse-frame': ['解析フレーム', 'pf', 'kf']
+  'http3.parse-url': ['解析url', 'pu', 'ku']
+  'http3.post': ['後置', 'p', 'k']
+  'http3.response.get-header': ['取得ヘッダ', 'gh', 'sh']
+  'http3.send-request': ['送信リクエスト', 'sr', 'sr']
+  'int.div': ['除算', 'd', 'j']
+  'int.mod': ['モッド', 'm', 'm']
+  'int.to-str': ['strへ変換', 'ts', 'shh']
+  'io.err': ['エラー', 'e', 'e']
+  'io.errln': ['errln', 'e', 'e']
+  'io.out': ['出力', 'o', 's']
+  'io.outln': ['outln', 'o', 'o']
+  'io.read-line': ['読み行', 'rl', 'yg']
+  'io.reader.from-fd': ['fdから変換', 'ff', 'fkh']
+  'io.reader.from-stdin': ['stdinから変換', 'fs', 'skh']
+  'io.reader.read': ['読み', 'r', 'y']
+  'io.reader.read-all': ['読み全て', 'ra', 'ys']
+  'io.reader.read-byte': ['読みバイト', 'rb', 'yb']
+  'io.reader.read-line': ['読み行', 'rl', 'yg']
+  'io.writer.from-fd': ['fdから変換', 'ff', 'fkh']
+  'io.writer.from-stderr': ['stderrから変換', 'fs', 'skh']
+  'io.writer.from-stdout': ['stdoutから変換', 'fs', 'skh']
+  'io.writer.write': ['書き', 'w', 'k']
+  'io.writer.write-byte': ['書きバイト', 'wb', 'kb']
+  'io.writer.write-line': ['書き行', 'wl', 'kg']
+  'io.writer.write-str': ['書き文字列', 'ws', 'km']
+  'ip.ip-addr.equal': ['等値', 'e', 't']
+  'ip.ip-addr.from-str': ['strから変換', 'fs', 'skh']
+  'ip.ip-addr.from-u32': ['u32から変換', 'fu', 'ukh']
+  'ip.ip-addr.in-subnet': ['内サブネット', 'is', 'ns']
+  'ip.ip-addr.is-broadcast': ['ブロードキャストか', 'ib', 'bk']
+  'ip.ip-addr.is-class-a': ['クラス全か', 'ica', 'km']
+  'ip.ip-addr.is-class-b': ['クラスバイトか', 'icb', 'kk']
+  'ip.ip-addr.is-class-c': ['クラス容量か', 'icc', 'kyk']
+  'ip.ip-addr.is-link-local': ['リンクローカルか', 'ill', 'rk']
+  'ip.ip-addr.is-loopback': ['ループバックか', 'il', 'rk']
+  'ip.ip-addr.is-multicast': ['マルチキャストか', 'im', 'mk']
+  'ip.ip-addr.is-private': ['私有か', 'ip', 'sk']
+  'ip.ip-addr.is-valid': ['有効か', 'iv', 'yk']
+  'ip.ip-addr.is-zero': ['ゼロか', 'iz', 'zk']
+  'ip.ip-addr.parse': ['解析', 'p', 'k']
+  'ip.ip-addr.to-str': ['strへ変換', 'ts', 'shh']
+  'ip.ip-addr.to-u32': ['u32へ変換', 'tu', 'uhh']
+  'ip.ip-is-loopback': ['ip是否ループバック', 'iil', 'ikhr']
+  'ip.ip-is-private': ['ip是否私有', 'iip', 'ikhs']
+  'ip.ip-parse': ['ip解析', 'ip', 'ik']
+  'json.alloc-node': ['確保ノード', 'an', 'kn']
+  'json.arr-get': ['配列取得', 'ag', 'hs']
+  'json.arr-len': ['配列長さ', 'al', 'hn']
+  'json.arr-push': ['配列プッシュ', 'ap', 'hp']
+  'json.arr-push-bool': ['配列プッシュbool', 'apb', 'hpb']
+  'json.arr-push-idx': ['配列プッシュindex', 'api', 'hpi']
+  'json.arr-push-num': ['配列プッシュ数値', 'apn', 'hps']
+  'json.arr-push-str': ['配列プッシュ文字列', 'aps', 'hpm']
+  'json.bool': ['bool', 'b', 'b']
+  'json.delete-key': ['削除キー', 'dk', 'sk']
+  'json.get': ['取得', 'g', 's']
+  'json.get-bool': ['取得bool', 'gb', 'sb']
+  'json.get-i64': ['取得i64', 'gi', 'si']
+  'json.get-key': ['取得キー', 'gk', 'sk']
+  'json.get-num': ['取得数値', 'gn', 'ss']
+  'json.get-str': ['取得文字列', 'gs', 'sm']
+  'json.i64': ['i64', 'i', 'i']
+  'json.is-arr': ['配列か', 'ia', 'hk']
+  'json.is-bool': ['boolか', 'ib', 'bk']
+  'json.is-null': ['nullか', 'in', 'nk']
+  'json.is-num': ['数値か', 'in', 'sk']
+  'json.is-obj': ['objか', 'io', 'ok']
+  'json.is-str': ['文字列か', 'is', 'mk']
+  'json.json-clone-tree': ['jsonクローンツリー', 'jct', 'jk']
+  'json.json-pool.add-child': ['追加子', 'ac', 'tk']
+  'json.json-pool.alloc': ['確保', 'a', 'k']
+  'json.json-pool.arr-get': ['配列取得', 'ag', 'hs']
+  'json.json-pool.arr-len': ['配列長さ', 'al', 'hn']
+  'json.json-pool.copy-tree': ['コピーツリー', 'ct', 'k']
+  'json.json-pool.get-bool': ['取得bool', 'gb', 'sb']
+  'json.json-pool.get-key': ['取得キー', 'gk', 'sk']
+  'json.json-pool.get-kind': ['取得種別', 'gk', 'ss']
+  'json.json-pool.get-num': ['取得数値', 'gn', 'ss']
+  'json.json-pool.get-str': ['取得文字列', 'gs', 'sm']
+  'json.json-pool.init': ['初期化', 'i', 's']
+  'json.json-pool.parse': ['解析', 'p', 'k']
+  'json.json-pool.parse-num': ['解析数値', 'pn', 'ks']
+  'json.json-pool.parse-str': ['解析文字列', 'ps', 'km']
+  'json.json-pool.set-key': ['設定キー', 'sk', 'sk']
+  'json.json-pool.skip-ws': ['スキップWebSocket', 'sw', 'sw']
+  'json.json-pool.str-eq': ['文字列等値', 'se', 'mt']
+  'json.json-pool.stringify': ['文字列化', 's', 'mk']
+  'json.kind': ['種別', 'k', 's']
+  'json.new': ['新規', 'n', 's']
+  'json.new-pool': ['新規プール', 'np', 'sp']
+  'json.num': ['数値', 'n', 's']
+  'json.obj-key': ['objキー', 'ok', 'ok']
+  'json.obj-keys-str': ['objキー文字列', 'oks', 'okm']
+  'json.obj-len': ['obj長さ', 'ol', 'on']
+  'json.overflowed': ['オーバーフロー', 'o', 'o']
+  'json.set': ['設定', 's', 's']
+  'json.set-bool': ['設定bool', 'sb', 'sb']
+  'json.set-i64': ['設定i64', 'si', 'si']
+  'json.set-key': ['設定キー', 'sk', 'sk']
+  'json.set-null': ['設定null', 'sn', 'sn']
+  'json.set-num': ['設定数値', 'sn', 'ss']
+  'json.set-str': ['設定文字列', 'ss', 'sm']
+  'json.str': ['文字列', 's', 'm']
+  'json.str-val': ['文字列値', 'sv', 'ma']
+  'json.stringify': ['文字列化', 's', 'mk']
+  'link.link.empty': ['empty', 'e', 'e']
+  'link.link.full': ['full', 'f', 'f']
+  'link.link.size': ['サイズ', 's', 's']
+  'linked-hash-map.linked-hash-map.clear': ['クリア', 'c', 'k']
+  'linked-hash-map.linked-hash-map.contains': ['含む', 'c', 'f']
+  'linked-hash-map.linked-hash-map.for-each': ['用各', 'fe', 'yk']
+  'linked-hash-map.linked-hash-map.get': ['取得', 'g', 's']
+  'linked-hash-map.linked-hash-map.hash': ['ハッシュ', 'h', 'h']
+  'linked-hash-map.linked-hash-map.init': ['初期化', 'i', 's']
+  'linked-hash-map.linked-hash-map.is-empty': ['emptyか', 'ie', 'ek']
+  'linked-hash-map.linked-hash-map.len': ['長さ', 'l', 'n']
+  'linked-hash-map.linked-hash-map.put': ['投入', 'p', 't']
+  'linked-hash-map.linked-hash-map.remove': ['削除', 'r', 's']
+  'log.get-output-fd': ['取得outputfd', 'gof', 'so']
+  'log.get-writer': ['取得ライタ', 'gw', 'sr']
+  'log.log-emit': ['ログ发出', 'le', 'r']
+  'log.log-stamp': ['ログスタンプ', 'ls', 'r']
+  'log.open-file': ['オープンファイル', 'of', 'o']
+  'log.set-format': ['設定フォーマット', 'sf', 'sf']
+  'log.set-level': ['設定レベル', 'sl', 'sr']
+  'log.set-output-fd': ['設定outputfd', 'sof', 'so']
+  'log.set-writer': ['設定ライタ', 'sw', 'sr']
+  'magic.detect-by-extension': ['検出で拡張', 'dbe', 'kdk']
+  'magic.detect-by-magic': ['検出でマジック', 'dbm', 'kdm']
+  'magic.detect-type': ['検出型', 'dt', 'kk']
+  'magic.get-extension': ['取得拡張', 'ge', 'sk']
+  'map.hashmap-bool-tmpl.clear': ['クリア', 'c', 'k']
+  'map.hashmap-bool-tmpl.contains': ['含む', 'c', 'f']
+  'map.hashmap-bool-tmpl.for-each': ['用各', 'fe', 'yk']
+  'map.hashmap-bool-tmpl.get': ['取得', 'g', 's']
+  'map.hashmap-bool-tmpl.hash': ['ハッシュ', 'h', 'h']
+  'map.hashmap-bool-tmpl.init': ['初期化', 'i', 's']
+  'map.hashmap-bool-tmpl.is-empty': ['emptyか', 'ie', 'ek']
+  'map.hashmap-bool-tmpl.len': ['長さ', 'l', 'n']
+  'map.hashmap-bool-tmpl.put': ['投入', 'p', 't']
+  'map.hashmap-bool-tmpl.remove': ['削除', 'r', 's']
+  'map.hashmap-int-tmpl.clear': ['クリア', 'c', 'k']
+  'map.hashmap-int-tmpl.contains': ['含む', 'c', 'f']
+  'map.hashmap-int-tmpl.for-each': ['用各', 'fe', 'yk']
+  'map.hashmap-int-tmpl.get': ['取得', 'g', 's']
+  'map.hashmap-int-tmpl.hash': ['ハッシュ', 'h', 'h']
+  'map.hashmap-int-tmpl.init': ['初期化', 'i', 's']
+  'map.hashmap-int-tmpl.is-empty': ['emptyか', 'ie', 'ek']
+  'map.hashmap-int-tmpl.len': ['長さ', 'l', 'n']
+  'map.hashmap-int-tmpl.put': ['投入', 'p', 't']
+  'map.hashmap-int-tmpl.rehash': ['再ハッシュ', 'r', 'sh']
+  'map.hashmap-int-tmpl.remove': ['削除', 'r', 's']
+  'map.hashmap-str-tmpl.clear': ['クリア', 'c', 'k']
+  'map.hashmap-str-tmpl.contains': ['含む', 'c', 'f']
+  'map.hashmap-str-tmpl.for-each': ['用各', 'fe', 'yk']
+  'map.hashmap-str-tmpl.get': ['取得', 'g', 's']
+  'map.hashmap-str-tmpl.hash': ['ハッシュ', 'h', 'h']
+  'map.hashmap-str-tmpl.init': ['初期化', 'i', 's']
+  'map.hashmap-str-tmpl.is-empty': ['emptyか', 'ie', 'ek']
+  'map.hashmap-str-tmpl.len': ['長さ', 'l', 'n']
+  'map.hashmap-str-tmpl.put': ['投入', 'p', 't']
+  'map.hashmap-str-tmpl.rehash': ['再ハッシュ', 'r', 'sh']
+  'map.hashmap-str-tmpl.remove': ['削除', 'r', 's']
+  'map.hashmap-str-tmpl.str-eq': ['文字列等値', 'se', 'mt']
+  'markdown.blockquote': ['引用ブロック', 'b', 'ib']
+  'markdown.code-close': ['コードクローズ', 'cc', 'k']
+  'markdown.escape-html': ['エスケープhtml', 'eh', 'eh']
+  'markdown.fence': ['フェンス', 'f', 'f']
+  'markdown.heading': ['見出し', 'h', 'm']
+  'markdown.inline': ['inline', 'i', 'i']
+  'markdown.is-word-byte': ['単語バイトか', 'iwb', 'tbk']
+  'markdown.join-paragraph': ['結合段落', 'jp', 'kd']
+  'markdown.list-content': ['リストコンテンツ', 'lc', 'r']
+  'markdown.list-item': ['リストitem', 'li', 'ri']
+  'markdown.prefix-count': ['プレフィックスカウント', 'pc', 'p']
+  'markdown.read-line': ['読み行', 'rl', 'yg']
+  'markdown.render': ['描画', 'r', 'b']
+  'markdown.render-code': ['描画コード', 'rc', 'bk']
+  'markdown.setext-level': ['Setextレベル', 'sl', 'sr']
+  'markdown.table-row': ['テーブル行', 'tr', 'tg']
+  'markdown.table-separator': ['テーブル区切り', 'ts', 'tk']
+  'markdown.thematic-break': ['thematicbreak', 'tb', 't']
+  'markdown.to-html': ['htmlへ変換', 'th', 'hhh']
+  'math.arr-zero': ['配列ゼロ', 'az', 'hz']
+  'math.atan-kernel': ['逆正接カーネル', 'ak', 'gk']
+  'math.char-to-str': ['文字to文字列', 'cts', 'mtm']
+  'math.clamp': ['clamp', 'c', 'c']
+  'math.div': ['除算', 'd', 'j']
+  'math.even': ['偶数', 'e', 'g']
+  'math.fmod': ['浮動少数モッド', 'f', 'fsm']
+  'math.gcd': ['最大公約数', 'g', 's']
+  'math.hypot': ['三平方', 'h', 's']
+  'math.lcm': ['最小公倍数', 'l', 's']
+  'math.max': ['最大', 'm', 's']
+  'math.min': ['最小', 'm', 's']
+  'math.mod': ['モッド', 'm', 'm']
+  'math.odd': ['奇数', 'o', 'k']
+  'math.pow': ['幂', 'p', 'p']
+  'math.pow-int': ['幂整数', 'pi', 'k']
+  'math.rotate-left': ['回転左', 'rl', 'kh']
+  'math.rotate-right': ['回転右', 'rr', 'km']
+  'math.store-le-u32': ['保存リトルエンディアンu32', 'slu', 'hru']
+  'math.swap': ['スワップ', 's', 's']
+  'md5.md5': ['MD5', 'm', 'm']
+  'md5.md5-rotl': ['MD5左回転', 'mr', 'mhk']
+  'multipart.multipart-create': ['multipart作成', 'mc', 'ms']
+  'multipart.multipart-create-boundary': ['multipart作成境界', 'mcb', 'msk']
+  'multipart.multipart-decrypt-field': ['multipart復号フィールド', 'mdf', 'mff']
+  'multipart.multipart-extract-boundary': ['multipart抽出境界', 'meb', 'mck']
+  'multipart.multipart-gen-boundary': ['multipart生成境界', 'mgb', 'msk']
+  'multipart.multipart-parse': ['multipart解析', 'mp', 'mk']
+  'multipart.multipart-reader.field-content-type': ['フィールドコンテンツ型', 'fct', 'fk']
+  'multipart.multipart-reader.field-data': ['フィールドデータ', 'fd', 'f']
+  'multipart.multipart-reader.field-filename': ['フィールドファイル名', 'ff', 'fm']
+  'multipart.multipart-reader.field-name': ['フィールド名前', 'fn', 'fn']
+  'multipart.multipart-reader.has-current-part': ['.has現在部分', 'hcp', 'hgb']
+  'multipart.multipart-reader.init': ['初期化', 'i', 's']
+  'multipart.multipart-reader.is-file': ['ファイルか', 'if', 'fk']
+  'multipart.multipart-reader.next': ['次', 'n', 't']
+  'multipart.multipart-reader.parse-header-line': ['解析ヘッダ行', 'phl', 'khg']
+  'multipart.multipart-reader.parse-headers': ['解析ヘッダ', 'ph', 'kh']
+  'multipart.multipart-writer.body-of': ['ボディの', 'bo', 'bn']
+  'multipart.multipart-writer.boundary-of': ['境界の', 'bo', 'kn']
+  'multipart.multipart-writer.close-form': ['クローズ形式', 'cf', 'kk']
+  'multipart.multipart-writer.content-type': ['コンテンツ型', 'ct', 'kk']
+  'multipart.multipart-writer.init': ['初期化', 'i', 's']
+  'multipart.multipart-writer.init-boundary': ['初期化境界', 'ib', 'sk']
+  'multipart.multipart-writer.write-encrypted-field': ['書き暗号化済みフィールド', 'wef', 'kasf']
+  'multipart.multipart-writer.write-encrypted-file': ['書き暗号化済みファイル', 'wef', 'kasf']
+  'multipart.multipart-writer.write-field': ['書きフィールド', 'wf', 'kf']
+  'multipart.multipart-writer.write-file': ['書きファイル', 'wf', 'kf']
+  'net.close': ['クローズ', 'c', 'k']
+  'net.conn.close': ['クローズ', 'c', 'k']
+  'net.conn.dial': ['ダイヤル', 'd', 'd']
+  'net.conn.fd-of': ['fdの', 'fo', 'fn']
+  'net.conn.recv': ['受信', 'r', 'j']
+  'net.conn.recv-all': ['受信全て', 'ra', 'js']
+  'net.conn.recv-line': ['受信行', 'rl', 'jg']
+  'net.conn.recv-with-timeout': ['受信付き타임아웃', 'rwt', 'jt']
+  'net.conn.send': ['送信', 's', 's']
+  'net.conn.send-with-timeout': ['送信付き타임아웃', 'swt', 'st']
+  'net.conn.set-recv-timeout': ['設定受信타임아웃', 'srt', 'sj']
+  'net.conn.set-timeout': ['設定타임아웃', 'st', 's']
+  'net.dial-timeout': ['ダイヤル타임아웃', 'dt', 'd']
+  'net.dial-to': ['ダイヤルto', 'dt', 'dt']
+  'net.enc-accept': ['暗号化受付', 'ea', 'au']
+  'net.enc-conn.close': ['クローズ', 'c', 'k']
+  'net.enc-conn.gen-iv': ['生成IV', 'gi', 'si']
+  'net.enc-conn.init': ['初期化', 'i', 's']
+  'net.enc-conn.recv-encrypted': ['受信暗号化済み', 're', 'jas']
+  'net.enc-conn.send-encrypted': ['送信暗号化済み', 'se', 'sas']
+  'net.enc-dial': ['暗号化ダイヤル', 'ed', 'ad']
+  'net.icmp-checksum': ['ICMPチェックサム', 'ic', 'ic']
+  'net.icmp-conn.build-echo': ['構築エコー', 'be', 'ke']
+  'net.icmp-conn.close': ['クローズ', 'c', 'k']
+  'net.icmp-conn.open': ['オープン', 'o', 'o']
+  'net.icmp-conn.ping-host': ['pingホスト', 'ph', 'ph']
+  'net.icmp-conn.ping-once': ['ping一度', 'po', 'pi']
+  'net.listen-on': ['リッスン上', 'lo', 'ru']
+  'net.listener.accept': ['受付', 'a', 'u']
+  'net.listener.accept-with-timeout': ['受付付き타임아웃', 'awt', 'ut']
+  'net.listener.close': ['クローズ', 'c', 'k']
+  'net.listener.fd-of': ['fdの', 'fo', 'fn']
+  'net.listener.listen': ['リッスン', 'l', 'r']
+  'net.listener.set-timeout': ['設定타임아웃', 'st', 's']
+  'net.net-accept': ['ネットワーク受付', 'na', 'nu']
+  'net.net-accept-nb': ['ネットワーク受付nb', 'nan', 'nun']
+  'net.net-dial': ['ネットワークダイヤル', 'nd', 'n']
+  'net.net-icmp-open': ['ネットワークICMPオープン', 'nio', 'nio']
+  'net.net-listen': ['ネットワークリッスン', 'nl', 'n']
+  'net.net-recv': ['ネットワーク受信', 'nr', 'nj']
+  'net.net-send': ['ネットワーク送信', 'ns', 'ns']
+  'net.net-set-recv-timeout': ['ネットワーク設定受信타임아웃', 'nsrt', 'nsj']
+  'net.net-udp-open': ['ネットワークUDPオープン', 'nuo', 'nuo']
+  'net.net-udp-recvfrom': ['ネットワークUDP受信元', 'nur', 'nujm']
+  'net.net-udp-sendto': ['ネットワークUDP送信先', 'nus', 'nus']
+  'net.ping': ['ping', 'p', 'p']
+  'net.ping-count': ['pingカウント', 'pc', 'pk']
+  'net.split-ws': ['分割WebSocket', 'sw', 'bw']
+  'net.udp-conn.close': ['クローズ', 'c', 'k']
+  'net.udp-conn.fd-of': ['fdの', 'fo', 'fn']
+  'net.udp-conn.open': ['オープン', 'o', 'o']
+  'net.udp-conn.recv': ['受信', 'r', 'j']
+  'net.udp-conn.recv-bytes': ['受信バイト', 'rb', 'jb']
+  'net.udp-conn.send': ['送信', 's', 's']
+  'net.udp-conn.send-bytes': ['送信バイト', 'sb', 'sb']
+  'net.udp-conn.set-timeout': ['設定타임아웃', 'st', 's']
+  'net.udp-dial-to': ['UDPダイヤルto', 'udt', 'udt']
+  'noml.hex-char': ['16進文字', 'hc', '1sm']
+  'noml.hex-digit': ['16進数字', 'hd', '1sj']
+  'noml.is-ident-char': ['識別子文字か', 'iic', 'smk']
+  'noml.is-ident-key': ['識別子キーか', 'iik', 'skk']
+  'noml.is-ident-start': ['識別子開始か', 'iis', 'skk']
+  'noml.new': ['新規', 'n', 's']
+  'noml.noml-doc.ann': ['アノテーション', 'a', 'a']
+  'noml.noml-doc.ann-value': ['アノテーション値', 'av', 'aa']
+  'noml.noml-doc.at': ['位置', 'a', 'i']
+  'noml.noml-doc.bool': ['bool', 'b', 'b']
+  'noml.noml-doc.get': ['取得', 'g', 's']
+  'noml.noml-doc.get-bool': ['取得bool', 'gb', 'sb']
+  'noml.noml-doc.get-f64': ['取得f64', 'gf', 'sf']
+  'noml.noml-doc.get-i64': ['取得i64', 'gi', 'si']
+  'noml.noml-doc.get-str': ['取得文字列', 'gs', 'sm']
+  'noml.noml-doc.has': ['.has', 'h', 'h']
+  'noml.noml-doc.i64': ['i64', 'i', 'i']
+  'noml.noml-doc.is-arr': ['配列か', 'ia', 'hk']
+  'noml.noml-doc.is-bool': ['boolか', 'ib', 'bk']
+  'noml.noml-doc.is-nil': ['nilか', 'in', 'nk']
+  'noml.noml-doc.is-num': ['数値か', 'in', 'sk']
+  'noml.noml-doc.is-obj': ['objか', 'io', 'ok']
+  'noml.noml-doc.is-str': ['文字列か', 'is', 'mk']
+  'noml.noml-doc.key': ['キー', 'k', 'k']
+  'noml.noml-doc.kind': ['種別', 'k', 's']
+  'noml.noml-doc.len': ['長さ', 'l', 'n']
+  'noml.noml-doc.new-arr': ['新規配列', 'na', 'sh']
+  'noml.noml-doc.new-bool': ['新規bool', 'nb', 'sb']
+  'noml.noml-doc.new-nil': ['新規nil', 'nn', 'sn']
+  'noml.noml-doc.new-num': ['新規数値', 'nn', 'ss']
+  'noml.noml-doc.new-obj': ['新規obj', 'no', 'so']
+  'noml.noml-doc.new-str': ['新規文字列', 'ns', 'sm']
+  'noml.noml-doc.num': ['数値', 'n', 's']
+  'noml.noml-doc.push': ['プッシュ', 'p', 'p']
+  'noml.noml-doc.put': ['投入', 'p', 't']
+  'noml.noml-doc.root-index': ['ルートインデックス', 'ri', 'r']
+  'noml.noml-doc.set-ann': ['設定アノテーション', 'sa', 'sa']
+  'noml.noml-doc.set-root': ['設定ルート', 'sr', 'sr']
+  'noml.noml-doc.str': ['文字列', 's', 'm']
+  'noml.noml-doc.stringify': ['文字列化', 's', 'mk']
+  'noml.noml-doc.stringify-node': ['文字列化ノード', 'sn', 'mkn']
+  'noml.noml-pool.add-child': ['追加子', 'ac', 'tk']
+  'noml.noml-pool.alloc': ['確保', 'a', 'k']
+  'noml.noml-pool.ann': ['アノテーション', 'a', 'a']
+  'noml.noml-pool.ann-literal': ['アノテーションリテラル', 'al', 'a']
+  'noml.noml-pool.ann-value': ['アノテーション値', 'av', 'aa']
+  'noml.noml-pool.at': ['位置', 'a', 'i']
+  'noml.noml-pool.at-line-start': ['位置行開始', 'als', 'igk']
+  'noml.noml-pool.decode-escape': ['デコードエスケープ', 'de', 'd']
+  'noml.noml-pool.fail': ['失敗', 'f', 's']
+  'noml.noml-pool.fmt-key': ['fmtキー', 'fk', 'fk']
+  'noml.noml-pool.fmt-num': ['fmt数値', 'fn', 'fs']
+  'noml.noml-pool.get': ['取得', 'g', 's']
+  'noml.noml-pool.get-bool': ['取得bool', 'gb', 'sb']
+  'noml.noml-pool.get-f64': ['取得f64', 'gf', 'sf']
+  'noml.noml-pool.get-i64': ['取得i64', 'gi', 'si']
+  'noml.noml-pool.get-str': ['取得文字列', 'gs', 'sm']
+  'noml.noml-pool.has': ['.has', 'h', 'h']
+  'noml.noml-pool.has-byte': ['.hasバイト', 'hb', 'hb']
+  'noml.noml-pool.has-key': ['.hasキー', 'hk', 'hk']
+  'noml.noml-pool.hex4': ['hex4', 'h', 'h']
+  'noml.noml-pool.init': ['初期化', 'i', 's']
+  'noml.noml-pool.is-arr': ['配列か', 'ia', 'hk']
+  'noml.noml-pool.is-bool': ['boolか', 'ib', 'bk']
+  'noml.noml-pool.is-nil': ['nilか', 'in', 'nk']
+  'noml.noml-pool.is-num': ['数値か', 'in', 'sk']
+  'noml.noml-pool.is-obj': ['objか', 'io', 'ok']
+  'noml.noml-pool.is-str': ['文字列か', 'is', 'mk']
+  'noml.noml-pool.join-ann': ['結合アノテーション', 'ja', 'ka']
+  'noml.noml-pool.key': ['キー', 'k', 'k']
+  'noml.noml-pool.kind': ['種別', 'k', 's']
+  'noml.noml-pool.len': ['長さ', 'l', 'n']
+  'noml.noml-pool.line-of': ['行の', 'lo', 'o']
+  'noml.noml-pool.match-kw': ['一致キーワード', 'mk', 'ik']
+  'noml.noml-pool.parse': ['解析', 'p', 'k']
+  'noml.noml-pool.parse-array': ['解析配列', 'pa', 'kh']
+  'noml.noml-pool.parse-bool': ['解析bool', 'pb', 'kb']
+  'noml.noml-pool.parse-bool-node': ['解析boolノード', 'pbn', 'kbn']
+  'noml.noml-pool.parse-key': ['解析キー', 'pk', 'kk']
+  'noml.noml-pool.parse-nil-node': ['解析nilノード', 'pnn', 'knn']
+  'noml.noml-pool.parse-num': ['解析数値', 'pn', 'ks']
+  'noml.noml-pool.parse-num-node': ['解析数値ノード', 'pnn', 'ksn']
+  'noml.noml-pool.parse-object': ['解析object', 'po', 'ko']
+  'noml.noml-pool.parse-raw': ['解析生の', 'pr', 'ku']
+  'noml.noml-pool.parse-raw-node': ['解析生のノード', 'prn', 'kun']
+  'noml.noml-pool.parse-str': ['解析文字列', 'ps', 'km']
+  'noml.noml-pool.parse-str-node': ['解析文字列ノード', 'psn', 'kmn']
+  'noml.noml-pool.parse-value': ['解析値', 'pv', 'ka']
+  'noml.noml-pool.quote': ['クォート', 'q', 'k']
+  'noml.noml-pool.quote-value': ['クォート値', 'qv', 'ka']
+  'noml.noml-pool.raw-safe': ['生の安全', 'rs', 'ua']
+  'noml.noml-pool.require-end': ['必要終了', 're', 'hs']
+  'noml.noml-pool.scan-ann': ['スキャンアノテーション', 'sa', 's']
+  'noml.noml-pool.scan-quote': ['スキャンクォート', 'sq', 's']
+  'noml.noml-pool.scan-raw': ['スキャン生の', 'sr', 'su']
+  'noml.noml-pool.set-ann': ['設定アノテーション', 'sa', 'sa']
+  'noml.noml-pool.skip-ann-value': ['スキップアノテーション値', 'sav', 'sa']
+  'noml.noml-pool.skip-blanks': ['スキップ空白', 'sb', 'sk']
+  'noml.noml-pool.skip-trivia': ['スキップ自明', 'st', 'sj']
+  'noml.noml-pool.stringify': ['文字列化', 's', 'mk']
+  'noml.noml-pool.stringify-arr': ['文字列化配列', 'sa', 'mkh']
+  'noml.noml-pool.stringify-obj': ['文字列化obj', 'so', 'mko']
+  'noml.noml-pool.val-bool': ['値bool', 'vb', 'ab']
+  'noml.noml-pool.val-i64': ['値i64', 'vi', 'ai']
+  'noml.noml-pool.val-num': ['値数値', 'vn', 'as']
+  'noml.noml-pool.val-str': ['値文字列', 'vs', 'am']
+  'noml.parse': ['解析', 'p', 'k']
+  'num.abs': ['絶対値', 'a', 'z']
+  'num.clamp': ['clamp', 'c', 'c']
+  'num.sign': ['署名', 's', 's']
+  'number.byte.to-str': ['strへ変換', 'ts', 'shh']
+  'number.exp-f64': ['指数f64', 'ef', 'sf']
+  'number.f32.to-f64': ['f64へ変換', 'tf', 'fhh']
+  'number.f32.to-str': ['strへ変換', 'ts', 'shh']
+  'number.f64.cbrt': ['立方根', 'c', 'r']
+  'number.f64.ceil': ['天井', 'c', 't']
+  'number.f64.degrees': ['度数', 'd', 'd']
+  'number.f64.radians': ['ラジアン', 'r', 'r']
+  'number.f64.sin': ['正弦', 's', 's']
+  'number.f64.sinh': ['双曲正弦', 's', 'ss']
+  'number.f64.sqrt': ['平方根', 's', 'h']
+  'number.f64.tan': ['正接', 't', 's']
+  'number.f64.to-bits': ['bitsへ変換', 'tb', 'bhh']
+  'number.f64.to-f32': ['f32へ変換', 'tf', 'fhh']
+  'number.f64.to-i32': ['i32へ変換', 'ti', 'ihh']
+  'number.f64.to-i64': ['i64へ変換', 'ti', 'ihh']
+  'number.f64.to-str': ['strへ変換', 'ts', 'shh']
+  'number.f64.to-str-fixed': ['str-fixedへ変換', 'tsf', 'shh']
+  'number.f64.to-str-general': ['str-generalへ変換', 'tsg', 'shh']
+  'number.f64.to-str-sci': ['str-sciへ変換', 'tss', 'shh']
+  'number.f64.to-u32': ['u32へ変換', 'tu', 'uhh']
+  'number.f64.to-u64': ['u64へ変換', 'tu', 'uhh']
+  'number.i128.sqrt': ['平方根', 's', 'h']
+  'number.i128.to-f64': ['f64へ変換', 'tf', 'fhh']
+  'number.i16.sqrt': ['平方根', 's', 'h']
+  'number.i16.to-str': ['strへ変換', 'ts', 'shh']
+  'number.i32.sqrt': ['平方根', 's', 'h']
+  'number.i32.to-str': ['strへ変換', 'ts', 'shh']
+  'number.i64.is-prime': ['primeか', 'ip', 'pk']
+  'number.i64.sqrt': ['平方根', 's', 'h']
+  'number.i64.to-bytes-be': ['bytes-beへ変換', 'tbb', 'bhh']
+  'number.i64.to-bytes-le': ['bytes-leへ変換', 'tbl', 'bhh']
+  'number.i64.to-f64': ['f64へ変換', 'tf', 'fhh']
+  'number.i64.to-i32': ['i32へ変換', 'ti', 'ihh']
+  'number.i64.to-str': ['strへ変換', 'ts', 'shh']
+  'number.i8.sqrt': ['平方根', 's', 'h']
+  'number.i8.to-str': ['strへ変換', 'ts', 'shh']
+  'number.pow': ['幂', 'p', 'p']
+  'number.u128.to-f64': ['f64へ変換', 'tf', 'fhh']
+  'number.u16.sqrt': ['平方根', 's', 'h']
+  'number.u16.to-str': ['strへ変換', 'ts', 'shh']
+  'number.u32.sqrt': ['平方根', 's', 'h']
+  'number.u32.to-str': ['strへ変換', 'ts', 'shh']
+  'number.u64.from-bits': ['bitsから変換', 'fb', 'bkh']
+  'number.u64.sqrt': ['平方根', 's', 'h']
+  'number.u64.to-f64': ['f64へ変換', 'tf', 'fhh']
+  'number.u64.to-str': ['strへ変換', 'ts', 'shh']
+  'number.u8.sqrt': ['平方根', 's', 'h']
+  'number.u8.to-str': ['strへ変換', 'ts', 'shh']
+  'ords.asc': ['昇順', 'a', 's']
+  'ords.desc': ['降順', 'd', 'k']
+  'os.arg': ['引数', 'a', 'h']
+  'os.args': ['引数', 'a', 'h']
+  'os.ch-dir': ['chディレクトリ', 'cd', 'cd']
+  'os.ch-mod': ['chモッド', 'cm', 'cm']
+  'os.chown': ['chown', 'c', 'c']
+  'os.chroot': ['chroot', 'c', 'c']
+  'os.flock': ['ファイルロック', 'f', 'f']
+  'os.get-arch': ['取得アーキテクチャ', 'ga', 'sa']
+  'os.get-domain-name': ['取得ドメイン名前', 'gdn', 'sdn']
+  'os.get-env': ['取得環境', 'ge', 'sk']
+  'os.get-errno': ['取得errno', 'ge', 'se']
+  'os.get-host-id': ['取得ホストid', 'ghi', 'shi']
+  'os.get-login': ['取得ログイン', 'gl', 'sr']
+  'os.get-pid': ['取得pid', 'gp', 'sp']
+  'os.get-priority': ['取得priority', 'gp', 'sp']
+  'os.get-wd': ['取得wd', 'gw', 'sw']
+  'os.getegid': ['egid 取得', 'g', 'es']
+  'os.geteuid': ['euid 取得', 'g', 'es']
+  'os.getgid': ['gid 取得', 'g', 'gs']
+  'os.getgroups': ['グループ取得', 'g', 'gs']
+  'os.getuid': ['uid 取得', 'g', 'us']
+  'os.host-name': ['ホスト名前', 'hn', 'hn']
+  'os.mkdir': ['mkdir', 'm', 'm']
+  'os.now': ['現在', 'n', 'g']
+  'os.now-ms': ['現在ミリ秒', 'nm', 'gmb']
+  'os.now-ns': ['現在ナノ秒', 'nn', 'gnb']
+  'os.now-us': ['現在マイクロ秒', 'nu', 'gmb']
+  'os.num-cpu': ['数値CPU', 'nc', 'sc']
+  'os.set-env': ['設定環境', 'se', 'sk']
+  'os.set-priority': ['設定priority', 'sp', 'sp']
+  'os.set-sid': ['設定セッション ID', 'ss', 'ss']
+  'os.signal': ['シグナル', 's', 's']
+  'os.sleep': ['スリー프', 's', 's']
+  'os.sleep-ns': ['スリー프ナノ秒', 'sn', 'snb']
+  'os.sleep-us': ['スリー프マイクロ秒', 'su', 'sib']
+  'os.stat-gid': ['statGID', 'sg', 's']
+  'os.stat-mode': ['statモード', 'sm', 'sm']
+  'os.stat-mtime': ['stat更新時刻', 'sm', 'sk']
+  'os.stat-uid': ['statUID', 'su', 's']
+  'os.strerror': ['strerror', 's', 's']
+  'os.sysconf': ['システム設定', 's', 'ss']
+  'os.sysctl': ['sysctl', 's', 's']
+  'os.syslog': ['syslog', 's', 's']
+  'os.ttyname': ['tty名', 't', 'tm']
+  'os.uname': ['uname', 'u', 'u']
+  'os.win-find-close': ['ウィンドウ検索クローズ', 'wfc', 'ukk']
+  'os.win-find-first-file': ['ウィンドウ検索先頭ファイル', 'wfff', 'uksf']
+  'os.win-find-next-file': ['ウィンドウ検索次ファイル', 'wfnf', 'uktf']
+  'os.win-wsa-startup': ['ウィンドウwsa起動', 'wws', 'uwk']
+  'path.base': ['base', 'b', 'b']
+  'path.change-dir': ['changeディレクトリ', 'cd', 'cd']
+  'path.clean': ['clean', 'c', 'c']
+  'path.current': ['現在', 'c', 'g']
+  'path.dir': ['ディレクトリ', 'd', 'd']
+  'path.exists': ['存在', 'e', 's']
+  'path.ext': ['ext', 'e', 'e']
+  'path.is-abs': ['絶対値か', 'ia', 'zk']
+  'path.is-dir': ['ディレクトリか', 'id', 'dk']
+  'path.is-file': ['ファイルか', 'if', 'fk']
+  'path.join': ['結合', 'j', 'k']
+  'path.make-dir': ['生成ディレクトリ', 'md', 'sd']
+  'path.remove': ['削除', 'r', 's']
+  'path.rename': ['rename', 'r', 'r']
+  'path.size': ['サイズ', 's', 's']
+  'path.split': ['分割', 's', 'b']
+  'pbkdf2.pbkdf2-hmac-sha1': ['pbkdf2HMACSHA-1', 'phs', 'p']
+  'pbkdf2.pbkdf2-hmac-sha256': ['pbkdf2HMACsha256', 'phs', 'p']
+  'pbkdf2.pbkdf2-hmac-sha512': ['pbkdf2HMACsha512', 'phs', 'p']
+  'pem.pem-decode': ['PEMデコード', 'pd', 'pd']
+  'pem.pem-encode': ['PEMエンコード', 'pe', 'pe']
+  'pool.create': ['作成', 'c', 's']
+  'pool.pool.active-count': ['アクティブカウント', 'ac', 'a']
+  'pool.pool.close-all': ['クローズ全て', 'ca', 'ks']
+  'pool.pool.close-conn': ['クローズ接続', 'cc', 'ks']
+  'pool.pool.get': ['取得', 'g', 's']
+  'pool.pool.idle-count': ['アイドルカウント', 'ic', 'a']
+  'pool.pool.init': ['初期化', 'i', 's']
+  'pool.pool.put': ['投入', 'p', 't']
+  'pool.pool.total-count': ['totalカウント', 'tc', 'tk']
+  'pool.with-size': ['付きサイズ', 'ws', 'ts']
+  'process.close': ['クローズ', 'c', 'k']
+  'process.close-stderr': ['クローズ標準エラー', 'cs', 'khe']
+  'process.close-stdin': ['クローズ標準入力', 'cs', 'kh']
+  'process.close-stdout': ['クローズ標準出力', 'cs', 'kh']
+  'process.cmd-2': ['コマンド', 'c2', 'k']
+  'process.exec': ['実行', 'e', 'j']
+  'process.exit-code-of': ['終了コードの', 'eco', 'skn']
+  'process.find-by-name': ['検索で名前', 'fbn', 'kdn']
+  'process.find-match': ['検索一致', 'fm', 'ki']
+  'process.force-kill': ['forceキル', 'fk', 'fk']
+  'process.is-running': ['実行中か', 'ir', 'jk']
+  'process.kill': ['キル', 'k', 'k']
+  'process.list-all': ['リスト全て', 'la', 'rs']
+  'process.new': ['新規', 'n', 's']
+  'process.output': ['output', 'o', 'o']
+  'process.parent-pid': ['親pid', 'pp', 'op']
+  'process.pid-of': ['pidの', 'po', 'pn']
+  'process.process-dup2': ['プロセスデュプリケート2', 'pd', 'p2']
+  'process.process-exec': ['プロセス実行', 'pe', 'pj']
+  'process.process-exec-shell': ['プロセス実行シェル', 'pes', 'pjs']
+  'process.process-fork': ['プロセスフォーク', 'pf', 'p']
+  'process.process-getppid': ['プロセス親プロセス ID', 'pg', 'pop']
+  'process.process-kill': ['プロセスキル', 'pk', 'p']
+  'process.process-pipe': ['プロセスパイプ', 'pp', 'p']
+  'process.process-shell': ['プロセスシェル', 'ps', 'p']
+  'process.process-system': ['プロセスシステム', 'ps', 'p']
+  'process.process-waitpid': ['プロセス子プロセス待ち', 'pw', 'pkpm']
+  'process.process-waitpid-nohang': ['プロセス子プロセス待ち非停止', 'pwn', 'pkpmht']
+  'process.read': ['読み', 'r', 'y']
+  'process.read-all': ['読み全て', 'ra', 'ys']
+  'process.read-line': ['読み行', 'rl', 'yg']
+  'process.shell': ['シェル', 's', 's']
+  'process.shell-quote': ['シェルクォート', 'sq', 's']
+  'process.spawn': ['スポーン', 's', 's']
+  'process.start': ['開始', 's', 'k']
+  'process.start-with-opts': ['開始付きopts', 'swo', 'kto']
+  'process.terminate': ['terminate', 't', 't']
+  'process.wait': ['待ち', 'w', 'm']
+  'process.wait-2': ['待ち', 'w2', 'm']
+  'process.wait-nohang': ['待ち非停止', 'wn', 'mht']
+  'process.win-close-handle': ['ウィンドウクローズハンドル', 'wch', 'u']
+  'process.win-create-pipe': ['ウィンドウ作成パイプ', 'wcp', 'usp']
+  'process.win-create-process': ['ウィンドウ作成プロセス', 'wcp', 'usp']
+  'process.win-get-exit-code': ['ウィンドウ取得終了コード', 'wgec', 'ussk']
+  'process.win-get-std-handle': ['ウィンドウ取得stdハンドル', 'wgsh', 'ussh']
+  'process.win-read-pipe': ['ウィンドウ読みパイプ', 'wrp', 'uyp']
+  'process.win-terminate-process': ['ウィンドウterminateプロセス', 'wtp', 'utp']
+  'process.win-wait-process': ['ウィンドウ待ちプロセス', 'wwp', 'ump']
+  'process.win-write-pipe': ['ウィンドウ書きパイプ', 'wwp', 'ukp']
+  'process.write': ['書き', 'w', 'k']
+  'proxy.config.connect': ['接続', 'c', 's']
+  'proxy.config.tls-connect': ['TLS接続', 'tc', 'ts']
+  'proxy.connect': ['接続', 'c', 's']
+  'proxy.dial': ['ダイヤル', 'd', 'd']
+  'proxy.dial-auth': ['ダイヤル認証', 'da', 'dn']
+  'proxy.proxy-tls-dial': ['プロキシTLSダイヤル', 'ptd', 'ptd']
+  'proxy.socks5-connect': ['SOCKS5接続', 'sc', 'ss']
+  'proxy.socks5-dial': ['SOCKS5ダイヤル', 'sd', 'sd']
+  'queue.queue.clear': ['クリア', 'c', 'k']
+  'queue.queue.empty': ['empty', 'e', 'e']
+  'queue.queue.full': ['full', 'f', 'f']
+  'queue.queue.size': ['サイズ', 's', 's']
+  'quic.apply-header-protection': ['適用ヘッダprotection', 'ahp', 'thp']
+  'quic.conn.build-initial-packet': ['構築initialパケット', 'bip', 'kip']
+  'quic.conn.close': ['クローズ', 'c', 'k']
+  'quic.conn.init': ['初期化', 'i', 's']
+  'quic.conn.recv-initial': ['受信initial', 'ri', 'ji']
+  'quic.conn.recv-raw': ['受信生の', 'rr', 'ju']
+  'quic.decode-packet-number': ['デコードパケット数値', 'dpn', 'ds']
+  'quic.derive-initial-keys': ['導出initialキー', 'dik', 'dik']
+  'quic.dial': ['ダイヤル', 'd', 'd']
+  'quic.gen-cid': ['生成接続 ID', 'gc', 'ss']
+  'quic.parse-frames': ['解析フレーム', 'pf', 'kf']
+  'quic.remove-header-protection': ['削除ヘッダprotection', 'rhp', 'shp']
+  'quic.varint-decode': ['可変長整数デコード', 'vd', 'ksd']
+  'quic.varint-encode': ['可変長整数エンコード', 've', 'kse']
+  'rand.rand': ['乱数', 'r', 'r']
+  'rand.rand-str': ['乱数文字列', 'rs', 'rm']
+  'rc4.rc4': ['RC4', 'r', 'r']
+  'regexp.alloc-class': ['確保クラス', 'ac', 'kk']
+  'regexp.clear-class-bit': ['クリアクラスビット', 'ccb', 'k']
+  'regexp.compile': ['compile', 'c', 'c']
+  'regexp.emit': ['发出', 'e', 'e']
+  'regexp.emit-atom': ['发出atom', 'ea', 'a']
+  'regexp.emit-quantized': ['发出量子化', 'eq', 'r']
+  'regexp.find': ['検索', 'f', 'k']
+  'regexp.in-class': ['内クラス', 'ic', 'nk']
+  'regexp.init-class-all': ['初期化クラス全て', 'ica', 'sks']
+  'regexp.init-class-zero': ['初期化クラスゼロ', 'icz', 'sk']
+  'regexp.make-class-digits': ['生成クラス数字', 'mcd', 'sks']
+  'regexp.make-class-nondigits': ['生成クラス非数字', 'mcn', 'skhs']
+  'regexp.make-class-nonspace': ['生成クラス非空白', 'mcn', 'skhk']
+  'regexp.make-class-nonword': ['生成クラス非単語', 'mcn', 'skht']
+  'regexp.make-class-space': ['生成クラススペース', 'mcs', 'sk']
+  'regexp.make-class-word': ['生成クラス単語', 'mcw', 'skt']
+  'regexp.match-at': ['一致位置', 'ma', 'ii']
+  'regexp.matches': ['一致', 'm', 'i']
+  'regexp.parse-atom': ['解析atom', 'pa', 'ka']
+  'regexp.parse-class': ['解析クラス', 'pc', 'kk']
+  'regexp.parse-escape': ['解析エスケープ', 'pe', 'ke']
+  'regexp.regexp-compile': ['regexpcompile', 'rc', 'r']
+  'regexp.regexp-find': ['regexp検索', 'rf', 'rk']
+  'regexp.regexp-match': ['regexp一致', 'rm', 'ri']
+  'regexp.set-class-bit': ['設定クラスビット', 'scb', 'sk']
+  'regexp.set-class-escape': ['設定クラスエスケープ', 'sce', 'sk']
+  'rsa.rsa-bn-add': ['RSA大数追加', 'rba', 'rdt']
+  'rsa.rsa-bn-cmp': ['RSA大数比較', 'rbc', 'rdh']
+  'rsa.rsa-bn-div-mod': ['RSA大数除算モッド', 'rbdm', 'rdjm']
+  'rsa.rsa-bn-mul': ['RSA大数乗算', 'rbm', 'rdj']
+  'rsa.rsa-bn-shl1': ['RSA大数左シフト1', 'rbs', 'rdhs1']
+  'rsa.rsa-bn-shr1': ['RSA大数右シフト1', 'rbs', 'rdms1']
+  'rsa.rsa-bn-sub': ['RSA大数減算', 'rbs', 'rdg']
+  'rsa.rsa-decrypt': ['RSA復号', 'rd', 'rf']
+  'rsa.rsa-encrypt': ['RSA暗号化', 're', 'ra']
+  'rsa.rsa-modpow': ['RSAモジュラ幂', 'rm', 'rm']
+  'rsa.rsa-modpow-step': ['RSAモジュラ幂ステップ', 'rms', 'rmt']
+  'scrypt.rotl32': ['rotl32', 'r', 'r']
+  'scrypt.salsa20-8-core': ['salsa208コア', 's8c', 'sk']
+  'scrypt.scrypt': ['scrypt', 's', 's']
+  'scrypt.scrypt-blockmix': ['scryptブロック混合', 'sb', 'sbk']
+  'scrypt.scrypt-romix': ['scryptromix', 'sr', 's']
+  'server.https-listen-on': ['HTTPSリッスン上', 'hlo', 'hru']
+  'server.https-server-conn.close': ['クローズ', 'c', 'k']
+  'server.https-server-conn.get-header': ['取得ヘッダ', 'gh', 'sh']
+  'server.https-server-conn.parse': ['解析', 'p', 'k']
+  'server.https-server-conn.recv-more': ['受信もっと', 'rm', 'jm']
+  'server.https-server-conn.reset': ['リセット', 'r', 'r']
+  'server.https-server-conn.write-body': ['書きボディ', 'wb', 'kb']
+  'server.https-server-conn.write-header': ['書きヘッダ', 'wh', 'kh']
+  'server.https-server-conn.write-headers-done': ['書きヘッダ完了', 'whd', 'khk']
+  'server.https-server-conn.write-html': ['書きhtml', 'wh', 'kh']
+  'server.https-server-conn.write-json': ['書きjson', 'wj', 'kj']
+  'server.https-server-conn.write-status': ['書きステータス', 'ws', 'ks']
+  'server.https-server-conn.write-text': ['書きテキスト', 'wt', 'kt']
+  'server.https-server.accept': ['受付', 'a', 'u']
+  'server.https-server.close': ['クローズ', 'c', 'k']
+  'server.https-server.listen': ['リッスン', 'l', 'r']
+  'server.listen-on': ['リッスン上', 'lo', 'ru']
+  'server.secure-compare': ['セキュア比較', 'sc', 'sh']
+  'server.server-conn.close': ['クローズ', 'c', 'k']
+  'server.server-conn.get-cookie': ['取得cookie', 'gc', 'sc']
+  'server.server-conn.get-header': ['取得ヘッダ', 'gh', 'sh']
+  'server.server-conn.get-signed-cookie': ['取得符号付きcookie', 'gsc', 'sftc']
+  'server.server-conn.parse': ['解析', 'p', 'k']
+  'server.server-conn.recv-more': ['受信もっと', 'rm', 'jm']
+  'server.server-conn.reset': ['リセット', 'r', 'r']
+  'server.server-conn.set-signed-cookie': ['設定符号付きcookie', 'ssc', 'sftc']
+  'server.server-conn.verify-basic-auth': ['検証基本認証', 'vba', 'kkn']
+  'server.server-conn.write-body': ['書きボディ', 'wb', 'kb']
+  'server.server-conn.write-error': ['書きエラー', 'we', 'ke']
+  'server.server-conn.write-header': ['書きヘッダ', 'wh', 'kh']
+  'server.server-conn.write-headers-done': ['書きヘッダ完了', 'whd', 'khk']
+  'server.server-conn.write-html': ['書きhtml', 'wh', 'kh']
+  'server.server-conn.write-json': ['書きjson', 'wj', 'kj']
+  'server.server-conn.write-redirect': ['書きリダイレクト', 'wr', 'kr']
+  'server.server-conn.write-status': ['書きステータス', 'ws', 'ks']
+  'server.server-conn.write-text': ['書きテキスト', 'wt', 'kt']
+  'server.server.accept': ['受付', 'a', 'u']
+  'server.server.accept-nb': ['受付nb', 'an', 'un']
+  'server.server.close': ['クローズ', 'c', 'k']
+  'server.server.fd-of': ['fdの', 'fo', 'fn']
+  'server.server.listen': ['リッスン', 'l', 'r']
+  'set.add': ['追加', 'a', 't']
+  'set.contains': ['含む', 'c', 'f']
+  'set.difference': ['difference', 'd', 'd']
+  'set.init': ['初期化', 'i', 's']
+  'set.intersection': ['積集合', 'i', 's']
+  'set.is-empty': ['emptyか', 'ie', 'ek']
+  'set.remove': ['削除', 'r', 's']
+  'set.size': ['サイズ', 's', 's']
+  'set.to-vec': ['vecへ変換', 'tv', 'vhh']
+  'set.union': ['和集合', 'u', 'w']
+  'sha1.sha1': ['SHA-1', 's', 's']
+  'sha1.sha1-block': ['SHA-1ブロック', 'sb', 'sb']
+  'sha1.sha1-hex': ['SHA-116進', 'sh', 'ss']
+  'sha224.sha224': ['sha224', 's', 's']
+  'sha224.sha224-hex': ['sha22416進', 'sh', 'ss']
+  'sha256.sha256': ['sha256', 's', 's']
+  'sha256.sha256-block': ['sha256ブロック', 'sb', 'sb']
+  'sha256.sha256-hex': ['sha25616進', 'sh', 'ss']
+  'sha3.keccak-f1600': ['keccakf1600', 'kf', 'k']
+  'sha3.keccak-sponge': ['keccakスポンジ', 'ks', 'ks']
+  'sha3.rotl64': ['rotl64', 'r', 'r']
+  'sha3.sha3-224': ['SHA-3224', 's2', 's']
+  'sha3.sha3-224-hex': ['SHA-322416進', 's2h', 'ss']
+  'sha3.sha3-256': ['SHA-3256', 's2', 's']
+  'sha3.sha3-256-hex': ['SHA-325616進', 's2h', 'ss']
+  'sha3.sha3-384': ['SHA-3384', 's3', 's']
+  'sha3.sha3-384-hex': ['SHA-338416進', 's3h', 'ss']
+  'sha3.sha3-512': ['SHA-3512', 's5', 's']
+  'sha3.sha3-512-hex': ['SHA-351216進', 's5h', 'ss']
+  'sha384.sha384': ['sha384', 's', 's']
+  'sha384.sha384-hex': ['sha38416進', 'sh', 'ss']
+  'sha512.sha512': ['sha512', 's', 's']
+  'sha512.sha512-block': ['sha512ブロック', 'sb', 'sb']
+  'sha512.sha512-hex': ['sha51216進', 'sh', 'ss']
+  'sse.client.close': ['クローズ', 'c', 'k']
+  'sse.client.is-connected': ['接続済みか', 'ic', 'sm']
+  'sse.client.next-event': ['次event', 'ne', 'te']
+  'sse.client.reconnect': ['再接続', 'r', 's']
+  'sse.listen-on': ['リッスン上', 'lo', 'ru']
+  'sse.server-conn.close': ['クローズ', 'c', 'k']
+  'sse.server-conn.handshake': ['handshake', 'h', 'h']
+  'sse.server-conn.is-connected': ['接続済みか', 'ic', 'sm']
+  'sse.server-conn.send-comment': ['送信コメント', 'sc', 'sk']
+  'sse.server-conn.send-event': ['送信event', 'se', 'se']
+  'sse.server.accept': ['受付', 'a', 'u']
+  'sse.server.close': ['クローズ', 'c', 'k']
+  'sse.server.listen': ['リッスン', 'l', 'r']
+  'sse.sse-connect': ['SSE接続', 'sc', 'ss']
+  'stack.stack.clear': ['クリア', 'c', 'k']
+  'stack.stack.empty': ['empty', 'e', 'e']
+  'stack.stack.peek': ['覗き', 'p', 'n']
+  'stack.stack.pop': ['ポップ', 'p', 'p']
+  'stack.stack.push': ['プッシュ', 'p', 'p']
+  'stack.stack.size': ['サイズ', 's', 's']
+  'static-hashmap.static-hashmap-bool-tmpl.clear': ['クリア', 'c', 'k']
+  'static-hashmap.static-hashmap-bool-tmpl.contains': ['含む', 'c', 'f']
+  'static-hashmap.static-hashmap-bool-tmpl.for-each': ['用各', 'fe', 'yk']
+  'static-hashmap.static-hashmap-bool-tmpl.get': ['取得', 'g', 's']
+  'static-hashmap.static-hashmap-bool-tmpl.hash': ['ハッシュ', 'h', 'h']
+  'static-hashmap.static-hashmap-bool-tmpl.init': ['初期化', 'i', 's']
+  'static-hashmap.static-hashmap-bool-tmpl.is-empty': ['emptyか', 'ie', 'ek']
+  'static-hashmap.static-hashmap-bool-tmpl.len': ['長さ', 'l', 'n']
+  'static-hashmap.static-hashmap-bool-tmpl.put': ['投入', 'p', 't']
+  'static-hashmap.static-hashmap-bool-tmpl.remove': ['削除', 'r', 's']
+  'static-hashmap.static-hashmap-int-tmpl.clear': ['クリア', 'c', 'k']
+  'static-hashmap.static-hashmap-int-tmpl.contains': ['含む', 'c', 'f']
+  'static-hashmap.static-hashmap-int-tmpl.for-each': ['用各', 'fe', 'yk']
+  'static-hashmap.static-hashmap-int-tmpl.get': ['取得', 'g', 's']
+  'static-hashmap.static-hashmap-int-tmpl.hash': ['ハッシュ', 'h', 'h']
+  'static-hashmap.static-hashmap-int-tmpl.init': ['初期化', 'i', 's']
+  'static-hashmap.static-hashmap-int-tmpl.is-empty': ['emptyか', 'ie', 'ek']
+  'static-hashmap.static-hashmap-int-tmpl.len': ['長さ', 'l', 'n']
+  'static-hashmap.static-hashmap-int-tmpl.put': ['投入', 'p', 't']
+  'static-hashmap.static-hashmap-int-tmpl.remove': ['削除', 'r', 's']
+  'static-hashmap.static-hashmap-str-tmpl.clear': ['クリア', 'c', 'k']
+  'static-hashmap.static-hashmap-str-tmpl.contains': ['含む', 'c', 'f']
+  'static-hashmap.static-hashmap-str-tmpl.for-each': ['用各', 'fe', 'yk']
+  'static-hashmap.static-hashmap-str-tmpl.get': ['取得', 'g', 's']
+  'static-hashmap.static-hashmap-str-tmpl.hash': ['ハッシュ', 'h', 'h']
+  'static-hashmap.static-hashmap-str-tmpl.init': ['初期化', 'i', 's']
+  'static-hashmap.static-hashmap-str-tmpl.is-empty': ['emptyか', 'ie', 'ek']
+  'static-hashmap.static-hashmap-str-tmpl.len': ['長さ', 'l', 'n']
+  'static-hashmap.static-hashmap-str-tmpl.put': ['投入', 'p', 't']
+  'static-hashmap.static-hashmap-str-tmpl.remove': ['削除', 'r', 's']
+  'static-hashmap.static-hashmap-str-tmpl.str-eq': ['文字列等値', 'se', 'mt']
+  'str-map.str-map.clear': ['クリア', 'c', 'k']
+  'str-map.str-map.contains': ['含む', 'c', 'f']
+  'str-map.str-map.for-each': ['用各', 'fe', 'yk']
+  'str-map.str-map.get': ['取得', 'g', 's']
+  'str-map.str-map.hash': ['ハッシュ', 'h', 'h']
+  'str-map.str-map.init': ['初期化', 'i', 's']
+  'str-map.str-map.is-empty': ['emptyか', 'ie', 'ek']
+  'str-map.str-map.len': ['長さ', 'l', 'n']
+  'str-map.str-map.put': ['投入', 'p', 't']
+  'str-map.str-map.remove': ['削除', 'r', 's']
+  'str-map.str-map.str-eq': ['文字列等値', 'se', 'mt']
+  'str-map.str-map.to-str': ['strへ変換', 'ts', 'shh']
+  'str-set.str-set.add': ['追加', 'a', 't']
+  'str-set.str-set.clear': ['クリア', 'c', 'k']
+  'str-set.str-set.contains': ['含む', 'c', 'f']
+  'str-set.str-set.for-each': ['用各', 'fe', 'yk']
+  'str-set.str-set.hash': ['ハッシュ', 'h', 'h']
+  'str-set.str-set.init': ['初期化', 'i', 's']
+  'str-set.str-set.is-empty': ['emptyか', 'ie', 'ek']
+  'str-set.str-set.len': ['長さ', 'l', 'n']
+  'str-set.str-set.remove': ['削除', 'r', 's']
+  'str-set.str-set.str-eq': ['文字列等値', 'se', 'mt']
+  'str._str-dig-val': ['_strdig値', 'sdv', 'a']
+  'str.at': ['位置', 'a', 'i']
+  'str.bigint-bitlen': ['大整数ビット長', 'bb', 'dsbc']
+  'str.byte': ['バイト', 'b', 'b']
+  'str.byte-index': ['バイトインデックス', 'bi', 'b']
+  'str.compare': ['比較', 'c', 'h']
+  'str.contains': ['含む', 'c', 'f']
+  'str.copy': ['コピー', 'c', 'k']
+  'str.count': ['カウント', 'c', 'k']
+  'str.cp-index': ['cpインデックス', 'ci', 'ci']
+  'str.decode-cp': ['デコードcp', 'dc', 'dc']
+  'str.empty': ['empty', 'e', 'e']
+  'str.ends-with': ['終端付き', 'ew', 'st']
+  'str.eq-full': ['等値full', 'ef', 'tf']
+  'str.eq-raw': ['等値生の', 'er', 'tu']
+  'str.fields': ['フィールド', 'f', 'f']
+  'str.fill': ['充填', 'f', 'j']
+  'str.find-byte-from': ['検索バイトfrom', 'fbf', 'kbf']
+  'str.from-hex': ['hexから変換', 'fh', 'hkh']
+  'str.index': ['インデックス', 'i', 'i']
+  'str.index-from': ['インデックスfrom', 'if', 'if']
+  'str.last-index': ['末尾インデックス', 'li', 'mi']
+  'str.len': ['長さ', 'l', 'n']
+  'str.lines': ['行', 'l', 'g']
+  'str.new': ['新規', 'n', 's']
+  'str.repeat': ['リピート', 'r', 'r']
+  'str.replace-char': ['置換文字', 'rc', 'c']
+  'str.replace-n': ['置換数', 'rn', 'ck']
+  'str.replace-str': ['置換文字列', 'rs', 'c']
+  'str.reverse': ['反転', 'r', 'h']
+  'str.rfind-byte-from': ['逆検索バイトfrom', 'rbf', 'gkbf']
+  'str.rindex': ['逆索引', 'r', 'gs']
+  'str.rindex-from': ['逆索引from', 'rf', 'gsf']
+  'str.set-byte': ['設定バイト', 'sb', 'sb']
+  'str.slice': ['スライス', 's', 's']
+  'str.slice-bytes': ['スライスバイト', 'sb', 's']
+  'str.split': ['分割', 's', 'b']
+  'str.split-n': ['分割数', 'sn', 'b']
+  'str.starts-with': ['starts付き', 'sw', 'st']
+  'str.str-hex-val': ['文字列16進値', 'shv', 'm1sa']
+  'str.to-bigint': ['bigintへ変換', 'tb', 'bhh']
+  'str.to-bool': ['boolへ変換', 'tb', 'bhh']
+  'str.to-byte': ['byteへ変換', 'tb', 'bhh']
+  'str.to-bytes': ['bytesへ変換', 'tb', 'bhh']
+  'str.to-f32': ['f32へ変換', 'tf', 'fhh']
+  'str.to-f64': ['f64へ変換', 'tf', 'fhh']
+  'str.to-hex': ['hexへ変換', 'th', 'hhh']
+  'str.to-i16': ['i16へ変換', 'ti', 'ihh']
+  'str.to-i32': ['i32へ変換', 'ti', 'ihh']
+  'str.to-i64': ['i64へ変換', 'ti', 'ihh']
+  'str.to-i8': ['i8へ変換', 'ti', 'ihh']
+  'str.to-lower': ['lowerへ変換', 'tl', 'lhh']
+  'str.to-str': ['strへ変換', 'ts', 'shh']
+  'str.to-txt': ['txtへ変換', 'tt', 'thh']
+  'str.to-u16': ['u16へ変換', 'tu', 'uhh']
+  'str.to-u32': ['u32へ変換', 'tu', 'uhh']
+  'str.to-u64': ['u64へ変換', 'tu', 'uhh']
+  'str.to-u8': ['u8へ変換', 'tu', 'uhh']
+  'str.to-upper': ['upperへ変換', 'tu', 'uhh']
+  'str.trim': ['トリム', 't', 't']
+  'str.trim-char': ['トリム文字', 'tc', 'tm']
+  'str.with-cap': ['付き容量', 'wc', 'ty']
+  'str.with-len': ['付き長さ', 'wl', 'tn']
+  'str.with-len-cap': ['付き長さ容量', 'wlc', 'tny']
+  'strs.join': ['結合', 'j', 'k']
+  'tar.tar-builder.add-bytes': ['追加バイト', 'ab', 'tb']
+  'tar.tar-builder.add-dir': ['追加ディレクトリ', 'ad', 'td']
+  'tar.tar-builder.add-file': ['追加ファイル', 'af', 'tf']
+  'tar.tar-builder.finish': ['完了', 'f', 'k']
+  'tar.tar-builder.pre-alloc': ['前置確保', 'pa', 'zk']
+  'tar.tar-builder.write-header': ['書きヘッダ', 'wh', 'kh']
+  'tar.tar-builder.write-octal': ['書き8進', 'wo', 'k8s']
+  'tar.tar-entry.is-dir': ['ディレクトリか', 'id', 'dk']
+  'tar.tar-entry.is-file': ['ファイルか', 'if', 'fk']
+  'tar.tar-entry.mode': ['モード', 'm', 'm']
+  'tar.tar-entry.mtime': ['更新時刻', 'm', 'k']
+  'tar.tar-entry.name': ['名前', 'n', 'n']
+  'tar.tar-entry.read': ['読み', 'r', 'y']
+  'tar.tar-entry.size': ['サイズ', 's', 's']
+  'tar.tar-entry.type': ['型', 't', 'k']
+  'tar.tar-open-gz': ['tarオープンgz', 'tog', 'tog']
+  'tar.tar.count': ['カウント', 'c', 'k']
+  'tar.tar.entry': ['エントリ', 'e', 'e']
+  'tar.tar.is-dir': ['ディレクトリか', 'id', 'dk']
+  'tar.tar.is-file': ['ファイルか', 'if', 'fk']
+  'tar.tar.mode': ['モード', 'm', 'm']
+  'tar.tar.mtime': ['更新時刻', 'm', 'k']
+  'tar.tar.name': ['名前', 'n', 'n']
+  'tar.tar.offset': ['オフセット', 'o', 'o']
+  'tar.tar.read': ['読み', 'r', 'y']
+  'tar.tar.size': ['サイズ', 's', 's']
+  'tar.tar.type': ['型', 't', 'k']
+  'tdes.tdes-cbc-dec': ['3DESCBC復号', 'tcd', '3f']
+  'tdes.tdes-cbc-enc': ['3DESCBC暗号化', 'tce', '3a']
+  'tdes.tdes-dec': ['3DES復号', 'td', '3f']
+  'tdes.tdes-enc': ['3DES暗号化', 'te', '3a']
+  'time.add-seconds': ['追加秒', 'as', 'tb']
+  'time.date': ['日付', 'd', 'h']
+  'time.date-to-unix': ['日付tounix', 'dtu', 'ht']
+  'time.days-in-month-fn': ['日数内月fn', 'dimf', 'nngf']
+  'time.duration-between': ['持续时间間', 'db', 'j']
+  'time.duration-ms-between': ['持续时间ミリ秒間', 'dmb', 'jrb']
+  'time.duration-time': ['持续时间時間', 'dt', 'jk']
+  'time.duration-us-between': ['持续时间マイクロ秒間', 'dub', 'jib']
+  'time.format': ['フォーマット', 'f', 'f']
+  'time.format-date': ['フォーマット日付', 'fd', 'fh']
+  'time.format-duration': ['フォーマット持续时间', 'fd', 'fj']
+  'time.format-time-str': ['フォーマット時間文字列', 'fts', 'fjm']
+  'time.is-leap': ['leapか', 'il', 'lk']
+  'time.now-date': ['現在日付', 'nd', 'gh']
+  'time.now-ms': ['現在ミリ秒', 'nm', 'gmb']
+  'time.now-ns': ['現在ナノ秒', 'nn', 'gnb']
+  'time.now-s': ['現在複数', 'ns', 'gf']
+  'time.now-time': ['現在時間', 'nt', 'gj']
+  'time.now-us': ['現在マイクロ秒', 'nu', 'gmb']
+  'time.parse-date': ['解析日付', 'pd', 'kh']
+  'time.parse-time': ['解析時間', 'pt', 'kk']
+  'time.since-ms': ['以来ミリ秒', 'sm', 'imb']
+  'time.since-s': ['以来複数', 'ss', 'if']
+  'time.since-time': ['以来時間', 'st', 'ij']
+  'time.since-us': ['以来マイクロ秒', 'su', 'imb']
+  'time.sleep-ms': ['スリー프ミリ秒', 'sm', 'srb']
+  'time.sleep-ns': ['スリー프ナノ秒', 'sn', 'snb']
+  'time.sleep-s': ['スリー프複数', 'ss', 'sk']
+  'time.sleep-us': ['スリー프マイクロ秒', 'su', 'sib']
+  'time.sub': ['減算', 's', 'g']
+  'time.timer.elapsed-ms': ['経過ミリ秒', 'em', 'kmb']
+  'time.timer.elapsed-s': ['経過複数', 'es', 'kf']
+  'time.timer.elapsed-us': ['経過マイクロ秒', 'eu', 'kmb']
+  'time.timer.start': ['開始', 's', 'k']
+  'time.timer.stop': ['停止', 's', 't']
+  'time.unix': ['unix', 'u', 'u']
+  'time.unix-ms': ['unixミリ秒', 'um', 'umb']
+  'time.unix-to-date': ['unixto日付', 'utd', 'uh']
+  'time.unix-to-time': ['unixto時間', 'utt', 'uj']
+  'tls.bn-to-bytes': ['大数toバイト', 'btb', 'dtb']
+  'tls.build-nonce': ['構築ナンス', 'bn', 'kn']
+  'tls.bytes-cat': ['バイトcat', 'bc', 'bc']
+  'tls.bytes-to-bn': ['バイトto大数', 'btb', 'btd']
+  'tls.cipher-is-ecdhe': ['暗号是否ecdhe', 'cie', 'akhe']
+  'tls.cipher-is-gcm': ['暗号是否GCM', 'cig', 'akhg']
+  'tls.conn.append-hs': ['追加hs', 'ah', 'th']
+  'tls.conn.append-hs-from': ['追加hsfrom', 'ahf', 'th']
+  'tls.conn.close': ['クローズ', 'c', 'k']
+  'tls.conn.compute-shared-secret-13': ['計算共有秘密13', 'css1', 'kkh1']
+  'tls.conn.connect': ['接続', 'c', 's']
+  'tls.conn.connect-12': ['接続12', 'c1', 's1']
+  'tls.conn.connect-13': ['接続13', 'c1', 's1']
+  'tls.conn.decrypt-record': ['復号レコード', 'dr', 'fr']
+  'tls.conn.decrypt-record-13': ['復号レコード13', 'dr1', 'fr1']
+  'tls.conn.decrypt-record-gcm': ['復号レコードGCM', 'drg', 'frg']
+  'tls.conn.derive-application-keys-13': ['導出applicationキー13', 'dak1', 'dak1']
+  'tls.conn.derive-handshake-keys-13': ['導出handshakeキー13', 'dhk1', 'dhk1']
+  'tls.conn.derive-keys': ['導出キー', 'dk', 'dk']
+  'tls.conn.encrypt-record': ['暗号化レコード', 'er', 'ar']
+  'tls.conn.encrypt-record-13': ['暗号化レコード13', 'er1', 'ar1']
+  'tls.conn.encrypt-record-gcm': ['暗号化レコードGCM', 'erg', 'arg']
+  'tls.conn.gen-p256-keypair': ['生成p256鍵ペア', 'gpk', 'spkp']
+  'tls.conn.gen-x25519-keypair': ['生成x25519鍵ペア', 'gxk', 'sxkp']
+  'tls.conn.get-fd': ['取得fd', 'gf', 'sf']
+  'tls.conn.handshake-12-body': ['handshake12ボディ', 'h1b', 'hb']
+  'tls.conn.init': ['初期化', 'i', 's']
+  'tls.conn.read-certificate': ['読み証明書', 'rc', 'ys']
+  'tls.conn.read-change-cipher-spec': ['読みchange暗号spec', 'rccs', 'ycas']
+  'tls.conn.read-encrypted-handshake-13': ['読み暗号化済みhandshake13', 'reh1', 'yash']
+  'tls.conn.read-encrypted-record-13': ['読み暗号化済みレコード13', 'rer1', 'yasr1']
+  'tls.conn.read-finished': ['読み完了済み', 'rf', 'yks']
+  'tls.conn.read-server-hello': ['読みサーバーhello', 'rsh', 'ysh']
+  'tls.conn.read-server-hello-13': ['読みサーバーhello13', 'rsh1', 'ysh']
+  'tls.conn.read-server-hello-done': ['読みサーバーhello完了', 'rshd', 'yshk']
+  'tls.conn.read-server-key-exchange': ['読みサーバーキー交換', 'rske', 'ysk']
+  'tls.conn.send': ['送信', 's', 's']
+  'tls.conn.send-change-cipher-spec': ['送信change暗号spec', 'sccs', 'scas']
+  'tls.conn.send-client-hello': ['送信クライアントhello', 'sch', 'skh']
+  'tls.conn.send-client-hello-13': ['送信クライアントhello13', 'sch1', 'skh']
+  'tls.conn.send-client-key-exchange': ['送信クライアントキー交換', 'scke', 'skk']
+  'tls.conn.send-finished': ['送信完了済み', 'sf', 'sks']
+  'tls.conn.send-finished-13': ['送信完了済み13', 'sf1', 'sks1']
+  'tls.dial': ['ダイヤル', 'd', 'd']
+  'tls.dial-12': ['ダイヤル12', 'd1', 'd1']
+  'tls.get-u16': ['取得u16', 'gu', 'su']
+  'tls.get-u24': ['取得u24', 'gu', 'su']
+  'tls.https-serve-once': ['HTTPSサーブ一度', 'hso', 'hsi']
+  'tls.net-recv-wait': ['ネットワーク受信待ち', 'nrw', 'njm']
+  'tls.prf': ['prf', 'p', 'p']
+  'tls.put-u16': ['投入u16', 'pu', 'tu']
+  'tls.put-u24': ['投入u24', 'pu', 'tu']
+  'tls.rand-bytes': ['乱数バイト', 'rb', 'rb']
+  'tls.read-record': ['読みレコード', 'rr', 'yr']
+  'tls.recv-n': ['受信数', 'rn', 'jk']
+  'tls.rsa-pkcs1-decrypt': ['RSAPKCS#1復号', 'rpd', 'rf']
+  'tls.rsa-pkcs1-encrypt': ['RSAPKCS#1暗号化', 'rpe', 'ra']
+  'tls.send-raw': ['送信生の', 'sr', 'su']
+  'tls.server-accept': ['サーバー受付', 'sa', 'su']
+  'tls.server-conn.append-hs': ['追加hs', 'ah', 'th']
+  'tls.server-conn.append-hs-from': ['追加hsfrom', 'ahf', 'th']
+  'tls.server-conn.close': ['クローズ', 'c', 'k']
+  'tls.server-conn.compute-shared-secret-13': ['計算共有秘密13', 'css1', 'kkh1']
+  'tls.server-conn.decrypt-record': ['復号レコード', 'dr', 'fr']
+  'tls.server-conn.decrypt-record-13': ['復号レコード13', 'dr1', 'fr1']
+  'tls.server-conn.derive-application-keys-13': ['導出applicationキー13', 'dak1', 'dak1']
+  'tls.server-conn.derive-handshake-keys-13': ['導出handshakeキー13', 'dhk1', 'dhk1']
+  'tls.server-conn.derive-keys': ['導出キー', 'dk', 'dk']
+  'tls.server-conn.encrypt-record': ['暗号化レコード', 'er', 'ar']
+  'tls.server-conn.encrypt-record-13': ['暗号化レコード13', 'er1', 'ar1']
+  'tls.server-conn.handshake': ['handshake', 'h', 'h']
+  'tls.server-conn.handshake-13': ['handshake13', 'h1', 'h']
+  'tls.server-conn.read-change-cipher-spec': ['読みchange暗号spec', 'rccs', 'ycas']
+  'tls.server-conn.read-client-finished-13': ['読みクライアント完了済み13', 'rcf1', 'ykks1']
+  'tls.server-conn.read-client-hello': ['読みクライアントhello', 'rch', 'ykh']
+  'tls.server-conn.read-client-key-exchange': ['読みクライアントキー交換', 'rcke', 'ykk']
+  'tls.server-conn.read-encrypted-handshake-13': ['読み暗号化済みhandshake13', 'reh1', 'yash']
+  'tls.server-conn.read-encrypted-record-13': ['読み暗号化済みレコード13', 'rer1', 'yasr1']
+  'tls.server-conn.read-finished': ['読み完了済み', 'rf', 'yks']
+  'tls.server-conn.recv': ['受信', 'r', 'j']
+  'tls.server-conn.send': ['送信', 's', 's']
+  'tls.server-conn.send-certificate': ['送信証明書', 'sc', 'ss']
+  'tls.server-conn.send-certificate-13': ['送信証明書13', 'sc1', 'ss1']
+  'tls.server-conn.send-change-cipher-spec': ['送信change暗号spec', 'sccs', 'scas']
+  'tls.server-conn.send-encrypted-extensions-13': ['送信暗号化済み拡張13', 'see1', 'sask1']
+  'tls.server-conn.send-finished': ['送信完了済み', 'sf', 'sks']
+  'tls.server-conn.send-finished-13': ['送信完了済み13', 'sf1', 'sks1']
+  'tls.server-conn.send-server-hello': ['送信サーバーhello', 'ssh', 'ssh']
+  'tls.server-conn.send-server-hello-13': ['送信サーバーhello13', 'ssh1', 'ssh']
+  'tls.server-conn.send-server-hello-done': ['送信サーバーhello完了', 'sshd', 'sshk']
+  'tls.server-init': ['サーバー初期化', 'si', 'ss']
+  'tls.server-listen': ['サーバーリッスン', 'sl', 's']
+  'tls.tls-pad': ['TLSパディング', 'tp', 'tp']
+  'tls.tls-unpad': ['TLSパディング除去', 'tu', 'tpj']
+  'toml.get': ['取得', 'g', 's']
+  'toml.get-bool': ['取得bool', 'gb', 'sb']
+  'toml.get-f64': ['取得f64', 'gf', 'sf']
+  'toml.get-i64': ['取得i64', 'gi', 'si']
+  'toml.get-str': ['取得文字列', 'gs', 'sm']
+  'toml.has': ['.has', 'h', 'h']
+  'toml.new': ['新規', 'n', 's']
+  'toml.parse': ['解析', 'p', 'k']
+  'toml.stringify': ['文字列化', 's', 'mk']
+  'toml.toml-array-name': ['toml配列名前', 'tan', 'thm']
+  'toml.toml-doc.put': ['投入', 'p', 't']
+  'toml.toml-entry-key': ['tomlエントリキー', 'tek', 'te']
+  'toml.toml-entry-key-eq': ['tomlエントリキー等値', 'teke', 'tet']
+  'toml.toml-entry-value': ['tomlエントリ値', 'tev', 'tea']
+  'toml.toml-find-eq': ['toml検索等値', 'tfe', 'tkt']
+  'toml.toml-make-entry': ['toml生成エントリ', 'tme', 'tse']
+  'toml.toml-next-array-table': ['toml次配列テーブル', 'tnat', 'ttht']
+  'toml.toml-normalize-key': ['toml正規化キー', 'tnk', 'tsk']
+  'toml.toml-parse-bool': ['toml解析bool', 'tpb', 'tkb']
+  'toml.toml-parse-f64': ['toml解析f64', 'tpf', 'tkf']
+  'toml.toml-parse-i64': ['toml解析i64', 'tpi', 'tki']
+  'toml.toml-register-table': ['toml登録テーブル', 'trt', 'ttt']
+  'toml.toml-resolve-section': ['tomlresolveセクション', 'trs', 'ts']
+  'toml.toml-strip-comment': ['toml除去コメント', 'tsc', 'tjk']
+  'toml.toml-table-eq': ['tomlテーブル等値', 'tte', 'ttt']
+  'toml.toml-table-name': ['tomlテーブル名前', 'ttn', 'ttn']
+  'toml.toml-unquote': ['tomlクォート除去', 'tu', 'tkj']
+  'toml.toml-valid-value': ['toml有効値', 'tvv', 'tya']
+  'toml.toml-value-complete': ['toml値完了', 'tvc', 'tak']
+  'tree-map.tree-map.alloc-node': ['確保ノード', 'an', 'kn']
+  'tree-map.tree-map.bf': ['bf', 'b', 'b']
+  'tree-map.tree-map.clear': ['クリア', 'c', 'k']
+  'tree-map.tree-map.contains': ['含む', 'c', 'f']
+  'tree-map.tree-map.empty': ['empty', 'e', 'e']
+  'tree-map.tree-map.first': ['先頭', 'f', 's']
+  'tree-map.tree-map.for-each': ['用各', 'fe', 'yk']
+  'tree-map.tree-map.free-node': ['解放ノード', 'fn', 'kn']
+  'tree-map.tree-map.full': ['full', 'f', 'f']
+  'tree-map.tree-map.get': ['取得', 'g', 's']
+  'tree-map.tree-map.ht': ['タブ', 'h', 't']
+  'tree-map.tree-map.init': ['初期化', 'i', 's']
+  'tree-map.tree-map.last': ['末尾', 'l', 'm']
+  'tree-map.tree-map.lower-bound': ['小文字バウンド', 'lb', 'kb']
+  'tree-map.tree-map.put': ['投入', 'p', 't']
+  'tree-map.tree-map.rebalance': ['rebalance', 'r', 'r']
+  'tree-map.tree-map.rebalance-up': ['rebalance上へ', 'ru', 'ruh']
+  'tree-map.tree-map.remove': ['削除', 'r', 's']
+  'tree-map.tree-map.rot-left': ['rot左', 'rl', 'rh']
+  'tree-map.tree-map.rot-right': ['rot右', 'rr', 'rm']
+  'tree-map.tree-map.size': ['サイズ', 's', 's']
+  'tree-map.tree-map.successor': ['後続', 's', 'k']
+  'tree-map.tree-map.update-ht': ['更新タブ', 'uh', 'kt']
+  'tree-map.tree-map.upper-bound': ['大文字バウンド', 'ub', 'ob']
+  'tree-set.tree-set.add': ['追加', 'a', 't']
+  'tree-set.tree-set.alloc-node': ['確保ノード', 'an', 'kn']
+  'tree-set.tree-set.bf': ['bf', 'b', 'b']
+  'tree-set.tree-set.clear': ['クリア', 'c', 'k']
+  'tree-set.tree-set.contains': ['含む', 'c', 'f']
+  'tree-set.tree-set.empty': ['empty', 'e', 'e']
+  'tree-set.tree-set.first': ['先頭', 'f', 's']
+  'tree-set.tree-set.for-each': ['用各', 'fe', 'yk']
+  'tree-set.tree-set.free-node': ['解放ノード', 'fn', 'kn']
+  'tree-set.tree-set.full': ['full', 'f', 'f']
+  'tree-set.tree-set.ht': ['タブ', 'h', 't']
+  'tree-set.tree-set.init': ['初期化', 'i', 's']
+  'tree-set.tree-set.last': ['末尾', 'l', 'm']
+  'tree-set.tree-set.lower-bound': ['小文字バウンド', 'lb', 'kb']
+  'tree-set.tree-set.rebalance': ['rebalance', 'r', 'r']
+  'tree-set.tree-set.rebalance-up': ['rebalance上へ', 'ru', 'ruh']
+  'tree-set.tree-set.remove': ['削除', 'r', 's']
+  'tree-set.tree-set.rot-left': ['rot左', 'rl', 'rh']
+  'tree-set.tree-set.rot-right': ['rot右', 'rr', 'rm']
+  'tree-set.tree-set.size': ['サイズ', 's', 's']
+  'tree-set.tree-set.successor': ['後続', 's', 'k']
+  'tree-set.tree-set.update-ht': ['更新タブ', 'uh', 'kt']
+  'tree-set.tree-set.upper-bound': ['大文字バウンド', 'ub', 'ob']
+  'txt._txt-dig-val': ['_txtdig値', 'tdv', 'a']
+  'txt.append': ['追加', 'a', 't']
+  'txt.append-str': ['追加文字列', 'as', 'tm']
+  'txt.append-txt': ['追加テキスト', 'at', 'tt']
+  'txt.at': ['位置', 'a', 'i']
+  'txt.byte': ['バイト', 'b', 'b']
+  'txt.clear': ['クリア', 'c', 'k']
+  'txt.compare': ['比較', 'c', 'h']
+  'txt.contains': ['含む', 'c', 'f']
+  'txt.copy': ['コピー', 'c', 'k']
+  'txt.count': ['カウント', 'c', 'k']
+  'txt.decode-cp': ['デコードcp', 'dc', 'dc']
+  'txt.empty': ['empty', 'e', 'e']
+  'txt.ends-with': ['終端付き', 'ew', 'st']
+  'txt.eq': ['等値', 'e', 't']
+  'txt.eq-full': ['等値full', 'ef', 'tf']
+  'txt.fields': ['フィールド', 'f', 'f']
+  'txt.fill': ['充填', 'f', 'j']
+  'txt.from-bytes': ['bytesから変換', 'fb', 'bkh']
+  'txt.from-chars': ['charsから変換', 'fc', 'ckh']
+  'txt.from-hex': ['hexから変換', 'fh', 'hkh']
+  'txt.from-str': ['strから変換', 'fs', 'skh']
+  'txt.index': ['インデックス', 'i', 'i']
+  'txt.index-from': ['インデックスfrom', 'if', 'if']
+  'txt.join': ['結合', 'j', 'k']
+  'txt.last-index': ['末尾インデックス', 'li', 'mi']
+  'txt.len': ['長さ', 'l', 'n']
+  'txt.lines': ['行', 'l', 'g']
+  'txt.new': ['新規', 'n', 's']
+  'txt.repeat': ['リピート', 'r', 'r']
+  'txt.replace-char': ['置換文字', 'rc', 'c']
+  'txt.replace-n': ['置換数', 'rn', 'ck']
+  'txt.replace-str': ['置換文字列', 'rs', 'c']
+  'txt.reverse': ['反転', 'r', 'h']
+  'txt.rindex': ['逆索引', 'r', 'gs']
+  'txt.rindex-from': ['逆索引from', 'rf', 'gsf']
+  'txt.set-byte': ['設定バイト', 'sb', 'sb']
+  'txt.slice': ['スライス', 's', 's']
+  'txt.split': ['分割', 's', 'b']
+  'txt.split-n': ['分割数', 'sn', 'b']
+  'txt.starts-with': ['starts付き', 'sw', 'st']
+  'txt.to-bigint': ['bigintへ変換', 'tb', 'bhh']
+  'txt.to-bool': ['boolへ変換', 'tb', 'bhh']
+  'txt.to-byte': ['byteへ変換', 'tb', 'bhh']
+  'txt.to-bytes': ['bytesへ変換', 'tb', 'bhh']
+  'txt.to-f32': ['f32へ変換', 'tf', 'fhh']
+  'txt.to-f64': ['f64へ変換', 'tf', 'fhh']
+  'txt.to-hex': ['hexへ変換', 'th', 'hhh']
+  'txt.to-i16': ['i16へ変換', 'ti', 'ihh']
+  'txt.to-i32': ['i32へ変換', 'ti', 'ihh']
+  'txt.to-i64': ['i64へ変換', 'ti', 'ihh']
+  'txt.to-i8': ['i8へ変換', 'ti', 'ihh']
+  'txt.to-lower': ['lowerへ変換', 'tl', 'lhh']
+  'txt.to-str': ['strへ変換', 'ts', 'shh']
+  'txt.to-u16': ['u16へ変換', 'tu', 'uhh']
+  'txt.to-u32': ['u32へ変換', 'tu', 'uhh']
+  'txt.to-u64': ['u64へ変換', 'tu', 'uhh']
+  'txt.to-u8': ['u8へ変換', 'tu', 'uhh']
+  'txt.to-upper': ['upperへ変換', 'tu', 'uhh']
+  'txt.trim': ['トリム', 't', 't']
+  'txt.trim-char': ['トリム文字', 'tc', 'tm']
+  'txt.truncate': ['truncate', 't', 't']
+  'txt.txt-hex-val': ['テキスト16進値', 'thv', 't1sa']
+  'unix.unix-conn.close': ['クローズ', 'c', 'k']
+  'unix.unix-conn.dial': ['ダイヤル', 'd', 'd']
+  'unix.unix-conn.fd-of': ['fdの', 'fo', 'fn']
+  'unix.unix-conn.recv': ['受信', 'r', 'j']
+  'unix.unix-conn.recv-all': ['受信全て', 'ra', 'js']
+  'unix.unix-conn.recv-with-timeout': ['受信付き타임아웃', 'rwt', 'jt']
+  'unix.unix-conn.send': ['送信', 's', 's']
+  'unix.unix-conn.set-recv-timeout': ['設定受信타임아웃', 'srt', 'sj']
+  'unix.unix-conn.set-timeout': ['設定타임아웃', 'st', 's']
+  'unix.unix-dial': ['unixダイヤル', 'ud', 'ud']
+  'unix.unix-dial-timeout': ['unixダイヤル타임아웃', 'udt', 'ud']
+  'unix.unix-dial-to': ['unixダイヤルto', 'udt', 'udt']
+  'unix.unix-listen': ['unixリッスン', 'ul', 'ur']
+  'unix.unix-listen-on': ['unixリッスン上', 'ulo', 'uru']
+  'unix.unix-listener.accept': ['受付', 'a', 'u']
+  'unix.unix-listener.accept-with-timeout': ['受付付き타임아웃', 'awt', 'ut']
+  'unix.unix-listener.close': ['クローズ', 'c', 'k']
+  'unix.unix-listener.fd-of': ['fdの', 'fo', 'fn']
+  'unix.unix-listener.listen': ['リッスン', 'l', 'r']
+  'unix.unix-listener.path-of': ['パスの', 'po', 'pn']
+  'unix.unix-listener.set-timeout': ['設定타임아웃', 'st', 's']
+  'url.url-basic-auth': ['url基本認証', 'uba', 'ukn']
+  'url.url-build-query': ['url構築クエリ', 'ubq', 'ukk']
+  'url.url-decode': ['urlデコード', 'ud', 'ud']
+  'url.url-encode': ['urlエンコード', 'ue', 'ue']
+  'url.url-encode-component': ['urlエンコードcomponent', 'uec', 'uec']
+  'url.url-info.get-query': ['取得クエリ', 'gq', 'sk']
+  'url.url-info.set-query': ['設定クエリ', 'sq', 'sk']
+  'url.url-info.to-str': ['strへ変換', 'ts', 'shh']
+  'url.url-join': ['url結合', 'uj', 'uk']
+  'url.url-parse': ['url解析', 'up', 'uk']
+  'url.url-parse-basic-auth': ['url解析基本認証', 'upba', 'ukkn']
+  'uuid.cmp': ['比較', 'c', 'h']
+  'uuid.eq': ['等値', 'e', 't']
+  'uuid.from-str': ['strから変換', 'fs', 'skh']
+  'uuid.hex-byte': ['16進バイト', 'hb', '1sb']
+  'uuid.hex-byte-upper': ['16進バイト大文字', 'hbu', '1sbo']
+  'uuid.hex-val': ['16進値', 'hv', '1sa']
+  'uuid.is-nil': ['nilか', 'in', 'nk']
+  'uuid.new-v4': ['新規v4', 'nv', 'sv']
+  'uuid.nil-uuid': ['niluuid', 'nu', 'n']
+  'uuid.parse-hex-byte': ['解析16進バイト', 'phb', 'k1sb']
+  'uuid.parse-no-dashes': ['解析なしダッシュ', 'pnd', 'knd']
+  'uuid.parse-with-dashes': ['解析付きダッシュ', 'pwd', 'ktd']
+  'uuid.to-str': ['strへ変換', 'ts', 'shh']
+  'uuid.to-str-upper': ['str-upperへ変換', 'tsu', 'shh']
+  'uuid.validate': ['検証', 'v', 'k']
+  'uuid.variant': ['バリアント', 'v', 'b']
+  'uuid.version': ['バージョン', 'v', 'b']
+  'vec.at': ['位置', 'a', 'i']
+  'vec.clone': ['クローン', 'c', 'k']
+  'vec.contains': ['含む', 'c', 'f']
+  'vec.eq': ['等値', 'e', 't']
+  'vec.extend': ['拡張', 'e', 'k']
+  'vec.fill': ['充填', 'f', 'j']
+  'vec.first': ['先頭', 'f', 's']
+  'vec.index-of': ['インデックスの', 'io', 'in']
+  'vec.insert': ['挿入', 'i', 's']
+  'vec.last': ['末尾', 'l', 'm']
+  'vec.len': ['長さ', 'l', 'n']
+  'vec.max': ['最大', 'm', 's']
+  'vec.min': ['最小', 'm', 's']
+  'vec.pop': ['ポップ', 'p', 'p']
+  'vec.remove': ['削除', 'r', 's']
+  'vec.reverse': ['反転', 'r', 'h']
+  'vec.sum': ['合計', 's', 'g']
+  'vec.swap': ['スワップ', 's', 's']
+  'vec.to-arr': ['arrへ変換', 'ta', 'ahh']
+  'vec.to-str': ['strへ変換', 'ts', 'shh']
+  'vec.truncate': ['truncate', 't', 't']
+  'vec.vec-clear': ['ベクトルクリア', 'vc', 'b']
+  'vec.vec-push': ['ベクトルプッシュ', 'vp', 'b']
+  'ws.build-frame': ['構築フレーム', 'bf', 'kf']
+  'ws.client.close': ['クローズ', 'c', 'k']
+  'ws.client.is-connected': ['接続済みか', 'ic', 'sm']
+  'ws.client.recv': ['受信', 'r', 'j']
+  'ws.client.send': ['送信', 's', 's']
+  'ws.client.send-binary': ['送信2進', 'sb', 's2s']
+  'ws.client.send-close': ['送信クローズ', 'sc', 'sk']
+  'ws.client.send-ping': ['送信ping', 'sp', 'sp']
+  'ws.client.send-pong': ['送信pong', 'sp', 'sp']
+  'ws.client.send-text': ['送信テキスト', 'st', 'st']
+  'ws.compute-accept': ['計算受付', 'ca', 'ku']
+  'ws.connect': ['接続', 'c', 's']
+  'ws.gen-client-key': ['生成クライアントキー', 'gck', 'sk']
+  'ws.gen-mask-key': ['生成マスクキー', 'gmk', 'sm']
+  'ws.listen-on': ['リッスン上', 'lo', 'ru']
+  'ws.next-rand': ['次乱数', 'nr', 'tr']
+  'ws.server-conn.close': ['クローズ', 'c', 'k']
+  'ws.server-conn.handshake': ['handshake', 'h', 'h']
+  'ws.server-conn.is-connected': ['接続済みか', 'ic', 'sm']
+  'ws.server-conn.recv': ['受信', 'r', 'j']
+  'ws.server-conn.recv-nb': ['受信nb', 'rn', 'jn']
+  'ws.server-conn.send': ['送信', 's', 's']
+  'ws.server-conn.send-binary': ['送信2進', 'sb', 's2s']
+  'ws.server-conn.send-close': ['送信クローズ', 'sc', 'sk']
+  'ws.server-conn.send-ping': ['送信ping', 'sp', 'sp']
+  'ws.server-conn.send-pong': ['送信pong', 'sp', 'sp']
+  'ws.server-conn.send-text': ['送信テキスト', 'st', 'st']
+  'ws.server.accept': ['受付', 'a', 'u']
+  'ws.server.close': ['クローズ', 'c', 'k']
+  'ws.server.listen': ['リッスン', 'l', 'r']
+  'x25519.fe-add': ['体要素追加', 'fa', 'kyt']
+  'x25519.fe-add-v': ['体要素追加版', 'fav', 'kyt']
+  'x25519.fe-copy': ['体要素コピー', 'fc', 'kyk']
+  'x25519.fe-cswap': ['体要素cswap', 'fc', 'kyc']
+  'x25519.fe-frombytes': ['体要素frombytes', 'ff', 'kyf']
+  'x25519.fe-frombytes-v': ['体要素frombytes版', 'ffv', 'kyfh']
+  'x25519.fe-invert': ['体要素逆転', 'fi', 'kyg']
+  'x25519.fe-invert-v': ['体要素逆転版', 'fiv', 'kygh']
+  'x25519.fe-mul': ['体要素乗算', 'fm', 'kyj']
+  'x25519.fe-mul-v': ['体要素乗算版', 'fmv', 'kyjh']
+  'x25519.fe-mul121665': ['体要素x121665', 'fm', 'kyx']
+  'x25519.fe-one': ['体要素単一', 'fo', 'kyt']
+  'x25519.fe-one-v': ['体要素単一版', 'fov', 'kyth']
+  'x25519.fe-sq': ['体要素二乗', 'fs', 'kyn']
+  'x25519.fe-sq-v': ['体要素二乗版', 'fsv', 'kynh']
+  'x25519.fe-sub': ['体要素減算', 'fs', 'kyg']
+  'x25519.fe-sub-v': ['体要素減算版', 'fsv', 'kygh']
+  'x25519.fe-tobytes': ['体要素tobytes', 'ft', 'kyt']
+  'x25519.fe-tobytes-v': ['体要素tobytes版', 'ftv', 'kyth']
+  'x25519.fe-zero': ['体要素ゼロ', 'fz', 'kyz']
+  'x25519.fe-zero-v': ['体要素ゼロ版', 'fzv', 'kyzh']
+  'x25519.x25519-gen-keypair': ['x25519生成鍵ペア', 'xgk', 'xskp']
+  'x25519.x25519-get-basepoint': ['x25519取得基準点', 'xgb', 'xsk']
+  'x25519.x25519-scalarmult': ['x25519スカラー乗算', 'xs', 'xsj']
+  'x25519.x25519-scalarmult-base': ['x25519スカラー乗算base', 'xsb', 'xsjb']
+  'x25519.x25519-scalarmult-base-bytes': ['x25519スカラー乗算baseバイト', 'xsbb', 'xsjbb']
+  'x25519.x25519-scalarmult-bytes': ['x25519スカラー乗算バイト', 'xsb', 'xsjb']
+  'x509.alg-id-rsa-encryption': ['algidRSA暗号化', 'aire', 'aa']
+  'x509.alg-id-sha256-with-rsa': ['algidsha256付きRSA', 'aiswr', 'atr']
+  'x509.der-enc-bitstring': ['DER暗号化ビット列', 'deb', 'dabr']
+  'x509.der-enc-explicit': ['DER暗号化明示的', 'dee', 'dam']
+  'x509.der-enc-integer-bytes': ['DER暗号化整数バイト', 'deib', 'dasb']
+  'x509.der-enc-integer-i64': ['DER暗号化整数i64', 'deii', 'dasi']
+  'x509.der-enc-len': ['DER暗号化長さ', 'del', 'dan']
+  'x509.der-enc-null': ['DER暗号化null', 'den', 'dan']
+  'x509.der-enc-octetstring': ['DER暗号化オクテット列', 'deo', 'daor']
+  'x509.der-enc-oid-raw': ['DER暗号化OID生の', 'deor', 'daou']
+  'x509.der-enc-printablestring': ['DER暗号化印刷可能列', 'dep', 'daikr']
+  'x509.der-enc-sequence': ['DER暗号化シーケンス', 'des', 'das']
+  'x509.der-enc-set': ['DER暗号化設定', 'des', 'das']
+  'x509.der-enc-tlv': ['DER暗号化TLV', 'det', 'dat']
+  'x509.der-enc-utctime': ['DER暗号化UTC時刻', 'deu', 'dauj']
+  'x509.der-len': ['DER長さ', 'dl', 'dn']
+  'x509.der-skip': ['DERスキップ', 'ds', 'ds']
+  'x509.der-tag': ['DERタグ', 'dt', 'dt']
+  'x509.rsa-pkcs1-sign-sha256': ['RSAPKCS#1署名sha256', 'rpss', 'rss']
+  'x509.sha256-compress': ['sha256圧縮', 'sc', 'sa']
+  'x509.x509-build-name-cn': ['X.509構築名前cn', 'xbnc', 'x5knc']
+  'x509.x509-build-rsa-public-key': ['X.509構築RSA公開キー', 'xbrpk', 'x5krkk']
+  'x509.x509-build-self-signed-cert': ['X.509構築self符号付き証明書', 'xbssc', 'x5ksfts']
+  'x509.x509-build-spki': ['X.509構築公開鍵情報', 'xbs', 'x5kkkj']
+  'x509.x509-build-tbs': ['X.509構築署名対象', 'xbt', 'x5kst']
+  'x509.x509-build-validity': ['X.509構築有効期間', 'xbv', 'x5kyk']
+  'x509.x509-bytes-to-bn': ['X.509バイトto大数', 'xbtb', 'x5btd']
+  'x509.x509-fingerprint': ['X.509指紋', 'xf', 'x5s']
+  'x509.x509-rsa-e': ['X.509RSA指数', 'xre', 'x5s']
+  'x509.x509-rsa-n': ['X.509RSA数', 'xrn', 'x5k']
+  'x509.x509-serial': ['X.509シリアル', 'xs', 'x5s']
+  'x509.x509-tbs-range': ['X.509署名対象range', 'xtr', 'x5str']
+  'xz.lzma-decoder.decode': ['デコード', 'd', 'd']
+  'xz.lzma-decoder.decode-distance': ['デコード距離', 'dd', 'dk']
+  'xz.lzma-decoder.decode-length': ['デコード長さ', 'dl', 'dn']
+  'xz.lzma-decoder.decode-literal': ['デコードリテラル', 'dl', 'd']
+  'xz.lzma-decoder.init-probs': ['初期化確率', 'ip', 'sk']
+  'xz.lzma-decoder.update-state-literal': ['更新状態リテラル', 'usl', 'kjr']
+  'xz.lzma-decoder.update-state-match': ['更新状態一致', 'usm', 'kji']
+  'xz.lzma-decoder.update-state-rep': ['更新状態リピート', 'usr', 'kjr']
+  'xz.lzma-decoder.update-state-shortrep': ['更新状態短リピート', 'uss', 'kjtr']
+  'xz.lzma-decompress': ['lzma解凍', 'ld', 'lk']
+  'xz.lzma-rd.decode-bit': ['デコードビット', 'db', 'd']
+  'xz.lzma-rd.decode-bit-tree': ['デコードビットツリー', 'dbt', 'd']
+  'xz.lzma-rd.decode-direct-bits': ['デコードdirectビット', 'ddb', 'ddb']
+  'xz.lzma-rd.decode-reverse-bit-tree': ['デコード反転ビットツリー', 'drbt', 'dhb']
+  'xz.lzma-rd.init': ['初期化', 'i', 's']
+  'xz.lzma-rd.normalize': ['正規化', 'n', 's']
+  'xz.lzma2-decompress-stream': ['lzma2解凍ストリーム', 'lds', 'lks']
+  'xz.xz-compress': ['xz圧縮', 'xc', 'xa']
+  'xz.xz-decompress': ['xz解凍', 'xd', 'xk']
+  'yaml.anchor': ['アンカー', 'a', 'a']
+  'yaml.at': ['位置', 'a', 'i']
+  'yaml.bool': ['bool', 'b', 'b']
+  'yaml.doc': ['ドキュメント', 'd', 'd']
+  'yaml.doc-count': ['ドキュメントカウント', 'dc', 'd']
+  'yaml.error': ['エラー', 'e', 'e']
+  'yaml.error-of': ['エラーの', 'eo', 'en']
+  'yaml.f64': ['f64', 'f', 'f']
+  'yaml.find': ['検索', 'f', 'k']
+  'yaml.find-bool': ['検索bool', 'fb', 'kb']
+  'yaml.find-f64': ['検索f64', 'ff', 'kf']
+  'yaml.find-i64': ['検索i64', 'fi', 'ki']
+  'yaml.find-str': ['検索文字列', 'fs', 'k']
+  'yaml.get': ['取得', 'g', 's']
+  'yaml.get-bool': ['取得bool', 'gb', 'sb']
+  'yaml.get-f64': ['取得f64', 'gf', 'sf']
+  'yaml.get-i64': ['取得i64', 'gi', 'si']
+  'yaml.get-str': ['取得文字列', 'gs', 'sm']
+  'yaml.i64': ['i64', 'i', 'i']
+  'yaml.is-bool': ['boolか', 'ib', 'bk']
+  'yaml.is-int': ['整数か', 'ii', 'sk']
+  'yaml.is-map': ['マップか', 'im', 'mk']
+  'yaml.is-nan': ['NaNか', 'in', 'nk']
+  'yaml.is-null': ['nullか', 'in', 'nk']
+  'yaml.is-num': ['数値か', 'in', 'sk']
+  'yaml.is-seq': ['seqか', 'is', 'sk']
+  'yaml.is-str': ['文字列か', 'is', 'mk']
+  'yaml.key': ['キー', 'k', 'k']
+  'yaml.key-node': ['キーノード', 'kn', 'k']
+  'yaml.kind': ['種別', 'k', 's']
+  'yaml.len': ['長さ', 'l', 'n']
+  'yaml.line-of': ['行の', 'lo', 'o']
+  'yaml.node-count': ['ノードカウント', 'nc', 'n']
+  'yaml.parse': ['解析', 'p', 'k']
+  'yaml.parse-all': ['解析全て', 'pa', 'ks']
+  'yaml.scalar-text': ['スカラーテキスト', 'st', 's']
+  'yaml.source-of': ['sourceの', 'so', 'sn']
+  'yaml.str': ['文字列', 's', 'm']
+  'yaml.stringify': ['文字列化', 's', 'mk']
+  'yaml.strip-bom': ['除去BOM', 'sb', 'jb']
+  'yaml.style': ['スタイル', 's', 's']
+  'yaml.tag': ['タグ', 't', 't']
+  'yaml.text': ['テキスト', 't', 't']
+  'yaml.to-json': ['jsonへ変換', 'tj', 'jhh']
+  'yaml.to-json-all': ['json-allへ変換', 'tja', 'jhh']
+  'yaml.to-yaml': ['yamlへ変換', 'ty', 'yhh']
+  'yaml.valid': ['有効', 'v', 'y']
+  'yaml.valid-of': ['有効の', 'vo', 'yn']
+  'yaml.value': ['値', 'v', 'a']
+  'yaml.yaml-apply-tag': ['yaml適用タグ', 'yat', 'ytt']
+  'yaml.yaml-emit': ['yaml发出', 'ye', 'y']
+  'yaml.yaml-f-is-inf': ['yaml浮動小数是否無限', 'yfii', 'yfkhm']
+  'yaml.yaml-f-is-nan': ['yaml浮動小数是否NaN', 'yfin', 'yfkhn']
+  'yaml.yaml-hex-char': ['yaml16進文字', 'yhc', 'ysm']
+  'yaml.yaml-hex-digit': ['yaml16進数字', 'yhd', 'ysj']
+  'yaml.yaml-inf': ['yaml無限', 'yi', 'ym']
+  'yaml.yaml-json-escape': ['yamljsonエスケープ', 'yje', 'ye']
+  'yaml.yaml-json-of': ['yamljsonの', 'yjo', 'yn']
+  'yaml.yaml-key-eq': ['yamlキー等値', 'yke', 'ykt']
+  'yaml.yaml-key-text-eq': ['yamlキーテキスト等値', 'ykte', 'ykt']
+  'yaml.yaml-nan': ['yamlNaN', 'yn', 'y']
+  'yaml.yaml-node-is-nan': ['yamlノード是否NaN', 'ynin', 'ynkhn']
+  'yaml.yaml-parse-radix': ['yaml解析基数', 'ypr', 'ykk']
+  'yaml.yaml-parser.advance': ['前進', 'a', 'z']
+  'yaml.yaml-parser.anchor-id': ['アンカーid', 'ai', 'ai']
+  'yaml.yaml-parser.at': ['位置', 'a', 'i']
+  'yaml.yaml-parser.at-doc-marker': ['位置ドキュメントマーカー', 'adm', 'id']
+  'yaml.yaml-parser.at-eol': ['位置行末', 'ae', 'ig']
+  'yaml.yaml-parser.byte-at': ['バイト位置', 'ba', 'bi']
+  'yaml.yaml-parser.cur': ['現在', 'c', 'g']
+  'yaml.yaml-parser.eof': ['eof', 'e', 'e']
+  'yaml.yaml-parser.fail': ['失敗', 'f', 's']
+  'yaml.yaml-parser.fail-at': ['失敗位置', 'fa', 'si']
+  'yaml.yaml-parser.indent-at': ['インデント位置', 'ia', 'ii']
+  'yaml.yaml-parser.is-seq-dash': ['seqダッシュか', 'isd', 'sdk']
+  'yaml.yaml-parser.line-end-of': ['行終了の', 'leo', 'gsn']
+  'yaml.yaml-parser.line-start-of': ['行開始の', 'lso', 'gkn']
+  'yaml.yaml-parser.looks-like-map-entry': ['見た目-likeマップエントリ', 'llme', 'mm']
+  'yaml.yaml-parser.merge-into': ['マージへ', 'mi', 'mh']
+  'yaml.yaml-parser.merge-one': ['マージ単一', 'mo', 'mt']
+  'yaml.yaml-parser.newline': ['改行', 'n', 'k']
+  'yaml.yaml-parser.parse-alias': ['解析alias', 'pa', 'ka']
+  'yaml.yaml-parser.parse-block': ['解析ブロック', 'pb', 'kb']
+  'yaml.yaml-parser.parse-block-indented': ['解析ブロックインデント', 'pbi', 'kb']
+  'yaml.yaml-parser.parse-block-map': ['解析ブロックマップ', 'pbm', 'kb']
+  'yaml.yaml-parser.parse-block-scalar': ['解析ブロックスカラー', 'pbs', 'kb']
+  'yaml.yaml-parser.parse-block-seq': ['解析ブロックseq', 'pbs', 'kbs']
+  'yaml.yaml-parser.parse-docs': ['解析ドキュメント', 'pd', 'kd']
+  'yaml.yaml-parser.parse-document': ['解析ドキュメント', 'pd', 'kd']
+  'yaml.yaml-parser.parse-double': ['解析倍点', 'pd', 'kbt']
+  'yaml.yaml-parser.parse-flow-map': ['解析flowマップ', 'pfm', 'kfm']
+  'yaml.yaml-parser.parse-flow-node': ['解析flowノード', 'pfn', 'kfn']
+  'yaml.yaml-parser.parse-flow-seq': ['解析flowseq', 'pfs', 'kf']
+  'yaml.yaml-parser.parse-plain': ['解析plain', 'pp', 'kp']
+  'yaml.yaml-parser.parse-props': ['解析プロパティ', 'pp', 'kp']
+  'yaml.yaml-parser.parse-single': ['解析単一', 'ps', 'kt']
+  'yaml.yaml-parser.push-node': ['プッシュノード', 'pn', 'p']
+  'yaml.yaml-parser.push-null': ['プッシュnull', 'pn', 'pn']
+  'yaml.yaml-parser.push-scalar': ['プッシュスカラー', 'ps', 'p']
+  'yaml.yaml-parser.read-line-content': ['読み行コンテンツ', 'rlc', 'ygk']
+  'yaml.yaml-parser.read-tag': ['読みタグ', 'rt', 'yt']
+  'yaml.yaml-parser.read-token': ['読みトークン', 'rt', 'yt']
+  'yaml.yaml-parser.register-anchor': ['登録アンカー', 'ra', 'ta']
+  'yaml.yaml-parser.set-props': ['設定プロパティ', 'sp', 'sp']
+  'yaml.yaml-parser.skip-blank-lines': ['スキップ空白行', 'sbl', 'sk']
+  'yaml.yaml-parser.skip-doc-preamble': ['スキップドキュメント前置文', 'sdp', 'szb']
+  'yaml.yaml-parser.skip-flow-ws': ['スキップflowWebSocket', 'sfw', 'sf']
+  'yaml.yaml-parser.skip-spaces': ['スキップスペース', 'ss', 's']
+  'yaml.yaml-parser.skip-to-doc-boundary': ['スキップtoドキュメント境界', 'stdb', 'stdk']
+  'yaml.yaml-parser.skip-to-eol': ['スキップto行末', 'ste', 'stg']
+  'yaml.yaml-plain-safe': ['yamlplain安全', 'yps', 'ya']
+  'yaml.yaml-quote': ['yamlクォート', 'yq', 'yk']
+  'yaml.yaml-resolve-plain': ['yamlresolveplain', 'yrp', 'y']
+  'yaml.yaml-scalar-repr': ['yamlスカラー表現', 'ysr', 'ysh']
+  'yaml.yaml-scan-number': ['yamlスキャン数値', 'ysn', 'yss']
+  'yaml.yaml-spaces': ['yamlスペース', 'ys', 'ys']
+  'yaml.yaml-str-at': ['yaml文字列位置', 'ysa', 'ymi']
+  'yaml.yaml-tag-name': ['yamlタグ名前', 'ytn', 'ytn']
+  'yaml.yaml-to-f64': ['yamltof64', 'ytf', 'y']
+  'yaml.yaml-to-i64': ['yamltoi64', 'yti', 'y']
+  'yaml.yaml-unescape-double': ['yaml逆エスケープ倍点', 'yud', 'ygebt']
+  'zip.u16le': ['u16le', 'u', 'u']
+  'zip.u32le': ['u32le', 'u', 'u']
+  'zip.zip-entry.compressed-size': ['圧縮済みサイズ', 'cs', 'ass']
+  'zip.zip-entry.extract': ['抽出', 'e', 'c']
+  'zip.zip-entry.method': ['method', 'm', 'm']
+  'zip.zip-entry.name': ['名前', 'n', 'n']
+  'zip.zip-entry.size': ['サイズ', 's', 's']
+  'zip.zip-writer.add-dir': ['追加ディレクトリ', 'ad', 'td']
+  'zip.zip-writer.add-file': ['追加ファイル', 'af', 'tf']
+  'zip.zip-writer.cd-put': ['cd投入', 'cp', 'ct']
+  'zip.zip-writer.cd-write-u16': ['cd書きu16', 'cwu', 'cku']
+  'zip.zip-writer.cd-write-u32': ['cd書きu32', 'cwu', 'cku']
+  'zip.zip-writer.finalize': ['最終化', 'f', 'sk']
+  'zip.zip-writer.put': ['投入', 'p', 't']
+  'zip.zip-writer.write-cd-entry': ['書きcdエントリ', 'wce', 'kce']
+  'zip.zip-writer.write-eocd': ['書きEOCD', 'we', 'ke']
+  'zip.zip-writer.write-local-file': ['書きローカルファイル', 'wlf', 'kr']
+  'zip.zip-writer.write-u16': ['書きu16', 'wu', 'ku']
+  'zip.zip-writer.write-u32': ['書きu32', 'wu', 'ku']
+  'zip.zip.compressed-size': ['圧縮済みサイズ', 'cs', 'ass']
+  'zip.zip.count': ['カウント', 'c', 'k']
+  'zip.zip.entry': ['エントリ', 'e', 'e']
+  'zip.zip.entry-off': ['エントリoff', 'eo', 'eo']
+  'zip.zip.extract': ['抽出', 'e', 'c']
+  'zip.zip.find-eocd': ['検索EOCD', 'fe', 'ke']
+  'zip.zip.get-cd-off': ['取得cdoff', 'gco', 'sc']
+  'zip.zip.get-total': ['取得total', 'gt', 'st']
+  'zip.zip.method': ['method', 'm', 'm']
+  'zip.zip.name': ['名前', 'n', 'n']
+  'zip.zip.size': ['サイズ', 's', 's']
+  'zlib.adler-32': ['adler32', 'a3', 'a']
+  'zlib.zlib-compress': ['zlib圧縮', 'zc', 'za']
+  'zlib.zlib-consumed-stored': ['zlib消費済みstored', 'zcs', 'zsss']
+  'zlib.zlib-decompress': ['zlib解凍', 'zd', 'zk']
+  'zlib.zlib-decompress-stored': ['zlib解凍stored', 'zds', 'zks']
+  'zstd.bits-for-count': ['ビット用カウント', 'bfc', 'byk']
+  'zstd.fse-table.build': ['構築', 'b', 'k']
+  'zstd.fse-table.decode': ['デコード', 'd', 'd']
+  'zstd.zs-bit-reader.align-to-byte': ['アラインtoバイト', 'atb', 'atb']
+  'zstd.zs-bit-reader.read-bit': ['読みビット', 'rb', 'yb']
+  'zstd.zs-bit-reader.read-bits': ['読みビット', 'rb', 'yb']
+  'zstd.zs-bit-reader.read-varint': ['読み可変長整数', 'rv', 'yks']
+  'zstd.zs-frame.decode-block': ['デコードブロック', 'db', 'd']
+  'zstd.zs-frame.decode-compressed-block': ['デコード圧縮済みブロック', 'dcb', 'dasb']
+  'zstd.zs-frame.read-frame-header': ['読みフレームヘッダ', 'rfh', 'yf']
+  'zstd.zs-huffman.build': ['構築', 'b', 'k']
+  'zstd.zs-huffman.decode': ['デコード', 'd', 'd']
+  'zstd.zstd-compress': ['zstd圧縮', 'zc', 'za']
+  'zstd.zstd-decompress': ['zstd解凍', 'zd', 'zk']
 }
