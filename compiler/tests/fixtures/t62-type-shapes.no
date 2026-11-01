@@ -6,8 +6,10 @@
 
 ff = (task *i8) {
 }
-fg = (a **u8, b i8*) {
+
+fg = (a **u8, b *i8) {
 }
+
 fh = (in []byte, n i64) {
 }
 

@@ -103,6 +103,26 @@ func TestFormatImportsBlankLineAroundSurvives(t *testing.T) {
 		"main = () {\n    print('hi')\n}")
 }
 
+func TestFormatImportsBareAliasKeptOnSameLine(t *testing.T) {
+	// 裸別名（無 `as`）：`# std/err error` 的 `error` 是別名，必須與路徑同行。
+	// 解析器曾把裸別名當成緊跟的獨立陳述，formatter 隨之把別名印到新行（regress）。
+	fmtCheck(t, "bare module alias stays on the import line",
+		"# std/err error\n\nmain = () {\n    print('hi')\n}",
+		"# std/err error\n\nmain = () {\n    print('hi')\n}")
+	// `as` 寫法仍保留（往返不變）。
+	fmtCheck(t, "as-style module alias preserved",
+		"# std/err as error\n\nmain = () {\n    print('hi')\n}",
+		"# std/err as error\n\nmain = () {\n    print('hi')\n}")
+	// 函數導入的裸別名（`.fn` 形式）本就同行，確認未被破壞。
+	fmtCheck(t, "fn import bare alias stays on the line",
+		"# std/err.new e\n\nmain = () {\n    print('hi')\n}",
+		"# std/err.new e\n\nmain = () {\n    print('hi')\n}")
+	// 多條裸別名導入：各自同行、整體仍按 path 排序。
+	fmtCheck(t, "multiple bare aliases each on their line",
+		"# std/str s\n# std/err error\n# std/io",
+		"# std/err error\n# std/io\n# std/str s")
+}
+
 func TestFormatImportsMidFileRunNotTouched(t *testing.T) {
 	// 非文件頂部的導入區段（出現在代碼之後）保守不動。
 	input := "x = 1\n# zzz/b\n# aaa/a\n"

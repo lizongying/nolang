@@ -129,28 +129,31 @@ t-reader-read-line = () {
     r = bufio.reader.init(fd, buf)
 
     ; 第一行
-    l1 str = ''
+    l1 = ''
     opt1 = r.read-line()
     opt1: {
         ok -> l1 = it
+
         -> _
     }
     runner.str-eq(l1, 'Hello', 5, 'read-line 1st == Hello')
 
     ; 第二行
-    l2 str = ''
+    l2 = ''
     opt2 = r.read-line()
     opt2: {
         ok -> l2 = it
+
         -> _
     }
     runner.str-eq(l2, 'World', 5, 'read-line 2nd == World')
 
     ; EOF 回傳 nil
-    eof bool = false
+    eof = false
     opt3 = r.read-line()
     opt3: {
         nil -> eof = true
+
         -> eof = false
     }
     runner.is-true(eof, 'read-line at EOF == nil')

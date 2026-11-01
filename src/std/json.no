@@ -272,6 +272,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     next-pos = it
                     ok = true
                 }
+
                 -> ok = false
             }
             return
@@ -287,6 +288,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     next-pos = it
                     ok = true
                 }
+
                 -> ok = false
             }
             return
@@ -300,6 +302,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     next-pos = it
                     ok = true
                 }
+
                 -> ok = false
             }
             return
@@ -466,6 +469,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     i = 0
     i-opt: {
         ok -> i = it
+
         -> i = 0
     }
     j = 0
@@ -499,6 +503,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 next-pos = 0
                 next-pos-opt: {
                     ok -> next-pos = it
+
                     -> next-pos = 0
                 }
                 return
@@ -523,6 +528,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         }
         buf[j]: {
             ok -> it = c
+
             -> _
         }
 
@@ -1050,6 +1056,7 @@ json.get-key = (obj json, key str) (child ?json) {
             ; 返回獨立深拷貝子樹（不與 obj 共享 vec 緩衝）
             child = json-clone-tree(obj.pool, it)
         }
+
         -> child = nil
     }
 }
@@ -1210,6 +1217,7 @@ json.get = (key str) (child ?json) {
     val-idx = -1
     gi: {
         ok -> val-idx = it
+
         -> val-idx = -1
     }
     val-idx < 0 -> return
@@ -1232,6 +1240,7 @@ json.get-str = (key str) (val ?str) {
     gi = .pool.get-key(.root, key)
     gi: {
         ok -> val = .pool.get-str(it)
+
         -> _
     }
 }
@@ -1247,6 +1256,7 @@ json.get-num = (key str) (val ?f64) {
     gi = .pool.get-key(.root, key)
     gi: {
         ok -> val = .pool.get-num(it)
+
         -> _
     }
 }
@@ -1262,6 +1272,7 @@ json.get-bool = (key str) (val ?bool) {
     gi = .pool.get-key(.root, key)
     gi: {
         ok -> val = .pool.get-bool(it)
+
         -> _
     }
 }
@@ -1280,6 +1291,7 @@ json.get-i64 = (key str) (val ?i64) {
             found = true
             f = it
         }
+
         -> found = false
     }
     found == false -> return
@@ -1429,6 +1441,7 @@ json.arr-get = (elem i64) (child ?json) {
     ai = .pool.arr-get(.root, elem)
     ai: {
         ok -> child = json-clone-tree(.pool, it)
+
         -> child = nil
     }
 }
@@ -1574,6 +1587,7 @@ json.i64 = () (val ?i64) {
             found = true
             f = it
         }
+
         -> found = false
     }
     found == false -> return
@@ -1595,7 +1609,6 @@ json.obj-len = () (n i64) {
 
 ; 取得物件指定索引的 key
 ; 返回 key str: key 字串
-; 返回 ok bool: 是否成功
 ; idx: 鍵序號（依插入順序沿邊鏈走訪）
 ; key: ok=鍵名, nil=越界或根非物件
 ; [obj-key](#json.obj-key)
@@ -1723,6 +1736,7 @@ json.str-val = () (val str) {
     v-opt = .pool.get-str(.root)
     v-opt: {
         ok -> val = it
+
         -> val = ''
     }
 }

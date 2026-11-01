@@ -203,6 +203,7 @@ t-parse-response = () {
     bad = make-resp(0, 1, 0, 1)
     bad[12]: {
         ok -> it = 0x80
+
         -> _
     }
     br = dns.parse-response(bad)

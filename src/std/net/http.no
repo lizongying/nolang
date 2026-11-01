@@ -107,7 +107,9 @@ request.init = (method str, url str, body str) {
 
 ; 新增自訂標頭
 ; 將 name 與 value 組裝成 'Name: Value' 存入 headers 陣列
-; 返回 ok=true=成功, false=標頭數已滿
+; name str: 標頭字段名
+; value str: 標頭字段值
+; ok bool: true=已追加到 headers 並推進 header-count，false=標頭數已達 HTTP-MAX-REQ-HEADERS 上限
 ; [add-header](#http.request.add-header)
 request.add-header = (name str, value str) (ok bool) {
 
@@ -776,9 +778,9 @@ patch = (url str, body str) (resp ?response) {
 
 ; 串流下載（支援任意大小，直接寫入檔案）
 ; 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
-; url str — 完整 URL
-; dest str — 目的地檔案路徑
-; 返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+; url str: 完整 URL（http:// 走明文、https:// 走原生 TLS，其他 scheme 直接失敗）
+; dest str: 目的地檔案路徑；成功時寫入回應內文，失敗時若已存在會被刪除
+; ok bool: true=取得回應且 HTTP 狀態碼為 2xx，內文已寫入 dest
 ; [download](#http.download)
 download = (url str, dest str) (ok bool) {
     ok = false
@@ -940,10 +942,10 @@ download = (url str, dest str) (ok bool) {
 
 ; 串流上傳檔案（PUT，原始二進位 body）
 ; 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
-; url str — 完整 URL
-; token str — Bearer token（可空）
-; file-path str — 要上傳的檔案
-; 返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+; url str: 完整 URL（http:// 或 https://）
+; token str: Bearer token，非空時附加 Authorization: Bearer 標頭
+; file-path str: 要上傳的檔案路徑（先整讀為內容再發送）
+; ok bool: true=上傳完成且 HTTP 狀態碼為 2xx；檔案讀不到或狀態非 2xx 為 false
 ; [upload-put](#http.upload-put)
 upload-put = (url str, token str, file-path str) (ok bool) {
     ok = false
@@ -1125,7 +1127,7 @@ upload-put = (url str, token str, file-path str) (ok bool) {
 ; req request: 請求結構體
 ; user str: 用戶名
 ; password str: 密碼
-; 返回 ok=true=成功
+; ok bool: true=已加入標頭，false=請求標頭槽位已滿
 ; [set-basic-auth](#http.set-basic-auth)
 set-basic-auth = (req request, user str, password str) (ok bool) {
 
@@ -1140,7 +1142,7 @@ set-basic-auth = (req request, user str, password str) (ok bool) {
 ; 為請求加入 Bearer Token 認證標頭
 ; req request: 請求結構體
 ; token str: Bearer token
-; 返回 ok=true=成功
+; ok bool: true=已加入標頭，false=請求標頭槽位已滿
 ; [set-bearer-auth](#http.set-bearer-auth)
 set-bearer-auth = (req request, token str) (ok bool) {
     auth-val = 'Bearer ' - token
@@ -1151,7 +1153,7 @@ set-bearer-auth = (req request, token str) (ok bool) {
 ; req request: 請求結構體
 ; header-name str: 標頭名稱（如 'X-API-Key'）
 ; api-key str: API 金鑰
-; 返回 ok=true=成功
+; ok bool: true=已加入標頭，false=請求標頭槽位已滿
 ; [set-api-key](#http.set-api-key)
 set-api-key = (req request, header-name str, api-key str) (ok bool) {
     ok = req.add-header(header-name, api-key)
@@ -1353,6 +1355,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     body-start = 0
     body-start-opt: {
         ok -> body-start = it
+
         -> body-start = 0
     }
 

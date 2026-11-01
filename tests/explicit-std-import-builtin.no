@@ -71,6 +71,7 @@ t-vec-push = () {
     ; 逐元素讀回（避免靜態下標越界檢查），和必須是 10
     sum = 0
     i <- [0..len(a)): {
+
         #{overflow=wrap}
         sum = sum + a[i]
     }

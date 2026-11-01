@@ -128,18 +128,22 @@ t-build-join = () {
     v [16]str
     k[0]: {
         ok -> it = 'a'
+
         -> _
     }
     k[1]: {
         ok -> it = 'b'
+
         -> _
     }
     v[0]: {
         ok -> it = '1'
+
         -> _
     }
     v[1]: {
         ok -> it = '2'
+
         -> _
     }
     eq-str(url.url-build-query(k, v, 2), 'a=1&b=2', 'build-query')

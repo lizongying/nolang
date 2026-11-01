@@ -175,7 +175,7 @@ test-str-to-byte = () {
 
 ; ===== i64 → str =====
 test-i64-to-str = () {
-    n i64 = 42
+    n = 42
     s = n.to-str()
     print(s); 期望: 42
 
@@ -204,7 +204,7 @@ test-u64-to-str = () {
 
 ; ===== f64 → str =====
 test-f64-to-str = () {
-    f f64 = 3.14
+    f = 3.14
     s = f.to-str()
     print(s); 期望: 3.14
 
@@ -226,7 +226,7 @@ test-f32-to-str = () {
 
 ; ===== bool → str =====
 test-bool-to-str = () {
-    b bool = true
+    b = true
     s = b.to-str()
     print(s); 期望: true
 
@@ -248,7 +248,7 @@ test-byte-to-str = () {
 
 ; ===== 往返: i64 → str → i64 =====
 test-roundtrip-i64 = () {
-    n0 i64 = 12345
+    n0 = 12345
     s = n0.to-str()
     n = s.to-i64()
     {
@@ -274,7 +274,7 @@ test-roundtrip-f64 = () {
 
 ; ===== 邊界: i64 極值 =====
 test-edge-i64 = () {
-    n i64 = 9223372036854775807
+    n = 9223372036854775807
     s = n.to-str()
     print(s); 期望: 9223372036854775807
 

@@ -84,6 +84,7 @@
 
         cp = .[i] & 0xff
         seg str = with-cap(4)
+
         ; 注意：seg 是 with-cap 出來的 len=0 緩衝，不可用 `seg[0]: { ok -> it = v }`
         ; 這種 D9 place-match 寫入——它以「讀」作閘門，len=0 時讀 seg[0] 越界回 nil，
         ; ok 臂永不執行，seg 永遠是空串（曾使本方法靜默回空字串）。

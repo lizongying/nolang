@@ -33,36 +33,43 @@ server:
             sopt = doc.find-str('name')
             sopt: {
                 ok -> runner.str-eq(it, 'nolang', 6, 'find-str name')
+
                 -> runner.is-true(false, 'find name ok')
             }
             popt = doc.find-i64('port')
             popt: {
                 ok -> runner.eq(it, 8080, 'find-i64 port')
+
                 -> runner.is-true(false, 'find port ok')
             }
             bopt = doc.find-bool('enabled')
             bopt: {
                 ok -> runner.is-true(it, 'find-bool enabled')
+
                 -> runner.is-true(false, 'find enabled ok')
             }
             fopt = doc.find-f64('ratio')
             fopt: {
                 ok -> runner.f64-eq(it, 1.5, 0.0001, 'find-f64 ratio')
+
                 -> runner.is-true(false, 'find ratio ok')
             }
             hopt = doc.find-str('server.host')
             hopt: {
                 ok -> runner.str-eq(it, 'localhost', 9, 'find-str server.host')
+
                 -> runner.is-true(false, 'nested path ok')
             }
             spo = doc.find-i64('server.port')
             spo: {
                 ok -> runner.eq(it, 9090, 'find-i64 server.port')
+
                 -> runner.is-true(false, 'find server.port ok')
             }
             moo = doc.find-str('missing')
             moo: {
                 ok -> runner.is-true(false, 'missing => ok false')
+
                 -> _
             }
         }
@@ -91,6 +98,7 @@ t-seq = () {
                     e0opt = ls.at(0)
                     e0opt: {
                         ok -> eq-str(it.text(), 'a', 'list[0] text')
+
                         -> runner.is-true(false, 'at 0 ok')
                     }
                     e1opt = ls.at(1)
@@ -100,17 +108,21 @@ t-seq = () {
                             svopt = e1.str()
                             svopt: {
                                 ok -> runner.str-eq(it, 'b', 1, 'list[1] str')
+
                                 -> runner.is-true(false, 'e1 str ok')
                             }
                         }
+
                         -> runner.is-true(false, 'at 1 ok')
                     }
                     oobopt = ls.at(99)
                     oobopt: {
                         ok -> runner.is-true(false, 'list[99] out-of-range => false')
+
                         -> _
                     }
                 }
+
                 -> runner.is-true(false, 'get list ok')
             }
         }
@@ -136,36 +148,43 @@ nul: null')
             aopt = doc.find-i64('a')
             aopt: {
                 ok -> runner.eq(it, -5, 'negative int')
+
                 -> runner.is-true(false, 'find a ok')
             }
             bopt = doc.find-bool('b')
             bopt: {
                 ok -> runner.is-false(it, 'bool false')
+
                 -> runner.is-true(false, 'find b ok')
             }
             cvopt = doc.find-f64('c')
             cvopt: {
                 ok -> runner.f64-eq(it, 3.14, 0.0001, 'float')
+
                 -> runner.is-true(false, 'find c ok')
             }
             dsopt = doc.find-str('d')
             dsopt: {
                 ok -> runner.str-eq(it, 'off', 3, 'off stays string')
+
                 -> runner.is-true(false, 'find d ok')
             }
             hopt = doc.find-i64('h')
             hopt: {
                 ok -> runner.eq(it, 31, 'hex 0x1F == 31')
+
                 -> runner.is-true(false, 'find h ok')
             }
             uopt = doc.find-i64('u')
             uopt: {
                 ok -> runner.eq(it, 1000, 'underscore 1_000 == 1000')
+
                 -> runner.is-true(false, 'find u ok')
             }
             nopt = doc.get('nul')
             nopt: {
                 ok -> runner.is-true(it.is-null(), 'null is-null')
+
                 -> runner.is-true(false, 'get nul ok')
             }
         }
@@ -215,12 +234,15 @@ fm: {a: 1, b: two}')
                             ivopt = e2.i64()
                             ivopt: {
                                 ok -> runner.eq(it, 3, 'flow seq[2] i64')
+
                                 -> runner.is-true(false, 'e2 i64 ok')
                             }
                         }
+
                         -> runner.is-true(false, 'at 2 ok')
                     }
                 }
+
                 -> runner.is-true(false, 'get top ok')
             }
             fokopt = doc.get('fm')
@@ -232,14 +254,17 @@ fm: {a: 1, b: two}')
                     k0opt = fmk.key(0)
                     k0opt: {
                         ok -> runner.str-eq(it, 'a', 1, 'flow map key0')
+
                         -> runner.is-true(false, 'key 0 ok')
                     }
                     aopt = fmk.find-i64('a')
                     aopt: {
                         ok -> runner.eq(it, 1, 'flow map a==1')
+
                         -> runner.is-true(false, 'find a ok')
                     }
                 }
+
                 -> runner.is-true(false, 'get fm ok')
             }
         }
@@ -261,11 +286,13 @@ alias: *b')
             dqopt = doc.find-str('dq')
             dqopt: {
                 ok -> runner.eq(it.len-bytes(), 11, 'dq escape processed (len 11)')
+
                 -> runner.is-true(false, 'dq ok')
             }
             alop = doc.find-str('alias')
             alop: {
                 ok -> runner.str-eq(it, 'hello', 5, 'alias == anchor value')
+
                 -> runner.is-true(false, 'alias resolved')
             }
         }

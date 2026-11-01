@@ -15,14 +15,16 @@
 ; resolves its ready Promise before native calls.
 ; ============================================================================
 
-#{bind = wasm, wasm = './math-wasm.mjs'}
+#{bind=wasm, wasm='./math-wasm.mjs'}
 # /math
+
 ; WebAssembly export `square` (imported through the ESM wrapper): squares its argument
 ; x f64: value to square
 ; r f64: x * x
 
 #{c}
 square = (x f64) (r f64)
+
 ; WebAssembly export `answer`: returns the constant 42, no arguments
 ; r i32: always 42
 

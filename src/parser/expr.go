@@ -656,7 +656,35 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 	}
 
+	// Nolang 不允許顯式型別轉換（cast）：`expr T` 這種「後綴型別」寫法等同 C 式的按位
+	// 重解釋，屬不安全操作，語言明確禁止。合法的同寬/寬化轉換只能走宣告形式
+	// `let x T = expr`（編譯器做受檢轉換）。此處若發現一個完整值表達式後緊跟型別名，
+	// 即為非法的後綴 cast：報錯並吞掉該型別 token，避免它被誤解析成一條獨立陳述。
+	// 但「緊跟 = / ?=」的 `name T = expr` 是合法宣告（在 match-arm body 等語境會先經
+	// parseExpression 見到型別名），必須排除，否則會誤傷 `h2 str = ...` 這類宣告。
+	if leftExp != nil && isPostfixCastType(p.currentToken.Literal) &&
+		p.peekToken.Type != lexer.ASSIGN && p.peekToken.Type != lexer.QUESTION_ASSIGN {
+		p.saveErrorf("tlwmf1le",
+			"line %d, column %d: explicit type cast `expr %s` is not allowed in Nolang; use the declaration form `name %s = expr` for a safe widening/same-width conversion instead",
+			p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal, p.currentToken.Literal)
+		p.nextToken() // 吞掉型別 token，避免成為下一條陳述
+	}
+
 	return leftExp
+}
+
+// isPostfixCastType 判斷某個識別字是否為內建型別名（可作為後綴 cast 的目標）。
+// 與 isTypeName 不同：此處明確涵蓋 char/txt/usize 等其餘基本型別，確保任何形式的
+// `expr <type>` 後綴都被攔截為非法 cast。
+func isPostfixCastType(literal string) bool {
+	switch literal {
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
+		"f32", "f64",
+		"byte", "bool", "str", "txt", "char", "usize":
+		return true
+	}
+	return false
 }
 
 func (p *Parser) parseIdentifier() Expression {

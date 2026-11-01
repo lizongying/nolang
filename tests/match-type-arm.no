@@ -40,7 +40,7 @@ bool-str = (b bool) (r str) {
 ; (1)(2)(3)(4) 裸臂 + 綁定臂混用；bool 臂內巢狀第二條型別 match。
 ; 內層 match 的主體是 union 別名（num）型別的局部變數——靜態型別是 union，
 ; 走 buildTypeMatchDesugar 的主體型別派發路徑（與外層 mixed 同形）。
-gi64 i64 = 7
+gi64 = 7
 
 ; 巢狀型別 match：外層對 mixed 判 bool，內層再對 union 別名 num 判具體寬度
 ; a mixed: 外層要判型別的 union 值
@@ -72,11 +72,11 @@ nested = (a mixed) (r str) {
 }
 
 ; ---- 驅動：每個 concrete 成員各跑一次 ----
-ba bool = true
-b1 i64 = 7
+ba = true
+b1 = 7
 b2 i32 = 3
-b3 f64 = 2.5
-print(nested(ba))       ; -> bool+int64（外層 bool 臂 × 內層 i64 臂）
-print(nested(b1))       ; -> bare-i64（裸型別臂）
-print(nested(b2))       ; -> bare-i32
-print(nested(b3))       ; -> bare-f64
+b3 = 2.5
+print(nested(ba)); -> bool+int64（外層 bool 臂 × 內層 i64 臂）
+print(nested(b1)); -> bare-i64（裸型別臂）
+print(nested(b2)); -> bare-i32
+print(nested(b3)); -> bare-f64

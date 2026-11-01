@@ -27,6 +27,7 @@ print('i={i}')
 print('m={m}')
 
 total = 0
+
 ; 加入
 ; v i64: 要累加到全域 total 的整數（overflow 採 wrap）
 add = (v i64) {

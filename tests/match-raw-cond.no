@@ -16,8 +16,11 @@
 grade = (score ?i64) (r str) {
     r = score: {
         ok(it >= 90) -> 'A'
+
         ok(it >= 80 && it < 90) -> 'B'
+
         ok(it >= 60 && it < 80) -> 'C'
+
         -> 'F'
     }
 }
@@ -30,10 +33,12 @@ classify = (v ?i64) (r str) {
         ok(it < 0) -> {
             w = v: {
                 ok(it < -100) -> 'very-negative'
+
                 -> 'negative'
             }
             w
         }
+
         -> 'non-negative'
     }
 }
@@ -46,6 +51,7 @@ double = (n i64) (r ?i64) {
     r = nil
     n > 0 -> r = n * 2
 }
+
 ; 兩個選項相加：用 ?= 依序解箱，任一側不是 ok 就提前上拋
 ; a ?i64: 第一個選項
 ; b ?i64: 第二個選項
@@ -55,6 +61,7 @@ sum-two = (a ?i64, b ?i64) (r ?i64) {
     y ?= b
     r = x + y
 }
+
 ; ?= 只能在有 option 結果參數的函式內使用，故傳播驅動也包一層。
 ; 注意 a / b 用普通 = 綁定（保留 ?i64 option 型別）；?= 是解箱語義。
 ; double 的實參走普通變數：option 函式的裸算術實數會被 f10x20nf 規則
@@ -62,8 +69,8 @@ sum-two = (a ?i64, b ?i64) (r ?i64) {
 ; 驅動 ?= 傳播：用兩個普通變數綁定 option 結果，再交給 sum-two 解箱
 ; r ?i64: 21 → 42（ok），但 -1 → nil，故 sum-two 上拋 nil（整體為 nil）
 drive = () (r ?i64) {
-    n1 i64 = 21
-    n2 i64 = -1
+    n1 = 21
+    n2 = -1
     a = double(n1)
     b = double(n2)
     r = sum-two(a, b)
@@ -76,26 +83,26 @@ s85 ?i64 = 85
 s65 ?i64 = 65
 s10 ?i64 = 10
 io.out('grade nil -> ')
-print(grade(snil))           ; -> F（nil 落入預設臂）
+print(grade(snil)); -> F（nil 落入預設臂）
 io.out('grade 95 -> ')
-print(grade(s95))            ; -> A
+print(grade(s95)); -> A
 io.out('grade 85 -> ')
-print(grade(s85))            ; -> B
+print(grade(s85)); -> B
 io.out('grade 65 -> ')
-print(grade(s65))            ; -> C
+print(grade(s65)); -> C
 io.out('grade 10 -> ')
-print(grade(s10))            ; -> F
+print(grade(s10)); -> F
 
 ; ---- classify ----
 c-neg ?i64 = -5
 c-vneg ?i64 = -500
 c-pos ?i64 = 7
 io.out('classify -5 -> ')
-print(classify(c-neg))       ; -> negative
+print(classify(c-neg)); -> negative
 io.out('classify -500 -> ')
-print(classify(c-vneg))      ; -> very-negative
+print(classify(c-vneg)); -> very-negative
 io.out('classify 7 -> ')
-print(classify(c-pos))       ; -> non-negative
+print(classify(c-pos)); -> non-negative
 
 ; ---- ?= 傳播：double(-1) 回傳 nil，x ?= a 向上傳播，sum-two 落到 nil ----
 ; 注：臂內插值用裸 {it} 而非 {it.to-str()}——後者撞上既有 MIR 缺陷

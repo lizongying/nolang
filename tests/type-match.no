@@ -7,58 +7,66 @@ num = i32 | i64 | f64
 ; hi num: i64 臂要回傳的上界值
 ; r num: 依 x 的具體型別選出的 lo / hi / x
 clamp0 = (x num, lo num, hi num) (r num) {
-  r = x: {
-    i32 -> lo
-    i64 -> hi
-    -> x
-  }
+    r = x: {
+        i32 -> lo
+
+        i64 -> hi
+
+        -> x
+    }
 }
 
 ; 帶綁定型別臂 + 預設臂
 ; x num: 被匹配的 union 值；i64 / i32 / f64 臂各自具名綁定 v 取載荷，其餘落 catch-all
 classify = (x num) {
-  y = x: {
-    v i64 -> v.to-str()
-    v i32 -> v.to-str()
-    v f64 -> v.to-str()
-    -> 'other'
-  }
-  print(y)
+    y = x: {
+        v i64 -> v.to-str()
+
+        v i32 -> v.to-str()
+
+        v f64 -> v.to-str()
+
+        -> 'other'
+    }
+    print(y)
 }
 
 ; 各臂回傳不同值，驗證確實選對臂
 ; x num: 被匹配的 union 值；i64 臂 +1、i32 臂 +2、f64 臂 +3.0，其餘回 0
 add1 = (x num) {
-  r = x: {
-    w i64 -> w + 1
-    w i32 -> w + 2
-    w f64 -> w + 3.0
-    -> 0
-  }
-  print(r)
+    r = x: {
+        w i64 -> w + 1
+
+        w i32 -> w + 2
+
+        w f64 -> w + 3.0
+
+        -> 0
+    }
+    print(r)
 }
 
 ; ---- clamp0 ----
-ai64 i64 = 5
-hi64 i64 = 10
-a = clamp0(ai64, 0, hi64)         ; -> i64 臂 -> hi = 10
+ai64 = 5
+hi64 = 10
+a = clamp0(ai64, 0, hi64); -> i64 臂 -> hi = 10
 print(a)
 bi32 i32 = 3
 hi32 i32 = 9
-b = clamp0(bi32, bi32, 0)         ; -> i32 臂 -> lo = 3
+b = clamp0(bi32, bi32, 0); -> i32 臂 -> lo = 3
 print(b)
-bf64 f64 = 2.5
-hf64 f64 = 9.0
-c = clamp0(bf64, bf64, hf64)      ; -> 無 f64 臂 -> 預設臂 -> r = x = 2.5
+bf64 = 2.5
+hf64 = 9.0
+c = clamp0(bf64, bf64, hf64); -> 無 f64 臂 -> 預設臂 -> r = x = 2.5
 print(c)
 
 ; ---- classify ----
-bi64 i64 = 7
-classify(bi64)                 ; -> "7"
-classify(bi32)                 ; -> "7"
-classify(bf64)                 ; -> "7.5"
+bi64 = 7
+classify(bi64); -> "7"
+classify(bi32); -> "7"
+classify(bf64); -> "7.5"
 
 ; ---- add1 ----
-add1(bi64)                    ; -> 11
-add1(bi32)                    ; -> 12
-add1(bf64)                    ; -> 13
+add1(bi64); -> 11
+add1(bi32); -> 12
+add1(bf64); -> 13

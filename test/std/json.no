@@ -132,6 +132,7 @@ t-get-str = () {
                     found = true
                     val = it
                 }
+
                 -> found = false
             }
         }
@@ -157,6 +158,7 @@ t-get-num = () {
                     found = true
                     val = it
                 }
+
                 -> found = false
             }
         }
@@ -183,6 +185,7 @@ t-get-i64 = () {
                     found = true
                     val = it
                 }
+
                 -> found = false
             }
         }
@@ -208,6 +211,7 @@ t-get-bool = () {
                     found = true
                     val = it
                 }
+
                 -> found = false
             }
         }
@@ -254,6 +258,7 @@ t-arr-get = () {
                             ok2 = true
                             val2 = it
                         }
+
                         -> ok2 = false
                     }
                 }

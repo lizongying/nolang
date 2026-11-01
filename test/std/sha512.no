@@ -12,6 +12,7 @@ TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
 
 ; 112 個 'a' -> 超過 128 位元組區塊的 padding 閾值，強制兩個 1024-bit 區塊
 A112 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+
 ; 摘要長度：SHA-512 固定 64 位元組（512 位元）
 t-len = () {
     h = sha512.sha512(ABC.to-bytes())

@@ -5,22 +5,16 @@ reader {
 }
 reader.fill = () (ok bool) {
 
-    #{overflow=wrap}
     .pos = .avail
 
-    #{index-out=zero}
     .pos = 1
 
-    #{index-out=zero, overflow=wrap}
     .pos = 2
 
-    #{index-out=zero, overflow=wrap}
     .pos = 3
 
-    #{index-out=zero}
     .pos = 4
     ok = true
 
-    #{overflow=wrap}
     avail = .pos
 }

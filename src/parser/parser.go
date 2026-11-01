@@ -1319,6 +1319,22 @@ func (p *Parser) restoreState(state parserState) {
 	p.sem.FuncDeclaredVars = state.semFuncDeclaredVars
 }
 
+// discardDiagnosticsRecordsSince 丟棄自 snapshot（len(p.diags) 的舊值）之後記錄的
+// 全部診斷。用於「試探性解析失敗、且呼叫端保證會用另一條路徑重新解析同一段原始碼」
+// 的場合：那條路徑會自己重新報錯，試探階段產生的訊息純屬噪音，最壞情況下還是
+// **誤報**（例：`{ keys []i64 }` 被試探性地當成裸 match 的臂條件求值，`keys []`
+// 成了 IndexExpression、殘留的 `i64` 便撞上後綴 cast 診斷 tlwmf1le）。
+//
+// 刻意不把這段邏輯放進 restoreState：有呼叫端（如 dot-field 型別宣告的拒絕分支）
+// 是「先報錯、再 restoreState 回到行首重建」，若 restoreState 無條件截斷，
+// 那條**本來要留下**的診斷會被靜默吞掉。因此回滾必須由呼叫端明確決定
+// （同樣的做法見 type.go isFunctionTypeAlias）。
+func (p *Parser) discardDiagnosticsRecordsSince(snapshot int) {
+	if snapshot >= 0 && snapshot < len(p.diags) {
+		p.diags = p.diags[:snapshot]
+	}
+}
+
 func (p *Parser) nextToken() {
 	p.prevToken = p.currentToken
 	if p.peek < 0 {
@@ -1539,6 +1555,13 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 		if os.Getenv("NOLANG_FMTDBG") != "" && doc != nil {
 			fmt.Fprintf(os.Stderr, "[DBG setDoc] AnnotationStatement got doc=%q\n", doc.List[0].Text)
 		}
+	case *ExternStatement:
+		// FFI 宣告（`#{c}` 前綴）由 parseAnnotationFFIDeclaration 直接產出
+		// ExternStatement，主解析迴圈已透過 collectDocComments 把 `#{...}`
+		// 上方的註釋群組收進 doc 並呼叫 setDoc；此前 setDoc 不認得
+		// ExternStatement，導致這些 Doc 註釋在 `no fmt` 下整組遺失
+		// （見 example/sqlite-driver）。現補上，使其與其它宣告同樣保留 Doc。
+		s.Doc = doc
 	}
 }
 

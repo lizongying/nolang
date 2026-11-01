@@ -83,6 +83,7 @@ t-tamper = () {
     sealed = aes-gcm.seal-128(key, iv, ''.to-bytes(), pt)
     sealed[0]: {
         ok -> it = it ^ 1
+
         -> _
     }
     back = aes-gcm.open-128(key, iv, ''.to-bytes(), sealed)

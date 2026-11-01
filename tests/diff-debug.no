@@ -13,6 +13,7 @@ diff-op {
 ; content str: 要切分的多行文字（以 '\n' 分隔）
 ; lines []str: 每行一個元素的 vec；末尾行不足換行時也會被 push，空輸入得空 vec
 diff-split-lines = (content str) (lines []str) {
+
     ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
     src = content

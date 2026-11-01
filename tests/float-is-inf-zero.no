@@ -11,8 +11,8 @@ test-is-inf-zero = () {
     z.is-inf() -> print('FAIL +0 reported inf')
     nz.is-inf() -> print('FAIL -0 reported inf')
     nan.is-inf() -> print('FAIL nan reported inf')
-    !h.is-inf() -> print('FAIL +inf not detected')
-    !hn.is-inf() -> print('FAIL -inf not detected')
+    ! h.is-inf() -> print('FAIL +inf not detected')
+    ! hn.is-inf() -> print('FAIL -inf not detected')
     print('DONE')
 }
 

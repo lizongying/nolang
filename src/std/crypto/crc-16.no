@@ -36,21 +36,25 @@ hex = (data []byte) (hex str) {
 
     hex[0]: {
         ok -> it = hex-chars[(crc >> 12) & 15]
+
         -> _
     }
 
     hex[1]: {
         ok -> it = hex-chars[(crc >> 8) & 15]
+
         -> _
     }
 
     hex[2]: {
         ok -> it = hex-chars[(crc >> 4) & 15]
+
         -> _
     }
 
     hex[3]: {
         ok -> it = hex-chars[crc & 15]
+
         -> _
     }
 }

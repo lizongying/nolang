@@ -1,9 +1,11 @@
 read-pair = (key str) (val i64, ok bool) {
     val = 0
 }
+
 make = () (out ?i64) {
     out = 0
 }
+
 sum-all = (a i64, b i64, c []i64) (total i64) {
     total = a
 }

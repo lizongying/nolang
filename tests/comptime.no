@@ -34,20 +34,28 @@ propagate = () (r i64) {
 
 ; pure-fn call folded
 print('add(2,3)=' + add(2, 3).to-str())
+
 ; expression folded
 print('(2+3)*4-1=' + ((2 + 3) * 4 - 1).to-str())
+
 ; const let propagation
 print('propagate()=' + propagate().to-str())
+
 ; ternary folded
 print('1<2?100:200=' + (1 < 2 ? 100 : 200).to-str())
+
 ; nested pure call folded
 print('compose(2,3)=' + compose(2, 3).to-str())
+
 ; float folded
 print('1.5+2.5=' + (1.5 + 2.5).to-str())
+
 ; string concat folded
 print('concat=' + ('a=' - 'b'))
+
 ; bitwise / shift folded
 print('(3&5)|(1<<3)=' + ((3 & 5) | (1 << 3)).to-str())
+
 ; logical short-circuit folded
 print('true&&false=' + (true && false).to-str())
 
@@ -65,7 +73,10 @@ point.dist = () (r i64) {
     r = .x * .x + .y * .y
 }
 
-p = point { x: 3, y: 4 }
+p = point {
+    x: 3
+    y: 4
+}
 print('point.dist=' + p.dist().to-str())
 
 print('done')

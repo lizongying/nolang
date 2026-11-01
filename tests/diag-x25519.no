@@ -15,6 +15,7 @@
 ; hex-str str: 長度至少 64 的 ASCII hex 字串
 ; out [32]byte: 第 i 個位元組 = hex-str[2i] 與 hex-str[2i+1] 合起來的高/低位
 hex-to-bytes = (hex-str str) (out [32]byte) {
+
     ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
     hex-src = hex-str

@@ -439,8 +439,8 @@ multipart-create = () (w ?multipart-writer) {
 }
 
 ; 使用指定邊界建立編碼器
-; boundary str: 邊界字串
-; 返回 w multipart-writer
+; boundary str: 邊界字串（不含前導 --，寫入時自動加上）
+; w multipart-writer: 已設入該邊界、可直接寫入各段的編碼器
 ; [multipart-create-boundary](#multipart.multipart-create-boundary)
 multipart-create-boundary = (boundary str) (w multipart-writer) {
     w.init-boundary(boundary)
@@ -556,6 +556,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     i <- [0..12): {
         combined[i]: {
             ok -> it = iv[i]
+
             -> _
         }
     }
@@ -565,6 +566,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
         #{index-out=zero, overflow=wrap}
         combined[12 + i]: {
             ok -> it = sealed[i]
+
             -> _
         }
     }
@@ -606,6 +608,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     i <- [0..12): {
         combined[i]: {
             ok -> it = iv[i]
+
             -> _
         }
     }
@@ -615,6 +618,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
         #{index-out=zero, overflow=wrap}
         combined[12 + i]: {
             ok -> it = sealed[i]
+
             -> _
         }
     }
@@ -662,6 +666,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
         #{index-out=zero}
         iv[i]: {
             ok -> it = raw[i]
+
             -> _
         }
     }
@@ -676,6 +681,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
         #{index-out=zero, overflow=wrap}
         sealed[i]: {
             ok -> it = raw[12 + i]
+
             -> _
         }
     }

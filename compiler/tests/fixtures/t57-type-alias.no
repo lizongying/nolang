@@ -18,7 +18,6 @@ x = (or-value)
 
 runner = (v uni) (acc str) {
 
-    #{overflow=wrap}
     bv = 3
     t0 = bv | (1 << 2)
     acc = 'u'

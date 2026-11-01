@@ -14,7 +14,7 @@
 ; b u64: 解析結果 f64 的 64 位元 IEEE-754 位模式（供與金標常數逐位元比對）
 fbits = (s str) (b u64) {
     v = s.to-f64()
-    f f64 = v: {
+    f = v: {
         ok -> it
 
         -> 0.0
@@ -29,17 +29,17 @@ failed = 0
 
 ; 基本形式：整數 / 小數 / 正負號 / 指數 / 前後空白 / 極小數，比對 IEEE-754 位元模式
 t-basic = () {
-    runner.is-true(fbits('0.1') == 0x3FB999999999999A, 'basic 0.1')
+    runner.is-true(fbits('0.1') == 0x3fb999999999999a, 'basic 0.1')
     runner.is-true(fbits('42') == 0x4045000000000000, 'basic 42')
-    runner.is-true(fbits('-3.5') == 0xC00C000000000000, 'basic -3.5')
-    runner.is-true(fbits('1e10') == 0x4202A05F20000000, 'basic 1e10')
-    runner.is-true(fbits('.5') == 0x3FE0000000000000, 'basic .5')
+    runner.is-true(fbits('-3.5') == 0xc00c000000000000, 'basic -3.5')
+    runner.is-true(fbits('1e10') == 0x4202a05f20000000, 'basic 1e10')
+    runner.is-true(fbits('.5') == 0x3fe0000000000000, 'basic .5')
     runner.is-true(fbits('+2') == 0x4000000000000000, 'basic +2')
-    runner.is-true(fbits('  7.25  ') == 0x401D000000000000, 'basic whitespace')
-    runner.is-true(fbits('0.000123456789') == 0x3F202E85BE111841, 'basic small frac')
-    runner.is-true(fbits('12345.6789') == 0x40C81CD6E631F8A1, 'basic mixed')
-    runner.is-true(fbits('-9.1e-17') == 0xBC9A3A9D6656F838, 'basic neg exp')
-    runner.is-true(fbits('3e-08') == 0x3E601B2B29A4692B, 'basic exp lead zero')
+    runner.is-true(fbits('  7.25  ') == 0x401d000000000000, 'basic whitespace')
+    runner.is-true(fbits('0.000123456789') == 0x3f202e85be111841, 'basic small frac')
+    runner.is-true(fbits('12345.6789') == 0x40c81cd6e631f8a1, 'basic mixed')
+    runner.is-true(fbits('-9.1e-17') == 0xbc9a3a9d6656f838, 'basic neg exp')
+    runner.is-true(fbits('3e-08') == 0x3e601b2b29a4692b, 'basic exp lead zero')
 }
 
 ; ── 17 位精度（舊 f64 累積實作會差 1 ULP 的案例）──
@@ -48,13 +48,13 @@ t-basic = () {
 t-precision = () {
     runner.is-true(fbits('9007199254740993') == 0x4340000000000000, '2^53+1 ties-even')
     runner.is-true(fbits('4503599627370497') == 0x4330000000000001, '2^52+1')
-    runner.is-true(fbits('1e23') == 0x44B52D02C7E14AF6, '1e23 classic naive bug')
-    runner.is-true(fbits('99999999999999999999') == 0x4415AF1D78B58C40, '20 digits')
-    runner.is-true(fbits('0.1000000000000000055511151231257827') == 0x3FB999999999999A, '0.1 exact repr')
-    runner.is-true(fbits('1.0000000000000002') == 0x3FF0000000000001, '1+2^-52')
-    runner.is-true(fbits('2.2250738585072011e-308') == 0x000FFFFFFFFFFFFF, 'near min normal')
-    runner.is-true(fbits('12345678901234567890123') == 0x4484EA15B273B38A, '23 digits')
-    runner.is-true(fbits('2.2204460492503131e-16') == 0x3CB0000000000000, 'eps/2-ish')
+    runner.is-true(fbits('1e23') == 0x44b52d02c7e14af6, '1e23 classic naive bug')
+    runner.is-true(fbits('99999999999999999999') == 0x4415af1d78b58c40, '20 digits')
+    runner.is-true(fbits('0.1000000000000000055511151231257827') == 0x3fb999999999999a, '0.1 exact repr')
+    runner.is-true(fbits('1.0000000000000002') == 0x3ff0000000000001, '1+2^-52')
+    runner.is-true(fbits('2.2250738585072011e-308') == 0x000fffffffffffff, 'near min normal')
+    runner.is-true(fbits('12345678901234567890123') == 0x4484ea15b273b38a, '23 digits')
+    runner.is-true(fbits('2.2204460492503131e-16') == 0x3cb0000000000000, 'eps/2-ish')
 }
 
 ; ── 次正規 ────────────────────────────────────
@@ -65,18 +65,18 @@ t-subnormal = () {
     runner.is-true(fbits('4.9406564584124654e-324') == 0x0000000000000001, 'exact min subnormal')
     runner.is-true(fbits('2.5e-324') == 0x0000000000000001, 'subnormal rounds up')
     runner.is-true(fbits('1e-324') == 0x0000000000000000, 'underflow to zero')
-    runner.is-true(fbits('1e-320') == 0x00000000000007E8, 'subnormal 1e-320')
+    runner.is-true(fbits('1e-320') == 0x00000000000007e8, 'subnormal 1e-320')
 }
 
 ; ── 上下溢 / INF ──────────────────────────────
 
 ; 上溢 / 飽和：超過 DBL-MAX 得 ±inf，最大有限值仍可精確解析
 t-inf = () {
-    runner.is-true(fbits('1e309') == 0x7FF0000000000000, 'overflow +inf')
-    runner.is-true(fbits('-1e309') == 0xFFF0000000000000, 'overflow -inf')
-    runner.is-true(fbits('1.7976931348623157e308') == 0x7FEFFFFFFFFFFFFF, 'max finite')
-    runner.is-true(fbits('1.7976931348623159e308') == 0x7FF0000000000000, 'round up past max')
-    runner.is-true(fbits('1e308') == 0x7FE1CCF385EBC8A0, 'finite near max')
+    runner.is-true(fbits('1e309') == 0x7ff0000000000000, 'overflow +inf')
+    runner.is-true(fbits('-1e309') == 0xfff0000000000000, 'overflow -inf')
+    runner.is-true(fbits('1.7976931348623157e308') == 0x7fefffffffffffff, 'max finite')
+    runner.is-true(fbits('1.7976931348623159e308') == 0x7ff0000000000000, 'round up past max')
+    runner.is-true(fbits('1e308') == 0x7fe1ccf385ebc8a0, 'finite near max')
 }
 
 ; ── 零符號（位元模式直接驗證 -0.0）───────────
@@ -100,7 +100,7 @@ t-roundtrip = () {
     w = 9007199254740993.0
     runner.is-true(fbits(w.to-str()) == w.to-bits(), 'roundtrip 2^53+1 value')
     uv = '5e-324'.to-f64()
-    u f64 = uv: {
+    u = uv: {
         ok -> it
 
         -> 0.0
@@ -120,7 +120,7 @@ t-option = () {
     runner.is-true(e == nil, 'empty -> nil')
     bad = 'abc'.to-f64()
     runner.is-true(bad == err, 'invalid -> err')
-    runner.is-true(fbits('1.0') == 0x3FF0000000000000, 'valid -> ok')
+    runner.is-true(fbits('1.0') == 0x3ff0000000000000, 'valid -> ok')
 }
 
 ; ── 執行 ──────────────────────────────────────

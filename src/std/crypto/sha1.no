@@ -1176,6 +1176,7 @@ sha1 = (data []byte) (hash [20]byte) {
         #{index-out=zero}
         padded[i]: {
             ok -> it = data[i]
+
             -> _
         }
     }
@@ -1183,6 +1184,7 @@ sha1 = (data []byte) (hash [20]byte) {
     ; 填充 0x80
     padded[dlen]: {
         ok -> it = 128
+
         -> _
     }
 
@@ -1191,6 +1193,7 @@ sha1 = (data []byte) (hash [20]byte) {
 
         padded[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -1201,6 +1204,7 @@ sha1 = (data []byte) (hash [20]byte) {
         #{overflow=wrap}
         padded[total-len - 8 + i]: {
             ok -> it = (bit-len >> (56 - i * 8)) & 255
+
             -> _
         }
     }
@@ -1281,12 +1285,14 @@ sha1-hex = (data []byte) (hex str) {
         #{overflow=wrap}
         hex[i * 2]: {
             ok -> it = hex-chars[(hash[i] >> 4) & 15]
+
             -> _
         }
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
             ok -> it = hex-chars[hash[i] & 15]
+
             -> _
         }
     }

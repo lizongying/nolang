@@ -134,6 +134,7 @@ lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
 
         probs[m]: {
             ok -> it = tmp
+
             -> _
         }
         m = (m << 1) | bit
@@ -158,6 +159,7 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
 
         probs[m]: {
             ok -> it = tmp
+
             -> _
         }
         m = (m << 1) | bit
@@ -383,6 +385,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
 
     probs[0]: {
         ok -> it = tmp
+
         -> _
     }
     bit == 0 -> {
@@ -398,6 +401,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
 
     probs[1]: {
         ok -> it = tmp
+
         -> _
     }
 
@@ -737,6 +741,7 @@ XZ-MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]
 ;   - Stream Footer: 12 bytes
 ; [xz-decompress](#xz.xz-decompress)
 xz-decompress = (data []byte) (out []byte) {
+
     ; 先給空結果；Block 解壓時由 lzma2-decompress-stream 的結果覆寫
     out = []
 
@@ -1027,6 +1032,7 @@ xz-compress = (data []byte) (out []byte) {
         ; LZMA2 未壓縮區塊（ctrl=0x01，字典重置）
         ; 規格：2-byte 大小欄位 = 實際大小 - 1（大端序），後跟 4-byte 字典 ID
         out.push(0x01)
+
         #{overflow=wrap}
         n = data.len() - 1
         hi = (n >> 8) & 0xff

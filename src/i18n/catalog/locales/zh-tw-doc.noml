@@ -989,25 +989,24 @@ port: 目標伺服器埠號
   'client.client.connect': `
 連接到指定主機與埠號
 記錄 host/port 供後續 reconnect 使用
-返回 ok=true=成功
-host: 目標伺服器位址
-port: 目標伺服器埠號
+host str: 目標伺服器位址
+port i64: 目標伺服器埠號
+ok bool: true=已建立 TCP 連接，false=撥號失敗
 `
   'client.client.is-connected': `
 檢查連接狀態
-返回 yes=true=已連接
+yes bool: true=當前處於已連接狀態
 `
   'client.client.reconnect': `
 使用已記錄的 host/port 重新連接
 先關閉舊連接（避免 fd 洩漏），再重新 dial
-返回 ok=true=成功
-ok: 以先前記錄的 host/port 重新撥號成功時為 true
+ok bool: 以先前記錄的 host/port 重新撥號成功時為 true（未記錄過則直接回傳 false）
 `
   'client.client.recv': `
 接收資料到緩衝區
-buf: 接收緩衝區（str）
-n: 最多接收的位元組數
-返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
+buf str: 接收緩衝區（str）
+n i64: 最多接收的位元組數
+read-n i64: 實際接收位元組數（-1=未連接或錯誤, 0=連接關閉）
 `
   'client.client.recv-line': `
 接收一行資料（最多 NET-BUF-SIZE 位元組）
@@ -1021,13 +1020,13 @@ data: 要發送的請求內容
 `
   'client.client.send': `
 發送字串資料
-返回 written=實際發送位元組數（-1=錯誤）
-data: 要發送的位元組內容字串
+data str: 要發送的位元組內容字串
+written i64: 實際發送位元組數（-1=未連接或底層錯誤）
 `
   'client.client.send-line': `
 發送一行（附加換行符 \n）
-返回 written=實際發送位元組數（-1=錯誤）
-line: 要發送的行文字（自動附加換行符）
+line str: 要發送的行文字（自動附加換行符）
+written i64: 實際發送位元組數（含換行符；-1=未連接或錯誤）
 `
   'cookie.build-header': `
 建構 Cookie 請求標頭
@@ -1537,13 +1536,13 @@ priv [32]byte: 私鑰（大端序）
   'ecdsa.ecdsa-sign': `
 ECDSA 簽名
 priv [32]byte: 私鑰（大端序）
-msg []byte: 訊息
+msg []byte: 待簽名原文（內部先做 SHA-256 再簽，非預哈希輸入）
 返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
 `
   'ecdsa.ecdsa-verify': `
 ECDSA 驗簽
 pub [65]byte: 公鑰
-msg []byte: 訊息
+msg []byte: 待驗簽原文（內部先做 SHA-256，需與簽名時一致）
 sig [64]byte: 簽名（r || s）
 返回 ok i64: 1=有效, 0=無效
 `
@@ -1709,8 +1708,7 @@ ec: 要比對的錯誤碼
 `
   'err.msg': `
 取得錯誤訊息
-回傳 msg: 錯誤訊息
-
+回傳 msg str: 錯誤物件攜帶的訊息文字；非錯誤值時為空串
 `
   'err.new': `
 建立錯誤
@@ -2305,29 +2303,38 @@ msg: 待認證的訊息位元組
 `
   'hpack.decode-int': `
 從 data 的 pos 位置解碼變長整數
-prefix-bits: 前綴位數
-返回 val=解碼值, next-pos=下一個未讀位置（-1=錯誤）
+data str: HPACK 編碼資料
+pos i64: 首位元組所在位元組偏移
+prefix-bits i64: 前綴位數（與編碼端一致）
+val i64: 解碼出的整數值（錯誤時不保證）
+next-pos i64: 下一個未讀位元組偏移（-1=越界或 continuation 鏈過長）
 `
   'hpack.decode-str': `
 從 data 的 pos 位置解碼字串
-返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
+data str: HPACK 編碼資料
+pos i64: 長度前綴首位元組所在偏移
+out str: 解碼出的字串原文（Huffman 編碼不支援）
+next-pos i64: 下一個未讀位元組偏移（-1=錯誤或資料不足）
 `
   'hpack.encode-int': `
 編碼變長整數到 out
-val: 要編碼的值
-prefix-bits: 前綴位數（1-8）
-prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
-返回 out=編碼後的字串
+val i64: 要編碼的非負整數
+prefix-bits i64: 首位元組可用前綴位數（1-8）；小於 2^prefix-bits-1 時單位元組即可完成
+prefix-byte i64: 已填好高位的前綴位元組（高 8-prefix-bits 位已設置，低 bits 留給前綴值）
+out str: 編碼結果（首位元組 + 若干 continuation 位元組，每位元組低 7 位承載數值、最高位為延續標誌）
 `
   'hpack.encode-str': `
 編碼字串（literal，H=0）
-返回 out=編碼後字串
-s: 待編碼的字串（長度 varint 前綴 + UTF-8 位元組）
+s str: 待編碼的字串（長度 varint 前綴 + UTF-8 位元組）
+out str: 編碼結果位元組串（7-bit prefix 長度編碼拼接原文，不支援 Huffman）
 `
   'hpack.tables.decode-headers': `
 解碼標頭塊
-data: 二進位資料
-返回 names/values 陣列, count=標頭數, ok=true=成功
+data str: HPACK 編碼的標頭塊二進位資料
+names [128]str: 解碼出的標頭字段名，與 values 同下標對應（未用槽位為空串）
+values [128]str: 解碼出的標頭字段值
+count i64: 實際解碼出的標頭數（超過 128 條時截斷）
+ok bool: true=整塊解碼成功，false=中途遇錯或輸出槽位用完
 `
   'hpack.tables.dyn-add': `
 新增標頭到動態表（FIFO，新項在索引 0）
@@ -2338,9 +2345,9 @@ value: 該標頭字段的值
 編碼單個標頭
 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
 否則→literal with indexing（新 name）
-返回 out=編碼字串
-name: 待編碼的標頭字段名（按查表結果選取索引或字面量形式）
-value: 待編碼的標頭字段值
+name str: 待編碼的標頭字段名（按查表結果選取索引或字面量形式）
+value str: 待編碼的標頭字段值
+out str: 編碼後的標頭位元組串，編碼結果同時加入動態表
 `
   'hpack.tables.find': `
 完全匹配（name+value），返回全局索引（靜態 1-61，動態 62+）
@@ -2385,9 +2392,9 @@ req: 已初始化的 request（含自訂標頭）
   'http.download': `
 串流下載（支援任意大小，直接寫入檔案）
 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
-url str — 完整 URL
-dest str — 目的地檔案路徑
-返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+url str: 完整 URL（http:// 走明文、https:// 走原生 TLS，其他 scheme 直接失敗）
+dest str: 目的地檔案路徑；成功時寫入回應內文，失敗時若已存在會被刪除
+ok bool: true=取得回應且 HTTP 狀態碼為 2xx，內文已寫入 dest
 `
   'http.get': `
 執行 HTTP GET 請求
@@ -2465,7 +2472,9 @@ body: 請求主體
   'http.request.add-header': `
 新增自訂標頭
 將 name 與 value 組裝成 'Name: Value' 存入 headers 陣列
-返回 ok=true=成功, false=標頭數已滿
+name str: 標頭字段名
+value str: 標頭字段值
+ok bool: true=已追加到 headers 並推進 header-count，false=標頭數已達 HTTP-MAX-REQ-HEADERS 上限
 `
   'http.request.init': `
 初始化請求
@@ -2487,28 +2496,28 @@ name: 標頭名（如 'Content-Type'）
 req request: 請求結構體
 header-name str: 標頭名稱（如 'X-API-Key'）
 api-key str: API 金鑰
-返回 ok=true=成功
+ok bool: true=已加入標頭，false=請求標頭槽位已滿
 `
   'http.set-basic-auth': `
 為請求加入 HTTP Basic 認證標頭
 req request: 請求結構體
 user str: 用戶名
 password str: 密碼
-返回 ok=true=成功
+ok bool: true=已加入標頭，false=請求標頭槽位已滿
 `
   'http.set-bearer-auth': `
 為請求加入 Bearer Token 認證標頭
 req request: 請求結構體
 token str: Bearer token
-返回 ok=true=成功
+ok bool: true=已加入標頭，false=請求標頭槽位已滿
 `
   'http.upload-put': `
 串流上傳檔案（PUT，原始二進位 body）
 使用原生 TLS/net，不依賴任何外部元件（curl 等）。
-url str — 完整 URL
-token str — Bearer token（可空）
-file-path str — 要上傳的檔案
-返回 ok bool — true=成功（且 HTTP 狀態碼為 2xx）
+url str: 完整 URL（http:// 或 https://）
+token str: Bearer token，非空時附加 Authorization: Bearer 標頭
+file-path str: 要上傳的檔案路徑（先整讀為內容再發送）
+ok bool: true=上傳完成且 HTTP 狀態碼為 2xx；檔案讀不到或狀態非 2xx 為 false
 `
   'http2.conn.close': '關閉連線（自動處理 TLS/明文）'
   'http2.conn.init': '初始化連線狀態'
@@ -2545,9 +2554,12 @@ ok: true=已寫入 socket, false=寫入錯誤
 `
   'http2.conn.send-headers': `
 發送 HEADERS 影格
-names/values: 標頭陣列, count: 標頭數, end-stream=是否結束串流
-stream-id: 本 HEADERS 影格所屬的串流識別號
-ok: true=HPACK 編碼並發送成功
+stream-id i64: 本 HEADERS 影格所屬的串流識別號
+names [64]str: 標頭字段名陣列，與 values 同下標配對
+values [64]str: 標頭字段值陣列
+count i64: 有效標頭條目數（只編碼前 count 對）
+end-stream bool: true=附加 END_STREAM 旗標，表示本串流不再發送資料
+ok bool: true=HPACK 編碼並發送成功
 `
   'http2.conn.send-settings': `
 發送空 SETTINGS 影格
@@ -2819,9 +2831,9 @@ v: 32 位無號整數值（按大端序拆為四段：a=v>>24、b=v>>16、c=v>>8
 `
   'ip.ip-addr.in-subnet': `
 檢查是否在指定子網內
-base: 子網基地址
-prefix-len: 前綴長度（0~32）
-返回 yes=true=在子網內
+base ip-addr: 子網基地址
+prefix-len i64: 前綴長度（0~32；<=0 視為全域，>=32 退化為完全相等比較）
+yes bool: true=本地址與 base 在前 prefix-len 位網絡遮罩下同屬一個子網
 `
   'ip.ip-addr.is-broadcast': `
 是否為廣播地址（255.255.255.255）
@@ -2867,13 +2879,15 @@ yes bool: true 表示四個分段全為 0（可綁定到所有網卡）
   'ip.ip-addr.parse': `
 從字串解析 IPv4 地址
 格式：A.B.C.D，每段 0~255
-返回 ok=true=成功
+s str: 點分十進位字串（四段以 '.' 分隔，每段 0~255）
+ok bool: true=解析成功且四段已寫入 a/b/c/d，false=格式非法（此時欄位已清零）
 `
   'ip.ip-addr.to-str': `
 轉為字串表示（如 '192.168.1.1'）
 直接拼接四個十進位片段。舊實作靠 `out[n]: { ok -> it = 46 }` 在 len 處追加字元，
 但索引寫入是**邊界檢查寫**：n == len-bytes() 時 safe-index 判越界（nil），
 點號從未寫入，結果只剩第一個 octet（`192.168.1.1` → `192`）。
+out str: 四段十進位以 '.' 串接的地址字串（如 '192.168.1.1'）
 `
   'ip.ip-addr.to-u32': `
 轉為 32 位無號整數（大端序）
@@ -3112,8 +3126,8 @@ root, next, ok = p.parse('{"key":"value"}', 0)
   'json.obj-key': `
 取得物件指定索引的 key
 回傳 key str: key 字串
-回傳 ok bool: 是否成功
-
+idx: 鍵序號（依插入順序沿邊鏈走訪）
+key: ok=鍵名, nil=越界或根非物件
 `
   'json.obj-keys-str': `
 取得物件所有鍵，以換行分隔的字串回傳
@@ -3408,8 +3422,8 @@ r u32: 左旋結果，已 & 0xFFFFFFFF
 `
   'multipart.multipart-create-boundary': `
 使用指定邊界建立編碼器
-boundary str: 邊界字串
-返回 w multipart-writer
+boundary str: 邊界字串（不含前導 --，寫入時自動加上）
+w multipart-writer: 已設入該邊界、可直接寫入各段的編碼器
 `
   'multipart.multipart-decrypt-field': `
 解密加密的 multipart 欄位資料
@@ -3647,8 +3661,8 @@ key [32]byte: AES-256 金鑰
   'net.icmp-checksum': `
 計算 ICMP 校驗和（16 位元一補數和）
 data []byte: 封包資料
-len i64: 封包長度
-返回 checksum i64（16 位元）
+len i64: 參與計算的位元組數（奇數時最後一個位元組補零成高位位元組）
+checksum i64: 16 位元一反補數結果（進位已摺疊，取反後低 16 位有效）
 `
   'net.icmp-conn.build-echo': `
 建構 ICMP Echo Request 封包
@@ -3816,38 +3830,34 @@ ok: true=UDP socket 建立成功
 接收 UDP 資料到緩衝區
 buf str: 接收緩衝區
 n i64: 最多接收的位元組數
-返回 read-n=實際接收位元組數（-1=錯誤, 0=逾時）
+read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
 `
   'net.udp-conn.recv-bytes': `
 接收 UDP 資料到位元組陣列
 buf []byte: 接收緩衝區
 n i64: 最多接收的位元組數
-返回 read-n=實際接收位元組數（-1=錯誤, 0=逾時）
+read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
 `
   'net.udp-conn.send': `
 發送 UDP 資料到 .host:.port
 data str: 要發送的資料
-返回 written=實際發送位元組數（-1=錯誤）
+written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
 `
   'net.udp-conn.send-bytes': `
 發送 UDP 位元組陣列到 .host:.port
 data []byte: 要發送的資料
-返回 written=實際發送位元組數（-1=錯誤）
+written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
 `
   'net.udp-conn.set-timeout': `
 設定接收逾時
-timeout-ms i64: 逾時毫秒數
-返回 ok=true=成功
+timeout-ms i64: 逾時毫秒數（0=恢復阻塞）
+ok bool: true=socket 選項設定成功（fd 無效或系統呼叫失敗時為 false）
 `
   'net.udp-dial-to': `
 建立 UDP 連接並設定目標位址
 host str: 目標 IP 地址
 port i64: 目標埠號
 返回 c ?udp-conn: ok=連接, nil=失敗
-`
-  'noml-doc.is-bool': `
-根是否布林
-yes: true=根為布林
 `
   'noml.hex-char': `
 數值 0~15 轉十六進位字元位元組
@@ -3938,6 +3948,10 @@ v: ok=整數, nil=根非數字
   'noml.noml-doc.is-arr': `
 根是否陣列
 yes: true=根為陣列
+`
+  'noml.noml-doc.is-bool': `
+根是否布林
+yes: true=根為布林
 `
   'noml.noml-doc.is-nil': `
 根是否 nil
@@ -4074,7 +4088,7 @@ child: ok=元素節點索引, nil=非陣列或下標越界
   'noml.noml-pool.at-line-start': `
 位置是否在行首（其前只有空白）
 s: 來源文字
-pos: 位置
+pos: 待判斷的位元組偏移
 yes: true=本行尚未出現過非空白字元
 `
   'noml.noml-pool.decode-escape': `
@@ -4214,13 +4228,13 @@ n: 子元素數量
   'noml.noml-pool.line-of': `
 位置所在的行號（從 1 起算）
 s: 來源文字
-pos: 位置
+pos: 待查行號的位元組偏移（超出範圍時自動 clamp）
 line: 行號
 `
   'noml.noml-pool.match-kw': `
 匹配裸關鍵字（其後不得緊接識別符字元）
 s: 來源文字
-pos: 起始位置
+pos: 嘗試匹配的位元組偏移
 kw: 關鍵字
 next: 關鍵字之後的位置；-1=不匹配
 `
@@ -4398,13 +4412,13 @@ next: 值之後的位置；-1=格式非法
   'noml.noml-pool.skip-blanks': `
 只跳過行內空白（空格與 Tab），不跨越換行
 s: 來源文字
-pos: 起始位置
+pos: 開始掃描的位元組偏移
 p: 第一個非空白字元的位置
 `
   'noml.noml-pool.skip-trivia': `
 跳過空白（含換行）與 `;` 行註解
 s: 來源文字
-pos: 起始位置
+pos: 開始掃描的位元組偏移
 p: 第一個有效字元的位置（全為空白時為字串尾）
 `
   'noml.noml-pool.stringify': `
@@ -5551,8 +5565,10 @@ cmp: 1=a>b, 0=a==b, -1=a<b（先比 limb 數，再自最高位逐位比）
 `
   'rsa.rsa-bn-div-mod': `
 q = a / b, r = a % b
-a: 被除數, an: 長度
-b: 除數, bn: 長度
+a []i64: 被除數（低位在前的 limb 陣列）
+an i64: 被除數有效 limb 數
+b []i64: 除數（同 limb 排布）
+bn i64: 除數有效 limb 數（bn=1 且 b[0]=0 時視為除零，輸出全零）
 q: 商數（輸出）, qn: 商長度
 r: 餘數（輸出）, rn: 餘長度
 qn: 商修剪後的 limb 數（b=0 時 q、r 全零且 qn=rn=0）
@@ -5715,24 +5731,24 @@ value str: 標頭值
 `
   'server.https-server-conn.write-html': `
 便捷方法 — 寫入 HTML 回應（透過 TLS）
-status i64: 狀態碼
+status i64: HTTP 回應狀態碼（如 200、404）
 html str: HTML 內容
 返回 ok bool: true=成功
 `
   'server.https-server-conn.write-json': `
 便捷方法 — 寫入 JSON 回應（透過 TLS）
-status i64: 狀態碼
+status i64: HTTP 回應狀態碼（如 200、404）
 json-str str: JSON 字串
 返回 ok bool: true=成功
 `
   'server.https-server-conn.write-status': `
 寫入 HTTP 狀態行（透過 TLS）
-status i64: 狀態碼
+status i64: HTTP 狀態碼（如 200、404）；內部映射出原因短語後寫成 "HTTP/1.1 <status> <reason>\r\n"，未知碼原因默認 'OK'
 返回 ok bool: true=成功
 `
   'server.https-server-conn.write-text': `
 便捷方法 — 寫入完整文字回應（透過 TLS）
-status i64: 狀態碼
+status i64: HTTP 回應狀態碼（如 200、404）
 text str: 回應文字
 返回 ok bool: true=成功
 `
@@ -6396,18 +6412,16 @@ from i64: 起始位置（含，下界，碼點）
 `
   'str.split': `
 用分隔符將字串分割為多個子字串
-sep str: 分隔符
+sep str: 切分點子串；在每個出現處切開，本身不進入結果
 回傳 out []str: 分割後的子字串切片
 空分隔符時回傳整個字串作為唯一元素
 注意：使用本地 result 切片再賦值給 out，避免 out.push 在輸出參數上不生效的編譯器 bug
-
 `
   'str.split-n': `
 限定分割次數
-sep str: 分隔符
+sep str: 切分點子串；在每個出現處切開，本身不進入結果
 maxsplit i64: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
 回傳 out []str: 分割結果
-
 `
   'str.starts-with': `
 判斷 s 是否以 target 開頭
@@ -7413,10 +7427,9 @@ target i64: 目標鍵
 `
   'tree-map.tree-map.put': `
 插入或更新 key→value
-key i64: 鍵
-val i64: 值
+key i64: 排序鍵
+val i64: 要寫入的整數值（鍵已存在時覆蓋舊值）
 回傳 ok bool: true=新增, false=更新已存在鍵或池已滿
-
 `
   'tree-map.tree-map.rebalance': `
 在節點 idx 檢查並修復平衡
@@ -7797,12 +7810,12 @@ sep txt, maxsplit i64: 最大分割次數（<=0 不限制）
   'unix.unix-conn.close': '關閉連接'
   'unix.unix-conn.dial': `
 連接到 Unix Domain Socket 服務端
-path: socket 檔案路徑（如 '/tmp/myapp.sock'）
-返回 ok=true=成功
+path str: socket 檔案路徑（如 '/tmp/myapp.sock'）
+ok bool: true=已連上，false=系統呼叫失敗（fd 保持 -1）
 `
   'unix.unix-conn.fd-of': `
 取得連接 socket 的檔案描述符
-返回 fd fd
+fd fd: 連接 socket 的檔案描述符（未連接時為 -1）
 `
   'unix.unix-conn.recv': `
 接收資料到緩衝區
@@ -7812,7 +7825,8 @@ n i64: 最多接收的位元組數
 `
   'unix.unix-conn.recv-all': `
 接收全部資料直到連接關閉
-返回 content str: 接收的內容, total i64: 總位元組數
+content str: 累積收到的全部資料（逐塊拼接，直到對端關閉或出錯）
+total i64: 收到的總位元組數（未連接時為 0）
 `
   'unix.unix-conn.recv-with-timeout': `
 帶逾時的接收
@@ -7876,16 +7890,16 @@ timeout-ms i64: 逾時毫秒數
   'unix.unix-listener.close': '關閉監聽 socket（不自動刪除 socket 檔案）'
   'unix.unix-listener.fd-of': `
 取得監聽 socket 的檔案描述符
-返回 fd fd
+fd fd: 監聽 socket 的檔案描述符（未開啟時為 -1）
 `
   'unix.unix-listener.listen': `
 開始監聽 Unix Domain Socket
-path: socket 檔案路徑（如 '/tmp/myapp.sock'）
-返回 ok=true=成功
+path str: socket 檔案路徑（如 '/tmp/myapp.sock'）
+ok bool: true=socket 已建立並進入監聽，false=系統呼叫失敗（fd 保持 -1）
 `
   'unix.unix-listener.path-of': `
 取得 socket 檔案路徑
-返回 path str
+path str: 建立監聽時傳入的 socket 檔案路徑
 `
   'unix.unix-listener.set-timeout': `
 設定 accept 逾時
@@ -7961,14 +7975,19 @@ out uuid: 輸出 UUID
 回傳 ok bool: true=解析成功
 
 `
-  'uuid.hex-byte': '將一個位元組寫為兩個 hex 字元到 out 的 pos 位置'
+  'uuid.hex-byte': `
+將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
+b byte: 待編碼的位元組（高半位元組先寫，低半位元組後寫）
+pos i64: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
+out str: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
+`
   'uuid.hex-byte-upper': '大寫 hex 位元組寫入'
   'uuid.hex-val': '單一 hex 字元轉數值'
   'uuid.is-nil': '判斷是否為空 UUID（全零）'
   'uuid.new-v4': `
 生成隨機 UUID v4
 state: xorshift32 狀態（輸入/輸出，初始為非零種子）
-
+out: 生成的 v4 隨機 UUID（state 隨 xorshift32 推進）
 `
   'uuid.nil-uuid': '建立空 UUID（全零）'
   'uuid.parse-hex-byte': '從字串解析兩個 hex 字元為一個位元組'
@@ -8203,6 +8222,7 @@ err = 錯誤
 注意：為配合非阻塞輪詢，本方法不跨多次呼叫累積 fragmentation；
 單 frame 的 text/binary 訊息（nowork 前端用法）直接成為一條訊息。
 需要完整分片重組時仍請使用阻塞版 recv。
+msg ?message: ok=本次輪詢已湊齊的完整訊息；nil=暫無資料或 frame 尚未收齊；err=連線關閉或錯誤
 `
   'ws.server-conn.send': `
 發送 WebSocket 訊框（server 不加 mask）
@@ -8388,7 +8408,7 @@ base: 基點 u=9 的 32 位元組小端編碼
 X25519 純量乘法
 scalar [32]byte: 純量（私鑰）
 point [32]byte: 點座標（公鑰）
-返回 out [32]byte: 結果
+回傳 out [32]byte: 點乘結果（共享密鑰），小端序域元素位元組
 `
   'x25519.x25519-scalarmult-base': `
 計算純量 * 基點
@@ -8484,8 +8504,10 @@ out: tag=0x17 的 DER TLV
 `
   'x509.der-len': `
 解碼 DER 長度
-data: DER 編碼資料, pos: 位置（指向長度位元組）
-len: 輸出長度值, adv: 輸出消耗的位元組數（1 或更多）
+data []byte: DER 編碼資料
+pos i64: 長度位元組所在偏移（短格式 1 位元組；長格式時首位元組低 7 位告訴後續還有幾個位元組編碼長度）
+len i64: 輸出長度值
+adv i64: 長度字段本身消耗的位元組數（短格式為 1，長格式為 1 + 長度位元組數，呼叫端以 pos+adv 跳到值域）
 `
   'x509.der-skip': `
 跳過一個 DER TLV 元素

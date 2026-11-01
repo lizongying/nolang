@@ -20,6 +20,7 @@ test-vec-str-assign = () (ok bool) {
     a = 'original'
     s[0]: {
         ok -> it = a
+
         -> _
     }
     a = 'changed'
@@ -38,16 +39,19 @@ test-vec-str-reassign = () (ok bool) {
     a = 'aaa'
     s[0]: {
         ok -> it = a
+
         -> _
     }
     b = 'bbb'
     s[0]: {
         ok -> it = b
+
         -> _
     }
     c = 'ccc'
     s[0]: {
         ok -> it = c
+
         -> _
     }
 
@@ -64,6 +68,7 @@ test-vec-str-literal = () (ok bool) {
 
     s[0]: {
         ok -> it = 'literal value'
+
         -> _
     }
 

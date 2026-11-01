@@ -42,9 +42,10 @@ bad = 7
 ; 空轉（good 保持預宣告的零值）。
 #{overflow=wrap}
 good-opt = 0 - 3
-good i64 = 0
+good = 0
 good-opt: {
     ok -> good = it
+
     ->
 }
 r = 5

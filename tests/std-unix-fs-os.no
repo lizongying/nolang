@@ -39,6 +39,7 @@ dir-name-opt: {
         print('PASS: mkdtemp created directory')
         fs.remove(dir-name)
     }
+
     -> print('FAIL: mkdtemp failed')
 }
 

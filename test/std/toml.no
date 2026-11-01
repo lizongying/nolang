@@ -35,6 +35,7 @@ ratio = 1.5')
                     so = true
                     s = it
                 }
+
                 -> so = false
             }
             runner.is-true(so, 'name decode ok')
@@ -47,6 +48,7 @@ ratio = 1.5')
                     po = true
                     p = it
                 }
+
                 -> po = false
             }
             runner.is-true(po, 'port decode ok')
@@ -59,6 +61,7 @@ ratio = 1.5')
                     bo = true
                     b = it
                 }
+
                 -> bo = false
             }
             runner.is-true(bo, 'enabled decode ok')
@@ -71,6 +74,7 @@ ratio = 1.5')
                     fo = true
                     fr = it
                 }
+
                 -> fo = false
             }
             runner.is-true(fo, 'ratio decode ok')
@@ -101,6 +105,7 @@ off = false')
                     po = true
                     p = it
                 }
+
                 -> po = false
             }
             runner.is-true(po, 'neg decode ok')
@@ -113,6 +118,7 @@ off = false')
                     bo = true
                     b = it
                 }
+
                 -> bo = false
             }
             runner.is-true(bo, 'off decode ok')
@@ -145,6 +151,7 @@ port = 8080 # inline comment')
                     ho = true
                     h = it
                 }
+
                 -> ho = false
             }
             runner.is-true(ho, 'server.host ok')
@@ -153,6 +160,7 @@ port = 8080 # inline comment')
             pn = toml.get-i64(doc, 'server.port')
             pn: {
                 ok -> p = it
+
                 -> _
             }
             runner.eq(p, 8080, 'inline comment stripped from value')
@@ -217,6 +225,7 @@ t-helpers = () {
             uo = true
             u = it
         }
+
         -> uo = false
     }
     runner.is-true(uo, 'unquote ok')
@@ -233,6 +242,7 @@ t-helpers = () {
             ho = true
             hv = it
         }
+
         -> ho = false
     }
     runner.is-true(ho, 'hex parse ok')
@@ -245,6 +255,7 @@ t-helpers = () {
             uo2 = true
             uv = it
         }
+
         -> uo2 = false
     }
     runner.is-true(uo2, 'underscore parse ok')
@@ -253,6 +264,7 @@ t-helpers = () {
     di = toml.toml-parse-i64('-123')
     di: {
         ok -> dv = it
+
         -> _
     }
     runner.eq(dv, -123, 'decimal -123')
@@ -270,6 +282,7 @@ t-build-roundtrip = () {
     sn = toml.get-str(doc, 'title')
     sn: {
         ok -> s = it
+
         -> _
     }
     runner.str-eq(s, 'hello', 5, 'roundtrip get-str')

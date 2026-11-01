@@ -1147,7 +1147,7 @@ https-server-conn.get-header = (name str) (val ?str) {
 }
 
 ; 寫入 HTTP 狀態行（透過 TLS）
-; status i64: 狀態碼
+; status i64: HTTP 狀態碼（如 200、404）；內部映射出原因短語後寫成 "HTTP/1.1 <status> <reason>\r\n"，未知碼原因默認 'OK'
 ; 返回 ok bool: true=成功
 ; [write-status](#server.https-server-conn.write-status)
 https-server-conn.write-status = (status i64) (ok bool) {
@@ -1285,7 +1285,7 @@ https-server-conn.write-body = (data str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入完整文字回應（透過 TLS）
-; status i64: 狀態碼
+; status i64: HTTP 回應狀態碼（如 200、404）
 ; text str: 回應文字
 ; 返回 ok bool: true=成功
 ; [write-text](#server.https-server-conn.write-text)
@@ -1310,7 +1310,7 @@ https-server-conn.write-text = (status i64, text str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入 JSON 回應（透過 TLS）
-; status i64: 狀態碼
+; status i64: HTTP 回應狀態碼（如 200、404）
 ; json-str str: JSON 字串
 ; 返回 ok bool: true=成功
 ; [write-json](#server.https-server-conn.write-json)
@@ -1333,7 +1333,7 @@ https-server-conn.write-json = (status i64, json-str str) (ok bool) {
 }
 
 ; 便捷方法 — 寫入 HTML 回應（透過 TLS）
-; status i64: 狀態碼
+; status i64: HTTP 回應狀態碼（如 200、404）
 ; html str: HTML 內容
 ; 返回 ok bool: true=成功
 ; [write-html](#server.https-server-conn.write-html)

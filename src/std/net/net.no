@@ -398,8 +398,8 @@ udp-conn.open = () (ok bool) {
 }
 
 ; 設定接收逾時
-; timeout-ms i64: 逾時毫秒數
-; 返回 ok=true=成功
+; timeout-ms i64: 逾時毫秒數（0=恢復阻塞）
+; ok bool: true=socket 選項設定成功（fd 無效或系統呼叫失敗時為 false）
 ; [set-timeout](#net.udp-conn.set-timeout)
 udp-conn.set-timeout = (timeout-ms i64) (ok bool) {
     ok = false
@@ -410,7 +410,7 @@ udp-conn.set-timeout = (timeout-ms i64) (ok bool) {
 
 ; 發送 UDP 資料到 .host:.port
 ; data str: 要發送的資料
-; 返回 written=實際發送位元組數（-1=錯誤）
+; written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
 ; [send](#net.udp-conn.send)
 udp-conn.send = (data str) (written i64) {
     written = -1
@@ -420,7 +420,7 @@ udp-conn.send = (data str) (written i64) {
 
 ; 發送 UDP 位元組陣列到 .host:.port
 ; data []byte: 要發送的資料
-; 返回 written=實際發送位元組數（-1=錯誤）
+; written i64: 實際發送位元組數（-1=fd 無效或發送失敗）
 ; [send-bytes](#net.udp-conn.send-bytes)
 udp-conn.send-bytes = (data []byte) (written i64) {
     written = -1
@@ -431,7 +431,7 @@ udp-conn.send-bytes = (data []byte) (written i64) {
 ; 接收 UDP 資料到緩衝區
 ; buf str: 接收緩衝區
 ; n i64: 最多接收的位元組數
-; 返回 read-n=實際接收位元組數（-1=錯誤, 0=逾時）
+; read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
 ; [recv](#net.udp-conn.recv)
 udp-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
@@ -442,7 +442,7 @@ udp-conn.recv = (buf str, n i64) (read-n i64) {
 ; 接收 UDP 資料到位元組陣列
 ; buf []byte: 接收緩衝區
 ; n i64: 最多接收的位元組數
-; 返回 read-n=實際接收位元組數（-1=錯誤, 0=逾時）
+; read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
 ; [recv-bytes](#net.udp-conn.recv-bytes)
 udp-conn.recv-bytes = (buf []byte, n i64) (read-n i64) {
     read-n = -1
@@ -680,21 +680,25 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 
     packet[0]: {
         ok -> it = (payload-len >> 24) & 255
+
         -> _
     }
 
     packet[1]: {
         ok -> it = (payload-len >> 16) & 255
+
         -> _
     }
 
     packet[2]: {
         ok -> it = (payload-len >> 8) & 255
+
         -> _
     }
 
     packet[3]: {
         ok -> it = payload-len & 255
+
         -> _
     }
 
@@ -704,6 +708,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
         #{overflow=wrap}
         packet[4 + i]: {
             ok -> it = iv[i]
+
             -> _
         }
     }
@@ -714,6 +719,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
         #{index-out=zero, overflow=wrap}
         packet[16 + i]: {
             ok -> it = sealed[i]
+
             -> _
         }
     }
@@ -752,6 +758,7 @@ enc-conn.recv-encrypted = () (data ?str) {
 
         iv[i]: {
             ok -> it = payload-buf.byte(i)
+
             -> _
         }
     }
@@ -765,6 +772,7 @@ enc-conn.recv-encrypted = () (data ?str) {
         #{overflow=wrap}
         sealed[i]: {
             ok -> it = payload-buf.byte(12 + i)
+
             -> _
         }
     }
@@ -891,45 +899,53 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
     ; Type = 8 (Echo Request)
     pkt[0]: {
         ok -> it = ICMP-ECHO-REQUEST
+
         -> _
     }
 
     ; Code = 0
     pkt[1]: {
         ok -> it = 0
+
         -> _
     }
 
     ; Checksum = 0 (先填 0，之後計算)
     pkt[2]: {
         ok -> it = 0
+
         -> _
     }
 
     pkt[3]: {
         ok -> it = 0
+
         -> _
     }
 
     ; Identifier (big-endian)
     pkt[4]: {
         ok -> it = (.ident >> 8) & 255
+
         -> _
     }
 
     pkt[5]: {
         ok -> it = .ident & 255
+
         -> _
     }
 
     ; Sequence (big-endian)
     pkt[6]: {
         ok -> it = (seq >> 8) & 255
+
         -> _
     }
 
     pkt[7]: {
         ok -> it = seq & 255
+
         -> _
     }
 
@@ -939,6 +955,7 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
         #{overflow=wrap}
         pkt[ICMP-HEADER-SIZE + i]: {
             ok -> it = (seq + i) & 255
+
             -> _
         }
     }
@@ -948,19 +965,21 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
 
     pkt[2]: {
         ok -> it = (cksum >> 8) & 255
+
         -> _
     }
 
     pkt[3]: {
         ok -> it = cksum & 255
+
         -> _
     }
 }
 
 ; 計算 ICMP 校驗和（16 位元一補數和）
 ; data []byte: 封包資料
-; len i64: 封包長度
-; 返回 checksum i64（16 位元）
+; len i64: 參與計算的位元組數（奇數時最後一個位元組補零成高位字節）
+; checksum i64: 16 位元一反補數結果（進位已摺疊，取反後低 16 位有效）
 ; [icmp-checksum](#net.icmp-checksum)
 icmp-checksum = (data []byte, len i64) (checksum i64) {
 
@@ -1247,19 +1266,23 @@ ifconfig-list = () (ifs []if-info) {
         }
     }
 }
+
 ; macOS 變體：尚未實裝（需 getifaddrs(3)）
 ; ifs: 恆為空列表
 
 #{mac-amd64, mac-arm64}
 ifconfig-list = () (ifs []if-info) {
+
     ; macOS 暫時返回空列表（需 getifaddrs(3) 系統 API）
     ifs = []
 }
+
 ; Windows 變體：尚未實裝（需 GetIfTable）
 ; ifs: 恆為空列表
 
 #{win-amd64, win-arm64}
 ifconfig-list = () (ifs []if-info) {
+
     ; Windows 暫時返回空列表（需 GetIfTable 系統 API）
     ifs = []
 }
@@ -1300,19 +1323,23 @@ route-list = () (routes []route-info) {
         }
     }
 }
+
 ; macOS 變體：尚未實裝（需 PF_ROUTE socket 或 sysctl CTL_NET/NET_RT_DUMP）
 ; routes: 恆為空列表
 
 #{mac-amd64, mac-arm64}
 route-list = () (routes []route-info) {
+
     ; macOS 暫時返回空列表（需 PF_ROUTE socket 或 sysctl CTL_NET/NET_RT_DUMP）
     routes = []
 }
+
 ; Windows 變體：尚未實裝（需 GetIpForwardTable）
 ; routes: 恆為空列表
 
 #{win-amd64, win-arm64}
 route-list = () (routes []route-info) {
+
     ; Windows 暫時返回空列表（需 GetIpForwardTable 系統 API）
     routes = []
 }
@@ -1353,19 +1380,23 @@ arp-list = () (arps []arp-info) {
         }
     }
 }
+
 ; macOS 變體：尚未實裝（需 sysctl net.inet.arp 或 ARP ioctl）
 ; arps: 恆為空列表
 
 #{mac-amd64, mac-arm64}
 arp-list = () (arps []arp-info) {
+
     ; macOS 暫時返回空列表（需 sysctl net.inet.arp 或 ARP ioctls）
     arps = []
 }
+
 ; Windows 變體：尚未實裝（需 GetIpNetTable）
 ; arps: 恆為空列表
 
 #{win-amd64, win-arm64}
 arp-list = () (arps []arp-info) {
+
     ; Windows 暫時返回空列表（需 GetIpNetTable 系統 API）
     arps = []
 }

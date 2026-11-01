@@ -451,6 +451,7 @@ md5 = (data []byte) (out [16]byte) {
     zi <- [0..128): {
         buf[zi]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -483,6 +484,7 @@ md5 = (data []byte) (out [16]byte) {
         k <- [0..copy-rem): {
             buf[base + k]: {
                 ok -> it = data[off + base + k]
+
                 -> _
             }
         }
@@ -491,6 +493,7 @@ md5 = (data []byte) (out [16]byte) {
     ; 添加 0x80 填充
     buf[dremain]: {
         ok -> it = 128
+
         -> _
     }
 

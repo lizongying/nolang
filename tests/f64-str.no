@@ -18,8 +18,8 @@ neg-inf-val = neg-inf-val / 0.0
 
 ; 主體呼叫：先把 f64 值綁到顯式型別變數再走方法，避免字面量後接 `.` 的解析歧義
 print('=== f64-to-str-fixed ===')
-v f64 = 3.14159
-p i64 = 4
+v = 3.14159
+p = 4
 s = v.to-str-fixed(p)
 print(s)
 p = 2

@@ -66,6 +66,7 @@ from-i64 = (v i64) (out bigint) {
         out.limbs[1] = hi-v
         out.len = 2
     }
+
     -> {
         out.limbs = with-len(1)
         out.limbs[0] = lo-v
@@ -89,6 +90,7 @@ from-u64 = (v i64) (out bigint) {
         out.limbs[1] = u-hi
         out.len = 2
     }
+
     -> {
         out.limbs = with-len(1)
         out.limbs[0] = u-lo
@@ -365,22 +367,22 @@ bigint.mul-bigint = (b bigint) (c bigint) {
         ; 因此產品運算全部走 u64（邏輯 >>、乾淨 &）。limb 值本身仍落在
         ; [0,2^32)，可安全存回 []i64。
         carry u64 = 0
-        av u64 = (.limbs[i] & MASK) u64
+        av u64 = (.limbs[i] & MASK)
         j <- [0..bl): {
 
             ; 累積順序：先 av*bv（< 2^64），再加既有 limb（< 2^32），最後加 carry
             ; （< 2^32）。三者之和嚴格小於 2^64，故全程不會回繞，carry 正確落在
             ; [0, 2^32)。Nolang 的 u64 乘法是 mod 2^64 正確、>> 為邏輯移位、& 低位乾淨。
-            bv u64 = (b.limbs[j] & MASK) u64
+            bv u64 = (b.limbs[j] & MASK)
             p u64 = av * bv
-            p = p + (c.limbs[i + j] & MASK) u64
+            p = p + (c.limbs[i + j] & MASK)
             p = p + carry
-            c.limbs[i + j] = (p & 4294967295) i64
+            c.limbs[i + j] = (p & 4294967295)
             carry = p >> 32
         }
 
         #{overflow=wrap}
-        c.limbs[i + bl] = carry i64
+        c.limbs[i + bl] = carry
     }
 
     #{overflow=wrap}
@@ -422,6 +424,7 @@ bigint._mod = (b big) (r ?bigint) {
             m = ._mod-i64(v)
             mv = m: {
                 ok -> it
+
                 -> 0
             }
             r = bigint.from-i64(mv)
@@ -538,7 +541,9 @@ bigint._mul-i64 = (v i64) (c bigint) {
         b.limbs[0] = lo-v
         b.limbs[1] = hi-v
         b.len = 2
-    } -> {
+    }
+
+    -> {
         b.limbs = with-len(1)
         b.limbs[0] = lo-v
         b.len = 1
@@ -593,6 +598,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         md = ._mod-i64(v)
         mv = md: {
             ok -> it
+
             -> 0
         }
         r.limbs[0] = mv
@@ -613,7 +619,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
     ; 正規化位移：讓除數最高 limb >= BASE/2。
     ; 用 u64 與 (bt >> 31 == 0) 判斷，避免 i64 有符號比較把 [2^31,2^32) 誤判為負數而過度位移。
-    bt u64 = (b.limbs[bl - 1] & MASK) u64
+    bt u64 = (b.limbs[bl - 1] & MASK)
     shift = 0
     (bt >> 31 == 0) {
         bt = bt << 1
@@ -630,6 +636,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         nbv = (b.limbs[nbi] & MASK) << shift | nb-carry
         norm-b[nbi]: {
             ok -> it = nbv & MASK
+
             -> _
         }
         nb-carry = nbv >> 32
@@ -666,19 +673,23 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     qi = q.len - 1
     (qi >= 0) {
 
-        an u64 = (norm-a.limbs[qi + bl] & MASK) u64
-        an1 u64 = (norm-a.limbs[qi + bl - 1] & MASK) u64
-        an2 u64 = (norm-a.limbs[qi + bl - 2] & MASK) u64
+        an u64 = (norm-a.limbs[qi + bl] & MASK)
+        an1 u64 = (norm-a.limbs[qi + bl - 1] & MASK)
+        an2 u64 = (norm-a.limbs[qi + bl - 2] & MASK)
 
         BASE u64 = 4294967296
-        bt-u u64 = (norm-b[bl - 1] & MASK) u64
+        bt-u u64 = (norm-b[bl - 1] & MASK)
         bt1 u64 = 0
-        bl >= 2 -> bt1 = (norm-b[bl - 2] & MASK) u64
+        bl >= 2 -> bt1 = (norm-b[bl - 2] & MASK)
 
         ; qhat = floor((an*BASE + an1) / bt)，全程 u64 避免 an*BASE 溢出 i64
         qhat u64 = (an * BASE + an1) / bt-u
+
         ; 極端情形 qhat 可能 == BASE，壓回 BASE-1
-        qhat >> 32 > 0 -> { qhat = BASE - 1 }
+        qhat >> 32 > 0 -> {
+            qhat = BASE - 1
+        }
+
         ; Knuth 修正：檢查 qhat*bt1 是否超過 (rhat*BASE + an2)，超過則 qhat 偏大，減 1（至多 2 次）。
         ; 無號比較拆成高/低 32-bit（各半皆 < 2^32，作為 i64 為正數，故可用有符號比較）。
         ; 注意：rhat += bt-u 後可能 >= BASE，此時 c2 = rhat*BASE + an2 在 u64 中溢出；
@@ -722,38 +733,42 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         ; 乘減：norm-a[qi..qi+bl] -= qhat * norm-b[0..bl-1]
         borrow u64 = 0
         bj <- [0..bl): {
-            p u64 = qhat * (norm-b[bj] & MASK) u64
+            p u64 = qhat * (norm-b[bj] & MASK)
             p = p + borrow
             pl = p & 4294967295
-            limb u64 = (norm-a.limbs[qi + bj] & MASK) u64
+            limb u64 = (norm-a.limbs[qi + bj] & MASK)
             (limb >= pl) -> {
-                norm-a.limbs[qi + bj] = (limb - pl) i64
+                norm-a.limbs[qi + bj] = (limb - pl)
                 borrow = p >> 32
-            } -> {
+            }
+
+            -> {
                 sub-limb u64 = limb + BASE - pl
-                norm-a.limbs[qi + bj] = (sub-limb & 4294967295) i64
+                norm-a.limbs[qi + bj] = (sub-limb & 4294967295)
                 borrow = (p >> 32) + 1
             }
         }
 
         ; 最高 limb 減最終 borrow；若過減則 qhat 偏大，加回 norm-b
-        top u64 = (norm-a.limbs[qi + bl] & MASK) u64
+        top u64 = (norm-a.limbs[qi + bl] & MASK)
         (top >= borrow) -> {
-            norm-a.limbs[qi + bl] = (top - borrow) i64
-            q.limbs[qi] = qhat i64
-        } -> {
+            norm-a.limbs[qi + bl] = (top - borrow)
+            q.limbs[qi] = qhat
+        }
+
+        -> {
             sub-top u64 = top + BASE - borrow
-            norm-a.limbs[qi + bl] = (sub-top & 4294967295) i64
+            norm-a.limbs[qi + bl] = (sub-top & 4294967295)
             qhat = qhat - 1
             carry2 u64 = 0
             bj2 <- [0..bl): {
-                s u64 = (norm-a.limbs[qi + bj2] & MASK) u64 + (norm-b[bj2] & MASK) u64 + carry2
-                norm-a.limbs[qi + bj2] = (s & 4294967295) i64
+                s u64 = (norm-a.limbs[qi + bj2] & MASK) + (norm-b[bj2] & MASK) + carry2
+                norm-a.limbs[qi + bj2] = (s & 4294967295)
                 carry2 = s >> 32
             }
-            carry2-i i64 = carry2 i64
+            carry2-i i64 = carry2
             norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry2-i
-            q.limbs[qi] = qhat i64
+            q.limbs[qi] = qhat
         }
 
         #{overflow=wrap}
@@ -956,6 +971,7 @@ bigint.shl1 = () {
         .limbs[i] = v & MASK
     }
     carry > 0 -> {
+
         ; 必須「先擴容再寫入」：.limbs 是恰好 .len 個元素的切片（copy/one 皆以 with-len 建立），
         ; 直接寫 .limbs[.len] 是越界寫，會讓 limb 數與內容失控
         ; （實測 bigint.shl(one, 52) 曾因此得到 2^1074 而非 2^52）。
@@ -1059,12 +1075,14 @@ bigint.to-str = () (out str) {
         dm = tmp._mod-i64(10)
         d = dm: {
             ok -> it
+
             -> 0
         }
 
         #{overflow=wrap}
         buf[bufn]: {
             ok -> it = d + 48
+
             -> _
         }
 
@@ -1112,6 +1130,7 @@ bigint._add-i64 = (v i64) (c bigint) {
 ; v: ok=值域內的 i64, err=超出 i64 範圍（絕不靜默截斷高位）
 ; [to-i64](#bigint.to-i64)
 bigint.to-i64 = () (v ?i64) {
+
     ; limbs 是 32-bit 小端；先做長度守衛，才去碰 limbs。
     (.len > 2) -> {
         v = err('bigint.to-i64: overflow')
@@ -1123,7 +1142,7 @@ bigint.to-i64 = () (v ?i64) {
     }
 
     lo-m = .limbs[0] & MASK
-    hi-m i64 = 0
+    hi-m = 0
     (.len > 1) -> hi-m = .limbs[1] & MASK
 
     ; hi-m 經 MASK 遮罩後必落在 [0, 2^32)，故可與 2^31 直接無符號比較。

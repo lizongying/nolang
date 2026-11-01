@@ -58,6 +58,7 @@ test-decode-int-small = () {
     data = space.repeat(HPACK-TEST-BUF)
     data[0]: {
         ok -> it = 10
+
         -> _
     }
     val = 0
@@ -80,14 +81,17 @@ test-decode-int-multi = () {
     data = space.repeat(HPACK-TEST-BUF)
     data[0]: {
         ok -> it = 31
+
         -> _
     }
     data[1]: {
         ok -> it = 170
+
         -> _
     }
     data[2]: {
         ok -> it = 10
+
         -> _
     }
     val = 0
@@ -131,18 +135,22 @@ test-decode-str = () {
     data = space.repeat(HPACK-TEST-BUF)
     data[0]: {
         ok -> it = 3
+
         -> _
     }
     data[1]: {
         ok -> it = 97
+
         -> _
     }
     data[2]: {
         ok -> it = 98
+
         -> _
     }
     data[3]: {
         ok -> it = 99
+
         -> _
     }
     out = ''

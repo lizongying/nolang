@@ -10,7 +10,7 @@
 ; label str: 該項檢查的名稱，輸出時原樣印出
 ; cond bool: 檢查結果，false 視為失敗
 ck = (label str, cond bool) {
-    !cond -> print('FAIL', label)
+    ! cond -> print('FAIL', label)
     cond -> print('ok', label)
 }
 
@@ -18,51 +18,56 @@ ck = (label str, cond bool) {
 t txt = 'abc'
 
 ; 範圍內：some(true)
-present bool = false
-value bool = false
+present = false
+value = false
 r1 = t.set-byte(0, 90)
 r1: {
     ok -> {
         present = true
         value = it
     }
+
     -> present = false
 }
 ck('txt-in-range-present', present)
 ck('txt-in-range-true', present && value)
 
 ; 寫入生效
-after bool = false
+after = false
 w0 = t.byte(0)
 w0: {
     ok -> after = (it == 90)
+
     -> after = false
 }
 ck('txt-write-effect', after)
 
 ; 越界（255 >= 容量）：nil
-oob bool = false
+oob = false
 r2 = t.set-byte(255, 71)
 r2: {
     ok -> oob = true
+
     -> oob = false
 }
-ck('txt-oob-nil', !oob)
+ck('txt-oob-nil', ! oob)
 
 ; 負數索引：nil
-neg bool = false
+neg = false
 r3 = t.set-byte(-1, 71)
 r3: {
     ok -> neg = true
+
     -> neg = false
 }
-ck('txt-neg-nil', !neg)
+ck('txt-neg-nil', ! neg)
 
 ; 越界寫入不改變既有內容（byte 0 仍是 90）
-keep bool = false
+keep = false
 b0 = t.byte(0)
 b0: {
     ok -> keep = (it == 90)
+
     -> keep = false
 }
 ck('txt-oob-untouched', keep)
@@ -70,27 +75,30 @@ ck('txt-oob-untouched', keep)
 ; ── str：堆上長字串，容量取自 cap 欄位 ──
 s = 'hello world this is a longer string that is definitely stored as a str-long buffer'
 
-sp bool = false
+sp = false
 r4 = s.set-byte(0, 72)
 r4: {
     ok -> sp = true
+
     -> sp = false
 }
 ck('str-in-range-present', sp)
 
-so bool = false
+so = false
 r5 = s.set-byte(99999, 71)
 r5: {
     ok -> so = true
+
     -> so = false
 }
-ck('str-oob-nil', !so)
+ck('str-oob-nil', ! so)
 
 ; str 寫入生效：首字元改為 'H'（72）
-se bool = false
+se = false
 c0 = s.byte(0)
 c0: {
     ok -> se = (it == 72)
+
     -> se = false
 }
 ck('str-write-effect', se)

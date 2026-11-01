@@ -54,6 +54,7 @@ test-names-cover-all = () {
         nm = tok.name(i)
         unk = tok.str-eq(nm, 'UNKNOWN')
         unk -> {
+
             #{overflow=wrap}
             bad = bad + 1
         }
@@ -120,6 +121,7 @@ test-keyword = () {
     runner.eq(tok.keyword('IF'), tok.ILLEGAL, 'keywords are case sensitive')
     runner.eq(tok.keyword('iff'), tok.ILLEGAL, 'iff is not if')
     runner.eq(tok.keyword('i'), tok.ILLEGAL, 'i is not if')
+
     ; 前綴陷阱：in 是關鍵字，int 不是
     runner.eq(tok.keyword('int'), tok.ILLEGAL, 'int is not in, prefix trap')
 }
@@ -135,5 +137,6 @@ runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)
+
     -> exit(0)
 }

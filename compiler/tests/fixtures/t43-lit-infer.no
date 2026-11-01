@@ -1,7 +1,7 @@
 SEP = "/"
 DOT = "."
 H = 0x41
-HBIG = 0Xff
+HBIG = 0xff
 DEC = 65
 ZRO = 0x0
 ARRHEX = [0x50, 0x4b, 0]

@@ -33,51 +33,61 @@ fe-zero = (h []i64) {
 
     h[0]: {
         ok -> it = 0
+
         -> _
     }
 
     h[1]: {
         ok -> it = 0
+
         -> _
     }
 
     h[2]: {
         ok -> it = 0
+
         -> _
     }
 
     h[3]: {
         ok -> it = 0
+
         -> _
     }
 
     h[4]: {
         ok -> it = 0
+
         -> _
     }
 
     h[5]: {
         ok -> it = 0
+
         -> _
     }
 
     h[6]: {
         ok -> it = 0
+
         -> _
     }
 
     h[7]: {
         ok -> it = 0
+
         -> _
     }
 
     h[8]: {
         ok -> it = 0
+
         -> _
     }
 
     h[9]: {
         ok -> it = 0
+
         -> _
     }
 }
@@ -89,51 +99,61 @@ fe-one = (h []i64) {
 
     h[0]: {
         ok -> it = 1
+
         -> _
     }
 
     h[1]: {
         ok -> it = 0
+
         -> _
     }
 
     h[2]: {
         ok -> it = 0
+
         -> _
     }
 
     h[3]: {
         ok -> it = 0
+
         -> _
     }
 
     h[4]: {
         ok -> it = 0
+
         -> _
     }
 
     h[5]: {
         ok -> it = 0
+
         -> _
     }
 
     h[6]: {
         ok -> it = 0
+
         -> _
     }
 
     h[7]: {
         ok -> it = 0
+
         -> _
     }
 
     h[8]: {
         ok -> it = 0
+
         -> _
     }
 
     h[9]: {
         ok -> it = 0
+
         -> _
     }
 }
@@ -147,60 +167,70 @@ fe-copy = (h []i64, f []i64) {
     #{index-out=zero}
     h[0]: {
         ok -> it = f[0]
+
         -> _
     }
 
     #{index-out=zero}
     h[1]: {
         ok -> it = f[1]
+
         -> _
     }
 
     #{index-out=zero}
     h[2]: {
         ok -> it = f[2]
+
         -> _
     }
 
     #{index-out=zero}
     h[3]: {
         ok -> it = f[3]
+
         -> _
     }
 
     #{index-out=zero}
     h[4]: {
         ok -> it = f[4]
+
         -> _
     }
 
     #{index-out=zero}
     h[5]: {
         ok -> it = f[5]
+
         -> _
     }
 
     #{index-out=zero}
     h[6]: {
         ok -> it = f[6]
+
         -> _
     }
 
     #{index-out=zero}
     h[7]: {
         ok -> it = f[7]
+
         -> _
     }
 
     #{index-out=zero}
     h[8]: {
         ok -> it = f[8]
+
         -> _
     }
 
     #{index-out=zero}
     h[9]: {
         ok -> it = f[9]
+
         -> _
     }
 }
@@ -215,60 +245,70 @@ fe-add = (h []i64, f []i64, g []i64) {
     #{index-out=zero, overflow=wrap}
     h[0]: {
         ok -> it = f[0] + g[0]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[1]: {
         ok -> it = f[1] + g[1]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[2]: {
         ok -> it = f[2] + g[2]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[3]: {
         ok -> it = f[3] + g[3]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[4]: {
         ok -> it = f[4] + g[4]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[5]: {
         ok -> it = f[5] + g[5]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[6]: {
         ok -> it = f[6] + g[6]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[7]: {
         ok -> it = f[7] + g[7]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[8]: {
         ok -> it = f[8] + g[8]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[9]: {
         ok -> it = f[9] + g[9]
+
         -> _
     }
 }
@@ -283,60 +323,70 @@ fe-sub = (h []i64, f []i64, g []i64) {
     #{index-out=zero, overflow=wrap}
     h[0]: {
         ok -> it = f[0] - g[0]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[1]: {
         ok -> it = f[1] - g[1]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[2]: {
         ok -> it = f[2] - g[2]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[3]: {
         ok -> it = f[3] - g[3]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[4]: {
         ok -> it = f[4] - g[4]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[5]: {
         ok -> it = f[5] - g[5]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[6]: {
         ok -> it = f[6] - g[6]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[7]: {
         ok -> it = f[7] - g[7]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[8]: {
         ok -> it = f[8] - g[8]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[9]: {
         ok -> it = f[9] - g[9]
+
         -> _
     }
 }
@@ -361,12 +411,14 @@ fe-cswap = (a []i64, b []i64, mask i64) {
         #{index-out=zero}
         a[i]: {
             ok -> it = a[i] ^ t
+
             -> _
         }
 
         #{index-out=zero}
         b[i]: {
             ok -> it = b[i] ^ t
+
             -> _
         }
     }
@@ -504,60 +556,70 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = f0 * g0 + f1-2 * g9-19 + f2 * g8-19 + f3-2 * g7-19 + f4 * g6-19 + f5-2 * g5-19 + f6 * g4-19 + f7-2 * g3-19 + f8 * g2-19 + f9-2 * g1-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = f0 * g1 + f1 * g0 + f2 * g9-19 + f3 * g8-19 + f4 * g7-19 + f5 * g6-19 + f6 * g5-19 + f7 * g4-19 + f8 * g3-19 + f9 * g2-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = f0 * g2 + f1-2 * g1 + f2 * g0 + f3-2 * g9-19 + f4 * g8-19 + f5-2 * g7-19 + f6 * g6-19 + f7-2 * g5-19 + f8 * g4-19 + f9-2 * g3-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
         ok -> it = f0 * g3 + f1 * g2 + f2 * g1 + f3 * g0 + f4 * g9-19 + f5 * g8-19 + f6 * g7-19 + f7 * g6-19 + f8 * g5-19 + f9 * g4-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
         ok -> it = f0 * g4 + f1-2 * g3 + f2 * g2 + f3-2 * g1 + f4 * g0 + f5-2 * g9-19 + f6 * g8-19 + f7-2 * g7-19 + f8 * g6-19 + f9-2 * g5-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
         ok -> it = f0 * g5 + f1 * g4 + f2 * g3 + f3 * g2 + f4 * g1 + f5 * g0 + f6 * g9-19 + f7 * g8-19 + f8 * g7-19 + f9 * g6-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
         ok -> it = f0 * g6 + f1-2 * g5 + f2 * g4 + f3-2 * g3 + f4 * g2 + f5-2 * g1 + f6 * g0 + f7-2 * g9-19 + f8 * g8-19 + f9-2 * g7-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
         ok -> it = f0 * g7 + f1 * g6 + f2 * g5 + f3 * g4 + f4 * g3 + f5 * g2 + f6 * g1 + f7 * g0 + f8 * g9-19 + f9 * g8-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
         ok -> it = f0 * g8 + f1-2 * g7 + f2 * g6 + f3-2 * g5 + f4 * g4 + f5-2 * g3 + f6 * g2 + f7-2 * g1 + f8 * g0 + f9-2 * g9-19
+
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
         ok -> it = f0 * g9 + f1 * g8 + f2 * g7 + f3 * g6 + f4 * g5 + f5 * g4 + f6 * g3 + f7 * g2 + f8 * g1 + f9 * g0
+
         -> _
     }
 
@@ -577,12 +639,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (c0 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] + c0
+
         -> _
     }
 
@@ -596,12 +660,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] - (c1 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] + c1
+
         -> _
     }
 
@@ -615,12 +681,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] - (c2 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] + c2
+
         -> _
     }
 
@@ -634,12 +702,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] - (c3 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] + c3
+
         -> _
     }
 
@@ -653,12 +723,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] - (c4 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] + c4
+
         -> _
     }
 
@@ -672,12 +744,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] - (c5 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] + c5
+
         -> _
     }
 
@@ -691,12 +765,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] - (c6 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] + c6
+
         -> _
     }
 
@@ -710,12 +786,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] - (c7 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] + c7
+
         -> _
     }
 
@@ -729,12 +807,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] - (c8 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] + c8
+
         -> _
     }
 
@@ -748,6 +828,7 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] - (c9 << 25)
+
         -> _
     }
 
@@ -755,6 +836,7 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] + c9 * 19
+
         -> _
     }
 
@@ -768,12 +850,14 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (c10 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] + c10
+
         -> _
     }
 
@@ -786,63 +870,75 @@ fe-mul = (h []i64, f []i64, g []i64) {
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] - (c11 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] + c11
+
         -> _
     }
 
     ; 寫回結果
     h[0]: {
         ok -> it = t[0]
+
         -> _
     }
 
     h[1]: {
         ok -> it = t[1]
+
         -> _
     }
 
     h[2]: {
         ok -> it = t[2]
+
         -> _
     }
 
     h[3]: {
         ok -> it = t[3]
+
         -> _
     }
 
     h[4]: {
         ok -> it = t[4]
+
         -> _
     }
 
     h[5]: {
         ok -> it = t[5]
+
         -> _
     }
 
     h[6]: {
         ok -> it = t[6]
+
         -> _
     }
 
     h[7]: {
         ok -> it = t[7]
+
         -> _
     }
 
     h[8]: {
         ok -> it = t[8]
+
         -> _
     }
 
     h[9]: {
         ok -> it = t[9]
+
         -> _
     }
 }
@@ -870,60 +966,70 @@ fe-mul121665 = (h []i64, f []i64) {
     #{index-out=zero, overflow=wrap}
     t[0]: {
         ok -> it = 121665 * f[0]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[1]: {
         ok -> it = 121665 * f[1]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[2]: {
         ok -> it = 121665 * f[2]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[3]: {
         ok -> it = 121665 * f[3]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[4]: {
         ok -> it = 121665 * f[4]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[5]: {
         ok -> it = 121665 * f[5]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[6]: {
         ok -> it = 121665 * f[6]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[7]: {
         ok -> it = 121665 * f[7]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[8]: {
         ok -> it = 121665 * f[8]
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     t[9]: {
         ok -> it = 121665 * f[9]
+
         -> _
     }
 
@@ -937,12 +1043,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (c0 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] + c0
+
         -> _
     }
 
@@ -955,12 +1063,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] - (c1 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] + c1
+
         -> _
     }
 
@@ -973,12 +1083,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] - (c2 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] + c2
+
         -> _
     }
 
@@ -991,12 +1103,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] - (c3 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] + c3
+
         -> _
     }
 
@@ -1009,12 +1123,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] - (c4 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] + c4
+
         -> _
     }
 
@@ -1027,12 +1143,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] - (c5 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] + c5
+
         -> _
     }
 
@@ -1045,12 +1163,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] - (c6 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] + c6
+
         -> _
     }
 
@@ -1063,12 +1183,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] - (c7 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] + c7
+
         -> _
     }
 
@@ -1081,12 +1203,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] - (c8 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] + c8
+
         -> _
     }
 
@@ -1099,12 +1223,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] - (c9 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] + c9 * 19
+
         -> _
     }
 
@@ -1117,12 +1243,14 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (c10 << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] + c10
+
         -> _
     }
 
@@ -1135,62 +1263,74 @@ fe-mul121665 = (h []i64, f []i64) {
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] - (c11 << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] + c11
+
         -> _
     }
 
     h[0]: {
         ok -> it = t[0]
+
         -> _
     }
 
     h[1]: {
         ok -> it = t[1]
+
         -> _
     }
 
     h[2]: {
         ok -> it = t[2]
+
         -> _
     }
 
     h[3]: {
         ok -> it = t[3]
+
         -> _
     }
 
     h[4]: {
         ok -> it = t[4]
+
         -> _
     }
 
     h[5]: {
         ok -> it = t[5]
+
         -> _
     }
 
     h[6]: {
         ok -> it = t[6]
+
         -> _
     }
 
     h[7]: {
         ok -> it = t[7]
+
         -> _
     }
 
     h[8]: {
         ok -> it = t[8]
+
         -> _
     }
 
     h[9]: {
         ok -> it = t[9]
+
         -> _
     }
 }
@@ -1322,46 +1462,55 @@ fe-frombytes = (h []i64, s [32]byte) {
     ; 載入未遮罩 limb（每個 limb 包含「跨界」位元，由後續進位傳播規整）
     h[0]: {
         ok -> it = (s[0]) | ((s[1]) << 8) | ((s[2]) << 16) | ((s[3]) << 24)
+
         -> _
     }
 
     h[1]: {
         ok -> it = ((s[4]) | ((s[5]) << 8) | ((s[6]) << 16)) << 6
+
         -> _
     }
 
     h[2]: {
         ok -> it = ((s[7]) | ((s[8]) << 8) | ((s[9]) << 16)) << 5
+
         -> _
     }
 
     h[3]: {
         ok -> it = ((s[10]) | ((s[11]) << 8) | ((s[12]) << 16)) << 3
+
         -> _
     }
 
     h[4]: {
         ok -> it = ((s[13]) | ((s[14]) << 8) | ((s[15]) << 16)) << 2
+
         -> _
     }
 
     h[5]: {
         ok -> it = (s[16]) | ((s[17]) << 8) | ((s[18]) << 16) | ((s[19]) << 24)
+
         -> _
     }
 
     h[6]: {
         ok -> it = ((s[20]) | ((s[21]) << 8) | ((s[22]) << 16)) << 7
+
         -> _
     }
 
     h[7]: {
         ok -> it = ((s[23]) | ((s[24]) << 8) | ((s[25]) << 16)) << 5
+
         -> _
     }
 
     h[8]: {
         ok -> it = ((s[26]) | ((s[27]) << 8) | ((s[28]) << 16)) << 4
+
         -> _
     }
 
@@ -1369,6 +1518,7 @@ fe-frombytes = (h []i64, s [32]byte) {
     ; 使 V 貢獻 = (bits 232-254) * 2^2 * 2^230 = (bits 232-254) * 2^232（與位元組值一致）
     h[9]: {
         ok -> it = (((s[29]) | ((s[30]) << 8) | ((s[31]) << 16)) & 8388607) << 2
+
         -> _
     }
 
@@ -1386,12 +1536,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[0]: {
         ok -> it = h[0] - (c << 26)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[1]: {
         ok -> it = h[1] + c
+
         -> _
     }
 
@@ -1404,12 +1556,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[1]: {
         ok -> it = h[1] - (c << 25)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[2]: {
         ok -> it = h[2] + c
+
         -> _
     }
 
@@ -1422,12 +1576,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[2]: {
         ok -> it = h[2] - (c << 26)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[3]: {
         ok -> it = h[3] + c
+
         -> _
     }
 
@@ -1440,12 +1596,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[3]: {
         ok -> it = h[3] - (c << 25)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[4]: {
         ok -> it = h[4] + c
+
         -> _
     }
 
@@ -1458,12 +1616,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[4]: {
         ok -> it = h[4] - (c << 26)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[5]: {
         ok -> it = h[5] + c
+
         -> _
     }
 
@@ -1476,12 +1636,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[5]: {
         ok -> it = h[5] - (c << 25)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[6]: {
         ok -> it = h[6] + c
+
         -> _
     }
 
@@ -1494,12 +1656,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[6]: {
         ok -> it = h[6] - (c << 26)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[7]: {
         ok -> it = h[7] + c
+
         -> _
     }
 
@@ -1512,12 +1676,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[7]: {
         ok -> it = h[7] - (c << 25)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[8]: {
         ok -> it = h[8] + c
+
         -> _
     }
 
@@ -1530,12 +1696,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[8]: {
         ok -> it = h[8] - (c << 26)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[9]: {
         ok -> it = h[9] + c
+
         -> _
     }
 
@@ -1548,6 +1716,7 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[9]: {
         ok -> it = h[9] - (c << 25)
+
         -> _
     }
 
@@ -1555,6 +1724,7 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[0]: {
         ok -> it = h[0] + c * 19
+
         -> _
     }
 
@@ -1568,12 +1738,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[0]: {
         ok -> it = h[0] - (c << 26)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[1]: {
         ok -> it = h[1] + c
+
         -> _
     }
 
@@ -1586,12 +1758,14 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{index-out=zero, overflow=wrap}
     h[1]: {
         ok -> it = h[1] - (c << 25)
+
         -> _
     }
 
     #{index-out=zero, overflow=wrap}
     h[2]: {
         ok -> it = h[2] + c
+
         -> _
     }
 }
@@ -1610,60 +1784,70 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{index-out=zero}
     t[0]: {
         ok -> it = h[0]
+
         -> _
     }
 
     #{index-out=zero}
     t[1]: {
         ok -> it = h[1]
+
         -> _
     }
 
     #{index-out=zero}
     t[2]: {
         ok -> it = h[2]
+
         -> _
     }
 
     #{index-out=zero}
     t[3]: {
         ok -> it = h[3]
+
         -> _
     }
 
     #{index-out=zero}
     t[4]: {
         ok -> it = h[4]
+
         -> _
     }
 
     #{index-out=zero}
     t[5]: {
         ok -> it = h[5]
+
         -> _
     }
 
     #{index-out=zero}
     t[6]: {
         ok -> it = h[6]
+
         -> _
     }
 
     #{index-out=zero}
     t[7]: {
         ok -> it = h[7]
+
         -> _
     }
 
     #{index-out=zero}
     t[8]: {
         ok -> it = h[8]
+
         -> _
     }
 
     #{index-out=zero}
     t[9]: {
         ok -> it = h[9]
+
         -> _
     }
 
@@ -1677,12 +1861,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] + c
+
         -> _
     }
 
@@ -1692,12 +1878,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] + c
+
         -> _
     }
 
@@ -1707,12 +1895,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] + c
+
         -> _
     }
 
@@ -1722,12 +1912,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] + c
+
         -> _
     }
 
@@ -1737,12 +1929,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] + c
+
         -> _
     }
 
@@ -1752,12 +1946,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] + c
+
         -> _
     }
 
@@ -1767,12 +1963,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] + c
+
         -> _
     }
 
@@ -1782,12 +1980,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] + c
+
         -> _
     }
 
@@ -1797,12 +1997,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] + c
+
         -> _
     }
 
@@ -1812,6 +2014,7 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] - (c << 25)
+
         -> _
     }
 
@@ -1819,6 +2022,7 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] + c * 19
+
         -> _
     }
 
@@ -1829,12 +2033,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] + c
+
         -> _
     }
 
@@ -1844,12 +2050,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] + c
+
         -> _
     }
 
@@ -1859,6 +2067,7 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] + 19
+
         -> _
     }
 
@@ -1869,12 +2078,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] + c
+
         -> _
     }
 
@@ -1884,12 +2095,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[1]: {
         ok -> it = t[1] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] + c
+
         -> _
     }
 
@@ -1899,12 +2112,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[2]: {
         ok -> it = t[2] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] + c
+
         -> _
     }
 
@@ -1914,12 +2129,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[3]: {
         ok -> it = t[3] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] + c
+
         -> _
     }
 
@@ -1929,12 +2146,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[4]: {
         ok -> it = t[4] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] + c
+
         -> _
     }
 
@@ -1944,12 +2163,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[5]: {
         ok -> it = t[5] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] + c
+
         -> _
     }
 
@@ -1959,12 +2180,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[6]: {
         ok -> it = t[6] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] + c
+
         -> _
     }
 
@@ -1974,12 +2197,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[7]: {
         ok -> it = t[7] - (c << 25)
+
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] + c
+
         -> _
     }
 
@@ -1989,12 +2214,14 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[8]: {
         ok -> it = t[8] - (c << 26)
+
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] + c
+
         -> _
     }
 
@@ -2004,6 +2231,7 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[9]: {
         ok -> it = t[9] - (c << 25)
+
         -> _
     }
 
@@ -2016,6 +2244,7 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     t[0]: {
         ok -> it = t[0] - (19 & mask)
+
         -> _
     }
 
@@ -2024,161 +2253,193 @@ fe-tobytes = (s [32]byte, h []i64) {
     ; 各 limb 起始位元：0, 26, 51, 77, 102, 128, 153, 179, 204, 230
     s[0]: {
         ok -> it = t[0]
+
         -> _
     }
 
     s[1]: {
         ok -> it = (t[0] >> 8) & 255
+
         -> _
     }
 
     s[2]: {
         ok -> it = (t[0] >> 16) & 255
+
         -> _
     }
 
     s[3]: {
         ok -> it = ((t[0] >> 24) | (t[1] << 2)) & 255
+
         -> _
     }
 
     s[4]: {
         ok -> it = (t[1] >> 6) & 255
+
         -> _
     }
 
     s[5]: {
         ok -> it = (t[1] >> 14) & 255
+
         -> _
     }
 
     s[6]: {
         ok -> it = ((t[1] >> 22) | (t[2] << 3)) & 255
+
         -> _
     }
 
     s[7]: {
         ok -> it = (t[2] >> 5) & 255
+
         -> _
     }
 
     s[8]: {
         ok -> it = (t[2] >> 13) & 255
+
         -> _
     }
 
     s[9]: {
         ok -> it = ((t[2] >> 21) | (t[3] << 5)) & 255
+
         -> _
     }
 
     s[10]: {
         ok -> it = (t[3] >> 3) & 255
+
         -> _
     }
 
     s[11]: {
         ok -> it = (t[3] >> 11) & 255
+
         -> _
     }
 
     s[12]: {
         ok -> it = ((t[3] >> 19) | (t[4] << 6)) & 255
+
         -> _
     }
 
     s[13]: {
         ok -> it = (t[4] >> 2) & 255
+
         -> _
     }
 
     s[14]: {
         ok -> it = (t[4] >> 10) & 255
+
         -> _
     }
 
     s[15]: {
         ok -> it = (t[4] >> 18) & 255
+
         -> _
     }
 
     s[16]: {
         ok -> it = ((t[4] >> 26) | (t[5] << 0)) & 255
+
         -> _
     }
 
     s[17]: {
         ok -> it = (t[5] >> 8) & 255
+
         -> _
     }
 
     s[18]: {
         ok -> it = (t[5] >> 16) & 255
+
         -> _
     }
 
     s[19]: {
         ok -> it = ((t[5] >> 24) | (t[6] << 1)) & 255
+
         -> _
     }
 
     s[20]: {
         ok -> it = (t[6] >> 7) & 255
+
         -> _
     }
 
     s[21]: {
         ok -> it = (t[6] >> 15) & 255
+
         -> _
     }
 
     s[22]: {
         ok -> it = ((t[6] >> 23) | (t[7] << 3)) & 255
+
         -> _
     }
 
     s[23]: {
         ok -> it = (t[7] >> 5) & 255
+
         -> _
     }
 
     s[24]: {
         ok -> it = (t[7] >> 13) & 255
+
         -> _
     }
 
     s[25]: {
         ok -> it = ((t[7] >> 21) | (t[8] << 4)) & 255
+
         -> _
     }
 
     s[26]: {
         ok -> it = (t[8] >> 4) & 255
+
         -> _
     }
 
     s[27]: {
         ok -> it = (t[8] >> 12) & 255
+
         -> _
     }
 
     s[28]: {
         ok -> it = ((t[8] >> 20) | (t[9] << 6)) & 255
+
         -> _
     }
 
     s[29]: {
         ok -> it = (t[9] >> 2) & 255
+
         -> _
     }
 
     s[30]: {
         ok -> it = (t[9] >> 10) & 255
+
         -> _
     }
 
     s[31]: {
         ok -> it = (t[9] >> 18) & 255
+
         -> _
     }
 }
@@ -2190,7 +2451,7 @@ fe-tobytes = (s [32]byte, h []i64) {
 ; X25519 純量乘法
 ; scalar [32]byte: 純量（私鑰）
 ; point [32]byte: 點座標（公鑰）
-; 返回 out [32]byte: 結果
+; 返回 out [32]byte: 點乘結果（共享密鑰），小端序域元素位元組
 ; [x25519-scalarmult](#x25519.x25519-scalarmult)
 x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
@@ -2201,22 +2462,26 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
         k[i]: {
             ok -> it = scalar[i]
+
             -> _
         }
     }
 
     k[0]: {
         ok -> it = k[0] & 248
+
         -> _
     }
 
     k[31]: {
         ok -> it = k[31] & 127
+
         -> _
     }
 
     k[31]: {
         ok -> it = k[31] | 64
+
         -> _
     }
 
@@ -2230,6 +2495,7 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
         x1[i]: {
             ok -> it = u[i]
+
             -> _
         }
     }
@@ -2244,6 +2510,7 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
         x3[i]: {
             ok -> it = u[i]
+
             -> _
         }
     }
@@ -2387,22 +2654,26 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
         #{index-out=zero}
         k[i]: {
             ok -> it = scalar[i]
+
             -> _
         }
     }
 
     k[0]: {
         ok -> it = k[0] & 248
+
         -> _
     }
 
     k[31]: {
         ok -> it = k[31] & 127
+
         -> _
     }
 
     k[31]: {
         ok -> it = k[31] | 64
+
         -> _
     }
 
@@ -2413,6 +2684,7 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
         #{index-out=zero}
         point-arr[i]: {
             ok -> it = point[i]
+
             -> _
         }
     }
@@ -2425,6 +2697,7 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 
         x1[i]: {
             ok -> it = u[i]
+
             -> _
         }
     }
@@ -2439,6 +2712,7 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 
         x3[i]: {
             ok -> it = u[i]
+
             -> _
         }
     }
@@ -2527,12 +2801,14 @@ x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
 
         base[i]: {
             ok -> it = 0
+
             -> _
         }
     }
 
     base[0]: {
         ok -> it = 9
+
         -> _
     }
     out = x25519-scalarmult-bytes(scalar, base)

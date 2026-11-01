@@ -1060,6 +1060,7 @@ list-dir = (dirpath str) (entries []str) {
         name-opt = read-dir(dirp)
         name-opt: {
             ok -> result.push(it)
+
             -> more = false
         }
     }
@@ -1086,6 +1087,7 @@ list-dir = (dirpath str) (entries []str) {
         name-opt = os.win-find-next-file(bufptr)
         name-opt: {
             ok -> result.push(it)
+
             -> more = false
         }
     }
@@ -1110,6 +1112,7 @@ list-dir = (dirpath str) (entries []str) {
         name-opt = read-dir(dirp)
         name-opt: {
             ok -> result.push(it)
+
             -> more = false
         }
     }

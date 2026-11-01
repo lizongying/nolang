@@ -27,6 +27,7 @@ test-vec-elem-inplace = () {
     outer[0] = inner
     inner[0]: {
         ok -> it = 99
+
         -> _
     }
     print(outer[0][0]); 1

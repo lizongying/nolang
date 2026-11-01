@@ -7,6 +7,16 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.13
+
+- feat(i18n): add German, Portuguese and Russian locales and sync documentation catalogs across all languages
+- feat(crypto): add x25519, ecdsa/x509, argon2, chacha20-poly1305, aes-gcm/cbc/ctr, scrypt, blake2, ed25519, pbkdf2, hmac and base32; extend sha and rsa primitives
+- feat(net): add tls, websocket, hpack, http2/http3, quic, proxy and related networking primitives
+- feat(archive): add bzip2, gzip, xz and zstd compression support
+- fix(parser): eliminate false-positive diagnostics from speculative parse paths and preserve FFI doc comments in no fmt
+- perf(mir): split option drop/clone helpers into an inline tag test plus out-of-line body to cut compile time and binary size
+- build(compiler): regenerate parser, lexer and AST tables for the self-hosted compiler
+
 ## v0.4.12
 
 - feat(build,package): import .noml as typed modules and annotate noml members

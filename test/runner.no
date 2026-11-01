@@ -36,13 +36,11 @@ count-failed = 0
 eq = (a i64, b i64, msg str) {
     {
         a != b -> {
-
             count-failed = fail(count-failed)
             print('FAIL: eq -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }
@@ -55,13 +53,11 @@ eq = (a i64, b i64, msg str) {
 ne = (a i64, b i64, msg str) {
     {
         a == b -> {
-
             count-failed = fail(count-failed)
             print('FAIL: ne -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }
@@ -74,13 +70,11 @@ ne = (a i64, b i64, msg str) {
 gt = (a i64, b i64, msg str) {
     {
         a <= b -> {
-
             count-failed = fail(count-failed)
             print('FAIL: gt -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }
@@ -93,13 +87,11 @@ gt = (a i64, b i64, msg str) {
 lt = (a i64, b i64, msg str) {
     {
         a >= b -> {
-
             count-failed = fail(count-failed)
             print('FAIL: lt -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }
@@ -115,13 +107,11 @@ lt = (a i64, b i64, msg str) {
 is-true = (val bool, msg str) {
     {
         val == false -> {
-
             count-failed = fail(count-failed)
             print('FAIL: is-true -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }
@@ -133,13 +123,11 @@ is-true = (val bool, msg str) {
 is-false = (val bool, msg str) {
     {
         val == true -> {
-
             count-failed = fail(count-failed)
             print('FAIL: is-false -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }
@@ -157,13 +145,11 @@ is-false = (val bool, msg str) {
 str-eq = (a str, b str, n i64, msg str) {
     {
         a.eq(b, n) == false -> {
-
             count-failed = fail(count-failed)
             print('FAIL: str-eq -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }
@@ -183,13 +169,11 @@ f64-eq = (a f64, b f64, eps f64, msg str) {
     diff < 0.0 -> diff = 0.0 - diff
     {
         diff >= eps -> {
-
             count-failed = fail(count-failed)
             print('FAIL: f64-eq -', msg)
         }
 
         -> {
-
             count-passed = pass(count-passed)
         }
     }

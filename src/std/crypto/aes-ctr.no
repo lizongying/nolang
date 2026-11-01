@@ -23,6 +23,7 @@ ctr-inc = (cb []byte) {
         #{index-out=zero}
         cb[j]: {
             ok -> it = (cb[j] + 1) & 255
+
             -> _
         }
         cb[j] != 0 -> {
@@ -42,6 +43,7 @@ ctr-inc = (cb []byte) {
             #{index-out=zero}
             cb[j]: {
                 ok -> it = (cb[j] + 1) & 255
+
                 -> _
             }
             cb[j] != 0 -> {
@@ -69,6 +71,7 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
         cb[i]: {
             ok -> it = iv[i]
+
             -> _
         }
     }
@@ -82,6 +85,7 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
             blk[i]: {
                 ok -> it = cb[i]
+
                 -> _
             }
         }

@@ -46,6 +46,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 
         k[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -56,6 +57,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
                 #{index-out=zero}
                 k[i]: {
                     ok -> it = key[i]
+
                     -> _
                 }
             }
@@ -69,6 +71,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 
                 k[i]: {
                     ok -> it = h[i]
+
                     -> _
                 }
             }
@@ -81,6 +84,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 
         ipad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-IPAD
+
             -> _
         }
     }
@@ -91,6 +95,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 
         opad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-OPAD
+
             -> _
         }
     }
@@ -101,6 +106,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 
         inner-data[i]: {
             ok -> it = ipad-key[i]
+
             -> _
         }
     }
@@ -109,6 +115,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
         #{index-out=zero, overflow=wrap}
         inner-data[64 + i]: {
             ok -> it = msg[i]
+
             -> _
         }
     }
@@ -120,6 +127,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
 
         outer-data[i]: {
             ok -> it = opad-key[i]
+
             -> _
         }
     }
@@ -128,6 +136,7 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
         #{overflow=wrap}
         outer-data[64 + i]: {
             ok -> it = inner-hash[i]
+
             -> _
         }
     }
@@ -168,6 +177,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 
         k[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -178,6 +188,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
                 #{index-out=zero}
                 k[i]: {
                     ok -> it = key[i]
+
                     -> _
                 }
             }
@@ -189,6 +200,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 
                 k[i]: {
                     ok -> it = h[i]
+
                     -> _
                 }
             }
@@ -199,6 +211,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 
         ipad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-IPAD
+
             -> _
         }
     }
@@ -207,6 +220,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 
         opad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-OPAD
+
             -> _
         }
     }
@@ -215,6 +229,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 
         inner-data[i]: {
             ok -> it = ipad-key[i]
+
             -> _
         }
     }
@@ -223,6 +238,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
         #{index-out=zero, overflow=wrap}
         inner-data[64 + i]: {
             ok -> it = msg[i]
+
             -> _
         }
     }
@@ -233,6 +249,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
 
         outer-data[i]: {
             ok -> it = opad-key[i]
+
             -> _
         }
     }
@@ -241,6 +258,7 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
         #{overflow=wrap}
         outer-data[64 + i]: {
             ok -> it = inner-hash[i]
+
             -> _
         }
     }
@@ -281,6 +299,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
         k[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -291,6 +310,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
                 #{index-out=zero}
                 k[i]: {
                     ok -> it = key[i]
+
                     -> _
                 }
             }
@@ -302,6 +322,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
                 k[i]: {
                     ok -> it = h[i]
+
                     -> _
                 }
             }
@@ -312,6 +333,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
         ipad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-IPAD
+
             -> _
         }
     }
@@ -320,6 +342,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
         opad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-OPAD
+
             -> _
         }
     }
@@ -328,6 +351,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
         inner-data[i]: {
             ok -> it = ipad-key[i]
+
             -> _
         }
     }
@@ -336,6 +360,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
         #{index-out=zero, overflow=wrap}
         inner-data[128 + i]: {
             ok -> it = msg[i]
+
             -> _
         }
     }
@@ -346,6 +371,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
         outer-data[i]: {
             ok -> it = opad-key[i]
+
             -> _
         }
     }
@@ -354,6 +380,7 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
         #{overflow=wrap}
         outer-data[128 + i]: {
             ok -> it = inner-hash[i]
+
             -> _
         }
     }
@@ -387,6 +414,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 
         k[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -397,6 +425,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
                 #{index-out=zero}
                 k[i]: {
                     ok -> it = key[i]
+
                     -> _
                 }
             }
@@ -408,6 +437,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 
                 k[i]: {
                     ok -> it = h[i]
+
                     -> _
                 }
             }
@@ -418,6 +448,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 
         ipad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-IPAD
+
             -> _
         }
     }
@@ -426,6 +457,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 
         opad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-OPAD
+
             -> _
         }
     }
@@ -434,6 +466,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 
         inner-data[i]: {
             ok -> it = ipad-key[i]
+
             -> _
         }
     }
@@ -442,6 +475,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
         #{index-out=zero, overflow=wrap}
         inner-data[128 + i]: {
             ok -> it = msg[i]
+
             -> _
         }
     }
@@ -452,6 +486,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
 
         outer-data[i]: {
             ok -> it = opad-key[i]
+
             -> _
         }
     }
@@ -460,6 +495,7 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
         #{overflow=wrap}
         outer-data[128 + i]: {
             ok -> it = inner-hash[i]
+
             -> _
         }
     }
@@ -493,6 +529,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 
         k[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -503,6 +540,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
                 #{index-out=zero}
                 k[i]: {
                     ok -> it = key[i]
+
                     -> _
                 }
             }
@@ -514,6 +552,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 
                 k[i]: {
                     ok -> it = h[i]
+
                     -> _
                 }
             }
@@ -524,6 +563,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 
         ipad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-IPAD
+
             -> _
         }
     }
@@ -532,6 +572,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 
         opad-key[i]: {
             ok -> it = (k[i]) ^ HMAC-OPAD
+
             -> _
         }
     }
@@ -540,6 +581,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 
         inner-data[i]: {
             ok -> it = ipad-key[i]
+
             -> _
         }
     }
@@ -548,6 +590,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
         #{index-out=zero, overflow=wrap}
         inner-data[64 + i]: {
             ok -> it = msg[i]
+
             -> _
         }
     }
@@ -558,6 +601,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
 
         outer-data[i]: {
             ok -> it = opad-key[i]
+
             -> _
         }
     }
@@ -566,6 +610,7 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
         #{overflow=wrap}
         outer-data[64 + i]: {
             ok -> it = inner-hash[i]
+
             -> _
         }
     }

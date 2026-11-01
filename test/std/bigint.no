@@ -165,6 +165,7 @@ t-to-i64 = () {
     av ?i64 = a.to-i64()
     rv = av: {
         ok -> it
+
         -> -1
     }
     runner.eq(rv, 4503599627370496, 'to-i64 round-trips 2^52')
@@ -173,6 +174,7 @@ t-to-i64 = () {
     nv ?i64 = neg.to-i64()
     nrv = nv: {
         ok -> it
+
         -> 0
     }
     runner.eq(nrv, -123, 'to-i64 keeps the sign')
@@ -182,6 +184,7 @@ t-to-i64 = () {
     o63 ?i64 = p63.to-i64()
     ok63 = o63: {
         ok -> 1
+
         -> 0
     }
     runner.eq(ok63, 0, 'to-i64(2^63) is err, not a truncated value')
@@ -191,6 +194,7 @@ t-to-i64 = () {
     o64 ?i64 = p64.to-i64()
     ok64 = o64: {
         ok -> 1
+
         -> 0
     }
     runner.eq(ok64, 0, 'to-i64(2^64) is err')
@@ -201,6 +205,7 @@ t-to-i64 = () {
     mv63 ?i64 = m63.to-i64()
     okm = mv63: {
         ok -> it
+
         -> 0
     }
     back = bigint.from-i64(okm)
@@ -258,16 +263,19 @@ t-operator-mixed = () {
     runner.str-eq(s4, '50', 2, 'a(100) / 2 == 50')
     s5 = (a % 9).to-str()
     runner.str-eq(s5, '1', 1, 'a(100) % 9 == 1')
+
     ; i64 區域變數實參同樣命中 i64 臂（非僅字面量）
     n = 5
     s6 = (a + n).to-str()
     runner.str-eq(s6, '105', 3, 'a(100) + n(5) == 105')
+
     ; 同型 bigint ⊕ bigint 命中 bigint 臂
     b = bigint.from-i64(7)
     s7 = (a + b).to-str()
     runner.str-eq(s7, '107', 3, 'a(100) + b(7) == 107')
     s8 = (a * b).to-str()
     runner.str-eq(s8, '700', 3, 'a(100) * b(7) == 700')
+
     ; 負運算數：守衛型別臂內命名輸出形參的符號回寫（曾誤為正號）
     na = bigint.from-i64(-100)
     s9 = (na + 3).to-str()

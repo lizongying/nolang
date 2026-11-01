@@ -50,6 +50,7 @@ e-list {
 }
 
 ; 抽取的 callee（Phase 2 的 R2 會把呼叫者的引數標成 owning）
+; q: 被消費打印的枚舉值（ok 帶 str 載荷）
 consume = (q e-res) {
     q: {
         ok(v) -> print('consume: {v}')
@@ -60,10 +61,13 @@ consume = (q e-res) {
 
 ; **不**抽取的 callee：R5 必須讓**呼叫者**擁有，而 callee 的參數不可被標
 ; （否則同一個儲存被釋放兩次）。
+; q: 傳入但從不過問的枚舉值（接收方不得宣稱所有權）
 bystander = (q e-res) {
     print('bystander: ignored')
 }
 
+; 打印 e-list 的內容
+; q: 待打印的枚舉值（ok2 帶 []i64 載荷逐項輸出，none 打印 none）
 show-list = (q e-list) {
     q: {
         ok2(v) -> {
@@ -78,17 +82,21 @@ show-list = (q e-list) {
 }
 
 ; 經**結果參數**把載荷交還呼叫者（case 11/12 的被呼叫端）。
+; r: ok('direct') 的 e-res 值
 make-direct = () (r e-res) {
     q e-res = ok('direct')
     r = q
 }
 
+; 最內層的構造者：建立 ok('inner') 並經結果參數交還（case 12 的 inner）。
+; r: ok('inner') 的 e-res 值
 make-inner = () (r e-res) {
     q e-res = ok('inner')
     r = q
 }
 
 ; 再轉手一層：接到 inner 的結果，原樣交還。
+; r: make-inner 回傳的 e-res，未經拷貝直接轉手
 make-outer = () (r e-res) {
     t = make-inner()
     r = t
@@ -97,6 +105,7 @@ make-outer = () (r e-res) {
 ; 🔴 先經一個**區域別名**再交還：`t e-res = q` 會讓 Phase 2b 插一次深拷貝
 ; （因為 t 之後會被讀），拷貝結果再被 move 進結果參數。這條路上的「所有權在
 ; 來源」規則同樣必須讓位給「移進參數 = 離開這個框」（§11.4）。
+; r: 經區域別名 t 轉手後 move 進結果參數的 e-res 值
 make-chain = () (r e-res) {
     q e-res = ok('chain')
     t = q

@@ -18,6 +18,7 @@ t-unalloc-loop = () {
     i <- [0..4): {
         v[i]: {
             ok -> it = i + 1
+
             -> _
         }
     }
@@ -31,6 +32,7 @@ t-unalloc-far-index = () {
     v []u64
     v[1500]: {
         ok -> it = 77
+
         -> _
     }
     runner.eq(v[1500], 77, 'far index: v[1500] == 77')
@@ -42,6 +44,7 @@ t-withlen0 = () {
     v []u64 = with-len(0)
     v[2]: {
         ok -> it = 9
+
         -> _
     }
     runner.eq(v[2], 9, 'with-len(0): v[2] == 9')
@@ -51,15 +54,17 @@ t-withlen0 = () {
 ; 4) 負下標：寫語義下唯一非法索引，必須走 catch-all（不寫入、不崩潰）
 t-negative-index = () {
     v []u64
-    i i64 = 0
+    i = 0
+
     #{overflow=wrap}
     i = i - 1
-    wrote bool = false
+    wrote = false
     v[i]: {
         ok -> {
             it = 5
             wrote = true
         }
+
         -> _
     }
     runner.eq(wrote, false, 'negative index: ok arm NOT taken')
@@ -69,29 +74,35 @@ t-negative-index = () {
 ; 5) 忠實重現 blake2 b-compress 的初始化形態：未分配 vec + #{index-out=zero} +
 ;    RHS 含下標讀（觸發 desugarIndexOutReads）+ 迴圈 + 函數返回該 vec
 WV [8]u64 = [1, 2, 3, 4, 5, 6, 7, 8]
+
 ; 重現 blake2 compress 的初始化形態：未配置 vec + #{index-out=zero} + RHS 下標讀 + 迴圈 + 返回
 ; st []u64: 長度 16 的 vec；[0..8) 為 WV[i]*10，[8..16) 為 WV[i]+100
 b-state-like = () (st []u64) {
     v []u64
     i <- [0..8): {
+
         #{index-out=zero}
         v[i]: {
             ok -> it = WV[i] * 10
+
             -> _
         }
     }
     i <- [0..8): {
+
         #{index-out=zero}
         v[8 + i]: {
             ok -> it = WV[i] + 100
+
             -> _
         }
     }
     st = v
 }
+
 ; 承接返回的 vec：v[0]=10、v[7]=80、v[8]=101、v[15]=108，len 為 16
 t-blake2-like = () {
-    st []u64 = b-state-like()
+    st = b-state-like()
     runner.eq(st[0], 10, 'blake2-like: v[0] == 10')
     runner.eq(st[7], 80, 'blake2-like: v[7] == 80')
     runner.eq(st[8], 101, 'blake2-like: v[8] == 101')
@@ -108,5 +119,6 @@ runner.summary()
 ff = runner.failed-count()
 {
     ff > 0 -> exit(1)
+
     -> exit(0)
 }

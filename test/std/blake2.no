@@ -40,7 +40,6 @@ seq-bytes = (n i64) (out []byte) {
     out = with-len(n)
     i <- [0..n): {
 
-        #{index-out=zero}
         out[i] = i & 255
     }
 }

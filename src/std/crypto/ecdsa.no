@@ -156,6 +156,7 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         #{index-out=zero}
         work[i]: {
             ok -> it = a[i]
+
             -> _
         }
     }
@@ -172,6 +173,7 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
 
             work[i]: {
                 ok -> it = diff[i]
+
                 -> _
             }
         }
@@ -196,6 +198,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
         product[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -214,6 +217,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             product[idx]: {
                 ok -> it = val & 255
+
                 -> _
             }
             carry = val >> 8
@@ -229,6 +233,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             product[idx]: {
                 ok -> it = val & 255
+
                 -> _
             }
             carry = val >> 8
@@ -246,6 +251,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
         work[i]: {
             ok -> it = product[i]
+
             -> _
         }
     }
@@ -292,112 +298,60 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     ; 否則最高位元組永遠不會被規約，結果錯誤。
     ; 迴圈條件 > 0 + 頂部先 -1，因此實際會處理到 shift-byte=0（窗 work[0..31]），
     ; 確保結果 < m。
-    shift-byte = 33
-    (shift-byte > 0) {
+    ; ── 高效率模約簡（取代逐次減 m）──
+    ; 對每個高位元組位置 pos（32..0）：以「商估計 q = hi」一次性減去 q*m
+    ; （hi = work[pos+32] 代表 hi*2^256 項），再以 ≤2 次單次減 m 校正到
+    ; 窗口 < m。相較於逐次減 m（每位置最多約 254 次），此做法每位置僅
+    ; O(32) 位元組運算，把單次約簡從 O(256n) 降到 O(n)。
+    pos = 32
+    (pos >= 0) {
 
-        #{overflow=wrap}
-        shift-byte = shift-byte - 1
-
-        ; 嘗試減去 m << (shift_byte * 8)
-        ; 即在 work[shift_byte..shift_byte+32) 處減去 m
-        ; 33 位元組修正：真實要比較的是 floor(work / 256^shift_byte)，佔用位元組
-        ; [shift_byte .. 63]；其上方位元組 work[shift_byte+32] 非 0 時，該值必
-        ; >= 2^256 > m，必須強制減。經高位處理後 [shift_byte+33 .. 63] 必為 0，
-        ; 故只需檢查此一位元組即可；僅在「窗口 < m 且無上溢位元組」時才清 can-sub。
-        can-sub = 1
+        ; hi = work[pos+32]（越界視為 0）
         hi = 0
-        (shift-byte + 32 < 64) -> {
+        (pos + 32 < 64) -> {
 
             #{index-out=zero}
-            hi = work[shift-byte + 32]
-        }
-        i <- [31..0]: {
-            wi = 0
-
-            #{overflow=wrap}
-            shift-byte + i < 64 -> {
-
-                #{index-out=zero}
-                wi = work[shift-byte + i]
-            }
-
-            #{index-out=zero}
-            mi = m[i]
-            {
-                wi > mi -> break
-
-                wi < mi -> {
-                    (hi == 0) -> {
-                        can-sub = 0
-                    }
-                    break
-                }
-            }
+            hi = work[pos + 32]
         }
 
-        #{overflow=wrap}
-        can-sub == 1 -> {
-
-            borrow = 0
+        ; 一次乘減：work[pos..pos+32] -= hi * m
+        (hi != 0) -> {
+            prod [33]byte
+            carry = 0
             i <- [0..32): {
 
+                #{index-out=zero}
+                mi = m[i]
+
                 #{overflow=wrap}
-                idx = shift-byte + i
-                {
-                    idx < 64 -> {
+                t = (hi) * (mi) + carry
 
-                        #{index-out=zero, overflow=wrap}
-                        val = (work[idx]) - (m[i]) - borrow
-                        {
-                            val < 0 -> {
+                prod[i]: {
+                    ok -> it = t & 255
 
-                                #{overflow=wrap}
-                                val = val + 256
-                                borrow = 1
-                            }
-
-                            -> borrow = 0
-                        }
-
-                        work[idx]: {
-                            ok -> it = val
-                            -> _
-                        }
-                    }
-
-                    -> {
-                        borrow != 0 -> {
-
-                            #{index-out=zero, overflow=wrap}
-                            val = (work[idx]) - borrow
-                            {
-                                val < 0 -> {
-
-                                    #{overflow=wrap}
-                                    val = val + 256
-                                    borrow = 1
-                                }
-
-                                -> borrow = 0
-                            }
-
-                            work[idx]: {
-                                ok -> it = val
-                                -> _
-                            }
-                        }
-                    }
+                    -> _
                 }
+
+                carry = t >> 8
+            }
+            prod[32]: {
+                ok -> it = carry & 255
+
+                -> _
             }
 
-            ; 傳播最後的借位到上位元組：強制減時窗口可能 < m 而產生借位，
-            ; 必須把借位繼續往 work[shift-byte+32 .. 63] 傳播，否則減法不完整。
-            (borrow != 0) {
-                idx = shift-byte + 32
-                (idx < 64) {
+            borrow = 0
+            i <- [0..33): {
+
+                #{overflow=wrap}
+                idx = pos + i
+                (idx < 64) -> {
+
+                    #{index-out=zero}
+                    pi = prod[i]
 
                     #{index-out=zero, overflow=wrap}
-                    val = (work[idx]) - borrow
+                    val = (work[idx]) - pi - borrow
                     {
                         val < 0 -> {
 
@@ -410,17 +364,107 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
                     work[idx]: {
                         ok -> it = val
+
                         -> _
                     }
-
-                    #{overflow=wrap}
-                    idx = idx + 1
                 }
             }
-
-            ; 如果還能減，再減一次
-            shift-byte = shift-byte + 1
         }
+
+        ; 校正：33 位元組值 [pos..pos+32] >= m 就再減 m（通常 ≤1 次）
+        corr = 0
+        (corr < 4) {
+            chi = 0
+            (pos + 32 < 64) -> {
+
+                #{index-out=zero}
+                chi = work[pos + 32]
+            }
+            ge = 0
+            (chi != 0) -> {
+                ge = 1
+            }
+            (chi == 0) -> {
+                ge = 1
+                j <- [31..0]: {
+
+                    #{index-out=zero}
+                    wj = work[pos + j]
+
+                    #{index-out=zero}
+                    mj = m[j]
+                    {
+                        wj > mj -> break
+
+                        wj < mj -> {
+                            ge = 0
+                            break
+                        }
+                    }
+                }
+            }
+            (ge == 1) -> {
+                borrow = 0
+                j <- [0..32): {
+
+                    #{overflow=wrap}
+                    idx = pos + j
+
+                    #{index-out=zero, overflow=wrap}
+                    val = (work[idx]) - (m[j]) - borrow
+                    {
+                        val < 0 -> {
+
+                            #{overflow=wrap}
+                            val = val + 256
+                            borrow = 1
+                        }
+
+                        -> borrow = 0
+                    }
+                    work[idx]: {
+                        ok -> it = val
+
+                        -> _
+                    }
+                }
+                (borrow != 0) {
+                    idx = pos + 32
+                    (idx < 64) {
+
+                        #{index-out=zero, overflow=wrap}
+                        val = (work[idx]) - borrow
+                        {
+                            val < 0 -> {
+
+                                #{overflow=wrap}
+                                val = val + 256
+                                borrow = 1
+                            }
+
+                            -> borrow = 0
+                        }
+                        work[idx]: {
+                            ok -> it = val
+
+                            -> _
+                        }
+
+                        #{overflow=wrap}
+                        idx = idx + 1
+                    }
+                }
+            }
+            (ge == 0) -> {
+                corr = 4
+            }
+
+            #{overflow=wrap}
+            corr = corr + 1
+        }
+
+        #{overflow=wrap}
+        pos = pos - 1
     }
     i <- [0..32): {
         out[i] = work[i]
@@ -448,17 +492,20 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
         acc[i]: {
             ok -> it = s[i]
+
             -> _
         }
     }
     acc[32]: {
         ok -> it = carry & 255
+
         -> _
     }
     i <- [33..64): {
 
         acc[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -530,6 +577,7 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                         acc[idx]: {
                             ok -> it = val
+
                             -> _
                         }
                     }
@@ -552,6 +600,7 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                             acc[idx]: {
                                 ok -> it = val
+
                                 -> _
                             }
                         }
@@ -580,6 +629,7 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
                     acc[idx]: {
                         ok -> it = val
+
                         -> _
                     }
 
@@ -653,12 +703,14 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
     result [32]byte
     result[0]: {
         ok -> it = 1
+
         -> _
     }
     i <- [1..32): {
 
         result[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -821,6 +873,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
             #{index-out=zero}
             r[i]: {
                 ok -> it = q[i]
+
                 -> _
             }
         }
@@ -840,6 +893,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
             #{index-out=zero}
             r[i]: {
                 ok -> it = p[i]
+
                 -> _
             }
         }
@@ -908,6 +962,7 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
                 i <- [0..96): {
                     r[i]: {
                         ok -> it = 0
+
                         -> _
                     }
                 }
@@ -951,18 +1006,21 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     i <- [0..32): {
         r[i]: {
             ok -> it = x3[i]
+
             -> _
         }
 
         #{overflow=wrap}
         r[32 + i]: {
             ok -> it = y3[i]
+
             -> _
         }
 
         #{overflow=wrap}
         r[64 + i]: {
             ok -> it = z3[i]
+
             -> _
         }
     }
@@ -1085,12 +1143,14 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
         #{index-out=zero, overflow=wrap}
         x[i]: {
             ok -> it = in[1 + 31 - i]
+
             -> _
         }
 
         #{index-out=zero, overflow=wrap}
         y[i]: {
             ok -> it = in[33 + 31 - i]
+
             -> _
         }
     }
@@ -1156,6 +1216,7 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
         #{index-out=zero, overflow=wrap}
         k[i]: {
             ok -> it = priv[31 - i]
+
             -> _
         }
     }
@@ -1195,6 +1256,7 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
         #{index-out=zero, overflow=wrap}
         k[i]: {
             ok -> it = priv[31 - i]
+
             -> _
         }
     }
@@ -1213,7 +1275,7 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
 
 ; ECDSA 簽名
 ; priv [32]byte: 私鑰（大端序）
-; msg []byte: 訊息
+; msg []byte: 待簽名原文（內部先做 SHA-256 再簽，非預哈希輸入）
 ; 返回 sig [64]byte: 簽名（r || s，各 32 位元組，大端序）
 ; [ecdsa-sign](#ecdsa.ecdsa-sign)
 ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
@@ -1229,6 +1291,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         #{index-out=zero, overflow=wrap}
         h-le[i]: {
             ok -> it = h[31 - i]
+
             -> _
         }
     }
@@ -1240,6 +1303,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         #{index-out=zero, overflow=wrap}
         d[i]: {
             ok -> it = priv[31 - i]
+
             -> _
         }
     }
@@ -1254,6 +1318,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 
         k[i]: {
             ok -> it = state & 255
+
             -> _
         }
     }
@@ -1271,6 +1336,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         all-zero == 1 -> {
             k[0]: {
                 ok -> it = 1
+
                 -> _
             }
         }
@@ -1293,6 +1359,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
         #{index-out=zero, overflow=wrap}
         rx[i]: {
             ok -> it = r-point-bytes[1 + 31 - i]
+
             -> _
         }
     }
@@ -1322,7 +1389,7 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
 
 ; ECDSA 驗簽
 ; pub [65]byte: 公鑰
-; msg []byte: 訊息
+; msg []byte: 待驗簽原文（內部先做 SHA-256，需與簽名時一致）
 ; sig [64]byte: 簽名（r || s）
 ; 返回 ok i64: 1=有效, 0=無效
 ; [ecdsa-verify](#ecdsa.ecdsa-verify)
@@ -1336,12 +1403,14 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         #{index-out=zero, overflow=wrap}
         r-val[i]: {
             ok -> it = sig[31 - i]
+
             -> _
         }
 
         #{index-out=zero, overflow=wrap}
         s-val[i]: {
             ok -> it = sig[32 + 31 - i]
+
             -> _
         }
     }
@@ -1390,6 +1459,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         #{index-out=zero, overflow=wrap}
         h-le[i]: {
             ok -> it = h[31 - i]
+
             -> _
         }
     }
@@ -1445,6 +1515,7 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
         #{index-out=zero, overflow=wrap}
         rx[i]: {
             ok -> it = r-point-bytes[1 + 31 - i]
+
             -> _
         }
     }

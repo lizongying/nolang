@@ -101,11 +101,13 @@ t-tamper = () {
         #{index-out=zero}
         bad[i]: {
             ok -> it = sig[i]
+
             -> _
         }
     }
     bad[63]: {
         ok -> it = it ^ 0x01
+
         -> _
     }
     ok = ed25519.ed25519-verify(pub, msg, bad)

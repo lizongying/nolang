@@ -529,6 +529,7 @@ txt.to-lower = () (val txt) {
     }
     val.len = n
 }
+
 ;
 ; 從 char 切片構造新 txt（逐碼點寫入，UTF-8 編碼；超過 255 字節 的內容自動丟棄）
 ; ⚠️ 不可用 `val[i]: { ok -> it = cs[i] }` 逐碼點寫入：D9 的 place-match 以
@@ -539,7 +540,7 @@ txt.to-lower = () (val txt) {
 ; t: ok=逐碼點 UTF-8 編碼後的新 txt, nil=編碼結果超過 255 位元組（超出部分丟棄）
 ; [from-chars](#txt.from-chars)
 txt.from-chars = (cs []char) (t ?txt) {
-    v txt = txt.new(cs)
+    v = txt.new(cs)
     t = v
 }
 

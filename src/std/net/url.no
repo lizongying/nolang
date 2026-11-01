@@ -378,7 +378,9 @@ url-encode = (s str) (out str) {
             ->
         }
         {
-            keep -> { out[out.len-bytes()] = c }
+            keep -> {
+                out[out.len-bytes()] = c
+            }
 
             -> {
                 out[out.len-bytes()] = 37
@@ -395,6 +397,7 @@ url-encode = (s str) (out str) {
 ; [url-encode-component](#url.url-encode-component)
 url-encode-component = (s str) (out str) {
     hex-chars = '0123456789ABCDEF'
+
     #{overflow=wrap}
     out = with-cap(s.len-bytes() * 3 + 1)
     i <- [0..s.len-bytes()): {
@@ -421,7 +424,9 @@ url-encode-component = (s str) (out str) {
             ->
         }
         {
-            keep -> { out[out.len-bytes()] = c }
+            keep -> {
+                out[out.len-bytes()] = c
+            }
 
             -> {
                 out[out.len-bytes()] = 37
@@ -454,6 +459,7 @@ url-decode = (s str) (out str) {
 
                 h1 i64 = h1-opt: {
                     ok -> it
+
                     -> _
                 }
 
@@ -461,6 +467,7 @@ url-decode = (s str) (out str) {
 
                 h2 i64 = h2-opt: {
                     ok -> it
+
                     -> _
                 }
 
@@ -493,7 +500,9 @@ url-decode = (s str) (out str) {
                     i = i + 2
                 }
 
-                -> { out[out.len-bytes()] = c }
+                -> {
+                    out[out.len-bytes()] = c
+                }
             }
 
             c == 43 -> {
@@ -502,7 +511,9 @@ url-decode = (s str) (out str) {
                 out[out.len-bytes()] = 32
             }
 
-            -> { out[out.len-bytes()] = c }
+            -> {
+                out[out.len-bytes()] = c
+            }
         }
 
         #{overflow=wrap}
@@ -667,6 +678,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
         #{index-out=zero}
         user-bytes[j]: {
             ok -> it = raw[j]
+
             -> _
         }
     }
@@ -680,6 +692,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
         #{index-out=zero}
         pass-bytes[k]: {
             ok -> it = raw[j]
+
             -> _
         }
 

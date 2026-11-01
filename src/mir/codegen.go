@@ -7026,6 +7026,68 @@ func optDropName(payloadLT string) string {
 	return "__nolang_opt_drop_" + sanitize(strings.TrimPrefix(payloadLT, "%"))
 }
 
+// optionPayloadOwnsNothing reports whether an option whose OK payload is
+// payloadLT owns no heap through that payload at all: an i1/i8/i16/i32/i64/
+// i128/f32/f64 scalar, or a POD struct/array with no pointer or owned-leaf
+// fields. It is the "ok arm frees nothing" half of emitOptionDrop's switch,
+// factored out so the drop/clone helpers can consult it.
+//
+// It says nothing about the ERR arm. A `?i64` still owns a heap box the moment
+// it holds a structured err.err (see errPayloadOwnsHeap), which is why such an
+// option gets a drop helper at all.
+func (c *codegen) optionPayloadOwnsNothing(elemRaw, payloadLT string) bool {
+	if !c.optionPayloadInline(payloadLT) {
+		return false
+	}
+	switch payloadLT {
+	case "%str-long", "%vec":
+		return false
+	}
+	if key := c.structKeyOf(elemRaw); key != "" {
+		return !(c.mod.StructHasPtrFields(key) || c.mod.StructHasOwnedLeafFields(key))
+	}
+	return true
+}
+
+// optionHelperSplit reports whether an option drop/clone helper should be
+// emitted as a two-part pair: a tiny `alwaysinline` tag test that forwards to
+// an out-of-line `.slow` twin holding the real body.
+//
+// When the OK payload owns nothing, the helper's ONLY work is the tag==2 arm —
+// freeing (drop) or re-boxing (clone) std's err.err; the tag==0 and tag==1 arms
+// are empty. Forcing such a helper inline lets LLVM see the tag test at the
+// call site, so a `%option` alloca written with a constant tag is SROA'd, the
+// branch constant-folds, and the call, the tag load and the empty arms all
+// disappear.
+//
+// This is not a micro-optimisation. Passing `%option*` to an OUT-OF-LINE helper
+// makes the alloca escape, which is exactly what stops mem2reg/SROA from
+// proving the tag constant — so every `?i64` temporary paid a real function
+// call on every drop, and the compiler-generated index-out machinery emits
+// three of them per byte store.
+//
+// Measured on `test/std/ecdsa.no` (6588 drop/clone sites):
+//
+//	variant                     build    binary   ecdsa run
+//	before                      96.5s    882 KB   5.7s
+//	full body inlined          217.0s    122 KB   0.19s
+//	split (this)                46.4s    172 KB   1.07s
+//
+// The full-body variant removes the most runtime but duplicates a ~17-instruction
+// body 6588 times, which pushes `opt -O2` past 120s (68s on the raw IR alone).
+// Splitting so only a 6-instruction wrapper is inlined keeps the elimination and
+// makes every axis better than the status quo, including compile time — the
+// optimized module is 5x smaller, so the backend does less work than before.
+// The remaining 1.07s vs 0.19s gap is the tag test on values whose tag genuinely
+// cannot be folded (options that really can hold an err).
+//
+// Payloads that DO own heap keep the single out-of-line helper: their ok arm
+// reaches the allocator and keeps the alloca live, so inlining buys no folding
+// and would only duplicate the free/box code at every drop site.
+func (c *codegen) optionHelperSplit(elemRaw, payloadLT string) bool {
+	return c.optionPayloadOwnsNothing(elemRaw, payloadLT)
+}
+
 // emitOptionDropHelper emits (once per payload type) and returns the name of
 // `@__nolang_opt_drop_<payload>`, which frees everything an `%option*` owns:
 //
@@ -7054,9 +7116,16 @@ func (c *codegen) emitOptionDropHelper(elemRaw, payloadLT string) string {
 	// default slot even when the declared payload was not — and is now std's
 	// structured err.err, which never fits and always goes through a box.
 	errBoxed := c.errPayloadBoxed()
+	// See optionHelperSplit: a POD ok payload means the body is all err arm, so
+	// it is emitted as `<fn>.slow` behind a 6-instruction inline tag test.
+	split := c.optionHelperSplit(elemRaw, payloadLT)
+	bodyName := fn
+	if split {
+		bodyName = fn + ".slow"
+	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "define void @%s(%%option* %%o) {\n", fn)
+	fmt.Fprintf(&b, "define void @%s(%%option* %%o) {\n", bodyName)
 	b.WriteString("entry:\n")
 	b.WriteString("  %tp = getelementptr inbounds %option, %option* %o, i32 0, i32 0\n")
 	b.WriteString("  %t = load i64, i64* %tp\n")
@@ -7119,6 +7188,24 @@ func (c *codegen) emitOptionDropHelper(elemRaw, payloadLT string) string {
 	b.WriteString("  br label %done\n")
 	b.WriteString("done:\n")
 	b.WriteString("  ret void\n}\n")
+	if split {
+		// The wrapper is what every call site names; the body above is reached
+		// only from its `slow` block, i.e. only for a tag==2 slot.
+		var w strings.Builder
+		fmt.Fprintf(&w, "define void @%s(%%option* %%o) alwaysinline {\n", fn)
+		w.WriteString("entry:\n")
+		w.WriteString("  %stp = getelementptr inbounds %option, %option* %o, i32 0, i32 0\n")
+		w.WriteString("  %st = load i64, i64* %stp\n")
+		w.WriteString("  %siserr = icmp eq i64 %st, 2\n")
+		w.WriteString("  br i1 %siserr, label %slow, label %ret\n")
+		w.WriteString("slow:\n")
+		fmt.Fprintf(&w, "  call void @%s(%%option* %%o)\n", bodyName)
+		w.WriteString("  br label %ret\n")
+		w.WriteString("ret:\n")
+		w.WriteString("  ret void\n}\n")
+		w.WriteString(b.String())
+		b = w
+	}
 	c.extraFuncsBody.WriteString(b.String())
 	return "@" + fn
 }
@@ -7209,8 +7296,15 @@ func (c *codegen) emitOptionCloneHelper(elemRaw, payloadLT string) string {
 	c.extraFuncs[fn] = true
 
 	key := c.structKeyOf(elemRaw)
+	// See optionHelperSplit: a POD ok payload means the body is all err arm, so
+	// it is emitted as `<fn>.slow` behind a small inline wrapper.
+	split := c.optionHelperSplit(elemRaw, payloadLT)
+	bodyName := fn
+	if split {
+		bodyName = fn + ".slow"
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "define void @%s(%%option* %%dst, %%option* %%src) {\n", fn)
+	fmt.Fprintf(&b, "define void @%s(%%option* %%dst, %%option* %%src) {\n", bodyName)
 	b.WriteString("entry:\n")
 	// The bitwise copy first: it carries the tag and the payload bytes across,
 	// and the ok/err branches below then replace the SHARED heap with fresh
@@ -7276,6 +7370,27 @@ func (c *codegen) emitOptionCloneHelper(elemRaw, payloadLT string) string {
 
 	b.WriteString("done:\n")
 	b.WriteString("  ret void\n}\n")
+	if split {
+		// The wrapper keeps the bitwise copy (it is what gives the destination
+		// its tag and payload for the tag!=2 cases, and the body below repeats
+		// it harmlessly on the cold path), then forwards only a tag==2 slot.
+		var w strings.Builder
+		fmt.Fprintf(&w, "define void @%s(%%option* %%dst, %%option* %%src) alwaysinline {\n", fn)
+		w.WriteString("entry:\n")
+		w.WriteString("  %wv = load %option, %option* %src\n")
+		w.WriteString("  store %option %wv, %option* %dst\n")
+		w.WriteString("  %wtp = getelementptr inbounds %option, %option* %dst, i32 0, i32 0\n")
+		w.WriteString("  %wt = load i64, i64* %wtp\n")
+		w.WriteString("  %wiserr = icmp eq i64 %wt, 2\n")
+		w.WriteString("  br i1 %wiserr, label %slow, label %ret\n")
+		w.WriteString("slow:\n")
+		fmt.Fprintf(&w, "  call void @%s(%%option* %%dst, %%option* %%src)\n", bodyName)
+		w.WriteString("  br label %ret\n")
+		w.WriteString("ret:\n")
+		w.WriteString("  ret void\n}\n")
+		w.WriteString(b.String())
+		b = w
+	}
 	c.extraFuncsBody.WriteString(b.String())
 	return "@" + fn
 }

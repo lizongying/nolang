@@ -686,6 +686,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 b.push(j.to-str())
                 b.push('\n')
                 prev = nm
+
                 #{overflow=wrap}
                 j = j + 1
             }
@@ -806,6 +807,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                     b.push(jr.to-str())
                     b.push(')\n')
                 }
+
                 #{overflow=wrap}
                 jr = jr + 1
             }
@@ -848,6 +850,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                     b.push(jl.to-str())
                     b.push(')\n')
                 }
+
                 #{overflow=wrap}
                 jl = jl + 1
             }

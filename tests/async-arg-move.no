@@ -126,6 +126,7 @@ test-arg-inplace-mutation = () {
     n = co first(a)
     a[0]: {
         ok -> it = 99
+
         -> _
     }
     print(n); expect: 1

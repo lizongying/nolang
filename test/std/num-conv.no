@@ -15,17 +15,17 @@
 t-float-int-sat = () {
 
     ; 範圍內：向零截斷
-    r f64 = 3.9
+    r = 3.9
     runner.eq(r.to-i64(), 3, '3.9.to-i64 == 3')
-    rn f64 = 0.0 - 3.9
+    rn = 0.0 - 3.9
     runner.eq(rn.to-i64(), -3, '-3.9.to-i64 == -3')
 
     ; 超上界 → i64.MAX（而非回绕/poison）
-    over f64 = 93.0 * 100000000000000000.0
+    over = 93.0 * 100000000000000000.0
     runner.eq(over.to-i64(), i64.MAX, 'f64 超上界 → i64.MAX')
 
     ; 超下界 → i64.MIN
-    under f64 = 0.0 - over
+    under = 0.0 - over
     runner.eq(under.to-i64(), i64.MIN, 'f64 超下界 → i64.MIN')
 
     ; 1e30 巨大值 → i64.MAX
@@ -33,41 +33,41 @@ t-float-int-sat = () {
     runner.eq(huge.to-i64(), i64.MAX, '1e30.to-i64 → i64.MAX')
 
     ; NaN → 0
-    za f64 = 0.0
-    zb f64 = 0.0
-    nan f64 = za / zb
+    za = 0.0
+    zb = 0.0
+    nan = za / zb
     runner.eq(nan.to-i64(), 0, 'NaN.to-i64 → 0')
 
     ; ±Inf → i64.MAX / i64.MIN
-    oa f64 = 1.0
-    inf f64 = oa / zb
+    oa = 1.0
+    inf = oa / zb
     runner.eq(inf.to-i64(), i64.MAX, '+Inf.to-i64 → i64.MAX')
-    ninf f64 = 0.0 - inf
+    ninf = 0.0 - inf
     runner.eq(ninf.to-i64(), i64.MIN, '-Inf.to-i64 → i64.MIN')
 }
 
 ; ── B2：f64→str 的 NaN/Inf/大值渲染 ──────────────────────────
 ; 口径：f64.to-str 取「最短往返」表示並對齊 Go 的 %v（含 NaN/+Inf/-Inf 拼寫）。
 t-f64-str = () {
-    za f64 = 0.0
-    zb f64 = 0.0
-    nan f64 = za / zb
+    za = 0.0
+    zb = 0.0
+    nan = za / zb
     runner.str-eq(nan.to-str(), 'NaN', 3, 'NaN → "NaN"')
-    oa f64 = 1.0
-    inf f64 = oa / zb
+    oa = 1.0
+    inf = oa / zb
     runner.str-eq(inf.to-str(), '+Inf', 4, '+Inf → "+Inf"')
-    ninf f64 = 0.0 - inf
+    ninf = 0.0 - inf
     runner.str-eq(ninf.to-str(), '-Inf', 4, '-Inf → "-Inf"')
 
     ; 普通值仍按十進制打印
-    z f64 = 0.0
+    z = 0.0
     runner.str-eq(z.to-str(), '0', 1, '0.0 → "0"')
-    a f64 = 1500.0
+    a = 1500.0
     runner.str-eq(a.to-str(), '1500', 4, '1500.0 → "1500"')
 
     ; 超 i64 位緩衝的大值歸一化成科学計數法（2^63）。最短往返只要 16 位有效數字：
     ; 9223372036854776e3（19 位的精確展開 9223372036854775808 不是最短形）。
-    two63 f64 = 9223372036854775808.0
+    two63 = 9223372036854775808.0
     runner.str-eq(two63.to-str(), '9.223372036854776e+18', 21, '2^63 → 9.223372036854776e+18')
 }
 
@@ -75,8 +75,8 @@ t-f64-str = () {
 t-f32-precision = () {
 
     ; 0.1 在 f32 無法精確表示，拓寬回 f64 後與原值不同
-    x f64 = 0.1
-    y f32 = x.to-f32()
+    x = 0.1
+    y = x.to-f32()
     back f64 = y
     diff = back - x
     {
@@ -91,8 +91,8 @@ t-f32-precision = () {
     runner.is-true(diff < 0.000001, '误差量级合理 (<1e-6)')
 
     ; 可精確表示的值往返無損
-    w f64 = 0.5
-    w32 f32 = w.to-f32()
+    w = 0.5
+    w32 = w.to-f32()
     wb f64 = w32
     runner.f64-eq(wb, 0.5, 0.000001, '0.5 经 f32 往返无损')
 }
@@ -106,17 +106,17 @@ t-conv-matrix = () {
     runner.f64-eq(b.to-f64(), 123.0, 0.000001, 'i128.to-f64')
     c u128 = 456
     runner.f64-eq(c.to-f64(), 456.0, 0.000001, 'u128.to-f64')
-    x f64 = 3.9
+    x = 3.9
     runner.eq(x.to-u64(), 3, 'f64.to-u64 → 3')
     runner.eq(x.to-u32(), 3, 'f64.to-u32 → 3')
     runner.eq(x.to-i32(), 3, 'f64.to-i32 → 3')
 
     ; i64→i32 低 32 位截斷（wrap，非 UB）：5000000000 → 705032704
-    big i64 = 5000000000
+    big = 5000000000
     runner.eq(big.to-i32(), 705032704, 'i64.to-i32 截断低 32 位')
 
     ; f64→u32 負數饱和到 0
-    neg f64 = 0.0 - 5.0
+    neg = 0.0 - 5.0
     runner.eq(neg.to-u32(), 0, 'f64 负值.to-u32 → 0')
 }
 

@@ -498,11 +498,13 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     ; :method
     hdr-names[hdr-count]: {
         ok -> it = ':method'
+
         -> _
     }
 
     hdr-values[hdr-count]: {
         ok -> it = method
+
         -> _
     }
 
@@ -512,11 +514,13 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     ; :path
     hdr-names[hdr-count]: {
         ok -> it = ':path'
+
         -> _
     }
 
     hdr-values[hdr-count]: {
         ok -> it = path
+
         -> _
     }
 
@@ -526,11 +530,13 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     ; :scheme
     hdr-names[hdr-count]: {
         ok -> it = ':scheme'
+
         -> _
     }
 
     hdr-values[hdr-count]: {
         ok -> it = 'https'
+
         -> _
     }
 
@@ -540,11 +546,13 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     ; :authority
     hdr-names[hdr-count]: {
         ok -> it = ':authority'
+
         -> _
     }
 
     hdr-values[hdr-count]: {
         ok -> it = host
+
         -> _
     }
 
@@ -554,11 +562,13 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     ; user-agent
     hdr-names[hdr-count]: {
         ok -> it = 'user-agent'
+
         -> _
     }
 
     hdr-values[hdr-count]: {
         ok -> it = 'nolang-http3/1.0'
+
         -> _
     }
 
@@ -570,11 +580,13 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 
         hdr-names[hdr-count]: {
             ok -> it = 'content-length'
+
             -> _
         }
 
         hdr-values[hdr-count]: {
             ok -> it = body.len-bytes().to-str()
+
             -> _
         }
 
@@ -600,6 +612,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out=zero, overflow=wrap}
         stream-data[stream-pos + i]: {
             ok -> it = hdr-buf[i]
+
             -> _
         }
     }
@@ -611,6 +624,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out=zero, overflow=wrap}
         stream-data[stream-pos + i]: {
             ok -> it = data-buf[i]
+
             -> _
         }
     }
@@ -636,6 +650,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out=zero, overflow=wrap}
         pkt[pkt-pos + i]: {
             ok -> it = stream-ft[i]
+
             -> _
         }
     }
@@ -652,6 +667,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out=zero, overflow=wrap}
         pkt[pkt-pos + i]: {
             ok -> it = sid-buf[i]
+
             -> _
         }
     }
@@ -668,6 +684,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out=zero, overflow=wrap}
         pkt[pkt-pos + i]: {
             ok -> it = off-buf[i]
+
             -> _
         }
     }
@@ -684,6 +701,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out=zero, overflow=wrap}
         pkt[pkt-pos + i]: {
             ok -> it = len-buf[i]
+
             -> _
         }
     }
@@ -697,6 +715,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         #{index-out=zero, overflow=wrap}
         pkt[pkt-pos + i]: {
             ok -> it = stream-data[i]
+
             -> _
         }
     }

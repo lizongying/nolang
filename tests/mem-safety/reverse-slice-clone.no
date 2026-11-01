@@ -64,6 +64,7 @@ test-vec-reverse-independence = () (ok bool) {
     b = a[4..0]
     a[0]: {
         ok -> it = 99
+
         -> _
     }
     b[4] == 10 -> ok = true

@@ -14,6 +14,7 @@ print('  模式: 只读')
 f1 ?fs.file = fs.open('/nonexistent/file-xyz-12345.txt',  {
     mode: file-mode.read
 })
+
 ; D1：option 綁定後必須消費（上拋 / match / `_ =`）。
 _ = f1
 
@@ -31,6 +32,7 @@ print('  模式: 只读')
 f2 ?fs.file = fs.open('/tmp',  {
     mode: file-mode.read
 })
+
 ; D1：option 綁定後必須消費（上拋 / match / `_ =`）。
 _ = f2
 
@@ -46,6 +48,7 @@ print('  模式: 写入')
 f3 ?fs.file = fs.open('/root/test.txt',  {
     mode: file-mode.write
 })
+
 ; D1：option 綁定後必須消費（上拋 / match / `_ =`）。
 _ = f3
 
@@ -62,6 +65,7 @@ f4 ?fs.file = fs.open('/tmp/nolang-err-test.txt',  {
     mode: file-mode.write
     perm: file-perm.perm-644
 })
+
 ; D1：option 綁定後必須消費（上拋 / match / `_ =`）。
 _ = f4
 

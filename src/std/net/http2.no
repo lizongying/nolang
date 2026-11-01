@@ -111,54 +111,63 @@ frame.serialize = (buf str, pos i64) (next-pos i64) {
 
     buf[pos]: {
         ok -> it = (.length >> 16) & 255
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 1]: {
         ok -> it = (.length >> 8) & 255
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 2]: {
         ok -> it = .length & 255
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 3]: {
         ok -> it = .frame-type & 255
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 4]: {
         ok -> it = .flags & 255
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 5]: {
         ok -> it = (.stream-id >> 24) & 127
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 6]: {
         ok -> it = (.stream-id >> 16) & 255
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 7]: {
         ok -> it = (.stream-id >> 8) & 255
+
         -> _
     }
 
     #{overflow=wrap}
     buf[pos + 8]: {
         ok -> it = .stream-id & 255
+
         -> _
     }
 
@@ -268,6 +277,7 @@ conn.recv-frame = () (frame ?frame) {
             #{overflow=wrap}
             hdr-buf[hdr-total + i]: {
                 ok -> it = hdr-buf.byte(i)
+
                 -> _
             }
         }
@@ -338,9 +348,12 @@ conn.send-settings = (ack bool) (ok bool) {
 }
 
 ; 發送 HEADERS 影格
-; names/values: 標頭陣列, count: 標頭數, end-stream=是否結束串流
-; stream-id: 本 HEADERS 影格所屬的串流識別號
-; ok: true=HPACK 編碼並發送成功
+; stream-id i64: 本 HEADERS 影格所屬的串流識別號
+; names [64]str: 標頭字段名陣列，與 values 同下標配對
+; values [64]str: 標頭字段值陣列
+; count i64: 有效標頭條目數（只編碼前 count 對）
+; end-stream bool: true=附加 END_STREAM 旗標，表示本串流不再發送資料
+; ok bool: true=HPACK 編碼並發送成功
 ; [send-headers](#http2.conn.send-headers)
 conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, end-stream bool) (ok bool) {
     ok = false
@@ -371,6 +384,7 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
             #{overflow=wrap}
             block[block-n + j]: {
                 ok -> it = hdr-out.byte(j)
+
                 -> _
             }
         }
@@ -563,11 +577,13 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     ; :method
     hdr-names[0]: {
         ok -> it = ':method'
+
         -> _
     }
 
     hdr-values[0]: {
         ok -> it = method
+
         -> _
     }
     hdr-count = 1
@@ -575,11 +591,13 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     ; :path
     hdr-names[1]: {
         ok -> it = ':path'
+
         -> _
     }
 
     hdr-values[1]: {
         ok -> it = path
+
         -> _
     }
     hdr-count = 2
@@ -587,11 +605,13 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     ; :scheme
     hdr-names[2]: {
         ok -> it = ':scheme'
+
         -> _
     }
 
     hdr-values[2]: {
         ok -> it = 'http'
+
         -> _
     }
     hdr-count = 3
@@ -599,11 +619,13 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     ; :authority
     hdr-names[3]: {
         ok -> it = ':authority'
+
         -> _
     }
 
     hdr-values[3]: {
         ok -> it = host
+
         -> _
     }
     hdr-count = 4
@@ -617,12 +639,14 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
         ; content-length
         hdr-names[4]: {
             ok -> it = 'content-length'
+
             -> _
         }
         blen-str = body-len.to-str()
 
         hdr-values[4]: {
             ok -> it = blen-str
+
             -> _
         }
         hdr-count = 5
@@ -696,6 +720,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                     #{overflow=wrap}
                     resp-body[resp-n + i]: {
                         ok -> it = f.payload.byte(i)
+
                         -> _
                     }
                 }

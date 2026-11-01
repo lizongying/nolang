@@ -32,6 +32,7 @@ outer {
     i inner
     name str
 }
+
 ; 建立 box 並把字串寫入它的 txt 欄位 s
 ; v str: 要放入的字串
 ; b box: s 欄位為 v 內容的結構體

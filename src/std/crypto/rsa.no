@@ -230,6 +230,7 @@ rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     local-cn = 0
     local-cn-opt: {
         ok -> local-cn = it
+
         -> local-cn = 0
     }
     keep-trimming = true
@@ -274,6 +275,7 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
 
         a[i]: {
             ok -> it = new-val & 4294967295
+
             -> _
         }
     }
@@ -282,6 +284,7 @@ rsa-bn-shl1 = (a []i64, an i64) (new-an i64) {
 
         a[an]: {
             ok -> it = carry
+
             -> _
         }
 
@@ -313,6 +316,7 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 
         a[i]: {
             ok -> it = new-val & 4294967295
+
             -> _
         }
 
@@ -348,8 +352,10 @@ rsa-bn-shr1 = (a []i64, an i64) (new-an i64) {
 ; ─── 大數除法（二進位長除法）────────────────────
 
 ; q = a / b, r = a % b
-; a: 被除數, an: 長度
-; b: 除數, bn: 長度
+; a []i64: 被除數（低位在前的 limb 陣列）
+; an i64: 被除數有效 limb 數
+; b []i64: 除數（同 limb 排布）
+; bn i64: 除數有效 limb 數（bn=1 且 b[0]=0 時視為除零，輸出全零）
 ; q: 商數（輸出）, qn: 商長度
 ; r: 餘數（輸出）, rn: 餘長度
 ; qn: 商修剪後的 limb 數（b=0 時 q、r 全零且 qn=rn=0）
@@ -388,11 +394,13 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
         local-r[i]: {
             ok -> it = 0
+
             -> _
         }
 
         local-q[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -431,6 +439,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
             local-r[j]: {
                 ok -> it = new-val & 4294967295
+
                 -> _
             }
         }
@@ -440,6 +449,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
             local-r[local-rn]: {
                 ok -> it = carry-shl
+
                 -> _
             }
             local-rn = local-rn + 1
@@ -456,6 +466,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
         #{index-out=zero}
         local-r[0]: {
             ok -> it = local-r[0] | a-bit
+
             -> _
         }
 
@@ -476,6 +487,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
                 #{index-out=zero}
                 local-r[k]: {
                     ok -> it = sub-r[k]
+
                     -> _
                 }
             }
@@ -489,6 +501,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
 
                     local-r[k]: {
                         ok -> it = 0
+
                         -> _
                     }
                     k = k + 1
@@ -501,6 +514,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
             #{index-out=zero}
             local-q[q-limb]: {
                 ok -> it = local-q[q-limb] | (1 << q-bit)
+
                 -> _
             }
         }
@@ -514,6 +528,7 @@ rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, r
     qn-step = (bits / 32) + 1
     local-qn = qn-step: {
         ok -> it
+
         -> _
     }
     keep-trimming = true
@@ -606,12 +621,14 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 
         local-result[i]: {
             ok -> it = 0
+
             -> _
         }
     }
 
     local-result[0]: {
         ok -> it = 1
+
         -> _
     }
     local-rn = 1

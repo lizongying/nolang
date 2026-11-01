@@ -473,6 +473,7 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     .running = 1
     ok = true
 }
+
 ; Windows 變體：尚未實裝（恆返回 false），Windows 上請改用 process.cmd()
 ; program: 要執行的程式名
 ; args: 傳給程式的參數列表
@@ -515,6 +516,7 @@ process.wait = () (status i64) {
     .exit-code = status
     .running = 0
 }
+
 ; Windows 變體：不阻塞，直接返回實例記錄的退出碼
 ; status: .exit-code 記錄值（啟動失敗或未記錄時為 0）
 
@@ -545,6 +547,7 @@ process.wait-nohang = () (status ?i64) {
     .running = 0
     status = code
 }
+
 ; Windows 變體：未實裝輪詢，恆返回 nil（呼叫方會視為仍在執行）
 ; status: 退出碼（Windows 恆為 nil）
 
@@ -566,6 +569,7 @@ process.wait-nohang = () (status ?i64) {
 process.kill = (sig i64) (ok bool) {
     ok = process-kill(.pid, sig)
 }
+
 ; Windows 變體：未實裝 POSIX 信號語義，恆返回 false（可改用 terminate/force-kill 的 Windows 對應）
 ; sig: 信號編號（POSIX 語義，Windows 未處理）
 ; ok: 是否成功（Windows 恆為 false）
@@ -1423,6 +1427,7 @@ list-all = () (procs []proc-info) {
         }
     }
 }
+
 ; macOS 變體：未實裝，返回空列表（需 libproc proc_listallpids 或 sysctl）
 ; procs: 空的進程列表
 
@@ -1432,6 +1437,7 @@ list-all = () (procs []proc-info) {
     ; macOS 暫時返回空列表（需 libproc proc_listallpids 或 sysctl KERN_PROC）
     procs = []
 }
+
 ; Windows 變體：未實裝，返回空列表（需 CreateToolhelp32Snapshot）
 ; procs: 空的進程列表
 
@@ -1503,6 +1509,7 @@ spawn = (cmd str) (pid i64) {
         }
     }
 }
+
 ; Windows 變體：未實裝，恆返回 -1
 ; cmd: 完整命令字串（Windows 未處理）
 ; pid: 恆為 -1（未實裝）
@@ -1521,6 +1528,7 @@ spawn = (cmd str) (pid i64) {
 wait = (pid i64) (status i64) {
     status = process-waitpid(pid, 0)
 }
+
 ; Windows 變體：未實裝，恆返回 -1
 ; pid: 子進程 ID（Windows 未處理）
 ; status: 恆為 -1（未實裝）
@@ -1544,6 +1552,7 @@ shell = (cmd str) (code i64) {
         pid < 0 -> code = -1
     }
 }
+
 ; Windows 變體：未實裝，恆返回 -1
 ; cmd: 完整命令字串（Windows 未處理）
 ; code: 恆為 -1（未實裝）

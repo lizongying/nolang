@@ -62,7 +62,7 @@ test-str-to-byte = () {
 
 ; 測試 i64-to-str
 test-i64-to-str = () {
-    n i64 = 42
+    n = 42
     s = n.to-str()
     print(s)
 }
@@ -83,14 +83,14 @@ test-u64-to-str = () {
 
 ; 測試 f64-to-str
 test-f64-to-str = () {
-    f f64 = 3.14
+    f = 3.14
     s = f.to-str()
     print(s)
 }
 
 ; 測試 bool-to-str
 test-bool-to-str = () {
-    b bool = true
+    b = true
     s = b.to-str()
     print(s)
 }
@@ -104,7 +104,7 @@ test-byte-to-str = () {
 
 ; 測試 roundtrip-i64
 test-roundtrip-i64 = () {
-    n0 i64 = 12345
+    n0 = 12345
     s = n0.to-str()
     n = s.to-i64()
     print(n)

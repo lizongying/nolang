@@ -15,6 +15,7 @@ fib = (n i64) (o i64) {
         b-opt = c
         b-opt: {
             ok -> b = it
+
             ->
         }
 

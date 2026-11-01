@@ -26,7 +26,9 @@ diag {
 diag.level-name = () (r str) {
     {
         .level == LEVEL-ERROR -> r = 'ERROR'
+
         .level == LEVEL-WARNING -> r = 'WARNING'
+
         -> r = 'HINT'
     }
 }
@@ -37,7 +39,7 @@ diag.level-name = () (r str) {
 ;   line == 0 ⇒ <file>: [LEVEL] <src>: <msg> [<code>]   （檔案級診斷，無位置）
 ; r: 結果字串
 diag.render = () (r str) {
-    head str = ''
+    head = ''
     {
         .line > 0 -> {
             head = .file + ':' + .line.to-str() + ':' + .col.to-str() + ': '

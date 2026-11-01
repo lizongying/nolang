@@ -32,6 +32,7 @@ test-hkdf-expand = () {
         #{overflow=wrap}
         prk[i]: {
             ok -> it = i + 1
+
             -> _
         }
     }
@@ -61,6 +62,7 @@ test-hkdf-expand-label = () {
         #{overflow=wrap}
         prk[i]: {
             ok -> it = i + 1
+
             -> _
         }
     }
@@ -92,6 +94,7 @@ test-aes-gcm-seal-open = () {
         #{overflow=wrap}
         key[i]: {
             ok -> it = i + 1
+
             -> _
         }
     }
@@ -103,6 +106,7 @@ test-aes-gcm-seal-open = () {
         #{overflow=wrap}
         iv[i]: {
             ok -> it = i + 10
+
             -> _
         }
     }
@@ -161,6 +165,7 @@ test-x25519-scalarmult = () {
         #{overflow=wrap}
         priv[i]: {
             ok -> it = i + 1
+
             -> _
         }
     }

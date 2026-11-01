@@ -29,18 +29,21 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
         k1[i]: {
             ok -> it = key[i]
+
             -> _
         }
 
         #{index-out=zero, overflow=wrap}
         k2[i]: {
             ok -> it = key[8 + i]
+
             -> _
         }
 
         #{index-out=zero, overflow=wrap}
         k3[i]: {
             ok -> it = key[16 + i]
+
             -> _
         }
     }
@@ -57,6 +60,7 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
             #{index-out=zero, overflow=wrap}
             block[i]: {
                 ok -> it = in[blk + i]
+
                 -> _
             }
         }
@@ -100,18 +104,21 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
 
         k1[i]: {
             ok -> it = key[i]
+
             -> _
         }
 
         #{index-out=zero, overflow=wrap}
         k2[i]: {
             ok -> it = key[8 + i]
+
             -> _
         }
 
         #{index-out=zero, overflow=wrap}
         k3[i]: {
             ok -> it = key[16 + i]
+
             -> _
         }
     }
@@ -125,6 +132,7 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
             #{index-out=zero, overflow=wrap}
             block[i]: {
                 ok -> it = in[blk + i]
+
                 -> _
             }
         }
@@ -170,6 +178,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
         prev[i]: {
             ok -> it = iv[i]
+
             -> _
         }
     }
@@ -184,6 +193,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             #{index-out=zero}
             xored[i]: {
                 ok -> it = (in[blk + i]) ^ (prev[i])
+
                 -> _
             }
         }
@@ -201,6 +211,7 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             #{index-out=zero}
             prev[i]: {
                 ok -> it = enc-block[i]
+
                 -> _
             }
         }
@@ -223,6 +234,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
         prev[i]: {
             ok -> it = iv[i]
+
             -> _
         }
     }
@@ -236,6 +248,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
             #{index-out=zero, overflow=wrap}
             cipher-block[i]: {
                 ok -> it = in[blk + i]
+
                 -> _
             }
         }
@@ -249,6 +262,7 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
             prev[i]: {
                 ok -> it = cipher-block[i]
+
                 -> _
             }
         }

@@ -124,34 +124,42 @@ test-quic-derive-initial-keys = () {
     dst-cid []byte
     dst-cid[0]: {
         ok -> it = 0x83
+
         -> _
     }
     dst-cid[1]: {
         ok -> it = 0x94
+
         -> _
     }
     dst-cid[2]: {
         ok -> it = 0xc8
+
         -> _
     }
     dst-cid[3]: {
         ok -> it = 0xf0
+
         -> _
     }
     dst-cid[4]: {
         ok -> it = 0x3e
+
         -> _
     }
     dst-cid[5]: {
         ok -> it = 0x51
+
         -> _
     }
     dst-cid[6]: {
         ok -> it = 0x57
+
         -> _
     }
     dst-cid[7]: {
         ok -> it = 0x08
+
         -> _
     }
 
@@ -176,66 +184,82 @@ test-quic-derive-initial-keys = () {
     expected-key []byte
     expected-key[0]: {
         ok -> it = 0x1f
+
         -> _
     }
     expected-key[1]: {
         ok -> it = 0x36
+
         -> _
     }
     expected-key[2]: {
         ok -> it = 0x96
+
         -> _
     }
     expected-key[3]: {
         ok -> it = 0x13
+
         -> _
     }
     expected-key[4]: {
         ok -> it = 0xdd
+
         -> _
     }
     expected-key[5]: {
         ok -> it = 0x76
+
         -> _
     }
     expected-key[6]: {
         ok -> it = 0xd5
+
         -> _
     }
     expected-key[7]: {
         ok -> it = 0x46
+
         -> _
     }
     expected-key[8]: {
         ok -> it = 0x77
+
         -> _
     }
     expected-key[9]: {
         ok -> it = 0x30
+
         -> _
     }
     expected-key[10]: {
         ok -> it = 0xef
+
         -> _
     }
     expected-key[11]: {
         ok -> it = 0xcb
+
         -> _
     }
     expected-key[12]: {
         ok -> it = 0xe3
+
         -> _
     }
     expected-key[13]: {
         ok -> it = 0xb1
+
         -> _
     }
     expected-key[14]: {
         ok -> it = 0xa2
+
         -> _
     }
     expected-key[15]: {
         ok -> it = 0x2d
+
         -> _
     }
 
@@ -295,10 +319,12 @@ test-http3-frame-encode-decode = () {
     payload []byte
     payload[0]: {
         ok -> it = 0x42
+
         -> _
     }
     payload[1]: {
         ok -> it = 0x43
+
         -> _
     }
 
@@ -341,11 +367,13 @@ test-qpack-encode-decode = () {
     values [16]str
     names[0]: {
         ok -> it = 'content-type'
+
         -> _
     }
 
     values[0]: {
         ok -> it = 'text/plain'
+
         -> _
     }
     buf []byte

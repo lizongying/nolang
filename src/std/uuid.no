@@ -31,7 +31,7 @@ uuid {
 
 ; 生成隨機 UUID v4
 ; state: xorshift32 狀態（輸入/輸出，初始為非零種子）
-; out: 生成的 v4 随機 UUID（state 随 xorshift32 推進）
+; out: 生成的 v4 隨機 UUID（state 隨 xorshift32 推進）
 ; [new-v4](#uuid.new-v4)
 new-v4 = (state i64) (out uuid) {
 
@@ -132,6 +132,9 @@ uuid.to-str = () (out str) {
 }
 
 ; 將一個位元組寫為兩個 hex 字元到 out 的 pos 位置
+; b byte: 待編碼的位元組（高半字節先寫，低半字節後寫）
+; pos i64: out 中第一個 hex 字元寫入的偏移（第二字元寫在 pos+1）
+; out str: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
 ; [hex-byte](#uuid.hex-byte)
 hex-byte = (b byte, pos i64, out str) {
 
@@ -562,6 +565,7 @@ parse-hex-byte = (s str, pos i64) (v i64) {
     c0 = -1
     c0-opt: {
         ok -> c0 = it
+
         -> _
     }
 
@@ -570,6 +574,7 @@ parse-hex-byte = (s str, pos i64) (v i64) {
     c1 = -1
     c1-opt: {
         ok -> c1 = it
+
         -> _
     }
     h0 = hex-val(c0)

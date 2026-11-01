@@ -616,6 +616,7 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'tgutu5g0': 'use \'# %s.%s %s\' instead of \'# %s.%s as %s\''
   'tgz86gvc': 'reading built binary: %w'
   'tjwokiw9': 'expected comma or right bracket in array literal, got %s instead'
+  'tlwmf1le': 'explicit type cast `expr %s` is not allowed in Nolang; use the declaration form `name %s = expr` for a safe widening/same-width conversion instead'
   'tmiibvan': 'builtin %s: no dst slot'
   'tmqnqq9x': 'dependency not found: %q is not declared in package.noml dependencies'
   'tosnl9r7': 'expected \'*\' between count and loop body, got %s'

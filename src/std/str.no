@@ -1720,7 +1720,7 @@ str.empty = () (yes bool) {
 
 ; str.truncate: 原地截斷字串至至多 n 個位元組（len = min(len, n)）
 ; 不 free 堆、不改變 cap/ptr，僅調整 len
-; 替代低阶 s.len = n 寫法（驗證器拒绝直接修改 .len）
+; 替代低階 s.len = n 寫法（驗證器拒絕直接修改 .len）
 ; build-in
 ; str.truncate = (n i64) { }
 
@@ -1981,7 +1981,7 @@ str.to-bigint = () (out ?bigint) {
 ; ═══════════════════════════════════════════════
 
 ; 用分隔符將字串分割為多個子字串
-; sep str: 分隔符
+; sep str: 切分點子串；在每個出現處切開，本身不進入結果
 ; 返回 out []str: 分割後的子字串切片
 ; 空分隔符時返回整個字串作為唯一元素
 ; 注意：使用本地 result 切片再賦值給 out，避免 out.push 在輸出參數上不生效的編譯器 bug
@@ -2327,7 +2327,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
 ; ═══════════════════════════════════════════════
 
 ; 限定分割次數
-; sep str: 分隔符
+; sep str: 切分點子串；在每個出現處切開，本身不進入結果
 ; maxsplit i64: 最大分割次數（產生 maxsplit+1 個元素），maxsplit <= 0 不限制
 ; 返回 out []str: 分割結果
 ; [split-n](#str.split-n)

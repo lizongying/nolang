@@ -25,7 +25,7 @@ peek = (m [str]i64, k str) (r ?i64) {
 
 ; 下標寫入：m['a'] = 1、m['b'] = 2 應插入兩個鍵，len 為 2
 t-write-insert = () {
-    m [str]i64 = {}
+    m [str]i64 = { }
     m['a'] = 1
     m['b'] = 2
     runner.eq(m.len(), 2, 'insert two keys via m[k] = v')
@@ -41,7 +41,9 @@ t-write-overwrite = () {
     v = m.get('k')
     v: {
         ok -> runner.eq(v, 42, 'overwrite updates the value')
+
         nil -> runner.is-true(false, 'k must be present after overwrite')
+
         err -> runner.is-true(false, 'unexpected err arm')
     }
 }
@@ -52,7 +54,9 @@ t-read-present = () {
     r = peek(m, 'a')
     r: {
         ok -> runner.eq(r, 7, 'read present key')
+
         nil -> runner.is-true(false, 'a must be present')
+
         err -> runner.is-true(false, 'unexpected err arm')
     }
 }
@@ -63,26 +67,32 @@ t-read-absent = () {
     r = peek(m, 'missing')
     r: {
         ok -> runner.is-true(false, 'absent key must not be ok')
+
         nil -> runner.is-true(true, 'absent key reads nil')
+
         err -> runner.is-true(false, 'unexpected err arm')
     }
 }
 
 ; m[k] 與 .put / .get 必須等價：同一次寫入只能有一個值，兩條路徑讀到的一致
 t-eq-put-get = () {
-    m [str]i64 = {}
+    m [str]i64 = { }
     m['x'] = 3
     g1 = m.get('x')
     g1: {
         ok -> runner.eq(g1, 3, 'subscript write visible to get')
+
         nil -> runner.is-true(false, 'x must be present')
+
         err -> runner.is-true(false, 'unexpected err arm')
     }
     m.put('y', 4)
     r = peek(m, 'y')
     r: {
         ok -> runner.eq(r, 4, 'put visible to subscript read')
+
         nil -> runner.is-true(false, 'y must be present')
+
         err -> runner.is-true(false, 'unexpected err arm')
     }
     runner.eq(m.len(), 2, 'both keys counted once')
@@ -90,7 +100,7 @@ t-eq-put-get = () {
 
 ; i64 鍵 + str 值：證明特化命名 hashmap-i64-str 也走同一條下標路徑
 t-i64-key-str-val = () {
-    m [i64]str = {}
+    m [i64]str = { }
     m[1] = 'one'
     m[2] = 'two'
     m[1] = 'ONE'
@@ -98,7 +108,9 @@ t-i64-key-str-val = () {
     v = m.get(1)
     v: {
         ok -> runner.str-eq(v, 'ONE', 3, 'i64-key map: overwrite wins')
+
         nil -> runner.is-true(false, 'key 1 must be present')
+
         err -> runner.is-true(false, 'unexpected err arm')
     }
 }
@@ -113,14 +125,16 @@ two = () (a i64, b i64) {
 
 ; 多目標賦值：x, m[k] = f() 的寫側必須同樣落到 put（m 應新增該鍵）
 t-multi-assign-target = () {
-    m [str]i64 = {}
+    m [str]i64 = { }
     x, m['k'] = two()
     runner.eq(x, 1, 'multi-assign first target')
     runner.eq(m.len(), 1, 'multi-assign map target inserted a key')
     r = peek(m, 'k')
     r: {
         ok -> runner.eq(r, 2, 'multi-assign map target value')
+
         nil -> runner.is-true(false, 'k must be present')
+
         err -> runner.is-true(false, 'unexpected err arm')
     }
 }

@@ -24,7 +24,9 @@ t-parse-nil = () {
             ok = true
             ni = it.is-nil()
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse nil ok')
@@ -46,11 +48,15 @@ t-parse-str = () {
                     found = true
                     v = s
                 }
+
                 nil -> found = false
+
                 err -> found = false
             }
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse str ok')
@@ -73,11 +79,15 @@ t-parse-num = () {
                     found = true
                     v = n
                 }
+
                 nil -> found = false
+
                 err -> found = false
             }
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse num ok')
@@ -91,7 +101,9 @@ t-parse-bool = () {
     ok = false
     r: {
         ok -> ok = it.is-bool()
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse bool true ok')
@@ -111,7 +123,9 @@ t-parse-obj = () {
             p = it.pool
             ok = it.is-obj()
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse obj ok')
@@ -119,7 +133,9 @@ t-parse-obj = () {
     ai = false
     ca: {
         ok -> ai = p.is-num(ca)
+
         nil -> ai = false
+
         err -> ai = false
     }
     runner.is-true(ai, 'obj a is num')
@@ -131,7 +147,9 @@ t-parse-obj = () {
             bfound = true
             bv = cb
         }
+
         nil -> bfound = false
+
         err -> bfound = false
     }
     runner.is-true(bfound, 'obj b found')
@@ -144,7 +162,9 @@ t-parse-obj = () {
             cfound = true
             cv = cc
         }
+
         nil -> cfound = false
+
         err -> cfound = false
     }
     runner.is-true(cfound, 'obj c found')
@@ -163,7 +183,9 @@ t-parse-arr = () {
             p = it.pool
             ok = it.is-arr()
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse arr ok')
@@ -172,7 +194,9 @@ t-parse-arr = () {
     v0 = 0
     e0: {
         ok -> v0 = p.val-i64(e0)
+
         nil -> v0 = -1
+
         err -> v0 = -1
     }
     runner.eq(v0, 1, 'arr[0]')
@@ -184,7 +208,9 @@ t-parse-nested = () {
     ok = false
     r: {
         ok -> ok = it.is-obj()
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse nested ok')
@@ -193,7 +219,9 @@ t-parse-nested = () {
     ok2 = false
     r2: {
         ok -> ok2 = true
+
         nil -> ok2 = false
+
         err -> ok2 = false
     }
     runner.is-true(ok2, 'nested reparse ok')
@@ -207,7 +235,9 @@ t-comment = () {
     ok = false
     r: {
         ok -> ok = it.is-obj()
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse comment ok')
@@ -230,16 +260,21 @@ t-annotation = () {
                     ffound = true
                     fa = a
                 }
+
                 nil -> ffound = false
+
                 err -> ffound = false
             }
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'parse annotation ok')
     runner.is-true(ffound, 'file ann found')
     runner.str-eq(fa, 'type = \'server\'', 15, 'file ann text')
+
     ; 成員級註解
     doc = r
     p = doc.pool
@@ -250,11 +285,15 @@ t-annotation = () {
             ma = p.ann(ch)
             ma: {
                 ok -> mfound = ma.eq-full('c')
+
                 nil -> mfound = false
+
                 err -> mfound = false
             }
         }
+
         nil -> mfound = false
+
         err -> mfound = false
     }
     runner.is-true(mfound, 'member ann text')
@@ -273,7 +312,9 @@ t-roundtrip = () {
             ok1 = true
             s1 = it.stringify()
         }
+
         nil -> ok1 = false
+
         err -> ok1 = false
     }
     runner.is-true(ok1, 'roundtrip parse ok')
@@ -285,7 +326,9 @@ t-roundtrip = () {
             ok2 = true
             s2 = it.stringify()
         }
+
         nil -> ok2 = false
+
         err -> ok2 = false
     }
     runner.is-true(ok2, 'roundtrip reparse ok')
@@ -312,20 +355,26 @@ t-builder = () {
             found = true
             v = nm
         }
+
         nil -> found = false
+
         err -> found = false
     }
     runner.is-true(found, 'builder name found')
     runner.str-eq(v, 'nolang', 6, 'builder name value')
+
     ; nil 成員
     nn = d.get('note')
     isn = false
     nn: {
         ok -> isn = d.pool.is-nil(nn)
+
         nil -> isn = false
+
         err -> isn = false
     }
     runner.is-true(isn, 'builder nil member')
+
     ; 序列化後再解析
     s = d.stringify()
     r = noml.parse(s)
@@ -338,12 +387,16 @@ t-builder = () {
             cnil = false
             cn: {
                 ok -> cnil = p.is-nil(cn)
+
                 nil -> cnil = false
+
                 err -> cnil = false
             }
             runner.is-true(cnil, 'reparsed nil member')
         }
+
         nil -> ok3 = false
+
         err -> ok3 = false
     }
     runner.is-true(ok3, 'builder stringify reparse ok')
@@ -381,16 +434,21 @@ t-ann-write = () {
                     ff = true
                     fa = a
                 }
+
                 nil -> ff = false
+
                 err -> ff = false
             }
         }
+
         nil -> ok = false
+
         err -> ok = false
     }
     runner.is-true(ok, 'ann-write reparse ok')
     runner.is-true(ff, 'ann-write file ann found')
     runner.str-eq(fa, 'type = \'server\'', 15, 'ann-write file ann text')
+
     ; ann-value 取出鍵值
     av = r.ann-value('type')
     avf = false
@@ -400,7 +458,9 @@ t-ann-write = () {
             avf = true
             avv = av
         }
+
         nil -> avf = false
+
         err -> avf = false
     }
     runner.is-true(avf, 'ann-value found')
@@ -415,7 +475,9 @@ t-err-empty = () {
     bad = false
     r: {
         ok -> bad = true
+
         nil -> bad = true
+
         err -> bad = false
     }
     runner.is-false(bad, 'empty input errors')
@@ -427,7 +489,9 @@ t-err-dup = () {
     bad = false
     r: {
         ok -> bad = true
+
         nil -> bad = true
+
         err -> bad = false
     }
     runner.is-false(bad, 'duplicate key errors')
@@ -439,7 +503,9 @@ t-err-unterm = () {
     bad = false
     r: {
         ok -> bad = true
+
         nil -> bad = true
+
         err -> bad = false
     }
     runner.is-false(bad, 'unterminated string errors')
@@ -451,7 +517,9 @@ t-err-ann-pos = () {
     bad = false
     r: {
         ok -> bad = true
+
         nil -> bad = true
+
         err -> bad = false
     }
     runner.is-false(bad, 'misplaced annotation errors')
@@ -463,7 +531,9 @@ t-err-trailing = () {
     bad = false
     r: {
         ok -> bad = true
+
         nil -> bad = true
+
         err -> bad = false
     }
     runner.is-false(bad, 'trailing content errors')
@@ -475,7 +545,9 @@ t-err-null = () {
     bad = false
     r: {
         ok -> bad = true
+
         nil -> bad = true
+
         err -> bad = false
     }
     runner.is-false(bad, 'null rejected')

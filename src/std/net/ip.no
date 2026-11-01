@@ -81,7 +81,8 @@ ip-addr {
 
 ; 從字串解析 IPv4 地址
 ; 格式：A.B.C.D，每段 0~255
-; 返回 ok=true=成功
+; s str: 點分十進位字串（四段以 '.' 分隔，每段 0~255）
+; ok bool: true=解析成功且四段已寫入 a/b/c/d，false=格式非法（此時欄位已清零）
 ; [parse](#ip.ip-addr.parse)
 ip-addr.parse = (s str) (ok bool) {
     r-s = s
@@ -164,6 +165,7 @@ ip-addr.from-str = (s str) (addr ?ip-addr) {
 ; 直接拼接四個十進位片段。舊實作靠 `out[n]: { ok -> it = 46 }` 在 len 處追加字元，
 ; 但索引寫入是**邊界檢查寫**：n == len-bytes() 時 safe-index 判越界（nil），
 ; 點號從未寫入，結果只剩第一個 octet（`192.168.1.1` → `192`）。
+; out str: 四段十進位以 '.' 串接的地址字串（如 '192.168.1.1'）
 ; [to-str](#ip.ip-addr.to-str)
 ip-addr.to-str = () (out str) {
     out = .a.to-str() - '.' - .b.to-str() - '.' - .c.to-str() - '.' - .d.to-str()
@@ -319,9 +321,9 @@ ip-addr.equal = (other ip-addr) (yes bool) {
 ; ═══════════════════════════════════════════════
 
 ; 檢查是否在指定子網內
-; base: 子網基地址
-; prefix-len: 前綴長度（0~32）
-; 返回 yes=true=在子網內
+; base ip-addr: 子網基地址
+; prefix-len i64: 前綴長度（0~32；<=0 視為全域，>=32 退化為完全相等比較）
+; yes bool: true=本地址與 base 在前 prefix-len 位網絡遮罩下同屬一個子網
 ; [in-subnet](#ip.ip-addr.in-subnet)
 ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
     {

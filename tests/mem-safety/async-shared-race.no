@@ -32,6 +32,7 @@ modify-async = (v []i64) (r i64) {
     ; async runtime deep-copies v, so modifying v[0] is safe
     v[0]: {
         ok -> it = 999; 修改的是深拷貝副本，不影響調用方的 shared
+
         -> _
     }
 
@@ -47,6 +48,7 @@ race-test = () (out i64) {
     task = run modify-async(shared); shared 被深拷貝，子線程不共享 data
     shared[0]: {
         ok -> it = 100; 主線程修改自己的 shared，不影響子線程的副本
+
         -> _
     }
     out = awy task; awy 取回結果（999），子線程修改的是副本
@@ -61,6 +63,7 @@ no-await-test = () (out i64) {
     task = run modify-async(shared); 創建 task 但不 awy
     shared[0]: {
         ok -> it = 200; 主線程修改自己的 shared
+
         -> _
     }
     out = 42

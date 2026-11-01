@@ -25,6 +25,7 @@ rc4 = (in []byte, key []byte) (out []byte) {
 
         s[i]: {
             ok -> it = i
+
             -> _
         }
     }
@@ -41,11 +42,13 @@ rc4 = (in []byte, key []byte) (out []byte) {
         #{index-out=zero}
         s[i]: {
             ok -> it = s[j]
+
             -> _
         }
 
         s[j]: {
             ok -> it = t
+
             -> _
         }
     }
@@ -69,11 +72,13 @@ rc4 = (in []byte, key []byte) (out []byte) {
         #{index-out=zero}
         s[i]: {
             ok -> it = s[j]
+
             -> _
         }
 
         s[j]: {
             ok -> it = t
+
             -> _
         }
 

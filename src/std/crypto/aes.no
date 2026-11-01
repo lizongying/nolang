@@ -116,6 +116,7 @@ sub-bytes = (state []byte, n i64) {
 
         state[i]: {
             ok -> it = SBOX[b]
+
             -> _
         }
     }
@@ -133,6 +134,7 @@ inv-sub-bytes = (state []byte, n i64) {
 
         state[i]: {
             ok -> it = INV-SBOX[b]
+
             -> _
         }
     }
@@ -149,23 +151,27 @@ shift-rows = (state []byte) {
     #{index-out=zero}
     state[1]: {
         ok -> it = state[5]
+
         -> _
     }
 
     #{index-out=zero}
     state[5]: {
         ok -> it = state[9]
+
         -> _
     }
 
     #{index-out=zero}
     state[9]: {
         ok -> it = state[13]
+
         -> _
     }
 
     state[13]: {
         ok -> it = t
+
         -> _
     }
 
@@ -178,22 +184,26 @@ shift-rows = (state []byte) {
     #{index-out=zero}
     state[2]: {
         ok -> it = state[10]
+
         -> _
     }
 
     #{index-out=zero}
     state[6]: {
         ok -> it = state[14]
+
         -> _
     }
 
     state[10]: {
         ok -> it = t0
+
         -> _
     }
 
     state[14]: {
         ok -> it = t1
+
         -> _
     }
 
@@ -203,23 +213,27 @@ shift-rows = (state []byte) {
     #{index-out=zero}
     state[15]: {
         ok -> it = state[11]
+
         -> _
     }
 
     #{index-out=zero}
     state[11]: {
         ok -> it = state[7]
+
         -> _
     }
 
     #{index-out=zero}
     state[7]: {
         ok -> it = state[3]
+
         -> _
     }
 
     state[3]: {
         ok -> it = t
+
         -> _
     }
 }
@@ -235,23 +249,27 @@ inv-shift-rows = (state []byte) {
     #{index-out=zero}
     state[13]: {
         ok -> it = state[9]
+
         -> _
     }
 
     #{index-out=zero}
     state[9]: {
         ok -> it = state[5]
+
         -> _
     }
 
     #{index-out=zero}
     state[5]: {
         ok -> it = state[1]
+
         -> _
     }
 
     state[1]: {
         ok -> it = t
+
         -> _
     }
 
@@ -264,22 +282,26 @@ inv-shift-rows = (state []byte) {
     #{index-out=zero}
     state[2]: {
         ok -> it = state[10]
+
         -> _
     }
 
     #{index-out=zero}
     state[6]: {
         ok -> it = state[14]
+
         -> _
     }
 
     state[10]: {
         ok -> it = t0
+
         -> _
     }
 
     state[14]: {
         ok -> it = t1
+
         -> _
     }
 
@@ -289,23 +311,27 @@ inv-shift-rows = (state []byte) {
     #{index-out=zero}
     state[3]: {
         ok -> it = state[7]
+
         -> _
     }
 
     #{index-out=zero}
     state[7]: {
         ok -> it = state[11]
+
         -> _
     }
 
     #{index-out=zero}
     state[11]: {
         ok -> it = state[15]
+
         -> _
     }
 
     state[15]: {
         ok -> it = t
+
         -> _
     }
 }
@@ -349,21 +375,25 @@ mix-columns = (state []byte) {
 
     state[0]: {
         ok -> it = d0
+
         -> _
     }
 
     state[1]: {
         ok -> it = d1
+
         -> _
     }
 
     state[2]: {
         ok -> it = d2
+
         -> _
     }
 
     state[3]: {
         ok -> it = d3
+
         -> _
     }
 
@@ -372,21 +402,25 @@ mix-columns = (state []byte) {
 
     state[4]: {
         ok -> it = d0
+
         -> _
     }
 
     state[5]: {
         ok -> it = d1
+
         -> _
     }
 
     state[6]: {
         ok -> it = d2
+
         -> _
     }
 
     state[7]: {
         ok -> it = d3
+
         -> _
     }
 
@@ -395,21 +429,25 @@ mix-columns = (state []byte) {
 
     state[8]: {
         ok -> it = d0
+
         -> _
     }
 
     state[9]: {
         ok -> it = d1
+
         -> _
     }
 
     state[10]: {
         ok -> it = d2
+
         -> _
     }
 
     state[11]: {
         ok -> it = d3
+
         -> _
     }
 
@@ -418,21 +456,25 @@ mix-columns = (state []byte) {
 
     state[12]: {
         ok -> it = d0
+
         -> _
     }
 
     state[13]: {
         ok -> it = d1
+
         -> _
     }
 
     state[14]: {
         ok -> it = d2
+
         -> _
     }
 
     state[15]: {
         ok -> it = d3
+
         -> _
     }
 }
@@ -492,21 +534,25 @@ inv-mix-columns = (state []byte) {
 
     state[0]: {
         ok -> it = d0
+
         -> _
     }
 
     state[1]: {
         ok -> it = d1
+
         -> _
     }
 
     state[2]: {
         ok -> it = d2
+
         -> _
     }
 
     state[3]: {
         ok -> it = d3
+
         -> _
     }
 
@@ -515,21 +561,25 @@ inv-mix-columns = (state []byte) {
 
     state[4]: {
         ok -> it = d0
+
         -> _
     }
 
     state[5]: {
         ok -> it = d1
+
         -> _
     }
 
     state[6]: {
         ok -> it = d2
+
         -> _
     }
 
     state[7]: {
         ok -> it = d3
+
         -> _
     }
 
@@ -538,21 +588,25 @@ inv-mix-columns = (state []byte) {
 
     state[8]: {
         ok -> it = d0
+
         -> _
     }
 
     state[9]: {
         ok -> it = d1
+
         -> _
     }
 
     state[10]: {
         ok -> it = d2
+
         -> _
     }
 
     state[11]: {
         ok -> it = d3
+
         -> _
     }
 
@@ -561,21 +615,25 @@ inv-mix-columns = (state []byte) {
 
     state[12]: {
         ok -> it = d0
+
         -> _
     }
 
     state[13]: {
         ok -> it = d1
+
         -> _
     }
 
     state[14]: {
         ok -> it = d2
+
         -> _
     }
 
     state[15]: {
         ok -> it = d3
+
         -> _
     }
 }
@@ -590,6 +648,7 @@ add-round-key = (state []byte, rk []byte) {
         #{index-out=zero}
         state[i]: {
             ok -> it = (state[i]) ^ (rk[i])
+
             -> _
         }
     }
@@ -801,6 +860,7 @@ add-round-key-at = (state []byte, rk []byte, off i64) {
         #{index-out=zero}
         state[i]: {
             ok -> it = (state[i]) ^ (rk[off + i])
+
             -> _
         }
     }
@@ -821,6 +881,7 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
 
         st[i]: {
             ok -> it = in[i]
+
             -> _
         }
     }
@@ -864,6 +925,7 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
         st[i]: {
             ok -> it = in[i]
+
             -> _
         }
     }

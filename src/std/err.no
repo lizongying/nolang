@@ -157,7 +157,7 @@ err.is = (ec code) (yes bool) {
 }
 
 ; 取得錯誤訊息
-; 返回 msg: 錯誤訊息
+; 返回 msg str: 錯誤物件攜帶的訊息文字；非錯誤值時為空串
 ; [msg](#err.msg)
 err.msg = () (msg str) {
     msg = .msg
@@ -184,6 +184,7 @@ err.code = () (ec code) {
 ; [format](#err.format)
 err.format = () (s str) {
     cn = .code.to-name()
+
     ; format() 的 {…} 欄位目前只認「簡單標識符」，不解析接收者的 `.field`
     ; 存取（MIR lowerFormatField 會對 `{.file}` 報 unresolved format field）。
     ; 故先把接收者欄位绑到局部變量，再以簡單名插值；cn/loc 已示範簡單名可用。

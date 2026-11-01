@@ -68,9 +68,10 @@ reader.read-byte = () (b ?byte) {
 ; [read-line](#bufio.reader.read-line)
 reader.read-line = () (line ?str) {
     line = nil
-    acc str = ''
-    got bool = false
+    acc = ''
+    got = false
     !! {
+
         ; 緩衝區耗盡（pos 到了 avail）時重新填充；fill 只對 avail==0 才真正讀，
         ; 故需先重置 pos/avail，否則 fill 會因殘留 avail>0 直接回 true 而無限迴圈。
         (.pos >= .avail) {

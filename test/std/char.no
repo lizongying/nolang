@@ -168,6 +168,7 @@ t-to-bytes = () {
 
 ; 驗證 to-txt：不超過 255 位元組回 ok(txt)，超過則回 nil（不再靜默截斷）
 t-to-txt = () {
+
     ; str.to-txt 回傳 ?txt：<= 255 位元組為 ok(txt)
     a ?txt = "A".to-txt()
     a: {
@@ -217,10 +218,12 @@ t-slice-char-literal = () {
     runner.eq(arr.len(), 3, '[]char len == 3')
     runner.str-eq(arr[0].to-str(), 'a', 1, '[]char[0] == a')
     runner.str-eq(arr[2].to-str(), 'c', 1, '[]char[2] == c')
+
     ; 元素寫入走 place-match（ok 臂的 it 是元素位置，可讀可寫）——
     ;    直接 `arr[1] = "Z"` 會被 checker 的 idxwrite 規則拒掉。
     arr[1]: {
         ok -> it = "Z"
+
         -> _
     }
     runner.str-eq(arr[1].to-str(), 'Z', 1, '[]char[1] assign == Z')

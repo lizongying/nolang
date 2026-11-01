@@ -116,8 +116,11 @@ hex-digit = (c i64) (d i64) {
     d = -1
     {
         c >= 48 && c <= 57 -> d = c - 48
+
         c >= 97 && c <= 102 -> d = c - 87
+
         c >= 65 && c <= 70 -> d = c - 55
+
         -> d = -1
     }
 }
@@ -227,7 +230,7 @@ noml-pool.has-key = (obj-idx i64, key str) (found bool) {
 
 ; 跳過空白（含換行）與 `;` 行註解
 ; s: 來源文字
-; pos: 起始位置
+; pos: 開始掃描的位元組偏移
 ; p: 第一個有效字元的位置（全為空白時為字串尾）
 ; [skip-trivia](#noml.noml-pool.skip-trivia)
 noml-pool.skip-trivia = (s str, pos i64) (p i64) {
@@ -237,11 +240,13 @@ noml-pool.skip-trivia = (s str, pos i64) (p i64) {
         c = s.byte(p)
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> p = p + 1
+
             c == 59 -> {
                 (p < sn && s.byte(p) != 10) {
                     p = p + 1
                 }
             }
+
             -> break
         }
     }
@@ -249,7 +254,7 @@ noml-pool.skip-trivia = (s str, pos i64) (p i64) {
 
 ; 只跳過行內空白（空格與 Tab），不跨越換行
 ; s: 來源文字
-; pos: 起始位置
+; pos: 開始掃描的位元組偏移
 ; p: 第一個非空白字元的位置
 ; [skip-blanks](#noml.noml-pool.skip-blanks)
 noml-pool.skip-blanks = (s str, pos i64) (p i64) {
@@ -260,13 +265,14 @@ noml-pool.skip-blanks = (s str, pos i64) (p i64) {
         (c == 32 || c == 9) -> {
             p = p + 1
         }
+
         -> break
     }
 }
 
 ; 位置是否在行首（其前只有空白）
 ; s: 來源文字
-; pos: 位置
+; pos: 待判斷的位元組偏移
 ; yes: true=本行尚未出現過非空白字元
 ; [at-line-start](#noml.noml-pool.at-line-start)
 noml-pool.at-line-start = (s str, pos i64) (yes bool) {
@@ -276,7 +282,9 @@ noml-pool.at-line-start = (s str, pos i64) (yes bool) {
         c = s.byte(i - 1)
         {
             c == 10 -> return
+
             c == 32 || c == 9 || c == 13 -> i = i - 1
+
             -> {
                 yes = false
                 return
@@ -287,7 +295,7 @@ noml-pool.at-line-start = (s str, pos i64) (yes bool) {
 
 ; 位置所在的行號（從 1 起算）
 ; s: 來源文字
-; pos: 位置
+; pos: 待查行號的位元組偏移（超出範圍時自動 clamp）
 ; line: 行號
 ; [line-of](#noml.noml-pool.line-of)
 noml-pool.line-of = (s str, pos i64) (line i64) {
@@ -325,11 +333,14 @@ noml-pool.scan-quote = (s str, pos i64) (next i64) {
         c = s.byte(p)
         {
             c == 92 -> p = p + 2
+
             c == 39 -> {
                 next = p + 1
                 return
             }
+
             c == 10 -> return
+
             -> p = p + 1
         }
     }
@@ -356,6 +367,7 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
                 (cc == 32 || cc == 9 || cc == 13) -> {
                     j = j + 1
                 }
+
                 -> break
             }
             (j < sn && s.byte(j) == 96) -> {
@@ -364,6 +376,7 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
             }
             p = p + 1
         }
+
         -> p = p + 1
     }
 }
@@ -388,18 +401,22 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                 p = .scan-quote(s, p)
                 p < 0 -> return
             }
+
             c == 96 -> {
                 p = .scan-raw(s, p)
                 p < 0 -> return
             }
+
             c == 91 || c == 123 -> {
                 depth = depth + 1
                 p = p + 1
             }
+
             c == 93 -> {
                 depth > 0 -> depth = depth - 1
                 p = p + 1
             }
+
             c == 125 -> {
                 depth == 0 -> {
                     next = p + 1
@@ -408,6 +425,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                 depth = depth - 1
                 p = p + 1
             }
+
             -> p = p + 1
         }
     }
@@ -507,14 +525,36 @@ noml-pool.parse-value = (s str, pos i64) (idx i64, next i64, ok bool) {
     }
     c = s.byte(p)
     {
-        c == 123 -> idx, next, ok = .parse-object(s, p)
-        c == 91 -> idx, next, ok = .parse-array(s, p)
-        c == 39 -> idx, next, ok = .parse-str-node(s, p)
-        c == 96 -> idx, next, ok = .parse-raw-node(s, p)
-        c == 116 || c == 102 -> idx, next, ok = .parse-bool-node(s, p)
-        c == 110 -> idx, next, ok = .parse-nil-node(s, p)
-        c == 45 || (c >= 48 && c <= 57) -> idx, next, ok = .parse-num-node(s, p)
+        c == 123 -> {
+            idx, next, ok = .parse-object(s, p)
+        }
+
+        c == 91 -> {
+            idx, next, ok = .parse-array(s, p)
+        }
+
+        c == 39 -> {
+            idx, next, ok = .parse-str-node(s, p)
+        }
+
+        c == 96 -> {
+            idx, next, ok = .parse-raw-node(s, p)
+        }
+
+        c == 116 || c == 102 -> {
+            idx, next, ok = .parse-bool-node(s, p)
+        }
+
+        c == 110 -> {
+            idx, next, ok = .parse-nil-node(s, p)
+        }
+
+        c == 45 || (c >= 48 && c <= 57) -> {
+            idx, next, ok = .parse-num-node(s, p)
+        }
+
         c == 35 -> ok = .fail(s, p, '`#{...}` must be on its own line above the member, or trailing on the member\'s line')
+
         -> {
             ch = s.slice-bytes(p, p + 1)
             ok = .fail(s, p, 'unexpected character \'' - ch - '\' in value')
@@ -652,11 +692,13 @@ noml-pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
         c = s.byte(p)
         {
             c == 44 -> p = p + 1
+
             c == 93 -> {
                 next = p + 1
                 ok = true
                 return
             }
+
             -> {
                 ok = .fail(s, p, 'expected \',\' or \']\' in array')
                 return
@@ -682,16 +724,19 @@ noml-pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
         c = s.byte(pos)
         {
             c == 32 || c == 9 || c == 13 -> pos = pos + 1
+
             c == 10 -> {
                 next = pos + 1
                 ok = true
                 return
             }
+
             c == 125 -> {
                 next = pos
                 ok = true
                 return
             }
+
             c == 59 -> {
                 (pos < sn && s.byte(pos) != 10) {
                     pos = pos + 1
@@ -705,6 +750,7 @@ noml-pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
                 ok = true
                 return
             }
+
             -> {
                 ok = .fail(s, pos, 'expected newline after member \'' - key - '\' (object members are newline-separated)')
                 return
@@ -776,10 +822,12 @@ noml-pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
                 ok = true
                 return
             }
+
             c == 10 -> {
                 ok = .fail(s, p, 'unterminated string')
                 return
             }
+
             c == 92 -> {
                 dec, np, dok = .decode-escape(s, p)
                 dok == false -> {
@@ -790,6 +838,7 @@ noml-pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
                 p = np
                 seg = p
             }
+
             -> p = p + 1
         }
     }
@@ -817,11 +866,17 @@ noml-pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
     ok = true
     {
         e == 39 -> val = '\''
+
         e == 92 -> val = '\\'
+
         e == 47 -> val = '/'
+
         e == 110 -> val = '\n'
+
         e == 114 -> val = '\r'
+
         e == 116 -> val = '\t'
+
         e == 117 -> {
             code = .hex4(s, pos + 2)
             code < 0 -> {
@@ -833,6 +888,7 @@ noml-pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
             ch char = code
             val = ch.to-str()
         }
+
         -> {
             ok = .fail(s, pos, 'invalid escape sequence')
             next = pos
@@ -894,6 +950,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                 (cc == 32 || cc == 9 || cc == 13) -> {
                     j = j + 1
                 }
+
                 -> break
             }
             (j < sn && s.byte(j) == 96) -> {
@@ -909,6 +966,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
             p = p + 1
         }
         c == 13 && p + 1 < sn && s.byte(p + 1) == 10 -> p = p + 1
+
         -> {
             buf[k]: {
                 ok -> it = c
@@ -1034,7 +1092,7 @@ noml-pool.parse-bool = (s str, pos i64) (val bool, next i64, ok bool) {
 
 ; 匹配裸關鍵字（其後不得緊接識別符字元）
 ; s: 來源文字
-; pos: 起始位置
+; pos: 嘗試匹配的位元組偏移
 ; kw: 關鍵字
 ; next: 關鍵字之後的位置；-1=不匹配
 ; [match-kw](#noml.noml-pool.match-kw)
@@ -1179,11 +1237,13 @@ noml-pool.raw-safe = (s str) (yes bool) {
         yes = false
         return
     }
+
     ; 首/末位元組是換行時，原始串會把該行當成空行或提前收尾，內容無法原樣往返
     (s.byte(0) == 10 || s.byte(sn - 1) == 10) -> {
         yes = false
         return
     }
+
     ; 含 CR 時原始串會被解析端正規化成 LF，改用轉義形式
     .has-byte(s, 13) -> {
         yes = false
@@ -1198,6 +1258,7 @@ noml-pool.raw-safe = (s str) (yes bool) {
                 (c == 32 || c == 9 || c == 13) -> {
                     j = j + 1
                 }
+
                 -> break
             }
             (j < sn && s.byte(j) == 96) -> {
@@ -1235,6 +1296,7 @@ noml-pool.quote = (s str) (out str) {
                 }
                 k = k + 2
             }
+
             c == 92 -> {
                 buf[k]: {
                     ok -> it = 92
@@ -1244,6 +1306,7 @@ noml-pool.quote = (s str) (out str) {
                 }
                 k = k + 2
             }
+
             c == 10 -> {
                 buf[k]: {
                     ok -> it = 92
@@ -1253,6 +1316,7 @@ noml-pool.quote = (s str) (out str) {
                 }
                 k = k + 2
             }
+
             c == 13 -> {
                 buf[k]: {
                     ok -> it = 92
@@ -1262,6 +1326,7 @@ noml-pool.quote = (s str) (out str) {
                 }
                 k = k + 2
             }
+
             c == 9 -> {
                 buf[k]: {
                     ok -> it = 92
@@ -1271,7 +1336,15 @@ noml-pool.quote = (s str) (out str) {
                 }
                 k = k + 2
             }
+
             c < 32 -> {
+                cv ?byte = c
+                cvv i64 = 0
+                cv: {
+                    ok -> cvv = it
+
+                    -> cvv = 0
+                }
                 buf[k]: {
                     ok -> it = 92
                 }
@@ -1285,13 +1358,14 @@ noml-pool.quote = (s str) (out str) {
                     ok -> it = 48
                 }
                 buf[k + 4]: {
-                    ok -> it = hex-char(c >> 4)
+                    ok -> it = hex-char(cvv >> 4)
                 }
                 buf[k + 5]: {
-                    ok -> it = hex-char(c & 15)
+                    ok -> it = hex-char(cvv & 15)
                 }
                 k = k + 6
             }
+
             -> {
                 buf[k]: {
                     ok -> it = c
@@ -1355,14 +1429,21 @@ noml-pool.stringify = (idx i64, indent i64) (out str) {
     k = .nodes[idx].kind
     {
         k == NOML-KIND-NIL -> out = 'nil'
+
         k == NOML-KIND-BOOL -> {
             .nodes[idx].bool-val -> out = 'true'
+
             -> out = 'false'
         }
+
         k == NOML-KIND-NUM -> out = .fmt-num(.nodes[idx].num-val)
+
         k == NOML-KIND-STR -> out = .quote-value(.strs[idx])
+
         k == NOML-KIND-ARR -> out = .stringify-arr(idx, indent)
+
         k == NOML-KIND-OBJ -> out = .stringify-obj(idx, indent)
+
         -> out = 'nil'
     }
 }
@@ -1579,6 +1660,7 @@ noml-pool.val-i64 = (idx i64) (v ?i64) {
     f = .val-num(idx)
     f: {
         ok -> v = it.to-i64()
+
         -> v = nil
     }
 }
@@ -1605,6 +1687,7 @@ noml-pool.get-str = (idx i64, key str) (v ?str) {
     c = .get(idx, key)
     c: {
         ok -> v = .val-str(it)
+
         -> v = nil
     }
 }
@@ -1619,6 +1702,7 @@ noml-pool.get-f64 = (idx i64, key str) (v ?f64) {
     c = .get(idx, key)
     c: {
         ok -> v = .val-num(it)
+
         -> v = nil
     }
 }
@@ -1633,6 +1717,7 @@ noml-pool.get-i64 = (idx i64, key str) (v ?i64) {
     c = .get(idx, key)
     c: {
         ok -> v = .val-i64(it)
+
         -> v = nil
     }
 }
@@ -1647,6 +1732,7 @@ noml-pool.get-bool = (idx i64, key str) (v ?bool) {
     c = .get(idx, key)
     c: {
         ok -> v = .val-bool(it)
+
         -> v = nil
     }
 }
@@ -1661,6 +1747,7 @@ noml-pool.has = (idx i64, key str) (found bool) {
     c = .get(idx, key)
     c: {
         ok -> found = true
+
         -> found = false
     }
 }
@@ -1709,6 +1796,7 @@ noml-pool.ann-value = (idx i64, key str) (v ?str) {
         (c == 32 || c == 9 || c == 10 || c == 13 || c == 44) -> {
             i = i + 1
         }
+
         -> {
             j = i
             (j < n) {
@@ -1785,10 +1873,12 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                 p = .scan-quote(body, p)
                 p < 0 -> return
             }
+
             cc == 91 || cc == 123 -> {
                 depth = depth + 1
                 p = p + 1
             }
+
             cc == 93 || cc == 125 -> {
                 depth == 0 -> {
                     next = p
@@ -1797,6 +1887,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                 depth = depth - 1
                 p = p + 1
             }
+
             cc == 44 -> {
                 depth == 0 -> {
                     next = p + 1
@@ -1804,6 +1895,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                 }
                 p = p + 1
             }
+
             -> p = p + 1
         }
     }
@@ -1912,7 +2004,7 @@ noml-doc.is-num = () (yes bool) {
 
 ; 根是否布林
 ; yes: true=根為布林
-; [is-bool](#noml-doc.is-bool)
+; [is-bool](#noml.noml-doc.is-bool)
 noml-doc.is-bool = () (yes bool) {
     yes = .pool.is-bool(.root)
 }

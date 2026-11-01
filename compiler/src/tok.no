@@ -135,11 +135,13 @@ str-eq = (a str, b str) (yes bool) {
         ca-opt = a.byte(i)
         ca = ca-opt: {
             ok -> it
+
             -> 0
         }
         cb-opt = b.byte(i)
         cb = cb-opt: {
             ok -> it
+
             -> 0
         }
         ca != cb -> return
@@ -153,97 +155,189 @@ str-eq = (a str, b str) (yes bool) {
 name = (c i64) (r str) {
     r = c: {
         ILLEGAL -> 'ILLEGAL'
+
         EOF -> 'EOF'
+
         NEWLINE -> 'NEWLINE'
+
         COMMENT -> 'COMMENT'
+
         IDENT -> 'IDENT'
+
         INT -> 'INT'
+
         FLOAT -> 'FLOAT'
+
         STRING -> 'STRING'
+
         CHAR -> 'CHAR'
+
         REGEX -> 'REGEX'
+
         TRUE -> 'TRUE'
+
         FALSE -> 'FALSE'
+
         NIL -> 'NIL'
+
         IF -> 'IF'
+
         ELIF -> 'ELIF'
+
         ELSE -> 'ELSE'
+
         RETURN -> 'RETURN'
+
         FOR -> 'FOR'
+
         IN -> 'IN'
+
         BREAK -> 'BREAK'
+
         CONTINUE -> 'CONTINUE'
+
         SUPER -> 'SUPER'
+
         SELF -> 'SELF'
+
         IT -> 'IT'
+
         USE -> 'USE'
+
         LABEL -> 'LABEL'
+
         HASH-LBRACE -> 'HASH_LBRACE'
+
         AS -> 'AS'
+
         CHAN -> 'CHAN'
+
         PTR -> 'PTR'
+
         SWITCH -> 'SWITCH'
+
         CASE -> 'CASE'
+
         DEFAULT -> 'DEFAULT'
+
         MATCH -> 'MATCH'
+
         MAP -> 'MAP'
+
         RUN -> 'RUN'
+
         AWY -> 'AWY'
+
         CO -> 'CO'
+
         ASSIGN -> 'ASSIGN'
+
         ADD -> 'ADD'
+
         SUB -> 'SUB'
+
         MUL -> 'MUL'
+
         QUO -> 'QUO'
+
         MOD -> 'MOD'
+
         EQUALS -> 'EQUALS'
+
         NOT-EQUALS -> 'NOT_EQUALS'
+
         LESS -> 'LESS'
+
         LESS-EQUALS -> 'LESS_EQUALS'
+
         GREATER -> 'GREATER'
+
         GREATER-EQUALS -> 'GREATER_EQUALS'
+
         LAND -> 'LAND'
+
         LOR -> 'LOR'
+
         INC -> 'INC'
+
         DEC -> 'DEC'
+
         NOT -> 'NOT'
+
         XOR -> 'XOR'
+
         SHL -> 'SHL'
+
         SHR -> 'SHR'
+
         ARROW -> 'ARROW'
+
         RARROW -> 'RARROW'
+
         AND -> 'AND'
+
         OR -> 'OR'
+
         AND-NOT -> 'AND_NOT'
+
         STAR-STAR -> 'STAR_STAR'
+
         BANG-BANG -> 'BANG_BANG'
+
         ELLIPSIS -> 'ELLIPSIS'
+
         ADD-ASSIGN -> 'ADD_ASSIGN'
+
         SUB-ASSIGN -> 'SUB_ASSIGN'
+
         MUL-ASSIGN -> 'MUL_ASSIGN'
+
         QUO-ASSIGN -> 'QUO_ASSIGN'
+
         MOD-ASSIGN -> 'MOD_ASSIGN'
+
         AND-ASSIGN -> 'AND_ASSIGN'
+
         OR-ASSIGN -> 'OR_ASSIGN'
+
         XOR-ASSIGN -> 'XOR_ASSIGN'
+
         SHL-ASSIGN -> 'SHL_ASSIGN'
+
         SHR-ASSIGN -> 'SHR_ASSIGN'
+
         AND-NOT-ASSIGN -> 'AND_NOT_ASSIGN'
+
         QUESTION-ASSIGN -> 'QUESTION_ASSIGN'
+
         LPAREN -> 'LPAREN'
+
         RPAREN -> 'RPAREN'
+
         LBRACE -> 'LBRACE'
+
         RBRACE -> 'RBRACE'
+
         LBRACKET -> 'LBRACKET'
+
         RBRACKET -> 'RBRACKET'
+
         COMMA -> 'COMMA'
+
         SEMICOLON -> 'SEMICOLON'
+
         COLON -> 'COLON'
+
         DOT -> 'DOT'
+
         UNDERSCORE -> 'UNDERSCORE'
+
         AT -> 'AT'
+
         QUESTION -> 'QUESTION'
+
         TILDE -> 'TILDE'
+
         -> 'UNKNOWN'
     }
 }
@@ -256,28 +350,51 @@ name = (c i64) (r str) {
 keyword = (s str) (r i64) {
     r = s: {
         'if' -> IF
+
         'elif' -> ELIF
+
         'else' -> ELSE
+
         'switch' -> SWITCH
+
         'case' -> CASE
+
         'default' -> DEFAULT
+
         'match' -> MATCH
+
         'for' -> FOR
+
         'while' -> FOR
+
         'in' -> IN
+
         'return' -> RETURN
+
         'break' -> BREAK
+
         'continue' -> CONTINUE
+
         'true' -> TRUE
+
         'false' -> FALSE
+
         'nil' -> NIL
+
         'as' -> AS
+
         'ptr' -> PTR
+
         'chan' -> CHAN
+
         'use' -> USE
+
         'run' -> RUN
+
         'awy' -> AWY
+
         'co' -> CO
+
         -> ILLEGAL
     }
 }

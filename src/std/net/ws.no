@@ -171,6 +171,7 @@ compute-accept = (key str) (accept str) {
 
         hash-vec[i]: {
             ok -> it = hash[i]
+
             -> _
         }
     }
@@ -191,6 +192,7 @@ next-rand = () (r i64) {
     c = 0
     rand-val: {
         ok -> c = it
+
         -> c = 0
     }
 
@@ -207,21 +209,25 @@ gen-mask-key = (seed i64) (key str) {
 
     key[0]: {
         ok -> it = (seed & 255)
+
         -> _
     }
 
     key[1]: {
         ok -> it = ((seed >> 8) & 255)
+
         -> _
     }
 
     key[2]: {
         ok -> it = ((seed >> 16) & 255)
+
         -> _
     }
 
     key[3]: {
         ok -> it = ((seed >> 24) & 255)
+
         -> _
     }
 }
@@ -239,6 +245,7 @@ gen-client-key = (seed i64) (key str) {
 
         raw[i]: {
             ok -> it = (s * 1103515245 + 12345) & 255
+
             -> _
         }
     }
@@ -274,6 +281,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     ; byte 0: FIN(1) | opcode
     frame[0]: {
         ok -> it = 128 | (opcode & 15)
+
         -> _
     }
 
@@ -283,26 +291,28 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
     #{overflow=wrap}
     {
-        dlen <= 125 -> {
-            frame[1]: {
-                ok -> it = mask-bit | dlen
-                -> _
-            }
+        dlen <= 125 -> frame[1]: {
+            ok -> it = mask-bit | dlen
+
+            -> _
         }
 
         dlen > 125 && dlen <= 65535 -> {
             frame[1]: {
                 ok -> it = mask-bit | 126
+
                 -> _
             }
 
             frame[2]: {
                 ok -> it = (dlen >> 8) & 255
+
                 -> _
             }
 
             frame[3]: {
                 ok -> it = dlen & 255
+
                 -> _
             }
         }
@@ -310,6 +320,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
         dlen > 65535 -> {
             frame[1]: {
                 ok -> it = mask-bit | 127
+
                 -> _
             }
             i <- [0..8): {
@@ -317,6 +328,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
                 #{overflow=wrap}
                 frame[2 + i]: {
                     ok -> it = (dlen >> (56 - i * 8)) & 255
+
                     -> _
                 }
             }
@@ -339,6 +351,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
                 #{overflow=wrap}
                 frame[mk-start + i]: {
                     ok -> it = mask-key.byte(i)
+
                     -> _
                 }
             }
@@ -349,6 +362,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
                 #{overflow=wrap}
                 frame[header-len + i]: {
                     ok -> it = (data.byte(i) ^ mask-key.byte(i % 4)) & 255
+
                     -> _
                 }
             }
@@ -362,6 +376,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
                 #{overflow=wrap}
                 frame[header-len + i]: {
                     ok -> it = data.byte(i)
+
                     -> _
                 }
             }
@@ -457,6 +472,7 @@ server-conn.handshake = () {
             #{overflow=wrap}
             raw[total + i]: {
                 ok -> it = tmp.byte(i)
+
                 -> _
             }
         }
@@ -640,11 +656,13 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
 
     payload[0]: {
         ok -> it = (close-code >> 8) & 255
+
         -> _
     }
 
     payload[1]: {
         ok -> it = close-code & 255
+
         -> _
     }
     i <- [0..reason.len-bytes()): {
@@ -652,6 +670,7 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
         #{overflow=wrap}
         payload[2 + i]: {
             ok -> it = reason.byte(i)
+
             -> _
         }
     }
@@ -712,12 +731,14 @@ server-conn.recv = () (msg ?message) {
         b0-opt = .recv-buf.byte(0)
         b0 = b0-opt: {
             ok -> it
+
             -> _
         }
 
         b1-opt = .recv-buf.byte(1)
         b1 = b1-opt: {
             ok -> it
+
             -> _
         }
         fin = (b0 & 128) != 0
@@ -848,6 +869,7 @@ server-conn.recv = () (msg ?message) {
                 #{overflow=wrap}
                 mask-key[i]: {
                     ok -> it = .recv-buf.byte(mask-start + i)
+
                     -> _
                 }
             }
@@ -871,6 +893,7 @@ server-conn.recv = () (msg ?message) {
 
             payload[i]: {
                 ok -> it = b & 255
+
                 -> _
             }
         }
@@ -942,6 +965,7 @@ server-conn.recv = () (msg ?message) {
 ; 注意：為配合非阻塞輪詢，本方法不跨多次呼叫累積 fragmentation；
 ;       單 frame 的 text/binary 訊息（nowork 前端用法）直接成為一條訊息。
 ;       需要完整分片重組時仍請使用阻塞版 recv。
+; msg ?message: ok=本次輪詢已湊齊的完整訊息；nil=暫無資料或 frame 尚未收齊；err=連線關閉或錯誤
 ; [recv-nb](#ws.server-conn.recv-nb)
 server-conn.recv-nb = () (msg ?message) {
 
@@ -1005,12 +1029,14 @@ server-conn.recv-nb = () (msg ?message) {
     b0-opt = .recv-buf.byte(0)
     b0 = b0-opt: {
         ok -> it
+
         -> _
     }
 
     b1-opt = .recv-buf.byte(1)
     b1 = b1-opt: {
         ok -> it
+
         -> _
     }
     fin = (b0 & 128) != 0
@@ -1071,6 +1097,7 @@ server-conn.recv-nb = () (msg ?message) {
             #{overflow=wrap}
             mask-key[k]: {
                 ok -> it = .recv-buf.byte(mask-start + k)
+
                 -> _
             }
         }
@@ -1090,6 +1117,7 @@ server-conn.recv-nb = () (msg ?message) {
 
         payload[p]: {
             ok -> it = b & 255
+
             -> _
         }
     }
@@ -1244,11 +1272,13 @@ client.send-close = (close-code i64, reason str) (ok bool) {
 
     payload[0]: {
         ok -> it = (close-code >> 8) & 255
+
         -> _
     }
 
     payload[1]: {
         ok -> it = close-code & 255
+
         -> _
     }
     i <- [0..reason.len-bytes()): {
@@ -1256,6 +1286,7 @@ client.send-close = (close-code i64, reason str) (ok bool) {
         #{overflow=wrap}
         payload[2 + i]: {
             ok -> it = reason.byte(i)
+
             -> _
         }
     }
@@ -1316,12 +1347,14 @@ client.recv = () (msg ?message) {
         b0-opt = .recv-buf.byte(0)
         b0 = b0-opt: {
             ok -> it
+
             -> _
         }
 
         b1-opt = .recv-buf.byte(1)
         b1 = b1-opt: {
             ok -> it
+
             -> _
         }
         fin = (b0 & 128) != 0
@@ -1479,6 +1512,7 @@ client.recv = () (msg ?message) {
                 #{overflow=wrap}
                 mask-key[i]: {
                     ok -> it = .recv-buf.byte(mask-start + i)
+
                     -> _
                 }
             }
@@ -1501,6 +1535,7 @@ client.recv = () (msg ?message) {
 
             payload[i]: {
                 ok -> it = b & 255
+
                 -> _
             }
         }
@@ -1785,6 +1820,7 @@ connect = (url str) (c ?client) {
             #{overflow=wrap}
             raw[total + i]: {
                 ok -> it = tmp.byte(i)
+
                 -> _
             }
         }
@@ -1907,6 +1943,7 @@ connect = (url str) (c ?client) {
 
             rb[i]: {
                 ok -> it = remaining[i]
+
                 -> _
             }
         }

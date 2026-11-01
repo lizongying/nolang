@@ -1,6 +1,6 @@
-# std/number
-# std/math
 # /test/runner
+# std/math
 # std/net/http
+# std/number
 
 x = 1

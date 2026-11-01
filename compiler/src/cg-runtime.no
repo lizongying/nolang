@@ -107,6 +107,7 @@ cg-runtime-struct-decl = (id i64, nf i64, ft []i64) (r str) {
     (j < nf) {
         j > 0 -> b.push(', ')
         b.push(cg-runtime-ty-name(ft[j]))
+
         #{overflow=wrap}
         j = j + 1
     }
@@ -132,8 +133,10 @@ cg-runtime-struct-decls = (sfc []i64, sft []i64) (r str) {
             j = 0
             (j < nf) {
                 ft.push(sft[off])
+
                 #{overflow=wrap}
                 j = j + 1
+
                 #{overflow=wrap}
                 off = off + 1
             }

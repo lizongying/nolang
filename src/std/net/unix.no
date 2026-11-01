@@ -72,8 +72,8 @@ unix-listener {
 }
 
 ; 開始監聽 Unix Domain Socket
-; path: socket 檔案路徑（如 '/tmp/myapp.sock'）
-; 返回 ok=true=成功
+; path str: socket 檔案路徑（如 '/tmp/myapp.sock'）
+; ok bool: true=socket 已建立並進入監聽，false=系統呼叫失敗（fd 保持 -1）
 ; [listen](#unix.unix-listener.listen)
 unix-listener.listen = (path str) (ok bool) {
     ok = false
@@ -136,14 +136,14 @@ unix-listener.close = () {
 }
 
 ; 取得監聽 socket 的檔案描述符
-; 返回 fd fd
+; fd fd: 監聽 socket 的檔案描述符（未開啟時為 -1）
 ; [fd-of](#unix.unix-listener.fd-of)
 unix-listener.fd-of = () (fd fd) {
     fd = .fd
 }
 
 ; 取得 socket 檔案路徑
-; 返回 path str
+; path str: 建立監聽時傳入的 socket 檔案路徑
 ; [path-of](#unix.unix-listener.path-of)
 unix-listener.path-of = () (path str) {
     path = .path
@@ -160,8 +160,8 @@ unix-conn {
 }
 
 ; 連接到 Unix Domain Socket 服務端
-; path: socket 檔案路徑（如 '/tmp/myapp.sock'）
-; 返回 ok=true=成功
+; path str: socket 檔案路徑（如 '/tmp/myapp.sock'）
+; ok bool: true=已連上，false=系統呼叫失敗（fd 保持 -1）
 ; [dial](#unix.unix-conn.dial)
 unix-conn.dial = (path str) (ok bool) {
     ok = false
@@ -194,7 +194,8 @@ unix-conn.recv = (buf str, n i64) (read-n i64) {
 }
 
 ; 接收全部資料直到連接關閉
-; 返回 content str: 接收的內容, total i64: 總位元組數
+; content str: 累積收到的全部資料（逐塊拼接，直到對端關閉或出錯）
+; total i64: 收到的總位元組數（未連接時為 0）
 ; [recv-all](#unix.unix-conn.recv-all)
 unix-conn.recv-all = () (content str, total i64) {
     total = 0
@@ -261,7 +262,7 @@ unix-conn.close = () {
 }
 
 ; 取得連接 socket 的檔案描述符
-; 返回 fd fd
+; fd fd: 連接 socket 的檔案描述符（未連接時為 -1）
 ; [fd-of](#unix.unix-conn.fd-of)
 unix-conn.fd-of = () (fd fd) {
     fd = .fd

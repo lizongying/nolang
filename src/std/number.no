@@ -523,20 +523,16 @@ f64.to-str = () (out str) {
         (i < int-digits) {
             {
                 ; best-k < 0 時 n-str 只有 k 位，整數部分剩下的位數是已削去的尾隨零。
-                i < k -> {
-                    out[pos]: {
-                        ok -> it = n-str[i]
+                i < k -> out[pos]: {
+                    ok -> it = n-str[i]
 
-                        -> _
-                    }
+                    -> _
                 }
 
-                -> {
-                    out[pos]: {
-                        ok -> it = 48
+                -> out[pos]: {
+                    ok -> it = 48
 
-                        -> _
-                    }
+                    -> _
                 }
             }
             pos = pos + 1

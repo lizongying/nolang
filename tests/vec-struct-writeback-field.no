@@ -21,10 +21,10 @@ _p jv-pool
 seed = () {
     _p.nodes = with-len(1)
     ks []i64 = with-len(4)
-    ks[0]=1 #{index-out=0}
-    ks[1]=2 #{index-out=0}
-    ks[2]=3 #{index-out=0}
-    ks[3]=4 #{index-out=0}
+    ks[0] = 1
+    ks[1] = 2
+    ks[2] = 3
+    ks[3] = 4
     _p.nodes[0].keys = ks #{index-out=0}
 }
 
@@ -55,8 +55,8 @@ io.outln('T1 len=' - t1len.to-str() - ' order=' - t1a.to-str() - ',' - t1b.to-st
 ; 對照組 a：直接寫 slot 欄位
 seed()
 nk []i64 = with-len(2)
-nk[0]=7 #{index-out=0}
-nk[1]=8 #{index-out=0}
+nk[0] = 7
+nk[1] = 8
 _p.nodes[0].keys = nk
 t3len i64 = _p.nodes[0].keys.len()
 io.outln('T3 len=' - t3len.to-str())

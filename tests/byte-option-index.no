@@ -26,6 +26,7 @@ f-byte = (all str, k i64) (out i64) {
         b-opt = all.byte(j)
         b i64 = b-opt: {
             ok -> it
+
             ->
         }
         s = s + b #{overflow=wrap}
@@ -38,6 +39,7 @@ f-byte = (all str, k i64) (out i64) {
 ; k i64: 要取幾個位元組
 ; out i64: 取到的位元組總和（預期也是 195）
 f-idx = (all str, k i64) (out i64) {
+
     ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
     src = all

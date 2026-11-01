@@ -1,10 +1,52 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/lexer"
 )
+
+// TestFFIDeclarationDocCommentPreserved 是 example/sqlite-driver 回歸測試：
+// `#{c}` FFI 宣告上方的 Doc 註釋必須保留在產出的 ExternStatement.Doc 上，
+// 否則 no fmt 會把整組註釋刪除（setDoc 原本不認得 *ExternStatement）。
+func TestFFIDeclarationDocCommentPreserved(t *testing.T) {
+	input := "; FFI open: open or create database\n" +
+		"; filename: db path\n" +
+		"#{c}\n" +
+		"_open = (filename str) (rc i32)\n" +
+		"\n" +
+		"; FFI close\n" +
+		"#{c}\n" +
+		"_close = (db *byte) (rc i32)"
+	lex := lexer.New(input)
+	p := New(lex)
+	p.Filename = "test.no"
+	program := p.ParseProgram()
+	if len(p.Errors()) != 0 {
+		t.Fatalf("parser errors: %v", p.Errors())
+	}
+	if program == nil || len(program.Statements) == 0 {
+		t.Fatal("no statements parsed")
+	}
+	es, ok := program.Statements[0].(*ExternStatement)
+	if !ok {
+		t.Fatalf("expected first statement to be *ExternStatement, got %T", program.Statements[0])
+	}
+	doc := es.GetDoc()
+	if doc == nil || len(doc.List) == 0 {
+		t.Fatal("expected Doc comment attached to ExternStatement, got nil")
+	}
+	if len(doc.List) != 2 {
+		t.Fatalf("expected 2 leading doc comments, got %d", len(doc.List))
+	}
+	if !strings.Contains(doc.List[0].Text, "FFI open") {
+		t.Errorf("first doc comment text = %q, want it to mention 'FFI open'", doc.List[0].Text)
+	}
+	if !strings.Contains(doc.List[1].Text, "filename: db path") {
+		t.Errorf("second doc comment text = %q, want it to mention 'filename: db path'", doc.List[1].Text)
+	}
+}
 
 func TestOldSyntax(t *testing.T) {
 	tests := []struct {

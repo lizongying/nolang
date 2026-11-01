@@ -87,9 +87,10 @@ drv.cmd-tokens = () (code i64) {
         return
     }
     opt-path = args.get(2)
-    path str = ''
+    path = ''
     opt-path: {
         ok -> path = it
+
         -> _
     }
 
@@ -140,9 +141,10 @@ drv.cmd-ast = () (code i64) {
         return
     }
     opt-path = args.get(2)
-    path str = ''
+    path = ''
     opt-path: {
         ok -> path = it
+
         -> _
     }
     c = fs.read-bytes(path)
@@ -191,9 +193,10 @@ drv.cmd-vet = () (code i64) {
         return
     }
     opt-path = args.get(2)
-    path str = ''
+    path = ''
     opt-path: {
         ok -> path = it
+
         -> _
     }
 
@@ -350,6 +353,7 @@ drv.dispatch = () (code i64) {
             cmd str = ''
             opt-cmd: {
                 ok -> cmd = it
+
                 -> _
             }
             cmd: {

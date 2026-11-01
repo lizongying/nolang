@@ -84,6 +84,7 @@ prio-opt: {
         print(it.to-str())
         print('PASS: get-priority succeeded')
     }
+
     -> print('WARN: get-priority failed')
 }
 
@@ -130,6 +131,7 @@ sc-opt: {
         print(it)
         print('PASS: sysctl succeeded')
     }
+
     -> print('WARN: sysctl failed (may not be available on this platform)')
 }
 

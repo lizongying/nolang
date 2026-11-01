@@ -125,6 +125,7 @@ huffman.build = (lengths []i64, n i64) {
 
         offs[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -133,6 +134,7 @@ huffman.build = (lengths []i64, n i64) {
         #{overflow=wrap}
         offs[i + 1]: {
             ok -> it = offs[i] + .count[i]
+
             -> _
         }
     }
@@ -153,6 +155,7 @@ huffman.build = (lengths []i64, n i64) {
             #{index-out=zero, overflow=wrap}
             offs[lengths[i]]: {
                 ok -> it = offs[lengths[i]] + 1
+
                 -> _
             }
         }
@@ -269,6 +272,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
         #{index-out=zero}
         clens[code-order[i]]: {
             ok -> it = br.read-bits(3)
+
             -> _
         }
     }
@@ -296,6 +300,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
             sym < 16 -> {
                 lengths[idx]: {
                     ok -> it = sym
+
                     -> _
                 }
                 idx = idx + 1
@@ -313,6 +318,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
                     lengths[idx]: {
                         ok -> it = prev
+
                         -> _
                     }
                     idx = idx + 1
@@ -328,6 +334,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
                     lengths[idx]: {
                         ok -> it = 0
+
                         -> _
                     }
                     idx = idx + 1
@@ -343,6 +350,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
                     lengths[idx]: {
                         ok -> it = 0
+
                         -> _
                     }
                     idx = idx + 1
@@ -365,6 +373,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
         #{index-out=zero, overflow=wrap}
         dlengths[i]: {
             ok -> it = lengths[hlit + i]
+
             -> _
         }
     }

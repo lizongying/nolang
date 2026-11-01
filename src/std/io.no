@@ -167,6 +167,7 @@ writer.write-byte = (b i64) (written i64) {
 
     buf[0]: {
         ok -> it = b & 255
+
         -> _
     }
     written = fs.write(.fd, buf, 1)
@@ -187,6 +188,7 @@ writer.write-line = (s str) (written i64) {
 
     nl[0]: {
         ok -> it = 10
+
         -> _
     }
     written = fs.write(.fd, nl, 1)
@@ -220,6 +222,7 @@ outln = (s str) (n i64) {
 
     nl[0]: {
         ok -> it = 10
+
         -> _
     }
     m = fs.write(fs.STDOUT-FD, nl, 1)
@@ -249,6 +252,7 @@ errln = (s str) (n i64) {
 
     nl[0]: {
         ok -> it = 10
+
         -> _
     }
     m = fs.write(fs.STDERR-FD, nl, 1)

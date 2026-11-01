@@ -265,6 +265,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                     #{index-out=zero, overflow=wrap}
                     buf[buf-pos]: {
                         ok -> it = data[pos + i]
+
                         -> _
                     }
                     buf-pos = buf-pos + 1
@@ -272,6 +273,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
                 buf[buf-pos]: {
                     ok -> it = 46
+
                     -> _
                 }
                 buf-pos = buf-pos + 1
@@ -456,6 +458,7 @@ resolve-from = (server str, domain str) (ip ?str) {
 
         resp[i]: {
             ok -> it = resp-str.byte(i)
+
             -> _
         }
     }
@@ -507,6 +510,7 @@ resolve-all = (domain str) (ip ?str) {
 
         resp[i]: {
             ok -> it = resp-str.byte(i)
+
             -> _
         }
     }

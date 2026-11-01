@@ -161,10 +161,12 @@ cg-rc-check-balance = (vids []i64, ops []i64) (r str) {
             j <- [0..n): {
                 vids[j] == cur -> {
                     ops[j] == RC-RETAIN -> {
+
                         #{overflow=wrap}
                         nr = nr + 1
                     }
                     ops[j] == RC-RELEASE -> {
+
                         #{overflow=wrap}
                         nd = nd + 1
                     }

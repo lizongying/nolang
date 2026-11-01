@@ -71,16 +71,21 @@ print(plain())
 		name string
 		re   *regexp.Regexp
 	}{
+		// SSA names in the emitted IR carry a DOT (`%lv.58`, `%rbi.61`), so the
+		// value-name class must be `[\w.]+`, not `\w+`. With a bare `\w+` the
+		// match stops at `%lv` and then fails on the `.58` that follows, so
+		// every assertion below silently reported "missing" even when the IR
+		// was correct — the gate was red, not vacuous, but equally useless.
 		// unsigned compare: a negative i64 is a huge unsigned value, so
 		// `ult` rejects it without a separate `i >= 0` check.
-		{"bounds check (icmp ult)", regexp.MustCompile(`icmp ult i64 %\w+, %\w+`)},
+		{"bounds check (icmp ult)", regexp.MustCompile(`icmp ult i64 %[\w.]+, %[\w.]+`)},
 		// the data pointer is selected between the real buffer and a
 		// fallback, so the nil path never dereferences.
-		{"guarded pointer (select i8*)", regexp.MustCompile(`select i1 %\w+, i8\* %\w+, i8\* %\w+`)},
+		{"guarded pointer (select i8*)", regexp.MustCompile(`select i1 %[\w.]+, i8\* %[\w.]+, i8\* %[\w.]+`)},
 		{"fallback slot bitcast", regexp.MustCompile(`bitcast %option\* %[\w.]+ to i8\*`)},
-		{"byte payload widened", regexp.MustCompile(`zext i8 %\w+ to i64`)},
-		{"tag select (ok/nil)", regexp.MustCompile(`select i1 %\w+, i64 0, i64 1`)},
-		{"payload select", regexp.MustCompile(`select i1 %\w+, i64 %\w+, i64 0`)},
+		{"byte payload widened", regexp.MustCompile(`zext i8 %[\w.]+ to i64`)},
+		{"tag select (ok/nil)", regexp.MustCompile(`select i1 %[\w.]+, i64 0, i64 1`)},
+		{"payload select", regexp.MustCompile(`select i1 %[\w.]+, i64 %[\w.]+, i64 0`)},
 		{"option result store", regexp.MustCompile(`store %option`)},
 	}
 	for _, c := range checks {

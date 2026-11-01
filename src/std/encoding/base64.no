@@ -155,10 +155,10 @@ decode = (s str, table str) (out ?[]byte) {
     i = 0
     j = 0
 
-    #{overflow=wrap}
     ; with-cap 的 len=0，place-match 寫入會全部落到 none 臂（靜默不寫）；
     ; 需先將長度鋪滿（每 4 字元解出 3 位元組，+3 覆蓋不整除餘量），
     ; 最後再 truncate 到實際寫入長度。
+    #{overflow=wrap}
     buf []byte = with-len(n * 3 / 4 + 3)
 
     #{overflow=wrap}
@@ -188,6 +188,7 @@ decode = (s str, table str) (out ?[]byte) {
 
         buf[j]: {
             ok -> it = (v0 << 2) | (v1 >> 4)
+
             -> _
         }
 
@@ -201,6 +202,7 @@ decode = (s str, table str) (out ?[]byte) {
 
             buf[j + 1]: {
                 ok -> it = ((v1 & 15) << 4) | (v2 >> 2)
+
                 -> _
             }
         }
@@ -215,6 +217,7 @@ decode = (s str, table str) (out ?[]byte) {
 
             buf[j + 2]: {
                 ok -> it = ((v2 & 3) << 6) | v3
+
                 -> _
             }
         }

@@ -1,4 +1,11 @@
-c = net.Conn{host: "x"}
-d = a.b.C{x: 1}
-e = net.Conn{}
-f = pkg.Sub.K{x: 1, y: 2}
+c = net.Conn {
+    host: "x"
+}
+d = a.b.C {
+    x: 1
+}
+e = net.Conn {}
+f = pkg.Sub.K {
+    x: 1
+    y: 2
+}

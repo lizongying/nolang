@@ -14,10 +14,12 @@
 t-get-env = () {
     os.set-env('NOLANG_OS_TEST', 'xyz')
     val = os.get-env('NOLANG_OS_TEST')
-    got str = ''
+    got = ''
     val: {
         ok -> got = it
+
         nil -> got = ''
+
         err -> got = ''
     }
     runner.str-eq(got, 'xyz', 3, 'get-env after set-env')
@@ -29,7 +31,9 @@ t-get-env-unset = () {
     is-nil = false
     val: {
         ok -> is-nil = false
+
         nil -> is-nil = true
+
         err -> is-nil = false
     }
     runner.is-true(is-nil, 'get-env unset == nil')
@@ -77,6 +81,7 @@ t-get-priority = () {
             found = true
             prio = it
         }
+
         -> found = false
     }
     runner.is-true(found, 'get-priority returns ok')

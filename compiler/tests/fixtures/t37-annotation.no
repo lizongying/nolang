@@ -3,10 +3,9 @@ f = (n i64) (out i64) {
     #{overflow=wrap}
     a = n + 1
 
-    #{index-out=zero}
     b = a
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
     c = b + n
     out = c
 }

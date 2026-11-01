@@ -342,7 +342,14 @@ func (p *Parser) parseStatement() Statement {
 							structToken.Literal, propTok.Literal, structToken.Literal,
 							structToken.Literal, propTok.Literal)
 						p.restoreState(state)
-						p.skipToStatementEnd()
+						// 整行吞掉：skipToStatementEnd 在遇到「陳述起始邊界」(IDENT `p`)
+						// 時是 no-op，導致 `[]byte` 的元素型別 `byte` 被當成下一條陳述
+						// 重新走一遍 parseExpression，誤觸發後綴 cast 診斷
+						// (tlwmf1le)。nolang 以 NEWLINE / `;` 分隔陳述，
+						// 所以直接吃到行尾，避免殘餘 token 被二次解析。
+						for p.currentToken.Type != lexer.NEWLINE && p.currentToken.Type != lexer.EOF && p.currentToken.Type != lexer.SEMICOLON {
+							p.nextToken()
+						}
 						return nil
 					}
 				}
@@ -453,6 +460,7 @@ func (p *Parser) parseStatement() Statement {
 			// `bend < 0 -> return` to be mis-parsed as separate statements.
 			// Temporarily strip CTX_MATCH_ARM so the inner bare match starts clean.
 			state := p.saveState()
+			diagMark := len(p.diags)
 			savedCtx := p.ctx.copy()
 			p.ctx = p.ctx.filterOut(CTX_MATCH_ARM)
 			expr := p.parseBareMatchExpr()
@@ -465,6 +473,11 @@ func (p *Parser) parseStatement() Statement {
 			// mixed content: standalone if-then statements (cond -> { body })
 			// followed by other statements or nested bare matches. Fall back to
 			// parsing as a regular block statement so no content is lost.
+			// 試探失敗：其間產生的診斷一律作廢——下面 parseBlockStatement 會把
+			// 同一段原始碼按正確語法重新解析並自行報錯，試探的殘留只會誤導
+			// （例如把 struct 欄位 `keys []i64` 當成臂條件求值，殘留的 `i64`
+			// 撞上後綴 cast 診斷 tlwmf1le）。
+			p.discardDiagnosticsRecordsSince(diagMark)
 			p.restoreState(state)
 			block := p.parseBlockStatement()
 			// parseBlockStatement stops at } but does not consume it; advance
@@ -515,6 +528,7 @@ func (p *Parser) parseStatement() Statement {
 		if bt == blockUnknown || bt == blockEnum || bt == blockIface || bt == blockTaggedEnum {
 			tok := p.currentToken
 			state := p.saveState()
+			diagMark := len(p.diags)
 			savedCtx := p.ctx.copy()
 			p.ctx = p.ctx.filterOut(CTX_MATCH_ARM)
 			expr := p.parseBareMatchExpr()
@@ -522,6 +536,9 @@ func (p *Parser) parseStatement() Statement {
 			if expr != nil {
 				return &ExpressionStatement{Token: tok, Expression: expr}
 			}
+			// 試探失敗：丟棄其間的診斷（理由同上一處：回退路徑會重新報錯，
+			// 試探殘留會誤報，如 struct 欄位 `keys []i64`）。
+			p.discardDiagnosticsRecordsSince(diagMark)
 			p.restoreState(state)
 			// parseBareMatchExpr couldn't handle this block (e.g. a leading
 			// #{...} annotation sits before the first arm, which confuses its
@@ -667,9 +684,11 @@ func (p *Parser) parseUseStatement() Statement {
 		}
 	}
 
-	// 只有路徑、沒有函數名的導入（如 `# /cfg/server as cfg`）。
+	// 只有路徑、沒有函數名的導入（如 `# /cfg/server as cfg` 或 `# std/err error`）。
 	// 一般模組沒有函數可導入，別名只對 `.noml` 導入有意義（改寫頂層值
 	// 綁定名，結構體名仍為文件名）；合併階段會拒絕其他情形。
+	// 兼容兩種別名寫法：`as` 關鍵字與緊跟路徑的裸別名（陳述以換行結尾，
+	// 故路徑同行緊跟的 path-ident 只能是別名，不會是下一條陳述）。
 	if p.currentToken.Type == lexer.AS {
 		stmt.AsKeyword = true
 		p.nextToken()
@@ -677,6 +696,9 @@ func (p *Parser) parseUseStatement() Statement {
 			stmt.Alias = p.currentToken.Literal
 			p.nextToken()
 		}
+	} else if isPathIdent(p.currentToken.Type) {
+		stmt.Alias = p.currentToken.Literal
+		p.nextToken()
 	}
 
 	// 沒有函數名的情況（不應該發生，但兼容處理）
@@ -761,7 +783,20 @@ func (p *Parser) parseExportStatement() Statement {
 		}
 	}
 
-	// 沒有函數名的情況（不應該發生，但兼容處理）
+	// 沒有函數名的情況（如 `@ /cfg/server as cfg` 或 `@ std/err err`）。
+	// 裸別名：路徑同行緊跟的 path-ident 即別名（陳述以換行結尾，不會是下一條陳述）。
+	if p.currentToken.Type == lexer.AS {
+		stmt.AsKeyword = true
+		p.nextToken()
+		if isPathIdent(p.currentToken.Type) {
+			stmt.Alias = p.currentToken.Literal
+			p.nextToken()
+		}
+	} else if isPathIdent(p.currentToken.Type) {
+		stmt.Alias = p.currentToken.Literal
+		p.nextToken()
+	}
+
 	stmt.Path = joinPathParts(parts)
 	return stmt
 }

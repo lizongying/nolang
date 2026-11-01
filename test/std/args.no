@@ -27,21 +27,24 @@ t-count = () {
 ; get(0) 與 program 都應等於 os.arg(0)（即程式名）
 t-get-program = () {
     opt-p = args.program()
-    p str = ''
+    p = ''
     opt-p: {
         ok -> p = it
+
         -> _
     }
     opt-g0 = args.get(0)
-    g0 str = ''
+    g0 = ''
     opt-g0: {
         ok -> g0 = it
+
         -> _
     }
     opt-o0 = os.arg(0)
-    o0 str = ''
+    o0 = ''
     opt-o0: {
         ok -> o0 = it
+
         -> _
     }
     runner.gt(p.len(), 0, 'program non-empty (was empty)')

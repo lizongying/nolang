@@ -77,48 +77,56 @@ b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
     #{index-out=zero}
     v[a]: {
         ok -> it = (v[a] + v[b] + x) & BLAKE2B-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[d]: {
         ok -> it = rotr64(v[d] ^ v[a], 32)
+
         -> _
     }
 
     #{index-out=zero}
     v[c]: {
         ok -> it = (v[c] + v[d]) & BLAKE2B-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[b]: {
         ok -> it = rotr64(v[b] ^ v[c], 24)
+
         -> _
     }
 
     #{index-out=zero}
     v[a]: {
         ok -> it = (v[a] + v[b] + y) & BLAKE2B-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[d]: {
         ok -> it = rotr64(v[d] ^ v[a], 16)
+
         -> _
     }
 
     #{index-out=zero}
     v[c]: {
         ok -> it = (v[c] + v[d]) & BLAKE2B-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[b]: {
         ok -> it = rotr64(v[b] ^ v[c], 63)
+
         -> _
     }
 }
@@ -141,6 +149,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
         #{index-out=zero}
         v[i]: {
             ok -> it = h[i]
+
             -> _
         }
     }
@@ -149,6 +158,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
         #{overflow=wrap}
         v[8 + i]: {
             ok -> it = BLAKE2B-IV[i]
+
             -> _
         }
     }
@@ -157,6 +167,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     #{index-out=zero}
     v[12]: {
         ok -> it = (v[12] ^ (t & BLAKE2B-MASK)) & BLAKE2B-MASK
+
         -> _
     }
 
@@ -169,6 +180,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
         #{index-out=zero}
         v[14]: {
             ok -> it = v[14] ^ BLAKE2B-MASK
+
             -> _
         }
     }
@@ -183,6 +195,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
         #{index-out=zero}
         m[i]: {
             ok -> it = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24) | ((block[off + 4]) << 32) | ((block[off + 5]) << 40) | ((block[off + 6]) << 48) | ((block[off + 7]) << 56)
+
             -> _
         }
     }
@@ -198,6 +211,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
             #{overflow=wrap}
             s[i]: {
                 ok -> it = BLAKE2B-SIGMA[base + i]
+
                 -> _
             }
         }
@@ -233,6 +247,7 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
         #{index-out=zero}
         h[i]: {
             ok -> it = (h[i] ^ v[i] ^ v[8 + i]) & BLAKE2B-MASK
+
             -> _
         }
     }
@@ -273,6 +288,7 @@ b = (data []byte) (hash [64]byte) {
     #{index-out=zero}
     h[0]: {
         ok -> it = (h[0] ^ 16842816) & BLAKE2B-MASK
+
         -> _
     }
 
@@ -303,6 +319,7 @@ b = (data []byte) (hash [64]byte) {
         #{index-out=zero, overflow=wrap}
         last-block[i]: {
             ok -> it = data[offset + i]
+
             -> _
         }
     }
@@ -312,6 +329,7 @@ b = (data []byte) (hash [64]byte) {
 
         last-block[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -363,6 +381,7 @@ b-256 = (data []byte) (hash [32]byte) {
     #{index-out=zero}
     h[0]: {
         ok -> it = (h[0] ^ 16842784) & BLAKE2B-MASK
+
         -> _
     }
 
@@ -390,6 +409,7 @@ b-256 = (data []byte) (hash [32]byte) {
         #{index-out=zero, overflow=wrap}
         last-block[i]: {
             ok -> it = data[offset + i]
+
             -> _
         }
     }
@@ -397,6 +417,7 @@ b-256 = (data []byte) (hash [32]byte) {
 
         last-block[i]: {
             ok -> it = 0
+
             -> _
         }
     }
@@ -530,48 +551,56 @@ s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
     #{index-out=zero}
     v[a]: {
         ok -> it = (v[a] + v[b] + x) & BLAKE2S-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[d]: {
         ok -> it = rotr32(v[d] ^ v[a], 16)
+
         -> _
     }
 
     #{index-out=zero}
     v[c]: {
         ok -> it = (v[c] + v[d]) & BLAKE2S-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[b]: {
         ok -> it = rotr32(v[b] ^ v[c], 12)
+
         -> _
     }
 
     #{index-out=zero}
     v[a]: {
         ok -> it = (v[a] + v[b] + y) & BLAKE2S-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[d]: {
         ok -> it = rotr32(v[d] ^ v[a], 8)
+
         -> _
     }
 
     #{index-out=zero}
     v[c]: {
         ok -> it = (v[c] + v[d]) & BLAKE2S-MASK
+
         -> _
     }
 
     #{index-out=zero}
     v[b]: {
         ok -> it = rotr32(v[b] ^ v[c], 7)
+
         -> _
     }
 }
@@ -589,6 +618,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         #{index-out=zero}
         v[i]: {
             ok -> it = h[i]
+
             -> _
         }
     }
@@ -597,6 +627,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         #{overflow=wrap}
         v[8 + i]: {
             ok -> it = BLAKE2S-IV[i]
+
             -> _
         }
     }
@@ -604,6 +635,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
     #{index-out=zero}
     v[12]: {
         ok -> it = (v[12] ^ t) & BLAKE2S-MASK
+
         -> _
     }
     last != 0 -> {
@@ -611,6 +643,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         #{index-out=zero}
         v[14]: {
             ok -> it = v[14] ^ BLAKE2S-MASK
+
             -> _
         }
     }
@@ -623,6 +656,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         #{index-out=zero}
         m[i]: {
             ok -> it = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
+
             -> _
         }
     }
@@ -636,6 +670,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
             #{overflow=wrap}
             s[i]: {
                 ok -> it = BLAKE2S-SIGMA[base + i]
+
                 -> _
             }
         }
@@ -669,6 +704,7 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         #{index-out=zero}
         h[i]: {
             ok -> it = (h[i] ^ v[i] ^ v[8 + i]) & BLAKE2S-MASK
+
             -> _
         }
     }
@@ -685,6 +721,7 @@ s = (data []byte) (hash [32]byte) {
     #{index-out=zero}
     h[0]: {
         ok -> it = (h[0] ^ 16842784) & BLAKE2S-MASK
+
         -> _
     }
 
@@ -712,6 +749,7 @@ s = (data []byte) (hash [32]byte) {
         #{index-out=zero, overflow=wrap}
         last-block[i]: {
             ok -> it = data[offset + i]
+
             -> _
         }
     }
@@ -719,6 +757,7 @@ s = (data []byte) (hash [32]byte) {
 
         last-block[i]: {
             ok -> it = 0
+
             -> _
         }
     }

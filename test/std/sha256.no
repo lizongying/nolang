@@ -11,6 +11,7 @@ ABC = 'abc'
 
 ; 56 字元 -> 跨越兩個 512-bit 區塊（padding 進位到第二塊）
 TWOBLOCK = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+
 ; 摘要長度：SHA-256 固定 32 位元組（256 位元）
 t-hash-len = () {
     h = sha256.sha256(ABC.to-bytes())

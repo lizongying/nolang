@@ -38,6 +38,7 @@ e-res {
 }
 
 ; (1) callee match 自己的參數一次
+; q e-res: 被 match 打印的枚舉值（呼叫者仍擁有，callee 抽取時走 borrow）
 show = (q e-res) {
     q: {
         ok(v) -> print('show: {v}')
@@ -47,11 +48,14 @@ show = (q e-res) {
 }
 
 ; (2) callee 完全不 match → 不得變成 owning
+; q e-res: 原樣接收但不讀載荷的枚舉值（所有權留在呼叫者）
 ignore = (q e-res) {
     print('ignore')
 }
 
 ; (3) 一個 callee 兩個 enum 參數
+; a e-res: 第一個枚舉值，match 打印其 ok 載荷
+; b e-res: 第二個枚舉值，match 打印其 ok 載荷
 pair = (a e-res, b e-res) {
     a: {
         ok(v) -> print('a: {v}')
@@ -66,6 +70,7 @@ pair = (a e-res, b e-res) {
 }
 
 ; (4) 轉手：載荷跨兩個邊界
+; q e-res: 先被接收再原樣轉交給 show 的枚舉值
 outer = (q e-res) {
     print('outer')
     show(q)
@@ -76,6 +81,7 @@ box {
 }
 
 ; (5) method：receiver 是結構體，參數是 enum
+; q e-res: 被 match 打印的枚舉值（receiver 只讀本身欄位）
 box.report = (q e-res) {
     print('box n:')
     print(.n)

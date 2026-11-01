@@ -23,6 +23,7 @@ fib-loop = (n i64) (r i64) {
         b-opt = t
         b-opt: {
             ok -> b = it
+
             ->
         }
     }
@@ -41,16 +42,19 @@ fib-rec = (n i64) (r i64) {
 
     #{overflow=wrap}
     n1-opt = n - 1
-    n1 i64 = 0
+    n1 = 0
     n1-opt: {
         ok -> n1 = it
+
         ->
     }
+
     #{overflow=wrap}
     n2-opt = n - 2
-    n2 i64 = 0
+    n2 = 0
     n2-opt: {
         ok -> n2 = it
+
         ->
     }
     p1 = fib-rec(n1)

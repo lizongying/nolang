@@ -50,6 +50,7 @@ has-flag = (flag str) (yes bool) {
         opt-arg = get(i)
         opt-arg: {
             ok -> arg = it
+
             -> _
         }
 
@@ -92,6 +93,7 @@ get-option = (key str) (val ?str) {
         opt-arg = get(i)
         opt-arg: {
             ok -> arg = it
+
             -> _
         }
 
@@ -145,6 +147,7 @@ get-positional = (idx i64) (val ?str) {
         opt-arg = get(j)
         opt-arg: {
             ok -> arg = it
+
             -> _
         }
 
@@ -165,6 +168,7 @@ get-positional = (idx i64) (val ?str) {
                 opt-next = get(j)
                 opt-next: {
                     ok -> next = it
+
                     -> _
                 }
 

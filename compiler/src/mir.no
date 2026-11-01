@@ -18,9 +18,11 @@
 TY-I64 = 0
 TY-STR = 1
 TY-VEC = 2
+
 ; TY-OPT → %op<id>（%option）。`?T` 只有**一个** LLVM 型别，元素型别只活在高层
 ; 语义里（payload 到底是 i64 还是 %str-long，由读它的 op 决定）。
 TY-OPT = 3
+
 ; 结构体型别（M4-c 续件 s31）：**型别码 = TY-STRUCT-BASE + 结构体 id**，值住 %st<id>（第七个
 ;   命名空间之外的「值」空间，与 %sv/%vc/%op 并列）。结构体 id 0..N 由语义层登记
 ;   （`cg-runtime-struct-decls(sfc)`：sfc[id] = 字段数，0 = 未使用）。
@@ -36,6 +38,7 @@ OP-ADD = 1
 OP-SUB = 2
 OP-MUL = 3
 OP-RET = 4
+
 ; dst = 结果值 id；syms[k] = 被调函数名；
 ;   a = 首个参数值 id（连续），bs[k] = 参数个数（0 表示无参调用）。
 ;   ⚠️ M4-b 时 a 是「唯一参数」、bs 恒 0；M4-c 起 bs 是【参数个数】，
@@ -44,12 +47,14 @@ OP-CALL = 5
 OP-ALLOC = 6
 OP-STORE = 7
 OP-LOAD = 8
+
 ; ── 控制流（M4-c 首件）────────────────────────────────────
 ; blks[k] 给出每条指令所属的基本块 id（0 = entry）。块切换处发 bb<id>: 标签。
 ; 跨块传值用 alloca/store/load（-O0 风格），不引入 PHI（PHI 留后续）。
-OP-BR = 9      ; a = 目标块 id
-OP-CONDBR = 10 ; a = 条件值 id（i64，非零为真）；bs[k] = 真块 id；dsts[k] = 假块 id
-OP-CMPLT = 11  ; dst = (a < b)；发 icmp slt + zext 到 i64
+OP-BR = 9; a = 目标块 id
+OP-CONDBR = 10; a = 条件值 id（i64，非零为真）；bs[k] = 真块 id；dsts[k] = 假块 id
+OP-CMPLT = 11; dst = (a < b)；发 icmp slt + zext 到 i64
+
 ; ── ALU 家族（M4-c 续件 s35）：位运算 / 移位 / 除法 / 其余比较 ──────
 ; 约定与 ADD/SUB/MUL 完全一致：dst = i64 结果值 id；a = 左操作数；bs[k] = 右操作数。
 ;   位运算：OP-AND / OP-OR / OP-XOR  ⇒ and / or / xor i64
@@ -84,6 +89,7 @@ OP-MOD = 50
 OP-STRCONST = 12
 OP-STRLEN = 13
 OP-STRCAT = 14
+
 ; ── 字符串槽（跨基本块保存 %str-long，M4-c 第五件）──────────
 ; %str-long 是【值型别】，跨块不能用 SSA 名直接续命（除非 PHI）⇒ 走 alloca。
 ; 槽住在独立命名空间 %ss<id>（类型 %str-long*），与 i64 槽 %s<id> 区分。
@@ -93,6 +99,7 @@ OP-STRCAT = 14
 OP-SALLOC = 15
 OP-SSTORE = 16
 OP-SLOAD = 17
+
 ; ── 向量（M4-c 第六件；%vec = { i64, i64, i64 }，元素目前只有 i64）──────
 ; 向量值住在第四个命名空间 %vc<id>（类型 %vec）。
 ; dst = 向量值 id。发 call %vec @vec_new()。
@@ -105,6 +112,7 @@ OP-VECNEW = 18
 OP-VECPUSH = 19
 OP-VECLEN = 20
 OP-VECGET = 21
+
 ; ── option（M4-c 第十件；%option = { i64 tag, [3 x i64] slot }，tag 0=ok/1=nil/2=err）──
 ; option 值住在第五个命名空间 %op<id>（类型 %option）。
 ; dst = option 值 id。发 tag=1（nil）的常量。
@@ -120,6 +128,7 @@ OP-OPTSOME = 23
 OP-OPTTAG = 24
 OP-OPTISOK = 25
 OP-OPTGET = 26
+
 ; ── option 的 str 载荷（M4-c 续件 s28；%str-long 恰 24 字节，内联进 [3 x i64] 槽，无堆装箱）──
 ; %option 的 payload slot 是 [3 x i64] = 24 字节；%str-long = { i64, i64, i8* } 也恰 24 字节、
 ; 全 8 字节字段无 padding ⇒ 二者布局兼容，可逐字段 extractvalue/insertvalue 互转，免内存；
@@ -134,6 +143,7 @@ OP-OPTGET = 26
 ;    >24 字节的载荷（tag==0 才解引用）仍走堆上装箱，属后续。
 OP-OPTMKSTR = 29
 OP-OPTGETSTR = 30
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
@@ -148,6 +158,7 @@ OP-OPTGETSTR = 30
 ;               发射 extractvalue %struct.s<id> %st<xa>, <bs>；id 取 vty[xa[k]] - TY-STRUCT-BASE。
 OP-STRUCT-MK = 31
 OP-STRUCT-GET = 32
+
 ; ── 结构体写字段与结构体槽（M4-c 续件 s30）────────────────────────────
 ; OP-STRUCT-SET：dst = 新结构体值 id；xa[k] = 旧结构体值 id；
 ;               xa[k]+1 = 新字段值 id（i64，**连续**，与 OP-CALL 的实参约定同形）；
@@ -166,6 +177,7 @@ OP-STRUCT-SET = 33
 OP-STALLOC = 34
 OP-STSTORE = 35
 OP-STLOAD = 36
+
 ; ── 结构体字段的 RC 原语（M4-c 续件 s33；§11 B11 的第一块）──────────────
 ; 语义：结构体**值**对它的每个「持有堆的字段」各算一份拥有权。这两个 op 只做**机械动作**，
 ;   **不做策略判断**：要不要 retain、何时 release 由调用方（未来的 hir2mir）决定。
@@ -183,6 +195,7 @@ OP-STLOAD = 36
 ;    （当前 AST 节点远未到 64，先不实现；与「掩码自证型别」同一处约束）。
 OP-STRUCT-RETAIN = 37
 OP-STRUCT-RELEASE = 38
+
 ; ── RC 发射原语（M4-c 第十一件：STRCAT 的 retain/release）────────
 ;   STRCAT 的结果在堆上、带 RC 头（rc=1，拥有）；本编译器必须在别名传递时
 ;   retain、在 scope 退出时 release，否则 UAF（§5.6.1 铁律）。这两个 op 是

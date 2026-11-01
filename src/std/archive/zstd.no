@@ -186,6 +186,7 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
         positions[i]: {
             ok -> it = pos
+
             -> _
         }
 
@@ -344,6 +345,7 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 
         tmp-base[i]: {
             ok -> it = .base[i]
+
             -> _
         }
     }
@@ -363,6 +365,7 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
             #{index-out=zero}
             tmp-base[l]: {
                 ok -> it = tmp-base[l] + 1
+
                 -> _
             }
         }
@@ -730,6 +733,7 @@ zstd-decompress = (data []byte) (out []byte) {
                 last-block = it
                 success = true
             }
+
             -> success = false
         }
 

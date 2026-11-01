@@ -35,6 +35,7 @@ test-str-far-oob = () (ok bool) {
     i = 100000
     s[i]: {
         ok -> it = 'X'; 遠越界，offset 100000 跨越分頁邊界 → 修復前 SIGSEGV
+
         -> _
     }
     ok = s[i] == 'X'; 讀回：修復前亦越界讀 → 崩潰；修復後增長到 idxV+1 → 'X'

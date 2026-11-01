@@ -46,6 +46,7 @@ use-struct = (t data) (s str) {
 ; raw str: 直接傳入的記錄字串（不經結構體）
 ; s str: 同樣取空格後到 NUL 的子串，預期 'file1.txt'
 pass-direct = (raw str) (s str) {
+
     ; #{ascii} 證明此串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
     #{ascii}
     src = raw

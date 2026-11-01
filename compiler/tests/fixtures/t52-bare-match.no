@@ -32,12 +32,13 @@ c = 3
 {
     c == 4 -> print('p')
 
-    c == 5 ->
+    c == 5 -> {
         print('q')
         print('r')
+    }
 }
 
-; ⑤ `_ ->` wildcard 臂
+; ⑤ `->` wildcard 臂
 {
-    _ -> print('u')
+    -> print('u')
 }

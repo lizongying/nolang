@@ -5,8 +5,8 @@
 ; `a int = 10` 這種寫法在 `a / b`、`a.mod(b)` 上既選不出成員、也無法在 MIR 裡
 ; 當作標量參與 sdiv/srem 與零比較（實測 LLVM 型別不匹配）。本測試驗證的是
 ; 「除零 -> err」，不需要 union 派發。
-a i64 = 10
-b i64 = 2
+a = 10
+b = 2
 
 #{overflow=wrap}
 q = a / b
@@ -17,7 +17,7 @@ q: {
 
     -> print(it)
 }
-z i64 = 0
+z = 0
 
 #{overflow=wrap}
 q0 = a / z

@@ -431,6 +431,7 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
 
         initial-salt[i]: {
             ok -> it = QUIC-INITIAL-SALT[i]
+
             -> _
         }
     }
@@ -496,6 +497,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
         #{index-out=zero, overflow=wrap}
         sample[i]: {
             ok -> it = packet[pn-offset + 4 + i]
+
             -> _
         }
     }
@@ -513,6 +515,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     #{index-out=zero}
     packet[pn-offset]: {
         ok -> it = packet[pn-offset] ^ (mask[0] & mask-bits)
+
         -> _
     }
 
@@ -526,6 +529,7 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
             #{index-out=zero}
             packet[pn-offset + j]: {
                 ok -> it = packet[pn-offset + j] ^ mask[mask-offset + j]
+
                 -> _
             }
         }
@@ -879,6 +883,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
         nonce[i]: {
             ok -> it = .client-initial-iv[i]
+
             -> _
         }
     }
@@ -887,6 +892,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
         #{index-out=zero, overflow=wrap}
         nonce[4 + i]: {
             ok -> it = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+
             -> _
         }
     }
@@ -897,6 +903,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
         aad[i]: {
             ok -> it = packet[i]
+
             -> _
         }
     }
@@ -911,6 +918,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
         #{overflow=wrap}
         plain[i]: {
             ok -> it = packet[pn-offset + i]
+
             -> _
         }
     }
@@ -1028,6 +1036,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
         nonce[i]: {
             ok -> it = .server-initial-iv[i]
+
             -> _
         }
     }
@@ -1036,6 +1045,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         #{index-out=zero, overflow=wrap}
         nonce[4 + i]: {
             ok -> it = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+
             -> _
         }
     }
@@ -1047,6 +1057,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         #{index-out=zero}
         aad[i]: {
             ok -> it = buf[i]
+
             -> _
         }
     }
@@ -1058,6 +1069,7 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         #{index-out=zero, overflow=wrap}
         sealed[i]: {
             ok -> it = buf[pn-offset + i]
+
             -> _
         }
     }

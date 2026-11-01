@@ -12,9 +12,10 @@ IV [8]u64 = [11, 22, 33, 44, 55, 66, 77, 88]
 
 ; 1) 全域陣列切片 + option 寫（無 index-out 註解），寫入值與源不同
 t-slice-write-simple = () {
-    h []u64 = IV[..8)
+    h = IV[..8)
     h[0]: {
         ok -> it = 999
+
         -> _
     }
     runner.eq(h[0], 999, 'slice+option-write: h[0] == 999')
@@ -22,11 +23,13 @@ t-slice-write-simple = () {
 
 ; 2) 切片 + for 迴圈 + #{index-out=zero} + option 寫
 t-slice-write-loop = () {
-    h []u64 = IV[..8)
+    h = IV[..8)
     i <- [0..8): {
+
         #{index-out=zero}
         h[i]: {
             ok -> it = 999
+
             -> _
         }
     }
@@ -36,11 +39,13 @@ t-slice-write-loop = () {
 
 ; 3) 切片自身讀改寫（RHS 含下標讀，觸發 desugarIndexOutReads）
 t-slice-write-self-rmw = () {
-    h []u64 = IV[..8)
+    h = IV[..8)
     i <- [0..8): {
+
         #{index-out=zero}
         h[i]: {
             ok -> it = h[i] ^ 1
+
             -> _
         }
     }
@@ -52,16 +57,19 @@ t-slice-write-self-rmw = () {
 mk-state = () (h []u64) {
     h = IV[..8)
     i <- [0..8): {
+
         #{index-out=zero}
         h[i]: {
             ok -> it = 999
+
             -> _
         }
     }
 }
+
 ; 函式回傳的切片再做 option 寫：mk-state 已把全元素寫成 999，這裡確認取回後仍是 999
 t-slice-write-fn-return = () {
-    h []u64 = mk-state()
+    h = mk-state()
     runner.eq(h[0], 999, 'fn-return slice + option-write: h[0] == 999')
 }
 
@@ -73,5 +81,6 @@ total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)
+
     -> exit(0)
 }

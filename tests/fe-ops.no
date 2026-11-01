@@ -95,11 +95,13 @@ test-fe-frombytes = () (pass bool) {
     i <- [0..32): {
         base[i]: {
             ok -> it = 0
+
             -> _
         }
     }
     base[0]: {
         ok -> it = 9
+
         -> _
     }
 
@@ -165,6 +167,7 @@ test-scalarmult-base = () (pass bool) {
         }
         scalar[i]: {
             ok -> it = (hi-v << 4) | lo-v
+
             -> _
         }
     }

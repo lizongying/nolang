@@ -292,7 +292,7 @@ print(13)
 ; 测试 i64-to-str (非方法)
 ; ═══════════════════════════════════════════════
 test-i64-to-str = () {
-    n i64 = 123
+    n = 123
     s1 = n.to-str()
     print(s1.len-bytes()); expect: 3
     n = 0

@@ -37,9 +37,9 @@ client {
 
 ; 連接到指定主機與埠號
 ; 記錄 host/port 供後續 reconnect 使用
-; 返回 ok=true=成功
-; host: 目標伺服器位址
-; port: 目標伺服器埠號
+; host str: 目標伺服器位址
+; port i64: 目標伺服器埠號
+; ok bool: true=已建立 TCP 連接，false=撥號失敗
 ; [connect](#client.client.connect)
 client.connect = (host str, port i64) (ok bool) {
     ok = false
@@ -53,8 +53,7 @@ client.connect = (host str, port i64) (ok bool) {
 
 ; 使用已記錄的 host/port 重新連接
 ; 先關閉舊連接（避免 fd 洩漏），再重新 dial
-; 返回 ok=true=成功
-; ok: 以先前記錄的 host/port 重新撥號成功時為 true
+; ok bool: 以先前記錄的 host/port 重新撥號成功時為 true（未記錄過則直接返回 false）
 ; [reconnect](#client.client.reconnect)
 client.reconnect = () (ok bool) {
     ok = false
@@ -68,8 +67,8 @@ client.reconnect = () (ok bool) {
 }
 
 ; 發送字串資料
-; 返回 written=實際發送位元組數（-1=錯誤）
-; data: 要發送的位元組內容字串
+; data str: 要發送的位元組內容字串
+; written i64: 實際發送位元組數（-1=未連接或底層錯誤）
 ; [send](#client.client.send)
 client.send = (data str) (written i64) {
     written = -1
@@ -80,9 +79,9 @@ client.send = (data str) (written i64) {
 }
 
 ; 接收資料到緩衝區
-; buf: 接收緩衝區（str）
-; n: 最多接收的位元組數
-; 返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
+; buf str: 接收緩衝區（str）
+; n i64: 最多接收的位元組數
+; read-n i64: 實際接收位元組數（-1=未連接或錯誤, 0=連接關閉）
 ; [recv](#client.client.recv)
 client.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
@@ -116,8 +115,8 @@ client.request = (data str) (response ?str) {
 }
 
 ; 發送一行（附加換行符 \n）
-; 返回 written=實際發送位元組數（-1=錯誤）
-; line: 要發送的行文字（自動附加換行符）
+; line str: 要發送的行文字（自動附加換行符）
+; written i64: 實際發送位元組數（含換行符；-1=未連接或錯誤）
 ; [send-line](#client.client.send-line)
 client.send-line = (line str) (written i64) {
 
@@ -131,7 +130,7 @@ client.send-line = (line str) (written i64) {
 }
 
 ; 檢查連接狀態
-; 返回 yes=true=已連接
+; yes bool: true=當前處於已連接狀態
 ; [is-connected](#client.client.is-connected)
 client.is-connected = () (yes bool) {
     yes = .connected

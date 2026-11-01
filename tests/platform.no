@@ -20,12 +20,14 @@ sep = '\\'
 greet = () {
     print('hello from mac, sep is /')
 }
+
 ; Linux x86_64 專用實作：以 #{linux-amd64} 標註覆蓋上面的預設版本
 
 #{linux-amd64}
 greet = () {
     print('hello from linux, sep is /')
 }
+
 ; Windows x86_64 專用實作：路徑分隔符改用反斜線 '\\'
 
 #{win-amd64}

@@ -123,6 +123,7 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
             #{overflow=wrap}
             raw[total + i]: {
                 ok -> it = buf.byte(i)
+
                 -> _
             }
         }
@@ -268,11 +269,13 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             premaster[0]: {
                 ok -> it = 0x03
+
                 -> _
             }
 
             premaster[1]: {
                 ok -> it = 0x03
+
                 -> _
             }
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
@@ -281,6 +284,7 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
                 #{overflow=wrap}
                 premaster[2 + i]: {
                     ok -> it = rand-bytes[i]
+
                     -> _
                 }
             }
@@ -373,11 +377,13 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
 
             premaster[0]: {
                 ok -> it = 0x03
+
                 -> _
             }
 
             premaster[1]: {
                 ok -> it = 0x03
+
                 -> _
             }
             rand-bytes []byte = tls.rand-bytes(c.rand-state, 46)
@@ -386,6 +392,7 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
                 #{overflow=wrap}
                 premaster[2 + i]: {
                     ok -> it = rand-bytes[i]
+
                     -> _
                 }
             }
@@ -460,22 +467,26 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     req[0]: {
         ok -> it = SOCKS5-VERSION
+
         -> _
     }
     {
         username.len-bytes() > 0 -> {
             req[1]: {
                 ok -> it = 2
+
                 -> _
             }
 
             req[2]: {
                 ok -> it = SOCKS5-METHOD-NO-AUTH
+
                 -> _
             }
 
             req[3]: {
                 ok -> it = SOCKS5-METHOD-USER-PASS
+
                 -> _
             }
         }
@@ -483,11 +494,13 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         -> {
             req[1]: {
                 ok -> it = 1
+
                 -> _
             }
 
             req[2]: {
                 ok -> it = SOCKS5-METHOD-NO-AUTH
+
                 -> _
             }
         }
@@ -529,12 +542,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
         auth-req[pos]: {
             ok -> it = 1
+
             -> _
         }
         pos = pos + 1
 
         auth-req[pos]: {
             ok -> it = username.len-bytes() & 255
+
             -> _
         }
         pos = pos + 1
@@ -542,6 +557,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             auth-req[pos]: {
                 ok -> it = username.byte(i)
+
                 -> _
             }
             pos = pos + 1
@@ -549,6 +565,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
         auth-req[pos]: {
             ok -> it = password.len-bytes() & 255
+
             -> _
         }
         pos = pos + 1
@@ -556,6 +573,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             auth-req[pos]: {
                 ok -> it = password.byte(i)
+
                 -> _
             }
             pos = pos + 1
@@ -589,6 +607,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     conn-req[pos]: {
         ok -> it = SOCKS5-VERSION
+
         -> _
     }
 
@@ -597,6 +616,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     conn-req[pos]: {
         ok -> it = SOCKS5-CMD-CONNECT
+
         -> _
     }
 
@@ -605,6 +625,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     conn-req[pos]: {
         ok -> it = 0
+
         -> _
     }
 
@@ -614,6 +635,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; 使用域名地址類型
     conn-req[pos]: {
         ok -> it = SOCKS5-ATYP-DOMAIN
+
         -> _
     }
 
@@ -622,6 +644,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     conn-req[pos]: {
         ok -> it = target-host.len-bytes() & 255
+
         -> _
     }
 
@@ -631,6 +654,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
         conn-req[pos]: {
             ok -> it = target-host.byte(i)
+
             -> _
         }
 
@@ -640,6 +664,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     conn-req[pos]: {
         ok -> it = (target-port >> 8) & 255
+
         -> _
     }
 
@@ -648,6 +673,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     conn-req[pos]: {
         ok -> it = target-port & 255
+
         -> _
     }
 

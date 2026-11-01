@@ -332,8 +332,8 @@ tree-map.successor = (idx i64) (succ i64) {
 ; ═══════════════════════════════════════════════
 
 ; 插入或更新 key→value
-; key i64: 鍵
-; val i64: 值
+; key i64: 排序鍵
+; val i64: 要寫入的整數值（鍵已存在時覆蓋舊值）
 ; 返回 ok bool: true=新增, false=更新已存在鍵或池已滿
 ; [put](#tree-map.tree-map.put)
 tree-map.put = (key i64, val i64) (ok bool) {

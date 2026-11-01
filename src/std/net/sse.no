@@ -450,6 +450,7 @@ client.reconnect = () (ok bool) {
             #{overflow=wrap}
             raw[total + i]: {
                 ok -> it = tmp.byte(i)
+
                 -> _
             }
         }
@@ -705,6 +706,7 @@ sse-connect = (url str) (client ?client) {
             #{overflow=wrap}
             raw[total + i]: {
                 ok -> it = tmp.byte(i)
+
                 -> _
             }
         }
@@ -768,6 +770,7 @@ sse-connect = (url str) (client ?client) {
 
         rb[i]: {
             ok -> it = remaining.byte(i)
+
             -> _
         }
     }
@@ -895,6 +898,7 @@ server-conn.handshake = () (ok bool) {
             #{overflow=wrap}
             raw[total + i]: {
                 ok -> it = tmp.byte(i)
+
                 -> _
             }
         }

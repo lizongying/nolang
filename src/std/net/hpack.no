@@ -333,6 +333,7 @@ tables.dyn-add = (name str, value str) {
             #{overflow=wrap}
             dn-tmp[j]: {
                 ok -> it = .dyn-names[i - 1][j]
+
                 -> _
             }
         }
@@ -346,6 +347,7 @@ tables.dyn-add = (name str, value str) {
             #{overflow=wrap}
             dv-tmp[j]: {
                 ok -> it = .dyn-values[i - 1][j]
+
                 -> _
             }
         }
@@ -570,10 +572,10 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; 編碼變長整數到 out
-; val: 要編碼的值
-; prefix-bits: 前綴位數（1-8）
-; prefix-byte: 已填好的前綴 byte（高 8-prefix-bits 位已設置）
-; 返回 out=編碼後的字串
+; val i64: 要編碼的非負整數
+; prefix-bits i64: 首字節可用前綴位數（1-8）；小於 2^prefix-bits-1 時單字節即可完成
+; prefix-byte i64: 已填好高位的前綴字節（高 8-prefix-bits 位已設置，低 bits 留給前綴值）
+; out str: 編碼結果（首字節 + 若干 continuation 字節，每字節低 7 位承載數值、最高位為延續標誌）
 ; [encode-int](#hpack.encode-int)
 encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     r-val = val
@@ -621,8 +623,11 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
 }
 
 ; 從 data 的 pos 位置解碼變長整數
-; prefix-bits: 前綴位數
-; 返回 val=解碼值, next-pos=下一個未讀位置（-1=錯誤）
+; data str: HPACK 編碼資料
+; pos i64: 首字節所在位元組偏移
+; prefix-bits i64: 前綴位數（與編碼端一致）
+; val i64: 解碼出的整數值（錯誤時不保證）
+; next-pos i64: 下一個未讀位元組偏移（-1=越界或 continuation 鏈過長）
 ; [decode-int](#hpack.decode-int)
 decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
@@ -639,6 +644,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     first-opt = data.byte(pos)
     first-b = first-opt: {
         ok -> it
+
         -> _
     }
     first = first-b & max-prefix
@@ -679,8 +685,8 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 ; ═══════════════════════════════════════════════
 
 ; 編碼字串（literal，H=0）
-; 返回 out=編碼後字串
-; s: 待編碼的字串（長度 varint 前綴 + UTF-8 位元組）
+; s str: 待編碼的字串（長度 varint 前綴 + UTF-8 位元組）
+; out str: 編碼結果字節串（7-bit prefix 長度編碼拼接原文，不支援 Huffman）
 ; [encode-str](#hpack.encode-str)
 encode-str = (s str) (out str) {
 
@@ -708,7 +714,10 @@ encode-str = (s str) (out str) {
 }
 
 ; 從 data 的 pos 位置解碼字串
-; 返回 out=解碼字串, next-pos=下一個位置（-1=錯誤）
+; data str: HPACK 編碼資料
+; pos i64: 長度前綴首字節所在偏移
+; out str: 解碼出的字串原文（Huffman 編碼不支援）
+; next-pos i64: 下一個未讀位元組偏移（-1=錯誤或資料不足）
 ; [decode-str](#hpack.decode-str)
 decode-str = (data str, pos i64) (out str, next-pos i64) {
 
@@ -720,6 +729,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     first-opt = data.byte(pos)
     first = first-opt: {
         ok -> it
+
         -> _
     }
 
@@ -761,9 +771,9 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
 ; 編碼單個標頭
 ; 策略：完全匹配→indexed；name 匹配→literal with indexing（用 name 索引）；
 ;       否則→literal with indexing（新 name）
-; 返回 out=編碼字串
-; name: 待編碼的標頭字段名（按查表結果選取索引或字面量形式）
-; value: 待編碼的標頭字段值
+; name str: 待編碼的標頭字段名（按查表結果選取索引或字面量形式）
+; value str: 待編碼的標頭字段值
+; out str: 編碼後的標頭字節串，編碼結果同時加入動態表
 ; [encode-header](#hpack.tables.encode-header)
 tables.encode-header = (name str, value str) (out str) {
 
@@ -846,8 +856,11 @@ tables.encode-header = (name str, value str) (out str) {
 }
 
 ; 解碼標頭塊
-; data: 二進位資料
-; 返回 names/values 陣列, count=標頭數, ok=true=成功
+; data str: HPACK 編碼的標頭塊二進位資料
+; names [128]str: 解碼出的標頭字段名，與 values 同下標對應（未用槽位為空串）
+; values [128]str: 解碼出的標頭字段值
+; count i64: 實際解碼出的標頭數（超過 128 條時截斷）
+; ok bool: true=整塊解碼成功，false=中途遇錯或輸出槽位用完
 ; [decode-headers](#hpack.tables.decode-headers)
 tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, ok bool) {
     ok = false
@@ -891,6 +904,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     ln-tmp[j]: {
                         ok -> it = lk-name.byte(j)
+
                         -> _
                     }
                 }
@@ -901,6 +915,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     lv-tmp[j]: {
                         ok -> it = lk-val.byte(j)
+
                         -> _
                     }
                 }
@@ -947,6 +962,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     nb-tmp[j]: {
                         ok -> it = name.byte(j)
+
                         -> _
                     }
                 }
@@ -957,6 +973,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     vb-tmp[j]: {
                         ok -> it = value.byte(j)
+
                         -> _
                     }
                 }
@@ -1003,6 +1020,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     nb-tmp[j]: {
                         ok -> it = name.byte(j)
+
                         -> _
                     }
                 }
@@ -1013,6 +1031,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     vb-tmp[j]: {
                         ok -> it = value.byte(j)
+
                         -> _
                     }
                 }
@@ -1056,6 +1075,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     nb-tmp[j]: {
                         ok -> it = name.byte(j)
+
                         -> _
                     }
                 }
@@ -1066,6 +1086,7 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                     vb-tmp[j]: {
                         ok -> it = value.byte(j)
+
                         -> _
                     }
                 }

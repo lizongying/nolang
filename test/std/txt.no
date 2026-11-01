@@ -67,6 +67,7 @@ at-or = (b ?byte, dflt i64) (v i64) {
     v = dflt
     b: {
         ok -> v = it
+
         ->
     }
 }
@@ -121,10 +122,12 @@ t-to-bytes-semantics = () {
     runner.eq(n, 12, 'len-bytes == 12')
     b []byte
     i <- [0..n): {
+
         ; t.byte(i) 自 2026-10-21 起回傳 ?byte（越界 nil）⇒ 不能直接寫入索引
         bo = t.byte(i)
         bo: {
             ok -> b.push(it)
+
             ->
         }
     }
@@ -196,6 +199,7 @@ t-slice-at = () {
     runner.str-eq(a.to-str(), 'Hello', 5, 'slice(0,5)')
     b = t.slice(7, 12)
     runner.str-eq(b.to-str(), 'World', 5, 'slice(7,12)')
+
     ; txt.at 已廢棄：字符（碼點）索引、回傳 ?byte、越界 nil —— 新代碼請用 t[i]
     runner.eq(at-or(t.at(0), -1), 72, 'at(0) == 72')
     runner.eq(at-or(t.at(1), -1), 101, 'at(1) == 101')

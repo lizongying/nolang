@@ -152,16 +152,16 @@ t-fingerprint = () {
         base = wi * 4
         w = ws[wi]
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         buf[base + 0] = (w >> 24) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         buf[base + 1] = (w >> 16) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         buf[base + 2] = (w >> 8) & 255
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         buf[base + 3] = w & 255
     }
     runner.str-eq(bhex(buf), FP, 64, 'fingerprint matches OpenSSL sha256(tbs)')

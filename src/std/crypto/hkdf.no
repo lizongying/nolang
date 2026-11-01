@@ -29,6 +29,7 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 
                 k[i]: {
                     ok -> it = 0
+
                     -> _
                 }
             }
@@ -40,6 +41,7 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
                 #{index-out=zero}
                 k[i]: {
                     ok -> it = salt[i]
+
                     -> _
                 }
             }
@@ -75,6 +77,7 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
         #{index-out=zero}
         msg[i]: {
             ok -> it = t-data[i]
+
             -> _
         }
     }
@@ -83,6 +86,7 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
         #{index-out=zero, overflow=wrap}
         msg[t-len + i]: {
             ok -> it = info[i]
+
             -> _
         }
     }
@@ -92,6 +96,7 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
 
         msg[t-len + info.len()]: {
             ok -> it = counter & 255
+
             -> _
         }
     }
@@ -112,6 +117,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
         prk-vec[i]: {
             ok -> it = prk[i]
+
             -> _
         }
     }
@@ -150,6 +156,7 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
                     t[i]: {
                         ok -> it = t-tmp[i]
+
                         -> _
                     }
                 }
@@ -206,11 +213,13 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ; length (2 bytes, big-endian)
     info[0]: {
         ok -> it = (out-len >> 8) & 255
+
         -> _
     }
 
     info[1]: {
         ok -> it = out-len & 255
+
         -> _
     }
     pos = 2
@@ -218,6 +227,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ; label length (1 byte)
     info[2]: {
         ok -> it = label-bytes.len() & 255
+
         -> _
     }
     pos = 3
@@ -228,6 +238,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
         #{index-out=zero, overflow=wrap}
         info[pos + i]: {
             ok -> it = label-bytes[i]
+
             -> _
         }
     }
@@ -238,6 +249,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ; context length (1 byte)
     info[pos]: {
         ok -> it = context.len() & 255
+
         -> _
     }
 
@@ -250,6 +262,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
         #{index-out=zero, overflow=wrap}
         info[pos + i]: {
             ok -> it = context[i]
+
             -> _
         }
     }
@@ -272,6 +285,7 @@ hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (ok
         #{index-out=zero}
         prk-arr[i]: {
             ok -> it = prk[i]
+
             -> _
         }
     }

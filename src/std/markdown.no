@@ -152,6 +152,7 @@ markdown.thematic-break = (line str) (yes bool) {
         c-opt = s.byte(i)
         c = c-opt: {
             ok -> it
+
             -> _
         }
         c == 32 || c == 9 -> {
@@ -284,6 +285,7 @@ markdown.fence = (line str) (out markdown-fence) {
         c-opt = s.byte(0)
         c = c-opt: {
             ok -> it
+
             -> _
         }
         (c == 96 || c == 126) -> {
@@ -383,6 +385,7 @@ markdown.inline = (s str) (out str) {
         c-opt = s.byte(i)
         c char = c-opt: {
             ok -> it
+
             -> _
         }
 

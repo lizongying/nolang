@@ -18,7 +18,7 @@ print('=== bigint-operator-overload ===')
 two bigint = bigint.from-i64(2)
 three bigint = bigint.from-i64(3)
 neg2 bigint = bigint.from-i64(-2)
-big bigint = bigint.from-i64(4294967296) ; 2^32，触发跨 limb
+big bigint = bigint.from-i64(4294967296); 2^32，触发跨 limb
 
 c1 = two + three
 {
@@ -175,7 +175,7 @@ c19b = two + three + neg2
 ; 8. 结果类型是纯 payload bigint（无 option 包装）：可直接再参与运算、
 ;    可直接调用 bigint 方法，无需 ?= 解包。
 ; ─────────────────────────────────────────────
-c20 bigint = two + three ; 显式标注 bigint 必须被 checker 接受（不是 ?bigint）
+c20 = two + three; 显式标注 bigint 必须被 checker 接受（不是 ?bigint）
 {
     c20.is-zero() == false -> print('PASS: 8a a+b 结果是 bigint（直接方法调用）')
 

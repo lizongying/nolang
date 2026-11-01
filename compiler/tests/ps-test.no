@@ -261,7 +261,6 @@ test-bare-match-surface()
 test-bare-match-ok-dotval()
 test-match-valuectx-snapshot()
 
-
 ; ═══════════════════════════════════════════════════════════════════════
 ; s7 裁定①續 C：型別臂 `v T ->` 三槽（typeArm/typePattern/typeBinding）。
 ;     舊缺陷：generic expr 臂吞掉 `v bool` 兩 IDENT 後見 -> 當空 pattern
@@ -291,7 +290,6 @@ test-match-enum-variant-pattern = () {
 test-match-type-arm()
 test-match-enum-variant-pattern()
 
-
 ; ═══════════════════════════════════════════════════════════════════════
 ; s7 續 E：NEWLINE 臂體形 + 空臂體（oracle expr.go:1251-1376 第二支）。
 ;     舊缺陷：`->` 後 ps-skip-trivia 吞換行 ⇒ NEWLINE 形不可見，`err ->\n\nnil ->`
@@ -320,7 +318,6 @@ test-match-range-pattern = () {
 
 test-match-newline-empty-arms()
 test-match-range-pattern()
-
 
 ; ═══════════════════════════════════════════════════════════════════════
 ; s7 續 G：`name ?T` 裸宣告（無 `=`）不得吞後隨陳述當 RHS。
@@ -647,5 +644,6 @@ runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)
+
     -> exit(0)
 }

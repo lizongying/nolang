@@ -85,6 +85,7 @@ test-minimal = () {
 test-trim = () {
     t, root = build-forty-two()
     got = ast.dump(t, root)
+
     ; ⚠️ CLI 的 `no ast` 會多印一個尾端 \n（od 實測 81 位元組）；Dump 本身
     ;    只有 80。ast.dump 對齊的是 Dump，所以這裡必須是 80、且尾位元組是 '}'。
     runner.eq(got.len-bytes(), 80, 'dump length is 80 bytes (no trailing newline)')
@@ -309,6 +310,7 @@ test-unsupported-is-live = () {
 
 ; 測試 kind-table
 test-kind-table = () {
+
     ; ⚠️ 這裡必須先把跨模組常量落到區域變數。
     ;    已實測的 src/ 缺陷（bug #85 家族，見 docs/design/nolang-selfhost.md §9）：
     ;       runner.is-true(asp.kind-name(asp.K_PROGRAM).eq-full('Program'), 'a')
@@ -319,6 +321,7 @@ test-kind-table = () {
     kprog = asp.K_PROGRAM
     runner.eq(asp.KIND-COUNT, 72, 'KIND-COUNT = 72')
     runner.eq(kprog, 53, 'Program is kind 53')
+
     ; SurfaceMatch 是 2026-10-16 新增的種類（dump.go 的 SurfaceMatch case）。
     ; 它被**追加在 switch 尾端**（default: 之前），所以 id 65 之後的種類才位移，
     ; 上面釘的 53/35/39 都在位移區之前，必須保持不變。
@@ -465,5 +468,6 @@ runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)
+
     -> exit(0)
 }

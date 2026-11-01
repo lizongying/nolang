@@ -44,6 +44,7 @@ salsa20-8-core = (block []byte) {
         #{index-out=zero}
         x[i]: {
             ok -> it = (block[off]) | ((block[off + 1]) << 8) | ((block[off + 2]) << 16) | ((block[off + 3]) << 24)
+
             -> _
         }
     }
@@ -53,6 +54,7 @@ salsa20-8-core = (block []byte) {
     i <- [0..16): {
         init[i]: {
             ok -> it = x[i]
+
             -> _
         }
     }
@@ -65,72 +67,88 @@ salsa20-8-core = (block []byte) {
         ; QR(x[0], x[4], x[8], x[12])
         x[4]: {
             ok -> it = (x[4] ^ (rotl32((x[0] + x[12]) & mask, 7))) & mask
+
             -> _
         }
         x[8]: {
             ok -> it = (x[8] ^ (rotl32((x[4] + x[0]) & mask, 9))) & mask
+
             -> _
         }
         x[12]: {
             ok -> it = (x[12] ^ (rotl32((x[8] + x[4]) & mask, 13))) & mask
+
             -> _
         }
         x[0]: {
             ok -> it = (x[0] ^ (rotl32((x[12] + x[8]) & mask, 18))) & mask
+
             -> _
         }
 
         ; QR(x[5], x[9], x[13], x[1])
         x[9]: {
             ok -> it = (x[9] ^ (rotl32((x[5] + x[1]) & mask, 7))) & mask
+
             -> _
         }
         x[13]: {
             ok -> it = (x[13] ^ (rotl32((x[9] + x[5]) & mask, 9))) & mask
+
             -> _
         }
         x[1]: {
             ok -> it = (x[1] ^ (rotl32((x[13] + x[9]) & mask, 13))) & mask
+
             -> _
         }
         x[5]: {
             ok -> it = (x[5] ^ (rotl32((x[1] + x[13]) & mask, 18))) & mask
+
             -> _
         }
 
         ; QR(x[10], x[14], x[2], x[6])
         x[14]: {
             ok -> it = (x[14] ^ (rotl32((x[10] + x[6]) & mask, 7))) & mask
+
             -> _
         }
         x[2]: {
             ok -> it = (x[2] ^ (rotl32((x[14] + x[10]) & mask, 9))) & mask
+
             -> _
         }
         x[6]: {
             ok -> it = (x[6] ^ (rotl32((x[2] + x[14]) & mask, 13))) & mask
+
             -> _
         }
         x[10]: {
             ok -> it = (x[10] ^ (rotl32((x[6] + x[2]) & mask, 18))) & mask
+
             -> _
         }
 
         ; QR(x[15], x[3], x[7], x[11])
         x[3]: {
             ok -> it = (x[3] ^ (rotl32((x[15] + x[11]) & mask, 7))) & mask
+
             -> _
         }
         x[7]: {
             ok -> it = (x[7] ^ (rotl32((x[3] + x[15]) & mask, 9))) & mask
+
             -> _
         }
         x[11]: {
             ok -> it = (x[11] ^ (rotl32((x[7] + x[3]) & mask, 13))) & mask
+
             -> _
         }
         x[15]: {
             ok -> it = (x[15] ^ (rotl32((x[11] + x[7]) & mask, 18))) & mask
+
             -> _
         }
 
@@ -138,72 +156,88 @@ salsa20-8-core = (block []byte) {
         ; QR(x[0], x[1], x[2], x[3])
         x[1]: {
             ok -> it = (x[1] ^ (rotl32((x[0] + x[3]) & mask, 7))) & mask
+
             -> _
         }
         x[2]: {
             ok -> it = (x[2] ^ (rotl32((x[1] + x[0]) & mask, 9))) & mask
+
             -> _
         }
         x[3]: {
             ok -> it = (x[3] ^ (rotl32((x[2] + x[1]) & mask, 13))) & mask
+
             -> _
         }
         x[0]: {
             ok -> it = (x[0] ^ (rotl32((x[3] + x[2]) & mask, 18))) & mask
+
             -> _
         }
 
         ; QR(x[5], x[6], x[7], x[4])
         x[6]: {
             ok -> it = (x[6] ^ (rotl32((x[5] + x[4]) & mask, 7))) & mask
+
             -> _
         }
         x[7]: {
             ok -> it = (x[7] ^ (rotl32((x[6] + x[5]) & mask, 9))) & mask
+
             -> _
         }
         x[4]: {
             ok -> it = (x[4] ^ (rotl32((x[7] + x[6]) & mask, 13))) & mask
+
             -> _
         }
         x[5]: {
             ok -> it = (x[5] ^ (rotl32((x[4] + x[7]) & mask, 18))) & mask
+
             -> _
         }
 
         ; QR(x[10], x[11], x[8], x[9])
         x[11]: {
             ok -> it = (x[11] ^ (rotl32((x[10] + x[9]) & mask, 7))) & mask
+
             -> _
         }
         x[8]: {
             ok -> it = (x[8] ^ (rotl32((x[11] + x[10]) & mask, 9))) & mask
+
             -> _
         }
         x[9]: {
             ok -> it = (x[9] ^ (rotl32((x[8] + x[11]) & mask, 13))) & mask
+
             -> _
         }
         x[10]: {
             ok -> it = (x[10] ^ (rotl32((x[9] + x[8]) & mask, 18))) & mask
+
             -> _
         }
 
         ; QR(x[15], x[12], x[13], x[14])
         x[12]: {
             ok -> it = (x[12] ^ (rotl32((x[15] + x[14]) & mask, 7))) & mask
+
             -> _
         }
         x[13]: {
             ok -> it = (x[13] ^ (rotl32((x[12] + x[15]) & mask, 9))) & mask
+
             -> _
         }
         x[14]: {
             ok -> it = (x[14] ^ (rotl32((x[13] + x[12]) & mask, 13))) & mask
+
             -> _
         }
         x[15]: {
             ok -> it = (x[15] ^ (rotl32((x[14] + x[13]) & mask, 18))) & mask
+
             -> _
         }
     }
@@ -216,24 +250,28 @@ salsa20-8-core = (block []byte) {
         off = i * 4
         block[off]: {
             ok -> it = val & 255
+
             -> _
         }
 
         #{overflow=wrap}
         block[off + 1]: {
             ok -> it = (val >> 8) & 255
+
             -> _
         }
 
         #{overflow=wrap}
         block[off + 2]: {
             ok -> it = (val >> 16) & 255
+
             -> _
         }
 
         #{overflow=wrap}
         block[off + 3]: {
             ok -> it = (val >> 24) & 255
+
             -> _
         }
     }
@@ -266,6 +304,7 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
         #{index-out=zero, overflow=wrap}
         x[i]: {
             ok -> it = b[(total - 1) * 64 + i]
+
             -> _
         }
     }
@@ -282,6 +321,7 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
             #{index-out=zero}
             x[j]: {
                 ok -> it = (b[i * 64 + j]) ^ (x[j])
+
                 -> _
             }
         }
@@ -295,6 +335,7 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
             #{index-out=zero, overflow=wrap}
             y[i * 64 + j]: {
                 ok -> it = x[j]
+
                 -> _
             }
         }
@@ -346,6 +387,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         #{index-out=zero}
         x[i]: {
             ok -> it = b[i]
+
             -> _
         }
     }
@@ -358,6 +400,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         #{index-out=zero}
         v[i]: {
             ok -> it = x[i]
+
             -> _
         }
     }
@@ -371,12 +414,14 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
             #{index-out=zero}
             x[i]: {
                 ok -> it = mixed[i]
+
                 -> _
             }
 
             #{index-out=zero, overflow=wrap}
             v[n-idx * block-bytes + i]: {
                 ok -> it = mixed[i]
+
                 -> _
             }
         }
@@ -410,6 +455,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
             #{index-out=zero}
             x[i]: {
                 ok -> it = (x[i]) ^ (v[j * block-bytes + i])
+
                 -> _
             }
         }
@@ -421,6 +467,7 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
             #{index-out=zero}
             x[i]: {
                 ok -> it = mixed[i]
+
                 -> _
             }
         }
@@ -472,6 +519,7 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
             #{index-out=zero, overflow=wrap}
             b-i[j]: {
                 ok -> it = b[i * block-bytes + j]
+
                 -> _
             }
         }
@@ -485,6 +533,7 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
             #{index-out=zero, overflow=wrap}
             b[i * block-bytes + j]: {
                 ok -> it = mixed[j]
+
                 -> _
             }
         }

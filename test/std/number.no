@@ -117,15 +117,15 @@ t-div-mod = () {
 
 ; ── 整數轉字串 ────────────────────────────────
 t-i64-to-str = () {
-    v42 i64 = 42
+    v42 = 42
     s = v42.to-str()
     runner.eq(s.len-bytes(), 2, 'i64-to-str 42 len')
     runner.str-eq(s, '42', 2, 'i64-to-str 42 content')
-    vn i64 = -456
+    vn = -456
     n = vn.to-str()
     runner.eq(n.len-bytes(), 4, 'i64-to-str -456 len')
     runner.str-eq(n, '-456', 4, 'i64-to-str -456 content')
-    v0 i64 = 0
+    v0 = 0
     z = v0.to-str()
     runner.eq(z.len-bytes(), 1, 'i64-to-str 0 len')
     runner.str-eq(z, '0', 1, 'i64-to-str 0 content')
@@ -159,10 +159,10 @@ t-u64-to-str = () {
 
 ; ── 浮點轉字串 ────────────────────────────────
 t-f64-to-str = () {
-    f314 f64 = 3.14
+    f314 = 3.14
     s = f314.to-str()
     runner.str-eq(s, '3.14', 4, 'f64-to-str 3.14')
-    f0 f64 = 0.0
+    f0 = 0.0
     z = f0.to-str()
     runner.str-eq(z, '0', 1, 'f64-to-str 0.0')
 }

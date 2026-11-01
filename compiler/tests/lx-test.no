@@ -36,6 +36,7 @@
 test-empty = () {
     ts = lx.scan-all('')
     runner.eq(ts.len(), 1, 'empty source -> exactly 1 token')
+
     #{index-out=zero}
     t = ts[0]
     runner.eq(t.typ, tok.EOF, 'empty source -> that token is EOF')
@@ -53,10 +54,13 @@ test-empty = () {
 test-no-alias = () {
     ts = lx.scan-all('abc def ghi')
     runner.eq(ts.len(), 4, 'abc def ghi -> 4 tokens')
+
     #{index-out=zero}
     t0 = ts[0]
+
     #{index-out=zero}
     t1 = ts[1]
+
     #{index-out=zero}
     t2 = ts[2]
     runner.str-eq(t0.lit, 'abc', 3, 'elem 0 literal is abc (not aliased)')
@@ -78,12 +82,16 @@ test-no-alias = () {
 test-assign = () {
     ts = lx.scan-all('a = 1')
     runner.eq(ts.len(), 4, 'a = 1 -> 4 tokens')
+
     #{index-out=zero}
     a = ts[0]
+
     #{index-out=zero}
     b = ts[1]
+
     #{index-out=zero}
     c = ts[2]
+
     #{index-out=zero}
     d = ts[3]
     runner.eq(a.typ, tok.IDENT, 'tok0 IDENT')
@@ -104,14 +112,19 @@ test-assign = () {
 test-newline = () {
     ts = lx.scan-all('1 + 2\n')
     runner.eq(ts.len(), 5, '1 + 2 NL -> 5 tokens')
+
     #{index-out=zero}
     a = ts[0]
+
     #{index-out=zero}
     b = ts[1]
+
     #{index-out=zero}
     c = ts[2]
+
     #{index-out=zero}
     d = ts[3]
+
     #{index-out=zero}
     e = ts[4]
     runner.eq(a.typ, tok.INT, 'tok0 INT')
@@ -131,6 +144,7 @@ test-newline = () {
 test-char-vs-string = () {
     cs = lx.scan-all('"x"')
     runner.eq(cs.len(), 2, 'char literal -> 2 tokens')
+
     #{index-out=zero}
     c = cs[0]
     runner.eq(c.typ, tok.CHAR, 'double quotes -> CHAR')
@@ -139,6 +153,7 @@ test-char-vs-string = () {
 
     ss = lx.scan-all('\'x\'')
     runner.eq(ss.len(), 2, 'string literal -> 2 tokens')
+
     #{index-out=zero}
     s = ss[0]
     runner.eq(s.typ, tok.STRING, 'single quotes -> STRING')
@@ -154,6 +169,7 @@ test-char-vs-string = () {
 test-comment-marker = () {
     ts = lx.scan-all('; hi\n')
     runner.eq(ts.len(), 3, 'semicolon comment + NL -> 3 tokens')
+
     #{index-out=zero}
     c = ts[0]
     runner.eq(c.typ, tok.COMMENT, 'tok0 COMMENT')
@@ -161,6 +177,7 @@ test-comment-marker = () {
     runner.str-eq(c.lit, ' hi', 3, 'comment text keeps the leading space')
 
     ts2 = lx.scan-all('// hi\n')
+
     #{index-out=zero}
     c2 = ts2[0]
     runner.eq(c2.typ, tok.COMMENT, 'slash comment -> COMMENT')
@@ -180,5 +197,6 @@ runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)
+
     -> exit(0)
 }
