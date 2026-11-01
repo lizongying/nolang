@@ -6550,6 +6550,169 @@ func isStrConcatOperand(view *THIRView, e parser.Expression) bool {
 }
 
 // ─────────────────────────────────────────────────────────────
+// char 與非數值運算元的算術
+// ─────────────────────────────────────────────────────────────
+
+// ValidateCharArith 拒絕「char 與沒有數值意義的運算元做算術」。
+//
+// Nolang 的引號：`"..."` 是 char 字面量，`'...'` 是 str 字面量（即使只有一個碼點）。
+// char 是 i32 碼點，與整數 / char / str 都能組合：
+//
+//	"x" - 1       ; 115     整數
+//	"x" - c       ; 23      char
+//	"x" - "y"     ; -1      char 差值（可為負 ⇒ char 算術按有號 i32 看）
+//	"x" - s       ; "xhi"   str（char 隱式轉成單字元字串）
+//
+// 但 bool / f64 / 結構體 / 容器沒有位元組語意。舊行為把 bool 當 1、把 f64 截成 1，
+// `"x" - flag` 靜默得到 119 —— 一個看似合理、實則毫無意義的數字，而且與
+// `'x' - flag` 的 "xtrue"（str 拼接）不一致。這類組合一律報錯，逼出真正的意圖。
+//
+// 判據走 THIRView.TypeOf（表達式級型別表）：只認「確定為 char」與「確定為非數值」，
+// 任一側型別未知即不報（與 StringConcat 的型別精化同屬保守口徑）。
+func ValidateCharArith(program *parser.Program, view *THIRView) []ValidateResult {
+	if program == nil || view == nil {
+		return nil
+	}
+	var results []ValidateResult
+	for _, stmt := range program.Statements {
+		results = append(results, checkCharArithInStmt(view, program.Sem, stmt, program.Sem.SourceFileOf(stmt))...)
+	}
+	return results
+}
+
+func checkCharArithInStmt(view *THIRView, sem *parser.SemanticContext, stmt parser.Statement, file string) []ValidateResult {
+	var results []ValidateResult
+	if f := sem.SourceFileOf(stmt); f != "" {
+		file = f
+	}
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			results = append(results, checkCharArithInExpr(view, s.Expression, file)...)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			results = append(results, checkCharArithInExpr(view, s.Value, file)...)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkCharArithInStmt(view, sem, bodyStmt, file)...)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			results = append(results, checkCharArithInStmt(view, sem, bodyStmt, file)...)
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			results = append(results, checkCharArithInExpr(view, s.ReturnValue, file)...)
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			results = append(results, checkCharArithInStmt(view, sem, s.Init, file)...)
+		}
+		if s.Condition != nil {
+			results = append(results, checkCharArithInExpr(view, s.Condition, file)...)
+		}
+		if s.Update != nil {
+			results = append(results, checkCharArithInStmt(view, sem, s.Update, file)...)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkCharArithInStmt(view, sem, bodyStmt, file)...)
+			}
+		}
+	}
+	return results
+}
+
+func checkCharArithInExpr(view *THIRView, expr parser.Expression, file string) []ValidateResult {
+	var results []ValidateResult
+	switch e := expr.(type) {
+	case *parser.InfixExpression:
+		if isCharArithOperator(e.Operator) {
+			if bad, badType, ok := charArithBadOperand(view, e); ok {
+				results = append(results, ValidateResult{
+					TraceID: "k2m9xq4t",
+					File:    file,
+					Line:    e.Token.Line,
+					Column:  e.Token.Column,
+					Message: i18n.T("k2m9xq4t",
+						"cannot apply arithmetic between `char` and `%s` (%s): a char is a single code point (i32) and only combines with integers, chars or strings. If you meant string concatenation, use a string literal — `'x' - %s` renders the operand through to-str",
+						bad, badType, bad),
+				})
+			}
+		}
+		results = append(results, checkCharArithInExpr(view, e.Left, file)...)
+		results = append(results, checkCharArithInExpr(view, e.Right, file)...)
+	case *parser.CallExpression:
+		for _, arg := range e.Arguments {
+			results = append(results, checkCharArithInExpr(view, arg, file)...)
+		}
+	case *parser.DotExpression:
+		results = append(results, checkCharArithInExpr(view, e.Receiver, file)...)
+	case *parser.PrefixExpression:
+		results = append(results, checkCharArithInExpr(view, e.Right, file)...)
+	case *parser.GroupedExpression:
+		results = append(results, checkCharArithInExpr(view, e.Expression, file)...)
+	case *parser.IndexExpression:
+		results = append(results, checkCharArithInExpr(view, e.Left, file)...)
+		results = append(results, checkCharArithInExpr(view, e.Index, file)...)
+	}
+	return results
+}
+
+// isCharArithOperator reports whether op is arithmetic a char can take part in.
+// Ordering/equality operators are out of scope here (ValidateStrOrdering owns
+// those); bitwise operators are excluded because char is not a bit container.
+func isCharArithOperator(op string) bool {
+	switch op {
+	case "+", "-", "*", "/", "%":
+		return true
+	}
+	return false
+}
+
+// charArithBadOperand returns the offending operand — its source text and its
+// type — when an arithmetic infix pairs a `char` with a value that has no
+// numeric meaning.
+func charArithBadOperand(view *THIRView, e *parser.InfixExpression) (string, string, bool) {
+	lt, rt := view.TypeOf(e.Left), view.TypeOf(e.Right)
+	if lt == "char" && isNonNumericType(rt) {
+		return parser.ExprToString(e.Right), rt, true
+	}
+	if rt == "char" && isNonNumericType(lt) {
+		return parser.ExprToString(e.Left), lt, true
+	}
+	return "", "", false
+}
+
+// isNonNumericType reports whether raw names a type with no byte/numeric
+// meaning. Unknown ("") and unions are deliberately NOT flagged: an unresolved
+// spelling must not turn into a false positive, and a union such as `num`
+// carries an integer branch.
+func isNonNumericType(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	t := thirPool.Parse(raw)
+	if t == nil {
+		return false
+	}
+	switch t.Canonical().Kind {
+	case ty.Bool, ty.Float:
+		// No byte/numeric meaning for a code point. `"x" - 1.5` used to
+		// truncate the double to 1 and answer 119.
+		return true
+	case ty.Int, ty.Char, ty.Str, ty.Txt, ty.Union, ty.Invalid, ty.Void:
+		return false
+	}
+	// struct / map / slice / array / option / ptr / func / view
+	return true
+}
+
+// ─────────────────────────────────────────────────────────────
 // s[i] 性能告警（str/txt 码点下标 O(n)）
 // ─────────────────────────────────────────────────────────────
 

@@ -144,6 +144,30 @@ func (f *formatter) formatPrefixExpression(e *parser.PrefixExpression) {
 	f.formatExpression(e.Right)
 }
 
+// maxInlineInfixWidth 是中缀表达式「摊平到单行」时允许的最大宽度。超过它的
+// 多行中缀（典型是长串接链，如 INVSBOX）保留逐行拆分；低于它的（如
+// `d = 1 + 2`）则合并为单行。该值小于最短的一行字符串拼接对（~135 列），
+// 故不影响既有串接对齐行为。
+const maxInlineInfixWidth = 76
+
+// inlineWidth 用一个临时的 forceInline formatter 把整个表达式完全摊平，返回其
+// 单行宽度。若摊平结果仍含换行（内含函数体 / 块等必须跨行的构造），ok 为 false，
+// 表示不可折叠为单行。
+func (f *formatter) inlineWidth(e parser.Expression) (int, bool) {
+	tmp := &formatter{
+		sem:         f.sem,
+		trivia:      f.trivia,
+		loopStyle:   f.loopStyle,
+		forceInline: true,
+	}
+	tmp.formatExpression(e)
+	out := tmp.buf.String()
+	if strings.ContainsRune(out, '\n') {
+		return 0, false
+	}
+	return tmp.column, true
+}
+
 func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
 	// Boolean-comparison simplification (`x == true` -> `x`, `x == false` ->
 	// `! x`) used to be performed here. It was removed on purpose: the rewrite
@@ -159,6 +183,21 @@ func (f *formatter) formatInfixExpression(e *parser.InfixExpression) {
 	rightLine := stmtExprEndLine(e.Right)
 	leftLine := stmtExprEndLine(e.Left)
 	multiLine := rightLine > leftLine
+
+	// A multi-line infix is only worth keeping split when the operands are too
+	// wide to sit on one line (the long string-concat idiom). A short one — e.g.
+	// `d = 1 +\n2` — was just an incidental break in the source and must collapse
+	// to `d = 1 + 2`. Measure the fully flattened width; if it fits within
+	// maxInlineInfixWidth (and contains no block that would force a newline),
+	// treat it as single-line. forceInline short-circuits so measuring (which
+	// re-enters this function) never recurses infinitely.
+	if multiLine {
+		if f.forceInline {
+			multiLine = false
+		} else if w, ok := f.inlineWidth(e); ok && w <= maxInlineInfixWidth {
+			multiLine = false
+		}
+	}
 
 	if multiLine {
 		f.write(" ")

@@ -572,7 +572,7 @@ client: {
         ev = client.next-event()     ; Returns ?sse-event (nil=EOF, err=error)
         ev: {
             nil -> print('connection closed')
-            err -> print('error: ' - it)
+            err -> print('error: ' - it.msg())
             -> print(ev.data)
         }
         client.close()

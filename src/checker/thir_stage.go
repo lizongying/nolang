@@ -488,6 +488,12 @@ func ValidateStrOrderingTHIR(program *parser.Program, view *THIRView) []Validate
 	return runStrOrderingCore(program, funcTypes)
 }
 
+// ValidateCharArithTHIR 是 ValidateCharArith 的 THIR 侧变体：判据全部来自
+// THIRView.TypeOf 的表达式级型别表（无 AST 直读），两侧同传 view ⇒ 恒等对拍。
+func ValidateCharArithTHIR(program *parser.Program, view *THIRView) []ValidateResult {
+	return ValidateCharArith(program, view)
+}
+
 // runStrOrderingCore 是 ValidateStrOrdering 两变体共享的走查 + 去重尾巴。
 func runStrOrderingCore(program *parser.Program, funcTypes map[string]string) []ValidateResult {
 	varTypes := make(map[string]string)
@@ -692,6 +698,8 @@ func ShadowCompareTHIR(program *parser.Program, view *THIRView) []ShadowMismatch
 	// TestDivByZeroFloatRefine 等独立正向测试锁定。
 	cmp("div-by-zero", ValidateDivByZero(program, view), ValidateDivByZeroTHIR(program, view))
 	cmp("str-ordering", ValidateStrOrdering(program), ValidateStrOrderingTHIR(program, view))
+	// char-arith：legacy 与 THIR 两侧同传 view（同步精化）⇒ 恒等对拍。
+	cmp("char-arith", ValidateCharArith(program, view), ValidateCharArithTHIR(program, view))
 	// string-concat：legacy 与 THIR 两侧同传 view（同步精化）⇒ 恒等对拍。行为
 	// 变更（`str+str` 由漏报转补报）由 TestStringConcatRefine 等独立正向测试锁定。
 	cmp("string-concat", ValidateStringConcat(program, view), ValidateStringConcatTHIR(program, view))

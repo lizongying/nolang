@@ -412,6 +412,7 @@
   'jwegl6bv': '多赋值中的下标写入目标 `%s` 未经解包：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。请把该目标拆出为 place-match（ok 臂的 it 是元素位置，可读可写），或改用 `?=` 在 option 结果函数中上抛。'
   'k0fwb241': '导出别名 \'%s\' 与函数名相同；可以省略该别名'
   'k1h5kums': '读取 %s 失败: %w'
+  'k2m9xq4t': 'char 与 %s（%s）之间不能做算术：char 是单个码点（i32），只能与整数、char 或字符串组合。若想拼接字符串，请用字符串字面量：\'x\' - %s 会按 to-str 渲染该运算元'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 没有结果槽位'
   'k8je3usi': '%s 已存在且不是 ES 模块（没有 "type": "module"）；请改为输出 .mjs（no build --js -o out.mjs）'

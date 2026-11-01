@@ -5,20 +5,20 @@ i <- [0..3]: {
     break
 }
 
-for {
+!! {
     continue
 }
 
-for j <- a {
+j <- a: {
     break #1
 }
 
-for n > 0 {
+(n > 0) {
     continue #2
     n = n - 1
 }
 
-for x <- a {
+x <- a: {
     if x > 1 {
         break
     }

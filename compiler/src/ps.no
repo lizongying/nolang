@@ -9968,8 +9968,7 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
 
                         #{index-out=zero}
                         c-n[q2].copy() == evs[i2] &&
-(c-a[q2] == -1 ||
-c-a[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
+(c-a[q2] == -1 || c-a[q2] == ps-enum-ncols(p, st0, evs[i2])) -> hit2 = 1
 
                         #{overflow=wrap}
                         q2 = q2 + 1

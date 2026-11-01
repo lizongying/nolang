@@ -199,6 +199,7 @@ make = () (r ast) {
     r.nodes.push(z)
     r.aux.push(0)
     r.n = 1
+
     ; pre-fill string-interner sentinel slots (open addressing; '' = empty)
     hi = 0
     (hi < 256) {
@@ -414,8 +415,10 @@ ast-str-hash = (sx str) (h i64) {
         c-opt = sx.byte(i)
         c = c-opt: {
             ok -> it
+
             -> 0
         }
+
         #{overflow=wrap}
         h = h * 31 + c
         i = i + 1
@@ -426,9 +429,10 @@ ast-str-hash = (sx str) (h i64) {
 ; t: 輸入
 ; s: 字串
 ; target: 數值
-ast-str-intern-raw = (t ast, s str, target i64) () {
+ast-str-intern-raw = (t ast, s str, target i64) {
     n = t.str-k.len()
     h = ast-str-hash(s)
+
     #{overflow=wrap}
     h = h % n
     (h < 0) -> h = h + n
@@ -441,7 +445,10 @@ ast-str-intern-raw = (t ast, s str, target i64) () {
             t.str-n = t.str-n + 1
             return
         }
-        k == s -> { return }
+        k == s -> {
+            return
+        }
+
         #{overflow=wrap}
         h = (h + 1) % n
         (h < 0) -> h = h + n
@@ -451,7 +458,7 @@ ast-str-intern-raw = (t ast, s str, target i64) () {
 
 ; 翻倍重哈希（str-v 存的是 strs 下標，strs 本身不動）
 ; t: 輸入
-ast-str-grow = (t ast) () {
+ast-str-grow = (t ast) {
     old-k = t.str-k
     old-v = t.str-v
     old-n = old-k.len()
@@ -483,6 +490,7 @@ ast-str-intern = (t ast, s str) (idx i64) {
     (t.str-n * 4 >= cap * 3) -> ast-str-grow(t)
     n = t.str-k.len()
     h = ast-str-hash(s)
+
     #{overflow=wrap}
     h = h % n
     (h < 0) -> h = h + n
@@ -501,6 +509,7 @@ ast-str-intern = (t ast, s str) (idx i64) {
             t.str-n = t.str-n + 1
             return
         }
+
         #{overflow=wrap}
         h = (h + 1) % n
         (h < 0) -> h = h + n
@@ -778,6 +787,7 @@ sub = (s str, a i64, b i64) (r str) {
         sb-opt = s.byte(i)
         sbv = sb-opt: {
             ok -> it
+
             -> 0
         }
         t.push-byte(sbv)
@@ -799,6 +809,7 @@ trim-nl = (s str) (r str) {
         b-opt = s.byte(n - 1)
         b = b-opt: {
             ok -> it
+
             -> 0
         }
         b != 10 -> break
@@ -1553,6 +1564,7 @@ signature = (t ast, o sb, d nd, depth i64) {
 ; base: 基準值
 ; depth: 深度
 helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
+
     ; s66：matchArm —— SurfaceMatch 的臂。MatchArm **不是 Node**
     ;   （dump.go:876-877 明言：非 Node、無 dumpNode case、只經 SurfaceMatch 的
     ;   HELPER 到達）⇒ 資料全部走 aux，不佔 kid 區。
@@ -1570,10 +1582,10 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
     hname.eq-full('matchArm') -> {
         j = 0
         (j < d.hcount) {
+
             #{overflow=wrap}
             hb = d.hbase + 12 * j
 
-            #{overflow=wrap}
             mbind = ast.str-at(t, ast.aux-at(t, hb))
 
             #{overflow=wrap}
@@ -1721,6 +1733,7 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
     }
 
     hname.eq-full('interfaceMethod') -> {
+
         ; interfaceMethod（InterfaceDefinition 的方法）—— **不是 Node**
         ;   （Go dump.go:837-849：d.interfaceMethod 單獨印，不經 node switch）
         ;   ⇒ 資料全部走 aux；參數／回傳的**節點索引**也走 aux（節點本身在 arena）。
@@ -1741,7 +1754,6 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
             #{overflow=wrap}
             hb = d.hbase + 5 * j
 
-            #{overflow=wrap}
             imnm = ast.str-at(t, ast.aux-at(t, hb))
 
             #{overflow=wrap}
@@ -1768,7 +1780,6 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
             o.push('}')
             o.push-byte(10)
 
-            #{overflow=wrap}
             k = 0
             (k < impc) {
 

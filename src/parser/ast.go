@@ -1862,8 +1862,9 @@ type StructField struct {
 	ReadOnly  bool  // true = read-only field modifier
 	Sealed    bool  // true = sealed field modifier
 	Value     Expression
-	// 欄位級 `#{...}`（含尾隨 `pool json-pool #{inline=false}`）。
-	AnnotatedNode
+	// 欄位級 `#{...}`、Doc 註釋（欄位上方獨立成行的 `;`）和行內 `;` 尾隨註釋。
+	// CommentedNode embeds AnnotatedNode, so field.Annotations is still valid.
+	CommentedNode
 }
 
 func (sf *StructField) Pos() lexer.Position { return posFromToken(sf.Token) }

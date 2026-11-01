@@ -132,6 +132,23 @@ c = e.code()                        ; Get error code
 s = e.format()                       ; Format as string
 ```
 
+This `err` struct **is** the payload of the builtin option's `err` variant
+(`option { ok(v t), nil, err(e err.err) }`): when you match a `?t`, the implicitly bound
+`it` in the `err ->` arm is this struct, not a `str`.
+
+```no
+x = f()               ; f returns ?i64
+x: {
+    ok -> n = it
+    nil -> n = 0
+    err -> {
+        log.error(it.msg())        ; bare message
+        print(it.format())         ; 'code.unknown: ... at file:line:col'
+        it.is(code.io) -> print('io error')
+    }
+}
+```
+
 ### bool — Boolean Type
 
 ```no

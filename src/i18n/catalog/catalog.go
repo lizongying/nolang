@@ -99,16 +99,47 @@ func IsDocCatalogName(name string) bool {
 
 // AliasCatalogSuffix marks an ALIAS catalog: `locales/<tag>-alias.noml`. An
 // alias catalog gives every std function/method its doc anchor a localized
-// display name ("别名") — a short pure-translated name, not the block text a
-// doc catalog holds. The two share the key namespace (the author-written
-// anchor) but not the value semantics, so they live in separate files:
+// display name ("别名") plus the keystroke columns completion filters on. The
+// value is an OBJECT, not a string:
+//
+//	'args.get': {
+//	  alias: ['获取参数']
+//	  keys: 'hqcs'
+//	  enkeys: 'g'
+//	  pinyin: 'huoqucanshu'
+//	}
+//
+// The keystroke columns exist because the identifier is English while the
+// display name is not: someone who knows the function as 获取参数 cannot spell
+// `get`. Typing the name's initials (keys), the identifier's initials (enkeys),
+// or — for Chinese — the full pinyin/zhuyin keystrokes lets completion propose
+// the identifier. All four columns are ASCII `[a-z0-9]` because completion
+// compares them byte for byte against what the editor reports as typed text.
+//
+// Alias and doc catalogs share the key namespace (the author-written anchor)
+// but not the value semantics, so they live in separate files:
 //
 //   - doc values are translations of a whole comment block and are pruned
 //     against every anchored block in the tree (hover can point at any of them);
-//   - alias values are one-line names over the stable, machine-checkable
-//     domain of `src/std` anchors, which is why en-alias.noml is required to be
+//   - alias values are one-lined rows over the stable, machine-checkable domain
+//     of `src/std` anchors, which is why en-alias.noml is required to be
 //     COMPLETE and the other locales are compared against it key for key.
 const AliasCatalogSuffix = "-alias.noml"
+
+// AliasFields are the member names of an alias row, in render order. They are
+// exported so the gate can assert "these and nothing else".
+const (
+	AliasFieldAlias  = "alias"
+	AliasFieldKeys   = "keys"
+	AliasFieldEnKeys = "enkeys"
+	AliasFieldPinyin = "pinyin"
+	AliasFieldZhuyin = "zhuyin"
+)
+
+// AliasRequiredFields are the members every row must carry: without a display
+// name there is nothing to show, and keys/enkeys are the minimum a user can
+// type. pinyin and zhuyin are locale-specific and optional.
+var AliasRequiredFields = []string{AliasFieldAlias, AliasFieldKeys, AliasFieldEnKeys}
 
 // AliasCatalogName returns the alias-catalog file name for tag. Like
 // DocCatalogName it lowercases the tag, because a file name follows the `.no`
@@ -123,44 +154,110 @@ func IsAliasCatalogName(name string) bool {
 }
 
 // AliasCatalogHeaderFor is the fixed preamble of a rendered alias catalog.
+//
+// The text is part of the byte comparison the freshness gate performs, so it is
+// also the place a human is told what the columns mean — a translator editing
+// one row sees the schema without opening the Go source.
 func AliasCatalogHeaderFor(tag string) string {
 	return "; Nolang alias catalog: " + tag + "\n" +
-		"; Localized display names (别名) for every std function/method, keyed by\n" +
-		"; the same doc anchor its `; [label](#anchor)` comment uses, so an alias and\n" +
-		"; its documentation block always agree on the key. Values are short, pure\n" +
-		"; translated names — the identifier itself remains the only spelling that\n" +
-		"; compiles. Keys must exist as an anchor in some src/std .no source, or the\n" +
-		"; gate rejects the catalog; `make i18n -alias-missing` lists what is left.\n"
+		"; Display names (别名) and keystroke columns for every std function/method,\n" +
+		"; keyed by the same doc anchor its `; [label](#anchor)` comment uses, so an\n" +
+		"; alias and its documentation block always agree on the key. One row per\n" +
+		"; anchor, as an object:\n" +
+		";\n" +
+		";   alias:  ['获取参数']      display names; the first one is what hover shows\n" +
+		";   keys:   'hqcs'          initials of the localized name — required\n" +
+		";   enkeys: 'g'             initials of the identifier — required everywhere\n" +
+		";   pinyin: 'huoqucanshu'   full pinyin keystrokes — zh-CN rows only\n" +
+		";   zhuyin: 'fm32k6h0gj4'   zhuyin key positions (Dachen) — zh-TW rows only\n" +
+		";\n" +
+		"; keys, enkeys, pinyin and zhuyin are ASCII [a-z0-9]: completion compares\n" +
+		"; them byte for byte against what the editor reports as typed, so a\n" +
+		"; non-ASCII cell would silently never match. The identifier itself remains\n" +
+		"; the only spelling that compiles — these columns only tell the completion\n" +
+		"; provider which identifier the reader is reaching for. Keys must exist as\n" +
+		"; an anchor in some src/std .no source, or the gate rejects the catalog;\n" +
+		"; `make i18n -alias-missing` lists what is left.\n"
 }
 
-// RenderAlias renders an alias catalog, sorted by key.
-func RenderAlias(tag string, entries map[string]string) string {
+// RenderAlias renders an alias catalog, sorted by key. The output is
+// deterministic down to the byte — anchors sorted, fields in a fixed order, an
+// empty optional column omitted rather than written as '' — because both the
+// generator and the freshness gate render through here, so "what `make i18n`
+// writes" and "what the gate expects" cannot drift.
+func RenderAlias(tag string, entries map[string]i18n.AliasEntry) string {
 	var sb strings.Builder
 	sb.WriteString(AliasCatalogHeaderFor(tag))
 	sb.WriteString("{\n")
-	writeEntries(&sb, entries)
+	anchors := make([]string, 0, len(entries))
+	for anchor := range entries {
+		anchors = append(anchors, anchor)
+	}
+	sort.Strings(anchors)
+	for _, anchor := range anchors {
+		e := entries[anchor]
+		// A row with no display name carries nothing to show and cannot be
+		// parsed back (alias must list at least one name), so it is skipped
+		// here rather than rendered into a file the loader would reject.
+		if len(e.Alias) == 0 {
+			continue
+		}
+		sb.WriteString("  ")
+		sb.WriteString(pkg.NomlQuote(anchor))
+		sb.WriteString(": {\n")
+		sb.WriteString("    ")
+		sb.WriteString(AliasFieldAlias)
+		sb.WriteString(": [")
+		for i, name := range e.Alias {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(pkg.NomlQuote(name))
+		}
+		sb.WriteString("]\n")
+		writeAliasColumn(&sb, AliasFieldKeys, e.Keys)
+		writeAliasColumn(&sb, AliasFieldEnKeys, e.EnKeys)
+		writeAliasColumn(&sb, AliasFieldPinyin, e.Pinyin)
+		writeAliasColumn(&sb, AliasFieldZhuyin, e.Zhuyin)
+		sb.WriteString("  }\n")
+	}
 	sb.WriteString("}\n")
 	return sb.String()
 }
 
-// PruneAliasTranslations returns the alias table to render: the committed
-// values restricted to anchors the std sources still declare. Unlike doc
-// catalogs nothing is ever seeded, and an empty value is dropped so a
+// writeAliasColumn writes one optional scalar member, or nothing when it is
+// empty. pkg.NomlQuote (not NomlQuoteValue) is deliberate: a keystroke column
+// has no newline, and NomlQuote cannot switch to a backtick block, which would
+// break the one-member-per-line determinism the gate compares.
+func writeAliasColumn(sb *strings.Builder, field, value string) {
+	if value == "" {
+		return
+	}
+	sb.WriteString("    ")
+	sb.WriteString(field)
+	sb.WriteString(": ")
+	sb.WriteString(pkg.NomlQuote(value))
+	sb.WriteString("\n")
+}
+
+// PruneAliasTranslations returns the alias table to render: the committed rows
+// restricted to anchors the std sources still declare. Unlike doc catalogs
+// nothing is ever seeded, and a row with no display name is dropped so a
 // half-filled locale degrades to the identifier rather than a blank name.
-func PruneAliasTranslations(scanned map[string]bool, existing map[string]string) map[string]string {
-	out := make(map[string]string, len(existing))
-	for anchor, text := range existing {
-		if !scanned[anchor] || text == "" {
+func PruneAliasTranslations(scanned map[string]bool, existing map[string]i18n.AliasEntry) map[string]i18n.AliasEntry {
+	out := make(map[string]i18n.AliasEntry, len(existing))
+	for anchor, e := range existing {
+		if !scanned[anchor] || len(e.Alias) == 0 {
 			continue
 		}
-		out[anchor] = text
+		out[anchor] = e
 	}
 	return out
 }
 
 // MissingAliasTranslations lists, sorted, the std anchors a locale has no
 // alias for yet.
-func MissingAliasTranslations(scanned map[string]bool, existing map[string]string) []string {
+func MissingAliasTranslations(scanned map[string]bool, existing map[string]i18n.AliasEntry) []string {
 	var out []string
 	for anchor := range scanned {
 		if _, ok := existing[anchor]; !ok {
@@ -347,7 +444,12 @@ func LoadDoc(projectDirs []string, tag string) (map[string]string, error) {
 // not an error — i18n.Alias then falls back to the identifier itself, exactly
 // like Doc falling back to the source comment. Resolution goes through
 // Canonical and the lower-cased file name for the same reasons as LoadDoc.
-func LoadAlias(projectDirs []string, tag string) (map[string]string, error) {
+//
+// An alias catalog obeys a stricter schema than the other two (every row is an
+// object with alias/keys/enkeys), so a project override still written in the
+// old flat format fails to parse: the whole language degrades to identifiers
+// with a warning rather than half-loading a table nothing can read.
+func LoadAlias(projectDirs []string, tag string) (map[string]i18n.AliasEntry, error) {
 	tag = Canonical(tag)
 	name := AliasCatalogName(tag)
 	for _, dir := range projectDirs {
@@ -362,7 +464,7 @@ func LoadAlias(projectDirs []string, tag string) (map[string]string, error) {
 			}
 			return nil, fmt.Errorf("i18n: reading %s: %w", path, err)
 		}
-		return parseCatalog(path, data)
+		return parseAliasCatalog(path, data)
 	}
 
 	path := "locales/" + name
@@ -370,7 +472,7 @@ func LoadAlias(projectDirs []string, tag string) (map[string]string, error) {
 	if err != nil {
 		return nil, nil
 	}
-	return parseCatalog(path, data)
+	return parseAliasCatalog(path, data)
 }
 
 // Canonical maps an alias onto the tag whose file exists. Unknown tags are
@@ -507,6 +609,110 @@ func parseCatalog(path string, data []byte) (map[string]string, error) {
 		out[k] = s
 	}
 	return out, nil
+}
+
+// ParseAliasCatalogData turns a `.noml` alias document into anchor -> row. It is
+// the alias twin of ParseCatalogData, exported so the generator can inspect the
+// committed file it is about to rewrite.
+func ParseAliasCatalogData(path string, data []byte) (map[string]i18n.AliasEntry, error) {
+	return parseAliasCatalog(path, data)
+}
+
+// parseAliasCatalog reads an alias catalog. It is a separate reader from
+// parseCatalog on purpose: a message/doc catalog requires every value to be a
+// string (a nested value there means the file was hand-edited wrong), while an
+// alias row IS an object. One reader cannot enforce both, and silently
+// accepting either shape would make a typo'd alias file load as an empty table.
+//
+// Every check here is adversarial, because the failure mode is silent: a
+// misspelled field name would otherwise drop a row's display name, and a
+// non-ASCII keystroke column would simply never match anything at runtime.
+func parseAliasCatalog(path string, data []byte) (map[string]i18n.AliasEntry, error) {
+	m, err := pkg.ParseNomlMap(data)
+	if err != nil {
+		return nil, fmt.Errorf("i18n: %s: %w", path, err)
+	}
+	out := make(map[string]i18n.AliasEntry, len(m))
+	for anchor, raw := range m {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("i18n: %s: value for %q must be an object with alias/keys/enkeys, got %T",
+				path, anchor, raw)
+		}
+		e := i18n.AliasEntry{Anchor: anchor}
+		for field, value := range row {
+			switch field {
+			case AliasFieldAlias:
+				list, ok := value.([]any)
+				if !ok {
+					return nil, fmt.Errorf("i18n: %s: %q: %s must be an array of strings, got %T",
+						path, anchor, field, value)
+				}
+				if len(list) == 0 {
+					return nil, fmt.Errorf("i18n: %s: %q: %s must list at least one name",
+						path, anchor, field)
+				}
+				for i, item := range list {
+					name, ok := item.(string)
+					if !ok || name == "" {
+						return nil, fmt.Errorf("i18n: %s: %q: %s[%d] must be a non-empty string, got %T",
+							path, anchor, field, i, item)
+					}
+					e.Alias = append(e.Alias, name)
+				}
+			case AliasFieldKeys, AliasFieldEnKeys, AliasFieldPinyin, AliasFieldZhuyin:
+				s, ok := value.(string)
+				if !ok {
+					return nil, fmt.Errorf("i18n: %s: %q: %s must be a string, got %T",
+						path, anchor, field, value)
+				}
+				if !isAliasKeyString(s) {
+					return nil, fmt.Errorf("i18n: %s: %q: %s must be a non-empty ASCII string of [a-z0-9], got %q",
+						path, anchor, field, s)
+				}
+				switch field {
+				case AliasFieldKeys:
+					e.Keys = s
+				case AliasFieldEnKeys:
+					e.EnKeys = s
+				case AliasFieldPinyin:
+					e.Pinyin = s
+				case AliasFieldZhuyin:
+					e.Zhuyin = s
+				}
+			default:
+				return nil, fmt.Errorf("i18n: %s: %q: unknown field %q (allowed: %s)",
+					path, anchor, field, strings.Join(AliasRequiredFields, ", ")+", "+AliasFieldPinyin+", "+AliasFieldZhuyin)
+			}
+		}
+		for _, field := range AliasRequiredFields {
+			missing := (field == AliasFieldAlias && len(e.Alias) == 0) ||
+				(field == AliasFieldKeys && e.Keys == "") ||
+				(field == AliasFieldEnKeys && e.EnKeys == "")
+			if missing {
+				return nil, fmt.Errorf("i18n: %s: %q: missing required field %s", path, anchor, field)
+			}
+		}
+		out[anchor] = e
+	}
+	return out, nil
+}
+
+// isAliasKeyString reports whether s is a well-formed keystroke column: ASCII
+// `[a-z0-9]`, non-empty. Completion matches these byte for byte against the word
+// the editor reports, so anything else is a cell that can never fire.
+func isAliasKeyString(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // tagsInDir lists the `<tag>.noml` files directly under dir/locales. Doc

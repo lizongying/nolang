@@ -99,7 +99,7 @@ doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\
 doc: {
     nil -> print('nil')
 
-    err -> print(it)
+    err -> print(it.msg())
 
     -> {
         doc = it
@@ -142,7 +142,7 @@ doc: {
 > d: {
 >     nil -> print('nil')
 >
->     err -> print(it)
+>     err -> print(it.msg())
 >
 >     -> {
 >         print(it.find-str('a'))        ; 外層 it = 文件

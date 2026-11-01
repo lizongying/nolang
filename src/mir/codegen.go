@@ -3610,23 +3610,22 @@ entry:
   ret void
 }
 
+; bool always renders "true"/"false" — the same spelling bool.to-str produces,
+; so print(b), a "{b}" format field and "'b=' - b" all agree. This deliberately
+; departs from legacy's bare-bool "1"/"0": the integer spelling leaked the i1
+; representation into user-visible output and disagreed with b.to-str().
+; @.otrue/@.ofalse are shared with @print_option_bool, which has always used
+; this spelling.
 define void @print_bool(i1 %v) {
 entry:
   br i1 %v, label %t, label %f
 t:
-  call i64 @write(i32 1, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.true, i64 0, i64 0), i64 1)
+  call i64 @write(i32 1, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.otrue, i64 0, i64 0), i64 4)
   ret void
 f:
-  call i64 @write(i32 1, i8* getelementptr inbounds ([1 x i8], [1 x i8]* @.false, i64 0, i64 0), i64 1)
+  call i64 @write(i32 1, i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.ofalse, i64 0, i64 0), i64 5)
   ret void
 }
-
-; Bare bool literals: legacy print(true)/print(false) emit "1"/"0" (the integer
-; representation of the bool), NOT "true"/"false". Option-of-bool (?bool) is
-; printed by @print_option_bool as "true"/"false" instead — legacy dispatches
-; the two differently, so MIR must too.
-@.true = private constant [1 x i8] c"1"
-@.false = private constant [1 x i8] c"0"
 @.nl = private constant [2 x i8] c"\0A\00"
 @.sp = private constant [2 x i8] c" \00"
 
@@ -3755,6 +3754,19 @@ entry:
   %buf = alloca [1 x i8]
   store i8 %b, i8* %buf
   call i64 @write(i32 2, i8* %buf, i64 1)
+  ret void
+}
+
+; stderr twin of @print_bool: "true"/"false" to fd 2. Widening to i64 and
+; reusing @eprint_i64 would print "1"/"0", diverging from print(b).
+define void @eprint_bool(i1 %v) {
+entry:
+  br i1 %v, label %t, label %f
+t:
+  call i64 @write(i32 2, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @.otrue, i64 0, i64 0), i64 4)
+  ret void
+f:
+  call i64 @write(i32 2, i8* getelementptr inbounds ([6 x i8], [6 x i8]* @.ofalse, i64 0, i64 0), i64 5)
   ret void
 }
 
@@ -6066,14 +6078,38 @@ func (c *codegen) emitCast(inst *Inst) error {
 			return nil
 		}
 	}
-	signed := strings.HasPrefix(srcRaw, "i") && srcRaw != "i1" && srcRaw != "i8"
-	if signed {
+	if wideningIsSigned(srcRaw) {
 		fmt.Fprintf(c.sb, "  %%c%d = sext %s %s to %s\n", inst.Dst, srcT, srcV, dstLT)
 	} else {
 		fmt.Fprintf(c.sb, "  %%c%d = zext %s %s to %s\n", inst.Dst, srcT, srcV, dstLT)
 	}
 	fmt.Fprintf(c.sb, "  store %s %%c%d, %s* %s\n", dstLT, inst.Dst, dstLT, slot)
 	return nil
+}
+
+// wideningIsSigned reports whether a widening integer cast from a value whose
+// static nolang type is `raw` must SIGN-extend (sext) rather than zero-extend
+// (zext).
+//
+// `i16`/`i32`/`i64` are signed by spelling. `i8` is deliberately NOT: MIR maps
+// byte/u8/i8 onto the same LLVM i8 and unsigned bytes dominate the corpus, so
+// the static nolang type decides (see the print path's `case "i8"`, which does
+// the same split). `i1` is a bool, which renders "1"/"0".
+//
+// `char` is the exception this function exists for. It is an i32 and char
+// arithmetic is signed (`"x" - "y"` is -1), but its raw name does not start
+// with `i`, so the old spelling test classified it as unsigned and zero-
+// extended. That made one value render two ways: `print(c)` printed -1 (the
+// print path sign-extends explicitly) while `print('{c}')` printed 4294967295
+// (interpolation widens through this cast to fmt-int). Every VALID code point
+// is 0..=0x10FFFF, where bit 31 is clear and sext == zext, so this only changes
+// the out-of-range results of char arithmetic — exactly the case that was
+// wrong.
+func wideningIsSigned(raw string) bool {
+	if raw == "char" {
+		return true
+	}
+	return strings.HasPrefix(raw, "i") && raw != "i1" && raw != "i8"
 }
 
 // emitOptionValueEq emits a STRUCTURAL comparison of two option VALUES —
@@ -13108,13 +13144,19 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				fmt.Fprintf(c.sb, "  %s = %s i8 %s to i64\n", z, ext, argV)
 				fmt.Fprintf(c.sb, "  call void @print_i64(i64 %s)\n", z)
 			case "i32":
-				// char is the i32 scalar. A code point is non-negative, so this
-				// is a zero-extension, and it prints the DECIMAL value of the
-				// code point (Go-like `fmt.Println('A')` -> 65), matching what
-				// `print(c)` has always done for a char.
+				// char is the i32 scalar, printed as the DECIMAL value of the
+				// code point (Go-like `fmt.Println('A')` -> 65).
+				//
+				// SIGN-extend, not zero-extend. Every valid code point is
+				// 0..=0x10FFFF, so bit 31 is never set and the two extensions
+				// agree for any real char. They differ only for a char slot
+				// holding a NEGATIVE result of char arithmetic — `"x" - "y"` is
+				// -1 in i32, and zero-extending printed 4294967295 while
+				// sign-extending prints -1. char arithmetic is signed (see
+				// docs/docs/lang/str.md), so -1 is the correct rendering.
 				c.loadSeq++
 				z := fmt.Sprintf("%%pz3.%d", c.loadSeq)
-				fmt.Fprintf(c.sb, "  %s = zext i32 %s to i64\n", z, argV)
+				fmt.Fprintf(c.sb, "  %s = sext i32 %s to i64\n", z, argV)
 				fmt.Fprintf(c.sb, "  call void @print_i64(i64 %s)\n", z)
 			case "double":
 				fmt.Fprintf(c.sb, "  call void @print_double(%s %s)\n", argT, argV)
@@ -16687,20 +16729,19 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 		case "i8":
 			fmt.Fprintf(c.sb, "  call void @eprint_byte(i8 %s)\n", v)
 		case "i32":
-			// char is the i32 scalar; a code point is non-negative, so this is
-			// a zero-extension and prints the DECIMAL value of the code point,
-			// matching what print(c) does.
+			// char is the i32 scalar; printed as the DECIMAL value of the code
+			// point, matching print(c). SIGN-extended for the same reason as
+			// print: valid code points are non-negative (so sext == zext), but
+			// a negative char-arithmetic result like `"x" - "y"` is -1 and
+			// must not come out as 4294967295.
 			c.loadSeq++
 			z := fmt.Sprintf("%%pez.%d", c.loadSeq)
-			fmt.Fprintf(c.sb, "  %s = zext i32 %s to i64\n", z, v)
+			fmt.Fprintf(c.sb, "  %s = sext i32 %s to i64\n", z, v)
 			fmt.Fprintf(c.sb, "  call void @eprint_i64(i64 %s)\n", z)
 		case "i1":
-			// A bare bool prints as 1/0 (print_bool's convention), so widening
-			// to i64 and reusing eprint_i64 is exactly equivalent.
-			c.loadSeq++
-			z := fmt.Sprintf("%%peb.%d", c.loadSeq)
-			fmt.Fprintf(c.sb, "  %s = zext i1 %s to i64\n", z, v)
-			fmt.Fprintf(c.sb, "  call void @eprint_i64(i64 %s)\n", z)
+			// Same spelling as print(b): "true"/"false", never 1/0. Widening to
+			// i64 and reusing eprint_i64 would print the i1 representation.
+			fmt.Fprintf(c.sb, "  call void @eprint_bool(i1 %s)\n", v)
 		case "%txt":
 			// Build a transient %str-long { len, cap=len, data=&txt.data[0] }
 			// and write it to fd 2 (mirrors the print(txt) path but to stderr).

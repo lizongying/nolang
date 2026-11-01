@@ -1112,7 +1112,7 @@ Unwrap with match:
 val = s.pop()
 val: {
     nil -> print('empty')
-    err -> print(it)          ; it = error message
+    err -> print(it.msg())    ; it = structured error err.err
     -> print(it)              ; it = the value
 }
 ```
@@ -1495,7 +1495,7 @@ i <- [0..10): {
 ```no
 ; Simple form, it is used to get the parameter
 x: {
-    err -> log(it)
+    err -> log(it.msg())
     nil -> log('nil')
     ->
         do-right-thing(it)
@@ -1503,7 +1503,7 @@ x: {
 
 ; Destructuring form
 x: {
-    err(e) -> log(e)
+    err(e) -> log(e.msg())
     nil -> log('nil')
     ok(v) ->
         do-right-thing(v)
@@ -1550,7 +1550,7 @@ x: {
         return
     }
     err -> {
-        log(it)
+        log(it.msg())
         do-cleanup()
         return
     }
@@ -1668,7 +1668,7 @@ w: {
 ; ✅ Or vice versa: name simple branches, complex logic in ->
 val: {
     nil -> return
-    err -> log(it)
+    err -> log(it.msg())
     -> {
         n = it
         total = total + n
@@ -1701,7 +1701,7 @@ val: {
 ; it implicit binding
 val: {
     ok -> process(it)       ; it = unwrapped value
-    err -> log(it)          ; it = error message string
+    err -> log(it.msg())    ; it = structured error err.err (NOT str)
     -> log('empty')         ; catch-all, handles nil here
 }
 ```
@@ -1746,7 +1746,7 @@ unambiguous meaning only when exactly **one** case remains:
 ; ✅ -> is ok (nil and err are both claimed)
 v: {
     nil -> log('empty')
-    err -> log(it)
+    err -> log(it.msg())
     -> process(it)
 }
 
@@ -1760,9 +1760,13 @@ v: {
 Add the missing `nil ->` / `err ->` arm, or switch to `ok ->`. Enum matches and bare matches
 (`{ cond -> ... }`) are exempt: `it` there is the matched value itself, with no nil/err case.
 
-> In the `err ->` arm `it` is **always the error message (`str`)**, regardless of the option's
-> element type — the builtin is `option { ok(v t), nil, err(e str) }`. So even for a scalar
-> option such as `?i64` / `?bool`, `it` in the `err ->` arm is a string and `msg = it` works.
+> In the `err ->` arm `it` is **always the structured error `err.err`** (std/err: `code` /
+> `msg` / `file` / `line` / `col`), regardless of the option's element type — the builtin is
+> `option { ok(v t), nil, err(e err.err) }`. So even for a scalar option such as `?i64` /
+> `?bool`, `it` in the `err ->` arm is an `err` value, **not** a string: read the message
+> with `msg = it.msg()`, render code + message + position with `it.format()`, and test the
+> code with `it.is(code.io)`. Writing `msg = it` (or concatenating `it` into a `str`) does
+> not compile. The `err(...)` constructor injects `file` / `line` / `col` at its call site.
 
 ```no
 ; ✅ Combined option patterns: nil || err -> body
@@ -2159,7 +2163,7 @@ may carry **multiple** fields (multi-field payloads are boxed in a synthesized h
 result {
     ok(v t),        ; payload field v of type t
     nil,            ; no payload
-    err(e str),     ; payload field e of type str
+    err(e str),     ; payload field e of type str (user-defined enum — unrelated to option)
 }
 
 shape {
@@ -2219,7 +2223,7 @@ way in `src/std/global.no`:
 option {
     ok(v t),        ; tag 0
     nil,            ; tag 1
-    err(e str),     ; tag 2
+    err(e err.err), ; tag 2 — std structured error, not str
 }
 ```
 
@@ -2569,7 +2573,7 @@ client: {
             ev = client.next-event()     ; returns ?sse-event
             ev: {
                 nil -> *                  ; EOF
-                err -> print(it)        ; error
+                err -> print(it.msg())  ; error
                 -> print(ev.data)       ; event data
             }
         } ()
@@ -3726,9 +3730,9 @@ The two are independent and do not conflict: the annotation shapes a struct, the
 
 **Rules**
 
-- Default **24**: an err message is a 24-byte string, so at the default every err message fits inline.
+- Default **24**: a `?str` ok payload is a 24-byte `%str-long`, so 24 is the smallest threshold at which it stays inline — builtins returning `?str` hard-fail below it (`?str option result needs an inline option slot (option-inline-threshold >= 24)`). The **err** payload is std's structured `err.err` (~72 bytes: code / msg / file / line / col), so tag 2 is heap-boxed at **every** threshold.
 - Minimum **8**: a payload must at least hold an `i64`. Values below 8 are a **compile error**.
-- **8..23** compiles but **warns**: `err payloads (a 24-byte str) no longer fit the slot and are heap-boxed`. In this range err messages *and* `?str` payloads go through a pointer — that is the intended consequence of asking for a smaller option, not a degradation.
+- **8..23** compiles but **warns**: `err payloads (a 24-byte str) no longer fit the slot and are heap-boxed`. The warning text predates the structured-error payload: what actually starts going through a pointer in this range are `?str` ok payloads (`err.err` was already boxed).
 - The threshold is rounded up to a whole number of `i64`s, so the option struct is `8 + 8*ceil(N/8)` bytes.
 - **Semantics never change.** This is a codegen/layout switch only: source stays `?T`, program output stays identical, only performance and allocation behaviour move. Do not use it to "fix" a behaviour difference — a difference across thresholds is a compiler bug.
 

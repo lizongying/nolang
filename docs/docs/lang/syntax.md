@@ -623,7 +623,7 @@ doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\
 doc: {
     nil -> print('nil')
 
-    err -> print(it)
+    err -> print(it.msg())
 
     -> {
         doc = it
@@ -987,7 +987,7 @@ i <- [0..10): {
 ```no
 ; 簡單寫法，it 用於取參數
 x: {
-    err -> log(it)
+    err -> log(it.msg())       ; it 是結構化錯誤 err.err
     nil -> log('nil')
     ->
         do-right-thing(it)
@@ -995,7 +995,7 @@ x: {
 
 ; 析構寫法
 x: {
-    err(e) -> log(e)
+    err(e) -> log(e.msg())
     nil -> log('nil')
     ok(v) ->
         do-right-thing(v)
@@ -1077,7 +1077,7 @@ x: {
         return
     }
     err -> {
-        log(it)
+        log(it.msg())
         do-cleanup()
         return
     }
@@ -1119,7 +1119,7 @@ w: {
 ; ✅ 反之亦然：簡單分支命名，複雜邏輯放 ->
 val: {
     nil -> return
-    err -> log(it)
+    err -> log(it.msg())
     -> {
         n = it
         total = total + n
@@ -1152,7 +1152,7 @@ val: {
 ; it 隱式綁定
 val: {
     ok -> process(it)       ; it = 解包後的值
-    err -> log(it)          ; it = 錯誤訊息字串
+    err -> log(it.msg())    ; it = 結構化錯誤 err.err（非 str）
     -> log('empty')         ; catch-all，此處為 nil
 }
 ```
@@ -1214,7 +1214,7 @@ catch-all `->` 臂承接的是前面沒有被顯式臂認領的所有情況。�
 ; ✅ -> 就是 ok（nil / err 都已被認領）
 v: {
     nil -> log('empty')
-    err -> log(it)
+    err -> log(it.msg())
     -> process(it)
 }
 
@@ -1222,7 +1222,7 @@ v: {
 v: {
     ok -> process(it)
     nil -> log('empty')
-    -> log(it)
+    -> log(it.msg())
 }
 
 ; ❌ -> 可能是 nil 也可能是 err —— 編譯錯誤
@@ -2039,7 +2039,7 @@ struct-name {
 result {
     ok(v t),        ; 有值：載荷欄位 v，型別 t
     nil,            ; 空值：無載荷
-    err(e str),     ; 錯誤：載荷欄位 e，型別 str
+    err(e str),     ; 錯誤：載荷欄位 e，型別 str（用戶自定義枚舉，與內建 option 無關）
 }
 
 shape {
@@ -2094,7 +2094,7 @@ struct/union**。`?t` option 即以此方式聲明：
 option {
     ok(v t),
     nil,
-    err(e str),
+    err(e err.err),
 }
 ```
 
@@ -2333,9 +2333,13 @@ read-file = () {
 option {
     ok(v t),        ; tag 0：有值
     nil,            ; tag 1：空值
-    err(e str),     ; tag 2：錯誤
+    err(e err.err), ; tag 2：錯誤（std 結構化錯誤 err.err）
 }
 ```
+
+`err` 變體的載荷**不是 `str`**，而是 `std/err` 的 `err` 結構體（`code` / `msg` / `file` / `line` / `col`）。
+`err('msg')` 是 `err.new('msg')` 的別名構造器，預設 `code.unknown`；可寫 `err('msg', code.io)` 指定錯誤碼；
+位置欄位由編譯器在構造點自動注入。
 
 `#{buildin}` 表示底層表示與構造由內建 runtime 提供（`%option` 型別、`ok(...)`/`nil`/`err(...)`  
 構造器），`option` 的列舉聲明僅用於匹配與窮盡性檢查。詳見「標籤列舉」與「內建標籤列舉」。
@@ -2358,8 +2362,8 @@ nullableString = err('some error')
 
 ; 可通過match判斷
 x: {
-    err -> log(it)
-    nil -> log(it)
+    err -> log(it.msg())      ; it 是 err.err，訊息靠 .msg()
+    nil -> log('nil')
     ->
         do-right-thing(it)
 }
@@ -2409,7 +2413,7 @@ file.read = () (data ?str) {
 val = s.pop()
 val: {
     nil -> print('empty')
-    err -> print(it)          ; it = 錯誤訊息
+    err -> print(it.msg())    ; it = 結構化錯誤 err.err
     -> print(it)              ; it = 彈出的值
 }
 ```

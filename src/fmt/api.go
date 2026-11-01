@@ -77,9 +77,13 @@ type formatter struct {
 	// indexOutRemovable：其全部容器索引讀取皆可證明在界內的陳述（parser/bounds.go
 	// 計算）。非 nil 時，formatter 會移除附加/尾隨於這些陳述的冗餘 `#{index-out}`
 	// 註解（該讀取永遠不會越界，option 處理無意義）。nil = 保留（舊行為）。
-	indexOutRemovable map[parser.Statement]bool
+	indexOutRemovable    map[parser.Statement]bool
 	// indexOutAnnRemovable：獨立成行、管轄陳述全部讀取在界內的 #{index-out} 註解節點。
 	indexOutAnnRemovable map[*parser.AnnotationStatement]bool
+
+	// forceInline：僅供 inlineWidth 量測使用 —— 為 true 時，格式化的中綴一律走
+	// 單行分支（不因源碼跨行而插入換行），讓量測得到「完全攤平」的宽度。
+	forceInline bool
 }
 
 // hasRT 查詢 IfExpression 的 fmt 往返標誌：查 trivia 表（f.trivia 為 nil 時安全）。

@@ -44,6 +44,18 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 	f.write(" {")
 	f.indent++
 	for _, field := range s.Fields {
+		// Doc comments on standalone lines above this field.
+		if doc := field.GetDoc(); doc != nil && len(doc.List) > 0 {
+			f.newline()
+			f.formatDocComments(doc)
+			// Preserve a blank line the author wrote between the last Doc comment
+			// and the field itself (same logic as formatStatement's Doc handling).
+			lastDocLine := doc.List[len(doc.List)-1].Pos.Line
+			fieldLine := field.Token.Line
+			if lastDocLine > 0 && fieldLine > 0 && f.hasBlankLineBetween(lastDocLine, fieldLine) {
+				f.write("\n") // blank line (no indent)
+			}
+		}
 		f.newline()
 		// A field's own `#{...}` annotations (`#{inline}`) are written as a
 		// trailing annotation at the end of the field line. They live in the
@@ -101,6 +113,8 @@ func (f *formatter) formatStructDefinition(s *parser.StructDefinition) {
 			}
 			f.write("}")
 		}
+		// Trailing `;` inline comment written on the same line as the field.
+		f.formatInlineComment(field.GetComment())
 	}
 	f.indent--
 	f.newline()

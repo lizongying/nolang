@@ -119,12 +119,25 @@ ok = s[0] == 'h'         ; true
 > "z" - "a"                ; 25 (both sides are char literals → char minus char)
 > 'x' - c                  ; 23 (c is a variable → byte arithmetic)
 > ```
+>
+> Conversely, the byte fallback happens **only when the other side is an integer or a char**. If the other side is a `bool`, `f64`, struct or anything else with **no byte meaning**, the `'...'` stays a string and the whole expression is **concatenation**, with the other side rendered through `to-str`:
+>
+> ```no
+> b = true
+> 'x' - b                  ; "xtrue" (not 120 - 1 = 119)
+> 'x' - 1.5                ; "x1.5"
+> 'x' - 'y'                ; "xy" (both sides are string literals)
+> ```
+>
+> So `'x' - b` may be assigned to a `str`: `s str = 'x' - b` yields `"xtrue"`, while `s str = 'x' - 1` is still rejected because that is byte arithmetic (the result is a number).
 
 > Implicit conversion encodes a **single code point** as `str`. If what you want is the numeric value, use the `char` itself (e.g. `print(c)` prints the decimal value of that code point); if you want an explicit conversion, `c.to-str()` still works (it is equivalent to the implicit one).
 >
 > A `char` represents a single Unicode scalar value, and its underlying storage type is **`i32`** (valid range `0 ..= 0x10FFFF`).
 >
 > A `char` **takes part in integer arithmetic normally** (e.g. `z = a + 25`, `u = ch - 32`), computed on the code point value at i32 width; unlike the integer family it does not default to returning `option<int>`, so it never triggers an "unhandled integer overflow" compile error.
+>
+> **Rendering**: a `char` turned into text always prints the **decimal value of its code point** (`"A"` → `65`, `"é"` → `233`), and `print(c)` and the interpolation `print('{c}')` **must agree**. char arithmetic is **signed i32**, so `"x" - "y"` is `-1` and both paths print `-1` — never `4294967295` on one of them. Every valid code point lies in `0 ..= 0x10FFFF` (bit 31 clear), where signed and unsigned widening coincide, so this rule only affects the negative values produced by out-of-range char arithmetic. If you want the **character** rather than the number, use `c.to-str()` (`"A".to-str()` → `"A"`) — that is a different operation.
 
 ## ASCII Optimization & Performance Notes
 

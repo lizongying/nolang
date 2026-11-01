@@ -41,7 +41,7 @@ itab {
 ; r: 返回結果
 intern.make = () (r itab) {
     r = itab {
-        pool: []str
+        pool: []
         cnt: 0
     }
 }
@@ -54,6 +54,7 @@ intern.find = (t itab, s str) (slot i64) {
     slot = -1
     n = t.cnt
     i <- [0..n): {
+
         #{index-out=zero}
         cur = t.pool[i]
         cur.eq-full(s) -> {
@@ -73,6 +74,7 @@ intern.get = (t itab, s str) (id i64) {
     s.len-bytes() == 0 -> return
     i = intern.find(t, s)
     i < 0 -> return
+
     #{overflow=wrap}
     id = i + 1
 }
@@ -87,13 +89,17 @@ intern.put = (t itab, s str) (id i64) {
     i = intern.find(t, s)
     {
         i >= 0 -> {
+
             #{overflow=wrap}
             id = i + 1
             return
         }
-        -> { }
+
+        -> {
+        }
     }
     t.pool.push(s)
+
     #{overflow=wrap}
     t.cnt = t.cnt + 1
     id = t.cnt
@@ -114,11 +120,16 @@ intern.at = (t itab, id i64) (r str) {
     r = ''
     {
         id < 1 -> return
+
         id > t.cnt -> return
-        -> { }
+
+        -> {
+        }
     }
+
     #{overflow=wrap}
     i = id - 1
+
     #{index-out=zero}
     r = t.pool[i]
 }

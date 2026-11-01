@@ -94,7 +94,7 @@ doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\
 doc: {
     nil -> print('nil')
 
-    err -> print(it)
+    err -> print(it.msg())
 
     -> {
         doc = it
@@ -137,7 +137,7 @@ Kind constants: `YAML-KIND-NULL` / `BOOL` / `INT` / `FLOAT` / `STR` / `SEQ` / `M
 > d: {
 >     nil -> print('nil')
 >
->     err -> print(it)
+>     err -> print(it.msg())
 >
 >     -> {
 >         print(it.find-str('a'))        ; outer it = the document

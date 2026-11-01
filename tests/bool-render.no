@@ -1,0 +1,78 @@
+; bool must stringify as "true"/"false" everywhere a str is produced — the
+; same spelling bool.to-str() yields.
+;
+; Regression guard: print(b) used to emit the i1 representation ("1"/"0")
+; while '{b}' went through fmt-int, and 'b=' - b did not compile at all
+; (an i1 operand reached @str_concat). All of them now agree with to-str.
+;
+; print(b) / eprint(b) are pinned in src/mir/bool_render_test.go instead:
+; interpolation is only lowered inside print-family calls, and `format(...)`
+; cannot sit directly in an expression (pre-existing: the callee is not
+; enqueued on that path), so each result is bound to a local first.
+b = true
+f = false
+
+b.to-str() != 'true' -> exit(1)
+f.to-str() != 'false' -> exit(2)
+
+sb = format('{b}')
+sb != 'true' -> exit(3)
+sf = format('{f}')
+sf != 'false' -> exit(4)
+sx = format('x={b}')
+sx != 'x=true' -> exit(5)
+sw = format('[{b:>6}]')
+sw != '[  true]' -> exit(6)
+st = format('{b:t}')
+st != 'bool' -> exit(7)
+
+'b=' - b != 'b=true' -> exit(8)
+f - ' <-false' != 'false <-false' -> exit(9)
+
+; A ONE-character '...' is still a STRING literal ("..." would be a char), so
+; with a bool sibling there is no byte arithmetic to fold and this is plain
+; concatenation. Regression: 'x' used to fold to byte 120, making 'x' - b
+; answer 119 — a number that silently replaced the intended "xtrue".
+'x' - b != 'xtrue' -> exit(11)
+b - 'x' != 'truex' -> exit(12)
+'x' - f != 'xfalse' -> exit(13)
+
+; An integer/char sibling must still fold to a byte — that is the
+; digit-to-value idiom ('A' + 1 is 66, not "A1"), pinned by tests/str-ops.no.
+'A' + 1 != 66 -> exit(14)
+
+; Both sides literals: concatenation, not 120 - 121.
+'x' - 'y' != 'xy' -> exit(15)
+
+; A float sibling has no byte meaning either.
+r = 1.5
+'x' - r != 'x1.5' -> exit(16)
+
+; The result must also satisfy an explicit `str` annotation. This is the form
+; that actually caught the regression: the front-end guard required BOTH
+; operands to be strings, so `s str = 'x' - b` was rejected outright with
+; "cannot assign non-string value to string variable".
+sc str = 'x' - b
+sc != 'xtrue' -> exit(17)
+
+; `+` concatenates too (docs/docs/lang/str.md), so the guard must accept it.
+sab str = 'a' + 'b'
+sab != 'ab' -> exit(18)
+
+; Aggregates recurse through to-str, so a bool field renders the same way.
+pt {
+    flag bool
+    n i64
+}
+p = pt {
+    flag: true
+    n: 1
+}
+sp = format('{p}')
+sp != '{flag: true, n: 1}' -> exit(10)
+
+; The print below is not cosmetic: `format`'s internal fmt-* callees are only
+; materialized into the module when the program also contains a print-family
+; call (pre-existing lowering quirk, reproduced on the previous release with
+; fmt-int). Without it this file fails to link with "unknown callee fmt-bool".
+print('bool-render: ok')

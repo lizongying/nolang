@@ -126,14 +126,14 @@ lxst {
     ;    否則會把攤還 O(1) 重新打回 O(N²)。
     ; 方法真名是 to-bytes()，【沒有】 str.bytes()。
     input []byte
-    pos i64     ; Go: position   目前字元（位元組）索引
-    rpos i64    ; Go: readPosition
-    ch i64      ; Go: ch（byte；0 = EOF）
+    pos i64; Go: position   目前字元（位元組）索引
+    rpos i64; Go: readPosition
+    ch i64; Go: ch（byte；0 = EOF）
     line i64
-    col i64     ; Go: column
-    prev i64    ; Go: prevTokenType
-    last i64    ; 本檔自用：最後產出的 token 型別（供 dump 迴圈判斷 EOF）
-    count i64   ; 本檔自用：已產出的 token 數（決定要不要在行首補 \n）
+    col i64; Go: column
+    prev i64; Go: prevTokenType
+    last i64; 本檔自用：最後產出的 token 型別（供 dump 迴圈判斷 EOF）
+    count i64; 本檔自用：已產出的 token 數（決定要不要在行首補 \n）
 }
 
 ; ── 一個 token 的記錄（M2 起：掃描與渲染分離）──
@@ -242,14 +242,17 @@ lx-is-hex = (c i64) (yes bool) {
 lx-hex-val = (c i64) (v i64) {
     v = -1
     lx-in-range(c, B-DIG0, B-DIG9) -> {
+
         #{overflow=wrap}
         v = c - B-DIG0
     }
     lx-in-range(c, B-LO-A, 102) -> {
+
         #{overflow=wrap}
         v = (c - B-LO-A) + 10
     }
     lx-in-range(c, B-UP-A, 70) -> {
+
         #{overflow=wrap}
         v = (c - B-UP-A) + 10
     }
@@ -277,9 +280,11 @@ lx-is-ws = (c i64) (yes bool) {
 lx-sub = (s []byte, a i64, b i64) (r str) {
     t = sb.init(16)
     i = a
+
     #{overflow=wrap}
     (i < b) {
         t.push-byte(s[i])
+
         #{overflow=wrap}
         i = i + 1
     }
@@ -299,9 +304,11 @@ lx-ch-str = (c i64) (r str) {
 ; v: 值
 ; c: 結果字元
 lx-hex-digit = (v i64) (c i64) {
+
     #{overflow=wrap}
     c = v + B-DIG0
     v >= 10 -> {
+
         #{overflow=wrap}
         c = v + 87
     }
@@ -310,11 +317,13 @@ lx-hex-digit = (v i64) (c i64) {
 ; 功能待補充
 ; b: 運算元
 ; c: 運算元
-lx-esc-hex = (b sb, c i64) () {
+lx-esc-hex = (b sb, c i64) {
     b.push-byte(B-BS)
     b.push-byte(B-LOWER-X)
+
     #{overflow=wrap}
     hi = c / 16
+
     #{overflow=wrap}
     lo = c % 16
     b.push-byte(lx-hex-digit(hi))
@@ -324,7 +333,7 @@ lx-esc-hex = (b sb, c i64) () {
 ; esc-byte：把一個位元組按約定轉義後追加到 b
 ; b: 運算元
 ; c: 運算元
-lx-esc-byte = (b sb, c i64) () {
+lx-esc-byte = (b sb, c i64) {
     c == B-BS -> {
         b.push-byte(B-BS)
         b.push-byte(B-BS)
@@ -366,6 +375,7 @@ lx-esc = (s []byte) (r str) {
         r = '-'
         return
     }
+
     #{overflow=wrap}
     b = sb.init(n + 8)
     i <- [0..n): {
@@ -399,16 +409,19 @@ lx-new = (src []byte) (r lxst) {
 ; readChar：前進一個位元組。column 逐位元組遞增；見到 '\n' 時 line++ 且 column 歸零。
 ; ⚠️ 這裡「先取 ch 再前進」的順序是照抄的，別改成先前進。
 ; lx: 輸入
-lx-read-char = (lx lxst) () {
+lx-read-char = (lx lxst) {
     n = lx.input.len()
     lx.rpos >= n -> lx.ch = 0
     lx.rpos < n -> lx.ch = lx.input[lx.rpos]
     lx.pos = lx.rpos
+
     #{overflow=wrap}
     lx.rpos = lx.rpos + 1
+
     #{overflow=wrap}
     lx.col = lx.col + 1
     lx.ch == B-LF -> {
+
         #{overflow=wrap}
         lx.line = lx.line + 1
         lx.col = 0
@@ -426,7 +439,7 @@ lx-peek = (lx lxst) (c i64) {
 
 ; 功能待補充
 ; lx: 輸入
-lx-skip-ws = (lx lxst) () {
+lx-skip-ws = (lx lxst) {
     (lx-is-ws(lx.ch)) {
         lx-read-char(lx)
     }
@@ -434,7 +447,7 @@ lx-skip-ws = (lx lxst) () {
 
 ; skip-to-eol：前進到 '\n' 或 EOF（不消耗換行）
 ; lx: 輸入
-lx-skip-to-eol = (lx lxst) () {
+lx-skip-to-eol = (lx lxst) {
     stop = false
     (stop == false) {
         c = lx.ch
@@ -595,6 +608,7 @@ lx-str-esc = (lx lxst, buf sb) (trailing bool) {
                 trailing = false
                 return
             }
+
             #{overflow=wrap}
             buf.push-byte((hi * 16) + lo)
         }
@@ -739,6 +753,7 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
     }
     lx-read-char(lx)
     fb = sb.init(8)
+
     ; ⚠️ 這裡的「跳出」必須在**迴圈體內**設旗標（Go 是 `else { break }`）。
     ;    若只把 hit 當迴圈條件，遇到「不是字母」時迴圈體不推進也不改條件
     ;    ⇒ 無限迴圈（實測：`/a/` 在 EOF 後掛死）。
@@ -771,6 +786,7 @@ lx-read-regex = (lx lxst) (pat str, flags str, ok bool) {
 ; yes: 是否成立
 lx-block-boundary = (lx lxst) (yes bool) {
     n = lx.input.len()
+
     #{overflow=wrap}
     i = lx.rpos + 1
     yes = true
@@ -782,6 +798,7 @@ lx-block-boundary = (lx lxst) (yes bool) {
             c != B-LF -> {
                 w = lx-is-ws(c)
                 w -> {
+
                     #{overflow=wrap}
                     i = i + 1
                 }
@@ -849,7 +866,6 @@ lx-regex-start = (lx lxst) (yes bool) {
         yes = false
 
         return
-
     }
     p == tok.INT -> {
         yes = false
@@ -929,7 +945,6 @@ lx-regex-start = (lx lxst) (yes bool) {
         yes = false
 
         return
-
     }
     p == tok.LABEL -> {
         yes = false
@@ -979,6 +994,7 @@ lx-fmt = (t tk) (r str) {
     b.push(lx-esc(t.emsg.to-bytes()))
     r = b.str()
 }
+
 ; ═══════════════════════════════════════════════════════════════════
 ; scan-token：照抄 src/lexer/lexer.go 的 scanToken()
 ; ═══════════════════════════════════════════════════════════════════
@@ -990,7 +1006,7 @@ lx-fmt = (t tk) (r str) {
 ; 功能待補充
 ; lx: 輸入
 ; t: 輸入
-lx-scan-token = (lx lxst, t tk) () {
+lx-scan-token = (lx lxst, t tk) {
     lx-skip-ws(lx)
     ln = lx.line
     cl = lx.col
@@ -1298,32 +1314,36 @@ lx-scan-token = (lx lxst, t tk) () {
         }
 
         c == B-LP -> {
-
             typ = tok.LPAREN
 
             lit = '('
-
         }
+
         c == B-RP -> {
             typ = tok.RPAREN
             lit = ')'
         }
+
         c == B-LC -> {
             typ = tok.LBRACE
             lit = '{'
         }
+
         c == B-RC -> {
             typ = tok.RBRACE
             lit = '}'
         }
+
         c == B-LB -> {
             typ = tok.LBRACKET
             lit = '['
         }
+
         c == B-RB -> {
             typ = tok.RBRACKET
             lit = ']'
         }
+
         c == B-COMMA -> {
             typ = tok.COMMA
             lit = ','
@@ -1363,11 +1383,9 @@ lx-scan-token = (lx lxst, t tk) () {
         }
 
         c == B-COLON -> {
-
             typ = tok.COLON
 
             lit = ':'
-
         }
 
         c == B-US -> {
@@ -1405,12 +1423,11 @@ lx-scan-token = (lx lxst, t tk) () {
         }
 
         c == B-AT -> {
-
             typ = tok.AT
 
             lit = '@'
-
         }
+
         c == B-TILDE -> {
             typ = tok.TILDE
             lit = '~'
@@ -1532,6 +1549,7 @@ lx-scan-token = (lx lxst, t tk) () {
     done == false -> lx-read-char(lx)
     lx.prev = typ
     lx.last = typ
+
     ; 掃描的產物一律寫進 t（M2 起：不再直接渲染）
     t.ln = ln
     t.cl = cl
@@ -1540,6 +1558,7 @@ lx-scan-token = (lx lxst, t tk) () {
     t.raw = raw
     t.mk = mk
     t.emsg = emsg
+
     #{overflow=wrap}
     lx.count = lx.count + 1
 }

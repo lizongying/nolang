@@ -225,3 +225,101 @@ func TestFormatLineScopedOverflowPreservedInPlace(t *testing.T) {
 		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
 	}
 }
+
+// REGRESSION GUARD (a short multi-line infix collapses to one line).
+//
+// A multi-line infix whose operands fit comfortably on one line was an
+// incidental source break, not the long string-concat idiom. Previously
+// formatInfixExpression always preserved the source split, so
+//
+//	d = 1 +
+//	2
+//
+// was reformatted to `d = 1 +\n    2` (the continuation aligned to the RHS
+// column). It must instead collapse to `d = 1 + 2`. Long concatenation chains
+// (covered by the str1/INVSBOX case) stay split.
+func TestFormatShortMultilineInfixCollapses(t *testing.T) {
+	in := "d = 1 +\n2\n"
+	want := "d = 1 + 2\n"
+	out, errs := FormatFileWithErrors(in)
+	if len(errs) > 0 {
+		t.Fatalf("format errors: %v", errs)
+	}
+	if out != want {
+		t.Fatalf("short multi-line infix not collapsed:\n--- want ---\n%q\n--- got ---\n%q", want, out)
+	}
+	out2, _ := FormatFileWithErrors(out)
+	if out2 != out {
+		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
+	}
+}
+
+// REGRESSION GUARD (struct field trailing `;` comments must stay in place).
+//
+// Struct fields are not Statements, so the parser never ran attachInlineComment
+// on them and the formatter never emitted field.GetComment(). The comments were
+// left in the parser's buffered comment queue, then drained by the enclosing
+// block as *trailing* comments of the struct body and re-emitted AFTER the
+// closing brace:
+//
+//	ast {
+//	    str-k []str; interning table
+//	}
+//
+// became
+//
+//	ast {
+//	    str-k []str
+//	}
+//
+//	; interning table
+//
+// i.e. the comment silently drifted out of the field it documents. Fields must
+// keep their own trailing comment, exactly as `compiler/src/ast.no` relies on.
+func TestFormatStructFieldTrailingCommentsPreserved(t *testing.T) {
+	in := "ast {\n" +
+		"    nodes []nd\n" +
+		"    str-k []str; string-interning hash table (open addressing; grows on demand)\n" +
+		"    str-v []i64; maps interned string -> index in strs\n" +
+		"    str-n i64; live entry count in str-k/str-v (drives load-factor growth)\n" +
+		"}\n"
+	out, errs := FormatFileWithErrors(in)
+	if len(errs) > 0 {
+		t.Fatalf("format errors: %v", errs)
+	}
+	if out != in {
+		t.Fatalf("struct field trailing comments not preserved:\n--- want ---\n%q\n--- got ---\n%q", in, out)
+	}
+	// The comments must not be relocated below the struct body.
+	if strings.Contains(out, "}\n\n;") {
+		t.Fatalf("field comments drifted past the closing brace:\n%q", out)
+	}
+	out2, _ := FormatFileWithErrors(out)
+	if out2 != out {
+		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
+	}
+}
+
+// REGRESSION GUARD (doc comment on a line above a struct field survives).
+//
+// The same comment-queue plumbing that dropped trailing field comments also
+// mis-attached a field's standalone `;` doc line: it stayed buffered and was
+// emitted as a trailing comment after the struct instead of above the field.
+func TestFormatStructFieldDocCommentPreserved(t *testing.T) {
+	in := "ast {\n" +
+		"    ; doc line for a\n" +
+		"    a i64\n" +
+		"    b i64; trailing b\n" +
+		"}\n"
+	out, errs := FormatFileWithErrors(in)
+	if len(errs) > 0 {
+		t.Fatalf("format errors: %v", errs)
+	}
+	if out != in {
+		t.Fatalf("struct field doc comment not preserved:\n--- want ---\n%q\n--- got ---\n%q", in, out)
+	}
+	out2, _ := FormatFileWithErrors(out)
+	if out2 != out {
+		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
+	}
+}

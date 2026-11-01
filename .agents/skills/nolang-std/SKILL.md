@@ -191,7 +191,7 @@ x = err('msg')      ; Set to error
 x: {
     val -> f(it)
     nil ->
-    err -> g(it)
+    err -> g(it.msg())
 }
 ```
 
@@ -1161,7 +1161,7 @@ client: {
         ev = client.next-event()     ; Returns ?sse-event (nil=EOF, err=error)
         ev: {
             nil -> print('connection closed')
-            err -> print('error: ' - it)
+            err -> print('error: ' - it.msg())
             -> print(ev.data)
         }
         client.close()
@@ -2711,7 +2711,7 @@ doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\
 doc: {
     nil -> print('nil')
 
-    err -> print(it)
+    err -> print(it.msg())
 
     -> {
         doc = it

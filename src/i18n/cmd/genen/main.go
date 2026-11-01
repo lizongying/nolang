@@ -19,12 +19,12 @@
 //     catalog with Chinese, so an untranslated anchor stays absent and falls back
 //     to the comment at runtime. `-doc-missing` lists what is left to translate.
 //
-// A third output, en-alias.noml, holds the localized display names (别名) of
-// every std function/method, keyed by the same doc anchor but scoped to
-// src/std. Unlike doc catalogs an alias catalog is expected to be COMPLETE —
-// the key domain is finite and machine-checkable — and `-alias-missing` lists
-// the std anchors still without a name. Values are hand-written; the generator
-// only prunes keys that no longer exist.
+// A third output, en-alias.noml, holds the localized display names (别名) and
+// keystroke columns of every std function/method, keyed by the same doc anchor
+// but scoped to src/std. Unlike doc catalogs an alias catalog is expected to be
+// COMPLETE — the key domain is finite and machine-checkable — and
+// `-alias-missing` lists the std anchors still without a name. Values are
+// hand-written; the generator only prunes keys that no longer exist.
 package main
 
 import (
@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/i18n/catalog"
 	"github.com/lizongying/nolang/i18n/docscan"
 	"github.com/lizongying/nolang/i18n/msgscan"
@@ -156,9 +157,16 @@ func scanDocs(root, out string) (map[string]string, []string, error) {
 	}
 	existing := map[string]string{}
 	if data, err := os.ReadFile(out); err == nil {
-		if m, perr := catalog.ParseCatalogData(out, data); perr == nil {
-			existing = m
+		m, perr := catalog.ParseCatalogData(out, data)
+		if perr != nil {
+			// Swallowing this would prune every translation away and then write
+			// the empty result back, i.e. one `make i18n` would delete the
+			// file's contents because one entry was malformed.
+			return nil, nil, perr
 		}
+		existing = m
+	} else if !os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("reading %s: %w", out, err)
 	}
 	return catalog.PruneDocTranslations(scanned, existing),
 		catalog.MissingDocTranslations(scanned, existing), nil
@@ -167,7 +175,7 @@ func scanDocs(root, out string) (map[string]string, []string, error) {
 // scanAliases prunes the committed alias catalog down to anchors the std
 // sources still declare. The scope is `src/std` on purpose: an alias names a
 // public API surface, and only std functions have that surface.
-func scanAliases(root, out string) (map[string]string, []string, error) {
+func scanAliases(root, out string) (map[string]i18n.AliasEntry, []string, error) {
 	entries, err := docscan.Scan(root)
 	if err != nil {
 		return nil, nil, fmt.Errorf("scanning doc links: %w", err)
@@ -180,11 +188,15 @@ func scanAliases(root, out string) (map[string]string, []string, error) {
 			scanned[e.Anchor] = true
 		}
 	}
-	existing := map[string]string{}
+	existing := map[string]i18n.AliasEntry{}
 	if data, err := os.ReadFile(out); err == nil {
-		if m, perr := catalog.ParseCatalogData(out, data); perr == nil {
-			existing = m
+		m, perr := catalog.ParseAliasCatalogData(out, data)
+		if perr != nil {
+			return nil, nil, perr
 		}
+		existing = m
+	} else if !os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("reading %s: %w", out, err)
 	}
 	return catalog.PruneAliasTranslations(scanned, existing),
 		catalog.MissingAliasTranslations(scanned, existing), nil

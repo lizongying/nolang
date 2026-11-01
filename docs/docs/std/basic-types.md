@@ -45,7 +45,7 @@ x = err('msg')      ; 設為錯誤
 x: {
     val -> f(it)
     nil ->
-    err -> g(it)
+    err -> g(it.msg())
 }  
 ```
 

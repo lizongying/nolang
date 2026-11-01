@@ -119,13 +119,19 @@ BuiltinMethod{
    option {
        ok(v t),
        nil,
-       err(e str),
+       err(e error.err),
    }
    ```
 
    置 `TaggedEnumDefinition.Builtin`。變體（名稱/順序/載荷型別）登記進 `sem.EnumVariants`，
    驅動匹配與窮盡性檢查；但底層表示與構造由 builtin runtime 提供（`?t` option 用 `%option`
    型別與 `ok(...)`/`nil`/`err(...)` 構造器），**不生成使用者可見的 struct/union**。
+
+   > `err` 變體的載荷是 std/err 的結構化錯誤 `err.err`（`code` / `msg` / `file` / `line` /
+   > `col`），不再是 `str`（`global.no` 頂部以 `# std/err error` 引入，故寫成 `error.err`）。
+   > 三處必須一致：`src/std/global.no` 的宣告、`checker.errVariantPayloadType`、
+   > `mir.Module.OptionErrRaw`；任一漂移，match 的 `err ->` 臂裡 `it` 的型別就會與 codegen
+   > 實際存入載荷的內容不匹配（err.err 走裝箱指標，讀取側要先解箱）。
 
 > 歷史：早期寫法為 `#{buildin=NAME}`（帶 Go 側 builtin 鍵值）。由於查找只依賴裸名，
 > `=NAME` 屬冗餘，已統一簡化為 `#{buildin}`。

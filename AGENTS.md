@@ -115,8 +115,10 @@ Nolang 关键字极少、语法极简。**注意：`go` 不是关键字**——�
 `as`（**仅用于 FFI 指针类型转换**，如 `*byte` / `**byte` / `*i64`）`ptr` `chan` `map`
 `co`（无色 async 衍生）`self` `super` `it`。
 
-**`it`**：match 臂中的**隐式绑定**。`ok -> process(it)` 中 `it` 是解包值；`err -> log(it)` 中
-`it` 始终是**错误消息字符串**（`str`），与元素类型无关。`nil`/`err` 未被同时显式认领时，
+**`it`**：match 臂中的**隐式绑定**。`ok -> process(it)` 中 `it` 是解包值；`err ->` 臂中
+`it` 始终是**结构化错误 `err.err`**（std/err：`code` / `msg` / `file` / `line` / `col`），与元素类型无关——
+取纯消息用 `it.msg()`、带错误码与位置用 `it.format()`、比错误码用 `it.is(code.io)`；
+直接把 `it` 当 `str` 用（拼接 / 赋值给 `str`）会编译失败。`nil`/`err` 未被同时显式认领时，
 catch-all `->` 用 `it` 会编译错误（含义不唯一）。`it` 仅在 match 臂内可用，跨层级携带请复制到具名局部。
 
 > **最佳实践（option 解包首选 `it`）**：解包 **option `?t`** 时优先写 `ok -> ...(it)...`，而非
@@ -137,7 +139,7 @@ i <- [0..5): {
 }
 val: {
     nil -> print('empty')
-    err -> log(it)          ; it 是错误消息 str
+    err -> log.error(it.msg())   ; it 是 err.err，不是 str
     ok -> process(it)       ; it 是解包值
 }
 
@@ -162,7 +164,8 @@ val: {
 **特殊 / 高级**：`*t`（指针，仅 FFI `#{c}` 声明与标准库）`any`（仅标准库）`bigint` `err`。
 
 **Option（可失败 / 可空）**：前缀 `?` —— `?i64` `?str` `?[]str`。`?t` 是三态标签枚举
-`option { ok(v t), nil, err(e str) }`：`ok`（有值，隐式绑定）`nil`（空）`err(msg)`（错误）。
+`option { ok(v t), nil, err(e err.err) }`：`ok`（有值，隐式绑定）`nil`（空）`err`（结构化错误
+`err.err`，由 `err('msg')` / `err('msg', code.io)` 构造，位置在构造点自动注入）。
 解包优先用 `?t` 而非 `(val, ok bool)` 双返回。
 
 **联合类型别名**：`name = t1 | t2 | ...`，编译期按实参单态化（每个成员生成一份具体函数）。
@@ -328,8 +331,8 @@ holder { inl pt #{inline=true}  out pt #{inline=false} }
 | `str` | `.len()`(码点数) `.len-bytes()` `.cap` `.byte(i) ?byte` `.set-byte(i,b) ?bool` `.to-upper()` `.to-lower()` `.index()` `.contains()` `.slice()` `.copy()` `.fill()`；`with-cap(n)`；`s[i]` 码点索引 |
 | `vec` / `arr` | `vec-create(n, val)`；`[]t.eq(b)`；原地排序 `.asc()` `.desc()`；切片视图 `v[a..b)` |
 | `int` / `float` / `num` | `int.to-str()` `div` `mod`；`f64.sin() cos() tan() degrees() radians()`；`math.PI` `math.E`；具体类型转换见 `number` |
-| `err` | `err.new(msg, code=code.unknown)` `from-errno(errno)`；`code` 枚举（ok/not-found/permission/io/timeout/parse/invalid/overflow/unknown）；`e.is(ec)` `e.msg()` `e.code()` `e.format()` |
-| `fmt` | `print(...)` `format('{x}')`（仅认简单标识符，不解析 `.field`） |
+| `err` | `err.new(msg, code=code.unknown)` `from-errno(errno)`；`code` 枚举（ok/not-found/permission/io/timeout/parse/invalid/overflow/unknown）；`e.is(ec)` `e.msg()` `e.code()` `e.format()`；**`?t` 的 `err ->` 臂绑定的 `it` 就是这个 `err.err`（消息靠 `it.msg()`）** |
+| `fmt` / `log` | `print(...)` `format('{x}')`（仅认简单标识符，不解析 `.field`）；`log.debug/info/warn/error(msg)` `log.fatal(msg, code)`（**无**裸 `log(x)` 调用） |
 | `json` / `yaml` / `toml` | `t.to-json()` `t.to-noml()` 等序列化方法（接口方法，由实现类型提供） |
 | `fs` / `io` / `os` | `file` 结构体、`fs.list-dir`（**含 `.`/`..`，递归删除须用 `fs.dir-entries` 或显式跳过**）、`os.strerror(errno)` |
 | `net/*` | http / http2 / http3 / ws / quic / tls / sse / server / dns / url 等 |
@@ -467,7 +470,7 @@ res ?i64 = compute()
 res: {
     ok -> keep(it)
     nil -> r = 0
-    err -> log(it)
+    err -> log.error(it.msg())
 }
 ```
 

@@ -583,7 +583,7 @@ for i <- a {
 			`),
 			expected: strings.TrimSpace(`a [3] = [1, 2, 3]
 
-for i <- a: {
+i <- a: {
     print(i)
 }`),
 		},
@@ -599,7 +599,7 @@ for i <- a {
 			`),
 			expected: strings.TrimSpace(`a [3] = [1, 2, 3]
 
-for i <- a: {
+i <- a: {
     print(i)
 }`),
 		},

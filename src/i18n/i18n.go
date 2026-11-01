@@ -54,10 +54,11 @@ type Options struct {
 	DocLoad func(tag string) (map[string]string, error)
 	// AliasLoad returns the ALIAS catalog for a resolved tag — the localized
 	// display names (别名) of std functions/methods, keyed by the same doc
-	// anchors Doc uses. Like DocLoad, a missing table is not an error:
-	// nil, nil means "no aliases for this tag" and Alias falls back to the
-	// identifier itself.
-	AliasLoad func(tag string) (map[string]string, error)
+	// anchors Doc uses. A row also carries the keystroke columns completion
+	// filters on (see AliasEntry). Like DocLoad, a missing table is not an
+	// error: nil, nil means "no aliases for this tag" and Alias falls back to
+	// the identifier itself.
+	AliasLoad func(tag string) (map[string]AliasEntry, error)
 	// Canonical maps an alias onto the tag whose catalog file actually exists
 	// (e.g. "zh" -> "zh-CN"). Nil means identity. It is applied after Resolve
 	// and before Load, so the reported language is always the file's own tag.
@@ -67,6 +68,76 @@ type Options struct {
 	// Warn receives non-fatal notices (unknown explicit tag, rejected entries).
 	// Nil means discard.
 	Warn func(msg string)
+}
+
+// AliasEntry is one row of an alias catalog: the localized display name(s) of a
+// std function/method plus the keystroke strings a completion provider filters
+// on. Anchor is the doc anchor the row is keyed by (`args.get`), filled in from
+// the catalog's map key so a caller never has to pass it twice.
+//
+// The keystroke columns exist because the identifier is English while the
+// display name is not: a reader who knows the function as 获取参数 has no way to
+// spell `get`. Typing the localized name's initials (Keys), the English
+// identifier's initials (EnKeys, the same in every language), or — for Chinese
+// — the full pinyin / zhuyin keystrokes lets completion propose the identifier
+// instead.
+//
+//   - Alias  — 别名, e.g. ["获取参数"]. Alias[0] is what hover shows.
+//   - Keys   — initials of the localized name: `hqcs`.
+//   - EnKeys — initials of the identifier, language-independent: `g`.
+//   - Pinyin — full pinyin keystrokes, zh-CN only: `huoqucanshu`.
+//   - Zhuyin — zhuyin keyboard key positions, zh-TW only: `fm32k6h0gj4`.
+//
+// Every keystroke column is ASCII `[a-z0-9]`, because completion compares them
+// byte for byte against what the editor reports as typed text.
+type AliasEntry struct {
+	Anchor string
+	Alias  []string
+	Keys   string
+	EnKeys string
+	Pinyin string
+	Zhuyin string
+}
+
+// Display returns the display name for hover: the first non-empty alias, or the
+// identifier itself when the row has no translation. It never returns an empty
+// string for a non-empty anchor, so a caller can concatenate it unconditionally.
+func (e AliasEntry) Display() string {
+	for _, a := range e.Alias {
+		if a != "" {
+			return a
+		}
+	}
+	return IdentifierOf(e.Anchor)
+}
+
+// EnKeysOf derives EnKeys from an anchor: the first alphanumeric character of
+// each word of its final dotted segment, lowercased (`arr.arr-stack-pop` ->
+// `asp`, `arr.dec-128` -> `ad1`). It is a pure function of the anchor, which is
+// why the gate can demand every catalog's EnKeys equal it instead of trusting
+// 2106 hand-written cells.
+func EnKeysOf(anchor string) string {
+	id := IdentifierOf(anchor)
+	var sb strings.Builder
+	atWordStart := true
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			if atWordStart {
+				sb.WriteByte(c)
+				atWordStart = false
+			}
+		case c >= 'A' && c <= 'Z':
+			if atWordStart {
+				sb.WriteByte(c + ('a' - 'A'))
+				atWordStart = false
+			}
+		default:
+			atWordStart = true
+		}
+	}
+	return sb.String()
 }
 
 // defaultLang is the tag used when nothing else resolves, and the tag whose
@@ -85,8 +156,15 @@ var (
 	// are authored in whatever language their writer used).
 	docMsgs map[string]string
 	// aliasMsgs is the catalog Alias() reads: anchor -> localized display
-	// name. Same English rule as docMsgs — "en" has a table too.
-	aliasMsgs map[string]string
+	// name and its keystroke columns. Same English rule as docMsgs — "en" has
+	// a table too.
+	aliasMsgs map[string]AliasEntry
+	// aliasList is aliasMsgs as a slice sorted by Anchor. It exists so a
+	// completion provider gets a STABLE order out of a map (Go randomises
+	// iteration, which would make suggestions shuffle between keystrokes) and
+	// so it can range over everything without re-sorting per request. Both are
+	// built together and replaced together; never mutate either in place.
+	aliasList []AliasEntry
 
 	missMu sync.Mutex
 	missed map[string]struct{}
@@ -117,6 +195,7 @@ func SetLang(tag string) {
 	msgs = nil
 	docMsgs = nil
 	aliasMsgs = nil
+	aliasList = nil
 	msgMu.Unlock()
 }
 
@@ -247,19 +326,38 @@ func Errorf(id, def string, args ...any) error {
 // SetAliasCatalog installs the table Alias reads. Like SetDocCatalog it is
 // installed under every language including "en"; a nil or empty table means
 // "no aliases", so Alias falls back to the identifier.
-func SetAliasCatalog(table map[string]string) {
+//
+// The table is deep-copied (including each Alias slice) because the caller — a
+// catalog loader — may reuse its buffers, and a completion provider hands the
+// entries out on a hot path where a torn read would be invisible until a user
+// saw a garbled suggestion.
+func SetAliasCatalog(table map[string]AliasEntry) {
 	if len(table) == 0 {
 		msgMu.Lock()
 		aliasMsgs = nil
+		aliasList = nil
 		msgMu.Unlock()
 		return
 	}
-	cp := make(map[string]string, len(table))
-	for k, v := range table {
-		cp[k] = v
+	byAnchor := make(map[string]AliasEntry, len(table))
+	list := make([]AliasEntry, 0, len(table))
+	for anchor, e := range table {
+		// An anchor with no display name carries nothing Alias() could use;
+		// dropping it keeps AliasEntries() free of rows that would only ever
+		// suggest the identifier back to the user.
+		if anchor == "" || len(e.Alias) == 0 {
+			continue
+		}
+		cp := e
+		cp.Anchor = anchor
+		cp.Alias = append([]string(nil), e.Alias...)
+		byAnchor[anchor] = cp
+		list = append(list, cp)
 	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Anchor < list[j].Anchor })
 	msgMu.Lock()
-	aliasMsgs = cp
+	aliasMsgs = byAnchor
+	aliasList = list
 	msgMu.Unlock()
 }
 
@@ -276,12 +374,39 @@ func Alias(anchor string) string {
 		return ""
 	}
 	msgMu.RLock()
-	t := aliasMsgs[anchor]
+	e := aliasMsgs[anchor]
 	msgMu.RUnlock()
-	if t != "" {
-		return t
+	if d := e.Display(); d != "" {
+		return d
 	}
 	return IdentifierOf(anchor)
+}
+
+// AliasEntryOf returns the full row for an anchor — display names plus the
+// keystroke columns — and reports whether the catalog has one at all. Callers
+// that only need the display name should use Alias.
+func AliasEntryOf(anchor string) (AliasEntry, bool) {
+	if anchor == "" {
+		return AliasEntry{}, false
+	}
+	msgMu.RLock()
+	e, ok := aliasMsgs[anchor]
+	msgMu.RUnlock()
+	return e, ok
+}
+
+// AliasEntries returns every installed row, ordered by Anchor.
+//
+// The slice is the living table, not a copy: it is replaced wholesale on the
+// next SetAliasCatalog, so a caller may range over the returned value but must
+// not modify it or hold it across an Init. That is the same contract Doc and
+// Alias have always had, and it is what keeps a 2106-row completion filter off
+// the allocator.
+func AliasEntries() []AliasEntry {
+	msgMu.RLock()
+	list := aliasList
+	msgMu.RUnlock()
+	return list
 }
 
 // IdentifierOf extracts the final dotted segment of a doc anchor — the raw
@@ -405,6 +530,7 @@ func WithLang(tag string, fn func()) {
 	prevMsgs := msgs
 	prevDocs := docMsgs
 	prevAliases := aliasMsgs
+	prevAliasList := aliasList
 	msgMu.RUnlock()
 	defer func() {
 		langVal.Store(prevLang)
@@ -412,6 +538,7 @@ func WithLang(tag string, fn func()) {
 		msgs = prevMsgs
 		docMsgs = prevDocs
 		aliasMsgs = prevAliases
+		aliasList = prevAliasList
 		msgMu.Unlock()
 	}()
 	SetLang(tag)

@@ -1304,6 +1304,21 @@ func (p *Parser) parseTaggedEnumVariantType() string {
 	return ""
 }
 
+// attachFieldComment consumes the first buffered comment token if it sits on the
+// same source line as the field-name token and attaches it as the field's inline
+// (trailing) Comment. Struct fields are not Statements, so the general
+// attachInlineComment (which switches on Statement type) cannot be reused here.
+func (p *Parser) attachFieldComment(field *StructField) {
+	if field == nil || len(p.comments) == 0 {
+		return
+	}
+	if p.comments[0].Line != field.Token.Line {
+		return
+	}
+	field.Comment = commentGroupFromTokens(p.comments[:1])
+	p.comments = p.comments[1:]
+}
+
 func (p *Parser) parseStructDefinition() Statement {
 	sd := &StructDefinition{
 		Token:  p.currentToken,
@@ -1381,10 +1396,17 @@ func (p *Parser) parseStructDefinition() Statement {
 			return nil
 		}
 
+		// Take any Doc comments that appeared on standalone lines above this field.
+		// advanceCollect has already buffered them into p.comments; at this point only
+		// Doc comments for the upcoming field remain (trailing comments for prior fields
+		// are consumed by attachFieldComment before the loop restarts).
+		fieldDoc := p.collectDocComments()
+
 		field := &StructField{
 			Token: p.currentToken,
 			Name:  p.currentToken.Literal,
 		}
+		field.Doc = fieldDoc
 		// 欄位級註解記錄到語義副表（side-table），不掛載到節點。
 		if len(fieldAnnotations) > 0 {
 			p.sem.SetRawAnnotations(field, fieldAnnotations)
@@ -1517,6 +1539,12 @@ func (p *Parser) parseStructDefinition() Statement {
 			}
 			p.sem.SetRawAnnotations(field, fieldAnnotations)
 		}
+
+		// Attach any trailing `;` comment on the same line as this field.
+		// advanceCollect buffered it into p.comments when the parser advanced
+		// past the field's last type token. Must be consumed here (before the
+		// loop restarts) so it does not leak to the next field's Doc.
+		p.attachFieldComment(field)
 
 		sd.Fields = append(sd.Fields, field)
 

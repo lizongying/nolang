@@ -412,6 +412,7 @@ clang not detected; check that the LLVM toolchain is fully installed
   'jwegl6bv': 'multi-assignment target `%s` is written through an index without unwrapping: an index read returns an option (nil when out of range), so writing straight through it turns an out-of-range access into an unchecked out-of-range write. Split that target out into a place-match (`it` in the ok arm is the element position, readable and writable), or propagate with `?=` in a function that returns an option.'
   'k0fwb241': 'export alias \'%s\' is the same as the function name; the alias can be omitted'
   'k1h5kums': 'reading %s: %w'
+  'k2m9xq4t': 'cannot apply arithmetic between `char` and `%s` (%s): a char is a single code point (i32) and only combines with integers, chars or strings. If you meant string concatenation, use a string literal — `\'x\' - %s` renders the operand through to-str'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: no result slot'
   'k8je3usi': '%s already exists and is not an ES module (no "type": "module"); emit the output as .mjs instead (no build --js -o out.mjs)'

@@ -121,6 +121,22 @@ c = e.code()                        ; 取得錯誤碼
 s = e.format()                       ; 格式化為字串
 ```
 
+這個 `err` 結構體就是內建 option 的 `err` 變體載荷（`option { ok(v t), nil, err(e err.err) }`）：
+匹配 `?t` 時 `err ->` 臂裡隱式綁定的 `it` 就是它，而不是 `str`。
+
+```no
+x = f()               ; f 返回 ?i64
+x: {
+    ok -> n = it
+    nil -> n = 0
+    err -> {
+        log.error(it.msg())        ; 純訊息
+        print(it.format())         ; 'code.unknown: ... at file:line:col'
+        it.is(code.io) -> print('io error')
+    }
+}
+```
+
 ### bool — 布爾型別
 
 ```no

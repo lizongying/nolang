@@ -42,11 +42,11 @@ t-parse-str = () {
     r: {
         ok -> {
             ok = it.is-str()
-            s = it.get-str('')
+            s = it.str()
             s: {
                 ok -> {
                     found = true
-                    v = s
+                    v = it
                 }
 
                 nil -> found = false
@@ -73,11 +73,11 @@ t-parse-num = () {
     r: {
         ok -> {
             ok = it.is-num()
-            n = it.get-i64('')
+            n = it.i64()
             n: {
                 ok -> {
                     found = true
-                    v = n
+                    v = it
                 }
 
                 nil -> found = false
@@ -115,13 +115,46 @@ t-parse-bool = () {
 t-parse-obj = () {
     r = noml.parse('{\n  a: 1\n  b: \'x\'\n  c: true\n}\n')
     ok = false
-    p = nil
-    doc = nil
+    ai = false
+    bfound = false
+    bv = ''
+    cfound = false
+    cv = false
     r: {
         ok -> {
             doc = it
-            p = it.pool
-            ok = it.is-obj()
+            p = doc.pool
+            ok = doc.is-obj()
+            ca = doc.get('a')
+            ca: {
+                ok -> ai = p.is-num(it)
+
+                nil -> ai = false
+
+                err -> ai = false
+            }
+            cb = doc.get-str('b')
+            cb: {
+                ok -> {
+                    bfound = true
+                    bv = it
+                }
+
+                nil -> bfound = false
+
+                err -> bfound = false
+            }
+            cc = doc.get-bool('c')
+            cc: {
+                ok -> {
+                    cfound = true
+                    cv = it
+                }
+
+                nil -> cfound = false
+
+                err -> cfound = false
+            }
         }
 
         nil -> ok = false
@@ -129,59 +162,41 @@ t-parse-obj = () {
         err -> ok = false
     }
     runner.is-true(ok, 'parse obj ok')
-    ca = doc.get('a')
-    ai = false
-    ca: {
-        ok -> ai = p.is-num(ca)
-
-        nil -> ai = false
-
-        err -> ai = false
-    }
     runner.is-true(ai, 'obj a is num')
-    cb = doc.get-str('b')
-    bfound = false
-    bv = ''
-    cb: {
-        ok -> {
-            bfound = true
-            bv = cb
-        }
-
-        nil -> bfound = false
-
-        err -> bfound = false
-    }
     runner.is-true(bfound, 'obj b found')
     runner.str-eq(bv, 'x', 1, 'obj b value')
-    cc = doc.get-bool('c')
-    cfound = false
-    cv = false
-    cc: {
-        ok -> {
-            cfound = true
-            cv = cc
-        }
-
-        nil -> cfound = false
-
-        err -> cfound = false
-    }
     runner.is-true(cfound, 'obj c found')
     runner.is-true(cv, 'obj c value')
 }
 
 ; 陣列解析與下標取值
 t-parse-arr = () {
-    r = noml.parse('[\n  1\n  2\n  3\n]\n')
+    r = noml.parse('[\n  1,\n  2,\n  3\n]\n')
     ok = false
-    doc = nil
-    p = nil
+    n = -1
+    v0 = -1
     r: {
         ok -> {
             doc = it
-            p = it.pool
-            ok = it.is-arr()
+            ok = doc.is-arr()
+            n = doc.len()
+            e0 = doc.at(0)
+            e0: {
+                ok -> {
+                    a0 = doc.pool.val-i64(it)
+                    a0: {
+                        ok -> v0 = it
+
+                        nil -> v0 = -1
+
+                        err -> v0 = -1
+                    }
+                }
+
+                nil -> v0 = -1
+
+                err -> v0 = -1
+            }
         }
 
         nil -> ok = false
@@ -189,16 +204,7 @@ t-parse-arr = () {
         err -> ok = false
     }
     runner.is-true(ok, 'parse arr ok')
-    runner.eq(doc.len(), 3, 'arr len')
-    e0 = doc.at(0)
-    v0 = 0
-    e0: {
-        ok -> v0 = p.val-i64(e0)
-
-        nil -> v0 = -1
-
-        err -> v0 = -1
-    }
+    runner.eq(n, 3, 'arr len')
     runner.eq(v0, 1, 'arr[0]')
 }
 
@@ -206,24 +212,26 @@ t-parse-arr = () {
 t-parse-nested = () {
     r = noml.parse('{\n  m: {\n    k: \'v\'\n  }\n  a: [1, 2]\n}\n')
     ok = false
+    ok2 = false
     r: {
-        ok -> ok = it.is-obj()
+        ok -> {
+            ok = it.is-obj()
+            s = it.stringify()
+            r2 = noml.parse(s)
+            r2: {
+                ok -> ok2 = true
+
+                nil -> ok2 = false
+
+                err -> ok2 = false
+            }
+        }
 
         nil -> ok = false
 
         err -> ok = false
     }
     runner.is-true(ok, 'parse nested ok')
-    s = r.stringify()
-    r2 = noml.parse(s)
-    ok2 = false
-    r2: {
-        ok -> ok2 = true
-
-        nil -> ok2 = false
-
-        err -> ok2 = false
-    }
     runner.is-true(ok2, 'nested reparse ok')
 }
 
@@ -233,15 +241,19 @@ t-parse-nested = () {
 t-comment = () {
     r = noml.parse('{\n  a: 1 ; 這是註解\n  b: 2\n}\n')
     ok = false
+    n = -1
     r: {
-        ok -> ok = it.is-obj()
+        ok -> {
+            ok = it.is-obj()
+            n = it.len()
+        }
 
         nil -> ok = false
 
         err -> ok = false
     }
     runner.is-true(ok, 'parse comment ok')
-    runner.eq(r.len(), 2, 'comment keeps 2 members')
+    runner.eq(n, 2, 'comment keeps 2 members')
 }
 
 ; 註解標記 `#{...}`（文件級 + 成員級）
@@ -251,19 +263,40 @@ t-annotation = () {
     ok = false
     fa = ''
     ffound = false
+    mfound = false
     r: {
         ok -> {
             ok = true
-            a = it.ann()
+            doc = it
+            a = doc.ann()
             a: {
                 ok -> {
                     ffound = true
-                    fa = a
+                    fa = it
                 }
 
                 nil -> ffound = false
 
                 err -> ffound = false
+            }
+
+            ; 成員級註解
+            ch = doc.get('host')
+            ch: {
+                ok -> {
+                    ma = doc.pool.ann(it)
+                    ma: {
+                        ok -> mfound = it.eq-full('c')
+
+                        nil -> mfound = false
+
+                        err -> mfound = false
+                    }
+                }
+
+                nil -> mfound = false
+
+                err -> mfound = false
             }
         }
 
@@ -274,28 +307,6 @@ t-annotation = () {
     runner.is-true(ok, 'parse annotation ok')
     runner.is-true(ffound, 'file ann found')
     runner.str-eq(fa, 'type = \'server\'', 15, 'file ann text')
-
-    ; 成員級註解
-    doc = r
-    p = doc.pool
-    ch = doc.get('host')
-    mfound = false
-    ch: {
-        ok -> {
-            ma = p.ann(ch)
-            ma: {
-                ok -> mfound = ma.eq-full('c')
-
-                nil -> mfound = false
-
-                err -> mfound = false
-            }
-        }
-
-        nil -> mfound = false
-
-        err -> mfound = false
-    }
     runner.is-true(mfound, 'member ann text')
 }
 
@@ -353,7 +364,7 @@ t-builder = () {
     nm: {
         ok -> {
             found = true
-            v = nm
+            v = it
         }
 
         nil -> found = false
@@ -367,7 +378,7 @@ t-builder = () {
     nn = d.get('note')
     isn = false
     nn: {
-        ok -> isn = d.pool.is-nil(nn)
+        ok -> isn = d.pool.is-nil(it)
 
         nil -> isn = false
 
@@ -386,7 +397,7 @@ t-builder = () {
             cn = it.get('note')
             cnil = false
             cn: {
-                ok -> cnil = p.is-nil(cn)
+                ok -> cnil = p.is-nil(it)
 
                 nil -> cnil = false
 
@@ -425,19 +436,35 @@ t-ann-write = () {
     ok = false
     fa = ''
     ff = false
+    avv = ''
+    avf = false
     r: {
         ok -> {
             ok = true
-            a = it.ann()
+            doc = it
+            a = doc.ann()
             a: {
                 ok -> {
                     ff = true
-                    fa = a
+                    fa = it
                 }
 
                 nil -> ff = false
 
                 err -> ff = false
+            }
+
+            ; ann-value 取出鍵值
+            av = doc.ann-value('type')
+            av: {
+                ok -> {
+                    avf = true
+                    avv = it
+                }
+
+                nil -> avf = false
+
+                err -> avf = false
             }
         }
 
@@ -448,21 +475,6 @@ t-ann-write = () {
     runner.is-true(ok, 'ann-write reparse ok')
     runner.is-true(ff, 'ann-write file ann found')
     runner.str-eq(fa, 'type = \'server\'', 15, 'ann-write file ann text')
-
-    ; ann-value 取出鍵值
-    av = r.ann-value('type')
-    avf = false
-    avv = ''
-    av: {
-        ok -> {
-            avf = true
-            avv = av
-        }
-
-        nil -> avf = false
-
-        err -> avf = false
-    }
     runner.is-true(avf, 'ann-value found')
     runner.str-eq(avv, 'server', 6, 'ann-value text')
 }
@@ -565,6 +577,7 @@ p7, f7 = runner.test('noml.parse-nested', t-parse-nested)
 p8, f8 = runner.test('noml.comment', t-comment)
 p9, f9 = runner.test('noml.annotation', t-annotation)
 p10, f10 = runner.test('noml.roundtrip', t-roundtrip)
+
 p11, f11 = runner.test('noml.builder', t-builder)
 p12, f12 = runner.test('noml.builder-arr', t-builder-arr)
 p13, f13 = runner.test('noml.ann-write', t-ann-write)

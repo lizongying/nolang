@@ -289,6 +289,7 @@ var lintSteps = []lintStep{
 	{"non-exhaustive-match", true, runLintNonExhaustiveMatch},
 	{"option-comparison", false, runLintOptionComparison},
 	{"str-ordering", false, runLintStrOrdering},
+	{"char-arith", false, runLintCharArith},
 	{"print-format", true, runLintPrintFormat},
 	{"cross-module-type-refs", true, runLintCrossModuleTypeRefs},
 	{"unresolved-module-calls", true, runLintUnresolvedModuleCalls},
@@ -499,6 +500,19 @@ func runLintOptionComparison(program *parser.Program, opts LintOptions) []LintRe
 func runLintStrOrdering(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, u := range ValidateStrOrderingTHIR(program, opts.thirView) {
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column, File: u.File,
+			Severity: LintError, Source: "nolang-type-checker",
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintCharArith — 19e. char 與非數值運算元（bool/f64/結構體/容器）的算術
+func runLintCharArith(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateCharArithTHIR(program, opts.thirView) {
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-type-checker",

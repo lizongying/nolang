@@ -590,9 +590,9 @@ func (f *formatter) formatForStatement(s *parser.ForStatement) {
 		return
 	}
 
-	// for 關鍵字形式的 range-for（已廢棄，向後相容輸出）：for i <- [a..b]: { body }
+	// for 關鍵字形式的 range-for（已廢棄）：歸一化為裸遍歷形式 `i <- [a..b]: { body }`，
+	// 丟掉 `for` 前綴，與文件其他遍歷寫法保持一致（见上方 bare 分支）。
 	if s.Token.Type == lexer.FOR && s.IterRange != nil && s.IterRange.Variable != "" {
-		f.write("for ")
 		f.write(s.IterRange.Variable)
 		f.write(" <- ")
 		if s.IterRange.RangeStr != "" {

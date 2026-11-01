@@ -643,7 +643,7 @@ doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\
 doc: {
     nil -> print('nil')
 
-    err -> print(it)
+    err -> print(it.msg())
 
     -> {
         doc = it
@@ -999,7 +999,7 @@ i <- [0..10): {
 ```no
 ; Simple form; it is used to access the argument
 x: {
-    err -> log(it)
+    err -> log(it.msg())        ; it is the structured error err.err
     nil -> log('nil')
     ->
         do-right-thing(it)
@@ -1007,7 +1007,7 @@ x: {
 
 ; Destructuring form
 x: {
-    err(e) -> log(e)
+    err(e) -> log(e.msg())
     nil -> log('nil')
     ok(v) ->
         do-right-thing(v)
@@ -1089,7 +1089,7 @@ x: {
         return
     }
     err -> {
-        log(it)
+        log(it.msg())
         do-cleanup()
         return
     }
@@ -1131,7 +1131,7 @@ w: {
 ; ✅ Or vice versa: name the simple branches, put complex logic in ->
 val: {
     nil -> return
-    err -> log(it)
+    err -> log(it.msg())
     -> {
         n = it
         total = total + n
@@ -1164,7 +1164,7 @@ val: {
 ; Implicit it binding
 val: {
     ok -> process(it)       ; it = unwrapped value
-    err -> log(it)          ; it = error message string
+    err -> log(it.msg())    ; it = structured error err.err (not str)
     -> log('empty')         ; catch-all; here it is nil
 }
 ```
@@ -1209,7 +1209,7 @@ unambiguous meaning only when exactly **one** case remains:
 ; ✅ -> is ok (nil and err are both claimed)
 v: {
     nil -> log('empty')
-    err -> log(it)
+    err -> log(it.msg())
     -> process(it)
 }
 
@@ -1217,7 +1217,7 @@ v: {
 v: {
     ok -> process(it)
     nil -> log('empty')
-    -> log(it)
+    -> log(it.msg())
 }
 
 ; ❌ -> may be nil or err — compile error
@@ -2115,7 +2115,7 @@ A single variant may carry **multiple** fields (a multi-field payload is represe
 result {
     ok(v t),        ; has a value: payload field v of type t
     nil,            ; null value: no payload
-    err(e str),     ; error: payload field e of type str
+    err(e str),     ; error: payload field e of type str (user-defined enum — unrelated to the builtin option)
 }
 
 shape {
@@ -2173,7 +2173,7 @@ is declared this way:
 option {
     ok(v t),
     nil,
-    err(e str),
+    err(e err.err),
 }
 ```
 
@@ -2438,9 +2438,14 @@ A nullable type variable can legitimately hold a null value or an error value; t
 option {
     ok(v t),        ; tag 0: has a value
     nil,            ; tag 1: null value
-    err(e str),     ; tag 2: error
+    err(e err.err), ; tag 2: error (the std structured error err.err)
 }
 ```
+
+The `err` variant's payload is **not a `str`** — it is the `err` struct from `std/err`
+(`code` / `msg` / `file` / `line` / `col`). `err('msg')` is the alias constructor for
+`err.new('msg')` and defaults to `code.unknown`; write `err('msg', code.io)` to set an error
+code. The position fields are injected by the compiler at the `err(...)` construction site.
 
 `#{buildin}` means the underlying representation and construction are provided by the built-in runtime (the `%option`
 type, and the `ok(...)`/`nil`/`err(...)` constructors); the `option` enum declaration exists only for matching and
@@ -2464,8 +2469,8 @@ nullableString = err('some error')
 
 ; Can be checked via match
 x: {
-    err -> log(it)
-    nil -> log(it)
+    err -> log(it.msg())      ; it is err.err; the message needs .msg()
+    nil -> log('nil')
     ->
         do-right-thing(it)
 }
@@ -2515,7 +2520,7 @@ Use match to unwrap an option:
 val = s.pop()
 val: {
     nil -> print('empty')
-    err -> print(it)          ; it = error message
+    err -> print(it.msg())    ; it = structured error err.err
     -> print(it)              ; it = popped value
 }
 ```

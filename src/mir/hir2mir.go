@@ -8423,11 +8423,16 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		rStr := rawOf(rv) == "str"
 		// Nolang quoting: `'...'` is a StringLiteral, `"..."` is a CharLiteral
 		// (already a byte-valued i64 here). A ONE-character StringLiteral paired
-		// with a non-string operand is BYTE arithmetic, not concatenation:
+		// with an INTEGER/CHAR operand is BYTE arithmetic, not concatenation:
 		// `'A' + 1` is 66 (tests/str-ops.no). Legacy's isStringExpr gates
 		// this on the sibling NOT being a string, so `'a' + 'b'` stays "ab".
 		// It applies to `+`/`-` only — for `*` a string literal is always a
 		// string (`'x' * 5` is repeat -> "xxxxx"), never a byte.
+		//
+		// "Integer/char operand" is narrower than "not a string" and has to
+		// stay that way: a bool sibling used to fold too, so `'x' - flag`
+		// computed 120 - 1 = 119 instead of concatenating to "xtrue". Only
+		// operands that can mean a byte value keep the fold.
 		//
 		// A `char` LITERAL sibling is the one exception: when both operands
 		// are literals the `'...'` operand stays a STRING, so `'x' - "a"` is
@@ -8444,15 +8449,36 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			sn := l.pkg.Node(lr[i])
 			return sn != nil && sn.Kind == hir.KCharLit
 		}
+		// The byte fold above is only sound when the OTHER operand can actually
+		// take part in byte arithmetic. `'A' + 1` is 66 and `c - '0'` is the
+		// digit value 5 — those siblings are integer/char-valued. A bool,
+		// float, struct, map or slice sibling has no byte meaning at all:
+		// `'x' - flag` folded `'x'` to 120 and answered 119, a number that
+		// silently replaced the intended concatenation "xtrue". `'...'` is a
+		// STRING literal, so when the sibling is not byte-arith the literal
+		// stays a str and the infix is concatenation.
+		// isIntegerMIRType is unusable as the predicate here: it reports true
+		// for "bool", which is exactly the case this has to exclude.
+		byteArithOperand := func(v ValueID) bool {
+			t := l.valueTypeOf(v)
+			if t == l.voidType || t == NoType {
+				return false
+			}
+			ty := l.mod.Type(t)
+			if ty == nil {
+				return false
+			}
+			return ty.Kind == KindInt || ty.Kind == KindChar
+		}
 		srcOp := l.pkg.Str(n.S)
 		if !isCmp && (srcOp == "+" || srcOp == "-") {
-			if sn := l.pkg.Node(lr[0]); sn != nil && sn.Kind == hir.KStrLit && !rStr && !charLitSibling(1) {
+			if sn := l.pkg.Node(lr[0]); sn != nil && sn.Kind == hir.KStrLit && !rStr && !charLitSibling(1) && byteArithOperand(rv) {
 				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
 					lv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
 					lStr = false
 				}
 			}
-			if sn := l.pkg.Node(lr[1]); sn != nil && sn.Kind == hir.KStrLit && !lStr && !charLitSibling(0) {
+			if sn := l.pkg.Node(lr[1]); sn != nil && sn.Kind == hir.KStrLit && !lStr && !charLitSibling(0) && byteArithOperand(lv) {
 				if b, ok := singleCharStrByte(l.pkg.Str(sn.S)); ok {
 					rv = l.b.EmitInt(OpConst, l.b.Type("i64"), b, "")
 					rStr = false
@@ -8599,6 +8625,24 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			if ty := l.mod.Type(resTyp); ty != nil && ty.Raw == "str" {
 				resTyp = l.b.Type("i64")
 			}
+		}
+		// `str - X` / `str + X` must render X as a string. codegen natively
+		// renders integers (decimal) and chars (UTF-8) and widens a `txt`
+		// operand, so those keep the direct path. Everything else — bool,
+		// f64, struct, map, slice, array — has no native rendering and used
+		// to reach @str_concat as a raw value, which LLVM rejects outright:
+		//   `'b=' - flag`  -> call @str_concat(%str-long, i1)     (bool)
+		//   `'f=' - ratio` -> call @str_concat(%str-long, double) (f64)
+		//   `'p=' - pt`    -> call @str_concat(%str-long, %point) (struct)
+		// Stringify them through the language's `to-str` auto-execution — the
+		// same choke point print uses — so the concatenation form agrees with
+		// `flag.to-str()` / `pt.to-str()`. `*` is deliberately excluded: `s * n`
+		// is string repeat, and its count must stay an integer.
+		// Gate on a genuine concatenation (at least one operand is a string):
+		// plain `f + g` float / `pt - pt` arithmetic must never stringify.
+		if !isCmp && (srcOp == "+" || srcOp == "-") && (lStr || rStr) {
+			lv = l.concatOperandToStr(lv, lStr)
+			rv = l.concatOperandToStr(rv, rStr)
 		}
 		// String equality/inequality cannot be a direct `icmp` (str is a struct),
 		// so route it through the runtime @str_eq helper via OpStrEq. `!=` negates
@@ -11031,16 +11075,13 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 	// "unsupported construct ... format field type f32 not lowered"。
 	case raw == "f64" || raw == "f32" || raw == "float" || raw == "double":
 		fn = "fmt-f64"
-		// NOTE: `bool` deliberately does NOT go through std fmt-bool here.
-		// fmt-bool renders "true"/"false", but the legacy backend renders a
-		// bool format field as "1"/"0" in function bodies (its varTypes table
-		// does not expose i1 for locals, so dispatchFmtCall falls through to
-		// fmt-int) — the same 1/0 that MIR's own print_bool emits for plain
-		// `print(b)`. Routing through fmt-int keeps MIR self-consistent
-		// (print(b) and print('{b}') agree) and matches the corpus-dominant
-		// legacy output. Only legacy's top-level-script mode prints "true",
-		// which is the inconsistent case (its print(b) prints "true" there
-		// too — MIR standardizes on 1/0 for both).
+	case raw == "bool":
+		// std fmt-bool renders "true"/"false" (and honours the format spec,
+		// e.g. `{b:>6}`), agreeing with print(b), `'b=' - b` and b.to-str().
+		// fmt-int — the branch that would otherwise catch bool, since
+		// isIntegerMIRType accepts it — renders the i1 representation as
+		// "1"/"0".
+		fn = "fmt-bool"
 	case raw == "" || strings.HasPrefix(raw, "option") || strings.HasPrefix(raw, "[]") ||
 		ty.IsContainerRaw(raw) || strings.Contains(raw, "{"):
 		// Container / option / unknown: legacy has no fmt-* helper for these
@@ -12950,6 +12991,35 @@ func (l *lowerer) mapFieldsToStr(v ValueID, ty *Type) ValueID {
 	return out
 }
 
+// concatOperandToStr renders one operand of a `+`/`-` string concatenation as
+// a `%str-long`. Operands codegen can already render are returned untouched:
+//
+//   - str          already a string
+//   - int / char   codegen's strFromScalar (decimal, or UTF-8 for a char)
+//   - txt          codegen widens it to %str-long. It also LAYS OUT as a
+//     struct, so it must be excluded before the KindStruct
+//     branch: valueToStr would call txt.to-str instead of widening.
+//   - option / ptr no string form; keep the old path so the error surfaces
+//     instead of being masked by a bogus conversion.
+//
+// Everything else — bool, f64, struct, map, slice, array — goes through
+// valueToStr, the same `to-str` auto-execution print uses. bool therefore
+// renders "true"/"false" here for the same reason print(b) does.
+func (l *lowerer) concatOperandToStr(v ValueID, alreadyStr bool) ValueID {
+	if alreadyStr || v == NoVal {
+		return v
+	}
+	ty := l.mod.Type(l.valueTypeOf(v))
+	if ty == nil || ty.Raw == "txt" {
+		return v
+	}
+	switch ty.Kind {
+	case KindInt, KindChar, KindOption, KindPtr, KindVoid, KindUnknown, KindEnum, KindFunc:
+		return v
+	}
+	return l.valueToStr(v)
+}
+
 // concatStr concatenates two `%str-long` values via the synthetic $str_concat
 // helper used elsewhere by the named-format lowering.
 func (l *lowerer) concatStr(a, b ValueID) ValueID {
@@ -12977,6 +13047,17 @@ func (l *lowerer) scalarOrStrToStr(v ValueID, t *Type) ValueID {
 	case raw == "f64" || raw == "f32" || raw == "float" || raw == "double":
 		l.enqueueCallee("fmt-f64")
 		if d := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{v, l.b.EmitStr(OpConst, strT, "", "")}, "fmt-f64"); len(d) > 0 {
+			return d[0]
+		}
+		return v
+	case raw == "bool":
+		// bool.to-str renders "true"/"false" — the documented form, and the one
+		// `b.to-str()` produces. fmt-int (the generic integer path) would leak
+		// the i1 representation as "1"/"0", so print(b), `{b}` and `'b=' - b`
+		// would all disagree with an explicit to-str call.
+		// No enqueueCallee: a builtin has no HIR body to lower; codegen
+		// dispatches the forward symbol straight to emitBuiltinBoolToStr.
+		if d := l.b.EmitCallMulti([]TypeID{strT}, []ValueID{v}, "bool-to-str"); len(d) > 0 {
 			return d[0]
 		}
 		return v

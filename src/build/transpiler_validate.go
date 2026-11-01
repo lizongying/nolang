@@ -2,6 +2,7 @@ package build
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/lizongying/nolang/checker"
 	"github.com/lizongying/nolang/parser"
@@ -489,8 +490,14 @@ func isStringExprForCollect(expr parser.Expression, strSizes map[string]int64, f
 	return false
 }
 
-// isStringExpr checks if an expression is a string type
-func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
+// isStringExpr checks if an expression is a string type.
+//
+// varTypes is only consulted for the infix case: `-`/`+`/`*` with a str on one
+// side concatenates (or repeats), and the OTHER operand is rendered as a
+// string whenever it is provably not an integer/char. Without the type table
+// `'x' - flag` (a bool variable) is indistinguishable from `'x' - c` (a char
+// variable), and only the latter is byte arithmetic.
+func isStringExpr(expr parser.Expression, stringSizes map[string]int64, varTypes map[string]string) bool {
 	switch e := expr.(type) {
 	case *parser.StringLiteral:
 		return true
@@ -501,11 +508,34 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 		_, exists := stringSizes[e.Value]
 		return exists
 	case *parser.GroupedExpression:
-		return isStringExpr(e.Expression, stringSizes)
+		return isStringExpr(e.Expression, stringSizes, varTypes)
 	case *parser.InfixExpression:
-		// String concatenation: when both sides are strings, the result is a string
-		if e.Operator == "-" {
-			return isStringExpr(e.Left, stringSizes) && isStringExpr(e.Right, stringSizes)
+		// `*` is string REPEAT: `'x' * 5` is "xxxxx". The count stays an
+		// integer, so a str on either side is enough.
+		if e.Operator == "*" {
+			return isStringExpr(e.Left, stringSizes, varTypes) || isStringExpr(e.Right, stringSizes, varTypes)
+		}
+		// `-` and `+` are the concatenation operators. Both sides a string is
+		// the classic form (`'a' - 'b'` is "ab"); one side a string plus an
+		// operand that is provably not an integer/char is the auto-to-str form
+		// (`'x' - flag` is "xtrue"). Everything else — `'x' - 1`, `c - '0'`,
+		// `'x' - c` — is byte arithmetic and must stay a non-string, because
+		// that is what makes the digit-to-value idiom work.
+		//
+		// The old rule required BOTH sides, which also rejected `'a' + 'b'`.
+		if e.Operator == "-" || e.Operator == "+" {
+			l := isStringExpr(e.Left, stringSizes, varTypes)
+			r := isStringExpr(e.Right, stringSizes, varTypes)
+			if l && r {
+				return true
+			}
+			if l || r {
+				other := e.Right
+				if r {
+					other = e.Left
+				}
+				return isDefinitelyNonArithOperand(other, varTypes)
+			}
 		}
 	case *parser.CallExpression:
 		// Function/method calls (e.g., i64-to-str, s.to-upper) may return strings.
@@ -533,6 +563,57 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64) bool {
 		// `v str = awy t` where t came from `run f(...)` and f returns str.
 		// Defer to LLVM type checking, like the cases above. Without this the
 		// validator rejected a perfectly valid str result.
+		return true
+	}
+	return false
+}
+
+// isIntOrCharTypeName reports whether a varTypes entry names an integer or
+// char type — the operand kinds that keep a single-character `'...'` literal
+// in BYTE-arithmetic mode (`c - '0'` is 5, `'x' - c` is 23).
+func isIntOrCharTypeName(t string) bool {
+	if t == "char" || t == "int" {
+		return true
+	}
+	switch t {
+	case "i8", "i16", "i32", "i64", "i128",
+		"u8", "u16", "u32", "u64", "u128",
+		"byte", "usize", "isize", "runesize":
+		return true
+	}
+	return false
+}
+
+// isDefinitelyNonArithOperand reports whether expr is PROVABLY not an
+// integer/char value, so that a string concatenation with it must render it
+// through to-str instead of folding the `'...'` literal to a byte.
+//
+// Deliberately conservative: anything this pass cannot classify — a call, a
+// field access, an untyped or unknown name — returns false and keeps the
+// previous rejection. Widening only the certain cases is what keeps
+// `'a' + 1` (98) and `c - '0'` (5) out of the str path while letting
+// `'x' - flag` ("xtrue") in.
+func isDefinitelyNonArithOperand(expr parser.Expression, varTypes map[string]string) bool {
+	switch e := expr.(type) {
+	case *parser.BooleanLiteral, *parser.FloatLiteral,
+		*parser.StructLiteral, *parser.MapLiteral:
+		return true
+	case *parser.GroupedExpression:
+		return isDefinitelyNonArithOperand(e.Expression, varTypes)
+	case *parser.Identifier:
+		t, known := varTypes[e.Value]
+		if !known || t == "" {
+			return false
+		}
+		if isIntOrCharTypeName(t) || t == "str" {
+			return false
+		}
+		// Containers and options are not byte-arithmetic either, but their
+		// string form is not settled here — keep the old rejection.
+		if strings.HasPrefix(t, "?") || strings.HasPrefix(t, "[") ||
+			strings.HasPrefix(t, "map") || strings.HasPrefix(t, "fn(") {
+			return false
+		}
 		return true
 	}
 	return false
@@ -964,7 +1045,7 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				// return type is unknown at vet time; deferring to LLVM is safer.
 				isExplicitStr := s.Type != nil && (s.Type.String() == "str")
 				if isExplicitStr {
-					if !isStringExpr(s.Value, stringSizes) && !isCharOrUntypedValue(s.Value, varTypes) {
+					if !isStringExpr(s.Value, stringSizes, varTypes) && !isCharOrUntypedValue(s.Value, varTypes) {
 						return i18n.Errorf("5jsd564o", "cannot assign non-string value to string variable '%s'", s.Name.Value)
 					}
 				}
@@ -1324,6 +1405,15 @@ func validateEntryProgram(program *parser.Program, sourcePath string, varTypes m
 	// 會靜默退化成恆假。單字元字串字面量（'a'）隱式當 char，仍合法。
 	if strOrderErrs := checker.ValidateStrOrderingTHIR(program, thirView); len(strOrderErrs) > 0 {
 		for _, e := range strOrderErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	// char 與非數值運算元（bool / f64 / 結構體 / 容器）的算術（編譯硬錯誤）：
+	// char 是 i32 碼點，只能與整數 / char / str 組合。舊行為把 bool 當成 1、把
+	// f64 截成 1，`"x" - flag` 靜默得到 119 —— 看似合理、實則毫無意義。字串拼接
+	// 要用字串字面量：`'x' - flag` 會把 flag 按 to-str 渲染成 "xtrue"。
+	if charArithErrs := checker.ValidateCharArithTHIR(program, thirView); len(charArithErrs) > 0 {
+		for _, e := range charArithErrs {
 			lints = append(lints, validateResultToLint(e))
 		}
 	}
