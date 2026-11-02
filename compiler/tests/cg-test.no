@@ -1545,6 +1545,82 @@ test-str-eq = () {
     runner.eq(s.contains('icmp %str-long'), 0, 'no icmp on %str-long')
 }
 
+; s43：vec 元素相等（[]i64）—— VECEQ 走 @__nolang_vec_eq_i64 helper（icmp %vec 非法），结果落 %v
+test-vec-eq = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; bb0: CONST v1=7,v2=9; VECNEW vc3; push vc4,vc5; VECNEW vc6; push vc7,vc8; VECEQ v9=(vc5==vc8); RET v9
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECNEW)
+    dsts.push(3)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(5)
+    xa.push(4)
+    bs.push(2)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECNEW)
+    dsts.push(6)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(7)
+    xa.push(6)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(8)
+    xa.push(7)
+    bs.push(2)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECEQ)
+    dsts.push(9)
+    xa.push(5)
+    bs.push(8)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('veceq', 0, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%veq8 = call i1 @__nolang_vec_eq_i64(%vec %vc5, %vec %vc8)'), 1, 'veceq call')
+    runner.eq(s.contains('%v9 = zext i1 %veq8 to i64'), 1, 'veceq zext')
+    runner.eq(s.contains('icmp %vec'), 0, 'no icmp on %vec')
+}
+
 ; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
 ; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
 ; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
@@ -2943,6 +3019,7 @@ test-option-vec()
 test-str-slot()
 test-option-slot()
 test-str-eq()
+test-vec-eq()
 test-vec()
 test-vec-len()
 test-sig-str()

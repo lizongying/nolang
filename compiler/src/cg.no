@@ -19,6 +19,7 @@
 ;     但裹除零 select 護欄（s38，见 cg-div-guard）
 ;   无符号 ALU（s36）：SHRU(lshr) / CMP*U(icmp u*)；DIVU/MODU 发 udiv/urem 亦裹同一護欄（s38）
 ;   STEREQ / STNEQ（str 结构相等 s42：操作数在 %sv，走运行时 @str_eq；icmp %str-long 非法故用专用 op）
+;   VECEQ（vec 元素相等 s43：操作数在 %vc，走运行时 @__nolang_vec_eq_i64；icmp %vec 非法故用专用 op，仅适用元素型 i64）
 ;     ——与有符号族共用 %v 命名空间与 i64 型别，只差助记符；TY-U64 型别码走 cg-ty-name/cg-val-prefix 默认臂
 ;   浮点 ALU（s37）：ADD/SUB/MUL/DIV/MOD 与 CMP* 按**值型别分派**——vty 为 TY-F64 时发
 ;     fadd/fsub/fmul/fdiv/frem double %fd… / fcmp <oeq/une/olt/ole/ogt/oge> double（忠实 Go
@@ -621,6 +622,21 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', true\n\t%v')
             b.push(d.to-str())
             b.push(' = zext i1 %sn')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+
+        ; ── vec 元素相等（s43）：call @__nolang_vec_eq_i64 + zext；操作数在 %vc，icmp %vec 非法故走 helper ──
+        op == OP-VECEQ -> {
+            b.push('\t%veq')
+            b.push(k.to-str())
+            b.push(' = call i1 @__nolang_vec_eq_i64(%vec %vc')
+            b.push(x.to-str())
+            b.push(', %vec %vc')
+            b.push(y.to-str())
+            b.push(')\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %veq')
             b.push(k.to-str())
             b.push(' to i64\n')
         }

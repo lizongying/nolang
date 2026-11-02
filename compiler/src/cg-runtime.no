@@ -90,6 +90,34 @@ cg-runtime-str-eq = () (r str) {
     r = b.str()
 }
 
+; vec-eq：@__nolang_vec_eq_i64 —— 两个 %vec（元素 i64）按内容深度相等（Go vecDeepEq 的 i64 分支逐字）。
+; %vec = { i64 len, i64 cap, i64 data }；data 存为整数地址，故先 inttoptr 还原为 i8*。
+; 先比 len，len 相等才 memcmp(data,data,len*8)（空向量 bytes=0，memcmp 不解引用，null 也安全）。
+; 依赖 @memcmp（cg-runtime-memcmp-decl，s42 已声明）。
+; r: 結果字串
+cg-runtime-vec-eq = () (r str) {
+    b = sb.init(768)
+    b.push('define i1 @__nolang_vec_eq_i64(%vec %a, %vec %b) {\n')
+    b.push('entry:\n')
+    b.push('  %la = extractvalue %vec %a, 0\n')
+    b.push('  %lb = extractvalue %vec %b, 0\n')
+    b.push('  %leneq = icmp eq i64 %la, %lb\n')
+    b.push('  br i1 %leneq, label %cmp, label %no\n')
+    b.push('cmp:\n')
+    b.push('  %da = extractvalue %vec %a, 2\n')
+    b.push('  %db = extractvalue %vec %b, 2\n')
+    b.push('  %pa = inttoptr i64 %da to i8*\n')
+    b.push('  %pb = inttoptr i64 %db to i8*\n')
+    b.push('  %bytes = mul i64 %la, 8\n')
+    b.push('  %mr = call i32 @memcmp(i8* %pa, i8* %pb, i64 %bytes)\n')
+    b.push('  %same = icmp eq i32 %mr, 0\n')
+    b.push('  ret i1 %same\n')
+    b.push('no:\n')
+    b.push('  ret i1 false\n')
+    b.push('}\n')
+    r = b.str()
+}
+
 ; div-zero-msg：@nolang_msg_div_zero —— 整數除零診斷串（Go divZeroMsgText 逐字，85 位元組，
 ;   含結尾 \n）：private unnamed_addr constant，供 div-zero-report helper 取址寫 stderr。
 ;   ⚠️ 用單引號串 + 雙反斜杠（\6E 寫成 \\6E）——fmt 會清空含反斜杠的反引號原始串；\ 在單引號串內轉義成字面反斜杠。
@@ -340,5 +368,6 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-vec-len())
     b.push(cg-runtime-vec-get())
     b.push(cg-runtime-vec-push())
+    b.push(cg-runtime-vec-eq())
     r = b.str()
 }

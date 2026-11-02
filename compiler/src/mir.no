@@ -211,6 +211,15 @@ OP-OPTLOAD = 62
 OP-STEREQ = 63
 OP-STNEQ = 64
 
+; ── vec 元素相等（M4-c 续件 s43；补齐 §11 向量比较，镜像 Go vecDeepEq 的 i64 分支）──
+; Go 对 []i64 相等不用 icmp（icmp %vec 非法），降级到运行时 helper @__nolang_vec_eq_i64
+; （见 cg-runtime.no cg-runtime-vec-eq）。本层同形新增一条 op：
+; OP-VECEQ ：dst = i64 结果 id（0/1）；xa[k] = 左 vec 值 id；bs[k] = 右 vec 值 id。
+;            发 `%veq<k> = call i1 @__nolang_vec_eq_i64(%vec %vc<xa>, %vec %vc<bs>)` + zext 到 %v<dst>。
+;            操作数均在 vec 命名空间 %vc，结果落 i64 %v（仅适用元素型为 i64 的 vec）。
+; ⚠️ op 码接在既有最大码 OP-STNEQ=64 之后（取 65），不重排既有码。
+OP-VECEQ = 65
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

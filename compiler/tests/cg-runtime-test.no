@@ -120,6 +120,7 @@ test-prelude-full = () {
     ; s42：str 相等所需两符号（@str_eq 定义 + libc @memcmp 声明）均需落在完整 prelude
     runner.eq(p.contains('declare i32 @memcmp(i8*, i8*, i64)'), 1, 'memcmp decl')
     runner.eq(p.contains('define i1 @str_eq(%str-long %a, %str-long %b)'), 1, 'str_eq present')
+    runner.eq(p.contains('define i1 @__nolang_vec_eq_i64(%vec %a, %vec %b)'), 1, 'vec_eq present')
 }
 
 ; ── str 相等 helper IR 文本（s42）───────────────────────
@@ -136,6 +137,22 @@ test-str-eq-helper = () {
 
     ; 绝不对 %str-long 本体发 icmp（非法）：str_eq 体内只比 i64 len 与 memcmp
     runner.eq(e.contains('icmp %str-long'), 0, 'no icmp on struct')
+}
+
+; s43：@__nolang_vec_eq_i64 helper 形状断言（镜像 Go vecDeepEq 的 i64 分支）
+test-vec-eq-helper = () {
+    e = cg-runtime-vec-eq()
+    runner.eq(e.contains('define i1 @__nolang_vec_eq_i64(%vec %a, %vec %b)'), 1, 'vec_eq signature')
+    runner.eq(e.contains('%la = extractvalue %vec %a, 0'), 1, 'len a field 0')
+    runner.eq(e.contains('%leneq = icmp eq i64 %la, %lb'), 1, 'len eq branch')
+    runner.eq(e.contains('%pa = inttoptr i64 %da to i8*'), 1, 'data a inttoptr')
+    runner.eq(e.contains('%bytes = mul i64 %la, 8'), 1, 'bytes = len*8')
+    runner.eq(e.contains('%mr = call i32 @memcmp(i8* %pa, i8* %pb, i64 %bytes)'), 1, 'memcmp on bytes')
+    runner.eq(e.contains('%same = icmp eq i32 %mr, 0'), 1, 'same = memcmp==0')
+    runner.eq(e.contains('ret i1 false'), 1, 'no-path ret false')
+
+    ; 绝不对 %vec 本体发 icmp（非法）：vec_eq 体内只比 i64 len 与 memcmp
+    runner.eq(e.contains('icmp %vec'), 0, 'no icmp on vec')
 }
 
 ; ── 向量 helper IR 文本 ───────────────────────────────────
@@ -164,6 +181,7 @@ test-balance-under()
 test-balance-over-ok()
 test-prelude-full()
 test-str-eq-helper()
+test-vec-eq-helper()
 test-vec-helpers()
 
 runner.summary()
