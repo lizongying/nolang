@@ -268,6 +268,15 @@ OP-OPTGETF64 = 71
 OP-OPTEQF64 = 72
 OP-OPTNEQF64 = 73
 
+; ── 一元 ALU：NEG / NOT（M4-c 續件 s48；鏡像 Go emitNeg／emitNot，補齊 emitInst 裡 arith 之後緊接的兩條一元 op）──
+; Go：emitNeg（codegen.go:5503）float ⇒ `fneg double`、int ⇒ `sub <lt> 0, x`（非 option 路徑不插溢出護欄，與 s35 有符號 ALU 同紀律）；
+;     emitNot（5505）⇒ `xor <lt> 1, x`（翻轉 0/1 布林，noc 布林即 i64 0/1）。
+; OP-NEG：dst = 結果值 id；x = 操作數 id（vty[d]==TY-F64 ⇒ 發 %fd<dst> = fneg double %fd<x>，否則 %v<dst> = sub i64 0, %v<x>）。
+; OP-NOT：dst = i64 結果值 id；x = 布林值 id。發 %v<dst> = xor i64 1, %v<x>。
+; ⚠ op 碼接在既有最大碼 OP-OPTNEQF64=73 之後（取 74/75），不重排既有碼。
+OP-NEG = 74
+OP-NOT = 75
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

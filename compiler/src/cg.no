@@ -29,6 +29,8 @@
 ;     fadd/fsub/fmul/fdiv/frem double %fd… / fcmp <oeq/une/olt/ole/ogt/oge> double（忠实 Go
 ;     emitArith 的 isFloat；ADD/SUB/MUL/位运算走原 i64/%v 分支不变，整数 DIV/MOD 另加 s38 護欄、
 ;     但 fdiv/frem 无護栏）。TY-F64 是真独立型别，须进两张映射
+;   一元 ALU（s48）：NEG / NOT——NEG 复用 s37 的值型别分派（vty[d]==TY-F64⇒fneg double %fd…，否则⇒sub i64 0, %v…），
+;     NOT⇒xor i64 1, %v…（翻转 0/1 布尔）。均单块降级、无 helper；忠实 Go emitNeg（非 option 路不插溢出护栏）／emitNot
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
@@ -447,6 +449,35 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         }
         op == OP-MODU -> {
             b.push(cg-div-guard('urem', d, x, y, k, 0))
+        }
+
+        ; ── 一元 ALU（s48）：NEG 按值型别分派（double⇒fneg／否则⇒sub 0,x）、NOT⇒xor 1；均单块无 helper ──
+        op == OP-NEG -> {
+
+            ; dst = 结果值 id；x = 操作数 id。镜像 Go emitNeg：非 option 路径 float⇒fneg double、int⇒sub 0,x（不插溢出护栏）。
+            cg-vty-at(vty, d) == TY-F64 -> {
+                b.push('\t%fd')
+                b.push(d.to-str())
+                b.push(' = fneg double %fd')
+                b.push(x.to-str())
+                b.push('\n')
+            }
+            cg-vty-at(vty, d) != TY-F64 -> {
+                b.push('\t%v')
+                b.push(d.to-str())
+                b.push(' = sub i64 0, %v')
+                b.push(x.to-str())
+                b.push('\n')
+            }
+        }
+        op == OP-NOT -> {
+
+            ; dst = i64 结果值 id；x = 布尔值 id（i64 0/1）。镜像 Go emitNot：xor 1 翻转最低位。
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = xor i64 1, %v')
+            b.push(x.to-str())
+            b.push('\n')
         }
         op == OP-CALL -> {
             rt = cty[k]

@@ -415,6 +415,77 @@ test-alu-f64 = () {
     runner.eq(s.contains('ashr'), 0, 'not ashr')
 }
 
+test-unary = () {
+
+    ; s48：一元 ALU——NEG 按值型别分派（TY-F64⇒fneg double／否则⇒sub i64 0,x）、NOT⇒xor i64 1,x；
+    ;   v1=TY-I64 形参、v2=TY-F64 形参 ⇒ 一个 cfg 同时验 NEG 两条分派路 + NOT
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; k0: v3 = NEG v1（int ⇒ sub i64 0, %v1）
+    ops.push(OP-NEG)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k1: v4 = NOT v1（bool ⇒ xor i64 1, %v1）
+    ops.push(OP-NOT)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k2: v5 = NEG v2（TY-F64 ⇒ fneg double %fd2）
+    ops.push(OP-NEG)
+    dsts.push(5)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+
+    ; 形参 v1=TY-I64、v2=TY-F64 ⇒ define 签名是 i64 %v1, double %fd2
+    ptyps []i64 = []
+    ptyps.push(TY-I64)
+    ptyps.push(TY-F64)
+
+    ; vty 逐 id：id0=I64、id1=I64(形参)、id2=F64(形参)、id3=I64(neg int)、id4=I64(not)、id5=F64(neg double)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-F64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-F64)
+    cty []i64 = []
+    blks []i64 = []
+    n = ops.len()
+    i <- [0..n): {
+        cty.push(TY-I64)
+        blks.push(0)
+    }
+    s = cg-emit-cfg-t('un', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; 签名：TY-I64⇒i64/%v、TY-F64⇒double/%fd 混形参
+    runner.eq(s.contains('define i64 @un(i64 %v1, double %fd2)'), 1, 'unary sig mixed')
+
+    ; 一元助记符
+    runner.eq(s.contains('%v3 = sub i64 0, %v1'), 1, 'neg int sub 0')
+    runner.eq(s.contains('%v4 = xor i64 1, %v1'), 1, 'not xor 1')
+    runner.eq(s.contains('%fd5 = fneg double %fd2'), 1, 'neg f64 fneg')
+
+    ; 分派鉴别力：整型 NEG 绝不走 fneg、浮型 NEG 绝不走 sub i64
+    runner.eq(s.contains('fneg double %fd1'), 0, 'int neg not fneg')
+    runner.eq(s.contains('sub i64 0, %fd'), 0, 'f64 neg not sub i64')
+}
+
 test-struct-param-ret = () {
 
     ; 形参侧：nargs=1、ptyps[0] = TY-STRUCT-BASE ⇒ define 签名里是 %struct.s0 %st1
@@ -3299,6 +3370,7 @@ test-struct-nested()
 test-alu()
 test-alu-unsigned()
 test-alu-f64()
+test-unary()
 test-arith()
 test-call()
 test-call2()
