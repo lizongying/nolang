@@ -31,6 +31,7 @@
 ;     但 fdiv/frem 无護栏）。TY-F64 是真独立型别，须进两张映射
 ;   一元 ALU（s48）：NEG / NOT——NEG 复用 s37 的值型别分派（vty[d]==TY-F64⇒fneg double %fd…，否则⇒sub i64 0, %v…），
 ;     NOT⇒xor i64 1, %v…（翻转 0/1 布尔）。均单块降级、无 helper；忠实 Go emitNeg（非 option 路不插溢出护栏）／emitNot
+;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
@@ -1258,6 +1259,46 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', i64 %v')
             b.push(y.to-str())
             b.push(')\n')
+        }
+        op == OP-STRFROMVEC -> {
+
+            ; s49（鏡像 Go emitStrFromVec, codegen.go:13069）：dst = 字符串值 id；x = 向量值 id（TY-VEC）。
+            ; %vec→%str-long 逐欄位重interpret：f0=len、f1=cap 直接 i64→i64；f2=dat 是整數指針（i64）⇒ inttoptr i64→i8*。
+            ; ⚠️ 同 OPTGETSTR：bitcast 不能指針⇄整數，故 f2 必須 inttoptr；中間步 %sfl/%sfc/%sfd/%sfp/%sfs0/%sfs1 按下標 k，最後一步才落規範 %sv<d>（規避 multiple definition）。
+            ; ⚠️ 純單块降級、無需 helper；僅存欄位，dat 與原 vec 共享同一緩冲（不拷貝、不 retain）。
+            b.push('\t%sfl')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 0\n\t%sfc')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 1\n\t%sfd')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 2\n\t%sfp')
+            b.push(k.to-str())
+            b.push(' = inttoptr i64 %sfd')
+            b.push(k.to-str())
+            b.push(' to i8*\n\t%sfs0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %sfl')
+            b.push(k.to-str())
+            b.push(', 0\n\t%sfs1')
+            b.push(k.to-str())
+            b.push(' = insertvalue %str-long %sfs0')
+            b.push(k.to-str())
+            b.push(', i64 %sfc')
+            b.push(k.to-str())
+            b.push(', 1\n\t%sv')
+            b.push(d.to-str())
+            b.push(' = insertvalue %str-long %sfs1')
+            b.push(k.to-str())
+            b.push(', i8* %sfp')
+            b.push(k.to-str())
+            b.push(', 2\n')
         }
         op == OP-OPTNONE -> {
             b.push('\t%op')

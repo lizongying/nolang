@@ -486,6 +486,64 @@ test-unary = () {
     runner.eq(s.contains('sub i64 0, %fd'), 0, 'f64 neg not sub i64')
 }
 
+test-str-from-vec = () {
+
+    ; s49：vec→str 重interpret（鏡像 Go emitStrFromVec）——%vec 三欄位逐欄拷进 %str-long，f2=dat 走 inttoptr i64→i8*
+    ;   v1=TY-VEC 形参（%vc1）、dst v2=TY-STR（%sv2）
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; k0: sv2 = STRFROMVEC vc1
+    ops.push(OP-STRFROMVEC)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k1: RET sv2
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; 形参 v1=TY-VEC ⇒ define 签名里是 %vec %vc1；retty=TY-STR
+    ptyps []i64 = []
+    ptyps.push(TY-VEC)
+
+    ; vty 逐 id：id0=I64、id1=VEC(形参)、id2=STR(结果)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-VEC)
+    vty.push(TY-STR)
+    cty []i64 = []
+    blks []i64 = []
+    n = ops.len()
+    i <- [0..n): {
+        cty.push(TY-I64)
+        blks.push(0)
+    }
+    s = cg-emit-cfg-t('sf', TY-STR, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; 签名：TY-VEC 形参⇒%vec %vc1、retty=TY-STR⇒define %str-long
+    runner.eq(s.contains('define %str-long @sf(%vec %vc1)'), 1, 'sf sig vec->str')
+
+    ; 逐欄拷：len/cap 直取，dat 经 inttoptr
+    runner.eq(s.contains('%sfl0 = extractvalue %vec %vc1, 0'), 1, 'copy len f0')
+    runner.eq(s.contains('%sfc0 = extractvalue %vec %vc1, 1'), 1, 'copy cap f1')
+    runner.eq(s.contains('%sfd0 = extractvalue %vec %vc1, 2'), 1, 'copy dat f2')
+    runner.eq(s.contains('%sfp0 = inttoptr i64 %sfd0 to i8*'), 1, 'dat inttoptr')
+    runner.eq(s.contains('%sv2 = insertvalue %str-long %sfs10, i8* %sfp0, 2'), 1, 'final f2 insert')
+    runner.eq(s.contains('ret %str-long %sv2'), 1, 'str ret')
+
+    ; 分派鉴别力：dat 指針绝不能用 bitcast（i64⇄i8* 非法），也不能对 %vec 整体 bitcast
+    runner.eq(s.contains('bitcast i64 %sfd0'), 0, 'dat not bitcast')
+    runner.eq(s.contains('bitcast %vec'), 0, 'vec not bitcast')
+}
+
 test-struct-param-ret = () {
 
     ; 形参侧：nargs=1、ptyps[0] = TY-STRUCT-BASE ⇒ define 签名里是 %struct.s0 %st1
@@ -3371,6 +3429,7 @@ test-alu()
 test-alu-unsigned()
 test-alu-f64()
 test-unary()
+test-str-from-vec()
 test-arith()
 test-call()
 test-call2()

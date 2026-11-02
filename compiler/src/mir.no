@@ -277,6 +277,17 @@ OP-OPTNEQF64 = 73
 OP-NEG = 74
 OP-NOT = 75
 
+; ── vec → str 重interpret（M4-c 續件 s49；鏡像 Go emitStrFromVec，codegen.go:13069）──
+; Go 把 %vec 就地重reinterpret 成 %str-long（用於 `data str = fs.read-file(path)` 一类把 %vec 直 store 進 %str-long 槽的語料）。
+; %vec = { i64 f0=len, i64 f1=cap, i64 f2=dat(整數指針) }；%str-long = { i64 f0=len, i64 f1=cap, i8* f2=data }。
+; 兩者前三欄位皆 8 字節、僅 f2 型別不同（i64 ⇄ i8*）⇒ 逐欄位 extractvalue/insertvalue，f2 走 inttoptr（LLVM 不允許 bitcast 指針⇄整數，同 s28 OPTGETSTR 紀律）。
+; OP-STRFROMVEC：dst = 字符串值 id（TY-STR，落 %sv）；x = 向量值 id（TY-VEC，住 %vc）；bs[k] 不用（0）。
+;   發：%sfl<k>=extractvalue %vec,0；%sfc<k>=…,1；%sfd<k>=…,2；%sfp<k>=inttoptr i64→i8*；
+;       %sfs0<k>=insertvalue %str-long{0,0,null},%sfl,0；%sfs1<k>=insertvalue…, %sfc,1；%sv<dst>=insertvalue…, %sfp,2
+; ⚠️ 純單块降級、無需 helper（extractvalue/inttoptr/insertvalue 皆 LLVM 合法指令）；僅【存儲欄位】，不拷貝緩沖、不 retain（dat 與原 vec 共享同一緩冲）。
+; ⚠ op 碼接在既有最大碼 OP-NOT=75 之後（取 76），不重排既有碼。
+OP-STRFROMVEC = 76
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
