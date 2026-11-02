@@ -193,11 +193,12 @@ t-format-misc = () {
     ; 同一欄位重複取用
     runner.str-eq(format('{a}{a}{a}'), '111', 3, 'field used three times')
 
-    ; bool
+    ; bool：與 print(b)、b.to-str()、'b=' - b 同一拼寫
     t = true
-    runner.str-eq(format('{t}'), '1', 1, 'bool true -> 1')
+    runner.str-eq(format('{t}'), 'true', 4, 'bool true -> true')
     f = false
-    runner.str-eq(format('{f}'), '0', 1, 'bool false -> 0')
+    runner.str-eq(format('{f}'), 'false', 5, 'bool false -> false')
+    runner.str-eq(format('{t:>6}|'), '  true|', 7, 'bool honours the format spec')
 }
 
 ; ── 執行 ───────────────────────────────────────
