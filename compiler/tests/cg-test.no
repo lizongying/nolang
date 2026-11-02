@@ -1685,6 +1685,80 @@ test-opt-eq = () {
     runner.eq(s.contains('%v5 = zext i1 %on4 to i64'), 1, 'optneq zext')
 }
 
+; option 的 str 载荷相等（s45）：OPTEQSTR/OPTNEQSTR 走 tag icmp eq AND 从 [3 x i64] 槽重建 %str-long call @str_eq 再 and；
+;   单块降级、复用 s42 @str_eq（无需新增 helper）；操作数在 %op，结果落 i64 %v。
+test-opt-eq-str = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; bb0: STRCONST sv1='ab'; STRCONST sv2='cd'; OPTMKSTR op3=sv1; OPTMKSTR op4=sv2;
+    ;      OPTEQSTR v5=(op3==op4)@k4; OPTNEQSTR v6=(op3!=op4)@k5; RET v5
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('cd')
+    blks.push(0)
+    ops.push(OP-OPTMKSTR)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTMKSTR)
+    dsts.push(4)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTEQSTR)
+    dsts.push(5)
+    xa.push(3)
+    bs.push(4)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTNEQSTR)
+    dsts.push(6)
+    xa.push(3)
+    bs.push(4)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('opteqstr', 0, blks, ops, dsts, xa, bs, syms)
+
+    ; OPTEQSTR @k4：tag 两边提取 + icmp eq；两侧从槽重建 %str-long（len/cap/data inttoptr）；call @str_eq；and；zext
+    runner.eq(s.contains('%otx4 = extractvalue %option %op3, 0'), 1, 'opteqstr left tag')
+    runner.eq(s.contains('%oty4 = extractvalue %option %op4, 0'), 1, 'opteqstr right tag')
+    runner.eq(s.contains('%otq4 = icmp eq i64 %otx4, %oty4'), 1, 'opteqstr tag eq')
+    runner.eq(s.contains('%olx04 = extractvalue %option %op3, 1, 0'), 1, 'opteqstr left len')
+    runner.eq(s.contains('%olx2p4 = inttoptr i64 %olx24 to i8*'), 1, 'opteqstr left data ptr')
+    runner.eq(s.contains('%osx4 = insertvalue %str-long %orx14, i8* %olx2p4, 2'), 1, 'opteqstr left rebuild')
+    runner.eq(s.contains('%osy4 = insertvalue %str-long %ory14, i8* %oly2p4, 2'), 1, 'opteqstr right rebuild')
+    runner.eq(s.contains('%oseq4 = call i1 @str_eq(%str-long %osx4, %str-long %osy4)'), 1, 'opteqstr call str_eq')
+    runner.eq(s.contains('%oa4 = and i1 %otq4, %oseq4'), 1, 'opteqstr and')
+    runner.eq(s.contains('%v5 = zext i1 %oa4 to i64'), 1, 'opteqstr zext')
+
+    ; OPTNEQSTR @k5：and 后 xor true 取反
+    runner.eq(s.contains('%oseq5 = call i1 @str_eq(%str-long %osx5, %str-long %osy5)'), 1, 'optneqstr call str_eq')
+    runner.eq(s.contains('%on5 = xor i1 %oa5, true'), 1, 'optneqstr xor')
+    runner.eq(s.contains('%v6 = zext i1 %on5 to i64'), 1, 'optneqstr zext')
+}
+
 ; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
 ; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
 ; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
@@ -3085,6 +3159,7 @@ test-option-slot()
 test-str-eq()
 test-vec-eq()
 test-opt-eq()
+test-opt-eq-str()
 test-vec()
 test-vec-len()
 test-sig-str()

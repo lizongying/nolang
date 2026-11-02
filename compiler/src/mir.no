@@ -231,6 +231,21 @@ OP-VECEQ = 65
 OP-OPTEQ = 66
 OP-OPTNEQ = 67
 
+; ── option 的 `str` 载荷相等（M4-c 續件 s45；補齊 §11 option 非 i64 載荷比較，鏡像 Go emitOptionValueEq 的 %str-long 分支）──
+; Go 對 ?str 相等仍走 emitOptionValueEq（src/mir/codegen.go:6247）：tag icmp eq AND 載荷 call @str_eq 再 and；
+; 載荷內聯（optionPayloadOf 回呼已負載值），故無需控制流。noc 的 %option 載荷槽是 [3 x i64]（s28 把 %str-long 的
+; len/cap/data 逐欄位打包，data 指針 ptrtoint），故相等前需先用與 OPTGETSTR 同形的三步 insertvalue 從槽重建 %str-long，
+; 再喂給既有 helper @str_eq（s42，**無需新增 helper**）。本層同形新增兩條 op：
+; OP-OPTEQSTR ：dst = i64 結果 id（0/1）；xa[k] = 左 option 值 id；bs[k] = 右 option 值 id。
+;                發 extractvalue tag（field 0）各 icmp eq；左/右各從槽（field 1,0/1/2）重建 %str-long（inttoptr 還原 data）；
+;                call i1 @str_eq(両邊重建的 %str-long)；and i1 tag-eq · str-eq → zext 到 %v<dst>。
+; OP-OPTNEQSTR：同上，and 結果先 xor i1 true 取反再 zext。兩 op 的操作數均在 option 命名空間 %op，結果落 i64 %v（僅適用 str 載荷）。
+; ⚠ op 碼接在既有最大碼 OP-OPTNEQ=67 之後（取 68/69），不重排既有碼。
+; ⚠ 與 s44 的 OPTEQ 互斥：s44 直接取 slot[0] 當 i64 比，僅適用 i64 載荷；本件從槽重建 %str-long 再 call @str_eq，適用 str 載荷。
+; ⚠ 載荷為 nil（OPTNONE，槽=zeroinitializer）時重建成 {0,0,null}，@str_eq 走 len0→memcmp(null,null,0)=0 判等，nil==nil→1（與 Go 同形）。
+OP-OPTEQSTR = 68
+OP-OPTNEQSTR = 69
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
