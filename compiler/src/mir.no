@@ -246,6 +246,19 @@ OP-OPTNEQ = 67
 OP-OPTEQSTR = 68
 OP-OPTNEQSTR = 69
 
+; ── option 的 `f64`（double）載荷內聯讀寫（M4-c 續件 s46；補齊 §11 option 標量載荷家族，鏡像 Go 對 double 載荷的存取）──
+; Go 對 ?f64 的載荷存取走 optPayloadTypedAddr（把槽地址重類型為 double*）＋ store/load double；
+; emitOptionValueEq 的 double 分支即 fcmp oeq（src/mir/codegen.go:6263）。noc 的 %option 載荷槽是 [3 x i64]，
+; 無法直接 insertvalue 一個 double（欄位型別是 i64），故以等宽 bitcast 落槽：**double→i64 寫入 slot[0]、i64→double 讀回**
+; （bitcast 是 LLVM 允许的等宽标量重interpret，64↔64，無需 ptrtoint/inttoptr，也無需任何 runtime helper）。
+; 與 s28(str)/s40(vec) 同属「先建載荷讀寫、後建相等」節律：本件先落地 f64 的 MK/GET，為後續 OPTEQF64 預備可測基底。
+; OP-OPTMKF64 ：dst = option 值 id；x = 浮點值 id（TY-F64，住 %fd）。發 %mb<k> = bitcast double→i64；再同 OPTSOME 形 insertvalue 進 slot[0]（tag 已內建於字面 0）。
+; OP-OPTGETF64：dst = 浮點值 id（TY-F64）；x = option 值 id。發 extractvalue slot[0]（i64）→ %mg<k>；再 bitcast i64→double 落到規範 %fd<dst>。
+; ⚠ op 碼接在既有最大碼 OP-OPTNEQSTR=69 之後（取 70/71），不重排既有碼。
+; ⚠ 與 s28/s40 不同處：f64 舆槽元素等宽（皆 64 位），只需 bitcast，不需 ptrtoint/inttoptr（舆 str 的 i8* data 指針不同）。
+OP-OPTMKF64 = 70
+OP-OPTGETF64 = 71
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

@@ -11,6 +11,7 @@
 ;   OPTNONE / OPTSOME / OPTTAG / OPTISOK / OPTGET（%option，i64 载荷）
 ;   OPTMKSTR / OPTGETSTR（%option，str 载荷内联；%str-long 恰 24B = [3 x i64] 槽）
 ;   OPTMKVEC / OPTGETVEC（%option，vec 载荷内联 s40；%vec 三字段全 i64 恰 24B，无需 ptrtoint）
+;   OPTMKF64 / OPTGETF64（%option，f64/double 载荷内联 s46；f64 与 [3 x i64] 槽元素等宽，bitcast double<->i64 落/取 slot[0]，无需 ptrtoint/helper）
 ;   OPTALLOC / OPTSTORE / OPTLOAD（%option 跨基本块走 alloca %option，第八命名空间 %os，无 PHI s41）
 ;   STRUCT-MK / STRUCT-GET / STRUCT-SET（%struct.point，值语义；SET 是「读旧出新值」）
 ;   STALLOC / STSTORE / STLOAD（%struct.point 跨基本块走 alloca %struct.point，无 PHI）
@@ -1319,6 +1320,39 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', i64 %vo2')
             b.push(k.to-str())
             b.push(', 2\n')
+        }
+
+        ; ── option 的 f64（double）载荷内联写（s46）：bitcast double→i64 落 slot[0]；无 helper ──
+        op == OP-OPTMKF64 -> {
+
+            ; dst = option 值 id；x = 浮点值 id（TY-F64，住 %fd）。
+            ; 同 OPTSOME 一步 insertvalue（tag 已内建于字面 { i64 0, ... }），只是喂进 slot[0] 的是 bitcast double→i64。
+            ; ⚠ f64 与槽元素等宽（64↔64），bitcast 合法且无需 ptrtoint/inttoptr（异于 str 的 i8* data）。
+            b.push('\t%mb')
+            b.push(k.to-str())
+            b.push(' = bitcast double %fd')
+            b.push(x.to-str())
+            b.push(' to i64\n\t%op')
+            b.push(d.to-str())
+            b.push(' = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %mb')
+            b.push(k.to-str())
+            b.push(', 1, 0\n')
+        }
+
+        ; ── option 的 f64（double）载荷内联读（s46）：extractvalue slot[0] 再 bitcast i64→double；无 helper ──
+        op == OP-OPTGETF64 -> {
+
+            ; dst = 浮点值 id（TY-F64）；x = option 值 id。取 slot[0]（i64）后 bitcast 回 double 落规范 %fd<dst>。
+            ; 命名空间 %mb<k>/%mg<k> 按指令下标 k，与 %op/%fd/%v 值名不冲突。
+            b.push('\t%mg')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%fd')
+            b.push(d.to-str())
+            b.push(' = bitcast i64 %mg')
+            b.push(k.to-str())
+            b.push(' to double\n')
         }
         op == OP-OPTALLOC -> {
 

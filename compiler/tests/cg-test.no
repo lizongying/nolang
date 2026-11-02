@@ -1759,6 +1759,77 @@ test-opt-eq-str = () {
     runner.eq(s.contains('%v6 = zext i1 %on5 to i64'), 1, 'optneqstr zext')
 }
 
+; ── func optf64(a f64) f64 { o = some(a); return o.get() } ──
+; 证明 ?f64 载荷内联读写：OPTMKF64 先 bitcast double→i64 写 slot[0]，OPTGETF64 从 slot[0] bitcast i64→double 读回（s46）。
+; 往返经 CMPEQ 分派为 fcmp oeq double（两侧皆 %fd），验证读出值与原值同为一个 double。
+test-opt-f64 = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+    ptyps.push(TY-F64)
+
+    ; vty 按值 id 索引：0 占位 / 1=%fd1(F64 形参)/2=%op2(OPT)/3=%fd3(F64 读回)/4=%v4(I64 cmp)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-F64)
+    vty.push(TY-OPT)
+    vty.push(TY-F64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-OPT); k0 OPTMKF64 op2
+    cty.push(TY-F64); k1 OPTGETF64 fd3
+    cty.push(TY-I64); k2 CMPEQ v4
+    cty.push(TY-I64); k3 RET v4
+
+    ; k0: OPTMKF64 op2 = some(%fd1)（bitcast double→i64 落 slot[0]）
+    blks.push(0)
+    ops.push(OP-OPTMKF64)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k1: OPTGETF64 fd3 = 从 op2 读回 double（bitcast i64→double）
+    blks.push(0)
+    ops.push(OP-OPTGETF64)
+    dsts.push(3)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; k2: CMPEQ v4 = fd3 == fd1（两侧 TY-F64 ⇒ fcmp oeq double）
+    blks.push(0)
+    ops.push(OP-CMPEQ)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+
+    ; k3: RET v4
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg-t('optf64', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; OPTMKF64 @k0：bitcast double→i64 后一步 insertvalue 进 slot[0]（tag 已内建于字面 0）
+    runner.eq(s.contains('%mb0 = bitcast double %fd1 to i64'), 1, 'optmkf64 bitcast d2i')
+    runner.eq(s.contains('%op2 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %mb0, 1, 0'), 1, 'optmkf64 insert slot0')
+
+    ; OPTGETF64 @k1：从 slot[0] extractvalue 取 i64 再 bitcast 回 double 落 %fd3
+    runner.eq(s.contains('%mg1 = extractvalue %option %op2, 1, 0'), 1, 'optgetf64 extract slot0')
+    runner.eq(s.contains('%fd3 = bitcast i64 %mg1 to double'), 1, 'optgetf64 bitcast i2d')
+
+    ; CMPEQ @k2：两侧 TY-F64 ⇒ 分派 fcmp oeq double（往返为真 double 而非整数）
+    runner.eq(s.contains('%c2 = fcmp oeq double %fd3, %fd1'), 1, 'optf64 roundtrip fcmp')
+}
+
 ; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
 ; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
 ; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
@@ -3160,6 +3231,7 @@ test-str-eq()
 test-vec-eq()
 test-opt-eq()
 test-opt-eq-str()
+test-opt-f64()
 test-vec()
 test-vec-len()
 test-sig-str()
