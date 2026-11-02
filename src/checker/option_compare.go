@@ -22,6 +22,16 @@ package checker
 //   - 兩側都是 option（型別相同，語意是整體比較）；
 //   - 另一側是 option 變體標記（ok / nil / err）——這是 match 的正規寫法；
 //   - 任一側型別未知（跨模組回傳、struct 欄位、泛型等）。
+//
+// 另有一條獨立子規則（q4nilcmp）：`nil` 只能與 option（`?T`）比較。
+// 非 option 的 `T == nil` / `T != nil` 一律硬錯誤——
+//   - `str == nil` 恆為 false（拿 `%str-long` 結構體跟 0 比），靜默給錯答案；
+//   - `[]i64 == nil` 會掉進整數比較路徑，產生 `icmp eq i64 %vec, i64` 這種
+//     非法 LLVM（後端才炸，錯誤訊息完全看不出原因）。
+// 正確寫法是宣告成 `?T` 再比，或與具體值比較。
+//
+// 兩條子規則都必須自帶 File：合併多模組的 `no vet` / `no build` 會丟棄
+// File 為空的診斷（見 lint.go finalizeLintResults），沒有 File 就等於規則不存在。
 
 import (
 	"fmt"
@@ -33,6 +43,9 @@ import (
 )
 
 const optionCompareTraceID = "fe0a5wt2"
+
+// optionNilCompareTraceID 是「非 option 值與 nil 比較」的診斷碼（q4nilcmp）。
+const optionNilCompareTraceID = "q4nilcmp"
 
 // optionVariantType / optionNilType 是「option 變體標記」的內部哨兵型別，
 // 不帶 "?" 前綴，因此不會被當成普通值型別。
@@ -54,6 +67,26 @@ func ValidateOptionComparison(program *parser.Program) []ValidateResult {
 	return runOptionCmpCore(program, collectOptionCmpFuncTypes(program))
 }
 
+// ValidateNilComparison 只回傳 nil 子規則（q4nilcmp）的結果。
+//
+// 這是**編譯硬錯誤**，供 build/transpiler_validate.go 在模組合併後接線：
+// lint 軌道（runLintOptionComparison）只在 `no vet` / LSP 可見，`no build`
+// 根本不跑 lint（見 build/transpiler.go 的 vetMode 分支），只接 lint 軌就等於
+// 「vet 有訊息、build 照樣成功」。
+func ValidateNilComparison(program *parser.Program) []ValidateResult {
+	if program == nil {
+		return nil
+	}
+	all := runOptionCmpCore(program, collectOptionCmpFuncTypes(program))
+	out := make([]ValidateResult, 0, 1)
+	for _, r := range all {
+		if r.TraceID == optionNilCompareTraceID {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // runOptionCmpCore 是 ValidateOptionComparison 兩變體共享的 walker 跑法 +
 // 去重尾巴（6C：THIR 變體只換 funcTypes 來源，走查不動）。
 func runOptionCmpCore(program *parser.Program, funcTypes map[string]string) []ValidateResult {
@@ -63,8 +96,14 @@ func runOptionCmpCore(program *parser.Program, funcTypes map[string]string) []Va
 		locals:    make(map[string]string),
 		untyped:   make(map[string]bool),
 		unwrapped: make(map[string]bool),
+		declared:  make(map[string]bool),
 	}
 	for _, stmt := range program.Statements {
+		// 每條頂層語句重置 File 歸因：合併多模組時 std 的語句多半沒有
+		// SourceFile facts（單態化克隆後遺失），若沿用上一條主檔語句的
+		// File，std 內的診斷會被張冠李戴成主檔行號（實測 std/str.no:1328
+		// 被報成 r1.no:1328），既誤導又繞過 std 過濾。
+		w.curFile = program.Sem.SourceFileOf(stmt)
 		w.walkStmt(stmt, "")
 	}
 	return dedupOptionCmpResults(w.results)
@@ -143,12 +182,21 @@ type optCmpWalker struct {
 	funcTypes map[string]string
 	results   []ValidateResult
 
+	// curFile 是「當前最近一條語句」的來源檔（合併多模組時由
+	// program.Sem.SourceFileOf 取得）。診斷必須帶上它，否則
+	// finalizeLintResults 會在 singleFile=false 時把 File 為空的診斷整批丟掉
+	// ——規則看起來接好了，實際上 `no vet` / `no build` 一條都不報。
+	curFile string
+
 	fn         string          // 當前函式作用域（供 sem.FuncVarTypes 查詢）
 	curResults map[string]bool // 當前函式的結果參數名（?= 目標為結果參數時不解包）
 	locals     map[string]string
 	untyped    map[string]bool // 型別未知的局部變數（避免回退到全域表被同名符號污染）
 	unwrapped  map[string]bool
-	itStack    []string // match 臂內 `it` 的解包內層型別堆疊（最近一次在棧頂）
+	// declared 標記「型別來自顯式宣告」的名字（參數/結果參數/`x T = ...`）。
+	// nil 子規則只信這個集合，見 nilCompareTypeOf。
+	declared map[string]bool
+	itStack  []string // match 臂內 `it` 的解包內層型別堆疊（最近一次在棧頂）
 }
 
 // itType 回傳當前 match 臂內 `it` 的解包內層型別；不在 match 臂內則回空。
@@ -171,12 +219,24 @@ func (w *optCmpWalker) key(name string) string { return w.fn + "\x00" + name }
 
 func (w *optCmpWalker) report(e *parser.InfixExpression, optExpr, otherExpr parser.Expression, optType, otherType string) {
 	results := []ValidateResult{{
+		File:    w.curFile,
 		Line:    e.Token.Line,
 		Column:  e.Token.Column,
 		Message: i18n.T("fe0a5wt2", "cannot compare option value '%s' (%s) with '%s' (%s): unwrap it first (`v ?= expr`) or match on ok/nil/err", exprName(optExpr), optType, exprName(otherExpr), otherType),
 		TraceID: "fe0a5wt2",
 	}}
 	w.results = append(w.results, results...)
+}
+
+// reportNilCompare 報告「非 option 值與 nil 比較」。
+func (w *optCmpWalker) reportNilCompare(e *parser.InfixExpression, other parser.Expression, otherType string) {
+	w.results = append(w.results, ValidateResult{
+		File:    w.curFile,
+		Line:    e.Token.Line,
+		Column:  e.Token.Column,
+		Message: i18n.T("q4nilcmp", "cannot compare '%s' (%s) with nil: only an option (`?T`) can be tested against nil; declare it as `?%s` or compare against a concrete value", exprName(other), otherType, otherType),
+		TraceID: optionNilCompareTraceID,
+	})
 }
 
 // ── 語句走訪 ──────────────────────────────────────────────────
@@ -190,6 +250,14 @@ func (w *optCmpWalker) walkStmt(stmt parser.Statement, fn string) {
 		w.fn = fn
 	}
 	defer func() { w.fn = prevFn }()
+
+	// File 歸因：內層語句（BlockStatement 等）多半沒有自己的 facts，
+	// 沿用外層語句的檔案；頂層語句由 runOptionCmpCore 直接重置。
+	if w.program != nil {
+		if f := w.program.Sem.SourceFileOf(stmt); f != "" {
+			w.curFile = f
+		}
+	}
 
 	switch s := stmt.(type) {
 	case *parser.FunctionDefinition:
@@ -267,12 +335,14 @@ func (w *optCmpWalker) enterFunc(name string, results, params []*parser.Paramete
 			continue
 		}
 		w.locals[w.key(p.Name)] = p.Type.String()
+		w.declared[w.key(p.Name)] = true
 	}
 	for _, r := range results {
 		if r == nil || r.Name == "" || r.Type == nil {
 			continue
 		}
 		w.locals[w.key(r.Name)] = r.Type.String()
+		w.declared[w.key(r.Name)] = true
 	}
 }
 
@@ -281,11 +351,20 @@ func (w *optCmpWalker) recordLocal(name string, typ parser.Type, value parser.Ex
 	if typ != nil {
 		if t := typ.String(); t != "" {
 			w.locals[w.key(name)] = t
+			w.declared[w.key(name)] = true
 			return
 		}
 	}
 	if t, ok := w.typeOf(value); ok {
 		w.locals[w.key(name)] = t
+		// 推斷型別：字面量 / 轉型 / 取反的推斷是可靠的（`s = 'x'` 就是 str），
+		// 呼叫則不可靠——合併多模組時方法呼叫被攤平成裸識別符
+		// （`.to-f64()` → `str.to-f64(.)`），而方法在 funcTypes 裡登記的是
+		// self 型別 ⇒ `f = .to-f64()` 的 f 會被推成 `str`。nil 子規則只信
+		// declared，見 nilCompareTypeOf。
+		if _, isCall := value.(*parser.CallExpression); !isCall {
+			w.declared[w.key(name)] = true
+		}
 		delete(w.untyped, w.key(name))
 		return
 	}
@@ -371,6 +450,11 @@ func (w *optCmpWalker) checkCompare(e *parser.InfixExpression) {
 	default:
 		return
 	}
+	// 先跑 nil 子規則：`nil` 只對 option 有意義，非 option 的 `T == nil`
+	// 是**另一類**錯誤（不是「option 與非 option 比較」），診斷碼與文案都不同。
+	if w.checkNilCompare(e) {
+		return
+	}
 	lt, lok := w.typeOf(e.Left)
 	rt, rok := w.typeOf(e.Right)
 	lOpt := lok && ty.IsOptionRaw(lt)
@@ -402,6 +486,72 @@ func (w *optCmpWalker) checkCompare(e *parser.InfixExpression) {
 		return
 	}
 	w.report(e, optExpr, otherExpr, optType, otherType)
+}
+
+// checkNilCompare 執行 nil 子規則：`nil` 只能與 option（`?T`）比較。
+//
+// 回傳 true 表示「本比較已由子規則裁決」——呼叫端必須停止後續的 option 判定，
+// 否則同一節點會被 fe0a5wt2 再報一次（`nil` 不是 option，會落進
+// 「一側 option、一側非 option」的形狀）。
+//
+// 放行的情形（保守，寧可漏報不可誤報）：
+//   - 另一側型別未知（跨模組回傳、struct 欄位、泛型、`v ?= expr` 解包後的值）；
+//   - 另一側本身是 option（`?T == nil`，本規則要保護的正規寫法）；
+//   - 另一側是變體標記（`nil == nil`、`err`、`ok`）。
+func (w *optCmpWalker) checkNilCompare(e *parser.InfixExpression) bool {
+	if e.Operator != "==" && e.Operator != "!=" {
+		return false
+	}
+	lt, lok := w.nilCompareTypeOf(e.Left)
+	rt, rok := w.nilCompareTypeOf(e.Right)
+	var other parser.Expression
+	var otherType string
+	var otherKnown bool
+	switch {
+	case lok && lt == optionNilType:
+		other, otherType, otherKnown = e.Right, rt, rok
+	case rok && rt == optionNilType:
+		other, otherType, otherKnown = e.Left, lt, lok
+	default:
+		return false // 兩側都不是 nil 字面量
+	}
+	if !otherKnown || otherType == "" {
+		return false
+	}
+	if ty.IsOptionRaw(otherType) || otherType == optionVariantType || otherType == optionNilType {
+		return false
+	}
+	w.reportNilCompare(e, other, otherType)
+	return true
+}
+
+// nilCompareTypeOf 是 nil 子規則專用的**保守**型別查詢：只認「顯式宣告」的
+// 型別（參數、結果參數、`x T = ...`），不認推斷值。
+//
+// 為什麼不用 typeOf：合併多模組時方法呼叫會被攤平成裸識別符
+// （`.to-f64()` → `str.to-f64(.)`），而方法在 funcTypes 裡登記的是 self
+// 型別 ⇒ `f = .to-f64()` 的 f 會被推成 `str`，於是 std/str.no 的
+// `f == nil ->` 這種**合法**的 option 判定被誤報成 q4nilcmp。
+// 顯式宣告不受此影響：宣告型別就是寫出來的那個，沒有推斷歧義。
+//
+// 代價是漏報 `x = f(); x == nil`（x 是推斷型別）——本規則寧可漏報不可誤報。
+func (w *optCmpWalker) nilCompareTypeOf(e parser.Expression) (string, bool) {
+	switch x := e.(type) {
+	case *parser.NilLiteral:
+		return optionNilType, true
+	case *parser.Identifier:
+		if w.unwrapped[w.key(x.Value)] {
+			return "", false
+		}
+		if !w.declared[w.key(x.Value)] {
+			return "", false
+		}
+		if t, ok := w.locals[w.key(x.Value)]; ok {
+			return t, true
+		}
+		return "", false
+	}
+	return "", false
 }
 
 // isValueComparableType 報告型別是否為可與 option 內層值直接比較的「純量 / 值型別」。

@@ -484,11 +484,16 @@ func runLintFuncArgs(program *parser.Program, opts LintOptions) []LintResult {
 }
 
 // runLintOptionComparison — 19c. option 值直接比較
+//
+// 🔴 File 必須從 ValidateResult 透傳：finalizeLintResults 在合併多模組
+// （singleFile=false）時會把 File 為空的診斷整批丟掉（見其註釋「幾乎都是 std
+// 內部洩漏」）。少了這一行，本規則在 `no vet` / `no build` 一條都不報，
+// 只有單檔 LSP 與單元測試看得到——典型的「接好了但不存在」。
 func runLintOptionComparison(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, u := range ValidateOptionComparisonTHIR(program, opts.thirView) {
 		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
+			Line: u.Line, Column: u.Column, File: u.File,
 			Severity: LintError, Source: "nolang-type-checker",
 			Message: u.Message, TraceID: u.TraceID,
 		})

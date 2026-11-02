@@ -235,6 +235,8 @@ func TestTHIRShadowSanity(t *testing.T) {
 		{"string-concat", "f = (a str) {\n\tb = a + 'x'\n}\n", ValidateStringConcatTHIR,
 			func(p *parser.Program) []ValidateResult { return ValidateStringConcat(p, nil) }},
 		{"option-comparison", "point = (x i64, y i64) {}\nf = () () {\n\tp ?point = make-point()\n\tq point = point { x: 1, y: 2 }\n\tp == q -> return\n}", ValidateOptionComparisonTHIR, ValidateOptionComparison},
+		// nil-compare（q4nilcmp）：非 option 值与 nil 比较必须报，新旧同多重集。
+		{"nil-compare", "s str = 'x'\nprint(s == nil)\n", ValidateOptionComparisonTHIR, ValidateOptionComparison},
 		// int-overflow：未標註有號整數加法必須報（ovf-int-default），新舊同多重集。
 		{"int-overflow", "main = (a i64, b i64) {\n\tprint(a + b)\n}\n", ValidateIntOverflowTHIR, ValidateIntOverflow},
 		// interface-impl：結果型別不符必須報（expected 'bool'），新舊同多重集。

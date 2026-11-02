@@ -547,6 +547,7 @@ Zig compiler not detected
   'q20a8lbi': 'writing JS output: %w'
   'q2qgyoqo': 'win-wait-process: needs (proc-handle, timeout-ms)'
   'q3v8kn2m': 'expected variable name after \',\', got %s'
+  'q4nilcmp': 'cannot compare \'%s\' (%s) with nil: only an option (`?T`) can be tested against nil; declare it as `?%s` or compare against a concrete value'
   'q9m9no8c': 'expected \'}\' to close field annotation, got %s instead'
   'q9p5bmd0': 'no C linker (clang/cc/gcc) found'
   'qadj6ck6': 'eq-raw: cannot take data pointer of receiver'

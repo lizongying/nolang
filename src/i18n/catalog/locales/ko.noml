@@ -545,6 +545,7 @@ Zig 컴파일러를 찾을 수 없습니다
   'q20a8lbi': 'JS 출력 쓰기: %w'
   'q2qgyoqo': 'win-wait-process: (proc-handle, timeout-ms)가 필요합니다'
   'q3v8kn2m': '\',\' 뒤에 변수 이름을 기대했지만 %s을(를) 받았습니다'
+  'q4nilcmp': '\'%s\' (%s) 을(를) nil 과 비교할 수 없습니다: option(`?T`) 만 nil 과 비교할 수 있습니다. `?%s` 로 선언하거나 구체적인 값과 비교하세요'
   'q9m9no8c': '필드 주석을 닫는 \'}\'를 기대했지만 %s을(를) 받았습니다'
   'q9p5bmd0': 'C 링커(clang/cc/gcc)를 찾을 수 없습니다'
   'qadj6ck6': 'eq-raw: 수신자의 데이터 포인터를 가져올 수 없습니다'

@@ -544,6 +544,7 @@ compilateur Zig non détecté
   'q20a8lbi': 'écriture de la sortie JS : %w'
   'q2qgyoqo': 'win-wait-process : (proc-handle, timeout-ms) requis'
   'q3v8kn2m': 'nom de variable attendu après « , », %s obtenu'
+  'q4nilcmp': 'impossible de comparer \'%s\' (%s) avec nil : seule une option (`?T`) peut être testée contre nil ; déclarez-le en `?%s` ou comparez avec une valeur concrète'
   'q9m9no8c': '« } » attendu pour fermer l’annotation de champ, %s obtenu'
   'q9p5bmd0': 'aucun éditeur de liens C (clang/cc/gcc) trouvé'
   'qadj6ck6': 'eq-raw : impossible de prendre le pointeur de données du récepteur'

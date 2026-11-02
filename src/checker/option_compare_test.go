@@ -150,6 +150,102 @@ f = (fd i64) (out ?i64) {
 	}
 }
 
+// TestNilCompareRequiresOption 验证 q4nilcmp 子规则：`nil` 只能与 option（`?T`）比较。
+//
+// 非 option 的 `T == nil` 必须硬错误：
+//   - `str == nil` 恒为 false（拿 `%str-long` 结构体与 0 比），静默给错答案；
+//   - `[]i64 == nil` 掉进整数比较路径，产生非法 LLVM（`icmp eq i64 %vec, i64`），
+//     后端起才炸，错误讯息完全看不出原因。
+func TestNilCompareRequiresOption(t *testing.T) {
+	mustErr := []struct {
+		name string
+		src  string
+	}{
+		{"str_eq_nil", `s str = 'x'
+print(s == nil)`},
+		{"str_ne_nil", `s str = 'x'
+print(s != nil)`},
+		{"slice_eq_nil", `a []i64 = [1, 2, 3]
+print(a == nil)`},
+		{"txt_eq_nil", `t txt = 'x'
+print(t == nil)`},
+		{"fixed_array_eq_nil", `a [3]i64 = [1, 2, 3]
+print(a == nil)`},
+		{"int_eq_nil", `n i64 = 5
+print(n == nil)`},
+		// 推斷自字面量的型別同樣可靠（`s = 'x'` 就是 str），也要報。
+		{"inferred_str_from_literal", `s = 'x'
+print(s == nil)`},
+		{"inferred_int_from_literal", `n = 5
+print(n == nil)`},
+		// 反向书写同样必须报。
+		{"nil_on_left", `s str = 'x'
+print(nil == s)`},
+		// 函数体内（作用域 key 带函数名）也要报。
+		{"inside_function", `f = () {
+    s str = 'x'
+    s == nil -> return
+}`},
+	}
+	for _, c := range mustErr {
+		t.Run("err/"+c.name, func(t *testing.T) {
+			res := ValidateOptionComparison(parseProg(t, c.src))
+			found := false
+			for _, r := range res {
+				if r.TraceID == optionNilCompareTraceID {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("expected %s diagnostic, got: %v", optionNilCompareTraceID, res)
+			}
+		})
+	}
+
+	allowed := []struct {
+		name string
+		src  string
+	}{
+		{"opt_str", `s ?str = nil
+print(s == nil)`},
+		{"opt_slice", `a ?[]i64 = nil
+print(a == nil)`},
+		{"opt_txt", `t ?txt = nil
+print(t == nil)`},
+		{"opt_int", `n ?i64 = nil
+print(n != nil)`},
+		// 型别未知（方法调用回传、跨模块、泛型）→ 保守放行。
+		{"unknown_type", `e = ''.to-f64()
+print(e == nil)`},
+		// `v ?= expr` 解包后的 v 不是 option，但也推不出型别 → 放行。
+		{"unwrapped_value", `get = () (r ?i64) {
+    r = 1
+}
+f = () (out ?i64) {
+    v ?= get()
+    v == nil -> return
+}`},
+		// match 臂里对 option 的 nil 判定是正规写法。
+		{"match_arm_on_option", `f = () (r ?i64) {
+    r: {
+        nil -> return
+        ok -> return
+        err -> return
+    }
+}`},
+	}
+	for _, c := range allowed {
+		t.Run("ok/"+c.name, func(t *testing.T) {
+			res := ValidateOptionComparison(parseProg(t, c.src))
+			for _, r := range res {
+				if r.TraceID == optionNilCompareTraceID {
+					t.Fatalf("unexpected %s diagnostic: %v", optionNilCompareTraceID, r)
+				}
+			}
+		})
+	}
+}
+
 // TestOptionComparisonWiredIntoLints 確認規則已接入 RunAllLints（no vet / LSP 路徑）。
 func TestOptionComparisonWiredIntoLints(t *testing.T) {
 	src := `point = (x i64, y i64) {}

@@ -1901,6 +1901,23 @@ get-vec-default = (a [4]i64, i i64) (res i64) {
 > `a[i] == 5` is false, and no out-of-bounds memory is ever read. `s[0] == 'a'` works the same way:
 > comparing a code point with a one-character string uses the implicit `char → str` conversion.
 
+> **Nested subscripts** `a[i][j]`: **both levels are safe index reads**. The outer `a[i]` is
+> bounds-checked and tested for presence first, and only then is `[j]` applied to it; if either
+> level is out of range the whole expression is `nil`. So `a[oob][0] == 'c'` is false rather than
+> aborting.
+
+> **Container comparison** `[]T == []T` (and `[N]T == [N]T`) is **structural**: lengths first, then
+> element by element. When the element is itself a container (`[][]i64`) the comparison recurses;
+> when it is a `str` it compares the **contents**, not the data pointer. Ordering comparisons
+> (`<` / `<=` / `>` / `>=`) are not defined for containers — only `==` / `!=`.
+
+> **`nil` can only be compared with an option**: `?T == nil` / `?T != nil` are legal; `T == nil`
+> for a non-option `T` (`str`, `[]i64`, `[N]T`, `txt`, `i64`, structs, …) is a **compile error**
+> (`q4nilcmp`). This is not pedantry: `str == nil` is always false (it compares a `%str-long`
+> struct against 0), and `[]i64 == nil` falls into the integer comparison path and emits invalid
+> LLVM (`icmp eq i64 %vec, i64`) — both silently give the wrong answer. To express "may be
+> absent", declare the type as `?T` and compare that with `nil`.
+
 ## Structs
 
 Struct definitions and literals must both use the multi-line form, with each field on its own line. Fields are not separated by commas, and there is no trailing comma.

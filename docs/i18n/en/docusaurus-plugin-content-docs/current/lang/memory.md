@@ -282,7 +282,7 @@ FFI extern functions (marked with `#{c}`) return C string pointers (`i8*`) that 
 
 The compiler inserts a safe copy on the FFI extern `str` return path:
 
-1. **NULL check**: if C returns NULL, construct a nil `%str-long` (data=0), making `s == nil` true
+1. **NULL check**: if C returns NULL, an empty `%str-long` is constructed (data=0, len=0). Note that `str` is not an option, so **`s == nil` is a compile error** (`q4nilcmp`); to tell NULL apart from the empty string, declare the extern as returning `?str` (NULL ⇒ `nil`), or test `s.len == 0` instead
 2. **Non-NULL**: `strlen` + `malloc` + `memcpy` + null-terminate, copying into an independent heap buffer
 3. **PHI merge**: merge both paths and construct the `%str-long` return value
 

@@ -539,6 +539,7 @@
   'q20a8lbi': '写入 JS 输出失败: %w'
   'q2qgyoqo': 'win-wait-process: 需要 (proc-handle, timeout-ms)'
   'q3v8kn2m': '期望 \',\' 后为变量名，实际得到 %s'
+  'q4nilcmp': '无法比较 \'%s\' (%s) 与 nil：只有 option（`?T`）才能与 nil 比较；请声明为 `?%s` 或与具体值比较'
   'q9m9no8c': '期望以 \'}\' 结束字段注解，实际得到 %s'
   'q9p5bmd0': '找不到 C 链接器（clang/cc/gcc）'
   'qadj6ck6': 'eq-raw: 无法获取接收者的数据指针'

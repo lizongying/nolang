@@ -538,6 +538,7 @@ Compilador Zig não detectado
   'q20a8lbi': 'gravando saída JS: %w'
   'q2qgyoqo': 'win-wait-process: precisa de (proc-handle, timeout-ms)'
   'q3v8kn2m': 'esperado nome de variável após \',\', obtido %s'
+  'q4nilcmp': 'não é possível comparar \'%s\' (%s) com nil: apenas uma opção (`?T`) pode ser comparada com nil; declare-o como `?%s` ou compare com um valor concreto'
   'q9m9no8c': 'esperado \'}\' para fechar a anotação de campo, obtido %s em vez disso'
   'q9p5bmd0': 'nenhum link editor C (clang/cc/gcc) encontrado'
   'qadj6ck6': 'eq-raw: não é possível obter o ponteiro de dados do receptor'

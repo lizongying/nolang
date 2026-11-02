@@ -545,6 +545,7 @@ Zig コンパイラが見つかりません
   'q20a8lbi': 'JS 出力の書き込み: %w'
   'q2qgyoqo': 'win-wait-process: (proc-handle, timeout-ms) が必要です'
   'q3v8kn2m': '\',\' の後に変数名を期待しましたが %s でした'
+  'q4nilcmp': '\'%s\' (%s) を nil と比較できません: nil と比較できるのは option (`?T`) だけです。`?%s` として宣言するか、具体的な値と比較してください'
   'q9m9no8c': 'フィールド注釈を閉じる \'}\' を期待しましたが %s でした'
   'q9p5bmd0': 'C リンカ（clang/cc/gcc）が見つかりません'
   'qadj6ck6': 'eq-raw: レシーバのデータポインタを取得できません'

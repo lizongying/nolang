@@ -1523,5 +1523,19 @@ func validateMergedProgram(merged *parser.Program) error {
 		}
 		return &DiagnosticError{Lints: lints}
 	}
+	// nil 比較硬錯誤：`nil` 只能與 option（`?T`）比較。
+	// 非 option 的 `T == nil` / `T != nil` 一律攔下：
+	//   - `str == nil` 恆為 false（拿 `%str-long` 結構體與 0 比），靜默給錯答案；
+	//   - `[]i64 == nil` 掉進整數比較路徑，產生 `icmp eq i64 %vec, i64` 這種非法
+	//     LLVM，只有後端 clang 才炸，錯誤訊息完全看不出原因。
+	// 對應的 lint 步（option-comparison / q4nilcmp）只在 vet/LSP 可見，
+	// build 不跑 lint（見 transpiler.go 的 vetMode 分支），故必須在此獨立接線。
+	if nilCmpErrs := checker.ValidateNilComparison(merged); len(nilCmpErrs) > 0 {
+		var lints []checker.LintResult
+		for _, e := range nilCmpErrs {
+			lints = append(lints, validateResultToLint(e))
+		}
+		return &DiagnosticError{Lints: lints}
+	}
 	return nil
 }

@@ -538,6 +538,7 @@ Zig-Compiler nicht erkannt
   'q20a8lbi': 'JS-Ausgabe wird geschrieben: %w'
   'q2qgyoqo': 'win-wait-process: benötigt (proc-handle, timeout-ms)'
   'q3v8kn2m': 'Variablenname nach \',\' erwartet, %s erhalten'
+  'q4nilcmp': 'kann \'%s\' (%s) nicht mit nil vergleichen: nur ein Option-Wert (`?T`) kann gegen nil geprüft werden; deklariere ihn als `?%s` oder vergleiche mit einem konkreten Wert'
   'q9m9no8c': '\'}\' zum Schließen der Feld-Anmerkung erwartet, stattdessen %s erhalten'
   'q9p5bmd0': 'kein C-Linker (clang/cc/gcc) gefunden'
   'qadj6ck6': 'eq-raw: Datenzeiger des Empfängers kann nicht genommen werden'

@@ -290,7 +290,7 @@ FFI extern 函數（`#{c}` 標記）返回的 C 字串指標（`i8*`）可能指
 
 編譯器在 FFI extern `str` 返回路徑插入安全複製：
 
-1. **NULL 檢查**：若 C 返回 NULL，構造 nil `%str-long`（data=0），使 `s == nil` 成立
+1. **NULL 檢查**：若 C 返回 NULL，構造空 `%str-long`（data=0、len=0）。注意 `str` 不是 option，**`s == nil` 是編譯錯誤**（`q4nilcmp`）——要區分 NULL 與空字串，把 extern 宣告成回傳 `?str`（NULL ⇒ `nil`），或改判 `s.len == 0`
 2. **非 NULL**：`strlen` + `malloc` + `memcpy` + null 終止，複製到獨立堆緩衝區
 3. **PHI 合併**：兩條路徑合併，構造 `%str-long` 返回
 

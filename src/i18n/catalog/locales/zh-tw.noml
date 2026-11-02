@@ -538,6 +538,7 @@
   'q20a8lbi': '寫入 JS 輸出失敗: %w'
   'q2qgyoqo': 'win-wait-process: 需要 (proc-handle, timeout-ms)'
   'q3v8kn2m': '預期 \',\' 後為變數名稱，實際得到 %s'
+  'q4nilcmp': '無法比較 \'%s\' (%s) 與 nil：只有 option（`?T`）才能與 nil 比較；請宣告為 `?%s` 或與具體值比較'
   'q9m9no8c': '預期以 \'}\' 結束欄位註解，實際得到 %s'
   'q9p5bmd0': '找不到 C 連結器（clang/cc/gcc）'
   'qadj6ck6': 'eq-raw: 無法取得接收者的資料指標'
