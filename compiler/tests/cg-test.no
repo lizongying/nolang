@@ -1281,6 +1281,130 @@ test-option-str = () {
     runner.eq(bad.contains('under-count'), 1, 'under-count message')
 }
 
+; ── s40（§11 B8）：option 的 vec 载荷（?[]i64）内联读写 ──
+; 证明 %vec（{i64,i64,i64}，dat 已是整数指针）与 %option 的 [3 x i64] 槽 1:1 逐字段互转，
+;   且**本函数体内无 ptrtoint**（vec 载荷不需指针<->整数转换，较 str 载荷更简单）。
+; arena：v1=CONST 42（元素）/ v2=CONST 0（索引）/ vc3=VECNEW / vc4=VECPUSH(vc3,v1)
+;   / op5=OPTMKVEC(vc4) / vc6=OPTGETVEC(op5) / v7=VECLEN(vc6) / v8=VECGET(vc6, v2)。
+test-option-vec = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+
+    ; vty 按值 id 索引：0 占位 / 1=v1(I64) / 2=v2(I64) / 3=vc3(VEC) / 4=vc4(VEC) / 5=op5(OPT) / 6=vc6(VEC) / 7=v7(I64) / 8=v8(I64)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-VEC)
+    vty.push(TY-VEC)
+    vty.push(TY-OPT)
+    vty.push(TY-VEC)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-I64); k0 CONST v1=42
+    cty.push(TY-I64); k1 CONST v2=0
+    cty.push(TY-VEC); k2 VECNEW vc3
+    cty.push(TY-VEC); k3 VECPUSH vc4
+    cty.push(TY-OPT); k4 OPTMKVEC op5
+    cty.push(TY-VEC); k5 OPTGETVEC vc6
+    cty.push(TY-I64); k6 VECLEN v7
+    cty.push(TY-I64); k7 VECGET v8
+    cty.push(TY-I64); k8 RET v8
+
+    ; k0: CONST v1 = 42
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(42)
+    bs.push(0)
+    syms.push('')
+
+    ; k1: CONST v2 = 0（索引）
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+
+    ; k2: VECNEW vc3
+    blks.push(0)
+    ops.push(OP-VECNEW)
+    dsts.push(3)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+
+    ; k3: VECPUSH vc4 = push(vc3, v1)
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(1)
+    syms.push('')
+
+    ; k4: OPTMKVEC op5 = some(vc4)（内联存储 %vec 到 [3 x i64] 槽；不 retain）
+    blks.push(0)
+    ops.push(OP-OPTMKVEC)
+    dsts.push(5)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+
+    ; k5: OPTGETVEC vc6 = 从 op5 取出 vec（共享同一 dat）
+    blks.push(0)
+    ops.push(OP-OPTGETVEC)
+    dsts.push(6)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+
+    ; k6: VECLEN v7 = vc6.len
+    blks.push(0)
+    ops.push(OP-VECLEN)
+    dsts.push(7)
+    xa.push(6)
+    bs.push(0)
+    syms.push('')
+
+    ; k7: VECGET v8 = vc6[v2]
+    blks.push(0)
+    ops.push(OP-VECGET)
+    dsts.push(8)
+    xa.push(6)
+    bs.push(2)
+    syms.push('')
+
+    ; k8: RET v8
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(8)
+    bs.push(0)
+    syms.push('')
+
+    s = cg-emit-cfg-t('optvec', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; OPTMKVEC：tag=0 + 逐字段 extractvalue %vec / insertvalue 进 slot（k=4）
+    runner.eq(s.contains('%mv04 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 0, 0'), 1, 'optmkvec tag=0')
+    runner.eq(s.contains('%vu04 = extractvalue %vec %vc4, 0'), 1, 'optmkvec extract len field')
+    runner.eq(s.contains('%op5 = insertvalue %option %mv24, i64 %vu24, 1, 2'), 1, 'optmkvec store dat field')
+
+    ; ⚠️ vec 载荷无需 ptrtoint（%vec 三字段全 i64）：函数体内不得出现 ptrtoint/inttoptr
+    runner.eq(s.contains('ptrtoint'), 0, 'optmkvec no ptrtoint (all-i64 payload)')
+
+    ; OPTGETVEC：从 slot 取 3 字段 + insertvalue 重建 %vec（k=5，zeroinitializer 起）
+    runner.eq(s.contains('%vo05 = extractvalue %option %op5, 1, 0'), 1, 'optgetvec extract slot[0]')
+    runner.eq(s.contains('%vb05 = insertvalue %vec zeroinitializer, i64 %vo05, 0'), 1, 'optgetvec rebuild len')
+    runner.eq(s.contains('%vc6 = insertvalue %vec %vb15, i64 %vo25, 2'), 1, 'optgetvec rebuild dat field')
+}
+
 ; ── func pick(c) { s='ab'; c ? s='abcdef'; return s.len } ──
 ; 证明 %str-long 跨基本块（bb1 → bb2）走 alloca/store/load 而非 PHI。
 test-str-slot = () {
@@ -2658,6 +2782,7 @@ test-strcat()
 test-strcat-rc()
 test-strcat-rc-nested()
 test-option-str()
+test-option-vec()
 test-str-slot()
 test-vec()
 test-vec-len()

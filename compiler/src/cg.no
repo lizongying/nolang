@@ -10,6 +10,7 @@
 ;   VECNEW / VECPUSH / VECLEN / VECGET（%vec，元素仅 i64）
 ;   OPTNONE / OPTSOME / OPTTAG / OPTISOK / OPTGET（%option，i64 载荷）
 ;   OPTMKSTR / OPTGETSTR（%option，str 载荷内联；%str-long 恰 24B = [3 x i64] 槽）
+;   OPTMKVEC / OPTGETVEC（%option，vec 载荷内联 s40；%vec 三字段全 i64 恰 24B，无需 ptrtoint）
 ;   STRUCT-MK / STRUCT-GET / STRUCT-SET（%struct.point，值语义；SET 是「读旧出新值」）
 ;   STALLOC / STSTORE / STLOAD（%struct.point 跨基本块走 alloca %struct.point，无 PHI）
 ;   RETAIN / RELEASE（%str-long 的 RC 发射原语；取 data 指针 call @nolang_rc_retain/release）
@@ -876,6 +877,83 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = insertvalue %str-long %og1')
             b.push(k.to-str())
             b.push(', i8* %ol2b')
+            b.push(k.to-str())
+            b.push(', 2\n')
+        }
+        op == OP-OPTMKVEC -> {
+
+            ; s40（§11 B8「option 的 vec 载荷」）：dst = option 值 id；x = 向量值 id（TY-VEC）。
+            ;   tag=0 + 把 %vec 的 3 个 i64 字段（len/cap/dat）逐字段 insertvalue 进 slot[0..2]。
+            ;   %vec 三字段全 i64（dat 已是整数指针），与 [3 x i64] 槽 1:1 ⇒ 无需 ptrtoint/inttoptr（较 OPTMKSTR 简单）。
+            ; ⚠️ 中间步 %mv0..%mv2 落规范 %op<d>（同 OPTMKSTR 规避 multiple definition）；命名空间按指令下标 k。
+            ; ⚠️ 本 op 只【存储】不自动 retain；取得所有权须调用方紧接 OP-RETAIN（s28/s40 规矩）。
+            b.push('\t%mv0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 0, 0\n')
+            b.push('\t%vu0')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 0\n\t%mv1')
+            b.push(k.to-str())
+            b.push(' = insertvalue %option %mv0')
+            b.push(k.to-str())
+            b.push(', i64 %vu0')
+            b.push(k.to-str())
+            b.push(', 1, 0\n\t%vu1')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 1\n\t%mv2')
+            b.push(k.to-str())
+            b.push(' = insertvalue %option %mv1')
+            b.push(k.to-str())
+            b.push(', i64 %vu1')
+            b.push(k.to-str())
+            b.push(', 1, 1\n\t%vu2')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 2\n\t%op')
+            b.push(d.to-str())
+            b.push(' = insertvalue %option %mv2')
+            b.push(k.to-str())
+            b.push(', i64 %vu2')
+            b.push(k.to-str())
+            b.push(', 1, 2\n')
+        }
+        op == OP-OPTGETVEC -> {
+
+            ; s40：dst = 向量值 id（TY-VEC）；x = option 值 id。从 slot[0..2] 取 3 个 i64 字段，
+            ;   逐字段 insertvalue 重建 %vec（zeroinitializer 起）。三字段全 i64 ⇒ 无 inttoptr。
+            ;   中间步 %vb0/%vb1 落规范 %vc<d>（同 OPTMKVEC 的 multiple-definition 规避）。
+            b.push('\t%vo0')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%vo1')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 1\n\t%vo2')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 2\n\t%vb0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %vec zeroinitializer, i64 %vo0')
+            b.push(k.to-str())
+            b.push(', 0\n\t%vb1')
+            b.push(k.to-str())
+            b.push(' = insertvalue %vec %vb0')
+            b.push(k.to-str())
+            b.push(', i64 %vo1')
+            b.push(k.to-str())
+            b.push(', 1\n\t%vc')
+            b.push(d.to-str())
+            b.push(' = insertvalue %vec %vb1')
+            b.push(k.to-str())
+            b.push(', i64 %vo2')
             b.push(k.to-str())
             b.push(', 2\n')
         }

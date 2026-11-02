@@ -175,6 +175,19 @@ OP-OPTGET = 26
 OP-OPTMKSTR = 29
 OP-OPTGETSTR = 30
 
+; ── option 的 vec 载荷（M4-c 续件 s40；补齐上面 173–174 行 s28 预告的同构内联路径）──────
+; %vec = { i64, i64, i64 }（f0=len、f1=cap、f2=dat），其中 dat 已是 ptrtoint 后的**整数指针**
+; （见 cg-runtime-vec-get/push 内部才 inttoptr 还原），三字段全 i64 且恰 24 字节 ⇒ 与 %option 的
+;   [3 x i64] 槽 1:1 布局兼容，逐字段 extractvalue/insertvalue 互转，**连 ptrtoint/inttoptr 都不需要**
+;   （比 str 载荷更简单：str 的 data 是 i8*，须 ptrtoint/inttoptr）。
+; OP-OPTMKVEC ：dst = option 值 id；x = 向量值 id（TY-VEC）。发 tag=0 + 把 %vec 的 3 个 i64 字段
+;               逐字段 insertvalue 进 slot[0..2]。⚠️ 只【存储】不自动 retain；取得所有权须紧接 OP-RETAIN。
+; OP-OPTGETVEC：dst = 向量值 id（TY-VEC）；x = option 值 id。从 slot[0..2] 取 3 个 i64 字段，
+;               逐字段 insertvalue 重建 %vec（zeroinitializer 起）。读出的 %vec 与原 vec 共享同一 dat。
+; ⚠️ op 码接在既有最大码 OP-CMPGEU=57 之后（取 58/59），刻意不重排 22..57 以免影响既有 arena 数据。
+OP-OPTMKVEC = 58
+OP-OPTGETVEC = 59
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
