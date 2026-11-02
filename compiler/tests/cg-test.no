@@ -1830,6 +1830,92 @@ test-opt-f64 = () {
     runner.eq(s.contains('%c2 = fcmp oeq double %fd3, %fd1'), 1, 'optf64 roundtrip fcmp')
 }
 
+; ── func eqfd(a f64, b f64) { some(a) == some(b) / some(a) != some(b) } ──
+; 证明 option 的 f64（double）载荷相等降级：取 slot[0]（i64）→ bitcast i64→double → fcmp oeq，与 tag icmp eq AND（镜像 Go emitOptionValueEq double 分支，§5.3.4.cb）。
+; 与 s44/s45 同族：操作数在 %op，单块降级，无需 helper；仅载荷比较从 i64 icmp / str call 换成 double fcmp oeq。
+test-opt-eq-f64 = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+    ptyps.push(TY-F64)
+    ptyps.push(TY-F64)
+
+    ; vty 按值 id：0 占位 / 1=%fd1(a F64) / 2=%fd2(b F64) / 3=%op3(OPT some a) / 4=%op4(OPT some b) / 5=%v5(I64 eq) / 6=%v6(I64 neq)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-OPT)
+    vty.push(TY-OPT)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-OPT); k0 OPTMKF64 op3
+    cty.push(TY-OPT); k1 OPTMKF64 op4
+    cty.push(TY-I64); k2 OPTEQF64 v5
+    cty.push(TY-I64); k3 OPTNEQF64 v6
+    cty.push(TY-I64); k4 RET v5
+
+    ; k0: OPTMKF64 op3 = some(%fd1)
+    blks.push(0)
+    ops.push(OP-OPTMKF64)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k1: OPTMKF64 op4 = some(%fd2)
+    blks.push(0)
+    ops.push(OP-OPTMKF64)
+    dsts.push(4)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; k2: OPTEQF64 v5 = op3 == op4（tag AND fcmp oeq double）
+    blks.push(0)
+    ops.push(OP-OPTEQF64)
+    dsts.push(5)
+    xa.push(3)
+    bs.push(4)
+    syms.push('')
+
+    ; k3: OPTNEQF64 v6 = op3 != op4（and 后 xor i1 true）
+    blks.push(0)
+    ops.push(OP-OPTNEQF64)
+    dsts.push(6)
+    xa.push(3)
+    bs.push(4)
+    syms.push('')
+
+    ; k4: RET v5
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg-t('opteqf64', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; 两侧各取 slot[0]（i64）后 bitcast i64→double（复用 s46 slot[0] 读取形）
+    runner.eq(s.contains('%opx2 = extractvalue %option %op3, 1, 0'), 1, 'opteqf64 extract payload x')
+    runner.eq(s.contains('%fdx2 = bitcast i64 %opx2 to double'), 1, 'opteqf64 bitcast i2d x')
+
+    ; 载荷比较走 fcmp oeq double（非 icmp）
+    runner.eq(s.contains('%opq2 = fcmp oeq double %fdx2, %fdy2'), 1, 'opteqf64 fcmp oeq')
+
+    ; tag 比较与 AND（与 s44/s45 同形）
+    runner.eq(s.contains('%otq2 = icmp eq i64 %otx2, %oty2'), 1, 'opteqf64 tag icmp eq')
+    runner.eq(s.contains('%oa2 = and i1 %otq2, %opq2'), 1, 'opteqf64 and')
+
+    ; != 为整体取反（xor i1 true）
+    runner.eq(s.contains('%on3 = xor i1 %oa3, true'), 1, 'optneqf64 xor')
+}
+
 ; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
 ; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
 ; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
@@ -3232,6 +3318,7 @@ test-vec-eq()
 test-opt-eq()
 test-opt-eq-str()
 test-opt-f64()
+test-opt-eq-f64()
 test-vec()
 test-vec-len()
 test-sig-str()

@@ -259,6 +259,15 @@ OP-OPTNEQSTR = 69
 OP-OPTMKF64 = 70
 OP-OPTGETF64 = 71
 
+; ── option 的 `f64`（double）載荷相等（M4-c 續件 s47；鏡像 Go emitOptionValueEq 的 double 分支，延續 s44(i64)／s45(str)「先建讀寫、後建相等」節律）──
+; Go 對 ?f64 相等走 emitOptionValueEq（src/mir/codegen.go:6263）：載荷 fcmp oeq ＋ tag icmp eq 再 and i1；!= 為整體取反（xor i1 true）。
+; 本件復用 s46 的 slot[0] 讀取路徑：兩側各 extractvalue slot[0]（i64）→ bitcast i64→double → fcmp oeq；聚合體不可直接 icmp，故拆 tag／載荷兩比再 and。
+; OP-OPTEQF64 ：dst = i64 結果（0/1）；x = 左 option 值 id；y = 右 option 值 id。發 tag icmp eq AND（bitcast 後 fcmp oeq double）→ zext。
+; OP-OPTNEQF64：同 OPTEQF64，但 and 結果先 xor i1 true 取反再 zext。
+; ⚠ op 碼接在既有最大碼 OP-OPTGETF64=71 之後（取 72/73），不重排既有碼。
+OP-OPTEQF64 = 72
+OP-OPTNEQF64 = 73
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
