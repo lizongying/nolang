@@ -17,6 +17,11 @@ LD_FLAGS  ?= -ldflags="-s -w -X main.version=$(GIT_VERSION) -X main.buildDate=$(
 SRCMOD     = src/go.mod
 GO_SOURCES := $(shell find src -name '*.go' -type f)
 NO_SOURCES := $(shell find src/std -name '*.no' -type f)
+# Locale catalogs are embedded (//go:embed), so they are build inputs of every
+# binary that links the i18n package. Without this, editing a translation and
+# running `make no` leaves the old strings in the binary: make only sees the
+# .go files change.
+I18N_SOURCES := $(shell find src/i18n/catalog/locales -name '*.noml' -type f)
 NO_BIN    = $(BINDIR)/no
 NO_HOME   = $(HOME)/no/bin
 NO_LINK   = /usr/local/bin/no
@@ -147,7 +152,7 @@ i18n-missing: FORCE
 	cd src && $(GO) run ./i18n/cmd/genen -doc-missing
 
 # ── NO ────────────────────────────────
-$(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
+$(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
 	$(MAKE) stamp-traceid
 	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$(NO_BIN) ./cmd/no
 	chmod +x $(NO_BIN)
@@ -271,7 +276,7 @@ LLVM_STATIC_EXTRA_LIBS ?= -lstdc++ -lm
 endif
 
 .PHONY: no-capi
-no-capi: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
+no-capi: $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
 	@command -v "$(LLVM_CONFIG)" >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config (macOS: brew install llvm)"; exit 1; }
 	$(MAKE) stamp-traceid
 	cd src && $(LLVM_CAPI_CGO_ENV) CGO_ENABLED=1 CGO_CFLAGS="$(LLVM_CAPI_CFLAGS)" CGO_LDFLAGS="$(LLVM_CAPI_LDFLAGS)" \
@@ -288,7 +293,7 @@ no-capi: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BIN
 #      NOLANG_LLVM_CAPI=0（或 --llvm-capi=0）仍可關回外部 clang 路徑。
 # cgo 無法交叉編譯，故本目標只能在目標平台的原生 runner 上構建（見 CI）。
 .PHONY: no-llvm
-no-llvm: $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
+no-llvm: $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
 	@command -v "$(LLVM_CONFIG)" >/dev/null 2>&1 || { echo "llvm-config not found: set LLVM_CONFIG=/path/to/llvm-config"; exit 1; }
 	$(MAKE) stamp-traceid
 	cd src && $(LLVM_CAPI_CGO_ENV) CGO_ENABLED=1 CGO_CFLAGS="$(LLVM_CAPI_CFLAGS) $(LLVM_TARGET_DEFINES)" CGO_LDFLAGS="$(LLVM_STATIC_CGO_LDFLAGS) $(LLVM_STATIC_EXTRA_LIBS) $(LLVM_GC_FLAGS)" \
@@ -307,7 +312,7 @@ install: $(NO_BIN)
 	@echo "Installed: $(NO_LINK) -> $(NO_HOME)/no"
 
 # ── LSP ────────────────────────────────────
-$(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum
+$(LSP_BIN): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum
 	$(MAKE) stamp-traceid
 	mkdir -p $(dir $@)
 	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/lsp
@@ -322,7 +327,7 @@ package: FORCE
 # Requires Go 1.21+ (project uses 1.25.4). Output: docs/static/wasm/no.wasm
 no-wasm: $(NO_WASM)
 
-$(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
+$(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
 	$(MAKE) stamp-traceid
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/no
 
@@ -333,7 +338,7 @@ $(WASM_DIR):
 # Cross-compile LSP server to WebAssembly (wasip1) for the browser playground.
 lsp-wasm: $(LSP_WASM)
 
-$(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
+$(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
 	$(MAKE) stamp-traceid
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/lsp
 

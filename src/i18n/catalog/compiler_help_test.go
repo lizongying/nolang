@@ -230,7 +230,7 @@ func TestCompilerHelpFallbacks(t *testing.T) {
 			t.Errorf("LoadCompilerHelp(%q) = ok, want fallback to the inline English help", lang)
 		}
 	}
-	for _, lang := range []string{"zh-CN", "zh-TW", "ja"} {
+	for _, lang := range []string{"zh-cn", "zh-tw", "ja"} {
 		if _, ok := catalog.LoadCompilerHelp(lang); !ok {
 			t.Errorf("LoadCompilerHelp(%q) = !ok, want an embedded translation", lang)
 		}

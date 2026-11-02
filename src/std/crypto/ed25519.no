@@ -131,9 +131,9 @@ ed-sqm1 = () (h []i64) {
 is-zero-arr = (a [32]byte) (z i64) {
 
     z = 1
-    i <- [0..32): {
+    v <- a: {
         {
-            a[i] != 0 -> z = 0
+            v != 0 -> z = 0
         }
     }
 }
@@ -410,12 +410,12 @@ sc-reduce = (s []byte) (out [32]byte) {
 
         ; acc = acc*2 + bit
         carry = bit
-        j <- [0..32): {
+        e <- acc: {
 
             #{overflow=wrap}
-            v = acc[j] * 2 + carry
+            v = e * 2 + carry
 
-            acc[j]: {
+            e: {
                 ok -> it = v & 255
 
                 -> _

@@ -94,6 +94,9 @@ func renderPackageNoml(config ProjectConfig) string {
 	sb.WriteString(pkg.NomlQuote(config.Compiler.Version))
 	sb.WriteString("\n")
 	sb.WriteString("    link-libs: []\n")
+	// lang 是 `no` 的訊息語言，等價於萬用 --lang。留成註解而不是寫死值：
+	// 它取決於專案自己用什麼語言寫訊息，沒有合理的預設值可以替它猜。
+	sb.WriteString("    ; lang: 'zh-tw'   pin the message language (omit: follow the system locale)\n")
 	sb.WriteString("  }\n")
 	writePair("output", config.Output)
 	sb.WriteString("  ignore: []\n")

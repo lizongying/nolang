@@ -12,7 +12,7 @@ Nolang 프로그래밍 언어 (버전 %s)
 사용법:
 전역 옵션:
   -v    상세 모드 (모든 명령에 적용)
-  --lang=<tag>  메시지 언어, 예: --lang=zh-CN, --lang=en.
+  --lang=<tag>  메시지 언어, 예: --lang=zh-cn, --lang=en.
                 기본값은 시스템 로캘($LC_ALL / $LANG)을 따릅니다.
                 영어가 대체 언어입니다. $NO_LANG으로도 설정할 수 있습니다.
 

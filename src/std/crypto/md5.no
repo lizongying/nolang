@@ -448,8 +448,8 @@ md5 = (data []byte) (out [16]byte) {
     buf [128]byte
 
     ; 固定陣列不保證零初始化，先全部清零
-    zi <- [0..128): {
-        buf[zi]: {
+    e <- buf: {
+        e: {
             ok -> it = 0
 
             -> _

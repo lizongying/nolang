@@ -1447,10 +1447,9 @@ http-write-ok = (p str, data []byte) (ok bool) {
 http-dl-location = (head-str str) (loc ?str) {
     loc = nil
     lines = head-str.lines()
-    li <- [0..lines.len()): {
+    line <- lines: {
 
-        #{index-out=0}
-        trimmed = lines[li].trim()
+        trimmed = line.trim()
         trimmed.to-lower().starts-with('location:') -> {
             loc = trimmed.slice-bytes(9, trimmed.len-bytes()).trim()
             return

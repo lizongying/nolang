@@ -85,8 +85,8 @@ func Normalize(raw string) string {
 	case "", "c", "posix":
 		return ""
 	}
-	// Script subtags: a Hans request is exactly a zh-CN request. Hant is left
-	// alone so the alias table can route it to the zh-TW catalog.
+	// Script subtags: a Hans request is exactly a zh-cn request. Hant is left
+	// alone so the alias table can route it to the zh-tw catalog.
 	if s == "zh-hans" || strings.HasPrefix(s, "zh-hans-") {
 		return "zh-cn"
 	}
@@ -101,7 +101,7 @@ func Normalize(raw string) string {
 //	en-us       -> [en-us, en]
 //
 // Stripping one subtag at a time (rather than jumping straight to the primary
-// language) is what lets zh-Hant-TW reach the zh-TW catalog via the zh-hant
+// language) is what lets zh-Hant-TW reach the zh-tw catalog via the zh-hant
 // alias instead of collapsing to the Simplified "zh".
 func fallbackChain(norm string) []string {
 	chain := []string{norm}
@@ -143,7 +143,7 @@ func joinTags(available []string) string {
 }
 
 // distinctTags collapses alias tags onto their canonical form so a warning lists
-// "zh-CN" once instead of "zh-CN, zh, zh-hans, zh-hant, ...".
+// "zh-cn" once instead of "zh-cn, zh, zh-hans, zh-hant, ...".
 func distinctTags(available []string, canon func(string) string) []string {
 	seen := map[string]bool{}
 	var out []string

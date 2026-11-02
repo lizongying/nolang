@@ -172,10 +172,10 @@ A committed value is preserved verbatim even if the comment is reworded, because
 the anchor rather than the text is the key (`catalog.PruneDocTranslations`).
 Translations go in `locales/<tag>-doc.noml`; a key that no longer exists in any
 `.no` source is rejected as an orphan. The file name follows the `.no` naming
-rule — lowercase letters, digits and single hyphens — so the tag is lowercased
-and the separator is `-`: `--lang=zh-CN` reads `zh-cn-doc.noml`, not
-`zh-CN-doc.noml`. `catalog.DocCatalogName(tag)` is the only place that builds
-this name.
+rule — lowercase letters, digits and single hyphens — and so is the tag itself,
+so `--lang=zh-tw` reads `zh-tw-doc.noml`. `catalog.DocCatalogName(tag)` is the
+only place that builds this name (it still lowercases, as a guard against a tag a
+project declares in another case).
 
 `go run ./i18n/cmd/genen -doc-missing` lists the anchors still waiting for a
 translation, so the remaining work is visible without diffing two files.
@@ -190,22 +190,27 @@ source text, so a cosmetic override cannot break `no build`.
 
 ### Selecting a language
 
-`--lang=<tag>` selects the language (`no build --lang=zh-CN`, `no vet --lang=ja`).
-Precedence is `--lang` > `NO_LANG` > `LC_ALL` > `LANG` > `en`, so a Chinese or
-Japanese system locale is honoured without a flag (`zh_CN.UTF-8` → `zh-CN`).
-Aliases resolve onto the catalog that actually exists: `zh`/`zh-Hans` → `zh-CN`,
-`zh-Hant`/`zh-Hant-TW`/`zh-HK`/`zh-MO` → `zh-TW`. A project may drop
+`--lang=<tag>` selects the language (`no build --lang=zh-tw`, `no vet --lang=ja`).
+A tag is lowercase-hyphen — the same spelling the `.no` naming rule requires — so
+`--lang=zh-TW` still works but is reported as `zh-tw`: matching is
+case-insensitive on purpose (`$LANG` is machine-generated), the canonical form is
+not. Precedence is `--lang` > `NO_LANG` > `compiler.lang` (from the nearest
+`package.noml`) > `LC_ALL` > `LANG` > `en`, so a Chinese or Japanese system
+locale is honoured without a flag (`zh_CN.UTF-8` → `zh-cn`), while a project can
+pin its own default and still lose to a deliberate `--lang` or `NO_LANG`.
+Aliases resolve onto the catalog that actually exists: `zh`/`zh-Hans` → `zh-cn`,
+`zh-Hant`/`zh-Hant-TW`/`zh-HK`/`zh-MO` → `zh-tw`. A project may drop
 `locales/<tag>.noml` at its root to override the built-in catalogs (project-local
-wins); the file name is the tag lowercased, so the `zh-CN` override is
-`locales/zh-cn.noml` (`catalog.LocaleFileName` is the only place that builds this
-name). Built-in catalogs live in `src/i18n/catalog/locales/` and are embedded with
-`go:embed`.
+wins); the file name is the tag, so the `zh-tw` override is `locales/zh-tw.noml`
+(`catalog.LocaleFileName` is the only place that builds this name). Built-in
+catalogs live in `src/i18n/catalog/locales/` and are embedded with `go:embed`.
 
 The LSP has no `--lang` flag. It resolves the language at startup from the same
 environment variables, then **overrides it from the client's
 `initialize.locale`** — an editor running in English should not show Chinese
 diagnostics just because the machine's `$LANG` is `zh_CN`. Precedence there is
-`initialize.locale` > `NO_LANG` > `LC_ALL` > `LANG` > `en`; an empty locale means
+`initialize.locale` > `NO_LANG` > `compiler.lang` > `LC_ALL` > `LANG` > `en`; an
+empty locale means
 "no opinion" and the startup resolution stands. Unknown tags warn and fall back
 to `en`.
 
@@ -223,7 +228,7 @@ lands. `en-doc.noml` and `zh-cn-doc.noml` cover, end to end:
 `arr`, `byte`, `char`, `number`, `int`, `num`, `float`, `math`, `os`, `fs`,
 `process`, `env`, `set`, `heap`, `bufio`, `path`, `err`, `log`, `bool`, `async`,
 `sort`, plus `collection`, `dom`, `yaml`, `toml`, `markdown`, `uuid`, `encoding`,
-`bigint` and `magic` — 1186 of the 1997 anchors that carry prose. `zh-TW`, `ja`,
+`bigint` and `magic` — 1186 of the 1997 anchors that carry prose. `zh-tw`, `ja`,
 `ko`, `fr` and `es` ship a starter set (the `args`/`global`/`env`/`bool`/`num`/
 `int` surface) and fall back to the source comment for the rest. The `net`,
 `crypto` and `archive` modules are anchored but not translated yet; run

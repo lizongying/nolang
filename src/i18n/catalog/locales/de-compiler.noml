@@ -12,7 +12,7 @@ Nolang - Eine Programmiersprache (Version %s)
 Verwendung:
 Globale Optionen:
   -v    Ausführlicher Modus (gilt für alle Befehle)
-  --lang=<tag>  Sprache der Meldungen, z. B. --lang=zh-CN, --lang=en.
+  --lang=<tag>  Sprache der Meldungen, z. B. --lang=zh-cn, --lang=en.
                 Standard ist die Systemsprache ($LC_ALL / $LANG);
                 Englisch ist der Rückfall. Auch über $NO_LANG einstellbar.
 

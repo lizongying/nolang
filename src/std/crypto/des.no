@@ -271,9 +271,9 @@ f = (r i64, k i64) (out i64) {
 ; [des-key-schedule](#des.des-key-schedule)
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
-    i <- [0..8): {
+    b <- key: {
 
-        k64 = (k64 << 8) | (key[i])
+        k64 = (k64 << 8) | b
     }
     c = 0
     d = 0

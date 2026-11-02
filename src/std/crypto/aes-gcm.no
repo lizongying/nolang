@@ -41,9 +41,9 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 
     ; z = 0
     z [16]byte
-    i <- [0..16): {
+    e <- z: {
 
-        z[i]: {
+        e: {
             ok -> it = 0
 
             -> _
@@ -137,9 +137,9 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     ; y = 0
     y [16]byte
     blk [16]byte
-    i <- [0..16): {
+    e1 <- y: {
 
-        y[i]: {
+        e1: {
             ok -> it = 0
 
             -> _
@@ -180,9 +180,9 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     ; AAD 最後不完整區塊
     #{overflow=wrap}
     pos < aad.len() -> {
-        i <- [0..16): {
+        e2 <- blk: {
 
-            blk[i]: {
+            e2: {
                 ok -> it = 0
 
                 -> _
@@ -240,9 +240,9 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     #{overflow=wrap}
     pos < cipher.len() -> {
-        i <- [0..16): {
+        e3 <- blk: {
 
-            blk[i]: {
+            e3: {
                 ok -> it = 0
 
                 -> _
@@ -271,9 +271,9 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
     ; 最後區塊: len(AAD)_64bit || len(cipher)_64bit（以位元為單位）
     len-blk [16]byte
-    i <- [0..16): {
+    e4 <- len-blk: {
 
-        len-blk[i]: {
+        e4: {
             ok -> it = 0
 
             -> _
@@ -484,9 +484,9 @@ gcm-j0 = (iv [12]byte) (j0 [16]byte) {
 ; [gcm-h](#aes-gcm.gcm-h)
 gcm-h = (ek []byte) (h [16]byte) {
     zero-block [16]byte
-    i <- [0..16): {
+    e5 <- zero-block: {
 
-        zero-block[i]: {
+        e5: {
             ok -> it = 0
 
             -> _

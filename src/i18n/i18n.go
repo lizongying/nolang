@@ -37,6 +37,12 @@ type Options struct {
 	// "not requested" unless LangSet is true.
 	Lang    string
 	LangSet bool
+	// ProjectLang is the project's own default — `compiler.lang` in the nearest
+	// package.noml. It sits between NO_LANG and the ambient system locale: a
+	// project may pin the language its messages are written in, but a deliberate
+	// per-invocation override (--lang, NO_LANG) still wins, because that is what
+	// the user asked for right now.
+	ProjectLang string
 	// Available lists the tags that actually have a catalog, in preference order
 	// (project-local first, then embedded). The resolver uses it to canonicalise
 	// case and to decide whether an explicit request is satisfiable.
@@ -60,7 +66,7 @@ type Options struct {
 	// the identifier itself.
 	AliasLoad func(tag string) (map[string]AliasEntry, error)
 	// Canonical maps an alias onto the tag whose catalog file actually exists
-	// (e.g. "zh" -> "zh-CN"). Nil means identity. It is applied after Resolve
+	// (e.g. "zh" -> "zh-cn"). Nil means identity. It is applied after Resolve
 	// and before Load, so the reported language is always the file's own tag.
 	Canonical func(tag string) string
 	// Env reads environment variables. Nil means os.Getenv.
@@ -85,8 +91,8 @@ type Options struct {
 //   - Alias  — 别名, e.g. 获取参数. It is what hover shows.
 //   - EnKeys — initials of the identifier, language-independent: `g`.
 //   - Keys   — initials of the localized name: `hqcs`.
-//   - Full   — full keystrokes, Chinese only: pinyin for zh-CN
-//     (`huoqucanshu`), zhuyin key positions for zh-TW (`fm32k6h0gj4`).
+//   - Full   — full keystrokes, Chinese only: pinyin for zh-cn
+//     (`huoqucanshu`), zhuyin key positions for zh-tw (`fm32k6h0gj4`).
 //
 // The on-disk order is [alias, enkeys, keys, full], documented in
 // catalog.RenderAlias. Every keystroke column is ASCII `[a-z0-9]` (Full also
@@ -357,7 +363,7 @@ func SetAliasCatalog(table map[string]AliasEntry) {
 }
 
 // Alias returns the localized display name for a std function/method keyed by
-// its doc anchor (`args.get` -> 获取参数 under zh-CN).
+// its doc anchor (`args.get` -> 获取参数 under zh-cn).
 //
 // The fallback when the anchor has no translation is the anchor's final dotted
 // segment — the identifier itself (`get`) — which is always readable and is
@@ -443,7 +449,19 @@ func Init(o Options) error {
 	if env == nil {
 		env = defaultEnv
 	}
-	tag, explicit, raw := Resolve(env, o.Lang, o.LangSet, o.Available)
+	// Precedence: --lang > NO_LANG > ProjectLang > LC_ALL > LANG > en.
+	//
+	// ProjectLang is folded into the explicit slot here rather than taught to
+	// Resolve, so "explicit" keeps meaning exactly one thing: a request we
+	// promised to honour, and therefore one worth warning about when it names a
+	// tag we cannot serve. It only takes that slot when nothing more deliberate
+	// is present — NO_LANG is the nolang-specific override and must beat a
+	// project's default, or a user could not escape it.
+	lang, langSet := o.Lang, o.LangSet
+	if !langSet && strings.TrimSpace(env("NO_LANG")) == "" && strings.TrimSpace(o.ProjectLang) != "" {
+		lang, langSet = o.ProjectLang, true
+	}
+	tag, explicit, raw := Resolve(env, lang, langSet, o.Available)
 
 	if explicit && raw != "" && tag == defaultLang && !containsTag(o.Available, raw) && !isPlainEnglish(raw) {
 		if o.Warn != nil {

@@ -651,10 +651,9 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         ; 讀取 Sequences_Section
         ; 簡化處理：如果沒有序列，直接輸出 literals
         br.pos >= block-end -> {
-            i <- [0..literals.len()): {
+            b <- literals: {
 
-                #{index-out=zero}
-                .out.push(literals[i])
+                .out.push(b)
             }
             ok = true
             .pos = block-end
@@ -667,10 +666,9 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         ; 讀取序列
         ; 簡化處理：如果有序列，需要讀取 sequence tables 並解碼
         ; 這裡先輸出 literals，序列解碼待完整實現
-        i <- [0..literals.len()): {
+        b1 <- literals: {
 
-            #{index-out=zero}
-            .out.push(literals[i])
+            .out.push(b1)
         }
         ok = true
         .pos = block-end
@@ -784,10 +782,9 @@ zstd-compress = (data []byte) (out []byte) {
     out.push(b2)
 
     ; 原始資料
-    i <- [0..data.len()): {
+    raw-b <- data: {
 
-        #{index-out=zero}
-        out.push(data[i])
+        out.push(raw-b)
     }
     ; Content Checksum (可選，這裡跳過)
 }

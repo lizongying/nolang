@@ -565,8 +565,8 @@ get = (i i64) (val ?str) {
 Translations live in `locales/<language>-doc.noml`, keyed by the anchor. A missing
 translation falls back to the comment's own text rather than becoming blank. The
 file name follows the `.no` naming rule (lowercase letters, digits, single
-hyphens), so the tag is lowercased and the separator is `-`: `--lang=zh-CN` reads
-`zh-cn-doc.noml`.
+hyphens), and the tag is spelled the same way: `--lang=zh-tw` reads
+`zh-tw-doc.noml`.
 
 Every documented function and method in the standard library already carries an
 anchor (about 2000 of them), so a translation becomes visible in the LSP the moment

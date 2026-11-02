@@ -335,6 +335,9 @@ Nolang 的所有配置檔（`package.noml`、`workspace.noml`、`.workspace.noml
 }
 ```
 
+`compiler.lang` 把本專案的消息語言固定下來（`'zh-tw'`、`'ja'` 等，寫法同 `--lang`）：它優先於系統 locale，
+但低於 `--lang` 與 `NO_LANG`；不寫則跟隨系統。
+
 ### 依賴管理
 
 ```bash

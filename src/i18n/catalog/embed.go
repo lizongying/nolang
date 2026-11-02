@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// localesFS carries the built-in catalogs so `no --lang=zh-CN` works out of the
+// localesFS carries the built-in catalogs so `no --lang=zh-tw` works out of the
 // box on any machine, with no install step and no writable state. A project's
 // own `locales/<tag>.noml` is read from disk first and wins.
 //
@@ -15,8 +15,9 @@ var localesFS embed.FS
 
 // embeddedTags lists the tags baked into the binary, sorted for determinism.
 //
-// File names are lower-case (`zh-cn.noml`) while tags are not (`zh-CN`), so each
-// name goes back through Canonical; see LocaleFileName.
+// A tag is lowercase-hyphen (`zh-cn`) and so is its file name, but each name
+// still goes back through Canonical so a project's `zh.noml` lands on the
+// catalog we ship; see LocaleFileName.
 func embeddedTags() []string {
 	entries, err := localesFS.ReadDir("locales")
 	if err != nil {

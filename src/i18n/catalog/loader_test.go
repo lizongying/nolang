@@ -9,7 +9,7 @@ import (
 )
 
 // writeLocale drops a locale file into dir/locales. The file name comes from
-// LocaleFileName, so a `zh-CN` tag writes `zh-cn.noml` — the same lower-case
+// LocaleFileName, so a `zh-CN` tag writes `zh-cn.noml` — the tag is lower-case
 // rule the shipped catalogs follow.
 func writeLocale(t *testing.T, dir, tag, body string) {
 	t.Helper()
@@ -61,13 +61,13 @@ func TestNonStringValueRejected(t *testing.T) {
 }
 
 // TestAvailableIncludesAliases: a bare "zh" request must resolve, and the
-// canonical tag must stay zh-CN — the FILE is `zh-cn.noml`, but the tag is what
-// Lang() reports and what the user typed, so it keeps its conventional spelling.
+// canonical tag is the lowercase-hyphen spelling `zh-cn` — the same shape the
+// `.no` naming rule requires, so the tag and the file name agree.
 func TestAvailableIncludesAliases(t *testing.T) {
 	avail := Available(nil)
 	var hasCanon, hasAlias bool
 	for _, tag := range avail {
-		if tag == "zh-CN" {
+		if tag == "zh-cn" {
 			hasCanon = true
 		}
 		if tag == "zh" {
@@ -75,13 +75,13 @@ func TestAvailableIncludesAliases(t *testing.T) {
 		}
 	}
 	if !hasCanon {
-		t.Fatalf("Available() = %v, want zh-CN", avail)
+		t.Fatalf("Available() = %v, want zh-cn", avail)
 	}
 	if !hasAlias {
 		t.Fatalf("Available() = %v, want the zh alias", avail)
 	}
-	if got := Canonical("zh"); got != "zh-CN" {
-		t.Fatalf("Canonical(zh) = %q, want zh-CN", got)
+	if got := Canonical("zh"); got != "zh-cn" {
+		t.Fatalf("Canonical(zh) = %q, want zh-cn", got)
 	}
 }
 
@@ -91,13 +91,13 @@ func TestInitInstallsTranslatedCatalog(t *testing.T) {
 	defer i18n.SetLang("en")
 
 	dir := t.TempDir()
-	writeLocale(t, dir, "zh-CN", "{\n  'aaaaaaaa': '中文'\n}\n")
+	writeLocale(t, dir, "zh-cn", "{\n  'aaaaaaaa': '中文'\n}\n")
 
-	if err := Init(Options{Lang: "zh-CN", LangSet: true, ProjectDirs: []string{dir}}); err != nil {
+	if err := Init(Options{Lang: "zh-cn", LangSet: true, ProjectDirs: []string{dir}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if got := i18n.Lang(); got != "zh-CN" {
-		t.Fatalf("Lang() = %q, want zh-CN", got)
+	if got := i18n.Lang(); got != "zh-cn" {
+		t.Fatalf("Lang() = %q, want zh-cn", got)
 	}
 	if got := i18n.T("aaaaaaaa", "english"); got != "中文" {
 		t.Fatalf("T = %q, want 中文", got)
@@ -122,7 +122,7 @@ func TestNewLocalesResolve(t *testing.T) {
 	defer i18n.SetLang("en")
 
 	avail := Available(nil)
-	for _, want := range []string{"zh-CN", "zh-TW", "ja", "ko", "fr", "es"} {
+	for _, want := range []string{"zh-cn", "zh-tw", "ja", "ko", "fr", "es"} {
 		found := false
 		for _, a := range avail {
 			if a == want {
@@ -136,9 +136,9 @@ func TestNewLocalesResolve(t *testing.T) {
 	}
 
 	cases := map[string]string{
-		"zh": "zh-CN", "zh-Hans": "zh-CN", "zh-CN": "zh-CN",
-		"zh-TW": "zh-TW", "zh-Hant": "zh-TW", "zh-Hant-TW": "zh-TW",
-		"zh-HK": "zh-TW", "zh-MO": "zh-TW",
+		"zh": "zh-cn", "zh-Hans": "zh-cn", "zh-CN": "zh-cn",
+		"zh-TW": "zh-tw", "zh-Hant": "zh-tw", "zh-Hant-TW": "zh-tw",
+		"zh-HK": "zh-tw", "zh-MO": "zh-tw",
 		"ja": "ja", "ja-JP": "ja", "ko": "ko", "ko-KR": "ko",
 		"fr": "fr", "fr-FR": "fr", "es": "es", "es-ES": "es",
 	}
@@ -159,7 +159,7 @@ func TestEachLocaleTranslates(t *testing.T) {
 	defer i18n.SetLang("en")
 	const id = "haahhq7o"
 	en := "function 'f' expects at least 1 argument(s), got 0"
-	for _, tag := range []string{"zh-CN", "zh-TW", "ja", "ko", "fr", "es"} {
+	for _, tag := range []string{"zh-cn", "zh-tw", "ja", "ko", "fr", "es"} {
 		if err := Init(Options{Lang: tag, LangSet: true}); err != nil {
 			t.Fatalf("Init(%s): %v", tag, err)
 		}

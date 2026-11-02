@@ -94,8 +94,10 @@ func (s *Server) handleInitialize(params InitializeParams) (any, error) {
 	// English while $LANG is zh_CN would otherwise get Chinese diagnostics and
 	// Chinese hover text inside an English UI, which reads as a bug in the
 	// editor rather than a language setting. Precedence is therefore
-	// initialize.locale > NO_LANG > LC_ALL > LANG > en, and an empty locale
-	// means "no opinion" — the startup resolution stands.
+	// initialize.locale > NO_LANG > compiler.lang > LC_ALL > LANG > en, and an
+	// empty locale means "no opinion" — the startup resolution stands. Because
+	// a client locale is explicit here, it also outranks the project default
+	// that startup may have picked up from package.noml.
 	//
 	// This must happen before any diagnostic is built: the checker translates
 	// when it constructs a message, not when it renders one.

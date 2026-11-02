@@ -1,5 +1,16 @@
 # 更新日誌
 
+## v0.4.15
+
+- feat(checker): forbid comparing non-option types with nil (`T == nil` is now a hard error; `?T == nil` stays legal)
+- feat(cg): inline read/write of option vec payload (`?[]i64`) without boxing (s40, §11 B8)
+- feat(cg): integer div/mod by-zero select guardrail with stderr diagnostic (s38/s39, §11 B14)
+- feat(i18n): embed localized multi-line compiler help texts and version labels; expand translator catalogs
+- fix(ci): restrict GitHub Pages deploy to release tags with manual dispatch; drop main-branch deploy trigger
+- fix(std): update archive and crypto modules (bzip2/gzip/xz/zip/zlib/zstd, aes-gcm/des/ecdsa/ed25519/hmac/sha256/sha3); add bzip2 test
+- perf(mir): add vec equality and refined index comparison codegen
+- test(build): remove obsolete binary test file and expect bool as "true"/"false" in format interpolation
+
 ## v0.4.14
 
 - feat(i18n): add an alias catalog of localized display names and keystroke columns for std

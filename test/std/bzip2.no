@@ -1,0 +1,67 @@
+; std-bzip2.no — archive/bzip2 模組測試
+;
+; 執行：no test test/std/bzip2.no
+; 覆蓋：bzip2.bzip2-decompress —— 以系統 bzip2 -9 產生的真實串流做黃金比對，
+;       完整走過 Huffman 碼表建構（len-count / base / limit / perm）、
+;       symbol map（in-use-16 / in-use）、MTF 與 BWT 反變換（count / cum / rank / lf）
+
+# /test/runner
+
+; /usr/bin/bzip2 -9 對 BZ2-EXP 壓縮所得的真實 .bz2 串流（121 位元組）
+BZ2-REF []byte = [
+    66, 90, 104, 57, 49, 65, 89, 38, 83, 89, 180, 202, 206, 106, 0, 0, 33,
+    217, 128, 0, 16, 64, 0, 127, 224, 63, 255, 255, 240, 32, 0, 72, 168,
+    208, 104, 105, 163, 77, 61, 76, 38, 70, 158, 163, 106, 24, 211, 79, 81,
+    161, 145, 233, 13, 12, 141, 50, 51, 70, 18, 156, 81, 38, 141, 99, 150,
+    106, 211, 85, 236, 205, 192, 58, 105, 221, 40, 89, 35, 70, 129, 111,
+    157, 252, 105, 211, 20, 161, 34, 121, 173, 5, 33, 141, 254, 232, 55,
+    76, 53, 220, 173, 64, 71, 224, 95, 25, 9, 185, 50, 202, 83, 238, 130,
+    238, 72, 167, 10, 18, 22, 153, 89, 205, 64
+]
+
+; BZ2-REF 解壓後的期望位元組（82 位元組 ASCII）
+BZ2-EXP []byte = [
+    116, 104, 101, 32, 113, 117, 105, 99, 107, 32, 98, 114, 111, 119, 110,
+    32, 102, 111, 120, 32, 106, 117, 109, 112, 115, 32, 111, 118, 101, 114,
+    32, 116, 104, 101, 32, 108, 97, 122, 121, 32, 100, 111, 103, 10, 48,
+    49, 50, 51, 52, 53, 54, 55, 56, 57, 32, 97, 98, 99, 100, 101, 102, 103,
+    104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
+    118, 119, 120, 121, 122, 10
+]
+
+; 黃金比對：解壓真實 bzip2 串流，逐位元組對比期望輸出
+t-decompress-golden = () {
+    out = bzip2.bzip2-decompress(BZ2-REF)
+    runner.eq(out.len(), 82, 'decompressed len == 82')
+    n = out.len()
+    m = 0
+    i <- [0..n): {
+        a ?i64 = out[i]
+        b ?i64 = BZ2-EXP[i]
+        {
+            a == b -> {}
+            -> m = m + 1
+        }
+    }
+    runner.eq(m, 0, 'all bytes match golden bzip2 output')
+}
+
+; 邊界：空輸入不產生任何位元組
+t-decompress-empty = () {
+    raw []byte = []
+    out = bzip2.bzip2-decompress(raw)
+    runner.eq(out.len(), 0, 'empty input -> empty output')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('bzip2.decompress golden stream', t-decompress-golden)
+p2, f2 = runner.test('bzip2.decompress empty input', t-decompress-empty)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

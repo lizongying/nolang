@@ -26,6 +26,10 @@ type CompilerOptions struct {
 	// ESMCDN 是 browser 模式下第三方 ESM 導入（# npm/…）的 import map CDN
 	// 前綴；空字串表示使用內建預設 https://esm.sh。
 	ESMCDN string `json:"esm-cdn,omitempty"`
+	// Lang 是本專案預設的消息語言（`compiler.lang = 'zh-tw'`）。空字串表示
+	// 跟隨環境；--lang 與 NO_LANG 永遠優先於它，見 i18n.Resolve 的優先級。
+	// 值的小寫中劃線形式與 --lang 相同，`zh_TW` 這類寫法由 i18n 正規化。
+	Lang string `json:"lang,omitempty"`
 }
 
 // Package 表示 package.noml 定義的專案套件
@@ -211,6 +215,42 @@ func LoadPackage(dir string) (*Package, error) {
 	}
 
 	return nil, nil // 沒有找到套件
+}
+
+// CompilerLang returns the `compiler.lang` declared by the nearest package.noml
+// at or above dir, or "" when there is no manifest or the field is unset.
+//
+// It deliberately does NOT go through LoadPackage. That function also resolves
+// the workspace map, the lock file and the sum file — none of which choosing a
+// message language needs — and this runs before i18n is initialised, i.e. on
+// every `no` invocation, so the startup cost has to stay at "read one small
+// file". A manifest that fails to parse returns "" rather than an error: the
+// command about to run will report the parse failure itself, and a broken
+// config must not make `no` unable to print its own diagnostics.
+//
+// The value is returned as written; i18n normalises it (case, `_` vs `-`) the
+// same way it normalises --lang and $LANG.
+func CompilerLang(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = dir
+	}
+	for {
+		if data, readErr := os.ReadFile(filepath.Join(abs, PackageManifestName)); readErr == nil {
+			m, parseErr := ParseNomlMap(data)
+			if parseErr != nil {
+				return ""
+			}
+			comp, _ := m["compiler"].(map[string]any)
+			lang, _ := comp["lang"].(string)
+			return strings.TrimSpace(lang)
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs { // reached the filesystem root
+			return ""
+		}
+		abs = parent
+	}
 }
 
 // WorkspaceRoot 返回工作區根目錄（workspace.noml 所在目錄）。

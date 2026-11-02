@@ -4,6 +4,10 @@
 {
   '04mmq0us': 'lencap struct : len/cap n’est pas pris en charge sur le struct %s dans la fonction %d'
   '04tb4mwj': 'eq-raw : impossible de stocker i1 dans %s'
+  '060maaj0': `
+Erreur : %v
+
+`
   '06r4gtr3': 'builtin %s : opérande manquant'
   '081adx9q': 'net-accept-nb : aucun emplacement de résultat'
   '09qseik5': 'identifiant attendu après le point, %s obtenu'
@@ -11,12 +15,17 @@
   '0cccc2ei': 'l’instruction régie par cette annotation #{overflow=...} ne contient aucune arithmétique entière (par exemple la ligne ne fait que concaténer des chaînes), elle ne peut donc jamais déborder ; envisagez de supprimer l’annotation.'
   '0coyzo4x': 'vec.sort : aucun emplacement de récepteur'
   '0ewki0e0': '« } » attendu pour fermer l’annotation de variante, %s obtenu'
+  '0gl7izq7': 'les sorties navigateur les résolvent via une import map ; pointez-la vers'
   '0hl9ybj4': 'le backend JS exige un fichier d’entrée explicite ou main.no (mode workspace non pris en charge)'
   '0ik1j9cf': 'échec du formatage : %d erreur(s) d’analyse'
   '0iodav1i': '« .. » attendu pour la plage ou « , »/« ] » pour le slice, %s obtenu'
   '0j1imd2d': 'une annotation `#{...}` ne peut pas partager la ligne devant sa cible ; placez-la sur sa propre ligne au-dessus de la cible, ou en fin de ligne de la cible'
   '0jdavdb8': '« while condition { } » est obsolète, utilisez « for condition { } » à la place'
   '0kf267f2': 'instruction switch vide'
+  '0lur3tbm': `
+Mis à jour %s
+
+`
   '0qnjitgt': 'builtin %s : aucune spécification d’appel C'
   '0tjeipjr': '« for init; cond; update » est obsolète, utilisez des virgules « , » à la place'
   '0ts2eetl': 'builtin %s : aucune valeur'
@@ -30,9 +39,17 @@
   '16ltowfs': '« for cond { } » est obsolète, utilisez la boucle « { } (cond) » à la place'
   '170bewkb': 'impossible de déduire le type de la variable “%s” à partir de nil'
   '17mbz8cw': '« } » attendu pour fermer l’annotation, %s obtenu'
+  '18uic4sz': 'Avec -v, écrire en plus des fichiers LLVM IR (.ll) pour l\'analyse lors de la compilation.'
   '1b3u924y': 'read-file : impossible de convertir le chemin en chaîne C'
+  '1cg8g9ic': 'Valider des fichiers source Nolang sans produire de sortie.'
+  '1ea3hwsu': '  lier les modules JS. Aucun drapeau requis ; le manifeste décide.'
+  '1gmy3g9v': '  no vet                     valider le main.no du répertoire courant'
   '1gybkrrq': '%s'
   '1i1o45j6': 'type de paramètre attendu, %s obtenu'
+  '1iye2j55': `
+  repository: %s
+
+`
   '1j6i9o1o': 'emplacement du récepteur d’opération slice'
   '1k6cdcgx': '« . » attendu après le type, %s obtenu'
   '1lg2qpwf': 'syslog : impossible de convertir l’argument 1 en chaîne C'
@@ -40,32 +57,54 @@
   '1m1ocf8t': 'hôte non pris en charge %q (seul github.com est pris en charge)'
   '1plv4fne': 'emplacement de destination de str-from-vec'
   '1qz0p808': 'chemin de module manquant après la clé de dépendance %s'
+  '1rk772tt': `
+Erreur de création du répertoire src : %v
+
+`
   '1u2vckag': 'builtin %s : récepteur manquant'
   '1ubmxmsr': '« , » ou « } » attendu dans l’annotation, %s obtenu'
+  '1wsc2hed': 'Chemin du zip de sortie (défaut : dist/<name>.ast.zip)'
   '1x2yhmnf': 'win-get-std-handle : un argument which est requis'
+  '1zgxpqk7': 'Imports ESM tiers (--js) : importer des paquets npm avec `# npm/lodash`,'
+  '202eioh0': `
+Erreur d'écriture du fichier de test : %v
+
+`
+  '20szn23y': '  no ast main.no                    afficher l\'AST de main.no'
+  '20xgyqyu': `
+Dépendance ajoutée : %s = %s
+
+`
   '21irdw5o': '$str_concat : incompatibilité de type des arguments'
   '2243l8if': '..any n’est autorisé que dans la bibliothèque standard, pas dans le code utilisateur (fonction : %s)'
   '238u1xr7': 'embed : seules les déclarations []byte / [N]byte / fs.embed sont prises en charge, déclaration non typée obtenue'
+  '23ki71z9': 'Utiliser le backend Direct WASM (sans chaîne LLVM, compatible navigateur)'
   '2534ei4x': '« if/elif/else » est obsolète, utilisez « { <cond> -> <corps> } » à la place'
   '26rmtbup': 'vec.truncate : aucun emplacement de récepteur'
   '27jt8xlw': 'création du répertoire temporaire : %w'
   '28t42vw9': 'l’expression entière retournée est un option<int> par défaut, mais cette fonction ne retourne pas de type option. Ajoutez une annotation `#{overflow = wrap}` pour récupérer un int simple, ou faites retourner ?T à la fonction et propagez avec `result ?= expr` (ou capturez sur place avec `result = expr`).'
+  '2bg0n0e0': '  - lib.no (fichier d\'export de la bibliothèque)'
   '2cmnxd6l': '« ] » ou « ) » attendu pour fermer la plage, %s obtenu'
   '2dhoris2': '“%s” ne doit contenir que des lettres minuscules et des traits d’union'
   '2e14k5et': 'impossible de déduire le type de “%s” : %s() exige une annotation de type explicite à gauche (ex. `name []byte = %s(n)`)'
   '2fke76na': 'wasm : incohérence du nombre de fonctions/codes : %d fonctions contre %d codes'
   '2g4xt4m5': 'net-listen : aucun emplacement de résultat'
+  '2ixluoth': 'Exécuter les tests.'
   '2kqboupo': 'builtin non pris en charge %s'
   '2ls7kxqp': 'impossible de réaffecter le nom de fonction “%s”'
   '2lsu55tb': 'le module wasm natif %q n’est pas déclaré dans les dépendances de package.noml ; ajoutez dependencies: [\'%s:^latest\'] (ou dev-dependencies) puis exécutez npm install'
+  '2lxm8j4k': 'Backend :'
   '2nh7qycu': 'builtin %s : type de retour C non géré'
   '2nvmt2tf': 'écriture du fichier LLVM IR : %w'
+  '2psk9dma': 'Générer une sortie ciblant le navigateur (HTML + JS, avec --js)'
+  '2q3wfrie': 'Analyser un fichier source Nolang et afficher son AST sur la sortie standard.'
   '2qdpadhy': 'Utilisez le déballage en deux étapes : d’abord `%s = <expr>` (inféré comme ?T), puis `v = %s: {` avec `ok -> it` et `-> <défaut>` sur des lignes séparées ; ou utilisez une instruction match `%s: { ok -> { ... } -> { ... } }`, ou propagez avec `%s ?= <expr>`, ou rejetez explicitement avec `_ = <expr>`. Notez que les branches de match doivent être séparées par des retours à la ligne (la forme avec virgules est une erreur d’analyse), et la forme sur une ligne `%s = <expr>: { ... }` ne s’attache que lorsque <expr> est un identifiant nu ; sinon le match se détache en une instruction autonome et %s reste un ?T non déballé.'
   '2qoxhl6a': 'win-create-process : impossible de convertir cmdline en chaîne C'
   '2rkb38mw': 'création du répertoire de cache : %w'
   '2t4wkn7s': '« } » attendu pour fermer l’annotation de champ, %s obtenu'
   '2trc49mk': 'alias de type en double %q'
   '2u2o0e24': 'net-dial : aucun emplacement de résultat'
+  '2u63w9uc': 'Utiliser le backend JS (émettre du JavaScript source, sans chaîne LLVM)'
   '2xehrcuo': `
 chaîne d’outils LLVM non détectée
   macOS : brew install llvm
@@ -101,33 +140,47 @@ impossible d’affecter directement via un index : `%s = %s`. Une lecture d’in
   '3owkeirf': 'analyse des informations de release pour %s/%s : %w'
   '3pry7fmd': 'virgule ou parenthèse fermante attendue, %s obtenu'
   '3r03yk09': '« ) » attendu'
+  '3rob7gjj': 'Avec --wasm-direct, contourner la chaîne LLVM et générer du WASM directement (compatible navigateur).'
   '3sxhaibr': '« ) » ou « ] » attendu pour fermer la plage, %s obtenu'
   '3u02loy5': 'API C LLVM : exécution des passes %q : %s'
+  '3u2xl8v7': '  no run --wasm-direct main.no   compiler via Direct WASM puis exécuter avec wasmtime (si présent)'
   '3uu88ox1': 'parenthèse fermante attendue, %s obtenu'
   '3vbgvipn': 'résolution de la dépendance %s@%s : %w'
   '3wynwdcq': 'impossible d’analyser %q comme float'
   '3xcxajan': 'getgrouplist : impossible de convertir l’argument 0 en chaîne C'
+  '3xe1wjrw': 'Dépendances :'
+  '3zh3tuv8': 'C\'est l\'oracle L2 de l\'effort d\'auto-hébergement : la sortie est'
   '430ty5x5': 'le récepteur tableau d’octets n’a pas d’emplacement'
   '45y022ur': 'net-listen : impossible de convertir l’hôte en chaîne C'
   '46jwfg5y': 'type attendu après %q dans l’alias de type'
   '46qem63e': 'l’IR MIR a échoué à l’assemblage LLVM : %v : %s'
+  '4bopl5am': 'Racine :'
   '4ccv952m': 'builtin %s : impossible de stocker i64 dans %s'
+  '4dquj9mu': 'Répertoire de travail :'
+  '4en75r71': '<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip'
   '4ewgvnbn': 'les conditions chaînées par « -> » (a -> b -> c) sont déconseillées ; fusionnez les conditions avec &&/|| ou utilisez des blocs « { } » pour éviter des bugs de portée subtils'
+  '4eyd78yc': 'Si aucun fichier/répertoire n\'est donné et que workspace.noml existe,'
   '4g7bz9oy': 'net-accept-nb : (listen-fd) requis'
   '4hmw6w3i': 'arité du borrow'
   '4m2w3mkd': 'vec.push : aucun emplacement de récepteur'
   '4o348fh8': '« ] » ou « ) » attendu pour fermer la plage, %s obtenu'
   '4oy26jat': 'builtin %s : le résultat 0 n’a pas d’emplacement'
+  '4pj8z50l': '  la résolution de modules du backend JS, donc les imports ESM `# npm/<pkg>` et les'
   '4ptt84li': '%s : incompatibilité de type des arguments'
   '4qhyyund': 'callee inconnu %s dans la fonction %s'
+  '4r3ghy7k': 'Prérempli depuis git/l\'environnement :'
   '4rsqarsx': 'emplacement txt d’eprint'
   '4scfdhhp': 'utime : aucun emplacement de résultat'
   '4uv9dunu': 'str.clear : récepteur requis'
   '4y6hz2la': 'embed : seules les déclarations []byte / [N]byte / fs.embed sont prises en charge, %s obtenu'
   '50ztzqeo': 'AST std : encodage de %s : %w'
+  '531ftg4b': '  no test tests/my-test.no    exécuter un seul fichier de test'
   '537ew54w': 'builtin chars-new : slice de caractères manquant'
+  '55szl0aa': '  no test -cc zig'
+  '58nk14b4': '  no build -o output main.no'
   '5bj5o9ci': 'str.clear : aucun emplacement de récepteur'
   '5blqb26x': '« ) » attendu'
+  '5ci3l7h9': '  no add nogit:v0.1.33@github.com/lizongying/notools'
   '5cid832p': 'builtin de champ privé inconnu %s'
   '5ckkrp9f': 'noml : champ %s[%d] : un élément de dépendance doit être une chaîne, %T obtenu'
   '5eo1kvb9': 'noml : champ %s : objet attendu, %T obtenu'
@@ -145,12 +198,19 @@ aucun éditeur de liens C utilisable détecté (clang/cc/gcc)
 
 `
   '5lycdtsz': 'argument %d de “%s.%s” : “%s” attendu, “%s” obtenu'
+  '5nhzzuch': 'Drapeaux :'
+  '5nlhrsc7': 'Avec --js, contourner la chaîne LLVM et générer du JavaScript (exécuté par node).'
   '5ns1mui1': 'le niveau supérieur doit être un objet'
+  '5o3x4h4d': 'Ignorer les vérifications de bornes pour une performance maximale (non sûr)'
   '5qjs01mp': 'parenthèse fermante attendue, %s obtenu'
   '5qpe9buw': 'win-write-pipe : (handle, data) requis'
   '5ve092z6': 'type de paramètre non pris en charge %s dans la fonction %s'
   '5yjn9wrj': 'setfield : champ %q introuvable sur %q (option %q)'
+  '603y6hgq': 'Chaque paquet doit être déclaré dans les dependencies (ou'
+  '61bm2pzr': 'Toutes les dépendances ont été mises à jour.'
   '62z2cnfe': 'emplacement option peel'
+  '63lrmg48': 'Si stdin est un tube (ex. echo \'x=1\' | no fmt), la lecture se fait depuis stdin.'
+  '64bt3a50': 'Compiler des sources Nolang en un exécutable.'
   '64t1vgh6': 'vec.remove : récepteur et index requis'
   '66ybjsus': 'write-file : impossible de convertir le chemin en chaîne C'
   '68bn4o2m': 'le spécificateur de paquet ESM %q ne doit pas commencer ni se terminer par « / »'
@@ -161,26 +221,49 @@ aucun éditeur de liens C utilisable détecté (clang/cc/gcc)
   '6o12uzmx': 'waitpid : non pris en charge sous windows'
   '6p2o4902': 'l’actif %s dépasse la limite de taille (%d octets)'
   '6qca9xu4': 'embed : impossible de combiner avec une valeur explicite'
+  '6svrp0le': 'Usage : no fmt [flags] <file|dir>'
   '6umfb8yv': 'builtin %s : %s'
   '6xq3uson': 'getgrouplist : 2 résultats requis (gids, n)'
   '6y4tyjln': 'noml : champ %s : type de cible non pris en charge %s'
+  '73myjkcm': '  no test                     exécuter tous les .no du répertoire tests/'
   '743idjpl': 'impossible d’analyser %q comme entier'
+  '74e32kaz': 'Avec --llvm-capi, compiler l\'IR en cours de processus via l\'API C de LLVM (builds non-debug uniquement ; désactivé par défaut).'
   '755ldw47': 'parenthèse fermante attendue dans la déclaration extern, %s obtenu'
   '75f5l5xg': 'load-le-%s : aucun emplacement de destination'
   '75pom499': 'emplacement de destination txt'
   '75qapexc': 'impossible de convertir l’argument %d de %s en %s'
   '75yiyise': 'le match de type sur l’union %q exige des motifs de type (par ex. %q ->) ou une branche par défaut (->)'
+  '76fao0mm': `
+  ressource : %s
+
+`
   '7c5fbvp4': 'le constructeur val() est obsolète ; utilisez ok(x) pour une construction explicite ou `name = expr` pour une affectation implicite'
+  '7camjpuc': `
+  author:     %s
+
+`
   '7clod0r1': 'accolade ouvrante attendue dans elif, %s obtenu'
   '7dl1fkwt': 'chaîne d’outils LLVM non disponible dans la compilation WASM ; utilisez l’option --wasm-direct'
   '7f3qhn9l': 'emplacement du récepteur d’index txt'
+  '7f6c9808': `
+Erreur de création du répertoire tests : %v
+
+`
   '7h2kezo7': 'net-udp-sendto : impossible de prendre le pointeur de données de l’argument 1'
+  '7k5x9q9a': 'Compilateur C : clang (défaut), zig'
+  '7l372tkw': '  --strict         promouvoir tous les avertissements/indices lint en erreurs'
+  '7mckxr6e': `
+  Mis à jour %s
+
+`
   '7mitslag': 'format de clé de dépendance non pris en charge : %s (seul github.com est pris en charge)'
   '7o5ico3h': 'str.to-bool : impossible de convertir i1 en %s'
   '7p1k0dke': 'le téléchargement de paquets n’est pas pris en charge dans la compilation WASM (playground du navigateur)'
   '7riv9hah': 'version de fichier de verrouillage non prise en charge %q (%s attendue)'
   '7sfqpwmj': 'dépendance introuvable : %q n’est pas déclaré dans les dépendances de package.noml'
   '7t8ke5g1': 'cancelled : aucun emplacement de résultat'
+  '7tcn8wox': 'Exemples :'
+  '7usot77o': 'appliquer des corrections automatiques pour une classe de problème : \'overflow\' (ajoute #{overflow=wrap} à l\'arithmétique entière non annotée), \'redundant\' (supprime les annotations de type égales au type inféré, ex. `x str = \'\'` -> `x = \'\'`), \'match\' (ajoute les bras nil/err manquants aux match d\'option non exhaustifs), ou \'unwrap\' (consomme les liaisons option qui ne sont jamais propagées ni déballées : `x ?= expr` si la fonction a déjà un résultat ?T, sinon `x-opt = expr` plus un match d\'instruction `x-opt: { ok -> x = it -> }` sur les lignes suivantes), ou \'main\' (omet le wrapper de haut niveau `main = () { ... }` en remontant ses instructions au niveau supérieur ; ignoré si main a des paramètres/résultats ou un return direct)'
   '7uy8wmqv': '%s'
   '7zfvvuin': 'Aucun problème détecté.'
   '802t452i': 'builtin %s : résultat option dans la destination %s'
@@ -199,22 +282,39 @@ le chemin du fichier source n’est pas un nom valide : %s
   '89pwo0vg': 'noml : la clé de map doit être une chaîne : %T'
   '8apmtyk6': 'lecture du fichier d’entrée : %w'
   '8dbrd5fk': 'fichier de module introuvable : %s'
+  '8ehrkmgn': '  no test'
+  '8emu38e0': 'Usage : no new <package-name>'
   '8gnvlvf4': 'nom de paramètre attendu, %s obtenu'
+  '8h17gwzn': '  no build -cc zig main.no'
   '8haww14h': 'write-file : chemin et données requis'
   '8j6njczi': 'virgule ou parenthèse fermante attendue dans la déclaration extern, %s obtenu'
   '8jsgdrcw': 'erreur de génération JS : %w'
   '8k0xmfmo': 'emplacement de destination d’index str (dst=%d type=%s)'
   '8ndov8z0': 'net-dial : (host, port) requis'
   '8o5wqxi2': 'parenthèse ouvrante attendue, %s obtenu'
+  '8r4nnper': '  no add nogit@lizongying/notools                   l\'hôte vaut github.com par défaut'
+  '8r9be4h9': `
+Compilé : %s
+
+`
   '8rjhajw9': '$str_concat : arité incorrecte'
   '8sf1ugcv': 'noml : type de valeur non pris en charge %T'
   '8t1jaj02': 'l’expression entière `a OP b` renvoie un option<T> en cas de débordement par défaut, ce qui lie `%s` à un `?T`. %s Si vous préférez un repli circulaire plutôt qu’une erreur, ajoutez `#{overflow = wrap}` — notez que l’annotation ne change que la valeur prise en cas de débordement, le résultat reste `?T`.'
+  '8ux5w599': 'comparée octet par octet à `noc ast`, donc le format fait office de spécification.'
   '8vlao0fn': 'bool.to-str : aucun emplacement de résultat'
   '8w3q93g2': 'la méthode intégrée privée “%s.%s” ne peut être appelée que depuis le module %s, pas depuis %s'
   '8wckpc2l': 'nom de variable attendu après « , », %s obtenu'
   '8wmzq8hx': '« .. » attendu dans la plage, %s obtenu'
   '8wo2yee6': 'les clés %q et %q correspondent au même champ nolang %q'
+  '8wygofht': `
+Test : %s
+
+`
   '8xy43fpc': 'corps de boucle attendu après l’étiquette #%s, %s obtenu sans « { } »'
+  '8y7pdnc9': `
+Erreur de synchronisation des dépendances : %v
+
+`
   '8zompytc': 'interface « %s » : cycle de fusion %s'
   '95a27ccb': 'clé d’annotation attendue, %s obtenu'
   '96c2yjtk': '« , » ou « } » attendu dans le littéral de struct, %s obtenu'
@@ -223,6 +323,7 @@ le chemin du fichier source n’est pas un nom valide : %s
   '97nc8yti': 'noml : objet attendu, %T obtenu'
   '985exavg': '`%s %s= %s` est obsolète et la fonction englobante n’a pas de résultat option, l’échec ne peut donc pas être propagé : réécrivez-le en `%s %s %s: { ok -> %s = it, -> }` (ce que fait la branche non-ok est à votre choix), ou faites du paramètre de résultat un `?T` et écrivez `%s ?= %s %s %s`'
   '998pp6wy': 'win-wsa-startup : impossible de convertir i1 en %s'
+  '99vq7t38': 'Compiler et exécuter un projet Nolang.'
   '9a5ye4ws': 'le membre %q a un type de valeur non pris en charge %T (annotez-le avec #{type = \'...\'})'
   '9buy5tfz': '« ] » attendu dans le type slice nullable, %s obtenu'
   '9c615d3t': '« , » ou « > » attendu dans les arguments génériques, %s obtenu'
@@ -230,34 +331,51 @@ le chemin du fichier source n’est pas un nom valide : %s
   '9edsvha2': 'paquet %s introuvable dans l’archive extraite'
   '9emnu2fu': 'argument str d’extern'
   '9ljl8qke': 'corps de boucle attendu après l’étiquette #%s, « ( » obtenu sans « (cond) { } »'
+  '9novjn6s': '  no pack ./nogit                  empaqueter un répertoire de paquet'
   '9onc0638': 'readlink : impossible de convertir le chemin en chaîne C'
   '9q9raufb': 'une branche de match en contexte d’expression doit se terminer par une expression'
   '9ru0tpwh': 'uname : type de struct utsname non collecté'
+  '9smrnsbd': '  no pack -o nogit.ast.zip         sortie explicite (pratique en CI)'
   '9v43hxr2': '%d erreur(s), %d avertissement(s), %d indication(s)'
   '9yjr7gj6': 'nom de champ attendu dans la définition du struct, %s obtenu'
+  '9yqaweku': '  no fmt -w main.no           formater le fichier sur place'
   'a2hjr26f': 'emplacement du récepteur d’index str'
   'a3duuqtg': 'type de paramètre attendu, %s obtenu'
   'a3yrogp1': 'concaténation de chaînes : utilisez “-” au lieu de “+”'
   'a5247dgy': 'API C LLVM : échec de création du tampon mémoire pour l’IR'
   'a7ee394w': 'win-find-first-file : un argument de chemin est requis'
   'a7wjyiq9': 'pipe : non pris en charge sous windows'
+  'aazb9b1n': 'Seuil en octets pour intégrer une charge option (?T) dans la structure option (défaut 24, minimum 8) ; au-delà, la charge est mise en boîte sur le tas'
   'aih7e3j0': 'impossible d’affecter nil à la variable non-option “%s”'
   'al7nsvgl': 'vec.insert : récepteur, index et élément requis'
   'aljknpjz': 'builtin %s : opération binaire inconnue'
   'am0g79ly': '%s : argument manquant'
   'amiajbn5': 'net-icmp-open : aucun emplacement de résultat'
+  'amyp0ig8': `
+Erreur de résolution de la dernière version : %v
+
+`
   'ap403a8m': 'net-recv : impossible de prendre le pointeur de données de l’argument 1'
   'appz8ry7': 'builtin %s : %v'
+  'aqrceaf2': '  no ast -annotations main.no       y compris les annotations #{...}'
   'au6g7ji7': 'erreurs de l’analyseur : %s'
   'axj3m1pb': '« as » inattendu au début de l’expression'
   'axtpo500': 'win-find-first-file : impossible de convertir le chemin en chaîne C'
   'ayjrpinp': 'noml : DecodeInto exige un pointeur non nul, %T obtenu'
   'aywuxg5w': 'builtin %s récepteur %s : %s'
+  'b1narysr': 'binaire'
   'b360mu4g': 'nom de paramètre attendu, %s obtenu'
+  'b3ucznjm': `
+Dernière version de %s/%s : %s
+
+`
   'b6fjj9ka': 'impossible d’affecter nil à la variable non-option “%s”'
+  'b978wrdx': '  no run -target wasm32-wasi main.no'
   'b9cf2s8p': '« x { ... } » est obsolète, utilisez « x: { ... } » à la place'
+  'b9iqtopl': '  - si workspace.noml existe, formate tous ses répertoires de projet ;'
   'bbv2nbtt': 'type de champ attendu après %q, %s obtenu'
   'beppq99h': 'builtin %s : aucun emplacement de résultat'
+  'bikq8xen': 'Format de sortie : file:line:col: [SEVERITY] source: message'
   'bjj14xsi': 'emplacement lencap'
   'bp7m5374': 'arr.zero : aucun emplacement de récepteur'
   'bsaaq6j7': 'utime : impossible de convertir le chemin en chaîne C'
@@ -265,15 +383,22 @@ le chemin du fichier source n’est pas un nom valide : %s
   'bvxzv6u0': 'net-udp-recvfrom : aucun emplacement de résultat'
   'c33l3vql': 'fichier de module introuvable : %s ou %s'
   'c48g377y': 'les bornes de plage flottantes ne sont pas prises en charge, utilisez des entiers'
+  'c6eld4s3': `
+Dépendance supprimée : %s
+
+`
+  'capaq6dh': 'un autre CDN (ex. https://cdn.jsdelivr.net/npm).'
   'cb4biu8s': 'NOLANG_MIR=%s : le backend de génération de code hérité a été supprimé et MIR est le seul backend ; supprimez NOLANG_MIR (ou utilisez NOLANG_MIR=1 pour le vidage de l’abaissement)'
   'cccby88i': 'main.no introuvable dans le paquet %q (%s)'
   'ceuorcf6': 'sysctl : un nom est requis'
+  'cfmyuhe8': 'afficher aussi les entrées d\'annotation #{...} de chaque nœud'
   'cfoww4c7': 'identifiant attendu dans le chemin d’exportation, %s obtenu'
   'cfw15ncb': 'impossible d’analyser %q comme entier'
   'cggefx7i': 'lecture de l’entrée tar : %w'
   'cgy953iu': 'vec.push : récepteur et élément requis'
   'ch6tlrpx': 'rotate : aucun emplacement de destination'
   'chbx2waz': 'la branche attrape-tout `->` vide peut être prise (le compilateur ne peut pas prouver que « %s » est toujours ok). Décidez de ce qui doit se produire en cas d’échec, par ex. `-> log(\'...\')` / `-> print(\'...\')` ; la laisser vide produit silencieusement la valeur zéro par défaut.'
+  'ci3l2aku': 'Ouvrir dans le navigateur (nécessite --js)'
   'cjih2jtt': '« = » attendu dans l’alias de type de fonction, %s obtenu'
   'ckaj3355': 'fonction inconnue “%s.%s” : le module “%s” n’a pas de fonction de niveau supérieur “%s”'
   'cldvfmqx': 'waitpid : pid et options requis'
@@ -285,41 +410,82 @@ le chemin du fichier source n’est pas un nom valide : %s
   'cuhyyetq': 'virgule ou crochet fermant attendu dans le littéral de slice, %s obtenu'
   'cvl8rf8s': 'type attendu après « | »'
   'cw348wnl': 'eq-raw : impossible de prendre le pointeur de données de l’argument 1'
+  'cw8xkrj9': `
+Erreur d'écriture du fichier principal : %v
+
+`
   'czinamrs': 'process-exec : non pris en charge sous windows'
   'd1xzecbk': 'builtin get-arch : aucun emplacement de résultat'
+  'd4faltsr': 'chemin par défaut'
   'd8en6a9j': 'l’IR MIR a échoué à la vérification LLVM : %v : %s'
   'ddljrny8': 'nom de champ attendu dans le littéral de struct, %s obtenu'
   'ddutfwr8': 'Erreur dans %s : %w'
   'ddvc98n2': 'l’index de tableau/slice `arr[i]` renvoie un option<elem> en cas d’accès hors limites par défaut. Cette option n’est jamais gérée : propagez-la avec `a ?= arr[i]` (dans une fonction retournant ?T vous pouvez aussi la capturer sur place avec `a = arr[i]`), ou annotez `#{index-out = DEF}` pour prendre la valeur DEF par défaut hors limites, ou déclarez la cible comme option (par ex. `a ?elem = arr[i]`) pour capturer l’erreur sur place, ou rejetez-la explicitement avec `_ = arr[i]`.'
+  'deuvryn0': 'Runtime JS utilisé par --js : node (défaut), bun, deno, ... (arguments supplémentaires autorisés, ex. "deno run --allow-read")'
   'dh249i0x': '« : » attendu dans le littéral de map, %s obtenu'
+  'dhae25dd': `
+Compilation réussie : %s
+
+`
+  'djuq12bh': '  echo \'x=1\' | no fmt         formater depuis stdin'
   'dk195kbk': 'package.noml introuvable dans %s'
   'dkx493in': 'nom court ESM ambigu %q : les spécificateurs %q et %q se résolvent tous deux vers le préfixe d’appel %q'
   'dmm2rjox': 'builtin %s : emplacement sret non alloué'
   'dns4nguy': 'noml : la valeur de la clé %q n’est pas une chaîne (%T obtenu)'
   'dpcwdbng': 'erreur de chaîne de format : %v'
   'dphrcd1a': 'net-accept : (listen-fd) requis'
+  'dqrzfvyt': 'Usage : no pub [-o <file>]'
+  'dre61zsd': 'Utiliser le backend JS (émettre du JavaScript, exécuté via --js-runtime ; node par défaut)'
   'dt39zm0i': 'cible d’installation invalide %q : dépôt manquant ; attendu <tool>[:<version>]@<host>/<owner>/<repo>'
   'dtb82vgd': '« ) » ou « ] » attendu pour fermer la plage, %s obtenu'
+  'dufa8bnf': `
+Erreur d'écriture de .gitignore : %v
+
+`
   'dumlt7oj': '« ( » attendu après les arguments génériques, %s obtenu'
+  'dupns7pb': `
+Erreur de synchronisation de la dépendance AST %s : %v
+
+`
   'duufpprw': 'toutes les tentatives de téléchargement ont échoué : %w'
   'dwkhnsmo': 'la branche de match a des types de retour incohérents : %s contre %s'
+  'e01glh6p': '  no run --js --browser main.no  générer le JS navigateur + HTML et ouvrir le navigateur par défaut'
+  'e0r5thlw': 'réécrire le résultat dans le fichier source'
   'e1i8566c': 'read-file : le type de résultat %s n’est ni un slice ni une chaîne'
+  'e3xplf89': '  Un paquet déclarant compiler.emit = "js" dans package.noml est validé avec'
   'e7yptvje': 'process-exec : (prog, arg) requis'
+  'e9ab330i': 'Usage : no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'spécificateurs wasm natifs en conflit : %q (de %q) et %q (de %q)'
+  'easgxbye': 'émettre des diagnostics JSON lisibles par machine au lieu de texte'
   'ebzb8tx2': 'échec de la résolution des dépendances : %w'
   'ectmoin3': 'aucune release trouvée pour %s/%s'
   'edps6fxx': 'un ou plusieurs cibles du workspace ont échoué à la compilation'
+  'edsub23j': 'Usage : no update <pkg>'
   'efflaapc': '« case » ou « default » attendu, %s obtenu'
+  'ehsahzu5': '  no vet src/std/            valider tous les .no de src/std/'
   'eit5cjgr': 'extraction de l’archive tar.gz : %w'
   'ejbt38ik': 'emplacement de destination d’opération slice'
+  'elep1kra': '  no build                  compiler le répertoire courant ou les projets de workspace.noml'
   'em4a9wv2': 'la borne supérieure de la plage commence par `.%s` sur le self implicite, donc l’écrire directement après l’opérateur `..` produit `...%s` (ambigu : `...` est aussi l’opérateur de retour/terminaison). Nommez explicitement le récepteur et écrivez `..self.%s` (par ex. `[a..self.%s)`).'
+  'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        backend Direct WASM avec sortie explicite'
+  'en9zq76f': 'Orthographe de boucle par défaut : \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\' ; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
+  'eqsalj72': '  no build -unsafe main.no  compiler sans vérification des bornes (performance max)'
+  'es55egn6': 'Formater des fichiers source Nolang.'
+  'eu5v0rj9': '  2. un répertoire existant     -> exécuter son main.no'
   'eubonf62': 'impossible d’affecter une valeur %s à la variable %s « %s » : une valeur struct doit être construite explicitement (par ex. `%s { … }` ou son constructeur) ; un entier n’est promu implicitement que vers un struct disposant d’un constructeur sans perte (comme bigint)'
   'ew5qg77j': 'identifiant attendu dans le chemin use, %s obtenu'
+  'ex8l4y2k': 'Mise à jour des dépendances...'
+  'exeja3ad': 'via %s'
   'f091hn1f': 'net-send : (fd, data, n) requis'
   'f0p0dfha': 'le constructeur val() est obsolète ; utilisez ok(x) pour une construction explicite ou `name = expr` pour une affectation implicite'
   'f10x20nf': 'l’appel à la fonction « %s » retournant une option avec un argument arithmétique nu exige un déballage explicite : utilisez « x ?= %s(...) » pour déballer d’abord l’argument, ou déballez le résultat (par ex. « y ?= %s(...) »)'
   'f3j66rlp': 'le spécificateur de format « %c » exige un type entier, « %s » obtenu (spec : %q)'
+  'f5gbhit6': '  no test --wasm-direct       exécuter les tests via Direct WASM avec wasmtime'
   'f5ikdmuc': 'nom de champ attendu dans le littéral de struct, %s obtenu'
+  'fcs3wo7u': `
+Paquet créé : %s
+
+`
   'fd9jkb5k': 'le membre %q est un tableau vide : annotez-le avec #{type = \'[]<elem>\'}'
   'fdwcn8i8': 'la branche de match ne renvoie jamais de valeur'
   'fe0a5wt2': 'impossible de comparer la valeur option « %s » (%s) avec « %s » (%s) : déballez-la d’abord (`v ?= expr`) ou faites un match sur ok/nil/err'
@@ -327,16 +493,21 @@ le chemin du fichier source n’est pas un nom valide : %s
   'fk1sb6ss': 'syslog : non pris en charge sous windows'
   'flfh2ueu': 'cible d’installation invalide %q : le dépôt doit être <host>/<owner>/<repo> ou <owner>/<repo>'
   'fs4qotyl': 'extraction de l’archive zip : %w'
+  'fu1ow141': 'Aucun fichier de test trouvé dans '
   'fvk7yu8c': 'valeur entière attendue après « = », %s obtenu'
   'fw8rehzu': 'la branche attrape-tout `->` vide est inatteignable : le compilateur peut prouver que « %s » est toujours ok (l’arithmétique littérale ne peut ni déborder ni diviser par zéro, ou l’index est prouvé dans les limites). La branche doit rester pour l’exhaustivité du match, et la conserver signifie qu’un futur changement de sémantique ne nécessitera aucune modification de syntaxe.'
+  'fxc0tilj': 'Empaqueter l\'AST du paquet courant en gob + zip.'
   'fxdzclp6': 'impossible d’affecter le champ « %s » sur le type struct « %s » : instanciez-le d’abord (par ex. `%s0 = %s {}`)'
   'fxhkwtho': 'read-file : un chemin est requis'
+  'g2ex1gxt': 'Triplet cible (ex. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)'
   'g391pqjl': 'création de la requête : %w'
   'g3dsu5vf': 'le spécificateur de format « %c » exige un type float, « %s » obtenu (spec : %q)'
   'g6aool5a': 'net-recv : aucun emplacement de résultat'
+  'g6phjqek': '  no test tests/my-test.no'
   'g9elmost': 'récupération de %s (statut %d)'
   'gaewcwmo': 'virgule ou parenthèse fermante attendue, %s obtenu'
   'gazt89uv': '« ] » ou « ) » attendu dans l’expression de plage, %s obtenu'
+  'gccy7ull': '  - sinon, utilise le répertoire courant.'
   'gczvzsdh': 'résolution des modules : %w'
   'gd7jpkzw': '« while condition { } » est obsolète, utilisez « for condition { } » à la place'
   'gdrnjrtu': 'net-udp-open : aucun emplacement de résultat'
@@ -349,6 +520,7 @@ le chemin du fichier source n’est pas un nom valide : %s
   'gir1e4fn': 'net-udp-sendto : impossible de convertir l’hôte en chaîne C'
   'giw7e5rb': '« } » attendu pour fermer l’annotation, %s obtenu'
   'giy30qq2': 'OpRun : callee async inconnu %q'
+  'gjsrgyn8': '-annotations pour les inclure.'
   'gl4bahpp': `
 clang non détecté ; vérifiez que la chaîne d’outils LLVM est complètement installée
   macOS : brew install llvm
@@ -357,10 +529,21 @@ clang non détecté ; vérifiez que la chaîne d’outils LLVM est complètement
 
 `
   'gljrb7g7': 'spécificateur de paquet ESM vide dans l’import %q'
+  'glytw3eo': 'Ensuite : créer un paquet avec `no new <name>`'
+  'gmlatduc': `
+  bytes:  %d
+  nodes:  %d
+
+`
   'gno8qk1j': '« ~match/case/default » est obsolète, utilisez « x: { motif-> ... } » à la place'
   'gr0jwheb': '« for { } » est obsolète, utilisez la boucle infinie « { } (true) » à la place'
+  'gszz9tke': '  - main.no (fichier d\'entrée principal)'
   'gubuo5cb': 'option liée mais jamais consommée : elle n’est ni propagée (`?=`) ni déballée (`x: { ... }` / `_ = x`), l’erreur est donc silencieusement ignorée. %s'
   'gx02j37c': 'write-file : l’argument de données n’a pas d’emplacement (fonction %s, type d’argument %s)'
+  'gx8l0tdu': `
+Erreur de changement de répertoire : %v
+
+`
   'gyuohhum': 'index %d hors limites pour la chaîne « %s » de taille %d'
   'h0rvt6eu': 'nom de paramètre attendu, %s obtenu'
   'h1g1ipdw': 'les imports ESM (npm) ne sont pas pris en charge par le backend WASM Direct ; utilisez le backend JS (no build --js)'
@@ -369,34 +552,57 @@ clang non détecté ; vérifiez que la chaîne d’outils LLVM est complètement
   'h4vlfsi9': 'str-truncate : récepteur et n requis'
   'h6du6sag': '« * » attendu après le bloc dans la boucle comptée, %s obtenu'
   'h6z5s5my': 'accolade ouvrante attendue, %s obtenu'
+  'h8dvlp9i': `
+'%s' enregistré dans workspace.noml
+
+`
   'h9cfkf84': 'ligne %d : la variable « %s » est déclarée dans un corps de boucle et peut être non initialisée lorsqu’elle est réutilisée comme variable de boucle ici (la boucle peut ne faire aucune itération)'
   'haahhq7o': 'la fonction “%s” attend au moins %d argument(s), mais %d ont été fournis'
   'hc3a6zzw': 'classe de correction inconnue %q (pris en charge : overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': 'une branche de match vide ne peut pas déterminer de valeur (le type de l’expression comparée est inconnu)'
   'hgedm96o': 'chargement automatique du module %s : %w'
+  'hoal6bo9': 'Avec --js, contourner la chaîne LLVM et générer du JavaScript source (compatible Node.js/navigateur).'
   'hr40fh5v': 'package.noml introuvable. Exécutez « no new <name> » pour créer un paquet, ou placez-vous dans un répertoire de paquet'
   'hr4y7owq': 'getgrouplist : %v'
+  'htdgzowm': '  no fmt                      formater le répertoire courant (lister les fichiers à formater)'
+  'hun7qbmc': '  no ast src/std/vec.no             afficher l\'AST de vec.no'
   'hvk8qwyj': 'emplacement de destination du borrow'
+  'hvuu1dxx': '  no build --js -o app.js main.no                    backend JS avec sortie explicite'
   'hxy8tpyp': 'type du récepteur d’opération slice'
   'hzkv5tvl': '« } » attendu pour fermer l’annotation de valeur d’énumération, %s obtenu'
   'hzv4zwx4': 'API C LLVM : échec de création de la machine cible pour le triple %q'
   'i0q22lpt': 'virgule ou parenthèse fermante attendue, %s obtenu'
+  'i31bp0tk': 'devDependencies) et installés avec npm install avant `no run --js`.'
   'i3k422u3': 'le paramètre de résultat « %s » (%s) n’est jamais affecté dans le corps de la fonction — il sera rempli de zéros au retour'
+  'i56j6g3g': `
+Erreur de création du répertoire : %v
+
+`
   'i59zddv3': '« , » ou « ) » attendu'
   'i8i2c8jx': '« } » attendu pour fermer l’annotation, %s obtenu'
   'i933a48e': 'paramètre %d de “%s.%s” : “%s” attendu, “%s” obtenu'
+  'i9bcpk5g': '  # npm/lodash               l\'objet module entier (accès via lodash.get(...))'
   'ibaimz2h': 'détection de cycles : %w'
+  'ibiol93t': 'Erreur : package.noml introuvable. Utilisez \'no new <name>\' pour créer un paquet, ou placez-vous dans un répertoire de paquet'
+  'ibl465o8': '  no test -target wasm32-wasi'
   'ifmrg001': 'interface « %s » : la méthode fusionnée « %s » a des signatures en conflit (« %s.%s », « %s.%s »)'
   'ihr1vm8m': 'arr.zero : récepteur requis'
   'iky4xsx4': 'la méthode “%s.%s” a %d résultat(s), l’interface en attend %d'
   'ippfc6p4': 'utime : path, atime, mtime requis'
+  'iqszywlc': 'Pour la cible wasm32-wasi, définissez $WASI_SYSROOT sur le chemin de wasi-sysroot.'
   'iqtr8mht': 'destination option-wrap'
   'irjygycv': 'le constructeur val() est obsolète ; utilisez ok(x) pour une construction explicite ou `name = expr` pour une affectation implicite'
   'irnz2m56': '« { » attendu pour ouvrir le corps de la boucle, %s obtenu'
+  'is8zuoph': '  - src/ (répertoire des sources)'
   'itcnc2oz': 'aucun emplacement pour le callee indirect dans %s'
+  'iubb5mnf': '  no test -target x86_64-linux-gnu'
   'iykbgab6': 'vec.sort : récepteur requis'
   'iyn3rgtm': '“self” (.) ne peut être utilisé que dans les méthodes de structure ; si vous vouliez la valeur de match, utilisez “it”'
   'iyvzh49e': 'indexer un str/txt avec s[i] dans une boucle est en O(n^2) : chaque index doit parcourir l’encodage UTF-8 depuis le début de la chaîne pour atteindre le point de code i, et la boucle répète ce travail. Options : (1) pour itérer les caractères, utilisez directement `c <- s` (itération par point de code, O(n)) ; (2) si vous n’avez besoin que des octets, utilisez `s.byte(i)` ; (3) si la chaîne est prouvablement ASCII pur (annotez la déclaration avec `#{ascii}`, ou affectez un littéral ASCII), `s[i]` est en O(1).'
+  'izc6aklk': 'Seuls l\'analyse lexicale et syntaxique sont nécessaires — pas de chaîne LLVM — donc cela tourne'
+  'iztes0wp': '  3. un nom de paquet du workspace -> exécuter le main.no de ce paquet'
+  'izzihnrp': 'promouvoir les avertissements/indices lint en erreurs'
+  'j00dw84u': '  - tests/ (répertoire des tests)'
   'j1onng8y': 'virgule ou parenthèse fermante attendue, %s obtenu'
   'j2lwz7pe': 'API C LLVM : échec de %s'
   'j2n5poza': 'native bind=ffi (import %q) exige au moins une déclaration extern #{c} pour la liaison'
@@ -408,91 +614,163 @@ clang non détecté ; vérifiez que la chaîne d’outils LLVM est complètement
   'j7dzteja': 'la fonction “%s” attend au moins %d argument(s), mais %d ont été fournis'
   'j8e31b1f': 'builtin %s : le récepteur n’a pas d’emplacement'
   'j9ir46ed': 'l’actif téléchargé est vide : %s'
+  'jc3psu5g': '  no fmt -w                   formater sur place tous les .no du répertoire courant'
   'jeq6vteu': 'native bind=wasm exige un spécificateur wasm= (import %q), par ex. #{bind = wasm, wasm = \'@scope/pkg\'}'
   'jko9phaw': 'échec de l’assemblage LLVM : %w'
   'jl86npdd': 'résolution de la dernière release : %w'
+  'jlv0jw10': 'résolu :'
   'jmamxa8i': 'emplacement de destination lencap'
   'jppwnc4n': '« { » attendu après le nom du struct, %s obtenu'
   'jpy06p6d': 'aucune cible de compilation trouvée dans le workspace'
+  'juu3smx0': 'Le système d\'annotations #{...} vit dans une table sémantique latérale plutôt'
   'jwegl6bv': 'la cible d’affectation multiple `%s` est écrite via un index sans déballage : une lecture d’index renvoie une option (nil hors limites), donc écrire directement à travers transforme un accès hors limites en écriture non vérifiée. Séparez cette cible dans un place-match (`it` dans la branche ok est la position de l’élément, lisible et modifiable), ou propagez avec `?=` dans une fonction retournant une option.'
+  'jx1w7b52': '  no fmt -fix=overflow -w src/    ajouter sur place les annotations de débordement'
   'k0fwb241': 'l’alias d’exportation « %s » est identique au nom de la fonction ; l’alias peut être omis'
   'k1h5kums': 'lecture de %s : %w'
+  'k2m9xq4t': 'l\'arithmétique entre `char` et `%s` n\'est pas autorisée (%s) : un char est un seul point de code (i32) et ne se combine qu\'avec des entiers, des chars ou des chaînes. Pour une concaténation, utilisez un littéral de chaîne — `\'x\' - %s` rend l\'opérande via to-str'
+  'k2wgp5l6': 'Usage : no run [<package|dir|file>]'
+  'k3envsrc': 'variable d\'environnement'
+  'k3g4ofs4': 'émettre un diff coloré au lieu du résultat formaté'
   'k64rvzp7': 'setfield : %s'
   'k72ohub0': 'net-send : aucun emplacement de résultat'
   'k8je3usi': '%s existe déjà et n’est pas un module ES (pas de "type": "module") ; émettez la sortie en .mjs à la place (no build --js -o out.mjs)'
   'k9179drd': '“%s” est une fonction et doit être appelée ; vouliez-vous %s(...) ?'
   'k9270vd6': 'champ getfield'
   'ke8i906b': 'MIR->LLVM a paniqué (récupéré, retour au backend hérité) : %v'
+  'kfxfk3n1': 'Si aucun fichier/répertoire n\'est donné et que stdin est un terminal :'
+  'kg4qzfdu': '  no add nogit@github.com/lizongying/notools        dernière version'
+  'ki6qzzsx': '  --json           émettre des diagnostics JSON structurés (CI/outils)'
   'kio8h1tx': 'js.Generator.Generate : le programme est nil'
   'kjxtslvr': 'waitpid-nohang : pid requis'
+  'klplh4cw': '  no fmt src/                 lister les .no de src/ à formater'
   'kmm43ypb': 'résolution de %s depuis le verrou : %w'
   'krvc469y': 'vec.clear : récepteur requis'
+  'kvp8bxoc': 'Fichier de verrouillage et sommes d\'intégrité enregistrés.'
   'kxikdkzu': 'net-accept : aucun emplacement de résultat'
   'kzomgjsg': 'instruction ~match vide'
   'kzsepkro': 'chargement du module %s : %w'
   'l0ifbo16': 'l’archive zip dépasse la limite de taille d’extraction (%d octets)'
   'l1ypawem': 'str-from-vec : types invalides %s -> %s'
+  'l332fwh9': `
+Espace de travail initialisé dans %s
+
+`
   'l48rpvr9': '« ) » attendu pour fermer la condition de boucle, %s obtenu'
   'l62tgcu4': 'import %q : %w'
+  'l6euu21x': 'délai d\'exécution par test en secondes (0 = illimité) ; un seul blocage est tué et signalé, sans arrêter toute l\'exécution'
   'l90oz2gr': 'sysctl : impossible de convertir le nom en chaîne C'
   'l9eytl0v': '« ( » attendu'
   'l9lio3b1': 'net-dial : impossible de convertir l’hôte en chaîne C'
   'ldfvpa0x': '; une option ne peut pas être déballée implicitement (ce n’est qu’une copie, la branche d’échec est donc ignorée). %s Si vous vouliez un repli circulaire ou un écrêtage, `#{overflow = wrap` ne change que la valeur prise en cas de débordement ; le résultat reste `?%s` et doit toujours être déballé.'
+  'lehy8lls': '  no fmt main.no              formater et écrire sur la sortie standard'
+  'let8mtmo': 'Usage : no build [flags] <file|directory>'
   'ljfz84ro': '« ( » attendu pour commencer le type de fonction, %s obtenu'
   'lkiy53ow': 'le littéral hexadécimal “%s” utilise des majuscules ; le formatage le convertira en minuscules (ex. 0xff)'
   'lqcz5x45': 'lecture des données de l’archive depuis %s : %w'
   'lr3c6kg5': 'l’export référence un symbole non défini %q (introuvable dans %s)'
   'lrj1csgo': 'read-dir : dirp requis'
   'lrxsr5pt': 'workspace.noml introuvable dans %s'
+  'lvi02faz': `
+Sortie ESM servie sur %s (Ctrl+C pour arrêter)
+
+`
   'lx7lbupc': 'emplacement indexstore'
+  'lzgs7cds': '  no fmt -fix=redundant main.no   prévisualiser la suppression des annotations redondantes'
+  'm0nvgkbt': 'L\'argument est résolu dans cet ordre :'
+  'm13ljyfp': 'pour \'no vet src/std\', réutiliser l\'AST du programme std déjà analysé (expérimental, évite de réanalyser chaque module std)'
   'm17ikt3w': 'builtin %s : impossible de stocker %s dans %s'
   'm1yd7r5x': 'le token suivant devait être %s, %s obtenu'
-  'm2fh7rfg': 'boucle avec index de plage : « %s[%s] » lit par index à la main dans `%s <- [a..b):` ; si vous n’avez pas besoin de l’index, itérez le conteneur avec `x <- %s` (sans index, pas de vérification de limites ni d’option à déballer). Par exemple, réécrivez\n     %s <- [0..n): {\n         %s: {\n             ok -> it = 0\n             -> _\n         }\n     }\n   en\n     x <- %s: {\n         x: {\n             ok -> it = 0\n             -> _\n         }\n     }'
+  'm2fh7rfg': `
+boucle avec index de plage : « %s[%s] » lit par index à la main dans `%s <- [a..b):` ; si vous n’avez pas besoin de l’index, itérez le conteneur avec `x <- %s` (sans index, pas de vérification de limites ni d’option à déballer). Par exemple, réécrivez
+     %s <- [0..n): {
+         %s[%s]: {
+             ok -> it = 0
+             -> _
+         }
+     }
+   en
+     x <- %s: {
+         x: {
+             ok -> it = 0
+             -> _
+         }
+     }
+`
   'm4mu624f': 'sérialisation du fichier de verrouillage : %w'
+  'm4re9802': `
+Erreur d'écriture de utils.no : %v
+
+`
   'm5bv291o': 'import %s : %q est déjà déclaré dans le programme principal'
   'm5fpbrwd': 'vec.reverse : récepteur requis'
   'm5klw1rq': 'la méthode “%s.%s” a %d paramètre(s), l’interface en attend %d'
   'm7egvbv0': 'l’expression entière est un option<int> par défaut et est ignorée en tant qu’instruction d’expression (non gérée). Ajoutez une annotation `#{overflow = wrap}` pour récupérer un int simple, ou propagez avec `?=`, ou rejetez explicitement avec `_ = expr`.'
   'm8blb8q2': 'noml : ligne %d colonne %d : %s'
+  'mbnaky32': 'Jeton d\'authentification du registre (inutilisé : envoi non implémenté)'
   'meket0n4': 'vec.clear : aucun emplacement de récepteur'
   'mf29f4fh': 'emplacement clone'
   'mgnh35fz': 'builtin %s : impossible de stocker le résultat %s dans l’emplacement %s'
+  'mh9jwcfu': '  no fmt -loop-style=suffix f.no  écrire les boucles en \'{ } (cond)\' / \'{ } * N\''
   'mhfvvp1u': 'limite de profondeur des dépendances dépassée (%d) : %s@%s'
   'mi13i3vc': 'parenthèse fermante attendue, %s obtenu'
   'mimqybn2': 'vec.pop : récepteur requis'
   'mkpo3f8h': 'emplacement de destination utf8-at'
   'mlm7xpcj': '`%s %s= %s` est obsolète ; la fonction englobante a un résultat option, donc `no fmt` le réécrit en `%s ?= %s %s %s` à l’enregistrement (le membre de droite d’une affectation composée est désormais `?T` et passe par `?=` pour le déballer ou le propager)'
+  'mlyz11mg': 'Avec --js-runtime <cmd>, choisir le runtime JS de `no run --js` (node, bun, deno, ...).'
+  'mmcrtoio': 'Usage : no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': '« : » attendu après le nom du champ du struct, %s obtenu'
+  'mt377i94': '  no build --wasm-direct -target wasm32-wasi main.no  générer du WASM sans chaîne LLVM'
   'mv6ox1tw': 'uname : aucun emplacement de résultat'
   'mw127e39': '« ] » attendu dans le type de tableau, %s obtenu'
+  'mwhgbhbp': '  les imports de paquet (#{bind = ffi|wasm}) se résolvent au lieu d\'échouer — LLVM ne peut pas'
   'mz7tmynt': 'builtin %s : récepteur manquant'
   'mzwb28br': 'variable “%s” non définie dans la chaîne de format'
   'mzxtskah': 'eq-raw : (receiver, b, n) requis'
   'n00utq2q': 'process-exec : impossible de convertir l’argument en chaîne C'
+  'n08bzk5j': 'Le résultat est exactement ce que `no add <tool>@<host>/<owner>/<repo>` télécharge :'
   'n0hl9vde': 'builtin %s argument %d : %s'
   'n44lxvvk': 'le membre %q est un objet vide : annotez-le avec #{type = \'<struct>\'}'
+  'n48cusda': `
+À ouvrir manuellement : %s
+
+`
   'n51paa43': 'AST std : échec de l’analyse de %s : %v'
   'n5k784wb': 'native bind=ffi exige une bibliothèque de liaison (compiler.link-libs ou lib= sur l’import %q)'
   'n5ksyzmi': '« ) » attendu pour fermer la condition de boucle, %s obtenu'
+  'ne9gyl5c': '  no run --js main.no            compiler via le backend JS puis exécuter avec node'
   'ne9kyew7': '« = » attendu après le nom FFI, %s obtenu'
+  'nejhwtgd': 'Aucune dépendance trouvée.'
   'ngj8b3uj': 'utime : non pris en charge sous windows'
   'nh8jhhz7': 'AST std : %w'
   'nik0cll9': '« for cond { } » est obsolète, utilisez la boucle « { } (cond) » à la place'
   'njsutn36': 'nom de méthode attendu dans l’interface, %s obtenu'
   'nkozcyi4': 'net-recv : (fd, buf, n) requis'
   'nkr30oz0': '« .. » attendu dans l’expression de plage, %s obtenu'
+  'nmke5ijp': '  no fmt -w src/              formater sur place tous les .no de src/'
   'nmxs8sop': 'syslog : %v'
+  'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': 'impossible de déduire le type de « %s » : %s() exige une annotation de type explicite à gauche (par ex. `name []byte = %s(n)`)'
   'nwtpvei9': 'embed : fs.embed exige un répertoire, fichier obtenu : %s (résolu : %s)'
+  'nx1476j3': '  no pack nogit.no                 empaqueter un seul fichier source'
   'nz3ol1c4': 'le module ESM %q n’est pas déclaré dans les dépendances de package.noml ; ajoutez dependencies: [\'%s:^latest\'] (ou dev-dependencies) puis exécutez npm install'
+  'nzkc7scw': '  - workspace.noml (définition de l\'espace de travail)'
   'o0p7ixno': '« for » attendu, %s obtenu'
   'o1v8wvx8': 'valeur d’annotation attendue, %s obtenu'
+  'o2lua0kh': `
+  email:      %s
+
+`
   'o3e4tfwx': 'builtin %s : résultat chaîne stocké dans l’emplacement %s'
   'o41t34tn': 'le répertoire courant est une racine de workspace sans main.no ; exécutez un paquet avec : no run <package>'
   'o4wq2axo': 'récupération de la release %s : %w'
-  'o630714m': '%s exige une valeur (par ex. %s=zh-CN)'
+  'o630714m': '%s exige une valeur (par ex. %s=zh-cn)'
   'o7503w1f': '« i <- range { } » est obsolète, utilisez « i <- range: { } » à la place'
   'o9bv21zu': 'analyse de %s : %w'
+  'oaei2lx7': 'que dans les champs du nœud, donc omis par défaut ; passez'
+  'oaslpd20': `
+Dépendance %q introuvable.
+
+`
   'obm5gtx3': 'corps de boucle attendu après l’étiquette #%s, « { » obtenu sans « * N » ni « (cond) » ni « (true) »'
   'obx5vjjv': 'le nom de paramètre devait être un identifiant'
   'ocsanpe6': 'cible d’installation invalide %q : le nom d’outil ne doit pas contenir de séparateur de chemin'
@@ -507,21 +785,17 @@ compilateur Zig non détecté
 
 `
   'ol0l3ova': 'type “%s” introuvable ; vouliez-vous “%s.%s” ?'
+  'ol21t36r': '  no run --js --js-runtime bun main.no     idem avec bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new : %s'
   'onpn7zgb': 'le diviseur d’une division entière ou d’un modulo est la constante littérale 0, ce qui est un comportement indéfini en LLVM (sdiv/srem par zéro) et produit des résultats imprévisibles. Ajoutez une vérification de zéro à l’exécution, ou faites retourner l’échec à la fonction sous forme d’option.'
-  'oraub2m9': `
-`%s %s= %s` n’est pas pris en charge : une lecture d’index renvoie une option (nil hors limites), donc une affectation composée évaluerait l’index deux fois et ignorerait l’échec. Réécrivez-le ainsi (le `it` de la branche ok est l’emplacement de l’élément, lisible et modifiable) :
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   ou `%s ?= %s %s %s` (propage l’échec ; la fonction englobante doit avoir un paramètre de résultat option)
-`
+  'oraub2m9': '`%s %s= %s` n’est pas pris en charge : une lecture d’index renvoie une option (nil hors limites), donc une affectation composée évaluerait l’index deux fois et ignorerait l’échec. Réécrivez-le ainsi (le `it` de la branche ok est l’emplacement de l’élément, lisible et modifiable) :\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   ou `%s ?= %s %s %s` (propage l’échec ; la fonction englobante doit avoir un paramètre de résultat option)'
   'orjs902d': '« switch/case/default » est obsolète, utilisez « x: { 1-> ... } » à la place'
   'os0j8ix4': 'impossible d’affecter une valeur %s à un élément %s du tableau « %s »%s'
   'osrb7a78': 'emplacement move'
   'oswu0as1': '« : » attendu dans l’expression conditionnelle, %s obtenu'
   'oxgtqeo0': 'write-file : aucun emplacement de résultat'
+  'oyfkw3qi': '(non défini)'
+  'p08xevlx': '  no run main.no               compiler et exécuter main.no'
   'p1ujpxwi': 'vec.remove : aucun emplacement de récepteur'
   'p215kqvl': 'cancelled : impossible de stocker i1 dans %s'
   'p2epl19k': 'impossible d’affecter nil à la variable non option « %s »'
@@ -529,10 +803,14 @@ compilateur Zig non détecté
   'p56zjfhi': 'impossible de déduire le type de « %s » : %s() exige une annotation de type explicite à gauche (par ex. `name []byte = %s(n)`)'
   'p763k84p': 'création de %s : %w'
   'p9jv1dcz': 'workspace.noml est vide'
-  'paiorrdo': '--lang exige une valeur (par ex. --lang=zh-CN)'
+  'pa3bgtjn': 'Base CDN des import maps ESM du navigateur (défaut https://esm.sh ; aussi réglable via compiler.esm-cdn dans package.noml)'
+  'paiorrdo': '--lang exige une valeur (par ex. --lang=zh-cn)'
+  'pev2j4v9': '  no vet main.no             valider main.no'
   'pgapt83d': 'win-create-process : impossible de convertir dir en chaîne C'
   'pgh2eoft': 'net-udp-recvfrom : (fd, buf, n) requis'
+  'pgwm8msy': '  # npm/lodash.default as d  l\'export par défaut du paquet'
   'phld6glo': '« } » attendu pour fermer l’annotation, %s obtenu'
+  'phqmamrn': '  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip'
   'pibk34ed': 'sérialisation du fichier de sommes : %w'
   'plsdygti': 'le motif de branche de match de type %q n’est pas membre de l’union %q'
   'pne07fog': 'membre %q[%d] : le tableau mélange objets et scalaires ; annotez-le avec #{type = \'[]<elem>\'}'
@@ -541,36 +819,53 @@ compilateur Zig non détecté
   'pxxxqtg6': '« { » attendu'
   'pyo62z10': 'get-priority : which et who requis'
   'pzdpmlto': 'net-udp-sendto : aucun emplacement de résultat'
+  'q06zlcbx': '  no pub -o nogit.ast.zip      écrire vers un chemin explicite'
   'q20a8lbi': 'écriture de la sortie JS : %w'
   'q2qgyoqo': 'win-wait-process : (proc-handle, timeout-ms) requis'
   'q3v8kn2m': 'nom de variable attendu après « , », %s obtenu'
   'q4nilcmp': 'impossible de comparer \'%s\' (%s) avec nil : seule une option (`?T`) peut être testée contre nil ; déclarez-le en `?%s` ou comparez avec une valeur concrète'
+  'q76kxtef': '  no fmt -d                   afficher le diff de tous les .no du répertoire courant'
   'q9m9no8c': '« } » attendu pour fermer l’annotation de champ, %s obtenu'
   'q9p5bmd0': 'aucun éditeur de liens C (clang/cc/gcc) trouvé'
+  'qa8z0cwo': `
+Avertissement : analyse de workspace.noml : %v
+
+`
   'qadj6ck6': 'eq-raw : impossible de prendre le pointeur de données du récepteur'
+  'qagmala2': `
+Erreur d'écriture de lib.no : %v
+
+`
   'qayttv4q': 'virgule ou parenthèse fermante attendue, %s obtenu'
   'qew8n04j': 'vec.pop : aucun emplacement de récepteur'
   'qh0mj3sf': 'type de paramètre attendu, %s obtenu'
+  'qh4i3y4v': '  - package.noml (configuration du paquet)'
   'qhkl8p9i': 'noml : champ %s : chaîne attendue, %T obtenu'
   'qkce8wnr': 'le motif de branche de match de type %q n’est pas membre de l’union %q'
+  'qkj01y3s': 'Modules std :'
   'qlpiqzag': 'win-find-next-file : un argument bufptr est requis'
   'qmmpavsj': 'accolade ouvrante attendue dans else, %s obtenu'
   'qog571qy': 'builtin %s : le tampon keep-alive n’est pas matérialisé'
+  'qogvayg4': 'Usage : no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': 'impossible de modifier le champ en lecture seule « len » de la chaîne « %s »'
   'qoykdxqy': 'noml : champ %s : tableau attendu, %T obtenu'
   'qxkk7mt2': 'win-close-handle : un argument handle est requis'
   'qzwxurol': '« , » ou « ] » attendu dans le tableau, %s obtenu'
   'r001bqqr': 'builtin %s : impossible de prendre le pointeur de données de l’argument %d'
   'r0360g4t': 'interface « %s » : les interfaces parentes ont été écrites en liste d’en-tête ; écrivez plutôt un nom par ligne dans le corps'
+  'r1wo1izg': '  # npm/lodash.get as get    une liaison nommée/exportée'
   'r28q9t6z': 'corps de boucle attendu après l’étiquette #%s, %s obtenu'
   'r315uabz': 'net-send : impossible de prendre le pointeur de données de l’argument 1'
   'r4mh5mrg': 'waitpid-nohang : non pris en charge sous windows'
+  'r5fkc5h1': '  no build --js --browser main.no                    générer le JS navigateur + le wrapper HTML'
   'r60tokvf': '« = » attendu après la liste de variables multiples'
   'r6gf3a7m': 'nom de variante attendu dans l’énumération étiquetée, %s obtenu'
   'r6p4a75i': 'téléchargement depuis %s (statut %d)'
   'r80hkipt': 'conversion saturante : destination non entière %q'
+  'r96s24ec': '  --reuse-std-ast  réutiliser l\'AST du programme std déjà analysé (expérimental)'
   'raqvyltn': 'le symbole std privé “%s” appartient au module %s et ne peut être utilisé qu’à l’intérieur de celui-ci, pas depuis %s ; utilisez l’API publique'
   'rclf258h': 'native bind=ffi n’est pas disponible dans le navigateur (import %q) ; utilisez bind=wasm ou omettez bind'
+  'rdl2c2x2': '  no build -target x86_64-linux-gnu main.no'
   'rfzrw1nh': 'la fonction renvoie %d valeur(s) mais %d cible(s) ont été fournies'
   'rhajr9l9': 'obsolète : la propriété str.len est supprimée ; utilisez s.len-bytes() pour la longueur en octets ou s.len() pour le nombre de points de code'
   'rkd2pw8p': 'échec de la compilation LLVM C API en cours de processus (désactivez avec %s=0) : %w'
@@ -579,6 +874,7 @@ compilateur Zig non détecté
   'rolk5ods': '« } » attendu pour fermer l’annotation de valeur d’énumération, %s obtenu'
   'roqeis8q': 'accolade ouvrante attendue, %s obtenu'
   'rp7sdc6j': 'win-get-exit-code : un argument proc-handle est requis'
+  'rpazw1l7': 'Ajouter une dépendance (paquet AST précompilé : <tool>.ast.zip).'
   'rsz5rmmt': 'récupération de %s : %w'
   'rtopy0mf': 'vec.insert : aucun emplacement de récepteur'
   'rusw4b0k': 'nom de méthode attendu, %s obtenu'
@@ -594,6 +890,11 @@ compilateur Zig non détecté
   'sehpprvy': 'builtin %s : type de valeur invalide %s'
   'seta2gk3': 'builtin %s : aucun emplacement de récepteur'
   'sgk4yra9': 'fichier, répertoire ou paquet inexistant : %s'
+  'sh7h3f59': `
+Erreur d'écriture du fichier d'espace de travail : %v
+
+`
+  'shw0oc0z': 'Imports ESM tiers (backend JS uniquement) : importer des paquets npm ainsi'
   'sjuueqqo': 'ligne %d : la variable « %s » est déclarée dans un corps de boucle et peut être non initialisée lorsqu’elle est utilisée ici (la boucle peut ne faire aucune itération)'
   'sjvzidyd': 'résolution de la dépendance %s de %s@%s : %w'
   'sm0xomza': 'str.to-bool : aucun emplacement de résultat'
@@ -601,19 +902,33 @@ compilateur Zig non détecté
   'so08hhvh': 'embed : le répertoire est vide : %s (résolu : %s)'
   'soo3tmk2': 'le move d’un paramètre %s emprunté n’est pas pris en charge dans le backend MIR'
   'soq2h6t2': 'nom de paramètre attendu dans la déclaration extern, %s obtenu'
+  'squ5w5co': 'Avec --js, --browser génère le JS ciblant le navigateur et un wrapper HTML.'
+  'srpc0cgx': 'Avec --js --browser, générer le JS navigateur + HTML et ouvrir le navigateur par défaut.'
   'ssddj3qk': 'somme de contrôle incorrecte pour %s : %s attendu, %s obtenu (installation refusée)'
   'sstb7ij2': '« } » attendu pour fermer l’annotation, %s obtenu'
   'stbjgjqz': 'builtin %s tableau fixe %s'
+  'su2q9at6': 'Usage : no test [<file>]'
+  'suhqncsk': '  1. un fichier .no existant    -> exécuter ce fichier'
+  'sv3fw1hp': `
+AST empaqueté : %s
+
+`
   'sz3i7626': 'win-read-pipe : (handle, max-bytes) requis'
   't0f6p9jl': '« ( » attendu après le bloc dans la boucle, %s obtenu'
   't22pcf4p': 'embed : fichier introuvable : %s (résolu : %s)'
   't4jhbz5z': '« = » attendu après le nom de fonction, %s obtenu'
+  't5l89pst': `
+Dépendance %s introuvable.
+
+`
   't5qq2leo': 'type lencap : len/cap non pris en charge sur %s (%s) dans la fonction %d'
   't5rup04t': 'emplacement source du move v%d -> v%d'
   'tb2zxq0f': '« %s.%s []T » n’est pas autorisé : le type du champ appartient à la définition de type de « %s ». Pour stocker dans le champ, écrivez « %s.%s = ... »'
+  'tbfsq7ph': '  no pub                       écrire dist/<name>.ast.zip'
   'tcpoxtfd': 'l’annotation de type “%s” peut être omise (déduite de la valeur)'
   'td32do0k': 'retain : une valeur est requise'
   'td8qfehr': 'process-exec : impossible de convertir prog en chaîne C'
+  'tdkcr7i9': 'Sources :'
   'tdouxx03': 'read-file : aucun emplacement de résultat'
   'te0v5lgz': '« ] » ou « ) » attendu pour fermer la plage, %s obtenu'
   'tf9xqjf1': `
@@ -629,10 +944,14 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'tfwxqucs': '`return` ne peut pas être suivi d’une valeur ; Nolang retourne les résultats via des paramètres de résultat nommés (out-params), utilisez donc un `return` nu pour sortir plus tôt et affectez le paramètre de résultat dans le corps de la fonction'
   'tgutu5g0': 'utilisez « # %s.%s %s » au lieu de « # %s.%s as %s »'
   'tgz86gvc': 'lecture du binaire compilé : %w'
+  'tho8xc47': 'Fichiers créés :'
   'tjwokiw9': 'virgule ou crochet fermant attendu dans le littéral de tableau, %s obtenu'
+  'tlwmf1le': 'le transtypage explicite `expr %s` n\'est pas autorisé en Nolang ; utilisez la forme déclarative `name %s = expr` pour une conversion sûre (élargissement ou même largeur)'
   'tmiibvan': 'builtin %s : aucun emplacement de destination'
   'tmqnqq9x': 'dépendance introuvable : %q n’est pas déclaré dans les dependencies de package.noml'
+  'tnj4py6b': 'Aucune dépendance à synchroniser.'
   'tosnl9r7': '« * » attendu entre le compte et le corps de la boucle, %s obtenu'
+  'trahnyuh': '  no vet --strict src/std/   échouer dès qu\'un avertissement lint apparaît'
   'trdj5rp8': 'erreur de vérification : %v'
   'ts6fes3j': 'import %q ne correspond pas à la dépendance AST %s (utilisez %q ou %q)'
   'tsg5cbwu': 'caractère invalide %q dans le spécificateur de paquet ESM %q'
@@ -641,42 +960,63 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'ttlxcrgt': '« [ » ou « ( » ou une chaîne attendu dans l’expression de plage, %s obtenu'
   'u0g1w0d7': 'module de compatibilité js introuvable : %s'
   'u3g4qexx': 'builtin chars-new : type d’argument invalide %s'
+  'u3if6wak': '  no fmt -fix=match -w src/       ajouter sur place les bras match manquants'
   'u4oybn9r': '%s est déjà installé (%s) ; utilisez -u pour réinstaller ou mettre à jour'
   'u5qmp19f': 'le match d’option doit gérer toutes les branches : err, nil, ok (manquant : %s)'
   'ua5h1rpc': 'la conversion « as » n’est autorisée que pour les types pointeur FFI (par ex. *byte, **byte), %s obtenu'
   'uea62he5': 'la fonction “%s” accepte au plus %d argument(s) d’entrée, mais %d ont été fournis — les paramètres de sortie doivent être liés par affectation, ex. result = %s(...)'
+  'uf368nh9': 'Chemin du zip de sortie (défaut : dist/<tool>.ast.zip)'
+  'ufmw3i5q': '  no pack                          empaqueter le paquet courant -> dist/<name>.ast.zip'
+  'ufqsnwdw': 'Dépendances :'
   'ugoucnr9': 'la dépendance %s fournit un unique module précompilé %q ; impossible d’importer le sous-chemin %q'
   'ujfsckuo': 'type de paramètre attendu, %s obtenu'
   'umcsmsz6': '%s : l’analyseur a retourné un programme nil'
   'uqby2pvs': 'index %d hors limites pour %s « %s » de taille %d'
   'uruyzlb4': 'chemin de fichier illégal : %s'
+  'urxylcac': '  l\'analyse s\'arrête au premier argument positionnel).'
+  'uvvox4pk': 'Aucune dépendance à mettre à jour.'
   'uvws00l4': 'définition de fonction en double “%s” (première définition à la ligne %d)'
   'uwaizocg': 'vec.reverse : aucun emplacement de récepteur'
+  'uzugz5vn': 'Les répertoires sont traités récursivement automatiquement.'
   'uzzd8eqi': 'get-line : aucun résultat'
+  'v0avn8e4': 'Validation réussie'
   'v0thbcmv': 'nom de paramètre attendu, %s obtenu'
   'v1a6rxna': 'virgule ou parenthèse fermante attendue, %s obtenu'
   'v1j0odm2': 'écriture de la sortie JS %s : %w'
   'v3n8qk2d': 'version :'
+  'v57cjup3': `
+Erreur d'écriture du fichier de configuration : %v
+
+`
   'v7zs1nru': 'le spécificateur de format « s » exige un type str/bool/entier, « %s » obtenu (spec : %q)'
+  'v8tulbl4': 'Projet :'
   'v9hnqn6w': 'import %q : les imports ESM (npm) ne sont pris en charge que par le backend JS ; recompilez avec `no build --js` ou `no run --js` (le spécificateur %q ne peut pas être lié dans un binaire natif)'
   'v9milo3k': 'getgrouplist : non pris en charge sous windows'
+  'vas3pyce': 'URL du registre de paquets (inutilisé : envoi non implémenté)'
+  've2dzkxe': '  no test -timeout 90 test/std   exécuter tout un répertoire en séquence ; 90 s max par fichier'
   'vekjerf5': 'module std introuvable dans le StdFS embarqué : %s'
+  'velk9bjg': 'Note : l\'envoi vers le registre n\'est pas encore implémenté ; téléversez ce zip dans une release GitHub.'
   'venvcq6s': 'expression attendue après l’opérateur « %s »'
   'veqmroa3': 'bool.to-str : récepteur manquant'
   'vf6bc21u': 'erreur de compilation WASM : %w'
+  'vffhhi55': 'Chemin du fichier de sortie'
   'vgfb39et': 'AST std : lecture de %s : %w'
   'vgljm585': 'builtin %s : le résultat ?str attendait un emplacement %%option, %s obtenu'
   'vgxfhc6x': 'sysctl : non pris en charge sous windows'
   'vh7osqp5': 'aucun callee dans %s'
+  'vhmg22wa': 'Synchronisation des dépendances...'
   'vhpiqfim': 'les bornes de plage flottantes ne sont pas prises en charge, utilisez des entiers'
   'vhpl1qzt': 'arité de l’opération slice'
   'viuznngf': 'net-udp-recvfrom : impossible de prendre le pointeur de données de l’argument 1'
+  'vjj66evx': 'Sans argument, exécute le main.no du répertoire courant.'
   'vjkycl6v': 'emplacement du récepteur utf8-at'
+  'vkq3r0r2': '`# npm/lodash.get as get` ou `# npm/lodash.default as d`. Ils doivent être'
   'vm9uj5g4': 'builtin %s : str brut stocké dans l’emplacement %s'
   'vmy4qtcr': 'téléchargement depuis %s : %w'
   'vo2eyrl7': 'création du lecteur gzip : %w'
   'vpi1fke2': 'win-find-close : un argument bufptr est requis'
   'vr0eh0yz': 'embed : []byte exige un fichier, répertoire obtenu : %s (résolu : %s). Utilisez le type fs.embed pour embarquer un répertoire'
+  'vuvokhaa': 'les dépendances de package.noml et lancez npm install d\'abord ; `no run --js` échoue avec'
   'w308jsag': `
 %s : échec de la validation :
 %s
@@ -685,12 +1025,16 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'w3k1bwpp': '« , » ou « > » attendu dans les paramètres génériques, %s obtenu'
   'w6xtqb7k': 'net-listen : (host, port) requis'
   'w6zt4h9c': '« = » attendu après la liste de variables multiples'
+  'w826wv42': '  no run foo                   exécuter le paquet \'foo\' (depuis workspace.noml)'
   'w9ajg8ow': 'eprint attend un argument str/i64/byte/char/bool, %s obtenu'
+  'wbsevkfk': '  no fmt -d main.no           afficher le diff coloré'
   'wcbo6a01': '« } » attendu pour fermer l’annotation de variante, %s obtenu'
+  'wcoza64y': '  no build --option-inline-threshold=8 main.no   mettre en boîte toute charge ?T de plus de 8 octets'
   'wd8mx0q7': 'callee nil'
   'wdk3k728': 'le paramètre de sortie « %s » (?T) est lu mais jamais affecté dans le corps de la fonction — utilisation non initialisée d’un paramètre de sortie nullable'
   'wdpztov8': 'API C LLVM : IR vide'
   'wekxh2lc': 'interface “%s” : interface parente inconnue “%s”'
+  'wfua2ax8': 'Empaqueter l\'AST d\'un module en gob + zip (<tool>.ast.zip).'
   'wg5j97zm': 'virgule ou parenthèse fermante attendue, %s obtenu'
   'wigbiu9z': 'exec-shell : une commande est requise'
   'wjju8z98': 'échec de l’édition de liens : %w'
@@ -701,23 +1045,36 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'wmq5sd19': 'intrinsic LLVM %s supprimé pour le builtin %s'
   'wnskovpc': 'compte entier attendu avant « * » dans la boucle comptée, %s obtenu'
   'wo778frg': 'bool.to-str : impossible de convertir %%str-long en %s'
+  'wo8qw0ac': 'Sources std :'
   'wskr1nvn': 'impossible d’analyser %q comme entier'
   'wtg6ai3v': 'builtin %s : %w'
+  'wttj7qs9': '  no run -cc zig main.no       compiler et exécuter avec le compilateur Zig'
+  'wu70c4w0': 'tous les projets de workspace.noml sont compilés en parallèle.'
   'ww5ngyyh': 'win-create-process : (cmdline, dir, stdin, stdout, stderr) requis'
   'x51zwxlr': 'identifiant attendu après la directive #{%s}, %s obtenu'
   'x57xvqny': 'type de valeur non pris en charge %s dans la fonction %s'
   'x649sxw4': 'embed : échec de lecture du répertoire %s : %w'
+  'x6snirjy': 'Usage : no ast [-annotations] <file>'
   'x6swm2kk': '“%s” ne doit contenir que des lettres minuscules et des traits d’union'
   'x6tqaeqp': 'nom de paramètre attendu dans la méthode d’interface, %s obtenu'
   'x8bk3eqw': 'emplacement getfield'
   'xczzji7g': 'accolade ouvrante attendue, %s obtenu'
   'xe32iowe': 'term'
+  'xev7d0na': `
+  ast  %s %s
+
+`
   'xgq9y9sz': 'le membre %q a un type de valeur non pris en charge %T'
   'xgs17cqx': 'ligne %d, colonne %d : « main » est un nom réservé et ne peut pas être utilisé comme nom de fonction ; utilisez des instructions de niveau supérieur à la place (le point d’entrée est synthétisé automatiquement)'
   'xhy954hb': 'builtin %s : le tampon pair n’est pas matérialisé'
+  'xj7auj8a': `
+%d dépendances synchronisées.
+
+`
   'xkgmbluz': 'les segments de chemin relatifs ne sont pas autorisés dans le spécificateur de paquet ESM %q'
   'xl6uu81q': 'match non exhaustif sur l’option « %s » : branche(s) manquante(s) : %s — ajoutez une branche `-> ` (else), ou gérez toutes les variantes'
   'xlppn81m': 'impossible de modifier le champ en lecture seule « len » du slice « %s »'
+  'xmd4iv30': 'Aucune dépendance.'
   'xmicjezl': 'l’expression entière `a OP b` renvoie un option<T> en cas de débordement par défaut, le type du résultat est donc toujours `?T`. Choisissez parmi trois : (1) recevez-le comme `?T` (`a ?i64 = x + y`, ou simplement `a = x + y` et laissez le compilateur inférer une option), puis propagez avec `?=` ou déballez avec un match à deux branches (`v = a: {` saut de ligne `ok -> it` / `-> 0`) ; (2) annotez `#{overflow = wrap}` (repli circulaire silencieux) / `clamp0` (sous-dépassement vers zéro) / `min` / `max` / `saturate` (écrêtage saturant), ou une forme préfixée par type comme `#{overflow = u8-max}`, pour choisir la valeur prise en cas d’échec — notez que l’annotation ne change que cette valeur, le résultat reste `?T` et doit toujours être déballé ; (3) rejetez-le explicitement avec `_ = x + y`.'
   'xo6e53hm': 'impossible de modifier le champ en lecture seule « len » du tableau « %s »'
   'xpp5i92s': 'le match d’option doit gérer toutes les branches : err, nil, ok (manquant : %s)'
@@ -738,6 +1095,10 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'yf6kxdmz': 'une instruction ne peut pas être une simple valeur littérale ; appelez une fonction ou affectez-la à une variable'
   'yfm52ulo': 'token inattendu %s dans la charge utile de la variante d’énumération étiquetée (l’analyseur n’a pas progressé)'
   'ygofqfbs': '--wasm-direct exige un fichier d’entrée explicite (mode workspace non pris en charge)'
+  'ygsvytn5': `
+  homepage:   %s
+
+`
   'ygx2q6sp': 'builtin chars-new : aucun emplacement de résultat'
   'yh8904fm': 'opérateur d’affectation attendu, %s obtenu'
   'yhg5vw4v': 'emplacement source du borrow'
@@ -746,8 +1107,15 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'yjiapu40': 'builtin %s : aucun résultat'
   'yjq43ui5': 'net-udp-sendto : (fd, data, n, host, port) requis'
   'yk8jbowb': 'compte entier attendu après « * » dans la boucle comptée, %s obtenu'
+  'ymwfqb9o': '⚠️ Les drapeaux doivent précéder le nom du fichier (le paquet flag de Go arrête'
+  'yoq1krwy': '  no build --js main.no                              générer du JavaScript (effacement des types)'
+  'yqmj7czp': 'Usage : no remove <package-name>'
   'yrdjmq57': 'mappage de workspace circulaire détecté : %s'
+  'yu5ep241': 'un indice d\'installation quand un paquet manque.'
+  'yxf3nmjr': '  no run ./foo                 exécuter le main.no du répertoire ./foo'
+  'yyh1cd5z': '  no vet --json src/std/     émettre les diagnostics en JSON'
   'yzp82ylp': '« : » attendu, %s obtenu'
+  'z26oe20t': 'Binaire :'
   'z68vr2e2': 'builtin %s : impossible de convertir l’argument %d en chaîne C'
   'z87sn8u5': 'virgule ou parenthèse fermante attendue, %s obtenu'
   'z8rfu6gf': 'écriture de la sortie WASM %s : %w'
@@ -755,13 +1123,26 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'zae1l26t': 'écriture de %s : %w'
   'zc1zfsat': 'la syntaxe de type de fonction anonyme « () » est désactivée ; utilisez un alias de type de fonction nommé ou activez « anonymous-fn-type » dans package.noml'
   'zcelvmmy': 'OpAwait : aucun emplacement'
+  'zdbv29a2': `
+Ouvert dans le navigateur : %s
+
+`
   'zl7i0mx6': '« i <- range { } » est obsolète, utilisez « i <- range: { } » à la place'
+  'zlotlakj': '  no fmt -d src/              afficher le diff de tous les .no de src/'
   'zm1ivicl': 'instruction de corps de boucle attendue, %s obtenu'
+  'zm87x8w0': 'S\'il s\'agit d\'un répertoire, valide tous les .no qu\'il contient.'
   'zodppsnm': 'MIR->LLVM : %s'
+  'zpeqou62': 'en CI pour produire la ressource que `no add` télécharge :'
   'zpgykko6': 'main.no introuvable dans %s'
   'zql6tu9p': 'chemin de dépendance local au workspace %q introuvable'
+  'zr0vmo3q': '  no build main.no'
   'zs1q169p': 'lecture des informations de release : %w'
   'ztlqshll': 'builtin %s : le résultat %d n’a pas d’emplacement'
   'zvybywvf': 'modes de liaison native en conflit : %q (de %q) et %q (de %q)'
+  'zy88y2ur': '  no run                       compiler puis exécuter le main.no du répertoire courant'
+  'zz69r7h9': `
+Erreur de synchronisation de la dépendance AST %s : module vide
+
+`
   'zzcfoc04': 'création du répertoire dist : %w'
 }

@@ -186,9 +186,9 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
 
     ; 初始化狀態（25 個 64-bit lane，全零）
     state []u64 = with-len(25)
-    i <- [0..25): {
+    e <- state: {
 
-        state[i]: {
+        e: {
             ok -> it = 0
 
             -> _

@@ -11,6 +11,7 @@
 ;   OPTNONE / OPTSOME / OPTTAG / OPTISOK / OPTGET（%option，i64 载荷）
 ;   OPTMKSTR / OPTGETSTR（%option，str 载荷内联；%str-long 恰 24B = [3 x i64] 槽）
 ;   OPTMKVEC / OPTGETVEC（%option，vec 载荷内联 s40；%vec 三字段全 i64 恰 24B，无需 ptrtoint）
+;   OPTALLOC / OPTSTORE / OPTLOAD（%option 跨基本块走 alloca %option，第八命名空间 %os，无 PHI s41）
 ;   STRUCT-MK / STRUCT-GET / STRUCT-SET（%struct.point，值语义；SET 是「读旧出新值」）
 ;   STALLOC / STSTORE / STLOAD（%struct.point 跨基本块走 alloca %struct.point，无 PHI）
 ;   RETAIN / RELEASE（%str-long 的 RC 发射原语；取 data 指针 call @nolang_rc_retain/release）
@@ -956,6 +957,31 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', i64 %vo2')
             b.push(k.to-str())
             b.push(', 2\n')
+        }
+        op == OP-OPTALLOC -> {
+
+            ; dst = option 槽 id（本 op 无值操作数）。第八命名空间 %os，与值 %op 只差一个 s。
+            b.push('\t%os')
+            b.push(d.to-str())
+            b.push(' = alloca %option\n')
+        }
+        op == OP-OPTSTORE -> {
+
+            ; xa[k] = option 值 id；bs[k] = 槽 id。%option 型别固定，无需解 cty/vty（比 struct 槽更简单）。
+            b.push('\tstore %option %op')
+            b.push(x.to-str())
+            b.push(', %option* %os')
+            b.push(y.to-str())
+            b.push('\n')
+        }
+        op == OP-OPTLOAD -> {
+
+            ; dst = option 值 id；xa[k] = 槽 id（与 SLOAD/STLOAD 同形：槽在 a、结果在 dst）。
+            b.push('\t%op')
+            b.push(d.to-str())
+            b.push(' = load %option, %option* %os')
+            b.push(x.to-str())
+            b.push('\n')
         }
         op == OP-STRUCT-MK -> {
 

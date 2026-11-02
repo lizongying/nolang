@@ -310,10 +310,9 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
         }
 
         -> {
-            i <- [0..args.len()): {
+            a <- args: {
 
-                #{index-out=zero}
-                cmdline = cmdline - ' ' - args[i]
+                cmdline = cmdline - ' ' - a
             }
         }
     }
@@ -825,10 +824,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
         -> {
             cmdline = shell-quote(program)
-            i <- [0..args.len()): {
+            a <- args: {
 
-                #{index-out=zero}
-                cmdline = cmdline - ' ' - shell-quote(args[i])
+                cmdline = cmdline - ' ' - shell-quote(a)
             }
         }
     }
@@ -838,10 +836,9 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     {
         env.len() > 0 -> {
             envline str = 'env'
-            ei <- [0..env.len()): {
+            kv <- env: {
 
-                #{index-out=zero}
-                envline = envline - ' ' - shell-quote(env[ei])
+                envline = envline - ' ' - shell-quote(kv)
             }
             {
                 is-sh-c -> {

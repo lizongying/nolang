@@ -42,6 +42,7 @@ func main() {
 	// 覆寫（見 lsp/server.go），優先級高於環境變數。必須在任何診斷產生之前完成，
 	// 因為 checker 在建構訊息時就翻譯，而不是在渲染時。
 	if err := catalog.Init(catalog.Options{
+		ProjectLang: catalog.ProjectLang(),
 		ProjectDirs: catalog.ProjectDirs(),
 		Warn: func(msg string) {
 			log.Printf("i18n: %s", msg)

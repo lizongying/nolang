@@ -1759,28 +1759,39 @@ func (l *lowerer) typeOfNode(n *hir.Node) TypeID {
 		// lowerExpr's KIndex computes via elementTypeOf. Without this, arithmetic
 		// on vec elements (e.g. fe-mul) resolved the infix result type from the
 		// index read, which fell through to void and produced `add void`.
+		//
+		// 🔴 THIS MUST BE A PURE TYPE QUERY. It used to call `l.lowerExpr(arrID)`
+		// and then `elementTypeOf` on the resulting value. Because
+		// `elementTypeOf(v)` is exactly `elemTypeOfType(typeOf(v))`, lowering the
+		// container bought nothing — but it EMITTED INSTRUCTIONS every time any
+		// caller asked for an index expression's type. `cmpIndexSafeHint` and
+		// `lowerNestedSafeIndex` both do, so `tbl[oob][0]` ended up with the
+		// container `tbl[oob]` lowered TWICE: once (bare, unhinted) by the type
+		// query and once for real. The duplicate sat in the dominating block
+		// unguarded, so the out-of-range nested read crashed before any check.
+		// Derive the element type from the container's TYPE instead.
 		var arrID int32
 		for _, c := range l.pkg.Children(n.Id) {
 			arrID = c
 			break
 		}
-		if arrV := l.lowerExpr(arrID); arrV != NoVal {
-			if t := l.elementTypeOf(arrV); t != l.voidType {
-				return t
+		if ct := l.typeOfNode(l.pkg.Node(arrID)); ct != l.voidType && ct != NoType {
+			if et := l.elemTypeOfType(l.mod.Type(ct)); et != l.voidType && et != NoType {
+				return et
 			}
 		}
 		return l.inferredTypeOf(n)
 	case hir.KSlice:
 		// sub-slice `a[lo:hi]` yields the same (slice) type as its base.
+		// Pure query — see the KIndex note above; the base used to be lowered
+		// here only to be discarded.
 		var arrID int32
 		for _, c := range l.pkg.Children(n.Id) {
 			arrID = c
 			break
 		}
-		if arrV := l.lowerExpr(arrID); arrV != NoVal {
-			if t := l.typeOfNode(l.pkg.Node(arrID)); t != l.voidType {
-				return t
-			}
+		if t := l.typeOfNode(l.pkg.Node(arrID)); t != l.voidType {
+			return t
 		}
 		return l.inferredTypeOf(n)
 	case hir.KStructLit:
@@ -3303,11 +3314,7 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			// test-it-probe). A value that is ALREADY an option (e.g. from a
 			// `?i64`-returning call) is left as-is.
 			if dt := l.typeOfNode(n); dt != NoType && dt != l.voidType {
-				if tt := l.mod.Type(dt); tt != nil && tt.Kind == KindOption {
-					if vt := l.valueTypeOf(val); vt == NoType || vt == l.voidType || l.mod.Type(vt).Kind != KindOption {
-						val = l.b.EmitOptionWrap(dt, 0, val)
-					}
-				}
+				val = l.wrapOptionIfNeeded(dt, val)
 			}
 			// txt is a fixed 256-byte stack struct ({ [255 x i8] data, i8 len }),
 			// distinct from the heap-backed %str-long. When a `let x:txt = <str>`
@@ -3440,6 +3447,16 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						l.b.EmitVoid(OpDrop, []ValueID{existing}, "")
 					}
 				}
+				// Implicit `ok(v)` wrap, exactly as in the assignment path
+				// (lowerAssign ~14212): re-binding an option-typed slot — most
+				// importantly a RESULT PARAMETER (`f = (s str) (o ?str) { o = s }`)
+				// — must build `{tag=0, payload}` rather than move the bare
+				// payload over the slot. The bare move overwrote the
+				// discriminant with the str's LENGTH (2 for 'hi', which reads as
+				// tag 2 = err), so the caller's option held a %str-long whose
+				// fields were the payload's own and the drop freed a bogus
+				// pointer: `a ?str = f('hi')` died with trace/BPT.
+				val = l.wrapOptionIfNeeded(l.valueTypeOf(existing), val)
 				l.b.EmitMoveInto(existing, val)
 				// The handle now lives in `existing`; carry the task's result
 				// type across, or `awy t` would await an untyped handle (see
@@ -4341,6 +4358,177 @@ func (l *lowerer) cloneOptionElem(optT TypeID, e ValueID) ValueID {
 		return e
 	}
 	return l.b.Emit(OpClone, optT, []ValueID{e}, "")
+}
+
+// lowerNestedSafeIndex lowers `a[i][j]` — a subscript whose CONTAINER is itself
+// a subscript — as two chained safe reads:
+//
+//	outer := a[i]                    ; ?Elem, bounds-checked
+//	outer: { ok -> inner := outer[j] ; ?T, bounds-checked
+//	                 sink = inner
+//	         -> {}                   ; sink stays nil }
+//
+// Before this the outer read was left BARE (no hint reaches it — the consumer's
+// hint belongs to the INNER read) and `[j]` was then lowered against it, so
+// neither read was bounds-checked. Giving the inner read's hint to the outer one
+// instead is worse: the KIndex case lowers its container with the same
+// l.typeHint still in effect, so the hint landed on the outer VALUE and the
+// inner read then did `len(?str)` / `index ?str` — "lencap kind: len/cap
+// unsupported on ?char" on src/std/net/http.no's `.header-names[i][j] !=
+// name.byte(j)`.
+//
+// The outer read is lowered with ITS OWN HIR type as the hint (`a[i]` on a
+// `[32]str` is `?str`), which is exactly what a safe read produces, and any
+// deeper nesting recurses through this same path.
+// safeIndexHintFor returns the `?Elem` type a subscript node must be lowered
+// with to get a BOUNDS-CHECKED read (docs 〈安全索引〉: an index read is always
+// `?T`). `typeOfNode` cannot be used directly — by design it reports the BARE
+// element type of `a[i]` — so the option is rebuilt here.
+//
+// The checker's inferred type for the node wins when it already spells an
+// option (`x ?= v[i]`, `v ?str = a[i]`): that spelling carries the exact payload
+// type the rest of the expression expects.
+func (l *lowerer) safeIndexHintFor(nodeID int32) TypeID {
+	if nodeID == hir.NoID {
+		return NoType
+	}
+	if raw := l.pkg.InferredType(nodeID); raw != "" && raw != "void" && ty.IsOptionRaw(raw) {
+		if t := l.b.Type(raw); t != l.voidType {
+			return t
+		}
+	}
+	et := l.typeOfNode(l.pkg.Node(nodeID))
+	if et == NoType || et == l.voidType {
+		return NoType
+	}
+	ety := l.mod.Type(et)
+	if ety == nil || ety.Raw == "" {
+		return NoType
+	}
+	if ety.Kind == KindOption || ty.IsOptionRaw(ety.Raw) {
+		return et
+	}
+	if ot := l.b.Type("?" + ety.Raw); ot != l.voidType {
+		return ot
+	}
+	return NoType
+}
+
+func (l *lowerer) lowerNestedSafeIndex(id, outerID, idxID int32) ValueID {
+	optT := l.typeHint
+	// The outer read's own result type is `?Elem`, NOT `Elem`. `typeOfNode` on a
+	// subscript deliberately reports the BARE element type (it answers "what does
+	// `a[i]` yield"), so using it directly as the hint made `hintIsOption()` false
+	// and the outer read fell through to a bare, unchecked `OpIndex` — the read
+	// this whole path exists to prevent.
+	savedHint := l.typeHint
+	// NEVER inherit the inner read's hint for the outer read: `optT` describes
+	// what `a[i][j]` yields (e.g. `?char`), and hinting `a[i]` with it made the
+	// outer read produce a `?char` whose payload is a `str`, which the inner
+	// read then indexed as a char ("lencap kind: len/cap unsupported on ?char").
+	// No hint at all (a bare outer read) is the old, honest behaviour.
+	l.typeHint = NoType
+	if h := l.safeIndexHintFor(outerID); h != NoType {
+		l.typeHint = h
+	}
+	outerV := l.lowerExpr(outerID)
+	l.typeHint = savedHint
+	if outerV == NoVal {
+		return NoVal
+	}
+	outerTy := l.valueTypeOf(outerV)
+	if outerTy == NoType || outerTy == l.voidType {
+		return NoVal
+	}
+	ot := l.mod.Type(outerTy)
+	if ot == nil || ot.Kind != KindOption || ot.Elem == NoType {
+		// Not an option after all (the checker typed `a[i]` as the bare
+		// element): nothing to guard, keep the plain lowering.
+		if idxV := l.lowerExpr(idxID); idxV != NoVal {
+			if eT := l.elementTypeOf(outerV); eT != NoType && eT != l.voidType {
+				return l.lowerIndexReadWith(id, outerV, idxV, eT, "")
+			}
+		}
+		return NoVal
+	}
+	elemT := ot.Elem
+	// Peel the payload into a slot in the dominating block (MIR has no phi, so
+	// every branch convergence goes through a shared slot). The peel itself
+	// happens in the ok arm, and it is only safe THERE: an absent option with a
+	// BOXED payload (`?txt`, `?[]T`) has a null heap pointer, so peeling it would
+	// dereference null. That is what the presence test below guards.
+	peeled := l.b.Emit(OpConst, elemT, nil, "")
+	if peeled == NoVal {
+		return NoVal
+	}
+	// Present test: `outerV != nil` compares the TAG only (TagOnly), i.e.
+	// "this option is not the none discriminant".
+	nilConst := l.b.EmitInt(OpConst, outerTy, 0, "")
+	boolT := l.b.Type("bool")
+	present := l.b.Emit(OpNe, boolT, []ValueID{outerV, nilConst}, "")
+	if present != NoVal {
+		l.b.Mod.Insts[len(l.b.Mod.Insts)-1].TagOnly = true
+	}
+
+	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil
+	okBlk := l.b.NewBlock("nidx.ok")
+	noneBlk := l.b.NewBlock("nidx.none")
+	mergeBlk := l.b.NewBlock("nidx.merge")
+	if present != NoVal {
+		l.b.Terminate(OpCondBr, []ValueID{present}, []BlockID{okBlk, noneBlk}, "")
+	} else {
+		l.b.Terminate(OpBr, nil, []BlockID{okBlk}, "")
+	}
+
+	l.b.SetBlock(okBlk)
+	l.b.EmitMoveInto(peeled, outerV)
+	savedIdxHint := l.typeHint
+	l.typeHint = NoType
+	idxV := l.lowerExpr(idxID)
+	l.typeHint = savedIdxHint
+	if idxV != NoVal {
+		if eT := l.elementTypeOf(peeled); eT != NoType && eT != l.voidType {
+			if inner := l.lowerIndexReadWith(id, peeled, idxV, eT, ""); inner != NoVal {
+				l.b.EmitMoveInto(sink, inner)
+			}
+		}
+	}
+	// 🔴 Terminate the CURRENT block, not okBlk. The inner read is itself a
+	// safe read, so it leaves the builder inside ITS merge block — terminating
+	// okBlk (already terminated by the inner bounds check) left that merge block
+	// open, and ensureReturn then appended `ret void` there: `main` returned
+	// right after the nested read and every following statement vanished
+	// (`tbl[i][0] == 'c'` printed nothing at all).
+	if cur := l.b.CurrentBlock(); l.mod.Block(cur).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+	l.b.SetBlock(noneBlk)
+	if l.mod.Block(noneBlk).Term == nil {
+		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+	}
+	l.b.SetBlock(mergeBlk)
+	return sink
+}
+
+// lowerIndexReadWith applies the read-side dispatch for `arrV[idxV]` once the
+// element type is known: a consumer that wants an option gets a bounds-checked
+// read (UTF-8 receiver / grow-write / plain safe index), anything else gets a
+// bare OpIndex. It is the KIndex case's own tail, factored out so the nested
+// subscript path uses the identical rules.
+func (l *lowerer) lowerIndexReadWith(id int32, arrV, idxV ValueID, elemT TypeID, promotedFrom string) ValueID {
+	if l.hintIsOption() {
+		inBounds := l.pkg.Node(id).Has(hir.FlagInBounds)
+		if l.isUTF8IndexReceiver(arrV) {
+			return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, inBounds)
+		}
+		if l.pkg.Node(id).Has(hir.FlagGrowWrite) && !inBounds && l.isGrowableContainer(arrV) {
+			return l.lowerGrowWriteIndex(arrV, idxV, elemT, l.typeHint)
+		}
+		return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint, inBounds)
+	}
+	iv := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
+	l.mod.SetValueOrigin(iv, promotedFrom)
+	return iv
 }
 
 // lowerSafeIndex lowers a bounds-checked element read whose result is an
@@ -8074,6 +8262,12 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				break
 			}
 			i++
+		}
+		// Nested subscript `a[i][j]`: the CONTAINER is itself an index read, so
+		// the outer read has to be bounds-checked before the inner one may look
+		// at its value. See lowerNestedSafeIndex.
+		if cn := l.pkg.Node(arrID); cn != nil && cn.Kind == hir.KIndex && l.hintIsOption() {
+			return l.lowerNestedSafeIndex(id, arrID, idxID)
 		}
 		arrV := l.lowerExpr(arrID)
 		// An index expression is ALWAYS integer-typed. Lower it with a cleared
@@ -13833,6 +14027,36 @@ func (l *lowerer) elementTypeOf(v ValueID) TypeID {
 	return l.voidType
 }
 
+// indexElemHintType returns the element type an index READ is typed with when it
+// appears as a comparison operand.
+//
+// The checker's inferred type for the subscript wins when it is a concrete
+// non-option type, because that is the type the rest of the pipeline already
+// agrees on. `[]?T` is skipped (its read already yields the option, and `??T` is
+// not a type any read produces).
+//
+// A `txt` receiver is the case that needs the override. `elemTypeOfType(txt)`
+// reports the raw `i8` the backend loads (that is the BYTE identity the write
+// side needs), but a code-point read is what the language exposes: the checker
+// rejects `b byte = t[0]` with "cannot assign char value to byte". Typing the
+// comparison read `?i8` made `t[0] == 'c'` render the byte as DECIMAL TEXT
+// ("99" vs "c") and answer false with no diagnostic — while `s[0] == 'a'` on a
+// `str` was true. Comparing through `?char` makes the two receivers agree; an
+// integer literal (`t[0] == 99`) still compares numerically.
+func (l *lowerer) indexElemHintType(id int32, cty *Type) TypeID {
+	if raw := l.pkg.InferredType(id); raw != "" && raw != "void" && !ty.IsOptionRaw(raw) {
+		if t := l.b.Type(raw); t != l.voidType {
+			if tt := l.mod.Type(t); tt != nil && tt.Kind != KindOption {
+				return t
+			}
+		}
+	}
+	if cty != nil && cty.Raw == "txt" {
+		return l.b.Type("char")
+	}
+	return l.elemTypeOfType(cty)
+}
+
 // cmpIndexSafeHint returns the `?elem` type an index read must be lowered with
 // when it is an operand of a comparison, or NoType when the node is not an
 // index read (or is a map lookup, whose read is already `?V`).
@@ -13857,19 +14081,12 @@ func (l *lowerer) cmpIndexSafeHint(id int32) TypeID {
 	if arrID == hir.NoID {
 		return NoType
 	}
-	// `a[i][j]`: the container is itself an index read. A hint set here is
-	// inherited by the CONTAINER lowering (the KIndex case lowers the container
-	// with the same l.typeHint still in effect), so the outer read gets wrapped
-	// as if it were the result — `[32]str` element `str` became `?char`, and the
-	// inner read then emitted `len(?char)` / `index ?char`. That is what broke
-	// `.header-names[i][j] != name.byte(j)` in src/std/net/http.no
-	// ("lencap kind: len/cap unsupported on ?char (option)"). The read that
-	// would need making safe is the OUTER one, which this hint cannot reach —
-	// there is no `index ?T` in the backend. Keep the pre-existing lowering:
-	// nested reads stay unchecked exactly as at HEAD.
-	if cn := l.pkg.Node(arrID); cn != nil && cn.Kind == hir.KIndex {
-		return NoType
-	}
+	// NOTE: a container that is itself an index read (`a[i][j]`) IS supported —
+	// the hint set here is the INNER read's (`a[i][j]` on a `[32]str` is
+	// `?char`), and the KIndex case routes the whole expression through
+	// lowerNestedSafeIndex, which gives the OUTER read its own hint from the
+	// container node's HIR type. The guard that used to bail here existed only
+	// because the hint was inherited by the container lowering.
 	ct := l.typeOfNode(l.pkg.Node(arrID))
 	if ct == NoType || ct == l.voidType {
 		return NoType
@@ -13881,12 +14098,18 @@ func (l *lowerer) cmpIndexSafeHint(id int32) TypeID {
 	if cty.T != nil && cty.T.Kind == ty.Map {
 		return NoType
 	}
-	// Same shape reached without a KIndex container: a variable of option type
-	// (`v ?str` then `v[j]`). Same reasoning as above — bail.
+	// A container of option type that is NOT an index read (`v ?str` then
+	// `v[j]`): there is no payload to read without unwrapping, and no
+	// `index ?T` in the backend — bail and keep the pre-existing lowering. The
+	// `a[i][j]` shape reaches here with the same option container, but it IS
+	// handled (lowerNestedSafeIndex peels the outer read), so only the
+	// non-index case bails.
 	if cty.Kind == KindOption {
-		return NoType
+		if cn := l.pkg.Node(arrID); cn == nil || cn.Kind != hir.KIndex {
+			return NoType
+		}
 	}
-	elemT := l.elemTypeOfType(cty)
+	elemT := l.indexElemHintType(id, cty)
 	if elemT == NoType || elemT == l.voidType {
 		return NoType
 	}
@@ -13902,11 +14125,15 @@ func (l *lowerer) cmpIndexSafeHint(id int32) TypeID {
 			payload = pt
 		}
 	}
-	// Only scalar/string payloads have a structural comparison. A container or
-	// struct payload makes emitCmp fall back to the DISCRIMINANT, which would
-	// turn `a[i] == b[j]` on `[][]i64` into "are both present" — silently true
-	// for `[1] == [9]`. Keeping the bare read instead preserves the old, loud
-	// failure (an `icmp` on a %vec aggregate is rejected by the backend).
+	// Only scalar/string payloads get the option-wrapped read. A container or
+	// struct payload keeps the BARE read, on purpose: comparing two `?[]i64`
+	// would go through emitOptionValueEq, whose payload test cannot compare a
+	// %vec (there is no structural option-payload equality), so it would fall
+	// back to the DISCRIMINANT and turn `a[i] == b[j]` on `[][]i64` into "are
+	// both present" — silently true for `[1] == [9]`. The bare read hands
+	// emitCmp two %vec values, which it compares structurally through
+	// codegen.vecDeepEq (equal length + equal elements). The trade-off is that
+	// such a read is unchecked, exactly like every other non-option consumer.
 	switch payload.Kind {
 	case KindInt, KindFloat, KindBool, KindChar, KindStr:
 	default:
@@ -14328,6 +14555,41 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 	}
 }
 
+// optionPayloadCoerced converts v to the option element's raw type when the two
+// differ inside the str/txt family. That is the one implicit coercion nolang
+// allows which also changes the LAYOUT: `str` is a heap-backed 24-byte
+// %str-long, while `txt` is a 256-byte stack buffer `{ [255 x i8], i8 }`.
+//
+// Wrapping without converting put a %str-long into a slot that the read side
+// interprets as a (boxed) %txt — `o ?txt = <str>` then read 256 bytes of garbage
+// as the payload, so `?txt == txt` answered false and the following read
+// SEGFAULTed. The opposite direction was just as wrong: `o ?str = <txt>` handed
+// a 256-byte buffer to a %str-long reader, and the ok arm printed the empty
+// string.
+func (l *lowerer) optionPayloadCoerced(elemRaw string, v ValueID) ValueID {
+	if v == NoVal || (elemRaw != "txt" && elemRaw != "str") {
+		return v
+	}
+	vt := l.valueTypeOf(v)
+	if vt == NoType || vt == l.voidType {
+		return v
+	}
+	vty := l.mod.Type(vt)
+	if vty == nil {
+		return v
+	}
+	switch {
+	case elemRaw == "txt" && vty.Raw == "str":
+		return l.b.Emit(OpTxtFromStr, l.b.Type("txt"), []ValueID{v}, "")
+	}
+	// The opposite direction (`?str` holding a `txt`) is NOT handled here: the
+	// conversion lives in std's `txt-to-str`, which a program that never writes
+	// `.to-str()` does not link, and a hand-made call would be an "unknown
+	// callee". Codegen materialises the str from the buffer instead — see
+	// emitOptionWrap's %txt -> %str-long case.
+	return v
+}
+
 // wrapOptionIfNeeded implements nolang's implicit `ok(v)` wrap on assignment: a
 // non-option value `v` assigned to an option-typed target (`?T`) must be built
 // into the option {tag=0, payload=v}, never moved in as a bare scalar (which
@@ -14346,6 +14608,31 @@ func (l *lowerer) wrapOptionIfNeeded(targetType TypeID, v ValueID) ValueID {
 	if vt != NoType && vt != l.voidType {
 		if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindOption {
 			return v // already an option — leave as-is
+		}
+	}
+	// The payload must be stored AS THE ELEMENT TYPE — see optionPayloadCoerced.
+	if tt.T != nil && tt.T.IsOption() && tt.T.Elem != nil {
+		v = l.optionPayloadCoerced(tt.T.ElemRaw(), v)
+	}
+	// The option OWNS its payload, so a BORROWED payload must be cloned first.
+	// An input param is owned by the CALLER, which frees it at its scope end;
+	// wrapping it as-is left the option holding the caller's buffer, so both
+	// the caller's drop and the option's drop freed it:
+	//
+	//     f = (s str) (o ?str) { o = s }
+	//     a ?str = f('hi')            ; trace/BPT trap (double free)
+	//
+	// Same rule (and the same reason) as cloneIfBorrowedParamSlice on a setfield
+	// store: no value aliasing across the ownership boundary.
+	if l.paramVals[v] {
+		if vt2 := l.valueTypeOf(v); vt2 != NoType && vt2 != l.voidType {
+			if vty2 := l.mod.Type(vt2); vty2 != nil && vty2.Owned {
+				if vty2.Kind == KindSlice {
+					v = l.cloneIfBorrowedParamSlice(v)
+				} else if fresh := l.b.Emit(OpClone, vt2, []ValueID{v}, ""); fresh != NoVal {
+					v = fresh
+				}
+			}
 		}
 	}
 	return l.b.EmitOptionWrap(targetType, 0, v)

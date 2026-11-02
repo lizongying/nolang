@@ -1,9 +1,13 @@
-; Nolang locale: zh-CN
+; Nolang locale: zh-cn
 ; 只改译文，不要改键；键由 `make i18n` 从源码生成。
 ; 格式动词（%s / %d / %q / %v）必须与 en 完全一致，否则门禁会拒绝。
 {
   '04mmq0us': 'lencap struct: 不支持对结构体 %s 取 len/cap（函数 %d）'
   '04tb4mwj': 'eq-raw: 无法将 i1 存入 %s'
+  '060maaj0': `
+错误：%v
+
+`
   '06r4gtr3': 'builtin %s: 缺少操作数'
   '081adx9q': 'net-accept-nb: 没有结果槽位'
   '09qseik5': '点号后应为标识符，实际得到 %s'
@@ -11,12 +15,17 @@
   '0cccc2ei': '此 #{overflow=...} 注解对应的陈述不含整数运算（如整行仅字符串拼接），不会发生溢出，建议删除。'
   '0coyzo4x': 'vec.sort: 没有接收者槽位'
   '0ewki0e0': '期望以 \'}\' 结束变体注解，实际得到 %s'
+  '0gl7izq7': '浏览器输出通过 import map 解析它们；用'
   '0hl9ybj4': 'JS 后端需要显式指定输入文件或 main.no（不支持工作区模式）'
   '0ik1j9cf': '格式化失败: %d 个解析错误'
   '0iodav1i': '区间需要 \'..\'，切片需要 \',\' 或 \']\'，实际得到 %s'
   '0j1imd2d': '`#{...}` 注解不能写在目标前方同一行；请独立成行置于目标上方，或写在目标同一行尾随'
   '0jdavdb8': '\'while 条件 { }\' 已废弃，请改用 \'for 条件 { }\''
   '0kf267f2': '空的 switch 语句'
+  '0lur3tbm': `
+已更新 %s
+
+`
   '0qnjitgt': 'builtin %s: 缺少 C 调用声明'
   '0tjeipjr': '\'for 初始化; 条件; 更新\' 已废弃，请改用逗号 \',\' 分隔'
   '0ts2eetl': 'builtin %s: 缺少值'
@@ -30,9 +39,17 @@
   '16ltowfs': '\'for 条件 { }\' 已废弃，请改用 \'{ } (条件)\' 循环'
   '170bewkb': '无法从 nil 推断变量 “%s” 的类型'
   '17mbz8cw': '期望以 \'}\' 结束注解，实际得到 %s'
+  '18uic4sz': '用 -v 在构建同时输出 LLVM IR（.ll）文件以便分析。'
   '1b3u924y': 'read-file: 无法将 path 编组为 C 字符串'
+  '1cg8g9ic': '校验 Nolang 源文件而不产生输出。'
+  '1ea3hwsu': '  链接 JS 模块。无需任何开关；由清单驱动。'
+  '1gmy3g9v': '  no vet                     校验当前目录的 main.no'
   '1gybkrrq': '%s'
   '1i1o45j6': '期望参数类型，实际得到 %s'
+  '1iye2j55': `
+  repository: %s
+
+`
   '1j6i9o1o': 'slice op 接收者槽位'
   '1k6cdcgx': '类型后应为 \'.\'，实际得到 %s'
   '1lg2qpwf': 'syslog: 无法将第 1 个参数编组为 C 字符串'
@@ -40,32 +57,54 @@
   '1m1ocf8t': '不支持的主机 %q（仅支持 github.com）'
   '1plv4fne': 'str-from-vec 目标槽位'
   '1qz0p808': '依赖键 %s 之后缺少模块路径'
+  '1rk772tt': `
+创建 src 目录出错：%v
+
+`
   '1u2vckag': 'builtin %s: 缺少接收者'
   '1ubmxmsr': '注解中应为 \',\' 或 \'}\'，实际得到 %s'
+  '1wsc2hed': '输出 zip 路径（默认：dist/<name>.ast.zip）'
   '1x2yhmnf': 'win-get-std-handle: 需要 which 参数'
+  '1zgxpqk7': '第三方 ESM 导入（--js）：用 `# npm/lodash` 导入 npm 包，'
+  '202eioh0': `
+写入测试文件出错：%v
+
+`
+  '20szn23y': '  no ast main.no                    打印 main.no 的 AST'
+  '20xgyqyu': `
+已添加依赖：%s = %s
+
+`
   '21irdw5o': '$str_concat: 参数类型不匹配'
   '2243l8if': '..any 只允许在标准库中使用，用户代码中不可用（函数: %s）'
   '238u1xr7': 'embed: 仅支持 []byte / [N]byte / fs.embed 声明，得到的是无类型声明'
+  '23ki71z9': '使用 Direct WASM 后端（不需 LLVM 工具链，兼容浏览器）'
   '2534ei4x': '\'if/elif/else\' 已废弃，请改用 \'{ <条件> -> <分支> }\''
   '26rmtbup': 'vec.truncate: 没有接收者槽位'
   '27jt8xlw': '创建临时目录失败: %w'
   '28t42vw9': '返回的整数运算默认返回 option<int>，但本函数不返回 option 类型。请加 `#{overflow = wrap}` 注解回普通 int，或让函数返回 ?T 并用 `result ?= expr` 上抛（或用 `result = expr` 就地捕获错误）。'
+  '2bg0n0e0': '  - lib.no（库导出文件）'
   '2cmnxd6l': '期望以 \']\' 或 \')\' 结束区间，实际得到 %s'
   '2dhoris2': '“%s” 只能使用小写字母和连字符'
   '2e14k5et': '无法推断 “%s” 的类型: %s() 要求左侧有显式类型标注（例如 `name []byte = %s(n)`）'
   '2fke76na': 'wasm: 函数数量与代码段数量不一致: %d 个函数对 %d 个代码段'
   '2g4xt4m5': 'net-listen: 没有结果槽位'
+  '2ixluoth': '运行测试。'
   '2kqboupo': '不支持的内建 %s'
   '2ls7kxqp': '不能重新赋值函数名 “%s”'
   '2lsu55tb': '原生 wasm 模块 %q 未在 package.noml 的 dependencies 中声明；请添加 dependencies: [\'%s:^latest\']（或 dev-dependencies）并运行 npm install'
+  '2lxm8j4k': '后端：'
   '2nh7qycu': 'builtin %s: 未处理的 C 返回类型'
   '2nvmt2tf': '写入 LLVM IR 文件失败: %w'
+  '2psk9dma': '生成面向浏览器的输出（HTML + JS，需配合 --js）'
+  '2q3wfrie': '解析 Nolang 源文件并把 AST 打印到标准输出。'
   '2qdpadhy': '请用两段式解包：先 `%s = <expr>`（推断为 ?T），再 `v = %s: {` 换行书写 `ok -> it` 与 `-> <默认值>` 两臂；或用 match 语句 `%s: { ok -> { ... } -> { ... } }`，或 `%s ?= <expr>` 上抛，或 `_ = <expr>` 显式丢弃。注意 match 臂必须换行分隔（逗号形态是解析错误），且 `%s = <expr>: { ... }` 的同行写法只在 <expr> 是裸标识符时生效，否则 match 会脱离成独立语句、%s 仍是未解包的 ?T。'
   '2qoxhl6a': 'win-create-process: 无法将 cmdline 编组为 C 字符串'
   '2rkb38mw': '创建缓存目录失败: %w'
   '2t4wkn7s': '期望以 \'}\' 结束字段注解，实际得到 %s'
   '2trc49mk': '重复的类型别名 %q'
   '2u2o0e24': 'net-dial: 没有结果槽位'
+  '2u63w9uc': '使用 JS 后端（输出 JavaScript 源码，不需 LLVM 工具链）'
   '2xehrcuo': `
 未检测到 LLVM 工具链
   macOS: brew install llvm
@@ -99,33 +138,47 @@
   '3owkeirf': '解析 %s/%s 的发行版信息失败: %w'
   '3pry7fmd': '期望逗号或右括号，实际得到 %s'
   '3r03yk09': '期望 \')\''
+  '3rob7gjj': '用 --wasm-direct 绕过 LLVM 工具链直接生成 WASM（兼容浏览器）。'
   '3sxhaibr': '期望以 \')\' 或 \']\' 结束区间，实际得到 %s'
   '3u02loy5': 'LLVM C API: 运行 pass %q 失败: %s'
+  '3u2xl8v7': '  no run --wasm-direct main.no  经 Direct WASM 后端构建后用 wasmtime 运行（若可用）'
   '3uu88ox1': '期望右括号，实际得到 %s'
   '3vbgvipn': '解析依赖 %s@%s 失败: %w'
   '3wynwdcq': '无法将 %q 解析为浮点数'
   '3xcxajan': 'getgrouplist: 无法将第 0 个参数编组为 C 字符串'
+  '3xe1wjrw': '依赖：'
+  '3zh3tuv8': '这是自举工作的 L2 判定基准：其输出会'
   '430ty5x5': '字节数组接收者没有槽位'
   '45y022ur': 'net-listen: 无法将 host 编组为 C 字符串'
   '46jwfg5y': '类型别名中 %q 后应为类型'
   '46qem63e': 'MIR IR 汇编为 LLVM 失败: %v: %s'
+  '4bopl5am': '根目录：'
   '4ccv952m': 'builtin %s: 无法将 i64 存入 %s'
+  '4dquj9mu': '工作目录：'
+  '4en75r71': '<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip'
   '4ewgvnbn': '不建议链式使用 \'->\' 条件（a -> b -> c）；请用 &&/|| 合并条件，或改用 \'{ }\' 块，以免出现隐蔽的作用域问题'
+  '4eyd78yc': '若未指定文件/目录且存在 workspace.noml，'
   '4g7bz9oy': 'net-accept-nb: 需要 (listen-fd)'
   '4hmw6w3i': 'borrow 参数个数'
   '4m2w3mkd': 'vec.push: 没有接收者槽位'
   '4o348fh8': '期望以 \']\' 或 \')\' 结束区间，实际得到 %s'
   '4oy26jat': 'builtin %s: 结果 0 没有槽位'
+  '4pj8z50l': '  JS 后端的模块解析，因此 `# npm/<pkg>` 这类 ESM 导入与原生'
   '4ptt84li': '%s: 参数类型不匹配'
   '4qhyyund': '函数 %s 中出现未知的被调用者 %s'
+  '4r3ghy7k': '从 git/环境预填：'
   '4rsqarsx': 'eprint txt 槽位'
   '4scfdhhp': 'utime: 没有结果槽位'
   '4uv9dunu': 'str.clear: 需要接收者'
   '4y6hz2la': 'embed: 仅支持 []byte / [N]byte / fs.embed 声明，得到的是 %s'
   '50ztzqeo': 'std AST: 编码 %s 失败: %w'
+  '531ftg4b': '  no test tests/my-test.no    运行单个测试文件'
   '537ew54w': 'builtin chars-new: 缺少字符切片'
+  '55szl0aa': '  no test -cc zig'
+  '58nk14b4': '  no build -o output main.no'
   '5bj5o9ci': 'str.clear: 没有接收者槽位'
   '5blqb26x': '期望 \')\''
+  '5ci3l7h9': '  no add nogit:v0.1.33@github.com/lizongying/notools'
   '5cid832p': '未知的私有字段内建 %s'
   '5ckkrp9f': 'noml: 字段 %s[%d]: 依赖元素必须是字符串，得到 %T'
   '5eo1kvb9': 'noml: 字段 %s: 期望对象，得到 %T'
@@ -142,12 +195,19 @@
   Windows: winget install zig.zig  （或改用 -cc zig）
 `
   '5lycdtsz': '第 %d 个参数（“%s.%s”）: 期望 “%s”，得到 “%s”'
+  '5nhzzuch': '选项：'
+  '5nlhrsc7': '用 --js 绕过 LLVM 工具链直接生成 JavaScript（用 node 运行）。'
   '5ns1mui1': '顶层必须是一个对象'
+  '5o3x4h4d': '为最高性能跳过越界检查（不安全）'
   '5qjs01mp': '期望右括号，实际得到 %s'
   '5qpe9buw': 'win-write-pipe: 需要 (handle, data)'
   '5ve092z6': '函数 %s 中不支持的参数类型 %s'
   '5yjn9wrj': 'setfield: 在 %q 上找不到字段 %q（option %q）'
+  '603y6hgq': '每个包都必须在 package.noml 的 dependencies（或'
+  '61bm2pzr': '所有依赖已更新到最新。'
   '62z2cnfe': 'option 剥离槽位'
+  '63lrmg48': '当标准输入是管道（如 echo \'x=1\' | no fmt）时，从标准输入读取。'
+  '64bt3a50': '把 Nolang 源码构建为可执行文件。'
   '64t1vgh6': 'vec.remove: 需要 receiver、index'
   '66ybjsus': 'write-file: 无法将 path 编组为 C 字符串'
   '68bn4o2m': 'ESM 包说明符 %q 不能以 \'/\' 开头或结尾'
@@ -158,26 +218,49 @@
   '6o12uzmx': 'waitpid: 在 windows 上不受支持'
   '6p2o4902': '资源 %s 超出大小限制（%d 字节）'
   '6qca9xu4': 'embed: 不能与显式值组合使用'
+  '6svrp0le': '用法：no fmt [flags] <file|dir>'
   '6umfb8yv': 'builtin %s: %s'
   '6xq3uson': 'getgrouplist: 需要 2 个结果（gids, n）'
   '6y4tyjln': 'noml: 字段 %s: 不支持的目标种类 %s'
+  '73myjkcm': '  no test                     运行 tests/ 目录下所有 .no 文件'
   '743idjpl': '无法将 %q 解析为整数'
+  '74e32kaz': '用 --llvm-capi 在进程内通过 LLVM C API 编译 IR（仅非调试构建；默认关闭）。'
   '755ldw47': 'extern 声明中期望右括号，实际得到 %s'
   '75f5l5xg': 'load-le-%s: 没有目标槽位'
   '75pom499': 'txt 目标槽位'
   '75qapexc': '无法将第 %d 个参数从 %s 转换为 %s'
   '75yiyise': '对联合 %q 做类型 match 需要类型模式（例如 %q ->）或默认臂（->）'
+  '76fao0mm': `
+  资源：%s
+
+`
   '7c5fbvp4': 'val() 构造器已弃用；显式构造请用 ok(x)，隐式赋值请用 `name = expr`'
+  '7camjpuc': `
+  author:     %s
+
+`
   '7clod0r1': 'elif 中期望左花括号，实际得到 %s'
   '7dl1fkwt': 'WASM 构建中不可用 LLVM 工具链；请使用 --wasm-direct 选项'
   '7f3qhn9l': 'txt 索引接收者槽位'
+  '7f6c9808': `
+创建 tests 目录出错：%v
+
+`
   '7h2kezo7': 'net-udp-sendto: 无法获取第 1 个参数的数据指针'
+  '7k5x9q9a': 'C 编译器：clang（默认）、zig'
+  '7l372tkw': '  --strict         把所有 lint 警告/提示升级为错误'
+  '7mckxr6e': `
+  已更新 %s
+
+`
   '7mitslag': '不支持的依赖键格式: %s（仅支持 github.com）'
   '7o5ico3h': 'str.to-bool: 无法将 i1 转换为 %s'
   '7p1k0dke': 'WASM 构建（浏览器演练场）不支持下载依赖包'
   '7riv9hah': '不支持的锁文件版本 %q（期望 %s）'
   '7sfqpwmj': '找不到依赖: %q 未在 package.noml 的 dependencies 中声明'
   '7t8ke5g1': 'cancelled: 没有结果槽位'
+  '7tcn8wox': '示例：'
+  '7usot77o': '对某一类问题应用自动修复：\'overflow\'（给未标注的整数运算加上 #{overflow=wrap}）、\'redundant\'（删除与推断类型相同的类型标注，如 `x str = \'\'` -> `x = \'\'`）、\'match\'（为非穷尽的 option match 补上缺失的 nil/err 分支），或 \'unwrap\'（消费那些从不向外传播、也从不解包的 option 绑定：函数已有 ?T 返回类型时写 `x ?= expr`，否则写 `x-opt = expr` 并在后续行加陈述级 match `x-opt: { ok -> x = it -> }`），或 \'main\'（省略顶层 `main = () { ... }` 包装，把其语句提升到顶层；当 main 有参数/返回值或直接 return 时跳过）'
   '7uy8wmqv': '%s'
   '7zfvvuin': '未发现问题。'
   '802t452i': 'builtin %s: option 结果写入 %s 目标'
@@ -195,22 +278,39 @@
   '89pwo0vg': 'noml: 映射键必须是字符串: %T'
   '8apmtyk6': '读取输入文件失败: %w'
   '8dbrd5fk': '找不到模块文件: %s'
+  '8ehrkmgn': '  no test'
+  '8emu38e0': '用法：no new <package-name>'
   '8gnvlvf4': '期望参数名，实际得到 %s'
+  '8h17gwzn': '  no build -cc zig main.no'
   '8haww14h': 'write-file: 需要 path 和 data'
   '8j6njczi': 'extern 声明中期望逗号或右括号，实际得到 %s'
   '8jsgdrcw': 'JS 生成错误: %w'
   '8k0xmfmo': 'str 索引目标槽位（dst=%d type=%s）'
   '8ndov8z0': 'net-dial: 需要 (host, port)'
   '8o5wqxi2': '期望左括号，实际得到 %s'
+  '8r4nnper': '  no add nogit@lizongying/notools                   主机默认为 github.com'
+  '8r9be4h9': `
+已构建：%s
+
+`
   '8rjhajw9': '$str_concat: 参数个数错误'
   '8sf1ugcv': 'noml: 不支持的值类型 %T'
   '8t1jaj02': '整数运算 `a OP b` 默认在溢出时返回 option<T>，此处绑定到 `%s`（类型 `?T`）。%s若希望溢出时回绕而不是报错，可加 `#{overflow = wrap}`——注意注解只改变溢出时的取值，结果仍是 `?T`。'
+  '8ux5w599': '与 `noc ast` 逐字节比对，因此该格式即规范。'
   '8vlao0fn': 'bool.to-str: 没有结果槽位'
   '8w3q93g2': '私有内建方法 “%s.%s” 只能在模块 %s 内部调用，不能从 %s 调用'
   '8wckpc2l': '期望 \',\' 后为变量名，实际得到 %s'
   '8wmzq8hx': '区间中应为 \'..\'，实际得到 %s'
   '8wo2yee6': '键 %q 与 %q 映射到同一个 nolang 字段 %q'
+  '8wygofht': `
+正在测试：%s
+
+`
   '8xy43fpc': '标签 #%s 后应为循环体，实际得到 %s（缺少 \'{ }\'）'
+  '8y7pdnc9': `
+同步依赖出错：%v
+
+`
   '8zompytc': '接口 “%s”: 合并循环 %s'
   '95a27ccb': '期望注解键，实际得到 %s'
   '96c2yjtk': '结构体字面量中应为 \',\' 或 \'}\'，实际得到 %s'
@@ -219,6 +319,7 @@
   '97nc8yti': 'noml: 期望对象，得到 %T'
   '985exavg': '`%s %s= %s` 已废弃，且所在函数的结果不是 option，无法上抛：请改写成 `%s %s %s: { ok -> %s = it, -> }`（非 ok 分支如何处理由你决定），或把结果参数改成 `?T` 后写 `%s ?= %s %s %s`'
   '998pp6wy': 'win-wsa-startup: 无法将 i1 转换为 %s'
+  '99vq7t38': '构建并运行一个 Nolang 项目。'
   '9a5ye4ws': '成员 %q 的值类型不受支持 %T（请用 #{type = \'...\'} 标注它）'
   '9buy5tfz': '可空切片类型中应为 \']\'，实际得到 %s'
   '9c615d3t': '泛型实参中应为 \',\' 或 \'>\'，实际得到 %s'
@@ -226,34 +327,51 @@
   '9edsvha2': '解压后的归档中找不到包 %s'
   '9emnu2fu': 'extern str 参数'
   '9ljl8qke': '标签 #%s 后应为循环体，实际得到 \'(\'（缺少 \'(cond) { }\'）'
+  '9novjn6s': '  no pack ./nogit                  打包一个包目录'
   '9onc0638': 'readlink: 无法将 path 编组为 C 字符串'
   '9q9raufb': '表达式上下文中的 match 臂必须以表达式结尾'
   '9ru0tpwh': 'uname: 未收集到 utsname 结构体类型'
+  '9smrnsbd': '  no pack -o nogit.ast.zip         指定输出（便于 CI）'
   '9v43hxr2': '%d 个错误，%d 个警告，%d 个提示'
   '9yjr7gj6': '结构体定义中期望字段名，实际得到 %s'
+  '9yqaweku': '  no fmt -w main.no           就地格式化文件'
   'a2hjr26f': 'str 索引接收者槽位'
   'a3duuqtg': '期望参数类型，实际得到 %s'
   'a3yrogp1': '字符串拼接: 用 “-” 代替 “+”'
   'a5247dgy': 'LLVM C API: 为 IR 创建内存缓冲区失败'
   'a7ee394w': 'win-find-first-file: 需要 path 参数'
   'a7wjyiq9': 'pipe: 在 windows 上不受支持'
+  'aazb9b1n': '把 option（?T）载荷内联进 option 结构体的字节阈值（默认 24，最小 8）；超过阈值的载荷改为堆装箱'
   'aih7e3j0': '不能将 nil 赋给非 option 变量 “%s”'
   'al7nsvgl': 'vec.insert: 需要 receiver、index、element'
   'aljknpjz': 'builtin %s: 未知的位运算操作'
   'am0g79ly': '%s: 缺少参数'
   'amiajbn5': 'net-icmp-open: 没有结果槽位'
+  'amyp0ig8': `
+解析最新发布版出错：%v
+
+`
   'ap403a8m': 'net-recv: 无法获取第 1 个参数的数据指针'
   'appz8ry7': 'builtin %s: %v'
+  'aqrceaf2': '  no ast -annotations main.no       同时包含 #{...} 注解'
   'au6g7ji7': '解析错误: %s'
   'axj3m1pb': '表达式起始位置出现意外的 \'as\''
   'axtpo500': 'win-find-first-file: 无法将 path 编组为 C 字符串'
   'ayjrpinp': 'noml: DecodeInto 需要非 nil 指针，得到 %T'
   'aywuxg5w': 'builtin %s 接收者 %s: %s'
+  'b1narysr': '二进制文件'
   'b360mu4g': '期望参数名，实际得到 %s'
+  'b3ucznjm': `
+%s/%s 的最新发布版：%s
+
+`
   'b6fjj9ka': '不能将 nil 赋给非 option 变量 “%s”'
+  'b978wrdx': '  no run -target wasm32-wasi main.no'
   'b9cf2s8p': '\'x { ... }\' 已废弃，请改用 \'x: { ... }\''
+  'b9iqtopl': '  - 若存在 workspace.noml，则格式化其所有项目目录；'
   'bbv2nbtt': '%q 后应为字段类型，实际得到 %s'
   'beppq99h': 'builtin %s: 没有结果槽位'
+  'bikq8xen': '输出格式：file:line:col: [SEVERITY] source: message'
   'bjj14xsi': 'lencap 槽位'
   'bp7m5374': 'arr.zero: 没有接收者槽位'
   'bsaaq6j7': 'utime: 无法将 path 编组为 C 字符串'
@@ -261,15 +379,22 @@
   'bvxzv6u0': 'net-udp-recvfrom: 没有结果槽位'
   'c33l3vql': '找不到模块文件: %s 或 %s'
   'c48g377y': '不支持浮点区间边界，请使用整数'
+  'c6eld4s3': `
+已移除依赖：%s
+
+`
+  'capaq6dh': '另一个 CDN（如 https://cdn.jsdelivr.net/npm）。'
   'cb4biu8s': 'NOLANG_MIR=%s: 旧代码生成后端已移除，MIR 是唯一后端；请取消 NOLANG_MIR（或使用 NOLANG_MIR=1 查看降级输出）'
   'cccby88i': '包 %q 中找不到 main.no（%s）'
   'ceuorcf6': 'sysctl: 需要名称'
+  'cfmyuhe8': '同时输出每个节点上挂的 #{...} 注解条目'
   'cfoww4c7': '导出路径中期望标识符，实际得到 %s'
   'cfw15ncb': '无法将 %q 解析为整数'
   'cggefx7i': '读取 tar 条目失败: %w'
   'cgy953iu': 'vec.push: 需要 receiver 和 element'
   'ch6tlrpx': 'rotate: 没有目标槽位'
   'chbx2waz': '空的 `->` 兜底臂可能会被执行（无法证明 \'%s\' 恒为 ok）。请决定失败时应该做什么，例如 `-> log(\'...\')` / `-> print(\'...\')`；留空则会静默取默认零值。'
+  'ci3l2aku': '在浏览器中打开（需 --js）'
   'cjih2jtt': '函数类型别名中应为 \'=\'，实际得到 %s'
   'ckaj3355': '未知函数 “%s.%s”: 模块 “%s” 没有顶层函数 “%s”'
   'cldvfmqx': 'waitpid: 需要 pid、options'
@@ -281,41 +406,82 @@
   'cuhyyetq': '切片字面量中期望逗号或右方括号，实际得到 %s'
   'cvl8rf8s': '\'|\' 后应为类型'
   'cw348wnl': 'eq-raw: 无法获取第 1 个参数的数据指针'
+  'cw8xkrj9': `
+写入主文件出错：%v
+
+`
   'czinamrs': 'process-exec: 在 windows 上不受支持'
   'd1xzecbk': 'builtin get-arch: 没有结果槽位'
+  'd4faltsr': '默认路径'
   'd8en6a9j': 'MIR IR 未通过 LLVM 校验: %v: %s'
   'ddljrny8': '结构体字面量中期望字段名，实际得到 %s'
   'ddutfwr8': '%s 中出错: %w'
   'ddvc98n2': '数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 就地捕获错误），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF，或显式声明为 option 类型（如 `a ?elem = arr[i]`）以就地捕获错误，或用 `_ = arr[i]` 显式丢弃。'
+  'deuvryn0': '--js 运行时使用的 JS 运行时：node（默认）、bun、deno……（可带额外参数，如 "deno run --allow-read"）'
   'dh249i0x': 'map 字面量中应为 \':\'，实际得到 %s'
+  'dhae25dd': `
+构建成功：%s
+
+`
+  'djuq12bh': '  echo \'x=1\' | no fmt         从标准输入格式化'
   'dk195kbk': '%s 中找不到 package.noml'
   'dkx493in': 'ESM 短名 %q 有歧义: 说明符 %q 与 %q 都解析为调用前缀 %q'
   'dmm2rjox': 'builtin %s: 未分配 sret 槽位'
   'dns4nguy': 'noml: 键 %q 的值不是字符串（实际为 %T）'
   'dpcwdbng': '格式字符串错误: %v'
   'dphrcd1a': 'net-accept: 需要 (listen-fd)'
+  'dqrzfvyt': '用法：no pub [-o <file>]'
+  'dre61zsd': '使用 JS 后端（输出 JavaScript，用 --js-runtime 运行；默认 node）'
   'dt39zm0i': '非法的安装目标 %q: 缺少仓库；期望 <tool>[:<version>]@<host>/<owner>/<repo>'
   'dtb82vgd': '期望以 \')\' 或 \']\' 结束区间，实际得到 %s'
+  'dufa8bnf': `
+写入 .gitignore 出错：%v
+
+`
   'dumlt7oj': '泛型实参后应为 \'(\'，实际得到 %s'
+  'dupns7pb': `
+同步 AST 依赖 %s 出错：%v
+
+`
   'duufpprw': '所有下载尝试均失败: %w'
   'dwkhnsmo': 'match 各臂的返回类型不一致: %s 与 %s'
+  'e01glh6p': '  no run --js --browser main.no  生成浏览器 JS + HTML 并在默认浏览器打开'
+  'e0r5thlw': '把结果写回源文件'
   'e1i8566c': 'read-file: 结果类型 %s 不是切片或字符串'
+  'e3xplf89': '  在 package.noml 中声明 compiler.emit = "js" 的包会按'
   'e7yptvje': 'process-exec: 需要 (prog, arg)'
+  'e9ab330i': '用法：no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': '冲突的原生 wasm 说明符: %q（来自 %q）与 %q（来自 %q）'
+  'easgxbye': '输出机器可读的 JSON 诊断而非文本'
   'ebzb8tx2': '依赖解析失败: %w'
   'ectmoin3': '找不到 %s/%s 的发行版'
   'edps6fxx': '一个或多个工作区目标构建失败'
+  'edsub23j': '用法：no update <pkg>'
   'efflaapc': '期望 \'case\' 或 \'default\'，实际得到 %s'
+  'ehsahzu5': '  no vet src/std/            校验 src/std/ 下所有 .no 文件'
   'eit5cjgr': '解压 tar.gz 归档失败: %w'
   'ejbt38ik': 'slice op 目标槽位'
+  'elep1kra': '  no build                  构建当前目录或 workspace.noml 中的项目'
   'em4a9wv2': '区间上界以隐式 self 的 `.%s` 开头，与范围运算符 `..` 连写会形成 `...%s`（歧义：`...` 亦是 return/终止运算符）。建议显式写出接收者，改写为 `..self.%s`（例：`[a..self.%s)`）。'
+  'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        Direct WASM 后端并指定输出'
+  'en9zq76f': '循环默认写法：\'prefix\' -> \'(cond) { }\'、\'N * { }\'、\'!! { }\'、\'! { }\'；\'suffix\' -> \'{ } (cond)\'、\'{ } * N\'、\'{ } (true)\'、\'{ } ()\''
+  'eqsalj72': '  no build -unsafe main.no  不做越界检查地构建（最高性能）'
+  'es55egn6': '格式化 Nolang 源文件。'
+  'eu5v0rj9': '  2. 已存在的目录             -> 运行其 main.no'
   'eubonf62': '不能将 %s 值赋给 %s 变量 “%s”: 结构体值必须显式构造（例如 `%s { … }` 或其构造器）；只有当结构体具有唯一的无损构造器（如 bigint）时，整数才会被隐式提升'
   'ew5qg77j': 'use 路径中期望标识符，实际得到 %s'
+  'ex8l4y2k': '正在更新依赖……'
+  'exeja3ad': '经由%s'
   'f091hn1f': 'net-send: 需要 (fd, data, n)'
   'f0p0dfha': 'val() 构造器已弃用；显式构造请用 ok(x)，隐式赋值请用 `name = expr`'
   'f10x20nf': '调用返回 option 的函数 “%s” 时传入了裸算术参数，需要显式解包: 先用 “x ?= %s(...)” 解包参数，或解包结果（例如 “y ?= %s(...)”）'
   'f3j66rlp': '格式符 \'%c\' 要求整数类型，实际得到 \'%s\'（格式: %q）'
+  'f5gbhit6': '  no test --wasm-direct       经 Direct WASM 后端用 wasmtime 运行测试'
   'f5ikdmuc': '结构体字面量中期望字段名，实际得到 %s'
+  'fcs3wo7u': `
+已创建包：%s
+
+`
   'fd9jkb5k': '成员 %q 是空数组: 请用 #{type = \'[]<elem>\'} 标注它'
   'fdwcn8i8': 'match 臂从未返回值'
   'fe0a5wt2': '不能将 option 值 “%s” (%s) 与 “%s” (%s) 比较: 请先解包（`v ?= expr`），或对 ok/nil/err 做 match'
@@ -323,16 +489,21 @@
   'fk1sb6ss': 'syslog: 在 windows 上不受支持'
   'flfh2ueu': '非法的安装目标 %q: 仓库必须是 <host>/<owner>/<repo> 或 <owner>/<repo>'
   'fs4qotyl': '解压 zip 归档失败: %w'
+  'fu1ow141': '未找到测试文件，目录 '
   'fvk7yu8c': '\'=\' 后应为整数值，实际得到 %s'
   'fw8rehzu': '空的 `->` 兜底臂不会被执行：编译器可证明 \'%s\' 恒为 ok（字面量算术不会溢出/除零，或索引可证明在界内）。该臂仍须保留以满足 match 穷尽性；保留也便于日后语义变化时无需改语法。'
+  'fxc0tilj': '把当前包的 AST 打包为 gob + zip。'
   'fxdzclp6': '不能给字段 “%s” 赋值（结构体类型 “%s”）: 请先实例化（例如 `%s0 = %s {}`）'
   'fxhkwtho': 'read-file: 需要 path'
+  'g2ex1gxt': '目标三元组（如 x86_64-linux-gnu、aarch64-macos-gnu、x86_64-windows-gnu、wasm32-wasi）'
   'g391pqjl': '创建请求失败: %w'
   'g3dsu5vf': '格式符 \'%c\' 要求浮点类型，实际得到 \'%s\'（格式: %q）'
   'g6aool5a': 'net-recv: 没有结果槽位'
+  'g6phjqek': '  no test tests/my-test.no'
   'g9elmost': '正在获取 %s（状态码 %d）'
   'gaewcwmo': '期望逗号或右括号，实际得到 %s'
   'gazt89uv': '区间表达式中应为 \']\' 或 \')\'，实际得到 %s'
+  'gccy7ull': '  - 否则默认使用当前目录。'
   'gczvzsdh': '模块解析: %w'
   'gd7jpkzw': '\'while 条件 { }\' 已废弃，请改用 \'for 条件 { }\''
   'gdrnjrtu': 'net-udp-open: 没有结果槽位'
@@ -345,6 +516,7 @@
   'gir1e4fn': 'net-udp-sendto: 无法将 host 编组为 C 字符串'
   'giw7e5rb': '期望以 \'}\' 结束注解，实际得到 %s'
   'giy30qq2': 'OpRun: 未知的异步被调用者 %q'
+  'gjsrgyn8': '-annotations 可一并包含。'
   'gl4bahpp': `
 未检测到 clang，请确认 LLVM 工具链已完整安装
   macOS: brew install llvm
@@ -352,10 +524,21 @@
   Windows: winget install LLVM.LLVM
 `
   'gljrb7g7': 'import %q 中的 ESM 包说明符为空'
+  'glytw3eo': '下一步：用 `no new <name>` 创建包'
+  'gmlatduc': `
+  bytes:  %d
+  nodes:  %d
+
+`
   'gno8qk1j': '\'~match/case/default\' 已废弃，请改用 \'x: { 模式-> ... }\''
   'gr0jwheb': '\'for { }\' 已废弃，请改用 \'{ } (true)\' 无限循环'
+  'gszz9tke': '  - main.no（主入口文件）'
   'gubuo5cb': 'option 绑定后从未被消费：既没有上抛（`?=`），也没有解包（`x: { ... }` / `_ = x`），错误被静默丢弃。%s'
   'gx02j37c': 'write-file: data 参数没有槽位（函数 %s，参数类型 %s）'
+  'gx8l0tdu': `
+切换目录出错：%v
+
+`
   'gyuohhum': '索引 %d 越界: 字符串 \'%s\' 的长度为 %d'
   'h0rvt6eu': '期望参数名，实际得到 %s'
   'h1g1ipdw': 'Direct WASM 后端不支持 ESM（npm）导入；请改用 JS 后端（no build --js）'
@@ -364,34 +547,57 @@
   'h4vlfsi9': 'str-truncate: 需要 receiver 和 n'
   'h6du6sag': '计数循环中块后应为 \'*\'，实际得到 %s'
   'h6z5s5my': '期望左花括号，实际得到 %s'
+  'h8dvlp9i': `
+已在 workspace.noml 中注册 '%s'
+
+`
   'h9cfkf84': '第 %d 行: 变量 \'%s\' 在循环体内声明，在此处被复用作循环变量时可能尚未初始化（循环可能一次都不执行）'
   'haahhq7o': '函数 “%s” 至少需要 %d 个参数，实际传入 %d 个'
   'hc3a6zzw': '未知的修复类别 %q（支持: overflow、redundant、match、unwrap、main）'
   'hcdpwnpp': '空的 match 臂无法确定值（被匹配的表达式类型未知）'
   'hgedm96o': '自动加载模块 %s 失败: %w'
+  'hoal6bo9': '用 --js 绕过 LLVM 工具链直接生成 JavaScript 源码（兼容 Node.js/浏览器）。'
   'hr40fh5v': '找不到 package.noml。请运行 \'no new <name>\' 创建包，或进入某个包目录'
   'hr4y7owq': 'getgrouplist: %v'
+  'htdgzowm': '  no fmt                      格式化当前目录（列出需要格式化的文件）'
+  'hun7qbmc': '  no ast src/std/vec.no             打印 vec.no 的 AST'
   'hvk8qwyj': 'borrow 目标槽位'
+  'hvuu1dxx': '  no build --js -o app.js main.no                    JS 后端并指定输出'
   'hxy8tpyp': 'slice op 接收者类型'
   'hzkv5tvl': '期望以 \'}\' 结束枚举值注解，实际得到 %s'
   'hzv4zwx4': 'LLVM C API: 为三元组 %q 创建目标机器失败'
   'i0q22lpt': '期望逗号或右括号，实际得到 %s'
+  'i31bp0tk': 'devDependencies）中声明，并在 `no run --js` 前用 npm install 装好。'
   'i3k422u3': '结果参数 “%s” (%s) 在函数体中从未赋值 —— 返回时将被填零'
+  'i56j6g3g': `
+创建目录出错：%v
+
+`
   'i59zddv3': '期望 \',\' 或 \')\''
   'i8i2c8jx': '期望以 \'}\' 结束注解，实际得到 %s'
   'i933a48e': '第 %d 个参数（“%s.%s”）: 期望 “%s”，得到 “%s”'
+  'i9bcpk5g': '  # npm/lodash               整个模块对象（用 lodash.get(...) 取成员）'
   'ibaimz2h': '循环检测: %w'
+  'ibiol93t': '错误：未找到 package.noml。用 \'no new <name>\' 创建包，或切换到包目录'
+  'ibl465o8': '  no test -target wasm32-wasi'
   'ifmrg001': '接口 “%s”: 合并后的方法 “%s” 签名冲突 (“%s.%s”, “%s.%s”)'
   'ihr1vm8m': 'arr.zero: 需要 receiver'
   'iky4xsx4': '方法 “%s.%s” 有 %d 个返回值，接口期望 %d 个'
   'ippfc6p4': 'utime: 需要 path、atime、mtime'
+  'iqszywlc': 'wasm32-wasi 目标需把 $WASI_SYSROOT 设为你的 wasi-sysroot 路径。'
   'iqtr8mht': 'option-wrap 目标'
   'irjygycv': 'val() 构造器已弃用；显式构造请用 ok(x)，隐式赋值请用 `name = expr`'
   'irnz2m56': '期望以 \'{\' 开始循环体，实际得到 %s'
+  'is8zuoph': '  - src/（源码目录）'
   'itcnc2oz': '%s 中没有间接被调用者的槽位'
+  'iubb5mnf': '  no test -target x86_64-linux-gnu'
   'iykbgab6': 'vec.sort: 需要 receiver'
   'iyn3rgtm': '“self” (.) 只能在结构体方法内使用；若你指的是 match 值，请用 “it”'
   'iyvzh49e': '在循环里对 str/txt 使用 s[i] 取下标为 O(n²)：每次下标都要从串首前向迭代 UTF-8 取第 i 个码点，循环会被重复执行。建议：(1) 若需遍历字符，直接用 c <- s（内部按码点迭代，O(n)）；(2) 若只需字节访问，用 s.byte(i)；(3) 若该串可证明为纯 ASCII（声明加 #{ascii} 或赋 ASCII 字面量），s[i] 为 O(1)。'
+  'izc6aklk': '只需词法/语法分析 —— 不需要 LLVM 工具链 —— 因此可在'
+  'iztes0wp': '  3. workspace 中的包名       -> 运行该包的 main.no'
+  'izzihnrp': '把 lint 警告/提示升级为错误'
+  'j00dw84u': '  - tests/（测试目录）'
   'j1onng8y': '期望逗号或右括号，实际得到 %s'
   'j2lwz7pe': 'LLVM C API: %s 失败'
   'j2n5poza': '原生 bind=ffi（import %q）至少需要一个 #{c} extern 声明才能绑定'
@@ -403,92 +609,163 @@
   'j7dzteja': '函数 “%s” 至少需要 %d 个参数，实际传入 %d 个'
   'j8e31b1f': 'builtin %s: 接收者没有槽位'
   'j9ir46ed': '下载的资源为空: %s'
+  'jc3psu5g': '  no fmt -w                   就地格式化当前目录所有 .no 文件'
   'jeq6vteu': '原生 bind=wasm 需要 wasm= 说明符（import %q），例如 #{bind = wasm, wasm = \'@scope/pkg\'}'
   'jko9phaw': 'LLVM 汇编失败: %w'
   'jl86npdd': '解析最新发行版失败: %w'
+  'jlv0jw10': '来源：'
   'jmamxa8i': 'lencap 目标槽位'
   'jppwnc4n': '结构体名后应为 \'{\'，实际得到 %s'
   'jpy06p6d': '工作区中没有任何构建目标'
+  'juu3smx0': '#{...} 注解系统存放在语义侧表里，而'
   'jwegl6bv': '多赋值中的下标写入目标 `%s` 未经解包：索引读取返回 option（越界为 nil），直接写入等于把越界变成未检查的越界写。请把该目标拆出为 place-match（ok 臂的 it 是元素位置，可读可写），或改用 `?=` 在 option 结果函数中上抛。'
+  'jx1w7b52': '  no fmt -fix=overflow -w src/    就地补上溢出注解'
   'k0fwb241': '导出别名 \'%s\' 与函数名相同；可以省略该别名'
   'k1h5kums': '读取 %s 失败: %w'
-  'k2m9xq4t': 'char 与 %s（%s）之间不能做算术：char 是单个码点（i32），只能与整数、char 或字符串组合。若想拼接字符串，请用字符串字面量：\'x\' - %s 会按 to-str 渲染该运算元'
+  'k2m9xq4t': '不能在 `char` 与 `%s` 之间做算术运算（%s）：char 是单个码点（i32），只能与整数、char 或字符串结合。若想拼接字符串，请用字符串字面量 —— `\'x\' - %s` 会把操作数经 to-str 渲染'
+  'k2wgp5l6': '用法：no run [<package|dir|file>]'
+  'k3envsrc': '环境变量'
+  'k3g4ofs4': '输出彩色差异而非格式化结果'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 没有结果槽位'
   'k8je3usi': '%s 已存在且不是 ES 模块（没有 "type": "module"）；请改为输出 .mjs（no build --js -o out.mjs）'
   'k9179drd': '“%s” 是函数，必须调用；是否想写 %s(...)?'
   'k9270vd6': 'getfield 字段'
   'ke8i906b': 'MIR->LLVM 发生 panic（已恢复，回退到旧后端）: %v'
+  'kfxfk3n1': '未指定文件/目录且标准输入是终端时：'
+  'kg4qzfdu': '  no add nogit@github.com/lizongying/notools        最新发布版'
+  'ki6qzzsx': '  --json           输出结构化 JSON 诊断（便于 CI/工具处理）'
   'kio8h1tx': 'js.Generator.Generate: program 为 nil'
   'kjxtslvr': 'waitpid-nohang: 需要 pid'
+  'klplh4cw': '  no fmt src/                 列出 src/ 下需要格式化的 .no 文件'
   'kmm43ypb': '从锁文件解析 %s 失败: %w'
   'krvc469y': 'vec.clear: 需要 receiver'
+  'kvp8bxoc': '锁文件与完整性校验和已保存。'
   'kxikdkzu': 'net-accept: 没有结果槽位'
   'kzomgjsg': '空的 ~match 语句'
   'kzsepkro': '加载模块 %s 失败: %w'
   'l0ifbo16': 'zip 归档超出解压大小限制（%d 字节）'
   'l1ypawem': 'str-from-vec: 类型不匹配 %s -> %s'
+  'l332fwh9': `
+工作区已在 %s 初始化
+
+`
   'l48rpvr9': '期望以 \')\' 结束循环条件，实际得到 %s'
   'l62tgcu4': '导入 %q: %w'
+  'l6euu21x': '单个测试的运行超时秒数（0 = 不限）；单次挂死会被杀掉并报告，不影响整轮运行'
   'l90oz2gr': 'sysctl: 无法将 name 编组为 C 字符串'
   'l9eytl0v': '期望 \'(\''
   'l9lio3b1': 'net-dial: 无法将 host 编组为 C 字符串'
   'ldfvpa0x': '；option 不能隐式解包（这只是拷贝，失败分支会被丢弃）。%s若本意是回绕/钳位，`#{overflow = wrap` 只改变溢出时的取值，结果仍是 `?%s`，仍须解包。'
+  'lehy8lls': '  no fmt main.no              格式化并输出到标准输出'
+  'let8mtmo': '用法：no build [flags] <file|directory>'
   'ljfz84ro': '函数类型应以 \'(\' 开始，实际得到 %s'
   'lkiy53ow': '十六进制字面量 “%s” 使用了大写；格式化时会转为小写（例如 0xff）'
   'lqcz5x45': '从 %s 读取归档数据失败: %w'
   'lr3c6kg5': '导出引用了未定义的符号 %q（在 %s 中未找到）'
   'lrj1csgo': 'read-dir: 需要 dirp'
   'lrxsr5pt': '在 %s 中找不到 workspace.noml'
+  'lvi02faz': `
+在 %s 提供 ESM 输出（Ctrl+C 停止）
+
+`
   'lx7lbupc': 'indexstore 槽位'
+  'lzgs7cds': '  no fmt -fix=redundant main.no   预览冗余类型标注的移除'
+  'm0nvgkbt': '参数按以下顺序解析：'
+  'm13ljyfp': '为 \'no vet src/std\' 复用已解析的 std Program AST（实验性，跳过逐模块重解析）'
   'm17ikt3w': 'builtin %s: 无法将 %s 存入 %s'
   'm1yd7r5x': '期望下一个 token 为 %s，实际得到 %s'
-  'm2fh7rfg': 'range-index loop: \'%s[%s]\' 在 `%s <- [a..b):` 里手动按下标读取；若不需要下标本身，改用容器迭代 `x <- %s`（无下标即无越界，也无需解包 option）。例如把\n     %s <- [0..n): {\n         %s: {\n             ok -> it = 0\n             -> _\n         }\n     }\n   改写为\n     x <- %s: {\n         x: {\n             ok -> it = 0\n             -> _\n         }\n     }'
+  'm2fh7rfg': `
+range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不需要下标本身，改用容器迭代 `x <- %s`（无下标即无越界，也无需解包 option）。例如把
+     %s <- [0..n): {
+         %s[%s]: {
+             ok -> it = 0
+             -> _
+         }
+     }
+   改写为
+     x <- %s: {
+         x: {
+             ok -> it = 0
+             -> _
+         }
+     }
+`
   'm4mu624f': '序列化锁文件失败: %w'
+  'm4re9802': `
+写入 utils.no 出错：%v
+
+`
   'm5bv291o': '导入 %s: %q 已在主程序中声明'
   'm5fpbrwd': 'vec.reverse: 需要 receiver'
   'm5klw1rq': '方法 “%s.%s” 有 %d 个参数，接口期望 %d 个'
   'm7egvbv0': '整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛，或用 `_ = expr` 显式丢弃。'
   'm8blb8q2': 'noml: 第 %d 行第 %d 列: %s'
+  'mbnaky32': '注册表认证令牌（未使用：上传尚未实现）'
   'meket0n4': 'vec.clear: 没有接收者槽位'
   'mf29f4fh': 'clone 槽位'
   'mgnh35fz': 'builtin %s: 无法将 %s 结果存入 %s 槽位'
+  'mh9jwcfu': '  no fmt -loop-style=suffix f.no  循环写成 \'{ } (cond)\' / \'{ } * N\''
   'mhfvvp1u': '依赖层级超过上限（%d）: %s@%s'
   'mi13i3vc': '期望右括号，实际得到 %s'
   'mimqybn2': 'vec.pop: 需要 receiver'
   'mkpo3f8h': 'utf8-at 目标槽位'
   'mlm7xpcj': '`%s %s= %s` 已废弃；所在函数结果是 option，保存时 `no fmt` 会自动改写为 `%s ?= %s %s %s`（复合赋值的右式现在是 ?T，走 `?=` 解包/上抛）'
+  'mlyz11mg': '用 --js-runtime <cmd> 选择 `no run --js` 的 JS 运行时（node、bun、deno……）。'
+  'mmcrtoio': '用法：no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': '结构体字段名后应为 \':\'，实际得到 %s'
+  'mt377i94': '  no build --wasm-direct -target wasm32-wasi main.no  不经 LLVM 工具链直接生成 WASM'
   'mv6ox1tw': 'uname: 没有结果槽位'
   'mw127e39': '数组类型中应为 \']\'，实际得到 %s'
+  'mwhgbhbp': '  包导入（#{bind = ffi|wasm}）得以解析而不报错 —— LLVM 无法'
   'mz7tmynt': 'builtin %s: 没有接收者'
   'mzwb28br': '格式字符串中未定义的变量 “%s”'
   'mzxtskah': 'eq-raw: 需要 (receiver, b, n)'
   'n00utq2q': 'process-exec: 无法将 arg 编组为 C 字符串'
+  'n08bzk5j': '结果正是 `no add <tool>@<host>/<owner>/<repo>` 会下载的东西：'
   'n0hl9vde': 'builtin %s 参数 %d: %s'
   'n44lxvvk': '成员 %q 是空对象: 请用 #{type = \'<struct>\'} 标注它'
+  'n48cusda': `
+请手动打开：%s
+
+`
   'n51paa43': 'std AST: 解析 %s 失败: %v'
   'n5k784wb': '原生 bind=ffi 需要链接库（compiler.link-libs 或 import %q 上的 lib=）'
   'n5ksyzmi': '期望以 \')\' 结束循环条件，实际得到 %s'
+  'ne9gyl5c': '  no run --js main.no            经 JS 后端构建后用 node 运行'
   'ne9kyew7': 'FFI 名称后应为 \'=\'，实际得到 %s'
+  'nejhwtgd': '未找到依赖。'
   'ngj8b3uj': 'utime: 在 windows 上不受支持'
   'nh8jhhz7': 'std AST: %w'
   'nik0cll9': '\'for 条件 { }\' 已废弃，请改用 \'{ } (条件)\' 循环'
   'njsutn36': '接口中期望方法名，实际得到 %s'
   'nkozcyi4': 'net-recv: 需要 (fd, buf, n)'
   'nkr30oz0': '区间表达式中应为 \'..\'，实际得到 %s'
+  'nmke5ijp': '  no fmt -w src/              就地格式化 src/ 下所有 .no 文件'
   'nmxs8sop': 'syslog: %v'
+  'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': '无法推断 “%s” 的类型: %s() 要求左侧有显式类型标注（例如 `name []byte = %s(n)`）'
   'nwtpvei9': 'embed: fs.embed 需要一个目录，得到的是文件: %s（解析为: %s）'
+  'nx1476j3': '  no pack nogit.no                 打包单个源文件'
   'nz3ol1c4': 'ESM 模块 %q 未在 package.noml 的 dependencies 中声明；请添加 dependencies: [\'%s:^latest\']（或 dev-dependencies）并运行 npm install'
+  'nzkc7scw': '  - workspace.noml（工作区定义）'
   'o0p7ixno': '期望 \'for\'，实际得到 %s'
   'o1v8wvx8': '期望注解值，实际得到 %s'
+  'o2lua0kh': `
+  email:      %s
+
+`
   'o3e4tfwx': 'builtin %s: 字符串结果被存入 %s 槽位'
   'o41t34tn': '当前目录是没有 main.no 的工作区根目录；请用以下命令运行包: no run <package>'
   'o4wq2axo': '获取发行版 %s 失败: %w'
-  'o630714m': '%s 需要一个值（例如 %s=zh-CN）'
+  'o630714m': '%s 需要一个值（例如 %s=zh-cn）'
   'o7503w1f': '\'i <- range { }\' 已废弃，请改用 \'i <- range: { }\''
   'o9bv21zu': '解析 %s 失败: %w'
+  'oaei2lx7': '而不在节点字段中，所以默认省略；传'
+  'oaslpd20': `
+未找到依赖 %q。
+
+`
   'obm5gtx3': '标签 #%s 后应为循环体，实际得到 {（缺少 \'* N\'、\'(cond)\' 或 \'(true)\'）'
   'obx5vjjv': '参数名必须是标识符'
   'ocsanpe6': '非法的安装目标 %q: 工具名不能包含路径分隔符'
@@ -502,21 +779,17 @@
   Windows: winget install zig.zig
 `
   'ol0l3ova': '找不到类型 “%s”；是否想写 “%s.%s”?'
+  'ol21t36r': '  no run --js --js-runtime bun main.no     同上，改用 bun（node、bun、deno……）'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '整数除法 / 取模的除数是字面常量 0，会触发 LLVM 未定义行为（sdiv/srem 除以零），产生不可预测的结果。请改用运行期零检查，或让函数以 option 回传错误。'
-  'oraub2m9': `
-`%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）
-`
+  'oraub2m9': '`%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）'
   'orjs902d': '\'switch/case/default\' 已废弃，请改用 \'x: { 1-> ... }\''
   'os0j8ix4': '不能将 %s 值赋给数组 “%s” 的 %s 元素%s'
   'osrb7a78': 'move 槽位'
   'oswu0as1': '条件表达式中期望冒号，实际得到 %s'
   'oxgtqeo0': 'write-file: 没有结果槽位'
+  'oyfkw3qi': '（未设置）'
+  'p08xevlx': '  no run main.no               构建并运行 main.no'
   'p1ujpxwi': 'vec.remove: 没有接收者槽位'
   'p215kqvl': 'cancelled: 无法将 i1 存入 %s'
   'p2epl19k': '不能将 nil 赋给非 option 变量 “%s”'
@@ -524,10 +797,14 @@
   'p56zjfhi': '无法推断 “%s” 的类型: %s() 要求左侧有显式类型标注（例如 `name []byte = %s(n)`）'
   'p763k84p': '创建 %s 失败: %w'
   'p9jv1dcz': 'workspace.noml 为空'
-  'paiorrdo': '--lang 需要一个值（例如 --lang=zh-CN）'
+  'pa3bgtjn': '浏览器 ESM import map 的 CDN 基址（默认 https://esm.sh；也可在 package.noml 的 compiler.esm-cdn 设置）'
+  'paiorrdo': '--lang 需要一个值（例如 --lang=zh-cn）'
+  'pev2j4v9': '  no vet main.no             校验 main.no'
   'pgapt83d': 'win-create-process: 无法将 dir 编组为 C 字符串'
   'pgh2eoft': 'net-udp-recvfrom: 需要 (fd, buf, n)'
+  'pgwm8msy': '  # npm/lodash.default as d  包默认导出'
   'phld6glo': '期望以 \'}\' 结束注解，实际得到 %s'
+  'phqmamrn': '  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip'
   'pibk34ed': '序列化校验和文件失败: %w'
   'plsdygti': '类型 match 臂的模式 %q 不是联合 %q 的成员'
   'pne07fog': '成员 %q[%d]: 数组混用了对象和标量；请用 #{type = \'[]<elem>\'} 标注它'
@@ -536,36 +813,53 @@
   'pxxxqtg6': '期望 \'{\''
   'pyo62z10': 'get-priority: 需要 which、who'
   'pzdpmlto': 'net-udp-sendto: 没有结果槽位'
+  'q06zlcbx': '  no pub -o nogit.ast.zip      写入指定路径'
   'q20a8lbi': '写入 JS 输出失败: %w'
   'q2qgyoqo': 'win-wait-process: 需要 (proc-handle, timeout-ms)'
   'q3v8kn2m': '期望 \',\' 后为变量名，实际得到 %s'
   'q4nilcmp': '无法比较 \'%s\' (%s) 与 nil：只有 option（`?T`）才能与 nil 比较；请声明为 `?%s` 或与具体值比较'
+  'q76kxtef': '  no fmt -d                   显示当前目录所有 .no 文件的差异'
   'q9m9no8c': '期望以 \'}\' 结束字段注解，实际得到 %s'
   'q9p5bmd0': '找不到 C 链接器（clang/cc/gcc）'
+  'qa8z0cwo': `
+警告：解析 workspace.noml 出错：%v
+
+`
   'qadj6ck6': 'eq-raw: 无法获取接收者的数据指针'
+  'qagmala2': `
+写入 lib.no 出错：%v
+
+`
   'qayttv4q': '期望逗号或右括号，实际得到 %s'
   'qew8n04j': 'vec.pop: 没有接收者槽位'
   'qh0mj3sf': '期望参数类型，实际得到 %s'
+  'qh4i3y4v': '  - package.noml（包配置）'
   'qhkl8p9i': 'noml: 字段 %s: 期望字符串，得到 %T'
   'qkce8wnr': '类型 match 臂的模式 %q 不是联合 %q 的成员'
+  'qkj01y3s': '标准库模块：'
   'qlpiqzag': 'win-find-next-file: 需要 bufptr 参数'
   'qmmpavsj': 'else 中期望左花括号，实际得到 %s'
   'qog571qy': 'builtin %s: keep-alive 缓冲区未实体化'
+  'qogvayg4': '用法：no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': '不能修改字符串 \'%s\' 的只读字段 \'len\''
   'qoykdxqy': 'noml: 字段 %s: 期望数组，得到 %T'
   'qxkk7mt2': 'win-close-handle: 需要 handle 参数'
   'qzwxurol': '数组中应为 \',\' 或 \']\'，实际得到 %s'
   'r001bqqr': 'builtin %s: 无法获取第 %d 个参数的数据指针'
   'r0360g4t': '接口 “%s”: 父接口写成了前导列表；请改为在体内每行写一个名字'
+  'r1wo1izg': '  # npm/lodash.get as get    单个具名/导出绑定'
   'r28q9t6z': '标签 #%s 后应为循环体，实际得到 %s'
   'r315uabz': 'net-send: 无法获取第 1 个参数的数据指针'
   'r4mh5mrg': 'waitpid-nohang: 在 windows 上不受支持'
+  'r5fkc5h1': '  no build --js --browser main.no                    生成浏览器 JS + HTML 包装'
   'r60tokvf': '多变量列表后应为 \'=\''
   'r6gf3a7m': '带标签枚举中期望变体名，实际得到 %s'
   'r6p4a75i': '从 %s 下载（状态码 %d）'
   'r80hkipt': '饱和转换: 目标类型 %q 不是整数'
+  'r96s24ec': '  --reuse-std-ast  复用已解析的 std Program AST（实验性）'
   'raqvyltn': '私有 std 符号 “%s” 属于模块 %s，只能在其内部使用，不能从 %s 使用；请改用公共 API'
   'rclf258h': '浏览器中不可用原生 bind=ffi（import %q）；请使用 bind=wasm 或省略 bind'
+  'rdl2c2x2': '  no build -target x86_64-linux-gnu main.no'
   'rfzrw1nh': '函数返回 %d 个值，但提供了 %d 个目标'
   'rhajr9l9': '已废弃: str.len 属性已移除；字节长度请使用 s.len-bytes()，码点数量请使用 s.len()'
   'rkd2pw8p': '进程内 LLVM C API 编译失败（可用 %s=0 关闭）: %w'
@@ -574,6 +868,7 @@
   'rolk5ods': '期望以 \'}\' 结束枚举值注解，实际得到 %s'
   'roqeis8q': '期望左花括号，实际得到 %s'
   'rp7sdc6j': 'win-get-exit-code: 需要 proc-handle 参数'
+  'rpazw1l7': '添加依赖（预构建的 AST 包：<tool>.ast.zip）。'
   'rsz5rmmt': '获取 %s 失败: %w'
   'rtopy0mf': 'vec.insert: 没有接收者槽位'
   'rusw4b0k': '期望方法名，实际得到 %s'
@@ -589,6 +884,11 @@
   'sehpprvy': 'builtin %s: 值类型 %s 无效'
   'seta2gk3': 'builtin %s: 没有接收者槽位'
   'sgk4yra9': '没有该文件、目录或包: %s'
+  'sh7h3f59': `
+写入工作区文件出错：%v
+
+`
+  'shw0oc0z': '第三方 ESM 导入（仅 JS 后端）：用以下写法引入 npm 包'
   'sjuueqqo': '第 %d 行: 变量 \'%s\' 在循环体内声明，在此处使用时可能尚未初始化（循环可能一次都不执行）'
   'sjvzidyd': '解析 %s@%s 的依赖 %s 失败: %w'
   'sm0xomza': 'str.to-bool: 没有结果槽位'
@@ -596,19 +896,33 @@
   'so08hhvh': 'embed: 目录为空: %s（解析为: %s）'
   'soo3tmk2': 'MIR 后端不支持借用参数 %s 的 move'
   'soq2h6t2': 'extern 声明中期望参数名，实际得到 %s'
+  'squ5w5co': '配合 --js 使用 --browser 可生成面向浏览器的 JS 与 HTML 包装。'
+  'srpc0cgx': '用 --js --browser 生成浏览器 JS + HTML 并在默认浏览器打开。'
   'ssddj3qk': '%s 的校验和不匹配: 期望 %s，实际得到 %s（拒绝安装）'
   'sstb7ij2': '期望以 \'}\' 结束注解，实际得到 %s'
   'stbjgjqz': 'builtin %s 定长数组 %s'
+  'su2q9at6': '用法：no test [<file>]'
+  'suhqncsk': '  1. 已存在的 .no 文件        -> 运行该文件'
+  'sv3fw1hp': `
+已打包 AST：%s
+
+`
   'sz3i7626': 'win-read-pipe: 需要 (handle, max-bytes)'
   't0f6p9jl': '循环中块后应为 \'(\'，实际得到 %s'
   't22pcf4p': 'embed: 找不到文件: %s（解析为: %s）'
   't4jhbz5z': '函数名后应为 \'=\'，实际得到 %s'
+  't5l89pst': `
+未找到依赖 %s。
+
+`
   't5qq2leo': 'lencap kind: 不支持对 %s（%s）取 len/cap（函数 %d）'
   't5rup04t': 'move 源槽位 v%d -> v%d'
   'tb2zxq0f': '不允许 \'%s.%s []T\'：字段类型应写在 \'%s\' 的类型定义中。要写入该字段请写 \'%s.%s = ...\''
+  'tbfsq7ph': '  no pub                       写入 dist/<name>.ast.zip'
   'tcpoxtfd': '类型标注 “%s” 可以省略（可从值推断）'
   'td32do0k': 'retain: 需要一个值'
   'td8qfehr': 'process-exec: 无法将 prog 编组为 C 字符串'
+  'tdkcr7i9': '源码：'
   'tdouxx03': 'read-file: 没有结果槽位'
   'te0v5lgz': '期望以 \']\' 或 \')\' 结束区间，实际得到 %s'
   'tf9xqjf1': `
@@ -623,10 +937,14 @@
   'tfwxqucs': '`return` 后不能跟返回值；Nolang 函数结果通过具名结果参数（out-param）传出，请用裸 `return` 提前返回并在函数体内给结果参数赋值'
   'tgutu5g0': '请用 “# %s.%s %s” 代替 “# %s.%s as %s”'
   'tgz86gvc': '读取已构建的二进制失败: %w'
+  'tho8xc47': '已创建的文件：'
   'tjwokiw9': '数组字面量中期望逗号或右方括号，实际得到 %s'
+  'tlwmf1le': 'Nolang 不允许显式类型转换 `expr %s`；请改用声明形式 `name %s = expr` 做安全的加宽/等宽转换'
   'tmiibvan': 'builtin %s: 没有目标槽位'
   'tmqnqq9x': '找不到依赖: %q 未在 package.noml 的 dependencies 中声明'
+  'tnj4py6b': '没有需要同步的依赖。'
   'tosnl9r7': '计数与循环体之间应为 \'*\'，实际得到 %s'
+  'trahnyuh': '  no vet --strict src/std/   只要出现 lint 警告/提示就失败'
   'trdj5rp8': '检查错误: %v'
   'ts6fes3j': 'import %q 与 AST 依赖 %s 不匹配（请使用 %q 或 %q）'
   'tsg5cbwu': 'ESM 包说明符 %q 中包含非法字符 %q'
@@ -635,42 +953,63 @@
   'ttlxcrgt': '区间表达式中应为 \'[\'、\'(\' 或字符串，实际得到 %s'
   'u0g1w0d7': '找不到 js 兼容模块: %s'
   'u3g4qexx': 'builtin chars-new: 参数类型 %s 无效'
+  'u3if6wak': '  no fmt -fix=match -w src/       就地补全缺失的 match 分支'
   'u4oybn9r': '%s 已安装（%s）；请使用 -u 重新安装或更新'
   'u5qmp19f': 'option match 必须处理所有分支: err、nil、ok（缺少: %s）'
   'ua5h1rpc': '\'as\' 转换仅允许用于 FFI 指针类型（例如 *byte、**byte），实际得到 %s'
   'uea62he5': '函数 “%s” 最多接受 %d 个输入参数，实际传入 %d 个 —— 输出参数应通过赋值绑定，例如 result = %s(...)'
+  'uf368nh9': '输出 zip 路径（默认：dist/<tool>.ast.zip）'
+  'ufmw3i5q': '  no pack                          打包当前包 -> dist/<name>.ast.zip'
+  'ufqsnwdw': '依赖：'
   'ugoucnr9': '依赖 %s 只附带单个预构建模块 %q；无法导入子路径 %q'
   'ujfsckuo': '期望参数类型，实际得到 %s'
   'umcsmsz6': '%s: 解析器返回了空程序'
   'uqby2pvs': '索引 %d 越界: %s \'%s\' 的长度为 %d'
   'uruyzlb4': '非法的文件路径: %s'
+  'urxylcac': '  解析在首个位置参数处停止）。'
+  'uvvox4pk': '没有需要更新的依赖。'
   'uvws00l4': '重复的函数定义 “%s”（首次定义在第 %d 行）'
   'uwaizocg': 'vec.reverse: 没有接收者槽位'
+  'uzugz5vn': '目录会被自动递归处理。'
   'uzzd8eqi': 'get-line: 没有结果'
+  'v0avn8e4': '校验通过'
   'v0thbcmv': '期望参数名，实际得到 %s'
   'v1a6rxna': '期望逗号或右括号，实际得到 %s'
   'v1j0odm2': '写入 JS 输出 %s 失败: %w'
-  'v3n8qk2d': '版本:'
+  'v3n8qk2d': '版本：'
+  'v57cjup3': `
+写入配置文件出错：%v
+
+`
   'v7zs1nru': '格式符 \'s\' 要求 str/bool/整数类型，实际得到 \'%s\'（格式: %q）'
+  'v8tulbl4': '项目：'
   'v9hnqn6w': 'import %q: ESM（npm）导入仅由 JS 后端支持；请用 `no build --js` 或 `no run --js` 重新构建（说明符 %q 无法链接进原生二进制）'
   'v9milo3k': 'getgrouplist: 在 windows 上不受支持'
+  'vas3pyce': '包注册表 URL（未使用：上传尚未实现）'
+  've2dzkxe': '  no test -timeout 90 test/std   顺序跑整个目录；每个文件上限 90 秒'
   'vekjerf5': '内嵌 StdFS 中找不到 std 模块: %s'
+  'velk9bjg': '注意：注册表上传尚未实现；请把这个 zip 上传到 GitHub release。'
   'venvcq6s': '运算符 \'%s\' 后应为表达式'
   'veqmroa3': 'bool.to-str: 缺少接收者'
   'vf6bc21u': 'WASM 构建错误: %w'
+  'vffhhi55': '输出文件路径'
   'vgfb39et': 'std AST: 读取 %s 失败: %w'
   'vgljm585': 'builtin %s: ?str 结果需要 %%option 槽位，实际得到 %s'
   'vgxfhc6x': 'sysctl: 在 windows 上不受支持'
   'vh7osqp5': '%s 中没有被调用者'
+  'vhmg22wa': '正在同步依赖……'
   'vhpiqfim': '不支持浮点区间边界，请使用整数'
   'vhpl1qzt': 'slice op 参数个数'
   'viuznngf': 'net-udp-recvfrom: 无法获取第 1 个参数的数据指针'
+  'vjj66evx': '无参数时，运行当前目录的 main.no。'
   'vjkycl6v': 'utf8-at 接收者槽位'
+  'vkq3r0r2': '`# npm/lodash.get as get` 或 `# npm/lodash.default as d`。它们都要在'
   'vm9uj5g4': 'builtin %s: 原始 str 被存入 %s 槽位'
   'vmy4qtcr': '从 %s 下载失败: %w'
   'vo2eyrl7': '创建 gzip 读取器失败: %w'
   'vpi1fke2': 'win-find-close: 需要 bufptr 参数'
   'vr0eh0yz': 'embed: []byte 需要一个文件，得到的是目录: %s（解析为: %s）。目录嵌入请使用 fs.embed 类型'
+  'vuvokhaa': 'package.noml 依赖并用 npm install 先装好；`no run --js` 在包缺失时会'
   'w308jsag': `
 %s: 校验失败:
 %s
@@ -678,12 +1017,16 @@
   'w3k1bwpp': '泛型参数中应为 \',\' 或 \'>\'，实际得到 %s'
   'w6xtqb7k': 'net-listen: 需要 (host, port)'
   'w6zt4h9c': '多变量列表后应为 \'=\''
+  'w826wv42': '  no run foo                   运行包 \'foo\'（来自 workspace.noml）'
   'w9ajg8ow': 'eprint 需要 str/i64/byte/char/bool 参数，实际得到 %s'
+  'wbsevkfk': '  no fmt -d main.no           显示彩色差异'
   'wcbo6a01': '期望以 \'}\' 结束变体注解，实际得到 %s'
+  'wcoza64y': '  no build --option-inline-threshold=8 main.no   把大于 8 字节的 ?T 载荷全部装箱'
   'wd8mx0q7': '被调用者为 nil'
   'wdk3k728': '输出参数 “%s” (?T) 被读取但在函数体中从未赋值 —— 使用了未初始化的可空输出参数'
   'wdpztov8': 'LLVM C API: IR 为空'
   'wekxh2lc': '接口 “%s”: 未知的父接口 “%s”'
+  'wfua2ax8': '把模块的 AST 打包为 gob + zip（<tool>.ast.zip）。'
   'wg5j97zm': '期望逗号或右括号，实际得到 %s'
   'wigbiu9z': 'exec-shell: 需要命令'
   'wjju8z98': '链接失败: %w'
@@ -694,23 +1037,36 @@
   'wmq5sd19': '已移除 builtin %s 使用的 LLVM intrinsic %s'
   'wnskovpc': '计数循环中 \'*\' 前应为整数，实际得到 %s'
   'wo778frg': 'bool.to-str: 无法将 %%str-long 转换为 %s'
+  'wo8qw0ac': '标准库源码：'
   'wskr1nvn': '无法将 %q 解析为整数'
   'wtg6ai3v': 'builtin %s: %w'
+  'wttj7qs9': '  no run -cc zig main.no       用 Zig 编译器构建并运行'
+  'wu70c4w0': 'workspace.noml 中的所有项目会并行构建。'
   'ww5ngyyh': 'win-create-process: 需要 (cmdline, dir, stdin, stdout, stderr)'
   'x51zwxlr': '#{%s} 指令后应为标识符，实际得到 %s'
   'x57xvqny': '函数 %s 中不支持的值类型 %s'
   'x649sxw4': 'embed: 读取目录 %s 失败: %w'
+  'x6snirjy': '用法：no ast [-annotations] <file>'
   'x6swm2kk': '“%s” 只能使用小写字母和连字符'
   'x6tqaeqp': '接口方法中期望参数名，实际得到 %s'
   'x8bk3eqw': 'getfield 槽位'
   'xczzji7g': '期望左花括号，实际得到 %s'
   'xe32iowe': 'term'
+  'xev7d0na': `
+  ast  %s %s
+
+`
   'xgq9y9sz': '成员 %q 的值类型不受支持 %T'
   'xgs17cqx': '第 %d 行第 %d 列: \'main\' 是保留名，不能用作函数名；请改用顶层语句（入口点会自动合成）'
   'xhy954hb': 'builtin %s: pair 缓冲区未实体化'
+  'xj7auj8a': `
+已同步 %d 个依赖。
+
+`
   'xkgmbluz': 'ESM 包说明符 %q 中不允许相对路径片段'
   'xl6uu81q': '对 option “%s” 的 match 不穷尽: 缺少分支: %s —— 添加一个 `-> `（else）分支，或处理所有变体'
   'xlppn81m': '不能修改切片 \'%s\' 的只读字段 \'len\''
+  'xmd4iv30': '没有依赖。'
   'xmicjezl': '整数运算 `a OP b` 默认在溢出时返回 option<T>，结果类型恒为 `?T`。三选一：①用 `?T` 接收（`a ?i64 = x + y`，或直接 `a = x + y` 让编译器推断成 option），再用 `?=` 上抛或两段式 match 解包（`v = a: {` 换行 `ok -> it` / `-> 0`）；②加注解 `#{overflow = wrap}`（无声回绕）/`clamp0`（下溢归零）/`min`/`max`/`saturate`（饱和箝位）或型别前缀形式如 `#{overflow = u8-max}` 指定溢出行為——注意注解只改变失败时怎么取值，结果仍是 `?T`，仍须解包；③`_ = x + y` 显式丢弃。'
   'xo6e53hm': '不能修改数组 \'%s\' 的只读字段 \'len\''
   'xpp5i92s': 'option match 必须处理所有分支: err、nil、ok（缺少: %s）'
@@ -731,6 +1087,10 @@
   'yf6kxdmz': '语句不能只是一个字面量；请调用函数或将其赋给变量'
   'yfm52ulo': '带标签枚举变体载荷中出现意外的 token %s（解析器未取得进展）'
   'ygofqfbs': '--wasm-direct 需要显式指定输入文件（不支持工作区模式）'
+  'ygsvytn5': `
+  homepage:   %s
+
+`
   'ygx2q6sp': 'builtin chars-new: 没有结果槽位'
   'yh8904fm': '期望赋值运算符，实际得到 %s'
   'yhg5vw4v': 'borrow 源槽位'
@@ -739,8 +1099,15 @@
   'yjiapu40': 'builtin %s: 没有结果'
   'yjq43ui5': 'net-udp-sendto: 需要 (fd, data, n, host, port)'
   'yk8jbowb': '计数循环中 \'*\' 后应为整数，实际得到 %s'
+  'ymwfqb9o': '⚠️ 选项必须写在文件名之前（Go 的 flag 包在'
+  'yoq1krwy': '  no build --js main.no                              生成 JavaScript（类型擦除）'
+  'yqmj7czp': '用法：no remove <package-name>'
   'yrdjmq57': '检测到循环的工作区映射: %s'
+  'yu5ep241': '包缺失时给出安装提示。'
+  'yxf3nmjr': '  no run ./foo                 运行 ./foo 目录的 main.no'
+  'yyh1cd5z': '  no vet --json src/std/     以 JSON 输出诊断'
   'yzp82ylp': '期望 \':\'，实际得到 %s'
+  'z26oe20t': '二进制：'
   'z68vr2e2': 'builtin %s: 无法将第 %d 个参数编组为 C 字符串'
   'z87sn8u5': '期望逗号或右括号，实际得到 %s'
   'z8rfu6gf': '写入 WASM 输出 %s 失败: %w'
@@ -748,13 +1115,26 @@
   'zae1l26t': '写入 %s 失败: %w'
   'zc1zfsat': '匿名函数类型语法 \'()\' 已禁用；请使用具名函数类型别名，或在 package.noml 中启用 \'anonymous-fn-type\''
   'zcelvmmy': 'OpAwait: 没有槽位'
+  'zdbv29a2': `
+已在浏览器打开：%s
+
+`
   'zl7i0mx6': '\'i <- range { }\' 已废弃，请改用 \'i <- range: { }\''
+  'zlotlakj': '  no fmt -d src/              显示 src/ 下所有 .no 文件的差异'
   'zm1ivicl': '期望循环体语句，实际得到 %s'
+  'zm87x8w0': '若为目录，则校验该目录下所有 .no 文件。'
   'zodppsnm': 'MIR->LLVM: %s'
+  'zpeqou62': '在 CI 中生成 `no add` 所需的资产：'
   'zpgykko6': '在 %s 中找不到 main.no'
   'zql6tu9p': '找不到工作区本地依赖路径 %q'
+  'zr0vmo3q': '  no build main.no'
   'zs1q169p': '读取发行版信息失败: %w'
   'ztlqshll': 'builtin %s: 结果 %d 没有槽位'
   'zvybywvf': '冲突的原生绑定模式: %q（来自 %q）与 %q（来自 %q）'
+  'zy88y2ur': '  no run                       构建并运行当前目录的 main.no'
+  'zz69r7h9': `
+同步 AST 依赖 %s 出错：模块为空
+
+`
   'zzcfoc04': '创建 dist 目录失败: %w'
 }

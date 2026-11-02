@@ -121,9 +121,9 @@ huffman.build = (lengths []i64, n i64) {
 
     ; 計算各長度的起始偏移
     offs [17]i64
-    i <- [0..17): {
+    e <- offs: {
 
-        offs[i]: {
+        e: {
             ok -> it = 0
 
             -> _
@@ -627,10 +627,9 @@ gzip-compress = (data []byte) (out []byte) {
 
     ; DEFLATE 資料（stored blocks）
     deflated = deflate-stored(data)
-    i <- [0..deflated.len()): {
+    b <- deflated: {
 
-        #{index-out=zero}
-        result.push(deflated[i])
+        result.push(b)
     }
 
     ; CRC32（原始資料的 CRC32，小端序）

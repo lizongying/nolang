@@ -12,7 +12,7 @@ Nolang - Un lenguaje de programación (versión %s)
 Uso:
 Opciones globales:
   -v    Modo detallado (se aplica a todos los comandos)
-  --lang=<tag>  Idioma de los mensajes, p. ej. --lang=zh-CN, --lang=en.
+  --lang=<tag>  Idioma de los mensajes, p. ej. --lang=zh-cn, --lang=en.
                 Por defecto sigue la configuración regional del sistema ($LC_ALL / $LANG);
                 el inglés es el idioma de respaldo. También se puede definir con $NO_LANG.
 

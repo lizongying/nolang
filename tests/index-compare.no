@@ -125,15 +125,81 @@ expect(opt == h[0], 35)
 print('ok: bound and direct forms agree')
 
 ; 13. 巢狀下標（`a[i][j]`）的比較：容器本身就是一次索引讀取。
-; 這一格是回歸鎖 —— 給內層讀取加 option 提示會被容器 lowering 繼承下去，把外層
-; 讀取的結果（`str`）再包一層（`?char`），內層於是對 `?char` 取 len/下標，
-; 後端直接報 "lencap kind: len/cap unsupported on ?char"（src/std/net/http.no 的
-; `.header-names[i][j] != name.byte(j)` 就是這個形狀）。巢狀比較維持既有 lowering。
+; 兩層都必須是安全讀取：外層 `tbl[n]` → `?str`（界檢查 + 存在性判斷），
+; 內層 `outer[0]` → `?char`。這一格是回歸鎖，釘住兩種壞形態：
+;   (a) 提示被容器 lowering 繼承 ⇒ 內層對 `?char` 取 len/下標，後端報
+;       "lencap kind: len/cap unsupported on ?char"（src/std/net/http.no 的
+;       `.header-names[i][j] != name.byte(j)` 就是這個形狀）；
+;   (b) 兩層都裸讀 ⇒ 越界直接 SIGTRAP（見第 14 節）。
 tbl [2]str = ['ab', 'cd']
 n i64 = 1
 expect(tbl[n][0] == 'c', 36)
 reject(tbl[n][0] != 'c', 37)
 reject(tbl[0][0] == 'c', 38)
 print('ok: nested subscript comparison')
+
+; 14. 巢狀下標越界：兩層都帶界檢查，越界回傳 nil（絕不 abort）。
+; 修復前這裡是裸讀，`tbl[nest_oob][0]` 直接讀野內存。
+nest_oob i64 = 5
+reject(tbl[nest_oob][0] == 'c', 39)
+expect(tbl[nest_oob][0] != 'c', 40)
+expect(tbl[n][nest_oob] != 'a', 41)
+print('ok: nested subscript out of range yields nil')
+
+; 15. `?txt == txt`：txt 是 { [255 x i8], i8 } 聚合，payload 型別必須是 %txt，
+; 否則 option 的載荷被當成 i64（判別值比較 + 讀錯位元組，實測 SIGSEGV / 恆假）。
+; %txt 有 256 位元組，超過 option 的 24 位元組載荷槽 ⇒ 一律走堆上 BOXED 載荷。
+t txt = 'hello'
+ot ?txt = t
+expect(ot == t, 42)
+reject(ot != t, 43)
+other txt = 'hello!'
+reject(ot == other, 44)
+; 長字串（> 255 會被截斷，這裡取 40）確認 boxed 載荷的長度前綴也正確。
+lt txt = 'the-quick-brown-fox-jumps-over-a-lazy-dog'
+olt ?txt = lt
+expect(olt == lt, 54)
+reject(olt == t, 55)
+; option 對 option：比的是載荷，不是判別值
+otx ?txt = t
+expect(ot == otx, 60)
+reject(olt == otx, 61)
+print('ok: ?txt compares its txt payload')
+
+; 16. 容器元素的比較：`[]T == []T` 走結構比較（先比長度、再比元素）。
+; 修復前 emitCmp 對 %vec 發出 `icmp eq %vec`，LLVM 直接拒絕
+; （"icmp requires integer operands"）—— 連編譯都過不了。
+va []i64 = [1, 2]
+vb []i64 = [1, 2]
+vc []i64 = [1, 3]
+vd []i64 = [1, 2, 3]
+expect(va == vb, 45)
+reject(va == vc, 46)
+reject(va == vd, 47)
+expect(va != vc, 48)
+; 元素本身是容器（`[][]i64` 的元素是 `[]i64`）
+m1 [][]i64 = [[1, 2], [3, 4]]
+m2 [][]i64 = [[1, 2], [9, 9]]
+expect(m1[0] == m2[0], 49)
+reject(m1[1] == m2[1], 50)
+reject(m1 == m2, 51)
+; 元素是 str：必須比內容，不是比 data 指標
+sa []str = ['ab', 'cd']
+sb []str = ['ab', 'cd']
+sc []str = ['ab', 'ce']
+expect(sa == sb, 52)
+reject(sa == sc, 53)
+print('ok: container equality is structural')
+
+; 17. txt 下標的碼點比較：`t[0]` 與 `str` 下標一樣是**碼點**（checker 也這麼判：
+; `b byte = t[0]` 會被拒為 "cannot assign char value to byte"）。
+; 修復前比較語境把它定型成 `?i8`（後端載入的原始位元組），於是 `t[0] == 'c'`
+; 把 99 渲染成十進位文字 "99" 去比 "c" —— **靜默為假**，沒有任何診斷。
+ttxt txt = 'cd'
+expect(ttxt[0] == 'c', 56)
+reject(ttxt[0] == 'd', 57)
+expect(ttxt[0] == 99, 58)
+reject(ttxt[1] == 'c', 59)
+print('ok: txt code-point comparison')
 
 print('index-compare OK')

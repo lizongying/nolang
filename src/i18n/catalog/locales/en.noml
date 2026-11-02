@@ -4,6 +4,10 @@
 {
   '04mmq0us': 'lencap struct: len/cap unsupported on struct %s in func %d'
   '04tb4mwj': 'eq-raw: cannot store i1 into %s'
+  '060maaj0': `
+Error: %v
+
+`
   '06r4gtr3': 'builtin %s: missing operand'
   '081adx9q': 'net-accept-nb: no result slot'
   '09qseik5': 'expected identifier after dot, got %s instead'
@@ -11,12 +15,17 @@
   '0cccc2ei': 'the statement governed by this #{overflow=...} annotation contains no integer arithmetic (e.g. the line only concatenates strings), so it can never overflow; consider removing the annotation.'
   '0coyzo4x': 'vec.sort: no receiver slot'
   '0ewki0e0': 'expected \'}\' to close variant annotation, got %s instead'
+  '0gl7izq7': 'Browser output resolves them through an import map; point it at'
   '0hl9ybj4': 'JS backend requires an explicit input file or main.no (workspace mode not supported)'
   '0ik1j9cf': 'format failed: %d parse error(s)'
   '0iodav1i': 'expected \'..\' for range or \',\'/\']\' for slice, got %s instead'
   '0j1imd2d': 'an `#{...}` annotation cannot share the line in front of its target; put it on a line of its own above the target, or trailing on the target\'s own line'
   '0jdavdb8': '\'while condition { }\' is deprecated, use \'for condition { }\' instead'
   '0kf267f2': 'empty switch statement'
+  '0lur3tbm': `
+Updated %s
+
+`
   '0qnjitgt': 'builtin %s: no C call spec'
   '0tjeipjr': '\'for init; cond; update\' is deprecated, use commas \',\' instead'
   '0ts2eetl': 'builtin %s: no value'
@@ -30,9 +39,17 @@
   '16ltowfs': '\'for cond { }\' is deprecated, use \'{ } (cond)\' loop instead'
   '170bewkb': 'cannot infer type from nil for variable \'%s\''
   '17mbz8cw': 'expected \'}\' to close annotation, got %s'
+  '18uic4sz': 'Use -v to emit LLVM IR (.ll) files for analysis alongside the build.'
   '1b3u924y': 'read-file: cannot marshal path as C string'
+  '1cg8g9ic': 'Validate Nolang source files without producing output.'
+  '1ea3hwsu': '  link JS modules. No flag needed; the manifest drives it.'
+  '1gmy3g9v': '  no vet                     validate main.no in current dir'
   '1gybkrrq': '%s'
   '1i1o45j6': 'expected parameter type, got %s instead'
+  '1iye2j55': `
+  repository: %s
+
+`
   '1j6i9o1o': 'slice op recv slot'
   '1k6cdcgx': 'expected \'.\' after type, got %s'
   '1lg2qpwf': 'syslog: cannot marshal arg 1 as C string'
@@ -40,32 +57,54 @@
   '1m1ocf8t': 'unsupported host %q (only github.com is supported)'
   '1plv4fne': 'str-from-vec dst slot'
   '1qz0p808': 'no module path after dependency key %s'
+  '1rk772tt': `
+Error creating src directory: %v
+
+`
   '1u2vckag': 'builtin %s: missing receiver'
   '1ubmxmsr': 'expected \',\' or \'}\' in annotation, got %s instead'
+  '1wsc2hed': 'Output zip path (default: dist/<name>.ast.zip)'
   '1x2yhmnf': 'win-get-std-handle: needs a which argument'
+  '1zgxpqk7': 'Third-party ESM imports (--js): import npm packages with `# npm/lodash`,'
+  '202eioh0': `
+Error writing test file: %v
+
+`
+  '20szn23y': '  no ast main.no                    print AST for main.no'
+  '20xgyqyu': `
+Added dependency: %s = %s
+
+`
   '21irdw5o': '$str_concat: argument type mismatch'
   '2243l8if': '..any is only allowed in standard library, not in user code (function: %s)'
   '238u1xr7': 'embed: only []byte / [N]byte / fs.embed declarations are supported, got untyped declaration'
+  '23ki71z9': 'Use Direct WASM backend (no LLVM toolchain required, browser-compatible)'
   '2534ei4x': '\'if/elif/else\' is deprecated, use \'{ <cond> -> <body> }\' instead'
   '26rmtbup': 'vec.truncate: no receiver slot'
   '27jt8xlw': 'creating temp directory: %w'
   '28t42vw9': 'the returned integer expression is an option<int> by default, but this function does not return an option type. Add a `#{overflow = wrap}` annotation to get a plain int back, or make the function return ?T and propagate with `result ?= expr` (or capture in place with `result = expr`).'
+  '2bg0n0e0': '  - lib.no (library export file)'
   '2cmnxd6l': 'expected \']\' or \')\' to close range, got %s instead'
   '2dhoris2': '\'%s\' should use only lowercase letters and hyphens'
   '2e14k5et': 'cannot infer type for \'%s\': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)'
   '2fke76na': 'wasm: function/code count mismatch: %d functions vs %d codes'
   '2g4xt4m5': 'net-listen: no result slot'
+  '2ixluoth': 'Run tests.'
   '2kqboupo': 'unsupported builtin %s'
   '2ls7kxqp': 'cannot reassign function name \'%s\''
   '2lsu55tb': 'native wasm module %q is not declared in package.noml dependencies; add dependencies: [\'%s:^latest\'] (or dev-dependencies) and run npm install'
+  '2lxm8j4k': 'Backend:'
   '2nh7qycu': 'builtin %s: unhandled C return kind'
   '2nvmt2tf': 'writing LLVM IR file: %w'
+  '2psk9dma': 'Generate browser-targeted output (HTML + JS, requires --js)'
+  '2q3wfrie': 'Parse a Nolang source file and print its AST to stdout.'
   '2qdpadhy': 'Use the two-step unwrap: first `%s = <expr>` (inferred as ?T), then `v = %s: {` with `ok -> it` and `-> <default>` on separate lines; or use a match statement `%s: { ok -> { ... } -> { ... } }`, or propagate with `%s ?= <expr>`, or discard explicitly with `_ = <expr>`. Note that match arms must be separated by newlines (the comma form is a parse error), and the one-line form `%s = <expr>: { ... }` only attaches when <expr> is a bare identifier; otherwise the match detaches into a standalone statement and %s is still an unwrapped ?T.'
   '2qoxhl6a': 'win-create-process: cannot marshal cmdline as C string'
   '2rkb38mw': 'creating cache directory: %w'
   '2t4wkn7s': 'expected \'}\' to close field annotation, got %s instead'
   '2trc49mk': 'duplicate type alias %q'
   '2u2o0e24': 'net-dial: no result slot'
+  '2u63w9uc': 'Use JS backend (emit JavaScript source, no LLVM toolchain required)'
   '2xehrcuo': `
 LLVM toolchain not detected
   macOS: brew install llvm
@@ -99,33 +138,47 @@ cannot assign through an index directly: `%s = %s`. An index read returns an opt
   '3owkeirf': 'parsing release info for %s/%s: %w'
   '3pry7fmd': 'expected comma or right parenthesis, got %s instead'
   '3r03yk09': 'expected \')\''
+  '3rob7gjj': 'Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).'
   '3sxhaibr': 'expected \')\' or \']\' to close range, got %s instead'
   '3u02loy5': 'LLVM C API: running passes %q: %s'
+  '3u2xl8v7': '  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)'
   '3uu88ox1': 'expected right parenthesis, got %s instead'
   '3vbgvipn': 'resolving dependency %s@%s: %w'
   '3wynwdcq': 'could not parse %q as float'
   '3xcxajan': 'getgrouplist: cannot marshal arg 0 as C string'
+  '3xe1wjrw': 'deps:'
+  '3zh3tuv8': 'This is the L2 oracle of the self-hosting effort: the output is'
   '430ty5x5': 'byte-array receiver has no slot'
   '45y022ur': 'net-listen: cannot marshal host as C string'
   '46jwfg5y': 'expected type after %q in type alias'
   '46qem63e': 'MIR IR failed LLVM assembly: %v: %s'
+  '4bopl5am': 'root:'
   '4ccv952m': 'builtin %s: cannot store i64 into %s'
+  '4dquj9mu': 'workdir:'
+  '4en75r71': '<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip'
   '4ewgvnbn': 'chained \'->\' conditions (a -> b -> c) are discouraged; merge conditions with &&/|| or use \'{ }\' blocks to avoid subtle scoping bugs'
+  '4eyd78yc': 'If no file/directory is specified and workspace.noml exists,'
   '4g7bz9oy': 'net-accept-nb: needs (listen-fd)'
   '4hmw6w3i': 'borrow arity'
   '4m2w3mkd': 'vec.push: no receiver slot'
   '4o348fh8': 'expected \']\' or \')\' to close range, got %s instead'
   '4oy26jat': 'builtin %s: result 0 has no slot'
+  '4pj8z50l': '  the JS backend\'s module resolution, so `# npm/<pkg>` ESM imports and native'
   '4ptt84li': '%s: argument type mismatch'
   '4qhyyund': 'unknown callee %s in func %s'
+  '4r3ghy7k': 'Pre-filled from git/environment:'
   '4rsqarsx': 'eprint txt slot'
   '4scfdhhp': 'utime: no result slot'
   '4uv9dunu': 'str.clear: needs receiver'
   '4y6hz2la': 'embed: only []byte / [N]byte / fs.embed declarations are supported, got %s'
   '50ztzqeo': 'std AST: encode %s: %w'
+  '531ftg4b': '  no test tests/my-test.no    run a single test file'
   '537ew54w': 'builtin chars-new: missing char slice'
+  '55szl0aa': '  no test -cc zig'
+  '58nk14b4': '  no build -o output main.no'
   '5bj5o9ci': 'str.clear: no receiver slot'
   '5blqb26x': 'expected \')\''
+  '5ci3l7h9': '  no add nogit:v0.1.33@github.com/lizongying/notools'
   '5cid832p': 'unknown private field builtin %s'
   '5ckkrp9f': 'noml: field %s[%d]: dependency element must be a string, got %T'
   '5eo1kvb9': 'noml: field %s: expected object, got %T'
@@ -142,12 +195,19 @@ no usable C linker detected (clang/cc/gcc)
   Windows: winget install zig.zig  (or use -cc zig)
 `
   '5lycdtsz': 'argument %d of \'%s.%s\': expected \'%s\', got \'%s\''
+  '5nhzzuch': 'Flags:'
+  '5nlhrsc7': 'Use --js to bypass LLVM toolchain and emit JavaScript (run with node).'
   '5ns1mui1': 'top level must be an object'
+  '5o3x4h4d': 'Skip bounds checks for maximum performance (unsafe)'
   '5qjs01mp': 'expected right parenthesis, got %s instead'
   '5qpe9buw': 'win-write-pipe: needs (handle, data)'
   '5ve092z6': 'unsupported param type %s in func %s'
   '5yjn9wrj': 'setfield: field %q not found on %q (option %q)'
+  '603y6hgq': 'Each package must be declared in package.noml dependencies (or'
+  '61bm2pzr': 'All dependencies updated to latest.'
   '62z2cnfe': 'option peel slot'
+  '63lrmg48': 'When stdin is piped (e.g. echo \'x=1\' | no fmt), reads from stdin.'
+  '64bt3a50': 'Build Nolang source files to an executable.'
   '64t1vgh6': 'vec.remove: needs receiver, index'
   '66ybjsus': 'write-file: cannot marshal path as C string'
   '68bn4o2m': 'ESM package specifier %q must not start or end with \'/\''
@@ -158,26 +218,49 @@ no usable C linker detected (clang/cc/gcc)
   '6o12uzmx': 'waitpid: unsupported on windows'
   '6p2o4902': 'asset %s exceeds size limit (%d bytes)'
   '6qca9xu4': 'embed: cannot combine with explicit value'
+  '6svrp0le': 'Usage: no fmt [flags] <file|dir>'
   '6umfb8yv': 'builtin %s: %s'
   '6xq3uson': 'getgrouplist: needs 2 results (gids, n)'
   '6y4tyjln': 'noml: field %s: unsupported target kind %s'
+  '73myjkcm': '  no test                     run all .no files in tests/ directory'
   '743idjpl': 'could not parse %q as integer'
+  '74e32kaz': 'Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).'
   '755ldw47': 'expected right parenthesis in extern declaration, got %s instead'
   '75f5l5xg': 'load-le-%s: no dst slot'
   '75pom499': 'txt dst slot'
   '75qapexc': 'cannot coerce arg %d from %s to %s'
   '75yiyise': 'type match on union %q requires type patterns (e.g. %q ->) or a default arm (->)'
+  '76fao0mm': `
+  asset: %s
+
+`
   '7c5fbvp4': 'val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment'
+  '7camjpuc': `
+  author:     %s
+
+`
   '7clod0r1': 'expected left brace in elif, got %s instead'
   '7dl1fkwt': 'LLVM toolchain not available in WASM build; use --wasm-direct flag'
   '7f3qhn9l': 'txt index recv slot'
+  '7f6c9808': `
+Error creating tests directory: %v
+
+`
   '7h2kezo7': 'net-udp-sendto: cannot take data pointer of arg 1'
+  '7k5x9q9a': 'C compiler: clang (default), zig'
+  '7l372tkw': '  --strict         upgrade all lint warnings/hints to errors'
+  '7mckxr6e': `
+  Updated %s
+
+`
   '7mitslag': 'unsupported dependency key format: %s (only github.com is supported)'
   '7o5ico3h': 'str.to-bool: cannot coerce i1 to %s'
   '7p1k0dke': 'package download not supported in WASM build (browser playground)'
   '7riv9hah': 'unsupported lock file version %q (expected %s)'
   '7sfqpwmj': 'dependency not found: %q is not declared in package.noml dependencies'
   '7t8ke5g1': 'cancelled: no result slot'
+  '7tcn8wox': 'Examples:'
+  '7usot77o': 'apply automatic fixes for one problem class: \'overflow\' (adds #{overflow=wrap} to unannotated integer arithmetic), \'redundant\' (removes type annotations that equal the inferred type, e.g. `x str = \'\'` -> `x = \'\'`), \'match\' (adds the missing nil/err arms to non-exhaustive option matches), or \'unwrap\' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or \'main\' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)'
   '7uy8wmqv': '%s'
   '7zfvvuin': 'No issues found.'
   '802t452i': 'builtin %s: option result into %s dst'
@@ -195,22 +278,39 @@ source file path is not a valid name: %s
   '89pwo0vg': 'noml: map key must be string: %T'
   '8apmtyk6': 'reading input file: %w'
   '8dbrd5fk': 'module file not found: %s'
+  '8ehrkmgn': '  no test'
+  '8emu38e0': 'Usage: no new <package-name>'
   '8gnvlvf4': 'expected parameter name, got %s instead'
+  '8h17gwzn': '  no build -cc zig main.no'
   '8haww14h': 'write-file: needs path and data'
   '8j6njczi': 'expected comma or right parenthesis in extern declaration, got %s instead'
   '8jsgdrcw': 'JS generation error: %w'
   '8k0xmfmo': 'str index dst slot (dst=%d type=%s)'
   '8ndov8z0': 'net-dial: needs (host, port)'
   '8o5wqxi2': 'expected left parenthesis, got %s instead'
+  '8r4nnper': '  no add nogit@lizongying/notools                   host defaults to github.com'
+  '8r9be4h9': `
+Built: %s
+
+`
   '8rjhajw9': '$str_concat: bad arity'
   '8sf1ugcv': 'noml: unsupported value type %T'
   '8t1jaj02': 'integer `a OP b` returns option<T> on overflow by default, so this binds `%s` to a `?T`. %s If you would rather wrap around on overflow than report an error, add `#{overflow = wrap}` - note the annotation only changes the value taken on overflow, the result is still `?T`.'
+  '8ux5w599': 'compared byte-for-byte against `noc ast`, so the format is a spec.'
   '8vlao0fn': 'bool.to-str: no result slot'
   '8w3q93g2': 'private builtin method \'%s.%s\' may only be called from within module %s, not from %s'
   '8wckpc2l': 'expected variable name after \',\', got %s'
   '8wmzq8hx': 'expected \'..\' in range, got %s instead'
   '8wo2yee6': 'keys %q and %q map to the same nolang field %q'
+  '8wygofht': `
+Testing: %s
+
+`
   '8xy43fpc': 'expected loop body after label #%s, got %s without \'{ }\''
+  '8y7pdnc9': `
+Error syncing dependencies: %v
+
+`
   '8zompytc': 'interface \'%s\': merge cycle %s'
   '95a27ccb': 'expected annotation key, got %s instead'
   '96c2yjtk': 'expected \',\' or \'}\' in struct literal, got %s instead'
@@ -219,6 +319,7 @@ source file path is not a valid name: %s
   '97nc8yti': 'noml: expected object, got %T'
   '985exavg': '`%s %s= %s` is deprecated and the enclosing function has no option result, so the failure cannot be propagated: rewrite it as `%s %s %s: { ok -> %s = it, -> }` (what the non-ok arm does is up to you), or make the result parameter `?T` and write `%s ?= %s %s %s`'
   '998pp6wy': 'win-wsa-startup: cannot coerce i1 to %s'
+  '99vq7t38': 'Build and run a Nolang project.'
   '9a5ye4ws': 'member %q has unsupported value type %T (annotate it with #{type = \'...\'})'
   '9buy5tfz': 'expected \']\' in nullable slice type, got %s'
   '9c615d3t': 'expected \',\' or \'>\' in generic args, got %s instead'
@@ -226,34 +327,51 @@ source file path is not a valid name: %s
   '9edsvha2': 'package %s not found in extracted archive'
   '9emnu2fu': 'extern str arg'
   '9ljl8qke': 'expected loop body after label #%s, got \'(\' without \'(cond) { }\''
+  '9novjn6s': '  no pack ./nogit                  pack a package directory'
   '9onc0638': 'readlink: cannot marshal path as C string'
   '9q9raufb': 'match arm in expression context must end with an expression'
   '9ru0tpwh': 'uname: utsname struct type not collected'
+  '9smrnsbd': '  no pack -o nogit.ast.zip         explicit output (CI friendly)'
   '9v43hxr2': '%d error(s), %d warning(s), %d hint(s)'
   '9yjr7gj6': 'expected field name in struct definition, got %s instead'
+  '9yqaweku': '  no fmt -w main.no           format file in-place'
   'a2hjr26f': 'str index recv slot'
   'a3duuqtg': 'expected parameter type, got %s instead'
   'a3yrogp1': 'string concatenation: use \'-\' instead of \'+\''
   'a5247dgy': 'LLVM C API: creating memory buffer for IR failed'
   'a7ee394w': 'win-find-first-file: needs a path argument'
   'a7wjyiq9': 'pipe: unsupported on windows'
+  'aazb9b1n': 'Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed'
   'aih7e3j0': 'cannot assign nil to non-option variable \'%s\''
   'al7nsvgl': 'vec.insert: needs receiver, index, element'
   'aljknpjz': 'builtin %s: unknown bit op'
   'am0g79ly': '%s: missing argument'
   'amiajbn5': 'net-icmp-open: no result slot'
+  'amyp0ig8': `
+Error resolving latest release: %v
+
+`
   'ap403a8m': 'net-recv: cannot take data pointer of arg 1'
   'appz8ry7': 'builtin %s: %v'
+  'aqrceaf2': '  no ast -annotations main.no       ... including #{...} annotations'
   'au6g7ji7': 'parser errors: %s'
   'axj3m1pb': 'unexpected \'as\' at start of expression'
   'axtpo500': 'win-find-first-file: cannot marshal path as C string'
   'ayjrpinp': 'noml: DecodeInto requires non-nil pointer, got %T'
   'aywuxg5w': 'builtin %s receiver %s: %s'
+  'b1narysr': 'binary'
   'b360mu4g': 'expected parameter name, got %s instead'
+  'b3ucznjm': `
+Latest release of %s/%s: %s
+
+`
   'b6fjj9ka': 'cannot assign nil to non-option variable \'%s\''
+  'b978wrdx': '  no run -target wasm32-wasi main.no'
   'b9cf2s8p': '\'x { ... }\' is deprecated, use \'x: { ... }\' instead'
+  'b9iqtopl': '  - if workspace.noml exists, format all its project dirs;'
   'bbv2nbtt': 'expected field type after %q, got %s instead'
   'beppq99h': 'builtin %s: no result slot'
+  'bikq8xen': 'Output format: file:line:col: [SEVERITY] source: message'
   'bjj14xsi': 'lencap slot'
   'bp7m5374': 'arr.zero: no receiver slot'
   'bsaaq6j7': 'utime: cannot marshal path as C string'
@@ -261,15 +379,22 @@ source file path is not a valid name: %s
   'bvxzv6u0': 'net-udp-recvfrom: no result slot'
   'c33l3vql': 'module file not found: %s or %s'
   'c48g377y': 'float range boundary not supported, use integers'
+  'c6eld4s3': `
+Removed dependency: %s
+
+`
+  'capaq6dh': 'another CDN with --esm-cdn (e.g. https://cdn.jsdelivr.net/npm).'
   'cb4biu8s': 'NOLANG_MIR=%s: the legacy codegen backend was removed and MIR is the only backend; unset NOLANG_MIR (or use NOLANG_MIR=1 for the lowering dump)'
   'cccby88i': 'main.no not found in package %q (%s)'
   'ceuorcf6': 'sysctl: needs a name'
+  'cfmyuhe8': 'also dump the #{...} annotation entries attached to each node'
   'cfoww4c7': 'expected identifier in export path, got %s'
   'cfw15ncb': 'could not parse %q as integer'
   'cggefx7i': 'reading tar entry: %w'
   'cgy953iu': 'vec.push: needs receiver and element'
   'ch6tlrpx': 'rotate: no dst slot'
   'chbx2waz': 'the empty `->` catch-all arm may be taken (the compiler cannot prove \'%s\' is always ok). Decide what should happen on failure, e.g. `-> log(\'...\')` / `-> print(\'...\')`; leaving it empty silently yields the default zero value.'
+  'ci3l2aku': 'Open in browser (requires --js)'
   'cjih2jtt': 'expected \'=\' in function type alias, got %s'
   'ckaj3355': 'unknown function \'%s.%s\': module \'%s\' has no top-level function \'%s\''
   'cldvfmqx': 'waitpid: needs pid, options'
@@ -281,41 +406,82 @@ source file path is not a valid name: %s
   'cuhyyetq': 'expected comma or right bracket in slice literal, got %s instead'
   'cvl8rf8s': 'expected type after \'|\''
   'cw348wnl': 'eq-raw: cannot take data pointer of arg 1'
+  'cw8xkrj9': `
+Error writing main file: %v
+
+`
   'czinamrs': 'process-exec: unsupported on windows'
   'd1xzecbk': 'builtin get-arch: no result slot'
+  'd4faltsr': 'default'
   'd8en6a9j': 'MIR IR failed LLVM verification: %v: %s'
   'ddljrny8': 'expected field name in struct literal, got %s instead'
   'ddutfwr8': 'Error in %s: %w'
   'ddvc98n2': 'array/slice index `arr[i]` returns option<elem> on an out-of-range access by default. This option is never handled: propagate it with `a ?= arr[i]` (inside a function returning ?T you can also capture it in place with `a = arr[i]`), or annotate `#{index-out = DEF}` to take the default DEF when out of range, or declare the target as an option (e.g. `a ?elem = arr[i]`) to capture the error in place, or discard it explicitly with `_ = arr[i]`.'
+  'deuvryn0': 'JS runtime used by --js runs: node (default), bun, deno, ... (extra args allowed, e.g. "deno run --allow-read")'
   'dh249i0x': 'expected \':\' in map literal, got %s instead'
+  'dhae25dd': `
+Build successful: %s
+
+`
+  'djuq12bh': '  echo \'x=1\' | no fmt         format from stdin'
   'dk195kbk': 'package.noml not found in %s'
   'dkx493in': 'ambiguous ESM short name %q: specifiers %q and %q both resolve to call prefix %q'
   'dmm2rjox': 'builtin %s: sret slot not allocated'
   'dns4nguy': 'noml: value for key %q is not a string (got %T)'
   'dpcwdbng': 'format string error: %v'
   'dphrcd1a': 'net-accept: needs (listen-fd)'
+  'dqrzfvyt': 'Usage: no pub [-o <file>]'
+  'dre61zsd': 'Use JS backend (emit JavaScript, run with --js-runtime; default node)'
   'dt39zm0i': 'invalid install target %q: missing repository; want <tool>[:<version>]@<host>/<owner>/<repo>'
   'dtb82vgd': 'expected \')\' or \']\' to close range, got %s instead'
+  'dufa8bnf': `
+Error writing .gitignore: %v
+
+`
   'dumlt7oj': 'expected \'(\' after generic args, got %s instead'
+  'dupns7pb': `
+Error syncing AST dependency %s: %v
+
+`
   'duufpprw': 'all download attempts failed: %w'
   'dwkhnsmo': 'match arm has inconsistent return types: %s vs %s'
+  'e01glh6p': '  no run --js --browser main.no  build browser JS + HTML and open in default browser'
+  'e0r5thlw': 'write result to source file'
   'e1i8566c': 'read-file: result type %s is not a slice or string'
+  'e3xplf89': '  A package declaring compiler.emit = "js" in package.noml is validated with'
   'e7yptvje': 'process-exec: needs (prog, arg)'
+  'e9ab330i': 'Usage: no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'conflicting native wasm specifiers: %q (from %q) and %q (from %q)'
+  'easgxbye': 'emit machine-readable JSON diagnostics instead of text'
   'ebzb8tx2': 'dependency resolution failed: %w'
   'ectmoin3': 'no release found for %s/%s'
   'edps6fxx': 'one or more workspace targets failed to build'
+  'edsub23j': 'Usage: no update <pkg>'
   'efflaapc': 'expected \'case\' or \'default\', got %s'
+  'ehsahzu5': '  no vet src/std/            validate all .no files in src/std/'
   'eit5cjgr': 'extracting tar.gz archive: %w'
   'ejbt38ik': 'slice op dst slot'
+  'elep1kra': '  no build                  build current directory or workspace.noml projects'
   'em4a9wv2': 'the range upper bound starts with `.%s` on the implicit self, so writing it directly after the `..` operator yields `...%s` (ambiguous: `...` is also the return/terminate operator). Name the receiver explicitly and write `..self.%s` (e.g. `[a..self.%s)`).'
+  'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output'
+  'en9zq76f': 'default loop spelling: \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\'; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
+  'eqsalj72': '  no build -unsafe main.no  build without bounds checks (max performance)'
+  'es55egn6': 'Format Nolang source files.'
+  'eu5v0rj9': '  2. an existing directory       -> run its main.no'
   'eubonf62': 'cannot assign %s value to %s variable \'%s\': a struct value must be constructed explicitly (e.g. `%s { … }` or its constructor); an integer is promoted implicitly only into a struct that has one lossless constructor (such as bigint)'
   'ew5qg77j': 'expected identifier in use path, got %s'
+  'ex8l4y2k': 'Updating dependencies...'
+  'exeja3ad': 'via %s'
   'f091hn1f': 'net-send: needs (fd, data, n)'
   'f0p0dfha': 'val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment'
   'f10x20nf': 'call to option-returning function \'%s\' with a bare arithmetic argument requires explicit unwrap: use \'x ?= %s(...)\' to unwrap the argument first, or unwrap the result (e.g. \'y ?= %s(...)\')'
   'f3j66rlp': 'format spec \'%c\' requires integer type, got \'%s\' (spec: %q)'
+  'f5gbhit6': '  no test --wasm-direct       run tests via Direct WASM backend with wasmtime'
   'f5ikdmuc': 'expected field name in struct literal, got %s instead'
+  'fcs3wo7u': `
+Package created: %s
+
+`
   'fd9jkb5k': 'member %q is an empty array: annotate it with #{type = \'[]<elem>\'}'
   'fdwcn8i8': 'match arm never returns a value'
   'fe0a5wt2': 'cannot compare option value \'%s\' (%s) with \'%s\' (%s): unwrap it first (`v ?= expr`) or match on ok/nil/err'
@@ -323,16 +489,21 @@ source file path is not a valid name: %s
   'fk1sb6ss': 'syslog: unsupported on windows'
   'flfh2ueu': 'invalid install target %q: repository must be <host>/<owner>/<repo> or <owner>/<repo>'
   'fs4qotyl': 'extracting zip archive: %w'
+  'fu1ow141': 'No test files found in '
   'fvk7yu8c': 'expected integer value after \'=\', got %s'
   'fw8rehzu': 'the empty `->` catch-all arm is unreachable: the compiler can prove \'%s\' is always ok (literal arithmetic cannot overflow or divide by zero, or the index is provably in bounds). The arm still has to stay for match exhaustiveness, and keeping it means a later change in semantics needs no syntax edit.'
+  'fxc0tilj': 'Package the current package\'s AST as gob + zip.'
   'fxdzclp6': 'cannot assign field \'%s\' on struct type \'%s\': instantiate first (e.g. `%s0 = %s {}`)'
   'fxhkwtho': 'read-file: needs path'
+  'g2ex1gxt': 'Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)'
   'g391pqjl': 'creating request: %w'
   'g3dsu5vf': 'format spec \'%c\' requires float type, got \'%s\' (spec: %q)'
   'g6aool5a': 'net-recv: no result slot'
+  'g6phjqek': '  no test tests/my-test.no'
   'g9elmost': 'fetching %s (status %d)'
   'gaewcwmo': 'expected comma or right parenthesis, got %s instead'
   'gazt89uv': 'expected \']\' or \')\' in range expression, got %s instead'
+  'gccy7ull': '  - otherwise, default to the current directory.'
   'gczvzsdh': 'module resolution: %w'
   'gd7jpkzw': '\'while condition { }\' is deprecated, use \'for condition { }\' instead'
   'gdrnjrtu': 'net-udp-open: no result slot'
@@ -345,6 +516,7 @@ source file path is not a valid name: %s
   'gir1e4fn': 'net-udp-sendto: cannot marshal host as C string'
   'giw7e5rb': 'expected \'}\' to close annotation, got %s'
   'giy30qq2': 'OpRun: unknown async callee %q'
+  'gjsrgyn8': '-annotations to include it.'
   'gl4bahpp': `
 clang not detected; check that the LLVM toolchain is fully installed
   macOS: brew install llvm
@@ -352,10 +524,21 @@ clang not detected; check that the LLVM toolchain is fully installed
   Windows: winget install LLVM.LLVM
 `
   'gljrb7g7': 'empty ESM package specifier in import %q'
+  'glytw3eo': 'Next: create a package with `no new <name>`'
+  'gmlatduc': `
+  bytes:  %d
+  nodes:  %d
+
+`
   'gno8qk1j': '\'~match/case/default\' is deprecated, use \'x: { pattern-> ... }\' instead'
   'gr0jwheb': '\'for { }\' is deprecated, use \'{ } (true)\' infinite loop instead'
+  'gszz9tke': '  - main.no (main entry file)'
   'gubuo5cb': 'option bound but never consumed: it is neither propagated (`?=`) nor unwrapped (`x: { ... }` / `_ = x`), so the error is silently discarded. %s'
   'gx02j37c': 'write-file: data arg has no slot (func %s, arg type %s)'
+  'gx8l0tdu': `
+Error changing directory: %v
+
+`
   'gyuohhum': 'index %d out of bounds for string \'%s\' of size %d'
   'h0rvt6eu': 'expected parameter name, got %s instead'
   'h1g1ipdw': 'ESM (npm) imports are not supported by the Direct WASM backend; use the JS backend (no build --js)'
@@ -364,34 +547,57 @@ clang not detected; check that the LLVM toolchain is fully installed
   'h4vlfsi9': 'str-truncate: needs receiver and n'
   'h6du6sag': 'expected \'*\' after block in counted loop, got %s'
   'h6z5s5my': 'expected left brace, got %s instead'
+  'h8dvlp9i': `
+Registered '%s' in workspace.noml
+
+`
   'h9cfkf84': 'line %d: variable \'%s\' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)'
   'haahhq7o': 'function \'%s\' expects at least %d argument(s), got %d'
   'hc3a6zzw': 'unknown fix class %q (supported: overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': 'empty match arm cannot determine a value (matched expression type is unknown)'
   'hgedm96o': 'auto-loading module %s: %w'
+  'hoal6bo9': 'Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible).'
   'hr40fh5v': 'package.noml not found. Run \'no new <name>\' to create a package, or cd into a package directory'
   'hr4y7owq': 'getgrouplist: %v'
+  'htdgzowm': '  no fmt                      format current dir (list files needing formatting)'
+  'hun7qbmc': '  no ast src/std/vec.no             print AST for vec.no'
   'hvk8qwyj': 'borrow dst slot'
+  'hvuu1dxx': '  no build --js -o app.js main.no                    JS backend with explicit output'
   'hxy8tpyp': 'slice op recv type'
   'hzkv5tvl': 'expected \'}\' to close enum value annotation, got %s instead'
   'hzv4zwx4': 'LLVM C API: creating target machine for triple %q failed'
   'i0q22lpt': 'expected comma or right parenthesis, got %s instead'
+  'i31bp0tk': 'devDependencies) and installed with npm install before `no run --js`.'
   'i3k422u3': 'result parameter \'%s\' (%s) is never assigned in function body — will be zero-filled on return'
+  'i56j6g3g': `
+Error creating directory: %v
+
+`
   'i59zddv3': 'expected comma or \')\''
   'i8i2c8jx': 'expected \'}\' to close annotation, got %s instead'
   'i933a48e': 'parameter %d of \'%s.%s\': expected \'%s\', got \'%s\''
+  'i9bcpk5g': '  # npm/lodash               the whole module object (use lodash.get(...))'
   'ibaimz2h': 'cycle detection: %w'
+  'ibiol93t': 'Error: package.noml not found. Run \'no new <name>\' to create a package, or cd into a package directory'
+  'ibl465o8': '  no test -target wasm32-wasi'
   'ifmrg001': 'interface \'%s\': merged method \'%s\' has conflicting signatures (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: needs receiver'
   'iky4xsx4': 'method \'%s.%s\' has %d result(s), interface expects %d'
   'ippfc6p4': 'utime: needs path, atime, mtime'
+  'iqszywlc': 'For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.'
   'iqtr8mht': 'option-wrap dst'
   'irjygycv': 'val() constructor is deprecated; use ok(x) for explicit construction or `name = expr` for implicit assignment'
   'irnz2m56': 'expected \'{\' to open loop body, got %s'
+  'is8zuoph': '  - src/ (source directory)'
   'itcnc2oz': 'no slot for indirect callee in %s'
+  'iubb5mnf': '  no test -target x86_64-linux-gnu'
   'iykbgab6': 'vec.sort: needs receiver'
   'iyn3rgtm': '\'self\' (.) can only be used inside struct methods; if you meant the match value, use \'it\''
   'iyvzh49e': 'indexing a str/txt with s[i] inside a loop is O(n^2): each index has to walk the UTF-8 encoding from the start of the string to reach codepoint i, and the loop repeats that work. Options: (1) to iterate characters, use `c <- s` directly (it iterates by codepoint, O(n)); (2) if you only need bytes, use `s.byte(i)`; (3) if the string is provably pure ASCII (annotate the declaration with `#{ascii}`, or assign an ASCII literal), `s[i]` is O(1).'
+  'izc6aklk': 'Only lexing/parsing is needed — no LLVM toolchain — so this runs'
+  'iztes0wp': '  3. a package name in workspace  -> run that package\'s main.no'
+  'izzihnrp': 'upgrade lint warnings/hints to errors'
+  'j00dw84u': '  - tests/ (test directory)'
   'j1onng8y': 'expected comma or right parenthesis, got %s instead'
   'j2lwz7pe': 'LLVM C API: %s failed'
   'j2n5poza': 'native bind=ffi (import %q) requires at least one #{c} extern declaration to bind'
@@ -403,50 +609,76 @@ clang not detected; check that the LLVM toolchain is fully installed
   'j7dzteja': 'function \'%s\' expects at least %d argument(s), got %d'
   'j8e31b1f': 'builtin %s: receiver has no slot'
   'j9ir46ed': 'downloaded asset is empty: %s'
+  'jc3psu5g': '  no fmt -w                   format all .no files in current dir in-place'
   'jeq6vteu': 'native bind=wasm requires a wasm= specifier (import %q), e.g. #{bind = wasm, wasm = \'@scope/pkg\'}'
   'jko9phaw': 'LLVM assembly failed: %w'
   'jl86npdd': 'resolving latest release: %w'
+  'jlv0jw10': 'resolved:'
   'jmamxa8i': 'lencap dst slot'
   'jppwnc4n': 'expected \'{\' after struct name, got %s'
   'jpy06p6d': 'no build targets found in workspace'
+  'juu3smx0': 'The #{...} annotation system lives in a semantic side-table rather'
   'jwegl6bv': 'multi-assignment target `%s` is written through an index without unwrapping: an index read returns an option (nil when out of range), so writing straight through it turns an out-of-range access into an unchecked out-of-range write. Split that target out into a place-match (`it` in the ok arm is the element position, readable and writable), or propagate with `?=` in a function that returns an option.'
+  'jx1w7b52': '  no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place'
   'k0fwb241': 'export alias \'%s\' is the same as the function name; the alias can be omitted'
   'k1h5kums': 'reading %s: %w'
   'k2m9xq4t': 'cannot apply arithmetic between `char` and `%s` (%s): a char is a single code point (i32) and only combines with integers, chars or strings. If you meant string concatenation, use a string literal — `\'x\' - %s` renders the operand through to-str'
+  'k2wgp5l6': 'Usage: no run [<package|dir|file>]'
+  'k3envsrc': 'env'
+  'k3g4ofs4': 'output colored diff instead of formatted result'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: no result slot'
   'k8je3usi': '%s already exists and is not an ES module (no "type": "module"); emit the output as .mjs instead (no build --js -o out.mjs)'
   'k9179drd': '\'%s\' is a function and must be called; did you mean %s(...)?'
   'k9270vd6': 'getfield field'
   'ke8i906b': 'MIR->LLVM panicked (recovered, falling back to legacy): %v'
+  'kfxfk3n1': 'When no file/dir is given and stdin is a terminal:'
+  'kg4qzfdu': '  no add nogit@github.com/lizongying/notools        latest release'
+  'ki6qzzsx': '  --json           emit structured JSON diagnostics (CI/tooling friendly)'
   'kio8h1tx': 'js.Generator.Generate: program is nil'
   'kjxtslvr': 'waitpid-nohang: needs pid'
+  'klplh4cw': '  no fmt src/                 list .no files in src/ needing formatting'
   'kmm43ypb': 'resolving %s from lock: %w'
   'krvc469y': 'vec.clear: needs receiver'
+  'kvp8bxoc': 'Lock file and integrity sums saved.'
   'kxikdkzu': 'net-accept: no result slot'
   'kzomgjsg': 'empty ~match statement'
   'kzsepkro': 'loading module %s: %w'
   'l0ifbo16': 'zip archive exceeds extraction size limit (%d bytes)'
   'l1ypawem': 'str-from-vec: bad types %s -> %s'
+  'l332fwh9': `
+Workspace initialized in %s
+
+`
   'l48rpvr9': 'expected \')\' to close loop condition, got %s'
   'l62tgcu4': 'import %q: %w'
+  'l6euu21x': 'per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run'
   'l90oz2gr': 'sysctl: cannot marshal name as C string'
   'l9eytl0v': 'expected \'(\''
   'l9lio3b1': 'net-dial: cannot marshal host as C string'
   'ldfvpa0x': '; an option cannot be unwrapped implicitly (this is only a copy, so the failure branch is discarded). %s If you meant wraparound or clamping, `#{overflow = wrap` only changes the value taken on overflow; the result is still `?%s` and still has to be unwrapped.'
+  'lehy8lls': '  no fmt main.no              format and print to stdout'
+  'let8mtmo': 'Usage: no build [flags] <file|directory>'
   'ljfz84ro': 'expected \'(\' to start function type, got %s instead'
   'lkiy53ow': 'hex literal \'%s\' uses uppercase; format will convert to lowercase (e.g. 0xff)'
   'lqcz5x45': 'reading archive data from %s: %w'
   'lr3c6kg5': 'export references undefined symbol %q (not found in %s)'
   'lrj1csgo': 'read-dir: needs dirp'
   'lrxsr5pt': 'workspace.noml not found in %s'
+  'lvi02faz': `
+Serving ESM output at %s (Ctrl+C to stop)
+
+`
   'lx7lbupc': 'indexstore slot'
+  'lzgs7cds': '  no fmt -fix=redundant main.no   preview redundant annotation removal'
+  'm0nvgkbt': 'The argument is resolved in this order:'
+  'm13ljyfp': 'reuse already-parsed std Program AST for \'no vet src/std\' (experimental, skips re-parsing each std module)'
   'm17ikt3w': 'builtin %s: cannot store %s into %s'
   'm1yd7r5x': 'expected next token to be %s, got %s instead'
   'm2fh7rfg': `
 range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` (no index means no bounds check and no option to unwrap). e.g. rewrite
      %s <- [0..n): {
-         %s: {
+         %s[%s]: {
              ok -> it = 0
              -> _
          }
@@ -460,50 +692,80 @@ range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you
      }
 `
   'm4mu624f': 'marshaling lock file: %w'
+  'm4re9802': `
+Error writing utils.no: %v
+
+`
   'm5bv291o': 'import %s: %q is already declared in the main program'
   'm5fpbrwd': 'vec.reverse: needs receiver'
   'm5klw1rq': 'method \'%s.%s\' has %d parameter(s), interface expects %d'
   'm7egvbv0': 'the integer expression is an option<int> by default and is discarded as an expression statement (unhandled). Add a `#{overflow = wrap}` annotation to get a plain int back, or propagate with `?=`, or discard explicitly with `_ = expr`.'
   'm8blb8q2': 'noml: line %d col %d: %s'
+  'mbnaky32': 'Registry authentication token (unused: upload not implemented)'
   'meket0n4': 'vec.clear: no receiver slot'
   'mf29f4fh': 'clone slot'
   'mgnh35fz': 'builtin %s: cannot store %s result into %s slot'
+  'mh9jwcfu': '  no fmt -loop-style=suffix f.no  format loops as \'{ } (cond)\' / \'{ } * N\''
   'mhfvvp1u': 'dependency depth limit exceeded (%d): %s@%s'
   'mi13i3vc': 'expected right parenthesis, got %s instead'
   'mimqybn2': 'vec.pop: needs receiver'
   'mkpo3f8h': 'utf8-at dst slot'
   'mlm7xpcj': '`%s %s= %s` is deprecated; the enclosing function has an option result, so `no fmt` rewrites it to `%s ?= %s %s %s` on save (the right-hand side of a compound assignment is now `?T` and goes through `?=` to unwrap or propagate it)'
+  'mlyz11mg': 'Use --js-runtime <cmd> to choose the JS runtime for `no run --js` (node, bun, deno, ...).'
+  'mmcrtoio': 'Usage: no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': 'expected \':\' after struct field name, got %s instead'
+  'mt377i94': '  no build --wasm-direct -target wasm32-wasi main.no  emit WASM without LLVM toolchain'
   'mv6ox1tw': 'uname: no result slot'
   'mw127e39': 'expected \']\' in array type, got %s'
+  'mwhgbhbp': '  package imports (#{bind = ffi|wasm}) resolve instead of failing — LLVM cannot'
   'mz7tmynt': 'builtin %s: no receiver'
   'mzwb28br': 'undefined variable \'%s\' in format string'
   'mzxtskah': 'eq-raw: needs (receiver, b, n)'
   'n00utq2q': 'process-exec: cannot marshal arg as C string'
+  'n08bzk5j': 'The result is what `no add <tool>@<host>/<owner>/<repo>` downloads:'
   'n0hl9vde': 'builtin %s arg %d: %s'
   'n44lxvvk': 'member %q is an empty object: annotate it with #{type = \'<struct>\'}'
+  'n48cusda': `
+Open manually: %s
+
+`
   'n51paa43': 'std AST: parse %s failed: %v'
   'n5k784wb': 'native bind=ffi requires a link library (compiler.link-libs or lib= on import %q)'
   'n5ksyzmi': 'expected \')\' to close loop condition, got %s'
+  'ne9gyl5c': '  no run --js main.no            build via JS backend then run with node'
   'ne9kyew7': 'expected \'=\' after FFI name, got %s instead'
+  'nejhwtgd': 'No dependencies found.'
   'ngj8b3uj': 'utime: unsupported on windows'
   'nh8jhhz7': 'std AST: %w'
   'nik0cll9': '\'for cond { }\' is deprecated, use \'{ } (cond)\' loop instead'
   'njsutn36': 'expected method name in interface, got %s'
   'nkozcyi4': 'net-recv: needs (fd, buf, n)'
   'nkr30oz0': 'expected \'..\' in range expression, got %s instead'
+  'nmke5ijp': '  no fmt -w src/              format all .no files in src/ in-place'
   'nmxs8sop': 'syslog: %v'
+  'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': 'cannot infer type for \'%s\': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)'
   'nwtpvei9': 'embed: fs.embed requires a directory, got file: %s (resolved: %s)'
+  'nx1476j3': '  no pack nogit.no                 pack a single source file'
   'nz3ol1c4': 'ESM module %q is not declared in package.noml dependencies; add dependencies: [\'%s:^latest\'] (or dev-dependencies) and run npm install'
+  'nzkc7scw': '  - workspace.noml (workspace definition)'
   'o0p7ixno': 'expected \'for\', got %s'
   'o1v8wvx8': 'expected annotation value, got %s instead'
+  'o2lua0kh': `
+  email:      %s
+
+`
   'o3e4tfwx': 'builtin %s: string result stored into %s slot'
   'o41t34tn': 'current directory is a workspace root with no main.no; run a package with: no run <package>'
   'o4wq2axo': 'fetching release %s: %w'
-  'o630714m': '%s requires a value (e.g. %s=zh-CN)'
+  'o630714m': '%s requires a value (e.g. %s=zh-cn)'
   'o7503w1f': '\'i <- range { }\' is deprecated, use \'i <- range: { }\' instead'
   'o9bv21zu': 'parsing %s: %w'
+  'oaei2lx7': 'than in the node fields, so it is omitted by default; pass'
+  'oaslpd20': `
+Dependency %q not found.
+
+`
   'obm5gtx3': 'expected loop body after label #%s, got { without \'* N\' or \'(cond)\' or \'(true)\''
   'obx5vjjv': 'expected parameter name to be identifier'
   'ocsanpe6': 'invalid install target %q: tool name must not contain a path separator'
@@ -517,6 +779,7 @@ Zig compiler not detected
   Windows: winget install zig.zig
 `
   'ol0l3ova': 'type \'%s\' not found; did you mean \'%s.%s\'?'
+  'ol21t36r': '  no run --js --js-runtime bun main.no     same, with bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'the divisor of an integer division or modulo is the literal constant 0, which is undefined behaviour in LLVM (sdiv/srem by zero) and produces unpredictable results. Add a runtime zero check, or have the function return the failure as an option.'
   'oraub2m9': '`%s %s= %s` is not supported: an index read returns an option (nil when out of range), so a compound assignment would evaluate the index twice and discard the failure. Rewrite it as (the `it` of the ok arm is the element slot, readable and writable):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   or `%s ?= %s %s %s` (propagates the failure; requires the enclosing function to have an option result parameter)'
@@ -525,6 +788,8 @@ Zig compiler not detected
   'osrb7a78': 'move slot'
   'oswu0as1': 'expected colon in conditional expression, got %s instead'
   'oxgtqeo0': 'write-file: no result slot'
+  'oyfkw3qi': '(not set)'
+  'p08xevlx': '  no run main.no               build and run main.no'
   'p1ujpxwi': 'vec.remove: no receiver slot'
   'p215kqvl': 'cancelled: cannot store i1 into %s'
   'p2epl19k': 'cannot assign nil to non-option variable \'%s\''
@@ -532,10 +797,14 @@ Zig compiler not detected
   'p56zjfhi': 'cannot infer type for \'%s\': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)'
   'p763k84p': 'creating %s: %w'
   'p9jv1dcz': 'workspace.noml is empty'
-  'paiorrdo': '--lang requires a value (e.g. --lang=zh-CN)'
+  'pa3bgtjn': 'CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)'
+  'paiorrdo': '--lang requires a value (e.g. --lang=zh-cn)'
+  'pev2j4v9': '  no vet main.no             validate main.no'
   'pgapt83d': 'win-create-process: cannot marshal dir as C string'
   'pgh2eoft': 'net-udp-recvfrom: needs (fd, buf, n)'
+  'pgwm8msy': '  # npm/lodash.default as d  the package default export'
   'phld6glo': 'expected \'}\' to close annotation, got %s instead'
+  'phqmamrn': '  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip'
   'pibk34ed': 'marshaling sum file: %w'
   'plsdygti': 'type match arm pattern %q is not a member of union %q'
   'pne07fog': 'member %q[%d]: array mixes objects and scalars; annotate it with #{type = \'[]<elem>\'}'
@@ -544,36 +813,53 @@ Zig compiler not detected
   'pxxxqtg6': 'expected \'{\''
   'pyo62z10': 'get-priority: needs which, who'
   'pzdpmlto': 'net-udp-sendto: no result slot'
+  'q06zlcbx': '  no pub -o nogit.ast.zip      write an explicit path'
   'q20a8lbi': 'writing JS output: %w'
   'q2qgyoqo': 'win-wait-process: needs (proc-handle, timeout-ms)'
   'q3v8kn2m': 'expected variable name after \',\', got %s'
   'q4nilcmp': 'cannot compare \'%s\' (%s) with nil: only an option (`?T`) can be tested against nil; declare it as `?%s` or compare against a concrete value'
+  'q76kxtef': '  no fmt -d                   show diff for all .no files in current dir'
   'q9m9no8c': 'expected \'}\' to close field annotation, got %s instead'
   'q9p5bmd0': 'no C linker (clang/cc/gcc) found'
+  'qa8z0cwo': `
+Warning: parsing workspace.noml: %v
+
+`
   'qadj6ck6': 'eq-raw: cannot take data pointer of receiver'
+  'qagmala2': `
+Error writing lib.no: %v
+
+`
   'qayttv4q': 'expected comma or right parenthesis, got %s instead'
   'qew8n04j': 'vec.pop: no receiver slot'
   'qh0mj3sf': 'expected parameter type, got %s instead'
+  'qh4i3y4v': '  - package.noml (package configuration)'
   'qhkl8p9i': 'noml: field %s: expected string, got %T'
   'qkce8wnr': 'type match arm pattern %q is not a member of union %q'
+  'qkj01y3s': 'std modules:'
   'qlpiqzag': 'win-find-next-file: needs a bufptr argument'
   'qmmpavsj': 'expected left brace in else, got %s instead'
   'qog571qy': 'builtin %s: keep-alive buffer not materialized'
+  'qogvayg4': 'Usage: no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': 'cannot modify read-only field \'len\' of string \'%s\''
   'qoykdxqy': 'noml: field %s: expected array, got %T'
   'qxkk7mt2': 'win-close-handle: needs a handle argument'
   'qzwxurol': 'expected \',\' or \']\' in array, got %s instead'
   'r001bqqr': 'builtin %s: cannot take data pointer of arg %d'
   'r0360g4t': 'interface \'%s\': parent interfaces written as a leading list; write one name per line inside the body instead'
+  'r1wo1izg': '  # npm/lodash.get as get    one named/exported binding'
   'r28q9t6z': 'expected loop body after label #%s, got %s'
   'r315uabz': 'net-send: cannot take data pointer of arg 1'
   'r4mh5mrg': 'waitpid-nohang: unsupported on windows'
+  'r5fkc5h1': '  no build --js --browser main.no                    emit browser JS + HTML wrapper'
   'r60tokvf': 'expected \'=\' after multi-variable list'
   'r6gf3a7m': 'expected variant name in tagged enum, got %s instead'
   'r6p4a75i': 'downloading from %s (status %d)'
   'r80hkipt': 'saturating conversion: non-integer destination %q'
+  'r96s24ec': '  --reuse-std-ast  reuse already-parsed std Program AST (experimental)'
   'raqvyltn': 'private std symbol \'%s\' is owned by module %s and may only be used inside it, not from %s; use the public API instead'
   'rclf258h': 'native bind=ffi is unavailable in the browser (import %q); use bind=wasm or omit bind'
+  'rdl2c2x2': '  no build -target x86_64-linux-gnu main.no'
   'rfzrw1nh': 'function returns %d value(s) but %d target(s) provided'
   'rhajr9l9': 'deprecated: str.len property is removed; use s.len-bytes() for byte length or s.len() for codepoint count'
   'rkd2pw8p': 'in-process LLVM C API compile failed (disable with %s=0): %w'
@@ -582,6 +868,7 @@ Zig compiler not detected
   'rolk5ods': 'expected \'}\' to close enum value annotation, got %s instead'
   'roqeis8q': 'expected left brace, got %s instead'
   'rp7sdc6j': 'win-get-exit-code: needs a proc-handle argument'
+  'rpazw1l7': 'Add a dependency (prebuilt AST package: <tool>.ast.zip).'
   'rsz5rmmt': 'fetching %s: %w'
   'rtopy0mf': 'vec.insert: no receiver slot'
   'rusw4b0k': 'expected method name, got %s'
@@ -597,6 +884,11 @@ Zig compiler not detected
   'sehpprvy': 'builtin %s: bad value type %s'
   'seta2gk3': 'builtin %s: no receiver slot'
   'sgk4yra9': 'no such file, directory, or package: %s'
+  'sh7h3f59': `
+Error writing workspace file: %v
+
+`
+  'shw0oc0z': 'Third-party ESM imports (JS backend only): pull in npm packages with'
   'sjuueqqo': 'line %d: variable \'%s\' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)'
   'sjvzidyd': 'resolving dependency %s of %s@%s: %w'
   'sm0xomza': 'str.to-bool: no result slot'
@@ -604,19 +896,33 @@ Zig compiler not detected
   'so08hhvh': 'embed: directory is empty: %s (resolved: %s)'
   'soo3tmk2': 'borrowed %s param move unsupported in MIR backend'
   'soq2h6t2': 'expected parameter name in extern declaration, got %s instead'
+  'squ5w5co': 'Use --browser with --js to generate browser-targeted JS and an HTML wrapper.'
+  'srpc0cgx': 'Use --js --browser to emit browser JS + HTML and open in the default browser.'
   'ssddj3qk': 'checksum mismatch for %s: want %s, got %s (refusing to install)'
   'sstb7ij2': 'expected \'}\' to close annotation, got %s instead'
   'stbjgjqz': 'builtin %s fixed-array %s'
+  'su2q9at6': 'Usage: no test [<file>]'
+  'suhqncsk': '  1. an existing .no file        -> run that file'
+  'sv3fw1hp': `
+Packed AST: %s
+
+`
   'sz3i7626': 'win-read-pipe: needs (handle, max-bytes)'
   't0f6p9jl': 'expected \'(\' after block in loop, got %s'
   't22pcf4p': 'embed: file not found: %s (resolved: %s)'
   't4jhbz5z': 'expected \'=\' after function name, got %s instead'
+  't5l89pst': `
+Dependency %s not found.
+
+`
   't5qq2leo': 'lencap kind: len/cap unsupported on %s (%s) in func %d'
   't5rup04t': 'move src slot v%d -> v%d'
   'tb2zxq0f': '\'%s.%s []T\' is not allowed: the field type belongs in the type definition of \'%s\'. To store into the field write \'%s.%s = ...\''
+  'tbfsq7ph': '  no pub                       write dist/<name>.ast.zip'
   'tcpoxtfd': 'type annotation \'%s\' can be omitted (inferred from value)'
   'td32do0k': 'retain: needs a value'
   'td8qfehr': 'process-exec: cannot marshal prog as C string'
+  'tdkcr7i9': 'source:'
   'tdouxx03': 'read-file: no result slot'
   'te0v5lgz': 'expected \']\' or \')\' to close range, got %s instead'
   'tf9xqjf1': `
@@ -631,11 +937,14 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'tfwxqucs': '`return` cannot be followed by a value; Nolang returns results through named result parameters (out-params), so use a bare `return` to exit early and assign the result parameter inside the function body'
   'tgutu5g0': 'use \'# %s.%s %s\' instead of \'# %s.%s as %s\''
   'tgz86gvc': 'reading built binary: %w'
+  'tho8xc47': 'Files created:'
   'tjwokiw9': 'expected comma or right bracket in array literal, got %s instead'
   'tlwmf1le': 'explicit type cast `expr %s` is not allowed in Nolang; use the declaration form `name %s = expr` for a safe widening/same-width conversion instead'
   'tmiibvan': 'builtin %s: no dst slot'
   'tmqnqq9x': 'dependency not found: %q is not declared in package.noml dependencies'
+  'tnj4py6b': 'No dependencies to sync.'
   'tosnl9r7': 'expected \'*\' between count and loop body, got %s'
+  'trahnyuh': '  no vet --strict src/std/   fail if any lint warning/hint is found'
   'trdj5rp8': 'check error: %v'
   'ts6fes3j': 'import %q does not match AST dependency %s (use %q or %q)'
   'tsg5cbwu': 'invalid character %q in ESM package specifier %q'
@@ -644,42 +953,63 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'ttlxcrgt': 'expected \'[\' or \'(\' or string in range expression, got %s instead'
   'u0g1w0d7': 'js compatibility module not found: %s'
   'u3g4qexx': 'builtin chars-new: bad arg type %s'
+  'u3if6wak': '  no fmt -fix=match -w src/       add missing match arms in src/ in-place'
   'u4oybn9r': '%s already installed (%s); use -u to reinstall or update'
   'u5qmp19f': 'option match must handle all branches: err, nil, ok (missing: %s)'
   'ua5h1rpc': '\'as\' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s'
   'uea62he5': 'function \'%s\' expects at most %d input argument(s), got %d — output parameters should be bound via assignment, e.g. result = %s(...)'
+  'uf368nh9': 'Output zip path (default: dist/<tool>.ast.zip)'
+  'ufmw3i5q': '  no pack                          pack current package -> dist/<name>.ast.zip'
+  'ufqsnwdw': 'Dependencies:'
   'ugoucnr9': 'dependency %s ships a single prebuilt module %q; cannot import subpath %q'
   'ujfsckuo': 'expected parameter type, got %s instead'
   'umcsmsz6': '%s: parser returned nil program'
   'uqby2pvs': 'index %d out of bounds for %s \'%s\' of size %d'
   'uruyzlb4': 'illegal file path: %s'
+  'urxylcac': '   parsing at the first positional argument).'
+  'uvvox4pk': 'No dependencies to update.'
   'uvws00l4': 'duplicate function definition \'%s\' (first defined at line %d)'
   'uwaizocg': 'vec.reverse: no receiver slot'
+  'uzugz5vn': 'Directories are processed recursively automatically.'
   'uzzd8eqi': 'get-line: no result'
+  'v0avn8e4': 'Validation successful'
   'v0thbcmv': 'expected parameter name, got %s instead'
   'v1a6rxna': 'expected comma or right parenthesis, got %s instead'
   'v1j0odm2': 'writing JS output %s: %w'
   'v3n8qk2d': 'version:'
+  'v57cjup3': `
+Error writing config file: %v
+
+`
   'v7zs1nru': 'format spec \'s\' requires str/bool/integer type, got \'%s\' (spec: %q)'
+  'v8tulbl4': 'project:'
   'v9hnqn6w': 'import %q: ESM (npm) imports are only supported by the JS backend; rebuild with `no build --js` or `no run --js` (specifier %q cannot be linked into a native binary)'
   'v9milo3k': 'getgrouplist: unsupported on windows'
+  'vas3pyce': 'Package registry URL (unused: upload not implemented)'
+  've2dzkxe': '  no test -timeout 90 test/std   run a whole dir sequentially; each file capped at 90s'
   'vekjerf5': 'std module not found in embedded StdFS: %s'
+  'velk9bjg': 'Note: registry upload is not implemented yet; upload this zip to a GitHub release.'
   'venvcq6s': 'expected expression after operator \'%s\''
   'veqmroa3': 'bool.to-str: missing receiver'
   'vf6bc21u': 'WASM build error: %w'
+  'vffhhi55': 'Output file path'
   'vgfb39et': 'std AST: read %s: %w'
   'vgljm585': 'builtin %s: ?str result expected %%option slot, got %s'
   'vgxfhc6x': 'sysctl: unsupported on windows'
   'vh7osqp5': 'no callee in %s'
+  'vhmg22wa': 'Syncing dependencies...'
   'vhpiqfim': 'float range boundary not supported, use integers'
   'vhpl1qzt': 'slice op arity'
   'viuznngf': 'net-udp-recvfrom: cannot take data pointer of arg 1'
+  'vjj66evx': 'With no argument, runs main.no in the current directory.'
   'vjkycl6v': 'utf8-at recv slot'
+  'vkq3r0r2': '`# npm/lodash.get as get` or `# npm/lodash.default as d`. Declare them in'
   'vm9uj5g4': 'builtin %s: raw str stored into %s slot'
   'vmy4qtcr': 'downloading from %s: %w'
   'vo2eyrl7': 'creating gzip reader: %w'
   'vpi1fke2': 'win-find-close: needs a bufptr argument'
   'vr0eh0yz': 'embed: []byte requires a file, got directory: %s (resolved: %s). Use fs.embed type for directory embedding'
+  'vuvokhaa': 'package.noml dependencies and npm install first; `no run --js` fails with'
   'w308jsag': `
 %s: validation failed:
 %s
@@ -687,12 +1017,16 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'w3k1bwpp': 'expected \',\' or \'>\' in generic parameters, got %s instead'
   'w6xtqb7k': 'net-listen: needs (host, port)'
   'w6zt4h9c': 'expected \'=\' after multi-variable list'
+  'w826wv42': '  no run foo                   run package \'foo\' (from workspace.noml)'
   'w9ajg8ow': 'eprint expects str/i64/byte/char/bool arg, got %s'
+  'wbsevkfk': '  no fmt -d main.no           show colored diff'
   'wcbo6a01': 'expected \'}\' to close variant annotation, got %s instead'
+  'wcoza64y': '  no build --option-inline-threshold=8 main.no   box every ?T payload bigger than 8 bytes'
   'wd8mx0q7': 'callee nil'
   'wdk3k728': 'output parameter \'%s\' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter'
   'wdpztov8': 'LLVM C API: empty IR'
   'wekxh2lc': 'interface \'%s\': unknown parent interface \'%s\''
+  'wfua2ax8': 'Pack a module\'s AST as gob + zip (<tool>.ast.zip).'
   'wg5j97zm': 'expected comma or right parenthesis, got %s instead'
   'wigbiu9z': 'exec-shell: needs a command'
   'wjju8z98': 'linking failed: %w'
@@ -703,23 +1037,36 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'wmq5sd19': 'removed LLVM intrinsic %s for builtin %s'
   'wnskovpc': 'expected integer count before \'*\' in counted loop, got %s'
   'wo778frg': 'bool.to-str: cannot coerce %%str-long to %s'
+  'wo8qw0ac': 'std source:'
   'wskr1nvn': 'could not parse %q as integer'
   'wtg6ai3v': 'builtin %s: %w'
+  'wttj7qs9': '  no run -cc zig main.no       build and run with Zig compiler'
+  'wu70c4w0': 'all projects in workspace.noml are built in parallel.'
   'ww5ngyyh': 'win-create-process: needs (cmdline, dir, stdin, stdout, stderr)'
   'x51zwxlr': 'expected identifier after #{%s} directive, got %s instead'
   'x57xvqny': 'unsupported value type %s in func %s'
   'x649sxw4': 'embed: failed to read directory %s: %w'
+  'x6snirjy': 'Usage: no ast [-annotations] <file>'
   'x6swm2kk': '\'%s\' should use only lowercase letters and hyphens'
   'x6tqaeqp': 'expected parameter name in interface method, got %s'
   'x8bk3eqw': 'getfield slot'
   'xczzji7g': 'expected left brace, got %s instead'
   'xe32iowe': 'term'
+  'xev7d0na': `
+  ast  %s %s
+
+`
   'xgq9y9sz': 'member %q has unsupported value type %T'
   'xgs17cqx': 'line %d, column %d: \'main\' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)'
   'xhy954hb': 'builtin %s: pair buffer not materialized'
+  'xj7auj8a': `
+Synced %d dependencies.
+
+`
   'xkgmbluz': 'relative path segments are not allowed in ESM package specifier %q'
   'xl6uu81q': 'non-exhaustive match on option \'%s\': missing arm(s): %s — add a `-> ` (else) arm, or handle every variant'
   'xlppn81m': 'cannot modify read-only field \'len\' of slice \'%s\''
+  'xmd4iv30': 'No dependencies.'
   'xmicjezl': 'integer `a OP b` returns option<T> on overflow by default, so the result type is always `?T`. Pick one of three: (1) receive it as `?T` (`a ?i64 = x + y`, or just `a = x + y` and let the compiler infer an option), then propagate with `?=` or unwrap with a two-arm match (`v = a: {` newline `ok -> it` / `-> 0`); (2) annotate `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`, to choose the value taken on failure - note the annotation only changes that value, the result is still `?T` and still has to be unwrapped; (3) discard it explicitly with `_ = x + y`.'
   'xo6e53hm': 'cannot modify read-only field \'len\' of array \'%s\''
   'xpp5i92s': 'option match must handle all branches: err, nil, ok (missing: %s)'
@@ -740,6 +1087,10 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'yf6kxdmz': 'a statement cannot be just a literal value; call a function or assign it to a variable'
   'yfm52ulo': 'unexpected token %s in tagged enum variant payload (parser made no progress)'
   'ygofqfbs': '--wasm-direct requires an explicit input file (workspace mode not supported)'
+  'ygsvytn5': `
+  homepage:   %s
+
+`
   'ygx2q6sp': 'builtin chars-new: no result slot'
   'yh8904fm': 'expected assignment operator, got %s instead'
   'yhg5vw4v': 'borrow src slot'
@@ -748,8 +1099,15 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'yjiapu40': 'builtin %s: no result'
   'yjq43ui5': 'net-udp-sendto: needs (fd, data, n, host, port)'
   'yk8jbowb': 'expected integer count after \'*\' in counted loop, got %s'
+  'ymwfqb9o': '⚠️ Flags must precede the file name (Go\'s flag package stops'
+  'yoq1krwy': '  no build --js main.no                              emit JavaScript (type erasure)'
+  'yqmj7czp': 'Usage: no remove <package-name>'
   'yrdjmq57': 'circular workspace mapping detected: %s'
+  'yu5ep241': 'an install hint when a package is missing.'
+  'yxf3nmjr': '  no run ./foo                 run the ./foo directory\'s main.no'
+  'yyh1cd5z': '  no vet --json src/std/     emit diagnostics as JSON'
   'yzp82ylp': 'expected \':\', got %s instead'
+  'z26oe20t': 'binary:'
   'z68vr2e2': 'builtin %s: cannot marshal arg %d as C string'
   'z87sn8u5': 'expected comma or right parenthesis, got %s instead'
   'z8rfu6gf': 'writing WASM output %s: %w'
@@ -757,13 +1115,26 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'zae1l26t': 'writing %s: %w'
   'zc1zfsat': 'anonymous function type syntax \'()\' is disabled; use a named function type alias or enable \'anonymous-fn-type\' in package.noml'
   'zcelvmmy': 'OpAwait: no slot'
+  'zdbv29a2': `
+Open in browser: %s
+
+`
   'zl7i0mx6': '\'i <- range { }\' is deprecated, use \'i <- range: { }\' instead'
+  'zlotlakj': '  no fmt -d src/              show diff for all .no files in src/'
   'zm1ivicl': 'expected loop body statement, got %s'
+  'zm87x8w0': 'If directory, validates all .no files in that directory.'
   'zodppsnm': 'MIR->LLVM: %s'
+  'zpeqou62': 'in CI to produce the asset `no add` downloads:'
   'zpgykko6': 'main.no not found in %s'
   'zql6tu9p': 'workspace-local dependency path %q not found'
+  'zr0vmo3q': '  no build main.no'
   'zs1q169p': 'reading release info: %w'
   'ztlqshll': 'builtin %s: result %d has no slot'
   'zvybywvf': 'conflicting native bind modes: %q (from %q) and %q (from %q)'
+  'zy88y2ur': '  no run                       build and run main.no in current dir'
+  'zz69r7h9': `
+Error syncing AST dependency %s: empty module
+
+`
   'zzcfoc04': 'creating dist directory: %w'
 }

@@ -1,6 +1,9 @@
 package i18n
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func fakeEnv(kv map[string]string) func(string) string {
 	return func(k string) string { return kv[k] }
@@ -179,5 +182,106 @@ func TestInitLoadsCatalog(t *testing.T) {
 	}
 	if got := T("aaaaaaaa", "english"); got != "中文" {
 		t.Fatalf("T = %q, want 中文", got)
+	}
+}
+
+// TestProjectLangPrecedence pins where a project's own default — `compiler.lang`
+// in package.noml — sits in the chain:
+//
+//	--lang > NO_LANG > ProjectLang > LC_ALL > LANG > en
+//
+// It beats the ambient system locale, which is the whole point of pinning it in
+// the manifest (a Chinese project should read Chinese on a machine whose LANG is
+// de_DE). It loses to --lang and to NO_LANG, because those are deliberate
+// per-invocation overrides: without that, a user could not escape the project's
+// choice for one command.
+func TestProjectLangPrecedence(t *testing.T) {
+	available := []string{"en", "zh-cn", "zh-tw", "ja"}
+
+	cases := []struct {
+		name        string
+		explicit    string
+		explicitSet bool
+		project     string
+		env         map[string]string
+		wantTag     string
+	}{
+		{
+			name:    "project default beats the ambient locale",
+			project: "zh_TW.UTF-8", // written the way a human would
+			env:     map[string]string{"LANG": "de_DE.UTF-8"},
+			wantTag: "zh-tw",
+		},
+		{
+			name:        "explicit flag beats the project default",
+			explicit:    "en",
+			explicitSet: true,
+			project:     "zh-tw",
+			env:         map[string]string{"LANG": "de_DE.UTF-8"},
+			wantTag:     "en",
+		},
+		{
+			name:    "NO_LANG beats the project default",
+			project: "zh-tw",
+			env:     map[string]string{"NO_LANG": "ja", "LANG": "de_DE.UTF-8"},
+			wantTag: "ja",
+		},
+		{
+			name:    "no project default falls back to the ambient locale",
+			env:     map[string]string{"LANG": "ja_JP.UTF-8"},
+			wantTag: "ja",
+		},
+		{
+			name:    "blank project default is ignored",
+			project: "   ",
+			env:     map[string]string{"LANG": "ja_JP.UTF-8"},
+			wantTag: "ja",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reset(t)
+			defer reset(t)
+			err := Init(Options{
+				Lang:        c.explicit,
+				LangSet:     c.explicitSet,
+				ProjectLang: c.project,
+				Available:   available,
+				Env:         fakeEnv(c.env),
+			})
+			if err != nil {
+				t.Fatalf("Init: %v", err)
+			}
+			if got := Lang(); got != c.wantTag {
+				t.Errorf("Lang() = %q, want %q", got, c.wantTag)
+			}
+		})
+	}
+}
+
+// TestProjectLangWarnsWhenUnavailable keeps the project default on the
+// "explicit" side of the resolver: a manifest that pins a tag we cannot serve
+// must say so once, exactly like --lang does. Staying silent would make a typo
+// in package.noml look like "the project simply has no translation".
+func TestProjectLangWarnsWhenUnavailable(t *testing.T) {
+	reset(t)
+	defer reset(t)
+
+	var warnings []string
+	err := Init(Options{
+		ProjectLang: "zh-tw",
+		Available:   []string{"en", "ja"}, // zh-tw not shipped here
+		Env:         fakeEnv(nil),
+		Warn:        func(m string) { warnings = append(warnings, m) },
+	})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", warnings)
+	}
+	if !strings.Contains(warnings[0], "zh-tw") {
+		t.Errorf("warning %q should name the requested tag", warnings[0])
 	}
 }

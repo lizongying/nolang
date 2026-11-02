@@ -188,6 +188,19 @@ OP-OPTGETSTR = 30
 OP-OPTMKVEC = 58
 OP-OPTGETVEC = 59
 
+; ── option 跨基本块槽（M4-c 续件 s41；补齐 §11 B8 里 option 值跨块的 alloca 通路）──
+; option 值住 %op<id>；本件新增**第八个命名空间** %os<id>（option slot），与值 %op 只差一个 s，
+;   写错就是把值名当指针（LLVM 报 not a pointer），与 str 的 %sv/%ss、struct 的 %st/%sts 同规。
+; %option 型别固定（{ i64 tag, [3 x i64] payload }），故三件套无需 cty/vty 解型别——比 struct 槽更简单。
+; 跨块传 option 值走 alloca+store+load（在入口分配槽、各分支 store、汇聚块 load），而非 %option 的 PHI。
+; OP-OPTALLOC ：dst = option 槽 id（本 op 无值操作数）。发 `%os<id> = alloca %option`。
+; OP-OPTSTORE ：xa[k] = option 值 id；bs[k] = 槽 id。发 store，无结果（与 SSTORE/STSTORE 同形）。
+; OP-OPTLOAD  ：dst = option 值 id；xa[k] = 槽 id。发 load（与 SLOAD/STLOAD 同形：槽在 a、结果在 dst）。
+; ⚠️ op 码接在既有最大码 OP-OPTGETVEC=59 之后（取 60/61/62），刻意不重排既有码以免影响 arena 数据。
+OP-OPTALLOC = 60
+OP-OPTSTORE = 61
+OP-OPTLOAD = 62
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

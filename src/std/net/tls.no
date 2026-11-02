@@ -3092,9 +3092,9 @@ conn.derive-handshake-keys-13 = () {
     ;    salt=0 表示使用 HashLen 個零（hkdf-extract 內部處理空 salt）
     ;    ikm=PSK，無 PSK 時為 32 個零位元組（不是空 slice！）
     zero-32 []byte = with-len(32)
-    i <- [0..32): {
+    e1 <- zero-32: {
 
-        zero-32[i]: {
+        e1: {
             ok -> it = 0
 
             -> _
@@ -3230,9 +3230,9 @@ conn.derive-application-keys-13 = () {
 
     ; Master Secret = HKDF-Extract(derived, 0^HashLen)
     zero-32 []byte = with-len(32)
-    i <- [0..32): {
+    e2 <- zero-32: {
 
-        zero-32[i]: {
+        e2: {
             ok -> it = 0
 
             -> _
@@ -5396,9 +5396,9 @@ server-conn.derive-handshake-keys-13 = () {
 
     ; 1. Early Secret = HKDF-Extract(0, 0^32)
     zero-32 []byte = with-len(32)
-    i <- [0..32): {
+    e3 <- zero-32: {
 
-        zero-32[i]: {
+        e3: {
             ok -> it = 0
 
             -> _
@@ -5526,9 +5526,9 @@ server-conn.derive-application-keys-13 = () {
 
     ; Master Secret = HKDF-Extract(derived, 0^32)
     zero-32 []byte = with-len(32)
-    i <- [0..32): {
+    e4 <- zero-32: {
 
-        zero-32[i]: {
+        e4: {
             ok -> it = 0
 
             -> _

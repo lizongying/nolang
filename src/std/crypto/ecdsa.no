@@ -194,9 +194,9 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
     ; 512-bit 乘積（64 位元組）
     product [64]byte
-    i <- [0..64): {
+    e <- product: {
 
-        product[i]: {
+        e: {
             ok -> it = 0
 
             -> _

@@ -12,7 +12,7 @@ Nolang 程式語言（版本 %s）
 用法:
 全域選項:
   -v    詳細模式（適用於所有指令）
-  --lang=<tag>  訊息語言，例如 --lang=zh-CN、--lang=en。
+  --lang=<tag>  訊息語言，例如 --lang=zh-cn、--lang=en。
                 預設跟隨系統區域設定（$LC_ALL / $LANG）；
                 英語為回退語言。也可透過 $NO_LANG 設定。
 

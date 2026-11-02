@@ -105,7 +105,7 @@ func parseOptFlag(args []string) []string {
 // It is global for the same reason -opt is: build, run, test, vet and fmt all
 // produce diagnostics through the same lowering path, so a per-subcommand flag
 // would have to be added nine times and could drift. Stripping it here is also
-// what makes `no build main.no --lang=zh-CN` work at all — Go's flag package
+// what makes `no build main.no --lang=zh-cn` work at all — Go's flag package
 // stops at the first non-flag token, so a FlagSet-based flag would be silently
 // swallowed as a file argument.
 //
@@ -123,14 +123,14 @@ func parseLangFlag(args []string) (out []string, lang string, set bool, err erro
 		switch {
 		case arg == "--lang" || arg == "-lang":
 			if i+1 >= len(args) {
-				return nil, "", false, i18n.Errorf("o630714m", "%s requires a value (e.g. %s=zh-CN)", arg, arg)
+				return nil, "", false, i18n.Errorf("o630714m", "%s requires a value (e.g. %s=zh-cn)", arg, arg)
 			}
 			i++
 			lang, set = args[i], true
 		case strings.HasPrefix(arg, "--lang=") || strings.HasPrefix(arg, "-lang="):
 			lang, set = arg[strings.IndexByte(arg, '=')+1:], true
 			if lang == "" {
-				return nil, "", false, i18n.Errorf("paiorrdo", "--lang requires a value (e.g. --lang=zh-CN)")
+				return nil, "", false, i18n.Errorf("paiorrdo", "--lang requires a value (e.g. --lang=zh-cn)")
 			}
 		default:
 			filtered = append(filtered, arg)
@@ -154,7 +154,7 @@ func main() {
 
 	// --lang 必須在任何診斷產生之前生效（含 printUsage），且必須在 os.Args 被
 	// 各子命令的 FlagSet 解析之前剝離：Go 的 flag 在第一個非 flag 參數處停止，
-	// `no build main.no --lang=zh-CN` 否則會被當成檔案參數靜默忽略。
+	// `no build main.no --lang=zh-cn` 否則會被當成檔案參數靜默忽略。
 	var langFlag string
 	var langSet bool
 	var langErr error
@@ -166,6 +166,7 @@ func main() {
 	if err := catalog.Init(catalog.Options{
 		Lang:        langFlag,
 		LangSet:     langSet,
+		ProjectLang: catalog.ProjectLang(),
 		ProjectDirs: localeSearchDirs(),
 		Warn: func(msg string) {
 			fmt.Fprintf(os.Stderr, "no: warning: %s\n", msg)
@@ -199,32 +200,32 @@ func main() {
 		initProject()
 	case "new":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: no new <package-name>")
+			fmt.Println(i18n.P("8emu38e0", "Usage: no new <package-name>"))
 			return
 		}
 		newProject(os.Args[2])
 	case "add":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: no add <tool>[:<version>]@<host>/<owner>/<repo>")
+			fmt.Println(i18n.P("mmcrtoio", "Usage: no add <tool>[:<version>]@<host>/<owner>/<repo>"))
 			fmt.Println("")
-			fmt.Println("Add a dependency (prebuilt AST package: <tool>.ast.zip).")
+			fmt.Println(i18n.P("rpazw1l7", "Add a dependency (prebuilt AST package: <tool>.ast.zip)."))
 			fmt.Println("")
-			fmt.Println("Examples:")
-			fmt.Println("  no add nogit:v0.1.33@github.com/lizongying/notools")
-			fmt.Println("  no add nogit@github.com/lizongying/notools        latest release")
-			fmt.Println("  no add nogit@lizongying/notools                   host defaults to github.com")
+			fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+			fmt.Println(i18n.P("5ci3l7h9", "  no add nogit:v0.1.33@github.com/lizongying/notools"))
+			fmt.Println(i18n.P("kg4qzfdu", "  no add nogit@github.com/lizongying/notools        latest release"))
+			fmt.Println(i18n.P("8r4nnper", "  no add nogit@lizongying/notools                   host defaults to github.com"))
 			return
 		}
 		addDependency(os.Args[2])
 	case "remove":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: no remove <package-name>")
+			fmt.Println(i18n.P("yqmj7czp", "Usage: no remove <package-name>"))
 			return
 		}
 		removeDependency(os.Args[2])
 	case "update":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: no update <pkg>")
+			fmt.Println(i18n.P("edsub23j", "Usage: no update <pkg>"))
 			return
 		}
 		updateDependency(os.Args[2])
@@ -271,7 +272,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("Global flags:")
 	fmt.Println("  -v    Verbose mode (apply to all commands)")
-	fmt.Println("  --lang=<tag>  Message language, e.g. --lang=zh-CN, --lang=en.")
+	fmt.Println("  --lang=<tag>  Message language, e.g. --lang=zh-cn, --lang=en.")
 	fmt.Println("                Defaults to the system locale ($LC_ALL / $LANG);")
 	fmt.Println("                English is the fallback. Also settable via $NO_LANG.")
 	fmt.Println("")
@@ -508,72 +509,88 @@ func versionCommand() {
 }
 
 func infoCommand() {
+	// Labels are resolved first so the value column can be as wide as the widest
+	// label of THIS language: German or Japanese labels overflow a fixed 13-column
+	// field, and a clipped column would no longer line up. English stays at 13.
+	versionLbl := localizedVersionLabel()
+	binaryLbl := i18n.P("z26oe20t", "binary:")
+	stdSourceLbl := i18n.P("wo8qw0ac", "std source:")
+	sourceLbl := i18n.P("tdkcr7i9", "source:")
+	workdirLbl := i18n.P("4dquj9mu", "workdir:")
+	stdModulesLbl := i18n.P("qkj01y3s", "std modules:")
+	resolvedLbl := i18n.P("jlv0jw10", "resolved:")
+	width := infoWidth(versionLbl, binaryLbl, stdSourceLbl, sourceLbl, workdirLbl, stdModulesLbl)
+
 	// Version
+	label := infoLabel(versionLbl, width)
 	if buildDate != "" {
 		if sec, err := strconv.ParseInt(buildDate, 10, 64); err == nil {
 			t := time.Unix(sec, 0).UTC()
-			fmt.Printf("%s     %s (%s)\n", localizedVersionLabel(), version, t.Format("2006-01-02 15:04:05"))
+			fmt.Printf("%s%s (%s)\n", label, version, t.Format("2006-01-02 15:04:05"))
 		} else {
-			fmt.Printf("%s     %s\n", localizedVersionLabel(), version)
+			fmt.Printf("%s%s\n", label, version)
 		}
 	} else {
-		fmt.Printf("%s     %s\n", localizedVersionLabel(), version)
+		fmt.Printf("%s%s\n", label, version)
 	}
 
 	// Binary path
 	if exe, err := os.Executable(); err == nil {
-		fmt.Printf("binary:      %s\n", exe)
+		fmt.Printf("%s%s\n", infoLabel(binaryLbl, width), exe)
 	}
 
 	// Std library source directory
 	stdDir, stdSrc := nbuild.GetStdSourceDir()
-	fmt.Printf("std source:  %s\n", stdDir)
-	fmt.Printf("  resolved:  via %s", stdSrc)
+	fmt.Printf("%s%s\n", infoLabel(stdSourceLbl, width), stdDir)
+	stdSuffix := ""
 	if stdSrc == "env" {
-		fmt.Printf(" ($%s)", pkg.NOLANG_STD_SRC)
+		stdSuffix = fmt.Sprintf(" ($%s)", pkg.NOLANG_STD_SRC)
 	}
-	fmt.Println()
+	fmt.Printf("  %s%s%s\n", infoLabel(resolvedLbl, width-2),
+		fmt.Sprintf(i18n.P("exeja3ad", "via %s"), resolvedSourceLabel(stdSrc)), stdSuffix)
 
 	// Source directory (third-party / local development)
 	srcDir, srcSrc := nbuild.GetSourceDir()
-	fmt.Printf("source:      %s\n", srcDir)
-	fmt.Printf("  resolved:  via %s", srcSrc)
+	fmt.Printf("%s%s\n", infoLabel(sourceLbl, width), srcDir)
+	srcSuffix := ""
 	if srcSrc == "env" {
-		fmt.Printf(" ($%s)", pkg.NOLANG_SRC)
+		srcSuffix = fmt.Sprintf(" ($%s)", pkg.NOLANG_SRC)
 	}
-	fmt.Println()
+	fmt.Printf("  %s%s%s\n", infoLabel(resolvedLbl, width-2),
+		fmt.Sprintf(i18n.P("exeja3ad", "via %s"), resolvedSourceLabel(srcSrc)), srcSuffix)
 
 	// Environment variables
+	notSet := i18n.P("oyfkw3qi", "(not set)")
 	stdEnvVal := os.Getenv(pkg.NOLANG_STD_SRC)
 	if stdEnvVal != "" {
 		fmt.Printf("$%s: %s\n", pkg.NOLANG_STD_SRC, stdEnvVal)
 	} else {
-		fmt.Printf("$%s: (not set)\n", pkg.NOLANG_STD_SRC)
+		fmt.Printf("$%s: %s\n", pkg.NOLANG_STD_SRC, notSet)
 	}
 	srcEnvVal := os.Getenv(pkg.NOLANG_SRC)
 	if srcEnvVal != "" {
 		fmt.Printf("$%s:  %s\n", pkg.NOLANG_SRC, srcEnvVal)
 	} else {
-		fmt.Printf("$%s:  (not set)\n", pkg.NOLANG_SRC)
+		fmt.Printf("$%s:  %s\n", pkg.NOLANG_SRC, notSet)
 	}
 
 	// Working directory
 	if cwd, err := os.Getwd(); err == nil {
-		fmt.Printf("workdir:     %s\n", cwd)
+		fmt.Printf("%s%s\n", infoLabel(workdirLbl, width), cwd)
 	}
 
 	// Std module count
 	modules := checker.GetStdModules()
-	fmt.Printf("std modules: %d\n", len(modules))
+	fmt.Printf("%s%d\n", infoLabel(stdModulesLbl, width), len(modules))
 
 	// Package info (if in a project)
 	cwd, _ := os.Getwd()
 	if pkg, _ := nbuild.LoadPackage(cwd); pkg != nil {
 		fmt.Println()
-		fmt.Println("project:")
-		fmt.Printf("  root:      %s\n", pkg.RootDir)
+		fmt.Println(i18n.P("v8tulbl4", "project:"))
+		fmt.Printf("  %s%s\n", infoLabel(i18n.P("4bopl5am", "root:"), width-2), pkg.RootDir)
 		if len(pkg.Dependencies) > 0 {
-			fmt.Printf("  deps:      %d\n", len(pkg.Dependencies))
+			fmt.Printf("  %s%d\n", infoLabel(i18n.P("3xe1wjrw", "deps:"), width-2), len(pkg.Dependencies))
 			for name, ver := range pkg.Dependencies {
 				fmt.Printf("    %s@%s\n", name, ver)
 			}
@@ -581,10 +598,87 @@ func infoCommand() {
 	}
 }
 
+// resolvedSourceLabel renders one of the provenance identifiers that
+// package.GetStdSourceDir / GetSourceDir return ("env", "binary", "default").
+//
+// Those strings are a return-value contract (stdpath.go documents them and the
+// resolver compares against them), so they stay stable ASCII identifiers; only
+// the human-facing rendering in `no info` is translated. An unknown value falls
+// through verbatim rather than becoming an empty label.
+func resolvedSourceLabel(source string) string {
+	switch source {
+	case "env":
+		return i18n.P("k3envsrc", "env")
+	case "binary":
+		return i18n.P("b1narysr", "binary")
+	case "default":
+		return i18n.P("d4faltsr", "default")
+	}
+	return source
+}
+
+// infoLabel 把 `no info` 的标签右侧补空格到固定显示宽度，让取值列在各种语言下
+// 都对齐：东亚全角字符（CJK 汉字、假名、谚文、全角标点）按 2 列计，其余按 1 列
+// 计。英文标签本身已按 13 列排版，所以补空后输出与旧格式逐字节相同。
+func infoLabel(text string, width int) string {
+	w := 0
+	for _, r := range text {
+		if wideRune(r) {
+			w += 2
+		} else {
+			w++
+		}
+	}
+	if w >= width {
+		return text + " "
+	}
+	return text + strings.Repeat(" ", width-w)
+}
+
+// infoWidth 返回 `no info` 取值列的宽度：最宽标签的显示宽度再加一列空格。
+// 英文标签最宽为 12 列（"std modules:"），因此结果仍是 13，与旧输出逐字节相同。
+func infoWidth(labels ...string) int {
+	max := 0
+	for _, s := range labels {
+		w := 0
+		for _, r := range s {
+			if wideRune(r) {
+				w += 2
+			} else {
+				w++
+			}
+		}
+		if w > max {
+			max = w
+		}
+	}
+	return max + 1
+}
+
+// wideRune 报告 r 在等宽终端里是否占两列（East Asian Wide / Fullwidth）。
+func wideRune(r rune) bool {
+	switch {
+	case r < 0x1100:
+		return false
+	case r <= 0x115F, r == 0x2329, r == 0x232A,
+		r >= 0x2E80 && r <= 0xA4CF,
+		r >= 0xAC00 && r <= 0xD7A3,
+		r >= 0xF900 && r <= 0xFAFF,
+		r >= 0xFE30 && r <= 0xFE6F,
+		r >= 0xFF00 && r <= 0xFF60,
+		r >= 0xFFE0 && r <= 0xFFE6,
+		r >= 0x1F300 && r <= 0x1F64F,
+		r >= 0x1F900 && r <= 0x1F9FF,
+		r >= 0x20000 && r <= 0x3FFFD:
+		return true
+	}
+	return false
+}
+
 func initProject() {
 	dir, err := os.Getwd()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 
@@ -592,12 +686,12 @@ func initProject() {
 	// and does NOT generate a package.noml. Packages are added later via `no new`.
 	createWorkspaceFile()
 
-	fmt.Printf("Workspace initialized in %s\n", dir)
+	fmt.Printf(i18n.P("l332fwh9", "Workspace initialized in %s\n"), dir)
 	fmt.Println("")
-	fmt.Println("Files created:")
-	fmt.Println("  - workspace.noml (workspace definition)")
+	fmt.Println(i18n.P("tho8xc47", "Files created:"))
+	fmt.Println(i18n.P("nzkc7scw", "  - workspace.noml (workspace definition)"))
 	fmt.Println("")
-	fmt.Println("Next: create a package with `no new <name>`")
+	fmt.Println(i18n.P("glytw3eo", "Next: create a package with `no new <name>`"))
 }
 
 func newProject(name string) {
@@ -607,13 +701,13 @@ func newProject(name string) {
 
 	err := os.MkdirAll(name, 0755)
 	if err != nil {
-		fmt.Printf("Error creating directory: %v\n", err)
+		fmt.Printf(i18n.P("i56j6g3g", "Error creating directory: %v\n"), err)
 		return
 	}
 
 	err = os.Chdir(name)
 	if err != nil {
-		fmt.Printf("Error changing directory: %v\n", err)
+		fmt.Printf(i18n.P("gx8l0tdu", "Error changing directory: %v\n"), err)
 		return
 	}
 
@@ -641,32 +735,32 @@ func newProject(name string) {
 	createLibFile(name)
 	createTestDirectory()
 
-	fmt.Printf("Package created: %s\n", name)
+	fmt.Printf(i18n.P("fcs3wo7u", "Package created: %s\n"), name)
 	fmt.Println("")
-	fmt.Println("Files created:")
-	fmt.Println("  - package.noml (package configuration)")
-	fmt.Println("  - main.no (main entry file)")
-	fmt.Println("  - lib.no (library export file)")
-	fmt.Println("  - src/ (source directory)")
-	fmt.Println("  - tests/ (test directory)")
+	fmt.Println(i18n.P("tho8xc47", "Files created:"))
+	fmt.Println(i18n.P("qh4i3y4v", "  - package.noml (package configuration)"))
+	fmt.Println(i18n.P("gszz9tke", "  - main.no (main entry file)"))
+	fmt.Println(i18n.P("2bg0n0e0", "  - lib.no (library export file)"))
+	fmt.Println(i18n.P("is8zuoph", "  - src/ (source directory)"))
+	fmt.Println(i18n.P("j00dw84u", "  - tests/ (test directory)"))
 	fmt.Println("")
 	if gitInfo.Author != "" || gitInfo.Email != "" || gitInfo.Repository != "" {
-		fmt.Println("Pre-filled from git/environment:")
+		fmt.Println(i18n.P("4r3ghy7k", "Pre-filled from git/environment:"))
 		if gitInfo.Author != "" {
-			fmt.Printf("  author:     %s\n", gitInfo.Author)
+			fmt.Printf(i18n.P("7camjpuc", "  author:     %s\n"), gitInfo.Author)
 		}
 		if gitInfo.Email != "" {
-			fmt.Printf("  email:      %s\n", gitInfo.Email)
+			fmt.Printf(i18n.P("o2lua0kh", "  email:      %s\n"), gitInfo.Email)
 		}
 		if gitInfo.Repository != "" {
-			fmt.Printf("  repository: %s\n", gitInfo.Repository)
+			fmt.Printf(i18n.P("1iye2j55", "  repository: %s\n"), gitInfo.Repository)
 		}
 		if gitInfo.Homepage != "" {
-			fmt.Printf("  homepage:   %s\n", gitInfo.Homepage)
+			fmt.Printf(i18n.P("ygsvytn5", "  homepage:   %s\n"), gitInfo.Homepage)
 		}
 		fmt.Println("")
 	}
-	fmt.Printf("Registered '%s' in workspace.noml\n", name)
+	fmt.Printf(i18n.P("h8dvlp9i", "Registered '%s' in workspace.noml\n"), name)
 }
 
 func createConfigFile(config ProjectConfig) {
@@ -675,7 +769,7 @@ func createConfigFile(config ProjectConfig) {
 
 	err := os.WriteFile(pkg.PackageManifestName, []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("Error writing config file: %v\n", err)
+		fmt.Printf(i18n.P("v57cjup3", "Error writing config file: %v\n"), err)
 	}
 }
 
@@ -770,7 +864,7 @@ print('Hello, Nolang!')
 `
 	err := os.WriteFile("main.no", []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("Error writing main file: %v\n", err)
+		fmt.Printf(i18n.P("cw8xkrj9", "Error writing main file: %v\n"), err)
 	}
 }
 
@@ -788,7 +882,7 @@ func createWorkspaceFile() {
 }
 `
 	if err := os.WriteFile(wsFile, []byte(content), 0644); err != nil {
-		fmt.Printf("Error writing workspace file: %v\n", err)
+		fmt.Printf(i18n.P("sh7h3f59", "Error writing workspace file: %v\n"), err)
 	}
 }
 
@@ -813,7 +907,7 @@ func registerPackageInWorkspace(name string) {
 		// handled natively without json.Unmarshal.
 		parsed, perr := nomlParseMap(raw)
 		if perr != nil {
-			fmt.Printf("Warning: parsing workspace.noml: %v\n", perr)
+			fmt.Printf(i18n.P("qa8z0cwo", "Warning: parsing workspace.noml: %v\n"), perr)
 		} else {
 			ws = parsed
 		}
@@ -829,7 +923,7 @@ func registerPackageInWorkspace(name string) {
 	ws[name] = "./" + rel
 
 	if err := os.WriteFile(wsFile, []byte(nomlMarshalMap(ws)), 0644); err != nil {
-		fmt.Printf("Error writing workspace file: %v\n", err)
+		fmt.Printf(i18n.P("sh7h3f59", "Error writing workspace file: %v\n"), err)
 	}
 }
 
@@ -926,14 +1020,14 @@ Thumbs.db
 `
 	err := os.WriteFile(".gitignore", []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("Error writing .gitignore: %v\n", err)
+		fmt.Printf(i18n.P("dufa8bnf", "Error writing .gitignore: %v\n"), err)
 	}
 }
 
 func createSrcDirectory() {
 	err := os.MkdirAll("src", 0755)
 	if err != nil {
-		fmt.Printf("Error creating src directory: %v\n", err)
+		fmt.Printf(i18n.P("1rk772tt", "Error creating src directory: %v\n"), err)
 		return
 	}
 
@@ -944,7 +1038,7 @@ greet = (name str) {
 `
 	err = os.WriteFile("src/utils.no", []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("Error writing utils.no: %v\n", err)
+		fmt.Printf(i18n.P("m4re9802", "Error writing utils.no: %v\n"), err)
 	}
 }
 
@@ -954,14 +1048,14 @@ func createLibFile(name string) {
 `, name)
 	err := os.WriteFile("lib.no", []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("Error writing lib.no: %v\n", err)
+		fmt.Printf(i18n.P("qagmala2", "Error writing lib.no: %v\n"), err)
 	}
 }
 
 func createTestDirectory() {
 	err := os.MkdirAll("tests", 0755)
 	if err != nil {
-		fmt.Printf("Error creating tests directory: %v\n", err)
+		fmt.Printf(i18n.P("7f6c9808", "Error creating tests directory: %v\n"), err)
 		return
 	}
 
@@ -972,7 +1066,7 @@ func createTestDirectory() {
 `
 	err = os.WriteFile("tests/test.no", []byte(content), 0644)
 	if err != nil {
-		fmt.Printf("Error writing test file: %v\n", err)
+		fmt.Printf(i18n.P("202eioh0", "Error writing test file: %v\n"), err)
 	}
 }
 
@@ -985,7 +1079,7 @@ func createTestDirectory() {
 func addDependency(specStr string) {
 	spec, err := pkg.ParseToolSpec(specStr)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 
@@ -993,15 +1087,15 @@ func addDependency(specStr string) {
 	if version == "" {
 		version, err = pkg.LatestReleaseTag(spec.Host, spec.Owner, spec.Repo)
 		if err != nil {
-			fmt.Printf("Error resolving latest release: %v\n", err)
+			fmt.Printf(i18n.P("amyp0ig8", "Error resolving latest release: %v\n"), err)
 			return
 		}
-		fmt.Printf("Latest release of %s/%s: %s\n", spec.Owner, spec.Repo, version)
+		fmt.Printf(i18n.P("b3ucznjm", "Latest release of %s/%s: %s\n"), spec.Owner, spec.Repo, version)
 	}
 
 	config, err := loadProjectConfig()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 	if config.Dependencies == nil {
@@ -1011,8 +1105,8 @@ func addDependency(specStr string) {
 	key := spec.DepKey()
 	config.Dependencies[key] = version
 	createConfigFile(*config)
-	fmt.Printf("Added dependency: %s = %s\n", key, version)
-	fmt.Printf("  asset: %s\n", pkg.ReleaseASTZipURL(spec, version))
+	fmt.Printf(i18n.P("20xgyqyu", "Added dependency: %s = %s\n"), key, version)
+	fmt.Printf(i18n.P("76fao0mm", "  asset: %s\n"), pkg.ReleaseASTZipURL(spec, version))
 }
 
 func loadProjectConfig() (*ProjectConfig, error) {
@@ -1026,92 +1120,92 @@ func loadProjectConfig() (*ProjectConfig, error) {
 func removeDependency(name string) {
 	config, err := loadProjectConfig()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 	if config.Dependencies == nil {
-		fmt.Printf("No dependencies found.\n")
+		fmt.Println(i18n.P("nejhwtgd", "No dependencies found."))
 		return
 	}
 	if _, ok := config.Dependencies[name]; !ok {
-		fmt.Printf("Dependency %q not found.\n", name)
+		fmt.Printf(i18n.P("oaslpd20", "Dependency %q not found.\n"), name)
 		return
 	}
 	delete(config.Dependencies, name)
 	createConfigFile(*config)
-	fmt.Printf("Removed dependency: %s\n", name)
+	fmt.Printf(i18n.P("c6eld4s3", "Removed dependency: %s\n"), name)
 }
 
 func updateDependency(pkg string) {
 	config, err := loadProjectConfig()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 	if _, ok := config.Dependencies[pkg]; !ok {
-		fmt.Printf("Dependency %s not found.\n", pkg)
+		fmt.Printf(i18n.P("t5l89pst", "Dependency %s not found.\n"), pkg)
 		return
 	}
 	config.Dependencies[pkg] = "*"
 	createConfigFile(*config)
-	fmt.Printf("Updated %s\n", pkg)
+	fmt.Printf(i18n.P("0lur3tbm", "Updated %s\n"), pkg)
 }
 
 func updateAllDependencies() {
 	config, err := loadProjectConfig()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 	if len(config.Dependencies) == 0 {
-		fmt.Println("No dependencies to update.")
+		fmt.Println(i18n.P("uvvox4pk", "No dependencies to update."))
 		return
 	}
-	fmt.Println("Updating dependencies...")
+	fmt.Println(i18n.P("ex8l4y2k", "Updating dependencies..."))
 	for name := range config.Dependencies {
 		config.Dependencies[name] = "*"
-		fmt.Printf("  Updated %s\n", name)
+		fmt.Printf(i18n.P("7mckxr6e", "  Updated %s\n"), name)
 	}
 	createConfigFile(*config)
-	fmt.Println("All dependencies updated to latest.")
+	fmt.Println(i18n.P("61bm2pzr", "All dependencies updated to latest."))
 }
 
 func listDependencies() {
 	config, err := loadProjectConfig()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 	if len(config.Dependencies) == 0 {
-		fmt.Println("No dependencies.")
+		fmt.Println(i18n.P("xmd4iv30", "No dependencies."))
 		return
 	}
-	fmt.Println("Dependencies:")
+	fmt.Println(i18n.P("ufqsnwdw", "Dependencies:"))
 	for name, version := range config.Dependencies {
 		fmt.Printf("  %s: %s\n", name, version)
 	}
 }
 
 func syncDependencies() {
-	fmt.Println("Syncing dependencies...")
+	fmt.Println(i18n.P("vhmg22wa", "Syncing dependencies..."))
 
 	p, err := nbuild.LoadPackage(".")
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Printf(i18n.P("060maaj0", "Error: %v\n"), err)
 		return
 	}
 	if p == nil {
-		fmt.Println("Error: package.noml not found. Run 'no new <name>' to create a package, or cd into a package directory")
+		fmt.Println(i18n.P("ibiol93t", "Error: package.noml not found. Run 'no new <name>' to create a package, or cd into a package directory"))
 		return
 	}
 	if len(p.Dependencies) == 0 {
-		fmt.Println("No dependencies to sync.")
+		fmt.Println(i18n.P("tnj4py6b", "No dependencies to sync."))
 		return
 	}
 
 	graph, err := p.EnsureDependencies(10)
 	if err != nil {
-		fmt.Printf("Error syncing dependencies: %v\n", err)
+		fmt.Printf(i18n.P("8y7pdnc9", "Error syncing dependencies: %v\n"), err)
 		return
 	}
 
@@ -1126,20 +1220,20 @@ func syncDependencies() {
 		}
 		prog, err := mmast.EnsureModuleAST(key, ver)
 		if err != nil {
-			fmt.Printf("Error syncing AST dependency %s: %v\n", key, err)
+			fmt.Printf(i18n.P("dupns7pb", "Error syncing AST dependency %s: %v\n"), key, err)
 			return
 		}
 		if prog == nil {
-			fmt.Printf("Error syncing AST dependency %s: empty module\n", key)
+			fmt.Printf(i18n.P("zz69r7h9", "Error syncing AST dependency %s: empty module\n"), key)
 			return
 		}
 		astCount++
-		fmt.Printf("  ast  %s %s\n", key, ver)
+		fmt.Printf(i18n.P("xev7d0na", "  ast  %s %s\n"), key, ver)
 	}
 	count += astCount
 
-	fmt.Printf("Synced %d dependencies.\n", count)
-	fmt.Println("Lock file and integrity sums saved.")
+	fmt.Printf(i18n.P("xj7auj8a", "Synced %d dependencies.\n"), count)
+	fmt.Println(i18n.P("kvp8bxoc", "Lock file and integrity sums saved."))
 }
 
 // nolangBinDir 返回 ~/no/bin 目錄
@@ -1160,38 +1254,38 @@ func stdinIsPiped() bool {
 
 func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
-	writeInPlace := fs.Bool("w", false, "write result to source file")
-	diffMode := fs.Bool("d", false, "output colored diff instead of formatted result")
-	fixClass := fs.String("fix", "", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)")
-	loopStyle := fs.String("loop-style", "prefix", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'")
+	writeInPlace := fs.Bool("w", false, i18n.P("e0r5thlw", "write result to source file"))
+	diffMode := fs.Bool("d", false, i18n.P("k3g4ofs4", "output colored diff instead of formatted result"))
+	fixClass := fs.String("fix", "", i18n.P("7usot77o", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)"))
+	loopStyle := fs.String("loop-style", "prefix", i18n.P("en9zq76f", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no fmt [flags] <file|dir>")
+		fmt.Println(i18n.P("6svrp0le", "Usage: no fmt [flags] <file|dir>"))
 		fmt.Println("")
-		fmt.Println("Format Nolang source files.")
-		fmt.Println("When no file/dir is given and stdin is a terminal:")
-		fmt.Println("  - if workspace.noml exists, format all its project dirs;")
-		fmt.Println("  - otherwise, default to the current directory.")
-		fmt.Println("When stdin is piped (e.g. echo 'x=1' | no fmt), reads from stdin.")
-		fmt.Println("Directories are processed recursively automatically.")
+		fmt.Println(i18n.P("es55egn6", "Format Nolang source files."))
+		fmt.Println(i18n.P("kfxfk3n1", "When no file/dir is given and stdin is a terminal:"))
+		fmt.Println(i18n.P("b9iqtopl", "  - if workspace.noml exists, format all its project dirs;"))
+		fmt.Println(i18n.P("gccy7ull", "  - otherwise, default to the current directory."))
+		fmt.Println(i18n.P("63lrmg48", "When stdin is piped (e.g. echo 'x=1' | no fmt), reads from stdin."))
+		fmt.Println(i18n.P("uzugz5vn", "Directories are processed recursively automatically."))
 		fmt.Println("")
-		fmt.Println("Flags:")
+		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no fmt                      format current dir (list files needing formatting)")
-		fmt.Println("  no fmt -w                   format all .no files in current dir in-place")
-		fmt.Println("  no fmt -d                   show diff for all .no files in current dir")
-		fmt.Println("  no fmt main.no              format and print to stdout")
-		fmt.Println("  no fmt -w main.no           format file in-place")
-		fmt.Println("  no fmt -d main.no           show colored diff")
-		fmt.Println("  no fmt src/                 list .no files in src/ needing formatting")
-		fmt.Println("  no fmt -w src/              format all .no files in src/ in-place")
-		fmt.Println("  no fmt -d src/              show diff for all .no files in src/")
-		fmt.Println("  echo 'x=1' | no fmt         format from stdin")
-		fmt.Println("  no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place")
-		fmt.Println("  no fmt -fix=redundant main.no   preview redundant annotation removal")
-		fmt.Println("  no fmt -fix=match -w src/       add missing match arms in src/ in-place")
-		fmt.Println("  no fmt -loop-style=suffix f.no   format loops as '{ } (cond)' / '{ } * N'")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("htdgzowm", "  no fmt                      format current dir (list files needing formatting)"))
+		fmt.Println(i18n.P("jc3psu5g", "  no fmt -w                   format all .no files in current dir in-place"))
+		fmt.Println(i18n.P("q76kxtef", "  no fmt -d                   show diff for all .no files in current dir"))
+		fmt.Println(i18n.P("lehy8lls", "  no fmt main.no              format and print to stdout"))
+		fmt.Println(i18n.P("9yqaweku", "  no fmt -w main.no           format file in-place"))
+		fmt.Println(i18n.P("wbsevkfk", "  no fmt -d main.no           show colored diff"))
+		fmt.Println(i18n.P("klplh4cw", "  no fmt src/                 list .no files in src/ needing formatting"))
+		fmt.Println(i18n.P("nmke5ijp", "  no fmt -w src/              format all .no files in src/ in-place"))
+		fmt.Println(i18n.P("zlotlakj", "  no fmt -d src/              show diff for all .no files in src/"))
+		fmt.Println(i18n.P("djuq12bh", "  echo 'x=1' | no fmt         format from stdin"))
+		fmt.Println(i18n.P("jx1w7b52", "  no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place"))
+		fmt.Println(i18n.P("lzgs7cds", "  no fmt -fix=redundant main.no   preview redundant annotation removal"))
+		fmt.Println(i18n.P("u3if6wak", "  no fmt -fix=match -w src/       add missing match arms in src/ in-place"))
+		fmt.Println(i18n.P("mh9jwcfu", "  no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'"))
 	}
 	_ = fs.Parse(args)
 
@@ -2499,55 +2593,55 @@ func buildCommand(args []string) {
 	ldFlags, args := parseLDFlags(args)
 	args = parseLLVMCAPIFlag(args)
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
-	outputFile := fs.String("o", "", "Output file path")
-	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
-	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
-	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
-	optInlineThreshold := fs.Int("option-inline-threshold", 0, "Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed")
-	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
-	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript source, no LLVM toolchain required)")
-	browserMode := fs.Bool("browser", false, "Generate browser-targeted output (HTML + JS, requires --js)")
-	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)")
+	outputFile := fs.String("o", "", i18n.P("vffhhi55", "Output file path"))
+	cc := fs.String("cc", "clang", i18n.P("7k5x9q9a", "C compiler: clang (default), zig"))
+	target := fs.String("target", "", i18n.P("g2ex1gxt", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)"))
+	unsafe := fs.Bool("unsafe", false, i18n.P("5o3x4h4d", "Skip bounds checks for maximum performance (unsafe)"))
+	optInlineThreshold := fs.Int("option-inline-threshold", 0, i18n.P("aazb9b1n", "Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed"))
+	wasmDirect := fs.Bool("wasm-direct", false, i18n.P("23ki71z9", "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)"))
+	jsBackend := fs.Bool("js", false, i18n.P("2u63w9uc", "Use JS backend (emit JavaScript source, no LLVM toolchain required)"))
+	browserMode := fs.Bool("browser", false, i18n.P("2psk9dma", "Generate browser-targeted output (HTML + JS, requires --js)"))
+	esmCDN := fs.String("esm-cdn", "", i18n.P("pa3bgtjn", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no build [flags] <file|directory>")
+		fmt.Println(i18n.P("let8mtmo", "Usage: no build [flags] <file|directory>"))
 		fmt.Println("")
-		fmt.Println("Build Nolang source files to an executable.")
-		fmt.Println("If no file/directory is specified and workspace.noml exists,")
-		fmt.Println("all projects in workspace.noml are built in parallel.")
+		fmt.Println(i18n.P("64bt3a50", "Build Nolang source files to an executable."))
+		fmt.Println(i18n.P("4eyd78yc", "If no file/directory is specified and workspace.noml exists,"))
+		fmt.Println(i18n.P("wu70c4w0", "all projects in workspace.noml are built in parallel."))
 		fmt.Println("")
-		fmt.Println("Flags:")
+		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
-		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
-		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible).")
-		fmt.Println("Use --browser with --js to generate browser-targeted JS and an HTML wrapper.")
-		fmt.Println("Use -v to emit LLVM IR (.ll) files for analysis alongside the build.")
-		fmt.Println("Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).")
+		fmt.Println(i18n.P("iqszywlc", "For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path."))
+		fmt.Println(i18n.P("3rob7gjj", "Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible)."))
+		fmt.Println(i18n.P("hoal6bo9", "Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible)."))
+		fmt.Println(i18n.P("squ5w5co", "Use --browser with --js to generate browser-targeted JS and an HTML wrapper."))
+		fmt.Println(i18n.P("18uic4sz", "Use -v to emit LLVM IR (.ll) files for analysis alongside the build."))
+		fmt.Println(i18n.P("74e32kaz", "Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default)."))
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no build                  build current directory or workspace.noml projects")
-		fmt.Println("  no build main.no")
-		fmt.Println("  no build -o output main.no")
-		fmt.Println("  no build -cc zig main.no")
-		fmt.Println("  no build -target x86_64-linux-gnu main.no")
-		fmt.Println("  no build -target wasm32-wasi main.no")
-		fmt.Println("  no build -unsafe main.no  build without bounds checks (max performance)")
-		fmt.Println("  no build --option-inline-threshold=8 main.no   box every ?T payload bigger than 8 bytes")
-		fmt.Println("  no build --wasm-direct -target wasm32-wasi main.no  emit WASM without LLVM toolchain")
-		fmt.Println("  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output")
-		fmt.Println("  no build --js main.no                              emit JavaScript (type erasure)")
-		fmt.Println("  no build --js -o app.js main.no                    JS backend with explicit output")
-		fmt.Println("  no build --js --browser main.no                    emit browser JS + HTML wrapper")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("elep1kra", "  no build                  build current directory or workspace.noml projects"))
+		fmt.Println(i18n.P("zr0vmo3q", "  no build main.no"))
+		fmt.Println(i18n.P("58nk14b4", "  no build -o output main.no"))
+		fmt.Println(i18n.P("8h17gwzn", "  no build -cc zig main.no"))
+		fmt.Println(i18n.P("rdl2c2x2", "  no build -target x86_64-linux-gnu main.no"))
+		fmt.Println(i18n.P("nmxsz1go", "  no build -target wasm32-wasi main.no"))
+		fmt.Println(i18n.P("eqsalj72", "  no build -unsafe main.no  build without bounds checks (max performance)"))
+		fmt.Println(i18n.P("wcoza64y", "  no build --option-inline-threshold=8 main.no   box every ?T payload bigger than 8 bytes"))
+		fmt.Println(i18n.P("mt377i94", "  no build --wasm-direct -target wasm32-wasi main.no  emit WASM without LLVM toolchain"))
+		fmt.Println(i18n.P("emlptf1e", "  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output"))
+		fmt.Println(i18n.P("yoq1krwy", "  no build --js main.no                              emit JavaScript (type erasure)"))
+		fmt.Println(i18n.P("hvuu1dxx", "  no build --js -o app.js main.no                    JS backend with explicit output"))
+		fmt.Println(i18n.P("r5fkc5h1", "  no build --js --browser main.no                    emit browser JS + HTML wrapper"))
 		fmt.Println("")
-		fmt.Println("Third-party ESM imports (JS backend only): pull in npm packages with")
-		fmt.Println("  # npm/lodash               the whole module object (use lodash.get(...))")
-		fmt.Println("  # npm/lodash.get as get    one named/exported binding")
-		fmt.Println("  # npm/lodash.default as d  the package default export")
-		fmt.Println("Each package must be declared in package.noml dependencies (or")
-		fmt.Println("devDependencies) and installed with npm install before `no run --js`.")
-		fmt.Println("Browser output resolves them through an import map; point it at")
-		fmt.Println("another CDN with --esm-cdn (e.g. https://cdn.jsdelivr.net/npm).")
+		fmt.Println(i18n.P("shw0oc0z", "Third-party ESM imports (JS backend only): pull in npm packages with"))
+		fmt.Println(i18n.P("i9bcpk5g", "  # npm/lodash               the whole module object (use lodash.get(...))"))
+		fmt.Println(i18n.P("r1wo1izg", "  # npm/lodash.get as get    one named/exported binding"))
+		fmt.Println(i18n.P("pgwm8msy", "  # npm/lodash.default as d  the package default export"))
+		fmt.Println(i18n.P("603y6hgq", "Each package must be declared in package.noml dependencies (or"))
+		fmt.Println(i18n.P("i31bp0tk", "devDependencies) and installed with npm install before `no run --js`."))
+		fmt.Println(i18n.P("0gl7izq7", "Browser output resolves them through an import map; point it at"))
+		fmt.Println(i18n.P("capaq6dh", "another CDN with --esm-cdn (e.g. https://cdn.jsdelivr.net/npm)."))
 	}
 	_ = fs.Parse(args)
 
@@ -2633,11 +2727,11 @@ func buildCommand(args []string) {
 	// Browser 模式額外印 .js 與「Open in browser」提示（buildJSBackend 回傳 .html 路徑）。
 	if kind == nbuild.BackendJS && opts.BrowserMode {
 		jsPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".js"
-		fmt.Printf("Built: %s\n", jsPath)
-		fmt.Printf("Built: %s\n", outPath)
-		fmt.Printf("Open in browser: %s\n", outPath)
+		fmt.Printf(i18n.P("8r9be4h9", "Built: %s\n"), jsPath)
+		fmt.Printf(i18n.P("8r9be4h9", "Built: %s\n"), outPath)
+		fmt.Printf(i18n.P("zdbv29a2", "Open in browser: %s\n"), outPath)
 	} else {
-		fmt.Printf("Build successful: %s\n", outPath)
+		fmt.Printf(i18n.P("dhae25dd", "Build successful: %s\n"), outPath)
 	}
 
 	// 第三方 ESM：build 只警告不攔截——產物本身就是合法的 ESM，缺包只影響
@@ -2656,51 +2750,51 @@ func runCommand(args []string) {
 	ldFlags, args := parseLDFlags(args)
 	args = parseLLVMCAPIFlag(args)
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
-	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
-	unsafe := fs.Bool("unsafe", false, "Skip bounds checks for maximum performance (unsafe)")
-	optInlineThreshold := fs.Int("option-inline-threshold", 0, "Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed")
-	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
-	jsBackend := fs.Bool("js", false, "Use JS backend (emit JavaScript, run with --js-runtime; default node)")
-	browserMode := fs.Bool("browser", false, "Open in browser (requires --js)")
-	esmCDN := fs.String("esm-cdn", "", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)")
-	jsRuntime := fs.String("js-runtime", defaultJSRuntime, "JS runtime used by --js runs: node (default), bun, deno, ... (extra args allowed, e.g. \"deno run --allow-read\")")
+	cc := fs.String("cc", "clang", i18n.P("7k5x9q9a", "C compiler: clang (default), zig"))
+	target := fs.String("target", "", i18n.P("g2ex1gxt", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)"))
+	unsafe := fs.Bool("unsafe", false, i18n.P("5o3x4h4d", "Skip bounds checks for maximum performance (unsafe)"))
+	optInlineThreshold := fs.Int("option-inline-threshold", 0, i18n.P("aazb9b1n", "Byte threshold for inlining an option (?T) payload into the option struct (default 24, minimum 8); payloads above it are heap-boxed"))
+	wasmDirect := fs.Bool("wasm-direct", false, i18n.P("23ki71z9", "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)"))
+	jsBackend := fs.Bool("js", false, i18n.P("dre61zsd", "Use JS backend (emit JavaScript, run with --js-runtime; default node)"))
+	browserMode := fs.Bool("browser", false, i18n.P("ci3l2aku", "Open in browser (requires --js)"))
+	esmCDN := fs.String("esm-cdn", "", i18n.P("pa3bgtjn", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)"))
+	jsRuntime := fs.String("js-runtime", defaultJSRuntime, i18n.P("deuvryn0", "JS runtime used by --js runs: node (default), bun, deno, ... (extra args allowed, e.g. \"deno run --allow-read\")"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no run [<package|dir|file>]")
+		fmt.Println(i18n.P("k2wgp5l6", "Usage: no run [<package|dir|file>]"))
 		fmt.Println("")
-		fmt.Println("Build and run a Nolang project.")
-		fmt.Println("The argument is resolved in this order:")
-		fmt.Println("  1. an existing .no file        -> run that file")
-		fmt.Println("  2. an existing directory       -> run its main.no")
-		fmt.Println("  3. a package name in workspace  -> run that package's main.no")
-		fmt.Println("With no argument, runs main.no in the current directory.")
+		fmt.Println(i18n.P("99vq7t38", "Build and run a Nolang project."))
+		fmt.Println(i18n.P("m0nvgkbt", "The argument is resolved in this order:"))
+		fmt.Println(i18n.P("suhqncsk", "  1. an existing .no file        -> run that file"))
+		fmt.Println(i18n.P("eu5v0rj9", "  2. an existing directory       -> run its main.no"))
+		fmt.Println(i18n.P("iztes0wp", "  3. a package name in workspace  -> run that package's main.no"))
+		fmt.Println(i18n.P("vjj66evx", "With no argument, runs main.no in the current directory."))
 		fmt.Println("")
-		fmt.Println("Flags:")
+		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
-		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
-		fmt.Println("Use --js to bypass LLVM toolchain and emit JavaScript (run with node).")
-		fmt.Println("Use --js --browser to emit browser JS + HTML and open in the default browser.")
-		fmt.Println("Use --js-runtime <cmd> to choose the JS runtime for `no run --js` (node, bun, deno, ...).")
-		fmt.Println("Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default).")
+		fmt.Println(i18n.P("iqszywlc", "For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path."))
+		fmt.Println(i18n.P("3rob7gjj", "Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible)."))
+		fmt.Println(i18n.P("5nlhrsc7", "Use --js to bypass LLVM toolchain and emit JavaScript (run with node)."))
+		fmt.Println(i18n.P("srpc0cgx", "Use --js --browser to emit browser JS + HTML and open in the default browser."))
+		fmt.Println(i18n.P("mlyz11mg", "Use --js-runtime <cmd> to choose the JS runtime for `no run --js` (node, bun, deno, ...)."))
+		fmt.Println(i18n.P("74e32kaz", "Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default)."))
 		fmt.Println("")
-		fmt.Println("Third-party ESM imports (--js): import npm packages with `# npm/lodash`,")
-		fmt.Println("`# npm/lodash.get as get` or `# npm/lodash.default as d`. Declare them in")
-		fmt.Println("package.noml dependencies and npm install first; `no run --js` fails with")
-		fmt.Println("an install hint when a package is missing.")
+		fmt.Println(i18n.P("1zgxpqk7", "Third-party ESM imports (--js): import npm packages with `# npm/lodash`,"))
+		fmt.Println(i18n.P("vkq3r0r2", "`# npm/lodash.get as get` or `# npm/lodash.default as d`. Declare them in"))
+		fmt.Println(i18n.P("vuvokhaa", "package.noml dependencies and npm install first; `no run --js` fails with"))
+		fmt.Println(i18n.P("yu5ep241", "an install hint when a package is missing."))
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no run                       build and run main.no in current dir")
-		fmt.Println("  no run foo                   run package 'foo' (from workspace.noml)")
-		fmt.Println("  no run ./foo                 run the ./foo directory's main.no")
-		fmt.Println("  no run main.no               build and run main.no")
-		fmt.Println("  no run -cc zig main.no       build and run with Zig compiler")
-		fmt.Println("  no run -target wasm32-wasi main.no")
-		fmt.Println("  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)")
-		fmt.Println("  no run --js main.no            build via JS backend then run with node")
-		fmt.Println("  no run --js --js-runtime bun main.no     same, with bun (node, bun, deno, ...)")
-		fmt.Println("  no run --js --browser main.no  build browser JS + HTML and open in default browser")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("zy88y2ur", "  no run                       build and run main.no in current dir"))
+		fmt.Println(i18n.P("w826wv42", "  no run foo                   run package 'foo' (from workspace.noml)"))
+		fmt.Println(i18n.P("yxf3nmjr", "  no run ./foo                 run the ./foo directory's main.no"))
+		fmt.Println(i18n.P("p08xevlx", "  no run main.no               build and run main.no"))
+		fmt.Println(i18n.P("wttj7qs9", "  no run -cc zig main.no       build and run with Zig compiler"))
+		fmt.Println(i18n.P("b978wrdx", "  no run -target wasm32-wasi main.no"))
+		fmt.Println(i18n.P("3u2xl8v7", "  no run --wasm-direct main.no  build via Direct WASM backend then run with wasmtime (if available)"))
+		fmt.Println(i18n.P("ne9gyl5c", "  no run --js main.no            build via JS backend then run with node"))
+		fmt.Println(i18n.P("ol21t36r", "  no run --js --js-runtime bun main.no     same, with bun (node, bun, deno, ...)"))
+		fmt.Println(i18n.P("e01glh6p", "  no run --js --browser main.no  build browser JS + HTML and open in default browser"))
 	}
 	_ = fs.Parse(args)
 
@@ -2827,12 +2921,12 @@ func runCommand(args []string) {
 			case "windows":
 				openCmd = exec.Command("cmd", "/c", "start", outPath)
 			default:
-				fmt.Printf("Open in browser: %s\n", outPath)
+				fmt.Printf(i18n.P("zdbv29a2", "Open in browser: %s\n"), outPath)
 				return
 			}
 			if err := openCmd.Run(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to open browser: %v\n", err)
-				fmt.Printf("Open manually: %s\n", outPath)
+				fmt.Printf(i18n.P("n48cusda", "Open manually: %s\n"), outPath)
 			}
 			return
 		}
@@ -2979,7 +3073,7 @@ func serveESMAndOpen(dir, htmlPath string) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	url := fmt.Sprintf("http://127.0.0.1:%d/%s", port, filepath.Base(htmlPath))
 	go func() { _ = srv.Serve(ln) }()
-	fmt.Printf("Serving ESM output at %s (Ctrl+C to stop)\n", url)
+	fmt.Printf(i18n.P("lvi02faz", "Serving ESM output at %s (Ctrl+C to stop)\n"), url)
 	opened := false
 	switch runtime.GOOS {
 	case "darwin":
@@ -2990,7 +3084,7 @@ func serveESMAndOpen(dir, htmlPath string) {
 		opened = exec.Command("cmd", "/c", "start", url).Run() == nil
 	}
 	if !opened {
-		fmt.Printf("Open manually: %s\n", url)
+		fmt.Printf(i18n.P("n48cusda", "Open manually: %s\n"), url)
 	}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -3004,31 +3098,31 @@ func testCommand(args []string) {
 	ldFlags, args := parseLDFlags(args)
 	args = parseLLVMCAPIFlag(args)
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
-	cc := fs.String("cc", "clang", "C compiler: clang (default), zig")
-	target := fs.String("target", "", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)")
-	wasmDirect := fs.Bool("wasm-direct", false, "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)")
-	timeoutSec := fs.Int("timeout", 0, "per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run")
+	cc := fs.String("cc", "clang", i18n.P("7k5x9q9a", "C compiler: clang (default), zig"))
+	target := fs.String("target", "", i18n.P("g2ex1gxt", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)"))
+	wasmDirect := fs.Bool("wasm-direct", false, i18n.P("23ki71z9", "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)"))
+	timeoutSec := fs.Int("timeout", 0, i18n.P("l6euu21x", "per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no test [<file>]")
+		fmt.Println(i18n.P("su2q9at6", "Usage: no test [<file>]"))
 		fmt.Println("")
-		fmt.Println("Run tests.")
-		fmt.Println("  no test                     run all .no files in tests/ directory")
-		fmt.Println("  no test tests/my-test.no    run a single test file")
+		fmt.Println(i18n.P("2ixluoth", "Run tests."))
+		fmt.Println(i18n.P("73myjkcm", "  no test                     run all .no files in tests/ directory"))
+		fmt.Println(i18n.P("531ftg4b", "  no test tests/my-test.no    run a single test file"))
 		fmt.Println("")
-		fmt.Println("Flags:")
+		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path.")
-		fmt.Println("Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible).")
+		fmt.Println(i18n.P("iqszywlc", "For wasm32-wasi target, set $WASI_SYSROOT to your wasi-sysroot path."))
+		fmt.Println(i18n.P("3rob7gjj", "Use --wasm-direct to bypass LLVM toolchain and emit WASM directly (browser-compatible)."))
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no test")
-		fmt.Println("  no test tests/my-test.no")
-		fmt.Println("  no test -cc zig")
-		fmt.Println("  no test -target x86_64-linux-gnu")
-		fmt.Println("  no test -target wasm32-wasi")
-		fmt.Println("  no test --wasm-direct       run tests via Direct WASM backend with wasmtime")
-		fmt.Println("  no test -timeout 90 test/std   run a whole dir sequentially; each file capped at 90s")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("8ehrkmgn", "  no test"))
+		fmt.Println(i18n.P("g6phjqek", "  no test tests/my-test.no"))
+		fmt.Println(i18n.P("55szl0aa", "  no test -cc zig"))
+		fmt.Println(i18n.P("iubb5mnf", "  no test -target x86_64-linux-gnu"))
+		fmt.Println(i18n.P("ibl465o8", "  no test -target wasm32-wasi"))
+		fmt.Println(i18n.P("f5gbhit6", "  no test --wasm-direct       run tests via Direct WASM backend with wasmtime"))
+		fmt.Println(i18n.P("ve2dzkxe", "  no test -timeout 90 test/std   run a whole dir sequentially; each file capped at 90s"))
 	}
 	_ = fs.Parse(args)
 
@@ -3092,7 +3186,7 @@ func testCommand(args []string) {
 			os.Exit(1)
 		}
 		if len(testFiles) == 0 {
-			fmt.Println("No test files found in " + inputPath)
+			fmt.Println(i18n.P("fu1ow141", "No test files found in ") + inputPath)
 			return
 		}
 	} else {
@@ -3142,7 +3236,7 @@ func testCommand(args []string) {
 
 	for _, tf := range testFiles {
 		if verbose {
-			fmt.Printf("Testing: %s\n", tf)
+			fmt.Printf(i18n.P("8wygofht", "Testing: %s\n"), tf)
 		}
 
 		tmpDir, err := os.MkdirTemp("", "nolang-test")
@@ -3239,33 +3333,33 @@ func testCommand(args []string) {
 func vetCommand(args []string) {
 	nbuild.ClearCaches()
 	fs := flag.NewFlagSet("vet", flag.ExitOnError)
-	reuseStdAST := fs.Bool("reuse-std-ast", false, "reuse already-parsed std Program AST for 'no vet src/std' (experimental, skips re-parsing each std module)")
-	strict := fs.Bool("strict", false, "upgrade lint warnings/hints to errors")
-	jsonMode := fs.Bool("json", false, "emit machine-readable JSON diagnostics instead of text")
+	reuseStdAST := fs.Bool("reuse-std-ast", false, i18n.P("m13ljyfp", "reuse already-parsed std Program AST for 'no vet src/std' (experimental, skips re-parsing each std module)"))
+	strict := fs.Bool("strict", false, i18n.P("izzihnrp", "upgrade lint warnings/hints to errors"))
+	jsonMode := fs.Bool("json", false, i18n.P("easgxbye", "emit machine-readable JSON diagnostics instead of text"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no vet [--strict] [--json] [<file|dir>]")
+		fmt.Println(i18n.P("qogvayg4", "Usage: no vet [--strict] [--json] [<file|dir>]"))
 		fmt.Println("")
-		fmt.Println("Validate Nolang source files without producing output.")
-		fmt.Println("If directory, validates all .no files in that directory.")
-		fmt.Println("Output format: file:line:col: [SEVERITY] source: message")
+		fmt.Println(i18n.P("1cg8g9ic", "Validate Nolang source files without producing output."))
+		fmt.Println(i18n.P("zm87x8w0", "If directory, validates all .no files in that directory."))
+		fmt.Println(i18n.P("bikq8xen", "Output format: file:line:col: [SEVERITY] source: message"))
 		fmt.Println("")
-		fmt.Println("Flags:")
-		fmt.Println("  --strict         upgrade all lint warnings/hints to errors")
-		fmt.Println("  --reuse-std-ast  reuse already-parsed std Program AST (experimental)")
-		fmt.Println("  --json           emit structured JSON diagnostics (CI/tooling friendly)")
+		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
+		fmt.Println(i18n.P("7l372tkw", "  --strict         upgrade all lint warnings/hints to errors"))
+		fmt.Println(i18n.P("r96s24ec", "  --reuse-std-ast  reuse already-parsed std Program AST (experimental)"))
+		fmt.Println(i18n.P("ki6qzzsx", "  --json           emit structured JSON diagnostics (CI/tooling friendly)"))
 		fmt.Println("")
-		fmt.Println("Backend:")
-		fmt.Println("  A package declaring compiler.emit = \"js\" in package.noml is validated with")
-		fmt.Println("  the JS backend's module resolution, so `# npm/<pkg>` ESM imports and native")
-		fmt.Println("  package imports (#{bind = ffi|wasm}) resolve instead of failing — LLVM cannot")
-		fmt.Println("  link JS modules. No flag needed; the manifest drives it.")
+		fmt.Println(i18n.P("2lxm8j4k", "Backend:"))
+		fmt.Println(i18n.P("e3xplf89", "  A package declaring compiler.emit = \"js\" in package.noml is validated with"))
+		fmt.Println(i18n.P("4pj8z50l", "  the JS backend's module resolution, so `# npm/<pkg>` ESM imports and native"))
+		fmt.Println(i18n.P("mwhgbhbp", "  package imports (#{bind = ffi|wasm}) resolve instead of failing — LLVM cannot"))
+		fmt.Println(i18n.P("1ea3hwsu", "  link JS modules. No flag needed; the manifest drives it."))
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no vet                     validate main.no in current dir")
-		fmt.Println("  no vet main.no             validate main.no")
-		fmt.Println("  no vet src/std/            validate all .no files in src/std/")
-		fmt.Println("  no vet --strict src/std/   fail if any lint warning/hint is found")
-		fmt.Println("  no vet --json src/std/     emit diagnostics as JSON")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("1gmy3g9v", "  no vet                     validate main.no in current dir"))
+		fmt.Println(i18n.P("pev2j4v9", "  no vet main.no             validate main.no"))
+		fmt.Println(i18n.P("ehsahzu5", "  no vet src/std/            validate all .no files in src/std/"))
+		fmt.Println(i18n.P("trahnyuh", "  no vet --strict src/std/   fail if any lint warning/hint is found"))
+		fmt.Println(i18n.P("yyh1cd5z", "  no vet --json src/std/     emit diagnostics as JSON"))
 	}
 	_ = fs.Parse(args)
 
@@ -3423,7 +3517,7 @@ func vetCommand(args []string) {
 	}
 
 	if verbose {
-		fmt.Println("Validation successful")
+		fmt.Println(i18n.P("v0avn8e4", "Validation successful"))
 	}
 }
 
@@ -3665,23 +3759,23 @@ func packAST(target, out string) (string, *mmast.ZipStats, error) {
 
 func packCommand(args []string) {
 	fs := flag.NewFlagSet("pack", flag.ExitOnError)
-	out := fs.String("o", "", "Output zip path (default: dist/<tool>.ast.zip)")
+	out := fs.String("o", "", i18n.P("uf368nh9", "Output zip path (default: dist/<tool>.ast.zip)"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no pack [-o <file>] [<dir|file.no>]")
+		fmt.Println(i18n.P("e9ab330i", "Usage: no pack [-o <file>] [<dir|file.no>]"))
 		fmt.Println("")
-		fmt.Println("Pack a module's AST as gob + zip (<tool>.ast.zip).")
-		fmt.Println("Only lexing/parsing is needed — no LLVM toolchain — so this runs")
-		fmt.Println("in CI to produce the asset `no add` downloads:")
-		fmt.Println("  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip")
+		fmt.Println(i18n.P("wfua2ax8", "Pack a module's AST as gob + zip (<tool>.ast.zip)."))
+		fmt.Println(i18n.P("izc6aklk", "Only lexing/parsing is needed — no LLVM toolchain — so this runs"))
+		fmt.Println(i18n.P("zpeqou62", "in CI to produce the asset `no add` downloads:"))
+		fmt.Println(i18n.P("phqmamrn", "  <host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip"))
 		fmt.Println("")
-		fmt.Println("Flags:")
+		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no pack                          pack current package -> dist/<name>.ast.zip")
-		fmt.Println("  no pack -o nogit.ast.zip         explicit output (CI friendly)")
-		fmt.Println("  no pack nogit.no                 pack a single source file")
-		fmt.Println("  no pack ./nogit                  pack a package directory")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("ufmw3i5q", "  no pack                          pack current package -> dist/<name>.ast.zip"))
+		fmt.Println(i18n.P("9smrnsbd", "  no pack -o nogit.ast.zip         explicit output (CI friendly)"))
+		fmt.Println(i18n.P("nx1476j3", "  no pack nogit.no                 pack a single source file"))
+		fmt.Println(i18n.P("9novjn6s", "  no pack ./nogit                  pack a package directory"))
 	}
 	_ = fs.Parse(args)
 
@@ -3694,8 +3788,8 @@ func packCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Packed AST: %s\n", dst)
-	fmt.Printf("  bytes:  %d\n  nodes:  %d\n", st.Bytes, st.Nodes)
+	fmt.Printf(i18n.P("sv3fw1hp", "Packed AST: %s\n"), dst)
+	fmt.Printf(i18n.P("gmlatduc", "  bytes:  %d\n  nodes:  %d\n"), st.Bytes, st.Nodes)
 }
 
 // pubCommand 把當前包打包成預編 AST 包 <name>.ast.zip（gob + zip）。
@@ -3704,22 +3798,22 @@ func packCommand(args []string) {
 // --registry/--token 也只會提示，不會靜默假裝成功。
 func pubCommand(args []string) {
 	fs := flag.NewFlagSet("pub", flag.ExitOnError)
-	token := fs.String("token", "", "Registry authentication token (unused: upload not implemented)")
-	registry := fs.String("registry", "", "Package registry URL (unused: upload not implemented)")
-	out := fs.String("o", "", "Output zip path (default: dist/<name>.ast.zip)")
+	token := fs.String("token", "", i18n.P("mbnaky32", "Registry authentication token (unused: upload not implemented)"))
+	registry := fs.String("registry", "", i18n.P("vas3pyce", "Package registry URL (unused: upload not implemented)"))
+	out := fs.String("o", "", i18n.P("1wsc2hed", "Output zip path (default: dist/<name>.ast.zip)"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no pub [-o <file>]")
+		fmt.Println(i18n.P("dqrzfvyt", "Usage: no pub [-o <file>]"))
 		fmt.Println("")
-		fmt.Println("Package the current package's AST as gob + zip.")
-		fmt.Println("The result is what `no add <tool>@<host>/<owner>/<repo>` downloads:")
-		fmt.Println("<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip")
+		fmt.Println(i18n.P("fxc0tilj", "Package the current package's AST as gob + zip."))
+		fmt.Println(i18n.P("n08bzk5j", "The result is what `no add <tool>@<host>/<owner>/<repo>` downloads:"))
+		fmt.Println(i18n.P("4en75r71", "<host>/<owner>/<repo>/releases/download/<version>/<tool>.ast.zip"))
 		fmt.Println("")
-		fmt.Println("Flags:")
+		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no pub                       write dist/<name>.ast.zip")
-		fmt.Println("  no pub -o nogit.ast.zip      write an explicit path")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("tbfsq7ph", "  no pub                       write dist/<name>.ast.zip"))
+		fmt.Println(i18n.P("q06zlcbx", "  no pub -o nogit.ast.zip      write an explicit path"))
 	}
 	_ = fs.Parse(args)
 
@@ -3729,35 +3823,35 @@ func pubCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Packed AST: %s\n", dst)
-	fmt.Printf("  bytes:  %d\n  nodes:  %d\n", st.Bytes, st.Nodes)
+	fmt.Printf(i18n.P("sv3fw1hp", "Packed AST: %s\n"), dst)
+	fmt.Printf(i18n.P("gmlatduc", "  bytes:  %d\n  nodes:  %d\n"), st.Bytes, st.Nodes)
 	if *registry != "" || *token != "" {
-		fmt.Println("Note: registry upload is not implemented yet; upload this zip to a GitHub release.")
+		fmt.Println(i18n.P("velk9bjg", "Note: registry upload is not implemented yet; upload this zip to a GitHub release."))
 	}
 }
 
 func astCommand(args []string) {
 	fs := flag.NewFlagSet("ast", flag.ExitOnError)
 	annotations := fs.Bool("annotations", false,
-		"also dump the #{...} annotation entries attached to each node")
+		i18n.P("cfmyuhe8", "also dump the #{...} annotation entries attached to each node"))
 	fs.Usage = func() {
-		fmt.Println("Usage: no ast [-annotations] <file>")
+		fmt.Println(i18n.P("x6snirjy", "Usage: no ast [-annotations] <file>"))
 		fmt.Println("")
-		fmt.Println("Parse a Nolang source file and print its AST to stdout.")
-		fmt.Println("This is the L2 oracle of the self-hosting effort: the output is")
-		fmt.Println("compared byte-for-byte against `noc ast`, so the format is a spec.")
+		fmt.Println(i18n.P("2q3wfrie", "Parse a Nolang source file and print its AST to stdout."))
+		fmt.Println(i18n.P("3zh3tuv8", "This is the L2 oracle of the self-hosting effort: the output is"))
+		fmt.Println(i18n.P("8ux5w599", "compared byte-for-byte against `noc ast`, so the format is a spec."))
 		fmt.Println("")
-		fmt.Println("The #{...} annotation system lives in a semantic side-table rather")
-		fmt.Println("than in the node fields, so it is omitted by default; pass")
-		fmt.Println("-annotations to include it.")
+		fmt.Println(i18n.P("juu3smx0", "The #{...} annotation system lives in a semantic side-table rather"))
+		fmt.Println(i18n.P("oaei2lx7", "than in the node fields, so it is omitted by default; pass"))
+		fmt.Println(i18n.P("gjsrgyn8", "-annotations to include it."))
 		fmt.Println("")
-		fmt.Println("⚠️ Flags must precede the file name (Go's flag package stops")
-		fmt.Println("   parsing at the first positional argument).")
+		fmt.Println(i18n.P("ymwfqb9o", "⚠️ Flags must precede the file name (Go's flag package stops"))
+		fmt.Println(i18n.P("urxylcac", "   parsing at the first positional argument)."))
 		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  no ast main.no                    print AST for main.no")
-		fmt.Println("  no ast -annotations main.no       ... including #{...} annotations")
-		fmt.Println("  no ast src/std/vec.no             print AST for vec.no")
+		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
+		fmt.Println(i18n.P("20szn23y", "  no ast main.no                    print AST for main.no"))
+		fmt.Println(i18n.P("aqrceaf2", "  no ast -annotations main.no       ... including #{...} annotations"))
+		fmt.Println(i18n.P("hun7qbmc", "  no ast src/std/vec.no             print AST for vec.no"))
 	}
 	_ = fs.Parse(args)
 

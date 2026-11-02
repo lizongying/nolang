@@ -12,7 +12,7 @@ Nolang 编程语言（版本 %s）
 用法:
 全局选项:
   -v    详细模式（适用于所有命令）
-  --lang=<tag>  消息语言，例如 --lang=zh-CN、--lang=en。
+  --lang=<tag>  消息语言，例如 --lang=zh-cn、--lang=en。
                 默认跟随系统区域设置（$LC_ALL / $LANG）；
                 英语为回退语言。也可通过 $NO_LANG 设置。
 

@@ -1376,6 +1376,17 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 	switch elemRaw {
 	case "str":
 		return "%str-long"
+	case "txt":
+		// `txt` is the 256-byte inline buffer `{ [255 x i8], i8 }`, NOT a
+		// %str-long. Without this case it fell through to the final `return
+		// "i64"`, so `?txt`'s payload looked like a scalar: the comparison
+		// against a plain `txt` then failed optionPayloadComparable and
+		// degraded to the DISCRIMINANT — `?txt == txt` compared the tag
+		// (rendered as "0" by the int->str promotion) against the text, i.e.
+		// always false — and every other payload read of a `?txt` interpreted
+		// the first 8 bytes of the buffer as an i64. It is boxed (256 > the
+		// 24-byte slot), which the option machinery already handles.
+		return "%txt"
 	case "vec":
 		return "%vec"
 	// `f32` 與 `f64` 在 MIR 一律以 `double` 承載（builtin_call.go 的
@@ -2162,6 +2173,101 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	b.WriteString("  %r1 = insertvalue %vec %r0, i64 %len, 1\n")
 	b.WriteString("  %r2 = insertvalue %vec %r1, i64 %newi, 2\n")
 	b.WriteString("  ret %vec %r2\n}\n")
+	c.extraFuncsBody.WriteString(b.String())
+	return "@" + fn
+}
+
+// vecDeepEq emits (once per element type and depth) a helper that compares two
+// %vec values STRUCTURALLY, and returns its @name ("" when the element type is
+// unknown, in which case the caller keeps its old behaviour).
+//
+// `a == b` on two slices used to fall through emitCmp's generic integer path,
+// which LLVM rejects outright — "icmp requires integer operands" — because a
+// %vec is the aggregate {i64 len, i64 cap, i64 data}. So `a == b` on `[]i64` did
+// not compile at all, and the same comparison reached through an element read
+// (`aa[i] == bb[i]` on `[][]i64`) failed identically. Both now go through this
+// helper.
+//
+// The comparison is: equal lengths AND equal elements. An element that itself
+// owns heap memory (`str`, a nested slice) is compared by CONTENT — @str_eq for
+// a string, a recursive call for a slice. A flat memcmp would compare their
+// data POINTERS and report two equal strings as different, which is exactly the
+// silent-wrong-answer failure mode this codebase keeps hitting. Everything else
+// (i64, f64, char, byte, POD structs) has value semantics under memcmp.
+//
+// The empty-slice case needs no special handling: two zero-length slices are
+// equal regardless of their (possibly null) data pointers, and memcmp with a
+// zero byte count never dereferences them.
+func (c *codegen) vecDeepEq(elemType TypeID, depth int) string {
+	t := c.mod.Type(elemType)
+	if t == nil {
+		return ""
+	}
+	elemLT := c.llvmTypeOf(t)
+	if elemLT == "" {
+		return ""
+	}
+	fn := fmt.Sprintf("__nolang_vec_eq_%d_%d", elemType, depth)
+	if c.extraFuncs[fn] {
+		return "@" + fn
+	}
+	c.extraFuncs[fn] = true
+
+	// Per-element comparison, "" when memcmp over the whole buffer is the
+	// answer (every element type with plain value semantics).
+	elemEq := ""
+	if depth < vecCloneMaxDepth {
+		switch {
+		case elemLT == "%str-long":
+			c.decl("declare i1 @str_eq(%str-long, %str-long)")
+			elemEq = "@str_eq"
+		case t.Kind == KindSlice:
+			elemEq = c.vecDeepEq(t.Elem, depth+1)
+		}
+	}
+	if elemEq == "" {
+		c.decl("declare i32 @memcmp(i8*, i8*, i64)")
+	}
+
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "define i1 @%s(%%vec %%a, %%vec %%b) {\n", fn)
+	b.WriteString("entry:\n")
+	b.WriteString("  %la = extractvalue %vec %a, 0\n")
+	b.WriteString("  %lb = extractvalue %vec %b, 0\n")
+	b.WriteString("  %leneq = icmp eq i64 %la, %lb\n")
+	b.WriteString("  br i1 %leneq, label %cmp, label %no\n")
+	b.WriteString("cmp:\n")
+	b.WriteString("  %da = extractvalue %vec %a, 2\n")
+	b.WriteString("  %db = extractvalue %vec %b, 2\n")
+	b.WriteString("  %pa = inttoptr i64 %da to ptr\n")
+	b.WriteString("  %pb = inttoptr i64 %db to ptr\n")
+	if elemEq == "" {
+		fmt.Fprintf(b, "  %%es = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", elemLT)
+		b.WriteString("  %bytes = mul i64 %la, %es\n")
+		b.WriteString("  %mr = call i32 @memcmp(ptr %pa, ptr %pb, i64 %bytes)\n")
+		b.WriteString("  %same = icmp eq i32 %mr, 0\n")
+		b.WriteString("  ret i1 %same\n")
+	} else {
+		b.WriteString("  br label %lp\n")
+		b.WriteString("lp:\n")
+		b.WriteString("  %i = phi i64 [ 0, %cmp ], [ %inext, %next ]\n")
+		b.WriteString("  %more = icmp ult i64 %i, %la\n")
+		b.WriteString("  br i1 %more, label %body, label %yes\n")
+		b.WriteString("body:\n")
+		fmt.Fprintf(b, "  %%eap = getelementptr inbounds %s, ptr %%pa, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%ea = load %s, ptr %%eap\n", elemLT)
+		fmt.Fprintf(b, "  %%ebp = getelementptr inbounds %s, ptr %%pb, i64 %%i\n", elemLT)
+		fmt.Fprintf(b, "  %%eb = load %s, ptr %%ebp\n", elemLT)
+		fmt.Fprintf(b, "  %%eeq = call i1 %s(%s %%ea, %s %%eb)\n", elemEq, elemLT, elemLT)
+		b.WriteString("  br i1 %eeq, label %next, label %no\n")
+		b.WriteString("next:\n")
+		b.WriteString("  %inext = add i64 %i, 1\n")
+		b.WriteString("  br label %lp\n")
+		b.WriteString("yes:\n")
+		b.WriteString("  ret i1 true\n")
+	}
+	b.WriteString("no:\n")
+	b.WriteString("  ret i1 false\n}\n")
 	c.extraFuncsBody.WriteString(b.String())
 	return "@" + fn
 }
@@ -5593,6 +5699,15 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	}
 	src := inst.Args[0]
 	svType, sv := c.loadVal(src)
+	// `?str = <txt>`: the option's payload is a %str-long, but the value is the
+	// 256-byte %txt stack buffer. Storing the buffer raw handed a %str-long
+	// reader 24 bytes of TEXT (the ok arm printed the empty string, since the
+	// first field of `{ [255 x i8], i8 }` is not a length). Materialise a real
+	// str from the buffer's bytes and its length byte.
+	if payloadLT == "%str-long" && svType == "%txt" {
+		sv = c.strFromTxtValue(sv)
+		svType = "%str-long"
+	}
 	// A fixed-array literal into a `?[]T` option must become a real slice
 	// first: its bytes are the ELEMENTS, so storing them raw would make the
 	// payload read back as {len=first-elem, cap=second-elem, ...}.
@@ -6254,6 +6369,14 @@ func optionPayloadComparable(payloadT, otherT string) bool {
 	if otherT == "%str-long" && isIntType(payloadT) {
 		return true
 	}
+	// `?txt` vs a `str` operand (and `?str` vs a `txt` operand): the two are
+	// different layouts for the same value, and emitCmp already promotes the
+	// %str-long side to %txt (txtValueFromStr) once both operands are unwrapped.
+	// Without this case `?txt == <str>` fell back to the DISCRIMINANT and
+	// compared the tag, rendered as the decimal string "0", against the text.
+	if (payloadT == "%txt" && otherT == "%str-long") || (payloadT == "%str-long" && otherT == "%txt") {
+		return true
+	}
 	return false
 }
 
@@ -6507,6 +6630,30 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		fmt.Fprintf(c.sb, "  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot)
 		return nil
 	}
+	// Slice comparison (`[]T == []T`): a %vec is the aggregate
+	// {i64 len, i64 cap, i64 data}, so the generic `icmp eq %vec` below is not
+	// even legal IR. Compare structurally through a specialised helper (see
+	// vecDeepEq). This is the path `a == b` on `[]i64` takes, and the one
+	// `aa[i] == bb[i]` on `[][]i64` takes through an element read.
+	if aT == "%vec" && bT == "%vec" && (inst.Op == OpEq || inst.Op == OpNe) {
+		et := c.vecElemTypeID(inst.Args[0])
+		if et == NoType {
+			et = c.vecElemTypeID(inst.Args[1])
+		}
+		if helper := c.vecDeepEq(et, 0); helper != "" {
+			eqR := fmt.Sprintf("%%c%d", inst.Dst)
+			if inst.Op == OpNe {
+				// `!=` is the exact negation of `==`, not a second helper.
+				eqR = fmt.Sprintf("%%c%de", inst.Dst)
+				fmt.Fprintf(c.sb, "  %s = call i1 %s(%%vec %s, %%vec %s)\n", eqR, helper, aV, bV)
+				fmt.Fprintf(c.sb, "  %%c%d = xor i1 %s, true\n", inst.Dst, eqR)
+			} else {
+				fmt.Fprintf(c.sb, "  %s = call i1 %s(%%vec %s, %%vec %s)\n", eqR, helper, aV, bV)
+			}
+			fmt.Fprintf(c.sb, "  store %s %%c%d, %s* %s\n", lt, inst.Dst, lt, slot)
+			return nil
+		}
+	}
 	if aT == "double" || bT == "double" {
 		// Integer predicates (slt/sle/...) are ILLEGAL in fcmp; map to the
 		// ordered float predicates (olt/ole/ogt/oge). The bare "o"+op form only
@@ -6677,6 +6824,37 @@ func (c *codegen) rawTypeOfValue(v ValueID) string {
 		return ty.Raw
 	}
 	return ""
+}
+
+// strFromTxtValue materialises a %str-long from a %txt value. The 256-byte
+// `%txt = { [255 x i8], i8 }` buffer holds its bytes inline and its length in
+// the trailing i8; @str_from_const copies those bytes into a fresh heap buffer,
+// so the result is an ordinary OWNED str that the option can free.
+//
+// Needed by emitOptionWrap for `?str = <txt>`: without it the buffer was
+// stored raw into a %str-long payload slot, so the ok arm read the first 24
+// bytes of the TEXT as {len, cap, data} and printed the empty string.
+func (c *codegen) strFromTxtValue(txtV string) string {
+	c.loadSeq++
+	slot := fmt.Sprintf("%%txs.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = alloca %%txt\n", slot)
+	fmt.Fprintf(c.sb, "  store %%txt %s, %%txt* %s\n", txtV, slot)
+	c.loadSeq++
+	dp := fmt.Sprintf("%%txd.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dp, slot)
+	c.loadSeq++
+	lp := fmt.Sprintf("%%txl.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 1\n", lp, slot)
+	c.loadSeq++
+	l8 := fmt.Sprintf("%%txv.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = load i8, i8* %s\n", l8, lp)
+	c.loadSeq++
+	l64 := fmt.Sprintf("%%txw.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", l64, l8)
+	c.loadSeq++
+	r := fmt.Sprintf("%%txr.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = call %%str-long @str_from_const(i8* %s, i64 %s)\n", r, dp, l64)
+	return r
 }
 
 // scalarRawOf is rawTypeOfValue for a value that may be an OPTION whose payload
@@ -12826,6 +13004,19 @@ func (c *codegen) emitOptionPrintHelper(payloadLT string) {
 		body = "  %pz = zext i8 %p to i64\n  call void @print_i64(i64 %pz)\n"
 	case "i1":
 		body = "  call void @print_bool(i1 %p)\n"
+	case "%txt":
+		// The 256-byte inline buffer has no printer of its own: `print(t)` on a
+		// txt goes through a %str-long, so do the same here — materialise the
+		// str from the buffer's bytes and length byte, print it, free it.
+		body = "  %tb = alloca %txt\n" +
+			"  store %txt %p, %txt* %tb\n" +
+			"  %tdata = getelementptr inbounds %txt, %txt* %tb, i32 0, i32 0, i64 0\n" +
+			"  %tlenp = getelementptr inbounds %txt, %txt* %tb, i32 0, i32 1\n" +
+			"  %tlen8 = load i8, i8* %tlenp\n" +
+			"  %tlen = zext i8 %tlen8 to i64\n" +
+			"  %tstr = call %str-long @str_from_const(i8* %tdata, i64 %tlen)\n" +
+			"  call void @print_str(%str-long %tstr)\n" +
+			"  call void @str_free(%str-long %tstr)\n"
 	default:
 		// %vec / user-struct / fixed-array / boxed: no scalar printer — skip.
 		return

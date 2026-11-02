@@ -62,10 +62,9 @@ zlib-compress = (data []byte) (out []byte) {
 
     ; DEFLATE 資料（stored blocks）
     deflated = gzip.deflate-stored(data)
-    i <- [0..deflated.len()): {
+    b <- deflated: {
 
-        #{index-out=zero}
-        result.push(deflated[i])
+        result.push(b)
     }
 
     ; Adler-32 checksum（big-endian 4 bytes）

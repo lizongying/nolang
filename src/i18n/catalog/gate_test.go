@@ -1,9 +1,11 @@
 package catalog_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -115,9 +117,9 @@ func TestDocCatalogKeys(t *testing.T) {
 		t.Fatalf("expected at least en and one translation, got %v", names)
 	}
 	for _, name := range names {
-		// The file name is lowercase by the `.no` naming rule, so this label is
-		// `zh-cn` rather than the `zh-CN` tag the user types. It is only a label:
-		// the catalog is read straight from the path.
+		// The label is the file name minus the suffix, which is the tag itself:
+		// a tag is lowercase-hyphen (`zh-cn`) like every other file in the tree.
+		// It is only a label: the catalog is read straight from the path.
 		tag := strings.TrimSuffix(filepath.Base(name), catalog.DocCatalogSuffix)
 		t.Run(tag, func(t *testing.T) {
 			data, err := os.ReadFile(name)
@@ -187,8 +189,8 @@ func TestEnAliasCatalogFresh(t *testing.T) {
 }
 
 // aliasCatalogFiles returns every committed alias catalog as (tag, path), where
-// tag is the conventional spelling (`zh-CN`) rather than the file's lowercase
-// one. Sorted by file name so a failure reports in a stable order.
+// tag is the catalog's own lowercase-hyphen tag (`zh-tw`) — the same spelling as
+// the file name. Sorted by file name so a failure reports in a stable order.
 func aliasCatalogFiles(t *testing.T) []struct{ tag, path string } {
 	t.Helper()
 	names, err := filepath.Glob(filepath.Join("locales", "*"+catalog.AliasCatalogSuffix))
@@ -212,7 +214,7 @@ func aliasCatalogFiles(t *testing.T) []struct{ tag, path string } {
 // before: `make i18n` only rewrites en, so a locale missing a column — or still
 // written in an older layout — would silently degrade to identifiers at runtime
 // with nothing but a warning. The optional fourth column is pinned to the
-// Chinese catalogs: zh-CN rows carry full pinyin, zh-TW rows carry zhuyin key
+// Chinese catalogs: zh-cn rows carry full pinyin, zh-tw rows carry zhuyin key
 // positions, and no other locale may carry either.
 func TestAliasCatalogSchemaAllLocales(t *testing.T) {
 	files := aliasCatalogFiles(t)
@@ -239,7 +241,7 @@ func TestAliasCatalogSchemaAllLocales(t *testing.T) {
 				if e.Keys == "" || e.EnKeys == "" {
 					t.Errorf("%q: keys=%q enkeys=%q, both are required", anchor, e.Keys, e.EnKeys)
 				}
-				chinese := f.tag == "zh-CN" || f.tag == "zh-TW"
+				chinese := f.tag == "zh-cn" || f.tag == "zh-tw"
 				if chinese && e.Full == "" {
 					t.Errorf("%q: %s row has no full keystrokes (pinyin/zhuyin)", anchor, f.tag)
 				}
@@ -367,10 +369,10 @@ func TestAliasCatalogNamesFollowSourceRules(t *testing.T) {
 var idRe = regexp.MustCompile(`^[0-9a-z]{8}$`)
 
 // TestLocaleFileNamesFollowSourceRules is the message-catalog twin of the doc
-// gate below: a locale file must be a legal `.no` source-file segment, so the
-// tag (which keeps its conventional spelling, `zh-CN`) is lowercased into the
-// file name (`zh-cn.noml`). A tag and a file that disagree about case is exactly
-// the bug this pins: `Load` would look for a file nobody wrote.
+// gate below: a locale file must be a legal `.no` source-file segment, and so
+// must the TAG itself — `--lang=zh-tw` is what the user types, and it is spelled
+// exactly like the file (`zh-tw.noml`). A gate on the file alone would let
+// `--lang=zh-TW` back in, which is the mixed-case spelling this rule bans.
 func TestLocaleFileNamesFollowSourceRules(t *testing.T) {
 	segRe := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	locales := catalog.Locales()
@@ -378,6 +380,11 @@ func TestLocaleFileNamesFollowSourceRules(t *testing.T) {
 		t.Fatal("no embedded locales: the naming gate would pass vacuously")
 	}
 	for _, tag := range locales {
+		// The tag is what --lang accepts and what Lang() reports, so it obeys
+		// the same lowercase-hyphen rule as the file it names.
+		if !segRe.MatchString(tag) {
+			t.Errorf("locale tag %q is not lowercase-hyphen (letters, digits, single hyphens)", tag)
+		}
 		name := catalog.LocaleFileName(tag)
 		seg := strings.TrimSuffix(name, ".noml")
 		if !segRe.MatchString(seg) {
@@ -387,7 +394,8 @@ func TestLocaleFileNamesFollowSourceRules(t *testing.T) {
 			t.Errorf("LocaleFileName(%q) = %q depends on case", tag, name)
 		}
 		// The file must be the one Load actually reads: a stale `zh-CN.noml`
-		// left behind would make the tag resolve while the new file went unused.
+		// left behind would make a case-folding request resolve while the new
+		// file went unused.
 		if _, err := os.Stat(filepath.Join("locales", name)); err != nil {
 			t.Errorf("locale file %q for tag %q: %v", name, tag, err)
 		}
@@ -400,10 +408,10 @@ func TestLocaleFileNamesFollowSourceRules(t *testing.T) {
 // TestDocCatalogNamesFollowSourceRules pins the naming rule for doc catalogs:
 // a name must be a legal `.no` source-file segment (lowercase letters, digits
 // and single hyphens), because that is the only naming convention this tree
-// has. A locale tag is not constrained that way — `zh-CN` is the tag a user
-// types — so DocCatalogName lowercases it. Without this gate a future tag such
-// as `zh_Hant` or `pt-BR-x-formal` would quietly produce a name that `no`
-// itself would reject, and nothing else in the build would notice.
+// has. A tag already follows it (`zh-tw`), but DocCatalogName still lowercases
+// as a guard for a tag a project declares in another case. Without this gate a
+// future tag such as `zh_Hant` or `pt-BR-x-formal` would quietly produce a name
+// that `no` itself would reject, and nothing else in the build would notice.
 func TestDocCatalogNamesFollowSourceRules(t *testing.T) {
 	// Same shape as package.isValidSourceSegment: lowercase alphanumerics joined
 	// by single hyphens, no leading, trailing or repeated hyphen.
@@ -470,6 +478,130 @@ func TestLocaleKeysAndVerbs(t *testing.T) {
 				if regexp.MustCompile(`%!`).MatchString(text) {
 					t.Errorf("%s: translation contains a Go format error marker (%%!): %q", id, text)
 				}
+			}
+		})
+	}
+}
+
+// TestEveryLocaleCoversEn makes the message catalogs COMPLETE, not just
+// orphan-free: a key present in en.noml must be translated in every locale, so a
+// new message cannot ship half-localized. TestLocaleKeysAndVerbs only checks the
+// other direction (a locale must not invent keys), which lets a missing
+// translation fall back to English silently.
+//
+// A pure-command line (e.g. "  no test -cc zig") has no prose to translate and is
+// legitimately copied verbatim from English; that still has to be an explicit key,
+// so the rule stays "no gaps", not "no identical values".
+func TestEveryLocaleCoversEn(t *testing.T) {
+	en, err := catalog.Load(nil, "en")
+	if err != nil {
+		t.Fatalf("load en: %v", err)
+	}
+	for _, tag := range catalog.Locales() {
+		if tag == "en" {
+			continue
+		}
+		t.Run(tag, func(t *testing.T) {
+			cat, err := catalog.Load(nil, tag)
+			if err != nil {
+				t.Fatalf("load %s: %v", tag, err)
+			}
+			var missing []string
+			for id := range en {
+				if _, ok := cat[id]; !ok {
+					missing = append(missing, id)
+				}
+			}
+			if len(missing) > 0 {
+				sort.Strings(missing)
+				shown := missing
+				if len(shown) > 20 {
+					shown = shown[:20]
+				}
+				t.Errorf("%s.noml is missing %d of %d message(s), e.g. %v\n  add them to locales/%s.noml (an untranslated key silently falls back to English)",
+					tag, len(missing), len(en), shown, tag)
+			}
+		})
+	}
+}
+
+// usageLineRe matches a help-text example line: two spaces of indent, then the
+// thing the user types. The `echo 'x=1' | no fmt` pipeline counts as well.
+var usageLineRe = regexp.MustCompile(`^  (no |echo )`)
+
+// usageGapRe finds the run of spaces separating an example's command from its
+// prose comment. Two or more spaces between non-space characters: a command
+// argument never contains such a run, so the first one is the column separator.
+var usageGapRe = regexp.MustCompile(`\S {2,}\S`)
+
+// commandPrefix returns the part of a help line a translation must reproduce
+// verbatim: the indent, the `no <verb> ...` command, and the padding that puts
+// the comment in its column. Only what follows it — the comment — is translated.
+//
+// A line with no comment has no gap, so its whole text is the prefix. That is
+// what keeps a pure-command example ("  no test -cc zig") untranslated instead of
+// having a translator "localize" an argument into something that no longer runs.
+func commandPrefix(line string) string {
+	if loc := usageGapRe.FindStringIndex(line); loc != nil {
+		return line[:loc[1]-1] // loc[1]-1 drops the non-space char closing the match
+	}
+	return line
+}
+
+// TestUsageLinesKeepCommandPrefix locks the three parts of a help example that
+// are not text: the command itself, its arguments, and the number of spaces
+// before the comment. Two failure modes motivate it, both invisible until
+// someone runs the localized binary:
+//
+//   - A translator retypes the command and drops a padding space, so that one
+//     line's comment sits a column left of its neighbours (this actually shipped
+//     for the two `no fmt -fix=...` lines in seven locales).
+//   - A translator translates an argument (`main.no` -> `主.no`), producing an
+//     example that cannot be typed.
+//
+// Comparison is against en.noml because that file is generated from the call
+// sites, i.e. it is the template the translations are keyed against.
+func TestUsageLinesKeepCommandPrefix(t *testing.T) {
+	en, err := catalog.Load(nil, "en")
+	if err != nil {
+		t.Fatalf("load en: %v", err)
+	}
+	ids := make([]string, 0, len(en))
+	for id := range en {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // stable failure output
+
+	for _, tag := range catalog.Locales() {
+		if tag == "en" {
+			continue
+		}
+		t.Run(tag, func(t *testing.T) {
+			cat, err := catalog.Load(nil, tag)
+			if err != nil {
+				t.Fatalf("load %s: %v", tag, err)
+			}
+			var bad []string
+			for _, id := range ids {
+				enText := en[id]
+				if !usageLineRe.MatchString(enText) {
+					continue
+				}
+				text, ok := cat[id]
+				if !ok {
+					continue // a missing key is TestEveryLocaleCoversEn's finding, not this one's
+				}
+				if want := commandPrefix(enText); !strings.HasPrefix(text, want) {
+					bad = append(bad, fmt.Sprintf("%s: want prefix %q, got %q", id, want, text))
+				}
+			}
+			if len(bad) > 0 {
+				shown := bad
+				if len(shown) > 10 {
+					shown = shown[:10]
+				}
+				t.Errorf("%d help line(s) in %s.noml no longer start with the en command prefix:\n  %s\n  keep the command, its arguments and the padding before the comment verbatim; translate only the comment",
+					len(bad), tag, strings.Join(shown, "\n  "))
 			}
 		})
 	}

@@ -4,15 +4,15 @@
 ; alias and its documentation block always agree on the key. One row per
 ; anchor, as a POSITIONAL array:
 ;
-;   'args.get': ['获取参数', 'g', 'hqcs', 'huoqucanshu']   zh-CN, with pinyin
-;   'args.get': ['取得參數', 'g', 'qdhs', 'fm32k6h0gj4']   zh-TW, with zhuyin
+;   'args.get': ['获取参数', 'g', 'hqcs', 'huoqucanshu']   zh-cn, with pinyin
+;   'args.get': ['取得參數', 'g', 'qdhs', 'fm32k6h0gj4']   zh-tw, with zhuyin
 ;   'args.get': ['Get argument', 'g', 'ga']                every other locale
 ;
 ;   [0] alias   display name shown by hover
 ;   [1] enkeys  initials of the identifier — required, same in every locale
 ;   [2] keys    initials of the localized name — required
-;   [3] full    full keystrokes — optional: pinyin (zh-CN) or zhuyin key
-;               positions on a Dachen keyboard (zh-TW). No other locale
+;   [3] full    full keystrokes — optional: pinyin (zh-cn) or zhuyin key
+;               positions on a Dachen keyboard (zh-tw). No other locale
 ;               carries it, so its presence is what marks a Chinese catalog.
 ;
 ; The order is a contract, not a convention: a row must have 3 or 4 elements

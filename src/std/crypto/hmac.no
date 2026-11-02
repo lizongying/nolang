@@ -42,9 +42,9 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     ; K': 將金鑰調整為區塊大小（64 位元組）
     ; 若金鑰 > 64 位元組，先雜湊；若 < 64 位元組，補零
     k [64]byte
-    i <- [0..64): {
+    e <- k: {
 
-        k[i]: {
+        e: {
             ok -> it = 0
 
             -> _
@@ -173,9 +173,9 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     msg-n = msg.len()
 
     k [64]byte
-    i <- [0..64): {
+    e1 <- k: {
 
-        k[i]: {
+        e1: {
             ok -> it = 0
 
             -> _
@@ -295,9 +295,9 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
 
     ; SHA-512 區塊大小 = 128 位元組
     k [128]byte
-    i <- [0..128): {
+    e2 <- k: {
 
-        k[i]: {
+        e2: {
             ok -> it = 0
 
             -> _
@@ -410,9 +410,9 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     msg-n = msg.len()
 
     k [128]byte
-    i <- [0..128): {
+    e3 <- k: {
 
-        k[i]: {
+        e3: {
             ok -> it = 0
 
             -> _
@@ -525,9 +525,9 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     msg-n = msg.len()
 
     k [64]byte
-    i <- [0..64): {
+    e4 <- k: {
 
-        k[i]: {
+        e4: {
             ok -> it = 0
 
             -> _

@@ -1489,6 +1489,107 @@ test-str-slot = () {
     runner.eq(s.contains('br i1 %c3, label %bb1, label %bb2'), 1, 'condbr')
 }
 
+; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
+; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
+; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
+test-option-slot = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; bb0: OPTALLOC os1; OPTSOME op1=some(%v1); OPTSTORE op1->os1; CONDBR %v1 -> bb1/bb2
+    blks.push(0)
+    ops.push(OP-OPTALLOC)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSOME)
+    dsts.push(1)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSTORE)
+    dsts.push(0)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONDBR)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+
+    ; bb1: CONST %v5=99; OPTSOME op6=some(%v5); OPTSTORE op6->os1（覆盖写）; BR bb2
+    blks.push(1)
+    ops.push(OP-CONST)
+    dsts.push(5)
+    xa.push(99)
+    bs.push(0)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-OPTSOME)
+    dsts.push(6)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-OPTSTORE)
+    dsts.push(0)
+    xa.push(6)
+    bs.push(1)
+    syms.push('')
+    blks.push(1)
+    ops.push(OP-BR)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; bb2: OPTLOAD op7=os1; OPTISOK %v8; OPTGET %v9; RET %v9
+    blks.push(2)
+    ops.push(OP-OPTLOAD)
+    dsts.push(7)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-OPTISOK)
+    dsts.push(8)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-OPTGET)
+    dsts.push(9)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(2)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('optslot', 1, blks, ops, dsts, xa, bs, syms)
+
+    ; 槽在入口 alloca；bb0/bb1 各 store；bb2 load——三者皆非 PHI
+    runner.eq(s.contains('%os1 = alloca %option'), 1, 'opt slot alloca')
+    runner.eq(s.contains('store %option %op1, %option* %os1'), 1, 'optstore default (bb0)')
+    runner.eq(s.contains('store %option %op6, %option* %os1'), 1, 'optstore overwrite (bb1)')
+    runner.eq(s.contains('%op7 = load %option, %option* %os1'), 1, 'optload in bb2')
+
+    ; 读回的 %op7 直接喂给 OPTISOK（取 tag），证明 load 出的是可用 option 值
+    runner.eq(s.contains('%ot9 = extractvalue %option %op7, 0'), 1, 'optisok reads loaded slot value')
+    runner.eq(s.contains('br i1 %c3, label %bb1, label %bb2'), 1, 'condbr wiring')
+}
+
 ; ── func vecsum() { v=[1,2,3]; return v[0]+v[1]+v[2] } ────
 ; 证明 %vec 值命名空间 %vc 与 push/get/len 的发射形状。
 test-vec = () {
@@ -2784,6 +2885,7 @@ test-strcat-rc-nested()
 test-option-str()
 test-option-vec()
 test-str-slot()
+test-option-slot()
 test-vec()
 test-vec-len()
 test-sig-str()

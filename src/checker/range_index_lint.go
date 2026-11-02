@@ -23,14 +23,19 @@ const rngidxTraceID = "m2fh7rfg"
 // in-bounds 讀取**照常提示**——容器迭代消除的正是這份用戶側解包負擔。此前依
 // ProvablyInBoundsIndexReads 剔除 in-bounds 是 D7-R1（用戶側豁免）的舊口徑，已廢。
 //
-// 不做的事：不自動改寫。兩種寫法語義並不等價 —— 手動下標遍歷需要下標本身
-// （`arr[i] = v`、`print(i)`、跨陣列對齊），改寫會丟掉它，故交給人工決定。
+// 只在「改寫等價」時提示（否則提示就是一張兌現不了的支票）：下標在迴圈體裡
+// 只充當同一個容器的下標、沒被當值使用、沒有 `base[i] = v` 直寫、基底是可迭代
+// 的裸變數、且區間可證明恰好覆蓋整個容器。判定見 range_index_convert.go。
+//
+// 不做的事：不自動改寫。是否真的想換寫法仍交給人工決定。
 func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []ValidateResult {
 	if program == nil {
 		return nil
 	}
 	var results []ValidateResult
 	seen := map[*parser.IndexExpression]bool{}
+	// curScope 是當前函式（或頂層）的同一層作用域，量容器宣告長度用。
+	curScope := rngidxNewScope(program.Statements, nil)
 
 	// indexReadsByName 收集 e 中以 name 為下標、且基底是直接變數的索引讀取。
 	var indexReadsByName func(e parser.Expression, name string) []*parser.IndexExpression
@@ -99,7 +104,12 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 			switch st := s.(type) {
 			case *parser.FunctionDefinition:
 				if st.Body != nil {
+					outer := curScope
+					// 輸入與輸出參數都可能是被迭代的容器（`f = (a [3]i64) (b [8]byte)`）。
+					params := append(append([]*parser.Parameter{}, st.Parameters...), st.Results...)
+					curScope = rngidxNewScope(st.Body.Statements, params)
 					walk(st.Body.Statements, file)
+					curScope = outer
 				}
 			case *parser.BlockStatement:
 				walk(st.Statements, file)
@@ -123,35 +133,42 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 			case *parser.ForStatement:
 				if st.IterRange != nil && st.IterRange.Range != nil && st.IterRange.Variable != "" && st.Body != nil {
 					name := st.IterRange.Variable
-					for _, bs := range st.Body.Statements {
-						if bs == nil {
-							continue
-						}
-						// 該陳述裡所有以 name 為下標的容器讀取。
-						var reads []*parser.IndexExpression
-						switch b := bs.(type) {
-						case *parser.LetStatement:
-							reads = indexReadsByName(b.Value, name)
-						case *parser.ExpressionStatement:
-							reads = indexReadsByName(b.Expression, name)
-						}
-						for _, idx := range reads {
-							if seen[idx] {
+					// 只在「改寫成容器迭代等價」時提示：下標另有其職 / 覆蓋範圍
+					// 對不上容器長度時，改寫會丟掉行為，不能發這張支票
+					// （判定見 range_index_convert.go）。
+					iterable, convertible := rngidxConvertTarget(st, curScope)
+					if convertible {
+						for _, bs := range st.Body.Statements {
+							if bs == nil {
 								continue
 							}
-							seen[idx] = true
-							base := ""
-							if b, ok := idx.Left.(*parser.Identifier); ok {
-								base = b.Value
+							// 該陳述裡所有以 name 為下標的容器讀取。
+							var reads []*parser.IndexExpression
+							switch b := bs.(type) {
+							case *parser.LetStatement:
+								reads = indexReadsByName(b.Value, name)
+							case *parser.ExpressionStatement:
+								reads = indexReadsByName(b.Expression, name)
 							}
-							results = append(results, ValidateResult{
-								Line:    idx.Pos().Line,
-								Column:  idx.Pos().Column,
-								File:    file,
-								TraceID: "m2fh7rfg",
-								Message: i18n.T("m2fh7rfg", "range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` (no index means no bounds check and no option to unwrap). e.g. rewrite\n     %s <- [0..n): {\n         %s: {\n             ok -> it = 0\n             -> _\n         }\n     }\n   as\n     x <- %s: {\n         x: {\n             ok -> it = 0\n             -> _\n         }\n     }",
-									base, name, name, base, name, base, name),
-							})
+							for _, idx := range reads {
+								if seen[idx] {
+									continue
+								}
+								id, ok := idx.Left.(*parser.Identifier)
+								if !ok || id.Value != iterable {
+									continue
+								}
+								seen[idx] = true
+								base := id.Value
+								results = append(results, ValidateResult{
+									Line:    idx.Pos().Line,
+									Column:  idx.Pos().Column,
+									File:    file,
+									TraceID: "m2fh7rfg",
+									Message: i18n.T("m2fh7rfg", "range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` (no index means no bounds check and no option to unwrap). e.g. rewrite\n     %s <- [0..n): {\n         %s[%s]: {\n             ok -> it = 0\n             -> _\n         }\n     }\n   as\n     x <- %s: {\n         x: {\n             ok -> it = 0\n             -> _\n         }\n     }",
+										base, name, name, base, name, base, name, base),
+								})
+							}
 						}
 					}
 				}

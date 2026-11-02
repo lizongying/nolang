@@ -25,9 +25,9 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     k []byte = with-len(32)
     {
         salt.len() == 0 -> {
-            i <- [0..32): {
+            e <- k: {
 
-                k[i]: {
+                e: {
                     ok -> it = 0
 
                     -> _

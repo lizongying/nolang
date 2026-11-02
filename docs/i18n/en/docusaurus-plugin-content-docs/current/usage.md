@@ -273,6 +273,10 @@ The `package.noml` file in the project root directory describes project informat
 }
 ```
 
+`compiler.lang` pins the project's message language (`'zh-tw'`, `'ja'`, … — the
+same spelling `--lang` takes). It outranks the system locale but loses to
+`--lang` and `NO_LANG`; leave it out to follow the system.
+
 ### Dependency Management
 
 ```bash

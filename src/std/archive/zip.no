@@ -601,10 +601,9 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
     }
 
     ; 檔案內容
-    i <- [0..content.len()): {
+    b <- content: {
 
-        #{index-out=zero}
-        .put(content[i])
+        .put(b)
     }
 }
 

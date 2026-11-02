@@ -173,22 +173,96 @@ func TestIndexCompareStrOperand(t *testing.T) {
 	}
 }
 
-// TestIndexCompareNestedIndexStaysUnhinted：`a[i][j]` 的**容器本身就是索引讀取**，
-// 提示會被容器 lowering 繼承下去 —— 外層讀取被當成結果再包一層 option（實測
-// `[32]str` 的元素 `str` 被包成 `?char`），內層讀取於是對一個 `?char` 取 len/下標，
-// 後端報 "lencap kind: len/cap unsupported on ?char"。src/std/net/http.no 的
-// `.header-names[i][j] != name.byte(j)` 就是這個形狀。
+// TestIndexCompareNestedIndexChainsSafeReads：`a[i][j]` 的**容器本身就是索引讀取**。
+// 兩層都必須是安全讀取：外層 `a[i]` → `?str`（界檢查 + 存在性判斷），內層
+// `outer[j]` → `?char`。
 //
-// 不變量：巢狀比較不得出現 option 運算元（提示必須在此讓位，維持既有 lowering）。
-func TestIndexCompareNestedIndexStaysUnhinted(t *testing.T) {
+// 走過的兩個錯誤狀態：
+//  1. 提示被容器 lowering 繼承 ⇒ 內層對一個 `?char` 取 len/下標，後端報
+//     "lencap kind: len/cap unsupported on ?char"（src/std/net/http.no 的
+//     `.header-names[i][j] != name.byte(j)`）；
+//  2. 外層裸讀 + 內層裸讀 ⇒ 越界直接 SIGTRAP（`a[oob][0]`）。
+//
+// 不變量：比較運算元是 option、兩層各有一個 option-wrap、外層有 TagOnly 存在性
+// 判斷、且沒有任何 OpIndex 以 option 為接收者。
+func TestIndexCompareNestedIndexChainsSafeReads(t *testing.T) {
 	m := lowerSrc(t, `main = () () {
     a [2]str = ['ab', 'cd']
     i i64 = 0
     if a[i][0] != 'a' { print('ne') }
 }`)
+	// 1. 比較運算元是 option（內層讀取走了安全索引）。
+	sawOption := false
 	for _, k := range cmpOperandKinds(m) {
 		if k[0] == KindOption || k[1] == KindOption {
-			t.Errorf("nested index comparison compared an option: %v", k)
+			sawOption = true
 		}
 	}
+	if !sawOption {
+		t.Errorf("nested index comparison operand is not an option: %v", cmpOperandKinds(m))
+	}
+	// 2. 兩層各包一次 option：?str（外層）與 ?char（內層）。
+	if n := mainOpCount(m, OpOptionWrap); n < 2 {
+		t.Errorf("nested index emitted %d OpOptionWrap, want >= 2 (outer ?str + inner ?char): one level is still a bare read", n)
+	}
+	// 3. 外層讀取先做存在性判斷（TagOnly OpNe），否則 nil 容器會被當成空容器。
+	if n := mainTagOnlyNeCount(m); n == 0 {
+		t.Errorf("no tag-only OpNe in main: the outer read is not nil-guarded before the inner read")
+	}
+	// 4. 不得對 option 值下標（錯誤狀態 1 的形狀）。
+	if n := mainIndexOnOptionCount(m); n != 0 {
+		t.Errorf("%d OpIndex instruction(s) take an option receiver: the inner read indexes an unwrapped ?T", n)
+	}
+}
+
+// mainTagOnlyNeCount 統計 main 中「只比 tag」的 OpNe（存在性判斷）。
+func mainTagOnlyNeCount(m *Module) int {
+	n := 0
+	for i := range m.Funcs {
+		f := &m.Funcs[i]
+		if f.Name != "main" {
+			continue
+		}
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				if inst := m.Inst(iid); inst != nil && inst.Op == OpNe && inst.TagOnly {
+					n++
+				}
+			}
+		}
+	}
+	return n
+}
+
+// mainIndexOnOptionCount 統計 main 中以 option 值為接收者的 OpIndex。
+func mainIndexOnOptionCount(m *Module) int {
+	n := 0
+	for i := range m.Funcs {
+		f := &m.Funcs[i]
+		if f.Name != "main" {
+			continue
+		}
+		for _, bid := range f.Blocks {
+			blk := m.Block(bid)
+			if blk == nil {
+				continue
+			}
+			for _, iid := range blk.Insts {
+				inst := m.Inst(iid)
+				if inst == nil || inst.Op != OpIndex || len(inst.Args) == 0 {
+					continue
+				}
+				if val := m.Value(inst.Args[0]); val != nil {
+					if t := m.Type(val.Type); t != nil && t.Kind == KindOption {
+						n++
+					}
+				}
+			}
+		}
+	}
+	return n
 }

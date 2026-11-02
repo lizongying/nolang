@@ -2198,9 +2198,9 @@ sha256 = (data []byte) (hash [32]byte) {
     ; 這類 option 寫入對空切片是 no-op（讀 block[i] 得到 nil，ok 分支不執行），
     ; 區塊永遠是空的，sha256-block 讀到垃圾 → digest 錯。
     block []u32 = with-len(16)
-    i <- [0..16): {
+    e1 <- block: {
 
-        block[i]: {
+        e1: {
             ok -> it = 0
 
             -> _

@@ -2136,8 +2136,7 @@ dom-pool.collect-tag = (node i64, want str, star bool) (out []i64) {
             }
         }
         sub = .collect-tag(c, want, star)
-        m <- [0..sub.len()): {
-            sv i64 = sub[m]
+        sv <- sub: {
             out.push(sv)
         }
         c = .nodes[c].next
@@ -2164,8 +2163,7 @@ dom-pool.collect-class = (node i64, cls str) (out []i64) {
             }
         }
         sub = .collect-class(c, cls)
-        m <- [0..sub.len()): {
-            sv i64 = sub[m]
+        sv <- sub: {
             out.push(sv)
         }
         c = .nodes[c].next

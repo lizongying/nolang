@@ -22,10 +22,9 @@ new = (data []byte) (crc u64) {
     ;    正確十進位為 14514072000185962306。
     poly u64 = 14514072000185962306
     crc = 0
-    i <- [0..data.len()): {
+    b <- data: {
 
-        #{index-out=zero}
-        crc = crc ^ (data[i])
+        crc = crc ^ b
         j <- [0..8): {
             {
                 crc & 1 != 0 -> crc = ((crc >> 1) ^ poly) & mask

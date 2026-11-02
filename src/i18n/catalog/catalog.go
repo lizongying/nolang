@@ -85,9 +85,8 @@ const DocCatalogSuffix = "-doc.noml"
 
 // DocCatalogName returns the doc-catalog file name for tag.
 //
-// The tag is lowercased because a file name is lowercase-only by the `.no`
-// naming rule: `zh-CN` is the tag a user types and the key of the message
-// catalog, but its doc catalog is `zh-cn-doc.noml`.
+// The tag is lowercased as a guard only: a tag is already lowercase-hyphen
+// (`zh-tw`), so this is `tag + suffix` for every shipped locale.
 func DocCatalogName(tag string) string {
 	return strings.ToLower(tag) + DocCatalogSuffix
 }
@@ -150,7 +149,7 @@ const (
 	aliasIdxAlias  = 0 // 别名, shown by hover
 	aliasIdxEnKeys = 1 // initials of the identifier
 	aliasIdxKeys   = 2 // initials of the localized name
-	aliasIdxFull   = 3 // full keystrokes: pinyin (zh-CN) / zhuyin (zh-TW)
+	aliasIdxFull   = 3 // full keystrokes: pinyin (zh-cn) / zhuyin (zh-tw)
 	aliasColsMin   = 3 // alias, enkeys, keys
 	aliasColsMax   = 4 // + full
 )
@@ -159,8 +158,9 @@ const (
 const aliasLayoutDoc = "[alias, enkeys, keys] or [alias, enkeys, keys, full]"
 
 // AliasCatalogName returns the alias-catalog file name for tag. Like
-// DocCatalogName it lowercases the tag, because a file name follows the `.no`
-// naming rule (`zh-CN` is the tag, `zh-cn-alias.noml` is the file).
+// DocCatalogName it lowercases the tag: a tag is already lowercase-hyphen
+// (`zh-tw`), so this is `tag + suffix` for every shipped locale — the ToLower
+// stays as the guard for a project that declares `en-GB` in its own spelling.
 func AliasCatalogName(tag string) string {
 	return strings.ToLower(tag) + AliasCatalogSuffix
 }
@@ -182,15 +182,15 @@ func AliasCatalogHeaderFor(tag string) string {
 		"; alias and its documentation block always agree on the key. One row per\n" +
 		"; anchor, as a POSITIONAL array:\n" +
 		";\n" +
-		";   'args.get': ['获取参数', 'g', 'hqcs', 'huoqucanshu']   zh-CN, with pinyin\n" +
-		";   'args.get': ['取得參數', 'g', 'qdhs', 'fm32k6h0gj4']   zh-TW, with zhuyin\n" +
+		";   'args.get': ['获取参数', 'g', 'hqcs', 'huoqucanshu']   zh-cn, with pinyin\n" +
+		";   'args.get': ['取得參數', 'g', 'qdhs', 'fm32k6h0gj4']   zh-tw, with zhuyin\n" +
 		";   'args.get': ['Get argument', 'g', 'ga']                every other locale\n" +
 		";\n" +
 		";   [0] alias   display name shown by hover\n" +
 		";   [1] enkeys  initials of the identifier — required, same in every locale\n" +
 		";   [2] keys    initials of the localized name — required\n" +
-		";   [3] full    full keystrokes — optional: pinyin (zh-CN) or zhuyin key\n" +
-		";               positions on a Dachen keyboard (zh-TW). No other locale\n" +
+		";   [3] full    full keystrokes — optional: pinyin (zh-cn) or zhuyin key\n" +
+		";               positions on a Dachen keyboard (zh-tw). No other locale\n" +
 		";               carries it, so its presence is what marks a Chinese catalog.\n" +
 		";\n" +
 		"; The order is a contract, not a convention: a row must have 3 or 4 elements\n" +
@@ -344,31 +344,32 @@ func MissingDocTranslations(scanned, existing map[string]string) []string {
 
 // LocaleFileName returns the message-catalog file name for tag.
 //
-// Like DocCatalogName it lowercases the tag, because a file name in this tree
-// follows the `.no` rule (lowercase letters, digits and single hyphens — see
-// package.ValidateSourcePathName). The TAG keeps its conventional spelling
-// (`zh-CN`), because that is what a user types and what Lang() reports; only the
-// file is `zh-cn.noml`. Every read of a catalog file goes through this function,
-// so "the tag" and "the file" cannot drift apart.
+// A tag is lowercase-hyphen (`zh-tw`), the same spelling the `.no` naming rule
+// requires, so the tag and the file name agree and the ToLower is only a guard
+// for tags a project declares in another case (`en-GB` -> `en-gb.noml`). Every
+// read of a catalog file goes through this function, so "the tag" and "the file"
+// cannot drift apart.
 func LocaleFileName(tag string) string {
 	return strings.ToLower(tag) + ".noml"
 }
 
 // alias maps a requested tag onto the tag whose file we actually ship. Chinese
 // is split by script: Hans/plain "zh" resolve to the Simplified catalog, while
-// Hant and the Traditional-script regions (TW/HK/MO) resolve to zh-TW.
+// Hant and the Traditional-script regions (TW/HK/MO) resolve to zh-tw.
 //
-// The lower-case file spellings are entries too: tagsInDir and embeddedTags see
-// file names, not tags, so `zh-cn.noml` has to map back to the `zh-CN` tag that
-// Lang() reports.
+// The file spellings are the tag spellings: a tag is lowercase-hyphen
+// throughout (see LocaleFileName), so `zh-cn.noml` is the file for the `zh-cn`
+// tag and no case folding is needed to get from one to the other. The entries
+// still matter — they are what turns `zh`, `zh-Hans`, `zh-Hant`, `zh-HK` into
+// one of the two catalogs we actually ship.
 var alias = map[string]string{
-	"zh":      "zh-CN",
-	"zh-hans": "zh-CN",
-	"zh-cn":   "zh-CN",
-	"zh-hant": "zh-TW",
-	"zh-tw":   "zh-TW",
-	"zh-hk":   "zh-TW",
-	"zh-mo":   "zh-TW",
+	"zh":      "zh-cn",
+	"zh-hans": "zh-cn",
+	"zh-cn":   "zh-cn",
+	"zh-hant": "zh-tw",
+	"zh-tw":   "zh-tw",
+	"zh-hk":   "zh-tw",
+	"zh-mo":   "zh-tw",
 }
 
 // Options configures Init.
@@ -377,6 +378,10 @@ type Options struct {
 	// requested".
 	Lang    string
 	LangSet bool
+	// ProjectLang is the nearest package.noml's `compiler.lang` (see
+	// pkg.CompilerLang). Empty means the project declares no default. It is
+	// outranked by --lang and NO_LANG and outranks LC_ALL/LANG.
+	ProjectLang string
 	// ProjectDirs are searched for `locales/<tag>.noml` before the embedded
 	// files, most specific first.
 	ProjectDirs []string
@@ -390,12 +395,13 @@ type Options struct {
 // the binaries need to call.
 func Init(o Options) error {
 	return i18n.Init(i18n.Options{
-		Lang:      o.Lang,
-		LangSet:   o.LangSet,
-		Available: Available(o.ProjectDirs),
-		Env:       o.Env,
-		Warn:      o.Warn,
-		Canonical: Canonical,
+		Lang:        o.Lang,
+		LangSet:     o.LangSet,
+		ProjectLang: o.ProjectLang,
+		Available:   Available(o.ProjectDirs),
+		Env:         o.Env,
+		Warn:        o.Warn,
+		Canonical:   Canonical,
 		Load: func(tag string) (map[string]string, error) {
 			return Load(o.ProjectDirs, tag)
 		},
@@ -413,7 +419,7 @@ func Init(o Options) error {
 // nil, nil so that `Doc` simply falls back to the source text.
 //
 // It resolves through Canonical for the same reason Load does: `zh` must find the
-// `zh-CN` file, or a user who typed `--lang=zh` would get untranslated comments
+// `zh-cn` file, or a user who typed `--lang=zh` would get untranslated comments
 // while messages were translated. The file name is built by DocCatalogName,
 // which lowercases the tag (`zh-cn-doc.noml`).
 func LoadDoc(projectDirs []string, tag string) (map[string]string, error) {
@@ -503,6 +509,20 @@ func ProjectDirs() []string {
 	return dirs
 }
 
+// ProjectLang returns the `compiler.lang` declared by the nearest package.noml,
+// or "" when the project declares none.
+//
+// It lives next to ProjectDirs for the same reason: a project's language default
+// must behave identically for `no` and for the LSP, so both read it through this
+// one function instead of each deciding where to look.
+func ProjectLang() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return pkg.CompilerLang(wd)
+}
+
 // findWorkspaceRoot walks up from start looking for workspace.noml.
 func findWorkspaceRoot(start string) (string, bool) {
 	dir := start
@@ -546,8 +566,8 @@ func Available(projectDirs []string) []string {
 	}
 	sort.Strings(aliases)
 	for _, a := range aliases {
-		// `zh-cn` is the lower-case spelling of `zh-CN`, which is already listed;
-		// adding it would print the same language twice in a warning.
+		// `zh-cn` is spelled exactly like the tag it maps to, which is already
+		// listed; adding it would print the same language twice in a warning.
 		if strings.EqualFold(a, alias[a]) {
 			continue
 		}
@@ -716,9 +736,10 @@ func aliasColumnCharsetNote(i int) string {
 // listing them would make `Available` claim a language the messages have no
 // catalog for.
 //
-// The file name is lower-case (`zh-cn.noml`) but the tag is not (`zh-CN`), so
-// each name goes back through Canonical. A name with no alias entry is returned
-// as-is: a project may ship a locale we do not know about.
+// The file name is the tag (`zh-cn.noml` for `zh-cn`); each name still goes
+// back through Canonical so a project shipping `zh.noml` lands on the catalog we
+// actually ship, and a name with no alias entry is returned as-is: a project may
+// ship a locale we do not know about.
 func tagsInDir(dir string) []string {
 	entries, err := os.ReadDir(filepath.Join(dir, LocaleDirName))
 	if err != nil {
@@ -739,7 +760,7 @@ func tagsInDir(dir string) []string {
 // CompilerHelpKey is the single top-level key of a compiler help catalog. Its
 // value is the whole printUsage block as ONE multi-line raw string:
 //
-//	; Nolang compiler help: zh-CN
+//	; Nolang compiler help: zh-tw
 //	{
 //	  'compiler': `
 //	Nolang 编程语言（版本 %s）
@@ -799,9 +820,9 @@ func ParseCompilerHelp(path string, data []byte) (string, error) {
 }
 
 // LoadCompilerHelp returns the CLI help translation for lang, if one is embedded.
-// The tag is lower-cased to match the file name (zh-CN -> zh-cn ->
-// locales/zh-cn-compiler.noml). English (and any tag without a usable file)
-// returns ("", false) so the caller falls back to its inline English help.
+// The tag is lower-cased as a guard (zh-tw -> locales/zh-tw-compiler.noml).
+// English (and any tag without a usable file) returns ("", false) so the caller
+// falls back to its inline English help.
 //
 // This is separate from the message catalog: the help is one translatable block
 // keyed by a single ID-shaped key, not one entry per line, so it cannot go

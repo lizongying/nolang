@@ -1043,9 +1043,9 @@ xz-compress = (data []byte) (out []byte) {
         out.push(0x00)
         out.push(0x00)
         out.push(0x00)
-        i <- [0..data.len()): {
+        b <- data: {
 
-            out.push(data[i])
+            out.push(b)
         }
 
         ; LZMA2 結束標記
