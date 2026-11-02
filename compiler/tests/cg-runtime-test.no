@@ -116,6 +116,26 @@ test-prelude-full = () {
     runner.eq(p.contains('declare i64 @write(i32, i8*, i64)'), 1, 'write decl')
     runner.eq(p.contains('@nolang_msg_div_zero = private unnamed_addr constant'), 1, 'div-zero msg global')
     runner.eq(p.contains('define void @__nolang_div_zero_report(i1 %bad)'), 1, 'div-zero report helper')
+
+    ; s42：str 相等所需两符号（@str_eq 定义 + libc @memcmp 声明）均需落在完整 prelude
+    runner.eq(p.contains('declare i32 @memcmp(i8*, i8*, i64)'), 1, 'memcmp decl')
+    runner.eq(p.contains('define i1 @str_eq(%str-long %a, %str-long %b)'), 1, 'str_eq present')
+}
+
+; ── str 相等 helper IR 文本（s42）───────────────────────
+; 逐字对照 Go @str_eq：取 len 相等→memcmp 字节相等，否则 false；phi 收尾。2 空格缩进。
+test-str-eq-helper = () {
+    e = cg-runtime-str-eq()
+    runner.eq(e.contains('define i1 @str_eq(%str-long %a, %str-long %b)'), 1, 'str_eq signature')
+    runner.eq(e.contains('%la = extractvalue %str-long %a, 0'), 1, 'len a field 0')
+    runner.eq(e.contains('%da = extractvalue %str-long %a, 2'), 1, 'data a field 2')
+    runner.eq(e.contains('%cmp = call i32 @memcmp(i8* %da, i8* %db, i64 %la)'), 1, 'memcmp on len')
+    runner.eq(e.contains('%res = phi i1 [ 0, %noteq ], [ %same, %cmpto ]'), 1, 'result phi')
+    m = cg-runtime-memcmp-decl()
+    runner.eq(m.contains('declare i32 @memcmp(i8*, i8*, i64)'), 1, 'memcmp decl helper')
+
+    ; 绝不对 %str-long 本体发 icmp（非法）：str_eq 体内只比 i64 len 与 memcmp
+    runner.eq(e.contains('icmp %str-long'), 0, 'no icmp on struct')
 }
 
 ; ── 向量 helper IR 文本 ───────────────────────────────────
@@ -143,6 +163,7 @@ test-balance-pass()
 test-balance-under()
 test-balance-over-ok()
 test-prelude-full()
+test-str-eq-helper()
 test-vec-helpers()
 
 runner.summary()

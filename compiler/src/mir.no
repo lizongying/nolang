@@ -201,6 +201,16 @@ OP-OPTALLOC = 60
 OP-OPTSTORE = 61
 OP-OPTLOAD = 62
 
+; ── str 结构相等（M4-c 续件 s42；补齐 §11 字符串比较，镜像 Go 专用 OpStrEq）──
+; Go 对 str 相等不用 icmp（icmp %str-long 非法），而是专用 MIR op 降级到运行时
+; helper @str_eq（见 cg-runtime.no cg-runtime-str-eq）。本层同形新增两条 op：
+; OP-STEREQ ：dst = i64 结果 id（0/1）；xa[k] = 左 str 值 id；bs[k] = 右 str 值 id。
+;            发 `%se<k> = call i1 @str_eq(%str-long %sv<xa>, %str-long %sv<bs>)` + zext 到 %v<dst>。
+; OP-STNEQ  ：同上，但结果取反（xor i1 true）。两op 的操作数均在 str 命名空间 %sv，结果落 i64 %v。
+; ⚠️ op 码接在既有最大码 OP-OPTLOAD=62 之后（取 63/64），不重排既有码以免影响 arena 数据。
+OP-STEREQ = 63
+OP-STNEQ = 64
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

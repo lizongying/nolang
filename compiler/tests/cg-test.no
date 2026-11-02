@@ -1489,6 +1489,62 @@ test-str-slot = () {
     runner.eq(s.contains('br i1 %c3, label %bb1, label %bb2'), 1, 'condbr')
 }
 
+; ── func strpick() { return ('ab' == 'ab') 与 ('ab' != 'cd') } ──
+; 证明 str 相等走运行时 @str_eq 调用（非 icmp %str-long）；STNEQ 额外 xor true 取反（s42）。
+test-str-eq = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; bb0: STRCONST sv1='ab'; sv2='ab'; sv3='cd'; STEREQ v4=(sv1==sv2); STNEQ v5=(sv1!=sv3); RET v4
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(2)
+    xa.push(0)
+    bs.push(0)
+    syms.push('ab')
+    blks.push(0)
+    ops.push(OP-STRCONST)
+    dsts.push(3)
+    xa.push(0)
+    bs.push(0)
+    syms.push('cd')
+    blks.push(0)
+    ops.push(OP-STEREQ)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-STNEQ)
+    dsts.push(5)
+    xa.push(1)
+    bs.push(3)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('streq', 1, blks, ops, dsts, xa, bs, syms)
+    runner.eq(s.contains('%se3 = call i1 @str_eq(%str-long %sv1, %str-long %sv2)'), 1, 'stereq call')
+    runner.eq(s.contains('%v4 = zext i1 %se3 to i64'), 1, 'stereq zext')
+    runner.eq(s.contains('%se4 = call i1 @str_eq(%str-long %sv1, %str-long %sv3)'), 1, 'stneq call')
+    runner.eq(s.contains('%sn4 = xor i1 %se4, true'), 1, 'stneq xor')
+    runner.eq(s.contains('%v5 = zext i1 %sn4 to i64'), 1, 'stneq zext')
+    runner.eq(s.contains('icmp %str-long'), 0, 'no icmp on %str-long')
+}
+
 ; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
 ; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
 ; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
@@ -2886,6 +2942,7 @@ test-option-str()
 test-option-vec()
 test-str-slot()
 test-option-slot()
+test-str-eq()
 test-vec()
 test-vec-len()
 test-sig-str()

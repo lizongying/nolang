@@ -56,6 +56,40 @@ cg-runtime-memcpy-decl = () (r str) {
     r = 'declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)'
 }
 
+; memcmp-decl：libc memcmp 声明（Go @str_eq 字节比较所用，codegen.go:3129 同形）。
+; r: 結果字串
+cg-runtime-memcmp-decl = () (r str) {
+    r = 'declare i32 @memcmp(i8*, i8*, i64)'
+}
+
+; str-eq：@str_eq —— %str-long 结构相等（Go codegen.go:3121 逐字）。
+;   两串相等 iff 长度相同且字节相同（memcmp==0）；绝不对 struct 本体发 icmp（非法）。
+;   MIR OP-STEREQ 降级到此调用。2 空格缩进（与 Go 该处一致，非 tab）。
+;   依赖 @memcmp（cg-runtime-memcmp-decl）；不依赖 RC。
+; r: 結果字串
+cg-runtime-str-eq = () (r str) {
+    b = sb.init(768)
+    b.push('define i1 @str_eq(%str-long %a, %str-long %b) {\n')
+    b.push('entry:\n')
+    b.push('  %la = extractvalue %str-long %a, 0\n')
+    b.push('  %lb = extractvalue %str-long %b, 0\n')
+    b.push('  %lenEq = icmp eq i64 %la, %lb\n')
+    b.push('  br i1 %lenEq, label %cmpto, label %noteq\n')
+    b.push('cmpto:\n')
+    b.push('  %da = extractvalue %str-long %a, 2\n')
+    b.push('  %db = extractvalue %str-long %b, 2\n')
+    b.push('  %cmp = call i32 @memcmp(i8* %da, i8* %db, i64 %la)\n')
+    b.push('  %same = icmp eq i32 %cmp, 0\n')
+    b.push('  br label %done\n')
+    b.push('noteq:\n')
+    b.push('  br label %done\n')
+    b.push('done:\n')
+    b.push('  %res = phi i1 [ 0, %noteq ], [ %same, %cmpto ]\n')
+    b.push('  ret i1 %res\n')
+    b.push('}\n')
+    r = b.str()
+}
+
 ; div-zero-msg：@nolang_msg_div_zero —— 整數除零診斷串（Go divZeroMsgText 逐字，85 位元組，
 ;   含結尾 \n）：private unnamed_addr constant，供 div-zero-report helper 取址寫 stderr。
 ;   ⚠️ 用單引號串 + 雙反斜杠（\6E 寫成 \\6E）——fmt 會清空含反斜杠的反引號原始串；\ 在單引號串內轉義成字面反斜杠。
@@ -289,6 +323,8 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-prelude())
     b.push(cg-runtime-memcpy-decl())
     b.push('\n')
+    b.push(cg-runtime-memcmp-decl())
+    b.push('\n')
     b.push(cg-runtime-div-zero-msg())
     b.push('\n')
     b.push(cg-runtime-div-zero-report())
@@ -297,6 +333,8 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-rc-retain())
     b.push(cg-rc-release())
     b.push(cg-rc-nolang-free())
+    b.push(cg-runtime-str-eq())
+    b.push('\n')
     b.push(cg-runtime-str-concat())
     b.push(cg-runtime-vec-new())
     b.push(cg-runtime-vec-len())
