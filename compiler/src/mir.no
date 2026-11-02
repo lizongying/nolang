@@ -220,6 +220,17 @@ OP-STNEQ = 64
 ; ⚠️ op 码接在既有最大码 OP-STNEQ=64 之后（取 65），不重排既有码。
 OP-VECEQ = 65
 
+; ── option 值相等（M4-c 续件 s44；补齐 §11 option 比较，镜像 Go emitOptionValueEq 的 i64 载荷分支）──
+; Go 对 ?i64 相等发「tag icmp eq AND payload(i64) icmp eq」再 and（src/mir/codegen.go:6247），
+; 纯单块降级、无需运行时 helper（区别于 str/vec 需 call helper）。本层同形新增两条 op：
+; OP-OPTEQ ：dst = i64 结果 id（0/1）；xa[k] = 左 option 值 id；bs[k] = 右 option 值 id。
+;            发 extractvalue tag（field 0）各 icmp eq、extractvalue 载荷（field 1,0）各 icmp eq、and i1 → zext 到 %v<dst>。
+; OP-OPTNEQ：同上，and 结果先 xor i1 true 取反再 zext。两 op 的操作数均在 option 命名空间 %op，结果落 i64 %v（仅适用 i64 载荷）。
+; ⚠️ op 码接在既有最大码 OP-VECEQ=65 之后（取 66/67），不重排既有码。
+; ⚠️ 载荷非 i64（str/vec）时 slot[0] 只是首字，本 op 不覆盖（留作后续，见 §11）。
+OP-OPTEQ = 66
+OP-OPTNEQ = 67
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

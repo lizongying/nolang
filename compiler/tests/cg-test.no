@@ -1621,6 +1621,70 @@ test-vec-eq = () {
     runner.eq(s.contains('icmp %vec'), 0, 'no icmp on %vec')
 }
 
+; option 值相等（s44）：OPTEQ/OPTNEQ 走 tag icmp eq AND payload(i64) icmp eq 再 and；
+;   单块降级、无运行时 helper；操作数在 %op，结果落 i64 %v。
+test-opt-eq = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; bb0: CONST v1=7; OPTSOME op2=v1; OPTSOME op3=v1; OPTEQ v4=(op2==op3)@k3; OPTNEQ v5=(op2!=op3)@k4; RET v4
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSOME)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSOME)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTEQ)
+    dsts.push(4)
+    xa.push(2)
+    bs.push(3)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTNEQ)
+    dsts.push(5)
+    xa.push(2)
+    bs.push(3)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('opteq', 0, blks, ops, dsts, xa, bs, syms)
+
+    ; OPTEQ @k3：tag 两边提取 + icmp eq；载荷两边提取 + icmp eq；and；zext
+    runner.eq(s.contains('%otx3 = extractvalue %option %op2, 0'), 1, 'opteq left tag')
+    runner.eq(s.contains('%oty3 = extractvalue %option %op3, 0'), 1, 'opteq right tag')
+    runner.eq(s.contains('%otq3 = icmp eq i64 %otx3, %oty3'), 1, 'opteq tag eq')
+    runner.eq(s.contains('%opx3 = extractvalue %option %op2, 1, 0'), 1, 'opteq left payload')
+    runner.eq(s.contains('%opy3 = extractvalue %option %op3, 1, 0'), 1, 'opteq right payload')
+    runner.eq(s.contains('%opq3 = icmp eq i64 %opx3, %opy3'), 1, 'opteq payload eq')
+    runner.eq(s.contains('%oa3 = and i1 %otq3, %opq3'), 1, 'opteq and')
+    runner.eq(s.contains('%v4 = zext i1 %oa3 to i64'), 1, 'opteq zext')
+
+    ; OPTNEQ @k4：and 后 xor true 取反
+    runner.eq(s.contains('%on4 = xor i1 %oa4, true'), 1, 'optneq xor')
+    runner.eq(s.contains('%v5 = zext i1 %on4 to i64'), 1, 'optneq zext')
+}
+
 ; ── func optslot(c) { o ?= some(c); if c { o = some(99) } return o.get() } ──
 ; 证明 %option 跨基本块（bb0/bb1 写、bb2 读）走 alloca %option / store / load 而非 PHI（§11 B8 s41）。
 ; 与 test-str-slot 同构，只把 %str-long 换成 %option、槽命名空间 %ss 换成 %os。
@@ -3020,6 +3084,7 @@ test-str-slot()
 test-option-slot()
 test-str-eq()
 test-vec-eq()
+test-opt-eq()
 test-vec()
 test-vec-len()
 test-sig-str()

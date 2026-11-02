@@ -20,6 +20,7 @@
 ;   无符号 ALU（s36）：SHRU(lshr) / CMP*U(icmp u*)；DIVU/MODU 发 udiv/urem 亦裹同一護欄（s38）
 ;   STEREQ / STNEQ（str 结构相等 s42：操作数在 %sv，走运行时 @str_eq；icmp %str-long 非法故用专用 op）
 ;   VECEQ（vec 元素相等 s43：操作数在 %vc，走运行时 @__nolang_vec_eq_i64；icmp %vec 非法故用专用 op，仅适用元素型 i64）
+;   OPTEQ / OPTNEQ（option 值相等 s44：操作数在 %op，发 tag icmp eq AND payload(i64) icmp eq 再 and；单块降级无需 helper，仅适用 i64 载荷）
 ;     ——与有符号族共用 %v 命名空间与 i64 型别，只差助记符；TY-U64 型别码走 cg-ty-name/cg-val-prefix 默认臂
 ;   浮点 ALU（s37）：ADD/SUB/MUL/DIV/MOD 与 CMP* 按**值型别分派**——vty 为 TY-F64 时发
 ;     fadd/fsub/fmul/fdiv/frem double %fd… / fcmp <oeq/une/olt/ole/ogt/oge> double（忠实 Go
@@ -637,6 +638,99 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(')\n\t%v')
             b.push(d.to-str())
             b.push(' = zext i1 %veq')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+
+        ; ── option 值相等（s44）：tag eq AND payload(i64) eq → and → zext；操作数在 %op，单块降级无需 helper ──
+        op == OP-OPTEQ -> {
+
+            ; xa[k] = 左 option 值 id；bs[k] = 右 option 值 id；dst = i64 结果（0/1）。
+            ; 镜像 Go emitOptionValueEq 的 i64 载荷分支：先比 tag（field 0），再比载荷（field 1,0），两者 and。
+            b.push('\t%otx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 0\n\t%oty')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 0\n\t%otq')
+            b.push(k.to-str())
+            b.push(' = icmp eq i64 %otx')
+            b.push(k.to-str())
+            b.push(', %oty')
+            b.push(k.to-str())
+            b.push('\n\t%opx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%opy')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 1, 0\n\t%opq')
+            b.push(k.to-str())
+            b.push(' = icmp eq i64 %opx')
+            b.push(k.to-str())
+            b.push(', %opy')
+            b.push(k.to-str())
+            b.push('\n\t%oa')
+            b.push(k.to-str())
+            b.push(' = and i1 %otq')
+            b.push(k.to-str())
+            b.push(', %opq')
+            b.push(k.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %oa')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-OPTNEQ -> {
+
+            ; 同 OPTEQ，但 and 结果先 xor i1 true 取反再 zext。
+            b.push('\t%otx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 0\n\t%oty')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 0\n\t%otq')
+            b.push(k.to-str())
+            b.push(' = icmp eq i64 %otx')
+            b.push(k.to-str())
+            b.push(', %oty')
+            b.push(k.to-str())
+            b.push('\n\t%opx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%opy')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 1, 0\n\t%opq')
+            b.push(k.to-str())
+            b.push(' = icmp eq i64 %opx')
+            b.push(k.to-str())
+            b.push(', %opy')
+            b.push(k.to-str())
+            b.push('\n\t%oa')
+            b.push(k.to-str())
+            b.push(' = and i1 %otq')
+            b.push(k.to-str())
+            b.push(', %opq')
+            b.push(k.to-str())
+            b.push('\n\t%on')
+            b.push(k.to-str())
+            b.push(' = xor i1 %oa')
+            b.push(k.to-str())
+            b.push(', true\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %on')
             b.push(k.to-str())
             b.push(' to i64\n')
         }
