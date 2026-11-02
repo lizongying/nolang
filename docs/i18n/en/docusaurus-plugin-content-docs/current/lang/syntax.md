@@ -1200,6 +1200,47 @@ outer: {
 > (2) the value is needed **after a nested match** — the inner match rebinds `it`, so use a
 > named binding or copy `it` into a named local first.
 
+### An iteration variable is also an element *place*
+
+`x <- a` (where `a` is an `arr` / `vec` / `slice` / fixed array) binds `x` to the **element's
+place**, not to a per-iteration copy:
+
+- **Reading** `x` re-reads `a[__i]`, so a read after a write in the same iteration sees the new
+  value — `x = x + 1` is a read-modify-write;
+- **Writing** `x = v` stores back into `a[__i]`;
+- `it` inside a match arm is an **alias** of the same place (valid only within that arm), so
+  `x: { ok -> it = v }` and `a[i]: { ok -> it = v }` are exactly equivalent.
+
+```no
+; Both loops below leave every element of the container equal to 5.
+a []i64 = [0, 0, 0]
+i <- [0..3): {
+    a[i]: {
+        ok -> it = 5
+        -> _
+    }
+}
+
+b []i64 = [0, 0, 0]
+x <- b: {
+    x: {
+        ok -> it = 5
+        -> _
+    }
+}
+```
+
+- When the element is itself an option (`[]?T`), `it` is the **payload**; writing back wraps it
+  in `ok` again.
+- The alias dies with the arm: `it = v` after the match does not reach the container.
+
+**Not places** (a write stays local):
+
+- `c <- s` over a `str`: the element is a decoded **code point**; a string has no storage cell
+  for it.
+- `k <- m` over a map: the subscript is a **key**, not a position, so a write does not go back
+  into the table.
+
 ### `it` is only usable in an arm with a single provable case
 
 A catch-all `->` arm receives every case the explicit arms did not claim. `it` has one
@@ -1853,6 +1894,12 @@ get-vec-default = (a [4]i64, i i64) (res i64) {
 > **Bulk migration:** `no fmt --fix=unwrap` rewrites bindings that "produce an option but never consume it" into form 1 (when the function already has a `?T` result param) or form 3 (match unwrapping), and is idempotent when re-run.
 
 > **Core guarantee:** whichever form you use, an out-of-range index never makes the program crash silently — it either returns `None`, returns the default value, or propagates the error upwards.
+
+> **An index read used as a comparison operand** follows safe indexing too: `a[i] == 5` compares the
+> payload (the same rule as `?T == 5`), not the whole `{tag, payload}`. Out of range the read yields
+> `nil`, whose payload is the element type's zero value — so out of range `a[i] == 0` is true and
+> `a[i] == 5` is false, and no out-of-bounds memory is ever read. `s[0] == 'a'` works the same way:
+> comparing a code point with a one-character string uses the implicit `char → str` conversion.
 
 ## Structs
 

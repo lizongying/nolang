@@ -129,6 +129,22 @@ func IsDocCatalogName(name string) bool {
 //     COMPLETE and the other locales are compared against it key for key.
 const AliasCatalogSuffix = "-alias.noml"
 
+// CompilerHelpSuffix marks a whole-file CLI help translation:
+// `locales/<tag>-compiler.noml`. It IS a noml document like the other catalogs,
+// but its shape is different: a single CompilerHelpKey whose value is the
+// printUsage block as a positional array of lines, not a table of message IDs.
+// So it must never be treated as a language tag by embeddedTags/tagsInDir (the
+// suffix is not a tag), and the message gate must never try to read it as a
+// key:value catalog (those keys must match ^[0-9a-z]{8}$, the single key here is
+// the word "compiler").
+const CompilerHelpSuffix = "-compiler.noml"
+
+// IsCompilerHelpName reports whether a file name is a whole-file CLI help block
+// rather than a message/doc/alias catalog.
+func IsCompilerHelpName(name string) bool {
+	return strings.HasSuffix(name, CompilerHelpSuffix)
+}
+
 // Alias row layout: a positional array of 3 or 4 strings.
 const (
 	aliasIdxAlias  = 0 // 别名, shown by hover
@@ -711,11 +727,105 @@ func tagsInDir(dir string) []string {
 	var out []string
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".noml") ||
-			IsDocCatalogName(e.Name()) || IsAliasCatalogName(e.Name()) {
+			IsDocCatalogName(e.Name()) || IsAliasCatalogName(e.Name()) || IsCompilerHelpName(e.Name()) {
 			continue
 		}
 		out = append(out, Canonical(strings.TrimSuffix(e.Name(), ".noml")))
 	}
 	sort.Strings(out)
 	return out
+}
+
+// CompilerHelpKey is the single top-level key of a compiler help catalog. Its
+// value is the whole printUsage block as ONE multi-line raw string:
+//
+//	; Nolang compiler help: zh-CN
+//	{
+//	  'compiler': `
+//	Nolang 编程语言（版本 %s）
+//
+//	用法:
+//	...
+//	`
+//	}
+//
+// The raw string is the point: the help is a single block of text whose exact
+// characters matter (blank lines, column alignment between a flag and its
+// description), so it is written the way it is printed instead of being chopped
+// into one literal per line. A raw string also means zero escaping, which
+// matters because the text is full of quotes and backticked commands.
+//
+// ⚠️ One constraint comes from the lexer, not from this package: a raw string is
+// closed by a line whose first non-space character is a backtick (see
+// lexer.closingRawBacktick). So NO line of the help may BEGIN with a backtick,
+// even after indentation — the string would end there and the rest of the file
+// would be parsed as statements. Backticks in the middle of a line are fine, and
+// that is why the install section reads "the platform `no` runs on ..." instead
+// of starting the line with `no`.
+//
+// The key names the section the file suffix already names: `<tag>-compiler.noml`
+// holds `{ 'compiler': `...` }`.
+const CompilerHelpKey = "compiler"
+
+// ParseCompilerHelp decodes a compiler help catalog into its full text.
+//
+// It is exported so the gate test can validate the committed files straight from
+// disk; the runtime path reaches it through LoadCompilerHelp, which reads the
+// embedded copy instead.
+//
+// The schema is strict on purpose: exactly one key, a non-empty raw string. A
+// mistyped key would otherwise disable the translation silently and leave a
+// translated locale on the English help with no signal at all.
+func ParseCompilerHelp(path string, data []byte) (string, error) {
+	m, err := pkg.ParseNomlMap(data)
+	if err != nil {
+		return "", fmt.Errorf("i18n: %s: %w", path, err)
+	}
+	raw, ok := m[CompilerHelpKey]
+	if !ok {
+		return "", fmt.Errorf("i18n: %s: missing key %q (got %d other key(s))", path, CompilerHelpKey, len(m))
+	}
+	if len(m) != 1 {
+		return "", fmt.Errorf("i18n: %s: want only the %q key, got %d keys", path, CompilerHelpKey, len(m))
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("i18n: %s: %q must be a multi-line raw string, got %T", path, CompilerHelpKey, raw)
+	}
+	if strings.TrimSpace(text) == "" {
+		return "", fmt.Errorf("i18n: %s: %q is empty", path, CompilerHelpKey)
+	}
+	return text, nil
+}
+
+// LoadCompilerHelp returns the CLI help translation for lang, if one is embedded.
+// The tag is lower-cased to match the file name (zh-CN -> zh-cn ->
+// locales/zh-cn-compiler.noml). English (and any tag without a usable file)
+// returns ("", false) so the caller falls back to its inline English help.
+//
+// This is separate from the message catalog: the help is one translatable block
+// keyed by a single ID-shaped key, not one entry per line, so it cannot go
+// through i18n.T without turning 160 lines into 160 message IDs.
+//
+// A malformed catalog degrades to English rather than failing the CLI: the files
+// are embedded at build time, so a broken one is a repository bug that the gate
+// test (compiler_help_test.go) rejects long before a user sees it, and `no`
+// still has to print something useful when it does not.
+func LoadCompilerHelp(lang string) (string, bool) {
+	if lang == "" || lang == "en" {
+		return "", false
+	}
+	name := strings.ToLower(lang) + CompilerHelpSuffix
+	data, err := localesFS.ReadFile("locales/" + name)
+	if err != nil {
+		return "", false
+	}
+	text, err := ParseCompilerHelp(name, data)
+	if err != nil {
+		return "", false
+	}
+	// The trailing newline a raw string cannot carry: its closing delimiter
+	// consumes the newline before the backtick, while printUsage ends the block
+	// with a blank line rather than on the last character.
+	return text + "\n", true
 }

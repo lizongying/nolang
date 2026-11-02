@@ -1,0 +1,175 @@
+; Nolang compiler help: ja
+; 整段 CLI 帮助，用多行原始串（反引号）承载：内容逐字符保留，空行就是真的空行。
+; 只改译文：行数、空行位置、`no <verb>` 命令 token 都必须与 printUsage 的英文块一致，
+; 首行保留唯一的 %s（注入 version）。门禁见 compiler_help_test.go。
+;
+; ⚠️ 原始串的结束标记是「仅空白 + 反引号」单独一行，因此任何一行都不能以反引号开头
+; （哪怕前面有缩进）；行内中段的反引号无妨。
+{
+  'compiler': `
+Nolang プログラミング言語（バージョン %s）
+
+使い方:
+グローバルオプション:
+  -v    詳細モード（すべてのコマンドに適用）
+  --lang=<tag>  メッセージの言語。例: --lang=zh-CN、--lang=en。
+                既定ではシステムロケール（$LC_ALL / $LANG）に従います。
+                英語がフォールバックです。$NO_LANG でも設定できます。
+
+  no version           バージョン情報を表示
+
+  no fmt [オプション] <ファイル|ディレクトリ>  ソースを整形
+    端末で引数なしの場合:
+      - workspace.noml があれば、そのすべてのプロジェクトディレクトリを整形します。
+      - なければ現在のディレクトリを既定とします。
+    stdin をパイプで渡すと stdin から読み取ります（例: echo 'x=1' | no fmt）。
+    ディレクトリは自動的に再帰処理されます。
+    オプション:
+      -w    結果をソースファイルに書き戻す（その場で変更）
+      -d    整形結果ではなく色付き差分を出力
+      -fix=<class>  特定の種類の問題に自動修正を適用:
+                      overflow    注釈のない整数演算に #{overflow=wrap} を追加
+                      redundant  推論型と同じ型注釈を削除
+                      match      網羅的でない option マッチに不足の nil/err アームを追加
+      -loop-style=<s>  既定のループ記法: prefix（既定）または suffix
+    例:
+      no fmt                      現在のディレクトリで整形が必要なファイルを一覧
+      no fmt -w                   現在のディレクトリの全 .no ファイルをその場で整形
+      no fmt main.no             整形して stdout に出力
+      no fmt -w main.no          ファイルをその場で整形
+      no fmt -d main.no          色付き差分を表示
+      no fmt src/                src/ 内で整形が必要な .no ファイルを一覧
+      no fmt -w src/             src/ 下の全 .no ファイルをその場で整形
+      no fmt -d src/             src/ の全ファイルの差分を表示
+      no fmt -fix=overflow -w src/    src/ にその場で overflow 注釈を追加
+      no fmt -fix=redundant main.no   冗長な注釈の削除をプレビュー
+      no fmt -fix=match -w src/       src/ に不足の match アームをその場で追加
+      echo 'x=1' | no fmt         stdin から整形
+      no fmt -loop-style=suffix f.no  ループを '{ } (cond)' / '{ } * N' として整形
+
+  no build [オプション] [<ファイル|ディレクトリ>]  Nolang プロジェクトをビルド
+    ファイル/ディレクトリがなく workspace.noml がある場合、
+    workspace.noml のすべてのプロジェクトを並列ビルドします。
+    オプション:
+      -o <file>     出力ファイルパス
+      -cc <s>       C コンパイラ: clang（既定）、zig
+      -target <s>   クロスコンパイル用のターゲットトリプル
+                     例: x86_64-linux-gnu、aarch64-macos-gnu、
+                     x86_64-windows-gnu、wasm32-wasi
+      -js            JS バックエンドを使用（JavaScript を出力、LLVM ツールチェーン不要）
+      -browser       ブラウザ向け出力を生成（HTML + JS、-js と併用）
+      -ld-KEY=VALUE   コンパイル時グローバル定数を注入（後述の -ld 節を参照）
+    -v を使うとビルドと同時に LLVM IR（.ll）を出力して解析できます。
+    wasm32-wasi ターゲットでは $WASI_SYSROOT を wasi-sysroot のパスに設定してください。
+    既定: 現在のディレクトリまたは workspace.noml のプロジェクトをビルド
+    例:
+      no build
+      no build main.no
+      no build -o output main.no
+      no build -cc zig main.no
+      no build -target x86_64-linux-gnu main.no
+      no build -target wasm32-wasi main.no
+      no build --js main.no                      JavaScript を出力（型消去）
+      no build --js --browser main.no            ブラウザ用 JS + HTML ラッパーを生成
+      no build -ld-VERSION=0.1.2 main.no         VERSION をグローバル定数として注入
+
+  no run [<ファイル|ディレクトリ>]          ビルドして実行
+    ディレクトリの場合、main.no（エントリ）が必要です。
+    オプション:
+      -js            JS バックエンドを使用（node で実行）
+      -browser       ブラウザで開く（-js と併用）
+    例:
+      no run                     現在のディレクトリの main.no をビルドして実行
+      no run main.no             main.no をビルドして実行
+      no run -cc zig main.no     Zig コンパイラでビルドして実行
+      no run --js main.no            JS バックエンドでビルドし node で実行
+      no run --js --browser main.no  ブラウザ用 JS + HTML をビルドして開く
+
+  no test [<ファイル>]            テストを実行
+    既定では tests/ ディレクトリを使用します。
+    オプション:
+      -cc <s>       C コンパイラ: clang（既定）、zig
+      -target <s>   クロスコンパイル用のターゲットトリプル
+                     例: x86_64-linux-gnu、aarch64-macos-gnu、
+                     x86_64-windows-gnu、wasm32-wasi
+      -ld-KEY=VALUE  コンパイル時グローバル定数を注入（後述の -ld 節を参照）
+    例:
+      no test
+      no test tests/my-test.no
+      no test -cc zig
+      no test -target x86_64-linux-gnu
+      no test -target wasm32-wasi
+
+  no vet [--strict] [<ファイル|ディレクトリ>]  ソースを検証し lint を実行
+    --strict               警告/hint をエラーとして扱う
+    例:
+      no vet                     現在のディレクトリの main.no を検証
+      no vet main.no             main.no を検証
+      no vet --strict src/std/   lint が 1 件でもあれば失敗
+
+  no ast <ファイル>          解析済み AST を出力（デバッグ用）
+    例:
+      no ast main.no             main.no の AST を出力
+      no ast src/std/vec.no      vec.no の AST を出力
+
+  no info               環境とソースディレクトリの情報を表示
+
+  no add <tool>[:<version>]@<host>/<owner>/<repo>
+                    依存を追加（事前ビルド済み AST: <tool>.ast.zip）
+                    バージョン省略時は最新リリース。package.noml に書き込まれる
+                    キーは <tool>@<host>/<owner>/<repo> です。
+    例:
+      no add nogit@github.com/lizongying/notools
+      no add nogit:v0.1.33@github.com/lizongying/notools
+      no add nogit@lizongying/notools   host は既定で github.com
+  no remove <pkg>     依存を削除
+  no update <pkg>     特定の依存を更新
+  no update-all        すべての依存を更新
+  no list              依存を一覧
+  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
+                    バイナリをインストール（~/no/bin/ に保存、/usr/local/bin/ にシンボリックリンク）
+                    実行中のプラットフォーム向けの事前ビルド済み GitHub release を取得します
+                    （<tool>-<os>-<arch>、例: nogit-darwin-arm64）。
+                    引数なしの場合: 現在のパッケージをビルドしてインストール。
+                    -u    強制的に再取得して再インストール
+    例:
+      no install nogit@github.com/lizongying/notools
+      no install nogit:v0.1.33@github.com/lizongying/notools
+      no install nogit@lizongying/notools   host は既定で github.com
+      no install -u nogit@github.com/lizongying/notools
+  no uninstall <name>
+                    インストール済みバイナリとシンボリックリンクを削除
+    例:
+      no uninstall nogit
+  no sync              依存を同期/ダウンロード
+  no pack [-o <file>] [<dir|file.no>]
+                    モジュールの AST を <tool>.ast.zip（gob + zip）にパッケージ
+                    字句解析+構文解析のみ——LLVM ツールチェーン不要、CI に最適。
+    例:
+      no pack                     現在のパッケージをパッケージ -> dist/<name>.ast.zip
+      no pack -o nogit.ast.zip    出力パスを明示（CI 向け）
+      no pack nogit.no            単一のソースファイルをパッケージ
+  no pub [-o <file>]  パッケージ（no pack と同じ）して公開、registry への
+                    アップロードは未実装のため現状はパッケージのみ
+
+  -ld-KEY=VALUE  コンパイル時グローバル定数を注入（build、run、test 共通）
+    複数の -ld を使用できます。-ld 接頭辞は取り除かれ、
+    KEY=VALUE が最上位のグローバル定数として Nolang の
+    ソースに注入され、main.no の先頭に `KEY = VALUE` と書いたのと同じになります。
+
+    値の型推論:
+      - 整数（例: 42）           -> i64
+      - 浮動小数（例: 3.14）     -> f64
+      - 真偽値（true/false）     -> bool
+      - その他（例: 0.1.2）      -> str（単一引用符の文字列リテラル）
+
+    真偽値の省略形: -ld-DEBUG（=VALUE なし）は -ld-DEBUG=true と等価
+
+    例:
+      no build -ld-VERSION=0.1.2 -ld-NAME='nolang' main.no
+      no run -ld-DEBUG=true main.no
+      no run -ld-RELEASE main.no
+
+
+`
+}

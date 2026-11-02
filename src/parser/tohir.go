@@ -1859,7 +1859,7 @@ func (c *hirConv) emitSubjectMatchWrappersHIR(prep *subjectMatchPrep, inner int3
 			Token:       tok,
 			Name:        &Identifier{Token: tok, Value: prep.subjName},
 			IsSynthetic: true,
-			Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: prep.subjElem}},
+			Type:        buildType(prep.subjTypeRaw(), tok),
 			Value:       subjValue,
 		}
 		stmts = append(stmts, c.stmt(subjAssign), chainExpr(inner))

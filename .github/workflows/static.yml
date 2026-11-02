@@ -76,7 +76,11 @@ jobs:
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Deploy only for release tags (refs/tags/v*); pull_request only builds to validate.
+    # workflow_dispatch is kept as a manual redeploy escape hatch.
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

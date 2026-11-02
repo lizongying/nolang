@@ -6220,6 +6220,43 @@ func (c *codegen) emitOptionValueOrder(inst *Inst, aV, aT, bV, bT, lt, slot stri
 	return true
 }
 
+// optionPayloadComparable reports whether the ok-payload of an option
+// (LLVM type payloadT, as returned by optPayloadLTOf) may be compared against a
+// PLAIN operand of LLVM type otherT.
+//
+// It is the single predicate deciding "payload comparison vs discriminant
+// comparison" for `?T == scalar`, and every widening it accepts is one the
+// later coercion passes in emitCmp can actually perform. Falling back to the
+// discriminant is the safe default: it is always well-defined, and it is what
+// every such comparison did before the payload path existed.
+func optionPayloadComparable(payloadT, otherT string) bool {
+	if payloadT == "" || otherT == "" {
+		return false
+	}
+	// Same representation (i64/i64, %str-long/%str-long, %vec/%vec, ...).
+	if payloadT == otherT {
+		return true
+	}
+	// Integer payload vs an integer operand: emitCmp compares both at their own
+	// widths only when they agree, so accept the pair only when the widths are
+	// interchangeable through coerceInt (i8/i32 -> i64, i1 for bools).
+	if (isIntType(otherT) || otherT == "i1") &&
+		(payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1") {
+		return true
+	}
+	// char/byte payload vs a one-character STRING literal (`?char == 'a'`).
+	// nolang's `char == str` implicitly encodes the code point as a string, so
+	// the payload is the meaningful side — but without this case the payload was
+	// never extracted and the comparison fell back to the DISCRIMINANT, i.e.
+	// `?char == 'a'` answered false for every ok value. The actual conversion is
+	// done by the int -> %str-long promotion below (strFromScalar), which is
+	// SOURCE-type aware and encodes a char as UTF-8 rather than as "97".
+	if otherT == "%str-long" && isIntType(payloadT) {
+		return true
+	}
+	return false
+}
+
 func (c *codegen) emitCmp(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
@@ -6315,7 +6352,7 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		// true `valid` and std/toml's normalize-key rejected every bare
 		// key (parse said "toml parse error at line 1").
 		payloadT := c.optPayloadLTOf(inst.Args[0])
-		if payloadT == bT || (isIntType(bT) || bT == "i1") && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1") || (bT == "%str-long" && payloadT == "%str-long") || (bT == "%vec" && payloadT == "%vec") {
+		if optionPayloadComparable(payloadT, bT) {
 			aV, aT = c.optionPayloadOf(inst.Args[0], aV, aT)
 		} else {
 			aV = c.optionTag(aV, aT)
@@ -6323,7 +6360,7 @@ func (c *codegen) emitCmp(inst *Inst) error {
 		}
 	case bOpt:
 		payloadT := c.optPayloadLTOf(inst.Args[1])
-		if payloadT == aT || (isIntType(aT) || aT == "i1") && (payloadT == "i64" || payloadT == "i32" || payloadT == "i8" || payloadT == "i1") || (aT == "%str-long" && payloadT == "%str-long") || (aT == "%vec" && payloadT == "%vec") {
+		if optionPayloadComparable(payloadT, aT) {
 			bV, bT = c.optionPayloadOf(inst.Args[1], bV, bT)
 		} else {
 			bV = c.optionTag(bV, bT)
@@ -6642,6 +6679,21 @@ func (c *codegen) rawTypeOfValue(v ValueID) string {
 	return ""
 }
 
+// scalarRawOf is rawTypeOfValue for a value that may be an OPTION whose payload
+// is the scalar being rendered. `optionPayloadOf` hands the caller the payload
+// register while the MIR value keeps the option's type, so a `?char` payload
+// reached strFromScalar as "?char" and fell through to the decimal renderer:
+// `?char == 'a'` produced "97" instead of "a". Looking THROUGH one option
+// marker restores the source identity (char vs i32 vs u128) that the renderer
+// keys on. Non-option values are unchanged.
+func (c *codegen) scalarRawOf(vID ValueID) string {
+	raw := c.rawTypeOfValue(vID)
+	if ty.IsOptionRaw(raw) {
+		return ty.StripOptionRaw(raw)
+	}
+	return raw
+}
+
 // strFromScalar renders a scalar value as a %str-long, choosing the encoding
 // from the value's SOURCE type rather than its LLVM width:
 //
@@ -6655,7 +6707,7 @@ func (c *codegen) rawTypeOfValue(v ValueID) string {
 //
 // vT is the value's LLVM type; vID is used to look the source type up.
 func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
-	if c.rawTypeOfValue(vID) == "char" {
+	if c.scalarRawOf(vID) == "char" {
 		// char is i32; @str_from_cp's IR signature takes i64. Zero-extend at
 		// the CALL BOUNDARY only — the code point is non-negative (< 2^21), so
 		// the extension is exact and the char's own type stays i32. This is the
@@ -6672,7 +6724,7 @@ func (c *codegen) strFromScalar(vID ValueID, v, vT string) string {
 	// str_from_u128 helpers, splitting signedness on the SOURCE raw type.
 	if vT == "i128" {
 		fn := "@str_from_i128"
-		if c.rawTypeOfValue(vID) == "u128" {
+		if c.scalarRawOf(vID) == "u128" {
 			fn = "@str_from_u128"
 		}
 		c.loadSeq++
@@ -9508,6 +9560,29 @@ func (c *codegen) elemTypeOfReceiver(recv ValueID) string {
 	return "i8"
 }
 
+// optionElemRawOfContainer returns the payload spelling (`T` of `?T`) of a
+// container whose elements are options — `str` for `[]?str` — or "" when the
+// container is not a `[]?T` / `[N]?T`.
+//
+// It exists because the LLVM element type of every option is the untyped
+// `%option`, so emitIndexStore cannot tell `?str` from `?[]i64` from it, while
+// the tag-guarded drop/clone helpers it must call are keyed by the payload
+// spelling (see optDropName / optCloneName). The MIR element type is the only
+// place that still knows.
+func (c *codegen) optionElemRawOfContainer(recv ValueID) string {
+	et := NoType
+	if t := c.mirTypeOfValue(recv); t != nil {
+		switch t.Kind {
+		case KindSlice, KindArray:
+			et = t.Elem
+		}
+	}
+	if et == NoType {
+		return ""
+	}
+	return optionElemRaw(c.mod.Type(et))
+}
+
 // mirTypeOfValue resolves a value's MIR type through the same two channels
 // c.ptype uses (the current function's LocalTypes table first, then the value's
 // own recorded Type). elemTypeOfReceiver only consults the latter, which is not
@@ -9838,6 +9913,14 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// byte (see elemTypeOfReceiver). Using the value's type here stores 8 bytes
 	// per index and overruns the array.
 	elemT := c.elemTypeOfReceiver(inst.Args[0])
+	// For a container OF OPTIONS (`[]?T` / `[N]?T`) the LLVM element type is the
+	// untyped `%option`, so the tag-guarded drop/clone helpers — which are keyed
+	// by the PAYLOAD spelling — cannot be resolved from it. Recover the payload
+	// (`str` for `?str`) from the container's MIR element type.
+	optElemRaw := ""
+	if elemT == "%option" {
+		optElemRaw = c.optionElemRawOfContainer(inst.Args[0])
+	}
 	valT, valV := c.loadVal(inst.Args[2])
 	// `[]txt` / `[N]txt` element written from a str: materialize a real %txt.
 	// coerce() has no %str-long -> %txt case (different layouts), so the store
@@ -9966,6 +10049,18 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 					fmt.Fprintf(c.sb, "  call void %s(%s %s)\n", freeFn, elemT, old)
 				}
 			}
+		} else if elemT == "%option" {
+			// The overwritten element owns whatever its PAYLOAD owns, so it has to
+			// go through the option's own tag-guarded destructor. The generic
+			// `@str_free(%option ...)` branch below is not merely wrong here — it
+			// does not typecheck at all (%option is {i64, [3 x i64]}, %str-long is
+			// {i64, i64, ptr}), so the old code could never have run on a `[]?T`
+			// element that held an owned payload.
+			if optElemRaw != "" {
+				_, payloadLT := c.optionType(optElemRaw)
+				fmt.Fprintf(c.sb, "  call void %s(%%option* %s)\n",
+					c.emitOptionDropHelper(optElemRaw, payloadLT), c.optSpill(old))
+			}
 		} else {
 			fmt.Fprintf(c.sb, "  call void @str_free(%s %s)\n", elemT, old)
 		}
@@ -10054,7 +10149,44 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 			}
 		}
 	}
-	fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", elemT, valV, elemT, ep)
+	// The same by-value-sharing rule for an `%option` element (`[]?T` /
+	// `[N]?T`), and it is the reason `a []?str = [ok('x')]` used to read back an
+	// EMPTY string: the store copies the 32-byte {tag, payload} struct, so an
+	// owned payload stays shared with the value being written. That value is a
+	// temporary the caller drops right after the element store, so the element
+	// was left pointing at a freed buffer (and the subscript place-write
+	// SIGSEGV'd on it). Give the element its own heap with the option's clone
+	// helper — the exact inverse of the drop helper used above.
+	stored := false
+	if elemT == "%option" && optElemRaw != "" && valT == "%option" {
+		if _, payloadLT := c.optionType(optElemRaw); payloadLT != "" {
+			// The source slot: a value with its own slot is used directly,
+			// otherwise the already-loaded value is spilled into a fresh one.
+			// `vec.push(ok(v))` reaches here with a value that has NO slot (the
+			// wrap is a bare temporary), and skipping the clone for it left the
+			// pushed element aliasing a buffer the temporary's drop freed — the
+			// element then read back as leftover heap (`first=firs`).
+			srcSlot := c.optSlotOfValue(inst.Args[2])
+			if srcSlot == "" && valV != "" {
+				srcSlot = c.optSpill(valV)
+			}
+			if srcSlot != "" {
+				if !c.optionPayloadInline(payloadLT) {
+					// A boxed payload: the bitwise copy shares the box itself.
+					c.optBoxClone(srcSlot, ep, payloadLT)
+					stored = true
+				} else if c.mod.optionCopyOwnsPayload(optElemRaw) {
+					// An INLINE payload the option's drop FREES (`?str`, `?[]T`).
+					fmt.Fprintf(c.sb, "  call void %s(%%option* %s, %%option* %s)\n",
+						c.emitOptionCloneHelper(optElemRaw, payloadLT), ep, srcSlot)
+					stored = true
+				}
+			}
+		}
+	}
+	if !stored {
+		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", elemT, valV, elemT, ep)
+	}
 	// Same by-value sharing as vec.push — see cloneStructElemLeaves. Only
 	// reached for struct element types (str/vec elements have their own
 	// clone path above, scalars own nothing).

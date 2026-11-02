@@ -3157,6 +3157,27 @@ type subjectMatchPrep struct {
 	matchedIsEnum      bool
 }
 
+// matchSubjectTypeRaw is the declared type of a synthesised `__match_subj`
+// binding, given the ELEMENT type of the indexed container.
+//
+// It is `?<element>` for an ordinary container, but a container OF OPTIONS
+// (`[]?T`) has an element that is already `?T`, and the index read yields it
+// directly — `??T` is not a type any read can produce. All three places that
+// need this string (the semantic side table, emitSubjectMatchAST and
+// emitSubjectMatchHIR) go through here so they cannot drift: when the AST/HIR
+// node said `??str` while the side table said `?str`, the arm's `it`
+// (correctly `str`) was read out of a doubly-wrapped slot and `it + '-'` fed a
+// `%option` to @str_concat.
+func matchSubjectTypeRaw(elem string) string {
+	if ty.IsOptionRaw(elem) {
+		return elem
+	}
+	return "?" + elem
+}
+
+// subjTypeRaw is the prep-level spelling of matchSubjectTypeRaw.
+func (p *subjectMatchPrep) subjTypeRaw() string { return matchSubjectTypeRaw(p.subjElem) }
+
 // resolveSubjectMatch runs every side effect buildMatchDesugar performs on the
 // tree and on the parser side tables, and returns the resulting plan. It is
 // deliberately free of any emission: no IfExpression is built here.
@@ -3227,10 +3248,7 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 			if elem := p.inferIndexElemType(idx); elem != "" {
 				subjElem = elem
 				subjName = fmt.Sprintf("__match_subj_%d_%d", tok.Line, tok.Column)
-				subjType := "?" + elem
-				if ty.IsOptionRaw(elem) {
-					subjType = elem
-				}
+				subjType := matchSubjectTypeRaw(elem)
 				p.sem.SetFuncVarType(p.curFuncName, subjName, subjType)
 				p.setVarType(subjName, subjType)
 				matched = &Identifier{Token: tok, Value: subjName}
@@ -4075,11 +4093,13 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 				idx.Index = &Identifier{Token: tok, Value: idxTempName}
 			}
 		}
+		// The type NODE must be the same string the semantic table was given
+		// above — see subjTypeRaw for why `[]?T` must not be wrapped twice.
 		subjAssign := &LetStatement{
 			Token:       tok,
 			Name:        &Identifier{Token: tok, Value: subjName},
 			IsSynthetic: true,
-			Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: subjElem}},
+			Type:        buildType(prep.subjTypeRaw(), tok),
 			Value:       origMatched,
 		}
 		wrapperStmts := make([]Statement, 0, len(preStmts)+2)
@@ -4439,17 +4459,17 @@ func itAssignParts(s Statement) (Expression, bool) {
 // rewriteItPlaceWrites rewrites user-written `it = v` bindings inside a
 // place-match ok arm into a write-through sequence (D9):
 //
-//	it = v   ⇒   __place_L_C = v
-//	             a[__idx_L_C] = __place_L_C
-//	             it = __place_L_C
+//	it = v   ⇒   it = v
+//	             a[__idx_L_C] = it
 //
-// The arm's synthetic `it = <payload>` binding (prepended by the caller after
-// this rewrite) still gives reads the element VALUE; the trailing rebind keeps
-// `it` coherent for read-after-write inside the same arm. The index store is
-// marked IsSynthetic so the idxwrite validator does not reject the compiler's
-// own output, and both the read (__match_subj) and this store index through
-// the shared __idx_L_C temp, so a side-effecting index expression is
-// evaluated exactly once.
+// The rebind comes FIRST and writes straight into the arm's own `it`: `it` is
+// the element VALUE the rest of the arm reads, and it has to be a plain
+// assignment (see the inline comment — a second `let it` shadows the arm's
+// binding, and a __place temp is consumed by the store's option wrap when the
+// container is a `[]?T`). The index store is marked IsSynthetic so the idxwrite
+// validator does not reject the compiler's own output, and both the read
+// (__match_subj) and this store index through the shared __idx_L_C temp, so a
+// side-effecting index expression is evaluated exactly once.
 //
 // Nested matches — already lowered into RTBareMatch-flagged IfExpressions by
 // the time this runs — are skipped: their `it` belongs to the inner match.
@@ -4474,19 +4494,11 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 	out := make([]Statement, 0, len(stmts)+2)
 	for _, s := range stmts {
 		if val, ok := itAssignParts(s); ok {
-			pos := s.Pos()
-			placeName := fmt.Sprintf("__place_%d_%d", pos.Line, pos.Column)
-			// 讓 checker / codegen 知道暫存型別（與 subjName 同一節奏：函數作用域
-			// 優先，全域快照兜底；避免 std 常見同名全域變數污染）。
-			if elemType != "" {
-				p.sem.SetFuncVarType(p.curFuncName, placeName, elemType)
-				p.setVarType(placeName, elemType)
-			}
 			// D9 place-write + `#{index-out=DEF}`：舊 `x = v[i]` 寫法下註解作用於
 			// 整條陳述的全部下标读取（RHS 读取亦降為 u64，越界取 DEF）。把註解帶入
 			// 臂體後，此處先將 RHS 裡的每個安全索引读取（如 `it = rotr64(v[d]^v[a],32)`
 			// 的 `v[d]`/`v[a]`）降糖為「option 讀取 + DEF-match」的 u64 暫存，還原
-			// 舊語意；隨後的 __place 寫回使用這些 u64 暫存，rotr64 等函式不再收到
+			// 舊語意；隨後的寫回使用這些 u64 暫存，rotr64 等函式不再收到
 			// 裸 option（消除 fxxoptarg）。糖形態（SkipLowering=true）不走此路徑，
 			// 本函數整體早退，不會誤觸。
 			newVal := val
@@ -4506,26 +4518,42 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 				p.sem.SetIndexInBounds(writeIndex, true)
 			}
 			out = append(out,
-				&LetStatement{
+				// Rebind `it` FIRST, with a plain assignment — never a second
+				// `let it = ...`, and never through a separate __place temp.
+				//
+				// `let it = ...` declares a NEW local `it` for the whole
+				// enclosing block, so every read of `it` in the arm — including
+				// the RHS of this very statement — resolved to that fresh,
+				// still-unassigned slot. `ok -> it = it + 'x'` therefore read
+				// `it` as the empty string (and `it = it + 1` as 0), while a
+				// read AFTER the write looked right, which is what hid it. The
+				// iteration form (`x <- a: { x: { ok -> it = it + 'x' } }`) never
+				// had the bug: it goes through mir/elemplace.go, where the arm's
+				// `it` aliases the element place instead of being re-declared.
+				//
+				// The temp is gone for a reason of its own. The store below has
+				// to WRAP the value into the element when the container is a
+				// `[]?T` (`a[__idx] = ok(<value>)`), and a wrap TAKES OWNERSHIP
+				// of its operand. With `__place = v; a[__idx] = __place;
+				// it = __place` the wrap consumed __place and the rebind then
+				// read it back after the move — a use-after-free that showed up
+				// as `signal: trace/BPT trap` (double free) on
+				// `[]?str` + `ok -> it = it + '-'`. Writing through `it`
+				// instead means the store reads a local that is still live
+				// afterwards, which is the shape the move analysis already
+				// handles (it promotes the wrap to a clone).
+				&ExpressionStatement{Token: tok, Expression: &AssignExpression{
 					Token:       tok,
-					Name:        &Identifier{Token: tok, Value: placeName},
-					Type:        &NamedType{Token: tok, Value: elemType},
+					Left:        &Identifier{Token: tok, Value: "it"},
 					Value:       newVal,
 					IsSynthetic: true,
-				},
+				}},
 				&ExpressionStatement{Token: tok, Expression: &AssignExpression{
 					Token:       tok,
 					Left:        writeIndex,
-					Value:       &Identifier{Token: tok, Value: placeName},
+					Value:       &Identifier{Token: tok, Value: "it"},
 					IsSynthetic: true,
 				}},
-				&LetStatement{
-					Token:       tok,
-					Name:        &Identifier{Token: tok, Value: "it"},
-					Type:        &NamedType{Token: tok, Value: elemType},
-					Value:       &Identifier{Token: tok, Value: placeName},
-					IsSynthetic: true,
-				},
 			)
 			*used = true
 			changed = true

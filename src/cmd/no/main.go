@@ -34,6 +34,18 @@ import (
 	"github.com/lizongying/nolang/parser/dump"
 )
 
+// localizedVersionLabel returns the localized "version:" label, keeping the
+// trailing colon so callers can splice it straight into a printf.
+//
+// The label goes through the message catalog (ID v3n8qk2d) rather than a
+// per-language switch so that every locale translating the CLI translates this
+// too, and a locale without the key falls back to the inline English default
+// instead of silently mixing languages. The ID must stay a literal here: the
+// catalog generator reads IDs from the call site.
+func localizedVersionLabel() string {
+	return i18n.P("v3n8qk2d", "version:")
+}
+
 type ProjectConfig struct {
 	Name         string            `json:"name"`
 	Version      string            `json:"version"`
@@ -250,6 +262,10 @@ func main() {
 }
 
 func printUsage() {
+	if s, ok := catalog.LoadCompilerHelp(i18n.Lang()); ok {
+		fmt.Printf(s, version)
+		return
+	}
 	fmt.Printf("Nolang - A Programming Language (version %s)\n", version)
 	fmt.Println("")
 	fmt.Println("Usage:")
@@ -372,7 +388,7 @@ func printUsage() {
 	fmt.Println("  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]")
 	fmt.Println("                    Install a binary (store in ~/no/bin/, symlink in /usr/local/bin/)")
 	fmt.Println("                    Downloads a prebuilt GitHub release asset for the platform")
-	fmt.Println("                    `no` runs on (<tool>-<os>-<arch>, e.g. nogit-darwin-arm64).")
+	fmt.Println("                    that `no` runs on (<tool>-<os>-<arch>, e.g. nogit-darwin-arm64).")
 	fmt.Println("                    With no argument: build and install the current package.")
 	fmt.Println("                    -u    force re-download and re-install")
 	fmt.Println("    Examples:")
@@ -484,11 +500,11 @@ func versionCommand() {
 	if buildDate != "" {
 		if sec, err := strconv.ParseInt(buildDate, 10, 64); err == nil {
 			t := time.Unix(sec, 0).UTC()
-			fmt.Printf("version: %s(%s)\n", version, t.Format("2006-01-02 15:04:05"))
+			fmt.Printf("%s %s(%s)\n", localizedVersionLabel(), version, t.Format("2006-01-02 15:04:05"))
 			return
 		}
 	}
-	fmt.Printf("version: %s\n", version)
+	fmt.Printf("%s %s\n", localizedVersionLabel(), version)
 }
 
 func infoCommand() {
@@ -496,12 +512,12 @@ func infoCommand() {
 	if buildDate != "" {
 		if sec, err := strconv.ParseInt(buildDate, 10, 64); err == nil {
 			t := time.Unix(sec, 0).UTC()
-			fmt.Printf("version:     %s (%s)\n", version, t.Format("2006-01-02 15:04:05"))
+			fmt.Printf("%s     %s (%s)\n", localizedVersionLabel(), version, t.Format("2006-01-02 15:04:05"))
 		} else {
-			fmt.Printf("version:     %s\n", version)
+			fmt.Printf("%s     %s\n", localizedVersionLabel(), version)
 		}
 	} else {
-		fmt.Printf("version:     %s\n", version)
+		fmt.Printf("%s     %s\n", localizedVersionLabel(), version)
 	}
 
 	// Binary path

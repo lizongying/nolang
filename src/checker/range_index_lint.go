@@ -149,8 +149,8 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 								Column:  idx.Pos().Column,
 								File:    file,
 								TraceID: "m2fh7rfg",
-								Message: i18n.T("m2fh7rfg", "range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` (no index means no bounds check and no option to unwrap).",
-									base, name, name, base),
+								Message: i18n.T("m2fh7rfg", "range-index loop: '%s[%s]' reads by index by hand inside `%s <- [a..b):`; if you do not need the index itself, iterate the container with `x <- %s` (no index means no bounds check and no option to unwrap). e.g. rewrite\n     %s <- [0..n): {\n         %s: {\n             ok -> it = 0\n             -> _\n         }\n     }\n   as\n     x <- %s: {\n         x: {\n             ok -> it = 0\n             -> _\n         }\n     }",
+									base, name, name, base, name, base, name),
 							})
 						}
 					}

@@ -120,12 +120,12 @@ func TestNomlStringEscapes(t *testing.T) {
 	}
 }
 
-func TestNomlNumbersAndNull(t *testing.T) {
+func TestNomlNumbersAndNil(t *testing.T) {
 	src := `{
   n1: 42
   n2: -3.5
   n3: 1e3
-  missing: null
+  missing: nil
 }
 `
 	m, err := ParseNomlMap([]byte(src))
@@ -136,7 +136,37 @@ func TestNomlNumbersAndNull(t *testing.T) {
 		t.Errorf("numbers = %v %v %v", m["n1"], m["n2"], m["n3"])
 	}
 	if v, ok := m["missing"]; !ok || v != nil {
-		t.Errorf("null = %v (%v)", m["missing"], ok)
+		t.Errorf("nil = %v (%v)", m["missing"], ok)
+	}
+
+	// noml 本質是 Nolang 的字面量：空值寫 nil，JSON 的 null 不是 noml 語法。
+	if _, err := ParseNomlMap([]byte("{\n  missing: null\n}\n")); err == nil {
+		t.Error("null accepted as a value, want the `nil` hint error")
+	} else if !strings.Contains(err.Error(), "`nil`") {
+		t.Errorf("null error should point at `nil`, got: %v", err)
+	}
+	// 註解值同口徑（與 src/std/noml.no 一致）。
+	if _, err := ParseNomlDoc([]byte("#{type = null}\n{\n  port: 1\n}\n")); err == nil {
+		t.Error("null accepted in an annotation value")
+	}
+
+	// 往返：nil 序列化為 nil，而不是 null。
+	text, err := MarshalNoml(map[string]any{"missing": nil})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(text, "missing: nil") {
+		t.Errorf("nil must marshal as `nil`:\n%s", text)
+	}
+	if strings.Contains(text, "null") {
+		t.Errorf("marshaled output still mentions null:\n%s", text)
+	}
+	back, err := ParseNomlMap([]byte(text))
+	if err != nil {
+		t.Fatalf("reparse %q: %v", text, err)
+	}
+	if v, ok := back["missing"]; !ok || v != nil {
+		t.Errorf("round-trip nil = %v (%v)", v, ok)
 	}
 }
 

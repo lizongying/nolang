@@ -26,7 +26,7 @@ func embeddedTags() []string {
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".noml") ||
-			IsDocCatalogName(name) || IsAliasCatalogName(name) {
+			IsDocCatalogName(name) || IsAliasCatalogName(name) || IsCompilerHelpName(name) {
 			continue
 		}
 		out = append(out, Canonical(strings.TrimSuffix(name, ".noml")))

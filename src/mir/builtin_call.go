@@ -2263,7 +2263,32 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	}
 	eptr := c.treg("vpep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemTy, elemTy, ebase, lenG))
-	c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemTy, elemV, elemTy, eptr))
+	// Owned `%option` element (`[]?T` / `[N]?T`): the third instance of the same
+	// bug, and the reason `b []?str` built by push read back garbage. The
+	// 32-byte {tag, payload} struct is stored by value, so an owned payload
+	// (`?str`, `?[]T`) stays SHARED with the pushed temporary — whose drop then
+	// frees the container's element buffer (`first=firs`: the freed block had
+	// been reused by the format string). Give the element its own heap with the
+	// option clone helper, exactly as emitIndexStore now does.
+	optStored := false
+	if elemTy == "%option" {
+		if raw := c.optionElemRawOfContainer(recv); raw != "" {
+			if _, payloadLT := c.optionType(raw); payloadLT != "" {
+				if !c.optionPayloadInline(payloadLT) {
+					// A boxed payload: the copy would share the box itself.
+					c.optBoxClone(c.optSpill(elemV), eptr, payloadLT)
+					optStored = true
+				} else if c.mod.optionCopyOwnsPayload(raw) {
+					c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s, %%option* %s)\n",
+						c.emitOptionCloneHelper(raw, payloadLT), eptr, c.optSpill(elemV)))
+					optStored = true
+				}
+			}
+		}
+	}
+	if !optStored {
+		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", elemTy, elemV, elemTy, eptr))
+	}
 	// A struct element is stored by value, so its inline owned `str` leaves
 	// would still point at the SOURCE local's buffers. Give the container its
 	// own copies — otherwise the source's drop frees buffers the vec still

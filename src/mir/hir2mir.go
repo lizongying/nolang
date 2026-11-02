@@ -73,6 +73,11 @@ type lowerer struct {
 	worklist     []string
 	lowered      map[string]bool
 	locals       map[string]ValueID
+	// elemPlaces maps a binding that ALIASES a container element instead of
+	// owning a private slot: `x <- a` binds x to a[__i], and a match arm's
+	// identity binding (`let it = x`) inherits the same place. A read re-reads
+	// the element, a write stores into it — see elemplace.go.
+	elemPlaces map[string]elemPlace
 	// constLocals records, per function, the compile-time constant value of
 	// each `let` binding whose initializer is a pure compile-time constant.
 	// It feeds the implicit comptime evaluator (comptimeFold / evalConst).
@@ -231,6 +236,12 @@ type lowerer struct {
 	// payload. lowerKLet pushes the enclosing entry the arm binding shadowed
 	// and lowerIf pops + restores it when the arm body ends.
 	armScoped []armScopedBind
+
+	// armPlaces is the per-arm restore stack for element PLACES (elemplace.go).
+	// An arm's synthetic `it` may alias a container element (`x <- a`); the
+	// alias must die with the arm, or a later `it = v` would store into the
+	// container. lowerKLet pushes, lowerIf pops when the arm body ends.
+	armPlaces []armPlaceBind
 
 	// armBoundNames records the field names the CURRENT match arm destructured
 	// (`ok(v) ->` / `rect(w, h) ->`). A READ of such a name inside the arm must
@@ -1240,6 +1251,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		funcNames:    map[string]int32{},
 		lowered:      map[string]bool{},
 		locals:       map[string]ValueID{},
+		elemPlaces:   map[string]elemPlace{},
 		paramVals:    map[ValueID]bool{},
 		globals:      map[string]ValueID{},
 		globalTypes:  map[string]string{},
@@ -2472,6 +2484,7 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 		l.curRecv = resultVals[0]
 	}
 	l.locals = map[string]ValueID{}
+	l.elemPlaces = map[string]elemPlace{}
 	l.constLocals = map[string]comptimeVal{}
 	l.constLocalWrites = map[string]int{}
 	l.reassignedNames = map[string]bool{}
@@ -3347,6 +3360,30 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				l.armScoped = append(l.armScoped, armScopedBind{name: name, saved: existing})
 			}
 			if existing, ok := l.locals[name]; ok && !armScoped {
+				// A re-assignment of a name that aliases a container element
+				// (`it = v` inside `x: { ok -> ... }` over `x <- a`, or `x = v`
+				// in the loop body): store into the element instead of moving
+				// into a copy slot. This is the D9 place-match write for the
+				// loop-variable form (elemplace.go).
+				if p, ok := l.placeOf(name); ok {
+					l.storePlace(p, val)
+					break
+				}
+				// A match arm's synthetic binding re-established for a LATER
+				// arm (the first arm created the `it` local, so every later
+				// one lands here rather than on the fresh-binding path below).
+				// It must alias the element place just like the first arm did,
+				// otherwise only the first match in a function writes through.
+				if l.aliasArmPlace(name, n.Flags&hir.FlagSynthetic != 0 || n.Flags&hir.FlagArmBinding != 0, childID, val) {
+					// `itSrc` feeds tagged-enum field projection
+					// (enumArmFieldValue); the arm's `it` is still the matched
+					// value, only its storage is now the element place.
+					if name == "it" {
+						l.itSrc = val
+					}
+					l.locals[name] = val
+					break
+				}
 				// Match-arm synthetic `it` is bound PER ARM but the `locals` map is
 				// function-global, so every arm after the first finds `it` already
 				// declared. The arms can carry DIFFERENT `it` types (err arm →
@@ -3469,6 +3506,21 @@ func (l *lowerer) lowerStmtInner(id int32) {
 							break
 						}
 					}
+				}
+			}
+			// Match-arm identity binding over a PLACE subject. For an element
+			// that IS the arm's payload the parser prepends `let it = x` (see
+			// buildItBindingForArm); when x aliases a container element
+			// (`x <- a`) binding `it` to a COPY would make `it = v` a write to
+			// a dead local — the silent no-op this machinery exists to fix.
+			// Alias the same place instead, so `it = v` stores into the
+			// element exactly like `a[i]: { ok -> it = v }`. A synthetic arm
+			// binding over a NON-place clears any stale alias from a previous
+			// arm, so the place can never outlive the arm that established it.
+			if name != "" && (n.Flags&hir.FlagSynthetic != 0 || n.Flags&hir.FlagArmBinding != 0) {
+				if l.aliasArmPlace(name, true, childID, val) {
+					l.locals[name] = val
+					break
 				}
 			}
 			// New binding. If the initializer is a direct reference to an
@@ -3912,6 +3964,9 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		// `locals` entries this arm's synthetic bindings shadowed as soon as
 		// the arm body ends, so a nested match cannot leak its payload out.
 		armScopedBase := len(l.armScoped)
+		// Element places an arm's `it` aliased (elemplace.go) die with the arm
+		// for the same reason.
+		armPlaceBase := len(l.armPlaces)
 		// The destructured field names are per-arm too (see
 		// lowerer.armBoundNames): a later arm that does NOT destructure the
 		// same name must fall back to re-projecting the field.
@@ -3920,6 +3975,7 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 		armVal := l.lowerBlock(thenID)
 		l.armBoundNames = savedArmBound
 		l.restoreArmScoped(armScopedBase)
+		l.restoreArmPlaces(armPlaceBase)
 		// The variant pattern only applies to THIS arm's body.
 		l.armVariant = nil
 		l.armEnum = nil
@@ -3965,11 +4021,13 @@ func (l *lowerer) lowerIf(n *hir.Node) {
 			l.matchDepth++
 		}
 		armScopedBase := len(l.armScoped)
+		armPlaceBase := len(l.armPlaces)
 		savedArmBound := l.armBoundNames
 		l.armBoundNames = nil
 		armVal := l.lowerBlock(elseID)
 		l.armBoundNames = savedArmBound
 		l.restoreArmScoped(armScopedBase)
+		l.restoreArmPlaces(armPlaceBase)
 		if elseIsArm {
 			l.matchDepth--
 		}
@@ -4266,6 +4324,25 @@ func (l *lowerer) lowerCond(id int32) ValueID {
 	return sink
 }
 
+// cloneOptionElem clones a container element that is itself an option (`[]?T`)
+// before it is moved into a read's sink slot.
+//
+// Moving it would be wrong in the same way a move of an owned `str` element is
+// wrong (see the KindStr clone in lowerSafeIndex): `OpIndex` only BORROWS the
+// container's storage, so the container keeps ownership of the element's
+// payload. Handing that payload to the reader made the reader's drop free the
+// buffer the container still points at — then the element's own overwrite-drop
+// freed it a second time (`signal: trace/BPT trap`) — and any read after the
+// arm saw a dangling pointer. OpClone on an option routes through codegen's
+// emitClone option→option branch, which deep-copies an inline owned payload
+// with @__nolang_opt_clone_<payload>.
+func (l *lowerer) cloneOptionElem(optT TypeID, e ValueID) ValueID {
+	if e == NoVal {
+		return e
+	}
+	return l.b.Emit(OpClone, optT, []ValueID{e}, "")
+}
+
 // lowerSafeIndex lowers a bounds-checked element read whose result is an
 // option: in range -> ok(elem), out of range -> nil (tag 1). It backs the
 // parser's safe-index desugar (`x ?= v[i]` and `#{index-out=DEF} x = v[i]`),
@@ -4281,6 +4358,17 @@ func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID, inBound
 		return NoVal
 	}
 	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
+	// A container OF OPTIONS (`[]?T` / `[N]?T`): the element type already IS an
+	// option, so the read yields the stored element as-is. Wrapping it again
+	// would build a `?T` whose payload is a `?T` — the option struct is then
+	// read as if it were the payload, so `v ?str = a[0]` bound garbage (an empty
+	// string) and the subscript place-write SIGSEGV'd on the corrupted owned
+	// pointer. `optT` and `elemT` are the same type in that case, which is the
+	// test: it can only happen for `[]?T`, never for `[]T`.
+	optElem := false
+	if et := l.mod.Type(elemT); et != nil && et.Kind == KindOption && elemT == optT {
+		optElem = true
+	}
 	if inBounds {
 		// Provably in-bounds (constant subscript / for-range induction var /
 		// fixed-len slice): skip the runtime idx<len comparison. The read still
@@ -4288,11 +4376,15 @@ func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID, inBound
 		// dominated place-match write also needs no separate bound check.
 		e := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
 		if e != NoVal {
-			if et := l.mod.Type(elemT); et != nil && et.Kind == KindStr {
-				e = l.b.Emit(OpClone, elemT, []ValueID{e}, "")
+			if optElem {
+				l.b.EmitMoveInto(sink, l.cloneOptionElem(optT, e))
+			} else {
+				if et := l.mod.Type(elemT); et != nil && et.Kind == KindStr {
+					e = l.b.Emit(OpClone, elemT, []ValueID{e}, "")
+				}
+				wrapped := l.b.EmitOptionWrap(optT, 0, e)
+				l.b.EmitMoveInto(sink, wrapped)
 			}
-			wrapped := l.b.EmitOptionWrap(optT, 0, e)
-			l.b.EmitMoveInto(sink, wrapped)
 		}
 		return sink
 	}
@@ -4318,11 +4410,19 @@ func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID, inBound
 		// makes the move analysis treat the option as its owner, so the later
 		// drop of the option would free a buffer the container still owns.
 		// Clone so each side owns its own copy.
-		if et := l.mod.Type(elemT); et != nil && et.Kind == KindStr {
-			e = l.b.Emit(OpClone, elemT, []ValueID{e}, "")
+		//
+		// `[]?T` is the exception (see the inBounds branch above): the element
+		// is already the option the caller expects, so no re-wrap applies — but
+		// it still has to be CLONED, because OpIndex only borrows it.
+		if optElem {
+			l.b.EmitMoveInto(sink, l.cloneOptionElem(optT, e))
+		} else {
+			if et := l.mod.Type(elemT); et != nil && et.Kind == KindStr {
+				e = l.b.Emit(OpClone, elemT, []ValueID{e}, "")
+			}
+			wrapped := l.b.EmitOptionWrap(optT, 0, e)
+			l.b.EmitMoveInto(sink, wrapped)
 		}
-		wrapped := l.b.EmitOptionWrap(optT, 0, e)
-		l.b.EmitMoveInto(sink, wrapped)
 	}
 	if l.mod.Block(okBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
@@ -4375,11 +4475,19 @@ func (l *lowerer) isGrowableContainer(v ValueID) bool {
 // (len=0) take the nil path and the write is silently lost (the "未分配 vec
 // option 写丢失" bug class, seen as blake2's `v []u64` hashes going wrong).
 //
-// The ok payload must NOT read a[i]: on an unallocated vec the data pointer is
-// still null at subject-evaluation time (the store that allocates it has not
-// run yet), so reading would deref null — the "读取崩溃" half of the same bug.
-// The payload is dead anyway — the place-write rewrite rebinds `it` to the
-// value being written (`it = __place`) — so a zero of elemT is wrapped instead.
+// The ok payload used to be a hard-coded ZERO of elemT, on the grounds that it
+// is dead: the place-write rewrite rebinds `it` to the value being written
+// (`it = __place`). That reasoning is now void — the rewrite assigns through
+// `it` itself, and an arm may legitimately READ it first
+// (`ok -> it = it + 1` is a read-modify-write). With a zero payload that read
+// returned the zero value for every element: `[5,6,7]` became `[1,1,1]`, and a
+// `[]?str` element read as the empty string.
+//
+// The payload is therefore a REAL read, but only where a slot exists: this path
+// gates on `i >= 0` alone (see above), so on an unallocated vec the data
+// pointer is still null at subject-evaluation time and a read would deref null.
+// Guard it with `i < len` and fall back to elemT's zero — which is exactly what
+// a freshly grown slot holds, so the write path keeps its old behaviour.
 func (l *lowerer) lowerGrowWriteIndex(arrV, idxV ValueID, elemT, optT TypeID) ValueID {
 	i64T := l.b.Type("i64")
 	boolT := l.b.Type("bool")
@@ -4396,13 +4504,44 @@ func (l *lowerer) lowerGrowWriteIndex(arrV, idxV ValueID, elemT, optT TypeID) Va
 	l.b.Terminate(OpCondBr, []ValueID{nonneg}, []BlockID{okBlk, noneBlk}, "")
 
 	l.b.SetBlock(okBlk)
-	// Dead payload (see the comment above): zero of elemT, never a read of a[i].
-	e := l.b.EmitInt(OpConst, elemT, 0, "")
-	if e != NoVal {
-		wrapped := l.b.EmitOptionWrap(optT, 0, e)
-		l.b.EmitMoveInto(sink, wrapped)
+	// `[]?T`: the element already IS the option, so it goes into the sink
+	// unwrapped (a second wrap would read the option struct as its payload).
+	optElem := false
+	if et := l.mod.Type(elemT); et != nil && et.Kind == KindOption && elemT == optT {
+		optElem = true
 	}
-	if l.mod.Block(okBlk).Term == nil {
+	fill := func(v ValueID) {
+		if v == NoVal {
+			return
+		}
+		if optElem {
+			l.b.EmitMoveInto(sink, l.cloneOptionElem(optT, v))
+			return
+		}
+		l.b.EmitMoveInto(sink, l.b.EmitOptionWrap(optT, 0, v))
+	}
+	curBlk := okBlk
+	if n := l.b.Emit(OpLen, i64T, []ValueID{arrV}, ""); n != NoVal {
+		inRange := l.b.Emit(OpLt, boolT, []ValueID{idxV, n}, "")
+		readBlk := l.b.NewBlock("gwo.read")
+		zeroBlk := l.b.NewBlock("gwo.zero")
+		joinBlk := l.b.NewBlock("gwo.join")
+		l.b.Terminate(OpCondBr, []ValueID{inRange}, []BlockID{readBlk, zeroBlk}, "")
+
+		l.b.SetBlock(readBlk)
+		fill(l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, ""))
+		l.b.Terminate(OpBr, nil, []BlockID{joinBlk}, "")
+
+		l.b.SetBlock(zeroBlk)
+		fill(l.b.EmitInt(OpConst, elemT, 0, ""))
+		l.b.Terminate(OpBr, nil, []BlockID{joinBlk}, "")
+
+		l.b.SetBlock(joinBlk)
+		curBlk = joinBlk
+	} else {
+		fill(l.b.EmitInt(OpConst, elemT, 0, ""))
+	}
+	if l.mod.Block(curBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
@@ -4893,8 +5032,31 @@ func (l *lowerer) lowerRangeFor(n *hir.Node, iterID int32, bodyID int32, pre Blo
 		// each element into the out-param slot so the caller sees it.
 		l.b.EmitMoveInto(outP, iSlot)
 		iSlot = outP
+		l.locals[varName] = iSlot
+	} else {
+		l.locals[varName] = iSlot
+		// `x <- a` binds x to the ELEMENT, not to a copy: reads re-read a[idx]
+		// and writes store into it (elemplace.go). Without this, every write
+		// through the loop variable — `x = v`, and `it = v` in a match arm on
+		// x — landed in the dead per-iteration slot and vanished, while the
+		// equivalent `a[i]: { ok -> it = v }` wrote through. `iSlot` above
+		// stays the binding's initial value for type queries and for readers
+		// that bypass lowerExpr (it is a plain element read either way).
+		//
+		// A MAP is excluded: its "index" is a key and the positional element
+		// store would GEP into the hashmap struct (the same reason `m[k] = v`
+		// lowers to `.put`, see lowerAssignNode's KIndex case). Iterating a map
+		// is not supported beyond this point anyway, so a write stays a local
+		// rebind rather than corrupting the table.
+		if _, _, _, isMap := l.mapIndexTypes(arrV); !isMap {
+			baseName := ""
+			if bn := l.pkg.Node(rangeExprID); bn != nil && bn.Kind == hir.KIdent {
+				baseName = l.pkg.Str(bn.S)
+			}
+			restore := l.bindElemPlace(varName, elemPlace{arr: arrV, idx: idxSlot, elemT: elemT, name: baseName})
+			defer restore()
+		}
 	}
-	l.locals[varName] = iSlot
 	if bodyID != hir.NoID {
 		l.lowerBlock(bodyID)
 	}
@@ -5401,7 +5563,7 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 	// This is deliberately one-directional (64-bit -> 128-bit only): a narrow
 	// slot hint like `data []byte = [0x61, ...]` keeps `byte`, because its
 	// integer-literal elements lower to i64, never i128/u128.
-	firstVal = l.lowerExpr(elems[0])
+	firstVal = l.lowerElemWithHint(elems[0], elemRaw)
 	if firstVal != NoVal {
 		if ty := l.mod.Type(l.valueTypeOf(firstVal)); ty != nil {
 			if ty.Raw == "i128" || ty.Raw == "u128" {
@@ -5417,6 +5579,17 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 	// Pick the container. A slice literal gets a heap-backed %vec via the
 	// `with-len` builtin (dispatched by Inst.Sym at codegen time, so no callee
 	// has to be enqueued here); anything else keeps the stack [N x elem] form.
+	//
+	// The EXPECTED type wins over the node kind for a nested literal: the inner
+	// `[1, 2, 3]` of `d [2][3]i64 = [[1, 2, 3], [4, 5, 6]]` is a `slice-lit`
+	// node, but the slot it goes into is a fixed `[3]i64`, so materializing it
+	// as a %vec produced "%lv defined with type '%vec' but expected '[3 x i64]".
+	// lowerElemWithHint supplies that element type as the hint.
+	if asSlice {
+		if ht := l.mod.Type(l.typeHint); ht != nil && ht.Kind == KindArray {
+			asSlice = false
+		}
+	}
 	container := NoVal
 	if asSlice {
 		if sliceT := l.b.Type("[]" + elemRaw); sliceT != NoType {
@@ -5434,7 +5607,7 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 	for k, e := range elems {
 		ev := firstVal
 		if k != 0 || ev == NoVal {
-			ev = l.lowerExpr(e)
+			ev = l.lowerElemWithHint(e, elemRaw)
 		}
 		if ev == NoVal {
 			return NoVal
@@ -5443,6 +5616,40 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 		l.b.EmitVoid(OpIndexStore, []ValueID{container, idxV, ev}, "")
 	}
 	return container
+}
+
+// lowerElemWithHint lowers one element of a container literal, giving an
+// element whose own type cannot be read off the AST the ELEMENT type as its
+// hint instead of the container type.
+//
+// `c [][]i64 = [[1], [2]]` used to lower the inner `[1]` with the outer hint
+// `[][]i64`, so the inner container was built as `[][]i64` and its `i64`
+// element was stored into a `%vec` slot — LLVM rejected the module with
+// "%lv defined with type 'i64' but expected '%vec". The inner literal's own
+// type is the outer element type (`[]i64`), which is what this supplies.
+//
+// `nil` gets the same treatment for the same reason: it has no intrinsic type,
+// so `oa []?i64 = [ok(1), nil]` lowered the `nil` against the CONTAINER hint
+// (`[]?i64`, not an option) and emitted a bare i64 zero, which the element
+// store then rejected ("'%lv' defined with type 'i64' but expected '%option'").
+//
+// Only these context-typed elements get the override: other expressions keep
+// the caller's hint, so nothing else about element lowering changes.
+func (l *lowerer) lowerElemWithHint(elemID int32, elemRaw string) ValueID {
+	en := l.pkg.Node(elemID)
+	needsHint := en != nil && (en.Kind == hir.KSliceLit || en.Kind == hir.KArrayLit || en.Kind == hir.KNilLit)
+	if !needsHint || elemRaw == "" || elemRaw == "void" {
+		return l.lowerExpr(elemID)
+	}
+	elemT := l.b.Type(elemRaw)
+	if elemT == NoType {
+		return l.lowerExpr(elemID)
+	}
+	saved := l.typeHint
+	l.typeHint = elemT
+	v := l.lowerExpr(elemID)
+	l.typeHint = saved
+	return v
 }
 
 // lowerEmbedBinding materializes an `#{embed='file'}` top-level binding as a
@@ -6421,6 +6628,34 @@ func (l *lowerer) comptimeFold(id int32) (comptimeVal, TypeID, bool) {
 	return cv, typ, true
 }
 
+// indexBaseID returns the base (container) node id of a KIndex node, or NoID.
+// The first child of a KIndex is always the container.
+func indexBaseID(pkg *hir.Package, n *hir.Node) int32 {
+	if pkg == nil || n == nil {
+		return hir.NoID
+	}
+	for _, c := range pkg.Children(n.Id) {
+		return c
+	}
+	return hir.NoID
+}
+
+// dropConstAgg forgets a name's compile-time AGGREGATE constant.
+//
+// A container literal (`a []i64 = [0, 0]`) is recorded as a cvAgg so that
+// `a.len()` / `a[0]` can fold. The folder has no notion of mutation, so any
+// element write must drop the entry — otherwise a read after the write folds
+// back to the initializer's value. Scalar constants are untouched: a scalar's
+// single write is already handled by constLocalWrites / scanReassignedNames.
+func (l *lowerer) dropConstAgg(name string) {
+	if name == "" || l.constLocals == nil {
+		return
+	}
+	if cv, ok := l.constLocals[name]; ok && cv.kind == cvAgg {
+		delete(l.constLocals, name)
+	}
+}
+
 // scanReassignedNames walks the function body (without descending into nested
 // function definitions) and records every local name that is written MORE THAN
 // ONCE. Such names are excluded from constLocals so a folded `let` initializer
@@ -6467,9 +6702,28 @@ func (l *lowerer) scanReassignedNames(id int32) {
 			// The assignment target is the FIRST child. A bare-identifier
 			// target is a local (or result-param) reassignment.
 			for _, c := range l.pkg.Children(cur) {
-				if cn := l.pkg.Node(c); cn != nil && cn.Kind == hir.KIdent {
-					if nm := l.pkg.Str(cn.S); nm != "" {
-						writeCount[nm]++
+				if cn := l.pkg.Node(c); cn != nil {
+					switch cn.Kind {
+					case hir.KIdent:
+						if nm := l.pkg.Str(cn.S); nm != "" {
+							writeCount[nm]++
+						}
+					case hir.KIndex:
+						// `a[i] = v` MUTATES the container's aggregate value:
+						// `a []i64 = [0, 0]` is a cvAgg constant, and the
+						// folder cannot see a later element store, so a read
+						// after the write folded back to the initializer
+						// (`a[0]: { ok -> it = 5 }` then `a[0] == 5` compared
+						// false). A container built by a call is never a cvAgg,
+						// which is why only literal-initialized containers
+						// showed the bug. Any element store disqualifies the
+						// name, even a single one — unlike a scalar, ONE write
+						// already makes the constant wrong.
+						if base := l.pkg.Node(indexBaseID(l.pkg, cn)); base != nil && base.Kind == hir.KIdent {
+							if nm := l.pkg.Str(base.S); nm != "" {
+								l.reassignedNames[nm] = true
+							}
+						}
 					}
 				}
 				break
@@ -8066,6 +8320,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 			return l.b.EmitInt(OpConst, l.b.Type("i64"), 0, "")
 		}
+		if p, ok := l.placeOf(name); ok {
+			// `x <- a` / a match arm's `let it = x`: the name IS a[__i], so a
+			// read must re-read the element (a write earlier in this iteration
+			// must be visible — elemplace.go).
+			if pv := l.readPlace(p); pv != NoVal {
+				return pv
+			}
+		}
 		if v, ok := l.locals[name]; ok {
 			return v
 		}
@@ -8324,10 +8586,48 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// the hint, nil stays i64 0, emitCmp checks tag==0, and the match INVERTS
 		// (some(x) falls into the nil arm, nil falls into the default arm) — the
 		// bug behind `a.at(0)` matching nil and `?i64 = nil` matching default.
+		//
+		// An index read that is a COMPARISON operand must be the documented
+		// safe index read — `?elem`, bounds-checked, nil when out of range —
+		// exactly like every other index read (docs 〈安全索引〉: 「索引讀取的
+		// 結果恆為 ?T」).
+		//
+		// Why it needs its own hint: the safe-index branch in the KIndex case
+		// below fires on the CONSUMER's type hint. A typed binding
+		// (`v ?i64 = a[i]`), `?=` and `#{index-out=…}` all supply one; a
+		// comparison does not (its own type is bool), so `a[i] == 5` used to
+		// fall through to a bare `OpIndex` — an UNCHECKED read with no nil:
+		//
+		//     a []i64 = [5, 6, 7]; oob = 9
+		//     if a[oob] != 5 { … }   ; read past the vec, garbage / SIGTRAP
+		//
+		// `s[0] == 'a'` (a documented idiom) was worse than unchecked: it read
+		// the code point and then compared it against a string with no payload
+		// extraction. Both are fixed by giving the read the `?elem` hint, which
+		// makes emitCmp compare the PAYLOAD — the same reading `?T == 5` has.
+		lowerOperand := func(cid int32) ValueID {
+			saved := l.typeHint
+			if isCmp {
+				if optT := l.cmpIndexSafeHint(cid); optT != NoType {
+					l.typeHint = optT
+				}
+			}
+			v := l.lowerExpr(cid)
+			l.typeHint = saved
+			return v
+		}
 		var lv, rv ValueID
 		if i == 2 && (op == OpEq || op == OpNe) {
 			ln := l.pkg.Node(lr[0])
 			rn := l.pkg.Node(lr[1])
+			// A container element matched against a bare option variant
+			// (`x: { ok -> ... }` over `x <- a`): the element is always present,
+			// so the presence test is a constant — the same answer the
+			// provably-in-bounds subscript form `a[i]: { ok -> ... }` gives.
+			// See elemplace.go (placePresenceConst).
+			if pv := l.placePresenceConst(ln, rn, op); pv != NoVal {
+				return pv
+			}
 			if ln != nil && rn != nil {
 				// A bare option-variant operand (`nil`, `err`, `ok`, `some`)
 				// carries no type of its own; seed l.typeHint with its sibling's
@@ -8349,16 +8649,16 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				}
 				switch {
 				case isVar(ln) && !isVar(rn):
-					rv = l.lowerExpr(lr[1])
+					rv = lowerOperand(lr[1])
 					saved := l.typeHint
 					l.typeHint = l.valueTypeOf(rv)
-					lv = l.lowerExpr(lr[0])
+					lv = lowerOperand(lr[0])
 					l.typeHint = saved
 				case isVar(rn) && !isVar(ln):
-					lv = l.lowerExpr(lr[0])
+					lv = lowerOperand(lr[0])
 					saved := l.typeHint
 					l.typeHint = l.valueTypeOf(lv)
-					rv = l.lowerExpr(lr[1])
+					rv = lowerOperand(lr[1])
 					l.typeHint = saved
 				default:
 					// Bare user-enum variant (`m: { read -> ... }`): the variant
@@ -8366,25 +8666,25 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 					// sibling's enum type. Must be tried BEFORE lowering the bare
 					// operand, which would otherwise emit an unresolved `void` const.
 					if ev, ok := l.lowerBareEnumVariant(ln, rn); ok {
-						rv = l.lowerExpr(lr[1])
+						rv = lowerOperand(lr[1])
 						lv = ev
 						break
 					}
 					if ev, ok := l.lowerBareEnumVariant(rn, ln); ok {
-						lv = l.lowerExpr(lr[0])
+						lv = lowerOperand(lr[0])
 						rv = ev
 						break
 					}
-					lv = l.lowerExpr(lr[0])
-					rv = l.lowerExpr(lr[1])
+					lv = lowerOperand(lr[0])
+					rv = lowerOperand(lr[1])
 				}
 			} else {
-				lv = l.lowerExpr(lr[0])
-				rv = l.lowerExpr(lr[1])
+				lv = lowerOperand(lr[0])
+				rv = lowerOperand(lr[1])
 			}
 		} else {
-			lv = l.lowerExpr(lr[0])
-			rv = l.lowerExpr(lr[1])
+			lv = lowerOperand(lr[0])
+			rv = lowerOperand(lr[1])
 		}
 		// ARITHMETIC on an option-typed operand must use the PAYLOAD. `?=` is
 		// desugared by the parser into a plain assignment from the option
@@ -11183,6 +11483,13 @@ var fmtDotFieldRe = regexp.MustCompile(`^(.+)\.([A-Za-z_][A-Za-z0-9_-]*)$`)
 // A method call WITH arguments (e.g. `{s.slice(0)}`) is still refused: the
 // format field syntax has no way to express the argument list.
 func (l *lowerer) lookupFormatValue(name string) (ValueID, bool) {
+	if p, ok := l.placeOf(name); ok {
+		// `print('{x}')` where x aliases a container element (`x <- a`): read
+		// the element, not the per-iteration copy (elemplace.go).
+		if pv := l.readPlace(p); pv != NoVal {
+			return pv, true
+		}
+	}
 	if v, ok := l.locals[name]; ok {
 		return v, true
 	}
@@ -13526,6 +13833,97 @@ func (l *lowerer) elementTypeOf(v ValueID) TypeID {
 	return l.voidType
 }
 
+// cmpIndexSafeHint returns the `?elem` type an index read must be lowered with
+// when it is an operand of a comparison, or NoType when the node is not an
+// index read (or is a map lookup, whose read is already `?V`).
+//
+// It exists because the safe-index branch in the KIndex case keys off the
+// CONSUMER's type hint: a typed binding supplies one, a comparison does not.
+// Without this, `a[i] == 5` lowered to a bare unchecked `OpIndex` — the read the
+// docs say cannot happen (〈安全索引〉: 索引讀取的結果恆為 ?T，越界回傳 nil).
+//
+// Map subscripts are excluded on purpose: `m[k]` lowers to hashmap.get, which
+// already returns `?V`, and forcing an option hint here would wrap it twice.
+func (l *lowerer) cmpIndexSafeHint(id int32) TypeID {
+	n := l.pkg.Node(id)
+	if n == nil || n.Kind != hir.KIndex {
+		return NoType
+	}
+	arrID := hir.NoID
+	for _, c := range l.pkg.Children(id) {
+		arrID = c
+		break
+	}
+	if arrID == hir.NoID {
+		return NoType
+	}
+	// `a[i][j]`: the container is itself an index read. A hint set here is
+	// inherited by the CONTAINER lowering (the KIndex case lowers the container
+	// with the same l.typeHint still in effect), so the outer read gets wrapped
+	// as if it were the result — `[32]str` element `str` became `?char`, and the
+	// inner read then emitted `len(?char)` / `index ?char`. That is what broke
+	// `.header-names[i][j] != name.byte(j)` in src/std/net/http.no
+	// ("lencap kind: len/cap unsupported on ?char (option)"). The read that
+	// would need making safe is the OUTER one, which this hint cannot reach —
+	// there is no `index ?T` in the backend. Keep the pre-existing lowering:
+	// nested reads stay unchecked exactly as at HEAD.
+	if cn := l.pkg.Node(arrID); cn != nil && cn.Kind == hir.KIndex {
+		return NoType
+	}
+	ct := l.typeOfNode(l.pkg.Node(arrID))
+	if ct == NoType || ct == l.voidType {
+		return NoType
+	}
+	cty := l.mod.Type(ct)
+	if cty == nil {
+		return NoType
+	}
+	if cty.T != nil && cty.T.Kind == ty.Map {
+		return NoType
+	}
+	// Same shape reached without a KIndex container: a variable of option type
+	// (`v ?str` then `v[j]`). Same reasoning as above — bail.
+	if cty.Kind == KindOption {
+		return NoType
+	}
+	elemT := l.elemTypeOfType(cty)
+	if elemT == NoType || elemT == l.voidType {
+		return NoType
+	}
+	et := l.mod.Type(elemT)
+	if et == nil || et.Raw == "" {
+		return NoType
+	}
+	// The payload the comparison will actually look at: for `[]?T` the element
+	// IS the option, so the payload is its inner type.
+	payload := et
+	if et.Kind == KindOption && et.Elem != NoType {
+		if pt := l.mod.Type(et.Elem); pt != nil {
+			payload = pt
+		}
+	}
+	// Only scalar/string payloads have a structural comparison. A container or
+	// struct payload makes emitCmp fall back to the DISCRIMINANT, which would
+	// turn `a[i] == b[j]` on `[][]i64` into "are both present" — silently true
+	// for `[1] == [9]`. Keeping the bare read instead preserves the old, loud
+	// failure (an `icmp` on a %vec aggregate is rejected by the backend).
+	switch payload.Kind {
+	case KindInt, KindFloat, KindBool, KindChar, KindStr:
+	default:
+		return NoType
+	}
+	// `[]?T` already reads an option: the element IS the option, so the hint is
+	// the element type itself (`??T` is not a type any read can produce).
+	if ty.IsOptionRaw(et.Raw) {
+		return elemT
+	}
+	optT := l.b.Type("?" + et.Raw)
+	if optT == l.voidType {
+		return NoType
+	}
+	return optT
+}
+
 // elemTypeOfType is the type-level half of elementTypeOf: it maps a container
 // type to the type produced by a single index operation.
 func (l *lowerer) elemTypeOfType(ty *Type) TypeID {
@@ -13731,6 +14129,13 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 	switch tn.Kind {
 	case hir.KIdent:
 		nm := l.pkg.Str(tn.S)
+		// The target aliases a container element (`x <- a`, or a match arm's
+		// `it` over such an x): store into the element. The name owns no slot
+		// of its own, so the move below would write a dead per-iteration copy
+		// and the container would keep its old value (elemplace.go).
+		if p, ok := l.placeOf(nm); ok {
+			return l.storePlace(p, v)
+		}
 		// Keep the arm-projection source in sync: after the first arm has
 		// bound `it`, later arms re-assign it (same slot) rather than
 		// declaring it, so a `let`-only update missed every arm but the first
@@ -13831,6 +14236,16 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			i++
 		}
 		arrV := l.lowerExpr(arrID)
+		// A write to an element KILLS the container's compile-time aggregate
+		// constant. `a []i64 = [0, 0]` is recorded in constLocals as a cvAgg
+		// (that is what makes `a.len()` / `a[0]` foldable), and the folder has
+		// no notion of a later store: `a[0]: { ok -> it = 5 }` followed by
+		// `a[0] == 5` folded the READ back to the initializer's 0 and compared
+		// false. A container built by a call (`mk()`, `with-len(2)`) is never a
+		// cvAgg, which is why only literal-initialized containers showed it.
+		if bn := l.pkg.Node(arrID); bn != nil && bn.Kind == hir.KIdent {
+			l.dropConstAgg(l.pkg.Str(bn.S))
+		}
 		// An index expression is ALWAYS integer-typed. Lower it with a cleared
 		// typeHint so the read's target type (e.g. the `str`/`?str` binding of a
 		// safe index `x = lines[pre + k]`) can never leak into the index

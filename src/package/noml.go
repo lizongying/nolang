@@ -20,7 +20,10 @@ import (
 //     字母／數字；中間可含小寫字母、數字、中劃線；不能以數字開頭
 //     （下劃線開頭除外）。不符合規則的鍵寫成單引號字串鍵。
 //   - 值：單引號字串（\ 轉義：\' \\ \n \t \r）、true/false（全小寫）、
-//     null、裸數字（整數/小數/指數）、物件 {…}、陣列 […]。
+//     nil、裸數字（整數/小數/指數）、物件 {…}、陣列 […]。
+//     ⚠️ 空值是 `nil` 而**不是** `null`：noml 本質是 Nolang 的字面量，必須符合
+//     Nolang 語法，而 Nolang 沒有 `null`。寫 `null` 會被當成語法錯誤拒絕
+//     （src/std/noml.no 同口徑）。
 //   - 陣列：元素用逗號分隔，支援尾隨逗號；[ 、元素、,、] 皆可跨行。
 //   - 註解：; 到行尾（字串內的 ; 除外）。縮排無意義。
 //   - 成員註解：`#{...}` 與 nolang 註解語法完全一致（`key = value`，逗號分隔），
@@ -87,7 +90,8 @@ func IsNomlIdentifierKey(s string) bool {
 // NomlAnnotation 是寫在 noml 物件成員上的 `#{key = value}` 註解條目。
 //
 // 語法與 nolang 的 `#{...}` 一致：多個條目以逗號分隔；值支援單引號字串、
-// 數字、true/false/null、裸識別字與陣列；裸鍵（`#{debug}`）的 Value 為 nil。
+// 數字、true/false/nil、裸識別字與陣列；裸鍵（`#{debug}`）的 Value 為 nil。
+// 空值寫 `nil`（Nolang 語法），`null` 會被拒絕。
 // 位置規則也一致：只允許獨立成行寫在成員上方，或寫在成員同一行的尾隨位置。
 //
 // 有語意的鍵是 `type`（值為 nolang 型別表達式字串，如 `'[]str'`、`'i64'`、
@@ -254,7 +258,7 @@ func (p *nomlParser) parseValue(path string) (any, error) {
 	case c == 't' || c == 'f':
 		return p.parseBool()
 	case c == 'n':
-		return p.parseNull()
+		return p.parseNil()
 	case c == '-' || (c >= '0' && c <= '9'):
 		return p.parseNumber()
 	default:
@@ -472,8 +476,8 @@ func (p *nomlParser) parseAnnotationKey() (string, error) {
 	return string(p.data[start:p.pos]), nil
 }
 
-// parseAnnotationValue 解析註解值：單引號字串、數字、true/false/null、
-// 裸識別字（含 `/` `.` 等路徑字元）與陣列。
+// parseAnnotationValue 解析註解值：單引號字串、數字、true/false/nil、
+// 裸識別字（含 `/` `.` 等路徑字元）與陣列。空值是 `nil`，`null` 被拒絕。
 func (p *nomlParser) parseAnnotationValue() (any, error) {
 	if p.pos >= len(p.data) {
 		return nil, p.errf("expected annotation value")
@@ -517,8 +521,11 @@ func (p *nomlParser) parseAnnotationValue() (any, error) {
 		if p.matchKeyword("false") {
 			return false, nil
 		}
-		if p.matchKeyword("null") {
+		if p.matchKeyword("nil") {
 			return nil, nil
+		}
+		if p.matchKeyword("null") {
+			return nil, p.errf("`null` is not a noml literal; noml is Nolang literals, so the empty value is `nil`")
 		}
 		return p.parseAnnotationIdent()
 	default:
@@ -739,11 +746,17 @@ func (p *nomlParser) parseBool() (bool, error) {
 	}
 	return false, p.errf("invalid boolean literal")
 }
-func (p *nomlParser) parseNull() (any, error) {
-	if p.matchKeyword("null") {
+
+// parseNil 解析空值字面量 `nil`。noml 是 Nolang 的字面量，所以这里是 `nil`
+// 而不是 JSON 的 `null`；`null` 会带上指路信息被拒绝，而不是变成裸識別字字串。
+func (p *nomlParser) parseNil() (any, error) {
+	if p.matchKeyword("nil") {
 		return nil, nil
 	}
-	return nil, p.errf("invalid null literal")
+	if p.matchKeyword("null") {
+		return nil, p.errf("`null` is not a noml literal; noml is Nolang literals, so the empty value is `nil`")
+	}
+	return nil, p.errf("invalid nil literal")
 }
 
 func (p *nomlParser) parseNumber() (float64, error) {
@@ -1012,7 +1025,7 @@ func FormatNomlAnnotation(a NomlAnnotation) string {
 func nomlAnnotationValue(v any) string {
 	switch t := v.(type) {
 	case nil:
-		return "null"
+		return "nil"
 	case string:
 		return NomlQuote(t)
 	case bool:
@@ -1125,7 +1138,7 @@ func nomlWriteAnnotated(sb *strings.Builder, v any, indent int, path string, ann
 	pad := strings.Repeat("  ", indent)
 	switch t := v.(type) {
 	case nil:
-		sb.WriteString("null")
+		sb.WriteString("nil")
 	case string:
 		sb.WriteString(NomlQuote(t))
 	case bool:
@@ -1262,7 +1275,7 @@ func DecodeInto(v any, dst any) error {
 
 func nomlDecode(v any, dst reflect.Value, field string) error {
 	if v == nil {
-		return nil // null 等同未設定
+		return nil // nil 等同未設定
 	}
 	// 先處理 noml 特有語法：map[string]string ← 字串陣列。
 	if dst.Kind() == reflect.Map && isStringMap(dst.Type()) {

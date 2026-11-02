@@ -1,0 +1,175 @@
+; Nolang compiler help: ko
+; 整段 CLI 帮助，用多行原始串（反引号）承载：内容逐字符保留，空行就是真的空行。
+; 只改译文：行数、空行位置、`no <verb>` 命令 token 都必须与 printUsage 的英文块一致，
+; 首行保留唯一的 %s（注入 version）。门禁见 compiler_help_test.go。
+;
+; ⚠️ 原始串的结束标记是「仅空白 + 反引号」单独一行，因此任何一行都不能以反引号开头
+; （哪怕前面有缩进）；行内中段的反引号无妨。
+{
+  'compiler': `
+Nolang 프로그래밍 언어 (버전 %s)
+
+사용법:
+전역 옵션:
+  -v    상세 모드 (모든 명령에 적용)
+  --lang=<tag>  메시지 언어, 예: --lang=zh-CN, --lang=en.
+                기본값은 시스템 로캘($LC_ALL / $LANG)을 따릅니다.
+                영어가 대체 언어입니다. $NO_LANG으로도 설정할 수 있습니다.
+
+  no version           버전 정보 출력
+
+  no fmt [옵션] <파일|디렉터리>  소스 코드 서식 지정
+    터미널에서 인자 없이 실행할 경우:
+      - workspace.noml이 있으면 그 모든 프로젝트 디렉터리를 서식 지정합니다.
+      - 없으면 현재 디렉터리를 기본으로 합니다.
+    stdin을 파이프로 넘기면 stdin에서 읽습니다 (예: echo 'x=1' | no fmt).
+    디렉터리는 자동으로 재귀 처리됩니다.
+    옵션:
+      -w    결과를 소스 파일에 다시 쓰기 (제자리 수정)
+      -d    서식 결과 대신 색상이 있는 diff 출력
+      -fix=<class>  특정 문제 유형에 자동 수정 적용:
+                      overflow    주석 없는 정수 연산에 #{overflow=wrap} 추가
+                      redundant   추론된 타입과 같은 타입 주석 제거
+                      match       완전하지 않은 option 매치에 누락된 nil/err 분기 추가
+      -loop-style=<s>  기본 루프 표기: prefix(기본) 또는 suffix
+    예:
+      no fmt                      현재 디렉터리에서 서식이 필요한 파일 목록
+      no fmt -w                   현재 디렉터리의 모든 .no 파일을 제자리에서 서식 지정
+      no fmt main.no             서식 지정 후 stdout으로 출력
+      no fmt -w main.no          파일을 제자리에서 서식 지정
+      no fmt -d main.no          색상이 있는 diff 표시
+      no fmt src/                src/에서 서식이 필요한 .no 파일 목록
+      no fmt -w src/             src/ 아래 모든 .no 파일을 제자리에서 서식 지정
+      no fmt -d src/             src/ 모든 파일의 diff 표시
+      no fmt -fix=overflow -w src/    src/에 제자리에서 overflow 주석 추가
+      no fmt -fix=redundant main.no   중복 타입 주석 제거 미리보기
+      no fmt -fix=match -w src/       src/에 누락된 match 분기를 제자리에서 추가
+      echo 'x=1' | no fmt         stdin에서 서식 지정
+      no fmt -loop-style=suffix f.no  루프를 '{ } (cond)' / '{ } * N' 형식으로 서식 지정
+
+  no build [옵션] [<파일|디렉터리>]  Nolang 프로젝트 빌드
+    파일/디렉터리를 주지 않고 workspace.noml이 있으면
+    workspace.noml의 모든 프로젝트를 병렬로 빌드합니다.
+    옵션:
+      -o <file>     출력 파일 경로
+      -cc <s>       C 컴파일러: clang(기본), zig
+      -target <s>   크로스 컴파일 대상 트리플
+                      예: x86_64-linux-gnu, aarch64-macos-gnu,
+                      x86_64-windows-gnu, wasm32-wasi
+      -js            JS 백엔드 사용 (JavaScript 출력, LLVM 툴체인 불필요)
+      -browser       브라우저용 출력 생성 (HTML + JS, -js와 함께 사용)
+      -ld-KEY=VALUE   컴파일 시점 전역 상수 주입 (아래 -ld 절 참고)
+    -v를 사용하면 빌드와 함께 LLVM IR(.ll) 파일을 생성해 분석할 수 있습니다.
+    wasm32-wasi 타깃의 경우 $WASI_SYSROOT을 wasi-sysroot 경로로 설정하세요.
+    기본값: 현재 디렉터리 또는 workspace.noml의 프로젝트를 빌드
+    예:
+      no build
+      no build main.no
+      no build -o output main.no
+      no build -cc zig main.no
+      no build -target x86_64-linux-gnu main.no
+      no build -target wasm32-wasi main.no
+      no build --js main.no                      JavaScript 출력 (타입 소거)
+      no build --js --browser main.no            브라우저 JS + HTML 래퍼 생성
+      no build -ld-VERSION=0.1.2 main.no         VERSION을 전역 상수로 주입
+
+  no run [<파일|디렉터리>]          빌드 후 실행
+    디렉터리인 경우 main.no(진입점)가 필요합니다.
+    옵션:
+      -js            JS 백엔드 사용 (node로 실행)
+      -browser       브라우저에서 열기 (-js와 함께 사용)
+    예:
+      no run                     현재 디렉터리의 main.no를 빌드 후 실행
+      no run main.no             main.no를 빌드 후 실행
+      no run -cc zig main.no     Zig 컴파일러로 빌드 후 실행
+      no run --js main.no            JS 백엔드로 빌드한 뒤 node로 실행
+      no run --js --browser main.no  브라우저 JS + HTML을 빌드하고 브라우저에서 열기
+
+  no test [<파일>]            테스트 실행
+    기본값은 tests/ 디렉터리입니다.
+    옵션:
+      -cc <s>       C 컴파일러: clang(기본), zig
+      -target <s>   크로스 컴파일 대상 트리플
+                      예: x86_64-linux-gnu, aarch64-macos-gnu,
+                      x86_64-windows-gnu, wasm32-wasi
+      -ld-KEY=VALUE  컴파일 시점 전역 상수 주입 (아래 -ld 절 참고)
+    예:
+      no test
+      no test tests/my-test.no
+      no test -cc zig
+      no test -target x86_64-linux-gnu
+      no test -target wasm32-wasi
+
+  no vet [--strict] [<파일|디렉터리>]  소스 검증 및 lint 실행
+    --strict               경고/hint를 오류로 처리
+    예:
+      no vet                     현재 디렉터리의 main.no 검증
+      no vet main.no             main.no 검증
+      no vet --strict src/std/   lint가 하나라도 있으면 실패
+
+  no ast <파일>          파싱된 AST 출력 (디버깅용)
+    예:
+      no ast main.no             main.no의 AST 출력
+      no ast src/std/vec.no      vec.no의 AST 출력
+
+  no info               환경 및 소스 디렉터리 정보 표시
+
+  no add <tool>[:<version>]@<host>/<owner>/<repo>
+                    의존성 추가 (미리 빌드된 AST: <tool>.ast.zip)
+                    버전을 생략하면 최신 릴리스, package.noml에 기록되는
+                    키는 <tool>@<host>/<owner>/<repo>입니다.
+    예:
+      no add nogit@github.com/lizongying/notools
+      no add nogit:v0.1.33@github.com/lizongying/notools
+      no add nogit@lizongying/notools   host 기본값은 github.com
+  no remove <pkg>     의존성 제거
+  no update <pkg>     특정 의존성 업데이트
+  no update-all        모든 의존성 업데이트
+  no list              의존성 목록
+  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
+                    바이너리 설치 (~/no/bin/에 저장, /usr/local/bin/에 심볼릭 링크)
+                    즉 `no`가 실행되는 플랫폼용으로 미리 빌드된 GitHub release
+                    자산을 내려받습니다 (<tool>-<os>-<arch>, 예: nogit-darwin-arm64).
+                    인자가 없으면: 현재 패키지를 빌드해 설치합니다.
+                    -u    강제로 다시 내려받아 재설치
+    예:
+      no install nogit@github.com/lizongying/notools
+      no install nogit:v0.1.33@github.com/lizongying/notools
+      no install nogit@lizongying/notools   host 기본값은 github.com
+      no install -u nogit@github.com/lizongying/notools
+  no uninstall <name>
+                    설치된 바이너리와 심볼릭 링크 제거
+    예:
+      no uninstall nogit
+  no sync              의존성 동기화/다운로드
+  no pack [-o <file>] [<dir|file.no>]
+                    모듈의 AST를 <tool>.ast.zip(gob + zip)으로 패키징합니다.
+                    어휘 분석+파싱만 수행——LLVM 툴체인 불필요, CI에 적합.
+    예:
+      no pack                     현재 패키지를 패키징 -> dist/<name>.ast.zip
+      no pack -o nogit.ast.zip    출력 경로 명시 (CI에 적합)
+      no pack nogit.no            단일 소스 파일 패키징
+  no pub [-o <file>]  패키징(no pack과 동일) 후 게시, registry 업로드는
+                    아직 구현되지 않아 현재는 패키징만 수행
+
+  -ld-KEY=VALUE  컴파일 시점 전역 상수 주입 (build, run, test 공통)
+    여러 개의 -ld 플래그를 사용할 수 있습니다. -ld 접두사는 제거되고,
+    KEY=VALUE는 최상위 전역 상수로 Nolang 소스에
+    주입되어 main.no 맨 위에 `KEY = VALUE`를 쓴 것과 같습니다.
+
+    값 타입 추론:
+      - 정수 (예: 42)            -> i64
+      - 부동소수 (예: 3.14)      -> f64
+      - 불리언 (true/false)      -> bool
+      - 기타 (예: 0.1.2)         -> str (작은따옴표 문자열 리터럴)
+
+    불리언 축약: -ld-DEBUG (=VALUE 없음)는 -ld-DEBUG=true와 동일
+
+    예:
+      no build -ld-VERSION=0.1.2 -ld-NAME='nolang' main.no
+      no run -ld-DEBUG=true main.no
+      no run -ld-RELEASE main.no
+
+
+`
+}

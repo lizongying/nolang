@@ -1,0 +1,175 @@
+; Nolang compiler help: zh-cn
+; 整段 CLI 帮助，用多行原始串（反引号）承载：内容逐字符保留，空行就是真的空行。
+; 只改译文：行数、空行位置、`no <verb>` 命令 token 都必须与 printUsage 的英文块一致，
+; 首行保留唯一的 %s（注入 version）。门禁见 compiler_help_test.go。
+;
+; ⚠️ 原始串的结束标记是「仅空白 + 反引号」单独一行，因此任何一行都不能以反引号开头
+; （哪怕前面有缩进）；行内中段的反引号无妨。
+{
+  'compiler': `
+Nolang 编程语言（版本 %s）
+
+用法:
+全局选项:
+  -v    详细模式（适用于所有命令）
+  --lang=<tag>  消息语言，例如 --lang=zh-CN、--lang=en。
+                默认跟随系统区域设置（$LC_ALL / $LANG）；
+                英语为回退语言。也可通过 $NO_LANG 设置。
+
+  no version           打印版本信息
+
+  no fmt [选项] <文件|目录>  格式化源代码
+    终端中不带参数时：
+      - 若存在 workspace.noml，则格式化其所有项目目录；
+      - 否则默认格式化当前目录。
+    通过管道传入 stdin 时，从 stdin 读取（例如 echo 'x=1' | no fmt）。
+    目录会被自动递归处理。
+    选项:
+      -w    将结果写回源文件（原地修改）
+      -d    输出带颜色的差异，而非格式化结果
+      -fix=<class>  对某一类问题应用自动修复：
+                      overflow    为未标注的整数运算添加 #{overflow=wrap}
+                      redundant  移除与推导类型相同的类型标注
+                      match      为非穷尽 option 匹配补上缺失的 nil/err 分支
+      -loop-style=<s>  默认循环写法：prefix（默认）或 suffix
+    示例:
+      no fmt                      列出当前目录中需要格式化的文件
+      no fmt -w                   原地格式化当前目录的所有 .no 文件
+      no fmt main.no             格式化并输出到 stdout
+      no fmt -w main.no          原地格式化文件
+      no fmt -d main.no          显示带颜色的差异
+      no fmt src/                列出 src/ 中需要格式化的 .no 文件
+      no fmt -w src/             原地格式化 src/ 下的所有 .no 文件
+      no fmt -d src/             显示 src/ 所有文件的差异
+      no fmt -fix=overflow -w src/    为 src/ 原地添加溢出标注
+      no fmt -fix=redundant main.no   预览冗余标注移除
+      no fmt -fix=match -w src/       为 src/ 原地补上缺失的匹配分支
+      echo 'x=1' | no fmt         从 stdin 格式化
+      no fmt -loop-style=suffix f.no  将循环格式化为 '{ } (cond)' / '{ } * N'
+
+  no build [选项] [<文件|目录>]  构建 Nolang 项目
+    若未给定文件/目录且存在 workspace.noml，
+    则并行构建 workspace.noml 中的所有项目。
+    选项:
+      -o <file>     输出文件路径
+      -cc <s>       C 编译器：clang（默认）、zig
+      -target <s>   交叉编译的目标三元组
+                     例如 x86_64-linux-gnu、aarch64-macos-gnu、
+                     x86_64-windows-gnu、wasm32-wasi
+      -js            使用 JS 后端（生成 JavaScript，无需 LLVM 工具链）
+      -browser       生成面向浏览器的输出（HTML + JS，需配合 -js）
+      -ld-KEY=VALUE   注入编译期全局常量（详见下文的 -ld 小节）
+    使用 -v 可在构建时一并生成 LLVM IR（.ll）文件以供分析。
+    对于 wasm32-wasi 目标，请将 $WASI_SYSROOT 指向你的 wasi-sysroot 路径。
+    默认：构建当前目录或 workspace.noml 中的项目
+    示例:
+      no build
+      no build main.no
+      no build -o output main.no
+      no build -cc zig main.no
+      no build -target x86_64-linux-gnu main.no
+      no build -target wasm32-wasi main.no
+      no build --js main.no                     生成 JavaScript（类型擦除）
+      no build --js --browser main.no           生成浏览器 JS + HTML 包装
+      no build -ld-VERSION=0.1.2 main.no        将 VERSION 作为全局常量注入
+
+  no run [<文件|目录>]          构建并运行
+    若为目录，需要 main.no（入口）。
+    选项:
+      -js            使用 JS 后端（通过 node 运行）
+      -browser       在浏览器中打开（需配合 -js）
+    示例:
+      no run                     构建并运行当前目录的 main.no
+      no run main.no             构建并运行 main.no
+      no run -cc zig main.no     使用 Zig 编译器构建并运行
+      no run --js main.no            通过 JS 后端构建并用 node 运行
+      no run --js --browser main.no  构建浏览器 JS + HTML 并在浏览器打开
+
+  no test [<文件>]            运行测试
+    默认使用 tests/ 目录。
+    选项:
+      -cc <s>       C 编译器：clang（默认）、zig
+      -target <s>   交叉编译的目标三元组
+                     例如 x86_64-linux-gnu、aarch64-macos-gnu、
+                     x86_64-windows-gnu、wasm32-wasi
+      -ld-KEY=VALUE  注入编译期全局常量（详见下文的 -ld 小节）
+    示例:
+      no test
+      no test tests/my-test.no
+      no test -cc zig
+      no test -target x86_64-linux-gnu
+      no test -target wasm32-wasi
+
+  no vet [--strict] [<文件|目录>]  校验源文件并执行代码检查（lint）
+    --strict               将警告/hint 视为错误
+    示例:
+      no vet                     校验当前目录的 main.no
+      no vet main.no             校验 main.no
+      no vet --strict src/std/   任一 lint 即失败
+
+  no ast <文件>          打印解析后的 AST，用于调试
+    示例:
+      no ast main.no             打印 main.no 的 AST
+      no ast src/std/vec.no      打印 vec.no 的 AST
+
+  no info               显示环境与源目录信息
+
+  no add <tool>[:<version>]@<host>/<owner>/<repo>
+                    添加依赖（预构建 AST：<tool>.ast.zip）
+                    省略版本即最新发布；写入 package.noml 的键为
+                    <tool>@<host>/<owner>/<repo>。
+    示例:
+      no add nogit@github.com/lizongying/notools
+      no add nogit:v0.1.33@github.com/lizongying/notools
+      no add nogit@lizongying/notools   host 默认为 github.com
+  no remove <pkg>     移除依赖
+  no update <pkg>     更新某个依赖
+  no update-all        更新所有依赖
+  no list              列出依赖
+  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
+                    安装二进制（存放于 ~/no/bin/，并在 /usr/local/bin/ 建立符号链接）
+                    下载对应平台的预构建 GitHub release 资源
+                    亦即 `no` 所运行的平台（<tool>-<os>-<arch>，例如 nogit-darwin-arm64）。
+                    不带参数时：构建并安装当前包。
+                    -u    强制重新下载并安装
+    示例:
+      no install nogit@github.com/lizongying/notools
+      no install nogit:v0.1.33@github.com/lizongying/notools
+      no install nogit@lizongying/notools   host 默认为 github.com
+      no install -u nogit@github.com/lizongying/notools
+  no uninstall <name>
+                    移除已安装的二进制与符号链接
+    示例:
+      no uninstall nogit
+  no sync              同步/下载依赖
+  no pack [-o <file>] [<dir|file.no>]
+                    将模块的 AST 打包为 <tool>.ast.zip（gob + zip）。
+                    仅词法分析+解析——无需 LLVM 工具链，适合 CI。
+    示例:
+      no pack                     打包当前包 -> dist/<name>.ast.zip
+      no pack -o nogit.ast.zip    显式指定输出路径（对 CI 友好）
+      no pack nogit.no            打包单个源文件
+  no pub [-o <file>]  打包（同 no pack）并发布；registry 上传
+                    尚未实现，目前仅执行打包
+
+  -ld-KEY=VALUE  注入编译期全局常量（build、run、test 通用）
+    可使用多个 -ld 标志。-ld 前缀会被去掉，
+    KEY=VALUE 作为顶层全局常量注入 Nolang
+    源代码中，等价于在 main.no 顶部写下 `KEY = VALUE`。
+
+    值类型推导:
+      - 整数（例如 42）          -> i64
+      - 浮点数（例如 3.14）      -> f64
+      - 布尔值（true/false）     -> bool
+      - 其他（例如 0.1.2）       -> str（单引号字符串字面量）
+
+    布尔简写：-ld-DEBUG（不带 =VALUE）等价于 -ld-DEBUG=true
+
+    示例:
+      no build -ld-VERSION=0.1.2 -ld-NAME='nolang' main.no
+      no run -ld-DEBUG=true main.no
+      no run -ld-RELEASE main.no
+
+
+`
+}

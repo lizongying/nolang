@@ -1131,6 +1131,27 @@ func (p *Parser) parseLetStatement() Statement {
 							stmt.Type = &SliceType{Token: bracketToken, Elem: elemType}
 						}
 					}
+				} else if p.currentToken.Type == lexer.QUESTION {
+					// 可選元素型別: []?T 或 [N]?T（如 `a []?str = [ok('x')]`）。
+					//
+					// 這個分支必須在下方「省略元素型別」的兜底之前：`?` 不是 IDENT
+					// 也不是 LBRACKET，過去直接落進兜底，被偽造成
+					// `[]i64`（Elem.IsInferred=true）。後果是使用者寫下的 `?str`
+					// 被靜默丟棄——AST 型別是 `[]i64`，語義副表也是，於是
+					// `a[i]: { ok -> it = 'z' }` 的元素寫回變成 str → i64 的
+					// index-store（"no conversion exists"），而 `no fmt` 因為
+					// IsInferred 把整個標註刪掉、印成 `a = []`。兩者都是同一個
+					// 「?T 元素型別被吞掉」的根因，故在此補齊解析。
+					qTok := p.currentToken
+					p.nextToken() // skip ? → 內層型別起點
+					if inner, ok := p.parseTypeExpression(); ok {
+						elem := &NullableType{Token: qTok, Type: inner}
+						if hasSize {
+							stmt.Type = &ArrayType{Token: bracketToken, Size: sizeExpr, Elem: elem}
+						} else {
+							stmt.Type = &SliceType{Token: bracketToken, Elem: elem}
+						}
+					}
 				} else {
 					if hasSize {
 						// 源碼顯式寫了 `[N]`（只是省略元素型別）：整個陣列型別

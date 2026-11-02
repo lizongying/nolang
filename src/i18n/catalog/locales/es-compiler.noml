@@ -1,0 +1,175 @@
+; Nolang compiler help: es
+; 整段 CLI 帮助，用多行原始串（反引号）承载：内容逐字符保留，空行就是真的空行。
+; 只改译文：行数、空行位置、`no <verb>` 命令 token 都必须与 printUsage 的英文块一致，
+; 首行保留唯一的 %s（注入 version）。门禁见 compiler_help_test.go。
+;
+; ⚠️ 原始串的结束标记是「仅空白 + 反引号」单独一行，因此任何一行都不能以反引号开头
+; （哪怕前面有缩进）；行内中段的反引号无妨。
+{
+  'compiler': `
+Nolang - Un lenguaje de programación (versión %s)
+
+Uso:
+Opciones globales:
+  -v    Modo detallado (se aplica a todos los comandos)
+  --lang=<tag>  Idioma de los mensajes, p. ej. --lang=zh-CN, --lang=en.
+                Por defecto sigue la configuración regional del sistema ($LC_ALL / $LANG);
+                el inglés es el idioma de respaldo. También se puede definir con $NO_LANG.
+
+  no version           Mostrar información de versión
+
+  no fmt [opciones] <archivo|directorio>  Formatear el código fuente
+    Sin argumentos en una terminal:
+      - si existe workspace.noml, formatear todos sus directorios de proyecto;
+      - en caso contrario, usar el directorio actual.
+    Con stdin por tubería, lee de stdin (p. ej. echo 'x=1' | no fmt).
+    Los directorios se procesan de forma recursiva automáticamente.
+    Opciones:
+      -w    escribir el resultado en el archivo fuente (in situ)
+      -d    mostrar un diff con color en lugar del resultado formateado
+      -fix=<class>  aplicar correcciones automáticas a una clase de problema:
+                      overflow    añadir #{overflow=wrap} a la aritmética entera sin anotar
+                      redundant   quitar anotaciones de tipo iguales al tipo inferido
+                      match       añadir las ramas nil/err que faltan a los match de option no exhaustivos
+      -loop-style=<s>  forma de bucle por defecto: prefix (predeterminado) o suffix
+    Ejemplos:
+      no fmt                      listar los archivos del directorio actual que necesitan formateo
+      no fmt -w                   formatear in situ todos los .no del directorio actual
+      no fmt main.no             formatear y escribir en stdout
+      no fmt -w main.no          formatear el archivo in situ
+      no fmt -d main.no          mostrar un diff con color
+      no fmt src/                listar los .no de src/ que necesitan formateo
+      no fmt -w src/             formatear in situ todos los .no de src/
+      no fmt -d src/             mostrar el diff de todos los .no de src/
+      no fmt -fix=overflow -w src/    añadir in situ las anotaciones de overflow en src/
+      no fmt -fix=redundant main.no   previsualizar la eliminación de anotaciones redundantes
+      no fmt -fix=match -w src/       añadir in situ las ramas match que faltan en src/
+      echo 'x=1' | no fmt         formatear desde stdin
+      no fmt -loop-style=suffix f.no  formatear bucles como '{ } (cond)' / '{ } * N'
+
+  no build [opciones] [<archivo|directorio>]  Compilar un proyecto Nolang
+    Si no se indica archivo/directorio y existe workspace.noml,
+    se compilan en paralelo todos los proyectos de workspace.noml.
+    Opciones:
+      -o <file>     ruta del archivo de salida
+      -cc <s>       compilador de C: clang (predeterminado), zig
+      -target <s>   triple destino para compilación cruzada
+                      p. ej. x86_64-linux-gnu, aarch64-macos-gnu,
+                      x86_64-windows-gnu, wasm32-wasi
+      -js            usar el backend JS (emitir JavaScript, sin cadena LLVM)
+      -browser       generar salida para navegador (HTML + JS, usar con -js)
+      -ld-KEY=VALUE   inyectar una constante global en tiempo de compilación (ver la sección -ld abajo)
+    Use -v para emitir también archivos LLVM IR (.ll) para análisis.
+    Para el objetivo wasm32-wasi, defina $WASI_SYSROOT con la ruta de wasi-sysroot.
+    Por defecto: compilar el directorio actual o los proyectos de workspace.noml
+    Ejemplos:
+      no build
+      no build main.no
+      no build -o output main.no
+      no build -cc zig main.no
+      no build -target x86_64-linux-gnu main.no
+      no build -target wasm32-wasi main.no
+      no build --js main.no                     emitir JavaScript (borrado de tipos)
+      no build --js --browser main.no           emitir JS de navegador + envoltorio HTML
+      no build -ld-VERSION=0.1.2 main.no         inyectar VERSION como constante global
+
+  no run [<archivo|directorio>]          Compilar y ejecutar
+    Si es un directorio, requiere main.no (punto de entrada).
+    Opciones:
+      -js            usar el backend JS (ejecutar con node)
+      -browser       abrir en el navegador (usar con -js)
+    Ejemplos:
+      no run                     compilar y ejecutar el main.no del directorio actual
+      no run main.no             compilar y ejecutar main.no
+      no run -cc zig main.no     compilar y ejecutar con el compilador Zig
+      no run --js main.no            compilar con el backend JS y ejecutar con node
+      no run --js --browser main.no  compilar el JS de navegador + HTML y abrirlo
+
+  no test [<archivo>]            Ejecutar pruebas
+    Por defecto, el directorio tests/.
+    Opciones:
+      -cc <s>       compilador de C: clang (predeterminado), zig
+      -target <s>   triple destino para compilación cruzada
+                      p. ej. x86_64-linux-gnu, aarch64-macos-gnu,
+                      x86_64-windows-gnu, wasm32-wasi
+      -ld-KEY=VALUE  inyectar una constante global en tiempo de compilación (ver la sección -ld abajo)
+    Ejemplos:
+      no test
+      no test tests/my-test.no
+      no test -cc zig
+      no test -target x86_64-linux-gnu
+      no test -target wasm32-wasi
+
+  no vet [--strict] [<archivo|directorio>]  Validar archivos fuente + ejecutar lints
+    --strict               tratar advertencias/hints como errores
+    Ejemplos:
+      no vet                     validar el main.no del directorio actual
+      no vet main.no             validar main.no
+      no vet --strict src/std/   fallar ante cualquier lint
+
+  no ast <archivo>          Mostrar el AST analizado para depuración
+    Ejemplos:
+      no ast main.no             mostrar el AST de main.no
+      no ast src/std/vec.no      mostrar el AST de vec.no
+
+  no info               Mostrar información del entorno y del directorio de fuentes
+
+  no add <tool>[:<version>]@<host>/<owner>/<repo>
+                    Añadir una dependencia (AST precompilado: <tool>.ast.zip)
+                    Sin versión = última release; la clave escrita en
+                    package.noml es <tool>@<host>/<owner>/<repo>.
+    Ejemplos:
+      no add nogit@github.com/lizongying/notools
+      no add nogit:v0.1.33@github.com/lizongying/notools
+      no add nogit@lizongying/notools   host por defecto github.com
+  no remove <pkg>     Quitar una dependencia
+  no update <pkg>     Actualizar una dependencia concreta
+  no update-all        Actualizar todas las dependencias
+  no list              Listar dependencias
+  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
+                    Instalar un binario (se guarda en ~/no/bin/, enlace simbólico en /usr/local/bin/)
+                    Descarga un asset de release de GitHub precompilado para la plataforma
+                    en la que se ejecuta `no` (<tool>-<os>-<arch>, p. ej. nogit-darwin-arm64).
+                    Sin argumento: compilar e instalar el paquete actual.
+                    -u    forzar la descarga e instalación de nuevo
+    Ejemplos:
+      no install nogit@github.com/lizongying/notools
+      no install nogit:v0.1.33@github.com/lizongying/notools
+      no install nogit@lizongying/notools   host por defecto github.com
+      no install -u nogit@github.com/lizongying/notools
+  no uninstall <name>
+                    Quitar el binario instalado y el enlace simbólico
+    Ejemplos:
+      no uninstall nogit
+  no sync              Sincronizar/descargar dependencias
+  no pack [-o <file>] [<dir|file.no>]
+                    Empaquetar el AST de un módulo como <tool>.ast.zip (gob + zip).
+                    Solo lexer+parser — sin cadena LLVM, apto para CI.
+    Ejemplos:
+      no pack                     empaquetar el paquete actual -> dist/<name>.ast.zip
+      no pack -o nogit.ast.zip    ruta de salida explícita (apta para CI)
+      no pack nogit.no            empaquetar un único archivo fuente
+  no pub [-o <file>]  Empaquetar (igual que no pack) y publicar; la subida al registry
+                    aún no está implementada, así que hoy solo empaqueta
+
+  -ld-KEY=VALUE  Inyectar constantes globales en tiempo de compilación (build, run, test)
+    Se pueden usar varias opciones -ld. El prefijo -ld se elimina y
+    KEY=VALUE se inyecta como constante global de nivel superior en el
+    código Nolang, como si hubiera escrito `KEY = VALUE` al inicio de main.no.
+
+    Inferencia del tipo del valor:
+      - Enteros (p. ej. 42)       -> i64
+      - Flotantes (p. ej. 3.14)   -> f64
+      - Booleanos (true/false)    -> bool
+      - Otros (p. ej. 0.1.2)      -> str (literal de cadena entre comillas simples)
+
+    Atajo booleano: -ld-DEBUG (sin =VALUE) equivale a -ld-DEBUG=true
+
+    Ejemplos:
+      no build -ld-VERSION=0.1.2 -ld-NAME='nolang' main.no
+      no run -ld-DEBUG=true main.no
+      no run -ld-RELEASE main.no
+
+
+`
+}

@@ -1,0 +1,175 @@
+; Nolang compiler help: ru
+; 整段 CLI 帮助，用多行原始串（反引号）承载：内容逐字符保留，空行就是真的空行。
+; 只改译文：行数、空行位置、`no <verb>` 命令 token 都必须与 printUsage 的英文块一致，
+; 首行保留唯一的 %s（注入 version）。门禁见 compiler_help_test.go。
+;
+; ⚠️ 原始串的结束标记是「仅空白 + 反引号」单独一行，因此任何一行都不能以反引号开头
+; （哪怕前面有缩进）；行内中段的反引号无妨。
+{
+  'compiler': `
+Nolang — язык программирования (версия %s)
+
+Использование:
+Глобальные параметры:
+  -v    Подробный режим (применяется ко всем командам)
+  --lang=<tag>  Язык сообщений, напр. --lang=zh-CN, --lang=en.
+                По умолчанию используется локаль системы ($LC_ALL / $LANG);
+                английский — язык по умолчанию при отсутствии перевода. Также задаётся через $NO_LANG.
+
+  no version           Вывести информацию о версии
+
+  no fmt [параметры] <файл|каталог>  Форматировать исходный код
+    Без аргументов в терминале:
+      - если есть workspace.noml, форматировать все его каталоги проектов;
+      - иначе использовать текущий каталог.
+    При передаче stdin через конвейер читает из stdin (напр. echo 'x=1' | no fmt).
+    Каталоги обрабатываются рекурсивно автоматически.
+    Параметры:
+      -w    записать результат в исходный файл (на месте)
+      -d    выводить цветной diff вместо отформатированного результата
+      -fix=<class>  применить автоматические исправления для одного класса проблем:
+                      overflow    добавить #{overflow=wrap} к неаннотированной целочисленной арифметике
+                      redundant   удалить аннотации типов, совпадающие с выведенным типом
+                      match       добавить пропущенные ветви nil/err в неполные match по option
+      -loop-style=<s>  форма цикла по умолчанию: prefix (по умолчанию) или suffix
+    Примеры:
+      no fmt                      перечислить файлы текущего каталога, требующие форматирования
+      no fmt -w                   отформатировать на месте все .no в текущем каталоге
+      no fmt main.no             отформатировать и вывести в stdout
+      no fmt -w main.no          отформатировать файл на месте
+      no fmt -d main.no          показать цветной diff
+      no fmt src/                перечислить .no в src/, требующие форматирования
+      no fmt -w src/             отформатировать на месте все .no в src/
+      no fmt -d src/             показать diff для всех .no в src/
+      no fmt -fix=overflow -w src/    добавить на месте аннотации overflow в src/
+      no fmt -fix=redundant main.no   предпросмотр удаления избыточных аннотаций
+      no fmt -fix=match -w src/       добавить на месте пропущенные ветви match в src/
+      echo 'x=1' | no fmt         отформатировать из stdin
+      no fmt -loop-style=suffix f.no  форматировать циклы как '{ } (cond)' / '{ } * N'
+
+  no build [параметры] [<файл|каталог>]  Собрать проект Nolang
+    Если файл/каталог не указан и есть workspace.noml,
+    все проекты из workspace.noml собираются параллельно.
+    Параметры:
+      -o <file>     путь к выходному файлу
+      -cc <s>       компилятор C: clang (по умолчанию), zig
+      -target <s>   тройка цели для кросс-компиляции
+                      напр. x86_64-linux-gnu, aarch64-macos-gnu,
+                      x86_64-windows-gnu, wasm32-wasi
+      -js            использовать JS-бэкенд (вывод JavaScript, без инструментов LLVM)
+      -browser       сгенерировать вывод для браузера (HTML + JS, вместе с -js)
+      -ld-KEY=VALUE   внедрить глобальную константу этапа компиляции (см. раздел -ld ниже)
+    Используйте -v, чтобы дополнительно сгенерировать файлы LLVM IR (.ll) для анализа.
+    Для цели wasm32-wasi задайте $WASI_SYSROOT — путь к wasi-sysroot.
+    По умолчанию: собрать текущий каталог или проекты из workspace.noml
+    Примеры:
+      no build
+      no build main.no
+      no build -o output main.no
+      no build -cc zig main.no
+      no build -target x86_64-linux-gnu main.no
+      no build -target wasm32-wasi main.no
+      no build --js main.no                     вывести JavaScript (стирание типов)
+      no build --js --browser main.no           вывести браузерный JS + обёртку HTML
+      no build -ld-VERSION=0.1.2 main.no         внедрить VERSION как глобальную константу
+
+  no run [<файл|каталог>]          Собрать и запустить
+    Если каталог, требуется main.no (точка входа).
+    Параметры:
+      -js            использовать JS-бэкенд (запуск через node)
+      -browser       открыть в браузере (вместе с -js)
+    Примеры:
+      no run                     собрать и запустить main.no в текущем каталоге
+      no run main.no             собрать и запустить main.no
+      no run -cc zig main.no     собрать и запустить компилятором Zig
+      no run --js main.no            собрать через JS-бэкенд и запустить в node
+      no run --js --browser main.no  собрать браузерный JS + HTML и открыть
+
+  no test [<файл>]            Запустить тесты
+    По умолчанию используется каталог tests/.
+    Параметры:
+      -cc <s>       компилятор C: clang (по умолчанию), zig
+      -target <s>   тройка цели для кросс-компиляции
+                      напр. x86_64-linux-gnu, aarch64-macos-gnu,
+                      x86_64-windows-gnu, wasm32-wasi
+      -ld-KEY=VALUE  внедрить глобальную константу этапа компиляции (см. раздел -ld ниже)
+    Примеры:
+      no test
+      no test tests/my-test.no
+      no test -cc zig
+      no test -target x86_64-linux-gnu
+      no test -target wasm32-wasi
+
+  no vet [--strict] [<файл|каталог>]  Проверить исходные файлы + запустить линтеры
+    --strict               считать предупреждения/подсказки ошибками
+    Примеры:
+      no vet                     проверить main.no в текущем каталоге
+      no vet main.no             проверить main.no
+      no vet --strict src/std/   падать на любом замечании линтера
+
+  no ast <файл>          Вывести разобранный AST для отладки
+    Примеры:
+      no ast main.no             вывести AST для main.no
+      no ast src/std/vec.no      вывести AST для vec.no
+
+  no info               Показать сведения об окружении и каталоге исходников
+
+  no add <tool>[:<version>]@<host>/<owner>/<repo>
+                    Добавить зависимость (предсобранный AST: <tool>.ast.zip)
+                    Версия опущена = последний релиз; ключ, записываемый в
+                    package.noml, — <tool>@<host>/<owner>/<repo>.
+    Примеры:
+      no add nogit@github.com/lizongying/notools
+      no add nogit:v0.1.33@github.com/lizongying/notools
+      no add nogit@lizongying/notools   host по умолчанию github.com
+  no remove <pkg>     Удалить зависимость
+  no update <pkg>     Обновить конкретную зависимость
+  no update-all        Обновить все зависимости
+  no list              Список зависимостей
+  no install [-u] [<tool>[:<version>]@<host>/<owner>/<repo>]
+                    Установить бинарник (хранится в ~/no/bin/, символическая ссылка в /usr/local/bin/)
+                    Загружает предсобранный ресурс GitHub release для платформы,
+                    на которой работает `no` (<tool>-<os>-<arch>, напр. nogit-darwin-arm64).
+                    Без аргумента: собрать и установить текущий пакет.
+                    -u    принудительно загрузить и установить заново
+    Примеры:
+      no install nogit@github.com/lizongying/notools
+      no install nogit:v0.1.33@github.com/lizongying/notools
+      no install nogit@lizongying/notools   host по умолчанию github.com
+      no install -u nogit@github.com/lizongying/notools
+  no uninstall <name>
+                    Удалить установленный бинарник и символическую ссылку
+    Примеры:
+      no uninstall nogit
+  no sync              Синхронизировать/загрузить зависимости
+  no pack [-o <file>] [<dir|file.no>]
+                    Упаковать AST модуля в <tool>.ast.zip (gob + zip).
+                    Только лексер+парсер — без цепочки LLVM, подходит для CI.
+    Примеры:
+      no pack                     упаковать текущий пакет -> dist/<name>.ast.zip
+      no pack -o nogit.ast.zip    явный путь вывода (удобно для CI)
+      no pack nogit.no            упаковать один исходный файл
+  no pub [-o <file>]  Упаковать (как no pack) и опубликовать; загрузка в registry
+                    ещё не реализована, поэтому сейчас только упаковка
+
+  -ld-KEY=VALUE  Внедрить глобальные константы на этапе компиляции (build, run, test)
+    Можно использовать несколько флагов -ld. Префикс -ld отбрасывается,
+    а KEY=VALUE внедряется как глобальная константа верхнего уровня в
+    исходный код Nolang, как если бы вы написали `KEY = VALUE` в начале main.no.
+
+    Вывод типа значения:
+      - Целые (напр. 42)          -> i64
+      - С плавающей точкой (3.14) -> f64
+      - Логические (true/false)   -> bool
+      - Прочее (напр. 0.1.2)      -> str (строковый литерал в одинарных кавычках)
+
+    Логическое сокращение: -ld-DEBUG (без =VALUE) эквивалентно -ld-DEBUG=true
+
+    Примеры:
+      no build -ld-VERSION=0.1.2 -ld-NAME='nolang' main.no
+      no run -ld-DEBUG=true main.no
+      no run -ld-RELEASE main.no
+
+
+`
+}
