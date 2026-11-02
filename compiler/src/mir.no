@@ -23,6 +23,23 @@ TY-VEC = 2
 ; 语义里（payload 到底是 i64 还是 %str-long，由读它的 op 决定）。
 TY-OPT = 3
 
+; TY-U64（M4-c 續件 s36）：無符號整數。⚠️ 它在 LLVM 裡與 TY-I64 **同一型別、同一命名空間**
+;   （都是 i64 / %v）——符號性只活在 op 的助記符（lshr/udiv/urem/ult… vs ashr/sdiv/srem/slt…）。
+;   故 cg-ty-name / cg-val-prefix 對 TY-U64 走默認臂（i64/%v）即正確，無需額外映射。
+;   型別碼存在的意義是給語義層（hir2mir）標記「該值按無符號降級」，讓它選無符號 op——本件把
+;   TY-U64 與無符號 op 家族**同時**落地，規避 s35 §5.3.4.bo 警示的「型別碼存在但無人發射」空洞。
+TY-U64 = 4
+
+; TY-F64（M4-c 續件 s37）：雙精度浮點。⚠️ 與 TY-U64 **相反**——它在 LLVM 裡是**獨立型別 `double`**、
+;   且須住**獨立值命名空間 `%fd<id>`**（SSA 名全域唯一，`double` 不能與 `i64` 共用 `%v`，否則同名
+;   不同型opt 直接報錯）。故 TY-F64 必須進 cg-ty-name（→'double'）與 cg-val-prefix（→'%fd'）兩張映射。
+;   ⚠️ **不加獨立 op**：與 Go 後端 emitArith 一致（`isFloat := resLT=="double"` 按**結果型別**在
+;   OP-ADD/SUB/MUL/DIV/MOD 內分派 fadd/fsub/fmul/fdiv/frem；比較按**操作數型別**分派 fcmp）——
+;   型別是唯一的「整數 vs 浮點」真相，op 只說「加」不說「什麼型別的加」，避免把型別判斷複製進 op
+;   （§11 B7「型別碼與發射臂須成對」的正解）。⚠️ 浮點除零**不是** UB（IEEE 定義為 ±inf/nan），
+;   故 fdiv/frem 不需整數族的除零護欄（§11 B14 只關整數）。
+TY-F64 = 5
+
 ; 结构体型别（M4-c 续件 s31）：**型别码 = TY-STRUCT-BASE + 结构体 id**，值住 %st<id>（第七个
 ;   命名空间之外的「值」空间，与 %sv/%vc/%op 并列）。结构体 id 0..N 由语义层登记
 ;   （`cg-runtime-struct-decls(sfc)`：sfc[id] = 字段数，0 = 未使用）。
@@ -60,8 +77,8 @@ OP-CMPLT = 11; dst = (a < b)；发 icmp slt + zext 到 i64
 ;   位运算：OP-AND / OP-OR / OP-XOR  ⇒ and / or / xor i64
 ;   移位　：OP-SHL ⇒ shl i64；OP-SHR ⇒ **ashr** i64（算术右移，与 i64 有符号语义一致；
 ;           逻辑右移要等 u64 型别进场后用独立 op，别在这里「按需」改成 lshr）
-;   除余　：OP-DIV ⇒ sdiv i64；OP-MOD ⇒ srem i64（与 Go 后端的 sdiv/srem 逐字对齐；
-;           **不插除零护栏**——除零是 UB，与 Go 侧一致，审计项见 §11 B14）
+;   除余　：OP-DIV ⇒ sdiv i64；OP-MOD ⇒ srem i64（与 Go 后端的 sdiv/srem 对齐；
+;           s38 起裹除零 select 護欄——见 cg-div-guard，与 Go emitArith plain 路径一致，§11 B14）
 ;   比较　：OP-CMPEQ / OP-CMPNE / OP-CMPLE / OP-CMPGT / OP-CMPGE
 ;           ⇒ icmp <pred> i64 + zext i1 → i64（与 OP-CMPLT 同形，结果 0/1）
 ; ⚠️ 全是**有符号**语义（slt/sgt/sle/sge/sdiv/srem/ashr）。无符号族要等 u64 型别，不在本族。
@@ -78,6 +95,20 @@ OP-SHL = 47
 OP-SHR = 48
 OP-DIV = 49
 OP-MOD = 50
+
+; ── 無符號 ALU 家族（M4-c 續件 s36）：s35 預留——「邏輯右移要等 u64 型別進場後用獨立 op」──────
+; 約定與有符號族完全一致：dst = i64 結果值 id；a = 左；bs[k] = 右；結果走 %v（與 TY-I64 同命名空間）。
+;   OP-SHRU ⇒ lshr i64（邏輯右移，高位填 0；有符號版是 OP-SHR⇒ashr）
+;   OP-DIVU ⇒ udiv i64；OP-MODU ⇒ urem i64（s38 起裹除零 select 護欄，同有符號族；無 (MIN,-1)，§11 B14）
+;   OP-CMPLTU/LEU/GTU/GEU ⇒ icmp <ult/ule/ugt/uge> i64 + zext i1→i64（與有符號 cmp 同形）
+; ⚠️ CMPEQ/CMPNE 與符號無關（icmp eq/ne 對同一 i64 位元組模式結果一致），沿用 s35 的 OP-CMPEQ/NE。
+OP-SHRU = 51
+OP-DIVU = 52
+OP-MODU = 53
+OP-CMPLTU = 54
+OP-CMPLEU = 55
+OP-CMPGTU = 56
+OP-CMPGEU = 57
 
 ; ── 字符串（M4-c 非 i64 型别首件）──────────────────────────
 ; 字符串值住在独立命名空间 %sv<id>（类型 %str-long）；i64 值住 %v<id>。

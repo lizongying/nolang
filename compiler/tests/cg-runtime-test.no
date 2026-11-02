@@ -44,6 +44,7 @@ test-runtime-types = () {
     runner.eq(d.contains('%struct.s2'), 0, 'unused struct skipped')
     runner.eq(p.contains('@malloc'), 1, 'malloc decl present')
     runner.eq(p.contains('@free'), 1, 'free decl present')
+    runner.eq(p.contains('@write'), 1, 'write decl present')
 }
 
 ; ── RC helper IR 文本 ────────────────────────────────────
@@ -110,6 +111,11 @@ test-prelude-full = () {
     ic = p.index('define %str-long @str_concat')
     runner.eq(ia >= 0, 1, 'rc_alloc found')
     runner.eq(ic > ia, 1, 'rc_alloc before str_concat')
+
+    ; s39：除零报告所需三符号均需落在完整 prelude（与 Go emitPrelude/divZeroReport 对齐）
+    runner.eq(p.contains('declare i64 @write(i32, i8*, i64)'), 1, 'write decl')
+    runner.eq(p.contains('@nolang_msg_div_zero = private unnamed_addr constant'), 1, 'div-zero msg global')
+    runner.eq(p.contains('define void @__nolang_div_zero_report(i1 %bad)'), 1, 'div-zero report helper')
 }
 
 ; ── 向量 helper IR 文本 ───────────────────────────────────

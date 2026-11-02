@@ -22,6 +22,7 @@ cg-runtime-ty-name = (t i64) (s str) {
     t == TY-STR -> s = '%str-long'
     t == TY-VEC -> s = '%vec'
     t == TY-OPT -> s = '%option'
+    t == TY-F64 -> s = 'double'
     t >= TY-STRUCT-BASE -> s = '%struct.s' - (t - TY-STRUCT-BASE).to-str()
 }
 
@@ -46,13 +47,39 @@ cg-runtime-str-type = () (r str) {
 ; decls：libc 外部声明。
 ; r: 結果字串
 cg-runtime-decls = () (r str) {
-    r = 'declare i8* @malloc(i64)\ndeclare void @free(i8*)\n'
+    r = 'declare i8* @malloc(i64)\ndeclare void @free(i8*)\ndeclare i64 @write(i32, i8*, i64)\n'
 }
 
 ; memcpy-decl：llvm.memcpy 声明（Go codegen.go:2987 同形）。
 ; r: 結果字串
 cg-runtime-memcpy-decl = () (r str) {
     r = 'declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)'
+}
+
+; div-zero-msg：@nolang_msg_div_zero —— 整數除零診斷串（Go divZeroMsgText 逐字，85 位元組，
+;   含結尾 \n）：private unnamed_addr constant，供 div-zero-report helper 取址寫 stderr。
+;   ⚠️ 用單引號串 + 雙反斜杠（\6E 寫成 \\6E）——fmt 會清空含反斜杠的反引號原始串；\ 在單引號串內轉義成字面反斜杠。
+; r: 結果字串（不含結尾換行，由 prelude-full 補 \n）
+cg-runtime-div-zero-msg = () (r str) {
+    r = '@nolang_msg_div_zero = private unnamed_addr constant [85 x i8] c"\\6E\\6F\\6C\\61\\6E\\67\\3A\\20\\69\\6E\\74\\65\\67\\65\\72\\20\\64\\69\\76\\69\\73\\69\\6F\\6E\\20\\6F\\72\\20\\72\\65\\6D\\61\\69\\6E\\64\\65\\72\\20\\62\\79\\20\\7A\\65\\72\\6F\\20\\28\\74\\68\\65\\20\\64\\69\\76\\69\\73\\6F\\72\\20\\69\\73\\20\\30\\3B\\20\\72\\65\\73\\75\\6C\\74\\20\\66\\6F\\72\\63\\65\\64\\20\\74\\6F\\20\\30\\29\\0A"'
+}
+
+; div-zero-report：@__nolang_div_zero_report(i1 %bad) —— %bad 為真時把除零診斷寫到 stderr（fd 2）。
+;   與 Go divZeroReport 同形：呼叫方只需發單條 call，不切斷其所在基本塊（故做 helper 而非 inline 分支）。
+;   依賴 @write（cg-runtime-decls）與 @nolang_msg_div_zero（cg-runtime-div-zero-msg）。
+; r: 結果字串
+cg-runtime-div-zero-report = () (r str) {
+    b = sb.init(512)
+    b.push('define void @__nolang_div_zero_report(i1 %bad) {\n')
+    b.push('entry:\n')
+    b.push('  br i1 %bad, label %report, label %done\n')
+    b.push('report:\n')
+    b.push('  call i64 @write(i32 2, i8* getelementptr inbounds ([85 x i8], [85 x i8]* @nolang_msg_div_zero, i64 0, i64 0), i64 85)\n')
+    b.push('  br label %done\n')
+    b.push('done:\n')
+    b.push('  ret void\n')
+    b.push('}\n')
+    r = b.str()
 }
 
 ; str-concat：@str_concat —— 堆上拼接两个 %str-long（Go codegen.go:3139 逐字）。
@@ -261,6 +288,10 @@ cg-runtime-prelude-full = () (r str) {
     b = sb.init(8192)
     b.push(cg-runtime-prelude())
     b.push(cg-runtime-memcpy-decl())
+    b.push('\n')
+    b.push(cg-runtime-div-zero-msg())
+    b.push('\n')
+    b.push(cg-runtime-div-zero-report())
     b.push('\n')
     b.push(cg-rc-alloc())
     b.push(cg-rc-retain())

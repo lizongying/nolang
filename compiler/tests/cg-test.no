@@ -126,8 +126,24 @@ test-alu = () {
     ; 移位必须是有符号（ashr），不是 lshr
     runner.eq(s.contains('%v7 = ashr i64 %v1, %v2'), 1, 'shr ashr')
     runner.eq(s.contains('lshr'), 0, 'shr not lshr')
-    runner.eq(s.contains('%v8 = sdiv i64 %v1, %v2'), 1, 'div sdiv')
-    runner.eq(s.contains('%v9 = srem i64 %v1, %v2'), 1, 'mod srem')
+
+    ; s38 除零 select 護欄（DIV=k7、MOD=k8）：整數 sdiv/srem 不再是裸指令——
+    ;   先算安全除數（select 1）、除零結果再 select 成 0；有符號另含 (MIN,-1) UB 檢測
+    runner.eq(s.contains('%dz.7 = icmp eq i64 %v2, 0'), 1, 'div zeroDiv')
+    runner.eq(s.contains('%dmn.7 = icmp eq i64 %v1, -9223372036854775808'), 1, 'div isMin')
+    runner.eq(s.contains('%dn1.7 = icmp eq i64 %v2, -1'), 1, 'div isNeg1')
+    runner.eq(s.contains('%db.7 = and i1 %dmn.7, %dn1.7'), 1, 'div minAnd')
+    runner.eq(s.contains('%dall.7 = or i1 %dz.7, %db.7'), 1, 'div badOr')
+    runner.eq(s.contains('%ds.7 = select i1 %dall.7, i64 1, i64 %v2'), 1, 'div safe-divisor')
+    runner.eq(s.contains('%cr.7 = sdiv i64 %v1, %ds.7'), 1, 'div sdiv safe')
+    runner.eq(s.contains('%v8 = select i1 %dz.7, i64 0, i64 %cr.7'), 1, 'div result-zero')
+    runner.eq(s.contains('%cr.8 = srem i64 %v1, %ds.8'), 1, 'mod srem safe')
+    runner.eq(s.contains('%v9 = select i1 %dz.8, i64 0, i64 %cr.8'), 1, 'mod result-zero')
+
+    ; s39：除零结果定义化后追发 stderr 报告呼叫（对齐 Go divZeroReport，用 zeroDiv 条件非 badDiv）
+    runner.eq(s.contains('call void @__nolang_div_zero_report(i1 %dz.7)'), 1, 'div report call')
+    runner.eq(s.contains('call void @__nolang_div_zero_report(i1 %dz.8)'), 1, 'mod report call')
+    runner.eq(s.contains('%v8 = sdiv'), 0, 'no bare sdiv')
 
     ; 比较：icmp <pred> + zext，结果 0/1；中间名 %c<k> 按下标
     runner.eq(s.contains('%c9 = icmp eq i64 %v1, %v2'), 1, 'cmpeq icmp')
@@ -136,6 +152,267 @@ test-alu = () {
     runner.eq(s.contains('%c11 = icmp sle i64 %v1, %v2'), 1, 'cmple icmp')
     runner.eq(s.contains('%c12 = icmp sgt i64 %v1, %v2'), 1, 'cmpgt icmp')
     runner.eq(s.contains('%c13 = icmp sge i64 %v1, %v2'), 1, 'cmpge icmp')
+}
+
+; ── 無符號 ALU 家族（s36）：SHRU/DIVU/MODU + CMP*U ────────────
+;   同時驗證 TY-U64 走 cg-ty-name/cg-val-prefix 默認臂 ⇒ i64/%v（形參/返回值都是 i64 %v1）。
+test-alu-unsigned = () {
+
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; k0: CONST v2 = 3；左操作數是形參 v1（TY-U64）
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+
+    ; k1..k3: SHRU / DIVU / MODU ⇒ dst v3/v4/v5
+    ops.push(OP-SHRU)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-DIVU)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-MODU)
+    dsts.push(5)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+
+    ; k4..k7: CMPLTU/CMPLEU/CMPGTU/CMPGEU ⇒ dst v6/v7/v8/v9
+    ops.push(OP-CMPLTU)
+    dsts.push(6)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPLEU)
+    dsts.push(7)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPGTU)
+    dsts.push(8)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPGEU)
+    dsts.push(9)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+
+    ; 形參 v1 是 TY-U64 ⇒ define 簽名裡是 i64 %v1（型別碼走默認臂）
+    ptyps []i64 = []
+    ptyps.push(TY-U64)
+    vty []i64 = []
+    j = 0
+    (j < 10) {
+        vty.push(TY-U64)
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+    cty []i64 = []
+    blks []i64 = []
+    n = ops.len()
+    i <- [0..n): {
+        cty.push(TY-U64)
+        blks.push(0)
+    }
+    s = cg-emit-cfg-t('ua', TY-U64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; TY-U64 → i64/%v（默認臂）：簽名形參與返回值都是 i64 %v1
+    runner.eq(s.contains('define i64 @ua(i64 %v1)'), 1, 'u64 sig i64 %v1')
+
+    ; 每個無符號 op 钉一條指令文本
+    runner.eq(s.contains('%v3 = lshr i64 %v1, %v2'), 1, 'shru lshr')
+
+    ; s38：無符號除零護欄（DIVU=k2、MODU=k3）——只查 zeroDiv（無 (MIN,-1)，unsigned 不適用），
+    ;   安全除數 select 1，除零結果 select 成 0
+    runner.eq(s.contains('%dz.2 = icmp eq i64 %v2, 0'), 1, 'divu zeroDiv')
+    runner.eq(s.contains('%ds.2 = select i1 %dz.2, i64 1, i64 %v2'), 1, 'divu safe-divisor')
+    runner.eq(s.contains('%cr.2 = udiv i64 %v1, %ds.2'), 1, 'divu udiv safe')
+    runner.eq(s.contains('%v4 = select i1 %dz.2, i64 0, i64 %cr.2'), 1, 'divu result-zero')
+    runner.eq(s.contains('%cr.3 = urem i64 %v1, %ds.3'), 1, 'modu urem safe')
+    runner.eq(s.contains('%v5 = select i1 %dz.3, i64 0, i64 %cr.3'), 1, 'modu result-zero')
+
+    ; s39：无符号除零同样发 stderr 报告呼叫（忠 Go：plain 路径对 Div/Mod/UDiv/UMod 一律报告）
+    runner.eq(s.contains('call void @__nolang_div_zero_report(i1 %dz.2)'), 1, 'divu report call')
+    runner.eq(s.contains('call void @__nolang_div_zero_report(i1 %dz.3)'), 1, 'modu report call')
+    runner.eq(s.contains('-9223372036854775808'), 0, 'no MIN in unsigned guard')
+    runner.eq(s.contains('%c4 = icmp ult i64 %v1, %v2'), 1, 'cmpltu icmp')
+    runner.eq(s.contains('%v6 = zext i1 %c4 to i64'), 1, 'cmpltu zext')
+    runner.eq(s.contains('%c5 = icmp ule i64 %v1, %v2'), 1, 'cmpleu icmp')
+    runner.eq(s.contains('%c6 = icmp ugt i64 %v1, %v2'), 1, 'cmpgtu icmp')
+    runner.eq(s.contains('%c7 = icmp uge i64 %v1, %v2'), 1, 'cmpgeu icmp')
+
+    ; 負向對照：本函式絕不含有符號助記符（ashr/sdiv/srem/slt/sle/sgt/sge）
+    runner.eq(s.contains('ashr'), 0, 'not ashr')
+    runner.eq(s.contains('sdiv'), 0, 'not sdiv')
+    runner.eq(s.contains('srem'), 0, 'not srem')
+    runner.eq(s.contains('slt'), 0, 'not slt')
+    runner.eq(s.contains('sle'), 0, 'not sle')
+    runner.eq(s.contains('sgt'), 0, 'not sgt')
+    runner.eq(s.contains('sge'), 0, 'not sge')
+}
+
+test-alu-f64 = () {
+
+    ; s37：浮点 ALU 按值型别分派——同 OP-ADD/SUB/MUL/DIV/MOD 与 CMP*，
+    ;   vty=TY-F64 ⇒ fadd/fsub/fmul/fdiv/frem double %fd… / fcmp <o*/une>；
+    ;   v8..v13 是 cmp 結果（TY-I64 bool）、v14 是整數 ADD ⇒ 一個混型 cfg 同時验兩條分派路。
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; k0..k4：浮點算術 dst v3..v7（全部 TY-F64）
+    ops.push(OP-ADD)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-SUB)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-MUL)
+    dsts.push(5)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-DIV)
+    dsts.push(6)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-MOD)
+    dsts.push(7)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+
+    ; k5..k10：fcmp（左操作數 v1 是 TY-F64 ⇒ 分派），結果 dst v8..v13 是 TY-I64 bool
+    ops.push(OP-CMPEQ)
+    dsts.push(8)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPNE)
+    dsts.push(9)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPLT)
+    dsts.push(10)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPLE)
+    dsts.push(11)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPGT)
+    dsts.push(12)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    ops.push(OP-CMPGE)
+    dsts.push(13)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+
+    ; k11：整數 ADD v14 = v8 + v9（vty=TY-I64 ⇒ 走整數臂 add i64，验混型分派）
+    ops.push(OP-ADD)
+    dsts.push(14)
+    xa.push(8)
+    bs.push(9)
+    syms.push('')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(14)
+    bs.push(0)
+    syms.push('')
+
+    ; 形參 v1/v2 = TY-F64 ⇒ 簽名是 double %fd1, double %fd2
+    ptyps []i64 = []
+    ptyps.push(TY-F64)
+    ptyps.push(TY-F64)
+
+    ; vty 逐 id 顯式填（混型：id1..id7 = TY-F64、id8..id14 = TY-I64）
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    blks []i64 = []
+    n = ops.len()
+    i <- [0..n): {
+        cty.push(TY-I64)
+        blks.push(0)
+    }
+    s = cg-emit-cfg-t('fa', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; 簽名：TY-F64 → double/%fd（真獨立型別，非默認臂）
+    runner.eq(s.contains('define i64 @fa(double %fd1, double %fd2)'), 1, 'f64 sig double %fd')
+
+    ; 浮點算術助記符
+    runner.eq(s.contains('%fd3 = fadd double %fd1, %fd2'), 1, 'add fadd')
+    runner.eq(s.contains('%fd4 = fsub double %fd1, %fd2'), 1, 'sub fsub')
+    runner.eq(s.contains('%fd5 = fmul double %fd1, %fd2'), 1, 'mul fmul')
+    runner.eq(s.contains('%fd6 = fdiv double %fd1, %fd2'), 1, 'div fdiv')
+    runner.eq(s.contains('%fd7 = frem double %fd1, %fd2'), 1, 'mod frem')
+
+    ; fcmp 谓词 + zext 尾（結果恆 i64 bool）
+    runner.eq(s.contains('%c5 = fcmp oeq double %fd1, %fd2'), 1, 'cmp oeq')
+    runner.eq(s.contains('%v8 = zext i1 %c5 to i64'), 1, 'cmp zext')
+    runner.eq(s.contains('%c6 = fcmp une double %fd1, %fd2'), 1, 'cmp != une')
+    runner.eq(s.contains('%c7 = fcmp olt double %fd1, %fd2'), 1, 'cmp < olt')
+    runner.eq(s.contains('%c8 = fcmp ole double %fd1, %fd2'), 1, 'cmp <= ole')
+    runner.eq(s.contains('%c9 = fcmp ogt double %fd1, %fd2'), 1, 'cmp > ogt')
+    runner.eq(s.contains('%c10 = fcmp oge double %fd1, %fd2'), 1, 'cmp >= oge')
+
+    ; 混型分派：整數 ADD 仍走 add i64（同 op、vty 不同 ⇒ 不同 IR）
+    runner.eq(s.contains('%v14 = add i64 %v8, %v9'), 1, 'int add dispatch')
+
+    ; 負向對照：本函式絕不含整數算術/比較助記符（全部已分派到浮點族）
+    runner.eq(s.contains('add i64 %fd'), 0, 'not add i64 %fd')
+    runner.eq(s.contains('sub i64'), 0, 'not sub i64')
+    runner.eq(s.contains('mul i64'), 0, 'not mul i64')
+    runner.eq(s.contains('sdiv'), 0, 'not sdiv')
+    runner.eq(s.contains('srem'), 0, 'not srem')
+    runner.eq(s.contains('icmp'), 0, 'not icmp')
+    runner.eq(s.contains('ashr'), 0, 'not ashr')
 }
 
 test-struct-param-ret = () {
@@ -2368,6 +2645,8 @@ test-struct-field-rc()
 test-struct-param-ret()
 test-struct-nested()
 test-alu()
+test-alu-unsigned()
+test-alu-f64()
 test-arith()
 test-call()
 test-call2()
