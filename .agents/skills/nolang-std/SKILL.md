@@ -2281,11 +2281,17 @@ des.des-dec(cipher, 8, key, out)       ; Decrypt 8-byte block
 #### crypto/rsa — RSA Modular Exponentiation
 
 ```no
-rsa.rsa-modpow(base, bn, exp, en, mod, mn, result, rn)
+; Public bytes API (preferred): big-endian unsigned inputs;
+; output is the shortest big-endian encoding (value 0 -> single byte [0])
+out = rsa.rsa-encrypt-bytes(msg, pub-exp, mod)     ; RSA encrypt (c = m^e mod n)
+out = rsa.rsa-decrypt-bytes(ct, priv-exp, mod)     ; RSA decrypt (m = c^d mod n)
 
-; Additional functions
-out = rsa.rsa-encrypt(plain, n, pub-e, pub-n, mod, mn)    ; RSA encrypt
-out = rsa.rsa-decrypt(cipher, n, priv-d, dn, mod, mn)    ; RSA decrypt
+; Low-level numeric API (manual limb counts, wide buffer — rn gives effective limbs)
+result, rn = rsa.rsa-modpow(base, bn, exp, en, mod, mn)
+
+; All other `_`-prefixed symbols (_rsa-encrypt/_rsa-decrypt/_rsa-bn-*/_rsa-modpow-step/
+; _bytes-to-limbs/_limbs-to-bytes) are module-internal; cross-module calls are rejected
+; by the private_std checker guard.
 ```
 
 Does not include key generation, supports 1024~4096-bit.

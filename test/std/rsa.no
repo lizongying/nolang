@@ -1,39 +1,46 @@
 ; test/std/rsa.no — crypto/rsa 模組測試
 ;
 ; 執行：no test test/std/rsa.no
-; 覆蓋：rsa.rsa-encrypt / rsa.rsa-decrypt（base 2^32 little-endian limbs 模冪）
+; 覆蓋：rsa.rsa-encrypt-bytes / rsa.rsa-decrypt-bytes（大端無符號 bytes ↔ base 2^32 little-endian limbs 模冪）
 ; 向量來源：
-;   1) 教科書 RSA：p=61,q=53,n=3233,e=17,d=2753,m=65 → c=2790（Wikipedia RSA 例）
+;   1) 教科書 RSA：p=61,q=53,n=3233,e=17,d=2753,m=65 → c=2790=0x0AE6（Wikipedia RSA 例）
 ;   2) 雙 limb（~64-bit）金鑰：p=4294967291,q=4294967279,e=65537，用 Python 生成 c
 
 # /test/runner
 
 ; 教科書單 limb：m=65 → c=2790，再解密回 65
+; （公開 bytes 介面：大端輸入、最短大端輸出）
 t-textbook = () {
-    m = [65]
-    e = [17]
-    n = [3233]
-    d = [2753]
-    ct, ctn = rsa.rsa-encrypt(m, 1, e, 1, n, 1)
-    runner.eq(ctn, 1, 'textbook ct limb count')
-    runner.eq(ct[0], 2790, 'textbook ct == 2790')
-    pt, ptn = rsa.rsa-decrypt(ct, ctn, d, 1, n, 1)
-    runner.eq(ptn, 1, 'textbook pt limb count')
+    m []byte = [65]
+    e []byte = [17]
+    n []byte = [12, 161]
+    d []byte = [10, 193]
+    ct = rsa.rsa-encrypt-bytes(m, e, n)
+    runner.eq(ct.len(), 2, 'textbook ct bytes')
+    runner.eq(ct[0], 10, 'textbook ct == 2790 (hi)')
+    runner.eq(ct[1], 230, 'textbook ct == 2790 (lo)')
+    pt = rsa.rsa-decrypt-bytes(ct, d, n)
+    runner.eq(pt.len(), 1, 'textbook pt bytes')
     runner.eq(pt[0], 65, 'textbook round-trip == 65')
 }
 
 ; 雙 limb 金鑰，ct 需與 Python 一致，並解密回原 m
 t-multilimb = () {
-    m = [2249056121, 28744]
-    e = [65537]
-    n = [85, 4294967274]
-    d = [1566417625, 2172747378]
-    ct, ctn = rsa.rsa-encrypt(m, 2, e, 1, n, 2)
-    runner.eq(ct[0], 2363560722, 'multilimb ct limb0')
-    runner.eq(ct[1], 246890888, 'multilimb ct limb1')
-    pt, ptn = rsa.rsa-decrypt(ct, ctn, d, 2, n, 2)
-    runner.eq(pt[0], 2249056121, 'multilimb pt limb0')
-    runner.eq(pt[1], 28744, 'multilimb pt limb1')
+    m []byte = [112, 72, 134, 13, 223, 121]
+    e []byte = [1, 0, 1]
+    n []byte = [255, 255, 255, 234, 0, 0, 0, 85]
+    d []byte = [129, 129, 126, 114, 93, 93, 162, 217]
+    ct = rsa.rsa-encrypt-bytes(m, e, n)
+    ct-exp []byte = [14, 183, 65, 136, 140, 225, 19, 18]
+    runner.eq(ct.len(), 8, 'multilimb ct bytes')
+    a <- [0..8): {
+        runner.eq(ct[a], ct-exp[a], 'multilimb ct byte')
+    }
+    pt = rsa.rsa-decrypt-bytes(ct, d, n)
+    runner.eq(pt.len(), m.len(), 'multilimb pt bytes')
+    b <- [0..pt.len()): {
+        runner.eq(pt[b], m[b], 'multilimb pt byte')
+    }
 }
 
 p1 = runner.test('rsa.textbook', t-textbook)
