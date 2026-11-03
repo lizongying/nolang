@@ -729,6 +729,7 @@ test-term-cont = () {
     ir = h2m-lower-program(t, agg, root)
 
     runner.eq(agg.unsup, 0, 'cont unsup')
+
     ; continue 的目标是 hdr（bb1）：guard 臂块只拿到回边＋不可达汇聚 BR
     runner.eq(ir.contains('bb4:\n\tbr label %bb1\n\tbr label %bb6'), 1, 'cont arm back-edge pair')
 
@@ -750,6 +751,7 @@ test-term-brk = () {
     ir = h2m-lower-program(t, agg, root)
 
     runner.eq(agg.unsup, 0, 'brk unsup')
+
     ; break 的目标是 exit（bb3）——不是回边 hdr
     runner.eq(ir.contains('bb4:\n\tbr label %bb3\n\tbr label %bb6'), 1, 'brk arm exits loop')
 
@@ -769,6 +771,7 @@ test-term-chain = () {
     ir = h2m-lower-program(t, agg, root)
 
     runner.eq(agg.unsup, 0, 'chain unsup')
+
     ; 臂块 bb2 直接 BR 共享 ret 块 bb4（经 h2m-lower-branch 的终结形臂）
     runner.eq(ir.contains('bb2:\n\tbr label %bb4\n\tbr label %bb1'), 1, 'chain arm br ret')
 
