@@ -1,4 +1,4 @@
-; h2m-test.no — compiler/src/h2m.no（M4-e AST→MIR 降级首件）单元测试
+; h2m-test.no — compiler/src/h2m.no（M4-e AST→MIR 降级）单元测试
 ;
 ; 执行： ./bin/no run compiler/tests/h2m-test.no
 ; ⚠️ runner 断言失败不改退出码，本档结尾必须自己 exit(1)。
@@ -6,6 +6,9 @@
 ; 与 cg-test.no 的分工：cg-test.no 喂【手写 op 数组】验发射；本档喂【真实源码】——
 ; 走 ps.no 解析 → h2m.no 降级 → cg.no 发射，断言的是「源码文本 → IR 文本」这条链路。
 ; 每个用例都同时钉 unsup 计数器：产码 ≠ 产对码，不支持的构造必须被计数抓住。
+;
+; s55 覆盖：表达式（+ - *）/ 变量绑定与重绑 / 括號下钻 / 多函数
+; s56 覆盖：输入参数占形参值 id / 返回值型别决定 retty / 零参与多参调用 / 签名表前向解析
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -143,15 +146,25 @@ test-gate = () {
     ir2 = h2m-lower-program(t2, agg2, r2)
     runner.eq(agg2.unsup > 0, 1, 'gate unknown name counted')
 
-    ; 有输入参数 ⇒ 整函数不产码（返回空串）
-    src-in = 'i = (x i64) (r i64) {\n    r = x\n}\n'
+    ; 带默认值的参数 ⇒ 签名不合格（整函数不产码）：默认值会让调用点 arity 判定失效
+    src-def = 'i = (x i64 = 5) (r i64) {\n    r = x\n}\n'
     t3 = ast.make()
-    p3 = ps.new(src-in.to-bytes())
+    p3 = ps.new(src-def.to-bytes())
     r3 = ps.parse(t3, p3)
     agg3 = h2m-new()
     ir3 = h2m-lower-program(t3, agg3, r3)
-    runner.eq(agg3.unsup > 0, 1, 'gate input param counted')
-    runner.eq(ir3.contains('define'), 0, 'gate input param no code')
+    runner.eq(agg3.unsup > 0, 1, 'gate default param counted')
+    runner.eq(ir3.contains('define'), 0, 'gate default param no code')
+
+    ; 未知型别名 ⇒ 签名不合格
+    src-ty = 'j = (x foo) (r i64) {\n    r = 1\n}\n'
+    t5 = ast.make()
+    p5 = ps.new(src-ty.to-bytes())
+    r5 = ps.parse(t5, p5)
+    agg5 = h2m-new()
+    ir5 = h2m-lower-program(t5, agg5, r5)
+    runner.eq(agg5.unsup > 0, 1, 'gate unknown type counted')
+    runner.eq(ir5.contains('define'), 0, 'gate unknown type no code')
 
     ; 非函数定义语句（结构体定义）⇒ 计入 unsup
     src-struct = 'pt {\n    x i64\n}\n\ns = () (r i64) {\n    r = 3\n}\n'
@@ -164,11 +177,165 @@ test-gate = () {
     runner.eq(ir4.contains('define i64 @s()'), 1, 'gate sibling still emitted')
 }
 
+; ── 单个输入参数：形参占值 id 1，body 从 id 2 起 ──
+; 证明 s56 的签名侧降级：不建 alloca，名字直接绑到形参 id（与 §3.11 重绑模型一致）。
+test-param-one = () {
+    src = 'p1 = (x i64) (r i64) {\n    r = x + 1\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'param1 unsup')
+    runner.eq(ir.contains('define i64 @p1(i64 %v1)'), 1, 'param1 sig')
+    runner.eq(ir.contains('%v2 = add i64 0, 1'), 1, 'param1 const starts at 2')
+    runner.eq(ir.contains('%v3 = add i64 %v1, %v2'), 1, 'param1 body uses %v1')
+    runner.eq(ir.contains('ret i64 %v3'), 1, 'param1 ret')
+}
+
+; ── 两个输入参数：形参序 = 值 id 序 ──
+test-param-two = () {
+    src = 'p2 = (x i64, y i64) (r i64) {\n    r = x * y\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'param2 unsup')
+    runner.eq(ir.contains('define i64 @p2(i64 %v1, i64 %v2)'), 1, 'param2 sig')
+    runner.eq(ir.contains('%v3 = mul i64 %v1, %v2'), 1, 'param2 body')
+    runner.eq(ir.contains('alloca'), 0, 'param2 no alloca')
+}
+
+; ── str 形参：签名侧按型别选命名空间（值语义仍限 i64）──
+test-param-str = () {
+    src = 'sp = (s str) (r i64) {\n    r = 1\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'pstr unsup')
+    runner.eq(ir.contains('define i64 @sp(%str-long %sv1)'), 1, 'pstr sig')
+    runner.eq(ir.contains('%v2 = add i64 0, 1'), 1, 'pstr body id after param')
+    runner.eq(ir.contains('ret i64 %v2'), 1, 'pstr ret')
+
+    ; 鉴别力：str 形参不得误入 %v 命名空间
+    runner.eq(ir.contains('i64 %v1'), 0, 'pstr no i64 param')
+}
+
+; ── 输出参数的型别决定 retty（str 透传，不新增 id）──
+test-ret-str = () {
+    src = 'stw = (s str) (t str) {\n    t = s\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rets unsup')
+    runner.eq(ir.contains('define %str-long @stw(%str-long %sv1)'), 1, 'rets sig')
+    runner.eq(ir.contains('ret %str-long %sv1'), 1, 'rets ret value')
+
+    ; 鉴别力：本函数只有一个值 id（形参），body 不产生新指令
+    runner.eq(ir.contains('%v'), 0, 'rets no i64 id')
+}
+
+; ── 零参调用 + 前向引用（调用者写在被调用者之前）──
+; 证明前置 pass 先登记全模块签名，调用点能查到返回型别与 arity。
+test-call-fwd = () {
+    src = 'cc = () (r i64) {\n    r = cf0()\n}\n\ncf0 = () (r i64) {\n    r = 9\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'callfwd unsup')
+    runner.eq(ir.contains('%v1 = call i64 @cf0()'), 1, 'callfwd zero arg')
+    runner.eq(ir.contains('ret i64 %v1'), 1, 'callfwd ret')
+    runner.eq(ir.contains('define i64 @cf0()'), 1, 'callfwd callee emitted')
+    runner.eq(ir.contains('%v1 = add i64 0, 9'), 1, 'callfwd callee body')
+}
+
+; ── 单参调用 + 两参连续调用 ──
+test-call-args = () {
+    src = 'dbl = (x i64) (r i64) {\n    r = x + x\n}\n\nad = (x i64, y i64) (r i64) {\n    r = x + y\n}\n\nm1 = () (r i64) {\n    a = 3\n    r = dbl(a)\n}\n\nm2 = () (r i64) {\n    a = 1\n    b = 2\n    r = ad(a, b)\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'callargs unsup')
+    runner.eq(ir.contains('define i64 @dbl(i64 %v1)'), 1, 'callargs dbl sig')
+    runner.eq(ir.contains('%v2 = add i64 %v1, %v1'), 1, 'callargs dbl body')
+    runner.eq(ir.contains('%v2 = call i64 @dbl(i64 %v1)'), 1, 'callargs one arg')
+    runner.eq(ir.contains('%v3 = call i64 @ad(i64 %v1, i64 %v2)'), 1, 'callargs two args')
+
+    ; 鉴别力：多参实参必须按序（反序则 IR 文本不同）
+    runner.eq(ir.contains('@ad(i64 %v2, i64 %v1)'), 0, 'callargs order not swapped')
+}
+
+; ── 调用侧门禁：实参 id 不连续 / arity 不符 / 未知被调用者 / 返回型别不符 都计 unsup ──
+test-call-gate = () {
+
+    ; 嵌套调用挤占中间 id ⇒ 实参 1 与 4 不连续（cg 的 OP-CALL 要求 xa..xa+bs-1）
+    src-gap = 'ad = (x i64, y i64) (r i64) {\n    r = x + y\n}\n\nk = () (r i64) {\n    a = 1\n    r = ad(a, 2 + 3)\n}\n'
+    t1 = ast.make()
+    p1 = ps.new(src-gap.to-bytes())
+    r1 = ps.parse(t1, p1)
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup > 0, 1, 'gap counted')
+    runner.eq(ir1.contains('call i64 @ad'), 0, 'gap no call code')
+
+    ; arity 不符：dbl 只要一个参数
+    src-ary = 'dbl = (x i64) (r i64) {\n    r = x + x\n}\n\nk = () (r i64) {\n    r = dbl(1, 2)\n}\n'
+    t2 = ast.make()
+    p2 = ps.new(src-ary.to-bytes())
+    r2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 'arity counted')
+    runner.eq(ir2.contains('call i64 @dbl'), 0, 'arity no call code')
+
+    ; 未知被调用者（未在本模块定义）
+    src-unk = 'k = () (r i64) {\n    r = zzz(1)\n}\n'
+    t3 = ast.make()
+    p3 = ps.new(src-unk.to-bytes())
+    r3 = ps.parse(t3, p3)
+    agg3 = h2m-new()
+    ir3 = h2m-lower-program(t3, agg3, r3)
+    runner.eq(agg3.unsup > 0, 1, 'unknown callee counted')
+    runner.eq(ir3.contains('call'), 0, 'unknown callee no code')
+
+    ; 返回值型别不符：a 是 i64，却赋给声明为 str 的输出参数
+    src-rt = 'rr = (a i64) (s str) {\n    s = a\n}\n'
+    t4 = ast.make()
+    p4 = ps.new(src-rt.to-bytes())
+    r4 = ps.parse(t4, p4)
+    agg4 = h2m-new()
+    ir4 = h2m-lower-program(t4, agg4, r4)
+    runner.eq(agg4.unsup > 0, 1, 'rettype counted')
+    runner.eq(ir4.contains('define'), 0, 'rettype no code')
+}
+
 test-prec()
 test-var()
 test-rebind()
 test-group()
 test-multi-func()
+test-param-one()
+test-param-two()
+test-param-str()
+test-ret-str()
+test-call-fwd()
+test-call-args()
+test-call-gate()
 test-gate()
 
 runner.summary()
