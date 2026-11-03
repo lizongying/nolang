@@ -9,6 +9,10 @@
 ;
 ; s55 覆盖：表达式（+ - *）/ 变量绑定与重绑 / 括號下钻 / 多函数
 ; s56 覆盖：输入参数占形参值 id / 返回值型别决定 retty / 零参与多参调用 / 签名表前向解析
+; s57 覆盖：比较家族（六个比较符 → icmp 族）/ 单行 guard 的 if（entry+then+merge 切块）/
+;         前置条件循环（hdr/body/exit + 回边）/ mem 模式的 alloca 槽（跳块写回同一变量）/
+;         合成 AST 的 else 臂（真实源路的 `{c -> a -> b}` 目前被 ps.no 建成 K-SURFACE-MATCH，
+;         臂群在 aux 阵而不在 kid 阵，所以 else 只能用 ast.add/kid-add 搭出来跑同一段降级）
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -335,7 +339,257 @@ test-param-str()
 test-ret-str()
 test-call-fwd()
 test-call-args()
+
+; ═══ s57：控制流降级 ═══════════════════════════════════════════
+
+; 跳块写回 ⇒ 体内有分支/循环时全部局部量（含形参）落 entry alloca 槽（-O0 风格）
+test-flow-if = () {
+    src = 'f = (n i64) (r i64) {\n    r = 0\n    n > 0 -> r = n\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'if unsup')
+
+    ; entry：两个槽（n ← %v1、r 零初始化）——s55/s56 的直线式从来不发 alloca，本件是第一处
+    runner.eq(ir.contains('%s2 = alloca i64'), 1, 'if slot n')
+    runner.eq(ir.contains('store i64 %v1, i64* %s2'), 1, 'if param into slot')
+    runner.eq(ir.contains('%s4 = alloca i64'), 1, 'if slot r')
+
+    ; 条件侧：load 取 n → icmp sgt → zext → condbr（非零为真）
+    runner.eq(ir.contains('%v7 = load i64, i64* %s2'), 1, 'if cond loads slot')
+    runner.eq(ir.contains('%c11 = icmp sgt i64 %v7, %v8'), 1, 'if icmp')
+    runner.eq(ir.contains('%v9 = zext i1 %c11 to i64'), 1, 'if zext')
+
+    ; 无 else 臂 ⇒ 假路直接接汇聚块（bb3），不留 bb2
+    runner.eq(ir.contains('br i1 %c12, label %bb1, label %bb3'), 1, 'if condbr skips else')
+    runner.eq(ir.contains('bb2:'), 0, 'if no empty else block')
+    runner.eq(ir.contains('bb1:'), 1, 'if then label')
+    runner.eq(ir.contains('bb3:'), 1, 'if merge label')
+
+    ; then 臂写回槽并无条件回汇聚块；汇聚块 load 后才 ret（而不是 ret 一个 then 块的 SSA 名）
+    runner.eq(ir.contains('%v10 = load i64, i64* %s2'), 1, 'if arm loads n')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'if arm stores r')
+    runner.eq(ir.contains('br label %bb3'), 1, 'if arm br merge')
+    runner.eq(ir.contains('%v11 = load i64, i64* %s4'), 1, 'if merge loads r')
+    runner.eq(ir.contains('ret i64 %v11'), 1, 'if ret from load')
+
+    ; 鉴别力：汇聚块不能拿 then 块内部的 %v10 直接 ret（跨块引用会被 opt 的支配树拒）
+    runner.eq(ir.contains('ret i64 %v10'), 0, 'if no cross-block ret')
+}
+
+; ── 前置条件循环：(cond) { body } ⇒ entry→hdr、hdr→(body|exit)、body→hdr 回边 ──
+test-flow-loop = () {
+    src = 'g = (n i64) (r i64) {\n    r = 0\n    (n > 0) {\n        r = r + 1\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'loop unsup')
+
+    ; entry 无条件跳到条件块（hdr = bb1），不在 entry 求值条件（回边要落回它）
+    runner.eq(ir.contains('br label %bb1'), 1, 'loop entry br hdr')
+    runner.eq(ir.contains('bb1:'), 1, 'loop hdr label')
+    runner.eq(ir.contains('br i1 %c13, label %bb2, label %bb3'), 1, 'loop condbr body/exit')
+
+    ; 鉴别力（本件核心）：体内 `r = r + 1` 必须 load 槽而不是引用 entry 旧值——
+    ;   若退回 SSA 重绑语义，这里会变成 `add i64 %v6, %v11`（永远只加第一轮的值）
+    runner.eq(ir.contains('%v10 = load i64, i64* %s4'), 1, 'loop body loads r')
+    runner.eq(ir.contains('%v12 = add i64 %v10, %v11'), 1, 'loop body adds loaded')
+    runner.eq(ir.contains('%v12 = add i64 %v6, %v11'), 0, 'loop body not stale ssa')
+    runner.eq(ir.contains('store i64 %v12, i64* %s4'), 1, 'loop body stores r')
+
+    ; 回边 + 后继落在 exit 块
+    runner.eq(ir.contains('br label %bb1\n'), 1, 'loop back edge')
+    runner.eq(ir.contains('bb3:'), 1, 'loop exit label')
+    runner.eq(ir.contains('ret i64 %v13'), 1, 'loop ret in exit block')
+}
+
+; ── 比较家族：六个比较符各自落到对应的 icmp predicate ──
+test-flow-cmp = () {
+    src = 'a = (n i64) (r i64) {\n    r = 0\n    n < 5 -> r = 1\n    n <= 5 -> r = 2\n    n >= 5 -> r = 3\n    n == 5 -> r = 4\n    n != 5 -> r = 5\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cmp unsup')
+
+    ; 五条 guard 各一条 icmp；谓词不能串位（slt 写反成 sgt 就全反了）
+    runner.eq(ir.contains('icmp slt i64'), 1, 'cmp lt')
+    runner.eq(ir.contains('icmp sle i64'), 1, 'cmp le')
+    runner.eq(ir.contains('icmp sge i64'), 1, 'cmp ge')
+    runner.eq(ir.contains('icmp eq i64'), 1, 'cmp eq')
+    runner.eq(ir.contains('icmp ne i64 %v'), 1, 'cmp ne')
+    runner.eq(ir.contains('icmp ule i64'), 0, 'cmp no unsigned leak')
+
+    ; 5 条 guard ⇒ 5 个 then 块（bb1/4/7/10/13 形式：每条 if 新开 3 个 id，无 else 时中间那个不落地）
+    runner.eq(ir.contains('bb13:'), 1, 'cmp fifth then block')
+    runner.eq(ir.contains('bb14:'), 0, 'cmp block count stops')
+}
+
+; 合成 AST 造 else 臂：`sf = (n i64) (r i64) { n > 0 -> { r = 7 } else { r = 9 } }`
+; ⚠️ 真实源路造不出这个形状（`{c -> a -> b}` 被 ps.no 建成 K-SURFACE-MATCH，臂群在 aux 阵），
+;   而 h2m-lower-if 按 Go/HIR 的 IfExpression 三 kid 形制写，故用 ast.add/kid-add 直接搭同形节点
+mk-ident = (t ast, name str) (x i64) {
+    x = ast.add(t, asp.K-IDENTIFIER)
+    ast.set-slot(t, x, 0, ast.put-str(t, name))
+}
+
+mk-int = (t ast, lit str) (x i64) {
+    x = ast.add(t, asp.K-INTEGER-LITERAL)
+    ast.set-slot(t, x, 0, ast.put-str(t, lit))
+}
+
+; InfixExpression：kids = [左][右]，s0 = 运算符文本
+mk-infix = (t ast, op str, a i64, b i64) (x i64) {
+    x = ast.add(t, asp.K-INFIX-EXPRESSION)
+    ast.kid-add(t, x, a)
+    ast.kid-add(t, x, b)
+    ast.set-slot(t, x, 0, ast.put-str(t, op))
+}
+
+; BlockStatement：kids = 单条语句（本件合成用例只需一条 let）
+mk-block1 = (t ast, s i64) (x i64) {
+    x = ast.add(t, asp.K-BLOCK-STATEMENT)
+    ast.kid-add(t, x, s)
+}
+
+; LetStatement：kids = [型别 0][值]，s0 = 名字（与实测解析形状一致）
+mk-let-int = (t ast, name str, lit str) (x i64) {
+    v = mk-int(t, lit)
+    x = ast.add(t, asp.K-LET-STATEMENT)
+    ast.kid-add(t, x, 0)
+    ast.kid-add(t, x, v)
+    ast.set-slot(t, x, 0, ast.put-str(t, name))
+}
+
+; Parameter：kids = [K-NAMED-TYPE][默认值 0]，s0 = 名字
+mk-param = (t ast, name str, ty str) (x i64) {
+    tn = ast.add(t, asp.K-NAMED-TYPE)
+    ast.set-slot(t, tn, 0, ast.put-str(t, ty))
+    x = ast.add(t, asp.K-PARAMETER)
+    ast.kid-add(t, x, tn)
+    ast.kid-add(t, x, 0)
+    ast.set-slot(t, x, 0, ast.put-str(t, name))
+}
+
+test-flow-else-syn = () {
+    t = ast.make()
+
+    ; 自下而上建，且【每个子节点先落具名局部】再 kid-add：实测（s57）把调用直接嵌在
+    ;   另一调用的实参位（ast.kid-add(t, iff, mk-block1(t, then-s))）会传错值——拿到的是
+    ;   内层函数的【输入参数】而非它的【输出参数】（本档只做记录，依 AGENTS.md §2 不改他人代码）
+    idn = mk-ident(t, 'n')
+    iz = mk-int(t, '0')
+    cond = mk-infix(t, '>', idn, iz)
+    then-s = mk-let-int(t, 'r', '7')
+    then-blk = mk-block1(t, then-s)
+    else-s = mk-let-int(t, 'r', '9')
+    else-blk = mk-block1(t, else-s)
+    iff = ast.add(t, asp.K-IF-EXPRESSION)
+    ast.kid-add(t, iff, cond)
+    ast.kid-add(t, iff, then-blk)
+    ast.kid-add(t, iff, else-blk)
+    pin = mk-param(t, 'n', 'i64')
+    pout = mk-param(t, 'r', 'i64')
+    body = mk-block1(t, iff)
+    fd = ast.add(t, asp.K-FUNCTION-DEFINITION)
+    ast.kid-add(t, fd, pin)
+    ast.kid-add(t, fd, pout)
+    ast.kid-add(t, fd, body)
+    ast.set-sig(t, fd, 0, 1, 1)
+    ast.set-slot(t, fd, 0, ast.put-str(t, 'sf'))
+    pr = ast.add(t, asp.K-PROGRAM)
+    ast.kid-add(t, pr, fd)
+    ast.set-count(t, pr, 0, 1)
+
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, pr)
+
+    runner.eq(agg.unsup, 0, 'else-syn unsup')
+    runner.eq(ir.contains('define i64 @sf(i64 %v1)'), 1, 'else-syn define')
+
+    ; 有 else 臂 ⇒ 假路落 bb2（与无 else 时直落汇聚块形成对照），三块都落地
+    runner.eq(ir.contains('br i1 %c10, label %bb1, label %bb2'), 1, 'else-syn condbr both arms')
+    runner.eq(ir.contains('bb2:'), 1, 'else-syn else block emitted')
+    runner.eq(ir.contains('bb3:'), 1, 'else-syn merge block emitted')
+
+    ; 两臂各写自己的常量进同一槽 %s4，各自无条件回汇聚块；汇聚块只 load 一次
+    runner.eq(ir.contains('%v9 = add i64 0, 7'), 1, 'else-syn then const 7')
+    runner.eq(ir.contains('store i64 %v9, i64* %s4'), 1, 'else-syn then stores 7')
+    runner.eq(ir.contains('%v10 = add i64 0, 9'), 1, 'else-syn else const 9')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'else-syn else stores 9')
+    runner.eq(ir.contains('br label %bb3'), 1, 'else-syn arm br merge')
+    runner.eq(ir.contains('%v11 = load i64, i64* %s4'), 1, 'else-syn merge loads')
+    runner.eq(ir.contains('ret i64 %v11'), 1, 'else-syn ret loaded')
+
+    ; 鉴别力：任一臂自己的 SSA 名都不能被 ret（跨块引用会被 opt 支配树拒）
+    runner.eq(ir.contains('ret i64 %v9'), 0, 'else-syn no cross-block ret then')
+    runner.eq(ir.contains('ret i64 %v10'), 0, 'else-syn no cross-block ret else')
+}
+
+; ── 控制流侧门禁：surface match 链 / 计数循环 / 区间遍历 / 无槽型别都计 unsup 且不产码 ──
+test-flow-gate = () {
+
+    ; 花括号短路链→ K-SURFACE-MATCH（臂在 aux 阵，本件不降）
+    src-sm = 'a = (n i64) (r i64) {\n    r = 0\n    { n > 0 -> r = n  -> r = 0 }\n}\n'
+    t1 = ast.make()
+    r1 = ps.parse(t1, ps.new(src-sm.to-bytes()))
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup > 0, 1, 'surface-match counted')
+    runner.eq(ir1.contains('define'), 0, 'surface-match no code')
+
+    ; 计数循环 `n * { }`：CountExpr 非 0 ⇒ 不在覆盖面
+    src-ct = 'b = (n i64) (r i64) {\n    r = 0\n    n * {\n        r = r + 1\n    }\n}\n'
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(src-ct.to-bytes()))
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 'count-loop counted')
+    runner.eq(ir2.contains('br label'), 0, 'count-loop no code')
+
+    ; 区间遍历 `i <- [0..n]:`：IterRange 非 0 ⇒ 不在覆盖面
+    src-rg = 'c = (n i64) (r i64) {\n    r = 0\n    i <- [0..n]: {\n        r = r + i\n    }\n}\n'
+    t3 = ast.make()
+    r3 = ps.parse(t3, ps.new(src-rg.to-bytes()))
+    agg3 = h2m-new()
+    ir3 = h2m-lower-program(t3, agg3, r3)
+    runner.eq(agg3.unsup > 0, 1, 'range-loop counted')
+    runner.eq(ir3.contains('alloca'), 0, 'range-loop no slot emitted')
+
+    ; 臂内放不了的东西：break / continue / return 仍计 unsup（不静默略过）
+    src-rt = 'd = (n i64) (r i64) {\n    r = 0\n    n > 0 -> return\n}\n'
+    t4 = ast.make()
+    r4 = ps.parse(t4, ps.new(src-rt.to-bytes()))
+    agg4 = h2m-new()
+    ir4 = h2m-lower-program(t4, agg4, r4)
+    runner.eq(agg4.unsup > 0, 1, 'return counted')
+    runner.eq(ir4.contains('define'), 0, 'return no code')
+
+    ; mem 模式的槽型别边界：f64 局部量在 cg 无 alloca double 的 op ⇒ 宁缺勿错
+    src-f64 = 'e = (x f64) (r i64) {\n    r = 0\n    x == x -> r = 1\n}\n'
+    t5 = ast.make()
+    r5 = ps.parse(t5, ps.new(src-f64.to-bytes()))
+    agg5 = h2m-new()
+    ir5 = h2m-lower-program(t5, agg5, r5)
+    runner.eq(agg5.unsup > 0, 1, 'f64 slot counted')
+    runner.eq(ir5.contains('define'), 0, 'f64 slot no code')
+}
+
+; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
+test-flow-if()
+test-flow-loop()
+test-flow-cmp()
+test-flow-else-syn()
+test-flow-gate()
 test-gate()
 
 runner.summary()
