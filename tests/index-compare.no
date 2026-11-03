@@ -15,7 +15,7 @@
 
 ; expect：cond 必須為 true，否則 exit(code)。
 ; 避開 `->` 兩臂都跑的老問題（見 iter-place-write.no 的說明）。
-expect = (cond bool, code i64) () {
+expect = (cond bool, code i64) {
     if cond {
         return
     }
@@ -23,14 +23,14 @@ expect = (cond bool, code i64) () {
 }
 
 ; reject：cond 必須為 false，否則 exit(code)。
-reject = (cond bool, code i64) () {
+reject = (cond bool, code i64) {
     if cond {
         exit(code)
     }
 }
 
 ; 1. 字面量下標，界內：`==` / `!=` 都必須正確
-a []i64 = [5, 6, 7]
+a = [5, 6, 7]
 expect(a[0] == 5, 1)
 reject(a[0] != 5, 2)
 expect(a[1] == 6, 3)
@@ -38,22 +38,23 @@ reject(a[2] != 7, 4)
 print('ok: literal subscript comparison')
 
 ; 2. 變量下標，界內
-i i64 = 1
+i = 1
 expect(a[i] == 6, 5)
 i = 2
 reject(a[i] != 7, 6)
 print('ok: variable subscript comparison')
 
 ; 3. 越界：回 nil ⇒ 不等於任何字面量；且**不得崩潰**（修復前 SIGTRAP）
-oob i64 = 9
+oob = 9
 expect(a[oob] != 5, 7)
 reject(a[oob] == 5, 8)
+
 ; nil 的 payload 是零值，與 `?i64 == 0` 同語義（既有規則，不是本檔引入的）
 expect(a[oob] == 0, 9)
 print('ok: out-of-range read yields nil (no crash, never equal)')
 
 ; 4. 負下標同樣是越界
-neg i64 = -1
+neg = -1
 expect(a[neg] != 5, 10)
 expect(a[neg] == 0, 11)
 print('ok: negative index is out of range')
@@ -71,11 +72,11 @@ expect(f[2] != 9, 16)
 print('ok: fixed array element comparison')
 
 ; 7. str 下標：碼點讀取 vs 單字元字串字面量（char ↔ str 隱式轉換）
-s str = 'abc'
+s = 'abc'
 expect(s[0] == 'a', 17)
 reject(s[1] == 'a', 18)
 expect(s[2] == 'c', 19)
-soob i64 = 9
+soob = 9
 expect(s[soob] != 'a', 20)
 print('ok: str code-point comparison')
 
@@ -91,23 +92,25 @@ print('ok: []?T element comparison')
 c []byte = [65, 66]
 expect(c[0] == 65, 25)
 reject(c[1] == 65, 26)
-d []str = ['aa', 'bb']
+d = ['aa', 'bb']
 expect(d[0] == 'aa', 27)
 reject(d[1] == 'aa', 28)
 print('ok: byte and str element comparison')
 
 ; 10. place-match 寫入之後的比較（最初暴露此 bug 的場景）
-e []i64 = [1, 2, 3]
+e = [1, 2, 3]
 e[0]: {
     ok -> it = 5
-    -> {}
+
+    -> {
+    }
 }
 expect(e[0] == 5, 29)
 reject(e[0] != 5, 30)
 print('ok: comparison after a place-match write')
 
 ; 11. 讀-改-寫之後的比較（迭代形式）
-g []i64 = [1, 2, 3]
+g = [1, 2, 3]
 x <- g: {
     x = x + 10
 }
@@ -116,7 +119,7 @@ expect(g[2] == 13, 32)
 print('ok: comparison after a read-modify-write')
 
 ; 12. 綁定形式（顯式 plain / option）與直接比較同值
-h []i64 = [4, 5]
+h = [4, 5]
 plain i64 = h[0]
 opt ?i64 = h[0]
 expect(plain == 4, 33)
@@ -132,7 +135,7 @@ print('ok: bound and direct forms agree')
 ;       `.header-names[i][j] != name.byte(j)` 就是這個形狀）；
 ;   (b) 兩層都裸讀 ⇒ 越界直接 SIGTRAP（見第 14 節）。
 tbl [2]str = ['ab', 'cd']
-n i64 = 1
+n = 1
 expect(tbl[n][0] == 'c', 36)
 reject(tbl[n][0] != 'c', 37)
 reject(tbl[0][0] == 'c', 38)
@@ -140,7 +143,7 @@ print('ok: nested subscript comparison')
 
 ; 14. 巢狀下標越界：兩層都帶界檢查，越界回傳 nil（絕不 abort）。
 ; 修復前這裡是裸讀，`tbl[nest_oob][0]` 直接讀野內存。
-nest_oob i64 = 5
+nest_oob = 5
 reject(tbl[nest_oob][0] == 'c', 39)
 expect(tbl[nest_oob][0] != 'c', 40)
 expect(tbl[n][nest_oob] != 'a', 41)
@@ -155,11 +158,13 @@ expect(ot == t, 42)
 reject(ot != t, 43)
 other txt = 'hello!'
 reject(ot == other, 44)
+
 ; 長字串（> 255 會被截斷，這裡取 40）確認 boxed 載荷的長度前綴也正確。
 lt txt = 'the-quick-brown-fox-jumps-over-a-lazy-dog'
 olt ?txt = lt
 expect(olt == lt, 54)
 reject(olt == t, 55)
+
 ; option 對 option：比的是載荷，不是判別值
 otx ?txt = t
 expect(ot == otx, 60)
@@ -169,24 +174,26 @@ print('ok: ?txt compares its txt payload')
 ; 16. 容器元素的比較：`[]T == []T` 走結構比較（先比長度、再比元素）。
 ; 修復前 emitCmp 對 %vec 發出 `icmp eq %vec`，LLVM 直接拒絕
 ; （"icmp requires integer operands"）—— 連編譯都過不了。
-va []i64 = [1, 2]
-vb []i64 = [1, 2]
-vc []i64 = [1, 3]
-vd []i64 = [1, 2, 3]
+va = [1, 2]
+vb = [1, 2]
+vc = [1, 3]
+vd = [1, 2, 3]
 expect(va == vb, 45)
 reject(va == vc, 46)
 reject(va == vd, 47)
 expect(va != vc, 48)
+
 ; 元素本身是容器（`[][]i64` 的元素是 `[]i64`）
-m1 [][]i64 = [[1, 2], [3, 4]]
-m2 [][]i64 = [[1, 2], [9, 9]]
+m1 = [[1, 2], [3, 4]]
+m2 = [[1, 2], [9, 9]]
 expect(m1[0] == m2[0], 49)
 reject(m1[1] == m2[1], 50)
 reject(m1 == m2, 51)
+
 ; 元素是 str：必須比內容，不是比 data 指標
-sa []str = ['ab', 'cd']
-sb []str = ['ab', 'cd']
-sc []str = ['ab', 'ce']
+sa = ['ab', 'cd']
+sb = ['ab', 'cd']
+sc = ['ab', 'ce']
 expect(sa == sb, 52)
 reject(sa == sc, 53)
 print('ok: container equality is structural')

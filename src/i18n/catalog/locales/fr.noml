@@ -585,6 +585,7 @@ Erreur de création du répertoire : %v
   'ibaimz2h': 'détection de cycles : %w'
   'ibiol93t': 'Erreur : package.noml introuvable. Utilisez \'no new <name>\' pour créer un paquet, ou placez-vous dans un répertoire de paquet'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'interface « %s » : la méthode fusionnée « %s » a des signatures en conflit (« %s.%s », « %s.%s »)'
   'ihr1vm8m': 'arr.zero : récepteur requis'
   'iky4xsx4': 'la méthode “%s.%s” a %d résultat(s), l’interface en attend %d'

@@ -81,7 +81,6 @@ b-state-like = () (st []u64) {
     v []u64
     i <- [0..8): {
 
-        #{index-out=zero}
         v[i]: {
             ok -> it = WV[i] * 10
 
@@ -90,7 +89,6 @@ b-state-like = () (st []u64) {
     }
     i <- [0..8): {
 
-        #{index-out=zero}
         v[8 + i]: {
             ok -> it = WV[i] + 100
 

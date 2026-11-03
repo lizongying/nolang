@@ -1799,12 +1799,29 @@ func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
 	if lowered == nil {
 		return nil
 	}
-	// 識別符 LHS 且尚未宣告時預先 `let x = DEF` 宣告（所有分支皆會賦值，故安全）；
-	// 索引/點 LHS 是既有 lvalue，無需預先宣告。
+	// 識別符 LHS 預先 `let x = DEF` 宣告，使 x 在 match 臂外仍有 slot（ok/none 兩臂
+	// 都只對它賦值，不會自建宣告）；索引/點 LHS 是既有 lvalue，無需預先宣告。
+	//
+	// ⚠️ 位置是語意攸關的：preDecl 必須排在 tmpAssign（`__idx_out_N = container[i]`）
+	// **之後**。它本質上是「把 x 清零」，而 RHS 可以引用 x 本身——最典型的是自我索引
+	// 走訪 `p = lf[p]`（BWT 反變換的 LF 鏈、鏈式 next 走訪）。放在前面時，求值 RHS
+	// 用的是剛被清零的 x，索引恆為 0：p 每輪都讀 lf[0]，鏈條原地打轉。
+	//   p = 10
+	//   p = lf[p]   ; 舊： preDecl(p=0) → 讀 lf[0] → p 恆為 lf[0]
+	//               ; 新： 讀 lf[p]（p 的既有值）→ preDecl(p=0) → 兩臂覆寫 p
+	// 移到之後仍滿足原目的：兩臂都會寫 x，預宣告的零值從不被讀到，它只負責
+	// 「建立 slot」。
+	//
+	// 註：這裡刻意**不**去判斷 x「是否已宣告」來省掉 preDecl。曾試過用
+	// FuncVarTypeRef/IsFuncDeclared 判定，兩者的回退是「全域 VarTypes / 全域
+	// DeclaredVars」——那是跨模組的大雜燴，`a`、`b`、`f0` 這類短名幾乎必然命中別的
+	// 函式或別的模組的同名變數，於是本陳述的 LHS 被誤判為已宣告、preDecl 被跳過、
+	// slot 從未建立（實測 test/std/dns.no 的 parse-response 由 51/51 掉到 49/51，
+	// A 記錄 ip 的 a/b/c/d 全失真）。preDecl 本身無害，位置才是 bug。
 	var stmts []Statement
-	if name != nil && (l.p.sem == nil || l.p.sem.VarTypeRaw(name.Value) == "") {
+	if name != nil {
 		preDecl := &LetStatement{Token: tok, Name: name, Value: defLit}
-		stmts = []Statement{preDecl, tmpAssign, &ExpressionStatement{Token: tok, Expression: lowered}}
+		stmts = []Statement{tmpAssign, preDecl, &ExpressionStatement{Token: tok, Expression: lowered}}
 	} else {
 		stmts = []Statement{tmpAssign, &ExpressionStatement{Token: tok, Expression: lowered}}
 	}
@@ -5396,12 +5413,25 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// option 運算元為 nil/err 時先上拋；preStmts（result = __unwrap_N）亦須在
 	// match 之前，確保 r 在 arm 內的 return 前已被賦值為 opt 結果（ok/err/nil）。
 	stmts := make([]Statement, 0, len(guards)+len(preStmts)+3)
-	// 非結果參數目標（v != result）：在 match 前預宣告 `v <elemType> = <zero>`，使 v
-	// 在臂外（`r = v`）可見且有 slot。ok 臂以 AssignExpression 寫入此預宣告的 slot，
-	// 避免臂內 LetStatement 把 v 定義成臂內局部（MIR "move src slot"）。
+	// 非結果參數目標（v != result）：需要一條 `v <elemType> = <zero>` 預宣告，使 v
+	// 在臂外可見且有 slot；ok 臂以 AssignExpression 寫入此預宣告的 slot，避免臂內
+	// LetStatement 把 v 定義成臂內局部（MIR "move src slot"）。
+	//
+	// ⚠️ 位置是語意攸關的：它必須排在 tmpAssign（`__unwrap_N = <RHS>`）**之後**。
+	// 這條預宣告本質上是「把 v 清零」，而 RHS 可以引用 v 本身——最典型的是自我
+	// 引用的解箱 `p ?= lf[p]`（BWT 反變換的 LF 鏈、鏈式 next 走訪）。放在前面時，
+	// 求值 RHS 用的是剛被清零的 v，索引恆為 0：p 每輪都讀 lf[0]，鏈條原地打轉。
+	//   p = 2
+	//   p ?= lf[p]  ; 舊： preDecl(p=0) → 讀 lf[0] → p = 1（永遠）
+	//               ; 新： 讀 lf[p]（p 的既有值）→ preDecl(p=0) → match 覆寫 p
+	// 注意 `=` 型的自我索引（`p = lf[p]`，帶 `#{index-out}`）走的是另一條降糖
+	// maybeIndexOutAssign，同類修正見該函式內「已宣告」查詢的說明。
+	// 移到之後仍滿足原目的：match 的兩條臂都會寫 v，預宣告的零值從不被讀到，
+	// 它只負責「建立 slot / 讓臂外可見」這一件事。
+	var preDecls []Statement
 	if uas.Name != nil && uas.Name.Value != resultName && elemType != "" {
 		if zero := scalarZeroLiteral(tok, elemType); zero != nil {
-			stmts = append(stmts, &LetStatement{
+			preDecls = append(preDecls, &LetStatement{
 				Token: tok,
 				Name:  uas.Name,
 				Type:  &NamedType{Token: tok, Value: elemType},
@@ -5411,6 +5441,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	}
 	stmts = append(stmts, guards...)
 	stmts = append(stmts, tmpAssign)
+	stmts = append(stmts, preDecls...)
 	for _, s := range preStmts {
 		stmts = append(stmts, s)
 	}

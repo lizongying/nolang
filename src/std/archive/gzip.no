@@ -269,7 +269,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
     i <- [0..hclen): {
 
-        #{index-out=zero}
         clens[code-order[i]]: {
             ok -> it = br.read-bits(3)
 
@@ -297,6 +296,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
         #{overflow=wrap}
         {
+
             sym < 16 -> {
                 lengths[idx]: {
                     ok -> it = sym
@@ -436,6 +436,7 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
         ; Stored block (method 0)
         {
+
             btype == 0 -> {
                 br.skip-to-byte()
                 blen = br.read-u16-le()

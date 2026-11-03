@@ -235,7 +235,7 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ; label bytes
     i <- [0..label-bytes.len()): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         info[pos + i]: {
             ok -> it = label-bytes[i]
 

@@ -716,7 +716,7 @@ enc-conn.send-encrypted = (data str) (ok bool) {
     ; 複製密文
     i <- [0..sealed-n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         packet[16 + i]: {
             ok -> it = sealed[i]
 

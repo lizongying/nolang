@@ -268,6 +268,25 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 	// StmtRemovable / AnnRemovable 的口徑已由 parser/bounds.go computeRemovable
 	// 收窄為僅死碼情形。
 	inb := parser.AnalyzeInBoundsIndex(program)
+	// 多餘的 place-match 主體 #{index-out}：套用在 place-match 主體（容器索引讀取）
+	// 上的註解對主體是多餘（越界已由 match 的 ok/nil 臂保證），且臂內無依賴其預設值
+	// 的索引讀取（safe-gate）時，整條移除。併入 indexOutAnnRemovable /
+	// indexOutRemovable，由 formatter 的既有移除路徑統一處理。
+	red := parser.AnalyzeRedundantIndexOut(program)
+	// 多餘的 place-match 主體 #{index-out} 一律為「附著 / 尾隨」形式（其上方獨立成行
+	// 註解在解析期已 attach 到 place-match 陳述），不產生獨立 AnnotationStatement，
+	// 故只併入 indexOutRemovable（Stmts），不需要擴充 indexOutAnnRemovable。
+	indexOutAnnRemovable := make(map[*parser.AnnotationStatement]bool, len(inb.AnnRemovable))
+	for k := range inb.AnnRemovable {
+		indexOutAnnRemovable[k] = true
+	}
+	indexOutRemovable := make(map[parser.Statement]bool, len(inb.StmtRemovable)+len(red.Stmts))
+	for k := range inb.StmtRemovable {
+		indexOutRemovable[k] = true
+	}
+	for k := range red.Stmts {
+		indexOutRemovable[k] = true
+	}
 	f := &formatter{
 		sourceLines:          sourceLines,
 		sem:                  program.Sem,
@@ -275,8 +294,8 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 		loopStyle:            style,
 		overflowRelevant:     relevant,
 		overflowGoverned:     governed,
-		indexOutRemovable:    inb.StmtRemovable,
-		indexOutAnnRemovable: inb.AnnRemovable,
+		indexOutRemovable:    indexOutRemovable,
+		indexOutAnnRemovable: indexOutAnnRemovable,
 	}
 	f.formatProgram(program)
 

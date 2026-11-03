@@ -5675,6 +5675,45 @@ func ValidateUnhandledIndex(program *parser.Program, mainFile string) []Validate
 	return runUnhandledIndexCore(program, mainFile, nil)
 }
 
+const redundantIndexOutTraceID = "idxoutrd"
+
+// ValidateRedundantIndexOut 報告「套用在 place-match 主體上的多餘 #{index-out=...}
+// 註解」：place-match 主體若為容器索引讀取（如 `state[1]: { ... }`），其越界已由 match
+// 的 ok/nil 臂保證，套用在主體上的 `#{index-out = DEF}` 對主體是多餘。僅在 safe-gate
+//（臂體內無依賴該註解預設值的容器索引讀取）下才報告，避免移除會破壞建置的註解
+//（D7 三方口徑一致）。診斷經 RunAllLints 以 HINT 出現在 no vet / LSP（與 idxhndld 同軌）。
+func ValidateRedundantIndexOut(program *parser.Program, mainFile string) []ValidateResult {
+	red := parser.AnalyzeRedundantIndexOut(program)
+	var results []ValidateResult
+	seen := map[string]bool{}
+	add := func(line, col int, file, nodeFile string) {
+		if file == "" {
+			file = nodeFile
+		}
+		if file == "" {
+			file = mainFile
+		}
+		key := fmt.Sprintf("%s|%d:%d", file, line, col)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		msg := i18n.T("idxoutrd", "the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).")
+		results = append(results, ValidateResult{
+			Line:    line,
+			Column:  col,
+			File:    file,
+			Message: msg,
+			TraceID: redundantIndexOutTraceID,
+		})
+	}
+	for stmt := range red.Stmts {
+		pos := stmt.Pos()
+		add(pos.Line, pos.Column, program.Sem.SourceFileOf(stmt), "")
+	}
+	return results
+}
+
 // runUnhandledIndexCore 是 ValidateUnhandledIndex / THIR 两变体共享的走查主体。
 // view 只作用于 option 宣告检查（`?T` 前缀判定的字串来源，经 declTypeOf）；
 // 基底型别查询（sem.IdxLocalTypes / FuncVarType / VarType）已是副表，不动。

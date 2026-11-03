@@ -92,8 +92,8 @@ test-fe-frombytes = () (pass bool) {
     pass = false
 
     base [32]byte
-    i <- [0..32): {
-        base[i]: {
+    e <- base: {
+        e: {
             ok -> it = 0
 
             -> _

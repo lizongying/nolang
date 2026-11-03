@@ -13,6 +13,7 @@
 
 ; 開頭 ` 後的 CRLF 與串內 CRLF：值必須等於 LF 版本
 t-raw-crlf = () {
+
     ; stringify 不補尾隨換行：內容為 {\n  s: `\nline1\nline2\n`\n}
     want = '{\n  s: `\nline1\nline2\n`\n}'
     lf = '{\n  s: `\nline1\nline2\n`\n}\n'
@@ -35,8 +36,10 @@ t-raw-crlf = () {
 
         err -> s2 = ''
     }
+
     ; LF 版逐字符比對：舊版會丟掉每個續行的首字符（line2 → ine2）
     runner.str-eq(s1, want, want.len-bytes(), 'raw lf keeps every char')
+
     ; CRLF 版與 LF 版逐字符比對：舊版在開頭 ` 後遇 CRLF 直接判失敗
     runner.str-eq(s2, want, want.len-bytes(), 'raw crlf equals raw lf')
 }

@@ -580,6 +580,7 @@ Fehler beim Anlegen des Verzeichnisses: %v
   'ibaimz2h': 'Zyklus-Erkennung: %w'
   'ibiol93t': 'Fehler: package.noml nicht gefunden. Mit \'no new <name>\' ein Paket anlegen oder in ein Paketverzeichnis wechseln'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'Schnittstelle \'%s\': zusammengeführte Methode \'%s\' hat konfliktierende Signaturen (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: benötigt Empfänger'
   'iky4xsx4': 'Methode \'%s.%s\' hat %d Ergebnis(se), die Schnittstelle erwartet %d'

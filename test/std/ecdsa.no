@@ -176,7 +176,6 @@ t-tamper = () {
     bad [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         bad[i]: {
             ok -> it = sig[i]
 
@@ -195,7 +194,6 @@ t-tamper = () {
     mb2 [25]byte
     i <- [0..25): {
 
-        #{index-out=zero}
         mb2[i]: {
             ok -> it = MSG25[i]
 

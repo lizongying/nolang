@@ -169,6 +169,92 @@ func TestAnalyzeInBoundsIndexNotRemovableForSlice(t *testing.T) {
 	}
 }
 
+// TestAnalyzeRedundantIndexOut pins the "redundant #{index-out} on a place-match
+// subject" detection (safe-gate): the annotation is redundant only when the
+// place-match subject is a container index read AND no arm-body container index
+// read depends on the annotation's default. The annotation is reported in Stmts
+// regardless of whether it was written as a standalone line above the place-match
+// or as a trailing annotation — in both cases the parser attaches it to the
+// place-match statement, so it never exists as a standalone AnnotationStatement
+// node.
+func TestAnalyzeRedundantIndexOut(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		wantStmt int
+	}{
+		{
+			name: "subject_only_standalone_redundant",
+			src: `f = () {
+    state [4]i64 = [1, 2, 3, 4]
+    #{index-out=zero}
+    state[10]: {
+        ok(v) -> it = v
+        -> _
+    }
+    _ = state[1]
+}`,
+			wantStmt: 1,
+		},
+		{
+			name: "subject_only_trailing_redundant",
+			src: `f = () {
+    state [4]i64 = [1, 2, 3, 4]
+    state[10]: {
+        ok(v) -> it = v
+        -> _
+    } #{index-out=zero}
+    _ = state[1]
+}`,
+			wantStmt: 1,
+		},
+		{
+			name: "inner_read_kept",
+			src: `f = () {
+    state [4]i64 = [1, 2, 3, 4]
+    i i64 = 5
+    #{index-out=zero}
+    state[10]: {
+        ok -> it = state[i]
+        -> _
+    }
+    _ = state[1]
+}`,
+			wantStmt: 0,
+		},
+		{
+			name: "no_place_match_kept",
+			src: `f = () {
+    a [4]i64 = [1, 2, 3, 4]
+    #{index-out=zero}
+    x = a[2]
+}`,
+			wantStmt: 0,
+		},
+		{
+			name: "non_index_subject_kept",
+			src: `f = () {
+    x ?i64 = nil
+    #{index-out=zero}
+    x: {
+        ok(v) -> it = v
+        -> _
+    }
+}`,
+			wantStmt: 0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prog := parseSurface(t, c.src)
+			res := AnalyzeRedundantIndexOut(prog)
+			if len(res.Stmts) != c.wantStmt {
+				t.Errorf("Stmts = %d, want %d", len(res.Stmts), c.wantStmt)
+			}
+		})
+	}
+}
+
 func TestInBoundsProofLivesInSemanticSideTable(t *testing.T) {
 	if _, ok := reflect.TypeOf(IndexExpression{}).FieldByName("InBounds"); ok {
 		t.Fatal("IndexExpression still carries semantic InBounds state")

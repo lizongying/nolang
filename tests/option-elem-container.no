@@ -16,19 +16,24 @@
 
 ; 1. 字面量初始化 + 逐元素讀取：nil 必須讀成 nil，不能折成 0
 oa []?i64 = [ok(1), nil, ok(3)]
-n i64 = oa.len()
+n = oa.len()
 n != 3 -> exit(1)
 oa[0]: {
     ok -> {
         v0 i64 = it
         v0 != 1 -> exit(2)
     }
+
     nil -> exit(3)
+
     err -> exit(4)
 }
 oa[1]: {
     ok -> exit(5)
-    nil -> {}
+
+    nil -> {
+    }
+
     err -> exit(6)
 }
 oa[2]: {
@@ -36,7 +41,9 @@ oa[2]: {
         v2 i64 = it
         v2 != 3 -> exit(7)
     }
+
     nil -> exit(8)
+
     err -> exit(9)
 }
 
@@ -47,12 +54,17 @@ os[0]: {
         s0 str = it
         s0 != 'ab' -> exit(10)
     }
+
     nil -> exit(11)
+
     err -> exit(12)
 }
 os[1]: {
     ok -> exit(13)
-    nil -> {}
+
+    nil -> {
+    }
+
     err -> exit(14)
 }
 
@@ -61,7 +73,9 @@ os[1]: {
 i <- [0..3): {
     os[i]: {
         ok -> it = it + '!'
-        -> {}
+
+        -> {
+        }
     }
 }
 os[0]: {
@@ -69,12 +83,17 @@ os[0]: {
         t0 str = it
         t0 != 'ab!' -> exit(15)
     }
+
     nil -> exit(16)
+
     err -> exit(17)
 }
 os[1]: {
     ok -> exit(18)
-    nil -> {}
+
+    nil -> {
+    }
+
     err -> exit(19)
 }
 os[2]: {
@@ -82,7 +101,9 @@ os[2]: {
         t2 str = it
         t2 != 'cd!' -> exit(20)
     }
+
     nil -> exit(21)
+
     err -> exit(22)
 }
 
@@ -91,7 +112,9 @@ oi []?str = [ok('ab'), nil, ok('cd')]
 x <- oi: {
     x: {
         ok -> it = it + '!'
-        -> {}
+
+        -> {
+        }
     }
 }
 oi[0]: {
@@ -99,7 +122,9 @@ oi[0]: {
         u0 str = it
         u0 != 'ab!' -> exit(23)
     }
+
     nil -> exit(24)
+
     err -> exit(25)
 }
 oi[2]: {
@@ -107,7 +132,9 @@ oi[2]: {
         u2 str = it
         u2 != 'cd!' -> exit(26)
     }
+
     nil -> exit(27)
+
     err -> exit(28)
 }
 
@@ -116,14 +143,16 @@ op []?str = []
 j <- [0..3): {
     op.push(ok('p'))
 }
-opn i64 = op.len()
+opn = op.len()
 opn != 3 -> exit(30)
 op[0]: {
     ok -> {
         p0 str = it
         p0 != 'p' -> exit(31)
     }
+
     nil -> exit(32)
+
     err -> exit(33)
 }
 
@@ -132,7 +161,10 @@ or []?str = [ok('a'), ok('b')]
 or[1] = nil
 or[1]: {
     ok -> exit(40)
-    nil -> {}
+
+    nil -> {
+    }
+
     err -> exit(41)
 }
 or[0] = ok('zz')
@@ -141,16 +173,20 @@ or[0]: {
         z0 str = it
         z0 != 'zz' -> exit(42)
     }
+
     nil -> exit(43)
+
     err -> exit(44)
 }
 
 ; 7. 讀-改-寫 + 增長寫入（grow-write 路徑的 ok 載荷必須是**真讀**，不是零）
-rw []i64 = [5, 6, 7]
+rw = [5, 6, 7]
 m <- [0..3): {
     rw[m]: {
         ok -> it = it + 1
-        -> {}
+
+        -> {
+        }
     }
 }
 r0 i64 = rw[0]
@@ -164,10 +200,12 @@ og []i64 = []
 k <- [0..3): {
     og[k]: {
         ok -> it = k + 10
-        -> {}
+
+        -> {
+        }
     }
 }
-ogn i64 = og.len()
+ogn = og.len()
 ogn != 3 -> exit(53)
 g0 i64 = og[0]
 g0 != 10 -> exit(54)
@@ -182,17 +220,21 @@ q <- [0..200): {
 c <- [0..200): {
     ch[c]: {
         ok -> it = it + '-'
-        -> {}
+
+        -> {
+        }
     }
 }
-cn i64 = ch.len()
+cn = ch.len()
 cn != 200 -> exit(60)
 ch[0]: {
     ok -> {
         c0 str = it
         c0 != 'item-' -> exit(61)
     }
+
     nil -> exit(62)
+
     err -> exit(63)
 }
 ch[199]: {
@@ -200,7 +242,9 @@ ch[199]: {
         c9 str = it
         c9 != 'item-' -> exit(64)
     }
+
     nil -> exit(65)
+
     err -> exit(66)
 }
 

@@ -580,6 +580,7 @@
   'ibaimz2h': '循環偵測: %w'
   'ibiol93t': '錯誤：找不到 package.noml。用 \'no new <name>\' 建立套件，或切換到套件目錄'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': '介面 “%s”: 合併後的方法 “%s” 簽名衝突 (“%s.%s”, “%s.%s”)'
   'ihr1vm8m': 'arr.zero: 需要 receiver'
   'iky4xsx4': '方法 “%s.%s” 有 %d 個返回值，介面期望 %d 個'

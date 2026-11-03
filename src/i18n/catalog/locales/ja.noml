@@ -585,6 +585,7 @@ workspace.noml に '%s' を登録しました
   'ibaimz2h': '循環検出: %w'
   'ibiol93t': 'エラー: package.noml が見つかりません。\'no new <name>\' で作成するか、パッケージディレクトリへ移動してください'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'インターフェース \'%s\': マージされたメソッド \'%s\' のシグネチャが競合しています（\'%s.%s\'、\'%s.%s\'）'
   'ihr1vm8m': 'arr.zero: レシーバが必要です'
   'iky4xsx4': 'メソッド “%s.%s” は %d 個の戻り値を持ちますが、インターフェースは %d 個を期待しています'

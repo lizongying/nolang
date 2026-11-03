@@ -35,7 +35,7 @@ print('ab' != 'cd'); 1
 
 print('=== iterating a string yields chars ===')
 s = 'Hi There'
-for ch <- s: {
+ch <- s: {
     {
         ch >= 'a' && ch <= 'z' -> print('lower')
     }

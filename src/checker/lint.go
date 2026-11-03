@@ -298,6 +298,7 @@ var lintSteps = []lintStep{
 	{"ineffective-overflow", true, runLintIneffectiveOverflow},
 	{"unhandled-overflow", false, runLintUnhandledOverflow},
 	{"unhandled-index", false, runLintUnhandledIndex},
+	{"redundant-index-out", true, runLintRedundantIndexOut},
 	{"catch-all-arms", true, runLintCatchAllArms},
 	{"range-index-loops", true, runLintRangeIndexLoops},
 	{"range-self-ellipsis", true, runLintRangeSelfEllipsis},
@@ -584,6 +585,25 @@ func runLintUnhandledOverflow(program *parser.Program, opts LintOptions) []LintR
 func runLintUnhandledIndex(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, u := range ValidateUnhandledIndexTHIR(program, opts.SourcePath, opts.thirView) {
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintHint, Source: "nolang-index",
+			File:    file,
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintRedundantIndexOut — 20f. 套用在 place-match 主體上的多餘 #{index-out}（safe-gate）
+// 診斷為 HINT：提示使用者移除（no fmt 會自動移除）。與 idxhndld 同軌（nolang-index / HINT）。
+func runLintRedundantIndexOut(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateRedundantIndexOut(program, opts.SourcePath) {
 		file := u.File
 		if file == "" {
 			file = opts.SourcePath

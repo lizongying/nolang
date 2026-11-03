@@ -13,7 +13,7 @@ print('=== str repeat (*) inside loop body ===')
 
 ; This triggers the generateStrRepeat label bug:
 ; label definitions must not have '%' prefix, only br references do.
-for i <- [0..3]: {
+i <- [0..3]: {
     r = 'ab' * 2
     print(r)
 }

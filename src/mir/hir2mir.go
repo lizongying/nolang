@@ -5876,7 +5876,22 @@ func (l *lowerer) fixedArrayConstGlobalType(n *hir.Node, raw string) string {
 	if count == 0 {
 		return ""
 	}
-	ft := fmt.Sprintf("[%d]i64", count)
+	// The element type comes from the BINDING, not a hardcoded i64: a
+	// `[]byte`/`[]u8`/`[]i8` literal must fold to `[N]byte` (LLVM `[N x i8]`,
+	// one byte per element) exactly like a `[N]byte` array literal does.
+	//
+	// Hardcoding `[N]i64` made the global an `[N x i64]` ARRAY — 8 bytes per
+	// element — while every reader treats the binding as `[]byte` and indexes
+	// it per BYTE. Only element 0 survived: `data[0]` read the low byte of the
+	// first i64 (correct by accident), and `data[1]` read that i64's high zero
+	// byte. A 121-byte golden bzip2 stream therefore looked like
+	// `66, 0, 0, 0, 0, 0, 0, 0, 90, ...` to the decompressor (test/std/bzip2.no,
+	// which had to hand-copy the global into a local slice as a workaround).
+	elem := strings.TrimPrefix(raw, "[]")
+	if elem == "" {
+		return ""
+	}
+	ft := fmt.Sprintf("[%d]%s", count, elem)
 	if l.foldConstText(n, ft) == "" {
 		return ""
 	}
@@ -6503,6 +6518,24 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		// fixedArrayConstGlobalType is the only thing that unlocks the fold.
 		if !ty.IsContainerRaw(gtype) {
 			return ""
+		}
+		// Byte-element slices (`[]byte` / `[]u8` / `[]i8`) fold to the same
+		// compact `[N x i8] c"..."` constant a `[N]byte` array literal does.
+		// Without this they fell through to the generic `[N x i64]` branch
+		// below, so the global carried 8 bytes per element while every reader
+		// indexed it per byte — see fixedArrayConstGlobalType.
+		if byteArrayRe.FindStringSubmatch(gtype) != nil {
+			var data strings.Builder
+			nb := 0
+			for _, c := range l.pkg.Children(n.Id) {
+				ev := l.pkg.Node(c)
+				if ev == nil || ev.Kind != hir.KIntLit {
+					return ""
+				}
+				data.WriteString(fmt.Sprintf(`\%02X`, ev.Val&0xff))
+				nb++
+			}
+			return fmt.Sprintf("[%d x i8] c\"%s\"", nb, data.String())
 		}
 		var parts []string
 		for _, c := range l.pkg.Children(n.Id) {

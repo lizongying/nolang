@@ -107,6 +107,50 @@ func TestRangeIndexLoopNoHintWhenRewriteNotEquivalent(t *testing.T) {
 }`,
 		},
 		{
+			// 下標被字串字面量裡的 `{name}` 插值引用（AST 無插值節點）：
+			// 改寫會靜默丟掉插值裡的下標。
+			name: "index_used_in_interpolation",
+			src: `f = (a []i64) (r i64) {
+    i <- [0..a.len()): {
+        x = a[i]
+        print('idx {i} val {x}')
+        r = r + x
+    }
+}`,
+		},
+		{
+			// 讀取直接喂給 print 類呼叫：下標讀取是 option（打十進位），迭代
+			// 元素是裸值（byte 打字符），改寫會改變可見輸出。
+			name: "read_eprint_directly",
+			src: `f = (a []i64) (r i64) {
+    i <- [0..a.len()): {
+        eprint(a[i])
+    }
+    r = 0
+}`,
+		},
+		{
+			// 讀取先綁到變數再被 print：同上，綁定變數流進呼叫也非等價。
+			name: "read_var_flows_into_print",
+			src: `f = (a []i64) (r i64) {
+    i <- [0..a.len()): {
+        b = a[i]
+        eprint(b)
+    }
+    r = 0
+}`,
+		},
+		{
+			// 讀取當方法接收者（`(a[i]).to-str()`）：輸出表示隨改寫而變。
+			name: "read_used_as_method_receiver",
+			src: `f = (a []i64) (s str) {
+    s = ''
+    i <- [0..a.len()): {
+        s = s - (a[i]).to-str() - ' '
+    }
+}`,
+		},
+		{
 			// 基底是接收者欄位：`.field` 不能出現在 `x <- …` 右側。
 			name: "receiver_field_base",
 			src: `t {

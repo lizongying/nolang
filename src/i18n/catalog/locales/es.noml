@@ -582,6 +582,7 @@ Error al crear el directorio: %v
   'ibaimz2h': 'detección de ciclos: %w'
   'ibiol93t': 'Error: no se encontró package.noml. Usa \'no new <name>\' para crear un paquete, o entra en un directorio de paquete'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'interfaz \'%s\': el método fusionado \'%s\' tiene firmas en conflicto (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: necesita el receptor'
   'iky4xsx4': 'el método “%s.%s” tiene %d resultado(s), la interfaz espera %d'

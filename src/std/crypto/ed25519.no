@@ -580,7 +580,6 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
     a []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         a[i]: {
             ok -> it = h[i]
 
@@ -621,7 +620,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     a []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
         a[i]: {
             ok -> it = h[i]
 
@@ -648,7 +646,7 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     prefix [32]byte
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         prefix[i]: {
             ok -> it = h[32 + i]
 
@@ -685,7 +683,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     rhb []byte = with-len(64)
     i <- [0..64): {
 
-        #{index-out=zero}
         rhb[i]: {
             ok -> it = rh[i]
 
@@ -735,7 +732,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     khb []byte = with-len(64)
     i <- [0..64): {
 
-        #{index-out=zero}
         khb[i]: {
             ok -> it = kh[i]
 
@@ -862,7 +858,6 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     khb []byte = with-len(64)
     i <- [0..64): {
 
-        #{index-out=zero}
         khb[i]: {
             ok -> it = kh[i]
 

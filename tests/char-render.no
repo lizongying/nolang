@@ -27,7 +27,7 @@ sn = format('{n}')
 sn != '-1' -> exit(5)
 
 ; An explicitly annotated char takes the same path.
-c char = "x" - "y"
+c = "x" - "y"
 sc = format('{c}')
 sc != '-1' -> exit(6)
 
@@ -52,7 +52,7 @@ sp != '[   65]' -> exit(10)
 e.to-str() != 'A' -> exit(11)
 
 ; '...' is a str literal, so this is concatenation, not 120 - 98.
-sx str = 'x' - 'y'
+sx = 'x' - 'y'
 sx != 'xy' -> exit(12)
 
 ; Not cosmetic: format's fmt-* callees are only materialized into the module

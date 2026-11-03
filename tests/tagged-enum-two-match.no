@@ -98,7 +98,7 @@ l4 = ['p', 'q']
 q4 list-res = ok(l4)
 q4: {
     ok(items) -> {
-        for x <- items: {
+        x <- items: {
             print('4a: {x}')
         }
     }
@@ -107,7 +107,7 @@ q4: {
 }
 q4: {
     ok(items) -> {
-        for x <- items: {
+        x <- items: {
             print('4b: {x}')
         }
     }

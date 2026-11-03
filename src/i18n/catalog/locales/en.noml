@@ -580,6 +580,7 @@ Error creating directory: %v
   'ibaimz2h': 'cycle detection: %w'
   'ibiol93t': 'Error: package.noml not found. Run \'no new <name>\' to create a package, or cd into a package directory'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'interface \'%s\': merged method \'%s\' has conflicting signatures (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: needs receiver'
   'iky4xsx4': 'method \'%s.%s\' has %d result(s), interface expects %d'

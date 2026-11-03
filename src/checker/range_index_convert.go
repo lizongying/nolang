@@ -1,6 +1,8 @@
 package checker
 
 import (
+	"strings"
+
 	"github.com/lizongying/nolang/parser"
 )
 
@@ -46,7 +48,9 @@ func rngidxConvertTarget(st *parser.ForStatement, scope *rngidxScope) (string, b
 	if name == "" {
 		return "", false
 	}
-	u := &rngidxUse{name: name, bases: map[string]bool{}}
+	u := &rngidxUse{name: name, bases: map[string]bool{}, readVars: map[string]bool{}}
+	// 先記錄「由讀取綁定的變數」，再走查：這類變數流進呼叫同樣非等價。
+	u.collectReadVars(st.Body.Statements)
 	u.stmts(st.Body.Statements)
 	if u.bail {
 		return "", false
@@ -72,9 +76,82 @@ type rngidxUse struct {
 	name  string
 	bases map[string]bool
 	bail  bool
+	// readVars 是迴圈體裡「用含讀取的表达式綁定的變數名」（如 `b = a[i]`）；
+	// 下標讀取是 option、迭代元素是裸值，兩者的 codegen 表示不同（byte 元
+	// 素被 print 會輸出字符而非十進位），故這類變數一旦流進任何呼叫就 bail。
+	readVars map[string]bool
 }
 
 func (u *rngidxUse) markBail() { u.bail = true }
+
+// hasReadOrVar 判斷子樹裡是否含「以 u.name 為下標的索引讀取」或 readVars 變數。
+// 認不出來的節點保守回 true（寧可不提示）。
+func (u *rngidxUse) hasReadOrVar(e parser.Expression) bool {
+	if e == nil {
+		return false
+	}
+	switch x := e.(type) {
+	case *parser.Identifier:
+		return x.Value == u.name || u.readVars[x.Value]
+	case *parser.IndexExpression:
+		if id, ok := x.Index.(*parser.Identifier); ok && id.Value == u.name {
+			return true
+		}
+		return u.hasReadOrVar(x.Left) || u.hasReadOrVar(x.Index)
+	case *parser.InfixExpression:
+		return u.hasReadOrVar(x.Left) || u.hasReadOrVar(x.Right)
+	case *parser.PrefixExpression:
+		return u.hasReadOrVar(x.Right)
+	case *parser.GroupedExpression:
+		return u.hasReadOrVar(x.Expression)
+	case *parser.CallExpression:
+		if u.hasReadOrVar(x.Function) {
+			return true
+		}
+		for _, a := range x.Arguments {
+			if u.hasReadOrVar(a) {
+				return true
+			}
+		}
+		return false
+	case *parser.DotExpression:
+		return u.hasReadOrVar(x.Receiver)
+	case *parser.IntegerLiteral, *parser.FloatLiteral, *parser.StringLiteral,
+		*parser.CharLiteral, *parser.BooleanLiteral, *parser.NilLiteral, *parser.RegexLiteral:
+		return false
+	default:
+		return true
+	}
+}
+
+// collectReadVars 預掃迴圈體：記錄由「含讀取的表达式」綁定的變數名，迭代到
+// 不动點以覆蓋鏈式綁定（`x = a[i]; y = x; eprint(y)`）。
+func (u *rngidxUse) collectReadVars(ss []parser.Statement) {
+	for grew := true; grew; {
+		before := len(u.readVars)
+		u.collectReadVarsOnce(ss)
+		grew = len(u.readVars) != before
+	}
+}
+
+func (u *rngidxUse) collectReadVarsOnce(ss []parser.Statement) {
+	for _, s := range ss {
+		switch st := s.(type) {
+		case *parser.LetStatement:
+			if st.Name != nil && u.hasReadOrVar(st.Value) {
+				u.readVars[st.Name.Value] = true
+			}
+		case *parser.ExpressionStatement:
+			if ae, ok := st.Expression.(*parser.AssignExpression); ok {
+				if id, ok := ae.Left.(*parser.Identifier); ok && u.hasReadOrVar(ae.Value) {
+					u.readVars[id.Value] = true
+				}
+			}
+		case *parser.BlockStatement:
+			u.collectReadVarsOnce(st.Statements)
+		}
+	}
+}
 
 // expr 走查表達式。allowedIdx 表示當前位置是 `base[name]` 的下標槽（唯一允許
 // 直接出現 name 的位置）。
@@ -127,6 +204,13 @@ func (u *rngidxUse) expr(e parser.Expression, allowedIdx bool) {
 		u.expr(x.Consequence, false)
 		u.expr(x.Alternative, false)
 	case *parser.CallExpression:
+		// 讀取（或其綁定變數）流進任何呼叫：print/eprint 拿到的是 option 的
+		// 十進位表示，迭代元素則是裸值（byte 打字符、to-str 打箱內 tag），
+		// 改寫會改變可見輸出 —— 非等價，放棄。
+		if u.hasReadOrVar(x) {
+			u.markBail()
+			return
+		}
 		u.expr(x.Function, false)
 		for _, g := range x.GenericArgs {
 			u.expr(g, false)
@@ -217,9 +301,15 @@ func (u *rngidxUse) expr(e parser.Expression, allowedIdx bool) {
 	case *parser.FunctionLiteral:
 		// 閉包內的讀取跨越了作用域邊界，保守放棄。
 		u.markBail()
-	case *parser.IntegerLiteral, *parser.FloatLiteral, *parser.StringLiteral,
+	case *parser.StringLiteral:
+		// print/format 的 `{name}` 插值藏在字面量文本裡（AST 沒有插值節點），
+		// 字面掃描到就保守放棄 —— 改寫會靜默丟掉插值引用的下標。
+		if strings.Contains(x.Value, "{"+u.name) {
+			u.markBail()
+		}
+	case *parser.IntegerLiteral, *parser.FloatLiteral,
 		*parser.CharLiteral, *parser.BooleanLiteral, *parser.NilLiteral, *parser.RegexLiteral:
-		// 字面量不含下標引用。
+		// 其餘字面量不含下標引用。
 	default:
 		// 其他結構（含未預期的型別節點）保守放棄，寧可不提示。
 		u.markBail()

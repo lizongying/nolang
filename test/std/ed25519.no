@@ -98,7 +98,6 @@ t-tamper = () {
     bad [64]byte
     i <- [0..64): {
 
-        #{index-out=zero}
         bad[i]: {
             ok -> it = sig[i]
 

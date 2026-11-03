@@ -48,7 +48,7 @@ bz-bit-reader.read-bit = () (bit i64) {
 
         .bit-cnt > 0 -> {
             bit = .bit-buf >> 7
-            .bit-buf = .bit-buf & 0x7f
+            .bit-buf = (.bit-buf << 1) & 0xff
 
             #{overflow=wrap}
             .bit-cnt = .bit-cnt - 1
@@ -154,13 +154,14 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     }
 
     ; 計算 limit 陣列
-    ; limit[len] = 長度 len 的最大碼值
+    ; limit[len] = 長度 len 的最大 canon code 值
+    ;            = first-code[len] + count[len] - 1
+    ; first-code[len+1] = (first-code[len] + count[len]) << 1
     vec = 0
     i <- [0..24): {
 
-        vec = (vec << 1) | len-count[i]
-
-        .limit[i] = vec
+        .limit[i] = vec + len-count[i] - 1
+        vec = (vec + len-count[i]) << 1
     }
 
     ; 填充 perm 陣列
@@ -187,6 +188,17 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             ok -> it = tmp-base[l] + 1
 
             -> _
+        }
+    }
+
+    ; 轉成解碼用的 base 偏移：bzip2 在填完 perm 後就地把 base 由「perm 起始
+    ; 索引」改寫為「解碼偏移」= ((limit[len-1] + 1) << 1) - base[len]。
+    ; 解碼時以 perm[zvec - base[zn]] 取得符號。
+    i <- [0..24): {
+        i > .min-len -> {
+
+            #{index-out=zero, overflow=wrap}
+            .base[i] = ((.limit[i - 1] + 1) << 1) - .base[i]
         }
     }
 }
@@ -339,7 +351,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             ; 讀取區塊 CRC (32 bits)
             block-crc = br.read-bits(32)
 
-            ; 讀取隨機化旗標 (1 bit)
+            ; 讀取隨機化旗標 (1 bit)——必須消費掉以維持位元流對齊；本實作不還原隨機化表
             randomized = br.read-bit()
 
             ; 讀取 orig-ptr (24 bits) — BWT 原始指標
@@ -409,18 +421,11 @@ bzip2-decompress = (data []byte) (out []byte) {
             alpha-size = n-in-use + 2
 
             #{overflow=wrap}
-            eob-opt = n-in-use + 1
-            eob = 0
-            eob-opt: {
-                ok -> eob = it
-
-                -> eob = 0
-            }
+            eob = n-in-use + 1
 
             ; ── 讀取 Huffman 碼表 ──
-            ; 碼表數量 (3 bits, 2-6)
-            #{overflow=wrap}
-            n-tables = br.read-bits(3) + 2
+            ; 碼表數量 (3 bits, 直接存 nGroups，取值 2-6；bzip2 bsW(3, nGroups))
+            n-tables = br.read-bits(3)
 
             ; 選擇器數量 (15 bits)
             n-selectors = br.read-bits(15)
@@ -568,6 +573,7 @@ bzip2-decompress = (data []byte) (out []byte) {
             ; BWT 輸出
             bwt-out []i64
             run-len = 0
+            run-n = 1
             block-done = 0
 
             (block-done == 0) {
@@ -600,13 +606,19 @@ bzip2-decompress = (data []byte) (out []byte) {
                 cur-ht == 4 -> sym = ht4.decode-symbol(br)
                 cur-ht == 5 -> sym = ht5.decode-symbol(br)
 
-                ; RUNA (0): run 長度的低位
+                ; RUNA (0) / RUNB (1)：base-2 run-length。第一個 run 符號為最低位，
+                ; 每多一個符號權重翻倍（bzip2：es += val*N; N *= 2，RUNA=1、RUNB=2）。
                 #{overflow=wrap}
-                sym == 0 -> run-len = run-len + 1
+                sym == 0 -> {
+                    run-len = run-len + run-n
+                    run-n = run-n * 2
+                }
 
-                ; RUNB (1): run 長度的高位
                 #{overflow=wrap}
-                sym == 1 -> run-len = run-len + 2
+                sym == 1 -> {
+                    run-len = run-len + 2 * run-n
+                    run-n = run-n * 2
+                }
 
                 ; EOB
                 sym == eob -> {
@@ -631,6 +643,7 @@ bzip2-decompress = (data []byte) (out []byte) {
                             bwt-out.push(mtf-pos[0])
                         }
                         run-len = 0
+                        run-n = 1
                     }
 
                     ; MTF 反變換
@@ -746,52 +759,74 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
             }
 
-            ; 重建原始資料（BWT 反變換 + RLE1 解碼）
-            ; bzip2 的 RLE1: 4 個以上相同字節 → 4 字節 + 計數
+            ; 重建原始資料：依 LF 走訪攤平 BWT，再反轉成正序，最後做 RLE1 解碼。
+            ; 註一：LF 走訪（bwt-out[p]；前進 p = lf[p]）產生的是反序字串，故先攤平到
+            ;       flat-data（反序）再反轉為 rle-data（正序）供 RLE1 使用。
+            flat-data []i64
             p = orig-ptr
-            last-byte = -1
-            run-count = 0
-
-            i <- [0..bwt-n): {
+            k = 0
+            (k < bwt-n) {
 
                 #{index-out=zero}
                 v = bwt-out[p]
+                flat-data.push(v)
 
                 #{index-out=zero}
                 p = lf[p]
 
-                ; RLE1 解碼
+                #{overflow=wrap}
+                k = k + 1
+            }
+
+            ; 反轉成正序（bwt-n 個元素）
+            rle-data []i64
+            ri = bwt-n
+            (ri > 0) {
+
+                #{overflow=wrap}
+                ri = ri - 1
+
+                #{index-out=zero}
+                rv = flat-data[ri]
+                rle-data.push(rv)
+            }
+
+            ; RLE1 解碼：連續 4 個相同字節後跟一個計數字節 c，
+            ; 表示總共 4 + c 個該字節（c = 0 表示恰好 4 個）。
+            i = 0
+            rep = 0
+            last-b = -1
+            (i < bwt-n) {
+
+                #{index-out=zero}
+                v = rle-data[i]
+
+                #{overflow=wrap}
+                i = i + 1
+                out.push(v)
                 {
-                    v == last-byte -> {
+                    v == last-b -> rep = rep + 1
+
+                    v != last-b -> {
+                        last-b = v
+                        rep = 1
+                    }
+                }
+                rep == 4 -> {
+                    c = 0
+                    i < bwt-n -> {
+
+                        #{index-out=zero}
+                        c = rle-data[i]
 
                         #{overflow=wrap}
-                        run-count = run-count + 1
-                        out.push(v)
-
-                        ; 4 個相同字節後，下一個字節是計數
-                        run-count == 4 -> {
-                            ; 跳過計數字節（在下一個迭代中）
-                            ; 實際上 bzip2 RLE1 是：4 個相同字節 + 1 個計數字節
-                            ; 表示 4 + count 個相同字節
-                            ; 但這裡需要特殊處理
-                        }
-                        run-count == 5 -> {
-
-                            ; 第 5 個字節是計數，輸出對應數量的重複字節
-                            extra = v
-                            j <- [0..extra): {
-                                out.push(last-byte)
-                            }
-                            run-count = 0
-                            last-byte = -1
-                        }
+                        i = i + 1
                     }
-
-                    v != last-byte -> {
-                        last-byte = v
-                        run-count = 1
-                        out.push(v)
+                    j <- [0..c): {
+                        out.push(last-b)
                     }
+                    rep = 0
+                    last-b = -1
                 }
             }
         }

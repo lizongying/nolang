@@ -67,7 +67,7 @@ print(n[0][1]); 8
 sum = 0
 
 #{overflow=wrap}
-i <- [0..by.len()): {
-    sum = sum + by[i]
+v <- by: {
+    sum = sum + v
 }
 print(sum); 6

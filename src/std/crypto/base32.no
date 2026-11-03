@@ -165,37 +165,37 @@ encode = (data []byte) (out str) {
                 ; 1 byte → 2 chars + 6 padding
                 #{overflow=wrap}
                 out[out-pos + 2]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 3]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 4]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 5]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 6]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 7]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
@@ -217,25 +217,25 @@ encode = (data []byte) (out str) {
                 }
 
                 out[out-pos + 4]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 5]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 6]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 7]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
@@ -263,19 +263,19 @@ encode = (data []byte) (out str) {
                 }
 
                 out[out-pos + 5]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 6]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
 
                 out[out-pos + 7]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
@@ -315,7 +315,7 @@ encode = (data []byte) (out str) {
                 }
 
                 out[out-pos + 7]: {
-                    ok -> it = '='
+                    ok -> it = "="
 
                     -> _
                 }
@@ -353,7 +353,7 @@ decode = (in str) (out []byte) {
 
         #{overflow=wrap}
         {
-            in[i] == '=' -> {
+            in[i] == "=" -> {
                 pad-count = pad-count + 1
             }
 
@@ -395,7 +395,7 @@ decode = (in str) (out []byte) {
 
                 c >= '2' && c <= '7' -> val = c - '2' + 26
 
-                c == '=' -> val = 0
+                c == "=" -> val = 0
             }
             {
                 i == 0 -> v0 = val

@@ -252,11 +252,7 @@ f = (r i64, k i64) (out i64) {
     s6 = sbox-lookup((x >> 6) & 63, SBOX7)
     s7 = sbox-lookup(x & 63, SBOX8)
 
-    sb = (s0 << 28) |
-(s1 << 24) |
-(s2 << 20) |
-(s3 << 16) |
-(s4 << 12) | (s5 << 8) | (s6 << 4) | s7
+    sb = (s0 << 28) | (s1 << 24) | (s2 << 20) | (s3 << 16) | (s4 << 12) | (s5 << 8) | (s6 << 4) | s7
 
     out = permute(sb, P-TBL, 32, 32)
 }
@@ -366,9 +362,7 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
         ; 插在多行運算式的續行之間（換行 + `#{...}` + 續行運算元），語句會在該處
         ; 被切斷，後續陳述被收編到外層區塊，函式體因而被靜默截斷。
         #{index-out=zero, overflow=wrap}
-        sk = (ks[sk-off] << 40) |
-(ks[sk-off + 1] << 32) |
-(ks[sk-off + 2] << 24) |
+        sk = (ks[sk-off] << 40) | (ks[sk-off + 1] << 32) | (ks[sk-off + 2] << 24) |
 (ks[sk-off + 3] << 16) |
 (ks[sk-off + 4] << 8) | ks[sk-off + 5]
         fout = f(r, sk)

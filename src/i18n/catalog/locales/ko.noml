@@ -585,6 +585,7 @@ workspace.noml 에 '%s' 을(를) 등록했습니다
   'ibaimz2h': '순환 감지: %w'
   'ibiol93t': '오류: package.noml 을 찾을 수 없습니다. \'no new <name>\' 로 패키지를 만들거나 패키지 디렉터리로 이동하세요'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': '인터페이스 \'%s\': 병합된 메서드 \'%s\'의 시그니처가 충돌합니다(\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: 수신자가 필요합니다'
   'iky4xsx4': '메서드 “%s.%s”은(는) %d개의 반환값을 가지지만 인터페이스는 %d개를 기대합니다'

@@ -69,3 +69,50 @@ func TestFormatBlankBeforeBlockCommentAfterBrace(t *testing.T) {
 		t.Fatalf("formatter output mismatch:\n--- want ---\n%s\n--- got ---\n%s", want, out)
 	}
 }
+
+// REGRESSION GUARD (match/if 組 block 顶部空行保留): a blank line the author
+// wrote between a match block's `{` and its FIRST arm must survive formatting —
+// the same source-blank rule other block forms apply via formatBlockInner
+// (e.g. the loop bodies in std/archive/gzip.no). Previously formatSurfaceMatch
+// emitted no blank for i==0 regardless of source, so the top blank in a bare
+// if-group `{ cond -> ... }` was silently stripped and could not be kept.
+// Without a source blank, nothing is invented (arm-to-arm separation is a
+// separate pre-existing rule and must stay untouched).
+func TestFormatBlankAfterMatchOpenBracePreserved(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "bare if-group keeps top blank",
+			in:   "f = (sym i64) {\n    {\n\n        sym < 16 -> print('a')\n\n        -> _\n    }\n}\n",
+			want: "f = (sym i64) {\n    {\n\n        sym < 16 -> print('a')\n\n        -> _\n    }\n}\n",
+		},
+		{
+			name: "bare if-group without top blank stays compact",
+			in:   "f = (sym i64) {\n    {\n        sym < 16 -> print('a')\n        -> _\n    }\n}\n",
+			want: "f = (sym i64) {\n    {\n        sym < 16 -> print('a')\n\n        -> _\n    }\n}\n",
+		},
+		{
+			name: "option match keeps top blank",
+			in:   "f = (v []i64) {\n    x ?i64 = v[0]\n    x: {\n\n        ok -> print(it)\n\n        -> _\n    }\n}\n",
+			want: "f = (v []i64) {\n    x ?i64 = v[0]\n    x: {\n\n        ok -> print(it)\n\n        -> _\n    }\n}\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, errs := FormatFileWithErrors(tc.in)
+			if len(errs) > 0 {
+				t.Fatalf("FormatFileWithErrors errors: %v", errs)
+			}
+			if out != tc.want {
+				t.Fatalf("match top-blank handling wrong:\n--- want ---\n%q\n--- got ---\n%q", tc.want, out)
+			}
+			out2, _ := FormatFileWithErrors(out)
+			if out2 != out {
+				t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
+			}
+		})
+	}
+}

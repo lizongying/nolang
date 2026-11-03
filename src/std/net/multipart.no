@@ -563,7 +563,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     sealed-n = sealed.len()
     i <- [0..sealed-n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         combined[12 + i]: {
             ok -> it = sealed[i]
 
@@ -615,7 +615,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     sealed-n = sealed.len()
     i <- [0..sealed-n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
         combined[12 + i]: {
             ok -> it = sealed[i]
 

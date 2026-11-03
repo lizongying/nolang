@@ -753,6 +753,258 @@ func ProvablyInBoundsIndexReads(prog *Program) map[*IndexExpression]bool {
 	return AnalyzeInBoundsIndex(prog).Reads
 }
 
+// ── 多餘的 #{index-out}（place-match 主體）分析 ─────────────────────────────────
+//
+// 背景：place-match（`state[1]: { ok -> ... -> _ }`）的主體若為容器索引讀取，
+// 其越界已由 match 的 ok/nil 臂保證（越界回傳 nil/err 被 `_` 接納），故套用在主體
+// 上的 `#{index-out = DEF}` 註解對主體是多餘的——注解真正生效的對象是「臂內 RHS 索引
+// 讀取」（buildMatchDesugar 把 idxOutDef 交給 rewriteItPlaceWrites，只作用於臂內
+// `it = v` 的 RHS，見 lowering.go），主體本身走 match 解包，不取預設值。
+//
+// 因此：僅當「臂體內沒有任何容器索引讀取依賴該註解預設值」時，才判定註解為冗餘並
+// 可安全移除（safe-gate）。若臂內存在依賴預設值的索引讀取（如 `state[5]`），移除會
+// 讓該讀取退回 option 必須手動處理，破壞建置——此時保留註解（D7 三方口徑一致）。
+//
+// 移除由 formatter 執行：附著 / 尾隨（非獨立成行）形式（Stmts）從被管轄陳述的附著
+// 註解中過濾掉 index-out 條目。
+
+// RedundantIndexOutResult 分類「多餘的 #{index-out}」註解：
+//   - Stmts：被管轄的 place-match 陳述（其附著 / 尾隨 / 經 applyLineIndexOutAnnotations
+//     合併進來、且非 Propagated 的 index-out 條目應從附著註解中過濾掉，由 formatter
+//     移除整條顯示）。
+//
+// place-match 主體（`state[1]: { ... }`）上方的 `#{index-out}` 在解析期即被 attach
+// 到該 place-match 陳述（IDENT 起始的陳述不接受同行前置註解，註解一律附著），故不會
+// 以獨立 AnnotationStatement 節點存在——移除統一走 Stmts 路徑。
+type RedundantIndexOutResult struct {
+	Stmts map[Statement]bool
+}
+
+// AnalyzeRedundantIndexOut 對整份程式掃描「套用在 place-match 主體上的多餘 #{index-out}
+// 註解」。分析只讀，不修改 program。供 fmt / checker 使用。
+func AnalyzeRedundantIndexOut(prog *Program) RedundantIndexOutResult {
+	res := RedundantIndexOutResult{
+		Stmts: map[Statement]bool{},
+	}
+	if prog == nil {
+		return res
+	}
+	sem := prog.Sem
+	var idxLocal map[string]*ty.Type
+	if sem != nil {
+		idxLocal = sem.IdxLocalTypes[""]
+	}
+	a := &boundsAnalyzer{sem: sem, funcName: "", idxLocal: idxLocal}
+	a.scanRedundantIndexOut(prog.Statements, res)
+	return res
+}
+
+// governedPlaceMatch 報告 s 是否為「place-match 陳述」（`expr: { ... }` 解析為
+// ExpressionStatement 包裹的 SurfaceMatch），若是回傳該 SurfaceMatch。
+func governedPlaceMatch(s Statement) (*SurfaceMatch, bool) {
+	es, ok := s.(*ExpressionStatement)
+	if !ok {
+		return nil, false
+	}
+	sm, ok := es.Expression.(*SurfaceMatch)
+	if !ok {
+		return nil, false
+	}
+	return sm, true
+}
+
+// subjectIsContainerIndexRead 報告 place-match 主體是否為「容器索引讀取」（直接變數
+// 基底的 arr/vec/slice 索引，如 `state[1]`）。
+func (a *boundsAnalyzer) subjectIsContainerIndexRead(e Expression) bool {
+	idx, ok := e.(*IndexExpression)
+	if !ok {
+		return false
+	}
+	return a.isContainerBase(idx)
+}
+
+// placeMatchHasIndexOut 報告 place-match 陳述（或其內層 SurfaceMatch）是否攜帶
+// `#{index-out}` 註解（附著、尾隨，或經 applyLineIndexOutAnnotations 合併進來且非
+// Propagated 副本——Propagated 副本由 formatter 自行過濾，不算「本陳述自帶」）。
+func (a *boundsAnalyzer) placeMatchHasIndexOut(stmt Statement, sm *SurfaceMatch) bool {
+	if a.sem == nil {
+		return false
+	}
+	own := func(entries []*AnnotationEntry) bool {
+		for _, e := range entries {
+			if e != nil && e.Key == "index-out" && !e.Propagated {
+				return true
+			}
+		}
+		return false
+	}
+	if own(a.sem.AnnotationsOf(stmt)) || own(a.sem.RawAnnotationsOf(stmt)) {
+		return true
+	}
+	if own(a.sem.AnnotationsOf(sm)) || own(a.sem.RawAnnotationsOf(sm)) {
+		return true
+	}
+	return false
+}
+
+// containsContainerIndexRead 報告 match 臂體內是否含有任何「容器索引讀取」。safe-gate
+// 用：臂體內若有依賴註解預設值的索引讀取，則註解不可移除。
+func (a *boundsAnalyzer) containsContainerIndexRead(arms []MatchArm) bool {
+	for _, arm := range arms {
+		if arm.Body == nil {
+			continue
+		}
+		if a.containsContainerIndexReadStmtList(arm.Body.Statements) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *boundsAnalyzer) containsContainerIndexReadStmtList(list []Statement) bool {
+	for _, s := range list {
+		if a.containsContainerIndexReadStmt(s) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *boundsAnalyzer) containsContainerIndexReadStmt(s Statement) bool {
+	switch v := s.(type) {
+	case *ExpressionStatement:
+		return a.containsContainerIndexReadExpr(v.Expression)
+	case *LetStatement:
+		return a.containsContainerIndexReadExpr(v.Value)
+	case *ReturnStatement:
+		return a.containsContainerIndexReadExpr(v.ReturnValue)
+	case *UnwrapAssignStatement:
+		return a.containsContainerIndexReadExpr(v.Value)
+	case *MultiAssignStatement:
+		return a.containsContainerIndexReadExpr(v.Value)
+	case *FunctionDefinition:
+		if v.Body != nil {
+			return a.containsContainerIndexReadStmtList(v.Body.Statements)
+		}
+	case *ForStatement:
+		if v.Body != nil {
+			return a.containsContainerIndexReadStmtList(v.Body.Statements)
+		}
+	case *BlockStatement:
+		return a.containsContainerIndexReadStmtList(v.Statements)
+	}
+	return false
+}
+
+func (a *boundsAnalyzer) containsContainerIndexReadExpr(e Expression) bool {
+	if e == nil {
+		return false
+	}
+	switch x := e.(type) {
+	case *IndexExpression:
+		if a.isContainerBase(x) {
+			return true
+		}
+		return a.containsContainerIndexReadExpr(x.Left) || a.containsContainerIndexReadExpr(x.Index)
+	case *AssignExpression:
+		return a.containsContainerIndexReadExpr(x.Value) || a.containsContainerIndexReadExpr(x.Left)
+	case *InfixExpression:
+		return a.containsContainerIndexReadExpr(x.Left) || a.containsContainerIndexReadExpr(x.Right)
+	case *PrefixExpression:
+		return a.containsContainerIndexReadExpr(x.Right)
+	case *GroupedExpression:
+		return a.containsContainerIndexReadExpr(x.Expression)
+	case *CallExpression:
+		if a.containsContainerIndexReadExpr(x.Function) {
+			return true
+		}
+		for _, arg := range x.Arguments {
+			if a.containsContainerIndexReadExpr(arg) {
+				return true
+			}
+		}
+		return false
+	case *DotExpression:
+		return a.containsContainerIndexReadExpr(x.Receiver)
+	case *ArrayLiteral:
+		for _, el := range x.Elements {
+			if a.containsContainerIndexReadExpr(el) {
+				return true
+			}
+		}
+		return false
+	case *SliceExpression:
+		if a.containsContainerIndexReadExpr(x.Left) {
+			return true
+		}
+		if x.Range != nil {
+			return a.containsContainerIndexReadExpr(x.Range.Start) || a.containsContainerIndexReadExpr(x.Range.End)
+		}
+		return false
+	case *IfExpression:
+		if a.containsContainerIndexReadExpr(x.Condition) {
+			return true
+		}
+		if x.Consequence != nil && a.containsContainerIndexReadStmtList(x.Consequence.Statements) {
+			return true
+		}
+		if x.Alternative != nil && a.containsContainerIndexReadStmtList(x.Alternative.Statements) {
+			return true
+		}
+		return false
+	case *SurfaceMatch:
+		for _, arm := range x.Arms {
+			if arm.Body != nil && a.containsContainerIndexReadStmtList(arm.Body.Statements) {
+				return true
+			}
+		}
+		return false
+	case *ConditionalExpression:
+		return a.containsContainerIndexReadExpr(x.Condition) || a.containsContainerIndexReadExpr(x.Consequence) || a.containsContainerIndexReadExpr(x.Alternative)
+	case *CastExpression:
+		return a.containsContainerIndexReadExpr(x.Expr)
+	}
+	return false
+}
+
+// scanRedundantIndexOut 在陳述清單中尋找「多餘的 #{index-out} 註解」並填入 out。
+// place-match 主體上方的 index-out 在解析期即被 attach 到該 place-match 陳述（IDENT
+// 起始的陳述不接受同行前置註解），故一律以「附著 / 尾隨」形式存在，標記 Stmts。
+func (a *boundsAnalyzer) scanRedundantIndexOut(list []Statement, out RedundantIndexOutResult) {
+	for _, s := range list {
+		switch v := s.(type) {
+		case *FunctionDefinition:
+			if v.Body != nil {
+				a2 := &boundsAnalyzer{sem: a.sem, funcName: v.Name, idxLocal: resolveIdxLocal(a.sem, v.Name)}
+				a2.scanRedundantIndexOut(v.Body.Statements, out)
+			}
+		case *ForStatement:
+			if v.Body != nil {
+				a.scanRedundantIndexOut(v.Body.Statements, out)
+			}
+		case *BlockStatement:
+			a.scanRedundantIndexOut(v.Statements, out)
+		case *ExpressionStatement:
+			// 附著 / 尾隨形式：place-match 陳述自身攜帶 index-out（其上方獨立成行
+			// 的註解在解析期已 attach 到本陳述，不存在獨立 AnnotationStatement 節點）。
+			sm, ok := v.Expression.(*SurfaceMatch)
+			if !ok {
+				break
+			}
+			if !a.subjectIsContainerIndexRead(sm.Matched) {
+				break
+			}
+			if a.containsContainerIndexRead(sm.Arms) {
+				break
+			}
+			if !a.placeMatchHasIndexOut(v, sm) {
+				break
+			}
+			out.Stmts[v] = true
+		}
+	}
+}
+
 // ---- 泛型 AST 走訪（反射）----
 //
 // 覆蓋所有 AST 節點型別，避免逐型別 switch 遺漏導致「少收集到一個讀取 → 誤判全在

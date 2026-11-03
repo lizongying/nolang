@@ -60,7 +60,7 @@ str-id = (s str) (out str) {
 ; r i64: 0+1+2+3+4 = 10
 sum-to = (n i64) (r i64) {
     r = 0
-    for i <- [0, 1, 2, 3, 4]: {
+    i <- [0, 1, 2, 3, 4]: {
 
         #{overflow=wrap}
         r = r + i
@@ -82,7 +82,7 @@ print(n)
 print(str-id('hello, nolang'))
 print(sum-to(5))
 acc = 0
-for i <- [1, 2, 3, 4, 5]: {
+i <- [1, 2, 3, 4, 5]: {
     acc = add(acc, mul(i, i))
 }
 print(acc)

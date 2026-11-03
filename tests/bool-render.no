@@ -52,11 +52,11 @@ r = 1.5
 ; that actually caught the regression: the front-end guard required BOTH
 ; operands to be strings, so `s str = 'x' - b` was rejected outright with
 ; "cannot assign non-string value to string variable".
-sc str = 'x' - b
+sc = 'x' - b
 sc != 'xtrue' -> exit(17)
 
 ; `+` concatenates too (docs/docs/lang/str.md), so the guard must accept it.
-sab str = 'a' + 'b'
+sab = 'a' + 'b'
 sab != 'ab' -> exit(18)
 
 ; Aggregates recurse through to-str, so a bool field renders the same way.

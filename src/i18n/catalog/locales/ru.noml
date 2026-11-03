@@ -580,6 +580,7 @@ clang не обнаружен; проверьте, что комплект ин�
   'ibaimz2h': 'обнаружение циклов: %w'
   'ibiol93t': 'Ошибка: package.noml не найден. Создайте пакет командой \'no new <name>\' или перейдите в каталог пакета'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'интерфейс \'%s\': объединённый метод \'%s\' имеет конфликтующие сигнатуры (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: требуется получатель'
   'iky4xsx4': 'метод \'%s.%s\' имеет %d результат(ов), интерфейс ожидает %d'

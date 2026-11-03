@@ -210,6 +210,12 @@ func (f *formatter) formatSurfaceMatch(sm *parser.SurfaceMatch) {
 	for i := range sm.Arms {
 		if i > 0 {
 			f.write("\n")
+		} else if sm.Token.Line > 0 && f.hasBlankLineBetween(sm.Token.Line, sm.Arms[0].Pos.Line) {
+			// 源碼在 `{` 與首臂之間留了空行：保留——與其他塊形態
+			// （formatBlockInner 的 i==0 分支）的「以源碼為準」規則一致，
+			// 使 gzip.no 那類 if 組顶部的空行不會被格式化吞掉。
+			// 源碼無空行時不憑空插入，保持緊湊輸出。
+			f.write("\n") // blank line (no indent)
 		}
 		f.writeMatchArm(&sm.Arms[i])
 	}

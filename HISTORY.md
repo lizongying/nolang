@@ -1,5 +1,12 @@
 # 更新日誌
 
+## v0.4.16
+
+- feat(compiler): add structural equality codegen for str and vec via @str_eq and @__nolang_vec_eq_i64 helpers
+- feat(compiler): add option payload equality codegen for value, str, and f64 tags
+- feat(compiler): add option f64 inline load/store codegen and vec to str reinterpret codegen
+- feat(compiler): add unary ALU negation and not codegen via OP-NEG and OP-NOT
+
 ## v0.4.15
 
 - feat(checker): forbid comparing non-option types with nil (`T == nil` is now a hard error; `?T == nil` stays legal)
