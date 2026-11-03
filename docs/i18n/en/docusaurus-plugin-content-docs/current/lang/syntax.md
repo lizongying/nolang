@@ -1394,6 +1394,7 @@ max = sum > 10 ? sum : 10
 
 1. **Short-circuit group** — Multiple `cond -> body` wrapped in `{}` form an if-elif-else chain. Only the first matching branch executes.
 2. **Standalone if** — Writing `cond -> body` directly in a function/loop body (without `{}`) is an independent if. It does **not** short-circuit with adjacent if-then lines.
+   **An else forces the group.** A newline `->` else arm written outside `{}` is a **compile ERROR** — `k3r7mbqd` for a lone `cond ->` plus `->`, and `m7vq3xrt` when sibling `cond ->` arms sit above it (the message names how many arms are ignored). The parser folds a newline `->` onto only the *nearest* preceding standalone if, so every arm above it is silently dropped: what the code reads as is not what it compiles to, which is why this is a rule rather than a warning. Wrap every arm in `{ ... }`; a lone `cond -> body` **without** an else may stay ungrouped.
 3. **No mixing** — Inside a `{}` short-circuit group, all direct children must be `cond -> body` arms. Regular statements are not allowed as direct children; place them inside branch bodies.
 
 ```no
@@ -1410,6 +1411,26 @@ git-dispatch = (cmd str) {
         cmd == 'b' -> { fb() }
         true -> {}
     }
+}
+
+; ❌ if/else written outside the group — compile ERROR
+; the newline `-> break` binds to `c == 43` only, so a matched `c == 45` is still cut short
+;   c == 45 -> {
+;       exp-sign = -1
+;       i = i + 1
+;   }
+;   c == 43 -> i = i + 1
+;   -> break
+
+; ✅ Same code as an if-group — arms are exclusive, `->` is a real fallback arm
+{
+    c == 45 -> {
+        exp-sign = -1
+        i = i + 1
+    }
+    c == 43 -> i = i + 1
+
+    -> break
 }
 
 ; ❌ Match-block with mixed regular statement → compile error

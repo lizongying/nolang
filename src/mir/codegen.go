@@ -3012,6 +3012,33 @@ func overflowCheckable(lt string) bool {
 	return false
 }
 
+// narrowIntBits reports the semantic bit width and signedness of a declared
+// integer element type used as an option payload. The option struct stores
+// every integer payload as an i64 word, so the overflow intrinsic for a
+// ?byte/?i8/... destination runs in the i64 domain — where a byte sum like
+// 250+10 can never overflow. Overflow for such elements must ALSO be judged
+// in the element's own width: the result is out of the element's range iff
+// storing it would truncate (i.e. wrap). Returns ok=false for 64-bit types
+// (the i64-domain intrinsic already covers them) and for anything unknown —
+// notably `char`, whose arithmetic keeps its pre-existing behaviour.
+func narrowIntBits(elemRaw string) (bits int, signed bool, ok bool) {
+	switch elemRaw {
+	case "byte", "u8":
+		return 8, false, true
+	case "i8":
+		return 8, true, true
+	case "u16":
+		return 16, false, true
+	case "i16":
+		return 16, true, true
+	case "u32":
+		return 32, false, true
+	case "i32":
+		return 32, true, true
+	}
+	return 0, false, false
+}
+
 // emitOverflowIntrinsic emits `@llvm.<s|u><add|sub|mul>.with.overflow.<lt>`
 // and returns (computedValue, overflowFlag) SSA operand strings. The flag is
 // i1 and is meant to be folded into the option's err tag by the caller.
@@ -5658,6 +5685,18 @@ func (c *codegen) emitConst(inst *Inst, allocaFor func(ValueID) string) error {
 	switch lt {
 	case "i64":
 		fmt.Fprintf(c.sb, "  store i64 %d, i64* %s\n", inst.Int, slot)
+	case "i8":
+		// `byte`/`u8`/`i8` scalar constant. Missing this case sent every i8-typed
+		// const into the zeroinitializer default, so a comptime-folded byte
+		// arithmetic result (`hx[0][0] + ws[0][1]`, both operands comptime vec
+		// elements) materialized as 0 — the value was computed correctly by
+		// evalInfix and then thrown away at emission. Wider scalars never hit
+		// this: every other KindInt raw lowers to i64 (llvmTypeOf), i128 has its
+		// own case, char is i32, bool is i1. The fold-side range guard
+		// (comptimeFold) guarantees the value fits, so the immediate is emitted
+		// verbatim; an out-of-range value would be an LLVM verifier error (loud,
+		// never silently wrong).
+		fmt.Fprintf(c.sb, "  store i8 %d, i8* %s\n", inst.Int, slot)
 	case "i128":
 		// A 128-bit integer constant. IntBig carries the full decimal text for
 		// values beyond int64 (so 2^63 / 2^64-1 / the i128 range do not truncate);
@@ -6066,6 +6105,38 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			errMsg = c.emitErrMsgGlobal("nolang_errmsg_overflow",
 				"integer overflow")
 			useIntrinsic = true
+			// The intrinsic above runs in the i64 payload domain, where a
+			// byte/u8/i8/... sum can never overflow. If the DECLARED element
+			// is narrower, the i64-domain result must additionally stay inside
+			// the element's representable range — otherwise storing the
+			// payload below would silently truncate (wrap), which is exactly
+			// what the default overflow-becomes-err semantics must prevent.
+			// (A wrap result is only reachable via #{overflow=wrap}, which
+			// routes here as a plain non-option destination instead.)
+			if bits, signed, ok := narrowIntBits(elemRaw); ok && bits < 64 {
+				var rng string
+				if signed {
+					max := (int64(1) << uint(bits-1)) - 1
+					min := -(int64(1) << uint(bits-1))
+					c.loadSeq++
+					hi := fmt.Sprintf("%%rh%d", c.loadSeq)
+					fmt.Fprintf(c.sb, "  %s = icmp sgt %s %s, %d\n", hi, resLT, resVal, max)
+					c.loadSeq++
+					lo := fmt.Sprintf("%%rl%d", c.loadSeq)
+					fmt.Fprintf(c.sb, "  %s = icmp slt %s %s, %d\n", lo, resLT, resVal, min)
+					c.loadSeq++
+					rng = fmt.Sprintf("%%rr%d", c.loadSeq)
+					fmt.Fprintf(c.sb, "  %s = or i1 %s, %s\n", rng, hi, lo)
+				} else {
+					c.loadSeq++
+					rng = fmt.Sprintf("%%ru%d", c.loadSeq)
+					fmt.Fprintf(c.sb, "  %s = icmp ugt %s %s, %d\n", rng, resLT, resVal, uint64(1)<<uint(bits)-1)
+				}
+				c.loadSeq++
+				both := fmt.Sprintf("%%rb%d", c.loadSeq)
+				fmt.Fprintf(c.sb, "  %s = or i1 %s, %s\n", both, errCond, rng)
+				errCond = both
+			}
 		}
 	}
 	if !useIntrinsic {
@@ -6115,6 +6186,26 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, %s 0, %s %s\n", zr, zeroDiv, resLT, resLT, outV)
 			outV = zr
 			c.sb.WriteString("  " + c.divZeroReport(zeroDiv) + "\n")
+		}
+		// char sentinel clamp: char arithmetic outside [0, 0x10FFFF] becomes -1
+		// (the invalid-code-point sentinel). Unlike i64-family overflow, this is
+		// a defined plain result — byte silently wraps, char silently clamps to -1.
+		// char is i32 at the LLVM level, so signed slt/sgt with the i32-wide
+		// constant 1114111 (0x10FFFF) catches both underflow and overflow.
+		if dstRaw == "char" {
+			c.loadSeq++
+			loCk := fmt.Sprintf("%%clo.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = icmp slt %s %s, 0\n", loCk, resLT, outV)
+			c.loadSeq++
+			hiCk := fmt.Sprintf("%%chi.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = icmp sgt %s %s, 1114111\n", hiCk, resLT, outV)
+			c.loadSeq++
+			outRng := fmt.Sprintf("%%crn.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = or i1 %s, %s\n", outRng, loCk, hiCk)
+			c.loadSeq++
+			sentinel := fmt.Sprintf("%%cse.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = select i1 %s, %s -1, %s %s\n", sentinel, outRng, resLT, resLT, outV)
+			outV = sentinel
 		}
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", lt, c.wrapIntForStore(lt, dstRaw, outV), lt, slot)
 	}
@@ -6167,9 +6258,50 @@ func (c *codegen) emitNeg(inst *Inst) error {
 		}
 		c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(dstRaw, resVal))
 	} else {
-		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", lt, c.wrapIntForStore(lt, dstRaw, resVal), lt, slot)
+		outV := resVal
+		// char sentinel: negating a non-zero char always yields a negative
+		// (out-of-range) result, so clamp to -1. Zero stays zero (in-range).
+		if dstRaw == "char" {
+			c.loadSeq++
+			loCk := fmt.Sprintf("%%nclo.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = icmp slt %s %s, 0\n", loCk, resLT, outV)
+			c.loadSeq++
+			hiCk := fmt.Sprintf("%%nchi.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = icmp sgt %s %s, 1114111\n", hiCk, resLT, outV)
+			c.loadSeq++
+			outRng := fmt.Sprintf("%%ncrn.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = or i1 %s, %s\n", outRng, loCk, hiCk)
+			c.loadSeq++
+			sentinel := fmt.Sprintf("%%ncse.%d", c.loadSeq)
+			fmt.Fprintf(c.sb, "  %s = select i1 %s, %s -1, %s %s\n", sentinel, outRng, resLT, resLT, outV)
+			outV = sentinel
+		}
+		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", lt, c.wrapIntForStore(lt, dstRaw, outV), lt, slot)
 	}
 	return nil
+}
+
+// emitCharClamp clamps a scalar value into valid char range [0, 0x10FFFF].
+// When the destination raw type is "char" and the value is out of range,
+// it returns the sentinel -1. Otherwise returns the input unchanged (no-op).
+// The LLVM type lt is the value's LLVM type (i32 for char).
+func (c *codegen) emitCharClamp(dstVal ValueID, val, lt string) string {
+	if c.rawTypeOfValue(dstVal) != "char" {
+		return val
+	}
+	c.loadSeq++
+	loCk := fmt.Sprintf("%%cclo.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = icmp slt %s %s, 0\n", loCk, lt, val)
+	c.loadSeq++
+	hiCk := fmt.Sprintf("%%cchi.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = icmp sgt %s %s, 1114111\n", hiCk, lt, val)
+	c.loadSeq++
+	outRng := fmt.Sprintf("%%ccrn.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = or i1 %s, %s\n", outRng, loCk, hiCk)
+	c.loadSeq++
+	sentinel := fmt.Sprintf("%%ccse.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = select i1 %s, %s -1, %s %s\n", sentinel, outRng, lt, lt, val)
+	return sentinel
 }
 
 func (c *codegen) emitNot(inst *Inst) error {
@@ -8153,6 +8285,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 		c.loadSeq++
 		tmp := fmt.Sprintf("%%mv%d", inst.ID)
 		fmt.Fprintf(c.sb, "  %s = %s %s %s to %s\n", tmp, op, slt, nr, dstT)
+		tmp = c.emitCharClamp(dstVal, tmp, dstT)
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot)
 		return nil
 	}
@@ -8174,6 +8307,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// collide.
 	tmp := fmt.Sprintf("%%mv%d", inst.ID)
 	fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", tmp, dstT, dstT, srcSlot)
+	tmp = c.emitCharClamp(dstVal, tmp, dstT)
 	fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstT, tmp, dstT, dstSlot)
 	return nil
 }

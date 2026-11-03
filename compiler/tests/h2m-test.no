@@ -16,6 +16,9 @@
 ; s58 覆盖：花括号短路链 K-SURFACE-MATCH（语句位）——三臂含 wildcard / 无 wildcard 的两臂链
 ;         （假路直落汇聚块）/ 单 wildcard 臂（无条件判定故整链不应出现 icmp）/ 循环体内的链
 ;         （链的汇聚块只拿到回边）/ 表达式位的链仍计 unsup
+; s59 覆盖：块终结形 return / break / continue——共享 ret 块（懒开，BR 过去再 LOAD+RET）、
+;         循环目标栈（continue 回 hdr、break 落 exit 且其后继语句照跑）、链臂体裸终结形、
+;         无输出参函数的延迟零值 RET；负例：终结形非本块末条 / 循环外 break / 带标签跳出
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -662,14 +665,15 @@ test-flow-gate = () {
     runner.eq(agg3.unsup > 0, 1, 'range-loop counted')
     runner.eq(ir3.contains('alloca'), 0, 'range-loop no slot emitted')
 
-    ; 臂内放不了的东西：break / continue / return 仍计 unsup（不静默略过）
-    src-rt = 'd = (n i64) (r i64) {\n    r = 0\n    n > 0 -> return\n}\n'
+    ; 臂内放不了的东西：带标签的跳出（break # 1 形——ps.no 把 BREAK 留 'none' 且标签落为
+    ;   孤儿节点 kind 71/27，h2m 不认识 kind 71 ⇒ 计 unsup 整函数不产码）
+    src-rt = 'd = (n i64) (r i64) {\n    r = 0\n    (r < 10) {\n        r = r + 1\n        break # 1\n    }\n}\n'
     t4 = ast.make()
     r4 = ps.parse(t4, ps.new(src-rt.to-bytes()))
     agg4 = h2m-new()
     ir4 = h2m-lower-program(t4, agg4, r4)
-    runner.eq(agg4.unsup > 0, 1, 'return counted')
-    runner.eq(ir4.contains('define'), 0, 'return no code')
+    runner.eq(agg4.unsup > 0, 1, 'labeled-break counted')
+    runner.eq(ir4.contains('define'), 0, 'labeled-break no code')
 
     ; mem 模式的槽型别边界：f64 局部量在 cg 无 alloca double 的 op ⇒ 宁缺勿错
     src-f64 = 'e = (x f64) (r i64) {\n    r = 0\n    x == x -> r = 1\n}\n'
@@ -690,6 +694,124 @@ test-flow-gate = () {
     runner.eq(ir6.contains('define'), 0, 'wild-not-last no code')
 }
 
+; ── s59：guard 块里的 return——共享 ret 块懒开，终结处只发 BR；尾块再 BR 过去 LOAD+RET ──
+; 形制钉自 tmp/probe-s59-ir.no（SRC-RET）：then 块 store 42 后 br bb4＋不可达 br bb3；
+; bb3 后继语句照降；bb4 只读一次槽。若无 return 块形制（s57 的 ret 落当前块）被误用，
+; bb4 的 define 尾形与双 BR 序列都会断言失败。
+test-term-ret = () {
+    src = 'f59 = (n i64) (r i64) {\n    r = 0\n    n > 0 -> {\n        r = 42\n        return\n    }\n    r = n\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'ret unsup')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'ret then stores 42')
+    runner.eq(ir.contains('\tbr label %bb4\n\tbr label %bb3'), 1, 'ret dead-br pair')
+    runner.eq(ir.contains('bb4:\n\t%v13 = load i64, i64* %s4\n\tret i64 %v13'), 1, 'ret shared block')
+
+    ; 后继语句落在 bb3（未返回路径），且汇聚块 bb3 自己只 BR 不再 RET
+    runner.eq(ir.contains('bb3:\n\t%v11 = load i64, i64* %s2'), 1, 'ret trailing in bb3')
+    runner.eq(ir.contains('br label %bb4'), 1, 'ret trailing br merge-to-ret')
+
+    ; 懒开验证：只有 bb4 一个 ret 块，不应另开空块
+    runner.eq(ir.contains('bb5:'), 0, 'ret no spare block')
+}
+
+; ── s59：循环体内 continue——guard 块 BR 回 hdr（重判条件），不可达汇聚 BR 同块尾 ──
+test-term-cont = () {
+    src = 'g59 = (n i64) (r i64) {\n    r = 0\n    i = n\n    (i > 0) {\n        i = i - 1\n        i > 3 -> continue\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cont unsup')
+    ; continue 的目标是 hdr（bb1）：guard 臂块只拿到回边＋不可达汇聚 BR
+    runner.eq(ir.contains('bb4:\n\tbr label %bb1\n\tbr label %bb6'), 1, 'cont arm back-edge pair')
+
+    ; 跳过的陈述落在 bb6（if 汇聚块）：体内累加仍在回边之前
+    runner.eq(ir.contains('bb6:\n\t%v19 = load i64, i64* %s4'), 1, 'cont skipped stmt in merge')
+    runner.eq(ir.contains('store i64 %v21, i64* %s4'), 1, 'cont accumulate stored')
+
+    ; exit 块（bb3）只读槽返回——continue 不得把 RET 提前到循环区
+    runner.eq(ir.contains('bb3:\n\t%v22 = load i64, i64* %s4\n\tret i64 %v22'), 1, 'cont exit ret')
+}
+
+; ── s59：循环体内 break——BR 落 exit，且循环后的继语句在 exit 块照跑 ──
+test-term-brk = () {
+    src = 'h59 = (n i64) (r i64) {\n    r = 0\n    i = n\n    (i > 0) {\n        i = i - 1\n        i < 2 -> break\n        r = r + i\n    }\n    r = r + 100\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'brk unsup')
+    ; break 的目标是 exit（bb3）——不是回边 hdr
+    runner.eq(ir.contains('bb4:\n\tbr label %bb3\n\tbr label %bb6'), 1, 'brk arm exits loop')
+
+    ; 循环后的继语句落在 exit 块（+100 在 RET 之前），证明 break 跳过循环而非跳过函数
+    runner.eq(ir.contains('bb3:\n\t%v22 = load i64, i64* %s4'), 1, 'brk trailing after loop')
+    runner.eq(ir.contains('%v23 = add i64 0, 100'), 1, 'brk trailing add 100')
+    runner.eq(ir.contains('ret i64 %v25'), 1, 'brk ret trailing value')
+}
+
+; ── s59：链臂体的裸终结形（单陈述 inline 臂 `n > 9 -> return`）＋共享 ret 块多入口 ──
+test-term-chain = () {
+    src = 'k59 = (n i64) (r i64) {\n    {\n        n > 9 -> return\n        -> r = 5\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'chain unsup')
+    ; 臂块 bb2 直接 BR 共享 ret 块 bb4（经 h2m-lower-branch 的终结形臂）
+    runner.eq(ir.contains('bb2:\n\tbr label %bb4\n\tbr label %bb1'), 1, 'chain arm br ret')
+
+    ; 兜底臂正常落 bb3 并 BR 链汇聚块 bb1，bb1 再 BR 到 ret 块——两个入口共享同一 RET
+    runner.eq(ir.contains('bb1:\n\t%v10 = load i64, i64* %s4'), 1, 'chain merge loads')
+    runner.eq(ir.contains('bb4:\n\t%v11 = load i64, i64* %s4\n\tret i64 %v11'), 1, 'chain shared ret')
+}
+
+; ── s59：无输出参函数的 return——延迟零值由 ret 块的 CONST 0 落地（Go 的 void ret 形不在覆盖面）──
+test-term-ret-noout = () {
+    src = 'q59 = (n i64) {\n    n > 0 -> return\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'noout unsup')
+    runner.eq(ir.contains('bb4:\n\t%v8 = add i64 0, 0\n\tret i64 %v8'), 1, 'noout ret zero')
+}
+
+; ── s59 门禁：终结形非末条 / 循环外 break / 输出参槽型不符都计 unsup 且不产码 ──
+test-term-gate = () {
+
+    ; return 后面还有陈述 ⇒ 其后不可达，末位门禁计 unsup
+    src-nl = 'm59 = (n i64) (r i64) {\n    r = 0\n    return\n    r = 1\n}\n'
+    t1 = ast.make()
+    r1 = ps.parse(t1, ps.new(src-nl.to-bytes()))
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup > 0, 1, 'nonlast counted')
+    runner.eq(ir1.contains('define'), 0, 'nonlast no code')
+
+    ; 循环外的 break：栈空无目标 ⇒ 计 unsup（与 Go 的循环外跳出报错同调，宁缺勿错）
+    src-out = 'p59 = (n i64) (r i64) {\n    r = 1\n    break\n}\n'
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(src-out.to-bytes()))
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 'outer-break counted')
+    runner.eq(ir2.contains('define'), 0, 'outer-break no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-flow-if()
@@ -701,6 +823,12 @@ test-flow-chain-nowild()
 test-flow-chain-wild1()
 test-flow-chain-nest()
 test-flow-gate()
+test-term-ret()
+test-term-cont()
+test-term-brk()
+test-term-chain()
+test-term-ret-noout()
+test-term-gate()
 test-gate()
 
 runner.summary()

@@ -346,6 +346,20 @@ func (t *Transpiler) parseEntryProgram(source string) (*parser.Program, error) {
 					fmt.Fprintf(os.Stderr, "[debug-it] entry DISK CACHE HIT: %s\n", t.sourcePath)
 				}
 				program = cached
+				// Stale-cache detector (development aid, off by default). The
+				// cache key already carries ASTVersion, so a version bump
+				// invalidates old blobs automatically — the failure mode this
+				// catches is FORGETTING the bump after changing parser
+				// inference: old blobs then keep hitting and serve pre-change
+				// inferred types. NOLANG_AST_CACHE_VERIFY=1 re-parses the
+				// entry on every cache hit and compares the inferred-type side
+				// tables, turning the silent staleness into a loud warning.
+				if os.Getenv("NOLANG_AST_CACHE_VERIFY") != "" {
+					if detail := parser.VerifyASTCacheFreshness(source, t.astCacheSalt(), t.astParseConfig(t.sourcePath), cached); detail != "" {
+						fmt.Fprintf(os.Stderr, "[ast-cache] STALE ENTRY detected for %s: %s\n", t.sourcePath, detail)
+						fmt.Fprintf(os.Stderr, "[ast-cache] a parse-time output shape changed — bump parser.ASTVersion (or run `no cache clear` to work around)\n")
+					}
+				}
 			}
 		}
 	}

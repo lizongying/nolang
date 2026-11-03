@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/gob"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lizongying/nolang/lexer"
 )
 
 // ASTVersion is the version of the *parse output*, not of the compiler. It is
@@ -286,7 +289,14 @@ import (
 // `TypeFacts` / `NodeFacts` 型別本身仍保留 `GobEncode`/`GobDecode` 空方法：它們
 // 沒有導出字段，直接 gob 編碼 `*parser.Program` 的路徑（mmast_test.go 模擬舊格式）
 // 仍會碰到，缺了會報 `no exported fields`。
-const ASTVersion = "2026-10-26.3"
+//
+// 2026-11-03.1：嵌套容器字面量的 let 預推斷改為遞迴展開（inferLiteralElemTypeName，
+// src/parser/stmt.go）——`m = [[1, 2]]` 的 stmt.Type / sem.VarTypes 從壓平的
+// `[]i64` 變成 `[][]i64`。屬 parse-time 產出形狀變化（IsInferred 型別節點與
+// sem 型別表都會被序列化/重放），舊 blob 讓 checker 逐元素檢查誤報 os0j8ix4。
+// 🔴 必 bump（第 3 條「parse-time 推斷形狀改變」）：不改內容只改編譯器 ⇒ 快取鍵
+// 不動，舊 blob 恰好 HIT（2026-11-03 index-compare 實測被坑，靠 rm 緩存目錄繞過）。
+const ASTVersion = "2026-11-03.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent
@@ -390,6 +400,178 @@ func (c *UserASTCache) pathFor(key string) string {
 
 func (c *UserASTCache) tmpPathFor(key string) string {
 	return filepath.Join(c.dir, key+"."+strconv.Itoa(os.Getpid())+".tmp")
+}
+
+// UserASTCacheDir reports the directory the on-disk user AST cache lives in,
+// applying the same env overrides as DefaultUserASTCache
+// ($NOLANG_AST_CACHE_DIR, default ~/.cache/nolang/ast) without creating it.
+// Used by the `no cache` management command.
+func UserASTCacheDir() string {
+	if dir := os.Getenv("NOLANG_AST_CACHE_DIR"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".cache", "nolang", "ast")
+}
+
+// CacheStats describes the on-disk state of the user AST cache. Collected by
+// the `no cache stat` management command.
+type CacheStats struct {
+	Dir     string // cache directory ("" if caching is disabled)
+	Entries int    // number of .gob.gz blobs
+	Bytes   int64  // total size of the blobs
+}
+
+// Stats scans the cache directory. A nil receiver or missing directory yields
+// a zero-valued Dir/Entries (caching disabled or never populated).
+func (c *UserASTCache) Stats() CacheStats {
+	if c == nil {
+		return CacheStats{}
+	}
+	st := CacheStats{Dir: c.dir}
+	entries, err := os.ReadDir(c.dir)
+	if err != nil {
+		return st
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".gob.gz") {
+			continue
+		}
+		st.Entries++
+		if info, err := e.Info(); err == nil {
+			st.Bytes += info.Size()
+		}
+	}
+	return st
+}
+
+// Clear removes every .gob.gz blob from the cache directory (the directory
+// itself and any non-blob files are left in place). Returns the number of
+// entries removed. Used by `no cache clear` — the manual escape hatch when a
+// stale cache is suspected (the normal invalidation is automatic via
+// ASTVersion in the cache key; see the KeyFor doc comment).
+func (c *UserASTCache) Clear() (int, error) {
+	if c == nil {
+		return 0, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entries, err := os.ReadDir(c.dir)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	var firstErr error
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".gob.gz") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(c.dir, e.Name())); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		removed++
+	}
+	return removed, firstErr
+}
+
+// Package-level helpers for the `no cache` management command. They operate
+// directly on the resolved directory WITHOUT creating it or touching the
+// sync.Once singleton (stat/clear must not have build-pipeline side effects).
+
+// UserASTCacheOff reports whether caching is disabled via NOLANG_AST_CACHE_OFF.
+func UserASTCacheOff() bool {
+	return os.Getenv("NOLANG_AST_CACHE_OFF") != ""
+}
+
+// UserASTCacheStats scans the resolved cache directory without creating it.
+func UserASTCacheStats() CacheStats {
+	return (&UserASTCache{dir: UserASTCacheDir()}).Stats()
+}
+
+// UserASTCacheClear removes all cached blobs from the resolved directory.
+func UserASTCacheClear() (int, error) {
+	return (&UserASTCache{dir: UserASTCacheDir()}).Clear()
+}
+
+// VerifyASTCacheFreshness is the build-time stale-cache detector behind
+// NOLANG_AST_CACHE_VERIFY=1. It re-parses source with the SAME config the
+// cache entry was produced under and compares the inferred-type side table
+// (sem.FuncVarTypes — every `x = <rhs>` inferred binding, including the
+// ?T option-arith forms) between the fresh parse and the cache-served
+// Program. A mismatch is direct evidence that the parse-time output shape
+// changed but ASTVersion was NOT bumped: old blobs keep hitting and serve
+// pre-change inferred types ("old error still reported after the fix").
+//
+// Returns "" when the two agree, else a one-line human-readable summary of
+// the first differing function. Deliberately expensive (a full second parse)
+// and therefore env-gated, off by default; intended for development use right
+// after touching parser inference code.
+func VerifyASTCacheFreshness(source, sigSalt string, cfg SemRebuildConfig, cached *Program) string {
+	if cached == nil || cached.Sem == nil {
+		return ""
+	}
+	l := lexer.New(source)
+	p := New(l)
+	cfg.Apply(p)
+	fresh := p.ParseProgram()
+	if fresh == nil || fresh.Sem == nil {
+		return ""
+	}
+	// Compare the per-function inferred-type tables function-by-function and
+	// report the first divergence with a concrete variable, so the developer
+	// sees WHICH inference moved, not just that something did.
+	funcs := make([]string, 0, 2)
+	seen := map[string]bool{}
+	for fn := range fresh.Sem.FuncVarTypes {
+		if !seen[fn] {
+			seen[fn] = true
+			funcs = append(funcs, fn)
+		}
+	}
+	for fn := range cached.Sem.FuncVarTypes {
+		if !seen[fn] {
+			seen[fn] = true
+			funcs = append(funcs, fn)
+		}
+	}
+	sort.Strings(funcs)
+	for _, fn := range funcs {
+		fv := fresh.Sem.FuncVarTypes[fn]
+		cv := cached.Sem.FuncVarTypes[fn]
+		vars := make([]string, 0, len(fv)+len(cv))
+		vseen := map[string]bool{}
+		for v := range fv {
+			vseen[v] = true
+			vars = append(vars, v)
+		}
+		for v := range cv {
+			if !vseen[v] {
+				vars = append(vars, v)
+			}
+		}
+		sort.Strings(vars)
+		for _, v := range vars {
+			fs := ""
+			if t, ok := fv[v]; ok && t != nil {
+				fs = t.Raw()
+			}
+			cs := ""
+			if t, ok := cv[v]; ok && t != nil {
+				cs = t.Raw()
+			}
+			if fs != cs {
+				return fmt.Sprintf("function %q variable %q: fresh parse infers %q, cached blob has %q",
+					fn, v, fs, cs)
+			}
+		}
+	}
+	return ""
 }
 
 // Get decodes and returns the cached Program for key, or (nil, false). The

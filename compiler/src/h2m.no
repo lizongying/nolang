@@ -15,13 +15,18 @@
 ;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/CountExpr/IterRange 必须全 0）/
 ;         控制流（s58）：K-SURFACE-MATCH 的语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
 ;         （臂群在 helper/aux 阵，12 aux/臂，展开成 if/elif/else 的 CONDBR 链——镜像 Go desugarSurfaceMatchToIfExpr）
+;         块终结形（s59）：return / break / continue（含 * / ** 速写经解析归一后的同形节点）——
+;         return 走全函数共享的 ret 块（entry 零铺槽已保证未赋值输出参回零值），
+;         break/continue 走循环目标栈（(hdr, exit) 对，限最内层循环、无标签形）；
+;         三者都要求是本块最后一条陈述（其后陈述不可达 ⇒ 计 unsup，同 s58 兜底不在末位纪律）；
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
 ;         算术语义仍限 i64（其余型别的值进运算符即计 unsup，不发错码）
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、除与余、位运算、
 ;         前缀负号、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、非具名型别（[]t / map / *t / 别名）、
 ;         复合赋值、非函数定义语句、实参 id 不连续的调用、方法调用（点号）、
-;         break / continue / return 语句、计数循环 `n * { }`、区间与容器遍历 `i <- xs:`
+;         计数循环 `n * { }`、区间与容器遍历 `i <- xs:`、带标签的 break/continue（s1 ≠ 'none'）、
+;         带值的 return（nkid>1 且 kid[0] ≠ 0，语料中恒裸）；表达式位的链与臂体非末位终结形不产码
 ;
 ; ── 实参连续契约（cg 的 OP-CALL 约定，非 Go 约定）─────────────────
 ;   cg-emit-cfg-t 的 CALL 臂按 `xa[k] .. xa[k]+bs[k]-1` 读实参值 id，要求它们**连续**；
@@ -63,6 +68,8 @@
 ; ⚠️ 块游标纪律（s57）：cg 主循环按 `blks[k] != cur` 发标签 ⇒ **每块必须是指令序中的连续段**。
 ;   故本文件只单向推进块 id（entry → arms / loop 区域 → 汇聚块），回边只发 OP-BR 不再发指令；
 ;   一旦离开某块就绝不再写它（写回去会重复发标签，opt 报标签重定义）。
+; s59 追加：ret = 共享 return 块的块 id（0 = 尚未开；懒开保证无 return 的函数 IR 逐字节不变）；
+;   stk / stk-n = 循环目标栈（h2m-lower-for 进 body 前压 (hdr, exit) 对 ⇒ break/continue 查最内层）
 h2m-ctx {
     ops []i64
     dsts []i64
@@ -80,6 +87,9 @@ h2m-ctx {
     bnext i64
     mem i64
     unsup i64
+    ret i64
+    stk []i64
+    stk-n i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -113,6 +123,10 @@ h2m-new = () (c h2m-ctx) {
         bnext: 1
         mem: 0
         unsup: 0
+        ret: 0
+        stk: []
+        i64
+        stk-n: 0
     }
     c.vty.push(TY-I64)
 }
@@ -635,6 +649,9 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
                 fa > flow -> flow = fa
             }
 
+            ; s59：return/break/continue 也逼出 mem 模式（return 写输出参槽、之后还有块要读它）
+            d.kind == asp.K-RETURN-STATEMENT || d.kind == asp.K-BREAK-STATEMENT || d.kind == asp.K-CONTINUE-STATEMENT -> flow = 1
+
             d.kind == asp.K-BLOCK-STATEMENT || d.kind == asp.K-EXPRESSION-STATEMENT -> {
                 f2 = h2m-scan-kids(t, sg, l, n)
                 f2 > flow -> flow = f2
@@ -848,6 +865,7 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 
 ; BlockStatement 降级：逐个 kid 降级；认得 LetStatement / IfExpression / ForStatement /
 ; ExpressionStatement（内含 IfExpression，即述层的 `cond -> stmt` 单行 guard），其余计 unsup
+; s59：陈述位终结形（return/break/continue）经 h2m-lower-term-stmt 分派，非本块末条计 unsup
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -863,6 +881,18 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         kid = ast.kid-at(t, p)
         kk = ast.nd-at(t, kid)
         hd = 0
+
+        ; s59：本块末条判定（终结形只能站在陈述列末尾）
+        last = 0
+        li = d.nkid
+
+        #{overflow=wrap}
+        li = li - 1
+        i == li -> last = 1
+        th = kk.kind
+        th == asp.K-RETURN-STATEMENT || th == asp.K-BREAK-STATEMENT || th == asp.K-CONTINUE-STATEMENT -> {
+            hd = h2m-lower-term-stmt(t, c, sg, kid, last)
+        }
         kk.kind == asp.K-LET-STATEMENT -> {
             h2m-lower-let(t, c, sg, kid)
             hd = 1
@@ -893,6 +923,13 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                     h2m-lower-surface(t, c, sg, sub)
                     hd = 1
                 }
+
+                ; s59：`cond -> return` 的 guard 块里是裸 BLOCK(inline) 包陈述；但若子节点
+                ;   直接就是终结形（合成 AST 或未来解析改造），同样走末位分派
+                st = sd.kind
+                st == asp.K-RETURN-STATEMENT || st == asp.K-BREAK-STATEMENT || st == asp.K-CONTINUE-STATEMENT -> {
+                    hd = h2m-lower-term-stmt(t, c, sg, sub, last)
+                }
             }
         }
         hd == 0 -> h2m-mark(c)
@@ -903,7 +940,8 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 }
 
 ; 分支体降级：Block 走 h2m-lower-block；嵌套 IfExpression 走 h2m-lower-if（elif 链就靠这一路）；
-; 花括号短路链走 h2m-lower-surface；臂体内再开循环走 h2m-lower-for（s58）
+; 花括号短路链走 h2m-lower-surface；臂体内再开循环走 h2m-lower-for（s58）；
+; s58 补：链臂体的单陈述形（非块）走 h2m-lower-block；s59 补：臂体直接是终结形（单陈述 inline 臂）走 h2m-lower-term
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -920,6 +958,9 @@ h2m-lower-branch = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             d.kind == asp.K-SURFACE-MATCH -> h2m-lower-surface(t, c, sg, n)
 
             d.kind == asp.K-FOR-STATEMENT -> h2m-lower-for(t, c, sg, n)
+
+            ; s59：单陈述臂体直接是终结形（`n > 0 -> return` 的 inline 形若未包块即走此路）
+            d.kind == asp.K-RETURN-STATEMENT || d.kind == asp.K-BREAK-STATEMENT || d.kind == asp.K-CONTINUE-STATEMENT -> h2m-lower-term(t, c, n, d.kind)
 
             -> h2m-mark(c)
         }
@@ -965,6 +1006,7 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; ForStatement 降级（本件只收纯前置条件循环 `(cond) { }`）
 ; kid 序 = [Init][Condition][Update][CountExpr][IterRange][Body]（ps.no:5706 注释 + 实测 kid[1]/kid[5]）
 ; 块形制：当前块 BR → hdr；hdr 求值条件后 CONDBR(body, exit)；body 结尾 BR 回 hdr；后继语句落在 exit
+; s59：进 body 前压 (hdr, exit) 到循环栈（c.stk/c.stk-n）⇒ 体内 break/continue 查栈顶；出口弹回
 ; ⚠️ Init/Update/CountExpr/IterRange 任一非 0 ⇒ 不在覆盖面（计数循环与区间遍历属后续）
 ; t: AST arena
 ; c: 上下文
@@ -995,7 +1037,15 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         cv > 0 -> h2m-emit(c, OP-CONDBR, exit-id, cv, body-id, '', 0)
 
         h2m-set-block(c, body-id)
+
+        ; s59：压循环目标对 (hdr, exit)——continue 查 hdr（重判条件）、break 查 exit（跑完后继语句）
+        c.stk.push(hdr-id)
+        c.stk.push(exit-id)
+
+        #{overflow=wrap}
+        c.stk-n = c.stk-n + 1
         h2m-lower-block(t, c, sg, body)
+        c.stk-n = c.stk-n - 1
         h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
 
         h2m-set-block(c, exit-id)
@@ -1090,6 +1140,96 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     }
 }
 
+; ── 块终结形（s59）：return / break / continue ───────────────────
+; 三种节点均要**作为本块最后一条陈述**才可降级（呼叫方把关 last）：其后陈述不可达，
+;   若照降则臂体里的不支持构造会被静默吞掉（产码 ≠ 产对码），同 s58「兜底不在末位」纪律。
+; 形制（实测 tmp/probe-s59-ast.no，钉于 tmp/s59-ast-out.txt）：
+;   K-RETURN-STATEMENT(56)：nkid=1 且 kid[0]=0（guarded ReturnValue 缺席占位），无标量槽
+;   K-BREAK-STATEMENT(16) / K-CONTINUE-STATEMENT(22)：nkid=0，s0=label（空串）、s1=kind 名（'none'）
+;   ⚠️ s1 是【字串槽】不是整数槽：kv P-ALWAYS 政策下未显式设值会渲染成 kind 名默认——
+;     ps.no 存 'none' 表示无标签；非 'none'（text/numeric）是带标签跳出形，不在覆盖面
+; return 块形制：懒开一个全函数共享的 ret 块，终结处只发 BR；真正的 LOAD+RET
+;   由 h2m-lower-func 收尾时在该块发出——输出参的 entry 零初始化已替我们落地
+;   Go 侧「延迟零值」语义（return 前未赋值 ⇒ 读槽得 0），无需逐 return 点插 CONST。
+; break/continue 目标：查循环栈栈顶的 (hdr, exit) 对；栈空 ⇒ 循环外跳出，计 unsup。
+;   本件限最内层循环、无标签形；Go 侧 label 解析（break # N）不在覆盖面。
+; 终结后的 BR 落入「有跳转无后续」的死区段：同块内不再发指令（last 门禁保证），
+;   若呼叫方（if/链）随后在同一区域补发汇聚 BR，多出的不可达终结指令由 LLVM 接受（单测钉 IR 形）
+; t: AST arena
+; c: 上下文
+; n: 终结形节点 id
+; k: 节点 kind（RETURN/BREAK/CONTINUE）
+h2m-lower-term = (t ast, c h2m-ctx, n i64, k i64) {
+    d = ast.nd-at(t, n)
+    ok-t = 1
+
+    ; 带值 return（kid[0] 非 0）不在覆盖面：语料中恒裸（Go 对 `return <val>` 直接报错）
+    k == asp.K-RETURN-STATEMENT && d.nkid > 0 -> {
+        vk = h2m-kid-i(t, n, 0)
+        vk != 0 -> ok-t = 0
+    }
+
+    ; 带标签的 break/continue：kind 名非 'none' 即不在覆盖面
+    k == asp.K-BREAK-STATEMENT || k == asp.K-CONTINUE-STATEMENT -> {
+        kl = ast.str-at(t, d.s1)
+        kl != 'none' -> ok-t = 0
+    }
+    ok-t == 0 -> h2m-mark(c)
+    ok-t == 1 -> {
+        tgt = 0
+        k == asp.K-RETURN-STATEMENT -> {
+            c.ret <= 0 -> {
+                rid-blk = h2m-block-new(c)
+                c.ret = rid-blk
+            }
+            tgt = c.ret
+        }
+        k == asp.K-BREAK-STATEMENT -> {
+            p = c.stk-n
+
+            #{overflow=wrap}
+            p = p - 1
+            p < 0 -> h2m-mark(c)
+            p >= 0 -> {
+                pk = 2 * p + 1
+                tgt = c.stk[pk] #{index-out=zero}
+                h2m-emit(c, OP-BR, 0, tgt, 0, '', 0)
+            }
+        }
+        k == asp.K-CONTINUE-STATEMENT -> {
+            p = c.stk-n
+
+            #{overflow=wrap}
+            p = p - 1
+            p < 0 -> h2m-mark(c)
+            p >= 0 -> {
+                pk = 2 * p
+                tgt = c.stk[pk] #{index-out=zero}
+                h2m-emit(c, OP-BR, 0, tgt, 0, '', 0)
+            }
+        }
+        k == asp.K-RETURN-STATEMENT && tgt > 0 -> h2m-emit(c, OP-BR, 0, tgt, 0, '', 0)
+    }
+}
+
+; 块陈述列里的终结形分派（s59）：kind 命中则按「是否本块末条」把关后降级
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表（仅为呼叫形参统一，终结形自身无表达式子树）
+; kid: 陈述节点 id
+; last: 1 = 本块最后一条陈述
+; hd: 1 = 已分派（呼叫方据此不再计 unsup）
+h2m-lower-term-stmt = (t ast, c h2m-ctx, sg h2m-sigs, kid i64, last i64) (hd i64) {
+    hd = 0
+    kk = ast.nd-at(t, kid)
+    k = kk.kind
+    k == asp.K-RETURN-STATEMENT || k == asp.K-BREAK-STATEMENT || k == asp.K-CONTINUE-STATEMENT -> {
+        hd = 1
+        last == 0 -> h2m-mark(c)
+        last == 1 -> h2m-lower-term(t, c, kid, k)
+    }
+}
+
 ; 单个 K-PARAMETER 节点 → 型别码（实测 kid 序 = [Type, DefaultExpr]）
 ; 非具名型别 / 未知型别名 / 带默认值 ⇒ bad = 1（默认值会让调用点 arity 判定失效）
 ; t: AST arena
@@ -1174,6 +1314,10 @@ h2m-func-sig = (t ast, n i64) (name str, ret i64, argt []i64, bad i64) {
 ; sg: 模块级签名表（体内调用点查表用）
 ; n: 函数定义节点 id
 ; r: 函数 IR 文本（'' = 形状不支持，未产码）
+;
+; s59 收尾契约：若体内出现过 return（c.ret > 0），尾部先 BR 到共享 ret 块，
+;   再切过去发 LOAD+RET（读输出参槽——entry 零铺槽即「延迟零值」）；
+;   无 return 的函数走原路（终结指令落当前块），IR 逐字节不变
 h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     r = ''
     c = h2m-new()
@@ -1279,7 +1423,30 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             h2m-vty-at(c, rid) != frt -> ty-match = 0
         }
         ty-match == 0 -> h2m-mark(c)
-        rid > 0 && ty-match == 1 -> {
+
+        ; s59：共享 ret 块的收尾——末尾块（可能是 exit/merge）BR 过去，再在 ret 块读槽并 RET；
+        ;   无 ret 块时原路不动（ty-match 已过 ⇒ rid 必 > 0，发终结 RET）
+        ret-ok = rid > 0 && ty-match == 1
+        ret-ok && c.ret > 0 -> {
+            h2m-emit(c, OP-BR, 0, c.ret, 0, '', 0)
+            h2m-set-block(c, c.ret)
+            zc2 = 0
+            d.c5 == 1 -> {
+                oi2 = h2m-name-find(c, out-name)
+                oi2 >= 0 -> zc2 = h2m-var-read(c, out-name)
+            }
+            d.c5 == 0 -> {
+                zc2 = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, zc2, 0, 0, '', TY-I64)
+            }
+            ret-ok = zc2 > 0
+            ret-ok -> {
+                h2m-emit(c, OP-RET, 0, zc2, 0, '', frt)
+                r = cg.cg-emit-cfg-t(fnm, frt, fap.len(), fap, c.vty, c.cty, c.blks, c.ops, c.dsts, c.xa, c.bs, c.syms)
+            }
+            zc2 == 0 -> h2m-mark(c)
+        }
+        ret-ok && c.ret <= 0 -> {
             h2m-emit(c, OP-RET, 0, rid, 0, '', frt)
             r = cg.cg-emit-cfg-t(fnm, frt, fap.len(), fap, c.vty, c.cty, c.blks, c.ops, c.dsts, c.xa, c.bs, c.syms)
         }

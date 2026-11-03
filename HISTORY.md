@@ -1,5 +1,16 @@
 # 更新日誌
 
+## v0.4.17
+
+- feat(compiler): add option ordered comparisons via new MIR ops (int, f64, scalar, and f64-scalar wings)
+- feat(compiler): implement AST-to-MIR lowering slices (s55-s58) for straight-line, control-flow, signature/call, and brace short-circuit chain
+- feat(parser): force an else arm to group the preceding if-chain and migrate std/tests/compiler to grouped form
+- refactor(parser): swap meanings of `*` and `**` shorthands for continue and break
+- feat(lexer): add keyword aliases ctn/brk/rtn for continue/break/return across fmt, lsp, vscode and docs
+- feat(std): expose rsa public bytes API and privatize limb internals
+- fix(build): upgrade GitHub Actions to latest versions
+- docs(selfhost): document M4-e lowering slices s55-s58
+
 ## v0.4.16
 
 - feat(compiler): add structural equality codegen for str and vec via @str_eq and @__nolang_vec_eq_i64 helpers

@@ -2388,6 +2388,39 @@ func (l *lowerer) intLitNeeds128(n *hir.Node) string {
 	return ""
 }
 
+// intLitTypeFromHint returns the LLVM integer type ("i8"/"i16"/"i32"/"i64")
+// for the current type hint, but only for narrow integer kinds that need to
+// track their width through constant literals. Returns "" when the hint is
+// absent, unresolveable, or is wide (i64/i128) — in those cases the default
+// "i64" lowering is correct and avoids touching existing behavior.
+//
+// This fixes the byte-overflow bug: `a byte = 250` must emit OpConst with a
+// narrow slot type so subsequent byte arithmetic runs in i8 and wraps at
+// 8 bits. Previously every KIntLit defaulted to i64 regardless of the hinted
+// binding type, causing `250+10` to feed `add i64` whose result never truncated.
+func (l *lowerer) intLitTypeFromHint() string {
+	if l.typeHint == NoType || l.typeHint == l.voidType {
+		return ""
+	}
+	ty := l.mod.Type(l.typeHint)
+	if ty == nil {
+		return ""
+	}
+	switch ty.Raw {
+	case "byte", "u8", "i8":
+		return "i8"
+	case "u16", "i16":
+		return "i16"
+	case "u32", "i32":
+		return "i32"
+	case "u64", "i64":
+		return "i64"
+	case "i128", "u128":
+		return "i128"
+	}
+	return ""
+}
+
 // ---- function lowering ----
 
 // funcSigRaw builds a `fn(p0,p1,...)(r0,r1,...)?` type string from a HIR
@@ -6371,6 +6404,39 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		if t := l.foldIntConst128(n, gtype); t != "" {
 			return t
 		}
+		// Narrow the literal to the declared type width so byte/u8/i8 globals
+		// become `global i8 <val>` (not `global i64 <val>`), which in turn makes
+		// arithmetic on those globals happen in i8 and correctly wrap at 8 bits.
+		// Without this, `b byte = 10` becomes `@b = global i64 10`, reads as i64,
+		// and feeds `add i64` whose result is never truncated — 250+10 yields 260.
+		if gtype != "" {
+			switch gtype {
+			case "byte", "u8":
+				return fmt.Sprintf("i8 %d", uint64(n.Val)&0xff)
+			case "i8":
+				v := n.Val & 0xff
+				if v >= 0x80 {
+					v -= 0x100
+				}
+				return fmt.Sprintf("i8 %d", v)
+			case "u16":
+				return fmt.Sprintf("i16 %d", uint64(n.Val)&0xffff)
+			case "i16":
+				v := n.Val & 0xffff
+				if v >= 0x8000 {
+					v -= 0x10000
+				}
+				return fmt.Sprintf("i16 %d", v)
+			case "u32":
+				return fmt.Sprintf("i32 %d", uint64(n.Val)&0xffffffff)
+			case "i32":
+				v := n.Val & 0xffffffff
+				if v >= 0x80000000 {
+					v -= 0x100000000
+				}
+				return fmt.Sprintf("i32 %d", v)
+			}
+		}
 		return fmt.Sprintf("i64 %d", n.Val)
 	case hir.KCharLit:
 		// The code point lives in S (the interned character TEXT), not in Val:
@@ -6771,6 +6837,33 @@ func comptimeEnabled() bool {
 	return true
 }
 
+// narrowIntRange returns the representable value range of a declared narrow
+// integer type, for compile-time folding guards. Returns guarded=true for
+// byte/i8/u16/.../char; guarded=false for the i64 family and unknown types —
+// those fold in the i64 domain where no wrap occurs. NOTE: char's "range"
+// [0, 0x10FFFF] is a valid-code-point guard, NOT a wrap guard — char folds
+// that land outside must emit the sentinel -1, not refuse to fold (see
+// evalInfix / comptimeFold callers).
+func narrowIntRange(raw string) (lo, hi int64, guarded bool) {
+	switch raw {
+	case "byte", "u8":
+		return 0, 255, true
+	case "i8":
+		return -128, 127, true
+	case "u16":
+		return 0, 65535, true
+	case "i16":
+		return -32768, 32767, true
+	case "u32":
+		return 0, 4294967295, true
+	case "i32":
+		return -2147483648, 2147483647, true
+	case "char":
+		return 0, 0x10FFFF, true
+	}
+	return 0, 0, false
+}
+
 // comptimeFold reports whether the expression node `id` is a pure compile-time
 // constant. If so it returns the constant value and the MIR type it should be
 // emitted with. Only expression forms that can be constant are considered;
@@ -6841,6 +6934,18 @@ func (l *lowerer) comptimeFold(id int32) (comptimeVal, TypeID, bool) {
 	// `p: { ok(v) -> … }` into the nil arm. Option results are never folded.
 	if t := l.mod.Type(typ); t != nil && (t.Kind == KindOption || ty.IsOptionRaw(t.Raw)) {
 		return comptimeVal{}, NoType, false
+	}
+	// Narrow-int range guard: a folded value must fit the RESULT type's range
+	// (nolang: the arith result carries the LEFT operand's type). If it does not
+	// fit, do NOT fold — defer to the runtime path, where the option-on-overflow
+	// machinery turns the out-of-range result into err (or honors an explicit
+	// #{overflow=wrap}). Folding 250 + 10 into a byte const would either
+	// truncate silently (the exact "value out of the first operand's range"
+	// hazard) or emit an invalid `store i8 260` immediate.
+	if t := l.mod.Type(typ); t != nil && t.Kind == KindInt && cv.kind == cvInt {
+		if lo, hi, guarded := narrowIntRange(t.Raw); guarded && (cv.i < lo || cv.i > hi) {
+			return comptimeVal{}, NoType, false
+		}
 	}
 	// A char expression now folds correctly: char arithmetic preserves the
 	// char kind (evalInfix) and emitConstVal emits the char type (i32) rather
@@ -7280,14 +7385,49 @@ func (l *lowerer) evalInfix(op string, lv, rv comptimeVal, n *hir.Node) (comptim
 		if lv.kind == cvChar || rv.kind == cvChar {
 			resKind = cvChar
 		}
+		// Narrow-int range guard (same rule as comptimeFold): the result must
+		// fit the EXPRESSION's result type — the LEFT operand's declared type
+		// (KInfix typeOfNode). 255+1 folds to 256 in the i64 domain, but the
+		// result type is byte: folding would silently truncate at the point of
+		// storage. Refuse to fold; the runtime option-on-overflow path reports
+		// err instead (or wraps under #{overflow=wrap}). Only the operators
+		// that can leave the narrow range are guarded: & | ^ of in-range
+		// operands stay in range, and / % cannot exceed the dividend's range.
+		//
+		// char is the exception: its "range" guard [0, 0x10FFFF] is a
+		// valid-code-point check, not an overflow guard. When the folded
+		// char result lands outside, we FOLD it to the sentinel -1 instead of
+		// refusing to fold (char arithmetic never produces an option — the
+		// runtime path also clamps to -1, so folding early is semantically
+		// identical and more efficient).
+		var lo, hi int64
+		guarded := false
+		isChar := resKind == cvChar
+		if isChar {
+			lo, hi, guarded = 0, 0x10FFFF, true
+		} else if resKind == cvInt {
+			if t := l.mod.Type(l.typeOfNode(n)); t != nil && t.Kind == KindInt {
+				lo, hi, guarded = narrowIntRange(t.Raw)
+			}
+		}
+		fold := func(v int64) (comptimeVal, bool) {
+			if guarded && (v < lo || v > hi) {
+				if isChar {
+					// char out-of-range → sentinel -1 (compile-time fold)
+					return comptimeVal{kind: cvChar, i: -1}, true
+				}
+				return comptimeVal{}, false
+			}
+			return comptimeVal{kind: resKind, i: v}, true
+		}
 		a, b := lv.i, rv.i
 		switch op {
 		case "+":
-			return comptimeVal{kind: resKind, i: a + b}, true
+			return fold(a + b)
 		case "-":
-			return comptimeVal{kind: resKind, i: a - b}, true
+			return fold(a - b)
 		case "*":
-			return comptimeVal{kind: resKind, i: a * b}, true
+			return fold(a * b)
 		case "/":
 			if b == 0 {
 				return comptimeVal{}, false
@@ -7308,7 +7448,7 @@ func (l *lowerer) evalInfix(op string, lv, rv comptimeVal, n *hir.Node) (comptim
 			if b < 0 || b >= 64 {
 				return comptimeVal{}, false
 			}
-			return comptimeVal{kind: resKind, i: a << uint64(b)}, true
+			return fold(a << uint64(b))
 		case ">>":
 			if b < 0 || b >= 64 {
 				return comptimeVal{}, false
@@ -8664,6 +8804,14 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 			}
 			return v
 		}
+		// Respect surrounding narrow-integer type hint (byte/u8/i8/u16/i16/u32/i32).
+		// Without this every KIntLit defaulted to i64, so `a byte = 250` stored
+		// to an i64 slot and `a + b` fed `add i64` whose result was never truncated.
+		// The arithmetic-wrapping logic assumed operands were already i8; a
+		// constant-folding path bypassed that assumption.
+		if lt := l.intLitTypeFromHint(); lt != "" {
+			return l.b.EmitInt(OpConst, l.b.Type(lt), n.Val, "")
+		}
 		return l.b.EmitInt(OpConst, l.typeOfNode(n), n.Val, "")
 	case hir.KFloatLit:
 		v := l.b.Emit(OpConst, l.typeOfNode(n), nil, "")
@@ -9219,7 +9367,19 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// width, so a byte VARIABLE (`b byte = 255; b << 4` -> 240) still wraps
 		// at 8 bits while a byte read out of a buffer yields the full value.
 		// Only widen when an operand really IS wider; never narrow a result.
-		if !isCmp && isArithOrBitwiseOp(op) {
+		//
+		// (2026-11-03) LIMITED to shifts and bitwise ops (`<< >> & | ^`).
+		// Additive arithmetic (`+ - * / %`) must keep the LEFT operand's
+		// declared type — that IS the language rule (`byte + i64` yields byte
+		// semantics: the i64-domain sum is range-checked by emitArith and
+		// becomes err, or wraps under #{overflow=wrap}). Widening `byte + 1`
+		// to ?i64 silently defeated that check: the sum stayed in the i64
+		// domain (never "overflows") and the payload truncation wrapped
+		// 256 -> 0 without any err. The shift/bitwise widening stays because
+		// those compose wide values from narrow elements by design (sha1's
+		// `(b & 127) << m` accumulation, hpack decode-int) where a narrow
+		// result is simply wrong, not a language-level overflow.
+		if !isCmp && (srcOp == "<<" || srcOp == ">>" || srcOp == "&" || srcOp == "|" || srcOp == "^") {
 			if rt := l.mod.Type(resTyp); rt != nil {
 				// The narrow spelling can also arrive WRAPPED in an option: a
 				// sub-expression whose left operand is a `?byte` (e.g.
@@ -11689,7 +11849,7 @@ func (l *lowerer) lowerFormatField(f *parser.FormatField) (ValueID, bool) {
 // constant, or a bound identifier. The base is deliberately a general path:
 // lookupFormatValue recurses on it, so chained shapes lower by peeling one
 // suffix at a time. The key text is re-read from the field name (see the index
-// branch) rather than captured, so an EMPTY key (`{m['']}`) stays
+// branch) rather than captured, so an EMPTY key (`{m[”]}`) stays
 // distinguishable from a numeric/identifier one.
 var fmtIndexFieldRe = regexp.MustCompile(`^(.+)\[(?:'[^']*'|"[^"]*"|[A-Za-z_][A-Za-z0-9_-]*|[0-9]+)\]$`)
 

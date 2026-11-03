@@ -1,0 +1,26 @@
+; Test byte overflow/underflow behavior
+a byte = 250
+b byte = 10
+c byte = 200
+d byte = 3
+z byte = 0
+o byte = 1
+b4 byte = 250
+
+b1 byte = a + b
+b2 byte = c * d
+b3 byte = z - o
+b4 = b4 + b
+
+print(b1)
+print(b2)
+print(b3)
+print(b4)
+
+pass byte = 1
+{b1 != 4} -> pass = 0
+{b2 != 88} -> pass = 0
+{b3 != 255} -> pass = 0
+{b4 != 4} -> pass = 0
+{pass == 1} -> print('ALL TESTS PASSED')
+{pass == 0} -> print('SOME TESTS FAILED')

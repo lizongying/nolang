@@ -1414,6 +1414,17 @@ func (c *hirConv) scratchParser() *Parser {
 		Filename:    c.curFile,
 		prog:        c.prog,
 	}
+	// The safe-index local container-type table (idxLocalTypes) is collected
+	// into c.sem.IdxLocalTypes by precomputeIdxLocalTypes (run once at the
+	// ASTToHIR entry, above). The scratch parser must READ THE SAME TABLE —
+	// with the field left nil, isSafeIndexBase / inferIndexElemType inside H0
+	// desugaring silently miss every precomputed entry and the index-subject
+	// option-match normalisation never fires (the match degenerates and its
+	// arms never execute: []txt.join returned "..." instead of 'a.b.c.d',
+	// 2026-11-03 match-index-option regression).
+	if c.sem != nil {
+		sp.idxLocalTypes = c.sem.IdxLocalTypes
+	}
 	// funcSignatures drives inferTypeFromCallExpr (used by lowerUnwrapAssign
 	// for RHS type inference). The real Parser fills it during parsing; the
 	// scratch parser must reconstruct it from the merged Program's

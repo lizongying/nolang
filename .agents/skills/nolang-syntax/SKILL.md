@@ -3947,6 +3947,7 @@ Notes:
 - `%option`'s `data` field is `i64`; narrow results (`i8`/`i16`/`i32`) are sign-extended before storage and truncated back on unwrap.
 - Unsigned arithmetic (`u8`/`u16`/`u32`/`u64`/`u128`) follows the **same rule** as signed: unannotated `+ - *` default to `option<int>` (overflow → `err`), not plain wrap.
 - `i128` operations do not support the `option` path (data field is only `i64`); they always degrade to silent wrap.
+- **`byte` / `char` are special cases** (2026-11-03 decision): their arithmetic has **no option mechanism** and ignores `#{overflow}` — `byte` overflow silently wraps with two's complement; `char` code-point arithmetic yielding a value outside the valid code-point range (`< 0` or `> 0x10FFFF`) produces **`-1`** (invalid-code-point sentinel). Rationale: `i8`–`i128` / `u8`–`u128` serve real business values (default `err` forces an explicit choice), while `byte` / `char` typical uses (byte streams, code-point iteration) naturally tolerate wraparound. To detect byte/char overflow, convert to a wider type first (e.g. `b.to-i64()`). (⚠️ not yet implemented — byte overflow currently stores a wide-domain value, char sentinel missing; tracked in `docs/design/option-unified.md` §3.1.)
 
 ## Standard Library
 

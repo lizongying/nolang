@@ -788,6 +788,26 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 			lt := "[]" + elem // to-vec 回傳 slice
 			localTypes[name] = lt
 			l.recordIndexLocalType(fd.Name, name, lt)
+			continue
+		}
+		// 3) RHS 為方法 receiver self（源碼 `parts = .`，parser 把獨立 `.` 解析成
+		// Identifier("self")）：登记方法 receiver 的容器型別。方法名形如
+		// `[]txt.join` / `str.upper`，最後一個 '.' 之前即 receiver 型別。
+		// 不登记的後果：`parts[i]: { ok -> … }` 的安全索引歸一化
+		// （isSafeIndexBase / inferIndexElemType 三層查表——idxLocalTypes /
+		// sem.FuncVarType / 全域 VarTypes——全部 miss，self 的型別任何一層都
+		// 推不出）→ match 退化、全臂失效（2026-11-03 match-index-option 的
+		// []txt.join 失敗根因：std join 內 `parts = .` 後逐元素 match 拿到空串，
+		// 輸出 "..."）。非容器 receiver（str 等）登记後 containerElemType 為空、
+		// isSafeIndexBase 仍 false，無副作用。
+		if id, isID := ls.Value.(*Identifier); isID && id.Value == "self" {
+			if ridx := strings.LastIndex(fd.Name, "."); ridx > 0 {
+				recv := fd.Name[:ridx]
+				if recv != "" && containerElemType(recv) != "" {
+					localTypes[name] = recv
+					l.recordIndexLocalType(fd.Name, name, recv)
+				}
+			}
 		}
 	}
 	l.p.curFuncName = savedP
@@ -1121,6 +1141,72 @@ func commonCaptureInner(nodes []captureNode) string {
 	return common
 }
 
+// intOperandTypeName 回傳運算元的整數型別名（任意寬度，含 byte/u8 等無號型別）。
+// 與 signedIntOperandType 的差別：不限定有號、索引讀取按其元素型別解析
+// （`hx[0][1]` 於 [][]byte 上回 "byte"）。型別不可判定時回 ""（呼叫端保留
+// i64 慣例）。這是混型算術「結果取第一個運算元型別」規則的型別查詢端。
+func (l *lowerer) intOperandTypeName(e Expression) string {
+	switch x := unwrapLowerExpr(e).(type) {
+	case *IntegerLiteral:
+		return "i64"
+	case *Identifier:
+		name := x.Value
+		if name == "self" || name == "." {
+			if t, ok := l.lowerSelfType(); ok && t != "" {
+				return ty.StripOptionRaw(t)
+			}
+			return ""
+		}
+		if l.p.sem != nil {
+			if t, has := l.p.sem.FuncVarType(l.curFuncName, name); has && t != "" {
+				return ty.StripOptionRaw(t)
+			}
+		}
+		return ""
+	case *IndexExpression:
+		// indexContainerType 回傳的正是「這個讀取表達式本身的型別」
+		// （IndexExpression 情形已剝過一層容器）：`hx[0][0]` 於 [][]byte 上
+		// 直接回 "byte"。
+		return l.indexContainerType(x)
+	case *InfixExpression:
+		// 巢狀算術運算元：其值為 option 的內部 payload，型別遞迴取其左運算元
+		// （與本規則的根層判定一致）。
+		if !isOptionArithOperator(x.Operator) {
+			return ""
+		}
+		return l.intOperandTypeName(x.Left)
+	}
+	return ""
+}
+
+// indexContainerType 回傳「對 e 做下標讀取時的容器型別」，支援嵌套索引鏈：
+// `hx`（[][]byte）→ "[][]byte"；`hx[0]` → 其元素型別 "[]byte"，恰為內層
+// 讀取的容器。Identifier 走函數作用域語義表；IndexExpression 遞迴；點運算
+// 解 struct 欄位。不可判定回 ""。
+func (l *lowerer) indexContainerType(e Expression) string {
+	switch b := unwrapLowerExpr(e).(type) {
+	case *Identifier:
+		if l.p.sem != nil {
+			if t, has := l.p.sem.FuncVarType(l.curFuncName, b.Value); has && t != "" {
+				return ty.StripOptionRaw(t)
+			}
+		}
+	case *IndexExpression:
+		if cont := l.indexContainerType(b.Left); cont != "" {
+			return containerElemType(cont)
+		}
+	case *DotExpression:
+		if rt := l.p.resolveReceiverType(b.Receiver); rt != "" {
+			if fields, ok := l.p.structFields[rt]; ok {
+				if ft, ok := fields[b.Property]; ok {
+					return strings.TrimPrefix(ft, "?")
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // addCaptureNode 把 e 登記為捕獲節點（分配 __cap_N、註冊型別），回傳替代 e 的識別符。
 func (l *lowerer) addCaptureNode(e Expression, inner string, out *[]captureNode, tok lexer.Token) Expression {
 	l.capTmpSeq++
@@ -1396,10 +1482,24 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool)
 	// （aes.no 的 `(ek[x] << 24) | …`）覆寫成 ?byte 會讓 codegen 的 option
 	// wrap 發出 `trunc i64 %c614 to i8` 而 LLVM 驗證失敗（'%c614' defined
 	// with type 'i8' but expected 'i64'，tests/aes-vectors.no）。
+	//
+	// 2026-11-03（混型寬度規則）：option-arith 根的整數結果型別改為**左運算元
+	// 的型別**（語言規則：`byte + i64` 的結果是 byte、值必須落在其範圍內，
+	// 溢出 ⇒ err；回繞需顯式 `#{overflow=wrap}`）。這同時對齊了 MIR 側：
+	// KInfix 的 Dst 型別本來就取左運算元（hir2mir typeOfNode），此前 parser
+	// 給 ?i64、MIR 給 byte，兩邊不一致只能靠 option-wrap 的 type-pun 硬湊，
+	// 疊上 emitConst 缺 i8（折疊 byte 常量恆 0）就是混型加法順序敏感 bug 的
+	// 全鏈。移位/位運根（`<<`、`|` 等）不在 isOptionArithOperator 內，維持
+	// i64 慣例——aes.no 的教訓場景不受影響。
 	if inf, isInf := root.(*InfixExpression); isInf {
 		if common := commonCaptureInner(nodes); common == "f32" || common == "f64" ||
 			(common == "str" && inf.Operator == "+") {
 			inner = common
+		} else if isOptionArithOperator(inf.Operator) {
+			ltName := l.intOperandTypeName(inf.Left)
+			if ltName != "" {
+				inner = ltName
+			}
 		}
 	}
 	// 顯式標註 ?T 時補內部守衛（推斷內部型別以顯式為準）。

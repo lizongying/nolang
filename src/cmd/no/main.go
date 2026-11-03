@@ -255,6 +255,8 @@ func main() {
 		vetCommand(os.Args[2:])
 	case "ast":
 		astCommand(os.Args[2:])
+	case "cache":
+		cacheCommand(os.Args[2:])
 	case "info":
 		infoCommand()
 	default:
