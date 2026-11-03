@@ -679,6 +679,15 @@ test-flow-gate = () {
     ir5 = h2m-lower-program(t5, agg5, r5)
     runner.eq(agg5.unsup > 0, 1, 'f64 slot counted')
     runner.eq(ir5.contains('define'), 0, 'f64 slot no code')
+
+    ; 兜底臂不在末位：其后的臂恒不可达，臂体里的 return 会被链的 stop 静默吞掉 ⇒ 形状校验计 unsup
+    src-wmid = 'f2 = (n i64) (r i64) {\n    r = 0\n    {\n        n > 3 -> r = 1\n        -> r = 9\n        n > 1 -> return\n    }\n}\n'
+    t6 = ast.make()
+    r6 = ps.parse(t6, ps.new(src-wmid.to-bytes()))
+    agg6 = h2m-new()
+    ir6 = h2m-lower-program(t6, agg6, r6)
+    runner.eq(agg6.unsup > 0, 1, 'wild-not-last counted')
+    runner.eq(ir6.contains('define'), 0, 'wild-not-last no code')
 }
 
 ; 调用入口（保持与下方新增函数定义的顺序无关）

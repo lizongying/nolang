@@ -1014,6 +1014,8 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ; c: 上下文
 ; sg: 模块级签名表
 ; n: SurfaceMatch 节点 id
+; ⚠️ 兜底臂只认末位：兜底臂吃掉全部余下路径，其后的臂恒不可达；若照发则臂体里的不支持构造
+;   会被 stop 静默吞掉（产码 ≠ 产对码），故形状校验直接把 兜底臂不在末位 判成不覆盖面
 h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     d = ast.nd-at(t, n)
     arms = d.hcount
@@ -1030,6 +1032,10 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             wi = ast.aux-at(t, hb + 4)
             bn <= 0 -> bad = 1
             wi <= 0 && cn <= 0 -> bad = 1
+            wi > 0 -> {
+                last-j = j + 1
+                last-j < arms -> bad = 1
+            }
 
             #{overflow=wrap}
             j = j + 1
