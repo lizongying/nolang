@@ -27,6 +27,7 @@
 ;   OPTLT / OPTLE / OPTGT / OPTGE（option 排序 s51：操作数在 %op，只取两侧 slot[0]（i64 载荷）发 icmp slt/sle/sgt/sge 再 zext；【无 tag 项、无 and】——Go emitOptionValueOrder 原函即只比值；单块降级无 helper，仅适用 i64 载荷）
 ;   OPTLTF64 / OPTLEF64 / OPTGTF64 / OPTGEF64（option 的 f64/double 载荷排序 s52：操作数在 %op，取两侧 slot[0] 循 s47 bitcast i64→double 后发 fcmp olt/ole/ogt/oge 再 zext；【无 tag 项、无 and】同 s51 int 翼纪律，镜像 Go emitOptionValueOrder 的 double 分支；单块降级无 helper，仅适用 f64 载荷）
 ;   OPTLTSC / OPTLESC / OPTGTSC / OPTGESC（option 与纯量排序 s53：一侧 %op 一侧普通 %v，方向由 vty 判定（镜像 Go emitCmp 的 aOpt/bOpt 动态判侧）；只提 option 侧 slot[0] 载荷与纯量直接 icmp slt/sle/sgt/sge 再 zext——【无 tag 项、无 and、谓词不翻转】，操作数次序随源表达式不变；单块降级无 helper，仅适用 i64 载荷×i64 纯量）
+;   OPTLTSCF / OPTLESCF / OPTGTSCF / OPTGESCF（option 与 f64 纯量排序 s54：镜像 Go emitCmp aOpt/bOpt 提取后落 double 翼 codegen.go:6686-6714；vty 双护栏判向且非 option 侧须 TY-F64；提 option 侧 slot[0] bitcast i64→double（等价 Go 对载荷 typed load double）后与 %fd 纯量 fcmp olt/ole/ogt/oge 再 zext；【无 tag 项、无 and、谓词不翻转】同 s53 纪律；双护栏皆不满足时不发射，护栏不过不回退（呼叫方保证））
 ;     ——与有符号族共用 %v 命名空间与 i64 型别，只差助记符；TY-U64 型别码走 cg-ty-name/cg-val-prefix 默认臂
 ;   浮点 ALU（s37）：ADD/SUB/MUL/DIV/MOD 与 CMP* 按**值型别分派**——vty 为 TY-F64 时发
 ;     fadd/fsub/fmul/fdiv/frem double %fd… / fcmp <oeq/une/olt/ole/ogt/oge> double（忠实 Go
@@ -1145,6 +1146,194 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 b.push(' = icmp sge i64 %v')
                 b.push(x.to-str())
                 b.push(', %opy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+        }
+
+        ; ── option 与 f64 纯量的排序（s54）：vty 双护栏判向，载荷 bitcast→double 后与 %fd 纯量 fcmp；【无 tag 项、无 and、谓词不翻转】；镜像 Go emitCmp aOpt/bOpt 提取后落 double 翼 ──
+        op == OP-OPTLTSCF -> {
+
+            ; 左 option：载荷 slot[0] bitcast→double vs %fd<y>，谓词 olt；次序不变（xa 在左）；护栏要求纯量侧 TY-F64（镜像 Go double-vs-double 同形过闸）。
+            cg-vty-at(vty, x) == TY-OPT && cg-vty-at(vty, y) == TY-F64 -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%fdx')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opx')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp olt double %fdx')
+                b.push(k.to-str())
+                b.push(', %fd')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+
+            ; 右 option：%fd<x> vs 载荷 double，同谓词不翻转（Go 只换提取侧不换次序）。
+            cg-vty-at(vty, y) == TY-OPT && cg-vty-at(vty, x) == TY-F64 -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%fdy')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opy')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp olt double %fd')
+                b.push(x.to-str())
+                b.push(', %fdy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+        }
+        op == OP-OPTLESCF -> {
+
+            ; 同 OPTLTSCF，谓词换 ole（Go OpLe⇒ole 翼）。
+            cg-vty-at(vty, x) == TY-OPT && cg-vty-at(vty, y) == TY-F64 -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%fdx')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opx')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp ole double %fdx')
+                b.push(k.to-str())
+                b.push(', %fd')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+            cg-vty-at(vty, y) == TY-OPT && cg-vty-at(vty, x) == TY-F64 -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%fdy')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opy')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp ole double %fd')
+                b.push(x.to-str())
+                b.push(', %fdy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+        }
+        op == OP-OPTGTSCF -> {
+
+            ; 同 OPTLTSCF，谓词换 ogt（Go OpGt⇒ogt 翼）。
+            cg-vty-at(vty, x) == TY-OPT && cg-vty-at(vty, y) == TY-F64 -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%fdx')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opx')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp ogt double %fdx')
+                b.push(k.to-str())
+                b.push(', %fd')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+            cg-vty-at(vty, y) == TY-OPT && cg-vty-at(vty, x) == TY-F64 -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%fdy')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opy')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp ogt double %fd')
+                b.push(x.to-str())
+                b.push(', %fdy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+        }
+        op == OP-OPTGESCF -> {
+
+            ; 同 OPTLTSCF，谓词换 oge（Go OpGe⇒oge 翼）。nil 载荷位模式 +0.0 参与比较（同 s52）。
+            cg-vty-at(vty, x) == TY-OPT && cg-vty-at(vty, y) == TY-F64 -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%fdx')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opx')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp oge double %fdx')
+                b.push(k.to-str())
+                b.push(', %fd')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+            cg-vty-at(vty, y) == TY-OPT && cg-vty-at(vty, x) == TY-F64 -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%fdy')
+                b.push(k.to-str())
+                b.push(' = bitcast i64 %opy')
+                b.push(k.to-str())
+                b.push(' to double\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = fcmp oge double %fd')
+                b.push(x.to-str())
+                b.push(', %fdy')
                 b.push(k.to-str())
                 b.push('\n\t%v')
                 b.push(d.to-str())
