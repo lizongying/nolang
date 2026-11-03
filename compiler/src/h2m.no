@@ -1,0 +1,382 @@
+; ═══════════════════════════════════════════════════════════════════
+; h2m — AST → MIR 降级（对齐 src/mir/hir2mir.go）
+; ═══════════════════════════════════════════════════════════════════
+;
+; 目标（M4-e 首件，s55）：把 ps.no 产出的 AST arena 降级成 cg.no 消费的 MIR 指令流，
+; 打通「源码 → IR」的第一条真实路径。此前 compiler/ 里每一段 IR 都来自手写的 op 数组
+; （cg-test.no / tmp/probe-sNN.no）——等于「codegen 有测试、前端无出口」。
+;
+; ── 本切片的覆盖面（刻意极小，且小得可测量）───────────────────────
+;   支持：Program / FunctionDefinition（零输入参数、至多一个输出参数）/
+;         BlockStatement / LetStatement / Identifier / IntegerLiteral /
+;         GroupedExpression / InfixExpression（+ - *）
+;   不支持（一律计入 unsup，绝不静默略过）：控制流、调用、除与余、位运算、
+;         前缀负号、f64/str/vec/struct/option、多输出参数、输入参数、
+;         复合赋值、类型标注、非函数定义语句
+;
+; ── 值 id 模型（与 cg.cg-emit-cfg-t 的约定对齐）───────────────────
+;   id 0 = 哑元（vty[0] 先占位，永不引用）；1..nargs = 形参（本切片 nargs 恒 0）；
+;   nargs+1 起由降级期单调分配。每个 LetStatement 把右值表达式的结果 id 直接绑到名字，
+;   同名重复绑定 = 覆盖（镜像 §3.11「函数作用域内同名重复赋值 = 重赋值」）。
+;   ⚠ 直线式 i64 语义下 SSA 名即槽，故**不发 alloca/store/load**；一旦支持分支/循环，
+;     跨块同名变量必须落 alloca（§11 R7：alloca 还须提到函数入口），届时本切片的重绑
+;     策略要改成 STORE/LOAD——已记入未覆盖。
+;
+; ── 诚实门禁 ─────────────────────────────────────────────────────
+;   不支持的构造让 agg.unsup += 1。呼叫方必须以 unsup == 0 判定本轮产码可信，
+;   不得把「产出了 IR」当成「降级正确」。
+;
+; SHS 合规：无模块级可变状态、无一等函数值、无指针、无 map 字段；
+;   一律【普通函数 + 显式结构体参数】，不用方法（带 vec 字段的跨模块方法同 ast.no 风险面）。
+; ⚠️ 整数运算默认回 option<int>：每条算术陈述都要 #{overflow=wrap}；
+;    读 arr[i]（i 非字面量）要 #{index-out=zero}。
+
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/mir
+# /compiler/src/cg
+
+; ── 降级上下文（指令流 + 值 id arena + 变量绑定表 + 诚实计数器）──
+h2m-ctx {
+    ops []i64
+    dsts []i64
+    xa []i64
+    bs []i64
+    syms []str
+    blks []i64
+    vty []i64
+    cty []i64
+    names []str
+    vids []i64
+    nid i64
+    unsup i64
+}
+
+; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1
+; c: 上下文
+h2m-new = () (c h2m-ctx) {
+    c = h2m-ctx {
+        ops: []
+        i64
+        dsts: []
+        i64
+        xa: []
+        i64
+        bs: []
+        i64
+        syms: []
+        str
+        blks: []
+        i64
+        vty: []
+        i64
+        cty: []
+        i64
+        names: []
+        str
+        vids: []
+        i64
+        nid: 1
+        unsup: 0
+    }
+    c.vty.push(TY-I64)
+}
+
+; 分配一个新值 id，并把它的型别码登记进 vty（vty 按值 id 索引，必须同步填）
+; c: 上下文
+; ty: 型别码
+; id: 新分配的值 id
+h2m-alloc = (c h2m-ctx, ty i64) (id i64) {
+    c.vty.push(ty)
+    id = c.nid
+
+    #{overflow=wrap}
+    c.nid = c.nid + 1
+}
+
+; 追加一条单基本块指令（blks 恒 0）
+; c: 上下文
+; op: OP-* 码
+; d: 结果值 id（无结果指令传 0）
+; a: 第一实参
+; b: 第二实参
+; sym: 符号槽（字符串字面量等）
+; res: 结果型别码（写入 cty[k]）
+h2m-emit = (c h2m-ctx, op i64, d i64, a i64, b i64, sym str, res i64) {
+    c.ops.push(op)
+    c.dsts.push(d)
+    c.xa.push(a)
+    c.bs.push(b)
+    c.syms.push(sym)
+    c.blks.push(0)
+    c.cty.push(res)
+}
+
+; 记一条「本切片不支持」的构造（诚实门禁，不是静默略过）
+; c: 上下文
+h2m-mark = (c h2m-ctx) {
+
+    #{overflow=wrap}
+    c.unsup = c.unsup + 1
+}
+
+; 查变量绑定的值 id
+; c: 上下文
+; name: 变量名
+; id: 值 id（0 = 未绑定）
+h2m-var-find = (c h2m-ctx, name str) (id i64) {
+    id = 0
+    i = 0
+    (i < c.names.len() && id == 0) {
+        nm = c.names[i] #{index-out=zero}
+        nm == name -> {
+            vid = c.vids[i] #{index-out=zero}
+            id = vid
+        }
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; 绑定变量名到值 id：已有同名绑定则覆盖（重赋值语义），否则追加
+; c: 上下文
+; name: 变量名
+; id: 值 id
+h2m-var-bind = (c h2m-ctx, name str, id i64) {
+    found = 0
+    i = 0
+    (i < c.names.len() && found == 0) {
+        nm = c.names[i] #{index-out=zero}
+        nm == name -> {
+            c.vids[i] = id
+            found = 1
+        }
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    found == 0 -> {
+        c.names.push(name)
+        c.vids.push(id)
+    }
+}
+
+; 表达式降级：回传该表达式的值 id；0 = 不支持（已计入 unsup）
+; t: AST arena
+; c: 上下文
+; n: 表达式节点 id
+; v: 值 id
+h2m-lower-expr = (t ast, c h2m-ctx, n i64) (v i64) {
+    v = 0
+    d = ast.nd-at(t, n)
+    {
+        d.kind == asp.K-INTEGER-LITERAL -> {
+            lit = ast.str-at(t, d.s0)
+            ov = lit.to-i64()
+            ok-lit = 0
+            num = 0
+            ov: {
+                ok -> {
+                    num = it
+                    ok-lit = 1
+                }
+
+                -> {
+                }
+            }
+            ok-lit == 1 -> {
+                cid = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, cid, num, 0, '', TY-I64)
+                v = cid
+            }
+            ok-lit == 0 -> h2m-mark(c)
+        }
+
+        d.kind == asp.K-IDENTIFIER -> {
+            nm = ast.str-at(t, d.s0)
+            vid = h2m-var-find(c, nm)
+            vid > 0 -> v = vid
+            vid == 0 -> h2m-mark(c)
+        }
+
+        d.kind == asp.K-GROUPED-EXPRESSION -> {
+            gk = ast.kid-at(t, d.kid0)
+            v = h2m-lower-expr(t, c, gk)
+        }
+
+        d.kind == asp.K-INFIX-EXPRESSION -> {
+            osym = ast.str-at(t, d.s0)
+            xk = ast.kid-at(t, d.kid0)
+            yp = d.kid0
+
+            #{overflow=wrap}
+            yp = yp + 1
+            yk = ast.kid-at(t, yp)
+            lv = h2m-lower-expr(t, c, xk)
+            rv = h2m-lower-expr(t, c, yk)
+            bop = 0
+            {
+                osym == '+' -> bop = OP-ADD
+
+                osym == '-' -> bop = OP-SUB
+
+                osym == '*' -> bop = OP-MUL
+
+                -> {
+                }
+            }
+            bop > 0 && lv > 0 && rv > 0 -> {
+                mid = h2m-alloc(c, TY-I64)
+                h2m-emit(c, bop, mid, lv, rv, '', TY-I64)
+                v = mid
+            }
+            bop == 0 || lv == 0 || rv == 0 -> h2m-mark(c)
+        }
+
+        -> h2m-mark(c)
+    }
+}
+
+; LetStatement 降级：右值降级出的 id 直接绑到名字（不发 alloca/store/load）
+; kid 区序 = [型别节点, 值表达式]，取最后一个 kid 作值（对 nkid=1 的合成人同样成立）
+; t: AST arena
+; c: 上下文
+; n: 语句节点 id
+h2m-lower-let = (t ast, c h2m-ctx, n i64) {
+    d = ast.nd-at(t, n)
+    d.nkid == 0 -> h2m-mark(c)
+    d.nkid > 0 -> {
+        nm = ast.str-at(t, d.s0)
+        vp = d.kid0
+        vc = d.nkid
+
+        #{overflow=wrap}
+        vc = vc - 1
+
+        #{overflow=wrap}
+        vp = vp + vc
+        vk = ast.kid-at(t, vp)
+        vv = h2m-lower-expr(t, c, vk)
+        vv > 0 -> h2m-var-bind(c, nm, vv)
+    }
+}
+
+; BlockStatement 降级：逐个 kid 降级；本切片只认 LetStatement
+; t: AST arena
+; c: 上下文
+; n: 块节点 id
+h2m-lower-block = (t ast, c h2m-ctx, n i64) {
+    d = ast.nd-at(t, n)
+    i = 0
+    (i < d.nkid) {
+        p = d.kid0
+
+        #{overflow=wrap}
+        p = p + i
+        kid = ast.kid-at(t, p)
+        kk = ast.nd-at(t, kid)
+        kk.kind == asp.K-LET-STATEMENT -> h2m-lower-let(t, c, kid)
+        kk.kind != asp.K-LET-STATEMENT -> h2m-mark(c)
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; FunctionDefinition 降级为一段函数文本（零输入参数、至多一个输出参数）
+; agg: 模块级计数器上下文（本件内部的指令 arena 是私有的，只把 unsup 增量并入 agg）
+; t: AST arena
+; n: 函数定义节点 id
+; r: 函数 IR 文本（'' = 形状不支持，未产码）
+h2m-lower-func = (t ast, agg h2m-ctx, n i64) (r str) {
+    r = ''
+    c = h2m-new()
+    d = ast.nd-at(t, n)
+    shape = 1
+    d.c4 > 0 -> {
+        h2m-mark(c)
+        shape = 0
+    }
+    d.c5 > 1 -> {
+        h2m-mark(c)
+        shape = 0
+    }
+    shape == 1 -> {
+
+        ; body 是最后一个 kid（kid 区序：[泛型…][输入…][输出…][body]）
+        bp = d.kid0
+        bc = d.nkid
+
+        #{overflow=wrap}
+        bc = bc - 1
+
+        #{overflow=wrap}
+        bp = bp + bc
+        body = ast.kid-at(t, bp)
+        bc < 0 -> h2m-mark(c)
+        bc >= 0 -> h2m-lower-block(t, c, body)
+
+        ; 恰一个输出参数时：它绑定的值 id 即返回值；未绑定则补一条 CONST 0
+        rid = 0
+        d.c5 == 1 -> {
+            rp = d.kid0
+            rg = d.c3
+
+            #{overflow=wrap}
+            rp = rp + rg
+            rn = d.c4
+
+            #{overflow=wrap}
+            rp = rp + rn
+            pk = ast.kid-at(t, rp)
+            pd = ast.nd-at(t, pk)
+            out-name = ast.str-at(t, pd.s0)
+            rid = h2m-var-find(c, out-name)
+        }
+        rid == 0 -> {
+            zid = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CONST, zid, 0, 0, '', TY-I64)
+            rid = zid
+        }
+        h2m-emit(c, OP-RET, 0, rid, 0, '', TY-I64)
+        fn = ast.str-at(t, d.s0)
+        ptyps []i64 = []
+        r = cg.cg-emit-cfg-t(fn, TY-I64, 0, ptyps, c.vty, c.cty, c.blks, c.ops, c.dsts, c.xa, c.bs, c.syms)
+    }
+
+    ; 把本函数的不支持计数并入模块级计数器
+    inc = c.unsup
+
+    #{overflow=wrap}
+    agg.unsup = agg.unsup + inc
+}
+
+; 整个 Program 降级：逐个 FunctionDefinition 产码并拼接；非函数定义计入 unsup
+; t: AST arena
+; agg: 模块级计数器上下文（呼叫方以 agg.unsup == 0 判定产码可信）
+; root: Program 节点 id
+; r: 模块函数文本（不含 prelude / main）
+h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
+    r = ''
+    d = ast.nd-at(t, root)
+    i = 0
+    (i < d.nkid) {
+        p = d.kid0
+
+        #{overflow=wrap}
+        p = p + i
+        kid = ast.kid-at(t, p)
+        kk = ast.nd-at(t, kid)
+        kk.kind == asp.K-FUNCTION-DEFINITION -> {
+            one = h2m-lower-func(t, agg, kid)
+            one != '' -> {
+                r = r - one - '\n'
+            }
+        }
+        kk.kind != asp.K-FUNCTION-DEFINITION -> h2m-mark(agg)
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
