@@ -235,12 +235,10 @@ markdown.list-item = (line str) (out markdown-list) {
 markdown.list-content = (content str) (out str) {
     s = content.trim()
     s.starts-with('[ ] ') -> {
-
         out = '<input type="checkbox" disabled> ' - markdown.inline(s.slice-bytes(4, s.len-bytes()))
         return
     }
     s.starts-with('[x] ') || s.starts-with('[X] ') -> {
-
         out = '<input type="checkbox" checked disabled> ' - markdown.inline(s.slice-bytes(4, s.len-bytes()))
         return
     }
@@ -333,7 +331,6 @@ markdown.table-separator = (line str) (yes bool) {
         return
     }
     c <- cells: {
-
         cell = c.trim()
         cell = cell.replace-str(':', '')
         cell = cell.replace-str('-', '')
@@ -359,7 +356,6 @@ markdown.table-row = (line str, tag str) (out str) {
     cells = s.split('|')
     out = '<tr>\n'
     c <- cells: {
-
         cell = c.trim()
 
         out = out - '<' - tag - '>' - markdown.inline(cell) - '</' - tag - '>\n'
@@ -870,7 +866,6 @@ markdown.to-html = (source str) (out str) {
         }
 
         in-quote -> {
-
             result = result - '<blockquote>\n' - markdown.inline(quote-buffer) - '\n</blockquote>\n'
             quote-buffer = ''
             in-quote = false
@@ -930,7 +925,6 @@ markdown.to-html = (source str) (out str) {
         ; 縮進四格代碼塊。
         line.starts-with('    ') -> {
             paragraph.len-bytes() > 0 -> {
-
                 result = result - '<p>' - markdown.inline(paragraph) - '</p>\n'
                 paragraph = ''
             }

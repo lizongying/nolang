@@ -52,7 +52,6 @@ static-hashmap-str-tmpl.init = () {
     .cap = 256
     .size = 0
     i <- [0..256): {
-
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -64,10 +63,8 @@ static-hashmap-str-tmpl.init = () {
 ; idx: FNV-1a 雜湊後掩碼到 256 槽的索引
 ; [hash](#static-hashmap.static-hashmap-str-tmpl.hash)
 static-hashmap-str-tmpl.hash = (key str) (idx i64) {
-
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
-
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
@@ -86,7 +83,6 @@ static-hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
         a.byte(i) != b.byte(i) -> {
-
             return
         }
     }
@@ -105,19 +101,15 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     first-tomb = -1
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             eq = .str-eq(.keys[idx], key)
             eq -> {
-
                 .vals[idx] = val
                 is-new = false
                 return
             }
         }
         .occ[idx] == 2 -> {
-
             first-tomb < 0 -> first-tomb = idx
         }
 
@@ -150,12 +142,9 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
     idx = .hash(key)
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             eq = .str-eq(.keys[idx], key)
             eq -> {
-
                 result = .vals[idx]
                 return
             }
@@ -194,10 +183,8 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
 
         #{overflow=wrap}
         .occ[idx] == 1 -> {
-
             eq = .str-eq(.keys[idx], key)
             eq -> {
-
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -215,7 +202,6 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
 ; [clear](#static-hashmap.static-hashmap-str-tmpl.clear)
 static-hashmap-str-tmpl.clear = () {
     i <- [0...cap): {
-
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -249,7 +235,6 @@ static-hashmap-str-tmpl.for-each = () (k str, v v) {
             ; str[j] 是碼點索引，用位元組上界會讀越界並把非 ASCII 鍵弄壞。
             ; 三點 `[0...X)` = `[0..` + `.X`（X 為 self 成員），故 .keys 不可省。
             j <- [0...keys[i].len-bytes()): {
-
                 k[j] = .keys[i].byte(j)
             }
 
@@ -287,7 +272,6 @@ static-hashmap-int-tmpl.init = () {
     .cap = 256
     .size = 0
     i <- [0..256): {
-
         .occ[i] = 0
 
         .keys[i] = 0
@@ -299,7 +283,6 @@ static-hashmap-int-tmpl.init = () {
 ; idx: 鍵經 256 槽掩碼後的索引
 ; [hash](#static-hashmap.static-hashmap-int-tmpl.hash)
 static-hashmap-int-tmpl.hash = (key k) (idx i64) {
-
     idx = key & (.cap - 1)
 }
 
@@ -315,18 +298,14 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     first-tomb = -1
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             .keys[idx] == key -> {
-
                 .vals[idx] = val
                 is-new = false
                 return
             }
         }
         .occ[idx] == 2 -> {
-
             first-tomb < 0 -> first-tomb = idx
         }
 
@@ -357,11 +336,8 @@ static-hashmap-int-tmpl.get = (key k) (result ?v) {
     idx = .hash(key)
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             .keys[idx] == key -> {
-
                 result = .vals[idx]
                 return
             }
@@ -400,9 +376,7 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
 
         #{overflow=wrap}
         .occ[idx] == 1 -> {
-
             .keys[idx] == key -> {
-
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -420,7 +394,6 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
 ; [clear](#static-hashmap.static-hashmap-int-tmpl.clear)
 static-hashmap-int-tmpl.clear = () {
     i <- [0...cap): {
-
         .occ[i] = 0
 
         .keys[i] = 0
@@ -449,7 +422,6 @@ static-hashmap-int-tmpl.is-empty = () (empty bool) {
 static-hashmap-int-tmpl.for-each = () (k k, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
-
             k = .keys[i]
 
             v = .vals[i]
@@ -486,7 +458,6 @@ static-hashmap-bool-tmpl.init = () {
     .cap = 2
     .size = 0
     i <- [0..2): {
-
         .occ[i] = 0
 
         .keys[i] = false
@@ -516,7 +487,6 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
-
         .vals[idx] = val
         is-new = false
         return
@@ -542,7 +512,6 @@ static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
-
         result = .vals[idx]
         return
     }
@@ -572,7 +541,6 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
-
         .occ[idx] = 2
 
         #{overflow=wrap}
@@ -585,7 +553,6 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
 ; [clear](#static-hashmap.static-hashmap-bool-tmpl.clear)
 static-hashmap-bool-tmpl.clear = () {
     i <- [0...cap): {
-
         .occ[i] = 0
 
         .keys[i] = false
@@ -614,7 +581,6 @@ static-hashmap-bool-tmpl.is-empty = () (empty bool) {
 static-hashmap-bool-tmpl.for-each = () (k bool, v v) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
-
             k = .keys[i]
 
             v = .vals[i]

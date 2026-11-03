@@ -2,6 +2,7 @@ package mir
 
 import (
 	"runtime"
+	"strings"
 	"sync/atomic"
 
 	"github.com/lizongying/nolang/hir"
@@ -15,6 +16,69 @@ type mirPlatform struct{ goos, goarch string }
 
 // mirTarget holds the -target platform. nil = not set → lower for the host.
 var mirTarget atomic.Pointer[mirPlatform]
+
+// emitTriple is the string MIR writes into `target triple = "..."` at the top
+// of every module. The build driver sets it to whatever the target clang
+// installs on the parsed module (see build/builder.go queryEmitTargetTriple),
+// so clang's -Woverride-module check finds the two strings byte-equal and
+// stays silent. An empty value makes emitPrelude omit the directive entirely —
+// which is the correct behaviour for the LLVM C-API backend and the WASI
+// llc-only path, and the pre-existing default for tools that don't consult
+// it (standalone MIR tests, LSP, playground).
+var emitTriple atomic.Pointer[string]
+
+// SetEmitTargetTriple overrides the exact triple written into the IR
+// prelude. Passing "" resets to the Go-canonical fallback in
+// emitTargetTripleValue (linux / windows / wasi produce the right string
+// without needing a driver hint; darwin falls through to "" so the prelude
+// stays silent and clang installs its SDK-versioned triple). Builder calls
+// this once per build after probing clang for the canonical spelling of the
+// current -target — see build/transpiler.go SetTargetPlatform.
+func SetEmitTargetTriple(t string) {
+	trimmed := strings.TrimSpace(t)
+	if trimmed == "" {
+		emitTriple.Store(nil)
+		return
+	}
+	emitTriple.Store(&trimmed)
+}
+
+// emitTargetTripleValue returns the currently-configured IR prelude triple,
+// or a Go-derived canonical fallback when the driver didn't set one.
+//
+// The fallback only claims to know the answer for triples WITHOUT an OS
+// version suffix (linux/windows/wasi). Apple targets deliberately return
+// "" so the prelude stays silent — DarwinToolChain appends the macOS SDK
+// version to the driver triple at init time (`arm64-apple-macosx27.0.0`),
+// which MIR cannot observe from Go without shelling out to clang. Better
+// to omit than to guess wrong and reintroduce the -Woverride-module warning.
+func emitTargetTripleValue() string {
+	if p := emitTriple.Load(); p != nil {
+		return *p
+	}
+	goos, goarch := mirTargetPlatform()
+	switch goos {
+	case "linux":
+		switch goarch {
+		case "amd64":
+			return "x86_64-unknown-linux-gnu"
+		case "arm64":
+			return "aarch64-unknown-linux-gnu"
+		}
+	case "windows":
+		switch goarch {
+		case "amd64":
+			return "x86_64-w64-windows-gnu"
+		case "arm64":
+			return "aarch64-w64-windows-gnu"
+		}
+	case "wasi":
+		if goarch == "wasm32" {
+			return "wasm32-unknown-wasi"
+		}
+	}
+	return ""
+}
 
 // SetTargetPlatform declares the (GOOS, GOARCH) pair the MIR backend compiles
 // for. The build driver calls it from Transpiler.SetTargetPlatform with the

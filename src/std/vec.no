@@ -157,14 +157,12 @@ vec-clear = () {
 ; []t.reverse: 反轉
 ; [reverse](#vec.reverse)
 []t.reverse = () {
-
     i = 0
     j = .len()
 
     #{overflow=wrap}
     j = j - 1
     (i < j) {
-
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
@@ -182,7 +180,6 @@ vec-clear = () {
 []t.clone = () (dst []t) {
     dst = with-len(.len())
     i <- [0...len()): {
-
         dst[i] = .[i]
     }
 }
@@ -199,7 +196,6 @@ vec-clear = () {
 ; [to-arr](#vec.to-arr)
 []t.to-arr = () (out [?]t) {
     i <- [0...len()): {
-
         out[i] = .[i]
     }
 }
@@ -425,7 +421,6 @@ vec-clear = () {
     blen = b.len()
     i = 0
     (i < blen) {
-
         i >= blen -> break
         cur = .len()
 
@@ -455,7 +450,6 @@ vec-clear = () {
             #{overflow=wrap}
             last = last - 1
             i <- [0...len()): {
-
                 out = out - .[i].to-str()
 
                 i < last -> out = out - ', '

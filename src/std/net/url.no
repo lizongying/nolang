@@ -60,7 +60,6 @@ url-info {
 ; 返回 u url-info: 解析結果（u.ok=true=成功）
 ; [url-parse](#url.url-parse)
 url-parse = (url-str str) (u url-info) {
-
     u.ok = false
     u.scheme = ''
     u.host = ''
@@ -126,7 +125,6 @@ url-parse = (url-str str) (u url-info) {
 
     #{overflow=wrap}
     at-pos >= 0 -> {
-
         userinfo = authority.slice(0, at-pos)
         authority = authority.slice(at-pos + 1, authority.len-bytes())
         colon-pos = userinfo.index(':')
@@ -151,7 +149,6 @@ url-parse = (url-str str) (u url-info) {
             p = 0
             valid = true
             i <- [0..port-str.len-bytes()): {
-
                 ch = port-str[i]
                 ch < 48 || ch > 57 -> {
                     valid = false
@@ -186,8 +183,7 @@ url-info.get-query = (key str) (val ?str) {
     q = .query
     pos = 0
     !! {
-
-        pos >= q.len-bytes() -> *
+        pos >= q.len-bytes() -> break
 
         ; 找下一個 &
         next-amp = q.index-from('&', pos)
@@ -214,7 +210,7 @@ url-info.get-query = (key str) (val ?str) {
                 }
             }
         }
-        next-amp < 0 -> *
+        next-amp < 0 -> break
 
         #{overflow=wrap}
         pos = next-amp + 1
@@ -226,9 +222,7 @@ url-info.get-query = (key str) (val ?str) {
 ; value: 該參數的新值
 ; [set-query](#url.url-info.set-query)
 url-info.set-query = (key str, value str) {
-
     .query.len-bytes() == 0 -> {
-
         .query = key - '=' - value
         return
     }
@@ -239,8 +233,7 @@ url-info.set-query = (key str, value str) {
     new-query = ''
     pos = 0
     !! {
-
-        pos >= q.len-bytes() -> *
+        pos >= q.len-bytes() -> break
         next-amp = q.index-from('&', pos)
         pair-end = next-amp
         pair-end < 0 -> pair-end = q.len-bytes()
@@ -250,7 +243,6 @@ url-info.set-query = (key str, value str) {
         eq-pos >= 0 -> {
             k = pair.slice(0, eq-pos)
             k == key -> {
-
                 pair = key - '=' - value
                 found = true
             }
@@ -261,7 +253,7 @@ url-info.set-query = (key str, value str) {
 
             -> new-query = pair
         }
-        next-amp < 0 -> *
+        next-amp < 0 -> break
 
         #{overflow=wrap}
         pos = next-amp + 1
@@ -285,13 +277,11 @@ url-info.set-query = (key str, value str) {
 ; 返回 out str: 組裝後的完整 URL
 ; [to-str](#url.url-info.to-str)
 url-info.to-str = () (out str) {
-
     out = ''
 
     .scheme.len-bytes() > 0 -> out = out - .scheme - '://'
 
     .user.len-bytes() > 0 -> {
-
         out = out - .user
         .password.len-bytes() > 0 -> out = out - ':' - .password
         out = out - '@'
@@ -318,7 +308,6 @@ url-info.to-str = () (out str) {
     }
 
     show-port -> {
-
         port-s = .port.to-str()
         out = out - ':' - port-s
     }
@@ -355,7 +344,6 @@ url-encode = (s str) (out str) {
     #{overflow=wrap}
     out = with-cap(s.len-bytes() * 3 + 1)
     i <- [0..s.len-bytes()): {
-
         c = s.byte(i)
 
         ; 不編碼的字元：A-Z, a-z, 0-9, -, _, ., ~
@@ -401,7 +389,6 @@ url-encode-component = (s str) (out str) {
     #{overflow=wrap}
     out = with-cap(s.len-bytes() * 3 + 1)
     i <- [0..s.len-bytes()): {
-
         c = s.byte(i)
 
         ; 只保留 A-Z, a-z, 0-9, -, _, ., ~
@@ -445,7 +432,6 @@ url-decode = (s str) (out str) {
     out = with-cap(s.len-bytes() + 1)
     i = 0
     (i < s.len-bytes()) {
-
         c = s.byte(i)
 
         #{overflow=wrap}
@@ -569,10 +555,8 @@ url-join = (base str, path-str str) (out str) {
         u url-info
         u = url-parse(base)
         u.ok -> {
-
             out = u.scheme - '://' - u.host
             u.port > 0 -> {
-
                 port-s = u.port.to-str()
                 out = out - ':' - port-s
             }
@@ -587,7 +571,6 @@ url-join = (base str, path-str str) (out str) {
     #{overflow=wrap}
     i = base.len-bytes() - 1
     (i >= 0) {
-
         base[i] == 47 -> {
             slash-pos = i
             break
@@ -642,7 +625,6 @@ url-basic-auth = (user str, password str) (out str) {
 ; 返回 password str: 密碼
 ; [url-parse-basic-auth](#url.url-parse-basic-auth)
 url-parse-basic-auth = (header str) (user str, password str) {
-
     user = ''
     password = ''
 
@@ -663,7 +645,6 @@ url-parse-basic-auth = (header str) (user str, password str) {
     ; 尋找冒號分隔符
     colon = -1
     i <- [0..raw.len()): {
-
         raw[i] == 58 -> {
             colon = i
             break

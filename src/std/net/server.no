@@ -209,7 +209,6 @@ server-conn.recv-more = () (n i64) {
 ; 返回 ok bool: true=解析成功
 ; [parse](#server.server-conn.parse)
 server-conn.parse = () (ok bool) {
-
     ok = false
     .fd < 0 -> return
     cr = '\r'
@@ -226,7 +225,7 @@ server-conn.parse = () (ok bool) {
         ; 檢查緩衝區中是否已有分隔符
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> *
+        sep-pos >= 0 -> break
 
         ; 緩衝區已滿但未找到分隔符
         #{overflow=wrap}
@@ -285,7 +284,6 @@ server-conn.parse = () (ok bool) {
     ; 解析標頭到 header-names / header-values
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
-
         .header-names[i] = ' '
 
         .header-names[i].len = 0
@@ -301,8 +299,7 @@ server-conn.parse = () (ok bool) {
     hn > 0 -> {
         pos = 0
         !! {
-
-            pos >= hn -> *
+            pos >= hn -> break
             next-crlf = hs.index-from(crlf, pos)
             line-end = next-crlf
             line-end < 0 -> line-end = hn
@@ -332,7 +329,7 @@ server-conn.parse = () (ok bool) {
                     .header-count = cnt + 1
                 }
             }
-            next-crlf < 0 -> *
+            next-crlf < 0 -> break
             pos = next-crlf + 2
         }
     }
@@ -365,7 +362,6 @@ server-conn.parse = () (ok bool) {
             cl-str = it
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
-
                 ch = cl-str[j]
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
@@ -377,7 +373,6 @@ server-conn.parse = () (ok bool) {
 
                 ; 如果不足，繼續接收
                 (available < content-len) {
-
                     n = .recv-more()
                     n <= 0 -> return
                     available = .recv-buf-len - body-start
@@ -401,7 +396,6 @@ server-conn.get-header = (name str) (val ?str) {
     i <- [0..cnt): {
         matched = 1
         .header-names[i].len-bytes() != name.len-bytes() -> {
-
             matched = 0
         }
 
@@ -411,7 +405,6 @@ server-conn.get-header = (name str) (val ?str) {
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
-
                     c1 = .header-names[i][j]
 
                     c2 = name.byte(j)
@@ -428,7 +421,6 @@ server-conn.get-header = (name str) (val ?str) {
                     }
                 }
                 matched == 1 -> {
-
                     vlen = .header-values[i].len-bytes()
 
                     val = .header-values[i].slice(0, vlen)
@@ -444,7 +436,6 @@ server-conn.get-header = (name str) (val ?str) {
 ; 返回 ok bool: true=成功
 ; [write-status](#server.server-conn.write-status)
 server-conn.write-status = (status i64) (ok bool) {
-
     ok = false
     .fd < 0 -> return
     cr = '\r'
@@ -508,7 +499,6 @@ server-conn.write-status = (status i64) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [write-header](#server.server-conn.write-header)
 server-conn.write-header = (name str, value str) (ok bool) {
-
     ok = false
     .fd < 0 -> return
     cr = '\r'
@@ -526,7 +516,6 @@ server-conn.write-header = (name str, value str) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [write-headers-done](#server.server-conn.write-headers-done)
 server-conn.write-headers-done = () (ok bool) {
-
     ok = false
     .fd < 0 -> return
     cr = '\r'
@@ -558,7 +547,6 @@ server-conn.write-body = (data str) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [write-text](#server.server-conn.write-text)
 server-conn.write-text = (status i64, text str) (ok bool) {
-
     ok = false
     .fd < 0 -> return
     cr = '\r'
@@ -767,7 +755,6 @@ secure-compare = (a str, b str) (ok bool) {
     a.len-bytes() != b.len-bytes() -> return
     diff = 0
     i <- [0..a.len-bytes()): {
-
         diff = diff | (a.byte(i) ^ b.byte(i))
     }
     diff == 0 -> ok = true
@@ -779,7 +766,6 @@ secure-compare = (a str, b str) (ok bool) {
 ; key []byte: HMAC-SHA256 簽名金鑰
 ; [set-signed-cookie](#server.server-conn.set-signed-cookie)
 server-conn.set-signed-cookie = (name str, value str, key []byte) {
-
     signed-value = cookie.cookie-sign(name, value, key)
 
     cookie-val = name - '=' - signed-value - '; Path=/; HttpOnly'
@@ -923,7 +909,6 @@ https-server-conn.recv-more = () (n i64) {
 ; 返回 ok bool: true=解析成功
 ; [parse](#server.https-server-conn.parse)
 https-server-conn.parse = () (ok bool) {
-
     ok = false
     cr = '\r'
     lf = '\n'
@@ -935,10 +920,9 @@ https-server-conn.parse = () (ok bool) {
     ; 讀取直到找到 \r\n\r\n（標頭結束）
     sep-pos = -1
     !! {
-
         data = .recv-buf.slice(0, .recv-buf-len)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> *
+        sep-pos >= 0 -> break
 
         #{overflow=wrap}
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
@@ -996,7 +980,6 @@ https-server-conn.parse = () (ok bool) {
     ; 解析標頭
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
-
         .header-names[i] = ' '
 
         .header-names[i].len = 0
@@ -1012,8 +995,7 @@ https-server-conn.parse = () (ok bool) {
     hn > 0 -> {
         pos = 0
         !! {
-
-            pos >= hn -> *
+            pos >= hn -> break
             next-crlf = hs.index-from(crlf, pos)
             line-end = next-crlf
             line-end < 0 -> line-end = hn
@@ -1043,7 +1025,7 @@ https-server-conn.parse = () (ok bool) {
                     .header-count = cnt + 1
                 }
             }
-            next-crlf < 0 -> *
+            next-crlf < 0 -> break
             pos = next-crlf + 2
         }
     }
@@ -1076,7 +1058,6 @@ https-server-conn.parse = () (ok bool) {
             cl-str = it
             content-len = 0
             j <- [0..cl-str.len-bytes()): {
-
                 ch = cl-str[j]
                 ch >= 48 && ch <= 57 -> content-len = content-len * 10 + ch - 48
             }
@@ -1085,7 +1066,6 @@ https-server-conn.parse = () (ok bool) {
                 #{overflow=wrap}
                 available = .recv-buf-len - body-start
                 (available < content-len) {
-
                     n = .recv-more()
                     n <= 0 -> return
                     available = .recv-buf-len - body-start
@@ -1109,7 +1089,6 @@ https-server-conn.get-header = (name str) (val ?str) {
     i <- [0..cnt): {
         matched = 1
         .header-names[i].len-bytes() != name.len-bytes() -> {
-
             matched = 0
         }
 
@@ -1119,7 +1098,6 @@ https-server-conn.get-header = (name str) (val ?str) {
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
-
                     c1 = .header-names[i][j]
 
                     c2 = name.byte(j)
@@ -1135,7 +1113,6 @@ https-server-conn.get-header = (name str) (val ?str) {
                     }
                 }
                 matched == 1 -> {
-
                     vlen = .header-values[i].len-bytes()
 
                     val = .header-values[i].slice(0, vlen)
@@ -1151,7 +1128,6 @@ https-server-conn.get-header = (name str) (val ?str) {
 ; 返回 ok bool: true=成功
 ; [write-status](#server.https-server-conn.write-status)
 https-server-conn.write-status = (status i64) (ok bool) {
-
     ok = false
     cr = '\r'
     lf = '\n'
@@ -1215,7 +1191,6 @@ https-server-conn.write-status = (status i64) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [write-header](#server.https-server-conn.write-header)
 https-server-conn.write-header = (name str, value str) (ok bool) {
-
     ok = false
     cr = '\r'
     lf = '\n'
@@ -1241,7 +1216,6 @@ https-server-conn.write-header = (name str, value str) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [write-headers-done](#server.https-server-conn.write-headers-done)
 https-server-conn.write-headers-done = () (ok bool) {
-
     ok = false
     cr = '\r'
     lf = '\n'

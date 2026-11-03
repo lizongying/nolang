@@ -70,7 +70,6 @@ reader.read-byte = () (b ?i64) {
     buf []byte = with-len(1)
     n = fs.read(.fd, buf, 1)
     n > 0 -> {
-
         b = buf[0]
     }
 }
@@ -179,7 +178,6 @@ writer.write-byte = (b i64) (written i64) {
 ; written: 字串與換行合計寫入的位元組數；0 表示 fd 無效
 ; [write-line](#io.writer.write-line)
 writer.write-line = (s str) (written i64) {
-
     written = 0
     .fd < 0 -> return
     b = s.to-bytes()
@@ -215,7 +213,6 @@ out = (s str) (n i64) {
 ; n: 字串與換行合計寫入的位元組數
 ; [outln](#io.outln)
 outln = (s str) (n i64) {
-
     b = s.to-bytes()
     n = fs.write(fs.STDOUT-FD, b, b.len())
     nl []byte = with-len(1)
@@ -245,7 +242,6 @@ err = (s str) (n i64) {
 ; n: 字串與換行合計寫入的位元組數
 ; [errln](#io.errln)
 errln = (s str) (n i64) {
-
     b = s.to-bytes()
     n = fs.write(fs.STDERR-FD, b, b.len())
     nl []byte = with-len(1)

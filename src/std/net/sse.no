@@ -105,7 +105,6 @@ client {
 ;   err = 錯誤
 ; [next-event](#sse.client.next-event)
 client.next-event = () (ev ?event) {
-
     ev = nil
     .connected == false -> {
         ev = err('not connected')
@@ -167,7 +166,6 @@ client.next-event = () (ev ?event) {
 
                 ; 將剩餘資料移到緩衝區開頭
                 i <- [0..remaining.len-bytes()): {
-
                     .recv-buf[i] = remaining.byte(i)
                 }
                 .recv-buf-len = remaining.len-bytes()
@@ -180,7 +178,6 @@ client.next-event = () (ev ?event) {
                 has-data = false
                 pos = 0
                 (pos < event-block.len-bytes()) {
-
                     nl = event-block.index-from(lf, pos)
                     line-end = nl
                     line-end < 0 -> line-end = event-block.len-bytes()
@@ -189,7 +186,6 @@ client.next-event = () (ev ?event) {
                     ; 去除行尾 \r
                     line.len-bytes() > 0 -> {
                         line[line.len-bytes() - 1] == 13 -> {
-
                             line = line.slice(0, line.len-bytes() - 1)
                         }
                     }
@@ -203,12 +199,10 @@ client.next-event = () (ev ?event) {
                             field = line
                             value = ''
                             colon >= 0 -> {
-
                                 field = line.slice(0, colon)
                                 val-start = colon + 1
                                 val-start < line.len-bytes() -> {
                                     line[val-start] == 32 -> {
-
                                         val-start = val-start + 1
                                     }
                                 }
@@ -323,7 +317,6 @@ client.is-connected = () (yes bool) {
 ; 返回 ok bool: true=成功
 ; [reconnect](#sse.client.reconnect)
 client.reconnect = () (ok bool) {
-
     ok = false
     req = ''
     crlf = ''
@@ -377,7 +370,6 @@ client.reconnect = () (ok bool) {
 
     ; 如有 last-event-id，加入標頭
     .last-event-id.len-bytes() > 0 -> {
-
         req = req - 'Last-Event-ID: '
         req = req - .last-event-id
         req = req - crlf
@@ -459,7 +451,7 @@ client.reconnect = () (ok bool) {
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> *
+        sep-pos >= 0 -> break
     }
 
     ; 驗證狀態碼
@@ -480,7 +472,6 @@ client.reconnect = () (ok bool) {
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     status-code = 0
     i <- [0..code-str.len-bytes()): {
-
         c = code-str[i]
         c < 48 || c > 57 -> {
             .close()
@@ -503,7 +494,6 @@ client.reconnect = () (ok bool) {
     .recv-buf = with-len(SSE-BUF-SIZE)
     .recv-buf-len = remaining.len-bytes()
     i <- [0..remaining.len-bytes()): {
-
         .recv-buf[i] = remaining.byte(i)
     }
     ok = true
@@ -521,7 +511,6 @@ client.reconnect = () (ok bool) {
 ;   err = 錯誤訊息
 ; [sse-connect](#sse.sse-connect)
 sse-connect = (url str) (client ?client) {
-
     client = nil
 
     ; ── 解析 URL ──
@@ -560,12 +549,10 @@ sse-connect = (url str) (client ?client) {
 
     #{overflow=wrap}
     colon-pos >= 0 -> {
-
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
-
             c = port-str[i]
             c < 48 || c > 57 -> {
                 client = err('invalid port')
@@ -715,7 +702,7 @@ sse-connect = (url str) (client ?client) {
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> *
+        sep-pos >= 0 -> break
     }
 
     ; ── 驗證狀態碼 ──
@@ -738,7 +725,6 @@ sse-connect = (url str) (client ?client) {
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     status-code = 0
     i <- [0..code-str.len-bytes()): {
-
         c = code-str[i]
         c < 48 || c > 57 -> {
             use-tls -> tls-c.close()
@@ -752,7 +738,6 @@ sse-connect = (url str) (client ?client) {
     }
 
     status-code != 200 -> {
-
         use-tls -> tls-c.close()
         use-tls == false -> fs.close(fd)
         code-s = status-code.to-str()
@@ -767,7 +752,6 @@ sse-connect = (url str) (client ?client) {
 
     rb str = with-len(SSE-BUF-SIZE)
     i <- [0..remaining.len-bytes()): {
-
         rb[i]: {
             ok -> it = remaining.byte(i)
 
@@ -871,7 +855,6 @@ server.close = () {
 ; 返回 ok bool: true=成功
 ; [handshake](#sse.server-conn.handshake)
 server-conn.handshake = () (ok bool) {
-
     ok = false
     .fd < 0 -> return
     cr = '\r'
@@ -907,7 +890,7 @@ server-conn.handshake = () (ok bool) {
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> *
+        sep-pos >= 0 -> break
     }
 
     ; 解析請求行
@@ -922,7 +905,6 @@ server-conn.handshake = () (ok bool) {
     method = request-line.slice(0, sp1)
 
     method != 'GET' -> {
-
         resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
         resp = resp - 'Content-Length: 0' - crlf
         resp = resp - 'Allow: GET' - crlf
@@ -957,7 +939,6 @@ server-conn.handshake = () (ok bool) {
 ; 返回 ok bool: true=成功
 ; [send-event](#sse.server-conn.send-event)
 server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
-
     ok = false
     .connected == false -> return
     lf = '\n'
@@ -972,13 +953,12 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
         data.len-bytes() > 0 -> {
             pos = 0
             !! {
-
                 nl = data.index-from(lf, pos)
                 line-end = nl
                 nl < 0 -> line-end = data.len-bytes()
                 line = data.slice(pos, line-end)
                 msg = msg - 'data: ' - line - lf
-                nl < 0 -> *
+                nl < 0 -> break
                 pos = nl + 1
             }
         }
@@ -989,7 +969,6 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
     id.len-bytes() > 0 -> msg = msg - 'id: ' - id - lf
 
     retry >= 0 -> {
-
         retry-s = retry.to-str()
         msg = msg - 'retry: ' - retry-s - lf
     }
@@ -1010,7 +989,6 @@ server-conn.send-event = (event str, data str, id str, retry i64) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [send-comment](#sse.server-conn.send-comment)
 server-conn.send-comment = (comment str) (ok bool) {
-
     ok = false
     .connected == false -> return
     lf = '\n'

@@ -36,7 +36,6 @@ bit-reader.read-bit = () (bit i64) {
 
     #{overflow=wrap}
     .bit-cnt == 0 -> .pos < .data.len() -> {
-
         .bit-buf = .data[.pos]
         .pos = .pos + 1
         .bit-cnt = 8
@@ -71,7 +70,6 @@ bit-reader.skip-to-byte = () {
 ; v i64: 解出的 0..65535 整數
 ; [read-u16-le](#gzip.bit-reader.read-u16-le)
 bit-reader.read-u16-le = () (v i64) {
-
     lo = .data[.pos]
 
     #{overflow=wrap}
@@ -103,7 +101,6 @@ huffman.build = (lengths []i64, n i64) {
 
     ; 初始化 count[0..16] = 0
     i <- [0..17): {
-
         .count[i] = 0
     }
 
@@ -122,7 +119,6 @@ huffman.build = (lengths []i64, n i64) {
     ; 計算各長度的起始偏移
     offs [17]i64
     e <- offs: {
-
         e: {
             ok -> it = 0
 
@@ -141,7 +137,6 @@ huffman.build = (lengths []i64, n i64) {
 
     ; 排序符號
     i <- [0..n): {
-
         .symbol[i] = 0
     }
     i <- [0..n): {
@@ -173,7 +168,6 @@ huffman.decode = (br bit-reader) (sym i64) {
     index = 0
     len = 1
     (len <= 15) {
-
         bit = br.read-bit()
         code = code | bit
 
@@ -258,7 +252,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     ; 讀取碼長度碼的碼長度
     clens []i64
     i <- [0..19): {
-
         clens.push(0)
     }
     code-order = [
@@ -268,7 +261,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     ]
 
     i <- [0..hclen): {
-
         clens[code-order[i]]: {
             ok -> it = br.read-bits(3)
 
@@ -286,12 +278,10 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     #{overflow=wrap}
     total = hlit + hdist
     i <- [0..total): {
-
         lengths.push(0)
     }
     idx = 0
     (idx < total) {
-
         sym = clcodec.decode(br)
 
         #{overflow=wrap}
@@ -315,7 +305,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 #{index-out=zero}
                 prev = lengths[idx - 1]
                 j <- [0..cnt): {
-
                     lengths[idx]: {
                         ok -> it = prev
 
@@ -331,7 +320,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 #{overflow=wrap}
                 cnt = br.read-bits(3) + 3
                 j <- [0..cnt): {
-
                     lengths[idx]: {
                         ok -> it = 0
 
@@ -347,7 +335,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 #{overflow=wrap}
                 cnt = br.read-bits(7) + 11
                 j <- [0..cnt): {
-
                     lengths[idx]: {
                         ok -> it = 0
 
@@ -365,7 +352,6 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     ; 建構距離 Huffman 表
     dlengths []i64
     i <- [0..hdist): {
-
         dlengths.push(0)
     }
     i <- [0..hdist): {
@@ -629,7 +615,6 @@ gzip-compress = (data []byte) (out []byte) {
     ; DEFLATE 資料（stored blocks）
     deflated = deflate-stored(data)
     b <- deflated: {
-
         result.push(b)
     }
 

@@ -66,8 +66,9 @@ func formatSugar(src string) (out string, perrs []string) {
 	return ensureTrailingNewline(o), nil
 }
 
-// formatCLISugar reproduces what `no fmt` actually does: parse under sugar, ask
-// the checker which `#{overflow=...}` annotations are ineffective, then format.
+// formatCLISugar reproduces what `no fmt` actually does: parse under sugar, flip
+// reported `+` string-concat sites to `-` (checker-driven auto-replace), ask the
+// checker which `#{overflow=...}` annotations are ineffective, then format.
 func formatCLISugar(src string) (out string, perrs []string) {
 	lx := lexer.New(src)
 	p := parser.New(lx)
@@ -76,6 +77,7 @@ func formatCLISugar(src string) (out string, perrs []string) {
 	if len(p.Errors()) > 0 {
 		return "", p.Errors()
 	}
+	checker.FixStringConcatOperators(prog, checker.BuildTHIRView(prog))
 	relevant, governed := checker.OverflowAnnotationRelevance(prog)
 	return FormatProgramWithOverflow(prog, src, relevant, governed), nil
 }

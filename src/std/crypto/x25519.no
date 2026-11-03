@@ -30,7 +30,6 @@ X25519-A24 = 121665
 ; h: 被寫成零元素的域元素（10 個 limb 全部置 0）
 ; [fe-zero](#x25519.fe-zero)
 fe-zero = (h []i64) {
-
     h[0]: {
         ok -> it = 0
 
@@ -96,7 +95,6 @@ fe-zero = (h []i64) {
 ; h: 被寫成單位元的域元素（limb0=1，其餘 0）
 ; [fe-one](#x25519.fe-one)
 fe-one = (h []i64) {
-
     h[0]: {
         ok -> it = 1
 
@@ -960,7 +958,6 @@ fe-sq = (h []i64, f []i64) {
 ; f: 被乘的域元素
 ; [fe-mul121665](#x25519.fe-mul121665)
 fe-mul121665 = (h []i64, f []i64) {
-
     t []i64 = with-len(10)
 
     #{index-out=zero, overflow=wrap}
@@ -2459,7 +2456,6 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     ; scalar[0] &= 248, scalar[31] &= 127, scalar[31] |= 64
     k []byte = with-len(32)
     i <- [0..32): {
-
         k[i]: {
             ok -> it = scalar[i]
 
@@ -2492,7 +2488,6 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     ; 初始化 Montgomery ladder
     x1 []i64 = with-len(10)
     i <- [0..10): {
-
         x1[i]: {
             ok -> it = u[i]
 
@@ -2507,7 +2502,6 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
     x3 []i64 = with-len(10)
     i <- [0..10): {
-
         x3[i]: {
             ok -> it = u[i]
 
@@ -2619,7 +2613,6 @@ x25519-get-basepoint = () (base [32]byte) {
 
     ; [32]byte 不自動零初始化，需顯式清零
     i <- [0..32): {
-
         base[i] = 0
     }
 
@@ -2694,7 +2687,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     ; 初始化 Montgomery ladder
     x1 []i64 = with-len(10)
     i <- [0..10): {
-
         x1[i]: {
             ok -> it = u[i]
 
@@ -2709,7 +2701,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 
     x3 []i64 = with-len(10)
     i <- [0..10): {
-
         x3[i]: {
             ok -> it = u[i]
 
@@ -2798,7 +2789,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 x25519-scalarmult-base-bytes = (scalar []byte) (out []byte) {
     base []byte = with-len(32)
     e1 <- base: {
-
         e1: {
             ok -> it = 0
 

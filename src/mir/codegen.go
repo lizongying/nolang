@@ -3036,11 +3036,40 @@ func (c *codegen) emitOverflowIntrinsic(unsigned bool, kind, lt, aV, bV string) 
 
 // ---- prelude / runtime ----
 
+// emitPrelude writes `target triple = "<canonical>"` when the build driver
+// (or the Go-side fallback in emitTargetTripleValue) can name the exact
+// spelling clang will install on the parsed module. This is what keeps
+// clang's `-Woverride-module` diagnostic quiet:
+//
+//   - builder hands the .ll to clang with `--target=<linkTarget>`, and clang
+//     compares the driver triple against whatever the IR already declared.
+//     Mismatch (or an IR with no triple at all — clang counts empty as a
+//     mismatch against a non-empty driver value) fires one warning per .no
+//     file, i.e. ~90× per `no test test/std` on CI.
+//   - For linux / windows / wasi the canonical spelling has no OS version
+//     component, so emitTargetTripleValue's Go table matches clang's output
+//     byte-for-byte.
+//   - For darwin DarwinToolChain appends the SDK version to the driver
+//     triple at init time (`arm64-apple-macosx27.0.0`), which MIR cannot
+//     observe from Go. Builder therefore probes clang once
+//     (queryEmitTargetTriple) and pushes the result through
+//     SetEmitTargetTriple; when builder didn't run the probe (standalone
+//     MIR tests, LSP, playground) we deliberately emit nothing rather than
+//     guess wrong. In those cases clang still installs its own triple — the
+//     override warning may still surface, but only for host tools that
+//     don't drive a build.
+//
+// `target datalayout` is intentionally omitted. Clang fills it in from the
+// driver's target without warning when the module has none (a well-formed
+// empty→populated transition isn't an "override"), and hard-coding a
+// datalayout string is risky across LLVM releases (LLVM 20 expanded
+// x86_64-linux to `e-m:e-p270:32:32-p271:32:32-p272:64:64-...` while
+// earlier releases used the short `e-m:e-i64:64-f80:128-n8:16:32:64-S128`).
 func (c *codegen) emitPrelude() {
-	c.sb.WriteString(`target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128"
-target triple = "arm64-apple-macosx15.0.0"
-
-%str-long = type { i64, i64, i8* }   ; len, cap, data
+	if t := emitTargetTripleValue(); t != "" {
+		fmt.Fprintf(c.sb, "target triple = %q\n\n", t)
+	}
+	c.sb.WriteString(`%str-long = type { i64, i64, i8* }   ; len, cap, data
 %vec = type { i64, i64, i64 }
 `)
 	fmt.Fprintf(c.sb, "%%option = type { i64, %s }    ; tag, %d-byte payload slot (%d bytes total)\n",

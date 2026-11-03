@@ -33,7 +33,6 @@
 ; [clone](#arr.clone)
 [n]t.clone = () (dst [n]t) {
     i <- [0..n): {
-
         dst[i] = .[i]
     }
 }
@@ -61,13 +60,11 @@
 ; [n]t.reverse: 反轉陣列
 ; [reverse](#arr.reverse)
 [n]t.reverse = () {
-
     i = 0
 
     #{overflow=wrap}
     j = n - 1
     (i < j) {
-
         tmp = .[i]
         .[i] = .[j]
         .[j] = tmp
@@ -96,7 +93,6 @@
 [n]t.to-vec = () (out []t) {
     out = with-len(n)
     i <- [0..n): {
-
         out[i] = .[i]
     }
 }
@@ -161,13 +157,11 @@
 ; [asc](#arr.asc)
 [n]t.asc = () {
     i <- [1..n): {
-
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
-
             .[j] <= key -> break
 
             #{overflow=wrap}
@@ -186,13 +180,11 @@
 ; [desc](#arr.desc)
 [n]t.desc = () {
     i <- [1..n): {
-
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
-
             .[j] >= key -> break
 
             #{overflow=wrap}
@@ -257,7 +249,6 @@
             #{overflow=wrap}
             last = n - 1
             i <- [0..n): {
-
                 out = out - .[i].to-str()
 
                 i < last -> out = out - ', '

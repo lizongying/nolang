@@ -100,13 +100,11 @@ str.gt = (b str) (res bool) {
 ; [asc](#arrords.asc)
 [n]ord.asc = () {
     i <- [1..n): {
-
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
-
             .[j] <= key -> break
 
             #{overflow=wrap}
@@ -125,13 +123,11 @@ str.gt = (b str) (res bool) {
 ; [desc](#arrords.desc)
 [n]ord.desc = () {
     i <- [1..n): {
-
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
-
             .[j] >= key -> break
 
             #{overflow=wrap}
@@ -151,13 +147,11 @@ str.gt = (b str) (res bool) {
 []ord.asc = () {
     sz = .len()
     i <- [1..sz): {
-
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
-
             .[j] <= key -> break
 
             #{overflow=wrap}
@@ -177,13 +171,11 @@ str.gt = (b str) (res bool) {
 []ord.desc = () {
     sz = .len()
     i <- [1..sz): {
-
         key = .[i]
 
         #{overflow=wrap}
         j = i - 1
         (j >= 0) {
-
             .[j] >= key -> break
 
             #{overflow=wrap}

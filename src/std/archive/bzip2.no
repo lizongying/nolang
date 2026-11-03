@@ -102,13 +102,11 @@ bz-huffman {
 ; [build](#bzip2.bz-huffman.build)
 bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
-
         .limit[i] = 0
 
         .base[i] = 0
     }
     i <- [0..258): {
-
         .perm[i] = 0
     }
     .min-len = 24
@@ -117,7 +115,6 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; 計算各長度的碼數
     len-count [24]i64
     e <- len-count: {
-
         e: {
             ok -> it = 0
 
@@ -146,7 +143,6 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; base[len] = 在 perm 中，長度 len 的起始索引
     pp = 0
     i <- [0..24): {
-
         .base[i] = pp
 
         #{overflow=wrap}
@@ -159,7 +155,6 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; first-code[len+1] = (first-code[len] + count[len]) << 1
     vec = 0
     i <- [0..24): {
-
         .limit[i] = vec + len-count[i] - 1
         vec = (vec + len-count[i]) << 1
     }
@@ -168,7 +163,6 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; 重新計算 base（臨時使用）
     tmp-base [24]i64
     i <- [0..24): {
-
         tmp-base[i]: {
             ok -> it = .base[i]
 
@@ -209,7 +203,6 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
 ; sym i64: 解出的符號值，-1=非法碼或空表
 ; [decode](#bzip2.bz-huffman.decode)
 bz-huffman.decode = (br bz-bit-reader) (sym i64) {
-
     sym = -1
     zn = .min-len
     zvec = br.read-bits(.min-len)
@@ -219,10 +212,8 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
 
     ; 持續讀取直到找到匹配的碼
     (zvec > .limit[zn] && zn < 23) {
-
         zvec <= .limit[zn] -> {
-
-            *
+            break
         }
 
         #{overflow=wrap}
@@ -250,17 +241,14 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
 ; sym i64: 解出的符號值，-1=非法碼或空表
 ; [decode-symbol](#bzip2.bz-huffman.decode-symbol)
 bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
-
     sym = -1
     zn = .min-len
     zvec = br.read-bits(.min-len)
 
     .min-len == 0 -> return
     (zvec > .limit[zn] && zn < 23) {
-
         zvec <= .limit[zn] -> {
-
-            *
+            break
         }
 
         #{overflow=wrap}
@@ -332,7 +320,7 @@ bzip2-decompress = (data []byte) (out []byte) {
     ; 讀取區塊
     done = 0
     (done == 0) {
-        done == 1 -> *
+        done == 1 -> break
 
         ; 讀取 48 位元 magic
         magic = br.read-bits(48)
@@ -361,7 +349,6 @@ bzip2-decompress = (data []byte) (out []byte) {
             ; 決定哪些字節值在使用中
             in-use-16 [16]i64
             e1 <- in-use-16: {
-
                 e1: {
                     ok -> it = br.read-bit()
 
@@ -370,7 +357,6 @@ bzip2-decompress = (data []byte) (out []byte) {
             }
             in-use [256]i64
             e2 <- in-use: {
-
                 e2: {
                     ok -> it = 0
 
@@ -406,7 +392,6 @@ bzip2-decompress = (data []byte) (out []byte) {
 
                 #{overflow=wrap}
                 in-use[i] == 1 -> {
-
                     seq-to-unseq[k]: {
                         ok -> it = i
 
@@ -433,12 +418,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             ; 讀取選擇器（MTF 編碼）
             selectors []i64
             i <- [0..n-selectors): {
-
                 selectors.push(0)
             }
             mtf-list [6]i64
             i <- [0..6): {
-
                 mtf-list[i]: {
                     ok -> it = i
 
@@ -446,12 +429,10 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
             }
             i <- [0..n-selectors): {
-
                 j = 0
                 (j < 5) {
-
                     bit = br.read-bit()
-                    bit == 0 -> *
+                    bit == 0 -> break
 
                     #{overflow=wrap}
                     j = j + 1
@@ -500,16 +481,13 @@ bzip2-decompress = (data []byte) (out []byte) {
 
                 lengths []i64
                 i <- [0..alpha-size): {
-
                     lengths.push(0)
                 }
                 i = 0
                 (i < alpha-size) {
-
-                    i >= alpha-size -> *
+                    i >= alpha-size -> break
                     bit = br.read-bit()
                     bit == 0 -> {
-
                         lengths[i]: {
                             ok -> it = curr-len
 
@@ -577,12 +555,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             block-done = 0
 
             (block-done == 0) {
-
-                block-done == 1 -> *
+                block-done == 1 -> break
 
                 ; 需要新的選擇器？
                 group-remaining == 0 -> {
-
                     selector-idx < n-selectors -> {
 
                         #{index-out=zero}
@@ -626,7 +602,6 @@ bzip2-decompress = (data []byte) (out []byte) {
                     ; 輸出剩餘的 run
                     run-len > 0 -> {
                         i <- [0..run-len): {
-
                             bwt-out.push(mtf-pos[0])
                         }
                     }
@@ -639,7 +614,6 @@ bzip2-decompress = (data []byte) (out []byte) {
                     ; 輸出累積的 run
                     run-len > 0 -> {
                         i <- [0..run-len): {
-
                             bwt-out.push(mtf-pos[0])
                         }
                         run-len = 0
@@ -676,12 +650,11 @@ bzip2-decompress = (data []byte) (out []byte) {
 
             ; ── BWT 反變換 ──
             bwt-n = bwt-out.len()
-            bwt-n == 0 -> *
+            bwt-n == 0 -> break
 
             ; 計算字節頻率
             count [256]i64
             e3 <- count: {
-
                 e3: {
                     ok -> it = 0
 
@@ -709,7 +682,6 @@ bzip2-decompress = (data []byte) (out []byte) {
             cum [256]i64
             total = 0
             i <- [0..256): {
-
                 cum[i]: {
                     ok -> it = total
 
@@ -725,12 +697,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             ;          則 lf[i] = cum[v] + k
             lf []i64
             i <- [0..bwt-n): {
-
                 lf.push(0)
             }
             rank [256]i64
             e4 <- rank: {
-
                 e4: {
                     ok -> it = 0
 

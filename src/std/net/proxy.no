@@ -56,7 +56,6 @@ config {
 ; 返回 fd fd: 已建立的隧道 socket 描述符，-1=連接或握手失敗
 ; [connect](#proxy.connect)
 connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
-
     fd = -1
 
     ; 連接到代理伺服器
@@ -156,7 +155,6 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     code = 0
     i <- [0..code-str.len-bytes()): {
-
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
             fs.close(fd)
@@ -455,7 +453,6 @@ SOCKS5-ATYP-DOMAIN = 3
 ; 返回 fd fd: 已建立的隧道 socket 描述符，-1=協商或連接失敗
 ; [socks5-connect](#proxy.socks5-connect)
 socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, username str, password str) (fd fd) {
-
     fd = -1
 
     ; 連接到 SOCKS5 代理
@@ -536,7 +533,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     ; 如果需要用戶名/密碼認證
     #{overflow=wrap}
     method == SOCKS5-METHOD-USER-PASS -> {
-
         auth-req []byte
         pos = 0
 
@@ -554,7 +550,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
         pos = pos + 1
         i <- [0..username.len-bytes()): {
-
             auth-req[pos]: {
                 ok -> it = username.byte(i)
 
@@ -570,7 +565,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
         pos = pos + 1
         i <- [0..password.len-bytes()): {
-
             auth-req[pos]: {
                 ok -> it = password.byte(i)
 
@@ -651,7 +645,6 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     #{overflow=wrap}
     pos = pos + 1
     i <- [0..target-host.len-bytes()): {
-
         conn-req[pos]: {
             ok -> it = target-host.byte(i)
 

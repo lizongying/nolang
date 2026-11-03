@@ -119,7 +119,6 @@ client.request = (data str) (response ?str) {
 ; written i64: 實際發送位元組數（含換行符；-1=未連接或錯誤）
 ; [send-line](#client.client.send-line)
 client.send-line = (line str) (written i64) {
-
     written = -1
     .connected == false -> return
 

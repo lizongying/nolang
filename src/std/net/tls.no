@@ -183,7 +183,6 @@ rand-bytes = (state i64, n i64) (out []byte) {
 ; val i64: 要寫入的 16-bit 整數值
 ; [put-u16](#tls.put-u16)
 put-u16 = (buf []byte, pos i64, val i64) {
-
     buf[pos]: {
         ok -> it = (val >> 8) & 255
 
@@ -204,7 +203,6 @@ put-u16 = (buf []byte, pos i64, val i64) {
 ; val i64: 要寫入的 24-bit 整數值
 ; [put-u24](#tls.put-u24)
 put-u24 = (buf []byte, pos i64, val i64) {
-
     buf[pos]: {
         ok -> it = (val >> 16) & 255
 
@@ -254,7 +252,6 @@ get-u24 = (buf []byte, pos i64) (val i64) {
 ; out []byte: 串接後的新陣列（長度 = a.len() + b.len()）
 ; [bytes-cat](#tls.bytes-cat)
 bytes-cat = (a []byte, b []byte) (out []byte) {
-
     an = a.len()
     bn = b.len()
 
@@ -284,14 +281,12 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
 ; 返回 out []i64: 大整數（每個元素為 32-bit limb）
 ; [bytes-to-bn](#tls.bytes-to-bn)
 bytes-to-bn = (data []byte) (out []i64) {
-
     n = data.len()
 
     #{overflow=wrap}
     limb-count = (n + 3) / 4
     out = with-len(limb-count)
     i <- [0..limb-count): {
-
         out[i] = 0
     }
     i <- [0..n): {
@@ -316,7 +311,6 @@ bytes-to-bn = (data []byte) (out []i64) {
 ; 返回 out []byte: big-endian 位元組
 ; [bn-to-bytes](#tls.bn-to-bytes)
 bn-to-bytes = (num []i64) (out []byte) {
-
     n = num.len()
 
     #{overflow=wrap}
@@ -409,7 +403,6 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         ; A(i+1) = HMAC(secret, A(i))
         a-tmp = hmac.hmac-sha256(secret, a)
         i <- [0..32): {
-
             a[i] = a-tmp[i]
         }
     }
@@ -773,7 +766,6 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     ; nonce(12) = salt(4) || explicit(8)
     nonce [12]byte
     i <- [0..4): {
-
         nonce[i]: {
             ok -> it = salt[i]
 
@@ -876,7 +868,6 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     ; nonce(12) = salt(4) || explicit(8)
     nonce [12]byte
     i <- [0..4): {
-
         nonce[i]: {
             ok -> it = salt[i]
 
@@ -1330,7 +1321,6 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
             out = with-len(mod-n)
             shift = mod-n - raw.len()
             i <- [0..shift): {
-
                 out[i] = 0
             }
             i <- [0..raw.len()): {
@@ -1386,7 +1376,6 @@ conn.gen-x25519-keypair = () {
     ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
     priv-slice []byte = with-len(32)
     i <- [0..32): {
-
         priv-slice[i]: {
             ok -> it = .client-priv[i]
 
@@ -1419,7 +1408,6 @@ conn.gen-p256-keypair = () {
     pub-arr [65]byte
     pub-arr = ecdsa.ecdsa-publickey(.client-priv)
     i <- [0..65): {
-
         .pub-p256[i] = pub-arr[i]
     }
 }
@@ -2211,7 +2199,6 @@ conn.read-change-cipher-spec = () (ok bool) {
     ct != TLS-CT-CCS -> return
     rlen != 1 -> return
     (buf[5]) != 1 -> {
-
         return
     }
     ok = true
@@ -2273,7 +2260,6 @@ conn.derive-keys = (premaster []byte) {
     ; master_secret = PRF(premaster, "master secret", client_random + server_random, 48)
     seed []byte = with-len(64)
     i <- [0..32): {
-
         seed[i]: {
             ok -> it = .client-random[i]
 
@@ -2295,7 +2281,6 @@ conn.derive-keys = (premaster []byte) {
     ; key_block = PRF(master, "key expansion", server_random + client_random, ...)
     ks []byte = with-len(64)
     i <- [0..32): {
-
         ks[i]: {
             ok -> it = .server-random[i]
 
@@ -2417,7 +2402,6 @@ conn.handshake-12-body = () (ok bool) {
             priv-slice []byte = with-len(32)
             pub-slice []byte = with-len(32)
             i <- [0..32): {
-
                 priv-slice[i]: {
                     ok -> it = .client-priv[i]
 
@@ -3062,7 +3046,6 @@ conn.compute-shared-secret-13 = () {
     priv-slice []byte = with-len(32)
     pub-slice []byte = with-len(32)
     i <- [0..32): {
-
         priv-slice[i]: {
             ok -> it = .client-priv[i]
 
@@ -3093,7 +3076,6 @@ conn.derive-handshake-keys-13 = () {
     ;    ikm=PSK，無 PSK 時為 32 個零位元組（不是空 slice！）
     zero-32 []byte = with-len(32)
     e1 <- zero-32: {
-
         e1: {
             ok -> it = 0
 
@@ -3108,7 +3090,6 @@ conn.derive-handshake-keys-13 = () {
     empty-hash-arr = sha256.sha256('')
     empty-hash []byte = with-len(32)
     i <- [0..32): {
-
         empty-hash[i]: {
             ok -> it = empty-hash-arr[i]
 
@@ -3128,7 +3109,6 @@ conn.derive-handshake-keys-13 = () {
 
     ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
     i <- [0..32): {
-
         .hs-prk-field[i] = hs-prk[i]
     }
 
@@ -3192,7 +3172,6 @@ conn.derive-handshake-keys-13 = () {
     ; 儲存 handshake secret 供後續推導應用金鑰
     ; 保存到 shared-secret 的空間（重用）
     i <- [0..32): {
-
         .shared-secret[i] = hs-prk[i]
     }
     .hs-write-seq = 0
@@ -3206,7 +3185,6 @@ conn.derive-application-keys-13 = () {
     ; 從 handshake secret 推導
     hs-prk []byte = with-len(32)
     i <- [0..32): {
-
         hs-prk[i]: {
             ok -> it = .hs-prk-field[i]
 
@@ -3218,7 +3196,6 @@ conn.derive-application-keys-13 = () {
     empty-hash-arr = sha256.sha256('')
     empty-hash []byte = with-len(32)
     i <- [0..32): {
-
         empty-hash[i]: {
             ok -> it = empty-hash-arr[i]
 
@@ -3231,7 +3208,6 @@ conn.derive-application-keys-13 = () {
     ; Master Secret = HKDF-Extract(derived, 0^HashLen)
     zero-32 []byte = with-len(32)
     e2 <- zero-32: {
-
         e2: {
             ok -> it = 0
 
@@ -3294,7 +3270,6 @@ conn.derive-application-keys-13 = () {
 ; [build-nonce](#tls.build-nonce)
 build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
     i <- [0..12): {
-
         nonce[i] = iv[i]
     }
 
@@ -3511,7 +3486,7 @@ conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct i64, ou
     ; 不是加密資料，跳過後繼續讀取下一筆
     ; 注意：使用 break-if 模式避免在沒有 CCS 時多讀一筆記錄
     (r-ct == TLS-CT-CCS) {
-        r-ct != TLS-CT-CCS -> *
+        r-ct != TLS-CT-CCS -> break
         r-ct, rlen = read-record(.fd, rec)
         r-ct < 0 -> return
     }
@@ -3698,7 +3673,6 @@ conn.send-finished-13 = () (ok bool) {
     ; BaseKey 是 client_handshake_traffic_secret，不是 handshake secret
     c-hs-secret []byte = with-len(32)
     i <- [0..32): {
-
         c-hs-secret[i]: {
             ok -> it = .hs-c-secret[i]
 
@@ -4334,7 +4308,6 @@ server-conn.read-client-hello = () (ok bool) {
         has-key = false
         i <- [0..32): {
             .client-pub[i] != 0 -> {
-
                 has-key = true
             }
         }
@@ -4539,7 +4512,6 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
             m-bytes = with-len(mod-len)
             shift = mod-len - raw.len()
             i <- [0..shift): {
-
                 m-bytes[i]: {
                     ok -> it = 0
 
@@ -4574,11 +4546,9 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
 
     ; 驗證 PKCS#1 v1.5 填充: 0x00 0x02 PS 0x00 message
     m-bytes[0] != 0 -> {
-
         return
     }
     m-bytes[1] != 2 -> {
-
         return
     }
 
@@ -4590,7 +4560,6 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
         #{overflow=wrap}
         sep-pos < mod-len -> {
             m-bytes[sep-pos] == 0 -> {
-
                 found-sep = true
             }
             found-sep == false -> sep-pos = sep-pos + 1
@@ -4682,7 +4651,6 @@ server-conn.derive-keys = (premaster []byte) {
     ; master_secret = PRF(premaster, "master secret", client_random + server_random, 48)
     seed []byte = with-len(64)
     i <- [0..32): {
-
         seed[i]: {
             ok -> it = .client-random[i]
 
@@ -4704,7 +4672,6 @@ server-conn.derive-keys = (premaster []byte) {
     ; key_block = PRF(master, "key expansion", server_random + client_random, 96)
     ks []byte = with-len(64)
     i <- [0..32): {
-
         ks[i]: {
             ok -> it = .server-random[i]
 
@@ -5070,7 +5037,6 @@ server-conn.read-change-cipher-spec = () (ok bool) {
     ct != TLS-CT-CCS -> return
     rlen != 1 -> return
     (buf[5]) != 1 -> {
-
         return
     }
     ok = true
@@ -5196,7 +5162,6 @@ server-conn.send-server-hello-13 = () (ok bool) {
     ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
     priv-slice []byte = with-len(32)
     i <- [0..32): {
-
         priv-slice[i]: {
             ok -> it = .server-priv[i]
 
@@ -5369,7 +5334,6 @@ server-conn.compute-shared-secret-13 = () {
     priv-slice []byte = with-len(32)
     pub-slice []byte = with-len(32)
     i <- [0..32): {
-
         priv-slice[i]: {
             ok -> it = .server-priv[i]
 
@@ -5397,7 +5361,6 @@ server-conn.derive-handshake-keys-13 = () {
     ; 1. Early Secret = HKDF-Extract(0, 0^32)
     zero-32 []byte = with-len(32)
     e3 <- zero-32: {
-
         e3: {
             ok -> it = 0
 
@@ -5412,7 +5375,6 @@ server-conn.derive-handshake-keys-13 = () {
     empty-hash-arr = sha256.sha256('')
     empty-hash []byte = with-len(32)
     i <- [0..32): {
-
         empty-hash[i]: {
             ok -> it = empty-hash-arr[i]
 
@@ -5432,7 +5394,6 @@ server-conn.derive-handshake-keys-13 = () {
 
     ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
     i <- [0..32): {
-
         .hs-prk-field[i] = hs-prk[i]
     }
 
@@ -5490,7 +5451,6 @@ server-conn.derive-handshake-keys-13 = () {
 
     ; 儲存 handshake secret 供推導應用金鑰
     i <- [0..32): {
-
         .shared-secret[i] = hs-prk[i]
     }
     .hs-write-seq = 0
@@ -5502,7 +5462,6 @@ server-conn.derive-handshake-keys-13 = () {
 server-conn.derive-application-keys-13 = () {
     hs-prk []byte = with-len(32)
     i <- [0..32): {
-
         hs-prk[i]: {
             ok -> it = .hs-prk-field[i]
 
@@ -5514,7 +5473,6 @@ server-conn.derive-application-keys-13 = () {
     empty-hash-arr = sha256.sha256('')
     empty-hash []byte = with-len(32)
     i <- [0..32): {
-
         empty-hash[i]: {
             ok -> it = empty-hash-arr[i]
 
@@ -5527,7 +5485,6 @@ server-conn.derive-application-keys-13 = () {
     ; Master Secret = HKDF-Extract(derived, 0^32)
     zero-32 []byte = with-len(32)
     e4 <- zero-32: {
-
         e4: {
             ok -> it = 0
 
@@ -5547,7 +5504,6 @@ server-conn.derive-application-keys-13 = () {
     pre-cf-len = .hs-buf-len - 36
     pre-cf-buf []byte = with-len(pre-cf-len)
     i <- [0..pre-cf-len): {
-
         pre-cf-buf[i]: {
             ok -> it = .hs-buf[i]
 
@@ -5796,7 +5752,7 @@ server-conn.read-encrypted-record-13 = (key [16]byte, iv [12]byte, seq i64) (ct 
 
     ; CCS (content type 20) 為 middlebox compat，跳過後讀取下一筆
     (r-ct == TLS-CT-CCS) {
-        r-ct != TLS-CT-CCS -> *
+        r-ct != TLS-CT-CCS -> break
         r-ct, rlen = read-record(.fd, rec)
         r-ct < 0 -> return
     }
@@ -5987,7 +5943,6 @@ server-conn.send-finished-13 = () (ok bool) {
     ; server_finished_key = HKDF-Expand-Label(s_hs_traffic, "finished", "", 32)
     s-hs-secret []byte = with-len(32)
     i <- [0..32): {
-
         s-hs-secret[i]: {
             ok -> it = .hs-s-secret[i]
 
@@ -6049,7 +6004,6 @@ server-conn.read-client-finished-13 = () (ok bool) {
     ; client_finished_key = HKDF-Expand-Label(c_hs_traffic, "finished", "", 32)
     c-hs-secret []byte = with-len(32)
     i <- [0..32): {
-
         c-hs-secret[i]: {
             ok -> it = .hs-c-secret[i]
 
@@ -6311,13 +6265,11 @@ server-init = (fd fd) (conn ?server-conn) {
     ; 從內嵌金鑰構造 []byte
     c.n-bytes = with-len(256)
     i <- [0..256): {
-
         c.n-bytes[i] = tls-server-keys.TLS-SERVER-RSA-N[i]
     }
     c.n-bytes.len = 256
     c.d-bytes = with-len(256)
     i <- [0..256): {
-
         c.d-bytes[i] = tls-server-keys.TLS-SERVER-RSA-D[i]
     }
     c.d-bytes.len = 256
@@ -6419,13 +6371,13 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
             separator = crlf - crlf
             sep-found = false
             (sep-found == false) {
-                sep-found -> *
+                sep-found -> break
 
                 #{overflow=wrap}
-                recv-len + 4096 > 8192 -> *
+                recv-len + 4096 > 8192 -> break
                 tmp str = with-len(4096)
                 rn = c.recv(tmp, 4096)
-                rn <= 0 -> *
+                rn <= 0 -> break
                 i <- [0..rn): {
 
                     #{overflow=wrap}

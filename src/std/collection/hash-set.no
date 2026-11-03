@@ -24,7 +24,6 @@ hash-set.init = () {
     .cap = 64
     .size = 0
     i <- [0..64): {
-
         .occ[i] = 0
     }
 }
@@ -34,7 +33,6 @@ hash-set.init = () {
 ; idx i64: key 在 [0, cap) 內的初始槽位（key & (cap-1)，要求 cap 為 2 的冪）
 ; [hash](#hash-set.hash-set.hash)
 hash-set.hash = (key i64) (idx i64) {
-
     idx = key & (.cap - 1)
 }
 
@@ -45,11 +43,9 @@ hash-set.hash = (key i64) (idx i64) {
 ; is-new bool: true=原先不存在、已插入, false=已存在，未改動
 ; [add](#hash-set.hash-set.add)
 hash-set.add = (key i64) (is-new bool) {
-
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         .keys[idx] == key -> {
             is-new = false
             return
@@ -78,7 +74,6 @@ hash-set.contains = (key i64) (found bool) {
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         .keys[idx] == key -> {
             found = true
             return
@@ -103,7 +98,6 @@ hash-set.remove = (key i64) (removed bool) {
 
         #{overflow=wrap}
         .keys[idx] == key -> {
-
             .occ[idx] = 0
             .size = .size - 1
             removed = true
@@ -120,7 +114,6 @@ hash-set.remove = (key i64) (removed bool) {
 ; [clear](#hash-set.hash-set.clear)
 hash-set.clear = () {
     i <- [0...cap): {
-
         .occ[i] = 0
     }
     .size = 0
@@ -149,7 +142,6 @@ hash-set.is-empty = () (empty bool) {
 hash-set.for-each = () (val i64) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
-
             val = .keys[i]
         }
     }

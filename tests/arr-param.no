@@ -6,7 +6,6 @@
 ; s [32]byte: 32 個位元組，第 i 個寫成 (i + 1) & 255，即 1,2,…,32
 inner-write = () (s [32]byte) {
     i <- [0..32): {
-
         s[i] = (i + 1) & 255
     }
 }
@@ -30,7 +29,6 @@ test-via-inner = () (pass bool) {
     ; 打印所有 bytes
     hex = ''
     i <- [0..32): {
-
         hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via inner bytes:')
@@ -38,7 +36,6 @@ test-via-inner = () (pass bool) {
 
     ; 檢查前 8 bytes
     i <- [0..8): {
-
         expected = (i + 1) & 255
         arr[i] != expected -> {
             print('FAIL: via inner byte mismatch')
@@ -87,7 +84,6 @@ test-via-i64 = () (pass bool) {
     ; 打印所有 bytes
     hex = ''
     i <- [0..32): {
-
         hex = hex - (arr[i]).to-str() - ' '
     }
     eprint('via i64 bytes:')

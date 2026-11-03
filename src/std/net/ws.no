@@ -153,7 +153,6 @@ client {
 ; 返回 accept str: base64(sha1(key - WS-GUID))
 ; [compute-accept](#ws.compute-accept)
 compute-accept = (key str) (accept str) {
-
     guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
     combined = key - guid
@@ -168,7 +167,6 @@ compute-accept = (key str) (accept str) {
     ]
 
     i <- [0..20): {
-
         hash-vec[i]: {
             ok -> it = hash[i]
 
@@ -261,7 +259,6 @@ gen-client-key = (seed i64) (key str) {
 ; 返回 frame str: 完整的 frame 字串
 ; [build-frame](#ws.build-frame)
 build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
-
     dlen = data.len-bytes()
     header-len = 2
     {
@@ -446,7 +443,6 @@ server.close = () {
 ; 成功時設置 .connected = true。
 ; [handshake](#ws.server-conn.handshake)
 server-conn.handshake = () {
-
     .fd < 0 -> return
     cr = '\r'
     lf = '\n'
@@ -481,7 +477,7 @@ server-conn.handshake = () {
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> *
+        sep-pos >= 0 -> break
     }
     head = raw.slice(0, sep-pos)
 
@@ -494,7 +490,6 @@ server-conn.handshake = () {
     method = request-line.slice(0, sp1)
 
     method != 'GET' -> {
-
         resp = 'HTTP/1.1 405 Method Not Allowed' - crlf
         resp = resp - 'Content-Length: 0' - crlf
         resp = resp - 'Allow: GET' - crlf
@@ -582,7 +577,6 @@ server-conn.handshake = () {
     total > body-start -> {
         remaining = raw.slice(body-start, total)
         i <- [0..remaining.len-bytes()): {
-
             .recv-buf[i] = remaining.byte(i)
         }
         .recv-buf-len = remaining.len-bytes()
@@ -646,7 +640,6 @@ server-conn.send-pong = (data str) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [send-close](#ws.server-conn.send-close)
 server-conn.send-close = (close-code i64, reason str) (ok bool) {
-
     ok = false
     .connected == false -> return
 
@@ -686,7 +679,6 @@ server-conn.send-close = (close-code i64, reason str) (ok bool) {
 ;   err = 錯誤
 ; [recv](#ws.server-conn.recv)
 server-conn.recv = () (msg ?message) {
-
     msg = nil
     .connected == false -> {
         msg = err('not connected')
@@ -711,7 +703,6 @@ server-conn.recv = () (msg ?message) {
 
         #{overflow=wrap}
         .recv-buf-len < 2 -> {
-
             tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv(.fd, tmp, WS-RECV-SIZE)
             n <= 0 -> {
@@ -834,8 +825,7 @@ server-conn.recv = () (msg ?message) {
             need = frame-total - .recv-buf-len
             tmp str = with-len(WS-RECV-SIZE)
             !! {
-
-                need <= 0 -> *
+                need <= 0 -> break
                 n = net.net-recv(.fd, tmp, need)
                 n <= 0 -> {
                     .connected = false
@@ -968,7 +958,6 @@ server-conn.recv = () (msg ?message) {
 ; msg ?message: ok=本次輪詢已湊齊的完整訊息；nil=暫無資料或 frame 尚未收齊；err=連線關閉或錯誤
 ; [recv-nb](#ws.server-conn.recv-nb)
 server-conn.recv-nb = () (msg ?message) {
-
     msg = nil
     .connected == false -> {
         msg = err('not connected')
@@ -1000,7 +989,6 @@ server-conn.recv-nb = () (msg ?message) {
 
         #{overflow=wrap}
         .recv-buf-len + WS-RECV-SIZE <= WS-BUF-SIZE -> {
-
             tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv-nb(.fd, tmp, WS-RECV-SIZE)
             {
@@ -1185,7 +1173,6 @@ server-conn.close = () {
 ; 返回 ok bool: true=成功
 ; [send](#ws.client.send)
 client.send = (opcode i64, data str) (ok bool) {
-
     ok = false
     .connected == false -> return
 
@@ -1263,7 +1250,6 @@ client.send-pong = (data str) (ok bool) {
 ; 返回 ok bool: true=成功
 ; [send-close](#ws.client.send-close)
 client.send-close = (close-code i64, reason str) (ok bool) {
-
     ok = false
     .connected == false -> return
 
@@ -1315,7 +1301,6 @@ client.recv = () (msg ?message) {
         ; 確保 recv-buf 至少有 2 bytes
         #{overflow=wrap}
         .recv-buf-len < 2 -> {
-
             tmp str = with-len(WS-RECV-SIZE)
             n = 0
             {
@@ -1465,8 +1450,7 @@ client.recv = () (msg ?message) {
             need = frame-total - .recv-buf-len
             tmp str = with-len(WS-RECV-SIZE)
             !! {
-
-                need <= 0 -> *
+                need <= 0 -> break
                 n = 0
                 {
                     .use-tls -> {
@@ -1564,7 +1548,6 @@ client.recv = () (msg ?message) {
         }
 
         opcode == WS-OP-CONT -> {
-
             has-acc == false -> {
                 msg = err('unexpected continuation')
                 return
@@ -1628,7 +1611,6 @@ listen-on = (host str, port i64) (s ?server) {
 ;   err = 錯誤訊息
 ; [connect](#ws.connect)
 connect = (url str) (c ?client) {
-
     c = nil
 
     ; 解析 URL
@@ -1665,12 +1647,10 @@ connect = (url str) (c ?client) {
 
     #{overflow=wrap}
     colon-pos >= 0 -> {
-
         host-only = host.slice(0, colon-pos)
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
-
             ch = port-str[i]
             ch < 48 || ch > 57 -> {
                 c = err('invalid port')
@@ -1829,7 +1809,7 @@ connect = (url str) (c ?client) {
         total = total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
-        sep-pos >= 0 -> *
+        sep-pos >= 0 -> break
     }
 
     ; 驗證狀態碼為 101
@@ -1855,7 +1835,6 @@ connect = (url str) (c ?client) {
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     status-code = 0
     i <- [0..code-str.len-bytes()): {
-
         ch = code-str[i]
         ch < 48 || ch > 57 -> {
             {
@@ -1872,7 +1851,6 @@ connect = (url str) (c ?client) {
     }
 
     status-code != 101 -> {
-
         {
             use-tls -> tc.close()
 
@@ -1940,7 +1918,6 @@ connect = (url str) (c ?client) {
     remaining-len > 0 -> {
         remaining = raw.slice(body-start, total)
         i <- [0..remaining-len): {
-
             rb[i]: {
                 ok -> it = remaining[i]
 

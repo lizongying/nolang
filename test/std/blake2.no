@@ -39,7 +39,6 @@ bhex = (data []byte) (hex str) {
 seq-bytes = (n i64) (out []byte) {
     out = with-len(n)
     i <- [0..n): {
-
         out[i] = i & 255
     }
 }

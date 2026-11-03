@@ -65,7 +65,6 @@ QPACK-LITERAL-PREFIX i64 = 0x20
 ; 返回 n i64: 寫入 buf 的實際位元組數
 ; [encode-header](#http3.encode-header)
 encode-header = (name str, value str) (buf []byte, n i64) {
-
     pos = 0
     name-bytes = name.to-bytes()
     value-bytes = value.to-bytes()
@@ -161,7 +160,6 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
     pos = 2
 
     i <- [0..count): {
-
         hdr-buf []byte
         hdr-n = 0
 
@@ -253,7 +251,6 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
 ; 返回 n i64: 編碼後的影格總位元組數
 ; [encode-frame](#http3.encode-frame)
 encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
-
     pos = 0
 
     ; 影格類型（varint）
@@ -402,10 +399,8 @@ response.get-header = (name str) (val ?str) {
     val = nil
     target = name.to-lower()
     i <- [0...header-count): {
-
         h = .header-names[i].to-lower()
         h == target -> {
-
             val = .header-values[i]
             return
         }
@@ -442,14 +437,12 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
     }
     colon-pos = host.index(':')
     colon-pos >= 0 -> {
-
         host-only = host.slice(0, colon-pos)
 
         #{overflow=wrap}
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
-
             c = port-str[i]
             c < 48 || c > 57 -> return
 
@@ -485,7 +478,6 @@ connect = (host str, port i64) (conn ?quic.conn) {
 ; 返回 resp ?response: ok=解析後的回應, nil=傳送或接收失敗
 ; [send-request](#http3.send-request)
 send-request = (conn quic.conn, method str, path str, host str, body str) (resp ?response) {
-
     resp = nil
 
     conn.fd < 0 -> return
@@ -577,7 +569,6 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 
     ; content-length（如有主體）
     body.len-bytes() > 0 -> {
-
         hdr-names[hdr-count]: {
             ok -> it = 'content-length'
 
@@ -743,7 +734,6 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 
     pos = 0
     (pos < n) {
-
         ft = 0
         payload []byte
         np = 0
@@ -777,7 +767,6 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
                         }
                     }
                     r.header-count < 32 -> {
-
                         r.header-names[r.header-count] = name
 
                         r.header-values[r.header-count] = value

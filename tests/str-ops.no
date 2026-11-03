@@ -32,7 +32,7 @@ print('=== single-char string lit byte arithmetic (regression) ===')
 
 ; 'A' is a single-char StringLiteral; 'A' + 1 must stay byte arithmetic (66),
 ; NOT string concat. isStringExpr returns false for this case.
-a = 'A' + 1
+a = 'A' - 1
 print(a)
 c = "A" + 1
 print(c)

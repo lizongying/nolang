@@ -58,7 +58,6 @@ has-flag = (flag str) (yes bool) {
         matched = true
         flagn == 0 -> matched = false
         j <- [0..flagn): {
-
             ac = arg[j]
 
             fc = flag[j]
@@ -100,7 +99,6 @@ get-option = (key str) (val ?str) {
         ; 檢查 arg 是否以 key + '=' 開頭
         matched-prefix = 1
         j <- [0..keyn): {
-
             ac = arg[j]
 
             kc = key[j]
@@ -142,7 +140,6 @@ get-positional = (idx i64) (val ?str) {
     pos = 0
     j = 1
     (j < n) {
-
         arg str = ''
         opt-arg = get(j)
         opt-arg: {
@@ -163,7 +160,6 @@ get-positional = (idx i64) (val ?str) {
             ; 如果是 --key value 形式，也跳過下一個
             c1 = arg[1]
             c1 != 45 -> j < n -> {
-
                 next str = ''
                 opt-next = get(j)
                 opt-next: {
@@ -179,7 +175,6 @@ get-positional = (idx i64) (val ?str) {
         }
 
         pos == idx -> {
-
             val = arg
             return
         }

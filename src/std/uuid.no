@@ -137,7 +137,6 @@ uuid.to-str = () (out str) {
 ; out str: 目標字串，原地寫入兩格（越界時該格寫入被安全索引略過）
 ; [hex-byte](#uuid.hex-byte)
 hex-byte = (b byte, pos i64, out str) {
-
     out[pos]: {
         ok -> it = HEX[(b >> 4) & 15]
 
@@ -207,7 +206,6 @@ uuid.to-str-upper = () (out str) {
 ; table: 大寫十六進制字符表（如 '0123...ABCDEF'）
 ; [hex-byte-upper](#uuid.hex-byte-upper)
 hex-byte-upper = (b byte, pos i64, out str, table str) {
-
     out[pos]: {
         ok -> it = table[(b >> 4) & 15]
 
@@ -240,7 +238,6 @@ from-str = (s str, out uuid) (ok bool) {
 
     ; 跳過空白
     pos <- [0..s.len-bytes()): {
-
         c = s.byte(pos)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
@@ -260,7 +257,6 @@ from-str = (s str, out uuid) (ok bool) {
 ; ok: true=該段解析成功（連字符位置與 hex 字符均合法）
 ; [parse-with-dashes](#uuid.parse-with-dashes)
 parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
-
     ok = true
     v0 = parse-hex-byte(s, pos)
 
@@ -611,7 +607,6 @@ uuid.validate = () (ok bool) {
 ; v: UUID 版本號（取 byte6 高 4 位，v4 為 4）
 ; [version](#uuid.version)
 uuid.version = () (v i64) {
-
     v = (.bytes[6] >> 4) & 15
 }
 
@@ -619,7 +614,6 @@ uuid.version = () (v i64) {
 ; v: 變體標識（取 byte8 高 2 位，RFC 4122 為 2）
 ; [variant](#uuid.variant)
 uuid.variant = () (v i64) {
-
     v = (.bytes[8] >> 6) & 3
 }
 
@@ -661,7 +655,6 @@ uuid.eq = (b uuid) (yes bool) {
 uuid.cmp = (b uuid) (r i64) {
     r = 0
     i <- [0..16): {
-
         ab = .bytes[i]
 
         bb = b.bytes[i]
@@ -717,7 +710,6 @@ hex-val = (c i64) (v i64) {
 ; [nil-uuid](#uuid.nil-uuid)
 nil-uuid = (out uuid) {
     i <- [0..16): {
-
         out.bytes[i] = 0
     }
 }

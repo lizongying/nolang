@@ -285,12 +285,12 @@ func TestFormatBasic(t *testing.T) {
     match -> return
 }`,
 			expected: `f = () {
-    a != b -> *
+    a != b -> break
     match = true
     j <- [0..n): {
         .x[j] != y[j] -> {
             match = false
-            *
+            break
         }
     }
     match -> return
@@ -2176,8 +2176,10 @@ func TestFormatLabeledFor(t *testing.T) {
 }
 
 // TestFormatStarBreakContinue ensures that the `*` (break) and `**`
-// (continue) shorthand forms are preserved by the formatter and that
-// `break #1` / `continue #1` round-trip the numeric label correctly.
+// (continue) shorthand forms are NORMALIZED to the keyword forms by the
+// formatter (新式 `*` 表示法暂不应用——格式化统一输出 break/continue)，
+// that `break #1` / `continue #1` round-trip the numeric label correctly,
+// and that the output is idempotent.
 func TestFormatStarBreakContinue(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -2185,74 +2187,43 @@ func TestFormatStarBreakContinue(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "star shorthand round-trips",
-			input: `f = () {
-    *
-}`,
-			expected: `f = () {
-    *
-}`,
+			name:     "star shorthand normalizes to break",
+			input:    "f = () {\n    *\n}",
+			expected: "f = () {\n    break\n}",
 		},
 		{
-			name: "star star shorthand round-trips",
-			input: `f = () {
-    **
-}`,
-			expected: `f = () {
-    **
-}`,
+			name:     "star star shorthand normalizes to continue",
+			input:    "f = () {\n    **\n}",
+			expected: "f = () {\n    continue\n}",
 		},
 		{
-			name: "star with numeric label round-trips",
-			input: `f = () {
-    * #1
-}`,
-			expected: `f = () {
-    * #1
-}`,
+			name:     "star with numeric label normalizes to break #N",
+			input:    "f = () {\n    * #1\n}",
+			expected: "f = () {\n    break #1\n}",
 		},
 		{
-			name: "star star with numeric label round-trips",
-			input: `f = () {
-    ** #1
-}`,
-			expected: `f = () {
-    ** #1
-}`,
+			name:     "star star with numeric label normalizes to continue #N",
+			input:    "f = () {\n    ** #1\n}",
+			expected: "f = () {\n    continue #1\n}",
 		},
 		{
-			name: "break with hash-prefixed label round-trips",
-			input: `f = () {
-    break #1
-}`,
-			expected: `f = () {
-    break #1
-}`,
+			name:     "break with hash-prefixed label round-trips",
+			input:    "f = () {\n    break #1\n}",
+			expected: "f = () {\n    break #1\n}",
 		},
 		{
-			name: "continue with hash-prefixed label round-trips",
-			input: `f = () {
-    continue #1
-}`,
-			expected: `f = () {
-    continue #1
-}`,
+			name:     "continue with hash-prefixed label round-trips",
+			input:    "f = () {\n    continue #1\n}",
+			expected: "f = () {\n    continue #1\n}",
 		},
 		{
 			// Regression: `* #1` and `** #1` after `break #1` were
 			// silently dropped because `skipToStatementEnd()` swallowed
 			// them (MUL/STAR_STAR/LABEL missing from isStatementBoundary).
-			name: "sequence of break + star + starstar round-trips",
-			input: `f = () {
-    break #1
-    * #1
-    ** #1
-}`,
-			expected: `f = () {
-    break #1
-    * #1
-    ** #1
-}`,
+			// 現在不丟失且全部規範為關鍵字形式。
+			name:     "sequence of break + star + starstar normalizes",
+			input:    "f = () {\n    break #1\n    * #1\n    ** #1\n}",
+			expected: "f = () {\n    break #1\n    break #1\n    continue #1\n}",
 		},
 	}
 	for _, tt := range tests {
@@ -2260,6 +2231,9 @@ func TestFormatStarBreakContinue(t *testing.T) {
 			result := Format(tt.input)
 			if result != tt.expected {
 				t.Errorf("Format(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+			if again := Format(result); again != result {
+				t.Errorf("not idempotent: pass1 %q, pass2 %q", result, again)
 			}
 		})
 	}

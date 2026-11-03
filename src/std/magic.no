@@ -63,13 +63,11 @@ detect-type = (path str) (kind str) {
 ; ext str: 小寫副檔名；無 '.'、'.' 後為空、或 '.' 只出現在目錄部分時為 ''
 ; [get-extension](#magic.get-extension)
 get-extension = (path str) (ext str) {
-
     n = path.len-bytes()
 
     #{overflow=wrap}
     i = n - 1
     (i >= 0) {
-
         i < 0 -> return
 
         c = path[i]
@@ -380,7 +378,6 @@ detect-by-magic = (path str) (kind str) {
             ; WAV: 52 49 46 46 (RIFF) + offset 8: 57 41 56 45 (WAVE)
 
             n >= 12 -> {
-
                 w4 = buf[8]
 
                 w5 = buf[9]

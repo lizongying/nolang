@@ -2,7 +2,6 @@ package checker
 
 import (
 	"fmt"
-	"github.com/lizongying/nolang/i18n"
 	fs "io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/lizongying/nolang/i18n"
 
 	nolang "github.com/lizongying/nolang"
 	"github.com/lizongying/nolang/builtin"
@@ -5680,8 +5681,8 @@ const redundantIndexOutTraceID = "idxoutrd"
 // ValidateRedundantIndexOut 報告「套用在 place-match 主體上的多餘 #{index-out=...}
 // 註解」：place-match 主體若為容器索引讀取（如 `state[1]: { ... }`），其越界已由 match
 // 的 ok/nil 臂保證，套用在主體上的 `#{index-out = DEF}` 對主體是多餘。僅在 safe-gate
-//（臂體內無依賴該註解預設值的容器索引讀取）下才報告，避免移除會破壞建置的註解
-//（D7 三方口徑一致）。診斷經 RunAllLints 以 HINT 出現在 no vet / LSP（與 idxhndld 同軌）。
+// （臂體內無依賴該註解預設值的容器索引讀取）下才報告，避免移除會破壞建置的註解
+// （D7 三方口徑一致）。診斷經 RunAllLints 以 HINT 出現在 no vet / LSP（與 idxhndld 同軌）。
 func ValidateRedundantIndexOut(program *parser.Program, mainFile string) []ValidateResult {
 	red := parser.AnalyzeRedundantIndexOut(program)
 	var results []ValidateResult
@@ -6521,33 +6522,41 @@ func checkStringConcatInStmt(view *THIRView, sem *parser.SemanticContext, stmt p
 	}
 	return results
 }
+
+// isStringConcatSite 是 StringConcat 規則的單一判定口徑：`+` 且任一側為 str
+// 字面量，或兩側都確定為字串型別（THIR 精化）。ValidateStringConcat 的報告
+// 與 FixStringConcatOperators 的改寫共用它——「lint 報什麼，fmt 就修什麼」，
+// 不出現第二套口徑。
+func isStringConcatSite(view *THIRView, e *parser.InfixExpression) bool {
+	if e.Operator != "+" {
+		return false
+	}
+	// Check if either operand is a string literal
+	if _, ok := e.Left.(*parser.StringLiteral); ok {
+		return true
+	}
+	if _, ok := e.Right.(*parser.StringLiteral); ok {
+		return true
+	}
+	// 6C-optional 第四批補報：`str_var + str_var`（兩側都確定為字串
+	// 型別）也是字串拼接，先前只認 StringLiteral 一侧而漏報。
+	// 保守口徑：兩側**都**確定為字串才報，任一側型別未知即不報
+	//（與 DivByZero 的「確定為浮點才跳過」同屬保守方向）。
+	return isStrConcatOperand(view, e.Left) && isStrConcatOperand(view, e.Right)
+}
+
 func checkStringConcatInExpr(view *THIRView, expr parser.Expression, file string) []ValidateResult {
 	var results []ValidateResult
 	switch e := expr.(type) {
 	case *parser.InfixExpression:
-		if e.Operator == "+" {
-			// Check if either operand is a string literal
-			isStrConcat := false
-			if _, ok := e.Left.(*parser.StringLiteral); ok {
-				isStrConcat = true
-			} else if _, ok := e.Right.(*parser.StringLiteral); ok {
-				isStrConcat = true
-			} else if isStrConcatOperand(view, e.Left) && isStrConcatOperand(view, e.Right) {
-				// 6C-optional 第四批補報：`str_var + str_var`（兩側都確定為字串
-				// 型別）也是字串拼接，先前只認 StringLiteral 一侧而漏報。
-				// 保守口徑：兩側**都**確定為字串才報，任一側型別未知即不報
-				//（與 DivByZero 的「確定為浮點才跳過」同屬保守方向）。
-				isStrConcat = true
-			}
-			if isStrConcat {
-				results = append(results, ValidateResult{
-					TraceID: "a3yrogp1",
-					File:    file,
-					Line:    e.Token.Line,
-					Column:  e.Token.Column,
-					Message: i18n.T("a3yrogp1", "string concatenation: use '-' instead of '+'"),
-				})
-			}
+		if isStringConcatSite(view, e) {
+			results = append(results, ValidateResult{
+				TraceID: "a3yrogp1",
+				File:    file,
+				Line:    e.Token.Line,
+				Column:  e.Token.Column,
+				Message: i18n.T("a3yrogp1", "string concatenation: use '-' instead of '+'"),
+			})
 		}
 		// Recurse into sub-expressions
 		results = append(results, checkStringConcatInExpr(view, e.Left, file)...)
@@ -6586,6 +6595,104 @@ func isStrConcatOperand(view *THIRView, e parser.Expression) bool {
 		return true
 	}
 	return false
+}
+
+// FixStringConcatOperators 把 ValidateStringConcat 報告的 `+` 字串拼接站點
+// 就地翻轉為 `-`（走訪與判定口徑同報告側，見 isStringConcatSite）。`no fmt`
+// 預設路徑在格式化前對糖 AST 調用本函數，formatter 由 AST 重渲染即完成
+// 「自動替換」，用戶不必再手動改 HINT a3yrogp1。
+//
+// 只改 InfixExpression.Operator 欄位（不新建/搬移節點），對降糖與代碼生成
+// 無旁路影響；冪等：翻轉後同一站點不再命中口徑，二次調用回傳 0。
+// 回傳本次翻轉的站點數（0 = 未改動）。
+func FixStringConcatOperators(program *parser.Program, view *THIRView) int {
+	if program == nil {
+		return 0
+	}
+	n := 0
+	for _, stmt := range program.Statements {
+		n += fixStringConcatInStmt(view, stmt)
+	}
+	return n
+}
+
+// fixStringConcatInStmt 與 checkStringConcatInStmt 同構（去掉檔案歸因），
+// 兩者必須同步擴充走訪形態，否則會「報了不修」。
+func fixStringConcatInStmt(view *THIRView, stmt parser.Statement) int {
+	if stmt == nil {
+		return 0
+	}
+	n := 0
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		if s.Expression != nil {
+			n += fixStringConcatInExpr(view, s.Expression)
+		}
+	case *parser.LetStatement:
+		if s.Value != nil {
+			n += fixStringConcatInExpr(view, s.Value)
+		}
+	case *parser.FunctionDefinition:
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				n += fixStringConcatInStmt(view, bodyStmt)
+			}
+		}
+	case *parser.BlockStatement:
+		for _, bodyStmt := range s.Statements {
+			n += fixStringConcatInStmt(view, bodyStmt)
+		}
+	case *parser.ReturnStatement:
+		if s.ReturnValue != nil {
+			n += fixStringConcatInExpr(view, s.ReturnValue)
+		}
+	case *parser.ForStatement:
+		if s.Init != nil {
+			n += fixStringConcatInStmt(view, s.Init)
+		}
+		if s.Condition != nil {
+			n += fixStringConcatInExpr(view, s.Condition)
+		}
+		if s.Update != nil {
+			n += fixStringConcatInStmt(view, s.Update)
+		}
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				n += fixStringConcatInStmt(view, bodyStmt)
+			}
+		}
+	}
+	return n
+}
+
+// fixStringConcatInExpr 與 checkStringConcatInExpr 同構（遞歸形態一致，
+// 命中處由報告改為翻轉運算符）。
+func fixStringConcatInExpr(view *THIRView, expr parser.Expression) int {
+	var n int
+	switch e := expr.(type) {
+	case *parser.InfixExpression:
+		if isStringConcatSite(view, e) {
+			e.Operator = "-"
+			n++
+		}
+		// Recurse into sub-expressions
+		n += fixStringConcatInExpr(view, e.Left)
+		n += fixStringConcatInExpr(view, e.Right)
+	case *parser.CallExpression:
+		for _, arg := range e.Arguments {
+			n += fixStringConcatInExpr(view, arg)
+		}
+	case *parser.DotExpression:
+		n += fixStringConcatInExpr(view, e.Receiver)
+	case *parser.PrefixExpression:
+		n += fixStringConcatInExpr(view, e.Right)
+	case *parser.GroupedExpression:
+		n += fixStringConcatInExpr(view, e.Expression)
+	case *parser.IndexExpression:
+		n += fixStringConcatInExpr(view, e.Left)
+		n += fixStringConcatInExpr(view, e.Index)
+	}
+	return n
 }
 
 // ─────────────────────────────────────────────────────────────

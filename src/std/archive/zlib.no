@@ -63,7 +63,6 @@ zlib-compress = (data []byte) (out []byte) {
     ; DEFLATE 資料（stored blocks）
     deflated = gzip.deflate-stored(data)
     b <- deflated: {
-
         result.push(b)
     }
 
@@ -91,14 +90,12 @@ zlib-compress = (data []byte) (out []byte) {
 ; out ?[]byte: 解壓後資料（ok）；長度不足 6、header 非法或解壓失敗皆為 nil
 ; [zlib-decompress](#zlib.zlib-decompress)
 zlib-decompress = (data []byte) (out ?[]byte) {
-
     out = nil
     data.len() < 6 -> return
 
     ; 檢查 zlib header：CM(低 4 位)必須為 8(deflate)，CINFO(高 4 位)≤7
     ; 窗口大小僅供參考，inflate 一律用 32K 窗口解碼，故接受任意合法 CMF(如 sips 的 0x08)
     (data[0] & 0x0f) != 8 || (data[0] >> 4) > 7 -> {
-
         return
     }
 
@@ -110,7 +107,6 @@ zlib-decompress = (data []byte) (out ?[]byte) {
 
     #{overflow=wrap}
     data.len() < hdr-len + 4 -> {
-
         return
     }
 
@@ -149,7 +145,6 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
     buf []byte
     p = 2; 跳過 2-byte zlib header
     !! {
-
         p >= data.len() -> break
 
         #{index-out=zero}
@@ -187,13 +182,11 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
 ;     逐塊累加 5 位元組塊頭 + 資料長度 + 4 位元組校驗和，遇到 BFINAL 或非 stored 區塊即停止
 ; [zlib-consumed-stored](#zlib.zlib-consumed-stored)
 zlib-consumed-stored = (data []byte) (consumed i64) {
-
     consumed = 0
     data.len() < 6 -> return
 
     p = 2; 跳過 2-byte zlib header
     !! {
-
         p >= data.len() -> return
 
         #{index-out=zero}

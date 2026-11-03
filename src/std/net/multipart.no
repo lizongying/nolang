@@ -113,7 +113,6 @@ multipart-writer.init-boundary = (boundary str) {
 ; 返回 ok bool: true=寫入成功
 ; [write-field](#multipart.multipart-writer.write-field)
 multipart-writer.write-field = (name str, value str) (ok bool) {
-
     ok = false
     .closed -> return
     cr = '\r'
@@ -139,7 +138,6 @@ multipart-writer.write-field = (name str, value str) (ok bool) {
 ; 返回 ok bool: true=寫入成功
 ; [write-file](#multipart.multipart-writer.write-file)
 multipart-writer.write-file = (name str, filename str, content-type str, content str) (ok bool) {
-
     ok = false
     .closed -> return
     cr = '\r'
@@ -163,7 +161,6 @@ multipart-writer.write-file = (name str, filename str, content-type str, content
 ; 返回 ok bool: true=寫入成功
 ; [close-form](#multipart.multipart-writer.close-form)
 multipart-writer.close-form = () (ok bool) {
-
     ok = false
     .closed -> return
     cr = '\r'
@@ -194,7 +191,6 @@ multipart-writer.boundary-of = () (boundary str) {
 ; 返回 ct str: 如 'multipart/form-data; boundary=----NolangBoundary...'
 ; [content-type](#multipart.multipart-writer.content-type)
 multipart-writer.content-type = () (ct str) {
-
     ct = 'multipart/form-data; boundary=' - .boundary
 }
 
@@ -247,7 +243,6 @@ multipart-reader.init = (boundary str, data str) {
 ; part multipart-part: 輸出，解析結果
 ; [parse-headers](#multipart.multipart-reader.parse-headers)
 multipart-reader.parse-headers = (header-block str, part multipart-part) {
-
     cr = '\r'
     lf = '\n'
 
@@ -264,7 +259,7 @@ multipart-reader.parse-headers = (header-block str, part multipart-part) {
         next-crlf >= 0 -> line-end = next-crlf
         line = header-block.slice(pos, line-end)
         .parse-header-line(line, part)
-        next-crlf < 0 -> *
+        next-crlf < 0 -> break
 
         #{overflow=wrap}
         pos = next-crlf + 2

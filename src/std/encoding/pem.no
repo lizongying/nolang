@@ -84,7 +84,6 @@ pem-encode = (label str, data []byte) (out str) {
 
     ; 寫入 header
     i <- [0..header.len-bytes()): {
-
         out[pos] = header.byte(i)
 
         #{overflow=wrap}
@@ -99,7 +98,6 @@ pem-encode = (label str, data []byte) (out str) {
     ; 寫入 Base64（每行 64 字元）
     src = 0
     !! {
-
         src >= b64-len -> break
 
         #{overflow=wrap}
@@ -126,7 +124,6 @@ pem-encode = (label str, data []byte) (out str) {
 
     ; 寫入 footer
     i <- [0..footer.len-bytes()): {
-
         out[pos] = footer.byte(i)
 
         #{overflow=wrap}
@@ -148,7 +145,6 @@ pem-encode = (label str, data []byte) (out str) {
 ; result ?pem-block: ok=標籤與解碼後的載荷, nil=缺少標記、Base64 解碼失敗或內容過短
 ; [pem-decode](#pem.pem-decode)
 pem-decode = (pem-str str) (result ?pem-block) {
-
     n = pem-str.len-bytes()
     n < 10 -> return
 
@@ -176,7 +172,6 @@ pem-decode = (pem-str str) (result ?pem-block) {
     #{overflow=wrap}
     b64-start < n -> {
         pem-str[b64-start] == 10 -> {
-
             b64-start = b64-start + 1
         }
     }
@@ -193,7 +188,6 @@ pem-decode = (pem-str str) (result ?pem-block) {
     b64-data = with-cap(end-pos - b64-start)
     dst = 0
     i <- [b64-start..end-pos): {
-
         c = pem-str[i]
 
         ; 跳過換行符和空白

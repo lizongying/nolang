@@ -205,7 +205,6 @@ atan2 = (y f64, x f64) (res f64) {
 ; res f64: 餘數，符號跟隨 x 且 |res| < |y|
 ; [fmod](#math.fmod)
 fmod = (x f64, y f64) (res f64) {
-
     y == 0.0 -> {
         res = 0.0 / 0.0
         return
@@ -267,7 +266,6 @@ gcd = (a int, b int) (r int) {
     #{overflow=wrap}
     rb < 0 -> rb = 0 - rb
     (rb != 0) {
-
         t = rb
         rb = ra % rb
         ra = t
@@ -282,7 +280,6 @@ gcd = (a int, b int) (r int) {
 ; r int: a 與 b 的最小公倍數，非負；乘積溢位時依 #{overflow=wrap} 回繞
 ; [lcm](#math.lcm)
 lcm = (a int, b int) (r int) {
-
     a == 0 || b == 0 -> {
         r = 0
         return
@@ -302,7 +299,6 @@ lcm = (a int, b int) (r int) {
 ; r int: 向零截斷的商
 ; [div](#math.div)
 div = (a int, b int) (r int) {
-
     r = a / b
 }
 

@@ -257,13 +257,11 @@ char.to-txt = () (out txt) {
 ; 在編譯器修複 []char 切片支持前，請勿依赖 to-chars / []char.to-str。
 ; [to-str](#chars.to-str)
 []char.to-str = () (out str) {
-
     n = .len()
 
     #{overflow=saturate}
     tmp []byte = with-cap(n * 4)
     i <- [0..n): {
-
         cp = .[i]
         {
             cp < 0x80 -> tmp.push(cp & 0xff)

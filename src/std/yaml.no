@@ -118,7 +118,6 @@ yaml-parser {
 ; c: 該位置的位元組值（越界時為 0）
 ; [byte-at](#yaml.yaml-parser.byte-at)
 yaml-parser.byte-at = (i i64) (c i64) {
-
     c = 0
     i < 0 -> return
     i >= .n -> return
@@ -334,7 +333,6 @@ yaml-parser.push-null = () (idx i64) {
 ; anchor: 锚點名（空串=無；非空時同時登記）
 ; [set-props](#yaml.yaml-parser.set-props)
 yaml-parser.set-props = (idx i64, tag str, anchor str) {
-
     .nodes[idx].tag = tag
 
     .nodes[idx].anchor = anchor
@@ -1130,7 +1128,6 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
                 #{overflow=wrap}
                 j = i + 1
                 j < .n -> {
-
                     .src.byte(j) == 39 -> {
 
                         #{overflow=wrap}
@@ -1266,7 +1263,6 @@ yaml-parser.read-line-content = () (out str) {
         c = .cur()
         c == 35 -> {
             .pos > start -> {
-
                 prev = .at(-1)
                 prev == 32 || prev == 9 -> break
             }
@@ -1315,7 +1311,6 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
         }
         c == 35 -> {
             .pos > start -> {
-
                 prev = .at(-1)
                 prev == 32 || prev == 9 -> break
             }
@@ -1371,7 +1366,6 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
 
             breaks == 0 -> text = text - ' '
             breaks > 0 -> {
-
                 k <- [0..breaks): text = text - '\n'
             }
             more = .read-line-content()
@@ -1486,7 +1480,6 @@ yaml-parser.parse-alias = () (idx i64) {
     name = .read-token()
     target = .anchor-id(name)
     target < 0 -> {
-
         .fail-at('unknown anchor *' - name)
         idx = .push-null()
         return
@@ -1627,7 +1620,6 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
     content = ''
     style == YAML-STYLE-LITERAL -> {
         i <- [0..lines.len()): {
-
             content = content - yaml-str-at(lines, i) - '\n'
         }
         content.len-bytes() > 0 -> {
@@ -1655,7 +1647,6 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
                 continue
             }
             more -> {
-
                 k <- [0..pending + 1): content = content - '\n'
             }
             more == false -> {

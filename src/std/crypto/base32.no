@@ -15,7 +15,6 @@ BASE32-ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 ; out str: 編碼後的字串，長度為 8 的倍數（空輸入對應空字串）
 ; [encode](#base32.encode)
 encode = (data []byte) (out str) {
-
     dlen = data.len()
 
     ; 計算輸出長度

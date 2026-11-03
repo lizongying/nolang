@@ -109,8 +109,8 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             tc = it
 
             ; 發送 HTTP GET 請求
-            cr = math.char-to-str(13)
-            lf = math.char-to-str(10)
+            cr = '\r'
+            lf = '\n'
 
             #{overflow=wrap}
             crlf = cr - lf
@@ -145,11 +145,11 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
             recv-total = 0
             found = false
             (found == false) {
-                found -> *
-                recv-total >= 4000 -> *
+                found -> break
+                recv-total >= 4000 -> break
                 tmp = space.repeat(2048)
                 rn = tc.recv(tmp, 2048)
-                rn <= 0 -> *
+                rn <= 0 -> break
                 i <- [0..rn): {
 
                     #{overflow=wrap}
@@ -249,8 +249,8 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             tc = it
 
             ; 發送 HTTP GET 請求
-            cr = math.char-to-str(13)
-            lf = math.char-to-str(10)
+            cr = '\r'
+            lf = '\n'
 
             #{overflow=wrap}
             crlf = cr - lf
@@ -285,11 +285,11 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
             recv-total = 0
             found = false
             (found == false) {
-                found -> *
-                recv-total >= 4000 -> *
+                found -> break
+                recv-total >= 4000 -> break
                 tmp = space.repeat(2048)
                 rn = tc.recv(tmp, 2048)
-                rn <= 0 -> *
+                rn <= 0 -> break
                 i <- [0..rn): {
 
                     #{overflow=wrap}

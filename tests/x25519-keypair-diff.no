@@ -35,7 +35,6 @@ gb-pub = x25519.x25519-scalarmult-base(gb-priv)
 eprint('priv-a: ')
 s = ''
 i <- [0..32): {
-
     s = s - (ga-priv[i]).to-str() - ' '
 }
 eprint(s)
@@ -44,7 +43,6 @@ eprint(s)
 eprint('priv-b: ')
 s = ''
 i <- [0..32): {
-
     s = s - (gb-priv[i]).to-str() - ' '
 }
 eprint(s)
@@ -53,7 +51,6 @@ eprint(s)
 eprint('pub-a: ')
 s = ''
 i <- [0..32): {
-
     s = s - (ga-pub[i]).to-str() - ' '
 }
 eprint(s)
@@ -62,7 +59,6 @@ eprint(s)
 eprint('pub-b: ')
 s = ''
 i <- [0..32): {
-
     s = s - (gb-pub[i]).to-str() - ' '
 }
 eprint(s)
@@ -98,7 +94,6 @@ g-shared-b = x25519.x25519-scalarmult(gb-priv, ga-pub)
 eprint('shared-a: ')
 s = ''
 i <- [0..32): {
-
     s = s - (g-shared-a[i]).to-str() - ' '
 }
 eprint(s)
@@ -107,7 +102,6 @@ eprint(s)
 eprint('shared-b: ')
 s = ''
 i <- [0..32): {
-
     s = s - (g-shared-b[i]).to-str() - ' '
 }
 eprint(s)

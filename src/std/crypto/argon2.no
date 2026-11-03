@@ -39,7 +39,6 @@ ARGON2-MASK u64 = 18446744073709551615
 ; r u64: (x >> n) | (x << (64-n))，只保留低 64 位
 ; [rotr](#argon2.rotr)
 rotr = (x u64, n i64) (r u64) {
-
     r = ((x >> n) | (x << (64 - n))) & ARGON2-MASK
 }
 
@@ -199,7 +198,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             hash [64]byte
             hash = blake2.b(combined)
             i <- [0..out-len): {
-
                 out[i] = hash[i]
             }
         }
@@ -249,7 +247,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 
             ; 輸出前 32 位元組
             i <- [0..32): {
-
                 out[i] = v[i]
             }
 
@@ -257,7 +254,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             remaining = out-len - 32
             pos = 32
             (remaining > 64) {
-
                 v = blake2.b(v)
                 i <- [0..32): {
 
@@ -362,7 +358,6 @@ compress = (x []byte, y []byte) (out []byte) {
 
     ; 應用 P 函數到每列（stride 8），依 RFC 9106 §3.4：T[j] = v[base + 8*j]
     i <- [0..8): {
-
         base = i
 
         #{overflow=wrap}
@@ -847,7 +842,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; 72 位元組 = H0(64) || i(32-bit LE) || lane(32-bit LE)
     init-input []byte = with-len(72)
     i <- [0..64): {
-
         init-input[i]: {
             ok -> it = h0[i]
 
@@ -967,7 +961,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; 迭代 passes
     pass <- [1..time-cost): {
-
         curr-idx = 0
         (curr-idx < blocks-per-lane) {
 

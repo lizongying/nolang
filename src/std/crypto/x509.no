@@ -2258,7 +2258,6 @@ der-enc-tlv = (tag i64, content []byte) (out []byte) {
 ; 返回 out []byte: DER INTEGER（含 tag+length）
 ; [der-enc-integer-bytes](#x509.der-enc-integer-bytes)
 der-enc-integer-bytes = (data []byte) (out []byte) {
-
     n = data.len()
     n == 0 -> {
         zero []byte = with-len(1)
@@ -2441,7 +2440,6 @@ x509-bytes-to-bn = (data []byte) (out []i64) {
     limb-count = (n + 3) / 4
     out = with-len(limb-count)
     i <- [0..limb-count): {
-
         out[i] = 0
     }
     i <- [0..n): {
@@ -2602,7 +2600,6 @@ alg-id-rsa-encryption = () (out []byte) {
 ; 返回 out []byte: SEQUENCE { OID sha256WithRSAEncryption, NULL }
 ; [alg-id-sha256-with-rsa](#x509.alg-id-sha256-with-rsa)
 alg-id-sha256-with-rsa = () (out []byte) {
-
     oid []byte = with-len(9)
     oid[0]: {
         ok -> it = 0x2a
@@ -3193,7 +3190,6 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
 
     ; 先填零
     i <- [0..mod-len): {
-
         sig[i] = 0
     }
 

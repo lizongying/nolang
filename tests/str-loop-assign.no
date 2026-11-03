@@ -100,7 +100,7 @@ print('--- allocating assignment in a loop stays correct ---')
 sa = 'hello-world'
 ba = 'seed'
 i6 <- [0..5): {
-    ba = sa + '-xy'
+    ba = sa - '-xy'
 }
 print(ba.len())
 

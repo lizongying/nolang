@@ -26,7 +26,6 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     {
         salt.len() == 0 -> {
             e <- k: {
-
                 e: {
                     ok -> it = 0
 
@@ -93,7 +92,6 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
 
     #{overflow=wrap}
     counter > 0 -> {
-
         msg[t-len + info.len()]: {
             ok -> it = counter & 255
 
@@ -114,7 +112,6 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     ; 將 prk 轉為 []byte
     prk-vec []byte = with-len(32)
     i <- [0..32): {
-
         prk-vec[i]: {
             ok -> it = prk[i]
 
@@ -139,21 +136,18 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
             copy-n = out-len
             i <- [0..copy-n): {
-
                 okm[i] = t-tmp[i]
             }
         }
 
         out-len > 32 -> {
             (off < out-len) {
-
                 t-len-for-hmac = 0
                 t-valid -> t-len-for-hmac = 32
                 t-tmp [32]byte
                 t-tmp = hkdf-expand-hmac(prk-vec, t, t-len-for-hmac, info, counter)
 
                 i <- [0..32): {
-
                     t[i]: {
                         ok -> it = t-tmp[i]
 

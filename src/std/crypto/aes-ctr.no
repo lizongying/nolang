@@ -68,7 +68,6 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     ; 計數器（初始為 IV）
     cb []byte = with-len(16)
     i <- [0..16): {
-
         cb[i]: {
             ok -> it = iv[i]
 
@@ -82,7 +81,6 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ; 加密當前計數器區塊
         blk [16]byte
         i <- [0..16): {
-
             blk[i]: {
                 ok -> it = cb[i]
 

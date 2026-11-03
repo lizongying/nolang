@@ -28,7 +28,6 @@ str-map.init = () {
     .cap = 256
     .size = 0
     i <- [0..256): {
-
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -42,10 +41,8 @@ str-map.init = () {
 ; idx: FNV-1a 雜湊值對容量取模後的桶索引（h & (cap - 1)，cap 須為 2 的冪）
 ; [hash](#str-map.str-map.hash)
 str-map.hash = (key str) (idx i64) {
-
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
-
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
@@ -64,7 +61,6 @@ str-map.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
         a.byte(i) != b.byte(i) -> {
-
             return
         }
     }
@@ -77,11 +73,9 @@ str-map.str-eq = (a str, b str) (eq bool) {
 ; is-new: 首次插入新鍵時為 true，覆寫既有鍵時為 false
 ; [put](#str-map.str-map.put)
 str-map.put = (key str, val str) (is-new bool) {
-
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         eq = .str-eq(.keys[idx], key)
         eq -> {
 
@@ -120,10 +114,8 @@ str-map.get = (key str) (result ?str) {
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         eq = .str-eq(.keys[idx], key)
         eq -> {
-
             result = .vals[idx]
             return
         }
@@ -158,12 +150,10 @@ str-map.remove = (key str) (removed bool) {
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         eq = .str-eq(.keys[idx], key)
 
         #{overflow=wrap}
         eq -> {
-
             .occ[idx] = 0
 
             .keys[idx].len = 0
@@ -184,7 +174,6 @@ str-map.remove = (key str) (removed bool) {
 ; [clear](#str-map.str-map.clear)
 str-map.clear = () {
     i <- [0...cap): {
-
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -215,7 +204,6 @@ str-map.is-empty = () (empty bool) {
 str-map.for-each = () (k str, v str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
-
             k = .keys[i]
 
             v = .vals[i]

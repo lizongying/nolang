@@ -3088,7 +3088,6 @@ sha512 = (data []byte) (hash [64]byte) {
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 16): {
-
         padded[i]: {
             ok -> it = 0
 

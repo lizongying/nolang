@@ -48,7 +48,6 @@ tables.init = () {
     .dyn-size = 0
     .dyn-max = 4096
     i <- [0..HPACK-DYN-MAX): {
-
         .dyn-names[i] = ''
 
         .dyn-values[i] = ''
@@ -312,7 +311,6 @@ tables.init = () {
 ; value: 該標頭字段的值
 ; [dyn-add](#hpack.tables.dyn-add)
 tables.dyn-add = (name str, value str) {
-
     .dyn-count >= HPACK-DYN-MAX -> return
 
     ; 向後移動（從尾部開始避免覆蓋）
@@ -361,14 +359,12 @@ tables.dyn-add = (name str, value str) {
     ; 新項放索引 0
     dn0-tmp = ''.with-len(name.len-bytes())
     j <- [0..name.len-bytes()): {
-
         dn0-tmp[j] = name.byte(j)
     }
 
     .dyn-names[0] = dn0-tmp
     dv0-tmp = ''.with-len(value.len-bytes())
     j <- [0..value.len-bytes()): {
-
         dv0-tmp[j] = value.byte(j)
     }
 
@@ -398,7 +394,6 @@ tables.find = (name str, value str) (idx i64) {
     nm-len = name.len-bytes()
     vm-len = value.len-bytes()
     i <- [0..HPACK-STATIC-COUNT): {
-
         sn-len = .static-names[i].len-bytes()
         sn-len == nm-len -> {
             matched = 1
@@ -409,7 +404,6 @@ tables.find = (name str, value str) (idx i64) {
                 }
             }
             matched == 1 -> {
-
                 sv-len = .static-values[i].len-bytes()
                 sv-len == vm-len -> {
                     v-matched = 1
@@ -432,7 +426,6 @@ tables.find = (name str, value str) (idx i64) {
 
     ; 查動態表（索引從 62 開始）
     i <- [0...dyn-count): {
-
         dn-len = .dyn-names[i].len-bytes()
         dn-len == nm-len -> {
             matched = 1
@@ -443,7 +436,6 @@ tables.find = (name str, value str) (idx i64) {
                 }
             }
             matched == 1 -> {
-
                 dv-len = .dyn-values[i].len-bytes()
                 dv-len == vm-len -> {
                     v-matched = 1
@@ -474,7 +466,6 @@ tables.find-name = (name str) (idx i64) {
     idx = 0
     nm-len = name.len-bytes()
     i <- [0..HPACK-STATIC-COUNT): {
-
         sn-len = .static-names[i].len-bytes()
         sn-len == nm-len -> {
             matched = 1
@@ -493,7 +484,6 @@ tables.find-name = (name str) (idx i64) {
         }
     }
     i <- [0...dyn-count): {
-
         dn-len = .dyn-names[i].len-bytes()
         dn-len == nm-len -> {
             matched = 1
@@ -522,7 +512,6 @@ tables.find-name = (name str) (idx i64) {
 ; ok: idx 落在有效範圍並成功取出時為 true
 ; [lookup](#hpack.tables.lookup)
 tables.lookup = (idx i64) (name str, value str, ok bool) {
-
     ok = false
 
     #{overflow=wrap}
@@ -541,7 +530,6 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
 
             name = .static-names[arr-idx].slice-bytes(0, n-len)
             v-len > 0 -> {
-
                 value = .static-values[arr-idx].slice-bytes(0, v-len)
             }
             ok = true
@@ -552,14 +540,12 @@ tables.lookup = (idx i64) (name str, value str, ok bool) {
     #{overflow=wrap}
     dyn-idx = idx - HPACK-STATIC-COUNT - 1
     dyn-idx < .dyn-count -> {
-
         n-len = .dyn-names[dyn-idx].len-bytes()
 
         v-len = .dyn-values[dyn-idx].len-bytes()
 
         name = .dyn-names[dyn-idx].slice-bytes(0, n-len)
         v-len > 0 -> {
-
             value = .dyn-values[dyn-idx].slice-bytes(0, v-len)
         }
         ok = true
@@ -583,7 +569,6 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     #{overflow=wrap}
     max-prefix = (1 << prefix-bits) - 1
     val < max-prefix -> {
-
         out = with-len(1)
         out[0] = prefix-byte | val
         return
@@ -597,7 +582,6 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     t = r-val - max-prefix
     n = 2
     (t >= 128) {
-
         t = t >> 7
 
         #{overflow=wrap}
@@ -612,7 +596,6 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     r-val = r-val - max-prefix
     i = 1
     (r-val >= 128) {
-
         out[i] = (r-val & 127) | 128
 
         #{overflow=wrap}
@@ -630,7 +613,6 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
 ; next-pos i64: 下一個未讀位元組偏移（-1=越界或 continuation 鏈過長）
 ; [decode-int](#hpack.decode-int)
 decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
-
     val = 0
     next-pos = pos
     pos >= data.len-bytes() -> {
@@ -657,10 +639,9 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     ; 多 byte 編碼
     m = 0
     !! {
-
         next-pos >= data.len-bytes() -> {
             next-pos = -1
-            *
+            break
         }
 
         b = data.byte(next-pos)
@@ -672,10 +653,10 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
         #{overflow=wrap}
         m = m + 7
-        (b & 128) == 0 -> *
+        (b & 128) == 0 -> break
         m >= 35 -> {
             next-pos = -1
-            *
+            break
         }
     }
 }
@@ -700,7 +681,6 @@ encode-str = (s str) (out str) {
 
     ; 複製長度編碼到 out
     i <- [0..len-out.len-bytes()): {
-
         out[i] = len-out.byte(i)
     }
     out-n = len-out.len-bytes()
@@ -720,7 +700,6 @@ encode-str = (s str) (out str) {
 ; next-pos i64: 下一個未讀位元組偏移（-1=錯誤或資料不足）
 ; [decode-str](#hpack.decode-str)
 decode-str = (data str, pos i64) (out str, next-pos i64) {
-
     pos >= data.len-bytes() -> {
         next-pos = -1
         return
@@ -806,7 +785,6 @@ tables.encode-header = (name str, value str) (out str) {
         ; （place-match 以讀作閘門，len=0 時讀越界回 nil，ok 臂永不執行），
         ; 必須直接下標寫入才能增長長度（idxwrite 對 with-cap 基底豁免）。
         i <- [0..idx-out.len-bytes()): {
-
             out[i] = idx-out.byte(i)
         }
         out-n = idx-out.len-bytes()
@@ -868,7 +846,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
     ; 初始化輸出陣列
     i <- [0..128): {
-
         names[i] = ''
 
         values[i] = ''
@@ -880,8 +857,8 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
     }
     pos = 0
     !! {
-        pos >= n -> *
-        count >= 128 -> *
+        pos >= n -> break
+        count >= 128 -> break
 
         b = data.byte(pos)
 
@@ -901,7 +878,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 ; 複製到輸出
                 ln-tmp str = ''.with-len(lk-name.len-bytes())
                 j <- [0..lk-name.len-bytes()): {
-
                     ln-tmp[j]: {
                         ok -> it = lk-name.byte(j)
 
@@ -912,7 +888,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 names[count] = ln-tmp
                 lv-tmp str = ''.with-len(lk-val.len-bytes())
                 j <- [0..lk-val.len-bytes()): {
-
                     lv-tmp[j]: {
                         ok -> it = lk-val.byte(j)
 
@@ -959,7 +934,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 ; 複製到輸出
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
-
                     nb-tmp[j]: {
                         ok -> it = name.byte(j)
 
@@ -970,7 +944,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 names[count] = nb-tmp
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
-
                     vb-tmp[j]: {
                         ok -> it = value.byte(j)
 
@@ -1017,7 +990,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 pos < 0 -> return
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
-
                     nb-tmp[j]: {
                         ok -> it = name.byte(j)
 
@@ -1028,7 +1000,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 names[count] = nb-tmp
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
-
                     vb-tmp[j]: {
                         ok -> it = value.byte(j)
 
@@ -1072,7 +1043,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 pos < 0 -> return
                 nb-tmp str = ''.with-len(name.len-bytes())
                 j <- [0..name.len-bytes()): {
-
                     nb-tmp[j]: {
                         ok -> it = name.byte(j)
 
@@ -1083,7 +1053,6 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 names[count] = nb-tmp
                 vb-tmp str = ''.with-len(value.len-bytes())
                 j <- [0..value.len-bytes()): {
-
                     vb-tmp[j]: {
                         ok -> it = value.byte(j)
 

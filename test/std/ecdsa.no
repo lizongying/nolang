@@ -175,7 +175,6 @@ t-tamper = () {
     pub = ecdsa.ecdsa-publickey(priv)
     bad [64]byte
     i <- [0..64): {
-
         bad[i]: {
             ok -> it = sig[i]
 
@@ -193,7 +192,6 @@ t-tamper = () {
     ; 改動訊息也必須導致驗證失敗
     mb2 [25]byte
     i <- [0..25): {
-
         mb2[i]: {
             ok -> it = MSG25[i]
 

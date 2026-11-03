@@ -209,7 +209,6 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
 ; r i64: 查表得到的 4 位元輸出
 ; [sbox-lookup](#des.sbox-lookup)
 sbox-lookup = (input i64, box []byte) (r i64) {
-
     v = input & 63
 
     #{overflow=wrap}
@@ -268,7 +267,6 @@ f = (r i64, k i64) (out i64) {
 des-key-schedule = (key [8]byte) (ks [96]byte) {
     k64 = 0
     b <- key: {
-
         k64 = (k64 << 8) | b
     }
     c = 0
@@ -288,7 +286,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
         d = d | (bit2 << (27 - i))
     }
     round <- [0..16): {
-
         shift = SHIFT-TBL[round]
 
         #{overflow=wrap}
@@ -374,7 +371,6 @@ des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     fp = permute(pre-out, FP-TBL, 64, 64)
 
     i <- [0..8): {
-
         out.push((fp >> (56 - i * 8)) & 255)
     }
 }

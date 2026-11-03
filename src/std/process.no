@@ -311,7 +311,6 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 
         -> {
             a <- args: {
-
                 cmdline = cmdline - ' ' - a
             }
         }
@@ -412,7 +411,6 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
-
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())
@@ -632,9 +630,8 @@ process.read-all = () (content str, n i64) {
     .stdout-fd < 0 -> return
     buf []byte = with-len(4096)
     !! {
-
         chunk-n = fs.read(.stdout-fd, buf, 4096)
-        chunk-n <= 0 -> *
+        chunk-n <= 0 -> break
 
         content = content - buf.slice(0, chunk-n).to-bytes-str()
 
@@ -825,7 +822,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         -> {
             cmdline = shell-quote(program)
             a <- args: {
-
                 cmdline = cmdline - ' ' - shell-quote(a)
             }
         }
@@ -837,7 +833,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
         env.len() > 0 -> {
             envline str = 'env'
             kv <- env: {
-
                 envline = envline - ' ' - shell-quote(kv)
             }
             {
@@ -953,7 +948,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
             ; exec 失敗：寫錯誤訊息到 stderr（fd 2），供父進程歸一化為 code=-1
             exec-rc != 0 -> {
-
                 exec-err str = 'exec: ' - cmdline - ': command not found\n'
                 exec-err-bytes = exec-err.to-bytes()
                 fs.write(2, exec-err-bytes, exec-err-bytes.len())

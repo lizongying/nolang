@@ -59,7 +59,6 @@ BLAKE2B-MASK u64 = 18446744073709551615
 ; r: 循環右移後的結果（已套用 64 位元遮罩）
 ; [rotr64](#blake2.rotr64)
 rotr64 = (x u64, n i64) (r u64) {
-
     r = ((x >> n) | (x << (64 - n))) & BLAKE2B-MASK
 }
 
@@ -300,7 +299,6 @@ b = (data []byte) (hash [64]byte) {
 
     #{overflow=wrap}
     (offset + 128 < dlen) {
-
         t = (t + 128) & BLAKE2B-MASK
 
         b-compress(h, data[offset..], t, 0)
@@ -326,7 +324,6 @@ b = (data []byte) (hash [64]byte) {
 
     ; 補零到 128 位元組
     i <- [remaining..128): {
-
         last-block[i]: {
             ok -> it = 0
 
@@ -392,7 +389,6 @@ b-256 = (data []byte) (hash [32]byte) {
 
     #{overflow=wrap}
     (offset + 128 < dlen) {
-
         t = (t + 128) & BLAKE2B-MASK
 
         b-compress(h, data[offset..], t, 0)
@@ -414,7 +410,6 @@ b-256 = (data []byte) (hash [32]byte) {
         }
     }
     i <- [remaining..128): {
-
         last-block[i]: {
             ok -> it = 0
 
@@ -533,7 +528,6 @@ BLAKE2S-MASK u32 = 4294967295
 ; r: 循環右移後的結果
 ; [rotr32](#blake2.rotr32)
 rotr32 = (x u32, n i64) (r u32) {
-
     r = ((x >> n) | (x << (32 - n))) & BLAKE2S-MASK
 }
 
@@ -715,7 +709,6 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
 ; 返回 hash [32]byte: BLAKE2s 的 32 位元組雜湊值
 ; [s](#blake2.s)
 s = (data []byte) (hash [32]byte) {
-
     h = s-state()
 
     #{index-out=zero}
@@ -732,7 +725,6 @@ s = (data []byte) (hash [32]byte) {
 
     #{overflow=wrap}
     (offset + 64 < dlen) {
-
         t = (t + 64) & BLAKE2S-MASK
 
         s-compress(h, data[offset..], t, 0)
@@ -754,7 +746,6 @@ s = (data []byte) (hash [32]byte) {
         }
     }
     i <- [remaining..64): {
-
         last-block[i]: {
             ok -> it = 0
 

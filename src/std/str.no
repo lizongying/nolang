@@ -105,7 +105,6 @@ eq-raw = (b str, n i64) (eq bool) {
 str.copy = () (dst str) {
     dst = with-cap(.len-bytes())
     i <- [0...len-bytes()): {
-
         dst[i] = .byte(i)
     }
 }
@@ -192,7 +191,6 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
     limit = n - m
     r-from > limit -> return
     i <- [r-from..limit]: {
-
         matched = 1
         j <- [0..m): {
 
@@ -235,7 +233,6 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
     r-from > limit -> return
     i = limit
     (i >= r-from) {
-
         matched = 1
         j <- [0..target.len-bytes()): {
 
@@ -264,7 +261,6 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
 str.cp-index = (byte-pos i64) (cp i64) {
     cp = 0
     i <- [0..byte-pos): {
-
         b = .byte(i)
 
         #{overflow=wrap}
@@ -284,7 +280,6 @@ str.byte-index = (cp-pos i64) (byte i64) {
     byte = 0
     cp = 0
     (byte < .len-bytes()) {
-
         cp >= cp-pos -> return
         b = .byte(byte)
 
@@ -377,7 +372,6 @@ str.starts-with = (target str) (yes bool) {
 ; yes: s 是否以 target 結尾
 ; [ends-with](#str.ends-with)
 str.ends-with = (target str) (yes bool) {
-
     yes = true
     target.len-bytes() > .len-bytes() -> {
         yes = false
@@ -452,7 +446,6 @@ str.to-lower = () (val str) {
 ; [trim](#str.trim)
 str.trim = () (val str) {
     start <- [0...len-bytes()): {
-
         c = .byte(start)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
@@ -460,7 +453,6 @@ str.trim = () (val str) {
     #{overflow=wrap}
     end = .len-bytes() - 1
     (end >= start) {
-
         c = .byte(end)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
@@ -574,7 +566,6 @@ str.to-str = () (out str) {
 str.to-bytes = () (val []byte) {
     val = with-len(.len-bytes())
     i <- [0...len-bytes()): {
-
         val[i] = .byte(i)
     }
 }
@@ -587,7 +578,6 @@ str.to-bytes = () (val []byte) {
 ; val: ok=解析出的 i64, nil=空字串, err=含非數字字元/孤立 +/-/超範圍
 ; [to-i64](#str.to-i64)
 str.to-i64 = () (val ?i64) {
-
     .len-bytes() == 0 -> {
         val = nil
         return
@@ -616,7 +606,6 @@ str.to-i64 = () (val ?i64) {
     }
     limit = 922337203685477580
     i <- [start...len-bytes()): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -781,7 +770,6 @@ str.to-u8 = () (val ?u8) {
         }
     }
     i <- [start...len-bytes()): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -828,7 +816,6 @@ str.to-u16 = () (val ?u16) {
         }
     }
     i <- [start...len-bytes()): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -875,7 +862,6 @@ str.to-u32 = () (val ?u32) {
         }
     }
     i <- [start...len-bytes()): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -910,7 +896,6 @@ str.to-u64 = () (val ?u64) {
     start = 0
     c == 43 -> start = 1
     i <- [start...len-bytes()): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -953,7 +938,6 @@ str.to-byte = () (val ?byte) {
         }
     }
     i <- [start...len-bytes()): {
-
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -995,7 +979,6 @@ bigint-bitlen = (b bigint) (out i64) {
 ; s: 數字文本
 ; result: 解析得到的 f64（合法性由呼叫端 to-f64 先行校驗）
 str-to-f64 = (s str) (result f64) {
-
     n i64 = s.len-bytes()
     n == 0 -> return
     i = 0
@@ -1952,7 +1935,6 @@ str.to-bigint = () (out ?bigint) {
     ; 逐位解析數字
     started = 0
     (pos < n) {
-
         d = _str-dig-val(.byte(pos))
         d < 0 -> break
         d >= radix -> break
@@ -2134,7 +2116,6 @@ str.replace-str = (old str, new str) (val str) {
         }
         match -> {
             k <- [0..new-len): {
-
                 val[pos] = new.byte(k)
 
                 #{overflow=wrap}

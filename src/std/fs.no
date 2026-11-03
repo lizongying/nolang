@@ -745,7 +745,6 @@ file.read-bytes = () (content ?[]byte) {
     ; 循環 read 直到讀完或 EOF
     total = 0
     (total < size) {
-
         total >= size -> break
 
         #{overflow=wrap}
@@ -781,7 +780,6 @@ file.write-str = (data str) (ok ?bool) {
     s = data.to-bytes()
     total = 0
     (total < s.len()) {
-
         total >= s.len() -> break
 
         #{overflow=wrap}
@@ -809,7 +807,6 @@ file.write-bytes = (data []byte) (ok ?bool) {
     }
     total = 0
     (total < data.len()) {
-
         total >= data.len() -> break
 
         #{overflow=wrap}
@@ -994,7 +991,7 @@ file.copy-to = (dst-path str) (ok bool) {
     buf []byte = with-len(4096)
     !! {
         n = read(.fd, buf, 4096)
-        n <= 0 -> *
+        n <= 0 -> break
         write(fd-w, buf, n)
     }
     close(fd-w)
@@ -1075,7 +1072,6 @@ list-dir = (dirpath str) (entries []str) {
 ; [list-dir](#fs.list-dir-2)
 #{win-amd64, win-arm64}
 list-dir = (dirpath str) (entries []str) {
-
     winpath = dirpath - '\\*'
     bufptr = os.win-find-first-file(winpath)
     {
@@ -1145,11 +1141,9 @@ dir-entries = (dirpath str) (entries []str) {
         name = all[i]
         skip = false
         name.len-bytes() == 1 && name[0] == 46 -> {
-
             skip = true
         }
         name.len-bytes() == 2 && name[0] == 46 && name[1] == 46 -> {
-
             skip = true
         }
         skip == false -> entries.push(name)

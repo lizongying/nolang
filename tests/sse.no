@@ -75,12 +75,12 @@ client: {
             ev: {
                 nil -> {
                     print('connection closed')
-                    *
+                    break
                 }
 
                 err -> {
                     print('error')
-                    *
+                    break
                 }
 
                 -> {
@@ -95,7 +95,7 @@ client: {
 
                     #{overflow=wrap}
                     count = count + 1
-                    count >= 3 -> *
+                    count >= 3 -> break
                 }
             }
         }

@@ -61,17 +61,14 @@ toml.new = () (doc toml-doc) {
         array-count: 0
     }
     i <- [0..TOML-MAX-ENTRIES): {
-
         doc.entries[i].key-len = 0
 
         doc.entries[i].value-len = 0
     }
     i <- [0..TOML-MAX-TABLES): {
-
         doc.tables[i].name-len = 0
     }
     i <- [0..TOML-MAX-ARRAY-TABLES): {
-
         doc.arrays[i].name-len = 0
 
         doc.arrays[i].index = 0
@@ -85,7 +82,6 @@ toml.new = () (doc toml-doc) {
 toml-entry-key = (e toml-entry) (s str) {
     s = with-len(e.key-len)
     i <- [0..e.key-len): {
-
         s[i] = e.key[i]
     }
 }
@@ -97,7 +93,6 @@ toml-entry-key = (e toml-entry) (s str) {
 toml-entry-value = (e toml-entry) (s str) {
     s = with-len(e.value-len)
     i <- [0..e.value-len): {
-
         s[i] = e.value[i]
     }
 }
@@ -111,7 +106,6 @@ toml-entry-key-eq = (e toml-entry, key str) (same bool) {
     same = false
     e.key-len != key.len-bytes() -> return
     i <- [0..e.key-len): {
-
         e.key[i] != key.byte(i) -> return
     }
     same = true
@@ -126,11 +120,9 @@ toml-make-entry = (key str, value str) (e toml-entry) {
     e.key-len = key.len-bytes()
     e.value-len = value.len-bytes()
     i <- [0..e.key-len): {
-
         e.key[i] = key.byte(i)
     }
     i <- [0..e.value-len): {
-
         e.value[i] = value.byte(i)
     }
 }
@@ -142,7 +134,6 @@ toml-make-entry = (key str, value str) (e toml-entry) {
 toml-table-name = (t toml-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
-
         s[i] = t.name[i]
     }
 }
@@ -154,7 +145,6 @@ toml-table-name = (t toml-table) (s str) {
 toml-array-name = (t toml-array-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
-
         s[i] = t.name[i]
     }
 }
@@ -186,7 +176,6 @@ toml-find-eq = (s str) (pos i64) {
     escaped = false
     i = 0
     (i < s.len-bytes()) {
-
         i >= s.len-bytes() -> break
         c = s.byte(i)
         {
@@ -231,7 +220,6 @@ toml-strip-comment = (s str) (out str) {
     i = 0
     n = s.len-bytes()
     (i < n) {
-
         i >= n -> break
 
         c = s.byte(i)
@@ -330,7 +318,6 @@ toml-normalize-key = (s str) (key ?str) {
         return
     }
     i <- [0..n): {
-
         c = k.byte(i)
         valid = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 95 || c == 46 || c == 32 || c == 9
         valid == false -> return
@@ -423,7 +410,6 @@ toml-value-complete = (raw str) (complete bool) {
     escaped = false
     i = 0
     (i < n) {
-
         i >= n -> break
 
         c = s.byte(i)
@@ -532,7 +518,6 @@ toml-valid-value = (raw str) (valid bool) {
                 return
             }
             i <- [0..n): {
-
                 c = s.byte(i)
                 allowed = (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102) || c == 43 || c == 45 || c == 46 || c == 58 || c == 84 || c == 90 || c == 95 || c == 32 || c == 9 || c == 101 || c == 69 || c == 120 || c == 88 || c == 111 || c == 79 || c == 98 || c == 66
                 allowed == false -> return
@@ -550,14 +535,12 @@ toml-valid-value = (raw str) (valid bool) {
 toml-register-table = (doc toml-doc, name str) (ok bool) {
     ok = false
     i <- [0..doc.table-count): {
-
         table-name = toml-table-name(doc.tables[i])
         table-name.eq-full(name) -> return
     }
     doc.table-count >= TOML-MAX-TABLES -> return
     doc.tables[doc.table-count].name-len = name.len-bytes()
     i <- [0..name.len-bytes()): {
-
         doc.tables[doc.table-count].name[i] = name.byte(i)
     }
 
@@ -574,13 +557,10 @@ toml-register-table = (doc toml-doc, name str) (ok bool) {
 toml-resolve-section = (doc toml-doc, name str) (resolved str) {
     resolved = name
     i <- [0..doc.array-count): {
-
         base = toml-array-name(doc.arrays[i])
         name.starts-with(base) -> {
-
             blen = base.len-bytes()
             name.len-bytes() > blen -> {
-
                 name.byte(blen) == 46 -> {
                     suffix = name.slice-bytes(blen, name.len-bytes())
 
@@ -599,7 +579,6 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
 ; [toml-next-array-table](#toml.toml-next-array-table)
 toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     i <- [0..doc.array-count): {
-
         array-name = toml-array-name(doc.arrays[i])
         array-name.eq-full(name) -> {
 
@@ -614,7 +593,6 @@ toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     doc.array-count >= TOML-MAX-ARRAY-TABLES -> return
     doc.arrays[doc.array-count].name-len = name.len-bytes()
     i <- [0..name.len-bytes()): {
-
         doc.arrays[doc.array-count].name[i] = name.byte(i)
     }
 
@@ -636,7 +614,6 @@ toml.parse = (s str) (result ?toml-doc) {
     line-no = 0
     i = 0
     (i < lines.len()) {
-
         i >= lines.len() -> break
 
         ; D1：索引讀取 `lines[i]` 恆為 `?str`，而 `#{index-out}` 只在「根為索引」的
@@ -661,12 +638,10 @@ toml.parse = (s str) (result ?toml-doc) {
             close-len = 1
             is-array-table -> close-len = 2
             line.ends-with(']') == false -> {
-
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
             is-array-table && line.ends-with(']]') == false -> {
-
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
@@ -675,7 +650,6 @@ toml.parse = (s str) (result ?toml-doc) {
             end-pos = line.len-bytes() - close-len
             start-pos = close-len
             end-pos <= start-pos -> {
-
                 result = err('toml parse error at line ' - line-no.to-str())
                 return
             }
@@ -709,7 +683,6 @@ toml.parse = (s str) (result ?toml-doc) {
                     section = toml-resolve-section(doc, section)
                     table-ok = toml-register-table(doc, section)
                     table-ok == false -> {
-
                         result = err('toml duplicate table at line ' - line-no.to-str())
                         return
                     }
@@ -725,7 +698,6 @@ toml.parse = (s str) (result ?toml-doc) {
 
         #{overflow=wrap}
         eq <= 0 || eq >= line.len-bytes() - 1 -> {
-
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
@@ -744,7 +716,6 @@ toml.parse = (s str) (result ?toml-doc) {
         section.len-bytes() > 0 -> key = section - '.' - key
         raw-value = line.slice-bytes(eq + 1, line.len-bytes()).trim()
         raw-value.len-bytes() == 0 -> {
-
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
@@ -776,7 +747,6 @@ toml.parse = (s str) (result ?toml-doc) {
                     complete -> break
                 }
                 complete == false -> {
-
                     result = err('toml unterminated value at line ' - line-no.to-str())
                     return
                 }
@@ -793,19 +763,16 @@ toml.parse = (s str) (result ?toml-doc) {
         }
         valid-value = toml-valid-value(raw-value)
         valid-value == false -> {
-
             result = err('toml invalid value at line ' - line-no.to-str())
             return
         }
         key = key.trim()
         key.len-bytes() == 0 -> {
-
             result = err('toml parse error at line ' - line-no.to-str())
             return
         }
         key-exists = false
         k <- [0..doc.count): {
-
             entry-key = toml-entry-key(doc.entries[k])
             entry-key.eq-full(key) -> {
                 key-exists = true
@@ -813,7 +780,6 @@ toml.parse = (s str) (result ?toml-doc) {
             }
         }
         key-exists -> {
-
             result = err('toml duplicate key at line ' - line-no.to-str())
             return
         }
@@ -840,7 +806,6 @@ stringify = (doc toml-doc) (out str) {
     out = ''
     last-array = ''
     i <- [0..doc.count): {
-
         entry = doc.entries[i]
         key = toml-entry-key(entry)
         value = toml-entry-value(entry)
@@ -900,7 +865,6 @@ toml-doc.put = (key str, value str) (ok bool) {
     value-ok = toml-valid-value(value)
     value-ok == false -> return
     i <- [0...count): {
-
         entry-key = toml-entry-key(.entries[i])
         entry-key.eq-full(key) -> {
             .entries[i] = toml-make-entry(key, value)
@@ -924,7 +888,6 @@ toml-doc.put = (key str, value str) (ok bool) {
 ; [get](#toml.get)
 get = (doc toml-doc, key str) (value ?str) {
     i <- [0..doc.count): {
-
         entry-key = toml-entry-key(doc.entries[i])
         entry-key.eq-full(key) -> {
             value = toml-entry-value(doc.entries[i])
@@ -940,7 +903,6 @@ get = (doc toml-doc, key str) (value ?str) {
 ; [has](#toml.has)
 has = (doc toml-doc, key str) (found bool) {
     i <- [0..doc.count): {
-
         entry-key = toml-entry-key(doc.entries[i])
         entry-key.eq-full(key) -> {
             found = true
@@ -993,7 +955,6 @@ toml-parse-i64 = (s str) (value ?i64) {
 
     #{overflow=wrap}
     start + 2 <= n -> {
-
         p0 = clean.byte(start)
 
         #{overflow=wrap}
@@ -1024,7 +985,6 @@ toml-parse-i64 = (s str) (value ?i64) {
     start >= n -> return
     digits = 0
     i <- [start..n): {
-
         ch-opt = clean.byte(i)
         ch = ch-opt: {
             ok -> it

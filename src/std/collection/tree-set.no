@@ -58,7 +58,6 @@ tree-set {
 ; 初始化空樹與空閒節點池
 ; [init](#tree-set.tree-set.init)
 tree-set.init = () {
-
     .root = -1
     .free-head = 0
     .size = 0
@@ -100,7 +99,6 @@ tree-set.alloc-node = () (idx i64) {
 ; idx i64: 要釋放的節點索引
 ; [free-node](#tree-set.tree-set.free-node)
 tree-set.free-node = (idx i64) {
-
     .left[idx] = .free-head
     .free-head = idx
 }
@@ -124,7 +122,6 @@ tree-set.ht = (idx i64) (h i64) {
 ; idx i64: 節點索引
 ; [update-ht](#tree-set.tree-set.update-ht)
 tree-set.update-ht = (idx i64) {
-
     lh = .ht(.left[idx])
 
     rh = .ht(.right[idx])
@@ -138,7 +135,6 @@ tree-set.update-ht = (idx i64) {
 ; 返回 b i64: 平衡因子
 ; [bf](#tree-set.tree-set.bf)
 tree-set.bf = (idx i64) (b i64) {
-
     lh = .ht(.left[idx])
 
     rh = .ht(.right[idx])
@@ -160,14 +156,12 @@ tree-set.bf = (idx i64) (b i64) {
 ; x i64: 旋轉軸節點
 ; [rot-left](#tree-set.tree-set.rot-left)
 tree-set.rot-left = (x i64) {
-
     y = .right[x]
 
     b = .left[y]
 
     .right[x] = b
     b >= 0 -> {
-
         .parent[b] = x
     }
 
@@ -204,14 +198,12 @@ tree-set.rot-left = (x i64) {
 ; x i64: 旋轉軸節點
 ; [rot-right](#tree-set.tree-set.rot-right)
 tree-set.rot-right = (x i64) {
-
     y = .left[x]
 
     b = .right[y]
 
     .left[x] = b
     b >= 0 -> {
-
         .parent[b] = x
     }
 
@@ -256,7 +248,6 @@ tree-set.rebalance = (idx i64) (nr i64) {
         b > 1 -> {
             lb = .bf(.left[idx])
             lb < 0 -> {
-
                 .rot-left(.left[idx])
             }
             .rot-right(idx)
@@ -271,7 +262,6 @@ tree-set.rebalance = (idx i64) (nr i64) {
 
             rb = .bf(.right[idx])
             rb > 0 -> {
-
                 .rot-right(.right[idx])
             }
             .rot-left(idx)
@@ -303,10 +293,8 @@ tree-set.successor = (idx i64) (succ i64) {
     r-idx = idx
     succ = -1
     .right[r-idx] >= 0 -> {
-
         succ = .right[r-idx]
         (.left[succ] >= 0) {
-
             succ = .left[succ]
         }
         return
@@ -315,7 +303,6 @@ tree-set.successor = (idx i64) (succ i64) {
     p = .parent[r-idx]
     (p >= 0) {
         r-idx != .right[p] -> {
-
             break
         }
         r-idx = p
@@ -351,13 +338,11 @@ tree-set.add = (key i64) (ok bool) {
     cur = .root
     !! {
         key == .keys[cur] -> {
-
             return
         }
         {
             key < .keys[cur] -> {
                 .left[cur] < 0 -> {
-
                     idx = .alloc-node()
                     idx < 0 -> return
 
@@ -379,7 +364,6 @@ tree-set.add = (key i64) (ok bool) {
 
             -> {
                 .right[cur] < 0 -> {
-
                     idx = .alloc-node()
                     idx < 0 -> return
 
@@ -434,9 +418,7 @@ tree-set.remove = (key i64) (ok bool) {
     ; BST 搜尋
     idx = .root
     (idx >= 0) {
-
         key == .keys[idx] -> {
-
             break
         }
         {
@@ -457,10 +439,8 @@ tree-set.remove = (key i64) (ok bool) {
 
     ; 雙子節點：用後繼替換後刪除後繼
     .left[idx] >= 0 && .right[idx] >= 0 -> {
-
         succ = .right[idx]
         (.left[succ] >= 0) {
-
             succ = .left[succ]
         }
 
@@ -471,13 +451,11 @@ tree-set.remove = (key i64) (ok bool) {
     ; 此時 idx 最多一個子節點
     child = .left[idx]
     child < 0 -> {
-
         child = .right[idx]
     }
 
     p = .parent[idx]
     child >= 0 -> {
-
         .parent[child] = p
     }
     {
@@ -513,7 +491,6 @@ tree-set.first = () (val ?i64) {
         return
     }
     (.left[idx] >= 0) {
-
         idx = .left[idx]
     }
 
@@ -530,7 +507,6 @@ tree-set.last = () (val ?i64) {
         return
     }
     (.right[idx] >= 0) {
-
         idx = .right[idx]
     }
 
@@ -602,13 +578,11 @@ tree-set.for-each = () (val i64) {
 
     ; 定位到最小值
     (.left[idx] >= 0) {
-
         idx = .left[idx]
     }
 
     ; 逐個後繼遍歷
     (idx >= 0) {
-
         val = .keys[idx]
         idx = .successor(idx)
     }
@@ -621,7 +595,6 @@ tree-set.for-each = () (val i64) {
 ; 清空所有元素，重建空閒池
 ; [clear](#tree-set.tree-set.clear)
 tree-set.clear = () {
-
     .root = -1
     .free-head = 0
     .size = 0

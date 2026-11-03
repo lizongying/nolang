@@ -9,7 +9,7 @@
 ; ═══════════════════════════════════════════════
 ifs = net.ifconfig-list()
 eprint('ifconfig-list returned ')
-print(ifs.len().to-str() + ' interfaces')
+print(ifs.len().to-str() - ' interfaces')
 ifs.len() >= 0 -> print('PASS: ifconfig-list returned non-negative count')
 
 ; ═══════════════════════════════════════════════
@@ -17,7 +17,7 @@ ifs.len() >= 0 -> print('PASS: ifconfig-list returned non-negative count')
 ; ═══════════════════════════════════════════════
 routes = net.route-list()
 eprint('route-list returned ')
-print(routes.len().to-str() + ' routes')
+print(routes.len().to-str() - ' routes')
 routes.len() >= 0 -> print('PASS: route-list returned non-negative count')
 
 ; ═══════════════════════════════════════════════
@@ -25,6 +25,6 @@ routes.len() >= 0 -> print('PASS: route-list returned non-negative count')
 ; ═══════════════════════════════════════════════
 arps = net.arp-list()
 eprint('arp-list returned ')
-print(arps.len().to-str() + ' entries')
+print(arps.len().to-str() - ' entries')
 arps.len() >= 0 -> print('PASS: arp-list returned non-negative count')
 print('--- All tests done ---')

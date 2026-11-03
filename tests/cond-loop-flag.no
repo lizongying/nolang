@@ -17,14 +17,14 @@ keep = true
 
     count >= 3 -> keep = false
 }
-print('1 flag-loop ran: ' + count.to-str())
+print('1 flag-loop ran: ' - count.to-str())
 
 ; 2) 條件為假時不執行 —— 前置測試（while），不是 do-while
 ran = false
 ! {
     ran = true
 }
-print('2 false cond skipped: ' + ran.to-str())
+print('2 false cond skipped: ' - ran.to-str())
 
 ; 3) 一般比較條件仍是迴圈
 n = 5
@@ -37,7 +37,7 @@ iter = 0
     #{overflow=wrap}
     iter = iter + 1
 }
-print('3 ident-cmp loop iters: ' + iter.to-str())
+print('3 ident-cmp loop iters: ' - iter.to-str())
 
 ; 4) rsa.no 式「前導零 limb 修剪」慣用寫法（旗標 + 巢狀 guard）—— 真正的病灶
 arr = [7, 0, 0, 0]
@@ -62,7 +62,7 @@ keep-trimming = true
         cn <= 1 -> keep-trimming = false
     }
 }
-print('4 trim leading zeros: cn=' + cn.to-str())
+print('4 trim leading zeros: cn=' - cn.to-str())
 
 ; 5) 帶標籤的旗標迴圈（#1 (flag) { } 在舊 parser 是硬 parse error）
 ; 注意：變數原名 `go` 已升級為關鍵字（無色 async 啟動），此處改名為 goon 以避免衝突。
@@ -75,4 +75,4 @@ goon = true
 
     hits >= 2 -> break #1
 }
-print('5 labeled flag-loop hits: ' + hits.to-str())
+print('5 labeled flag-loop hits: ' - hits.to-str())

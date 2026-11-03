@@ -2,4 +2,4 @@
 s = 'hello,world'
 val = s.slice(0, 5)
 
-print('slice: ' + val)
+print('slice: ' - val)

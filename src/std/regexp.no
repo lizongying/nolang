@@ -104,7 +104,6 @@ regexp {
 ; arg2 i64: 參數2
 ; [emit](#regexp.emit)
 regexp.emit = (op i64, arg1 i64, arg2 i64) {
-
     .op[.n] = op
 
     .arg1[.n] = arg1
@@ -176,7 +175,6 @@ regexp.in-class = (cls-idx i64, c i64) (yes bool) {
     mask = 1 << bit-idx
 
     (.cls[base + byte-idx] & mask) != 0 -> {
-
         yes = true
     }
 }
@@ -213,7 +211,6 @@ regexp.init-class-all = (cls-idx i64) {
 ; 返回 cls-idx i64: 類別索引
 ; [alloc-class](#regexp.alloc-class)
 regexp.alloc-class = () (cls-idx i64) {
-
     cls-idx = .ncls
 
     #{overflow=wrap}
@@ -418,7 +415,6 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
 
     ; . — 任意字元
     c == 46 -> {
-
         .tmp-atom-type = RE-OP-ANY
 
         #{overflow=wrap}
@@ -438,7 +434,6 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
 
     ; 常字元
     c != 46 && c != 91 && c != 92 -> {
-
         .tmp-atom-type = RE-OP-CHAR
         .tmp-atom-char = c
 
@@ -455,7 +450,6 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
 ; 副作用：建立新的字元類別，索引存入 .tmp-atom-cls
 ; [parse-class](#regexp.parse-class)
 regexp.parse-class = (pattern str, i i64) (new-i i64) {
-
     ri = i
 
     ; 分配類別
@@ -474,7 +468,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     #{overflow=wrap}
     ri < n -> {
         pattern[ri] == 94 -> {
-
             negated = 1
             ri = ri + 1
         }
@@ -516,11 +509,9 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                 #{overflow=wrap}
                 end-c char = pattern[ri + 2]
                 end-c != 93 -> {
-
                     is-range = 1
                     k = c
                     (k <= end-c) {
-
                         .set-class-bit(cls-idx, k)
                         k = k + 1
                     }
@@ -580,7 +571,6 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
 ; 副作用：設置 .tmp-atom-type, .tmp-atom-char, .tmp-atom-cls
 ; [parse-escape](#regexp.parse-escape)
 regexp.parse-escape = (pattern str, i i64) (new-i i64) {
-
     ri = i
     result-i = i
 
@@ -603,7 +593,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \d — 數字
     #{overflow=wrap}
     c == 100 -> {
-
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-digits()
         result-i = ri + 1
@@ -612,7 +601,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \D — 非數字
     #{overflow=wrap}
     c == 68 -> {
-
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nondigits()
         result-i = ri + 1
@@ -621,7 +609,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \w — 文字字元
     #{overflow=wrap}
     c == 119 -> {
-
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-word()
         result-i = ri + 1
@@ -630,7 +617,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \W — 非文字字元
     #{overflow=wrap}
     c == 87 -> {
-
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonword()
         result-i = ri + 1
@@ -639,7 +625,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \s — 空白字元
     #{overflow=wrap}
     c == 115 -> {
-
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-space()
         result-i = ri + 1
@@ -648,7 +633,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \S — 非空白字元
     #{overflow=wrap}
     c == 83 -> {
-
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonspace()
         result-i = ri + 1
@@ -657,7 +641,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \n
     #{overflow=wrap}
     c == 110 -> {
-
         .tmp-atom-char = 10
         result-i = ri + 1
     }
@@ -665,7 +648,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \t
     #{overflow=wrap}
     c == 116 -> {
-
         .tmp-atom-char = 9
         result-i = ri + 1
     }
@@ -673,7 +655,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; \r
     #{overflow=wrap}
     c == 114 -> {
-
         .tmp-atom-char = 13
         result-i = ri + 1
     }
@@ -681,7 +662,6 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     ; 跳脫特殊字元或常字元
     #{overflow=wrap}
     c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> {
-
         .tmp-atom-char = c
         result-i = ri + 1
     }
@@ -705,7 +685,6 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
 
     ; * — 零次或多次（貪婪）
     q == _RE-QUANT-STAR -> {
-
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -723,7 +702,6 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
 
     ; + — 一次或多次（貪婪）
     q == _RE-QUANT-PLUS -> {
-
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
 
@@ -737,7 +715,6 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
 
     ; ? — 零次或一次（貪婪）
     q == _RE-QUANT-QUESTION -> {
-
         split-pc = .n
         .emit(RE-OP-SPLIT, 0, 0)
         l1 = .n
@@ -796,7 +773,6 @@ regexp.compile = () {
         ; ^ — 行首錨點
         #{overflow=wrap}
         c == 94 -> {
-
             .emit(RE-OP-START, 0, 0)
             .tmp-next-i = i + 1
         }
@@ -804,7 +780,6 @@ regexp.compile = () {
         ; $ — 行尾錨點
         #{overflow=wrap}
         c == 36 -> {
-
             .emit(RE-OP-END, 0, 0)
             .tmp-next-i = i + 1
         }
@@ -823,7 +798,6 @@ regexp.compile = () {
             ; 偵測量詞：使用 bitmap 位元測試
             .tmp-quant = _RE-QUANT-NONE
             atom-i < n -> {
-
                 qc = pat[atom-i]
                 is-star = .in-class(star-cls, qc)
                 is-star -> .tmp-quant = _RE-QUANT-STAR
@@ -858,7 +832,6 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
     result-ok = false
 
     pc < .n -> {
-
         op = .op[pc]
 
         op == RE-OP-CHAR -> {
@@ -896,12 +869,10 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
 
             ; 第一分支失敗時回溯到第二分支
             ! result-ok -> {
-
                 result-ok = .match-at(.arg2[pc], sp, text)
             }
         }
         op == RE-OP-JUMP -> {
-
             result-ok = .match-at(.arg1[pc], sp, text)
         }
         op == RE-OP-MATCH -> {
@@ -933,7 +904,6 @@ regexp.matches = (text str) (matched bool) {
     ; 從每個位置嘗試匹配
     sp = 0
     (sp <= text.len-bytes()) {
-
         .match-end = -1
         ok = .match-at(0, sp, text)
         ok -> {
@@ -958,7 +928,6 @@ regexp.find = (text str) (result str) {
     ; 從每個位置嘗試匹配
     sp = 0
     (sp <= text.len-bytes()) {
-
         .match-end = -1
         ok = .match-at(0, sp, text)
 

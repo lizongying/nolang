@@ -181,13 +181,11 @@ keccak-f1600 = (state []u64) {
 ; 返回 out []byte: 擠出（squeeze）出的雜湊/輸出位元組
 ; [keccak-sponge](#sha3.keccak-sponge)
 keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) (out []byte) {
-
     out = with-len(out-len)
 
     ; 初始化狀態（25 個 64-bit lane，全零）
     state []u64 = with-len(25)
     e <- state: {
-
         e: {
             ok -> it = 0
 

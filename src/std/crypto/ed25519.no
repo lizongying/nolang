@@ -81,7 +81,6 @@ ED-L [32]byte = [
 ; src: 待寫入的域元素（10 limb）
 ; [set-coord](#ed25519.set-coord)
 set-coord = (p []i64, off i64, src []i64) {
-
     i <- [0..10): {
 
         #{index-out=zero, overflow=wrap}
@@ -98,7 +97,6 @@ set-coord = (p []i64, off i64, src []i64) {
 ; src: 來源點（40 limb）
 ; [pcopy](#ed25519.pcopy)
 pcopy = (dst []i64, src []i64) {
-
     i <- [0..40): {
 
         #{index-out=zero}
@@ -129,7 +127,6 @@ ed-sqm1 = () (h []i64) {
 ; z: 1=32 位元組全為 0, 0=存在非零位元組
 ; [is-zero-arr](#ed25519.is-zero-arr)
 is-zero-arr = (a [32]byte) (z i64) {
-
     z = 1
     v <- a: {
         {
@@ -150,7 +147,6 @@ is-zero-arr = (a [32]byte) (z i64) {
 ; q: 加數點（40 limb expanded 座標）
 ; [ge-add](#ed25519.ge-add)
 ge-add = (r []i64, p []i64, q []i64) {
-
     d = ed-d()
 
     ; A = (Y1-X1)*(Y2-X2)
@@ -226,7 +222,6 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 ; out: 壓縮後 32 位元組（y 的小端編碼，最高位為 x 符號位）
 ; [ge-pack](#ed25519.ge-pack)
 ge-pack = (p []i64) (out [32]byte) {
-
     zinv = x25519.fe-invert-v(p[20..])
     x = x25519.fe-mul-v(p, zinv)
     y = x25519.fe-mul-v(p[10..], zinv)
@@ -247,11 +242,9 @@ ge-pack = (p []i64) (out [32]byte) {
 ; out: base^e 的結果域元素（10 limb）
 ; [fe-pow](#ed25519.fe-pow)
 fe-pow = (base []i64, e [32]byte) (out []i64) {
-
     out = x25519.fe-one-v()
     t = 255
     (t >= 0) {
-
         out = x25519.fe-sq-v(out)
 
         #{index-out=zero}
@@ -272,7 +265,6 @@ fe-pow = (base []i64, e [32]byte) (out []i64) {
 ; p: 解壓出的點（40 limb expanded 座標；ok=0 時內容不保證有效）
 ; [ge-unpack](#ed25519.ge-unpack)
 ge-unpack = (s [32]byte) (ok i64, p []i64) {
-
     p = with-len(40)
 
     sign = (s[31] >> 7) & 1
@@ -343,7 +335,6 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
 ; bp: 基點 B 的 expanded 座標（長度 40 的點緩衝）
 ; [ge-basepoint](#ed25519.ge-basepoint)
 ge-basepoint = () (bp []i64) {
-
     bp = with-len(40)
     x = x25519.fe-frombytes-v(ED-GX-BYTES)
     y = x25519.fe-frombytes-v(ED-GY-BYTES)
@@ -364,7 +355,6 @@ ge-basepoint = () (bp []i64) {
 ; ge: 1=acc >= L（群階）, 0=acc < L
 ; [sc-ge-l](#ed25519.sc-ge-l)
 sc-ge-l = (acc []i64) (ge i64) {
-
     ge = 1
     done = 0
     i = 31
@@ -458,7 +448,6 @@ sc-reduce = (s []byte) (out [32]byte) {
         i = i - 1
     }
     i <- [0..32): {
-
         out[i] = acc[i]
     }
 }
@@ -470,12 +459,10 @@ sc-reduce = (s []byte) (out [32]byte) {
 ; s: (a * b + c) mod L 的結果純量（32 位元組）
 ; [sc-muladd](#ed25519.sc-muladd)
 sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
-
     prod []i64 = with-len(64)
 
     ; schoolbook 乘法 a*b → prod（64 byte）
     i <- [0..32): {
-
         carry = 0
         j <- [0..32): {
 
@@ -554,7 +541,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     ; 轉成 []byte 再規約 mod L
     pb []byte = with-len(64)
     i <- [0..64): {
-
         pb[i]: {
             ok -> it = prod[i]
 
@@ -573,13 +559,11 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
 ; pub: 由種子導出的公鑰（32 位元組壓縮點）
 ; [ed25519-publickey](#ed25519.ed25519-publickey)
 ed25519-publickey = (seed [32]byte) (pub [32]byte) {
-
     h = sha512.sha512(seed)
 
     ; a = clamp(H[0:32])
     a []byte = with-len(32)
     i <- [0..32): {
-
         a[i]: {
             ok -> it = h[i]
 
@@ -615,11 +599,9 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
 ; sig: 簽名 R ‖ S（64 位元組）
 ; [ed25519-sign](#ed25519.ed25519-sign)
 ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
-
     h = sha512.sha512(seed)
     a []byte = with-len(32)
     i <- [0..32): {
-
         a[i]: {
             ok -> it = h[i]
 
@@ -682,7 +664,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     rh = sha512.sha512(rin)
     rhb []byte = with-len(64)
     i <- [0..64): {
-
         rhb[i]: {
             ok -> it = rh[i]
 
@@ -731,7 +712,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     kh = sha512.sha512(kin)
     khb []byte = with-len(64)
     i <- [0..64): {
-
         khb[i]: {
             ok -> it = kh[i]
 
@@ -744,7 +724,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     ; S = (r + k * a) mod L
     aarr [32]byte
     i <- [0..32): {
-
         aarr[i]: {
             ok -> it = a[i]
 
@@ -756,7 +735,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 
     ; sig = R || S
     i <- [0..32): {
-
         sig[i] = r[i]
 
         #{overflow=wrap}
@@ -857,7 +835,6 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     kh = sha512.sha512(kin)
     khb []byte = with-len(64)
     i <- [0..64): {
-
         khb[i]: {
             ok -> it = kh[i]
 

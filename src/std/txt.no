@@ -176,14 +176,12 @@ txt.to-bytes = () (out []byte) {
 ; out: 每位元組轉兩個小寫十六進位字元的 str
 ; [to-hex](#txt.to-hex)
 txt.to-hex = () (out str) {
-
     hex-table = '0123456789ABCDEF'
     n i64 = .len-bytes()
 
     #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
-
         b = .byte(i)
 
         #{overflow=wrap}
@@ -256,7 +254,6 @@ txt.starts-with = (sub txt) (yes bool) {
 ; yes: 是否以 sub 結尾
 ; [ends-with](#txt.ends-with)
 txt.ends-with = (sub txt) (yes bool) {
-
     yes = false
     sn = sub.len-bytes()
     n i64 = .len-bytes()
@@ -276,7 +273,6 @@ txt.ends-with = (sub txt) (yes bool) {
 ; b: 追加的位元組（超出 255 上限則忽略）
 ; [append](#txt.append)
 txt.append = (b byte) {
-
     n i64 = .len-bytes()
     n >= 255 -> return
     .set-byte(n, b)
@@ -289,7 +285,6 @@ txt.append = (b byte) {
 ; s: 追加的 str（超出 255 上限則截斷追加）
 ; [append-str](#txt.append-str)
 txt.append-str = (s str) {
-
     sn i64 = s.len-bytes()
     n i64 = .len-bytes()
 
@@ -1834,7 +1829,6 @@ txt.to-bigint = () (out ?bigint) {
     ; 逐位解析數字
     started = 0
     (pos < n) {
-
         d = _txt-dig-val(.byte(pos))
         d < 0 -> break
         d >= radix -> break

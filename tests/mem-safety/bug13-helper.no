@@ -4,7 +4,6 @@
 ; prefix str: 拼接前綴，例如 'x'
 ; s str: prefix 接上固定後綴 '-1234567890abcdef' 的結果
 compute-str = (prefix str) (s str) {
-
     s = prefix - '-1234567890abcdef'
 }
 

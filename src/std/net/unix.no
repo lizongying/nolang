@@ -202,7 +202,6 @@ unix-conn.recv-all = () (content str, total i64) {
     .fd < 0 -> return
     buf str = with-len(UNIX-BUF-SIZE)
     !! {
-
         chunk-n = net.net-recv(.fd, buf, UNIX-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {

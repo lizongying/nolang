@@ -1518,34 +1518,12 @@ func (p *Parser) parseLetStatement() Statement {
 			// 从元素推断切片类型
 			elemValue := "i64"
 			if len(v.Elements) > 0 {
-				switch el := v.Elements[0].(type) {
-				case *IntegerLiteral:
-					// 十六進位字面量（0xNN）推斷為 byte，十進位整數推斷為 i64 —— 與上方
-					// 裸整數標量分支同一口徑（僅按進位制判定，不看數值範圍）。否則
-					// `sig = [0x50, 0x4b, ...]` 這類未標註十六進位陣列会被推成 []i64。
-					raw := el.Token.Literal
-					if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
-						elemValue = ValueTypeByte.String()
-					} else {
-						elemValue = "i64"
-					}
-				case *FloatLiteral:
-					elemValue = "f64"
-				case *StringLiteral:
-					elemValue = "str"
-				case *BooleanLiteral:
-					elemValue = "bool"
-				case *CharLiteral:
-					elemValue = ValueTypeChar.String()
-				default:
-					elemValue = "i64"
-				}
+				elemValue = inferLiteralElemTypeName(v.Elements[0])
 			}
-			stmt.Type = &SliceType{
-				Token:      nameToken,
-				Elem:       &NamedType{Token: nameToken, Value: elemValue, IsInferred: true},
-				IsInferred: true,
-			}
+			stmt.Type = markInferred(&SliceType{
+				Token: nameToken,
+				Elem:  buildType(elemValue, nameToken),
+			})
 			// 同时登记到语义表，使 `parts = [..]; parts[i]: { ok-> }` 这类
 			// 索引主体 option-match 能被 isSafeIndexBase / inferIndexElemType
 			// 识别为 slice 基底、归一化为安全索引（%option）。stmt.Type 已为
@@ -1592,27 +1570,7 @@ func (p *Parser) parseLetStatement() Statement {
 			// []elem（与下方登记一致，见 tohir.go KArrayLit）。
 			elemValue := "i64"
 			if len(v.Elements) > 0 {
-				switch el := v.Elements[0].(type) {
-				case *IntegerLiteral:
-					// 十六進位字面量（0xNN）推斷為 byte，十進位整數推斷為 i64 —— 與
-					// SliceLiteral 分支同一口徑（僅按進位制判定，不看數值範圍）。
-					raw := el.Token.Literal
-					if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
-						elemValue = ValueTypeByte.String()
-					} else {
-						elemValue = "i64"
-					}
-				case *FloatLiteral:
-					elemValue = "f64"
-				case *StringLiteral:
-					elemValue = "str"
-				case *BooleanLiteral:
-					elemValue = "bool"
-				case *CharLiteral:
-					elemValue = ValueTypeChar.String()
-				default:
-					elemValue = "i64"
-				}
+				elemValue = inferLiteralElemTypeName(v.Elements[0])
 			}
 			p.setVarType(stmt.Name.Value, "[]"+elemValue)
 		case *StructLiteral:
@@ -1700,6 +1658,43 @@ func (p *Parser) parseLetStatement() Statement {
 	p.sem.SetFuncDeclared(p.curFuncName, stmt.Name.Value)
 
 	return stmt
+}
+
+// inferLiteralElemTypeName 從陣列/切片字面量的首元素推斷「元素型別名」。
+// 口徑與 SliceLiteral/ArrayLiteral 推斷分支一致：整數按進位制判定
+// （0xNN → byte、十進位 → i64），float/str/bool/char 各歸其位；
+// 嵌套 SliceLiteral/ArrayLiteral **遞迴展開**（[[1,2],[3,4]] → "[]i64"）。
+// 少了遞迴，嵌套字面量會被壓平成一級（[[1,2]] → 元素型別 i64），
+// checker 的逐元素檢查把內層 []i64 誤判為與元素型別 i64 不符
+// （"cannot assign []i64 value to i64 element in array"）。
+func inferLiteralElemTypeName(e Expression) string {
+	switch el := e.(type) {
+	case *IntegerLiteral:
+		raw := el.Token.Literal
+		if len(raw) > 2 && raw[0] == '0' && (raw[1] == 'x' || raw[1] == 'X') {
+			return ValueTypeByte.String()
+		}
+		return "i64"
+	case *FloatLiteral:
+		return "f64"
+	case *StringLiteral:
+		return "str"
+	case *BooleanLiteral:
+		return "bool"
+	case *CharLiteral:
+		return ValueTypeChar.String()
+	case *SliceLiteral:
+		if len(el.Elements) > 0 {
+			return "[]" + inferLiteralElemTypeName(el.Elements[0])
+		}
+		return "i64"
+	case *ArrayLiteral:
+		if len(el.Elements) > 0 {
+			return "[]" + inferLiteralElemTypeName(el.Elements[0])
+		}
+		return "i64"
+	}
+	return "i64"
 }
 
 func (p *Parser) parseReturnStatement() Statement {

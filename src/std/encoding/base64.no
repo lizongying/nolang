@@ -25,7 +25,6 @@ PAD = 61
 ; out str: 編碼後字串，長度為 4 的倍數，不足處以 '=' 填充
 ; [encode](#base64.encode)
 encode = (data []byte, table str) (out str) {
-
     n = data.len()
 
     #{overflow=wrap}
@@ -129,7 +128,6 @@ encode-url = (data []byte) (out str) {
 ; out ?[]byte: ok=解碼後的資料（已依 '=' 填充數截短）, err=輸入包含字母表外的無效字元
 ; [decode](#base64.decode)
 decode = (s str, table str) (out ?[]byte) {
-
     out = nil
     n = s.len-bytes()
 
@@ -194,7 +192,6 @@ decode = (s str, table str) (out ?[]byte) {
 
         #{overflow=wrap}
         s[i + 2] != 61 -> {
-
             v2 < 0 -> {
                 out = err('invalid base64 character')
                 return
@@ -209,7 +206,6 @@ decode = (s str, table str) (out ?[]byte) {
 
         #{overflow=wrap}
         s[i + 3] != 61 -> {
-
             v3 < 0 -> {
                 out = err('invalid base64 character')
                 return
@@ -251,7 +247,6 @@ b64-val = (c i64, table str) (v i64) {
         return
     }
     i <- [0..64): {
-
         tc = table[i]
         tc == c -> {
             v = i

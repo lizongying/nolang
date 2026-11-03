@@ -65,7 +65,6 @@ sha384 = (data []byte) (hash [48]byte) {
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 16): {
-
         padded[i]: {
             ok -> it = 0
 

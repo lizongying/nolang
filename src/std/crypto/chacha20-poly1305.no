@@ -36,7 +36,6 @@ CC-MASK32 u32 = 4294967295
 ; r: 循環左移後的結果（已掩碼至 32 位元）
 ; [rotl32](#chacha20-poly1305.rotl32)
 rotl32 = (x u32, n i64) (r u32) {
-
     r = ((x << n) | (x >> (32 - n))) & CC-MASK32
 }
 
@@ -241,7 +240,6 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
     pos = 0
     blk-counter = counter
     (pos < data.len()) {
-
         ks [64]byte
         ks = chacha20-block(key, blk-counter, nonce)
 
@@ -852,7 +850,6 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     ; 4. 常數時間比較
     diff = 0
     i <- [0..16): {
-
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> return

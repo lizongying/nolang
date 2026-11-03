@@ -84,7 +84,6 @@ u16le = (data []byte, off i64) (v i64) {
 ; off: EOCD 簽名所在偏移（找不到返回 -1）
 ; [find-eocd](#zip.zip.find-eocd)
 zip.find-eocd = () (off i64) {
-
     off = -1
     n = len(.data)
     ! n >= 22 -> return
@@ -108,7 +107,6 @@ zip.find-eocd = () (off i64) {
 ; cd-off: 中央目錄的起始偏移（無 EOCD 時返回 0）
 ; [get-cd-off](#zip.zip.get-cd-off)
 zip.get-cd-off = () (cd-off i64) {
-
     eocd = .find-eocd()
     eocd < 0 -> {
         cd-off = 0
@@ -124,7 +122,6 @@ zip.get-cd-off = () (cd-off i64) {
 ; total: 歸檔內的條目總數（無 EOCD 時返回 0）
 ; [get-total](#zip.zip.get-total)
 zip.get-total = () (total i64) {
-
     eocd = .find-eocd()
     eocd < 0 -> {
         total = 0
@@ -145,7 +142,6 @@ zip.entry-off = (idx i64) (off i64) {
     total = .get-total()
     cur = cd-off
     j <- [0..idx): {
-
         j >= total -> break
 
         #{overflow=wrap}
@@ -190,7 +186,6 @@ zip.entry = (idx i64) (e zip-entry) {
 ; name: 檔名（可含以 / 分隔的相對路徑）
 ; [name](#zip.zip.name)
 zip.name = (idx i64) (name str) {
-
     off = .entry-off(idx)
 
     #{overflow=wrap}
@@ -216,7 +211,6 @@ zip.name = (idx i64) (name str) {
 ; sz: 壓縮前的原始位元組數
 ; [size](#zip.zip.size)
 zip.size = (idx i64) (sz i64) {
-
     off = .entry-off(idx)
 
     #{overflow=wrap}
@@ -229,7 +223,6 @@ zip.size = (idx i64) (sz i64) {
 ; csz: 壓縮後的位元組數（stored 時與原始相同）
 ; [compressed-size](#zip.zip.compressed-size)
 zip.compressed-size = (idx i64) (csz i64) {
-
     off = .entry-off(idx)
 
     #{overflow=wrap}
@@ -242,7 +235,6 @@ zip.compressed-size = (idx i64) (csz i64) {
 ; method: 壓縮方式（0=stored 未壓縮、8=deflate）
 ; [method](#zip.zip.method)
 zip.method = (idx i64) (method i64) {
-
     off = .entry-off(idx)
 
     #{overflow=wrap}
@@ -255,7 +247,6 @@ zip.method = (idx i64) (method i64) {
 ; out: 解壓後的原始位元組（stored 直接拷貝、deflate 自動 inflate）
 ; [extract](#zip.zip.extract)
 zip.extract = (idx i64) (out []byte) {
-
     off = .entry-off(idx)
 
     #{overflow=wrap}
@@ -325,7 +316,6 @@ zip.extract = (idx i64) (out []byte) {
 ; name: 該條目的檔名
 ; [name](#zip.zip-entry.name)
 zip-entry.name = () (name str) {
-
     off = .off
 
     #{overflow=wrap}
@@ -380,7 +370,6 @@ zip-entry.method = () (method i64) {
 ; out: 解壓後的原始位元組（stored 直接拷貝、deflate 自動 inflate）
 ; [extract](#zip.zip-entry.extract)
 zip-entry.extract = () (out []byte) {
-
     off = .off
 
     #{overflow=wrap}
@@ -466,7 +455,6 @@ zip-writer {
 ; content: 檔案內容（以 stored 方式原樣儲存，自動計算 CRC32）
 ; [add-file](#zip.zip-writer.add-file)
 zip-writer.add-file = (name str, content []byte) {
-
     crc = crc-32.new(content, content.len())
     off = .data.len()
     .write-local-file(name, content, crc)
@@ -480,7 +468,6 @@ zip-writer.add-file = (name str, content []byte) {
 ; name: 目錄名（未以 / 結尾時自動補上）
 ; [add-dir](#zip.zip-writer.add-dir)
 zip-writer.add-dir = (name str) {
-
     dname = name
 
     dname.ends-with('/') == false -> dname = dname - '/'
@@ -520,14 +507,12 @@ zip-writer.finalize = () (out []byte) {
     cd-offset = .data.len()
     cd-size = .cd-data.len()
     i <- [0..cd-size): {
-
         .put(.cd-data[i])
     }
     .write-eocd(cd-offset, cd-size)
     dlen = .data.len()
     out = with-cap(.data.len())
     i <- [0..dlen): {
-
         out[i] = .data[i]
     }
 }
@@ -596,13 +581,11 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
 
     ; 檔名
     i <- [0..name-len): {
-
         .put(name.byte(i))
     }
 
     ; 檔案內容
     b <- content: {
-
         .put(b)
     }
 }
@@ -691,7 +674,6 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
 
     ; 檔名
     i <- [0..name-len): {
-
         .cd-put(name.byte(i))
     }
 }

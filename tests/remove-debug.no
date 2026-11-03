@@ -2,7 +2,6 @@
 
 ; 測試 remove
 test-remove = () {
-
     ok = fs.remove('/tmp/nonexistent-test-file')
     print(ok)
 }

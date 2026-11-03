@@ -27,7 +27,6 @@
 ; r0 u32..r7 u32: 壓縮後的新狀態（工作變數加回輸入狀態並模 2^32）
 ; [sha256-block](#sha256.sha256-block)
 sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32) (r0 u32, r1 u32, r2 u32, r3 u32, r4 u32, r5 u32, r6 u32, r7 u32) {
-
     mask u32 = 4294967295
 
     ; 初始狀態
@@ -2145,7 +2144,6 @@ sha256 = (data []byte) (hash [32]byte) {
     ; 建立填充緩衝區
     padded []byte = with-len(total-len)
     i <- [0..total-len): {
-
         padded[i]: {
             ok -> it = 0
 
@@ -2173,7 +2171,6 @@ sha256 = (data []byte) (hash [32]byte) {
 
     ; 填充 0x00
     i <- [dlen + 1..total-len - 8): {
-
         padded[i]: {
             ok -> it = 0
 
@@ -2199,7 +2196,6 @@ sha256 = (data []byte) (hash [32]byte) {
     ; 區塊永遠是空的，sha256-block 讀到垃圾 → digest 錯。
     block []u32 = with-len(16)
     e1 <- block: {
-
         e1: {
             ok -> it = 0
 

@@ -262,7 +262,6 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
     count = 0
     ft = 0
     (r-pos < end) {
-
         count >= QUIC-MAX-FRAMES -> return
         ft-val = 0
         ft-pos = 0
@@ -428,7 +427,6 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     ; 1. Initial Secret = HKDF-Extract(Initial_Salt, dst_cid)
     initial-salt []byte
     i <- [0..20): {
-
         initial-salt[i]: {
             ok -> it = QUIC-INITIAL-SALT[i]
 
@@ -557,7 +555,6 @@ remove-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-h
 ; 返回 pn-len i64: 封包號碼欄位佔用的位元組數
 ; [decode-packet-number](#quic.decode-packet-number)
 decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, pn-len i64) {
-
     pn = 0
     pn-len = 0
 
@@ -710,7 +707,6 @@ conn.close = () {
 ; 返回 out ?[]byte: 成功則為完整 Initial 封包（已加密），失敗為 nil
 ; [build-initial-packet](#quic.conn.build-initial-packet)
 conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
-
     out = nil
     pn = .initial-pn
     pn-len = 4
@@ -869,7 +865,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; PADDING to reach 1200 bytes
     #{overflow=wrap}
     (pos < QUIC-MAX-PACKET-SIZE - 16) {
-
         packet[pos] = 0
 
         #{overflow=wrap}
@@ -880,7 +875,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; Nonce = IV XOR packet_number (right-aligned)
     nonce [12]byte
     i <- [0..12): {
-
         nonce[i]: {
             ok -> it = .client-initial-iv[i]
 
@@ -900,7 +894,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; AAD = packet[0..pn-offset]（標頭部分）
     aad []byte
     i <- [0..pn-offset): {
-
         aad[i]: {
             ok -> it = packet[i]
 
@@ -958,7 +951,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 ; 返回 ok bool: true=成功
 ; [recv-initial](#quic.conn.recv-initial)
 conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
-
     ok = false
     count = -1
 
@@ -1033,7 +1025,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; Nonce
     nonce [12]byte
     i <- [0..12): {
-
         nonce[i]: {
             ok -> it = .server-initial-iv[i]
 

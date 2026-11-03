@@ -95,7 +95,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
         c2 char = spec[1]
         c2 == 60 || c2 == 62 || c2 == 61 || c2 == 94 -> {
-
             fill-v = spec[0]
             align-v = c2
             i = 2
@@ -119,7 +118,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
         c char = spec[i]
         c == 43 || c == 45 || c == 32 -> {
-
             sign-v = c
 
             #{overflow=wrap}
@@ -130,7 +128,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; alt: #
     i < n -> {
         spec[i] == 35 -> {
-
             alt-v = 1
 
             #{overflow=wrap}
@@ -141,7 +138,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; zero: 0
     i < n -> {
         spec[i] == 48 -> {
-
             zero-v = 1
 
             #{overflow=wrap}
@@ -154,7 +150,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; 改用 for-loop + break 模式
     last-wi = i
     wi <- [i..n): {
-
         c = spec[wi]
         c < 48 || c > 57 -> break
 
@@ -172,7 +167,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
         c char = spec[i]
         c == 44 || c == 95 -> {
-
             grouping-v = c
 
             #{overflow=wrap}
@@ -189,7 +183,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
             precision-v = 0
             last-pi = i
             pi <- [i..n): {
-
                 c = spec[pi]
                 c < 48 || c > 57 -> break
 
@@ -205,7 +198,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
     ; type: 剩餘單一字元
     i < n -> {
-
         typ-v = spec[i]
     }
 
@@ -233,7 +225,6 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 ; out: 補齊並對齊後的輸出字符串
 ; [fmt-apply-spec](#fmt.fmt-apply-spec)
 fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
-
     slen = s.len-bytes()
     width <= slen -> {
         out = s.copy()
@@ -250,7 +241,6 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             ; 左對齊：s + fill*pad
             out = with-cap(width)
             i <- [0..slen): {
-
                 out[i] = s.byte(i)
             }
             i <- [0..pad): {
@@ -267,7 +257,6 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             left = pad / 2
             right = pad - left
             i <- [0..left): {
-
                 out[i] = fill
             }
             i <- [0..slen): {
@@ -287,7 +276,6 @@ fmt-apply-spec = (s str, fill i64, align i64, width i64) (out str) {
             ; 右對齊或預設：fill*pad + s
             out = with-cap(width)
             i <- [0..pad): {
-
                 out[i] = fill
             }
             i <- [0..slen): {
@@ -361,12 +349,10 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 
                     #{overflow=wrap}
                     upper == true -> {
-
                         out[pos] = d - 10 + 65
                     }
 
                     -> {
-
                         out[pos] = d - 10 + 97
                     }
                 }
@@ -499,14 +485,12 @@ fmt-group-digits = (digits str, sep i64) (out str) {
     out = with-cap(total)
     pos = 0
     i <- [0..first): {
-
         out[pos] = digits.byte(i)
 
         #{overflow=wrap}
         pos = pos + 1
     }
     g <- [1..ngroups): {
-
         out[pos] = sep
 
         #{overflow=wrap}
@@ -577,7 +561,6 @@ fmt-int = (n i64, spec str) (out str) {
             sign == 32 -> sign-char = 32
             dlen-v = flen
             i <- [0..dlen-v): {
-
                 digits[i] = full[i]
             }
         }
@@ -593,7 +576,6 @@ fmt-int = (n i64, spec str) (out str) {
     ; 零填充：在符號後、數字前補 0
     #{overflow=wrap}
     zero == 1 -> {
-
         sign-len = 0
         sign-char != 0 -> sign-len = 1
         target = width - sign-len
@@ -603,7 +585,6 @@ fmt-int = (n i64, spec str) (out str) {
             pad = target - dlen-v
             new-digits str = with-cap(target)
             i <- [0..pad): {
-
                 new-digits[i] = 48
             }
             i <- [0..dlen-v): {
@@ -624,7 +605,6 @@ fmt-int = (n i64, spec str) (out str) {
     body str = with-cap(body-len)
     pos = 0
     sign-char != 0 -> {
-
         body[0] = sign-char
         pos = 1
     }
@@ -661,7 +641,6 @@ fmt-uint = (u u64, spec str) (out str) {
         typ == 98 -> {
             digits = fmt-uint-base(u, 2, false)
             alt == 1 -> {
-
                 prefix[0] = 48
 
                 prefix[1] = 98
@@ -672,7 +651,6 @@ fmt-uint = (u u64, spec str) (out str) {
         typ == 111 -> {
             digits = fmt-uint-base(u, 8, false)
             alt == 1 -> {
-
                 prefix[0] = 48
 
                 prefix[1] = 111
@@ -683,7 +661,6 @@ fmt-uint = (u u64, spec str) (out str) {
         typ == 120 -> {
             digits = fmt-uint-base(u, 16, false)
             alt == 1 -> {
-
                 prefix[0] = 48
 
                 prefix[1] = 120
@@ -705,7 +682,6 @@ fmt-uint = (u u64, spec str) (out str) {
         typ == 88 -> {
             digits = fmt-uint-base(u, 16, true)
             alt == 1 -> {
-
                 prefix[0] = 48
 
                 prefix[1] = 88
@@ -730,7 +706,6 @@ fmt-uint = (u u64, spec str) (out str) {
             pad = target - dlen
             new-digits str = with-cap(target)
             i <- [0..pad): {
-
                 new-digits[i] = 48
             }
             i <- [0..dlen): {
@@ -755,7 +730,6 @@ fmt-uint = (u u64, spec str) (out str) {
     body-len = dlen + prefix-len
     body str = with-cap(body-len)
     i <- [0..prefix-len): {
-
         body[i] = prefix[i]
     }
     i <- [0..dlen): {
@@ -841,11 +815,9 @@ fmt-f64 = (x f64, spec str) (out str) {
 
     ; 零填充：在符號後補 0
     zero == 1 -> {
-
         sign-len = 0
         dlen = digits.len-bytes()
         dlen > 0 -> {
-
             c = digits[0]
             c == 45 || c == 43 || c == 32 -> sign-len = 1
         }
@@ -861,7 +833,6 @@ fmt-f64 = (x f64, spec str) (out str) {
             pad = target - need
             new-digits str = with-cap(width)
             i <- [0..sign-len): {
-
                 new-digits[i] = digits[i]
             }
             i <- [0..pad): {
@@ -906,7 +877,6 @@ fmt-str = (s str, spec str) (out str) {
     precision >= 0 && precision < s.len-bytes() -> {
         body = with-cap(precision)
         i <- [0..precision): {
-
             body[i] = s.byte(i)
         }
     }

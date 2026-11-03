@@ -22,7 +22,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
     ; KSA: 金鑰排程
     s [256]byte
     i <- [0..256): {
-
         s[i]: {
             ok -> it = i
 

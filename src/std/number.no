@@ -112,7 +112,6 @@ i8.to-str = () (out str) {
 ; out: 十進位表示（Nolang 迴圈逐位生成，後端無原生 u64 格式化器）
 ; [to-str](#number.u64.to-str)
 u64.to-str = () (out str) {
-
     ru = .
     ru == 0 -> {
         out = with-cap(1)
@@ -192,7 +191,6 @@ byte.to-str = () (out str) {
 ; out: 最短往返十進位字串（能唯一還原本 double 的最少有效位；E≤-5 或 E≥6 用科學記號，NaN/±Inf 對齊 Go）
 ; [to-str](#number.f64.to-str)
 f64.to-str = () (out str) {
-
     x = .
 
     ; 特殊值處理
@@ -225,7 +223,6 @@ f64.to-str = () (out str) {
     ax = x
 
     x < 0.0 -> {
-
         neg = 1
         ax = 0.0 - x
     }
@@ -626,7 +623,6 @@ f32.to-str = () (out str) {
 ; 返回 out str: 字串表示（如 "3.14"、"-0.005"、"100"）
 ; [to-str-fixed](#number.f64.to-str-fixed)
 f64.to-str-fixed = (precision i64) (out str) {
-
     x = .
 
     ; NaN
@@ -772,7 +768,6 @@ f64.to-str-fixed = (precision i64) (out str) {
 ; 返回 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
 ; [to-str-sci](#number.f64.to-str-sci)
 f64.to-str-sci = (precision i64) (out str) {
-
     x = .
 
     ; NaN
@@ -980,7 +975,6 @@ f64.to-str-sci = (precision i64) (out str) {
         pos = pos + 1
     }
     j <- [0..elen2): {
-
         out[pos] = estr.byte(j)
 
         #{overflow=wrap}
@@ -993,7 +987,6 @@ f64.to-str-sci = (precision i64) (out str) {
 ; 返回 out str: 字串表示（自動去尾隨零）
 ; [to-str-general](#number.f64.to-str-general)
 f64.to-str-general = (precision i64) (out str) {
-
     x = .
 
     ; NaN
@@ -1401,7 +1394,6 @@ i64.to-i32 = () (out i32) {
 ; out: 8 位元組陣列（高位在前，大端序）
 ; [to-bytes-be](#number.i64.to-bytes-be)
 i64.to-bytes-be = () (out [?]byte) {
-
     out[0] = (. >> 56) & 255
 
     out[1] = (. >> 48) & 255
@@ -1426,7 +1418,6 @@ i64.to-bytes-be = () (out [?]byte) {
 ; out: 8 位元組陣列（低位在前，小端序）
 ; [to-bytes-le](#number.i64.to-bytes-le)
 i64.to-bytes-le = () (out [?]byte) {
-
     out[0] = . & 255
 
     out[1] = (. >> 8) & 255
@@ -2065,7 +2056,6 @@ i8.sqrt = () (r i8) {
     hi = n / 2
     r = 1
     (lo <= hi) {
-
         mid i8 = 0
 
         #{overflow=wrap}

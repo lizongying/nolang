@@ -32,7 +32,6 @@ str-set.init = () {
     .cap = 256
     .size = 0
     i <- [0..256): {
-
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -44,10 +43,8 @@ str-set.init = () {
 ; idx i64: 在 [0, cap) 內的槽位下標（雜湊值 & (cap-1)，不看大小寫）
 ; [hash](#str-set.str-set.hash)
 str-set.hash = (key str) (idx i64) {
-
     h = SS-FNV-OFFSET
     i <- [0..key.len-bytes()): {
-
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
@@ -67,7 +64,6 @@ str-set.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
         a.byte(i) != b.byte(i) -> {
-
             return
         }
     }
@@ -81,11 +77,9 @@ str-set.str-eq = (a str, b str) (eq bool) {
 ; is-new bool: true=原先不存在、已插入, false=已存在，未改動
 ; [add](#str-set.str-set.add)
 str-set.add = (key str) (is-new bool) {
-
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         eq = .str-eq(.keys[idx], key)
         eq -> {
             is-new = false
@@ -100,7 +94,6 @@ str-set.add = (key str) (is-new bool) {
     ; 複製 key
     .keys[idx].len = key.len-bytes()
     i <- [0..key.len-bytes()): {
-
         .keys[idx][i] = key.byte(i)
     }
 
@@ -120,7 +113,6 @@ str-set.contains = (key str) (found bool) {
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         eq = .str-eq(.keys[idx], key)
         eq -> {
             found = true
@@ -143,12 +135,10 @@ str-set.remove = (key str) (removed bool) {
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         eq = .str-eq(.keys[idx], key)
 
         #{overflow=wrap}
         eq -> {
-
             .occ[idx] = 0
 
             .keys[idx].len = 0
@@ -167,7 +157,6 @@ str-set.remove = (key str) (removed bool) {
 ; [clear](#str-set.str-set.clear)
 str-set.clear = () {
     i <- [0...cap): {
-
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -197,7 +186,6 @@ str-set.is-empty = () (empty bool) {
 str-set.for-each = () (val str) {
     i <- [0...cap): {
         .occ[i] == 1 -> {
-
             val = .keys[i]
         }
     }

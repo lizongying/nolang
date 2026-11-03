@@ -101,7 +101,6 @@ ip-addr.parse = (s str) (ok bool) {
     octet-idx = 0
     has-digit = 0
     i <- [0..n): {
-
         c = r-s[i]
         {
             c >= 48 && c <= 57 -> {

@@ -39,7 +39,6 @@ linked-hash-map.init = () {
     .tail = -1
     .size = 0
     i <- [0..64): {
-
         .occ[i] = 0
 
         .nxt[i] = -1
@@ -53,7 +52,6 @@ linked-hash-map.init = () {
 ; idx i64: key 在 [0, cap) 內的初始探測位置（key & (cap-1)）
 ; [hash](#linked-hash-map.linked-hash-map.hash)
 linked-hash-map.hash = (key i64) (idx i64) {
-
     idx = key & (.cap - 1)
 }
 
@@ -65,13 +63,10 @@ linked-hash-map.hash = (key i64) (idx i64) {
 ; is-new bool: true=新插入的鍵, false=已存在，僅更新了值
 ; [put](#linked-hash-map.linked-hash-map.put)
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
-
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         .keys[idx] == key -> {
-
             .vals[idx] = val
             is-new = false
             return
@@ -118,9 +113,7 @@ linked-hash-map.get = (key i64) (result ?i64) {
     idx = .hash(key)
 
     (.occ[idx] == 1) {
-
         .keys[idx] == key -> {
-
             result = .vals[idx]
             return
         }
@@ -159,7 +152,6 @@ linked-hash-map.remove = (key i64) (removed bool) {
 
         #{overflow=wrap}
         .keys[idx] == key -> {
-
             .occ[idx] = 0
             .size = .size - 1
 
@@ -194,7 +186,6 @@ linked-hash-map.remove = (key i64) (removed bool) {
 ; [clear](#linked-hash-map.linked-hash-map.clear)
 linked-hash-map.clear = () {
     i <- [0...cap): {
-
         .occ[i] = 0
     }
     .head = -1
@@ -226,7 +217,6 @@ linked-hash-map.for-each = () (k i64, v i64) {
     idx = .head
     (idx != -1) {
         .occ[idx] == 1 -> {
-
             k = .keys[idx]
 
             v = .vals[idx]

@@ -49,7 +49,6 @@ reader.fill = () (ok bool) {
 ; b ?byte: ok=下一個位元組, nil=已到 EOF 或讀取失敗
 ; [read-byte](#bufio.reader.read-byte)
 reader.read-byte = () (b ?byte) {
-
     ok = .fill()
     ok == false -> {
         b = nil
@@ -84,7 +83,6 @@ reader.read-line = () (line ?str) {
             }
         }
         (.pos < .avail) {
-
             c = .buf[.pos]
 
             #{overflow=wrap}

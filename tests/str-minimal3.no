@@ -1,7 +1,7 @@
 ; Minimal str test 3 - test str.copy
 src = 'abcdef'
 dst = '------'
-src.copy(dst)
+dst = src
 c0 = dst[0]
 c1 = dst[1]
 print(c0)

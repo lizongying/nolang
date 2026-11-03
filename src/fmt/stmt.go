@@ -588,9 +588,8 @@ func (f *formatter) formatFunctionDefinition(s *parser.FunctionDefinition) {
 		f.writef("; %s", strings.TrimSpace(c.Text))
 	}
 	f.indent++
-	// 傳入真實的 '{' 行號：{ 與首陳述之間的空白行以源碼為準（有則保留、無則
-	// 不憑空插入）。此前傳 0 並依賴 hasDocComment 無條件插空行，會在源碼無
-	// 空行時於函式體開頭製造多餘空行。
+	// 區塊頂部空行只取決於首陳述有無 node 頭（doc/註解），與 `{` 行號無關；
+	// 仍傳入真實的 '{' 行號供陳述間「源碼空行保留」規則使用。
 	f.formatBlockInner(s.Body, s.Body.Token.Line)
 	f.indent--
 	f.newline()
@@ -679,6 +678,7 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 	lastEmitEndLine := 0
 	var lastEmitStmt parser.Statement
 	prevEmitted := false
+	anyEmitted := false
 	for i, stmt := range statements {
 		emits := f.statementEmitsSomething(stmt)
 		if i > 0 {
@@ -709,7 +709,10 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 					// 相同的排版（else 另起一行時補一個空行），否則前置
 					// `#{...}` 註解造成的非鏈式 AST 會與鏈式版本輸出不同 →
 					// 非冪等（fmt.no / net.no 的漂移）。
-					if f.hasBlankLineBetween(prevEndLine, currStartLine) || f.nodeHeadWillEmit(stmt) || f.isBareElseAfterIfThen(lastEmitStmt, stmt) {
+					// 區塊頂部空行規範：在首條「有輸出」陳述之前（anyEmitted
+					// 為 false，基準行是 `{`），源碼空行不再保留——只有帶
+					// node 頭（doc/註解）的首陳述配得上空行（見下方 i==0 分支）。
+					if (anyEmitted && f.hasBlankLineBetween(prevEndLine, currStartLine)) || f.nodeHeadWillEmit(stmt) || f.isBareElseAfterIfThen(lastEmitStmt, stmt) {
 						f.write("\n") // blank line (no indent)
 					}
 					f.newline()
@@ -718,15 +721,12 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 			// else: current statement emits nothing — skip the gap entirely so
 			// it produces zero output (no leading newline, no blank line).
 		} else {
-			// Preserve an actual blank line between '{' and the first statement.
-			// 用 hasBlankLineBetween 偵測「真實空白行」而非單純行號落差：後者會因
-			// formatter 自身輸出的註解（如區塊級 #{overflow=wrap}）推移首陳述行號，
-			// 導致二次格式化時誤插入空白行而非冪等。
-			// 注意：不能只靠源碼空白——帶註釋/註解的 node 一律與 `{` 以一個空行
-			// 分隔（nodeHeadWillEmit），其餘仍以源碼空白為準。
+			// 區塊頂部空行規範：只有首陳述帶 node 頭（doc 註釋和/或會輸出的
+			// `#{...}` 註解）才在 `{` 後寫一個空行——註解需與區塊上方的程式碼
+			// 隔開，否則會被誤讀成上一行的註解。普通首陳述沒有這種歧義，
+			// 源碼裡憑空留下的頂部空行在格式化時移除（源碼有無都只看出 node 頭）。
 			if emits {
-				firstDocStartLine := stmtFirstLine(stmt)
-				if f.nodeHeadWillEmit(stmt) || (openBraceLine > 0 && f.hasBlankLineBetween(openBraceLine, firstDocStartLine)) {
+				if f.nodeHeadWillEmit(stmt) {
 					f.write("\n") // blank line (no indent)
 				}
 				f.newline()
@@ -736,6 +736,7 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 		if emits {
 			lastEmitEndLine = stmtTokenEndLine(stmt)
 			lastEmitStmt = stmt
+			anyEmitted = true
 		}
 		prevEmitted = emits
 	}
@@ -770,15 +771,12 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 }
 
 func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {
-	// Preserve `*` shorthand if it was the original source.
-	if s.Token.Type == lexer.MUL {
-		f.write("*")
-	} else {
-		f.write("break")
-	}
+	// 新式 `*` 簡寫暫不應用：無論源碼是否用簡寫，格式化一律輸出關鍵字
+	// break（用戶要求，見 formatter_test.go TestFormatStarBreakContinue）。
+	f.write("break")
 	// 直接讀取 LabelKind 枚舉（parser 在 LABEL/IDENT token 位置顯式設置），
 	// 避免依賴 isNumericLabel 字串內容啟發式。
-	// `*` 簡寫形式固定使用 `#` 前綴（如 `* #1`），與 LabelKind 無關。
+	// 源碼簡寫 `* #1` 的標籤本就是數字形式，規範為 `break #1`。
 	if s.Label != "" {
 		if s.Token.Type == lexer.MUL || s.LabelKind == parser.LabelNumeric {
 			f.write(" #")
@@ -790,15 +788,11 @@ func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {
 }
 
 func (f *formatter) formatContinueStatement(s *parser.ContinueStatement) {
-	// Preserve `**` shorthand if it was the original source.
-	if s.Token.Type == lexer.STAR_STAR {
-		f.write("**")
-	} else {
-		f.write("continue")
-	}
+	// 新式 `**` 簡寫暫不應用：格式化一律輸出關鍵字 continue（同上）。
+	f.write("continue")
 	// 直接讀取 LabelKind 枚舉（parser 在 LABEL/IDENT token 位置顯式設置），
 	// 避免依賴 isNumericLabel 字串內容啟發式。
-	// `**` 簡寫形式固定使用 `#` 前綴（如 `** #1`），與 LabelKind 無關。
+	// 源碼簡寫 `** #1` 的標籤本就是數字形式，規範為 `continue #1`。
 	if s.Label != "" {
 		if s.Token.Type == lexer.STAR_STAR || s.LabelKind == parser.LabelNumeric {
 			f.write(" #")

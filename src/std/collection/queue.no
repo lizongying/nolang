@@ -61,7 +61,6 @@ queue {
 ; 返回 ok bool: true=成功, false=佇列已滿
 ; [queue-push](#arr.queue-push)
 [n]t.queue-push = (q queue, val t) (ok bool) {
-
     ok = false
 
     #{overflow=wrap}

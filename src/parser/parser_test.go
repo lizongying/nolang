@@ -484,6 +484,49 @@ func TestSliceLiteralStillWorks(t *testing.T) {
 	}
 }
 
+// TestNestedSliceLiteralInferredElemType 防止嵌套容器字面量的元素型別推斷被
+// 壓平成一級。修復前 `m = [[1, 2], [3, 4]]` 的推斷走 SliceLiteral 元素 switch
+// 的 default（非標量 → i64），登記成 `[]i64`；checker 的逐元素檢查於是拿
+// 內層 `[]i64` 去比元素型別 `i64`，誤報
+// "cannot assign []i64 value to i64 element in array 'm'"（os0j8ix4），
+// 程式連編譯都過不了（tests/index-compare.no:187）。推斷必須遞迴展開嵌套
+// 字面量（[[1,2],[3,4]] → [][]i64），整數仍按進位制判定（0xNN → byte）。
+func TestNestedSliceLiteralInferredElemType(t *testing.T) {
+	tests := []struct {
+		src  string
+		want string
+	}{
+		{"m = [[1, 2], [3, 4]]\n", "[][]i64"},
+		{"h = [[0x50, 0x4b], [0x03, 0x04]]\n", "[][]byte"},
+		{"s = [['ab', 'cd']]\n", "[][]str"},
+		{"v = [1, 2]\n", "[]i64"},
+		{"v = [0x50]\n", "[]byte"},
+		{"v = ['ab']\n", "[]str"},
+		{"v = [1.0]\n", "[]f64"},
+	}
+	for _, tt := range tests {
+		l := lexer.New(tt.src)
+		p := New(l)
+		prog := p.ParseProgram()
+		if len(p.Errors()) > 0 {
+			t.Fatalf("%q: parse errors: %v", tt.src, p.Errors())
+		}
+		ls, ok := prog.Statements[0].(*LetStatement)
+		if !ok {
+			t.Fatalf("%q: expected LetStatement, got %T", tt.src, prog.Statements[0])
+		}
+		if ls.Type == nil {
+			t.Fatalf("%q: expected inferred type node, got nil", tt.src)
+		}
+		if got := ls.Type.String(); got != tt.want {
+			t.Errorf("%q: inferred stmt.Type = %q, want %q", tt.src, got, tt.want)
+		}
+		if got, ok := p.sem.FuncVarType("", ls.Name.Value); !ok || got != tt.want {
+			t.Errorf("%q: sem var type = %q (ok=%v), want %q", tt.src, got, ok, tt.want)
+		}
+	}
+}
+
 // TestStmtTokenEndLineNilBody 防止 formatter 在解析失敗（函數/迴圈體 Body 為
 // nil）時對 nil 解參考而 panic（見 tmp/bug-comment/test-type.no 觸發的
 // SIGSEGV：stmtTokenEndLine 讀 s.Body.Token.Line）。Body 為 nil 時應回退到

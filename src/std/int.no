@@ -16,7 +16,6 @@ int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 ; out str: 十進位表示字串，如 42 / -17；零輸出 '0'，負數帶前導 '-'
 ; [to-str](#int.to-str)
 int.to-str = () (out str) {
-
     . == 0 -> {
         out = with-cap(1)
 
@@ -65,7 +64,6 @@ int.to-str = () (out str) {
         pos = pos - 1
     }
     neg == 1 -> {
-
         out[0] = 45
     }
 }

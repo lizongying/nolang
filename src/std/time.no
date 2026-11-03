@@ -123,7 +123,6 @@ duration-us-between = (start i64, end i64) (diff i64) {
 ; diff: 到現在經過的秒數
 ; [since-s](#time.since-s)
 since-s = (start i64) (diff i64) {
-
     end i64 = os.now()
 
     #{overflow=wrap}
@@ -135,7 +134,6 @@ since-s = (start i64) (diff i64) {
 ; diff: 到現在經過的毫秒數
 ; [since-ms](#time.since-ms)
 since-ms = (start i64) (diff i64) {
-
     end = now-ms()
 
     #{overflow=wrap}
@@ -147,7 +145,6 @@ since-ms = (start i64) (diff i64) {
 ; diff: 到現在經過的微秒數
 ; [since-us](#time.since-us)
 since-us = (start i64) (diff i64) {
-
     end = now-us()
 
     #{overflow=wrap}
@@ -292,7 +289,6 @@ is-leap = (y i64) (leap bool) {
 ; d: 該月天數（2 月按閏年返回 29/28；m 越界時返回 31）
 ; [days-in-month-fn](#time.days-in-month-fn)
 days-in-month-fn = (y i64, m i64) (d i64) {
-
     d = 31
     {
         m < 1 -> return
@@ -406,7 +402,6 @@ unix-to-date = (ts i64) (d date) {
 ; ts: 對應時刻的 Unix 時間戳（秒）
 ; [date-to-unix](#time.date-to-unix)
 date-to-unix = (d date) (ts i64) {
-
     y = d.year
     m = d.month
 
@@ -450,13 +445,11 @@ date-to-unix = (d date) (ts i64) {
 ; out: 'YYYY-MM-DD HH:MM:SS' 字串（各欄位零補齊）
 ; [format-date](#time.format-date)
 format-date = (d date) (out str) {
-
     neg = 0
     yr = d.year
 
     #{overflow=wrap}
     yr < 0 -> {
-
         neg = 1
         yr = 0 - yr
     }
@@ -465,7 +458,6 @@ format-date = (d date) (out str) {
     out = with-len(out-len)
     pos = 0
     neg == 1 -> {
-
         out[0] = 45
         pos = 1
     }
@@ -564,7 +556,6 @@ parse-date = (s str) (ts ?i64) {
 
     ; 解析 YYYY-MM-DD
     i <- [0..4): {
-
         c = s[i]
         c < 48 || c > 57 -> return
 
@@ -572,11 +563,9 @@ parse-date = (s str) (ts ?i64) {
         d.year = d.year * 10 + (c - 48)
     }
     s[4] != 45 -> {
-
         return
     }
     i <- [5..7): {
-
         c = s[i]
         c < 48 || c > 57 -> return
 
@@ -584,11 +573,9 @@ parse-date = (s str) (ts ?i64) {
         d.month = d.month * 10 + (c - 48)
     }
     s[7] != 45 -> {
-
         return
     }
     i <- [8..10): {
-
         c = s[i]
         c < 48 || c > 57 -> return
 
@@ -611,11 +598,9 @@ parse-date = (s str) (ts ?i64) {
     ; 可選的時間部分 HH:MM:SS
     n >= 19 -> {
         s[10] != 32 -> {
-
             return
         }
         i <- [11..13): {
-
             c = s[i]
             c < 48 || c > 57 -> return
 
@@ -623,11 +608,9 @@ parse-date = (s str) (ts ?i64) {
             d.hour = d.hour * 10 + (c - 48)
         }
         s[13] != 58 -> {
-
             return
         }
         i <- [14..16): {
-
             c = s[i]
             c < 48 || c > 57 -> return
 
@@ -635,11 +618,9 @@ parse-date = (s str) (ts ?i64) {
             d.min = d.min * 10 + (c - 48)
         }
         s[16] != 58 -> {
-
             return
         }
         i <- [17..19): {
-
             c = s[i]
             c < 48 || c > 57 -> return
 

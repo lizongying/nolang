@@ -36,7 +36,6 @@
     v = 0
     n = .len()
     i <- [0..n): {
-
         v = v | ((.[i]) << (i * 8))
     }
 }
@@ -81,7 +80,6 @@
     n = .len()
     r str = with-len(0)
     i <- [0..n): {
-
         cp = .[i] & 0xff
         seg str = with-cap(4)
 
@@ -90,24 +88,20 @@
         ; ok 臂永不執行，seg 永遠是空串（曾使本方法靜默回空字串）。
         ; with-cap 基底被 idxwrite lint 豁免，可直接下標寫入。
         cp < 0x80 -> {
-
             seg[0] = cp
         }
 
         -> cp < 0x800 -> {
-
             seg[0] = 0xc0 | ((cp >> 6) & 0x1f)
 
             seg[1] = 0x80 | (cp & 0x3f)
         } -> cp < 0x10000 -> {
-
             seg[0] = 0xe0 | ((cp >> 12) & 0x0f)
 
             seg[1] = 0x80 | ((cp >> 6) & 0x3f)
 
             seg[2] = 0x80 | (cp & 0x3f)
         } -> {
-
             seg[0] = 0xf0 | ((cp >> 18) & 0x07)
 
             seg[1] = 0x80 | ((cp >> 12) & 0x3f)
@@ -130,7 +124,6 @@
     n = .len()
     out = with-len(n)
     i <- [0..n): {
-
         out[i] = .[i]
     }
 }
@@ -139,7 +132,6 @@
 ; 返回首次出現的位置，未找到返回 -1
 ; [index](#bytes.index)
 []byte.index = (target str) (pos i64) {
-
     pos = -1
     tn = target.len-bytes()
     tn == 0 -> {
@@ -152,7 +144,6 @@
     limit = n - tn
     i = 0
     (i <= limit) {
-
         matched = 1
         j <- [0..tn): {
 
@@ -179,7 +170,6 @@
 ; 返回首次出現的位置，未找到返回 -1
 ; [index-from](#bytes.index-from)
 []byte.index-from = (target str, from i64) (pos i64) {
-
     pos = -1
     tn = target.len-bytes()
     tn == 0 -> {
@@ -194,7 +184,6 @@
     limit = n - tn
     i = from
     (i <= limit) {
-
         matched = 1
         j <- [0..tn): {
 
@@ -221,7 +210,6 @@
 ; 返回新切片
 ; [slice](#bytes.slice)
 []byte.slice = (start i64, end i64) (val []byte) {
-
     start < 0 -> start = 0
     end > .len() -> end = .len()
     start >= end -> return
@@ -247,13 +235,11 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex: 將 []byte 編碼為大寫十六進制字串
 ; [to-hex](#bytes.to-hex)
 []byte.to-hex = () (out str) {
-
     n = .len()
 
     #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
-
         b = .[i]
 
         #{overflow=wrap}
@@ -267,13 +253,11 @@ HEX-LOWER = '0123456789abcdef'
 ; []byte.to-hex-lower: 將 []byte 編碼為小寫十六進制字串
 ; [to-hex-lower](#bytes.to-hex-lower)
 []byte.to-hex-lower = () (out str) {
-
     n = .len()
 
     #{overflow=wrap}
     out = with-len(n * 2)
     i <- [0..n): {
-
         b = .[i]
 
         #{overflow=wrap}

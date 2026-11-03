@@ -166,7 +166,6 @@ json-pool.add-child = (node-idx i64, child-idx i64, key str) {
         .en[last] = e
     }
     last < 0 -> {
-
         .nodes[node-idx].first = e
     }
 
@@ -210,7 +209,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
     ; 跳過空白
     (p < sn) {
-
         c = s.byte(p)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
@@ -392,7 +390,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
                 ; key must be string
                 s.byte(p) != 34 -> {
-
                     return
                 }
                 key-idx, key-next, key-ok = .parse(s, p)
@@ -403,7 +400,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
                 ; expect ':'
                 s.byte(p) != 58 -> {
-
                     return
                 }
 
@@ -448,7 +444,6 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 ; [skip-ws](#json.json-pool.skip-ws)
 json-pool.skip-ws = (s str, pos i64) (p i64) {
     p <- [pos..s.len-bytes()): {
-
         c = s.byte(p)
         c != 32 && c != 9 && c != 10 && c != 13 -> return
     }
@@ -576,7 +571,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     ; 小數部分
     #{overflow=wrap}
     i < s.len-bytes() -> {
-
         c = s.byte(i)
         c == 46 -> {
 
@@ -599,7 +593,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     ; 指數部分（e/E [+/-] digits）
     #{overflow=wrap}
     i < s.len-bytes() -> {
-
         c = s.byte(i)
         c == 101 || c == 69 -> {
 
@@ -607,7 +600,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
             i = i + 1
             exp-sign = 1
             i < s.len-bytes() -> {
-
                 c = s.byte(i)
                 c == 45 -> {
 
@@ -639,11 +631,9 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 ev = ev >> 1
             }
             exp-sign < 0 -> {
-
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val / exp-r
             }
             exp-sign >= 0 -> {
-
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val * exp-r
             }
         }
@@ -651,7 +641,6 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
 
     ; 處理負數
     negative == 1 -> {
-
         .nodes[node-idx].num-val = 0.0 - .nodes[node-idx].num-val
     }
     next-pos = i
@@ -680,16 +669,13 @@ json-pool.str-eq = (a str, b str) (eq i64) {
 json-pool.get-key = (obj-idx i64, key str) (val-idx ?i64) {
     obj-idx < 0 || obj-idx >= .count -> return
     .nodes[obj-idx].kind != JSON-KIND-OBJ -> {
-
         return
     }
 
     ; 沿邊表單向鏈表走訪子元素，比對鍵名 .ek[e]，命中回傳子節點 .ec[e]
     e = .nodes[obj-idx].first
     (e >= 0) {
-
         .str-eq(.ek[e], key) == 1 -> {
-
             val-idx = .ec[e]
             return
         }
@@ -709,16 +695,13 @@ json-pool.set-key = (obj-idx i64, key str, val-idx i64) (ok bool) {
     ok = false
     obj-idx < 0 || obj-idx >= .count -> return
     .nodes[obj-idx].kind != JSON-KIND-OBJ -> {
-
         return
     }
 
     ; 沿邊表走訪，命中既有鍵則更新其子節點索引
     e = .nodes[obj-idx].first
     (e >= 0) {
-
         .str-eq(.ek[e], key) == 1 -> {
-
             .ec[e] = val-idx
             ok = true
             return
@@ -769,7 +752,6 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
     ; 遍歷子節點的邊，逐一遞迴拷貝並以同鍵名附加
     e = src.nodes[node-idx].first
     (e >= 0) {
-
         cs = src.ec[e]
 
         ck = src.ek[e]
@@ -793,18 +775,15 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
 json-pool.arr-get = (arr-idx i64, elem i64) (val-idx ?i64) {
     arr-idx < 0 || arr-idx >= .count -> return
     .nodes[arr-idx].kind != JSON-KIND-ARR -> {
-
         return
     }
     elem < 0 || elem >= .nodes[arr-idx].count -> {
-
         return
     }
 
     ; 沿邊表走訪到第 elem 條邊
     e = .nodes[arr-idx].first
     k <- [0..elem): {
-
         e = .en[e]
     }
 
@@ -819,7 +798,6 @@ json-pool.arr-len = (arr-idx i64) (n i64) {
     n = 0
     arr-idx < 0 || arr-idx >= .count -> return
     .nodes[arr-idx].kind != JSON-KIND-ARR -> {
-
         return
     }
 
@@ -849,7 +827,6 @@ json-pool.get-kind = (node-idx i64) (kind i64) {
 json-pool.get-str = (node-idx i64) (out ?str) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-STR -> {
-
         return
     }
 
@@ -863,7 +840,6 @@ json-pool.get-str = (node-idx i64) (out ?str) {
 json-pool.get-num = (node-idx i64) (val ?f64) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-NUM -> {
-
         return
     }
 
@@ -878,7 +854,6 @@ json-pool.get-num = (node-idx i64) (val ?f64) {
 json-pool.get-bool = (node-idx i64) (val ?bool) {
     node-idx < 0 || node-idx >= .count -> return
     .nodes[node-idx].kind != JSON-KIND-BOOL -> {
-
         return
     }
 
@@ -917,7 +892,6 @@ json-pool.stringify = (node-idx i64) (out str) {
 
         kind == JSON-KIND-BOOL -> {
             .nodes[node-idx].bool-val -> {
-
                 out = 'true'
             }
 
@@ -1328,7 +1302,6 @@ json.set = (key str, val-idx i64) (ok bool) {
     ; null 節點可原地提升為物件；其他非物件類型拒絕寫入
     k = .pool.get-kind(.root)
     k == JSON-KIND-NULL -> {
-
         .pool.nodes[.root].kind = JSON-KIND-OBJ
     }
     k != JSON-KIND-NULL && k != JSON-KIND-OBJ -> return
@@ -1477,7 +1450,6 @@ json.arr-push-idx = (child-idx i64) (ok bool) {
     ; null 節點可原地提升為陣列；其他非陣列類型拒絕寫入
     k = .pool.get-kind(.root)
     k == JSON-KIND-NULL -> {
-
         .pool.nodes[.root].kind = JSON-KIND-ARR
     }
     k != JSON-KIND-NULL && k != JSON-KIND-ARR -> return
@@ -1623,7 +1595,6 @@ json.obj-key = (idx i64) (key ?str) {
     ; 沿邊表走訪到第 idx 條邊，取鍵名 .ek[e]
     e = .pool.nodes[.root].first
     t <- [0..idx): {
-
         e = .pool.en[e]
     }
 
@@ -1645,7 +1616,6 @@ json.delete-key = (key str) (ok bool) {
     e = .pool.nodes[.root].first
     prev = -1
     (e >= 0) {
-
         next i64 = .pool.en[e]
 
         ek = .pool.ek[e]
@@ -1653,18 +1623,15 @@ json.delete-key = (key str) (ok bool) {
 
             ; 前驅改指向 next；若命中邊為首則更新 first
             prev >= 0 -> {
-
                 .pool.en[prev] = next
             }
             prev < 0 -> {
-
                 .pool.nodes[.root].first = next
             }
 
             ; 若命中邊為尾則更新 last
             last i64 = .pool.nodes[.root].last
             last == e -> {
-
                 .pool.nodes[.root].last = prev
             }
 
@@ -1720,7 +1687,6 @@ json.obj-keys-str = () (keys str) {
     ; 沿邊表走訪，依序拼接每個鍵名
     e = .pool.nodes[.root].first
     (e >= 0) {
-
         key = .pool.ek[e]
         keys = keys - key - '\n'
 

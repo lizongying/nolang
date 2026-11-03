@@ -90,7 +90,7 @@ print(q.len())
 print(q.truncate(4))
 print(q.len())
 
-r = t.copy()
+r = t
 print(r)
 r.append-str('!')
 print(r)
@@ -229,7 +229,7 @@ print(to-str-out(tt))
 ; bug 13：txt 做 `+` 串接。結果是 str（txt 定長、長不大），但 emitArith 直接把
 ; %txt 餵給 `@str_concat(%str-long, %str-long)` → opt-verify 拒絕。
 u13 txt = 'ab'
-w13 = u13 + '-cd'
+w13 = u13 - '-cd'
 print(w13)
 
 print('=== done ===')

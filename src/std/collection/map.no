@@ -52,10 +52,8 @@ hashmap-str-tmpl.init = () {
 ; idx: FNV-1a 雜湊後掩碼到槽位範圍的索引
 ; [hash](#map.hashmap-str-tmpl.hash)
 hashmap-str-tmpl.hash = (key str) (idx i64) {
-
     h = FNV-OFFSET
     i <- [0..key.len-bytes()): {
-
         h = h ^ (key.byte(i))
 
         #{overflow=wrap}
@@ -74,7 +72,6 @@ hashmap-str-tmpl.str-eq = (a str, b str) (eq bool) {
     a.len-bytes() != b.len-bytes() -> return
     i <- [0..a.len-bytes()): {
         a.byte(i) != b.byte(i) -> {
-
             return
         }
     }
@@ -100,20 +97,16 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     first-tomb = -1
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             k str = .keys[idx]
             eq = .str-eq(k, key)
             eq -> {
-
                 .vals[idx] = val
                 is-new = false
                 return
             }
         }
         .occ[idx] == 2 -> {
-
             first-tomb < 0 -> first-tomb = idx
         }
 
@@ -146,13 +139,10 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
     idx = .hash(key)
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             k str = .keys[idx]
             eq = .str-eq(k, key)
             eq -> {
-
                 result = .vals[idx]
                 return
             }
@@ -191,11 +181,9 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
 
         #{overflow=wrap}
         .occ[idx] == 1 -> {
-
             k str = .keys[idx]
             eq = .str-eq(k, key)
             eq -> {
-
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -238,10 +226,8 @@ hashmap-str-tmpl.for-each = () (k str, v v) {
     n = .cap
     i <- [0..n): {
         .occ[i] == 1 -> {
-
             src str = .keys[i]
             j <- [0..src.len-bytes()): {
-
                 k[j] = src.byte(j)
             }
 
@@ -270,7 +256,6 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
     ; 遷移 occ==1 條目
     i <- [0..old-cap): {
         old-occ[i] == 1 -> {
-
             k str = old-keys[i]
 
             v = old-vals[i]
@@ -328,7 +313,6 @@ hashmap-int-tmpl.init = () {
 ; idx: 鍵經容量掩碼後的槽位索引
 ; [hash](#map.hashmap-int-tmpl.hash)
 hashmap-int-tmpl.hash = (key k) (idx i64) {
-
     idx = key & (.cap - 1)
 }
 
@@ -351,18 +335,14 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     first-tomb = -1
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             .keys[idx] == key -> {
-
                 .vals[idx] = val
                 is-new = false
                 return
             }
         }
         .occ[idx] == 2 -> {
-
             first-tomb < 0 -> first-tomb = idx
         }
 
@@ -393,11 +373,8 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
     idx = .hash(key)
 
     (.occ[idx] != 0) {
-
         .occ[idx] == 1 -> {
-
             .keys[idx] == key -> {
-
                 result = .vals[idx]
                 return
             }
@@ -436,9 +413,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
 
         #{overflow=wrap}
         .occ[idx] == 1 -> {
-
             .keys[idx] == key -> {
-
                 .occ[idx] = 2
                 .size = .size - 1
                 removed = true
@@ -481,7 +456,6 @@ hashmap-int-tmpl.for-each = () (k k, v v) {
     n = .cap
     i <- [0..n): {
         .occ[i] == 1 -> {
-
             k = .keys[i]
 
             v = .vals[i]
@@ -509,7 +483,6 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
     ; 遷移 occ==1 條目
     i <- [0..old-cap): {
         old-occ[i] == 1 -> {
-
             k = old-keys[i]
 
             v = old-vals[i]
@@ -584,7 +557,6 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
-
         .vals[idx] = val
         is-new = false
         return
@@ -610,7 +582,6 @@ hashmap-bool-tmpl.get = (key bool) (result ?v) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
-
         result = .vals[idx]
         return
     }
@@ -640,7 +611,6 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     idx = .hash(key)
 
     .occ[idx] == 1 -> {
-
         .occ[idx] = 2
 
         #{overflow=wrap}
@@ -678,7 +648,6 @@ hashmap-bool-tmpl.for-each = () (k bool, v v) {
     n = .cap
     i <- [0..n): {
         .occ[i] == 1 -> {
-
             k = .keys[i]
 
             v = .vals[i]

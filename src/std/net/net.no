@@ -262,9 +262,8 @@ conn.recv-all = () (content str, total i64) {
     .fd < 0 -> return
     buf str = with-len(NET-BUF-SIZE)
     !! {
-
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
-        chunk-n <= 0 -> *
+        chunk-n <= 0 -> break
         i <- [0..chunk-n): {
 
             #{overflow=wrap}
@@ -659,7 +658,6 @@ enc-conn.gen-iv = () (iv [12]byte) {
 ; 返回 ok bool: true=成功
 ; [send-encrypted](#net.enc-conn.send-encrypted)
 enc-conn.send-encrypted = (data str) (ok bool) {
-
     ok = false
     .underlying.fd < 0 -> return
 
@@ -735,7 +733,6 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 ; 返回 data ?str: ok=解密後明文, nil=失敗
 ; [recv-encrypted](#net.enc-conn.recv-encrypted)
 enc-conn.recv-encrypted = () (data ?str) {
-
     data = nil
     .underlying.fd < 0 -> return
 
@@ -755,7 +752,6 @@ enc-conn.recv-encrypted = () (data ?str) {
     ; 提取 IV
     iv [12]byte
     i <- [0..12): {
-
         iv[i]: {
             ok -> it = payload-buf.byte(i)
 
@@ -982,7 +978,6 @@ icmp-conn.build-echo = (pkt []byte, seq i64) {
 ; checksum i64: 16 位元一反補數結果（進位已摺疊，取反後低 16 位有效）
 ; [icmp-checksum](#net.icmp-checksum)
 icmp-checksum = (data []byte, len i64) (checksum i64) {
-
     checksum = 0
     i = 0
     (i < len) {
@@ -1023,7 +1018,6 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 ; 返回 rtt ?i64: ok=往返延遲（微秒）, nil=失敗
 ; [ping-once](#net.icmp-conn.ping-once)
 icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
-
     rtt = nil
     .fd < 0 -> return
 
@@ -1213,11 +1207,10 @@ ifconfig-list = () (ifs []if-info) {
     ; 冒號前為介面名，冒號後為空白分隔的 16 個統計欄位
     lines = content.split('\n')
     i <- [2..lines.len-bytes()): {
-
         line = lines[i]
-        line.len-bytes() == 0 -> *
+        line.len-bytes() == 0 -> break
         colon-pos = line.index(':')
-        colon-pos < 0 -> *
+        colon-pos < 0 -> break
         name = line.slice(0, colon-pos).trim()
 
         #{overflow=wrap}
@@ -1231,36 +1224,36 @@ ifconfig-list = () (ifs []if-info) {
             v0: {
                 ok -> info.rx-bytes = it
 
-                nil -> *
+                nil -> break
 
-                err -> *
+                err -> break
             }
 
             v1 ?i64 = fields[1].to-i64()
             v1: {
                 ok -> info.rx-packets = it
 
-                nil -> *
+                nil -> break
 
-                err -> *
+                err -> break
             }
 
             v8 ?i64 = fields[8].to-i64()
             v8: {
                 ok -> info.tx-bytes = it
 
-                nil -> *
+                nil -> break
 
-                err -> *
+                err -> break
             }
 
             v9 ?i64 = fields[9].to-i64()
             v9: {
                 ok -> info.tx-packets = it
 
-                nil -> *
+                nil -> break
 
-                err -> *
+                err -> break
             }
             ifs.push(info)
         }
@@ -1303,9 +1296,8 @@ route-list = () (routes []route-info) {
     ; Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
     lines = content.split('\n')
     i <- [1..lines.len-bytes()): {
-
         line = lines[i]
-        line.len-bytes() == 0 -> *
+        line.len-bytes() == 0 -> break
         fields = split-ws(line)
         fields.len-bytes() >= 11 -> {
             r = route-info {}
@@ -1360,9 +1352,8 @@ arp-list = () (arps []arp-info) {
     ; IP address   HW type  Flags   HW address  Mask  Device
     lines = content.split('\n')
     i <- [1..lines.len-bytes()): {
-
         line = lines[i]
-        line.len-bytes() == 0 -> *
+        line.len-bytes() == 0 -> break
         fields = split-ws(line)
         fields.len-bytes() >= 6 -> {
             a = arp-info {}
@@ -1413,7 +1404,6 @@ split-ws = (s str) (out []str) {
         ; 跳過前導空白
         (i < n && (s[i] == 32 || s[i] == 9)) {
             i < n -> {
-
                 c = s[i]
                 {
                     c == 32 || c == 9 -> {
@@ -1422,19 +1412,18 @@ split-ws = (s str) (out []str) {
                         i = i + 1
                     }
 
-                    -> *
+                    -> break
                 }
             }
         }
-        i >= n -> *
+        i >= n -> break
 
         ; 找到欄位結束
         start = i
         (i < n && s[i] != 32 && s[i] != 9) {
             i < n -> {
-
                 c = s[i]
-                c == 32 || c == 9 -> *
+                c == 32 || c == 9 -> break
 
                 #{overflow=wrap}
                 i = i + 1

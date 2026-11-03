@@ -1401,6 +1401,12 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 			}
 			result = r
 		} else {
+			// 預設 no fmt：StringConcat lint（a3yrogp1）報告的 `+` 拼接站點就地
+			// 翻轉為 `-`（formatter 由 AST 重渲染即自動替換，不必再手動改 HINT）。
+			// 判定口徑與 `no vet` 同源（checker.FixStringConcatOperators）；BuildTHIRView
+			// 對 H0 副作用有隔離回滾，後續 overflow 相關性計算與格式化看到的仍是
+			// 同一形狀的糖樹。
+			checker.FixStringConcatOperators(lp, checker.BuildTHIRView(lp))
 			relevant, governed := checker.OverflowAnnotationRelevance(lp)
 			result = nfmt.FormatProgramWithOverflow(lp, reduced, relevant, governed)
 		}

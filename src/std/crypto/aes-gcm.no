@@ -42,7 +42,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
     ; z = 0
     z [16]byte
     e <- z: {
-
         e: {
             ok -> it = 0
 
@@ -53,7 +52,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
     ; v = h（V 初始化為 H，即 hash subkey，依據 GCM 規範 V_0 = Y）
     v [16]byte
     i <- [0..16): {
-
         v[i]: {
             ok -> it = h[i]
 
@@ -77,7 +75,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         ; z = z XOR (xi * v) — 僅在 xi == 1 時執行
         xi == 1 -> {
             j <- [0..16): {
-
                 z[j]: {
                     ok -> it = z[j] ^ v[j]
 
@@ -112,7 +109,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
         v-lsb == 1 -> {
-
             v[0]: {
                 ok -> it = v[0] ^ 225
 
@@ -121,7 +117,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         }
     }
     i <- [0..16): {
-
         out[i] = z[i]
     }
 }
@@ -138,7 +133,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     y [16]byte
     blk [16]byte
     e1 <- y: {
-
         e1: {
             ok -> it = 0
 
@@ -163,7 +157,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         ; y = (y XOR block) * H
         i <- [0..16): {
-
             y[i]: {
                 ok -> it = y[i] ^ blk[i]
 
@@ -181,7 +174,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     #{overflow=wrap}
     pos < aad.len() -> {
         e2 <- blk: {
-
             e2: {
                 ok -> it = 0
 
@@ -198,7 +190,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..16): {
-
             y[i]: {
                 ok -> it = y[i] ^ blk[i]
 
@@ -224,7 +215,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..16): {
-
             y[i]: {
                 ok -> it = y[i] ^ blk[i]
 
@@ -241,7 +231,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     #{overflow=wrap}
     pos < cipher.len() -> {
         e3 <- blk: {
-
             e3: {
                 ok -> it = 0
 
@@ -258,7 +247,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..16): {
-
             y[i]: {
                 ok -> it = y[i] ^ blk[i]
 
@@ -272,7 +260,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     ; 最後區塊: len(AAD)_64bit || len(cipher)_64bit（以位元為單位）
     len-blk [16]byte
     e4 <- len-blk: {
-
         e4: {
             ok -> it = 0
 
@@ -385,7 +372,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     }
 
     i <- [0..16): {
-
         y[i]: {
             ok -> it = y[i] ^ len-blk[i]
 
@@ -395,7 +381,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     y = ghash-mul(y, h)
 
     i <- [0..16): {
-
         out[i] = y[i]
     }
 }
@@ -413,7 +398,6 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
     i <- [0..16): {
-
         cb[i]: {
             ok -> it = icb[i]
 
@@ -427,7 +411,6 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         ; 加密當前計數器區塊
         blk [16]byte
         i <- [0..16): {
-
             blk[i]: {
                 ok -> it = cb[i]
 
@@ -465,7 +448,6 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
 ; [gcm-j0](#aes-gcm.gcm-j0)
 gcm-j0 = (iv [12]byte) (j0 [16]byte) {
     i <- [0..12): {
-
         j0[i] = iv[i]
     }
 
@@ -485,7 +467,6 @@ gcm-j0 = (iv [12]byte) (j0 [16]byte) {
 gcm-h = (ek []byte) (h [16]byte) {
     zero-block [16]byte
     e5 <- zero-block: {
-
         e5: {
             ok -> it = 0
 
@@ -517,7 +498,6 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     aes-ctr.ctr-inc(ctr)
     ctr0 [16]byte
     i <- [0..16): {
-
         ctr0[i]: {
             ok -> it = ctr[i]
 
@@ -536,7 +516,6 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     j0-enc = aes.enc-block(j0, ek)
     tag [16]byte
     i <- [0..16): {
-
         tag[i]: {
             ok -> it = (j0-enc[i]) ^ (ghash-out[i])
 
@@ -567,7 +546,6 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
 ; 返回 plain []byte: 明文（認證失敗時長度為 0）
 ; [gcm-open](#aes-gcm.gcm-open)
 gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
-
     sealed.len() < 16 -> return
 
     #{overflow=wrap}
@@ -610,7 +588,6 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     j0-enc = aes.enc-block(j0, ek)
     exp-tag [16]byte
     i <- [0..16): {
-
         exp-tag[i]: {
             ok -> it = (j0-enc[i]) ^ (ghash-out[i])
 
@@ -621,7 +598,6 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ; 常數時間比較
     diff = 0
     i <- [0..16): {
-
         diff = diff | (tag[i] ^ exp-tag[i])
     }
     diff != 0 -> {
@@ -635,7 +611,6 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     aes-ctr.ctr-inc(ctr)
     ctr0 [16]byte
     i <- [0..16): {
-
         ctr0[i]: {
             ok -> it = ctr[i]
 

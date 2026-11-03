@@ -161,7 +161,6 @@ test-http2-do-req-signature = () {
 
 ; http2-get 函數簽名驗證（vet-only）
 test-http2-get-signature = () {
-
     resp = http2.get('http://127.0.0.1:1/test')
     resp != nil -> {
         print('FAIL: expected connection failure')
@@ -172,7 +171,6 @@ test-http2-get-signature = () {
 
 ; http2-post 函數簽名驗證（vet-only）
 test-http2-post-signature = () {
-
     resp = http2.post('http://127.0.0.1:1/test', 'body')
     resp != nil -> {
         print('FAIL: expected connection failure')
@@ -183,7 +181,6 @@ test-http2-post-signature = () {
 
 ; 執行所有測試
 test-run-all = () {
-
     print('=== HTTP/2 Tests ===')
     test-frame-parse()
     test-frame-serialize()

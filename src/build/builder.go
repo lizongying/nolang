@@ -22,6 +22,7 @@ import (
 	"github.com/lizongying/nolang/parser"
 
 	"github.com/lizongying/nolang/i18n"
+	"github.com/lizongying/nolang/mir"
 )
 
 // DetectTarget 根据当前运行平台返回对应的 target triple。
@@ -744,6 +745,10 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	compiler.sourcePath = inputPath
 	goos, goarch := parseTargetPlatform(opts.Target)
 	compiler.SetTargetPlatform(goos, goarch)
+	// Drive the IR prelude's `target triple` from clang's own canonical
+	// spelling so -Woverride-module stays silent (mir's Go table already
+	// covers linux / windows / wasi; this probe adds the darwin SDK version).
+	mir.SetEmitTargetTriple(queryEmitTargetTriple(opts.CC, opts.Target))
 	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
 	compiler.SetVerbose(opts.Verbose)
 	compiler.SetOptionInlineThreshold(opts.OptionInlineThreshold)

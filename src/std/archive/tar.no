@@ -80,9 +80,7 @@ tar.count = () (count i64) {
         ; 檢查是否為結束標記（全零區塊）
         empty = 1
         i <- [0..TAR-BLOCK): {
-
             (.data[off + i]) != 0 -> {
-
                 empty = 0
             }
         }
@@ -118,7 +116,6 @@ tar.count = () (count i64) {
 tar.offset = (idx i64) (off i64) {
     off = 0
     i <- [0..idx): {
-
         sz = 0
         j <- [0..12): {
 
@@ -187,7 +184,6 @@ tar.size = (idx i64) (sz i64) {
 ; typ: 條目型別字串（依 typeflag 映射為 "file"、"dir" 或 "unknown"）
 ; [type](#tar.tar.type)
 tar.type = (idx i64) (typ str) {
-
     hdr = .offset(idx)
 
     #{overflow=wrap}
@@ -205,7 +201,6 @@ tar.type = (idx i64) (typ str) {
 ; yes: 是否為目錄條目（typeflag 為 5）
 ; [is-dir](#tar.tar.is-dir)
 tar.is-dir = (idx i64) (yes bool) {
-
     hdr = .offset(idx)
 
     #{overflow=wrap}
@@ -218,7 +213,6 @@ tar.is-dir = (idx i64) (yes bool) {
 ; yes: 是否為普通檔案條目（typeflag 為 0）
 ; [is-file](#tar.tar.is-file)
 tar.is-file = (idx i64) (yes bool) {
-
     hdr = .offset(idx)
 
     #{overflow=wrap}
@@ -314,7 +308,6 @@ tar-entry.size = () (sz i64) {
 ; typ: 型別字串（"file"、"dir" 或 "unknown"）
 ; [type](#tar.tar-entry.type)
 tar-entry.type = () (typ str) {
-
     hdr = .idx
 
     #{overflow=wrap}
@@ -331,7 +324,6 @@ tar-entry.type = () (typ str) {
 ; yes: 該條目是否為目錄
 ; [is-dir](#tar.tar-entry.is-dir)
 tar-entry.is-dir = () (yes bool) {
-
     hdr = .idx
 
     #{overflow=wrap}
@@ -343,7 +335,6 @@ tar-entry.is-dir = () (yes bool) {
 ; yes: 該條目是否為普通檔案
 ; [is-file](#tar.tar-entry.is-file)
 tar-entry.is-file = () (yes bool) {
-
     hdr = .idx
 
     #{overflow=wrap}
@@ -416,7 +407,6 @@ tar-builder.pre-alloc = (size i64) {
 ; content: 檔案內容（寫入後補零對齊 512 位元組邊界）
 ; [add-file](#tar.tar-builder.add-file)
 tar-builder.add-file = (name str, content []byte) {
-
     .write-header(name, TAR-TYPE-FILE, len(content))
 
     ; 寫入檔案內容
@@ -460,7 +450,6 @@ tar-builder.add-dir = (name str) {
 ; typ: 條目型別碼（TAR-TYPE-FILE / TAR-TYPE-DIR）
 ; [add-bytes](#tar.tar-builder.add-bytes)
 tar-builder.add-bytes = (name str, content []byte, typ i64) {
-
     .write-header(name, typ, len(content))
     sz = len(content)
     i <- [0..sz): {
@@ -509,7 +498,6 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
         #{overflow=wrap}
         i < 100 -> {
-
             .buf[.pos + i] = name.byte(i)
         }
     }

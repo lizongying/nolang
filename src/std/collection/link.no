@@ -62,7 +62,6 @@ link {
 ; 返回 l link: 初始化後的鏈結串列
 ; [link-init](#arr.link-init)
 [n]t.link-init = (nxt []i64, prv []i64) (l link) {
-
     l.head = -1
     l.tail = -1
     l.free-head = 0
@@ -88,7 +87,6 @@ link {
 ; 返回 ok bool: true=成功, false=節點池已滿
 ; [link-push-front](#arr.link-push-front)
 [n]t.link-push-front = (l link, val t) (ok bool) {
-
     ok = false
 
     ; 從空閒鏈結串列分配節點
@@ -105,7 +103,6 @@ link {
 
     l.prev[idx] = -1
     l.head >= 0 -> {
-
         l.prev[l.head] = idx
     }
     l.head = idx
@@ -122,7 +119,6 @@ link {
 ; 返回 ok bool: true=成功, false=節點池已滿
 ; [link-push-back](#arr.link-push-back)
 [n]t.link-push-back = (l link, val t) (ok bool) {
-
     ok = false
     idx = l.free-head
     idx < 0 -> return
@@ -134,7 +130,6 @@ link {
 
     l.prev[idx] = l.tail
     l.tail >= 0 -> {
-
         l.next[l.tail] = idx
     }
     l.tail = idx
@@ -150,7 +145,6 @@ link {
 ; 返回 val ?t: ok=彈出值, nil=串列為空
 ; [link-pop-front](#arr.link-pop-front)
 [n]t.link-pop-front = (l link) (val ?t) {
-
     l.head < 0 -> {
         val = nil
         return
@@ -180,7 +174,6 @@ link {
 ; 返回 val ?t: ok=彈出值, nil=串列為空
 ; [link-pop-back](#arr.link-pop-back)
 [n]t.link-pop-back = (l link) (val ?t) {
-
     l.tail < 0 -> {
         val = nil
         return
@@ -235,7 +228,6 @@ link {
 ; 返回 ok bool: true=成功, false=位置越界或節點池已滿
 ; [link-insert-at](#arr.link-insert-at)
 [n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
-
     ok = false
 
     #{overflow=wrap}
@@ -255,7 +247,6 @@ link {
 
             l.prev[idx] = -1
             l.head >= 0 -> {
-
                 l.prev[l.head] = idx
             }
             l.head = idx
@@ -278,7 +269,6 @@ link {
 
             l.prev[idx] = l.tail
             l.tail >= 0 -> {
-
                 l.next[l.tail] = idx
             }
             l.tail = idx
@@ -292,7 +282,6 @@ link {
     ; 插入中間：定位到 pos 的節點
     idx = l.head
     i <- [0..pos): {
-
         idx = l.next[idx]
     }
 
@@ -379,7 +368,6 @@ link {
     ; 移除中間：定位到 pos 的節點
     idx = l.head
     i <- [0..pos): {
-
         idx = l.next[idx]
     }
     val = .[idx]
@@ -412,7 +400,6 @@ link {
     }
     idx = l.head
     i <- [0..pos): {
-
         idx = l.next[idx]
     }
     val = .[idx]
@@ -429,7 +416,6 @@ link {
     pos < 0 || pos >= l.size -> return
     idx = l.head
     i <- [0..pos): {
-
         idx = l.next[idx]
     }
     .[idx] = val
@@ -464,7 +450,6 @@ link {
 [n]t.link-reverse = (l link) {
     idx = l.head
     (idx >= 0) {
-
         nx = l.next[idx]
 
         l.next[idx] = l.prev[idx]
@@ -483,7 +468,6 @@ link {
 [n]t.link-clear = (l link) {
     idx = l.head
     (idx >= 0) {
-
         nx = l.next[idx]
 
         l.next[idx] = l.free-head

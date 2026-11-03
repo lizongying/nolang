@@ -66,7 +66,6 @@ pool.init = (host str, port i64, max-size i64) {
     .max-size = r-max-size
     .count = 0
     i <- [0..POOL-MAX-CONNS): {
-
         .in-use[i] = false
     }
 }
@@ -80,7 +79,6 @@ pool.get = () (c ?net.conn) {
     ; 尋找空閒連接
     i <- [0...count): {
         .in-use[i] == false -> {
-
             .in-use[i] = true
 
             c = .conns[i]
@@ -94,7 +92,6 @@ pool.get = () (c ?net.conn) {
         ok = false
         ok = cn.dial(.host, .port)
         ok -> {
-
             .conns[.count] = cn
 
             .in-use[.count] = true
@@ -114,7 +111,6 @@ pool.put = (c net.conn) {
     ; 尋找該連接在池中的位置
     i <- [0...count): {
         .conns[i].fd == c.fd -> {
-
             .in-use[i] = false
             return
         }
@@ -128,7 +124,6 @@ pool.put = (c net.conn) {
 ; idx: 池中要關閉並移除的連接索引
 ; [close-conn](#pool.pool.close-conn)
 pool.close-conn = (idx i64) {
-
     idx < 0 || idx >= .count -> return
 
     .conns[idx].close()
@@ -137,7 +132,6 @@ pool.close-conn = (idx i64) {
     #{overflow=wrap}
     last = .count - 1
     idx != last -> {
-
         .conns[idx] = .conns[last]
 
         .in-use[idx] = .in-use[last]
@@ -151,7 +145,6 @@ pool.close-conn = (idx i64) {
 ; [close-all](#pool.pool.close-all)
 pool.close-all = () {
     i <- [0...count): {
-
         .conns[i].close()
     }
     .count = 0
@@ -166,7 +159,6 @@ pool.active-count = () (n i64) {
 
         #{overflow=wrap}
         .in-use[i] -> {
-
             n = n + 1
         }
     }
@@ -181,7 +173,6 @@ pool.idle-count = () (n i64) {
 
         #{overflow=wrap}
         .in-use[i] == false -> {
-
             n = n + 1
         }
     }

@@ -88,7 +88,6 @@ g-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51
 eprint('g-priv: ')
 s = ''
 i <- [0..32): {
-
     s = s - (g-priv[i]).to-str() - ' '
 }
 eprint(s)
@@ -99,7 +98,6 @@ global-pub = x25519.x25519-scalarmult-base(g-priv)
 eprint('global-pub: ')
 s = ''
 i <- [0..32): {
-
     s = s - (global-pub[i]).to-str() - ' '
 }
 eprint(s)

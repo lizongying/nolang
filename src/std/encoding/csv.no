@@ -42,7 +42,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             #{overflow=wrap}
             r-pos = r-pos + 1
             (r-pos < s.len-bytes()) {
-
                 c = s.byte(r-pos)
                 c == 34 -> {
 
@@ -53,7 +52,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                         #{overflow=wrap}
                         nc = s.byte(r-pos + 1)
                         nc == 34 -> {
-
                             field[fn] = 34
                             fn = fn + 1
                             r-pos = r-pos + 2
@@ -67,7 +65,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
                     ; 跳過後續逗號
                     r-pos < s.len-bytes() -> {
-
                         nc = s.byte(r-pos)
 
                         #{overflow=wrap}
@@ -104,7 +101,6 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
     ; 普通欄位（無引號）
     (r-pos < s.len-bytes()) {
-
         c = s.byte(r-pos)
 
         #{overflow=wrap}
@@ -147,7 +143,6 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     pos = 0
     fields = with-cap(max-fields)
     (pos < s.len-bytes() && n < max-fields) {
-
         fields[n], pos = parse-field(s, pos)
 
         #{overflow=wrap}
@@ -162,10 +157,8 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
 ; 返回 out str: 可直接寫入 CSV 的文字；需要時已加上雙引號並把 " 變成 ""
 ; [encode-field](#csv.encode-field)
 encode-field = (field str) (out str) {
-
     need-quote = false
     i <- [0..field.len-bytes()): {
-
         c = field.byte(i)
         c == 44 || c == 34 || c == 10 || c == 13 -> {
             need-quote = true
@@ -186,7 +179,6 @@ encode-field = (field str) (out str) {
     #{overflow=wrap}
     j = j + 1
     i <- [0..field.len-bytes()): {
-
         c = field.byte(i)
 
         #{overflow=wrap}

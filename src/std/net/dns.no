@@ -145,7 +145,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     label-start = 0
     i = 0
     (i <= domain.len-bytes()) {
-
         is-dot = false
         {
             i == domain.len-bytes() -> is-dot = true
@@ -161,7 +160,6 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
             #{overflow=wrap}
             label-len = i - label-start
             label-len > 0 -> {
-
                 query[pos] = label-len & 255
                 pos = pos + 1
                 j <- [0..label-len): {
@@ -228,7 +226,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         ; 遇數據尾端仍未見終止零標籤：畸形封包，標記 next-pos=-1
         pos >= data.len() -> {
             jumped == false -> end-pos = -1
-            *
+            break
         }
 
         #{index-out=zero}
@@ -240,7 +238,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
             #{overflow=wrap}
             pos = pos + 1
             jumped == false -> end-pos = pos
-            *
+            break
         }
 
         ; 檢查是否為壓縮指標（前兩位為 11）
@@ -282,7 +280,7 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
             -> {
                 end-pos = -1
-                *
+                break
             }
         }
     }
@@ -291,7 +289,6 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     #{overflow=wrap}
     buf-pos > 0 -> {
         buf[buf-pos - 1] == 46 -> {
-
             buf-pos = buf-pos - 1
         }
     }
@@ -339,7 +336,6 @@ parse-response = (data []byte) (ip ?str) {
 
     ; 跳過問題部分
     i <- [0..qdcount): {
-
         qname = ''
         qname, pos = parse-name(data, pos)
         pos < 0 -> return
@@ -351,7 +347,6 @@ parse-response = (data []byte) (ip ?str) {
 
     ; 解析回答部分
     i <- [0..ancount): {
-
         rname = ''
         rname, pos = parse-name(data, pos)
         pos < 0 -> return
@@ -455,7 +450,6 @@ resolve-from = (server str, domain str) (ip ?str) {
     ; 解析回應
     resp []byte = with-len(n)
     i <- [0..n): {
-
         resp[i]: {
             ok -> it = resp-str.byte(i)
 
@@ -507,7 +501,6 @@ resolve-all = (domain str) (ip ?str) {
     n <= 0 -> return
     resp []byte = with-len(n)
     i <- [0..n): {
-
         resp[i]: {
             ok -> it = resp-str.byte(i)
 
