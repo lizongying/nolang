@@ -2,20 +2,24 @@
 ; h2m — AST → MIR 降级（对齐 src/mir/hir2mir.go）
 ; ═══════════════════════════════════════════════════════════════════
 ;
-; 目标（M4-e，s55 首件 / s56 第二件）：把 ps.no 产出的 AST arena 降级成 cg.no 消费的 MIR 指令流，
+; 目标（M4-e，s55 首件 / s56 第二件 / s57 第三件）：把 ps.no 产出的 AST arena 降级成 cg.no 消费的 MIR 指令流，
 ; 打通「源码 → IR」的第一条真实路径。此前 compiler/ 里每一段 IR 都来自手写的 op 数组
 ; （cg-test.no / tmp/probe-sNN.no）——等于「codegen 有测试、前端无出口」。
 ;
 ; ── 覆盖面（刻意极小，且小得可测量）─────────────────────────────
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
-;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - *，仅 i64）/
-;         CallExpression（零参或实参值 id 连续的多参，返回型别查模块级签名表）
+;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64）/
+;         CallExpression（零参或实参值 id 连续的多参，返回型别查模块级签名表）/
+;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
+;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/CountExpr/IterRange 必须全 0）
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
 ;         算术语义仍限 i64（其余型别的值进运算符即计 unsup，不发错码）
-;   不支持（一律计入 unsup，绝不静默略过）：控制流、除与余、位运算、前缀负号、
-;         多输出参数、泛型（c3 > 0）、带默认值的参数、非具名型别（[]t / map / *t / 别名）、
-;         复合赋值、类型标注、非函数定义语句、实参 id 不连续的调用、方法调用（点号）
+;   不支持（一律计入 unsup，绝不静默略过）：K-SURFACE-MATCH（`{c -> a -> b}` 花括号链——ps.no 把
+;         臂群放在 aux/helper 阵（12 aux/臂）而非 kid 阵，须先接上 Go 的 desugar）、除与余、位运算、
+;         前缀负号、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、非具名型别（[]t / map / *t / 别名）、
+;         复合赋值、非函数定义语句、实参 id 不连续的调用、方法调用（点号）、
+;         break / continue / return 语句、计数循环 `n * { }`、区间与容器遍历 `i <- xs:`
 ;
 ; ── 实参连续契约（cg 的 OP-CALL 约定，非 Go 约定）─────────────────
 ;   cg-emit-cfg-t 的 CALL 臂按 `xa[k] .. xa[k]+bs[k]-1` 读实参值 id，要求它们**连续**；
@@ -27,9 +31,17 @@
 ;   id 0 = 哑元（vty[0] 先占位，永不引用）；1..nargs = 形参（s56 起按形参序单调分配）；
 ;   nargs+1 起由降级期单调分配。每个 LetStatement 把右值表达式的结果 id 直接绑到名字，
 ;   同名重复绑定 = 覆盖（镜像 §3.11「函数作用域内同名重复赋值 = 重赋值」）。
-;   ⚠ 直线式 i64 语义下 SSA 名即槽，故**不发 alloca/store/load**；一旦支持分支/循环，
-;     跨块同名变量必须落 alloca（§11 R7：alloca 还须提到函数入口），届时本切片的重绑
-;     策略要改成 STORE/LOAD——已记入未覆盖。
+;
+; ── 两种存储模式（s57：按体内有无控制流二选一，判据来自 h2m-scan 前扫描）─────
+;   mem == 0（直线式，s55/s56 原样）：SSA 名即槽，**不发 alloca/store/load**。
+;   mem == 1（体内有分支/循环）：**全部局部量（含形参）落 entry 块 alloca 槽**（-O0 风格），
+;     读 = OP-LOAD/OP-SLOAD，写 = OP-STORE/OP-SSTORE。理由是 cg 只用 blks 数组切标签、
+;     没有 PHI：跨块引用别的块的 SSA 名会被 opt 的 dominator 检查直接拒（then 块里绑的
+;     %v9 在汇聚块不可用），而循环体内重绑同名变量若不落内存就退化成「永远只加第一轮的值」。
+;     ⚠️ 槽必须在 entry：cg 要求每块是指令序的**连续段**，一旦离开 entry 就再也回不去，
+;       所以槽位表由前扫描（h2m-lst + h2m-ty-of）先把名字与型别定下来，再进 body。
+;     ⚠️ 槽型别只认 i64 / str（cg 只有 alloca i64 与 alloca %str-long 两种；f64 无槽 op）；
+;       前扫描推不出型别的局部量（如 vec / 结构体）⇒ 计 unsup，整函数不产码。
 ;
 ; ── 诚实门禁 ─────────────────────────────────────────────────────
 ;   不支持的构造让 agg.unsup += 1。呼叫方必须以 unsup == 0 判定本轮产码可信，
@@ -45,7 +57,10 @@
 # /compiler/src/mir
 # /compiler/src/cg
 
-; ── 降级上下文（指令流 + 值 id arena + 变量绑定表 + 诚实计数器）──
+; ── 降级上下文（指令流 + 值 id arena + 变量绑定表 + 块游标 + 诚实计数器）──
+; ⚠️ 块游标纪律（s57）：cg 主循环按 `blks[k] != cur` 发标签 ⇒ **每块必须是指令序中的连续段**。
+;   故本文件只单向推进块 id（entry → arms / loop 区域 → 汇聚块），回边只发 OP-BR 不再发指令；
+;   一旦离开某块就绝不再写它（写回去会重复发标签，opt 报标签重定义）。
 h2m-ctx {
     ops []i64
     dsts []i64
@@ -57,11 +72,15 @@ h2m-ctx {
     cty []i64
     names []str
     vids []i64
+    tys []i64
     nid i64
+    blk i64
+    bnext i64
+    mem i64
     unsup i64
 }
 
-; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1
+; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
 ; c: 上下文
 h2m-new = () (c h2m-ctx) {
     c = h2m-ctx {
@@ -85,7 +104,12 @@ h2m-new = () (c h2m-ctx) {
         str
         vids: []
         i64
+        tys: []
+        i64
         nid: 1
+        blk: 0
+        bnext: 1
+        mem: 0
         unsup: 0
     }
     c.vty.push(TY-I64)
@@ -103,10 +127,10 @@ h2m-alloc = (c h2m-ctx, ty i64) (id i64) {
     c.nid = c.nid + 1
 }
 
-; 追加一条单基本块指令（blks 恒 0）
+; 追加一条指令（落到当前块 c.blk；s57 前恒为 entry = 0）
 ; c: 上下文
 ; op: OP-* 码
-; d: 结果值 id（无结果指令传 0）
+; d: 结果值 id（无结果指令传 0；⚠️ OP-CONDBR 的 d 被 cg 当【假块 id】用）
 ; a: 第一实参
 ; b: 第二实参
 ; sym: 符号槽（字符串字面量等）
@@ -117,8 +141,25 @@ h2m-emit = (c h2m-ctx, op i64, d i64, a i64, b i64, sym str, res i64) {
     c.xa.push(a)
     c.bs.push(b)
     c.syms.push(sym)
-    c.blks.push(0)
+    c.blks.push(c.blk)
     c.cty.push(res)
+}
+
+; 新开一个基本块并回它的 id（只分配 id，不发指令；块内容由后续 h2m-set-block 写入）
+; c: 上下文
+; id: 新块 id（entry = 0，故首个新块是 1）
+h2m-block-new = (c h2m-ctx) (id i64) {
+    id = c.bnext
+
+    #{overflow=wrap}
+    c.bnext = c.bnext + 1
+}
+
+; 切当前块（后续 h2m-emit 落到此块）⚠️ 只可切到尚未写过指令的块（连续段纪律）
+; c: 上下文
+; id: 目标块 id
+h2m-set-block = (c h2m-ctx, id i64) {
+    c.blk = id
 }
 
 ; 记一条「本切片不支持」的构造（诚实门禁，不是静默略过）
@@ -148,7 +189,7 @@ h2m-var-find = (c h2m-ctx, name str) (id i64) {
     }
 }
 
-; 绑定变量名到值 id：已有同名绑定则覆盖（重赋值语义），否则追加
+; 绑定变量名到值 id：已有同名绑定则覆盖（重赋值语义），否则追加（仅 mem == 0 直线式路径）
 ; c: 上下文
 ; name: 变量名
 ; id: 值 id
@@ -168,6 +209,130 @@ h2m-var-bind = (c h2m-ctx, name str, id i64) {
     found == 0 -> {
         c.names.push(name)
         c.vids.push(id)
+        c.tys.push(0)
+    }
+}
+
+; ── mem 模式（s57）：局部量落 alloca 槽的三件套 ────────────────────
+; 名字在 c.names 中的下标；-1 = 未登记（与 h2m-var-find 共用线性扫，表长只几个局部量）
+; c: 上下文
+; name: 变量名
+; i: 下标（-1 = 未找到）
+h2m-name-find = (c h2m-ctx, name str) (i i64) {
+    i = -1
+    j = 0
+    (j < c.names.len() && i < 0) {
+        nm = c.names[j] #{index-out=zero}
+        nm == name -> i = j
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
+; 为名字铺一个槽（s57：必须在 entry 块调用，因 cg 要求块为连续段、离开 entry 就回不去）
+; 同名已有条目（形参已经绑过值 id）则把绑定改写为槽；同时零初始化，避免未赋值先读拿到 poison
+; ⚠️ TY-U64 在 LLVM 里与 TY-I64 同类型（i64），共用 alloca i64 槽；TY-F64 无槽 op ⇒ 计 unsup
+; c: 上下文
+; name: 变量名
+; ty: 槽型别码（认 TY-I64 / TY-U64 / TY-STR）
+h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
+    sid = h2m-alloc(c, ty)
+    ok-slot = 1
+    ty != TY-I64 && ty != TY-U64 && ty != TY-STR -> ok-slot = 0
+    ok-slot == 1 && ty != TY-STR -> {
+        h2m-emit(c, OP-ALLOC, sid, 0, 0, '', ty)
+        zid = h2m-alloc(c, ty)
+        h2m-emit(c, OP-CONST, zid, 0, 0, '', ty)
+        h2m-emit(c, OP-STORE, 0, zid, sid, '', 0)
+    }
+    ok-slot == 1 && ty == TY-STR -> {
+        h2m-emit(c, OP-SALLOC, sid, 0, 0, '', TY-STR)
+        zid2 = h2m-alloc(c, TY-STR)
+        h2m-emit(c, OP-STRCONST, zid2, 0, 0, '', TY-STR)
+        h2m-emit(c, OP-SSTORE, 0, zid2, sid, '', 0)
+    }
+    ok-slot == 0 -> h2m-mark(c)
+    ok-slot == 1 -> {
+        i = h2m-name-find(c, name)
+        i >= 0 -> {
+            c.vids[i] = sid
+            c.tys[i] = ty
+        }
+        i < 0 -> {
+            c.names.push(name)
+            c.vids.push(sid)
+            c.tys.push(ty)
+        }
+    }
+}
+
+; 把形参 incoming 值存进它的槽（仍需在 entry 块调用；值 id 由 h2m-alloc 单调分配⇒c 已绑同名的槽）
+; c: 上下文
+; name: 形参名
+; vid: 形参的值 id（1..nargs）
+; ty: 槽型别码
+h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
+    sid = 0
+    st = -1
+    i = h2m-name-find(c, name)
+    i >= 0 -> {
+        sid = c.vids[i] #{index-out=zero}
+        st = c.tys[i] #{index-out=zero}
+    }
+    st == ty && ty != TY-STR -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
+    st == ty && ty == TY-STR -> h2m-emit(c, OP-SSTORE, 0, vid, sid, '', 0)
+    st != ty -> h2m-mark(c)
+    i < 0 -> h2m-mark(c)
+}
+
+; 读一个变量的当前值：mem == 0 直返 SSA 值 id；mem == 1 在当前块发 LOAD/SLOAD
+; c: 上下文
+; name: 变量名
+; v: 值 id（0 = 未登记或槽型 unsupported，已计入 unsup）
+h2m-var-read = (c h2m-ctx, name str) (v i64) {
+    v = 0
+    i = h2m-name-find(c, name)
+    i < 0 -> h2m-mark(c)
+    i >= 0 && c.mem == 0 -> v = c.vids[i] #{index-out=zero}
+    i >= 0 && c.mem == 1 -> {
+        sid = c.vids[i] #{index-out=zero}
+        st = c.tys[i] #{index-out=zero}
+        st == TY-I64 || st == TY-U64 -> {
+            v = h2m-alloc(c, st)
+            h2m-emit(c, OP-LOAD, v, sid, 0, '', st)
+        }
+        st == TY-STR -> {
+            v = h2m-alloc(c, TY-STR)
+            h2m-emit(c, OP-SLOAD, v, sid, 0, '', TY-STR)
+        }
+        st != TY-I64 && st != TY-U64 && st != TY-STR -> h2m-mark(c)
+    }
+}
+
+; 写一个变量：mem == 0 绑/覆盖值 id；mem == 1 发 STORE/SSTORE进槽（型别不符 ⇒ unsup）
+; c: 上下文
+; name: 变量名
+; val: 右值的值 id
+h2m-var-write = (c h2m-ctx, name str, val i64) {
+    c.mem == 0 -> h2m-var-bind(c, name, val)
+    c.mem == 1 -> {
+        ok-w = 0
+        i = h2m-name-find(c, name)
+        i >= 0 -> {
+            sid = c.vids[i] #{index-out=zero}
+            st = c.tys[i] #{index-out=zero}
+            vt = h2m-vty-at(c, val)
+            st == vt && st != TY-STR -> {
+                h2m-emit(c, OP-STORE, 0, val, sid, '', 0)
+                ok-w = 1
+            }
+            st == vt && st == TY-STR -> {
+                h2m-emit(c, OP-SSTORE, 0, val, sid, '', 0)
+                ok-w = 1
+            }
+        }
+        ok-w == 0 -> h2m-mark(c)
     }
 }
 
@@ -266,6 +431,188 @@ h2m-sig-arg = (s h2m-sigs, i i64, j i64) (t i64) {
     t = s.farg[fb] #{index-out=zero}
 }
 
+; ── 前扫描（s57：mem 模式定槽宽 + 控制流探测）───────────────────
+; 槽必须在 entry，而 entry 指令又必须先于 body 发出 ⇒ 进 body 前就得知道「有哪些局部量、各是什么型别」。
+; 本段就是一个不指令的小型Syntax walker：只做两件事——登记 let 名取型别、发现控制流节点置 flow。
+; ⚠️ 与降级器的型别判定彼此独立⇒可能偏离；偏离不会发错码：写入口 h2m-var-write 会再比一次
+;   槽型与右值实型（不符 ⇒ unsup、整函数不产码），宁缺勿错。
+h2m-lst {
+    lname []str
+    lty []i64
+}
+
+; 新建局部量表
+; l: 局部量表
+h2m-lst-new = () (l h2m-lst) {
+    l = h2m-lst {
+        lname: []
+        str
+        lty: []
+        i64
+    }
+}
+
+; 查局部量名在表中的下标；-1 = 未登记
+; l: 局部量表
+; name: 变量名
+; i: 下标
+h2m-lst-find = (l h2m-lst, name str) (i i64) {
+    i = -1
+    j = 0
+    (j < l.lname.len() && i < 0) {
+        nm = l.lname[j] #{index-out=zero}
+        nm == name -> i = j
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
+; 登记/覆盖一个局部量及其型别（同一名字多次 let 以最后一次为准，与重赋语义一致）
+; l: 局部量表
+; name: 变量名
+; ty: 型别码（-1 = 推不出，后续 h2m-slot-decl 会计 unsup）
+h2m-lst-add = (l h2m-lst, name str, ty i64) {
+    i = h2m-lst-find(l, name)
+    i >= 0 -> l.lty[i] = ty
+    i < 0 -> {
+        l.lname.push(name)
+        l.lty.push(ty)
+    }
+}
+
+; 语法型别推断（仅供定槽宽）：只认 i64 / str 两型，其余一律 -1
+; t: AST arena
+; sg: 模块级签名表（调用回值型别）
+; l: 已登记的局部量表（标识符型别查此表）
+; n: 表达式节点 id
+; code: 型别码（-1 = 推不出）
+h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
+    code = -1
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        d.kind == asp.K-INTEGER-LITERAL -> code = TY-I64
+        d.kind == asp.K-STRING-LITERAL -> code = TY-STR
+        d.kind == asp.K-GROUPED-EXPRESSION -> {
+            k = ast.kid-at(t, d.kid0)
+            code = h2m-ty-of(t, sg, l, k)
+        }
+        d.kind == asp.K-INFIX-EXPRESSION -> {
+            xk = ast.kid-at(t, d.kid0)
+            yk = h2m-kid-i(t, n, 1)
+            a = h2m-ty-of(t, sg, l, xk)
+            b = h2m-ty-of(t, sg, l, yk)
+            a == TY-I64 && b == TY-I64 -> code = TY-I64
+        }
+        d.kind == asp.K-IDENTIFIER -> {
+            nm = ast.str-at(t, d.s0)
+            i = h2m-lst-find(l, nm)
+            i >= 0 -> code = l.lty[i] #{index-out=zero}
+        }
+        d.kind == asp.K-CALL-EXPRESSION -> {
+            ck = ast.kid-at(t, d.kid0)
+            ck > 0 -> {
+                cd = ast.nd-at(t, ck)
+                cd.kind == asp.K-IDENTIFIER -> {
+                    cn = ast.str-at(t, cd.s0)
+                    si = h2m-sig-find(sg, cn)
+                    si >= 0 -> code = sg.fret[si] #{index-out=zero}
+                }
+            }
+        }
+    }
+}
+
+; 读节点第 i 个 kid（越界回 0，不拿后面节点的 kid 槽）
+; t: AST arena
+; n: 节点 id
+; i: kid 序号
+; k: 子节点 id（0 = 越界或该槽本来就空）
+h2m-kid-i = (t ast, n i64, i i64) (k i64) {
+    k = 0
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        i < d.nkid -> {
+            p = d.kid0
+
+            #{overflow=wrap}
+            p = p + i
+            k = ast.kid-at(t, p)
+        }
+    }
+}
+
+; 逐个 kid 前扫（不进嵌套函数定义：其局部量属另一个函数，否则会被误铺槽）
+; t: AST arena
+; sg: 模块级签名表
+; l: 局部量表
+; n: 父节点 id
+; flow: 其子树是否含控制流
+h2m-scan-kids = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
+    flow = 0
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        i = 0
+        (i < d.nkid) {
+            kid = h2m-kid-i(t, n, i)
+            kf = 0
+            kid > 0 -> {
+                kd = ast.nd-at(t, kid)
+                kd.kind != asp.K-FUNCTION-DEFINITION -> kf = h2m-scan(t, sg, l, kid)
+            }
+            kf > flow -> flow = kf
+
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
+}
+
+; 前扫入口：登记 let 绑定名与型别，并回「子树内是否有分支/循环」
+; ⚠️ K-SURFACE-MATCH 也计 flow（它的臂群在 aux 阵、本件不降），但它的臂体不会被扫到 ⇒ 若有
+;   局部量只在该体内绑定，只会少铺一个槽，而降级器会在遇到该节点时计 unsup ⇒ 整函数不产码
+; t: AST arena
+; sg: 模块级签名表
+; l: 局部量表（呼叫方预先播种形参）
+; n: 节点 id
+; flow: 1 = 含控制流（需 mem 模式）
+h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
+    flow = 0
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        {
+            d.kind == asp.K-LET-STATEMENT -> {
+                nm = ast.str-at(t, d.s0)
+                vc = d.nkid
+
+                #{overflow=wrap}
+                vc = vc - 1
+                vk = h2m-kid-i(t, n, vc)
+                ty = h2m-ty-of(t, sg, l, vk)
+                h2m-lst-add(l, nm, ty)
+                f0 = h2m-scan-kids(t, sg, l, vk)
+                f0 > flow -> flow = f0
+            }
+
+            d.kind == asp.K-IF-EXPRESSION || d.kind == asp.K-FOR-STATEMENT -> {
+                flow = 1
+                f1 = h2m-scan-kids(t, sg, l, n)
+                f1 > flow -> flow = f1
+            }
+
+            d.kind == asp.K-BLOCK-STATEMENT || d.kind == asp.K-EXPRESSION-STATEMENT -> {
+                f2 = h2m-scan-kids(t, sg, l, n)
+                f2 > flow -> flow = f2
+            }
+
+            -> {
+                f3 = h2m-scan-kids(t, sg, l, n)
+                f3 > flow -> flow = f3
+            }
+        }
+    }
+}
+
 ; 表达式降级：回传该表达式的值 id；0 = 不支持（已计入 unsup）
 ; t: AST arena
 ; c: 上下文
@@ -300,9 +647,9 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
         d.kind == asp.K-IDENTIFIER -> {
             nm = ast.str-at(t, d.s0)
-            vid = h2m-var-find(c, nm)
-            vid > 0 -> v = vid
-            vid == 0 -> h2m-mark(c)
+            vi = h2m-name-find(c, nm)
+            vi >= 0 -> v = h2m-var-read(c, nm)
+            vi < 0 -> h2m-mark(c)
         }
 
         d.kind == asp.K-GROUPED-EXPRESSION -> {
@@ -327,6 +674,19 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 osym == '-' -> bop = OP-SUB
 
                 osym == '*' -> bop = OP-MUL
+
+                ; 比较家族（s57：控制流的条件侧需要 0/1 值；cg 发 icmp + zext i1→i64）
+                osym == '<' -> bop = OP-CMPLT
+
+                osym == '>' -> bop = OP-CMPGT
+
+                osym == '<=' -> bop = OP-CMPLE
+
+                osym == '>=' -> bop = OP-CMPGE
+
+                osym == '==' -> bop = OP-CMPEQ
+
+                osym == '!=' -> bop = OP-CMPNE
 
                 -> {
                 }
@@ -430,7 +790,7 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         vp = vp + vc
         vk = ast.kid-at(t, vp)
         vv = h2m-lower-expr(t, c, sg, vk)
-        vv > 0 -> h2m-var-bind(c, nm, vv)
+        vv > 0 -> h2m-var-write(c, nm, vv)
 
         ; 型别标注侧：只认 K-NAMED-TYPE 且码与右值相符（不符 ⇒ 计 unsup，整函数不产码）
         tc = 0
@@ -451,7 +811,8 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     }
 }
 
-; BlockStatement 降级：逐个 kid 降级；本切片只认 LetStatement
+; BlockStatement 降级：逐个 kid 降级；认得 LetStatement / IfExpression / ForStatement /
+; ExpressionStatement（内含 IfExpression，即述层的 `cond -> stmt` 单行 guard），其余计 unsup
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -466,11 +827,126 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         p = p + i
         kid = ast.kid-at(t, p)
         kk = ast.nd-at(t, kid)
-        kk.kind == asp.K-LET-STATEMENT -> h2m-lower-let(t, c, sg, kid)
-        kk.kind != asp.K-LET-STATEMENT -> h2m-mark(c)
+        hd = 0
+        kk.kind == asp.K-LET-STATEMENT -> {
+            h2m-lower-let(t, c, sg, kid)
+            hd = 1
+        }
+        kk.kind == asp.K-IF-EXPRESSION -> {
+            h2m-lower-if(t, c, sg, kid)
+            hd = 1
+        }
+        kk.kind == asp.K-FOR-STATEMENT -> {
+            h2m-lower-for(t, c, sg, kid)
+            hd = 1
+        }
+
+        ; 述层的单行 `cond -> stmt`：ExpressionStatement 包一个 IfExpression（实测 kid 序 [expr]）
+        kk.kind == asp.K-EXPRESSION-STATEMENT -> {
+            sub = h2m-kid-i(t, kid, 0)
+            sub > 0 -> {
+                sd = ast.nd-at(t, sub)
+                sd.kind == asp.K-IF-EXPRESSION -> {
+                    h2m-lower-if(t, c, sg, sub)
+                    hd = 1
+                }
+            }
+        }
+        hd == 0 -> h2m-mark(c)
 
         #{overflow=wrap}
         i = i + 1
+    }
+}
+
+; 分支体降级：Block 走 h2m-lower-block；嵌套 IfExpression 走 h2m-lower-if（elif 链就靠这一路）
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; n: 体节点 id
+h2m-lower-branch = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    n <= 0 -> h2m-mark(c)
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        d.kind == asp.K-BLOCK-STATEMENT -> h2m-lower-block(t, c, sg, n)
+        d.kind == asp.K-IF-EXPRESSION -> h2m-lower-if(t, c, sg, n)
+        d.kind != asp.K-BLOCK-STATEMENT && d.kind != asp.K-IF-EXPRESSION -> h2m-mark(c)
+    }
+}
+
+; IfExpression 降级：kid 序 = [Condition][Consequence][Alternative]（实测 3 kid，单行 guard 的 Alternative = 0）
+; 块形制：当前块求值条件后发 CONDBR，then / else 各成一块并无条件的 BR 回汇聚块。
+; ⚠️ CONDBR 的三个槽按 cg 口径填：xa = 条件值 id、bs = 真块 id、**dsts = 假块 id**（此处 dsts 不是结果值）
+; ⚠️ 无 else 臂时把假路直接接到汇聚块，不留空块；每个开出来的块至少拿到一条终结指令（连续段纪律）
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; n: IfExpression 节点 id
+h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    ck = h2m-kid-i(t, n, 0)
+    tk = h2m-kid-i(t, n, 1)
+    ek = h2m-kid-i(t, n, 2)
+    cv = h2m-lower-expr(t, c, sg, ck)
+    cv == 0 -> h2m-mark(c)
+    cv > 0 -> {
+        then-id = h2m-block-new(c)
+        else-id = h2m-block-new(c)
+        merge-id = h2m-block-new(c)
+        ftgt = else-id
+        ek == 0 -> ftgt = merge-id
+        h2m-emit(c, OP-CONDBR, ftgt, cv, then-id, '', 0)
+
+        h2m-set-block(c, then-id)
+        h2m-lower-branch(t, c, sg, tk)
+        h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+
+        ek > 0 -> {
+            h2m-set-block(c, else-id)
+            h2m-lower-branch(t, c, sg, ek)
+            h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+        }
+
+        h2m-set-block(c, merge-id)
+    }
+}
+
+; ForStatement 降级（本件只收纯前置条件循环 `(cond) { }`）
+; kid 序 = [Init][Condition][Update][CountExpr][IterRange][Body]（ps.no:5706 注释 + 实测 kid[1]/kid[5]）
+; 块形制：当前块 BR → hdr；hdr 求值条件后 CONDBR(body, exit)；body 结尾 BR 回 hdr；后继语句落在 exit
+; ⚠️ Init/Update/CountExpr/IterRange 任一非 0 ⇒ 不在覆盖面（计数循环与区间遍历属后续）
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; n: ForStatement 节点 id
+h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    d = ast.nd-at(t, n)
+    init = h2m-kid-i(t, n, 0)
+    cond = h2m-kid-i(t, n, 1)
+    upd = h2m-kid-i(t, n, 2)
+    cnt = h2m-kid-i(t, n, 3)
+    rng = h2m-kid-i(t, n, 4)
+    body = h2m-kid-i(t, n, 5)
+    bad = 0
+    d.nkid != 6 -> bad = 1
+    init != 0 || upd != 0 || cnt != 0 || rng != 0 -> bad = 1
+    cond == 0 || body == 0 -> bad = 1
+    bad != 0 -> h2m-mark(c)
+    bad == 0 -> {
+        hdr-id = h2m-block-new(c)
+        body-id = h2m-block-new(c)
+        exit-id = h2m-block-new(c)
+        h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
+
+        h2m-set-block(c, hdr-id)
+        cv = h2m-lower-expr(t, c, sg, cond)
+        cv == 0 -> h2m-mark(c)
+        cv > 0 -> h2m-emit(c, OP-CONDBR, exit-id, cv, body-id, '', 0)
+
+        h2m-set-block(c, body-id)
+        h2m-lower-block(t, c, sg, body)
+        h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
+
+        h2m-set-block(c, exit-id)
     }
 }
 
@@ -568,6 +1044,8 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
         ; 形参：值 id 按 LLVM 形参序单调分配（h2m-new 起 nid = 1 ⇒ 恰为 1..nargs），
         ;   并把名字绑上；型别同时进 vty（发射侧按它选 %v / %sv 命名空间）
+        ;   loc 同步播种形参（前扫描要拿它推标识符型别，也要拿它当「哪些名字是 incoming」）
+        loc = h2m-lst-new()
         q = 0
         (q < fap.len()) {
             p = d.kid0
@@ -583,6 +1061,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             pt = fap[q] #{index-out=zero}
             vid = h2m-alloc(c, pt)
             h2m-var-bind(c, pnm, vid)
+            h2m-lst-add(loc, pnm, pt)
 
             #{overflow=wrap}
             q = q + 1
@@ -598,6 +1077,31 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         #{overflow=wrap}
         bp = bp + bc
         body = ast.kid-at(t, bp)
+
+        ; ⚠️ 槽必须在 body 之前铺完（entry 块的连续段纪律）⇒ 先前扫描定「有无控制流 + 局部量表」
+        flow = 0
+        bc >= 0 -> flow = h2m-scan(t, sg, loc, body)
+        flow > 0 -> c.mem = 1
+        c.mem == 1 -> {
+            m = 0
+            (m < loc.lname.len()) {
+                lnm = loc.lname[m] #{index-out=zero}
+                lty = loc.lty[m] #{index-out=zero}
+                h2m-slot-decl(c, lnm, lty)
+
+                ; 前 m 项是形参（loc 先被形参播种）⇒ 另需把 incoming 值存进槽，不然 callee 读不到实参
+                m < fap.len() -> {
+                    avid = 0
+
+                    #{overflow=wrap}
+                    avid = m + 1
+                    h2m-slot-init-arg(c, lnm, avid, lty)
+                }
+
+                #{overflow=wrap}
+                m = m + 1
+            }
+        }
         bc < 0 -> h2m-mark(c)
         bc >= 0 -> h2m-lower-block(t, c, sg, body)
 
@@ -614,7 +1118,10 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             pk = ast.kid-at(t, rp)
             pd = ast.nd-at(t, pk)
             out-name = ast.str-at(t, pd.s0)
-            rid = h2m-var-find(c, out-name)
+
+            ; mem 模式要在这里发 LOAD（槽在 entry、本块可达）；直线式仍直接拿绑定的值 id
+            oi = h2m-name-find(c, out-name)
+            oi >= 0 -> rid = h2m-var-read(c, out-name)
         }
 
         ; 输出参数未被赋值：Go 侧靠「延迟零值」补零；本件只对 i64 发 CONST 0，其余计 unsup
