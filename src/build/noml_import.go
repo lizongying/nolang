@@ -274,10 +274,10 @@ func (g *nomlStructGen) objectLiteral(path, typeName string, obj map[string]any,
 // nomlKeywords 是 nolang 中不能直接用作欄位/變數名的保留字。
 // 命中時加前綴 `x-`（noml 鍵可以任意，nolang 識別符不行）。
 var nomlKeywords = map[string]bool{
-	"and": true, "as": true, "break": true, "continue": true, "else": true,
-	"false": true, "for": true, "fn": true, "if": true, "in": true, "it": true,
-	"match": true, "new": true, "nil": true, "not": true, "or": true,
-	"return": true, "run": true, "self": true, "true": true, "type": true,
+	"and": true, "as": true, "break": true, "brk": true, "continue": true, "ctn": true,
+	"else": true, "false": true, "for": true, "fn": true, "if": true, "in": true,
+	"it": true, "match": true, "new": true, "nil": true, "not": true, "or": true,
+	"return": true, "rtn": true, "run": true, "self": true, "true": true, "type": true,
 	"use": true, "while": true,
 }
 

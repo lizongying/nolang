@@ -910,10 +910,14 @@ type keywordDef struct {
 }
 
 var keywords = []keywordDef{
+	// 別名關鍵字（2026-11 新增）：ctn⇒continue、brk⇒break、rtn⇒return
+	{"ctn", CompletionItemKindKeyword, "continue (alias keyword)", "ctn"},
+	{"brk", CompletionItemKindKeyword, "break (alias keyword)", "brk"},
+	{"rtn", CompletionItemKindKeyword, "return (alias keyword)", "rtn"},
 	// 新式語法
-	{"*", CompletionItemKindKeyword, "break shorthand", "*"},
-	{"**", CompletionItemKindKeyword, "continue shorthand", "**"},
-	{"...", CompletionItemKindKeyword, "return/terminate", "..."},
+	{"*", CompletionItemKindKeyword, "continue shorthand (not recommended yet)", "*"},
+	{"**", CompletionItemKindKeyword, "break shorthand (not recommended yet)", "**"},
+	{"***", CompletionItemKindKeyword, "return/terminate shorthand (planned, not recommended yet)", "***"},
 	// 舊式語法（deprecated，n 版本後移除）
 	{"!!", CompletionItemKindKeyword, "infinite loop (deprecated, use '{ } (true)')", "!! {\n\t$0\n}"},
 	{"if", CompletionItemKindKeyword, "if statement (deprecated)", "if ${1:condition} {\n\t$0\n}"},

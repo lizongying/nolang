@@ -241,10 +241,16 @@ func lookupKeyword(s string) TokenType {
 		return IN
 	case "return":
 		return RETURN
+	case "rtn":
+		return RETURN // rtn — return 別名關鍵字（拼寫保留於 Literal）
 	case "break":
 		return BREAK
+	case "brk":
+		return BREAK // brk — break 別名關鍵字
 	case "continue":
 		return CONTINUE
+	case "ctn":
+		return CONTINUE // ctn — continue 別名關鍵字
 	case "true":
 		return TRUE
 	case "false":

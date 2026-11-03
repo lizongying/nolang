@@ -21,7 +21,7 @@ Prism.languages.nolang = {
   },
   keyword: {
     pattern:
-      /\b(if|elif|else|for|in|break|continue|return|defer|as|chan|match|while|run|awy)\b|\*\*|\*(?=\s|$|\})|!!(?=\s*\{)/,
+      /\b(if|elif|else|for|in|break|brk|continue|ctn|return|rtn|defer|as|chan|match|while|run|awy)\b|\*\*|\*(?=\s|$|\})|!!(?=\s*\{)/,
     greedy: true,
   },
   constant: {

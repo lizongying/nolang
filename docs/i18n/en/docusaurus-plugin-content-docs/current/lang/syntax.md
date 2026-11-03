@@ -963,6 +963,14 @@ i <- [0..10): {
     break     ; equivalent to ** (not recommended yet)
     return    ; equivalent to *** (not recommended yet), only terminates the function early
 }
+
+; Keyword aliases (full lexer support, exactly equivalent to the long forms):
+;   ctn ≡ continue, brk ≡ break, rtn ≡ return; `no fmt` keeps the alias spelling verbatim
+i <- [0..10): {
+    ctn   ; equivalent to continue
+    brk   ; equivalent to break
+}
+rtn     ; equivalent to return, only terminates the function early
 ```
 
 > ⚠️ **`return` (and its shorthand form `***`, which is not recommended yet) can only be used bare — it cannot carry a return value.**

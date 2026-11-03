@@ -750,9 +750,11 @@ ps-premerge-trailing = (t ast, blk i64, head i64) {
 ; p: 輸入
 ; want: 數值
 ps-expect = (p psst, want i64) {
-    ps-peek(p) == want -> ps-bump(p)
+    {
+        ps-peek(p) == want -> ps-bump(p)
 
-    -> {}
+        -> {}
+    }
 }
 
 ; ── s10：語法錯誤收集器（M3-c 首族）───────────────────────────────
@@ -1303,9 +1305,11 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
         ;   （實測 /tmp/tdoc3.no：`#{overflow=wrap}` ⏎ `; c1` ⏎ `(cond) {}` 的 c1 兩邊差 1 行）。
         (p.pos > 0) {
             pt = p.toks[p.pos - 1].typ
-            pt == tok.COMMENT || pt == tok.NEWLINE -> p.pos = p.pos - 1
+            {
+                pt == tok.COMMENT || pt == tok.NEWLINE -> p.pos = p.pos - 1
 
-            -> break
+                -> break
+            }
         }
         return
     }
@@ -1318,9 +1322,11 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
     keys.len() > 0 -> {
         (p.pos > 0) {
             pt = p.toks[p.pos - 1].typ
-            pt == tok.COMMENT || pt == tok.NEWLINE -> p.pos = p.pos - 1
+            {
+                pt == tok.COMMENT || pt == tok.NEWLINE -> p.pos = p.pos - 1
 
-            -> break
+                -> break
+            }
         }
         p.ao-doc = ps-skip-trivia-doc(t, p, 0)
     }
@@ -1503,15 +1509,19 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                     ps-bump(p); 消費 IDENT
                     ps-bump(p); 消費 ASSIGN
                     a2 = ps-peek-token(p)
-                    a2.typ == tok.LPAREN -> {
+                    {
+                        a2.typ == tok.LPAREN -> {
 
-                        ; `= (...) {` 才是函式定義；`= (expr)` 是括號運算式（見 ps-is-func）
-                        ps-is-func(p) == 1 -> idx = ps-parse-func(t, p, name)
+                            ; `= (...) {` 才是函式定義；`= (expr)` 是括號運算式（見 ps-is-func）
+                            {
+                                ps-is-func(p) == 1 -> idx = ps-parse-func(t, p, name)
+
+                                -> idx = ps-parse-let(t, p, name)
+                            }
+                        }
 
                         -> idx = ps-parse-let(t, p, name)
                     }
-
-                    -> idx = ps-parse-let(t, p, name)
                 }
                 handled = 1
             }
@@ -1594,13 +1604,15 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ;   實證：src/std/net/net.no:571（aes-cbc/tls 兩檔同源）；詳見
                 ;   docs/design/nolang-selfhost.md §5.3.3。
                 ps-skip-trivia(p)
-                ps-peek(p) == tok.LBRACKET -> al = ps-parse-arr-lit(t, p, sz)
+                {
+                    ps-peek(p) == tok.LBRACKET -> al = ps-parse-arr-lit(t, p, sz)
 
-                -> {
-                    vc-save = p.val-ctx; s67：定長陣列標註 `name [N]T = expr` 賦值 RHS ⇒ 值語境
-                    p.val-ctx = 1
-                    al = ps-parse-expr(t, p)
-                    p.val-ctx = vc-save
+                    -> {
+                        vc-save = p.val-ctx; s67：定長陣列標註 `name [N]T = expr` 賦值 RHS ⇒ 值語境
+                        p.val-ctx = 1
+                        al = ps-parse-expr(t, p)
+                        p.val-ctx = vc-save
+                    }
                 }
 
                 ; 子先於父：elem NamedType → ArrayType（含 size、elem 兩 kid）→ LetStatement
@@ -1692,13 +1704,15 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
                 ; 型別導向：{ ⇒ MapLiteral；否則普通 expr（val-ctx=1）
                 ml = 0
                 ps-skip-trivia(p)
-                ps-peek(p) == tok.LBRACE -> ml = ps-parse-map-lit(t, p, mt)
+                {
+                    ps-peek(p) == tok.LBRACE -> ml = ps-parse-map-lit(t, p, mt)
 
-                -> {
-                    vc-save = p.val-ctx
-                    p.val-ctx = 1
-                    ml = ps-parse-expr(t, p)
-                    p.val-ctx = vc-save
+                    -> {
+                        vc-save = p.val-ctx
+                        p.val-ctx = 1
+                        ml = ps-parse-expr(t, p)
+                        p.val-ctx = vc-save
+                    }
                 }
                 idx = ast.add(t, asp.K-LET-STATEMENT)
                 ast.set-slot(t, idx, 0, ast.put-str(t, name))
@@ -3124,16 +3138,18 @@ ps-set-var-type = (p psst, vname str, ty str) {
     tidx = p.ht-ty.len()
     p.ht-ty.push(ty)
     ps-ht-put(p, key, tidx)
-    p.fn == '' -> {
-        p.gv-n.push(vname)
-        p.gv-t.push(ty)
-    }
+    {
+        p.fn == '' -> {
+            p.gv-n.push(vname)
+            p.gv-t.push(ty)
+        }
 
-    -> {
-        p.fv-f.push(p.fn)
-        p.fv-v.push(vname)
-        p.fv-t.push(ty)
-        ps-ht-put(p, 'fv:' - p.fn - ' ' - vname, 1)
+        -> {
+            p.fv-f.push(p.fn)
+            p.fv-v.push(vname)
+            p.fv-t.push(ty)
+            ps-ht-put(p, 'fv:' - p.fn - ' ' - vname, 1)
+        }
     }
 }
 
@@ -4191,25 +4207,27 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                     tn2 > 0 -> ts2 = ast.type-string(t, tn2)
                     tn2 > 0 && ps-filter-ok(t, tn2, ts2) == 1 -> {
                         keep = 0
-                        ps-is-declared(p, name) == 0 -> {
-                            keep = 1
-                            ps-set-var-type(p, name, ts2)
-                        }
-
-                        -> {
-
-                            ; 已宣告：option 仅更新 varType 不盖型別注标（Go stmt.go:1518-1521）；
-                            ;   非 option 当现有型別为空或 i64 时才补（Go stmt.go:1523-1530）。
-                            iso = 0
-                            ast.kind-at(t, tn2) == asp.K-NULLABLE-TYPE -> iso = 1
-                            iso == 1 -> {
+                        {
+                            ps-is-declared(p, name) == 0 -> {
+                                keep = 1
                                 ps-set-var-type(p, name, ts2)
                             }
-                            iso == 0 -> {
-                                ex = ps-var-type-strict(p, name)
-                                ex == '' || ex == 'i64' -> {
-                                    keep = 1
+
+                            -> {
+
+                                ; 已宣告：option 仅更新 varType 不盖型別注标（Go stmt.go:1518-1521）；
+                                ;   非 option 当现有型別为空或 i64 时才补（Go stmt.go:1523-1530）。
+                                iso = 0
+                                ast.kind-at(t, tn2) == asp.K-NULLABLE-TYPE -> iso = 1
+                                iso == 1 -> {
                                     ps-set-var-type(p, name, ts2)
+                                }
+                                iso == 0 -> {
+                                    ex = ps-var-type-strict(p, name)
+                                    ex == '' || ex == 'i64' -> {
+                                        keep = 1
+                                        ps-set-var-type(p, name, ts2)
+                                    }
                                 }
                             }
                         }
@@ -4250,22 +4268,24 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             tn3 > 0 -> ts3 = ast.type-string(t, tn3)
                             tn3 > 0 && ps-filter-ok(t, tn3, ts3) == 1 -> {
                                 keep2 = 0
-                                ps-is-declared(p, name) == 0 -> {
-                                    keep2 = 1
-                                    ps-set-var-type(p, name, ts3)
-                                }
-
-                                -> {
-                                    iso2 = 0
-                                    ast.kind-at(t, tn3) == asp.K-NULLABLE-TYPE -> iso2 = 1
-                                    iso2 == 1 -> {
+                                {
+                                    ps-is-declared(p, name) == 0 -> {
+                                        keep2 = 1
                                         ps-set-var-type(p, name, ts3)
                                     }
-                                    iso2 == 0 -> {
-                                        ex2 = ps-var-type-strict(p, name)
-                                        ex2 == '' || ex2 == 'i64' -> {
-                                            keep2 = 1
+
+                                    -> {
+                                        iso2 = 0
+                                        ast.kind-at(t, tn3) == asp.K-NULLABLE-TYPE -> iso2 = 1
+                                        iso2 == 1 -> {
                                             ps-set-var-type(p, name, ts3)
+                                        }
+                                        iso2 == 0 -> {
+                                            ex2 = ps-var-type-strict(p, name)
+                                            ex2 == '' || ex2 == 'i64' -> {
+                                                keep2 = 1
+                                                ps-set-var-type(p, name, ts3)
+                                            }
                                         }
                                     }
                                 }
@@ -4298,22 +4318,24 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                             tnq > 0 -> tsq = ast.type-string(t, tnq)
                             tnq > 0 && ps-filter-ok(t, tnq, tsq) == 1 -> {
                                 keepq = 0
-                                ps-is-declared(p, name) == 0 -> {
-                                    keepq = 1
-                                    ps-set-var-type(p, name, tsq)
-                                }
-
-                                -> {
-                                    isoq = 0
-                                    ast.kind-at(t, tnq) == asp.K-NULLABLE-TYPE -> isoq = 1
-                                    isoq == 1 -> {
+                                {
+                                    ps-is-declared(p, name) == 0 -> {
+                                        keepq = 1
                                         ps-set-var-type(p, name, tsq)
                                     }
-                                    isoq == 0 -> {
-                                        exq = ps-var-type-strict(p, name)
-                                        exq == '' || exq == 'i64' -> {
-                                            keepq = 1
+
+                                    -> {
+                                        isoq = 0
+                                        ast.kind-at(t, tnq) == asp.K-NULLABLE-TYPE -> isoq = 1
+                                        isoq == 1 -> {
                                             ps-set-var-type(p, name, tsq)
+                                        }
+                                        isoq == 0 -> {
+                                            exq = ps-var-type-strict(p, name)
+                                            exq == '' || exq == 'i64' -> {
+                                                keepq = 1
+                                                ps-set-var-type(p, name, tsq)
+                                            }
                                         }
                                     }
                                 }
@@ -4356,22 +4378,24 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
                                     tnc > 0 -> tsc = ast.type-string(t, tnc)
                                     tnc > 0 && ps-filter-ok(t, tnc, tsc) == 1 -> {
                                         keepc = 0
-                                        ps-is-declared(p, name) == 0 -> {
-                                            keepc = 1
-                                            ps-set-var-type(p, name, tsc)
-                                        }
-
-                                        -> {
-                                            isoc = 0
-                                            ast.kind-at(t, tnc) == asp.K-NULLABLE-TYPE -> isoc = 1
-                                            isoc == 1 -> {
+                                        {
+                                            ps-is-declared(p, name) == 0 -> {
+                                                keepc = 1
                                                 ps-set-var-type(p, name, tsc)
                                             }
-                                            isoc == 0 -> {
-                                                exc = ps-var-type-strict(p, name)
-                                                exc == '' || exc == 'i64' -> {
-                                                    keepc = 1
+
+                                            -> {
+                                                isoc = 0
+                                                ast.kind-at(t, tnc) == asp.K-NULLABLE-TYPE -> isoc = 1
+                                                isoc == 1 -> {
                                                     ps-set-var-type(p, name, tsc)
+                                                }
+                                                isoc == 0 -> {
+                                                    exc = ps-var-type-strict(p, name)
+                                                    exc == '' || exc == 'i64' -> {
+                                                        keepc = 1
+                                                        ps-set-var-type(p, name, tsc)
+                                                    }
                                                 }
                                             }
                                         }
@@ -4600,18 +4624,20 @@ ps-is-struct-lit = (p psst) (r i64) {
 
             #{index-out=zero}
             tt = p.toks[i].typ
-            tt == tok.NEWLINE -> {
+            {
+                tt == tok.NEWLINE -> {
 
-                #{overflow=wrap}
-                i = i + 1
+                    #{overflow=wrap}
+                    i = i + 1
+                }
+                tt == tok.COMMENT -> {
+
+                    #{overflow=wrap}
+                    i = i + 1
+                }
+
+                -> go = false
             }
-            tt == tok.COMMENT -> {
-
-                #{overflow=wrap}
-                i = i + 1
-            }
-
-            -> go = false
         }
 
         #{index-out=zero}
@@ -4627,18 +4653,20 @@ ps-is-struct-lit = (p psst) (r i64) {
 
                 #{index-out=zero}
                 tj = p.toks[j].typ
-                tj == tok.NEWLINE -> {
+                {
+                    tj == tok.NEWLINE -> {
 
-                    #{overflow=wrap}
-                    j = j + 1
+                        #{overflow=wrap}
+                        j = j + 1
+                    }
+                    tj == tok.COMMENT -> {
+
+                        #{overflow=wrap}
+                        j = j + 1
+                    }
+
+                    -> go2 = false
                 }
-                tj == tok.COMMENT -> {
-
-                    #{overflow=wrap}
-                    j = j + 1
-                }
-
-                -> go2 = false
             }
 
             #{index-out=zero}
@@ -4907,9 +4935,11 @@ ps-elem-shape = (e str) (shape i64) {
 
                 -> 0
             }
-            c1 == 93 -> shape = 2
+            {
+                c1 == 93 -> shape = 2
 
-            -> shape = 3
+                -> shape = 3
+            }
         }
     }
 }
@@ -6075,14 +6105,14 @@ ps-parse-cond-loop = (t ast, p psst) (idx i64) {
 
 ; 解析 `break` / `continue`（對應 Go parseBreakStatement / parseContinueStatement）。
 ;   節點無 CHILD，仅雨個字串 slot：slot0=label（`kv` 恆印，空⇒`label: `）、slot1=kind（`kv` 恆印，'none'/'text'/'numeric'）。
-;   brk=1⇒BreakStatement，brk=0⇒ContinueStatement。
+;   is-brk=1⇒BreakStatement，is-brk=0⇒ContinueStatement。
 ;   標籤侦测对齐 Go：消費关键字後直接看**紧邻** token（不跳 trivia）——LABEL(`#N`)⇒numeric、IDENT⇒text（同列才成立）；
 ;   否则（NEWLINE/RBRACE 等）⇒裸 break（label=''、kind='none'）。⚠️ 不同列的 IDENT 属于下一条陈述，不能当标签。
 ; t: 輸入
 ; p: 輸入
-; brk: 數值
+; is-brk: 數值
 ; idx: 索引
-ps-parse-break-continue = (t ast, p psst, brk i64) (idx i64) {
+ps-parse-break-continue = (t ast, p psst, is-brk i64) (idx i64) {
     ps-bump(p); 消費 break/continue 关键字
     label = ''
     kind = 'none'
@@ -6100,7 +6130,7 @@ ps-parse-break-continue = (t ast, p psst, brk i64) (idx i64) {
         ps-bump(p)
     }
     nodekind = asp.K-BREAK-STATEMENT
-    brk == 0 -> nodekind = asp.K-CONTINUE-STATEMENT
+    is-brk == 0 -> nodekind = asp.K-CONTINUE-STATEMENT
     idx = ast.add(t, nodekind)
     ast.set-slot(t, idx, 0, ast.put-str(t, label)); label
     ast.set-slot(t, idx, 1, ast.put-str(t, kind)); kind
@@ -6109,13 +6139,13 @@ ps-parse-break-continue = (t ast, p psst, brk i64) (idx i64) {
 
 ; 建 Break/Continue 節點（label/kind 兩純量槽），供速寫復用。
 ; t: 輸入
-; brk: 數值
+; is-brk: 數值
 ; label: 字串
 ; kind: 種類
 ; idx: 索引
-ps-mk-break-cont = (t ast, brk i64, label str, kind str) (idx i64) {
+ps-mk-break-cont = (t ast, is-brk i64, label str, kind str) (idx i64) {
     nodekind = asp.K-BREAK-STATEMENT
-    brk == 0 -> nodekind = asp.K-CONTINUE-STATEMENT
+    is-brk == 0 -> nodekind = asp.K-CONTINUE-STATEMENT
     idx = ast.add(t, nodekind)
     ast.set-slot(t, idx, 0, ast.put-str(t, label)); label
     ast.set-slot(t, idx, 1, ast.put-str(t, kind)); kind
@@ -7289,14 +7319,16 @@ ps-parse-type = (t ast, p psst) (idx i64) {
             nm = tk.lit
             go = true
             (go) {
-                ps-peek(p) == tok.DOT && ps-peek-at(p, 1) == tok.IDENT -> {
-                    ps-bump(p); 消費 .
-                    seg = ps-lit-at(p, 0)
-                    ps-bump(p); 消費 段名
-                    nm = nm + '.' + seg
-                }
+                {
+                    ps-peek(p) == tok.DOT && ps-peek-at(p, 1) == tok.IDENT -> {
+                        ps-bump(p); 消費 .
+                        seg = ps-lit-at(p, 0)
+                        ps-bump(p); 消費 段名
+                        nm = nm + '.' + seg
+                    }
 
-                -> go = false
+                    -> go = false
+                }
             }
             idx = ast.add(t, asp.K-NAMED-TYPE)
             ast.set-slot(t, idx, 0, ast.put-str(t, nm))
@@ -7583,13 +7615,15 @@ ps-skip-type-idx = (p psst, i i64) (j i64) {
 
                 #{overflow=wrap}
                 jp = j + 1
-                ps-peek-at(p, j) == tok.DOT && ps-peek-at(p, jp) == tok.IDENT -> {
+                {
+                    ps-peek-at(p, j) == tok.DOT && ps-peek-at(p, jp) == tok.IDENT -> {
 
-                    #{overflow=wrap}
-                    j = j + 2; 消費 .段
+                        #{overflow=wrap}
+                        j = j + 2; 消費 .段
+                    }
+
+                    -> go = false
                 }
-
-                -> go = false
             }
         }
 
@@ -8450,19 +8484,21 @@ ps-is-enum-def = (p psst) (r i64) {
 
                                     #{overflow=wrap}
                                     nt = ps-peek-at(p, fi + 1)
-                                    nt == tok.COMMA || nt == tok.RPAREN || nt == tok.NEWLINE || nt == tok.COMMENT -> {
+                                    {
+                                        nt == tok.COMMA || nt == tok.RPAREN || nt == tok.NEWLINE || nt == tok.COMMENT -> {
 
-                                        #{overflow=wrap}
-                                        fi = fi + 1
-                                    }
+                                            #{overflow=wrap}
+                                            fi = fi + 1
+                                        }
 
-                                    -> {
+                                        -> {
 
-                                        #{overflow=wrap}
-                                        fi = fi + 1
-                                        ts = ps-skip-type-idx(p, fi)
-                                        ts >= 0 -> fi = ts
-                                        ts < 0 -> okf = 0
+                                            #{overflow=wrap}
+                                            fi = fi + 1
+                                            ts = ps-skip-type-idx(p, fi)
+                                            ts >= 0 -> fi = ts
+                                            ts < 0 -> okf = 0
+                                        }
                                     }
                                 }
 

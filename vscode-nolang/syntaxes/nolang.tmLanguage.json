@@ -28,7 +28,7 @@
     },
     {
       "name": "keyword.control.nolang",
-      "match": "\\b(if|elif|else|for|break|continue|return|defer|as|chan|awy|match|while|co)\\b|\\*\\*|\\*(?=\\s|$|\\})|!!(?=\\s*\\{)"
+      "match": "\\b(if|elif|else|for|break|brk|continue|ctn|return|rtn|defer|as|chan|awy|match|while|co)\\b|\\*\\*|\\*(?=\\s|$|\\})|!!(?=\\s*\\{)"
     },
     {
       "name": "keyword.control.import.nolang",

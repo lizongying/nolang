@@ -111,7 +111,7 @@ Nolang 关键字极少、语法极简。**注意：`go` 不是关键字**——�
 | 分支选择 | `{ cond -> body }`（短路链） |
 | 跳出 / 继续 / 返回 | `*`（继续）`**`（跳出）`***`（返回）；**简写暂不推荐，推荐用关键字** |
 
-**其他关键字**：`return` `break`（暂保留）`continue`（暂保留）`true` `false` `nil`
+**其他关键字**：`return`（别名 `rtn`）`break`（别名 `brk`，暂保留）`continue`（别名 `ctn`，暂保留）`true` `false` `nil`
 `as`（**仅用于 FFI 指针类型转换**，如 `*byte` / `**byte` / `*i64`）`ptr` `chan` `map`
 `co`（无色 async 衍生）`self` `super` `it`。
 
@@ -246,6 +246,7 @@ handle = (b i64, c i64, d i64) (r i64) {
 - **字符串拼接用 `-`**（惯用）；`+` 在字符串上也拼接、在数值上是算术。`s[i]` 对 `str` 按**码点**索引。
 - 算术 `+ - * / %`、位运算 `& | ^ &^ << >>`、比较 `== != < <= > >=`、逻辑 `&& || !`。
 - `*` 是 `continue` 简写、`**` 是 `break` 简写、`***` 是 `return` 简写（仅语句起始；**这些简写暂不推荐使用，请写关键字 continue / break / return**）；`!!` 等于 `true`（表达式）。
+- 关键字别名（lexer 级完整支持）：`ctn` ≡ `continue`、`brk` ≡ `break`、`rtn` ≡ `return`；`no fmt` 保留别名原拼写。
 - `?=` option 解包 / 传播（见 §3.5）；`x ?T = expr` 显式标注 option 路径（含运行时溢出检查）。
 
 ### 3.8 接口

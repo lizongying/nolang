@@ -344,7 +344,7 @@ name = (c i64) (r str) {
 
 ; ── keyword：識別符 -> 關鍵字 code（照抄 src/lexer/token.go 的 lookupKeyword）──
 ; 回 ILLEGAL(0) 表示不是關鍵字，呼叫端應視為 IDENT。
-; 刻意用值匹配而非 map：SHS 禁「map 欄位 + 方法」，且只有 23 個關鍵字。
+; 刻意用值匹配而非 map：SHS 禁「map 欄位 + 方法」。別名：ctn⇒CONTINUE、brk⇒BREAK、rtn⇒RETURN。
 ; s: 字串
 ; r: 結果數值
 keyword = (s str) (r i64) {
@@ -371,9 +371,15 @@ keyword = (s str) (r i64) {
 
         'return' -> RETURN
 
+        'rtn' -> RETURN
+
         'break' -> BREAK
 
+        'brk' -> BREAK
+
         'continue' -> CONTINUE
+
+        'ctn' -> CONTINUE
 
         'true' -> TRUE
 

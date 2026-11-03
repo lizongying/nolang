@@ -15,11 +15,11 @@
  * 警告)，因此函数调用使用 legacy name `def`，对应带 definition 修饰的
  * variableName，会被 defaultHighlightStyle 渲染为蓝色 (#00f)。
  */
-import {HighlightStyle, StreamLanguage, syntaxHighlighting, type StringStream} from '@codemirror/language';
-import {tags as t} from '@lezer/highlight';
+import { HighlightStyle, StreamLanguage, syntaxHighlighting, type StringStream } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
 
 const KEYWORDS =
-  /^(if|elif|else|for|in|break|continue|return|defer|as|chan|match|while|run|awy)\b/;
+  /^(if|elif|else|for|in|break|brk|continue|ctn|return|rtn|defer|as|chan|match|while|run|awy)\b/;
 
 const CONSTANTS = /^(true|false|nil)\b/;
 
@@ -56,7 +56,7 @@ export const nolangLanguage = StreamLanguage.define<NolangState>({
     return {};
   },
   copyState(state: NolangState): NolangState {
-    return {phase: state.phase};
+    return { phase: state.phase };
   },
   token(stream: StringStream, state: NolangState): string | null {
     // 字串內：依欄位階段分派
@@ -140,7 +140,7 @@ export const nolangLanguage = StreamLanguage.define<NolangState>({
     return null;
   },
   languageData: {
-    commentTokens: {line: ';'},
+    commentTokens: { line: ';' },
   },
 });
 
@@ -217,33 +217,33 @@ function tokenFieldSpec(stream: StringStream, state: NolangState): string {
 // 暗色下偏亮，確保兩種背景下的對比度。
 export const nolangHighlightStyle = HighlightStyle.define([
   // 註釋：灰色斜體
-  {tag: t.comment, color: 'var(--nolang-comment)', fontStyle: 'italic'},
+  { tag: t.comment, color: 'var(--nolang-comment)', fontStyle: 'italic' },
   // 關鍵字：紅色
-  {tag: t.keyword, color: 'var(--nolang-keyword)'},
+  { tag: t.keyword, color: 'var(--nolang-keyword)' },
   // 常量（true/false/nil）：紅色
-  {tag: [t.atom, t.bool, t.null], color: 'var(--nolang-constant)'},
+  { tag: [t.atom, t.bool, t.null], color: 'var(--nolang-constant)' },
   // 字串：深藍（亮色）/ 淺藍（暗色）
-  {tag: t.string, color: 'var(--nolang-string)'},
+  { tag: t.string, color: 'var(--nolang-string)' },
   // 數字：藍色
-  {tag: t.number, color: 'var(--nolang-number)'},
+  { tag: t.number, color: 'var(--nolang-number)' },
   // 純變數：近黑（亮色）/ 淺灰（暗色）。格式字串 {name} 中的 name 也走這條
-  {tag: t.variableName, color: 'var(--nolang-variable)'},
+  { tag: t.variableName, color: 'var(--nolang-variable)' },
   // 函數定義/調用（'def' legacy name → definition(variableName)）：紫色
-  {tag: t.definition(t.variableName), color: 'var(--nolang-function)'},
+  { tag: t.definition(t.variableName), color: 'var(--nolang-function)' },
   // 屬性
-  {tag: t.propertyName, color: 'var(--nolang-property)'},
+  { tag: t.propertyName, color: 'var(--nolang-property)' },
   // 類型名稱（'type' legacy name）：棕紅（亮色）/ 橙（暗色）
-  {tag: t.typeName, color: 'var(--nolang-type)'},
+  { tag: t.typeName, color: 'var(--nolang-type)' },
   // 類名/常量（大寫開頭）：綠色
-  {tag: t.className, color: 'var(--nolang-class)'},
+  { tag: t.className, color: 'var(--nolang-class)' },
   // 運算子：紅色
-  {tag: t.operator, color: 'var(--nolang-operator)'},
+  { tag: t.operator, color: 'var(--nolang-operator)' },
   // 標點：近黑（亮色）/ 淺灰（暗色）
-  {tag: t.punctuation, color: 'var(--nolang-punctuation)'},
+  { tag: t.punctuation, color: 'var(--nolang-punctuation)' },
   // 轉義序列：橙色
-  {tag: t.escape, color: 'var(--nolang-escape)'},
+  { tag: t.escape, color: 'var(--nolang-escape)' },
   // 錯誤：紅色
-  {tag: t.invalid, color: 'var(--nolang-invalid)'},
+  { tag: t.invalid, color: 'var(--nolang-invalid)' },
 ]);
 
 // nolangHighlighting 是給 EditorState 用的 extension，包裝上面的 HighlightStyle。

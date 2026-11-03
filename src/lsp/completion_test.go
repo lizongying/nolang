@@ -58,8 +58,8 @@ func TestCompletionProviderWithNilProgram(t *testing.T) {
 
 	cp := NewCompletionProvider(doc, nil)
 	items := cp.getKeywordCompletions()
-	if len(items) != 16 {
-		t.Errorf("expected 16 keyword completions, got %d", len(items))
+	if len(items) != 19 {
+		t.Errorf("expected 19 keyword completions, got %d", len(items))
 	}
 }
 
@@ -666,7 +666,7 @@ func TestGetKeywordCompletionsNewSyntax(t *testing.T) {
 	cp := NewCompletionProvider(doc, nil)
 	items := cp.getKeywordCompletions()
 
-	expected := []string{"*", "**", "..."}
+	expected := []string{"*", "**", "***", "ctn", "brk", "rtn"}
 	found := make(map[string]bool)
 	for _, item := range items {
 		found[item.Label] = true

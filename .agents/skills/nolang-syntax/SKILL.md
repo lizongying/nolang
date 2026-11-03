@@ -1362,6 +1362,10 @@ int.to-str = () (out str) {
 | Break loop       | `**` (planned, not recommended yet)      | `break` (currently recommended)     |
 | Early return     | `***` (planned, not recommended yet)     | `return` (currently recommended)    |
 
+**Keyword aliases** (full lexer support): `ctn` ≡ `continue`, `brk` ≡ `break`, `rtn` ≡ `return`.
+They are real keywords (not identifiers), usable anywhere the long form is; `no fmt` keeps the
+alias spelling verbatim.
+
 Every loop has **two equivalent spellings** — prefix `(cond) { }` and suffix `{ } (cond)`.
 The semantics are identical; only the order of condition and body differs. `no fmt` emits the
 **prefix** form by default; `no fmt -loop-style=suffix` switches back. Both spellings are

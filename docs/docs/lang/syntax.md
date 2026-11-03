@@ -949,6 +949,14 @@ i <- [0..10): {
     break     ; 等價 **（暫不推薦）
     return    ; 等價 ***（暫不推薦），僅提前終止函數
 }
+
+; 關鍵字別名（lexer 完整支援，與原關鍵字完全等價）：
+;   ctn ≡ continue、brk ≡ break、rtn ≡ return；`no fmt` 保留別名原拼寫
+i <- [0..10): {
+    ctn   ; 等價 continue
+    brk   ; 等價 break
+}
+rtn     ; 等價 return，僅提前終止函數
 ```
 
 > ⚠️ **`return`（及其簡寫形式 `***`，簡寫暫不推薦使用）只能裸用，不能帶返回值。**  
