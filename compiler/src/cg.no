@@ -24,6 +24,7 @@
 ;   OPTEQ / OPTNEQ（option 值相等 s44：操作数在 %op，发 tag icmp eq AND payload(i64) icmp eq 再 and；单块降级无需 helper，仅适用 i64 载荷）
 ;   OPTEQSTR / OPTNEQSTR（option 的 str 载荷相等 s45：操作数在 %op，发 tag icmp eq AND 从 [3 x i64] 槽重建 %str-long 后 call @str_eq 再 and；单块降级，复用 s42 @str_eq 无需新增 helper，仅适用 str 载荷）
 ;   OPTEQF64 / OPTNEQF64（option 的 f64/double 载荷相等 s47：操作数在 %op，发 tag icmp eq AND 取 slot[0]（i64）各 bitcast i64→double 后 fcmp oeq 再 and；单块降级无需 helper，仅适用 f64 载荷；镜像 Go emitOptionValueEq 的 double 分支）
+;   OPTLT / OPTLE / OPTGT / OPTGE（option 排序 s51：操作数在 %op，只取两侧 slot[0]（i64 载荷）发 icmp slt/sle/sgt/sge 再 zext；【无 tag 项、无 and】——Go emitOptionValueOrder 原函即只比值；单块降级无 helper，仅适用 i64 载荷）
 ;     ——与有符号族共用 %v 命名空间与 i64 型别，只差助记符；TY-U64 型别码走 cg-ty-name/cg-val-prefix 默认臂
 ;   浮点 ALU（s37）：ADD/SUB/MUL/DIV/MOD 与 CMP* 按**值型别分派**——vty 为 TY-F64 时发
 ;     fadd/fsub/fmul/fdiv/frem double %fd… / fcmp <oeq/une/olt/ole/ogt/oge> double（忠实 Go
@@ -767,6 +768,102 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(', true\n\t%v')
             b.push(d.to-str())
             b.push(' = zext i1 %on')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+
+        ; ── option 排序（s51）：只比载荷（field 1,0）icmp slt/sle/sgt/sge，【无 tag 项】；镜像 Go emitOptionValueOrder 的有符号 int 分支 ──
+        op == OP-OPTLT -> {
+
+            ; xa[k] = 左 option 值 id；bs[k] = 右 option 值 id；dst = i64 结果（0/1）。
+            ; 镜像 Go emitOptionValueOrder（codegen.go:6294）的 icmp slt 分支：只比载荷，无 tag 项无 and（异于 s44 OPTEQ）。
+            ; nil 槽为 zeroinitializer（值 0），nil<some(7)=1、nil<nil=0，与 Go 同形。
+            b.push('\t%opx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%opy')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 1, 0\n\t%oq')
+            b.push(k.to-str())
+            b.push(' = icmp slt i64 %opx')
+            b.push(k.to-str())
+            b.push(', %opy')
+            b.push(k.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %oq')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-OPTLE -> {
+
+            ; 同 OPTLT，谓词换 sle（Go 同函 OpLe⇒slt/sle 映射的有符号 int 翼）。
+            b.push('\t%opx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%opy')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 1, 0\n\t%oq')
+            b.push(k.to-str())
+            b.push(' = icmp sle i64 %opx')
+            b.push(k.to-str())
+            b.push(', %opy')
+            b.push(k.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %oq')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-OPTGT -> {
+
+            ; 同 OPTLT，谓词换 sgt（Go 同函 OpGt 翼）。
+            b.push('\t%opx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%opy')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 1, 0\n\t%oq')
+            b.push(k.to-str())
+            b.push(' = icmp sgt i64 %opx')
+            b.push(k.to-str())
+            b.push(', %opy')
+            b.push(k.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %oq')
+            b.push(k.to-str())
+            b.push(' to i64\n')
+        }
+        op == OP-OPTGE -> {
+
+            ; 同 OPTLT，谓词换 sge（Go 同函 OpGe 翼）。
+            b.push('\t%opx')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(x.to-str())
+            b.push(', 1, 0\n\t%opy')
+            b.push(k.to-str())
+            b.push(' = extractvalue %option %op')
+            b.push(y.to-str())
+            b.push(', 1, 0\n\t%oq')
+            b.push(k.to-str())
+            b.push(' = icmp sge i64 %opx')
+            b.push(k.to-str())
+            b.push(', %opy')
+            b.push(k.to-str())
+            b.push('\n\t%v')
+            b.push(d.to-str())
+            b.push(' = zext i1 %oq')
             b.push(k.to-str())
             b.push(' to i64\n')
         }

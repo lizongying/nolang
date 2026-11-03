@@ -607,6 +607,74 @@ test-str-cap = () {
     runner.eq(s.contains('%vc'), 0, 'no vc namespace')
 }
 
+test-opt-order = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; bb0: CONST v1=7; OPTSOME op2; CONST v3=9; OPTSOME op4;
+    ;      OPTLT v5、OPTLE v6、OPTGT v7、OPTGE v8（均 op2 vs op4）; RET v5
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSOME)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(3)
+    xa.push(9)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSOME)
+    dsts.push(4)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    i <- [0..4): {
+        blks.push(0)
+        ops.push(OP-OPTLT + i)
+        dsts.push(5 + i)
+        xa.push(2)
+        bs.push(4)
+        syms.push('')
+    }
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('oo', 0, blks, ops, dsts, xa, bs, syms)
+
+    ; OPTEQ 同族形制但【无 tag 项】：只取两侧 slot[0] 载荷，四条谓词 slt/sle/sgt/sge
+    runner.eq(s.contains('%opx4 = extractvalue %option %op2, 1, 0'), 1, 'optlt left payload')
+    runner.eq(s.contains('%opy4 = extractvalue %option %op4, 1, 0'), 1, 'optlt right payload')
+    runner.eq(s.contains('%oq4 = icmp slt i64 %opx4, %opy4'), 1, 'optlt slt')
+    runner.eq(s.contains('%v5 = zext i1 %oq4 to i64'), 1, 'optlt zext')
+    runner.eq(s.contains('%oq5 = icmp sle i64 %opx5, %opy5'), 1, 'optle sle')
+    runner.eq(s.contains('%v6 = zext i1 %oq5 to i64'), 1, 'optle zext')
+    runner.eq(s.contains('%oq6 = icmp sgt i64 %opx6, %opy6'), 1, 'optgt sgt')
+    runner.eq(s.contains('%v7 = zext i1 %oq6 to i64'), 1, 'optgt zext')
+    runner.eq(s.contains('%oq7 = icmp sge i64 %opx7, %opy7'), 1, 'optge sge')
+    runner.eq(s.contains('%v8 = zext i1 %oq7 to i64'), 1, 'optge zext')
+
+    ; 鉴别力：排序不得引入 tag 项／and（与 s44 OPTEQ 的关键结构差异）
+    runner.eq(s.contains('and i1'), 0, 'no tag-and')
+    runner.eq(s.contains('%otx'), 0, 'no tag extract')
+    runner.eq(s.contains('extractvalue %option %op2, 0'), 0, 'no field-0 read')
+}
+
 test-struct-param-ret = () {
 
     ; 形参侧：nargs=1、ptyps[0] = TY-STRUCT-BASE ⇒ define 签名里是 %struct.s0 %st1
@@ -3494,6 +3562,7 @@ test-alu-f64()
 test-unary()
 test-str-from-vec()
 test-str-cap()
+test-opt-order()
 test-arith()
 test-call()
 test-call2()

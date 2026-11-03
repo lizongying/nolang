@@ -296,6 +296,22 @@ OP-STRFROMVEC = 76
 ; ⚠ op 碼接在既有最大碼 OP-STRFROMVEC=76 之後（取 77），不重排既有碼。
 OP-STRCAP = 77
 
+; ── option 排序（M4-c 續件 s51；鏡像 Go emitOptionValueOrder 的有符號 int 載荷分支，codegen.go:6294）──
+; Go emitCmp 對兩個 option 的 `a < b`／`<=`／`>`／`>=` 先試 emitOptionValueEq（Eq/Ne）、再試 emitOptionValueOrder（codegen.go:6448）：
+; 直接對兩側載荷（field 1,0）發 icmp slt/sle/sgt/sge——⚠️【無 tag 項、無 and】，異於 s44 OPTEQ 的「tag AND 載荷」：
+; Go 原函即如此（序比較只看值；str.compare 因 `.byte(i)` 返 ?byte 而需此路徑，比 tag 會讓同 tag 全判 false）。
+; nil 的載荷槽是 zeroinitializer（值 0），故 `nil < some(7)`＝0<7＝1、`nil < nil`＝0<0＝0，與 Go 行為同形。
+; OP-OPTLT／OP-OPTLE／OP-OPTGT／OP-OPTGE：dst = i64 結果 id（0/1）；xa[k] = 左 option 值 id；bs[k] = 右 option 值 id。
+;   發射：%opx<k>／%opy<k> = extractvalue %option %op<x|y>, 1, 0；%oq<k> = icmp <slt|sle|sgt|sge> i64 %opx<k>, %opy<k>；
+;         %v<dst> = zext i1 %oq<k> to i64（純單塊、無 helper）。
+; ⚠ 僅鏡像有符號四分支（Lt/Le/Gt/Ge）；無符號翼（ult/ule/ugt/uge）不自造——option 載荷符號性在 noc 型別宇宙不可見（TY-OPT 不挾載荷型別）。
+; ⚠ 僅適用 i64 載荷；f64 載荷序比較（Go 同函 fpred=olt/ole/ogt/oge 分支）需循 s47 OPTEQF64 前例另立專用 op，後續。
+; ⚠ op 碼接在既有最大碼 OP-STRCAP=77 之後（取 78–81），不重排既有碼。
+OP-OPTLT = 78
+OP-OPTLE = 79
+OP-OPTGT = 80
+OP-OPTGE = 81
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
