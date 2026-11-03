@@ -326,6 +326,23 @@ OP-OPTLEF64 = 83
 OP-OPTGTF64 = 84
 OP-OPTGEF64 = 85
 
+; ── option 與純量（scalar）的排序（M4-c 續件 s53；鏡像 Go emitCmp 的 aOpt/bOpt 分支，codegen.go:6490-6520：?T 與普通值比較走載荷路）──
+; Go 口徑：一側為 %option、另一側為可比的普通值（optionPayloadComparable：同型別或整數寬度互容）時，
+;   取出 option 側載荷（field 1,0）後與純量側操作數一起走普通 icmp／fcmp——⚠️【操作數次序不變、謂詞不翻轉】，
+;   tag 不参与（提取後整個丟棄）：這與 s51／s52 同紀律（無 tag 項、無 and），只是另一側從 %op 換成普通值。
+; 本波只發 i64 翼（載荷 slot[0] 直讀 i64，純量側 %v）；f64 純量翼（載荷 bitcast→double 與 %fd 比）循 s47/s52 前例另立專用 op，後續；
+;   str 序在 Go 語言層根本不存在（codegen.go:6557-6563 對 str/txt 操作數的序比較直接硬 fail——只實作 ==/!=），noc 刻意不造。
+; OP-OPTLTSC／OP-OPTLESC／OP-OPTGTSC／OP-OPTGESC：dst = i64 結果 id（0/1）；方向由 vty 判定（Go 以 isOptionType 動態判側，noc 同以 vty 判）：
+;   vty[xa[k]]==TY-OPT ⇒ 左 option：%opx<k> = extractvalue %option %op<xa>, 1, 0；%oq<k> = icmp <slt|sle|sgt|sge> i64 %opx<k>, %v<bs>；
+;   vty[bs[k]]==TY-OPT ⇒ 右 option：%opy<k> = extractvalue %option %op<bs>, 1, 0；%oq<k> = icmp 同謂詞 i64 %v<xa>, %opy<k>；
+;   %v<dst> = zext i1 %oq<k> to i64（純單塊、無 helper；nil 載荷零值 0 參與比較）。
+; ⚠ option 側必須是 %op 命名空間、純量側必須是 i64 %v；兩側皆 option 用 s51 OP-OPTLT 族，勿餵錯組合（兩者皆 TY-OPT 時兩側形同發、%oq<k> 重複定義→LLVM verify 誠實報錯）。
+; ⚠ op 碼接在既有最大碼 OP-OPTGEF64=85 之後（取 86–89），不重排既有碼。
+OP-OPTLTSC = 86
+OP-OPTLESC = 87
+OP-OPTGTSC = 88
+OP-OPTGESC = 89
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

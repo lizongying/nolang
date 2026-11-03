@@ -26,6 +26,7 @@
 ;   OPTEQF64 / OPTNEQF64（option 的 f64/double 载荷相等 s47：操作数在 %op，发 tag icmp eq AND 取 slot[0]（i64）各 bitcast i64→double 后 fcmp oeq 再 and；单块降级无需 helper，仅适用 f64 载荷；镜像 Go emitOptionValueEq 的 double 分支）
 ;   OPTLT / OPTLE / OPTGT / OPTGE（option 排序 s51：操作数在 %op，只取两侧 slot[0]（i64 载荷）发 icmp slt/sle/sgt/sge 再 zext；【无 tag 项、无 and】——Go emitOptionValueOrder 原函即只比值；单块降级无 helper，仅适用 i64 载荷）
 ;   OPTLTF64 / OPTLEF64 / OPTGTF64 / OPTGEF64（option 的 f64/double 载荷排序 s52：操作数在 %op，取两侧 slot[0] 循 s47 bitcast i64→double 后发 fcmp olt/ole/ogt/oge 再 zext；【无 tag 项、无 and】同 s51 int 翼纪律，镜像 Go emitOptionValueOrder 的 double 分支；单块降级无 helper，仅适用 f64 载荷）
+;   OPTLTSC / OPTLESC / OPTGTSC / OPTGESC（option 与纯量排序 s53：一侧 %op 一侧普通 %v，方向由 vty 判定（镜像 Go emitCmp 的 aOpt/bOpt 动态判侧）；只提 option 侧 slot[0] 载荷与纯量直接 icmp slt/sle/sgt/sge 再 zext——【无 tag 项、无 and、谓词不翻转】，操作数次序随源表达式不变；单块降级无 helper，仅适用 i64 载荷×i64 纯量）
 ;     ——与有符号族共用 %v 命名空间与 i64 型别，只差助记符；TY-U64 型别码走 cg-ty-name/cg-val-prefix 默认臂
 ;   浮点 ALU（s37）：ADD/SUB/MUL/DIV/MOD 与 CMP* 按**值型别分派**——vty 为 TY-F64 时发
 ;     fadd/fsub/fmul/fdiv/frem double %fd… / fcmp <oeq/une/olt/ole/ogt/oge> double（忠实 Go
@@ -995,6 +996,162 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = zext i1 %oq')
             b.push(k.to-str())
             b.push(' to i64\n')
+        }
+
+        ; ── option 与纯量的排序（s53）：方向由 vty 判定，只提 option 侧载荷与纯量 icmp；【无 tag 项、无 and】；镜像 Go emitCmp 的 aOpt/bOpt 分支 ──
+        op == OP-OPTLTSC -> {
+
+            ; 左 option（Go aOpt）：载荷 slot[0] vs %v<y>，谓词 slt；操作数次序不变（xa 在左）。
+            cg-vty-at(vty, x) == TY-OPT -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp slt i64 %opx')
+                b.push(k.to-str())
+                b.push(', %v')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+
+            ; 右 option（Go bOpt）：%v<x> vs 载荷，同谓词不翻转（Go 只换提取侧不换次序）。
+            cg-vty-at(vty, y) == TY-OPT -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp slt i64 %v')
+                b.push(x.to-str())
+                b.push(', %opy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+        }
+        op == OP-OPTLESC -> {
+
+            ; 同 OPTLTSC，谓词换 sle（Go OpLe⇒sle 翼）。
+            cg-vty-at(vty, x) == TY-OPT -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp sle i64 %opx')
+                b.push(k.to-str())
+                b.push(', %v')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+            cg-vty-at(vty, y) == TY-OPT -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp sle i64 %v')
+                b.push(x.to-str())
+                b.push(', %opy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+        }
+        op == OP-OPTGTSC -> {
+
+            ; 同 OPTLTSC，谓词换 sgt（Go OpGt⇒sgt 翼）。
+            cg-vty-at(vty, x) == TY-OPT -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp sgt i64 %opx')
+                b.push(k.to-str())
+                b.push(', %v')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+            cg-vty-at(vty, y) == TY-OPT -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp sgt i64 %v')
+                b.push(x.to-str())
+                b.push(', %opy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+        }
+        op == OP-OPTGESC -> {
+
+            ; 同 OPTLTSC，谓词换 sge（Go OpGe⇒sge 翼）。nil 载荷零值 0：`some(0) >= nil-形纯量` 等边界由哨兵钉住。
+            cg-vty-at(vty, x) == TY-OPT -> {
+                b.push('\t%opx')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(x.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp sge i64 %opx')
+                b.push(k.to-str())
+                b.push(', %v')
+                b.push(y.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
+            cg-vty-at(vty, y) == TY-OPT -> {
+                b.push('\t%opy')
+                b.push(k.to-str())
+                b.push(' = extractvalue %option %op')
+                b.push(y.to-str())
+                b.push(', 1, 0\n\t%oq')
+                b.push(k.to-str())
+                b.push(' = icmp sge i64 %v')
+                b.push(x.to-str())
+                b.push(', %opy')
+                b.push(k.to-str())
+                b.push('\n\t%v')
+                b.push(d.to-str())
+                b.push(' = zext i1 %oq')
+                b.push(k.to-str())
+                b.push(' to i64\n')
+            }
         }
 
         ; ── option 的 str 载荷相等（s45）：tag eq AND 从槽重建 %str-long call @str_eq；操作数在 %op，单块降级复用 s42 @str_eq ──

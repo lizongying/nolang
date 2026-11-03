@@ -750,6 +750,107 @@ test-opt-order-f64 = () {
     runner.eq(s.contains('icmp slt'), 0, 'no icmp leak')
 }
 
+; ── func sc(o ?i64, n i64) { o < n / n <= o / o > n / n >= o } ──
+; 证明 option 与纯量的排序降级（s53）：方向由 vty 判定，只提 option 侧 slot[0] 载荷与纯量 icmp——无 tag 项无 and；
+; 镜像 Go emitCmp 的 aOpt/bOpt 分支：提取后走普通比较，操作数次序不变、谓词不翻转。
+test-opt-order-sc = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+
+    ; vty 按值 id：0 占位 / 1=%v1(I64 常量 7) / 2=%op2(OPT some) / 3..6=%v(I64 結果)
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-OPT)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    cty.push(TY-I64); k0 CONST v1=7
+    cty.push(TY-OPT); k1 OPTSOME op2
+    cty.push(TY-I64); k2 LTSC v3（左 option）
+    cty.push(TY-I64); k3 LESC v4（右 option）
+    cty.push(TY-I64); k4 GTSC v5（左）
+    cty.push(TY-I64); k5 GESC v6（右）
+    cty.push(TY-I64); k6 RET v3
+
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTSOME)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k2: v3 = op2 < v1（左 option，slt）
+    blks.push(0)
+    ops.push(OP-OPTLTSC)
+    dsts.push(3)
+    xa.push(2)
+    bs.push(1)
+    syms.push('')
+
+    ; k3: v4 = v1 <= op2（右 option，sle）
+    blks.push(0)
+    ops.push(OP-OPTLESC)
+    dsts.push(4)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+
+    ; k4: v5 = op2 > v1（左 option，sgt）
+    blks.push(0)
+    ops.push(OP-OPTGTSC)
+    dsts.push(5)
+    xa.push(2)
+    bs.push(1)
+    syms.push('')
+
+    ; k5: v6 = v1 >= op2（右 option，sge）
+    blks.push(0)
+    ops.push(OP-OPTGESC)
+    dsts.push(6)
+    xa.push(1)
+    bs.push(2)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(3)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg-t('oo-sc', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; 左 option 形：%opx 提载荷，icmp 左侧在载荷、右侧 %v
+    runner.eq(s.contains('%opx2 = extractvalue %option %op2, 1, 0'), 1, 'sc lt left payload')
+    runner.eq(s.contains('%oq2 = icmp slt i64 %opx2, %v1'), 1, 'sc lt slt')
+    runner.eq(s.contains('%v3 = zext i1 %oq2 to i64'), 1, 'sc lt zext')
+
+    ; 右 option 形：%opy 提载荷，icmp 左侧 %v、右侧载荷（次序随源表达式，谓词不翻转）
+    runner.eq(s.contains('%opy3 = extractvalue %option %op2, 1, 0'), 1, 'sc le right payload')
+    runner.eq(s.contains('%oq3 = icmp sle i64 %v1, %opy3'), 1, 'sc le sle')
+    runner.eq(s.contains('%v4 = zext i1 %oq3 to i64'), 1, 'sc le zext')
+    runner.eq(s.contains('%oq4 = icmp sgt i64 %opx4, %v1'), 1, 'sc gt sgt')
+    runner.eq(s.contains('%oq5 = icmp sge i64 %v1, %opy5'), 1, 'sc ge sge')
+
+    ; 鉴别力：无 tag 项／无 and（同 s51 纪律）；不读 field 0；不碰 f64 翼命名
+    runner.eq(s.contains('and i1'), 0, 'no tag-and')
+    runner.eq(s.contains('%otx'), 0, 'no tag extract')
+    runner.eq(s.contains('extractvalue %option %op2, 0'), 0, 'no field-0 read')
+    runner.eq(s.contains('bitcast'), 0, 'no f64 wing')
+}
+
 test-struct-param-ret = () {
 
     ; 形参侧：nargs=1、ptyps[0] = TY-STRUCT-BASE ⇒ define 签名里是 %struct.s0 %st1
@@ -3639,6 +3740,7 @@ test-str-from-vec()
 test-str-cap()
 test-opt-order()
 test-opt-order-f64()
+test-opt-order-sc()
 test-arith()
 test-call()
 test-call2()
