@@ -285,12 +285,12 @@ func TestFormatBasic(t *testing.T) {
     match -> return
 }`,
 			expected: `f = () {
-    a != b -> break
+    a != b -> continue
     match = true
     j <- [0..n): {
         .x[j] != y[j] -> {
             match = false
-            break
+            continue
         }
     }
     match -> return
@@ -2175,9 +2175,9 @@ func TestFormatLabeledFor(t *testing.T) {
 	}
 }
 
-// TestFormatStarBreakContinue ensures that the `*` (break) and `**`
-// (continue) shorthand forms are NORMALIZED to the keyword forms by the
-// formatter (新式 `*` 表示法暂不应用——格式化统一输出 break/continue)，
+// TestFormatStarBreakContinue ensures that the `*` (continue) and `**`
+// (break) shorthand forms are NORMALIZED to the keyword forms by the
+// formatter (新式 `*`/`**` 简写暂不推荐使用——格式化统一输出 break/continue)，
 // that `break #1` / `continue #1` round-trip the numeric label correctly,
 // and that the output is idempotent.
 func TestFormatStarBreakContinue(t *testing.T) {
@@ -2187,24 +2187,24 @@ func TestFormatStarBreakContinue(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "star shorthand normalizes to break",
+			name:     "star shorthand normalizes to continue",
 			input:    "f = () {\n    *\n}",
-			expected: "f = () {\n    break\n}",
-		},
-		{
-			name:     "star star shorthand normalizes to continue",
-			input:    "f = () {\n    **\n}",
 			expected: "f = () {\n    continue\n}",
 		},
 		{
-			name:     "star with numeric label normalizes to break #N",
-			input:    "f = () {\n    * #1\n}",
-			expected: "f = () {\n    break #1\n}",
+			name:     "star star shorthand normalizes to break",
+			input:    "f = () {\n    **\n}",
+			expected: "f = () {\n    break\n}",
 		},
 		{
-			name:     "star star with numeric label normalizes to continue #N",
-			input:    "f = () {\n    ** #1\n}",
+			name:     "star with numeric label normalizes to continue #N",
+			input:    "f = () {\n    * #1\n}",
 			expected: "f = () {\n    continue #1\n}",
+		},
+		{
+			name:     "star star with numeric label normalizes to break #N",
+			input:    "f = () {\n    ** #1\n}",
+			expected: "f = () {\n    break #1\n}",
 		},
 		{
 			name:     "break with hash-prefixed label round-trips",
@@ -2223,7 +2223,7 @@ func TestFormatStarBreakContinue(t *testing.T) {
 			// 現在不丟失且全部規範為關鍵字形式。
 			name:     "sequence of break + star + starstar normalizes",
 			input:    "f = () {\n    break #1\n    * #1\n    ** #1\n}",
-			expected: "f = () {\n    break #1\n    break #1\n    continue #1\n}",
+			expected: "f = () {\n    break #1\n    continue #1\n    break #1\n}",
 		},
 	}
 	for _, tt := range tests {

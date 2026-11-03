@@ -11,7 +11,7 @@
 ;       ! {
 ;           req = srv.accept()           // 返回 ?server-conn
 ;           req: {
-;               nil -> *
+;               nil -> break
 ;               ->
 ;                   req.parse()
 ;                   req.method == 'GET' -> {

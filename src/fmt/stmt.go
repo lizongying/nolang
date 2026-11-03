@@ -771,14 +771,14 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 }
 
 func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {
-	// 新式 `*` 簡寫暫不應用：無論源碼是否用簡寫，格式化一律輸出關鍵字
+	// 新式 `**` 簡寫暫不推薦使用：無論源碼是否用簡寫，格式化一律輸出關鍵字
 	// break（用戶要求，見 formatter_test.go TestFormatStarBreakContinue）。
 	f.write("break")
 	// 直接讀取 LabelKind 枚舉（parser 在 LABEL/IDENT token 位置顯式設置），
 	// 避免依賴 isNumericLabel 字串內容啟發式。
-	// 源碼簡寫 `* #1` 的標籤本就是數字形式，規範為 `break #1`。
+	// 源碼簡寫 `** #1` 的標籤本就是數字形式，規範為 `break #1`。
 	if s.Label != "" {
-		if s.Token.Type == lexer.MUL || s.LabelKind == parser.LabelNumeric {
+		if s.Token.Type == lexer.STAR_STAR || s.LabelKind == parser.LabelNumeric {
 			f.write(" #")
 		} else {
 			f.write(" ")
@@ -788,13 +788,13 @@ func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {
 }
 
 func (f *formatter) formatContinueStatement(s *parser.ContinueStatement) {
-	// 新式 `**` 簡寫暫不應用：格式化一律輸出關鍵字 continue（同上）。
+	// 新式 `*` 簡寫暫不推薦使用：格式化一律輸出關鍵字 continue（同上）。
 	f.write("continue")
 	// 直接讀取 LabelKind 枚舉（parser 在 LABEL/IDENT token 位置顯式設置），
 	// 避免依賴 isNumericLabel 字串內容啟發式。
-	// 源碼簡寫 `** #1` 的標籤本就是數字形式，規範為 `continue #1`。
+	// 源碼簡寫 `* #1` 的標籤本就是數字形式，規範為 `continue #1`。
 	if s.Label != "" {
-		if s.Token.Type == lexer.STAR_STAR || s.LabelKind == parser.LabelNumeric {
+		if s.Token.Type == lexer.MUL || s.LabelKind == parser.LabelNumeric {
 			f.write(" #")
 		} else {
 			f.write(" ")

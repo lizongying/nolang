@@ -574,14 +574,14 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseExpressionStatement()
 
 	case lexer.MUL:
-		// `*` 在語句起始位置時是 break 簡寫。
+		// `*` 在語句起始位置時是 continue 簡寫（暫不推薦使用，建議用關鍵字）。
 		// 與 `*` 作為指針解引用或乘法區分：只有當 `*` 出現在語句第一個
-		// token 且後面是 NEWLINE/EOF/LABEL/IDENT/SEMICOLON 時視為 break。
-		return p.parseStarBreakOrExpr()
+		// token 且後面是 NEWLINE/EOF/LABEL/IDENT/SEMICOLON 時視為 continue。
+		return p.parseStarContinueOrExpr()
 
 	case lexer.STAR_STAR:
-		// `**` 是 continue 簡寫。形如 `** #1` 或 `**` 後接換行。
-		return p.parseStarStarContinue()
+		// `**` 是 break 簡寫（暫不推薦使用，建議用關鍵字）。形如 `** #1` 或 `**` 後接換行。
+		return p.parseStarStarBreak()
 
 	case lexer.LBRACKET:
 		// [n]t.method-name(…) { — 陣列型別方法定義
@@ -3057,17 +3057,17 @@ func (p *Parser) parseCountLoopPrefix() Statement {
 	return stmt
 }
 
-// parseStarBreakOrExpr handles a `*` at the start of a statement.
-// It is treated as a `break` shorthand (`*` or `* #1`) when the next
+// parseStarContinueOrExpr handles a `*` at the start of a statement.
+// It is treated as a `continue` shorthand (`*` or `* #1`) when the next
 // token indicates statement termination (NEWLINE/EOF/SEMICOLON/RBRACE)
 // or a label (LABEL/IDENT). Otherwise it falls back to normal expression
 // parsing (pointer dereference, multiplication, etc.).
-func (p *Parser) parseStarBreakOrExpr() Statement {
+func (p *Parser) parseStarContinueOrExpr() Statement {
 	// Look ahead one token: if it is NEWLINE/EOF/SEMICOLON/RBRACE/LABEL/IDENT,
-	// treat `*` as break.
+	// treat `*` as continue.
 	switch p.peekToken.Type {
 	case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON, lexer.RBRACE, lexer.LABEL, lexer.IDENT:
-		stmt := &BreakStatement{Token: p.currentToken}
+		stmt := &ContinueStatement{Token: p.currentToken}
 		p.nextToken() // skip MUL
 		if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 			stmt.Label = p.currentToken.Literal
@@ -3083,10 +3083,10 @@ func (p *Parser) parseStarBreakOrExpr() Statement {
 	return p.parseExpressionStatement()
 }
 
-// parseStarStarContinue handles a `**` at the start of a statement as
-// a `continue` shorthand, optionally followed by a label.
-func (p *Parser) parseStarStarContinue() Statement {
-	stmt := &ContinueStatement{Token: p.currentToken}
+// parseStarStarBreak handles a `**` at the start of a statement as
+// a `break` shorthand, optionally followed by a label.
+func (p *Parser) parseStarStarBreak() Statement {
+	stmt := &BreakStatement{Token: p.currentToken}
 	p.nextToken() // skip STAR_STAR
 	if p.currentToken.Type == lexer.LABEL || p.currentToken.Type == lexer.IDENT {
 		stmt.Label = p.currentToken.Literal

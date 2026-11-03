@@ -343,6 +343,20 @@ OP-OPTLESC = 87
 OP-OPTGTSC = 88
 OP-OPTGESC = 89
 
+; ── option 與 f64 純量（scalar）的排序（M4-c 續件 s54；鏡像 Go emitCmp aOpt／bOpt 提取後落 double 翼，codegen.go:6686-6714：OpLt／Le／Gt／Ge ⇒ fcmp olt／ole／ogt／oge double）──
+; Go 口徑：optionPayloadComparable 對 double 載荷只認同形（payloadT==otherT ⇒ double-vs-double 過閘；double-vs-i64 不過閘回退 tag 比較，noc 未實作回退，由呼叫方保證不餵）；
+;   過閘後提取載荷與 double 純量發 fcmp，【操作數次序不變、謂詞不翻轉】同 s53——i64 側換成 bitcast 後的 double（鏡像 Go 對載荷做 typed load double，noc 內聯槽等價）。
+; OP-OPTLTSCF／OP-OPTLESCF／OP-OPTGTSCF／OP-OPTGESCF：dst = i64 結果 id（0/1）；方向與純量側型別由 vty 雙護欄判定：
+;   左 option（vty[xa]==TY-OPT 且 vty[bs]==TY-F64）：%opx<k> = extractvalue %option %op<xa>, 1, 0；%fdx<k> = bitcast i64→double；%oq<k> = fcmp <olt|ole|ogt|oge> double %fdx<k>, %fd<bs>；
+;   右 option（vty[bs]==TY-OPT 且 vty[xa]==TY-F64）：%opy<k> = extractvalue %option %op<bs>, 1, 0；%fdy<k> = bitcast；%oq<k> = fcmp 同謂詞 double %fd<xa>, %opy<k>；
+;   %v<dst> = zext i1 %oq<k> to i64（純單塊、無 helper；nil 載荷位模式 +0.0 參與比較，同 s52）。
+; ⚠ 誤餵護欄比 s53 更嚴：護欄要求非 option 側必須 TY-F64，兩側皆 TY-OPT 或皆純量時兩臂都不發射，%v<dst> 未定義→呼叫方自查（鏡像 Go 閘不過不回退發射）。
+; ⚠ op 碼接在既有最大碼 OP-OPTGESC=89 之後（取 90–93），不重排既有碼。
+OP-OPTLTSCF = 90
+OP-OPTLESCF = 91
+OP-OPTGTSCF = 92
+OP-OPTGESCF = 93
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

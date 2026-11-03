@@ -10,7 +10,7 @@ import (
 // the various for-style loops that support break/continue:
 //   - bare range-for:       #1 i <- [0..256): { ... }
 //   - infinite loop:        #1!! { ... }   (deprecated)
-//                         #1 { ... } (true)   (new style)
+//     #1 { ... } (true)   (new style)
 //   - multiplicative count: #1 { ... } * N
 //   - conditional:          #1 x == 1: { ... }
 func TestParseLabeledFor(t *testing.T) {
@@ -138,7 +138,7 @@ func TestParseBreakContinueLabel(t *testing.T) {
 }
 
 // TestParseStarBreakContinue verifies that `*` and `**` can be used as
-// shorthand for `break` and `continue` respectively, optionally followed
+// shorthand for `continue` and `break` respectively, optionally followed
 // by a label (#N or IDENT).
 func TestParseStarBreakContinue(t *testing.T) {
 	tests := []struct {
@@ -150,37 +150,37 @@ func TestParseStarBreakContinue(t *testing.T) {
 		{
 			name:     "single star, no label",
 			input:    `*`,
-			wantKind: "break",
+			wantKind: "continue",
 			wantLbl:  "",
 		},
 		{
 			name:     "double star, no label",
 			input:    `**`,
-			wantKind: "continue",
+			wantKind: "break",
 			wantLbl:  "",
 		},
 		{
 			name:     "single star with numeric label",
 			input:    `* #1`,
-			wantKind: "break",
+			wantKind: "continue",
 			wantLbl:  "1",
 		},
 		{
 			name:     "double star with numeric label",
 			input:    `** #2`,
-			wantKind: "continue",
+			wantKind: "break",
 			wantLbl:  "2",
 		},
 		{
 			name:     "single star with text label",
 			input:    `* outer`,
-			wantKind: "break",
+			wantKind: "continue",
 			wantLbl:  "outer",
 		},
 		{
 			name:     "double star with text label",
 			input:    `** outer`,
-			wantKind: "continue",
+			wantKind: "break",
 			wantLbl:  "outer",
 		},
 	}
@@ -195,7 +195,7 @@ func TestParseStarBreakContinue(t *testing.T) {
 			if len(prog.Statements) == 0 {
 				t.Fatalf("expected at least one statement, got 0")
 			}
-			// The first statement is the star/break.
+			// The first statement is the star shorthand.
 			switch tt.wantKind {
 			case "break":
 				bs, ok := prog.Statements[0].(*BreakStatement)
@@ -222,7 +222,7 @@ func TestParseStarBreakContinue(t *testing.T) {
 //
 //	input:   break #1  /  * #1  /  ** #1
 //	ast:     BreakStatement{Label:"1"} / ContinueStatement{Label:"1"}
-//	fmt:     break #1 / * #1 / ** #1
+//	fmt:     break #1 / continue #1 / break #1
 //
 // The test verifies the AST is preserved and that the token type tracks
 // the source so the formatter can reproduce the `*` / `**` shorthand.
@@ -251,14 +251,14 @@ func TestParseBreakContinueWithForLabel(t *testing.T) {
 		{
 			name:     "star with numeric label",
 			input:    `* #1`,
-			wantKind: "break",
+			wantKind: "continue",
 			wantLbl:  "1",
 			wantTok:  lexer.MUL,
 		},
 		{
 			name:     "star star with numeric label",
 			input:    `** #1`,
-			wantKind: "continue",
+			wantKind: "break",
 			wantLbl:  "1",
 			wantTok:  lexer.STAR_STAR,
 		},
@@ -342,11 +342,11 @@ func TestParseBreakContinueBlockSequence(t *testing.T) {
 	if !ok || bs.Token.Type != lexer.BREAK || bs.Label != "1" {
 		t.Errorf("expected break #1, got %T %+v", fn.Body.Statements[0], fn.Body.Statements[0])
 	}
-	bs2, ok := fn.Body.Statements[1].(*BreakStatement)
+	bs2, ok := fn.Body.Statements[1].(*ContinueStatement)
 	if !ok || bs2.Token.Type != lexer.MUL || bs2.Label != "1" {
 		t.Errorf("expected * #1, got %T %+v", fn.Body.Statements[1], fn.Body.Statements[1])
 	}
-	cs, ok := fn.Body.Statements[2].(*ContinueStatement)
+	cs, ok := fn.Body.Statements[2].(*BreakStatement)
 	if !ok || cs.Token.Type != lexer.STAR_STAR || cs.Label != "1" {
 		t.Errorf("expected ** #1, got %T %+v", fn.Body.Statements[2], fn.Body.Statements[2])
 	}

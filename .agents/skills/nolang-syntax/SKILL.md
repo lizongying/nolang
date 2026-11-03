@@ -1358,9 +1358,9 @@ int.to-str = () (out str) {
 | Range iteration  | `i <- [a..b]: { }`                       | —                                   |
 | Conditional match| `x: { ... }`                             | —                                   |
 | Branch selection | `{ cond -> body }` (short-circuit)       | —                                   |
-| Skip iteration   | `**` (planned)                           | `continue` (temporarily retained)   |
-| Break loop       | `*` (planned)                            | `break` (temporarily retained)      |
-| Early return     | `...` (planned)                          | `return` (temporarily retained)     |
+| Skip iteration   | `*` (planned, not recommended yet)       | `continue` (currently recommended)  |
+| Break loop       | `**` (planned, not recommended yet)      | `break` (currently recommended)     |
+| Early return     | `***` (planned, not recommended yet)     | `return` (currently recommended)    |
 
 Every loop has **two equivalent spellings** — prefix `(cond) { }` and suffix `{ } (cond)`.
 The semantics are identical; only the order of condition and body differs. `no fmt` emits the
@@ -1484,11 +1484,15 @@ max = sum > 10 ? sum : 10
 
 ```no
 i <- [0..10): {
-    *      ; break
-    **     ; continue
-    ...    ; return/terminate
+    *      ; continue (skip this iteration)
+    **     ; break (exit loop)
+    ***    ; return / terminate
 }
 ```
+
+> ⚠️ **The `*` / `**` / `***` shorthands are NOT recommended for now** — write the
+> keywords `continue` / `break` / `return` instead. `no fmt` always normalizes the
+> accepted shorthand back to keyword form.
 
 ### Match (new style `x: { ... }`)
 
@@ -2572,7 +2576,7 @@ client: {
         {
             ev = client.next-event()     ; returns ?sse-event
             ev: {
-                nil -> *                  ; EOF
+                nil -> break              ; EOF
                 err -> print(it.msg())  ; error
                 -> print(ev.data)       ; event data
             }
@@ -3254,9 +3258,9 @@ External packages can only access exports declared in `lib.no` when importing vi
 - `{ } ()` — not executed (empty parens mean false; **suffix** form)
 - `{ } (cond)` — conditional loop (**suffix** form; `for cond { }` is deprecated)
 - `{ } * N` — counted loop (**suffix** form; body repeats N times; N ≤ 0 skips the body)
-- `**` — continue (skip current iteration) (planned, currently still uses `continue`)
-- `*` — break (exit loop) (planned, currently still uses `break`)
-- `...` — return/terminate (planned, currently still uses `return`)
+- `*` — continue (skip current iteration) (planned, not recommended yet; currently use `continue`)
+- `**` — break (exit loop) (planned, not recommended yet; currently use `break`)
+- `***` — return/terminate (planned, not recommended yet; currently use `return`)
 - `<-` — range iteration
 - `->` — match arm / if-else branch (`cond -> body`)
 - `:` — match expression (`x: { ... }`)

@@ -13,16 +13,16 @@ sidebar_position: 4
 - `{ } (true)` ; Infinite loop (suffix form, legacy spelling); prefix `!! { }` / `true { }` is equivalent and is the new default (emitted by `no fmt`)
 - `<-` ; Range iteration (e.g., `i <- [a..b]: { }`)
 - `..` ; Parent class / range operator (e.g., `[a..b)`)
-- `.` ; Self (current struct/type) (⚠️ in range bounds, use `self.method` not `.method` to avoid `...` ambiguity with the return operator)
+- `.` ; Self (current struct/type) (⚠️ in range bounds, use `self.method` not `.method` to avoid the visual ambiguity of three consecutive dots)
 - `?` ; Option type prefix (e.g., `?i64`, `?str`)
 - `(cond) { }` ; Conditional loop (prefix form, the new default; equivalent to the suffix `{ } (cond)`)
 - `N * { }` ; Counted loop (prefix form, the new default; equivalent to the suffix `{ } * N`; N ≤ 0 skips)
 - `!` ; False; also the "never execute" loop prefix (`! { }` never runs)
 - `!!` ; True; also the "always execute" loop prefix (`!! { }` loops forever)
 - `{ } ()` ; Not executed (empty parens mean false; suffix form, legacy spelling); prefix `! { }` / `false { }` / `() { }` is equivalent and is the new default
-- `*` ; Break — replaces break (planned, not yet replaced)
-- `**` ; Skip current iteration — replaces continue (planned, not yet replaced)
-- `...` ; Return statement, terminate function — replaces return (planned, not yet replaced)
+- `*` ; Skip current iteration — replaces continue (accepted by the parser, but not recommended yet — use the keyword)
+- `**` ; Break — replaces break (accepted by the parser, but not recommended yet — use the keyword)
+- `***` ; Return statement, terminate function — replaces return (planned, not recommended yet — use the keyword)
 - `run` ; Start async thread
 - `awy` ; Wait for async thread completion
 

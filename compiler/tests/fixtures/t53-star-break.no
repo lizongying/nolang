@@ -1,5 +1,5 @@
-; t53: 語句位 `*`/`**` 速寫（break/continue shorthand）
-;   鏡像 Go parseStarBreakOrExpr（stmt.go:2913）與 parseStarStarContinue（stmt.go:2937）。
+; t53: 語句位 `*`/`**` 速寫（continue/break shorthand，暫不推薦使用）
+;   鏡像 Go parseStarContinueOrExpr（stmt.go）與 parseStarStarBreak（stmt.go）。
 
 test-star-block = () {
 

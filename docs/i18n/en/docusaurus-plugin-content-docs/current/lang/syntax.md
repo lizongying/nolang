@@ -691,7 +691,7 @@ utils/
 ## Function Definition
 
 A function can emit results through **named result parameters**; this is essentially
-sugar for **out-parameters**, and `...` is only for early termination — it cannot carry a result.
+sugar for **out-parameters**; `return` (and its shorthand `***`, not recommended yet) is only for early termination — it cannot carry a result.
 
 The Nolang function form is `name = (in-params) (out-params) { body }`: the second
 parenthesis group `(out-params)` declares the named result parameters (the sugar). The body
@@ -779,9 +779,9 @@ a, b = swap(5, 3)
 | `for i in [a..b) { }` range         | `i <- [a..b): { }`                                  |
 | `match x { ... }` matching          | `x: { ... }`                                        |
 | `if/elif/else { }` branching        | `{ cond -> body }`                                  |
-| `continue`                          | `**`                                                |
-| `break`                             | `*`                                                 |
-| `return`                            | `...`                                               |
+| `continue`                          | `*` (shorthand not recommended yet)      |
+| `break`                             | `**` (shorthand not recommended yet)     |
+| `return`                            | `***` (shorthand not recommended yet)    |
 
 ### Loop / While / for-in
 
@@ -932,7 +932,7 @@ i <- 'abc': {   ; iterate over each character in the string
 ; ⚠️ Avoid the ... ambiguity
 ;   The range operator is .. (two dots). The self-method call is .len().
 ;   When written without a space: [0.. .len()) → [0...len()), the three dots
-;   look like a single operator (and ... is the return/terminate operator).
+;   look like a single operator (the return shorthand is now *** and is not recommended yet).
 ;   Use self.len() instead of .len() to disambiguate: i <- [0..self.len()): { }
 ;   (self and . are semantically equivalent inside method bodies)
 
@@ -946,25 +946,29 @@ i <- 'abc': {   ; iterate over each character in the string
 
 ### Break / Skip / Early Return
 
+> ⚠️ **The `*` (skip iteration) / `**` (break loop) / `***` (return/terminate) shorthands are
+> not recommended yet** — write the English keywords `continue` / `break` / `return`; `no fmt`
+> normalizes the supported shorthand back to keyword form.
+
 ```no
 i <- [0..10): {
-    *      ; break
-    **     ; continue
-    ...    ; return/terminate (early return; only terminates the function)
+    *      ; continue (skip this iteration; shorthand not recommended yet)
+    **     ; break (exit loop; shorthand not recommended yet)
+    ***    ; return/terminate (early return; only terminates the function; planned, not recommended yet)
 }
 
-; The English keywords also work (consistent with C/Rust, which helps when porting code — they compile and run normally):
+; The English keywords are the recommended form (consistent with C/Rust, which helps when porting code — they compile and run normally):
 i <- [0..10): {
-    break     ; equivalent to *
-    continue  ; equivalent to **
-    return    ; equivalent to ..., only terminates the function early
+    continue  ; equivalent to * (not recommended yet)
+    break     ; equivalent to ** (not recommended yet)
+    return    ; equivalent to *** (not recommended yet), only terminates the function early
 }
 ```
 
-> ⚠️ **`return` (and its symbolic form `...`) can only be used bare — it cannot carry a return value.**
+> ⚠️ **`return` (and its shorthand form `***`, which is not recommended yet) can only be used bare — it cannot carry a return value.**
 > Nolang functions have no "return value" mechanism — results are always handed out by assigning to
 > **named result parameters (out-params)** inside the body (see "Function Definition").
-> So `return <value>`, `return(expr)` and `... <value>` are all **forbidden**, and the compiler /
+> So `return <value>`, `return(expr)` and `*** <value>` are all **forbidden**, and the compiler /
 > formatter / LSP all report them:
 > - Compiler (`no build`): `Error: compilation error: parser errors: line L, column C: 'return' 後不能跟返回值；… [E_GENERAL]`
 > - `no vet`: `<file>:L:C: [ERROR] nolang-compile: 'return' 後不能跟返回值；… [E_GENERAL]` (same format as the other diagnostics, one line each; the message text itself is emitted in Chinese)

@@ -1349,12 +1349,12 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
 
         tk.typ == tok.CONTINUE -> idx = ps-parse-break-continue(t, p, 0)
 
-        ; `*` 語句起始 = break 速寫（Go stmt.go:552 parseStarBreakOrExpr）：僅當緊後 token
+        ; `*` 語句起始 = continue 速寫（Go stmt.go:552 parseStarContinueOrExpr）：僅當緊後 token
         ;   ∈ {NEWLINE,EOF,SEMI,RBRACE,LABEL,IDENT} 才成立，否則退回表達式陳述。
-        tk.typ == tok.MUL -> idx = ps-parse-star-break(t, p)
+        tk.typ == tok.MUL -> idx = ps-parse-star-cont(t, p)
 
-        ; `**` 語句起始 = continue 速寫（Go stmt.go:558 parseStarStarContinue，無前探閘門）
-        tk.typ == tok.STAR-STAR -> idx = ps-parse-star-star-cont(t, p)
+        ; `**` 語句起始 = break 速寫（Go stmt.go:558 parseStarStarBreak，無前探閘門）
+        tk.typ == tok.STAR-STAR -> idx = ps-parse-star-star-break(t, p)
 
         tk.typ == tok.LABEL -> {
             lval = tk.lit
@@ -6147,40 +6147,40 @@ ps-star-label = (p psst, out []str) (k i64) {
     k
 }
 
-; 語句位 `*` → BreakStatement 速寫（Go parseStarBreakOrExpr stmt.go:2913）。
-;   閘門：peek(1) ∈ {NEWLINE,EOF,SEMICOLON,RBRACE,LABEL,IDENT} 才視作 break；否則退回表達式陳述。
-;   ⚠️ 閘門含 IDENT——`* x` 在 Go 即 break+label x（怪异但必须逐位元組鏡像）。
+; 語句位 `*` → ContinueStatement 速寫（Go parseStarContinueOrExpr stmt.go:2913）。
+;   閘門：peek(1) ∈ {NEWLINE,EOF,SEMICOLON,RBRACE,LABEL,IDENT} 才視作 continue；否則退回表達式陳述。
+;   ⚠️ 閘門含 IDENT——`* x` 在 Go 即 continue+label x（怪异但必须逐位元組鏡像）。
 ; t: 輸入
 ; p: 輸入
 ; idx: 索引
-ps-parse-star-break = (t ast, p psst) (idx i64) {
+ps-parse-star-cont = (t ast, p psst) (idx i64) {
     idx = 0
     nt = ps-peek-at(p, 1)
-    is-brk = 0
-    nt == tok.NEWLINE || nt == tok.EOF || nt == tok.SEMICOLON || nt == tok.RBRACE || nt == tok.LABEL || nt == tok.IDENT -> is-brk = 1
-    is-brk == 1 -> {
+    is-cont = 0
+    nt == tok.NEWLINE || nt == tok.EOF || nt == tok.SEMICOLON || nt == tok.RBRACE || nt == tok.LABEL || nt == tok.IDENT -> is-cont = 1
+    is-cont == 1 -> {
         ps-bump(p); 消費 *
         lab []str = with-cap(2)
         lab.push('')
         lab.push('none')
         ps-star-label(p, lab)
-        idx = ps-mk-break-cont(t, 1, lab[0], lab[1])
+        idx = ps-mk-break-cont(t, 0, lab[0], lab[1])
     }
-    is-brk == 0 -> idx = ps-parse-expr-stmt(t, p)
+    is-cont == 0 -> idx = ps-parse-expr-stmt(t, p)
     idx
 }
 
-; 語句位 `**` → ContinueStatement 速寫（Go parseStarStarContinue stmt.go:2937，無閘門）。
+; 語句位 `**` → BreakStatement 速寫（Go parseStarStarBreak stmt.go:2937，無閘門）。
 ; t: 輸入
 ; p: 輸入
 ; idx: 索引
-ps-parse-star-star-cont = (t ast, p psst) (idx i64) {
+ps-parse-star-star-break = (t ast, p psst) (idx i64) {
     ps-bump(p); 消費 **
     lab []str = with-cap(2)
     lab.push('')
     lab.push('none')
     ps-star-label(p, lab)
-    idx = ps-mk-break-cont(t, 0, lab[0], lab[1])
+    idx = ps-mk-break-cont(t, 1, lab[0], lab[1])
     idx
 }
 

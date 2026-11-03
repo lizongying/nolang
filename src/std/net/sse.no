@@ -11,9 +11,9 @@
 ;           ! {
 ;               ev = client.next-event()       // 返回 ?event
 ;               ev: {
-;                   nil -> *
+;                   nil -> break
 ;                   err -> print('error: ' - it)
-;                         *
+;                         break
 ;                   -> print(ev.event - ': ' - ev.data)
 ;               }
 ;           }
@@ -28,7 +28,7 @@
 ;           ! {
 ;               c = srv.accept()             // 返回 ?server-conn
 ;               c: {
-;                   nil -> *
+;                   nil -> break
 ;                   ->
 ;                       c.send-event('message', 'hello', '', -1)
 ;                       c.send-comment('heartbeat')

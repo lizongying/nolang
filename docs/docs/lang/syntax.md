@@ -679,7 +679,7 @@ utils/
 ## 函數定義
 
 函數可以透過**具名結果參數（named result parameters）**&#x8F38;出結果，本質是  
-**輸出參數（out-parameter）的語法糖**；`...` 僅用於提前終止，不能跟結果。
+**輸出參數（out-parameter）的語法糖**；`return`（及其簡寫 `***`，暫不推薦使用）僅用於提前終止，不能跟結果。
 
 Nolang 的函數定義形式為 `name = (in-params) (out-params) { body }`：第二個  
 括號組 `(out-params)` 宣告具名結果參數（語法糖）。函數體內對它們賦值  
@@ -767,9 +767,9 @@ a, b = swap(5, 3)
 | `for i in [a..b) { }` 範圍   | `i <- [a..b): { }`                      |
 | `match x { ... }` 匹配       | `x: { ... }`                            |
 | `if/elif/else { }` 分支      | `{ cond -> body }`（短路，必須用 `{}` 包裹）      |
-| `continue`                 | `**`                                    |
-| `break`                    | `*`                                     |
-| `return`                   | `...`                                   |
+| `continue`                 | `*`（簡寫暫不推薦）                        |
+| `break`                    | `**`（簡寫暫不推薦）                       |
+| `return`                   | `***`（簡寫暫不推薦）                      |
 
 ### Loop / While / for-in
 
@@ -919,7 +919,7 @@ i <- 'abc': {   ; 遍历字符串中的每个字符
 ; ⚠️ 避免 ... 歧義
 ;   範圍運算子是 ..（兩點），self 方法調用是 .len()。
 ;   連寫時 [0.. .len()) → [0...len())，三個點看起來像單一運算子
-;   （而 ... 是 return/終止運算子）。
+;   （而 return 簡寫已定為 ***，暫不推薦使用；但三點連寫仍干擾辨讀）。
 ;   應使用 self.len() 代替 .len() 消歧：i <- [0..self.len()): { }
 ;   （方法體內 self 與 . 語義等價）
 
@@ -933,24 +933,27 @@ i <- 'abc': {   ; 遍历字符串中的每个字符
 
 ### 跳出 / 跳過 / 提前返回
 
+> ⚠️ **`*`（跳過本輪）/ `**`（跳出循環）/ `***`（返回終止）這組簡寫暫不推薦使用**——請書寫
+> 英文關鍵字 `continue` / `break` / `return`；`no fmt` 會把已支援的簡寫一律規範回關鍵字形式。
+
 ```no
 i <- [0..10): {
-    *      ; break
-    **     ; continue
-    ...    ; return/terminate（提前返回，僅終止函數）
+    *      ; continue（跳過本輪，暫不推薦）
+    **     ; break（跳出循環，暫不推薦）
+    ***    ; return/terminate（提前返回，僅終止函數；規劃中，暫不推薦）
 }
 
-; 也可使用英文關鍵字（與 C/Rust 一致，便於移植、且能正常編譯執行）：
+; 推薦使用英文關鍵字（與 C/Rust 一致，便於移植、且能正常編譯執行）：
 i <- [0..10): {
-    break     ; 等價 *
-    continue  ; 等價 **
-    return    ; 等價 ...，僅提前終止函數
+    continue  ; 等價 *（暫不推薦）
+    break     ; 等價 **（暫不推薦）
+    return    ; 等價 ***（暫不推薦），僅提前終止函數
 }
 ```
 
-> ⚠️ **`return`（及其符號形式 `...`）只能裸用，不能帶返回值。**  
+> ⚠️ **`return`（及其簡寫形式 `***`，簡寫暫不推薦使用）只能裸用，不能帶返回值。**  
 > Nolang 函數沒有「返回值」機制——結果一律通過**具名結果參數（out-param）**&#x5728;函數體內賦值傳出（見「函數定義」）。  
-> 因此 `return <值>`、`return(expr)`、`... <值>` 都**被禁止**，編譯器 / formatter / LSP 都會報錯：
+> 因此 `return <值>`、`return(expr)`、`*** <值>` 都**被禁止**，編譯器 / formatter / LSP 都會報錯：
 >
 > - 編譯器（`no build`）：`Error: compilation error: parser errors: line L, column C: 'return' 後不能跟返回值；… [E_GENERAL]`
 > - `no vet`：`<file>:L:C: [ERROR] nolang-compile: 'return' 後不能跟返回值；… [E_GENERAL]`（與其他診斷同一格式，每條一行）

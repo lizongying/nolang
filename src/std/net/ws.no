@@ -11,12 +11,12 @@
 ;           ! {
 ;               c = srv.accept()             // 返回 ?server-conn
 ;               c: {
-;                   nil -> *
+;                   nil -> break
 ;                   ->
 ;                       msg = c.recv()        // 返回 ?message
 ;                       msg: {
-;                           nil -> *
-;                           err -> *
+;                           nil -> break
+;                           err -> break
 ;                           -> c.send-text('echo: ' - msg.data)
 ;                              c.close()
 ;                       }

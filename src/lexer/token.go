@@ -75,7 +75,7 @@ const (
 	OR      // |
 	AND_NOT // &^
 
-	STAR_STAR // ** — used as `continue` shorthand (only at statement start)
+	STAR_STAR // ** — used as `break` shorthand (only at statement start)
 	BANG_BANG // !! — used as `true` (expression)
 
 	ELLIPSIS // ..
@@ -86,12 +86,12 @@ const (
 	QUO_ASSIGN // /=
 	MOD_ASSIGN // %=
 
-	AND_ASSIGN     // &=
-	OR_ASSIGN      // |=
-	XOR_ASSIGN     // ^=
-	SHL_ASSIGN     // <<=
-	SHR_ASSIGN     // >>=
-	AND_NOT_ASSIGN   // &^=
+	AND_ASSIGN      // &=
+	OR_ASSIGN       // |=
+	XOR_ASSIGN      // ^=
+	SHL_ASSIGN      // <<=
+	SHR_ASSIGN      // >>=
+	AND_NOT_ASSIGN  // &^=
 	QUESTION_ASSIGN // ?=
 
 	LPAREN     // (
@@ -195,22 +195,22 @@ var tokenNames = map[TokenType]string{
 	BANG_BANG:      "BANG_BANG(!!)",
 	ELLIPSIS:       "ELLIPSIS(..)",
 
-	ADD_ASSIGN:     "ADD_ASSIGN(+=)",
-	SUB_ASSIGN:     "SUB_ASSIGN(-=)",
-	MUL_ASSIGN:     "MUL_ASSIGN(*=)",
-	QUO_ASSIGN:     "QUO_ASSIGN(/=)",
-	MOD_ASSIGN:     "MOD_ASSIGN(%=)",
-	AND_ASSIGN:     "AND_ASSIGN(&=)",
-	OR_ASSIGN:      "OR_ASSIGN(|=)",
-	XOR_ASSIGN:     "XOR_ASSIGN(^=)",
-	SHL_ASSIGN:     "SHL_ASSIGN(<<=)",
-	SHR_ASSIGN:     "SHR_ASSIGN(>>=)",
-	AND_NOT_ASSIGN:   "AND_NOT_ASSIGN(&^=)",
-	QUESTION_ASSIGN:  "QUESTION_ASSIGN(?=)",
-	TILDE:            "TILDE(~)",
-	RUN:            "RUN",
-	AWY:            "AWY",
-	CO:             "CO",
+	ADD_ASSIGN:      "ADD_ASSIGN(+=)",
+	SUB_ASSIGN:      "SUB_ASSIGN(-=)",
+	MUL_ASSIGN:      "MUL_ASSIGN(*=)",
+	QUO_ASSIGN:      "QUO_ASSIGN(/=)",
+	MOD_ASSIGN:      "MOD_ASSIGN(%=)",
+	AND_ASSIGN:      "AND_ASSIGN(&=)",
+	OR_ASSIGN:       "OR_ASSIGN(|=)",
+	XOR_ASSIGN:      "XOR_ASSIGN(^=)",
+	SHL_ASSIGN:      "SHL_ASSIGN(<<=)",
+	SHR_ASSIGN:      "SHR_ASSIGN(>>=)",
+	AND_NOT_ASSIGN:  "AND_NOT_ASSIGN(&^=)",
+	QUESTION_ASSIGN: "QUESTION_ASSIGN(?=)",
+	TILDE:           "TILDE(~)",
+	RUN:             "RUN",
+	AWY:             "AWY",
+	CO:              "CO",
 }
 
 // lookupKeyword 以 switch 實現關鍵字查找，替代原 map[string]TokenType。
