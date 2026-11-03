@@ -11,8 +11,11 @@
 ; s56 覆盖：输入参数占形参值 id / 返回值型别决定 retty / 零参与多参调用 / 签名表前向解析
 ; s57 覆盖：比较家族（六个比较符 → icmp 族）/ 单行 guard 的 if（entry+then+merge 切块）/
 ;         前置条件循环（hdr/body/exit + 回边）/ mem 模式的 alloca 槽（跳块写回同一变量）/
-;         合成 AST 的 else 臂（真实源路的 `{c -> a -> b}` 目前被 ps.no 建成 K-SURFACE-MATCH，
-;         臂群在 aux 阵而不在 kid 阵，所以 else 只能用 ast.add/kid-add 搭出来跑同一段降级）
+;         合成 AST 的 else 臂（IfExpression 的三 kid 形制——真实单行 guard 的 Alternative 恒 0，
+;         所以带 else 的 if 只能靠 ast.add/kid-add 搭出来跑同一段降级）
+; s58 覆盖：花括号短路链 K-SURFACE-MATCH（语句位）——三臂含 wildcard / 无 wildcard 的两臂链
+;         （假路直落汇聚块）/ 单 wildcard 臂（无条件判定故整链不应出现 icmp）/ 循环体内的链
+;         （链的汇聚块只拿到回边）/ 表达式位的链仍计 unsup
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -534,17 +537,112 @@ test-flow-else-syn = () {
     runner.eq(ir.contains('ret i64 %v10'), 0, 'else-syn no cross-block ret else')
 }
 
+; ── s58：花括号短路链（K-SURFACE-MATCH）三臂含 wildcard──
+; 实测量：臂体块 bb2/bb4/bb5 各写自己的常量进同一槽 %s4 并无条件回汇聚块 bb1；第二臂的判定落 bb3
+test-flow-chain3 = () {
+    src = 'f = (n i64) (r i64) {\n    r = 0\n    {\n        n > 3 -> r = 1\n        n > 1 -> { r = 2 }\n        -> r = 3\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'chain3 unsup')
+    runner.eq(ir.contains('define i64 @f(i64 %v1)'), 1, 'chain3 define')
+
+    ; 逐臂一条 CONDBR：真路进臂体，假路进下一臂的判定块（wildcard 臂就是那个假路块）
+    runner.eq(ir.contains('br i1 %c12, label %bb2, label %bb3'), 1, 'chain3 arm1 condbr to arm2 test')
+    runner.eq(ir.contains('br i1 %c19, label %bb4, label %bb5'), 1, 'chain3 arm2 condbr to wildcard')
+
+    ; 三臂各写自己的常量到同一槽（跳块传值靠槽，不靠 SSA 名）
+    runner.eq(ir.contains('%v10 = add i64 0, 1'), 1, 'chain3 arm1 const')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'chain3 arm1 store')
+    runner.eq(ir.contains('%v14 = add i64 0, 2'), 1, 'chain3 arm2 const')
+    runner.eq(ir.contains('store i64 %v14, i64* %s4'), 1, 'chain3 arm2 store')
+    runner.eq(ir.contains('%v15 = add i64 0, 3'), 1, 'chain3 wildcard const')
+    runner.eq(ir.contains('store i64 %v15, i64* %s4'), 1, 'chain3 wildcard store')
+
+    ; 汇聚块只读一次槽；每臂都无条件跳回它（整块形制逐段钉住）
+    runner.eq(ir.contains('bb2:\n\t%v10 = add i64 0, 1\n\tstore i64 %v10, i64* %s4\n\tbr label %bb1'), 1, 'chain3 arm1 block shape')
+    runner.eq(ir.contains('bb5:\n\t%v15 = add i64 0, 3\n\tstore i64 %v15, i64* %s4\n\tbr label %bb1'), 1, 'chain3 wildcard block shape')
+    runner.eq(ir.contains('bb1:\n\t%v16 = load i64, i64* %s4\n\tret i64 %v16'), 1, 'chain3 merge block shape')
+    runner.eq(ir.contains('%v16 = load i64, i64* %s4'), 1, 'chain3 merge loads')
+    runner.eq(ir.contains('ret i64 %v16'), 1, 'chain3 ret loaded')
+
+    ; 鉴别力：块数恰为 entry + bb1..bb5（多开一块就是假路指了空块）；臂内 SSA 名不得被 ret
+    runner.eq(ir.contains('bb6:'), 0, 'chain3 no spare block')
+    runner.eq(ir.contains('ret i64 %v10'), 0, 'chain3 no cross-block ret')
+}
+
+; ── s58：无 wildcard 的两臂链——最后一臂的假路直接落汇聚块，不留空判定块──
+test-flow-chain-nowild = () {
+    src = 'g = (n i64) (r i64) {\n    r = 7\n    {\n        n > 3 -> r = 1\n        n > 1 -> r = 2\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'nowild unsup')
+    runner.eq(ir.contains('br i1 %c12, label %bb2, label %bb3'), 1, 'nowild arm1 condbr arm2 test')
+    runner.eq(ir.contains('br i1 %c19, label %bb4, label %bb1'), 1, 'nowild last arm false to merge')
+    runner.eq(ir.contains('bb5:'), 0, 'nowild no empty test block')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'nowild arm1 store')
+    runner.eq(ir.contains('store i64 %v14, i64* %s4'), 1, 'nowild arm2 store')
+    runner.eq(ir.contains('ret i64 %v15'), 1, 'nowild ret loaded')
+}
+
+; ── s58：单 wildcard 臂链——无条件判定，臂体直落当前块，整链不应出现任何 icmp──
+test-flow-chain-wild1 = () {
+    src = 'w = (n i64) (r i64) {\n    r = 5\n    {\n        -> r = 9\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'wild1 unsup')
+    runner.eq(ir.contains('store i64 %v7, i64* %s4'), 1, 'wild1 body in entry')
+    runner.eq(ir.contains('br label %bb1'), 1, 'wild1 br merge')
+    runner.eq(ir.contains('%v8 = load i64, i64* %s4'), 1, 'wild1 merge loads')
+    runner.eq(ir.contains('ret i64 %v8'), 1, 'wild1 ret loaded')
+    runner.eq(ir.contains('icmp'), 0, 'wild1 no condition evaluated')
+    runner.eq(ir.contains('br i1'), 0, 'wild1 no condbr')
+}
+
+; ── s58：循环体内的链——链的汇聚块只拿到循环的回边（连续段纪律的叠块例）──
+test-flow-chain-nest = () {
+    src = 'h = (n i64) (r i64) {\n    r = 0\n    (r < 10) {\n        {\n            r > 5 -> r = r + 3\n            -> r = r + 1\n        }\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'nest unsup')
+    runner.eq(ir.contains('br i1 %c13, label %bb2, label %bb3'), 1, 'nest loop condbr')
+    runner.eq(ir.contains('br i1 %c17, label %bb5, label %bb6'), 1, 'nest chain condbr')
+    runner.eq(ir.contains('store i64 %v15, i64* %s4'), 1, 'nest arm1 store')
+    runner.eq(ir.contains('store i64 %v18, i64* %s4'), 1, 'nest wildcard store')
+
+    ; 链的汇聚块 bb4 既不算条件也不写值，只拿到循环回边——证明块序合法
+    runner.eq(ir.contains('bb4:\n\tbr label %bb1'), 1, 'nest merge carries back edge')
+    runner.eq(ir.contains('bb7:'), 0, 'nest no spare block')
+    runner.eq(ir.contains('ret i64 %v19'), 1, 'nest exit ret')
+}
+
 ; ── 控制流侧门禁：surface match 链 / 计数循环 / 区间遍历 / 无槽型别都计 unsup 且不产码 ──
 test-flow-gate = () {
 
-    ; 花括号短路链→ K-SURFACE-MATCH（臂在 aux 阵，本件不降）
-    src-sm = 'a = (n i64) (r i64) {\n    r = 0\n    { n > 0 -> r = n  -> r = 0 }\n}\n'
+    ; 表达式位的链 `r = { c -> a -> b }`：须各臂汇成同一个结果值，s58 只收语句位 ⇒ 仍计 unsup
+    src-sm = 'a = (n i64) (r i64) {\n    r = { n > 0 -> n -> 0 }\n}\n'
     t1 = ast.make()
-    r1 = ps.parse(t1, ps.new(src-sm.to-bytes()))
+    p1 = ps.new(src-sm.to-bytes())
+    r1 = ps.parse(t1, p1)
     agg1 = h2m-new()
     ir1 = h2m-lower-program(t1, agg1, r1)
-    runner.eq(agg1.unsup > 0, 1, 'surface-match counted')
-    runner.eq(ir1.contains('define'), 0, 'surface-match no code')
+    runner.eq(agg1.unsup > 0, 1, 'expr-surface counted')
+    runner.eq(ir1.contains('define'), 0, 'expr-surface no code')
 
     ; 计数循环 `n * { }`：CountExpr 非 0 ⇒ 不在覆盖面
     src-ct = 'b = (n i64) (r i64) {\n    r = 0\n    n * {\n        r = r + 1\n    }\n}\n'
@@ -589,6 +687,10 @@ test-flow-if()
 test-flow-loop()
 test-flow-cmp()
 test-flow-else-syn()
+test-flow-chain3()
+test-flow-chain-nowild()
+test-flow-chain-wild1()
+test-flow-chain-nest()
 test-flow-gate()
 test-gate()
 

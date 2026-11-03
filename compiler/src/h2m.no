@@ -12,11 +12,13 @@
 ;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64）/
 ;         CallExpression（零参或实参值 id 连续的多参，返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
-;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/CountExpr/IterRange 必须全 0）
+;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/CountExpr/IterRange 必须全 0）/
+;         控制流（s58）：K-SURFACE-MATCH 的语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
+;         （臂群在 helper/aux 阵，12 aux/臂，展开成 if/elif/else 的 CONDBR 链——镜像 Go desugarSurfaceMatchToIfExpr）
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
 ;         算术语义仍限 i64（其余型别的值进运算符即计 unsup，不发错码）
-;   不支持（一律计入 unsup，绝不静默略过）：K-SURFACE-MATCH（`{c -> a -> b}` 花括号链——ps.no 把
-;         臂群放在 aux/helper 阵（12 aux/臂）而非 kid 阵，须先接上 Go 的 desugar）、除与余、位运算、
+;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
+;         各臂汇成同一个结果值，本件只收语句位）、除与余、位运算、
 ;         前缀负号、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、非具名型别（[]t / map / *t / 别名）、
 ;         复合赋值、非函数定义语句、实参 id 不连续的调用、方法调用（点号）、
 ;         break / continue / return 语句、计数循环 `n * { }`、区间与容器遍历 `i <- xs:`
@@ -568,9 +570,39 @@ h2m-scan-kids = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
     }
 }
 
+; SurfaceMatch 臂群前扫（s58）：臂不占 kid 阵，只能按 12 aux/臂的布局逐个取 COND/BODY 再递进
+; t: AST arena
+; sg: 模块级签名表
+; l: 局部量表
+; n: SurfaceMatch 节点 id
+; flow: 1 = 臂体内含控制流
+h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
+    flow = 0
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        j = 0
+        (j < d.hcount) {
+
+            #{overflow=wrap}
+            hb = d.hbase + 12 * j
+            cn = ast.aux-at(t, hb + 10)
+            bn = ast.aux-at(t, hb + 11)
+            cf = 0
+            cn > 0 -> cf = h2m-scan(t, sg, l, cn)
+            cf > flow -> flow = cf
+            bf = 0
+            bn > 0 -> bf = h2m-scan(t, sg, l, bn)
+            bf > flow -> flow = bf
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+    }
+}
+
 ; 前扫入口：登记 let 绑定名与型别，并回「子树内是否有分支/循环」
-; ⚠️ K-SURFACE-MATCH 也计 flow（它的臂群在 aux 阵、本件不降），但它的臂体不会被扫到 ⇒ 若有
-;   局部量只在该体内绑定，只会少铺一个槽，而降级器会在遇到该节点时计 unsup ⇒ 整函数不产码
+; ⚠️ K-SURFACE-MATCH 的臂群不占 kid 阵（在 helper/aux 区），故必须走 h2m-scan-arms 才能扫到臂体；
+;   漏扫会少铺局部量槽，降级器在写入口比对不上 ⇒ 计 unsup 整函数不产码
 ; t: AST arena
 ; sg: 模块级签名表
 ; l: 局部量表（呼叫方预先播种形参）
@@ -594,10 +626,13 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
                 f0 > flow -> flow = f0
             }
 
-            d.kind == asp.K-IF-EXPRESSION || d.kind == asp.K-FOR-STATEMENT -> {
+            d.kind == asp.K-IF-EXPRESSION || d.kind == asp.K-FOR-STATEMENT || d.kind == asp.K-SURFACE-MATCH -> {
                 flow = 1
                 f1 = h2m-scan-kids(t, sg, l, n)
                 f1 > flow -> flow = f1
+                fa = 0
+                d.kind == asp.K-SURFACE-MATCH -> fa = h2m-scan-arms(t, sg, l, n)
+                fa > flow -> flow = fa
             }
 
             d.kind == asp.K-BLOCK-STATEMENT || d.kind == asp.K-EXPRESSION-STATEMENT -> {
@@ -840,6 +875,10 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             h2m-lower-for(t, c, sg, kid)
             hd = 1
         }
+        kk.kind == asp.K-SURFACE-MATCH -> {
+            h2m-lower-surface(t, c, sg, kid)
+            hd = 1
+        }
 
         ; 述层的单行 `cond -> stmt`：ExpressionStatement 包一个 IfExpression（实测 kid 序 [expr]）
         kk.kind == asp.K-EXPRESSION-STATEMENT -> {
@@ -848,6 +887,10 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 sd = ast.nd-at(t, sub)
                 sd.kind == asp.K-IF-EXPRESSION -> {
                     h2m-lower-if(t, c, sg, sub)
+                    hd = 1
+                }
+                sd.kind == asp.K-SURFACE-MATCH -> {
+                    h2m-lower-surface(t, c, sg, sub)
                     hd = 1
                 }
             }
@@ -859,7 +902,8 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     }
 }
 
-; 分支体降级：Block 走 h2m-lower-block；嵌套 IfExpression 走 h2m-lower-if（elif 链就靠这一路）
+; 分支体降级：Block 走 h2m-lower-block；嵌套 IfExpression 走 h2m-lower-if（elif 链就靠这一路）；
+; 花括号短路链走 h2m-lower-surface；臂体内再开循环走 h2m-lower-for（s58）
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -868,9 +912,17 @@ h2m-lower-branch = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     n <= 0 -> h2m-mark(c)
     n > 0 -> {
         d = ast.nd-at(t, n)
-        d.kind == asp.K-BLOCK-STATEMENT -> h2m-lower-block(t, c, sg, n)
-        d.kind == asp.K-IF-EXPRESSION -> h2m-lower-if(t, c, sg, n)
-        d.kind != asp.K-BLOCK-STATEMENT && d.kind != asp.K-IF-EXPRESSION -> h2m-mark(c)
+        {
+            d.kind == asp.K-BLOCK-STATEMENT -> h2m-lower-block(t, c, sg, n)
+
+            d.kind == asp.K-IF-EXPRESSION -> h2m-lower-if(t, c, sg, n)
+
+            d.kind == asp.K-SURFACE-MATCH -> h2m-lower-surface(t, c, sg, n)
+
+            d.kind == asp.K-FOR-STATEMENT -> h2m-lower-for(t, c, sg, n)
+
+            -> h2m-mark(c)
+        }
     }
 }
 
@@ -947,6 +999,88 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
 
         h2m-set-block(c, exit-id)
+    }
+}
+
+; SurfaceMatch 降级（s58）：语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
+; 实测形制（tmp/probe-s58-ast.no）：节点 nkid=1 且 kid[0] 恒为 0（ps.no 占住 Matched 位防 kid 槽别名）、
+;   s0 = 臂数的字符串、臂群在 helper/aux 区——d.hcount 臂 × 12 aux/臂，
+;   槽 4 = wildcard（'true' / 0）、槽 7 = blockBody（'true' / 0）、槽 10 = Condition 节点索引（wildcard 臂 = 0）、槽 11 = Body 节点索引
+; 块形制（镜像 Go desugarSurfaceMatchToIfExpr 的 if/elif/else 链）：逐臂「当前块求值条件 → CONDBR(臂体块, 下一臂判定块)」，
+;   臂体结束一律 BR 回汇聚块；wildcard 臂不发 CONDBR，其体直接落当前块，其后的臂不可达（语言语义即短路）故不再降
+; ⚠️ 先跑整链形状前置校验再发指令：cg 要求每块都是指令序的**连续段**且每个被引用的块至少拿到一条终结指令，
+;   半路放弃会在 IR 里留下「有跳转无指令」的块 ⇒ opt 报标签未定义，所以不合格就地整函数不产码
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; n: SurfaceMatch 节点 id
+h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+    d = ast.nd-at(t, n)
+    arms = d.hcount
+    arms <= 0 -> h2m-mark(c)
+    arms > 0 -> {
+        bad = 0
+        j = 0
+        (j < arms && bad == 0) {
+
+            #{overflow=wrap}
+            hb = d.hbase + 12 * j
+            cn = ast.aux-at(t, hb + 10)
+            bn = ast.aux-at(t, hb + 11)
+            wi = ast.aux-at(t, hb + 4)
+            bn <= 0 -> bad = 1
+            wi <= 0 && cn <= 0 -> bad = 1
+
+            #{overflow=wrap}
+            j = j + 1
+        }
+        bad != 0 -> h2m-mark(c)
+        bad == 0 -> {
+            merge-id = h2m-block-new(c)
+            next-id = c.blk
+            j = 0
+            stop = 0
+            (j < arms && stop == 0) {
+
+                #{overflow=wrap}
+                hb = d.hbase + 12 * j
+                cn = ast.aux-at(t, hb + 10)
+                bn = ast.aux-at(t, hb + 11)
+                wi = ast.aux-at(t, hb + 4)
+                wild = 0
+                wi > 0 -> wild = 1
+                h2m-set-block(c, next-id)
+
+                #{overflow=wrap}
+                last = j + 1
+                wild == 1 -> {
+                    h2m-lower-branch(t, c, sg, bn)
+                    h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+                    stop = 1
+                }
+                wild == 0 -> {
+                    cv = h2m-lower-expr(t, c, sg, cn)
+                    cv == 0 -> {
+                        h2m-mark(c)
+                        stop = 1
+                    }
+                    cv > 0 -> {
+                        arm-id = h2m-block-new(c)
+                        ftgt = merge-id
+                        last < arms -> ftgt = h2m-block-new(c)
+                        h2m-emit(c, OP-CONDBR, ftgt, cv, arm-id, '', 0)
+                        h2m-set-block(c, arm-id)
+                        h2m-lower-branch(t, c, sg, bn)
+                        h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+                        next-id = ftgt
+                    }
+                }
+
+                #{overflow=wrap}
+                j = j + 1
+            }
+            h2m-set-block(c, merge-id)
+        }
     }
 }
 
