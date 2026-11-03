@@ -1138,4 +1138,6 @@ Erro ao sincronizar a dependência AST %s: módulo vazio
 
 `
   'zzcfoc04': 'criando diretório dist: %w'
+  'k3r7mbqd': 'um ramo else (um \'->\' sozinho na linha) deve ficar dentro de um grupo if; envolva o ramo \'cond ->\' e este \'->\' em { ... } (um \'cond ->\' isolado sem else pode ficar fora)'
+  'm7vq3xrt': 'um ramo else \'->\' isolado fora de um grupo if liga-se apenas ao ramo \'cond ->\' mais próximo; os %d ramos \'cond ->\' acima são ignorados — envolva todos num grupo if { ... } para que \'->\' seja um ramo de reserva real'
 }

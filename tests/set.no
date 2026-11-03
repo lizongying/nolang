@@ -17,12 +17,14 @@
 ; r bool: 原樣回傳 cond，供呼叫端彙整整體結果
 check = (cond bool, msg str) (r bool) {
     r = cond
-    cond -> {
-        print('ok:', msg)
-    }
+    {
+        cond -> {
+            print('ok:', msg)
+        }
 
-    -> {
-        print('FAIL:', msg)
+        -> {
+            print('FAIL:', msg)
+        }
     }
 }
 

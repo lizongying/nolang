@@ -53,8 +53,10 @@ probe = (c bool) (r i64) {
     ls []line = []
     l = ls[0]
     b = l.body
-    c -> r = b.probe('|')
-    -> r = 0
+    {
+        c -> r = b.probe('|')
+        -> r = 0
+    }
 }
 
 main = () {

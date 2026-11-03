@@ -1934,22 +1934,24 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
         ; 消費 '-'
         .advance()
         .skip-spaces()
-        .at-eol() -> {
-            .skip-to-eol()
-            .newline()
-            child = .parse-block-indented(indent)
-        }
-        .cur() == 35 -> {
-            .skip-to-eol()
-            .newline()
-            child = .parse-block-indented(indent)
-        }
+        {
+            .at-eol() -> {
+                .skip-to-eol()
+                .newline()
+                child = .parse-block-indented(indent)
+            }
+            .cur() == 35 -> {
+                .skip-to-eol()
+                .newline()
+                child = .parse-block-indented(indent)
+            }
 
-        -> {
-            col = .indent-at()
+            -> {
+                col = .indent-at()
 
-            #{overflow=wrap}
-            child = .parse-block(col, indent + 1)
+                #{overflow=wrap}
+                child = .parse-block(col, indent + 1)
+            }
         }
         .failed -> break
         kids.push(child)
@@ -2053,17 +2055,19 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
         .cur() == 63 && (.at(1) == 32 || .at(1) == 9) -> {
             .advance()
             .skip-spaces()
-            .at-eol() -> {
-                .skip-to-eol()
-                .newline()
-                key = .parse-block-indented(indent)
-            }
+            {
+                .at-eol() -> {
+                    .skip-to-eol()
+                    .newline()
+                    key = .parse-block-indented(indent)
+                }
 
-            -> {
-                kc = .indent-at()
+                -> {
+                    kc = .indent-at()
 
-                #{overflow=wrap}
-                key = .parse-block(kc, indent + 1)
+                    #{overflow=wrap}
+                    key = .parse-block(kc, indent + 1)
+                }
             }
             .failed -> break
             .skip-to-eol()
@@ -3406,9 +3410,11 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                 container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
                 container -> {
                     pool.nodes[k].kids.len() == 0 -> {
-                        ck == YAML-KIND-SEQ -> out = out - ' []'
+                        {
+                            ck == YAML-KIND-SEQ -> out = out - ' []'
 
-                        -> out = out - ' {}'
+                            -> out = out - ' {}'
+                        }
                     }
                     pool.nodes[k].kids.len() > 0 -> {
 
@@ -3465,9 +3471,11 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                 container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
                 container -> {
                     pool.nodes[k].kids.len() == 0 -> {
-                        ck == YAML-KIND-SEQ -> out = out - ' []'
+                        {
+                            ck == YAML-KIND-SEQ -> out = out - ' []'
 
-                        -> out = out - ' {}'
+                            -> out = out - ' {}'
+                        }
                     }
                     pool.nodes[k].kids.len() > 0 -> {
 

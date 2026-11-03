@@ -177,14 +177,16 @@ atan2 = (y f64, x f64) (res f64) {
         return
     }
     x < 0.0 -> {
-        y >= 0.0 -> {
-            res = atan-kernel(y / x) + 3.141592653589793
-            return
-        }
+        {
+            y >= 0.0 -> {
+                res = atan-kernel(y / x) + 3.141592653589793
+                return
+            }
 
-        -> {
-            res = atan-kernel(y / x) - 3.141592653589793
-            return
+            -> {
+                res = atan-kernel(y / x) - 3.141592653589793
+                return
+            }
         }
     }
     y > 0.0 -> {

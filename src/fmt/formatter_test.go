@@ -225,24 +225,33 @@ func TestFormatBasic(t *testing.T) {
 }`,
 		},
 		{
-			// regression: standalone if-then with block consequence and
-			// block else arm (-> on a new line after }).  Before the fix,
-			// the formatter merged `} -> {` onto the same line.
-			name: "standalone_if_then_block_else_newline",
+			// regression: an if-group with a block consequence and a block
+			// else arm (-> on a new line after }).  Before the fix, the
+			// formatter merged `} -> {` onto the same line.
+			// The ungrouped spelling of this shape (a standalone `cond ->`
+			// followed by a newline `->`) is now rejected by the parser —
+			// see parser/bare_else_group_test.go — so the group is the only
+			// way to reach this formatting path.
+			name: "if_group_block_then_block_else_newline",
 			input: `f = () {
-    cond -> {
-    }
-    -> {
-        x = 1
-        return
+    {
+        cond -> {
+        }
+        -> {
+            x = 1
+            return
+        }
     }
 }`,
 			expected: `f = () {
-    cond -> {}
+    {
+        cond -> {
+        }
 
-    -> {
-        x = 1
-        return
+        -> {
+            x = 1
+            return
+        }
     }
 }`,
 		},
@@ -2888,14 +2897,15 @@ func TestFormatScalarSlicePerLine8(t *testing.T) {
 			expected: "v []char = [\n    \"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\",\n    \"i\", \"j\",\n]\n",
 		},
 		{
-			// regression: inline comment on else-arm body of standalone if-then
+			// regression: inline comment on else-arm body of an if-group
 			// (e.g. `-> return; 493 = 0755`) must stay on the same line.
 			// Previously the comment was left unattached in p.comments and
 			// ended up as block TrailingComments, causing it to wrap to the
-			// next line on format.
-			name:     "standalone_if_then_else_arm_inline_semicolon_comment",
-			input:    "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n        -> return; 493 = 0755\n    }\n}\n",
-			expected: "foo = () {\n    bare == false -> {\n        os.mkdir(x, 493) -> {}\n\n        -> return; 493 = 0755\n    }\n}\n",
+			// next line on format.  Ungrouped, this shape is a parse error
+			// (a newline `->` needs an if-group), hence the inner braces.
+			name:     "if_group_else_arm_inline_semicolon_comment",
+			input:    "foo = () {\n    bare == false -> {\n        {\n            os.mkdir(x, 493) -> {}\n            -> return; 493 = 0755\n        }\n    }\n}\n",
+			expected: "foo = () {\n    bare == false -> {\n        {\n            os.mkdir(x, 493) -> {\n            }\n\n            -> return; 493 = 0755\n        }\n    }\n}\n",
 		},
 		{
 			// regression: a block containing standalone if-then statements

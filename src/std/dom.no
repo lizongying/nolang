@@ -1653,19 +1653,21 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
     }
     cend > np -> {
         tidx = .alloc(DOM-KIND-TEXT)
-        rc -> {
-            val str = ''
-            dopt = decode-entities(s, np, cend, true)
-            dopt: {
-                ok -> val = it
+        {
+            rc -> {
+                val str = ''
+                dopt = decode-entities(s, np, cend, true)
+                dopt: {
+                    ok -> val = it
 
-                -> val = s.slice-bytes(np, cend)
+                    -> val = s.slice-bytes(np, cend)
+                }
+                .vals[tidx] = val
             }
-            .vals[tidx] = val
-        }
 
-        -> {
-            .vals[tidx] = s.slice-bytes(np, cend)
+            -> {
+                .vals[tidx] = s.slice-bytes(np, cend)
+            }
         }
         .append(el, tidx)
     }

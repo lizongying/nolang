@@ -15,12 +15,19 @@ package mir
 // 后果是 `is-leap(1900)` / `is-leap(2023)` 都返回 true，`test/std/time.no` 报
 // "1900 not leap" / "2023 not leap"（同一二进制 NOLANG_COMPTIME=0 时 41/41 全过）。
 //
-// 修法：`evalConstIfBranch` 改成三态（val, returned, ok）——解释不了的 if 必须让
-// 整个折叠**放弃**，而不是继续扫描。因此本测试钉的是"不许折错"：
-// 该调用必须留下来。若将来折叠器能正确解释这个合成 if（折成 false），本断言需要
-// 改成"折出来的值必须是 false"；**取值的端到端门禁是 `test/std/time.no`**。
+// 修法（第一阶段，2026-10-28）：`evalConstIfBranch` 改成三态（val, returned, ok）——解释不了的 if 必须让
+// 整个折叠**放弃**，而不是继续扫描。
+//
+// 修法（第二阶段）：折叠器现在**能解释**这个合成 `if (1) { … }` 包装（它的语义就是
+// 「按顺序跑这些语句」，且没有 else 槽），于是直接下钻：臂里的 `return` 会以 returned
+// 传出，扫描不会跨过它去执行后面的 `r = true`。因此本测试的断言按上一条注释预留的方向
+// 改成「折出来的值必须是 false」——既钉住不许折错，也钉住这个形态真的被折了（否则该断言
+// 会因为「根本不折」而空洞通过）。**取值的端到端门禁仍是 `test/std/time.no`**。
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // condChainSrc 是 std/time.no 里 is-leap 的最小复现。
 const condChainSrc = `leap = (y i64) (r bool) {
@@ -42,20 +49,44 @@ main = () () {
 }
 `
 
-// TestComptimeDoesNotFoldAcrossCondChainReturn 钉住：折叠器不能跨过条件链里的
-// 提前 `return`。折错会得到"非闰年判成闰年"这种静默错答案，比不折叠危险得多。
-func TestComptimeDoesNotFoldAcrossCondChainReturn(t *testing.T) {
+// mainBlock returns the MIR text of `main`'s blocks only, so a constant can be
+// attributed to the folded call site rather than to the callee body (which keeps
+// existing in the module and holds bool constants of its own).
+func mainBlock(m *Module) string {
+	lines := strings.Split(m.String(), "\n")
+	var out []string
+	inMain := false
+	for _, ln := range lines {
+		switch {
+		case ln == "fn main":
+			inMain = true
+		case inMain && strings.HasPrefix(ln, "fn "):
+			return strings.Join(out, "\n")
+		}
+		if inMain {
+			out = append(out, ln)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// TestComptimeFoldsCondChainReturnToFalse 钉住：花括号条件链里的提前 `return` 必须
+// 被折叠**尊重**（不是被跨过）。折错会得到"非闰年判成闰年"这种静默错答案，
+// 比不折叠危险得多；而"干脆不折"会让本文件退化，所以两个方向一起钉。
+func TestComptimeFoldsCondChainReturnToFalse(t *testing.T) {
 	on, off := comptimePair(t, condChainSrc)
 
 	if !hasCallSym(off, "leap") {
 		t.Fatalf("comptime off: the call to leap must be present; syms=%v", callSyms(off))
 	}
-	if !hasCallSym(on, "leap") {
-		t.Errorf("leap(2023) was folded even though its body is a braced cond-chain the "+
-			"evaluator cannot interpret. Folding it means the scan ran past the chain's "+
-			"early `return` and executed `r = true`, so the constant is `true` — the "+
-			"silent wrong answer test/std/time.no reports as \"2023 not leap\". "+
-			"Either refuse the fold or fold it to `false`; syms=%v", callSyms(on))
+	if hasCallSym(on, "leap") {
+		t.Errorf("leap(2023) kept its call: the `if (1)` wrapper is meant to be interpreted "+
+			"(descend into its then-block), so refusing here means the descent regressed; syms=%v", callSyms(on))
+	}
+	main := mainBlock(on)
+	if strings.Contains(main, "const bool 1") || !strings.Contains(main, "const bool 0") {
+		t.Errorf("folded leap(2023) is not `false` — the scan ran past the chain's early `return` "+
+			"and executed `r = true`, which is the silent wrong answer test/std/time.no reports as \"2023 not leap\";\nmain block:\n%s", main)
 	}
 }
 

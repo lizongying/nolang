@@ -95,9 +95,11 @@ items-opt: {
                 num-opt: {
                     ok -> {
                         num-val = it
-                        num-val == 1.0 -> print('ok: items[0]=1')
+                        {
+                            num-val == 1.0 -> print('ok: items[0]=1')
 
-                        -> print('fail: items[0] should be 1')
+                            -> print('fail: items[0] should be 1')
+                        }
                     }
 
                     -> print('fail: get-num items[0]')
@@ -118,9 +120,11 @@ active-opt: {
         bool-opt: {
             ok -> {
                 bool-val = it
-                bool-val -> print('ok: active=true')
+                {
+                    bool-val -> print('ok: active=true')
 
-                -> print('fail: active should be true')
+                    -> print('fail: active should be true')
+                }
             }
 
             -> print('fail: get-bool active')

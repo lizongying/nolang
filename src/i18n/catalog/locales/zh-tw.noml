@@ -1138,4 +1138,6 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標讀取；若不
 
 `
   'zzcfoc04': '建立 dist 目錄失敗: %w'
+  'k3r7mbqd': 'else 分支（『->』獨佔一行）必須寫在 if-group 裡；把『cond ->』分支與這個『->』一起包進 { ... }（沒有 else 的單獨『cond ->』可以不包）'
+  'm7vq3xrt': 'if-group 外的單獨『->』else 分支只會綁到最近的那個『cond ->』分支，上面 %d 個『cond ->』分支會被無視——把它們全部包進 if-group { ... }，讓『->』成為真正的備用分支'
 }

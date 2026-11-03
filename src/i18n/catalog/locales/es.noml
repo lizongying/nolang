@@ -1143,4 +1143,6 @@ Error al sincronizar la dependencia AST %s: módulo vacío
 
 `
   'zzcfoc04': 'creando el directorio dist: %w'
+  'k3r7mbqd': 'una rama else (un \'->\' en su propia línea) debe estar dentro de un grupo if; envuelve la rama \'cond ->\' y este \'->\' entre { ... } (un \'cond ->\' suelto sin else puede quedarse fuera)'
+  'm7vq3xrt': 'una rama else \'->\' suelta fuera de un grupo if se enlaza solo con la rama \'cond ->\' más cercana; las %d ramas \'cond ->\' superiores se ignoran — envuelve todas en un grupo if { ... } para que \'->\' sea una rama de respaldo real'
 }

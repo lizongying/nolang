@@ -23,9 +23,11 @@
 ; got str: 實際取得的值
 ; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check-str = (name str, got str, want str) {
-    got == want -> print('ok: {name}')
+    {
+        got == want -> print('ok: {name}')
 
-    -> print('fail: {name} got=[{got}] want=[{want}]')
+        -> print('fail: {name} got=[{got}] want=[{want}]')
+    }
 }
 
 ; 固定失敗：帶 err 訊息 'boom-i64'，用於驗證 ?i64 的 err 臂 it 是字串

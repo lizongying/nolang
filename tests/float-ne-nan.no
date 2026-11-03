@@ -8,9 +8,11 @@
 ; name str: 檢查項目名稱，直接插入訊息
 ; cond bool: 判定結果
 check = (name str, cond bool) {
-    cond -> print('ok: {name}')
+    {
+        cond -> print('ok: {name}')
 
-    -> print('fail: {name}')
+        -> print('fail: {name}')
+    }
 }
 
 ; 產生 NaN：0.0 / 0.0 在執行期得到 NaN（不是 0）

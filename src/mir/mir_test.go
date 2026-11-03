@@ -55,7 +55,7 @@ func TestAnalyzeMovePreventsDoubleFree(t *testing.T) {
 	b := NewBuilder("t")
 	_ = b.NewFunc("f", nil, nil, false)
 	strT := b.Type("str")
-	v := b.EmitStr(OpConst, strT, "hi", "") // src (owned)
+	v := b.EmitStr(OpConst, strT, "hi", "")     // src (owned)
 	w := b.Emit(OpMove, strT, []ValueID{v}, "") // move src -> w
 	b.Emit(OpCall, b.Type("void"), []ValueID{w}, "print")
 	b.Terminate(OpReturn, nil, nil, "")
@@ -176,8 +176,10 @@ func TestLowerHIRControlFlow(t *testing.T) {
     sum = sum + i
   }
   x = 10
-  x > 5 -> print('big')
-  -> print('small')
+  {
+    x > 5 -> print('big')
+    -> print('small')
+  }
   return
 }
 `

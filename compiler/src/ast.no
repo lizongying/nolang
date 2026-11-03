@@ -931,21 +931,25 @@ expr-string = (t ast, i i64) (r str) {
 
         k == asp.K-STRING-LITERAL -> {
             raw = ast.str-at(t, d.s1)
-            raw.len-bytes() > 0 -> r = raw
+            {
+                raw.len-bytes() > 0 -> r = raw
 
-            -> r = "'" - ast.str-at(t, d.s0) - "'"
+                -> r = "'" - ast.str-at(t, d.s0) - "'"
+            }
         }
 
         k == asp.K-INFIX-EXPRESSION -> {
             folded = ast.fold-int(t, d)
-            folded.len-bytes() > 0 -> r = folded
+            {
+                folded.len-bytes() > 0 -> r = folded
 
-            -> {
-                r = ast.expr-string(t, ast.kid-at(t, d.kid0))
-                r = r - ' ' - ast.str-at(t, d.s0) - ' '
+                -> {
+                    r = ast.expr-string(t, ast.kid-at(t, d.kid0))
+                    r = r - ' ' - ast.str-at(t, d.s0) - ' '
 
-                #{overflow=wrap}
-                r = r - ast.expr-string(t, ast.kid-at(t, d.kid0 + 1))
+                    #{overflow=wrap}
+                    r = r - ast.expr-string(t, ast.kid-at(t, d.kid0 + 1))
+                }
             }
         }
 
@@ -1129,39 +1133,41 @@ node = (t ast, o sb, i i64, depth i64) {
 
         #{overflow=wrap}
         op = ast.ins(t, first + j, 0)
-        op == asp.OP-CHILD -> {
-            childs.push(ast.kid-at(t, cur))
+        {
+            op == asp.OP-CHILD -> {
+                childs.push(ast.kid-at(t, cur))
 
-            #{overflow=wrap}
-            cur = cur + 1
+                #{overflow=wrap}
+                cur = cur + 1
+            }
+            op == asp.OP-KIDS -> {
+
+                #{overflow=wrap}
+                cur = cur + ast.nd-c(d, cslot)
+
+                #{overflow=wrap}
+                cslot = cslot + 1
+            }
+            op == asp.OP-SIG -> {
+
+                ; SIG 的三組節點（泛型參數 / 參數 / 回傳值）連續排在 kid 區
+                #{overflow=wrap}
+                cur = cur + d.c3
+
+                #{overflow=wrap}
+                cur = cur + d.c4
+
+                #{overflow=wrap}
+                cur = cur + d.c5
+            }
+            op == asp.OP-HELPER -> {
+
+                #{overflow=wrap}
+                cur = cur + d.hcount
+            }
+
+            -> {}
         }
-        op == asp.OP-KIDS -> {
-
-            #{overflow=wrap}
-            cur = cur + ast.nd-c(d, cslot)
-
-            #{overflow=wrap}
-            cslot = cslot + 1
-        }
-        op == asp.OP-SIG -> {
-
-            ; SIG 的三組節點（泛型參數 / 參數 / 回傳值）連續排在 kid 區
-            #{overflow=wrap}
-            cur = cur + d.c3
-
-            #{overflow=wrap}
-            cur = cur + d.c4
-
-            #{overflow=wrap}
-            cur = cur + d.c5
-        }
-        op == asp.OP-HELPER -> {
-
-            #{overflow=wrap}
-            cur = cur + d.hcount
-        }
-
-        -> {}
 
         #{overflow=wrap}
         j = j + 1
@@ -1579,230 +1585,234 @@ helper = (t ast, o sb, d nd, hname str, base i64, depth i64) {
     ;   ⚠️ multiOption / multiValue / bindingNames / bindingFields 在 653 檔語料
     ;      中**零命中**（見 nolang-selfhost.md §5.3.4 的欄位普查），本支未接線。
     ;   ⚠️ bool 以字串 'true' / ''（str id 0）表示——nolang 無位元運算，走字串最簡。
-    hname.eq-full('matchArm') -> {
-        j = 0
-        (j < d.hcount) {
-
-            #{overflow=wrap}
-            hb = d.hbase + 12 * j
-
-            mbind = ast.str-at(t, ast.aux-at(t, hb))
-
-            #{overflow=wrap}
-            mbvar = ast.str-at(t, ast.aux-at(t, hb + 1))
-
-            #{overflow=wrap}
-            mtpat = ast.str-at(t, ast.aux-at(t, hb + 2))
-
-            #{overflow=wrap}
-            mtbnd = ast.str-at(t, ast.aux-at(t, hb + 3))
-
-            #{overflow=wrap}
-            mwild = ast.str-at(t, ast.aux-at(t, hb + 4))
-
-            #{overflow=wrap}
-            mdot = ast.str-at(t, ast.aux-at(t, hb + 5))
-
-            #{overflow=wrap}
-            mraw = ast.str-at(t, ast.aux-at(t, hb + 6))
-
-            #{overflow=wrap}
-            mblk = ast.str-at(t, ast.aux-at(t, hb + 7))
-
-            #{overflow=wrap}
-            mtarm = ast.str-at(t, ast.aux-at(t, hb + 8))
-
-            #{overflow=wrap}
-            mvctx = ast.str-at(t, ast.aux-at(t, hb + 9))
-
-            #{overflow=wrap}
-            mcond = ast.aux-at(t, hb + 10)
-
-            #{overflow=wrap}
-            mbody = ast.aux-at(t, hb + 11)
-
-            ast.indent(o, depth + 1)
-            o.push('MatchArm{')
-            mfirst = 1
-            mwild.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('wildcard: ')
-                o.push(mwild)
-                mfirst = 0
-            }
-            mdot.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('dotVal: ')
-                o.push(mdot)
-                mfirst = 0
-            }
-            mraw.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('rawCond: ')
-                o.push(mraw)
-                mfirst = 0
-            }
-            mblk.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('blockBody: ')
-                o.push(mblk)
-                mfirst = 0
-            }
-            mtarm.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('typeArm: ')
-                o.push(mtarm)
-                mfirst = 0
-            }
-            mtpat.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('typePattern: ')
-                o.push(mtpat)
-                mfirst = 0
-            }
-            mtbnd.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('typeBinding: ')
-                o.push(mtbnd)
-                mfirst = 0
-            }
-            mvctx.len-bytes() > 0 -> {
-                mfirst == 0 -> o.push(', ')
-                o.push('valueCtx: ')
-                o.push(mvctx)
-                mfirst = 0
-            }
-
-            ; binding / bindingVariant 恆印（kv），空值也印成 `binding: `
-            mfirst == 0 -> o.push(', ')
-            o.push('binding: ')
-            o.push(mbind)
-            o.push(', ')
-            o.push('bindingVariant: ')
-            o.push(mbvar)
-            o.push('}')
-            o.push-byte(10)
-
-            ; 子節點：Go 是 Condition 先、Body 後，皆 depth+1（相對臂 = depth+2）
-            mcond > 0 -> ast.node(t, o, mcond, depth + 2)
-            mbody > 0 -> ast.node(t, o, mbody, depth + 2)
-
-            #{overflow=wrap}
-            j = j + 1
-        }
-    }
-
-    hname.eq-full('taggedEnumField') -> {
-        j = 0
-        (j < d.hcount) {
-
-            #{overflow=wrap}
-            nm = ast.str-at(t, ast.aux-at(t, d.hbase + 2 * j))
-
-            #{overflow=wrap}
-            ty = ast.aux-at(t, d.hbase + 2 * j + 1)
-            ty < 0 -> {
+    {
+        hname.eq-full('matchArm') -> {
+            j = 0
+            (j < d.hcount) {
 
                 #{overflow=wrap}
-                ast.line(o, depth + 1, '<nil>')
-            }
+                hb = d.hbase + 12 * j
 
-            -> {
+                mbind = ast.str-at(t, ast.aux-at(t, hb))
 
                 #{overflow=wrap}
+                mbvar = ast.str-at(t, ast.aux-at(t, hb + 1))
+
+                #{overflow=wrap}
+                mtpat = ast.str-at(t, ast.aux-at(t, hb + 2))
+
+                #{overflow=wrap}
+                mtbnd = ast.str-at(t, ast.aux-at(t, hb + 3))
+
+                #{overflow=wrap}
+                mwild = ast.str-at(t, ast.aux-at(t, hb + 4))
+
+                #{overflow=wrap}
+                mdot = ast.str-at(t, ast.aux-at(t, hb + 5))
+
+                #{overflow=wrap}
+                mraw = ast.str-at(t, ast.aux-at(t, hb + 6))
+
+                #{overflow=wrap}
+                mblk = ast.str-at(t, ast.aux-at(t, hb + 7))
+
+                #{overflow=wrap}
+                mtarm = ast.str-at(t, ast.aux-at(t, hb + 8))
+
+                #{overflow=wrap}
+                mvctx = ast.str-at(t, ast.aux-at(t, hb + 9))
+
+                #{overflow=wrap}
+                mcond = ast.aux-at(t, hb + 10)
+
+                #{overflow=wrap}
+                mbody = ast.aux-at(t, hb + 11)
+
                 ast.indent(o, depth + 1)
-                o.push('TaggedEnumField{name: ')
-                o.push(nm)
-                ts = ast.type-string(t, ty)
-                ts.len-bytes() > 0 -> {
-                    o.push(', type: ')
-                    o.push(ts)
+                o.push('MatchArm{')
+                mfirst = 1
+                mwild.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('wildcard: ')
+                    o.push(mwild)
+                    mfirst = 0
                 }
+                mdot.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('dotVal: ')
+                    o.push(mdot)
+                    mfirst = 0
+                }
+                mraw.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('rawCond: ')
+                    o.push(mraw)
+                    mfirst = 0
+                }
+                mblk.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('blockBody: ')
+                    o.push(mblk)
+                    mfirst = 0
+                }
+                mtarm.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('typeArm: ')
+                    o.push(mtarm)
+                    mfirst = 0
+                }
+                mtpat.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('typePattern: ')
+                    o.push(mtpat)
+                    mfirst = 0
+                }
+                mtbnd.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('typeBinding: ')
+                    o.push(mtbnd)
+                    mfirst = 0
+                }
+                mvctx.len-bytes() > 0 -> {
+                    mfirst == 0 -> o.push(', ')
+                    o.push('valueCtx: ')
+                    o.push(mvctx)
+                    mfirst = 0
+                }
+
+                ; binding / bindingVariant 恆印（kv），空值也印成 `binding: `
+                mfirst == 0 -> o.push(', ')
+                o.push('binding: ')
+                o.push(mbind)
+                o.push(', ')
+                o.push('bindingVariant: ')
+                o.push(mbvar)
                 o.push('}')
                 o.push-byte(10)
-                ty > 0 -> {
+
+                ; 子節點：Go 是 Condition 先、Body 後，皆 depth+1（相對臂 = depth+2）
+                mcond > 0 -> ast.node(t, o, mcond, depth + 2)
+                mbody > 0 -> ast.node(t, o, mbody, depth + 2)
+
+                #{overflow=wrap}
+                j = j + 1
+            }
+        }
+
+        hname.eq-full('taggedEnumField') -> {
+            j = 0
+            (j < d.hcount) {
+
+                #{overflow=wrap}
+                nm = ast.str-at(t, ast.aux-at(t, d.hbase + 2 * j))
+
+                #{overflow=wrap}
+                ty = ast.aux-at(t, d.hbase + 2 * j + 1)
+                {
+                    ty < 0 -> {
+
+                        #{overflow=wrap}
+                        ast.line(o, depth + 1, '<nil>')
+                    }
+
+                    -> {
+
+                        #{overflow=wrap}
+                        ast.indent(o, depth + 1)
+                        o.push('TaggedEnumField{name: ')
+                        o.push(nm)
+                        ts = ast.type-string(t, ty)
+                        ts.len-bytes() > 0 -> {
+                            o.push(', type: ')
+                            o.push(ts)
+                        }
+                        o.push('}')
+                        o.push-byte(10)
+                        ty > 0 -> {
+
+                            #{overflow=wrap}
+                            ast.node(t, o, ty, depth + 2)
+                        }
+                    }
+                }
+
+                #{overflow=wrap}
+                j = j + 1
+            }
+        }
+
+        hname.eq-full('interfaceMethod') -> {
+
+            ; interfaceMethod（InterfaceDefinition 的方法）—— **不是 Node**
+            ;   （Go dump.go:837-849：d.interfaceMethod 單獨印，不經 node switch）
+            ;   ⇒ 資料全部走 aux；參數／回傳的**節點索引**也走 aux（節點本身在 arena）。
+            ;   aux 編碼（寬度 5，見 ps-parse-iface-def）：
+            ;     [0] name / [1] receiver / [2] variadic('true'/'') / [3] genericReceiver
+            ;     [4] 該方法的節點數（參數 + 回傳）
+            ;   節點索引段緊接在 helper 區之後：起點 = hbase + 5 * hcount。
+            ;   ⚠️ 欄位順序與 Go dump.go:842-843 的 fields(...) 逐項一致：
+            ;     name 恆印；receiver 非空才印；variadic / genericReceiver 為 true 才印。
+            ;   ⚠️ 參數與回傳**不分組**，都印在 depth+2（InterfaceMethod 印在 depth+1，
+            ;     見 dump.go:845-850 的 d.node(p, depth+1) —— 該處的 depth 已是
+            ;     InterfaceDefinition.depth+1）。
+            j = 0
+            off = 0
+            seg-b = d.hbase + 5 * d.hcount
+            (j < d.hcount) {
+
+                #{overflow=wrap}
+                hb = d.hbase + 5 * j
+
+                imnm = ast.str-at(t, ast.aux-at(t, hb))
+
+                #{overflow=wrap}
+                imrc = ast.str-at(t, ast.aux-at(t, hb + 1))
+
+                #{overflow=wrap}
+                imva = ast.str-at(t, ast.aux-at(t, hb + 2))
+
+                #{overflow=wrap}
+                imgr = ast.str-at(t, ast.aux-at(t, hb + 3))
+
+                #{overflow=wrap}
+                impc = ast.aux-at(t, hb + 4)
+
+                ast.indent(o, depth + 1)
+                o.push('InterfaceMethod{name: ')
+                o.push(imnm)
+                imrc.len-bytes() > 0 -> {
+                    o.push(', receiver: ')
+                    o.push(imrc)
+                }
+                imva.eq-full('true') -> o.push(', variadic: true')
+                imgr.eq-full('true') -> o.push(', genericReceiver: true')
+                o.push('}')
+                o.push-byte(10)
+
+                k = 0
+                (k < impc) {
 
                     #{overflow=wrap}
-                    ast.node(t, o, ty, depth + 2)
+                    v = ast.aux-at(t, seg-b + off + k)
+                    v > 0 -> ast.node(t, o, v, depth + 2)
+
+                    #{overflow=wrap}
+                    k = k + 1
                 }
-            }
-
-            #{overflow=wrap}
-            j = j + 1
-        }
-    }
-
-    hname.eq-full('interfaceMethod') -> {
-
-        ; interfaceMethod（InterfaceDefinition 的方法）—— **不是 Node**
-        ;   （Go dump.go:837-849：d.interfaceMethod 單獨印，不經 node switch）
-        ;   ⇒ 資料全部走 aux；參數／回傳的**節點索引**也走 aux（節點本身在 arena）。
-        ;   aux 編碼（寬度 5，見 ps-parse-iface-def）：
-        ;     [0] name / [1] receiver / [2] variadic('true'/'') / [3] genericReceiver
-        ;     [4] 該方法的節點數（參數 + 回傳）
-        ;   節點索引段緊接在 helper 區之後：起點 = hbase + 5 * hcount。
-        ;   ⚠️ 欄位順序與 Go dump.go:842-843 的 fields(...) 逐項一致：
-        ;     name 恆印；receiver 非空才印；variadic / genericReceiver 為 true 才印。
-        ;   ⚠️ 參數與回傳**不分組**，都印在 depth+2（InterfaceMethod 印在 depth+1，
-        ;     見 dump.go:845-850 的 d.node(p, depth+1) —— 該處的 depth 已是
-        ;     InterfaceDefinition.depth+1）。
-        j = 0
-        off = 0
-        seg-b = d.hbase + 5 * d.hcount
-        (j < d.hcount) {
-
-            #{overflow=wrap}
-            hb = d.hbase + 5 * j
-
-            imnm = ast.str-at(t, ast.aux-at(t, hb))
-
-            #{overflow=wrap}
-            imrc = ast.str-at(t, ast.aux-at(t, hb + 1))
-
-            #{overflow=wrap}
-            imva = ast.str-at(t, ast.aux-at(t, hb + 2))
-
-            #{overflow=wrap}
-            imgr = ast.str-at(t, ast.aux-at(t, hb + 3))
-
-            #{overflow=wrap}
-            impc = ast.aux-at(t, hb + 4)
-
-            ast.indent(o, depth + 1)
-            o.push('InterfaceMethod{name: ')
-            o.push(imnm)
-            imrc.len-bytes() > 0 -> {
-                o.push(', receiver: ')
-                o.push(imrc)
-            }
-            imva.eq-full('true') -> o.push(', variadic: true')
-            imgr.eq-full('true') -> o.push(', genericReceiver: true')
-            o.push('}')
-            o.push-byte(10)
-
-            k = 0
-            (k < impc) {
 
                 #{overflow=wrap}
-                v = ast.aux-at(t, seg-b + off + k)
-                v > 0 -> ast.node(t, o, v, depth + 2)
+                off = off + impc
 
                 #{overflow=wrap}
-                k = k + 1
+                j = j + 1
             }
-
-            #{overflow=wrap}
-            off = off + impc
-
-            #{overflow=wrap}
-            j = j + 1
         }
-    }
 
-    -> {
+        -> {
 
-        #{overflow=wrap}
-        t.unsup = t.unsup + 1
+            #{overflow=wrap}
+            t.unsup = t.unsup + 1
+        }
     }
 }
 
@@ -1834,41 +1844,47 @@ header = (t ast, o sb, d nd, ins i64, last i64, childs []i64, depth i64) {
         return
     }
     o.push('{')
-    nof > 0 -> {
+    {
+        nof > 0 -> {
 
-        ; 標頭內容是「某個子節點的行內摘要」；nil 時改用 absent
+            ; 標頭內容是「某個子節點的行內摘要」；nil 時改用 absent
 
-        #{overflow=wrap}
-        v = ast.child-at(t, childs, nof - 1)
-        v <= 0 -> o.push(absent)
+            #{overflow=wrap}
+            v = ast.child-at(t, childs, nof - 1)
+            {
+                v <= 0 -> o.push(absent)
 
-        -> o.push(ast.node-string(t, v))
-    }
-
-    -> {
-
-        ; ⚠️ 分隔符必須寫在**值之前**，所以 scalar 回傳文字而不是直接寫進 o。
-        ;    早期版本先寫值、再推 ", "，結果每個節點都變成
-        ;    `IntegerLiteral{value: 42raw: 42, }`（逗號全部右移一格）。
-        sep = ''
-        k = ins
-
-        #{overflow=wrap}
-        k = k + 1
-        (k < last) {
-            ast.ins(t, k, 0) == asp.OP-SCALAR -> {
-                shown, txt = ast.scalar(t, d, k, childs)
-                shown == 1 -> {
-                    o.push(sep)
-                    o.push(txt)
-                    sep = ', '
-                }
-
-                #{overflow=wrap}
-                k = k + 1
+                -> o.push(ast.node-string(t, v))
             }
+        }
 
-            -> break
+        -> {
+
+            ; ⚠️ 分隔符必須寫在**值之前**，所以 scalar 回傳文字而不是直接寫進 o。
+            ;    早期版本先寫值、再推 ", "，結果每個節點都變成
+            ;    `IntegerLiteral{value: 42raw: 42, }`（逗號全部右移一格）。
+            sep = ''
+            k = ins
+
+            #{overflow=wrap}
+            k = k + 1
+            (k < last) {
+                {
+                    ast.ins(t, k, 0) == asp.OP-SCALAR -> {
+                        shown, txt = ast.scalar(t, d, k, childs)
+                        shown == 1 -> {
+                            o.push(sep)
+                            o.push(txt)
+                            sep = ', '
+                        }
+
+                        #{overflow=wrap}
+                        k = k + 1
+                    }
+
+                    -> break
+                }
+            }
         }
     }
     o.push('}')
@@ -1906,9 +1922,11 @@ scalar = (t ast, d nd, k i64, childs []i64) (shown i64, text str) {
         of == asp.OF-LOCAL -> {
             ren == asp.R-NODE-STRING -> {
                 v = ast.child-at(t, childs, ref)
-                v <= 0 -> val = ''
+                {
+                    v <= 0 -> val = ''
 
-                -> val = ast.node-string(t, v)
+                    -> val = ast.node-string(t, v)
+                }
             }
 
             -> val = ast.str-at(t, ast.nd-s(d, ref))
@@ -1947,16 +1965,20 @@ wanted = (pol i64, val str) (yes i64) {
 
         pol == asp.P-NON-ZERO -> {
             yes = 0
-            val.eq-full('0') -> {}
+            {
+                val.eq-full('0') -> {}
 
-            -> yes = 1
+                -> yes = 1
+            }
         }
 
         pol == asp.P-COUNT -> {
             yes = 0
-            val.eq-full('0') -> {}
+            {
+                val.eq-full('0') -> {}
 
-            -> yes = 1
+                -> yes = 1
+            }
         }
 
         -> {

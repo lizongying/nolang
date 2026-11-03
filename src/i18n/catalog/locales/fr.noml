@@ -1146,4 +1146,6 @@ Erreur de synchronisation de la dépendance AST %s : module vide
 
 `
   'zzcfoc04': 'création du répertoire dist : %w'
+  'k3r7mbqd': 'une branche else (un \'->\' seul sur sa ligne) doit se trouver dans un groupe if ; encadrez la branche \'cond ->\' et ce \'->\' entre { ... } (un \'cond ->\' isolé sans else peut rester hors groupe)'
+  'm7vq3xrt': 'une branche else \'->\' isolée hors d\'un groupe if ne se rattache qu\'à la branche \'cond ->\' la plus proche ; les %d branches \'cond ->\' au-dessus sont ignorées — encadrez-les toutes dans un groupe if { ... } pour que \'->\' soit une vraie branche de repli'
 }

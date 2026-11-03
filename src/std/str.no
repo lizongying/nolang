@@ -290,11 +290,13 @@ str.byte-index = (cp-pos i64) (byte i64) {
             -> {
 
                 #{overflow=wrap}
-                b >= 0xf0 -> byte = byte + 4
+                {
+                    b >= 0xf0 -> byte = byte + 4
 
-                b >= 0xe0 -> byte = byte + 3
+                    b >= 0xe0 -> byte = byte + 3
 
-                -> byte = byte + 2
+                    -> byte = byte + 2
+                }
             }
         }
 
@@ -634,19 +636,21 @@ str.to-i64 = () (val ?i64) {
                     ; 必須是最後一位數字
 
                     #{overflow=wrap}
-                    i == .len-bytes() - 1 -> {
+                    {
+                        i == .len-bytes() - 1 -> {
 
-                        #{overflow=wrap}
-                        n = 0 - 922337203685477580
+                            #{overflow=wrap}
+                            n = 0 - 922337203685477580
 
-                        n = n * 10 - 8
-                        val = n
-                        return
-                    }
+                            n = n * 10 - 8
+                            val = n
+                            return
+                        }
 
-                    -> {
-                        val = err('out of range for i64')
-                        return
+                        -> {
+                            val = err('out of range for i64')
+                            return
+                        }
                     }
                 }
             }
@@ -683,9 +687,11 @@ str.to-i8 = () (val ?i8) {
             n = it
 
             #{overflow=wrap}
-            n >= 0 - 128 && n <= 127 -> val = n
+            {
+                n >= 0 - 128 && n <= 127 -> val = n
 
-            -> val = err('out of range for i8')
+                -> val = err('out of range for i8')
+            }
         }
     }
 }
@@ -708,9 +714,11 @@ str.to-i16 = () (val ?i16) {
             n = it
 
             #{overflow=wrap}
-            n >= 0 - 32768 && n <= 32767 -> val = n
+            {
+                n >= 0 - 32768 && n <= 32767 -> val = n
 
-            -> val = err('out of range for i16')
+                -> val = err('out of range for i16')
+            }
         }
     }
 }
@@ -733,9 +741,11 @@ str.to-i32 = () (val ?i32) {
             n = it
 
             #{overflow=wrap}
-            n >= 0 - 2147483648 && n <= 2147483647 -> val = n
+            {
+                n >= 0 - 2147483648 && n <= 2147483647 -> val = n
 
-            -> val = err('out of range for i32')
+                -> val = err('out of range for i32')
+            }
         }
     }
 }
@@ -1035,61 +1045,67 @@ str-to-f64 = (s str) (result f64) {
     ; 小數部分 → int-mant = int-mant * 10 + digit; frac-count++
     (i < n) {
         c = s.byte(i)
-        c == 46 -> {
-            i = i + 1
-            (i < n) {
-                c = s.byte(i)
-                {
-                    c >= 48 && c <= 57 -> {
+        {
+            c == 46 -> {
+                i = i + 1
+                (i < n) {
+                    c = s.byte(i)
+                    {
+                        c >= 48 && c <= 57 -> {
 
-                        ; 同整數部分：巢狀 block 裡用公開方法鏈累積。
-                        dig = bigint.from-i64(c - 48)
-                        int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
-                        frac-count = frac-count + 1
-                        has-digit = 1
-                        i = i + 1
+                            ; 同整數部分：巢狀 block 裡用公開方法鏈累積。
+                            dig = bigint.from-i64(c - 48)
+                            int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
+                            frac-count = frac-count + 1
+                            has-digit = 1
+                            i = i + 1
+                        }
+
+                        -> break
                     }
-
-                    -> break
                 }
             }
-        }
 
-        -> break
+            -> break
+        }
     }
     has-digit == 0 -> return
 
     ; 指數部分
     (i < n) {
         c = s.byte(i)
-        c == 101 || c == 69 -> {
-            i = i + 1
-            (i < n) {
-                c = s.byte(i)
-                c == 45 -> {
-                    exp-sign = -1
-                    i = i + 1
-                }
-                c == 43 -> i = i + 1
+        {
+            c == 101 || c == 69 -> {
+                i = i + 1
+                (i < n) {
+                    c = s.byte(i)
+                    {
+                        c == 45 -> {
+                            exp-sign = -1
+                            i = i + 1
+                        }
+                        c == 43 -> i = i + 1
 
-                -> break
-            }
-            (i < n) {
-                c = s.byte(i)
-                {
-                    c >= 48 && c <= 57 -> {
-
-                        #{overflow=wrap}
-                        exp-val = exp-val * 10 + (c - 48)
-                        i = i + 1
+                        -> break
                     }
+                }
+                (i < n) {
+                    c = s.byte(i)
+                    {
+                        c >= 48 && c <= 57 -> {
 
-                    -> break
+                            #{overflow=wrap}
+                            exp-val = exp-val * 10 + (c - 48)
+                            i = i + 1
+                        }
+
+                        -> break
+                    }
                 }
             }
-        }
 
-        -> break
+            -> break
+        }
     }
 
     ; exp-adj = exp-val * exp-sign - frac-count：精確有理數 = int-mant * 10^exp-adj
@@ -1097,14 +1113,16 @@ str-to-f64 = (s str) (result f64) {
 
     num = bigint.copy(int-mant)
     den = bigint.one()
-    (exp-adj >= 0) -> {
-        t10 bigint = bigint.from-i64(10)
-        num = int-mant.mul-bigint(t10.pow(exp-adj))
-    }
+    {
+        (exp-adj >= 0) -> {
+            t10 bigint = bigint.from-i64(10)
+            num = int-mant.mul-bigint(t10.pow(exp-adj))
+        }
 
-    -> {
-        t10d bigint = bigint.from-i64(10)
-        den = t10d.pow(0 - exp-adj)
+        -> {
+            t10d bigint = bigint.from-i64(10)
+            den = t10d.pow(0 - exp-adj)
+        }
     }
 
     ; 零值特例（含 -0.0）
@@ -1146,49 +1164,53 @@ str-to-f64 = (s str) (result f64) {
     two = bigint.from-i64(2)
 
     ; 次正規：value = F * 2^-1074（F 為 52-bit 分數）
-    (e < -1022) -> {
-        num-s = bigint.shl(num, 1074)
-        qS, rS = num-s.div-mod(den)
-        two-r = bigint.shl(rS, 1)
-        c2 = two-r.cmp(den)
-        fb-q = qS
-        (c2 > 0) -> fb-q = qS.add-bigint(one)
-        (c2 == 0) -> {
+    {
+        (e < -1022) -> {
+            num-s = bigint.shl(num, 1074)
+            qS, rS = num-s.div-mod(den)
+            two-r = bigint.shl(rS, 1)
+            c2 = two-r.cmp(den)
+            fb-q = qS
+            (c2 > 0) -> fb-q = qS.add-bigint(one)
+            (c2 == 0) -> {
 
-            ; 取奇偶：公開 div-mod 的餘數恆落在 {0,1}，用 is-zero 判別即可，
-            ; 不必把 bigint 拆回 i64，也不碰 bigint 的私有快速路徑。
-            _, qm = qS.div-mod(two)
-            (qm.is-zero()) -> fb-q = qS
+                ; 取奇偶：公開 div-mod 的餘數恆落在 {0,1}，用 is-zero 判別即可，
+                ; 不必把 bigint 拆回 i64，也不碰 bigint 的私有快速路徑。
+                _, qm = qS.div-mod(two)
+                {
+                    (qm.is-zero()) -> fb-q = qS
 
-            -> fb-q = qS.add-bigint(one)
+                    -> fb-q = qS.add-bigint(one)
+                }
+            }
+            _, frac-b = fb-q.div-mod(two52)
+            frac-i64 ?i64 = frac-b.to-i64()
+            inv1074f f64 = 1.0
+            j = 0
+            (j < 1074) {
+                inv1074f = inv1074f / 2.0
+                j = j + 1
+            }
+            frac-f64 f64 = frac-i64: {
+                ok -> it.to-f64()
+
+                -> _
+            }
+            result = frac-f64 * inv1074f
+            (sign < 0) -> result = -result
+            return
         }
-        _, frac-b = fb-q.div-mod(two52)
-        frac-i64 ?i64 = frac-b.to-i64()
-        inv1074f f64 = 1.0
-        j = 0
-        (j < 1074) {
-            inv1074f = inv1074f / 2.0
-            j = j + 1
+
+        ; 正規：value = (1 + m/2^52) * 2^e（m 為 52-bit 分數）
+        (e >= 0) -> {
+            num-s = bigint.shl(num, 52)
+            den-s = bigint.shl(den, e)
         }
-        frac-f64 f64 = frac-i64: {
-            ok -> it.to-f64()
 
-            -> _
+        -> {
+            num-s = bigint.shl(num, 52 - e)
+            den-s = den.copy()
         }
-        result = frac-f64 * inv1074f
-        (sign < 0) -> result = -result
-        return
-    }
-
-    ; 正規：value = (1 + m/2^52) * 2^e（m 為 52-bit 分數）
-    (e >= 0) -> {
-        num-s = bigint.shl(num, 52)
-        den-s = bigint.shl(den, e)
-    }
-
-    -> {
-        num-s = bigint.shl(num, 52 - e)
-        den-s = den.copy()
     }
     qw, rw = num-s.div-mod(den-s)
     two-r = bigint.shl(rw, 1)
@@ -1199,9 +1221,11 @@ str-to-f64 = (s str) (result f64) {
 
         ; 同次正規分支：奇偶判別走公開 div-mod + is-zero，不碰 bigint 私有快速路徑。
         _, qm2 = qw.div-mod(two)
-        (qm2.is-zero()) -> wv = qw
+        {
+            (qm2.is-zero()) -> wv = qw
 
-        -> wv = qw.add-bigint(one)
+            -> wv = qw.add-bigint(one)
+        }
     }
 
     ; 溢位保護：wv >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
@@ -1486,11 +1510,13 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             cp == old-ch -> {
 
                 #{overflow=wrap}
-                new-ch < 0x80 -> out-n = out-n + 1
-                new-ch < 0x800 -> out-n = out-n + 2
-                new-ch < 0x10000 -> out-n = out-n + 3
+                {
+                    new-ch < 0x80 -> out-n = out-n + 1
+                    new-ch < 0x800 -> out-n = out-n + 2
+                    new-ch < 0x10000 -> out-n = out-n + 3
 
-                -> out-n = out-n + 4
+                    -> out-n = out-n + 4
+                }
             }
 
             -> out-n = out-n + clen
@@ -2069,22 +2095,24 @@ str.replace-str = (old str, new str) (val str) {
             #{overflow=wrap}
             j = j + 1
         }
-        match -> {
+        {
+            match -> {
 
-            #{overflow=wrap}
-            out-len = out-len + new-len
+                #{overflow=wrap}
+                out-len = out-len + new-len
 
-            #{overflow=wrap}
-            i = i + old-len
-        }
+                #{overflow=wrap}
+                i = i + old-len
+            }
 
-        -> {
+            -> {
 
-            #{overflow=wrap}
-            out-len = out-len + 1
+                #{overflow=wrap}
+                out-len = out-len + 1
 
-            #{overflow=wrap}
-            i = i + 1
+                #{overflow=wrap}
+                i = i + 1
+            }
         }
     }
 
@@ -2114,26 +2142,28 @@ str.replace-str = (old str, new str) (val str) {
             #{overflow=wrap}
             j = j + 1
         }
-        match -> {
-            k <- [0..new-len): {
-                val[pos] = new.byte(k)
+        {
+            match -> {
+                k <- [0..new-len): {
+                    val[pos] = new.byte(k)
+
+                    #{overflow=wrap}
+                    pos = pos + 1
+                }
+
+                #{overflow=wrap}
+                i = i + old-len
+            }
+
+            -> {
+                val[pos] = .byte(i)
 
                 #{overflow=wrap}
                 pos = pos + 1
+
+                #{overflow=wrap}
+                i = i + 1
             }
-
-            #{overflow=wrap}
-            i = i + old-len
-        }
-
-        -> {
-            val[pos] = .byte(i)
-
-            #{overflow=wrap}
-            pos = pos + 1
-
-            #{overflow=wrap}
-            i = i + 1
         }
     }
 }

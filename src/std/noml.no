@@ -262,11 +262,13 @@ noml-pool.skip-blanks = (s str, pos i64) (p i64) {
     sn = s.len-bytes()
     (p < sn) {
         c = s.byte(p)
-        (c == 32 || c == 9) -> {
-            p = p + 1
-        }
+        {
+            (c == 32 || c == 9) -> {
+                p = p + 1
+            }
 
-        -> break
+            -> break
+        }
     }
 }
 
@@ -360,24 +362,28 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
     p = p + 1
     (p < sn) {
         c = s.byte(p)
-        c == 10 -> {
-            j = p + 1
-            (j < sn) {
-                cc = s.byte(j)
-                (cc == 32 || cc == 9 || cc == 13) -> {
-                    j = j + 1
+        {
+            c == 10 -> {
+                j = p + 1
+                (j < sn) {
+                    cc = s.byte(j)
+                    {
+                        (cc == 32 || cc == 9 || cc == 13) -> {
+                            j = j + 1
+                        }
+
+                        -> break
+                    }
                 }
+                (j < sn && s.byte(j) == 96) -> {
+                    next = j + 1
+                    return
+                }
+                p = p + 1
+            }
 
-                -> break
-            }
-            (j < sn && s.byte(j) == 96) -> {
-                next = j + 1
-                return
-            }
-            p = p + 1
+            -> p = p + 1
         }
-
-        -> p = p + 1
     }
 }
 
@@ -1271,11 +1277,13 @@ noml-pool.raw-safe = (s str) (yes bool) {
             j = i
             (j < sn) {
                 c = s.byte(j)
-                (c == 32 || c == 9 || c == 13) -> {
-                    j = j + 1
-                }
+                {
+                    (c == 32 || c == 9 || c == 13) -> {
+                        j = j + 1
+                    }
 
-                -> break
+                    -> break
+                }
             }
             (j < sn && s.byte(j) == 96) -> {
                 yes = false
@@ -1847,29 +1855,31 @@ noml-pool.ann-value = (idx i64, key str) (v ?str) {
     i = 0
     (i < n) {
         c = body.byte(i)
-        (c == 32 || c == 9 || c == 10 || c == 13 || c == 44) -> {
-            i = i + 1
-        }
+        {
+            (c == 32 || c == 9 || c == 10 || c == 13 || c == 44) -> {
+                i = i + 1
+            }
 
-        -> {
-            j = i
-            (j < n) {
-                cc = body.byte(j)
-                (cc == 32 || cc == 9 || cc == 10 || cc == 13 || cc == 44 || cc == 61 || cc == 91 || cc == 93 || cc == 39) -> break
-                j = j + 1
+            -> {
+                j = i
+                (j < n) {
+                    cc = body.byte(j)
+                    (cc == 32 || cc == 9 || cc == 10 || cc == 13 || cc == 44 || cc == 61 || cc == 91 || cc == 93 || cc == 39) -> break
+                    j = j + 1
+                }
+                kend = j
+                k = .skip-blanks(body, kend)
+                has-eq = k < n && body.byte(k) == 61
+                same = (kend - i) == kn && body.slice-bytes(i, kend).eq-full(key)
+                same && has-eq -> {
+                    k = k + 1
+                    k = .skip-blanks(body, k)
+                    v = .ann-literal(body, k)
+                    return
+                }
+                i = .skip-ann-value(body, i)
+                i < 0 -> return
             }
-            kend = j
-            k = .skip-blanks(body, kend)
-            has-eq = k < n && body.byte(k) == 61
-            same = (kend - i) == kn && body.slice-bytes(i, kend).eq-full(key)
-            same && has-eq -> {
-                k = k + 1
-                k = .skip-blanks(body, k)
-                v = .ann-literal(body, k)
-                return
-            }
-            i = .skip-ann-value(body, i)
-            i < 0 -> return
         }
     }
 }

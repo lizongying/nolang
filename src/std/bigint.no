@@ -60,17 +60,19 @@ from-i64 = (v i64) (out bigint) {
     ; |v| >= 2^32 時後續運算會把它當 32-bit 遮罩而截斷（如 from-i64(2^52) 變 0）。
     lo-v = r-v & MASK
     hi-v = r-v >> 32
-    hi-v > 0 -> {
-        out.limbs = with-len(2)
-        out.limbs[0] = lo-v
-        out.limbs[1] = hi-v
-        out.len = 2
-    }
+    {
+        hi-v > 0 -> {
+            out.limbs = with-len(2)
+            out.limbs[0] = lo-v
+            out.limbs[1] = hi-v
+            out.len = 2
+        }
 
-    -> {
-        out.limbs = with-len(1)
-        out.limbs[0] = lo-v
-        out.len = 1
+        -> {
+            out.limbs = with-len(1)
+            out.limbs[0] = lo-v
+            out.len = 1
+        }
     }
 }
 
@@ -84,17 +86,19 @@ from-u64 = (v i64) (out bigint) {
     ; 同 from-i64：需拆成 32-bit limb，避免 >= 2^32 截斷
     u-lo = v & MASK
     u-hi = v >> 32
-    u-hi > 0 -> {
-        out.limbs = with-len(2)
-        out.limbs[0] = u-lo
-        out.limbs[1] = u-hi
-        out.len = 2
-    }
+    {
+        u-hi > 0 -> {
+            out.limbs = with-len(2)
+            out.limbs[0] = u-lo
+            out.limbs[1] = u-hi
+            out.len = 2
+        }
 
-    -> {
-        out.limbs = with-len(1)
-        out.limbs[0] = u-lo
-        out.len = 1
+        -> {
+            out.limbs = with-len(1)
+            out.limbs[0] = u-lo
+            out.len = 1
+        }
     }
 }
 
@@ -519,17 +523,19 @@ bigint._mul-i64 = (v i64) (c bigint) {
     lo-v = r-v & MASK
     hi-v = r-v >> 32
     b = bigint {}
-    hi-v > 0 -> {
-        b.limbs = with-len(2)
-        b.limbs[0] = lo-v
-        b.limbs[1] = hi-v
-        b.len = 2
-    }
+    {
+        hi-v > 0 -> {
+            b.limbs = with-len(2)
+            b.limbs[0] = lo-v
+            b.limbs[1] = hi-v
+            b.len = 2
+        }
 
-    -> {
-        b.limbs = with-len(1)
-        b.limbs[0] = lo-v
-        b.len = 1
+        -> {
+            b.limbs = with-len(1)
+            b.limbs[0] = lo-v
+            b.len = 1
+        }
     }
     b.sign = 1
     c = ._mul(b)
@@ -712,38 +718,42 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             p = p + borrow
             pl = p & 4294967295
             limb u64 = (norm-a.limbs[qi + bj] & MASK)
-            (limb >= pl) -> {
-                norm-a.limbs[qi + bj] = (limb - pl)
-                borrow = p >> 32
-            }
+            {
+                (limb >= pl) -> {
+                    norm-a.limbs[qi + bj] = (limb - pl)
+                    borrow = p >> 32
+                }
 
-            -> {
-                sub-limb u64 = limb + BASE - pl
-                norm-a.limbs[qi + bj] = (sub-limb & 4294967295)
-                borrow = (p >> 32) + 1
+                -> {
+                    sub-limb u64 = limb + BASE - pl
+                    norm-a.limbs[qi + bj] = (sub-limb & 4294967295)
+                    borrow = (p >> 32) + 1
+                }
             }
         }
 
         ; 最高 limb 減最終 borrow；若過減則 qhat 偏大，加回 norm-b
         top u64 = (norm-a.limbs[qi + bl] & MASK)
-        (top >= borrow) -> {
-            norm-a.limbs[qi + bl] = (top - borrow)
-            q.limbs[qi] = qhat
-        }
-
-        -> {
-            sub-top u64 = top + BASE - borrow
-            norm-a.limbs[qi + bl] = (sub-top & 4294967295)
-            qhat = qhat - 1
-            carry2 u64 = 0
-            bj2 <- [0..bl): {
-                s u64 = (norm-a.limbs[qi + bj2] & MASK) + (norm-b[bj2] & MASK) + carry2
-                norm-a.limbs[qi + bj2] = (s & 4294967295)
-                carry2 = s >> 32
+        {
+            (top >= borrow) -> {
+                norm-a.limbs[qi + bl] = (top - borrow)
+                q.limbs[qi] = qhat
             }
-            carry2-i i64 = carry2
-            norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry2-i
-            q.limbs[qi] = qhat
+
+            -> {
+                sub-top u64 = top + BASE - borrow
+                norm-a.limbs[qi + bl] = (sub-top & 4294967295)
+                qhat = qhat - 1
+                carry2 u64 = 0
+                bj2 <- [0..bl): {
+                    s u64 = (norm-a.limbs[qi + bj2] & MASK) + (norm-b[bj2] & MASK) + carry2
+                    norm-a.limbs[qi + bj2] = (s & 4294967295)
+                    carry2 = s >> 32
+                }
+                carry2-i i64 = carry2
+                norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry2-i
+                q.limbs[qi] = qhat
+            }
         }
 
         #{overflow=wrap}

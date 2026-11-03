@@ -87,28 +87,30 @@
         ; 這種 D9 place-match 寫入——它以「讀」作閘門，len=0 時讀 seg[0] 越界回 nil，
         ; ok 臂永不執行，seg 永遠是空串（曾使本方法靜默回空字串）。
         ; with-cap 基底被 idxwrite lint 豁免，可直接下標寫入。
-        cp < 0x80 -> {
-            seg[0] = cp
-        }
+        {
+            cp < 0x80 -> {
+                seg[0] = cp
+            }
 
-        -> cp < 0x800 -> {
-            seg[0] = 0xc0 | ((cp >> 6) & 0x1f)
+            -> cp < 0x800 -> {
+                seg[0] = 0xc0 | ((cp >> 6) & 0x1f)
 
-            seg[1] = 0x80 | (cp & 0x3f)
-        } -> cp < 0x10000 -> {
-            seg[0] = 0xe0 | ((cp >> 12) & 0x0f)
+                seg[1] = 0x80 | (cp & 0x3f)
+            } -> cp < 0x10000 -> {
+                seg[0] = 0xe0 | ((cp >> 12) & 0x0f)
 
-            seg[1] = 0x80 | ((cp >> 6) & 0x3f)
+                seg[1] = 0x80 | ((cp >> 6) & 0x3f)
 
-            seg[2] = 0x80 | (cp & 0x3f)
-        } -> {
-            seg[0] = 0xf0 | ((cp >> 18) & 0x07)
+                seg[2] = 0x80 | (cp & 0x3f)
+            } -> {
+                seg[0] = 0xf0 | ((cp >> 18) & 0x07)
 
-            seg[1] = 0x80 | ((cp >> 12) & 0x3f)
+                seg[1] = 0x80 | ((cp >> 12) & 0x3f)
 
-            seg[2] = 0x80 | ((cp >> 6) & 0x3f)
+                seg[2] = 0x80 | ((cp >> 6) & 0x3f)
 
-            seg[3] = 0x80 | (cp & 0x3f)
+                seg[3] = 0x80 | (cp & 0x3f)
+            }
         }
 
         r = r - seg

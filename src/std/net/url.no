@@ -266,9 +266,11 @@ url-info.set-query = (key str, value str) {
     ; 還會讓 `no fmt` 不冪等（formatter 把它印成 `...: { }` 後重新解析成別的結構）。
     ; 要「二選一」就用下面這種 `{}` if/else-if 群組（與上面 251-255 行的寫法一致）。
     found == false -> {
-        new-query.len-bytes() > 0 -> new-query = new-query - '&' - key - '=' - value
+        {
+            new-query.len-bytes() > 0 -> new-query = new-query - '&' - key - '=' - value
 
-        -> new-query = key - '=' - value
+            -> new-query = key - '=' - value
+        }
     }
     .query = new-query
 }
@@ -479,15 +481,17 @@ url-decode = (s str) (out str) {
 
                     ->
                 }
-                v1 >= 0 && v2 >= 0 -> {
-                    out[out.len-bytes()] = (v1 << 4) | v2
+                {
+                    v1 >= 0 && v2 >= 0 -> {
+                        out[out.len-bytes()] = (v1 << 4) | v2
 
-                    #{overflow=wrap}
-                    i = i + 2
-                }
+                        #{overflow=wrap}
+                        i = i + 2
+                    }
 
-                -> {
-                    out[out.len-bytes()] = c
+                    -> {
+                        out[out.len-bytes()] = c
+                    }
                 }
             }
 

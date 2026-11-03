@@ -1405,9 +1405,11 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     ; ── chunked 解框 ──
     data []byte
     is-chunked = head-str.to-lower().contains('chunked')
-    is-chunked -> data = http-dl-dechunk(body)
+    {
+        is-chunked -> data = http-dl-dechunk(body)
 
-    -> data = body
+        -> data = body
+    }
 
     ; ── 寫入檔案 ──
     ok = http-write-ok(dest, data)

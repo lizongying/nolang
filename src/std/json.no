@@ -891,11 +891,13 @@ json-pool.stringify = (node-idx i64) (out str) {
         }
 
         kind == JSON-KIND-BOOL -> {
-            .nodes[node-idx].bool-val -> {
-                out = 'true'
-            }
+            {
+                .nodes[node-idx].bool-val -> {
+                    out = 'true'
+                }
 
-            -> out = 'false'
+                -> out = 'false'
+            }
             return
         }
 

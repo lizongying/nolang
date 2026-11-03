@@ -1138,4 +1138,6 @@ Fehler beim Synchronisieren der AST-Abhängigkeit %s: leeres Modul
 
 `
   'zzcfoc04': 'dist-Verzeichnis wird erstellt: %w'
+  'k3r7mbqd': 'ein else-Zweig (ein \'->\' in eigener Zeile) muss sich in einer if-Gruppe befinden; umbreite den Zweig \'cond ->\' und dieses \'->\' mit { ... } (ein einzelnes \'cond ->\' ohne else darf außerhalb stehen)'
+  'm7vq3xrt': 'ein einzelnes \'->\'-else-Zweig-Argument außerhalb einer if-Gruppe bindet nur an den nächstliegenden \'cond ->\'-Zweig; die %d \'cond ->\'-Zweige darüber werden ignoriert — umbreite alle davon mit einer if-Gruppe { ... }, damit \'->\' ein echter Ausweich-Zweig wird'
 }

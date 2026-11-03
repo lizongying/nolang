@@ -18,9 +18,11 @@
 ; name: 測試項顯示名稱（原樣印入 ok/fail 行）
 ; cond: true 印 ok、false 印 fail 的斷言結果
 check = (name str, cond bool) {
-    cond -> print('ok: {name}')
+    {
+        cond -> print('ok: {name}')
 
-    -> print('fail: {name}')
+        -> print('fail: {name}')
+    }
 }
 
 ; 解析 src 後斷言 path 處的字串值與 want 相等

@@ -170,9 +170,11 @@ j: {
 
     -> {
         ok-set = it.set-str('日本語', 'にほんご')
-        ok-set -> print('PASS: 5a json.set-str non-ascii key+value')
+        {
+            ok-set -> print('PASS: 5a json.set-str non-ascii key+value')
 
-        -> print('FAIL: 5a json.set-str returned false')
+            -> print('FAIL: 5a json.set-str returned false')
+        }
 
         val-opt = it.get-str('日本語')
         val-opt: {

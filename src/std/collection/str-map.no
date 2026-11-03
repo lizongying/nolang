@@ -220,13 +220,15 @@ str-map.to-str = () (out str) {
     first = true
     i <- [0...cap): {
         .occ[i] == 1 -> {
-            first -> {
-                out = out - .keys[i] - ': ' - .vals[i]
-                first = false
-            }
+            {
+                first -> {
+                    out = out - .keys[i] - ': ' - .vals[i]
+                    first = false
+                }
 
-            -> {
-                out = out - ', ' - .keys[i] - ': ' - .vals[i]
+                -> {
+                    out = out - ', ' - .keys[i] - ': ' - .vals[i]
+                }
             }
         }
     }

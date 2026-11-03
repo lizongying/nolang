@@ -35,9 +35,11 @@ outer: {
 
             nil -> print('fail 2: inner nil\n')
         }
-        m.msg == 'outer-msg' -> print('ok 2b: outer restored {m.msg}\n')
+        {
+            m.msg == 'outer-msg' -> print('ok 2b: outer restored {m.msg}\n')
 
-        -> print('fail 2b: outer got {m.msg}\n')
+            -> print('fail 2b: outer got {m.msg}\n')
+        }
     }
 
     nil -> print('fail 2: outer nil\n')

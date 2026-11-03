@@ -3930,11 +3930,13 @@ conn.recv = (buf str, n i64) (read-n i64) {
 
                         #{overflow=wrap}
                         .ap-read-seq = .ap-read-seq + 1
-                        d-ct < 0 -> return
-                        d-ct == TLS-CT-APP-DATA -> got-app-data = true
+                        {
+                            d-ct < 0 -> return
+                            d-ct == TLS-CT-APP-DATA -> got-app-data = true
 
-                        -> {
-                            ; 內層 handshake（NewSessionTicket 等）：跳過，繼續讀下一筆
+                            -> {
+                                ; 內層 handshake（NewSessionTicket 等）：跳過，繼續讀下一筆
+                            }
                         }
                     }
 

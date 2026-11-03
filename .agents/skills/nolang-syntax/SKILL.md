@@ -1814,6 +1814,7 @@ If-else groups (short-circuit) **must** be wrapped in `{}`. The first matching c
 
 1. **Short-circuit group** — Multiple `cond -> body` lines wrapped in `{}` form an if-elif-else chain. Only the first matching branch executes.
 2. **Standalone if** — A single `cond -> body` written directly in a function/loop body (without wrapping `{}`) is an independent if. It does **not** short-circuit with adjacent if-then lines.
+   **An else forces the group.** A bare `-> else` arm on its own line outside `{}` is a **compile ERROR** (`k3r7mbqd` for a lone `cond ->` + `->`, `m7vq3xrt` when sibling `cond ->` arms sit above it). The parser folds a newline `->` onto only the *nearest* preceding standalone if, so the ungroupped spelling silently means something different from what it reads as — hence the rule, not a warning. Wrap every arm; a lone `cond -> body` **without** an else may stay ungroupped.
 3. **No mixing** — Inside a `{}` short-circuit group, all direct children must be `cond -> body` arms. Regular statements (assignments, calls, etc.) are not allowed as direct children; place them inside branch bodies instead.
 
 ```no
@@ -1830,6 +1831,24 @@ func = (cmd str) {
         cmd == 'b' -> { fb() }
         true -> {}
     }
+}
+
+; ❌ if/else written outside the group — compile ERROR
+; the `-> break` folds onto `c == 43` only, so a `c == 45` match is still cut short
+;   c == 45 -> { exp-sign = -1
+;                i = i + 1 }
+;   c == 43 -> i = i + 1
+;   -> break
+
+; ✅ Same code as an if-group — arms are exclusive, `->` is a real fallback
+{
+    c == 45 -> {
+        exp-sign = -1
+        i = i + 1
+    }
+    c == 43 -> i = i + 1
+
+    -> break
 }
 
 ; ❌ Match-block with mixed regular statement → compile error

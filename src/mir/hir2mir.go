@@ -7986,25 +7986,50 @@ func (l *lowerer) evalConstBody(blockID int32, env map[string]comptimeVal, stack
 //
 // The ok/returned split is the whole point. A braced cond-chain
 // (`{ c -> s }`, the form std/time.no's is-leap uses) desugars to a SYNTHETIC
-// `if 1 { … }` whose condition is not a bool — the arm-ifs live inside it. With
-// a single bool return, that wrapper was read as "fell through", so the scan
-// continued PAST the chain's `return` and ran the statements after it:
+// `if 1 { … }` wrapper whose condition is not a bool — the arm-ifs live inside
+// it. With a single bool return, that wrapper was read as "fell through", so the
+// scan continued PAST the chain's `return` and ran the statements after it:
 //
 //	leap = false
 //	{ y % 4 != 0 -> return }   ; taken for 2023
 //	leap = true                ; ran anyway -> is-leap(2023) folded to true
 //
 // test/std/time.no caught exactly that ("1900 not leap" / "2023 not leap") while
-// the same binary with NOLANG_COMPTIME=0 passed 41/41. Refusing to fold a shape
-// the evaluator cannot interpret is the conservative fix; the call simply stays.
+// the same binary with NOLANG_COMPTIME=0 passed 41/41. The wrapper is now
+// INTERPRETED (it always runs its then-block, so the evaluator descends into it
+// and an `return` inside it propagates out as `returned`); any `if` whose
+// condition is neither a foldable bool nor that integer-1 marker stays refused,
+// because `continue`ing past an if we did not understand is what produced the
+// silent wrong answer above.
 func (l *lowerer) evalConstIfBranch(ifID int32, env map[string]comptimeVal, stack []string, resultName string) (comptimeVal, bool, bool) {
 	cv, ok := l.evalConst(l.slot(ifID, "cond"), env, stack)
-	if !ok || cv.kind != cvBool {
+	if !ok {
 		return comptimeVal{}, false, false
 	}
 	taken := l.slot(ifID, "then")
-	if !cv.b {
-		taken = l.slot(ifID, "else")
+	if cv.kind == cvBool {
+		if !cv.b {
+			taken = l.slot(ifID, "else")
+		}
+	} else if cv.kind == cvInt && cv.i == 1 && l.slot(ifID, "else") == hir.NoID {
+		// The match / if-group WRAPPER `if (1) { … }`, synthesized by
+		// parser/lowering.go for two shapes: the independent-guard bare match
+		// (>= 2 non-wildcard arms, resolveBareMatchPlan's fast path) and the
+		// trailing wildcard `->` arm (the else of an if/else group). Both carry
+		// an integer 1 condition and NO else slot, and both mean "run these
+		// statements" — so descending into the then-block is exact, not a guess.
+		//
+		// Refusing it (what this used to do) is what kept a grouped if/else
+		// un-foldable: the taken branch of `{ c -> x -> y }` is `if c` for the
+		// true side but `if (1) { y }` for the else side, so the else side always
+		// aborted the whole fold even when `c` was a compile-time constant.
+		//
+		// A user-written arm condition cannot reach here by accident: a bare
+		// match arm condition is type-checked as bool, and the fall-through
+		// semantics below (every statement runs in order, an early `return`
+		// stops the scan) match what the wrapper does at runtime either way.
+	} else {
+		return comptimeVal{}, false, false
 	}
 	if taken == hir.NoID {
 		// No branch can run, so the `if` is a no-op that we DO understand.

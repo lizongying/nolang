@@ -348,12 +348,14 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
                 -> {
 
                     #{overflow=wrap}
-                    upper == true -> {
-                        out[pos] = d - 10 + 65
-                    }
+                    {
+                        upper == true -> {
+                            out[pos] = d - 10 + 65
+                        }
 
-                    -> {
-                        out[pos] = d - 10 + 97
+                        -> {
+                            out[pos] = d - 10 + 97
+                        }
                     }
                 }
             }

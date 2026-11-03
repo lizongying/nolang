@@ -2259,6 +2259,35 @@ func isForCompOp(t lexer.TokenType) bool {
 		t == lexer.EQUALS || t == lexer.NOT_EQUALS
 }
 
+// standaloneIfAt 判斷 stmts[i] 是否為「裸 if 陳述」（`cond -> body` 形態，由
+// parseExpressionStatement 打上 RTStandalone 旗標）。
+func (p *Parser) standaloneIfAt(stmts []Statement, i int) bool {
+	es, ok := stmts[i].(*ExpressionStatement)
+	if !ok {
+		return false
+	}
+	ie, ok := es.Expression.(*IfExpression)
+	return ok && p.fmtTrivia.HasRTFlag(ie, RTStandalone)
+}
+
+// bareIfRunStart 從 stmts 尾部往前找「連續裸 if 陳述」遊程的第一條下標；
+// 尾部本身不是裸 if 時回傳 len(stmts)（空遊程）。用於判斷一條換行 `-> else`
+// 的上游是否還有兄弟裸 if：有的話它的綁定是歧義的（只掛最近一條，其餘靜默被
+// 忽略），提示語需要明確點名被丟掉的臂數。
+func (p *Parser) bareIfRunStart(stmts []Statement) int {
+	if len(stmts) == 0 || !p.standaloneIfAt(stmts, len(stmts)-1) {
+		return len(stmts)
+	}
+	first := len(stmts) - 1
+	for first-1 >= 0 && p.standaloneIfAt(stmts, first-1) {
+		first--
+	}
+	return first
+}
+
+// parseBlockStatement 解析 `{ ... }` 區塊語句。被 classifyBlockAtCurrent 定為
+// blockMatch 的區塊走 parseBareMatchExpr（if 組 / 裸 match，臂間互斥）；其餘
+// 逐條解析，此時換行的 `->` 才會進入下方的裸 else 摺疊分支（那裡補 ERROR）。
 func (p *Parser) parseBlockStatement() *BlockStatement {
 	block := &BlockStatement{Token: p.currentToken, Statements: []Statement{}}
 	openBraceLine := p.currentToken.Line
@@ -2316,12 +2345,35 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		//   }
 		// where `-> print('FALLBACK')` on a new line should be the else
 		// arm of `cond -> print('MATCH')`, not a separate always-true if-then.
+		//
+		// ⚠️ 但這個摺疊只綁「同一區塊裡最近的一條裸 if」——前面所有兄弟 `cond ->`
+		// 臂的條件都不參與，於是「多條裸 if + 一條 `-> else`」會靜默編成與字面
+		// 意圖完全不同的代碼（實例：std/str.no 指數符號掃描，`-> break` 只掛在
+		// `c == 43` 上，`c == 45` 走完後仍被 break 掐斷）。
+		//
+		// 語言規則因此收緊為：**裸 if 可以不用 if 組，但只要出現 else 就必須
+		// 用 `{ ... }` if 組包住所有臂**（if 組由 parseBareMatchExpr 處理，臂間
+		// 互斥，`-> else` 才是真的兜底臂）。這裡仍照舊摺疊以保住後續解析與 LSP
+		// 的結構完整性，只額外記一條 ERROR。
 		if p.currentToken.Type == lexer.RARROW && len(block.Statements) > 0 {
 			prevStmt := block.Statements[len(block.Statements)-1]
 			if es, ok := prevStmt.(*ExpressionStatement); ok {
 				if ie, ok := es.Expression.(*IfExpression); ok {
 					if p.fmtTrivia.HasRTFlag(ie, RTStandalone) && ie.Alternative == nil {
 						tok := p.currentToken
+						// 上游兄弟裸 if 的數量決定這條 else 有多「歧義」：>=1 時作者
+						// 極可能把整排 `cond ->` 當成互斥臂（實際只有最後一條參與），
+						// 0 時只是把普通 if/else 寫在 if 組外面。兩者給不同的提示。
+						armsBefore := len(block.Statements) - 1 - p.bareIfRunStart(block.Statements)
+						if armsBefore > 0 {
+							p.saveErrorf("m7vq3xrt",
+								"line %d, column %d: bare '->' else arm outside an if-group binds only the nearest 'cond ->' arm; the %d 'cond ->' arm(s) above are ignored — wrap all of them in an if-group { ... } so the '->' is a real fallback arm",
+								tok.Line, tok.Column, armsBefore)
+						} else {
+							p.saveErrorf("k3r7mbqd",
+								"line %d, column %d: an else arm ('->' on its own line) must live inside an if-group; wrap the 'cond ->' arm and this '->' in { ... } (a lone 'cond ->' without else may stay ungrouped)",
+								tok.Line, tok.Column)
+						}
 						p.nextToken() // skip ->
 						altBody := p.parseStandaloneBody(tok)
 						altBody = p.wrapStandaloneChain(tok, altBody)

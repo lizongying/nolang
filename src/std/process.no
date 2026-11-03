@@ -1032,18 +1032,20 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             }
 
             ; 超時：仍在執行 → 強制殺死並回報 -2
-            process-waitpid-nohang(pid) == -1 -> {
-                process-kill(pid, 9)
-                code = -2
+            {
+                process-waitpid-nohang(pid) == -1 -> {
+                    process-kill(pid, 9)
+                    code = -2
 
-                ; 收割被殺死的子進程
-                process-waitpid(pid, 0)
-            }
+                    ; 收割被殺死的子進程
+                    process-waitpid(pid, 0)
+                }
 
-            -> {
+                -> {
 
-                ; 自然結束：收割並取得退出碼
-                code = process-waitpid(pid, 0)
+                    ; 自然結束：收割並取得退出碼
+                    code = process-waitpid(pid, 0)
+                }
             }
         }
     }

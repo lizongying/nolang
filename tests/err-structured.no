@@ -14,9 +14,11 @@
 ; got str: 實際取得的值
 ; want str: 預期值；兩者相等印 'ok'，否則印 'fail' 並附上二者
 check = (name str, got str, want str) {
-    got == want -> print('ok: {name}')
+    {
+        got == want -> print('ok: {name}')
 
-    -> print('fail: {name} got=[{got}] want=[{want}]')
+        -> print('fail: {name} got=[{got}] want=[{want}]')
+    }
 }
 
 ; 固定失敗的函式：用 err 狀態帶上訊息 'boom' 與錯誤碼 code.io

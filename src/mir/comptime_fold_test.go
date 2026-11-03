@@ -143,8 +143,10 @@ main = () () {
 // and never materialises 51.
 func TestComptimeFoldsIfBranch(t *testing.T) {
 	src := `clamp = (a i64) (r i64) {
-    a > 10 -> { r = 7 * 13 }
-    -> { r = 3 * 17 }
+    {
+        a > 10 -> { r = 7 * 13 }
+        -> { r = 3 * 17 }
+    }
 }
 main = () () {
     r = clamp(5)
@@ -188,8 +190,10 @@ main = () () {
 // call survives and no constant is hoisted out of it.
 func TestComptimeLeavesRuntimeCondIfAlone(t *testing.T) {
 	on, _ := comptimePair(t, `pick = (a i64) (r i64) {
-    a > 0 -> { r = 7 * 13 }
-    -> { r = 3 * 17 }
+    {
+        a > 0 -> { r = 7 * 13 }
+        -> { r = 3 * 17 }
+    }
 }
 main = () () {
     i <- [0..3) {

@@ -239,18 +239,20 @@ f64.to-str = () (out str) {
 
     mant-val u64 = 0
     e2 = 0
-    exp-bits == 0 -> {
+    {
+        exp-bits == 0 -> {
 
-        ; 非規約：M = frac, e2 = -1022 - 52 = -1074
-        mant-val = frac
-        e2 = -1074
-    }
+            ; 非規約：M = frac, e2 = -1022 - 52 = -1074
+            mant-val = frac
+            e2 = -1074
+        }
 
-    -> {
+        -> {
 
-        ; 規約：M = (1<<52) | frac, e2 = exp-bits - 1023 - 52 = exp-bits - 1075
-        mant-val = bit52 | frac
-        e2 = exp-i - 1075
+            ; 規約：M = (1<<52) | frac, e2 = exp-bits - 1023 - 52 = exp-bits - 1075
+            mant-val = bit52 | frac
+            e2 = exp-i - 1075
+        }
     }
 
     ; base = M * 2^max(e2,0)；den = 2^max(-e2,0)；value = base / den
@@ -1220,9 +1222,11 @@ f64.to-str-general = (precision i64) (out str) {
         dot-pos >= 0 -> {
             end = n
             (end > dot-pos + 1) {
-                s.byte(end - 1) == 48 -> end = end - 1
+                {
+                    s.byte(end - 1) == 48 -> end = end - 1
 
-                -> break
+                    -> break
+                }
             }
             end > dot-pos + 1 -> {
                 s.byte(end - 1) == 46 -> end = end - 1
@@ -1683,15 +1687,17 @@ f32.tanh = () (res f32) {
 ; [ceil](#number.f64.ceil)
 f64.ceil = () (res f64) {
     t = (.to-i64()).to-f64()
-    . == t -> {
-        res = t
-    }
-    . > 0.0 -> {
-        res = t + 1.0
-    }
+    {
+        . == t -> {
+            res = t
+        }
+        . > 0.0 -> {
+            res = t + 1.0
+        }
 
-    -> {
-        res = t
+        -> {
+            res = t
+        }
     }
 }
 
@@ -1706,15 +1712,17 @@ f32.ceil = () (res f32) {
 ; res: 不大於 x 的最大整數值（向下取整，結果仍為 f64）
 f64.floor = () (res f64) {
     t = (.to-i64()).to-f64()
-    . == t -> {
-        res = t
-    }
-    . < 0.0 -> {
-        res = t - 1.0
-    }
+    {
+        . == t -> {
+            res = t
+        }
+        . < 0.0 -> {
+            res = t - 1.0
+        }
 
-    -> {
-        res = t
+        -> {
+            res = t
+        }
     }
 }
 
@@ -1730,23 +1738,29 @@ f32.floor = () (res f32) {
 f64.round = () (res f64) {
     t = (.to-i64()).to-f64()
     f = . - t
-    . >= 0.0 -> {
-        f >= 0.5 -> {
-            res = t + 1.0
+    {
+        . >= 0.0 -> {
+            {
+                f >= 0.5 -> {
+                    res = t + 1.0
+                }
+
+                -> {
+                    res = t
+                }
+            }
         }
 
         -> {
-            res = t
-        }
-    }
+            {
+                f <= -0.5 -> {
+                    res = t - 1.0
+                }
 
-    -> {
-        f <= -0.5 -> {
-            res = t - 1.0
-        }
-
-        -> {
-            res = t
+                -> {
+                    res = t
+                }
+            }
         }
     }
 }
