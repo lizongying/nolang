@@ -288,6 +288,14 @@ OP-NOT = 75
 ; ⚠ op 碼接在既有最大碼 OP-NOT=75 之後（取 76），不重排既有碼。
 OP-STRFROMVEC = 76
 
+; ── str 容量欄讀取（M4-c 續件 s50；鏡像 Go emitLenCap 的 OpCap/KindStr 分支，codegen.go:11848）──
+; %str-long = { i64 f0=len, i64 f1=cap, i8* f2=data }；Go 以 fieldIdx 分派：OpLen⇒0、OpCap⇒1。
+; noc 已有 OP-STRLEN（f0），本件補 f1：dst = i64 值 id；x = 字符串值 id（TY-STR，住 %sv）；bs[k] 不用（0）。
+; 發射：%v<dst> = extractvalue %str-long %sv<x>, 1（純單塊、無 helper）。
+; ⚠ Go 的 OpLen/OpCap 無 %vec 分支（vec 長度走 vec_len helper call），故本代次刻意不造 OP-VECCAP——無忠實鏡像對象。
+; ⚠ op 碼接在既有最大碼 OP-STRFROMVEC=76 之後（取 77），不重排既有碼。
+OP-STRCAP = 77
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。

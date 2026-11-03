@@ -32,6 +32,7 @@
 ;   一元 ALU（s48）：NEG / NOT——NEG 复用 s37 的值型别分派（vty[d]==TY-F64⇒fneg double %fd…，否则⇒sub i64 0, %v…），
 ;     NOT⇒xor i64 1, %v…（翻转 0/1 布尔）。均单块降级、无 helper；忠实 Go emitNeg（非 option 路不插溢出护栏）／emitNot
 ;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec
+;   str 容量欄（s50）：OP-STRCAP——extractvalue %str-long field 1（与 OP-STRLEN 的 field 0 成对，Go 原以 fieldIdx 分派）；单块降级、无 helper；忠实 Go emitLenCap 的 OpCap/KindStr 分支
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
 ; 值 id → SSA 名 %v<id>；槽 id → %s<id>；字符串值 → %sv<id>；字符串槽 → %ss<id>；
@@ -1201,6 +1202,16 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(' = extractvalue %str-long %sv')
             b.push(x.to-str())
             b.push(', 0\n')
+        }
+        op == OP-STRCAP -> {
+
+            ; s50（鏡像 Go emitLenCap 的 OpCap/KindStr 分支，codegen.go:11848：fieldIdx=1）：dst = i64 值 id；x = 字符串值 id（TY-STR）。
+            ; 與 OP-STRLEN 同一條 extractvalue、僅欄下標 0/1 之別（Go 原即以 fieldIdx 分派）；純單塊、無 helper。
+            b.push('\t%v')
+            b.push(d.to-str())
+            b.push(' = extractvalue %str-long %sv')
+            b.push(x.to-str())
+            b.push(', 1\n')
         }
         op == OP-STRCAT -> {
             b.push('\t%sv')

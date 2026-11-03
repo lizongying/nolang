@@ -544,6 +544,69 @@ test-str-from-vec = () {
     runner.eq(s.contains('bitcast %vec'), 0, 'vec not bitcast')
 }
 
+test-str-cap = () {
+
+    ; s50：str 容量欄讀取（鏡像 Go emitLenCap 的 OpCap/KindStr 分支，fieldIdx=1）——extractvalue %str-long, 1
+    ;   與 OP-STRLEN（field 0）成對；v1=TY-STR 形参（%sv1），dst v2=cap、v3=len（皆 TY-I64）
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+
+    ; k0: v2 = STRCAP v1（cap 欄）
+    ops.push(OP-STRCAP)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k1: v3 = STRLEN v1（len 欄，同一源、僅下標不同）
+    ops.push(OP-STRLEN)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k2: RET v2
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; 形参 v1=TY-STR ⇒ define 簽名裡是 %str-long %sv1；retty=TY-I64
+    ptyps []i64 = []
+    ptyps.push(TY-STR)
+
+    ; vty 逐 id：id0=I64、id1=STR(形参)、id2/id3=I64
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-STR)
+    vty.push(TY-I64)
+    vty.push(TY-I64)
+    cty []i64 = []
+    blks []i64 = []
+    n = ops.len()
+    i <- [0..n): {
+        cty.push(TY-I64)
+        blks.push(0)
+    }
+    s = cg-emit-cfg-t('sc', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; 簽名：TY-STR 形参⇒%str-long %sv1
+    runner.eq(s.contains('define i64 @sc(%str-long %sv1)'), 1, 'sc sig str param')
+
+    ; cap/len 成對：同 extractvalue %str-long %sv1，僅下標 1/0 之別
+    runner.eq(s.contains('%v2 = extractvalue %str-long %sv1, 1'), 1, 'cap field 1')
+    runner.eq(s.contains('%v3 = extractvalue %str-long %sv1, 0'), 1, 'len field 0')
+    runner.eq(s.contains('ret i64 %v2'), 1, 'i64 ret')
+
+    ; 鉴别力：容量欄是 str 自己的欄位，不得碰 %vec/%vc 命名空間
+    runner.eq(s.contains('extractvalue %vec'), 0, 'not vec extract')
+    runner.eq(s.contains('%vc'), 0, 'no vc namespace')
+}
+
 test-struct-param-ret = () {
 
     ; 形参侧：nargs=1、ptyps[0] = TY-STRUCT-BASE ⇒ define 签名里是 %struct.s0 %st1
@@ -3430,6 +3493,7 @@ test-alu-unsigned()
 test-alu-f64()
 test-unary()
 test-str-from-vec()
+test-str-cap()
 test-arith()
 test-call()
 test-call2()
