@@ -675,6 +675,81 @@ test-opt-order = () {
     runner.eq(s.contains('extractvalue %option %op2, 0'), 0, 'no field-0 read')
 }
 
+test-opt-order-f64 = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ptyps []i64 = []
+    ptyps.push(TY-F64)
+    ptyps.push(TY-F64)
+
+    ; vty 按值 id：0 占位 / 1=%fd1(a F64) / 2=%fd2(b F64) / 3=%op3(some a) / 4=%op4(some b) / 5..8=i64 结果
+    vty []i64 = []
+    vty.push(TY-I64)
+    vty.push(TY-F64)
+    vty.push(TY-F64)
+    vty.push(TY-OPT)
+    vty.push(TY-OPT)
+    i <- [0..4): {
+        vty.push(TY-I64)
+    }
+    cty []i64 = []
+    q <- [0..7): {
+        cty.push(TY-I64)
+    }
+
+    ; k0/k1: OPTMKF64 构造两个 some
+    blks.push(0)
+    ops.push(OP-OPTMKF64)
+    dsts.push(3)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-OPTMKF64)
+    dsts.push(4)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; k2..k5: OPTLTF64/LEF64/GTF64/GEF64（op3 vs op4），依赖 82–85 连续编码
+    i <- [0..4): {
+        blks.push(0)
+        ops.push(OP-OPTLTF64 + i)
+        dsts.push(5 + i)
+        xa.push(3)
+        bs.push(4)
+        syms.push('')
+    }
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg-t('oo-f64', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+
+    ; 取 slot[0]（i64）后 bitcast→double（复用 s46/s47 读回形），再 fcmp 有序谓词
+    runner.eq(s.contains('%opx2 = extractvalue %option %op3, 1, 0'), 1, 'lt left payload')
+    runner.eq(s.contains('%opy2 = extractvalue %option %op4, 1, 0'), 1, 'lt right payload')
+    runner.eq(s.contains('%fdx2 = bitcast i64 %opx2 to double'), 1, 'lt bitcast x')
+    runner.eq(s.contains('%fdy2 = bitcast i64 %opy2 to double'), 1, 'lt bitcast y')
+    runner.eq(s.contains('%oq2 = fcmp olt double %fdx2, %fdy2'), 1, 'lt olt')
+    runner.eq(s.contains('%v5 = zext i1 %oq2 to i64'), 1, 'lt zext')
+    runner.eq(s.contains('%oq3 = fcmp ole double %fdx3, %fdy3'), 1, 'le ole')
+    runner.eq(s.contains('%oq4 = fcmp ogt double %fdx4, %fdy4'), 1, 'gt ogt')
+    runner.eq(s.contains('%oq5 = fcmp oge double %fdx5, %fdy5'), 1, 'ge oge')
+
+    ; 鉴别力：无 tag 项／and（同 s51 纪律），且不误发相等谓词或 icmp
+    runner.eq(s.contains('and i1'), 0, 'no tag-and')
+    runner.eq(s.contains('%otx'), 0, 'no tag extract')
+    runner.eq(s.contains('fcmp oeq'), 0, 'no oeq leak')
+    runner.eq(s.contains('icmp slt'), 0, 'no icmp leak')
+}
+
 test-struct-param-ret = () {
 
     ; 形参侧：nargs=1、ptyps[0] = TY-STRUCT-BASE ⇒ define 签名里是 %struct.s0 %st1
@@ -3563,6 +3638,7 @@ test-unary()
 test-str-from-vec()
 test-str-cap()
 test-opt-order()
+test-opt-order-f64()
 test-arith()
 test-call()
 test-call2()

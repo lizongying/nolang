@@ -312,6 +312,20 @@ OP-OPTLE = 79
 OP-OPTGT = 80
 OP-OPTGE = 81
 
+; ── option 的 `f64`（double）載荷排序（M4-c 續件 s52；鏡像 Go emitOptionValueOrder 的 double 翼，codegen.go:6352，循 s47 OPTEQF64 專用 op 前例）──
+; Go 同函對 pTA==double 的兩側載荷直接 `fcmp olt/ole/ogt/oge double`（OpLt⇒olt／OpLe⇒ole／OpGt⇒ogt／OpGe⇒oge）再 store——
+; 與 s51 有符號 int 翼同紀律：【無 tag 項、無 and】，只比載荷。ordered 謂詞對 NaN 恒判 false，為 Go 原語義忠實鏡像。
+; noc 的 %option 載荷槽是 [3 x i64]，f64 讀回循 s46/s47 路徑：slot[0]（i64）等宽 bitcast→double，無需 helper。
+; OP-OPTLTF64／OP-OPTLEF64／OP-OPTGTF64／OP-OPTGEF64：dst = i64 結果 id（0/1）；xa[k] = 左 option 值 id；bs[k] = 右 option 值 id。
+;   發射：%opx<k>／%opy<k> = extractvalue %option %op<x|y>, 1, 0；%fdx<k>／%fdy<k> = bitcast i64→double；
+;         %oq<k> = fcmp <olt|ole|ogt|oge> double %fdx<k>, %fdy<k>；%v<dst> = zext i1 %oq<k> to i64（純單塊、無 helper）。
+; ⚠ 僅適用 f64 載荷（TyOpt 不挾載荷型別，呼叫方保證兩側皆 f64；誤用 i64 載荷會把整數位模式重interpret 成 double，語義由呼叫方兜底）。
+; ⚠ op 碼接在既有最大碼 OP-OPTGE=81 之後（取 82–85），不重排既有碼。
+OP-OPTLTF64 = 82
+OP-OPTLEF64 = 83
+OP-OPTGTF64 = 84
+OP-OPTGEF64 = 85
+
 ; ── 结构体（M4-c 续件 s29/s30/s31；型别码 = TY-STRUCT-BASE + 结构体 id）────
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
