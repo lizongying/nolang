@@ -13894,9 +13894,11 @@ func (l *lowerer) bindTarget(targetID int32, v ValueID) {
 			return
 		}
 		// Implicit `ok(v)` wrap for `a[i] = scalar` where `a` is a `[]?T`
-		// (same rule as the KIdent reassignment / lowerAssignNode paths).
+		// (same rule as the KIdent reassignment / lowerAssignNode paths); the
+		// mirror case (a `?T` value into a plain `T` element) keeps the payload.
 		if eT := l.indexElemType(arrV); eT != NoType {
 			v = l.wrapOptionIfNeeded(eT, v)
+			v = l.unwrapOptionForElem(eT, v)
 		}
 		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, v}, "")
 		return
@@ -14705,9 +14707,12 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			return v
 		}
 		// Implicit `ok(v)` wrap for `a[i] = scalar` where `a` is a `[]?T` (same
-		// rule as the KIdent reassignment path above).
+		// rule as the KIdent reassignment path above); symmetrically, a `?T`
+		// value stored into a plain `T` element keeps only its payload (see
+		// unwrapOptionForElem — std/dom.no's `%option`-vs-`%str-long` store).
 		if eT := l.indexElemType(arrV); eT != NoType {
 			v = l.wrapOptionIfNeeded(eT, v)
+			v = l.unwrapOptionForElem(eT, v)
 		}
 		l.b.EmitVoid(OpIndexStore, []ValueID{arrV, idxV, v}, "")
 		return v
@@ -14797,6 +14802,36 @@ func (l *lowerer) optionPayloadCoerced(elemRaw string, v ValueID) ValueID {
 	// callee". Codegen materialises the str from the buffer instead — see
 	// emitOptionWrap's %txt -> %str-long case.
 	return v
+}
+
+// unwrapOptionForElem stores the PAYLOAD when a `?T`-typed value is written into
+// a NON-option element slot (`x[i] = v` where the element type is `T`).
+//
+// The value can be option-typed without the user ever writing `?`, and that part
+// is BY DESIGN, not a mis-inference: an unannotated `y = f(p + 2)` is a capture
+// site, so the parser types the target `?<ret of f>` and stores nil/err in it on
+// failure (parser/lowering.go maybeCaptureOptionAssign / synthesizeNullableType
+// — `a = g(b / c)` is the documented example). The user is expected to consume
+// it with `y: { ok -> … }`.
+//
+// What made std/dom.no fail is that the element store was the ONE consumer that
+// did not take the payload: `.names[idx] = tgt` (names is []str) handed the raw
+// `%option` struct to a `%str-long` slot and LLVM rejected the module —
+//
+//	std/dom.no dom-pool.xml-parse-pi
+//	'%lv.7954' defined with type '%option = type { i64, [3 x i64] }'
+//	  but expected '%str-long = type { i64, i64, ptr }'
+//
+// — while every other consumer (call argument, method receiver, `tgt.len()`)
+// already reads the payload. So the store must agree; the capture typing stays.
+func (l *lowerer) unwrapOptionForElem(elemT TypeID, v ValueID) ValueID {
+	if elemT == NoType || elemT == l.voidType || v == NoVal {
+		return v
+	}
+	if et := l.mod.Type(elemT); et == nil || et.Kind == KindOption {
+		return v
+	}
+	return l.unwrapOptionOperand(v)
 }
 
 // wrapOptionIfNeeded implements nolang's implicit `ok(v)` wrap on assignment: a

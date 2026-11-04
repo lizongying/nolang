@@ -82,8 +82,17 @@ rc4 = (in []byte, key []byte) (out []byte) {
         }
 
         ; 生成密鑰流位元組
-        #{index-out=zero, overflow=wrap}
-        k = s[((s[i]) + (s[j])) % 256]
+        ; s[i] 與 s[j] 都是 byte：`s[i] + s[j]` 的結果型別取左運算元（byte），
+        ; 直接寫 `(s[i] + s[j]) % 256` 會讓常數 256 被窄化成 byte 0，觸發執行期
+        ; 除零並把索引強制成 0（金鑰流全錯）。先顯式升到 i64 再取模。
+        #{index-out=zero}
+        si i64 = s[i]
+
+        #{index-out=zero}
+        sj i64 = s[j]
+
+        #{overflow=wrap}
+        k = s[(si + sj) % 256]
 
         #{index-out=zero}
         out[pos] = (in[pos]) ^ (k & 255)
