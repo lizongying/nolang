@@ -1985,6 +1985,52 @@ test-bit-gate = () {
     runner.eq(ir.contains('define'), 0, 'bit-gate no code')
 }
 
+; 逻辑与：r = (x > 0) && (y < 10) ⇒ 两个 cmp 后 and i64（操作数在 i64 子集为 0/1）
+test-log-and = () {
+    src = 'g1x = (x i64, y i64) (r i64) {\n    r = (x > 0) && (y < 10)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'log-and unsup')
+    runner.eq(ir.contains('and i64'), 1, 'log-and and')
+    runner.eq(ir.contains('define'), 1, 'log-and code')
+}
+
+; 逻辑或：r = (x > 0) || (y < 10) ⇒ 两个 cmp 后 or i64
+test-log-or = () {
+    src = 'g2x = (x i64, y i64) (r i64) {\n    r = (x > 0) || (y < 10)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'log-or unsup')
+    runner.eq(ir.contains('or i64'), 1, 'log-or or')
+}
+
+; 逻辑链优先级：r = (x > 0) && (y > 0) || (x > 5) ⇒ && 紧于 || ⇒ ((and) || cmp)
+test-log-chain = () {
+    src = 'g3x = (x i64, y i64) (r i64) {\n    r = (x > 0) && (y > 0) || (x > 5)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'log-chain unsup')
+    runner.eq(ir.contains('and i64'), 1, 'log-chain and')
+    runner.eq(ir.contains('or i64'), 1, 'log-chain or')
+}
+
+; 门控：u64 操作数的 && 仍不在 i64 算术语义内 ⇒ unsup（逻辑与位运算同受 i64-only 约束）
+test-log-gate = () {
+    src = 'g4x = (x u64, y u64) (r u64) {\n    r = x && y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'log-gate counted')
+    runner.eq(ir.contains('define'), 0, 'log-gate no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-call-s64-scatter()
@@ -2057,6 +2103,10 @@ test-bit-shl()
 test-bit-shr()
 test-bit-chain()
 test-bit-gate()
+test-log-and()
+test-log-or()
+test-log-chain()
+test-log-gate()
 test-gate()
 
 runner.summary()
