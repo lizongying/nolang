@@ -1710,6 +1710,132 @@ test-vm-gate = () {
     runner.eq(ir6.contains('define'), 0, 'vm-gate-bool-pattern no code')
 }
 
+; ── s65 前置：循環目標棧出栈時必须真刪除——只减计数留陈项 ⇒ 兄弟循環第二顆的 break/continue
+;    查到第一顆的 block（實測 tmp/s65-sib-ir.txt：arm 块 %bb7 → br label %bb3，運行即死循環回跳）──
+test-sib-loop-target = () {
+
+    ; 第二個兄弟前置循環體內 break ⇒ BR 落自己的 exit（%bb6），不是第一顆的 %bb3
+    src-b = 'z65b = (n i64) (r i64) {\n    r = 0\n    i = n\n    (i > 0) {\n        i = i - 1\n    }\n    j = n\n    (j > 0) {\n        j = j - 1\n        j < 2 -> break\n    }\n    r = r + 100\n}\n'
+    t1 = ast.make()
+    r1 = ps.parse(t1, ps.new(src-b.to-bytes()))
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup, 0, 'sib-brk unsup')
+    runner.eq(ir1.contains('bb7:\n\tbr label %bb6'), 1, 'sib-brk targets own exit')
+    runner.eq(ir1.contains('bb7:\n\tbr label %bb3'), 0, 'sib-brk not stale exit')
+
+    ; 同一位置換成 continue ⇒ BR 落自己的 hdr（%bb4），不是第一顆的 %bb1
+    src-c = 'z65c = (n i64) (r i64) {\n    r = 0\n    i = n\n    (i > 0) {\n        i = i - 1\n    }\n    j = n\n    (j > 0) {\n        j = j - 1\n        j < 2 -> continue\n    }\n    r = r + 100\n}\n'
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(src-c.to-bytes()))
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup, 0, 'sib-cont unsup')
+    runner.eq(ir2.contains('bb7:\n\tbr label %bb4'), 1, 'sib-cont targets own hdr')
+    runner.eq(ir2.contains('bb7:\n\tbr label %bb1'), 0, 'sib-cont not stale hdr')
+}
+
+; ── s65 前置：epl 元素位名栈陈项 ⇒ 第二個兄弟容器遍历改写循環变量遯漏門禁（静默错码）──
+test-coll-sibling-write-gate = () {
+    src = 'gs65 = (xs []i64, ys []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        r = r + 1\n    }\n    w <- ys: {\n        w = 9\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'coll-sib-write counted')
+    runner.eq(ir.contains('define'), 0, 'coll-sib-write no code')
+}
+
+; ── s65 前置：rnms 栈名陈项 ⇒ 已退出的外层循環名被兄弟循環的内层同名误拒 ──
+test-rng-sibling-rnms-false-gate = () {
+
+    ; 第一颗区间遍历用 i（已退出）；第二颗用 j，其体内再开 i ——i 与活栈上只有 j 可比 ⇒ 应合法
+    src = 'gr65 = (n i64) (r i64) {\n    r = 0\n    i <- [0..3]: {\n        r = r + 1\n    }\n    j <- [0..3]: {\n        i <- [0..2]: {\n            r = r + i\n        }\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'rng-sib-rnms unsup')
+    runner.eq(ir.contains('define'), 1, 'rng-sib-rnms code')
+}
+
+; ── s65：值匹配臂体里的 `it` 隐式绑定——判定块 LOAD 的主体值压栈后在臂体内直读────
+test-it-basic = () {
+    src = 'i1x = (n i64) (r i64) {\n    r = 0\n    n: {\n        1 -> r = it\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'it-basic unsup')
+    runner.eq(ir.contains('define'), 1, 'it-basic code')
+    runner.eq(ir.contains('icmp eq'), 1, 'it-basic cmp')
+
+    ; 臂体读的是判定块 load 的主体值（同一 %vN 存进 r 槽），全程只多这一颗 load
+    runner.eq(ir.contains('load i64'), 1, 'it-basic load')
+}
+
+; 兜底臂单独吃 it：无判定块 ⇒ 体首块补一次 LOAD
+ test-it-wild = () {
+    src = 'i2x = (n i64) (r i64) {\n    n: {\n        -> r = it\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'it-wild unsup')
+    runner.eq(ir.contains('load i64'), 1, 'it-wild load')
+    runner.eq(ir.contains('define'), 1, 'it-wild code')
+}
+
+; it 参与算术：`r = it + 1` ⇒ add 吃栈顶值 id
+ test-it-arith = () {
+    src = 'i3x = (n i64) (r i64) {\n    r = 0\n    n: {\n        1 -> r = it + 1\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'it-arith unsup')
+    runner.eq(ir.contains('add i64'), 1, 'it-arith add')
+}
+
+; 嵌套 match：内层臂里 `it` = 内层主体；外层臂退栈后恢复（先拷具名局部 t0 再过内层 match）
+ test-it-nested = () {
+    src = 'i4x = (n i64, m i64) (r i64) {\n    r = 0\n    n: {\n        1 -> {\n            t0 = it\n            m: {\n                2 -> r = it\n                -> r = 9\n            }\n            r = r + t0\n        }\n        -> r = 0\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'it-nested unsup')
+    runner.eq(ir.contains('define'), 1, 'it-nested code')
+    runner.eq(ir.contains('icmp eq i64 %v'), 1, 'it-nested cmp')
+}
+
+; 门禁：写 `it` / 裸链臂里读 `it` / match 外读 `it` ⇒ 计 unsup 且整函数不产码
+ test-it-gate = () {
+    src-w = 'i5w = (n i64) (r i64) {\n    n: {\n        1 -> {\n            it = 5\n            r = it\n        }\n        -> r = 0\n    }\n}\n'
+    t1 = ast.make()
+    r1 = ps.parse(t1, ps.new(src-w.to-bytes()))
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup > 0, 1, 'it-gate-write counted')
+    runner.eq(ir1.contains('define'), 0, 'it-gate-write no code')
+
+    src-b = 'i5b = (n i64) (r i64) {\n    r = 0\n    {\n        n == 1 -> r = it\n        -> r = 0\n    }\n}\n'
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(src-b.to-bytes()))
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 'it-gate-bare counted')
+    runner.eq(ir2.contains('define'), 0, 'it-gate-bare no code')
+
+    src-o = 'i5o = (n i64) (r i64) {\n    r = it\n}\n'
+    t3 = ast.make()
+    r3 = ps.parse(t3, ps.new(src-o.to-bytes()))
+    agg3 = h2m-new()
+    ir3 = h2m-lower-program(t3, agg3, r3)
+    runner.eq(agg3.unsup > 0, 1, 'it-gate-outside counted')
+    runner.eq(ir3.contains('define'), 0, 'it-gate-outside no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-call-s64-scatter()
@@ -1761,6 +1887,14 @@ test-vm-block()
 test-vm-in-range()
 test-vm-nested()
 test-vm-gate()
+test-sib-loop-target()
+test-coll-sibling-write-gate()
+test-rng-sibling-rnms-false-gate()
+test-it-basic()
+test-it-wild()
+test-it-arith()
+test-it-nested()
+test-it-gate()
 test-gate()
 
 runner.summary()

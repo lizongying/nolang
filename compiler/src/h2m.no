@@ -25,7 +25,8 @@
 ;         控制流（s58）：K-SURFACE-MATCH 的语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
 ;         （臂群在 helper/aux 阵，12 aux/臂，展开成 if/elif/else 的 CONDBR 链——镜像 Go desugarSurfaceMatchToIfExpr）
 ;         值匹配（s63）：同一节点的显式主体形 `x: { 1 -> a1  2 -> a2  -> b }`——主体限「已在槽表登记且槽型 i64 的
-;         裸标识符」、型样限「裸整型字面量」，逐臂在【本臂判定块内】重读主体发 OP-CMPEQ（复用 s35，零改 cg）
+;         裸标识符」、型样限「裸整型字面量」，逐臂在【本臂判定块内】重读主体发 OP-CMPEQ（复用 s35，零改 cg）；
+;         臂体里的 `it` 隐式绑定（s65）：逐臂把主体值压进 c.itv 栈，嵌套 match 臂入栈臂退栈恢复外层
 ;         块终结形（s59）：return / break / continue（含 * / ** 速写经解析归一后的同形节点）——
 ;         return 走全函数共享的 ret 块（entry 零铺槽已保证未赋值输出参回零值），
 ;         break/continue 走循环目标栈（(hdr, exit) 对，限最内层循环、无标签形）；
@@ -97,9 +98,10 @@
 ;   stk / stk-n = 循环目标栈（h2m-lower-for 进 body 前压 (continue 目标, exit) 对 ⇒ break/continue 查最内层；
 ;     条件循环的 continue 目标 = hdr，s60m 计数循环 = update 块，与 Go loopCtx{exit, update} 同口径）
 ; s61 追加：rnms / rnms-n = 活动遍历的循环变量名栈（内层与外层同名 ⇒ 共用一个槽会互相踩计数，
-;     就地计 unsup；区间遍历与容器遍历共用本栈；与 stk 同样只追加不删除，用 rnms-n 当逻辑深度）
+;     就地计 unsup；区间遍历与容器遍历共用本栈；⚠️ s65 修正：出栈时真刪除（pop），只減計数留陳項 ⇒
+;     兄弟循环读到已退出层的陈名——误拒（同名合法复用被计 unsup）与漏闸双向错）
 ; s62 追加：epl / epl-n = 容器遍历体内活动的「元素位绑定名」栈（Go bindElemPlace 语义：写循环变量 = 写回容器元素；
-;     noc 走 VECGET 取副本，写回不可得 ⇒ 名字命中即计 unsup，同 rnms 只追加不删除）
+;     noc 走 VECGET 取副本，写回不可得 ⇒ 名字命中即计 unsup；同 rnms，s65 起出栈真刪除）
 ;     另：TY-VEC 形参在 mem 模式下【不铺槽】——cg 没有 alloca %vec 的 op，而函数形参本身就是 entry 就存在
 ;     的 SSA 值、支配全函数所有块 ⇒ 绑定保持 incoming 值 id 即跨块可读（h2m-var-read 对此型别直返该 id）
 h2m-ctx {
@@ -127,6 +129,8 @@ h2m-ctx {
     epl []str
     epl-n i64
     args []i64
+    itv []i64
+    itv-n i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -172,6 +176,9 @@ h2m-new = () (c h2m-ctx) {
         epl-n: 0
         args: []
         i64
+        itv: []
+        i64
+        itv-n: 0
     }
     c.vty.push(TY-I64)
 }
@@ -359,41 +366,50 @@ h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
 }
 
 ; 读一个变量的当前值：mem == 0 直返 SSA 值 id；mem == 1 在当前块发 LOAD/SLOAD
+; s65：`it` 隐式绑定——值匹配臂降级时把主体值压进 c.itv 栈（不进 names/槽表），栈顶即当前臂的绑定值；
+;   绑定臂内的 `it` 读永在 match 内（栈非空），match 外的 `it` 仍走 names 路（查不到计 unsup）
 ; c: 上下文
 ; name: 变量名
 ; v: 值 id（0 = 未登记或槽型 unsupported，已计入 unsup）
 h2m-var-read = (c h2m-ctx, name str) (v i64) {
     v = 0
-    i = h2m-name-find(c, name)
-    i < 0 -> h2m-mark(c)
-    i >= 0 && c.mem == 0 -> v = c.vids[i] #{index-out=zero}
-    i >= 0 && c.mem == 1 -> {
-        sid = c.vids[i] #{index-out=zero}
-        st = c.tys[i] #{index-out=zero}
-        st == TY-I64 || st == TY-U64 -> {
-            v = h2m-alloc(c, st)
-            h2m-emit(c, OP-LOAD, v, sid, 0, '', st)
-        }
-        st == TY-STR -> {
-            v = h2m-alloc(c, TY-STR)
-            h2m-emit(c, OP-SLOAD, v, sid, 0, '', TY-STR)
-        }
+    name == 'it' && c.itv-n > 0 -> v = c.itv[c.itv-n - 1] #{index-out=zero}
+    name != 'it' || c.itv-n <= 0 -> {
+        i = h2m-name-find(c, name)
+        i < 0 -> h2m-mark(c)
+        i >= 0 && c.mem == 0 -> v = c.vids[i] #{index-out=zero}
+        i >= 0 && c.mem == 1 -> {
+            sid = c.vids[i] #{index-out=zero}
+            st = c.tys[i] #{index-out=zero}
+            st == TY-I64 || st == TY-U64 -> {
+                v = h2m-alloc(c, st)
+                h2m-emit(c, OP-LOAD, v, sid, 0, '', st)
+            }
+            st == TY-STR -> {
+                v = h2m-alloc(c, TY-STR)
+                h2m-emit(c, OP-SLOAD, v, sid, 0, '', TY-STR)
+            }
 
-        ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
-        st == TY-VEC -> v = sid
-        st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC -> h2m-mark(c)
+            ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
+            st == TY-VEC -> v = sid
+            st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC -> h2m-mark(c)
+        }
     }
 }
 
 ; 写一个变量：mem == 0 绑/覆盖值 id；mem == 1 发 STORE/SSTORE进槽（型别不符 ⇒ unsup）
 ; ⚠️ s62 元素位门禁：名字落在容器遍历的活动名栈 c.epl 里 ⇒ Go 的 bindElemPlace 会把这次赋值
 ;   【写回容器元素】，而 noc 侧 VECGET 交出的是副本、写它只改副本 ⇒ 语义分岔，计 unsup 整函数不产码
+; ⚠️ s65 写 `it` 门禁：绑定臂内对 `it` 赋值不在覆盖面（臂绑定值是只读侧池项，无槽可落）⇒ 计 unsup
 ; ⚠️ TY-VEC 无槽也不能写（cg 无 %vec 的 store op）⇒ 落入 ok-w == 0 计 unsup
 ; c: 上下文
 ; name: 变量名
 ; val: 右值的值 id
 h2m-var-write = (c h2m-ctx, name str, val i64) {
     hit = 0
+    it-w = 0
+    name == 'it' && c.itv-n > 0 -> it-w = 1
+    it-w == 1 -> h2m-mark(c)
     q = 0
     (q < c.epl-n && hit == 0) {
         en = c.epl[q] #{index-out=zero}
@@ -403,8 +419,8 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
         q = q + 1
     }
     hit == 1 -> h2m-mark(c)
-    hit == 0 && c.mem == 0 -> h2m-var-bind(c, name, val)
-    hit == 0 && c.mem == 1 -> {
+    it-w == 0 && hit == 0 && c.mem == 0 -> h2m-var-bind(c, name, val)
+    it-w == 0 && hit == 0 && c.mem == 1 -> {
         ok-w = 0
         i = h2m-name-find(c, name)
         i >= 0 -> {
@@ -907,9 +923,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
         d.kind == asp.K-IDENTIFIER -> {
             nm = ast.str-at(t, d.s0)
+
+            ; s65：`it` 不在 names/槽表——值匹配臂降级时住在 c.itv 栈上，栈非空即读栈顶
+            it-on = 0
+            nm == 'it' && c.itv-n > 0 -> it-on = 1
             vi = h2m-name-find(c, nm)
-            vi >= 0 -> v = h2m-var-read(c, nm)
-            vi < 0 -> h2m-mark(c)
+            it-on == 1 || vi >= 0 -> v = h2m-var-read(c, nm)
+            it-on == 0 && vi < 0 -> h2m-mark(c)
         }
 
         d.kind == asp.K-GROUPED-EXPRESSION -> {
@@ -1302,6 +1322,10 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         #{overflow=wrap}
         c.stk-n = c.stk-n + 1
         h2m-lower-block(t, c, sg, body)
+
+        ; s65：出栈真刪除——只減計数留陳項 ⇒ 下一个兄弟循环查到本层的 hdr/exit（break 回跳成死循環）
+        c.stk.pop()
+        c.stk.pop()
         c.stk-n = c.stk-n - 1
         h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
 
@@ -1347,6 +1371,10 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 #{overflow=wrap}
                 c.stk-n = c.stk-n + 1
                 h2m-lower-block(t, c, sg, body)
+
+                ; s65：出栈真刪除（同前置循環）
+                c.stk.pop()
+                c.stk.pop()
                 c.stk-n = c.stk-n - 1
                 h2m-emit(c, OP-BR, 0, cu-id, 0, '', 0)
 
@@ -1502,7 +1530,12 @@ h2m-lower-range = (t ast, c h2m-ctx, sg h2m-sigs, rg i64, body i64, vn str) {
             #{overflow=wrap}
             c.rnms-n = c.rnms-n + 1
             h2m-lower-block(t, c, sg, body)
+
+            ; s65：出栈真刪除——rnms 留陳項 ⇒ 后续兄弟层的同名检查拿已退出层的名字误拒／漏闸
+            c.rnms.pop()
             c.rnms-n = c.rnms-n - 1
+            c.stk.pop()
+            c.stk.pop()
             c.stk-n = c.stk-n - 1
             h2m-emit(c, OP-BR, 0, cup-id, 0, '', 0)
 
@@ -1635,8 +1668,14 @@ h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn st
         #{overflow=wrap}
         c.epl-n = c.epl-n + 1
         h2m-lower-block(t, c, sg, body)
+
+        ; s65：出栈真刪除——epl 留陳項 ⇒ 下一个兄弟容器遍历里写循环变量的门禁漏闸（静默错码）
+        c.epl.pop()
         c.epl-n = c.epl-n - 1
+        c.rnms.pop()
         c.rnms-n = c.rnms-n - 1
+        c.stk.pop()
+        c.stk.pop()
         c.stk-n = c.stk-n - 1
         h2m-emit(c, OP-BR, 0, upd-id, 0, '', 0)
 
@@ -1655,6 +1694,46 @@ h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn st
     }
 }
 
+; s65：子树里是否引用了 `it`——兜底臂只在命中时才补主体 LOAD（不命中则 IR 与 s63 同形，零回归）
+; 递归走 kid 阵，另下钻 K-SURFACE-MATCH 的 aux 臂区（槽 10/11）；ForStatement 体已是 kid 无需特处理；
+; 看不到即不推 ⇒ 臂里真用 `it` 时 var-read 就地计 unsup，方向安全
+; t: AST arena
+; n: 子树根节点 id
+; u: 1 = 子树里引用了 `it`
+h2m-subtree-uses-it = (t ast, n i64) (u i64) {
+    u = 0
+    n > 0 -> {
+        d = ast.nd-at(t, n)
+        d.kind == asp.K-IDENTIFIER -> {
+            ast.str-at(t, d.s0) == 'it' -> u = 1
+        }
+        u == 0 -> {
+            i = 0
+            (i < d.nkid && u == 0) {
+                k = ast.kid-at(t, d.kid0 + i)
+                k > 0 -> u = h2m-subtree-uses-it(t, k)
+
+                #{overflow=wrap}
+                i = i + 1
+            }
+            u == 0 && d.kind == asp.K-SURFACE-MATCH -> {
+                arms = d.hcount
+                j = 0
+                (j < arms && u == 0) {
+                    hb = d.hbase + 12 * j
+                    cn = ast.aux-at(t, hb + 10)
+                    bn = ast.aux-at(t, hb + 11)
+                    u = h2m-subtree-uses-it(t, cn)
+                    u == 0 -> u = h2m-subtree-uses-it(t, bn)
+
+                    #{overflow=wrap}
+                    j = j + 1
+                }
+            }
+        }
+    }
+}
+
 ; SurfaceMatch 降级（s58 裸链 + s63 值匹配）：语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
 ;   与带主体的显式链 `x: { 1 -> a1  2 -> a2  -> b }`
 ; 实测形制（tmp/probe-s58-ast.no、tmp/probe-s63-ast.no，后者钉于 tmp/s63-ast-out.txt）：节点 nkid=1——
@@ -1669,9 +1748,10 @@ h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn st
 ; s63 值匹配（主体存在）：Go 权威 desugar 是 `raw-a[i] == 0 -> cond = ps-mk-eq(t, subj-node, pat-a[i])`
 ;   （ps.no:10372），即每臂比「主体 == 型样」，且主体节点被每臂重复引用 ⇒ noc 侧同样在【本臂判定块内】
 ;   各读一次主体（块必须是指令序连续段，把某块发的 LOAD 结果拿到别的块用会破支配关系）
-; ⚠️ 本件只收「主体 = i64 变量名 + 型样 = 裸整型字面量」一形：解构绑定、'ok' 关键字臂（dot-val）、
+; ⚠️ 本件只收「主体 = i64 变量名 + 型样 = 裸整型字面量」一形（臂体里 `it` 可读自 s65）：解构绑定、'ok' 关键字臂（dot-val）、
 ;   raw-cond `ok(<expr>)`、typePattern／typeArm、非 i64 主体（str／vec／option）、非字面量型样
-;   （具名型样、负数前缀式、布尔／字符串字面量）一律走形状门禁 ⇒ 整函数不产码
+;   （具名型样、负数前缀式、布尔／字符串字面量）一律走形状门禁 ⇒ 整函数不产码；
+;   写 `it`（`it = ...`）与裸链（无主体）臂体里的 `it` 读均在 h2m-var-read/write 就地计 unsup
 ; ⚠️ 收闸前的行为是【静默错码】不是 unsup：主体被丢、型样字面量当布尔条件 ⇒ `1 -> …` 恒真
 ;   （实测 tmp/probe-s63-now.no：unsup=0、%c10 = icmp ne i64 1, 0、主体 %v1 从未 load）
 ; ⚠️ 先跑整链形状前置校验再发指令：cg 要求每块都是指令序的**连续段**且每个被引用的块至少拿到一条终结指令，
@@ -1762,8 +1842,29 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 #{overflow=wrap}
                 last = j + 1
                 wild == 1 -> {
+
+                    ; s65：兜底臂无判定块——仅当体子树引用 `it` 时在体首块补一次主体 LOAD 并压栈
+                    ;   （判定臂的栈压入复用判定块已有 load，不新增指令）
+                    bound = 0
+                    vmode == 1 && h2m-subtree-uses-it(t, bn) == 1 -> {
+                        iv1 = h2m-var-read(c, sname)
+                        iv1 <= 0 -> h2m-mark(c)
+                        iv1 > 0 -> {
+                            bound = 1
+                            c.itv.push(iv1)
+
+                            #{overflow=wrap}
+                            c.itv-n = c.itv-n + 1
+                        }
+                    }
                     h2m-lower-branch(t, c, sg, bn)
                     h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+                    bound == 1 -> {
+                        c.itv.pop()
+
+                        #{overflow=wrap}
+                        c.itv-n = c.itv-n - 1
+                    }
                     stop = 1
                 }
                 wild == 0 -> {
@@ -1771,6 +1872,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                     ; 型样求值 → （有主体时）与主体值发 OP-CMPEQ；裸链仍拿条件本身（s58 路）
                     pv = h2m-lower-expr(t, c, sg, cn)
                     cv = pv
+                    sv = 0
                     vmode == 1 && pv > 0 -> {
                         sv = h2m-var-read(c, sname)
                         sv > 0 -> {
@@ -1790,8 +1892,24 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                         last < arms -> ftgt = h2m-block-new(c)
                         h2m-emit(c, OP-CONDBR, ftgt, cv, arm-id, '', 0)
                         h2m-set-block(c, arm-id)
+
+                        ; s65：本臂绑定值 = 判定块刚 LOAD 的主体值（判定块支配臂块）⇒ 压入后臂体里的 `it` 可读
+                        ab = 0
+                        sv > 0 -> {
+                            ab = 1
+                            c.itv.push(sv)
+
+                            #{overflow=wrap}
+                            c.itv-n = c.itv-n + 1
+                        }
                         h2m-lower-branch(t, c, sg, bn)
                         h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+                        ab == 1 -> {
+                            c.itv.pop()
+
+                            #{overflow=wrap}
+                            c.itv-n = c.itv-n - 1
+                        }
                         next-id = ftgt
                     }
                 }

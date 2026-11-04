@@ -6,6 +6,18 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## v0.4.18
+
+- feat(selfhost): add s62 container-iteration lowering for vec-backed `i <- xs` loops
+- feat(selfhost): add s63 value-match lowering for integer pattern arms
+- feat(selfhost): bind implicit `it` values in match arms and pop loop/name stacks on scope exit
+- refactor(compiler): decouple call arguments with a dedicated side pool for scattered value ids
+- fix(mir): unwrap option payloads on element stores before writing non-option elements
+- fix(crypto): widen rc4 key-schedule byte arithmetic to i64 before modulo 256
+- fix(checker): fall back to redundant std call signatures when inferring types in single-file mode
+- test(no): pin implicit ok() wrapping on scalar writes into []?T elements and sibling-loop targets
+- docs(selfhost): record s62-s64 lowering slices and the call argument side pool ledger
+
 ## v0.4.17
 
 - feat(compiler): add option ordered comparisons via new MIR ops (int, f64, scalar, and f64-scalar wings)
