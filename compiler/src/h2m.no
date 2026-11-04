@@ -10,7 +10,7 @@
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
 ;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67；逻辑 && || s68，复用 OP-AND/OR）/
-;         PrefixExpression（s66：-x / !x，仅 i64）/
+;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
 ;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/IterRange 必须全 0）/
@@ -36,7 +36,7 @@
 ;         算术语义仍限 i64（其余型别的值进运算符即计 unsup，不发错码）
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、除与余（`/` `%`，Go 侧 `?i64` 除零→err，i64 子集未建模 option）、位清除 `&^`（无对应 op）、
-;         前缀 `~`（s66 只收 `-` `!`）、多输出参数、泛型（c3 > 0）、带默认值的参数、
+;         多输出参数、泛型（c3 > 0）、带默认值的参数、
 ;         非具名型别（map / *t / 别名／[]非 i64／s62 起只 []i64 形参入形）、vec 形参作返回值（s62）、
 ;         复合赋值、非函数定义语句、方法调用（点号）、
 ;         容器遍历的非 vec 容器源——str（Go 逐码点走 utf8_at，需 OP-UTF8AT）／定长数组 [n]t（无运行期长度）／
@@ -1082,7 +1082,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
         }
 
         ; s66：前缀表达式 -x / !x（镜像 Go emitNeg/emitNot hir2mir.go:5503/5505）
-        ;   '-' ⇒ OP-NEG；'!' ⇒ OP-NOT；其余前缀元算子（~）仍计 unsup
+        ;   '-' ⇒ OP-NEG；'!' ⇒ OP-NOT；'~' ⇒ OP-XOR（s69，见下）；其余非 i64 主体仍计 unsup
         d.kind == asp.K-PREFIX-EXPRESSION -> {
             osym = ast.str-at(t, d.s0)
             ok = ast.kid-at(t, d.kid0)
@@ -1097,6 +1097,17 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ov > 0 && osym == '!' && h2m-vty-at(c, ov) == TY-I64 -> {
                 mid = h2m-alloc(c, TY-I64)
                 h2m-emit(c, OP-NOT, mid, ov, 0, '', TY-I64)
+                v = mid
+                ok-p = 1
+            }
+
+            ; s69：位非 ~x（镜像 Go hir2mir.go:8861 ~⇒OpXor 全 1 常量，非 OpNot）
+            ;   ~x = x XOR -1（-1 = i64 全 1）；先落 OP-CONST -1，再 OP-XOR 双 SSA 操作数
+            ov > 0 && osym == '~' && h2m-vty-at(c, ov) == TY-I64 -> {
+                cm1 = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, cm1, -1, 0, '', TY-I64)
+                mid = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-XOR, mid, ov, cm1, '', TY-I64)
                 v = mid
                 ok-p = 1
             }

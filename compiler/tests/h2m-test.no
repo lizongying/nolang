@@ -1895,9 +1895,46 @@ test-neg-in-expr = () {
     runner.eq(ir.contains('add i64'), 1, 'neg-expr add')
 }
 
-; 门控：~x（位非）仍不在覆盖面 ⇒ unsup
+; 位非（s69）：~x ⇒ xor i64 %v, %v 且上数 CONST -1（add i64 0, -1），区别于 !x 的 xor i64 %v, 1
+test-bitnot-var = () {
+    src = 'q1x = (x i64) (r i64) {\n    r = ~x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bitnot-var unsup')
+    runner.eq(ir.contains('add i64 0, -1'), 1, 'bitnot-var const -1')
+    runner.eq(ir.contains('xor i64 %v'), 1, 'bitnot-var xor reg')
+    runner.eq(ir.contains('define'), 1, 'bitnot-var code')
+}
+
+; 位非嵌套：~(~x) ⇒ 两颗 xor（值 id 不同，均对 -1）
+test-bitnot-nested = () {
+    src = 'q2x = (x i64) (r i64) {\n    r = ~(~x)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bitnot-nested unsup')
+    runner.eq(ir.contains('xor i64 %v'), 1, 'bitnot-nested xor')
+    runner.eq(ir.contains('add i64 0, -1'), 1, 'bitnot-nested const')
+}
+
+; 位非参与二元：r = ~x + 3 ⇒ XOR 再 ADD
+test-bitnot-in-expr = () {
+    src = 'q3x = (x i64) (r i64) {\n    r = ~x + 3\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bitnot-expr unsup')
+    runner.eq(ir.contains('xor i64 %v'), 1, 'bitnot-expr xor')
+    runner.eq(ir.contains('add i64'), 1, 'bitnot-expr add')
+}
+
+; 门控：~s（str 主體）不在 i64 覆盖面 ⇒ unsup（s69 把旧 ~x(i64) 门控改为 str 门控，因 ~x 已支持）
 test-prefix-gate = () {
-    src = 'n6x = (x i64) (r i64) {\n    r = ~x\n}\n'
+    src = 'q4x = (s str) (r str) {\n    r = ~s\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
@@ -2095,6 +2132,9 @@ test-neg-lit()
 test-not-var()
 test-neg-nested()
 test-neg-in-expr()
+test-bitnot-var()
+test-bitnot-nested()
+test-bitnot-in-expr()
 test-prefix-gate()
 test-bit-and()
 test-bit-or()
