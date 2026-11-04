@@ -12,7 +12,9 @@
 ;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64）/
 ;         CallExpression（零参或实参值 id 连续的多参，返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
-;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/CountExpr/IterRange 必须全 0）/
+;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/IterRange 必须全 0）/
+;         计数循环（s60m）：K-FOR-STATEMENT 的 CountExpr 形 `N * { }` 与 `{ } * N`（两形在 parser 归一）——
+;         计数器落 entry 的 alloca 槽（槽名由 ForStatement 节点 id 合成），header 判 >0、update 块自减
 ;         控制流（s58）：K-SURFACE-MATCH 的语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
 ;         （臂群在 helper/aux 阵，12 aux/臂，展开成 if/elif/else 的 CONDBR 链——镜像 Go desugarSurfaceMatchToIfExpr）
 ;         块终结形（s59）：return / break / continue（含 * / ** 速写经解析归一后的同形节点）——
@@ -25,7 +27,8 @@
 ;         各臂汇成同一个结果值，本件只收语句位）、除与余、位运算、
 ;         前缀负号、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、非具名型别（[]t / map / *t / 别名）、
 ;         复合赋值、非函数定义语句、实参 id 不连续的调用、方法调用（点号）、
-;         计数循环 `n * { }`、区间与容器遍历 `i <- xs:`、带标签的 break/continue（s1 ≠ 'none'）、
+;         区间与容器遍历 `i <- xs:`（CountExpr 与 IterRange 二选一，后者仍不在覆盖面）、
+;         带标签的 break/continue（s1 ≠ 'none'）、
 ;         带值的 return（nkid>1 且 kid[0] ≠ 0，语料中恒裸）；表达式位的链与臂体非末位终结形不产码
 ;
 ; ── 实参连续契约（cg 的 OP-CALL 约定，非 Go 约定）─────────────────
@@ -69,7 +72,8 @@
 ;   故本文件只单向推进块 id（entry → arms / loop 区域 → 汇聚块），回边只发 OP-BR 不再发指令；
 ;   一旦离开某块就绝不再写它（写回去会重复发标签，opt 报标签重定义）。
 ; s59 追加：ret = 共享 return 块的块 id（0 = 尚未开；懒开保证无 return 的函数 IR 逐字节不变）；
-;   stk / stk-n = 循环目标栈（h2m-lower-for 进 body 前压 (hdr, exit) 对 ⇒ break/continue 查最内层）
+;   stk / stk-n = 循环目标栈（h2m-lower-for 进 body 前压 (continue 目标, exit) 对 ⇒ break/continue 查最内层；
+;     条件循环的 continue 目标 = hdr，s60m 计数循环 = update 块，与 Go loopCtx{exit, update} 同口径）
 h2m-ctx {
     ops []i64
     dsts []i64
@@ -371,6 +375,14 @@ h2m-ty-code = (s str) (t i64) {
     s == 'str' -> t = TY-STR
 }
 
+; 计数循环计数器的合成槽名（s60m）：带上 ForStatement 节点 id ⇒ 同函数内多个／嵌套计数循环各占一槽；
+;   '@' 不是合法标识符首字符 ⇒ 永不与源码里的变量名相撞，前扫描与降级侧共用本式子
+; n: ForStatement 节点 id
+; s: 合成名
+h2m-cnt-name = (n i64) (s str) {
+    s = '@cnt' - n.to-str()
+}
+
 ; ── 模块级函数签名表（调用点据此解析返回型别与实参个数，对齐 Go 的函数表查找）──
 h2m-sigs {
     fname []str
@@ -642,6 +654,15 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
 
             d.kind == asp.K-IF-EXPRESSION || d.kind == asp.K-FOR-STATEMENT || d.kind == asp.K-SURFACE-MATCH -> {
                 flow = 1
+
+                ; s60m：计数循环的计数器要跨迭代存活 ⇒ 必须落 entry 的 alloca 槽，而槽只能在进 body 前铺完
+                ;   ⇒ 前扫描在这里按节点 id 合成名登记；形状不合格（如同时带条件）会在降级侧计 unsup
+                ;   ⇒ 整函数不产码，多铺一个无人读的槽无害
+                d.kind == asp.K-FOR-STATEMENT -> {
+                    cnode = h2m-kid-i(t, n, 3)
+                    cnode > 0 -> h2m-lst-add(l, h2m-cnt-name(n), TY-I64)
+                }
+
                 f1 = h2m-scan-kids(t, sg, l, n)
                 f1 > flow -> flow = f1
                 fa = 0
@@ -1003,11 +1024,16 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     }
 }
 
-; ForStatement 降级（本件只收纯前置条件循环 `(cond) { }`）
+; ForStatement 降级（s57：纯前置条件循环 `(cond) { }`；s60m：计数循环 `N * { }` 与 `{ } * N`）
 ; kid 序 = [Init][Condition][Update][CountExpr][IterRange][Body]（ps.no:5706 注释 + 实测 kid[1]/kid[5]）
-; 块形制：当前块 BR → hdr；hdr 求值条件后 CONDBR(body, exit)；body 结尾 BR 回 hdr；后继语句落在 exit
-; s59：进 body 前压 (hdr, exit) 到循环栈（c.stk/c.stk-n）⇒ 体内 break/continue 查栈顶；出口弹回
-; ⚠️ Init/Update/CountExpr/IterRange 任一非 0 ⇒ 不在覆盖面（计数循环与区间遍历属后续）
+; 条件循环块形制：当前块 BR → hdr；hdr 求值条件后 CONDBR(body, exit)；body 结尾 BR 回 hdr；后继语句落在 exit
+; s59：进 body 前压 (continue 目标, exit) 到循环栈（c.stk/c.stk-n）⇒ 体内 break/continue 查栈顶；出口弹回
+; ⚠️ Init/Update/IterRange 任一非 0 ⇒ 不在覆盖面（区间与容器遍历属后续）
+; ⚠️ CountExpr 与 Condition 只认其一：Go lowerFor 先查 countID 命中即 whole 取计数臂（条件被静默丢弃），
+;   本件宁缺勿错：两者同时非 0 ⇒ 计 unsup
+; s60m 计数循环形制（镜像 Go lowerCountFor hir2mir.go:5408）：计数值 STORE 进合成计数器槽→
+;   hdr LOAD 后 CMPGT 0→ CONDBR(body, exit)→ body 结尾 BR 到 update（不是 hdr）→
+;   update 块 LOAD/SUB 1/STORE 后 BR hdr；continue 目标因此是 update（自减后再判，不会活锁）
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -1022,10 +1048,12 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     body = h2m-kid-i(t, n, 5)
     bad = 0
     d.nkid != 6 -> bad = 1
-    init != 0 || upd != 0 || cnt != 0 || rng != 0 -> bad = 1
-    cond == 0 || body == 0 -> bad = 1
+    init != 0 || upd != 0 || rng != 0 -> bad = 1
+    body == 0 -> bad = 1
+    cnt != 0 && cond != 0 -> bad = 1
+    cnt == 0 && cond == 0 -> bad = 1
     bad != 0 -> h2m-mark(c)
-    bad == 0 -> {
+    bad == 0 && cond != 0 -> {
         hdr-id = h2m-block-new(c)
         body-id = h2m-block-new(c)
         exit-id = h2m-block-new(c)
@@ -1049,6 +1077,64 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
 
         h2m-set-block(c, exit-id)
+    }
+
+    ; s60m：计数循环——计数值只算一次（落在进循环前的当前块），此后全靠槽里的自减驱动
+    bad == 0 && cnt != 0 -> {
+        nv0 = h2m-lower-expr(t, c, sg, cnt)
+        nv0 == 0 -> h2m-mark(c)
+
+        ; 计数器槽只认 i64（cg 只有 alloca i64 与 alloca %str-long 两种），其余型别进不了计数器
+        nv0 > 0 && h2m-vty-at(c, nv0) != TY-I64 -> h2m-mark(c)
+        nv0 > 0 && h2m-vty-at(c, nv0) == TY-I64 -> {
+            slot = h2m-var-find(c, h2m-cnt-name(n))
+
+            ; 前扫描未登记该槽 ⇒ 降级侧与前扫侧形制不一致（绝不允许默默发错码）
+            slot == 0 -> h2m-mark(c)
+            slot > 0 -> {
+                h2m-emit(c, OP-STORE, 0, nv0, slot, '', 0)
+                ch-id = h2m-block-new(c)
+                cb-id = h2m-block-new(c)
+                cu-id = h2m-block-new(c)
+                ce-id = h2m-block-new(c)
+                h2m-emit(c, OP-BR, 0, ch-id, 0, '', 0)
+
+                ; header：每次判定都重新 LOAD 计数器（槽跨迭代，SSA 值不可复用）
+                h2m-set-block(c, ch-id)
+                cl1 = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-LOAD, cl1, slot, 0, '', TY-I64)
+                cz0 = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, cz0, 0, 0, '', TY-I64)
+                cg0 = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CMPGT, cg0, cl1, cz0, '', TY-I64)
+                h2m-emit(c, OP-CONDBR, ce-id, cg0, cb-id, '', 0)
+
+                h2m-set-block(c, cb-id)
+
+                ; 循环目标对压 (update, exit)：continue 先自减再重判（对齐 Go loopCtx.update）
+                c.stk.push(cu-id)
+                c.stk.push(ce-id)
+
+                #{overflow=wrap}
+                c.stk-n = c.stk-n + 1
+                h2m-lower-block(t, c, sg, body)
+                c.stk-n = c.stk-n - 1
+                h2m-emit(c, OP-BR, 0, cu-id, 0, '', 0)
+
+                ; update 块：cnt = cnt - 1 后跳回 header（N ≤ 0 的初始形在 header 首次判定即退出）
+                h2m-set-block(c, cu-id)
+                cl2 = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-LOAD, cl2, slot, 0, '', TY-I64)
+                co1 = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, co1, 1, 0, '', TY-I64)
+                cnx = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-SUB, cnx, cl2, co1, '', TY-I64)
+                h2m-emit(c, OP-STORE, 0, cnx, slot, '', 0)
+                h2m-emit(c, OP-BR, 0, ch-id, 0, '', 0)
+
+                h2m-set-block(c, ce-id)
+            }
+        }
     }
 }
 
