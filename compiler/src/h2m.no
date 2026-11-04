@@ -15,6 +15,9 @@
 ;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/IterRange 必须全 0）/
 ;         计数循环（s60m）：K-FOR-STATEMENT 的 CountExpr 形 `N * { }` 与 `{ } * N`（两形在 parser 归一）——
 ;         计数器落 entry 的 alloca 槽（槽名由 ForStatement 节点 id 合成），header 判 >0、update 块自减
+;         区间遍历（s61）：K-FOR-STATEMENT 的 IterRange 形 `i <- [a..b]`（四括号组合＋自动双向）——
+;         循环变量落 entry 的 alloca 槽（按源名登记），方向由 lo <= hi 的分支解析（IR 无 select），
+;         init/header/update 三处各判一次方向，共 11 块；端点只求值一次，其后各块按 SSA 支配关系复用
 ;         控制流（s58）：K-SURFACE-MATCH 的语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
 ;         （臂群在 helper/aux 阵，12 aux/臂，展开成 if/elif/else 的 CONDBR 链——镜像 Go desugarSurfaceMatchToIfExpr）
 ;         块终结形（s59）：return / break / continue（含 * / ** 速写经解析归一后的同形节点）——
@@ -27,7 +30,9 @@
 ;         各臂汇成同一个结果值，本件只收语句位）、除与余、位运算、
 ;         前缀负号、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、非具名型别（[]t / map / *t / 别名）、
 ;         复合赋值、非函数定义语句、实参 id 不连续的调用、方法调用（点号）、
-;         区间与容器遍历 `i <- xs:`（CountExpr 与 IterRange 二选一，后者仍不在覆盖面）、
+;         容器遍历 `i <- xs`（K-ITERATION-EXPR 的 kid[1] 形制，需先补 OP-LEN/OP-INDEX 两条 op）、
+;         区间的开边界 `i <- [a..]`／`[..b]`／`[..]`（Go 取型别极值补齐，量级不可验证）、
+;         嵌套同名区间循环（两层共用一个槽 ⇒ 内层踩掉外层计数），
 ;         带标签的 break/continue（s1 ≠ 'none'）、
 ;         带值的 return（nkid>1 且 kid[0] ≠ 0，语料中恒裸）；表达式位的链与臂体非末位终结形不产码
 ;
@@ -74,6 +79,8 @@
 ; s59 追加：ret = 共享 return 块的块 id（0 = 尚未开；懒开保证无 return 的函数 IR 逐字节不变）；
 ;   stk / stk-n = 循环目标栈（h2m-lower-for 进 body 前压 (continue 目标, exit) 对 ⇒ break/continue 查最内层；
 ;     条件循环的 continue 目标 = hdr，s60m 计数循环 = update 块，与 Go loopCtx{exit, update} 同口径）
+; s61 追加：rnms / rnms-n = 活动区间遍历的循环变量名栈（内层与外层同名 ⇒ 共用一个槽会互相踩计数，
+;     就地计 unsup；与 stk 同样只追加不删除，用 rnms-n 当逻辑深度）
 h2m-ctx {
     ops []i64
     dsts []i64
@@ -94,6 +101,8 @@ h2m-ctx {
     ret i64
     stk []i64
     stk-n i64
+    rnms []str
+    rnms-n i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -131,6 +140,9 @@ h2m-new = () (c h2m-ctx) {
         stk: []
         i64
         stk-n: 0
+        rnms: []
+        str
+        rnms-n: 0
     }
     c.vty.push(TY-I64)
 }
@@ -381,6 +393,64 @@ h2m-ty-code = (s str) (t i64) {
 ; s: 合成名
 h2m-cnt-name = (n i64) (s str) {
     s = '@cnt' - n.to-str()
+}
+
+; 区间遍历的循环变量名（s61）：非 K-ITERATION-EXPR 或名字缺位 ⇒ 回空串（呼叫方不铺槽／计 unsup）
+; 实测形制（tmp/probe-s61-ast.no，钉于 tmp/s61-ast-out.txt）：
+;   K-ITERATION-EXPR(41)：nkid=2，s0 = 循环变量名，kid[0] = 区间源（K-RANGE-EXPRESSION），kid[1] = 容器源
+; t: AST arena
+; ie: IterationExpr 节点 id
+; vn: 循环变量名
+h2m-rng-var = (t ast, ie i64) (vn str) {
+    vn = ''
+    ie > 0 -> {
+        d = ast.nd-at(t, ie)
+        d.kind == asp.K-ITERATION-EXPR && d.nkid == 2 && d.s0 > 0 -> vn = ast.str-at(t, d.s0)
+    }
+}
+
+; 区间遍历形状校验（s61）：回 RangeExpression 节点 id，0 = 不在覆盖面（呼叫方计 unsup）
+;   K-RANGE-EXPRESSION(54)：nkid=2，s0 = leftInc（'true'/'false'）、s1 = rightInc，
+;   kid[0] = 下界、kid[1] = 上界（缺位为 0 ⇒ 开边界）
+; 不入形的判据：容器遍历（kid[0] 非 RANGE 或 kid[1] 非 0，需 OP-LEN/OP-INDEX 两 op）／
+;   开边界（任一端为 0，Go 取 i64 极值补齐，实测量级不可验证）／
+;   `for v <- rng` 关键字形里 cond 不是循环变量自身的 IDENT（Go lowerFor 先取 iter 臂、条件位被忽略，
+;   本件只收「条件位就是循环变量」这一形，其余宁缺勿错）
+; t: AST arena
+; ie: IterationExpr 节点 id
+; cond: ForStatement 的 Condition kid（0 或循环变量的 IDENT）
+; rg: RangeExpression 节点 id（0 = 不在覆盖面）
+h2m-rng-check = (t ast, ie i64, cond i64) (rg i64) {
+    rg = 0
+    ie > 0 -> {
+        d = ast.nd-at(t, ie)
+        ok-c = 0
+        d.kind == asp.K-ITERATION-EXPR && d.nkid == 2 && d.s0 > 0 -> ok-c = 1
+        ok-c == 1 -> {
+            k0 = h2m-kid-i(t, ie, 0)
+            k1 = h2m-kid-i(t, ie, 1)
+            k0 > 0 && k1 == 0 -> {
+                kd = ast.nd-at(t, k0)
+                kd.kind == asp.K-RANGE-EXPRESSION && kd.nkid == 2 -> {
+                    sd = h2m-kid-i(t, k0, 0)
+                    ed = h2m-kid-i(t, k0, 1)
+
+                    ; 开边界（任一端缺位）不在本件覆盖面
+                    sd > 0 && ed > 0 -> rg = k0
+                }
+            }
+            cond > 0 && rg > 0 -> {
+                cvn = ast.str-at(t, d.s0)
+                cd = ast.nd-at(t, cond)
+                keep = 0
+                cd.kind == asp.K-IDENTIFIER -> {
+                    cnm = ast.str-at(t, cd.s0)
+                    cnm == cvn -> keep = 1
+                }
+                keep == 0 -> rg = 0
+            }
+        }
+    }
 }
 
 ; ── 模块级函数签名表（调用点据此解析返回型别与实参个数，对齐 Go 的函数表查找）──
@@ -661,6 +731,14 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
                 d.kind == asp.K-FOR-STATEMENT -> {
                     cnode = h2m-kid-i(t, n, 3)
                     cnode > 0 -> h2m-lst-add(l, h2m-cnt-name(n), TY-I64)
+
+                    ; s61：区间遍历的循环变量同理（体内要读、又必须跨迭代），但它用**源名**登记，
+                    ;   体内的 K-IDENTIFIER 才能直接查到这颗槽；形状不合时不铺槽（降级侧计 unsup）
+                    rnode = h2m-kid-i(t, n, 4)
+                    rnode > 0 -> {
+                        rgi = h2m-rng-check(t, rnode, h2m-kid-i(t, n, 1))
+                        rgi > 0 -> h2m-lst-add(l, h2m-rng-var(t, rnode), TY-I64)
+                    }
                 }
 
                 f1 = h2m-scan-kids(t, sg, l, n)
@@ -1024,16 +1102,19 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     }
 }
 
-; ForStatement 降级（s57：纯前置条件循环 `(cond) { }`；s60m：计数循环 `N * { }` 与 `{ } * N`）
+; ForStatement 降级（s57：纯前置条件循环 `(cond) { }`；s60m：计数循环 `N * { }` 与 `{ } * N`；s61：区间遍历 `i <- [a..b]`）
 ; kid 序 = [Init][Condition][Update][CountExpr][IterRange][Body]（ps.no:5706 注释 + 实测 kid[1]/kid[5]）
 ; 条件循环块形制：当前块 BR → hdr；hdr 求值条件后 CONDBR(body, exit)；body 结尾 BR 回 hdr；后继语句落在 exit
 ; s59：进 body 前压 (continue 目标, exit) 到循环栈（c.stk/c.stk-n）⇒ 体内 break/continue 查栈顶；出口弹回
-; ⚠️ Init/Update/IterRange 任一非 0 ⇒ 不在覆盖面（区间与容器遍历属后续）
-; ⚠️ CountExpr 与 Condition 只认其一：Go lowerFor 先查 countID 命中即 whole 取计数臂（条件被静默丢弃），
-;   本件宁缺勿错：两者同时非 0 ⇒ 计 unsup
+; ⚠️ Init/Update 任一非 0 ⇒ 不在覆盖面（C 形三段式本件不收）
+; ⚠️ Condition／CountExpr／IterRange 三者只认其一：Go lowerFor 按 iter → count → 三段式的序命中即走，
+;   多余位被静默丢弃（计数的条件位、区间的条件位都会沉掉）；本件宁缺勿错：并存 ⇒ 计 unsup，
+;   仅放宽 `for v <- rng` 关键字形（ps.no:5762 把 cond 写成循环变量自身的 IDENT，与 IterRange 同义不矛盾，
+;   h2m-lower-for 对此形不另计形位）
 ; s60m 计数循环形制（镜像 Go lowerCountFor hir2mir.go:5408）：计数值 STORE 进合成计数器槽→
 ;   hdr LOAD 后 CMPGT 0→ CONDBR(body, exit)→ body 结尾 BR 到 update（不是 hdr）→
 ;   update 块 LOAD/SUB 1/STORE 后 BR hdr；continue 目标因此是 update（自减后再判，不会活锁）
+; s61 区间遍历形制（镜像 Go lowerRangeFor hir2mir.go:5017-5176）→ 转 h2m-lower-range
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -1048,12 +1129,36 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     body = h2m-kid-i(t, n, 5)
     bad = 0
     d.nkid != 6 -> bad = 1
-    init != 0 || upd != 0 || rng != 0 -> bad = 1
+    init != 0 || upd != 0 -> bad = 1
     body == 0 -> bad = 1
-    cnt != 0 && cond != 0 -> bad = 1
-    cnt == 0 && cond == 0 -> bad = 1
+
+    ; 区间位先过形状校验；循环变量名由同一对助手取出（与前扫描铺槽共用同一式子）
+    ; rg 非 0 且 cond 非 0 时，cond 必是「循环变量自身的 IDENT」（`for v <- rng` 关键字形，
+    ;   h2m-rng-check 只认这一形），与 IterRange 同义 ⇒ 不另计一个形位
+    rg = 0
+    vn = ''
+    bad == 0 && rng != 0 -> rg = h2m-rng-check(t, rng, cond)
+    bad == 0 && rng != 0 && rg == 0 -> bad = 1
+    rg > 0 -> vn = h2m-rng-var(t, rng)
+    bad == 0 && rng != 0 && vn == '' -> bad = 1
+
+    ; 条件／计数／区间三位只允许一个真正生效的形（并存时 Go 会静默吃掉其一 ⇒ 就地不产码）
+    form = 0
+    rg == 0 && cond != 0 -> form = 1
+    cnt != 0 -> {
+
+        #{overflow=wrap}
+        form = form + 1
+    }
+    rng != 0 -> {
+
+        #{overflow=wrap}
+        form = form + 1
+    }
+    form != 1 -> bad = 1
+
     bad != 0 -> h2m-mark(c)
-    bad == 0 && cond != 0 -> {
+    bad == 0 && cond != 0 && rng == 0 -> {
         hdr-id = h2m-block-new(c)
         body-id = h2m-block-new(c)
         exit-id = h2m-block-new(c)
@@ -1134,6 +1239,172 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 
                 h2m-set-block(c, ce-id)
             }
+        }
+    }
+
+    ; s61：区间遍历——形状已过校验，块形制交给 h2m-lower-range
+    bad == 0 && rng != 0 -> h2m-lower-range(t, c, sg, rg, body, vn)
+}
+
+; 区间遍历降级（s61）：`i <- [a..b]`／`(a..b]`／`[a..b]`／`(a..b)` 四括号组合 + 自动双向
+; 镜像 Go lowerRangeFor（src/mir/hir2mir.go:5017-5176）——IR 无 select ⇒ 方向由 lo <= hi 的分支解析，
+;   init / header / update 三处各判一次方向，共 11 块（块 id 递增序即写入序，满足 cg 连续段纪律）：
+;   pre    ：两端点只求值一次，发 CMPLE(lo, hi) + CONDBR(initDesc | initAsc)
+;   initAsc：i = lo + off（'(' ⇒ off=1，'[' ⇒ 0）后 BR join    initDesc：i = lo - off 后 BR join
+;   join   ：BR hdr
+;   hdr    ：再判方向 ⇒ CONDBR(hdDesc | hdAsc)
+;   hdAsc  ：LOAD i 后 i < hi（']' ⇒ <=），CONDBR(exit | body)   hdDesc：i > hi（']' ⇒ >=）
+;   body   ：陈述列，结尾 BR upd（continue 目标 = upd，同 s60m 口径）
+;   upd    ：再判方向 ⇒ CONDBR(updDesc | updAsc)
+;   updAsc ：i = i + 1 后 BR hdr                              updDesc：i = i - 1 后 BR hdr
+;   exit   ：循环后继语句落此块
+; ⚠️ 与 Go 的偏差（就地不产码）：容器遍历／开边界／嵌套同名区间循环（末者两层共用一个槽 ⇒
+;   内层踩掉外层计数，Go 给内层另开一颗并把绑定也换掉，两边语义都不干净，宁缺勿错）
+; ⚠️ 端点值 sv/ev 在 pre 块定义、被其后各块引用：pre 支配一切循环块 ⇒ SSA 合法；
+;   且端点不写回（只有循环变量落槽），故可像 Go 一样直接复用同一对值 id 而非每次重新 LOAD
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; rg: RangeExpression 节点 id（h2m-rng-check 已验形状）
+; body: 循环体 BlockStatement 节点 id
+; vn: 循环变量名
+h2m-lower-range = (t ast, c h2m-ctx, sg h2m-sigs, rg i64, body i64, vn str) {
+    rd = ast.nd-at(t, rg)
+    sk = h2m-kid-i(t, rg, 0)
+    ek = h2m-kid-i(t, rg, 1)
+
+    ; 左开 '(' ⇒ 起始值要偏一格；右闭 ']' ⇒ 终止比较取 <=／>=，右开 ')' ⇒ 取 <／>
+    li = ast.str-at(t, rd.s0)
+    ri = ast.str-at(t, rd.s1)
+    lo-off = 0
+    li != 'true' -> lo-off = 1
+    asc-op = OP-CMPLT
+    desc-op = OP-CMPGT
+    ri == 'true' -> asc-op = OP-CMPLE
+    ri == 'true' -> desc-op = OP-CMPGE
+
+    islot = h2m-var-find(c, vn)
+    bad = 0
+    islot == 0 -> bad = 1
+
+    ; 嵌套同名区间循环判据：活动名栈里已有同名 ⇒ 共用一颗槽会互相踩计数，整函数不产码
+    q = 0
+    (q < c.rnms-n && bad == 0) {
+        qn = c.rnms[q] #{index-out=zero}
+        qn == vn -> bad = 1
+
+        #{overflow=wrap}
+        q = q + 1
+    }
+    bad == 1 -> h2m-mark(c)
+
+    bad == 0 -> {
+        sv = h2m-lower-expr(t, c, sg, sk)
+        ev = h2m-lower-expr(t, c, sg, ek)
+        ty-ok = 1
+        sv > 0 && h2m-vty-at(c, sv) != TY-I64 -> ty-ok = 0
+        ev > 0 && h2m-vty-at(c, ev) != TY-I64 -> ty-ok = 0
+        sv == 0 || ev == 0 || ty-ok == 0 -> h2m-mark(c)
+
+        sv > 0 && ev > 0 && ty-ok == 1 -> {
+            ias-id = h2m-block-new(c)
+            ide-id = h2m-block-new(c)
+            ijo-id = h2m-block-new(c)
+            chr-id = h2m-block-new(c)
+            cha-id = h2m-block-new(c)
+            che-id = h2m-block-new(c)
+            cbd-id = h2m-block-new(c)
+            cup-id = h2m-block-new(c)
+            cua-id = h2m-block-new(c)
+            cud-id = h2m-block-new(c)
+            cex-id = h2m-block-new(c)
+
+            ; pre：方向定一次（升序条什 lo <= hi），两路各算起始值
+            d1 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CMPLE, d1, sv, ev, '', TY-I64)
+            h2m-emit(c, OP-CONDBR, ide-id, d1, ias-id, '', 0)
+
+            h2m-set-block(c, ias-id)
+            o1 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CONST, o1, lo-off, 0, '', TY-I64)
+            a1 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-ADD, a1, sv, o1, '', TY-I64)
+            h2m-emit(c, OP-STORE, 0, a1, islot, '', 0)
+            h2m-emit(c, OP-BR, 0, ijo-id, 0, '', 0)
+
+            h2m-set-block(c, ide-id)
+            o2 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CONST, o2, lo-off, 0, '', TY-I64)
+            s2 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-SUB, s2, sv, o2, '', TY-I64)
+            h2m-emit(c, OP-STORE, 0, s2, islot, '', 0)
+            h2m-emit(c, OP-BR, 0, ijo-id, 0, '', 0)
+
+            h2m-set-block(c, ijo-id)
+            h2m-emit(c, OP-BR, 0, chr-id, 0, '', 0)
+
+            ; header：重判方向（端点不变 ⇒ 同一对值 id），两路各比 i 与 hi
+            h2m-set-block(c, chr-id)
+            d2 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CMPLE, d2, sv, ev, '', TY-I64)
+            h2m-emit(c, OP-CONDBR, che-id, d2, cha-id, '', 0)
+
+            h2m-set-block(c, cha-id)
+            l3 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-LOAD, l3, islot, 0, '', TY-I64)
+            c3 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, asc-op, c3, l3, ev, '', TY-I64)
+            h2m-emit(c, OP-CONDBR, cex-id, c3, cbd-id, '', 0)
+
+            h2m-set-block(c, che-id)
+            l4 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-LOAD, l4, islot, 0, '', TY-I64)
+            c4 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, desc-op, c4, l4, ev, '', TY-I64)
+            h2m-emit(c, OP-CONDBR, cex-id, c4, cbd-id, '', 0)
+
+            ; body：进体前压 (upd, exit) 与活动名 ⇒ 体内 break/continue 查栈顶，同名的嵌套层被门禁
+            h2m-set-block(c, cbd-id)
+            c.stk.push(cup-id)
+            c.stk.push(cex-id)
+
+            #{overflow=wrap}
+            c.stk-n = c.stk-n + 1
+            c.rnms.push(vn)
+
+            #{overflow=wrap}
+            c.rnms-n = c.rnms-n + 1
+            h2m-lower-block(t, c, sg, body)
+            c.rnms-n = c.rnms-n - 1
+            c.stk-n = c.stk-n - 1
+            h2m-emit(c, OP-BR, 0, cup-id, 0, '', 0)
+
+            h2m-set-block(c, cup-id)
+            d3 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CMPLE, d3, sv, ev, '', TY-I64)
+            h2m-emit(c, OP-CONDBR, cud-id, d3, cua-id, '', 0)
+
+            h2m-set-block(c, cua-id)
+            l5 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-LOAD, l5, islot, 0, '', TY-I64)
+            one1 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CONST, one1, 1, 0, '', TY-I64)
+            x5 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-ADD, x5, l5, one1, '', TY-I64)
+            h2m-emit(c, OP-STORE, 0, x5, islot, '', 0)
+            h2m-emit(c, OP-BR, 0, chr-id, 0, '', 0)
+
+            h2m-set-block(c, cud-id)
+            l6 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-LOAD, l6, islot, 0, '', TY-I64)
+            one2 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-CONST, one2, 1, 0, '', TY-I64)
+            x6 = h2m-alloc(c, TY-I64)
+            h2m-emit(c, OP-SUB, x6, l6, one2, '', TY-I64)
+            h2m-emit(c, OP-STORE, 0, x6, islot, '', 0)
+            h2m-emit(c, OP-BR, 0, chr-id, 0, '', 0)
+
+            h2m-set-block(c, cex-id)
         }
     }
 }
