@@ -22,6 +22,13 @@
 ; s60m 覆盖：计数循环 `N * { }` 与 `{ } * N`（两形在 parser 归一）——合成计数器槽 / header 判 >0 /
 ;         update 块自减回跳 / continue 落 update 而非 hdr / break 落 exit 且后继照跑 / 嵌套双计数器槽；
 ;         非正计数（-2 与 0）照发 header 判定；负例：标识符计数位 / 计数与条件同时存在 / 计数位是字符串
+; s61 覆盖：区间遍历 `i <- [a..b]`——四括号组合（右开 slt/sgt、右闭 sle/sge、左开起始值偏一格）／
+;         自动双向（11 块方向分派）／变量端点／体内 break 落 exit 且后继照跑、continue 落 update／
+;         关键字形 for 与运算符形同形；负例：开边界 / 嵌套同名区间循环 / 无标注的 let vec 容器遍历
+; s62 覆盖：容器遍历 `i <- xs`（[]i64 形参作源）——五块 pre/hdr/body/upd/exit／长度只求一次／
+;         索引落合成槽 @idx<node>／vec 形参不铺 alloca %vec 而靠 entry 支配直接跨块引用／体内 break
+;         落 exit 且后继照跑、continue 落 update／嵌套异名四颗独立槽；负例：str 源／标量源／[]str 元素源／
+;         无标注的 let vec／体内改写循环变量（Go bindElemPlace 写回元素）／嵌套同名／vec 作返回值
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -1264,7 +1271,8 @@ test-rng-gate = () {
     runner.eq(agg1.unsup > 0, 1, 'rng-nest-samename counted')
     runner.eq(ir1.contains('define'), 0, 'rng-nest-samename no code')
 
-    ; 容器遍历 `x <- xs`：IterRange 的容器源落在 kid[1]（kid[0] 为空位），取下标需 OP-LEN/OP-INDEX 两条 op
+    ; 容器遍历 `x <- xs`（无型别标注的 let 名）：s62 后仍不产码——h2m-ty-of 推不出 xs 的型别
+    ;   （K-SLICE-LITERAL 无降级路径）⇒ 铺槽阶段即计 unsup；s62 收的是 []i64 形参作源
     src-coll = 'gc = (lo i64, hi i64) (r i64) {\n    r = 0\n    xs = [1, 2, 3]\n    x <- xs: {\n        r = r + 1\n    }\n}\n'
     t2 = ast.make()
     r2 = ps.parse(t2, ps.new(src-coll.to-bytes()))
@@ -1281,6 +1289,180 @@ test-rng-gate = () {
     ir3 = h2m-lower-program(t3, agg3, r3)
     runner.eq(agg3.unsup > 0, 1, 'rng-open-bound counted2')
     runner.eq(ir3.contains('define'), 0, 'rng-open-bound no code')
+}
+
+; ── s62：容器遍历 `v <- xs`（[]i64 形参）——五块 pre/hdr/body/upd/exit，复用 OP-VECLEN/OP-VECGET ──
+; 形制钉自 tmp/probe-s62-ir.no（用例 A）：容器是【形参】⇒ 不铺槽，各块直接引用 entry 就存在的
+; %vc1（SSA 支配关系合法）；长度只求一次（%v9），hdr 拿 %v11（索引槽 LOAD）与它比；
+; 两颗 i64 槽：%s4 = 循环变量同名槽（体内 LOAD 取当前元素）、%s6 = 合成索引槽 @idx<node>
+test-coll-basic = () {
+    src = 'va = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        r = r + v\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'coll-basic unsup')
+    runner.eq(ir.contains('define i64 @va(%vec %vc1)'), 1, 'coll-basic define vec param')
+
+    ; entry：三颗 i64 槽（r / v / @idx）按 loc 序铺开；vec 形参【不得】出现 alloca %vec
+    runner.eq(ir.contains('%s2 = alloca i64'), 1, 'coll-basic out slot')
+    runner.eq(ir.contains('%s4 = alloca i64'), 1, 'coll-basic loop-var slot')
+    runner.eq(ir.contains('%s6 = alloca i64'), 1, 'coll-basic index slot')
+    runner.eq(ir.contains('alloca %vec'), 0, 'coll-basic no vec alloca')
+
+    ; pre：索引置 0 + 长度只求一次（紧接着 BR hdr）
+    runner.eq(ir.contains('%v10 = add i64 0, 0\n\tstore i64 %v10, i64* %s6\n\tbr label %bb1'), 1, 'coll-basic idx zero')
+    runner.eq(ir.contains('%v9 = call i64 @vec_len(%vec %vc1)'), 1, 'coll-basic len once')
+
+    ; hdr：LOAD 索引 → slt(len) → CONDBR(body bb2, exit bb4)
+    runner.eq(ir.contains('bb1:\n\t%v11 = load i64, i64* %s6\n\t%c16 = icmp slt i64 %v11, %v9'), 1, 'coll-basic header cmp against single len')
+    runner.eq(ir.contains('br i1 %c17, label %bb2, label %bb4'), 1, 'coll-basic condbr body/exit')
+
+    ; body：VECGET(vec, idx) 落进循环变量槽，体内读的是槽
+    runner.eq(ir.contains('bb2:\n\t%v13 = call i64 @vec_get_i64(%vec %vc1, i64 %v11)\n\tstore i64 %v13, i64* %s4'), 1, 'coll-basic body get+store')
+    runner.eq(ir.contains('%v14 = load i64, i64* %s2\n\t%v15 = load i64, i64* %s4\n\t%v16 = add i64 %v14, %v15'), 1, 'coll-basic body reads slot')
+    runner.eq(ir.contains('store i64 %v16, i64* %s2\n\tbr label %bb3'), 1, 'coll-basic body br update')
+
+    ; upd：索引 +1 后跳回 hdr；exit：后继即隐式 RET
+    runner.eq(ir.contains('bb3:\n\t%v17 = load i64, i64* %s6\n\t%v18 = add i64 0, 1\n\t%v19 = add i64 %v17, %v18\n\tstore i64 %v19, i64* %s6\n\tbr label %bb1'), 1, 'coll-basic update steps and loops')
+    runner.eq(ir.contains('bb4:\n\t%v20 = load i64, i64* %s2\n\tret i64 %v20'), 1, 'coll-basic exit ret')
+
+    ; 鉴别力：块数恰好 5（entry+bb1..bb4）；长度不得被第二次求出（再求会挤掉后续值 id）
+    runner.eq(ir.contains('bb5:'), 0, 'coll-basic no spare block')
+    runner.eq(ir.contains('%v9 = call i64 @vec_len(%vec %vc1)\n\t%v10 = add i64 0, 0'), 1, 'coll-basic len not recomputed')
+}
+
+; ── s62：`for v <- xs { }` 关键字形（cond 位 = 循环变量自身 IDENT）与运算符形走同一条路 ──
+test-coll-kw = () {
+    src = 'vb = (xs []i64) (r i64) {\n    r = 0\n    for v <- xs {\n        r = r + v\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'coll-kw unsup')
+    runner.eq(ir.contains('define i64 @vb(%vec %vc1)'), 1, 'coll-kw define')
+
+    ; 与运算符形同形：同一个 hdr 比较、同一个 body get、同一个 upd 回跳（只差函数名）
+    runner.eq(ir.contains('bb1:\n\t%v11 = load i64, i64* %s6\n\t%c16 = icmp slt i64 %v11, %v9'), 1, 'coll-kw same header as operator form')
+    runner.eq(ir.contains('%v13 = call i64 @vec_get_i64(%vec %vc1, i64 %v11)'), 1, 'coll-kw same body')
+    runner.eq(ir.contains('bb4:\n\t%v20 = load i64, i64* %s2\n\tret i64 %v20'), 1, 'coll-kw same exit')
+}
+
+; ── s62：体内 guard break——跳出落 exit，循环后继语句照跑（与 s60m/s61 同口径）──
+test-coll-break = () {
+    src = 'vc = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        v == 2 -> break\n        r = r + v\n    }\n    r = r + 100\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'coll-break unsup')
+    runner.eq(ir.contains('bb2:\n\t%v13 = call i64 @vec_get_i64(%vec %vc1, i64 %v11)\n\tstore i64 %v13, i64* %s4\n\t%v14 = load i64, i64* %s4'), 1, 'coll-break body loads element')
+
+    ; break 目标 = exit（bb4），不是 update（bb3）；其后后继语句也在 bb4 照跑
+    runner.eq(ir.contains('bb5:\n\tbr label %bb4'), 1, 'coll-break br to exit not update')
+    runner.eq(ir.contains('bb4:\n\t%v23 = load i64, i64* %s2\n\t%v24 = add i64 0, 100'), 1, 'coll-break exit runs successor')
+}
+
+; ── s62：体内 guard continue——落 update（先自增再判），本轮累加被跳过 ──
+test-coll-cont = () {
+    src = 'vd = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        v == 1 -> continue\n        r = r + v\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'coll-cont unsup')
+
+    ; continue 目标 = update（bb3）：落它就能自增索引，不会活锁
+    runner.eq(ir.contains('bb5:\n\tbr label %bb3'), 1, 'coll-cont br to update not exit')
+    runner.eq(ir.contains('bb7:\n\t%v17 = load i64, i64* %s2\n\t%v18 = load i64, i64* %s4'), 1, 'coll-cont merge after guard')
+}
+
+; ── s62：嵌套异名容器遍历——四颗独立槽（两颗循环变量 + 两颗索引），内层 exit 落到外层 update ──
+test-coll-nested = () {
+    src = 've = (xs []i64, ys []i64) (r i64) {\n    r = 0\n    a <- xs: {\n        b <- ys: {\n            r = r + 1\n        }\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'coll-nested unsup')
+    runner.eq(ir.contains('define i64 @ve(%vec %vc1, %vec %vc2)'), 1, 'coll-nested define')
+
+    ; 两个容器各取一次长度，各用自己的 %vc（索引槽 %s7 属外层、%s11 属内层）
+    runner.eq(ir.contains('%v14 = call i64 @vec_len(%vec %vc1)'), 1, 'coll-nested outer len')
+    runner.eq(ir.contains('%v19 = call i64 @vec_len(%vec %vc2)'), 1, 'coll-nested inner len')
+    runner.eq(ir.contains('bb1:\n\t%v16 = load i64, i64* %s7'), 1, 'coll-nested outer hdr uses outer idx slot')
+    runner.eq(ir.contains('bb5:\n\t%v21 = load i64, i64* %s11'), 1, 'coll-nested inner hdr uses inner idx slot')
+
+    ; 内层 exit（bb8）后继即外层 update（bb3）⇒ 外层计数照走
+    runner.eq(ir.contains('bb8:\n\tbr label %bb3'), 1, 'coll-nested inner exit falls to outer update')
+}
+
+; ── s62 门禁：六类不入形的容器源／用法（均计 unsup 且不产码）──
+test-coll-gate = () {
+
+    ; str 源：Go 逐码点走 lowerStrRangeFor（utf8_at + 宽度三颗槽），noc 无该 op
+    src-str = 'ga = (s str) (r i64) {\n    r = 0\n    c <- s: {\n        r = r + 1\n    }\n}\n'
+    t1 = ast.make()
+    r1 = ps.parse(t1, ps.new(src-str.to-bytes()))
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup > 0, 1, 'coll-gate-str counted')
+    runner.eq(ir1.contains('define'), 0, 'coll-gate-str no code')
+
+    ; 体内改写循环变量：Go bindElemPlace 写回容器元素，noc 的 VECGET 交出副本 ⇒ 语义分岔
+    src-w = 'gb = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        v = 9\n    }\n}\n'
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(src-w.to-bytes()))
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 'coll-gate-write counted')
+    runner.eq(ir2.contains('define'), 0, 'coll-gate-write no code')
+
+    ; 嵌套同名：两层共用一颗循环变量槽 ⇒ 内层踩掉外层遍历，整函数不产码
+    src-n = 'gc2 = (xs []i64) (r i64) {\n    r = 0\n    v <- xs: {\n        v <- xs: {\n            r = r + 1\n        }\n    }\n}\n'
+    t3 = ast.make()
+    r3 = ps.parse(t3, ps.new(src-n.to-bytes()))
+    agg3 = h2m-new()
+    ir3 = h2m-lower-program(t3, agg3, r3)
+    runner.eq(agg3.unsup > 0, 1, 'coll-gate-nest counted')
+    runner.eq(ir3.contains('define'), 0, 'coll-gate-nest no code')
+
+    ; 标量源（i64 形参）：容器位不是 vec ⇒ 无 OP-VECLEN 的合法实参
+    src-s = 'gd = (x i64) (r i64) {\n    r = 0\n    v <- x: {\n        r = r + 1\n    }\n}\n'
+    t4 = ast.make()
+    r4 = ps.parse(t4, ps.new(src-s.to-bytes()))
+    agg4 = h2m-new()
+    ir4 = h2m-lower-program(t4, agg4, r4)
+    runner.eq(agg4.unsup > 0, 1, 'coll-gate-scalar counted')
+    runner.eq(ir4.contains('define'), 0, 'coll-gate-scalar no code')
+
+    ; vec 作返回值：本件无产出 vec 值的途径，且 %vec 返回未经端到端验证
+    src-r = 'ge = (xs []i64) (r []i64) {\n    r = xs\n}\n'
+    t5 = ast.make()
+    r5 = ps.parse(t5, ps.new(src-r.to-bytes()))
+    agg5 = h2m-new()
+    ir5 = h2m-lower-program(t5, agg5, r5)
+    runner.eq(agg5.unsup > 0, 1, 'coll-gate-ret-vec counted')
+    runner.eq(ir5.contains('define'), 0, 'coll-gate-ret-vec no code')
+
+    ; 元素非 i64 的 vec（[]str）：@vec_get_i64 是单型 helper ⇒ 签名侧就不入形
+    src-e = 'gf = (xs []str) (r i64) {\n    r = 0\n    v <- xs: {\n        r = r + 1\n    }\n}\n'
+    t6 = ast.make()
+    r6 = ps.parse(t6, ps.new(src-e.to-bytes()))
+    agg6 = h2m-new()
+    ir6 = h2m-lower-program(t6, agg6, r6)
+    runner.eq(agg6.unsup > 0, 1, 'coll-gate-elem-str counted')
+    runner.eq(ir6.contains('define'), 0, 'coll-gate-elem-str no code')
 }
 
 ; 调用入口（保持与下方新增函数定义的顺序无关）
@@ -1316,6 +1498,12 @@ test-rng-break()
 test-rng-cont()
 test-rng-kw()
 test-rng-gate()
+test-coll-basic()
+test-coll-kw()
+test-coll-break()
+test-coll-cont()
+test-coll-nested()
+test-coll-gate()
 test-gate()
 
 runner.summary()

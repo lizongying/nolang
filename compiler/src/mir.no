@@ -292,7 +292,14 @@ OP-STRFROMVEC = 76
 ; %str-long = { i64 f0=len, i64 f1=cap, i8* f2=data }；Go 以 fieldIdx 分派：OpLen⇒0、OpCap⇒1。
 ; noc 已有 OP-STRLEN（f0），本件補 f1：dst = i64 值 id；x = 字符串值 id（TY-STR，住 %sv）；bs[k] 不用（0）。
 ; 發射：%v<dst> = extractvalue %str-long %sv<x>, 1（純單塊、無 helper）。
-; ⚠ Go 的 OpLen/OpCap 無 %vec 分支（vec 長度走 vec_len helper call），故本代次刻意不造 OP-VECCAP——無忠實鏡像對象。
+; ⚠️ s62 覆核修正（原記「Go 的 OpLen/OpCap 無 %vec 分支」係假帳）：Go emitLenCap 有
+;    "case KindStr, KindSlice"（src/mir/codegen.go:12011），而 KindSlice 的 LLVM 型別即 %vec
+;    （同檔 :939-941）⇒ Go 對 vec 取長度是 extractvalue %vec, 0、取容量是 extractvalue field 1。
+;    noc 的 OP-VECLEN 走 @vec_len call，而該 helper 的體正是這兩條指令本身
+;    （compiler/src/cg-runtime.no 的 cg-runtime-vec-len）⇒ 語性等價、只差 call 包裝，
+;    容器遍歷（s62）因此復用 OP-VECLEN 而不另造泛化 OP-LEN（同一份語義留兩條發射路徑是負擔）。
+; ⚠️ 後果：OP-VECCAP（vec field 1）在 Go【確有】忠實鏡像對象，s50 當初的「無忠實鏡像對象」理由不成立；
+;    本代次仍不造它（全庫無發射手、無語料觸發），改為記帳待補——見 docs/design/nolang-selfhost.md §5.3.4.cq。
 ; ⚠ op 碼接在既有最大碼 OP-STRFROMVEC=76 之後（取 77），不重排既有碼。
 OP-STRCAP = 77
 

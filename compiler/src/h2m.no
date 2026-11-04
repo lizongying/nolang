@@ -18,6 +18,10 @@
 ;         区间遍历（s61）：K-FOR-STATEMENT 的 IterRange 形 `i <- [a..b]`（四括号组合＋自动双向）——
 ;         循环变量落 entry 的 alloca 槽（按源名登记），方向由 lo <= hi 的分支解析（IR 无 select），
 ;         init/header/update 三处各判一次方向，共 11 块；端点只求值一次，其后各块按 SSA 支配关系复用
+;         容器遍历（s62）：K-FOR-STATEMENT 的 IterRange 形 `i <- xs`（源限 TY-VEC 形参）——
+;         复用既有 OP-VECLEN/OP-VECGET（零改 cg）：长度在进循环前只求一次，索引落 entry 的合成槽
+;         `@idx<node>`，元素 STORE 进循环变量同名 i64 槽；共 5 块（pre/hdr/body/upd/exit），
+;         continue 目标 = update（自增后再判，与 s60m 计数循环同口径）
 ;         控制流（s58）：K-SURFACE-MATCH 的语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
 ;         （臂群在 helper/aux 阵，12 aux/臂，展开成 if/elif/else 的 CONDBR 链——镜像 Go desugarSurfaceMatchToIfExpr）
 ;         块终结形（s59）：return / break / continue（含 * / ** 速写经解析归一后的同形节点）——
@@ -28,9 +32,13 @@
 ;         算术语义仍限 i64（其余型别的值进运算符即计 unsup，不发错码）
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、除与余、位运算、
-;         前缀负号、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、非具名型别（[]t / map / *t / 别名）、
+;         前缀负号、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、
+;         非具名型别（map / *t / 别名／[]非 i64／s62 起只 []i64 形参入形）、vec 形参作返回值（s62）、
 ;         复合赋值、非函数定义语句、实参 id 不连续的调用、方法调用（点号）、
-;         容器遍历 `i <- xs`（K-ITERATION-EXPR 的 kid[1] 形制，需先补 OP-LEN/OP-INDEX 两条 op）、
+;         容器遍历的非 vec 容器源——str（Go 逐码点走 utf8_at，需 OP-UTF8AT）／定长数组 [n]t（无运行期长度）／
+;         vec 局部量（cg 只有 alloca i64 与 alloca %str-long 两种槽 op，无 %vec 槽）／元素非 i64 的 vec
+;         （@vec_get_i64 是单型 helper）／体内改写循环变量（Go bindElemPlace 把循环变量绑到元素位址、
+;         写它会【写回容器】，noc 的 VECGET 交出的是副本 ⇒ 语义分岔，就地不产码），
 ;         区间的开边界 `i <- [a..]`／`[..b]`／`[..]`（Go 取型别极值补齐，量级不可验证）、
 ;         嵌套同名区间循环（两层共用一个槽 ⇒ 内层踩掉外层计数），
 ;         带标签的 break/continue（s1 ≠ 'none'）、
@@ -79,8 +87,12 @@
 ; s59 追加：ret = 共享 return 块的块 id（0 = 尚未开；懒开保证无 return 的函数 IR 逐字节不变）；
 ;   stk / stk-n = 循环目标栈（h2m-lower-for 进 body 前压 (continue 目标, exit) 对 ⇒ break/continue 查最内层；
 ;     条件循环的 continue 目标 = hdr，s60m 计数循环 = update 块，与 Go loopCtx{exit, update} 同口径）
-; s61 追加：rnms / rnms-n = 活动区间遍历的循环变量名栈（内层与外层同名 ⇒ 共用一个槽会互相踩计数，
-;     就地计 unsup；与 stk 同样只追加不删除，用 rnms-n 当逻辑深度）
+; s61 追加：rnms / rnms-n = 活动遍历的循环变量名栈（内层与外层同名 ⇒ 共用一个槽会互相踩计数，
+;     就地计 unsup；区间遍历与容器遍历共用本栈；与 stk 同样只追加不删除，用 rnms-n 当逻辑深度）
+; s62 追加：epl / epl-n = 容器遍历体内活动的「元素位绑定名」栈（Go bindElemPlace 语义：写循环变量 = 写回容器元素；
+;     noc 走 VECGET 取副本，写回不可得 ⇒ 名字命中即计 unsup，同 rnms 只追加不删除）
+;     另：TY-VEC 形参在 mem 模式下【不铺槽】——cg 没有 alloca %vec 的 op，而函数形参本身就是 entry 就存在
+;     的 SSA 值、支配全函数所有块 ⇒ 绑定保持 incoming 值 id 即跨块可读（h2m-var-read 对此型别直返该 id）
 h2m-ctx {
     ops []i64
     dsts []i64
@@ -103,6 +115,8 @@ h2m-ctx {
     stk-n i64
     rnms []str
     rnms-n i64
+    epl []str
+    epl-n i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -143,6 +157,9 @@ h2m-new = () (c h2m-ctx) {
         rnms: []
         str
         rnms-n: 0
+        epl: []
+        str
+        epl-n: 0
     }
     c.vty.push(TY-I64)
 }
@@ -265,36 +282,45 @@ h2m-name-find = (c h2m-ctx, name str) (i i64) {
 ; 为名字铺一个槽（s57：必须在 entry 块调用，因 cg 要求块为连续段、离开 entry 就回不去）
 ; 同名已有条目（形参已经绑过值 id）则把绑定改写为槽；同时零初始化，避免未赋值先读拿到 poison
 ; ⚠️ TY-U64 在 LLVM 里与 TY-I64 同类型（i64），共用 alloca i64 槽；TY-F64 无槽 op ⇒ 计 unsup
+; ⚠️ s62：TY-VEC 走【不铺槽】分支——cg 没有 alloca %vec 的 op，而函数形参本身就是 entry 就存在的
+;   SSA 值（支配全函数所有块）⇒ 只记型别、沿用已绑的 incoming 值 id；名字尚无绑定（vec 局部量）⇒ 计 unsup
 ; c: 上下文
 ; name: 变量名
-; ty: 槽型别码（认 TY-I64 / TY-U64 / TY-STR）
+; ty: 槽型别码（认 TY-I64 / TY-U64 / TY-STR；TY-VEC 不铺槽）
 h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
-    sid = h2m-alloc(c, ty)
-    ok-slot = 1
-    ty != TY-I64 && ty != TY-U64 && ty != TY-STR -> ok-slot = 0
-    ok-slot == 1 && ty != TY-STR -> {
-        h2m-emit(c, OP-ALLOC, sid, 0, 0, '', ty)
-        zid = h2m-alloc(c, ty)
-        h2m-emit(c, OP-CONST, zid, 0, 0, '', ty)
-        h2m-emit(c, OP-STORE, 0, zid, sid, '', 0)
+    ty == TY-VEC -> {
+        i0 = h2m-name-find(c, name)
+        i0 >= 0 -> c.tys[i0] = ty
+        i0 < 0 -> h2m-mark(c)
     }
-    ok-slot == 1 && ty == TY-STR -> {
-        h2m-emit(c, OP-SALLOC, sid, 0, 0, '', TY-STR)
-        zid2 = h2m-alloc(c, TY-STR)
-        h2m-emit(c, OP-STRCONST, zid2, 0, 0, '', TY-STR)
-        h2m-emit(c, OP-SSTORE, 0, zid2, sid, '', 0)
-    }
-    ok-slot == 0 -> h2m-mark(c)
-    ok-slot == 1 -> {
-        i = h2m-name-find(c, name)
-        i >= 0 -> {
-            c.vids[i] = sid
-            c.tys[i] = ty
+    ty != TY-VEC -> {
+        sid = h2m-alloc(c, ty)
+        ok-slot = 1
+        ty != TY-I64 && ty != TY-U64 && ty != TY-STR -> ok-slot = 0
+        ok-slot == 1 && ty != TY-STR -> {
+            h2m-emit(c, OP-ALLOC, sid, 0, 0, '', ty)
+            zid = h2m-alloc(c, ty)
+            h2m-emit(c, OP-CONST, zid, 0, 0, '', ty)
+            h2m-emit(c, OP-STORE, 0, zid, sid, '', 0)
         }
-        i < 0 -> {
-            c.names.push(name)
-            c.vids.push(sid)
-            c.tys.push(ty)
+        ok-slot == 1 && ty == TY-STR -> {
+            h2m-emit(c, OP-SALLOC, sid, 0, 0, '', TY-STR)
+            zid2 = h2m-alloc(c, TY-STR)
+            h2m-emit(c, OP-STRCONST, zid2, 0, 0, '', TY-STR)
+            h2m-emit(c, OP-SSTORE, 0, zid2, sid, '', 0)
+        }
+        ok-slot == 0 -> h2m-mark(c)
+        ok-slot == 1 -> {
+            i = h2m-name-find(c, name)
+            i >= 0 -> {
+                c.vids[i] = sid
+                c.tys[i] = ty
+            }
+            i < 0 -> {
+                c.names.push(name)
+                c.vids.push(sid)
+                c.tys.push(ty)
+            }
         }
     }
 }
@@ -312,8 +338,10 @@ h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
         sid = c.vids[i] #{index-out=zero}
         st = c.tys[i] #{index-out=zero}
     }
-    st == ty && ty != TY-STR -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
+    st == ty && ty != TY-VEC && ty != TY-STR -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
     st == ty && ty == TY-STR -> h2m-emit(c, OP-SSTORE, 0, vid, sid, '', 0)
+
+    ; s62：TY-VEC 形参无槽可存——绑在名字上的值 id 就是该 incoming vid ⇒ 空操作
     st != ty -> h2m-mark(c)
     i < 0 -> h2m-mark(c)
 }
@@ -338,24 +366,40 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
             v = h2m-alloc(c, TY-STR)
             h2m-emit(c, OP-SLOAD, v, sid, 0, '', TY-STR)
         }
-        st != TY-I64 && st != TY-U64 && st != TY-STR -> h2m-mark(c)
+
+        ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
+        st == TY-VEC -> v = sid
+        st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC -> h2m-mark(c)
     }
 }
 
 ; 写一个变量：mem == 0 绑/覆盖值 id；mem == 1 发 STORE/SSTORE进槽（型别不符 ⇒ unsup）
+; ⚠️ s62 元素位门禁：名字落在容器遍历的活动名栈 c.epl 里 ⇒ Go 的 bindElemPlace 会把这次赋值
+;   【写回容器元素】，而 noc 侧 VECGET 交出的是副本、写它只改副本 ⇒ 语义分岔，计 unsup 整函数不产码
+; ⚠️ TY-VEC 无槽也不能写（cg 无 %vec 的 store op）⇒ 落入 ok-w == 0 计 unsup
 ; c: 上下文
 ; name: 变量名
 ; val: 右值的值 id
 h2m-var-write = (c h2m-ctx, name str, val i64) {
-    c.mem == 0 -> h2m-var-bind(c, name, val)
-    c.mem == 1 -> {
+    hit = 0
+    q = 0
+    (q < c.epl-n && hit == 0) {
+        en = c.epl[q] #{index-out=zero}
+        en == name -> hit = 1
+
+        #{overflow=wrap}
+        q = q + 1
+    }
+    hit == 1 -> h2m-mark(c)
+    hit == 0 && c.mem == 0 -> h2m-var-bind(c, name, val)
+    hit == 0 && c.mem == 1 -> {
         ok-w = 0
         i = h2m-name-find(c, name)
         i >= 0 -> {
             sid = c.vids[i] #{index-out=zero}
             st = c.tys[i] #{index-out=zero}
             vt = h2m-vty-at(c, val)
-            st == vt && st != TY-STR -> {
+            st == vt && st != TY-STR && st != TY-VEC -> {
                 h2m-emit(c, OP-STORE, 0, val, sid, '', 0)
                 ok-w = 1
             }
@@ -412,7 +456,7 @@ h2m-rng-var = (t ast, ie i64) (vn str) {
 ; 区间遍历形状校验（s61）：回 RangeExpression 节点 id，0 = 不在覆盖面（呼叫方计 unsup）
 ;   K-RANGE-EXPRESSION(54)：nkid=2，s0 = leftInc（'true'/'false'）、s1 = rightInc，
 ;   kid[0] = 下界、kid[1] = 上界（缺位为 0 ⇒ 开边界）
-; 不入形的判据：容器遍历（kid[0] 非 RANGE 或 kid[1] 非 0，需 OP-LEN/OP-INDEX 两 op）／
+; 不入形的判据：容器遍历（kid[0] 非 RANGE 或 kid[1] 非 0，改由 s62 的 h2m-coll-check 收）／
 ;   开边界（任一端为 0，Go 取 i64 极值补齐，实测量级不可验证）／
 ;   `for v <- rng` 关键字形里 cond 不是循环变量自身的 IDENT（Go lowerFor 先取 iter 臂、条件位被忽略，
 ;   本件只收「条件位就是循环变量」这一形，其余宁缺勿错）
@@ -448,6 +492,51 @@ h2m-rng-check = (t ast, ie i64, cond i64) (rg i64) {
                     cnm == cvn -> keep = 1
                 }
                 keep == 0 -> rg = 0
+            }
+        }
+    }
+}
+
+; 容器遍历的索引槽名（s62）：带上 ForStatement 节点 id ⇒ 同函数内多个／嵌套容器遍历各占一颗；
+;   '@' 不是合法标识符首字符 ⇒ 永不与源码里的变量名相撞（与 h2m-cnt-name 同理）
+; n: ForStatement 节点 id
+; s: 合成名
+h2m-idx-name = (n i64) (s str) {
+    s = '@idx' - n.to-str()
+}
+
+; 容器遍历形状校验（s62）：命中则回容器源节点 id（K-IDENTIFIER），0 = 不在覆盖面（呼叫方计 unsup）
+;   实测形制（tmp/probe-s62-ast.no，钉于 tmp/s62-ast-out.txt）：K-ITERATION-EXPR(41) nkid=2、
+;   s0 = 循环变量名、kid[0] = 0（区间位空）、kid[1] = 容器源；区间形则是 kid[0] 非 0 且 kid[1] = 0
+;   两形互斥，故本助手只在 h2m-rng-check 回 0 后被呼叫
+; 不入形的判据：容器源不是裸 IDENT（数组索引／方法链等需先能降级子表达式）／
+;   名字缺位（s0 == 0）／`for v <- xs` 关键字形里 cond 不是循环变量自身的 IDENT（与 s61 同口径）
+; t: AST arena
+; ie: IterationExpr 节点 id
+; cond: ForStatement 的 Condition kid（0 或循环变量的 IDENT）
+; src: 容器源节点 id（0 = 不在覆盖面）
+h2m-coll-check = (t ast, ie i64, cond i64) (src i64) {
+    src = 0
+    ie > 0 -> {
+        d = ast.nd-at(t, ie)
+        ok-c = 0
+        d.kind == asp.K-ITERATION-EXPR && d.nkid == 2 && d.s0 > 0 -> ok-c = 1
+        ok-c == 1 -> {
+            k0 = h2m-kid-i(t, ie, 0)
+            k1 = h2m-kid-i(t, ie, 1)
+            k0 == 0 && k1 > 0 -> {
+                kd = ast.nd-at(t, k1)
+                kd.kind == asp.K-IDENTIFIER && kd.nkid == 0 -> src = k1
+            }
+            src > 0 && cond > 0 -> {
+                cvn = ast.str-at(t, d.s0)
+                cd = ast.nd-at(t, cond)
+                keep = 0
+                cd.kind == asp.K-IDENTIFIER -> {
+                    cnm = ast.str-at(t, cd.s0)
+                    cnm == cvn -> keep = 1
+                }
+                keep == 0 -> src = 0
             }
         }
     }
@@ -736,8 +825,16 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
                     ;   体内的 K-IDENTIFIER 才能直接查到这颗槽；形状不合时不铺槽（降级侧计 unsup）
                     rnode = h2m-kid-i(t, n, 4)
                     rnode > 0 -> {
-                        rgi = h2m-rng-check(t, rnode, h2m-kid-i(t, n, 1))
+                        cnd = h2m-kid-i(t, n, 1)
+                        rgi = h2m-rng-check(t, rnode, cnd)
                         rgi > 0 -> h2m-lst-add(l, h2m-rng-var(t, rnode), TY-I64)
+
+                        ; s62：容器遍历铺【两颗】i64 槽——循环变量同名槽（体内读当前元素）与合成索引槽
+                        ;   （跨迭代自增）；容器本身不铺槽（无 %vec 槽 op），靠形参的 incoming SSA 值
+                        rgi == 0 && h2m-coll-check(t, rnode, cnd) > 0 -> {
+                            h2m-lst-add(l, h2m-rng-var(t, rnode), TY-I64)
+                            h2m-lst-add(l, h2m-idx-name(n), TY-I64)
+                        }
                     }
                 }
 
@@ -1102,7 +1199,7 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     }
 }
 
-; ForStatement 降级（s57：纯前置条件循环 `(cond) { }`；s60m：计数循环 `N * { }` 与 `{ } * N`；s61：区间遍历 `i <- [a..b]`）
+; ForStatement 降级（s57：纯前置条件循环 `(cond) { }`；s60m：计数循环 `N * { }` 与 `{ } * N`；s61：区间遍历 `i <- [a..b]`；s62：容器遍历 `i <- xs`）
 ; kid 序 = [Init][Condition][Update][CountExpr][IterRange][Body]（ps.no:5706 注释 + 实测 kid[1]/kid[5]）
 ; 条件循环块形制：当前块 BR → hdr；hdr 求值条件后 CONDBR(body, exit)；body 结尾 BR 回 hdr；后继语句落在 exit
 ; s59：进 body 前压 (continue 目标, exit) 到循环栈（c.stk/c.stk-n）⇒ 体内 break/continue 查栈顶；出口弹回
@@ -1115,6 +1212,7 @@ h2m-lower-if = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 ;   hdr LOAD 后 CMPGT 0→ CONDBR(body, exit)→ body 结尾 BR 到 update（不是 hdr）→
 ;   update 块 LOAD/SUB 1/STORE 后 BR hdr；continue 目标因此是 update（自减后再判，不会活锁）
 ; s61 区间遍历形制（镜像 Go lowerRangeFor hir2mir.go:5017-5176）→ 转 h2m-lower-range
+; s62 容器遍历形制（镜像 Go lowerRangeFor 的容器分支 hir2mir.go:5179-5301）→ 转 h2m-lower-coll
 ; t: AST arena
 ; c: 上下文
 ; sg: 模块级签名表
@@ -1132,19 +1230,22 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     init != 0 || upd != 0 -> bad = 1
     body == 0 -> bad = 1
 
-    ; 区间位先过形状校验；循环变量名由同一对助手取出（与前扫描铺槽共用同一式子）
+    ; 区间／容器两形共用同一个 IterRange 位（kid[4]）：先试区间形，不中就试容器形
     ; rg 非 0 且 cond 非 0 时，cond 必是「循环变量自身的 IDENT」（`for v <- rng` 关键字形，
-    ;   h2m-rng-check 只认这一形），与 IterRange 同义 ⇒ 不另计一个形位
+    ;   h2m-rng-check 只认这一形），与 IterRange 同义 ⇒ 不另计一个形位（h2m-coll-check 同口径）
     rg = 0
+    ce = 0
     vn = ''
     bad == 0 && rng != 0 -> rg = h2m-rng-check(t, rng, cond)
-    bad == 0 && rng != 0 && rg == 0 -> bad = 1
-    rg > 0 -> vn = h2m-rng-var(t, rng)
+    bad == 0 && rng != 0 && rg == 0 -> ce = h2m-coll-check(t, rng, cond)
+    bad == 0 && rng != 0 && rg == 0 && ce == 0 -> bad = 1
+    rg > 0 || ce > 0 -> vn = h2m-rng-var(t, rng)
     bad == 0 && rng != 0 && vn == '' -> bad = 1
 
     ; 条件／计数／区间三位只允许一个真正生效的形（并存时 Go 会静默吃掉其一 ⇒ 就地不产码）
+    ;   ⚠️ 关键字形（rg 或 ce 命中）的 cond 位就是循环变量自身的 IDENT，与 IterRange 同义 ⇒ 不计形位
     form = 0
-    rg == 0 && cond != 0 -> form = 1
+    rg == 0 && ce == 0 && cond != 0 -> form = 1
     cnt != 0 -> {
 
         #{overflow=wrap}
@@ -1243,7 +1344,10 @@ h2m-lower-for = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     }
 
     ; s61：区间遍历——形状已过校验，块形制交给 h2m-lower-range
-    bad == 0 && rng != 0 -> h2m-lower-range(t, c, sg, rg, body, vn)
+    bad == 0 && rg > 0 -> h2m-lower-range(t, c, sg, rg, body, vn)
+
+    ; s62：容器遍历——形状已过校验，块形制交给 h2m-lower-coll（n 用于回推合成索引槽名）
+    bad == 0 && ce > 0 -> h2m-lower-coll(t, c, sg, n, ce, body, vn)
 }
 
 ; 区间遍历降级（s61）：`i <- [a..b]`／`(a..b]`／`[a..b]`／`(a..b)` 四括号组合 + 自动双向
@@ -1406,6 +1510,125 @@ h2m-lower-range = (t ast, c h2m-ctx, sg h2m-sigs, rg i64, body i64, vn str) {
 
             h2m-set-block(c, cex-id)
         }
+    }
+}
+
+; 容器遍历降级（s62）：`i <- xs`（xs 限 TY-VEC 形参）
+; 镜像 Go lowerRangeFor 的容器分支（src/mir/hir2mir.go:5179-5301），但长度与取下标复用 noc 既有
+;   helper（OP-VECLEN / OP-VECGET ⇒ 零改 cg）；五块形制（块 id 递增序即写入序，满足 cg 连续段纪律）：
+;   pre  ：当前块——VECLEN 只求一次（镜像 Go 在循环外 Emit(OpLen)）+ 索引 STORE 0 + BR hdr
+;   hdr  ：LOAD 索引 → CMPLT(idx, len) → CONDBR(body, exit)
+;   body ：VECGET(elem, vec, idx) → STORE 进循环变量同名槽 → 陈述列 → BR upd
+;   upd  ：LOAD + ADD 1 + STORE → BR hdr（continue 目标 = upd，与 s60m/s61 同口径）
+;   exit ：循环后继语句落此块
+; ⚠️ 与 Go 的两处偏差（均就地不产码）：
+;   ① Go 对非 map 元素会 bindElemPlace 把循环变量绑到【元素位址】，体内 `v = 9` 写回容器；
+;      noc 的 VECGET 交出的是副本 ⇒ 靠 c.epl 在 h2m-var-write 入口计 unsup
+;   ② Go 的 KindArray 源用编译期 Sizes[0] 常量做长度；noc 无数组型别登记 ⇒ 只收 vec
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; n: ForStatement 节点 id（合成索引槽名用它，与前扫描 h2m-scan 共用同一式子）
+; src: 容器源节点 id（h2m-coll-check 已验为裸 K-IDENTIFIER）
+; body: 循环体 BlockStatement 节点 id
+; vn: 循环变量名
+h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn str) {
+    bad = 0
+    sd = ast.nd-at(t, src)
+    cnm = ast.str-at(t, sd.s0)
+    sv = 0
+
+    ; 容器名必须已有绑定（只有形参会绑上）：查不到 ⇒ vec 局部量／外部名字 ⇒ 不产码
+    ;   不直接走 h2m-lower-expr：它在未绑定时已自行计 unsup，会与下面的门禁重计
+    ci = h2m-name-find(c, cnm)
+    ci < 0 -> bad = 1
+    ci >= 0 -> {
+        sv = h2m-var-read(c, cnm)
+        sv == 0 -> bad = 1
+
+        ; 容器必须是 TY-VEC：str 源要逐码点遍历（Go lowerStrRangeFor，需 utf8_at）、
+        ;   定长数组源无运行期长度 op ⇒ 两者一律不产码
+        sv > 0 && h2m-vty-at(c, sv) != TY-VEC -> bad = 1
+    }
+
+    ; 两颗槽必须由前扫描铺好（循环变量体内要读、索引要跨迭代存活）
+    islot = 0
+    xslot = 0
+    bad == 0 -> {
+        islot = h2m-var-find(c, vn)
+        xslot = h2m-var-find(c, h2m-idx-name(n))
+        islot == 0 || xslot == 0 -> bad = 1
+    }
+
+    ; 嵌套同名判据（与 s61 同口径）：活动遍历名栈里已有同名 ⇒ 共用一颗循环变量槽会互相踩，整函数不产码
+    q = 0
+    (q < c.rnms-n && bad == 0) {
+        qn = c.rnms[q] #{index-out=zero}
+        qn == vn -> bad = 1
+
+        #{overflow=wrap}
+        q = q + 1
+    }
+
+    bad != 0 -> h2m-mark(c)
+    bad == 0 -> {
+
+        ; pre：长度只求一次（lv 定在当前块，它支配 hdr/body/upd ⇒ SSA 合法）；索引归 0
+        lv = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-VECLEN, lv, sv, 0, '', TY-I64)
+        z0 = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-CONST, z0, 0, 0, '', TY-I64)
+        h2m-emit(c, OP-STORE, 0, z0, xslot, '', 0)
+        hdr-id = h2m-block-new(c)
+        bdy-id = h2m-block-new(c)
+        upd-id = h2m-block-new(c)
+        ext-id = h2m-block-new(c)
+        h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
+
+        h2m-set-block(c, hdr-id)
+        l1 = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-LOAD, l1, xslot, 0, '', TY-I64)
+        c1 = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-CMPLT, c1, l1, lv, '', TY-I64)
+        h2m-emit(c, OP-CONDBR, ext-id, c1, bdy-id, '', 0)
+
+        h2m-set-block(c, bdy-id)
+        e1 = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-VECGET, e1, sv, l1, '', TY-I64)
+        h2m-emit(c, OP-STORE, 0, e1, islot, '', 0)
+
+        ; 进体前压三样：循环目标对 (upd, exit)、活动遍历名（嵌套同名门禁）、元素位名（写回门禁）
+        c.stk.push(upd-id)
+        c.stk.push(ext-id)
+
+        #{overflow=wrap}
+        c.stk-n = c.stk-n + 1
+        c.rnms.push(vn)
+
+        #{overflow=wrap}
+        c.rnms-n = c.rnms-n + 1
+        c.epl.push(vn)
+
+        #{overflow=wrap}
+        c.epl-n = c.epl-n + 1
+        h2m-lower-block(t, c, sg, body)
+        c.epl-n = c.epl-n - 1
+        c.rnms-n = c.rnms-n - 1
+        c.stk-n = c.stk-n - 1
+        h2m-emit(c, OP-BR, 0, upd-id, 0, '', 0)
+
+        ; update：索引自增后跳回 header（len == 0 时在 header 首次判定即退出，与 Go 同形）
+        h2m-set-block(c, upd-id)
+        l2 = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-LOAD, l2, xslot, 0, '', TY-I64)
+        one = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-CONST, one, 1, 0, '', TY-I64)
+        nx = h2m-alloc(c, TY-I64)
+        h2m-emit(c, OP-ADD, nx, l2, one, '', TY-I64)
+        h2m-emit(c, OP-STORE, 0, nx, xslot, '', 0)
+        h2m-emit(c, OP-BR, 0, hdr-id, 0, '', 0)
+
+        h2m-set-block(c, ext-id)
     }
 }
 
@@ -1588,7 +1811,8 @@ h2m-lower-term-stmt = (t ast, c h2m-ctx, sg h2m-sigs, kid i64, last i64) (hd i64
 }
 
 ; 单个 K-PARAMETER 节点 → 型别码（实测 kid 序 = [Type, DefaultExpr]）
-; 非具名型别 / 未知型别名 / 带默认值 ⇒ bad = 1（默认值会让调用点 arity 判定失效）
+; 非具名型别（除 []i64）/ 未知型别名 / 带默认值 ⇒ bad = 1（默认值会让调用点 arity 判定失效）
+; s62：[]i64（K-SLICE-TYPE）入形→ TY-VEC；【非】具名型别的其它形（map / *t / 别名／元素非 i64 的 vec）仍不入
 ; t: AST arena
 ; p: 参数节点 id
 ; code: 型别码（-1 = 不在覆盖面）
@@ -1603,6 +1827,22 @@ h2m-param-ty = (t ast, p i64) (code i64, bad i64) {
         td.kind == asp.K-NAMED-TYPE -> {
             code = h2m-ty-code(ast.str-at(t, td.s0))
             code >= 0 -> bad = 0
+        }
+
+        ; 实测形制（tmp/s62-ast-out.txt）：K-SLICE-TYPE(60) nkid=1、s0='false'（是否多字节元），
+        ;   其 kid[0] = 元素型别节点——只收 i64 元（@vec_get_i64 是单型 helper）
+        td.kind == asp.K-SLICE-TYPE && td.nkid == 1 -> {
+            ek = h2m-kid-i(t, tk, 0)
+            ek > 0 -> {
+                ed = ast.nd-at(t, ek)
+                ed.kind == asp.K-NAMED-TYPE -> {
+                    enm = ast.str-at(t, ed.s0)
+                    enm == 'i64' -> {
+                        code = TY-VEC
+                        bad = 0
+                    }
+                }
+            }
         }
     }
     dp = pd.kid0
@@ -1661,7 +1901,11 @@ h2m-func-sig = (t ast, n i64) (name str, ret i64, argt []i64, bad i64) {
         rk = ast.kid-at(t, rp)
         rc, rb = h2m-param-ty(t, rk)
         rb != 0 -> bad = 1
-        rb == 0 -> ret = rc
+
+        ; s62：[]i64 作为【输入】形参已入形，但 vec 返回不入形——noc 侧无产出 vec 值的途径
+        ;   （无 %vec 槽、无 vec 字面量降级），且 OP-RET/CALL 的 %vec 返回从未经端到端验证，宁缺勿错
+        rb == 0 && rc == TY-VEC -> bad = 1
+        rb == 0 && rc != TY-VEC -> ret = rc
     }
 }
 
