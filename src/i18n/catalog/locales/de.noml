@@ -872,6 +872,7 @@ Zig-Compiler nicht erkannt
   'q3v8kn2m': 'Variablenname nach \',\' erwartet, %s erhalten'
   'q4nilcmp': 'kann \'%s\' (%s) nicht mit nil vergleichen: nur ein Option-Wert (`?T`) kann gegen nil geprüft werden; deklariere ihn als `?%s` oder vergleiche mit einem konkreten Wert'
   'q76kxtef': '  no fmt -d                   Diff aller .no im aktuellen Verzeichnis zeigen'
+  'q7k2nzr4': 'Der Divisor %d passt nicht in %s, den schmalen Typ, den diese Ganzzahldivision bzw. dieses Modulo von ihrem LINKEN Operanden erbt; das Literal wird daher auf 0 abgeschnitten und die Operation teilt immer durch null (das Ergebnis wird auf 0 gezwungen). Erweitern Sie zuerst die Operanden auf i64 (z. B. `av i64 = arr[i]`) und dividieren Sie in i64, oder entfernen Sie die Operation, wenn der Wert bereits im gültigen Bereich liegt.'
   'q9m9no8c': '\'}\' zum Schließen der Feld-Anmerkung erwartet, stattdessen %s erhalten'
   'q9p5bmd0': 'kein C-Linker (clang/cc/gcc) gefunden'
   'qa8z0cwo': `

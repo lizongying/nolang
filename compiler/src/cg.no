@@ -80,7 +80,9 @@ cg-lit-name = (fname str, k i64) (r str) {
     r = '@.s.' - fname - '.' - k.to-str()
 }
 
-; 单块便捷入口（全部指令属块 0）。保留 M4-b 的 7 参数 API。
+; 单块便捷入口（全部指令属块 0）。保留 M4-b 的 7 参数 API，
+;   ⚠️ s64 起多一个【必填】的实参侧池 args——宁可让呼叫点编译不过，也不给隐式空池：
+;   空池碰上 CALL 会发未 define 的 %v0（旧口径「空即默认」的静默退化教训见本档 s20 纪律）。
 ; name: 名稱
 ; nargs: 數值
 ; ops: 容器
@@ -88,11 +90,12 @@ cg-lit-name = (fname str, k i64) (r str) {
 ; xa: 容器
 ; bs: 容器
 ; syms: 容器
+; args: 實參值 id 側池（OP-CALL 用，其余传空池）
 ; r: 結果字串
-cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
+cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str, args []i64) (r str) {
     n = ops.len()
     z []i64 = [].with-len(n)
-    r = cg-emit-cfg(name, nargs, z, ops, dsts, xa, bs, syms)
+    r = cg-emit-cfg(name, nargs, z, ops, dsts, xa, bs, syms, args)
 }
 
 ; 型别码 → LLVM 型别名（TY-I64 → 'i64'，其余是 prelude 里的具名型）。
@@ -215,8 +218,9 @@ cg-div-guard = (mn str, d i64, x i64, y i64, k i64, sgn i64) (r str) {
 ; xa: 容器
 ; bs: 容器
 ; syms: 容器
+; args: 實參值 id 側池（轉發給 cg-emit-cfg-t；無 CALL 的體傳空池）
 ; r: 結果字串
-cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
+cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str, args []i64) (r str) {
     n = ops.len()
 
     #{overflow=wrap}
@@ -224,7 +228,7 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
     ty []i64 = [].with-len(nargs)
     vt []i64 = [].with-len(m)
     ct []i64 = [].with-len(n)
-    r = cg-emit-cfg-t(name, TY-I64, nargs, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    r = cg-emit-cfg-t(name, TY-I64, nargs, ty, vt, ct, blks, ops, dsts, xa, bs, syms, args)
 }
 
 ; 发射一个带型别签名的函数（可多基本块）。
@@ -245,8 +249,9 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
 ; xa: 容器
 ; bs: 容器
 ; syms: 容器
+; args: 实参值 id 侧池（s64）——只有 OP-CALL 读它：xa[k] = 池内基址下标、bs[k] = 个数
 ; r: 結果字串
-cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str) (r str) {
+cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i64, blks []i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str, args []i64) (r str) {
     b = sb.init(1024)
     n = ops.len()
 
@@ -496,19 +501,18 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(syms[k])
             b.push('(')
 
-            ; 参数：值 id x .. x+y-1（连续），y = bs[k] 个；每个的型别查 vty[]
-            q = x
+            ; 实参：从侧池 args 取 y = bs[k] 个，第 j 个的值 id = args[x + j]（x = xa[k] = 基址下标）；
+            ;   型别与命名空间按【值 id】查 vty[]（与 s64 前的旧连续口径同源，只是值 id 可任意散布）。
+            ; ⚠️ 越界读到空 ⇒ 拿到哑元 id 0，发 %v0；id 0 从未 define ⇒ LLVM verify 报错（响亮失败，不静默）
             j = 0
             (j < y) {
                 j > 0 -> b.push(', ')
+                q = args[x + j] #{index-out=zero}
                 at = vty[q]
                 b.push(cg-ty-name(at))
                 b.push(' ')
                 b.push(cg-val-prefix(at))
                 b.push(q.to-str())
-
-                #{overflow=wrap}
-                q = q + 1
 
                 #{overflow=wrap}
                 j = j + 1
@@ -2204,7 +2208,8 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             ; dst = 新结构体值 id；xa[k] = 旧结构体值 id；xa[k]+1 = 新字段值 id；bs[k] = 字段下标。
             ; LLVM 结构不可变 ⇒ 只能是「读旧 + insertvalue 出新值」，旧值仍可用。
             ; 结构体 id 取 vty[xa[k]] - TY-STRUCT-BASE。
-            ; ⚠️ 新字段值 id 按【连续】约定取 xa[k]+1（与 OP-CALL 的实参同形），不是另开一槽。
+            ; ⚠️ 新字段值 id 按【连续】约定取 xa[k]+1（本 op 自带约定；s64 后 OP-CALL 已改侧池 args，
+            ;   两者不再同形），不是另开一槽。
             vf = x
 
             #{overflow=wrap}

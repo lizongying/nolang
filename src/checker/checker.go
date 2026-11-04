@@ -4549,7 +4549,11 @@ func methodSelfType(fn *parser.FunctionDefinition) string {
 	return ""
 }
 
-// ValidateDivByZero 對整數除法 / 與取模 % 的「字面常數零除數」發出編譯期錯誤。
+// ValidateDivByZero 對整數除法 / 與取模 % 的零除數發出編譯期錯誤。兩條規則：
+//
+//  1. 除數是整數字面量 0（`10 / 0`、`a % 0`、`x / 0`）——trace onpn7zgb；
+//  2. 除數是**非 0** 字面量，但落不進左運算元繼承來的窄型別、被截斷成 0
+//     （`b % 256` 且 b 是 byte）——trace q7k2nzr4，見 narrowDivisorTruncatedToZero。
 //
 // 背景：Nolang 的整數除法/取模在 MIR 後端直接發射裸 sdiv/srem/udiv/urem，對零除數
 // 沒有任何執行時期檢查。LLVM 語言參考明定「除以零是未定義行為（UB）」，除數為 0 時
@@ -4558,8 +4562,7 @@ func methodSelfType(fn *parser.FunctionDefinition) string {
 // （Infinity/NaN）。src/ 內搜尋不到任何 div-by-zero 防護，src/std/number.no 亦自註
 // 「b 為 0 時行為未定義」。
 //
-// 本規則只攔截「除數為整數字面量 0」這種可在編譯期靜態判定的情形（如 `10 / 0`、`a % 0`、
-// `x / 0`），與溢出檢查無關（不受 #{overflow} 註解豁免）。浮點 / 0.0 屬 IEEE-754 定義
+// 兩條規則都與溢出檢查無關（不受 #{overflow} 註解豁免）。浮點 / 0.0 屬 IEEE-754 定義
 // （±inf / nan），不在管轄範圍；執行時期才確定的零除數（如 `a / b` 且 b 來自外部輸入）
 // 無法靜態偵測，留待未來的執行時期檢查處理。
 func ValidateDivByZero(program *parser.Program, view *THIRView) []ValidateResult {
@@ -4567,19 +4570,102 @@ func ValidateDivByZero(program *parser.Program, view *THIRView) []ValidateResult
 		return nil
 	}
 	var results []ValidateResult
-	emit := func(file string, line, col int) {
+	emit := func(file string, line, col int, msg, traceID string) {
 		results = append(results, ValidateResult{
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: i18n.T("onpn7zgb", "the divisor of an integer division or modulo is the literal constant 0, which is undefined behaviour in LLVM (sdiv/srem by zero) and produces unpredictable results. Add a runtime zero check, or have the function return the failure as an option."),
-			TraceID: "onpn7zgb",
+			Message: msg,
+			TraceID: traceID,
 		})
 	}
 	for _, stmt := range program.Statements {
 		walkStmtDivByZero(view, program.Sem, stmt, "", emit)
 	}
 	return results
+}
+
+// divZeroTraceID is the literal-zero divisor (`a / 0`, `a % 0`).
+const divZeroTraceID = "onpn7zgb"
+
+// divZeroNarrowTraceID is the literal divisor that only BECOMES zero after the
+// operation's narrow type narrows it (`byte_val % 256`), see
+// narrowDivisorTruncatedToZero.
+const divZeroNarrowTraceID = "q7k2nzr4"
+
+// narrowDivisorTruncatedToZero reports whether this `/` or `%` divides by a
+// literal that is non-zero but truncates to 0 in the operation's own type.
+//
+// nolang takes an integer arithmetic result's type from its LEFT operand, and
+// the right operand is coerced to that type. So `b % 256` with `b byte` computes
+// `byte % (256 as byte)` = `b % 0`: the literal 256 does not fit in 8 bits, the
+// coercion keeps the low 8 bits (0), and the divisor becomes a constant zero —
+// which the runtime guard reports once per execution and then forces the result
+// to 0.
+//
+// 實測（把本規則臨時關掉後跑 probe，2026-11-04）：`i byte = 5; i = (i + 1) % 256`
+// 在執行期印出 "integer division or remainder by zero (the divisor is 0; result
+// forced to 0)"，且 `i` 得 0 —— 是既成事實，不是推論。左運算元是 i64 時
+// （`j = 0` 這種未標註 let 推成 i64）就完全正常，所以 `src/std/crypto/rc4.no`
+// line 36/62/65 的 `% 256` 無事，而 line 95 原本的 `(s[i] + s[j]) % 256`
+// （兩者都是 `?byte`）正是這個坑，金鑰流全錯、KAT 掛掉。
+//
+// Returns the literal value and the left operand's type spelling for the
+// message. Conservative: an unknown type, a float/char/wide integer, or a
+// non-literal divisor all answer ok=false, so nothing is reported on a guess.
+func narrowDivisorTruncatedToZero(view *THIRView, x *parser.InfixExpression) (lit int64, raw string, ok bool) {
+	if view == nil || x == nil {
+		return 0, "", false
+	}
+	v, isLit := literalIntValue(x.Right)
+	if !isLit || v == 0 {
+		return 0, "", false // a literal 0 is already reported by divZeroTraceID
+	}
+	// 便宜閘門：最窄的整數型別是 8 位（byte / u8 / i8，見 ty/parse.go 的
+	// intTable），故「截斷成 0」的字面量必然是 256 的倍數。先過這一關再碰
+	// 型別表 —— TypeRefOf 的第三檔是**惰性全樹收集**，不能對每個 / 與 %
+	// 都付一次代價（與 isFloatArithOperand 同一個消費紀律）。
+	if v%256 != 0 {
+		return 0, "", false
+	}
+	t := view.TypeRefOf(x.Left)
+	if t == nil {
+		return 0, "", false
+	}
+	// `?byte % 256` unwraps to its payload before the arithmetic (the option's
+	// payload is what the operator sees in MIR).
+	for i := 0; t.Kind == ty.Option && t.Elem != nil && i < 4; i++ {
+		t = t.Elem
+	}
+	// 具名別名（`blk byte`）走 Canonical 才問得出位寬；報告仍用原名拼寫，
+	// 使用者看到的才是自己寫的那個型別。
+	shown := t
+	ct := t.Canonical()
+	if ct == nil || ct.Kind != ty.Int || ct.Bits <= 0 || ct.Bits >= 64 {
+		return 0, "", false
+	}
+	if uint64(v)&((uint64(1)<<uint(ct.Bits))-1) != 0 {
+		return 0, "", false // the literal survives the narrowing
+	}
+	return v, shown.Raw(), true
+}
+
+// literalIntValue returns the value of an integer literal, including a
+// sign-prefixed one (`256`, `-256`). Non-literals answer ok=false.
+func literalIntValue(e parser.Expression) (int64, bool) {
+	switch v := e.(type) {
+	case *parser.IntegerLiteral:
+		return v.Value, true
+	case *parser.PrefixExpression:
+		if v.Operator == "-" {
+			if n, ok := literalIntValue(v.Right); ok {
+				return -n, true
+			}
+		}
+	case *parser.GroupedExpression:
+		return literalIntValue(v.Expression)
+	}
+	return 0, false
 }
 
 // isFloatArithOperand 報告運算元是否確定為浮點型別（f32 / f64 / float 家族）。
@@ -4606,9 +4692,13 @@ func isFloatArithOperand(view *THIRView, e parser.Expression) bool {
 	return false
 }
 
+// divZeroEmit is the sink both divisors walkers report through: the two rules
+// (literal 0 / literal narrowed to 0) carry different messages and trace IDs.
+type divZeroEmit func(file string, line, col int, msg, traceID string)
+
 // walkStmtDivByZero 遞迴走訪陳述，對每個表達式呼叫 walkExprDivByZero。
 // file 由頂層逐層傳入（同 walkStmtForOverflow 的歸因邏輯），故不取節點自身 SourceFile。
-func walkStmtDivByZero(view *THIRView, sem *parser.SemanticContext, stmt parser.Statement, file string, emit func(file string, line, col int)) {
+func walkStmtDivByZero(view *THIRView, sem *parser.SemanticContext, stmt parser.Statement, file string, emit divZeroEmit) {
 	if stmt == nil {
 		return
 	}
@@ -4654,15 +4744,24 @@ func walkStmtDivByZero(view *THIRView, sem *parser.SemanticContext, stmt parser.
 
 // walkExprDivByZero 遞迴走訪表達式；對 / 與 % 且右運算元為整數字面量 0 的節點報錯。
 // 6C-optional 第三批型別精化：被除數確定為浮點時跳過（fdiv 非 UB），見 isFloatArithOperand。
-func walkExprDivByZero(view *THIRView, sem *parser.SemanticContext, e parser.Expression, file string, emit func(file string, line, col int)) {
+func walkExprDivByZero(view *THIRView, sem *parser.SemanticContext, e parser.Expression, file string, emit divZeroEmit) {
 	if e == nil {
 		return
 	}
 	switch x := e.(type) {
 	case *parser.InfixExpression:
 		if x.Operator == "/" || x.Operator == "%" {
+			// 兩處 i18n.T 的 ID 都寫**字串字面量**：msgscan（catalog 新鮮度
+			// 門禁）要求 message ID 是字面量，用 const 會被判成 "must be a
+			// string literal"。字面量與下面兩個 const 同值，改一處必改兩處。
 			if isLiteralZeroDivisor(x.Right) && !isFloatArithOperand(view, x.Left) {
-				emit(file, x.Token.Line, x.Token.Column)
+				emit(file, x.Token.Line, x.Token.Column,
+					i18n.T("onpn7zgb", "the divisor of an integer division or modulo is the literal constant 0, which is undefined behaviour in LLVM (sdiv/srem by zero) and produces unpredictable results. Add a runtime zero check, or have the function return the failure as an option."),
+					divZeroTraceID)
+			} else if lit, raw, ok := narrowDivisorTruncatedToZero(view, x); ok {
+				emit(file, x.Token.Line, x.Token.Column,
+					i18n.T("q7k2nzr4", "the divisor %d does not fit in %s, the narrow type this integer division or modulo inherits from its LEFT operand, so the literal is truncated to 0 and the operation always divides by zero (the result is forced to 0). Widen the operands to i64 first (e.g. `av i64 = arr[i]`) and divide in i64, or drop the operation if the value is already in range.", lit, raw),
+					divZeroNarrowTraceID)
 			}
 		}
 		walkExprDivByZero(view, sem, x.Left, file, emit)

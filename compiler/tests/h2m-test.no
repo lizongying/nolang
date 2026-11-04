@@ -33,6 +33,9 @@
 ;         OP-CMPEQ 型样」／单臂无兜底（假路直落汇聚块）／主体是局部量／臂体多陈述块／区间遍历变量
 ;         作主体／值匹配臂体内再套值匹配；负例：str 主体／负数前缀型样／具名型样／表达式主体／
 ;         未登记主体／布尔字面量型样
+; s64 覆盖：实参侧池 args（摘掉连续 id 契约 §11 B16）——次位/中间实参是算式／单嵌套调用实参／
+;         双嵌套调用实参（外层池基址落在内层池项之后，值 id 跳号）／str 混排实参／循环体内算式实参；
+;         回归靶：初版边降边推时嵌套入池挤偏外层基址（c6 发成 @f(%v1,%v2)），现整段入池后必须为 @f(%v2,%v3)
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -304,18 +307,20 @@ test-call-args = () {
     runner.eq(ir.contains('@ad(i64 %v2, i64 %v1)'), 0, 'callargs order not swapped')
 }
 
-; ── 调用侧门禁：实参 id 不连续 / arity 不符 / 未知被调用者 / 返回型别不符 都计 unsup ──
+; ── 调用侧门禁：arity 不符 / 未知被调用者 / 返回型别不符 都计 unsup ──
+; ⚠️ s64 前这里还钉「实参 id 不连续计 unsup」；侧池 args 落地后该门禁摘除（§11 B16 销帐），
+;   不连续形制翻转为正向用例 test-call-s64-*。
 test-call-gate = () {
 
-    ; 嵌套调用挤占中间 id ⇒ 实参 1 与 4 不连续（cg 的 OP-CALL 要求 xa..xa+bs-1）
+    ; 次位实参是算式（旧契约下实参 1 与 4 不连续 ⇒ 撞门禁）：s64 侧池寻址后放行
     src-gap = 'ad = (x i64, y i64) (r i64) {\n    r = x + y\n}\n\nk = () (r i64) {\n    a = 1\n    r = ad(a, 2 + 3)\n}\n'
     t1 = ast.make()
     p1 = ps.new(src-gap.to-bytes())
     r1 = ps.parse(t1, p1)
     agg1 = h2m-new()
     ir1 = h2m-lower-program(t1, agg1, r1)
-    runner.eq(agg1.unsup > 0, 1, 'gap counted')
-    runner.eq(ir1.contains('call i64 @ad'), 0, 'gap no call code')
+    runner.eq(agg1.unsup, 0, 'gap not counted (s64 pool)')
+    runner.eq(ir1.contains('%v5 = call i64 @ad(i64 %v1, i64 %v4)'), 1, 'gap args via pool')
 
     ; arity 不符：dbl 只要一个参数
     src-ary = 'dbl = (x i64) (r i64) {\n    r = x + x\n}\n\nk = () (r i64) {\n    r = dbl(1, 2)\n}\n'
@@ -346,6 +351,73 @@ test-call-gate = () {
     ir4 = h2m-lower-program(t4, agg4, r4)
     runner.eq(agg4.unsup > 0, 1, 'rettype counted')
     runner.eq(ir4.contains('define'), 0, 'rettype no code')
+}
+
+; ── s64 正向形制：实参值 id 任意散布（侧池寻址）──────────
+; 每个用例的锚点 IR 直取自 tmp/s64-dump-after2.txt（探针实测）。
+
+; 三实参、后两个是算式：值 id 1/3/5 跳号（旧契约 unsup=2）
+test-call-s64-scatter = () {
+    src = 'f = (a i64, b i64, c i64) (r i64) {\n    r = a + b + c\n}\n\ng = (x i64) (r i64) {\n    t = f(x, x * 2, x - 3)\n    r = t\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's64-scatter unsup')
+    runner.eq(ir.contains('%v6 = call i64 @f(i64 %v1, i64 %v3, i64 %v5)'), 1, 's64-scatter scatter ids')
+    runner.eq(ir.contains('call i64 @f(i64 %v1, i64 %v2)'), 0, 's64-scatter not contiguous assumption')
+}
+
+; 单嵌套调用实参：内层降期自己入池，外层基址必须整段入池后才取（回归挤偏 bug）
+test-call-s64-nested = () {
+    src = 'f = (a i64, b i64) (r i64) {\n    r = a + b\n}\n\nh = (x i64) (r i64) {\n    r = x\n}\n\ng = () (r i64) {\n    t = f(h(3), 1)\n    r = t\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's64-nested unsup')
+    runner.eq(ir.contains('%v4 = call i64 @f(i64 %v2, i64 %v3)'), 1, 's64-nested base not skewed')
+    runner.eq(ir.contains('call i64 @f(i64 %v1, i64 %v2)'), 0, 's64-nested skew regression')
+}
+
+; 双嵌套调用同作实参：内层各自入池 ⇒ 外层池段 [2,4] 值 id 跳号且基址非 0
+test-call-s64-double-nested = () {
+    src = 'f = (a i64, b i64) (r i64) {\n    r = a + b\n}\n\nh = (x i64) (r i64) {\n    r = x\n}\n\nk = (y i64) (r i64) {\n    r = y + 1\n}\n\ng = () (r i64) {\n    t = f(h(5), k(6))\n    r = t\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's64-dbl unsup')
+    runner.eq(ir.contains('%v2 = call i64 @h(i64 %v1)'), 1, 's64-dbl inner h')
+    runner.eq(ir.contains('%v4 = call i64 @k(i64 %v3)'), 1, 's64-dbl inner k')
+    runner.eq(ir.contains('%v5 = call i64 @f(i64 %v2, i64 %v4)'), 1, 's64-dbl outer scatter')
+}
+
+; str 混排实参：型别按值 id 查 vty，与池位置无关
+test-call-s64-str = () {
+    src = 'f = (s str, n i64) (r i64) {\n    r = n\n}\n\ng = (a str) (r i64) {\n    t = f(a, 4)\n    r = t\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's64-str unsup')
+    runner.eq(ir.contains('%v3 = call i64 @f(%str-long %sv1, i64 %v2)'), 1, 's64-str typed args')
+}
+
+; 循环体内算式实参（mem 模式）：LOAD＋ADD 混排，旧契约 unsup=1
+test-call-s64-loop = () {
+    src = 'f = (a i64, b i64) (r i64) {\n    r = a + b\n}\n\ng = (n i64) (r i64) {\n    r = 0\n    i <- [0..3): {\n        u = f(i, i + 1)\n        r = r + u\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's64-loop unsup')
+    runner.eq(ir.contains('%v27 = call i64 @f(i64 %v23, i64 %v26)'), 1, 's64-loop body call')
 }
 
 test-prec()
@@ -1640,6 +1712,11 @@ test-vm-gate = () {
 
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
+test-call-s64-scatter()
+test-call-s64-nested()
+test-call-s64-double-nested()
+test-call-s64-str()
+test-call-s64-loop()
 test-flow-if()
 test-flow-loop()
 test-flow-cmp()

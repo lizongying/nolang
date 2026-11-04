@@ -44,6 +44,10 @@ func TestDivByZeroFloatRefine(t *testing.T) {
 
 // TestDivByZeroRefineOnlyRemovesReports 斷言精化的**只減不增**性質：在影子語料上，
 // 帶 view 的報告多重集必須是 view=nil 多重集的子集（計數逐鍵 <=）。
+//
+// 唯一例外是 divZeroNarrowTraceID（窄型別域裡除數字面量被截斷成 0）：它**必須**
+// 讀型別表才判得出來，view=nil 側結構上不可能產生，屬有意的淨增（見
+// div_by_zero_narrow_test.go）。故此鍵不參與子集斷言，其餘鍵一字不放寬。
 func TestDivByZeroRefineOnlyRemovesReports(t *testing.T) {
 	for _, tc := range shadowSynth {
 		prog, view := shadowBuildView(t, tc.src)
@@ -64,6 +68,9 @@ func TestDivByZeroRefineOnlyRemovesReports(t *testing.T) {
 		}
 		rc, lc := count(refined), count(legacy)
 		for k, n := range rc {
+			if k.trace == divZeroNarrowTraceID {
+				continue // 型別表專屬的新規則，legacy 側沒有可比的基線
+			}
 			if n > lc[k] {
 				t.Errorf("%s: refined report %v count %d exceeds legacy %d — refine must only remove", tc.name, k, n, lc[k])
 			}

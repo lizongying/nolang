@@ -117,7 +117,7 @@ test-alu = () {
         cty.push(TY-I64)
         blks.push(0)
     }
-    s = cg-emit-cfg-t('alu', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('alu', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%v3 = and i64 %v1, %v2'), 1, 'and')
     runner.eq(s.contains('%v4 = or i64 %v1, %v2'), 1, 'or')
     runner.eq(s.contains('%v5 = xor i64 %v1, %v2'), 1, 'xor')
@@ -233,7 +233,7 @@ test-alu-unsigned = () {
         cty.push(TY-U64)
         blks.push(0)
     }
-    s = cg-emit-cfg-t('ua', TY-U64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('ua', TY-U64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; TY-U64 → i64/%v（默認臂）：簽名形參與返回值都是 i64 %v1
     runner.eq(s.contains('define i64 @ua(i64 %v1)'), 1, 'u64 sig i64 %v1')
@@ -381,7 +381,7 @@ test-alu-f64 = () {
         cty.push(TY-I64)
         blks.push(0)
     }
-    s = cg-emit-cfg-t('fa', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('fa', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 簽名：TY-F64 → double/%fd（真獨立型別，非默認臂）
     runner.eq(s.contains('define i64 @fa(double %fd1, double %fd2)'), 1, 'f64 sig double %fd')
@@ -471,7 +471,7 @@ test-unary = () {
         cty.push(TY-I64)
         blks.push(0)
     }
-    s = cg-emit-cfg-t('un', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('un', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 签名：TY-I64⇒i64/%v、TY-F64⇒double/%fd 混形参
     runner.eq(s.contains('define i64 @un(i64 %v1, double %fd2)'), 1, 'unary sig mixed')
@@ -526,7 +526,7 @@ test-str-from-vec = () {
         cty.push(TY-I64)
         blks.push(0)
     }
-    s = cg-emit-cfg-t('sf', TY-STR, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('sf', TY-STR, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 签名：TY-VEC 形参⇒%vec %vc1、retty=TY-STR⇒define %str-long
     runner.eq(s.contains('define %str-long @sf(%vec %vc1)'), 1, 'sf sig vec->str')
@@ -592,7 +592,7 @@ test-str-cap = () {
         cty.push(TY-I64)
         blks.push(0)
     }
-    s = cg-emit-cfg-t('sc', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('sc', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 簽名：TY-STR 形参⇒%str-long %sv1
     runner.eq(s.contains('define i64 @sc(%str-long %sv1)'), 1, 'sc sig str param')
@@ -655,7 +655,7 @@ test-opt-order = () {
     xa.push(5)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('oo', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('oo', 0, blks, ops, dsts, xa, bs, syms, [])
 
     ; OPTEQ 同族形制但【无 tag 项】：只取两侧 slot[0] 载荷，四条谓词 slt/sle/sgt/sge
     runner.eq(s.contains('%opx4 = extractvalue %option %op2, 1, 0'), 1, 'optlt left payload')
@@ -730,7 +730,7 @@ test-opt-order-f64 = () {
     xa.push(5)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('oo-f64', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('oo-f64', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 取 slot[0]（i64）后 bitcast→double（复用 s46/s47 读回形），再 fcmp 有序谓词
     runner.eq(s.contains('%opx2 = extractvalue %option %op3, 1, 0'), 1, 'lt left payload')
@@ -830,7 +830,7 @@ test-opt-order-sc = () {
     xa.push(3)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('oo-sc', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('oo-sc', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 左 option 形：%opx 提载荷，icmp 左侧在载荷、右侧 %v
     runner.eq(s.contains('%opx2 = extractvalue %option %op2, 1, 0'), 1, 'sc lt left payload')
@@ -924,7 +924,7 @@ test-opt-order-scf = () {
     xa.push(3)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('oo-scf', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('oo-scf', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 左 option 形：提载荷 bitcast→%fdx，fcmp 左侧载荷、右侧 %fd 纯量（次序不变）
     runner.eq(s.contains('%opx1 = extractvalue %option %op2, 1, 0'), 1, 'scf lt payload')
@@ -977,7 +977,7 @@ test-struct-param-ret = () {
     blks []i64 = []
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('take', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('take', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @take(%struct.s0 %st1) {'), 1, 'struct param sig')
     runner.eq(s.contains('%v2 = extractvalue %struct.s0 %st1, 0'), 1, 'struct param get')
 
@@ -999,7 +999,7 @@ test-struct-param-ret = () {
     cty2.push(TY-I64)
     blks2 []i64 = []
     blks2.push(0)
-    s2 = cg-emit-cfg-t('give', TY-STRUCT-BASE, 1, ptyps, vty2, cty2, blks2, ops2, dsts2, xa2, bs2, syms2)
+    s2 = cg-emit-cfg-t('give', TY-STRUCT-BASE, 1, ptyps, vty2, cty2, blks2, ops2, dsts2, xa2, bs2, syms2, [])
     runner.eq(s2.contains('define %struct.s0 @give(%struct.s0 %st1) {'), 1, 'struct ret sig')
     runner.eq(s2.contains('ret %struct.s0 %st1'), 1, 'struct ret value')
 
@@ -1011,7 +1011,7 @@ test-struct-param-ret = () {
     syms3 []str = []
     ops3.push(OP-CALL)
     dsts3.push(2)
-    xa3.push(1)
+    xa3.push(0)
     bs3.push(1)
     syms3.push('give')
     ops3.push(OP-RET)
@@ -1029,7 +1029,11 @@ test-struct-param-ret = () {
     blks3 []i64 = []
     blks3.push(0)
     blks3.push(0)
-    s3 = cg-emit-cfg-t('roundtrip', TY-STRUCT-BASE, 1, ptyps, vty3, cty3, blks3, ops3, dsts3, xa3, bs3, syms3)
+
+    ; 实参侧池（s64）：xa3=0 是池内基址，第 j 个实参值 id = args3[0 + j]
+    args3 []i64 = []
+    args3.push(1)
+    s3 = cg-emit-cfg-t('roundtrip', TY-STRUCT-BASE, 1, ptyps, vty3, cty3, blks3, ops3, dsts3, xa3, bs3, syms3, args3)
     runner.eq(s3.contains('define %struct.s0 @roundtrip(%struct.s0 %st1) {'), 1, 'struct call sig')
     runner.eq(s3.contains('%st2 = call %struct.s0 @give(%struct.s0 %st1)'), 1, 'struct call arg')
     runner.eq(s3.contains('ret %struct.s0 %st2'), 1, 'struct call ret')
@@ -1141,7 +1145,7 @@ test-struct-nested = () {
         #{overflow=wrap}
         j = j + 1
     }
-    s = cg-emit-cfg-t('nest', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('nest', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 嵌套字段的 insertvalue：型别名 %struct.s0、值前缀 %st2
     runner.eq(s.contains('%sm3_0 = insertvalue %struct.s1 zeroinitializer, %struct.s0 %st2, 0'), 1, 'nested field mk')
@@ -1168,7 +1172,7 @@ test-const-ret = () {
     xa.push(1)
     bs.push(0)
     syms.push('')
-    s = cg-emit-func('three', 0, ops, dsts, xa, bs, syms)
+    s = cg-emit-func('three', 0, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @three()'), 1, 'signature')
     runner.eq(s.contains('add i64 0, 3'), 1, 'const 3')
     runner.eq(s.contains('ret i64 %v1'), 1, 'ret v1')
@@ -1191,7 +1195,7 @@ test-arith = () {
     xa.push(2)
     bs.push(0)
     syms.push('')
-    s = cg-emit-func('dbl', 1, ops, dsts, xa, bs, syms)
+    s = cg-emit-func('dbl', 1, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @dbl(i64 %v1)'), 1, 'param sig')
     runner.eq(s.contains('add i64 %v1, %v1'), 1, 'add operands')
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
@@ -1211,7 +1215,7 @@ test-call = () {
     syms.push('')
     ops.push(OP-CALL)
     dsts.push(2)
-    xa.push(1)
+    xa.push(0)
     bs.push(1)
     syms.push('dbl')
     ops.push(OP-RET)
@@ -1219,7 +1223,11 @@ test-call = () {
     xa.push(2)
     bs.push(0)
     syms.push('')
-    s = cg-emit-func('caller', 0, ops, dsts, xa, bs, syms)
+
+    ; 实参侧池（s64）：xa=0 是池内基址，第 j 个实参值 id = args[0 + j]
+    args []i64 = []
+    args.push(1)
+    s = cg-emit-func('caller', 0, ops, dsts, xa, bs, syms, args)
     runner.eq(s.contains('define i64 @caller()'), 1, 'signature')
     runner.eq(s.contains('call i64 @dbl(i64 %v1)'), 1, 'call dbl')
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
@@ -1243,7 +1251,7 @@ test-call2 = () {
     xa.push(3)
     bs.push(0)
     syms.push('')
-    s = cg-emit-func('add2', 2, ops, dsts, xa, bs, syms)
+    s = cg-emit-func('add2', 2, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @add2(i64 %v1, i64 %v2)'), 1, 'two params')
     runner.eq(s.contains('add i64 %v1, %v2'), 1, 'add operands')
 
@@ -1264,7 +1272,7 @@ test-call2 = () {
     syms2.push('')
     ops2.push(OP-CALL)
     dsts2.push(3)
-    xa2.push(1)
+    xa2.push(0)
     bs2.push(2)
     syms2.push('add2')
     ops2.push(OP-RET)
@@ -1272,9 +1280,90 @@ test-call2 = () {
     xa2.push(3)
     bs2.push(0)
     syms2.push('')
-    t = cg-emit-func('caller2', 0, ops2, dsts2, xa2, bs2, syms2)
+
+    ; 实参侧池（s64）：值 id 1、2 不必连续，按下标入池即可
+    args2 []i64 = []
+    args2.push(1)
+    args2.push(2)
+    t = cg-emit-func('caller2', 0, ops2, dsts2, xa2, bs2, syms2, args2)
     runner.eq(t.contains('call i64 @add2(i64 %v1, i64 %v2)'), 1, 'two-arg call')
     runner.eq(t.contains('ret i64 %v3'), 1, 'ret v3')
+}
+
+; ── s64：侧池解耦连续 id（基址非 0 ＋ 池下标≠值 id ＋ str 散布）──
+; 旧契约下 xa 就是首个实参值 id 且要求连续；s64 起 xa = 池内基址下标，
+; 实参值 id 可任意散布（嵌套调用入池后外层基址落在内层池项之后）。
+; caller3() = add2(v5, v9)：池 = [1, 3, 5, 9]，基址 2 ⇒ 读 %v5、%v9；
+;   若把池下标当值 id 误读会发 %v2、%v3 —— 断言同时钉住正向与反向。
+test-call-scatter = () {
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ops.push(OP-CALL)
+    dsts.push(10)
+    xa.push(2)
+    bs.push(2)
+    syms.push('add2')
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(10)
+    bs.push(0)
+    syms.push('')
+    vty []i64 = [].with-len(11)
+    cty []i64 = [].with-len(2)
+    blks []i64 = []
+    blks.push(0)
+    blks.push(0)
+    ptyps []i64 = [].with-len(2)
+    args []i64 = []
+    args.push(1)
+    args.push(3)
+    args.push(5)
+    args.push(9)
+    s = cg-emit-cfg-t('caller3', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
+    runner.eq(s.contains('%v10 = call i64 @add2(i64 %v5, i64 %v9)'), 1, 'scatter pool base')
+    runner.eq(s.contains('ret i64 %v10'), 1, 'scatter ret')
+    runner.eq(s.contains('@add2(i64 %v2'), 0, 'pool index not read as value id')
+    runner.eq(s.contains('@add2(i64 %v9, i64 %v5'), 0, 'scatter order not swapped')
+
+    ; str 实参散布：call @sf(i64 %v3, %str-long %sv7) ⇒ 型别按值 id 查 vty，与池位置无关
+    ops2 []i64 = []
+    dsts2 []i64 = []
+    xa2 []i64 = []
+    bs2 []i64 = []
+    syms2 []str = []
+    ops2.push(OP-CALL)
+    dsts2.push(8)
+    xa2.push(1)
+    bs2.push(2)
+    syms2.push('sf')
+    ops2.push(OP-RET)
+    dsts2.push(0)
+    xa2.push(8)
+    bs2.push(0)
+    syms2.push('')
+    vty2 []i64 = []
+    w = 0
+    (w < 7) {
+        vty2.push(TY-I64)
+
+        #{overflow=wrap}
+        w = w + 1
+    }
+    vty2.push(TY-STR)
+    vty2.push(TY-I64)
+    cty2 []i64 = [].with-len(2)
+    blks2 []i64 = []
+    blks2.push(0)
+    blks2.push(0)
+    args2 []i64 = []
+    args2.push(0)
+    args2.push(3)
+    args2.push(7)
+    t = cg-emit-cfg-t('caller4', TY-I64, 0, ptyps, vty2, cty2, blks2, ops2, dsts2, xa2, bs2, syms2, args2)
+    runner.eq(t.contains('%v8 = call i64 @sf(i64 %v3, %str-long %sv7)'), 1, 'scatter str arg')
 }
 
 ; ── func let-add() { x = 3; return x + x } ─────────────
@@ -1314,7 +1403,7 @@ test-let = () {
     xa.push(3)
     bs.push(0)
     syms.push('')
-    s = cg-emit-func('let-add', 0, ops, dsts, xa, bs, syms)
+    s = cg-emit-func('let-add', 0, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%s1 = alloca i64'), 1, 'alloca slot')
     runner.eq(s.contains('store i64 %v1, i64* %s1'), 1, 'store')
     runner.eq(s.contains('%v2 = load i64, i64* %s1'), 1, 'load')
@@ -1385,7 +1474,7 @@ test-cfg = () {
     xa.push(5)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('lt10', 1, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('lt10', 1, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @lt10(i64 %v1)'), 1, 'sig')
     runner.eq(s.contains('icmp slt i64 %v1, %v2'), 1, 'cmplt')
     runner.eq(s.contains('br i1 %c2, label %bb1, label %bb2'), 1, 'condbr')
@@ -1544,7 +1633,7 @@ test-loop = () {
     xa.push(14)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('sum4', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('sum4', 0, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @sum4()'), 1, 'sig')
     runner.eq(s.contains('br label %bb1'), 1, 'back-edge br')
     runner.eq(s.contains('bb1:'), 1, 'loop head')
@@ -1585,7 +1674,7 @@ test-string = () {
     xa.push(2)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('slen', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('slen', 0, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('@.s.slen.0 = private unnamed_addr constant [4 x i8] c"abc\\00"'), 1, 'global literal')
     runner.eq(s.contains('getelementptr inbounds [4 x i8]'), 1, 'gep')
     runner.eq(s.contains('%q0 = insertvalue %str-long undef, i64 3, 0'), 1, 'len field')
@@ -1644,7 +1733,7 @@ test-strcat = () {
     xa.push(4)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('cat', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('cat', 0, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('@.s.cat.0 = private unnamed_addr constant [3 x i8] c"ab\\00"'), 1, 'left literal')
     runner.eq(s.contains('@.s.cat.1 = private unnamed_addr constant [3 x i8] c"cd\\00"'), 1, 'right literal')
     runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'strcat call')
@@ -1774,7 +1863,7 @@ test-option-str = () {
     xa.push(6)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('optstr', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('optstr', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; OPTMKSTR：tag=0 + 逐字段内联进槽（data 指针须 ptrtoint i8* -> i64；中间步用 %om0/%om1/%om2，末步落到 %op4）
     runner.eq(s.contains('%om04 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 0, 0'), 1, 'optmkstr tag')
@@ -1919,7 +2008,7 @@ test-option-vec = () {
     bs.push(0)
     syms.push('')
 
-    s = cg-emit-cfg-t('optvec', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('optvec', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; OPTMKVEC：tag=0 + 逐字段 extractvalue %vec / insertvalue 进 slot（k=4）
     runner.eq(s.contains('%mv04 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 0, 0'), 1, 'optmkvec tag=0')
@@ -2010,7 +2099,7 @@ test-str-slot = () {
     xa.push(4)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('pick', 1, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('pick', 1, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%ss1 = alloca %str-long'), 1, 'str slot alloca')
     runner.eq(s.contains('store %str-long %sv1, %str-long* %ss1'), 1, 'sstore')
     runner.eq(s.contains('store %str-long %sv2, %str-long* %ss1'), 1, 'sstore in bb1')
@@ -2066,7 +2155,7 @@ test-str-eq = () {
     xa.push(4)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('streq', 1, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('streq', 1, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%se3 = call i1 @str_eq(%str-long %sv1, %str-long %sv2)'), 1, 'stereq call')
     runner.eq(s.contains('%v4 = zext i1 %se3 to i64'), 1, 'stereq zext')
     runner.eq(s.contains('%se4 = call i1 @str_eq(%str-long %sv1, %str-long %sv3)'), 1, 'stneq call')
@@ -2145,7 +2234,7 @@ test-vec-eq = () {
     xa.push(9)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('veceq', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('veceq', 0, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%veq8 = call i1 @__nolang_vec_eq_i64(%vec %vc5, %vec %vc8)'), 1, 'veceq call')
     runner.eq(s.contains('%v9 = zext i1 %veq8 to i64'), 1, 'veceq zext')
     runner.eq(s.contains('icmp %vec'), 0, 'no icmp on %vec')
@@ -2198,7 +2287,7 @@ test-opt-eq = () {
     xa.push(4)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('opteq', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('opteq', 0, blks, ops, dsts, xa, bs, syms, [])
 
     ; OPTEQ @k3：tag 两边提取 + icmp eq；载荷两边提取 + icmp eq；and；zext
     runner.eq(s.contains('%otx3 = extractvalue %option %op2, 0'), 1, 'opteq left tag')
@@ -2269,7 +2358,7 @@ test-opt-eq-str = () {
     xa.push(5)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('opteqstr', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('opteqstr', 0, blks, ops, dsts, xa, bs, syms, [])
 
     ; OPTEQSTR @k4：tag 两边提取 + icmp eq；两侧从槽重建 %str-long（len/cap/data inttoptr）；call @str_eq；and；zext
     runner.eq(s.contains('%otx4 = extractvalue %option %op3, 0'), 1, 'opteqstr left tag')
@@ -2346,7 +2435,7 @@ test-opt-f64 = () {
     xa.push(4)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('optf64', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('optf64', TY-I64, 1, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; OPTMKF64 @k0：bitcast double→i64 后一步 insertvalue 进 slot[0]（tag 已内建于字面 0）
     runner.eq(s.contains('%mb0 = bitcast double %fd1 to i64'), 1, 'optmkf64 bitcast d2i')
@@ -2429,7 +2518,7 @@ test-opt-eq-f64 = () {
     xa.push(5)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('opteqf64', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('opteqf64', TY-I64, 2, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 两侧各取 slot[0]（i64）后 bitcast i64→double（复用 s46 slot[0] 读取形）
     runner.eq(s.contains('%opx2 = extractvalue %option %op3, 1, 0'), 1, 'opteqf64 extract payload x')
@@ -2534,7 +2623,7 @@ test-option-slot = () {
     xa.push(9)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('optslot', 1, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('optslot', 1, blks, ops, dsts, xa, bs, syms, [])
 
     ; 槽在入口 alloca；bb0/bb1 各 store；bb2 load——三者皆非 PHI
     runner.eq(s.contains('%os1 = alloca %option'), 1, 'opt slot alloca')
@@ -2662,7 +2751,7 @@ test-vec = () {
     xa.push(11)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('vecsum', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('vecsum', 0, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%vc1 = call %vec @vec_new()'), 1, 'vec_new')
     runner.eq(s.contains('%vc2 = call %vec @vec_push_i64(%vec %vc1, i64 %v1)'), 1, 'push 1')
     runner.eq(s.contains('%vc4 = call %vec @vec_push_i64(%vec %vc3, i64 %v3)'), 1, 'push 3')
@@ -2708,7 +2797,7 @@ test-vec-len = () {
     xa.push(2)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg('veclen', 0, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg('veclen', 0, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%v2 = call i64 @vec_len(%vec %vc2)'), 1, 'vec_len call')
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret len')
 }
@@ -2734,7 +2823,7 @@ test-sig-str = () {
     vt.push(TY-STR)
     ct []i64 = []
     ct.push(TY-I64)
-    s = cg-emit-cfg-t('sident', TY-STR, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('sident', TY-STR, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define %str-long @sident(%str-long %sv1)'), 1, 'str sig')
     runner.eq(s.contains('ret %str-long %sv1'), 1, 'str ret')
     runner.eq(s.contains('i64 %v1'), 0, 'no i64 leak')
@@ -2771,7 +2860,7 @@ test-sig-mixed = () {
     ct []i64 = []
     ct.push(TY-I64)
     ct.push(TY-I64)
-    s = cg-emit-cfg-t('mix', TY-I64, 2, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('mix', TY-I64, 2, ty, vt, ct, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @mix(i64 %v1, %str-long %sv2)'), 1, 'mixed sig')
     runner.eq(s.contains('%v3 = extractvalue %str-long %sv2, 0'), 1, 'len of sv2')
     runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
@@ -2806,7 +2895,7 @@ test-sig-vec = () {
     ct []i64 = []
     ct.push(TY-I64)
     ct.push(TY-I64)
-    s = cg-emit-cfg-t('vcount', TY-I64, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('vcount', TY-I64, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @vcount(%vec %vc1)'), 1, 'vec sig')
     runner.eq(s.contains('call i64 @vec_len(%vec %vc1)'), 1, 'len of vc1')
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
@@ -2834,7 +2923,7 @@ test-sig-call = () {
     blks.push(0)
     ops.push(OP-CALL)
     dsts.push(3)
-    xa.push(1)
+    xa.push(0)
     bs.push(2)
     syms.push('mix')
     blks.push(0)
@@ -2854,7 +2943,12 @@ test-sig-call = () {
     ct.push(TY-I64)
     ct.push(TY-I64)
     ct.push(TY-I64)
-    s = cg-emit-cfg-t('caller2', TY-I64, 0, [], vt, ct, blks, ops, dsts, xa, bs, syms)
+
+    ; 实参侧池（s64）：混排型别的实参值 id 逐个入池，发射侧按池下标取
+    args []i64 = []
+    args.push(1)
+    args.push(2)
+    s = cg-emit-cfg-t('caller2', TY-I64, 0, [], vt, ct, blks, ops, dsts, xa, bs, syms, args)
     runner.eq(s.contains('%sv2 = insertvalue %str-long %r1, i8* %p1, 2'), 1, 'str arg built')
     runner.eq(s.contains('%v3 = call i64 @mix(i64 %v1, %str-long %sv2)'), 1, 'typed call')
     runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
@@ -2928,7 +3022,7 @@ test-option = () {
     ct.push(TY-I64)
     ct.push(TY-OPT)
     ct.push(TY-I64)
-    s = cg-emit-cfg-t('pick', TY-OPT, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('pick', TY-OPT, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define %option @pick(i64 %v1)'), 1, 'option sig')
     runner.eq(s.contains('%op4 = insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v1, 1, 0'), 1, 'some packs payload')
     runner.eq(s.contains('%op5 = insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 1, 0'), 1, 'none sets tag 1')
@@ -2990,7 +3084,7 @@ test-option-read = () {
     ct.push(TY-I64)
     ct.push(TY-I64)
     ct.push(TY-I64)
-    s = cg-emit-cfg-t('rd', TY-I64, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('rd', TY-I64, 1, ty, vt, ct, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @rd(%option %op1)'), 1, 'option param sig')
     runner.eq(s.contains('%v2 = extractvalue %option %op1, 0'), 1, 'raw tag')
     runner.eq(s.contains('%ot1 = extractvalue %option %op1, 0'), 1, 'isok temp')
@@ -3084,7 +3178,7 @@ test-strcat-rc = () {
     xa.push(4)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('catrc', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('catrc', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'strcat call')
 
     ; RETAIN：取 data 指针 + call retain
@@ -3240,7 +3334,7 @@ test-strcat-rc-nested = () {
     xa.push(6)
     bs.push(0)
     syms.push('')
-    s = cg-emit-cfg-t('catnested', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('catnested', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'inner strcat')
     runner.eq(s.contains('%sv5 = call %str-long @str_concat(%str-long %sv3, %str-long %sv4)'), 1, 'outer strcat uses heap var')
 
@@ -3393,7 +3487,7 @@ test-struct-mk-get = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('pt', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('pt', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 构造：链式 insertvalue，中间步 %sm2_0（k=2, j=0），末步落 %st3（s31 起初值用 zeroinitializer）
     runner.eq(s.contains('%sm2_0 = insertvalue %struct.s0 zeroinitializer, i64 %v1, 0'), 1, 'struct field0')
@@ -3540,7 +3634,7 @@ test-struct-set = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('bump', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('bump', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; SET：读旧 %st3 + 新字段值 %v4 + 下标 1，产出 %st5（旧值未被改写）
     runner.eq(s.contains('%st5 = insertvalue %struct.s0 %st3, i64 %v4, 1'), 1, 'struct set reads old value')
@@ -3622,7 +3716,7 @@ test-struct-wide = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('wide', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('wide', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 三步链：j=0/1 用中间名 %sm3_0 / %sm3_1，j=2 落 %st4
     runner.eq(s.contains('%sm3_0 = insertvalue %struct.s1 zeroinitializer, i64 %v1, 0'), 1, 'wide field0')
@@ -3704,7 +3798,7 @@ test-struct-str-field = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('hold', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('hold', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; 字段 0 是 %str-long：型别名与前缀都取自 vty[1]（不是硬编 i64 %v）
     runner.eq(s.contains('%sm2_0 = insertvalue %struct.s1 zeroinitializer, %str-long %sv1, 0'), 1, 'str field mk')
@@ -3803,7 +3897,7 @@ test-struct-field-rc = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('keep', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms)
+    s = cg-emit-cfg-t('keep', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
 
     ; RETAIN（k=2）：struct → %str-long → data 指针 → call
     runner.eq(s.contains('%rf2_0 = extractvalue %struct.s0 %st2, 0'), 1, 'rc retain extract struct')
@@ -3839,6 +3933,7 @@ test-opt-order-scf()
 test-arith()
 test-call()
 test-call2()
+test-call-scatter()
 test-let()
 test-cfg()
 test-loop()

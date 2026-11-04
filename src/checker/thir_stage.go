@@ -15,9 +15,10 @@ package checker
 //     提取（KFuncDef / KExtern → 签名 / 回传型别）。
 //   - ValidateFuncArgCountTHIR：签名表改由 HIR 提取（KParam.First 恢复
 //     HasDefault），call-site walker（checkArgCountInStmt/Expr）不动。
-//   - ValidateDivByZeroTHIR：触发条件纯语法（isLiteralZeroDivisor），
-//     类型确认（「这是不是整数除法」）因表达式级型别尚未入副表而暂缓
-//     ——见 TypeOf 注释；本批保持触发条件与旧版逐字一致。
+//   - ValidateDivByZeroTHIR：触发条件纯语法（isLiteralZeroDivisor）+ 型别
+//     精化（浮点被除数跳过、窄型别域里被截断成 0 的除数字面量补报），
+//     型别结论读 TypeOf / TypeRefOf（表达式级副表），见 checker.go 的
+//     isFloatArithOperand 与 narrowDivisorTruncatedToZero。
 //   - ValidateStrOrderingTHIR：funcTypes 表改由 HIR 回传型别优先、
 //     collectStrOrderingFuncTypes 兜底；走查（walkStrOrderingStmt）不动。
 //   - ValidateStringConcatTHIR：同 DivByZero，触发纯语法，型别精化暂缓。
@@ -416,13 +417,18 @@ func ValidateFuncArgCountTHIR(program *parser.Program, view *THIRView) []Validat
 
 // ValidateDivByZeroTHIR 是 ValidateDivByZero 的 THIR 侧变体。
 //
-// 触发条件仍以纯语法为主——「除数是整数字面量 0」；6C-optional 第三批起接入
-// **型別确认精化**（isFloatArithOperand）：被除數確定為浮點時跳過，因為該除法
-// 走 LLVM fdiv（IEEE-754 定義 x/0.0 = ±inf），不是 sdiv/srem UB。判據走
-// THIRView.TypeOf（表達式級型別表），這是該表的第一個生產消費方。
+// 触发条件是两条规则的并集，两条都要型别结论（都读表达式级型别副表）：
+//
+//  1. 除数是整数字面量 0（纯语法，trace onpn7zgb），但被除數確定為浮點時跳过
+//     ——該除法走 LLVM fdiv（IEEE-754 定義 x/0.0 = ±inf），不是 sdiv/srem UB；
+//  2. 除数字面量非 0、但在**左运算元继承来的窄型别**里被截断成 0
+//     （trace q7k2nzr4，如 `b % 256` 且 b 为 byte），見 narrowDivisorTruncatedToZero。
+//
+// 规则 1 的浮点精化与规则 2 都走 THIRView.TypeOf / TypeRefOf（表达式级型别表），
+// 是该表的第一与第二个生产消费方。
 //
 // 與 legacy 同步精化（ValidateDivByZero 兩側同 view）⇒ 影子對拍保持全等；
-// 行為變更（浮點用例由報轉不報）由獨立正向測試鎖定。
+// 行为变更（浮点用例由报转不报、截断用例的净增）由独立正向测试锁定。
 func ValidateDivByZeroTHIR(program *parser.Program, view *THIRView) []ValidateResult {
 	return ValidateDivByZero(program, view)
 }

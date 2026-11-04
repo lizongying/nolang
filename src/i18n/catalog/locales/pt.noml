@@ -872,6 +872,7 @@ Compilador Zig não detectado
   'q3v8kn2m': 'esperado nome de variável após \',\', obtido %s'
   'q4nilcmp': 'não é possível comparar \'%s\' (%s) com nil: apenas uma opção (`?T`) pode ser comparada com nil; declare-o como `?%s` ou compare com um valor concreto'
   'q76kxtef': '  no fmt -d                   mostrar o diff de todos os .no do diretório atual'
+  'q7k2nzr4': 'o divisor %d não cabe em %s, o tipo estreito que esta divisão ou módulo inteiro herda do seu operando ESQUERDO, então o literal é truncado para 0 e a operação sempre divide por zero (o resultado é forçado a 0). Amplie primeiro os operandos para i64 (por exemplo `av i64 = arr[i]`) e divida em i64, ou remova a operação se o valor já estiver no intervalo.'
   'q9m9no8c': 'esperado \'}\' para fechar a anotação de campo, obtido %s em vez disso'
   'q9p5bmd0': 'nenhum link editor C (clang/cc/gcc) encontrado'
   'qa8z0cwo': `

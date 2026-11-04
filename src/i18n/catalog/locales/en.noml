@@ -867,6 +867,7 @@ Zig compiler not detected
   'q3v8kn2m': 'expected variable name after \',\', got %s'
   'q4nilcmp': 'cannot compare \'%s\' (%s) with nil: only an option (`?T`) can be tested against nil; declare it as `?%s` or compare against a concrete value'
   'q76kxtef': '  no fmt -d                   show diff for all .no files in current dir'
+  'q7k2nzr4': 'the divisor %d does not fit in %s, the narrow type this integer division or modulo inherits from its LEFT operand, so the literal is truncated to 0 and the operation always divides by zero (the result is forced to 0). Widen the operands to i64 first (e.g. `av i64 = arr[i]`) and divide in i64, or drop the operation if the value is already in range.'
   'q9m9no8c': 'expected \'}\' to close field annotation, got %s instead'
   'q9p5bmd0': 'no C linker (clang/cc/gcc) found'
   'qa8z0cwo': `
