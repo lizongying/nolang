@@ -248,4 +248,69 @@ ch[199]: {
     err -> exit(66)
 }
 
+; 9. 純量直寫進 `[]?T` 元素：隱式包一層 ok
+;    元素槽是 `?T`、RHS 是純量時，寫入必須自動 `ok(...)` 包裝 —— 既不能靜默寫
+;    裸載荷（option tag 會是垃圾），也不能因為型別不同就拒收（`?T` 元素接受 `T`
+;    是容器元素賦值的既定寬容度）。owned 載荷另要深拷貝，臨時值不能與容器共用
+;    緩衝。三種寫入形都要覆蓋：下標直寫、臨時值、place-write 的 `it = <純量>`。
+w []?i64 = [ok(1), nil]
+w[1] = 7
+w[1]: {
+    ok -> {
+        w1 i64 = it
+        w1 != 7 -> exit(70)
+    }
+
+    nil -> exit(71)
+
+    err -> exit(72)
+}
+
+ws []?str = [ok('a'), nil]
+ws[1] = 'zz'
+ws[1]: {
+    ok -> {
+        s1 str = it
+        s1 != 'zz' -> exit(73)
+    }
+
+    nil -> exit(74)
+
+    err -> exit(75)
+}
+
+mk-temp = () (r str) {
+    r = 'temp'
+}
+
+ws[0] = mk-temp()
+ws[0]: {
+    ok -> {
+        s0 str = it
+        s0 != 'temp' -> exit(76)
+    }
+
+    nil -> exit(77)
+
+    err -> exit(78)
+}
+
+; place-write：ok 臂的 `it` 就是 `?str` 元素槽，右側仍是純量
+ws[1]: {
+    ok -> it = 'q'
+
+    -> {
+    }
+}
+ws[1]: {
+    ok -> {
+        s2 str = it
+        s2 != 'q' -> exit(79)
+    }
+
+    nil -> exit(80)
+
+    err -> exit(81)
+}
+
 print('option-elem-container OK')
