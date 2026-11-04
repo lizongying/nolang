@@ -1836,6 +1836,76 @@ test-it-gate = () {
     runner.eq(ir3.contains('define'), 0, 'it-gate-outside no code')
 }
 
+; ── s66：前缀表达式 -x / !x ──────────────────────────────────────
+
+; 前缀负号作用于变量：r = -x ⇒ sub i64 0, %vx
+test-neg-var = () {
+    src = 'n1x = (x i64) (r i64) {\n    r = -x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'neg-var unsup')
+    runner.eq(ir.contains('sub i64 0'), 1, 'neg-var sub')
+    runner.eq(ir.contains('define'), 1, 'neg-var code')
+}
+
+; 前缀负号作用于字面量：r = -(5) ⇒ CONST 5 再 NEG
+test-neg-lit = () {
+    src = 'n2x = () (r i64) {\n    r = -(5)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'neg-lit unsup')
+    runner.eq(ir.contains('sub i64 0'), 1, 'neg-lit sub')
+}
+
+; 前缀逻辑非：!x ⇒ xor i64 1
+test-not-var = () {
+    src = 'n3x = (x i64) (r i64) {\n    r = !x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'not-var unsup')
+    runner.eq(ir.contains('xor i64 1'), 1, 'not-var xor')
+}
+
+; 嵌套双负：-(-x) ⇒ 两颗 sub
+test-neg-nested = () {
+    src = 'n4x = (x i64) (r i64) {\n    r = -(-x)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'neg-nested unsup')
+    runner.eq(ir.contains('sub i64 0'), 1, 'neg-nested sub present')
+}
+
+; 前缀参与二元：r = -x + 3 ⇒ NEG 再 ADD
+test-neg-in-expr = () {
+    src = 'n5x = (x i64) (r i64) {\n    r = -x + 3\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'neg-expr unsup')
+    runner.eq(ir.contains('sub i64 0'), 1, 'neg-expr sub')
+    runner.eq(ir.contains('add i64'), 1, 'neg-expr add')
+}
+
+; 门控：~x（位非）仍不在覆盖面 ⇒ unsup
+test-prefix-gate = () {
+    src = 'n6x = (x i64) (r i64) {\n    r = ~x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'prefix-gate counted')
+    runner.eq(ir.contains('define'), 0, 'prefix-gate no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-call-s64-scatter()
@@ -1895,6 +1965,12 @@ test-it-wild()
 test-it-arith()
 test-it-nested()
 test-it-gate()
+test-neg-var()
+test-neg-lit()
+test-not-var()
+test-neg-nested()
+test-neg-in-expr()
+test-prefix-gate()
 test-gate()
 
 runner.summary()
