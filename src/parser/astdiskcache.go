@@ -296,7 +296,13 @@ import (
 // sem 型別表都會被序列化/重放），舊 blob 讓 checker 逐元素檢查誤報 os0j8ix4。
 // 🔴 必 bump（第 3 條「parse-time 推斷形狀改變」）：不改內容只改編譯器 ⇒ 快取鍵
 // 不動，舊 blob 恰好 HIT（2026-11-03 index-compare 實測被坑，靠 rm 緩存目錄繞過）。
-const ASTVersion = "2026-11-03.1"
+//
+// 2026-11-04.1：`...` 從「`..` + `.`」兩個 token 收成單一 token（ELLIPSIS3），
+// 並在語句位置產生新的 AST 節點 EmptyStatement（佔位陳述，見 ast.go）。屬
+// 「parse-time 產出形狀改變」：同一份原始碼的 AST 多了一種節點，
+// `[0...count)` 由「合法（範圍+隱式 self）」變成語法錯誤。舊 blob 會把
+// 三點寫法當成合法的 RangeExpression 直接餵給下游，與新語義衝突。
+const ASTVersion = "2026-11-04.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

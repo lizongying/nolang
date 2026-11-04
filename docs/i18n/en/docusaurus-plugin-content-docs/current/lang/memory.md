@@ -94,6 +94,7 @@ All frees are preceded by `icmp eq i8* %ptr, null` to avoid free(NULL) or freein
 
 ### Single Return Value move
 ```no
+#{fmt-skip}
 get-slice = () (out []i64) {
     local = [1, 2, 3]
     out = local   ; local marked as moved, not freed at function exit; out managed by caller
@@ -104,6 +105,7 @@ v = get-slice()  ; v owns data, freed at function exit
 
 ### Multi-Return Value move (by parameter position order)
 ```no
+#{fmt-skip}
 get-pair = () (a []i64, b []i64) {
     x = [1, 2]
     y = [3, 4]
@@ -133,6 +135,7 @@ For heap-owning element types (`%str-long`/`%vec`/`%arr`/user structs), push per
 Move under conditional branches poses a challenge: the compiler cannot statically determine whether a move actually occurs.
 
 ```no
+#{fmt-skip}
 cond-move = (flag i64) (out []i64) {
     x = [1, 2, 3]
     if flag == 1 {
@@ -194,6 +197,7 @@ This mechanism applies to all heap types (`vec`/`str-long`/`arr`/user structs).
 ## Deep Clone (Assignment Between Locals)
 
 ```no
+#{fmt-skip}
 a []i64 = [10, 20, 30]
 b = a          ; deep clone: malloc new data + memcpy + recursively clone elements
 b[0] = 99
@@ -287,6 +291,7 @@ The compiler inserts a safe copy on the FFI extern `str` return path:
 3. **PHI merge**: merge both paths and construct the `%str-long` return value
 
 ```no
+#{fmt-skip}
 #{c}
 strchr = (s str, c i64) (r str)
 
@@ -308,6 +313,7 @@ The compiler calls the following before `ret i32 0` in the C entry `main`:
 2. `emitGlobalHeapFree` — iterates `moduleVarTypes`, frees all heap-owning types in `globalVars`
 
 ```no
+#{fmt-skip}
 GLOBAL-STR = 'hello'      ; LLVM @GLOBAL-STR = global %str-long zeroinitializer
 GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
 ; top-level statements malloc data and store into global
@@ -331,6 +337,7 @@ A slice expression `arr[1..3]` produces a view (zero-copy) that shares the origi
 ## Reassignment and Old Value Free
 
 ```no
+#{fmt-skip}
 s = 'hello'     ; malloc data buffer
 s = 'world'     ; free 'hello's data, malloc new data
 ```
@@ -345,7 +352,7 @@ Node {
     items []i64
 }
 
-n = Node{
+n = Node {
     name: 'hello'
     items: [1, 2, 3]
 }
@@ -359,6 +366,7 @@ When freeing a struct, all fields are traversed; heap-owning type fields are rec
 ## Fixed Array Reassigned to Slice
 
 ```no
+#{fmt-skip}
 local [4]i64 = [100, 200, 300, 400]   ; local is fixed array (16 bytes)
 local = [100, 200, 300]                ; reassigned as slice (24 bytes)
 ```
@@ -393,6 +401,7 @@ hashmap does not implement deep free of key/value; map container heap data leaks
 
 ### Loop Temporary Variables
 ```no
+#{fmt-skip}
 loop {
     s = 'temp'   ; each iteration mallocs new data, old data not freed
 }
@@ -400,6 +409,7 @@ loop {
 
 ### Slice View + Original Array move
 ```no
+#{fmt-skip}
 view = arr[1..3]   ; view shares arr.data
 arr = [9, 8, 7]    ; free old arr.data → view dangling
 ```
@@ -426,6 +436,7 @@ Regression: `tests/async-ownership.no`.
 ### struct Reassignment Leak (fixed 2026-09-30)
 
 ```no
+#{fmt-skip}
 holder { s str }
 h holder = holder { s: 'first' }
 h = holder { s: 'second' }   ; the old 'first' buffer used to leak
@@ -438,6 +449,7 @@ Measured with 2,000,000 reassignments: peak RSS dropped from 66.1 MB to 33.8 MB;
 ### struct Literal First Field Value Is a Method Call (fixed 2026-09-30)
 
 ```no
+#{fmt-skip}
 holder { s str }
 h = holder { s: n.to-str() }   ; before fix: 'holder' is not defined
 ```
@@ -449,6 +461,7 @@ After the fix `h = holder { s: recv.method(args) }` parses correctly. Nolang mat
 ### Await Result Type Reassigned Across Handle (fixed 2026-09-30)
 
 ```no
+#{fmt-skip}
 holder { s str }
 echo-holder-async = (h holder) (r str) { r = h.s }
 t i64 = 0

@@ -104,7 +104,7 @@ eq-raw = (b str, n i64) (eq bool) {
 ; [copy](#str.copy)
 str.copy = () (dst str) {
     dst = with-cap(.len-bytes())
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         dst[i] = .byte(i)
     }
 }
@@ -113,7 +113,7 @@ str.copy = () (dst str) {
 ; val: 用於填充整個字串的位元組值
 ; [fill](#str.fill)
 str.fill = (val byte) {
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         .[i] = val
     }
 }
@@ -404,7 +404,7 @@ str.ends-with = (target str) (yes bool) {
 ; [to-upper](#str.to-upper)
 str.to-upper = () (val str) {
     val = with-cap(.len-bytes())
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         c = .byte(i)
         {
             c >= 97 && c <= 122 -> {
@@ -426,7 +426,7 @@ str.to-upper = () (val str) {
 ; [to-lower](#str.to-lower)
 str.to-lower = () (val str) {
     val = with-cap(.len-bytes())
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         c = .byte(i)
         {
             c >= 65 && c <= 90 -> {
@@ -447,7 +447,7 @@ str.to-lower = () (val str) {
 ; val: 去除首尾空白後的副本
 ; [trim](#str.trim)
 str.trim = () (val str) {
-    start <- [0...len-bytes()): {
+    start <- [0..self.len-bytes()): {
         c = .byte(start)
         c != 32 && c != 9 && c != 10 && c != 13 -> break
     }
@@ -487,7 +487,7 @@ str.repeat = (times i64) (val str) {
     #{overflow=wrap}
     val = with-cap(.len-bytes() * times)
     i <- [0..times): {
-        j <- [0...len-bytes()): {
+        j <- [0..self.len-bytes()): {
 
             #{overflow=wrap}
             val[i * .len-bytes() + j] = .byte(j)
@@ -567,7 +567,7 @@ str.to-str = () (out str) {
 ; [to-bytes](#str.to-bytes)
 str.to-bytes = () (val []byte) {
     val = with-len(.len-bytes())
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         val[i] = .byte(i)
     }
 }
@@ -607,7 +607,7 @@ str.to-i64 = () (val ?i64) {
         }
     }
     limit = 922337203685477580
-    i <- [start...len-bytes()): {
+    i <- [start..self.len-bytes()): {
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -779,7 +779,7 @@ str.to-u8 = () (val ?u8) {
             }
         }
     }
-    i <- [start...len-bytes()): {
+    i <- [start..self.len-bytes()): {
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -825,7 +825,7 @@ str.to-u16 = () (val ?u16) {
             }
         }
     }
-    i <- [start...len-bytes()): {
+    i <- [start..self.len-bytes()): {
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -871,7 +871,7 @@ str.to-u32 = () (val ?u32) {
             }
         }
     }
-    i <- [start...len-bytes()): {
+    i <- [start..self.len-bytes()): {
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -905,7 +905,7 @@ str.to-u64 = () (val ?u64) {
     n = 0
     start = 0
     c == 43 -> start = 1
-    i <- [start...len-bytes()): {
+    i <- [start..self.len-bytes()): {
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -947,7 +947,7 @@ str.to-byte = () (val ?byte) {
             }
         }
     }
-    i <- [start...len-bytes()): {
+    i <- [start..self.len-bytes()): {
         c = .byte(i)
         c < 48 || c > 57 -> {
             val = err('invalid number: non-digit character')
@@ -1084,6 +1084,7 @@ str-to-f64 = (s str) (result f64) {
                             exp-sign = -1
                             i = i + 1
                         }
+
                         c == 43 -> i = i + 1
 
                         -> break
@@ -1284,7 +1285,7 @@ str.to-f64 = () (val ?f64) {
     start = 0
     c = .byte(0)
     c == 45 || c == 43 -> start = 1
-    i <- [start...len-bytes()): {
+    i <- [start..self.len-bytes()): {
         c = .byte(i)
         {
             c >= 48 && c <= 57 -> has-digit = 1
@@ -1388,7 +1389,7 @@ str.to-bool = () (val ?bool) {
 ; [reverse](#str.reverse)
 str.reverse = () (val str) {
     val = with-cap(.len-bytes())
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
 
         #{overflow=wrap}
         val[i] = .byte(.len-bytes() - 1 - i)
@@ -1512,7 +1513,9 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 #{overflow=wrap}
                 {
                     new-ch < 0x80 -> out-n = out-n + 1
+
                     new-ch < 0x800 -> out-n = out-n + 2
+
                     new-ch < 0x10000 -> out-n = out-n + 3
 
                     -> out-n = out-n + 4
@@ -2214,7 +2217,7 @@ str.fields = () (out []str) {
 str.eq-full = (b str) (yes bool) {
     .len-bytes() != b.len-bytes() -> return
     yes = true
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         .byte(i) != b.byte(i) -> {
             yes = false
             return
@@ -2425,7 +2428,7 @@ str.to-hex = () (out str) {
     #{overflow=wrap}
     out = with-cap(.len-bytes() * 2)
     hex = '0123456789abcdef'
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         b = .byte(i)
 
         #{overflow=wrap}

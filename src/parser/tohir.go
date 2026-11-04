@@ -506,6 +506,16 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 		// 直出失敗（錯誤已由 h0Diags 上報）：發 KUnknown 避免 tombstone KUnwrapAssign。
 		return c.b.Add(hir.Node{Kind: hir.KUnknown, S: c.b.Intern("UnwrapAssignStatement"), Line: line, Col: col})
 
+	case *EmptyStatement:
+		// `...` 佔位陳述：**build 時整條丟棄**。返回 NoID 後，b.List 會跳過它
+		// （見 hir.Builder.List），所以佔位符不會在 HIR 樹裡留下任何節點，
+		// 下游的 checker/mir/codegen 也永遠看不到它——「什麼都不做」是靠
+		// 「不存在」實現的，不是靠生成一條空指令。
+		//
+		// 這個 case 同時是 tohir_exhaustive_test.go 的覆蓋要求：沒有它，
+		// EmptyStatement 會靜默降成 hir.KUnknown。
+		return hir.NoID
+
 	case *LetStatement:
 		// S3-b 雙軌：H0 軌讀捕獲副表直接產出 KLet + KIf 鏈，取代 AST 軌的
 		// 「就地改寫用戶 AST」（V4 違規）。副表為 nil 表示本陳述未判定要捕獲，

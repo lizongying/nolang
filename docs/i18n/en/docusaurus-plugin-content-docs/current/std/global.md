@@ -9,6 +9,7 @@ sidebar_position: 4.3
 Declares built-in functions that can be called without a module prefix. Only the following 7 functions may be called without a module name; all other cross-module calls require a module prefix (e.g. `fs.read`, `os.get-env`):
 
 ```no
+#{fmt-skip}
 ; Capacity/length constructors (type inferred from left-hand side)
 s str = with-cap(256)               ; Pre-allocate 256-byte string (len=0)
 v []i64 = with-cap(100)             ; Pre-allocate 100-element slice (len=0)

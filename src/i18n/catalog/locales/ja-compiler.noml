@@ -32,6 +32,7 @@ Nolang プログラミング言語（バージョン %s）
                       redundant  推論型と同じ型注釈を削除
                       match      網羅的でない option マッチに不足の nil/err アームを追加
       -loop-style=<s>  既定のループ記法: prefix（既定）または suffix
+      -md   Markdown ファイル（.md/.mdx）内の Nolang コードブロックも整形する
     例:
       no fmt                      現在のディレクトリで整形が必要なファイルを一覧
       no fmt -w                   現在のディレクトリの全 .no ファイルをその場で整形
@@ -46,6 +47,7 @@ Nolang プログラミング言語（バージョン %s）
       no fmt -fix=match -w src/       src/ に不足の match アームをその場で追加
       echo 'x=1' | no fmt         stdin から整形
       no fmt -loop-style=suffix f.no  ループを '{ } (cond)' / '{ } * N' として整形
+      no fmt --md -w docs/        docs/ 配下のすべての .md/.mdx の Nolang ブロックを整形
 
   no build [オプション] [<ファイル|ディレクトリ>]  Nolang プロジェクトをビルド
     ファイル/ディレクトリがなく workspace.noml がある場合、

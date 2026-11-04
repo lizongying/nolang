@@ -9,6 +9,7 @@ sidebar_position: 4.3
 無需模組前綴即可調用的函數。僅有以下 7 個全域函數，其餘跨模組調用都必須加模組前綴（例如 `fs.read`、`os.get-env`）：
 
 ```no
+#{fmt-skip}
 ; 容量/長度構造（型別由賦值左側推斷）
 s str = with-cap(256)                   ; 預分配 256 位元組 str（len=0）
 v []i64 = with-cap(100)                 ; 預分配 100 元素切片（len=0）

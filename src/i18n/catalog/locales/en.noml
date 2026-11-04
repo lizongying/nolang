@@ -150,6 +150,15 @@ cannot assign through an index directly: `%s = %s`. An index read returns an opt
   '3zh3tuv8': 'This is the L2 oracle of the self-hosting effort: the output is'
   '430ty5x5': 'byte-array receiver has no slot'
   '45y022ur': 'net-listen: cannot marshal host as C string'
+  '46fhe9ez': `
+Markdown (.md/.mdx), only with -md: only the body of ```no / ```nolang fences is
+formatted. Fence lines and every other line are preserved byte for byte; a block that
+fails to parse is left untouched and reported on stderr, so formatting is always
+safe. Mark a deliberate pseudo-code or wrong-usage example with a '#{fmt-skip}'
+line at the top of the block: it is then neither validated nor modified.
+(```no skip and a '; nolang-fmt:skip' line are older spellings of the same thing.)
+-md ignores -fix.
+`
   '46jwfg5y': 'expected type after %q in type alias'
   '46qem63e': 'MIR IR failed LLVM assembly: %v: %s'
   '4bopl5am': 'root:'
@@ -182,6 +191,7 @@ cannot assign through an index directly: `%s = %s`. An index read returns an opt
   '5cid832p': 'unknown private field builtin %s'
   '5ckkrp9f': 'noml: field %s[%d]: dependency element must be a string, got %T'
   '5eo1kvb9': 'noml: field %s: expected object, got %T'
+  '5i2q1afu': '  hint: skipped blocks are left as-is; mark a deliberate pseudo-code or wrong-usage example with \'#{fmt-skip}\' on the first line of the block'
   '5j50pfem': 'member %q[%d]: object keys %s differ from %q\'s %s; each element needs the same shape'
   '5jqh5cf2': 'builtin %s: []str result expected %%vec slot, got %s'
   '5jsd564o': 'cannot assign non-string value to string variable \'%s\''
@@ -210,11 +220,21 @@ no usable C linker detected (clang/cc/gcc)
   '64bt3a50': 'Build Nolang source files to an executable.'
   '64t1vgh6': 'vec.remove: needs receiver, index'
   '66ybjsus': 'write-file: cannot marshal path as C string'
+  '6709xe69': `
+Parser ASTVersion: %s
+
+`
   '68bn4o2m': 'ESM package specifier %q must not start or end with \'/\''
+  '69wny890': '  cat api.md | no fmt -md     format Nolang blocks from stdin'
   '6a6jynsl': 'expected loop body after label #%s, got %s without \'* N\' or \'* { }\''
+  '6c01vyr1': '  no fmt -md -w docs/         format Nolang blocks in every .md/.mdx under docs/'
   '6c1nlj7d': 'conflicting native lib overrides: %q and %q'
   '6fgg3htw': 'argument %d of \'%s\': expected \'%s\', got \'%s\''
   '6kryrbsq': '\'%s\' is defined but never used'
+  '6m53s6q8': `
+Removed %d cache entries.
+
+`
   '6o12uzmx': 'waitpid: unsupported on windows'
   '6p2o4902': 'asset %s exceeds size limit (%d bytes)'
   '6qca9xu4': 'embed: cannot combine with explicit value'
@@ -266,6 +286,10 @@ Error creating tests directory: %v
   '802t452i': 'builtin %s: option result into %s dst'
   '81b2ea3o': 'expected \'(\' in extern declaration, got %s instead'
   '82csl5ay': 'str.to-bool: missing receiver'
+  '82hkddyo': `
+Entries: %d
+
+`
   '82j1xx80': 'missing arg %d'
   '82l9xk55': 'zip entry %q is too large (%d bytes)'
   '83xbz15x': `
@@ -355,10 +379,12 @@ Error resolving latest release: %v
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       ... including #{...} annotations'
   'au6g7ji7': 'parser errors: %s'
+  'awc98kqh': '  no fmt -md README.md        format Nolang blocks in one Markdown file'
   'axj3m1pb': 'unexpected \'as\' at start of expression'
   'axtpo500': 'win-find-first-file: cannot marshal path as C string'
   'ayjrpinp': 'noml: DecodeInto requires non-nil pointer, got %T'
   'aywuxg5w': 'builtin %s receiver %s: %s'
+  'aze4pgle': 'also format Nolang code blocks inside Markdown files (.md/.mdx)'
   'b1narysr': 'binary'
   'b360mu4g': 'expected parameter name, got %s instead'
   'b3ucznjm': `
@@ -398,6 +424,7 @@ Removed dependency: %s
   'cjih2jtt': 'expected \'=\' in function type alias, got %s'
   'ckaj3355': 'unknown function \'%s.%s\': module \'%s\' has no top-level function \'%s\''
   'cldvfmqx': 'waitpid: needs pid, options'
+  'cn2p79sm': '%s:%d: skipped Nolang code block: %s'
   'cnsb9bys': 'import %s: type %q is also defined by %s; tell them apart with a top-level #{name = \'...\'} annotation'
   'cotvjhmy': 'exec-shell: cannot marshal command as C string'
   'cpefnxwk': 'str-truncate: receiver has no slot'
@@ -449,6 +476,7 @@ Error syncing AST dependency %s: %v
   'e0r5thlw': 'write result to source file'
   'e1i8566c': 'read-file: result type %s is not a slice or string'
   'e3xplf89': '  A package declaring compiler.emit = "js" in package.noml is validated with'
+  'e7xfrsz0': '  clear  remove all cached AST blobs (escape hatch for suspected stale entries)'
   'e7yptvje': 'process-exec: needs (prog, arg)'
   'e9ab330i': 'Usage: no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'conflicting native wasm specifiers: %q (from %q) and %q (from %q)'
@@ -462,13 +490,18 @@ Error syncing AST dependency %s: %v
   'eit5cjgr': 'extracting tar.gz archive: %w'
   'ejbt38ik': 'slice op dst slot'
   'elep1kra': '  no build                  build current directory or workspace.noml projects'
-  'em4a9wv2': 'the range upper bound starts with `.%s` on the implicit self, so writing it directly after the `..` operator yields `...%s` (ambiguous: `...` is also the return/terminate operator). Name the receiver explicitly and write `..self.%s` (e.g. `[a..self.%s)`).'
+  'elps0exp': '`...` is a no-op placeholder statement and has no value, so it cannot be used in expression position (line %d); write it on a line of its own inside a block, e.g. `-> {` newline `    ...` newline `}`'
+  'elps0ln0': '`...` must stand on its own line: no code may precede it on line %d; put it on a line of its own, or delete it'
+  'elps1ln1': '`...` must stand on its own line: no code may follow it on line %d, got %s; `...` is a statement, so the rest of the line has to be a `;` comment'
+  'elps1rng': '`...` is not a range operator (line %d): the range operator is `..`, and `...` on its own is the no-op placeholder statement; here it looks like `..` glued to an implicit-self member, so name the receiver explicitly, e.g. `[0..self.count)`'
+  'em4a9wv2': 'the range upper bound starts with `.%s` on the implicit self, so it sits right after the `..` operator and reads like `...%s` (the `...` spelling is a syntax error: it is the no-op placeholder statement); name the receiver explicitly and write `..self.%s` (e.g. `[a..self.%s)`).'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        Direct WASM backend with explicit output'
   'en9zq76f': 'default loop spelling: \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\'; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  build without bounds checks (max performance)'
   'es55egn6': 'Format Nolang source files.'
   'eu5v0rj9': '  2. an existing directory       -> run its main.no'
   'eubonf62': 'cannot assign %s value to %s variable \'%s\': a struct value must be constructed explicitly (e.g. `%s { … }` or its constructor); an integer is promoted implicitly only into a struct that has one lossless constructor (such as bigint)'
+  'evesyggh': 'AST cache: disabled (NOLANG_AST_CACHE_OFF is set)'
   'ew5qg77j': 'expected identifier in use path, got %s'
   'ex8l4y2k': 'Updating dependencies...'
   'exeja3ad': 'via %s'
@@ -485,6 +518,10 @@ Package created: %s
   'fd9jkb5k': 'member %q is an empty array: annotate it with #{type = \'[]<elem>\'}'
   'fdwcn8i8': 'match arm never returns a value'
   'fe0a5wt2': 'cannot compare option value \'%s\' (%s) with \'%s\' (%s): unwrap it first (`v ?= expr`) or match on ok/nil/err'
+  'fftzl9dl': `
+clear failed: %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout: no result slot'
   'fk1sb6ss': 'syslog: unsupported on windows'
   'flfh2ueu': 'invalid install target %q: repository must be <host>/<owner>/<repo> or <owner>/<repo>'
@@ -532,6 +569,7 @@ clang not detected; check that the LLVM toolchain is fully installed
 `
   'gno8qk1j': '\'~match/case/default\' is deprecated, use \'x: { pattern-> ... }\' instead'
   'gr0jwheb': '\'for { }\' is deprecated, use \'{ } (true)\' infinite loop instead'
+  'gskcg79t': 'Note: entries are versioned — bumping ASTVersion invalidates them automatically.'
   'gszz9tke': '  - main.no (main entry file)'
   'gubuo5cb': 'option bound but never consumed: it is neither propagated (`?=`) nor unwrapped (`x: { ... }` / `_ = x`), so the error is silently discarded. %s'
   'gx02j37c': 'write-file: data arg has no slot (func %s, arg type %s)'
@@ -556,6 +594,7 @@ Registered '%s' in workspace.noml
   'hc3a6zzw': 'unknown fix class %q (supported: overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': 'empty match arm cannot determine a value (matched expression type is unknown)'
   'hgedm96o': 'auto-loading module %s: %w'
+  'hleyeurx': 'not parseable as Nolang'
   'hoal6bo9': 'Use --js to bypass LLVM toolchain and emit JavaScript source (Node.js/browser-compatible).'
   'hr40fh5v': 'package.noml not found. Run \'no new <name>\' to create a package, or cd into a package directory'
   'hr4y7owq': 'getgrouplist: %v'
@@ -580,6 +619,10 @@ Error creating directory: %v
   'ibaimz2h': 'cycle detection: %w'
   'ibiol93t': 'Error: package.noml not found. Run \'no new <name>\' to create a package, or cd into a package directory'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+AST cache directory: %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'interface \'%s\': merged method \'%s\' has conflicting signatures (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: needs receiver'
@@ -642,6 +685,7 @@ Error creating directory: %v
   'klplh4cw': '  no fmt src/                 list .no files in src/ needing formatting'
   'kmm43ypb': 'resolving %s from lock: %w'
   'krvc469y': 'vec.clear: needs receiver'
+  'ksvya88a': 'Usage: no cache <stat|clear>'
   'kvp8bxoc': 'Lock file and integrity sums saved.'
   'kxikdkzu': 'net-accept: no result slot'
   'kzomgjsg': 'empty ~match statement'
@@ -702,6 +746,7 @@ Error writing utils.no: %v
   'm5fpbrwd': 'vec.reverse: needs receiver'
   'm5klw1rq': 'method \'%s.%s\' has %d parameter(s), interface expects %d'
   'm7egvbv0': 'the integer expression is an option<int> by default and is discarded as an expression statement (unhandled). Add a `#{overflow = wrap}` annotation to get a plain int back, or propagate with `?=`, or discard explicitly with `_ = expr`.'
+  'm7q3keu7': 'fmt: %s is a Markdown file; pass -md to format its Nolang code blocks'
   'm7vq3xrt': 'bare \'->\' else arm outside an if-group binds only the nearest \'cond ->\' arm; the %d \'cond ->\' arm(s) above are ignored — wrap all of them in an if-group { ... } so the \'->\' is a real fallback arm'
   'm8blb8q2': 'noml: line %d col %d: %s'
   'mbnaky32': 'Registry authentication token (unused: upload not implemented)'
@@ -913,6 +958,7 @@ Packed AST: %s
   'sz3i7626': 'win-read-pipe: needs (handle, max-bytes)'
   't0f6p9jl': 'expected \'(\' after block in loop, got %s'
   't22pcf4p': 'embed: file not found: %s (resolved: %s)'
+  't2fwnrfi': '  stat   show cache location, entry count, size and ASTVersion'
   't4jhbz5z': 'expected \'=\' after function name, got %s instead'
   't5l89pst': `
 Dependency %s not found.
@@ -920,6 +966,7 @@ Dependency %s not found.
 `
   't5qq2leo': 'lencap kind: len/cap unsupported on %s (%s) in func %d'
   't5rup04t': 'move src slot v%d -> v%d'
+  't8440cno': 'Env: NOLANG_AST_CACHE_OFF=1 disables the cache; NOLANG_AST_CACHE_DIR overrides the directory.'
   'tb2zxq0f': '\'%s.%s []T\' is not allowed: the field type belongs in the type definition of \'%s\'. To store into the field write \'%s.%s = ...\''
   'tbfsq7ph': '  no pub                       write dist/<name>.ast.zip'
   'tcpoxtfd': 'type annotation \'%s\' can be omitted (inferred from value)'
@@ -940,6 +987,7 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'tfwxqucs': '`return` cannot be followed by a value; Nolang returns results through named result parameters (out-params), so use a bare `return` to exit early and assign the result parameter inside the function body'
   'tgutu5g0': 'use \'# %s.%s %s\' instead of \'# %s.%s as %s\''
   'tgz86gvc': 'reading built binary: %w'
+  'thdxbnrt': 'fmt: no Markdown files (.md/.mdx) found under %s'
   'tho8xc47': 'Files created:'
   'tjwokiw9': 'expected comma or right bracket in array literal, got %s instead'
   'tlwmf1le': 'explicit type cast `expr %s` is not allowed in Nolang; use the declaration form `name %s = expr` for a safe widening/same-width conversion instead'
@@ -953,12 +1001,17 @@ WASI sysroot not found. Set $WASI_SYSROOT to point to your wasi-sysroot.
   'tsg5cbwu': 'invalid character %q in ESM package specifier %q'
   'tt23j5su': 'expected \']\' or \')\' to close range, got %s instead'
   'tt8f2dmd': 'net-recv-nb: no result slot'
+  'ttdybn5d': 'fmt: -md cannot be combined with -fix (automatic fixes apply to .no sources only)'
   'ttlxcrgt': 'expected \'[\' or \'(\' or string in range expression, got %s instead'
   'u0g1w0d7': 'js compatibility module not found: %s'
   'u3g4qexx': 'builtin chars-new: bad arg type %s'
   'u3if6wak': '  no fmt -fix=match -w src/       add missing match arms in src/ in-place'
   'u4oybn9r': '%s already installed (%s); use -u to reinstall or update'
   'u5qmp19f': 'option match must handle all branches: err, nil, ok (missing: %s)'
+  'u9kq06kz': `
+Total size: %d bytes
+
+`
   'ua5h1rpc': '\'as\' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s'
   'uea62he5': 'function \'%s\' expects at most %d input argument(s), got %d — output parameters should be bound via assignment, e.g. result = %s(...)'
   'uf368nh9': 'Output zip path (default: dist/<tool>.ast.zip)'

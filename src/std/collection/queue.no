@@ -14,7 +14,7 @@
 ; - deque 僅支援 []i64
 ;
 ; 用法：
-;   buf [128]i64 = [0:128]
+;   buf [128]i64
 ;   q = buf.queue-init()
 ;   ok = buf.queue-push(q, 42)
 ;   ok = buf.queue-push(q, 7)

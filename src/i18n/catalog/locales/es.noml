@@ -150,6 +150,13 @@ no se puede asignar directamente a través de un índice: `%s = %s`. Una lectura
   '3zh3tuv8': 'Este es el oráculo L2 del esfuerzo de autoalojamiento: la salida se'
   '430ty5x5': 'el receptor de array de bytes no tiene ranura'
   '45y022ur': 'net-listen: no se puede convertir el host a una cadena C'
+  '46fhe9ez': `
+Markdown (.md/.mdx), solo con -md: se formatea únicamente el interior de los bloques ```no / ```nolang.
+Las líneas de valla y todas las demás se conservan byte a byte; un bloque que no se puede
+parsear queda intacto y se informa en stderr, así que formatear siempre es seguro.
+Para silenciar un ejemplo de pseudocódigo deliberado usa ```no skip o una línea
+'; nolang-fmt:skip' dentro del bloque. -md ignora -fix.
+`
   '46jwfg5y': 'se esperaba un tipo después de %q en el alias de tipo'
   '46qem63e': 'el IR de MIR no pasó el ensamblado LLVM: %v: %s'
   '4bopl5am': 'Raíz:'
@@ -182,6 +189,7 @@ no se puede asignar directamente a través de un índice: `%s = %s`. Una lectura
   '5cid832p': 'builtin de campo privado desconocido %s'
   '5ckkrp9f': 'noml: campo %s[%d]: el elemento de la dependencia debe ser una cadena, se obtuvo %T'
   '5eo1kvb9': 'noml: campo %s: se esperaba un objeto, se obtuvo %T'
+  '5i2q1afu': '  hint: los bloques omitidos quedan como están; marca el pseudocódigo deliberado con \'```no skip\' o una línea \'; nolang-fmt:skip\''
   '5j50pfem': 'miembro %q[%d]: las claves del objeto %s difieren de las de %q %s; cada elemento necesita la misma forma'
   '5jqh5cf2': 'builtin %s: el resultado []str esperaba una ranura %%vec, se obtuvo %s'
   '5jsd564o': 'no se puede asignar un valor que no sea cadena a la variable de cadena \'%s\''
@@ -210,11 +218,21 @@ no se detectó un enlazador C utilizable (clang/cc/gcc)
   '64bt3a50': 'Compilar fuentes Nolang a un ejecutable.'
   '64t1vgh6': 'vec.remove: necesita receptor, índice'
   '66ybjsus': 'write-file: no se puede convertir la ruta a una cadena C'
+  '6709xe69': `
+Parser ASTVersion: %s
+
+`
   '68bn4o2m': 'el especificador de paquete ESM %q no debe empezar ni terminar con \'/\''
+  '69wny890': '  cat api.md | no fmt -md     formatear bloques Nolang desde stdin'
   '6a6jynsl': 'se esperaba el cuerpo del bucle después de la etiqueta #%s, se obtuvo %s sin \'* N\' ni \'* { }\''
+  '6c01vyr1': '  no fmt -md -w docs/         formatear los bloques Nolang de todos los .md/.mdx de docs/'
   '6c1nlj7d': 'anulaciones de bibliotecas nativas en conflicto: %q y %q'
   '6fgg3htw': 'argumento %d de “%s”: se esperaba “%s”, se obtuvo “%s”'
   '6kryrbsq': '“%s” está definido pero nunca se usa'
+  '6m53s6q8': `
+Se eliminaron %d entradas de caché.
+
+`
   '6o12uzmx': 'waitpid: no admitido en windows'
   '6p2o4902': 'el recurso %s supera el límite de tamaño (%d bytes)'
   '6qca9xu4': 'embed: no se puede combinar con un valor explícito'
@@ -266,6 +284,10 @@ Error al crear el directorio tests: %v
   '802t452i': 'builtin %s: resultado option en el destino %s'
   '81b2ea3o': 'se esperaba \'(\' en la declaración extern, se obtuvo %s'
   '82csl5ay': 'str.to-bool: falta el receptor'
+  '82hkddyo': `
+Entradas: %d
+
+`
   '82j1xx80': 'falta el argumento %d'
   '82l9xk55': 'la entrada zip %q es demasiado grande (%d bytes)'
   '83xbz15x': `
@@ -356,10 +378,12 @@ Error al resolver la última versión: %v
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       incluyendo las anotaciones #{...}'
   'au6g7ji7': 'errores del analizador: %s'
+  'awc98kqh': '  no fmt -md README.md        formatear los bloques Nolang de un archivo Markdown'
   'axj3m1pb': '\'as\' inesperado al inicio de la expresión'
   'axtpo500': 'win-find-first-file: no se puede convertir la ruta a una cadena C'
   'ayjrpinp': 'noml: DecodeInto requiere un puntero no nulo, se obtuvo %T'
   'aywuxg5w': 'builtin %s receptor %s: %s'
+  'aze4pgle': 'formatear también los bloques Nolang dentro de archivos Markdown (.md/.mdx)'
   'b1narysr': 'binario'
   'b360mu4g': 'se esperaba el nombre del parámetro, se obtuvo %s'
   'b3ucznjm': `
@@ -399,6 +423,7 @@ Dependencia eliminada: %s
   'cjih2jtt': 'se esperaba \'=\' en el alias de tipo de función, se obtuvo %s'
   'ckaj3355': 'función desconocida “%s.%s”: el módulo “%s” no tiene función de nivel superior “%s”'
   'cldvfmqx': 'waitpid: necesita pid, options'
+  'cn2p79sm': '%s:%d: bloque Nolang omitido: %s'
   'cnsb9bys': 'import %s: el tipo %q también está definido por %s; distínguelos con una anotación `#{name = \'...\'}` de nivel superior'
   'cotvjhmy': 'exec-shell: no se puede convertir el comando a una cadena C'
   'cpefnxwk': 'str-truncate: el receptor no tiene ranura'
@@ -450,6 +475,7 @@ Error al sincronizar la dependencia AST %s: %v
   'e0r5thlw': 'reescribir el resultado en el archivo fuente'
   'e1i8566c': 'read-file: el tipo de resultado %s no es un slice ni una cadena'
   'e3xplf89': '  Un paquete que declara compiler.emit = "js" en package.noml se valida con'
+  'e7xfrsz0': '  clear  borrar todos los AST en caché (salida de emergencia ante entradas obsoletas)'
   'e7yptvje': 'process-exec: necesita (prog, arg)'
   'e9ab330i': 'Uso: no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'especificadores wasm nativos en conflicto: %q (de %q) y %q (de %q)'
@@ -463,13 +489,18 @@ Error al sincronizar la dependencia AST %s: %v
   'eit5cjgr': 'extrayendo el archivo tar.gz: %w'
   'ejbt38ik': 'ranura de destino de la operación slice'
   'elep1kra': '  no build                  compilar el directorio actual o los proyectos de workspace.noml'
-  'em4a9wv2': 'el límite superior del rango empieza por `.%s` sobre el self implícito, así que escribirlo directamente tras el operador `..` produce `...%s` (ambiguo: `...` también es el operador de retorno/terminación). Nombra el receptor explícitamente y escribe `..self.%s` (p. ej. `[a..self.%s)`).'
+  'elps0exp': '`...` es una sentencia de relleno sin efecto y sin valor, así que no puede usarse en posición de expresión (línea %d); escríbelo en su propia línea dentro de un bloque, p. ej. `-> {` salto de línea `    ...` salto de línea `}`'
+  'elps0ln0': '`...` debe ir en su propia línea: en la línea %d no puede haber código antes; ponlo en una línea propia o elimínalo'
+  'elps1ln1': '`...` debe ir en su propia línea: en la línea %d no puede haber código después, se obtuvo %s; `...` es una sentencia, el resto de la línea solo puede ser un comentario `;`'
+  'elps1rng': '`...` no es un operador de rango (línea %d): el operador de rango es `..`, y `...` por sí solo es la sentencia de relleno sin efecto; aquí parece `..` pegado a un miembro de self implícito, así que nombra el receptor explícitamente, p. ej. `[0..self.count)`'
+  'em4a9wv2': 'El límite superior del rango empieza con `.%s` sobre el self implícito, por lo que queda justo detrás del operador `..` y se lee como `...%s` (la forma con tres puntos es un error de sintaxis: `...` es la sentencia de relleno sin efecto). Nombra el receptor explícitamente y escribe `..self.%s` (p. ej. `[a..self.%s)`).'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        backend Direct WASM con salida explícita'
   'en9zq76f': 'Ortografía de bucle por defecto: \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\'; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  compilar sin comprobación de límites (rendimiento máximo)'
   'es55egn6': 'Formatear archivos fuente Nolang.'
   'eu5v0rj9': '  2. un directorio existente    -> ejecutar su main.no'
   'eubonf62': 'no se puede asignar un valor %s a la variable %s \'%s\': un valor struct debe construirse explícitamente (p. ej. `%s { … }` o su constructor); un entero solo se promueve implícitamente a un struct que tenga un constructor sin pérdida (como bigint)'
+  'evesyggh': 'Caché de AST: desactivada (NOLANG_AST_CACHE_OFF está definida)'
   'ew5qg77j': 'se esperaba un identificador en la ruta de use, se obtuvo %s'
   'ex8l4y2k': 'Actualizando dependencias...'
   'exeja3ad': 'vía %s'
@@ -486,6 +517,10 @@ Paquete creado: %s
   'fd9jkb5k': 'el miembro %q es un array vacío: anótalo con #{type = \'[]<elem>\'}'
   'fdwcn8i8': 'la rama de match nunca devuelve un valor'
   'fe0a5wt2': 'no se puede comparar el valor option \'%s\' (%s) con \'%s\' (%s): desempaquétalo primero (`v ?= expr`) o haz match sobre ok/nil/err'
+  'fftzl9dl': `
+no se pudo limpiar: %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout: no hay ranura para el resultado'
   'fk1sb6ss': 'syslog: no admitido en windows'
   'flfh2ueu': 'objetivo de instalación no válido %q: el repositorio debe ser <host>/<owner>/<repo> o <owner>/<repo>'
@@ -534,6 +569,7 @@ clang no detectado; comprueba que la cadena de herramientas LLVM esté completam
 `
   'gno8qk1j': '\'~match/case/default\' está obsoleto, usa \'x: { patrón-> ... }\' en su lugar'
   'gr0jwheb': '\'for { }\' está obsoleto, usa el bucle infinito \'{ } (true)\' en su lugar'
+  'gskcg79t': 'Nota: las entradas están versionadas — subir ASTVersion las invalida automáticamente.'
   'gszz9tke': '  - main.no (archivo de entrada principal)'
   'gubuo5cb': 'option vinculada pero nunca consumida: ni se propaga (`?=`) ni se desempaqueta (`x: { ... }` / `_ = x`), así que el error se descarta silenciosamente. %s'
   'gx02j37c': 'write-file: el argumento de datos no tiene ranura (función %s, tipo de argumento %s)'
@@ -558,6 +594,7 @@ Error al cambiar de directorio: %v
   'hc3a6zzw': 'clase de corrección desconocida %q (admitidas: overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': 'la rama de match vacía no puede determinar un valor (el tipo de la expresión coincidente es desconocido)'
   'hgedm96o': 'cargando automáticamente el módulo %s: %w'
+  'hleyeurx': 'no se puede parsear como Nolang'
   'hoal6bo9': 'Con --js, evitar la cadena LLVM y generar código JavaScript (compatible con Node.js/navegador).'
   'hr40fh5v': 'package.noml no encontrado. Ejecuta \'no new <name>\' para crear un paquete, o entra en un directorio de paquete'
   'hr4y7owq': 'getgrouplist: %v'
@@ -582,6 +619,10 @@ Error al crear el directorio: %v
   'ibaimz2h': 'detección de ciclos: %w'
   'ibiol93t': 'Error: no se encontró package.noml. Usa \'no new <name>\' para crear un paquete, o entra en un directorio de paquete'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+Directorio de caché de AST: %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'interfaz \'%s\': el método fusionado \'%s\' tiene firmas en conflicto (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: necesita el receptor'
@@ -629,6 +670,7 @@ Error al crear el directorio: %v
   'k2wgp5l6': 'Uso: no run [<package|dir|file>]'
   'k3envsrc': 'variable de entorno'
   'k3g4ofs4': 'emitir un diff coloreado en vez del resultado formateado'
+  'k3r7mbqd': 'una rama else (un \'->\' en su propia línea) debe estar dentro de un grupo if; envuelve la rama \'cond ->\' y este \'->\' entre { ... } (un \'cond ->\' suelto sin else puede quedarse fuera)'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: no hay ranura para el resultado'
   'k8je3usi': '%s ya existe y no es un módulo ES (no tiene "type": "module"); emite la salida como .mjs en su lugar (no build --js -o out.mjs)'
@@ -643,6 +685,7 @@ Error al crear el directorio: %v
   'klplh4cw': '  no fmt src/                 listar los .no de src/ que hay que formatear'
   'kmm43ypb': 'resolviendo %s desde el bloqueo: %w'
   'krvc469y': 'vec.clear: necesita el receptor'
+  'ksvya88a': 'Uso: no cache <stat|clear>'
   'kvp8bxoc': 'Archivo de bloqueo y sumas de integridad guardados.'
   'kxikdkzu': 'net-accept: no hay ranura para el resultado'
   'kzomgjsg': 'sentencia ~match vacía'
@@ -703,6 +746,8 @@ Error al escribir utils.no: %v
   'm5fpbrwd': 'vec.reverse: necesita el receptor'
   'm5klw1rq': 'el método “%s.%s” tiene %d parámetro(s), la interfaz espera %d'
   'm7egvbv0': 'la expresión entera es un option<int> por defecto y se descarta como sentencia de expresión (sin manejar). Añade una anotación `#{overflow = wrap}` para obtener un int normal, o propaga con `?=`, o descarta explícitamente con `_ = expr`.'
+  'm7q3keu7': 'fmt: %s es un archivo Markdown; añade -md para formatear sus bloques Nolang'
+  'm7vq3xrt': 'una rama else \'->\' suelta fuera de un grupo if se enlaza solo con la rama \'cond ->\' más cercana; las %d ramas \'cond ->\' superiores se ignoran — envuelve todas en un grupo if { ... } para que \'->\' sea una rama de respaldo real'
   'm8blb8q2': 'noml: línea %d columna %d: %s'
   'mbnaky32': 'Token de autenticación del registro (sin usar: subida no implementada)'
   'meket0n4': 'vec.clear: no hay ranura para el receptor'
@@ -786,7 +831,14 @@ compilador Zig no detectado
   'ol21t36r': '  no run --js --js-runtime bun main.no     igual pero con bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'el divisor de una división entera o módulo es la constante literal 0, lo cual es comportamiento indefinido en LLVM (sdiv/srem por cero) y produce resultados impredecibles. Añade una comprobación de cero en tiempo de ejecución, o haz que la función devuelva el fallo como option.'
-  'oraub2m9': '`%s %s= %s` no está admitido: una lectura de índice devuelve una option (nil cuando está fuera de rango), así que una asignación compuesta evaluaría el índice dos veces y descartaría el fallo. Reescríbelo como (el `it` de la rama ok es la ranura del elemento, legible y escribible):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   o `%s ?= %s %s %s` (propaga el fallo; requiere que la función contenedora tenga un parámetro de resultado option)'
+  'oraub2m9': `
+`%s %s= %s` no está admitido: una lectura de índice devuelve una option (nil cuando está fuera de rango), así que una asignación compuesta evaluaría el índice dos veces y descartaría el fallo. Reescríbelo como (el `it` de la rama ok es la ranura del elemento, legible y escribible):
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   o `%s ?= %s %s %s` (propaga el fallo; requiere que la función contenedora tenga un parámetro de resultado option)
+`
   'orjs902d': '\'switch/case/default\' está obsoleto, usa \'x: { 1-> ... }\' en su lugar'
   'os0j8ix4': 'no se puede asignar un valor %s al elemento %s del array \'%s\'%s'
   'osrb7a78': 'ranura de move'
@@ -914,6 +966,7 @@ AST empaquetado: %s
   'sz3i7626': 'win-read-pipe: necesita (handle, max-bytes)'
   't0f6p9jl': 'se esperaba \'(\' después del bloque en el bucle, se obtuvo %s'
   't22pcf4p': 'embed: archivo no encontrado: %s (resuelto: %s)'
+  't2fwnrfi': '  stat   mostrar ubicación de la caché, número de entradas, tamaño y ASTVersion'
   't4jhbz5z': 'se esperaba \'=\' después del nombre de la función, se obtuvo %s'
   't5l89pst': `
 No se encontró la dependencia %s.
@@ -921,6 +974,7 @@ No se encontró la dependencia %s.
 `
   't5qq2leo': 'tipo lencap: len/cap no admitido en %s (%s) en la función %d'
   't5rup04t': 'ranura de origen del move v%d -> v%d'
+  't8440cno': 'Entorno: NOLANG_AST_CACHE_OFF=1 desactiva la caché; NOLANG_AST_CACHE_DIR cambia el directorio.'
   'tb2zxq0f': '\'%s.%s []T\' no está permitido: el tipo del campo pertenece a la definición de tipo de \'%s\'. Para almacenar en el campo escribe \'%s.%s = ...\''
   'tbfsq7ph': '  no pub                       escribir dist/<name>.ast.zip'
   'tcpoxtfd': 'la anotación de tipo “%s” puede omitirse (inferida del valor)'
@@ -942,6 +996,7 @@ WASI sysroot no encontrado. Define $WASI_SYSROOT para apuntar a tu wasi-sysroot.
   'tfwxqucs': '`return` no puede ir seguido de un valor; Nolang devuelve resultados mediante parámetros de resultado con nombre (out-params), así que usa un `return` solo para salir antes y asigna el parámetro de resultado dentro del cuerpo de la función'
   'tgutu5g0': 'usa \'# %s.%s %s\' en lugar de \'# %s.%s as %s\''
   'tgz86gvc': 'leyendo el binario compilado: %w'
+  'thdxbnrt': 'fmt: no se encontraron archivos Markdown (.md/.mdx) en %s'
   'tho8xc47': 'Archivos creados:'
   'tjwokiw9': 'se esperaba una coma o un corchete derecho en el literal de array, se obtuvo %s'
   'tlwmf1le': 'no se permite la conversión de tipo explícita `expr %s` en Nolang; usa la forma declarativa `name %s = expr` para una conversión segura de ampliación o de igual anchura'
@@ -955,12 +1010,17 @@ WASI sysroot no encontrado. Define $WASI_SYSROOT para apuntar a tu wasi-sysroot.
   'tsg5cbwu': 'carácter no válido %q en el especificador de paquete ESM %q'
   'tt23j5su': 'se esperaba \']\' o \')\' para cerrar el rango, se obtuvo %s'
   'tt8f2dmd': 'net-recv-nb: no hay ranura para el resultado'
+  'ttdybn5d': 'fmt: -md no se puede combinar con -fix (las correcciones automáticas solo aplican a fuentes .no)'
   'ttlxcrgt': 'se esperaba \'[\' o \'(\' o una cadena en la expresión de rango, se obtuvo %s'
   'u0g1w0d7': 'módulo de compatibilidad js no encontrado: %s'
   'u3g4qexx': 'builtin chars-new: tipo de argumento incorrecto %s'
   'u3if6wak': '  no fmt -fix=match -w src/       añadir in situ las ramas match que faltan'
   'u4oybn9r': '%s ya está instalado (%s); usa -u para reinstalar o actualizar'
   'u5qmp19f': 'el match de option debe manejar todas las ramas: err, nil, ok (falta: %s)'
+  'u9kq06kz': `
+Tamaño total: %d bytes
+
+`
   'ua5h1rpc': 'la conversión \'as\' solo se permite para tipos de puntero FFI (p. ej. *byte, **byte), se obtuvo %s'
   'uea62he5': 'la función “%s” acepta como máximo %d argumento(s) de entrada, pero se pasaron %d — los parámetros de salida deben enlazarse mediante asignación, p. ej. result = %s(...)'
   'uf368nh9': 'Ruta del zip de salida (por defecto: dist/<tool>.ast.zip)'
@@ -1143,6 +1203,4 @@ Error al sincronizar la dependencia AST %s: módulo vacío
 
 `
   'zzcfoc04': 'creando el directorio dist: %w'
-  'k3r7mbqd': 'una rama else (un \'->\' en su propia línea) debe estar dentro de un grupo if; envuelve la rama \'cond ->\' y este \'->\' entre { ... } (un \'cond ->\' suelto sin else puede quedarse fuera)'
-  'm7vq3xrt': 'una rama else \'->\' suelta fuera de un grupo if se enlaza solo con la rama \'cond ->\' más cercana; las %d ramas \'cond ->\' superiores se ignoran — envuelve todas en un grupo if { ... } para que \'->\' sea una rama de respaldo real'
 }

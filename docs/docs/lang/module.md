@@ -49,12 +49,22 @@ math.PI
 ```no
 ; ✅ 正確：函數名簡潔，不加模組名前綴
 ; tail.no
-tail = () { ... }              ; 入口函數直接用模組名
-atoi = (s str) (v i64) { ... } ; 輔助函數用簡短名稱
+; 入口函數直接用模組名
+tail = () {
+    ...
+}
 
+; 輔助函數用簡短名稱
+atoi = (s str) (v i64) {
+    ...
+}
+```
+
+```no
+#{fmt-skip}
 ; ❌ 避免：函數名冗餘帶上模組名前綴
-; tail-run = () { ... }
-; tail-atoi = (s str) (v i64) { ... }
+; tail-run = () { }
+; tail-atoi = (s str) (v i64) { }
 ```
 
 跨模組導入時也保持一致：
@@ -63,7 +73,10 @@ atoi = (s str) (v i64) { ... } ; 輔助函數用簡短名稱
 ; ✅ 簡潔直觀
 # /src/tail.tail
 # /src/mktemp.mktemp
+```
 
+```no
+#{fmt-skip}
 ; ❌ 冗餘
 ; # /src/tail.tail-run
 ; # /src/mktemp.mktemp-run
@@ -100,6 +113,7 @@ Nolang 使用**具名格式字串**語法 `{name[:spec]}`，直接引用作用�
 **多參數時，字面量默認是模板，不是 C 風格的格式串。** `print('result={val}', 42, 'result={val}')` 中，每個字串字面量**各自**是一個模板：它的 `{val}` 從**呼叫點作用域**取值，與同一調用裡的其它參數無關。字面量**不會**去描述或消費後面的參數——它不是 `printf('%d', 42)` 那樣的替換。非字面量的參數（變數、運算式）則按普通可變參數處理，以空格分隔，整行末尾只有一個換行。
 
 ```no
+#{fmt-skip}
 val = 42
 print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
 tmpl = '{val}'
@@ -119,6 +133,7 @@ print('a={val}', val)                      ; a=42 42
 > `io.out`/`io.err` 是底層命令，輸出**不換行**。由於模組調用必須加模組名，`io.err` 明確了模組前綴，不會與 Option 構造函數 `err()` 衝突；即使同名，模組前綴也能區分。
 
 ```no
+#{fmt-skip}
 ; 容量/長度構造（無前綴）
 s str = with-cap(256)            ; ✅ 預分配 256 位元組的 str
 v []i64 = with-cap(100)          ; ✅ 預分配 100 個元素的切片
@@ -162,6 +177,7 @@ fs.open(path, opts)              ; ✅ 帶前綴（builtin 也需要）
 - `type` — `d`(整數)、`x`/`X`(十六進制)、`o`(八進制)、`b`(二進制)、`c`(字元)、`f`(定點)、`e`/`E`(科學記號)、`g`/`G`(通用)、`s`(字串，預設)、`t`(資料型別名，編譯期確定)、`v`(字面量值，字串加單引號，vec 調用 to-str)
 
 ```no
+#{fmt-skip}
 x i64 = 42
 u u64 = 255
 pi f64 = 3.14159
@@ -184,6 +200,7 @@ print('{s:v}')              ; 'hello'（字串用單引號包裹）
 在同一 `.no` 檔案內定義的函數、常量、方法，直接使用，不需前綴。
 
 ```no
+#{fmt-skip}
 ; 在 sha256.no 中：
 sha256(data)              ; sha256 定義在本檔案
 HMAC-BLOCK-SIZE           ; 常量定義在本檔案
@@ -194,6 +211,7 @@ HMAC-BLOCK-SIZE           ; 常量定義在本檔案
 內置類型（`str`、`i64`、`vec`、`arr`、`byte`、`char`、`bool` 等）的方法調用不需前綴。方法已內建於型別，通過接收者型別直接解析。
 
 ```no
+#{fmt-skip}
 'hello'.starts-with('he')  ; str 方法
 n.to-str()                 ; int 方法
 v.push(42)                 ; vec 方法
@@ -206,6 +224,7 @@ c.is-digit()               ; char 方法
 對已建立的結構體實例調用方法不需模組前綴。方法通過實例的型別解析，編譯器自動找到對應的 `struct.method` 定義。
 
 ```no
+#{fmt-skip}
 f = fs.open(path, opts)    ; fs.open 是模組級函數，需前綴
 f.read(buf, n)             ; file.read 是結構體方法，不需前綴
 f.close()                  ; file.close 是結構體方法，不需前綴
@@ -236,8 +255,8 @@ p.exists()                 ; path.exists 是結構體方法，不需前綴
 | `p.start(...)` | 實例變數 | 結構體方法 | `xxx` 是 `process` 類型的變數，`yyy` 是定義為 `process.start = ...` 的方法 |
 
 **定義時的差異**：
-- 模組級函數定義時**不加前綴**：在模組內部直接寫 `cmd = (program str, ...) { ... }`
-- 結構體方法定義時**必須加 `struct.` 前綴：`process.start = (program str, ...) { ... }`
+- 模組級函數定義時**不加前綴**：在模組內部直接寫 `cmd = (program str, ...) { }`
+- 結構體方法定義時**必須加 `struct.` 前綴：`process.start = (program str, ...) { }`
 
 **調用時的差異**：
 - 模組級函數在外部調用時用 `ModuleName.function()`：`process.cmd(...)`
@@ -254,11 +273,14 @@ p.exists()                 ; path.exists 是結構體方法，不需前綴
 當一個結構體實作其他模組定義的介面時，介面名必須帶模組前綴：
 
 ```no
+#{fmt-skip}
 ; ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
 db-mysql db {
     fd i64
 }
+```
 
+```no
 ; ✅ 正確：使用 sql.db、sql.rows、sql.stmt
 db-mysql sql.db {
     fd i64
@@ -308,7 +330,9 @@ result {
 
 ; enter/leave 是內置介面，不需前綴
 ; result 是同檔案定義的結構體，不需前綴
-db enter, leave {
+db {
+    enter
+    leave
     close() (ok bool)
     exec(sql str) (r result)
 }

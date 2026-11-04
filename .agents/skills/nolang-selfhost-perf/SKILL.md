@@ -13,10 +13,13 @@ description: Nolang 自举编译器（`compiler/src/*.no`）的性能约定与�
 需要对字串做**位元組層面遍歷**時，一律在入口處轉一次：
 
 ```nolang
+#{fmt-skip}
 ; ✅ 推薦：轉一次，之後 b[i] 索引 + b.len() 取長度（皆 O(1)）
 f = (s []byte) (r str) {
     n = s.len()
-    i <- [0..n): { ... b[i] ... }
+    i <- [0..n): {
+        ...            ; 逐元素處理 b[i]
+    }
 }
 
 ; 呼叫端：str.to-bytes()
@@ -26,10 +29,13 @@ r = f(t.lit.to-bytes())
 相較於直接對 `str` 逐位元組索引：
 
 ```nolang
+#{fmt-skip}
 ; ⚠️ 對【區域變數／參數】是 O(1)，可用；但一旦接收者是【結構體字段】就是 O(N)
 f = (s str) (r str) {
     n = s.len-bytes()
-    i <- [0..n): { ... s.byte(i) ... }
+    i <- [0..n): {
+        ...            ; 逐位元組處理 s.byte(i)
+    }
 }
 ```
 

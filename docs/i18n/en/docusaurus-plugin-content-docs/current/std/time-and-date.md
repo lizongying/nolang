@@ -7,6 +7,7 @@ sidebar_position: 3.4
 ### time — Time Operations
 
 ```no
+#{fmt-skip}
 sec = time.now-s()                   ; Current Unix timestamp (seconds)
 ms = time.now-ms()                   ; Current timestamp (milliseconds)
 us = time.now-us()                   ; Current timestamp (microseconds)

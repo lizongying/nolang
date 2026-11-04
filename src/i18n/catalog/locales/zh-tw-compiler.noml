@@ -32,6 +32,7 @@ Nolang 程式語言（版本 %s）
                       redundant  移除與推導型別相同的型別標註
                       match      為非窮盡 option 匹配補上缺失的 nil/err 分支
       -loop-style=<s>  預設迴圈寫法：prefix（預設）或 suffix
+      -md   同時格式化 Markdown 檔案（.md/.mdx）裡的 Nolang 程式碼區塊
     範例:
       no fmt                      列出目前目錄中需要格式化的檔案
       no fmt -w                   原地格式化目前目錄的所有 .no 檔
@@ -46,6 +47,7 @@ Nolang 程式語言（版本 %s）
       no fmt -fix=match -w src/       為 src/ 原地補上缺失的匹配分支
       echo 'x=1' | no fmt         從 stdin 格式化
       no fmt -loop-style=suffix f.no  將迴圈格式化為 '{ } (cond)' / '{ } * N'
+      no fmt --md -w docs/        格式化 docs/ 下所有 .md/.mdx 中的 Nolang 程式碼區塊
 
   no build [選項] [<檔案|目錄>]  建置 Nolang 專案
     若未給定檔案/目錄且存在 workspace.noml，

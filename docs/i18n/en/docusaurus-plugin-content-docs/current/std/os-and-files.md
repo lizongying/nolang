@@ -9,6 +9,7 @@ sidebar_position: 3.3
 Provides environment variables, directory operations, process management, system information, time, and more. For file read/write functionality, see the `fs` module.
 
 ```no
+#{fmt-skip}
 ; Environment variables
 val = os.get-env(key)                ; Returns ?str (nil=unset)
 os.set-env(key, 'value')
@@ -55,6 +56,7 @@ val = os.arg(idx)                   ; the idx-th argument (nil when out of range
 Wraps an open file with the `file` struct and a path with the `path` struct. Defines the `fd` newtype (`fd = i64`) to prevent file descriptors from being confused with arbitrary `i64` values. Also provides an `embed` struct for compile-time embedded filesystems (via `#{embed='dir/path'}`).
 
 ```no
+#{fmt-skip}
 ; fd newtype (underlying i64, type-distinct from i64)
 fd = i64
 
@@ -225,6 +227,7 @@ O-EXCL = 2048       ; macOS=2048, Linux=128, Windows=1024
 ### env — Environment Variables (Simplified Wrapper)
 
 ```no
+#{fmt-skip}
 val = env.get(key)                ; Returns ?str (nil=not found)
 val = env.lookup(key)               ; Returns ?str (nil=not found)
 env.set(key, val)
@@ -249,6 +252,7 @@ arg = args.get-positional(i)
 Wraps a path string with the `path` struct; all operations are provided as methods:
 
 ```no
+#{fmt-skip}
 SEP = 47     ; '/' (ASCII)
 DOT = 46     ; '.'
 
@@ -288,6 +292,7 @@ path.current() (out path)    ; Get current working directory
 ### bufio — Buffered Reading
 
 ```no
+#{fmt-skip}
 r = reader.init(fd, buf)       ; Initialize buffered reader (returns reader)
 ok = reader.fill()              ; Fill buffer
 b = reader.read-byte()          ; Read one byte (?byte, nil=EOF)
@@ -300,6 +305,7 @@ reader.close()                  ; Close
 Provides `io-reader` and `io-writer` structs to unify read/write operations across files, standard input/output, and other streams:
 
 ```no
+#{fmt-skip}
 ; Standard file descriptors
 STDIN-FD = 0, STDOUT-FD = 1, STDERR-FD = 2
 
@@ -339,6 +345,7 @@ line = io.read-line()           ; Read one line from stdin (?str, nil=EOF)
 Wraps a pattern with the `regexp` struct. The regular-expression engine is implemented entirely in Nolang (an imperative VM + backtracking matcher), with no dependency on the C standard library `regex.h`:
 
 ```no
+#{fmt-skip}
 ; Struct
 regexp {
     pattern str
@@ -355,6 +362,7 @@ result = re.find(text)           ; Find the first matching substring
 It supports the **regex-literal syntax** `/pattern/flags` (JavaScript style), which desugars at code-generation time into a `regexp-compile` call:
 
 ```no
+#{fmt-skip}
 ; Regex literal (recommended form)
 re = /\d+/
 matched = re.matches('hello 123 world')  ; true
@@ -371,6 +379,7 @@ re = regexp-compile('\\d+')
 Provides process creation, standard stream access, process waiting, and process information querying. Backed by POSIX fork/exec/pipe/waitpid:
 
 ```no
+#{fmt-skip}
 ; Signal constants
 SIG-TERM = 15, SIG-KILL = 9, SIG-INT = 2, SIG-STOP = 19, SIG-CONT = 18, SIG-CHLD = 17
 WNOHANG = 1
@@ -455,6 +464,7 @@ content, code = process.new().output(program, arg) ; Execute and capture output
 Provides TCP networking capabilities, including server listening, client connections, and data sending/receiving. Backed by the POSIX socket API:
 
 ```no
+#{fmt-skip}
 ; Network constants
 AF-INET = 2, SOCK-STREAM = 1, SOL-SOCKET = 65535, SO-REUSEADDR = 4, BACKLOG = 128
 
@@ -495,6 +505,7 @@ c = net.dial-to(host, port)              ; Create connection and dial (?conn)
 Provides parsing, validation, conversion, and classification of IPv4 addresses. Pure Nolang implementation:
 
 ```no
+#{fmt-skip}
 ; Default address constants
 IP-ZERO       ; 0.0.0.0
 IP-LOOPBACK   ; 127.0.0.1
@@ -542,6 +553,7 @@ yes = ip.ip-is-private(s)               ; Quick private check
 Supports SSE streaming reception compliant with the W3C EventSource specification. Backed by HTTP/1.1 long connections, supporting both plaintext HTTP and HTTPS (TLS):
 
 ```no
+#{fmt-skip}
 ; sse-event struct
 sse-event {
     event str       ; Event type (default 'message')
@@ -588,15 +600,16 @@ ok = client.reconnect()             ; Reconnect (using last-event-id)
 Provides an HTTP/1.1 protocol client supporting GET, POST, PUT, DELETE, PATCH and other methods, with optional TLS:
 
 ```no
-; Structs
-http.request {
+#{fmt-skip}
+; Structs (definitions inside std/http; no module prefix on definitions — with a prefix it parses as a struct literal)
+request {
     method str
     url str
     body str
     headers [16]str
     header-count i64
 }
-http.response {
+response {
     status-code i64
     status-text str
     headers str
@@ -635,6 +648,7 @@ val = resp.get-header(name)                  ; Look up a header value (?str)
 Supports HTTP/2 frame parsing and connection management, supporting h2c prior knowledge mode:
 
 ```no
+#{fmt-skip}
 ; Frame struct
 http2-frame {
     length i64
@@ -671,6 +685,7 @@ frame = c.recv-frame()                       ; Receive frame (?http2-frame)
 HTTP/3 client based on the QUIC protocol:
 
 ```no
+#{fmt-skip}
 ; Method constants
 HTTP3-METHOD-GET = 'GET'
 HTTP3-METHOD-POST = 'POST'
@@ -697,6 +712,7 @@ name, value, pos = http3.decode-header(buf, pos)
 Supports full-duplex communication over the WebSocket protocol, usable as either client or server:
 
 ```no
+#{fmt-skip}
 ; Message struct
 ws-message {
     opcode i64           ; 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
@@ -725,6 +741,7 @@ c.close()
 Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
 ```no
+#{fmt-skip}
 ; Connection
 c = tls.dial(host, port)                       ; Establish TLS connection (?tls.conn)
 n = c.send(data)                             ; Send encrypted data (?i64)
@@ -737,6 +754,7 @@ c.close()
 Wraps the `conn` struct, providing features such as automatic reconnection:
 
 ```no
+#{fmt-skip}
 c = client.client-create(host, port)               ; Create client (?client)
 ok = c.connect(host, port)                   ; Connect
 ok = c.reconnect()                           ; Reconnect
@@ -754,6 +772,7 @@ c.close()
 Provides an implementation of the QUIC transport protocol, serving as the underlying transport layer for HTTP/3:
 
 ```no
+#{fmt-skip}
 c = quic.dial(host, port)                    ; Establish QUIC connection (?quic.conn)
 n = c.send(data, n)                          ; Send data
 n = c.recv(buf, n)                           ; Receive data
@@ -765,6 +784,7 @@ c.close()
 Provides HTTP server functionality:
 
 ```no
+#{fmt-skip}
 s = server{}
 ok = s.listen(host, port)                    ; Start listening
 c = s.accept()                               ; Accept one connection (?server-conn)
@@ -776,6 +796,7 @@ s.close()
 Provides DNS query functionality:
 
 ```no
+#{fmt-skip}
 ip = dns.resolve(host)                       ; Resolve hostname (?str)
 ```
 
@@ -784,6 +805,7 @@ ip = dns.resolve(host)                       ; Resolve hostname (?str)
 Provides URL parsing and construction functionality:
 
 ```no
+#{fmt-skip}
 u = url.url-parse(url)                           ; Parse URL
 s = u.to-str()                               ; Convert to string
 ```
@@ -793,7 +815,7 @@ s = u.to-str()                               ; Convert to string
 Provides parsing and management of HTTP cookies:
 
 ```no
-c = cookie{}
+c = cookie {}
 c.parse(set-cookie-header)
 s = c.to-str()
 ```
@@ -803,6 +825,7 @@ s = c.to-str()
 Provides parsing and construction of multipart/form-data:
 
 ```no
+#{fmt-skip}
 ; Write (build multipart/form-data)
 w = multipart.multipart-create()           ; Create a writer (?multipart-writer)
 w.write-field(name, value)                 ; Write a field
@@ -818,6 +841,7 @@ r = multipart.multipart-parse(content-type, body) ; Parse (?multipart-reader)
 Provides encoding/decoding of the HPACK algorithm, used for HTTP/2 header compression:
 
 ```no
+#{fmt-skip}
 ; Header-table operations
 t = hpack.tables{}
 t.init()                                 ; Initialize the static + dynamic tables
@@ -848,6 +872,7 @@ c = proxy.dial(proxy-url, target-host, target-port)
 Provides pooled management of network connections, reusing connections to improve performance:
 
 ```no
+#{fmt-skip}
 p = pool{}
 p.init(capacity)
 c = p.get()                                  ; Get connection from pool
@@ -860,6 +885,7 @@ p.close()
 Provides Unix domain socket communication:
 
 ```no
+#{fmt-skip}
 fd = unix.unix-listen(path)                       ; Listen (returns fd)
 fd = unix.unix-dial(path)                         ; Connect (returns fd)
 l = unix.unix-listen-on(path)                     ; Create a listener (?unix-listener)

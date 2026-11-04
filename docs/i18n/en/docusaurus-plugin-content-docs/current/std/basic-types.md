@@ -36,6 +36,7 @@ Mapping of Nolang types to LLVM:
 `option<t>` tagged enum (tag=0=val, 1=nil, 2=err):
 
 ```no
+#{fmt-skip}
 x ?t                ; Declare option<t>
 x = 42              ; Set to a value
 x = nil             ; Set to nil

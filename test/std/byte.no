@@ -3,9 +3,15 @@
 ; 執行：no test test/std/byte.no
 ; 覆蓋：[]byte.to-i64-be / []byte.to-i64-le /
 ;       []byte.to-hex / []byte.to-hex-lower /
-;       []byte.index / []byte.index-from / []byte.slice
+;       []byte.index / []byte.index-from / []byte.slice /
+;       []byte.to-str / []byte.to-bytes-str
 ; 未測：i64.to-bytes-be/le（[?]byte 返回類型 codegen 問題）
-;       []byte.to-str（與 str.eq 交互有問題，預存 bug）
+;
+; 注（2026-11-03 更正）：本檔曾記「[]byte.to-str（與 str.eq 交互有問題，預存 bug）」，
+; 實測是誤記。真正的限制在 str.eq 本身——它是兩參形式 a.eq(b, n)，n 為「比較的位元組
+; 數」，少傳 n 會在 codegen 報「eq-raw: needs (receiver, b, n)」，與 to-str 無關。
+; to-str 語義正確（byte→0~255 碼點→UTF-8 重編碼），已補 t-to-str-* 覆蓋。
+; 另注意 str.len() 是「碼點數」不是「位元組數」，位元組數要用 len-bytes()。
 
 # /test/runner
 
@@ -86,6 +92,53 @@ t-slice = () {
     runner.eq(b2, 40, 'slice [2] == 40')
 }
 
+; ── 位元組切片 → 字符串 ───────────────────────
+
+; ASCII：每個位元組是 0~127 碼點，1:1 輸出，碼點數與位元組數相同
+t-to-str-ascii = () {
+    data []byte = [0x41, 0x42]
+    s = data.to-str()
+    runner.eq(s.len-bytes(), 2, 'to-str ASCII bytes == 2')
+    runner.eq(s.len(), 2, 'to-str ASCII cps == 2')
+    runner.str-eq(s, 'AB', 2, 'to-str ASCII content')
+}
+
+; 0x80 起走 2 位元組 UTF-8 分支：0x80 → C2 80、0xE9 → C3 A9（不是原樣拷貝）
+t-to-str-2byte = () {
+    data []byte = [0x80, 0xe9]
+    s = data.to-str()
+    runner.eq(s.len-bytes(), 4, 'to-str 2-byte bytes == 4')
+    runner.eq(s.len(), 2, 'to-str 2-byte cps == 2')
+    h = s.to-bytes().to-hex()
+    runner.str-eq(h, 'C280C3A9', 8, 'to-str 2-byte hex')
+}
+
+; ⚠️ 已文檔化的語義：合法 UTF-8 流會被二次編碼（C3 A9 → 碼點 C3/A9 → C3 83 C2 A9）
+; 需要 1:1 拷貝請用 to-bytes-str（讀文件 / 子進程輸出的正確選擇）
+t-to-str-double-encode = () {
+    data []byte = [0xc3, 0xa9]
+    h = data.to-str().to-bytes().to-hex()
+    runner.str-eq(h, 'C383C2A9', 8, 'to-str re-encodes valid UTF-8')
+    h2 = data.to-bytes-str().to-bytes().to-hex()
+    runner.str-eq(h2, 'C3A9', 4, 'to-bytes-str copies 1:1')
+}
+
+; 空切片 → 空串（with-len(0) 起手，迴圈零次）
+t-to-str-empty = () {
+    data []byte = []
+    s = data.to-str()
+    runner.eq(s.len-bytes(), 0, 'to-str empty bytes == 0')
+    runner.eq(s.len(), 0, 'to-str empty cps == 0')
+    runner.str-eq(s, '', 0, 'to-str empty content')
+}
+
+; 切片視圖之後再轉換：只看視圖範圍（下標 2..4 的 E9 21 → C3A9 21）
+t-to-str-slice = () {
+    data []byte = [0x68, 0x69, 0xe9, 0x21]
+    h = data.slice(2, 4).to-str().to-bytes().to-hex()
+    runner.str-eq(h, 'C3A921', 6, 'to-str on slice view')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('byte.to-i64-be', t-to-i64-be)
@@ -144,6 +197,41 @@ passed = passed + p8
 
 #{overflow=wrap}
 failed = failed + f8
+p9, f9 = runner.test('byte.to-str ascii', t-to-str-ascii)
+
+#{overflow=wrap}
+passed = passed + p9
+
+#{overflow=wrap}
+failed = failed + f9
+p10, f10 = runner.test('byte.to-str 2-byte', t-to-str-2byte)
+
+#{overflow=wrap}
+passed = passed + p10
+
+#{overflow=wrap}
+failed = failed + f10
+p11, f11 = runner.test('byte.to-str double-encode', t-to-str-double-encode)
+
+#{overflow=wrap}
+passed = passed + p11
+
+#{overflow=wrap}
+failed = failed + f11
+p12, f12 = runner.test('byte.to-str empty', t-to-str-empty)
+
+#{overflow=wrap}
+passed = passed + p12
+
+#{overflow=wrap}
+failed = failed + f12
+p13, f13 = runner.test('byte.to-str slice', t-to-str-slice)
+
+#{overflow=wrap}
+passed = passed + p13
+
+#{overflow=wrap}
+failed = failed + f13
 
 total = runner.summary()
 f = runner.failed-count()

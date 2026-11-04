@@ -18,8 +18,8 @@ Nolang 支援三種**單行註釋**標記與一種**多行（塊）註釋**標�
 ; 這是註釋
 ; 這也是註釋，語義相同
 ;; 這還是單行註釋（;; 後沒有換行）
-x = 1 ; 行內註釋，註釋到行尾
-x = 2 ;; 行內單行註釋，語義相同
+x = 1; 行內註釋，註釋到行尾
+x = 2;; 行內單行註釋，語義相同
 
 ;;
 這是多行（塊）註釋
@@ -43,6 +43,7 @@ y = 3
 > 這條規則同樣適用於註釋中的程式碼範例：即使在註釋裡，也不要用 `;` 或 `,` 把多條語句寫在同一行，以免誤導讀者。
 
 ```no
+#{fmt-skip}
 ; ❌ 錯誤：用 `;` 分隔多條語句 —— `;` 之後整行都是註釋，
 ; 連塊的 `}` 也被一起註釋掉，塊無法閉合，後續程式碼被靜默丟棄
 ; cond -> { print('X'); return }
@@ -51,7 +52,9 @@ y = 3
 ; h0 = 1732584193, h1 = 4023233417
 ; out = from-i64(v), out = from-u64(v)
 ; debug(msg), info(msg), warn(msg)
+```
 
+```no
 ; ✅ 正確：每條語句獨佔一行
 cond -> {
     print('X')
@@ -136,7 +139,7 @@ string = str | txt
 ; 單一類型別名
 bytes = []byte
 buf = [16]u8
-````
+```
 
 > `int`、`float`、`num` 定義在 `std/number`，`string` 定義在 `std/str`——它們都不是編譯器內建關鍵字，而是標準庫用同一套別名語法寫的聯合類型。
 
@@ -145,6 +148,7 @@ buf = [16]u8
 聯合類型可以引用其他聯合類型，形成層次結構：
 
 ```no
+#{fmt-skip}
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
 num = int | float     ; num 是 int 和 float 的聯合
@@ -169,7 +173,9 @@ max = (a ..num) (r num) {
 num.sign = () (r num) {
     {
         . > 0 -> r = 1
+
         . < 0 -> r = -1
+
         -> r = 0
     }
 }
@@ -178,6 +184,7 @@ num.sign = () (r num) {
 `string`（= `str | txt`）同樣可用於參數與返回值：
 
 ```no
+#{fmt-skip}
 ; str 與 txt 實參都能傳入，各自單態化一份具體函數
 take = (s string) (n i64) {
     n = len(s)
@@ -204,6 +211,7 @@ n2 = take(b)   ; take__txt
 ## 變量聲明
 
 ```no
+#{fmt-skip}
 
 ; 變量沒有關鍵字
 ; i64、f64、byte、bool、byte、str可以省略類型標注
@@ -389,6 +397,7 @@ re = regexp-compile('\\d+')
 ### 使用示例
 
 ```no
+#{fmt-skip}
 ; 創建正則並匹配
 re = /\d+/
 matched = re.matches('hello 123 world')
@@ -420,7 +429,7 @@ result = match-text(/\d+/, text)
 - **不要在函數名前加上模組名前綴**。模組內的函數只需用簡短直觀的名稱，模組前綴由跨模組調用時的 `ShortName.` 自動帶出。例如在 `tail.no` 中定義入口函數 `tail` 而非 `tail-run`，定義輔助函數 `atoi` 而非 `tail-atoi`。這樣程式碼更簡潔，跨模組調用時形如 `tail.tail()` 也更直觀。
 - **入口函數**建議直接使用模組名本身（如 `ping.no` → `ping`、`cat.no` → `cat`）。跨模組導入形如 `# /src/tail.tail`。
 - **注意避開關鍵字**：`run`（async 關鍵字）、`match`（條件匹配關鍵字）等不能用作函數名。如需對應語義，改用其他名稱。
-- **`main` 是保留名，不可用作函數名**：Nolang 的程式入口由**頂層語句自動合成**（見 `hir2mir.synthesizeMainForTopLevel`），因此無需、也**不允許**顯式定義 `main`。一旦出現 `main = (...) { ... }`——包含方法 `recv.main`、嵌套在其它函數內的 `main`——編譯器直接報錯（`'main' is a reserved name and cannot be used as a function name`）。要作為入口，把陳述直接寫在頂層即可。
+- **`main` 是保留名，不可用作函數名**：Nolang 的程式入口由**頂層語句自動合成**（見 `hir2mir.synthesizeMainForTopLevel`），因此無需、也**不允許**顯式定義 `main`。一旦出現 `main = (...) { }`——包含方法 `recv.main`、嵌套在其它函數內的 `main`——編譯器直接報錯（`'main' is a reserved name and cannot be used as a function name`）。要作為入口，把陳述直接寫在頂層即可。
 
 > **全局變量必須大寫字母開頭**，這是強制規則，不是慣例。小寫開頭的頂層變量會被編譯器視為局部變量，可能導致未定義引用等錯誤。
 
@@ -433,13 +442,18 @@ HEX-CHARS = '0123456789abcdef'
 ; ✅ 私有全局變量：下劃線開頭，其後仍需大寫
 _NOLANG = 'nolang'
 _PRIVATE-CONST = 42
+```
 
+```no
+#{fmt-skip}
 ; ❌ 錯誤：全局變量不能使用小寫字母開頭
 ; x1 = 10
 ; x = 10
 ; foo-bar = 42
 ; hello-world = 'Hello World'
+```
 
+```no
 ; ✅ 局部變量（函數內）使用小寫字母，不加 _ 前綴
 ; fn-example = () {
 ;     x1 = 10
@@ -468,6 +482,7 @@ _PRIVATE-CONST = 42
 4. **全局變量必須大寫**：這是強制規則（見上文），小寫開頭的頂層變量會被編譯器視為局部變量。
 
 ```no
+#{fmt-skip}
 ; ❌ 避免：在模組中使用全局可變變量
 ; g-conn = tls.conn {}
 ; g-buf = ' '
@@ -475,7 +490,10 @@ _PRIVATE-CONST = 42
 ; fn-a = () {
 ;     g-conn.send(g-buf)   ; 全局變量跨函式可能位址不一致
 ; }
+```
 
+```no
+#{fmt-skip}
 ; ✅ 推薦：使用局部變量，狀態透過參數/返回值傳遞
 fn-a = () {
     conn = tls.conn {}    ; 局部變量，位址一致
@@ -513,10 +531,13 @@ serve-once = (listen-fd fd, body str) (ok bool) {
 - 模組頂部的 API 摘要也應使用完整簽名（含參數名、型別、返回名、型別），不要使用省略寫法
 
 ```no
+#{fmt-skip}
 ; ❌ 錯誤：缺少型別，缺少返回參數名
 ; sha1(data) (hash)
 ; sha1-block(s, h0..h4)
+```
 
+```no
 ; ✅ 正確：包含參數名、型別、返回參數名、型別
 ; sha1(data []byte) (hash [20]byte) — 完整雜湊
 ; sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — 處理單一區塊
@@ -565,6 +586,7 @@ Nolang 標準庫提供了豐富的常用功能，包括字串操作、位元組�
 **規則：如果標準庫中已有對應功能，不建議自行重新實現。** 開發者應仔細查看標準庫文檔（`docs/docs/std/overview.md`），避免重複造輪子。
 
 ```no
+#{fmt-skip}
 ; ❌ 錯誤：自行實現 str → []byte 轉換
 str-to-bytes = (s str) (out []byte) {
     n = s.len-bytes()
@@ -574,7 +596,9 @@ str-to-bytes = (s str) (out []byte) {
         i = i + 1
     } (i < n)
 }
+```
 
+```no
 ; ✅ 正確：使用標準庫 str.to-bytes() 方法
 data []byte = s.to-bytes()
 ```
@@ -619,6 +643,7 @@ text = toml.stringify(doc)
 標準庫 `yaml` 解析與產生 YAML 1.2 core schema 文件，支援塊映射、塊序列、流式集合、三種引號標量、塊標量 `|` / `>`、註解、多文檔、錨點與別名、合併鍵 `<<`、顯式鍵，以及型別推斷（null / bool / int / float / `.inf` / `.nan`）。
 
 ```no
+#{fmt-skip}
 doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
 doc: {
     nil -> print('nil')
@@ -688,6 +713,7 @@ Nolang 的函數定義形式為 `name = (in-params) (out-params) { body }`：第
 變數：
 
 ```no
+#{fmt-skip}
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...            ; 函數體內對 fields 賦值
 }
@@ -716,6 +742,7 @@ Nolang 的函數有以下特點：
 函數參數可以使用 `name type = expr` 語法指定默認值。帶有默認值的參數在調用時可以省略，編譯器會自動填充默認值。帶默認值的參數必須放在參數列表末尾。
 
 ```no
+#{fmt-skip}
 ; 帶默認值的函數定義
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...
@@ -727,10 +754,11 @@ fields = csv.parse-line(line, 256)         ; max-fields = 256
 ```
 
 ```no
+#{fmt-skip}
 
 add = (a i64, b i64) (result i64) {
     result = a + b             ; 通過參數返回結果
-    ...                        ; 提前終止（可選）
+    ...                        ; 佔位陳述：不做任何事，build 時整條丟棄（見〈佔位陳述〉）
 }
 
 ; 可變參數
@@ -778,6 +806,7 @@ a, b = swap(5, 3)
 > 可用 `no fmt -loop-style=suffix` 切回後綴式（兩種寫法都保證格式化冪等）。
 
 ```no
+#{fmt-skip}
 ; === 前置式（prefix，條件寫在主體前面）===
 
 ; 無限循環（條件恆為 true）—— 以下兩種等價
@@ -937,6 +966,7 @@ i <- 'abc': {   ; 遍历字符串中的每个字符
 > 英文關鍵字 `continue` / `break` / `return`；`no fmt` 會把已支援的簡寫一律規範回關鍵字形式。
 
 ```no
+#{fmt-skip}
 i <- [0..10): {
     *      ; continue（跳過本輪，暫不推薦）
     **     ; break（跳出循環，暫不推薦）
@@ -993,9 +1023,53 @@ rtn     ; 等價 return，僅提前終止函數
 > 塊因此永不閉合，後續所有語句（常是整個函數體的剩餘部分）都被靜默吞進這個臂裡 ——
 > 實測 `no vet` 不報錯，函數從未被呼叫。
 
+## 佔位陳述（`...`）
+
+`...` 是語言的一條**佔位陳述**：語法上合法、語義上**什麼都不做**。主要用於文檔演示、
+代碼骨架與 `TODO` 預留位置。編譯時整條陳述在 AST→HIR 階段即被丟棄，產物與「從沒寫過這行」
+完全一致（實測同一份源碼加減 `...` 編譯出的二進位 `sha256` 相同）。
+
+```no
+parse-line = (s str) (fields []str) {
+
+    ; TODO: 這裡還要處理跳脫字元
+    ...
+
+    fields = csv.parse-line(s)
+}
+
+add = (a i64, b i64) (result i64) {
+    result = a + b
+    ...
+}
+```
+
+規則：
+
+- **只能獨佔一行**（行尾可跟 `;` 註釋）。`fail -> ...`、`x = ...`、`[0...n)` 這類寫法
+  一律報語法錯誤——`...` 沒有值，不能出現在表達式位置或陳述的其餘部分。
+- **不是 `return` 的別名**，也**不是範圍運算子**：範圍是 `..`（兩點），提前返回寫 `return`。
+- `no fmt` 原樣保留，既不刪除也不挪位。
+
+以下寫法全部不合法：
+
+```no
+#{fmt-skip}
+add = (a i64, b i64) (result i64) {
+    result = a + b
+    ...          ; ✅ 唯一合法形式：獨佔一行
+}
+
+ok -> ...        ; ❌ 語法錯誤：`...` 不能出現在表達式位置
+x = ...          ; ❌ 語法錯誤：同上
+i <- [0...n): {  ; ❌ 語法錯誤：`...` 不是範圍運算子，應寫 [0..self.n)
+}
+```
+
 ### Match
 
 ```no
+#{fmt-skip}
 ; 簡單寫法，it 用於取參數
 x: {
     err -> log(it.msg())       ; it 是結構化錯誤 err.err
@@ -1012,11 +1086,7 @@ x: {
         do-right-thing(v)
 }
 
-user: {
-    User{id=1} -> print('管理員')
-    User{name=n} -> print('用戶：', n)
-    -> print('匿名')
-}
+; 註：struct 模式匹配（`user: { User{id=1} -> ... }`）與欄位綁定尚未支援，故不示範
 
 score: {
     [0..59] -> print('不及格')
@@ -1103,6 +1173,7 @@ x: {
 #### Match 風格指引
 
 ```no
+#{fmt-skip}
 ; ❌ 避免重複分支體
 w = tls-c.send(req)
 w: {
@@ -1116,11 +1187,14 @@ w: {
     }
     ok -> n = it
 }
+```
 
+```no
 ; ✅ 公共邏輯放 -> catch-all
 w = tls-c.send(req)
 w: {
     ok -> n = it
+
     -> {
         tls-c.close()
         return
@@ -1130,7 +1204,9 @@ w: {
 ; ✅ 反之亦然：簡單分支命名，複雜邏輯放 ->
 val: {
     nil -> return
+
     err -> log(it.msg())
+
     -> {
         n = it
         total = total + n
@@ -1143,6 +1219,7 @@ val: {
 ; 單語句 — 不加大括號
 val: {
     ok -> print(it)
+
     -> print('empty or error')
 }
 
@@ -1152,6 +1229,7 @@ val: {
         n = it
         total = total + n
     }
+
     -> {
         log('failed')
         return
@@ -1160,6 +1238,7 @@ val: {
 ```
 
 ```no
+#{fmt-skip}
 ; it 隱式綁定
 val: {
     ok -> process(it)       ; it = 解包後的值
@@ -1169,6 +1248,7 @@ val: {
 ```
 
 ```no
+#{fmt-skip}
 ; it 的作用域：巢狀 match 按層還原
 ; （佔位函數名寫 keep —— `use` 是導入關鍵字，不能當函數名；
 ;   且裸 `->` 臂在 nil/err 未同時認領時讀 it 是編譯錯誤，故各層都寫 ok ->）
@@ -1199,11 +1279,15 @@ outer: {
 索引讀取傳回值是 option（越界為 nil），**直接給下標賦值會把越界變成未檢查的越界寫**，因此不允許，必須二選一：
 
 ```no
+#{fmt-skip}
 ; ❌ 不允許：a[1] = 2
+```
 
+```no
 ; ✅ place-match：自行處理越界臂（it = 元素位置，可讀可寫）
 a[1]: {
     ok -> it = 2
+
     -> _
 }
 
@@ -1230,6 +1314,7 @@ a []i64 = [0, 0, 0]
 i <- [0..3): {
     a[i]: {
         ok -> it = 5
+
         -> _
     }
 }
@@ -1238,6 +1323,7 @@ b []i64 = [0, 0, 0]
 x <- b: {
     x: {
         ok -> it = 5
+
         -> _
     }
 }
@@ -1260,17 +1346,24 @@ catch-all `->` 臂承接的是前面沒有被顯式臂認領的所有情況。�
 ; ✅ -> 就是 ok（nil / err 都已被認領）
 v: {
     nil -> log('empty')
+
     err -> log(it.msg())
+
     -> process(it)
 }
 
 ; ✅ -> 就是 err（ok / nil 都已被認領）
 v: {
     ok -> process(it)
+
     nil -> log('empty')
+
     -> log(it.msg())
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ -> 可能是 nil 也可能是 err —— 編譯錯誤
 v: {
     ok -> process(it)
@@ -1295,12 +1388,14 @@ val: {
         cleanup()
         return
     }
+
     ok -> process(it)
 }
 
 ; ✅ 也可與 -> catch-all 混用
 val: {
     nil || err -> log('failed')
+
     ok -> process(it)
 }
 ```
@@ -1342,6 +1437,7 @@ ok -> print('A') -> print('B')
 ; ✅ 兩個臂（換行分隔）→ 命中 ok 就不會印 'miss'
 v: {
     ok -> print('hit')
+
     -> print('miss')
 }
 ```
@@ -1351,6 +1447,7 @@ v: {
 1. **管道可以產值**：寫在賦值右側時，管道的結果就是**末尾的值節點**（僅在 state 仍為 Ok 時求值）。
 
 ```no
+#{fmt-skip}
 n = 7
 x = 1 > 2 -> 42        ; 條件不成立 → x 保持原值 7
 y = 2 > 1 -> 42        ; y == 42
@@ -1374,7 +1471,9 @@ if-else 組（短路）**必須**用 `{}` 包裹。第一個匹配的條件勝�
         a = 1
         b = 2
     }
+
     a == 2 || a == 3 -> do-something()
+
     -> {
         c = 0
     }
@@ -1398,19 +1497,35 @@ max = sum > 10 ? sum : 10
 ```no
 ; ❌ 不會短路 — 這些是獨立 if，所有條件都會被檢查
 git-dispatch = (cmd str) {
-    cmd == 'a' -> { fa() }
-    cmd == 'b' -> { fb() }
+    cmd == 'a' -> {
+        fa()
+    }
+    cmd == 'b' -> {
+        fb()
+    }
 }
+```
 
+```no
 ; ✅ 短路 — 用 {} 包裹，第一個匹配勝出
 git-dispatch = (cmd str) {
     {
-        cmd == 'a' -> { fa() }
-        cmd == 'b' -> { fb() }
-        true -> {}
+        cmd == 'a' -> {
+            fa()
+        }
+
+        cmd == 'b' -> {
+            fb()
+        }
+
+        true -> {
+        }
     }
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ if/else 寫在短路組外面 — 編譯錯誤
 ; 換行的 `-> break` 只掛在 `c == 43` 上，命中 `c == 45` 之後仍會被 break 掐斷
 ;   c == 45 -> {
@@ -1419,33 +1534,46 @@ git-dispatch = (cmd str) {
 ;   }
 ;   c == 43 -> i = i + 1
 ;   -> break
+```
 
+```no
 ; ✅ 同一份代碼寫成 if 組 — 臂間互斥，`->` 才是真正的兜底臂
 {
     c == 45 -> {
         exp-sign = -1
         i = i + 1
     }
+
     c == 43 -> i = i + 1
 
     -> break
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ match-block 混雜普通語句 → 編譯報錯
 {
     cmd == 'a' -> { fa() }
     print(cmd)
     cmd == 'b' -> { fb() }
 }
+```
 
+```no
 ; ✅ 普通語句放到分支 body 內部
 {
     cmd == 'a' -> {
         print(cmd)
         fa()
     }
-    cmd == 'b' -> { fb() }
-    true -> {}
+
+    cmd == 'b' -> {
+        fb()
+    }
+
+    true -> {
+    }
 }
 ```
 
@@ -1459,6 +1587,7 @@ Nolang 使用 `run` 和 `awy` 實現異步並發。異步函數的名稱必須�
 - `awy` — 等待異步線程完成並取得結果
 
 ```no
+#{fmt-skip}
 ; 異步函數定義（名稱以 -async 結尾）
 compute-async = (n i64) (r i64) {
     r = n * 2
@@ -1496,6 +1625,7 @@ test-inline = () {
 結果在**需要它的地方**才 `awy`。不需要寫 `run` / `awy`。
 
 ```no
+#{fmt-skip}
 hello-async = (i i64) (r i64) {
     r = i
 }
@@ -1543,6 +1673,7 @@ test-sequential = () {
 `co` 是建立在協程組之上的**無色（colorless）**&#x8A9E;法：你寫未染色的函式名 `worker`，編譯器自動單態化出 `worker-async` 變體，並在底層以染色無棧協程執行。你不需要手寫 `-async` 後綴，也不需要手寫 `run` / `awy`。
 
 ```no
+#{fmt-skip}
 worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
@@ -1569,6 +1700,7 @@ print(r1.to-str() + ' ' + r2.to-str())
 函數可以返回多個值，調用時使用多重賦值接收：
 
 ```no
+#{fmt-skip}
 ; 函數定義返回多個結果參數
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
@@ -1603,6 +1735,7 @@ val: {
 | `%` | `_mod` |
 
 ```no
+#{fmt-skip}
 big {
     v i64
 }
@@ -1636,6 +1769,7 @@ f = (a big, b big) (out big) {
 **定長数组arr：**
 
 ```no
+#{fmt-skip}
 
 ; 使用定長数组
 a [3] = [1, 2, 3]    ; 长度为 3 的定長数组 i64
@@ -1648,6 +1782,7 @@ a [?] = [1, 2, 3]    ; 自動推斷長度（i64）
 **變長數組vec：**
 
 ```no
+#{fmt-skip}
 v = [1, 2, 3]     ; 變長數組 i64
 bs = [0x11, 0x22, 0x33]
 v []u8 = [1, 2, 3] ; 指定类型的變長數組
@@ -1668,6 +1803,7 @@ v = with-cap-len(200, 100) ; len=100, cap=200（預留擴容空間）
 - 切片的類型由原始類型決定，方法自然適用，無需「繼承」機制
 
 ```no
+#{fmt-skip}
 ; 支持arr/vec/str
 ; 支持範圍 和for <- 的表示一致
 nums [5]u8 = [0, 1, 2, 3, 4]
@@ -1701,6 +1837,7 @@ b str = s[0..1]   ; 切片結果已是 str，可直接賦值給 str 變數
 | `str`          | `str<range>` | `str` 的所有方法（如 `to-upper`、`to-lower`、`index`、`contains`、`slice`、`copy`、`fill` 等）  |
 
 ```no
+#{fmt-skip}
 ; arr 切片 → vec 視圖，共享 arr 的底層記憶體
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]    ; s 是 []u8 視圖，指向 a 的記憶體
@@ -1726,6 +1863,7 @@ view[0] = 99         ; 修改 view 的元素
 ### 索引
 
 ```no
+#{fmt-skip}
 
 ; 字符串索引 → 回傳 ?char（Unicode 碼點，不是字節）
 c char = s[i]              ; 顯式 plain 型別把結果拉回 char（見〈安全索引〉）
@@ -1748,6 +1886,7 @@ map[str]
 > `char` 可**隱式轉換為 `str`**（編碼為單字元字串），因此下列寫法皆合法，無需手動呼叫 `char.to-str()`：
 
 ```no
+#{fmt-skip}
 s = 'héllo'
 c char = s[1]               ; 'é'（char，其碼點為 233）
 a str  = s[1]               ; 'é'（char → str 隱式轉換）
@@ -1767,6 +1906,7 @@ ok     = s[0] == 'h'        ; char 與 str 比較時隱式轉為 str
 `?=` 把越界錯誤直接拋給所在函式的 `?T` 結果參數（因此要求函式回傳 `?T`）。
 
 ```no
+#{fmt-skip}
 safe-get = (arr []i64, i i64) (res ?i64) {
     x ?= arr[i]   ; 越界 → res = None（不崩潰）
 }
@@ -1784,6 +1924,7 @@ safe-get = (arr []i64, i i64) (res ?i64) {
   - 字串容器（`str`）：字串字面量，如 `''`
 
 ```no
+#{fmt-skip}
 get-default = (arr []i64, i i64) (res i64) {
     res = arr[i]  #{index-out=zero}     ; 越界 → res = 0（顯式字面量）
 }
@@ -1806,6 +1947,7 @@ get-ch = (arr []byte, i i64) (res byte) {
 把 `?T` 就地解開；空兜底臂取目標型別的零值（D4）。
 
 ```no
+#{fmt-skip}
 get-elem = (arr []i64, i i64) (out i64) {
     x-opt = arr[i]
     x = x-opt: {
@@ -1821,6 +1963,7 @@ get-elem = (arr []i64, i i64) (out i64) {
 綁定目標上寫的顯式 plain 型別會讓 lower 期短路合成，讀回 plain 值。這是「我知道越界時要零值」最簡短的寫法，與 `#{index-out=zero}` 等價，但不需要註解：
 
 ```no
+#{fmt-skip}
 get-plain = (arr []i64, i i64) (out i64) {
     v i64 = arr[i]        ; 越界 → 0（不崩潰）
     out = v
@@ -1830,6 +1973,7 @@ get-plain = (arr []i64, i i64) (out i64) {
 `vec`（含由 `to-vec()` 產生的未標註區域變數）同樣適用：
 
 ```no
+#{fmt-skip}
 get-vec-default = (a [4]i64, i i64) (res i64) {
     v = a.to-vec()          ; v 的元素型別由 a 推導，無需標註
     res = v[i]  #{index-out=zero}   ; 越界 → res = 0（不崩潰）
@@ -1906,11 +2050,14 @@ file enter, leave {
 當實作**其他模組**定義的介面時，介面名必須帶模組前綴（`ShortName.`）。參見[跨模組調用前綴](module.md)。
 
 ```no
+#{fmt-skip}
 ; ❌ 錯誤：db、rows、stmt 是 sql 模組定義的介面，不能省略前綴
 db-mysql db {
     fd i64
 }
+```
 
+```no
 ; ✅ 正確：使用 sql.db、sql.rows、sql.stmt
 db-mysql sql.db {
     fd i64
@@ -1934,6 +2081,7 @@ stmt-mysql sql.stmt {
 ### 語法
 
 ```no
+#{fmt-skip}
 type.method-name = (params) (results) {
     ; . 是接收者
 }
@@ -1954,10 +2102,11 @@ type.method-name = (params) (results) {
 ### 示例
 
 ```no
+#{fmt-skip}
 ; str 方法
 str.to-upper = () (out str) {
     out = with-cap(.len-bytes())
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         c = .byte(i)
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
@@ -2026,11 +2175,13 @@ user json {
 
 ; 重寫 + 調用父實現
 user.to-json = () {
+
     ; 父實現
     ..to-json()
 }
 
 user.other = () {
+
     ; 當前實現
     .to-json()
 
@@ -2044,8 +2195,12 @@ user.other = () {
 接口可以「合併」其他接口的方法：父接口名寫在接口體內，**每行一個**（可帶模組前綴），不加逗號、不加括號：
 
 ```no
-json { to-json() }
-noml { to-noml() }
+json {
+    to-json()
+}
+noml {
+    to-noml()
+}
 
 serialize {
     json
@@ -2089,7 +2244,6 @@ file {
 ## 枚舉
 
 ```no
-
 ; red=0, green=1, blue=2
 color {
     red,
@@ -2121,6 +2275,7 @@ struct-name {
 一個變體可帶**多個**欄位（多欄位載荷在堆上以合成 struct 表示）：
 
 ```no
+#{fmt-skip}
 ; 標籤列舉：變體可帶載荷，tag 依聲明順序為 0,1,2...
 result {
     ok(v t),        ; 有值：載荷欄位 v，型別 t
@@ -2138,6 +2293,7 @@ shape {
 匹配時用變體名作為臂模式；帶載荷的變體可析構綁定載荷（多欄位按位置一一綁定）：
 
 ```no
+#{fmt-skip}
 r result = ok(42)
 r: {
     ok(v) -> print(v)    ; 把 ok 的載荷綁定到 v
@@ -2156,6 +2312,7 @@ s: {
 變體可在**表達式位置**直接建構，作為函數引數或其它變體的載荷：
 
 ```no
+#{fmt-skip}
 x f64 = perimeter(rect(3.0, 4.0))   ; 內聯建構並傳參
 o outer = wrap(a(5))                ; 枚舉載荷本身是另一個枚舉
 ```
@@ -2201,12 +2358,13 @@ option {
 ; ① 整個 enum：獨立成行置於 enum 上方
 #{inline=true}
 box {
-    ; ② 單個變體：獨立成行置於變體上方
-    #{doc = '有值'}
-    full(v i64),
-    ; ② 單個變體：同一行尾隨
-    empty #{doc = '空值'},
+    full(v i64) #{doc='有值'},
+    empty #{doc='空值'},
 }
+
+; ② 單個變體：獨立成行置於變體上方
+
+; ② 單個變體：同一行尾隨
 
 ; `#{inline=false}`：明確寫出「不用 inline 佈局」
 #{inline=false}
@@ -2216,12 +2374,11 @@ plain {
 }
 
 color {
-    ; C 風格枚舉的單個值同樣支援這兩種寫法
-    #{deprecated}
-    red,
+    red #{deprecated},
     green #{deprecated},
     blue,
 }
+; C 風格枚舉的單個值同樣支援這兩種寫法
 ```
 
 **註解不改變 enum 的結構**：變體名稱、宣告順序（tag）、載荷欄位與型別都不受註解影響，  
@@ -2279,6 +2436,7 @@ color {
 **按值內聯**在宿主結構體內（`%pt`），還是存成**指標**（`ptr`）。
 
 ```no
+#{fmt-skip}
 pt {
     x i64
     y i64
@@ -2334,6 +2492,7 @@ holder {
 唯一的寫法就是明確要求指標：
 
 ```no
+#{fmt-skip}
 node {
     v i64
     next node #{inline=false}   ; 指標：這樣 node 才有有限大小
@@ -2364,10 +2523,13 @@ print(n.next.v)                 ; 2
 這樣可以防止命名衝突，也使外部包無法直接使用具體值。
 
 ```no
+#{fmt-skip}
 ; ❌ 錯誤：直接使用裸值
 kind = null
 yes = e.is(io)
+```
 
+```no
 ; ✅ 正確：使用限定方式
 kind = json-kind.null
 yes = e.is(code.io)
@@ -2396,8 +2558,8 @@ file.leave = () {
 read-file = () {
 
     ; 自動 f.enter()
-    f = file{
-        path: 'data.txt',
+    f = file {
+        path: 'data.txt'
     }
 
     ; 使用 f
@@ -2415,6 +2577,7 @@ read-file = () {
 `?t` 是內建標籤列舉，其變體定義於 `src/std/global.no`：
 
 ```no
+#{fmt-skip}
 #{buildin}
 option {
     ok(v t),        ; tag 0：有值
@@ -2431,6 +2594,7 @@ option {
 構造器），`option` 的列舉聲明僅用於匹配與窮盡性檢查。詳見「標籤列舉」與「內建標籤列舉」。
 
 ```no
+#{fmt-skip}
 
 o ?i64
 o = nil          ; 設為空
@@ -2466,13 +2630,17 @@ x: {
 `?t` 是標籤列舉，有三種狀態：`ok`（有值）、`nil`（空值）、`err`（錯誤）。正常值會隱性綁定，當操作只是找不到值時用 `nil`，當操作遇到實際錯誤時用 `err(...)`。
 
 ```no
+#{fmt-skip}
 ; ❌ 不推薦：雙返回值模式
 stack.pop = () (val i64, ok bool) {
     .n == 0 -> return
     val = .data[.n]
     ok = true
 }
+```
 
+```no
+#{fmt-skip}
 ; ✅ 推薦：option 類型（nil 表示空，err 表示錯誤）
 stack.pop = () (val ?i64) {
     .n == 0 -> {
@@ -2496,6 +2664,7 @@ file.read = () (data ?str) {
 使用 match 解包 option：
 
 ```no
+#{fmt-skip}
 val = s.pop()
 val: {
     nil -> print('empty')
@@ -2549,6 +2718,7 @@ Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或
 未標註時，`a - b` 的結果型別是 `option<int>`。接收端必須是 `?T`（可空型別），並用 match 解構 `err` / `nil` / `ok` 三個分支：
 
 ```nolang
+#{fmt-skip}
 main = () {
     x i64 = 100
     d ?i64 = x - 1          ; 默認：返回 option<i64>
@@ -2566,6 +2736,7 @@ main()
 ### wrap：靜默回繞
 
 ```nolang
+#{fmt-skip}
 #{overflow = wrap}
 sub-wrap = (a i64, b i64) (r i64) {
     r = a - b              ; 溢出時靜默 2's 補數回繞；r 是 plain i64（顯式型別）
@@ -2575,6 +2746,7 @@ sub-wrap = (a i64, b i64) (r i64) {
 語句級：
 
 ```nolang
+#{fmt-skip}
 x i64 = -9223372036854775807
 #{overflow = wrap}
 w i64 = x - 2             ; 下溢回繞 → 9223372036854775807
@@ -2584,6 +2756,7 @@ print(w)
 ### clamp0：溢出歸零
 
 ```nolang
+#{fmt-skip}
 x i64 = -9223372036854775807
 #{overflow = clamp0}
 c i64 = x - 2             ; 下溢 → 0（上溢同樣歸零）
@@ -2595,6 +2768,7 @@ print(c)
 三種模式把溢出結果「夾」在型別可表示區間內，而非回繞或歸零：
 
 ```nolang
+#{fmt-skip}
 #{overflow = min}
 floor = (a i64, b i64) (r i64) {
     r = a - b              ; 下溢 → i64 最小值；上溢 → i64 最大值
@@ -2614,6 +2788,7 @@ sat = (a i64, b i64) (r i64) {
 型別前綴形式可精確控制窄型別的飽和界限（函數級註解會套用到體內所有對應型別運算）：
 
 ```nolang
+#{fmt-skip}
 #{overflow = u8-max}
 inc = (x u8) (r u8) {
     r = x + 1              ; x = 255 時上溢 → 255（而非回繞成 0）
@@ -2665,6 +2840,7 @@ dec = (x i8) (r i8) {
 | plain `int` | 陳述帶 `#{overflow = ...}` | 結果強制為 `0`，並在 **stderr** 印出 `nolang: integer division or remainder by zero ...` |
 
 ```nolang
+#{fmt-skip}
 safe = (a i64, b i64) (r ?i64) {
     r = a / b                ; b == 0 → err（呼叫方必須處理）
 }
@@ -2764,6 +2940,7 @@ x ?= a + b
 x-opt = a + b
 x = x-opt: {
     ok -> it
+
     ->
 }
 ```
@@ -2776,7 +2953,8 @@ x = x-opt: {
 
 ```nolang
 i <- [0..16): {
-    #{index-out = 0, overflow=wrap}
+
+    #{index-out=0, overflow=wrap}
     buf[base + i] = data[i]
 }
 ```
@@ -2807,6 +2985,7 @@ v ?= expr
 **示例：**
 
 ```no
+#{fmt-skip}
 ; 逐行讀取檔案並處理 — 使用 ?= 簡化錯誤傳播
 process-file = (path str) (result ?str) {
     f ?= open(path)             ; 失敗時自動 result = f; return
@@ -2818,6 +2997,7 @@ process-file = (path str) (result ?str) {
 等價的展開形式（編譯器自動生成的 match 鏈）：
 
 ```no
+#{fmt-skip}
 process-file = (path str) (result ?str) {
     result = nil
     __tmp = open(path)
@@ -2843,6 +3023,7 @@ process-file = (path str) (result ?str) {
 **鏈式使用：** 多個 `?=` 可以串聯使用，實現管道式錯誤傳播：
 
 ```no
+#{fmt-skip}
 pipeline = (input str) (result ?str) {
     a ?= step1(input)     ; 失敗則上拋
     b ?= step2(a)         ; 失敗則上拋
@@ -2853,6 +3034,7 @@ pipeline = (input str) (result ?str) {
 **裸算術運算：** `?=` 的右側不限於函數呼叫——任何回傳 `option` 的整數運算（如未標註的 `a - b`、`a + b`、`a * b`）都可以直接用 `?=` 上拋溢出錯誤，無需先綁定到中間變數：
 
 ```no
+#{fmt-skip}
 ; 溢出時自動 result = err; return，正常時 v 解包為內部值
 sub-safe = (a i64, b i64) (result ?i64) {
     v ?= a - b          ; 下溢/上溢 → err 自動上拋；否則 v = 內部 i64
@@ -2868,6 +3050,7 @@ add-safe = (a i64, b i64) (result ?i64) {
 等價展開（編譯器自動生成）：
 
 ```no
+#{fmt-skip}
 sub-safe = (a i64, b i64) (result ?i64) {
     result = nil
     __unwrap = a - b            ; option<i64>
@@ -2889,6 +3072,7 @@ sub-safe = (a i64, b i64) (result ?i64) {
 **複合右側（compound RHS）：** `?=` 的右側可以是一個含多個 option 運算元的複合運算式。每個 option 運算元會被自動解包，並注入傳播守衛——只要任一運算元為 `nil` / `err`，當前函數的 option 結果參數即被設為該值並 `return`（向上拋）；全部成功才把內部值賦給左值：
 
 ```no
+#{fmt-skip}
 sum3 = () (result ?i64) {
     a ?i64 = ok(10)
     b ?i64 = ok(20)
@@ -2932,6 +3116,7 @@ comp = () (result ?i64) {
 **多返回值最多只能有一個 `?T`（硬錯誤）：** 函式宣告的返回參數中，`?T` 至多一個。`?T` 是**單一**的錯誤通道——函式體內的 `?=` 提前返回時，只能把失敗放進那個唯一的 option 返回參數；若同時宣告兩個 `?T`，編譯器只填得上第一個，呼叫方會拿到半填的 tuple（`(err, nil)`），且無從判斷哪個值代表失敗：
 
 ```no
+#{fmt-skip}
 pair = () (a ?i64, b ?i64) {     ; 錯誤：兩個 ?T 返回參數
     a = ok(1)
     v ?= boom()                  ; boom() 回 err('boom')
@@ -2957,6 +3142,7 @@ lookup = (k str) (value str, found bool, err ?str) {
 `?=` 的語義是「錯誤向上拋」——它要求所在函式有 option 結果參數，失敗時提前 `return`。當你不希望提前返回、而是想在原地處理錯誤時，用普通 `=`：只要右側含**可錯源**，目標變數就會自動推斷為 `?T`，`nil` / `err` **就地存進該變數**，流程繼續。
 
 ```no
+#{fmt-skip}
 handle = (b i64, c i64, d i64) (r i64) {
     a = b + c / d        ; a 推斷為 ?i64；除零 → a = err
     a: {
@@ -2981,6 +3167,7 @@ handle = (b i64, c i64, d i64) (r i64) {
 **純算術不是可錯源**：`+ - * <<` 與取負本身不觸發捕獲（否則所有算術都會變成 option）。但一旦落在 option 路徑上（例如右側另有 `/`，或目標顯式宣告 `?T`），這些運算會帶**運行期溢出檢查**，溢出 → `err`：
 
 ```no
+#{fmt-skip}
 ovf = (x i64) (r i64) {
     a ?i64 = x + 1        ; 顯式 ?T → 走 option 包裝路徑
     a: {
@@ -3017,7 +3204,6 @@ arr_to_vec = (arr [n]t) (out []t) {
 ### 類型強制轉換
 
 ```no
-
 ; 返回類型名稱字符串
 a = typeof(x)
 
@@ -3035,6 +3221,7 @@ y = x as *byte
 窄整數型別的值可以自動賦值給更寬的型別，因為目標型別的範圍完全包含來源型別：
 
 ```no
+#{fmt-skip}
 b byte = 200
 i i64 = b        ; ✓ byte 範圍 [0,255] ⊆ i64 範圍
 u u32 = b        ; ✓ byte 範圍 ⊆ u32 範圍
@@ -3045,6 +3232,7 @@ u u32 = b        ; ✓ byte 範圍 ⊆ u32 範圍
 整數字面量（預設推斷為 `i64`）可以賦值給任何範圍包含該值的整數型別：
 
 ```no
+#{fmt-skip}
 n u8 = 200       ; ✓ 200 ∈ [0,255]
 m u8 = 300       ; ✗ 300 > 255，編譯錯誤
 big u64 = 18446744073709551615  ; ✓ 2^64-1，u64 最大值
@@ -3055,6 +3243,7 @@ big u64 = 18446744073709551615  ; ✓ 2^64-1，u64 最大值
 將寬型別的變數直接賦值給窄型別會導致編譯錯誤，因為可能造成資料遺失。錯誤訊息會附帶**可操作的修復提示**，建議如何用位元運算安全窄化：
 
 ```no
+#{fmt-skip}
 d u64 = 42
 h u32 = d        ; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
 h u16 = d        ; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
@@ -3072,6 +3261,7 @@ y u32 = foo()    ; ✗ 函式呼叫結果型別不匹配
 當賦值的右側是**位元運算表達式**（`&`、`|`、`^`、`<<`、`>>`）且目標型別為**無號整數**（`u8`/`u16`/`u32`/`u64`/`byte`）時，編譯器允許隱式窄化——因為截斷高位是位元操作的標準語義，不會造成非預期的資料遺失：
 
 ```no
+#{fmt-skip}
 d u64 = 42
 
 ; ✓ mask 運算：結果必 ≤ mask 值，安全落入 u32
@@ -3123,13 +3313,10 @@ utils/
 ```no
 ; 標準庫（新式語法，推薦）
 # std/math.add
-
 ; 遠程模塊（非std/開頭）
 # github.com/utils/math.add
-
 ; 本地模塊，必須/開頭
 # /utils/math.add
-
 ; 別名
 # std/math.add a
 
@@ -3160,6 +3347,7 @@ utils/
 ```
 
 ```no
+#{fmt-skip}
 # /cfg/server
 
 print(server.port)             ; 8080
@@ -3187,6 +3375,7 @@ print(server.compiler.version) ; v0.1.0
 ```
 
 ```no
+#{fmt-skip}
 # /cfg/db
 # /cfg/db as db2
 print(db-options.host)   ; localhost
@@ -3308,12 +3497,15 @@ LSP 會回報同一條診斷。判定方式：註解群組的 `}` 之後、同�
 
 ```no
 ; ✓ 上方：獨立成行
-#{overflow = wrap}
+#{overflow=wrap}
 x i8 = a + 100
 
 ; ✓ 後方：同一行尾隨
-x i8 = a + 100 #{overflow = wrap}
+x i8 = a + 100 #{overflow=wrap}
+```
 
+```no
+#{fmt-skip}
 ; ✗ 前方：同一行前綴 → 報錯
 #{overflow = wrap} x i8 = a + 100
 ```
@@ -3379,10 +3571,8 @@ point {
 
 ; 結構體欄位帶 range 註解（可用於 num 等數值型別）
 person {
-    #{range=[0..150]}
-    age num
-    #{range=[0..256)}
-    score i64
+    age num #{range=[0..150]}
+    score i64 #{range=[0..256)}
     name str
 }
 ```
@@ -3391,7 +3581,7 @@ person {
 
 ```no
 ; 使用常量識別字作為範圍邊界
-#{range=[i8.MIN..i8.MAX]}
+#{range=['i8.MIN'..'i8.MAX']}
 val i8 = 100
 ```
 
@@ -3406,7 +3596,7 @@ val i8 = 100
 ICON []byte
 
 ; 或使用裸路徑（無引號）
-#{embed=assets/icon.ico}
+#{embed='assets/icon.ico'}
 ICON []byte
 ```
 
@@ -3430,7 +3620,7 @@ WIN-ICON []byte
 SERVER-CERT []byte
 
 ; 嵌入配置文件
-#{embed=config/default.json}
+#{embed='config/default.json'}
 CONFIG []byte
 
 ; 使用嵌入數據
@@ -3459,6 +3649,7 @@ DIST fs.embed
 
 ; 從嵌入的文件系統讀取文件
 data = DIST.read('index.html')
+
 ; 檢查文件是否存在
 ok = DIST.exists('css/style.css')
 ```
@@ -3488,8 +3679,10 @@ serve = (conn server-conn) {
     rel = path.slice(1, path.len-bytes())
 
     ; 從嵌入的文件系統讀取
-    data []byte = DIST.read(rel): {
+    data []byte = DIST.read(rel)
+    {
         ok -> it
+
         -> {
             conn.write-html(404, 'Not Found')
             conn.close()
@@ -3536,23 +3729,19 @@ print('running on Linux x86_64')
 print('running on Windows x86_64')
 
 ; 平台特定的變數
-#{mac-amd64}
-#{mac-arm64}
+#{mac-amd64, mac-arm64}
 sep = '/'
 
-#{win-amd64}
-#{win-arm64}
+#{win-amd64, win-arm64}
 sep = '\\'
 
 ; 平台特定的函數
-#{mac-arm64}
-#{mac-amd64}
+#{mac-arm64, mac-amd64}
 greet = () {
     print('hello from mac')
 }
 
-#{linux-amd64}
-#{linux-arm64}
+#{linux-amd64, linux-arm64}
 greet = () {
     print('hello from linux')
 }
@@ -3663,6 +3852,7 @@ no build -ld-KEY=VALUE [更多 -ld...] <file>
 ### 範例
 
 ```no
+#{fmt-skip}
 ; 假設使用 -ld-VERSION=0.1.2 -ld-COUNT=42 -ld-DEBUG=true 編譯
 print('VERSION:', VERSION)  ; 輸出: VERSION: 0.1.2
 print('COUNT:', COUNT)      ; 輸出: COUNT: 42

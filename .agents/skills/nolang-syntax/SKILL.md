@@ -85,7 +85,7 @@ Nolang is an experimental systems programming language: memory-safe with no GC, 
 print('Hello, Nolang!')
 
 ; Variable declaration
-i64
+i64 i64
 
 ; Function definition
 add = (a i64, b i64) (result i64) {
@@ -177,6 +177,7 @@ no build -ld-KEY=VALUE [more -ld...] <file>
 **Examples:**
 
 ```no
+#{fmt-skip}
 ; Compiled with: no build -ld-VERSION=0.1.2 -ld-COUNT=42 -ld-DEBUG=true main.no
 print('VERSION:', VERSION)  ; 0.1.2
 print('COUNT:', COUNT)      ; 42
@@ -556,6 +557,7 @@ take = (s string) (n i64) {
 A single concrete type alias `name = known-type` (e.g. `fd = i64`) provides **newtype semantics**: the alias name and its underlying type are **distinct types** in the type system, preventing accidental mixing.
 
 ```no
+#{fmt-skip}
 ; std/fs.no
 fd = i64                     ; file descriptor newtype (underlying i64)
 
@@ -589,6 +591,7 @@ fn-takes-i64(STDIN-FD)       ; type mismatch: fd ≠ i64
 ### Variables
 
 ```no
+#{fmt-skip}
 ; i64 (default), f64, byte, bool, str can omit type annotation
 i = 1
 f = 1.0
@@ -673,6 +676,7 @@ Regex literals **desugar** at codegen into a call to the standard library `regex
 ```no
 ; source
 re = /\d+/
+
 ; desugars to
 re = regexp-compile('\\d+')
 ```
@@ -692,8 +696,8 @@ Nolang supports three single-line comment markers and one multi-line (block) com
 ; this is a comment (preferred style)
 ; this is also a comment, same semantics
 ;; this is still a single-line comment (no newline after ;;)
-x = 1 ; trailing comment, runs to end of line
-x = 2 ;; inline single-line comment, same semantics
+x = 1; trailing comment, runs to end of line
+x = 2;; inline single-line comment, same semantics
 
 ;;
 this is a multi-line (block) comment
@@ -711,20 +715,28 @@ to be recognized as the ending delimiter
 **One statement per line — single-line multi-statement writing is forbidden.** The semicolon `;` is a **comment marker**, never a statement separator, and `,` cannot join statements either. Every statement inside a block `{ ... }` must occupy its own line. This applies to comment examples too.
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: `;` used as a statement separator — everything after `;` is a comment,
 ; including the closing `}`. The block never closes and the rest is silently dropped.
 ; cond -> { print('X'); return }
+```
 
+```no
 ; ✅ Correct: one statement per line
 cond -> {
     print('X')
     return
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ Wrong: comma joining statements
 ; h0 = 1732584193, h1 = 4023233417
 ; out = from-i64(v), out = from-u64(v)
+```
 
+```no
 ; ✅ Correct: one statement per line
 ; h0 = 1732584193
 ; h1 = 4023233417
@@ -755,6 +767,7 @@ Variable names, function names, struct names, etc. can start with an underscore,
 - **Avoid keywords**: `run` (async keyword), `match` (conditional match keyword) cannot be used as function names. Use the module name directly for entry functions instead.
 
 ```no
+#{fmt-skip}
 ; ✅ Correct: global data uses uppercase
 NO-LANG = 'nolang'       ; global constant, uppercase
 MAX-SIZE = 1024          ; global constant
@@ -763,12 +776,17 @@ HEX-CHARS = '0123456789abcdef'
 ; ✅ Private global: underscore prefix + uppercase
 _NOLANG = 'nolang'       ; private global
 _PRIVATE-CONST = 42      ; private global constant
+```
 
+```no
+#{fmt-skip}
 ; ❌ Wrong: global variables must NOT use lowercase
 ; x = 10                 ; lowercase global — will cause errors
 ; foo-bar = 42           ; lowercase global — will cause errors
 ; hello-world = 'Hello World'  ; lowercase global — will cause errors
+```
 
+```no
 ; ✅ Local variables (inside functions) use lowercase, no _ prefix
 ; example-fn = () {
 ;     x = 10             ; local variable, lowercase — correct
@@ -794,6 +812,7 @@ _PRIVATE-CONST = 42      ; private global constant
 4. **Global variables MUST be uppercase**: This is a mandatory rule (see Naming Rules above). Lowercase top-level variables are treated as locals by the compiler.
 
 ```no
+#{fmt-skip}
 ; ❌ Avoid: using global mutable variables in modules
 ; g-conn = tls.conn {}
 ; g-buf = ' '
@@ -801,7 +820,10 @@ _PRIVATE-CONST = 42      ; private global constant
 ; fn-a = () {
 ;     g-conn.send(g-buf)   ; global variable address may differ across functions
 ; }
+```
 
+```no
+#{fmt-skip}
 ; ✅ Recommended: use local variables, pass state via params/return values
 fn-a = () {
     conn = tls.conn {}    ; local variable, consistent address
@@ -834,10 +856,13 @@ serve-once = (listen-fd fd, body str) (ok bool) {
 Function documentation comments should include full parameter names and types, return parameter names and types. The API summary at the top of a module should also use full signatures (including parameter names, types, return names, types), not abbreviated forms.
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: missing types, missing return names
 ; sha1(data) (hash)
 ; sha1-block(s, h0..h4)
+```
 
+```no
 ; ✅ Correct: full param names, types, return names, types
 ; sha1(data []byte) (hash [20]byte) — full hash
 ; sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) — process single block
@@ -858,6 +883,7 @@ The Nolang standard library provides a rich set of common functionality, includi
 **Rule: If the standard library already provides corresponding functionality, reimplementing it yourself is not recommended.** Developers should carefully review the [standard library reference](file://../nolang-std/SKILL.md) to avoid reinventing the wheel.
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: reimplementing str → []byte conversion
 str-to-bytes = (s str) (out []byte) {
     n = s.len-bytes()
@@ -867,7 +893,9 @@ str-to-bytes = (s str) (out []byte) {
         i = i + 1
     } (i < n)
 }
+```
 
+```no
 ; ✅ Correct: use standard library str.to-bytes() method
 data []byte = s.to-bytes()
 ```
@@ -1049,6 +1077,7 @@ name = (inputs) (outputs) {}
 System functions allow syntactic sugar return values for user convenience. Since the underlying mechanism still works through output parameters, no new variables are returned, making it internally safe.
 
 ```no
+#{fmt-skip}
 add = (a i64, b i64) (result i64) {
     result = a + b
 }
@@ -1080,13 +1109,16 @@ When a function may fail or return an empty value, **prefer the `?t` option type
 `?t` is a tagged enum with three states: `ok` (has value, implicitly bound), `nil` (empty), `err` (error). Normal values are implicitly bound. Use `nil` when the operation simply cannot find a value, and `err(...)` when the operation encounters an actual error.
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: dual-return pattern
 stack.pop = () (val i64, ok bool) {
     .n == 0 -> return
     val = .data[.n]
     ok = true
 }
+```
 
+```no
 ; ✅ Correct: option type (nil for empty, err for errors)
 stack.pop = () (val ?i64) {
     .n == 0 -> {
@@ -1102,6 +1134,7 @@ file.read = () (data ?str) {
         data = err('file not open')
         return
     }
+
     ; ... read data
     data = buf
 }
@@ -1109,6 +1142,7 @@ file.read = () (data ?str) {
 
 Unwrap with match:
 ```no
+#{fmt-skip}
 val = s.pop()
 val: {
     nil -> print('empty')
@@ -1129,6 +1163,7 @@ val: {
 **Unwrapping an owned payload gives you a DEEP COPY, not a view.** `x = opt` does not transfer ownership (the same option can be unwrapped again later), so the value you get owns its own heap memory:
 
 ```no
+#{fmt-skip}
 v = m.get('items')        ; ?[]str  — the map's slice is copied, not aliased
 v: {
     ok -> {
@@ -1158,6 +1193,7 @@ Use the `?=` operator to automatically unwrap an option or propagate the error t
 > **Capture vs. propagate:** `?=` means "throw the error upward" — it requires an option result param and does an early `return` on failure. If you want to handle the failure **in place** and keep going, use plain `=` instead (see *Error Capture Assignment* below).
 
 ```no
+#{fmt-skip}
 ; ✅ Error propagation with ?= — concise and readable
 process-file = (path str) (result ?str) {
     f ?= open(path)             ; fails → result = f; return
@@ -1176,6 +1212,7 @@ pipeline = (input str) (result ?str) {
 Equivalent desugared form (compiler-generated match chain):
 
 ```no
+#{fmt-skip}
 process-file = (path str) (result ?str) {
     result = nil
     __tmp = open(path)
@@ -1195,6 +1232,7 @@ process-file = (path str) (result ?str) {
 `?=` throws the error upward — it requires an option result param and returns early on failure. When you'd rather handle the failure in place and keep going, use plain `=`: if the right-hand side contains a **fallible source**, the target variable is inferred as `?T` and the `nil` / `err` is stored **into that variable**, with flow continuing.
 
 ```no
+#{fmt-skip}
 handle = (b i64, c i64, d i64) (r i64) {
     a = b + c / d        ; a infers ?i64; divide-by-zero → a = err
     a: {
@@ -1219,6 +1257,7 @@ handle = (b i64, c i64, d i64) (r i64) {
 **Pure arithmetic is not a fallible source:** `+ - * <<` and negation do not trigger capture on their own (otherwise every arithmetic expression would become an option and the standard library would explode). But once an expression lands on the option path (e.g. the RHS also contains `/`, or the target is explicitly declared `?T`), those operations carry **runtime overflow checks** and overflow → `err`:
 
 ```no
+#{fmt-skip}
 ovf = (x i64) (r i64) {
     a ?i64 = x + 1        ; explicit ?T → takes the option-wrap path
     a: {
@@ -1249,6 +1288,7 @@ Function prologue does **NOT** zero-initialize out parameters. The compiler trac
 **Consequence:** there is no need to write boilerplate `found = false` / `result = nil` at the top of a function — the compiler handles it. Write only the success-path assignments.
 
 ```no
+#{fmt-skip}
 ; ✅ Recommended: no premature zero-init; compiler fills unassigned out params
 hashmap-str-tmpl.contains = (key str) (found bool) {
     val ?v = .get(key)
@@ -1281,6 +1321,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
 ```
 
 ```no
+#{fmt-skip}
 ; ❌ Anti-pattern: redundant premature zero-init (gets overwritten by later assignment)
 hashmap-str-tmpl.contains = (key str) (found bool) {
     found = false              ; redundant — compiler handles this
@@ -1322,7 +1363,9 @@ buf = [16]u8
 num.sign = () (r num) {
     {
         . > 0 -> r = 1
+
         . < 0 -> r = -1
+
         -> r = 0
     }
 }
@@ -1386,6 +1429,7 @@ The **suffix** form puts the body **first**, followed by the loop kind:
 - `{ body } * N` — counted loop
 
 ```no
+#{fmt-skip}
 ; === Prefix form (loop kind before the body) ===
 
 ; Infinite loop
@@ -1487,6 +1531,7 @@ max = sum > 10 ? sum : 10
 ### Break / Skip / Early Return
 
 ```no
+#{fmt-skip}
 i <- [0..10): {
     *      ; continue (skip this iteration)
     **     ; break (exit loop)
@@ -1498,9 +1543,43 @@ i <- [0..10): {
 > keywords `continue` / `break` / `return` instead. `no fmt` always normalizes the
 > accepted shorthand back to keyword form.
 
+### Placeholder Statement (`...`)
+
+`...` is a **placeholder statement**: valid syntax, **no effect at all**. Use it for
+documentation sketches, skeletons and `TODO` slots. It is dropped during AST→HIR lowering,
+so the binary is byte-identical to never having written the line.
+
+```no
+parse-line = (s str) (fields []str) {
+
+    ; TODO: handle escapes
+    ...
+
+    fields = csv.parse-line(s)
+}
+```
+
+Rules:
+
+- **It must be alone on its line** (a trailing `;` comment is fine). `fail -> ...`,
+  `x = ...`, `[0...n)` are all syntax errors — `...` has no value.
+- It is **not** a `return` alias and **not** a range operator (`..` is the range operator).
+- `no fmt` keeps it verbatim.
+
+Wrong (all rejected by the parser):
+
+```no
+#{fmt-skip}
+ok -> ...        ; ❌ `...` cannot be used in expression position
+x = ...          ; ❌ same
+i <- [0...n): {  ; ❌ `...` is not a range operator; write [0..self.n)
+}
+```
+
 ### Match (new style `x: { ... }`)
 
 ```no
+#{fmt-skip}
 ; Simple form, it is used to get the parameter
 x: {
     err -> log(it.msg())
@@ -1517,11 +1596,7 @@ x: {
         do-right-thing(v)
 }
 
-user: {
-    User{id=1} -> print('admin')
-    User{name=n} -> print('user: ', n)
-    -> print('anonymous')
-}
+; Note: struct pattern matching (`user: { User{id=1} -> ... }`) and field binding are not supported yet, so they are not shown here
 
 score: {
     [0..59] -> print('fail')
@@ -1649,6 +1724,7 @@ x: {
 #### Match Style Guide
 
 ```no
+#{fmt-skip}
 ; ❌ Avoid: duplicate branch bodies
 w = tls-c.send(req)
 w: {
@@ -1662,11 +1738,14 @@ w: {
     }
     ok -> n = it
 }
+```
 
+```no
 ; ✅ Shared logic in -> catch-all
 w = tls-c.send(req)
 w: {
     ok -> n = it
+
     -> {
         tls-c.close()
         return
@@ -1676,7 +1755,9 @@ w: {
 ; ✅ Or vice versa: name simple branches, complex logic in ->
 val: {
     nil -> return
+
     err -> log(it.msg())
+
     -> {
         n = it
         total = total + n
@@ -1689,6 +1770,7 @@ val: {
 ; Single statement — no braces
 val: {
     ok -> print(it)
+
     -> print('empty or error')
 }
 
@@ -1698,6 +1780,7 @@ val: {
         n = it
         total = total + n
     }
+
     -> {
         log('failed')
         return
@@ -1706,6 +1789,7 @@ val: {
 ```
 
 ```no
+#{fmt-skip}
 ; it implicit binding
 val: {
     ok -> process(it)       ; it = unwrapped value
@@ -1715,6 +1799,7 @@ val: {
 ```
 
 ```no
+#{fmt-skip}
 ; it scoping: nested matches restore level by level
 ; (the placeholder function is named keep -- `use` is the import keyword and cannot be
 ;  a function name; and a bare `->` arm may not read `it` unless nil/err are both claimed,
@@ -1754,10 +1839,15 @@ unambiguous meaning only when exactly **one** case remains:
 ; ✅ -> is ok (nil and err are both claimed)
 v: {
     nil -> log('empty')
+
     err -> log(it.msg())
+
     -> process(it)
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ -> may be nil or err — compile error
 v: {
     ok -> process(it)
@@ -1784,12 +1874,14 @@ val: {
         cleanup()
         return
     }
+
     ok -> process(it)
 }
 
 ; ✅ Also valid: any combination of nil, err, ok joined by ||
 val: {
     nil || err -> log('failed')
+
     ok -> process(it)
 }
 ```
@@ -1804,9 +1896,10 @@ If-else groups (short-circuit) **must** be wrapped in `{}`. The first matching c
         a = 1
         b = 2
     }
+
     a == 2 || a == 3 -> do-something()
-    ->
-        c = 0
+
+    -> c = 0
 }
 ```
 
@@ -1820,52 +1913,81 @@ If-else groups (short-circuit) **must** be wrapped in `{}`. The first matching c
 ```no
 ; ❌ No short-circuit — these are independent ifs, all conditions are checked
 func = (cmd str) {
-    cmd == 'a' -> { fa() }
-    cmd == 'b' -> { fb() }
+    cmd == 'a' -> {
+        fa()
+    }
+    cmd == 'b' -> {
+        fb()
+    }
 }
+```
 
+```no
 ; ✅ Short-circuit — wrapped in {}, first match wins
 func = (cmd str) {
     {
-        cmd == 'a' -> { fa() }
-        cmd == 'b' -> { fb() }
-        true -> {}
+        cmd == 'a' -> {
+            fa()
+        }
+
+        cmd == 'b' -> {
+            fb()
+        }
+
+        true -> {
+        }
     }
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ if/else written outside the group — compile ERROR
 ; the `-> break` folds onto `c == 43` only, so a `c == 45` match is still cut short
 ;   c == 45 -> { exp-sign = -1
 ;                i = i + 1 }
 ;   c == 43 -> i = i + 1
 ;   -> break
+```
 
+```no
 ; ✅ Same code as an if-group — arms are exclusive, `->` is a real fallback
 {
     c == 45 -> {
         exp-sign = -1
         i = i + 1
     }
+
     c == 43 -> i = i + 1
 
     -> break
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ Match-block with mixed regular statement → compile error
 {
     cmd == 'a' -> { fa() }
     print(cmd)        ; regular statement not allowed here
     cmd == 'b' -> { fb() }
 }
+```
 
+```no
 ; ✅ Regular statement moved into branch body
 {
     cmd == 'a' -> {
         print(cmd)
         fa()
     }
-    cmd == 'b' -> { fb() }
-    true -> {}
+
+    cmd == 'b' -> {
+        fb()
+    }
+
+    true -> {
+    }
 }
 ```
 
@@ -1879,6 +2001,7 @@ Nolang uses `run` and `awy` for async concurrency. Async function names must end
 - `awy` — wait for the async thread to complete and get the result
 
 ```no
+#{fmt-skip}
 ; Async function definition (name ends with -async)
 compute-async = (n i64) (r i64) {
     r = n * 2
@@ -1919,6 +2042,7 @@ hello-async = (i i64) (r i64) {
     r1 = hello-async(1)
     r2 = hello-async(2)
 }
+
 ; lowers to: __ag0 = run hello-async(1)
 ;            __ag1 = run hello-async(2)
 ;            r1 = awy __ag0
@@ -1960,6 +2084,7 @@ stackless coroutines. You never write the `-async` suffix and you never write
 `run` / `awy`.
 
 ```no
+#{fmt-skip}
 worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
@@ -1994,6 +2119,7 @@ Rules:
 Functions can return multiple values, received using multi-assignment at the call site:
 
 ```no
+#{fmt-skip}
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
     y = a
@@ -2058,6 +2184,7 @@ user.greet = () {
 other annotation target:
 
 ```no
+#{fmt-skip}
 pt {
     x i64
     y i64
@@ -2124,6 +2251,7 @@ struct field is by value under the default configuration, **`#{inline=false}` is
 write a self-referential type without flipping `NOLANG_FIELD_PTR` for the whole program**:
 
 ```no
+#{fmt-skip}
 node {
     v i64
     next node #{inline=false}   ; pointer: gives node a finite size
@@ -2186,6 +2314,7 @@ parenthesized form `variant(field type)`; a payload-less variant is a bare name.
 may carry **multiple** fields (multi-field payloads are boxed in a synthesized heap struct):
 
 ```no
+#{fmt-skip}
 ; tagged enum — tags are 0,1,2... in declaration order
 result {
     ok(v t),        ; payload field v of type t
@@ -2204,6 +2333,7 @@ Match on the variant name; payload-bearing variants support destructuring bindin
 fields bind positionally):
 
 ```no
+#{fmt-skip}
 r result = ok(42)
 r: {
     ok(v) -> print(v)     ; binds ok's payload to v
@@ -2223,6 +2353,7 @@ Variants can be constructed directly in **expression position** — as a functio
 as another variant's payload:
 
 ```no
+#{fmt-skip}
 x f64 = perimeter(rect(3.0, 4.0))   ; construct inline and pass
 o outer = wrap(a(5))                ; payload is itself an enum
 ```
@@ -2246,6 +2377,7 @@ runtime — no user-visible struct/union is generated. The `?t` option type is d
 way in `src/std/global.no`:
 
 ```no
+#{fmt-skip}
 #{buildin}
 option {
     ok(v t),        ; tag 0
@@ -2275,12 +2407,13 @@ There are **two** legal places an enum annotation may sit:
 ; 1. whole enum: own line above
 #{inline=true}
 box {
-    ; 2. one variant: own line above
-    #{doc = 'has value'}
-    full(v i64),
-    ; 2. one variant: trailing on its line
-    empty #{doc = 'empty'},
+    full(v i64) #{doc='has value'},
+    empty #{doc='empty'},
 }
+
+; 2. one variant: own line above
+
+; 2. one variant: trailing on its line
 
 ; `#{inline=false}` states the default explicitly
 #{inline=false}
@@ -2290,12 +2423,11 @@ plain {
 }
 
 color {
-    ; C-style enum values take the same two spellings
-    #{deprecated}
-    red,
+    red #{deprecated},
     green #{deprecated},
     blue,
 }
+; C-style enum values take the same two spellings
 ```
 
 **An annotation never changes the enum's structure.** Variant names, declaration order (tags),
@@ -2361,10 +2493,13 @@ with the choice spelled out.
 **Rule: enum values must always be referenced using qualified form `enum-type.value`, never as bare names.** This prevents naming conflicts and ensures external packages cannot use values directly without qualification.
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: bare enum value
 kind = null
 yes = e.is(io)
+```
 
+```no
 ; ✅ Correct: qualified form
 kind = json-kind.null
 yes = e.is(code.io)
@@ -2387,10 +2522,11 @@ Methods are defined on types, using `.` to reference the receiver. The receiver 
 **Examples:**
 
 ```no
+#{fmt-skip}
 ; str method
 str.to-upper = () (out str) {
     out = with-cap(.len-bytes())
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         c = .byte(i)
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
@@ -2442,6 +2578,7 @@ Slicing (`arr[1..3]`, `vec[1..3]`, `str[1..3]`) produces a **view** into the ori
 | `str` | `str` | All `str` methods (`to-upper`, `to-lower`, `index`, `contains`, `slice`, `copy`, `fill`, etc.) |
 
 ```no
+#{fmt-skip}
 ; arr slice → vec view, shares arr's memory
 a [5]u8 = [0, 1, 2, 3, 4]
 s = a[1..4]       ; s is []u8 view into a's buffer
@@ -2486,6 +2623,7 @@ Direct indexing of `arr` / `vec` / `slice` (`[]T`) with `v[i]` aborts on out-of-
 **1. `x ?= v[i]` — propagate error upward.** Treats `v[i]` as returning `?elem`: OOB → `None`, else `some(elem)`. Combined with `?=`, the error propagates up (the function must return `?T`).
 
 ```no
+#{fmt-skip}
 safe-get = (arr []i64, i i64) (res ?i64) {
     x ?= arr[i]   ; OOB → res = None (no crash)
 }
@@ -2501,6 +2639,7 @@ safe-get = (arr []i64, i i64) (res ?i64) {
   - str containers (`str`): string literal, e.g. `''`
 
 ```no
+#{fmt-skip}
 get-default = (arr []i64, i i64) (res i64) {
     res = arr[i]  #{index-out=zero}     ; OOB → res = 0 (explicit literal)
 }
@@ -2516,6 +2655,7 @@ front of the target on the same line is rejected by both the compiler and nolang
 **3. Bare `x = v[i]` inside an option-returning function — capture in place.** When the enclosing function returns `?T`, a bare safe-index assignment `x = v[i]` makes `x` infer `?elem`: on OOB, `x` is stored as `nil` **in place** (no crash, no early `return`) and flow continues. Consume it later with `x: { ... }`. The difference from form 1 (`?=`) is that the failure **stays put** instead of propagating upward.
 
 ```no
+#{fmt-skip}
 capture-prop = (arr []i64, i i64) (res ?i64) {
     x = arr[i]        ; x infers ?i64; OOB → x = nil
     x: {
@@ -2556,7 +2696,7 @@ stack.pop = () (val ?i64) {
 }
 
 ; Usage
-buf [128]i64 = [0:128]
+buf [128]i64
 s = stack {
     data: buf
     n: 0
@@ -2591,6 +2731,7 @@ The standard library includes comprehensive networking modules under `std/net/`:
 - `std/net/ip` — IPv4 address parsing and classification
 
 ```no
+#{fmt-skip}
 ; SSE client usage
 client = sse.sse-connect('http://localhost:3000/events')  ; returns ?sse-client
 client: {
@@ -2614,6 +2755,7 @@ client: {
 Method calls on struct fields via `self.field` (abbreviated `.field`) are fully supported. The type checker resolves the field type from the struct definition, so return types are correctly inferred:
 
 ```no
+#{fmt-skip}
 ; .recv-buf is a str field → .recv-buf.slice() returns str
 data = .recv-buf.slice(0, .recv-buf-len)   ; correctly inferred as str
 
@@ -2641,11 +2783,13 @@ user json {
 
 ; Override + call parent implementation
 user.to-json = () {
+
     ; Parent implementation
     ..to-json()
 }
 
 user.other = () {
+
     ; Current implementation
     .to-json()
 
@@ -2672,9 +2816,10 @@ file.leave = () {
 }
 
 read-file = () {
+
     ; Auto f.enter()
-    f = file{
-        path: 'data.txt',
+    f = file {
+        path: 'data.txt'
     }
 
     ; Use f
@@ -2713,6 +2858,7 @@ The compiler type-checks integer assignments to prevent unsafe narrowing that co
 A narrower integer type's value can be auto-assigned to a wider type, since the target range fully contains the source range:
 
 ```no
+#{fmt-skip}
 b byte = 200
 i i64 = b        ; ✓ byte range [0,255] ⊆ i64 range
 u u32 = b        ; ✓ byte range ⊆ u32 range
@@ -2723,6 +2869,7 @@ u u32 = b        ; ✓ byte range ⊆ u32 range
 Integer literals (default inferred as `i64`) can be assigned to any integer type whose range includes the literal value:
 
 ```no
+#{fmt-skip}
 n u8 = 200       ; ✓ 200 ∈ [0,255]
 m u8 = 300       ; ✗ 300 > 255, compile error
 big u64 = 18446744073709551615  ; ✓ 2^64-1, u64 max
@@ -2733,6 +2880,7 @@ big u64 = 18446744073709551615  ; ✓ 2^64-1, u64 max
 Assigning a wider-typed variable directly to a narrower type causes a compile error, as it may cause data loss. The error message includes an **actionable fix hint** suggesting how to narrow safely with bitwise operations:
 
 ```no
+#{fmt-skip}
 d u64 = 42
 h u32 = d        ; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
 h u16 = d        ; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
@@ -2750,6 +2898,7 @@ y u32 = foo()    ; ✗ function call result type mismatch
 When the right-hand side of an assignment is a **bitwise expression** (`&`, `|`, `^`, `<<`, `>>`) and the target type is an **unsigned integer** (`u8`/`u16`/`u32`/`u64`/`byte`), the compiler allows implicit narrowing — because high-bit truncation is the standard semantics of bitwise operations and does not cause unexpected data loss:
 
 ```no
+#{fmt-skip}
 d u64 = 42
 
 ; ✓ mask operation: result ≤ mask value, safely fits u32
@@ -2789,13 +2938,10 @@ s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[
 ```no
 ; Std modules
 # std/math.add
-
 ; Remote modules
 # github.com/utils/math.add
-
 ; Local modules (must start with /)
 # /utils/math.add
-
 ; Aliases
 # std/math.add a
 
@@ -2826,6 +2972,7 @@ each member becomes a field, and a same-named global value holds the contents
 ```
 
 ```no
+#{fmt-skip}
 # /cfg/server
 print(server.compiler.version)   ; v0.1.0
 # /cfg/server as cfg              ; alias only renames the value binding
@@ -2854,6 +3001,7 @@ print(cfg.host)                  ; localhost
 ```
 
 ```no
+#{fmt-skip}
 # /cfg/db
 # /cfg/db as db2
 print(db-options.host)           ; localhost
@@ -2913,12 +3061,22 @@ math.PI
 ```no
 ; ✅ Correct: function names are concise, no module-name prefix
 ; tail.no
-tail = () { ... }              ; entry function uses module name
-atoi = (s str) (v i64) { ... } ; helper uses short name
+; entry function uses module name
+tail = () {
+    ...
+}
 
+; helper uses short name
+atoi = (s str) (v i64) {
+    ...
+}
+```
+
+```no
+#{fmt-skip}
 ; ❌ Avoid: redundant module-name prefix on function names
-; tail-run = () { ... }
-; tail-atoi = (s str) (v i64) { ... }
+; tail-run = () { }
+; tail-atoi = (s str) (v i64) { }
 ```
 
 Cross-module imports follow the same pattern:
@@ -2927,7 +3085,10 @@ Cross-module imports follow the same pattern:
 ; ✅ Concise and intuitive
 # /src/tail.tail
 # /src/mktemp.mktemp
+```
 
+```no
+#{fmt-skip}
 ; ❌ Redundant
 ; # /src/tail.tail-run
 ; # /src/mktemp.mktemp-run
@@ -2960,6 +3121,7 @@ Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing va
 **With multiple arguments, each string literal is a template — not a C-style format string.** In `print('result={val}', 42, 'result={val}')`, every string literal is a template **in its own right**: its `{val}` is resolved from the scope at the **call site**, independently of the other arguments in the same call. A literal **never** describes or consumes the following arguments — it is not `printf('%d', 42)`-style substitution. Non-literal arguments (variables, expressions) are handled as ordinary variadic arguments, separated by spaces, with a single trailing newline for the whole call.
 
 ```no
+#{fmt-skip}
 val = 42
 print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
 tmpl = '{val}'
@@ -2977,6 +3139,7 @@ print('a={val}', val)                      ; a=42 42
 > `io.out`/`io.err` are low-level commands that output **without a newline**. Since module calls must include the module prefix, `io.err` explicitly carries the module prefix and will not conflict with the Option constructor `err()`; even if names overlap, the module prefix disambiguates.
 
 ```no
+#{fmt-skip}
 ; Capacity/length constructors (no prefix)
 s str = with-cap(256)            ; ✅ pre-allocate 256 bytes for str
 v []i64 = with-cap(100)          ; ✅ pre-allocate 100 elements for slice
@@ -3011,6 +3174,7 @@ fs.open(path, opts)              ; ✅ with prefix (builtins need it too)
 - `type`: `d`(int), `x`/`X`(hex), `o`(octal), `b`(binary), `c`(char), `f`(fixed), `e`/`E`(scientific), `g`/`G`(general), `s`(string, default)
 
 ```no
+#{fmt-skip}
 x i64 = 42
 u u64 = 255
 pi f64 = 3.14159
@@ -3031,6 +3195,7 @@ print('{s:.3}')              ; hel (truncated to 3 chars)
 Functions, constants, and methods defined in the same `.no` file are used directly without a prefix.
 
 ```no
+#{fmt-skip}
 ; In sha256.no:
 sha256(data)              ; sha256 is defined in this file
 HMAC-BLOCK-SIZE           ; constant defined in this file
@@ -3041,6 +3206,7 @@ HMAC-BLOCK-SIZE           ; constant defined in this file
 Method calls on built-in types (`str`, `i64`, `vec`, `arr`, `byte`, `char`, `bool`, etc.) do not require a prefix. Methods are built into the type and resolved directly through the receiver type.
 
 ```no
+#{fmt-skip}
 'hello'.starts-with('he')  ; str method
 n.to-str()                 ; int method
 v.push(42)                 ; vec method
@@ -3053,6 +3219,7 @@ c.is-digit()               ; char method
 Calling methods on an already-created struct instance does not require a module prefix. Methods are resolved through the instance's type; the compiler automatically finds the corresponding `struct.method` definition.
 
 ```no
+#{fmt-skip}
 f = fs.open(path, opts)    ; fs.open is a module-level function, needs prefix
 f.read(buf, n)             ; file.read is a struct method, no prefix needed
 f.close()                  ; file.close is a struct method, no prefix needed
@@ -3083,8 +3250,8 @@ In `fs.fil()`, `fs` is the module's ShortName, and `fil` is the module-level fun
 | `p.start(...)` | Instance variable | Struct method | `xxx` is a variable of type `process`, `yyy` is a method defined as `process.start = ...` |
 
 **Definition differences**:
-- Module-level functions are defined **without prefix**: inside the module, write `cmd = (program str, ...) { ... }`
-- Struct methods are defined **with `struct.` prefix**: `process.start = (program str, ...) { ... }`
+- Module-level functions are defined **without prefix**: inside the module, write `cmd = (program str, ...) { }`
+- Struct methods are defined **with `struct.` prefix**: `process.start = (program str, ...) { }`
 
 **Call differences**:
 - Module-level functions are called externally as `ModuleName.function()`: `process.cmd(...)`
@@ -3099,11 +3266,14 @@ When referencing **types** (structs, interfaces, enums) defined in **other modul
 **1. Struct interface implementation** — when a struct implements interfaces from another module, the interface name must be prefixed:
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: db, rows, stmt are interfaces defined in the sql module
 db-mysql db {
     fd i64
 }
+```
 
+```no
 ; ✅ Correct: use sql.db, sql.rows, sql.stmt
 db-mysql sql.db {
     fd i64
@@ -3150,7 +3320,9 @@ result {
 
 ; enter/leave are built-in interfaces, no prefix needed
 ; result is same-file struct, no prefix needed
-db enter, leave {
+db {
+    enter
+    leave
     close() (ok bool)
     exec(sql str) (r result)
 }
@@ -3208,7 +3380,8 @@ Nolang uses the `@` keyword to declare exports in the package root `lib.no` file
 #### Syntax
 
 ```no
-@ path.func [alias]
+@ path.func
+[alias]
 ```
 
 - `path` — Module path (relative to package root, starts with `/`, without `.no` extension)
@@ -3252,7 +3425,6 @@ External packages can only access exports declared in `lib.no` when importing vi
 ```no
 ; Import alias a (corresponds to package-name.utils.greet)
 # package-name.utils.greet a
-
 ; Or use the function name directly
 # package-name.utils.greet
 ```
@@ -3455,12 +3627,15 @@ nolang-lsp. The rule is decided the same way everywhere: if code still follows t
 
 ```no
 ; ✓ above: own line
-#{overflow = wrap}
+#{overflow=wrap}
 x i8 = a + 100
 
 ; ✓ trailing: end of the target's line
-x i8 = a + 100 #{overflow = wrap}
+x i8 = a + 100 #{overflow=wrap}
+```
 
+```no
+#{fmt-skip}
 ; ✗ prefix: same line, in front -> compile error
 #{overflow = wrap} x i8 = a + 100
 ```
@@ -3503,10 +3678,8 @@ point {
 
 ; Struct field with range annotation (for num and other numeric types)
 person {
-    #{range=[0..150]}
-    age num
-    #{range=[0..256)}
-    score i64
+    age num #{range=[0..150]}
+    score i64 #{range=[0..256)}
     name str
 }
 ```
@@ -3538,23 +3711,19 @@ print('running on Linux x86_64')
 print('running on Windows x86_64')
 
 ; Platform-specific variable
-#{mac-amd64}
-#{mac-arm64}
+#{mac-amd64, mac-arm64}
 sep = '/'
 
-#{win-amd64}
-#{win-arm64}
+#{win-amd64, win-arm64}
 sep = '\\'
 
 ; Platform-specific function
-#{mac-arm64}
-#{mac-amd64}
+#{mac-arm64, mac-amd64}
 greet = () {
     print('hello from mac')
 }
 
-#{linux-amd64}
-#{linux-arm64}
+#{linux-amd64, linux-arm64}
 greet = () {
     print('hello from linux')
 }
@@ -3665,8 +3834,8 @@ The `src/js/` directory provides JS-backend-specific modules. All carry the `#{j
 Usage:
 
 ```no
-# js/dom
 # js/canvas
+# js/dom
 # js/events
 # js/storage
 
@@ -3721,7 +3890,7 @@ The `compiler` block in `package.noml` controls compiler behavior:
 The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
 
 ```no
-#{range=[i8.MIN..i8.MAX]}
+#{range=['i8.MIN'..'i8.MAX']}
 val i8 = 100
 ```
 
@@ -3787,11 +3956,9 @@ s = 'hello\nworld'
 c = "中"
 
 ; Raw string — backtick-delimited, multi-line, no escapes
-sql = `
-SELECT id, name
+sql = 'SELECT id, name
 FROM user
-WHERE id > 100
-`
+WHERE id > 100'
 ```
 
 **Raw string format constraints (core design):**
@@ -3824,6 +3991,7 @@ s = 'Hello' * 3
 ### Indexing & Slicing
 
 ```no
+#{fmt-skip}
 s = 'Hello World'
 
 ; Index -> char (Unicode code point, NOT a byte)
@@ -3842,6 +4010,7 @@ n = s.count()      ; code point count (Unicode character count)
 **Types & implicit conversion.** `str[i]` yields `char`; `str[a..b]` yields `str` (a code-point view). A `char` **implicitly converts to `str`** (UTF-8 encoded), so you never need an explicit `char.to-str()`:
 
 ```no
+#{fmt-skip}
 s = 'héllo'
 a str = s[1]            ; 'é'  -- char -> str (implicit)
 b str = s[0..1]         ; 'hé' -- slice result is already str
@@ -3860,6 +4029,7 @@ For the complete list of string methods, see the [standard library reference —
 When assigning `s[i] = v`, LLVM codegen automatically updates the length to `max(len, idx+1)` — no need to set it manually (and it cannot be assigned: the length is read-only):
 
 ```no
+#{fmt-skip}
 s = ''
 s[0] = 72                      ; length automatically becomes 1
 s[1] = 105                     ; length automatically becomes 2
@@ -3906,6 +4076,7 @@ Annotation granularity: `#{overflow = ...}` is a **line annotation** — it appl
 **LSP quick fix:** the language server (nolang-lsp) reports un-annotated integer arithmetic as an **error** (`nolang-overflow`, trace id `ovf-int-default`) and offers five code actions — **Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`** — that insert the annotation above the operation's enclosing statement at the matching indentation, switching the default `option<int>` result back to plain `int`. The command-line equivalent is `no fmt --fix=overflow`, which fixes a whole file or directory in place (`-w`), prints a diff (`-d`), or prints to stdout; it is precise (only lint-reported statements are touched) and idempotent.
 
 ```no
+#{fmt-skip}
 sub-wrap = (a i64, b i64) (r i64) {
     #{overflow = wrap}
     r = a - b              ; plain i64, silent wrap on overflow
@@ -3937,6 +4108,7 @@ d: {
 **Propagating overflow with `?=` (bare arithmetic):** `?=` works on any `option`-returning integer operation, not just function calls — so `v ?= a - b` auto-returns `err` on overflow without a temporary binding:
 
 ```no
+#{fmt-skip}
 sub-safe = (a i64, b i64) (result ?i64) {
     v ?= a - b            ; under/over-flow → err auto-propagated; else v = inner i64
     result = v

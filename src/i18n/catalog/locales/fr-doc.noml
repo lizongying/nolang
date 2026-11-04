@@ -7031,7 +7031,7 @@ cls-idx i64: l'indice de la classe
 c i64: le caractère échappé (par ex. 'd', 'w', 's')
 
 `
-  'rsa.rsa-bn-add': `
+  'rsa._rsa-bn-add': `
 c = a + b
 a : opérande à ajouter (lecture seule, non modifié)
 an : nombre de limb valides de a
@@ -7040,7 +7040,7 @@ bn : nombre de limb valides de b
 c : résultat de a+b (la retenue finale au-delà de l'opérande le plus long ajoute un limb)
 cn : nombre réel de limb de c (inclut la retenue, non élagué)
 `
-  'rsa.rsa-bn-cmp': `
+  'rsa._rsa-bn-cmp': `
 Compare deux grands nombres a et b
 Retour cmp : 1 = a > b, 0 = a == b, -1 = a < b
 a : premier grand nombre (tableau de limb de 32 bits, les poids faibles d'abord)
@@ -7049,7 +7049,7 @@ b : second grand nombre
 bn : nombre de limb valides de b participant à la comparaison
 cmp : 1=a>b, 0=a==b, -1=a<b (compare d'abord le nombre de limb, puis chiffre par chiffre depuis le plus élevé)
 `
-  'rsa.rsa-bn-div-mod': `
+  'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
 a : dividende, an : longueur
 b : diviseur, bn : longueur
@@ -7058,7 +7058,7 @@ r : reste (sortie), rn : longueur du reste
 qn : nombre de limb du quotient après élagage (avec b=0, q et r sont tous nuls et qn=rn=0)
 rn : nombre de limb du reste après élagage (toujours inférieur à b)
 `
-  'rsa.rsa-bn-mul': `
+  'rsa._rsa-bn-mul': `
 c = a × b
 a : multiplicande
 an : nombre de limb valides de a
@@ -7067,19 +7067,19 @@ bn : nombre de limb valides de b
 c : résultat de a×b (au maximum an+bn limb, zéros de tête élagués)
 cn : nombre de limb de c après élagage (au moins 1)
 `
-  'rsa.rsa-bn-shl1': `
+  'rsa._rsa-bn-shl1': `
 a = a << 1 (décalage vers la gauche d'1 bit sur place)
 a : grand nombre à décaler (modifié sur place ; si le bit de poids fort déborde, écrit dans a[an], l'appelant doit réserver l'espace)
 an : nombre de limb valides avant le décalage
 new-an : nombre de limb après le décalage (an+1 lorsque le limb initialement le plus élevé ≥ 2^31)
 `
-  'rsa.rsa-bn-shr1': `
+  'rsa._rsa-bn-shr1': `
 a = a >> 1 (décalage vers la droite d'1 bit sur place)
 a : grand nombre à décaler (modifié sur place)
 an : nombre de limb valides avant le décalage
 new-an : nombre de limb après décalage et élagage des zéros de tête (au moins 1)
 `
-  'rsa.rsa-bn-sub': `
+  'rsa._rsa-bn-sub': `
 c = a - b (nécessite a ≥ b)
 a : diminué (doit être ≥ b, sinon le résultat fait la boucle par emprunt de 2^32)
 an : nombre de limb valides de a (détermine la longueur de la boucle de soustraction et l'allocation de sortie)
@@ -7088,7 +7088,7 @@ bn : nombre de limb valides de b (la partie avec i ≥ bn est considérée comme
 c : résultat de a-b (zéros de tête élagués)
 cn : nombre de limb de c après élagage (au moins 1)
 `
-  'rsa.rsa-decrypt': `
+  'rsa._rsa-decrypt': `
 Déchiffrement RSA (m = c^d mod n)
 ct : grand nombre de texte chiffré c (doit être inférieur à mod)
 ctn : nombre de limb de ct
@@ -7099,7 +7099,7 @@ modn : nombre de limb de mod
 out : texte clair m = c^d mod n (sans retrait du bourrage PKCS#1)
 outn : nombre de limb de out
 `
-  'rsa.rsa-encrypt': `
+  'rsa._rsa-encrypt': `
 Chiffrement RSA (c = m^e mod n)
 msg : grand nombre de texte clair m (doit être inférieur à mod, sans appliquer de bourrage PKCS#1)
 msgn : nombre de limb de msg
@@ -7109,6 +7109,19 @@ mod : module n
 modn : nombre de limb de mod
 out : texte chiffré c = m^e mod n
 outn : nombre de limb de out
+`
+  'rsa._rsa-modpow-step': `
+Étape unique de carré-multiplié (fonction indépendante pour garantir que chaque étape libère les tampons temporaires)
+result = result^2 mod modulus ; si exp-bit == 1, alors aussi result = result * base mod modulus
+result : valeur accumulée actuelle (la base avant le carré)
+rn : nombre de limb de result
+base : base de la puissance modulaire, multipliée uniquement quand exp-bit=1
+bn : nombre de limb de base
+exp-bit : bit courant de l'exposant (1 = multiplie base en plus à cette étape, 0 = carré seul)
+modulus : diviseur pour prendre le module
+mn : nombre de limb de modulus
+new-result : (result² × base^exp-bit) mod modulus
+new-rn : nombre de limb de new-result
 `
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
@@ -7123,19 +7136,6 @@ modulus : module
 mn : nombre de limb de modulus (le tampon de résultat est alloué avec cette longueur)
 result : base^exp mod modulus (commence à 1 et fait carré-multiplié chiffre par chiffre)
 rn : nombre de limb de result
-`
-  'rsa.rsa-modpow-step': `
-Étape unique de carré-multiplié (fonction indépendante pour garantir que chaque étape libère les tampons temporaires)
-result = result^2 mod modulus ; si exp-bit == 1, alors aussi result = result * base mod modulus
-result : valeur accumulée actuelle (la base avant le carré)
-rn : nombre de limb de result
-base : base de la puissance modulaire, multipliée uniquement quand exp-bit=1
-bn : nombre de limb de base
-exp-bit : bit courant de l'exposant (1 = multiplie base en plus à cette étape, 0 = carré seul)
-modulus : diviseur pour prendre le module
-mn : nombre de limb de modulus
-new-result : (result² × base^exp-bit) mod modulus
-new-rn : nombre de limb de new-result
 `
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════

@@ -10,7 +10,12 @@ func (f *formatter) formatExpression(expr parser.Expression) {
 	switch e := expr.(type) {
 	case *parser.Identifier:
 		if e.Value == "self" {
-			f.write(".")
+			// 前一個字節是 `.`（區間 `[0..` 之後）時不能寫 `.`，否則拼成三點 token。
+			if f.lastByte() == '.' {
+				f.write("self")
+			} else {
+				f.write(".")
+			}
 		} else {
 			f.write(e.Value)
 		}
@@ -245,7 +250,13 @@ func (f *formatter) formatDotExpression(e *parser.DotExpression) {
 		switch ident.Value {
 		case "self":
 			// .property (the dot serves as both self-reference and member access)
-			f.write(".")
+			// 前一字節是 `.`（區間 `[0..` 之後）時必須寫全 `self.`，否則 `..` + `.` 拼成
+			// 三點 token `...`（佔位陳述），輸出不再是合法區間。
+			if f.lastByte() == '.' {
+				f.write("self.")
+			} else {
+				f.write(".")
+			}
 			f.write(e.Property)
 			return
 		case "super":

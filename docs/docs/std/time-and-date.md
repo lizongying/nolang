@@ -7,6 +7,7 @@ sidebar_position: 3.4
 ### time — 時間操作
 
 ```no
+#{fmt-skip}
 sec = time.now-s()                   ; 目前 Unix 時間戳（秒）
 ms = time.now-ms()                   ; 目前時間戳（毫秒）
 us = time.now-us()                   ; 目前時間戳（微秒）

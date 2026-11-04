@@ -43,6 +43,7 @@ Conservative boundary: if any import in the block carries a comment (own line ab
 Import blocks that appear anywhere other than the top of the file (after code) are left untouched.
 
 ```no
+#{fmt-skip}
 ; before                             ; after
 # std/vec                            # std/io
 # std/fmt                            # std/vec
@@ -59,6 +60,7 @@ Nolang supports two **single-line comment** markers and one **multi-line (block)
 - `;; ... ;;` — multi-line (block) comment (implemented 2026-07-18, symmetric delimiters; if left unclosed, the comment runs to end of file)
 
 ```no
+#{fmt-skip}
 // this is a comment
 ; this is also a comment, same meaning
 x = 1 ; inline comment, to end of line
@@ -80,9 +82,12 @@ y = 2 ;; inline block comment ;;
 **Single-line multi-statement writing is forbidden**: `;` is only a comment marker and cannot join multiple statements on one line; `,` cannot join statements either. Every statement inside a block `{ ... }` must occupy its own line. Compacting a block onto one line is the most dangerous mistake:
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: `; return }` all becomes a comment, so the block's `}` disappears
 cond -> { print('X'); return }
+```
 
+```no
 ; ✅ Correct: one statement per line
 cond -> {
     print('X')
@@ -140,8 +145,12 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+
+        err -> {
+        }
+
+        nil -> {
+        }
     }
 }
 ```
@@ -151,6 +160,7 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 Do not write redundant early zero-assignments — they are dead stores overwritten by a later assignment:
 
 ```no
+#{fmt-skip}
 ; Bad: redundant early zero-init
 hashmap-str-tmpl.contains = (key str) (found bool) {
     found = false              ; redundant — the compiler zero-fills on return
@@ -168,6 +178,7 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 For `?T` option-typed out parameters, the zero-fill writes `nil` directly (tag=1, data=0), equivalent to `result = nil`. So paths like "not found / empty set / EOF" need only a bare `return`, with no `result = nil` in the source:
 
 ```no
+#{fmt-skip}
 ; Good: the miss path uses a bare return, the compiler fills result = nil
 hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return        ; compiler fills result = nil
@@ -179,3 +190,59 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 ### Debugging hint
 
 If a function returns an unexpected zero value (e.g. `found` should be `true` but is `false`, or `result` should have a value but is `nil`), check that **every path that should return a non-zero value** explicitly assigns the out parameter inside the body. The compiler does not infer intent — it only zero-fills unassigned out parameters. See the debugging hint in `.agents/skills/nolang-debug/SKILL.md`.
+
+## Markdown code blocks (`no fmt -md`)
+
+`no fmt -md` formats only the **inside** of ```` ```no ```` / ```` ```nolang ```` fences; the fence lines and all other Markdown are preserved byte for byte. A block's body is parsed as Nolang source; if it cannot be parsed the block is left untouched and its line number is reported, so formatting never mangles a file it cannot understand. (`-md` and `-fix` are mutually exclusive — `-md` only formats.)
+
+### Keep correct and wrong examples in separate blocks
+
+Putting "the correct form" and "the wrong form" in one block makes the parser treat both as one program: the correct half loses its `no fmt` check, while the wrong half may be silently "fixed" by the formatter until the mistake is invisible. Therefore:
+
+- a **correct example** gets its own block with no annotation, so `no fmt` formats and validates it;
+- a **wrong example** gets its own block whose first line is `#{fmt-skip}`, so it is neither validated nor modified.
+
+```no
+; ✅ Correct: one statement per line
+cond -> {
+    print('X')
+    return
+}
+```
+
+```no
+#{fmt-skip}
+; ❌ Wrong: everything after `;` is a comment, so the block's `}` disappears
+cond -> { print('X'); return }
+```
+
+### Three legitimate uses of `#{fmt-skip}`
+
+1. **Wrong examples / counter-examples** — not valid programs to begin with; formatting only gets in the way.
+2. **Pseudo-code and signature summaries** — shape-only fragments with no implementation.
+3. **Cheat sheets with aligned comment columns** — `no fmt` rewrites `code      ; note` as `code; note`; the column alignment is the whole point of such a table.
+
+### Never annotate just to prevent expansion
+
+`no fmt` expands an empty block `{ }` and a single-line arm `-> { x() }` onto several lines:
+
+```no
+ok = (b bool) (yes bool) {
+}
+
+dispatch = (cmd str) {
+    cmd == 'a' -> {
+        fa()
+    }
+}
+```
+
+This is the **canonical** form and should be accepted — only once expanded does the block have a line of its own to insert further statements into; otherwise every added statement starts with manually splitting the block. Likewise, `true -> {}` turning into `true -> {\n}` is no reason to roll back. Only the three cases above (counter-examples, pseudo-code, aligned tables) genuinely need `#{fmt-skip}`.
+
+### Comment-only blocks need no annotation
+
+A block that contains only comments (the usual way of "commenting out" the correct form) parses to **zero statements**. `no fmt` treats that as "nothing to format", leaves it verbatim and reports nothing — it is not a syntax error, and adding `#{fmt-skip}` would only hide that fact.
+
+### Order: annotate first, format second
+
+`no fmt -md -w` rewrites every block that is not filtered out. Once the formatter has "corrected" a wrong example, the counter-example no longer demonstrates anything and the original spelling is gone for good. **Add `#{fmt-skip}` first, run `-w` second.**

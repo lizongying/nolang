@@ -368,6 +368,7 @@ no sync
 `<tool>.ast.zip`（MetaMessage + zip），解碼後直接注入編譯管線。用法：
 
 ```nolang
+#{fmt-skip}
 use nogit            ; 或 use <host>/<owner>/<repo>/nogit
 ```
 
@@ -616,13 +617,14 @@ dependencies: [
 ```no
 ; ✅ 合法：工作區相對路徑
 # /vendor/utils.helper
-
 ; ✅ 合法：遠端包標識
 # github.com/lizongying/nolang/core.process
-
 ; ✅ 合法：標準庫
 # std/fs
+```
 
+```no
+#{fmt-skip}
 ; ❌ 禁止：相對跳轉
 ; # ./utils.helper
 ; # ../lib/helper.process

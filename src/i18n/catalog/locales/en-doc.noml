@@ -6975,7 +6975,7 @@ handles an escape sequence inside a character class
 cls-idx i64: the class index
 c i64: the escaped character (e.g. 'd', 'w', 's')
 `
-  'rsa.rsa-bn-add': `
+  'rsa._rsa-bn-add': `
 c = a + b
 a: addend (read-only, not modified)
 an: number of significant limbs of a
@@ -6984,7 +6984,7 @@ bn: number of significant limbs of b
 c: result of a+b (a final carry beyond the longer operand appends one limb)
 cn: actual number of limbs of c (including carry, not trimmed)
 `
-  'rsa.rsa-bn-cmp': `
+  'rsa._rsa-bn-cmp': `
 Compare two big integers a and b
 returns cmp: 1 = a > b, 0 = a == b, -1 = a < b
 a: first big integer (array of 32-bit limbs, least significant first)
@@ -6993,7 +6993,7 @@ b: second big integer
 bn: number of significant limbs of b participating in the comparison
 cmp: 1=a>b, 0=a==b, -1=a<b (limb counts compared first, then limbs from most significant down)
 `
-  'rsa.rsa-bn-div-mod': `
+  'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
 a []i64: dividend (limb array with the low limb first)
 an i64: number of significant limbs in the dividend
@@ -7004,7 +7004,7 @@ r: remainder (output), rn: remainder length
 qn: limbs of the quotient after trimming (when b=0 both q and r are all zero and qn=rn=0)
 rn: limbs of the remainder after trimming (always smaller than b)
 `
-  'rsa.rsa-bn-mul': `
+  'rsa._rsa-bn-mul': `
 c = a × b
 a: multiplier
 an: number of significant limbs of a
@@ -7013,19 +7013,19 @@ bn: number of significant limbs of b
 c: result of a×b (at most an+bn limbs, leading zeros trimmed)
 cn: limbs of c after trimming (at least 1)
 `
-  'rsa.rsa-bn-shl1': `
+  'rsa._rsa-bn-shl1': `
 a = a << 1 (left shift 1 bit in place)
 a: big integer to shift (modified in place; when the top bit overflows it is written to a[an], so the caller must reserve space)
 an: number of significant limbs before the shift
 new-an: limbs after the shift (an+1 when the original top limb ≥ 2^31)
 `
-  'rsa.rsa-bn-shr1': `
+  'rsa._rsa-bn-shr1': `
 a = a >> 1 (right shift 1 bit in place)
 a: big integer to shift (modified in place)
 an: number of significant limbs before the shift
 new-an: limbs after shifting and trimming leading zeros (at least 1)
 `
-  'rsa.rsa-bn-sub': `
+  'rsa._rsa-bn-sub': `
 c = a - b (requires a ≥ b)
 a: minuend (must be ≥ b, otherwise the result wraps around borrowing modulo 2^32)
 an: number of significant limbs of a (determines the subtraction loop length and output allocation)
@@ -7034,7 +7034,7 @@ bn: number of significant limbs of b (terms with i ≥ bn count as 0)
 c: result of a-b (leading zeros trimmed)
 cn: limbs of c after trimming (at least 1)
 `
-  'rsa.rsa-decrypt': `
+  'rsa._rsa-decrypt': `
 RSA decrypt (m = c^d mod n)
 ct: ciphertext big integer c (must be less than mod)
 ctn: limbs of ct
@@ -7045,7 +7045,7 @@ modn: limbs of mod
 out: plaintext m = c^d mod n (no PKCS#1 unpadding)
 outn: limbs of out
 `
-  'rsa.rsa-encrypt': `
+  'rsa._rsa-encrypt': `
 RSA encrypt (c = m^e mod n)
 msg: plaintext big integer m (must be less than mod; no PKCS#1 padding applied)
 msgn: limbs of msg
@@ -7055,6 +7055,19 @@ mod: modulus n
 modn: limbs of mod
 out: ciphertext c = m^e mod n
 outn: limbs of out
+`
+  'rsa._rsa-modpow-step': `
+Single square-and-multiply step (a separate function so each step frees scratch buffers)
+result = result^2 mod modulus; when exp-bit == 1, additionally result = result * base mod modulus
+result: current accumulator (the base before squaring)
+rn: limbs of result
+base: power base, multiplied in only when exp-bit=1
+bn: limbs of base
+exp-bit: current exponent bit (1 = multiply base this step, 0 = square only)
+modulus: divisor for reduction
+mn: limbs of modulus
+new-result: (result² × base^exp-bit) mod modulus
+new-rn: limbs of new-result
 `
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
@@ -7069,19 +7082,6 @@ modulus: modulus
 mn: limbs of modulus (result buffers are allocated to this length)
 result: base^exp mod modulus (square-and-multiply per bit starting from 1)
 rn: limbs of result
-`
-  'rsa.rsa-modpow-step': `
-Single square-and-multiply step (a separate function so each step frees scratch buffers)
-result = result^2 mod modulus; when exp-bit == 1, additionally result = result * base mod modulus
-result: current accumulator (the base before squaring)
-rn: limbs of result
-base: power base, multiplied in only when exp-bit=1
-bn: limbs of base
-exp-bit: current exponent bit (1 = multiply base this step, 0 = square only)
-modulus: divisor for reduction
-mn: limbs of modulus
-new-result: (result² × base^exp-bit) mod modulus
-new-rn: limbs of new-result
 `
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════

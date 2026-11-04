@@ -32,6 +32,7 @@ Options globales :
                       redundant   supprimer les annotations de type égales au type inféré
                       match       ajouter les branches nil/err manquantes aux matchs option incomplets
       -loop-style=<s>  forme de boucle par défaut : prefix (par défaut) ou suffix
+      -md   formater aussi les blocs Nolang dans les fichiers Markdown (.md/.mdx)
     Exemples :
       no fmt                      lister les fichiers du répertoire courant à formater
       no fmt -w                   formater sur place tous les fichiers .no du répertoire courant
@@ -46,6 +47,7 @@ Options globales :
       no fmt -fix=match -w src/       ajouter sur place les branches match manquantes dans src/
       echo 'x=1' | no fmt         formater depuis stdin
       no fmt -loop-style=suffix f.no  formater les boucles en '{ } (cond)' / '{ } * N'
+      no fmt --md -w docs/        formater les blocs Nolang de tous les .md/.mdx sous docs/
 
   no build [options] [<fichier|répertoire>]  Compiler un projet Nolang
     Sans fichier/répertoire et si workspace.noml existe,

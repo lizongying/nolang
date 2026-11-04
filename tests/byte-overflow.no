@@ -18,9 +18,9 @@ print(b3)
 print(b4)
 
 pass byte = 1
-{b1 != 4} -> pass = 0
-{b2 != 88} -> pass = 0
-{b3 != 255} -> pass = 0
-{b4 != 4} -> pass = 0
-{pass == 1} -> print('ALL TESTS PASSED')
-{pass == 0} -> print('SOME TESTS FAILED')
+b1 != 4 -> pass = 0
+b2 != 88 -> pass = 0
+b3 != 255 -> pass = 0
+b4 != 4 -> pass = 0
+pass == 1 -> print('ALL TESTS PASSED')
+pass == 0 -> print('SOME TESTS FAILED')

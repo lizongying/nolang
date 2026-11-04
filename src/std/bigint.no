@@ -134,7 +134,7 @@ bigint.copy = () (out bigint) {
     out.limbs = with-len(.len)
     out.sign = .sign
     out.len = .len
-    i <- [0...len): {
+    i <- [0..self.len): {
         out.limbs[i] = .limbs[i]
     }
 }
@@ -941,7 +941,7 @@ bigint.lcm = (b bigint) (l bigint) {
 ; [shl1](#bigint.shl1)
 bigint.shl1 = () {
     carry = 0
-    i <- [0...len): {
+    i <- [0..self.len): {
         v = (.limbs[i] & MASK) << 1 | carry
         carry = v >> 32
 
@@ -953,7 +953,7 @@ bigint.shl1 = () {
         ; 直接寫 .limbs[.len] 是越界寫，會讓 limb 數與內容失控
         ; （實測 bigint.shl(one, 52) 曾因此得到 2^1074 而非 2^52）。
         grown []i64 = with-len(.len + 1)
-        k <- [0...len): {
+        k <- [0..self.len): {
             grown[k] = .limbs[k]
         }
         grown[.len] = carry

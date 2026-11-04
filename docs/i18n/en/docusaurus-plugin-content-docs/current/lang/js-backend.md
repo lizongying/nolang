@@ -238,6 +238,7 @@ n = history.length()
 # js/animation
 
 id = animation.request-frame(() {
+
     ; Per-frame callback
     print('frame')
 })
@@ -305,6 +306,7 @@ with **no new `import` statement** — reuse the `#` use directive with the
 reserved `npm/` prefix:
 
 ```no
+#{fmt-skip}
 # npm/lodash                ; whole module object: lodash.get(x, 'a.b')
 # npm/lodash.get as get     ; one named export: get(x, 'a.b')
 # npm/lodash.default as d   ; the package default export: d(props)
@@ -394,7 +396,7 @@ or trailing), or inside the annotation group above a `#{c}` extern.
 
 ```no
 ; libm's pow: FFI via koffi; the browser path needs a wasm= specifier
-#{bind = auto, c}
+#{c, bind=auto}
 pow = (x f64, y f64) (r f64)
 ```
 

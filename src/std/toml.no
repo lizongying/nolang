@@ -872,7 +872,7 @@ toml-doc.put = (key str, value str) (ok bool) {
     }
     value-ok = toml-valid-value(value)
     value-ok == false -> return
-    i <- [0...count): {
+    i <- [0..self.count): {
         entry-key = toml-entry-key(.entries[i])
         entry-key.eq-full(key) -> {
             .entries[i] = toml-make-entry(key, value)

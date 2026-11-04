@@ -2322,6 +2322,25 @@ func TestFormatEqualsTypeAlias(t *testing.T) {
 	}
 }
 
+// TestFormatTypeAliasInlineComment verifies a trailing comment on a type alias
+// survives formatting. The parser's setComment switch had no *TypeAlias arm, so
+// the comment was neither attached to the alias nor demoted to the next
+// statement's doc comment — it was silently dropped (`bytes = []byte ; 说明` →
+// `bytes = []byte`). Comments are author content; losing one is data loss.
+func TestFormatTypeAliasInlineComment(t *testing.T) {
+	for _, tt := range []struct{ name, input, want string }{
+		{"single alias", "bytes = []byte ; newtype\n", "bytes = []byte; newtype"},
+		{"union alias", "int = i8 | i16 ; 整数联合\n", "int = i8 | i16; 整数联合"},
+		{"padded", "bytes  = []byte          ; 说明\n", "bytes = []byte; 说明"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Format(tt.input); got != tt.want {
+				t.Errorf("Format(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestFormatTypeAliasBlankLinePreservation verifies that a blank line between
 // doc comments and a type alias statement is preserved by the formatter.
 // Before the fix, stmtTokenLine() was missing the *TypeAlias case (returned 0),
@@ -3194,5 +3213,95 @@ func TestFormatMalformedNoPanics(t *testing.T) {
 	}
 	if out != src {
 		t.Errorf("malformed input must be returned unchanged; got:\n%q", out)
+	}
+}
+
+// TestFormatTripleDotPlaceholder pins `...`（佔位陳述）的兩個 fmt 契約：
+//
+//  1. 原樣印回、位置不動——fmt 由 AST 重印原始碼，節點在、`...` 就在。若哪天
+//     有人「順手」把它當空節點丟掉，使用者每次存檔都會少一行佔位符，而這
+//     種資料遺失不會讓任何編譯測試變紅。
+//  2. 冪等——fmt(fmt(x)) == fmt(x)。
+func TestFormatTripleDotPlaceholder(t *testing.T) {
+	for _, tt := range []struct{ name, input, want string }{
+		{
+			name:  "body placeholder",
+			input: "f = (n i64) (r i64) {\n...\nr = n\n}\n",
+			want:  "f = (n i64) (r i64) {\n    ...\n    r = n\n}",
+		},
+		{
+			name:  "indented placeholder",
+			input: "f = () (r i64) {\n        ...\n}\n",
+			want:  "f = () (r i64) {\n    ...\n}",
+		},
+		{
+			name:  "placeholder with trailing comment",
+			input: "f = () (r i64) {\n... ; TODO 還沒寫\n}\n",
+			want:  "f = () (r i64) {\n    ...; TODO 還沒寫\n}",
+		},
+		{
+			// 區塊首條陳述帶 doc 註解 ⇒ `{` 後空一行，這是**所有**陳述共用的
+			// node 頭排版規則（見 fmt/stmt.go formatBlockInner 的 i==0 分支），
+			// 不是 `...` 的特例。
+			name:  "placeholder with doc comment above",
+			input: "f = () (r i64) {\n; 這一段之後再補\n...\n}\n",
+			want:  "f = () (r i64) {\n\n    ; 這一段之後再補\n    ...\n}",
+		},
+		{
+			name:  "placeholder doc comment mid block",
+			input: "f = () (r i64) {\nr = 0\n; 這一段之後再補\n...\n}\n",
+			want:  "f = () (r i64) {\n    r = 0\n\n    ; 這一段之後再補\n    ...\n}",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Format(tt.input)
+			if got != tt.want {
+				t.Fatalf("Format:\ngot:\n%s\nwant:\n%s", got, tt.want)
+			}
+			if again := Format(got); again != got {
+				t.Errorf("formatting is not idempotent:\nfirst:\n%s\nsecond:\n%s", got, again)
+			}
+		})
+	}
+}
+
+// TestFormatRangeUpperBoundKeepsSelfExplicit 回歸釘：`self` 在方法體內一般簡寫成 `.`，
+// 但區間上界緊接在 `..` 之後時必須寫全 `self.`——否則 `..` + `.` 拼成三點 token，
+// 而 `...` 自 2026-11-04 起是佔位陳述，格式化輸出會變成語法錯誤（歷史上
+// TestFormatReparseClean 對 src/std 17 個檔全紅就是這個原因）。
+func TestFormatRangeUpperBoundKeepsSelfExplicit(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "explicit self kept",
+			input: "str.copy = () (dst str) {\n    dst = with-cap(.len-bytes())\n    i <- [0..self.len-bytes()): {\n        dst[i] = .byte(i)\n    }\n}\n",
+			want:  "str.copy = () (dst str) {\n    dst = with-cap(.len-bytes())\n    i <- [0..self.len-bytes()): {\n        dst[i] = .byte(i)\n    }\n}",
+		},
+		{
+			name:  "bare dot normalised to self",
+			input: "f = () {\n    i <- [0.. .len()): {\n        i = i\n    }\n}\n",
+			want:  "f = () {\n    i <- [0..self.len()): {\n        i = i\n    }\n}",
+		},
+		{
+			name:  "implicit self member still shrinks elsewhere",
+			input: "f = () (r i64) {\n    r = .count\n}\n",
+			want:  "f = () (r i64) {\n    r = .count\n}",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Format(tt.input)
+			if got != tt.want {
+				t.Fatalf("Format:\ngot:\n%s\nwant:\n%s", got, tt.want)
+			}
+			if strings.Contains(got, "...") {
+				t.Fatalf("formatted output contains the three-dot token:\n%s", got)
+			}
+			if again := Format(got); again != got {
+				t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", got, again)
+			}
+		})
 	}
 }

@@ -294,6 +294,7 @@ func printUsage() {
 	fmt.Println("                      redundant   remove type annotations equal to the inferred type")
 	fmt.Println("                      match       add missing nil/err arms to non-exhaustive option matches")
 	fmt.Println("      -loop-style=<s>  default loop spelling: prefix (default) or suffix")
+	fmt.Println("      -md   also format Nolang code blocks inside Markdown files (.md/.mdx)")
 	fmt.Println("    Examples:")
 	fmt.Println("      no fmt                      list files in current dir needing formatting")
 	fmt.Println("      no fmt -w                   format all .no files in current dir in-place")
@@ -308,6 +309,7 @@ func printUsage() {
 	fmt.Println("      no fmt -fix=match -w src/       add missing match arms in src/ in-place")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
 	fmt.Println("      no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'")
+	fmt.Println("      no fmt --md -w docs/        format Nolang blocks in every .md/.mdx under docs/")
 	fmt.Println("")
 	fmt.Println("  no build [flags] [<file|dir>]  Build a Nolang project")
 	fmt.Println("    If no file/dir is given and workspace.noml exists,")
@@ -1260,6 +1262,7 @@ func fmtCommand(args []string) {
 	diffMode := fs.Bool("d", false, i18n.P("k3g4ofs4", "output colored diff instead of formatted result"))
 	fixClass := fs.String("fix", "", i18n.P("7usot77o", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)"))
 	loopStyle := fs.String("loop-style", "prefix", i18n.P("en9zq76f", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'"))
+	mdMode := fs.Bool("md", false, i18n.P("aze4pgle", "also format Nolang code blocks inside Markdown files (.md/.mdx)"))
 	fs.Usage = func() {
 		fmt.Println(i18n.P("6svrp0le", "Usage: no fmt [flags] <file|dir>"))
 		fmt.Println("")
@@ -1269,6 +1272,11 @@ func fmtCommand(args []string) {
 		fmt.Println(i18n.P("gccy7ull", "  - otherwise, default to the current directory."))
 		fmt.Println(i18n.P("63lrmg48", "When stdin is piped (e.g. echo 'x=1' | no fmt), reads from stdin."))
 		fmt.Println(i18n.P("uzugz5vn", "Directories are processed recursively automatically."))
+		fmt.Println("")
+		// 整段作為**一條**消息：它是同一個說明，拆成多條會把譯文的語序切碎
+		// （每種語言的斷句位置不同），也讓 catalog 多出一堆半句。genen 要求
+		// 預設文字是單一字串字面量（不能拼接），故整段寫成一行、用 \n 斷行。
+		fmt.Println(i18n.P("46fhe9ez", "Markdown (.md/.mdx), only with -md: only the body of ```no / ```nolang fences is\nformatted. Fence lines and every other line are preserved byte for byte; a block that\nfails to parse is left untouched and reported on stderr, so formatting is always\nsafe. Mark a deliberate pseudo-code or wrong-usage example with a '#{fmt-skip}'\nline at the top of the block: it is then neither validated nor modified.\n(```no skip and a '; nolang-fmt:skip' line are older spellings of the same thing.)\n-md ignores -fix."))
 		fmt.Println("")
 		fmt.Println(i18n.P("5nhzzuch", "Flags:"))
 		fs.PrintDefaults()
@@ -1288,12 +1296,21 @@ func fmtCommand(args []string) {
 		fmt.Println(i18n.P("lzgs7cds", "  no fmt -fix=redundant main.no   preview redundant annotation removal"))
 		fmt.Println(i18n.P("u3if6wak", "  no fmt -fix=match -w src/       add missing match arms in src/ in-place"))
 		fmt.Println(i18n.P("mh9jwcfu", "  no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'"))
+		fmt.Println(i18n.P("awc98kqh", "  no fmt -md README.md        format Nolang blocks in one Markdown file"))
+		fmt.Println(i18n.P("6c01vyr1", "  no fmt -md -w docs/         format Nolang blocks in every .md/.mdx under docs/"))
+		fmt.Println(i18n.P("69wny890", "  cat api.md | no fmt -md     format Nolang blocks from stdin"))
 	}
 	_ = fs.Parse(args)
 
 	style, ok := nfmt.LoopStyleFromName(*loopStyle)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "fmt: unknown -loop-style %q (want 'prefix' or 'suffix')\n", *loopStyle)
+		os.Exit(1)
+	}
+	if *mdMode && *fixClass != "" {
+		// --fix 的每一類修復都要走 checker/AST（型別推導、option 資料流），
+		// Markdown 片段沒有可修的東西；與其靜默忽略，不如直接拒絕。
+		fmt.Fprintln(os.Stderr, i18n.P("ttdybn5d", "fmt: -md cannot be combined with -fix (automatic fixes apply to .no sources only)"))
 		os.Exit(1)
 	}
 
@@ -1308,6 +1325,17 @@ func fmtCommand(args []string) {
 				os.Exit(1)
 			}
 			original := string(data)
+			if *mdMode {
+				// stdin 沒有檔名可判斷型別，-md 就是「這份輸入是 Markdown」的宣告。
+				result, skipped := nfmt.FormatMarkdownFileWithLoopStyle(original, style)
+				reportMdSkipped("stdin", skipped)
+				if *diffMode {
+					fmt.Print(generateDiff("stdin", original, result))
+				} else {
+					fmt.Print(result)
+				}
+				return
+			}
 			result, perrs := nfmt.FormatFileWithErrorsAndLoopStyle(original, style)
 			if len(perrs) > 0 {
 				for _, e := range perrs {
@@ -1336,8 +1364,14 @@ func fmtCommand(args []string) {
 
 	hadError := false
 	for _, arg := range remaining {
+		// Markdown 是「另一個世界」：只有顯式 -md 才處理，否則給提示而不是
+		// 靜默略過——使用者明確點名了一個 .md，卻什麼都沒發生會很困惑。
+		if nfmt.IsMarkdownPath(arg) && !*mdMode {
+			fmt.Fprintln(os.Stderr, i18n.T("m7q3keu7", "fmt: %s is a Markdown file; pass -md to format its Nolang code blocks", arg))
+			continue
+		}
 		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
-		if verr := pkg.ValidateSourcePathName(arg); verr != nil {
+		if verr := validateFmtPath(arg); verr != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", verr)
 			hadError = true
 			continue
@@ -1350,8 +1384,13 @@ func fmtCommand(args []string) {
 		}
 
 		if info.IsDir() {
-			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode, *fixClass, style); err != nil {
+			if err := fmtProcessDirectory(arg, *writeInPlace, *diffMode, *fixClass, style, *mdMode); err != nil {
 				fmt.Fprintf(os.Stderr, "Error processing directory %s: %v\n", arg, err)
+				hadError = true
+			}
+		} else if nfmt.IsMarkdownPath(arg) {
+			if err := fmtProcessMarkdownFile(arg, *writeInPlace, *diffMode, style); err != nil {
+				fmt.Fprintf(os.Stderr, "Error processing file %s: %v\n", arg, err)
 				hadError = true
 			}
 		} else {
@@ -1368,7 +1407,7 @@ func fmtCommand(args []string) {
 
 func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
 	// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
-	if verr := pkg.ValidateSourcePathName(filename); verr != nil {
+	if verr := validateFmtPath(filename); verr != nil {
 		return verr
 	}
 	if fixClass != "" {
@@ -1429,13 +1468,80 @@ func fmtProcessFile(filename string, writeInPlace bool, diffMode bool, fixClass 
 	return nil
 }
 
-func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle) error {
+// fmtProcessMarkdownFile 格式化一個 Markdown / MDX 文件裡的 Nolang 代碼塊。
+//
+// 它不碰 checker：Markdown 片段無型別資訊，也只做「排版」這一件事，所以不需要
+// 冗餘型別標註移除、overflow 相關性計算那些 AST 側的前處理（那些恰好也是
+// .no 才會有的東西）。
+func fmtProcessMarkdownFile(filename string, writeInPlace bool, diffMode bool, loopStyle nfmt.LoopStyle) error {
+	if verr := validateFmtPath(filename); verr != nil {
+		return verr
+	}
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	original := string(data)
+	result, skipped := nfmt.FormatMarkdownFileWithLoopStyle(original, loopStyle)
+	reportMdSkipped(filename, skipped)
+	if diffMode {
+		if diff := generateDiff(filename, original, result); diff != "" {
+			fmt.Print(diff)
+		}
+		return nil
+	}
+	if writeInPlace {
+		if result == original {
+			return nil
+		}
+		return os.WriteFile(filename, []byte(result), 0644)
+	}
+	fmt.Print(result)
+	return nil
+}
+
+// reportMdSkipped 把「解析不了、原樣留底」的代碼塊回報給作者，並給出靜音寫法。
+//
+// 這不是錯誤：文檔裡大量片段是示意偽碼，格式化對它們只做 best-effort，整棵
+// docs/ 樹因此永遠可以冪等執行。真正的語法錯誤仍會由 `no build` / `no vet` 抓。
+func reportMdSkipped(filename string, skipped []nfmt.MdSkippedBlock) {
+	if len(skipped) == 0 {
+		return
+	}
+	for _, s := range skipped {
+		reason := s.Reason
+		if reason == "" {
+			reason = i18n.P("hleyeurx", "not parseable as Nolang")
+		}
+		fmt.Fprintln(os.Stderr, i18n.T("cn2p79sm", "%s:%d: skipped Nolang code block: %s", filename, s.Line, reason))
+	}
+	fmt.Fprintln(os.Stderr, i18n.P("5i2q1afu", "  hint: skipped blocks are left as-is; mark a deliberate pseudo-code or wrong-usage example with '#{fmt-skip}' on the first line of the block"))
+}
+
+// validateFmtPath 是 `no fmt` 的路徑命名檢查。
+//
+// .no 走源碼命名規範（全段校驗）；Markdown 不是 Nolang 源碼，README.md /
+// CHANGELOG.md 這類帶大寫的檔名是慣例、也不構成模組，故只校驗**目錄段**。
+// 目錄參數與 Markdown 一樣放行 `.agents` 這類隱藏目錄（工具鏈約定名，見
+// pkg.ValidateDirPathName）。
+func validateFmtPath(path string) error {
+	if nfmt.IsMarkdownPath(path) {
+		return pkg.ValidateMarkdownDirName(path)
+	}
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return pkg.ValidateDirPathName(path)
+	}
+	return pkg.ValidateSourcePathName(path)
+}
+
+func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixClass string, loopStyle nfmt.LoopStyle, mdMode bool) error {
 	if fixClass != "" {
 		return fmtProcessFixDirectory(dirname, writeInPlace, diffMode, fixClass)
 	}
 	var firstErr error
 	checked := 0
 	needFormat := 0
+	mdChecked := 0
 	// 無 -w 且無 -d 時為「檢查模式」：只列出需要格式化的文件名，
 	// 不把所有文件內容拼接到 stdout（多文件拼接沒有意義）。
 	checkMode := !writeInPlace && !diffMode
@@ -1460,11 +1566,16 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 		if info.IsDir() {
 			return nil
 		}
-		if !strings.HasSuffix(path, ".no") {
+		// Markdown 只在顯式 -md 時參與；其餘非 .no 檔一律略過。
+		isMd := nfmt.IsMarkdownPath(path)
+		if isMd && !mdMode {
+			return nil
+		}
+		if !isMd && !strings.HasSuffix(path, ".no") {
 			return nil
 		}
 		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
-		if verr := pkg.ValidateSourcePathName(path); verr != nil {
+		if verr := validateFmtPath(path); verr != nil {
 			fmt.Fprintf(os.Stderr, "%s: format error: %s\n", path, verr)
 			if firstErr == nil {
 				firstErr = verr
@@ -1476,11 +1587,24 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			return nil
 		}
 		checked++
+		if isMd {
+			mdChecked++
+		}
 		if checkMode {
 			data, rerr := os.ReadFile(path)
 			if rerr != nil {
 				if firstErr == nil {
 					firstErr = rerr
+				}
+				return nil
+			}
+			if isMd {
+				// 檢查模式：只比對，不寫回；跳過的塊照樣回報（作者需要知道）。
+				mdOut, mdSkipped := nfmt.FormatMarkdownFileWithLoopStyle(string(data), loopStyle)
+				reportMdSkipped(path, mdSkipped)
+				if mdOut != string(data) {
+					fmt.Println(path)
+					needFormat++
 				}
 				return nil
 			}
@@ -1506,11 +1630,22 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			}
 			return nil
 		}
+		if isMd {
+			if ferr := fmtProcessMarkdownFile(path, writeInPlace, diffMode, loopStyle); ferr != nil && firstErr == nil {
+				firstErr = ferr
+			}
+			return nil
+		}
 		if ferr := fmtProcessFile(path, writeInPlace, diffMode, fixClass, loopStyle); ferr != nil && firstErr == nil {
 			firstErr = ferr
 		}
 		return nil
 	})
+	if mdMode && mdChecked == 0 {
+		// 使用者顯式要求處理 Markdown，樹裡卻一個都沒有：說一聲，免得他以為
+		// 命令沒生效（例如漏了副檔名或走錯目錄）。
+		fmt.Fprintln(os.Stderr, i18n.T("thdxbnrt", "fmt: no Markdown files (.md/.mdx) found under %s", dirname))
+	}
 	if checkMode && checked > 0 {
 		if needFormat == 0 {
 			fmt.Fprintf(os.Stderr, "all %d file(s) already formatted\n", checked)

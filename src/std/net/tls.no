@@ -2852,7 +2852,7 @@ conn.send-client-hello-13 = () (ok bool) {
     pos = pos + 2
 
     ; name
-    i <- [0...host.len-bytes()): {
+    i <- [0..self.host.len-bytes()): {
 
         #{overflow=wrap}
         hs[pos + i]: {
@@ -3932,6 +3932,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
                         .ap-read-seq = .ap-read-seq + 1
                         {
                             d-ct < 0 -> return
+
                             d-ct == TLS-CT-APP-DATA -> got-app-data = true
 
                             -> {

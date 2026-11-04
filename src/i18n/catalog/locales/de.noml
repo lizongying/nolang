@@ -150,6 +150,13 @@ kann nicht direkt über einen Index zuweisen: `%s = %s`. Ein Index-Lesevorgang g
   '3zh3tuv8': 'Dies ist das L2-Orakel der Self-Hosting-Arbeit: die Ausgabe wird'
   '430ty5x5': 'Byte-Array-Empfänger hat keinen Slot'
   '45y022ur': 'net-listen: Host kann nicht als C-Zeichenkette marshalled werden'
+  '46fhe9ez': `
+Markdown (.md/.mdx), nur mit -md: formatiert wird ausschließlich der Inhalt von ```no / ```nolang-Fences.
+Fence-Zeilen und jede andere Zeile bleiben byteweise erhalten; ein Block, der sich nicht
+parsen lässt, bleibt unverändert und wird auf stderr gemeldet — Formatieren ist also immer
+sicher. Ein absichtliches Pseudo-Code-Beispiel stillt man mit ```no skip oder einer Zeile
+'; nolang-fmt:skip' im Block. -md ignoriert -fix.
+`
   '46jwfg5y': 'Typ nach %q im Typ-Alias erwartet'
   '46qem63e': 'MIR-IR hat die LLVM-Assembly nicht bestanden: %v: %s'
   '4bopl5am': 'Wurzel:'
@@ -182,6 +189,7 @@ kann nicht direkt über einen Index zuweisen: `%s = %s`. Ein Index-Lesevorgang g
   '5cid832p': 'unbekannter privater builtin %s'
   '5ckkrp9f': 'noml: Feld %s[%d]: Abhängigkeitselement muss eine Zeichenkette sein, %T erhalten'
   '5eo1kvb9': 'noml: Feld %s: Objekt erwartet, %T erhalten'
+  '5i2q1afu': '  hint: übersprungene Blöcke bleiben unverändert; absichtlichen Pseudo-Code mit \'```no skip\' oder einer Zeile \'; nolang-fmt:skip\' markieren'
   '5j50pfem': 'Mitglied %q[%d]: die Objektschlüssel %s unterscheiden sich von %q und dessen %s; jedes Element braucht dieselbe Form'
   '5jqh5cf2': 'builtin %s: []str-Ergebnis erwartete %%vec-Slot, %s erhalten'
   '5jsd564o': 'Nicht-Zeichenkettenwert kann der Zeichenkettenvariablen \'%s\' nicht zugewiesen werden'
@@ -210,11 +218,21 @@ kein nutzbare C-Linker erkannt (clang/cc/gcc)
   '64bt3a50': 'Nolang-Quellen zu einer ausführbaren Datei bauen.'
   '64t1vgh6': 'vec.remove: benötigt Empfänger, Index'
   '66ybjsus': 'write-file: Pfad kann nicht als C-Zeichenkette marshalled werden'
+  '6709xe69': `
+Parser ASTVersion: %s
+
+`
   '68bn4o2m': 'ESM-Paket-Spezifikator %q darf nicht mit \'/\' beginnen oder enden'
+  '69wny890': '  cat api.md | no fmt -md     Nolang-Blöcke von stdin formatieren'
   '6a6jynsl': 'Schleifenkörper nach Marke #%s erwartet, %s ohne \'* N\' oder \'* { }\' erhalten'
+  '6c01vyr1': '  no fmt -md -w docs/         Nolang-Blöcke in allen .md/.mdx unter docs/ formatieren'
   '6c1nlj7d': 'konfliktierende native Bibliotheks-Überschreibungen: %q und %q'
   '6fgg3htw': 'Argument %d von \'%s\': \'%s\' erwartet, \'%s\' erhalten'
   '6kryrbsq': '\'%s\' ist definiert, wird aber niemals verwendet'
+  '6m53s6q8': `
+%d Cache-Einträge entfernt.
+
+`
   '6o12uzmx': 'waitpid: auf windows nicht unterstützt'
   '6p2o4902': 'Ressource %s überschreitet die Größengrenze (%d Bytes)'
   '6qca9xu4': 'embed: kann nicht mit explizitem Wert kombiniert werden'
@@ -266,6 +284,10 @@ Fehler beim Anlegen von tests: %v
   '802t452i': 'builtin %s: option-Ergebnis in %s-Ziel'
   '81b2ea3o': '\'(\' in extern-Deklaration erwartet, stattdessen %s erhalten'
   '82csl5ay': 'str.to-bool: Empfänger fehlt'
+  '82hkddyo': `
+Einträge: %d
+
+`
   '82j1xx80': 'Argument %d fehlt'
   '82l9xk55': 'Zip-Eintrag %q ist zu groß (%d Bytes)'
   '83xbz15x': `
@@ -355,10 +377,12 @@ Fehler beim Ermitteln des neuesten Releases: %v
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       inklusive #{...}-Annotationen'
   'au6g7ji7': 'Parser-Fehler: %s'
+  'awc98kqh': '  no fmt -md README.md        Nolang-Blöcke in einer Markdown-Datei formatieren'
   'axj3m1pb': 'unerwartetes \'as\' am Ausdruckanfang'
   'axtpo500': 'win-find-first-file: Pfad kann nicht als C-Zeichenkette marshalled werden'
   'ayjrpinp': 'noml: DecodeInto erfordert einen nicht-nil-Zeiger, %T erhalten'
   'aywuxg5w': 'builtin %s Empfänger %s: %s'
+  'aze4pgle': 'auch Nolang-Codeblöcke in Markdown-Dateien (.md/.mdx) formatieren'
   'b1narysr': 'Binärdatei'
   'b360mu4g': 'Parameter-Name erwartet, stattdessen %s erhalten'
   'b3ucznjm': `
@@ -398,6 +422,7 @@ Abhängigkeit entfernt: %s
   'cjih2jtt': '\'=\' im Funktions-Typ-Alias erwartet, %s erhalten'
   'ckaj3355': 'unbekannte Funktion \'%s.%s\': Modul \'%s\' hat keine Top-Level-Funktion \'%s\''
   'cldvfmqx': 'waitpid: benötigt pid, options'
+  'cn2p79sm': '%s:%d: Nolang-Codeblock übersprungen: %s'
   'cnsb9bys': 'Import %s: Typ %q wird auch von %s definiert; unterscheiden Sie sie mit einer Top-Level-Anmerkung #{name = \'...\'}'
   'cotvjhmy': 'exec-shell: Befehl kann nicht als C-Zeichenkette marshalled werden'
   'cpefnxwk': 'str-truncate: Empfänger hat keinen Slot'
@@ -449,6 +474,7 @@ Fehler beim Synchronisieren der AST-Abhängigkeit %s: %v
   'e0r5thlw': 'Ergebnis in die Quelldatei zurückschreiben'
   'e1i8566c': 'read-file: Ergebnis-Typ %s ist weder ein Slice noch eine Zeichenkette'
   'e3xplf89': '  Ein Paket, das in package.noml compiler.emit = "js" deklariert, wird mit'
+  'e7xfrsz0': '  clear  alle gecachten AST-Blobs entfernen (Notausgang bei Verdacht auf veraltete Einträge)'
   'e7yptvje': 'process-exec: benötigt (prog, arg)'
   'e9ab330i': 'Aufruf: no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'konfliktierende native wasm-Spezifikatoren: %q (von %q) und %q (von %q)'
@@ -462,13 +488,18 @@ Fehler beim Synchronisieren der AST-Abhängigkeit %s: %v
   'eit5cjgr': 'tar.gz-Archiv wird extrahiert: %w'
   'ejbt38ik': 'Ziel-Slot der Slice-Operation'
   'elep1kra': '  no build                  aktuelles Verzeichnis oder workspace.noml-Projekte bauen'
-  'em4a9wv2': 'die obere Bereichsgrenze beginnt mit `.%s` auf dem impliziten self, daher ergibt das direkte Schreiben nach dem Operator `..` ein `...%s` (mehrdeutig: `...` ist auch der Rückgabe-/Beendigungsoperator). Benennen Sie den Empfänger explizit und schreiben Sie `..self.%s` (z. B. `[a..self.%s)`).'
+  'elps0exp': '`...` ist eine wirkungslose Platzhalter-Anweisung ohne Wert und kann daher nicht an einer Ausdrucksposition stehen (Zeile %d); schreibe es in einer eigenen Zeile innerhalb eines Blocks, z. B. `-> {` Zeilenumbruch `    ...` Zeilenumbruch `}`'
+  'elps0ln0': '`...` muss auf einer eigenen Zeile stehen: In Zeile %d darf kein Code davorstehen; schreibe es in eine eigene Zeile oder entferne es'
+  'elps1ln1': '`...` muss auf einer eigenen Zeile stehen: In Zeile %d darf kein Code folgen, gefunden %s; `...` ist eine Anweisung, der Rest der Zeile darf nur ein `;`-Kommentar sein'
+  'elps1rng': '`...` ist kein Bereichsoperator (Zeile %d): Der Bereichsoperator ist `..`, und `...` allein ist die wirkungslose Platzhalter-Anweisung; hier sieht es aus wie `..` direkt vor einem impliziten self-Member — nenne den Empfänger explizit, z. B. `[0..self.count)`'
+  'em4a9wv2': 'Die obere Bereichsgrenze beginnt mit `.%s` auf dem impliziten self und steht damit direkt hinter dem `..`-Operator, was wie `...%s` aussieht (die Schreibweise mit drei Punkten ist ein Syntaxfehler: `...` ist die wirkungslose Platzhalter-Anweisung). Nenne den Empfänger explizit und schreibe `..self.%s` (z. B. `[a..self.%s)`).'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        Direct-WASM-Backend mit explizitem Ziel'
   'en9zq76f': 'Standard-Schleifenschreibweise: \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\'; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  ohne Bounds-Checks bauen (max. Performance)'
   'es55egn6': 'Nolang-Quelldateien formatieren.'
   'eu5v0rj9': '  2. vorhandenes Verzeichnis   -> dessen main.no ausführen'
   'eubonf62': 'Wert %s kann der Variable %s \'%s\' nicht zugewiesen werden: ein struct-Wert muss explizit konstruiert werden (z. B. `%s { … }` oder sein Konstruktor); eine Ganzzahl wird nur implizit zu einem struct hochgestuft, das einen verlustfreien Konstruktor hat (wie bigint)'
+  'evesyggh': 'AST-Cache: deaktiviert (NOLANG_AST_CACHE_OFF ist gesetzt)'
   'ew5qg77j': 'Bezeichner im use-Pfad erwartet, %s erhalten'
   'ex8l4y2k': 'Abhängigkeiten werden aktualisiert ...'
   'exeja3ad': 'über %s'
@@ -485,6 +516,10 @@ Paket erstellt: %s
   'fd9jkb5k': 'Mitglied %q ist ein leeres Array: annotieren Sie es mit #{type = \'[]<elem>\'}'
   'fdwcn8i8': 'match-Zweig gibt niemals einen Wert zurück'
   'fe0a5wt2': 'option-Wert \'%s\' (%s) kann nicht mit \'%s\' (%s) verglichen werden: entpacken Sie ihn zuerst (`v ?= expr`) oder matchen Sie auf ok/nil/err'
+  'fftzl9dl': `
+Leeren fehlgeschlagen: %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout: kein Ergebnis-Slot'
   'fk1sb6ss': 'syslog: auf windows nicht unterstützt'
   'flfh2ueu': 'ungültiges Installationsziel %q: Repository muss <host>/<owner>/<repo> oder <owner>/<repo> sein'
@@ -532,6 +567,7 @@ clang nicht erkannt; prüfen Sie, ob die LLVM-Toolchain vollständig installiert
 `
   'gno8qk1j': '\'~match/case/default\' ist veraltet, verwenden Sie stattdessen \'x: { pattern-> ... }\''
   'gr0jwheb': '\'for { }\' ist veraltet, verwenden Sie stattdessen die Endlosschleife \'{ } (true)\''
+  'gskcg79t': 'Hinweis: Einträge sind versioniert — ein höherer ASTVersion macht sie automatisch ungültig.'
   'gszz9tke': '  - main.no (Haupt-Einstiegsdatei)'
   'gubuo5cb': 'option gebunden, aber niemals verbraucht: sie wird weder propagiert (`?=`) noch entpackt (`x: { ... }` / `_ = x`), daher wird der Fehler stillschweigend verworfen. %s'
   'gx02j37c': 'write-file: Daten-Argument hat keinen Slot (Funktion %s, Argumenttyp %s)'
@@ -556,6 +592,7 @@ Fehler beim Verzeichniswechsel: %v
   'hc3a6zzw': 'unbekannte Korrekturklasse %q (unterstützt: overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': 'leerer match-Zweig kann keinen Wert bestimmen (Typ des abgeglichenen Ausdrucks ist unbekannt)'
   'hgedm96o': 'Modul %s wird automatisch geladen: %w'
+  'hleyeurx': 'nicht als Nolang parsebar'
   'hoal6bo9': 'Mit --js die LLVM-Toolchain umgehen und JavaScript-Quelltext erzeugen (Node.js-/Browser-kompatibel).'
   'hr40fh5v': 'package.noml nicht gefunden. Führen Sie \'no new <name>\' aus, um ein Paket zu erstellen, oder cd Sie in ein Paketverzeichnis'
   'hr4y7owq': 'getgrouplist: %v'
@@ -580,6 +617,10 @@ Fehler beim Anlegen des Verzeichnisses: %v
   'ibaimz2h': 'Zyklus-Erkennung: %w'
   'ibiol93t': 'Fehler: package.noml nicht gefunden. Mit \'no new <name>\' ein Paket anlegen oder in ein Paketverzeichnis wechseln'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+AST-Cache-Verzeichnis: %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'Schnittstelle \'%s\': zusammengeführte Methode \'%s\' hat konfliktierende Signaturen (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: benötigt Empfänger'
@@ -627,6 +668,7 @@ Fehler beim Anlegen des Verzeichnisses: %v
   'k2wgp5l6': 'Aufruf: no run [<package|dir|file>]'
   'k3envsrc': 'Umgebungsvariable'
   'k3g4ofs4': 'farbigen Diff statt des formatierten Ergebnisses ausgeben'
+  'k3r7mbqd': 'ein else-Zweig (ein \'->\' in eigener Zeile) muss sich in einer if-Gruppe befinden; umbreite den Zweig \'cond ->\' und dieses \'->\' mit { ... } (ein einzelnes \'cond ->\' ohne else darf außerhalb stehen)'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: kein Ergebnis-Slot'
   'k8je3usi': '%s existiert bereits und ist kein ES-Modul (kein "type": "module"); geben Sie die Ausgabe stattdessen als .mjs aus (no build --js -o out.mjs)'
@@ -641,6 +683,7 @@ Fehler beim Anlegen des Verzeichnisses: %v
   'klplh4cw': '  no fmt src/                 .no in src/ auflisten, die formatiert werden müssen'
   'kmm43ypb': '%s aus lock wird aufgelöst: %w'
   'krvc469y': 'vec.clear: benötigt Empfänger'
+  'ksvya88a': 'Verwendung: no cache <stat|clear>'
   'kvp8bxoc': 'Lock-Datei und Integritätsprüfsummen gespeichert.'
   'kxikdkzu': 'net-accept: kein Ergebnis-Slot'
   'kzomgjsg': 'leere ~match-Anweisung'
@@ -701,6 +744,8 @@ Fehler beim Schreiben von utils.no: %v
   'm5fpbrwd': 'vec.reverse: benötigt Empfänger'
   'm5klw1rq': 'Methode \'%s.%s\' hat %d Parameter, die Schnittstelle erwartet %d'
   'm7egvbv0': 'der Ganzzahlausdruck ist standardmäßig ein option<int> und wird als Ausdrucksanweisung verworfen (unbehandelt). Fügen Sie eine Anmerkung `#{overflow = wrap}` hinzu, um ein normales int zu erhalten, oder propagieren Sie mit `?=`, oder verwerfen Sie explizit mit `_ = expr`.'
+  'm7q3keu7': 'fmt: %s ist eine Markdown-Datei; mit -md werden ihre Nolang-Codeblöcke formatiert'
+  'm7vq3xrt': 'ein einzelnes \'->\'-else-Zweig-Argument außerhalb einer if-Gruppe bindet nur an den nächstliegenden \'cond ->\'-Zweig; die %d \'cond ->\'-Zweige darüber werden ignoriert — umbreite alle davon mit einer if-Gruppe { ... }, damit \'->\' ein echter Ausweich-Zweig wird'
   'm8blb8q2': 'noml: Zeile %d Spalte %d: %s'
   'mbnaky32': 'Registry-Authentifizierungstoken (ungenutzt: Upload nicht implementiert)'
   'meket0n4': 'vec.clear: kein Empfänger-Slot'
@@ -783,7 +828,14 @@ Zig-Compiler nicht erkannt
   'ol21t36r': '  no run --js --js-runtime bun main.no     ebenso, aber mit bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'der Divisor einer Ganzzahl-Division oder eines Modulo ist die Literal-Konstante 0, was in LLVM undefiniertes Verhalten ist (sdiv/srem durch null) und unvorhersehbare Ergebnisse erzeugt. Fügen Sie eine Laufzeit-Nullprüfung hinzu, oder lassen Sie die Funktion den Fehler als option zurückgeben.'
-  'oraub2m9': '`%s %s= %s` wird nicht unterstützt: ein Index-Lesevorgang gibt ein option zurück (nil außerhalb des Bereichs), daher würde eine zusammengesetzte Zuweisung den Index zweimal auswerten und den Fehler verwerfen. Schreiben Sie ihn als um (das `it` des ok-Zweigs ist der Element-Slot, lesbar und schreibbar):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   oder `%s ?= %s %s %s` (propagiert den Fehler; erfordert, dass die umgebende Funktion einen option-Ergebnisparameter hat)'
+  'oraub2m9': `
+`%s %s= %s` wird nicht unterstützt: ein Index-Lesevorgang gibt ein option zurück (nil außerhalb des Bereichs), daher würde eine zusammengesetzte Zuweisung den Index zweimal auswerten und den Fehler verwerfen. Schreiben Sie ihn als um (das `it` des ok-Zweigs ist der Element-Slot, lesbar und schreibbar):
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   oder `%s ?= %s %s %s` (propagiert den Fehler; erfordert, dass die umgebende Funktion einen option-Ergebnisparameter hat)
+`
   'orjs902d': '\'switch/case/default\' ist veraltet, verwenden Sie stattdessen \'x: { 1-> ... }\''
   'os0j8ix4': 'Wert %s kann nicht auf Element %s im Array \'%s\'%s zugewiesen werden'
   'osrb7a78': 'move-Slot'
@@ -911,6 +963,7 @@ AST gepackt: %s
   'sz3i7626': 'win-read-pipe: benötigt (handle, max-bytes)'
   't0f6p9jl': '\'(\' nach dem Block in der Schleife erwartet, %s erhalten'
   't22pcf4p': 'embed: Datei nicht gefunden: %s (aufgelöst: %s)'
+  't2fwnrfi': '  stat   Cache-Ort, Anzahl der Einträge, Größe und ASTVersion anzeigen'
   't4jhbz5z': '\'=\' nach dem Funktionsnamen erwartet, stattdessen %s erhalten'
   't5l89pst': `
 Abhängigkeit %s nicht gefunden.
@@ -918,6 +971,7 @@ Abhängigkeit %s nicht gefunden.
 `
   't5qq2leo': 'lencap-Art: len/cap nicht unterstützt auf %s (%s) in Funktion %d'
   't5rup04t': 'move Quell-Slot v%d -> v%d'
+  't8440cno': 'Umgebung: NOLANG_AST_CACHE_OFF=1 deaktiviert den Cache; NOLANG_AST_CACHE_DIR überschreibt das Verzeichnis.'
   'tb2zxq0f': '\'%s.%s []T\' ist nicht erlaubt: der Feld-Typ gehört in die Typdefinition von \'%s\'. Um in das Feld zu schreiben, schreiben Sie \'%s.%s = ...\''
   'tbfsq7ph': '  no pub                       dist/<name>.ast.zip schreiben'
   'tcpoxtfd': 'Typ-Anmerkung \'%s\' kann weggelassen werden (aus dem Wert abgeleitet)'
@@ -938,6 +992,7 @@ WASI-sysroot nicht gefunden. Setzen Sie $WASI_SYSROOT, damit es auf Ihren wasi-s
   'tfwxqucs': '`return` kann nicht von einem Wert gefolgt werden; Nolang gibt Ergebnisse über benannte Ergebnisparameter (out-params) zurück, verwenden Sie daher ein nacktes `return`, um früh zu beenden, und weisen Sie den Ergebnisparameter innerhalb des Funktionskörpers zu'
   'tgutu5g0': 'verwenden Sie \'# %s.%s %s\' statt \'# %s.%s as %s\''
   'tgz86gvc': 'gebaute Binary wird gelesen: %w'
+  'thdxbnrt': 'fmt: unter %s wurden keine Markdown-Dateien (.md/.mdx) gefunden'
   'tho8xc47': 'Erstellte Dateien:'
   'tjwokiw9': 'Komma oder schließende Klammer im Array-Literal erwartet, stattdessen %s erhalten'
   'tlwmf1le': 'explizite Typumwandlung `expr %s` ist in Nolang nicht erlaubt; verwende die Deklarationsform `name %s = expr` für eine sichere Erweiterung oder gleichbreite Umwandlung'
@@ -951,12 +1006,17 @@ WASI-sysroot nicht gefunden. Setzen Sie $WASI_SYSROOT, damit es auf Ihren wasi-s
   'tsg5cbwu': 'unzulässiges Zeichen %q im ESM-Paket-Spezifikator %q'
   'tt23j5su': '\']\' oder \')\' zum Schließen des Bereichs erwartet, stattdessen %s erhalten'
   'tt8f2dmd': 'net-recv-nb: kein Ergebnis-Slot'
+  'ttdybn5d': 'fmt: -md lässt sich nicht mit -fix kombinieren (automatische Korrekturen gelten nur für .no-Quellen)'
   'ttlxcrgt': '\'[\' oder \'(\' oder Zeichenkette im Bereichsausdruck erwartet, stattdessen %s erhalten'
   'u0g1w0d7': 'js-Kompatibilitätsmodul nicht gefunden: %s'
   'u3g4qexx': 'builtin chars-new: falscher Argument-Typ %s'
   'u3if6wak': '  no fmt -fix=match -w src/       fehlende match-Arme direkt ergänzen'
   'u4oybn9r': '%s bereits installiert (%s); verwenden Sie -u zum Neuinstallieren oder Aktualisieren'
   'u5qmp19f': 'option-Match muss alle Zweige behandeln: err, nil, ok (fehlt: %s)'
+  'u9kq06kz': `
+Gesamtgröße: %d Bytes
+
+`
   'ua5h1rpc': '\'as\'-Umwandlung ist nur für FFI-Zeigertypen erlaubt (z. B. *byte, **byte), %s erhalten'
   'uea62he5': 'Funktion \'%s\' erwartet höchstens %d Eingabeargument(e), %d erhalten — Ergebnisparameter sollten über Zuweisung gebunden werden, z. B. result = %s(...)'
   'uf368nh9': 'Pfad des Ausgabe-Zips (Standard: dist/<tool>.ast.zip)'
@@ -1138,6 +1198,4 @@ Fehler beim Synchronisieren der AST-Abhängigkeit %s: leeres Modul
 
 `
   'zzcfoc04': 'dist-Verzeichnis wird erstellt: %w'
-  'k3r7mbqd': 'ein else-Zweig (ein \'->\' in eigener Zeile) muss sich in einer if-Gruppe befinden; umbreite den Zweig \'cond ->\' und dieses \'->\' mit { ... } (ein einzelnes \'cond ->\' ohne else darf außerhalb stehen)'
-  'm7vq3xrt': 'ein einzelnes \'->\'-else-Zweig-Argument außerhalb einer if-Gruppe bindet nur an den nächstliegenden \'cond ->\'-Zweig; die %d \'cond ->\'-Zweige darüber werden ignoriert — umbreite alle davon mit einer if-Gruppe { ... }, damit \'->\' ein echter Ausweich-Zweig wird'
 }

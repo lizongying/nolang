@@ -40,6 +40,7 @@ s = 'Hello' * 3
 需要字典序時用 `str.compare(b)`：
 
 ```no
+#{fmt-skip}
 s = 'abc'
 b = 'abd'
 c = s.compare(b)      ; -1（s < b）/ 0（相等）/ 1（s > b）
@@ -55,6 +56,7 @@ s.compare(b) < 0      ; 正確寫法
 **索引**：`s[i]` 的推斷型別是 **`?char`**（Unicode 碼點），不是 `byte` —— 越界時回傳 `nil`，在界內回傳 `ok(碼點)`（與整數 `+ - * / %` 同一套統一規則）。對於含多字節字符的串，`s[i]` 會從串首前向解碼 UTF-8 數到第 i 個碼點（見下方效能說明）。
 
 ```no
+#{fmt-skip}
 s = 'Hello World'
 c char = s[0]      ; 'H' 的碼點（顯式 plain 型別把結果拉回 char）
 ```
@@ -66,6 +68,7 @@ c char = s[0]      ; 'H' 的碼點（顯式 plain 型別把結果拉回 char）
 **切片**：`s[a..b]` 回傳底層字串的一個**視圖**，型別仍是 **`str`**（共享記憶體，不複製）。切片下標是**碼點位置**，與 `s[i]` 一致：
 
 ```no
+#{fmt-skip}
 sub = s[6..]       ; 'World'
 sub = s[6..11]     ; 'World'
 sub = s[0..5)      ; 'Hello'（左閉右開）
@@ -74,6 +77,7 @@ sub = s[0..5)      ; 'Hello'（左閉右開）
 > 切片的下標是**碼點位置**，不是字節偏移。若需字節偏移的切片（例如配合 `s.byte(i)` 遍歷），用 `s.slice-bytes(start, end)`。
 
 ```no
+#{fmt-skip}
 ; 長度
 n = s.len()          ; code point 數（Unicode 字符數）
 n = s.count()        ; 同上（舊方法名，仍可用）
@@ -86,6 +90,7 @@ n = s.len-bytes()    ; byte 長度（UTF-8 位元組數）
 `char` 可以**隱式轉換**為 `str`：把該碼點 UTF-8 編碼成一個新字串。因此下列寫法都合法，**無需**手動呼叫 `char.to-str()`：
 
 ```no
+#{fmt-skip}
 s = 'héllo'              ; 'h' 'é' 'l' 'l' 'o'（é 為多字節）
 
 ; 1) s[i] 的 char 直接賦值給 str 變數 → 隱式轉成單字元字串
@@ -155,6 +160,7 @@ ok = s[0] == 'h'         ; true
 - 拼接（`-`）两侧都已证明 ASCII。
 
 ```no
+#{fmt-skip}
 ; ASCII 字面量 → 编译器证明为纯 ASCII，s[i] 为 O(1)
 name = 'hello'
 c = name[1]              ; O(1)，取字节 'e'
@@ -174,12 +180,13 @@ c = s[1]                 ; O(n)，取第 1 个码点 'é'（而非字节）
 
 - 若需要遍历每个字符，直接用 `for c <- s` 前向遍历——这是首选的 O(n) 单次扫描写法，避免反复 `s[i]` 的 O(n²)。编译器会按 **UTF-8 码点（Unicode 字符）** 推进，每次把解码后的码点值存入循环变量 `c`，语义等价于 `for c <- s.to-chars()`：
   ```no
-  for c <- s {
+  c <- s: {
       ; c 为当前码点，类型 char（已按 UTF-8 解码，非字节）
   }
   ```
 - 若只需按字节访问（如编解码、哈希、memcmp），使用逃生舱口 `s.byte(i)` —— 永远直接定址第 i 个字节，**恒为 O(1)**，且不会进入 std 函数体：
   ```no
+  #{fmt-skip}
   b = s.byte(0)          ; 取第 0 个字节，类型 ?byte，O(1)
   out = 0
   b: {
@@ -207,6 +214,7 @@ c = s[1]                 ; O(n)，取第 1 个码点 'é'（而非字节）
 ## 字串方法
 
 ```no
+#{fmt-skip}
 ; 比較
 ok = a.eq(b, n)               ; 相等比較（方法）
 c = s.compare(b)              ; 字典序比較
@@ -258,6 +266,7 @@ s.fill(val byte)               ; 填充 byte 值
 ## 字串與數值轉換
 
 ```no
+#{fmt-skip}
 ; 數值轉字串（方法）
 s = i64.to-str()               ; i64 轉字串
 s = f64.to-str()               ; f64 轉字串
@@ -277,6 +286,7 @@ v = s.to-f64()                 ; 回傳 ?f64
 對 `s[i] = v` 賦值時，LLVM codegen 會自動更新 `len` 欄位為 `max(len, idx+1)`，不需手動設置：
 
 ```no
+#{fmt-skip}
 s = ''
 s[0] = 72                      ; len 自動變為 1
 s[1] = 105                     ; len 自動變為 2
@@ -293,6 +303,7 @@ s = s.slice-bytes(0, 5)       ; 字節截斷
 透過 `with-cap`、`with-len`、`with-cap-len` 三個內建語法可預先分配堆記憶體，避免後續 `push` / `s[i]=` 觸發反覆擴容：
 
 ```no
+#{fmt-skip}
 ; with-cap(cap)：配置 cap 容量，len=0（需 push 後才能索引）
 s = with-cap(256)               ; str，len=0, cap=256
 

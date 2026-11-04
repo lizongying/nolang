@@ -9,7 +9,8 @@ Nolang uses the `@` keyword in the package root `lib.no` file to declare exporte
 ## Syntax
 
 ```no
-@ path.func [alias]
+@ path.func
+[alias]
 ```
 
 - `path` — Module path (relative to package root, starts with `/`, without `.no` extension)
@@ -53,12 +54,14 @@ name that can be called**. The bare name `<alias>` simply *is* `path`'s `func` �
 exactly as if the source had written `<path>.<func>(...)`.
 
 ```no
+#{fmt-skip}
 ; std/global.no — two spellings, same meaning
 @ std/err.new err      ; export-style
 err = err.new          ; assignment-style
 ```
 
 ```no
+#{fmt-skip}
 e = err('disk full')        ; same as e = err.new('disk full')
 m = e.msg()                 ; 'disk full'
 ```
@@ -92,7 +95,6 @@ External packages can only access exported items declared in `lib.no` when impor
 ```no
 ; Import alias a (corresponds to package-name.utils.greet)
 # package-name.utils.greet a
-
 ; Or use the function name directly
 # package-name.utils.greet
 ```

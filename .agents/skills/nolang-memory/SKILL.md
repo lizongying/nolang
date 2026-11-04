@@ -113,6 +113,7 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 #### 3.2.4 运行时位图按需分配（`detectBranchMoveToOut` 预扫描）
 
 ```no
+#{fmt-skip}
 cond-move = (flag i64) (out []i64) {
     x = [1, 2, 3]
     if flag == 1 {
@@ -260,6 +261,7 @@ g.cfgEdge(backEdgeFrom, loopCondLabel) // 真實 back edge
 
 ### 5.1 单返回值 move
 ```no
+#{fmt-skip}
 get-slice = () (out []i64) {
     local = [1, 2, 3]
     out = local   ; local 标记为 moved，不 free；out 由调用者管理
@@ -268,6 +270,7 @@ get-slice = () (out []i64) {
 
 ### 5.2 多返回值 move（按参数位置顺序）
 ```no
+#{fmt-skip}
 get-pair = () (a []i64, b []i64) {
     x = [1, 2]
     y = [3, 4]
@@ -524,6 +527,7 @@ if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" 
 
 ### 问题
 ```no
+#{fmt-skip}
 local [4]i64 = [100, 200, 300, 400]   ; local 是 %arr (16 字节)
 local = [100, 200, 300]                ; SliceLiteral 当作 %vec 写入 3 字段 → 越界
 ```
@@ -621,6 +625,7 @@ hashmap 模板（`hashmap-str-tmpl` 等）已實現 key/value 的堆數據釋放
 
 **原問題**：
 ```no
+#{fmt-skip}
 view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 ```
@@ -682,7 +687,7 @@ arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
 
 ### 10.5a ~~main 函數 out 參數 UB 崩潰~~（已解決）
 
-**原問題**：`main = () (out i64) { ... }` 時，`@main` 調用 `_nolang_main()` 缺少輸出參數指標，導致 LLVM UB。`-O3` 優化器將 `_nolang_main` 推斷為 `noreturn`，刪除全局變數釋放和 `ret i32 0`，程序在 `_nolang_main` 返回後立即崩潰（rc=133 SIGTRAP）。
+**原問題**：`main = () (out i64) { }` 時，`@main` 調用 `_nolang_main()` 缺少輸出參數指標，導致 LLVM UB。`-O3` 優化器將 `_nolang_main` 推斷為 `noreturn`，刪除全局變數釋放和 `ret i32 0`，程序在 `_nolang_main` 返回後立即崩潰（rc=133 SIGTRAP）。
 
 **根因**：`generateMainFunction` 中調用 `_nolang_main()` 時未傳遞輸出參數。`_nolang_main` 的簽名是 `void @_nolang_main()`（無參數），但實際函數體中有 `store i64 0, ptr %out`（out 是參數指標）。缺少參數時 LLVM 將其視為 `null`（UB），`store i64 0, ptr null → unreachable`。
 

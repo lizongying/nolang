@@ -211,6 +211,16 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	case lexer.NIL:
 		leftExp = p.parseNilLiteral()
 
+	case lexer.ELLIPSIS3:
+		// `...` 是佔位**陳述**，不是表達式：它不產生任何值，所以 `x = ...`、
+		// `f(...)`、match 臂 `fail -> ...` 都不合法。要在臂體裡寫佔位，用區塊
+		// `-> { ... }`（`...` 自成一行）。
+		p.errorf(p.currentToken, "elps0exp", "E_GENERAL",
+			"`...` is a no-op placeholder statement and has no value, so it cannot be used in expression position (line %d); write it on a line of its own inside a block, e.g. `-> {` newline `    ...` newline `}`",
+			p.currentToken.Line)
+		p.nextToken()
+		return nil
+
 	case lexer.ELLIPSIS:
 		// ..identifier represents super.identifier
 		if p.peekToken.Type == lexer.IDENT {

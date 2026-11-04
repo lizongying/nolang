@@ -716,6 +716,7 @@ _bytes-to-limbs = (v []byte) (out []i64) {
         out[k] = 0
     }
     i <- [0..n): {
+
         ; 大端第 i 位元組的 bit 位置（以 2 的冪計）
         bit-pos = (n - 1 - i) * 8
         limb = bit-pos / 32
@@ -732,12 +733,15 @@ _bytes-to-limbs = (v []byte) (out []i64) {
 ; out []byte: 最短大端編碼；值 0 回傳單位元組 [0]
 _limbs-to-bytes = (v []i64) (out []byte) {
     n = v.len()
+
     ; 有效 limb 數 top = 最高非零 limb 下標 + 1（全零時為 1）
     top = 1
     k <- [0..n): {
+
         #{index-out=zero}
         v[k] != 0 -> top = k + 1
     }
+
     ; 最高 limb 的有效位元組數 hb（不含前導零位元組；hi==0 時保留 1）
     #{index-out=zero}
     hi = v[top - 1]
@@ -753,6 +757,7 @@ _limbs-to-bytes = (v []i64) (out []byte) {
     k <- [0..top): {
         limb = v[k]
         j <- [0..4): {
+
             ; limb k 的第 j 個位元組（LSB 起）落在大端輸出的 idx 位置；最高 limb 的前導零位元組越界省略
             idx = total - 1 - (k * 4 + j)
             idx >= 0 -> out[idx] = (limb >> (j * 8)) & 255

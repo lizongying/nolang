@@ -152,6 +152,12 @@ LLVM ツールチェーンが見つかりません
   '3zh3tuv8': 'これはセルフホスティング作業の L2 判定基準です: 出力は'
   '430ty5x5': 'バイト配列レシーバにスロットがありません'
   '45y022ur': 'net-listen: ホストを C 文字列にマーシャルできません'
+  '46fhe9ez': `
+Markdown（.md/.mdx）は -md 指定時のみ処理します: 整形するのは ```no / ```nolang フェンスの
+中身だけです。フェンス行とその他の行は 1 バイトも変えず、解析できないブロックは
+そのまま残して stderr に報告するため、整形は常に安全です。意図的な擬似コードは ```no skip を
+付けるか、ブロック内に '; nolang-fmt:skip' 行を置いて黙らせます。-md は -fix を無視します。
+`
   '46jwfg5y': '型エイリアス内の %q の後に型を期待しました'
   '46qem63e': 'MIR IR の LLVM アセンブルに失敗しました: %v: %s'
   '4bopl5am': 'ルート:'
@@ -184,6 +190,7 @@ LLVM ツールチェーンが見つかりません
   '5cid832p': '不明なプライベートフィールド builtin %s です'
   '5ckkrp9f': 'noml: フィールド %s[%d]: 依存要素は文字列である必要がありますが %T でした'
   '5eo1kvb9': 'noml: フィールド %s: オブジェクトを期待しましたが %T でした'
+  '5i2q1afu': '  hint: スキップしたブロックはそのまま残します。意図的な擬似コードは \'```no skip\' またはブロック内の \'; nolang-fmt:skip\' 行で明示してください'
   '5j50pfem': 'メンバー %q[%d]: オブジェクトのキー %s が %q の %s と異なります。各要素は同じ形である必要があります'
   '5jqh5cf2': 'builtin %s: []str の結果は %%vec スロットを期待しましたが %s でした'
   '5jsd564o': '文字列変数 \'%s\' に文字列以外の値を代入できません'
@@ -213,11 +220,21 @@ LLVM ツールチェーンが見つかりません
   '64bt3a50': 'Nolang ソースを実行ファイルにビルドします。'
   '64t1vgh6': 'vec.remove: レシーバとインデックスが必要です'
   '66ybjsus': 'write-file: パスを C 文字列にマーシャルできません'
+  '6709xe69': `
+Parser ASTVersion: %s
+
+`
   '68bn4o2m': 'ESM パッケージ指定子 %q は \'/\' で始めたり終えたりできません'
+  '69wny890': '  cat api.md | no fmt -md     stdin から Nolang ブロックを整形'
   '6a6jynsl': 'ラベル #%s の後にループ本体を期待しましたが、\'* N\' も \'* { }\' もない %s でした'
+  '6c01vyr1': '  no fmt -md -w docs/         docs/ 配下のすべての .md/.mdx の Nolang ブロックを整形'
   '6c1nlj7d': 'ネイティブライブラリの上書きが競合しています: %q と %q'
   '6fgg3htw': '第 %d 引数目（“%s”）: “%s” を期待しましたが “%s” でした'
   '6kryrbsq': '“%s” は定義されていますが使用されていません'
+  '6m53s6q8': `
+%d 件のキャッシュエントリを削除しました。
+
+`
   '6o12uzmx': 'waitpid: windows では未対応です'
   '6p2o4902': 'アセット %s がサイズ上限（%d バイト）を超えています'
   '6qca9xu4': 'embed: 明示的な値と組み合わせることはできません'
@@ -269,6 +286,10 @@ tests ディレクトリ作成エラー: %v
   '802t452i': 'builtin %s: option の結果を %s の出力先へ'
   '81b2ea3o': 'extern 宣言内に \'(\' を期待しましたが %s でした'
   '82csl5ay': 'str.to-bool: レシーバがありません'
+  '82hkddyo': `
+エントリ数: %d
+
+`
   '82j1xx80': '引数 %d がありません'
   '82l9xk55': 'zip エントリ %q が大きすぎます（%d バイト）'
   '83xbz15x': `
@@ -359,10 +380,12 @@ tests ディレクトリ作成エラー: %v
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       #{...} 注釈も含める'
   'au6g7ji7': 'パーサエラー: %s'
+  'awc98kqh': '  no fmt -md README.md        1 つの Markdown ファイルの Nolang ブロックを整形'
   'axj3m1pb': '式の先頭に予期しない \'as\' があります'
   'axtpo500': 'win-find-first-file: パスを C 文字列にマーシャルできません'
   'ayjrpinp': 'noml: DecodeInto には非 nil ポインタが必要ですが %T でした'
   'aywuxg5w': 'builtin %s レシーバ %s: %s'
+  'aze4pgle': 'Markdown ファイル（.md/.mdx）内の Nolang コードブロックも整形する'
   'b1narysr': 'バイナリ'
   'b360mu4g': '引数名を期待しましたが %s でした'
   'b3ucznjm': `
@@ -402,6 +425,7 @@ tests ディレクトリ作成エラー: %v
   'cjih2jtt': '関数型エイリアス内に \'=\' を期待しましたが %s でした'
   'ckaj3355': '不明な関数 “%s.%s”: モジュール “%s” にトップレベル関数 “%s” がありません'
   'cldvfmqx': 'waitpid: pid, options が必要です'
+  'cn2p79sm': '%s:%d: Nolang コードブロックをスキップしました: %s'
   'cnsb9bys': 'import %s: 型 %q は %s でも定義されています。トップレベルの #{name = \'...\'} 注釈で区別してください'
   'cotvjhmy': 'exec-shell: コマンドを C 文字列にマーシャルできません'
   'cpefnxwk': 'str-truncate: レシーバにスロットがありません'
@@ -453,6 +477,7 @@ AST 依存 %s の同期エラー: %v
   'e0r5thlw': '結果をソースファイルに書き戻す'
   'e1i8566c': 'read-file: 結果型 %s はスライスでも文字列でもありません'
   'e3xplf89': '  package.noml で compiler.emit = "js" を宣言したパッケージは'
+  'e7xfrsz0': '  clear  キャッシュされた AST をすべて削除（エントリが古い疑いがあるときの手段）'
   'e7yptvje': 'process-exec: (prog, arg) が必要です'
   'e9ab330i': '使い方: no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'ネイティブ wasm 指定子が競合しています: %q（%q 由来）と %q（%q 由来）'
@@ -466,13 +491,18 @@ AST 依存 %s の同期エラー: %v
   'eit5cjgr': 'tar.gz アーカイブの抽出: %w'
   'ejbt38ik': 'slice 演算の出力先スロット'
   'elep1kra': '  no build                  カレントディレクトリまたは workspace.noml のプロジェクトをビルド'
-  'em4a9wv2': '範囲の上限が暗黙の self に対して `.%s` で始まっているため、`..` 演算子の直後に書くと `...%s` になります（`...` は return/terminate 演算子でもあり曖昧です）。レシーバを明示的に指定して `..self.%s` と書いてください（例: `[a..self.%s)`）。'
+  'elps0exp': '`...` は何もしないプレースホルダ文で値を持たないため、式の位置では使えません（%d 行目）。ブロック内の単独の行に書いてください（例: `-> {` 改行 `    ...` 改行 `}`）'
+  'elps0ln0': '`...` は単独の行に置く必要があります: %d 行目で `...` の前にコードを置けません。単独の行にするか削除してください'
+  'elps1ln1': '`...` は単独の行に置く必要があります: %d 行目で `...` の後にコードを置けません（%s）。`...` は文なので、行の残りは `;` コメントだけにしてください'
+  'elps1rng': '`...` は範囲演算子ではありません（%d 行目）。範囲演算子は `..` で、単独の `...` は何もしないプレースホルダ文です。ここでは `..` と暗黙の self メンバーが連結されているように見えます。レシーバーを明示してください（例: `[0..self.count)`）'
+  'em4a9wv2': '範囲の上限が暗黙の self の `.%s` で始まるため、`..` 演算子の直後に置かれて `...%s` のように読めます（三点の書き方は構文エラーです: `...` は何もしないプレースホルダ文です）。レシーバーを明示して `..self.%s` と書いてください（例: `[a..self.%s)`）。'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        Direct WASM バックエンドで出力先を指定'
   'en9zq76f': 'ループの既定表記: \'prefix\' -> \'(cond) { }\'、\'N * { }\'、\'!! { }\'、\'! { }\'; \'suffix\' -> \'{ } (cond)\'、\'{ } * N\'、\'{ } (true)\'、\'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  境界チェックなしでビルド（最高性能）'
   'es55egn6': 'Nolang のソースファイルを整形します。'
   'eu5v0rj9': '  2. 既存のディレクトリ         -> その main.no を実行'
   'eubonf62': '%s 値を %s 変数 \'%s\' に代入できません: struct 値は明示的に構築する必要があります（例: `%s { … }` またはそのコンストラクタ）。整数が暗黙に昇格できるのは、損失のないコンストラクタを 1 つ持つ struct（bigint など）だけです'
+  'evesyggh': 'AST キャッシュ: 無効（NOLANG_AST_CACHE_OFF が設定されています）'
   'ew5qg77j': 'use パス内に識別子を期待しましたが %s でした'
   'ex8l4y2k': '依存を更新しています...'
   'exeja3ad': '%s 経由'
@@ -489,6 +519,10 @@ AST 依存 %s の同期エラー: %v
   'fd9jkb5k': 'メンバー %q は空の配列です。#{type = \'[]<elem>\'} で注釈してください'
   'fdwcn8i8': 'match アームが値を返しません'
   'fe0a5wt2': 'option 値 \'%s\'（%s）と \'%s\'（%s）を比較できません: 先にアンラップする（`v ?= expr`）か、ok/nil/err で match してください'
+  'fftzl9dl': `
+削除に失敗しました: %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout: 結果スロットがありません'
   'fk1sb6ss': 'syslog: windows では未対応です'
   'flfh2ueu': 'インストール対象 %q が不正です: リポジトリは <host>/<owner>/<repo> または <owner>/<repo> である必要があります'
@@ -537,6 +571,7 @@ clang が見つかりません。LLVM ツールチェーンが完全にインス
 `
   'gno8qk1j': '\'~match/case/default\' は非推奨です。代わりに \'x: { pattern-> ... }\' を使用してください'
   'gr0jwheb': '\'for { }\' は非推奨です。代わりに \'{ } (true)\' の無限ループを使用してください'
+  'gskcg79t': '注: エントリはバージョン付きです — ASTVersion を上げると自動的に無効になります。'
   'gszz9tke': '  - main.no（メインエントリ）'
   'gubuo5cb': 'option が束縛されましたが一度も処理されていません: 伝播（`?=`）もアンラップ（`x: { ... }` / `_ = x`）もされておらず、エラーは黙って破棄されます。%s'
   'gx02j37c': 'write-file: data 引数にスロットがありません（関数 %s、引数型 %s）'
@@ -561,6 +596,7 @@ workspace.noml に '%s' を登録しました
   'hc3a6zzw': '不明な修正クラス %q です（対応: overflow、redundant、match、unwrap、main）'
   'hcdpwnpp': '空の match アームでは値を決定できません（対象式の型が不明です）'
   'hgedm96o': 'モジュール %s の自動読み込み: %w'
+  'hleyeurx': 'Nolang として解析できません'
   'hoal6bo9': '--js で LLVM ツールチェーンを迂回し JavaScript ソースを生成（Node.js／ブラウザ対応）。'
   'hr40fh5v': 'package.noml が見つかりません。パッケージを作成するには \'no new <name>\' を実行するか、パッケージディレクトリへ移動してください'
   'hr4y7owq': 'getgrouplist: %v'
@@ -585,6 +621,10 @@ workspace.noml に '%s' を登録しました
   'ibaimz2h': '循環検出: %w'
   'ibiol93t': 'エラー: package.noml が見つかりません。\'no new <name>\' で作成するか、パッケージディレクトリへ移動してください'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+AST キャッシュディレクトリ: %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'インターフェース \'%s\': マージされたメソッド \'%s\' のシグネチャが競合しています（\'%s.%s\'、\'%s.%s\'）'
   'ihr1vm8m': 'arr.zero: レシーバが必要です'
@@ -632,6 +672,7 @@ workspace.noml に '%s' を登録しました
   'k2wgp5l6': '使い方: no run [<package|dir|file>]'
   'k3envsrc': '環境変数'
   'k3g4ofs4': '整形結果の代わりに色付き差分を出力'
+  'k3r7mbqd': 'else 分岐（行単独の \'->\'）は if-group の中に書く必要があります。\'cond ->\' 分岐とこの \'->\' をまとめて { ... } で囲んでください（else を持たない単独の \'cond ->\' は囲わなくてもできます）'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 結果スロットがありません'
   'k8je3usi': '%s は既に存在し、ES モジュールではありません（"type": "module" がありません）。代わりに出力を .mjs として生成してください（no build --js -o out.mjs）'
@@ -646,6 +687,7 @@ workspace.noml に '%s' を登録しました
   'klplh4cw': '  no fmt src/                 src/ で整形が必要な .no を一覧'
   'kmm43ypb': 'ロックから %s を解決中: %w'
   'krvc469y': 'vec.clear: レシーバが必要です'
+  'ksvya88a': '使い方: no cache <stat|clear>'
   'kvp8bxoc': 'ロックファイルと完全性チェックサムを保存しました。'
   'kxikdkzu': 'net-accept: 結果スロットがありません'
   'kzomgjsg': '~match 文が空です'
@@ -706,6 +748,8 @@ utils.no の書き込みエラー: %v
   'm5fpbrwd': 'vec.reverse: レシーバが必要です'
   'm5klw1rq': 'メソッド “%s.%s” は %d 個の引数を持ちますが、インターフェースは %d 個を期待しています'
   'm7egvbv0': '整数式は既定で option<int> であり、式文として破棄されています（未処理）。`#{overflow = wrap}` 注釈を追加して通常の int を取得するか、`?=` で伝播させるか、`_ = expr` で明示的に破棄してください。'
+  'm7q3keu7': 'fmt: %s は Markdown ファイルです。-md を付けると中の Nolang ブロックを整形します'
+  'm7vq3xrt': 'if-group の外の単独の \'->\' else 分岐は最も近い \'cond ->\' 分岐にだけ結びつきます。上にある %d 個の \'cond ->\' 分岐は無視されます — すべてを if-group { ... } で囲んで \'->\' を本当のフォールバック分岐にしてください'
   'm8blb8q2': 'noml: 行 %d 列 %d: %s'
   'mbnaky32': 'レジストリ認証トークン（未使用: アップロードは未実装）'
   'meket0n4': 'vec.clear: レシーバスロットがありません'
@@ -789,7 +833,15 @@ Zig コンパイラが見つかりません
   'ol21t36r': '  no run --js --js-runtime bun main.no     同上、bun を使用（node、bun、deno など）'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '整数除算・剰余の除数がリテラル定数 0 です。これは LLVM では未定義動作（ゼロによる sdiv/srem）で、予測不能な結果を生みます。実行時のゼロチェックを追加するか、関数が失敗を option として返すようにしてください。'
-  'oraub2m9': '`%s %s= %s` は未対応です: インデックス読み取りは option（範囲外では nil）を返すため、複合代入はインデックスを 2 回評価して失敗を破棄してしまいます。次のように書き換えてください（ok アームの `it` が要素スロットで、読み書き可能です）:\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   または `%s ?= %s %s %s`（失敗を伝播します。外側の関数に option の結果パラメータが必要です）\n'
+  'oraub2m9': `
+`%s %s= %s` は未対応です: インデックス読み取りは option（範囲外では nil）を返すため、複合代入はインデックスを 2 回評価して失敗を破棄してしまいます。次のように書き換えてください（ok アームの `it` が要素スロットで、読み書き可能です）:
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   または `%s ?= %s %s %s`（失敗を伝播します。外側の関数に option の結果パラメータが必要です）
+
+`
   'orjs902d': '\'switch/case/default\' は非推奨です。代わりに \'x: { 1-> ... }\' を使用してください'
   'os0j8ix4': '配列 \'%s\' の %s 要素に %s 値を代入できません%s'
   'osrb7a78': 'move スロット'
@@ -917,6 +969,7 @@ AST を梱包しました: %s
   'sz3i7626': 'win-read-pipe: (handle, max-bytes) が必要です'
   't0f6p9jl': 'ループ内のブロックの後に \'(\' を期待しましたが %s でした'
   't22pcf4p': 'embed: ファイルが見つかりません: %s（解決後: %s）'
+  't2fwnrfi': '  stat   キャッシュの場所、エントリ数、サイズ、ASTVersion を表示'
   't4jhbz5z': '関数名の後に \'=\' を期待しましたが %s でした'
   't5l89pst': `
 依存 %s が見つかりません。
@@ -924,6 +977,7 @@ AST を梱包しました: %s
 `
   't5qq2leo': 'lencap kind: %s（%s）に対する len/cap は関数 %d 内では未対応です'
   't5rup04t': 'move 元スロット v%d -> v%d'
+  't8440cno': '環境変数: NOLANG_AST_CACHE_OFF=1 でキャッシュ無効、NOLANG_AST_CACHE_DIR でディレクトリを上書き。'
   'tb2zxq0f': '\'%s.%s []T\' は許可されていません: フィールドの型は \'%s\' の型定義に属します。フィールドに格納するには \'%s.%s = ...\' と書いてください'
   'tbfsq7ph': '  no pub                       dist/<name>.ast.zip を書き出す'
   'tcpoxtfd': '型注釈 “%s” は省略できます（値から推論されます）'
@@ -945,6 +999,7 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'tfwxqucs': '`return` の後に値を書けません。Nolang は名前付き結果パラメータ（出力パラメータ）で結果を返すため、早期終了には裸の `return` を使い、関数本体で結果パラメータに代入してください'
   'tgutu5g0': '\'# %s.%s as %s\' の代わりに \'# %s.%s %s\' を使用してください'
   'tgz86gvc': 'ビルド済みバイナリの読み取り: %w'
+  'thdxbnrt': 'fmt: %s の下に Markdown ファイル（.md/.mdx）が見つかりません'
   'tho8xc47': '作成されたファイル:'
   'tjwokiw9': '配列リテラル内にカンマまたは右角括弧を期待しましたが %s でした'
   'tlwmf1le': 'Nolang では明示的な型キャスト `expr %s` は許可されていません。安全な拡幅／同幅変換には宣言形式 `name %s = expr` を使ってください'
@@ -958,12 +1013,17 @@ WASI sysroot が見つかりません。$WASI_SYSROOT を wasi-sysroot に設定
   'tsg5cbwu': 'ESM パッケージ指定子 %q に不正な文字 %q があります'
   'tt23j5su': '範囲を閉じる \']\' または \')\' を期待しましたが %s でした'
   'tt8f2dmd': 'net-recv-nb: 結果スロットがありません'
+  'ttdybn5d': 'fmt: -md と -fix は併用できません（自動修正は .no ソースのみが対象）'
   'ttlxcrgt': '範囲式内に \'[\' または \'(\' または文字列を期待しましたが %s でした'
   'u0g1w0d7': 'js 互換モジュールが見つかりません: %s'
   'u3g4qexx': 'builtin chars-new: 不正な引数型 %s です'
   'u3if6wak': '  no fmt -fix=match -w src/       不足している match の腕をその場で補う'
   'u4oybn9r': '%s は既にインストールされています（%s）。再インストールまたは更新には -u を使用してください'
   'u5qmp19f': 'option の match はすべてのブランチ（err、nil、ok）を処理する必要があります（不足: %s）'
+  'u9kq06kz': `
+合計サイズ: %d バイト
+
+`
   'ua5h1rpc': '\'as\' キャストは FFI ポインタ型（例: *byte、**byte）にのみ許可されますが %s でした'
   'uea62he5': '関数 “%s” は最大 %d 個の入力引数を受け取りますが、%d 個でした —— 出力パラメータは代入で束縛してください（例: result = %s(...)）'
   'uf368nh9': '出力 zip パス（既定: dist/<tool>.ast.zip）'
@@ -1146,6 +1206,4 @@ AST 依存 %s の同期エラー: モジュールが空です
 
 `
   'zzcfoc04': 'dist ディレクトリの作成: %w'
-  'k3r7mbqd': 'else 分岐（行単独の \'->\'）は if-group の中に書く必要があります。\'cond ->\' 分岐とこの \'->\' をまとめて { ... } で囲んでください（else を持たない単独の \'cond ->\' は囲わなくてもできます）'
-  'm7vq3xrt': 'if-group の外の単独の \'->\' else 分岐は最も近い \'cond ->\' 分岐にだけ結びつきます。上にある %d 個の \'cond ->\' 分岐は無視されます — すべてを if-group { ... } で囲んで \'->\' を本当のフォールバック分岐にしてください'
 }

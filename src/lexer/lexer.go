@@ -873,10 +873,21 @@ func (l *Lexer) scanToken() (tok Token) {
 			tok.Literal = charLits[l.ch]
 		}
 	case '.':
+		// `...` 是**單一** token（佔位陳述），必須在 `..`（範圍運算子）之前判定：
+		// 貪婪吃掉第三個點，否則 `...` 會被切成 `..` + `.`，使 `[0...count)` 這種
+		// 「範圍上界接隱式 self 成員」的連寫靜默成立——同一個 `...` 同時有兩種
+		// 語義（佔位 / 範圍+成員），讀者無法分辨。收成單 token 後，`[0...count)`
+		// 是語法錯誤，必須寫成 `[0..self.count)`。
 		if l.peekChar() == '.' {
 			l.readChar()
-			tok.Type = ELLIPSIS
-			tok.Literal = ".."
+			if l.peekChar() == '.' {
+				l.readChar()
+				tok.Type = ELLIPSIS3
+				tok.Literal = "..."
+			} else {
+				tok.Type = ELLIPSIS
+				tok.Literal = ".."
+			}
 		} else {
 			tok.Type = DOT
 			tok.Literal = charLits[l.ch]

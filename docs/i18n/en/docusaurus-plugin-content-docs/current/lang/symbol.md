@@ -55,6 +55,7 @@ return false**; it is now a compile error.
 - For lexicographic order use `str.compare(b)` (returns -1 / 0 / 1).
 
 ```nolang
+#{fmt-skip}
 'a' <= 'z'      ; true  — one-char string is implicitly a char
 ch >= 'a'       ; ch is a char, fine
 'a' > "b"       ; one-char string vs char, fine

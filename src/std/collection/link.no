@@ -15,9 +15,9 @@
 ; - link 需要額外的 next/prev 索引陣列
 ;
 ; 用法：
-;   buf [128]i64 = [0:128]
-;   nxt [128]i64 = [0:128]
-;   prv [128]i64 = [0:128]
+;   buf [128]i64
+;   nxt [128]i64
+;   prv [128]i64
 ;   l = buf.link-init(nxt, prv)
 ;   ok = buf.link-push-back(l, 10)
 ;   ok = buf.link-push-back(l, 20)

@@ -15,6 +15,7 @@ Unicode 相關功能已分散至 `char` 和 `str` 模組：
 ### uuid — UUID v4 產生與解析
 
 ```no
+#{fmt-skip}
 out = uuid.new-v4(state)                  ; 產生 UUID v4
 out-n = uuid.to-str(out)             ; 轉小寫字串（方法）
 out-n = uuid.to-str-upper(out)       ; 轉大寫字串（方法）
@@ -33,6 +34,7 @@ uuid.nil-uuid(out)                        ; 回傳 nil UUID
 ### bigint — 任意精度整數
 
 ```no
+#{fmt-skip}
 ; 型別
 bigint {
     sign i64
@@ -90,6 +92,7 @@ out = bigint.from-hex(s, sn)
 結構化錯誤型別與工具函式：
 
 ```no
+#{fmt-skip}
 ; 錯誤碼枚舉
 code {
     ok,
@@ -125,6 +128,7 @@ s = e.format()                       ; 格式化為字串
 匹配 `?t` 時 `err ->` 臂裡隱式綁定的 `it` 就是它，而不是 `str`。
 
 ```no
+#{fmt-skip}
 x = f()               ; f 返回 ?i64
 x: {
     ok -> n = it
@@ -140,22 +144,22 @@ x: {
 ### bool — 布爾型別
 
 ```no
+#{fmt-skip}
 bool.to-str() (out str)     ; true→"true", false→"false"（方法）
 ```
 
 ### enter / leave — 生命週期鉤子
 
 ```no
-
 ; 啟動時執行
-enter { 
+enter {
     enter()
-}     
+}
 
 ; 退出時執行
 leave {
     leave()
-}     
+}
 ```
 
 ### magic — 檔案類型檢測
@@ -163,6 +167,7 @@ leave {
 基於副檔名與魔數（magic bytes）判斷檔案類型，不依賴 libmagic：
 
 ```no
+#{fmt-skip}
 kind = magic.detect-type(path)                  ; 檢測檔案類型
 ; 返回類型描述字串，如 'PNG image'、'ELF executable'、'ASCII text'、'directory'、'unknown'、'data'
 ```

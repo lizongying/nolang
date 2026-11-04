@@ -9,6 +9,7 @@ sidebar_position: 3.2
 Nolang uses **named format strings** `{name[:spec]}`, referencing variables directly from scope — no positional arguments. Output goes through `io.out`/`io.err` syscalls, without depending on libc `printf`.
 
 ```no
+#{fmt-skip}
 print('x={x}')                 ; Named format, auto-appends newline (stdout)
 print('result={val}', 42, 'result={val}')  ; Multiple args: space-separated; each literal is its own template
 eprint('err {x}')              ; Named format, auto-appends newline (stderr)
@@ -62,6 +63,7 @@ The "method-form" numeric APIs are concentrated in the number module (std/number
 char is essentially i32 (a Unicode code point); all operations are provided as methods:
 
 ```no
+#{fmt-skip}
 c char = 'A'
 c.is-digit()       ; Whether it is a digit (0-9) (method)
 c.is-letter()      ; Whether it is a letter (a-z, A-Z) (method)
@@ -79,6 +81,7 @@ c.to-str()         ; Unicode -> string (UTF-8, method)
 ### str — String Operations
 
 ```no
+#{fmt-skip}
 ok = a.eq(b, n)               ; Equality comparison (method)
 dst = s.copy()                ; String copy (method)
 s.fill(val byte)              ; Fill with byte value (method)
@@ -124,6 +127,7 @@ out = ss.join(sep)            ; Join []str with separator (method)
 `num = int | float` (std/num.no). Methods on the num type live in the num module (the generic functions max/min are in math, see above):
 
 ```no
+#{fmt-skip}
 r = num.abs()                        ; Absolute value (method)
 r = num.clamp(lo, hi)                  ; Clamp to range (method)
 r = num.sign()                         ; Sign (-1/0/1, method)
@@ -134,6 +138,7 @@ r = num.sign()                         ; Sign (-1/0/1, method)
 `int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128` (std/int.no). Methods on the int type live in the int module:
 
 ```no
+#{fmt-skip}
 s = v.to-str()                       ; Integer to string (method)
 q = v.div(b)                         ; Division quotient (returns option)
 r = v.mod(b)                         ; Modulo (returns option)
@@ -144,6 +149,7 @@ r = v.mod(b)                         ; Modulo (returns option)
 `float = f32 | f64` (std/float.no). Methods on the float type live in the float module:
 
 ```no
+#{fmt-skip}
 q = v.div(b)                         ; Float division
 yes = v.is-nan()                     ; NaN check (method)
 yes = v.is-inf()                     ; Inf check (method)
@@ -156,6 +162,7 @@ yes = v.is-inf()                     ; Inf check (method)
 (Full API is in the "number — Numeric Operations (method-form API)" section above; function-form APIs are under "math".)
 
 ```no
+#{fmt-skip}
 ; Method form (number module)
 s = v.to-str()                     ; integer/float to string (each width)
 r = n.sqrt()                       ; integer square root floor(√n)
@@ -188,6 +195,7 @@ number.INF                    ; floating-point infinity
 ### byte — Byte Operations
 
 ```no
+#{fmt-skip}
 out = i64.to-bytes-be()         ; i64 -> big-endian [8]byte
 out = i64.to-bytes-le()         ; i64 -> little-endian [8]byte
 v = []byte.to-i64-be()          ; big-endian []byte -> i64 (1~8 bytes)
@@ -212,6 +220,7 @@ Length semantics (aligned with `str`):
 - Indexing / slicing / appending and other byte operations are based on `len-bytes()`; the two are equal for pure ASCII, and `len() < len-bytes()` when multi-byte UTF-8 is present
 
 ```no
+#{fmt-skip}
 t txt = 'hello'              ; Requires a type annotation
 n = t.len()                  ; Code point count (i64)
 b = t.len-bytes()            ; Byte count (i64)
@@ -235,6 +244,7 @@ r = t.compare(b txt)         ; Lexicographic comparison (-1/0/1)
 ### vec — Slice Operations
 
 ```no
+#{fmt-skip}
 v = vec.vec-create(n, val)         ; Create a slice of length n, filled with val
 ok = []t.eq(a, b, n)           ; Equality comparison
 n = []t.len()                  ; Length
@@ -256,6 +266,7 @@ arr = []t.to-arr()             ; Convert to array
 ### arr — Array Operations
 
 ```no
+#{fmt-skip}
 out = [n]t.clone()             ; Copy
 ok = [n]t.eq(b)                ; Equality comparison
 [n]t.fill(val)                  ; Fill
@@ -275,6 +286,7 @@ v = [n]t.first()               ; First element
 ### sort — Sort Constants
 
 ```no
+#{fmt-skip}
 sort.ast                         ; Ascending
 sort.desc                        ; Descending
 ```

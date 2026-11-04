@@ -7,6 +7,7 @@ sidebar_position: 3.8
 ### encoding/hex — Hexadecimal
 
 ```no
+#{fmt-skip}
 ; Encoding (defined in the byte module)
 out = data.to-hex()                  ; []byte -> uppercase hex str
 out = data.to-hex-lower()            ; []byte -> lowercase hex str
@@ -18,6 +19,7 @@ out = s.from-hex()                   ; hex str -> ?[]byte (nil=empty, err=invali
 ### encoding/base64 — Base64 (RFC 4648)
 
 ```no
+#{fmt-skip}
 BASE64-STD = 'ABC...+/'
 BASE64-URL = 'ABC...-_'
 PAD = 61  ; '='
@@ -31,6 +33,7 @@ out-n = base64.decode(s, n, table, out)   ; Base64 decoding (?i64, nil=invalid i
 ### encoding/csv — CSV Parsing (RFC 4180)
 
 ```no
+#{fmt-skip}
 fn, new-pos = csv.parse-field(s, sn, pos, field)  ; Parse a single field
 n = csv.parse-line(s, sn, fields, max)             ; Parse one line
 out-n = csv.encode-field(field, fn, out)           ; Encode field
@@ -41,6 +44,7 @@ out-n = csv.encode-field(field, fn, out)           ; Encode field
 PEM (Privacy-Enhanced Mail) format encoding/decoding, widely used for X.509 certificates, RSA/ECDSA keys, etc.:
 
 ```no
+#{fmt-skip}
 ; Constants
 PEM-LINE-LEN = 64                    ; Max Base64 characters per line
 

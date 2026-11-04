@@ -9,7 +9,8 @@ Nolang 使用 `@` 關鍵字在包的根目錄 `lib.no` 文件中聲明導出項�
 ## 語法
 
 ```no
-@ path.func [alias]
+@ path.func
+[alias]
 ```
 
 - `path` — 模塊路徑（相對於包根目錄，以 `/` 開頭，不帶 `.no` 副檔名）
@@ -52,12 +53,14 @@ hello = () {
 `path` 模塊的 `func`，效果與寫全 `<path>.<func>(...)` 完全相同。
 
 ```no
+#{fmt-skip}
 ; std/global.no —— 兩種寫法，語義相同
 @ std/err.new err      ; 導出式
 err = err.new          ; 賦值式
 ```
 
 ```no
+#{fmt-skip}
 e = err('disk full')        ; 等同 e = err.new('disk full')
 m = e.msg()                 ; 'disk full'
 ```
@@ -86,7 +89,6 @@ m = e.msg()                 ; 'disk full'
 ```no
 ; 导入別名 a（對應 package-name.utils.greet）
 # package-name.utils.greet a
-
 ; 或者直接使用函數名
 # package-name.utils.greet
 ```

@@ -13,7 +13,7 @@
 ; - arr-stack 的 pop/peek 返回 ?t option，stack 返回 (val, ok)
 ;
 ; 用法：
-;   buf [128]i64 = [0:128]
+;   buf [128]i64
 ;   s = buf.arr-stack-init()
 ;   ok = buf.arr-stack-push(s, 42)
 ;   ok = buf.arr-stack-push(s, 7)

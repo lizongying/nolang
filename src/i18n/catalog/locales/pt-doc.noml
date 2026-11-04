@@ -6975,7 +6975,7 @@ trata uma sequência de escape dentro de uma classe de caracteres
 cls-idx i64: o índice da classe
 c i64: o caractere escapado (por ex. 'd', 'w', 's')
 `
-  'rsa.rsa-bn-add': `
+  'rsa._rsa-bn-add': `
 c = a + b
 a: parcela (somente leitura, não modificada)
 an: número de limb válidos de a
@@ -6984,7 +6984,7 @@ bn: número de limb válidos de b
 c: resultado de a+b (o transporte final além do operando mais longo acrescenta um limb)
 cn: número real de limb de c (inclui o transporte, sem podar)
 `
-  'rsa.rsa-bn-cmp': `
+  'rsa._rsa-bn-cmp': `
 Compara dois inteiros grandes a e b
 Retorna cmp: 1 = a > b, 0 = a == b, -1 = a < b
 a: primeiro inteiro grande (array de limb de 32 bits, o menos significativo primeiro)
@@ -6993,7 +6993,7 @@ b: segundo inteiro grande
 bn: número de limb válidos de b participando da comparação
 cmp: 1=a>b, 0=a==b, -1=a<b (contagens de limb comparadas primeiro, então limb do mais significativo para baixo)
 `
-  'rsa.rsa-bn-div-mod': `
+  'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
 a []i64: dividendo (array de limb com o limb baixo primeiro)
 an i64: número de limb válidos no dividendo
@@ -7004,7 +7004,7 @@ r: resto (saída), rn: comprimento do resto
 qn: limb do quociente após poda (quando b=0 tanto q quanto r são todos zero e qn=rn=0)
 rn: limb do resto após poda (sempre menor que b)
 `
-  'rsa.rsa-bn-mul': `
+  'rsa._rsa-bn-mul': `
 c = a × b
 a: multiplicando
 an: número de limb válidos de a
@@ -7013,19 +7013,19 @@ bn: número de limb válidos de b
 c: resultado de a×b (no máximo an+bn limb, zeros à esquerda podados)
 cn: limb de c após poda (ao menos 1)
 `
-  'rsa.rsa-bn-shl1': `
+  'rsa._rsa-bn-shl1': `
 a = a << 1 (desloca 1 bit à esquerda no lugar)
 a: inteiro grande a deslocar (modificado no lugar; quando o bit alto transborda é escrito em a[an], então o chamador deve reservar espaço)
 an: número de limb válidos antes do deslocamento
 new-an: limb após o deslocamento (an+1 quando o limb alto original ≥ 2^31)
 `
-  'rsa.rsa-bn-shr1': `
+  'rsa._rsa-bn-shr1': `
 a = a >> 1 (desloca 1 bit à direita no lugar)
 a: inteiro grande a deslocar (modificado no lugar)
 an: número de limb válidos antes do deslocamento
 new-an: limb após deslocar e podar zeros à esquerda (ao menos 1)
 `
-  'rsa.rsa-bn-sub': `
+  'rsa._rsa-bn-sub': `
 c = a - b (requer a ≥ b)
 a: minuendo (deve ser ≥ b, caso contrário o resultado dá a volta emprestando módulo 2^32)
 an: número de limb válidos de a (determina o comprimento do laço de subtração e a alocação de saída)
@@ -7034,7 +7034,7 @@ bn: número de limb válidos de b (termos com i ≥ bn contam como 0)
 c: resultado de a-b (zeros à esquerda podados)
 cn: limb de c após poda (ao menos 1)
 `
-  'rsa.rsa-decrypt': `
+  'rsa._rsa-decrypt': `
 RSA descriptografa (m = c^d mod n)
 ct: inteiro grande de texto cifrado c (deve ser menor que mod)
 ctn: limb de ct
@@ -7045,7 +7045,7 @@ modn: limb de mod
 out: texto claro m = c^d mod n (sem desempacotamento PKCS#1)
 outn: limb de out
 `
-  'rsa.rsa-encrypt': `
+  'rsa._rsa-encrypt': `
 RSA criptografa (c = m^e mod n)
 msg: inteiro grande de texto claro m (deve ser menor que mod; sem empacotamento PKCS#1 aplicado)
 msgn: limb de msg
@@ -7055,6 +7055,19 @@ mod: módulo n
 modn: limb de mod
 out: texto cifrado c = m^e mod n
 outn: limb de out
+`
+  'rsa._rsa-modpow-step': `
+Passo único de square-and-multiply (uma função separada para que cada passo libere buffers auxiliares)
+result = result^2 mod modulus; quando exp-bit == 1, adicionalmente result = result * base mod modulus
+result: acumulador atual (a base antes do quadrado)
+rn: limb de result
+base: base da potência, multiplicada dentro só quando exp-bit=1
+bn: limb de base
+exp-bit: bit atual do expoente (1 = multiplica base neste passo, 0 = só quadrado)
+modulus: divisor para redução
+mn: limb de modulus
+new-result: (result² × base^exp-bit) mod modulus
+new-rn: limb de new-result
 `
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
@@ -7069,19 +7082,6 @@ modulus: módulo
 mn: limb de modulus (buffers de resultado são alocados neste comprimento)
 result: base^exp mod modulus (square-and-multiply por bit começando de 1)
 rn: limb de result
-`
-  'rsa.rsa-modpow-step': `
-Passo único de square-and-multiply (uma função separada para que cada passo libere buffers auxiliares)
-result = result^2 mod modulus; quando exp-bit == 1, adicionalmente result = result * base mod modulus
-result: acumulador atual (a base antes do quadrado)
-rn: limb de result
-base: base da potência, multiplicada dentro só quando exp-bit=1
-bn: limb de base
-exp-bit: bit atual do expoente (1 = multiplica base neste passo, 0 = só quadrado)
-modulus: divisor para redução
-mn: limb de modulus
-new-result: (result² × base^exp-bit) mod modulus
-new-rn: limb de new-result
 `
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════

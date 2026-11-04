@@ -78,7 +78,8 @@ const (
 	STAR_STAR // ** — used as `break` shorthand (only at statement start)
 	BANG_BANG // !! — used as `true` (expression)
 
-	ELLIPSIS // ..
+	ELLIPSIS  // ..
+	ELLIPSIS3 // ... — 佔位陳述（no-op），只允許獨佔一行
 
 	ADD_ASSIGN // +=
 	SUB_ASSIGN // -=
@@ -194,6 +195,7 @@ var tokenNames = map[TokenType]string{
 	STAR_STAR:      "STAR_STAR(**)",
 	BANG_BANG:      "BANG_BANG(!!)",
 	ELLIPSIS:       "ELLIPSIS(..)",
+	ELLIPSIS3:      "ELLIPSIS3(...)",
 
 	ADD_ASSIGN:      "ADD_ASSIGN(+=)",
 	SUB_ASSIGN:      "SUB_ASSIGN(-=)",

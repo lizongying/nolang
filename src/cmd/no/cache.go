@@ -26,26 +26,26 @@ func cacheCommand(args []string) {
 	switch sub {
 	case "stat":
 		if parser.UserASTCacheOff() {
-			fmt.Println(i18n.P("cch-off1", "AST cache: disabled (NOLANG_AST_CACHE_OFF is set)"))
+			fmt.Println(i18n.P("evesyggh", "AST cache: disabled (NOLANG_AST_CACHE_OFF is set)"))
 			return
 		}
 		st := parser.UserASTCacheStats()
-		fmt.Printf(i18n.P("cch-st-d", "AST cache directory: %s\n"), st.Dir)
-		fmt.Printf(i18n.P("cch-st-n", "Entries: %d\n"), st.Entries)
-		fmt.Printf(i18n.P("cch-st-b", "Total size: %d bytes\n"), st.Bytes)
-		fmt.Printf(i18n.P("cch-st-v", "Parser ASTVersion: %s\n"), parser.ASTVersion)
+		fmt.Printf(i18n.P("icfe5o5a", "AST cache directory: %s\n"), st.Dir)
+		fmt.Printf(i18n.P("82hkddyo", "Entries: %d\n"), st.Entries)
+		fmt.Printf(i18n.P("u9kq06kz", "Total size: %d bytes\n"), st.Bytes)
+		fmt.Printf(i18n.P("6709xe69", "Parser ASTVersion: %s\n"), parser.ASTVersion)
 	case "clear":
 		n, err := parser.UserASTCacheClear()
 		if err != nil {
-			fmt.Printf(i18n.P("cch-cl-e", "clear failed: %v\n"), err)
+			fmt.Printf(i18n.P("fftzl9dl", "clear failed: %v\n"), err)
 			return
 		}
-		fmt.Printf(i18n.P("cch-cl-ok", "Removed %d cache entries.\n"), n)
+		fmt.Printf(i18n.P("6m53s6q8", "Removed %d cache entries.\n"), n)
 	default:
-		fmt.Println(i18n.P("cch-h-1", "Usage: no cache <stat|clear>"))
-		fmt.Println(i18n.P("cch-h-2", "  stat   show cache location, entry count, size and ASTVersion"))
-		fmt.Println(i18n.P("cch-h-3", "  clear  remove all cached AST blobs (escape hatch for suspected stale entries)"))
-		fmt.Println(i18n.P("cch-h-4", "Env: NOLANG_AST_CACHE_OFF=1 disables the cache; NOLANG_AST_CACHE_DIR overrides the directory."))
-		fmt.Println(i18n.P("cch-h-5", "Note: entries are versioned — bumping ASTVersion invalidates them automatically."))
+		fmt.Println(i18n.P("ksvya88a", "Usage: no cache <stat|clear>"))
+		fmt.Println(i18n.P("t2fwnrfi", "  stat   show cache location, entry count, size and ASTVersion"))
+		fmt.Println(i18n.P("e7xfrsz0", "  clear  remove all cached AST blobs (escape hatch for suspected stale entries)"))
+		fmt.Println(i18n.P("t8440cno", "Env: NOLANG_AST_CACHE_OFF=1 disables the cache; NOLANG_AST_CACHE_DIR overrides the directory."))
+		fmt.Println(i18n.P("gskcg79t", "Note: entries are versioned — bumping ASTVersion invalidates them automatically."))
 	}
 }

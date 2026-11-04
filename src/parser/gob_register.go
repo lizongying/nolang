@@ -25,6 +25,7 @@ var gobNodeTypes = []any{
 	&LetStatement{},
 	&ReturnStatement{},
 	&ExpressionStatement{},
+	&EmptyStatement{},
 	&BlockStatement{},
 	&FunctionDefinition{},
 	&ExternStatement{},

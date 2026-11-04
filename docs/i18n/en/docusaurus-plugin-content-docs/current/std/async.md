@@ -43,6 +43,7 @@ and runs it on the underlying colored stackless coroutines. You do not hand-writ
 the `-async` suffix and you do not hand-write `run` / `awy`.
 
 ```no
+#{fmt-skip}
 worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
@@ -73,6 +74,7 @@ Rules:
 A coroutine model:
 
 ```no
+#{fmt-skip}
 ; Start an -async function as a background task, returns an opaque task handle (i8*)
 h = run f-async(args)
 

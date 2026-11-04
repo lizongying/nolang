@@ -32,6 +32,7 @@ Nolang 프로그래밍 언어 (버전 %s)
                       redundant   추론된 타입과 같은 타입 주석 제거
                       match       완전하지 않은 option 매치에 누락된 nil/err 분기 추가
       -loop-style=<s>  기본 루프 표기: prefix(기본) 또는 suffix
+      -md   Markdown 파일(.md/.mdx) 안의 Nolang 코드 블록도 서식 적용
     예:
       no fmt                      현재 디렉터리에서 서식이 필요한 파일 목록
       no fmt -w                   현재 디렉터리의 모든 .no 파일을 제자리에서 서식 지정
@@ -46,6 +47,7 @@ Nolang 프로그래밍 언어 (버전 %s)
       no fmt -fix=match -w src/       src/에 누락된 match 분기를 제자리에서 추가
       echo 'x=1' | no fmt         stdin에서 서식 지정
       no fmt -loop-style=suffix f.no  루프를 '{ } (cond)' / '{ } * N' 형식으로 서식 지정
+      no fmt --md -w docs/        docs/ 아래 모든 .md/.mdx 의 Nolang 블록 서식 적용
 
   no build [옵션] [<파일|디렉터리>]  Nolang 프로젝트 빌드
     파일/디렉터리를 주지 않고 workspace.noml이 있으면

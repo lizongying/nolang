@@ -5196,7 +5196,7 @@ c i64: 字符值（0~255）
 cls-idx i64: 类别索引
 c i64: 转义字符（如 'd' 'w' 's' 等）
 `
-  'rsa.rsa-bn-add': `
+  'rsa._rsa-bn-add': `
 c = a + b
 a: 加数（唯读，不被修改）
 an: a 的有效 limb 数
@@ -5205,7 +5205,7 @@ bn: b 的有效 limb 数
 c: a+b 的结果（超出较长操作数的最终进位会追加一个 limb）
 cn: c 的实际 limb 数（含进位，未修剪）
 `
-  'rsa.rsa-bn-cmp': `
+  'rsa._rsa-bn-cmp': `
 比较两个大数 a 和 b
 返回 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 a: 第一个大数（32-bit limb 阵列，低位在前）
@@ -5214,7 +5214,7 @@ b: 第二个大数
 bn: b 参与比较的有效 limb 数
 cmp: 1=a>b, 0=a==b, -1=a<b（先比 limb 数，再自最高位逐位比）
 `
-  'rsa.rsa-bn-div-mod': `
+  'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
 a []i64: 被除数（低位在前的 limb 数组）
 an i64: 被除数有效 limb 数
@@ -5225,7 +5225,7 @@ r: 余数（输出）, rn: 余长度
 qn: 商修剪后的 limb 数（b=0 时 q、r 全零且 qn=rn=0）
 rn: 余数修剪后的 limb 数（恒小于 b）
 `
-  'rsa.rsa-bn-mul': `
+  'rsa._rsa-bn-mul': `
 c = a × b
 a: 乘数
 an: a 的有效 limb 数
@@ -5234,19 +5234,19 @@ bn: b 的有效 limb 数
 c: a×b 的结果（最多 an+bn 个 limb，已修剪前导零）
 cn: c 修剪后的 limb 数（至少为 1）
 `
-  'rsa.rsa-bn-shl1': `
+  'rsa._rsa-bn-shl1': `
 a = a << 1（原地左移 1 位元）
 a: 被移位的大数（原地修改，最高位溢出时会写入 a[an]，呼叫端须预留空间）
 an: 移位前的有效 limb 数
 new-an: 移位后的 limb 数（原最高位 ≥ 2^31 时为 an+1）
 `
-  'rsa.rsa-bn-shr1': `
+  'rsa._rsa-bn-shr1': `
 a = a >> 1（原地右移 1 位元）
 a: 被移位的大数（原地修改）
 an: 移位前的有效 limb 数
 new-an: 移位并修剪前导零后的 limb 数（至少为 1）
 `
-  'rsa.rsa-bn-sub': `
+  'rsa._rsa-bn-sub': `
 c = a - b（需 a ≥ b）
 a: 被减数（须 ≥ b，否则结果按 2^32 借位回绕）
 an: a 的有效 limb 数（决定减法回圈长度与输出分配）
@@ -5255,7 +5255,7 @@ bn: b 的有效 limb 数（i ≥ bn 的部分视为 0）
 c: a-b 的结果（已修剪前导零）
 cn: c 修剪后的 limb 数（至少为 1）
 `
-  'rsa.rsa-decrypt': `
+  'rsa._rsa-decrypt': `
 RSA 解密（m = c^d mod n）
 ct: 密文大数 c（须小于 mod）
 ctn: ct 的 limb 数
@@ -5266,7 +5266,7 @@ modn: mod 的 limb 数
 out: 明文 m = c^d mod n（未做 PKCS#1 去填充）
 outn: out 的 limb 数
 `
-  'rsa.rsa-encrypt': `
+  'rsa._rsa-encrypt': `
 RSA 加密（c = m^e mod n）
 msg: 明文大数 m（须小于 mod，未做 PKCS#1 填充）
 msgn: msg 的 limb 数
@@ -5276,6 +5276,19 @@ mod: 模数 n
 modn: mod 的 limb 数
 out: 密文 c = m^e mod n
 outn: out 的 limb 数
+`
+  'rsa._rsa-modpow-step': `
+单步平方乘（独立函数以确保每步释放暂存缓冲区）
+result = result^2 mod modulus; 若 exp-bit == 1，再 result = result * base mod modulus
+result: 当前累乘值（平方前的底）
+rn: result 的 limb 数
+base: 模幂的底，仅在 exp-bit=1 时乘入
+bn: base 的 limb 数
+exp-bit: 指数的当前位（1=本步额外乘 base，0=仅平方）
+modulus: 取模用的除数
+mn: modulus 的 limb 数
+new-result: (result² × base^exp-bit) mod modulus
+new-rn: new-result 的 limb 数
 `
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
@@ -5290,19 +5303,6 @@ modulus: 模数
 mn: modulus 的 limb 数（结果缓冲区按此长度分配）
 result: base^exp mod modulus（从 1 开始逐位平方乘）
 rn: result 的 limb 数
-`
-  'rsa.rsa-modpow-step': `
-单步平方乘（独立函数以确保每步释放暂存缓冲区）
-result = result^2 mod modulus; 若 exp-bit == 1，再 result = result * base mod modulus
-result: 当前累乘值（平方前的底）
-rn: result 的 limb 数
-base: 模幂的底，仅在 exp-bit=1 时乘入
-bn: base 的 limb 数
-exp-bit: 指数的当前位（1=本步额外乘 base，0=仅平方）
-modulus: 取模用的除数
-mn: modulus 的 limb 数
-new-result: (result² × base^exp-bit) mod modulus
-new-rn: new-result 的 limb 数
 `
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════

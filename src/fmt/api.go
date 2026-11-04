@@ -107,6 +107,20 @@ func (f *formatter) write(s string) {
 	f.column += len(s)
 }
 
+// lastByte 回傳已寫出內容的最後一個位元組（尚無內容時回傳 0）。
+//
+// 用途：`self` 在方法體內一律簡寫成 `.`，但若前一個位元組已經是 `.`——最典型的是
+// 區間寫法的 `[0..` 之後接隱式 self 成員——直接寫 `.` 會拼出三點 `...`，而 `...`
+// 自 2026-11-04 起是單一 token 的佔位陳述，輸出因此變成語法錯誤（`TestFormatReparseClean`
+// 對 `src/std/str.no` 等 17 檔全紅）。這種位置必須退回顯式 `self`。
+func (f *formatter) lastByte() byte {
+	s := f.buf.String()
+	if s == "" {
+		return 0
+	}
+	return s[len(s)-1]
+}
+
 func (f *formatter) writef(format string, args ...any) {
 	f.buf.WriteString(fmt.Sprintf(format, args...))
 }

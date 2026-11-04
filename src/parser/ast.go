@@ -792,11 +792,41 @@ func (es *ExpressionStatement) EndPos() lexer.Position {
 	return posFromToken(es.Token)
 }
 
+// EmptyStatement 是 `...` 的語法樹節點：一條**什麼都不做**的佔位陳述。
+//
+// 用途僅限「程式碼示範 / TODO 佔位」——例如文檔裡寫 `hashmap.get = (key str) (r ?v) {`
+// 之後用 `...` 表示「這裡還有內容」，或先把函式骨架寫出來再逐步替換。它不是
+// return 的別名（歷史上 `...` 曾被當成「提前終止」，該語義已廢除），也**不產生任何
+// 程式碼**：ASTToHIR 直接丟棄（見 parser/tohir.go），所以 build 出來的二進位與
+// 整條 `...` 從未寫過完全一致。
+//
+// 語法約束：`...` 必須**獨佔一行**（行首縮排任意，行尾可接 `;` 註釋）。它不能出現在
+// 表達式位置（`x = ...`、`f(...)`、match 臂 `fail -> ...`），也不能與範圍運算子連寫
+// （`[0..self.count)` 才是合法寫法，`[0...count)` 自 `...` 收成單一 token 後是語法錯誤）。
+//
+// 為什麼要留節點而不是解析時直接丟掉：`no fmt` 由 AST 重印原始碼，節點在、`...` 就在；
+// 丟掉的話每次格式化都會把使用者的佔位符靜默刪除——那是資料遺失。
+type EmptyStatement struct {
+	Token lexer.Token
+	CommentedNode
+}
+
+func (es *EmptyStatement) statementNode()      {}
+func (es *EmptyStatement) Pos() lexer.Position { return posFromToken(es.Token) }
+func (es *EmptyStatement) EndPos() lexer.Position {
+	return posFromToken(es.Token)
+}
+
 type BlockStatement struct {
 	Token      lexer.Token    // the {
 	RBrace     lexer.Position // position of }
 	Statements []Statement
 	IsInline   bool // true = body was a single inline statement (no braces); false = block form { ... }
+	// IsWrapper：parser 为双层 `cond -> { { bare_match } }` 创建的内层包装 BlockStatement。
+	// parseBlockStatement 循环里 preserveInnerBlock=true + blockMatch 时，
+	// 手动 parseBareMatchExpr 折叠 arms 后用 BlockStatement{IsWrapper:true} 包装，
+	// 区分双层和单层的 AST。fmt 遇到 IsWrapper 时跳过大括号直接输出内部内容。
+	IsWrapper bool
 	CommentedNode
 	TrailingComments    *CommentGroup   // standalone statements before }
 	ClosingBraceComment *CommentGroup   // comment on the } line itself

@@ -44,6 +44,7 @@ lexicographic string semantics**; using them on a string is a compile error:
 For lexicographic order use `str.compare(b)`:
 
 ```no
+#{fmt-skip}
 s = 'abc'
 b = 'abd'
 c = s.compare(b)      ; -1 (s < b) / 0 (equal) / 1 (s > b)
@@ -59,6 +60,7 @@ s.compare(b) < 0      ; the correct form
 **Index**: the type of `s[i]` is **`char`** (a Unicode code point), not `byte`. For a string containing multi-byte characters, `s[i]` decodes UTF-8 forward from the start of the string and counts to the i-th code point (see the performance notes below).
 
 ```no
+#{fmt-skip}
 s = 'Hello World'
 c char = s[0]      ; the code point of 'H' (type char)
 ```
@@ -66,6 +68,7 @@ c char = s[0]      ; the code point of 'H' (type char)
 **Slicing**: `s[a..b]` returns a **view** of the underlying string; the type is still **`str`** (it shares the memory and does not copy). Slice indices are **code-point positions**, consistent with `s[i]`:
 
 ```no
+#{fmt-skip}
 sub = s[6..]       ; 'World'
 sub = s[6..11]     ; 'World'
 sub = s[0..5)      ; 'Hello' (left-closed, right-open)
@@ -74,6 +77,7 @@ sub = s[0..5)      ; 'Hello' (left-closed, right-open)
 > Slice indices are **code-point positions**, not byte offsets. If you need a byte-offset slice (for example to pair with an `s.byte(i)` walk), use `s.slice-bytes(start, end)`.
 
 ```no
+#{fmt-skip}
 ; Length
 n = s.len()          ; code point count (Unicode character count)
 n = s.count()        ; same (legacy method name, still available)
@@ -87,6 +91,7 @@ n = s.len-bytes()    ; byte length (UTF-8 byte count)
 A `char` **converts implicitly** to `str`: the code point is UTF-8 encoded into a new string. All of the following are therefore legal, with **no need** to call `char.to-str()` by hand:
 
 ```no
+#{fmt-skip}
 s = 'héllo'              ; 'h' 'é' 'l' 'l' 'o' ('é' is multi-byte)
 
 ; 1) a char from s[i] assigned straight to a str variable → implicitly a one-character string
@@ -151,6 +156,7 @@ When the compiler can **prove** that a string consists entirely of ASCII charact
 - Concatenation (`-`) where both sides are proven ASCII.
 
 ```no
+#{fmt-skip}
 ; ASCII literal → compiler proves pure ASCII, s[i] is O(1)
 name = 'hello'
 c = name[1]              ; O(1), gets byte 'e'
@@ -170,12 +176,13 @@ Prefer a faster alternative:
 
 - If you need to iterate over every character, use `for c <- s` — the preferred single O(n) forward scan, which avoids the O(n²) of repeated `s[i]`. The compiler advances by **UTF-8 code point (Unicode character)**, storing the decoded code point value into the loop variable `c` on each step; this is semantically equivalent to `for c <- s.to-chars()`:
   ```no
-  for c <- s {
+  c <- s: {
       ; c is the current code point, type char (already UTF-8 decoded, not a byte)
   }
   ```
 - If you only need byte access (e.g. encode/decode, hashing, memcmp), use the escape hatch `s.byte(i)` — it always addresses the i-th byte directly, is **always O(1)**, and does not enter the std function body:
   ```no
+  #{fmt-skip}
   b = s.byte(0)          ; get the 0-th byte, type ?byte, O(1)
   out = 0
   b: {
@@ -205,6 +212,7 @@ Prefer a faster alternative:
 ## String Methods
 
 ```no
+#{fmt-skip}
 ; Comparison
 ok = a.eq(b, n)               ; Equality comparison (method)
 c = s.compare(b)              ; Lexicographic comparison
@@ -257,6 +265,7 @@ s.fill(val byte)               ; Fill with byte value
 ## String & Number Conversion
 
 ```no
+#{fmt-skip}
 ; Number to string (method)
 s = i64.to-str()               ; i64 to string
 s = f64.to-str()               ; f64 to string
@@ -276,6 +285,7 @@ v = s.to-f64()                 ; Returns ?f64
 When assigning `s[i] = v`, LLVM codegen automatically updates the `len` field to `max(len, idx+1)` — no need to set it manually:
 
 ```no
+#{fmt-skip}
 s = ''
 s[0] = 72                      ; len automatically becomes 1
 s[1] = 105                     ; len automatically becomes 2
@@ -292,6 +302,7 @@ s = s.slice-bytes(0, 5)      ; byte truncation
 The three builtins `with-cap`, `with-len`, and `with-cap-len` pre-allocate heap memory, avoiding repeated reallocation on subsequent `push` / `s[i]=` operations:
 
 ```no
+#{fmt-skip}
 ; with-cap(cap): allocate cap capacity, len=0 (must push before indexing)
 s = with-cap(256)               ; str, len=0, cap=256
 

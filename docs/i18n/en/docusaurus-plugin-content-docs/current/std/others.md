@@ -9,6 +9,7 @@ sidebar_position: 4.4
 Simplified file type detection based on file extension and magic bytes (no libmagic dependency). Checks extension first, then magic bytes:
 
 ```no
+#{fmt-skip}
 kind = magic.detect-type('/path/to/file')    ; Returns type string
 ;   e.g. 'PNG image', 'ELF executable', 'ASCII text', 'directory', 'unknown'
 ```
@@ -24,6 +25,7 @@ Unicode-related functionality is distributed across the `char` and `str` modules
 ### uuid — UUID v4 Generation and Parsing
 
 ```no
+#{fmt-skip}
 out = uuid.new-v4(state)                  ; Generate UUID v4
 out-n = uuid.to-str(out)             ; Convert to lowercase string (method)
 out-n = uuid.to-str-upper(out)       ; Convert to uppercase string (method)
@@ -42,6 +44,7 @@ uuid.nil-uuid(out)                        ; Return nil UUID
 ### bigint — Arbitrary Precision Integer
 
 ```no
+#{fmt-skip}
 ; Type
 bigint {
     sign i64
@@ -101,6 +104,7 @@ out = bigint.from-hex(s, sn)
 Structured error type and utility functions:
 
 ```no
+#{fmt-skip}
 ; Error code enum
 code {
     ok,
@@ -137,6 +141,7 @@ This `err` struct **is** the payload of the builtin option's `err` variant
 `it` in the `err ->` arm is this struct, not a `str`.
 
 ```no
+#{fmt-skip}
 x = f()               ; f returns ?i64
 x: {
     ok -> n = it
@@ -152,22 +157,22 @@ x: {
 ### bool — Boolean Type
 
 ```no
+#{fmt-skip}
 bool.to-str() (out str)     ; true->"true", false->"false" (method)
 ```
 
 ### enter / leave — Lifecycle Hooks
 
 ```no
-
 ; Run on startup
-enter { 
+enter {
     enter()
-}     
+}
 
 ; Run on exit
 leave {
     leave()
-}     
+}
 ```
 
 ---

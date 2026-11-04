@@ -152,6 +152,13 @@ impossible d’affecter directement via un index : `%s = %s`. Une lecture d’in
   '3zh3tuv8': 'C\'est l\'oracle L2 de l\'effort d\'auto-hébergement : la sortie est'
   '430ty5x5': 'le récepteur tableau d’octets n’a pas d’emplacement'
   '45y022ur': 'net-listen : impossible de convertir l’hôte en chaîne C'
+  '46fhe9ez': `
+Markdown (.md/.mdx), uniquement avec -md : seul le contenu des blocs ```no / ```nolang
+est formaté. Les lignes de délimitation et toutes les autres sont préservées octet par octet ;
+un bloc illisible est laissé intact et signalé sur stderr, donc le formatage est toujours sûr.
+Pour taire un exemple de pseudo-code volontaire, utilisez ```no skip ou une ligne
+'; nolang-fmt:skip' dans le bloc. -md ignore -fix.
+`
   '46jwfg5y': 'type attendu après %q dans l’alias de type'
   '46qem63e': 'l’IR MIR a échoué à l’assemblage LLVM : %v : %s'
   '4bopl5am': 'Racine :'
@@ -184,6 +191,7 @@ impossible d’affecter directement via un index : `%s = %s`. Une lecture d’in
   '5cid832p': 'builtin de champ privé inconnu %s'
   '5ckkrp9f': 'noml : champ %s[%d] : un élément de dépendance doit être une chaîne, %T obtenu'
   '5eo1kvb9': 'noml : champ %s : objet attendu, %T obtenu'
+  '5i2q1afu': '  hint: les blocs ignorés restent tels quels ; marquez le pseudo-code volontaire avec \'```no skip\' ou une ligne \'; nolang-fmt:skip\''
   '5j50pfem': 'membre %q[%d] : les clés d’objet %s diffèrent de celles de %q %s ; chaque élément doit avoir la même forme'
   '5jqh5cf2': 'builtin %s : le résultat []str attendait un emplacement %%vec, %s obtenu'
   '5jsd564o': 'impossible d’affecter une valeur non-chaîne à la variable chaîne « %s »'
@@ -213,11 +221,21 @@ aucun éditeur de liens C utilisable détecté (clang/cc/gcc)
   '64bt3a50': 'Compiler des sources Nolang en un exécutable.'
   '64t1vgh6': 'vec.remove : récepteur et index requis'
   '66ybjsus': 'write-file : impossible de convertir le chemin en chaîne C'
+  '6709xe69': `
+Parser ASTVersion : %s
+
+`
   '68bn4o2m': 'le spécificateur de paquet ESM %q ne doit pas commencer ni se terminer par « / »'
+  '69wny890': '  cat api.md | no fmt -md     formater les blocs Nolang depuis stdin'
   '6a6jynsl': 'corps de boucle attendu après l’étiquette #%s, %s obtenu sans « * N » ni « * { } »'
+  '6c01vyr1': '  no fmt -md -w docs/         formater les blocs Nolang de tous les .md/.mdx sous docs/'
   '6c1nlj7d': 'surcharges de bibliothèque native en conflit : %q et %q'
   '6fgg3htw': 'argument %d de “%s” : “%s” attendu, “%s” obtenu'
   '6kryrbsq': '“%s” est défini mais jamais utilisé'
+  '6m53s6q8': `
+%d entrées de cache supprimées.
+
+`
   '6o12uzmx': 'waitpid : non pris en charge sous windows'
   '6p2o4902': 'l’actif %s dépasse la limite de taille (%d octets)'
   '6qca9xu4': 'embed : impossible de combiner avec une valeur explicite'
@@ -269,6 +287,10 @@ Erreur de création du répertoire tests : %v
   '802t452i': 'builtin %s : résultat option dans la destination %s'
   '81b2ea3o': '« ( » attendu dans la déclaration extern, %s obtenu'
   '82csl5ay': 'str.to-bool : récepteur manquant'
+  '82hkddyo': `
+Entrées : %d
+
+`
   '82j1xx80': 'argument %d manquant'
   '82l9xk55': 'l’entrée zip %q est trop grande (%d octets)'
   '83xbz15x': `
@@ -359,10 +381,12 @@ Erreur de résolution de la dernière version : %v
   'appz8ry7': 'builtin %s : %v'
   'aqrceaf2': '  no ast -annotations main.no       y compris les annotations #{...}'
   'au6g7ji7': 'erreurs de l’analyseur : %s'
+  'awc98kqh': '  no fmt -md README.md        formater les blocs Nolang d\'un fichier Markdown'
   'axj3m1pb': '« as » inattendu au début de l’expression'
   'axtpo500': 'win-find-first-file : impossible de convertir le chemin en chaîne C'
   'ayjrpinp': 'noml : DecodeInto exige un pointeur non nul, %T obtenu'
   'aywuxg5w': 'builtin %s récepteur %s : %s'
+  'aze4pgle': 'formater aussi les blocs Nolang dans les fichiers Markdown (.md/.mdx)'
   'b1narysr': 'binaire'
   'b360mu4g': 'nom de paramètre attendu, %s obtenu'
   'b3ucznjm': `
@@ -402,6 +426,7 @@ Dépendance supprimée : %s
   'cjih2jtt': '« = » attendu dans l’alias de type de fonction, %s obtenu'
   'ckaj3355': 'fonction inconnue “%s.%s” : le module “%s” n’a pas de fonction de niveau supérieur “%s”'
   'cldvfmqx': 'waitpid : pid et options requis'
+  'cn2p79sm': '%s:%d: bloc Nolang ignoré : %s'
   'cnsb9bys': 'import %s : le type %q est aussi défini par %s ; distinguez-les avec une annotation `#{name = \'...\'}` de niveau supérieur'
   'cotvjhmy': 'exec-shell : impossible de convertir la commande en chaîne C'
   'cpefnxwk': 'str-truncate : le récepteur n’a pas d’emplacement'
@@ -453,6 +478,7 @@ Erreur de synchronisation de la dépendance AST %s : %v
   'e0r5thlw': 'réécrire le résultat dans le fichier source'
   'e1i8566c': 'read-file : le type de résultat %s n’est ni un slice ni une chaîne'
   'e3xplf89': '  Un paquet déclarant compiler.emit = "js" dans package.noml est validé avec'
+  'e7xfrsz0': '  clear  supprimer tous les AST en cache (recours en cas d\'entrées suspectes)'
   'e7yptvje': 'process-exec : (prog, arg) requis'
   'e9ab330i': 'Usage : no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'spécificateurs wasm natifs en conflit : %q (de %q) et %q (de %q)'
@@ -466,13 +492,18 @@ Erreur de synchronisation de la dépendance AST %s : %v
   'eit5cjgr': 'extraction de l’archive tar.gz : %w'
   'ejbt38ik': 'emplacement de destination d’opération slice'
   'elep1kra': '  no build                  compiler le répertoire courant ou les projets de workspace.noml'
-  'em4a9wv2': 'la borne supérieure de la plage commence par `.%s` sur le self implicite, donc l’écrire directement après l’opérateur `..` produit `...%s` (ambigu : `...` est aussi l’opérateur de retour/terminaison). Nommez explicitement le récepteur et écrivez `..self.%s` (par ex. `[a..self.%s)`).'
+  'elps0exp': '`...` est une instruction de remplissage sans effet et sans valeur : elle ne peut pas figurer à une position d’expression (ligne %d) ; écrivez-la sur sa propre ligne dans un bloc, par ex. `-> {` saut de ligne `    ...` saut de ligne `}`'
+  'elps0ln0': '`...` doit occuper sa propre ligne : aucun code ne peut le précéder à la ligne %d ; placez-le sur une ligne dédiée ou supprimez-le'
+  'elps1ln1': '`...` doit occuper sa propre ligne : aucun code ne peut le suivre à la ligne %d, %s trouvé ; `...` est une instruction, le reste de la ligne doit être un commentaire `;`'
+  'elps1rng': '`...` n’est pas un opérateur de plage (ligne %d) : l’opérateur de plage est `..`, et `...` seul est l’instruction de remplissage sans effet ; ici on dirait `..` collé à un membre de self implicite, nommez donc le récepteur explicitement, par ex. `[0..self.count)`'
+  'em4a9wv2': 'La borne supérieure de la plage commence par `.%s` sur le self implicite : elle se retrouve juste après l’opérateur `..` et se lit comme `...%s` (la forme à trois points est une erreur de syntaxe : `...` est l’instruction de remplissage sans effet). Nommez le récepteur explicitement et écrivez `..self.%s` (par ex. `[a..self.%s)`).'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        backend Direct WASM avec sortie explicite'
   'en9zq76f': 'Orthographe de boucle par défaut : \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\' ; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  compiler sans vérification des bornes (performance max)'
   'es55egn6': 'Formater des fichiers source Nolang.'
   'eu5v0rj9': '  2. un répertoire existant     -> exécuter son main.no'
   'eubonf62': 'impossible d’affecter une valeur %s à la variable %s « %s » : une valeur struct doit être construite explicitement (par ex. `%s { … }` ou son constructeur) ; un entier n’est promu implicitement que vers un struct disposant d’un constructeur sans perte (comme bigint)'
+  'evesyggh': 'Cache AST : désactivé (NOLANG_AST_CACHE_OFF est défini)'
   'ew5qg77j': 'identifiant attendu dans le chemin use, %s obtenu'
   'ex8l4y2k': 'Mise à jour des dépendances...'
   'exeja3ad': 'via %s'
@@ -489,6 +520,10 @@ Paquet créé : %s
   'fd9jkb5k': 'le membre %q est un tableau vide : annotez-le avec #{type = \'[]<elem>\'}'
   'fdwcn8i8': 'la branche de match ne renvoie jamais de valeur'
   'fe0a5wt2': 'impossible de comparer la valeur option « %s » (%s) avec « %s » (%s) : déballez-la d’abord (`v ?= expr`) ou faites un match sur ok/nil/err'
+  'fftzl9dl': `
+échec du nettoyage : %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout : aucun emplacement de résultat'
   'fk1sb6ss': 'syslog : non pris en charge sous windows'
   'flfh2ueu': 'cible d’installation invalide %q : le dépôt doit être <host>/<owner>/<repo> ou <owner>/<repo>'
@@ -537,6 +572,7 @@ clang non détecté ; vérifiez que la chaîne d’outils LLVM est complètement
 `
   'gno8qk1j': '« ~match/case/default » est obsolète, utilisez « x: { motif-> ... } » à la place'
   'gr0jwheb': '« for { } » est obsolète, utilisez la boucle infinie « { } (true) » à la place'
+  'gskcg79t': 'Remarque : les entrées sont versionnées — augmenter ASTVersion les invalide automatiquement.'
   'gszz9tke': '  - main.no (fichier d\'entrée principal)'
   'gubuo5cb': 'option liée mais jamais consommée : elle n’est ni propagée (`?=`) ni déballée (`x: { ... }` / `_ = x`), l’erreur est donc silencieusement ignorée. %s'
   'gx02j37c': 'write-file : l’argument de données n’a pas d’emplacement (fonction %s, type d’argument %s)'
@@ -561,6 +597,7 @@ Erreur de changement de répertoire : %v
   'hc3a6zzw': 'classe de correction inconnue %q (pris en charge : overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': 'une branche de match vide ne peut pas déterminer de valeur (le type de l’expression comparée est inconnu)'
   'hgedm96o': 'chargement automatique du module %s : %w'
+  'hleyeurx': 'non analysable comme du Nolang'
   'hoal6bo9': 'Avec --js, contourner la chaîne LLVM et générer du JavaScript source (compatible Node.js/navigateur).'
   'hr40fh5v': 'package.noml introuvable. Exécutez « no new <name> » pour créer un paquet, ou placez-vous dans un répertoire de paquet'
   'hr4y7owq': 'getgrouplist : %v'
@@ -585,6 +622,10 @@ Erreur de création du répertoire : %v
   'ibaimz2h': 'détection de cycles : %w'
   'ibiol93t': 'Erreur : package.noml introuvable. Utilisez \'no new <name>\' pour créer un paquet, ou placez-vous dans un répertoire de paquet'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+Répertoire du cache AST : %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'interface « %s » : la méthode fusionnée « %s » a des signatures en conflit (« %s.%s », « %s.%s »)'
   'ihr1vm8m': 'arr.zero : récepteur requis'
@@ -632,6 +673,7 @@ Erreur de création du répertoire : %v
   'k2wgp5l6': 'Usage : no run [<package|dir|file>]'
   'k3envsrc': 'variable d\'environnement'
   'k3g4ofs4': 'émettre un diff coloré au lieu du résultat formaté'
+  'k3r7mbqd': 'une branche else (un \'->\' seul sur sa ligne) doit se trouver dans un groupe if ; encadrez la branche \'cond ->\' et ce \'->\' entre { ... } (un \'cond ->\' isolé sans else peut rester hors groupe)'
   'k64rvzp7': 'setfield : %s'
   'k72ohub0': 'net-send : aucun emplacement de résultat'
   'k8je3usi': '%s existe déjà et n’est pas un module ES (pas de "type": "module") ; émettez la sortie en .mjs à la place (no build --js -o out.mjs)'
@@ -646,6 +688,7 @@ Erreur de création du répertoire : %v
   'klplh4cw': '  no fmt src/                 lister les .no de src/ à formater'
   'kmm43ypb': 'résolution de %s depuis le verrou : %w'
   'krvc469y': 'vec.clear : récepteur requis'
+  'ksvya88a': 'Utilisation : no cache <stat|clear>'
   'kvp8bxoc': 'Fichier de verrouillage et sommes d\'intégrité enregistrés.'
   'kxikdkzu': 'net-accept : aucun emplacement de résultat'
   'kzomgjsg': 'instruction ~match vide'
@@ -706,6 +749,8 @@ Erreur d'écriture de utils.no : %v
   'm5fpbrwd': 'vec.reverse : récepteur requis'
   'm5klw1rq': 'la méthode “%s.%s” a %d paramètre(s), l’interface en attend %d'
   'm7egvbv0': 'l’expression entière est un option<int> par défaut et est ignorée en tant qu’instruction d’expression (non gérée). Ajoutez une annotation `#{overflow = wrap}` pour récupérer un int simple, ou propagez avec `?=`, ou rejetez explicitement avec `_ = expr`.'
+  'm7q3keu7': 'fmt: %s est un fichier Markdown ; ajoutez -md pour formater ses blocs Nolang'
+  'm7vq3xrt': 'une branche else \'->\' isolée hors d\'un groupe if ne se rattache qu\'à la branche \'cond ->\' la plus proche ; les %d branches \'cond ->\' au-dessus sont ignorées — encadrez-les toutes dans un groupe if { ... } pour que \'->\' soit une vraie branche de repli'
   'm8blb8q2': 'noml : ligne %d colonne %d : %s'
   'mbnaky32': 'Jeton d\'authentification du registre (inutilisé : envoi non implémenté)'
   'meket0n4': 'vec.clear : aucun emplacement de récepteur'
@@ -789,7 +834,14 @@ compilateur Zig non détecté
   'ol21t36r': '  no run --js --js-runtime bun main.no     idem avec bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new : %s'
   'onpn7zgb': 'le diviseur d’une division entière ou d’un modulo est la constante littérale 0, ce qui est un comportement indéfini en LLVM (sdiv/srem par zéro) et produit des résultats imprévisibles. Ajoutez une vérification de zéro à l’exécution, ou faites retourner l’échec à la fonction sous forme d’option.'
-  'oraub2m9': '`%s %s= %s` n’est pas pris en charge : une lecture d’index renvoie une option (nil hors limites), donc une affectation composée évaluerait l’index deux fois et ignorerait l’échec. Réécrivez-le ainsi (le `it` de la branche ok est l’emplacement de l’élément, lisible et modifiable) :\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   ou `%s ?= %s %s %s` (propage l’échec ; la fonction englobante doit avoir un paramètre de résultat option)'
+  'oraub2m9': `
+`%s %s= %s` n’est pas pris en charge : une lecture d’index renvoie une option (nil hors limites), donc une affectation composée évaluerait l’index deux fois et ignorerait l’échec. Réécrivez-le ainsi (le `it` de la branche ok est l’emplacement de l’élément, lisible et modifiable) :
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   ou `%s ?= %s %s %s` (propage l’échec ; la fonction englobante doit avoir un paramètre de résultat option)
+`
   'orjs902d': '« switch/case/default » est obsolète, utilisez « x: { 1-> ... } » à la place'
   'os0j8ix4': 'impossible d’affecter une valeur %s à un élément %s du tableau « %s »%s'
   'osrb7a78': 'emplacement move'
@@ -917,6 +969,7 @@ AST empaqueté : %s
   'sz3i7626': 'win-read-pipe : (handle, max-bytes) requis'
   't0f6p9jl': '« ( » attendu après le bloc dans la boucle, %s obtenu'
   't22pcf4p': 'embed : fichier introuvable : %s (résolu : %s)'
+  't2fwnrfi': '  stat   afficher l\'emplacement du cache, le nombre d\'entrées, la taille et ASTVersion'
   't4jhbz5z': '« = » attendu après le nom de fonction, %s obtenu'
   't5l89pst': `
 Dépendance %s introuvable.
@@ -924,6 +977,7 @@ Dépendance %s introuvable.
 `
   't5qq2leo': 'type lencap : len/cap non pris en charge sur %s (%s) dans la fonction %d'
   't5rup04t': 'emplacement source du move v%d -> v%d'
+  't8440cno': 'Environnement : NOLANG_AST_CACHE_OFF=1 désactive le cache ; NOLANG_AST_CACHE_DIR remplace le répertoire.'
   'tb2zxq0f': '« %s.%s []T » n’est pas autorisé : le type du champ appartient à la définition de type de « %s ». Pour stocker dans le champ, écrivez « %s.%s = ... »'
   'tbfsq7ph': '  no pub                       écrire dist/<name>.ast.zip'
   'tcpoxtfd': 'l’annotation de type “%s” peut être omise (déduite de la valeur)'
@@ -945,6 +999,7 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'tfwxqucs': '`return` ne peut pas être suivi d’une valeur ; Nolang retourne les résultats via des paramètres de résultat nommés (out-params), utilisez donc un `return` nu pour sortir plus tôt et affectez le paramètre de résultat dans le corps de la fonction'
   'tgutu5g0': 'utilisez « # %s.%s %s » au lieu de « # %s.%s as %s »'
   'tgz86gvc': 'lecture du binaire compilé : %w'
+  'thdxbnrt': 'fmt: aucun fichier Markdown (.md/.mdx) trouvé sous %s'
   'tho8xc47': 'Fichiers créés :'
   'tjwokiw9': 'virgule ou crochet fermant attendu dans le littéral de tableau, %s obtenu'
   'tlwmf1le': 'le transtypage explicite `expr %s` n\'est pas autorisé en Nolang ; utilisez la forme déclarative `name %s = expr` pour une conversion sûre (élargissement ou même largeur)'
@@ -958,12 +1013,17 @@ WASI sysroot introuvable. Définissez $WASI_SYSROOT pour pointer vers votre wasi
   'tsg5cbwu': 'caractère invalide %q dans le spécificateur de paquet ESM %q'
   'tt23j5su': '« ] » ou « ) » attendu pour fermer la plage, %s obtenu'
   'tt8f2dmd': 'net-recv-nb : aucun emplacement de résultat'
+  'ttdybn5d': 'fmt: -md ne peut pas être combiné avec -fix (les corrections automatiques ne concernent que les sources .no)'
   'ttlxcrgt': '« [ » ou « ( » ou une chaîne attendu dans l’expression de plage, %s obtenu'
   'u0g1w0d7': 'module de compatibilité js introuvable : %s'
   'u3g4qexx': 'builtin chars-new : type d’argument invalide %s'
   'u3if6wak': '  no fmt -fix=match -w src/       ajouter sur place les bras match manquants'
   'u4oybn9r': '%s est déjà installé (%s) ; utilisez -u pour réinstaller ou mettre à jour'
   'u5qmp19f': 'le match d’option doit gérer toutes les branches : err, nil, ok (manquant : %s)'
+  'u9kq06kz': `
+Taille totale : %d octets
+
+`
   'ua5h1rpc': 'la conversion « as » n’est autorisée que pour les types pointeur FFI (par ex. *byte, **byte), %s obtenu'
   'uea62he5': 'la fonction “%s” accepte au plus %d argument(s) d’entrée, mais %d ont été fournis — les paramètres de sortie doivent être liés par affectation, ex. result = %s(...)'
   'uf368nh9': 'Chemin du zip de sortie (défaut : dist/<tool>.ast.zip)'
@@ -1146,6 +1206,4 @@ Erreur de synchronisation de la dépendance AST %s : module vide
 
 `
   'zzcfoc04': 'création du répertoire dist : %w'
-  'k3r7mbqd': 'une branche else (un \'->\' seul sur sa ligne) doit se trouver dans un groupe if ; encadrez la branche \'cond ->\' et ce \'->\' entre { ... } (un \'cond ->\' isolé sans else peut rester hors groupe)'
-  'm7vq3xrt': 'une branche else \'->\' isolée hors d\'un groupe if ne se rattache qu\'à la branche \'cond ->\' la plus proche ; les %d branches \'cond ->\' au-dessus sont ignorées — encadrez-les toutes dans un groupe if { ... } pour que \'->\' soit une vraie branche de repli'
 }

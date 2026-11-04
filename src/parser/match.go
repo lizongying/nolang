@@ -432,6 +432,23 @@ func (p *Parser) parseBareMatchExpr() Expression {
 			// 若 { } 內容本身是 bare match（如 `-> { cond -> body }`），先嘗試 parseStatement
 			// 處理 inline bare match；若失敗（如 block 含 match 後接其他語句），則回退為
 			// parseBlockStatement 解析為敘述區塊。
+			// directDouble：arm body 的 { 后第一个内层实质性 token 是 LBRACE 且中间无 COMMENT。
+			// 这是「直接双层 {{」启发式——中间有注释则 preserveInnerBlock 不启用。
+			var prevPreserve bool
+			directDouble := func() bool {
+				skip := 0
+				seenComment := false
+				for {
+					t := p.look(skip)
+					if t.Type == lexer.COMMENT { seenComment = true; skip++; continue }
+					if t.Type == lexer.NEWLINE { skip++; continue }
+					return t.Type == lexer.LBRACE && !seenComment
+				}
+			}()
+			if directDouble {
+				prevPreserve = p.preserveInnerBlock
+				p.preserveInnerBlock = true
+			}
 			if p.classifyBlockAtCurrent() != blockMatch {
 				ma.IsBlockBody = true
 				// 不推送 CTX_MATCH_ARM：block body 內的 `cond -> return` 應視為 standalone if-then，
@@ -491,6 +508,9 @@ func (p *Parser) parseBareMatchExpr() Expression {
 						p.nextToken()
 					}
 				}
+			}
+			if directDouble {
+				p.preserveInnerBlock = prevPreserve
 			}
 		} else if p.currentToken.Type == lexer.NEWLINE {
 			// Block form (newline-separated statements, no braces)

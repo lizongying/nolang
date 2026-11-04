@@ -87,7 +87,10 @@ cond -> {
     print('X')
     return
 }
+```
 
+```no
+#{fmt-skip}
 ; ❌ 反例：用 ; 当语句分隔符 —— 块永不闭合，return 被吞
 ; cond -> { print('X'); return }
 ```
@@ -130,6 +133,7 @@ catch-all `->` 用 `it` 会编译错误（含义不唯一）。`it` 仅在 match
 **`self` / `super`**：接口方法体内，`self` 指接收者；`super.method()` 调用父接口实现（见 §3.8）。
 
 ```no
+#{fmt-skip}
 ; 区间迭代 + 条件循环 + match
 i <- [0..5): {
     print(i)
@@ -177,6 +181,7 @@ val: {
 `int` / `float` / `num` / `string` 都是 std 用此语法定义的普通代码，**不是关键字**。
 
 ```no
+#{fmt-skip}
 int    = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 string = str | txt
 bytes  = []byte          ; 单类型别名（newtype 语义：别名与底层类型互不相通）
@@ -211,7 +216,10 @@ Nolang 函数是 **read-only input / writable output** 模型：`name = (inputs)
 add = (a i64, b i64) (result i64) {
     result = a + b
 }
-parse-line = (s str, max-fields i64 = 1024) (fields []str) { ... }
+
+parse-line = (s str, max-fields i64 = 1024) (fields []str) {
+}
+
 user.greet = () {
     print('Hello, ' - .name)
 }
@@ -220,6 +228,7 @@ user.greet = () {
 **Option 错误传播 vs 就地捕获**：
 
 ```no
+#{fmt-skip}
 ; ?= 向上抛：函数须有 ?T 结果参数，失败时设结果并提前 return
 process-file = (path str) (result ?str) {
     f ?= open(path)            ; 失败 → result = f; return
@@ -247,6 +256,9 @@ handle = (b i64, c i64, d i64) (r i64) {
 - **遍历**（逐个取元素，**不是循环**）：区间 `i <- [a..b]: { }`，括号有 `[a..b]` / `[a..b)` /
   `(a..b]` / `(a..b)` 四种组合、端点可省略为无界，`start > end` 时自动递减；容器 `i <- xs: { }`
   支持数组 / 字符串（逐码点，得到 `char`）/ vec。区间遍历与容器遍历都只是遍历，不能与上面的循环构造混用。
+- **占位陈述 `...`**：合法但**什么都不做**，`build` 时整条丢弃（产物与没写这行完全相同）。只能
+  **独占一行**（行尾可跟 `;` 注释），用于骨架 / `TODO` / 文档演示。它**不是** `return` 别名，也
+  **不是**范围运算符——`fail -> ...`、`x = ...`、`[0...n)` 一律语法错误；范围写 `..`，空函数体写 `{ }`。
 
 ### 3.7 运算符与惯用法
 
@@ -259,6 +271,7 @@ handle = (b i64, c i64, d i64) (r i64) {
 ### 3.8 接口
 
 ```no
+#{fmt-skip}
 json {                       ; 接口定义（方法签名，或合并父接口名）
     to-json()
 }
@@ -281,6 +294,7 @@ user.to-json = () (s str) {
 **同行的行首前缀写法（`#{...} target`）是编译错误**（对所有注解目标一致）。
 
 ```no
+#{fmt-skip}
 #{overflow=wrap}             ; 整数溢出策略（wrap / trap / 默认）；只作用于下一陈述，须独占一行
 digits = digits + 1
 
@@ -300,6 +314,7 @@ holder { inl pt #{inline=true}  out pt #{inline=false} }
 ### 3.10 导入
 
 ```no
+#{fmt-skip}
 # std/math.add              ; std 模块
 # github.com/utils/math.add ; 远程模块
 # /utils/math.add          ; 本地模块（以 / 开头）
@@ -369,6 +384,7 @@ holder { inl pt #{inline=true}  out pt #{inline=false} }
 - **文件名（含目录名）用连字符 `-`**，不用下划线 `_`（如 `string-helper.no`）。
 
 ```no
+#{fmt-skip}
 ; ✅ 正例
 NO-LANG = 'nolang'           ; 全局常量，大写
 MAX-SIZE = 1024
@@ -380,7 +396,10 @@ user {                      ; 结构体名小写
 }
 ; 局部变量（函数内）小写、无 _ 前缀
 ;   x = 10 ; foo-bar = 42
+```
 
+```no
+#{fmt-skip}
 ; ❌ 反例
 x = 10                       ; 全局不能小写 → 错误
 foo-bar = 42                 ; 全局不能小写 → 错误
@@ -393,13 +412,18 @@ StringHelper.no              ; 文件名用 _ 而非 -
 函数文档注释须含完整参数名与类型、返回名与类型；模块顶部 API 摘要同样用完整签名。
 
 ```no
+#{fmt-skip}
 ; ❌ 缺类型、缺返回名
 ; sha1(data) (hash)
+```
+
+```no
 ; ✅ 完整签名
 ; sha1(data []byte) (hash [20]byte) — full hash
 ; data []byte: input byte array
 ; returns hash [20]byte: 20-byte hash value
-sha1 = (data []byte) (hash [20]byte) { ... }
+sha1 = (data []byte) (hash [20]byte) {
+}
 ```
 
 ### 5.3 格式化
@@ -444,6 +468,10 @@ Nolang 用 deferred move + 作用域退出自动销毁。写 `free` / 手动 `de
 ; ✅ 正例：离开作用域自动销毁
 buf = with-cap(64)
 keep(buf)
+```
+
+```no
+#{fmt-skip}
 ; ❌ 反例：手写 free
 ; free(buf)
 ```
@@ -453,6 +481,7 @@ keep(buf)
 编译通过但运行错乱**。每个臂的绑定变量一律加唯一后缀。
 
 ```no
+#{fmt-skip}
 ; 枚举声明：state { a(v i64), b(s str) }；类型写在变体声明里，
 ; 臂上的绑定只写名字（写 `a(tn i64)` 是语法错误：expected comma or right parenthesis）
 ; ❌ 反例：两臂都用 tn（一为 i64、一为 str）→ 静默串型
@@ -461,10 +490,15 @@ st: {
     b(tn) -> keep-str(tn)
     -> r = 0
 }
+```
+
+```no
 ; ✅ 正例：加唯一后缀
 st: {
     a(tni) -> keep(tni)
+
     b(tns) -> keep-str(tns)
+
     -> r = 0
 }
 ```
@@ -477,7 +511,9 @@ st: {
 res ?i64 = compute()
 res: {
     ok -> keep(it)
+
     nil -> r = 0
+
     err -> log.error(it.msg())
 }
 ```
@@ -489,6 +525,10 @@ res: {
 ; ✅ 正例
 #{overflow=wrap}
 digits = digits + 1
+```
+
+```no
+#{fmt-skip}
 ; ❌ 反例（误以为整函数生效 / 与语句同行 / 行首前缀）
 ; #{overflow=wrap} digits = digits + 1
 ; #{overflow=wrap} digits = digits + 1   ; 前缀写法 → 编译错误
@@ -506,10 +546,15 @@ digits = digits + 1
 结果参数自动初始化为 nil（实测空函数体 `q = () (result ?i64) { }` 返回 nil），**无需写 `result = nil` 样板**（见 §3.11「返回值延迟零值」）。
 
 ```no
+#{fmt-skip}
 ; ✅ 正例
 process = (path str) (result ?str) {
     f ?= open(path)            ; 失败 → result = f; return
 }
+```
+
+```no
+#{fmt-skip}
 ; ❌ 反例：在无 ?T 结果参数的函数里用 ?=
 ; g = (x i64) { y ?= might-fail(x) }
 ```

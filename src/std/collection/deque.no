@@ -6,7 +6,7 @@
 ;
 ; 用法：
 ;   use std/deque
-;   buf [128]i64 = [0:128]
+;   buf [128]i64
 ;   d = deque { buf: buf, cap: 128, head: 0, tail: 0 }
 ;   d.push-back(42)
 ;   d.push-back(7)

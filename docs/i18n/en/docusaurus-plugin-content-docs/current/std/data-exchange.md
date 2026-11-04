@@ -9,6 +9,7 @@ sidebar_position: 4.1
 `json` stores a JSON tree in a **heap-allocated node pool** (`json-pool`), supporting nested arrays/objects, string/number/bool/null scalars, escape sequences and exponent-format numbers. The pool is built from dynamic `[]vec` buffers, so there is **no fixed capacity cap** — total node count and children-per-node are bounded only by available memory. The high-level `json` struct wraps the pool plus a root index; its `pool` field is annotated `#{inline=false}` (a pointer field), which lets `json` be safely returned and copied by value.
 
 ```no
+#{fmt-skip}
 ; Parse: returns ?json (ok = value, err = failure with a specific reason)
 j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
 j: {
@@ -90,6 +91,7 @@ The document limits are 4 keys, 2 ordinary tables, and 2 array-of-tables; keys a
 `yaml` keeps a YAML 1.2 core-schema document tree in a node pool (`yaml-pool`). It supports block mappings, block sequences, flow collections (`[...]` / `{...}`), single-quoted / double-quoted / plain scalars, block scalars (`|` / `>` with `-` / `+` chomping), comments, document markers (`---` / `...`) and multi-document streams, anchors (`&`) and aliases (`*`), merge keys `<<`, explicit keys (`? k`), core-schema type inference (null / bool / int / float / `.inf` / `.nan`), dotted-path lookup, and JSON / YAML serialization.
 
 ```no
+#{fmt-skip}
 doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
 doc: {
     nil -> print('nil')

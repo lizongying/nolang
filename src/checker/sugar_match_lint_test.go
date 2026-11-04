@@ -94,13 +94,13 @@ f = (v ?point) () {
 	}
 }
 
-// range_ellipsis：[0...count)（隱式 self 上界）在 match 臂內。
+// range_ellipsis：[0.. .count)（隱式 self 上界）在 match 臂內。
 func TestSugarMatchLintRangeEllipsis(t *testing.T) {
 	src := `jar { count i64 }
 jar.set = (v ?i64) () {
     v: {
         ok(x) -> {
-            i <- [0...count): {
+            i <- [0.. .count): {
                 i = i
             }
         }

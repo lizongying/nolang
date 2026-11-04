@@ -134,6 +134,11 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 			// nil expression = bare { from condition: { body } syntax — skip silently
 			emitted = false
 		}
+	case *parser.EmptyStatement:
+		// `...` 佔位陳述原樣印回。它在 AST 裡有節點、在 HIR 裡被丟棄（不產生
+		// 任何程式碼），fmt 兩邊都不能少：少了這個 case，每次 `no fmt` 都會把
+		// 使用者的佔位符靜默刪掉。
+		f.write("...")
 	case *parser.FunctionDefinition:
 		f.formatFunctionDefinition(s)
 	case *parser.ForStatement:
@@ -755,6 +760,20 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 }
 
 func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
+	// IsWrapper：parser 為雙層 `cond -> { { bare_match } }` 造的人工 BlockStatement
+	// （見 parser/ast.go BlockStatement.IsWrapper）。它**沒有對應的源碼大括號**——源碼
+	// 裡那一層是內層 short-circuit chain 自己的 `{}`，由 chain 節點負責印出。
+	// 若照常印出大括號，每次 `no fmt` 都會多疊一層 `{ }`（非冪等），且會讓 arm 的
+	// 隸屬關係失真。故這裡直接輸出內部陳述（不換行、不改縮排，父層已就位）。
+	if s.IsWrapper {
+		for i, stmt := range s.Statements {
+			if i > 0 {
+				f.newline()
+			}
+			f.formatStatement(stmt)
+		}
+		return
+	}
 	f.write("{")
 	// Output opening brace comment on the same line as {
 	if obc := f.obcOf(s); obc != nil && len(obc.List) > 0 {

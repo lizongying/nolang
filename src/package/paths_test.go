@@ -53,3 +53,36 @@ func containsSubstr(s, sub string) bool {
 	}
 	return false
 }
+
+// ValidateMarkdownDirName 只檢查目錄段，且放行隱藏目錄（`.agents` 等工具鏈約定名）；
+// 檔名本身不受源碼命名規範約束（README.md / CHANGELOG.md 是慣例）。
+func TestValidateMarkdownDirName(t *testing.T) {
+	valid := []string{
+		"README.md",
+		"docs/README.md",
+		"docs/i18n/en/docusaurus-plugin-content-docs/current/lang/syntax.md",
+		".agents/skills/nolang-syntax/SKILL.md", // 隱藏目錄放行
+		".github/workflows/build.md",
+		"docs/index.mdx",
+	}
+	for _, p := range valid {
+		if err := ValidateMarkdownDirName(p); err != nil {
+			t.Errorf("expected %q to be valid, got error: %v", p, err)
+		}
+	}
+
+	invalid := map[string]string{
+		"docs/bad_name/syntax.md": "bad_name", // 目錄段含底線
+		"docs/Foo/x.md":           "Foo",
+	}
+	for p, want := range invalid {
+		err := ValidateMarkdownDirName(p)
+		if err == nil {
+			t.Errorf("expected %q to be invalid, got nil", p)
+			continue
+		}
+		if !containsSubstr(err.Error(), want) {
+			t.Errorf("error for %q should mention %q, got: %v", p, want, err)
+		}
+	}
+}

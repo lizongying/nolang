@@ -7008,7 +7008,7 @@ cls-idx i64: クラスのインデックス
 c i64: エスケープされた文字（例: 'd', 'w', 's'）
 
 `
-  'rsa.rsa-bn-add': `
+  'rsa._rsa-bn-add': `
 c = a + b
 a: 加数（読み取り専用、変更されません）
 an: a の有効 limb 数
@@ -7017,7 +7017,7 @@ bn: b の有効 limb 数
 c: a+b の結果（長いオペランドを超えた最終桁上げは limb を 1 つ追加）
 cn: c の実際の limb 数（桁上げを含む、未除去）
 `
-  'rsa.rsa-bn-cmp': `
+  'rsa._rsa-bn-cmp': `
 2 つの多倍長整数 a と b を比較
 返り値 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 a: 第1の多倍長整数（32-bit limb 配列、下位が先）
@@ -7026,7 +7026,7 @@ b: 第2の多倍長整数
 bn: b が比較に参加する有効 limb 数
 cmp: 1=a>b, 0=a==b, -1=a<b（まず limb 数を比較、次に最上位から各ビット比較）
 `
-  'rsa.rsa-bn-div-mod': `
+  'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
 a: 被除数, an: 長さ
 b: 除数, bn: 長さ
@@ -7035,7 +7035,7 @@ r: 余り（出力）, rn: 余りの長さ
 qn: 除去後の商の limb 数（b=0 のとき q、r はすべてゼロで qn=rn=0）
 rn: 除去後の余りの limb 数（常に b より小さい）
 `
-  'rsa.rsa-bn-mul': `
+  'rsa._rsa-bn-mul': `
 c = a × b
 a: 乗数
 an: a の有効 limb 数
@@ -7044,19 +7044,19 @@ bn: b の有効 limb 数
 c: a×b の結果（最大 an+bn 個の limb、先頭ゼロは除去済み）
 cn: 除去後の c の limb 数（最低 1）
 `
-  'rsa.rsa-bn-shl1': `
+  'rsa._rsa-bn-shl1': `
 a = a << 1（インプレス左1ビットシフト）
 a: シフト対象の多倍長整数（インプレス修正。最上位がオーバーフローすると a[an] に書き込むため、呼び出し側は空きを確保する必要あり）
 an: シフト前の有効 limb 数
 new-an: シフト後の limb 数（元の最上位 ≥ 2^31 なら an+1）
 `
-  'rsa.rsa-bn-shr1': `
+  'rsa._rsa-bn-shr1': `
 a = a >> 1（インプレス右1ビットシフト）
 a: シフト対象の多倍長整数（インプレス修正）
 an: シフト前の有効 limb 数
 new-an: シフトして先頭ゼロを除去後の limb 数（最低 1）
 `
-  'rsa.rsa-bn-sub': `
+  'rsa._rsa-bn-sub': `
 c = a - b（a ≥ b が必要）
 a: 被減数（b 以上が必要。そうでないと結果は 2^32 で借用ラップアラウンド）
 an: a の有効 limb 数（減算ループ長と出力確保を決めます）
@@ -7065,7 +7065,7 @@ bn: b の有効 limb 数（i ≥ bn の部分は 0 とみなす）
 c: a-b の結果（先頭ゼロ除去済み）
 cn: 除去後の c の limb 数（最低 1）
 `
-  'rsa.rsa-decrypt': `
+  'rsa._rsa-decrypt': `
 RSA 復号（m = c^d mod n）
 ct: 暗号文の多倍長整数 c（mod より小さい必要）
 ctn: ct の limb 数
@@ -7076,7 +7076,7 @@ modn: mod の limb 数
 out: 平文 m = c^d mod n（PKCS#1 非パディング解除は未実施）
 outn: out の limb 数
 `
-  'rsa.rsa-encrypt': `
+  'rsa._rsa-encrypt': `
 RSA 暗号化（c = m^e mod n）
 msg: 平文の多倍長整数 m（mod より小さい必要、PKCS#1 パディング未実施）
 msgn: msg の limb 数
@@ -7086,6 +7086,19 @@ mod: 法 n
 modn: mod の limb 数
 out: 暗号文 c = m^e mod n
 outn: out の limb 数
+`
+  'rsa._rsa-modpow-step': `
+1 ステップの平方乗（各ステップで一時バッファを解放するための独立関数）
+result = result^2 mod modulus; exp-bit == 1 なら更に result = result * base mod modulus
+result: 現在の累乗値（平方前の底）
+rn: result の limb 数
+base: 法冪の底。exp-bit=1 のときのみ乗じる
+bn: base の limb 数
+exp-bit: 指数の現在のビット（1=このステップで base を余分に乗じる、0=平方のみ）
+modulus: modulo 用の除数
+mn: modulus の limb 数
+new-result: (result² × base^exp-bit) mod modulus
+new-rn: new-result の limb 数
 `
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
@@ -7100,19 +7113,6 @@ modulus: 法
 mn: modulus の limb 数（結果バッファはこの長さで確保）
 result: base^exp mod modulus（1 から始め各ビットで平方乗）
 rn: result の limb 数
-`
-  'rsa.rsa-modpow-step': `
-1 ステップの平方乗（各ステップで一時バッファを解放するための独立関数）
-result = result^2 mod modulus; exp-bit == 1 なら更に result = result * base mod modulus
-result: 現在の累乗値（平方前の底）
-rn: result の limb 数
-base: 法冪の底。exp-bit=1 のときのみ乗じる
-bn: base の limb 数
-exp-bit: 指数の現在のビット（1=このステップで base を余分に乗じる、0=平方のみ）
-modulus: modulo 用の除数
-mn: modulus の limb 数
-new-result: (result² × base^exp-bit) mod modulus
-new-rn: new-result の limb 数
 `
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════

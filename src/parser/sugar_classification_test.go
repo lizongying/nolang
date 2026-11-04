@@ -99,6 +99,7 @@ var baseASTTypes = []string{
 	"ConditionalExpression",
 	"ContinueStatement",
 	"DotExpression",
+	"EmptyStatement",
 	"EnumDefinition",
 	"ExportStatement",
 	"ExpressionStatement",

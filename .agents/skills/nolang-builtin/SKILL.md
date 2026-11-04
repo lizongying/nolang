@@ -11,7 +11,7 @@ Nolang 的内建函数（builtin）是由编译器直接生成 LLVM IR 的函数
 
 ### 1. Builtin 不是标准库 .no 文件中的函数
 
-`fs.read-file`、`os.get-env`、`os.now` 等函数在标准库 `.no` 文件中**以注释形式存在**（如 `fs.no` 中 `; read-file = (p str) (content []byte) { ... }`），仅作为文档说明。它们真正的定义在 `src/builtin/` 下的 Go 文件中注册。
+`fs.read-file`、`os.get-env`、`os.now` 等函数在标准库 `.no` 文件中**以注释形式存在**（如 `fs.no` 中 `; read-file = (p str) (content []byte) { }`），仅作为文档说明。它们真正的定义在 `src/builtin/` 下的 Go 文件中注册。
 
 ### 2. 注册位置
 
@@ -49,6 +49,7 @@ src/builtin/
 非字面量参数（变量、表达式）按普通可变参数处理。
 
 ```no
+#{fmt-skip}
 val = 42
 print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
 tmpl = '{val}'
@@ -103,9 +104,10 @@ BuiltinMethod{
 1. **內建函式樁**（`#{buildin}` 在函式定義前）：
 
    ```no
-   ; read-file = (p str) (content ?str) { ... }
+   ; read-file = (p str) (content ?str) { }
    #{buildin}
-   read-file = (p str) (content ?str) { }
+   read-file = (p str) (content ?str) {
+   }
    ```
 
    解析器在 `parser/annotation.go` 的 `attachAnnotations` 中把 `FunctionDefinition.BuiltinStub`
@@ -186,7 +188,7 @@ func FindBuiltinMethod(name string) *BuiltinMethod {
 2. 如果是 `.no` 文件中的函数 → 改写为直接函数调用 `Identifier{fnName}`
 3. 如果不是 → 保持 DotExpression，由 codegen 查 builtin
 
-例如：`fs.read-str` 在 `fs.no` 中有实际定义（`read-str = (p str) (content ?str) { ... }`），所以 `fs.read-str()` 会改写为 `read-str()` 直接调用。而 `fs.read-file` 在 `fs.no` 中只有注释，没有实际定义，所以保持 `fs.read-file` 的 DotExpression 形式，由 codegen 查 builtin。
+例如：`fs.read-str` 在 `fs.no` 中有实际定义（`read-str = (p str) (content ?str) { }`），所以 `fs.read-str()` 会改写为 `read-str()` 直接调用。而 `fs.read-file` 在 `fs.no` 中只有注释，没有实际定义，所以保持 `fs.read-file` 的 DotExpression 形式，由 codegen 查 builtin。
 
 ### ⚠️ 同名遮蔽陷阱：一个裸名两条注册
 
@@ -232,6 +234,7 @@ grep -r 'MethodName.*"read-file"' src/builtin/
 
 2. 在对应的标准库 `.no` 文件中添加注释文档：
    ```no
+   #{fmt-skip}
    ; build-in (ForwardFunc: my-builtin)
    ; my-builtin: 我的内建函数
    ; p: 参数说明

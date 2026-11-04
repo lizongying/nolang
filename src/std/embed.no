@@ -38,7 +38,7 @@ embed {
 embed.read = (path str) (data ?[]byte) {
     data = nil
     path-len = path.len()
-    i <- [0...count): {
+    i <- [0..self.count): {
         p-start = .pathStarts[i]
 
         p-len = .pathLens[i]
@@ -76,7 +76,7 @@ embed.read = (path str) (data ?[]byte) {
 ; [exists](#embed.exists)
 embed.exists = (path str) (yes bool) {
     path-len = path.len()
-    i <- [0...count): {
+    i <- [0..self.count): {
         p-start = .pathStarts[i]
 
         p-len = .pathLens[i]

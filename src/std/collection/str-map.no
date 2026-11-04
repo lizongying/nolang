@@ -173,7 +173,7 @@ str-map.remove = (key str) (removed bool) {
 ; 清空
 ; [clear](#str-map.str-map.clear)
 str-map.clear = () {
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -202,7 +202,7 @@ str-map.is-empty = () (empty bool) {
 ; v: 該佔用條目對應的值
 ; [for-each](#str-map.str-map.for-each)
 str-map.for-each = () (k str, v str) {
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] == 1 -> {
             k = .keys[i]
 
@@ -218,7 +218,7 @@ str-map.for-each = () (k str, v str) {
 str-map.to-str = () (out str) {
     out = '{'
     first = true
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] == 1 -> {
             {
                 first -> {

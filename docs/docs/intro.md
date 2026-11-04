@@ -27,7 +27,7 @@ Nolang 是一門實驗性的系統編程語言：內存安全無 GC、語義符�
 print('Hello, Nolang!')
 
 ; 變量聲明
-i64
+count i64
 
 ; 函數定義
 add = (a i64, b i64) (result i64) {
@@ -43,7 +43,7 @@ user {
     age i64
 }
 
-u = user { 
+u = user {
     name: 'Alice'
     age: 30
 }

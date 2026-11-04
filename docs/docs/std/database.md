@@ -9,6 +9,7 @@ sidebar_position: 3.7
 定義資料庫連線、查詢、預編譯陳述式的標準介面，由具體驅動實現：
 
 ```no
+#{fmt-skip}
 ; 執行結果
 result {
     last-id i64

@@ -47,12 +47,22 @@ math.PI
 ```no
 ; ✅ Correct: concise function names, no module prefix
 ; tail.no
-tail = () { ... }              ; entry function uses the module name directly
-atoi = (s str) (v i64) { ... } ; helper functions use short names
+; entry function uses the module name directly
+tail = () {
+    ...
+}
 
+; helper functions use short names
+atoi = (s str) (v i64) {
+    ...
+}
+```
+
+```no
+#{fmt-skip}
 ; ❌ Avoid: redundantly prefixing function names with the module name
-; tail-run = () { ... }
-; tail-atoi = (s str) (v i64) { ... }
+; tail-run = () { }
+; tail-atoi = (s str) (v i64) { }
 ```
 
 Keep the same convention when importing across modules:
@@ -61,7 +71,10 @@ Keep the same convention when importing across modules:
 ; ✅ Concise and intuitive
 # /src/tail.tail
 # /src/mktemp.mktemp
+```
 
+```no
+#{fmt-skip}
 ; ❌ Redundant
 ; # /src/tail.tail-run
 ; # /src/mktemp.mktemp-run
@@ -98,6 +111,7 @@ Nolang uses **named format strings** with `{name[:spec]}` syntax, referencing va
 **With multiple arguments, each string literal is a template — not a C-style format string.** In `print('result={val}', 42, 'result={val}')`, every string literal is a template **in its own right**: its `{val}` is resolved from the scope at the **call site**, independently of the other arguments in the same call. A literal **never** describes or consumes the following arguments — it is not `printf('%d', 42)`-style substitution. Non-literal arguments (variables, expressions) are handled as ordinary variadic arguments, separated by spaces, with a single trailing newline for the whole call.
 
 ```no
+#{fmt-skip}
 val = 42
 print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
 tmpl = '{val}'
@@ -115,6 +129,7 @@ print('a={val}', val)                      ; a=42 42
 > `io.out`/`io.err` are low-level commands that output **without a newline**. Since module calls must include the module prefix, `io.err` explicitly carries the module prefix and will not conflict with the Option constructor `err()`; even if names overlap, the module prefix disambiguates.
 
 ```no
+#{fmt-skip}
 ; Capacity/length constructors (no prefix)
 s str = with-cap(256)            ; Pre-allocate 256 bytes for str
 v []i64 = with-cap(100)          ; Pre-allocate 100 elements for slice
@@ -158,6 +173,7 @@ The `spec` in `{name[:spec]}` supports the following fields (fixed order, all op
 - `type` — `d`(int), `x`/`X`(hex), `o`(octal), `b`(binary), `c`(char), `f`(fixed), `e`/`E`(scientific), `g`/`G`(general), `s`(string, default), `t`(type name, resolved at compile time), `v`(literal value: strings wrapped in single quotes, vec calls to-str)
 
 ```no
+#{fmt-skip}
 x i64 = 42
 u u64 = 255
 pi f64 = 3.14159
@@ -180,6 +196,7 @@ print('{s:v}')              ; 'hello' (string wrapped in single quotes)
 Functions, constants, and methods defined within the same `.no` file can be used directly without a prefix.
 
 ```no
+#{fmt-skip}
 ; In sha256.no:
 sha256(data)              ; sha256 is defined in this file
 HMAC-BLOCK-SIZE           ; Constant defined in this file
@@ -190,6 +207,7 @@ HMAC-BLOCK-SIZE           ; Constant defined in this file
 Methods of built-in types (`str`, `i64`, `vec`, `arr`, `byte`, `char`, `bool`, etc.) do not require a prefix. Methods are built into the type and resolved through the receiver type.
 
 ```no
+#{fmt-skip}
 'hello'.starts-with('he')  ; str method
 n.to-str()                 ; int method
 v.push(42)                 ; vec method
@@ -202,6 +220,7 @@ c.is-digit()               ; char method
 Calling methods on an already-created struct instance does not require a module prefix. Methods are resolved through the instance's type — the compiler automatically finds the corresponding `struct.method` definition.
 
 ```no
+#{fmt-skip}
 f = fs.open(path, opts)    ; fs.open is a module-level function, prefix required
 f.read(buf, n)             ; file.read is a struct method, no prefix needed
 f.close()                  ; file.close is a struct method, no prefix needed
@@ -232,8 +251,8 @@ In `fs.fil()`, `fs` is the module's ShortName, and `fil` is the module-level fun
 | `p.start(...)` | Instance variable | Struct method | `xxx` is a variable of type `process`, `yyy` is a method defined as `process.start = ...` |
 
 **Definition differences**:
-- Module-level functions are defined **without prefix**: inside the module, write `cmd = (program str, ...) { ... }`
-- Struct methods are defined **with `struct.` prefix**: `process.start = (program str, ...) { ... }`
+- Module-level functions are defined **without prefix**: inside the module, write `cmd = (program str, ...) { }`
+- Struct methods are defined **with `struct.` prefix**: `process.start = (program str, ...) { }`
 
 **Call differences**:
 - Module-level functions are called externally as `ModuleName.function()`: `process.cmd(...)`
@@ -250,11 +269,14 @@ When referencing types (structs, interfaces, enums, etc.) defined in **other mod
 When a struct implements an interface defined in another module, the interface name must carry the module prefix:
 
 ```no
+#{fmt-skip}
 ; ❌ Wrong: db, rows, stmt are interfaces defined by the sql module; the prefix cannot be omitted
 db-mysql db {
     fd i64
 }
+```
 
+```no
 ; ✅ Correct: use sql.db, sql.rows, sql.stmt
 db-mysql sql.db {
     fd i64
@@ -304,7 +326,9 @@ result {
 
 ; enter/leave are built-in interfaces, no prefix needed
 ; result is a struct defined in the same file, no prefix needed
-db enter, leave {
+db {
+    enter
+    leave
     close() (ok bool)
     exec(sql str) (r result)
 }

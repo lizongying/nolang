@@ -32,6 +32,7 @@ Globale Optionen:
                       redundant   Typannotationen entfernen, die dem abgeleiteten Typ entsprechen
                       match       fehlende nil/err-Zweige zu unvollständigen option-Matches hinzufügen
       -loop-style=<s>  Standard-Schreibweise für Schleifen: prefix (Standard) oder suffix
+      -md   auch Nolang-Codeblöcke in Markdown-Dateien (.md/.mdx) formatieren
     Beispiele:
       no fmt                      Dateien im aktuellen Verzeichnis auflisten, die formatiert werden müssen
       no fmt -w                   alle .no-Dateien im aktuellen Verzeichnis in-place formatieren
@@ -46,6 +47,7 @@ Globale Optionen:
       no fmt -fix=match -w src/       fehlende Match-Zweige in src/ in-place ergänzen
       echo 'x=1' | no fmt         von stdin formatieren
       no fmt -loop-style=suffix f.no  Schleifen als '{ } (cond)' / '{ } * N' formatieren
+      no fmt --md -w docs/        Nolang-Blöcke in allen .md/.mdx unter docs/ formatieren
 
   no build [Optionen] [<Datei|Verzeichnis>]  Ein Nolang-Projekt bauen
     Ohne Datei/Verzeichnis und mit vorhandener workspace.noml

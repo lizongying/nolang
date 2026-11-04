@@ -7,6 +7,7 @@ sidebar_position: 3.5
 ### log — Leveled Logging
 
 ```no
+#{fmt-skip}
 LEVEL-DEBUG = 0
 LEVEL-INFO  = 1
 LEVEL-WARN  = 2
@@ -26,6 +27,7 @@ log.fatal(msg, code)                   ; Log and exit with the given status code
 Combine format bits with `set-format` (default is `F-LEVEL` only, close to the legacy output):
 
 ```no
+#{fmt-skip}
 F-TIME  = 1                            ; Timestamp YYYY-MM-DD HH:MM:SS (UTC)
 F-LEVEL = 2                            ; [INFO] / [ERROR] level tag
 F-LOC   = 4                            ; Call site [file:line:col]
@@ -44,6 +46,7 @@ explicitly the given value wins, so wrappers can forward their own location).
 Logs go to standard error (fd=2) by default. Switch to a file or any `io.writer`:
 
 ```no
+#{fmt-skip}
 log.open-file(path)                    ; Open file in append mode and set as target; returns ?bool
 log.set-output-fd(fd)                  ; Switch to a custom fd (caller opens/closes it)
 log.set-writer(w io.writer)            ; Switch to an io.writer (uses its fd)
@@ -52,6 +55,7 @@ w = log.get-writer()                    ; Current output target as an io.writer
 ```
 
 ```no
+#{fmt-skip}
 log.set-format(log.F-TIME | log.F-LEVEL | log.F-LOC)
 log.open-file('app.log')               ; Subsequent lines append to app.log
 log.error('disk full')                 ; [ERROR] [main.no:12:5] disk full → app.log

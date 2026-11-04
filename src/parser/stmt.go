@@ -17,6 +17,9 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.NEWLINE:
 		return nil
 
+	case lexer.ELLIPSIS3:
+		return p.parseEmptyStatement()
+
 	case lexer.IF:
 		stmt := p.parseExpressionStatement()
 		p.skipToStatementEnd()
@@ -851,7 +854,9 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 	// Additional variables separated by commas
 	for p.currentToken.Type == lexer.COMMA {
 		p.nextToken() // skip COMMA
-		if p.currentToken.Type != lexer.IDENT {
+		// `_` 是丟棄佔位符，可出現在任意位置（`a, _ = f()` / `_, _ = f()`）。
+		// 先前只放行 IDENT，導致首位的 `_` 可用、其餘位置報 8wckpc2l。
+		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.UNDERSCORE {
 			p.saveErrorf("8wckpc2l", "line %d, column %d: expected variable name after ',', got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			return nil
@@ -1716,6 +1721,40 @@ func (p *Parser) parseReturnStatement() Statement {
 	return stmt
 }
 
+// parseEmptyStatement 解析 `...` 佔位陳述（節點見 ast.go 的 EmptyStatement）。
+//
+// 語義只有一個：**什麼都不做**，build 時整條丟棄（ASTToHIR 不產生任何 HIR 節點）。
+// 它不是 return 的別名——歷史上 `...` 曾被讀作「提前終止」，該語義已廢除。
+//
+// 文法約束：`...` 必須**獨佔一行**。同一行它前面不能有程式碼（`f = () { ... }` 違規）、
+// 後面也不能有程式碼（`... x = 1` 違規），行尾接 `;` 註釋則允許（註釋不是程式碼）。
+//
+// 為什麼要這條約束：`...` 若可內嵌，就與 `[0..self.len)` 漏寫 self 的誤寫
+// `[0...len)` 在視覺上完全相同，讀者無法判斷某個 `...` 是「這裡還有內容」還是
+// 「打錯了」。限定獨佔一行後，`...` 在版面上一眼可辨，且任何非陳述位置的 `...`
+// 都能給出「寫成獨立一行」的明確指引，而不是把 `..`+`.` 誤讀成範圍運算式。
+func (p *Parser) parseEmptyStatement() Statement {
+	tok := p.currentToken
+
+	// 行首：前一個非註釋 token 不能在**同一行**（`{`/`;`/運算元都算違規）。
+	if p.prevToken.Type != lexer.NEWLINE && p.prevToken.Line == tok.Line {
+		p.errorf(tok, "elps0ln0", "E_GENERAL",
+			"`...` must stand on its own line: no code may precede it on line %d; put it on a line of its own, or delete it", tok.Line)
+	}
+	p.nextToken()
+
+	// 行尾：下一個非註釋 token 只能是換行 / 區塊結束 / 檔案結束。
+	switch p.currentToken.Type {
+	case lexer.NEWLINE, lexer.RBRACE, lexer.EOF:
+	default:
+		p.errorf(p.currentToken, "elps1ln1", "E_GENERAL",
+			"`...` must stand on its own line: no code may follow it on line %d, got %s; `...` is a statement, so the rest of the line has to be a `;` comment",
+			p.currentToken.Line, p.currentToken.Type.String())
+	}
+
+	return &EmptyStatement{Token: tok}
+}
+
 // parseSwitchStatement parses old-style switch:
 //
 //	switch x { case 1: ... case 2: ... default: ... }
@@ -2247,7 +2286,7 @@ func isStatementBoundary(t lexer.TokenType) bool {
 		// 編譯照過、輸出照印，只是**不再 spawn**。而 `awy t` 退化成裸 `t`，
 		// 於是「if 鏈臂體的值」拿到的是 task handle（一個堆指標），印出來就是
 		// 一個垃圾大數（如 4316452624）。兩者都是 rc=0、無診斷的靜默錯誤。
-		lexer.RUN, lexer.AWY:
+		lexer.RUN, lexer.AWY, lexer.ELLIPSIS3:
 		return true
 	}
 	return false
@@ -2410,7 +2449,32 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		}
 
 		doc := p.collectDocComments()
-		stmt := p.parseStatement()
+		var stmt Statement
+		// preserveInnerBlock：arm body 是「直接雙層」`{ { <bare match> } }` 時
+		// （見 parseBareMatchExpr 的 directDouble 啟發式），內層那對大括號
+		// 是**獨立的 if 組**，不是可以省略的敘述區塊。這裡把它包成人工的
+		// BlockStatement{IsWrapper:true}：AST 保留下兩層結構，fmt 印出時跳過
+		// wrapper 自己那一層（它沒有對應源碼大括號），由內層 chain 的節點負責
+		// 印出真正的大括號 —— 否則格式化會把 if 組攤平進外層 chain。
+		if p.preserveInnerBlock && p.currentToken.Type == lexer.LBRACE {
+			bt := p.classifyBlockAtCurrent()
+			if bt == blockMatch {
+				tok := p.currentToken
+				expr := p.parseBareMatchExpr()
+				if expr != nil {
+					stmt = &BlockStatement{
+						Token:     tok,
+						IsWrapper: true,
+						Statements: []Statement{
+							&ExpressionStatement{Expression: expr},
+						},
+					}
+				}
+			}
+		}
+		if stmt == nil {
+			stmt = p.parseStatement()
+		}
 		if stmt != nil {
 			setDoc(stmt, doc)
 			p.attachInlineComment(stmt)
@@ -2789,13 +2853,17 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 		state := p.saveState()
 		p.nextToken() // skip [
 		kind := 0     // 0 = unclassified, 1 = range, 2 = slice literal
-		if p.currentToken.Type == lexer.ELLIPSIS {
-			kind = 1 // [..b] / [..]: open lower bound
+		// `...` 收成單一 token 後，`[0...count)` 只剩一種可能：寫的人把
+		// `[0..self.count)` 的 `..` 與 `.count` 連寫成三點。先歸為 range 讓
+		// parseRangeBody 給出「這不是範圍運算子」的精確診斷，而不是含糊的
+		// 「expected '..' ..., got ELLIPSIS3(...)」。
+		if p.currentToken.Type == lexer.ELLIPSIS || p.currentToken.Type == lexer.ELLIPSIS3 {
+			kind = 1 // [..b] / [..] / 三點誤寫
 		} else {
 			p.parseExpression(LOWEST)
 			switch p.currentToken.Type {
-			case lexer.ELLIPSIS:
-				kind = 1 // [a..b] / [a..]
+			case lexer.ELLIPSIS, lexer.ELLIPSIS3:
+				kind = 1 // [a..b] / [a..] / [a...b)
 			case lexer.COMMA, lexer.RBRACKET:
 				kind = 2 // [a, b] / [a]
 			}
@@ -2853,12 +2921,24 @@ func (p *Parser) parseForRange(ir *IterationExpr) {
 // error the error is recorded and ir.Range is left nil.
 func (p *Parser) parseRangeBody(ir *IterationExpr, tok lexer.Token, leftInc bool) {
 	var start, end Expression
+	// `...` 不是範圍運算子：三點只在**陳述**位置合法，且必須獨佔一行。
+	// 這裡單獨攔一次，是為了讓 `[0...count)` 這種「`..` 與 `.count` 連寫」的誤寫
+	// 拿到「範圍運算子是 `..`，上界請寫 self.count」這種能直接照著改的訊息，
+	// 而不是落到 parseExpression 的「`...` cannot be used in expression position」。
+	if p.currentToken.Type == lexer.ELLIPSIS3 {
+		p.rangeTripleDotError(p.currentToken)
+		return
+	}
 	// Optional lower bound: absent iff the first token inside is `..`.
 	if p.currentToken.Type != lexer.ELLIPSIS {
 		start = p.parseExpression(LOWEST)
 		if _, ok := start.(*FloatLiteral); ok {
 			p.saveErrorf("vhpiqfim", "line %d, column %d: float range boundary not supported, use integers",
 				p.currentToken.Line, p.currentToken.Column)
+			return
+		}
+		if p.currentToken.Type == lexer.ELLIPSIS3 {
+			p.rangeTripleDotError(p.currentToken)
 			return
 		}
 		if p.currentToken.Type != lexer.ELLIPSIS {
@@ -2895,6 +2975,20 @@ func (p *Parser) parseRangeBody(ir *IterationExpr, tok lexer.Token, leftInc bool
 		End:      end,
 		LeftInc:  leftInc,
 		RightInc: rightInc,
+	}
+}
+
+// rangeTripleDotError 報告「範圍上界寫成了三點」。——`[0...count)` 是
+// `[0..` 與 `.count` 連寫的結果：`...` 現在是單一的佔位陳述 token，不再是
+// `..` + `.`，所以這行必須給出可直接照改的寫法，而不是讓讀者猜為什麼壞了。
+func (p *Parser) rangeTripleDotError(tok lexer.Token) {
+	p.errorf(tok, "elps1rng", "E_GENERAL",
+		"`...` is not a range operator (line %d): the range operator is `..`, and `...` on its own is the no-op placeholder statement; here it looks like `..` glued to an implicit-self member, so name the receiver explicitly, e.g. `[0..self.count)`",
+		tok.Line)
+	// 吃掉這個 `...`。否則上層同步時會把它當成一條獨立陳述，再由
+	// parseEmptyStatement 報 elps0ln0 + elps1ln1 —— 同一個誤寫吐三條訊息。
+	if p.currentToken.Type == lexer.ELLIPSIS3 {
+		p.nextToken()
 	}
 }
 

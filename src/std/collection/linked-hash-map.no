@@ -185,7 +185,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
 ; 清空
 ; [clear](#linked-hash-map.linked-hash-map.clear)
 linked-hash-map.clear = () {
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] = 0
     }
     .head = -1

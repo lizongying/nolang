@@ -9,6 +9,7 @@ sidebar_position: 4.1
 `json` 以**堆配置的節點池**（`json-pool`）保存 JSON 樹，支援巢狀陣列與物件、字串/數值/布林/null 標量、轉義字元與指數格式數字。節點池改用動態 `vec`，**沒有固定容量上限**——節點總數與單一節點的子元素數僅受可用記憶體限制。高級介面以 `json` 結構體封裝節點池與根節點索引；其 `pool` 欄位標註 `#{inline=false}`（指標欄位），使 `json` 可按值安全回傳與複製。
 
 ```no
+#{fmt-skip}
 ; 解析：回傳 ?json（ok=成功，err=失敗並附原因）
 j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
 j: {
@@ -95,6 +96,7 @@ text = toml.stringify(doc)
 `yaml` 以節點池（`yaml-pool`）保存 YAML 1.2 core schema 的文件樹，支援塊映射、塊序列、流式集合（`[...]` / `{...}`）、單引號/雙引號/plain 標量、塊標量（`|` / `>` 與 `-` / `+` chomping）、註解、文件標記（`---` / `...`）與多文檔、錨點（`&`）與別名（`*`）、合併鍵 `<<`、顯式鍵（`? k`）、型別推斷（null / bool / int / float / `.inf` / `.nan`）、點號路徑查詢，以及 JSON / YAML 序列化。
 
 ```no
+#{fmt-skip}
 doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
 doc: {
     nil -> print('nil')

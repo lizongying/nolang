@@ -7,6 +7,7 @@ sidebar_position: 3.8
 ### encoding/hex — 十六進制
 
 ```no
+#{fmt-skip}
 ; 編碼（定義於 byte 模組）
 out = data.to-hex()                  ; []byte → 大寫 hex str
 out = data.to-hex-lower()            ; []byte → 小寫 hex str
@@ -18,6 +19,7 @@ out = s.from-hex()                   ; hex str → ?[]byte（nil=空, err=無效
 ### encoding/base64 — Base64（RFC 4648）
 
 ```no
+#{fmt-skip}
 BASE64-STD = 'ABC...+/'
 BASE64-URL = 'ABC...-_'
 PAD = 61  ; '='
@@ -31,6 +33,7 @@ out-n = base64.decode(s, n, table, out)   ; Base64 解碼（?i64, nil=無效輸�
 ### encoding/csv — CSV 解析（RFC 4180）
 
 ```no
+#{fmt-skip}
 fn, new-pos = csv.parse-field(s, sn, pos, field)  ; 解析單個欄位
 n = csv.parse-line(s, sn, fields, max)             ; 解析一行
 out-n = csv.encode-field(field, fn, out)           ; 編碼欄位
@@ -41,6 +44,7 @@ out-n = csv.encode-field(field, fn, out)           ; 編碼欄位
 PEM 格式廣泛用於 X.509 憑證、RSA/ECDSA 金鑰等。
 
 ```no
+#{fmt-skip}
 ; 結構體
 pem-block {
     label str

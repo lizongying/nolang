@@ -40,7 +40,8 @@ Install the Nolang extension from the [VS Code Marketplace](https://marketplace.
 | `no sync`                                                    | Sync dependencies       |
 | `no install [-u] [<pkg>@<version>]`                          | Install binary          |
 | `no uninstall <name>`                                        | Remove binary           |
-| `no pub --token <token> [--registry <url>]`                  | Publish to registry     |
+| `no pack [-o <file>] [<dir\|file.no>]`                       | Package the AST (`<tool>.ast.zip`) |
+| `no pub [-o <file>]`                                         | Same as `no pack` (registry upload not implemented) |
 
 ## Quick Start
 
@@ -299,6 +300,24 @@ no list
 no sync
 ```
 
+### Pre-built AST Dependencies
+
+Dependencies added as `no add <tool>@<host>/<owner>/<repo>` ship **AST only, with no source code**: at compile time `no sync` fetches `<tool>.ast.zip` (a MetaMessage + zip) from the release, decodes it and injects it straight into the compile pipeline. Usage:
+
+```nolang
+#{fmt-skip}
+use nogit            ; or use <host>/<owner>/<repo>/nogit
+```
+
+One zip is one module — a deeper path such as `use <repo>/<submod>` is not supported. The version must be a concrete value (`no sync` and compilation both report an error when they see `""` or `"*"`). Zips are cached under `~/no/cache/ast/`, overridable with `$NOLANG_AST_CACHE_DIR`.
+
+Produce the artifact with `no pack` (lexer + parser only — no LLVM toolchain needed, so it is CI-friendly):
+
+```bash
+no pack -o nogit.ast.zip nogit.no      # a single source file
+no pack -o nogit.ast.zip ./nogit       # a package directory
+```
+
 ### Dependency Types & Version Rules
 
 Dependencies in `package.noml` are classified as **local packages** or **remote packages**. The compiler automatically determines the type using the following rules and emits a warning when a local package does not use `"*"` as its version.
@@ -533,13 +552,14 @@ Source code cannot use OS absolute paths in imports; all external code reference
 ```no
 ; ✅ Valid: workspace-relative path
 # /vendor/utils.helper
-
 ; ✅ Valid: remote package identifier
 # github.com/lizongying/nolang/core.process
-
 ; ✅ Valid: standard library
 # std/fs
+```
 
+```no
+#{fmt-skip}
 ; ❌ Forbidden: relative jump
 ; # ./utils.helper
 ; # ../lib/helper.process

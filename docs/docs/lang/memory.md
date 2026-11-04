@@ -94,6 +94,7 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 
 ### 單返回值 move
 ```no
+#{fmt-skip}
 get-slice = () (out []i64) {
     local = [1, 2, 3]
     out = local   ; local 標記為 moved，函數結束不 free；out 由呼叫者管理
@@ -104,6 +105,7 @@ v = get-slice()  ; v 擁有 data，函數結束時 free
 
 ### 多返回值 move（按參數位置順序）
 ```no
+#{fmt-skip}
 get-pair = () (a []i64, b []i64) {
     x = [1, 2]
     y = [3, 4]
@@ -140,6 +142,7 @@ push 對堆擁有元素型別（`%str-long`/`%vec`/`%arr`/用戶結構體）執�
 條件分支下的 move 帶來一個挑戰：編譯期無法確定某個 move 是否真的發生。
 
 ```no
+#{fmt-skip}
 cond-move = (flag i64) (out []i64) {
     x = [1, 2, 3]
     if flag == 1 {
@@ -201,6 +204,7 @@ Nolang 採用**按堆變數下標索引的位圖**解決此問題。編譯期為
 ## 深層 clone（局部變數間賦值）
 
 ```no
+#{fmt-skip}
 a []i64 = [10, 20, 30]
 b = a          ; 深層 clone：malloc 新 data + memcpy + 遞迴 clone 元素
 b[0] = 99
@@ -295,6 +299,7 @@ FFI extern 函數（`#{c}` 標記）返回的 C 字串指標（`i8*`）可能指
 3. **PHI 合併**：兩條路徑合併，構造 `%str-long` 返回
 
 ```no
+#{fmt-skip}
 #{c}
 strchr = (s str, c i64) (r str)
 
@@ -316,6 +321,7 @@ find = () (r str) {
 2. `emitGlobalHeapFree` — 遍歷 `moduleVarTypes`，釋放所有 `globalVars` 中的堆擁有型別
 
 ```no
+#{fmt-skip}
 GLOBAL-STR = 'hello'      ; LLVM @GLOBAL-STR = global %str-long zeroinitializer
 GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
 ; top-level 語句 malloc data 並存入 global
@@ -339,6 +345,7 @@ GLOBAL-VEC = [1, 2, 3]    ; LLVM @GLOBAL-VEC = global %vec zeroinitializer
 ## 重新賦值與舊值釋放
 
 ```no
+#{fmt-skip}
 s = 'hello'     ; malloc data 緩衝區
 s = 'world'     ; 釋放 'hello' 的 data，malloc 新 data
 ```
@@ -353,7 +360,7 @@ Node {
     items []i64
 }
 
-n = Node{
+n = Node {
     name: 'hello'
     items: [1, 2, 3]
 }
@@ -367,6 +374,7 @@ n = Node{
 ## 固定陣列重新賦值為切片
 
 ```no
+#{fmt-skip}
 local [4]i64 = [100, 200, 300, 400]   ; local 是固定陣列（16 字節）
 local = [100, 200, 300]                ; 重新賦值為切片（24 字節）
 ```
@@ -401,6 +409,7 @@ hashmap 未實現 key/value 的深層 free，map 容器的堆數據會泄漏。
 
 ### 循環臨時變數
 ```no
+#{fmt-skip}
 loop {
     s = 'temp'   ; 每次迭代 malloc 新 data，舊 data 未釋放
 }
@@ -408,6 +417,7 @@ loop {
 
 ### 切片視圖 + 原數組 move
 ```no
+#{fmt-skip}
 view = arr[1..3]   ; view 共享 arr.data
 arr = [9, 8, 7]    ; 釋放舊 arr.data → view 懸空
 ```
@@ -439,6 +449,7 @@ arr = [9, 8, 7]    ; 釋放舊 arr.data → view 懸空
 ### struct 重賦值洩漏（2026-09-30 已修）
 
 ```no
+#{fmt-skip}
 holder { s str }
 h holder = holder { s: 'first' }
 h = holder { s: 'second' }   ; 舊的 'first' buffer 曾洩漏
@@ -455,6 +466,7 @@ h = holder { s: 'second' }   ; 舊的 'first' buffer 曾洩漏
 ### struct literal 首欄位值是方法呼叫（2026-09-30 已修）
 
 ```no
+#{fmt-skip}
 holder { s str }
 h = holder { s: n.to-str() }   ; 修復前：'holder' is not defined
 ```
@@ -473,6 +485,7 @@ h = holder { s: n.to-str() }   ; 修復前：'holder' is not defined
 ### await 結果型別跨 handle 重賦值（2026-09-30 已修）
 
 ```no
+#{fmt-skip}
 holder { s str }
 echo-holder-async = (h holder) (r str) { r = h.s }
 t i64 = 0

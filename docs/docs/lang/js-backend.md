@@ -230,6 +230,7 @@ n = history.length()
 # js/animation
 
 id = animation.request-frame(() {
+
     ; 每幀回調
     print('frame')
 })
@@ -295,6 +296,7 @@ HTML wrapper 特性：
 JS 後端可以直接引入 npm 生態的套件（TypeScript 的 `import` 等價物），**不需要新的 `import` 語句**——複用 `#` use 指令加上保留前綴 `npm/`：
 
 ```no
+#{fmt-skip}
 # npm/lodash                ; 整個模組物件：lodash.get(x, 'a.b')
 # npm/lodash.get as get     ; 單個命名導出：get(x, 'a.b')
 # npm/lodash.default as d   ; 套件的預設導出：d(props)
@@ -358,7 +360,7 @@ JS 後端除了匯入 JS 套件，還可呼叫原生包（C ABI 共享函式庫�
 
 ```no
 ; libm 的 pow：FFI 走 koffi，瀏覽器需另給 wasm= 的 specifier
-#{bind = auto, c}
+#{c, bind=auto}
 pow = (x f64, y f64) (r f64)
 ```
 

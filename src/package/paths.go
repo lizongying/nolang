@@ -121,11 +121,36 @@ func isValidSourceSegment(name string) bool {
 // 絕對 OS 路徑（如 /Users/me/proj/a.no）只驗證落在目前工作目錄下的部分，
 // 因此 "Users" 等宿主目錄名不會觸發假陽性。
 func ValidateSourcePathName(path string) error {
+	return validatePathSegments(path, false)
+}
+
+// ValidateMarkdownDirName 是 Markdown / MDX 檔案的路徑命名檢查：只驗證**目錄段**，
+// 且跳過以 `.` 開頭的隱藏目錄（`.agents` / `.github` / `.workbuddy` 是工具鏈約定名，
+// 不受源碼命名規範約束）。檔名本身不檢查 —— `README.md` / `CHANGELOG.md` 這類
+// 大寫慣例名不構成模組。
+func ValidateMarkdownDirName(path string) error {
+	return ValidateDirPathName(filepath.Dir(path))
+}
+
+// ValidateDirPathName 校驗**目錄**路徑的每一段命名，放行隱藏目錄。
+//
+// 目錄不是模組，也不參與符號解析；`.agents` 這類工具鏈約定名因此不該被源碼
+// 命名規範攔下（`no fmt -md .agents` 必須能跑）。
+func ValidateDirPathName(path string) error {
+	return validatePathSegments(path, true)
+}
+
+// validatePathSegments 是路徑段命名檢查的共同實作。skipHidden 為真時放行以 `.`
+// 開頭的隱藏段；`.no` 副檔名不計入（被規範的是檔名主體）。
+func validatePathSegments(path string, skipHidden bool) error {
 	rel := sourcePathRelativeToCwd(path)
 	clean := filepath.ToSlash(filepath.Clean(rel))
 	segs := strings.Split(clean, "/")
 	for i, seg := range segs {
 		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		if skipHidden && strings.HasPrefix(seg, ".") {
 			continue
 		}
 		name := seg

@@ -26,15 +26,22 @@ import (
 // `nolang` 是早期寫法，文件站兩種都有，故兩者等價處理。
 var mdNolangLangs = map[string]bool{"no": true, "nolang": true}
 
-// 跳過標記有兩種寫法，作者可任選：
+// 跳過標記有三種寫法，作者可任選：
+//   - 塊頂部註解：#{fmt-skip} —— **推薦**。用 Nolang 自己的註解語法，寫在柵欄內
+//     第一行；它標明「這段是刻意寫的示例，別碰」，語義自解釋，也不依賴渲染器
+//     如何處置柵欄 meta；
 //   - 柵欄 meta：```no skip —— 渲染器只看首詞當語言，其餘 meta 不顯示；
-//   - 塊內註解：; nolang-fmt:skip —— 完全不依賴渲染器對 meta 的態度，
-//     在 MDX / 任何自訂主題下都絕對安全，缺點是讀者會看到這行註解。
+//   - 塊內註解：; nolang-fmt:skip —— 早期寫法，完全不依賴渲染器對 meta 的態度。
+//
+// 三者的效果完全相同：整塊既不格式化、也不驗證，逐字節原樣保留。
 const (
-	mdSkipToken     = "skip"
-	mdSkipTokenAlt  = "nofmt"
-	mdSkipComment   = "nolang-fmt:skip"
-	mdSkipCommentAt = ";" // Nolang 行註解標記
+	mdSkipAnnotation = "fmt-skip"        // 塊頂部註解項：#{fmt-skip}
+	mdSkipToken      = "skip"            // 柵欄 meta 首選詞
+	mdSkipTokenAlt   = "nofmt"           // 柵欄 meta 別名
+	mdSkipComment    = "nolang-fmt:skip" // 塊內行註解（早期寫法）
+	mdSkipCommentAt  = ";"               // Nolang 行註解標記
+	mdAnnotationOpen = "#{"              // Nolang 附着註解起始
+	mdAnnotationEnd  = "}"
 )
 
 // mdFenceRe 匹配柵欄行：捕組 1 = 行首縮排、2 = 柵欄字元串（``` 或 ~~~）、
@@ -92,6 +99,11 @@ func FormatMarkdownFile(source string) (string, []MdSkippedBlock) {
 func FormatMarkdownFileWithLoopStyle(source string, style LoopStyle) (string, []MdSkippedBlock) {
 	lines := strings.Split(source, "\n")
 	var skipped []MdSkippedBlock
+	// delta 是「已寫回的行數增減」累計。格式化會改變塊的長度，而後續塊的
+	// 掃描位置 i 是**當前** lines 的下標；回報給作者的行號必須是**原文件**
+	// 的行號，否則作者照著行號找不到那個塊（早期就踩過：報告 1040 行，
+	// 實際柵欄在 1024）。delta 讓兩者互不干擾。
+	delta := 0
 
 	for i := 0; i < len(lines); i++ {
 		open := mdFenceRe.FindStringSubmatch(lines[i])
@@ -114,15 +126,29 @@ func FormatMarkdownFileWithLoopStyle(source string, style LoopStyle) (string, []
 			i = end
 			continue
 		}
+		// 空塊（```no 緊接 ```）沒有可格式化的內容：原樣留底，且**不記為
+		// skipped** —— skipped 的語義是「這裡有東西我想格式化但做不到，請作者
+		// 處理」，空塊沒有需要作者處理的東西，回報只會製造噪音。
+		if strings.TrimSpace(strings.Join(body, "\n")) == "" {
+			i = end
+			continue
+		}
 		out, reason, ok := formatMdBlock(strings.Join(body, "\n"), style, commonIndent(body))
 		if !ok {
-			skipped = append(skipped, MdSkippedBlock{Line: i + 1, Reason: reason})
+			// 報告原文件行號：i 是當前緩衝區下標，delta 抹掉先前塊的長度變化。
+			skipped = append(skipped, MdSkippedBlock{Line: i + 1 - delta, Reason: reason})
 			i = end
 			continue
 		}
 		// 只替換內容行：起始與結尾柵欄行、其餘文件內容完全不動。
+		replaced := end - (i + 1)
 		lines = spliceLines(lines, i+1, end, out)
-		i += len(out)
+		delta += len(out) - replaced
+		// 跳過剛寫入的內容行**與結尾柵欄**：結尾柵欄在語法上同樣符合起始柵欄
+		// 的正則，若停在它上面，下一輪會把它當成新塊的開始，於是它與下一個
+		// 真正的起始柵欄配對，中間那個 Nolang 塊就被當成「非 Nolang 塊的內容」
+		// 整段跳過 —— 一份文件裡只有每隔一個塊會被格式化。
+		i += len(out) + 1
 	}
 	return strings.Join(lines, "\n"), skipped
 }
@@ -149,9 +175,9 @@ func mdIsNolangFence(info string) bool {
 	return mdNolangLangs[strings.ToLower(fields[0])]
 }
 
-// mdMarkedSkip 報告該塊是否被作者顯式標記為不格式化：柵欄 meta 含 skip /
-// nofmt，或塊內存在一行 `; ...nolang-fmt:skip...` 註解。兩種寫法等效，後者
-// 不依賴渲染器如何處置多餘的 fence meta。
+// mdMarkedSkip 報告該塊是否被作者顯式標記為不格式化：塊頂部 `#{fmt-skip}`
+// 註解、柵欄 meta 含 skip / nofmt、或塊內存在一行 `; ...nolang-fmt:skip...`
+// 註解。三種寫法等效，第一種是推薦寫法。
 func mdMarkedSkip(info string, body []string) bool {
 	fields := strings.Fields(info)
 	for _, tok := range fields[1:] {
@@ -160,11 +186,39 @@ func mdMarkedSkip(info string, body []string) bool {
 			return true
 		}
 	}
+	if mdHasSkipAnnotation(body) {
+		return true
+	}
 	for _, l := range body {
 		t := strings.TrimSpace(l)
 		if strings.HasPrefix(t, mdSkipCommentAt) && strings.Contains(t, mdSkipComment) {
 			return true
 		}
+	}
+	return false
+}
+
+// mdHasSkipAnnotation 報告塊頂部（第一個非空行）是否為 `#{fmt-skip}` 註解。
+//
+// 只認頂部：註解是給「整塊」的指令，寫在中間會讓「從哪一行開始不格式化」變得
+// 有歧義，而 no fmt 的契約是整塊原子保留。同一行的多個註解項以逗號分隔，
+// 例如 `#{fmt-skip, overflow=wrap}`，任一項為 fmt-skip 即命。比對不分大小寫。
+func mdHasSkipAnnotation(body []string) bool {
+	for _, l := range body {
+		t := strings.TrimSpace(l)
+		if t == "" {
+			continue // 跳過柵欄後的空白行，註解仍算「頂部」
+		}
+		if !strings.HasPrefix(t, mdAnnotationOpen) || !strings.HasSuffix(t, mdAnnotationEnd) {
+			return false
+		}
+		inner := t[len(mdAnnotationOpen) : len(t)-len(mdAnnotationEnd)]
+		for _, item := range strings.Split(inner, ",") {
+			if strings.EqualFold(strings.TrimSpace(item), mdSkipAnnotation) {
+				return true
+			}
+		}
+		return false
 	}
 	return false
 }
@@ -204,9 +258,16 @@ func formatMdBlock(body string, style LoopStyle, indentTo string) (out []string,
 	dedented := dedentLines(strings.Split(body, "\n"), indentTo)
 	formatted, fmtOK, errs := formatProgramWithLoopStyle(strings.Join(dedented, "\n"), style)
 	if !fmtOK {
-		if len(errs) > 0 {
-			reason = errs[0]
+		if len(errs) == 0 {
+			// 解析成功但**一條陳述都沒有**：整塊只有註解（文檔裡很常見的
+			// 「把正確寫法註起來」示例）。formatProgramAST 把「無陳述」與
+			// 「解析失敗」歸成同一種 ok=false，於是這裡會被報成
+			// 「not parseable as Nolang」——那不是真的，會逼作者去加
+			// #{fmt-skip} 掩蓋一個並不存在的語法錯誤。這種塊沒有任何可排版
+			// 的程式碼，原樣留底且不計入 skipped。
+			return strings.Split(body, "\n"), "", true
 		}
+		reason = errs[0]
 		return nil, reason, false
 	}
 	formatted = strings.TrimRight(formatted, "\n")

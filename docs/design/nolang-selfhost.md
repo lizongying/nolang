@@ -180,9 +180,10 @@ B 仍二次 ⇒ 二次項**不在** `len-bytes()`，而在**字段借用本身**
 看實作就明白（`src/std/str.no:464`）：
 
 ```nolang
+#{fmt-skip}
 str.to-bytes = () (val []byte) {
     val = with-len(.len-bytes())   ; 新配置一塊緩衝
-    i <- [0...len-bytes()): {
+    i <- [0..self.len-bytes()): {
         val[i] = .byte(i)          ; 逐位元組複製
     }
 }
@@ -249,6 +250,7 @@ str.to-bytes = () (val []byte) {
 #### 🔴 2.2.2 整數運算默認返回 `option<int>`，且**只能逐敘述標註**
 
 ```no
+#{fmt-skip}
 f = () (r i64) {
     #{overflow=wrap}      ; ← 只作用於緊跟其後的那一條敘述
     a = 1
@@ -318,10 +320,14 @@ K = 42
 
 ; tmp/probeZ/dep.no
 # /tmp/probeZ/lib
-a = () (r i64) { r = lib.K }
+
+a = () (r i64) {
+    r = lib.K
+}
 
 ; tmp/probeZ/mn.no   ← 入口檔（頂層語句自動合成 main）
 # /tmp/probeZ/dep
+
 print(dep.a())
 ```
 
@@ -700,6 +706,7 @@ util/{sb,arena,intern,idxmap,pathx}
 **解法**：**一切圖狀結構都用 arena + `i64` 索引**
 
 ```no
+#{fmt-skip}
 ; 節點資料與指向節點的引用分離
 nodedata {
     kind i64
@@ -740,6 +747,7 @@ ast.push = (k i64, a i64, b i64, s str) (idx i64) {
 
 
 ```no
+#{fmt-skip}
 sb {
     buf []byte
     n i64
@@ -787,12 +795,14 @@ intern.get = (s str) (id i64) {
     v ?i64 = .table.get(s)
     v: {
         ok(x) -> id = x
+
         nil -> {
             .pool.push(s)
             .n = .n + 1
             .table.put(s, .n)
             id = .n
         }
+
         err(e) -> id = 0
     }
 }
@@ -811,9 +821,9 @@ intern.get = (s str) (id i64) {
 ```no
 ctx {
     diags []diag
-    file  str
-    src   str
-    pos   i64
+    file str
+    src str
+    pos i64
 }
 
 ck.check = (c ctx, a ast, root i64) {
@@ -1845,7 +1855,7 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 **探針矩陣（parser 族行與 oracle 逐字節全等）**：分組族 p12/p15/p17/p23 ⇒ 2:0 NEWLINEp32/p42 ⇒ 3:0 NEWLINEp11 ⇒ 1:11 EOFp13 ⇒ 2:2 EOF；實參族 p14 ⇒ 2:1 INTp20 ⇒ 1:11 INTp21 ⇒ 2:2 EOFp30 ⇒ 1:14 IDENT；合法形 p22/p24/p41（換行在逗號前/後皆合法 ⇒ 零語法錯）；乾淨檔 c1–c5 零誤報；**c6（`x = (\n1 + 2\n)`）⇒ 3:0 NEWLINE 全等**——推翻舊註解尾換行會被入口 skip 吞掉 ⇒ 落 EOF的猜測（入口 skip 只吞前導換行；尾換行由中綴循環停在原處），ps.no 站點註解已同步改訂
 
 **本輪新發現的工具鏈事實（實測釘死）**：
-1. **單語句形 `(cond) x = x + 1` 不是循環**——實測掃描計數只走一格即止（等價一次性 if）；`(cond) { ... }` 塊形才是 whilededup 測試的游標回溯掃描因此改塊形（對照探針 `tmp/s11-or.no`：plain 形 j=1塊形 k=2）
+1. **單語句形 `(cond) x = x + 1` 不是循環**——實測掃描計數只走一格即止（等價一次性 if）；`(cond) { }` 塊形才是 whilededup 測試的游標回溯掃描因此改塊形（對照探針 `tmp/s11-or.no`：plain 形 j=1塊形 k=2）
 2. **`#` 模組裸名解析要求檔在專案內**——探針放 `/tmp` 時 `ps.new` 前綴呼叫可解析但裸 `ps-err-count` 報 not defined；探針一律放 `tmp/`
 
 **fmt 清掃**：s10 遺留的 ps.no fmt 漂移（384 行計法：`fmt -d` 輸出 69,806 位元組）以 `no fmt -w` 一次清零，ps.no＋ps-err-test.no 現況 `fmt -d` 皆空輸出；清掃後**重建 SUT 復跑全部門禁**（diff 面含清掃噪声，屬一次性代價）
@@ -2966,6 +2976,7 @@ M4 的驗收**不能只靠程式跑得對**，因為：
 ### 5.8 診斷模型（`diag.no`）
 
 ```no
+#{fmt-skip}
 diag {
     file str
     line i64
@@ -4381,6 +4392,7 @@ drv.dispatch()
 ### B.4 `compiler/src/ast.no`（arena 化的 AST）
 
 ```no
+#{fmt-skip}
 ; 節點種類（與 parser/ast.go 的 71 個 Node 一一對應；此處僅示範）
 KIND-LET = 1
 KIND-IDENT = 2
@@ -4449,6 +4461,7 @@ entry:
 
 ```no
 # /compiler/src/diag.diag
+
 ; 把 LLVM IR 文本寫檔並調用 clang 產出可執行檔
 ; ⚠️ fs.write-bytes 回 ?bool，必須顯式處理（§2.2.6）
 ; ⚠️ std 目前沒有 chmod；clang 產出的檔案自帶執行權限，故此處不 chmod
@@ -4457,18 +4470,23 @@ link.compile = (ll str, out str) (ok bool) {
     llpath str = out + '.ll'
     w ?bool = fs.write-bytes(llpath, ll.to-bytes())
     w: {
-        ok(y) -> { }
+        ok(y) -> {
+        }
+
         nil -> {
             eprint('cannot write {llpath}')
             ok = false
         }
+
         err(e) -> {
             eprint('cannot write {llpath}: {e}')
             ok = false
         }
     }
     {
-        ok == false -> { }
+        ok == false -> {
+        }
+
         -> {
             args []str = []
             args.push('-x')

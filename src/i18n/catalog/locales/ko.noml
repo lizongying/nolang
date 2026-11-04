@@ -152,6 +152,12 @@ LLVM 툴체인을 찾을 수 없습니다
   '3zh3tuv8': '이것은 셀프호스팅 작업의 L2 판정 기준입니다: 출력은'
   '430ty5x5': '바이트 배열 수신자에 슬롯이 없습니다'
   '45y022ur': 'net-listen: 호스트를 C 문자열로 변환할 수 없습니다'
+  '46fhe9ez': `
+Markdown(.md/.mdx)은 -md 를 줄 때만 처리합니다: 서식을 적용하는 곳은 ```no / ```nolang 펜스 안쪽뿐입니다.
+펜스 줄과 나머지 모든 줄은 바이트 단위로 그대로 두고, 파싱에 실패한 블록은
+원본 그대로 남긴 채 stderr 로 알리므로 서식 적용은 언제나 안전합니다. 의도적인 의사 코드는 ```no skip 을
+붙이거나 블록 안에 '; nolang-fmt:skip' 줄을 두어 건너뜁니다. -md 는 -fix 를 무시합니다.
+`
   '46jwfg5y': '타입 별칭에서 %q 뒤에 타입을 기대했습니다'
   '46qem63e': 'MIR IR의 LLVM 어셈블리에 실패했습니다: %v: %s'
   '4bopl5am': '루트:'
@@ -184,6 +190,7 @@ LLVM 툴체인을 찾을 수 없습니다
   '5cid832p': '알 수 없는 비공개 필드 builtin %s입니다'
   '5ckkrp9f': 'noml: 필드 %s[%d]: 종속성 요소는 문자열이어야 하는데 %T을(를) 받았습니다'
   '5eo1kvb9': 'noml: 필드 %s: 객체를 기대했지만 %T을(를) 받았습니다'
+  '5i2q1afu': '  hint: 건너뛴 블록은 그대로 둡니다. 의도적인 의사 코드는 \'```no skip\' 또는 블록 안의 \'; nolang-fmt:skip\' 줄로 표시하세요'
   '5j50pfem': '멤버 %q[%d]: 객체 키 %s이(가) %q의 %s와(과) 다릅니다. 각 요소는 같은 형태여야 합니다'
   '5jqh5cf2': 'builtin %s: []str 결과는 %%vec 슬롯을 기대했지만 %s을(를) 받았습니다'
   '5jsd564o': '문자열 변수 \'%s\'에 문자열이 아닌 값을 할당할 수 없습니다'
@@ -213,11 +220,21 @@ LLVM 툴체인을 찾을 수 없습니다
   '64bt3a50': 'Nolang 소스를 실행 파일로 빌드합니다.'
   '64t1vgh6': 'vec.remove: 수신자와 인덱스가 필요합니다'
   '66ybjsus': 'write-file: 경로를 C 문자열로 변환할 수 없습니다'
+  '6709xe69': `
+Parser ASTVersion: %s
+
+`
   '68bn4o2m': 'ESM 패키지 지정자 %q은(는) \'/\'로 시작하거나 끝날 수 없습니다'
+  '69wny890': '  cat api.md | no fmt -md     stdin 에서 Nolang 블록 서식 적용'
   '6a6jynsl': '레이블 #%s 뒤에 루프 본문을 기대했지만 \'* N\'도 \'* { }\'도 없는 %s을(를) 받았습니다'
+  '6c01vyr1': '  no fmt -md -w docs/         docs/ 아래 모든 .md/.mdx 의 Nolang 블록 서식 적용'
   '6c1nlj7d': '충돌하는 네이티브 lib 재정의: %q 및 %q'
   '6fgg3htw': '%d번째 인수（“%s”）: “%s”을(를) 기대했지만 “%s”을(를) 받았습니다'
   '6kryrbsq': '“%s”이(가) 정의되었지만 사용되지 않았습니다'
+  '6m53s6q8': `
+캐시 항목 %d개를 삭제했습니다.
+
+`
   '6o12uzmx': 'waitpid: windows에서는 지원되지 않습니다'
   '6p2o4902': '자산 %s이(가) 크기 제한(%d바이트)을 초과했습니다'
   '6qca9xu4': 'embed: 명시적 값과 함께 사용할 수 없습니다'
@@ -269,6 +286,10 @@ tests 디렉터리 생성 오류: %v
   '802t452i': 'builtin %s: option 결과를 %s 대상으로'
   '81b2ea3o': 'extern 선언에서 \'(\'를 기대했지만 %s을(를) 받았습니다'
   '82csl5ay': 'str.to-bool: 수신자가 없습니다'
+  '82hkddyo': `
+항목 수: %d
+
+`
   '82j1xx80': '%d번째 인수가 없습니다'
   '82l9xk55': 'zip 항목 %q이(가) 너무 큽니다(%d바이트)'
   '83xbz15x': `
@@ -359,10 +380,12 @@ tests 디렉터리 생성 오류: %v
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       #{...} 주석도 포함'
   'au6g7ji7': '파서 오류: %s'
+  'awc98kqh': '  no fmt -md README.md        Markdown 파일 하나의 Nolang 블록 서식 적용'
   'axj3m1pb': '표현식 시작 부분에 예상치 못한 \'as\'가 있습니다'
   'axtpo500': 'win-find-first-file: 경로를 C 문자열로 변환할 수 없습니다'
   'ayjrpinp': 'noml: DecodeInto에는 nil이 아닌 포인터가 필요하지만 %T을(를) 받았습니다'
   'aywuxg5w': 'builtin %s 수신자 %s: %s'
+  'aze4pgle': 'Markdown 파일(.md/.mdx) 안의 Nolang 코드 블록도 함께 서식 적용'
   'b1narysr': '바이너리'
   'b360mu4g': '매개변수 이름을 기대했지만 %s을(를) 받았습니다'
   'b3ucznjm': `
@@ -402,6 +425,7 @@ tests 디렉터리 생성 오류: %v
   'cjih2jtt': '함수 타입 별칭에 \'=\'를 기대했지만 %s을(를) 받았습니다'
   'ckaj3355': '알 수 없는 함수 “%s.%s”: 모듈 “%s”에 최상위 함수 “%s”이(가) 없습니다'
   'cldvfmqx': 'waitpid: pid, options가 필요합니다'
+  'cn2p79sm': '%s:%d: Nolang 코드 블록을 건너뜀: %s'
   'cnsb9bys': 'import %s: 타입 %q은(는) %s에서도 정의됩니다. 최상위 #{name = \'...\'} 주석으로 구분하세요'
   'cotvjhmy': 'exec-shell: 명령을 C 문자열로 변환할 수 없습니다'
   'cpefnxwk': 'str-truncate: 수신자에 슬롯이 없습니다'
@@ -453,6 +477,7 @@ AST 의존성 %s 동기화 오류: %v
   'e0r5thlw': '결과를 소스 파일에 되쓰기'
   'e1i8566c': 'read-file: 결과 타입 %s은(는) 슬라이스나 문자열이 아닙니다'
   'e3xplf89': '  package.noml 에 compiler.emit = "js" 를 선언한 패키지는'
+  'e7xfrsz0': '  clear  캐시된 AST 를 모두 삭제(항목이 오래된 것으로 의심될 때의 수단)'
   'e7yptvje': 'process-exec: (prog, arg)가 필요합니다'
   'e9ab330i': '사용법: no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': '네이티브 wasm 지정자가 충돌합니다: %q(%q에서) 및 %q(%q에서)'
@@ -466,13 +491,18 @@ AST 의존성 %s 동기화 오류: %v
   'eit5cjgr': 'tar.gz 아카이브 압축 해제: %w'
   'ejbt38ik': 'slice 연산 대상 슬롯'
   'elep1kra': '  no build                  현재 디렉터리 또는 workspace.noml 프로젝트 빌드'
-  'em4a9wv2': '범위 상한이 암시적 self의 `.%s`로 시작하므로 `..` 연산자 바로 뒤에 쓰면 `...%s`이(가) 되어 모호해집니다(`...`은(는) return/terminate 연산자이기도 합니다). 수신자를 명시적으로 지정해 `..self.%s`로 작성하세요(예: `[a..self.%s)`).'
+  'elps0exp': '`...`는 아무 동작도 하지 않는 자리표시자 문장이며 값이 없으므로 식 위치에 쓸 수 없습니다(%d행). 블록 안에서 별도 줄에 쓰세요(예: `-> {` 줄바꿈 `    ...` 줄바꿈 `}`)'
+  'elps0ln0': '`...`는 반드시 한 줄을 차지해야 합니다: %d행에서 `...` 앞에 코드가 올 수 없습니다. 별도 줄에 두거나 삭제하세요'
+  'elps1ln1': '`...`는 반드시 한 줄을 차지해야 합니다: %d행에서 `...` 뒤에 코드가 올 수 없습니다(%s). `...`는 문장이므로 줄의 나머지는 `;` 주석이어야 합니다'
+  'elps1rng': '`...`는 범위 연산자가 아닙니다(%d행). 범위 연산자는 `..`이며, 단독 `...`는 아무 동작도 하지 않는 자리표시자 문장입니다. 여기서는 `..`와 암시적 self 멤버가 붙은 것으로 보이므로 수신자를 명시하세요(예: `[0..self.count)`).'
+  'em4a9wv2': '범위 상한이 암시적 self의 `.%s`로 시작해 `..` 연산자 바로 뒤에 놓이므로 `...%s`처럼 읽힙니다(세 점 표기는 문법 오류입니다: `...`는 아무 동작도 하지 않는 자리표시자 문장입니다). 수신자를 명시하여 `..self.%s`로 쓰세요(예: `[a..self.%s)`).'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        Direct WASM 백엔드로 출력 경로 지정'
   'en9zq76f': '루프 기본 표기: \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\'; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  경계 검사 없이 빌드 (최고 성능)'
   'es55egn6': 'Nolang 소스 파일을 포맷합니다.'
   'eu5v0rj9': '  2. 기존 디렉터리        -> 그 main.no 를 실행'
   'eubonf62': '%s 값을 %s 변수 \'%s\'에 할당할 수 없습니다: struct 값은 명시적으로 생성해야 합니다(예: `%s { … }` 또는 해당 생성자). 정수는 무손실 생성자가 하나뿐인 struct(예: bigint)로만 암시적 승격됩니다'
+  'evesyggh': 'AST 캐시: 비활성(NOLANG_AST_CACHE_OFF 설정됨)'
   'ew5qg77j': 'use 경로에 식별자를 기대했지만 %s을(를) 받았습니다'
   'ex8l4y2k': '의존성을 업데이트하는 중...'
   'exeja3ad': '%s 경유'
@@ -489,6 +519,10 @@ AST 의존성 %s 동기화 오류: %v
   'fd9jkb5k': '멤버 %q은(는) 빈 배열입니다. #{type = \'[]<elem>\'}로 주석하세요'
   'fdwcn8i8': 'match arm이 값을 반환하지 않습니다'
   'fe0a5wt2': 'option 값 \'%s\'(%s)과(와) \'%s\'(%s)을(를) 비교할 수 없습니다: 먼저 언랩(`v ?= expr`)하거나 ok/nil/err로 match하세요'
+  'fftzl9dl': `
+삭제 실패: %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout: 결과 슬롯이 없습니다'
   'fk1sb6ss': 'syslog: windows에서는 지원되지 않습니다'
   'flfh2ueu': '잘못된 설치 대상 %q입니다: 리포지토리는 <host>/<owner>/<repo> 또는 <owner>/<repo>여야 합니다'
@@ -537,6 +571,7 @@ clang을 찾을 수 없습니다. LLVM 툴체인이 완전히 설치되었는지
 `
   'gno8qk1j': '\'~match/case/default\'은(는) 사용 중단되었습니다. 대신 \'x: { pattern-> ... }\'을(를) 사용하세요'
   'gr0jwheb': '\'for { }\'은(는) 사용 중단되었습니다. 대신 \'{ } (true)\' 무한 루프를 사용하세요'
+  'gskcg79t': '참고: 항목에는 버전이 붙습니다 — ASTVersion 을 올리면 자동으로 무효화됩니다.'
   'gszz9tke': '  - main.no (메인 진입점 파일)'
   'gubuo5cb': 'option이 바인딩되었지만 한 번도 처리되지 않았습니다: 전파(`?=`)도 언랩(`x: { ... }` / `_ = x`)도 되지 않아 에러가 조용히 버려집니다. %s'
   'gx02j37c': 'write-file: data 인수에 슬롯이 없습니다(함수 %s, 인수 타입 %s)'
@@ -561,6 +596,7 @@ workspace.noml 에 '%s' 을(를) 등록했습니다
   'hc3a6zzw': '알 수 없는 수정 클래스 %q입니다(지원: overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': '비어 있는 match arm은 값을 결정할 수 없습니다(대상 표현식의 타입을 알 수 없음)'
   'hgedm96o': '모듈 %s 자동 로드: %w'
+  'hleyeurx': 'Nolang 으로 파싱할 수 없음'
   'hoal6bo9': '--js 로 LLVM 툴체인을 우회해 JavaScript 소스를 생성합니다 (Node.js/브라우저 호환).'
   'hr40fh5v': 'package.noml을 찾을 수 없습니다. 패키지를 만들려면 \'no new <name>\'을 실행하거나 패키지 디렉터리로 이동하세요'
   'hr4y7owq': 'getgrouplist: %v'
@@ -585,6 +621,10 @@ workspace.noml 에 '%s' 을(를) 등록했습니다
   'ibaimz2h': '순환 감지: %w'
   'ibiol93t': '오류: package.noml 을 찾을 수 없습니다. \'no new <name>\' 로 패키지를 만들거나 패키지 디렉터리로 이동하세요'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+AST 캐시 디렉터리: %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': '인터페이스 \'%s\': 병합된 메서드 \'%s\'의 시그니처가 충돌합니다(\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: 수신자가 필요합니다'
@@ -632,6 +672,7 @@ workspace.noml 에 '%s' 을(를) 등록했습니다
   'k2wgp5l6': '사용법: no run [<package|dir|file>]'
   'k3envsrc': '환경 변수'
   'k3g4ofs4': '포맷 결과 대신 컬러 차이 출력'
+  'k3r7mbqd': 'else 절(혼자 한 줄에 있는 \'->\')은 if-group 안에 있어야 합니다. \'cond ->\' 절과 이 \'->\'를 함께 { ... } 로 감싸 주세요(else 가 없는 단독 \'cond ->\'는 감싸지 않아도 됩니다)'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 결과 슬롯이 없습니다'
   'k8je3usi': '%s이(가) 이미 존재하고 ES 모듈이 아닙니다("type": "module" 없음). 대신 출력을 .mjs로 내보내세요(no build --js -o out.mjs)'
@@ -646,6 +687,7 @@ workspace.noml 에 '%s' 을(를) 등록했습니다
   'klplh4cw': '  no fmt src/                 src/ 에서 포맷이 필요한 .no 나열'
   'kmm43ypb': 'lock에서 %s 해석 중: %w'
   'krvc469y': 'vec.clear: 수신자가 필요합니다'
+  'ksvya88a': '사용법: no cache <stat|clear>'
   'kvp8bxoc': '잠금 파일과 무결성 체크섬을 저장했습니다.'
   'kxikdkzu': 'net-accept: 결과 슬롯이 없습니다'
   'kzomgjsg': '~match 문이 비어 있습니다'
@@ -706,6 +748,8 @@ utils.no 쓰기 오류: %v
   'm5fpbrwd': 'vec.reverse: 수신자가 필요합니다'
   'm5klw1rq': '메서드 “%s.%s”은(는) %d개의 인수를 가지지만 인터페이스는 %d개를 기대합니다'
   'm7egvbv0': '정수 표현식은 기본적으로 option<int>이며 표현식 문으로 버려졌습니다(처리되지 않음). `#{overflow = wrap}` 주석을 추가해 일반 int를 받거나, `?=`로 전파하거나, `_ = expr`로 명시적으로 버리세요.'
+  'm7q3keu7': 'fmt: %s 은(는) Markdown 파일입니다. -md 를 주면 그 안의 Nolang 블록을 서식 적용합니다'
+  'm7vq3xrt': 'if-group 밖의 단독 \'->\' else 절은 가장 가까운 \'cond ->\' 절에만 결합되며 위쪽의 \'cond ->\' 절 %d 개는 무시됩니다 — 모두 if-group { ... } 로 감싸서 \'->\' 가 실제 대체 절이 되도록 하세요'
   'm8blb8q2': 'noml: %d행 %d열: %s'
   'mbnaky32': '레지스트리 인증 토큰 (미사용: 업로드 미구현)'
   'meket0n4': 'vec.clear: 수신자 슬롯이 없습니다'
@@ -789,7 +833,15 @@ Zig 컴파일러를 찾을 수 없습니다
   'ol21t36r': '  no run --js --js-runtime bun main.no     위와 같되 bun 사용 (node, bun, deno 등)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '정수 나눗셈 또는 나머지 연산의 제수가 리터럴 상수 0입니다. 이는 LLVM에서 정의되지 않은 동작(0으로 나누는 sdiv/srem)이며 예측할 수 없는 결과를 낳습니다. 런타임 0 검사를 추가하거나, 함수가 실패를 option으로 반환하도록 하세요.'
-  'oraub2m9': '`%s %s= %s`은(는) 지원되지 않습니다: 인덱스 읽기는 option(범위를 벗어나면 nil)을 반환하므로 복합 할당은 인덱스를 두 번 평가하고 실패를 버리게 됩니다. 다음과 같이 다시 작성하세요(ok arm의 `it`이 요소 슬롯이며 읽고 쓸 수 있습니다):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   또는 `%s ?= %s %s %s`(실패를 전파합니다. 바깥 함수에 option 결과 매개변수가 필요합니다)\n'
+  'oraub2m9': `
+`%s %s= %s`은(는) 지원되지 않습니다: 인덱스 읽기는 option(범위를 벗어나면 nil)을 반환하므로 복합 할당은 인덱스를 두 번 평가하고 실패를 버리게 됩니다. 다음과 같이 다시 작성하세요(ok arm의 `it`이 요소 슬롯이며 읽고 쓸 수 있습니다):
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   또는 `%s ?= %s %s %s`(실패를 전파합니다. 바깥 함수에 option 결과 매개변수가 필요합니다)
+
+`
   'orjs902d': '\'switch/case/default\'은(는) 사용 중단되었습니다. 대신 \'x: { 1-> ... }\'을(를) 사용하세요'
   'os0j8ix4': '배열 \'%s\'의 %s 요소에 %s 값을 할당할 수 없습니다%s'
   'osrb7a78': 'move 슬롯'
@@ -917,6 +969,7 @@ AST 묶음 완료: %s
   'sz3i7626': 'win-read-pipe: (handle, max-bytes)가 필요합니다'
   't0f6p9jl': '루프 안의 블록 뒤에 \'(\'를 기대했지만 %s을(를) 받았습니다'
   't22pcf4p': 'embed: 파일을 찾을 수 없습니다: %s (해석 경로: %s)'
+  't2fwnrfi': '  stat   캐시 위치, 항목 수, 크기, ASTVersion 표시'
   't4jhbz5z': '함수 이름 뒤에 \'=\'를 기대했지만 %s을(를) 받았습니다'
   't5l89pst': `
 의존성 %s 을(를) 찾을 수 없습니다.
@@ -924,6 +977,7 @@ AST 묶음 완료: %s
 `
   't5qq2leo': 'lencap kind: %s(%s)에 대한 len/cap은 함수 %d에서 지원되지 않습니다'
   't5rup04t': 'move 소스 슬롯 v%d -> v%d'
+  't8440cno': '환경 변수: NOLANG_AST_CACHE_OFF=1 이면 캐시 비활성, NOLANG_AST_CACHE_DIR 이 디렉터리를 대체합니다.'
   'tb2zxq0f': '\'%s.%s []T\'은(는) 허용되지 않습니다: 필드 타입은 \'%s\'의 타입 정의에 속합니다. 필드에 저장하려면 \'%s.%s = ...\'로 작성하세요'
   'tbfsq7ph': '  no pub                       dist/<name>.ast.zip 쓰기'
   'tcpoxtfd': '타입 주석 “%s”은(는) 생략할 수 있습니다(값에서 추론됨)'
@@ -945,6 +999,7 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'tfwxqucs': '`return` 뒤에는 값을 붙일 수 없습니다. Nolang은 이름 있는 결과 매개변수(out-params)로 결과를 반환하므로, 조기 종료에는 `return`만 쓰고 함수 본문 안에서 결과 매개변수에 값을 할당하세요'
   'tgutu5g0': '\'# %s.%s as %s\' 대신 \'# %s.%s %s\'을(를) 사용하세요'
   'tgz86gvc': '빌드된 바이너리 읽기: %w'
+  'thdxbnrt': 'fmt: %s 아래에 Markdown 파일(.md/.mdx)이 없습니다'
   'tho8xc47': '생성된 파일:'
   'tjwokiw9': '배열 리터럴에서 쉼표 또는 오른쪽 대괄호를 기대했지만 %s을(를) 받았습니다'
   'tlwmf1le': 'Nolang 에서는 명시적 타입 캐스트 `expr %s` 를 허용하지 않습니다. 안전한 확장/동일 폭 변환에는 선언 형식 `name %s = expr` 을 사용하세요'
@@ -958,12 +1013,17 @@ WASI sysroot를 찾을 수 없습니다. $WASI_SYSROOT를 wasi-sysroot 경로로
   'tsg5cbwu': 'ESM 패키지 지정자 %q에 잘못된 문자 %q이(가) 있습니다'
   'tt23j5su': '범위를 닫는 \']\' 또는 \')\'를 기대했지만 %s을(를) 받았습니다'
   'tt8f2dmd': 'net-recv-nb: 결과 슬롯이 없습니다'
+  'ttdybn5d': 'fmt: -md 와 -fix 는 함께 쓸 수 없습니다(자동 수정은 .no 소스에만 적용)'
   'ttlxcrgt': '범위 표현식에 \'[\' 또는 \'(\' 또는 문자열을 기대했지만 %s을(를) 받았습니다'
   'u0g1w0d7': 'js 호환 모듈을 찾을 수 없습니다: %s'
   'u3g4qexx': 'builtin chars-new: 잘못된 인수 타입 %s입니다'
   'u3if6wak': '  no fmt -fix=match -w src/       빠진 match 분기를 제자리에서 보충'
   'u4oybn9r': '%s이(가) 이미 설치되어 있습니다(%s). 재설치하거나 업데이트하려면 -u를 사용하세요'
   'u5qmp19f': 'option match는 모든 분기를 처리해야 합니다: err, nil, ok (누락: %s)'
+  'u9kq06kz': `
+전체 크기: %d 바이트
+
+`
   'ua5h1rpc': '\'as\' 캐스트는 FFI 포인터 타입(예: *byte, **byte)에만 허용되지만 %s을(를) 받았습니다'
   'uea62he5': '함수 “%s”은(는) 최대 %d개의 입력 인수를 받지만 %d개가 전달되었습니다 —— 출력 매개변수는 할당으로 바인딩해야 합니다(예: result = %s(...))'
   'uf368nh9': '출력 zip 경로 (기본: dist/<tool>.ast.zip)'
@@ -1146,6 +1206,4 @@ AST 의존성 %s 동기화 오류: 모듈이 비어 있음
 
 `
   'zzcfoc04': 'dist 디렉터리 생성: %w'
-  'k3r7mbqd': 'else 절(혼자 한 줄에 있는 \'->\')은 if-group 안에 있어야 합니다. \'cond ->\' 절과 이 \'->\'를 함께 { ... } 로 감싸 주세요(else 가 없는 단독 \'cond ->\'는 감싸지 않아도 됩니다)'
-  'm7vq3xrt': 'if-group 밖의 단독 \'->\' else 절은 가장 가까운 \'cond ->\' 절에만 결합되며 위쪽의 \'cond ->\' 절 %d 개는 무시됩니다 — 모두 if-group { ... } 로 감싸서 \'->\' 가 실제 대체 절이 되도록 하세요'
 }

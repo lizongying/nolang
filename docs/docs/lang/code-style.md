@@ -43,6 +43,7 @@ sidebar_position: 4
 檔案頂部之外（代碼之後）出現的導入區段一律原樣保留。
 
 ```no
+#{fmt-skip}
 ; 格式化前                          ; 格式化後
 # std/vec                           # std/io
 # std/fmt                           # std/vec
@@ -59,6 +60,7 @@ Nolang 支援兩種**單行註釋**標記與一種**多行（塊）註釋**標�
 - `;; ... ;;` —— 多行（塊）註釋（2026-07-18 實作，對稱定界，未閉合則註釋到文件尾）
 
 ```no
+#{fmt-skip}
 // 這是註釋
 ; 這也是註釋，語義相同
 x = 1 ; 行內註釋，註釋到行尾
@@ -80,9 +82,12 @@ y = 2 ;; 行內塊註釋 ;;
 **禁止單行多條語句寫法**：`;` 只是註釋標記，不能用來在同一行連接多條語句；逗號 `,` 同樣不能連接語句。塊 `{ ... }` 內的每條語句必須各自獨佔一行。把塊壓成一行是最危險的錯誤：
 
 ```no
+#{fmt-skip}
 ; ❌ 錯誤：`; return }` 整段變成註釋，塊的 `}` 隨之消失
 cond -> { print('X'); return }
+```
 
+```no
 ; ✅ 正確：每條語句獨佔一行
 cond -> {
     print('X')
@@ -140,8 +145,12 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
     val ?v = .get(key)
     val: {
         ok -> found = true
-        err -> {}
-        nil -> {}
+
+        err -> {
+        }
+
+        nil -> {
+        }
     }
 }
 ```
@@ -151,6 +160,7 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 不要寫冗餘的提前賦零值——這只是被後續賦值覆蓋掉的無效 store：
 
 ```no
+#{fmt-skip}
 ; Bad：冗餘的提前賦零值
 hashmap-str-tmpl.contains = (key str) (found bool) {
     found = false              ; 冗餘——編譯器會在返回時自動補零
@@ -168,6 +178,7 @@ hashmap-str-tmpl.contains = (key str) (found bool) {
 對 `?T` option 型別的 out 參數，編譯器在補零時直接寫入 `nil`（tag=1, data=0），等同於 `result = nil`。因此「找不到 / 空集合 / EOF」這類路徑只需裸 `return`，不需要在原始碼寫 `result = nil`：
 
 ```no
+#{fmt-skip}
 ; Good：未命中路徑用裸 return，編譯器自動補 result = nil
 hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return        ; 編譯器補 result = nil
@@ -179,3 +190,59 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
 ### 除錯提示
 
 若函式返回了非預期的零值（例如 `found` 應為 `true` 卻得到 `false`，或 `result` 應有值卻是 `nil`），檢查函式體內**所有應返回非零值的路徑**是否都對 out 參數做了顯式賦值。編譯器不會猜測意圖——它只會對未被賦值的 out 參數補零。詳見 `.agents/skills/nolang-debug/SKILL.md` 的除錯提示。
+
+## Markdown 代碼塊（`no fmt -md`）
+
+`no fmt -md` 只排版 ```` ```no ```` / ```` ```nolang ```` 圍欄**內部**的內容，圍欄行與其餘 Markdown 逐字保留。塊的內容按 Nolang 源碼解析；解析不了就整塊原樣留底並回報行號，不會改壞。（`-md` 與 `-fix` 互斥，只管排版。）
+
+### 正確示例與錯誤示例各自獨立成塊
+
+同一塊裡既寫「正確寫法」又寫「錯誤寫法」，兩者會被當成同一段程式：正確的那半失去 `no fmt` 校驗，錯誤的那半又可能被排版「順手修正」成看不出問題的樣子。所以：
+
+- **正確示例**單獨一塊，不加註解，交給 `no fmt` 排版與校驗；
+- **錯誤示例**單獨一塊，首行寫 `#{fmt-skip}`，既不校驗也不修改。
+
+```no
+; ✅ 正確：每條語句獨佔一行
+cond -> {
+    print('X')
+    return
+}
+```
+
+```no
+#{fmt-skip}
+; ❌ 錯誤：`;` 之後整行都是註釋，塊的 `}` 隨之消失
+cond -> { print('X'); return }
+```
+
+### `#{fmt-skip}` 的三類用途
+
+1. **錯誤示例 / 反例**——本來就不是合法程式，排版只會幫倒忙。
+2. **偽碼與簽名速查**——只有形狀、沒有實作的片段（如 `f = (a i64) (r i64) { ... }` 的簽名骨架）。
+3. **對齊註釋列的快查表**——`no fmt` 會把 `code      ; 說明` 壓成 `code; 說明`，而列對齊正是這類表格的可讀性來源，必須過濾。
+
+### 不要為了「阻止展開」而加註解
+
+`no fmt` 會把空塊 `{ }`、單行臂 `-> { x() }` 展開成多行：
+
+```no
+ok = (b bool) (yes bool) {
+}
+
+dispatch = (cmd str) {
+    cmd == 'a' -> {
+        fa()
+    }
+}
+```
+
+這是**要接受**的規範形——展開後塊內才有獨立的行可以插入後續語句，否則每次加一行都得先手動拆塊。同理，`true -> {}` 變成 `true -> {\n}` 也不必回退：真正需要 `#{fmt-skip}` 的只有上面三類（反例、偽碼、對齊表格）。
+
+### 純註釋塊不需要註解
+
+整塊只寫註釋（把正確寫法「註起來」）的塊解析得到**零條陳述**，`no fmt` 視為「沒有可排版的東西」，原樣留底、不回報——它本來就不是語法錯誤，加 `#{fmt-skip}` 只會掩蓋事實。
+
+### 順序：先加註解，再排版
+
+`no fmt -md -w` 會就地改寫所有未被過濾的塊。錯誤示例一旦被排版工具「修正」，反例就不成立了，而原始寫法無從還原。**先補 `#{fmt-skip}`，再跑 `-w`。**

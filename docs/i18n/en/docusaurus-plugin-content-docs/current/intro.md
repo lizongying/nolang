@@ -27,7 +27,7 @@ Nolang is a memory-safe, GC-free systems programming language with intuitive sem
 print('Hello, Nolang!')
 
 ; Variable declaration
-i64
+count i64
 
 ; Function definition
 add = (a i64, b i64) (result i64) {

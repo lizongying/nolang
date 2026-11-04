@@ -7,6 +7,7 @@ sidebar_position: 3.6
 ### set — Set (Array-based)
 
 ```no
+#{fmt-skip}
 new-n = set.add(s, n, val)           ; Add element
 new-n = set.set-remove(s, n, val)        ; Remove element
 ok = set.contains(s, n, val)         ; Whether it contains
@@ -23,6 +24,7 @@ yes = set.set-empty(s, n)                    ; Whether it is empty
 A double-ended queue implemented with a circular buffer, wrapped in the `deque` struct:
 
 ```no
+#{fmt-skip}
 ; Struct
 deque {
     buf []i64
@@ -56,6 +58,7 @@ d.clear()                      ; Clear
 A binary min heap wrapped in the `heap` struct:
 
 ```no
+#{fmt-skip}
 ; Struct
 heap {
     data []i64
@@ -78,6 +81,7 @@ yes = h.empty()                ; Whether it is empty
 A last-in-first-out (LIFO) data structure, wrapped in the `stack` struct:
 
 ```no
+#{fmt-skip}
 ; Struct
 stack {
     data []i64
@@ -85,7 +89,7 @@ stack {
 }
 
 ; Initialization
-buf [128]i64 = [0:128]
+buf [128]i64
 s = stack{
     data: buf
     n: 0
@@ -105,6 +109,7 @@ s.clear()                      ; Clear
 Fixed capacity 64 (i64→i64), linear probing, doubly-linked list preserves insertion order:
 
 ```no
+#{fmt-skip}
 m = linked-hash-map{}
 m.init()
 m.put(key, val)
@@ -122,7 +127,7 @@ m.for-each(key, val)
 Fixed capacity 64, linear probing, O(1) lookup/insert/delete:
 
 ```no
-s = hash-set{}
+s = hash-set {}
 s.init()
 is-new = s.add(val)
 found = s.contains(val)
@@ -138,6 +143,7 @@ s.for-each(val)
 Fixed capacity 256, FNV-1a hash, linear probing:
 
 ```no
+#{fmt-skip}
 m = str-map{}
 m.init()
 m.put('key', 'val')
@@ -155,7 +161,7 @@ m.for-each(k, v)
 Fixed capacity 256, FNV-1a hash, string deduplication:
 
 ```no
-s = str-set{}
+s = str-set {}
 s.init()
 is-new = s.add('hello')
 found = s.contains('hello')
@@ -171,6 +177,7 @@ s.for-each(val)
 An ordered map (i64→i64) implemented on a self-balancing AVL binary search tree, capacity 64:
 
 ```no
+#{fmt-skip}
 m = tree-map{}
 m.clear()                           ; Initialize
 ok = m.put(key, val)                ; Insert or update
@@ -192,6 +199,7 @@ yes = m.full()
 An ordered set (i64) implemented on a self-balancing AVL binary search tree, capacity 64:
 
 ```no
+#{fmt-skip}
 s = tree-set{}
 s.clear()                           ; Initialize
 ok = s.add(key)                     ; Add element
@@ -212,7 +220,8 @@ yes = s.full()
 Implemented on a fixed-length array ring buffer; the buffer is provided by the `[n]t` receiver:
 
 ```no
-buf [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
 q = buf.queue-init()
 ok = buf.queue-push(q, val)         ; Push to tail
 val = buf.queue-pop(q)              ; Pop from front (?t)
@@ -228,7 +237,8 @@ q.clear()
 A stack implementation based on a fixed-length array; the buffer is provided by the `[n]t` receiver:
 
 ```no
-buf [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
 s = buf.arr-stack-init()
 ok = buf.arr-stack-push(s, val)     ; Push
 val = buf.arr-stack-pop(s)          ; Pop (?t)
@@ -244,9 +254,10 @@ s.clear()
 A doubly linked list based on a fixed-length array node pool; values are provided by the `[n]t` receiver:
 
 ```no
-buf [128]i64 = [0:128]
-nxt [128]i64 = [0:128]
-prv [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
+nxt [128]i64
+prv [128]i64
 l = buf.link-init(nxt, prv)
 ok = buf.link-push-front(l, val)    ; Insert at head
 ok = buf.link-push-back(l, val)     ; Insert at tail
@@ -264,6 +275,7 @@ yes = l.full()
 Generic dynamic-capacity hash map, using vec fields for keys/vals/occ. Supports str keys (hashmap-str-tmpl), int keys (hashmap-int-tmpl), and bool keys (hashmap-bool-tmpl). Initial capacity 16, auto-rehash when load factor > 0.75:
 
 ```no
+#{fmt-skip}
 m = hashmap-str-tmpl{}
 m.init()
 m.put('key', val)                   ; Insert or update
@@ -291,6 +303,7 @@ m3.put(flag, v)
 Generic fixed-capacity hash map (256 slots for str/int, 2 slots for bool), using linear probing and FNV-1a hashing. Recommended ≤ 192 entries (load factor ≤ 0.75):
 
 ```no
+#{fmt-skip}
 m = static-hashmap-str-tmpl{}
 m.init()
 m.put('key', val)                   ; Insert or update

@@ -176,7 +176,7 @@ func TestFormatPreservesEffectiveOverflowInMatchArm(t *testing.T) {
 func TestFormatPreservesEffectiveOverflowGenericElem(t *testing.T) {
 	input := "[]t.sum = () (sum t) {\n" +
 		"    acc = 0\n" +
-		"    i <- [0...len()): {\n" +
+		"    i <- [0..self.len()): {\n" +
 		"        #{overflow=wrap}\n" +
 		"        acc = acc + .[i]\n" +
 		"    }\n" +

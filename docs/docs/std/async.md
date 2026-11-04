@@ -31,6 +31,7 @@ sidebar_position: 4.2
 `co` 是建立在協程組之上的**無色（colorless）**語法：你寫的是未染色的函式名 `worker`，編譯器自動單態化出 `worker-async` 變體並在底層以染色無棧協程執行。你不需要手寫 `-async` 後綴，也不需要手寫 `run` / `awy`。
 
 ```no
+#{fmt-skip}
 worker = (n i64) (r i64) {
     #{overflow=wrap}
     r = n + 1
@@ -55,6 +56,7 @@ print(r1.to-str() + ' ' + r2.to-str())
 Nolang 提供協作式、單執行緒、無棧的異步協程模型：
 
 ```no
+#{fmt-skip}
 ; 啟動 -async 函數為後台任務，返回不透明 task 句柄
 h = run worker-async(args)
 

@@ -134,6 +134,7 @@ type Parser struct {
 	// 重解析原始碼，檢查逐行注解是否與舊行為等價。目前沒有任何工具會設定它
 	//（預設恆為 false），故上述分支在正常建置下不會被走到。
 	LegacyBlockOverflowPropagation bool
+	preserveInnerBlock bool
 }
 
 // blockType — { body } 內部的型別分類
@@ -1440,6 +1441,21 @@ func setComment(stmt Statement, comment *CommentGroup) {
 		s.Comment = comment
 	case *MultiAssignStatement:
 		s.Comment = comment
+	case *TypeAlias:
+		// 類型別名同樣繼承 CommentedNode。漏掉這個分支時，`bytes = []byte ; 說明`
+		// 的行內註釋既不會掛到別名上、也不會退化成下一條陳述的 Doc，而是在
+		// fmt 重排時**靜默丟失**——註釋是使用者寫下的內容，丟失等同資料遺失。
+		s.Comment = comment
+	case *EmptyStatement:
+		// `...  ; TODO` 的行尾註釋同理：佔位符幾乎總是被寫成「這裡還沒做」，
+		// 註釋就是它的全部資訊量，丟掉等於把 TODO 刪了。
+		s.Comment = comment
+	case *UnwrapAssignStatement:
+		// `v ?= expr ; 說明` 的行內註釋。此型別在 setDoc 有分支、在 setComment
+		// 卻沒有，於是「同一行尾隨」這一種寫法的註釋誰也掛不上，fmt 重排時
+		// **靜默丟失**（寫在上面一行反而不會丢）。註釋是使用者寫下的內容，
+		// 丟失等同資料遺失。
+		s.Comment = comment
 	}
 }
 
@@ -1550,6 +1566,17 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 		s.Doc = doc
 	case *TypeAlias:
 		s.Doc = doc
+	case *EmptyStatement:
+		// `...` 只有一個 token，所以解析迴圈在算 peekToken 時就已經把同一行後方的
+		// 註釋預收進緩衝（nextToken 的 advanceCollect），接著 collectDocComments
+		// 把它當成「前置 Doc」交給這裡。位置上它明明在 `...` 之後 ⇒ 它是行內註釋。
+		// 不區分的話 `... ; TODO` 會被印成「上面一行註釋 + 下一行 `...`」，並多出
+		// 一個空行；更糟的是多數時候 Doc 掛在下一條陳述上、`...` 的 TODO 就搬走了。
+		if doc.Start.Line == s.Token.Line {
+			s.Comment = doc
+		} else {
+			s.Doc = doc
+		}
 	case *AnnotationStatement:
 		s.Doc = doc
 		if os.Getenv("NOLANG_FMTDBG") != "" && doc != nil {

@@ -323,3 +323,75 @@ func TestFormatStructFieldDocCommentPreserved(t *testing.T) {
 		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
 	}
 }
+
+// REGRESSION GUARD (an if-group inside an arm body must keep its own braces).
+//
+// `cond -> { { inner -> ...  -> ... } }` 的內層 `{}` 是**獨立的 short-circuit
+// chain**（if 組），不是可以省略的多餘區塊。曾有一版 fmt 把內層 `{}` 當成
+// wrapper 一併印成無大括號形態，內層的臂於是被外層 chain 吸收 —— 語意改變：
+// 以 f64.round 為例，x = -3.7 時 `f <= -0.5` 臂不再屬於 `. >= 0.0` 的 else 分支，
+// 結果從 -4.0 變成 -3.0。wrapper 節點在 parser 側由 IsWrapper 標記（人工造、
+// 無對應源碼大括號），fmt 必須跳過「wrapper 自己」的那一層，而不能連內層 chain
+// 的大括號一起吞掉。
+func TestFormatNestedChainArmKeepsBraceGroup(t *testing.T) {
+	in := "f = (x f64) (res f64) {\n" +
+		"    {\n" +
+		"        x >= 0.0 -> {\n" +
+		"            {\n" +
+		"                x >= 0.5 -> {\n" +
+		"                    res = 1.0\n" +
+		"                }\n" +
+		"\n" +
+		"                -> {\n" +
+		"                    res = 0.0\n" +
+		"                }\n" +
+		"            }\n" +
+		"        }\n" +
+		"\n" +
+		"        -> {\n" +
+		"            res = -1.0\n" +
+		"        }\n" +
+		"    }\n" +
+		"}\n"
+	out, errs := FormatFileWithErrors(in)
+	if len(errs) > 0 {
+		t.Fatalf("format errors: %v", errs)
+	}
+	if out != in {
+		t.Fatalf("if-group braces inside an arm body were rewritten:\n--- want ---\n%s\n--- got ---\n%s", in, out)
+	}
+	out2, _ := FormatFileWithErrors(out)
+	if out2 != out {
+		t.Fatalf("not idempotent:\n--- pass1 ---\n%s\n--- pass2 ---\n%s", out, out2)
+	}
+}
+
+// REGRESSION GUARD (`v ?= expr ; comment` must keep its inline comment).
+//
+// parser.setComment had a case for every CommentedNode-bearing statement except
+// UnwrapAssignStatement. Because setDoc *did* have that case, only the
+// same-line form was affected: `; 說明` written above the `?=` line survived,
+// while `v ?= expr ; 說明` had its comment attached to nothing and was then
+// silently dropped by the formatter — user-written content turned into data
+// loss. Same class as the TypeAlias / EmptyStatement cases already guarded
+// there.
+func TestFormatUnwrapAssignKeepsInlineComment(t *testing.T) {
+	in := "f = (p str) (result ?str) {\n    v ?= open(p) ; 說明\n    result = v\n}\n"
+	// Inline comments are printed flush against the statement (`a = 1; c`),
+	// which is the formatter's long-standing canonical spelling.
+	want := "f = (p str) (result ?str) {\n    v ?= open(p); 說明\n    result = v\n}\n"
+	out, errs := FormatFileWithErrors(in)
+	if len(errs) > 0 {
+		t.Fatalf("format errors: %v", errs)
+	}
+	if !strings.Contains(out, "說明") {
+		t.Fatalf("inline comment on `?=` was dropped:\n--- want ---\n%q\n--- got ---\n%q", want, out)
+	}
+	if out != want {
+		t.Fatalf("unexpected output:\n--- want ---\n%q\n--- got ---\n%q", want, out)
+	}
+	out2, _ := FormatFileWithErrors(out)
+	if out2 != out {
+		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
+	}
+}

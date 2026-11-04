@@ -4,7 +4,7 @@
 ;
 ; 用法：
 ;   use std/stack
-;   buf [128]i64 = [0:128]
+;   buf [128]i64
 ;   s = stack { data: buf, n: 0 }
 ;   s.push(42)
 ;   s.push(7)

@@ -23,6 +23,7 @@
 B 的最小重現：
 
 ```no
+#{fmt-skip}
 e-res { ok(v str), fail, }
 
 q e-res = ok('hi')
@@ -64,7 +65,10 @@ owning(v) ⟺ extra(v) >= 2          ; ❌ 錯的
 **為什麼錯**：一次 match 一個**多欄位**變體會抽**每一個**欄位 ——
 
 ```no
-rect(w, h) -> ...      ; 產生 OpEnumField slot 0 與 slot 1
+#{fmt-skip}
+rect(w, h) -> {
+    ...                ; 產生 OpEnumField slot 0 與 slot 1
+}
 ```
 
 於是 `tests/tagged-enum.no` 的 `shape`（`rect` 只被 match 一次）得到 `extra == 2` →
@@ -664,6 +668,7 @@ Phase 1/2/2b 的所有權模型全部建立在「**抽取**把載荷搬出去」
 （`Type.Owned` 依設計 false），載荷就這樣漏掉：
 
 ```no
+#{fmt-skip}
 q e-res = ok('hi')
 print('never matched')      ; 完全沒有 match
 ```
@@ -687,8 +692,18 @@ MIR 實測（`main`）：`drops=1`，而那唯一的 drop 是 `print` 的字串�
 R5 的第一版直接造成**靜默 use-after-free**（比洩漏更糟）：
 
 ```no
-make = () (r e-res) { q e-res = ok('made')  r = q }
-x e-res = make()  x: { ok(v) -> print('got: ' - v)  fail -> ... }
+make = () (r e-res) {
+    q e-res = ok('made')
+    r = q
+}
+x e-res = make()
+x: {
+    ok(v) -> print('got: ' - v)
+
+    fail -> {
+        ...
+    }
+}
 ```
 
 | 二進位 | 輸出 |
@@ -718,7 +733,11 @@ inst.Args[1] }`）—— 這同時修好 R2 的同一道閘門。
 Phase 1/2/2b 就壞了）：
 
 ```no
-make2 = () (r e-res) { q e-res = ok('chain')  t e-res = q  r = t }
+make2 = () (r e-res) {
+    q e-res = ok('chain')
+    t e-res = q
+    r = t
+}
 ```
 
 | 二進位 | 輸出 |
@@ -1028,6 +1047,7 @@ b []byte = with-len(4)     ; HEAD: SIGSEGV（rc=139），v0.3.5 / 4ed84631 / d40
 精確根因（MIR 實證）：`src/std/fs.no:564` 的 `fs.file.close` 方法體內用**裸名**呼叫 libc：
 
 ```no
+#{fmt-skip}
 rc = close(.fd)      ; 意圖是 libc close(2)，回 i64
 ```
 
@@ -1155,6 +1175,7 @@ commit**（這裡是 `d407f2b0`）當基準，否則「HEAD == NOW」這個判�
 ### 13.6 等價替代
 
 ```no
+#{fmt-skip}
 b = 0x00        ; byte，值 0（hex 在 byte 範圍內推斷為 byte）
 PORT i64 = 0x0303   ; 超出 byte 範圍 → 必須顯式標註
 ```

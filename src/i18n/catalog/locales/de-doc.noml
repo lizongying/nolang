@@ -6975,7 +6975,7 @@ behandelt eine Escape-Folge innerhalb einer Zeichenklasse
 cls-idx i64: der Klassenindex
 c i64: das escapte Zeichen (z. B. 'd', 'w', 's')
 `
-  'rsa.rsa-bn-add': `
+  'rsa._rsa-bn-add': `
 c = a + b
 a: Addend (schreibgeschützt, nicht geändert)
 an: Anzahl der signifikanten Limbs von a
@@ -6984,7 +6984,7 @@ bn: Anzahl der signifikanten Limbs von b
 c: Ergebnis von a+b (ein abschließender Übertrag über das längere Operand hinaus hängt ein Limb an)
 cn: tatsächliche Anzahl der Limbs von c (einschließlich Übertrag, nicht beschnitten)
 `
-  'rsa.rsa-bn-cmp': `
+  'rsa._rsa-bn-cmp': `
 Vergleicht zwei Große Ganzzahlen a und b
 Rückgabe cmp: 1 = a > b, 0 = a == b, -1 = a < b
 a: erste Große Ganzzahl (Feld von 32-Bit-Limbs, niederwertigster zuerst)
@@ -6993,7 +6993,7 @@ b: zweite Große Ganzzahl
 bn: Anzahl der signifikanten Limbs von b, die am Vergleich teilnehmen
 cmp: 1=a>b, 0=a==b, -1=a<b (Limb-Anzahlen werden zuerst verglichen, dann Limbs vom bedeutendsten abwärts)
 `
-  'rsa.rsa-bn-div-mod': `
+  'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
 a []i64: Dividend (Limb-Feld mit niedrigstem Limb zuerst)
 an i64: Anzahl der signifikanten Limbs im Dividenden
@@ -7004,7 +7004,7 @@ r: Rest (Ausgabe), rn: Restlänge
 qn: Limbs des Quotienten nach dem Beschneiden (wenn b=0 sind sowohl q als auch r lauter Nullen und qn=rn=0)
 rn: Limbs des Rests nach dem Beschneiden (immer kleiner als b)
 `
-  'rsa.rsa-bn-mul': `
+  'rsa._rsa-bn-mul': `
 c = a × b
 a: Multiplikator
 an: Anzahl der signifikanten Limbs von a
@@ -7013,19 +7013,19 @@ bn: Anzahl der signifikanten Limbs von b
 c: Ergebnis von a×b (höchstens an+bn Limbs, führende Nullen beschnitten)
 cn: Limbs von c nach dem Beschneiden (mindestens 1)
 `
-  'rsa.rsa-bn-shl1': `
+  'rsa._rsa-bn-shl1': `
 a = a << 1 (links um 1 Bit an Ort und Stelle verschieben)
 a: die zu verschiebende Große Ganzzahl (an Ort und Stelle geändert; wenn das oberste Bit überläuft, wird es nach a[an] geschrieben, der Aufrufer muss also Platz reservieren)
 an: Anzahl der signifikanten Limbs vor der Verschiebung
 new-an: Limbs nach der Verschiebung (an+1, wenn das ursprüngliche oberste Limb ≥ 2^31)
 `
-  'rsa.rsa-bn-shr1': `
+  'rsa._rsa-bn-shr1': `
 a = a >> 1 (rechts um 1 Bit an Ort und Stelle verschieben)
 a: die zu verschiebende Große Ganzzahl (an Ort und Stelle geändert)
 an: Anzahl der signifikanten Limbs vor der Verschiebung
 new-an: Limbs nach dem Verschieben und Beschneiden führender Nullen (mindestens 1)
 `
-  'rsa.rsa-bn-sub': `
+  'rsa._rsa-bn-sub': `
 c = a - b (erfordert a ≥ b)
 a: Minuend (muss ≥ b sein, sonst wrappt das Ergebnis beim Borgen modulo 2^32)
 an: Anzahl der signifikanten Limbs von a (bestimmt die Länge der Subtraktionsschleife und die Ausgabezuteilung)
@@ -7034,7 +7034,7 @@ bn: Anzahl der signifikanten Limbs von b (Terme mit i ≥ bn zählen als 0)
 c: Ergebnis von a-b (führende Nullen beschnitten)
 cn: Limbs von c nach dem Beschneiden (mindestens 1)
 `
-  'rsa.rsa-decrypt': `
+  'rsa._rsa-decrypt': `
 RSA-Entschlüsselung (m = c^d mod n)
 ct: Chiffretext-Große-Ganzzahl c (muss kleiner als mod sein)
 ctn: Limbs von ct
@@ -7045,7 +7045,7 @@ modn: Limbs von mod
 out: Klartext m = c^d mod n (kein PKCS#1-Entpolstern)
 outn: Limbs von out
 `
-  'rsa.rsa-encrypt': `
+  'rsa._rsa-encrypt': `
 RSA-Verschlüsselung (c = m^e mod n)
 msg: Klartext-Große-Ganzzahl m (muss kleiner als mod sein; kein PKCS#1-Polstern angewendet)
 msgn: Limbs von msg
@@ -7055,6 +7055,19 @@ mod: Modulus n
 modn: Limbs von mod
 out: Chiffretext c = m^e mod n
 outn: Limbs von out
+`
+  'rsa._rsa-modpow-step': `
+Einzelner Quadrat-und-Multiplizieren-Schritt (eine eigene Funktion, damit jeder Schritt Arbeitspuffer freigibt)
+result = result^2 mod modulus; wenn exp-bit == 1, zusätzlich result = result * base mod modulus
+result: aktueller Akkumulator (die Basis vor dem Quadrieren)
+rn: Limbs von result
+base: Potenzbasis, nur bei exp-bit=1 eingemultipliziert
+bn: Limbs von base
+exp-bit: aktuelles Exponent-Bit (1 = base in diesem Schritt multiplizieren, 0 = nur quadrieren)
+modulus: Divisor zur Reduktion
+mn: Limbs von modulus
+new-result: (result² × base^exp-bit) mod modulus
+new-rn: Limbs von new-result
 `
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
@@ -7069,19 +7082,6 @@ modulus: Modulus
 mn: Limbs von modulus (Ergebnispuffer werden auf diese Länge zugeteilt)
 result: base^exp mod modulus (Quadrat-und-Multiplizieren pro Bit, beginnend bei 1)
 rn: Limbs von result
-`
-  'rsa.rsa-modpow-step': `
-Einzelner Quadrat-und-Multiplizieren-Schritt (eine eigene Funktion, damit jeder Schritt Arbeitspuffer freigibt)
-result = result^2 mod modulus; wenn exp-bit == 1, zusätzlich result = result * base mod modulus
-result: aktueller Akkumulator (die Basis vor dem Quadrieren)
-rn: Limbs von result
-base: Potenzbasis, nur bei exp-bit=1 eingemultipliziert
-bn: Limbs von base
-exp-bit: aktuelles Exponent-Bit (1 = base in diesem Schritt multiplizieren, 0 = nur quadrieren)
-modulus: Divisor zur Reduktion
-mn: Limbs von modulus
-new-result: (result² × base^exp-bit) mod modulus
-new-rn: Limbs von new-result
 `
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════

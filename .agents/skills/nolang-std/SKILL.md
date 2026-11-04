@@ -182,6 +182,7 @@ Nolang type to LLVM mapping:
 `option<t>` tagged enum (tag=0=val, 1=nil, 2=err):
 
 ```no
+#{fmt-skip}
 x ?t                ; Declare option<t>
 x = 42              ; Set to has-value
 x = nil             ; Set to empty
@@ -204,6 +205,7 @@ x: {
 #### fmt — Formatted Output
 
 ```no
+#{fmt-skip}
 print('x={x}')                 ; Named format, auto-appends newline (stdout)
 eprint('err {x}')              ; Named format, auto-appends newline (stderr)
 print('id {id:06} amt {money:.2f}')  ; Supports align/fill/width/precision
@@ -255,6 +257,7 @@ After the 2026-10 math/number split, ALL function-form numeric APIs live in std/
 char is a single **Unicode scalar value** (valid range `0 ..= 0x10FFFF`), stored as **`i32`** — deliberately not i64 (a code point needs only 21 bits). All operations are provided as methods:
 
 ```no
+#{fmt-skip}
 c char = 'A'
 c.is-digit()       ; Is digit (0-9) (method)
 c.is-letter()      ; Is letter (a-z, A-Z) (method)
@@ -278,6 +281,7 @@ c.to-str()         ; Unicode → string (UTF-8, method)
 #### str — String Operations
 
 ```no
+#{fmt-skip}
 ok = a.eq(b, n)               ; Equality comparison (method)
 ok = a.eq-full(b)             ; Full string equality (method)
 dst = s.copy()                ; String copy (method)
@@ -340,6 +344,7 @@ cp = s.at(idx)                ; Get character at index (method)
 `num = int | float` (defined in `src/std/num.no`). Methods on the `num` type live here; the generic functions max/min are in math:
 
 ```no
+#{fmt-skip}
 r = v.abs()                      ; Absolute value (num method)
 r = v.clamp(lo, hi)              ; Clamp to range (num method)
 r = v.sign()                     ; Sign (-1/0/1, num method)
@@ -350,6 +355,7 @@ r = v.sign()                     ; Sign (-1/0/1, num method)
 `int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128` (defined in `src/std/int.no`). Methods on the `int` type live here:
 
 ```no
+#{fmt-skip}
 s = v.to-str()                   ; Integer to string (int method)
 q = v.div(b)                     ; Division quotient, returns option (int method)
 r = v.mod(b)                     ; Modulo, returns option (int method)
@@ -360,6 +366,7 @@ r = v.mod(b)                     ; Modulo, returns option (int method)
 `float = f32 | f64` (defined in `src/std/float.no`). Methods on the `float` type live here:
 
 ```no
+#{fmt-skip}
 q = v.div(b)                     ; Float division (float method)
 yes = v.is-nan()                 ; NaN check (float method)
 yes = v.is-inf()                 ; Inf check (float method)
@@ -372,6 +379,7 @@ No `float.to-str` union method is defined (codegen fallback dispatches f64 recei
 (Full API is in the two sections above: methods in "number — Numeric Operations (method-form API)", functions under "math". `x.to-str()` methods are on the value, e.g. `n.to-str()`.)
 
 ```no
+#{fmt-skip}
 math.even(v)                       ; Even/odd check (function, math)
 math.odd(v)
 math.gcd(a, b)                     ; Greatest common divisor (function, math)
@@ -404,6 +412,7 @@ u64.MIN / MAX                 ; 0 / 2^64-1
 #### byte — Byte Operations
 
 ```no
+#{fmt-skip}
 out = i64.to-bytes-be()         ; i64 → big-endian [8]byte
 out = i64.to-bytes-le()         ; i64 → little-endian [8]byte
 v = []byte.to-i64-be()          ; big-endian []byte → i64 (1~8 bytes)
@@ -429,6 +438,7 @@ HEX-LOWER = '0123456789abcdef'
 > **Length semantics (aligned with `str`):** `t.len()` returns the **code-point count** (equal to `t.count()`); `t.len-bytes()` returns the **byte count**. Index/slice/append/compare are all byte-based, so loop bounds over `.byte(i)` / `t[i]` **must use `t.len-bytes()`**, not `t.len()`. For pure ASCII they are equal; with multi-byte UTF-8 content, `t.len() < t.len-bytes()`.
 
 ```no
+#{fmt-skip}
 t txt = 'hello'              ; Must use type annotation
 n = t.len()                  ; Code-point count (i64), == t.count()
 b = t.len-bytes()            ; Byte count (i64) — use this for byte loop bounds
@@ -466,6 +476,7 @@ ok = t.set-byte(i i64, b byte)  ; Raw BYTE write → ?bool (nil + store skipped 
 #### vec — Slice Operations
 
 ```no
+#{fmt-skip}
 v = vec.vec-create(n, val)         ; Create slice of length n, filled with val
 ok = []t.eq(a, b, n)           ; Equality comparison
 n = []t.len()                  ; Length
@@ -487,6 +498,7 @@ arr = []t.to-arr()             ; Convert to array
 #### arr — Array Operations
 
 ```no
+#{fmt-skip}
 out = [n]t.clone()             ; Copy
 ok = [n]t.eq(b)                ; Equality comparison
 [n]t.fill(val)                  ; Fill
@@ -506,6 +518,7 @@ v = [n]t.first()               ; First element
 #### sort — Sort Constants
 
 ```no
+#{fmt-skip}
 sort.asc                         ; Ascending
 sort.desc                        ; Descending
 ```
@@ -519,6 +532,7 @@ sort.desc                        ; Descending
 Provides environment variables, directory operations, process management, system information, time, etc. For file read/write functionality, see the `fs` module.
 
 ```no
+#{fmt-skip}
 ; Environment variables
 val = os.get-env(key)
 os.set-env(key, val)
@@ -614,6 +628,7 @@ ok = os.win-wsa-startup()              ; Initialize Winsock 2.2 (Windows only)
 Wraps open files with the `file` struct and paths with the `path` struct. Defines the `fd` newtype (`fd = i64`) to prevent file descriptors from being confused with arbitrary `i64` values. Also provides an `embed` struct for compile-time embedded filesystems (via `#{embed='dir/path'}`).
 
 ```no
+#{fmt-skip}
 ; fd newtype (underlying i64, type-distinct from i64)
 fd = i64
 
@@ -784,6 +799,7 @@ O-EXCL = 2048       ; macOS=2048, Linux=128, Windows=1024
 #### env — Environment Variables (simplified wrapper)
 
 ```no
+#{fmt-skip}
 val = env.get(key)
 val = env.lookup(key)               ; Returns ?str (nil=not found)
 env.set(key, val)
@@ -808,6 +824,7 @@ arg = args.get-positional(i)
 Wraps path strings with the `path` struct; all operations are provided as methods:
 
 ```no
+#{fmt-skip}
 SEP = 47     ; '/' (ASCII)
 DOT = 46     ; '.'
 
@@ -847,6 +864,7 @@ path.current() (out path)    ; Get current working directory
 #### bufio — Buffered Reading
 
 ```no
+#{fmt-skip}
 r = reader.init(fd, buf)       ; Initialize buffered reader (returns reader)
 ok = reader.fill()              ; Fill buffer
 b = reader.read-byte()          ; Read one byte (?byte, nil=EOF)
@@ -859,6 +877,7 @@ reader.close()                  ; Close
 Provides `io-reader` and `io-writer` structs to unify read/write operations across files, standard I/O, and other streams:
 
 ```no
+#{fmt-skip}
 ; Standard file descriptors
 STDIN-FD = 0
 STDOUT-FD = 1
@@ -900,6 +919,7 @@ line = io.read-line()           ; Read one line from stdin (?str, nil=EOF)
 Wraps pattern with the `regexp` struct; underlying implementation uses C standard library `regex.h`:
 
 ```no
+#{fmt-skip}
 ; Struct
 regexp {
     pattern str
@@ -925,6 +945,7 @@ yes = regexp-match(pattern, text)   ; Check if pattern matches text
 Provides process creation, standard stream access, process waiting, and process information query. Underlying implementation uses POSIX fork/exec/pipe/waitpid:
 
 ```no
+#{fmt-skip}
 ; Signal constants
 SIG-TERM = 15
 SIG-KILL = 9
@@ -995,6 +1016,7 @@ pids = process.find-match(pattern)             ; Find matching pattern
 Provides TCP networking capabilities, including server listening, client connections, and data send/receive. Underlying implementation uses POSIX socket API:
 
 ```no
+#{fmt-skip}
 ; Network constants
 AF-INET = 2
 SOCK-STREAM = 1
@@ -1084,6 +1106,7 @@ parts = split-ws(url)                ; Split WebSocket URL into host/port/path
 Provides IPv4 address parsing, validation, conversion, and classification. Pure Nolang implementation:
 
 ```no
+#{fmt-skip}
 ; Default address constants
 IP-ZERO       ; 0.0.0.0
 IP-LOOPBACK   ; 127.0.0.1
@@ -1131,6 +1154,7 @@ yes = ip.ip-is-private(s)               ; Quick private check
 Supports SSE streaming reception conforming to W3C EventSource spec. Underlying implementation uses HTTP/1.1 long connections, supporting both plain HTTP and HTTPS (TLS):
 
 ```no
+#{fmt-skip}
 ; sse-event struct
 sse-event {
     event str       ; Event type (default 'message')
@@ -1177,15 +1201,16 @@ ok = client.reconnect()             ; Reconnect (uses last-event-id)
 Provides an HTTP/1.1 protocol client, supporting GET, POST, PUT, DELETE, PATCH and other methods, with optional TLS:
 
 ```no
-; Structs
-http.request {
+#{fmt-skip}
+; Structs (definitions inside std/http; no module prefix on definitions — with a prefix it parses as a struct literal)
+request {
     method str
     url str
     body str
     headers [16]str
     header-count i64
 }
-http.response {
+response {
     status-code i64
     status-text str
     headers str
@@ -1226,6 +1251,7 @@ val = resp.get-header(name)                       ; Look up a header value (?str
 Supports HTTP/2 frame parsing and connection management, supports h2c prior knowledge mode:
 
 ```no
+#{fmt-skip}
 ; Frame struct
 http2-frame {
     length i64
@@ -1273,6 +1299,7 @@ pos = frame.serialize(buf, pos)              ; Serialize frame
 HTTP/3 client based on QUIC protocol:
 
 ```no
+#{fmt-skip}
 ; Method constants
 HTTP3-METHOD-GET = 'GET'
 HTTP3-METHOD-POST = 'POST'
@@ -1310,6 +1337,7 @@ val = resp.get-header(name)                  ; Get response header
 Supports full-duplex communication over WebSocket protocol, can act as client or server:
 
 ```no
+#{fmt-skip}
 ; Message struct
 ws-message {
     opcode i64           ; 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
@@ -1351,6 +1379,7 @@ mask-key = gen-mask-key()                    ; Generate mask key
 Provides TLS encrypted connections, supporting TLS 1.2 and 1.3:
 
 ```no
+#{fmt-skip}
 ; Connection
 c = tls.dial(host, port)                        ; Establish TLS connection (?tls.conn)
 c = tls.dial-12(host, port)                     ; TLS 1.2 connection (?tls.conn)
@@ -1371,6 +1400,7 @@ ok = tls.https-serve-once(fd, cert, key)        ; Handle one HTTPS request
 Wraps the `conn` struct, providing auto-reconnect and other features:
 
 ```no
+#{fmt-skip}
 c = client.client-create(host, port)               ; Create client (?client)
 ok = c.connect(host, port)                   ; Connect
 ok = c.reconnect()                           ; Reconnect
@@ -1388,6 +1418,7 @@ c.close()
 Provides QUIC transport protocol implementation, serving as the underlying transport layer for HTTP/3:
 
 ```no
+#{fmt-skip}
 c = quic.dial(host, port)                    ; Establish QUIC connection (?quic.conn)
 n = c.send(data, n)                          ; Send data
 n = c.recv(buf, n)                           ; Receive data
@@ -1397,6 +1428,7 @@ c.close()
 #### net/server — HTTP Server
 
 ```no
+#{fmt-skip}
 ; HTTP server
 s = server{}
 ok = s.listen(host, port)                    ; Start listening
@@ -1438,6 +1470,7 @@ yes = secure-compare(a, b)                   ; Constant-time string comparison
 #### net/dns — DNS Resolution
 
 ```no
+#{fmt-skip}
 ip = dns.resolve(host)                       ; Resolve hostname (?str)
 ips = dns.resolve-all(host)                  ; Resolve all IPs ([]str)
 ip = dns.resolve-from(server, host)          ; Resolve from specific DNS server
@@ -1446,6 +1479,7 @@ ip = dns.resolve-from(server, host)          ; Resolve from specific DNS server
 #### net/url — URL Parsing
 
 ```no
+#{fmt-skip}
 u = url.url-parse(url)                           ; Parse URL
 s = u.to-str()                               ; Convert to string
 
@@ -1466,6 +1500,7 @@ u.set-query(q)                          ; Set query parameters
 #### net/cookie — HTTP Cookie
 
 ```no
+#{fmt-skip}
 c = cookie{}
 c.parse(set-cookie-header)
 s = c.to-str()
@@ -1496,6 +1531,7 @@ header = jar.build-header()                  ; Build Cookie header
 #### net/multipart — Multipart Form Data
 
 ```no
+#{fmt-skip}
 ; Reader
 r = multipart-reader{}
 r.init(data, boundary)
@@ -1531,6 +1567,7 @@ data = multipart-decrypt-field(encrypted, key) ; Decrypt field
 #### net/hpack — HPACK Header Compression (HTTP/2)
 
 ```no
+#{fmt-skip}
 ; Table operations
 t = hpack.tables{}
 t.init()                                      ; Initialize static+dynamic table
@@ -1551,6 +1588,7 @@ out, next-pos = hpack.decode-str(data, pos)   ; Decode string literal
 #### net/proxy — Proxy Support
 
 ```no
+#{fmt-skip}
 c = proxy.dial(proxy-url, target-host, target-port)    ; Dial via proxy
 c = proxy.connect(proxy-url, host, port)               ; Connect via proxy
 c = proxy.dial-auth(proxy-url, host, port, user, pass)  ; Dial with auth
@@ -1567,6 +1605,7 @@ c = proxy.proxy-tls-dial(host, port, target)    ; TLS proxy dial
 #### net/pool — Connection Pool
 
 ```no
+#{fmt-skip}
 p = pool.create(capacity)                     ; Create pool
 p = pool.with-size(n)                         ; Create with size
 p.init(capacity)
@@ -1582,6 +1621,7 @@ n = p.idle-count()                           ; Idle connections
 #### net/unix — Unix Domain Socket
 
 ```no
+#{fmt-skip}
 l = unix.unix-listen-on(path)                  ; Listen on Unix socket
 l = unix-listener{}
 ok = l.listen(path)                           ; Listen
@@ -1612,6 +1652,7 @@ c.close()
 #### time — Time Operations
 
 ```no
+#{fmt-skip}
 sec = time.now-s()                   ; Current Unix timestamp (seconds)
 ms = time.now-ms()                   ; Current timestamp (milliseconds)
 us = time.now-us()                   ; Current timestamp (microseconds)
@@ -1667,6 +1708,7 @@ diff = t.sub(other)                   ; Seconds difference (t - other)
 #### log — Leveled Logging
 
 ```no
+#{fmt-skip}
 LEVEL-DEBUG = 0
 LEVEL-INFO  = 1
 LEVEL-WARN  = 2
@@ -1684,6 +1726,7 @@ log.fatal(msg, code)                   ; Log and exit with status code
 Format bits (combine with `set-format`; default is `F-LEVEL` only):
 
 ```no
+#{fmt-skip}
 F-TIME  = 1                            ; Timestamp YYYY-MM-DD HH:MM:SS (UTC)
 F-LEVEL = 2                            ; [INFO] / [ERROR] level tag
 F-LOC   = 4                            ; Call site [file:line:col]
@@ -1695,6 +1738,7 @@ state is a scalar fd (in std merged modules, struct globals do not retain writes
 only scalar globals are mutable), so a writer is reconstructed from the fd at emit time:
 
 ```no
+#{fmt-skip}
 log.open-file(path)                    ; Append-open a file and set as target; returns ?bool
 log.set-output-fd(fd)                  ; Switch to a custom fd (caller opens/closes)
 log.set-writer(w io.writer)            ; Switch to an io.writer (stores its fd)
@@ -1718,6 +1762,7 @@ w = log.get-writer()                   ; Current output target as an io.writer
 `set` is a **generic** set. The `set` struct owns its element buffer as a `[]t` field plus state (`cap`/`size`); the element type `t` is inferred from the concrete `[N]E` / `[]E` buffer passed to the factory `set.init(data)`, and the compiler monomorphizes `set-E` (via `monomorphizeSliceStructs`). So `set` works for any element type with `==` semantics (`i64`/`u8`/`byte`/`str` …). Capacity is the buffer length.
 
 ```no
+#{fmt-skip}
 use std/set
 
 buf [128]i64 = [0, 0, 0, /* ... n elements ... */]
@@ -1743,6 +1788,7 @@ ss.add('apple')
 Double-ended queue implemented with a circular buffer, wrapped in the `deque` struct:
 
 ```no
+#{fmt-skip}
 ; Struct
 deque {
     buf []i64
@@ -1776,6 +1822,7 @@ d.clear()                      ; Clear
 `heap` is a **generic** binary min heap / priority queue. The `heap` struct owns its element buffer as a `[]t` field plus state (`cap`/`n`); the element type `t` is inferred from the concrete `[N]E` buffer passed to the factory `heap.init(data)`, and the compiler monomorphizes `heap-E` (via `monomorphizeSliceStructs`). So `heap` works for any element type with `<`/`>=` comparison semantics (`i64`/`u8`/`f64` …). Capacity is the buffer length. Minimum element pops first.
 
 ```no
+#{fmt-skip}
 use std/heap
 
 buf [128]i64 = [0, 0, 0, /* ... n elements ... */]
@@ -1803,6 +1850,7 @@ smallest = fh.pop()               ; -> ok(1.5)
 Last-in-first-out (LIFO) data structure, wrapped in the `stack` struct:
 
 ```no
+#{fmt-skip}
 ; Struct
 stack {
     data []i64
@@ -1810,7 +1858,7 @@ stack {
 }
 
 ; Initialization
-buf [128]i64 = [0:128]
+buf [128]i64
 s = stack{
     data: buf
     n: 0
@@ -1830,6 +1878,7 @@ s.clear()                      ; Clear
 Fixed capacity 64 (i64→i64), linear probing, doubly-linked list preserves insertion order:
 
 ```no
+#{fmt-skip}
 m = linked-hash-map{}
 m.init()
 m.put(key, val)
@@ -1847,7 +1896,7 @@ m.for-each(key, val)
 Fixed capacity 64, linear probing, O(1) lookup/insert/delete:
 
 ```no
-s = hash-set{}
+s = hash-set {}
 s.init()
 is-new = s.add(val)
 found = s.contains(val)
@@ -1863,6 +1912,7 @@ s.for-each(val)
 Fixed capacity 256, FNV-1a hash, linear probing:
 
 ```no
+#{fmt-skip}
 m = str-map{}
 m.init()
 m.put('key', 'val')
@@ -1880,7 +1930,7 @@ m.for-each(k, v)
 Fixed capacity 256, FNV-1a hash, string deduplication:
 
 ```no
-s = str-set{}
+s = str-set {}
 s.init()
 is-new = s.add('hello')
 found = s.contains('hello')
@@ -1896,6 +1946,7 @@ s.for-each(val)
 Ordered map (i64→i64) implemented based on AVL self-balancing binary search tree, capacity 64:
 
 ```no
+#{fmt-skip}
 m = tree-map{}
 m.clear()                           ; Initialize
 ok = m.put(key, val)                ; Insert or update
@@ -1917,6 +1968,7 @@ yes = m.full()
 Ordered set (i64) implemented based on AVL self-balancing binary search tree, capacity 64:
 
 ```no
+#{fmt-skip}
 s = tree-set{}
 s.clear()                           ; Initialize
 ok = s.add(key)                     ; Add element
@@ -1937,7 +1989,8 @@ yes = s.full()
 Ring buffer implementation based on fixed-length array, buffer provided by the `[n]t` receiver:
 
 ```no
-buf [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
 q = buf.queue-init()
 ok = buf.queue-push(q, val)         ; Push to tail
 val = buf.queue-pop(q)              ; Pop from head (?t)
@@ -1953,7 +2006,8 @@ q.clear()
 Stack implementation based on fixed-length array, buffer provided by the `[n]t` receiver:
 
 ```no
-buf [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
 s = buf.arr-stack-init()
 ok = buf.arr-stack-push(s, val)     ; Push
 val = buf.arr-stack-pop(s)          ; Pop (?t)
@@ -1969,9 +2023,10 @@ s.clear()
 Doubly-linked list based on fixed-length array node pool, values provided by the `[n]t` receiver:
 
 ```no
-buf [128]i64 = [0:128]
-nxt [128]i64 = [0:128]
-prv [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
+nxt [128]i64
+prv [128]i64
 l = buf.link-init(nxt, prv)
 ok = buf.link-push-front(l, val)    ; Insert at head
 ok = buf.link-push-back(l, val)     ; Insert at tail
@@ -1989,6 +2044,7 @@ yes = l.full()
 Dynamic-capacity generic hash maps with automatic rehashing (load factor > 0.75 triggers capacity doubling). Three templates specialized by key type:
 
 ```no
+#{fmt-skip}
 ; str-key map (V is generic)
 m = hashmap-str-tmpl{}
 m.init()
@@ -2016,6 +2072,7 @@ m3.put(flag, v)
 Fixed-capacity (256 slots) generic hash maps with linear probing. Three templates specialized by key type:
 
 ```no
+#{fmt-skip}
 ; str-key static map (V is generic)
 m = static-hashmap-str-tmpl{}
 m.init()
@@ -2041,6 +2098,7 @@ m3 = static-hashmap-bool-tmpl{}
 Defines standard interfaces for database connections, queries, and prepared statements, implemented by concrete drivers:
 
 ```no
+#{fmt-skip}
 ; Execution result
 result {
     last-id i64
@@ -2082,6 +2140,7 @@ stmt enter, leave {
 #### encoding/hex — Hexadecimal
 
 ```no
+#{fmt-skip}
 ; Encoding (defined in byte module)
 out = data.to-hex()                  ; []byte → uppercase hex str
 out = data.to-hex-lower()            ; []byte → lowercase hex str
@@ -2093,6 +2152,7 @@ out = s.from-hex()                   ; hex str → ?[]byte (nil=empty, err=inval
 #### encoding/base64 — Base64 (RFC 4648)
 
 ```no
+#{fmt-skip}
 BASE64-STD = 'ABC...+/'
 BASE64-URL = 'ABC...-_'
 PAD = 61  ; '='
@@ -2106,6 +2166,7 @@ out-n = base64.decode(s, n, table, out)   ; Base64 decode (?i64, nil=invalid inp
 #### encoding/csv — CSV Parsing (RFC 4180)
 
 ```no
+#{fmt-skip}
 fn, new-pos = csv.parse-field(s, sn, pos, field)  ; Parse single field
 n = csv.parse-line(s, sn, fields, max)             ; Parse one line
 out-n = csv.encode-field(field, fn, out)           ; Encode field
@@ -2116,6 +2177,7 @@ out-n = csv.encode-field(field, fn, out)           ; Encode field
 PEM format is widely used for X.509 certificates, RSA/ECDSA keys, etc.
 
 ```no
+#{fmt-skip}
 ; Struct
 pem-block {
     label str
@@ -2137,6 +2199,7 @@ result = pem.pem-decode(pem-str)                    ; Parse PEM string (?pem-blo
 #### archive/tar — TAR Archive (POSIX ustar)
 
 ```no
+#{fmt-skip}
 ; Read regular tar
 archive = tar{
     data: raw-bytes
@@ -2177,6 +2240,7 @@ archive = builder.finish()
 #### archive/zip — ZIP Archive Parsing
 
 ```no
+#{fmt-skip}
 archive = zip{
     data: raw-bytes
 }
@@ -2205,6 +2269,7 @@ out = writer.finalize()
 #### archive/gzip — GZIP Compression and Raw DEFLATE
 
 ```no
+#{fmt-skip}
 out = gzip.gzip-compress(data)                      ; zlib compression
 out = gzip.gzip-decompress(data)                    ; zlib decompression
 out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression (ZIP method 8)
@@ -2215,6 +2280,7 @@ out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression 
 Pure Nolang implementation of BZIP2 decompression (BWT inverse, MTF inverse, Huffman decode, RLE decode):
 
 ```no
+#{fmt-skip}
 out = bzip2.bzip2-decompress(data)                   ; Decompress .bz2 data
 out = bzip2.bzip2-compress(data)                   ; Compress to .bz2 data
 ```
@@ -2224,6 +2290,7 @@ out = bzip2.bzip2-compress(data)                   ; Compress to .bz2 data
 Pure Nolang implementation of LZMA2 decompression, supporting both .xz container and legacy .lzma formats:
 
 ```no
+#{fmt-skip}
 out = xz.xz-decompress(data)                        ; Decompress .xz format
 out = xz.lzma-decompress(data)                      ; Decompress legacy .lzma format
 out = xz.xz-compress(data)                          ; Compress to .xz format
@@ -2234,6 +2301,7 @@ out = xz.xz-compress(data)                          ; Compress to .xz format
 zlib stream format: 2-byte header + raw DEFLATE + 4-byte Adler-32 checksum:
 
 ```no
+#{fmt-skip}
 out = zlib.zlib-compress(data)                       ; Compress to zlib format (stored blocks)
 out = zlib.zlib-decompress(data)                     ; Decompress zlib format
 out = zlib.zlib-decompress-stored(data)               ; Decompress stored blocks
@@ -2246,6 +2314,7 @@ sum = zlib.adler-32(data, n)                        ; Compute Adler-32 checksum
 Pure Nolang implementation of Zstandard (zstd) decompression (FSE decode, Huffman decode, LZ77 sequence decode):
 
 ```no
+#{fmt-skip}
 out = zstd.zstd-decompress(data)                     ; Decompress .zst format
 out = zstd.zstd-compress(data)                       ; Compress to .zst format
 ```
@@ -2257,6 +2326,7 @@ out = zstd.zstd-compress(data)                       ; Compress to .zst format
 #### crypto/aes — AES Block Cipher Core (AES-128 / AES-256)
 
 ```no
+#{fmt-skip}
 out = aes.enc-128(in [16]byte, key [16]byte)   ; AES-128 encrypt one block
 out = aes.dec-128(in [16]byte, key [16]byte)   ; AES-128 decrypt one block
 out = aes.enc-256(in [16]byte, key [32]byte)   ; AES-256 encrypt one block
@@ -2274,6 +2344,7 @@ and `crypto/aes-gcm`.
 #### crypto/des — DES Encryption/Decryption (ECB mode)
 
 ```no
+#{fmt-skip}
 des.des-enc(plain, 8, key, out)        ; Encrypt 8-byte block
 des.des-dec(cipher, 8, key, out)       ; Decrypt 8-byte block
 ```
@@ -2281,6 +2352,7 @@ des.des-dec(cipher, 8, key, out)       ; Decrypt 8-byte block
 #### crypto/rsa — RSA Modular Exponentiation
 
 ```no
+#{fmt-skip}
 ; Public bytes API (preferred): big-endian unsigned inputs;
 ; output is the shortest big-endian encoding (value 0 -> single byte [0])
 out = rsa.rsa-encrypt-bytes(msg, pub-exp, mod)     ; RSA encrypt (c = m^e mod n)
@@ -2305,6 +2377,7 @@ out [16]byte = md5.md5(data)
 #### crypto/sha1 — SHA-1 (160-bit)
 
 ```no
+#{fmt-skip}
 hash = sha1.sha1(data []byte) (hash [20]byte)
 hex = sha1.sha1-hex(data []byte) (hex str)
 sha1.sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
@@ -2317,6 +2390,7 @@ sha1.sha1-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32)
 #### crypto/sha256 — SHA-256 (256-bit)
 
 ```no
+#{fmt-skip}
 sha256.sha256(data []byte) (hash [32]byte)
 sha256.sha256-hex(data []byte) (hex str)
 sha256.sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32, h7 u32)
@@ -2329,6 +2403,7 @@ sha256.sha256-block(s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 
 #### crypto/sha512 — SHA-512 (512-bit)
 
 ```no
+#{fmt-skip}
 sha512.sha512(data []byte) (hash [64]byte)
 sha512.sha512-hex(data []byte) (hex str)
 sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64, h7 u64)
@@ -2341,18 +2416,21 @@ sha512.sha512-block(s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 
 #### crypto/crc-32 — CRC32 Checksum
 
 ```no
+#{fmt-skip}
 crc-32.new(s []byte, n, crc)
 ```
 
 #### crypto/fnv-1a-32 — FNV-1a Non-cryptographic Hash
 
 ```no
+#{fmt-skip}
 fnv-1a-32.fnv-1a-32(s []byte, n, h)
 ```
 
 #### crypto/rand — Random Number Generator (xorshift32)
 
 ```no
+#{fmt-skip}
 r = rand.rand(state)                     ; 32-bit pseudo-random number
 rand.rand-str(state, n, s)              ; Random alphanumeric string
 ```
@@ -2360,6 +2438,7 @@ rand.rand-str(state, n, s)              ; Random alphanumeric string
 #### crypto/x509 — X.509 Certificate DER Parsing
 
 ```no
+#{fmt-skip}
 tag = x509.der-tag(data, pos)
 len, adv = x509.der-len(data, pos)
 x509.x509-fingerprint(cert, n, h0..h7)  ; SHA-256 certificate fingerprint
@@ -2394,6 +2473,7 @@ len, adv = x509.der-skip(data, pos)                     ; Skip TLV
 #### crypto/aes-cbc — AES-CBC Mode (with PKCS7 Padding, AES-128 / AES-256)
 
 ```no
+#{fmt-skip}
 out = aes-cbc.enc-128(in []byte, key [16]byte, iv [16]byte)
 out = aes-cbc.dec-128(in []byte, key [16]byte, iv [16]byte)
 out = aes-cbc.enc-256(in []byte, key [32]byte, iv [16]byte)
@@ -2405,6 +2485,7 @@ n = aes-cbc.pkcs7-unpad(in []byte)
 #### crypto/aes-ctr — AES-CTR Counter Mode (AES-128 / AES-256)
 
 ```no
+#{fmt-skip}
 out = aes-ctr.crypt-128(in []byte, key [16]byte, iv [16]byte)
 out = aes-ctr.crypt-256(in []byte, key [32]byte, iv [16]byte)
 ```
@@ -2412,6 +2493,7 @@ out = aes-ctr.crypt-256(in []byte, key [32]byte, iv [16]byte)
 #### crypto/aes-gcm — AES-GCM AEAD (NIST SP 800-38D, AES-128 / AES-256)
 
 ```no
+#{fmt-skip}
 sealed = aes-gcm.seal-128(key [16]byte, iv [12]byte, aad []byte, plain []byte)
 plain = aes-gcm.open-128(key [16]byte, iv [12]byte, aad []byte, sealed []byte)
 sealed = aes-gcm.seal-256(key [32]byte, iv [12]byte, aad []byte, plain []byte)
@@ -2420,16 +2502,19 @@ plain = aes-gcm.open-256(key [32]byte, iv [12]byte, aad []byte, sealed []byte)
 #### crypto/hmac — HMAC Message Authentication Code
 
 ```no
+#{fmt-skip}
 out = hmac.hmac-sha256(key []byte, msg []byte) (out [32]byte)
 out = hmac.hmac-sha512(key []byte, msg []byte) (out [64]byte)
 out = hmac.hmac-sha384(key []byte, msg []byte) (out [48]byte)
 out = hmac.hmac-sha1(key []byte, msg []byte) (out [20]byte)
 out = hmac.hmac-md5(key []byte, msg []byte) (out [16]byte)
-vec = hmac.hmac-sha256-vec(key []byte, msg []byte) (out []byte)```
+vec = hmac.hmac-sha256-vec(key []byte, msg []byte) (out []byte)
+```
 
 #### crypto/hkdf — HKDF Key Derivation (RFC 5869)
 
 ```no
+#{fmt-skip}
 ok = hkdf.hkdf-extract(salt []byte, salt-n i64, ikm []byte, ikm-n i64, prk []byte)
 ok = hkdf.hkdf-expand(prk []byte, prk-n i64, info []byte, info-n i64, out []byte, out-n i64)
 ok = hkdf.hkdf-expand-hmac(prk, prk-n, info, info-n, out, out-n) ; Expand with HMAC
@@ -2441,25 +2526,30 @@ ok = hkdf.hkdf-derive-secret(prk, prk-n, label, label-n, out, out-n) ; Derive se
 #### crypto/pbkdf2 — PBKDF2 Key Derivation (RFC 2898)
 
 ```no
+#{fmt-skip}
 out = pbkdf2.pbkdf2-hmac-sha256(password []byte, salt []byte, iterations i64, key-len i64) (out []byte)
 out = pbkdf2.pbkdf2-hmac-sha512(password []byte, salt []byte, iterations i64, key-len i64) (out []byte)
-out = pbkdf2.pbkdf2-hmac-sha1(password []byte, salt []byte, iterations i64, key-len i64) (out []byte)```
+out = pbkdf2.pbkdf2-hmac-sha1(password []byte, salt []byte, iterations i64, key-len i64) (out []byte)
+```
 
 #### crypto/argon2 — Argon2 Memory-hard Key Derivation
 
 ```no
+#{fmt-skip}
 argon2.id(password []byte, pw-n i64, salt []byte, salt-n i64, time i64, memory i64, parallel i64, out []byte, out-n i64)
 ```
 
 #### crypto/scrypt — scrypt Key Derivation
 
 ```no
+#{fmt-skip}
 scrypt.scrypt(password []byte, pw-n i64, salt []byte, salt-n i64, n i64, r i64, p i64, out []byte, out-n i64)
 ```
 
 #### crypto/sha224 — SHA-224 (224-bit)
 
 ```no
+#{fmt-skip}
 hash = sha224.sha224(data []byte) (hash [28]byte)
 hex = sha224.sha224-hex(data []byte) (hex str)
 ```
@@ -2467,6 +2557,7 @@ hex = sha224.sha224-hex(data []byte) (hex str)
 #### crypto/sha384 — SHA-384 (384-bit)
 
 ```no
+#{fmt-skip}
 hash = sha384.sha384(data []byte) (hash [48]byte)
 hex = sha384.sha384-hex(data []byte) (hex str)
 ```
@@ -2474,6 +2565,7 @@ hex = sha384.sha384-hex(data []byte) (hex str)
 #### crypto/sha3 — SHA-3 (Keccak)
 
 ```no
+#{fmt-skip}
 hash = sha3.sha3-256(data []byte) (hash [32]byte)
 hash = sha3.sha3-512(data []byte) (hash [64]byte)
 hash = sha3.sha3-224(data []byte) (hash [28]byte)
@@ -2489,15 +2581,18 @@ hex = sha3.sha3-512-hex(data)               ; SHA3-512 hex string
 #### crypto/blake2 — BLAKE2 Hash
 
 ```no
+#{fmt-skip}
 hash = blake2.b(data []byte) (hash [64]byte)
 hash = blake2.b-256(data []byte) (hash [32]byte)
 hex = blake2.b-hex(data []byte) (hex str)
 hash = blake2.s(data []byte) (hash [32]byte)
-hex = blake2.s-hex(data []byte) (hex str)```
+hex = blake2.s-hex(data []byte) (hex str)
+```
 
 #### crypto/crc-16 — CRC16 Checksum
 
 ```no
+#{fmt-skip}
 crc = crc-16.new(data []byte, n i64) (crc i64)
 hex = crc-16.hex(data []byte, n i64) (hex str)    ; CRC16 hex string
 ```
@@ -2505,6 +2600,7 @@ hex = crc-16.hex(data []byte, n i64) (hex str)    ; CRC16 hex string
 #### crypto/crc-64 — CRC64 Checksum
 
 ```no
+#{fmt-skip}
 crc = crc-64.new(data []byte, n i64) (crc i64)
 hex = crc-64.hex(data []byte, n i64) (hex str)    ; CRC64 hex string
 ```
@@ -2512,12 +2608,15 @@ hex = crc-64.hex(data []byte, n i64) (hex str)    ; CRC64 hex string
 #### crypto/fnv — FNV-1 Hash
 
 ```no
+#{fmt-skip}
 h = fnv.fnv-1a-32(data []byte) (hash i64)
-h = fnv.fnv-1a-64(data []byte) (hash u64)```
+h = fnv.fnv-1a-64(data []byte) (hash u64)
+```
 
 #### crypto/base32 — Base32 Encoding/Decoding (RFC 4648)
 
 ```no
+#{fmt-skip}
 out = base32.encode(data []byte) (out str)
 out = base32.decode(in str) (out []byte)
 ```
@@ -2525,6 +2624,7 @@ out = base32.decode(in str) (out []byte)
 #### crypto/chacha20-poly1305 — ChaCha20-Poly1305 AEAD
 
 ```no
+#{fmt-skip}
 sealed = chacha20-poly1305.chacha20-poly1305-seal(key [32]byte, nonce [12]byte, aad []byte, plain []byte)
 plain = chacha20-poly1305.chacha20-poly1305-open(key [32]byte, nonce [12]byte, aad []byte, sealed []byte)
 ```
@@ -2532,12 +2632,14 @@ plain = chacha20-poly1305.chacha20-poly1305-open(key [32]byte, nonce [12]byte, a
 #### crypto/rc4 — RC4 Stream Cipher
 
 ```no
+#{fmt-skip}
 out = rc4.rc4(key []byte, key-n i64, data []byte, data-n i64) (out []byte)
 ```
 
 #### crypto/tdes — Triple DES (3DES)
 
 ```no
+#{fmt-skip}
 tdes.tdes-enc(plain, 8, key [24]byte, out)
 tdes.tdes-dec(cipher, 8, key [24]byte, out)
 out = tdes.tdes-cbc-enc(in []byte, key [24]byte, iv [8]byte)  ; 3DES-CBC encrypt
@@ -2547,6 +2649,7 @@ out = tdes.tdes-cbc-dec(in []byte, key [24]byte, iv [8]byte)  ; 3DES-CBC decrypt
 #### crypto/ecdsa — ECDSA Digital Signature
 
 ```no
+#{fmt-skip}
 ok = ecdsa.ecdsa-sign(priv-key []byte, msg []byte, msg-n i64, r []byte, s []byte)
 ok = ecdsa.ecdsa-verify(pub-key []byte, msg []byte, msg-n i64, r []byte, s []byte) (ok bool)
 pub = ecdsa.ecdsa-publickey(priv-key []byte) (pub []byte)    ; Derive public key from private
@@ -2555,17 +2658,21 @@ pub = ecdsa.ecdsa-publickey(priv-key []byte) (pub []byte)    ; Derive public key
 #### crypto/ed25519 — Ed25519 Digital Signature
 
 ```no
+#{fmt-skip}
 pub = ed25519.ed25519-publickey(seed [32]byte) (pub [32]byte)
 sig = ed25519.ed25519-sign(seed [32]byte, msg []byte) (sig [64]byte)
-ok = ed25519.ed25519-verify(pub [32]byte, msg []byte, sig [64]byte) (ok i64)```
+ok = ed25519.ed25519-verify(pub [32]byte, msg []byte, sig [64]byte) (ok i64)
+```
 
 #### crypto/x25519 — X25519 Key Exchange
 
 ```no
+#{fmt-skip}
 priv, pub = x25519.x25519-gen-keypair(seed i64) (priv [32]byte, pub [32]byte)
 pub = x25519.x25519-scalarmult-base-bytes(scalar []byte) (out []byte)
 shared = x25519.x25519-scalarmult-bytes(scalar []byte, point []byte) (out []byte)
-out = x25519.x25519-scalarmult(scalar [32]byte, point [32]byte) (out [32]byte)```
+out = x25519.x25519-scalarmult(scalar [32]byte, point [32]byte) (out [32]byte)
+```
 
 ---
 
@@ -2576,6 +2683,7 @@ out = x25519.x25519-scalarmult(scalar [32]byte, point [32]byte) (out [32]byte)``
 `json` stores a JSON tree in a **heap-allocated node pool** (`json-pool`), supporting nested arrays/objects, string/number/bool/null scalars, escape sequences and exponent numbers. The pool is built from dynamic `[]vec` buffers, so there is **no fixed capacity cap** — total node count and children-per-node are bounded only by available memory. The high-level `json` struct wraps the pool plus a root index; its `pool` field is annotated `#{inline=false}` (a pointer field), which lets `json` be safely returned and copied **by value**.
 
 ```no
+#{fmt-skip}
 ; Parse: returns ?json (ok = value, err = failure with a specific reason)
 j = json.parse('{"name":"Alice","age":30,"items":[1,2,3],"active":true}')
 j: {
@@ -2599,6 +2707,7 @@ print(j2.stringify())
 High-level API (methods on `json`):
 
 ```no
+#{fmt-skip}
 j = json.new()                              ; empty (null) json
 j = json.parse(s)                           ; ?json; err reasons: empty input / parse error / trailing characters
 s = j.stringify()                           ; serialize
@@ -2658,6 +2767,7 @@ yes = j.is-bool()
 Low-level API (`json-pool` / `json-value`) — operate by node index; the pool is a single-level struct so it is safe to return/copy by value:
 
 ```no
+#{fmt-skip}
 p = json.new-pool()
 p.init()                                  ; init() sets nodes/strs/ec/ek/en to with-len(0)
 idx = p.alloc()                             ; allocate a node (heap vec auto-grows)
@@ -2695,6 +2805,7 @@ text = toml.stringify(doc)
 API:
 
 ```no
+#{fmt-skip}
 doc = toml.new()                         ; Create empty toml-doc
 cfg = toml.parse(text)                    ; ?toml-doc
 doc.put(key, raw-value)                   ; Insert/update a validated TOML value
@@ -2713,6 +2824,7 @@ The current bounded document model supports up to 4 keys, 2 ordinary tables, and
 `yaml` keeps a YAML 1.2 core-schema document tree in a node pool (`yaml-pool`). Supported: block mappings, block sequences, flow collections (`[...]` / `{...}`), single-quoted / double-quoted / plain scalars, block scalars (`|` / `>` with `-` / `+` chomping), comments, document markers (`---` / `...`) and multi-document streams, anchors (`&`) / aliases (`*`), merge keys `<<`, explicit keys (`? k`), core-schema type inference (null / bool / int / float / `.inf` / `.nan`), dotted-path lookup, and JSON / YAML serialization.
 
 ```no
+#{fmt-skip}
 doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
 doc: {
     nil -> print('nil')
@@ -2742,6 +2854,7 @@ doc: {
 API:
 
 ```no
+#{fmt-skip}
 ; Entry points
 d = yaml.parse(text)                     ; ?yaml — first document
 all = yaml.parse-all(text)               ; ?yaml — every document
@@ -2821,6 +2934,7 @@ YAML-STYLE-BLOCK = 6  FLOW = 7
 - **HTML (lenient)**: `dom.parse-html` — never fails; case-insensitive tag/attribute names, void elements (`br/hr/img/input/...`), raw-text (`script`/`style`) and RCDATA (`title`/`textarea`) elements, implicit close rules (`p`/`li`/`dd`/`dt`/`option`/`optgroup`/`td`/`th`/`tr`/table sections), unmatched close tags auto-closed or ignored, HTML4 named entity table, unquoted attribute values.
 
 ```no
+#{fmt-skip}
 # std/dom
 d = dom.parse-xml('<root a="1">text<!--c--></root>')
 d: {
@@ -2848,6 +2962,7 @@ h: {
 API summary:
 
 ```no
+#{fmt-skip}
 ; Parsing / construction
 d = dom.parse-xml(source)          ; ?dom — err('... at byte N') on invalid XML
 d = dom.parse-html(source)         ; ?dom — always ok
@@ -2921,6 +3036,7 @@ Unicode-related features have been distributed across the `char` and `str` modul
 #### uuid — UUID v4 Generation and Parsing
 
 ```no
+#{fmt-skip}
 out = uuid.new-v4(state)                  ; Generate UUID v4
 out-n = uuid.to-str(out)             ; Convert to lowercase string (method)
 out-n = uuid.to-str-upper(out)       ; Convert to uppercase string (method)
@@ -2939,6 +3055,7 @@ uuid.nil-uuid(out)                        ; Return nil UUID
 #### bigint — Arbitrary Precision Integer
 
 ```no
+#{fmt-skip}
 ; Type
 bigint {
     sign i64
@@ -2996,6 +3113,7 @@ out = bigint.from-hex(s, sn)
 Structured error type and utility functions:
 
 ```no
+#{fmt-skip}
 ; Error code enum
 code {
 ok,
@@ -3027,22 +3145,22 @@ s = e.format()              ; Format as string (method)
 ### bool — Boolean Type
 
 ```no
+#{fmt-skip}
 bool.to-str() (out str)     ; true->"true", false->"false" (method)
 ```
 
 ### enter / leave — Lifecycle Hooks
 
 ```no
-
 ; Execute on startup
-enter { 
+enter {
     enter()
-}     
+}
 
 ; Execute on exit
 leave {
     leave()
-}     
+}
 ```
 
 ### async — Async Coroutine and Cancellation Primitives
@@ -3050,6 +3168,7 @@ leave {
 Nolang provides a cooperative, single-threaded, stackless async coroutine model:
 
 ```no
+#{fmt-skip}
 ; Start an -async function as a background task, returns opaque task handle
 h = run worker-async(args)
 
@@ -3070,6 +3189,7 @@ yes = async.cancelled()            ; Returns true if current task has been cance
 Functions callable without module prefix. Only these 7 global functions exist; all other cross-module calls require module prefix (e.g. `fs.read`, `os.get-env`).
 
 ```no
+#{fmt-skip}
 ; Capacity/length constructors (type inferred from assignment target)
 s str = with-cap(256)                   ; Pre-allocate 256-byte str (len=0)
 v []i64 = with-cap(100)                 ; Pre-allocate 100-element slice (len=0)
@@ -3096,6 +3216,7 @@ exit(0)                                  ; End process with status code (was os.
 Simplified file type detection based on extension and magic bytes, no libmagic dependency:
 
 ```no
+#{fmt-skip}
 kind = magic.detect-type(path)                  ; Detect file type
 ; Returns type description string, e.g. 'PNG image', 'ELF executable', 'ASCII text', 'directory', 'unknown', 'data'
 

@@ -240,6 +240,7 @@ compiler bug**. Rule these out before filing anything as a codegen defect.
 1. **New-style if/else must be wrapped in its own `{ }` block.**
 
    ```no
+   #{fmt-skip}
    ; correct
    f = (a i64) (r i64) {
        {
@@ -307,12 +308,21 @@ uuid.is-nil = () (yes bool) {
     yes = 1
     ...
 }
-uuid.eq = (b uuid) (yes bool) { ... }
-is-letter = (r i64) (yes bool) { ... }
-str.path-is-abs = () (yes bool) { ... }
 
+uuid.eq = (b uuid) (yes bool) {
+}
+
+is-letter = (r i64) (yes bool) {
+}
+
+str.path-is-abs = () (yes bool) {
+}
+```
+
+```no
+#{fmt-skip}
 ; ❌ Incorrect — i64 is not a boolean type
-uuid.is-nil = () (yes i64) { ... }
+uuid.is-nil = () (yes i64) { }
 ```
 
 ### Type-bound functions should use method form
@@ -321,8 +331,13 @@ Functions operating on a primary data type should be expressed as type-bound met
 
 ```no
 ; ✅ Correct — method form with typed parameters
-str.path-join(b str, bn i64) (out str, out-n i64)
+str.path-join = (b str, bn i64) (out str, out-n i64) {
+    ...
+}
+```
 
+```no
+#{fmt-skip}
 ; ❌ Incorrect — no receiver, missing types
 join(a, an, b, bn, out) (out-n)
 ```
@@ -348,11 +363,15 @@ In the old syntax, `for {}` and `if x {}` and `match x {}` all use the same `{}`
 **Always prefer the new syntax** to avoid this:
 
 ```no
+#{fmt-skip}
 ; ❌ Old syntax — empty body
 for { }
+```
 
+```no
 ; ✅ New syntax — explicit infinite loop, no ambiguity
-! { }
+! {
+}
 ```
 
 ### Bare match expression — `{ cond -> body }`
@@ -360,10 +379,13 @@ for { }
 The new bare-match expression is the recommended way to express if/else chains. Each arm is `cond -> body`, with the **last arm's condition optional** (`-> body` is the default branch).
 
 ```no
+#{fmt-skip}
 ; ✅ Recommended (single-line body)
 {
     a == 1 -> x = 1
+
     a == 2 || a == 3 -> y = 2
+
     -> z = 0
 }
 
@@ -373,9 +395,10 @@ The new bare-match expression is the recommended way to express if/else chains. 
         x = 1
         y = 2
     }
+
     a == 2 || a == 3 -> do-something()
-    ->
-        z = 0
+
+    -> z = 0
 }
 ```
 

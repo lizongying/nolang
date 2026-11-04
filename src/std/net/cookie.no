@@ -306,7 +306,7 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
 jar.set = (name str, value str, domain str, path str, max-age i64) {
 
     ; 檢查是否已存在同名 Cookie
-    i <- [0...count): {
+    i <- [0..self.count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
             .values[i] = value
             return
@@ -336,7 +336,7 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
 ; [get](#cookie.jar.get)
 jar.get = (name str, domain str, path str) (val ?str) {
     val = nil
-    i <- [0...count): {
+    i <- [0..self.count): {
         .names[i] == name -> {
 
             ; 域名匹配（簡化：精確匹配或子域名匹配）
@@ -382,7 +382,7 @@ jar.get = (name str, domain str, path str) (val ?str) {
 ; path: 所屬路徑（須精確相符；name/domain/path 三者全等才刪除）
 ; [delete](#cookie.jar.delete)
 jar.delete = (name str, domain str, path str) {
-    i <- [0...count): {
+    i <- [0..self.count): {
         .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
 
             ; 將最後一個移到當前位置
@@ -412,7 +412,7 @@ jar.delete = (name str, domain str, path str) {
 ; [build-header](#cookie.jar.build-header)
 jar.build-header = (domain str, path str) (out str) {
     out = ''
-    i <- [0...count): {
+    i <- [0..self.count): {
 
         ; 域名匹配
         domain-match = false

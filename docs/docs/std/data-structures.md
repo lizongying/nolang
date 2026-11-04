@@ -7,6 +7,7 @@ sidebar_position: 3.6
 ### set — 集合（基於陣列）
 
 ```no
+#{fmt-skip}
 new-n = set.add(s, n, val)           ; 新增元素
 new-n = set.set-remove(s, n, val)        ; 移除元素
 ok = set.contains(s, n, val)         ; 是否包含
@@ -23,6 +24,7 @@ yes = set.set-empty(s, n)                    ; 是否為空
 使用循環緩衝區實作的雙端佇列，以 `deque` 結構體封裝：
 
 ```no
+#{fmt-skip}
 ; 結構體
 deque {
     buf []i64
@@ -56,6 +58,7 @@ d.clear()                      ; 清空
 以 `heap` 結構體封裝的二元最小堆積：
 
 ```no
+#{fmt-skip}
 ; 結構體
 heap {
     data []i64
@@ -78,6 +81,7 @@ yes = h.empty()                ; 是否為空
 後進先出（LIFO）資料結構，以 `stack` 結構體封裝：
 
 ```no
+#{fmt-skip}
 ; 結構體
 stack {
     data []i64
@@ -85,7 +89,7 @@ stack {
 }
 
 ; 初始化
-buf [128]i64 = [0:128]
+buf [128]i64
 s = stack{
     data: buf
     n: 0
@@ -105,6 +109,7 @@ s.clear()                      ; 清空
 固定容量 64（i64→i64），線性探測，雙向鏈表保持插入順序：
 
 ```no
+#{fmt-skip}
 m = linked-hash-map{}
 m.init()
 m.put(key, val)
@@ -122,7 +127,7 @@ m.for-each(key, val)
 固定容量 64，線性探測，O(1) 查找/插入/刪除：
 
 ```no
-s = hash-set{}
+s = hash-set {}
 s.init()
 is-new = s.add(val)
 found = s.contains(val)
@@ -138,6 +143,7 @@ s.for-each(val)
 固定容量 256，FNV-1a 雜湊，線性探測：
 
 ```no
+#{fmt-skip}
 m = str-map{}
 m.init()
 m.put('key', 'val')
@@ -155,7 +161,7 @@ m.for-each(k, v)
 固定容量 256，FNV-1a 雜湊，字串去重：
 
 ```no
-s = str-set{}
+s = str-set {}
 s.init()
 is-new = s.add('hello')
 found = s.contains('hello')
@@ -171,6 +177,7 @@ s.for-each(val)
 基於 AVL 自平衡二元搜尋樹實現的有序映射表（i64→i64），容量 64：
 
 ```no
+#{fmt-skip}
 m = tree-map{}
 m.clear()                           ; 初始化
 ok = m.put(key, val)                ; 插入或更新
@@ -192,6 +199,7 @@ yes = m.full()
 基於 AVL 自平衡二元搜尋樹實現的有序集合（i64），容量 64：
 
 ```no
+#{fmt-skip}
 s = tree-set{}
 s.clear()                           ; 初始化
 ok = s.add(key)                     ; 加入元素
@@ -212,7 +220,8 @@ yes = s.full()
 基於定長陣列的環形緩衝區實現，緩衝區由 `[n]t` 接收者提供：
 
 ```no
-buf [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
 q = buf.queue-init()
 ok = buf.queue-push(q, val)         ; 推入尾端
 val = buf.queue-pop(q)              ; 從前端彈出（?t）
@@ -228,7 +237,8 @@ q.clear()
 基於定長陣列的堆疊實現，緩衝區由 `[n]t` 接收者提供：
 
 ```no
-buf [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
 s = buf.arr-stack-init()
 ok = buf.arr-stack-push(s, val)     ; 推入
 val = buf.arr-stack-pop(s)          ; 彈出（?t）
@@ -244,9 +254,10 @@ s.clear()
 基於定長陣列節點池的雙向鏈結串列，值由 `[n]t` 接收者提供：
 
 ```no
-buf [128]i64 = [0:128]
-nxt [128]i64 = [0:128]
-prv [128]i64 = [0:128]
+#{fmt-skip}
+buf [128]i64
+nxt [128]i64
+prv [128]i64
 l = buf.link-init(nxt, prv)
 ok = buf.link-push-front(l, val)    ; 插入頭部
 ok = buf.link-push-back(l, val)     ; 插入尾部
@@ -264,6 +275,7 @@ yes = l.full()
 動態容量泛型雜湊映射表，裝載因子 > 0.75 時自動 rehash 擴容（容量加倍）。三個模板按鍵型別特化：
 
 ```no
+#{fmt-skip}
 ; str 鍵映射表（V 泛型）
 m = hashmap-str-tmpl{}
 m.init()
@@ -291,6 +303,7 @@ m3.put(flag, v)
 固定容量（256 槽）泛型雜湊映射表，線性探測。三個模板按鍵型別特化：
 
 ```no
+#{fmt-skip}
 ; str 鍵靜態映射表（V 泛型）
 m = static-hashmap-str-tmpl{}
 m.init()

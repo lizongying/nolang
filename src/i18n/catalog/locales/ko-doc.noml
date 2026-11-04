@@ -5064,10 +5064,6 @@ host str: 대상 IP 주소
 port i64: 대상 포트 번호
 반환값 c ?udp-conn: ok=연결, nil=실패
 `
-  'noml.noml-doc.is-bool': `
-루트가 불린인지
-yes: true=루트가 불린
-`
   'noml.hex-char': `
 숫자 0~15를 16진수 문자 바이트로 변환
 d: 0~15
@@ -5157,6 +5153,10 @@ v: ok=정수, nil=루트가 숫자 아님
   'noml.noml-doc.is-arr': `
 루트가 배열인지
 yes: true=루트가 배열
+`
+  'noml.noml-doc.is-bool': `
+루트가 불린인지
+yes: true=루트가 불린
 `
   'noml.noml-doc.is-nil': `
 루트가 nil인지
@@ -7004,7 +7004,7 @@ cls-idx i64: 클래스 인덱스
 c i64: 이스케이프된 문자(예: 'd', 'w', 's')
 
 `
-  'rsa.rsa-bn-add': `
+  'rsa._rsa-bn-add': `
 c = a + b
 a: 가수(읽기 전용, 수정되지 않음)
 an: a의 유효 limb 수
@@ -7013,7 +7013,7 @@ bn: b의 유효 limb 수
 c: a+b 결과(긴 피연산자를 초과하는 최종 올림은 limb를 하나 추가)
 cn: c의 실제 limb 수(올림 포함, 정리하지 않음)
 `
-  'rsa.rsa-bn-cmp': `
+  'rsa._rsa-bn-cmp': `
 두 큰 수 a와 b 비교
 반환값 cmp: 1 = a > b, 0 = a == b, -1 = a < b
 a: 첫 번째 큰 수(32비트 limb 배열, 하위 비트가 앞)
@@ -7022,7 +7022,7 @@ b: 두 번째 큰 수
 bn: b가 비교에 참여한 유효 limb 수
 cmp: 1=a>b, 0=a==b, -1=a<b(먼저 limb 수를 비교하고, 최고위부터 자리별로 비교)
 `
-  'rsa.rsa-bn-div-mod': `
+  'rsa._rsa-bn-div-mod': `
 q = a / b, r = a % b
 a: 피제수, an: 길이
 b: 제수, bn: 길이
@@ -7031,7 +7031,7 @@ r: 나머지(출력), rn: 나머지 길이
 qn: 몫을 정리한 후 limb 수(b=0이면 q, r 모두 0이고 qn=rn=0)
 rn: 나머지를 정리한 후 limb 수(항상 b보다 작음)
 `
-  'rsa.rsa-bn-mul': `
+  'rsa._rsa-bn-mul': `
 c = a × b
 a: 승수
 an: a의 유효 limb 수
@@ -7040,19 +7040,19 @@ bn: b의 유효 limb 수
 c: a×b 결과(최대 an+bn개 limb, 선행 0 정리됨)
 cn: c를 정리한 후 limb 수(최소 1)
 `
-  'rsa.rsa-bn-shl1': `
+  'rsa._rsa-bn-shl1': `
 a = a << 1(제자리 좌-shift 1비트)
 a: 이동할 큰 수(제자리 수정, 최고위 오버플로 시 a[an]에 기록하므로 호출 측이 공간을 미리 확보해야 함)
 an: 이동 전 유효 limb 수
 new-an: 이동 후 limb 수(원래 최고위 ≥ 2^31이면 an+1)
 `
-  'rsa.rsa-bn-shr1': `
+  'rsa._rsa-bn-shr1': `
 a = a >> 1(제자리 우-shift 1비트)
 a: 이동할 큰 수(제자리 수정)
 an: 이동 전 유효 limb 수
 new-an: 이동 후 선행 0을 정리한 limb 수(최소 1)
 `
-  'rsa.rsa-bn-sub': `
+  'rsa._rsa-bn-sub': `
 c = a - b(a ≥ b 필요)
 a: 피감수(b 이상이어야 함, 그렇지 않으면 결과가 2^32 기준으로 빌림 랩어라운드)
 an: a의 유효 limb 수(뺄셈 루프 길이와 출력 할당을 결정)
@@ -7061,7 +7061,7 @@ bn: b의 유효 limb 수(i ≥ bn인 부분은 0으로 간주)
 c: a-b 결과(선행 0 정리됨)
 cn: c를 정리한 후 limb 수(최소 1)
 `
-  'rsa.rsa-decrypt': `
+  'rsa._rsa-decrypt': `
 RSA 복호화(m = c^d mod n)
 ct: 암호문 큰 수 c(mod보다 작아야 함)
 ctn: ct의 limb 수
@@ -7072,7 +7072,7 @@ modn: mod의 limb 수
 out: 평문 m = c^d mod n(PKCS#1 패딩 제거를 하지 않음)
 outn: out의 limb 수
 `
-  'rsa.rsa-encrypt': `
+  'rsa._rsa-encrypt': `
 RSA 암호화(c = m^e mod n)
 msg: 평문 큰 수 m(mod보다 작아야 함, PKCS#1 패딩을 하지 않음)
 msgn: msg의 limb 수
@@ -7082,6 +7082,19 @@ mod: 법 n
 modn: mod의 limb 수
 out: 암호문 c = m^e mod n
 outn: out의 limb 수
+`
+  'rsa._rsa-modpow-step': `
+단일 단계 제곱-곱셈(매 단계 임시 버퍼 해제를 보장하는 독립 함수)
+result = result^2 mod modulus; exp-bit == 1이면 다시 result = result * base mod modulus
+result: 현재 누적 곱 값(제곱 전의 밑)
+rn: result의 limb 수
+base: 법 거듭제곱의 밑, exp-bit=1일 때만 곱해 넣음
+bn: base의 limb 수
+exp-bit: 지수의 현재 비트(1=이 단계에서 base를 추가로 곱함, 0=제곱만)
+modulus: 나머지를 구할 때 쓰는 제수
+mn: modulus의 limb 수
+new-result: (result² × base^exp-bit) mod modulus
+new-rn: new-result의 limb 수
 `
   'rsa.rsa-modpow': `
 result = base^exp mod modulus
@@ -7096,19 +7109,6 @@ modulus: 법(모듈러스)
 mn: modulus의 limb 수(결과 버퍼를 이 길이로 할당)
 result: base^exp mod modulus(1에서 시작해 자리별 제곱-곱셈)
 rn: result의 limb 수
-`
-  'rsa.rsa-modpow-step': `
-단일 단계 제곱-곱셈(매 단계 임시 버퍼 해제를 보장하는 독립 함수)
-result = result^2 mod modulus; exp-bit == 1이면 다시 result = result * base mod modulus
-result: 현재 누적 곱 값(제곱 전의 밑)
-rn: result의 limb 수
-base: 법 거듭제곱의 밑, exp-bit=1일 때만 곱해 넣음
-bn: base의 limb 수
-exp-bit: 지수의 현재 비트(1=이 단계에서 base를 추가로 곱함, 0=제곱만)
-modulus: 나머지를 구할 때 쓰는 제수
-mn: modulus의 limb 수
-new-result: (result² × base^exp-bit) mod modulus
-new-rn: new-result의 limb 수
 `
   'scrypt.rotl32': `
 ═══════════════════════════════════════════════

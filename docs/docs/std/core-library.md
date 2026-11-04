@@ -9,6 +9,7 @@ sidebar_position: 3.2
 Nolang 使用**具名格式字串** `{name[:spec]}`，直接引用作用域變量，無需位置參數。輸出透過 `io.out`/`io.err` 系統調用，不依賴 libc `printf`。
 
 ```no
+#{fmt-skip}
 print('x={x}')                 ; 具名格式，自動換行（stdout）
 print('result={val}', 42, 'result={val}')  ; 多參數：空格分隔；每個字面量各自是模板
 eprint('err {x}')              ; 具名格式，自動換行（stderr）
@@ -62,6 +63,7 @@ std 數字系「方法形式」API 集中在 number 模組（std/number.no）；
 char 本質為 i32（Unicode 碼點），所有操作以方法形式提供：
 
 ```no
+#{fmt-skip}
 c char = 'A'
 c.is-digit()       ; 是否為數字 (0-9)（方法）
 c.is-letter()      ; 是否為字母 (a-z, A-Z)（方法）
@@ -79,6 +81,7 @@ c.to-str()         ; Unicode → 字串（UTF-8，方法）
 ### str — 字串操作
 
 ```no
+#{fmt-skip}
 ok = a.eq(b, n)               ; 相等比較（方法）
 dst = s.copy()                ; 字串複製（方法）
 s.fill(val byte)              ; 填充 byte 值（方法）
@@ -124,6 +127,7 @@ out = ss.join(sep)            ; []str 用分隔符連接（方法）
 `num = int | float`（std/num.no）。num 型別的方法在 num 模組（泛型函數 max/min 見上方 math）：
 
 ```no
+#{fmt-skip}
 r = num.abs()                        ; 絕對值（方法）
 r = num.clamp(lo, hi)                  ; 限制範圍（方法）
 r = num.sign()                         ; 正負號（-1/0/1，方法）
@@ -134,6 +138,7 @@ r = num.sign()                         ; 正負號（-1/0/1，方法）
 `int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128`（std/int.no）。int 型別的方法在 int 模組：
 
 ```no
+#{fmt-skip}
 s = v.to-str()                       ; 整數轉字串（方法）
 q = v.div(b)                         ; 除法取商（回傳 option）
 r = v.mod(b)                         ; 取模（回傳 option）
@@ -144,6 +149,7 @@ r = v.mod(b)                         ; 取模（回傳 option）
 `float = f32 | f64`（std/float.no）。float 型別的方法在 float 模組：
 
 ```no
+#{fmt-skip}
 q = v.div(b)                         ; 浮點除法
 yes = v.is-nan()                     ; NaN 判斷（方法）
 yes = v.is-inf()                     ; Inf 判斷（方法）
@@ -156,6 +162,7 @@ yes = v.is-inf()                     ; Inf 判斷（方法）
 （完整 API 見上方「number — 數值操作（方法形式 API）」；函數形式見「math」節。）
 
 ```no
+#{fmt-skip}
 ; 方法形式（number 模組）
 s = v.to-str()                     ; 整數/浮點轉字串（各寬度）
 r = n.sqrt()                       ; 整數平方根 floor(√n)
@@ -188,6 +195,7 @@ number.INF                    ; 浮點無窮大
 ### byte — 位元組操作
 
 ```no
+#{fmt-skip}
 out = i64.to-bytes-be()         ; i64 → big-endian [8]byte
 out = i64.to-bytes-le()         ; i64 → little-endian [8]byte
 v = []byte.to-i64-be()          ; big-endian []byte → i64（1~8 位元組）
@@ -212,6 +220,7 @@ s = byte.to-str()               ; byte 轉 str（方法）
 - 索引 / 切片 / 追加等字節操作以 `len-bytes()` 為準；ASCII 下兩者相等，含多字節 UTF-8 時 `len() < len-bytes()`
 
 ```no
+#{fmt-skip}
 t txt = 'hello'              ; 必須類型標註
 n = t.len()                  ; 字元（code point）數量（i64）
 b = t.len-bytes()            ; 字節數量（i64）
@@ -235,6 +244,7 @@ r = t.compare(b txt)        ; 字典序比較 (-1/0/1)
 ### vec — 切片操作
 
 ```no
+#{fmt-skip}
 v = vec.vec-create(n, val)         ; 建立長度 n 的切片，全部填充 val
 ok = []t.eq(a, b, n)           ; 相等比較
 n = []t.len()                  ; 長度
@@ -256,6 +266,7 @@ arr = []t.to-arr()             ; 轉陣列
 ### arr — 陣列操作
 
 ```no
+#{fmt-skip}
 out = [n]t.clone()             ; 複製
 ok = [n]t.eq(b)                ; 相等比較
 [n]t.fill(val)                  ; 填充
@@ -275,6 +286,7 @@ v = [n]t.first()               ; 首元素
 ### sort — 排序常量
 
 ```no
+#{fmt-skip}
 sort.ast                         ; 升序
 sort.desc                        ; 降序
 ```

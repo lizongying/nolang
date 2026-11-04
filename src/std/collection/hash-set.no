@@ -113,7 +113,7 @@ hash-set.remove = (key i64) (removed bool) {
 ; 清空
 ; [clear](#hash-set.hash-set.clear)
 hash-set.clear = () {
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] = 0
     }
     .size = 0
@@ -140,7 +140,7 @@ hash-set.is-empty = () (empty bool) {
 ; val i64: 當前槽位的元素值（最後一次賦值）
 ; [for-each](#hash-set.hash-set.for-each)
 hash-set.for-each = () (val i64) {
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] == 1 -> {
             val = .keys[i]
         }

@@ -150,6 +150,13 @@ não é possível atribuir diretamente por índice: `%s = %s`. Uma leitura por �
   '3zh3tuv8': 'Este é o oráculo L2 do esforço de auto-hospedagem: a saída é'
   '430ty5x5': 'receptor de array de bytes não tem espaço'
   '45y022ur': 'net-listen: não é possível marshalar host como string C'
+  '46fhe9ez': `
+Markdown (.md/.mdx), apenas com -md: só o interior dos blocos ```no / ```nolang é formatado.
+As linhas de cerca e todas as outras são preservadas byte a byte; um bloco que não pode ser
+analisado fica intacto e é reportado no stderr, portanto formatar é sempre seguro.
+Para silenciar um exemplo de pseudocódigo deliberado, use ```no skip ou uma linha
+'; nolang-fmt:skip' dentro do bloco. -md ignora -fix.
+`
   '46jwfg5y': 'esperado tipo após %q no apelido de tipo'
   '46qem63e': 'MIR IR falhou na montagem LLVM: %v: %s'
   '4bopl5am': 'Raiz:'
@@ -182,6 +189,7 @@ não é possível atribuir diretamente por índice: `%s = %s`. Uma leitura por �
   '5cid832p': 'builtin privado desconhecido %s'
   '5ckkrp9f': 'noml: campo %s[%d]: elemento de dependência deve ser uma string, obtido %T'
   '5eo1kvb9': 'noml: campo %s: esperado objeto, obtido %T'
+  '5i2q1afu': '  hint: os blocos ignorados ficam como estão; marque o pseudocódigo deliberado com \'```no skip\' ou uma linha \'; nolang-fmt:skip\''
   '5j50pfem': 'membro %q[%d]: as chaves do objeto %s diferem de %q e suas %s; cada elemento precisa da mesma forma'
   '5jqh5cf2': 'builtin %s: resultado []str esperava espaço %%vec, obtido %s'
   '5jsd564o': 'não é possível atribuir valor não-string à variável string \'%s\''
@@ -210,11 +218,21 @@ nenhum link editor C utilizável detectado (clang/cc/gcc)
   '64bt3a50': 'Compilar fontes Nolang em um executável.'
   '64t1vgh6': 'vec.remove: precisa de receptor, índice'
   '66ybjsus': 'write-file: não é possível marshalar o caminho como string C'
+  '6709xe69': `
+Parser ASTVersion: %s
+
+`
   '68bn4o2m': 'o especificador de pacote ESM %q não deve começar nem terminar com \'/\''
+  '69wny890': '  cat api.md | no fmt -md     formatar blocos Nolang da entrada padrão'
   '6a6jynsl': 'esperado corpo de laço após o rótulo #%s, obtido %s sem \'* N\' ou \'* { }\''
+  '6c01vyr1': '  no fmt -md -w docs/         formatar os blocos Nolang de todos os .md/.mdx em docs/'
   '6c1nlj7d': 'sobrescritas conflitantes de biblioteca nativa: %q e %q'
   '6fgg3htw': 'argumento %d de \'%s\': esperado \'%s\', obtido \'%s\''
   '6kryrbsq': '\'%s\' está definido mas nunca usado'
+  '6m53s6q8': `
+%d entradas de cache removidas.
+
+`
   '6o12uzmx': 'waitpid: não suportado em windows'
   '6p2o4902': 'o recurso %s excede o limite de tamanho (%d bytes)'
   '6qca9xu4': 'embed: não é possível combinar com valor explícito'
@@ -266,6 +284,10 @@ Erro ao criar o diretório tests: %v
   '802t452i': 'builtin %s: resultado option para o destino %s'
   '81b2ea3o': 'esperado \'(\' na declaração extern, obtido %s em vez disso'
   '82csl5ay': 'str.to-bool: receptor ausente'
+  '82hkddyo': `
+Entradas: %d
+
+`
   '82j1xx80': 'argumento %d ausente'
   '82l9xk55': 'a entrada zip %q é grande demais (%d bytes)'
   '83xbz15x': `
@@ -355,10 +377,12 @@ Erro ao resolver a última versão: %v
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       incluindo as anotações #{...}'
   'au6g7ji7': 'erros de análise: %s'
+  'awc98kqh': '  no fmt -md README.md        formatar os blocos Nolang de um arquivo Markdown'
   'axj3m1pb': '\'as\' inesperado no início da expressão'
   'axtpo500': 'win-find-first-file: não é possível marshalar o caminho como string C'
   'ayjrpinp': 'noml: DecodeInto requer ponteiro não-nulo, obtido %T'
   'aywuxg5w': 'builtin %s receptor %s: %s'
+  'aze4pgle': 'formatar também blocos Nolang em arquivos Markdown (.md/.mdx)'
   'b1narysr': 'binário'
   'b360mu4g': 'esperado nome de parâmetro, obtido %s em vez disso'
   'b3ucznjm': `
@@ -398,6 +422,7 @@ Dependência removida: %s
   'cjih2jtt': 'esperado \'=\' no apelido de tipo de função, obtido %s'
   'ckaj3355': 'função desconhecida \'%s.%s\': o módulo \'%s\' não tem função de nível superior \'%s\''
   'cldvfmqx': 'waitpid: precisa de pid, options'
+  'cn2p79sm': '%s:%d: bloco Nolang ignorado: %s'
   'cnsb9bys': 'import %s: o tipo %q também é definido por %s; distinga-os com uma anotação de nível superior #{name = \'...\'}'
   'cotvjhmy': 'exec-shell: não é possível marshalar o comando como string C'
   'cpefnxwk': 'str-truncate: receptor sem espaço'
@@ -449,6 +474,7 @@ Erro ao sincronizar a dependência AST %s: %v
   'e0r5thlw': 'regravar o resultado no arquivo-fonte'
   'e1i8566c': 'read-file: tipo de resultado %s não é uma fatia nem string'
   'e3xplf89': '  Um pacote que declara compiler.emit = "js" em package.noml é validado com'
+  'e7xfrsz0': '  clear  remover todos os AST em cache (recurso para entradas suspeitas de estarem velhas)'
   'e7yptvje': 'process-exec: precisa de (prog, arg)'
   'e9ab330i': 'Uso: no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': 'especificadores wasm nativos conflitantes: %q (de %q) e %q (de %q)'
@@ -462,13 +488,18 @@ Erro ao sincronizar a dependência AST %s: %v
   'eit5cjgr': 'extraindo arquivo tar.gz: %w'
   'ejbt38ik': 'espaço de destino da operação de fatia'
   'elep1kra': '  no build                  compilar o diretório atual ou os projetos de workspace.noml'
-  'em4a9wv2': 'o limite superior do intervalo começa com `.%s` no self implícito, então escrevê-lo diretamente após o operador `..` produz `...%s` (ambíguo: `...` também é o operador de retorno/terminação). Nomeie o receptor explicitamente e escreva `..self.%s` (por exemplo `[a..self.%s)`).'
+  'elps0exp': '`...` é uma instrução de preenchimento sem efeito e sem valor, então não pode ser usada em posição de expressão (linha %d); escreva-a em sua própria linha dentro de um bloco, por exemplo `-> {` nova linha `    ...` nova linha `}`'
+  'elps0ln0': '`...` deve ficar em sua própria linha: na linha %d não pode haver código antes; coloque-o em uma linha própria ou remova-o'
+  'elps1ln1': '`...` deve ficar em sua própria linha: na linha %d não pode haver código depois, obteve %s; `...` é uma instrução, o resto da linha só pode ser um comentário `;`'
+  'elps1rng': '`...` não é um operador de intervalo (linha %d): o operador de intervalo é `..`, e `...` sozinho é a instrução de preenchimento sem efeito; aqui parece `..` colado a um membro de self implícito, então nomeie o receptor explicitamente, por exemplo `[0..self.count)`'
+  'em4a9wv2': 'O limite superior do intervalo começa com `.%s` no self implícito, ficando logo após o operador `..` e lê-se como `...%s` (a forma com três pontos é erro de sintaxe: `...` é a instrução de preenchimento sem efeito). Nomeie o receptor explicitamente e escreva `..self.%s` (por exemplo `[a..self.%s)`).'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        backend Direct WASM com saída explícita'
   'en9zq76f': 'Ortografia de laço padrão: \'prefix\' -> \'(cond) { }\', \'N * { }\', \'!! { }\', \'! { }\'; \'suffix\' -> \'{ } (cond)\', \'{ } * N\', \'{ } (true)\', \'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  compilar sem verificação de limites (desempenho máximo)'
   'es55egn6': 'Formatar arquivos-fonte Nolang.'
   'eu5v0rj9': '  2. um diretório existente     -> executar seu main.no'
   'eubonf62': 'não é possível atribuir valor %s à variável %s \'%s\': um valor struct deve ser construído explicitamente (por exemplo `%s { … }` ou seu construtor); um inteiro é promovido implicitamente apenas para um struct que tenha um construtor sem perdas (como bigint)'
+  'evesyggh': 'Cache AST: desativado (NOLANG_AST_CACHE_OFF definido)'
   'ew5qg77j': 'esperado identificador no caminho use, obtido %s'
   'ex8l4y2k': 'Atualizando dependências...'
   'exeja3ad': 'via %s'
@@ -485,6 +516,10 @@ Pacote criado: %s
   'fd9jkb5k': 'o membro %q é um array vazio: anote-o com #{type = \'[]<elem>\'}'
   'fdwcn8i8': 'o braço de match nunca retorna um valor'
   'fe0a5wt2': 'não é possível comparar o valor option \'%s\' (%s) com \'%s\' (%s): desencapsule-o primeiro (`v ?= expr`) ou faça match sobre ok/nil/err'
+  'fftzl9dl': `
+falha ao limpar: %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout: sem espaço de resultado'
   'fk1sb6ss': 'syslog: não suportado em windows'
   'flfh2ueu': 'alvo de instalação inválido %q: o repositório deve ser <host>/<owner>/<repo> ou <owner>/<repo>'
@@ -532,6 +567,7 @@ clang não detectado; verifique se a cadeia de ferramentas LLVM está totalmente
 `
   'gno8qk1j': '\'~match/case/default\' está obsoleto, use \'x: { pattern-> ... }\' em vez disso'
   'gr0jwheb': '\'for { }\' está obsoleto, use o laço infinito \'{ } (true)\' em vez disso'
+  'gskcg79t': 'Nota: as entradas têm versão — aumentar ASTVersion invalida-as automaticamente.'
   'gszz9tke': '  - main.no (arquivo de entrada principal)'
   'gubuo5cb': 'option vinculado mas nunca consumido: não é propagado (`?=`) nem desencapsulado (`x: { ... }` / `_ = x`), então o erro é descartado silenciosamente. %s'
   'gx02j37c': 'write-file: argumento de dados sem espaço (função %s, tipo de argumento %s)'
@@ -556,6 +592,7 @@ Erro ao mudar de diretório: %v
   'hc3a6zzw': 'classe de correção desconhecida %q (suportadas: overflow, redundant, match, unwrap, main)'
   'hcdpwnpp': 'braço de match vazio não pode determinar um valor (o tipo da expressão correspondida é desconhecido)'
   'hgedm96o': 'carregando módulo automaticamente %s: %w'
+  'hleyeurx': 'não é possível analisar como Nolang'
   'hoal6bo9': 'Com --js, contornar a toolchain LLVM e gerar código JavaScript (compatível com Node.js/navegador).'
   'hr40fh5v': 'package.noml não encontrado. Execute \'no new <name>\' para criar um pacote, ou cd para dentro de um diretório de pacote'
   'hr4y7owq': 'getgrouplist: %v'
@@ -580,6 +617,10 @@ Erro ao criar o diretório: %v
   'ibaimz2h': 'detecção de ciclo: %w'
   'ibiol93t': 'Erro: package.noml não encontrado. Use \'no new <name>\' para criar um pacote, ou entre em um diretório de pacote'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+Diretório do cache AST: %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': 'interface \'%s\': o método mesclado \'%s\' tem assinaturas conflitantes (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: precisa de receptor'
@@ -627,6 +668,7 @@ Erro ao criar o diretório: %v
   'k2wgp5l6': 'Uso: no run [<package|dir|file>]'
   'k3envsrc': 'variável de ambiente'
   'k3g4ofs4': 'emitir diff colorido em vez do resultado formatado'
+  'k3r7mbqd': 'um ramo else (um \'->\' sozinho na linha) deve ficar dentro de um grupo if; envolva o ramo \'cond ->\' e este \'->\' em { ... } (um \'cond ->\' isolado sem else pode ficar fora)'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: sem espaço de resultado'
   'k8je3usi': '%s já existe e não é um módulo ES (sem "type": "module"); emita a saída como .mjs em vez disso (no build --js -o out.mjs)'
@@ -641,6 +683,7 @@ Erro ao criar o diretório: %v
   'klplh4cw': '  no fmt src/                 listar os .no em src/ que precisam de formatação'
   'kmm43ypb': 'resolvendo %s do lock: %w'
   'krvc469y': 'vec.clear: precisa de receptor'
+  'ksvya88a': 'Uso: no cache <stat|clear>'
   'kvp8bxoc': 'Arquivo de lock e somas de integridade salvos.'
   'kxikdkzu': 'net-accept: sem espaço de resultado'
   'kzomgjsg': 'instrução ~match vazia'
@@ -701,6 +744,8 @@ Erro ao escrever utils.no: %v
   'm5fpbrwd': 'vec.reverse: precisa de receptor'
   'm5klw1rq': 'o método \'%s.%s\' tem %d parâmetro(s), a interface espera %d'
   'm7egvbv0': 'a expressão inteira é um option<int> por padrão e é descartada como instrução-expressão (não tratada). Adicione uma anotação `#{overflow = wrap}` para obter um int simples, ou propague com `?=`, ou descarte explicitamente com `_ = expr`.'
+  'm7q3keu7': 'fmt: %s é um arquivo Markdown; use -md para formatar seus blocos Nolang'
+  'm7vq3xrt': 'um ramo else \'->\' isolado fora de um grupo if liga-se apenas ao ramo \'cond ->\' mais próximo; os %d ramos \'cond ->\' acima são ignorados — envolva todos num grupo if { ... } para que \'->\' seja um ramo de reserva real'
   'm8blb8q2': 'noml: linha %d coluna %d: %s'
   'mbnaky32': 'Token de autenticação do registro (não usado: envio não implementado)'
   'meket0n4': 'vec.clear: sem espaço de receptor'
@@ -783,7 +828,14 @@ Compilador Zig não detectado
   'ol21t36r': '  no run --js --js-runtime bun main.no     idem com bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'o divisor de uma divisão ou módulo inteiro é a constante literal 0, o que é comportamento indefinido em LLVM (sdiv/srem por zero) e produz resultados imprevisíveis. Adicione uma verificação de zero em tempo de execução, ou faça a função retornar a falha como option.'
-  'oraub2m9': '`%s %s= %s` não é suportado: uma leitura por índice devolve um option (nil fora dos limites), então uma atribuição composta avaliaria o índice duas vezes e descartaria a falha. Reescreva como (o `it` do braço ok é o espaço do elemento, legível e gravável):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   ou `%s ?= %s %s %s` (propaga a falha; exige que a função envolvente tenha um parâmetro de resultado option)'
+  'oraub2m9': `
+`%s %s= %s` não é suportado: uma leitura por índice devolve um option (nil fora dos limites), então uma atribuição composta avaliaria o índice duas vezes e descartaria a falha. Reescreva como (o `it` do braço ok é o espaço do elemento, legível e gravável):
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   ou `%s ?= %s %s %s` (propaga a falha; exige que a função envolvente tenha um parâmetro de resultado option)
+`
   'orjs902d': '\'switch/case/default\' está obsoleto, use \'x: { 1-> ... }\' em vez disso'
   'os0j8ix4': 'não é possível atribuir valor %s ao elemento %s no array \'%s\'%s'
   'osrb7a78': 'espaço de move'
@@ -911,6 +963,7 @@ AST empacotada: %s
   'sz3i7626': 'win-read-pipe: precisa de (handle, max-bytes)'
   't0f6p9jl': 'esperado \'(\' após o bloco no laço, obtido %s'
   't22pcf4p': 'embed: arquivo não encontrado: %s (resolvido: %s)'
+  't2fwnrfi': '  stat   mostrar local do cache, número de entradas, tamanho e ASTVersion'
   't4jhbz5z': 'esperado \'=\' após o nome da função, obtido %s em vez disso'
   't5l89pst': `
 Dependência %s não encontrada.
@@ -918,6 +971,7 @@ Dependência %s não encontrada.
 `
   't5qq2leo': 'tipo lencap: len/cap não suportado em %s (%s) na função %d'
   't5rup04t': 'move do espaço de origem v%d -> v%d'
+  't8440cno': 'Ambiente: NOLANG_AST_CACHE_OFF=1 desativa o cache; NOLANG_AST_CACHE_DIR substitui o diretório.'
   'tb2zxq0f': '\'%s.%s []T\' não é permitido: o tipo do campo pertence à definição de tipo de \'%s\'. Para gravar no campo escreva \'%s.%s = ...\''
   'tbfsq7ph': '  no pub                       escrever dist/<name>.ast.zip'
   'tcpoxtfd': 'a anotação de tipo \'%s\' pode ser omitida (inferida do valor)'
@@ -938,6 +992,7 @@ WASI sysroot não encontrado. Defina $WASI_SYSROOT para apontar para o seu wasi-
   'tfwxqucs': '`return` não pode ser seguido por um valor; o Nolang retorna resultados por meio de parâmetros de resultado nomeados (out-params), então use um `return` simples para sair cedo e atribua o parâmetro de resultado dentro do corpo da função'
   'tgutu5g0': 'use \'# %s.%s %s\' em vez de \'# %s.%s as %s\''
   'tgz86gvc': 'lendo o binário compilado: %w'
+  'thdxbnrt': 'fmt: nenhum arquivo Markdown (.md/.mdx) encontrado em %s'
   'tho8xc47': 'Arquivos criados:'
   'tjwokiw9': 'esperada vírgula ou colchete de fechamento no literal de array, obtido %s em vez disso'
   'tlwmf1le': 'a conversão de tipo explícita `expr %s` não é permitida em Nolang; use a forma declarativa `name %s = expr` para uma conversão segura de alargamento ou de mesma largura'
@@ -951,12 +1006,17 @@ WASI sysroot não encontrado. Defina $WASI_SYSROOT para apontar para o seu wasi-
   'tsg5cbwu': 'caractere ilegal %q no especificador de pacote ESM %q'
   'tt23j5su': 'esperado \']\' ou \')\' para fechar o intervalo, obtido %s em vez disso'
   'tt8f2dmd': 'net-recv-nb: sem espaço de resultado'
+  'ttdybn5d': 'fmt: -md não pode ser combinado com -fix (correções automáticas só valem para fontes .no)'
   'ttlxcrgt': 'esperado \'[\' ou \'(\' ou string na expressão de intervalo, obtido %s em vez disso'
   'u0g1w0d7': 'módulo de compatibilidade js não encontrado: %s'
   'u3g4qexx': 'builtin chars-new: tipo de argumento incorreto %s'
   'u3if6wak': '  no fmt -fix=match -w src/       adicionar no local os braços match que faltam'
   'u4oybn9r': '%s já instalado (%s); use -u para reinstalar ou atualizar'
   'u5qmp19f': 'o match de option deve tratar todos os ramos: err, nil, ok (ausente: %s)'
+  'u9kq06kz': `
+Tamanho total: %d bytes
+
+`
   'ua5h1rpc': 'o conversão \'as\' só é permitida para tipos de ponteiro FFI (por exemplo, *byte, **byte), obtido %s'
   'uea62he5': 'a função \'%s\' espera no máximo %d argumento(s) de entrada, obtido %d — os parâmetros de saída devem ser vinculados via atribuição, por exemplo result = %s(...)'
   'uf368nh9': 'Caminho do zip de saída (padrão: dist/<tool>.ast.zip)'
@@ -1138,6 +1198,4 @@ Erro ao sincronizar a dependência AST %s: módulo vazio
 
 `
   'zzcfoc04': 'criando diretório dist: %w'
-  'k3r7mbqd': 'um ramo else (um \'->\' sozinho na linha) deve ficar dentro de um grupo if; envolva o ramo \'cond ->\' e este \'->\' em { ... } (um \'cond ->\' isolado sem else pode ficar fora)'
-  'm7vq3xrt': 'um ramo else \'->\' isolado fora de um grupo if liga-se apenas ao ramo \'cond ->\' mais próximo; os %d ramos \'cond ->\' acima são ignorados — envolva todos num grupo if { ... } para que \'->\' seja um ramo de reserva real'
 }

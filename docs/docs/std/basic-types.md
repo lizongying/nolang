@@ -36,6 +36,7 @@ Nolang 型別到 LLVM 的對映關係：
 `option<t>` 標籤列舉（tag=0=val, 1=nil, 2=err）：
 
 ```no
+#{fmt-skip}
 x ?t                ; 宣告 option<t>
 x = 42              ; 設為有值
 x = nil             ; 設為空

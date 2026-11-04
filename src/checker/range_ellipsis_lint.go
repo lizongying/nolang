@@ -7,9 +7,10 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// rngEllipsisTraceID 是「區間上界用隱式 self 的 `.field`，與 `..` 連寫成 `...`」的
-// 診斷碼。見 src/std/arr.no 頂部說明：`..`（範圍運算子）與 `.{field}`（self 成員存取）
-// 連寫時會產生 `...` 歧義（`...` 亦是 return/終止運算子）。
+// rngEllipsisTraceID 是「區間上界用隱式 self 的 `.field`」的診斷碼。見 src/std/arr.no
+// 頂部說明：`..`（範圍運算子）後面緊接 `.{field}`（self 成員存取）時，寫成 `[0.. .count)`
+// 雖然合法，卻極易被讀成三點；而 `[0...count)`（三點連寫）自 `...` 收成單一 token
+// （佔位陳述，只允許獨佔一行）之後是**語法錯誤**，由 parser 的 elps1rng 攔下。
 const rngEllipsisTraceID = "em4a9wv2"
 
 // implicitSelfHead 沿表達式最左側（head）下降，回傳「隱式 self 的 `.` token」與其緊接的
@@ -33,12 +34,13 @@ func implicitSelfHead(e parser.Expression) (*parser.Identifier, string) {
 	return nil, ""
 }
 
-// ValidateRangeSelfEllipsis 對 `i <- [0...count)` 這類「區間上界以隱式 self 的 `.` 開頭、
-// 緊接範圍運算子 `..`」的寫法發一條 HINT，建議顯式寫出接收者 `self`（如 `[0..self.count)`），
-// 以避免 `..` + `.field` 連寫形成的 `...` 與 return/終止運算子歧義。
+// ValidateRangeSelfEllipsis 對 `i <- [0.. .count)` 這類「區間上界以隱式 self 的 `.`
+// 開頭、緊接範圍運算子 `..`」的寫法發一條 HINT，建議顯式寫出接收者 `self`
+// （如 `[0..self.count)`），因為 `[0.. .count)` 與三點連寫的 `[0...count)` 只差一個
+// 空白，而後者是語法錯誤（`...` 是佔位陳述）。
 //
-// 為什麼是 HINT 而非 ERROR：現行詞法器會把 `...` 拆成 `..`（ELLIPSIS）+ `.`（DOT），
-// 語意仍能正確解析，只是可讀性差、易踩坑；提示不改寫、交由人工決定（與 arr.no 說明一致）。
+// 為什麼是 HINT 而非 ERROR：`[0.. .count)` 本身語意明確、能正常編譯，只是可讀性差；
+// 提示不改寫、交由人工決定。
 //
 // 只檢查區間的**上界**（End）——下界（Start）緊接的是 `[`/`(` 而非 `..`，不會形成 `...`。
 func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []ValidateResult {
@@ -61,7 +63,7 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 			Column:  id.Token.Column,
 			File:    file,
 			TraceID: "em4a9wv2",
-			Message: i18n.T("em4a9wv2", "the range upper bound starts with `.%s` on the implicit self, so writing it directly after the `..` operator yields `...%s` (ambiguous: `...` is also the return/terminate operator). Name the receiver explicitly and write `..self.%s` (e.g. `[a..self.%s)`).",
+			Message: i18n.T("em4a9wv2", "the range upper bound starts with `.%s` on the implicit self, so it sits right after the `..` operator and reads like `...%s` (the `...` spelling is a syntax error: it is the no-op placeholder statement); name the receiver explicitly and write `..self.%s` (e.g. `[a..self.%s)`).",
 				prop, prop, prop, prop),
 		})
 	}

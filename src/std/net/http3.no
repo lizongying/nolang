@@ -398,7 +398,7 @@ response {
 response.get-header = (name str) (val ?str) {
     val = nil
     target = name.to-lower()
-    i <- [0...header-count): {
+    i <- [0..self.header-count): {
         h = .header-names[i].to-lower()
         h == target -> {
             val = .header-values[i]

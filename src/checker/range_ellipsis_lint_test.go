@@ -15,31 +15,32 @@ func countEllipsis(t *testing.T, src string) int {
 	return n
 }
 
-// TestRangeSelfEllipsisHint：`i <- [0...count)` 的上界是隱式 self 的 `.count`，
-// 與 `..` 連寫成 `...`（歧義），應發一條 rng-ellipsis HINT。
+// TestRangeSelfEllipsisHint：`i <- [0.. .count)` 的上界是隱式 self 的 `.count`，
+// `..` 與 `.` 只隔一個空格，極易讀成三點，應發一條 rng-ellipsis HINT。
+// （三點連寫 `[0...count)` 自 2026-11-04 起是語法錯誤 elps1rng，不再進入本 lint。）
 func TestRangeSelfEllipsisHint(t *testing.T) {
 	src := `jar { count i64 }
 jar.set = () {
-    i <- [0...count): {
+    i <- [0.. .count): {
         i = i
     }
 }
 `
 	if got := countEllipsis(t, src); got != 1 {
-		t.Fatalf("expected 1 rng-ellipsis hint for `[0...count)`, got %d", got)
+		t.Fatalf("expected 1 rng-ellipsis hint for `[0.. .count)`, got %d", got)
 	}
 }
 
-// TestRangeSelfEllipsisMethodCall：`.len()`（隱式 self 方法）作為上界同樣形成 `...`。
+// TestRangeSelfEllipsisMethodCall：`.len()`（隱式 self 方法）作為上界同樣易誤讀。
 func TestRangeSelfEllipsisMethodCall(t *testing.T) {
 	src := `f = () {
-    i <- [0...len()): {
+    i <- [0.. .len()): {
         i = i
     }
 }
 `
 	if got := countEllipsis(t, src); got != 1 {
-		t.Fatalf("expected 1 rng-ellipsis hint for `[0...len())`, got %d", got)
+		t.Fatalf("expected 1 rng-ellipsis hint for `[0.. .len())`, got %d", got)
 	}
 }
 
@@ -76,7 +77,7 @@ func TestRangeSelfEllipsisNoHintOtherReceiver(t *testing.T) {
 func TestRangeSelfEllipsisWiredIntoLints(t *testing.T) {
 	src := `jar { count i64 }
 jar.set = () {
-    i <- [0...count): {
+    i <- [0.. .count): {
         i = i
     }
 }

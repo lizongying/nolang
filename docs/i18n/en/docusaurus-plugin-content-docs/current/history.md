@@ -10,13 +10,19 @@ This page collects Nolang release records for each version, kept consistent with
 ## v0.4.17
 
 - feat(compiler): add option ordered comparisons via new MIR ops (int, f64, scalar, and f64-scalar wings)
-- feat(compiler): implement AST-to-MIR lowering slices (s55-s58) for straight-line, control-flow, signature/call, and brace short-circuit chain
+- feat(compiler): implement AST-to-MIR lowering slices (s55-s61) for straight-line, control-flow, block terminator, signature/call, brace short-circuit chain, and range/count-loop traversal
+- feat(parser): make `...` a no-op placeholder statement that is dropped at build time; it is no longer a return alias or a range operator (`[0...n)` is now a syntax error, write `[0..self.n)`)
+- feat(fmt): keep `self` explicit when a range upper bound follows `..`, so formatting can no longer emit the `...` token
+- feat(fmt): support `#{fmt-skip}` in Markdown Nolang fences (`no fmt -md`), keeping docs snippets byte-identical
+- fix(fmt): stop dropping a trailing comment on `v ?= expr` (`parser.setComment` had no `UnwrapAssignStatement` case, so only the same-line form lost its comment)
+- fix(fmt): a comment-only Markdown block is no longer reported as "not parseable as Nolang" (zero statements is "nothing to format", not a parse failure)
 - feat(parser): force an else arm to group the preceding if-chain and migrate std/tests/compiler to grouped form
 - refactor(parser): swap meanings of `*` and `**` shorthands for continue and break
 - feat(lexer): add keyword aliases ctn/brk/rtn for continue/break/return across fmt, lsp, vscode and docs
 - feat(std): expose rsa public bytes API and privatize limb internals
 - fix(build): upgrade GitHub Actions to latest versions
-- docs(selfhost): document M4-e lowering slices s55-s58
+- docs(overflow): clarify special overflow semantics for byte and char types
+- docs(selfhost): document M4-e lowering slices s55-s61
 
 ## v0.4.16
 

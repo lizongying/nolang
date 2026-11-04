@@ -1940,6 +1940,7 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
                 .newline()
                 child = .parse-block-indented(indent)
             }
+
             .cur() == 35 -> {
                 .skip-to-eol()
                 .newline()

@@ -150,6 +150,13 @@
   '3zh3tuv8': '这是自举工作的 L2 判定基准：其输出会'
   '430ty5x5': '字节数组接收者没有槽位'
   '45y022ur': 'net-listen: 无法将 host 编组为 C 字符串'
+  '46fhe9ez': `
+Markdown（.md/.mdx），仅在 -md 下处理：只格式化 ```no / ```nolang 围栏内部的内容。
+围栏行与其余每一行都逐字节保留；解析失败的代码块原样留底并报告到 stderr，
+因此格式化始终安全。确为伪代码或错误用法示例的块，在首行写 '#{fmt-skip}'：
+该块既不验证也不修改。（```no skip 与块内 '; nolang-fmt:skip' 行是同一功能的旧写法。）
+-md 会忽略 -fix。
+`
   '46jwfg5y': '类型别名中 %q 后应为类型'
   '46qem63e': 'MIR IR 汇编为 LLVM 失败: %v: %s'
   '4bopl5am': '根目录：'
@@ -182,6 +189,7 @@
   '5cid832p': '未知的私有字段内建 %s'
   '5ckkrp9f': 'noml: 字段 %s[%d]: 依赖元素必须是字符串，得到 %T'
   '5eo1kvb9': 'noml: 字段 %s: 期望对象，得到 %T'
+  '5i2q1afu': '  hint: 跳过的代码块保持原样；确为伪代码或错误用法示例，请在块首行写 \'#{fmt-skip}\''
   '5j50pfem': '成员 %q[%d]: 对象键 %s 与 %q 的 %s 不一致；每个元素必须有相同的形状'
   '5jqh5cf2': 'builtin %s: []str 结果需要 %%vec 槽位，实际得到 %s'
   '5jsd564o': '不能把非字符串值赋给字符串变量 \'%s\''
@@ -210,11 +218,21 @@
   '64bt3a50': '把 Nolang 源码构建为可执行文件。'
   '64t1vgh6': 'vec.remove: 需要 receiver、index'
   '66ybjsus': 'write-file: 无法将 path 编组为 C 字符串'
+  '6709xe69': `
+Parser ASTVersion: %s
+
+`
   '68bn4o2m': 'ESM 包说明符 %q 不能以 \'/\' 开头或结尾'
+  '69wny890': '  cat api.md | no fmt -md     从 stdin 格式化 Nolang 代码块'
   '6a6jynsl': '标签 #%s 后应为循环体，实际得到 %s（缺少 \'* N\' 或 \'* { }\'）'
+  '6c01vyr1': '  no fmt -md -w docs/         格式化 docs/ 下所有 .md/.mdx 中的 Nolang 代码块'
   '6c1nlj7d': '冲突的原生库覆盖: %q 与 %q'
   '6fgg3htw': '第 %d 个参数（“%s”）: 期望 “%s”，得到 “%s”'
   '6kryrbsq': '“%s” 已定义但从未使用'
+  '6m53s6q8': `
+已删除 %d 条缓存条目。
+
+`
   '6o12uzmx': 'waitpid: 在 windows 上不受支持'
   '6p2o4902': '资源 %s 超出大小限制（%d 字节）'
   '6qca9xu4': 'embed: 不能与显式值组合使用'
@@ -266,6 +284,10 @@
   '802t452i': 'builtin %s: option 结果写入 %s 目标'
   '81b2ea3o': 'extern 声明中期望 \'(\'，实际得到 %s'
   '82csl5ay': 'str.to-bool: 缺少接收者'
+  '82hkddyo': `
+条目数：%d
+
+`
   '82j1xx80': '缺少第 %d 个参数'
   '82l9xk55': 'zip 条目 %q 过大（%d 字节）'
   '83xbz15x': `
@@ -355,10 +377,12 @@
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       同时包含 #{...} 注解'
   'au6g7ji7': '解析错误: %s'
+  'awc98kqh': '  no fmt -md README.md        格式化单个 Markdown 文件中的 Nolang 代码块'
   'axj3m1pb': '表达式起始位置出现意外的 \'as\''
   'axtpo500': 'win-find-first-file: 无法将 path 编组为 C 字符串'
   'ayjrpinp': 'noml: DecodeInto 需要非 nil 指针，得到 %T'
   'aywuxg5w': 'builtin %s 接收者 %s: %s'
+  'aze4pgle': '同时格式化 Markdown 文件（.md/.mdx）里的 Nolang 代码块'
   'b1narysr': '二进制文件'
   'b360mu4g': '期望参数名，实际得到 %s'
   'b3ucznjm': `
@@ -398,6 +422,7 @@
   'cjih2jtt': '函数类型别名中应为 \'=\'，实际得到 %s'
   'ckaj3355': '未知函数 “%s.%s”: 模块 “%s” 没有顶层函数 “%s”'
   'cldvfmqx': 'waitpid: 需要 pid、options'
+  'cn2p79sm': '%s:%d: 跳过 Nolang 代码块: %s'
   'cnsb9bys': '导入 %s: 类型 %q 也被 %s 定义；请用顶层 #{name = \'...\'} 注解把它们区分开'
   'cotvjhmy': 'exec-shell: 无法将 command 编组为 C 字符串'
   'cpefnxwk': 'str-truncate: 接收者没有槽位'
@@ -449,6 +474,7 @@
   'e0r5thlw': '把结果写回源文件'
   'e1i8566c': 'read-file: 结果类型 %s 不是切片或字符串'
   'e3xplf89': '  在 package.noml 中声明 compiler.emit = "js" 的包会按'
+  'e7xfrsz0': '  clear  清空所有已缓存的 AST（怀疑条目陈旧时的应急手段）'
   'e7yptvje': 'process-exec: 需要 (prog, arg)'
   'e9ab330i': '用法：no pack [-o <file>] [<dir|file.no>]'
   'e9kbpohv': '冲突的原生 wasm 说明符: %q（来自 %q）与 %q（来自 %q）'
@@ -462,13 +488,18 @@
   'eit5cjgr': '解压 tar.gz 归档失败: %w'
   'ejbt38ik': 'slice op 目标槽位'
   'elep1kra': '  no build                  构建当前目录或 workspace.noml 中的项目'
-  'em4a9wv2': '区间上界以隐式 self 的 `.%s` 开头，与范围运算符 `..` 连写会形成 `...%s`（歧义：`...` 亦是 return/终止运算符）。建议显式写出接收者，改写为 `..self.%s`（例：`[a..self.%s)`）。'
+  'elps0exp': '`...` 是无作用的占位语句，没有值，因此不能用在表达式位置（第 %d 行）；请把它单独写在块内的一行，例如 `-> {` 换行 `    ...` 换行 `}`'
+  'elps0ln0': '`...` 必须独占一行：第 %d 行 `...` 前面不能有代码；请把它单独放一行，或删除'
+  'elps1ln1': '`...` 必须独占一行：第 %d 行 `...` 后面不能有代码，却出现了 %s；`...` 是一条语句，该行其余部分只能是 `;` 注释'
+  'elps1rng': '`...` 不是范围运算符（第 %d 行）：范围运算符是 `..`，单独的 `...` 是无作用的占位语句；这里看起来是 `..` 与隐式 self 成员连写了，请显式写出接收者，例如 `[0..self.count)`'
+  'em4a9wv2': '区间上界以隐式 self 的 `.%s` 开头，紧跟在 `..` 运算符之后，读起来像 `...%s`（三点的写法是语法错误：它是无作用的占位语句）。请显式写出接收者，改写为 `..self.%s`（例：`[a..self.%s)`）。'
   'emlptf1e': '  no build --wasm-direct -o out.wasm main.no        Direct WASM 后端并指定输出'
   'en9zq76f': '循环默认写法：\'prefix\' -> \'(cond) { }\'、\'N * { }\'、\'!! { }\'、\'! { }\'；\'suffix\' -> \'{ } (cond)\'、\'{ } * N\'、\'{ } (true)\'、\'{ } ()\''
   'eqsalj72': '  no build -unsafe main.no  不做越界检查地构建（最高性能）'
   'es55egn6': '格式化 Nolang 源文件。'
   'eu5v0rj9': '  2. 已存在的目录             -> 运行其 main.no'
   'eubonf62': '不能将 %s 值赋给 %s 变量 “%s”: 结构体值必须显式构造（例如 `%s { … }` 或其构造器）；只有当结构体具有唯一的无损构造器（如 bigint）时，整数才会被隐式提升'
+  'evesyggh': 'AST 缓存：已禁用（已设置 NOLANG_AST_CACHE_OFF）'
   'ew5qg77j': 'use 路径中期望标识符，实际得到 %s'
   'ex8l4y2k': '正在更新依赖……'
   'exeja3ad': '经由%s'
@@ -485,6 +516,10 @@
   'fd9jkb5k': '成员 %q 是空数组: 请用 #{type = \'[]<elem>\'} 标注它'
   'fdwcn8i8': 'match 臂从未返回值'
   'fe0a5wt2': '不能将 option 值 “%s” (%s) 与 “%s” (%s) 比较: 请先解包（`v ?= expr`），或对 ok/nil/err 做 match'
+  'fftzl9dl': `
+清空失败: %v
+
+`
   'fh3ukes8': 'net-set-recv-timeout: 没有结果槽位'
   'fk1sb6ss': 'syslog: 在 windows 上不受支持'
   'flfh2ueu': '非法的安装目标 %q: 仓库必须是 <host>/<owner>/<repo> 或 <owner>/<repo>'
@@ -532,6 +567,7 @@
 `
   'gno8qk1j': '\'~match/case/default\' 已废弃，请改用 \'x: { 模式-> ... }\''
   'gr0jwheb': '\'for { }\' 已废弃，请改用 \'{ } (true)\' 无限循环'
+  'gskcg79t': '注：条目带版本号——提升 ASTVersion 会自动使其失效。'
   'gszz9tke': '  - main.no（主入口文件）'
   'gubuo5cb': 'option 绑定后从未被消费：既没有上抛（`?=`），也没有解包（`x: { ... }` / `_ = x`），错误被静默丢弃。%s'
   'gx02j37c': 'write-file: data 参数没有槽位（函数 %s，参数类型 %s）'
@@ -556,6 +592,7 @@
   'hc3a6zzw': '未知的修复类别 %q（支持: overflow、redundant、match、unwrap、main）'
   'hcdpwnpp': '空的 match 臂无法确定值（被匹配的表达式类型未知）'
   'hgedm96o': '自动加载模块 %s 失败: %w'
+  'hleyeurx': '无法作为 Nolang 解析'
   'hoal6bo9': '用 --js 绕过 LLVM 工具链直接生成 JavaScript 源码（兼容 Node.js/浏览器）。'
   'hr40fh5v': '找不到 package.noml。请运行 \'no new <name>\' 创建包，或进入某个包目录'
   'hr4y7owq': 'getgrouplist: %v'
@@ -580,6 +617,10 @@
   'ibaimz2h': '循环检测: %w'
   'ibiol93t': '错误：未找到 package.noml。用 \'no new <name>\' 创建包，或切换到包目录'
   'ibl465o8': '  no test -target wasm32-wasi'
+  'icfe5o5a': `
+AST 缓存目录: %s
+
+`
   'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
   'ifmrg001': '接口 “%s”: 合并后的方法 “%s” 签名冲突 (“%s.%s”, “%s.%s”)'
   'ihr1vm8m': 'arr.zero: 需要 receiver'
@@ -627,6 +668,7 @@
   'k2wgp5l6': '用法：no run [<package|dir|file>]'
   'k3envsrc': '环境变量'
   'k3g4ofs4': '输出彩色差异而非格式化结果'
+  'k3r7mbqd': 'else 分支（\'->\' 独占一行）必须写在 if-group 里；把 \'cond ->\' 分支与这个 \'->\' 一起包进 { ... }（没有 else 的孤立 \'cond ->\' 可以不包）'
   'k64rvzp7': 'setfield: %s'
   'k72ohub0': 'net-send: 没有结果槽位'
   'k8je3usi': '%s 已存在且不是 ES 模块（没有 "type": "module"）；请改为输出 .mjs（no build --js -o out.mjs）'
@@ -641,6 +683,7 @@
   'klplh4cw': '  no fmt src/                 列出 src/ 下需要格式化的 .no 文件'
   'kmm43ypb': '从锁文件解析 %s 失败: %w'
   'krvc469y': 'vec.clear: 需要 receiver'
+  'ksvya88a': '用法: no cache <stat|clear>'
   'kvp8bxoc': '锁文件与完整性校验和已保存。'
   'kxikdkzu': 'net-accept: 没有结果槽位'
   'kzomgjsg': '空的 ~match 语句'
@@ -701,6 +744,8 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'm5fpbrwd': 'vec.reverse: 需要 receiver'
   'm5klw1rq': '方法 “%s.%s” 有 %d 个参数，接口期望 %d 个'
   'm7egvbv0': '整数运算结果默认是 option<int>，作为表达式语句被丢弃（未处理）。请加 `#{overflow = wrap}` 注解回普通 int，或用 `?=` 上抛，或用 `_ = expr` 显式丢弃。'
+  'm7q3keu7': 'fmt: %s 是 Markdown 文件；加 -md 才会格式化其中的 Nolang 代码块'
+  'm7vq3xrt': 'if-group 外的孤立 \'->\' else 分支只会绑到最近的那个 \'cond ->\' 分支，上面 %d 个 \'cond ->\' 分支会被忽略——把它们全部包进 if-group { ... }，让 \'->\' 成为真正的兜底分支'
   'm8blb8q2': 'noml: 第 %d 行第 %d 列: %s'
   'mbnaky32': '注册表认证令牌（未使用：上传尚未实现）'
   'meket0n4': 'vec.clear: 没有接收者槽位'
@@ -783,7 +828,14 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'ol21t36r': '  no run --js --js-runtime bun main.no     同上，改用 bun（node、bun、deno……）'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '整数除法 / 取模的除数是字面常量 0，会触发 LLVM 未定义行为（sdiv/srem 除以零），产生不可预测的结果。请改用运行期零检查，或让函数以 option 回传错误。'
-  'oraub2m9': '`%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）'
+  'oraub2m9': `
+`%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：
+     %s: {
+         ok -> it = it %s %s
+         -> _
+     }
+   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）
+`
   'orjs902d': '\'switch/case/default\' 已废弃，请改用 \'x: { 1-> ... }\''
   'os0j8ix4': '不能将 %s 值赋给数组 “%s” 的 %s 元素%s'
   'osrb7a78': 'move 槽位'
@@ -911,6 +963,7 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'sz3i7626': 'win-read-pipe: 需要 (handle, max-bytes)'
   't0f6p9jl': '循环中块后应为 \'(\'，实际得到 %s'
   't22pcf4p': 'embed: 找不到文件: %s（解析为: %s）'
+  't2fwnrfi': '  stat   显示缓存位置、条目数、大小与 ASTVersion'
   't4jhbz5z': '函数名后应为 \'=\'，实际得到 %s'
   't5l89pst': `
 未找到依赖 %s。
@@ -918,6 +971,7 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
 `
   't5qq2leo': 'lencap kind: 不支持对 %s（%s）取 len/cap（函数 %d）'
   't5rup04t': 'move 源槽位 v%d -> v%d'
+  't8440cno': '环境变量: NOLANG_AST_CACHE_OFF=1 关闭缓存；NOLANG_AST_CACHE_DIR 覆盖目录。'
   'tb2zxq0f': '不允许 \'%s.%s []T\'：字段类型应写在 \'%s\' 的类型定义中。要写入该字段请写 \'%s.%s = ...\''
   'tbfsq7ph': '  no pub                       写入 dist/<name>.ast.zip'
   'tcpoxtfd': '类型标注 “%s” 可以省略（可从值推断）'
@@ -938,6 +992,7 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'tfwxqucs': '`return` 后不能跟返回值；Nolang 函数结果通过具名结果参数（out-param）传出，请用裸 `return` 提前返回并在函数体内给结果参数赋值'
   'tgutu5g0': '请用 “# %s.%s %s” 代替 “# %s.%s as %s”'
   'tgz86gvc': '读取已构建的二进制失败: %w'
+  'thdxbnrt': 'fmt: %s 下没有找到 Markdown 文件（.md/.mdx）'
   'tho8xc47': '已创建的文件：'
   'tjwokiw9': '数组字面量中期望逗号或右方括号，实际得到 %s'
   'tlwmf1le': 'Nolang 不允许显式类型转换 `expr %s`；请改用声明形式 `name %s = expr` 做安全的加宽/等宽转换'
@@ -951,12 +1006,17 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'tsg5cbwu': 'ESM 包说明符 %q 中包含非法字符 %q'
   'tt23j5su': '期望以 \']\' 或 \')\' 结束区间，实际得到 %s'
   'tt8f2dmd': 'net-recv-nb: 没有结果槽位'
+  'ttdybn5d': 'fmt: -md 不能与 -fix 同时使用（自动修复只适用于 .no 源文件）'
   'ttlxcrgt': '区间表达式中应为 \'[\'、\'(\' 或字符串，实际得到 %s'
   'u0g1w0d7': '找不到 js 兼容模块: %s'
   'u3g4qexx': 'builtin chars-new: 参数类型 %s 无效'
   'u3if6wak': '  no fmt -fix=match -w src/       就地补全缺失的 match 分支'
   'u4oybn9r': '%s 已安装（%s）；请使用 -u 重新安装或更新'
   'u5qmp19f': 'option match 必须处理所有分支: err、nil、ok（缺少: %s）'
+  'u9kq06kz': `
+总大小: %d 字节
+
+`
   'ua5h1rpc': '\'as\' 转换仅允许用于 FFI 指针类型（例如 *byte、**byte），实际得到 %s'
   'uea62he5': '函数 “%s” 最多接受 %d 个输入参数，实际传入 %d 个 —— 输出参数应通过赋值绑定，例如 result = %s(...)'
   'uf368nh9': '输出 zip 路径（默认：dist/<tool>.ast.zip）'
@@ -1138,6 +1198,4 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
 
 `
   'zzcfoc04': '创建 dist 目录失败: %w'
-  'k3r7mbqd': 'else 分支（\'->\' 独占一行）必须写在 if-group 里；把 \'cond ->\' 分支与这个 \'->\' 一起包进 { ... }（没有 else 的孤立 \'cond ->\' 可以不包）'
-  'm7vq3xrt': 'if-group 外的孤立 \'->\' else 分支只会绑到最近的那个 \'cond ->\' 分支，上面 %d 个 \'cond ->\' 分支会被忽略——把它们全部包进 if-group { ... }，让 \'->\' 成为真正的兜底分支'
 }

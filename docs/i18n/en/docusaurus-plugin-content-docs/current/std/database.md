@@ -9,6 +9,7 @@ sidebar_position: 3.7
 Defines standard interfaces for database connections, queries, and prepared statements, implemented by concrete drivers:
 
 ```no
+#{fmt-skip}
 ; Execution result
 result {
     last-id i64

@@ -7,6 +7,7 @@ sidebar_position: 3.9
 ### archive/tar — TAR Archive (POSIX ustar)
 
 ```no
+#{fmt-skip}
 ; Read a regular tar
 archive = tar{
     data: raw-bytes
@@ -41,6 +42,7 @@ archive = builder.finish()
 ### archive/zip — ZIP Archive Parsing
 
 ```no
+#{fmt-skip}
 archive = zip{
     data: raw-bytes
 }
@@ -63,6 +65,7 @@ out = e.extract()
 ### archive/gzip — GZIP Compression and Raw DEFLATE
 
 ```no
+#{fmt-skip}
 out = gzip.gzip-compress(data)                      ; zlib compression
 out = gzip.gzip-decompress(data)                    ; zlib decompression
 out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression (ZIP method 8)
@@ -73,6 +76,7 @@ out = gzip.inflate-decompress(data, out-size)       ; Raw DEFLATE decompression 
 Pure Nolang implementation of BZIP2 decompression, including BWT inverse transform, MTF inverse transform, Huffman decoding, and RLE decoding:
 
 ```no
+#{fmt-skip}
 out = bzip2.bzip2-decompress(data)                  ; Decompress .bz2 data
 ```
 
@@ -81,6 +85,7 @@ out = bzip2.bzip2-decompress(data)                  ; Decompress .bz2 data
 Pure Nolang implementation of LZMA2 decompression, supporting both .xz container format and legacy .lzma format:
 
 ```no
+#{fmt-skip}
 out = xz.xz-decompress(data)                        ; Decompress .xz data
 out = xz.lzma-decompress(data)                      ; Decompress legacy .lzma data
 ```
@@ -90,6 +95,7 @@ out = xz.lzma-decompress(data)                      ; Decompress legacy .lzma da
 Pure Nolang implementation of RFC 1950 zlib compression and decompression, using stored blocks (BTYPE=00) for compression and supporting full DEFLATE for decompression:
 
 ```no
+#{fmt-skip}
 out = zlib.zlib-compress(data)                      ; Compress to zlib stream
 out = zlib.zlib-decompress(data)                    ; Decompress zlib stream (returns ?[]byte)
 sum = zlib.adler-32(data, n)                        ; Adler-32 checksum
@@ -100,6 +106,7 @@ sum = zlib.adler-32(data, n)                        ; Adler-32 checksum
 Pure Nolang implementation of Zstandard (zstd) decompression, including FSE decoding, Huffman decoding, LZ77 sequence decoding, and Zstandard frame format parsing:
 
 ```no
+#{fmt-skip}
 out = zstd.zstd-decompress(data)                    ; Decompress .zst data
 ```
 

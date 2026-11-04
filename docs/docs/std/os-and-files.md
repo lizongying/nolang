@@ -9,6 +9,7 @@ sidebar_position: 3.3
 提供環境變數、目錄操作、行程管理、系統資訊、時間等功能。檔案讀寫相關功能請見 `fs` 模組。
 
 ```no
+#{fmt-skip}
 ; 環境變數
 val = os.get-env(key)                ; 返回 ?str（nil=未設定）
 os.set-env(key, 'value')
@@ -55,6 +56,7 @@ val = os.arg(idx)                   ; 取得第 idx 個參數（越界回傳 nil
 以 `file` 結構體封裝開啟中的檔案，以 `path` 結構體封裝路徑。定義 `fd` newtype（`fd = i64`），防止檔案描述符與任意 `i64` 混淆。另提供 `embed` 結構體用於編譯期嵌入檔案系統（透過 `#{embed='dir/path'}`）。
 
 ```no
+#{fmt-skip}
 ; fd newtype（底層 i64，與 i64 在型別系統中互斥）
 fd = i64
 
@@ -223,6 +225,7 @@ O-EXCL = 2048       ; macOS=2048, Linux=128, Windows=1024
 ### env — 環境變數（簡化封裝）
 
 ```no
+#{fmt-skip}
 val = env.get(key)                ; 返回 ?str（nil=未找到）
 val = env.lookup(key)               ; 返回 ?str（nil=未找到）
 env.set(key, val)
@@ -247,6 +250,7 @@ arg = args.get-positional(i)
 以 `path` 結構體封裝路徑字串，所有操作以方法形式提供：
 
 ```no
+#{fmt-skip}
 SEP = 47     ; '/'（ASCII）
 DOT = 46     ; '.'
 
@@ -286,6 +290,7 @@ path.current() (out path)    ; 取得當前工作目錄
 ### bufio — 緩衝讀取
 
 ```no
+#{fmt-skip}
 r = reader.init(fd, buf)       ; 初始化緩衝讀取器（傳回 reader）
 ok = reader.fill()              ; 填充緩衝區
 b = reader.read-byte()          ; 讀取一個位元組（?byte, nil=EOF）
@@ -298,6 +303,7 @@ reader.close()                  ; 關閉
 提供 `io-reader` 和 `io-writer` 結構體，統一檔案、標準輸入輸出等資料流的讀寫操作：
 
 ```no
+#{fmt-skip}
 ; 標準檔案描述符
 STDIN-FD = 0, STDOUT-FD = 1, STDERR-FD = 2
 
@@ -337,6 +343,7 @@ line = io.read-line()           ; 從 stdin 讀取一行（?str, nil=EOF）
 以 `regexp` 結構體封裝 pattern，完全使用 Nolang 實作正規表示式引擎（指令式 VM + 回溯匹配），不依賴 C 標準庫 regex.h：
 
 ```no
+#{fmt-skip}
 ; 結構體
 regexp {
     pattern str
@@ -353,6 +360,7 @@ result = re.find(text)           ; 查找第一個匹配子串
 支援 **正則字面量語法** `/pattern/flags`（JavaScript 風格），在代碼生成階段脫糖為 `regexp-compile` 函數調用：
 
 ```no
+#{fmt-skip}
 ; 正則字面量（推薦寫法）
 re = /\d+/
 matched = re.matches('hello 123 world')  ; true
@@ -369,6 +377,7 @@ re = regexp-compile('\\d+')
 提供進程創建、標準流獲取、進程等待、進程信息查詢等功能。底層使用 POSIX fork/exec/pipe/waitpid：
 
 ```no
+#{fmt-skip}
 ; 信號常量
 SIG-TERM = 15, SIG-KILL = 9, SIG-INT = 2, SIG-STOP = 19, SIG-CONT = 18, SIG-CHLD = 17
 WNOHANG = 1
@@ -453,6 +462,7 @@ content, code = process.new().output(program, arg) ; 執行並捕獲輸出
 提供 TCP 網路編程能力，包括服務端監聽、客戶端連接、資料收發等。底層使用 POSIX socket API：
 
 ```no
+#{fmt-skip}
 ; 網路常量
 AF-INET = 2, SOCK-STREAM = 1, SOL-SOCKET = 65535, SO-REUSEADDR = 4, BACKLOG = 128
 
@@ -493,6 +503,7 @@ c = net.dial-to(host, port)                ; 建立連接並撥號（?conn）
 提供 IPv4 地址的解析、驗證、轉換與分類功能。純 Nolang 實作：
 
 ```no
+#{fmt-skip}
 ; 預設地址常量
 IP-ZERO       ; 0.0.0.0
 IP-LOOPBACK   ; 127.0.0.1
@@ -540,6 +551,7 @@ yes = ip.ip-is-private(s)               ; 快速判斷私有
 支援 W3C EventSource 規範的 SSE 串流接收。底層使用 HTTP/1.1 長連接，支援明文 HTTP 與 HTTPS（TLS）：
 
 ```no
+#{fmt-skip}
 ; sse-event 結構體
 sse-event {
     event str       ; 事件類型（預設 'message'）
@@ -586,15 +598,16 @@ ok = client.reconnect()             ; 重新連線（使用 last-event-id）
 提供 HTTP/1.1 協議的客戶端，支援 GET、POST、PUT、DELETE、PATCH 等方法，可選 TLS：
 
 ```no
-; 結構體
-http.request {
+#{fmt-skip}
+; 結構體（以下為 std/http 模組內的定義；模組內定義不加模組前綴，加了會被讀成 struct literal）
+request {
     method str
     url str
     body str
     headers [16]str
     header-count i64
 }
-http.response {
+response {
     status-code i64
     status-text str
     headers str
@@ -633,6 +646,7 @@ val = resp.get-header(name)                  ; 查詢標頭值（?str）
 支援 HTTP/2 影格解析與連線管理，支援 h2c prior knowledge 模式：
 
 ```no
+#{fmt-skip}
 ; 影格結構體
 http2-frame {
     length i64
@@ -669,6 +683,7 @@ frame = c.recv-frame()                       ; 接收影格（?http2-frame）
 基於 QUIC 協議的 HTTP/3 客戶端：
 
 ```no
+#{fmt-skip}
 ; 方法常量
 HTTP3-METHOD-GET = 'GET'
 HTTP3-METHOD-POST = 'POST'
@@ -695,6 +710,7 @@ name, value, pos = http3.decode-header(buf, pos)
 支援 WebSocket 協議的全雙工通訊，可作為客戶端或服務端：
 
 ```no
+#{fmt-skip}
 ; 訊息結構體
 ws-message {
     opcode i64           ; 0=continuation, 1=text, 2=binary, 8=close, 9=ping, 10=pong
@@ -723,6 +739,7 @@ c.close()
 提供 TLS 加密連接，支援 TLS 1.2 和 1.3：
 
 ```no
+#{fmt-skip}
 ; 連接
 c = tls.dial(host, port)                       ; 建立 TLS 連接（?tls.conn）
 n = c.send(data)                             ; 發送加密資料（?i64）
@@ -735,6 +752,7 @@ c.close()
 封裝 `conn` 結構體，提供自動重連等功能：
 
 ```no
+#{fmt-skip}
 c = client.client-create(host, port)               ; 建立客戶端（?client）
 ok = c.connect(host, port)                   ; 連接
 ok = c.reconnect()                           ; 重連
@@ -752,6 +770,7 @@ c.close()
 提供 QUIC 傳輸協議實現，作為 HTTP/3 的底層傳輸層：
 
 ```no
+#{fmt-skip}
 c = quic.dial(host, port)                    ; 建立 QUIC 連接（?quic.conn）
 n = c.send(data, n)                          ; 發送資料
 n = c.recv(buf, n)                           ; 接收資料
@@ -763,6 +782,7 @@ c.close()
 提供 HTTP 伺服器功能：
 
 ```no
+#{fmt-skip}
 s = server{}
 ok = s.listen(host, port)                    ; 開始監聽
 c = s.accept()                               ; 接受一條連接（?server-conn）
@@ -774,6 +794,7 @@ s.close()
 提供 DNS 查詢功能：
 
 ```no
+#{fmt-skip}
 ip = dns.resolve(host)                       ; 解析主機名（?str）
 ```
 
@@ -782,6 +803,7 @@ ip = dns.resolve(host)                       ; 解析主機名（?str）
 提供 URL 解析與建構功能：
 
 ```no
+#{fmt-skip}
 u = url.url-parse(url)                           ; 解析 URL
 s = u.to-str()                               ; 轉為字串
 ```
@@ -791,7 +813,7 @@ s = u.to-str()                               ; 轉為字串
 提供 HTTP Cookie 的解析與管理：
 
 ```no
-c = cookie{}
+c = cookie {}
 c.parse(set-cookie-header)
 s = c.to-str()
 ```
@@ -801,6 +823,7 @@ s = c.to-str()
 提供 multipart/form-data 的解析與建構：
 
 ```no
+#{fmt-skip}
 ; 寫入（建構 multipart/form-data）
 w = multipart.multipart-create()           ; 建立寫入器（?multipart-writer）
 w.write-field(name, value)                 ; 寫入欄位
@@ -816,6 +839,7 @@ r = multipart.multipart-parse(content-type, body) ; 解析（?multipart-reader�
 提供 HPACK 演算法的編解碼，用於 HTTP/2 標頭壓縮：
 
 ```no
+#{fmt-skip}
 ; 標頭表操作
 t = hpack.tables{}
 t.init()                                 ; 初始化靜態+動態表
@@ -846,6 +870,7 @@ c = proxy.dial(proxy-url, target-host, target-port)
 提供網路連接的池化管理，重用連接以提升效能：
 
 ```no
+#{fmt-skip}
 p = pool{}
 p.init(capacity)
 c = p.get()                                  ; 從池中取得連接
@@ -858,6 +883,7 @@ p.close()
 提供 Unix 域套接字通訊：
 
 ```no
+#{fmt-skip}
 fd = unix.unix-listen(path)                       ; 監聽（回傳 fd）
 fd = unix.unix-dial(path)                         ; 連接（回傳 fd）
 l = unix.unix-listen-on(path)                     ; 建立監聽器（?unix-listener）

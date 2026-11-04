@@ -156,7 +156,7 @@ str-set.remove = (key str) (removed bool) {
 ; 清空
 ; [clear](#str-set.str-set.clear)
 str-set.clear = () {
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] = 0
 
         .keys[i].len = 0
@@ -184,7 +184,7 @@ str-set.is-empty = () (empty bool) {
 ; val str: 當前槽位的字串（最後一次賦值）
 ; [for-each](#str-set.str-set.for-each)
 str-set.for-each = () (val str) {
-    i <- [0...cap): {
+    i <- [0..self.cap): {
         .occ[i] == 1 -> {
             val = .keys[i]
         }

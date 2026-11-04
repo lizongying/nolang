@@ -82,6 +82,31 @@ func TestMdFormatsNolangBlocks(t *testing.T) {
 	mdCheck(t, "basic", input, want, nil)
 }
 
+// REGRESSION GUARD (multi-block documents: every block is formatted, not every other one).
+//
+// 結尾柵欄 ``` 在語法上同樣符合起始柵欄的正則。舊版格式化成功後把游標停在
+// 結尾柵欄上，下一輪就把它當成新塊的開始，於是它與**下一個**真正的起始柵欄
+// 配對，中間那個 Nolang 塊被當成「非 Nolang 塊的內容」整段跳過 —— 一份文件
+// 裡只有第 1、3、5… 個塊會被格式化，第 2 個塊永遠原樣留底，且不入 skipped
+// （作者無從察覺）。
+func TestMdMultipleBlocksAllFormatted(t *testing.T) {
+	input := mdDoc(
+		mdFence+"no", "a=1", mdFence, "",
+		"prose", "",
+		mdFence+"no", "b=2", mdFence, "",
+		"prose2", "",
+		mdFence+"no", "c=3", mdFence, "",
+	)
+	want := mdDoc(
+		mdFence+"no", "a = 1", mdFence, "",
+		"prose", "",
+		mdFence+"no", "b = 2", mdFence, "",
+		"prose2", "",
+		mdFence+"no", "c = 3", mdFence, "",
+	)
+	mdCheck(t, "multi-block", input, want, nil)
+}
+
 // `nolang` 是早期標籤，與 `no` 等價處理；`noml`（套件配置）與其他語言不碰。
 func TestMdLangSelection(t *testing.T) {
 	input := mdDoc(
@@ -102,12 +127,26 @@ func TestMdLangSelection(t *testing.T) {
 		mdFence,
 		"",
 	)
-	mdCheck(t, "langs", input, input, nil)
-	// 只有 ```nolang 那一塊應該被改：把它換成格式化後的形態再驗一次。
-	got, _ := FormatMarkdownFile(mdDoc(mdFence+"nolang", "x=1", mdFence, ""))
-	if want := mdDoc(mdFence+"nolang", "x = 1", mdFence, ""); got != want {
-		t.Errorf("nolang tag: got %q want %q", got, want)
-	}
+	// 只有 ```nolang 那一塊被格式化：`noml` / `bash` / 無語言標記的塊逐字保留。
+	want := mdDoc(
+		mdFence+"nolang",
+		"x = 1",
+		mdFence,
+		"",
+		mdFence+"noml",
+		"x=1",
+		mdFence,
+		"",
+		mdFence+"bash",
+		"x=1",
+		mdFence,
+		"",
+		mdFence,
+		"x=1",
+		mdFence,
+		"",
+	)
+	mdCheck(t, "langs", input, want, nil)
 }
 
 // 柵欄 meta 帶 skip / nofmt 時整塊留底；塊內 `; nolang-fmt:skip` 註解同效。
@@ -121,6 +160,49 @@ func TestMdSkipMarkers(t *testing.T) {
 		in := mdDoc(tc.fence, tc.block, mdFence, "")
 		mdCheck(t, tc.name, in, in, nil)
 	}
+}
+
+// 推薦寫法：塊頂部的 Nolang 註解 `#{fmt-skip}`，整塊既不驗證也不修改。
+//
+// 這個註解本身不是合法 Nolang 語句，所以跳過判定必須發生在解析之前 ——
+// 否則塊會先因「註解項未知」解析失敗、被記成 skipped，作者的意圖就淹沒在
+// 噪音裡。
+func TestMdSkipAnnotation(t *testing.T) {
+	for _, tc := range []struct{ name, block string }{
+		{"annotation", "#{fmt-skip}" + mdNL + "x=1"},
+		{"annotation-after-blank", mdNL + "#{fmt-skip}" + mdNL + "x=1"},
+		{"annotation-with-indent", "  #{fmt-skip}" + mdNL + "  x=1"},
+		{"annotation-shared-line", "#{fmt-skip, overflow=wrap}" + mdNL + "x=1"},
+	} {
+		in := mdDoc(mdFence+"no", tc.block, mdFence, "")
+		mdCheck(t, tc.name, in, in, nil)
+	}
+}
+
+// 註解必須在頂部：寫在塊中間不生效（整塊的跳過語義不能有歧義），該塊照常格式化。
+// 同時驗證註解項不叫 fmt-skip 時照常格式化。
+func TestMdSkipAnnotationOnlyAtTop(t *testing.T) {
+	in := mdDoc(mdFence+"no", "x=1", "#{fmt-skip}", mdFence, "")
+	got, skipped := FormatMarkdownFile(in)
+	if len(skipped) != 0 {
+		t.Fatalf("unexpected skipped blocks: %v", skipped)
+	}
+	if !strings.Contains(got, "x = 1") {
+		t.Fatalf("mid-block annotation must not skip formatting:\n got: %q", got)
+	}
+	other := mdDoc(mdFence+"no", "#{overflow=wrap}", "x=1+2", mdFence, "")
+	if out := mustFormat(t, other); !strings.Contains(out, "x = 1 + 2") {
+		t.Errorf("unrelated annotation must not skip formatting:\n got: %q", out)
+	}
+}
+
+func mustFormat(t *testing.T, src string) string {
+	t.Helper()
+	out, skipped := FormatMarkdownFile(src)
+	if len(skipped) != 0 {
+		t.Fatalf("unexpected skipped blocks: %v", skipped)
+	}
+	return out
 }
 
 // 列表項內的縮排柵欄：剝掉共同縮排格式化，再原樣貼回，層級縮排保留。
@@ -177,6 +259,36 @@ func TestMdUnparseablePreserved(t *testing.T) {
 	mdCheck(t, "unparseable", input, want, []int{3})
 }
 
+// REGRESSION GUARD: 跳過塊的行號必須是**原文件**行號。
+//
+// 格式化會改變前面塊的長度，而掃描游標走的是「當前緩衝區」下標。早期版本
+// 直接報告 i+1，於是前面塊一變長，後面被跳過的塊行號就整體後移（實測報告
+// 1040 行、柵欄實際在 1024），作者照行號找不到塊。
+func TestMdSkippedLineIsOriginalLine(t *testing.T) {
+	input := mdDoc(
+		"prose",               // 1
+		"",                    // 2
+		mdFence+"no",          // 3
+		"v: {",                // 4
+		"    ok -> a()",       // 5
+		"    -> b()",          // 6
+		"}",                   // 7
+		mdFence,               // 8
+		"",                    // 9
+		mdFence+"no",          // 10
+		"not ⟦nolang⟧ at all", // 11
+		mdFence,               // 12
+		"",                    // 13
+	)
+	_, skipped := FormatMarkdownFile(input)
+	if len(skipped) != 1 {
+		t.Fatalf("want 1 skipped block, got %v", skipped)
+	}
+	if skipped[0].Line != 10 {
+		t.Errorf("skipped line = %d, want 10 (original file line)", skipped[0].Line)
+	}
+}
+
 // 空塊、未闭合塊、以及較長的結尾柵欄都不造成破壞。
 func TestMdEdgeCases(t *testing.T) {
 	mdCheck(t, "empty-block", mdDoc(mdFence+"no", mdFence, ""), mdDoc(mdFence+"no", mdFence, ""), nil)
@@ -212,4 +324,25 @@ func TestIsMarkdownPath(t *testing.T) {
 			t.Errorf("IsMarkdownPath(%q) = %v, want %v", path, got, want)
 		}
 	}
+}
+
+// 純註解塊不是「無法解析」。
+//
+// 文檔裡常用「整塊只寫註解」的方式給出正確寫法（把程式碼註起來）。這種塊解析
+// 成功、但一條陳述都沒有，formatProgramAST 把「無陳述」與「解析失敗」歸成同一
+// 個 ok=false，於是 -md 把它報成 "not parseable as Nolang"，作者只能加
+// #{fmt-skip} 去掩蓋一個並不存在的語法錯誤。它沒有可排版的程式碼，應原樣留底
+// 且不計入 skipped。
+func TestMdCommentOnlyBlockNotReported(t *testing.T) {
+	input := mdDoc(
+		"prose",
+		"",
+		mdFence+"no",
+		"; 只有註解：正確寫法以註解呈現",
+		"; fn-example = () {",
+		"; }",
+		mdFence,
+		"",
+	)
+	mdCheck(t, "comment-only", input, input, nil)
 }
