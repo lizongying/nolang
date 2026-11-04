@@ -2388,37 +2388,35 @@ func (l *lowerer) intLitNeeds128(n *hir.Node) string {
 	return ""
 }
 
-// intLitTypeFromHint returns the LLVM integer type ("i8"/"i16"/"i32"/"i64")
-// for the current type hint, but only for narrow integer kinds that need to
-// track their width through constant literals. Returns "" when the hint is
-// absent, unresolveable, or is wide (i64/i128) — in those cases the default
-// "i64" lowering is correct and avoids touching existing behavior.
+// intLitTypeFromHint returns the DECLARED integer type name of the current type
+// hint, so an integer literal can be emitted with the exact type its binding
+// declares. Returns "" when the hint is absent or not an integer — the default
+// `typeOfNode` lowering is then correct.
 //
-// This fixes the byte-overflow bug: `a byte = 250` must emit OpConst with a
-// narrow slot type so subsequent byte arithmetic runs in i8 and wraps at
-// 8 bits. Previously every KIntLit defaulted to i64 regardless of the hinted
-// binding type, causing `250+10` to feed `add i64` whose result never truncated.
+// It fixes the byte-overflow bug: `a byte = 250` must emit OpConst typed byte so
+// subsequent byte arithmetic runs in i8 and wraps at 8 bits. Previously every
+// KIntLit defaulted to i64 regardless of the hinted binding type, causing
+// `250+10` to feed `add i64` whose result never truncated.
+//
+// 🔴 It must return the RAW name (u16 stays "u16", byte stays "byte"), NOT the
+// LLVM type name. Type("u16") and Type("i16") both lower to i64, so the LLVM
+// width is unaffected — but the resulting value's Raw carries the signedness
+// into the enclosing binding's LocalTypes, and the narrow-wrap decision
+// (wrapIntToStorage -> isUnsignedRaw) reads it back. Returning "i16" for a u16
+// hint therefore erased the unsignedness of every narrow intermediate: inside
+// `u16.sqrt`, `mid = (lo + hi) / 2` computed 1+32767 = 32768, truncated it to
+// i16 and SIGN-extended to -32768, so the binary search never terminated
+// (`no test test/std/math.no` spun forever printing "division by zero")
+// while u16.MAX/2 and friends silently returned wrong values.
 func (l *lowerer) intLitTypeFromHint() string {
 	if l.typeHint == NoType || l.typeHint == l.voidType {
 		return ""
 	}
 	ty := l.mod.Type(l.typeHint)
-	if ty == nil {
+	if ty == nil || ty.Kind != KindInt {
 		return ""
 	}
-	switch ty.Raw {
-	case "byte", "u8", "i8":
-		return "i8"
-	case "u16", "i16":
-		return "i16"
-	case "u32", "i32":
-		return "i32"
-	case "u64", "i64":
-		return "i64"
-	case "i128", "u128":
-		return "i128"
-	}
-	return ""
+	return ty.Raw
 }
 
 // ---- function lowering ----
@@ -6404,38 +6402,31 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		if t := l.foldIntConst128(n, gtype); t != "" {
 			return t
 		}
-		// Narrow the literal to the declared type width so byte/u8/i8 globals
-		// become `global i8 <val>` (not `global i64 <val>`), which in turn makes
-		// arithmetic on those globals happen in i8 and correctly wrap at 8 bits.
-		// Without this, `b byte = 10` becomes `@b = global i64 10`, reads as i64,
-		// and feeds `add i64` whose result is never truncated — 250+10 yields 260.
-		if gtype != "" {
-			switch gtype {
-			case "byte", "u8":
-				return fmt.Sprintf("i8 %d", uint64(n.Val)&0xff)
-			case "i8":
-				v := n.Val & 0xff
-				if v >= 0x80 {
-					v -= 0x100
-				}
-				return fmt.Sprintf("i8 %d", v)
-			case "u16":
-				return fmt.Sprintf("i16 %d", uint64(n.Val)&0xffff)
-			case "i16":
-				v := n.Val & 0xffff
-				if v >= 0x8000 {
-					v -= 0x10000
-				}
-				return fmt.Sprintf("i16 %d", v)
-			case "u32":
-				return fmt.Sprintf("i32 %d", uint64(n.Val)&0xffffffff)
-			case "i32":
-				v := n.Val & 0xffffffff
-				if v >= 0x80000000 {
-					v -= 0x100000000
-				}
-				return fmt.Sprintf("i32 %d", v)
+		// 收窄字面量，但**只限 byte/u8/i8**：這三者的 LLVM 槽位真的是 i8
+		// （見 llvmTypeOf 的 KindInt 分支），所以 `global i8 <val>` 與
+		// 讀寫端一致，且讓算術在 i8 域完成、自然模 2^8 回繞。少了這一支，
+		// `b byte = 10` 會變成 `@b = global i64 10`，被當 i64 讀出、
+		// 餵給 `add i64` 後永不截斷 —— 250+10 得 260。
+		//
+		// ⚠️ 其餘寬度（u16/i16/u32/i32）**不可**在此收窄。MIR 把 non-byte
+		// 整數一律拉平為 i64（llvmTypeOf 與 GlobalDecl.Type 都給 i64），
+		// 只有 ConstText 的文字會決定實際配置寬度。一旦在此發 `i16`，
+		// 全域就真的只佔 2 位元組，而所有讀取端（loadVal、emitMove、
+		// 以及 by-ref 傳參 `i64* @g`）仍按 i64 存取 —— opaque pointer 下
+		// LLVM 不報錯，靜默讀走相鄰 6 位元組記憶體。實測 `i16 = -100`
+		// 印成 65436、`u16 65535` 印成 -1、`u16 65535.sqrt()` 取到垃圾
+		// mid 而無限迴圈（`no test test/std/math.no` 直接卡死），
+		// std/crypto/blake2 的 `BLAKE2S-MASK u32` 遮罩失配使 BLAKE2s
+		// 全部向量錯誤。
+		if gtype == "byte" || gtype == "u8" {
+			return fmt.Sprintf("i8 %d", uint64(n.Val)&0xff)
+		}
+		if gtype == "i8" {
+			v := n.Val & 0xff
+			if v >= 0x80 {
+				v -= 0x100
 			}
+			return fmt.Sprintf("i8 %d", v)
 		}
 		return fmt.Sprintf("i64 %d", n.Val)
 	case hir.KCharLit:

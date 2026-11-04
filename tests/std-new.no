@@ -150,7 +150,7 @@ decoded: {
 ; ═══════════════════════════════════════════════
 print('=== fs.list-dir ===')
 
-entries []str = fs.list-dir('.')
+entries = fs.list-dir('.')
 n = entries.len()
 print('entry count:{n.to-str()}')
 i <- [0..n): {

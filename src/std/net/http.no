@@ -1421,7 +1421,7 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
 ; ok: true=寫入成功（把 ?bool 的 ok 摺疊為 true；nil/err 均為 false）
 ; [http-write-ok](#http.http-write-ok)
 http-write-ok = (p str, data []byte) (ok bool) {
-    w ?bool = fs.write-bytes(p, data)
+    w = fs.write-bytes(p, data)
     ok = w: {
         ok -> it
 

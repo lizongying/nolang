@@ -105,8 +105,20 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
     carry = 0
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
-        val = (a[i]) + (b[i]) + carry
+        ; ⚠️ 必須先把兩個位元組讀成 i64 再相加。`byte + byte + i64` 的結果
+        ; 型別是**左運算元的 byte**（docs/lang/syntax.md〈特例：byte 與 char
+        ; 算術〉：byte 算術不產生 option、溢出靜默 2's 補數回繞），所以
+        ; 直接寫 `(a[i]) + (b[i]) + carry` 會得到 mod 256 的加和 ——
+        ; 200 + 100 → 44，`carry = val >> 8` 恆為 0，整條 P-256 大數加法
+        ; 因而不進位（ecdsa 公鑰/簽名/ECDH 全部失配，2026-11-04）。
+        #{index-out=zero}
+        av i64 = a[i]
+
+        #{index-out=zero}
+        bv i64 = b[i]
+
+        #{overflow=wrap}
+        val = av + bv + carry
 
         sum[i] = val & 255
         carry = val >> 8
@@ -124,8 +136,16 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
     borrow = 0
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
-        val = (a[i]) - (b[i]) - borrow
+        ; 同 bn-add：左運算元是 byte 時結果恆為 byte（mod 256 回繞），
+        ; `val < 0` 永遠不成立、borrow 恆為 0。先讀成 i64 才有負值可比。
+        #{index-out=zero}
+        av i64 = a[i]
+
+        #{index-out=zero}
+        bv i64 = b[i]
+
+        #{overflow=wrap}
+        val = av - bv - borrow
 
         #{overflow=wrap}
         {
@@ -208,8 +228,16 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             #{overflow=wrap}
             idx = i + j
 
-            #{index-out=zero, overflow=wrap}
-            val = (product[idx]) + (a[i]) * (b[j]) + carry
+            ; byte 是回繞型別（見 bn-add 註解）：最左操作數先讀成 i64，
+            ; 否則 `a[i] * b[j]` 只算到 mod 256，加法也帶不出進位。
+            #{index-out=zero}
+            pv i64 = product[idx]
+
+            #{index-out=zero}
+            av i64 = a[i]
+
+            #{overflow=wrap}
+            val = pv + av * (b[j]) + carry
 
             product[idx]: {
                 ok -> it = val & 255
@@ -224,8 +252,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         idx = i + 32
         (idx < 64 && carry != 0) {
 
-            #{index-out=zero, overflow=wrap}
-            val = (product[idx]) + carry
+            #{index-out=zero}
+            pv2 i64 = product[idx]
+
+            #{overflow=wrap}
+            val = pv2 + carry
 
             product[idx]: {
                 ok -> it = val & 255
@@ -344,8 +375,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     #{index-out=zero}
                     pi = prod[i]
 
-                    #{index-out=zero, overflow=wrap}
-                    val = (work[idx]) - pi - borrow
+                    ; byte 回繞：最左操作數先讀成 i64，否則 `val < 0` 永不成立
+                    #{index-out=zero}
+                    wv i64 = work[idx]
+
+                    #{overflow=wrap}
+                    val = wv - pi - borrow
                     {
                         val < 0 -> {
 
@@ -404,8 +439,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     #{overflow=wrap}
                     idx = pos + j
 
-                    #{index-out=zero, overflow=wrap}
-                    val = (work[idx]) - (m[j]) - borrow
+                    #{index-out=zero}
+                    wv i64 = work[idx]
+
+                    #{overflow=wrap}
+                    val = wv - (m[j]) - borrow
                     {
                         val < 0 -> {
 
@@ -426,8 +464,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     idx = pos + 32
                     (idx < 64) {
 
-                        #{index-out=zero, overflow=wrap}
-                        val = (work[idx]) - borrow
+                        #{index-out=zero}
+                        wv i64 = work[idx]
+
+                        #{overflow=wrap}
+                        val = wv - borrow
                         {
                             val < 0 -> {
 
@@ -553,8 +594,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 {
                     idx < 64 -> {
 
+                        #{index-out=zero}
+                        av i64 = acc[idx]
+
                         #{overflow=wrap}
-                        val = (acc[idx]) - (m[i]) - borrow
+                        val = av - (m[i]) - borrow
                         {
                             val < 0 -> {
 
@@ -576,8 +620,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     -> {
                         borrow != 0 -> {
 
+                            #{index-out=zero}
+                            av i64 = acc[idx]
+
                             #{overflow=wrap}
-                            val = (acc[idx]) - borrow
+                            val = av - borrow
                             {
                                 val < 0 -> {
 
@@ -606,8 +653,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 idx = shift-byte + 32
                 (idx < 64) {
 
-                    #{index-out=zero, overflow=wrap}
-                    val = (acc[idx]) - borrow
+                    #{index-out=zero}
+                    av i64 = acc[idx]
+
+                    #{overflow=wrap}
+                    val = av - borrow
                     {
                         val < 0 -> {
 

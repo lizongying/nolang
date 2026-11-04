@@ -44,20 +44,20 @@ t-inverse-trig-needs-sqrt = () {
 
 ; ── # std/math：clamp（#{buildin} 樁 → ForwardFunc math-clamp）──
 t-clamp = () {
-    hi i64 = math.clamp(9, 1, 5)
+    hi = math.clamp(9, 1, 5)
     runner.eq(hi, 5, '# std/math: math.clamp(9,1,5) == 5')
 
-    lo i64 = math.clamp(-3, 0, 5)
+    lo = math.clamp(-3, 0, 5)
     runner.eq(lo, 0, '# std/math: math.clamp(-3,0,5) == 0')
 
-    mid i64 = math.clamp(3, 1, 5)
+    mid = math.clamp(3, 1, 5)
     runner.eq(mid, 3, '# std/math: math.clamp(3,1,5) == 3')
 }
 
 ; ── # std/os：get-wd（getcwd，C 字串回傳）──
 ; 修復前 os.get-wd() 回傳空字串（長度 0）。
 t-get-wd = () {
-    wd str = os.get-wd()
+    wd = os.get-wd()
     n i64 = wd.len-bytes()
     runner.is-true(n > 0, '# std/os: os.get-wd() 非空')
 }

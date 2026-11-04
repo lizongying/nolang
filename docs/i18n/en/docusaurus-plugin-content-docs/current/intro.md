@@ -8,15 +8,11 @@ Nolang is a memory-safe, GC-free systems programming language with intuitive sem
 
 ## Core Features
 
-- **Memory-safe, no GC**: No garbage collector; automatic, safe memory management. Through the safe scope model, memory is automatically freed when leaving scope — no dangling pointers or memory leaks. Heap allocation is batched up-front, and a single batch free runs when the scope exits.
-- **Semantically intuitive**: Respects developer intent; no pointers, ownership, or lifetimes as hidden mental overhead.
-- **Minimal syntax**: Fewer keywords, simpler syntax.
-- **Pass by reference**: All function parameters are references; functions return results by modifying parameters.
-- **Performance-first**: Small strings require no heap allocation; variables can be allocated once and freed once.
-- **Method overloading**: Efficient performance through monomorphization.
-- **Interfaces**: Support interface declaration, default implementations, and multi-interface inheritance.
-- **Generics**: Support type and value generics.
-- **Pattern matching**: Unique match design, simpler to use.
+- **Memory-safe**: No garbage collector; automatic memory management.
+- **Powerful performance**: Compile-time optimization, no GC.
+- **Minimal syntax**: Fewer keywords; no pointers, ownership, or lifetimes as implicit mental overhead; simpler syntax.
+- **Intent-driven**: Respects developer intent; semantics align with human intuition.
+- **Crash-free**: Eliminates implicit crash paths.
 
 
 ## Quick Start
@@ -43,14 +39,14 @@ user {
     age i64
 }
 
+; Method
+user.greet = () {
+    print('Hello, {.name}')
+}
+
 u = user {
     name: 'Alice'
     age: 30
-}
-
-; Method
-user.greet = () {
-    print('Hello, ' - .name)
 }
 
 u.greet()

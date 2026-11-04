@@ -26,9 +26,9 @@ t-escape = () {
 
 ; 驗證 markdown.prefix-count：統計行首連續指定字符數（### 得 3），無匹配時得 0
 t-prefix = () {
-    n i64 = markdown.prefix-count('### x', 35)
+    n = markdown.prefix-count('### x', 35)
     runner.eq(n, 3, 'prefix-count # == 3')
-    z i64 = markdown.prefix-count('abc', 35)
+    z = markdown.prefix-count('abc', 35)
     runner.eq(z, 0, 'prefix-count none == 0')
 }
 
@@ -49,9 +49,9 @@ t-setext-thematic = () {
     runner.eq(markdown.setext-level('====='), 1, 'setext === => 1')
     runner.eq(markdown.setext-level('-----'), 2, 'setext --- => 2')
     runner.eq(markdown.setext-level('abc'), 0, 'setext none => 0')
-    tb bool = markdown.thematic-break('---')
+    tb = markdown.thematic-break('---')
     runner.is-true(tb, 'thematic --- true')
-    nb bool = markdown.thematic-break('not ---')
+    nb = markdown.thematic-break('not ---')
     runner.is-false(nb, 'thematic text false')
 }
 
@@ -76,7 +76,7 @@ t-block-structs = () {
     runner.eq(f.width, 3, 'fence width 3')
     eq-str(f.info, 'py', 'fence info')
 
-    ts bool = markdown.table-separator('--- | ---')
+    ts = markdown.table-separator('--- | ---')
     runner.is-true(ts, 'table-separator true')
 }
 

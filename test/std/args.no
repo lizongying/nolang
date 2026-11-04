@@ -18,7 +18,7 @@
 
 ; args.count 應等於 os.args().len，且至少為 1（含程式名，回歸：曾誤回 0）
 t-count = () {
-    c i64 = args.count()
+    c = args.count()
     o i64 = os.args().len()
     runner.eq(c, o, 'args.count == os.args().len (delegation)')
     runner.gt(c, 0, 'count >= 1 (regression: was 0)')
@@ -49,7 +49,7 @@ t-get-program = () {
     }
     runner.gt(p.len(), 0, 'program non-empty (was empty)')
     runner.eq(g0.len(), o0.len(), 'get(0).len == os.arg(0).len')
-    n i64 = p.len()
+    n = p.len()
     runner.str-eq(g0, o0, n, 'get(0) == os.arg(0)')
     runner.str-eq(p, o0, n, 'program == os.arg(0)')
 }
@@ -58,7 +58,7 @@ t-get-program = () {
 t-has-flag-absent = () {
 
     ; argv 僅含程式名，[1..n) 迴圈不執行 => 任何 flag 皆不存在
-    v bool = args.has-flag('--absent')
+    v = args.has-flag('--absent')
     runner.is-false(v, 'absent flag => false')
 }
 

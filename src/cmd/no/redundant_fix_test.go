@@ -164,3 +164,53 @@ func TestFixRedundantTypeFixesDirectory(t *testing.T) {
 		t.Errorf("did not expect a fix for %s (implicit conversion)", p2)
 	}
 }
+
+// TestFixRedundantTypeSourceStdCall 回歸：預設 `no fmt` 的單檔前置移除
+// （fixRedundantTypeSource）也必須清得掉「跨模組 std 呼叫」的冗餘標註。
+// 單檔解析不合併 std，inferExprType 在 funcTypes 裡查不到 `bigint.from-i64`
+// 這類函式簽名；少了 redundant_std_call.go 的簽名表回退接線，
+// `two bigint = bigint.from-i64(2)` 會被靜默保留 —— 只剩
+// `no fmt -fix=redundant` 的 package-context Path 2 修得動。
+//
+// 刻意直接打 Path 1：走 fixRedundantTypeInFile 會被 Path 2 的 vet 兜底救回，
+// 讓測試在回退接線被拔掉時仍假通過（尺子必須有判別力）。
+func TestFixRedundantTypeSourceStdCall(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "std module call: bigint annotation removed",
+			src:  "two bigint = bigint.from-i64(2)\n",
+			want: "two = bigint.from-i64(2)\n",
+		},
+		{
+			name: "std module call: str annotation removed",
+			src:  "wd str = os.get-wd()\n",
+			want: "wd = os.get-wd()\n",
+		},
+		{
+			name: "unknown call: annotation preserved",
+			src:  "v i64 = unknown-fn()\n",
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := fixRedundantTypeSource(c.src)
+			if c.want == "" {
+				if ok {
+					t.Errorf("expected NO fix (ok=false), got ok=true result=%q", got)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("expected a fix (ok=true), got ok=false")
+			}
+			if got != c.want {
+				t.Errorf("fixRedundantTypeSource =\n%q\nwant\n%q", got, c.want)
+			}
+		})
+	}
+}

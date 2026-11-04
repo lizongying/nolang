@@ -29,7 +29,7 @@ t-float-int-sat = () {
     runner.eq(under.to-i64(), i64.MIN, 'f64 超下界 → i64.MIN')
 
     ; 1e30 巨大值 → i64.MAX
-    huge f64 = math.pow(10.0, 30.0)
+    huge = math.pow(10.0, 30.0)
     runner.eq(huge.to-i64(), i64.MAX, '1e30.to-i64 → i64.MAX')
 
     ; NaN → 0

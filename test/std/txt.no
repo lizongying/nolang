@@ -138,18 +138,18 @@ t-to-bytes-semantics = () {
 
 ; 構造斷言：txt.from-str / from-bytes / from-chars 產生長度與內容正確的 txt（from-chars 回傳 ?txt）
 t-from = () {
-    a txt = txt.from-str('from-str')
+    a = txt.from-str('from-str')
     runner.eq(a.len(), 8, 'txt.from-str len == 8')
     runner.str-eq(a.to-str(), 'from-str', 8, 'txt.from-str value')
     src = 'bytes'.to-bytes()
-    b txt = txt.from-bytes(src)
+    b = txt.from-bytes(src)
     runner.eq(b.len(), 5, 'txt.from-bytes len == 5')
     runner.str-eq(b.to-str(), 'bytes', 5, 'txt.from-bytes value')
     cs []char
     cs.push("a")
     cs.push("b")
     cs.push("c")
-    c ?txt = txt.from-chars(cs)
+    c = txt.from-chars(cs)
     c: {
         ok(v) -> {
             runner.eq(v.len(), 3, 'txt.from-chars len == 3')

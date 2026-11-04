@@ -773,7 +773,7 @@ dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
 
         -> return
     }
-    tgt str = s.slice-bytes(p + 2, ne)
+    tgt = s.slice-bytes(p + 2, ne)
     j = ne
     found = false
     (j + 1 < n) {
@@ -886,7 +886,7 @@ dom-pool.xml-parse-attr = (node i64, s str, p i64, xml bool) (np ?i64) {
 
         -> return
     }
-    nm str = s.slice-bytes(p, ne)
+    nm = s.slice-bytes(p, ne)
     cpos = xml-skip-ws(s, ne)
     cpos >= n -> return
     c = s.byte(cpos)
@@ -977,7 +977,7 @@ dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
 
         -> return
     }
-    cnm str = s.slice-bytes(p + 2, ne)
+    cnm = s.slice-bytes(p + 2, ne)
     .names[node].eq-full(cnm) == false -> return
     cpos = xml-skip-ws(s, ne)
     cpos >= n -> return
@@ -1409,7 +1409,7 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
             return
         }
     }
-    tgt str = s.slice-bytes(p + 2, ne)
+    tgt = s.slice-bytes(p + 2, ne)
     j = ne
     found = false
     (j < n) {
@@ -1457,7 +1457,7 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
 
         -> return
     }
-    nm str = s.slice-bytes(p, ne)
+    nm = s.slice-bytes(p, ne)
     nm = nm.to-lower()
     cpos = xml-skip-ws(s, ne)
     cpos < n && s.byte(cpos) == 61 -> {

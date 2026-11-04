@@ -63,13 +63,13 @@ t-abs = () {
 
 ; 驗證 math.even / math.odd：偶數對 even 回 true、奇數對 odd 回 true，兩者互斥
 t-even-odd = () {
-    yes1 bool = math.even(4)
+    yes1 = math.even(4)
     runner.is-true(yes1, 'even(4) == true')
-    no1 bool = math.even(3)
+    no1 = math.even(3)
     runner.is-false(no1, 'even(3) == false')
-    yes2 bool = math.odd(3)
+    yes2 = math.odd(3)
     runner.is-true(yes2, 'odd(3) == true')
-    no2 bool = math.odd(4)
+    no2 = math.odd(4)
     runner.is-false(no2, 'odd(4) == false')
 }
 
@@ -95,11 +95,11 @@ t-lcm = () {
 
 ; 驗證 number.pow：整數冪運算（2^10=1024、3^3=27），任意數的 0 次方回 1
 t-pow = () {
-    r i64 = number.pow(2, 10)
+    r = number.pow(2, 10)
     runner.eq(r, 1024, 'pow(2,10) == 1024')
-    r2 i64 = number.pow(3, 3)
+    r2 = number.pow(3, 3)
     runner.eq(r2, 27, 'pow(3,3) == 27')
-    r3 i64 = number.pow(5, 0)
+    r3 = number.pow(5, 0)
     runner.eq(r3, 1, 'pow(5,0) == 1')
 }
 
@@ -198,23 +198,23 @@ t-int128-range-const = () {
 ; 會觸發 128 位 codegen 丟棄 main）。結果常超 i64 值域，以 .to-str() 斷言。
 t-int128-sqrt = () {
     imax i128 = i128.MAX
-    s1 i128 = imax.sqrt()
+    s1 = imax.sqrt()
     runner.str-eq(s1.to-str(), '13043817825332782212', 20, 'i128.MAX.sqrt')
 
     imin i128 = i128.MIN
-    s2 i128 = imin.sqrt()
+    s2 = imin.sqrt()
     runner.str-eq(s2.to-str(), '0', 1, 'i128.MIN.sqrt (負數 -> 0)')
 
     t124 i128 = 1000000000000000000000000
-    s3 i128 = t124.sqrt()
+    s3 = t124.sqrt()
     runner.str-eq(s3.to-str(), '1000000000000', 13, 'i128.1e24.sqrt')
 
     umax u128 = u128.MAX
-    s4 u128 = umax.sqrt()
+    s4 = umax.sqrt()
     runner.str-eq(s4.to-str(), '18446744073709551615', 20, 'u128.MAX.sqrt (= 2^64-1)')
 
     u124 u128 = 1000000000000000000000000
-    s5 u128 = u124.sqrt()
+    s5 = u124.sqrt()
     runner.str-eq(s5.to-str(), '1000000000000', 13, 'u128.1e24.sqrt')
 }
 

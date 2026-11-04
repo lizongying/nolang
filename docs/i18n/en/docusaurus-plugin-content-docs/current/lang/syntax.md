@@ -6,9 +6,8 @@ sidebar_position: 2
 
 ## Comments
 
-Nolang supports three single-line comment markers and one multi-line (block) comment marker:
+Nolang supports single-line comment markers and a multi-line (block) comment marker:
 
-- `//` — traditional single-line marker (comments to end-of-line)
 - `;` — single-line marker (comments to end-of-line)
 - `;; <content>` — single-line marker (when `;;` is followed by content on the **same line**, comments to end-of-line; same semantics as `;`)
 - `;;\n` — multi-line (block) comment: when `;;` is **immediately followed by a newline** (only whitespace allowed in between), it enters multi-line mode until another `;;` followed by a newline/EOF is encountered

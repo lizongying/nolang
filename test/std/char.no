@@ -199,7 +199,7 @@ t-to-txt = () {
 
     ; 超過 255 位元組 -> nil（txt 容納不下，不再靜默截斷）
     big str = with-len(300)
-    o ?txt = big.to-txt()
+    o = big.to-txt()
     o: {
         ok(v) -> runner.is-true(false, 'to-txt 300 bytes must not be ok')
 

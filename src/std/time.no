@@ -123,7 +123,7 @@ duration-us-between = (start i64, end i64) (diff i64) {
 ; diff: 到現在經過的秒數
 ; [since-s](#time.since-s)
 since-s = (start i64) (diff i64) {
-    end i64 = os.now()
+    end = os.now()
 
     #{overflow=wrap}
     diff = end - start

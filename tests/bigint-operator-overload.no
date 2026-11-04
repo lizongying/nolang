@@ -15,10 +15,10 @@ print('=== bigint-operator-overload ===')
 ; ─────────────────────────────────────────────
 ; 1. 加法 _add：同号 / 异号 / 进位
 ; ─────────────────────────────────────────────
-two bigint = bigint.from-i64(2)
-three bigint = bigint.from-i64(3)
-neg2 bigint = bigint.from-i64(-2)
-big bigint = bigint.from-i64(4294967296); 2^32，触发跨 limb
+two = bigint.from-i64(2)
+three = bigint.from-i64(3)
+neg2 = bigint.from-i64(-2)
+big = bigint.from-i64(4294967296); 2^32，触发跨 limb
 
 c1 = two + three
 {
@@ -99,7 +99,7 @@ c10 = big * two
 ; ─────────────────────────────────────────────
 ; 4. 除法 _div（整数截断）
 ; ─────────────────────────────────────────────
-seven bigint = bigint.from-i64(7)
+seven = bigint.from-i64(7)
 c11 = seven / two
 {
     c11.to-str() == '3' -> print('PASS: 4a 7 / 2 = 3（向零截断）')

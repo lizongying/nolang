@@ -3199,6 +3199,15 @@ func checkRedundantTypeInStmt(sem *parser.SemanticContext, stmt parser.Statement
 			// map 字面量同理：沒了 `[K]V` 標註，`{ 'k': v }` 會被當成 block 解析。
 			if !isFixedArrayAnnotation(s.Type) && !isMapLiteralValue(s.Value) {
 				inferredType := inferExprType(s.Value, varTypes, validationFuncTypes, "")
+				if inferredType == "" {
+					// 單檔解析（預設 `no fmt` / 單檔 vet）沒有合併 std 模組：跨模組
+					// 呼叫如 `bigint.from-i64(2)` 在 inferExprType 的 funcTypes 裡查不到，
+					// 回傳 ""，標註型別便永遠比不過推斷型別 ⇒ tcpoxtfd 不報、
+					// `no fmt` 也就不會移除 `two bigint = ...` 的 bigint。
+					// 改問烤進二進位的 std 簽名表（redundant_std_call.go），
+					// 讓單檔路徑與 package-context vet 的口徑一致。
+					inferredType = redundancyValueTypeForLet(s.Value, varTypes)
+				}
 				// D1：有號整數 `+ - * / %` 的結果恆為 `?T`，因此寫在目標上的 plain `T`
 				// 標註**不是**冗餘 —— 2026-10-14 起它甚至是**錯誤**（D1 嚴格模式：
 				// 見本檔 upgradeOptionArithTargetType）。少了這一條，D1 遷移時

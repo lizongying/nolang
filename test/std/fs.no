@@ -17,15 +17,15 @@ TMP-FILE2 = '/tmp/nolang_fs_test_file2.txt'
 t-is-file = () {
 
     ; /tmp should be a directory, not a file
-    yes bool = fs.is-file('/tmp')
+    yes = fs.is-file('/tmp')
     runner.is-false(yes, 'is-file /tmp == false')
 }
 
 ; is-dir：存在的目錄得 true，不存在的路徑得 false
 t-is-dir = () {
-    yes bool = fs.is-dir('/tmp')
+    yes = fs.is-dir('/tmp')
     runner.is-true(yes, 'is-dir /tmp == true')
-    yes2 bool = fs.is-dir('/nonexistent_xyz')
+    yes2 = fs.is-dir('/nonexistent_xyz')
     runner.is-false(yes2, 'is-dir nonexistent == false')
 }
 
@@ -60,7 +60,7 @@ t-open-write-read = () {
     runner.is-true(ok-write, 'open write succeeded')
 
     ; 驗證檔案存在
-    yes bool = fs.is-file(TMP-FILE)
+    yes = fs.is-file(TMP-FILE)
     runner.is-true(yes, 'written file exists')
 
     ; 讀取檔案
@@ -119,7 +119,7 @@ t-stat-size = () {
 
     ; stat-size 回傳 ?i64（檔案不存在或 stat 失敗時為 nil/err），
     ; MIR 需要顯式 ?i64 標註 + 三分支 match 才能取值。
-    sz ?i64 = fs.stat-size(TMP-FILE)
+    sz = fs.stat-size(TMP-FILE)
     sz: {
         ok(v) -> runner.eq(v, 10, 'stat-size == 10')
 
@@ -161,11 +161,11 @@ t-copy-file = () {
     runner.is-true(ok, 'copy-file returns true')
 
     ; 驗證目標檔案存在
-    yes bool = fs.is-file(TMP-FILE2)
+    yes = fs.is-file(TMP-FILE2)
     runner.is-true(yes, 'copied file exists')
 
     ; 驗證目標檔案大小
-    sz ?i64 = fs.stat-size(TMP-FILE2)
+    sz = fs.stat-size(TMP-FILE2)
     sz: {
         ok(v) -> runner.eq(v, 7, 'copied file size == 7')
 
