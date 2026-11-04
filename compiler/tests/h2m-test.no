@@ -1775,7 +1775,7 @@ test-it-basic = () {
 }
 
 ; 兜底臂单独吃 it：无判定块 ⇒ 体首块补一次 LOAD
- test-it-wild = () {
+test-it-wild = () {
     src = 'i2x = (n i64) (r i64) {\n    n: {\n        -> r = it\n    }\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
@@ -1787,7 +1787,7 @@ test-it-basic = () {
 }
 
 ; it 参与算术：`r = it + 1` ⇒ add 吃栈顶值 id
- test-it-arith = () {
+test-it-arith = () {
     src = 'i3x = (n i64) (r i64) {\n    r = 0\n    n: {\n        1 -> r = it + 1\n        -> r = 0\n    }\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
@@ -1798,7 +1798,7 @@ test-it-basic = () {
 }
 
 ; 嵌套 match：内层臂里 `it` = 内层主体；外层臂退栈后恢复（先拷具名局部 t0 再过内层 match）
- test-it-nested = () {
+test-it-nested = () {
     src = 'i4x = (n i64, m i64) (r i64) {\n    r = 0\n    n: {\n        1 -> {\n            t0 = it\n            m: {\n                2 -> r = it\n                -> r = 9\n            }\n            r = r + t0\n        }\n        -> r = 0\n    }\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
@@ -1810,7 +1810,7 @@ test-it-basic = () {
 }
 
 ; 门禁：写 `it` / 裸链臂里读 `it` / match 外读 `it` ⇒ 计 unsup 且整函数不产码
- test-it-gate = () {
+test-it-gate = () {
     src-w = 'i5w = (n i64) (r i64) {\n    n: {\n        1 -> {\n            it = 5\n            r = it\n        }\n        -> r = 0\n    }\n}\n'
     t1 = ast.make()
     r1 = ps.parse(t1, ps.new(src-w.to-bytes()))

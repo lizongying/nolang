@@ -723,6 +723,10 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
             nm = ast.str-at(t, d.s0)
             i = h2m-lst-find(l, nm)
             i >= 0 -> code = l.lty[i] #{index-out=zero}
+
+            ; s65：`it` 不进槽表——它的值 = 值匹配臂主体（s63 门禁限 i64 槽），槽宽直推 I64；
+            ;   裸链／match 外的 `it` 在这里同样推成 I64，但降级侧 var-read/write 栈空即计 unsup，门禁不放松
+            i < 0 && nm == 'it' -> code = TY-I64
         }
         d.kind == asp.K-CALL-EXPRESSION -> {
             ck = ast.kid-at(t, d.kid0)
