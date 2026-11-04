@@ -19,6 +19,9 @@
 ; s59 覆盖：块终结形 return / break / continue——共享 ret 块（懒开，BR 过去再 LOAD+RET）、
 ;         循环目标栈（continue 回 hdr、break 落 exit 且其后继语句照跑）、链臂体裸终结形、
 ;         无输出参函数的延迟零值 RET；负例：终结形非本块末条 / 循环外 break / 带标签跳出
+; s60m 覆盖：计数循环 `N * { }` 与 `{ } * N`（两形在 parser 归一）——合成计数器槽 / header 判 >0 /
+;         update 块自减回跳 / continue 落 update 而非 hdr / break 落 exit 且后继照跑 / 嵌套双计数器槽；
+;         非正计数（-2 与 0）照发 header 判定；负例：标识符计数位 / 计数与条件同时存在 / 计数位是字符串
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -647,7 +650,9 @@ test-flow-gate = () {
     runner.eq(agg1.unsup > 0, 1, 'expr-surface counted')
     runner.eq(ir1.contains('define'), 0, 'expr-surface no code')
 
-    ; 计数循环 `n * { }`：CountExpr 非 0 ⇒ 不在覆盖面
+    ; 计数循环的【标识符计数位】`n * { }`：实测 ps.no 不把它建成 ForStatement（退化成
+    ;   EXPR-STATEMENT{n} + LET 块），h2m 不认识该形状 ⇒ 计 unsup 整函数不产码。
+    ;   ⚠️ s60m 起字面量计数形已入覆盖面，本例仍是负例但理由换成【计数位必须是字面量】
     src-ct = 'b = (n i64) (r i64) {\n    r = 0\n    n * {\n        r = r + 1\n    }\n}\n'
     t2 = ast.make()
     r2 = ps.parse(t2, ps.new(src-ct.to-bytes()))
@@ -815,6 +820,235 @@ test-term-gate = () {
     runner.eq(ir2.contains('define'), 0, 'outer-break no code')
 }
 
+; ── s60m：计数循环前置形 `3 * { }`——四块轮转（hdr/body/update/exit）+ 合成计数器槽 ──
+; 形制钉自 tmp/probe-s60m-ir.no（函数 a）：计数器是 entry 的第三个 alloca（%s6），计数值只在
+; 进循环前算一次并 STORE，header 每次重新 LOAD 判 >0，body 结尾 BR 到 update（不是 hdr）。
+; 若把回边直接接回 hdr（漏掉自减），update 块就不会出现 sub；若沿用 SSA 重绑，body 里就是旧值。
+test-cnt-fwd = () {
+    src = 'ca = (n i64) (r i64) {\n    r = 0\n    3 * {\n        r = r + 1\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cnt-fwd unsup')
+    runner.eq(ir.contains('define i64 @ca(i64 %v1)'), 1, 'cnt-fwd define')
+
+    ; 计数器槽落在 entry（cg 要求 alloca 只能在 entry，离开后回不去）
+    runner.eq(ir.contains('%s6 = alloca i64'), 1, 'cnt-fwd counter slot in entry')
+
+    ; 计数值只算一次：常量 3 紧跟一次 STORE，然后无条件跳 header
+    runner.eq(ir.contains('store i64 %v8, i64* %s4\n\t%v9 = add i64 0, 3\n\tstore i64 %v9, i64* %s6\n\tbr label %bb1'), 1, 'cnt-fwd seed then br hdr')
+
+    ; header：每次重新 LOAD 计数器并与 0 比——谓词必须是 sgt（N <= 0 首判即假）
+    runner.eq(ir.contains('bb1:\n\t%v10 = load i64, i64* %s6\n\t%v11 = add i64 0, 0\n\t%c17 = icmp sgt i64 %v10, %v11'), 1, 'cnt-fwd hdr loads and sgt')
+    runner.eq(ir.contains('icmp sle i64 %v10'), 0, 'cnt-fwd hdr predicate not flipped')
+    runner.eq(ir.contains('br i1 %c18, label %bb2, label %bb4'), 1, 'cnt-fwd condbr body/exit')
+
+    ; body：读的是槽而不是 entry 的旧 SSA 值
+    runner.eq(ir.contains('bb2:\n\t%v13 = load i64, i64* %s4'), 1, 'cnt-fwd body loads slot')
+
+    ; 关键鉴别：body 结尾 BR 到 update（bb3）而不是 hdr（bb1）——否则计数器永不递减、死循环
+    runner.eq(ir.contains('store i64 %v15, i64* %s4\n\tbr label %bb3'), 1, 'cnt-fwd body br update')
+    runner.eq(ir.contains('store i64 %v15, i64* %s4\n\tbr label %bb1'), 0, 'cnt-fwd body not br hdr')
+
+    ; update：cnt = cnt - 1 后跳回 hdr
+    runner.eq(ir.contains('bb3:\n\t%v16 = load i64, i64* %s6\n\t%v17 = add i64 0, 1\n\t%v18 = sub i64 %v16, %v17\n\tstore i64 %v18, i64* %s6\n\tbr label %bb1'), 1, 'cnt-fwd update decrements and loops')
+
+    ; exit：循环后继语句（此处即隐式 RET）落在 exit 块
+    runner.eq(ir.contains('bb4:\n\t%v19 = load i64, i64* %s4\n\tret i64 %v19'), 1, 'cnt-fwd exit ret')
+    runner.eq(ir.contains('bb5:'), 0, 'cnt-fwd no spare block')
+}
+
+; ── s60m：后置形 `{ } * 3` 与前置形归一为同一 AST ⇒ 降级出的 IR 逐字节同形 ──
+; 实测（tmp/probe-s60m-ast.no）：ps.no 的两个 builder 把块体统一落在 kid[5]、字面量落在 kid[3]，
+; 故本例的断言集合与 test-cnt-fwd 完全一致（只有函数名不同）——这同时钉住「两种写法不会各走一路」。
+test-cnt-postfix = () {
+    src = 'cb = (n i64) (r i64) {\n    r = 0\n    {\n        r = r + 1\n    } * 3\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cnt-post unsup')
+    runner.eq(ir.contains('define i64 @cb(i64 %v1)'), 1, 'cnt-post define')
+    runner.eq(ir.contains('store i64 %v8, i64* %s4\n\t%v9 = add i64 0, 3\n\tstore i64 %v9, i64* %s6\n\tbr label %bb1'), 1, 'cnt-post seed same as prefix')
+    runner.eq(ir.contains('%c17 = icmp sgt i64 %v10, %v11'), 1, 'cnt-post hdr sgt')
+    runner.eq(ir.contains('store i64 %v15, i64* %s4\n\tbr label %bb3'), 1, 'cnt-post body br update')
+    runner.eq(ir.contains('bb3:\n\t%v16 = load i64, i64* %s6\n\t%v17 = add i64 0, 1\n\t%v18 = sub i64 %v16, %v17'), 1, 'cnt-post update decrements')
+    runner.eq(ir.contains('bb4:\n\t%v19 = load i64, i64* %s4\n\tret i64 %v19'), 1, 'cnt-post exit ret')
+}
+
+; ── s60m：非正计数（-2 与 0）照发 header 判定——语义「N <= 0 时体一次不进」由 sgt 保证 ──
+test-cnt-nonpos = () {
+    src = 'cn = (n i64) (r i64) {\n    r = 0\n    -2 * {\n        r = r + 1\n    }\n}\n\ncz = (n i64) (r i64) {\n    r = 0\n    0 * {\n        r = r + 1\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cnt-nonpos unsup')
+
+    ; 负字面量在 parser 侧就拼进 token（s0 = '-2'），降级走 to-i64 得 -2
+    runner.eq(ir.contains('%v9 = add i64 0, -2'), 1, 'cnt-nonpos negative const')
+    runner.eq(ir.contains('store i64 %v9, i64* %s6'), 1, 'cnt-nonpos negative seeded')
+
+    ; 两个函数的 header 谓词都是 sgt（不是 ne）——否则 0 会进一次体、负数会死循环
+    runner.eq(ir.contains('icmp sgt i64 %v10, %v11'), 1, 'cnt-nonpos hdr sgt')
+    runner.eq(ir.contains('icmp ne i64 %v10, %v11'), 0, 'cnt-nonpos not nonzero-test')
+    runner.eq(ir.contains('define i64 @cz(i64 %v1)'), 1, 'cnt-nonpos zero-count func emitted')
+}
+
+; ── s60m：计数循环内 break——BR 落 exit（不是 hdr），循环后的继语句在 exit 块照跑 ──
+test-cnt-break = () {
+    src = 'cc = (n i64) (r i64) {\n    r = 0\n    5 * {\n        r = r + 1\n        r > 3 -> break\n    }\n    r = r + 100\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cnt-brk unsup')
+
+    ; break 臂块 bb5 首条 BR 落 exit（bb4）；同块尾是不可达的链汇聚 BR（s59 同款双 BR 形）
+    runner.eq(ir.contains('bb5:\n\tbr label %bb4\n\tbr label %bb7'), 1, 'cnt-brk arm exits loop')
+
+    ; 鉴别力：break 绝不能落 hdr（那是 continue 的目标）或 update
+    runner.eq(ir.contains('bb5:\n\tbr label %bb1'), 0, 'cnt-brk not hdr')
+    runner.eq(ir.contains('bb5:\n\tbr label %bb3'), 0, 'cnt-brk not update')
+
+    ; 链的汇聚块 bb7 接回 update——未触发的轮次仍要自减
+    runner.eq(ir.contains('bb7:\n\tbr label %bb3'), 1, 'cnt-brk merge to update')
+
+    ; 后继语句 +100 落在 exit 块：证明 break 是跳出循环而不是跳出函数
+    runner.eq(ir.contains('bb4:\n\t%v22 = load i64, i64* %s4\n\t%v23 = add i64 0, 100'), 1, 'cnt-brk trailing after loop')
+    runner.eq(ir.contains('ret i64 %v25'), 1, 'cnt-brk ret trailing value')
+}
+
+; ── s60m：计数循环内 continue——目标是 update 块（先自减再重判），不是 hdr ──
+; 与条件循环的 continue（test-term-cont 回 hdr）形成对照：计数循环若把 continue 接回 hdr，
+; 计数器永不递减 ⇒ 活锁。循环栈存的因此是 (continue 目标, exit) 而非固定的 (hdr, exit)。
+test-cnt-cont = () {
+    src = 'cd = (n i64) (r i64) {\n    r = 0\n    4 * {\n        r = r + 1\n        r > 2 -> continue\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cnt-cont unsup')
+
+    ; continue 臂块 BR 到 update（bb3），同块尾是不可达的汇聚 BR
+    runner.eq(ir.contains('bb5:\n\tbr label %bb3\n\tbr label %bb7'), 1, 'cnt-cont arm br update')
+
+    ; 鉴别力：continue 不得直回 hdr（跳过自减 = 活锁）
+    runner.eq(ir.contains('bb5:\n\tbr label %bb1'), 0, 'cnt-cont not hdr')
+
+    ; update 块确实是自减而非重算计数值
+    runner.eq(ir.contains('bb3:\n\t%v19 = load i64, i64* %s6\n\t%v20 = add i64 0, 1\n\t%v21 = sub i64 %v19, %v20'), 1, 'cnt-cont update decrements')
+    runner.eq(ir.contains('bb4:\n\t%v22 = load i64, i64* %s4\n\tret i64 %v22'), 1, 'cnt-cont exit ret')
+}
+
+; ── s60m：嵌套计数循环——两个独立的计数器槽，内层 exit 接回外层 update ──
+test-cnt-nested = () {
+    src = 'ce = (n i64) (r i64) {\n    r = 0\n    2 * {\n        3 * {\n            r = r + 1\n        }\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'cnt-nest unsup')
+
+    ; 每层各占一个合成槽（槽名带 ForStatement 节点 id）：外层 %s6、内层 %s8
+    runner.eq(ir.contains('%s6 = alloca i64'), 1, 'cnt-nest outer slot')
+    runner.eq(ir.contains('%s8 = alloca i64'), 1, 'cnt-nest inner slot')
+    runner.eq(ir.contains('%v11 = add i64 0, 2'), 1, 'cnt-nest outer const 2')
+
+    ; 内层计数值在外层 body 块（bb2）里播种后跳内层 hdr（bb5）——不在 entry 一次算完
+    runner.eq(ir.contains('bb2:\n\t%v15 = add i64 0, 3\n\tstore i64 %v15, i64* %s8\n\tbr label %bb5'), 1, 'cnt-nest inner seeded in outer body')
+
+    ; 内层 header / update 各自闭环于 %s8
+    runner.eq(ir.contains('bb5:\n\t%v16 = load i64, i64* %s8'), 1, 'cnt-nest inner hdr loads inner slot')
+    runner.eq(ir.contains('bb7:\n\t%v22 = load i64, i64* %s8\n\t%v23 = add i64 0, 1\n\t%v24 = sub i64 %v22, %v23\n\tstore i64 %v24, i64* %s8\n\tbr label %bb5'), 1, 'cnt-nest inner update loops inner')
+
+    ; 内层 exit（bb8）接回外层 update（bb3）——不是外层 hdr，也不是函数尾
+    runner.eq(ir.contains('bb8:\n\tbr label %bb3'), 1, 'cnt-nest inner exit to outer update')
+    runner.eq(ir.contains('bb3:\n\t%v25 = load i64, i64* %s6'), 1, 'cnt-nest outer update loads outer slot')
+    runner.eq(ir.contains('bb4:\n\t%v28 = load i64, i64* %s4\n\tret i64 %v28'), 1, 'cnt-nest exit ret')
+}
+
+; ── s60m 门禁：计数与条件同时存在 / 计数位是字符串字面量，都计 unsup 且不产码 ──
+; 真实源路造不出这两个形状（Go lowerFor 是 count 优先、条件被静默丢弃），故按 s57 的先例用
+; ast.add/kid-add 合成同形 ForStatement 节点，钉住「宁缺勿错」而非跟着 Go 静默丢条件。
+test-cnt-gate = () {
+
+    ; 合成：CountExpr 与 Condition 同时非 0 ⇒ 拒绝降整函数
+    t1 = ast.make()
+    idn1 = mk-ident(t1, 'n')
+    iz1 = mk-int(t1, '0')
+    cond1 = mk-infix(t1, '>', idn1, iz1)
+    cnt1 = mk-int(t1, '3')
+    st1 = mk-let-int(t1, 'r', '1')
+    blk1 = mk-block1(t1, st1)
+    for1 = ast.add(t1, asp.K-FOR-STATEMENT)
+    ast.kid-add(t1, for1, 0)
+    ast.kid-add(t1, for1, cond1)
+    ast.kid-add(t1, for1, 0)
+    ast.kid-add(t1, for1, cnt1)
+    ast.kid-add(t1, for1, 0)
+    ast.kid-add(t1, for1, blk1)
+    pin1 = mk-param(t1, 'n', 'i64')
+    pout1 = mk-param(t1, 'r', 'i64')
+    fbody1 = mk-block1(t1, for1)
+    fd1 = ast.add(t1, asp.K-FUNCTION-DEFINITION)
+    ast.kid-add(t1, fd1, pin1)
+    ast.kid-add(t1, fd1, pout1)
+    ast.kid-add(t1, fd1, fbody1)
+    ast.set-sig(t1, fd1, 0, 1, 1)
+    ast.set-slot(t1, fd1, 0, ast.put-str(t1, 'gcnt1'))
+    pr1 = ast.add(t1, asp.K-PROGRAM)
+    ast.kid-add(t1, pr1, fd1)
+    ast.set-count(t1, pr1, 0, 1)
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, pr1)
+    runner.eq(agg1.unsup > 0, 1, 'cnt-plus-cond counted')
+    runner.eq(ir1.contains('define'), 0, 'cnt-plus-cond no code')
+
+    ; 合成：计数位是字符串字面量（非 i64 值进不了计数器）⇒ 计 unsup
+    t2 = ast.make()
+    snode = ast.add(t2, asp.K-STRING-LITERAL)
+    ast.set-slot(t2, snode, 0, ast.put-str(t2, 'abc'))
+    st2 = mk-let-int(t2, 'r', '1')
+    blk2 = mk-block1(t2, st2)
+    for2 = ast.add(t2, asp.K-FOR-STATEMENT)
+    ast.kid-add(t2, for2, 0)
+    ast.kid-add(t2, for2, 0)
+    ast.kid-add(t2, for2, 0)
+    ast.kid-add(t2, for2, snode)
+    ast.kid-add(t2, for2, 0)
+    ast.kid-add(t2, for2, blk2)
+    pin2 = mk-param(t2, 'n', 'i64')
+    pout2 = mk-param(t2, 'r', 'i64')
+    fbody2 = mk-block1(t2, for2)
+    fd2 = ast.add(t2, asp.K-FUNCTION-DEFINITION)
+    ast.kid-add(t2, fd2, pin2)
+    ast.kid-add(t2, fd2, pout2)
+    ast.kid-add(t2, fd2, fbody2)
+    ast.set-sig(t2, fd2, 0, 1, 1)
+    ast.set-slot(t2, fd2, 0, ast.put-str(t2, 'gcnt2'))
+    pr2 = ast.add(t2, asp.K-PROGRAM)
+    ast.kid-add(t2, pr2, fd2)
+    ast.set-count(t2, pr2, 0, 1)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, pr2)
+    runner.eq(agg2.unsup > 0, 1, 'str-counter counted')
+    runner.eq(ir2.contains('define'), 0, 'str-counter no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-flow-if()
@@ -832,6 +1066,13 @@ test-term-brk()
 test-term-chain()
 test-term-ret-noout()
 test-term-gate()
+test-cnt-fwd()
+test-cnt-postfix()
+test-cnt-nonpos()
+test-cnt-break()
+test-cnt-cont()
+test-cnt-nested()
+test-cnt-gate()
 test-gate()
 
 runner.summary()
