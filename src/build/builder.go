@@ -220,6 +220,13 @@ type BuildOptions struct {
 	// ESMCDN overrides the import-map CDN base for browser ESM output
 	// ("" = package.noml compiler.esm-cdn, else the built-in default).
 	ESMCDN string
+	// Shared links the emitted LLVM IR as a position-independent dynamic
+	// library instead of an executable. Requires at least one #{cabi} export;
+	// a matching C header is written next to the library (see Header).
+	Shared bool
+	// Header overrides the generated C header path for a Shared build.
+	// Empty = <output path without extension>.h.
+	Header string
 }
 
 // versionCompatible 檢查 package.noml 中聲明的編譯器版本是否與當前編譯器版本兼容。
@@ -725,6 +732,23 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		}
 		outPath = filepath.Join(distDir, fileName)
 	}
+	// A shared library needs a platform-recognised file name so `-l<name>`
+	// and dlopen-style loaders can find it. Only the AUTO path is adjusted:
+	// an explicit -o is the user's contract and is used verbatim.
+	if opts.Shared && opts.Output == "" {
+		goos, _ := parseTargetPlatform(opts.Target)
+		if goos == "" {
+			goos = runtime.GOOS
+		}
+		switch goos {
+		case "darwin":
+			outPath += ".dylib"
+		case "windows":
+			outPath += ".dll"
+		default:
+			outPath += ".so"
+		}
+	}
 
 	// 並行構建時使用緩衝區避免輸出交錯
 	var sink *bytes.Buffer
@@ -751,6 +775,7 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 	mir.SetEmitTargetTriple(queryEmitTargetTriple(opts.CC, opts.Target))
 	compiler.SetNoBoundsCheck(opts.NoBoundsCheck)
 	compiler.SetVerbose(opts.Verbose)
+	compiler.SetShared(opts.Shared)
 	compiler.SetOptionInlineThreshold(opts.OptionInlineThreshold)
 	compiler.SetLDFlags(opts.LDFlags)
 	code, err := compiler.Compile(string(source))
@@ -801,7 +826,22 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 		}
 	}
 
-	if err := buildLLVMInternal(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, linkLibs, sink); err != nil {
+	// `--shared` is only meaningful with a public API. Fail before linking so
+	// the user gets a source-level message instead of a valid-but-useless .so.
+	var headerText string
+	var headerPath string
+	if opts.Shared {
+		headerText = compiler.CABIHeader()
+		if headerText == "" {
+			return "", i18n.Errorf("n1cabi00", "`no build --shared` requires at least one #{cabi} export; annotate a top-level function with #{cabi='symbol'}")
+		}
+		headerPath = opts.Header
+		if headerPath == "" {
+			headerPath = strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".h"
+		}
+	}
+
+	if err := buildLLVMInternal(code, fileName, outPath, opts.CC, opts.Target, opts.Verbose, opts.Shared, linkLibs, sink); err != nil {
 		if sink != nil && sink.Len() > 0 {
 			fmt.Fprint(os.Stderr, sink.String())
 		}
@@ -810,6 +850,16 @@ func buildWithPkg(inputPath string, pkg *Package, opts BuildOptions, buffered bo
 
 	if sink != nil && sink.Len() > 0 {
 		fmt.Fprint(os.Stderr, sink.String())
+	}
+
+	if opts.Shared {
+		if err := os.MkdirAll(filepath.Dir(headerPath), 0755); err != nil {
+			return "", i18n.Errorf("n1cabi01", "creating header directory: %w", err)
+		}
+		if err := os.WriteFile(headerPath, []byte(headerText), 0644); err != nil {
+			return "", i18n.Errorf("n1cabi02", "writing C ABI header: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "[shared] %s + %s (%d exports)\n", outPath, headerPath, strings.Count(headerText, ");\n"))
 	}
 
 	return outPath, nil
@@ -837,7 +887,7 @@ func vprintf(sink *bytes.Buffer, format string, args ...any) {
 // opt + llc stages are kept so intermediate artifacts (<out>_opt.ll / <out>.s)
 // are emitted for inspection.
 // If sink is non-nil, output is buffered to avoid interleaving in parallel builds.
-func buildLLVMInternal(code string, fileName string, outPath string, cc string, target string, verbose bool, linkLibs []string, sink *bytes.Buffer) error {
+func buildLLVMInternal(code string, fileName string, outPath string, cc string, target string, verbose bool, shared bool, linkLibs []string, sink *bytes.Buffer) error {
 	// WASM 建構下無法呼叫本機 LLVM 工具鏈（opt/llc/clang）。
 	// 瀏覽器 playground 應改用 --wasm-direct 路徑（直接產生 WASM，不經過 LLVM IR）。
 	if runtime.GOOS == "wasip1" {
@@ -873,6 +923,15 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		optLevel = "-O2"
 	}
 	singleShot := !verbose
+	// A dynamic library must be linked from the LLVM IR in ONE clang step with
+	// -fPIC applied to codegen as well as linking. The verbose path lowers the
+	// IR through `llc` first (default relocation model = static), which
+	// produces absolute relocations that a -shared link then rejects. Feeding
+	// `clang -x ir -shared -fPIC` the .ll directly lets clang choose PIC for
+	// the whole pipeline. The verbose .ll dump is still written above.
+	if shared {
+		singleShot = true
+	}
 
 	// MIR IR 關閉 FP contraction（避免 fmul+fadd 融合成 FMA，與 MIR 驗證基準一致）；
 	// 其餘（理論上已移除的 legacy）才用 fast。
@@ -888,7 +947,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 	// 把 IR 直接編成 .o，後續只讓 cc 做連結。
 	// debug（-v）模式不受本開關影響：仍走 opt + llc + clang，保留可檢視的中間產物。
 	useCAPI := false
-	if singleShot && llvmapi.Enabled() {
+	if singleShot && !shared && llvmapi.Enabled() {
 		if !llvmapi.Available() {
 			vprintf(sink, "[warn] %s=1 but this binary has no LLVM C API backend; falling back to clang (rebuild with: make no-capi)\n", llvmapi.EnvSwitch)
 		} else {
@@ -1019,6 +1078,14 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		clangIn = sPath
 	}
 	var clangArgs []string
+	if shared && isWasiTarget {
+		return i18n.Errorf("n1cabi03", "--shared is not supported for a WASI target")
+	}
+	if shared {
+		// -fPIC must be visible to the IR->object codegen, not just the final
+		// link, so put it before the input file (singleShot clang -x ir).
+		clangArgs = append(clangArgs, "-shared", "-fPIC")
+	}
 	// zig 的 Apple OS 名是 "macos" 而非 LLVM 的 "darwin"：用 apple-darwin 作
 	// --target 連結已編譯好的 object 會報
 	// "unable to parse target query '...': UnknownOperatingSystem"。故 zig 時
@@ -1063,8 +1130,13 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 		if tGoos == "" {
 			tGoos = runtime.GOOS
 		}
-		if tGoos == "linux" {
+		if tGoos == "linux" && !shared {
 			clangArgs = append(clangArgs, "-no-pie")
+		}
+		if shared && tGoos == "darwin" {
+			// A dylib linked without an explicit install name records the build
+			// path, so a host using -Wl,-rpath cannot find it after a move.
+			clangArgs = append(clangArgs, "-Wl,-install_name,@rpath/"+filepath.Base(outPath))
 		}
 		for _, lib := range linkLibs {
 			clangArgs = append(clangArgs, "-l"+lib)
@@ -1138,7 +1210,7 @@ func buildLLVMInternal(code string, fileName string, outPath string, cc string, 
 // BuildLLVM is the public API for standalone LLVM compilation.
 // Kept for backward compatibility.
 func BuildLLVM(code string, fileName string, outPath string, cc string, target string, verbose bool, linkLibs []string) error {
-	return buildLLVMInternal(code, fileName, outPath, cc, target, verbose, linkLibs, nil)
+	return buildLLVMInternal(code, fileName, outPath, cc, target, verbose, false, linkLibs, nil)
 }
 
 // BuildDirectWasm 使用 Direct WASM 後端從 Nolang 源碼直接產生 WebAssembly 二進制。

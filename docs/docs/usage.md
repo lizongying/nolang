@@ -115,7 +115,7 @@ no run -cc zig
 no run -target aarch64-macos-gnu
 ```
 
-> `no build -v` 會在輸出路徑旁另外寫出原始 LLVM IR（`<輸出路徑>.ll`），但仍然只鏈接可執行檔；目前沒有 `-shared`、`-fPIC`、`-c` 或標頭檔生成選項。若要讓 C / C++ / Rust / Go / Java / Python / C# 等宿主語言呼叫 Nolang，需要把這份 IR 自行編成共享庫並加一層 C shim，完整做法見 [從宿主語言調用 Nolang](./lang/host-interop)。
+> `no build -v` 會在輸出路徑旁另外寫出原始 LLVM IR（`<輸出路徑>.ll`）。`no build --shared -o libdemo.dylib main.no` 則會把標記 `#{cabi='symbol'}` 的頂層函數導出為穩定的 C ABI 符號，以 `-shared -fPIC` 鏈成動態庫，並自動生成同名 `.h` 標頭檔；可用 `--header` 覆寫標頭路徑。目前沒有 `-c`（只編譯不鏈接）選項。讓 C / C++ / Rust / Go / Java / Python / C# 呼叫 Nolang 的完整做法見 [從宿主語言調用 Nolang](./lang/host-interop)。
 
 `no run` 的位置參數按以下順序解析：
 

@@ -774,6 +774,14 @@ utils.no 쓰기 오류: %v
   'n00utq2q': 'process-exec: 인수를 C 문자열로 변환할 수 없습니다'
   'n08bzk5j': '결과는 `no add <tool>@<host>/<owner>/<repo>` 가 내려받는 바로 그 파일입니다:'
   'n0hl9vde': 'builtin %s의 %d번째 인수: %s'
+  'n1cabi00': '`no build --shared` requires at least one #{cabi} export; annotate a top-level function with #{cabi=\'symbol\'}'
+  'n1cabi01': 'creating header directory: %w'
+  'n1cabi02': 'writing C ABI header: %w'
+  'n1cabi03': '--shared is not supported for a WASI target'
+  'n1cabi10': 'Build a shared library (.dylib/.so/.dll) exposing #{cabi} functions; also emits a C header'
+  'n1cabi11': 'Output path for the generated C ABI header (default: <output>.h)'
+  'n1cabi12': 'Use --shared with #{cabi=\'symbol\'} functions to build a shared library and its C header.'
+  'n1cabi13': '  no build --shared -o dist/libdemo.dylib main.no    shared library + dist/libdemo.h'
   'n44lxvvk': '멤버 %q은(는) 빈 객체입니다. #{type = \'<struct>\'}로 주석하세요'
   'n48cusda': `
 직접 열어 주세요: %s

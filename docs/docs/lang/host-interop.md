@@ -3,108 +3,145 @@ sidebar_position: 9
 ---
 
 # 從宿主語言調用 Nolang
+> **這是編譯器原生能力（`#{cabi}` v1 純量版）。** `no build --shared` 會把標記 `#{cabi='symbol'}` 的頂層函數導出為穩定的 C ABI 符號，並在共享庫旁自動生成 C 標頭檔。不需要手寫 shim、不需要解析 LLVM IR、不需要可達性錨點。`#{c}`（Nolang 呼叫 C）、`@`（Nolang 包之間導出）、`#{cabi}`（宿主呼叫 Nolang）是三個不同方向的能力。
 
-> **這是 workaround，不是編譯器支援的特性。** `no build` 目前只產出可執行檔，沒有 `-shared`、`-fPIC`、`-c` 或標頭檔生成；`#{c}` 是「Nolang 呼叫 C」的外部函數宣告，`@` 只是 Nolang 包之間的符號導出，兩者都不是 C ABI 導出。`docs/design/nolang-native-backend.md` 也把動態庫產出列為非目標。本文示範的是**不改編譯器**、把 `-v` 順便寫出的 LLVM IR 自行鏈成共享庫的做法。
 
 ## 適用範圍與限制
 
-本文覆蓋 C、C++、Rust、Go、Java、Python、C# 七種宿主語言，全部只使用各自工具鏈與標準庫：直接鏈結、cgo、JNI、`ctypes`、`DllImport`，不需要 JNA、cffi、NuGet 或 Maven 依賴。示例只用 `i64`／`f64` 標量，不覆蓋 `str`、`vec`、`?T` 等持有堆記憶體的型別。完整可運行代碼在 `example/host-interop/`，`make verify` 會逐一種譯、執行並比對固定輸出。
+本文覆蓋 C、C++、Rust、Go、Java、Python、C# 七種宿主語言，全部只使用各自工具鏈與標準庫：直接鏈結、cgo、JNI、`ctypes`、`DllImport`，不需要 JNA、cffi、NuGet 或 Maven 依賴。示例只使用 `i64`／`f64` 標量；`str`、`vec`、`?T`、struct 等需要生命週期 ABI 的型別在 v1 會被編譯器硬錯誤拒絕。完整可運行代碼在 `example/host-interop/`，`make verify` 會逐一編譯、執行並比對固定輸出。
 
-已在 macOS arm64 實跑驗證：clang 22、Apple g++、rustc 1.98、Go 1.27、OpenJDK 21、Python 3.13、.NET 9，`no v0.4.17`。Linux 只需把 `.dylib` 換成 `.so`、`DYLD_LIBRARY_PATH` 換成 `LD_LIBRARY_PATH`、`@loader_path` 換成 `$ORIGIN`。
+已在 macOS arm64 實跑驗證：clang 22、Apple g++、rustc 1.98、Go 1.27、OpenJDK 21、Python 3.13、.NET 9。Linux 只需把 `.dylib` 換成 `.so`、`DYLD_LIBRARY_PATH` 換成 `LD_LIBRARY_PATH`、`@loader_path` 換成 `$ORIGIN`；Windows 使用 `.dll`。
 
-## 原理：IR → 共享庫 → C shim
 
-`no build -v` 在產生可執行檔的同時，會把**原始** LLVM IR 寫到 `<輸出路徑>.ll`。我們忽略那個可執行檔，把 `.ll` 用 `clang -fPIC -c` 編成物件檔，再與一層手寫 C shim 一起鏈成共享庫。shim 是唯一對外承諾的穩定面。
+## 原理：從 `#{cabi}` 到共享庫
 
 ```text
-main.no --(no build -v)--> dist/libnolang.ll
-                              | abi_guard.py checks 3 x define void @nl_*(...)
-        clang -x ir -fPIC -c --> dist/nolang.o
-shim/nolang_shim.c   -fPIC -c --> dist/nolang_shim.o
-        clang -shared          --> dist/libnolang.dylib | .so
-                                     ^
-  C / C++ / Rust / Go(cgo) / Python(ctypes) / C#(P/Invoke) call the stable API
-  Java -> jni/nolang_jni.c -> libnolangjni -> -lnolang -> the same stable API
+main.no  --(#{cabi='nolang_add'})-->  HIR annotation
+   |  LowerHIR: export = extra reachability root (no comptime folding)
+   v
+MIR Module.CABIExports
+   |  codegen: normal-return wrapper + generated C header
+   v
+no build --shared  (clang -shared -fPIC, no C main entry)
+   -> dist/libnolang.dylib | .so | .dll  +  dist/libnolang.h
+   -> C / C++ / Rust / Go(cgo) / Python(ctypes) / C#(P/Invoke)
+   -> Java -> jni/nolang_jni.c -> libnolangjni -> -lnolang
 ```
 
-### 內部 ABI 不穩定
 
-`no build` 把使用者函數發射為 `define void @<name>(輸入按值, 結果 out-pointer)`，函式名稱由 `sanitize()` 把 `-` 轉成 `_`，衝突時還可能加後綴。本次探针得到的實際簽名是：
+### 導出註解與可達性
+
+在頂層函數定義前寫 `#{cabi='nolang_add'}` 即指定對外 C 符號；省略值寫 `#{cabi}` 時，編譯器以 `nolang_` 加上函式名的消毒結果推導。符號必須是合法 C 識別字，不能重複，也不能佔用 `main` / `_nolang_main`。方法、外部宣告、結果數量不是 1 的函數都會被診斷為 `cabi` 類硬錯誤。
+
+`LowerHIR` 原本只從合成的 `main` 沿呼叫點展開可達函數，未被呼叫的函數根本不會進入 IR；全常數的頂層呼叫還會被 comptime 折疊。編譯器現在把每個 `#{cabi}` 函數加入額外的可達性根，並把它標記為不可 comptime 折疊，因此示例的 `main.no` 可以只有三個函數定義，不需要任何錨點或假呼叫。
+
+
+### Wrapper 與自動生成的標頭檔
+
+Nolang 的內部呼叫 ABI 是 `define void @fn(args..., T* out)`：輸入按值、結果寫進呼叫端提供的 out-pointer，函式名還是可能隨衝突而加後綴的內部名稱。兩者都不適合 C 呼叫。編譯器為每個導出函數發射一個正常返回值的 wrapper：
 
 ```llvm
-define void @nl_add(i64 %p0, i64 %p1, i64* %p2)
-define void @nl_scale(double %p0, double %p1, double* %p2)
-define void @nl_sum3(i64 %p0, i64 %p1, i64 %p2, i64* %p3)
+; #{cabi} export of nl-add
+define i64 @nolang_add(i64 %a0, i64 %a1) {
+entry:
+  %cabi.r = alloca i64
+  call void @nl_add(i64 %a0, i64 %a1, i64* %cabi.r)
+  %cabi.v = load i64, i64* %cabi.r
+  ret i64 %cabi.v
+}
 ```
 
-這不是公開 ABI：函式一律回傳 `void`，結果寫進呼叫方提供的指標；`%str-long` 等結構體配置也屬於編譯器實作細節。因此 `abi_guard.py` 每次構建都重新解析 `.ll` 並 pin 住這三條簽名，任何漂移都直接失敗，而不是讓宿主靜默呼叫錯誤的函數。
+wrapper 的簽章與標頭檔由同一份 `cabiSignature` 解析結果產生，因此兩者不可能漂移；wrapper 名稱會先註冊進 `usedFname`，避免與 runtime helper 或其他導出符號撞名。
 
-### 合成入口 `main`
 
-`LowerHIR` 只從合成的 `main` 沿呼叫點展開，未被呼叫的函數根本不會出現在 `.ll`；而全常數的頂層呼叫又會被 comptime 折疊掉。所以 `main.no` 用 `#{c}` 宣告 libc 的 `getpid` 取得一個**運行期**值 `seed`，三個錨點都消費它，函數才會被保留。錨點位於 `_nolang_main`，宿主永遠不會呼叫它。
+### 共享庫建置模式
 
-`define i32 @main` 總是會被合成。共享庫中的 `main` 只是普通導出符號，dyld／ld.so 不會把它當入口，保留即可。也正因為宿主不執行 `_nolang_main`，示例刻意不使用模組級堆變數、字串或向量，避開入口處的初始化與尾聲的清理邏輯。
+`--shared` 讓 `no build` 以 `clang -shared -fPIC` 直接把 LLVM IR 鏈成動態庫（單次 `-x ir` 流程，PIC 同時作用於 codegen 與鏈結），並停用 LLVM C API 路徑。自動輸出路徑會依平台補上 `.dylib` / `.so` / `.dll`；顯式 `-o` 則原樣使用。`--header` 可覆寫標頭檔位置，預設是輸出路徑去副檔名後加 `.h`。沒有任何 `#{cabi}` 導出時會直接硬失敗，避免產出沒有 API 的庫。
+
+- `--shared` 與 `--js` / `--wasm-direct`、WASI target 互斥（只支援 LLVM 後端）。
+- 共享庫不會發射合成的 `define i32 @main`，避免與宿主可執行檔的 `main` 互相干擾；`os.args` 需要的 `@nolang_argc` / `@nolang_argv` 全域變數仍然保留。
+- 可執行檔建置完全不受影響：沒有 `#{cabi}` 時不產生 wrapper、不產生標頭檔，IR 保持不變。
+
+
+## 支援型別（v1 純量）
+
+v1 只接受下列五種按值傳遞的標量。表格中的 C 型別就是生成標頭檔裡的宣告型別。
+
+| Nolang | LLVM IR | C 標頭 | wrapper |
+| --- | --- | --- | --- |
+| `i64` | `i64` | `int64_t` | `i64` |
+| `i32` | `i32` | `int32_t` | `i32` |
+| `i8` | `i8` | `int8_t` | `i8` |
+| `bool` | `i1` | `uint8_t` | `i8`（`trunc` / `zext`） |
+| `f64` | `double` | `double` | `double` |
+
+`bool` 在 LLVM 是 `i1`，但 C 沒有可移植的 1-bit 型別，因此對外放寬為 `uint8_t`，由 wrapper 在邊界做 `trunc`／`zext`。`i128`、`str`／`txt`、`vec`／`[]T`、`map`、`?T`、struct、指標、固定陣列，以及任何持有堆記憶體的值都會被 `cabiTypeOf` 拒絕，錯誤訊息會指出是哪個參數或結果型別不支援。
+
 
 ## 目錄結構
 
-所有檔案都在 `example/host-interop/` 下，`dist/` 是生成物且已被忽略；根目錄的 `workspace.noml` 不需要登記這個包。
-
 ```text
 example/host-interop/
-├── package.noml          # Nolang package descriptor
-├── main.no               # 3 scalar functions + reachability anchors
-├── abi_guard.py          # parse .ll, fail loudly on ABI drift
-├── Makefile              # make verify
-├── expected.txt          # pinned output, 7 lines
-├── shim/nolang.h         # stable public C API
-├── shim/nolang_shim.c    # adapts the internal by-reference ABI
-├── jni/nolang_jni.c      # JNI glue
-├── c/main.c   cpp/main.cpp   rust/main.rs
-├── go/go.mod  go/main.go     java/NolangDemo.java
-├── python/main.py        csharp/Program.cs  csharp/host-interop.csproj
-└── dist/                 # generated, gitignored
+├── main.no                  # three #{cabi} functions
+├── package.noml
+├── Makefile                 # lib / jni / c / cpp / rust / go / csharp / verify
+├── expected.txt             # pinned output of all seven hosts
+├── c/main.c
+├── cpp/main.cpp
+├── rust/main.rs
+├── go/main.go               # cgo
+├── java/NolangDemo.java
+├── jni/nolang_jni.c         # Java -> C ABI glue (the only adapter left)
+├── python/main.py           # ctypes
+├── csharp/Program.cs        # DllImport
+└── dist/                    # generated: libnolang.* , libnolang.h , demos
+                             # (ignored by .gitignore)
 ```
+
+舊版示例裡的 `shim/`（手寫 C adapter 與標頭）與 `abi_guard.py`（內部 ABI 漂移防護）都已刪除：導出符號、wrapper 與標頭檔現在全部由編譯器產生。
+
 
 ## 第一步：Nolang 示例庫
 
-三個純量函數，加上三個可達性錨點。`#{c}` 宣告的 `getpid` 由 libc 提供，只為了讓錨點拿到一個無法被折疊的值。
+三個純量函數，沒有任何頂層敘述。`#{cabi='...'}` 的值就是宿主看到的 C 函式名。
 
 ```no
-; Demo library for host-language interop via a hand-written C shim.
-; Only i64/f64 scalars: no heap allocation, no module-level heap globals,
-; and no dependency on the synthesized main's init/cleanup epilogue.
+; Compiler-native C ABI export demo.
+;
+; `#{cabi='symbol'}` does three things in the compiler itself:
+;   1. keeps the function alive as an extra LowerHIR reachability root, so it
+;      is emitted even though no Nolang code calls it;
+;   2. emits a stable, normal-return C ABI wrapper over the internal
+;      `define void @fn(args..., T* out)` shape;
+;   3. contributes a declaration to the generated C header.
+;
+; `no build --shared -o dist/libnolang.dylib main.no` then links the IR into a
+; real dynamic library and writes dist/libnolang.h next to it.
+;
+; v1 of the export path is scalar-only. str / vec / ?T / structs need a
+; lifecycle ABI (ownership + runtime init/drop) that a direct C call cannot
+; provide yet, so the compiler rejects them with a hard error.
 
-; getpid supplies a RUNTIME value for the reachability anchors below.
-; LowerHIR lowers only functions reachable from the synthesized main, and
-; comptime folding erases calls whose arguments are all constants.
-#{c}
-_getpid = () (pid i32)
-
+#{cabi='nolang_add'}
 nl-add = (a i64, b i64) (r i64) {
     r = a + b
 }
 
+#{cabi='nolang_scale'}
 nl-scale = (x f64, k f64) (r f64) {
     r = x * k
 }
 
+#{cabi='nolang_sum3'}
 nl-sum3 = (a i64, b i64, c i64) (r i64) {
     r = a + b + c
 }
-
-; Reachability anchors. These live in _nolang_main, which the host never
-; calls; they exist only to keep the three functions in the emitted LLVM IR.
-; Every anchor consumes `seed`, so none of them can be folded away.
-seed = _getpid()
-a0 = nl-add(seed, 2)
-s0 = nl-scale(1.5, seed)
-t0 = nl-sum3(seed, 2, 3)
 ```
 
 ```noml
 {
   name: 'host-interop'
-  description: 'Calling Nolang from seven host languages via a shared-library C shim'
+  description: 'Calling Nolang from seven host languages via compiler-native C ABI exports'
   license: 'Apache-2.0'
   author: 'lizongying'
   keywords: []
@@ -117,32 +154,27 @@ t0 = nl-sum3(seed, 2, 3)
 }
 ```
 
-## 第二步：構建共享庫與 shim
 
-注意 `-v` 是全域旗標，但 `-o` 必須放在檔名**之前**；反過來 Go 的 `flag` 會靜默不產出檔案而仍回傳 0。`-O0` 用在 `.ll → .o` 這一步，保證物件檔的簽名就是 guard 剛剛讀到的簽名。
+## 第二步：`no build --shared`
+
+旗標必須放在檔案前面（`-o OUT FILE`）。這一步同時產出動態庫與標頭檔：
 
 ```bash
 cd example/host-interop
-NO=../../bin/no
 mkdir -p dist
-
-# ALL flags must come BEFORE the file: -o OUT FILE
-$NO build -v -o dist/libnolang main.no
-python3 abi_guard.py dist/libnolang.ll
-
-clang -x ir -O0 -fPIC -c dist/libnolang.ll -o dist/nolang.o
-clang -O2 -fPIC -Ishim -c shim/nolang_shim.c -o dist/nolang_shim.o
-clang -shared -fPIC -Wl,-install_name,@rpath/libnolang.dylib \
-      -o dist/libnolang.dylib dist/nolang.o dist/nolang_shim.o
-# Linux: use -o dist/libnolang.so and -Wl,-rpath,'$ORIGIN' instead
-nm -g dist/libnolang.dylib | grep nolang_
+no build --shared -o dist/libnolang.dylib main.no
+# [shared] dist/libnolang.dylib + dist/libnolang.h (3 exports)
+# Build successful: dist/libnolang.dylib
 ```
 
-穩定 API 的標頭檔：
+> 需要包含 `#{cabi}` / `--shared` 的 `no`。若倉庫的 `bin/no` 還是舊版，Makefile 的 `lib` 目標會給出明確提示；可用 `make verify NO=/path/to/no` 指定新編譯器，不必覆寫共享的 `bin/no`。
+
+自動生成的標頭檔，可直接 `#include`：
 
 ```c
-#ifndef NOLANG_H
-#define NOLANG_H
+/* Generated by `no build --shared` — do not edit. */
+#ifndef NOLANG_CABI_H
+#define NOLANG_CABI_H
 
 #include <stdint.h>
 
@@ -150,201 +182,58 @@ nm -g dist/libnolang.dylib | grep nolang_
 extern "C" {
 #endif
 
-#if defined(_WIN32)
-#  define NOLANG_API __declspec(dllexport)
-#elif defined(__GNUC__)
-#  define NOLANG_API __attribute__((visibility("default")))
-#else
-#  define NOLANG_API
-#endif
-
-/* Stable public API. Never expose the internal nl_* symbols to host code. */
-NOLANG_API int64_t nolang_add(int64_t a, int64_t b);
-NOLANG_API double  nolang_scale(double x, double k);
-NOLANG_API int64_t nolang_sum3(int64_t a, int64_t b, int64_t c);
+int64_t nolang_add(int64_t a0, int64_t a1);
+double nolang_scale(double a0, double a1);
+int64_t nolang_sum3(int64_t a0, int64_t a1, int64_t a2);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* NOLANG_H */
+#endif /* NOLANG_CABI_H */
 ```
 
-shim 把內部的 out-pointer 呼叫包成真正的 C 返回值：
+Makefile 的 `lib` 目標就是這一步，另外用 `nm -g` 斷言三個穩定符號確實導出：
 
-```c
-#include <stdint.h>
-
-#include "nolang.h"
-
-/*
- * Internal Nolang symbols. `no build` emits every user function as
- * `define void @<name>(<inputs by value>, <result out-pointer>)`.
- * These signatures are NOT a public ABI: abi_guard.py re-checks them against
- * dist/libnolang.ll on every build and fails loudly if they ever change.
- * The `nl_` prefix avoids collisions with the compiler runtime prelude.
- */
-extern void nl_add(int64_t a, int64_t b, int64_t *out);
-extern void nl_scale(double x, double k, double *out);
-extern void nl_sum3(int64_t a, int64_t b, int64_t c, int64_t *out);
-
-int64_t nolang_add(int64_t a, int64_t b) {
-    int64_t out = 0;
-    nl_add(a, b, &out);
-    return out;
-}
-
-double nolang_scale(double x, double k) {
-    double out = 0.0;
-    nl_scale(x, k, &out);
-    return out;
-}
-
-int64_t nolang_sum3(int64_t a, int64_t b, int64_t c) {
-    int64_t out = 0;
-    nl_sum3(a, b, c, &out);
-    return out;
-}
+```make
+lib:
+	mkdir -p dist
+	@$(NO) build --help 2>&1 | grep -q -- '--shared' || { \
+	  echo "FAIL: $(NO) has no --shared support. Rebuild the compiler, or pass NO=/path/to/no to make."; \
+	  exit 1; }
+	$(NO) build --shared -o dist/$(LIB) main.no
+	@test -f dist/$(HEADER) || { echo "FAIL: generated header dist/$(HEADER) missing"; exit 1; }
+	@if [ "$(UNAME)" = Darwin ]; then codesign -s - --force dist/$(LIB) >/dev/null 2>&1; fi
+	@count=$$(nm -g dist/$(LIB) | grep -cE 'nolang_(add|scale|sum3)$$' || true); \
+	 if [ "$$count" -ne 3 ]; then echo "FAIL: expected 3 exported symbols, got $$count"; exit 1; fi; \
+	 echo "[lib] OK: 3 stable symbols exported from dist/$(LIB)"
 ```
 
-## 第三步：ABI 防護
+| 旗標 | 作用 |
+| --- | --- |
+| `--shared` | 以 `-shared -fPIC` 建置動態庫；需要至少一個 `#{cabi}` 導出 |
+| `-o PATH` | 輸出路徑；決定自動生成的標頭檔名稱 |
+| `--header PATH` | 覆寫標頭檔輸出路徑（預設 `<輸出去副檔名>.h`） |
 
-每次 `make lib` 都會先跑這支腳本。它解析 `.ll` 中的 `define void @nl_*(...)`，逐一比對 `EXPECTED`，出現缺失、`internal` 連結、opaque `ptr` 或型別序列不同就結束並印出實際簽名。**不要盲改 shim**：先重新探针，再同時更新 `EXPECTED` 與 shim。
-
-```python
-#!/usr/bin/env python3
-"""Fail loudly when Nolang's internal ABI no longer matches the C shim.
-
-`no build` emits user functions with an INTERNAL by-reference ABI: inputs are
-passed by value, results are written through a caller-supplied out-pointer.
-That ABI is not a public contract, so this script pins the exact signatures
-that shim/nolang_shim.c declares. Run it after every `no build -v` and before
-compiling the shim.
-
-Exit 1 => do NOT patch the shim blindly: re-read the .ll, re-probe, and update
-both EXPECTED below and shim/nolang_shim.c together.
-"""
-
-import re
-import sys
-from pathlib import Path
-
-# symbol -> exact LLVM parameter type sequence the shim is written against.
-EXPECTED = {
-    "nl_add": ["i64", "i64", "i64*"],
-    "nl_scale": ["double", "double", "double*"],
-    "nl_sum3": ["i64", "i64", "i64", "i64*"],
-}
-
-DEFINE = re.compile(
-    r"^define\s+(?P<linkage>(?:internal|private|linkonce|weak)\s+)?"
-    r"void\s+@(?P<name>[A-Za-z0-9_.$]+)\s*\((?P<params>.*?)\)\s*\{",
-    re.M,
-)
-ATTRIBUTE = re.compile(
-    r"\b(?:nocapture|readonly|writeonly|nonnull|noalias|noundef|signext|"
-    r"zeroext|align\s+\d+|dereferenceable(?:_or_null)?\([^)]*\)|"
-    r"captures\([^)]*\)|initializes\([^)]*\)|byval\([^)]*\)|sret\([^)]*\))",
-)
-
-
-def type_of(param: str) -> str:
-    """Extract the LLVM type from one parameter declaration."""
-    param = param.strip()
-    # Everything before the first " %name" token is the type (plus attrs).
-    match = re.match(r"^(.*?)\s+%\S", param)
-    ty = match.group(1) if match else param
-    ty = ATTRIBUTE.sub("", ty)
-    return re.sub(r"\s+", " ", ty).strip()
-
-
-def main() -> int:
-    if len(sys.argv) not in (2, 3):
-        print("usage: abi_guard.py <libnolang.ll> [signature-report.txt]", file=sys.stderr)
-        return 2
-
-    ll_path = Path(sys.argv[1])
-    if not ll_path.exists():
-        print(f"[abi-guard] FAIL: {ll_path} does not exist", file=sys.stderr)
-        return 1
-    text = ll_path.read_text()
-
-    found = {}
-    for match in DEFINE.finditer(text):
-        name = match.group("name")
-        types = [type_of(p) for p in match.group("params").split(",") if p.strip()]
-        found.setdefault(name, []).append((match.group("linkage") or "", types))
-
-    problems = []
-    for name, want in EXPECTED.items():
-        entries = found.get(name, [])
-        if not entries:
-            problems.append(
-                f"@{name} is MISSING. Usually this means (a) the top-level "
-                f"reachability anchors were folded away by comptime, or "
-                f"(b) the symbol gained a collision suffix / was renamed."
-            )
-            continue
-        if len(entries) != 1:
-            problems.append(f"@{name} is defined {len(entries)} times")
-            continue
-        linkage, got = entries[0]
-        if linkage:
-            problems.append(f"@{name} is '{linkage.strip()}' and cannot be linked from C")
-        if any(t == "ptr" or "ptr" in t for t in got):
-            problems.append(
-                f"@{name} uses opaque `ptr`; the compiler switched pointer style. "
-                f"Re-probe and update EXPECTED, or use the unoptimized .ll."
-            )
-        if got != want:
-            problems.append(
-                f"@{name} ABI DRIFT\n      actual   {got}\n      expected {want}"
-            )
-
-    has_main = bool(re.search(r"^define\s+i32\s+@main\s*\(", text, re.M))
-    triple = re.search(r'^target triple\s*=\s*"([^"]+)"', text, re.M)
-
-    if problems:
-        print("=== NOLANG ABI GUARD FAILED ===", file=sys.stderr)
-        for problem in problems:
-            print(f"  - {problem}", file=sys.stderr)
-        print(f"  define i32 @main present: {has_main}", file=sys.stderr)
-        print(
-            "  Inspect with: grep -nE '^define .*@nl_' " + str(ll_path),
-            file=sys.stderr,
-        )
-        return 1
-
-    print(
-        f"[abi-guard] ok | @main present={has_main} | "
-        f"triple={triple.group(1) if triple else 'n/a'}"
-    )
-    report_lines = []
-    for name in EXPECTED:
-        got = found[name][0][1]
-        print(f"[abi-guard]   define void @{name}({', '.join(got)})")
-        report_lines.append(f"{name}: {' '.join(got)}")
-    if len(sys.argv) == 3:
-        Path(sys.argv[2]).write_text("\n".join(report_lines) + "\n")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-```
 
 ## 七種宿主語言示例
 
-每個範例都印出一行 `<語言> 42 10.0 42`（`20+22`、`2.5*4.0`、`10+20+12`）。以下是各語言原始碼與對應的編譯／執行命令；把它們串起來並比對輸出的是 `make verify`。
+| 語言 | 綁定方式 |
+| --- | --- |
+| C / C++ | 直接 `#include "libnolang.h"` 並鏈 `-lnolang` |
+| Rust | `#[link(name = "nolang")] unsafe extern "C"` |
+| Go | cgo `#cgo CFLAGS` / `#cgo LDFLAGS` |
+| Java | JNI（JDK 21；不使用 preview 的 Panama FFM） |
+| Python | 標準庫 `ctypes.CDLL(絕對路徑)` |
+| C# | `DllImport` + `NativeLibrary.SetDllImportResolver` |
+
 
 ### C
-
-直接包含標頭檔並鏈結共享庫。
 
 ```c
 #include <stdio.h>
 
-#include "nolang.h"
+#include "libnolang.h"
 
 int main(void) {
     printf("c %lld %.1f %lld\n",
@@ -356,18 +245,16 @@ int main(void) {
 ```
 
 ```bash
-clang -O2 -Ishim -o dist/c_demo c/main.c -Ldist -lnolang -Wl,-rpath,@loader_path
-./dist/c_demo
+clang -O2 -Idist -o dist/c_demo c/main.c -Ldist -lnolang -Wl,-rpath,@loader_path
 ```
 
-### C++
 
-標頭檔自帶 `extern "C"` 守衛，無需額外處理。
+### C++
 
 ```cpp
 #include <cstdio>
 
-#include "nolang.h"
+#include "libnolang.h"
 
 int main() {
     std::printf("cpp %lld %.1f %lld\n",
@@ -379,13 +266,11 @@ int main() {
 ```
 
 ```bash
-g++ -std=c++17 -O2 -Ishim -o dist/cpp_demo cpp/main.cpp -Ldist -lnolang -Wl,-rpath,@loader_path
-./dist/cpp_demo
+g++ -std=c++17 -O2 -Idist -o dist/cpp_demo cpp/main.cpp -Ldist -lnolang -Wl,-rpath,@loader_path
 ```
 
-### Rust
 
-用 `unsafe extern "C"` 宣告外部函數，`#[link]` 指定庫名。
+### Rust
 
 ```rust
 #[link(name = "nolang")]
@@ -408,22 +293,21 @@ fn main() {
 ```
 
 ```bash
-rustc -O -L native="$(pwd)/dist" -C link-arg=-Wl,-rpath,"$(pwd)/dist" \
-      -o dist/rust_demo rust/main.rs
-./dist/rust_demo
+rustc -O -L native=$PWD/dist -C link-arg=-Wl,-rpath,$PWD/dist -o dist/rust_demo rust/main.rs
 ```
+
 
 ### Go（cgo）
 
-cgo 用 `${SRCDIR}` 指向模組目錄；`go.mod` 只需 `module host-interop-go` 與 `go 1.27`。
+cgo 直接 include 生成的標頭檔；`${SRCDIR}` 讓路徑與工作目錄無關。
 
 ```go
 package main
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../shim
+#cgo CFLAGS: -I${SRCDIR}/../dist
 #cgo LDFLAGS: -L${SRCDIR}/../dist -lnolang -Wl,-rpath,${SRCDIR}/../dist
-#include "nolang.h"
+#include "libnolang.h"
 */
 import "C"
 
@@ -439,12 +323,12 @@ func main() {
 
 ```bash
 cd go && CGO_ENABLED=1 CC=clang go build -o ../dist/go_demo .
-../dist/go_demo
 ```
+
 
 ### Java（JNI）
 
-JDK 21 的 Panama FFM 仍是 preview，故使用零依賴的 JNI：`javac -h` 生成標頭，C 膠水另鏈成 `libnolangjni`。
+Java 不能直接呼叫 C ABI，仍需一層 JNI 膠水；除此之外六種語言都不需要轉接層。`javac -h` 產生 `NolangDemo.h`，JNI 庫再鏈回 `-lnolang`。
 
 ```java
 import java.util.Locale;
@@ -472,7 +356,7 @@ public class NolangDemo {
 #include <stdint.h>
 
 #include "NolangDemo.h"
-#include "nolang.h"
+#include "libnolang.h"
 
 JNIEXPORT jlong JNICALL Java_NolangDemo_add
         (JNIEnv *env, jclass cls, jlong a, jlong b) {
@@ -498,16 +382,16 @@ JNIEXPORT jlong JNICALL Java_NolangDemo_sum3
 
 ```bash
 javac -h dist -d dist/classes java/NolangDemo.java
-clang -O2 -fPIC -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/darwin" \
-      -Ishim -Idist -c jni/nolang_jni.c -o dist/nolang_jni.o
-clang -shared -fPIC -Wl,-rpath,"$(pwd)/dist" -o dist/libnolangjni.dylib \
+clang -O2 -fPIC $JNI_INCLUDES -Idist -c jni/nolang_jni.c -o dist/nolang_jni.o
+clang -shared -fPIC -Wl,-rpath,$PWD/dist -o dist/libnolangjni.dylib \
       dist/nolang_jni.o -Ldist -lnolang
 java -Djava.library.path=dist -cp dist/classes NolangDemo
 ```
 
+
 ### Python（ctypes）
 
-只用標準庫；以絕對路徑載入，避開搜尋路徑差異，並逐個宣告 `argtypes` / `restype`。
+明確指定 `argtypes` / `restype`，避免 64 位元整數被當成 C `int` 截斷。
 
 ```python
 #!/usr/bin/env python3
@@ -537,9 +421,10 @@ print(f"python {lib.nolang_add(20, 22)} "
 python3 python/main.py
 ```
 
+
 ### C#（P/Invoke）
 
-`DllImport` 搭配 `NativeLibrary.SetDllImportResolver`：macOS hardened runtime 可能忽略 `DYLD_LIBRARY_PATH`，所以由 `NOLANG_LIB` 傳入絕對路徑。
+macOS hardened runtime 可能忽略 `DYLD_LIBRARY_PATH`，因此用 `NOLANG_LIB` 傳絕對路徑，再由 `SetDllImportResolver` 解析。
 
 ```csharp
 using System;
@@ -577,22 +462,33 @@ internal static class Program
 }
 ```
 
-```bash
-dotnet build csharp/host-interop.csproj -c Release -o dist/csharp_out -v q
-NOLANG_LIB="$(pwd)/dist/libnolang.dylib" dotnet dist/csharp_out/host-interop.dll
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>host-interop</AssemblyName>
+  </PropertyGroup>
+</Project>
 ```
+
+```bash
+cd csharp && dotnet build -c Release -o ../dist/csharp_out -v q
+NOLANG_LIB=$PWD/dist/libnolang.dylib dotnet dist/csharp_out/host-interop.dll
+```
+
 
 ## 驗證
 
-`Makefile` 的 `verify` 目標會依序構建共享庫、JNI 庫與七個宿主程式，把它們的輸出收集到 `dist/actual.txt`，最後與 `expected.txt` 做 `diff`；另外還會用 `nm -g` 斷言三個導出符號、複跑 guard，並在 Linux 檢查非 PIC 重定位。
+函式庫搜尋路徑：macOS 用 `DYLD_LIBRARY_PATH` / `@rpath` / `@loader_path`，Linux 用 `LD_LIBRARY_PATH` / `$ORIGIN`；Java 另需 `-Djava.library.path`；.NET 在 hardened runtime 下用 `NOLANG_LIB` 傳絕對路徑。`make verify` 會建庫、建七種宿主程式、把它們的輸出收進 `dist/actual.txt`，再與 `expected.txt` 逐行比對。
 
 ```bash
 cd example/host-interop
 make verify
 # ALL SEVEN HOST LANGUAGES PASSED
 ```
-
-`expected.txt`：
 
 ```text
 c 42 10.0 42
@@ -604,24 +500,24 @@ python 42 10.0 42
 csharp 42 10.0 42
 ```
 
-## 風險與緩解
 
-| 風險 | 緩解 |
+## 限制、風險與緩解
+
+| 風險 / 限制 | 現況處理 |
 | --- | --- |
-| 內部 ABI 不穩定（按值／按指標、符號改名、衝突後綴） | `abi_guard.py` pin 住三條簽名，漂移即硬失敗；shim 是唯一穩定面 |
-| 未被呼叫的函數被可達性分析丟棄、或錨點被 comptime 折疊 | 用 `getpid()` 提供運行期 `seed`，三個錨點都消費它 |
-| `str` / `vec` 等堆型別的所有權與釋放 | 示例只用 `i64` / `f64` 標量；其餘列為非目標 |
-| 合成的 `@main` 落在共享庫裡 | 保留即可，dyld／ld.so 不會把它當入口；`nm -g` 做資訊性檢查 |
-| macOS 程式碼簽章／隔離屬性 | `codesign -s - --force`；必要時 `xattr -d com.apple.quarantine` |
-| Linux 非 PIC 重定位 | `-fPIC` 加在編譯 `.ll` 的那一步，`readelf -r` 斷言 |
-| `-o` 放在檔名之後 | Go 的 `flag` 會靜默不產出；一律 `-o OUT FILE` |
-| LLVM 移除 typed pointer 自動升級 | 改用 `dist/libnolang_opt.ll`（opaque `ptr`）並更新 guard |
-| 浮點輸出受語系影響 | 統一 `.1f`／`F1`＋`Locale.ROOT`／`InvariantCulture`，固定 `expected.txt` |
+| 內部 ABI（`out-pointer`、符號消毒）不適合 C 直接呼叫 | 編譯器發射正常返回值 wrapper；宿主只依賴 `#{cabi}` 符號與生成標頭 |
+| 未被呼叫的函數被可達性分析丟棄、或被 comptime 折疊 | 導出函數作為額外 `LowerHIR` 根並標記不可折疊；不再需要 `getpid()` 錨點 |
+| 共享庫導出 `main` 與宿主衝突 | `--shared` 不發射合成的 `define i32 @main` |
+| 共享庫仍會導出 Nolang 內部／runtime 全域符號 | v1 不做 visibility 收斂：`nm -g` 除了三個 `#{cabi}` 符號，還會看到 `__nolang_main`、`_nolang_rc_*`、`_nolang_async_*` 等。宿主只應依賴生成標頭中的宣告；若要隱藏內部符號，需後續在 codegen 對共享庫標 `hidden` visibility |
+| `str` / `vec` / `?T` 的所有權與 runtime 初始化／清理 | v1 明確拒絕；需要生命週期 ABI（`init` / `shutdown` / borrow / free）後才開放 |
+| 導出符號名稱撞名或非法 | 檢查合法 C 識別字、重複、`main` / `_nolang_main` 保留字與 LLVM 內部符號，衝突即硬錯誤 |
+| 標頭檔與 wrapper 型別漂移 | 兩者由同一份 `cabiSignature` 解析結果產生 |
+| Java 需要 JNI | 保留一層薄 JNI 庫；其餘六種語言零轉接層 |
+
 
 ## 相關文檔
 
-- [`#{c}` FFI 宣告](./syntax) — 反向的「Nolang 呼叫 C」
-- [導出](./export) — `@` 是 Nolang 包之間的符號導出
-- [原生包：WASM 與 FFI](./js-backend) — `bind=ffi` / `bind=wasm`
-- [記憶體](./memory) — 模組級堆變數的生命週期
-- [完整可運行示例](https://github.com/lizongying/nolang/tree/main/example/host-interop)
+- [FFI：Nolang 呼叫 C](./syntax) — `#{c}`，方向相反
+- [導出與可見性](./export) — `@` 只在 Nolang 包之間導出
+- [建置與執行](../usage) — `no build` 旗標與 `--shared`
+- [本地示例 README](https://github.com/lizongying/no/tree/main/example/host-interop) — `make verify` 完整流程

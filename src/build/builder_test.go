@@ -74,7 +74,7 @@ entry:
 
 	// sink 用來吸收 opt/llc 的輸出，避免測試日誌噪音。
 	sink := &bytes.Buffer{}
-	err := buildLLVMInternal(code, "wasi_missing_sysroot_test", outPath, "clang", "wasm32-wasi", false, nil, sink)
+	err := buildLLVMInternal(code, "wasi_missing_sysroot_test", outPath, "clang", "wasm32-wasi", false, false, nil, sink)
 	if err == nil {
 		t.Fatal("expected error for missing $WASI_SYSROOT, got nil")
 	}
@@ -217,7 +217,7 @@ define i32 @main() {
 	// 正好用來驗證 darwin triple 在連結期的 zig 翻譯。
 	out := t.TempDir()
 	outBin := filepath.Join(out, "a.out")
-	if err := buildLLVMInternal(code, "main", outBin, "zig", "aarch64-apple-darwin", true, nil, nil); err != nil {
+	if err := buildLLVMInternal(code, "main", outBin, "zig", "aarch64-apple-darwin", true, false, nil, nil); err != nil {
 		t.Fatalf("buildLLVMInternal (zig, aarch64-apple-darwin) failed: %v", err)
 	}
 	if _, statErr := os.Stat(outBin); statErr != nil {
@@ -246,7 +246,7 @@ define i32 @main() {
 	out := t.TempDir()
 	outBin := filepath.Join(out, "a.out")
 	// verbose=false ⇒ singleShot；cc="zig" 且關閉 C API ⇒ 走 -x ir 分支（修復前會掛）。
-	if err := buildLLVMInternal(code, "main", outBin, "zig", "aarch64-apple-darwin", false, nil, nil); err != nil {
+	if err := buildLLVMInternal(code, "main", outBin, "zig", "aarch64-apple-darwin", false, false, nil, nil); err != nil {
 		t.Fatalf("buildLLVMInternal (zig, singleShot) failed: %v", err)
 	}
 	if _, statErr := os.Stat(outBin); statErr != nil {

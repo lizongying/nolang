@@ -1943,6 +1943,43 @@ test-prefix-gate = () {
     runner.eq(ir.contains('define'), 0, 'prefix-gate no code')
 }
 
+; f64 前缀负号（s70）：-x（x 为 f64 形参）⇒ fneg double %fd…，仅 widened 的 '-' 臂
+;   ⚠ 无 f64 字面量降级（OP-CONST 只发 i64）⇒ 操作数必为 f64 形参
+;   ⚠ 直线式（无控制流）⇒ 寄存器模式，f64 值以 %fd SSA 流动，不落 alloca double 槽
+test-neg-f64-var = () {
+    src = 'n6x = (x f64) (r f64) {\n    r = -x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'neg-f64-var unsup')
+    runner.eq(ir.contains('fneg double'), 1, 'neg-f64-var fneg')
+    runner.eq(ir.contains('define double'), 1, 'neg-f64-var define double')
+    runner.eq(ir.contains('ret double'), 1, 'neg-f64-var ret double')
+}
+
+; f64 双负：-(-x) ⇒ 两颗 fneg double
+test-neg-f64-nested = () {
+    src = 'n7x = (x f64) (r f64) {\n    r = -(-x)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'neg-f64-nested unsup')
+    runner.eq(ir.contains('fneg double'), 1, 'neg-f64-nested fneg')
+}
+
+; 门控：! 与 ~ 仅 i64——!x（x 为 f64）不在覆盖面 ⇒ unsup（s70 只 widened '-'，不动 '!'/'~'）
+test-neg-f64-gate = () {
+    src = 'n8x = (x f64) (r i64) {\n    r = !x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'neg-f64-gate counted')
+    runner.eq(ir.contains('define'), 0, 'neg-f64-gate no code')
+}
+
 ; 位与：x & y ⇒ and i64
 test-bit-and = () {
     src = 'b1x = (x i64, y i64) (r i64) {\n    r = x & y\n}\n'
@@ -2136,6 +2173,9 @@ test-bitnot-var()
 test-bitnot-nested()
 test-bitnot-in-expr()
 test-prefix-gate()
+test-neg-f64-var()
+test-neg-f64-nested()
+test-neg-f64-gate()
 test-bit-and()
 test-bit-or()
 test-bit-xor()

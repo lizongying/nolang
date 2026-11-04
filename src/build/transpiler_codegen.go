@@ -149,7 +149,11 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 		// Surface the concrete lowering diagnostic (field name / type / shape),
 		// not just the generic bucket. A bare "unsupported construct" forces a
 		// re-run with debugger every single time — the diag already carries the
-		// answer, so print it.
+		// answer, so print it. C ABI export violations are user-facing source
+		// errors, not backend gaps, so they get their own wording.
+		if d.Kind == "cabi" {
+			return "", "C ABI export error: " + d.Msg
+		}
 		return "", "unsupported construct in MIR backend: " + d.Kind + ": " + d.Msg
 	}
 	if os.Getenv("NOLANG_MIR_DUMP_MIR") != "" {
@@ -168,6 +172,9 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 		}
 		return "", rep.Error()
 	}
+	// A dynamic library must not export the synthesized C `main`. The argc/argv
+	// globals are still emitted by codegen (emitEntryGlobals) for os.args.
+	mod.NoMainEntry = t.sharedLib
 	ll, err := mod.EmitLLVM()
 	if err != nil {
 		if debug {
@@ -175,6 +182,15 @@ func (t *Transpiler) emitMIR(hirPkg *hir.Package) (out string, reason string) {
 		}
 		return "", fmt.Sprintf("EmitLLVM: %v", err)
 	}
+	// The header is derived from the SAME resolved signatures as the wrappers
+	// (Module.CABIHeader uses cabiSignature), so it cannot drift from the IR.
+	// EmitLLVM already validated every export above; a failure here is a
+	// compiler bug, not a source error.
+	hdr, herr := mod.CABIHeader()
+	if herr != nil {
+		return "", fmt.Sprintf("C ABI header: %v", herr)
+	}
+	t.cabiHeader = hdr
 	if os.Getenv("NOLANG_MIR_DUMP_LL") != "" {
 		if f, e := os.CreateTemp("", "nolang-mir-emit-*.ll"); e == nil {
 			_ = os.WriteFile(f.Name(), []byte(ll), 0644)
@@ -222,7 +238,10 @@ func firstFatalLowerDiag(diags []mir.LowerDiag) (mir.LowerDiag, bool) {
 		//   read yields nothing, the write silently does not happen. A silent
 		//   no-op map write is exactly the kind of wrong-but-exit-0 outcome this
 		//   list exists to prevent, so it is fatal.
-		if d.Kind == "interp" || d.Kind == "deprecated" || d.Kind == "map-index" {
+		// "cabi": a #{cabi} export declaration the compiler cannot honour
+		//   (method, wrong result count, bad/duplicate symbol). Silently
+		//   dropping the export would produce a library missing its API.
+		if d.Kind == "interp" || d.Kind == "deprecated" || d.Kind == "map-index" || d.Kind == "cabi" {
 			return d, true
 		}
 	}

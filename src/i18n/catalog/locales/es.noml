@@ -772,6 +772,14 @@ Error al escribir utils.no: %v
   'n00utq2q': 'process-exec: no se puede convertir el argumento a una cadena C'
   'n08bzk5j': 'El resultado es exactamente lo que descarga `no add <tool>@<host>/<owner>/<repo>`:'
   'n0hl9vde': 'builtin %s argumento %d: %s'
+  'n1cabi00': '`no build --shared` requires at least one #{cabi} export; annotate a top-level function with #{cabi=\'symbol\'}'
+  'n1cabi01': 'creating header directory: %w'
+  'n1cabi02': 'writing C ABI header: %w'
+  'n1cabi03': '--shared is not supported for a WASI target'
+  'n1cabi10': 'Build a shared library (.dylib/.so/.dll) exposing #{cabi} functions; also emits a C header'
+  'n1cabi11': 'Output path for the generated C ABI header (default: <output>.h)'
+  'n1cabi12': 'Use --shared with #{cabi=\'symbol\'} functions to build a shared library and its C header.'
+  'n1cabi13': '  no build --shared -o dist/libdemo.dylib main.no    shared library + dist/libdemo.h'
   'n44lxvvk': 'el miembro %q es un objeto vacío: anótalo con #{type = \'<struct>\'}'
   'n48cusda': `
 Ábrelo manualmente: %s

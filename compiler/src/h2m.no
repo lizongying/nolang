@@ -10,7 +10,7 @@
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
 ;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67；逻辑 && || s68，复用 OP-AND/OR）/
-;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones）/
+;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
 ;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/IterRange 必须全 0）/
@@ -33,7 +33,8 @@
 ;         break/continue 走循环目标栈（(hdr, exit) 对，限最内层循环、无标签形）；
 ;         三者都要求是本块最后一条陈述（其后陈述不可达 ⇒ 计 unsup，同 s58 兜底不在末位纪律）；
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
-;         算术语义仍限 i64（其余型别的值进运算符即计 unsup，不发错码）
+;         算术语义仍限 i64（二元 + - * 比较等；其余型别的值进运算符即计 unsup，不发错码）；
+;         例外：前缀 '-' 接受 f64 操作数（s70，发 fneg double），二元算术仍不收 f64
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、除与余（`/` `%`，Go 侧 `?i64` 除零→err，i64 子集未建模 option）、位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）、带默认值的参数、
@@ -1082,7 +1083,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
         }
 
         ; s66：前缀表达式 -x / !x（镜像 Go emitNeg/emitNot hir2mir.go:5503/5505）
-        ;   '-' ⇒ OP-NEG；'!' ⇒ OP-NOT；'~' ⇒ OP-XOR（s69，见下）；其余非 i64 主体仍计 unsup
+        ;   '-' ⇒ OP-NEG（i64⇒sub 0,x；f64⇒fneg double，s70）；'!' ⇒ OP-NOT；'~' ⇒ OP-XOR（s69）；其余非 i64/f64 主体仍计 unsup
         d.kind == asp.K-PREFIX-EXPRESSION -> {
             osym = ast.str-at(t, d.s0)
             ok = ast.kid-at(t, d.kid0)
@@ -1091,6 +1092,15 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ov > 0 && osym == '-' && h2m-vty-at(c, ov) == TY-I64 -> {
                 mid = h2m-alloc(c, TY-I64)
                 h2m-emit(c, OP-NEG, mid, ov, 0, '', TY-I64)
+                v = mid
+                ok-p = 1
+            }
+
+            ; s70：f64 前缀负号 -x ⇒ OP-NEG（镜像 Go emitNeg 的 float 分支，cg 发 fneg double %fd…）
+            ;   操作数型别作 mid/emit 型别（寄存器模式下 f64 以 %fd SSA 流动，不落槽）
+            ov > 0 && osym == '-' && h2m-vty-at(c, ov) == TY-F64 -> {
+                mid = h2m-alloc(c, TY-F64)
+                h2m-emit(c, OP-NEG, mid, ov, 0, '', TY-F64)
                 v = mid
                 ok-p = 1
             }

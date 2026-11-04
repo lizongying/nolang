@@ -3462,7 +3462,7 @@ open = (dsn str) (d db-sqlite) {
 7. 名稱以 `_` 開頭表示私有（不導出），C ABI 符號去除前綴 `_`
 8. FFI 宣告與普通代碼可寫在同一個 `.no` 檔案中
 
-> 反向方向（讓 C / C++ / Rust / Go / Java / Python / C# 反過來呼叫 Nolang）見 [從宿主語言調用 Nolang](./host-interop)。
+> 反向方向（讓 C / C++ / Rust / Go / Java / Python / C# 反過來呼叫 Nolang）用 `#{cabi='symbol'}` 與 `no build --shared`，見 [從宿主語言調用 Nolang](./host-interop)。
 
 ### 註解系統（`#{...}`）
 

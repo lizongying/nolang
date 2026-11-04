@@ -1,29 +1,30 @@
-; Demo library for host-language interop via a hand-written C shim.
-; Only i64/f64 scalars: no heap allocation, no module-level heap globals,
-; and no dependency on the synthesized main's init/cleanup epilogue.
+; Compiler-native C ABI export demo.
+;
+; `#{cabi='symbol'}` does three things in the compiler itself:
+;   1. keeps the function alive as an extra LowerHIR reachability root, so it
+;      is emitted even though no Nolang code calls it;
+;   2. emits a stable, normal-return C ABI wrapper over the internal
+;      `define void @fn(args..., T* out)` shape;
+;   3. contributes a declaration to the generated C header.
+;
+; `no build --shared -o dist/libnolang.dylib main.no` then links the IR into a
+; real dynamic library and writes dist/libnolang.h next to it.
+;
+; v1 of the export path is scalar-only. str / vec / ?T / structs need a
+; lifecycle ABI (ownership + runtime init/drop) that a direct C call cannot
+; provide yet, so the compiler rejects them with a hard error.
 
-; getpid supplies a RUNTIME value for the reachability anchors below.
-; LowerHIR lowers only functions reachable from the synthesized main, and
-; comptime folding erases calls whose arguments are all constants.
-#{c}
-_getpid = () (pid i32)
-
+#{cabi='nolang_add'}
 nl-add = (a i64, b i64) (r i64) {
     r = a + b
 }
 
+#{cabi='nolang_scale'}
 nl-scale = (x f64, k f64) (r f64) {
     r = x * k
 }
 
+#{cabi='nolang_sum3'}
 nl-sum3 = (a i64, b i64, c i64) (r i64) {
     r = a + b + c
 }
-
-; Reachability anchors. These live in _nolang_main, which the host never
-; calls; they exist only to keep the three functions in the emitted LLVM IR.
-; Every anchor consumes `seed`, so none of them can be folded away.
-seed = _getpid()
-a0 = nl-add(seed, 2)
-s0 = nl-scale(1.5, seed)
-t0 = nl-sum3(seed, 2, 3)

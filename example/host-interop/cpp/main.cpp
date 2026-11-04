@@ -1,6 +1,6 @@
 #include <cstdio>
 
-#include "nolang.h"
+#include "libnolang.h"
 
 int main() {
     std::printf("cpp %lld %.1f %lld\n",

@@ -1,8 +1,10 @@
 # Seven host languages calling into one Nolang shared library.
 # Usage: make verify   (from this directory)
 #
-# This is a documented workaround: `no build` only emits executables, so we
-# take the LLVM IR it writes with -v and link it ourselves as a shared library.
+# `no build --shared` is a compiler-native feature: the #{cabi='...'} functions
+# in main.no become stable C ABI symbols, and the compiler writes the matching
+# C header next to the library. No hand-written shim, no IR post-processing,
+# no reachability anchors.
 
 SHELL := /bin/bash
 export PATH := /opt/homebrew/bin:/opt/homebrew/opt/llvm/bin:$(PATH)
@@ -11,18 +13,17 @@ NO      ?= ../../bin/no
 JAVA    ?= java
 CUR     := $(CURDIR)
 UNAME   := $(shell uname -s)
+HEADER  := libnolang.h
 
 ifeq ($(UNAME),Darwin)
   LIB          := libnolang.dylib
   JNI_LIB      := libnolangjni.dylib
-  CORE_INSTALL := -Wl,-install_name,@rpath/$(LIB)
   HOST_RPATH   := -Wl,-rpath,@loader_path
   LDLIBENV     := DYLD_LIBRARY_PATH=$(CUR)/dist
   JNI_OS_DIR   := darwin
 else
   LIB          := libnolang.so
   JNI_LIB      := libnolangjni.so
-  CORE_INSTALL :=
   HOST_RPATH   := -Wl,-rpath,'$$ORIGIN'
   LDLIBENV     := LD_LIBRARY_PATH=$(CUR)/dist
   JNI_OS_DIR   := linux
@@ -32,44 +33,38 @@ endif
 JH := $(shell /usr/libexec/java_home 2>/dev/null || dirname $$(dirname $$(dirname "$$(command -v javac)")))
 JNI_INCLUDES := -I"$(JH)/include" -I"$(JH)/include/$(JNI_OS_DIR)"
 
-.PHONY: all probe lib jni c cpp rust go csharp verify clean
+.PHONY: all lib jni c cpp rust go csharp verify clean
 
 all: verify
 
-# Step 1: .no -> raw .ll, then pin the internal ABI before any C is compiled.
-probe:
+# Compiler-native step: .no -> dynamic library + generated C header.
+# `-o dist/$(LIB)` also determines the header path: dist/libnolang.h.
+lib:
 	mkdir -p dist
-	$(NO) build -v -o dist/libnolang main.no
-	python3 abi_guard.py dist/libnolang.ll dist/abi_signatures.txt
-
-# Step 2: .ll -> PIC object -> shared library, plus the stable C shim.
-lib: probe
-	clang -x ir -O0 -fPIC -c dist/libnolang.ll -o dist/nolang.o
-	clang -O2 -fPIC -Ishim -c shim/nolang_shim.c -o dist/nolang_shim.o
-	clang -shared -fPIC $(CORE_INSTALL) -o dist/$(LIB) dist/nolang.o dist/nolang_shim.o
+	@$(NO) build --help 2>&1 | grep -q -- '--shared' || { \
+	  echo "FAIL: $(NO) has no --shared support. Rebuild the compiler, or pass NO=/path/to/no to make."; \
+	  exit 1; }
+	$(NO) build --shared -o dist/$(LIB) main.no
+	@test -f dist/$(HEADER) || { echo "FAIL: generated header dist/$(HEADER) missing"; exit 1; }
 	@if [ "$(UNAME)" = Darwin ]; then codesign -s - --force dist/$(LIB) >/dev/null 2>&1; fi
 	@count=$$(nm -g dist/$(LIB) | grep -cE 'nolang_(add|scale|sum3)$$' || true); \
 	 if [ "$$count" -ne 3 ]; then echo "FAIL: expected 3 exported symbols, got $$count"; exit 1; fi; \
 	 echo "[lib] OK: 3 stable symbols exported from dist/$(LIB)"
-	@if [ "$(UNAME)" = Linux ]; then \
-	   if readelf -r dist/nolang.o | grep -qE 'R_X86_64_32S?'; then \
-	     echo "FAIL: non-PIC relocations in dist/nolang.o"; exit 1; fi; \
-	 fi
 
 # JNI glue is a second shared library so the other six hosts need no JDK.
 jni: lib
 	mkdir -p dist/classes
 	javac -h dist -d dist/classes java/NolangDemo.java
-	clang -O2 -fPIC $(JNI_INCLUDES) -Ishim -Idist -c jni/nolang_jni.c -o dist/nolang_jni.o
+	clang -O2 -fPIC $(JNI_INCLUDES) -Idist -c jni/nolang_jni.c -o dist/nolang_jni.o
 	clang -shared -fPIC -Wl,-rpath,$(CUR)/dist -o dist/$(JNI_LIB) \
 	      dist/nolang_jni.o -Ldist -lnolang
 	@if [ "$(UNAME)" = Darwin ]; then codesign -s - --force dist/$(JNI_LIB) >/dev/null 2>&1; fi
 
 c:
-	clang -O2 -Ishim -o dist/c_demo c/main.c -Ldist -lnolang $(HOST_RPATH)
+	clang -O2 -Idist -o dist/c_demo c/main.c -Ldist -lnolang $(HOST_RPATH)
 
 cpp:
-	g++ -std=c++17 -O2 -Ishim -o dist/cpp_demo cpp/main.cpp -Ldist -lnolang $(HOST_RPATH)
+	g++ -std=c++17 -O2 -Idist -o dist/cpp_demo cpp/main.cpp -Ldist -lnolang $(HOST_RPATH)
 
 rust:
 	rustc -O -L native=$(CUR)/dist -C link-arg=-Wl,-rpath,$(CUR)/dist \

@@ -1,9 +1,9 @@
 package main
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../shim
+#cgo CFLAGS: -I${SRCDIR}/../dist
 #cgo LDFLAGS: -L${SRCDIR}/../dist -lnolang -Wl,-rpath,${SRCDIR}/../dist
-#include "nolang.h"
+#include "libnolang.h"
 */
 import "C"
 

@@ -1510,6 +1510,22 @@ type Module struct {
 	Globals    []GlobalDecl
 	FuncByName map[string]FuncID
 
+	// CABIExports is the ordered list of functions marked with #{cabi[='sym']}.
+	// LowerHIR fills it from the merged HIR package and uses it as EXTRA
+	// reachability roots (an exported function must survive even when no
+	// Nolang code calls it). codegen emits one normal-return C ABI wrapper per
+	// entry and CABIHeader emits the matching C declarations. Empty for every
+	// build that has no exports, so executable builds are bit-identical.
+	CABIExports []CABIExport
+
+	// NoMainEntry tells codegen to omit the synthesized `define i32 @main`.
+	// Set by `no build --shared`: a dynamic library has no process entry point,
+	// and exporting `main` from a dylib is both meaningless and a symbol
+	// interposition hazard for the host executable that loads it. The argc/argv
+	// globals (read by os.args) are still emitted regardless of this flag.
+	// Default false, so executable builds are unchanged.
+	NoMainEntry bool
+
 	// KnownFuncs is the set of every Nolang function name present in the HIR
 	// package (populated during lowering from the HIR func table). emitCall
 	// uses it to prefer a real function over a builtin that was only matched

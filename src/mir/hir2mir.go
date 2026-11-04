@@ -72,7 +72,11 @@ type lowerer struct {
 	hintDeclared bool
 	worklist     []string
 	lowered      map[string]bool
-	locals       map[string]ValueID
+	// cabiNames is the set of #{cabi}-exported Nolang function names. Exports
+	// are extra LowerHIR roots and are pinned non-comptime-pure so a constant
+	// call site can never fold away the only reference to the exported body.
+	cabiNames map[string]bool
+	locals    map[string]ValueID
 	// elemPlaces maps a binding that ALIASES a container element instead of
 	// owning a private slot: `x <- a` binds x to a[__i], and a match arm's
 	// identity binding (`let it = x`) inherits the same place. A read re-reads
@@ -1250,6 +1254,7 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		pkg:          pkg,
 		funcNames:    map[string]int32{},
 		lowered:      map[string]bool{},
+		cabiNames:    map[string]bool{},
 		locals:       map[string]ValueID{},
 		elemPlaces:   map[string]elemPlace{},
 		paramVals:    map[ValueID]bool{},
@@ -1574,6 +1579,12 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	// consults it.
 	l.collectAliases()
 
+	// #{cabi} exports are EXTRA reachability roots. Without this sweep a
+	// library-only function (nothing in the synthesized main calls it) is never
+	// passed to lowerFunction, so it never reaches FuncByName and there is no
+	// LLVM body for the C ABI wrapper to call.
+	l.diags = append(l.diags, l.collectCABIExports()...)
+
 	// Record every HIR function name so emitCall can prefer a real Nolang
 	// function over a builtin matched only via the bare-name fallback
 	// (e.g. module function `fs.read-dir` vs the global builtin `read-dir`).
@@ -1591,6 +1602,9 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	}
 	if entry != "" {
 		l.worklist = append(l.worklist, entry)
+	}
+	for _, e := range l.mod.CABIExports {
+		l.worklist = append(l.worklist, e.FuncName)
 	}
 	for len(l.worklist) > 0 {
 		name := l.worklist[0]
@@ -8219,6 +8233,12 @@ func (l *lowerer) computeComptimePurity() {
 		if l.funcImpure(name, map[string]bool{}) {
 			l.comptimePure[name] = false
 		}
+	}
+	// An exported function must keep a callable body even when its only Nolang
+	// call site has all-constant arguments: comptime folding may erase the call,
+	// but never the exported symbol itself.
+	for name := range l.cabiNames {
+		l.comptimePure[name] = false
 	}
 }
 

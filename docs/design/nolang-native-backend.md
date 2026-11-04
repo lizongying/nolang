@@ -82,7 +82,7 @@ main.no
 - ❌ **不做 LTO**：三端口各自一套 bitcode 分支，需要链接整套 LLVM CodeGen+LTO 库，是最大的一块依赖。
 - ❌ **不做 dSYM / PDB**：lld 本身就不生成 dSYM（由 `dsymutil` 后置生成），PDB 亦同；先做 debug info **透传**（把 DWARF/CodeView 段原样搬到输出），不自产。
 - ❌ **不做 linker script**（ELF）：`LinkerScript.cpp` 61KB + `ScriptParser.cpp` 62KB。提供最小 stub 版 `Script` 满足 `assignAddresses()` 内部调用即可。
-- ❌ **不做动态库产出**（dylib / DLL / .so 导出表）：MVP 只出可执行文件。
+- ❌ **不做动态库产出**（dylib / DLL / .so 导出表）：MVP 只出可执行文件。此条针对自研 native backend 的链接器；`no build --shared` 是另一条链路——它把 MIR 产出的 LLVM IR 交给外部 clang（`-shared -fPIC`），由 `#{cabi='symbol'}` 注解生成 C ABI wrapper 与头文件，不依赖自研 linker 的导出表能力。参见 `docs/docs/lang/host-interop.md`。
 - ❌ **不做 ICF / GC / 符号版本**：属于优化与体积特性，后置。
 - ❌ **不作为通用的目标文件工具**：不是一个替代完整 `ld` 的产品。它是"**服务 Nolang 自身 codegen 的专用后端**"。
 

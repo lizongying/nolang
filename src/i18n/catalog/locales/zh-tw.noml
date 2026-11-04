@@ -770,6 +770,14 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標讀取；若不
   'n00utq2q': 'process-exec: 無法將 arg 編組為 C 字串'
   'n08bzk5j': '結果正是 `no add <tool>@<host>/<owner>/<repo>` 會下載的東西：'
   'n0hl9vde': 'builtin %s 參數 %d: %s'
+  'n1cabi00': '`no build --shared` requires at least one #{cabi} export; annotate a top-level function with #{cabi=\'symbol\'}'
+  'n1cabi01': 'creating header directory: %w'
+  'n1cabi02': 'writing C ABI header: %w'
+  'n1cabi03': '--shared is not supported for a WASI target'
+  'n1cabi10': 'Build a shared library (.dylib/.so/.dll) exposing #{cabi} functions; also emits a C header'
+  'n1cabi11': 'Output path for the generated C ABI header (default: <output>.h)'
+  'n1cabi12': 'Use --shared with #{cabi=\'symbol\'} functions to build a shared library and its C header.'
+  'n1cabi13': '  no build --shared -o dist/libdemo.dylib main.no    shared library + dist/libdemo.h'
   'n44lxvvk': '成員 %q 是空物件: 請用 #{type = \'<struct>\'} 標註它'
   'n48cusda': `
 請手動開啟：%s

@@ -6,7 +6,7 @@ sidebar_position: 5
 
 Nolang 使用 `@` 關鍵字在包的根目錄 `lib.no` 文件中聲明導出項，外部包通過 `#` 導入時只能訪問這些已導出的符號。
 
-> **注意**：`@` 只負責 Nolang 包之間的符號導出，不會產生 C ABI 符號，也不能讓 C / C++ / Rust / Go / Java / Python / C# 直接呼叫 Nolang。反向方向見 [從宿主語言調用 Nolang](./host-interop)。
+> **注意**：`@` 只負責 Nolang 包之間的符號導出，不會產生 C ABI 符號。要讓 C / C++ / Rust / Go / Java / Python / C# 呼叫 Nolang，請改用 `#{cabi='symbol'}` 註解搭配 `no build --shared`，見 [從宿主語言調用 Nolang](./host-interop)。
 
 ## 語法
 

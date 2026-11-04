@@ -614,6 +614,41 @@ func (p *Package) AnnotationBool(id int32, key string) (present, value bool) {
 	return false, false
 }
 
+// AnnotationString returns the textual value of the named annotation attached
+// to id. present reports whether the annotation exists; value is the raw string
+// for a quoted (#{cabi='foo'}) or identifier (#{cabi=foo}) value, and "" for a
+// bare flag (#{cabi}) or a non-text value (bool/int/array/struct).
+//
+// Used by the C ABI export path: the annotation carries the public C symbol
+// name. Consumers that only need a yes/no answer should use AnnotationBool;
+// AnnotationKeys deliberately reports only whether a value is present, not what
+// it is.
+func (p *Package) AnnotationString(id int32, key string) (present bool, value string) {
+	group := p.AnnotationsOf(id)
+	if group == NoID {
+		return false, ""
+	}
+	for _, e := range p.Children(group) {
+		n := p.Node(e)
+		if n == nil || n.Kind != KAnnEntry || p.Str(n.S) != key {
+			continue
+		}
+		if n.First == NoID {
+			return true, ""
+		}
+		v := p.Node(n.First)
+		if v == nil {
+			return true, ""
+		}
+		switch v.Kind {
+		case KStrLit, KIdent:
+			return true, p.Str(v.S)
+		}
+		return true, ""
+	}
+	return false, ""
+}
+
 // Walk visits id and all of its descendants in pre-order.
 func (p *Package) Walk(id int32, fn func(id int32, n *Node) bool) {
 	n := p.Node(id)

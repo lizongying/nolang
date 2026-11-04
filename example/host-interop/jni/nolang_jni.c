@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #include "NolangDemo.h"
-#include "nolang.h"
+#include "libnolang.h"
 
 JNIEXPORT jlong JNICALL Java_NolangDemo_add
         (JNIEnv *env, jclass cls, jlong a, jlong b) {

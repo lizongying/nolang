@@ -582,9 +582,21 @@ func (m *Module) EmitLLVM() (out string, err error) {
 			return "", err
 		}
 	}
-	if mid := findMainFunc(m); mid != NoFunc {
-		if _, ok := c.fname[mid]; ok {
-			c.emitEntry(m.Func(mid))
+	// Stable C ABI wrappers for #{cabi} exports. Buffered into extraFuncsBody
+	// and flushed with the other helper functions at the end of the module.
+	if err := c.emitCABIWrappers(usedFname); err != nil {
+		return "", err
+	}
+	// The argc/argv globals belong to the module, not to the C entry: emit them
+	// unconditionally. Only a `no build --shared` module (m.NoMainEntry) omits
+	// `define i32 @main`, since a dynamic library must not export a process
+	// entry symbol that could interpose on the host executable's own main.
+	c.emitEntryGlobals()
+	if !m.NoMainEntry {
+		if mid := findMainFunc(m); mid != NoFunc {
+			if _, ok := c.fname[mid]; ok {
+				c.emitEntry(m.Func(mid))
+			}
 		}
 	}
 	// Module-level trailing section: globals and external declarations that
@@ -4828,16 +4840,12 @@ func dataStr(s string) string {
 	return b.String()
 }
 
-func (c *codegen) emitEntry(main *Function) {
-	// The nolang `main` may declare an out parameter, which is its process exit
-	// code: `main = () (out i64) { ... out = 2 }`. `_nolang_main` is emitted with
-	// that result as a leading out-pointer (see the by-reference ABI), so the C
-	// entry MUST allocate the slot, pass its address, and return the value as the
-	// i32 status. Emitting `call void @_nolang_main()` with no argument dropped
-	// the out pointer: the callee's `store ... , i64* %p0` then targets a
-	// garbage/null pointer, which -O3 folds to `unreachable` (SIGTRAP) and the
-	// epilogue (globals free + ret) is deleted — the crash behind
-	// tests/mem-safety/cross-fn-str-return-dfree.no.
+// emitEntryGlobals declares the process-wide state that the C entry fills in.
+// It is emitted for EVERY module, including shared libraries that suppress the
+// entry itself: os.args / os.arg read @nolang_argc and @nolang_argv directly
+// from codegen (src/mir/builtin_call.go), so omitting the definitions would
+// leave dangling references that only the LLVM verifier would catch.
+func (c *codegen) emitEntryGlobals() {
 	// Capture the C entry's argc/argv into module globals so the os.args /
 	// os.arg builtins (ForwardFunc args-list / args-get) can read them. The
 	// MIR backend otherwise discards them after the entry prologue.
@@ -4853,6 +4861,18 @@ func (c *codegen) emitEntry(main *Function) {
 		c.sb.WriteString("@nolang_wsa_data = global [512 x i8] zeroinitializer\n")
 		c.sb.WriteString("declare i32 @WSAStartup(i16, i8*)\n")
 	}
+}
+
+func (c *codegen) emitEntry(main *Function) {
+	// The nolang `main` may declare an out parameter, which is its process exit
+	// code: `main = () (out i64) { ... out = 2 }`. `_nolang_main` is emitted with
+	// that result as a leading out-pointer (see the by-reference ABI), so the C
+	// entry MUST allocate the slot, pass its address, and return the value as the
+	// i32 status. Emitting `call void @_nolang_main()` with no argument dropped
+	// the out pointer: the callee's `store ... , i64* %p0` then targets a
+	// garbage/null pointer, which -O3 folds to `unreachable` (SIGTRAP) and the
+	// epilogue (globals free + ret) is deleted — the crash behind
+	// tests/mem-safety/cross-fn-str-return-dfree.no.
 	c.sb.WriteString("define i32 @main(i32 %0, i8** %1) {\nentry:\n")
 	c.sb.WriteString("  store i32 %0, i32* @nolang_argc\n")
 	c.sb.WriteString("  store i8** %1, i8*** @nolang_argv\n")

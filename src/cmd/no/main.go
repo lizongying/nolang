@@ -2745,6 +2745,8 @@ func buildCommand(args []string) {
 	jsBackend := fs.Bool("js", false, i18n.P("2u63w9uc", "Use JS backend (emit JavaScript source, no LLVM toolchain required)"))
 	browserMode := fs.Bool("browser", false, i18n.P("2psk9dma", "Generate browser-targeted output (HTML + JS, requires --js)"))
 	esmCDN := fs.String("esm-cdn", "", i18n.P("pa3bgtjn", "CDN base for browser ESM import maps (default https://esm.sh; also settable via package.noml compiler.esm-cdn)"))
+	shared := fs.Bool("shared", false, i18n.P("n1cabi10", "Build a shared library (.dylib/.so/.dll) exposing #{cabi} functions; also emits a C header"))
+	header := fs.String("header", "", i18n.P("n1cabi11", "Output path for the generated C ABI header (default: <output>.h)"))
 	fs.Usage = func() {
 		fmt.Println(i18n.P("let8mtmo", "Usage: no build [flags] <file|directory>"))
 		fmt.Println("")
@@ -2761,6 +2763,7 @@ func buildCommand(args []string) {
 		fmt.Println(i18n.P("squ5w5co", "Use --browser with --js to generate browser-targeted JS and an HTML wrapper."))
 		fmt.Println(i18n.P("18uic4sz", "Use -v to emit LLVM IR (.ll) files for analysis alongside the build."))
 		fmt.Println(i18n.P("74e32kaz", "Use --llvm-capi to compile IR in-process via the LLVM C API (non-debug builds only; off by default)."))
+		fmt.Println(i18n.P("n1cabi12", "Use --shared with #{cabi='symbol'} functions to build a shared library and its C header."))
 		fmt.Println("")
 		fmt.Println(i18n.P("7tcn8wox", "Examples:"))
 		fmt.Println(i18n.P("elep1kra", "  no build                  build current directory or workspace.noml projects"))
@@ -2776,6 +2779,7 @@ func buildCommand(args []string) {
 		fmt.Println(i18n.P("yoq1krwy", "  no build --js main.no                              emit JavaScript (type erasure)"))
 		fmt.Println(i18n.P("hvuu1dxx", "  no build --js -o app.js main.no                    JS backend with explicit output"))
 		fmt.Println(i18n.P("r5fkc5h1", "  no build --js --browser main.no                    emit browser JS + HTML wrapper"))
+		fmt.Println(i18n.P("n1cabi13", "  no build --shared -o dist/libdemo.dylib main.no    shared library + dist/libdemo.h"))
 		fmt.Println("")
 		fmt.Println(i18n.P("shw0oc0z", "Third-party ESM imports (JS backend only): pull in npm packages with"))
 		fmt.Println(i18n.P("i9bcpk5g", "  # npm/lodash               the whole module object (use lodash.get(...))"))
@@ -2787,6 +2791,10 @@ func buildCommand(args []string) {
 		fmt.Println(i18n.P("capaq6dh", "another CDN with --esm-cdn (e.g. https://cdn.jsdelivr.net/npm)."))
 	}
 	_ = fs.Parse(args)
+	if *shared && (*wasmDirect || *jsBackend) {
+		fmt.Fprintln(os.Stderr, "Error: --shared requires the LLVM backend (incompatible with --js / --wasm-direct)")
+		os.Exit(1)
+	}
 
 	var inputPath string
 	if len(fs.Args()) == 0 {
@@ -2824,6 +2832,8 @@ func buildCommand(args []string) {
 		CompilerVersion:       version,
 		LDFlags:               ldFlags,
 		ESMCDN:                *esmCDN,
+		Shared:                *shared,
+		Header:                *header,
 	}
 
 	// 後端決策集中化：ResolveBackend 是唯一決策點（Direct-WASM > JS > LLVM），

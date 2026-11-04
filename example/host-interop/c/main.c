@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "nolang.h"
+#include "libnolang.h"
 
 int main(void) {
     printf("c %lld %.1f %lld\n",

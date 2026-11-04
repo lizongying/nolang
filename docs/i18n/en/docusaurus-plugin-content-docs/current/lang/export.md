@@ -6,7 +6,7 @@ sidebar_position: 5
 
 Nolang uses the `@` keyword in the package root `lib.no` file to declare exported items. External packages can only access these exported symbols when importing via `#`.
 
-> **Note**: `@` only exports symbols between Nolang packages. It does not produce C ABI symbols and does not let C / C++ / Rust / Go / Java / Python / C# call into Nolang directly. For the reverse direction, see [Calling Nolang From Host Languages](./host-interop).
+> **Note**: `@` only exports symbols between Nolang packages and does not produce C ABI symbols. To let C / C++ / Rust / Go / Java / Python / C# call into Nolang, use the `#{cabi='symbol'}` annotation with `no build --shared` instead. See [Calling Nolang From Host Languages](./host-interop).
 
 ## Syntax
 

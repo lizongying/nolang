@@ -68,6 +68,14 @@ type Transpiler struct {
 	// 快取後降至 1 次。安全性：preload 和 checker.ValidateFuncArgs 只讀不修改 AST，
 	// merge 步驟的 prefixModuleStatements/alias 改名是冪等的（已帶前綴的名稱會被跳過）。
 	fileCache map[string]*parser.Program
+	// cabiHeader is the generated C header for #{cabi} exports, filled by
+	// emitMIR after a successful EmitLLVM. Empty when the program declares no
+	// exports. `no build --shared` writes it next to the library.
+	cabiHeader string
+	// sharedLib is set by `no build --shared`. It propagates to the MIR module
+	// as NoMainEntry so the generated dynamic library does not export a C
+	// `main` symbol. Executable builds leave it false.
+	sharedLib bool
 	// astAuditDelta / astAuditByRoot: S5 門禁的觀測結果。設
 	// NOLANG_AUDIT_AST_WRITES=1 時，每個進入編譯器的 Program（新解析或快取
 	// 還原）都會在那一刻拍一份值快照（auditRegister），CompileTarget 返回時
@@ -314,6 +322,16 @@ func (t *Transpiler) LinkLibs() []string {
 	}
 	return out
 }
+
+// CABIHeader returns the generated C header text for this compilation's
+// #{cabi} exports. It is empty for programs with no exports. `no build
+// --shared` requires a non-empty header and writes it next to the library.
+func (t *Transpiler) CABIHeader() string { return t.cabiHeader }
+
+// SetShared marks this compilation as a shared-library build (`no build
+// --shared`). It must be called before Compile: emitMIR transfers the flag to
+// mir.Module.NoMainEntry before codegen runs.
+func (t *Transpiler) SetShared(v bool) { t.sharedLib = v }
 
 func (t *Transpiler) Compile(source string) (string, error) {
 	// 初始化 per-Transpiler AST 解析快取，消除單次編譯內的重复解析。
