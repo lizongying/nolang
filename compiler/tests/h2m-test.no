@@ -1906,6 +1906,85 @@ test-prefix-gate = () {
     runner.eq(ir.contains('define'), 0, 'prefix-gate no code')
 }
 
+; 位与：x & y ⇒ and i64
+test-bit-and = () {
+    src = 'b1x = (x i64, y i64) (r i64) {\n    r = x & y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-and unsup')
+    runner.eq(ir.contains('and i64'), 1, 'bit-and and')
+    runner.eq(ir.contains('define'), 1, 'bit-and code')
+}
+
+; 位或：x | y ⇒ or i64
+test-bit-or = () {
+    src = 'b2x = (x i64, y i64) (r i64) {\n    r = x | y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-or unsup')
+    runner.eq(ir.contains('or i64'), 1, 'bit-or or')
+}
+
+; 位异或：x ^ y ⇒ xor i64（双变量 ⇒ xor i64 %v, %v）
+test-bit-xor = () {
+    src = 'b3x = (x i64, y i64) (r i64) {\n    r = x ^ y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-xor unsup')
+    runner.eq(ir.contains('xor i64'), 1, 'bit-xor xor')
+}
+
+; 左移：x << 2 ⇒ shl i64
+test-bit-shl = () {
+    src = 'b4x = (x i64) (r i64) {\n    r = x << 2\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-shl unsup')
+    runner.eq(ir.contains('shl i64'), 1, 'bit-shl shl')
+}
+
+; 右移：x >> 1 ⇒ ashr i64（算术右移，与 i64 有符号语义一致）
+test-bit-shr = () {
+    src = 'b5x = (x i64) (r i64) {\n    r = x >> 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-shr unsup')
+    runner.eq(ir.contains('ashr i64'), 1, 'bit-shr ashr')
+}
+
+; 位运算嵌算术：r = (x & 15) + 1 ⇒ AND 再 ADD（验优先级树降级）
+test-bit-chain = () {
+    src = 'b6x = (x i64) (r i64) {\n    r = (x & 15) + 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-chain unsup')
+    runner.eq(ir.contains('and i64'), 1, 'bit-chain and')
+    runner.eq(ir.contains('add i64'), 1, 'bit-chain add')
+}
+
+; 门控：x / y（除法）仍不在覆盖面 ⇒ unsup（本件只收位运算，除/余留后续）
+test-bit-gate = () {
+    src = 'b7x = (x i64, y i64) (r i64) {\n    r = x / y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'bit-gate counted')
+    runner.eq(ir.contains('define'), 0, 'bit-gate no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-call-s64-scatter()
@@ -1971,6 +2050,13 @@ test-not-var()
 test-neg-nested()
 test-neg-in-expr()
 test-prefix-gate()
+test-bit-and()
+test-bit-or()
+test-bit-xor()
+test-bit-shl()
+test-bit-shr()
+test-bit-chain()
+test-bit-gate()
 test-gate()
 
 runner.summary()

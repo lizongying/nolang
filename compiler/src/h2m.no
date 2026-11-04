@@ -9,7 +9,7 @@
 ; ── 覆盖面（刻意极小，且小得可测量）─────────────────────────────
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
-;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64）/
+;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67）/
 ;         PrefixExpression（s66：-x / !x，仅 i64）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
@@ -35,7 +35,7 @@
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
 ;         算术语义仍限 i64（其余型别的值进运算符即计 unsup，不发错码）
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
-;         各臂汇成同一个结果值，本件只收语句位）、除与余、位运算、
+;         各臂汇成同一个结果值，本件只收语句位）、除与余（`/` `%`，Go 侧 `?i64` 除零→err，i64 子集未建模 option）、位清除 `&^`（无对应 op）、
 ;         前缀 `~`（s66 只收 `-` `!`）、逻辑 `&& ||`、多输出参数、泛型（c3 > 0）、带默认值的参数、
 ;         非具名型别（map / *t / 别名／[]非 i64／s62 起只 []i64 形参入形）、vec 形参作返回值（s62）、
 ;         复合赋值、非函数定义语句、方法调用（点号）、
@@ -963,6 +963,17 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 osym == '-' -> bop = OP-SUB
 
                 osym == '*' -> bop = OP-MUL
+
+                ; 位运算家族（s67：& | ^ << >>，仅 i64；&^ 位清除无对应 op 仍计 unsup）
+                osym == '&' -> bop = OP-AND
+
+                osym == '|' -> bop = OP-OR
+
+                osym == '^' -> bop = OP-XOR
+
+                osym == '<<' -> bop = OP-SHL
+
+                osym == '>>' -> bop = OP-SHR
 
                 ; 比较家族（s57：控制流的条件侧需要 0/1 值；cg 发 icmp + zext i1→i64）
                 osym == '<' -> bop = OP-CMPLT
