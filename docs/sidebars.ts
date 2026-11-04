@@ -10,7 +10,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Language",
-      items: ["lang/syntax", "lang/code-style", "lang/str", "lang/symbol", "lang/export", "lang/memory", "lang/module"],
+      items: ["lang/syntax", "lang/code-style", "lang/str", "lang/symbol", "lang/export", "lang/memory", "lang/module", "lang/host-interop"],
     },
     {
       type: "category",

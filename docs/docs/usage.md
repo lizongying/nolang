@@ -115,6 +115,8 @@ no run -cc zig
 no run -target aarch64-macos-gnu
 ```
 
+> `no build -v` 會在輸出路徑旁另外寫出原始 LLVM IR（`<輸出路徑>.ll`），但仍然只鏈接可執行檔；目前沒有 `-shared`、`-fPIC`、`-c` 或標頭檔生成選項。若要讓 C / C++ / Rust / Go / Java / Python / C# 等宿主語言呼叫 Nolang，需要把這份 IR 自行編成共享庫並加一層 C shim，完整做法見 [從宿主語言調用 Nolang](./lang/host-interop)。
+
 `no run` 的位置參數按以下順序解析：
 
 1. 已存在的 `.no` 文件 → 直接運行該文件

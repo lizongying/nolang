@@ -3657,6 +3657,8 @@ open = (dsn str) (d db-sqlite) {
 7. A name starting with `_` is private (not exported); the C ABI symbol drops the `_` prefix
 8. FFI declarations and ordinary code can be written in the same `.no` file
 
+> The reverse direction (having C / C++ / Rust / Go / Java / Python / C# call into Nolang) is covered in [Calling Nolang From Host Languages](./host-interop).
+
 ### Annotation System (`#{...}`)
 
 `#{...}` is a general annotation system, a comma-separated list of key-value pairs. It supports the following value types:

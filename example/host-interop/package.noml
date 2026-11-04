@@ -1,0 +1,13 @@
+{
+  name: 'host-interop'
+  description: 'Calling Nolang from seven host languages via a shared-library C shim'
+  license: 'Apache-2.0'
+  author: 'lizongying'
+  keywords: []
+  dependencies: []
+  compiler: {
+    link-libs: []
+  }
+  output: '/dist'
+  ignore: []
+}

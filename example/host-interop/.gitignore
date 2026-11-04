@@ -1,0 +1,6 @@
+# `make verify` build output
+dist/
+
+# dotnet build intermediate/output directories (not covered by the repo root .gitignore)
+csharp/obj/
+csharp/bin/

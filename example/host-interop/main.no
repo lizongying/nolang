@@ -1,0 +1,29 @@
+; Demo library for host-language interop via a hand-written C shim.
+; Only i64/f64 scalars: no heap allocation, no module-level heap globals,
+; and no dependency on the synthesized main's init/cleanup epilogue.
+
+; getpid supplies a RUNTIME value for the reachability anchors below.
+; LowerHIR lowers only functions reachable from the synthesized main, and
+; comptime folding erases calls whose arguments are all constants.
+#{c}
+_getpid = () (pid i32)
+
+nl-add = (a i64, b i64) (r i64) {
+    r = a + b
+}
+
+nl-scale = (x f64, k f64) (r f64) {
+    r = x * k
+}
+
+nl-sum3 = (a i64, b i64, c i64) (r i64) {
+    r = a + b + c
+}
+
+; Reachability anchors. These live in _nolang_main, which the host never
+; calls; they exist only to keep the three functions in the emitted LLVM IR.
+; Every anchor consumes `seed`, so none of them can be folded away.
+seed = _getpid()
+a0 = nl-add(seed, 2)
+s0 = nl-scale(1.5, seed)
+t0 = nl-sum3(seed, 2, 3)

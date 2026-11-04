@@ -115,6 +115,8 @@ no run -cc zig
 no run -target aarch64-macos-gnu
 ```
 
+> `no build -v` also writes the raw LLVM IR next to the output path (`<output>.ll`), but still only links an executable; there is no `-shared`, `-fPIC`, `-c` or header-generation option. To let C / C++ / Rust / Go / Java / Python / C# call into Nolang, that IR has to be compiled into a shared library with a hand-written C shim. See [Calling Nolang From Host Languages](./lang/host-interop).
+
 The `no run` argument is resolved in this order:
 
 1. an existing `.no` file -> run that file directly
