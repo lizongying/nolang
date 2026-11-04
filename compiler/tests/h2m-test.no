@@ -661,14 +661,15 @@ test-flow-gate = () {
     runner.eq(agg2.unsup > 0, 1, 'count-loop counted')
     runner.eq(ir2.contains('br label'), 0, 'count-loop no code')
 
-    ; 区间遍历 `i <- [0..n]:`：IterRange 非 0 ⇒ 不在覆盖面
-    src-rg = 'c = (n i64) (r i64) {\n    r = 0\n    i <- [0..n]: {\n        r = r + i\n    }\n}\n'
+    ; 区间的【开边界】`i <- [0..]`：缺位的那一端 Go 取 i64 型别极值补齐（实测量级不可验证），
+    ;   h2m 宁缺勿错 ⇒ 计 unsup 整函数不产码（s61 起闭区间两端齐全才入覆盖面）
+    src-rg = 'c = (n i64) (r i64) {\n    r = 0\n    i <- [0..]: {\n        r = r + 1\n    }\n}\n'
     t3 = ast.make()
     r3 = ps.parse(t3, ps.new(src-rg.to-bytes()))
     agg3 = h2m-new()
     ir3 = h2m-lower-program(t3, agg3, r3)
-    runner.eq(agg3.unsup > 0, 1, 'range-loop counted')
-    runner.eq(ir3.contains('alloca'), 0, 'range-loop no slot emitted')
+    runner.eq(agg3.unsup > 0, 1, 'range-open-bound counted')
+    runner.eq(ir3.contains('alloca'), 0, 'range-open-bound no slot emitted')
 
     ; 臂内放不了的东西：带标签的跳出（break # 1 形——ps.no 把 BREAK 留 'none' 且标签落为
     ;   孤儿节点 kind 71/27，h2m 不认识 kind 71 ⇒ 计 unsup 整函数不产码）
@@ -1049,6 +1050,239 @@ test-cnt-gate = () {
     runner.eq(ir2.contains('define'), 0, 'str-counter no code')
 }
 
+; ── s61：区间遍历升序右开 `i <- [0..5)`——11 块方向分派（init 双臂／hdr 双臂／upd 双臂）──
+; 形制钉自 tmp/probe-s61-ir.no（用例 A）：两端点只求值一次（%v12／%v13），方向由 lo <= hi 的
+; 运行期分支决定（IR 无 select ⇒ 不能像计数循环那样单块轮转），循环变量是 entry 的 alloca 槽 %s9
+; （体内 LOAD 取当前值，跨迭代存活）；三个方向判定点都复用同一对端点值 id ⇒ 端点不会每轮重算
+test-rng-asc = () {
+    src = 'ra = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..5): {\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-asc unsup')
+    runner.eq(ir.contains('define i64 @ra(i64 %v1, i64 %v2)'), 1, 'rng-asc define')
+
+    ; 循环变量槽落在 entry（cg 要求 alloca 只能在 entry）
+    runner.eq(ir.contains('%s9 = alloca i64'), 1, 'rng-asc loop-var slot in entry')
+
+    ; pre：端点各算一次，紧接着比较方向；输出参槽 %s7 与循环变量槽 %s9 是两颗不同的槽
+    runner.eq(ir.contains('%v12 = add i64 0, 0\n\t%v13 = add i64 0, 5\n\t%c18 = icmp sle i64 %v12, %v13'), 1, 'rng-asc endpoints then direction')
+    runner.eq(ir.contains('br i1 %c19, label %bb1, label %bb2'), 1, 'rng-asc direction condbr')
+
+    ; 起始值两臂：升序 lo + off、降序 lo - off（左闭 '[' ⇒ off = 0）
+    runner.eq(ir.contains('bb1:\n\t%v15 = add i64 0, 0\n\t%v16 = add i64 %v12, %v15\n\tstore i64 %v16, i64* %s9\n\tbr label %bb3'), 1, 'rng-asc init ascending')
+    runner.eq(ir.contains('bb2:\n\t%v17 = add i64 0, 0\n\t%v18 = sub i64 %v12, %v17\n\tstore i64 %v18, i64* %s9\n\tbr label %bb3'), 1, 'rng-asc init descending')
+    runner.eq(ir.contains('bb3:\n\tbr label %bb4'), 1, 'rng-asc join to header')
+
+    ; header：再判一次方向，两臂各比 i 与 hi；右开 ')' ⇒ 升序用 slt／降序用 sgt
+    runner.eq(ir.contains('bb4:\n\t%c29 = icmp sle i64 %v12, %v13'), 1, 'rng-asc header re-tests direction')
+    runner.eq(ir.contains('bb5:\n\t%v20 = load i64, i64* %s9\n\t%c32 = icmp slt i64 %v20, %v13'), 1, 'rng-asc hd-asc loads slot and slt')
+    runner.eq(ir.contains('bb6:\n\t%v22 = load i64, i64* %s9\n\t%c35 = icmp sgt i64 %v22, %v13'), 1, 'rng-asc hd-desc sgt')
+
+    ; 两臂汇入同一对目标：真进体 bb7、假出循环 bb11
+    runner.eq(ir.contains('br i1 %c33, label %bb7, label %bb11'), 1, 'rng-asc hd-asc condbr body/exit')
+    runner.eq(ir.contains('br i1 %c36, label %bb7, label %bb11'), 1, 'rng-asc hd-desc condbr body/exit')
+
+    ; 体：读的是槽（%s9）而不是 entry 的旧 SSA 值；结尾 BR 到 upd（bb8）
+    runner.eq(ir.contains('bb7:\n\t%v24 = load i64, i64* %s7\n\t%v25 = load i64, i64* %s9\n\t%v26 = add i64 %v24, %v25'), 1, 'rng-asc body reads slot')
+    runner.eq(ir.contains('store i64 %v26, i64* %s7\n\tbr label %bb8'), 1, 'rng-asc body br update')
+
+    ; update：第三处方向判定 + 两臂各 ±1 后跳回 header
+    runner.eq(ir.contains('bb8:\n\t%c42 = icmp sle i64 %v12, %v13'), 1, 'rng-asc update re-tests direction')
+    runner.eq(ir.contains('bb9:\n\t%v28 = load i64, i64* %s9\n\t%v29 = add i64 0, 1\n\t%v30 = add i64 %v28, %v29\n\tstore i64 %v30, i64* %s9\n\tbr label %bb4'), 1, 'rng-asc upd-asc steps and loops')
+    runner.eq(ir.contains('bb10:\n\t%v31 = load i64, i64* %s9\n\t%v32 = add i64 0, 1\n\t%v33 = sub i64 %v31, %v32\n\tstore i64 %v33, i64* %s9\n\tbr label %bb4'), 1, 'rng-asc upd-desc steps and loops')
+
+    ; exit：循环后继语句（此处即隐式 RET）落在 exit 块；块数恰好 11（bb0..bb11 中 bb0 为 entry）
+    runner.eq(ir.contains('bb11:\n\t%v34 = load i64, i64* %s7\n\tret i64 %v34'), 1, 'rng-asc exit ret')
+    runner.eq(ir.contains('bb12:'), 0, 'rng-asc no spare block')
+    runner.eq(ir.contains('icmp sle i64 %v20'), 0, 'rng-asc right-open not inclusive')
+}
+
+; ── s61：右闭 ']' 把两臂的比较谓词换成 sle／sge（差一个端点是否进体）──
+test-rng-closed = () {
+    src = 'rb = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..5]: {\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-closed unsup')
+    runner.eq(ir.contains('define i64 @rb(i64 %v1, i64 %v2)'), 1, 'rng-closed define')
+    runner.eq(ir.contains('%c32 = icmp sle i64 %v20, %v13'), 1, 'rng-closed hd-asc uses sle')
+    runner.eq(ir.contains('%c35 = icmp sge i64 %v22, %v13'), 1, 'rng-closed hd-desc uses sge')
+
+    ; 鉴别力：右闭绝不能沿用右开的 slt／sgt（否则少跑最后一轮）
+    runner.eq(ir.contains('icmp slt i64 %v20'), 0, 'rng-closed not slt')
+    runner.eq(ir.contains('icmp sgt i64 %v22'), 0, 'rng-closed not sgt')
+}
+
+; ── s61：左开 '(' 只改起始值的偏移量（两臂各 ±1），比较谓词仍由右括号决定 ──
+test-rng-openleft = () {
+    src = 'rc = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- (0..5]: {\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-openleft unsup')
+    runner.eq(ir.contains('define i64 @rc(i64 %v1, i64 %v2)'), 1, 'rng-openleft define')
+    runner.eq(ir.contains('bb1:\n\t%v15 = add i64 0, 1\n\t%v16 = add i64 %v12, %v15'), 1, 'rng-openleft ascending start skips lo')
+    runner.eq(ir.contains('bb2:\n\t%v17 = add i64 0, 1\n\t%v18 = sub i64 %v12, %v17'), 1, 'rng-openleft descending start skips lo')
+    runner.eq(ir.contains('%v15 = add i64 0, 0'), 0, 'rng-openleft offset not dropped')
+
+    ; 右端是 ']' ⇒ 谓词仍是 sle／sge（左开不影响终止比较）
+    runner.eq(ir.contains('%c32 = icmp sle i64 %v20, %v13'), 1, 'rng-openleft hd-asc sle')
+}
+
+; ── s61：降序区间 `[5..0)`——方向不在编译期折成常量，仍发运行期分支选臂 ──
+; Go 同形（hir2mir.go:5103 起：三处 OpLe(start,end) 各开一次分支），opt 才会把不变谓词提出循环
+test-rng-desc = () {
+    src = 'rd = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [5..0): {\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-desc unsup')
+    runner.eq(ir.contains('define i64 @rd(i64 %v1, i64 %v2)'), 1, 'rng-desc define')
+
+    ; lo=5／hi=0：方向判定写成 icmp sle 5, 0（首判即假 ⇒ 走降序臂），而不是降级器直接选臂
+    runner.eq(ir.contains('%v12 = add i64 0, 5\n\t%v13 = add i64 0, 0\n\t%c18 = icmp sle i64 %v12, %v13'), 1, 'rng-desc runtime direction test')
+
+    ; 两臂齐发：升序臂存在但运行期不被选中（宁多发不可少发，静态裁剪会让 lo<=hi 的调用点丢臂）
+    runner.eq(ir.contains('bb5:\n\t%v20 = load i64, i64* %s9\n\t%c32 = icmp slt i64 %v20, %v13'), 1, 'rng-desc asc arm still emitted')
+    runner.eq(ir.contains('bb6:\n\t%v22 = load i64, i64* %s9\n\t%c35 = icmp sgt i64 %v22, %v13'), 1, 'rng-desc desc arm emitted')
+    runner.eq(ir.contains('bb10:\n\t%v31 = load i64, i64* %s9\n\t%v32 = add i64 0, 1\n\t%v33 = sub i64 %v31, %v32'), 1, 'rng-desc desc step decrements')
+}
+
+; ── s61：变量端点 `i <- [lo..hi)`——端点从形参槽 LOAD 一次，其后各块复用同一对值 id ──
+test-rng-var = () {
+    src = 're = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [lo..hi): {\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-var unsup')
+    runner.eq(ir.contains('define i64 @re(i64 %v1, i64 %v2)'), 1, 'rng-var define')
+
+    ; 端点不是字面量：pre 块各发一条 LOAD，随即比较方向
+    runner.eq(ir.contains('%v12 = load i64, i64* %s3\n\t%v13 = load i64, i64* %s5\n\t%c18 = icmp sle i64 %v12, %v13'), 1, 'rng-var endpoints loaded once')
+
+    ; 关键鉴别：header 与 update 的方向判定直接引用 %v12／%v13（不是重新 LOAD 形参槽）
+    runner.eq(ir.contains('bb4:\n\t%c29 = icmp sle i64 %v12, %v13'), 1, 'rng-var header reuses endpoint values')
+    runner.eq(ir.contains('bb8:\n\t%c42 = icmp sle i64 %v12, %v13'), 1, 'rng-var update reuses endpoint values')
+
+    ; 鉴别力：header 与 update 的首条不是新的端点 LOAD（每轮重读形参槽会把不变谓词变依赖循环）
+    runner.eq(ir.contains('bb4:\n\t%v19 = load'), 0, 'rng-var header not reloading bounds')
+    runner.eq(ir.contains('bb8:\n\t%v27 = load'), 0, 'rng-var update not reloading bounds')
+}
+
+; ── s61：区间遍历体内 break——BR 落 exit，循环后继语句仍在 exit 块照跑 ──
+test-rng-break = () {
+    src = 'rf = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..4): {\n        i == 2 -> break\n        r = r + i\n    }\n    r = r + 100\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-brk unsup')
+    runner.eq(ir.contains('bb7:\n\t%v24 = load i64, i64* %s9\n\t%v25 = add i64 0, 2\n\t%c39 = icmp eq i64 %v24, %v25'), 1, 'rng-brk guard reads loop var slot')
+
+    ; break 臂块 bb12 首条 BR 落 exit（bb11）；同块尾是不可达的链汇聚 BR（s59 同款双 BR 形）
+    runner.eq(ir.contains('bb12:\n\tbr label %bb11\n\tbr label %bb14'), 1, 'rng-brk arm exits loop')
+
+    ; 鉴别力：break 不得落 hdr（bb4）或 upd（bb8）
+    runner.eq(ir.contains('bb12:\n\tbr label %bb4'), 0, 'rng-brk not hdr')
+    runner.eq(ir.contains('bb12:\n\tbr label %bb8'), 0, 'rng-brk not update')
+
+    ; 链汇聚块 bb14 接回 update——未触发的轮次仍要步进
+    runner.eq(ir.contains('bb14:\n\t%v27 = load i64, i64* %s7\n\t%v28 = load i64, i64* %s9\n\t%v29 = add i64 %v27, %v28\n\tstore i64 %v29, i64* %s7\n\tbr label %bb8'), 1, 'rng-brk merge to update')
+
+    ; 后继语句 +100 落在 exit 块：证明 break 是跳出循环而不是跳出函数
+    runner.eq(ir.contains('bb11:\n\t%v37 = load i64, i64* %s7\n\t%v38 = add i64 0, 100'), 1, 'rng-brk trailing after loop')
+    runner.eq(ir.contains('ret i64 %v40'), 1, 'rng-brk ret trailing value')
+}
+
+; ── s61：区间遍历体内 continue——目标是 update 块（先步进再重判），不是 hdr ──
+; 与计数循环同口径：若把 continue 接回 hdr，本轮的 ±1 被跳过 ⇒ 活锁
+test-rng-cont = () {
+    src = 'rg = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..4): {\n        i == 1 -> continue\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-cont unsup')
+
+    ; continue 臂块 BR 到 update（bb8），同块尾是不可达的汇聚 BR
+    runner.eq(ir.contains('bb12:\n\tbr label %bb8\n\tbr label %bb14'), 1, 'rng-cont arm br update')
+
+    ; 鉴别力：既不得直回 hdr（跳过步进 = 活锁），也不得落 exit（那是 break 的目标）
+    runner.eq(ir.contains('bb12:\n\tbr label %bb4'), 0, 'rng-cont not hdr')
+    runner.eq(ir.contains('bb12:\n\tbr label %bb11'), 0, 'rng-cont not exit')
+}
+
+; ── s61：`for i <- [0..3) { }` 关键字形（Condition 就是循环变量自身）──
+; ps.no:5762 会同时写下 Condition=IDENT{i} 与 IterRange，两者同义不矛盾 ⇒ 不另计形位；
+; 降级结果与 `<-` 运算符形同形（只差端点常量），钉住「两种写法走同一条路」
+test-rng-kw = () {
+    src = 'rk = (lo i64, hi i64) (r i64) {\n    r = 0\n    for i <- [0..3) {\n        r = r + i\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'rng-kw unsup')
+    runner.eq(ir.contains('define i64 @rk(i64 %v1, i64 %v2)'), 1, 'rng-kw define')
+    runner.eq(ir.contains('%v13 = add i64 0, 3\n\t%c18 = icmp sle i64 %v12, %v13'), 1, 'rng-kw endpoints and direction')
+    runner.eq(ir.contains('br i1 %c19, label %bb1, label %bb2'), 1, 'rng-kw same block shape as operator form')
+    runner.eq(ir.contains('bb11:\n\t%v34 = load i64, i64* %s7\n\tret i64 %v34'), 1, 'rng-kw exit ret')
+}
+
+; ── s61 门禁：嵌套同名区间循环／容器遍历／开边界都计 unsup 且不产码 ──
+; 嵌套同名：两层若共用一颗循环变量槽，内层会把外层的计数踩掉（Go 给内层另开一颗槽并改
+;   l.locals，但循环后再读该名仍指向内层槽），语义两边都不干净 ⇒ 宁缺勿错
+test-rng-gate = () {
+
+    ; 内外层同名 i ⇒ 活动名栈命中，整函数不产码
+    src-nest = 'gn = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..3): {\n        i <- [0..2): {\n            r = r + 1\n        }\n    }\n}\n'
+    t1 = ast.make()
+    r1 = ps.parse(t1, ps.new(src-nest.to-bytes()))
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup > 0, 1, 'rng-nest-samename counted')
+    runner.eq(ir1.contains('define'), 0, 'rng-nest-samename no code')
+
+    ; 容器遍历 `x <- xs`：IterRange 的容器源落在 kid[1]（kid[0] 为空位），取下标需 OP-LEN/OP-INDEX 两条 op
+    src-coll = 'gc = (lo i64, hi i64) (r i64) {\n    r = 0\n    xs = [1, 2, 3]\n    x <- xs: {\n        r = r + 1\n    }\n}\n'
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(src-coll.to-bytes()))
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 'rng-container counted')
+    runner.eq(ir2.contains('define'), 0, 'rng-container no code')
+
+    ; 开边界 `[0..]` 与 `(0..)`：任一端缺位即不产码（Go 用型别极值补齐，量级不可验证）
+    src-open = 'gz = (lo i64, hi i64) (r i64) {\n    r = 0\n    i <- [0..]: {\n        r = r + 1\n    }\n}\n'
+    t3 = ast.make()
+    r3 = ps.parse(t3, ps.new(src-open.to-bytes()))
+    agg3 = h2m-new()
+    ir3 = h2m-lower-program(t3, agg3, r3)
+    runner.eq(agg3.unsup > 0, 1, 'rng-open-bound counted2')
+    runner.eq(ir3.contains('define'), 0, 'rng-open-bound no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-flow-if()
@@ -1073,6 +1307,15 @@ test-cnt-break()
 test-cnt-cont()
 test-cnt-nested()
 test-cnt-gate()
+test-rng-asc()
+test-rng-closed()
+test-rng-openleft()
+test-rng-desc()
+test-rng-var()
+test-rng-break()
+test-rng-cont()
+test-rng-kw()
+test-rng-gate()
 test-gate()
 
 runner.summary()
