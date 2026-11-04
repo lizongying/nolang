@@ -26,9 +26,13 @@
 ;         自动双向（11 块方向分派）／变量端点／体内 break 落 exit 且后继照跑、continue 落 update／
 ;         关键字形 for 与运算符形同形；负例：开边界 / 嵌套同名区间循环 / 无标注的 let vec 容器遍历
 ; s62 覆盖：容器遍历 `i <- xs`（[]i64 形参作源）——五块 pre/hdr/body/upd/exit／长度只求一次／
-;         索引落合成槽 @idx<node>／vec 形参不铺 alloca %vec 而靠 entry 支配直接跨块引用／体内 break
+;         索引落合成槽 @idx<node>／vec 形参不铺 alloca %vec 而靠 entry 支配直接跳块引用／体内 break
 ;         落 exit 且后继照跑、continue 落 update／嵌套异名四颗独立槽；负例：str 源／标量源／[]str 元素源／
 ;         无标注的 let vec／体内改写循环变量（Go bindElemPlace 写回元素）／嵌套同名／vec 作返回值
+; s63 覆盖：值匹配 `x: { 1 -> …  2 -> …  -> … }`（语句位主体存）——逐臂「本臂判定块内 LOAD 主体 +
+;         OP-CMPEQ 型样」／单臂无兜底（假路直落汇聚块）／主体是局部量／臂体多陈述块／区间遍历变量
+;         作主体／值匹配臂体内再套值匹配；负例：str 主体／负数前缀型样／具名型样／表达式主体／
+;         未登记主体／布尔字面量型样
 
 # /test/runner.eq
 # /test/runner.failed-count
@@ -1465,6 +1469,175 @@ test-coll-gate = () {
     runner.eq(ir6.contains('define'), 0, 'coll-gate-elem-str no code')
 }
 
+; ── s63：三臂值匹配——逐臂在本臂判定块内 LOAD 主体并与型样发 icmp eq──
+; ⚠️ 收闸前的错码形是「型样字面量直接当布尔条件」（%c = icmp ne i64 <pat>, 0 且主体从不 load），
+;     本例同时钉住【错码形不得出现】
+test-vm-arm3 = () {
+    src = 'f = (x i64) (r i64) {\n    r = 0\n    x: {\n        1 -> r = 10\n        2 -> r = 20\n        -> r = 30\n    }\n}\n'
+    t = ast.make()
+    root = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'vm3 unsup')
+    runner.eq(ir.contains('%v8 = load i64, i64* %s2'), 1, 'vm3 arm1 loads subject')
+    runner.eq(ir.contains('%c11 = icmp eq i64 %v8, %v7'), 1, 'vm3 arm1 subject eq pattern')
+    runner.eq(ir.contains('br i1 %c12, label %bb2, label %bb3'), 1, 'vm3 arm1 condbr')
+    runner.eq(ir.contains('%c18 = icmp eq i64 %v12, %v11'), 1, 'vm3 arm2 re-loads and compares')
+    runner.eq(ir.contains('br i1 %c19, label %bb4, label %bb5'), 1, 'vm3 arm2 condbr')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'vm3 arm1 body store')
+    runner.eq(ir.contains('store i64 %v14, i64* %s4'), 1, 'vm3 arm2 body store')
+    runner.eq(ir.contains('store i64 %v15, i64* %s4'), 1, 'vm3 wildcard body store')
+    runner.eq(ir.contains('ret i64 %v16'), 1, 'vm3 merge loads result')
+
+    ; 旧错码形：拿型样字面量 %v7 本身当条件判非零 ⇒ 恒真，不得再现
+    runner.eq(ir.contains('%c11 = icmp ne i64 %v7, 0'), 0, 'vm3 pattern-not-used-as-condition')
+}
+
+; ── s63：单值样臂无兜底——假路直落汇聚块，不留空判定块──
+test-vm-nowild = () {
+    src = 'g = (x i64) (r i64) {\n    r = 7\n    x: {\n        3 -> r = 1\n    }\n}\n'
+    t = ast.make()
+    root = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'vmnw unsup')
+    runner.eq(ir.contains('%c11 = icmp eq i64 %v8, %v7'), 1, 'vmnw compare')
+    runner.eq(ir.contains('br i1 %c12, label %bb2, label %bb1'), 1, 'vmnw false to merge')
+    runner.eq(ir.contains('bb3:'), 0, 'vmnw no spare block')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'vmnw arm body store')
+    runner.eq(ir.contains('ret i64 %v11'), 1, 'vmnw ret loaded')
+}
+
+; ── s63：主体是局部量（不只有形参）——槽表前扫描已登记，校验期查到同名 i64 槽即可──
+; ⚠️ 主体初始化用【拷贝】y i64 = x 而非 y i64 = x - 1：实测 Go 侧 checker 拒「把 ?i64 赋给 i64 变量」
+;     （算术结果带 option，需就地解包），语料必须两侧都合法才能对拍
+test-vm-local = () {
+    src = 'p = (x i64) (r i64) {\n    y i64 = x\n    r = 0\n    y: {\n        1 -> r = 3\n        -> r = 4\n    }\n}\n'
+    t = ast.make()
+    root = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'vmlocal unsup')
+    runner.eq(ir.contains('store i64 %v8, i64* %s4'), 1, 'vmlocal subject slot initialized')
+    runner.eq(ir.contains('%v11 = load i64, i64* %s4'), 1, 'vmlocal loads the local slot')
+    runner.eq(ir.contains('%c16 = icmp eq i64 %v11, %v10'), 1, 'vmlocal compare')
+    runner.eq(ir.contains('br i1 %c17, label %bb2, label %bb3'), 1, 'vmlocal condbr')
+    runner.eq(ir.contains('ret i64 %v15'), 1, 'vmlocal ret loaded')
+}
+
+; ── s63：臂体是多陈述块——两条陈述同块发射，块尾单条 BR 回汇聚──
+test-vm-block = () {
+    src = 'q = (x i64) (r i64) {\n    r = 0\n    x: {\n        1 -> {\n            r = 5\n            r = r * 2\n        }\n        -> r = 1\n    }\n}\n'
+    t = ast.make()
+    root = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'vmblock unsup')
+    runner.eq(ir.contains('%c11 = icmp eq i64 %v8, %v7'), 1, 'vmblock compare')
+    runner.eq(ir.contains('store i64 %v10, i64* %s4'), 1, 'vmblock first stmt store')
+    runner.eq(ir.contains('%v13 = mul i64 %v11, %v12'), 1, 'vmblock second stmt mul')
+    runner.eq(ir.contains('store i64 %v13, i64* %s4'), 1, 'vmblock second stmt store back')
+    runner.eq(ir.contains('br label %bb1'), 1, 'vmblock arm tail br merge')
+    runner.eq(ir.contains('ret i64 %v15'), 1, 'vmblock ret loaded')
+}
+
+; ── s63：区间遍历体内套值匹配（s61 × s63）——主体就是遍历变量槽──
+test-vm-in-range = () {
+    src = 's = (n i64) (r i64) {\n    r = 0\n    i <- [0..3): {\n        i: {\n            0 -> r = r + 1\n            1 -> r = r + 10\n            -> r = r + 100\n        }\n    }\n}\n'
+    t = ast.make()
+    root = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'vmrange unsup')
+    runner.eq(ir.contains('%c35 = icmp eq i64 %v22, %v21'), 1, 'vmrange arm1 compares loop var')
+    runner.eq(ir.contains('br i1 %c36, label %bb13, label %bb14'), 1, 'vmrange arm1 condbr')
+    runner.eq(ir.contains('%c44 = icmp eq i64 %v28, %v27'), 1, 'vmrange arm2 compares')
+    runner.eq(ir.contains('%v32 = add i64 %v30, %v31'), 1, 'vmrange arm2 body adds 10')
+    runner.eq(ir.contains('%v35 = add i64 %v33, %v34'), 1, 'vmrange wildcard body adds 100')
+    runner.eq(ir.contains('%v39 = add i64 %v37, %v38'), 1, 'vmrange loop update still runs')
+    runner.eq(ir.contains('ret i64 %v43'), 1, 'vmrange exit ret')
+}
+
+; ── s63：值匹配臂体内再套值匹配（嵌套链）——内链汇聚块只拿到外链臂体的尾 BR──
+test-vm-nested = () {
+    src = 'u = (x i64, y i64) (r i64) {\n    r = 0\n    x: {\n        1 -> {\n            y: {\n                2 -> r = 8\n                -> r = 9\n            }\n        }\n        -> r = 7\n    }\n}\n'
+    t = ast.make()
+    root = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'vmnest unsup')
+    runner.eq(ir.contains('%c15 = icmp eq i64 %v11, %v10'), 1, 'vmnest outer compare')
+    runner.eq(ir.contains('br i1 %c16, label %bb2, label %bb3'), 1, 'vmnest outer condbr')
+    runner.eq(ir.contains('%c19 = icmp eq i64 %v14, %v13'), 1, 'vmnest inner compare in outer arm')
+    runner.eq(ir.contains('br i1 %c20, label %bb5, label %bb6'), 1, 'vmnest inner condbr')
+    runner.eq(ir.contains('bb4:\n\tbr label %bb1'), 1, 'vmnest inner merge carries outer arm br')
+    runner.eq(ir.contains('ret i64 %v19'), 1, 'vmnest ret loaded')
+}
+
+; ── s63 值匹配形状门禁：主体与型样只要超出「i64 变量名 + 裸整型字面量」一律整函数不产码──
+test-vm-gate = () {
+
+    ; 主体是 str：cg 的 OP-CMPEQ 只会发 icmp i64，%str 比不了
+    src-s = 'h = (s str) (r i64) {\n    r = 0\n    s: {\n        1 -> r = 1\n        -> r = 2\n    }\n}\n'
+    t1 = ast.make()
+    r1 = ps.parse(t1, ps.new(src-s.to-bytes()))
+    agg1 = h2m-new()
+    ir1 = h2m-lower-program(t1, agg1, r1)
+    runner.eq(agg1.unsup > 0, 1, 'vm-gate-str-subj counted')
+    runner.eq(ir1.contains('define'), 0, 'vm-gate-str-subj no code')
+
+    ; 型样是负数前缀式（UnaryExpression 包字面量）：本件不拆前缀，宁缺勿错
+    src-n = 'i = (x i64) (r i64) {\n    r = 0\n    x: {\n        -1 -> r = 1\n        -> r = 2\n    }\n}\n'
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(src-n.to-bytes()))
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg2.unsup > 0, 1, 'vm-gate-neg-pattern counted')
+    runner.eq(ir2.contains('define'), 0, 'vm-gate-neg-pattern no code')
+
+    ; 具名型样 `y ->`：Go 侧是绑定／变体判定而非相等比较，错当变量读会静默改语义
+    src-m = 'j = (x i64) (r i64) {\n    r = 0\n    x: {\n        y -> r = 1\n        -> r = 2\n    }\n}\n'
+    t3 = ast.make()
+    r3 = ps.parse(t3, ps.new(src-m.to-bytes()))
+    agg3 = h2m-new()
+    ir3 = h2m-lower-program(t3, agg3, r3)
+    runner.eq(agg3.unsup > 0, 1, 'vm-gate-named-pattern counted')
+    runner.eq(ir3.contains('define'), 0, 'vm-gate-named-pattern no code')
+
+    ; 主体是表达式 `n + 1: { … }`：实测 ps.no 不把它建进 Matched（主体丢失）⇒ 退化形照样计 unsup
+    src-e = 'k = (n i64) (r i64) {\n    r = 0\n    n + 1: {\n        1 -> r = 1\n        -> r = 2\n    }\n}\n'
+    t4 = ast.make()
+    r4 = ps.parse(t4, ps.new(src-e.to-bytes()))
+    agg4 = h2m-new()
+    ir4 = h2m-lower-program(t4, agg4, r4)
+    runner.eq(agg4.unsup > 0, 1, 'vm-gate-expr-subj counted')
+    runner.eq(ir4.contains('define'), 0, 'vm-gate-expr-subj no code')
+
+    ; 主体未登记（既非形参也非局部量）：槽表查不到 ⇒ 无法证明它是可读的 i64
+    src-u = 'm = (x i64) (r i64) {\n    r = 0\n    zz: {\n        1 -> r = 1\n        -> r = 2\n    }\n}\n'
+    t5 = ast.make()
+    r5 = ps.parse(t5, ps.new(src-u.to-bytes()))
+    agg5 = h2m-new()
+    ir5 = h2m-lower-program(t5, agg5, r5)
+    runner.eq(agg5.unsup > 0, 1, 'vm-gate-unknown-subj counted')
+    runner.eq(ir5.contains('define'), 0, 'vm-gate-unknown-subj no code')
+
+    ; 布尔字面量型样 `true ->`：Go 侧同样包成 subj == true，但 subj 是 i64 而 true 另建节点⇒不在本件
+    src-b = 'v = (x i64) (r i64) {\n    r = 0\n    x: {\n        true -> r = 1\n        -> r = 2\n    }\n}\n'
+    t6 = ast.make()
+    r6 = ps.parse(t6, ps.new(src-b.to-bytes()))
+    agg6 = h2m-new()
+    ir6 = h2m-lower-program(t6, agg6, r6)
+    runner.eq(agg6.unsup > 0, 1, 'vm-gate-bool-pattern counted')
+    runner.eq(ir6.contains('define'), 0, 'vm-gate-bool-pattern no code')
+}
+
 ; 调用入口（保持与下方新增函数定义的顺序无关）
 test-call-gate()
 test-flow-if()
@@ -1504,6 +1677,13 @@ test-coll-break()
 test-coll-cont()
 test-coll-nested()
 test-coll-gate()
+test-vm-arm3()
+test-vm-nowild()
+test-vm-local()
+test-vm-block()
+test-vm-in-range()
+test-vm-nested()
+test-vm-gate()
 test-gate()
 
 runner.summary()

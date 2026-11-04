@@ -24,6 +24,8 @@
 ;         continue 目标 = update（自增后再判，与 s60m 计数循环同口径）
 ;         控制流（s58）：K-SURFACE-MATCH 的语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
 ;         （臂群在 helper/aux 阵，12 aux/臂，展开成 if/elif/else 的 CONDBR 链——镜像 Go desugarSurfaceMatchToIfExpr）
+;         值匹配（s63）：同一节点的显式主体形 `x: { 1 -> a1  2 -> a2  -> b }`——主体限「已在槽表登记且槽型 i64 的
+;         裸标识符」、型样限「裸整型字面量」，逐臂在【本臂判定块内】重读主体发 OP-CMPEQ（复用 s35，零改 cg）
 ;         块终结形（s59）：return / break / continue（含 * / ** 速写经解析归一后的同形节点）——
 ;         return 走全函数共享的 ret 块（entry 零铺槽已保证未赋值输出参回零值），
 ;         break/continue 走循环目标栈（(hdr, exit) 对，限最内层循环、无标签形）；
@@ -43,6 +45,8 @@
 ;         嵌套同名区间循环（两层共用一个槽 ⇒ 内层踩掉外层计数），
 ;         带标签的 break/continue（s1 ≠ 'none'）、
 ;         带值的 return（nkid>1 且 kid[0] ≠ 0，语料中恒裸）；表达式位的链与臂体非末位终结形不产码
+;         值匹配的非收形（s63）：解构绑定 ok(v)/err(e)、'ok' 关键字臂（dot-val）、raw-cond ok(<expr>) 臂、
+;         型别臂（typePattern／typeArm）、非 i64 主体（str／vec／option）、非字面量型样（具名／-1 前缀式／布尔／字符串）
 ;
 ; ── 实参连续契约（cg 的 OP-CALL 约定，非 Go 约定）─────────────────
 ;   cg-emit-cfg-t 的 CALL 臂按 `xa[k] .. xa[k]+bs[k]-1` 读实参值 id，要求它们**连续**；
@@ -1632,12 +1636,25 @@ h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn st
     }
 }
 
-; SurfaceMatch 降级（s58）：语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
-; 实测形制（tmp/probe-s58-ast.no）：节点 nkid=1 且 kid[0] 恒为 0（ps.no 占住 Matched 位防 kid 槽别名）、
+; SurfaceMatch 降级（s58 裸链 + s63 值匹配）：语句位花括号短路链 `{ c1 -> a1  c2 -> a2  -> b }`
+;   与带主体的显式链 `x: { 1 -> a1  2 -> a2  -> b }`
+; 实测形制（tmp/probe-s58-ast.no、tmp/probe-s63-ast.no，后者钉于 tmp/s63-ast-out.txt）：节点 nkid=1——
+;   kid[0] 就是 Matched 主体：裸链为 0（ps.no 占住 Matched 位防 kid 槽别名）、显式 match 为主体节点；
 ;   s0 = 臂数的字符串、臂群在 helper/aux 区——d.hcount 臂 × 12 aux/臂，
-;   槽 4 = wildcard（'true' / 0）、槽 7 = blockBody（'true' / 0）、槽 10 = Condition 节点索引（wildcard 臂 = 0）、槽 11 = Body 节点索引
+;   槽 0/1/2/3 = binding／bindingVariant／typePattern／typeBinding（解构与型别臂，都是 str 槽）、
+;   槽 4 = wildcard（'true' / 0）、槽 5 = dot-val（'ok' 关键字臂）、槽 6 = rawCond（'ok(<expr>)' 臂）、
+;   槽 7 = blockBody（'true' / 0）、槽 8 = typeArm、槽 9 = valueCtx、
+;   槽 10 = Condition 节点索引（wildcard 臂 = 0）、槽 11 = Body 节点索引
 ; 块形制（镜像 Go desugarSurfaceMatchToIfExpr 的 if/elif/else 链）：逐臂「当前块求值条件 → CONDBR(臂体块, 下一臂判定块)」，
 ;   臂体结束一律 BR 回汇聚块；wildcard 臂不发 CONDBR，其体直接落当前块，其后的臂不可达（语言语义即短路）故不再降
+; s63 值匹配（主体存在）：Go 权威 desugar 是 `raw-a[i] == 0 -> cond = ps-mk-eq(t, subj-node, pat-a[i])`
+;   （ps.no:10372），即每臂比「主体 == 型样」，且主体节点被每臂重复引用 ⇒ noc 侧同样在【本臂判定块内】
+;   各读一次主体（块必须是指令序连续段，把某块发的 LOAD 结果拿到别的块用会破支配关系）
+; ⚠️ 本件只收「主体 = i64 变量名 + 型样 = 裸整型字面量」一形：解构绑定、'ok' 关键字臂（dot-val）、
+;   raw-cond `ok(<expr>)`、typePattern／typeArm、非 i64 主体（str／vec／option）、非字面量型样
+;   （具名型样、负数前缀式、布尔／字符串字面量）一律走形状门禁 ⇒ 整函数不产码
+; ⚠️ 收闸前的行为是【静默错码】不是 unsup：主体被丢、型样字面量当布尔条件 ⇒ `1 -> …` 恒真
+;   （实测 tmp/probe-s63-now.no：unsup=0、%c10 = icmp ne i64 1, 0、主体 %v1 从未 load）
 ; ⚠️ 先跑整链形状前置校验再发指令：cg 要求每块都是指令序的**连续段**且每个被引用的块至少拿到一条终结指令，
 ;   半路放弃会在 IR 里留下「有跳转无指令」的块 ⇒ opt 报标签未定义，所以不合格就地整函数不产码
 ; t: AST arena
@@ -1649,9 +1666,30 @@ h2m-lower-coll = (t ast, c h2m-ctx, sg h2m-sigs, n i64, src i64, body i64, vn st
 h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     d = ast.nd-at(t, n)
     arms = d.hcount
+    sname = ''
+    vmode = 0
     arms <= 0 -> h2m-mark(c)
     arms > 0 -> {
         bad = 0
+
+        ; s63：主体判定——裸链 kid[0] = 0（占位），显式 match kid[0] = 主体节点
+        ;   主体只认【已在槽表登记且槽型 i64 的裸标识符】：查表在发指令之前完成，校验期不发 LOAD
+        subj = h2m-kid-i(t, n, 0)
+        subj > 0 -> {
+            vmode = 1
+            sd = ast.nd-at(t, subj)
+            sd.kind != asp.K-IDENTIFIER || sd.nkid != 0 -> bad = 1
+            bad == 0 -> {
+                sname = ast.str-at(t, sd.s0)
+                si = h2m-name-find(c, sname)
+                si < 0 -> bad = 1
+                si >= 0 -> {
+                    sty = c.tys[si] #{index-out=zero}
+                    sty != TY-I64 -> bad = 1
+                }
+            }
+        }
+
         j = 0
         (j < arms && bad == 0) {
 
@@ -1665,6 +1703,21 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             wi > 0 -> {
                 last-j = j + 1
                 last-j < arms -> bad = 1
+            }
+
+            ; s63 值匹配臂群门禁：除 wildcard 外只认裸整型字面量型样，带任何解构／型别／raw-cond 标记即出局
+            vmode == 1 -> {
+                ast.aux-at(t, hb + 0) != 0 -> bad = 1
+                ast.aux-at(t, hb + 1) != 0 -> bad = 1
+                ast.aux-at(t, hb + 2) != 0 -> bad = 1
+                ast.aux-at(t, hb + 3) != 0 -> bad = 1
+                ast.aux-at(t, hb + 5) != 0 -> bad = 1
+                ast.aux-at(t, hb + 6) != 0 -> bad = 1
+                ast.aux-at(t, hb + 8) != 0 -> bad = 1
+                wi <= 0 -> {
+                    pd = ast.nd-at(t, cn)
+                    pd.kind != asp.K-INTEGER-LITERAL || pd.nkid != 0 -> bad = 1
+                }
             }
 
             #{overflow=wrap}
@@ -1695,7 +1748,19 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                     stop = 1
                 }
                 wild == 0 -> {
-                    cv = h2m-lower-expr(t, c, sg, cn)
+
+                    ; 型样求值 → （有主体时）与主体值发 OP-CMPEQ；裸链仍拿条件本身（s58 路）
+                    pv = h2m-lower-expr(t, c, sg, cn)
+                    cv = pv
+                    vmode == 1 && pv > 0 -> {
+                        sv = h2m-var-read(c, sname)
+                        sv > 0 -> {
+                            eqv = h2m-alloc(c, TY-I64)
+                            h2m-emit(c, OP-CMPEQ, eqv, sv, pv, '', TY-I64)
+                            cv = eqv
+                        }
+                        sv <= 0 -> cv = 0
+                    }
                     cv == 0 -> {
                         h2m-mark(c)
                         stop = 1
