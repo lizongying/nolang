@@ -2136,15 +2136,133 @@ test-arith-u64-add-gate = () {
     runner.eq(ir.contains('define'), 0, 'arith-u64-add-gate no code')
 }
 
-; s76 门禁：u64 的 '>' 不放行——无符號比较（icmp ult 路）属后续件，本件仅除／模
-test-arith-u64-cmp-gate = () {
-    src = 'u6c = (x u64, y u64) (r i64) {\n    r = x > y\n}\n'
+; s77 门禁：u64 的位与仍不放行——本件只解除比較族（icmp u* 路），位运算族留给后续件
+;   （s76 曾在此钉「u64 '>' 不放行」的门禁，s77 已解除，门禁下移到位与）
+test-arith-u64-bit-gate = () {
+    src = 'u6b = (x u64, y u64) (r u64) {\n    r = x & y\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup > 0, 1, 'arith-u64-cmp-gate counted')
-    runner.eq(ir.contains('define'), 0, 'arith-u64-cmp-gate no code')
+    runner.eq(agg.unsup > 0, 1, 'arith-u64-bit-gate counted')
+    runner.eq(ir.contains('define'), 0, 'arith-u64-bit-gate no code')
+}
+
+; ── u64 比较族（s77）────────────────────────────────────────
+; s77：u64 的 '<' 放行 ⇒ OP-CMPLTU（icmp ult i64 + zext i1→i64），dest 恒 TY-I64
+;   （镜像 Go hir2mir.go 的 post-lowering 路由 OpLt⇒OpULt：任一侧 sourceUnsigned 即走无符號；
+;    有符號 slt 会把最高位为 1 的 u64 当负数而误序）
+test-cmp-u64-lt = () {
+    src = 'u7t = (x u64, y u64) (r i64) {\n    r = x < y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-lt unsup')
+    runner.eq(ir.contains('icmp ult i64'), 1, 'cmp-u64-lt ult')
+    runner.eq(ir.contains('icmp slt i64'), 0, 'cmp-u64-lt not slt')
+    runner.eq(ir.contains('zext i1'), 1, 'cmp-u64-lt zext')
+}
+
+; s77：u64 的 '<=' 放行 ⇒ OP-CMPLEU（icmp ule i64）
+test-cmp-u64-le = () {
+    src = 'u7u = (x u64, y u64) (r i64) {\n    r = x <= y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-le unsup')
+    runner.eq(ir.contains('icmp ule i64'), 1, 'cmp-u64-le ule')
+    runner.eq(ir.contains('icmp sle i64'), 0, 'cmp-u64-le not sle')
+}
+
+; s77：u64 的 '>' 放行 ⇒ OP-CMPGTU（icmp ugt i64）
+test-cmp-u64-gt = () {
+    src = 'u7v = (x u64, y u64) (r i64) {\n    r = x > y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-gt unsup')
+    runner.eq(ir.contains('icmp ugt i64'), 1, 'cmp-u64-gt ugt')
+    runner.eq(ir.contains('icmp sgt i64'), 0, 'cmp-u64-gt not sgt')
+}
+
+; s77：u64 的 '>=' 放行 ⇒ OP-CMPGEU（icmp uge i64）
+test-cmp-u64-ge = () {
+    src = 'u7w = (x u64, y u64) (r i64) {\n    r = x >= y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-ge unsup')
+    runner.eq(ir.contains('icmp uge i64'), 1, 'cmp-u64-ge uge')
+    runner.eq(ir.contains('icmp sge i64'), 0, 'cmp-u64-ge not sge')
+}
+
+; s77：u64 的 '==' 走原路 OP-CMPEQ——Go 口径「eq/ne 与符号无关（同位比较）」，
+;   hir2mir 的无符號重映射刻意不含 OpEq/OpNe ⇒ 断言不得出现任何 u* 谓词
+test-cmp-u64-eq = () {
+    src = 'u7x = (x u64, y u64) (r i64) {\n    r = x == y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-eq unsup')
+    runner.eq(ir.contains('icmp eq i64'), 1, 'cmp-u64-eq eq')
+    runner.eq(ir.contains('icmp ult i64'), 0, 'cmp-u64-eq no ult')
+}
+
+; s77：u64 的 '!=' 走原路 OP-CMPNE（同上：ne 亦与符号无关）
+test-cmp-u64-ne = () {
+    src = 'u7y = (x u64, y u64) (r i64) {\n    r = x != y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-ne unsup')
+    runner.eq(ir.contains('icmp ne i64'), 1, 'cmp-u64-ne ne')
+    runner.eq(ir.contains('icmp ule i64'), 0, 'cmp-u64-ne no ule')
+}
+
+; s77：一侧 u64 × 整字面量同走无符號比较（镜像 sourceUnsigned(lv) || sourceUnsigned(rv) 的任一侧判据）
+test-cmp-u64-lit = () {
+    src = 'u7z = (x u64) (r i64) {\n    r = x < 2\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-lit unsup')
+    runner.eq(ir.contains('icmp ult i64'), 1, 'cmp-u64-lit ult')
+}
+
+; s77：mem 模式下的 u64 比较——操作数出自 entry 块 alloca 槽，跨块 LOAD 后喂 icmp uge
+test-cmp-u64-mem = () {
+    src = 'u7n = (x u64, y u64, n i64) (r i64) {\n    r = x >= y\n    n > 0 -> n = n - 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-mem unsup')
+    runner.eq(ir.contains('alloca i64'), 1, 'cmp-u64-mem alloca')
+    runner.eq(ir.contains('load i64, i64*'), 1, 'cmp-u64-mem load')
+    runner.eq(ir.contains('icmp uge i64'), 1, 'cmp-u64-mem uge')
+}
+
+; s77 🔴 前扫描耦合：比较 infix 的槽宽必推 TY-I64（不是 TY-U64）——
+;   h2m-scan 用 h2m-ty-of(RHS) 独立登记 let 目标，而降级侧 dest 恒 TY-I64；
+;   若 ty-of 沿用 s76 的「整族含 u64 ⇒ U64」，f 会铺成 U64 槽，随后 f = f + 1 写 I64 值
+;   ⇒ h2m-var-write 型别不符计 unsup（注册模式绿、mem 模式红的正是这条耦合）
+test-cmp-u64-slot-i64 = () {
+    src = 'u7s = (x u64, y u64) (r i64) {\n    f = x > y\n    x > 0 -> f = f + 1\n    r = f\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-u64-slot-i64 unsup')
+    runner.eq(ir.contains('icmp ugt i64'), 1, 'cmp-u64-slot-i64 ugt')
+    runner.eq(ir.contains('add i64'), 1, 'cmp-u64-slot-i64 i64 add')
+    runner.eq(ir.contains('store i64'), 1, 'cmp-u64-slot-i64 store')
 }
 
 ; s75 门禁：f64 '%' 不放行（is-arith 不含 OP-MOD， frem 路径未解锁）⇒ 诚实 unsup
@@ -2532,7 +2650,16 @@ test-arith-u64-mod-plain()
 test-arith-u64-div-lit()
 test-arith-u64-div-mem()
 test-arith-u64-add-gate()
-test-arith-u64-cmp-gate()
+test-arith-u64-bit-gate()
+test-cmp-u64-lt()
+test-cmp-u64-le()
+test-cmp-u64-gt()
+test-cmp-u64-ge()
+test-cmp-u64-eq()
+test-cmp-u64-ne()
+test-cmp-u64-lit()
+test-cmp-u64-mem()
+test-cmp-u64-slot-i64()
 test-arith-f64-mod-gate()
 test-cmp-f64-lt()
 test-cmp-f64-eq()

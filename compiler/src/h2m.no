@@ -34,7 +34,7 @@
 ;         三者都要求是本块最后一条陈述（其后陈述不可达 ⇒ 计 unsup，同 s58 兜底不在末位纪律）；
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
 ;         算术语义：二元 + - * 与六个比较符仅 i64（其余型别的值进运算符即计 unsup，不发错码）；
-;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；s72：六个比较符亦接受 f64 操作数（发 fcmp 后 zext i1→i64，结果恒 i64）；位运算/移位/逻辑仍不收 f64
+;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；s72：六个比较符亦接受 f64 操作数（发 fcmp 后 zext i1→i64，结果恒 i64）；位运算/移位/逻辑仍不收 f64；s76：u64 的 '/' '%' 经无符號重映射放行（OP-DIVU/OP-MODU，dest TY-U64）；s77：六个比较符亦接受 u64 操作数（< <= > >= 重映射为 OP-CMP*U 发 icmp u*，== != 與符號无关保持原 op，结果恒 i64）；u64 位运算/移位/逻辑仍不收
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）、带默认值的参数、
@@ -729,9 +729,17 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
             a == TY-I64 && b == TY-I64 -> code = TY-I64
 
             ; s76：整族含 u64（任一侧 TY-U64、另一侧整族）⇒ TY-U64，与降级侧 uty 同口径——
-            ;   槽宽共用 alloca i64，型别码只供槽登记；非除模 op（如 u64 '+'）在此照样推成 U64 无害：
+            ;   槽宽共用 alloca i64，型别码只供槽登记；非除模的非比較 op（如 u64 '+'）在此照样推成 U64 无害：
             ;   降级侧必 mark ⇒ 整函数不产码（与本文件开头「槽宽推错无害」同理）
-            (a == TY-U64 || b == TY-U64) && (a == TY-I64 || a == TY-U64) && (b == TY-I64 || b == TY-U64) -> code = TY-U64
+            ; s77 🔴 比较族例外：整族含 u64 但 op 是比较符 ⇒ 推 TY-I64（不是 U64）——
+            ;   降级侧比较的 dest 恒 TY-I64（结果 0/1），而 h2m-var-write 只接受 st == vt；
+            ;   若这里仍推 U64，`f = x > y`（x,y u64）会把 f 铺成 U64 槽，随后对 f 的 i64 写全部计 unsup
+            ;   ——与降级侧 s77 的 OP-CMP*U 臂同口径，两条路必须一起改
+            (a == TY-U64 || b == TY-U64) && (a == TY-I64 || a == TY-U64) && (b == TY-I64 || b == TY-U64) -> {
+                osu = ast.str-at(t, d.s0)
+                osu == '<' || osu == '>' || osu == '<=' || osu == '>=' || osu == '==' || osu == '!=' -> code = TY-I64
+                osu != '<' && osu != '>' && osu != '<=' && osu != '>=' && osu != '==' && osu != '!=' -> code = TY-U64
+            }
 
             ; s74：f64 双侧按操作符分族，与降级侧 dest 型别同步——算术族 + - * / ⇒ TY-F64；比较族 ⇒ TY-I64；
             ;   位/移位/逻辑不推（留 -1 ⇒ 铺槽失败整函数 unsup，与降级侧族门禁同口径）
@@ -1047,7 +1055,8 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ;   f64 侧：仅「算术族」与「比较族」放行——
             ;     - 算术 + - * / ⇒ 发 fadd/fsub/fmul/fdiv double，dest 记 TY-F64（s71）
             ;     - 比较 < > <= >= == != ⇒ 发 fcmp 后 zext i1→i64，dest 记 TY-I64（s72，比较结果恒 i64 非 f64）
-            ;   u64 侧（s76）：仅 '/' '%' 经 uty 重映射为 OP-DIVU/OP-MODU 放行，dest 记 TY-U64；其余 u64 二元 op 仍门禁
+            ;   u64 侧（s76 除模 / s77 比較）：'/' '%' 经 uty 重映射为 OP-DIVU/OP-MODU，dest 记 TY-U64；
+            ;     六個比較符经 uty 重映射为 OP-CMP*U（eq/ne 除外），dest 记 TY-I64；其余 u64 二元 op 仍门禁
             ;   位运算/移位/逻辑（& | ^ << >> && ||）于 f64 不落任一路 ⇒ 计 unsup（收紧 s71 曾过宽的 f64 臂）
             ;   混合（一 i64 一 f64）或任一 str ⇒ ity、fty、uty 皆 0 ⇒ 计 unsup
             ity = 1
@@ -1078,6 +1087,14 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == OP-DIV && uty == 1 -> bop = OP-DIVU
             bop == OP-MOD && uty == 1 -> bop = OP-MODU
 
+            ; s77：无符號比較分派——uty 下 < <= > >= 重映射（镜像 Go 同段的 OpLt⇒OpULt、OpLe⇒OpULe、
+            ;   OpGt⇒OpUGt、OpGe⇒OpUGe：有符號謂詞会把最高位为 1 的 u64 当负数而误序）；
+            ;   '==' '!=' 不参与重映射——Go 口径「eq/ne 與符號无关（同位比較）」，保持 OP-CMPEQ/CMPNE
+            bop == OP-CMPLT && uty == 1 -> bop = OP-CMPLTU
+            bop == OP-CMPLE && uty == 1 -> bop = OP-CMPLEU
+            bop == OP-CMPGT && uty == 1 -> bop = OP-CMPGTU
+            bop == OP-CMPGE && uty == 1 -> bop = OP-CMPGEU
+
             ; bop 归类（s72）：算术族 vs 比较族（决定 f64 侧 dest 型别 TY-F64 vs TY-I64）
             is-arith = 0
             is-cmp = 0
@@ -1091,6 +1108,13 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == OP-CMPLE -> is-cmp = 1
             bop == OP-CMPGT -> is-cmp = 1
             bop == OP-CMPGE -> is-cmp = 1
+
+            ; s77：重映射後的无符號比較同属比較族（dest 恒 TY-I64）——歸類在重映射之後，
+            ;   故这四行只可能在 uty==1 時命中；fty==1（两侧 f64）与 uty==1（含 u64）互斥，不会误开 f64 臂
+            bop == OP-CMPLTU -> is-cmp = 1
+            bop == OP-CMPLEU -> is-cmp = 1
+            bop == OP-CMPGTU -> is-cmp = 1
+            bop == OP-CMPGEU -> is-cmp = 1
 
             ; i64：全部二元 op 放行（s75 起含 OP-DIV/OP-MOD ⇒ dest TY-I64，cg 发带除零護欄的 sdiv/srem）
             ;   ⚠️ 口径：護欄对应 Go 非 option（plain）路径——除零结果定义化为 0 并 stderr 报告；
@@ -1127,6 +1151,17 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop > 0 && lv > 0 && rv > 0 && uty == 1 && (bop == OP-DIVU || bop == OP-MODU) -> {
                 mid = h2m-alloc(c, TY-U64)
                 h2m-emit(c, bop, mid, lv, rv, '', TY-U64)
+                v = mid
+                ok-u = 1
+            }
+
+            ; u64 比較族（s77）：< <= > >= 已经 uty 重映射为 OP-CMP*U（cg 发 icmp ult/ule/ugt/uge + zext i1→i64）；
+            ;   == != 與符號无关，保持 OP-CMPEQ/CMPNE（cg 发 icmp eq/ne i64，槽宽同为 i64）；
+            ;   dest 恒 TY-I64——比較结果是 0/1 而非 u64，镜像 Go 的 resTyp（compare 结果固定整型）
+            ;   u64 的位運算/移位/逻辑不落此臂 ⇒ 仍计入下方 mark（本件仅解除比較族）
+            bop > 0 && lv > 0 && rv > 0 && uty == 1 && is-cmp == 1 -> {
+                mid = h2m-alloc(c, TY-I64)
+                h2m-emit(c, bop, mid, lv, rv, '', TY-I64)
                 v = mid
                 ok-u = 1
             }
