@@ -6408,29 +6408,6 @@ func (c *codegen) emitCharClamp(dstVal ValueID, val, lt string) string {
 func (c *codegen) emitNot(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
-	src := inst.Args[0]
-	srcLT, _ := c.ptype(src)
-	srcSlot := c.valSlot[src]
-	// DBG-NOT: capture recorded types when operand slot type disagrees with dst.
-	if os.Getenv("NOLANG_DBG_NOT") != "" {
-		rawOfTID := func(t TypeID) string {
-			if t == NoType {
-				return "NoType"
-			}
-			if ty := c.mod.Type(t); ty != nil {
-				return ty.Raw
-			}
-			return "?"
-		}
-		curf := c.mod.Func(c.cf)
-		var dstTID, srcTID TypeID
-		if curf != nil {
-			dstTID = curf.LocalTypes[inst.Dst]
-			srcTID = curf.LocalTypes[src]
-		}
-		fmt.Fprintf(os.Stderr, "[DBG-NOT] func=%s dst=v%d dstLT=%s dstLocal=%s src=v%d srcLT=%s srcLocal=%s srcSlot=%q\n",
-			c.fname[c.cf], inst.Dst, lt, rawOfTID(dstTID), src, srcLT, rawOfTID(srcTID), srcSlot)
-	}
 	vT, v := c.loadVal(inst.Args[0])
 	v = c.coerceInt(v, vT, lt)
 	fmt.Fprintf(c.sb, "  %%c%d = xor %s 1, %s\n", inst.Dst, lt, v)
@@ -6670,10 +6647,6 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	slot := c.valSlot[inst.Dst]
 	aT, aV := c.loadVal(inst.Args[0])
 	bT, bV := c.loadVal(inst.Args[1])
-	if os.Getenv("NOLANG_DBG_CMP") != "" {
-		fmt.Fprintf(os.Stderr, "[DBG-CMP] func=%s op=%v dst=v%d lt=%s aV=%s aT=%s bV=%s bT=%s tagOnly=%v\n",
-			c.fname[c.cf], inst.Op, inst.Dst, lt, aV, aT, bV, bT, inst.TagOnly)
-	}
 	// Option operands. Which half of the `{ tag, payload }` struct is compared
 	// depends on the OTHER side:
 	//
@@ -8086,64 +8059,6 @@ func (c *codegen) emitMove(inst *Inst) error {
 			if sty := c.mod.Type(sv.Type); sty != nil && sty.Kind == KindVoid {
 				return nil
 			}
-		}
-		// DBG-MOVE-NOSLOT: the move source value has no slot in THIS function,
-		// i.e. its ValueID does not belong here (cross-function leak / stale id).
-		if f := c.mod.Func(c.cf); f != nil {
-			sv := c.mod.Value(inst.Args[0])
-			var sinfo string
-			if sv != nil {
-				if sty := c.mod.Type(sv.Type); sty != nil {
-					sinfo = fmt.Sprintf("srctype raw=%q kind=%v elem=%d", sty.Raw, sty.Kind, sty.Elem)
-				} else {
-					sinfo = fmt.Sprintf("srctype tid=%d (no type)", sv.Type)
-				}
-			} else {
-				sinfo = "src value NOT in module Values"
-			}
-			// Scan for the DEFINING instruction of the source value to detect
-			// a cross-function value leak (ValueID used outside its owner func).
-			defFunc := -1
-			defOp := ""
-			var defInt int64
-			var defStr string
-			var defTypeID TypeID
-			for fid := range c.mod.Funcs {
-				ff := c.mod.Func(FuncID(fid))
-				if ff == nil {
-					continue
-				}
-				for _, bid := range ff.Blocks {
-					bb := c.mod.Block(bid)
-					if bb == nil {
-						continue
-					}
-					for _, iid := range bb.Insts {
-						ii := c.mod.Inst(iid)
-						if ii != nil && ii.Dst == inst.Args[0] {
-							defFunc = int(fid)
-							defOp = ii.Op.String()
-							defInt = ii.Int
-							defStr = ii.Str
-							defTypeID = ii.Type
-						}
-					}
-				}
-			}
-			// Dst value details.
-			dv := c.mod.Value(dstVal)
-			var dinfo string
-			if dv != nil {
-				if dty := c.mod.Type(dv.Type); dty != nil {
-					dinfo = fmt.Sprintf("dsttype raw=%q kind=%v", dty.Raw, dty.Kind)
-				}
-			}
-			if dt, ok := f.LocalTypes[dstVal]; ok {
-				if dty := c.mod.Type(dt); dty != nil {
-					dinfo += fmt.Sprintf(" dstLocal raw=%q kind=%v", dty.Raw, dty.Kind)
-				}
-			}
-			fmt.Fprintf(os.Stderr, "DBG-MOVE-NOSLOT func=%d name=%q src=%d dst=%d %s defFunc=%d defOp=%q defInt=%d defStr=%q defTypeID=%d %s\n", c.cf, f.Name, inst.Args[0], dstVal, sinfo, defFunc, defOp, defInt, defStr, defTypeID, dinfo)
 		}
 		c.fail("move source has no slot in func %d", c.cf)
 		return i18n.Errorf("t5rup04t", "move src slot v%d -> v%d", inst.Args[0], dstVal)
@@ -17476,18 +17391,6 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dReg, r2)
 			fmt.Fprintf(c.sb, "  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg)
 		default:
-			// DBG-EPRINT-BAD: capture the mis-typed operand so we can trace where
-			// its LocalTypes entry was assigned.
-			if f := c.mod.Func(c.cf); f != nil {
-				tid := f.LocalTypes[a]
-				if ty := c.mod.Type(tid); ty != nil {
-					fmt.Fprintf(os.Stderr, "DBG-EPRINT-BAD arg=%d func=%d name=%q lt=%s tid=%d raw=%q kind=%v elem=%d\n",
-						a, c.cf, f.Name, lt, tid, ty.Raw, ty.Kind, ty.Elem)
-				} else {
-					fmt.Fprintf(os.Stderr, "DBG-EPRINT-BAD arg=%d func=%d name=%q lt=%s tid=%d (no type)\n",
-						a, c.cf, f.Name, lt, tid)
-				}
-			}
 			c.fail("eprint expects str/i64/byte/char/bool arg, got %s", lt)
 			return i18n.Errorf("w9ajg8ow", "eprint expects str/i64/byte/char/bool arg, got %s", lt)
 		}

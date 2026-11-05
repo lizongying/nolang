@@ -1394,6 +1394,17 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool)
 		return nil
 	}
 	root := unwrapLowerExpr(ls.Value)
+	// 布林結果的 infix（比較 == != < <= > >=、邏輯 && ||）不是「可錯算術」：
+	// 比較在 emitCmp 直接對 ?T 取 payload 比較並得到 bool，邏輯運算同理，兩者
+	// 都不傳遞 nil/err。若讓它們走本 pass 的 option 捕獲，下方 switch 會把
+	// inner 硬編碼成 "i64"，使 `b = lb == 10` 的 b 合成為 ?i64 並生成
+	// ok/err/nil 捕獲鏈；後續 `!b` 便把 %option 交給 `xor i1`，LLVM 驗證
+	// 直接失敗（'%lv.N' defined with type '%option' but expected 'i1'）。
+	// 安全索引越界的 nil 由 emitCmp 的 payload 比較自然給出 false（見
+	// mir/index_compare_test.go 的語言契約），不需要、也不應該往外傳播 option。
+	if inf, isInf := root.(*InfixExpression); isInf && isBoolResultInfixOperator(inf.Operator) {
+		return nil
+	}
 	// 根為算術（`+ - * / %`）且已帶型別節點（inferOptionArith 剛合成的推斷型別，
 	// 或用戶顯式寫的 ?T）→ 本 pass 不介入。
 	//
@@ -1729,6 +1740,20 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 func isOptionArithOperator(op string) bool {
 	switch op {
 	case "+", "-", "*", "/", "%":
+		return true
+	}
+	return false
+}
+
+// isBoolResultInfixOperator reports infix operators whose result is a plain
+// bool (comparisons and logical connectives). Unlike the D6 arithmetic family,
+// these CONSUME their option operands: emitCmp compares the ok-payload, and a
+// nil/err operand simply makes the comparison false. They therefore yield a
+// bool, not a ?T, and must not be rewritten into an option capture chain by
+// maybeCaptureOptionAssign. See the comment at that call site.
+func isBoolResultInfixOperator(op string) bool {
+	switch op {
+	case "==", "!=", "<", "<=", ">", ">=", "&&", "||":
 		return true
 	}
 	return false
