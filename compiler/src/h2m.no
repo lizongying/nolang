@@ -9,7 +9,7 @@
 ; ── 覆盖面（刻意极小，且小得可测量）─────────────────────────────
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
-;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67，s79 起 u64 亦放行——uty 下 >> 重映射 OP-SHRU 发 lshr、其余发裸 and/or/xor/shl i64；逻辑 && || s68，复用 OP-AND/OR（u64 仍门禁）；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' 仍门禁）/
+;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67，s79 起 u64 亦放行——uty 下 >> 重映射 OP-SHRU 发 lshr、其余发裸 and/or/xor/shl i64；s80：'>>' 无条件重映射 OP-SHRU——i64 侧亦发 lshr，镜像 Go OpShr 恒逻辑移位，s35 的 i64=ashr 设计被推翻，cg 的 ashr 臂转死代码）；逻辑 && || s68，复用 OP-AND/OR（u64 仍门禁）；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' 仍门禁）/
 ;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
@@ -34,7 +34,7 @@
 ;         三者都要求是本块最后一条陈述（其后陈述不可达 ⇒ 计 unsup，同 s58 兜底不在末位纪律）；
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
 ;         算术语义：二元 + - * 与六个比较符仅 i64（其余型别的值进运算符即计 unsup，不发错码）；
-;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；s72：六个比较符亦接受 f64 操作数（发 fcmp 后 zext i1→i64，结果恒 i64）；位运算/移位/逻辑仍不收 f64；s76：u64 的 '/' '%' 经无符號重映射放行（OP-DIVU/OP-MODU，dest TY-U64）；s77：六个比较符亦接受 u64 操作数（< <= > >= 重映射为 OP-CMP*U 发 icmp u*，== != 與符號无关保持原 op，结果恒 i64）；s78：u64 的 '+ - *' 放行（不重映射，64 位宽下签／无签位元相同，dest TY-U64 发裸 add/sub/mul i64）；u64 位运算/移位/逻辑仍不收
+;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；s72：六个比较符亦接受 f64 操作数（发 fcmp 后 zext i1→i64，结果恒 i64）；位运算/移位/逻辑仍不收 f64；s76：u64 的 '/' '%' 经无符號重映射放行（OP-DIVU/OP-MODU，dest TY-U64）；s77：六个比较符亦接受 u64 操作数（< <= > >= 重映射为 OP-CMP*U 发 icmp u*，== != 與符號无关保持原 op，结果恒 i64）；s78：u64 的 '+ - *' 放行（不重映射，64 位宽下签／无签位元相同，dest TY-U64 发裸 add/sub/mul i64）；s79：u64 位运算/移位放行（'& | ^ <<' 发裸 and/or/xor/shl i64，'>>' 经 OP-SHRU 发 lshr）；s80：'>>' 改无条件重映射 OP-SHRU（i64 侧同发 lshr，与 Go 对齐）；u64 逻辑族仍不收
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）、带默认值的参数、
@@ -1017,7 +1017,8 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                 osym == '%' -> bop = OP-MOD
 
-                ; 位运算家族（s67：& | ^ << >> 双侧 i64；s79 起 u64 亦放行——见下方 uty 位运算臂；&^ 位清除无对应 op 仍计 unsup）
+                ; 位运算家族（s67：& | ^ << >> 双侧 i64；s79 起 u64 亦放行——见下方 uty 位运算臂；
+                ;   s80 起 '>>' 无条件重映射 OP-SHRU——i64 侧亦发 lshr，镜像 Go OpShr 恒逻辑移位；&^ 位清除无对应 op 仍计 unsup）
                 osym == '&' -> bop = OP-AND
 
                 osym == '|' -> bop = OP-OR
@@ -1106,11 +1107,12 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == OP-CMPGT && uty == 1 -> bop = OP-CMPGTU
             bop == OP-CMPGE && uty == 1 -> bop = OP-CMPGEU
 
-            ; s79：无符號右移重映射——uty 下 '>>' ⇒ OP-SHRU（非镜像路由表而是镜像 Go 发射：
+            ; s79/s80：右移重映射——'>>' ⇒ OP-SHRU 无条件（非镜像路由表而是镜像 Go 发射：
             ;   codegen.go:7257 OpShr 恒发 lshr，注释 7212「nolang >> is a logical shift」——
-            ;   与自举端 s35 设的「i64 走 ashr、u64 用独立 op」设计在同侧会师：u64 ⇒ lshr 两边一致；
-            ;   重映射先于归类，故 OP-SHRU 只在 uty==1 出现，i64 路 OP-SHR/ashr 不变）
-            bop == OP-SHR && uty == 1 -> bop = OP-SHRU
+            ;   s79 先解 uty==1（u64 侧）；s80 裁定 i64 侧同改：自举 s35 的「i64=ashr」与 Go 失真
+            ;   （负数右移为分岔靶，s79 關鍵點 2），全族对齐 lshr；重映射先于归类，
+            ;   OP-SHR 归類后不再产生⇒ cg 的 ashr 臂转死代码（本件不动 cg，保留待后续清理）
+            bop == OP-SHR -> bop = OP-SHRU
 
             ; bop 归类（s72）：算术族 vs 比较族（决定 f64 侧 dest 型别 TY-F64 vs TY-I64）
             is-arith = 0
@@ -1133,8 +1135,8 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == OP-CMPGTU -> is-cmp = 1
             bop == OP-CMPGEU -> is-cmp = 1
 
-            ; s79：位运算／移位族归类（归類在重映射之後：OP-SHRU 只在 uty==1 出现；
-            ;   OP-SHR 此时只剩有符號路；and/or/xor/shl 签／无签位元相同故两路共用同码）
+            ; s79：位运算／移位族归类（归類在重映射之后：s80 起 OP-SHR 已全量重映射为
+            ;   OP-SHRU，此行不再命中——保留仅作防御；and/or/xor/shl 签／无签位元相同故两路共用同码）
             is-bit = 0
             bop == OP-AND -> is-bit = 1
             bop == OP-OR -> is-bit = 1

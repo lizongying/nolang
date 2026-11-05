@@ -2691,7 +2691,9 @@ test-bit-shl = () {
     runner.eq(ir.contains('shl i64'), 1, 'bit-shl shl')
 }
 
-; 右移：x >> 1 ⇒ ashr i64（算术右移，与 i64 有符号语义一致）
+; 右移：x >> 1 ⇒ lshr i64（s80 裁定：镜像 Go codegen.go emitBitwise——OpShr 对所有整型恒发
+;   lshr，注释 7212「nolang >> is a logical shift (lshr), matching the legacy backend」；
+;   s35 的「i64=ashr」设计与 Go 失真被推翻，ashr 不得再出现于自举产物）
 test-bit-shr = () {
     src = 'b5x = (x i64) (r i64) {\n    r = x >> 1\n}\n'
     t = ast.make()
@@ -2699,7 +2701,21 @@ test-bit-shr = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
     runner.eq(agg.unsup, 0, 'bit-shr unsup')
-    runner.eq(ir.contains('ashr i64'), 1, 'bit-shr ashr')
+    runner.eq(ir.contains('lshr i64'), 1, 'bit-shr lshr')
+    runner.eq(ir.contains('ashr'), 0, 'bit-shr not ashr')
+}
+
+; s80 mem 槽路：i64 '>>' 走 var-write/store 也恒发 lshr（重映射在 op 层、与 SSA/mem 路无关；
+;   contains 是存在性而非计数——双移位皆降发由 unsup==0 钉住，路旁残留 ashr 由零出现钉住）
+test-shr-i64-mem = () {
+    src = 'b5m = (x i64, n i64) (r i64) {\n    f = x >> 2\n    k = 0\n    n > 0 -> k = f >> 1\n    r = k\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'shr-i64-mem unsup')
+    runner.eq(ir.contains('lshr i64'), 1, 'shr-i64-mem lshr present')
+    runner.eq(ir.contains('ashr'), 0, 'shr-i64-mem not ashr')
 }
 
 ; 位运算嵌算术：r = (x & 15) + 1 ⇒ AND 再 ADD（验优先级树降级）
@@ -2899,6 +2915,7 @@ test-bit-or()
 test-bit-xor()
 test-bit-shl()
 test-bit-shr()
+test-shr-i64-mem()
 test-bit-chain()
 test-bit-gate()
 test-log-and()
