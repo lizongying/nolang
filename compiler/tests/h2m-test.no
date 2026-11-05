@@ -2071,6 +2071,82 @@ test-arith-i64-div-mem = () {
     runner.eq(ir.contains('load i64, i64*'), 1, 'arith-i64-div-mem load')
 }
 
+; ── u64 除／模（s76）────────────────────────────────────────
+; s76：u64 '/' 放行 ⇒ udiv i64 ＋ 除零護欄（镜像 Go plain 路径 OpUDiv 分支：
+;   護欄仅零检、无 (MIN,-1)——负向断言 %dmn. 不现；且不得混发有符號 sdiv）
+test-arith-u64-div-plain = () {
+    src = 'u6d = (x u64, y u64) (r u64) {\n    r = x / y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-div-plain unsup')
+    runner.eq(ir.contains('udiv i64'), 1, 'arith-u64-div-plain udiv')
+    runner.eq(ir.contains('sdiv i64'), 0, 'arith-u64-div-plain not sdiv')
+    runner.eq(ir.contains('= select i1 %dz.'), 1, 'arith-u64-div-plain safe-divisor select')
+    runner.eq(ir.contains('call void @__nolang_div_zero_report'), 1, 'arith-u64-div-plain report')
+    runner.eq(ir.contains('%dmn.'), 0, 'arith-u64-div-plain no MIN check')
+}
+
+; s76：u64 '%' 放行 ⇒ urem i64 ＋ 同一除零護欄（OpUMod 分支；负向断言 -1 检查不现）
+test-arith-u64-mod-plain = () {
+    src = 'u6m = (x u64, y u64) (r u64) {\n    r = x % y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-mod-plain unsup')
+    runner.eq(ir.contains('urem i64'), 1, 'arith-u64-mod-plain urem')
+    runner.eq(ir.contains('srem i64'), 0, 'arith-u64-mod-plain not srem')
+    runner.eq(ir.contains('%dn1.'), 0, 'arith-u64-mod-plain no -1 check')
+}
+
+; s76：一侧 u64 × 整字面量同走无符號（镜像 Go hir2mir sourceUnsigned(lv) || sourceUnsigned(rv) 的任一侧判据）
+test-arith-u64-div-lit = () {
+    src = 'u6l = (x u64) (r u64) {\n    r = x / 2\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-div-lit unsup')
+    runner.eq(ir.contains('udiv i64'), 1, 'arith-u64-div-lit udiv')
+}
+
+; s76：mem 模式下的 u64 除法——u64 操作数出自 entry 块 alloca 槽，跨块 LOAD 后喂護欄 udiv
+test-arith-u64-div-mem = () {
+    src = 'u6n = (x u64, y u64, n i64) (r u64) {\n    r = x / y\n    n > 0 -> n = n - 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-div-mem unsup')
+    runner.eq(ir.contains('alloca i64'), 1, 'arith-u64-div-mem alloca')
+    runner.eq(ir.contains('udiv i64'), 1, 'arith-u64-div-mem udiv')
+    runner.eq(ir.contains('load i64, i64*'), 1, 'arith-u64-div-mem load')
+}
+
+; s76 门禁：u64 的 '+' 不放行——本件仅 '/' '%' 走无符號分派，其余 op 仍诚实 unsup
+test-arith-u64-add-gate = () {
+    src = 'u6a = (x u64, y u64) (r u64) {\n    r = x + y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'arith-u64-add-gate counted')
+    runner.eq(ir.contains('define'), 0, 'arith-u64-add-gate no code')
+}
+
+; s76 门禁：u64 的 '>' 不放行——无符號比较（icmp ult 路）属后续件，本件仅除／模
+test-arith-u64-cmp-gate = () {
+    src = 'u6c = (x u64, y u64) (r i64) {\n    r = x > y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'arith-u64-cmp-gate counted')
+    runner.eq(ir.contains('define'), 0, 'arith-u64-cmp-gate no code')
+}
+
 ; s75 门禁：f64 '%' 不放行（is-arith 不含 OP-MOD， frem 路径未解锁）⇒ 诚实 unsup
 test-arith-f64-mod-gate = () {
     src = 'i6p = (x f64) (r f64) {\n    r = x % 2.0\n}\n'
@@ -2451,6 +2527,12 @@ test-arith-f64-mixed-gate()
 test-arith-i64-div-plain()
 test-arith-i64-mod-plain()
 test-arith-i64-div-mem()
+test-arith-u64-div-plain()
+test-arith-u64-mod-plain()
+test-arith-u64-div-lit()
+test-arith-u64-div-mem()
+test-arith-u64-add-gate()
+test-arith-u64-cmp-gate()
 test-arith-f64-mod-gate()
 test-cmp-f64-lt()
 test-cmp-f64-eq()
