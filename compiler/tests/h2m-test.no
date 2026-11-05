@@ -764,14 +764,16 @@ test-flow-gate = () {
     runner.eq(agg4.unsup > 0, 1, 'labeled-break counted')
     runner.eq(ir4.contains('define'), 0, 'labeled-break no code')
 
-    ; mem 模式的槽型别边界：f64 局部量在 cg 无 alloca double 的 op ⇒ 宁缺勿错
+    ; s74 转正：mem 模式下 f64 形参铺 alloca double 槽（旧负例『宁缺勿错』已解锁）——x == x ⇒ store/load double + fcmp oeq double
     src-f64 = 'e = (x f64) (r i64) {\n    r = 0\n    x == x -> r = 1\n}\n'
     t5 = ast.make()
     r5 = ps.parse(t5, ps.new(src-f64.to-bytes()))
     agg5 = h2m-new()
     ir5 = h2m-lower-program(t5, agg5, r5)
-    runner.eq(agg5.unsup > 0, 1, 'f64 slot counted')
-    runner.eq(ir5.contains('define'), 0, 'f64 slot no code')
+    runner.eq(agg5.unsup, 0, 'f64 slot unsup')
+    runner.eq(ir5.contains('alloca double'), 1, 'f64 slot alloca double')
+    runner.eq(ir5.contains('load double'), 1, 'f64 slot load double')
+    runner.eq(ir5.contains('fcmp oeq double'), 1, 'f64 slot fcmp')
 
     ; 兜底臂不在末位：其后的臂恒不可达，臂体里的 return 会被链的 stop 静默吞掉 ⇒ 形状校验计 unsup
     src-wmid = 'f2 = (n i64) (r i64) {\n    r = 0\n    {\n        n > 3 -> r = 1\n        -> r = 9\n        n > 1 -> return\n    }\n}\n'
@@ -2164,6 +2166,48 @@ test-f64-lit-gate = () {
     runner.eq(ir.contains('define'), 0, 'f64-lit-gate no code')
 }
 
+; ── f64 局部变量 / 控制流（s74）──────────────────────────────
+; mem 模式下 f64 局部量铺 alloca double 槽：带标注声明 `y f64 = 1.5` + guard 改写 + 末尾读回 ⇒
+;   alloca double / store double / load double 全套（字面量零初始化走 sym='0.0' 的 fadd 物化）
+test-f64-slot-flow = () {
+    src = 's6f = (x f64) (r f64) {\n    y f64 = 1.5\n    x > 2.0 -> y = x + y\n    r = y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'f64-slot-flow unsup')
+    runner.eq(ir.contains('alloca double'), 1, 'f64-slot-flow alloca')
+    runner.eq(ir.contains('store double'), 1, 'f64-slot-flow store')
+    runner.eq(ir.contains('load double'), 1, 'f64-slot-flow load')
+    runner.eq(ir.contains('fadd double 0.0, 1.5'), 1, 'f64-slot-flow init const')
+    runner.eq(ir.contains('define double'), 1, 'f64-slot-flow define double')
+    runner.eq(ir.contains('ret double'), 1, 'f64-slot-flow ret double')
+}
+
+; 无前扫描标注的 f64 局部量靠初值推断定槽宽：`y = x * 2.0` ⇒ h2m-ty-of 认 f64 字面量与 f64 算术 infix ⇒ TY-F64 槽
+test-f64-slot-infer = () {
+    src = 's6g = (x f64) (r f64) {\n    y = x * 2.0\n    x > 1.0 -> y = y + x\n    r = y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'f64-slot-infer unsup')
+    runner.eq(ir.contains('alloca double'), 1, 'f64-slot-infer alloca')
+    runner.eq(ir.contains('fmul double'), 1, 'f64-slot-infer fmul')
+    runner.eq(ir.contains('fadd double'), 1, 'f64-slot-infer fadd')
+}
+
+; 门控：f64 与 i64 混合的局部初值（`y = x + 1`）前扫描推不出型别（一 F64 一 I64）⇒ 槽宽 -1 ⇒ 诚实 unsup
+test-f64-slot-mixed-gate = () {
+    src = 's6h = (x f64) (r f64) {\n    y = x + 1\n    x > 1.0 -> y = y + x\n    r = y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'f64-slot-mixed-gate counted')
+    runner.eq(ir.contains('define'), 0, 'f64-slot-mixed-gate no code')
+}
+
 ; 位与：x & y ⇒ and i64
 test-bit-and = () {
     src = 'b1x = (x i64, y i64) (r i64) {\n    r = x & y\n}\n'
@@ -2375,6 +2419,9 @@ test-logic-f64-gate()
 test-f64-lit-arith()
 test-f64-lit-cmp()
 test-f64-lit-gate()
+test-f64-slot-flow()
+test-f64-slot-infer()
+test-f64-slot-mixed-gate()
 test-bit-and()
 test-bit-or()
 test-bit-xor()

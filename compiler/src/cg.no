@@ -307,7 +307,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         op == OP-CONST -> {
 
             ; s73：dest 为 TY-F64 ⇒ 常量源于 f64 字面量（raw 存 syms[k]）⇒ 以 fadd double 0.0, <raw> 物化为 %fd SSA
-            ;   ⚠ slot-decl 的零初始化 OP-CONST 永不见 TY-F64（h2m.no:320 仅 I64/U64/STR 铺槽）⇒ 本分支只由字面量路径可达
+            ;   ⚠ s74 后两条路可达：字面量降级与 slot-decl 的 f64 零初始化（sym 固定 '0.0'）；空 sym 会产非法 IR，呼叫方保证 sym 非空
             cg-vty-at(vty, d) == TY-F64 -> {
                 b.push('\t%fd')
                 b.push(d.to-str())
@@ -534,19 +534,50 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         op == OP-ALLOC -> {
             b.push('\t%s')
             b.push(d.to-str())
-            b.push(' = alloca i64\n')
+
+            ; s74：dest 值型别 TY-F64 ⇒ alloca double（槽 id 由 h2m-alloc 携 ty 登记进 vty）；其余仍 alloca i64（含 TY-U64 同宽共路）
+            cg-vty-at(vty, d) == TY-F64 -> {
+                b.push(' = alloca double\n')
+            }
+            cg-vty-at(vty, d) != TY-F64 -> {
+                b.push(' = alloca i64\n')
+            }
         }
         op == OP-STORE -> {
-            b.push('\tstore i64 %v')
+
+            ; s74：按【源值型别】分派——TY-F64 ⇒ store double %fd…；其余 ⇒ store i64 %v…（目标槽前缀 %s 共路）
+            cg-vty-at(vty, x) == TY-F64 -> {
+                b.push('\tstore double %fd')
+            }
+            cg-vty-at(vty, x) != TY-F64 -> {
+                b.push('\tstore i64 %v')
+            }
             b.push(x.to-str())
-            b.push(', i64* %s')
+            cg-vty-at(vty, x) == TY-F64 -> {
+                b.push(', double* %s')
+            }
+            cg-vty-at(vty, x) != TY-F64 -> {
+                b.push(', i64* %s')
+            }
             b.push(y.to-str())
             b.push('\n')
         }
         op == OP-LOAD -> {
-            b.push('\t%v')
+
+            ; s74：按【dest 值型别】分派——TY-F64 ⇒ %fd… = load double；其余 ⇒ %v… = load i64
+            cg-vty-at(vty, d) == TY-F64 -> {
+                b.push('\t%fd')
+            }
+            cg-vty-at(vty, d) != TY-F64 -> {
+                b.push('\t%v')
+            }
             b.push(d.to-str())
-            b.push(' = load i64, i64* %s')
+            cg-vty-at(vty, d) == TY-F64 -> {
+                b.push(' = load double, double* %s')
+            }
+            cg-vty-at(vty, d) != TY-F64 -> {
+                b.push(' = load i64, i64* %s')
+            }
             b.push(x.to-str())
             b.push('\n')
         }

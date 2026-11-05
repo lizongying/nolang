@@ -302,12 +302,12 @@ h2m-name-find = (c h2m-ctx, name str) (i i64) {
 
 ; 为名字铺一个槽（s57：必须在 entry 块调用，因 cg 要求块为连续段、离开 entry 就回不去）
 ; 同名已有条目（形参已经绑过值 id）则把绑定改写为槽；同时零初始化，避免未赋值先读拿到 poison
-; ⚠️ TY-U64 在 LLVM 里与 TY-I64 同类型（i64），共用 alloca i64 槽；TY-F64 无槽 op ⇒ 计 unsup
+; ⚠️ TY-U64 在 LLVM 里与 TY-I64 同类型（i64），共用 alloca i64 槽；s74：TY-F64 铺 alloca double 槽（零初始化携 sym='0.0'，供 cg 的 fadd 物化分支）
 ; ⚠️ s62：TY-VEC 走【不铺槽】分支——cg 没有 alloca %vec 的 op，而函数形参本身就是 entry 就存在的
 ;   SSA 值（支配全函数所有块）⇒ 只记型别、沿用已绑的 incoming 值 id；名字尚无绑定（vec 局部量）⇒ 计 unsup
 ; c: 上下文
 ; name: 变量名
-; ty: 槽型别码（认 TY-I64 / TY-U64 / TY-STR；TY-VEC 不铺槽）
+; ty: 槽型别码（认 TY-I64 / TY-U64 / TY-F64 / TY-STR；TY-VEC 不铺槽）
 h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
     ty == TY-VEC -> {
         i0 = h2m-name-find(c, name)
@@ -317,11 +317,15 @@ h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
     ty != TY-VEC -> {
         sid = h2m-alloc(c, ty)
         ok-slot = 1
-        ty != TY-I64 && ty != TY-U64 && ty != TY-STR -> ok-slot = 0
+        ty != TY-I64 && ty != TY-U64 && ty != TY-STR && ty != TY-F64 -> ok-slot = 0
         ok-slot == 1 && ty != TY-STR -> {
             h2m-emit(c, OP-ALLOC, sid, 0, 0, '', ty)
             zid = h2m-alloc(c, ty)
-            h2m-emit(c, OP-CONST, zid, 0, 0, '', ty)
+
+            ; s74：f64 零初始化携 sym='0.0'——cg 的 OP-CONST TY-F64 分支读 sym 发 fadd double 0.0, <sym>，空 sym 会产非法 IR
+            zs = ''
+            ty == TY-F64 -> zs = '0.0'
+            h2m-emit(c, OP-CONST, zid, 0, 0, zs, ty)
             h2m-emit(c, OP-STORE, 0, zid, sid, '', 0)
         }
         ok-slot == 1 && ty == TY-STR -> {
@@ -383,7 +387,7 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
         i >= 0 && c.mem == 1 -> {
             sid = c.vids[i] #{index-out=zero}
             st = c.tys[i] #{index-out=zero}
-            st == TY-I64 || st == TY-U64 -> {
+            st == TY-I64 || st == TY-U64 || st == TY-F64 -> {
                 v = h2m-alloc(c, st)
                 h2m-emit(c, OP-LOAD, v, sid, 0, '', st)
             }
@@ -394,7 +398,7 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
 
             ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
             st == TY-VEC -> v = sid
-            st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC -> h2m-mark(c)
+            st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-F64 -> h2m-mark(c)
         }
     }
 }
@@ -698,7 +702,7 @@ h2m-lst-add = (l h2m-lst, name str, ty i64) {
     }
 }
 
-; 语法型别推断（仅供定槽宽）：只认 i64 / str 两型，其余一律 -1
+; 语法型别推断（仅供定槽宽）：认 i64 / str / f64 三型（s74），其余一律 -1
 ; t: AST arena
 ; sg: 模块级签名表（调用回值型别）
 ; l: 已登记的局部量表（标识符型别查此表）
@@ -710,6 +714,9 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
         d = ast.nd-at(t, n)
         d.kind == asp.K-INTEGER-LITERAL -> code = TY-I64
         d.kind == asp.K-STRING-LITERAL -> code = TY-STR
+
+        ; s74：f64 字面量初值 ⇒ 槽宽 TY-F64（与降级侧 K-FLOAT-LITERAL 同口径；裸指数形如 1e5 降级侧必 mark，整函数不产码，槽宽推错无害）
+        d.kind == asp.K-FLOAT-LITERAL -> code = TY-F64
         d.kind == asp.K-GROUPED-EXPRESSION -> {
             k = ast.kid-at(t, d.kid0)
             code = h2m-ty-of(t, sg, l, k)
@@ -720,6 +727,14 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
             a = h2m-ty-of(t, sg, l, xk)
             b = h2m-ty-of(t, sg, l, yk)
             a == TY-I64 && b == TY-I64 -> code = TY-I64
+
+            ; s74：f64 双侧按操作符分族，与降级侧 dest 型别同步——算术族 + - * / ⇒ TY-F64；比较族 ⇒ TY-I64；
+            ;   位/移位/逻辑不推（留 -1 ⇒ 铺槽失败整函数 unsup，与降级侧族门禁同口径）
+            a == TY-F64 && b == TY-F64 -> {
+                os = ast.str-at(t, d.s0)
+                os == '+' || os == '-' || os == '*' || os == '/' -> code = TY-F64
+                os == '<' || os == '>' || os == '<=' || os == '>=' || os == '==' || os == '!=' -> code = TY-I64
+            }
         }
         d.kind == asp.K-IDENTIFIER -> {
             nm = ast.str-at(t, d.s0)
