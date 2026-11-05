@@ -6408,6 +6408,29 @@ func (c *codegen) emitCharClamp(dstVal ValueID, val, lt string) string {
 func (c *codegen) emitNot(inst *Inst) error {
 	lt, _ := c.ptype(inst.Dst)
 	slot := c.valSlot[inst.Dst]
+	src := inst.Args[0]
+	srcLT, _ := c.ptype(src)
+	srcSlot := c.valSlot[src]
+	// DBG-NOT: capture recorded types when operand slot type disagrees with dst.
+	if os.Getenv("NOLANG_DBG_NOT") != "" {
+		rawOfTID := func(t TypeID) string {
+			if t == NoType {
+				return "NoType"
+			}
+			if ty := c.mod.Type(t); ty != nil {
+				return ty.Raw
+			}
+			return "?"
+		}
+		curf := c.mod.Func(c.cf)
+		var dstTID, srcTID TypeID
+		if curf != nil {
+			dstTID = curf.LocalTypes[inst.Dst]
+			srcTID = curf.LocalTypes[src]
+		}
+		fmt.Fprintf(os.Stderr, "[DBG-NOT] func=%s dst=v%d dstLT=%s dstLocal=%s src=v%d srcLT=%s srcLocal=%s srcSlot=%q\n",
+			c.fname[c.cf], inst.Dst, lt, rawOfTID(dstTID), src, srcLT, rawOfTID(srcTID), srcSlot)
+	}
 	vT, v := c.loadVal(inst.Args[0])
 	v = c.coerceInt(v, vT, lt)
 	fmt.Fprintf(c.sb, "  %%c%d = xor %s 1, %s\n", inst.Dst, lt, v)
@@ -6647,6 +6670,10 @@ func (c *codegen) emitCmp(inst *Inst) error {
 	slot := c.valSlot[inst.Dst]
 	aT, aV := c.loadVal(inst.Args[0])
 	bT, bV := c.loadVal(inst.Args[1])
+	if os.Getenv("NOLANG_DBG_CMP") != "" {
+		fmt.Fprintf(os.Stderr, "[DBG-CMP] func=%s op=%v dst=v%d lt=%s aV=%s aT=%s bV=%s bT=%s tagOnly=%v\n",
+			c.fname[c.cf], inst.Op, inst.Dst, lt, aV, aT, bV, bT, inst.TagOnly)
+	}
 	// Option operands. Which half of the `{ tag, payload }` struct is compared
 	// depends on the OTHER side:
 	//

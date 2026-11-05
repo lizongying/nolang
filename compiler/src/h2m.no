@@ -34,7 +34,7 @@
 ;         三者都要求是本块最后一条陈述（其后陈述不可达 ⇒ 计 unsup，同 s58 兜底不在末位纪律）；
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
 ;         算术语义：二元 + - * 与六个比较符仅 i64（其余型别的值进运算符即计 unsup，不发错码）；
-;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；s72：六个比较符亦接受 f64 操作数（发 fcmp 后 zext i1→i64，结果恒 i64）；位运算/移位/逻辑仍不收 f64；s76：u64 的 '/' '%' 经无符號重映射放行（OP-DIVU/OP-MODU，dest TY-U64）；s77：六个比较符亦接受 u64 操作数（< <= > >= 重映射为 OP-CMP*U 发 icmp u*，== != 與符號无关保持原 op，结果恒 i64）；u64 位运算/移位/逻辑仍不收
+;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；s72：六个比较符亦接受 f64 操作数（发 fcmp 后 zext i1→i64，结果恒 i64）；位运算/移位/逻辑仍不收 f64；s76：u64 的 '/' '%' 经无符號重映射放行（OP-DIVU/OP-MODU，dest TY-U64）；s77：六个比较符亦接受 u64 操作数（< <= > >= 重映射为 OP-CMP*U 发 icmp u*，== != 與符號无关保持原 op，结果恒 i64）；s78：u64 的 '+ - *' 放行（不重映射，64 位宽下签／无签位元相同，dest TY-U64 发裸 add/sub/mul i64）；u64 位运算/移位/逻辑仍不收
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）、带默认值的参数、
@@ -729,8 +729,9 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
             a == TY-I64 && b == TY-I64 -> code = TY-I64
 
             ; s76：整族含 u64（任一侧 TY-U64、另一侧整族）⇒ TY-U64，与降级侧 uty 同口径——
-            ;   槽宽共用 alloca i64，型别码只供槽登记；非除模的非比較 op（如 u64 '+'）在此照样推成 U64 无害：
-            ;   降级侧必 mark ⇒ 整函数不产码（与本文件开头「槽宽推错无害」同理）
+            ;   除模（s76）与算术 + - *（s78）两族 dest 皆为 TY-U64，与本推断同口径；
+            ;   （s76 当时曾记「其余 op 在此推成 U64 无害：降级侧必 mark ⇒ 整函数不产码」，
+            ;   该前提已随 s77（比较）/ s78（算术）解除门禁而失效——现在只有仍门禁的位运算／移位／逻辑成立）
             ; s77 🔴 比较族例外：整族含 u64 但 op 是比较符 ⇒ 推 TY-I64（不是 U64）——
             ;   降级侧比较的 dest 恒 TY-I64（结果 0/1），而 h2m-var-write 只接受 st == vt；
             ;   若这里仍推 U64，`f = x > y`（x,y u64）会把 f 铺成 U64 槽，随后对 f 的 i64 写全部计 unsup
@@ -1050,13 +1051,15 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 }
             }
 
-            ; 运算元型别分派（s71 二元算术 + s72 二元比较 + s76 无符號除模）：
+            ; 运算元型别分派（s71 二元算术 + s72 二元比较 + s76 无符號除模 + s78 无符號算术）：
             ;   i64 侧：全部 bop 放行（s75 含 '/' '%'）⇒ 结果 TY-I64（算术/比较/位/移位/逻辑结果恒 i64）
             ;   f64 侧：仅「算术族」与「比较族」放行——
             ;     - 算术 + - * / ⇒ 发 fadd/fsub/fmul/fdiv double，dest 记 TY-F64（s71）
             ;     - 比较 < > <= >= == != ⇒ 发 fcmp 后 zext i1→i64，dest 记 TY-I64（s72，比较结果恒 i64 非 f64）
-            ;   u64 侧（s76 除模 / s77 比較）：'/' '%' 经 uty 重映射为 OP-DIVU/OP-MODU，dest 记 TY-U64；
-            ;     六個比較符经 uty 重映射为 OP-CMP*U（eq/ne 除外），dest 记 TY-I64；其余 u64 二元 op 仍门禁
+            ;   u64 侧（s76 除模 / s77 比較 / s78 算術）：'/' '%' 经 uty 重映射为 OP-DIVU/OP-MODU，dest 记 TY-U64；
+            ;     六個比較符经 uty 重映射为 OP-CMP*U（eq/ne 除外），dest 记 TY-I64；
+            ;     '+ - *' 不重映射（Go 算子表无 OpAddU/OpSubU/OpMulU，64 位宽下签／无签位元相同），直接以 OP-ADD/SUB/MUL 发裸 add/sub/mul i64，dest 记 TY-U64；
+            ;     其余 u64 二元 op（位运算/移位/逻辑）仍门禁
             ;   位运算/移位/逻辑（& | ^ << >> && ||）于 f64 不落任一路 ⇒ 计 unsup（收紧 s71 曾过宽的 f64 臂）
             ;   混合（一 i64 一 f64）或任一 str ⇒ ity、fty、uty 皆 0 ⇒ 计 unsup
             ity = 1
@@ -1149,6 +1152,18 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ;   ⚠️ 口径同 s75：護欄对应 Go 非 option（plain）路——除零结果定义化为 0 并 stderr 报告；?u64 未建模
             ok-u = 0
             bop > 0 && lv > 0 && rv > 0 && uty == 1 && (bop == OP-DIVU || bop == OP-MODU) -> {
+                mid = h2m-alloc(c, TY-U64)
+                h2m-emit(c, bop, mid, lv, rv, '', TY-U64)
+                v = mid
+                ok-u = 1
+            }
+
+            ; u64 算術族（s78）：+ - * 放行 ⇒ dest TY-U64（cg 发裸 add/sub/mul i64，TY-U64 走 cg 默认 i64 臂）。
+            ;   ⚠️ 本件不需重映射：Go 侧 MIR 算子表只有除模（OpUDiv/OpUMod）与序比较（OpULt..OpUGe）有無符號衍生，
+            ;     add/sub/mul 在 64 位宽下签／无签位元相同（2's 补数）；Go 的溢出内在函数（s*add vs u*add.with.overflow）
+            ;     只在 option 路（codegen.go:6183 「Plain arithmetic keeps emitting a bare add/sub/mul」），?u64 未建模⇒不表达
+            ;   uty==1 时 is-arith==1 只可能是 ADD/SUB/MUL（OP-DIV/OP-MOD 已在上式重映射为 OP-DIVU/OP-MODU，不入 is-arith）
+            bop > 0 && lv > 0 && rv > 0 && uty == 1 && is-arith == 1 -> {
                 mid = h2m-alloc(c, TY-U64)
                 h2m-emit(c, bop, mid, lv, rv, '', TY-U64)
                 v = mid

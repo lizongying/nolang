@@ -209,7 +209,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
     ; 跳過空白
     (p < sn) {
-        c = s.byte(p)
+        copt = s.byte(p)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
         #{overflow=wrap}
@@ -217,7 +221,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     }
     p >= sn -> return
 
-    c = s.byte(p)
+    copt = s.byte(p)
+    c = copt: {
+        ok -> it
+        -> 0
+    }
 
     ; 分配節點
     node-idx = .alloc()
@@ -341,7 +349,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 p = .skip-ws(s, p)
                 p >= sn -> return
 
-                c2 = s.byte(p)
+                c2opt = s.byte(p)
+                c2 = c2opt: {
+                    ok -> it
+                    -> 0
+                }
                 c2 == 93 -> {
 
                     #{overflow=wrap}
@@ -415,7 +427,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 p = .skip-ws(s, p)
                 p >= sn -> return
 
-                c2 = s.byte(p)
+                c2opt = s.byte(p)
+                c2 = c2opt: {
+                    ok -> it
+                    -> 0
+                }
                 c2 == 125 -> {
 
                     #{overflow=wrap}
@@ -481,7 +497,11 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> return
 
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
 
         #{overflow=wrap}
         {
@@ -512,7 +532,11 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 i = i + 1
                 i >= s.len-bytes() -> return
 
-                c = s.byte(i)
+                copt = s.byte(i)
+                c = copt: {
+                    ok -> it
+                    -> 0
+                }
 
                 ; 處理常見轉義
                 c == 110 -> c = 10
@@ -559,7 +583,11 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> break
 
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         c < 48 || c > 57 -> break
 
         .nodes[node-idx].num-val = .nodes[node-idx].num-val * 10.0 + (c - 48)
@@ -571,7 +599,11 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     ; 小數部分
     #{overflow=wrap}
     i < s.len-bytes() -> {
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         c == 46 -> {
 
             #{overflow=wrap}
@@ -580,7 +612,11 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
             (i < s.len-bytes()) {
                 i >= s.len-bytes() -> break
 
-                c = s.byte(i)
+                copt = s.byte(i)
+                c = copt: {
+                    ok -> it
+                    -> 0
+                }
                 c < 48 || c > 57 -> break
 
                 .nodes[node-idx].num-val = .nodes[node-idx].num-val + frac * (c - 48)
@@ -593,14 +629,22 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     ; 指數部分（e/E [+/-] digits）
     #{overflow=wrap}
     i < s.len-bytes() -> {
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         c == 101 || c == 69 -> {
 
             #{overflow=wrap}
             i = i + 1
             exp-sign = 1
             i < s.len-bytes() -> {
-                c = s.byte(i)
+                copt = s.byte(i)
+                c = copt: {
+                    ok -> it
+                    -> 0
+                }
                 c == 45 -> {
 
                     #{overflow=wrap}
@@ -613,7 +657,11 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
             (i < s.len-bytes()) {
                 i >= s.len-bytes() -> break
 
-                c = s.byte(i)
+                copt = s.byte(i)
+                c = copt: {
+                    ok -> it
+                    -> 0
+                }
                 c < 48 || c > 57 -> break
                 exp-val = exp-val * 10 + (c - 48)
                 i = i + 1

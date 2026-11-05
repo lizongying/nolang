@@ -53,9 +53,9 @@ path.is-file = () (yes bool) {
 }
 
 ; 取得檔案大小
-; sz: .p 指向檔案的位元組大小
+; sz: ok=.p 指向檔案的位元組大小, nil/err=取得失敗（檔案不存在或無法 stat）
 ; [size](#path.size)
-path.size = () (sz i64) {
+path.size = () (sz ?i64) {
     sz = fs.stat-size(.p)
 }
 

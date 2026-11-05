@@ -9715,6 +9715,24 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					}
 				}
 			}
+			// 重指派到「已存在的 plain 變數」：標註寫在**前一行**（先 `x str = ''`、
+			// 之後 `x = os.arg(i + 1)`），但這仍是同一個「option 當值傳遞」的靜默解包
+			// ——option 的 payload 被讀進 plain 變數，tag（ok/nil/err）被丟掉，越界時
+			// 拿到的是空字串而不是錯誤。與本行標註是同一條 D1 規則，只是標註的位置
+			// 不同，因此同樣開火 15w45dqk。
+			//
+			// 沒有豁免：結果參數（如 `path.size = () (sz i64) { sz = fs.stat-size(.p) }`）
+			// 也一樣是「?i64 直接進 i64」的靜默解包，必須改成 `sz ?i64` 或顯式 match。
+			// option/借用目標本來就該是 option，由下游 optionTypesCompatible / isViewBorrow 管。
+			// 新綁定（不在 varTypes）不在此列：`x = os.arg(...)` 的 x 本身就是 `?T`，
+			// 由 match 消費，是 D1 鏡像表的合法列。
+			if s.Name != nil && inferredType == "" {
+				if existing, exists := varTypes[s.Name.Value]; exists && isConcreteType(existing) && !ty.IsOptionRaw(existing) && !ty.IsViewRaw(existing) {
+					if up := optionResultOfCallTarget(s.Value, varTypes, selfType); up != "" {
+						inferredType = up
+					}
+				}
+			}
 			// `err` 是變體標記，不是真型別：match 的 `err ->` 臂會為隱式綁定 `it`
 			// 合成一條 `let it t=err`。err 載荷是 `option { ..., err(e X) }`
 			// 宣告的那個型別——歷史上是 str（統一佈局後標量 option 也真的存得下

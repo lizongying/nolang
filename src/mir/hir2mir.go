@@ -8858,6 +8858,17 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		}
 		ov := l.lowerExpr(operand)
 		op := prefixOp(l.pkg.Str(n.S))
+		if os.Getenv("NOLANG_DBG_NOT") != "" && op == OpNot {
+			if raw := l.valueRaw(ov); strings.HasPrefix(raw, "?") {
+				nd := l.pkg.Node(operand)
+				ndinfo := "<nil>"
+				if nd != nil {
+					ndinfo = fmt.Sprintf("kind=%v str=%q", hir.KindNames[nd.Kind], l.pkg.Str(nd.S))
+				}
+				fmt.Fprintf(os.Stderr, "[DBG-PREFIX-NOT] func=%s op=%s ov=v%d ovRaw=%s operandNode=%s\n",
+					l.curFuncName(), l.pkg.Str(n.S), ov, raw, ndinfo)
+			}
+		}
 		if l.pkg.Str(n.S) == "~" {
 			// Bitwise complement (`~x`): x XOR all-ones. Nolang `~` is NOT logical
 			// NOT — mapping it to OpNot (which emits `xor 1`) gives 100^1=101

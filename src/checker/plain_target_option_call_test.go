@@ -232,17 +232,26 @@ func TestOptionResultOfCallTargetResolution(t *testing.T) {
 // 🔴 執行前提：與本檔既有的案例相同，std 簽名表要能解析，因此 `go test
 // ./checker/` 必須帶 StdSigKey（見本檔檔頭）。
 //
-// 🔴 界線（刻意不報，與 D1 鏡像表逐字對稱）：**重指派**與**結果參數重綁定**不在
-// 本規則的射程內——
+// 🔴 界線（2026-11-05 收緊，**沒有豁免**）：**重指派到已存在的 plain 局部變數**
+// 同樣是靜默解包，必須開火——
 //
-//	x str = ''; x = os.arg(i + 1)   ; 標註在**前一行** → 刻意不報（D1 鏡像表）
-//	f = (r str) { r = os.arg(i) }   ; 結果參數同上     → 刻意不報（D1 鏡像表）
+//	x str = ''; x = os.arg(i + 1)   ; 標註在**前一行** → ERROR（同一條 D1 規則）
 //
-// 這不是遺漏而是承載：std 自己就靠它——src/std/path.no 的
-// `path.size = () (sz i64) { sz = fs.stat-size(.p) }` 正是「plain 結果參數接住
-// `?i64`」。方法呼叫那條路徑（`b = s.byte(0)`）也是同樣的待遇，所以模組限定與
-// 方法兩條路徑的行為一致。要把這一格也變成 ERROR，必須同時動 lowering 的鏡像表
-// （captureTargetAllowsOption），不是單改 checker 能決定的。
+// 結果參數（`f = () (sz i64) { sz = fs.stat-size('/tmp') }`）**不豁免**：結果參數
+// 的型別同樣是 plain `i64`，`?i64` 直接寫進去一樣是「payload 進 plain、tag 丟掉」。
+// 舊版曾為 std 的 `path.size = () (sz i64) { sz = fs.stat-size(.p) }` 開一格例外
+// （resultParams 集合），那是把 std 的錯誤當成規則——正確修法是改 std 的簽名
+// （現已改成 `sz ?i64`），而不是讓編譯器閉嘴。
+//
+// 新綁定（`x = os.arg(...)`，本行無標註、x 先前不存在）不在此列：x 本身就是 `?T`，
+// 由 match 消費，是 D1 鏡像表的合法列（見 TestModuleQualifiedOptionCallLegalShapes
+// 的 fresh_binding_inferred_option）。
+//
+// 🔴 診斷的副作用（2026-11-05 實測）：把 std 裡 `b = s.byte(j)` 這類「靜默拆包」
+// 改寫成兩段式 match 時，**catch-all 臂 `-> 0` 會把 `it` 登記成被匹配值的整型
+// （`?byte`）並沿扁平的 varTypes 洩漏到整個函式**（walker 不按臂恢復）。同一函式
+// 後面若還有 `kw = it`，就會拿到 `?byte` 而誤報。寫 std 時用**具名綁定**
+// （`ok(bv) -> bv`）或直接把下游的 `it` 也改成具名綁定，就不會踩到。
 func TestPlainTargetRejectsModuleQualifiedOptionCall(t *testing.T) {
 	cases := []struct {
 		name string
@@ -279,6 +288,45 @@ func TestPlainTargetRejectsModuleQualifiedOptionCall(t *testing.T) {
 			src: `f = () (out i64) {
     x str = args.get(0)
     out = 0
+}`,
+		},
+		{
+			// 使用者回報的核心形狀（2026-11-05）：**重指派**到已存在的 plain
+			// 局部變數。標註寫在前一行（`x str = ''`），但 `x = os.arg(...)` 仍是
+			// 同一個「option 當值傳遞」的靜默解包——payload 進 plain 變數、tag 被
+			// 丟掉。之前刻意放行（D1 鏡像表），現在與本行標註同一條規則。
+			name: "reassign_plain_local_from_os_arg",
+			src: `f = (i i64) (out i64) {
+    x str = ''
+    x = os.arg(i + 1)
+    out = 0
+}`,
+		},
+		{
+			// 同一條規則覆蓋方法呼叫形狀（`recv.method(...)`）：重指派到 plain
+			// 局部變數同樣不得靜默拆包。
+			name: "reassign_plain_local_from_method_option",
+			src: `f = (s str) (out i64) {
+    b i64 = 0
+    b = s.byte(0)
+    out = b
+}`,
+		},
+		{
+			// 結果參數**不豁免**（2026-11-05 使用者裁定）：`sz` 的型別來自簽名
+			// `(sz i64)`，仍是 plain `i64`；`fs.stat-size` 回 `?i64`，直接寫進去
+			// 一樣是「payload 進 plain、tag 丟掉」。std 的 `path.size` 曾靠這一格
+			// 活著——那是 std 的錯，簽名改成 `sz ?i64` 才是正解，不是讓編譯器閉嘴。
+			name: "result_param_plain_rebind_from_option",
+			src: `f = () (sz i64) {
+    sz = fs.stat-size('/tmp')
+}`,
+		},
+		{
+			// 結果參數 + 模組限定呼叫：與上一格同一件事，換成 `os.arg` 路徑。
+			name: "result_param_plain_rebind_from_os_arg",
+			src: `f = (i i64) (out str) {
+    out = os.arg(i + 1)
 }`,
 		},
 	}
@@ -383,6 +431,13 @@ func TestModuleQualifiedOptionCallLegalShapes(t *testing.T) {
             out = 0
         }
     }
+}`,
+		},
+		{
+			// 結果參數本身是 option：option → option 相容，不該報。
+			name: "result_param_option_rebind",
+			src: `f = () (val ?str) {
+    val = os.get-env('HOME')
 }`,
 		},
 	}

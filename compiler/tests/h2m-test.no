@@ -2125,19 +2125,108 @@ test-arith-u64-div-mem = () {
     runner.eq(ir.contains('load i64, i64*'), 1, 'arith-u64-div-mem load')
 }
 
-; s76 门禁：u64 的 '+' 不放行——本件仅 '/' '%' 走无符號分派，其余 op 仍诚实 unsup
-test-arith-u64-add-gate = () {
+; s78：u64 的 '+' 放行——add/sub/mul 在 64 位宽下签／无签位元相同，Go 侧 MIR 算子表
+;   无 OpAddU/OpSubU/OpMulU（只有除模与序比较重映射），plain 路径恒发裸 add i64
+;   （溢出变 err 的 with.overflow 内在函数只在 option 路径、由声明的 elemRaw 定 s*/u*，自举端不建模 ?u64）
+;   （s76 曾以此钉「u64 '+' 不放行」的门禁，s78 解除；仍门禁的位运算族见 test-arith-u64-bit-gate）
+test-arith-u64-add-plain = () {
     src = 'u6a = (x u64, y u64) (r u64) {\n    r = x + y\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup > 0, 1, 'arith-u64-add-gate counted')
-    runner.eq(ir.contains('define'), 0, 'arith-u64-add-gate no code')
+    runner.eq(agg.unsup, 0, 'arith-u64-add-plain unsup')
+    runner.eq(ir.contains('add i64'), 1, 'arith-u64-add-plain add')
+    runner.eq(ir.contains('fadd double'), 0, 'arith-u64-add-plain not fadd')
 }
 
-; s77 门禁：u64 的位与仍不放行——本件只解除比較族（icmp u* 路），位运算族留给后续件
-;   （s76 曾在此钉「u64 '>' 不放行」的门禁，s77 已解除，门禁下移到位与）
+; s78：u64 '-' 放行 ⇒ sub i64（2's 补数回绕，与有符號同指令；无 fsub 翼）
+test-arith-u64-sub-plain = () {
+    src = 'u6b = (x u64, y u64) (r u64) {\n    r = x - y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-sub-plain unsup')
+    runner.eq(ir.contains('sub i64'), 1, 'arith-u64-sub-plain sub')
+    runner.eq(ir.contains('fsub double'), 0, 'arith-u64-sub-plain not fsub')
+}
+
+; s78：u64 '*' 放行 ⇒ mul i64（只取低 64 位，签／无签同值；无 fmul 翼）
+test-arith-u64-mul-plain = () {
+    src = 'u6c = (x u64, y u64) (r u64) {\n    r = x * y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-mul-plain unsup')
+    runner.eq(ir.contains('mul i64'), 1, 'arith-u64-mul-plain mul')
+    runner.eq(ir.contains('fmul double'), 0, 'arith-u64-mul-plain not fmul')
+}
+
+; s78：一侧 u64 × 整字面量同走（沿用 s76 的 uty「任一侧 TY-U64」判据，镜像 Go sourceUnsigned 或路由）
+test-arith-u64-add-lit = () {
+    src = 'u6d = (x u64) (r u64) {\n    r = x + 2\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-add-lit unsup')
+    runner.eq(ir.contains('add i64'), 1, 'arith-u64-add-lit add')
+}
+
+; s78：嵌套 u64 算术（(x + y) * 2）——内层 dest TY-U64，外层读它再乘 ⇒ 三 op 皆落无符號整族
+test-arith-u64-arith-nested = () {
+    src = 'u6e = (x u64, y u64) (r u64) {\n    r = (x + y) * 2\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-nested unsup')
+    runner.eq(ir.contains('add i64'), 1, 'arith-u64-nested add')
+    runner.eq(ir.contains('mul i64'), 1, 'arith-u64-nested mul')
+}
+
+; s78：mem 模式下的 u64 加法——u64 操作数出自 entry 块 alloca 槽，跨块 LOAD 后喂 add i64
+test-arith-u64-add-mem = () {
+    src = 'u6f = (x u64, y u64, n i64) (r u64) {\n    r = x + y\n    n > 0 -> n = n - 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-add-mem unsup')
+    runner.eq(ir.contains('alloca i64'), 1, 'arith-u64-add-mem alloca')
+    runner.eq(ir.contains('add i64'), 1, 'arith-u64-add-mem add')
+    runner.eq(ir.contains('load i64, i64*'), 1, 'arith-u64-add-mem load')
+}
+
+; s78 🔴 槽宽耦合靶（s76 ④ 的同类）：let 目标 f 由 h2m-ty-of 前扫描注册为 TY-U64，
+;   降级侧算术臂 dest 也须 TY-U64——否则 h2m-var-write 的 st == vt 门禁在第二次写（f - 1）上 mark
+test-arith-u64-slot-u64 = () {
+    src = 'u6g = (x u64, y u64, n i64) (r u64) {\n    f = x + y\n    n > 0 -> f = f - 1\n    r = f\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-u64-slot-u64 unsup')
+    runner.eq(ir.contains('add i64'), 1, 'arith-u64-slot-u64 add')
+    runner.eq(ir.contains('sub i64'), 1, 'arith-u64-slot-u64 sub')
+    runner.eq(ir.contains('store i64'), 1, 'arith-u64-slot-u64 store')
+}
+
+; s78 门禁：u64 × f64 混合仍不放行——uty 要求双侧整族、fty 要求双侧 f64，混合两者皆 0 ⇒ 诚实 unsup
+test-arith-u64-mixed-gate = () {
+    src = 'u6h = (x u64, f f64) (r u64) {\n    r = x + f\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'arith-u64-mixed-gate counted')
+    runner.eq(ir.contains('define'), 0, 'arith-u64-mixed-gate no code')
+}
+
+; s77 门禁：u64 的位与仍不放行——s78 只解算术族（+ - *），位运算／移位／逻辑留给后续件
+;   （s76 曾在此钉「u64 '>' 不放行」的门禁，s77 已解除并下移到位与；s78 未触此门禁）
 test-arith-u64-bit-gate = () {
     src = 'u6b = (x u64, y u64) (r u64) {\n    r = x & y\n}\n'
     t = ast.make()
@@ -2649,7 +2738,14 @@ test-arith-u64-div-plain()
 test-arith-u64-mod-plain()
 test-arith-u64-div-lit()
 test-arith-u64-div-mem()
-test-arith-u64-add-gate()
+test-arith-u64-add-plain()
+test-arith-u64-sub-plain()
+test-arith-u64-mul-plain()
+test-arith-u64-add-lit()
+test-arith-u64-arith-nested()
+test-arith-u64-add-mem()
+test-arith-u64-slot-u64()
+test-arith-u64-mixed-gate()
 test-arith-u64-bit-gate()
 test-cmp-u64-lt()
 test-cmp-u64-le()

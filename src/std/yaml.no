@@ -121,7 +121,11 @@ yaml-parser.byte-at = (i i64) (c i64) {
     c = 0
     i < 0 -> return
     i >= .n -> return
-    c = .src.byte(i)
+    copt = .src.byte(i)
+    c = copt: {
+        ok -> it
+        -> 0
+    }
 }
 
 ; 當前字節
@@ -623,7 +627,11 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
             #{overflow=wrap}
             i = i + 1
             i < n -> {
-                s = t.byte(i)
+                sopt = t.byte(i)
+                s = sopt: {
+                    ok -> it
+                    -> 0
+                }
 
                 #{overflow=wrap}
                 s == 45 || s == 43 -> i = i + 1

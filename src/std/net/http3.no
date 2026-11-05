@@ -214,7 +214,11 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos + name-len > buf.len() -> return
 
     ; 讀取名稱
-    name = buf[r-pos..r-pos + name-len).to-str()
+    nameopt = buf[r-pos..r-pos + name-len).to-str()
+    name = nameopt: {
+        ok -> it
+        -> ''
+    }
 
     #{overflow=wrap}
     r-pos = r-pos + name-len
@@ -232,7 +236,11 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos + value-len > buf.len() -> return
 
     ; 讀取值
-    value = buf[r-pos..r-pos + value-len).to-str()
+    valueopt = buf[r-pos..r-pos + value-len).to-str()
+    value = valueopt: {
+        ok -> it
+        -> ''
+    }
 
     #{overflow=wrap}
     r-pos = r-pos + value-len

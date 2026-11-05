@@ -1023,7 +1023,11 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
     }
     (i < sn) {
         i >= sn -> break
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         c < 48 || c > 57 -> break
         val = val * 10.0 + (c - 48)
         digits = digits + 1
@@ -1039,7 +1043,11 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
         fd = 0
         (i < sn) {
             i >= sn -> break
-            c = s.byte(i)
+            copt = s.byte(i)
+            c = copt: {
+                ok -> it
+                -> 0
+            }
             c < 48 || c > 57 -> break
             val = val + frac * (c - 48)
             frac = frac * 0.1
@@ -1062,7 +1070,11 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
         ed = 0
         (i < sn) {
             i >= sn -> break
-            c = s.byte(i)
+            copt = s.byte(i)
+            c = copt: {
+                ok -> it
+                -> 0
+            }
             c < 48 || c > 57 -> break
             ev = ev * 10 + (c - 48)
             ed = ed + 1

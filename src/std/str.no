@@ -1003,7 +1003,11 @@ str-to-f64 = (s str) (result f64) {
 
     ; 跳過前導空白
     (i < n) {
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         {
             c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
 
@@ -1013,7 +1017,11 @@ str-to-f64 = (s str) (result f64) {
     i >= n -> return
 
     ; 正負號
-    c = s.byte(i)
+    copt = s.byte(i)
+    c = copt: {
+        ok -> it
+        -> 0
+    }
     {
         c == 45 -> {
             sign = -1
@@ -1025,7 +1033,11 @@ str-to-f64 = (s str) (result f64) {
 
     ; 整數部分 → int-mant = int-mant * 10 + digit
     (i < n) {
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         {
             c >= 48 && c <= 57 -> {
 
@@ -1044,12 +1056,20 @@ str-to-f64 = (s str) (result f64) {
 
     ; 小數部分 → int-mant = int-mant * 10 + digit; frac-count++
     (i < n) {
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         {
             c == 46 -> {
                 i = i + 1
                 (i < n) {
-                    c = s.byte(i)
+                    copt = s.byte(i)
+                    c = copt: {
+                        ok -> it
+                        -> 0
+                    }
                     {
                         c >= 48 && c <= 57 -> {
 
@@ -1073,12 +1093,20 @@ str-to-f64 = (s str) (result f64) {
 
     ; 指數部分
     (i < n) {
-        c = s.byte(i)
+        copt = s.byte(i)
+        c = copt: {
+            ok -> it
+            -> 0
+        }
         {
             c == 101 || c == 69 -> {
                 i = i + 1
                 (i < n) {
-                    c = s.byte(i)
+                    copt = s.byte(i)
+                    c = copt: {
+                        ok -> it
+                        -> 0
+                    }
                     {
                         c == 45 -> {
                             exp-sign = -1
@@ -1091,7 +1119,11 @@ str-to-f64 = (s str) (result f64) {
                     }
                 }
                 (i < n) {
-                    c = s.byte(i)
+                    copt = s.byte(i)
+                    c = copt: {
+                        ok -> it
+                        -> 0
+                    }
                     {
                         c >= 48 && c <= 57 -> {
 
