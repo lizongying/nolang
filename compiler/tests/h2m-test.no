@@ -2123,6 +2123,47 @@ test-logic-f64-gate = () {
     runner.eq(ir.contains('define'), 0, 'logic-f64 no code')
 }
 
+; ── f64 字面量（s73）────────────────────────────────────────
+; f64 字面量参与算术：x * 2.0 ⇒ 字面量经 OP-CONST(TY-F64) 物化为 %fd = fadd double 0.0, 2.0，再 fmul double
+;   ⚠ 与 i64 字面量分岔：i64 走 add i64 0, <int>；f64 走 fadd double 0.0, <raw>（raw 取 slot1 源文，含小数点）
+test-f64-lit-arith = () {
+    src = 'l6a = (x f64) (r f64) {\n    r = x * 2.0\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'f64-lit-arith unsup')
+    runner.eq(ir.contains('fadd double 0.0, 2.0'), 1, 'f64-lit-arith const')
+    runner.eq(ir.contains('fmul double'), 1, 'f64-lit-arith fmul')
+    runner.eq(ir.contains('define double'), 1, 'f64-lit-arith define double')
+    runner.eq(ir.contains('ret double'), 1, 'f64-lit-arith ret double')
+}
+
+; f64 字面量参与比较：x < 3.0 ⇒ 字面量 fadd double 0.0, 3.0 后 fcmp olt double ＋ zext i1→i64（结果恒 i64）
+test-f64-lit-cmp = () {
+    src = 'l6c = (x f64) (r i64) {\n    r = x < 3.0\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'f64-lit-cmp unsup')
+    runner.eq(ir.contains('fadd double 0.0, 3.0'), 1, 'f64-lit-cmp const')
+    runner.eq(ir.contains('fcmp olt double'), 1, 'f64-lit-cmp fcmp olt')
+    runner.eq(ir.contains('zext i1'), 1, 'f64-lit-cmp zext')
+    runner.eq(ir.contains('define i64'), 1, 'f64-lit-cmp define i64')
+}
+
+; 门控：无小数点的裸指数面字面量（如 1e5）raw 不含 '.' ⇒ LLVM double 字面量文法拒绝 ⇒ 诚实 unsup
+test-f64-lit-gate = () {
+    src = 'l6g = (x f64) (r f64) {\n    r = x * 1e5\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'f64-lit-gate counted')
+    runner.eq(ir.contains('define'), 0, 'f64-lit-gate no code')
+}
+
 ; 位与：x & y ⇒ and i64
 test-bit-and = () {
     src = 'b1x = (x i64, y i64) (r i64) {\n    r = x & y\n}\n'
@@ -2331,6 +2372,9 @@ test-cmp-f64-arith-nested()
 test-cmp-f64-mixed-gate()
 test-bit-f64-gate()
 test-logic-f64-gate()
+test-f64-lit-arith()
+test-f64-lit-cmp()
+test-f64-lit-gate()
 test-bit-and()
 test-bit-or()
 test-bit-xor()

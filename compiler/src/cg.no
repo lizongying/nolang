@@ -305,11 +305,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         x = xa[k]
         y = bs[k]
         op == OP-CONST -> {
-            b.push('\t%v')
-            b.push(d.to-str())
-            b.push(' = add i64 0, ')
-            b.push(x.to-str())
-            b.push('\n')
+
+            ; s73：dest 为 TY-F64 ⇒ 常量源于 f64 字面量（raw 存 syms[k]）⇒ 以 fadd double 0.0, <raw> 物化为 %fd SSA
+            ;   ⚠ slot-decl 的零初始化 OP-CONST 永不见 TY-F64（h2m.no:320 仅 I64/U64/STR 铺槽）⇒ 本分支只由字面量路径可达
+            cg-vty-at(vty, d) == TY-F64 -> {
+                b.push('\t%fd')
+                b.push(d.to-str())
+                b.push(' = fadd double 0.0, ')
+                b.push(syms[k])
+                b.push('\n')
+            }
+            cg-vty-at(vty, d) != TY-F64 -> {
+                b.push('\t%v')
+                b.push(d.to-str())
+                b.push(' = add i64 0, ')
+                b.push(x.to-str())
+                b.push('\n')
+            }
         }
         op == OP-ADD -> {
             cg-vty-at(vty, d) == TY-F64 -> {

@@ -931,6 +931,21 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ok-lit == 0 -> h2m-mark(c)
         }
 
+        ; s73：f64 字面量降级——取 raw（slot1 = 源 token 原文，非 %v 值），物化为 OP-CONST(TY-F64) 携 raw 于 sym 槽
+        ;   ⚠ 与整型字面量分岔：整型把数值放 a(xa)、sym 留空；f64 把 raw 放 sym、a 留 0（cg 按 dest TY-F64 走 fadd 分支读 sym）
+        ;   ⚠ 诚实门控：LLVM double 字面量文法要求尾数含小数点（'1.0'/'1.5e-7' 可、裸 '1e5' 不可）⇒ raw 不含 '.' 即 mark
+        d.kind == asp.K-FLOAT-LITERAL -> {
+            raw = ast.str-at(t, d.s1)
+            ok-f64 = 0
+            raw.contains('.') -> ok-f64 = 1
+            ok-f64 == 1 -> {
+                cid = h2m-alloc(c, TY-F64)
+                h2m-emit(c, OP-CONST, cid, 0, 0, raw, TY-F64)
+                v = cid
+            }
+            ok-f64 == 0 -> h2m-mark(c)
+        }
+
         d.kind == asp.K-IDENTIFIER -> {
             nm = ast.str-at(t, d.s0)
 
