@@ -2225,16 +2225,131 @@ test-arith-u64-mixed-gate = () {
     runner.eq(ir.contains('define'), 0, 'arith-u64-mixed-gate no code')
 }
 
-; s77 门禁：u64 的位与仍不放行——s78 只解算术族（+ - *），位运算／移位／逻辑留给后续件
-;   （s76 曾在此钉「u64 '>' 不放行」的门禁，s77 已解除并下移到位与；s78 未触此门禁）
+; s79 门禁下移：u64 的逻辑与 `&&` 仍不放行——s79 解位运算／移位族（& | ^ << >>），
+;   逻辑族（&& ||）与位运算在 bop 层同码（OP-AND/OP-OR，s68 复用），u64 操作数非 0/1，
+;   裸 and/or 于其上不等于逻辑与/或——留给后续件与真·短路语义一起处理
+;   （s77 曾在此钉「u64 位与不放行」的门禁，s79 已解除并下移到逻辑与）
 test-arith-u64-bit-gate = () {
-    src = 'u6b = (x u64, y u64) (r u64) {\n    r = x & y\n}\n'
+    src = 'u6b = (x u64, y u64) (r u64) {\n    r = x && y\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
     runner.eq(agg.unsup > 0, 1, 'arith-u64-bit-gate counted')
     runner.eq(ir.contains('define'), 0, 'arith-u64-bit-gate no code')
+}
+
+; ── u64 位运算／移位族（s79）────────────────────────────────
+; s79：u64 的 '&' 放行——and/or/xor/shl 与签／无签无关（逐位运算，64 位宽位元相同），
+;   Go 侧无 OpBitAndU 等衍生算子（无符號路由表只有除模与序比较），恒发裸 and i64
+;
+;   （镜像 src/mir/codegen.go emitBitwise：and/or/xor/shl 逐位无符號性；OpShr 恒 lshr——
+;    「nolang >> is a logical shift」；唯一衍生是 '>>' ⇒ OP-SHRU，cg s36 已备 lshr 臂）
+test-bit-u64-and-plain = () {
+    src = 'u8a = (x u64, y u64) (r u64) {\n    r = x & y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-and-plain unsup')
+    runner.eq(ir.contains('and i64'), 1, 'bit-u64-and-plain and')
+}
+
+; s79：u64 的 '|' 放行 ⇒ or i64
+;   （注意断言只用于本函数 src 仅有 or 的场景；xor 也含子串 'or i64'，靠 src 隔离）
+test-bit-u64-or-plain = () {
+    src = 'u8b = (x u64, y u64) (r u64) {\n    r = x | y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-or-plain unsup')
+    runner.eq(ir.contains('or i64'), 1, 'bit-u64-or-plain or')
+}
+
+; s79：u64 的 '^' 放行 ⇒ xor i64
+test-bit-u64-xor-plain = () {
+    src = 'u8c = (x u64, y u64) (r u64) {\n    r = x ^ y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-xor-plain unsup')
+    runner.eq(ir.contains('xor i64'), 1, 'bit-u64-xor-plain xor')
+}
+
+; s79：u64 的 '<<' 放行 ⇒ shl i64（左移高位丢弃，签／无签同值；Go 明文定义 shl 回绕非溢出）
+test-bit-u64-shl-plain = () {
+    src = 'u8d = (x u64, y u64) (r u64) {\n    r = x << y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-shl-plain unsup')
+    runner.eq(ir.contains('shl i64'), 1, 'bit-u64-shl-plain shl')
+}
+
+; s79 🔴 本件唯一重映射靶：u64 的 '>>' ⇒ OP-SHRU ⇒ lshr i64（镜像 Go OpShr 恒发 lshr；
+;   有符號 OP-SHR/ashr 是 i64 路专属，u64 若误走 ashr 对最高位为 1 的值错填 1）
+test-bit-u64-shr-lshr = () {
+    src = 'u8e = (x u64, y u64) (r u64) {\n    r = x >> y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-shr-lshr unsup')
+    runner.eq(ir.contains('lshr i64'), 1, 'bit-u64-shr-lshr lshr')
+    runner.eq(ir.contains('ashr'), 0, 'bit-u64-shr-lshr not ashr')
+}
+
+; s79：u64 >> 整字面量同走（沿用 uty「任一侧 TY-U64」——移位量为 TY-I64 亦入无符號路）
+test-bit-u64-shr-lit = () {
+    src = 'u8f = (x u64) (r u64) {\n    r = x >> 3\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-shr-lit unsup')
+    runner.eq(ir.contains('lshr i64'), 1, 'bit-u64-shr-lit lshr')
+}
+
+; s79：嵌套位运算 ((x & y) | 1)——内层 dest TY-U64，外层读它再 or ⇒ 皆落无符號整族
+test-bit-u64-nested = () {
+    src = 'u8g = (x u64, y u64) (r u64) {\n    r = (x & y) | 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-nested unsup')
+    runner.eq(ir.contains('and i64'), 1, 'bit-u64-nested and')
+    runner.eq(ir.contains('or i64'), 1, 'bit-u64-nested or')
+}
+
+; s79 🔴 槽宽耦合靶（s77/s78 同族）：let 目标 f 由 h2m-ty-of 前扫描注册为 TY-U64
+;   （非比较符⇒U64，s77 拆路后天然满足），降级侧位运算臂 dest 亦 TY-U64——第二次写 f = f ^ y 不撞 st == vt 门禁
+test-bit-u64-slot-u64 = () {
+    src = 'u8h = (x u64, y u64, n i64) (r u64) {\n    f = x & y\n    n > 0 -> f = f ^ y\n    r = f\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-slot-u64 unsup')
+    runner.eq(ir.contains('and i64'), 1, 'bit-u64-slot-u64 and')
+    runner.eq(ir.contains('xor i64'), 1, 'bit-u64-slot-u64 xor')
+    runner.eq(ir.contains('store i64'), 1, 'bit-u64-slot-u64 store')
+}
+
+; s79：mem 模式下的 u64 位运算——跨块 alloca/load 链喂 and i64
+test-bit-u64-and-mem = () {
+    src = 'u8i = (x u64, y u64, n i64) (r u64) {\n    r = x & y\n    n > 0 -> n = n - 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bit-u64-and-mem unsup')
+    runner.eq(ir.contains('alloca i64'), 1, 'bit-u64-and-mem alloca')
+    runner.eq(ir.contains('and i64'), 1, 'bit-u64-and-mem and')
+    runner.eq(ir.contains('load i64, i64*'), 1, 'bit-u64-and-mem load')
 }
 
 ; ── u64 比较族（s77）────────────────────────────────────────
@@ -2747,6 +2862,15 @@ test-arith-u64-add-mem()
 test-arith-u64-slot-u64()
 test-arith-u64-mixed-gate()
 test-arith-u64-bit-gate()
+test-bit-u64-and-plain()
+test-bit-u64-or-plain()
+test-bit-u64-xor-plain()
+test-bit-u64-shl-plain()
+test-bit-u64-shr-lshr()
+test-bit-u64-shr-lit()
+test-bit-u64-nested()
+test-bit-u64-slot-u64()
+test-bit-u64-and-mem()
 test-cmp-u64-lt()
 test-cmp-u64-le()
 test-cmp-u64-gt()
