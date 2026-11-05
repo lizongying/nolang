@@ -395,3 +395,62 @@ func TestFormatUnwrapAssignKeepsInlineComment(t *testing.T) {
 		t.Fatalf("not idempotent:\n--- pass1 ---\n%q\n--- pass2 ---\n%q", out, out2)
 	}
 }
+
+// REGRESSION GUARD (an arm body wrapping a **matched** match keeps its braces).
+//
+// `cond -> { x: { ... } }` 的外層 `{}` 是使用者明確寫下的區塊。writeArm 只在
+// 兩種情況可以內聯：body 原本就是 inline（IsInline），或唯一陳述是「裸 match」
+// （`{ ... }`，印出來自帶大括號，內聯不會多一層）。S4 糖化時 isBareMatchBody
+// 從降糖期的 RTBareMatch 旗標放寬成「任意 *SurfaceMatch」，於是帶主語的
+// match 也被當成裸 match：
+//
+//	cond -> { rle-idx[...]: { ... } }  =>  cond -> rle-idx[...]: { ... }
+//
+// 丟掉一層大括號，臂主體也從 block 變成 inline expression。真實案例：
+// noimg/src/bmp.no 的 RLE4/RLE8 解碼。第二則案例反向釘住「裸 match 仍要內聯」，
+// 避免把 isBareMatchBody 整個拿掉而多包一層 `{}`。
+func TestFormatMatchedMatchInArmBodyKeepsBlock(t *testing.T) {
+	cases := map[string]string{
+		"matchedMatch": "f = (n i64, v ?i64) (r i64) {\n" +
+			"    {\n" +
+			"        n == 1 -> {\n" +
+			"            n > 0 -> {\n" +
+			"                v: {\n" +
+			"                    ok -> r = it\n" +
+			"\n" +
+			"                    -> _\n" +
+			"                }\n" +
+			"            }\n" +
+			"        }\n" +
+			"\n" +
+			"        -> r = 0\n" +
+			"    }\n" +
+			"}\n",
+		"bareMatch": "f = (n i64) (r i64) {\n" +
+			"    {\n" +
+			"        n == 1 -> {\n" +
+			"            n > 0 -> r = 1\n" +
+			"\n" +
+			"            -> r = 2\n" +
+			"        }\n" +
+			"\n" +
+			"        -> r = 0\n" +
+			"    }\n" +
+			"}\n",
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, errs := FormatFileWithErrors(in)
+			if len(errs) > 0 {
+				t.Fatalf("format errors: %v", errs)
+			}
+			if out != in {
+				t.Fatalf("arm body braces were rewritten:\n--- want ---\n%s\n--- got ---\n%s", in, out)
+			}
+			out2, _ := FormatFileWithErrors(out)
+			if out2 != out {
+				t.Fatalf("not idempotent:\n--- pass1 ---\n%s\n--- pass2 ---\n%s", out, out2)
+			}
+		})
+	}
+}

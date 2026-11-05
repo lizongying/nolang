@@ -2460,6 +2460,16 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			bt := p.classifyBlockAtCurrent()
 			if bt == blockMatch {
 				tok := p.currentToken
+				// 試探性解析：parseBareMatchExpr 碰到混合內容（standalone if 後接
+				// 一般陳述／巢狀 if 組）會在半途 return nil。此時必須把 token 流、
+				// context 與試探期間的診斷一併回滾，再交給下面的 parseStatement
+				// （它自己有 saveState → fallback parseBlockStatement）。否則剩餘
+				// token 會被當成「下一條陳述」接著解析，前面的陳述被靜默丟棄：
+				// notools/src/awk.no 的 awk-find-eq 曾因此丟掉 `q = q2` 與
+				// `qm1 = q - 1`，checker 接著報 `'qm1' is not defined'，而 no fmt
+				// 只是把這份壞 AST 忠實印出來（看起來像 formatter 在刪程式碼）。
+				state := p.saveState()
+				diagMark := len(p.diags)
 				expr := p.parseBareMatchExpr()
 				if expr != nil {
 					stmt = &BlockStatement{
@@ -2469,6 +2479,9 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 							&ExpressionStatement{Expression: expr},
 						},
 					}
+				} else {
+					p.discardDiagnosticsRecordsSince(diagMark)
+					p.restoreState(state)
 				}
 			}
 		}

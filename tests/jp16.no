@@ -1,0 +1,12 @@
+# /test/runner
+s txt = 'a-b-c-d'
+parts = s.split('-')
+j = parts.join('.')
+print('top=[{j.to-str()}] len={j.len-bytes()}')
+f = () {
+    s2 txt = 'a-b-c-d'
+    p2 = s2.split('-')
+    j2 = p2.join('.')
+    print('fn=[{j2.to-str()}] len={j2.len-bytes()}')
+}
+f()

@@ -166,6 +166,64 @@ test-expr-stmt-no-cascade = () {
 }
 
 ; ═══════════════════════════════════════════════
+; 8. ILLEGAL 報錯族接線（s82：鏡像 Go expr.go:395-409 operand 位臂）
+;    期望全部由 L3 oracle 實測釘死（no vet /tmp/orb-p*.no / orb-q*.no）：
+;      `x = 1e5` ⇒ 【恰 1 條】1:5 sci [1gybkrrq]，let 站級聯被 n-illegal 抑制
+;      `print(1e5)` ⇒ 2 條：1:7 sci + 1:8 逗號族（鏡像 p5 實測）
+;      `x = $`     ⇒ 【恰 1 條】1:5 'illegal token "$"' [ghvjbe8q] + 級聯抑制
+; ═══════════════════════════════════════════════
+
+; 測試 illegal-sci-let
+test-illegal-sci-let = () {
+    SCI = 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)'
+    p = parse-err('x = 1e5\n')
+    runner.eq(ps-err-count(p), 1, 'sci-let count (cascade suppressed by n-illegal)')
+    runner.eq(p.e-ln[0], 1, 'sci-let line')
+    runner.eq(p.e-cl[0], 5, 'sci-let col')
+    runner.str-eq(p.e-msg[0], SCI, 156, 'sci-let msg')
+    runner.str-eq(p.e-code[0], '1gybkrrq', 8, 'sci-let code')
+}
+
+; 測試 illegal-sci-call
+test-illegal-sci-call = () {
+    SCI = 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)'
+    p = parse-err('print(1e5)\n')
+    runner.eq(ps-err-count(p), 2, 'sci-call count')
+    runner.eq(p.e-cl[0], 7, 'sci-call col')
+    runner.str-eq(p.e-msg[0], SCI, 156, 'sci-call msg')
+    runner.str-eq(p.e-code[0], '1gybkrrq', 8, 'sci-call code')
+    runner.eq(p.e-cl[1], 8, 'sci-call cascade col')
+    runner.str-eq(p.e-msg[1], 'expected comma or right parenthesis, got IDENT instead', 52, 'sci-call cascade msg')
+}
+
+; 測試 illegal-bare：無 emsg 的 ILLEGAL ⇒ Go 第二句 illegal token %q
+test-illegal-bare = () {
+    p = parse-err('x = $\n')
+    runner.eq(ps-err-count(p), 1, 'bare count (nil cascade suppressed)')
+    runner.eq(p.e-ln[0], 1, 'bare line')
+    runner.eq(p.e-cl[0], 5, 'bare col')
+    runner.str-eq(p.e-msg[0], 'illegal token \"$\"', 17, 'bare msg %q form')
+    runner.str-eq(p.e-code[0], 'ghvjbe8q', 8, 'bare code')
+}
+
+; 測試 illegal-suppresses-cascade：sci 錯同位的 let 級聯【不報】nil 錯，
+;    而普通錯誤（括號族）【照報】級聯 —— 釘死 s12 閘門從恆 0 到真實計位
+;   （oracle q2 釘死 p1 只 1 條；test-group-missing-rparen 釘死普通路 2 條）
+test-illegal-suppresses-cascade = () {
+    p = parse-err('y = 1e5\n')
+    runner.eq(ps-err-count(p), 1, 'suppress count')
+    runner.str-eq(p.e-msg[0], 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)', 156, 'suppress msg')
+}
+
+; 測試 guards：合法浮點/非 sci 形態零誤報（1.5 無 e、`1e` 是 INT+IDENT）
+test-illegal-guards = () {
+    p = parse-err('x = 1.5\n')
+    runner.eq(ps-err-count(p), 0, 'guard float')
+    p2 = parse-err('x = 1e\n')
+    runner.eq(ps-err-count(p2), 0, 'guard 1e not sci at ps layer')
+}
+
+; ═══════════════════════════════════════════════
 test-call-missing-comma()
 test-let-nil-value()
 test-group-missing-rparen()
@@ -173,6 +231,11 @@ test-dedup()
 test-clean-no-errors()
 test-multiline-call()
 test-expr-stmt-no-cascade()
+test-illegal-sci-let()
+test-illegal-sci-call()
+test-illegal-bare()
+test-illegal-suppresses-cascade()
+test-illegal-guards()
 
 runner.summary()
 f = runner.failed-count()

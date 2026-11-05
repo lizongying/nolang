@@ -102,6 +102,8 @@ B-RC = 125
 B-TILDE = 126
 B-LOWER-X = 120
 B-UPPER-X = 88
+B-LOWER-E = 101
+B-UPPER-E = 69
 B-ESC-N = 110
 B-ESC-T = 116
 B-ESC-R = 114
@@ -1536,6 +1538,26 @@ lx-scan-token = (lx lxst, t tk) {
                     dot = lx-contains-dot(num.to-bytes())
                     dot -> typ = tok.FLOAT
                     lit = num
+
+                    ; 鏡像 Go lexer.go:999-1008（s82）——科學計數法字面量不支持：數字後緊接
+                    ;   e/E 且其後是指數位（或 +/- 後指數位）⇒ 整體覆寫 ILLEGAL + ErrMsg。
+                    ;   探測只預覽不消耗（Go exponentDigitFollows 不 readChar）⇒ 殘餘照舊
+                    ;   掃為 IDENT 'e5'；hex 的 e 已被 lx-read-number 的 isHex 循環吞掉，
+                    ;   尾字符必非 e ⇒ 天然不觸發（對齊 Go 0x1e5 合法實測）
+                    sci = false
+                    lx.ch == B-LOWER-E || lx.ch == B-UPPER-E -> {
+                        nx = lx-peek(lx)
+                        lx-is-digit(nx) -> sci = true
+                        nx == B-PLUS || nx == B-MINUS -> {
+                            k = lx.rpos + 1
+                            kn = lx.input.len()
+                            k < kn -> sci = lx-is-digit(lx.input[k])
+                        }
+                    }
+                    sci -> {
+                        typ = tok.ILLEGAL
+                        emsg = 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)'
+                    }
                     done = true
                 }
                 (a6 == false) -> {

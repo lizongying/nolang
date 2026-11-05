@@ -7,6 +7,17 @@ sidebar_position: 2
 This page collects Nolang release records for each version, kept consistent with the root `HISTORY.md`.
 
 
+## v0.4.19
+
+- feat(mir): enable plain u64 arithmetic (`+`, `-`, `*`) and lower u64 bitwise, shift, division, and modulo as unsigned ops
+- feat(mir): add f64 binary arithmetic, comparison, and prefix negation via h2m lowering
+- feat(mir): lower i64 right shift as logical `lshr` and add bit-complement `~x` and logical `&&`/`||` operators
+- feat(checker): add `it` implicit binding ty-of prescan for self-host ledger
+- fix(parser): prevent option capture for boolean infix expressions
+- fix(funcargs): reject invalid extra targets in std method multi-assign
+- fix(codegen): hide internal symbols in shared library builds
+- docs(host-interop): add detailed guide for calling Nolang from host languages
+
 ## v0.4.18
 
 - feat(selfhost): add s62 container-iteration lowering for vec-backed `i <- xs` loops

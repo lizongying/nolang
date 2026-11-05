@@ -1983,6 +1983,80 @@ test-neg-f64-gate = () {
     runner.eq(ir.contains('define'), 0, 'neg-f64-gate no code')
 }
 
+; ── u64 前缀 -x / ~x（s81）────────────────────────────────────────
+; s81：u64 主体的 '-' ⇒ OP-NEG（dest TY-U64），cg 整数臂发 sub i64 0（二补回绕，与 i64 同 IR 形）
+;   镜像 src/mir/codegen.go emitNeg 非 option 非 float 路径；s76–s80 u64 族收尾（前缀 NEG/bit-not）
+test-pfx-u64-neg = () {
+    src = 'p8a = (x u64) (r u64) {\n    r = -x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'pfx-u64-neg unsup')
+    runner.eq(ir.contains('sub i64 0'), 1, 'pfx-u64-neg sub')
+    runner.eq(ir.contains('define'), 1, 'pfx-u64-neg code')
+}
+
+; s81：u64 主体的 '~' ⇒ OP-CONST(-1)+OP-XOR（dest TY-U64），发 add i64 0, -1 与 xor i64 %v
+test-pfx-u64-not = () {
+    src = 'p8b = (x u64) (r u64) {\n    r = ~x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'pfx-u64-not unsup')
+    runner.eq(ir.contains('add i64 0, -1'), 1, 'pfx-u64-not const -1')
+    runner.eq(ir.contains('xor i64 %v'), 1, 'pfx-u64-not xor')
+}
+
+; s81：u64 嵌套 -(-x) ⇒ 两颗 sub
+test-pfx-u64-nested = () {
+    src = 'p8c = (x u64) (r u64) {\n    r = -(-x)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'pfx-u64-nested unsup')
+    runner.eq(ir.contains('sub i64 0'), 1, 'pfx-u64-nested sub')
+}
+
+; s81 🔴 槽宽耦合靶：mem 模式 f=-x; n>0->f=~f; r=f——f 由 h2m-ty-of 前扫描递归操作元型别注册 TY-U64，
+;   降级侧两臂 dest 皆 TY-U64，写 f 不撞 st==vt；跨块 alloca/load 喂 sub 与 xor
+test-pfx-u64-mem = () {
+    src = 'p8d = (x u64, n i64) (r u64) {\n    f = -x\n    n > 0 -> f = ~f\n    r = f\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'pfx-u64-mem unsup')
+    runner.eq(ir.contains('alloca i64'), 1, 'pfx-u64-mem alloca')
+    runner.eq(ir.contains('sub i64 0'), 1, 'pfx-u64-mem sub')
+    runner.eq(ir.contains('xor i64'), 1, 'pfx-u64-mem xor')
+}
+
+; s81：u64 前缀喂无符號 add：r = ~x + ~y（前缀 dest TY-U64 流入 s78 u64 算术）
+test-pfx-u64-in-expr = () {
+    src = 'p8e = (x u64, y u64) (r u64) {\n    r = ~x + ~y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'pfx-u64-expr unsup')
+    runner.eq(ir.contains('xor i64'), 1, 'pfx-u64-expr xor')
+    runner.eq(ir.contains('add i64'), 1, 'pfx-u64-expr add')
+}
+
+; 门禁：'!' 于 u64 仍不放行——s81 只 widened '-'/'~'，不动 '!'（裸 xor 1 ≠ 逻辑非，非 0/1 值会错）
+test-pfx-u64-lnot-gate = () {
+    src = 'p8f = (x u64) (r i64) {\n    r = !x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'pfx-u64-lnot-gate counted')
+    runner.eq(ir.contains('define'), 0, 'pfx-u64-lnot-gate no code')
+}
+
 ; f64 二元算术（s71）：x + y（两 f64 形参）⇒ fadd double %fd…
 ;   ⚠ 无 f64 字面量降级（OP-CONST 只发 i64）⇒ 两侧操作数必为 f64 形参
 ;   ⚠ 直线式（无控制流）⇒ 寄存器模式，f64 值以 %fd SSA 流动，不落 alloca double 槽
@@ -2858,6 +2932,12 @@ test-prefix-gate()
 test-neg-f64-var()
 test-neg-f64-nested()
 test-neg-f64-gate()
+test-pfx-u64-neg()
+test-pfx-u64-not()
+test-pfx-u64-nested()
+test-pfx-u64-mem()
+test-pfx-u64-in-expr()
+test-pfx-u64-lnot-gate()
 test-arith-f64-add()
 test-arith-f64-mul-nested()
 test-arith-f64-div()

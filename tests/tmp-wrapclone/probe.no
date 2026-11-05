@@ -1,0 +1,7 @@
+f = (s str) (out ?str) {
+    a = s
+    out = a
+    g = a
+    print(g)
+}
+print(f('hello'))

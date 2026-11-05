@@ -2634,6 +2634,15 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 					walkExpr(s.IterRange.RangeExpr)
 				}
 				walkExpr(s.CountExpr)
+			case *parser.BlockStatement:
+				// A bare `{ ... }` group (if-group / match group with arms) is a
+				// statement in its own right. Without this case the whole nested
+				// group is skipped, so helpers called only from a nested arm are
+				// dropped from the export keep-set and later report
+				// "unknown callee" in MIR codegen.
+				if s != nil {
+					walkStmts(s.Statements)
+				}
 			}
 		}
 	}

@@ -59,10 +59,13 @@ func (f *formatter) isStandaloneInline(body *parser.BlockStatement) bool {
 	return false
 }
 
-// isBareMatchBody reports whether the body contains a single bare match expression.
-// Bare match bodies (e.g. `-> { cond -> body }`) output as `{ ... }` themselves,
-// so inlining them in writeBareMatchArm doesn't change their visual form.
-// This allows `{ }` block bodies containing a bare match to be inlined.
+// isBareMatchBody reports whether the body contains a single **bare** match
+// expression (`{ cond -> body }`, SurfaceMatch.Matched == nil). Such a body
+// prints as `{ ... }` by itself, so inlining it in writeArm does not add a
+// brace level. A matched match (`x: { ... }`) must NOT be inlined: its printed
+// form starts with `x: `, so `cond -> { x: { ... } }` would become
+// `cond -> x: { ... }`, silently dropping the user-written block and turning a
+// block body into an inline expression body.
 func (f *formatter) isBareMatchBody(statements []parser.Statement) bool {
 	if len(statements) != 1 {
 		return false
@@ -71,11 +74,12 @@ func (f *formatter) isBareMatchBody(statements []parser.Statement) bool {
 	if !ok {
 		return false
 	}
-	// 糖形態下裸 match 是 *SurfaceMatch，本身就印成 `{ ... }`，內聯不改變視覺形式，故可直接內聯。
-	if _, ok := es.Expression.(*parser.SurfaceMatch); ok {
-		return true
-	}
-	return false
+	// 糖形態下裸 match 是 *SurfaceMatch。S4 之前的降糖判定用 RTBareMatch 旗標，
+	// 只認裸 match；糖化時一度放寬成「任意 SurfaceMatch」，於是帶主語的 match
+	// （`x: { ... }`）也被內聯、臂體的大括號被吞掉（noimg/src/bmp.no 的
+	// `cx < w && cy < h -> { rle-idx[...]: { ... } }`）。這裡把限制補回來。
+	sm, ok := es.Expression.(*parser.SurfaceMatch)
+	return ok && sm.Matched == nil
 }
 
 func (f *formatter) formatIfExpression(e *parser.IfExpression) {

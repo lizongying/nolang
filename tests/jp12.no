@@ -1,0 +1,8 @@
+# /test/runner
+t-join = () {
+    s txt = 'a-b-c-d'
+    parts = s.split('-')
+    j = parts.join('.')
+    print('viarunner=[{j.to-str()}] len={j.len-bytes()}')
+}
+runner.test('join', t-join)

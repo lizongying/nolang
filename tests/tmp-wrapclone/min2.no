@@ -1,0 +1,11 @@
+f = (o ?str) (out str) {
+    out = o: {
+        ok -> it
+        -> ''
+    }
+    g = out
+    print(g)
+    print(out)
+}
+s ?str = 'hello'
+print(f(s))

@@ -10,7 +10,7 @@
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
 ;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67，s79 起 u64 亦放行——uty 下 >> 重映射 OP-SHRU 发 lshr、其余发裸 and/or/xor/shl i64；s80：'>>' 无条件重映射 OP-SHRU——i64 侧亦发 lshr，镜像 Go OpShr 恒逻辑移位，s35 的 i64=ashr 设计被推翻，cg 的 ashr 臂转死代码）；逻辑 && || s68，复用 OP-AND/OR（u64 仍门禁）；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' 仍门禁）/
-;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量）/
+;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量；s81：u64 主体 -x ⇒ OP-NEG(dest TY-U64)、~x ⇒ OP-CONST(-1)+OP-XOR(dest TY-U64)，cg 整数臂发 sub i64 0 / xor i64（二补回绕/bit-not，与 i64 同 IR 形），'!' 于 u64 仍门禁）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
 ;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/IterRange 必须全 0）/
@@ -1325,6 +1325,27 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 h2m-emit(c, OP-CONST, cm1, -1, 0, '', TY-I64)
                 mid = h2m-alloc(c, TY-I64)
                 h2m-emit(c, OP-XOR, mid, ov, cm1, '', TY-I64)
+                v = mid
+                ok-p = 1
+            }
+
+            ; s81：u64 主体前缀负号 -x ⇒ OP-NEG（dest TY-U64），镜像 Go emitNeg 非 option 非 float 路径；
+            ;   cg 整数臂（vty != TY-F64）发 sub i64 0, %v——TY-U64 与 TY-I64 共用 %v 命名空间与 i64 型别，
+            ;   二补回绕同形（-(1 u64)=M-1），零改 cg；s76–s80 u64 族收尾的前缀 NEG 一环
+            ov > 0 && osym == '-' && h2m-vty-at(c, ov) == TY-U64 -> {
+                mid = h2m-alloc(c, TY-U64)
+                h2m-emit(c, OP-NEG, mid, ov, 0, '', TY-U64)
+                v = mid
+                ok-p = 1
+            }
+
+            ; s81：u64 主体位非 ~x ⇒ OP-CONST(-1)+OP-XOR（dest TY-U64），镜像 Go ~⇒XOR-all-ones；
+            ;   与 i64 ~x 同发 add i64 0, -1 与 xor i64，仅 dest 型别码为 TY-U64；'!' 于 u64 仍门禁（见下 ok-p==0）
+            ov > 0 && osym == '~' && h2m-vty-at(c, ov) == TY-U64 -> {
+                cm1 = h2m-alloc(c, TY-U64)
+                h2m-emit(c, OP-CONST, cm1, -1, 0, '', TY-U64)
+                mid = h2m-alloc(c, TY-U64)
+                h2m-emit(c, OP-XOR, mid, ov, cm1, '', TY-U64)
                 v = mid
                 ok-p = 1
             }

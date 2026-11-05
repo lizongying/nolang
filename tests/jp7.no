@@ -1,0 +1,39 @@
+# /test/runner
+
+t-in-bounds = () {
+    s txt = 'a-b-c'
+    parts = s.split('-')
+    i = 0
+    parts[i]: {
+        ok -> { p = it }
+        -> { p = '' }
+    }
+    runner.str-eq(p.to-str(), 'a', 1, 'in-bounds payload == a')
+}
+t-out-of-bounds = () {
+    s txt = 'a-b-c'
+    parts = s.split('-')
+    i = 99
+    parts[i]: {
+        ok -> { p = it }
+        -> { p = 'OOB' }
+    }
+    runner.str-eq(p.to-str(), 'OOB', 3, 'out-of-bounds -> nil arm == OOB')
+}
+t-replace-n = () {
+    s txt = 'a-b-c-d'
+    r = s.replace-n('-', '.', 2)
+    runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'txt.replace-n 2x')
+}
+t-join = () {
+    s txt = 'a-b-c-d'
+    parts = s.split('-')
+    j = parts.join('.')
+    print('J=[{j.to-str()}] len={j.len-bytes()}')
+    runner.str-eq(j.to-str(), 'a.b.c.d', 7, '[]txt.join')
+}
+p1, f1 = runner.test('in-bounds', t-in-bounds)
+p2, f2 = runner.test('out-of-bounds', t-out-of-bounds)
+p3, f3 = runner.test('replace-n', t-replace-n)
+p4, f4 = runner.test('join', t-join)
+total = runner.summary()

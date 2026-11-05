@@ -2866,6 +2866,23 @@ func (l *lowerer) lowerStmtInner(id int32) {
 	switch n.Kind {
 	case hir.KLet:
 		name := l.pkg.Str(n.S)
+		// `_ = expr` is an explicit DISCARD, not a reusable local binding.
+		// Keeping one local named `_` typed from the FIRST discard makes every
+		// later `_ = expr` an EmitMoveInto rebind into that same slot, so the
+		// end-of-scope drop is chosen by the FIRST value's type. With
+		// heterogeneous ?T payloads that is a type pun: e.g. `?s` boxes its
+		// payload (slot 0 = box pointer) while `?[]i64` stores the %vec inline
+		// (slot 0 = len). Dropping the latter with the former's helper calls
+		// free(len) -> SIGSEGV (tests/uninit-output.no printed everything then
+		// crashed on the final drop). Give each discard its own fresh binding
+		// keyed by the HIR node id: each gets its own type and its own drop,
+		// which also stops the first four values leaking on overwrite.
+		// `__` cannot be written in Nolang source, so no user name can collide.
+		// The checker still sees `_ = expr` on the AST (it consumes the option),
+		// so diagnostics are unchanged.
+		if name == "_" {
+			name = fmt.Sprintf("__discard_%d", id)
+		}
 		// Record the binding's DECLARED raw type (needed later to pick
 		// `udiv`/`urem` for unsigned division — MIR flattens integers to i64
 		// and loses the u64-ness of the lowered value). Only set when the

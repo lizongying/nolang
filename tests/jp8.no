@@ -1,0 +1,15 @@
+# /test/runner
+t-join = () {
+    s txt = 'a-b-c-d'
+    parts = s.split('-')
+    j = parts.join('.')
+    print('J=[{j.to-str()}] len={j.len-bytes()}')
+}
+t-first = () {
+    s txt = 'a-b-c-d'
+    r = s.replace-n('-', '.', 2)
+    runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'x')
+}
+runner.test('first', t-first)
+runner.test('join', t-join)
+total = runner.summary()

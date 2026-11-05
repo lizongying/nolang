@@ -790,6 +790,39 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 			l.recordIndexLocalType(fd.Name, name, lt)
 			continue
 		}
+		// 2b) RHS 為切片表達式 `base[a..b)` / `base[..]`：parseLetStatement 刻意
+		// 不為 SliceExpression 推斷 SliceType（「切片表達式總是走 clone 路徑，
+		// 型別由 varLLVMType 從 RHS 推導」），所以 h 在 sem.VarTypes /
+		// FuncVarTypes / idxLocalTypes 三層查表全 miss。後果：
+		// `h = IV[..8); h[i]: { ok -> it = 999 -> _ }` 的 isSafeIndexBase 回
+		// false，resolveSubjectMatch 不做索引主體歸一化，整條 option 位置寫被
+		// 靜默丟棄（tests/slice-option-write.no 4 個 FAIL，顯式標註 `h []u64`
+		// 則正常）。這裡只補「安全索引專用」的 idxLocalTypes 條目，不改
+		// stmt.Type / sem.VarTypes，故不影響 codegen 的 slice-view clone 路徑。
+		// str/txt 切片回傳的是 str/txt（不是 []char），以 `[` / `vec[` 前綴
+		// 限制在位置型容器，避免把它們誤登記成 []char。
+		if se, isSlice := ls.Value.(*SliceExpression); false && isSlice {
+			if base := dotReceiverName(se.Left); base != "" {
+				src := localTypes[base]
+				if src == "" && l.p.sem != nil {
+					if t, ok := l.p.sem.FuncVarType(fd.Name, base); ok {
+						src = t
+					}
+					if src == "" {
+						src = l.p.sem.VarTypeRaw(base)
+					}
+				}
+				baseRaw := ty.StripOptionRaw(src)
+				if strings.HasPrefix(baseRaw, "[") || strings.HasPrefix(baseRaw, "vec[") {
+					if elem := containerElemType(baseRaw); elem != "" {
+						lt := "[]" + elem
+						localTypes[name] = lt
+						l.recordIndexLocalType(fd.Name, name, lt)
+						continue
+					}
+				}
+			}
+		}
 		// 3) RHS 為方法 receiver self（源碼 `parts = .`，parser 把獨立 `.` 解析成
 		// Identifier("self")）：登记方法 receiver 的容器型別。方法名形如
 		// `[]txt.join` / `str.upper`，最後一個 '.' 之前即 receiver 型別。
@@ -801,12 +834,28 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 		// 輸出 "..."）。非容器 receiver（str 等）登记後 containerElemType 為空、
 		// isSafeIndexBase 仍 false，無副作用。
 		if id, isID := ls.Value.(*Identifier); isID && id.Value == "self" {
-			if ridx := strings.LastIndex(fd.Name, "."); ridx > 0 {
-				recv := fd.Name[:ridx]
-				if recv != "" && containerElemType(recv) != "" {
-					localTypes[name] = recv
-					l.recordIndexLocalType(fd.Name, name, recv)
+			// 方法 receiver 的真實型別以合成的 self 結果參數為準，不能從 fd.Name 反推：
+			// 泛型方法經 monomorphizeGenerics 單態化後會被改名，例如 `[]txt.join`
+			// → `_xtxt.join`，`fd.Name[:LastIndex(".")]` 得到 `_xtxt`，
+			// containerElemType 回空 → 不登记 → 方法體內 `parts[i]: { ok -> … }`
+			// 的索引 option 型別推不出，安全索引歸一化失效（2026-11-05
+			// match-index-option.no 的 []txt.join 印出 "..." 而不是 "a.b.c.d"）。
+			// self 參數由 decl.go 插入、substituteType 會把 `[]t` 換成 `[]txt`，
+			// 對模板與單態化實例都給出同一個正確答案。
+			recv := ""
+			if fd.IsMethodDef && len(fd.Results) > 0 {
+				if r := fd.Results[0]; r != nil && r.Name == "self" && r.Type != nil {
+					recv = typeString(r.Type)
 				}
+			}
+			if recv == "" {
+				if ridx := strings.LastIndex(fd.Name, "."); ridx > 0 {
+					recv = fd.Name[:ridx]
+				}
+			}
+			if recv != "" && containerElemType(recv) != "" {
+				localTypes[name] = recv
+				l.recordIndexLocalType(fd.Name, name, recv)
 			}
 		}
 	}

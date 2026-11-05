@@ -75,7 +75,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 				// 無效 overflow：被標註陳述不含整數溢出運算（如整行僅字串拼接），
 				// 註解對溢出毫無作用，`no fmt` 應移除。overflowRelevant 為 nil 時
 				// 退回舊行為（保留）。
-				if !f.overflowEntryEffective(stmt) {
+				// 例外：附加在裸 `->` 臂上的註解是語法上必要的——刪掉後下一輪
+				// parse 會把 `->` 摺疊成上一條 cond 臂的 else 並報 k3r7mbqd
+				//（見 annotationGuardsBareElse）。
+				if !f.overflowEntryEffective(stmt) && !f.statementIsBareWildcardArm(stmt) {
 					continue
 				}
 				if m := overflowModeStringOf(e); m != "" && !seenMode[m] {
@@ -298,6 +301,40 @@ func (f *formatter) overflowEntryEffective(gov parser.Statement) bool {
 	return f.overflowRelevant[gov]
 }
 
+// statementIsBareWildcardArm reports whether stmt prints as a standalone
+// `-> body` arm (as opposed to a `cond -> body` arm). An annotation attached
+// to such a statement may be ineffective for overflow yet still load-bearing:
+// see annotationGuardsBareElse.
+func (f *formatter) statementIsBareWildcardArm(stmt parser.Statement) bool {
+	es, ok := stmt.(*parser.ExpressionStatement)
+	if !ok || es.Expression == nil {
+		return false
+	}
+	ie, ok := es.Expression.(*parser.IfExpression)
+	if !ok {
+		return false
+	}
+	return (f.hasRT(ie, parser.RTStandalone) || f.hasRT(ie, parser.RTPipelineValue)) &&
+		f.hasRT(ie, parser.RTMatchWildcard)
+}
+
+// annotationGuardsBareElse reports whether a standalone #{...} annotation is
+// load-bearing purely because of its position: it sits immediately before a
+// bare wildcard arm (`-> body`). The parser's else-folding only looks at the
+// directly preceding statement; an intervening annotation statement keeps the
+// `->` as a separate sibling instead of folding it into the previous
+// `cond ->` as an else. If `no fmt` removes the annotation as "ineffective",
+// the next parse sees a bare `->` outside an if-group and rejects the file
+// (k3r7mbqd) — the formatter would emit source it cannot read back.
+// Real victim: awk.no awk-is-numeric's `#{overflow=wrap}` before `-> yes = false`.
+//
+// The same annotation may instead be *attached* to the `->` statement by the
+// parser (no standalone AnnotationStatement at all); formatStatement checks
+// statementIsBareWildcardArm on that path too.
+func (f *formatter) annotationGuardsBareElse(s *parser.AnnotationStatement) bool {
+	return f.statementIsBareWildcardArm(f.overflowGoverned[s])
+}
+
 // annotationStatementEmits reports whether a standalone #{...} annotation
 // statement will actually emit output. With `#{overflow=...}` as a line
 // annotation (no more cross-statement de-duplication) every entry is emitted
@@ -306,6 +343,9 @@ func (f *formatter) overflowEntryEffective(gov parser.Statement) bool {
 // governed statement has no integer arithmetic) emits nothing and must report
 // false here so the enclosing gap logic does not leave a dangling blank line.
 func (f *formatter) annotationStatementEmits(s *parser.AnnotationStatement) bool {
+	if f.annotationGuardsBareElse(s) {
+		return true
+	}
 	gov := f.overflowGoverned[s]
 	for _, e := range s.Entries {
 		if e.Key == "overflow" {
@@ -891,13 +931,16 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 	var others []*parser.AnnotationEntry
 	var overflowModes []string
 	seenMode := make(map[string]bool)
+	// 無效註解若正好擋在裸 `->` 臂前面就不能刪：見 annotationGuardsBareElse。
+	// 保留它輸出（即便對 overflow 毫無作用）才能讓格式化結果重新解析。
+	keepIneffective := f.annotationGuardsBareElse(s)
 	for _, e := range s.Entries {
 		if e.Key == "overflow" {
 			// 無效 overflow：獨立成行註解所管轄的陳述不含整數溢出運算（如整行僅
 			// 字串拼接），註解對溢出毫無作用，`no fmt` 應移除。overflowRelevant /
 			// overflowGoverned 為 nil 時退回舊行為（保留）。gov 為 nil（註解後方無
 			// 被管轄陳述）亦視為無效。
-			if !f.overflowEntryEffective(f.overflowGoverned[s]) {
+			if !keepIneffective && !f.overflowEntryEffective(f.overflowGoverned[s]) {
 				continue
 			}
 			if m := overflowModeStringOf(e); m != "" && !seenMode[m] {

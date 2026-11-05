@@ -2234,6 +2234,43 @@ ps-int-lit-value = (raw str) (out str) {
     out = val.to-str()
 }
 
+; s82：Go fmt %q 內層形escape（不含外層雙引號），供 operand 位裸 ILLEGAL 報文。
+;   覆蓋裸 ILLEGAL 實際可取的形態：" ⇒ \"、\ ⇒ \\、<0x20 與 0x7F ⇒ \xhh（小寫 hex）；
+;   其餘可打印 ASCII 原樣。⚠️ ≥0x80 Go 按碼點 \uXXXX escape，noc 單字节原樣重建字符——
+;   語料無 operand 位非 ASCII 裸 ILLEGAL（std/tests 實測），偏差留 §5.3.4.dk 未覆蓋清單。
+; b: 運算元（ILLEGAL token 的 lit 字節）
+; r: 結果字串
+ps-q-esc = (b []byte) (r str) {
+    q = lx.lx-ch-str(34)
+    bs = lx.lx-ch-str(92)
+    xs = lx.lx-ch-str(120)
+    r = ''
+    i = 0
+    (i < b.len()) {
+        #{index-out=zero}
+        c = b[i]
+        cc = lx.lx-ch-str(c)
+        {
+            c == 34 -> cc = bs - q
+
+            c == 92 -> cc = bs - bs
+
+            c < 32 || c == 127 -> {
+                h1 = lx.lx-ch-str(lx.lx-hex-digit(c / 16))
+                h0 = lx.lx-ch-str(lx.lx-hex-digit(c % 16))
+                cc = bs - xs - h1 - h0
+            }
+
+            -> {
+            }
+        }
+        r = r - cc
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
 ; 優先級爬升解析（對應 Go parseExpression(precedence)。
 ;   左結合：只吞「優先級**嚴格大於** prec」的運算子（Go 的迴圈條件
 ;   `currentPrecedence() > precedence`）。遞迴右運算元時傳入**運算子自身**
@@ -2576,6 +2613,30 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
                 idx = ast.add(t, asp.K-IDENTIFIER)
                 ast.set-slot(t, idx, 0, ast.put-str(t, 'self'))
             }
+        }
+
+        tk.typ == tok.ILLEGAL -> {
+
+            ; s82：鏡像 Go expr.go:395-409——operand 位 ILLEGAL：報詞法錯並跳過。
+            ;   有 ErrMsg（科學計數/雙引號多字符族，lx.no 已錄 emsg）⇒ 原樣上報 [1gybkrrq]；
+            ;   裸 ILLEGAL（未知字符）⇒ 'illegal token %q' [ghvjbe8q]（Go fmt %q 內層形）。
+            ;   Go 去重鍵 reportedIllegal[line:col] 在 noc 由 ps-error 的 (ln,cl,msg) 去重覆蓋
+            ;   （同位只可能一個 token，同位同文 ⇒ 同鍵，效果等價）；計位 n-illegal 接上
+            ;   s12 閘門：let 站「expected expression, got nil instead」隨之抑制（oracle p1 釘死恰 1 條）。
+            ;   消費路徑：Go nextToken() 後 return nil ⇒ bump 一格、idx 留 0
+            im = ''
+            ic = 'ghvjbe8q'
+            tk.emsg != '' -> {
+                im = tk.emsg.copy()
+                ic = '1gybkrrq'
+            }
+            im == '' -> im = 'illegal token "' + ps-q-esc(tk.lit.to-bytes()) + '"'
+            ps-error(p, im, ic)
+
+            #{overflow=wrap}
+            p.n-illegal = p.n-illegal + 1
+            ps-bump(p); Go: nextToken(); return nil
+            idx = 0
         }
 
         -> {
@@ -3980,7 +4041,7 @@ ps-parse-let = (t ast, p psst, name str) (idx i64) {
     ; s12 閘門修正：Go 的抑制條件是 len(p.reportedIllegal)==0——只數【ILLEGAL 詞法錯】，
     ;   普通 saveError（分組/逗號報文）**不**抑制級聯（探針 p12：2:0 括號錯 + 2:0 nil 錯
     ;   兩條都在）。舊 s10 近似成 ps-err-count==0 會吞掉級聯條，正是 §5.3.4.ap 缺口①。
-    ;   n-illegal 目前恆 0（noc 無 ILLEGAL 報錯族），接上該族時在此計位即可。
+    ;   n-illegal 已接線（s82）：operand 位 ILLEGAL 臂每報一條計一位，鏡像 Go reportedIllegal 非空即抑制。
     val == 0 && p.n-illegal == 0 -> ps-error(p, 'expected expression, got nil instead', 'E_GENERAL')
 
     ; s8q：Pipeline 同位——`x = A -> B` 的【整條鏈】是 let 的 value（鏡像 Go stmt.go:1242-1260）。

@@ -185,6 +185,92 @@ test-comment-marker = () {
 }
 
 ; ═══════════════════════════════════════════════
+; 7. 科學計數 ILLEGAL 檢測（s82：鏡像 Go lexer.go:999-1008）
+;    期望行形由 L3 oracle 實測釘死（/tmp/nolang-v413/bin/no vet /tmp/orb-p*.no）：
+;      `x = 1e5` ⇒ 1:5 sci ErrMsg【一條】；`0x1e5` 合法（hex loop 吞 e）；
+;      `1e`【不是】sci（e 後無指數位 ⇒ INT+IDENT）
+; ═══════════════════════════════════════════════
+
+; 測試 sci-notation
+test-sci-notation = () {
+    SCI = 'scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)'
+    ts = lx.scan-all('x = 1e5')
+    runner.eq(ts.len(), 5, 'x = 1e5 -> ILLEGAL + residual IDENT e5')
+
+    #{index-out=zero}
+    a = ts[2]
+
+    #{index-out=zero}
+    b = ts[3]
+    runner.eq(a.typ, tok.ILLEGAL, 'sci tok2 is ILLEGAL')
+    runner.eq(a.ln, 1, 'sci line')
+    runner.eq(a.cl, 5, 'sci col')
+    runner.str-eq(a.lit, '1', 1, 'sci lit keeps the consumed number')
+    runner.str-eq(a.emsg, SCI, 156, 'sci emsg exact wording')
+    runner.eq(b.typ, tok.IDENT, 'e5 residual is IDENT')
+    runner.str-eq(b.lit, 'e5', 2, 'e5 literal')
+    runner.eq(b.cl, 6, 'e5 starts at the e')
+
+    ; 有點形（3.5e-2）：先 FLOAT 後被 sci 檢測覆寫為 ILLEGAL；游標停在 e 不消耗
+    ts2 = lx.scan-all('3.5e-2')
+    runner.eq(ts2.len(), 3, '3.5e-2 -> ILLEGAL + IDENT e-2')
+
+    #{index-out=zero}
+    a2 = ts2[0]
+    runner.eq(a2.typ, tok.ILLEGAL, 'dotted sci is ILLEGAL not FLOAT')
+    runner.str-eq(a2.lit, '3.5', 3, 'dotted sci lit is the number part')
+    runner.str-eq(a2.emsg, SCI, 156, 'dotted sci emsg')
+
+    #{index-out=zero}
+    b2 = ts2[1]
+    runner.str-eq(b2.lit, 'e-2', 3, 'e-2 residual IDENT (isLetter includes -)')
+
+    ; 1e+5：'+' 後跟指數位 ⇒ sci
+    ts3 = lx.scan-all('1e+5')
+
+    #{index-out=zero}
+    a3 = ts3[0]
+    runner.eq(a3.typ, tok.ILLEGAL, '1e+5 is sci')
+    runner.str-eq(a3.emsg, SCI, 156, '1e+5 emsg')
+
+    ; 大寫 E 同檢
+    ts4 = lx.scan-all('2E7')
+
+    #{index-out=zero}
+    a4 = ts4[0]
+    runner.eq(a4.typ, tok.ILLEGAL, '2E7 is sci')
+
+    ; 反例保衛：e 後無指數位 ⇒ 普通 INT（Go：x = 1e ⇒ 1 + IDENT e）
+    ts5 = lx.scan-all('1e')
+    runner.eq(ts5.len(), 3, '1e -> INT + IDENT + EOF')
+
+    #{index-out=zero}
+    a5 = ts5[0]
+    runner.eq(a5.typ, tok.INT, '1e is NOT sci (no exponent digit)')
+
+    #{index-out=zero}
+    b5 = ts5[1]
+    runner.str-eq(b5.lit, 'e', 1, '1e residual IDENT')
+
+    ; 反例保衛：hex 的 e 被 isHex loop 吞掉，尾字符不可能是 e ⇒ 絕不觸發
+    ts6 = lx.scan-all('0x1e5')
+    runner.eq(ts6.len(), 2, '0x1e5 single hex token')
+
+    #{index-out=zero}
+    a6 = ts6[0]
+    runner.eq(a6.typ, tok.INT, 'hex 0x1e5 stays INT')
+    runner.str-eq(a6.lit, '0x1e5', 5, 'hex lit intact')
+
+    ; 裸 ILLEGAL（未知字符）無 emsg —— Go 走 ps 側 'illegal token %q' 第二句
+    ts7 = lx.scan-all('$')
+
+    #{index-out=zero}
+    a7 = ts7[0]
+    runner.eq(a7.typ, tok.ILLEGAL, 'dollar is bare ILLEGAL')
+    runner.str-eq(a7.emsg, '', 0, 'bare ILLEGAL has no emsg')
+}
+
+; ═══════════════════════════════════════════════
 
 test-empty()
 test-no-alias()
@@ -192,6 +278,7 @@ test-assign()
 test-newline()
 test-char-vs-string()
 test-comment-marker()
+test-sci-notation()
 
 runner.summary()
 f = runner.failed-count()

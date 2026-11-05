@@ -8894,14 +8894,24 @@ func isBuiltinContainerLT(lt string) bool {
 }
 
 func (c *codegen) emitClone(inst *Inst) error {
-	if lt, _ := c.ptype(inst.Args[0]); lt == "%str-long" {
-		// Resolve the destination the way emitMove does: OpClone shares OpMove's
-		// two shapes, and the EmitMoveInto one (Dst == NoVal, destination in
-		// Args[1]) is exactly what a RE-assignment lowers to — which is the shape
-		// insertDrops rewrites to OpClone when the source is still live. Reading
-		// inst.Dst there yields NoVal, so ptype/valSlot fell back to i64/"".
-		dstVal := moveDst(inst)
-		dstT, _ := c.ptype(dstVal)
+	// Resolve the destination the way emitMove does: OpClone shares OpMove's
+	// two shapes, and the EmitMoveInto one (Dst == NoVal, destination in
+	// Args[1]) is exactly what a RE-assignment lowers to — which is the shape
+	// insertDrops rewrites to OpClone when the source is still live. Reading
+	// inst.Dst there yields NoVal, so ptype/valSlot fell back to i64/"".
+	dstVal := moveDst(inst)
+	dstT, _ := c.ptype(dstVal)
+	if lt, _ := c.ptype(inst.Args[0]); lt == "%str-long" && dstT == "%str-long" {
+		// 🔴 BOTH sides must be %str-long. @str_clone has the fixed signature
+		// `%str-long @str_clone(%str-long)`, and this emitter types the call with
+		// dstT. When the destination is an OPTION (a wrap-to-option clone, e.g.
+		// the `-> ''` fallback arm of `x = opt: { ok -> it  -> '' }` inside
+		// http3.decode-header), using dstT emitted
+		//   `call %option @str_clone(%option <str-long value>)`
+		// which LLVM's verifier rejects ("defined with type %str-long but
+		// expected %option"). Such a clone is a WRAP and belongs to the
+		// option-destination branch at the bottom of this function
+		// (emitOptionWrap), so fall through instead of stealing it here.
 		dstSlot := c.valSlot[dstVal]
 		_, srcV := c.loadVal(inst.Args[0])
 		// A true deep copy: @str_clone duplicates the buffer at the SAME length.
@@ -9009,7 +9019,7 @@ func (c *codegen) emitClone(inst *Inst) error {
 	// will be dropped and must therefore own a block each. Copy, then re-box
 	// the copy (optBoxClone mallocs a fresh block and deep-copies the payload's
 	// owned contents into it).
-	dstVal := moveDst(inst)
+	dstVal = moveDst(inst)
 	if t := c.mod.Type(c.localTypeOf(dstVal)); t != nil && t.Kind == KindOption {
 		dstSlot := c.valSlot[dstVal]
 		if st := c.mod.Type(c.localTypeOf(inst.Args[0])); st != nil && st.Kind == KindOption {
@@ -17391,8 +17401,11 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dReg, r2)
 			fmt.Fprintf(c.sb, "  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg)
 		default:
-			c.fail("eprint expects str/i64/byte/char/bool arg, got %s", lt)
-			return i18n.Errorf("w9ajg8ow", "eprint expects str/i64/byte/char/bool arg, got %s", lt)
+			// Carry the enclosing function name in the message payload so the
+			// diagnostic points at a source location without changing the i18n
+			// template (whose single %s placeholder is localised separately).
+			c.fail("eprint expects str/i64/byte/char/bool arg, got %s in func %s", lt, c.fname[c.cf])
+			return i18n.Errorf("w9ajg8ow", "eprint expects str/i64/byte/char/bool arg, got %s", lt+" in func "+c.fname[c.cf])
 		}
 	}
 	c.sb.WriteString("  call void @eprint_nl()\n")
