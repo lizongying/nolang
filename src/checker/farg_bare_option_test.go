@@ -84,3 +84,50 @@ g = () (res i64) {
 		t.Fatalf("legit ?T->?T param wrongly rejected: got %d fxxoptarg errors", n)
 	}
 }
+
+// countReturnCountErrors runs ValidateFuncArgs and returns the number of
+// rfzrw1nh (return-count mismatch) errors.
+func countReturnCountErrors(t *testing.T, src string) int {
+	t.Helper()
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if errs := p.Errors(); len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	n := 0
+	for _, r := range ValidateFuncArgs(prog, "") {
+		if r.TraceID == "rfzrw1nh" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestMultiAssignStdMethodReturnCountRejected is a regression guard for the
+// invalid IR `icmp ne void undef, 0`. Std METHOD signatures live in
+// CollectStdMethodSigs, a table separate from CollectStdModuleSignatures;
+// lookupReturnCount must consult it. A legacy `(T, ok bool)` destructure
+// against a `?T`-returning std method (`s, found = it.str()`) has to be
+// rejected at source level with rfzrw1nh, instead of silently dropping the
+// extra target and later reading it as an unbound void value.
+func TestMultiAssignStdMethodReturnCountRejected(t *testing.T) {
+	for _, src := range []string{
+		"main = () {\n\ts, found = it.str()\n}\n",
+		"main = () {\n\ts, found = json.str(v)\n}\n",
+	} {
+		if n := countReturnCountErrors(t, src); n != 1 {
+			t.Fatalf("expected 1 rfzrw1nh error for %q, got %d", src, n)
+		}
+	}
+}
+
+// TestMultiAssignUserFunctionReturnCountOK verifies no false positive: a
+// user-defined function with two result parameters may still be destructured
+// into two targets.
+func TestMultiAssignUserFunctionReturnCountOK(t *testing.T) {
+	src := "two = () (p i64, q i64) {\n\tp = 1\n\tq = 2\n}\nmain = () {\n\ta, b = two()\n}\n"
+	if n := countReturnCountErrors(t, src); n != 0 {
+		t.Fatalf("legit 2-target destructure wrongly rejected: got %d rfzrw1nh errors", n)
+	}
+}

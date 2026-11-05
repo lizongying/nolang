@@ -17435,6 +17435,16 @@ func (c *codegen) emitTerm(f *Function, t *Term) error {
 				fmt.Fprintf(c.sb, "  %s = icmp eq i64 %s, 0\n", nb, tg)
 				vT, v = "i1", nb
 			}
+			// A void condition has no producing instruction. The usual cause is
+			// a legacy `(T, ok bool)` multi-target destructure against a `?T`
+			// callee: lowerMultiAssign drops the extra target, so reading that
+			// unbound name yields KindVoid / "undef". `icmp ne void undef, 0` is
+			// invalid LLVM IR, so accumulate a diagnostic and stop emitting this
+			// terminator instead; EmitLLVM surfaces c.errs as zodppsnm.
+			if vT == "void" {
+				c.fail("func %s: branch condition is void (no value produced); a multi-target assignment has more targets than the callee returns - consume the option with `x: { ok -> ... }` or `?=` instead of the legacy `(T, ok bool)` pair", c.fname[c.cf])
+				return nil
+			}
 			// Nolang booleans ride on i64 (the HIR `bool` type), but LLVM `br`
 			// requires a strict i1. Coerce any non-i1 condition to i1 by testing
 			// non-zero: `&&`/`||` results arrive as i64, comparison results as

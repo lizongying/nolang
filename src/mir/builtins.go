@@ -31,17 +31,17 @@ import (
 // For these the declared Return list is empty, so lowering falls back to the
 // KLet's declared type (see lowerer.typeHint).
 var lhsInferredBuiltins = map[string]bool{
-	"with-len":       true,
-	"with-cap":       true,
-	"with-cap-len":   true,
-	"vec.with-len":   true,
-	"vec.with-cap":   true,
+	"with-len":         true,
+	"with-cap":         true,
+	"with-cap-len":     true,
+	"vec.with-len":     true,
+	"vec.with-cap":     true,
 	"vec.with-len-cap": true,
 	// new: `txt.new(cs)` / `str.new(cs)` — same empty-Return + LHS-inferred
 	// contract as with-len. Registered under the BARE name "new"; module-qualified
 	// callees (`txt.new`, `str.new`) are matched by bareCalleeName in
 	// builtinResultOf below.
-	"new":            true,
+	"new": true,
 }
 
 // builtinResult describes what a builtin call produces.
@@ -107,6 +107,26 @@ func builtinResultTypes(callee string) []string {
 	return out
 }
 
+// variadicPlaceholderBuiltins lists the builtins whose registry `Params` is a
+// PLACEHOLDER rather than a real signature (see builtin/fmt.go):
+//
+//	print / eprint   — variadic: any number of values, separated by spaces
+//	printf / sprintf / eprintf — removed; kept only so the symbol resolves
+//
+// `format` is NOT here: it genuinely takes exactly one str template.
+//
+// 🔴 Why a name list rather than a flag: BuiltinMethod has no "variadic" field,
+// and the placeholder is documented only in the fmt registrations. A future
+// variadic builtin must be added here; the symptom of forgetting is a silent
+// value coercion at the call site (an option argument losing its nil branch).
+var variadicPlaceholderBuiltins = map[string]bool{
+	"print":   true,
+	"eprint":  true,
+	"printf":  true,
+	"sprintf": true,
+	"eprintf": true,
+}
+
 // builtinParamTypes returns the nolang type string of a GLOBAL builtin's
 // declared parameters, in declaration order.
 //
@@ -130,7 +150,21 @@ func builtinResultTypes(callee string) []string {
 // call is dispatched with: if the callee has no HIR definition, the call WILL
 // be lowered by that builtin's emitter, so the builtin's declared parameter
 // types are by construction the right expected types at the argument positions.
+//
+// 🔴 EXCEPTION — the fmt family. `print` / `eprint` are VARIADIC and
+// `printf` / `sprintf` / `eprintf` are removed-but-still-resolvable, so their
+// registry `Params` is a PLACEHOLDER (`[str]`) that describes neither the
+// accepted count nor the accepted types (builtin/fmt.go says so explicitly).
+// Feeding it into the per-argument expected-type hint coerces every argument
+// against `str`, which silently changed observable behaviour: with
+// `print(a.at(5))` the `?i64` argument was lowered against a declared `str`
+// hint and the nil branch was lost, printing `0` instead of `nil`
+// (tests/arr-at1.no, tests/arr-c2.no). Variadic builtins must therefore be
+// skipped — see variadicPlaceholderBuiltins.
 func builtinParamTypes(callee string) []string {
+	if variadicPlaceholderBuiltins[bareCalleeName(callee)] {
+		return nil
+	}
 	bm, _, ok := lookupBuiltin(callee)
 	if !ok || bm.ReceiverType != builtin.ReceiverGlobal {
 		return nil

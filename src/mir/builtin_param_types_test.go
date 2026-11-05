@@ -48,6 +48,20 @@ func TestBuiltinParamTypesForGlobalBuiltins(t *testing.T) {
 	if got := builtinParamTypes(""); got != nil {
 		t.Fatalf("empty callee must not resolve, got %v", got)
 	}
+	// 🔴 變參 / 模板內建（fmt 家族）的 registry `Params` 是**佔位**：builtin/fmt.go
+	// 明說 print/eprint 是變參（個數任意），printf/sprintf/eprintf 只是「保留名字
+	// 讓呼叫能解析」。拿這個 `[str]` 當引數位置的預期型別，會把**每個**引數按 `str`
+	// 強制轉換——`print(a.at(5))` 的 `?i64` 引數因此丟掉 nil 分支，印出 `0` 而不是
+	// `nil`（tests/arr-at1.no、tests/arr-c2.no 是端到端釘子）。所以一律不猜。
+	for _, callee := range []string{"print", "eprint", "printf", "sprintf", "eprintf"} {
+		if got := builtinParamTypes(callee); got != nil {
+			t.Fatalf("variadic builtin %q must not supply argument types, got %v", callee, got)
+		}
+	}
+	// `format` 不在排除名單：它真的只吃一個 str 模板。
+	if got := builtinParamTypes("format"); len(got) != 1 || got[0] != "str" {
+		t.Fatalf("format params must stay [str], got %v", got)
+	}
 }
 
 // TestGlobalBuiltinArithArgumentKeepsIntegerType 釘住症狀本身：帶算術引數的全域

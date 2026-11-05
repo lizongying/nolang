@@ -2798,6 +2798,42 @@ func lookupReturnCount(callExpr *parser.CallExpression, sigs map[string]*funcSig
 	// Method call: receiver.method(args)
 	if dot, ok := callExpr.Function.(*parser.DotExpression); ok {
 		methodName := dot.Property
+		stdMethodSigs := CollectStdMethodSigs()
+		// Std METHOD signatures live in a table separate from std module
+		// functions (CollectStdMethodSigs). Consulting only the latter makes
+		// legacy `(T, ok bool)` destructures such as `s, found = it.str()` or
+		// `s, found = json.str(v)` resolve to -1 here, so rfzrw1nh never fires.
+		// lowerMultiAssign then drops the extra target, and the later read of
+		// that unbound name yields a void value that emitTerm turns into the
+		// invalid IR `icmp ne void undef, 0`.
+		lookupMethod := func(keys ...string) (int, bool) {
+			for _, k := range keys {
+				if rets, ok := stdMethodSigs[k]; ok {
+					return len(rets), true
+				}
+			}
+			return 0, false
+		}
+		// An implicit match binding (`it`) or an otherwise untyped receiver
+		// carries no type information, so `module.method` cannot be formed.
+		// Fall back to a method-name suffix lookup, accepting a count only
+		// when every candidate agrees; ambiguity keeps the -1 contract.
+		lookupMethodBySuffix := func() int {
+			count := -1
+			for k, rets := range stdMethodSigs {
+				if !strings.HasSuffix(k, "."+methodName) {
+					continue
+				}
+				if count == -1 {
+					count = len(rets)
+					continue
+				}
+				if count != len(rets) {
+					return -1
+				}
+			}
+			return count
+		}
 		// Determine receiver type to construct lookup key (e.g. "str.split")
 		if recv, ok := dot.Receiver.(*parser.Identifier); ok {
 			// If receiver is a known variable, use its type
@@ -2819,6 +2855,10 @@ func lookupReturnCount(callExpr *parser.CallExpression, sigs map[string]*funcSig
 				if rets, ok := stdSigs[fullName]; ok {
 					return len(rets)
 				}
+				if n, ok := lookupMethod(fullName, recv.Value+"."+fullName, methodName); ok {
+					return n
+				}
+				return lookupMethodBySuffix()
 			} else {
 				// Receiver is a module name (e.g. math.sin, os.stat-size, dep.resolve)
 				// 0. User-defined function with module prefix (e.g. "dep.resolve")
@@ -2840,6 +2880,10 @@ func lookupReturnCount(callExpr *parser.CallExpression, sigs map[string]*funcSig
 				if rets, ok := stdSigs[fullName]; ok {
 					return len(rets)
 				}
+				if n, ok := lookupMethod(fullName, methodName); ok {
+					return n
+				}
+				return lookupMethodBySuffix()
 			}
 		}
 		return -1
