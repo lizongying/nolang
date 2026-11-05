@@ -2040,6 +2040,89 @@ test-arith-i64-div-gate = () {
     runner.eq(ir.contains('define'), 0, 'arith-i64-div no code')
 }
 
+; ── f64 比较（s72）──────────────────────────────────────────
+; f64 小于：x < y（两 f64 形参）⇒ fcmp olt double ＋ zext i1→i64（比较结果恒 i64，走 %v 命名空间）
+;   ⚠ 与 f64 算术臂分岔：算术 dest 记 TY-F64（发 fadd 等），比较 dest 记 TY-I64（zext 到 i64）
+test-cmp-f64-lt = () {
+    src = 'c6l = (x f64, y f64) (r i64) {\n    r = x < y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-f64-lt unsup')
+    runner.eq(ir.contains('fcmp olt double'), 1, 'cmp-f64-lt fcmp olt')
+    runner.eq(ir.contains('zext i1'), 1, 'cmp-f64-lt zext')
+    runner.eq(ir.contains('define i64'), 1, 'cmp-f64-lt define i64')
+    runner.eq(ir.contains('ret i64'), 1, 'cmp-f64-lt ret i64')
+}
+
+; f64 相等：x == y ⇒ fcmp oeq double
+test-cmp-f64-eq = () {
+    src = 'c6e = (x f64, y f64) (r i64) {\n    r = x == y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-f64-eq unsup')
+    runner.eq(ir.contains('fcmp oeq double'), 1, 'cmp-f64-eq fcmp oeq')
+}
+
+; f64 不等：x != y ⇒ fcmp une double（une 保 NaN 语义）
+test-cmp-f64-ne = () {
+    src = 'c6n = (x f64, y f64) (r i64) {\n    r = x != y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-f64-ne unsup')
+    runner.eq(ir.contains('fcmp une double'), 1, 'cmp-f64-ne fcmp une')
+}
+
+; f64 嵌套比较：(x + y) < z ⇒ 内层 fadd double（TY-F64）后外层 fcmp olt double（TY-I64 结果）
+test-cmp-f64-arith-nested = () {
+    src = 'c6a = (x f64, y f64, z f64) (r i64) {\n    r = (x + y) < z\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'cmp-f64-nested unsup')
+    runner.eq(ir.contains('fadd double'), 1, 'cmp-f64-nested fadd')
+    runner.eq(ir.contains('fcmp olt double'), 1, 'cmp-f64-nested fcmp olt')
+}
+
+; 门控：混合操作数（一 f64 一 i64）比较 ⇒ unsup（两侧须同为 f64 或同为 i64）
+test-cmp-f64-mixed-gate = () {
+    src = 'c6x = (x f64, y i64) (r i64) {\n    r = x < y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'cmp-f64-mixed counted')
+    runner.eq(ir.contains('define'), 0, 'cmp-f64-mixed no code')
+}
+
+; 门控：位运算 & 于 f64 仍门禁（s72 收紧 f64 放行臂至仅算术＋比较；用 r f64 确保不是靠赋值型别不匹配而并靠显式 mark 拦截）
+test-bit-f64-gate = () {
+    src = 'b6x = (x f64, y f64) (r f64) {\n    r = x & y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'bit-f64 counted')
+    runner.eq(ir.contains('define'), 0, 'bit-f64 no code')
+}
+
+; 门控：逻辑 && 于 f64 仍门禁（s68 所记 f64/u64 逻辑操作数门禁，s72 收紧后铉住；r f64 同避开型别不匹配假拦截）
+test-logic-f64-gate = () {
+    src = 'l6x = (x f64, y f64) (r f64) {\n    r = x && y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'logic-f64 counted')
+    runner.eq(ir.contains('define'), 0, 'logic-f64 no code')
+}
+
 ; 位与：x & y ⇒ and i64
 test-bit-and = () {
     src = 'b1x = (x i64, y i64) (r i64) {\n    r = x & y\n}\n'
@@ -2241,6 +2324,13 @@ test-arith-f64-mul-nested()
 test-arith-f64-div()
 test-arith-f64-mixed-gate()
 test-arith-i64-div-gate()
+test-cmp-f64-lt()
+test-cmp-f64-eq()
+test-cmp-f64-ne()
+test-cmp-f64-arith-nested()
+test-cmp-f64-mixed-gate()
+test-bit-f64-gate()
+test-logic-f64-gate()
 test-bit-and()
 test-bit-or()
 test-bit-xor()
