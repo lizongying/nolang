@@ -9,7 +9,7 @@
 ; ── 覆盖面（刻意极小，且小得可测量）─────────────────────────────
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
-;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67；逻辑 && || s68，复用 OP-AND/OR；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁）/
+;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67；逻辑 && || s68，复用 OP-AND/OR；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' 仍门禁）/
 ;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
@@ -995,8 +995,12 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                 osym == '*' -> bop = OP-MUL
 
-                ; 除法符号映射（s71）：'/' 映射 OP-DIV 供 f64 侧发 fdiv double；i64 侧仍门禁（见下方 ok-i 排除 bop==OP-DIV）
+                ; 除法符号映射（s71  '/' ⇒ OP-DIV；s75  '%' ⇒ OP-MOD）：
+                ;   f64 侧 '/' 发 fdiv double（'%' 不入 is-arith ⇒ frem 仍门禁）；
+                ;   i64 侧 s75 起两符皆放行 ⇒ cg 发除零 select 護欄（镜像 Go plain 路径：除零→0 + stderr 报告）
                 osym == '/' -> bop = OP-DIV
+
+                osym == '%' -> bop = OP-MOD
 
                 ; 位运算家族（s67：& | ^ << >>，仅 i64；&^ 位清除无对应 op 仍计 unsup）
                 osym == '&' -> bop = OP-AND
@@ -1033,7 +1037,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             }
 
             ; 运算元型别分派（s71 二元算术 + s72 二元比较）：
-            ;   i64 侧：一切 bop 除 OP-DIV 皆放行 ⇒ 结果 TY-I64（算术/比较/位/移位/逻辑结果恒 i64）
+            ;   i64 侧：全部 bop 放行（s75 含 '/' '%'）⇒ 结果 TY-I64（算术/比较/位/移位/逻辑结果恒 i64）
             ;   f64 侧：仅「算术族」与「比较族」放行——
             ;     - 算术 + - * / ⇒ 发 fadd/fsub/fmul/fdiv double，dest 记 TY-F64（s71）
             ;     - 比较 < > <= >= == != ⇒ 发 fcmp 后 zext i1→i64，dest 记 TY-I64（s72，比较结果恒 i64 非 f64）
@@ -1062,9 +1066,11 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == OP-CMPGT -> is-cmp = 1
             bop == OP-CMPGE -> is-cmp = 1
 
-            ; i64：+ - * 与六位/移位/逻辑/比较放行；bop==OP-DIV 不落此路（i64 除法仍门禁）
+            ; i64：全部二元 op 放行（s75 起含 OP-DIV/OP-MOD ⇒ dest TY-I64，cg 发带除零護欄的 sdiv/srem）
+            ;   ⚠️ 口径：護欄对应 Go 非 option（plain）路径——除零结果定义化为 0 并 stderr 报告；
+            ;     ?i64 的 tag=2 装箱 err option 路未建模（h2m 型别表无 option dest），对账 oracle 须用明示 i64 目标
             ok-i = 0
-            bop > 0 && lv > 0 && rv > 0 && ity == 1 && bop != OP-DIV -> {
+            bop > 0 && lv > 0 && rv > 0 && ity == 1 -> {
                 mid = h2m-alloc(c, TY-I64)
                 h2m-emit(c, bop, mid, lv, rv, '', TY-I64)
                 v = mid

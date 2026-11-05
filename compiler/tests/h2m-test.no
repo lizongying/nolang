@@ -155,14 +155,15 @@ test-multi-func = () {
 ; ── 负例门禁：不支持的构造必须计入 unsup，不得静默产码 ──
 test-gate = () {
 
-    ; 除法不在本切片（除零的 option 语义降级属 §11 B14 语义半项）
+    ; s75：整型 / 已放行（護欄 plain 路：除零→0 + stderr 报告），此例转正
     src-div = 'd = () (r i64) {\n    r = 6 / 2\n}\n'
     t1 = ast.make()
     p1 = ps.new(src-div.to-bytes())
     r1 = ps.parse(t1, p1)
     agg1 = h2m-new()
     ir1 = h2m-lower-program(t1, agg1, r1)
-    runner.eq(agg1.unsup > 0, 1, 'gate div counted')
+    runner.eq(agg1.unsup, 0, 'gate div unsup')
+    runner.eq(ir1.contains('sdiv i64'), 1, 'gate div sdiv')
 
     ; 未定义标识符
     src-unk = 'u = () (r i64) {\n    r = zz\n}\n'
@@ -2031,15 +2032,54 @@ test-arith-f64-mixed-gate = () {
     runner.eq(ir.contains('define'), 0, 'arith-f64-mixed no code')
 }
 
-; 门控二：i64 除法仍门禁（?i64 除零→err 的 option 语义未建模，s71 仅放行 f64 '/'）
-test-arith-i64-div-gate = () {
+; s75 转正：i64 '/' 放行——dest 纯 i64 ⇒ cg 发除零 select 護欄（镜像 Go plain 路径）：
+;   %dz icmp、%ds 安全除数 select、sdiv、除零结果定义化为 0、div_zero_report 追发
+test-arith-i64-div-plain = () {
     src = 'i6d = (x i64, y i64) (r i64) {\n    r = x / y\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup > 0, 1, 'arith-i64-div counted')
-    runner.eq(ir.contains('define'), 0, 'arith-i64-div no code')
+    runner.eq(agg.unsup, 0, 'arith-i64-div-plain unsup')
+    runner.eq(ir.contains('sdiv i64'), 1, 'arith-i64-div-plain sdiv')
+    runner.eq(ir.contains('= select i1 %dz.'), 1, 'arith-i64-div-plain safe-divisor select')
+    runner.eq(ir.contains('call void @__nolang_div_zero_report'), 1, 'arith-i64-div-plain report')
+}
+
+; s75：i64 '%' 放行 ⇒ srem i64 + 同一除零護欄（镜像 Go plain 路径的 OpMod 分支）
+test-arith-i64-mod-plain = () {
+    src = 'i6m = (x i64, y i64) (r i64) {\n    r = x % y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-i64-mod-plain unsup')
+    runner.eq(ir.contains('srem i64'), 1, 'arith-i64-mod-plain srem')
+    runner.eq(ir.contains('= select i1 %dz.'), 1, 'arith-i64-mod-plain safe-divisor select')
+}
+
+; s75：mem 模式（控制流）下的 i64 除法——除数出自前扫描推断的 i64 槽，跨块 LOAD 后喂護欄 sdiv
+test-arith-i64-div-mem = () {
+    src = 'i6n = (x i64) (r i64) {\n    d = 3 - x\n    r = 100 / d\n    r > 0 -> r = r + x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-i64-div-mem unsup')
+    runner.eq(ir.contains('alloca i64'), 1, 'arith-i64-div-mem alloca')
+    runner.eq(ir.contains('sdiv i64'), 1, 'arith-i64-div-mem sdiv')
+    runner.eq(ir.contains('load i64, i64*'), 1, 'arith-i64-div-mem load')
+}
+
+; s75 门禁：f64 '%' 不放行（is-arith 不含 OP-MOD， frem 路径未解锁）⇒ 诚实 unsup
+test-arith-f64-mod-gate = () {
+    src = 'i6p = (x f64) (r f64) {\n    r = x % 2.0\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'arith-f64-mod-gate counted')
+    runner.eq(ir.contains('define'), 0, 'arith-f64-mod-gate no code')
 }
 
 ; ── f64 比较（s72）──────────────────────────────────────────
@@ -2276,9 +2316,9 @@ test-bit-chain = () {
     runner.eq(ir.contains('add i64'), 1, 'bit-chain add')
 }
 
-; 门控：x / y（除法）仍不在覆盖面 ⇒ unsup（本件只收位运算，除/余留后续）
+; 门控：x &^ y（位清除）仍无对应 op ⇒ unsup（s67 旧例用 '/' 演示，s75 已放行除法，改由 &^ 守住本门禁）
 test-bit-gate = () {
-    src = 'b7x = (x i64, y i64) (r i64) {\n    r = x / y\n}\n'
+    src = 'b7x = (x i64, y i64) (r i64) {\n    r = x &^ y\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
@@ -2408,7 +2448,10 @@ test-arith-f64-add()
 test-arith-f64-mul-nested()
 test-arith-f64-div()
 test-arith-f64-mixed-gate()
-test-arith-i64-div-gate()
+test-arith-i64-div-plain()
+test-arith-i64-mod-plain()
+test-arith-i64-div-mem()
+test-arith-f64-mod-gate()
 test-cmp-f64-lt()
 test-cmp-f64-eq()
 test-cmp-f64-ne()
