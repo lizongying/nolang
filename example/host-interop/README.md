@@ -64,10 +64,10 @@ wrapper 與 `dist/libnolang.h` 由同一份簽章解析結果產生，不會漂�
 值都會被編譯器硬錯誤拒絕——它們需要一套生命週期 ABI（init / shutdown / borrow /
 free），目前尚未定義。導出函數必須是頂層函數、恰好一個結果、C 符號合法且不重複。
 
-共享庫不會導出合成的 C `main`，但 v1 **尚未收斂內部符號可見性**：`nm -g` 除了
-三個 `nolang_*` 穩定符號，還會看到 `__nolang_main`、`_nolang_rc_*`、
-`_nolang_async_*` 等 Nolang runtime 全域符號。宿主程式請只依賴
-`dist/libnolang.h` 的宣告，不要直接連結這些內部符號。
+共享庫只導出三個 `#{cabi}` 穩定符號（`nm -g` 只剩 `nolang_add/scale/sum3`），
+不導出合成的 C `main`，也不導出任何 Nolang 內部／runtime 符號——`--shared`
+在 codegen 階段把共享庫模組內所有非導出函數與全域變數標 `hidden` visibility，
+wrapper 標 `default`。宿主程式只需依賴 `dist/libnolang.h` 的宣告。
 
 ## 目錄
 

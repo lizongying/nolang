@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -635,7 +636,87 @@ func (m *Module) EmitLLVM() (out string, err error) {
 			fmt.Fprintf(os.Stderr, "[miropt] prelude: dropped %d unreferenced helpers\n", removed)
 		}
 	}
+	// A shared library must expose ONLY the C ABI wrappers. Tag every other
+	// function and module global `hidden` and tag the wrappers `default`, so the
+	// dynamic symbol table holds just the stable nolang_* entries a host links
+	// against — not __nolang_main, _nolang_rc_*, _nolang_async_*, @nolang_argc,
+	// etc. Executable builds skip this and stay byte-identical.
+	if m.NoMainEntry {
+		exports := make(map[string]bool, len(m.CABIExports))
+		for _, e := range m.CABIExports {
+			exports[e.Symbol] = true
+		}
+		ir = hideInternalSymbols(ir, exports)
+	}
 	return ir, nil
+}
+
+// hideInternalSymbols rewrites a finished module so that a shared-library build
+// exports ONLY the C ABI wrapper symbols. It is the textual-IR equivalent of
+// compiling with -fvisibility=hidden and then marking the wrappers
+// __attribute__((visibility("default"))): every non-local function and
+// module-level global/constant is tagged `hidden`, and each #{cabi} wrapper is
+// tagged `default`. Visibility does not affect references inside the module, so
+// hiding nolang's private helpers leaves the calls the wrappers/runtime make to
+// them intact; it only removes the symbols from the dynamic export table.
+//
+// LLVM IR requires `define [linkage] [visibility] <ret> @name`, so visibility
+// is inserted AFTER an optional leading linkage keyword. Local linkage
+// (internal / private) is already non-exported and forbids non-default
+// visibility, so those symbols are left untouched.
+func hideInternalSymbols(ir string, exports map[string]bool) string {
+	reDefine := regexp.MustCompile(`^define(?: (internal|private|linkonce|weak|common|appending|extern_weak|available_externally|linkonce_odr|weak_odr))? `)
+	reDefineName := regexp.MustCompile(`@([A-Za-z_][\w.]*)\(`)
+	isLocalLinkage := func(linkage string) bool {
+		return linkage == "internal" || linkage == "private"
+	}
+	var b strings.Builder
+	b.Grow(len(ir) + 64)
+	for _, line := range strings.Split(ir, "\n") {
+		if strings.HasPrefix(line, "define ") {
+			m := reDefine.FindStringSubmatch(line)
+			linkage := ""
+			if m != nil {
+				linkage = m[1]
+			}
+			if isLocalLinkage(linkage) {
+				// internal/private is already non-exported AND must keep
+				// default visibility; leave it alone.
+				b.WriteString(line)
+				b.WriteByte('\n')
+				continue
+			}
+			name := ""
+			if nm := reDefineName.FindStringSubmatch(line); nm != nil {
+				name = nm[1]
+			}
+			vis := "hidden "
+			if exports[name] {
+				vis = "default "
+			}
+			line = reDefine.ReplaceAllString(line, m[0]+vis)
+			b.WriteString(line)
+			b.WriteByte('\n')
+			continue
+		}
+		if strings.HasPrefix(line, "@") {
+			// Local-linkage globals (private/internal constant) are non-exported
+			// and must keep default visibility; skip them.
+			if strings.Contains(line, "private ") || strings.Contains(line, "internal ") {
+				b.WriteString(line)
+				b.WriteByte('\n')
+				continue
+			}
+			if strings.Contains(line, " = global") {
+				line = strings.Replace(line, " = global", " = hidden global", 1)
+			} else if strings.Contains(line, " = constant") {
+				line = strings.Replace(line, " = constant", " = hidden constant", 1)
+			}
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func findMainFunc(m *Module) FuncID {
@@ -7968,10 +8049,90 @@ func (c *codegen) emitMove(inst *Inst) error {
 	}
 	srcSlot := c.valSlot[inst.Args[0]]
 	if srcSlot == "" {
+		// A void source carries no data (e.g. a match/cond exprSink seed const
+		// the lowerer emitted as void because valueTypeOf(exprSink) resolved to
+		// void). ptype() collapses void to the "i64" fallback spelling, so detect
+		// void via the nolang type table. The destination keeps its own
+		// zero-initialised slot (nil option / empty struct / 0), so skipping the
+		// move is sound and avoids a crash on the missing source slot.
+		if sv := c.mod.Value(inst.Args[0]); sv != nil {
+			if sty := c.mod.Type(sv.Type); sty != nil && sty.Kind == KindVoid {
+				return nil
+			}
+		}
+		// DBG-MOVE-NOSLOT: the move source value has no slot in THIS function,
+		// i.e. its ValueID does not belong here (cross-function leak / stale id).
+		if f := c.mod.Func(c.cf); f != nil {
+			sv := c.mod.Value(inst.Args[0])
+			var sinfo string
+			if sv != nil {
+				if sty := c.mod.Type(sv.Type); sty != nil {
+					sinfo = fmt.Sprintf("srctype raw=%q kind=%v elem=%d", sty.Raw, sty.Kind, sty.Elem)
+				} else {
+					sinfo = fmt.Sprintf("srctype tid=%d (no type)", sv.Type)
+				}
+			} else {
+				sinfo = "src value NOT in module Values"
+			}
+			// Scan for the DEFINING instruction of the source value to detect
+			// a cross-function value leak (ValueID used outside its owner func).
+			defFunc := -1
+			defOp := ""
+			var defInt int64
+			var defStr string
+			var defTypeID TypeID
+			for fid := range c.mod.Funcs {
+				ff := c.mod.Func(FuncID(fid))
+				if ff == nil {
+					continue
+				}
+				for _, bid := range ff.Blocks {
+					bb := c.mod.Block(bid)
+					if bb == nil {
+						continue
+					}
+					for _, iid := range bb.Insts {
+						ii := c.mod.Inst(iid)
+						if ii != nil && ii.Dst == inst.Args[0] {
+							defFunc = int(fid)
+							defOp = ii.Op.String()
+							defInt = ii.Int
+							defStr = ii.Str
+							defTypeID = ii.Type
+						}
+					}
+				}
+			}
+			// Dst value details.
+			dv := c.mod.Value(dstVal)
+			var dinfo string
+			if dv != nil {
+				if dty := c.mod.Type(dv.Type); dty != nil {
+					dinfo = fmt.Sprintf("dsttype raw=%q kind=%v", dty.Raw, dty.Kind)
+				}
+			}
+			if dt, ok := f.LocalTypes[dstVal]; ok {
+				if dty := c.mod.Type(dt); dty != nil {
+					dinfo += fmt.Sprintf(" dstLocal raw=%q kind=%v", dty.Raw, dty.Kind)
+				}
+			}
+			fmt.Fprintf(os.Stderr, "DBG-MOVE-NOSLOT func=%d name=%q src=%d dst=%d %s defFunc=%d defOp=%q defInt=%d defStr=%q defTypeID=%d %s\n", c.cf, f.Name, inst.Args[0], dstVal, sinfo, defFunc, defOp, defInt, defStr, defTypeID, dinfo)
+		}
 		c.fail("move source has no slot in func %d", c.cf)
 		return i18n.Errorf("t5rup04t", "move src slot v%d -> v%d", inst.Args[0], dstVal)
 	}
 	srcT, _ := c.ptype(inst.Args[0])
+	// A void source carries no data (e.g. a match/cond exprSink seed const the
+	// lowerer emitted as void because valueTypeOf(exprSink) resolved to void).
+	// ptype() collapses void to the "i64" fallback spelling, so detect void via
+	// the nolang type table directly. The destination keeps its own
+	// zero-initialised slot (a nil option / empty struct / 0), so skipping the
+	// move is sound and avoids a crash on the missing source slot.
+	if sv := c.mod.Value(inst.Args[0]); sv != nil {
+		if sty := c.mod.Type(sv.Type); sty != nil && sty.Kind == KindVoid {
+			return nil
+		}
+	}
 	// Ownership-correctness guard: moving a BORROWED input parameter into an owned
 	// heap slot must CLONE the heap, never bitwise-copy the {len,cap,data} triple.
 	// A bitwise copy shares the data pointer; the caller still owns the parameter
@@ -17288,6 +17449,18 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dReg, r2)
 			fmt.Fprintf(c.sb, "  call i64 @write(i32 2, i8* %s, i64 %s)\n", dReg, lReg)
 		default:
+			// DBG-EPRINT-BAD: capture the mis-typed operand so we can trace where
+			// its LocalTypes entry was assigned.
+			if f := c.mod.Func(c.cf); f != nil {
+				tid := f.LocalTypes[a]
+				if ty := c.mod.Type(tid); ty != nil {
+					fmt.Fprintf(os.Stderr, "DBG-EPRINT-BAD arg=%d func=%d name=%q lt=%s tid=%d raw=%q kind=%v elem=%d\n",
+						a, c.cf, f.Name, lt, tid, ty.Raw, ty.Kind, ty.Elem)
+				} else {
+					fmt.Fprintf(os.Stderr, "DBG-EPRINT-BAD arg=%d func=%d name=%q lt=%s tid=%d (no type)\n",
+						a, c.cf, f.Name, lt, tid)
+				}
+			}
 			c.fail("eprint expects str/i64/byte/char/bool arg, got %s", lt)
 			return i18n.Errorf("w9ajg8ow", "eprint expects str/i64/byte/char/bool arg, got %s", lt)
 		}

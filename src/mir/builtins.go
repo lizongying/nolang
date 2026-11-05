@@ -107,6 +107,48 @@ func builtinResultTypes(callee string) []string {
 	return out
 }
 
+// builtinParamTypes returns the nolang type string of a GLOBAL builtin's
+// declared parameters, in declaration order.
+//
+// 🔴 Why this exists: a pure builtin (`#{buildin}`) has NO HIR body, so it is
+// absent from `l.funcNames` and `paramRawTypesOfCallee` finds nothing for it.
+// The builtin registry is then the ONLY place its parameter types are declared
+// (`os.arg` → `(idx i64)`). Without them the expected type at an argument
+// position was UNKNOWN, and the enclosing statement's hint leaked in instead
+// (see lowerCallArgsWith): `x ?str = os.arg(i + 1)` handed the `?str` hint to
+// the `i + 1` argument, the infix lowered as a string concatenation, and
+// codegen emitted `add %str-long <i64>, <i64>` — LLVM rejects it ("'%lv.29'
+// defined with type 'i64' but expected '%str-long'"). The same leak made the
+// plain `x str = os.arg(i + 1)` silently drop the option's nil branch.
+//
+// Only GLOBAL builtins qualify. A METHOD builtin's registry entry lists the
+// method's OWN parameters, while the call's argv[0] is the RECEIVER — the two
+// lists do not line up, so the HIR path (which prepends self's type) stays
+// authoritative for methods.
+//
+// The resolution deliberately reuses `lookupBuiltin`, i.e. the SAME table the
+// call is dispatched with: if the callee has no HIR definition, the call WILL
+// be lowered by that builtin's emitter, so the builtin's declared parameter
+// types are by construction the right expected types at the argument positions.
+func builtinParamTypes(callee string) []string {
+	bm, _, ok := lookupBuiltin(callee)
+	if !ok || bm.ReceiverType != builtin.ReceiverGlobal {
+		return nil
+	}
+	var out []string
+	for _, p := range bm.Params {
+		if p == nil {
+			continue
+		}
+		raw := p.String()
+		if raw == "" {
+			continue
+		}
+		out = append(out, raw)
+	}
+	return out
+}
+
 // builtinResultOf reports what a call to `callee` yields.
 func builtinResultOf(callee string) builtinResult {
 	bm, _, ok := lookupBuiltin(callee)

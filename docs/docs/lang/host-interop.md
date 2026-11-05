@@ -508,7 +508,7 @@ csharp 42 10.0 42
 | 內部 ABI（`out-pointer`、符號消毒）不適合 C 直接呼叫 | 編譯器發射正常返回值 wrapper；宿主只依賴 `#{cabi}` 符號與生成標頭 |
 | 未被呼叫的函數被可達性分析丟棄、或被 comptime 折疊 | 導出函數作為額外 `LowerHIR` 根並標記不可折疊；不再需要 `getpid()` 錨點 |
 | 共享庫導出 `main` 與宿主衝突 | `--shared` 不發射合成的 `define i32 @main` |
-| 共享庫仍會導出 Nolang 內部／runtime 全域符號 | v1 不做 visibility 收斂：`nm -g` 除了三個 `#{cabi}` 符號，還會看到 `__nolang_main`、`_nolang_rc_*`、`_nolang_async_*` 等。宿主只應依賴生成標頭中的宣告；若要隱藏內部符號，需後續在 codegen 對共享庫標 `hidden` visibility |
+| 共享庫只導出三個 `#{cabi}` 符號 | `--shared` 在 codegen 階段把共享庫模組內**所有非導出函數與全域變數**標 `hidden`、wrapper 標 `default`（LLVM IR visibility）；`nm -g` 只剩 `_nolang_add/_nolang_scale/_nolang_sum3`，內部 runtime 符號（`_nolang_rc_*`、`_nolang_async_*`、`@nolang_argc` 等）已不可見。局部連結（internal/private）符號本就不導出，保持 default |
 | `str` / `vec` / `?T` 的所有權與 runtime 初始化／清理 | v1 明確拒絕；需要生命週期 ABI（`init` / `shutdown` / borrow / free）後才開放 |
 | 導出符號名稱撞名或非法 | 檢查合法 C 識別字、重複、`main` / `_nolang_main` 保留字與 LLVM 內部符號，衝突即硬錯誤 |
 | 標頭檔與 wrapper 型別漂移 | 兩者由同一份 `cabiSignature` 解析結果產生 |

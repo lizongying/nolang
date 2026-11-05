@@ -54,6 +54,23 @@ t-get-program = () {
     runner.str-eq(p, o0, n, 'program == os.arg(0)')
 }
 
+; os.arg 的**算術引數**（i + 1）與**宣告為 option 的目標**：
+; 型別提示（`?str`）不得洩漏進引數的算術運算，否則 infix 會被降成字串串接，
+; codegen 發出 `add %str-long <i64>, <i64>`，LLVM 拒收（"'%lv.29' defined with
+; type 'i64' but expected '%str-long'"）——整個測試 binary 編譯失敗。
+; 修正前（本案例加入時）就是這個形狀會炸。
+t-arg-arith-index = () {
+    i i64 = 0
+    opt-a ?str = os.arg(i + 1)
+    is-nil = false
+    opt-a: {
+        nil -> is-nil = true
+
+        -> is-nil = false
+    }
+    runner.is-true(is-nil, 'os.arg(i + 1) out of range => nil')
+}
+
 ; 無額外參數時 has-flag 對任意旗標都應為 false
 t-has-flag-absent = () {
 
@@ -90,6 +107,7 @@ p2 = runner.test('args.get/program', t-get-program)
 p3 = runner.test('args.has-flag(absent)', t-has-flag-absent)
 p4 = runner.test('args.get-option(absent)', t-get-option-absent)
 p5 = runner.test('args.get-positional(absent)', t-get-positional-absent)
+p6 = runner.test('os.arg(arith index)', t-arg-arith-index)
 total = runner.summary()
 f = runner.failed-count()
 {

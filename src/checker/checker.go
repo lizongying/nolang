@@ -5140,7 +5140,8 @@ func upgradeOptionArithTargetType(explicitPlain bool, value parser.Expression, t
 //
 // 🔴 邊界（與 arithmetic 那一支逐字鏡像，兩者共用同一份「明文標註只在本行算開關」
 // 的判據）：
-//   - 只處理 **CallExpression + DotExpression 接收者**（`recv.method(...)`）；
+//   - 只處理 **CallExpression + DotExpression 接收者**（`recv.method(...)` 與
+//     模組限定的 `mod.fn(...)`）；
 //   - 目標必須是 plain（`?T` / `&T` 由 optionTypesCompatible / 借用規則管）——
 //     呼叫端負責擋，這裡只回答「右值是不是 option」；
 //   - 接收者型別推斷不出來就回 ""（寧可漏報，不可誤報）；
@@ -5153,6 +5154,19 @@ func optionResultOfCallTarget(value parser.Expression, varTypes map[string]strin
 	dot, ok := call.Function.(*parser.DotExpression)
 	if !ok || dot == nil || dot.Property == "" {
 		return ""
+	}
+	// 模組限定呼叫（`os.arg(...)`）：接收者是**模組名**而不是變數，型別推斷不出來，
+	// 方法路徑（下方 stdMethodOptionResult）對不上。但 std 簽名表知道它的回傳
+	// 型別（`os.arg` → `?str`），所以在這裡分流出來。若不分流，這種「option 當
+	// 值傳遞」會被整條型別比對跳過（`inferredType != ""` 守衛）而**靜默拆包**：
+	// option 的 payload 被讀出來存進 plain 變數，nil/err 分支直接丟掉。
+	//
+	// 接收者是**本地變數**時（`os = ...` 遮蔽了模組名）必須走方法路徑，不可誤認
+	// 成模組限定呼叫。
+	if recv, ok := dot.Receiver.(*parser.Identifier); ok {
+		if _, isVar := varTypes[recv.Value]; !isVar {
+			return stdFuncOptionResult(recv.Value, dot.Property)
+		}
 	}
 	recvType := inferExprType(dot.Receiver, varTypes, nil, selfType)
 	if recvType == "" {

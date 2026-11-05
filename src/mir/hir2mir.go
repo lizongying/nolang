@@ -13050,6 +13050,19 @@ func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, p
 	// parameter types before lowering, so lowerStructLit can emit a typed
 	// structlit (see structLitTypes).
 	paramRaws := l.paramRawTypesOfCallee(callee)
+	// A PURE builtin (`#{buildin}` — `os.arg`, `os.args`, …) has no HIR body,
+	// so it is not in funcNames and paramRawTypesOfCallee finds nothing for
+	// it. Its declared parameter types live in the builtin registry, which is
+	// also the table the call is DISPATCHED with — so those are the right
+	// expected types at the argument positions. Without them the expected type
+	// was unknown and the enclosing statement's hint leaked into the argument
+	// (see the comment above the per-argument loop): `x ?str = os.arg(i + 1)`
+	// handed the `?str` hint to the `i + 1` argument, the infix lowered as a
+	// string concatenation, and codegen emitted `add %str-long <i64>, <i64>`,
+	// which LLVM rejects. See builtinParamTypes.
+	if len(paramRaws) == 0 {
+		paramRaws = builtinParamTypes(callee)
+	}
 	// Real (non-receiver) KParam node IDs, in declaration order. Used to fill
 	// trailing parameters the caller omitted via their default expressions.
 	paramNodes := l.paramNodesOfCallee(callee)

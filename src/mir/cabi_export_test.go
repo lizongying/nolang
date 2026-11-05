@@ -104,13 +104,78 @@ func TestCABISharedModuleOmitsCMainButKeepsArgGlobals(t *testing.T) {
 	// os.args / os.arg read these globals directly from builtin_call.go;
 	// dropping them together with the entry would produce unverifiable IR.
 	for _, want := range []string{
-		"@nolang_argc = global i32 0",
-		"@nolang_argv = global i8** null",
-		"define i64 @nolang_add(i64 %a0, i64 %a1) {",
+		"@nolang_argc = hidden global i32 0",
+		"@nolang_argv = hidden global i8** null",
+		"define default i64 @nolang_add(i64 %a0, i64 %a1) {",
 	} {
 		if !strings.Contains(libIR, want) {
 			t.Errorf("shared IR is missing %q", want)
 		}
+	}
+}
+
+func TestCABISharedModuleHidesInternalSymbols(t *testing.T) {
+	// `no build --shared` must export ONLY the C ABI wrappers. Every other
+	// function and module global is hidden, so the produced dylib/.so/.dll does
+	// not leak __nolang_main, _nolang_rc_*, _nolang_async_*, @nolang_argc, etc.
+	lib := lowerSourceForTest(t, cabiThreeExports)
+	lib.NoMainEntry = true
+	libIR, err := lib.EmitLLVM()
+	if err != nil {
+		t.Fatalf("shared EmitLLVM: %v", err)
+	}
+	// The three wrappers are explicitly default-visible (exported).
+	for _, sym := range []string{"nolang_add", "nolang_scale", "nolang_sum3"} {
+		if !strings.Contains(libIR, "define default i64 @"+sym+"(") &&
+			!strings.Contains(libIR, "define default double @"+sym+"(") {
+			t.Errorf("wrapper %s must be default-visible, got:\n%s", sym, libIR)
+		}
+	}
+	// The internal functions they call must be hidden, not exported.
+	for _, internal := range []string{
+		"define hidden void @nl_add(",
+		"define hidden void @nl_scale(",
+		"define hidden void @nl_sum3(",
+		"define hidden void @print_i64(",
+	} {
+		if !strings.Contains(libIR, internal) {
+			t.Errorf("internal symbol not hidden: want %q in IR", internal)
+		}
+	}
+	// No `define` line may be left unmarked, EXCEPT local-linkage functions
+	// (internal/private) which are already non-exported and keep default
+	// visibility. Every other function is either the default-visible wrapper or
+	// a hidden (external-linkage) internal helper.
+	for _, line := range strings.Split(libIR, "\n") {
+		if !strings.HasPrefix(line, "define ") {
+			continue
+		}
+		if strings.Contains(line, " internal ") || strings.Contains(line, " private ") {
+			continue
+		}
+		if !strings.Contains(line, "default ") && !strings.Contains(line, "hidden ") {
+			t.Errorf("unmarked function in shared IR: %q", line)
+		}
+	}
+	// Module globals must be hidden too.
+	if !strings.Contains(libIR, "@nolang_argc = hidden global") {
+		t.Error("argc global must be hidden in a shared library")
+	}
+}
+
+func TestCABIExecutableModuleStaysByteIdentical(t *testing.T) {
+	// The visibility pass runs only for shared builds; an ordinary executable
+	// module must not gain any `default`/`hidden` keyword.
+	exe := lowerSourceForTest(t, cabiThreeExports)
+	exeIR, err := exe.EmitLLVM()
+	if err != nil {
+		t.Fatalf("executable EmitLLVM: %v", err)
+	}
+	if strings.Contains(exeIR, "define default ") || strings.Contains(exeIR, "define hidden ") {
+		t.Error("executable module must not be touched by the shared visibility pass")
+	}
+	if !strings.Contains(exeIR, "define i64 @nolang_add(i64 %a0, i64 %a1) {") {
+		t.Error("executable wrapper lost its normal-return shape")
 	}
 }
 

@@ -1743,6 +1743,48 @@ func optionResultOfSigEntry(entry StdSigEntry) string {
 	return r
 }
 
+// stdFuncOptionResult 解析「**模組限定** std 函式呼叫」（`os.arg(...)`、
+// `os.get-env(...)`、`args.get(...)` 等）的**回傳型別**，且只在「確定是 option」
+// 時回傳 `?T`，其餘一律回 ""。
+//
+// 🔴 為什麼需要這一支（與 stdMethodOptionResult 對稱但形狀不同）：`os.arg(i + 1)`
+// 在 AST 裡是 `CallExpression{Function: DotExpression{Property:"arg",
+// Receiver: Identifier("os")}}`——接收者是**模組名**而不是變數，所以
+// stdMethodOptionResult 那條「接收者型別 → 方法名」的路徑完全對不上（`os` 的
+// 型別推不出來），optionResultOfCallTarget 便回 ""。於是 `x str = os.arg(i + 1)`
+// 這條「option 當值傳遞」被整條型別比對跳過（`inferredType != ""` 守衛），
+// **靜默拆包**：option 的 payload 被讀出來存進 plain 變數，nil/err 分支直接丟掉，
+// `no vet` 一句話都不說。
+//
+// 鍵是**模組限定**的 `module.fn`（`os.arg` → `?str`），因此不會與另一個模組的
+// 同名函式相撞（`foo.arg` 不會被誤認成 `os.arg`）——這是選簽名表而非 Go builtin
+// 裸名表的原因（後者只有 "arg" 這個裸名，會與任何模組的 `arg` 相撞）。
+//
+// 邊界與 stdMethodOptionResult 逐字對稱（寧可漏報，不可誤報）：簽名表未暖表時
+// 安靜返回；非 option 結果不升格；仍帶型別變數的泛型結果不猜。
+func stdFuncOptionResult(module, fn string) string {
+	if module == "" || fn == "" {
+		return ""
+	}
+	// 簽名表未暖表時（`go test` 沒帶 StdSigKey 的二進位）必須直接安靜返回：
+	// CollectStdModuleSignatures 在 StdSigKey 為空時會 os.Exit(1)。
+	if stdSigsCache == nil && stdMethodSigsCache == nil {
+		if StdSigKey == "" {
+			return ""
+		}
+		CollectStdModuleSignatures()
+		if stdSigsCache == nil && stdMethodSigsCache == nil {
+			return ""
+		}
+	}
+	if entry, ok := stdSigsCache[module+"."+fn]; ok {
+		if r := optionResultOfSigEntry(entry); r != "" {
+			return r
+		}
+	}
+	return ""
+}
+
 // builtinSliceMethodParamTypes resolves a slice method that exists ONLY in the
 // builtin registry (src/builtin/vec.go) and therefore has no std declaration
 // and never reaches the signature tables.

@@ -26,12 +26,19 @@ func TestSharedTranspilerSuppressesCMain(t *testing.T) {
 		t.Error("a shared-library module must not export a C main entry")
 	}
 	for _, want := range []string{
-		"@nolang_argc = global i32 0",
-		"define i64 @nolang_add(i64 %a0, i64 %a1) {",
+		"@nolang_argc = hidden global i32 0",
+		"define default i64 @nolang_add(i64 %a0, i64 %a1) {",
 	} {
 		if !strings.Contains(ir, want) {
 			t.Errorf("shared IR is missing %q", want)
 		}
+	}
+	// Internal helpers must be hidden, so the dylib does not export them.
+	if !strings.Contains(ir, "define hidden void @nl_add(") {
+		t.Error("internal function must be hidden in a shared-library build")
+	}
+	if strings.Contains(ir, "@nolang_argc = global i32 0") {
+		t.Error("argc global must be hidden, not default-visible")
 	}
 	hdr := shared.CABIHeader()
 	if !strings.Contains(hdr, "int64_t nolang_add(int64_t a0, int64_t a1);") {
