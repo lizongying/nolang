@@ -9,7 +9,7 @@
 ; ── 覆盖面（刻意极小，且小得可测量）─────────────────────────────
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
-;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67；逻辑 && || s68，复用 OP-AND/OR）/
+;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67；逻辑 && || s68，复用 OP-AND/OR；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量）/
 ;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
@@ -33,10 +33,10 @@
 ;         break/continue 走循环目标栈（(hdr, exit) 对，限最内层循环、无标签形）；
 ;         三者都要求是本块最后一条陈述（其后陈述不可达 ⇒ 计 unsup，同 s58 兜底不在末位纪律）；
 ;   型别表：i64 / u64 / f64 / str 四个具名型别（K-NAMED-TYPE 的 s0）——只有签名侧认它们，
-;         算术语义仍限 i64（二元 + - * 比较等；其余型别的值进运算符即计 unsup，不发错码）；
-;         例外：前缀 '-' 接受 f64 操作数（s70，发 fneg double），二元算术仍不收 f64
+;         算术语义：二元 + - * 与六个比较符仅 i64（其余型别的值进运算符即计 unsup，不发错码）；
+;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；比较符仍不收 f64
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
-;         各臂汇成同一个结果值，本件只收语句位）、除与余（`/` `%`，Go 侧 `?i64` 除零→err，i64 子集未建模 option）、位清除 `&^`（无对应 op）、
+;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）、带默认值的参数、
 ;         非具名型别（map / *t / 别名／[]非 i64／s62 起只 []i64 形参入形）、vec 形参作返回值（s62）、
 ;         复合赋值、非函数定义语句、方法调用（点号）、
@@ -965,6 +965,9 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                 osym == '*' -> bop = OP-MUL
 
+                ; 除法符号映射（s71）：'/' 映射 OP-DIV 供 f64 侧发 fdiv double；i64 侧仍门禁（见下方 ok-i 排除 bop==OP-DIV）
+                osym == '/' -> bop = OP-DIV
+
                 ; 位运算家族（s67：& | ^ << >>，仅 i64；&^ 位清除无对应 op 仍计 unsup）
                 osym == '&' -> bop = OP-AND
 
@@ -999,18 +1002,37 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 }
             }
 
-            ; 算术语义仍限 i64：任一操作数是 str/u64/f64 值 ⇒ 计 unsup，不发 add i64 %sv…
+            ; 算术语义：i64 与 f64 各一条放行路（s71 扩 f64 二元 + - * /）
+            ;   i64 侧：+ - * 直发；/ (OP-DIV) 与 % 仍门禁（需 ?i64 除零→err 的 option 语义未建模）
+            ;   f64 侧：+ - * / 直发（cg 依目的型别发 fadd/fsub/fmul/fdiv double；IEEE 除零得 inf/nan、无需 option 護栏）
+            ;   混合（一 i64 一 f64）或任一 str/u64 ⇒ 两侧皆不满足 ⇒ 计 unsup
             ity = 1
+            fty = 1
             lv > 0 && rv > 0 -> {
                 h2m-vty-at(c, lv) != TY-I64 -> ity = 0
                 h2m-vty-at(c, rv) != TY-I64 -> ity = 0
+                h2m-vty-at(c, lv) != TY-F64 -> fty = 0
+                h2m-vty-at(c, rv) != TY-F64 -> fty = 0
             }
-            bop > 0 && lv > 0 && rv > 0 && ity == 1 -> {
+
+            ; i64：+ - * 放行；bop==OP-DIV 不落此路（除法仍门禁）
+            ok-i = 0
+            bop > 0 && lv > 0 && rv > 0 && ity == 1 && bop != OP-DIV -> {
                 mid = h2m-alloc(c, TY-I64)
                 h2m-emit(c, bop, mid, lv, rv, '', TY-I64)
                 v = mid
+                ok-i = 1
             }
-            bop == 0 || lv == 0 || rv == 0 || ity == 0 -> h2m-mark(c)
+
+            ; f64：+ - * / 放行
+            ok-f = 0
+            bop > 0 && lv > 0 && rv > 0 && fty == 1 -> {
+                mid = h2m-alloc(c, TY-F64)
+                h2m-emit(c, bop, mid, lv, rv, '', TY-F64)
+                v = mid
+                ok-f = 1
+            }
+            bop == 0 || lv == 0 || rv == 0 || (ok-i == 0 && ok-f == 0) -> h2m-mark(c)
         }
 
         ; 调用降级：kid 序 = [被调用者][实参…]，c0 = 实参个数；

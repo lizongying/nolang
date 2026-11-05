@@ -1980,6 +1980,66 @@ test-neg-f64-gate = () {
     runner.eq(ir.contains('define'), 0, 'neg-f64-gate no code')
 }
 
+; f64 二元算术（s71）：x + y（两 f64 形参）⇒ fadd double %fd…
+;   ⚠ 无 f64 字面量降级（OP-CONST 只发 i64）⇒ 两侧操作数必为 f64 形参
+;   ⚠ 直线式（无控制流）⇒ 寄存器模式，f64 值以 %fd SSA 流动，不落 alloca double 槽
+test-arith-f64-add = () {
+    src = 'f6a = (x f64, y f64) (r f64) {\n    r = x + y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-f64-add unsup')
+    runner.eq(ir.contains('fadd double'), 1, 'arith-f64-add fadd')
+    runner.eq(ir.contains('define double'), 1, 'arith-f64-add define double')
+    runner.eq(ir.contains('ret double'), 1, 'arith-f64-add ret double')
+}
+
+; f64 嵌套：(x + y) * z ⇒ fadd double ＋ fmul double（内层子表达式型别经 h2m-vty-at 递归传至外层）
+test-arith-f64-mul-nested = () {
+    src = 'f6m = (x f64, y f64, z f64) (r f64) {\n    r = (x + y) * z\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-f64-mul unsup')
+    runner.eq(ir.contains('fadd double'), 1, 'arith-f64-mul fadd')
+    runner.eq(ir.contains('fmul double'), 1, 'arith-f64-mul fmul')
+}
+
+; f64 除法：x / y ⇒ fdiv double（IEEE 除零得 inf/nan，无需 option 護栏）
+test-arith-f64-div = () {
+    src = 'f6d = (x f64, y f64) (r f64) {\n    r = x / y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-f64-div unsup')
+    runner.eq(ir.contains('fdiv double'), 1, 'arith-f64-div fdiv')
+}
+
+; 门控一：混合操作数（一 f64 一 i64）⇒ unsup（两侧须同为 f64）
+test-arith-f64-mixed-gate = () {
+    src = 'f6x = (x f64, y i64) (r f64) {\n    r = x + y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'arith-f64-mixed counted')
+    runner.eq(ir.contains('define'), 0, 'arith-f64-mixed no code')
+}
+
+; 门控二：i64 除法仍门禁（?i64 除零→err 的 option 语义未建模，s71 仅放行 f64 '/'）
+test-arith-i64-div-gate = () {
+    src = 'i6d = (x i64, y i64) (r i64) {\n    r = x / y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'arith-i64-div counted')
+    runner.eq(ir.contains('define'), 0, 'arith-i64-div no code')
+}
+
 ; 位与：x & y ⇒ and i64
 test-bit-and = () {
     src = 'b1x = (x i64, y i64) (r i64) {\n    r = x & y\n}\n'
@@ -2176,6 +2236,11 @@ test-prefix-gate()
 test-neg-f64-var()
 test-neg-f64-nested()
 test-neg-f64-gate()
+test-arith-f64-add()
+test-arith-f64-mul-nested()
+test-arith-f64-div()
+test-arith-f64-mixed-gate()
+test-arith-i64-div-gate()
 test-bit-and()
 test-bit-or()
 test-bit-xor()
