@@ -45,6 +45,7 @@ Globale Optionen:
       no fmt -fix=overflow -w src/    Overflow-Annotationen in src/ in-place hinzufügen
       no fmt -fix=redundant main.no   Entfernen redundanter Annotationen als Vorschau
       no fmt -fix=match -w src/       fehlende Match-Zweige in src/ in-place ergänzen
+      no fmt -fix=index-out -w src/   Lesezugriffe mit #{index-out=DEF} in explizites match ausbauen
       echo 'x=1' | no fmt         von stdin formatieren
       no fmt -loop-style=suffix f.no  Schleifen als '{ } (cond)' / '{ } * N' formatieren
       no fmt --md -w docs/        Nolang-Blöcke in allen .md/.mdx unter docs/ formatieren

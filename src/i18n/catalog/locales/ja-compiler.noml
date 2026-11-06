@@ -45,6 +45,7 @@ Nolang プログラミング言語（バージョン %s）
       no fmt -fix=overflow -w src/    src/ にその場で overflow 注釈を追加
       no fmt -fix=redundant main.no   冗長な注釈の削除をプレビュー
       no fmt -fix=match -w src/       src/ に不足の match アームをその場で追加
+      no fmt -fix=index-out -w src/   #{index-out=DEF} の読み取りを明示的な match に展開
       echo 'x=1' | no fmt         stdin から整形
       no fmt -loop-style=suffix f.no  ループを '{ } (cond)' / '{ } * N' として整形
       no fmt --md -w docs/        docs/ 配下のすべての .md/.mdx の Nolang ブロックを整形

@@ -45,6 +45,7 @@ Nolang 程式語言（版本 %s）
       no fmt -fix=overflow -w src/    為 src/ 原地加上溢出標註
       no fmt -fix=redundant main.no   預覽冗餘標註的移除
       no fmt -fix=match -w src/       為 src/ 原地補上缺失的匹配分支
+      no fmt -fix=index-out -w src/   把 #{index-out=DEF} 讀取展開成顯式 match
       echo 'x=1' | no fmt         從 stdin 格式化
       no fmt -loop-style=suffix f.no  將迴圈格式化為 '{ } (cond)' / '{ } * N'
       no fmt --md -w docs/        格式化 docs/ 下所有 .md/.mdx 中的 Nolang 程式碼區塊

@@ -591,7 +591,7 @@ Registered '%s' in workspace.noml
 `
   'h9cfkf84': 'line %d: variable \'%s\' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)'
   'haahhq7o': 'function \'%s\' expects at least %d argument(s), got %d'
-  'hc3a6zzw': 'unknown fix class %q (supported: overflow, redundant, match, unwrap, main)'
+  'hc3a6zzw': 'unknown fix class %q (supported: overflow, redundant, match, unwrap, main, index-out)'
   'hcdpwnpp': 'empty match arm cannot determine a value (matched expression type is unknown)'
   'hgedm96o': 'auto-loading module %s: %w'
   'hleyeurx': 'not parseable as Nolang'
