@@ -190,8 +190,11 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     next-pos = -1
     r-pos >= buf.len() -> return
 
-    #{index-out=zero}
-    prefix = buf[r-pos]
+    prefix = buf[r-pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     r-pos = r-pos + 1
@@ -217,6 +220,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     nameopt = buf[r-pos..r-pos + name-len).to-str()
     name = nameopt: {
         ok -> it
+
         -> ''
     }
 
@@ -239,6 +243,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     valueopt = buf[r-pos..r-pos + value-len).to-str()
     value = valueopt: {
         ok -> it
+
         -> ''
     }
 

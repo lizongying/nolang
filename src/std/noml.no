@@ -1026,6 +1026,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         c < 48 || c > 57 -> break
@@ -1046,6 +1047,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             copt = s.byte(i)
             c = copt: {
                 ok -> it
+
                 -> 0
             }
             c < 48 || c > 57 -> break
@@ -1073,6 +1075,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             copt = s.byte(i)
             c = copt: {
                 ok -> it
+
                 -> 0
             }
             c < 48 || c > 57 -> break
@@ -1398,10 +1401,10 @@ noml-pool.quote = (s str) (out str) {
             c < 32 -> {
                 cv ?byte = c
                 cvv i64 = 0
-                cv: {
-                    ok -> cvv = it
+                cvv = cv: {
+                    ok -> it
 
-                    -> cvv = 0
+                    -> 0
                 }
                 buf[k]: {
                     ok -> it = 92
@@ -1819,10 +1822,10 @@ noml-pool.get-bool = (idx i64, key str) (v ?bool) {
 noml-pool.has = (idx i64, key str) (found bool) {
     found = false
     c = .get(idx, key)
-    c: {
-        ok -> found = true
+    found = c: {
+        ok -> true
 
-        -> found = false
+        -> false
     }
 }
 

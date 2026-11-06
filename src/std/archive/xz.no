@@ -644,8 +644,11 @@ lzma-decompress = (data []byte) (out []byte) {
     data.len() < 13 -> return
 
     ; 解析屬性
-    #{index-out=zero}
-    props = data[0]
+    props = data[0]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pb = props / (9 * 5)
@@ -661,8 +664,11 @@ lzma-decompress = (data []byte) (out []byte) {
     dict-size i64 = data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24)
 
     ; 解析 unpacked size (8 bytes LE)
-    #{index-out=zero}
-    unpacked-size = data[5]
+    unpacked-size = data[5]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{index-out=zero}
     unpacked-size = unpacked-size | (data[6] << 8)
@@ -757,8 +763,11 @@ xz-decompress = (data []byte) (out []byte) {
         pos = pos + 1
 
         ; 讀取 Block Flags
-        #{index-out=zero}
-        block-flags = data[pos]
+        block-flags = data[pos]: {
+            ok -> it
+
+            -> 0
+        }
 
         #{overflow=wrap}
         pos = pos + 1
@@ -785,15 +794,21 @@ xz-decompress = (data []byte) (out []byte) {
         }
 
         ; 讀取 Filter ID（應為 0x21 = LZMA2）
-        #{index-out=zero}
-        filter-id = data[pos]
+        filter-id = data[pos]: {
+            ok -> it
+
+            -> 0
+        }
 
         #{overflow=wrap}
         pos = pos + 1
 
         ; 讀取 Filter Properties Size
-        #{index-out=zero}
-        props-size = data[pos]
+        props-size = data[pos]: {
+            ok -> it
+
+            -> 0
+        }
 
         #{overflow=wrap}
         pos = pos + 1
@@ -803,9 +818,11 @@ xz-decompress = (data []byte) (out []byte) {
 
         #{overflow=wrap}
         props-size > 0 -> {
+            lzma2-props = data[pos]: {
+                ok -> it
 
-            #{index-out=zero}
-            lzma2-props = data[pos]
+                -> 0
+            }
             pos = pos + 1
         }
 
@@ -843,8 +860,11 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
     !! {
         pos >= data.len() -> break
 
-        #{index-out=zero}
-        ctrl = data[pos]
+        ctrl = data[pos]: {
+            ok -> it
+
+            -> 0
+        }
 
         #{overflow=wrap}
         pos = pos + 1
@@ -913,8 +933,11 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             ctrl >= 0xc0 -> {
 
                 ; 屬性位元組
-                #{index-out=zero}
-                props = data[pos]
+                props = data[pos]: {
+                    ok -> it
+
+                    -> 0
+                }
                 pos = pos + 1
             }
 

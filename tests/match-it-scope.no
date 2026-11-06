@@ -88,12 +88,12 @@ probe-deep = () (out str) {
                 -> {
                     out = out - '-' - it.to-str()
                     c ?i64 = mk-outer()
-                    c: {
-                        nil -> out = 'c nil'
+                    out = c: {
+                        nil -> 'c nil'
 
-                        err -> out = 'c err'
+                        err -> 'c err'
 
-                        -> out = out - '-' - it.to-str()
+                        -> out - '-' - it.to-str()
                     }
 
                     ; 第三層結束後 it 要回到第二層的 7

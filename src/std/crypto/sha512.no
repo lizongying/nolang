@@ -460,53 +460,101 @@ sha512-block = (s []u64, h0 u64, h1 u64, h2 u64, h3 u64, h4 u64, h5 u64, h6 u64,
 
     ; ---- 第 16-79 輪：擴展訊息排程 + 壓縮 ----
     ; 預計算所有 W[16..79]
-    #{index-out=zero}
-    w0 = s[0]
+    w0 = s[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    w1 = s[1]
+        -> 0
+    }
 
-    #{index-out=zero}
-    w2 = s[2]
+    w1 = s[1]: {
+        ok -> it
 
-    #{index-out=zero}
-    w3 = s[3]
+        -> 0
+    }
 
-    #{index-out=zero}
-    w4 = s[4]
+    w2 = s[2]: {
+        ok -> it
 
-    #{index-out=zero}
-    w5 = s[5]
+        -> 0
+    }
 
-    #{index-out=zero}
-    w6 = s[6]
+    w3 = s[3]: {
+        ok -> it
 
-    #{index-out=zero}
-    w7 = s[7]
+        -> 0
+    }
 
-    #{index-out=zero}
-    w8 = s[8]
+    w4 = s[4]: {
+        ok -> it
 
-    #{index-out=zero}
-    w9 = s[9]
+        -> 0
+    }
 
-    #{index-out=zero}
-    w10 = s[10]
+    w5 = s[5]: {
+        ok -> it
 
-    #{index-out=zero}
-    w11 = s[11]
+        -> 0
+    }
 
-    #{index-out=zero}
-    w12 = s[12]
+    w6 = s[6]: {
+        ok -> it
 
-    #{index-out=zero}
-    w13 = s[13]
+        -> 0
+    }
 
-    #{index-out=zero}
-    w14 = s[14]
+    w7 = s[7]: {
+        ok -> it
 
-    #{index-out=zero}
-    w15 = s[15]
+        -> 0
+    }
+
+    w8 = s[8]: {
+        ok -> it
+
+        -> 0
+    }
+
+    w9 = s[9]: {
+        ok -> it
+
+        -> 0
+    }
+
+    w10 = s[10]: {
+        ok -> it
+
+        -> 0
+    }
+
+    w11 = s[11]: {
+        ok -> it
+
+        -> 0
+    }
+
+    w12 = s[12]: {
+        ok -> it
+
+        -> 0
+    }
+
+    w13 = s[13]: {
+        ok -> it
+
+        -> 0
+    }
+
+    w14 = s[14]: {
+        ok -> it
+
+        -> 0
+    }
+
+    w15 = s[15]: {
+        ok -> it
+
+        -> 0
+    }
 
     ; W[16]: σ1(w14) + w9 + σ0(w1) + w0
     s0-r1 = ((w1 >> 1) | (w1 << 63))

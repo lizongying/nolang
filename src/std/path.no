@@ -316,10 +316,10 @@ path.clean = () {
                                 #{overflow=wrap}
                                 out-n-opt = j + 1
                                 out-n = 0
-                                out-n-opt: {
-                                    ok -> out-n = it
+                                out-n = out-n-opt: {
+                                    ok -> it
 
-                                    -> out-n = 0
+                                    -> 0
                                 }
 
                                 break
@@ -401,10 +401,10 @@ path.clean = () {
                     #{overflow=wrap}
                     out-n-opt = j + 1
                     out-n = 0
-                    out-n-opt: {
-                        ok -> out-n = it
+                    out-n = out-n-opt: {
+                        ok -> it
 
-                        -> out-n = 0
+                        -> 0
                     }
 
                     break

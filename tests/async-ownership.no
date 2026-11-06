@@ -46,9 +46,11 @@ echo-async = (s str) (r str) {
 ; v []i64: 來源 vec（協程已在 spawn 時深拷貝）
 ; r i64: v[0]；越界由 #{index-out=zero} 補零
 first-async = (v []i64) (r i64) {
+    r = v[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    r = v[0]
+        -> 0
+    }
 }
 
 ; 協程：純量乘二，驗證標量以值捕獲進協程，父側後續改動不影響它

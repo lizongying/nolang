@@ -46,17 +46,29 @@ u32le = (data []byte, off i64) (v i64) {
     #{overflow=wrap}
     off3 = off + 3
 
-    #{index-out=zero}
-    b0 = data[off]
+    b0 = data[off]: {
+        ok -> it
 
-    #{index-out=zero}
-    b1 = data[off1]
+        -> 0
+    }
 
-    #{index-out=zero}
-    b2 = data[off2]
+    b1 = data[off1]: {
+        ok -> it
 
-    #{index-out=zero}
-    b3 = data[off3]
+        -> 0
+    }
+
+    b2 = data[off2]: {
+        ok -> it
+
+        -> 0
+    }
+
+    b3 = data[off3]: {
+        ok -> it
+
+        -> 0
+    }
     v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
 
@@ -70,11 +82,17 @@ u16le = (data []byte, off i64) (v i64) {
     #{overflow=wrap}
     off1 = off + 1
 
-    #{index-out=zero}
-    b0 = data[off]
+    b0 = data[off]: {
+        ok -> it
 
-    #{index-out=zero}
-    b1 = data[off1]
+        -> 0
+    }
+
+    b1 = data[off1]: {
+        ok -> it
+
+        -> 0
+    }
     v = b0 | (b1 << 8)
 }
 

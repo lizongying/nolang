@@ -60,6 +60,8 @@ var sugarMarkerNames = map[string]bool{
 var sugarASTTypes = map[string]string{
 	"SurfaceMatch":          "§4.1 #1 — match syntax; expands to an if/elif/else chain",
 	"UnwrapAssignStatement": "§4.1 #2 — `x ?= e`; expands to a tag test + let/return",
+	"BlockMatchStatement": "§4.1 #2b — `{ body }: { arms }`; H0 expands the block " +
+		"subject into a ?T local + CPS guard chain (no new HIR kind)",
 	"MultiAssignStatement":  "§4.1 #6 — `a, b = f()`; destructuring, H0 emits KMultiAssign 1:1",
 	"GroupedExpression": "§5 rules KGrouped SUGAR (pure parentheses, no semantics), " +
 		"so H0 must erase it — §10.2's first non-vacuous instance; erased at tohir " +

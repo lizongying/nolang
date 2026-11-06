@@ -1230,23 +1230,33 @@ shs-sort-strs = (arr []str) (r []str) {
         best = a
         b <- [a..n): {
 
-            #{index-out=zero}
-            ib = idx[b]
+            ib = idx[b]: {
+                ok -> it
+                -> 0
+            }
 
-            #{index-out=zero}
-            ibest = idx[best]
+            ibest = idx[best]: {
+                ok -> it
+                -> 0
+            }
 
-            #{index-out=zero}
-            kb = arr[ib]
+            kb = arr[ib]: {
+                ok -> it
+                -> ''
+            }
 
-            #{index-out=zero}
-            kbest = arr[ibest]
+            kbest = arr[ibest]: {
+                ok -> it
+                -> ''
+            }
             g = shs-str-gt(kbest, kb)
             g -> best = b
         }
 
-        #{index-out=zero}
-        t = idx[a]
+        t = idx[a]: {
+            ok -> it
+            -> 0
+        }
 
         ; D9 place-write：`idx[a] = idx[best]` 這種「下標直接賦值」被 idxwrite 拒絕
         ;   （越界寫會變成未檢查的 OOB 寫）。改用 place-match：ok 臂的 it 是元素
@@ -1267,8 +1277,10 @@ shs-sort-strs = (arr []str) (r []str) {
     out []str = []
     k <- [0..n): {
 
-        #{index-out=zero}
-        pos = idx[k]
+        pos = idx[k]: {
+            ok -> it
+            -> 0
+        }
 
         #{index-out=zero}
         out.push(arr[pos])
@@ -1403,8 +1415,10 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     cur = -1
     li <- [0..nl): {
 
-        #{index-out=zero}
-        ln = lines[li]
+        ln = lines[li]: {
+            ok -> it
+            -> ''
+        }
 
         #{overflow=wrap}
         lineno = li + 1
@@ -1459,8 +1473,10 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     ; ── Pass 2：逐行查 S3 / S4 ──
     li2 <- [0..nl): {
 
-        #{index-out=zero}
-        ln2 = lines[li2]
+        ln2 = lines[li2]: {
+            ok -> it
+            -> ''
+        }
 
         #{overflow=wrap}
         lineno2 = li2 + 1
@@ -1485,21 +1501,29 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     ; 所以這裡用相等比較。
     i <- [0..tnames.len()): {
 
-        #{index-out=zero}
-        tm = tmaps[i]
+        tm = tmaps[i]: {
+            ok -> it
+            -> false
+        }
         tm -> {
 
-            #{index-out=zero}
-            tn = tnames[i]
+            tn = tnames[i]: {
+                ok -> it
+                -> ''
+            }
             k <- [0..meths.len()): {
 
-                #{index-out=zero}
-                mf = meths[k]
+                mf = meths[k]: {
+                    ok -> it
+                    -> ''
+                }
                 eq = shs-str-eq(mf, tn)
                 eq -> {
 
-                    #{index-out=zero}
-                    mln = meth-line[k]
+                    mln = meth-line[k]: {
+                        ok -> it
+                        -> 0
+                    }
                     r = shs-add(r, path, mln, 'S5', 'type `' + tn + '` has a [K]V map field AND a method - forbidden, see docs/design/nolang-selfhost.md §2.2.8')
                     return
                 }
@@ -1517,8 +1541,10 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     ; 故排除。
     li3 <- [0..nl): {
 
-        #{index-out=zero}
-        ln3 = lines[li3]
+        ln3 = lines[li3]: {
+            ok -> it
+            -> ''
+        }
 
         #{overflow=wrap}
         lineno3 = li3 + 1
@@ -1544,8 +1570,10 @@ shs-check-file = (path str, acc []finding) (r []finding) {
                     own = shs-sub(ln3, a3, j3)
                     m <- [0..tnames.len()): {
 
-                        #{index-out=zero}
-                        t3 = tnames[m]
+                        t3 = tnames[m]: {
+                            ok -> it
+                            -> ''
+                        }
                         e3 = shs-str-eq(t3, own)
                         e3 -> ismeth = true
                     }
@@ -1586,8 +1614,10 @@ shs-main = () (code i64) {
     acc []finding = []
     j <- [0..paths.len()): {
 
-        #{index-out=zero}
-        fp = paths[j]
+        fp = paths[j]: {
+            ok -> it
+            -> ''
+        }
         acc = shs-check-file(fp, acc)
     }
     k <- [0..acc.len()): {

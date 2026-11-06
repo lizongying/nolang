@@ -30,8 +30,11 @@ Holder {
 ; (1) 重綁定的視圖：長度必須是 trim 之後的長度
 lines = ['  a  ']
 
-#{index-out=zero}
-line = lines[0]
+line = lines[0]: {
+    ok -> it
+
+    -> ''
+}
 line = line.trim()
 line.len() == 1 -> print('ok 1: rebound view length')
 
@@ -71,11 +74,17 @@ g.len() == 2 -> print('ok 5: rebound field view length')
 ; (6) 重綁定到**另一個**元素後，不得再讀到第一個元素
 ls = ['aaaa', 'b']
 
-#{index-out=zero}
-v = ls[0]
+v = ls[0]: {
+    ok -> it
 
-#{index-out=zero}
-v = ls[1]
+    -> ''
+}
+
+v = ls[1]: {
+    ok -> it
+
+    -> ''
+}
 v.len() == 1 -> print('ok 6: rebind to another element')
 
 -> print('fail 6: rebind to another element got={v.len()}')
@@ -93,8 +102,11 @@ box.f == 'Zy' -> print('ok 7: single-def view still projects to the field')
 ; (8) **容器本身**被重新綁定：投影指向 &ls[0]，容器換了它就指向別的字串
 ls2 = ['aaaa']
 
-#{index-out=zero}
-ln2 = ls2[0]
+ln2 = ls2[0]: {
+    ok -> it
+
+    -> ''
+}
 ls2 = ['bb']
 ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')
 

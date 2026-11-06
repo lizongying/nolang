@@ -35,15 +35,25 @@ encode = (data []byte, table str) (out str) {
 
     #{overflow=wrap}
     (i + 3 <= n) {
+        b0 = data[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        b0 = data[i]
+            -> 0
+        }
 
-        #{index-out=zero, overflow=wrap}
-        b1 = data[i + 1]
+        #{overflow=wrap}
+        b1 = data[i + 1]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
-        b2 = data[i + 2]
+            -> 0
+        }
+
+        #{overflow=wrap}
+        b2 = data[i + 2]: {
+            ok -> it
+
+            -> 0
+        }
 
         out[j] = table[b0 >> 2]
 
@@ -70,9 +80,11 @@ encode = (data []byte, table str) (out str) {
     #{overflow=wrap}
     {
         rem == 1 -> {
+            b0 = data[i]: {
+                ok -> it
 
-            #{index-out=zero}
-            b0 = data[i]
+                -> 0
+            }
 
             out[j] = table[b0 >> 2]
 
@@ -84,12 +96,17 @@ encode = (data []byte, table str) (out str) {
         }
 
         rem == 2 -> {
+            b0 = data[i]: {
+                ok -> it
 
-            #{index-out=zero}
-            b0 = data[i]
+                -> 0
+            }
 
-            #{index-out=zero}
-            b1 = data[i + 1]
+            b1 = data[i + 1]: {
+                ok -> it
+
+                -> 0
+            }
 
             out[j] = table[b0 >> 2]
 

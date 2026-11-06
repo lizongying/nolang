@@ -170,6 +170,9 @@ func collectStmtsExprTypes(stmts []parser.Statement, c *exprTypeCtx, view *THIRV
 			recordExprType(s.ReturnValue, c, out)
 		case *parser.BlockStatement:
 			collectStmtsExprTypes(s.Statements, c, view, out)
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			collectStmtsExprTypes(blockMatchChildStatements(s), c, view, out)
 		case *parser.ForStatement:
 			recordExprType(s.Condition, c, out)
 			if s.Body != nil {

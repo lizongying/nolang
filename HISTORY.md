@@ -1,5 +1,11 @@
 # 更新日誌
 
+## 未發布
+
+- feat(parser): add the block form of match subject `{ body }: { arms }` — captures `?=` failures inside the body so functions without a `?T` result param can handle errors locally; nearest (innermost) block match wins, one failure stops the whole body, standard three-state exhaustiveness applies
+- feat(fmt): round-trip `}: {` verbatim and keep the sugar AST pristine across H0 expansion
+- docs(lang): document the three match subject forms (value / expression / block) in the syntax guide, AGENTS.md and the nolang-syntax skill
+
 ## v0.4.19
 
 - feat(mir): enable plain u64 arithmetic (`+`, `-`, `*`) and lower u64 bitwise, shift, division, and modulo as unsigned ops

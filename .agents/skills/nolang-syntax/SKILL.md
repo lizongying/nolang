@@ -1188,9 +1188,9 @@ Use the `?=` operator to automatically unwrap an option or propagate the error t
 - If `expr` returns `ok(value)`, `v` is assigned the unwrapped inner value (auto-unwrap).
 - If `expr` returns `nil` or `err`, the current function's option result param is set to the option value and `return` is executed (auto-propagate).
 
-**Constraint:** `?=` is only valid inside a function that has an option-typed result param. Using `?=` in a function without an option result param is a compile error.
+**Constraint:** `?=` is only valid inside a function that has an option-typed result param, **or** inside the body of a statement-level block match `{ ... }: { ... }` (see *Block Match* below). Outside both, it is a compile error.
 
-> **Capture vs. propagate:** `?=` means "throw the error upward" — it requires an option result param and does an early `return` on failure. If you want to handle the failure **in place** and keep going, use plain `=` instead (see *Error Capture Assignment* below).
+> **Capture vs. propagate:** `?=` means "throw the error upward" — outside a block match it requires an option result param and does an early `return` on failure. If you want to handle the failure **in place** and keep going, use plain `=` instead (see *Error Capture Assignment* below).
 
 ```no
 #{fmt-skip}
@@ -1226,6 +1226,51 @@ process-file = (path str) (result ?str) {
     ; ... same for f.read-line()
 }
 ```
+
+#### Block Match — the Third Match Subject Form
+
+A match subject can be a **value** (`x: { }`), an **expression** (`x + 1: { }`), or a
+**block** (`{ ... }: { ... }`). The first two are expressions and can be used in a
+value context (`v = x: { ok -> it, -> 0 }`). The third is **a statement only**: it
+cannot be assigned, has no block-tail value, and `-> _` discards the result.
+
+A block subject runs a statement body and funnels any `?=` failure inside it into
+one match — so a function **without a `?T` result param** can use `?=` locally:
+
+```no
+#{fmt-skip}
+f = (d i64) {
+    {
+        v ?= 6 / d              ; failure no longer needs a ?T result param
+        print(v.to-str())       ; skipped on failure
+    }: {
+        err -> print(it.msg())
+
+        nil -> _
+
+        ok -> _
+    }
+    print('continues afterwards')
+}
+```
+
+- The **nearest** block match captures (innermost wins for nested ones; it also wins
+  over an enclosing function that has a `?T` result param). Capture is recursive:
+  bare blocks, if bodies, loop bodies and match arms are included. A function
+  definition is a boundary; a function literal is not.
+- The subject is a three-state `?T` and uses the **standard option-match
+  exhaustiveness check**: without a catch-all, even the unreachable `ok ->` must be
+  written alongside `nil` and `err`.
+- Completing the body (zero `?=`, or all successful) matches `nil`; a failed `?=`
+  matches that failure's `nil` or `err`. `it` in the `err` arm is the full `err.err`.
+- **One failure stops the entire body** — later statements and later loop iterations
+  do not run, arms execute once. This is not a function `return`, so user
+  `return` / `break` / `continue` bindings are unaffected.
+- `no fmt` round-trips `}: {` verbatim (blank line between arms, as with any match).
+  Synthetic subject names never appear in diagnostics or formatted source.
+
+> **Choosing between `=` and `}: {`:** `=` stores the failure in the target and keeps
+> going; `}: {` funnels it into one match and stops the rest of the body.
 
 #### Error Capture Assignment (就地捕獲)
 
@@ -1272,7 +1317,8 @@ ovf = (x i64) (r i64) {
 
 | Form | On failure | Needs option result param | Reading the value later |
 |---|---|---|---|
-| `a ?= expr` | sets result param to `nil`/`err` and `return`s (early return) | yes | n/a (already returned) |
+| `a ?= expr` | sets result param to `nil`/`err` and `return`s (early return) | yes (unless inside a block match) | n/a (already returned) |
+| `{ a ?= expr }: { arms }` | stops the block body, `arms` match `nil`/`err` once | no | inside the arms (`it` in `err`) |
 | `a = expr` | stores `nil`/`err` into `a` in place, flow continues | no | `a: { ok -> ... }` |
 | `a ?T = expr` | same as `=` (explicit annotation; inner fallible subexpressions included) | no | same as above |
 | `_ = expr` | evaluates but discards both value and error (no error, no unused lint) | no | n/a |

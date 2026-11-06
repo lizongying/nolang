@@ -166,20 +166,20 @@ format-duration = (seconds i64) (out str) {
     h = seconds / 3600
     rem-opt = seconds % 3600
     rem = 0
-    rem-opt: {
-        ok -> rem = it
+    rem = rem-opt: {
+        ok -> it
 
-        -> rem = 0
+        -> 0
     }
 
     #{overflow=wrap}
     m = rem / 60
     sec-opt = rem % 60
     sec = 0
-    sec-opt: {
-        ok -> sec = it
+    sec = sec-opt: {
+        ok -> it
 
-        -> sec = 0
+        -> 0
     }
     h-s = h.to-str()
     m-s = m.to-str()

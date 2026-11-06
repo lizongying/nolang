@@ -122,9 +122,11 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         }
     }
     i <- [0..alpha-size): {
+        l = lengths[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        l = lengths[i]
+            -> 0
+        }
 
         #{index-out=zero, overflow=wrap}
         len-count[l]: {
@@ -170,9 +172,11 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
         }
     }
     i <- [0..alpha-size): {
+        l = lengths[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        l = lengths[i]
+            -> 0
+        }
 
         #{index-out=zero}
         .perm[tmp-base[l]] = i
@@ -440,8 +444,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 j >= n-tables -> j = 0
 
                 ; MTF 解碼
-                #{index-out=zero}
-                tmp = mtf-list[j]
+                tmp = mtf-list[j]: {
+                    ok -> it
+
+                    -> 0
+                }
                 m <- [0..j): {
 
                     #{index-out=zero, overflow=wrap}
@@ -560,9 +567,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 ; 需要新的選擇器？
                 group-remaining == 0 -> {
                     selector-idx < n-selectors -> {
+                        cur-ht = selectors[selector-idx]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        cur-ht = selectors[selector-idx]
+                            -> 0
+                        }
                     }
 
                     #{overflow=wrap}
@@ -624,8 +633,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                     #{overflow=wrap}
                     mtf-idx = sym - 1
 
-                    #{index-out=zero}
-                    val = mtf-pos[mtf-idx]
+                    val = mtf-pos[mtf-idx]: {
+                        ok -> it
+
+                        -> 0
+                    }
 
                     ; 將 val 移到前面
                     j <- [1..mtf-idx + 1): {
@@ -662,9 +674,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
             }
             i <- [0..bwt-n): {
+                v = bwt-out[i]: {
+                    ok -> it
 
-                #{index-out=zero}
-                v = bwt-out[i]
+                    -> 0
+                }
                 v >= 0 -> {
                     v < 256 -> {
 
@@ -708,9 +722,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
             }
             i <- [0..bwt-n): {
+                v = bwt-out[i]: {
+                    ok -> it
 
-                #{index-out=zero}
-                v = bwt-out[i]
+                    -> 0
+                }
                 v >= 0 -> v < 256 -> {
 
                     #{index-out=zero, overflow=wrap}
@@ -736,13 +752,18 @@ bzip2-decompress = (data []byte) (out []byte) {
             p = orig-ptr
             k = 0
             (k < bwt-n) {
+                v = bwt-out[p]: {
+                    ok -> it
 
-                #{index-out=zero}
-                v = bwt-out[p]
+                    -> 0
+                }
                 flat-data.push(v)
 
-                #{index-out=zero}
-                p = lf[p]
+                p = lf[p]: {
+                    ok -> it
+
+                    -> 0
+                }
 
                 #{overflow=wrap}
                 k = k + 1
@@ -756,8 +777,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 ri = ri - 1
 
-                #{index-out=zero}
-                rv = flat-data[ri]
+                rv = flat-data[ri]: {
+                    ok -> it
+
+                    -> 0
+                }
                 rle-data.push(rv)
             }
 
@@ -767,9 +791,11 @@ bzip2-decompress = (data []byte) (out []byte) {
             rep = 0
             last-b = -1
             (i < bwt-n) {
+                v = rle-data[i]: {
+                    ok -> it
 
-                #{index-out=zero}
-                v = rle-data[i]
+                    -> 0
+                }
 
                 #{overflow=wrap}
                 i = i + 1
@@ -785,9 +811,11 @@ bzip2-decompress = (data []byte) (out []byte) {
                 rep == 4 -> {
                     c = 0
                     i < bwt-n -> {
+                        c = rle-data[i]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        c = rle-data[i]
+                            -> 0
+                        }
 
                         #{overflow=wrap}
                         i = i + 1

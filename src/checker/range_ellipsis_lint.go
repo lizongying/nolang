@@ -159,6 +159,9 @@ func ValidateRangeSelfEllipsis(program *parser.Program, mainFile string) []Valid
 				walkBlock(st.Body, file)
 			case *parser.BlockStatement:
 				walkStmt(st.Statements, file)
+			case *parser.BlockMatchStatement:
+				// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+				walkStmt(blockMatchChildStatements(st), file)
 			case *parser.LetStatement:
 				walkExpr(st.Value, file)
 			case *parser.MultiAssignStatement:

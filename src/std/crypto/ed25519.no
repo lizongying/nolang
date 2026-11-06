@@ -359,12 +359,17 @@ sc-ge-l = (acc []i64) (ge i64) {
     done = 0
     i = 31
     (i >= 0 && done == 0) {
+        av = acc[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        av = acc[i]
+            -> 0
+        }
 
-        #{index-out=zero}
-        lv = ED-L[i]
+        lv = ED-L[i]: {
+            ok -> it
+
+            -> 0
+        }
 
         {
             av > lv -> done = 1
@@ -419,9 +424,11 @@ sc-reduce = (s []byte) (out [32]byte) {
         ge == 1 -> {
             borrow = 0
             j <- [0..32): {
+                lv = ED-L[j]: {
+                    ok -> it
 
-                #{index-out=zero}
-                lv = ED-L[j]
+                    -> 0
+                }
 
                 #{overflow=wrap}
                 dv = acc[j] - lv - borrow

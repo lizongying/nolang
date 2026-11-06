@@ -5,26 +5,39 @@ t-in-bounds = () {
     parts = s.split('-')
     i = 0
     parts[i]: {
-        ok -> { p = it }
-        -> { p = '' }
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = ''
+        }
     }
     runner.str-eq(p.to-str(), 'a', 1, 'in-bounds payload == a')
 }
+
 t-out-of-bounds = () {
     s txt = 'a-b-c'
     parts = s.split('-')
     i = 99
     parts[i]: {
-        ok -> { p = it }
-        -> { p = 'OOB' }
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = 'OOB'
+        }
     }
     runner.str-eq(p.to-str(), 'OOB', 3, 'out-of-bounds -> nil arm == OOB')
 }
+
 t-replace-n = () {
     s txt = 'a-b-c-d'
     r = s.replace-n('-', '.', 2)
     runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'txt.replace-n 2x')
 }
+
 t-join = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')

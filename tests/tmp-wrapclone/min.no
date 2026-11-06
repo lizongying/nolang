@@ -1,6 +1,7 @@
 f = (o ?str) (out str) {
     out = o: {
         ok -> it
+
         -> ''
     }
 }

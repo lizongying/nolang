@@ -29,16 +29,22 @@ test-nested-clone-vec = () (ok bool) {
     b = a
 
     ; 驗證 a 和 b 的內容相同（透過臨時變數避免嵌套索引讀取）
-    #{index-out=zero}
-    a0 = a[0]
+    a0 = a[0]: {
+        ok -> it
+
+        -> []
+    }
     b0 = b[0]
     a0[0] == 1 -> ok = true
     b0[0] == 1 -> ok = true
     a0[2] == 3 -> ok = true
     b0[2] == 3 -> ok = true
 
-    #{index-out=zero}
-    a1 = a[1]
+    a1 = a[1]: {
+        ok -> it
+
+        -> []
+    }
     b1 = b[1]
     a1[1] == 5 -> ok = true
     b1[1] == 5 -> ok = true
@@ -60,8 +66,11 @@ test-nested-clone-modify = () (ok bool) {
     b0 = b[0]
 
     ; a 的第一個子切片長度應仍為 2
-    #{index-out=zero}
-    a0 = a[0]
+    a0 = a[0]: {
+        ok -> it
+
+        -> []
+    }
     a0.len() == 2 -> ok = true
 
     ; b 的第一個子切片長度應為 2
@@ -72,8 +81,11 @@ test-nested-clone-modify = () (ok bool) {
     b0[1] == 2 -> ok = true
 
     ; a 的第二個子切片不變
-    #{index-out=zero}
-    a1 = a[1]
+    a1 = a[1]: {
+        ok -> it
+
+        -> []
+    }
     b1 = b[1]
     a1[0] == 3 -> ok = true
     b1[0] == 3 -> ok = true
@@ -86,8 +98,11 @@ test-nested-element-assign = () (ok bool) {
     a.push(make-vec3(1, 2, 3))
     a.push(make-vec3(4, 5, 6))
 
-    #{index-out=zero}
-    x = a[0]
+    x = a[0]: {
+        ok -> it
+
+        -> []
+    }
 
     ; x 是獨立拷貝
     x.len() == 3 -> ok = true
@@ -96,8 +111,11 @@ test-nested-element-assign = () (ok bool) {
     x[2] == 3 -> ok = true
 
     ; a 應不受影響
-    #{index-out=zero}
-    a0 = a[0]
+    a0 = a[0]: {
+        ok -> it
+
+        -> []
+    }
     a0.len() == 3 -> ok = true
     a0[0] == 1 -> ok = true
 }
@@ -115,11 +133,17 @@ test-nested-reassign = () (ok bool) {
     b0 = b[0]
     b1 = b[1]
 
-    #{index-out=zero}
-    a0 = a[0]
+    a0 = a[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    a1 = a[1]
+        -> []
+    }
+
+    a1 = a[1]: {
+        ok -> it
+
+        -> []
+    }
     b0[0] == 1 -> ok = true
     b1[1] == 4 -> ok = true
     a0[0] == 1 -> ok = true
@@ -140,16 +164,22 @@ test-nested-clone-str = () (ok bool) {
     s.push(sub2)
     c = s
 
-    #{index-out=zero}
-    s0 = s[0]
+    s0 = s[0]: {
+        ok -> it
+
+        -> []
+    }
     c0 = c[0]
     s0[0] == 'hello' -> ok = true
     c0[0] == 'hello' -> ok = true
     s0[1] == 'world' -> ok = true
     c0[1] == 'world' -> ok = true
 
-    #{index-out=zero}
-    s1 = s[1]
+    s1 = s[1]: {
+        ok -> it
+
+        -> []
+    }
     c1 = c[1]
     s1[0] == 'foo' -> ok = true
     c1[0] == 'foo' -> ok = true
@@ -448,8 +478,11 @@ test-insert-nested-clone = () (ok bool) {
     ; 若 insert 共享緩衝區（修復前），outer[0] 會懸垂，讀回垃圾甚至崩潰。
     inner = [100, 200, 300]
 
-    #{index-out=zero}
-    got = outer[0]
+    got = outer[0]: {
+        ok -> it
+
+        -> []
+    }
     got[0] == 7 -> ok = true
     got[1] == 8 -> ok = true
     got[2] == 9 -> ok = true
@@ -460,8 +493,11 @@ test-insert-nested-clone = () (ok bool) {
     outer.insert(1, inner2)
     inner2 = [9, 9, 9, 9]
 
-    #{index-out=zero}
-    got2 = outer[1]
+    got2 = outer[1]: {
+        ok -> it
+
+        -> []
+    }
     got2[0] == 1 -> ok = true
     got2[1] == 2 -> ok = true
     got2.len() == 2 -> ok = true
@@ -477,8 +513,11 @@ test-insert-nested-str-clone = () (ok bool) {
     outer.insert(0, inner)
     inner = ['x', 'y', 'z']
 
-    #{index-out=zero}
-    got = outer[0]
+    got = outer[0]: {
+        ok -> it
+
+        -> []
+    }
     got[0] == 'a' -> ok = true
     got[1] == 'b' -> ok = true
     got[2] == 'c' -> ok = true
@@ -504,14 +543,23 @@ build-from-fixed = () (s []str) {
 test-fixed-array-sink-clone = () (ok bool) {
     s = build-from-fixed()
 
-    #{index-out=zero}
-    a = s[0]
+    a = s[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    b = s[1]
+        -> ''
+    }
 
-    #{index-out=zero}
-    c = s[2]
+    b = s[1]: {
+        ok -> it
+
+        -> ''
+    }
+
+    c = s[2]: {
+        ok -> it
+
+        -> ''
+    }
     a == 'p' -> ok = true
     b == 'q' -> ok = true
     c == 'r' -> ok = true

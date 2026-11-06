@@ -708,8 +708,10 @@ child-at = (t ast, childs []i64, ref i64) (v i64) {
     ref < 0 -> return
     ref >= childs.len() -> return
 
-    #{index-out=zero}
-    v = childs[ref]
+    v = childs[ref]: {
+        ok -> it
+        -> 0
+    }
 }
 
 ; ── 讀回存取器（給測試與除錯用；ps.no 不需要）────────────────────

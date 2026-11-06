@@ -11,12 +11,12 @@ test-err = () {
     n ?str
     n = err('boom')
     r = ''
-    n: {
-        err -> r = 'got-err'
+    r = n: {
+        err -> 'got-err'
 
-        nil -> r = 'got-nil'
+        nil -> 'got-nil'
 
-        -> r = 'got-val'
+        -> 'got-val'
     }
     print(r)
 }
@@ -26,12 +26,12 @@ test-nil = () {
     n ?str
     n = nil
     r = ''
-    n: {
-        err -> r = 'got-err'
+    r = n: {
+        err -> 'got-err'
 
-        nil -> r = 'got-nil'
+        nil -> 'got-nil'
 
-        -> r = 'got-val'
+        -> 'got-val'
     }
     print(r)
 }
@@ -41,12 +41,12 @@ test-val = () {
     n ?i64
     n = 42
     r = ''
-    n: {
-        err -> r = 'got-err'
+    r = n: {
+        err -> 'got-err'
 
-        nil -> r = 'got-nil'
+        nil -> 'got-nil'
 
-        -> r = 'got-val'
+        -> 'got-val'
     }
     print(r)
 }
@@ -56,10 +56,10 @@ test-err-only = () {
     n ?str
     n = err('boom')
     r = ''
-    n: {
-        err -> r = 'only-err'
+    r = n: {
+        err -> 'only-err'
 
-        -> r = 'otherwise'
+        -> 'otherwise'
     }
     print(r)
 }

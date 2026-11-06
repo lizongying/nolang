@@ -1,10 +1,12 @@
 # /test/runner
+
 t-join = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')
     j = parts.join('.')
     print('direct=[{j.to-str()}] len={j.len-bytes()}')
 }
+
 call = (f fn) {
     f()
 }

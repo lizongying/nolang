@@ -524,14 +524,19 @@ url-decode = (s str) (out str) {
 url-build-query = (keys [16]str, values [16]str, count i64) (out str) {
     out = ''
     i <- [0..count): {
+        k str = keys[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        k str = keys[i]
+            -> ''
+        }
 
         enc-k = url-encode(k)
 
-        #{index-out=zero}
-        vv str = values[i]
+        vv str = values[i]: {
+            ok -> it
+
+            -> ''
+        }
 
         enc-v = url-encode(vv)
 

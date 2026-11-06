@@ -292,10 +292,10 @@ txt.append-str = (s str) {
     #{overflow=wrap}
     remain-opt = 255 - n
     remain = 0
-    remain-opt: {
-        ok -> remain = it
+    remain = remain-opt: {
+        ok -> it
 
-        -> remain = 0
+        -> 0
     }
     sn > remain -> sn = remain
     i <- [0..sn): {
@@ -679,10 +679,10 @@ txt.trim-char = (ch char) (val txt) {
     #{overflow=wrap}
     m-opt = end - start
     m = 0
-    m-opt: {
-        ok -> m = it
+    m = m-opt: {
+        ok -> it
 
-        -> m = 0
+        -> 0
     }
     m < 0 -> return
     j <- [0..m): {

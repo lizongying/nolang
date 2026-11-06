@@ -71,6 +71,9 @@ var sugarTiers = map[string]sugarTier{
 	//（lowerUnwrapAssignToHIR 直出基礎 HIR），walk 只做校驗不回寫。
 	"SurfaceMatch":          removedByH0,
 	"UnwrapAssignStatement": removedByH0,
+	// `{ body }: { arms }` 與 `?=` 同級：parser 只保留糖節點，H0 的
+	// case *BlockMatchStatement 才展開成 KBlock+KLet+KIf 鏈。
+	"BlockMatchStatement": removedByH0,
 	"GroupedExpression":     removedByH0,
 	"MultiAssignStatement":  removedByH0,
 }

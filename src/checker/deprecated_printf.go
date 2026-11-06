@@ -123,6 +123,11 @@ func walkStmtForRemovedPrintf(stmt parser.Statement, out *[]ValidateResult) {
 		for _, sub := range s.Statements {
 			walkStmtForRemovedPrintf(sub, out)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, sub := range blockMatchChildStatements(s) {
+			walkStmtForRemovedPrintf(sub, out)
+		}
 	case *parser.FunctionDefinition:
 		if s.Body != nil {
 			for _, sub := range s.Body.Statements {

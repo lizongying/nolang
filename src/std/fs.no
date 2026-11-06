@@ -1136,9 +1136,11 @@ dir-entries = (dirpath str) (entries []str) {
     all = list-dir(dirpath)
     n = all.len()
     i <- [0..n): {
+        name = all[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        name = all[i]
+            -> ''
+        }
         skip = false
         name.len-bytes() == 1 && name[0] == 46 -> {
             skip = true
@@ -1183,9 +1185,11 @@ walk-collect = (dirpath str, paths []str) (out []str) {
     n == 0 -> return
     sep = 47
     i <- [0..n): {
+        name = names[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        name = names[i]
+            -> ''
+        }
         fullpath str
         {
             dirpath.len-bytes() > 0 -> {

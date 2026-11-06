@@ -304,9 +304,11 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     }
     {
         is-sh-c -> {
+            cmdline = args[1]: {
+                ok -> it
 
-            #{index-out=zero}
-            cmdline = args[1]
+                -> ''
+            }
         }
 
         -> {
@@ -814,9 +816,11 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     }
     {
         is-sh-c -> {
+            cmdline = args[1]: {
+                ok -> it
 
-            #{index-out=zero}
-            cmdline = args[1]
+                -> ''
+            }
         }
 
         -> {
@@ -1113,9 +1117,11 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     ; 構建命令列字串：program + " " + arg1 + " " + arg2 + ...
     cmdline = program
     i <- [0..args.len()): {
+        arg str = args[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        arg str = args[i]
+            -> ''
+        }
 
         ; 含空格的參數需要加引號
         has-space = arg.contains(' ')
@@ -1250,10 +1256,10 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
                     ; 已退出
                     ec-opt = win-get-exit-code(proc-handle)
-                    ec-opt: {
-                        ok -> code = it
+                    code = ec-opt: {
+                        ok -> it
 
-                        -> code = -1
+                        -> -1
                     }
                 }
             }
@@ -1264,10 +1270,10 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
             ; 無限等待
             win-wait-process(proc-handle, 0)
             ec-opt2 = win-get-exit-code(proc-handle)
-            ec-opt2: {
-                ok -> code = it
+            code = ec-opt2: {
+                ok -> it
 
-                -> code = -1
+                -> -1
             }
         }
     }

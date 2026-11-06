@@ -436,66 +436,126 @@ fe-cswap = (a []i64, b []i64, mask i64) {
 fe-mul = (h []i64, f []i64, g []i64) {
 
     ; 提取 f 的各 limb
-    #{index-out=zero}
-    f0 = f[0]
+    f0 = f[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    f1 = f[1]
+        -> 0
+    }
 
-    #{index-out=zero}
-    f2 = f[2]
+    f1 = f[1]: {
+        ok -> it
 
-    #{index-out=zero}
-    f3 = f[3]
+        -> 0
+    }
 
-    #{index-out=zero}
-    f4 = f[4]
+    f2 = f[2]: {
+        ok -> it
 
-    #{index-out=zero}
-    f5 = f[5]
+        -> 0
+    }
 
-    #{index-out=zero}
-    f6 = f[6]
+    f3 = f[3]: {
+        ok -> it
 
-    #{index-out=zero}
-    f7 = f[7]
+        -> 0
+    }
 
-    #{index-out=zero}
-    f8 = f[8]
+    f4 = f[4]: {
+        ok -> it
 
-    #{index-out=zero}
-    f9 = f[9]
+        -> 0
+    }
+
+    f5 = f[5]: {
+        ok -> it
+
+        -> 0
+    }
+
+    f6 = f[6]: {
+        ok -> it
+
+        -> 0
+    }
+
+    f7 = f[7]: {
+        ok -> it
+
+        -> 0
+    }
+
+    f8 = f[8]: {
+        ok -> it
+
+        -> 0
+    }
+
+    f9 = f[9]: {
+        ok -> it
+
+        -> 0
+    }
 
     ; 提取 g 的各 limb
-    #{index-out=zero}
-    g0 = g[0]
+    g0 = g[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    g1 = g[1]
+        -> 0
+    }
 
-    #{index-out=zero}
-    g2 = g[2]
+    g1 = g[1]: {
+        ok -> it
 
-    #{index-out=zero}
-    g3 = g[3]
+        -> 0
+    }
 
-    #{index-out=zero}
-    g4 = g[4]
+    g2 = g[2]: {
+        ok -> it
 
-    #{index-out=zero}
-    g5 = g[5]
+        -> 0
+    }
 
-    #{index-out=zero}
-    g6 = g[6]
+    g3 = g[3]: {
+        ok -> it
 
-    #{index-out=zero}
-    g7 = g[7]
+        -> 0
+    }
 
-    #{index-out=zero}
-    g8 = g[8]
+    g4 = g[4]: {
+        ok -> it
 
-    #{index-out=zero}
-    g9 = g[9]
+        -> 0
+    }
+
+    g5 = g[5]: {
+        ok -> it
+
+        -> 0
+    }
+
+    g6 = g[6]: {
+        ok -> it
+
+        -> 0
+    }
+
+    g7 = g[7]: {
+        ok -> it
+
+        -> 0
+    }
+
+    g8 = g[8]: {
+        ok -> it
+
+        -> 0
+    }
+
+    g9 = g[9]: {
+        ok -> it
+
+        -> 0
+    }
 
     ; 預計算 g 的 19 倍數（用於 wrap-around 折疊）
     #{overflow=wrap}

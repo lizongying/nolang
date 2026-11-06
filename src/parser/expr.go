@@ -550,6 +550,31 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		}
 	}
 
+	// `c[i]: { … }` 值位置（賦值右值 / 實參 / 回傳值）的 match 主題。
+	//
+	// 上面 IDENT 分支裡的 `: {` 附加只覆蓋「裸識別字主體」；索引主體在值位置此前
+	// **不會**被附加，AST 裂成兩條陳述：`x = c[i]`（普通越界讀）＋ 主體為空
+	// 的 match。後果是 `-> DEF` 臂靜默失效——`x = a[i]: { ok -> it -> -1 }` 在
+	// 越界時得到 0 而不是 -1（2026-11-06 以 `[]i64` 實測）。語句位置的同形寫法
+	// 一直正常（stmt.go parseExpressionStatement → parseMatchExprFrom），兩處必須
+	// 同口徑，否則同一段邏輯寫成值形態就悄悄丟掉越界保護。
+	//
+	// 只認索引主體、只在 LOWEST 與非 for/match 條件上下文中處理：其他 : { 都有
+	// 各自的既有歸屬（for 條件體、map/struct 字面量的鍵、臂內 range pattern）。
+	if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE &&
+		precedence == LOWEST &&
+		!p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) {
+		if _, isIndex := leftExp.(*IndexExpression); isIndex {
+			state := p.saveState()
+			p.nextToken() // skip :
+			if me := p.parseMatchExprFrom(leftExp); me != nil {
+				leftExp = me
+			} else {
+				p.restoreState(state)
+			}
+		}
+	}
+
 	// 处理中缀运算符与 `as` 类型转换（不包括三元表达式）
 	// `as` 的优先级低于算术（PRODUCT/SUM/...），高于赋值；
 	// 循环允许 (expr as Type) op expr 形式，例如 (r[4]*5) as *byte 后跟 +

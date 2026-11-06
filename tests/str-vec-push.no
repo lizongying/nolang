@@ -45,8 +45,11 @@ test-nested-clone-str = () (ok bool) {
     s.push(sub1)
     c = s
 
-    #{index-out=zero}
-    s0 = s[0]
+    s0 = s[0]: {
+        ok -> it
+
+        -> []
+    }
 
     #{index-out=zero}
     c0 = c[0]

@@ -3,9 +3,11 @@
 ; i i64: 下標，可由 #{index-out=zero} 兜底
 ; r i64: arr[i]；下標越界時為 0
 get-at = (arr [5]i64, i i64) (r i64) {
+    r = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    r = arr[i]
+        -> 0
+    }
 }
 
 ; 兩次下標相加：驗證同一式內連續取用的暫存值不互相覆蓋

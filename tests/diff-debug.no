@@ -56,15 +56,27 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             #{overflow=wrap}
             a[ai].compare(b[aj]) == 0 -> dp[ai * cols + aj] = dp[(ai + 1) * cols + (aj + 1)] + 1
 
-            #{index-out=zero, overflow=wrap}
-            cur = dp[ai * cols + aj]
+            #{overflow=wrap}
+            cur = dp[ai * cols + aj]: {
+                ok -> it
 
-            #{index-out=zero, overflow=wrap}
-            below = dp[(ai + 1) * cols + aj]
+                -> 0
+            }
+
+            #{overflow=wrap}
+            below = dp[(ai + 1) * cols + aj]: {
+                ok -> it
+
+                -> 0
+            }
             cur < below -> dp[ai * cols + aj] = below
 
-            #{index-out=zero, overflow=wrap}
-            right = dp[ai * cols + (aj + 1)]
+            #{overflow=wrap}
+            right = dp[ai * cols + (aj + 1)]: {
+                ok -> it
+
+                -> 0
+            }
             cur < right -> dp[ai * cols + aj] = right
         }
     }
@@ -80,8 +92,12 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
         #{overflow=wrap}
         aj <- [0..nb + 1): {
 
-            #{index-out=zero, overflow=wrap}
-            v = dp[ai * cols + aj]
+            #{overflow=wrap}
+            v = dp[ai * cols + aj]: {
+                ok -> it
+
+                -> 0
+            }
 
             row = row - ' ' - v.to-str()
         }
@@ -95,8 +111,11 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op = diff-op {}
                 op.kind = 0
 
-                #{index-out=zero}
-                tmp-line = a[i]
+                tmp-line = a[i]: {
+                    ok -> it
+
+                    -> ''
+                }
                 op.line = tmp-line
 
                 #{overflow=wrap}
@@ -118,8 +137,11 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op = diff-op {}
                 op.kind = 1
 
-                #{index-out=zero}
-                tmp-line = a[i]
+                tmp-line = a[i]: {
+                    ok -> it
+
+                    -> ''
+                }
                 op.line = tmp-line
 
                 #{overflow=wrap}
@@ -135,8 +157,11 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op = diff-op {}
                 op.kind = 2
 
-                #{index-out=zero}
-                tmp-line = b[j]
+                tmp-line = b[j]: {
+                    ok -> it
+
+                    -> ''
+                }
                 op.line = tmp-line
 
                 #{overflow=wrap}
@@ -151,8 +176,11 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op = diff-op {}
             op.kind = 1
 
-            #{index-out=zero}
-            tmp-line = a[i]
+            tmp-line = a[i]: {
+                ok -> it
+
+                -> ''
+            }
             op.line = tmp-line
 
             #{overflow=wrap}
@@ -166,8 +194,11 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op = diff-op {}
             op.kind = 2
 
-            #{index-out=zero}
-            tmp-line = b[j]
+            tmp-line = b[j]: {
+                ok -> it
+
+                -> ''
+            }
             op.line = tmp-line
 
             #{overflow=wrap}
@@ -203,15 +234,19 @@ i <- [0..cl): {
     eprint('  c1[{i}]={b}')
 }
 i <- [0..n1): {
+    s = lines1[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    s = lines1[i]
+        -> ''
+    }
     eprint('  L1[{i}]={s}')
 }
 i <- [0..n2): {
+    s = lines2[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    s = lines2[i]
+        -> ''
+    }
     eprint('  L2[{i}]={s}')
 }
 ops []diff-op

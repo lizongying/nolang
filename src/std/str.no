@@ -1006,6 +1006,7 @@ str-to-f64 = (s str) (result f64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         {
@@ -1020,6 +1021,7 @@ str-to-f64 = (s str) (result f64) {
     copt = s.byte(i)
     c = copt: {
         ok -> it
+
         -> 0
     }
     {
@@ -1036,6 +1038,7 @@ str-to-f64 = (s str) (result f64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         {
@@ -1059,6 +1062,7 @@ str-to-f64 = (s str) (result f64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         {
@@ -1068,6 +1072,7 @@ str-to-f64 = (s str) (result f64) {
                     copt = s.byte(i)
                     c = copt: {
                         ok -> it
+
                         -> 0
                     }
                     {
@@ -1096,6 +1101,7 @@ str-to-f64 = (s str) (result f64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         {
@@ -1105,6 +1111,7 @@ str-to-f64 = (s str) (result f64) {
                     copt = s.byte(i)
                     c = copt: {
                         ok -> it
+
                         -> 0
                     }
                     {
@@ -1122,6 +1129,7 @@ str-to-f64 = (s str) (result f64) {
                     copt = s.byte(i)
                     c = copt: {
                         ok -> it
+
                         -> 0
                     }
                     {
@@ -2357,8 +2365,11 @@ str.replace-n = (old str, new str, n i64) (val str) {
             }
         }
 
-        #{index-out=zero}
-        s = parts[i]
+        s = parts[i]: {
+            ok -> it
+
+            -> ''
+        }
         j <- [0..s.len-bytes()): {
             val[pos] = s.byte(j)
 

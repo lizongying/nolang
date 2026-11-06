@@ -62,6 +62,11 @@ type Parser struct {
 	// variable type tracking. Empty when parsing module-level code.
 	curFuncName string
 
+	// blockMatchSeq assigns stable synthetic subject names to block matches
+	// (`{ body }: { arms }`). The name is baked into the AST at parse time so
+	// the H0, js/wasm, checker and formatter paths all see the same identifier.
+	blockMatchSeq int
+
 	// idxLocalTypes 是「安全索引專用」的解析器本地型別表（函數作用域）：
 	// lowering 預掃描區域變數容器型別（如 `av = a.to-vec()`）後寫入此處，
 	// 僅供 isSafeIndexBase / inferIndexElemType 查詢。刻意不寫入
@@ -1456,6 +1461,8 @@ func setComment(stmt Statement, comment *CommentGroup) {
 		// **靜默丟失**（寫在上面一行反而不會丢）。註釋是使用者寫下的內容，
 		// 丟失等同資料遺失。
 		s.Comment = comment
+	case *BlockMatchStatement:
+		s.Comment = comment
 	}
 }
 
@@ -1563,6 +1570,8 @@ func setDoc(stmt Statement, doc *CommentGroup) {
 		s.Doc = doc
 	case *UnwrapAssignStatement:
 		// `v ?= expr` 的前置註釋也要掛上，否則 fmt 會把註釋吞掉。
+		s.Doc = doc
+	case *BlockMatchStatement:
 		s.Doc = doc
 	case *TypeAlias:
 		s.Doc = doc

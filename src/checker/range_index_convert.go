@@ -149,6 +149,9 @@ func (u *rngidxUse) collectReadVarsOnce(ss []parser.Statement) {
 			}
 		case *parser.BlockStatement:
 			u.collectReadVarsOnce(st.Statements)
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			u.collectReadVarsOnce(blockMatchChildStatements(st))
 		}
 	}
 }
@@ -355,6 +358,9 @@ func (u *rngidxUse) stmt(s parser.Statement) {
 		u.expr(st.ReturnValue, false)
 	case *parser.BlockStatement:
 		u.stmts(st.Statements)
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		u.stmts(blockMatchChildStatements(st))
 	case *parser.ForStatement:
 		if st.IterRange != nil && st.IterRange.Variable == u.name {
 			u.markBail() // 巢狀迴圈重綁同名下標

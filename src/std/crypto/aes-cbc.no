@@ -225,8 +225,12 @@ pkcs7-unpad = (in []byte) (out-n i64) {
         return
     }
 
-    #{index-out=zero, overflow=wrap}
-    pad-len = in[in.len() - 1]
+    #{overflow=wrap}
+    pad-len = in[in.len() - 1]: {
+        ok -> it
+
+        -> 0
+    }
     pad-len == 0 || pad-len > 16 -> {
         out-n = -1
         return

@@ -70,7 +70,15 @@ func (p *Parser) classifyInfixReturn(expr *InfixExpression) returnTypeInfo {
 			return returnTypeInfo{kind: returnConcrete, typeName: "i64"}
 		}
 		// String concatenation: str + unknown (e.g. str + method-call) → str
-		if expr.Operator == "+" {
+		//
+		// `-` 在 str 上同样是拼接而不是减法（`'a' - 'b'` == `'ab'`，std 到处用
+		// `a - b - c` 拼字符串），故必须与 `+` 同归类。只按 `+` 归类时，
+		// `it.msg() - '@' - it.file`（左 unknown / 右 str）会掉到下面的兜底 i64，
+		// 与另一臂的 str 冲突并报「match arm has inconsistent return types:
+		// i64 vs str」——值语境的臂一致性检查（validateMatchArmReturns）因此会
+		// 拒收一段完全合法的字符串拼接。2026-11-06 由 no fmt 的「全臂同一目标
+		// 赋值」折叠暴露：折叠把语句语境的 match 搬进值语境，这段检查才开始跑。
+		if expr.Operator == "+" || expr.Operator == "-" {
 			if leftInfo.typeName == "str" || rightInfo.typeName == "str" {
 				return returnTypeInfo{kind: returnConcrete, typeName: "str"}
 			}

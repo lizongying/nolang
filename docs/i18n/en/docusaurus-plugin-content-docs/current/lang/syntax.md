@@ -1187,6 +1187,70 @@ x: {
 
 > **Match semantics inside a for-in body**: `i <- (a..b]: { 1 -> ... 2 -> ... }` executes the match body once for each iteration variable `i` (`1 ->` is equivalent to `i == 1 ->`, and so on). This is syntactic sugar for executing a match once per iteration.
 
+#### The Three Match Subject Forms
+
+A match subject can be a **value**, an **expression**, or a **block**:
+
+| Form | Syntax | How it is evaluated |
+| --- | --- | --- |
+| Value | `x: { ... }` | Matches `x` directly |
+| Expression | `x + 1: { ... }` | Evaluates the expression, then matches its value |
+| Block | `{ ... }: { ... }` | Runs a statement body and matches the outcome of `?=` inside it |
+
+The first two are **expressions**: they work as statements and also as values
+(`v = x: { ok -> it, -> 0 }`). The third is **a statement only** — it is not an
+expression, cannot be assigned, and has no block-tail value; `-> _` discards the
+result. `no fmt` round-trips `}: {` verbatim, with the same blank-line rule between
+arms as any other match.
+
+##### Block subject (`}: {`)
+
+A block subject lets a function **without a `?T` result parameter** handle `?=`
+propagation locally:
+
+```no
+; d i64: divisor; 6/d yields err when d is 0
+f = (d i64) {
+    {
+        v ?= 6 / d; no ?T result param needed here
+        print(v.to-str()); skipped on failure
+    }: {
+        err -> print(it.msg())
+
+        nil -> print('nil')
+
+        -> _; discard the result
+    }
+    print('continues afterwards'); flow resumes after the arms
+}
+```
+
+Semantics:
+
+- A `?=` inside the body is captured by the **nearest** block match (innermost
+  wins for nested ones; a block match also wins over an enclosing function that has
+  a `?T` result parameter). Capture is recursive: bare blocks, if bodies, loop
+  bodies and match arms are all included. A function definition is a boundary;
+  a function literal is not.
+- The subject is a three-state `?T` and uses the **standard option-match
+  exhaustiveness check**: without a catch-all arm, even the unreachable `ok ->`
+  must be written alongside `nil` and `err`.
+- Completing the body (zero `?=`, or all of them successful) matches `nil`;
+  a failed `?=` matches that failure's `nil` or `err` (`it` in the `err` arm is
+  the full `err.err` payload).
+- **One failure stops the entire body**: later statements and later loop
+  iterations do not run, and the arms execute exactly once. This stops a block,
+  it is not a function `return` — the user's own `return` / `break` / `continue`
+  bindings are unaffected.
+- Expansion uses only existing core AST (a synthetic `?T` local, an `if`-guard
+  chain and an ordinary match). No new HIR / MIR kinds. Synthetic names never
+  appear in diagnostics or in `no fmt` output.
+
+> Versus `=` capture-in-place: `=` stores the failure **in the target variable**
+> and keeps going; `}: {` funnels the failure **into one match** and stops the
+> rest of the body. Use `=` plus a later match when you want to continue after a
+> failure; use `}: {` when a failure should jump straight to the cleanup arms.
+
 #### Match Style Guide
 
 ```no
@@ -3174,7 +3238,7 @@ v ?= expr
 - If `expr` returns `ok(value)`, `v` is assigned the unwrapped inner value (automatic unwrap)
 - If `expr` returns `nil` or `err`, the current function's option result parameter is set to that value and `return` runs (automatic propagation)
 
-**Restriction:** `?=` can only be used inside a function that has an option-typed result parameter. If the current function has no option result parameter, the compiler reports an error.
+**Restriction:** `?=` can only be used inside a function that has an option-typed result parameter, **or** inside the body of a statement-level block match `{ ... }: { ... }` (where the nearest block match captures it — see *The Three Match Subject Forms*). Outside both, the compiler reports an error.
 
 **No pre-initialization needed:** the function prologue does not zero-initialize out parameters, but at return
 time any out parameter that was never explicitly assigned is auto-filled with its type's zero value (integer →

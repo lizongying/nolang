@@ -113,6 +113,9 @@ func ValidateRangeIndexLoops(program *parser.Program, mainFile string) []Validat
 				}
 			case *parser.BlockStatement:
 				walk(st.Statements, file)
+			case *parser.BlockMatchStatement:
+				// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+				walk(blockMatchChildStatements(st), file)
 			case *parser.ExpressionStatement:
 				// `cond -> { … }` guard 語句：兩個分支都要走。
 				if ie, ok := st.Expression.(*parser.IfExpression); ok {

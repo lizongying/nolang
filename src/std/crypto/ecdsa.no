@@ -73,12 +73,17 @@ P256-B [32]byte = [
 ; [bn-cmp](#ecdsa.bn-cmp)
 bn-cmp = (a []byte, b []byte) (r i64) {
     i <- [31..0]: {
+        ai = a[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        ai = a[i]
+            -> 0
+        }
 
-        #{index-out=zero}
-        bi = b[i]
+        bi = b[i]: {
+            ok -> it
+
+            -> 0
+        }
         {
             ai > bi -> {
                 r = 1
@@ -111,11 +116,17 @@ bn-add = (a []byte, b []byte) (sum [32]byte, carry i64) {
         ; 直接寫 `(a[i]) + (b[i]) + carry` 會得到 mod 256 的加和 ——
         ; 200 + 100 → 44，`carry = val >> 8` 恆為 0，整條 P-256 大數加法
         ; 因而不進位（ecdsa 公鑰/簽名/ECDH 全部失配，2026-11-04）。
-        #{index-out=zero}
-        av i64 = a[i]
+        av i64 = a[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        bv i64 = b[i]
+            -> 0
+        }
+
+        bv i64 = b[i]: {
+            ok -> it
+
+            -> 0
+        }
 
         #{overflow=wrap}
         val = av + bv + carry
@@ -138,11 +149,17 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
 
         ; 同 bn-add：左運算元是 byte 時結果恆為 byte（mod 256 回繞），
         ; `val < 0` 永遠不成立、borrow 恆為 0。先讀成 i64 才有負值可比。
-        #{index-out=zero}
-        av i64 = a[i]
+        av i64 = a[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        bv i64 = b[i]
+            -> 0
+        }
+
+        bv i64 = b[i]: {
+            ok -> it
+
+            -> 0
+        }
 
         #{overflow=wrap}
         val = av - bv - borrow
@@ -230,11 +247,17 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             ; byte 是回繞型別（見 bn-add 註解）：最左操作數先讀成 i64，
             ; 否則 `a[i] * b[j]` 只算到 mod 256，加法也帶不出進位。
-            #{index-out=zero}
-            pv i64 = product[idx]
+            pv i64 = product[idx]: {
+                ok -> it
 
-            #{index-out=zero}
-            av i64 = a[i]
+                -> 0
+            }
+
+            av i64 = a[i]: {
+                ok -> it
+
+                -> 0
+            }
 
             #{overflow=wrap}
             val = pv + av * (b[j]) + carry
@@ -251,9 +274,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         #{overflow=wrap}
         idx = i + 32
         (idx < 64 && carry != 0) {
+            pv2 i64 = product[idx]: {
+                ok -> it
 
-            #{index-out=zero}
-            pv2 i64 = product[idx]
+                -> 0
+            }
 
             #{overflow=wrap}
             val = pv2 + carry
@@ -334,9 +359,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         ; hi = work[pos+32]（越界視為 0）
         hi = 0
         (pos + 32 < 64) -> {
+            hi = work[pos + 32]: {
+                ok -> it
 
-            #{index-out=zero}
-            hi = work[pos + 32]
+                -> 0
+            }
         }
 
         ; 一次乘減：work[pos..pos+32] -= hi * m
@@ -344,9 +371,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             prod [33]byte
             carry = 0
             i <- [0..32): {
+                mi = m[i]: {
+                    ok -> it
 
-                #{index-out=zero}
-                mi = m[i]
+                    -> 0
+                }
 
                 #{overflow=wrap}
                 t = (hi) * (mi) + carry
@@ -371,13 +400,18 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 #{overflow=wrap}
                 idx = pos + i
                 (idx < 64) -> {
+                    pi = prod[i]: {
+                        ok -> it
 
-                    #{index-out=zero}
-                    pi = prod[i]
+                        -> 0
+                    }
 
                     ; byte 回繞：最左操作數先讀成 i64，否則 `val < 0` 永不成立
-                    #{index-out=zero}
-                    wv i64 = work[idx]
+                    wv i64 = work[idx]: {
+                        ok -> it
+
+                        -> 0
+                    }
 
                     #{overflow=wrap}
                     val = wv - pi - borrow
@@ -405,9 +439,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         (corr < 4) {
             chi = 0
             (pos + 32 < 64) -> {
+                chi = work[pos + 32]: {
+                    ok -> it
 
-                #{index-out=zero}
-                chi = work[pos + 32]
+                    -> 0
+                }
             }
             ge = 0
             (chi != 0) -> {
@@ -416,12 +452,17 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             (chi == 0) -> {
                 ge = 1
                 j <- [31..0]: {
+                    wj = work[pos + j]: {
+                        ok -> it
 
-                    #{index-out=zero}
-                    wj = work[pos + j]
+                        -> 0
+                    }
 
-                    #{index-out=zero}
-                    mj = m[j]
+                    mj = m[j]: {
+                        ok -> it
+
+                        -> 0
+                    }
                     {
                         wj > mj -> break
 
@@ -439,8 +480,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     #{overflow=wrap}
                     idx = pos + j
 
-                    #{index-out=zero}
-                    wv i64 = work[idx]
+                    wv i64 = work[idx]: {
+                        ok -> it
+
+                        -> 0
+                    }
 
                     #{overflow=wrap}
                     val = wv - (m[j]) - borrow
@@ -463,9 +507,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 (borrow != 0) {
                     idx = pos + 32
                     (idx < 64) {
+                        wv i64 = work[idx]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        wv i64 = work[idx]
+                            -> 0
+                        }
 
                         #{overflow=wrap}
                         val = wv - borrow
@@ -558,22 +604,29 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         can-sub = 1
         hi = 0
         (shift-byte + 32 < 64) -> {
+            hi = acc[shift-byte + 32]: {
+                ok -> it
 
-            #{index-out=zero}
-            hi = acc[shift-byte + 32]
+                -> 0
+            }
         }
         i <- [31..0]: {
             wi = 0
 
             #{overflow=wrap}
             shift-byte + i < 64 -> {
+                wi = acc[shift-byte + i]: {
+                    ok -> it
 
-                #{index-out=zero}
-                wi = acc[shift-byte + i]
+                    -> 0
+                }
             }
 
-            #{index-out=zero}
-            mi = m[i]
+            mi = m[i]: {
+                ok -> it
+
+                -> 0
+            }
             {
                 wi > mi -> break
 
@@ -593,9 +646,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                 idx = shift-byte + i
                 {
                     idx < 64 -> {
+                        av i64 = acc[idx]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        av i64 = acc[idx]
+                            -> 0
+                        }
 
                         #{overflow=wrap}
                         val = av - (m[i]) - borrow
@@ -619,9 +674,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                     -> {
                         borrow != 0 -> {
+                            av i64 = acc[idx]: {
+                                ok -> it
 
-                            #{index-out=zero}
-                            av i64 = acc[idx]
+                                -> 0
+                            }
 
                             #{overflow=wrap}
                             val = av - borrow
@@ -652,9 +709,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             (borrow != 0) {
                 idx = shift-byte + 32
                 (idx < 64) {
+                    av i64 = acc[idx]: {
+                        ok -> it
 
-                    #{index-out=zero}
-                    av i64 = acc[idx]
+                        -> 0
+                    }
 
                     #{overflow=wrap}
                     val = av - borrow

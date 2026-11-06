@@ -243,8 +243,16 @@ func (f *formatter) matchOpeningBraceComment(sm *parser.SurfaceMatch) *parser.Co
 
 // writeMatchArm 輸出糖形態的單條 match 臂（parser.MatchArm）。與
 // writeBareMatchArm 走同一條排版路徑，差別只在臂模式的來源。
+//
+// 若本臂屬於正在折疊的 match（「全臂同一目標賦值」→ `v = subj: { … }`，見
+// match_assign_fold.go），則把臂體換成該臂應產出的值表達式，讓 writeArm 既有的
+// 單行臂路徑負責印成 `cond -> <值>`。
 func (f *formatter) writeMatchArm(ma *parser.MatchArm) {
-	f.writeArm(f.armFromMatchArm(ma))
+	a := f.armFromMatchArm(ma)
+	if v, ok := f.foldArmValues[ma]; ok && v != nil {
+		a.stmts = []parser.Statement{&parser.ExpressionStatement{Expression: v}}
+	}
+	f.writeArm(a)
 }
 
 // armFromMatchArm 從糖節點 MatchArm 直接讀出臂模式——沒有反推、沒有痕跡欄位。

@@ -30,10 +30,10 @@ fail-i64 = () (out ?i64) {
 ; ── 1. 訊息 ──
 a = fail-i64()
 got1 = ''
-a: {
-    err -> got1 = it.msg()
+got1 = a: {
+    err -> it.msg()
 
-    -> got1 = 'ok'
+    -> 'ok'
 }
 check('msg', got1, 'boom')
 
@@ -57,10 +57,10 @@ check('code', got2, 'io')
 ; ── 3. 位置：file 由編譯器在 err(...) 構造點注入 ──
 a3 = fail-i64()
 got3 = ''
-a3: {
-    err -> got3 = it.file
+got3 = a3: {
+    err -> it.file
 
-    -> got3 = 'ok'
+    -> 'ok'
 }
 check('file', got3, 'err-structured.no')
 
@@ -76,10 +76,10 @@ rethrow = () (out ?bool) {
 }
 b = rethrow()
 got4 = ''
-b: {
-    err -> got4 = it.msg() - '@' - it.file
+got4 = b: {
+    err -> it.msg() - '@' - it.file
 
-    -> got4 = 'ok'
+    -> 'ok'
 }
 check('rethrow', got4, 'boom@err-structured.no')
 
@@ -88,15 +88,15 @@ c = fail-i64()
 d = c
 got5 = ''
 got6 = ''
-c: {
-    err -> got5 = it.msg()
+got5 = c: {
+    err -> it.msg()
 
-    -> got5 = 'ok'
+    -> 'ok'
 }
-d: {
-    err -> got6 = it.msg()
+got6 = d: {
+    err -> it.msg()
 
-    -> got6 = 'ok'
+    -> 'ok'
 }
 check('copy-src', got5, 'boom')
 check('copy-dst', got6, 'boom')

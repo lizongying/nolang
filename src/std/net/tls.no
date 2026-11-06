@@ -429,10 +429,10 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
         #{overflow=wrap}
         n-total-opt = n - total
         n-total = 0
-        n-total-opt: {
-            ok -> n-total = it
+        n-total = n-total-opt: {
+            ok -> it
 
-            -> n-total = 0
+            -> 0
         }
         r = net-recv-wait(fd, tmp, n-total)
         r <= 0 -> return
@@ -521,10 +521,10 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         #{overflow=wrap}
         hdr-remain-opt = 5 - hdr-total
         hdr-remain = 0
-        hdr-remain-opt: {
-            ok -> hdr-remain = it
+        hdr-remain = hdr-remain-opt: {
+            ok -> it
 
-            -> hdr-remain = 0
+            -> 0
         }
         r = net-recv-wait(fd, tmp, hdr-remain)
         r <= 0 -> {
@@ -549,8 +549,11 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
 
     ; 解析標頭
 
-    #{index-out=zero}
-    ct = buf[0]
+    ct = buf[0]: {
+        ok -> it
+
+        -> 0
+    }
     rlen = get-u16(buf, 3)
 
     ; TLS 1.3 app-data 記錄最大密文 = 16384(明文) + 1(內容類型) + 16(GCM tag) = 16401 位元組。
@@ -571,10 +574,10 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
         #{overflow=wrap}
         body-remain-opt = rlen - body-total
         body-remain = 0
-        body-remain-opt: {
-            ok -> body-remain = it
+        body-remain = body-remain-opt: {
+            ok -> it
 
-            -> body-remain = 0
+            -> 0
         }
         r = net-recv-wait(fd, tmp2, body-remain)
         r <= 0 -> {
@@ -719,8 +722,12 @@ tls-unpad = (in []byte) (out-n i64) {
         return
     }
 
-    #{index-out=zero, overflow=wrap}
-    pad-val = in[in.len() - 1]
+    #{overflow=wrap}
+    pad-val = in[in.len() - 1]: {
+        ok -> it
+
+        -> 0
+    }
 
     ; TLS: 需移除的位元組數 = pad-val + 1（含末位長度位元組）
 
@@ -1194,8 +1201,12 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     recv-mac-off = content-len
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
-        b1 = plain[recv-mac-off + i]
+        #{overflow=wrap}
+        b1 = plain[recv-mac-off + i]: {
+            ok -> it
+
+            -> 0
+        }
 
         b2 = exp-mac[i]
         b1 != b2 -> return
@@ -1713,10 +1724,10 @@ conn.send-client-hello = () (ok bool) {
     #{overflow=wrap}
     ext-total-opt = pos - ext-len-pos - 2
     ext-total = 0
-    ext-total-opt: {
-        ok -> ext-total = it
+    ext-total = ext-total-opt: {
+        ok -> it
 
-        -> ext-total = 0
+        -> 0
     }
     put-u16(hs, ext-len-pos, ext-total)
 
@@ -1725,10 +1736,10 @@ conn.send-client-hello = () (ok bool) {
     #{overflow=wrap}
     body-len-opt = pos - 4
     body-len = 0
-    body-len-opt: {
-        ok -> body-len = it
+    body-len = body-len-opt: {
+        ok -> it
 
-        -> body-len = 0
+        -> 0
     }
     put-u24(hs, 1, body-len)
 
@@ -1805,8 +1816,11 @@ conn.read-server-hello = () (ok bool) {
 
     ; session_id
 
-    #{index-out=zero}
-    sid-len = buf[pos]
+    sid-len = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pos = pos + 1 + sid-len
@@ -1823,8 +1837,11 @@ conn.read-server-hello = () (ok bool) {
 
     ; compression_method
 
-    #{index-out=zero}
-    comp = buf[pos]
+    comp = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pos = pos + 1
@@ -1898,8 +1915,11 @@ conn.read-server-key-exchange = () (ok bool) {
 
     ; curve_type: 3 = named_curve
 
-    #{index-out=zero}
-    curve-type = buf[pos]
+    curve-type = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
     curve-type != 3 -> return
 
     ; named curve 必須是我方支援的 x25519 / secp256r1
@@ -1907,10 +1927,10 @@ conn.read-server-key-exchange = () (ok bool) {
     #{overflow=wrap}
     g-pos-opt = pos + 1
     g-pos = 0
-    g-pos-opt: {
-        ok -> g-pos = it
+    g-pos = g-pos-opt: {
+        ok -> it
 
-        -> g-pos = 0
+        -> 0
     }
     group = get-u16(buf, g-pos)
     (group != TLS-GROUP-X25519 && group != TLS-GROUP-SECP256R1) -> return
@@ -1918,8 +1938,12 @@ conn.read-server-key-exchange = () (ok bool) {
 
     ; ECPoint: 1-byte 長度 + 公鑰（x25519 為 32 bytes 原始編碼；部分實作帶 0x04 前綴）
 
-    #{index-out=zero, overflow=wrap}
-    plen = buf[pos + 3]
+    #{overflow=wrap}
+    plen = buf[pos + 3]: {
+        ok -> it
+
+        -> 0
+    }
     group == TLS-GROUP-SECP256R1 -> {
 
         ; P-256 未壓縮點：0x04 || x(32) || y(32) = 65 bytes
@@ -2223,8 +2247,11 @@ conn.read-finished = () (ok bool) {
 
     ; 解析 Finished 訊息
 
-    #{index-out=zero}
-    msg-type = plain[0]
+    msg-type = plain[0]: {
+        ok -> it
+
+        -> 0
+    }
     msg-type != TLS-HS-FINISHED -> return
 
     ; 驗證 verify_data（hash 不包含 server Finished）
@@ -2235,11 +2262,18 @@ conn.read-finished = () (ok bool) {
     verify = prf(.master-secret, 'server finished', hs-hash, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
 
-        #{index-out=zero, overflow=wrap}
-        b1 = plain[4 + i]
+        #{overflow=wrap}
+        b1 = plain[4 + i]: {
+            ok -> it
 
-        #{index-out=zero}
-        b2 = verify[i]
+            -> 0
+        }
+
+        b2 = verify[i]: {
+            ok -> it
+
+            -> 0
+        }
         b1 != b2 -> return
     }
 
@@ -2870,10 +2904,10 @@ conn.send-client-hello-13 = () (ok bool) {
     #{overflow=wrap}
     ext-total-opt = pos - ext-len-pos - 2
     ext-total = 0
-    ext-total-opt: {
-        ok -> ext-total = it
+    ext-total = ext-total-opt: {
+        ok -> it
 
-        -> ext-total = 0
+        -> 0
     }
     put-u16(hs, ext-len-pos, ext-total)
 
@@ -2882,10 +2916,10 @@ conn.send-client-hello-13 = () (ok bool) {
     #{overflow=wrap}
     body-len-opt = pos - 4
     body-len = 0
-    body-len-opt: {
-        ok -> body-len = it
+    body-len = body-len-opt: {
+        ok -> it
 
-        -> body-len = 0
+        -> 0
     }
     put-u24(hs, 1, body-len)
 
@@ -2947,8 +2981,11 @@ conn.read-server-hello-13 = () (ok bool) {
 
     ; session_id
 
-    #{index-out=zero}
-    sid-len = buf[pos]
+    sid-len = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pos = pos + 1 + sid-len
@@ -3452,8 +3489,12 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     ; 最後一個位元組是原始 content type
     plain-len = plain.len()
 
-    #{index-out=zero, overflow=wrap}
-    ct = plain[plain-len - 1]
+    #{overflow=wrap}
+    ct = plain[plain-len - 1]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     plain-len = plain-len - 1
@@ -4145,8 +4186,11 @@ server-conn.read-client-hello = () (ok bool) {
 
     ; session_id
 
-    #{index-out=zero}
-    sid-len = buf[pos]
+    sid-len = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pos = pos + 1 + sid-len
@@ -4169,10 +4213,10 @@ server-conn.read-client-hello = () (ok bool) {
             #{overflow=wrap}
             cs-pos-opt = pos + j
             cs-pos = 0
-            cs-pos-opt: {
-                ok -> cs-pos = it
+            cs-pos = cs-pos-opt: {
+                ok -> it
 
-                -> cs-pos = 0
+                -> 0
             }
             cs = get-u16(buf, cs-pos)
             {
@@ -4190,8 +4234,11 @@ server-conn.read-client-hello = () (ok bool) {
 
     ; compression methods（跳過）
 
-    #{index-out=zero}
-    comp-len = buf[pos]
+    comp-len = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pos = pos + 1 + comp-len
@@ -4207,10 +4254,10 @@ server-conn.read-client-hello = () (ok bool) {
         pos = pos + 2
         ext-end-opt = pos + ext-total
         ext-end = 0
-        ext-end-opt: {
-            ok -> ext-end = it
+        ext-end = ext-end-opt: {
+            ok -> it
 
-            -> ext-end = 0
+            -> 0
         }
         (pos + 4 <= ext-end) {
 
@@ -4218,10 +4265,10 @@ server-conn.read-client-hello = () (ok bool) {
             pos + 4 <= ext-end -> {
                 edl-pos-opt = pos + 2
                 edl-pos = 0
-                edl-pos-opt: {
-                    ok -> edl-pos = it
+                edl-pos = edl-pos-opt: {
+                    ok -> it
 
-                    -> edl-pos = 0
+                    -> 0
                 }
                 ext-data-len = get-u16(buf, edl-pos)
                 pos = pos + 4
@@ -4231,21 +4278,24 @@ server-conn.read-client-hello = () (ok bool) {
 
                     ; client 端: 1 byte list length + versions
 
-                    #{index-out=zero}
-                    sv-list-len = buf[pos]
+                    sv-list-len = buf[pos]: {
+                        ok -> it
+
+                        -> 0
+                    }
                     sv-pos-opt = pos + 1
                     sv-pos = 0
-                    sv-pos-opt: {
-                        ok -> sv-pos = it
+                    sv-pos = sv-pos-opt: {
+                        ok -> it
 
-                        -> sv-pos = 0
+                        -> 0
                     }
                     sv-end-opt = sv-pos + sv-list-len
                     sv-end = 0
-                    sv-end-opt: {
-                        ok -> sv-end = it
+                    sv-end = sv-end-opt: {
+                        ok -> it
 
-                        -> sv-end = 0
+                        -> 0
                     }
                     (sv-pos + 2 <= sv-end) {
 
@@ -4266,17 +4316,17 @@ server-conn.read-client-hello = () (ok bool) {
                     ks-list-len = get-u16(buf, pos)
                     ks-pos-opt = pos + 2
                     ks-pos = 0
-                    ks-pos-opt: {
-                        ok -> ks-pos = it
+                    ks-pos = ks-pos-opt: {
+                        ok -> it
 
-                        -> ks-pos = 0
+                        -> 0
                     }
                     ks-end-opt = ks-pos + ks-list-len
                     ks-end = 0
-                    ks-end-opt: {
-                        ok -> ks-end = it
+                    ks-end = ks-end-opt: {
+                        ok -> it
 
-                        -> ks-end = 0
+                        -> 0
                     }
                     (ks-pos + 4 <= ks-end) {
 
@@ -4284,10 +4334,10 @@ server-conn.read-client-hello = () (ok bool) {
                         ks-pos + 4 <= ks-end -> {
                             kkl-pos-opt = ks-pos + 2
                             kkl-pos = 0
-                            kkl-pos-opt: {
-                                ok -> kkl-pos = it
+                            kkl-pos = kkl-pos-opt: {
+                                ok -> it
 
-                                -> kkl-pos = 0
+                                -> 0
                             }
                             ks-key-len = get-u16(buf, kkl-pos)
                             ks-group == TLS-GROUP-X25519 && ks-key-len == 32 -> {
@@ -4400,10 +4450,10 @@ server-conn.send-server-hello = () (ok bool) {
     #{overflow=wrap}
     body-len-opt = pos - 4
     body-len = 0
-    body-len-opt: {
-        ok -> body-len = it
+    body-len = body-len-opt: {
+        ok -> it
 
-        -> body-len = 0
+        -> 0
     }
     put-u24(hs, 1, body-len)
     hs.truncate(pos)
@@ -4961,8 +5011,12 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     mac-ok = 1
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
-        b1 = plain[data-len + i]
+        #{overflow=wrap}
+        b1 = plain[data-len + i]: {
+            ok -> it
+
+            -> 0
+        }
 
         b2 = exp-mac[i]
         b1 != b2 -> mac-ok = 0
@@ -5063,8 +5117,11 @@ server-conn.read-finished = () (ok bool) {
     d-ct < 0 -> return
 
     ; 解析 Finished 訊息
-    #{index-out=zero}
-    msg-type = plain[0]
+    msg-type = plain[0]: {
+        ok -> it
+
+        -> 0
+    }
     msg-type != TLS-HS-FINISHED -> return
 
     ; 驗證 verify_data（hash 不包含 client Finished）
@@ -5075,11 +5132,18 @@ server-conn.read-finished = () (ok bool) {
     verify = prf(.master-secret, 'client finished', hs-hash, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
 
-        #{index-out=zero, overflow=wrap}
-        b1 = plain[4 + i]
+        #{overflow=wrap}
+        b1 = plain[4 + i]: {
+            ok -> it
 
-        #{index-out=zero}
-        b2 = verify[i]
+            -> 0
+        }
+
+        b2 = verify[i]: {
+            ok -> it
+
+            -> 0
+        }
         b1 != b2 -> return
     }
 
@@ -5302,10 +5366,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     #{overflow=wrap}
     ext-total-opt = pos - ext-len-pos - 2
     ext-total = 0
-    ext-total-opt: {
-        ok -> ext-total = it
+    ext-total = ext-total-opt: {
+        ok -> it
 
-        -> ext-total = 0
+        -> 0
     }
     put-u16(hs, ext-len-pos, ext-total)
 
@@ -5313,10 +5377,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     #{overflow=wrap}
     body-len-opt = pos - 4
     body-len = 0
-    body-len-opt: {
-        ok -> body-len = it
+    body-len = body-len-opt: {
+        ok -> it
 
-        -> body-len = 0
+        -> 0
     }
     put-u24(hs, 1, body-len)
     hs.truncate(pos)
@@ -5724,8 +5788,12 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     ; 最後一個位元組是原始 content type
     plain-len = plain.len()
 
-    #{index-out=zero, overflow=wrap}
-    ct = plain[plain-len - 1]
+    #{overflow=wrap}
+    ct = plain[plain-len - 1]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     plain-len = plain-len - 1
@@ -6033,12 +6101,17 @@ server-conn.read-client-finished-13 = () (ok bool) {
 
     ; 比較 verify_data
     i <- [0..32): {
+        b1 = cf-data[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        b1 = cf-data[i]
+            -> 0
+        }
 
-        #{index-out=zero}
-        b2 = verify[i]
+        b2 = verify[i]: {
+            ok -> it
+
+            -> 0
+        }
         b1 != b2 -> return
     }
     ok = true

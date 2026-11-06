@@ -124,6 +124,11 @@ func (v *listDirVisitor) walkStmt(s parser.Statement) {
 		v.walkBlock(st.Body)
 	case *parser.BlockStatement:
 		v.walkBlock(st)
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, sub := range blockMatchChildStatements(st) {
+			v.walkStmt(sub)
+		}
 	case *parser.ForStatement:
 		v.walkBlock(st.Body)
 		if st.Condition != nil {

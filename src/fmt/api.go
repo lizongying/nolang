@@ -84,6 +84,13 @@ type formatter struct {
 	// forceInline：僅供 inlineWidth 量測使用 —— 為 true 時，格式化的中綴一律走
 	// 單行分支（不因源碼跨行而插入換行），讓量測得到「完全攤平」的宽度。
 	forceInline bool
+
+	// foldArmValues：正在折疊的 match（「全臂同一目標賦值」→ `v = subj: { … }`）
+	// 的「臂指標 → 應產出的值表達式」對照表。非空時 writeMatchArm 會把該臂的
+	// body 陳述換成這條值表達式，使 writeArm 走既有的單行臂路徑把它印成
+	// `cond -> <值>`。以臂指標為鍵 ⇒ 嵌套的 match（臂內值本身又是 match）不會
+	// 命中，天然不外溢。見 match_assign_fold.go。
+	foldArmValues map[*parser.MatchArm]parser.Expression
 }
 
 // hasRT 查詢 IfExpression 的 fmt 往返標誌：查 trivia 表（f.trivia 為 nil 時安全）。

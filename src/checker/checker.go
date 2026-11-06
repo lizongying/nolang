@@ -839,6 +839,11 @@ func walkStmtForLen(stmt parser.Statement, varTypes, funcTypes map[string]string
 		for _, sub := range s.Statements {
 			walkStmtForLen(sub, varTypes, funcTypes, selfType, results)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, sub := range blockMatchChildStatements(s) {
+			walkStmtForLen(sub, varTypes, funcTypes, selfType, results)
+		}
 	case *parser.ForStatement:
 		walkStmtForLen(s.Init, varTypes, funcTypes, selfType, results)
 		walkExprForLen(s.Condition, varTypes, funcTypes, selfType, results)
@@ -1499,6 +1504,11 @@ func checkNaming(sem *parser.SemanticContext, stmt parser.Statement, file string
 		for _, bStmt := range s.Statements {
 			results = append(results, checkNaming(sem, bStmt, file, globalVars)...)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bStmt := range blockMatchChildStatements(s) {
+			results = append(results, checkNaming(sem, bStmt, file, globalVars)...)
+		}
 	case *parser.ForStatement:
 		// `(cond) { … }` 循环糖与 `for x <- …` 都解析為 ForStatement，其 Body
 		// 必須下鑽，否則迴圈體內的區域宣告（如 `Yy = 3`）永遠逃過命名檢查。
@@ -1563,6 +1573,11 @@ func walkStatementsForAsync(sem *parser.SemanticContext, stmt parser.Statement, 
 		}
 	case *parser.BlockStatement:
 		for _, b := range s.Statements {
+			walkStatementsForAsync(sem, b, file, results)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, b := range blockMatchChildStatements(s) {
 			walkStatementsForAsync(sem, b, file, results)
 		}
 	case *parser.ExpressionStatement:
@@ -1713,6 +1728,13 @@ func markReferencesInStatement(stmt parser.Statement, varSet map[string]struct{ 
 
 	case *parser.BlockStatement:
 		for _, inner := range s.Statements {
+			markReferencesInStatement(inner, varSet, usedVars)
+		}
+
+	case *parser.BlockMatchStatement:
+		// 只在塊 match 主體 / 臂體裡被用到的變數也算是「已使用」；漏了這個
+		// case 會讓 ValidateUnusedVars 誤報 unused variable。
+		for _, inner := range blockMatchChildStatements(s) {
 			markReferencesInStatement(inner, varSet, usedVars)
 		}
 
@@ -2488,6 +2510,10 @@ func collectAssignedNames(stmts []parser.Statement, assigned map[string]bool, se
 			}
 		case *parser.BlockStatement:
 			collectAssignedNames(s.Statements, assigned, sem)
+		case *parser.BlockMatchStatement:
+			// 主體 / 臂體展開後是同一函式的扁平陳述，`?=` 目標也算已賦值；
+			// 漏了會讓 ValidateUnassignedReturns 對結果參數誤報。
+			collectAssignedNames(blockMatchChildStatements(s), assigned, sem)
 		case *parser.ForStatement:
 			if s.Init != nil {
 				collectAssignedNames([]parser.Statement{s.Init}, assigned, sem)
@@ -2653,6 +2679,11 @@ func collectReadNames(stmts []parser.Statement, read map[string]bool) {
 			}
 		case *parser.BlockStatement:
 			collectReadNames(s.Statements, read)
+		case *parser.BlockMatchStatement:
+			// 塊 match 主體內 `x ?= f()` 就是對 f() 回傳 option 的消費；
+			// 漏了這個 case 會讓 optunuse 把「只在塊 match 裡被消費」的
+			// option 誤報成從未消費。
+			collectReadNames(blockMatchChildStatements(s), read)
 		case *parser.ForStatement:
 			if s.Init != nil {
 				collectReadNames([]parser.Statement{s.Init}, read)
@@ -3291,6 +3322,13 @@ func checkRedundantTypeInStmt(sem *parser.SemanticContext, stmt parser.Statement
 			results = append(results, checkRedundantTypeInStmt(sem, bs, file, varTypes)...)
 		}
 		return results
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		var results []ValidateResult
+		for _, bs := range blockMatchChildStatements(s) {
+			results = append(results, checkRedundantTypeInStmt(sem, bs, file, varTypes)...)
+		}
+		return results
 	}
 	return nil
 }
@@ -3387,6 +3425,14 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 		}
 	case *parser.BlockStatement:
 		for _, bStmt := range s.Statements {
+			results := checkStmtDuplicateVars(sem, bStmt, file, seen)
+			if len(results) > 0 {
+				return results
+			}
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bStmt := range blockMatchChildStatements(s) {
 			results := checkStmtDuplicateVars(sem, bStmt, file, seen)
 			if len(results) > 0 {
 				return results
@@ -3883,6 +3929,11 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 		for _, b := range s.Statements {
 			walkStmtForOverflow(b, file, sem, declared, funcTypes, emit)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, b := range blockMatchChildStatements(s) {
+			walkStmtForOverflow(b, file, sem, declared, funcTypes, emit)
+		}
 	}
 }
 
@@ -4040,6 +4091,9 @@ func collectLetsInStmts(stmts []parser.Statement, types map[string]string, funcT
 			}
 		case *parser.BlockStatement:
 			collectLetsInStmts(s.Statements, types, funcTypes, view)
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			collectLetsInStmts(blockMatchChildStatements(s), types, funcTypes, view)
 		}
 	}
 }
@@ -4356,6 +4410,13 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 					found = true
 				}
 			}
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			for _, b := range blockMatchChildStatements(s) {
+				if stmtHasIntOverflow(b, declared, selfType) {
+					found = true
+				}
+			}
 		case *parser.LetStatement:
 			if exprHasIntOverflow(s.Value, declared, selfType) {
 				found = true
@@ -4502,6 +4563,9 @@ func OverflowAnnotationRelevance(program *parser.Program) (relevant map[parser.S
 				}
 			case *parser.BlockStatement:
 				collect(v.Statements)
+			case *parser.BlockMatchStatement:
+				// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+				collect(blockMatchChildStatements(v))
 			case *parser.ForStatement:
 				if v.Body != nil {
 					collect(v.Body.Statements)
@@ -4737,6 +4801,11 @@ func walkStmtDivByZero(view *THIRView, sem *parser.SemanticContext, stmt parser.
 		}
 	case *parser.BlockStatement:
 		for _, b := range s.Statements {
+			walkStmtDivByZero(view, sem, b, file, emit)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, b := range blockMatchChildStatements(s) {
 			walkStmtDivByZero(view, sem, b, file, emit)
 		}
 	}
@@ -5748,6 +5817,11 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			for _, b := range s.Statements {
 				walkStmt(b, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
 			}
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			for _, b := range blockMatchChildStatements(s) {
+				walkStmt(b, fnReturnsOption, effOverflow, varTypes, selfType, curFile)
+			}
 		case *parser.MultiAssignStatement:
 			// a, b = f()：名稱型別由呼叫回傳值決定，難靜態得知，僅遞迴 RHS。
 			if s.Value != nil {
@@ -6176,6 +6250,11 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			for _, b := range s.Statements {
 				walkStmt(b, curFunc, fnOpt, curFile)
 			}
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			for _, b := range blockMatchChildStatements(s) {
+				walkStmt(b, curFunc, fnOpt, curFile)
+			}
 		case *parser.MultiAssignStatement:
 			if s.Value != nil {
 				walkExpr(s.Value, curFunc, curFile)
@@ -6291,6 +6370,11 @@ func collectWithCapBases(body *parser.BlockStatement) map[string]bool {
 			}
 		case *parser.BlockStatement:
 			for _, b := range x.Statements {
+				ws(b)
+			}
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			for _, b := range blockMatchChildStatements(x) {
 				ws(b)
 			}
 		case *parser.ForStatement:
@@ -6589,6 +6673,11 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 			for _, b := range s.Statements {
 				walkStmt(b, curFunc, curFile)
 			}
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			for _, b := range blockMatchChildStatements(s) {
+				walkStmt(b, curFunc, curFile)
+			}
 		}
 	}
 
@@ -6620,6 +6709,11 @@ func checkStringConcatInStmt(view *THIRView, sem *parser.SemanticContext, stmt p
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
+			results = append(results, checkStringConcatInStmt(view, sem, bodyStmt, file)...)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
 			results = append(results, checkStringConcatInStmt(view, sem, bodyStmt, file)...)
 		}
 	case *parser.ReturnStatement:
@@ -6764,6 +6858,11 @@ func fixStringConcatInStmt(view *THIRView, stmt parser.Statement) int {
 		for _, bodyStmt := range s.Statements {
 			n += fixStringConcatInStmt(view, bodyStmt)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
+			n += fixStringConcatInStmt(view, bodyStmt)
+		}
 	case *parser.ReturnStatement:
 		if s.ReturnValue != nil {
 			n += fixStringConcatInExpr(view, s.ReturnValue)
@@ -6870,6 +6969,11 @@ func checkCharArithInStmt(view *THIRView, sem *parser.SemanticContext, stmt pars
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
+			results = append(results, checkCharArithInStmt(view, sem, bodyStmt, file)...)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
 			results = append(results, checkCharArithInStmt(view, sem, bodyStmt, file)...)
 		}
 	case *parser.ReturnStatement:
@@ -7056,6 +7160,9 @@ func collectStrIndexAscii(stmts []parser.Statement, sem *parser.SemanticContext,
 			}
 		case *parser.BlockStatement:
 			collectStrIndexAscii(st.Statements, sem, asciiVars, funcName)
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			collectStrIndexAscii(blockMatchChildStatements(st), sem, asciiVars, funcName)
 		case *parser.ExpressionStatement:
 			scanStrIndexExpr(st.Expression, sem, asciiVars, funcName)
 		case *parser.ReturnStatement:
@@ -7114,6 +7221,9 @@ func collectStrIndexTypes(stmts []parser.Statement, sem *parser.SemanticContext,
 			}
 		case *parser.BlockStatement:
 			collectStrIndexTypes(st.Statements, sem, funcName, scopeTypes, funcReturns, asciiVars, view)
+		case *parser.BlockMatchStatement:
+			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			collectStrIndexTypes(blockMatchChildStatements(st), sem, funcName, scopeTypes, funcReturns, asciiVars, view)
 		case *parser.ExpressionStatement:
 			scanStrIndexExpr(st.Expression, sem, asciiVars, funcName)
 		case *parser.ReturnStatement:
@@ -7365,6 +7475,11 @@ func checkStrIndexInStmt(stmt parser.Statement, sem *parser.SemanticContext, asc
 		}
 	case *parser.BlockStatement:
 		for _, b := range s.Statements {
+			results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, b := range blockMatchChildStatements(s) {
 			results = append(results, checkStrIndexInStmt(b, sem, asciiVars, scopeTypes, funcName, inLoop, file)...)
 		}
 	case *parser.ForStatement:
@@ -7733,6 +7848,11 @@ func walkStrOrderingStmt(sem *parser.SemanticContext, stmt parser.Statement, fun
 		}
 	case *parser.BlockStatement:
 		walkStrOrderingBlock(sem, s, funcTypes, varTypes, selfType, file, results)
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, b := range blockMatchChildStatements(s) {
+			walkStrOrderingStmt(sem, b, funcTypes, varTypes, selfType, file, results)
+		}
 	case *parser.ForStatement:
 		walkStrOrderingStmt(sem, s.Init, funcTypes, varTypes, selfType, file, results)
 		walkStrOrderingExpr(sem, s.Condition, funcTypes, varTypes, selfType, file, results)
@@ -7836,6 +7956,11 @@ func checkHexCaseInStmt(sem *parser.SemanticContext, stmt parser.Statement, file
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
+			results = append(results, checkHexCaseInStmt(sem, bodyStmt, file)...)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
 			results = append(results, checkHexCaseInStmt(sem, bodyStmt, file)...)
 		}
 	case *parser.ReturnStatement:
@@ -8097,6 +8222,13 @@ func checkPrintFormatInStmt(stmt parser.Statement, varTypes map[string]string, s
 	case *parser.BlockStatement:
 		var results []ValidateResult
 		for _, bs := range s.Statements {
+			results = append(results, checkPrintFormatInStmt(bs, varTypes, structFields)...)
+		}
+		return results
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		var results []ValidateResult
+		for _, bs := range blockMatchChildStatements(s) {
 			results = append(results, checkPrintFormatInStmt(bs, varTypes, structFields)...)
 		}
 		return results
@@ -8679,6 +8811,18 @@ func checkUndefinedVarsInStmt(stmt parser.Statement, definedVars, funcNames map[
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
 			results = append(results, checkUndefinedVarsInStmt(bodyStmt, definedVars, funcNames, curModule)...)
+		}
+	case *parser.BlockMatchStatement:
+		// 主體陳述與臂體陳述都在同一函式作用域（展開後是扁平陳述），
+		// 主體裡 `v ?= f()` 宣告的 v 必須在這裡註冊，否則後續引用會被誤報
+		// "is not defined"。臂體走 SurfaceMatch 的既有分支，順便註冊 it 綁定。
+		if s.Body != nil {
+			for _, bodyStmt := range s.Body.Statements {
+				results = append(results, checkUndefinedVarsInStmt(bodyStmt, definedVars, funcNames, curModule)...)
+			}
+		}
+		if s.Match != nil {
+			results = append(results, checkUndefinedVarsInExpr(s.Match, definedVars, funcNames, false, curModule)...)
 		}
 	case *parser.ForStatement:
 		localDefs := make(map[string]bool)
@@ -10137,6 +10281,53 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			results = append(results, errs...)
 		}
 
+	case *parser.BlockMatchStatement:
+		// `{ body }: { arms }`：合成 subject 是 `?i64`（見 parser/block_match.go
+		// 的 `let __bm_N ?i64 = nil`）。先登記型別，臂綁定才知道 err 臂的 `it`
+		// 是 err 載荷、catch-all 臂是 ?i64；展開後的 CPS 節點不經 checker，
+		// 這裡是唯一替合成 subject 建立靜態型別的地方。
+		if s.Subject != "" {
+			varTypes[s.Subject] = blockMatchSubjectType
+		}
+		// 主體是純陳述、沒有 block-tail value（使用者定案 2），所以每條都
+		// 以 isBlockValue=false 走訪。展開後這些陳述與臂體共用同一函式作用域，
+		// 不另開 scope，故直接沿用 varTypes。
+		if s.Body != nil {
+			for _, bStmt := range s.Body.Statements {
+				errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, false, sem, overflowMode, view)
+				results = append(results, errs...)
+			}
+		}
+		// 臂體：用「帶主體」的淺拷貝跑標準 SurfaceMatch 綁定 / 型別檢查，
+		// 與上面 ExpressionStatement 的 SurfaceMatch 分支同口徑（不檢查臂
+		// 條件裡的 val() 構造器）。原糖 Match 保持 Matched == nil 給 no fmt。
+		if sm := blockMatchSubjectMatch(s); sm != nil {
+			mt := varTypes[s.Subject]
+			savedIt, hadIt := varTypes["it"]
+			for i := range sm.Arms {
+				arm := &sm.Arms[i]
+				for _, b := range matchArmBindings(sm, arm, mt) {
+					if b.Name != "" {
+						varTypes[b.Name] = b.Type
+					}
+				}
+				if arm.Body != nil {
+					for j, bStmt := range arm.Body.Statements {
+						errs := validateStmtTypes(bStmt, funcNames, funcTypes, selfType, varTypes, j == len(arm.Body.Statements)-1, sem, overflowMode, view)
+						results = append(results, errs...)
+					}
+				}
+			}
+			// flat varTypes 的 `it` 會被 catch-all 臂寫成 ?i64 並一路洩漏到
+			// 同函式後面的陳述（見 checker/sugar_walk.go 的註解）。塊 match
+			// 不該把合成 subject 的型別外洩，用完還原。
+			if hadIt {
+				varTypes["it"] = savedIt
+			} else {
+				delete(varTypes, "it")
+			}
+		}
+
 	case *parser.MultiAssignStatement:
 		// Type-check multi-return assignment: fields[n], pos = parse-field(s, pos)
 		// For each Identifier target, infer the type from the call's return types
@@ -10876,6 +11067,11 @@ func checkLHSInferredInStmt(stmt parser.Statement, varTypes map[string]string, v
 		for _, bs := range s.Statements {
 			results = append(results, checkLHSInferredInStmt(bs, varTypes, view)...)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bs := range blockMatchChildStatements(s) {
+			results = append(results, checkLHSInferredInStmt(bs, varTypes, view)...)
+		}
 	case *parser.LetStatement:
 		if s.IsSynthetic {
 			break
@@ -11225,6 +11421,11 @@ func resolveModuleCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext
 		for _, bodyStmt := range s.Statements {
 			resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
+			resolveModuleCallsInStmt(bodyStmt, sem, modSet, moduleFns, moduleConsts, prefixedFns)
+		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
 			s.Condition = resolveModuleCallsInExpr(s.Condition, sem, modSet, moduleFns, moduleConsts, prefixedFns)
@@ -11541,6 +11742,11 @@ func resolveMethodCallsInStmt(stmt parser.Statement, sem *parser.SemanticContext
 		for _, bodyStmt := range s.Statements {
 			resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
+			resolveMethodCallsInStmt(bodyStmt, sem, typeOwner, definedMethods)
+		}
 	case *parser.ForStatement:
 		if s.Condition != nil {
 			s.Condition = resolveMethodCallsInExpr(s.Condition, sem, typeOwner, definedMethods)
@@ -11759,6 +11965,11 @@ func resolveSelfInStmt(stmt parser.Statement, selfType string, structFields map[
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
+			resolveSelfInStmt(bodyStmt, selfType, structFields)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
 			resolveSelfInStmt(bodyStmt, selfType, structFields)
 		}
 	case *parser.ForStatement:
@@ -12038,6 +12249,11 @@ func resolveModuleConstantsInStmt(stmt parser.Statement, constants map[string]pa
 		}
 	case *parser.BlockStatement:
 		for _, bodyStmt := range s.Statements {
+			resolveModuleConstantsInStmt(bodyStmt, constants, locals)
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, bodyStmt := range blockMatchChildStatements(s) {
 			resolveModuleConstantsInStmt(bodyStmt, constants, locals)
 		}
 	case *parser.ForStatement:

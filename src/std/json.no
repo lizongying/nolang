@@ -212,6 +212,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         copt = s.byte(p)
         c = copt: {
             ok -> it
+
             -> 0
         }
         c != 32 && c != 9 && c != 10 && c != 13 -> break
@@ -224,6 +225,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     copt = s.byte(p)
     c = copt: {
         ok -> it
+
         -> 0
     }
 
@@ -352,6 +354,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 c2opt = s.byte(p)
                 c2 = c2opt: {
                     ok -> it
+
                     -> 0
                 }
                 c2 == 93 -> {
@@ -430,6 +433,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 c2opt = s.byte(p)
                 c2 = c2opt: {
                     ok -> it
+
                     -> 0
                 }
                 c2 == 125 -> {
@@ -478,10 +482,10 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     i-opt = pos + 1
     i = 0
-    i-opt: {
-        ok -> i = it
+    i = i-opt: {
+        ok -> it
 
-        -> i = 0
+        -> 0
     }
     j = 0
     c = 0
@@ -500,6 +504,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
 
@@ -516,10 +521,10 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 #{overflow=wrap}
                 next-pos-opt = i + 1
                 next-pos = 0
-                next-pos-opt: {
-                    ok -> next-pos = it
+                next-pos = next-pos-opt: {
+                    ok -> it
 
-                    -> next-pos = 0
+                    -> 0
                 }
                 return
             }
@@ -535,6 +540,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 copt = s.byte(i)
                 c = copt: {
                     ok -> it
+
                     -> 0
                 }
 
@@ -586,6 +592,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         c < 48 || c > 57 -> break
@@ -602,6 +609,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         c == 46 -> {
@@ -615,6 +623,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 copt = s.byte(i)
                 c = copt: {
                     ok -> it
+
                     -> 0
                 }
                 c < 48 || c > 57 -> break
@@ -632,6 +641,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         copt = s.byte(i)
         c = copt: {
             ok -> it
+
             -> 0
         }
         c == 101 || c == 69 -> {
@@ -643,6 +653,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 copt = s.byte(i)
                 c = copt: {
                     ok -> it
+
                     -> 0
                 }
                 c == 45 -> {
@@ -660,6 +671,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 copt = s.byte(i)
                 c = copt: {
                     ok -> it
+
                     -> 0
                 }
                 c < 48 || c > 57 -> break
@@ -1239,10 +1251,10 @@ json.get = (key str) (child ?json) {
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
     gi = .pool.get-key(.root, key)
     val-idx = -1
-    gi: {
-        ok -> val-idx = it
+    val-idx = gi: {
+        ok -> it
 
-        -> val-idx = -1
+        -> -1
     }
     val-idx < 0 -> return
 
@@ -1750,9 +1762,9 @@ json.obj-keys-str = () (keys str) {
 ; [str-val](#json.str-val)
 json.str-val = () (val str) {
     v-opt = .pool.get-str(.root)
-    v-opt: {
-        ok -> val = it
+    val = v-opt: {
+        ok -> it
 
-        -> val = ''
+        -> ''
     }
 }

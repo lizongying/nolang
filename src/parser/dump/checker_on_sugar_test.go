@@ -749,6 +749,26 @@ var sugarDriftAllowlist = map[string]string{
 	"optunuse": "ValidateUnhandledOverflow — its sugar count equals surface's, so this is the pre-existing lowered/surface divergence, not a new sugar bug",
 	"4bek3xc6": "ValidateUndefinedVars — its sugar count equals surface's (pre-existing lowered/surface divergence)",
 	"idxhndld": "ValidateUnhandledIndex — its sugar count equals surface's exactly. In the lowered shape the #{index-out} annotation has already been lowered into a synthetic __idx_out_ tmp which the rule treats as 'handled'; surface/sugar read the annotation directly. Pre-existing lowered/surface divergence, surfaced by S1.",
+
+	// 2026-11-06：`no fmt` 新增「全臂同一目标赋值」折叠
+	// （src/fmt/match_assign_fold.go：`m: { read -> flags = 1  -> flags = 0 }` →
+	// `flags = m: { read -> 1  -> 0 }`），语料里的两处字符串拼接链因此从「臂内赋值」
+	// 变成「match 的值」：
+	//
+	//	tests/err-structured.no:79        got4 = b: { err -> it.msg() - '@' - it.file  -> 'ok' }
+	//	tests/match-err-msg-scalar.no:91  同形
+	//
+	// 糖形态下 `got4 = <SurfaceMatch>` 让 ValidateUnhandledOverflow 把
+	// `it.msg() - '@' - it.file` 当成「未知操作数 − char 字面量」= 整数算术，于是
+	// 多报 2 个 HINT；降糖形态把臂展开成 if 链、值先落进 __cap/__unwrap 临时变量，
+	// 该路径看不到这次「把运算结果直接绑给用户变量」。两条都属于「中划线究竟是拼接
+	// 还是减法」这个没有类型就判不出的老问题（parser 侧 classifyInfixReturn 同源，
+	// 同日已按「含 str 操作数即拼接」收窄）。
+	//
+	// HINT 级（不影响 no build 结果），且降糖形态才是 `no vet`/`no build` 的发布
+	// 形态，故记入允许清单而不是改判据：真正的修法是给这条 lint 补类型信息，
+	// 属独立议题。
+	"ovfhndld": "ValidateUnhandledOverflow's HINT half — the «全臂同一目标赋值» fold turns `x = it.msg() - '@' - f` arm assignments into match values; with an unknown receiver the `-` chain is classified as integer arithmetic and the HINT fires on sugar only (2 corpus sites). Same type-blind `-` ambiguity as parser classifyInfixReturn.",
 }
 
 // ── Retired allowlist entries (kept as a record) ─────────────────────────────

@@ -269,6 +269,17 @@ func (d *dumper) node(node parser.Node, depth int) {
 			d.commentGroup(n.TrailingComments, depth+2)
 		}
 
+	case *parser.BlockMatchStatement:
+		fmt.Fprintf(&d.buf, "%sBlockMatchStatement{%s}\n", indent(depth),
+			kvs("subject", n.Subject))
+		d.comments(n, depth+1)
+		if n.Body != nil {
+			d.node(n.Body, depth+1)
+		}
+		if n.Match != nil {
+			d.node(n.Match, depth+1)
+		}
+
 	case *parser.FunctionDefinition:
 		fmt.Fprintf(&d.buf, "%sFunctionDefinition{%s}\n", indent(depth),
 			fields(kv("name", n.Name),

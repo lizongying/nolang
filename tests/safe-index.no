@@ -17,9 +17,11 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 ; i: 下標位置
 ; res: 範圍內元素值；越界時回傳 i64 零值（index-out=zero）
 get-default = (arr []i64, i i64) (res i64) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    res = arr[i]
+        -> 0
+    }
 }
 
 ; 驗證 option 函式內裸 x = arr[i] 會自動轉為 ?= 就地捕獲、越界不崩潰
@@ -103,9 +105,11 @@ unwrap-infix-rhs = (n i64) (r ?i64) {
 ; i: 下標位置
 ; res: 範圍內元素值；越界時回傳字面量 1.5
 get-default-f = (arr []f64, i i64) (res f64) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=1.5}
-    res = arr[i]
+        -> 1.5
+    }
 }
 
 ; str 元素 + 字串預設值
@@ -113,9 +117,11 @@ get-default-f = (arr []f64, i i64) (res f64) {
 ; i: 下標位置
 ; res: 範圍內元素值；越界時回傳字面量「-」
 get-default-str = (arr []str, i i64) (res str) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out='-'}
-    res = arr[i]
+        -> '-'
+    }
 }
 
 ; bool 元素 + 布林預設值
@@ -123,9 +129,11 @@ get-default-str = (arr []str, i i64) (res str) {
 ; i: 下標位置
 ; res: 範圍內元素值；越界時回傳 true
 get-default-bool = (arr []bool, i i64) (res bool) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=true}
-    res = arr[i]
+        -> true
+    }
 }
 
 ; byte(u8) 元素 + 整數預設值
@@ -133,9 +141,11 @@ get-default-bool = (arr []bool, i i64) (res bool) {
 ; i: 下標位置
 ; res: 範圍內元素值；越界時回傳 byte 零值（index-out=zero）
 get-default-byte = (arr []u8, i i64) (res u8) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    res = arr[i]
+        -> 0
+    }
 }
 
 ; char 元素 + 字元預設值（字面量）
@@ -143,9 +153,11 @@ get-default-byte = (arr []u8, i i64) (res u8) {
 ; i: 下標位置
 ; res: 範圍內元素值；越界時回傳字面量「x」
 get-default-char = (arr []char, i i64) (res char) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out='x'}
-    res = arr[i]
+        -> 'x'
+    }
 }
 
 a = [10, 20, 30]

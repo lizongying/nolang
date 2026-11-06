@@ -225,10 +225,10 @@ _rsa-bn-mul = (a []i64, an i64, b []i64, bn i64) (c []i64, cn i64) {
     #{overflow=wrap}
     local-cn-opt = an + bn
     local-cn = 0
-    local-cn-opt: {
-        ok -> local-cn = it
+    local-cn = local-cn-opt: {
+        ok -> it
 
-        -> local-cn = 0
+        -> 0
     }
     keep-trimming = true
     (keep-trimming) {
@@ -396,8 +396,12 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
     }
 
     ; 計算 a 的最高有效位元數
-    #{index-out=zero, overflow=wrap}
-    top = a[an - 1]
+    #{overflow=wrap}
+    top = a[an - 1]: {
+        ok -> it
+
+        -> 0
+    }
     lead = 0
     tmp = top
     (tmp != 0) {
@@ -617,8 +621,12 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
     local-rn = 1
 
     ; 計算 exp 的位元數
-    #{index-out=zero, overflow=wrap}
-    top = exp[en - 1]
+    #{overflow=wrap}
+    top = exp[en - 1]: {
+        ok -> it
+
+        -> 0
+    }
     lead = 0
     tmp = top
     (tmp != 0) {
@@ -743,8 +751,11 @@ _limbs-to-bytes = (v []i64) (out []byte) {
     }
 
     ; 最高 limb 的有效位元組數 hb（不含前導零位元組；hi==0 時保留 1）
-    #{index-out=zero}
-    hi = v[top - 1]
+    hi = v[top - 1]: {
+        ok -> it
+
+        -> 0
+    }
     hb = 1
     j <- [0..4): {
         ((hi >> (j * 8)) & 255) != 0 -> hb = j + 1

@@ -229,8 +229,11 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
             break
         }
 
-        #{index-out=zero}
-        len-byte = data[pos]
+        len-byte = data[pos]: {
+            ok -> it
+
+            -> 0
+        }
 
         #{overflow=wrap}
         len-byte == 0 -> {
@@ -316,11 +319,17 @@ parse-response = (data []byte) (ip ?str) {
     data.len() < 12 -> return
 
     ; 檢查回應碼
-    #{index-out=zero}
-    flags-hi = data[2]
+    flags-hi = data[2]: {
+        ok -> it
 
-    #{index-out=zero}
-    flags-lo = data[3]
+        -> 0
+    }
+
+    flags-lo = data[3]: {
+        ok -> it
+
+        -> 0
+    }
     rcode = flags-lo & 0x0f
     rcode != DNS-RCODE-NO-ERROR -> return
 
@@ -381,18 +390,29 @@ parse-response = (data []byte) (ip ?str) {
         ; A 記錄（4 bytes IPv4）
         #{overflow=wrap}
         rtype == DNS-TYPE-A && rdlength == 4 -> {
+            a = data[pos]: {
+                ok -> it
 
-            #{index-out=zero}
-            a = data[pos]
+                -> 0
+            }
 
-            #{index-out=zero}
-            b = data[pos + 1]
+            b = data[pos + 1]: {
+                ok -> it
 
-            #{index-out=zero}
-            c = data[pos + 2]
+                -> 0
+            }
 
-            #{index-out=zero}
-            d = data[pos + 3]
+            c = data[pos + 2]: {
+                ok -> it
+
+                -> 0
+            }
+
+            d = data[pos + 3]: {
+                ok -> it
+
+                -> 0
+            }
 
             sa = a.to-str()
             sb = b.to-str()

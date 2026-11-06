@@ -1340,10 +1340,10 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     #{overflow=wrap}
     body-start-opt = sep + 4
     body-start = 0
-    body-start-opt: {
-        ok -> body-start = it
+    body-start = body-start-opt: {
+        ok -> it
 
-        -> body-start = 0
+        -> 0
     }
 
     ; ── 標頭文字（ASCII，取 [0..sep) 逐位元組）──
@@ -1496,9 +1496,11 @@ http-dl-dechunk = (b []byte) (out []byte) {
 
         #{index-out=0}
         (pos < blen && size-done == false) {
+            c = b[pos]: {
+                ok -> it
 
-            #{index-out=0}
-            c = b[pos]
+                -> 0
+            }
             {
                 c >= 48 && c <= 57 -> {
 
@@ -1534,9 +1536,11 @@ http-dl-dechunk = (b []byte) (out []byte) {
 
         #{index-out=0}
         (pos < blen && line-done == false) {
+            c = b[pos]: {
+                ok -> it
 
-            #{index-out=0}
-            c = b[pos]
+                -> 0
+            }
             {
                 c == 10 -> {
 

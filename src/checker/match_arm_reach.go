@@ -158,6 +158,23 @@ func collectSugarMatchRoots(program *parser.Program) ([]*parser.SurfaceMatch, ma
 				}
 			case *parser.BlockStatement:
 				walkStmts(fn, file, st.Statements)
+			case *parser.BlockMatchStatement:
+				// `{ body }: { arms }` 的糖 Match 是裸的（Matched == nil，讓
+				// `no fmt` 印得出 `}: {`），但窮盡性規則只看帶主體的 match。
+				// 這裡給一條綁上合成 subject 的淺拷貝，標準三態 ?T 規則原樣套用；
+				// 原始 Match 不動，fmt / H0 看到的仍是裸 match。
+				if sm := blockMatchSubjectMatch(st); sm != nil {
+					all = append(all, sm)
+					rootFunc[sm] = fn
+					rootFile[sm] = file
+					walkSurfaceMatchChildren(sm, nil,
+						func(sub parser.Expression) { walkExpr(fn, file, sub) },
+						func(sub parser.Statement) { walkStmts(fn, file, []parser.Statement{sub}) })
+				}
+				// 主體裡還可能有使用者手寫的 match / 巢狀塊 match。
+				if st.Body != nil {
+					walkStmts(fn, file, st.Body.Statements)
+				}
 			case *parser.LetStatement:
 				walkExpr(fn, file, st.Value)
 			case *parser.MultiAssignStatement:
@@ -308,6 +325,11 @@ func sugarMatchSubjectName(sm *parser.SurfaceMatch) string {
 	}
 	switch m := sm.Matched.(type) {
 	case *parser.Identifier:
+		// `{ body }: { arms }` 的合成 subject（`__bm_N`）不該出現在診斷裡：
+		// 使用者看不到這個名字。見 block_match.go 的 blockMatchSubjectLabel。
+		if isBlockMatchSubject(m.Value) {
+			return blockMatchSubjectLabel
+		}
 		return m.Value
 	case *parser.DotExpression:
 		return m.Property
@@ -620,6 +642,10 @@ func localInitializers(program *parser.Program) map[string]map[string]parser.Exp
 				}
 			case *parser.BlockStatement:
 				walkStmts(funcName, st.Statements)
+			case *parser.BlockMatchStatement:
+				// 塊 match 的主體 / 臂體也在同一函式作用域（展開後是扁平陳述，
+				// 不另開作用域），其中的 let 綁定一樣要計入「只綁定一次」的口徑。
+				walkStmts(funcName, blockMatchChildStatements(st))
 			case *parser.LetStatement:
 				if st.Name == nil || st.Value == nil || st.IsSynthetic {
 					continue

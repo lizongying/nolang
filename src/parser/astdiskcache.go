@@ -302,7 +302,16 @@ import (
 // 「parse-time 產出形狀改變」：同一份原始碼的 AST 多了一種節點，
 // `[0...count)` 由「合法（範圍+隱式 self）」變成語法錯誤。舊 blob 會把
 // 三點寫法當成合法的 RangeExpression 直接餵給下游，與新語義衝突。
-const ASTVersion = "2026-11-04.1"
+// 2026-11-06.1：新增陳述層級節點 BlockMatchStatement（`{ body }: { arms }`）。
+// 屬「surface AST 形狀改變」：同一份原始碼的 AST 多出一種節點，舊 blob 會把
+// `}: {` 餵成三個互不相干的陳述（bare block / stray COLON / bare match），
+// 與新語義衝突，故必 bump。
+// 2026-11-06.2：索引主體的值位置 match `x = c[i]: { ok -> … }` 现在**会**把
+// `: { … }` 附加到索引表达式上（parser/expr.go 后缀循环之后的新分支）。同一份
+// 原始碼的樹因此從「`x = c[i]` + 主體為空的裸 match」變成「`x` 的賦值右值是
+// SurfaceMatch(主體=IndexExpression)」。舊 blob 仍是裂開的那棵樹，`-> DEF` 臂
+// 形同不存在（越界取 0 而不是 DEF），故必 bump。
+const ASTVersion = "2026-11-06.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

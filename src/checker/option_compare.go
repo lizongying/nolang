@@ -306,6 +306,11 @@ func (w *optCmpWalker) walkStmt(stmt parser.Statement, fn string) {
 		for _, inner := range s.Statements {
 			w.walkStmt(inner, "")
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, inner := range blockMatchChildStatements(s) {
+			w.walkStmt(inner, "")
+		}
 	case *parser.ForStatement:
 		if s.Init != nil {
 			w.walkStmt(s.Init, "")

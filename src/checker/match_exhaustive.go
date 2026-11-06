@@ -159,6 +159,9 @@ func collectMatchRoots(program *parser.Program) ([]*parser.IfExpression, map[*pa
 				}
 			case *parser.BlockStatement:
 				walkStmts(funcName, file, st.Statements)
+			case *parser.BlockMatchStatement:
+				// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+				walkStmts(funcName, file, blockMatchChildStatements(st))
 			case *parser.LetStatement:
 				walkExpr(funcName, file, st.Value)
 			case *parser.MultiAssignStatement:

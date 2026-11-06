@@ -598,6 +598,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
         bopt = s.byte(p)
         b = bopt: {
             ok(bv) -> bv
+
             -> 0
         }
         d i64 = -1
@@ -662,6 +663,7 @@ xml-read-name = (s str, p i64) (np ?i64) {
         copt = s.byte(pos)
         c = copt: {
             ok(cv) -> cv
+
             -> 0
         }
         is-name-byte(c) == false -> break
@@ -827,6 +829,7 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
         bopt = s.byte(j)
         b = bopt: {
             ok(bv) -> bv
+
             -> 0
         }
 
@@ -1485,6 +1488,7 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
             qopt = s.byte(cpos)
             q = qopt: {
                 ok(qv) -> qv
+
                 -> 0
             }
         }
@@ -1542,10 +1546,10 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
         }
         val str = ''
         dopt = decode-entities(s, vs, ve, true)
-        dopt: {
-            ok -> val = it
+        val = dopt: {
+            ok -> it
 
-            -> val = s.slice-bytes(vs, ve)
+            -> s.slice-bytes(vs, ve)
         }
         .html-set-attr-once(node, nm, val)
         np = cpos
@@ -1675,10 +1679,10 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
             rc -> {
                 val str = ''
                 dopt = decode-entities(s, np, cend, true)
-                dopt: {
-                    ok -> val = it
+                val = dopt: {
+                    ok -> it
 
-                    -> val = s.slice-bytes(np, cend)
+                    -> s.slice-bytes(np, cend)
                 }
                 .vals[tidx] = val
             }
@@ -1797,6 +1801,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
         m1opt = s.byte(p + 1)
         m1 = m1opt: {
             ok(m1v) -> m1v
+
             -> 0
         }
         m1 == 33 -> {

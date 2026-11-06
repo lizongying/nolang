@@ -1072,8 +1072,11 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     n - offset < ICMP-HEADER-SIZE -> return
 
     ; 驗證 ICMP Type = 0 (Echo Reply)
-    #{index-out=zero}
-    icmp-type = recv-buf[offset]
+    icmp-type = recv-buf[offset]: {
+        ok -> it
+
+        -> 0
+    }
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier

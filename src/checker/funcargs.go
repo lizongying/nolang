@@ -193,6 +193,17 @@ func checkArgCountInStmt(stmt parser.Statement, sigs map[string]*funcSig) []Vali
 			results = append(results, checkArgCountInStmt(bs, sigs)...)
 		}
 		return results
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		// 入口程序頂層 `{ ... }` 區塊（如 `no run` 的腳本式入口）也是一條
+		// 頂層陳述句，必須遞迴其內部陳述，否則塊內對 std 函式（如
+		// sha1.sha1-hex() 漏參）的呼叫會被合併後的數量檢查漏掉——完整型別
+		// 檢查 checkCallArgsInStmtWithResultParams 已有此分支，此處對齊。
+		var results []ValidateResult
+		for _, bs := range blockMatchChildStatements(s) {
+			results = append(results, checkArgCountInStmt(bs, sigs)...)
+		}
+		return results
 	case *parser.FunctionDefinition:
 		var results []ValidateResult
 		if s.Body != nil {
@@ -780,6 +791,13 @@ func checkCallArgsInStmtWithResultParams(stmt parser.Statement, sigs map[string]
 	case *parser.BlockStatement:
 		var results []ValidateResult
 		for _, bs := range s.Statements {
+			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
+		}
+		return results
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		var results []ValidateResult
+		for _, bs := range blockMatchChildStatements(s) {
 			results = append(results, checkCallArgsInStmtWithResultParams(bs, sigs, varTypes, resultParamNames, structFields, underUnwrap, view)...)
 		}
 		return results
@@ -2642,6 +2660,16 @@ func filterByExports(prog *parser.Program, libPath string, modFilePath string) *
 				// "unknown callee" in MIR codegen.
 				if s != nil {
 					walkStmts(s.Statements)
+				}
+			case *parser.BlockMatchStatement:
+				// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+				// A bare `{ ... }` group (if-group / match group with arms) is a
+				// statement in its own right. Without this case the whole nested
+				// group is skipped, so helpers called only from a nested arm are
+				// dropped from the export keep-set and later report
+				// "unknown callee" in MIR codegen.
+				if s != nil {
+					walkStmts(blockMatchChildStatements(s))
 				}
 			}
 		}

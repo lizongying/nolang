@@ -1864,7 +1864,7 @@ test-neg-lit = () {
     runner.eq(ir.contains('sub i64 0'), 1, 'neg-lit sub')
 }
 
-; 前缀逻辑非：!x ⇒ xor i64 1
+; 前缀逻辑非：!x ⇒ 先归位低 bit（and i64 1）再 xor i64 1（s88 对齐 Go emitNot 的 `xor i1 1, trunc i64→i1`）
 test-not-var = () {
     src = 'n3x = (x i64) (r i64) {\n    r = !x\n}\n'
     t = ast.make()
@@ -1873,6 +1873,22 @@ test-not-var = () {
     ir = h2m-lower-program(t, agg, r)
     runner.eq(agg.unsup, 0, 'not-var unsup')
     runner.eq(ir.contains('xor i64 1'), 1, 'not-var xor')
+}
+
+; s88：i64 主体 `!x` 值语义对齐 i1 低位列——Go hir2mir prefixOp '!' ⇒ OpNot、dest 型别 bool
+;   （MIR 把 bool 映射为 i1）；codegen.go:6408 emitNot 先 coerceInt(i64→i1) = `trunc i64 … to i1`
+;   （取最低位）再 `xor i1 1` ⇒ 值恒 (x&1)^1。自举槽宽统一 i64 ⇒ 以 `and i64 x, 1` 表达 trunc、
+;   `xor i64 1` 表达 xor（同值域 {0,1}，型别正确性不靠 IR 文本鑑別，口径同 s83）。
+;   分岔靶：tmp/probe-s88-ir.no exit 362（旧全宽形）vs tmp/s88-oracle-i64.no exit 117（态 T）
+test-not-i64-lowbit = () {
+    src = 'n9x = (x i64) (r i64) {\n    r = !x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'not-i64-lowbit unsup')
+    runner.eq(ir.contains('and i64'), 1, 'not-i64-lowbit mask')
+    runner.eq(ir.contains('xor i64 1'), 1, 'not-i64-lowbit xor')
 }
 
 ; 嵌套双负：-(-x) ⇒ 两颗 sub
@@ -1944,6 +1960,23 @@ test-prefix-gate = () {
     ir = h2m-lower-program(t, agg, r)
     runner.eq(agg.unsup > 0, 1, 'prefix-gate counted')
     runner.eq(ir.contains('define'), 0, 'prefix-gate no code')
+}
+
+; ── f64 主体位非 ~x 负向门禁哨兵（s86）──────────────────────────
+;   Go 侧 f64 `~` 属未定义区：运行路 hir2mir.go:8878 OpXor(rt=f64) 经 emitBitwise
+;   发 `xor double`（LLVM 非法指令，s86 实测 clang "instruction requires integer or
+;   integer vector operands" build fail，见 tmp/probe-s86-b.no）；
+;   常量路 hir2mir.go:7152 comptime 用 cvInt 域 ^ 折叠 float 字面量（s86 实测
+;   tmp/probe-s86-a.no 四比较全折成 false）⇒ 无可镜像的权威执行语义。
+;   自举端维持 unsup 门禁（h2m.no K-PREFIX 臂 ok-p==0 → h2m-mark），本测试钉死防误放行
+test-prefix-not-f64-gate = () {
+    src = 'q5x = (x f64) (r f64) {\n    r = ~x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'prefix-~f64-gate counted')
+    runner.eq(ir.contains('define'), 0, 'prefix-~f64-gate no code')
 }
 
 ; f64 前缀负号（s70）：-x（x 为 f64 形参）⇒ fneg double %fd…，仅 widened 的 '-' 臂
@@ -2046,15 +2079,18 @@ test-pfx-u64-in-expr = () {
     runner.eq(ir.contains('add i64'), 1, 'pfx-u64-expr add')
 }
 
-; 门禁：'!' 于 u64 仍不放行——s81 只 widened '-'/'~'，不动 '!'（裸 xor 1 ≠ 逻辑非，非 0/1 值会错）
-test-pfx-u64-lnot-gate = () {
+; s88 翻正：'!' 于 u64 放行——s81 门禁尾款（当时理由「裸 xor 1 ≠ 逻辑非，非 0/1 值会错」正解
+;   为先归位低 bit 再 xor，非门禁）；Go 对 u64 与 i64 同走 emitNot 的 `xor i1 1, trunc`，
+;   值面 oracle tmp/probe-s88-a.no 实钉 54（!2=1、!5=0、!255=0、!0=1、!1=0）
+test-pfx-u64-lnot = () {
     src = 'p8f = (x u64) (r i64) {\n    r = !x\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup > 0, 1, 'pfx-u64-lnot-gate counted')
-    runner.eq(ir.contains('define'), 0, 'pfx-u64-lnot-gate no code')
+    runner.eq(agg.unsup, 0, 'pfx-u64-lnot unsup')
+    runner.eq(ir.contains('and i64'), 1, 'pfx-u64-lnot mask')
+    runner.eq(ir.contains('xor i64 1'), 1, 'pfx-u64-lnot xor')
 }
 
 ; f64 二元算术（s71）：x + y（两 f64 形参）⇒ fadd double %fd…
@@ -2093,6 +2129,19 @@ test-arith-f64-div = () {
     ir = h2m-lower-program(t, agg, r)
     runner.eq(agg.unsup, 0, 'arith-f64-div unsup')
     runner.eq(ir.contains('fdiv double'), 1, 'arith-f64-div fdiv')
+}
+
+; s87：f64 模 x % y ⇒ frem double（镜像 Go codegen.go:6083 OpMod isFloat⇒frem）；
+;   AArch64 llc 将 frem double 降为 libm fmod（trunc 语义，7.0%2.5=2.0，oracle 实钉），
+;   与 Go 侧同 IR 形制同 lowering ⇒ 语义自动对齐，无需護欄
+test-arith-f64-mod = () {
+    src = 'f6m = (x f64, y f64) (r f64) {\n    r = x % y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-f64-mod unsup')
+    runner.eq(ir.contains('frem double'), 1, 'arith-f64-mod frem')
 }
 
 ; 门控一：混合操作数（一 f64 一 i64）⇒ unsup（两侧须同为 f64）
@@ -2143,6 +2192,40 @@ test-arith-i64-div-mem = () {
     runner.eq(ir.contains('alloca i64'), 1, 'arith-i64-div-mem alloca')
     runner.eq(ir.contains('sdiv i64'), 1, 'arith-i64-div-mem sdiv')
     runner.eq(ir.contains('load i64, i64*'), 1, 'arith-i64-div-mem load')
+}
+
+; ── (MIN,-1) 護欄翼（s85）────────────────────────────────
+; s85 實釘：i64 '/' '%' 端到端 IR 必含 (MIN,-1) 翼（%dmn/%dn1/%db/%dall 四臂）——
+;   鏡像 Go codegen.go emitArith OpDiv/OpMod 有符號分支；執行面值見 tmp/probe-s85-ir
+;   （MIN/-1⇒MIN、MIN%-1⇒0、除零錨共存 exit 7 == oracle）；u64 側負向斷言已在 s76 釘住
+test-arith-i64-div-min-wing = () {
+    src = 'i6w = (x i64, y i64) (r i64) {\n    r = x / y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-i64-div-min-wing unsup')
+    runner.eq(ir.contains('%dmn.'), 1, 'arith-i64-div-min-wing isMin')
+    runner.eq(ir.contains('%dn1.'), 1, 'arith-i64-div-min-wing isNeg1')
+    runner.eq(ir.contains('= and i1 %dmn.'), 1, 'arith-i64-div-min-wing minAnd')
+    runner.eq(ir.contains('= or i1 %dz.'), 1, 'arith-i64-div-min-wing badOr')
+    runner.eq(ir.contains('select i1 %dall.'), 1, 'arith-i64-div-min-wing safe-divisor fed by dall')
+}
+
+test-arith-i64-mod-min-wing = () {
+    src = 'i6v = (x i64, y i64) (r i64) {\n    r = x % y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'arith-i64-mod-min-wing unsup')
+    runner.eq(ir.contains('srem i64'), 1, 'arith-i64-mod-min-wing srem')
+    runner.eq(ir.contains('%dmn.'), 1, 'arith-i64-mod-min-wing isMin')
+    runner.eq(ir.contains('%dn1.'), 1, 'arith-i64-mod-min-wing isNeg1')
+    runner.eq(ir.contains('%dall.'), 1, 'arith-i64-mod-min-wing badAll')
+    runner.eq(ir.contains('= or i1 %dz.'), 1, 'arith-i64-mod-min-wing badOr')
+    runner.eq(ir.contains('select i1 %dz.'), 1, 'arith-i64-mod-min-wing zero result select')
+    runner.eq(ir.contains('call void @__nolang_div_zero_report(i1 %dz.'), 1, 'arith-i64-mod-min-wing report on zeroDiv not dall')
 }
 
 ; ── u64 除／模（s76）────────────────────────────────────────
@@ -2202,7 +2285,7 @@ test-arith-u64-div-mem = () {
 ; s78：u64 的 '+' 放行——add/sub/mul 在 64 位宽下签／无签位元相同，Go 侧 MIR 算子表
 ;   无 OpAddU/OpSubU/OpMulU（只有除模与序比较重映射），plain 路径恒发裸 add i64
 ;   （溢出变 err 的 with.overflow 内在函数只在 option 路径、由声明的 elemRaw 定 s*/u*，自举端不建模 ?u64）
-;   （s76 曾以此钉「u64 '+' 不放行」的门禁，s78 解除；仍门禁的位运算族见 test-arith-u64-bit-gate）
+;   （s76 曾以此钉「u64 '+' 不放行」的门禁，s78 解除；位运算族 s79 解除；逻辑族 && || s79 曾同码门禁、s83 解除见 test-logic-u64-*）
 test-arith-u64-add-plain = () {
     src = 'u6a = (x u64, y u64) (r u64) {\n    r = x + y\n}\n'
     t = ast.make()
@@ -2299,18 +2382,43 @@ test-arith-u64-mixed-gate = () {
     runner.eq(ir.contains('define'), 0, 'arith-u64-mixed-gate no code')
 }
 
-; s79 门禁下移：u64 的逻辑与 `&&` 仍不放行——s79 解位运算／移位族（& | ^ << >>），
-;   逻辑族（&& ||）与位运算在 bop 层同码（OP-AND/OP-OR，s68 复用），u64 操作数非 0/1，
-;   裸 and/or 于其上不等于逻辑与/或——留给后续件与真·短路语义一起处理
-;   （s77 曾在此钉「u64 位与不放行」的门禁，s79 已解除并下移到逻辑与）
-test-arith-u64-bit-gate = () {
-    src = 'u6b = (x u64, y u64) (r u64) {\n    r = x && y\n}\n'
+; ── u64 逻辑族 && ||（s83）────────────────────────────
+; s83：u64 逻辑族放行——探针实钉（tmp/probe-s83-a/c.no 走 Go oracle）：12 && 10 ⇒ 8、12 || 10 ⇒ 14、
+;   0 || 5 ⇒ 5、5 && 0 ⇒ 0、0 && 1 ⇒ 0——Go 对 u64 的 && || 发裸位形 and/or 且**非短路**；
+;   镜像 src/mir/codegen.go emitLogic（裸 and/or <lt>）+ hir2mir typeOfNode KInfix（cmp=false ⇒ 结果型=左操作数型 u64）；
+;   与位运算族同码（OP-AND/OR，s68 复用），bop 层无需分流
+;   （s79 test-arith-u64-bit-gate 所钉「同码⇒不等价逻辑语义、与真短路一起后置」的假设被探针推翻：
+;    Go 权威本无短路语义，放行即镜像；原门禁测试改写为放行断言）
+test-logic-u64-and-plain = () {
+    src = 'u9a = (x u64, y u64) (r u64) {\n    r = x && y\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup > 0, 1, 'arith-u64-bit-gate counted')
-    runner.eq(ir.contains('define'), 0, 'arith-u64-bit-gate no code')
+    runner.eq(agg.unsup, 0, 'logic-u64-and-plain unsup')
+    runner.eq(ir.contains('and i64'), 1, 'logic-u64-and-plain and')
+}
+
+; s83：u64 的 '||' 放行 ⇒ or i64（src 隔离，同 test-bit-u64-or-plain 口径）
+test-logic-u64-or-plain = () {
+    src = 'u9b = (x u64, y u64) (r u64) {\n    r = x || y\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'logic-u64-or-plain unsup')
+    runner.eq(ir.contains('or i64'), 1, 'logic-u64-or-plain or')
+}
+
+; s83：u64 && 整字面量同走（uty「任一侧 TY-U64」；Go 探针对 0 && 1 ⇒ 0 已验收）
+test-logic-u64-and-lit = () {
+    src = 'u9c = (x u64) (r u64) {\n    r = x && 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'logic-u64-and-lit unsup')
+    runner.eq(ir.contains('and i64'), 1, 'logic-u64-and-lit and')
 }
 
 ; ── u64 位运算／移位族（s79）────────────────────────────────
@@ -2543,15 +2651,16 @@ test-cmp-u64-slot-i64 = () {
     runner.eq(ir.contains('store i64'), 1, 'cmp-u64-slot-i64 store')
 }
 
-; s75 门禁：f64 '%' 不放行（is-arith 不含 OP-MOD， frem 路径未解锁）⇒ 诚实 unsup
-test-arith-f64-mod-gate = () {
+; s87 翻正：f64 '%' 字面量形（形参×f64 字面量，s73 已备 OP-CONST TY-F64）放行 ⇒ frem double
+;   （旧 s75 门禁哨兵 test-arith-f64-mod-gate 锚「is-arith 不含 OP-MOD」，放行后语义过时，翻正为正向）
+test-arith-f64-mod-lit = () {
     src = 'i6p = (x f64) (r f64) {\n    r = x % 2.0\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup > 0, 1, 'arith-f64-mod-gate counted')
-    runner.eq(ir.contains('define'), 0, 'arith-f64-mod-gate no code')
+    runner.eq(agg.unsup, 0, 'arith-f64-mod-lit unsup')
+    runner.eq(ir.contains('frem double'), 1, 'arith-f64-mod-lit frem')
 }
 
 ; ── f64 比较（s72）──────────────────────────────────────────
@@ -2850,15 +2959,19 @@ test-log-chain = () {
     runner.eq(ir.contains('or i64'), 1, 'log-chain or')
 }
 
-; 门控：u64 操作数的 && 仍不在 i64 算术语义内 ⇒ unsup（逻辑与位运算同受 i64-only 约束）
-test-log-gate = () {
-    src = 'g4x = (x u64, y u64) (r u64) {\n    r = x && y\n}\n'
+; s83：原 s67 门禁测试 test-log-gate（u64 && 计 unsup）被探針推翻——Go 对 u64 的 && || 即裸位形
+;   and/or 非短路（12 && 10 ⇒ 8、0 || 5 ⇒ 5）⇒ 改写为 mem 放行靶：跨块两写 f 不撞 st == vt
+;   （同 test-bit-u64-slot-u64 的槽寬耦合族；plain/lit 形见 test-logic-u64-*）
+test-log-u64-mem = () {
+    src = 'g4x = (x u64, y u64, n i64) (r u64) {\n    f = x && y\n    n > 0 -> f = f || y\n    r = f\n}\n'
     t = ast.make()
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
-    runner.eq(agg.unsup > 0, 1, 'log-gate counted')
-    runner.eq(ir.contains('define'), 0, 'log-gate no code')
+    runner.eq(agg.unsup, 0, 'log-u64-mem unsup')
+    runner.eq(ir.contains('and i64'), 1, 'log-u64-mem and')
+    runner.eq(ir.contains('or i64'), 1, 'log-u64-mem or')
+    runner.eq(ir.contains('store i64'), 1, 'log-u64-mem store')
 }
 
 ; 调用入口（保持与下方新增函数定义的顺序无关）
@@ -2923,12 +3036,14 @@ test-it-gate()
 test-neg-var()
 test-neg-lit()
 test-not-var()
+test-not-i64-lowbit()
 test-neg-nested()
 test-neg-in-expr()
 test-bitnot-var()
 test-bitnot-nested()
 test-bitnot-in-expr()
 test-prefix-gate()
+test-prefix-not-f64-gate()
 test-neg-f64-var()
 test-neg-f64-nested()
 test-neg-f64-gate()
@@ -2937,14 +3052,17 @@ test-pfx-u64-not()
 test-pfx-u64-nested()
 test-pfx-u64-mem()
 test-pfx-u64-in-expr()
-test-pfx-u64-lnot-gate()
+test-pfx-u64-lnot()
 test-arith-f64-add()
 test-arith-f64-mul-nested()
 test-arith-f64-div()
+test-arith-f64-mod()
 test-arith-f64-mixed-gate()
 test-arith-i64-div-plain()
 test-arith-i64-mod-plain()
 test-arith-i64-div-mem()
+test-arith-i64-div-min-wing()
+test-arith-i64-mod-min-wing()
 test-arith-u64-div-plain()
 test-arith-u64-mod-plain()
 test-arith-u64-div-lit()
@@ -2957,7 +3075,9 @@ test-arith-u64-arith-nested()
 test-arith-u64-add-mem()
 test-arith-u64-slot-u64()
 test-arith-u64-mixed-gate()
-test-arith-u64-bit-gate()
+test-logic-u64-and-plain()
+test-logic-u64-or-plain()
+test-logic-u64-and-lit()
 test-bit-u64-and-plain()
 test-bit-u64-or-plain()
 test-bit-u64-xor-plain()
@@ -2976,7 +3096,7 @@ test-cmp-u64-ne()
 test-cmp-u64-lit()
 test-cmp-u64-mem()
 test-cmp-u64-slot-i64()
-test-arith-f64-mod-gate()
+test-arith-f64-mod-lit()
 test-cmp-f64-lt()
 test-cmp-f64-eq()
 test-cmp-f64-ne()
@@ -3001,7 +3121,7 @@ test-bit-gate()
 test-log-and()
 test-log-or()
 test-log-chain()
-test-log-gate()
+test-log-u64-mem()
 test-gate()
 
 runner.summary()

@@ -584,6 +584,14 @@ func (c *hirConv) stmtNode(s Statement) int32 {
 			Line:  line, Col: col,
 		})
 
+	case *BlockMatchStatement:
+		// S3 H0 直出：塊 match 在這裡展開成 KBlock+KLet+KIf 鏈，沒有任何
+		// 新的 HIR kind。parse-time Subject 讓 H0 與 js/wasm 展開結果一致。
+		if id := c.lowerBlockMatchToHIR(s); id != hir.NoID {
+			return id
+		}
+		return c.b.Add(hir.Node{Kind: hir.KUnknown, S: c.b.Intern("BlockMatchStatement"), Line: line, Col: col})
+
 	case *FunctionDefinition:
 		return c.funcLike(hir.KFuncDef, &s.FuncSignature, s.Name, s.Body,
 			c.sem.VariadicUnionOf(s), c.sem.GenericUnionOf(s), line, col,
@@ -1395,6 +1403,22 @@ func (c *hirConv) lowerUnwrapAssignToHIR(uas *UnwrapAssignStatement, line, col i
 		resultNameOverride: c.curResultName,
 	}
 	stmt := l.lowerUnwrapAssign(uas)
+	c.h0Diags = append(c.h0Diags, sp.diags...)
+	if stmt == nil {
+		return hir.NoID
+	}
+	return c.stmt(stmt)
+}
+
+// lowerBlockMatchToHIR is the H0 direct emitter for `{ body }: { arms }`.
+//
+// It shares expandBlockMatch with the js/wasm re-home path so both backends
+// produce the same core AST. Diagnostics raised while expanding the captured
+// `?=` (a fresh lowerer per `?=`) land in the scratch parser's diags and are
+// folded into c.h0Diags exactly once.
+func (c *hirConv) lowerBlockMatchToHIR(bm *BlockMatchStatement) int32 {
+	sp := c.scratchParser()
+	stmt := expandBlockMatch(sp, bm, c.curResultName)
 	c.h0Diags = append(c.h0Diags, sp.diags...)
 	if stmt == nil {
 		return hir.NoID

@@ -91,6 +91,11 @@ func literalConvInStmt(sem *parser.SemanticContext, stmt parser.Statement, file 
 		for _, b := range s.Statements {
 			results = append(results, literalConvInStmt(sem, b, file)...)
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		for _, b := range blockMatchChildStatements(s) {
+			results = append(results, literalConvInStmt(sem, b, file)...)
+		}
 	case *parser.ForStatement:
 		results = append(results, literalConvInStmt(sem, s.Init, file)...)
 		results = append(results, literalConvInExpr(s.Condition, file)...)

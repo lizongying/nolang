@@ -311,6 +311,17 @@ type lowerer struct {
 	// 用它傳入 hirConv.curResultName（funcLike 從 sig.Results 提取的 ?T 結果名），
 	// 因為 H0 侧沒有 curFuncDef。
 	resultNameOverride string
+
+	// blockMatchSubject 非空時，這個 lowerer 正在展開被陳述層級塊 match
+	// `{ body }: { arms }` 捕捉的 `?=`。lowerUnwrapAssign 會把「上拋目標」
+	// 改成這個合成 subject（而非函式的 ?T 結果參數，見「最近的塊 match 捕捉」
+	// 語意），且 nil/err 臂只寫入 subject、**不 return** —— 停止塊主體改由
+	// block_match.go 的 `if __bm_N == nil` 守衛負責。
+	blockMatchSubject string
+	// unwrapTmpOverride 覆寫 `__unwrap_<line>`：同一行有兩個 `?=` 時這個
+	// 名字會撞名，塊 match 改由 parse-time Subject 派生唯一名。
+	// （`__match_subj_<line>_<col>` 已含欄位，不需覆寫。）
+	unwrapTmpOverride string
 }
 
 var surfaceMatchPtrType = reflect.TypeOf((*SurfaceMatch)(nil))
@@ -334,6 +345,31 @@ func (l *lowerer) walk(v reflect.Value) {
 		l.walk(v.Elem())
 	case reflect.Interface:
 		if v.IsNil() {
+			return
+		}
+		// 陳述層級塊 match `{ body }: { arms }`。
+		//
+		// LLVM 主管線（skipSugarExpand）：**絕不 descend 進 Body**。D9 下標目標
+		// `a[i] ?= v`（uas.Name == nil）在下方的 :420 會被 v.Set 原地改寫，而
+		// H0 讀的是同一份 *Program；降進去會污染糖 AST。展開全權交給 H0 的
+		// case *BlockMatchStatement。
+		//
+		// js/wasm（DesugarSurfaceMatchesPlain）：在原地換成展開後的核心 AST，
+		// 再走一次 walk，讓合成的 SurfaceMatch 也降成 IfExpression 鏈。
+		if v.Elem().Type() == blockMatchPtrType {
+			if l.skipSugarExpand {
+				return
+			}
+			if !l.analysisOnly && v.CanSet() {
+				bm := v.Interface().(*BlockMatchStatement)
+				if expanded := expandBlockMatch(l.p, bm, l.resultNameOverride); expanded != nil {
+					v.Set(reflect.ValueOf(expanded))
+					l.walk(v)
+				}
+				return
+			}
+			// analysisOnly：只收集推斷事實，不做任何結構改寫。
+			l.walk(v.Elem())
 			return
 		}
 		// 運算符重載派發（post-order）：先遞迴把子節點（如巢狀 `a + b`、
@@ -801,7 +837,7 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 		// stmt.Type / sem.VarTypes，故不影響 codegen 的 slice-view clone 路徑。
 		// str/txt 切片回傳的是 str/txt（不是 []char），以 `[` / `vec[` 前綴
 		// 限制在位置型容器，避免把它們誤登記成 []char。
-		if se, isSlice := ls.Value.(*SliceExpression); false && isSlice {
+		if se, isSlice := ls.Value.(*SliceExpression); isSlice {
 			if base := dotReceiverName(se.Left); base != "" {
 				src := localTypes[base]
 				if src == "" && l.p.sem != nil {
@@ -813,7 +849,7 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 					}
 				}
 				baseRaw := ty.StripOptionRaw(src)
-				if strings.HasPrefix(baseRaw, "[") || strings.HasPrefix(baseRaw, "vec[") {
+				if isPositionContainerRaw(baseRaw) {
 					if elem := containerElemType(baseRaw); elem != "" {
 						lt := "[]" + elem
 						localTypes[name] = lt
@@ -5225,6 +5261,11 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			}
 		}
 	}
+	// 最近的塊 match 永遠捕捉：即使所在函式本身有 ?T 結果參數，也改用
+	// 合成 subject 作為上拋目標（塊 match 語意 #4）。
+	if l.blockMatchSubject != "" {
+		resultName = l.blockMatchSubject
+	}
 
 	// --- D9 寫入側 ?=：`a[i] ?= v` ---
 	// 寫入目標為安全索引時，option 性來自「下標讀取」（a[i] 越界回傳 nil），
@@ -5274,6 +5315,9 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 
 	// Create a unique temporary variable name for the option value.
 	tmpName := fmt.Sprintf("__unwrap_%d", tok.Line)
+	if l.unwrapTmpOverride != "" {
+		tmpName = l.unwrapTmpOverride
+	}
 	tmpIdent := &Identifier{Token: tok, Value: tmpName}
 
 	// Infer the type of the temp variable from the RHS expression.
@@ -5414,6 +5458,12 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// 此時改為在 nil/err arm 內才拷貝（僅傳播 err/nil 結果），ok 路徑不污染
 	// 結果槽，由用戶程式碼自行賦值。
 	targetIsResult := uas.Name != nil && uas.Name.Value == resultName
+	// 塊 match 的 subject 是合成名，使用者不可能寫出 `?=` 目標剛好等於它；
+	// 即使寫了也必須走「僅在 nil/err 臂寫入」的路徑，否則 match 前就先把
+	// 整個 option（含 ok）塞進 subject，成功路徑會讓 arms 看到 ok。
+	if l.blockMatchSubject != "" {
+		targetIsResult = false
+	}
 	if resultName != "" && targetIsResult {
 		// 將 `result = __unwrap_N` 提前到 match 之前：三個 arm 都不再寫回 r，
 		// 因為 match 前的這次賦值已把 opt 結果（ok/err/nil）寫入 r，arm 內
@@ -5450,15 +5500,19 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		// 非結果參數目標（`v ?= ...` 且 v != 結果參數）：把 option 結構的傳播
 		// 拷貝放進 nil/err arm 內，ok 路徑完全不動結果參數。
 		propagate := func() *BlockStatement {
-			return &BlockStatement{Token: tok, Statements: []Statement{
+			// whole-option 拷貝（IsPropagation）保留 err.err 的 msg/code/file/
+			// line/col 原樣；塊 match 不 return，由 `if __bm_N == nil` 守衛
+			// 停止塊主體後讓 arms 以 err 跑一次。
+			stmts := []Statement{
 				&LetStatement{
 					Token:         tok,
 					Name:          &Identifier{Token: tok, Value: resultName},
 					Value:         tmpIdent,
 					IsPropagation: true,
 				},
-				&ReturnStatement{Token: tok},
-			}}
+			}
+			stmts = append(stmts, blockMatchTail(l.blockMatchSubject, tok)...)
+			return &BlockStatement{Token: tok, Statements: stmts}
 		}
 		arms = append(arms, MatchArm{
 			Condition:     &Identifier{Token: tok, Value: "nil"},
@@ -5482,7 +5536,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		// ERROR（含 `a + 1: { ok -> a = it, -> }` 這兩種可寫法，見
 		// flushCompoundAssigns）。同一行再補一句「`?=` can only be used …」只會
 		// 讓用戶以為解決方案是去掉 `?=`，而去掉之後仍是條死路。
-		if uas.DeprecatedOp == "" {
+		if uas.DeprecatedOp == "" && l.blockMatchSubject == "" {
 			l.p.saveErrorf("l86f91me", "line %d, column %d: `?=` can only be used inside a function with an option-typed result param", tok.Line, tok.Column)
 		}
 		arms = append(arms, MatchArm{
@@ -5613,13 +5667,25 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			})
 		}
 	}
-	stmts = append(stmts, guards...)
-	stmts = append(stmts, tmpAssign)
-	stmts = append(stmts, preDecls...)
-	for _, s := range preStmts {
-		stmts = append(stmts, s)
+	tail := []Statement{tmpAssign}
+	tail = append(tail, preDecls...)
+	tail = append(tail, preStmts...)
+	tail = append(tail, &ExpressionStatement{Token: tok, Expression: lowered})
+	if l.blockMatchSubject != "" && len(guards) > 0 {
+		// guardOptionOperands 的失敗臂會寫入 subject；塊 match 下它不 return，
+		// 故 tmpAssign 與 match 必須一併關進 `if __bm_N == nil`，否則守衛失敗
+		// 後仍會繼續求值 RHS 並跑一次 match。
+		tail = []Statement{&ExpressionStatement{
+			Token: tok,
+			Expression: &IfExpression{
+				Token:       tok,
+				Condition:   blockMatchNilGuard(tok, l.blockMatchSubject),
+				Consequence: &BlockStatement{Token: tok, Statements: tail},
+			},
+		}}
 	}
-	stmts = append(stmts, &ExpressionStatement{Token: tok, Expression: lowered})
+	stmts = append(stmts, guards...)
+	stmts = append(stmts, tail...)
 	return &BlockStatement{
 		Token:      tok,
 		Statements: stmts,
@@ -5651,6 +5717,10 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 // temp of exactly that name), so no separate temp is introduced here.
 func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *IndexExpression, resultName string) Statement {
 	tok := uas.Token
+	// 塊 match 捕捉時改用合成 subject 作為上拋目標，壓掉 jib2tpel 且不 return nil。
+	if l.blockMatchSubject != "" {
+		resultName = l.blockMatchSubject
+	}
 
 	// 若所在函式沒有 option 結果參數，無法向上傳播越界錯誤 ⇒ 報既有口径錯誤。
 	// （D9 的 idxwrite ERROR 會在 P2 提供更具體的寫入側指引；此處保持 ?= 既有語義。）
@@ -5670,19 +5740,22 @@ func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *Inde
 
 	// subjName 與 buildMatchDesugar 內部歸一化命名一致（__match_subj_L_C），
 	// 供傳播臂引用越界 option。
+	// 注意：subjName 必須與 resolveSubjectMatch 為索引主體歸一化的名字一致
+	//（__match_subj_<line>_<col>），不可覆寫；line+col 已保證同行唯一。
 	subjName := fmt.Sprintf("__match_subj_%d_%d", tok.Line, tok.Column)
 
-	// nil / err 傳播臂：result = __match_subj; return。
+	// nil / err 傳播臂：result = __match_subj; return（塊 match 下不 return）。
 	propagate := func() *BlockStatement {
-		return &BlockStatement{Token: tok, Statements: []Statement{
+		stmts := []Statement{
 			&LetStatement{
 				Token:         tok,
 				Name:          &Identifier{Token: tok, Value: resultName},
 				Value:         &Identifier{Token: tok, Value: subjName},
 				IsPropagation: true,
 			},
-			&ReturnStatement{Token: tok},
-		}}
+		}
+		stmts = append(stmts, blockMatchTail(l.blockMatchSubject, tok)...)
+		return &BlockStatement{Token: tok, Statements: stmts}
 	}
 	arms := []MatchArm{
 		{
@@ -6015,11 +6088,14 @@ func (l *lowerer) makePropagateGuard(optName, resultName string, tok lexer.Token
 	tmpIdent := &Identifier{Token: tok, Value: optName}
 	mkBody := func() *BlockStatement {
 		assignRes := &LetStatement{
-			Token: tok,
-			Name:  &Identifier{Token: tok, Value: resultName},
-			Value: tmpIdent,
+			Token:         tok,
+			Name:          &Identifier{Token: tok, Value: resultName},
+			Value:         tmpIdent,
+			IsPropagation: l.blockMatchSubject != "",
 		}
-		return &BlockStatement{Token: tok, Statements: []Statement{assignRes, &ReturnStatement{Token: tok}}}
+		stmts := []Statement{assignRes}
+		stmts = append(stmts, blockMatchTail(l.blockMatchSubject, tok)...)
+		return &BlockStatement{Token: tok, Statements: stmts}
 	}
 	nilArm := MatchArm{
 		Condition:     &Identifier{Token: tok, Value: "nil"},

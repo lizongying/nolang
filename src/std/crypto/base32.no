@@ -37,20 +37,39 @@ encode = (data []byte) (out str) {
     (pos + 5 <= dlen) {
 
         ; 提取 5 位元組 → 40 位元 → 8 個 5-bit 值
-        #{index-out=zero}
-        b0 = data[pos]
+        b0 = data[pos]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
-        b1 = data[pos + 1]
+            -> 0
+        }
 
-        #{index-out=zero, overflow=wrap}
-        b2 = data[pos + 2]
+        #{overflow=wrap}
+        b1 = data[pos + 1]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
-        b3 = data[pos + 3]
+            -> 0
+        }
 
-        #{index-out=zero, overflow=wrap}
-        b4 = data[pos + 4]
+        #{overflow=wrap}
+        b2 = data[pos + 2]: {
+            ok -> it
+
+            -> 0
+        }
+
+        #{overflow=wrap}
+        b3 = data[pos + 3]: {
+            ok -> it
+
+            -> 0
+        }
+
+        #{overflow=wrap}
+        b4 = data[pos + 4]: {
+            ok -> it
+
+            -> 0
+        }
 
         out[out-pos]: {
             ok -> it = BASE32-ALPHABET[(b0 >> 3) & 31]
@@ -125,24 +144,32 @@ encode = (data []byte) (out str) {
         b3 = 0
         b4 = 0
         remainder >= 1 -> {
+            b0 = data[pos]: {
+                ok -> it
 
-            #{index-out=zero}
-            b0 = data[pos]
+                -> 0
+            }
         }
         remainder >= 2 -> {
+            b1 = data[pos + 1]: {
+                ok -> it
 
-            #{index-out=zero}
-            b1 = data[pos + 1]
+                -> 0
+            }
         }
         remainder >= 3 -> {
+            b2 = data[pos + 2]: {
+                ok -> it
 
-            #{index-out=zero}
-            b2 = data[pos + 2]
+                -> 0
+            }
         }
         remainder >= 4 -> {
+            b3 = data[pos + 3]: {
+                ok -> it
 
-            #{index-out=zero}
-            b3 = data[pos + 3]
+                -> 0
+            }
         }
 
         ; 根據剩餘位元組數決定輸出字元和填充

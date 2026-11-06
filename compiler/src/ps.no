@@ -2247,8 +2247,10 @@ ps-q-esc = (b []byte) (r str) {
     r = ''
     i = 0
     (i < b.len()) {
-        #{index-out=zero}
-        c = b[i]
+        c = b[i]: {
+            ok -> it
+            -> 0
+        }
         cc = lx.lx-ch-str(c)
         {
             c == 34 -> cc = bs - q
@@ -5264,8 +5266,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         ; 索引讀提取為獨立陳述並標 #{index-out=zero}：巢置於 call 引數內的索引讀會被
         ; option 捕獲改寫（pd 淪為 ?i64、後續欄位讀在 MIR 產 NoVal，bug #85 類）；
         ; 迴圈守衛 rp < params.len() 已保證不越界，zero 僅為型別層面的逃生艙。
-        #{index-out=zero}
-        pni = params[rp]
+        pni = params[rp]: {
+            ok -> it
+            -> 0
+        }
         pd = ast.nd-at(t, pni)
         pt = ast.kid-at(t, pd.kid0)
         pt > 0 -> ps-set-var-type(p, ast.str-at(t, pd.s0), ast.type-string(t, pt))
@@ -5278,8 +5282,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
 
         ; 索引讀提取為獨立陳述並標 #{index-out=zero}（理由同 params 循環：call 引數內的
         ; 索引讀會被 option 捕獲改寫 ⇒ 後續欄位讀 NoVal）；迴圈守衛保證不越界。
-        #{index-out=zero}
-        oni = outs[rr]
+        oni = outs[rr]: {
+            ok -> it
+            -> 0
+        }
         od = ast.nd-at(t, oni)
         ot = ast.kid-at(t, od.kid0)
 
@@ -5313,8 +5319,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     (gp < params.len()) {
 
         ; 索引讀提取獨立成句 + index-out=zero（理由同 params/outs 型別登記循環）
-        #{index-out=zero}
-        gni = params[gp]
+        gni = params[gp]: {
+            ok -> it
+            -> 0
+        }
         gpd = ast.nd-at(t, gni)
         ps-detect-generic(t, ast.kid-at(t, gpd.kid0), gnames)
 
@@ -5325,8 +5333,10 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
     (gr < outs.len()) {
 
         ; 索引讀提取獨立成句 + index-out=zero（理由同上）
-        #{index-out=zero}
-        goi = outs[gr]
+        goi = outs[gr]: {
+            ok -> it
+            -> 0
+        }
         grd = ast.nd-at(t, goi)
         ps-detect-generic(t, ast.kid-at(t, grd.kid0), gnames)
 
@@ -5458,8 +5468,10 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
         ; 索引讀提取為獨立陳述並標 #{index-out=zero}：巢置於 call 引數內的索引讀會被
         ; option 捕獲改寫（pd 淪為 ?i64、後續欄位讀在 MIR 產 NoVal，bug #85 類）；
         ; 迴圈守衛 rp < params.len() 已保證不越界，zero 僅為型別層面的逃生艙。
-        #{index-out=zero}
-        pni = params[rp]
+        pni = params[rp]: {
+            ok -> it
+            -> 0
+        }
         pd = ast.nd-at(t, pni)
         pt = ast.kid-at(t, pd.kid0)
         pt > 0 -> {
@@ -5475,8 +5487,10 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
 
         ; 索引讀提取為獨立陳述並標 #{index-out=zero}（理由同 params 循環：call 引數內的
         ; 索引讀會被 option 捕獲改寫 ⇒ 後續欄位讀 NoVal）；迴圈守衛保證不越界。
-        #{index-out=zero}
-        oni = outs[rr]
+        oni = outs[rr]: {
+            ok -> it
+            -> 0
+        }
         od = ast.nd-at(t, oni)
         ot = ast.kid-at(t, od.kid0)
 
@@ -5527,8 +5541,10 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
     (gp < params.len()) {
 
         ; 索引讀提取獨立成句 + index-out=zero（理由同 params/outs 型別登記循環）
-        #{index-out=zero}
-        gni = params[gp]
+        gni = params[gp]: {
+            ok -> it
+            -> 0
+        }
         gpd = ast.nd-at(t, gni)
         ps-detect-generic(t, ast.kid-at(t, gpd.kid0), gnames)
 
@@ -5544,8 +5560,10 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
     (gr < outs.len()) {
 
         ; 索引讀提取獨立成句 + index-out=zero（理由同上）
-        #{index-out=zero}
-        goi = outs[gr]
+        goi = outs[gr]: {
+            ok -> it
+            -> 0
+        }
         grd = ast.nd-at(t, goi)
         ps-detect-generic(t, ast.kid-at(t, grd.kid0), gnames)
 
@@ -7188,11 +7206,15 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
         i = n - 1
         (i >= 0 && bail == 0) {
 
-            #{index-out=zero}
-            w = wild-a[i]
+            w = wild-a[i]: {
+                ok -> it
+                -> 0
+            }
 
-            #{index-out=zero}
-            b = body-a[i]
+            b = body-a[i]: {
+                ok -> it
+                -> 0
+            }
             hdw = 0
             w == 1 && res == 0 && bail == 0 -> {
 
@@ -8705,8 +8727,10 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 ty0 = 0
                 fns.len() > 0 -> {
 
-                    #{index-out=zero}
-                    ty0 = fty[0]
+                    ty0 = fty[0]: {
+                        ok -> it
+                        -> 0
+                    }
                 }
                 ast.kid-add(t, v, ty0)
                 ast.helper-begin(t, v, fns.len())
@@ -9962,8 +9986,10 @@ ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.RPAREN -> {
                             kvar-e = tk0.lit.copy()
                             bcnt == 1 -> {
 
-                                #{index-out=zero}
-                                bname = bns2[0]
+                                bname = bns2[0]: {
+                                    ok -> it
+                                    -> ''
+                                }
                             }
                             bcnt > 1 -> bmulti = 1
                         }
@@ -10014,14 +10040,20 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             sopt == 1 && kvar == 'ok' -> bt = elem
             sopt == 1 && wild == 1 -> {
 
-                #{index-out=zero}
-                ol = listed[0]
+                ol = listed[0]: {
+                    ok -> it
+                    -> 0
+                }
 
-                #{index-out=zero}
-                oe = listed[1]
+                oe = listed[1]: {
+                    ok -> it
+                    -> 0
+                }
 
-                #{index-out=zero}
-                onil = listed[2]
+                onil = listed[2]: {
+                    ok -> it
+                    -> 0
+                }
 
                 ; 全列 ok/err/nil ⇒ wildcard 臂為死碼（Go skipItBinding，lowering.go:2214）——不建任何 it 綁定
                 ol == 1 && oe == 1 && onil == 1 -> {
@@ -10414,11 +10446,15 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
     i = blk-a.len() - 1
     (i >= 0) {
 
-        #{index-out=zero}
-        w = wild-a[i]
+        w = wild-a[i]: {
+            ok -> it
+            -> 0
+        }
 
-        #{index-out=zero}
-        b = blk-a[i]
+        b = blk-a[i]: {
+            ok -> it
+            -> 0
+        }
         hd3 = 0
         w == 1 -> {
 

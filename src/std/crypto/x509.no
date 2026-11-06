@@ -23,9 +23,11 @@
 ; pos: 標籤位元組所在偏移（僅讀 data[pos]，不前移，呼叫端自行推進）
 ; [der-tag](#x509.der-tag)
 der-tag = (data []byte, pos i64) (tag i64) {
+    tag = data[pos]: {
+        ok -> it
 
-    #{index-out=zero}
-    tag = data[pos]
+        -> 0
+    }
 }
 
 ; 解碼 DER 長度
@@ -35,9 +37,11 @@ der-tag = (data []byte, pos i64) (tag i64) {
 ; adv i64: 長度字段本身消耗的位元組數（短格式為 1，長格式為 1 + 長度位元組數，呼叫端以 pos+adv 跳到值域）
 ; [der-len](#x509.der-len)
 der-len = (data []byte, pos i64) (len i64, adv i64) {
+    b = data[pos]: {
+        ok -> it
 
-    #{index-out=zero}
-    b = data[pos]
+        -> 0
+    }
 
     ; 短格式：長度 = b (0-127)
     b < 128 -> {
@@ -71,10 +75,10 @@ der-skip = (data []byte, pos i64) (next i64) {
     #{overflow=wrap}
     p-opt = pos + 1
     p = 0
-    p-opt: {
-        ok -> p = it
+    p = p-opt: {
+        ok -> it
 
-        -> p = 0
+        -> 0
     }
     l, adv = der-len(data, p)
 
@@ -96,8 +100,11 @@ der-skip = (data []byte, pos i64) (next i64) {
 x509-tbs-range = (data []byte) (start i64, end i64) {
 
     ; 驗證外層 SEQUENCE
-    #{index-out=zero}
-    tag = data[0]
+    tag = data[0]: {
+        ok -> it
+
+        -> 0
+    }
     tag != 48 -> {
         start = 0
         end = 0
@@ -116,14 +123,26 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
     }
 
     ; 印出 TBS 標頭位元組以驗證
-    #{index-out=zero, overflow=wrap}
-    b0 = data[start + 1]
+    #{overflow=wrap}
+    b0 = data[start + 1]: {
+        ok -> it
 
-    #{index-out=zero, overflow=wrap}
-    b1 = data[start + 2]
+        -> 0
+    }
 
-    #{index-out=zero, overflow=wrap}
-    b2 = data[start + 3]
+    #{overflow=wrap}
+    b1 = data[start + 2]: {
+        ok -> it
+
+        -> 0
+    }
+
+    #{overflow=wrap}
+    b2 = data[start + 3]: {
+        ok -> it
+
+        -> 0
+    }
     end = der-skip(data, start)
 }
 
@@ -3195,9 +3214,11 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
 
     ; 將 limb 轉為位元組
     i <- [0..rn): {
+        limb = result[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        limb = result[i]
+            -> 0
+        }
         limb-byte-0 = limb & 255
         limb-byte-1 = (limb >> 8) & 255
         limb-byte-2 = (limb >> 16) & 255

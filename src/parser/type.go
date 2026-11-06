@@ -436,6 +436,27 @@ func (p *Parser) filterInferableType(retType string) string {
 	return retType
 }
 
+// isPositionContainerRaw 報告 raw 是否為「位置型容器」的拼寫：切片 `[]T`、
+// 定長陣列 `[N]T`、映射 `[K]V`、以及舊式 `vec[T]`。
+//
+// 與 containerElemType 的分工：那個回元素型別、且把 str/txt 也算進來（D6 起
+// `s[i]` 產生 ?char）；本函式只回答「是不是括號型容器」，用於需要把 str/txt
+// **排除**的場合（例如切片表達式 `base[a..b)` 的元素型別登記，str/txt 切片回
+// 的仍是 str/txt 而非 []char）。
+//
+// 為什麼拼寫判斷留在本檔：parser/type.go 在 scripts/check_ty_strings.sh 的
+// ALLOW_FILES 裡，其契約本就是「複現／判讀源碼拼寫」。呼叫端（lowering.go）
+// 只該看到這個謂詞，不該自己對型別字串做前綴掃描。
+func isPositionContainerRaw(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if strings.HasPrefix(raw, "[") {
+		return true
+	}
+	return strings.HasPrefix(raw, "vec[") && strings.HasSuffix(raw, "]")
+}
+
 // containerElemType returns the element type of a container type string used
 // for arr/vec/slice indexing, or "" if lt is not an indexable container.
 // str/txt ARE included since D6 (their s[i] yields Option<char>); see below.

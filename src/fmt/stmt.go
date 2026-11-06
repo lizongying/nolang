@@ -127,6 +127,19 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 	case *parser.ReturnStatement:
 		f.formatReturnStatement(s)
 	case *parser.ExpressionStatement:
+		if sm, ok := s.Expression.(*parser.SurfaceMatch); ok {
+			// 「全臂同一目標賦值」的 match 折疊成 `v = subj: { … }`（值語境）。
+			// 判據與理由見 match_assign_fold.go；不可折疊時走下面的常規路徑。
+			if name, vals, foldable := f.foldableMatchAssign(sm); foldable {
+				f.write(name)
+				f.write(" = ")
+				prev := f.foldArmValues
+				f.foldArmValues = vals
+				f.formatSurfaceMatch(sm)
+				f.foldArmValues = prev
+				break
+			}
+		}
 		if s.Expression != nil {
 			f.formatExpression(s.Expression)
 		} else if isUnderscorePlaceholder(s) {
@@ -152,6 +165,8 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		f.formatContinueStatement(s)
 	case *parser.BlockStatement:
 		f.formatBlockStatement(s)
+	case *parser.BlockMatchStatement:
+		f.formatBlockMatchStatement(s)
 	case *parser.EnumDefinition:
 		f.formatEnumDefinition(s)
 	case *parser.TaggedEnumDefinition:
@@ -832,6 +847,29 @@ func (f *formatter) formatBlockStatement(s *parser.BlockStatement) {
 	f.indent--
 	f.newline()
 	f.write("}")
+}
+
+// formatBlockMatchStatement 輸出陳述層級塊 match `{ body }: { arms }`。
+//
+// 這是 match 主語的第三種形態（值 `x:` / 表達式 `x + 1:` / 塊 `{…}:`）。
+// 糖節點刻意保持 Match.Matched == nil：formatSurfaceMatch 見到 nil 只印一個裸
+// `{`，緊接在主體區塊的 `}` 之後補 `: ` 就得到 `}: {`。若把合成 subject 寫進
+// Matched，fmt 會印成 `__bm_1: {` 而原始碼根本沒有這個名字。
+//
+// 主體與臂都交給既有的區塊 / match 排版，因此註解、臂間空行、縮排全部沿用
+// 同一套規則，`no fmt -d` 可逐位元往返。
+func (f *formatter) formatBlockMatchStatement(s *parser.BlockMatchStatement) {
+	if s.Body != nil {
+		f.formatBlockStatement(s.Body)
+	} else {
+		f.write("{}")
+	}
+	f.write(": ")
+	if s.Match != nil {
+		f.formatSurfaceMatch(s.Match)
+	} else {
+		f.write("{}")
+	}
 }
 
 func (f *formatter) formatBreakStatement(s *parser.BreakStatement) {

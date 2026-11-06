@@ -147,8 +147,11 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
     !! {
         p >= data.len() -> break
 
-        #{index-out=zero}
-        hdr i64 = data[p]
+        hdr i64 = data[p]: {
+            ok -> it
+
+            -> 0
+        }
         bfinal i64 = hdr & 1
         btype i64 = (hdr >> 1) & 3
         btype != 0 -> return

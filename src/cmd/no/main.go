@@ -307,6 +307,7 @@ func printUsage() {
 	fmt.Println("      no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place")
 	fmt.Println("      no fmt -fix=redundant main.no   preview redundant annotation removal")
 	fmt.Println("      no fmt -fix=match -w src/       add missing match arms in src/ in-place")
+	fmt.Println("      no fmt -fix=index-out -w src/   expand #{index-out=DEF} reads into explicit match")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
 	fmt.Println("      no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'")
 	fmt.Println("      no fmt --md -w docs/        format Nolang blocks in every .md/.mdx under docs/")
@@ -1295,6 +1296,7 @@ func fmtCommand(args []string) {
 		fmt.Println(i18n.P("jx1w7b52", "  no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place"))
 		fmt.Println(i18n.P("lzgs7cds", "  no fmt -fix=redundant main.no   preview redundant annotation removal"))
 		fmt.Println(i18n.P("u3if6wak", "  no fmt -fix=match -w src/       add missing match arms in src/ in-place"))
+		fmt.Println("  no fmt -fix=index-out -w src/   expand #{index-out=DEF} reads into explicit match")
 		fmt.Println(i18n.P("mh9jwcfu", "  no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'"))
 		fmt.Println(i18n.P("awc98kqh", "  no fmt -md README.md        format Nolang blocks in one Markdown file"))
 		fmt.Println(i18n.P("6c01vyr1", "  no fmt -md -w docs/         format Nolang blocks in every .md/.mdx under docs/"))
@@ -1769,8 +1771,11 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 	if fixClass == "main" {
 		return fixMainFixes(arg), nil
 	}
+	if fixClass == "index-out" {
+		return fixIndexOutFixes(arg), nil
+	}
 	if fixClass != "overflow" {
-		return nil, i18n.Errorf("hc3a6zzw", "unknown fix class %q (supported: overflow, redundant, match, unwrap, main)", fixClass)
+		return nil, i18n.Errorf("hc3a6zzw", "unknown fix class %q (supported: overflow, redundant, match, unwrap, main, index-out)", fixClass)
 	}
 	info, err := os.Stat(arg)
 	if err != nil {

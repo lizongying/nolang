@@ -12,8 +12,11 @@
 get-default-arr = (i i64) (res i64) {
     a = [10, 20, 30, 40]
 
-    #{index-out=zero}
-    res = a[i]
+    res = a[i]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; --- vec[T]：#{index-out} 預設值 ---

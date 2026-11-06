@@ -7,9 +7,11 @@
 ; i i64: 下標，允許越界
 ; res i64: arr[i]，越界時為 0
 z-i64 = (arr []i64, i i64) (res i64) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    res = arr[i]
+        -> 0
+    }
 }
 
 ; 越界取 f64 元素零值：得 0.0（不是 NaN、不沿用其他元素的值）
@@ -17,9 +19,11 @@ z-i64 = (arr []i64, i i64) (res i64) {
 ; i i64: 下標，允許越界
 ; res f64: arr[i]，越界時為 0.0
 z-f64 = (arr []f64, i i64) (res f64) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    res = arr[i]
+        -> 0.0
+    }
 }
 
 ; 越界取 bool 元素零值：得 false（容器原本全是 true，可驗證不是抄了別的元素）
@@ -27,9 +31,11 @@ z-f64 = (arr []f64, i i64) (res f64) {
 ; i i64: 下標，允許越界
 ; res bool: arr[i]，越界時為 false
 z-bool = (arr []bool, i i64) (res bool) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    res = arr[i]
+        -> false
+    }
 }
 
 ; 越界取 str 元素零值：得空字串 ''（非 nil）
@@ -37,9 +43,11 @@ z-bool = (arr []bool, i i64) (res bool) {
 ; i i64: 下標，允許越界
 ; res str: arr[i]，越界時為 ''
 z-str = (arr []str, i i64) (res str) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    res = arr[i]
+        -> ''
+    }
 }
 
 ; 越界取 char 元素零值：得 '\0'（碼點 0）
@@ -57,9 +65,11 @@ z-char = (arr []char, i i64) (res char) {
 ; i i64: 下標，允許越界
 ; res u8: arr[i]，越界時為 0
 z-byte = (arr []u8, i i64) (res u8) {
+    res = arr[i]: {
+        ok -> it
 
-    #{index-out=zero}
-    res = arr[i]
+        -> 0
+    }
 }
 
 ia = [10, 20, 30]

@@ -848,6 +848,47 @@ func (bs *BlockStatement) EndPos() lexer.Position {
 	return bs.RBrace
 }
 
+// BlockMatchStatement — statement-level block match `{ body }: { arms }`.
+//
+// It catches `?=` propagation inside Body so a function without an option-typed
+// result parameter can still handle errors locally. It is a pure statement: it
+// is not an Expression, cannot be assigned, and yields no value.
+//
+// Match is the bare SurfaceMatch produced by parseBareMatchExpr: Matched is nil
+// (so `no fmt` prints a bare `{ ... }` rather than `subject: { ... }`) and
+// RBracePos is a real source position (so the checker's sugar exhaustiveness
+// pass does not skip it). At lowering the expander builds a subject-bearing
+// copy of Match — the sugar node itself is never mutated.
+//
+// Subject is assigned at parse time from a per-Parser counter and stored in the
+// AST. Keeping it here (rather than deriving it in lowering) makes it stable and
+// identical across the H0, js/wasm, checker and formatter paths, which the HIR
+// equivalence seam tests rely on.
+type BlockMatchStatement struct {
+	Token   lexer.Token    // the body's opening `{`
+	Body    *BlockStatement
+	Match   *SurfaceMatch  // bare match: Matched == nil, real RBracePos
+	Subject string         // unique synthetic subject, e.g. `__bm_7`
+	RBrace  lexer.Position // position of the arms' closing `}`
+	CommentedNode
+}
+
+func (bm *BlockMatchStatement) statementNode()      {}
+func (bm *BlockMatchStatement) expressionNode()     {}
+func (bm *BlockMatchStatement) Pos() lexer.Position { return posFromToken(bm.Token) }
+func (bm *BlockMatchStatement) EndPos() lexer.Position {
+	if bm.RBrace.Line > 0 {
+		return bm.RBrace
+	}
+	if bm.Match != nil {
+		return bm.Match.EndPos()
+	}
+	return posFromToken(bm.Token)
+}
+func (bm *BlockMatchStatement) String() string {
+	return "{ ... }: { ... }"
+}
+
 type Parameter struct {
 	Token       lexer.Token
 	Name        string

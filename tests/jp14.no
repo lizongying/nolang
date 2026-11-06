@@ -1,12 +1,18 @@
 # /test/runner
+
 t-join = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')
     print('n={parts.len()}')
     i <- [0..parts.len()): {
         parts[i]: {
-            ok -> { q = it }
-            -> { q = '' }
+            ok -> {
+                q = it
+            }
+
+            -> {
+                q = ''
+            }
         }
         print('  part[{i}] len={q.len-bytes()} val={q.to-str()}')
     }

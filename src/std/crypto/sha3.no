@@ -119,8 +119,12 @@ keccak-f1600 = (state []u64) {
                 #{overflow=wrap}
                 rc u64 = KECCAK-RHO[x + 5 * y]
 
-                #{index-out=zero, overflow=wrap}
-                val u64 = state[x + 5 * y]
+                #{overflow=wrap}
+                val u64 = state[x + 5 * y]: {
+                    ok -> it
+
+                    -> 0
+                }
 
                 rotated = rotl64(val, rc)
 
@@ -210,8 +214,12 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
             #{overflow=wrap}
             byte-idx = i % 8
 
-            #{index-out=zero, overflow=wrap}
-            w = data[absorbed + i]
+            #{overflow=wrap}
+            w = data[absorbed + i]: {
+                ok -> it
+
+                -> 0
+            }
 
             #{index-out=zero}
             state[lane-idx]: {
@@ -239,8 +247,12 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
             #{overflow=wrap}
             byte-idx = i % 8
 
-            #{index-out=zero, overflow=wrap}
-            w = data[absorbed + i]
+            #{overflow=wrap}
+            w = data[absorbed + i]: {
+                ok -> it
+
+                -> 0
+            }
 
             #{index-out=zero}
             state[lane-idx]: {

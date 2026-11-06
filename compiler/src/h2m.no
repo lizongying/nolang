@@ -9,8 +9,8 @@
 ; ── 覆盖面（刻意极小，且小得可测量）─────────────────────────────
 ;   支持：Program / FunctionDefinition（输入参数按 LLVM 形参序占值 id 1..nargs、
 ;         至多一个输出参数且其型别决定 retty）/ BlockStatement / LetStatement /
-;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67，s79 起 u64 亦放行——uty 下 >> 重映射 OP-SHRU 发 lshr、其余发裸 and/or/xor/shl i64；s80：'>>' 无条件重映射 OP-SHRU——i64 侧亦发 lshr，镜像 Go OpShr 恒逻辑移位，s35 的 i64=ashr 设计被推翻，cg 的 ashr 臂转死代码）；逻辑 && || s68，复用 OP-AND/OR（u64 仍门禁）；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' 仍门禁）/
-;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量；s81：u64 主体 -x ⇒ OP-NEG(dest TY-U64)、~x ⇒ OP-CONST(-1)+OP-XOR(dest TY-U64)，cg 整数臂发 sub i64 0 / xor i64（二补回绕/bit-not，与 i64 同 IR 形），'!' 于 u64 仍门禁）/
+;         Identifier / IntegerLiteral / GroupedExpression / InfixExpression（+ - * 与六个比较符，仅 i64；位运算 & | ^ << >> s67，s79 起 u64 亦放行——uty 下 >> 重映射 OP-SHRU 发 lshr、其余发裸 and/or/xor/shl i64；s80：'>>' 无条件重映射 OP-SHRU——i64 侧亦发 lshr，镜像 Go OpShr 恒逻辑移位，s35 的 i64=ashr 设计被推翻，cg 的 ashr 臂转死代码）；逻辑 && || s68，复用 OP-AND/OR（s83 起 u64 亦放行——Go 对 u64 逻辑族即裸位形 and/or 非短路，探针实钉）；s71：二元 + - * / 接受 f64 两侧操作数 ⇒ OP-ADD/SUB/MUL/DIV 发 fadd/fsub/fmul/fdiv double，镜像 Go 按型别分派——操作数必为 f64 形参，无 f64 字面量；s72：六个比较符 < > <= >= == != 接受 f64 两侧操作数 ⇒ OP-CMP* 依操作数 TY-F64 发 fcmp（!= 用 une 保 NaN）后 zext i1→i64，结果 dest 恒 TY-I64（非 f64）；位运算/移位/逻辑于 f64 仍门禁；s75：i64 侧 '/' '%' 放行 ⇒ OP-DIV/OP-MOD（dest TY-I64）由 cg 发带除零護欄的 sdiv/srem，镜像 Go plain 路径——除零结果定义化为 0 + stderr 报告；?i64 的 tag=2 装箱 err option 路未建模；f64 '%' s87 放行 ⇒ OP-MOD 入 is-arith 发 frem double（AArch64 llc 降为 libm fmod：trunc 语义，与 Go 同 IR 形制同 lowering；oracle 实钉 7.0%2.5=2.0），f64 算术 + - * / % 族收齐）/
+;         PrefixExpression（s66：-x / !x，仅 i64；s69：~x 位非 ⇒ OP-XOR(x, CONST -1)，镜像 Go ~→XOR-all-ones；s70：f64 -x ⇒ OP-NEG/fneg double，镜像 Go emitNeg float 分支——操作数必为 f64 形参，无 f64 字面量；s81：u64 主体 -x ⇒ OP-NEG(dest TY-U64)、~x ⇒ OP-CONST(-1)+OP-XOR(dest TY-U64)，cg 整数臂发 sub i64 0 / xor i64（二补回绕/bit-not，与 i64 同 IR 形）；s88：'!' 于 i64／u64 一律先 OP-CONST(1)＋OP-AND 归位低 bit 再 OP-NOT（镜像 Go emitNot `xor i1 1, trunc i64→i1` 的 bool 域 (x&1)^1；旧 s66 全宽 xor i64 1 仅操作数∈{0,1} 同值），f64 主体 '!' 仍门禁——Go 侧 double→i1 退化恒 true，无可镜像稳定语义）/
 ;         CallExpression（零参或多参——实参值 id 走侧池 args（s64），返回型别查模块级签名表）/
 ;         控制流（s57）：K-IF-EXPRESSION（含可选 else，elif 链按嵌套 if 递归）/
 ;         K-FOR-STATEMENT 的纯前置条件循环（Init/Update/IterRange 必须全 0）/
@@ -1010,7 +1010,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 osym == '*' -> bop = OP-MUL
 
                 ; 除法符号映射（s71  '/' ⇒ OP-DIV；s75  '%' ⇒ OP-MOD；s76 整族另按操作数型别重映射为无符號族）：
-                ;   f64 侧 '/' 发 fdiv double（'%' 不入 is-arith ⇒ frem 仍门禁）；
+                ;   f64 侧 '/' 发 fdiv double；s87 '%' 放行入 is-arith ⇒ frem double（镜像 Go codegen.go:6083 OpMod isFloat⇒frem）；
                 ;   i64 侧 s75 起两符皆放行 ⇒ cg 发除零 select 護欄（镜像 Go plain 路径：除零→0 + stderr 报告）；
                 ;   u64 侧 s76 起两符放行 ⇒ 下方 uty 重映射为 OP-DIVU/OP-MODU（同護欄、无 (MIN,-1)）
                 osym == '/' -> bop = OP-DIV
@@ -1052,11 +1052,9 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 }
             }
 
-            ; s79：逻辑族标记——&& || 与位与/位同在 bop 层同码（OP-AND/OR，s68 复用），
-            ;   i64 路操作数恒 0/1 故裸 and/or 等于逻辑与/或；u64 操作数非 0/1，同码不成立⇒
-            ;   下方 u64 位运算臂以 is-logic==0 排除逻辑族（仍门禁，与真·短路语义一起后置）
-            is-logic = 0
-            osym == '&&' || osym == '||' -> is-logic = 1
+            ; s83：is-logic 旗标退场——&& || 与位运算同码（OP-AND/OR，s68 复用）⇒ 直接走下方 u64 位运算臂，无需分旗标
+            ;   （s79 曾以「u64 操作数非 0/1、裸 and/or 不等价逻辑语义」为由门禁，该前提被 v413 探针推翻：
+            ;   Go emitLogic 对 OpAnd/OpOr 发裸 and/or 非短路，12&&10⇒8、0||5⇒5）
 
             ; 运算元型别分派（s71 二元算术 + s72 二元比较 + s76 无符號除模 + s78 无符號算术 + s79 无符號位运算/移位）：
             ;   i64 侧：全部 bop 放行（s75 含 '/' '%'）⇒ 结果 TY-I64（算术/比较/位/移位/逻辑结果恒 i64）
@@ -1068,7 +1066,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ;     '+ - *' 不重映射（Go 算子表无 OpAddU/OpSubU/OpMulU，64 位宽下签／无签位元相同），直接以 OP-ADD/SUB/MUL 发裸 add/sub/mul i64，dest 记 TY-U64；
             ;     '& | ^ <<' 同理不重映射发裸 and/or/xor/shl i64；'>>' 经 uty 重映射为 OP-SHRU 发 lshr i64
             ;     （Go 侧 OpShr 对所有整型恒发 lshr——「nolang >> 是逻辑移位」，见 codegen.go emitBitwise），dest 记 TY-U64；
-            ;     逻辑族（&& ||）仍门禁（与位运算同码、u64 上裸 and/or 不等价逻辑语义）；&^ 无 cg op 仍门禁
+            ;     逻辑族（&& ||）s83 同码走位运算臂放行（Go 权威非短路，裸位 and/or 即其唯一语义）；&^ 无 cg op 仍门禁
             ;   位运算/移位/逻辑（& | ^ << >> && ||）于 f64 不落任一路 ⇒ 计 unsup（收紧 s71 曾过宽的 f64 臂）
             ;   混合（一 i64 一 f64）或任一 str ⇒ ity、fty、uty 皆 0 ⇒ 计 unsup
             ity = 1
@@ -1115,12 +1113,15 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             bop == OP-SHR -> bop = OP-SHRU
 
             ; bop 归类（s72）：算术族 vs 比较族（决定 f64 侧 dest 型别 TY-F64 vs TY-I64）
+            ;   s87：OP-MOD 入算术族——f64 侧 '%' 放行发 frem double（镜像 Go codegen.go:6083）；
+            ;   i64 路无条件全放不受影响；uty 下 OP-MOD 已先行重映射为 OP-MODU（s76），本行不可达
             is-arith = 0
             is-cmp = 0
             bop == OP-ADD -> is-arith = 1
             bop == OP-SUB -> is-arith = 1
             bop == OP-MUL -> is-arith = 1
             bop == OP-DIV -> is-arith = 1
+            bop == OP-MOD -> is-arith = 1
             bop == OP-CMPLT -> is-cmp = 1
             bop == OP-CMPEQ -> is-cmp = 1
             bop == OP-CMPNE -> is-cmp = 1
@@ -1210,8 +1211,8 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ; u64 位运算／移位族（s79）：& | ^ << 放行⇒裸 and/or/xor/shl i64（逐位运算与符號性无关，
             ;   Go 无符號路由表无 OpBitAndU/OpShlU 等衍生可镜像）；>> 已经 uty 重映射为 OP-SHRU⇒lshr i64
             ;   （唯一衍生：Go OpShr 恒逻辑移位，cg s36 已备 lshr 臂）；dest 记 TY-U64（移位／逐位结果仍 u64 宽度）
-            ;   is-logic==0 排除 && ||：与位与同在 OP-AND/OR 同码，u64 操作数非 0/1，裸 and/or 不等价逻辑语义⇒仍门禁
-            bop > 0 && lv > 0 && rv > 0 && uty == 1 && is-bit == 1 && is-logic == 0 -> {
+            ;   s83：&& || 同码（OP-AND/OR）入本臂——Go 对 u64 逻辑族即裸位形 and/or 非短路（探针实钉 12&&10⇒8、0||5⇒5）
+            bop > 0 && lv > 0 && rv > 0 && uty == 1 && is-bit == 1 -> {
                 mid = h2m-alloc(c, TY-U64)
                 h2m-emit(c, bop, mid, lv, rv, '', TY-U64)
                 v = mid
@@ -1290,7 +1291,12 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
         }
 
         ; s66：前缀表达式 -x / !x（镜像 Go emitNeg/emitNot hir2mir.go:5503/5505）
-        ;   '-' ⇒ OP-NEG（i64⇒sub 0,x；f64⇒fneg double，s70）；'!' ⇒ OP-NOT；'~' ⇒ OP-XOR（s69）；其余非 i64/f64 主体仍计 unsup
+        ;   '-' ⇒ OP-NEG（i64⇒sub 0,x；f64⇒fneg double，s70）；'!' ⇒ OP-CONST(1)＋OP-AND＋OP-NOT（s88 先归位低 bit）、'~' ⇒ OP-XOR（s69）；其余非 i64/f64 主体仍计 unsup
+        ;   s86 纪实：f64 主体 '~' 维持门禁是正确形态——Go 侧同形非权威而是崩溃：
+        ;   hir2mir.go:8878 对 rt=f64 无守卫发 OpXor ⇒ emitBitwise 出 `xor double`（LLVM 非法，
+        ;   clang build fail，tmp/probe-s86-b.no 实测）；常量路又被 cvInt 域 comptime 摺死
+        ;   （tmp/probe-s86-a.no）。本臂 ok-p==0 是 cg「OP-XOR 恒发 xor i64」的唯一上游防线，
+        ;   放行前须先给 cg 补 double 合法形（无权威可对拍，不放行）。哨兵：h2m-test test-prefix-not-f64-gate
         d.kind == asp.K-PREFIX-EXPRESSION -> {
             osym = ast.str-at(t, d.s0)
             ok = ast.kid-at(t, d.kid0)
@@ -1311,9 +1317,21 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 v = mid
                 ok-p = 1
             }
-            ov > 0 && osym == '!' && h2m-vty-at(c, ov) == TY-I64 -> {
+            ; s88：'!' 值语义对齐 Go emitNot——hir2mir prefixOp '!' ⇒ OpNot、dest 型别 bool
+            ;   （MIR 把 bool 映射为 i1）；codegen.go:6408 先 coerceInt(i64→i1) 发 `trunc i64 … to i1`
+            ;   （取最低位）再 `xor i1 1` ⇒ 值恒 (x&1)^1 ∈ {0,1}。自举无 i1 槽（整族共用 i64 宽，
+            ;   口径同 s78/s83）⇒ 以 OP-CONST(1)＋OP-AND 表达 trunc 归位、OP-NOT 表达 xor 1。
+            ;   旧 s66 直发 `xor i64 1, %v`（全宽）仅在操作数 ∈ {0,1} 同值——非 0/1 分岔：
+            ;   oracle tmp/s88-oracle-i64.no 实钉 117（态 T）vs 探针旧形 362（态 W）。
+            ;   u64 主体同臂放行（s81 登记的门禁尾款）；结果恒 bool ⇒ dest 一律 TY-I64
+            ;   f64 主体 '!' 不落此臂⇒仍计 unsup（Go 侧 double→i1 恒得 true，poison 退化无稳定语义）
+            ov > 0 && osym == '!' && (h2m-vty-at(c, ov) == TY-I64 || h2m-vty-at(c, ov) == TY-U64) -> {
+                one = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-CONST, one, 1, 0, '', TY-I64)
+                low = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-AND, low, ov, one, '', TY-I64)
                 mid = h2m-alloc(c, TY-I64)
-                h2m-emit(c, OP-NOT, mid, ov, 0, '', TY-I64)
+                h2m-emit(c, OP-NOT, mid, low, 0, '', TY-I64)
                 v = mid
                 ok-p = 1
             }
@@ -1340,7 +1358,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             }
 
             ; s81：u64 主体位非 ~x ⇒ OP-CONST(-1)+OP-XOR（dest TY-U64），镜像 Go ~⇒XOR-all-ones；
-            ;   与 i64 ~x 同发 add i64 0, -1 与 xor i64，仅 dest 型别码为 TY-U64；'!' 于 u64 仍门禁（见下 ok-p==0）
+            ;   与 i64 ~x 同发 add i64 0, -1 与 xor i64，仅 dest 型别码为 TY-U64；'!' 于 u64 已随 s88 放行（见上 '!' 臂）
             ov > 0 && osym == '~' && h2m-vty-at(c, ov) == TY-U64 -> {
                 cm1 = h2m-alloc(c, TY-U64)
                 h2m-emit(c, OP-CONST, cm1, -1, 0, '', TY-U64)

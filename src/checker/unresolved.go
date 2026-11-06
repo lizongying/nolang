@@ -56,6 +56,10 @@ func collectLocalVarNames(program *parser.Program, out map[string]bool) {
 			for _, bs := range x.Statements {
 				walkStmt(bs)
 			}
+		case *parser.BlockMatchStatement:
+			for _, bs := range blockMatchChildStatements(x) {
+				walkStmt(bs)
+			}
 		case *parser.ExpressionStatement:
 			walkExpr(x.Expression)
 		case *parser.ReturnStatement:
@@ -386,6 +390,10 @@ func CheckUnresolvedModuleCalls(program *parser.Program) []ValidateResult {
 			}
 		case *parser.BlockStatement:
 			for _, bs := range x.Statements {
+				checkStmt(bs)
+			}
+		case *parser.BlockMatchStatement:
+			for _, bs := range blockMatchChildStatements(x) {
 				checkStmt(bs)
 			}
 		case *parser.ReturnStatement:

@@ -640,6 +640,51 @@ test-iface-inherits-list = () {
 
 test-iface-inherits-list()
 
+; ═══════════════════════════════════════════════════════════════════
+; s84（前綴 `~` 與二元的綁定形狀）：§5.3.4.cx 關鍵點 4 曾記「ps.no 鬆綁定
+;   ⇒ ~(x+3)」優先級分歧待查。s84 複核：現行 ps-op-prec 表 SUM=7/PRODUCT=8
+;   < PREFIX=9 且中綴迴圈 `oprec > prec`，TILDE 臂走 ps-parse-expr-prec(…,9)
+;   ⇒ 緊綁定 (~x)+3，AST dump 與 oracle 逐字節 SAME、h2m+cg 執行值 -8/-22 同值
+;   （tmp/probe-s84-{nocdump,ir}.no 實釘）。本節 4 測試為防回歸哨兵——若 TILDE 臂
+;   優先級再被鬆綁，第 1/2 測試立即紅。want 由 L2 oracle（v413 `no ast`）實測取得。
+; ═══════════════════════════════════════════════════════════════════
+
+; 測試 tilde-add-bind
+test-tilde-add-bind = () {
+    got = parse-dump('r = ~x + 3')
+    want = 'Program{}\n    LetStatement{name: r, value: InfixExpression}\n        InfixExpression{op: +}\n            PrefixExpression{op: ~}\n                Identifier{name: x}\n            IntegerLiteral{value: 3, raw: 3}'
+    runner.is-true(got.eq-full(want), '`~x + 3` 緊綁定 ⇒ Infix{+}{Prefix{~}{x}, 3}（鏡 Go parseExpression(PREFIX)）')
+}
+
+test-tilde-add-bind()
+
+; 測試 tilde-mul-bind
+test-tilde-mul-bind = () {
+    got = parse-dump('r = ~x * 2')
+    want = 'Program{}\n    LetStatement{name: r, value: InfixExpression}\n        InfixExpression{op: *}\n            PrefixExpression{op: ~}\n                Identifier{name: x}\n            IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), '`~x * 2` 緊綁定 ⇒ Infix{*} 頂（PRODUCT=8 < PREFIX=9）')
+}
+
+test-tilde-mul-bind()
+
+; 測試 tilde-both-sides
+test-tilde-both-sides = () {
+    got = parse-dump('r = ~x + ~y')
+    want = 'Program{}\n    LetStatement{name: r, value: InfixExpression}\n        InfixExpression{op: +}\n            PrefixExpression{op: ~}\n                Identifier{name: x}\n            PrefixExpression{op: ~}\n                Identifier{name: y}'
+    runner.is-true(got.eq-full(want), '`~x + ~y` 兩側前綴各自緊綁 ⇒ Infix{+} 頂')
+}
+
+test-tilde-both-sides()
+
+; 測試 tilde-grouped-contrast
+test-tilde-grouped-contrast = () {
+    got = parse-dump('r = (~x) * 2')
+    want = 'Program{}\n    LetStatement{name: r, value: InfixExpression}\n        InfixExpression{op: *}\n            GroupedExpression\n                PrefixExpression{op: ~}\n                    Identifier{name: x}\n            IntegerLiteral{value: 2, raw: 2}'
+    runner.is-true(got.eq-full(want), '括號形 `(~x) * 2` 對照 ⇒ GroupedExpression 包 Prefix')
+}
+
+test-tilde-grouped-contrast()
+
 runner.summary()
 f = runner.failed-count()
 {

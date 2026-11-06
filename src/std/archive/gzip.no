@@ -106,9 +106,11 @@ huffman.build = (lengths []i64, n i64) {
 
     ; 計算各長度的碼數
     i <- [0..n): {
+        l = lengths[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        l = lengths[i]
+            -> 0
+        }
 
         #{overflow=wrap}
         .count[l] = .count[l] + 1
@@ -141,9 +143,11 @@ huffman.build = (lengths []i64, n i64) {
     }
     i <- [0..n): {
         lengths[i] != 0 -> {
+            idx = offs[lengths[i]]: {
+                ok -> it
 
-            #{index-out=zero}
-            idx = offs[lengths[i]]
+                -> 0
+            }
 
             .symbol[idx] = i
 
@@ -302,8 +306,11 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
                 #{overflow=wrap}
                 cnt = br.read-bits(2) + 3
 
-                #{index-out=zero}
-                prev = lengths[idx - 1]
+                prev = lengths[idx - 1]: {
+                    ok -> it
+
+                    -> 0
+                }
                 j <- [0..cnt): {
                     lengths[idx]: {
                         ok -> it = prev
@@ -456,21 +463,33 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         #{overflow=wrap}
                         code = sym - 257
 
-                        #{index-out=zero}
-                        length = length-base[code]
+                        length = length-base[code]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        extra = length-extra[code]
+                            -> 0
+                        }
+
+                        extra = length-extra[code]: {
+                            ok -> it
+
+                            -> 0
+                        }
 
                         #{overflow=wrap}
                         extra > 0 -> length = length + br.read-bits(extra)
                         dsym = dc.decode(br)
 
-                        #{index-out=zero}
-                        distance = dist-base[dsym]
+                        distance = dist-base[dsym]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        dextra = dist-extra[dsym]
+                            -> 0
+                        }
+
+                        dextra = dist-extra[dsym]: {
+                            ok -> it
+
+                            -> 0
+                        }
 
                         #{overflow=wrap}
                         dextra > 0 -> distance = distance + br.read-bits(dextra)
@@ -506,21 +525,33 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         #{overflow=wrap}
                         code = sym - 257
 
-                        #{index-out=zero}
-                        length = length-base[code]
+                        length = length-base[code]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        extra = length-extra[code]
+                            -> 0
+                        }
+
+                        extra = length-extra[code]: {
+                            ok -> it
+
+                            -> 0
+                        }
 
                         #{overflow=wrap}
                         extra > 0 -> length = length + br.read-bits(extra)
                         dsym = dc.decode(br)
 
-                        #{index-out=zero}
-                        distance = dist-base[dsym]
+                        distance = dist-base[dsym]: {
+                            ok -> it
 
-                        #{index-out=zero}
-                        dextra = dist-extra[dsym]
+                            -> 0
+                        }
+
+                        dextra = dist-extra[dsym]: {
+                            ok -> it
+
+                            -> 0
+                        }
 
                         #{overflow=wrap}
                         dextra > 0 -> distance = distance + br.read-bits(dextra)
@@ -646,15 +677,20 @@ gzip-decompress = (data []byte) (out []byte) {
     pos = 10
 
     ; 檢查 FLG 處理額外欄位
-    #{index-out=zero}
-    flg = data[3]
+    flg = data[3]: {
+        ok -> it
+
+        -> 0
+    }
 
     ; FEXTRA (bit 2)
     #{overflow=wrap}
     (flg & 4) != 0 -> {
+        xlen = data[pos]: {
+            ok -> it
 
-        #{index-out=zero}
-        xlen = data[pos]
+            -> 0
+        }
         pos = pos + 1
 
         #{index-out=zero}
@@ -666,9 +702,11 @@ gzip-decompress = (data []byte) (out []byte) {
     #{overflow=wrap}
     (flg & 8) != 0 -> {
         (pos < data.len()) {
+            c = data[pos]: {
+                ok -> it
 
-            #{index-out=zero}
-            c = data[pos]
+                -> 0
+            }
             pos = pos + 1
             c == 0 -> break
         }
@@ -678,9 +716,11 @@ gzip-decompress = (data []byte) (out []byte) {
     #{overflow=wrap}
     (flg & 16) != 0 -> {
         (pos < data.len()) {
+            c = data[pos]: {
+                ok -> it
 
-            #{index-out=zero}
-            c = data[pos]
+                -> 0
+            }
             pos = pos + 1
             c == 0 -> break
         }

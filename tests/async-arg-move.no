@@ -29,9 +29,11 @@ echo = (s str) (r str) {
 ; v []i64: 來源 vec（本測試用來驗證 spawn 時是 move 還是 clone）
 ; r i64: v[0]；越界由 #{index-out=zero} 補零
 first = (v []i64) (r i64) {
+    r = v[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    r = v[0]
+        -> 0
+    }
 }
 
 holder {

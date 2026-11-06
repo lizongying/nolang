@@ -36,8 +36,11 @@ modify-async = (v []i64) (r i64) {
         -> _
     }
 
-    #{index-out=zero}
-    r = v[0]
+    r = v[0]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 ; 主線程與協程各改各的：shared 傳給協程時深拷貝，主線程把 shared[0] 改成 100，

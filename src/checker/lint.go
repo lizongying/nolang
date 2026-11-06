@@ -195,6 +195,9 @@ func LintIneffectiveOverflow(program *parser.Program, sourcePath string) []LintR
 				}
 			case *parser.BlockStatement:
 				collect(v.Statements)
+			case *parser.BlockMatchStatement:
+				// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+				collect(blockMatchChildStatements(v))
 			case *parser.ForStatement:
 				if v.Body != nil {
 					collect(v.Body.Statements)

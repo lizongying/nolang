@@ -3,8 +3,11 @@ f = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     next-pos = -1
     r-pos >= buf.len() -> return
 
-    #{index-out=zero}
-    prefix = buf[r-pos]
+    prefix = buf[r-pos]: {
+        ok -> it
+
+        -> 0
+    }
     r-pos = r-pos + 1
     (prefix & 0xe0) != 0x20 -> return
 
@@ -16,6 +19,7 @@ f = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     nameopt = buf[r-pos..r-pos + name-len).to-str()
     name = nameopt: {
         ok -> it
+
         -> ''
     }
     r-pos = r-pos + name-len
@@ -28,9 +32,13 @@ f = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     valueopt = buf[r-pos..r-pos + value-len).to-str()
     value = valueopt: {
         ok -> it
+
         -> ''
     }
     r-pos = r-pos + value-len
     next-pos = r-pos
 }
-print(f([0x23, 0x03, 0x66, 0x6f, 0x6f, 0x03, 0x62, 0x61, 0x72], 0))
+print(f([
+    0x23, 0x03, 0x66, 0x6f, 0x6f, 0x03, 0x62, 0x61,
+    0x72,
+], 0))

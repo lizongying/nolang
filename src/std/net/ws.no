@@ -188,10 +188,10 @@ next-rand = () (r i64) {
     RAND-COUNTER = RAND-COUNTER + 1
     rand-val = RAND-COUNTER + 0
     c = 0
-    rand-val: {
-        ok -> c = it
+    c = rand-val: {
+        ok -> it
 
-        -> c = 0
+        -> 0
     }
 
     ; LCG: r = (c * 1103515245 + 12345) & 0x7fffffff

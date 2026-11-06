@@ -54,18 +54,18 @@ var (
 	// Signatures / knownStdModules then hard-fail and require `make no`; there
 	// is deliberately NO computeStdSigKey fallback. A non-empty StdSigKey means
 	// the binary was built via `make` and the baked tables are present and fresh.
-	StdSigKey                = ""
+	StdSigKey = ""
 	// embeddedStdFuncSigs merges the old funcSigs (RESULT types) and
 	// funcParams (PARAMETER types) tables into one map keyed by "module.fn"
 	// or the bare fn name. embeddedStdMethodSigs does the same for struct
 	// methods, keyed by "module.struct.method". Collapsing the four tables
 	// into two entry tables keeps generation and the checker's argument-type
 	// lookup in one place (see funcargs.go stdMethodParamTypes).
-	embeddedStdFuncSigs    = map[string]StdSigEntry{}
-	embeddedStdMethodSigs = map[string]StdSigEntry{}
-	embeddedStdStructFields  = map[string]map[string]string{}
-	embeddedStdAliases       = map[string]string{}
-	embeddedStdStructMod     = map[string]string{}
+	embeddedStdFuncSigs     = map[string]StdSigEntry{}
+	embeddedStdMethodSigs   = map[string]StdSigEntry{}
+	embeddedStdStructFields = map[string]map[string]string{}
+	embeddedStdAliases      = map[string]string{}
+	embeddedStdStructMod    = map[string]string{}
 	embeddedStdEnumVariants = map[string][]string{}
 	// embeddedStdModules is the baked module KV map (ShortName -> FullPath), the
 	// compact successor to the old []StdModuleInfo slice. ShortName is unique
@@ -75,7 +75,7 @@ var (
 	// (make runs `make gen` before compiling, baking this map from the same
 	// src/std as the other 6 signature tables); the only runtime gate is that
 	// the injected StdSigKey is non-empty.
-	embeddedStdModules      = map[string]string{}
+	embeddedStdModules = map[string]string{}
 )
 
 // ComputeStdSigKeyFromFS is the exported, FS-parameterised variant used by
@@ -107,4 +107,3 @@ func computeStdSigKeyFromFS(fsys fs.FS) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-

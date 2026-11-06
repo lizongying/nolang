@@ -134,8 +134,11 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
     val = 0
     pos >= buf.len() -> return
 
-    #{index-out=zero}
-    first = buf[pos]
+    first = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
     prefix = first >> 6
     {
         prefix == 0 -> {
@@ -560,8 +563,11 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
 
     pn-offset >= packet.len() -> return
 
-    #{index-out=zero}
-    first = packet[pn-offset]
+    first = packet[pn-offset]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pn-len = (first & 3) + 1
@@ -962,8 +968,11 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     end < 1 -> return
 
-    #{index-out=zero}
-    first = buf[0]
+    first = buf[0]: {
+        ok -> it
+
+        -> 0
+    }
 
     ; 檢查是否為 Long Header
     (first & 0x80) == 0 -> return
@@ -978,8 +987,11 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; Destination CID
     pos >= end -> return
 
-    #{index-out=zero}
-    dcid-len = buf[pos]
+    dcid-len = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pos = pos + 1 + dcid-len
@@ -987,8 +999,11 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; Source CID
     pos >= end -> return
 
-    #{index-out=zero}
-    scid-len = buf[pos]
+    scid-len = buf[pos]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
     pos = pos + 1 + scid-len

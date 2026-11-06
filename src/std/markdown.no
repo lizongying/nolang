@@ -410,10 +410,10 @@ markdown.inline = (s str) (out str) {
                 #{overflow=wrap}
                 i-opt = close + 1
                 i = 0
-                i-opt: {
-                    ok -> i = it
+                i = i-opt: {
+                    ok -> it
 
-                    -> i = 0
+                    -> 0
                 }
                 continue
             }
@@ -438,20 +438,20 @@ markdown.inline = (s str) (out str) {
                     #{overflow=wrap}
                     alt-start-opt = i + 2
                     alt-start = 0
-                    alt-start-opt: {
-                        ok -> alt-start = it
+                    alt-start = alt-start-opt: {
+                        ok -> it
 
-                        -> alt-start = 0
+                        -> 0
                     }
                     alt = s.slice-bytes(alt-start, close)
 
                     #{overflow=wrap}
                     img-url-start-opt = close + 2
                     img-url-start = 0
-                    img-url-start-opt: {
-                        ok -> img-url-start = it
+                    img-url-start = img-url-start-opt: {
+                        ok -> it
 
-                        -> img-url-start = 0
+                        -> 0
                     }
                     url = s.slice-bytes(img-url-start, end)
                     result = result - '<img src="' - markdown.escape-html(url) - '" alt="' - markdown.escape-html(alt) - '">'
@@ -459,10 +459,10 @@ markdown.inline = (s str) (out str) {
                     #{overflow=wrap}
                     i-opt = end + 1
                     i = 0
-                    i-opt: {
-                        ok -> i = it
+                    i = i-opt: {
+                        ok -> it
 
-                        -> i = 0
+                        -> 0
                     }
                     continue
                 }
@@ -485,20 +485,20 @@ markdown.inline = (s str) (out str) {
                     #{overflow=wrap}
                     label-start-opt = i + 1
                     label-start = 0
-                    label-start-opt: {
-                        ok -> label-start = it
+                    label-start = label-start-opt: {
+                        ok -> it
 
-                        -> label-start = 0
+                        -> 0
                     }
                     label = s.slice-bytes(label-start, close)
 
                     #{overflow=wrap}
                     url-start-opt = close + 2
                     url-start = 0
-                    url-start-opt: {
-                        ok -> url-start = it
+                    url-start = url-start-opt: {
+                        ok -> it
 
-                        -> url-start = 0
+                        -> 0
                     }
                     url = s.slice-bytes(url-start, end)
                     result = result - '<a href="' - markdown.escape-html(url) - '">' - markdown.inline(label) - '</a>'
@@ -506,10 +506,10 @@ markdown.inline = (s str) (out str) {
                     #{overflow=wrap}
                     i-opt = end + 1
                     i = 0
-                    i-opt: {
-                        ok -> i = it
+                    i = i-opt: {
+                        ok -> it
 
-                        -> i = 0
+                        -> 0
                     }
                     continue
                 }
@@ -526,10 +526,10 @@ markdown.inline = (s str) (out str) {
                 #{overflow=wrap}
                 target-start-opt = i + 1
                 target-start = 0
-                target-start-opt: {
-                    ok -> target-start = it
+                target-start = target-start-opt: {
+                    ok -> it
 
-                    -> target-start = 0
+                    -> 0
                 }
                 target = s.slice-bytes(target-start, close)
                 target.starts-with('http://') || target.starts-with('https://') || target.starts-with('mailto:') -> {
@@ -538,10 +538,10 @@ markdown.inline = (s str) (out str) {
                     #{overflow=wrap}
                     i-opt = close + 1
                     i = 0
-                    i-opt: {
-                        ok -> i = it
+                    i = i-opt: {
+                        ok -> it
 
-                        -> i = 0
+                        -> 0
                     }
                     continue
                 }

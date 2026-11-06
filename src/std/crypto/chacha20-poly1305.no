@@ -329,8 +329,12 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         #{overflow=wrap}
         k <- [n - 1..0]: {
 
-            #{index-out=zero, overflow=wrap}
-            bvk i64 = data[pos + k]
+            #{overflow=wrap}
+            bvk i64 = data[pos + k]: {
+                ok -> it
+
+                -> 0
+            }
             c = c * 256 + bigint.from-i64(bvk)
         }
 

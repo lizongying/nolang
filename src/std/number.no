@@ -1103,10 +1103,10 @@ f64.to-str-general = (precision i64) (out str) {
     #{overflow=wrap}
     i-opt = precision - 1
     i = 0
-    i-opt: {
-        ok -> i = it
+    i = i-opt: {
+        ok -> it
 
-        -> i = 0
+        -> 0
     }
     (i >= 0) {
 
@@ -1207,10 +1207,10 @@ f64.to-str-general = (precision i64) (out str) {
         #{overflow=wrap}
         dp-opt = precision - 1 - e
         dec-places i64 = 0
-        dp-opt: {
-            ok -> dec-places = it
+        dec-places = dp-opt: {
+            ok -> it
 
-            -> dec-places = 0
+            -> 0
         }
         dec-places < 0 -> dec-places = 0
         s str = x.to-str-fixed(dec-places)

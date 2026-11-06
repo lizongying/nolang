@@ -323,6 +323,9 @@ func (v *deprecatedVisitor) walkStmt(s parser.Statement, file, curFn string) {
 		v.popScope()
 	case *parser.BlockStatement:
 		v.walkBlock(st.Statements, file, curFn)
+	case *parser.BlockMatchStatement:
+		// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+		v.walkBlock(blockMatchChildStatements(st), file, curFn)
 	case *parser.ForStatement:
 		v.walkExpr(st.Condition, file, curFn)
 		if st.Body != nil {

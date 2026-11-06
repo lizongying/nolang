@@ -537,6 +537,15 @@ func isStringExpr(expr parser.Expression, stringSizes map[string]int64, varTypes
 				return isDefinitelyNonArithOperand(other, varTypes)
 			}
 		}
+	case *parser.SurfaceMatch:
+		// 值語境的 match——`k str = keys[i]: { ok -> it  -> '' }` 是
+		// `#{index-out}` / `?=` 脫糖後的目標形態（見 cmd/no 的 index-out fixer
+		// 與 fmt 的「全臂同一目標賦值」摺疊）。產出型別由各臂的值決定，本驗證
+		// 器沒有型別推導，故與下面的呼叫 / 欄位 / 索引**同一口徑**：延後給 LLVM
+		// 檢查。缺這個分支時，這類完全合法的 str 賦值會被誤報成
+		// cannot assign non-string value（2026-11-06 std/net/url.no url-build-query
+		// 實測）。
+		return true
 	case *parser.CallExpression:
 		// Function/method calls (e.g., i64-to-str, s.to-upper) may return strings.
 		// Return type cannot be determined at validation time; defer to LLVM type checking.

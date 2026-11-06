@@ -451,6 +451,9 @@ func (p *Parser) parseStatement() Statement {
 					if p.currentToken.Type == lexer.RBRACE {
 						p.nextToken()
 					}
+					if bm := p.parseBlockMatchTail(block); bm != nil {
+						return bm
+					}
 					return block
 				}
 			}
@@ -487,6 +490,9 @@ func (p *Parser) parseStatement() Statement {
 			// past so the caller sees the token after the block.
 			if p.currentToken.Type == lexer.RBRACE {
 				p.nextToken()
+			}
+			if bm := p.parseBlockMatchTail(block); bm != nil {
+				return bm
 			}
 			return block
 		}
@@ -554,6 +560,9 @@ func (p *Parser) parseStatement() Statement {
 			block := p.parseBlockStatement()
 			if p.currentToken.Type == lexer.RBRACE {
 				p.nextToken()
+			}
+			if bm := p.parseBlockMatchTail(block); bm != nil {
+				return bm
 			}
 			return block
 		}
@@ -2327,6 +2336,45 @@ func (p *Parser) bareIfRunStart(stmts []Statement) int {
 // parseBlockStatement 解析 `{ ... }` 區塊語句。被 classifyBlockAtCurrent 定為
 // blockMatch 的區塊走 parseBareMatchExpr（if 組 / 裸 match，臂間互斥）；其餘
 // 逐條解析，此時換行的 `->` 才會進入下方的裸 else 摺疊分支（那裡補 ERROR）。
+// parseBlockMatchTail detects the postfix `: { arms }` of a statement-level
+// block match. Callers invoke it AFTER parseBlockStatement returned and after
+// the body's closing `}` has been consumed, so currentToken is the token that
+// followed `}` — a COLON for `}: {`.
+//
+// On success it consumes the colon and the whole arm block and returns ONE
+// BlockMatchStatement. On failure it restores the parser completely and returns
+// nil, so the caller can return the plain block and normal parsing continues.
+//
+// Without this hook `}: {` silently parses into three unrelated statements
+// (bare block / stray COLON ExpressionStatement with nil Expression / bare
+// SurfaceMatch), which loses the user's intent with no diagnostic at all.
+func (p *Parser) parseBlockMatchTail(body *BlockStatement) Statement {
+	if body == nil || p.currentToken.Type != lexer.COLON || p.peekToken.Type != lexer.LBRACE {
+		return nil
+	}
+	state := p.saveState()
+	diagMark := len(p.diags)
+	savedCtx := p.ctx.copy()
+	p.ctx = p.ctx.filterOut(CTX_MATCH_ARM)
+	p.nextToken() // consume ':' -> currentToken is the arms' LBRACE
+	expr := p.parseBareMatchExpr()
+	p.ctx = savedCtx
+	sm, ok := expr.(*SurfaceMatch)
+	if !ok || sm == nil {
+		p.discardDiagnosticsRecordsSince(diagMark)
+		p.restoreState(state)
+		return nil
+	}
+	p.blockMatchSeq++
+	return &BlockMatchStatement{
+		Token:   body.Token,
+		Body:    body,
+		Match:   sm,
+		Subject: fmt.Sprintf("__bm_%d", p.blockMatchSeq),
+		RBrace:  sm.RBracePos,
+	}
+}
+
 func (p *Parser) parseBlockStatement() *BlockStatement {
 	block := &BlockStatement{Token: p.currentToken, Statements: []Statement{}}
 	openBraceLine := p.currentToken.Line

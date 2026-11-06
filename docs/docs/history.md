@@ -6,6 +6,12 @@ sidebar_position: 2
 
 本頁面收錄 Nolang 各版本的發布紀錄，與倉庫根目錄的 `HISTORY.md` 保持一致。
 
+## 未發布
+
+- feat(parser): 新增 match 主語的塊形態 `{ body }: { arms }`，捕捉主體內 `?=` 的失敗，讓沒有 `?T` 結果參數的函式也能就地處理錯誤；最近的（最內層）塊 match 優先，一次失敗停住整個主體，窮盡性沿用標準三態 `?T` 規則
+- feat(fmt): `}: {` 逐位元往返；H0 展開不再改寫糖 AST
+- docs(lang): 於語法指南、AGENTS.md 與 nolang-syntax skill 補上 match 主語三種形態（值 / 表達式 / 塊）
+
 ## v0.4.19
 
 - feat(mir): enable plain u64 arithmetic (`+`, `-`, `*`) and lower u64 bitwise, shift, division, and modulo as unsigned ops

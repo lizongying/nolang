@@ -110,9 +110,11 @@ gf-mul2 = (x i64) (r i64) {
 ; [sub-bytes](#aes.sub-bytes)
 sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
+        b = state[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        b = state[i]
+            -> 0
+        }
 
         state[i]: {
             ok -> it = SBOX[b]
@@ -128,9 +130,11 @@ sub-bytes = (state []byte, n i64) {
 ; [inv-sub-bytes](#aes.inv-sub-bytes)
 inv-sub-bytes = (state []byte, n i64) {
     i <- [0..16): {
+        b = state[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        b = state[i]
+            -> 0
+        }
 
         state[i]: {
             ok -> it = INV-SBOX[b]
@@ -144,9 +148,11 @@ inv-sub-bytes = (state []byte, n i64) {
 ; state: 16 位元組狀態矩陣（每 4 個連續位元組為一列，第 i 列循環左移 i 位元組，原位修改）
 ; [shift-rows](#aes.shift-rows)
 shift-rows = (state []byte) {
+    t = state[1]: {
+        ok -> it
 
-    #{index-out=zero}
-    t = state[1]
+        -> 0
+    }
 
     #{index-out=zero}
     state[1]: {
@@ -175,11 +181,17 @@ shift-rows = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    t0 = state[2]
+    t0 = state[2]: {
+        ok -> it
 
-    #{index-out=zero}
-    t1 = state[6]
+        -> 0
+    }
+
+    t1 = state[6]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{index-out=zero}
     state[2]: {
@@ -207,8 +219,11 @@ shift-rows = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    t = state[15]
+    t = state[15]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{index-out=zero}
     state[15]: {
@@ -242,9 +257,11 @@ shift-rows = (state []byte) {
 ; state: 16 位元組狀態矩陣（第 i 列循環右移 i 位元組，原位修改，用於解密）
 ; [inv-shift-rows](#aes.inv-shift-rows)
 inv-shift-rows = (state []byte) {
+    t = state[13]: {
+        ok -> it
 
-    #{index-out=zero}
-    t = state[13]
+        -> 0
+    }
 
     #{index-out=zero}
     state[13]: {
@@ -273,11 +290,17 @@ inv-shift-rows = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    t0 = state[2]
+    t0 = state[2]: {
+        ok -> it
 
-    #{index-out=zero}
-    t1 = state[6]
+        -> 0
+    }
+
+    t1 = state[6]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{index-out=zero}
     state[2]: {
@@ -305,8 +328,11 @@ inv-shift-rows = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    t = state[3]
+    t = state[3]: {
+        ok -> it
+
+        -> 0
+    }
 
     #{index-out=zero}
     state[3]: {

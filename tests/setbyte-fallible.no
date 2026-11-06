@@ -35,40 +35,40 @@ ck('txt-in-range-true', present && value)
 ; 寫入生效
 after = false
 w0 = t.byte(0)
-w0: {
-    ok -> after = (it == 90)
+after = w0: {
+    ok -> (it == 90)
 
-    -> after = false
+    -> false
 }
 ck('txt-write-effect', after)
 
 ; 越界（255 >= 容量）：nil
 oob = false
 r2 = t.set-byte(255, 71)
-r2: {
-    ok -> oob = true
+oob = r2: {
+    ok -> true
 
-    -> oob = false
+    -> false
 }
 ck('txt-oob-nil', ! oob)
 
 ; 負數索引：nil
 neg = false
 r3 = t.set-byte(-1, 71)
-r3: {
-    ok -> neg = true
+neg = r3: {
+    ok -> true
 
-    -> neg = false
+    -> false
 }
 ck('txt-neg-nil', ! neg)
 
 ; 越界寫入不改變既有內容（byte 0 仍是 90）
 keep = false
 b0 = t.byte(0)
-b0: {
-    ok -> keep = (it == 90)
+keep = b0: {
+    ok -> (it == 90)
 
-    -> keep = false
+    -> false
 }
 ck('txt-oob-untouched', keep)
 
@@ -77,29 +77,29 @@ s = 'hello world this is a longer string that is definitely stored as a str-long
 
 sp = false
 r4 = s.set-byte(0, 72)
-r4: {
-    ok -> sp = true
+sp = r4: {
+    ok -> true
 
-    -> sp = false
+    -> false
 }
 ck('str-in-range-present', sp)
 
 so = false
 r5 = s.set-byte(99999, 71)
-r5: {
-    ok -> so = true
+so = r5: {
+    ok -> true
 
-    -> so = false
+    -> false
 }
 ck('str-oob-nil', ! so)
 
 ; str 寫入生效：首字元改為 'H'（72）
 se = false
 c0 = s.byte(0)
-c0: {
-    ok -> se = (it == 72)
+se = c0: {
+    ok -> (it == 72)
 
-    -> se = false
+    -> false
 }
 ck('str-write-effect', se)
 

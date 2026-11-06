@@ -1,0 +1,245 @@
+; 陳述層級塊 match `{ body }: { arms }` —— match 主語的第三種形態。
+;
+;   值       x: { ... }
+;   表達式   x + 1: { ... }
+;   塊       { … }: { ... }
+;
+; 塊主語是一段陳述：主體內的 `?=` 不再要求「所在函式有 ?T 結果參數」，
+; 失敗（nil / err）由最近的塊 match 捕捉，arms 只可能是 nil / err；
+; 主體順利走完（零個或全部成功的 `?=`）則是 nil。
+; 一次失敗會停住**整個主體**（後續陳述、後續迴圈 iteration 都不再執行），
+; arms 只跑一次。`-> _` 丟棄結果。
+
+; 斷言：不符即 exit(1)，讓 `no test` 真的能紅。
+; name str: 檢查名稱
+; got str: 實際值
+; want str: 期望值
+check = (name str, got str, want str) {
+    {
+        got == want -> print('ok: {name}')
+
+        -> {
+            print('fail: {name} got=[{got}] want=[{want}]')
+            exit(1)
+        }
+    }
+}
+
+; ── 1. 零個 `?=`：arms 看到 nil ────────────────────────────────────
+; out str: 塊 match 最終觀察到的變體
+zero = () (out str) {
+    out = ''
+    {
+        print('  zero body')
+    }: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        ok -> out = 'ok'
+    }
+}
+
+; ── 2. 一個成功的 `?=`：arms 仍是 nil，主體繼續跑完 ──────────────
+; out str: 塊 match 最終觀察到的變體 + 主體是否跑完
+success = (d i64) (out str) {
+    ran = false
+    out = ''
+    {
+        v ?= 6 / d
+        print('  success v=' - v.to-str())
+        ran = true
+    }: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        ok -> out = 'ok'
+    }
+    ran -> out = out - '+ran'
+}
+
+; ── 3. `?=` 失敗為 err：整個主體停住，arms 只跑一次 ───────────────
+; d i64: 除數（0 時 6/d 得 err）
+; out str: 觀察到的變體 + 主體是否被停住
+fail-err = (d i64) (out str) {
+    ran = false
+    out = ''
+    {
+        v ?= 6 / d
+        print('  fail-err v=' - v.to-str())
+        ran = true
+    }: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        ok -> out = 'ok'
+    }
+    ran -> out = out - '+ran'
+}
+
+; ── 4. `?=` 失敗為 nil（安全索引越界）：同樣停住主體 ──────────────
+; out str: 觀察到的變體 + 主體是否被停住
+fail-nil = () (out str) {
+    arr = [10, 20, 30]
+    ran = false
+    out = ''
+    {
+        v ?= arr[9]
+        print('  fail-nil v=' - v.to-str())
+        ran = true
+    }: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        ok -> out = 'ok'
+    }
+    ran -> out = out - '+ran'
+}
+
+; ── 5. 巢狀塊 match：最內層捕捉，外層只看到 nil ────────────────────
+; out str: 內外兩層觀察到的變體
+nested = (z i64) (out str) {
+    out = ''
+    {
+        {
+            v ?= 6 / z
+            print('  nested v=' - v.to-str())
+        }: {
+            nil -> out = 'inner-nil'
+
+            err -> out = 'inner-err'
+
+            ok -> out = 'inner-ok'
+        }
+    }: {
+        nil -> out = out - '|outer-nil'
+
+        err -> out = out - '|outer-err'
+
+        ok -> out = out - '|outer-ok'
+    }
+}
+
+; ── 6. 函式本身有 ?T 結果參數時，仍是「最近的塊 match」捕捉 ──────
+; res ?i64: 刻意留著，證明它不會把 `?=` 吸走
+; out str: 塊 match 觀察到的變體
+shadow = (z i64) (res ?i64, out str) {
+    res = nil
+    out = ''
+    {
+        v ?= 6 / z
+        print('  shadow v=' - v.to-str())
+    }: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        ok -> out = 'ok'
+    }
+}
+
+; ── 7. 迴圈內失敗：後續 iteration 全部停住 ─────────────────────────
+; out str: 觀察到的變體 + 迴圈累計次數（應停在 0）
+loop-stop = (z i64) (out str) {
+    n = 0
+    out = ''
+    {
+        3 * {
+            v ?= 6 / z
+            print('  loop v=' - v.to-str())
+            n = n + 1
+        }
+    }: {
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+
+        ok -> out = 'ok'
+    }
+    out = out - '+n=' - n.to-str()
+}
+
+; ── 8. `-> _` 丟棄：語法合法、不產生值 ─────────────────────────────
+; out str: 固定回 'discarded'
+discard = (z i64) (out str) {
+    out = 'discarded'
+    {
+        v ?= 6 / z
+        print('  discard v=' - v.to-str())
+    }: {
+        err -> _
+
+        -> _
+    }
+}
+
+; ── 9. 三種主語形態（值 / 表達式 / 塊）在同一函式裡並存 ───────────
+; out str: 三種主語的匹配結果
+subjects = () (out str) {
+    x = 1
+    out = ''
+    out = x: {
+        1 -> 'v'
+
+        -> 'v-other'
+    }
+    x + 1: {
+        2 -> print('  expr-subject')
+
+        -> print('  expr-subject-other')
+    }
+    out = out - 'e'
+    {
+        x + 1
+    }: {
+        nil -> out = out - 'b'
+
+        err -> out = out - 'b-err'
+
+        ok -> out = out - 'b-ok'
+    }
+}
+
+; ── 10. err 載荷保真：err 臂的 it 是結構化 err.err ────────────────
+; d i64: 除數，0 時 6/d 得 err
+; out str: err 的訊息（whole-option 拷貝必須保留 msg/code/file/line/col）
+err-msg = (d i64) (out str) {
+    out = ''
+    {
+        v ?= 6 / d
+        print(v.to-str())
+    }: {
+        err -> out = it.msg()
+
+        nil -> out = 'nil'
+
+        ok -> out = 'ok'
+    }
+}
+
+check('zero', zero(), 'nil')
+check('success', success(2), 'nil+ran')
+check('fail-err', fail-err(2), 'nil+ran')
+check('fail-err-zero', fail-err(0), 'err')
+check('fail-nil', fail-nil(), 'nil')
+check('nested', nested(0), 'inner-err|outer-nil')
+sr, so = shadow(0)
+check('shadow', so, 'err')
+check('loop-stop', loop-stop(0), 'err+n=0')
+check('discard', discard(0), 'discarded')
+check('subjects', subjects(), 'veb')
+
+; err 載荷保真：it 是完整的 err.err，msg() 不得為空
+em = err-msg(0)
+{
+    em == '' -> {
+        print('fail: err-msg empty')
+        exit(1)
+    }
+
+    -> print('ok: err-msg')
+}
+print('block-match: all ok')

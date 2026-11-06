@@ -442,10 +442,10 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     #{overflow=wrap}
     m-opt = memory-cost / (4 * parallelism) * 4 * parallelism
     m = 0
-    m-opt: {
-        ok -> m = it
+    m = m-opt: {
+        ok -> it
 
-        -> m = 0
+        -> 0
     }
 
     #{overflow=wrap}
@@ -456,10 +456,10 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     #{overflow=wrap}
     blocks-per-lane-opt = blocks / lanes
     blocks-per-lane = 0
-    blocks-per-lane-opt: {
-        ok -> blocks-per-lane = it
+    blocks-per-lane = blocks-per-lane-opt: {
+        ok -> it
 
-        -> blocks-per-lane = 0
+        -> 0
     }
 
     ; 構建 H0 輸入
