@@ -31,6 +31,9 @@ Opções globais:
                       overflow    adicionar #{overflow=wrap} à aritmética inteira sem anotação
                       redundant   remover anotações de tipo iguais ao tipo inferido
                       match       adicionar ramos nil/err ausentes a matches de option não exaustivos
+                      unwrap      consumir ligações option que nunca são propagadas nem desempacotadas
+                      main        elevar o corpo de um main de nível superior a instruções de nível superior
+                      index-out   expandir leituras #{index-out=DEF} em matches explícitos
       -loop-style=<s>  forma de laço padrão: prefix (padrão) ou suffix
       -md   formatar também blocos Nolang em arquivos Markdown (.md/.mdx)
     Exemplos:

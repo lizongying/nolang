@@ -31,6 +31,9 @@ Nolang プログラミング言語（バージョン %s）
                       overflow    注釈のない整数演算に #{overflow=wrap} を追加
                       redundant  推論型と同じ型注釈を削除
                       match      網羅的でない option マッチに不足の nil/err アームを追加
+                      unwrap      外へ伝播も展開もされない option バインディングを消費
+                      main        最上位 main の本体を最上位の文へ持ち上げ
+                      index-out   #{index-out=DEF} の読み取りを明示的な match に展開
       -loop-style=<s>  既定のループ記法: prefix（既定）または suffix
       -md   Markdown ファイル（.md/.mdx）内の Nolang コードブロックも整形する
     例:

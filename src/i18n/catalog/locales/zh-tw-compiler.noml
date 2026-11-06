@@ -31,6 +31,9 @@ Nolang 程式語言（版本 %s）
                       overflow    為未標註的整數運算加上 #{overflow=wrap}
                       redundant  移除與推導型別相同的型別標註
                       match      為非窮盡 option 匹配補上缺失的 nil/err 分支
+                      unwrap      消費從不向外傳播、也從不解包的 option 繫結
+                      main        把頂層 main 的函式體提升為頂層陳述
+                      index-out   把 #{index-out=DEF} 索引讀取展開成顯式 match
       -loop-style=<s>  預設迴圈寫法：prefix（預設）或 suffix
       -md   同時格式化 Markdown 檔案（.md/.mdx）裡的 Nolang 程式碼區塊
     範例:

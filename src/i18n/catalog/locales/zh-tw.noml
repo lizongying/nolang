@@ -278,7 +278,7 @@ Parser ASTVersion: %s
   '7sfqpwmj': '找不到依賴: %q 未在 package.noml 的 dependencies 中宣告'
   '7t8ke5g1': 'cancelled: 沒有結果槽位'
   '7tcn8wox': '範例：'
-  '7usot77o': '對某一類問題套用自動修復：\'overflow\'（給未標註的整數運算加上 #{overflow=wrap}）、\'redundant\'（刪除與推斷型別相同的型別標註，如 `x str = \'\'` -> `x = \'\'`）、\'match\'（為非窮盡的 option match 補上缺少的 nil/err 分支），或 \'unwrap\'（消費那些從不向外傳播、也從不解包的 option 繫結：函式已有 ?T 回傳型別時寫 `x ?= expr`，否則寫 `x-opt = expr` 並在後續行加陳述級 match `x-opt: { ok -> x = it -> }`），或 \'main\'（省略頂層 `main = () { ... }` 包裝，把其陳述提升到頂層；當 main 有參數／回傳值或直接 return 時跳過）'
+  '7usot77o': '對某一類問題套用自動修復：\'overflow\'（給未標註的整數運算加上 #{overflow=wrap}）、\'redundant\'（刪除與推斷型別相同的型別標註，如 `x str = \'\'` -> `x = \'\'`）、\'match\'（為非窮盡的 option match 補上缺少的 nil/err 分支），或 \'unwrap\'（消費那些從不向外傳播、也從不解包的 option 繫結：函式已有 ?T 回傳型別時寫 `x ?= expr`，否則寫 `x-opt = expr` 並在後續行加陳述級 match `x-opt: { ok -> x = it -> }`），或 \'main\'（省略頂層 `main = () { ... }` 包裝，把其陳述提升到頂層；當 main 有參數／回傳值或直接 return 時跳過），或 \'index-out\'（把 #{index-out=DEF} 索引讀取展開成顯式 match）'
   '7uy8wmqv': '%s'
   '7zfvvuin': '未發現問題。'
   '802t452i': 'builtin %s: option 結果寫入 %s 目標'

@@ -293,6 +293,9 @@ func printUsage() {
 	fmt.Println("                      overflow    add #{overflow=wrap} to unannotated integer arithmetic")
 	fmt.Println("                      redundant   remove type annotations equal to the inferred type")
 	fmt.Println("                      match       add missing nil/err arms to non-exhaustive option matches")
+	fmt.Println("                      unwrap      consume option bindings never propagated or unwrapped")
+	fmt.Println("                      main        hoist a top-level main body to top-level statements")
+	fmt.Println("                      index-out   expand #{index-out=DEF} index reads into explicit matches")
 	fmt.Println("      -loop-style=<s>  default loop spelling: prefix (default) or suffix")
 	fmt.Println("      -md   also format Nolang code blocks inside Markdown files (.md/.mdx)")
 	fmt.Println("    Examples:")
@@ -1261,7 +1264,7 @@ func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, i18n.P("e0r5thlw", "write result to source file"))
 	diffMode := fs.Bool("d", false, i18n.P("k3g4ofs4", "output colored diff instead of formatted result"))
-	fixClass := fs.String("fix", "", i18n.P("7usot77o", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)"))
+	fixClass := fs.String("fix", "", i18n.P("7usot77o", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return), or 'index-out' (expands `#{index-out=DEF}` safe-index reads into explicit matches, dropping the annotation)"))
 	loopStyle := fs.String("loop-style", "prefix", i18n.P("en9zq76f", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'"))
 	mdMode := fs.Bool("md", false, i18n.P("aze4pgle", "also format Nolang code blocks inside Markdown files (.md/.mdx)"))
 	fs.Usage = func() {

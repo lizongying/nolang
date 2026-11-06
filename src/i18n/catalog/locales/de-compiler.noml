@@ -31,6 +31,9 @@ Globale Optionen:
                       overflow    #{overflow=wrap} zu nicht annotierter Ganzzahlarithmetik hinzufügen
                       redundant   Typannotationen entfernen, die dem abgeleiteten Typ entsprechen
                       match       fehlende nil/err-Zweige zu unvollständigen option-Matches hinzufügen
+                      unwrap      nie weitergegebene oder entpackte option-Bindings konsumieren
+                      main        einen Top-Level-main-Rumpf auf Top-Level-Anweisungen heben
+                      index-out   #{index-out=DEF}-Lesezugriffe in explizite matches ausbauen
       -loop-style=<s>  Standard-Schreibweise für Schleifen: prefix (Standard) oder suffix
       -md   auch Nolang-Codeblöcke in Markdown-Dateien (.md/.mdx) formatieren
     Beispiele:

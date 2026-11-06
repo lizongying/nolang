@@ -280,7 +280,7 @@ tests 디렉터리 생성 오류: %v
   '7sfqpwmj': '종속성을 찾을 수 없습니다: %q이(가) package.noml의 dependencies에 선언되지 않았습니다'
   '7t8ke5g1': 'cancelled: 결과 슬롯이 없습니다'
   '7tcn8wox': '예시:'
-  '7usot77o': '한 부류의 문제에 자동 수정을 적용합니다: \'overflow\'(주석 없는 정수 연산에 #{overflow=wrap} 추가), \'redundant\'(추론 타입과 같은 타입 주석 제거, 예 `x str = \'\'` -> `x = \'\'`), \'match\'(망라적이지 않은 option match 에 빠진 nil/err 분기 추가), \'unwrap\'(밖으로 전파도 언랩도 되지 않는 option 바인딩 소비: 함수가 ?T 를 반환하면 `x ?= expr`, 아니면 `x-opt = expr` 와 다음 줄의 문 match `x-opt: { ok -> x = it -> }`), \'main\'(최상위 `main = () { ... }` 래퍼를 생략하고 본문 문을 최상위로 올림; main 에 인자/반환값이나 직접 return 이 있으면 생략)'
+  '7usot77o': '한 부류의 문제에 자동 수정을 적용합니다: \'overflow\'(주석 없는 정수 연산에 #{overflow=wrap} 추가), \'redundant\'(추론 타입과 같은 타입 주석 제거, 예 `x str = \'\'` -> `x = \'\'`), \'match\'(망라적이지 않은 option match 에 빠진 nil/err 분기 추가), \'unwrap\'(밖으로 전파도 언랩도 되지 않는 option 바인딩 소비: 함수가 ?T 를 반환하면 `x ?= expr`, 아니면 `x-opt = expr` 와 다음 줄의 문 match `x-opt: { ok -> x = it -> }`), \'main\'(최상위 `main = () { ... }` 래퍼를 생략하고 본문 문을 최상위로 올림; main 에 인자/반환값이나 직접 return 이 있으면 생략), \'index-out\'(#{index-out=DEF} 읽기를 명시적 match 로 확장)'
   '7uy8wmqv': '%s'
   '7zfvvuin': '문제를 찾을 수 없습니다.'
   '802t452i': 'builtin %s: option 결과를 %s 대상으로'

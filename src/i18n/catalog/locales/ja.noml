@@ -280,7 +280,7 @@ tests ディレクトリ作成エラー: %v
   '7sfqpwmj': '依存が見つかりません: %q は package.noml の依存に宣言されていません'
   '7t8ke5g1': 'cancelled: 結果スロットがありません'
   '7tcn8wox': '例:'
-  '7usot77o': 'ある種の問題に対して自動修正を適用します: \'overflow\'（未注釈の整数演算に #{overflow=wrap} を付与）、\'redundant\'（推論型と同じ型注釈を削除、例 `x str = \'\'` -> `x = \'\'`）、\'match\'（網羅的でない option match に不足の nil/err アームを補う）、\'unwrap\'（外へ伝播も展開もされない option バインディングを消費: 関数が ?T を返すなら `x ?= expr`、そうでなければ `x-opt = expr` と次行の文 match `x-opt: { ok -> x = it -> }`）、\'main\'（最上位の `main = () { ... }` ラッパーを省き本体の文を最上位へ持ち上げ。main に引数／戻り値や直接 return がある場合は省略）'
+  '7usot77o': 'ある種の問題に対して自動修正を適用します: \'overflow\'（未注釈の整数演算に #{overflow=wrap} を付与）、\'redundant\'（推論型と同じ型注釈を削除、例 `x str = \'\'` -> `x = \'\'`）、\'match\'（網羅的でない option match に不足の nil/err アームを補う）、\'unwrap\'（外へ伝播も展開もされない option バインディングを消費: 関数が ?T を返すなら `x ?= expr`、そうでなければ `x-opt = expr` と次行の文 match `x-opt: { ok -> x = it -> }`）、\'main\'（最上位の `main = () { ... }` ラッパーを省き本体の文を最上位へ持ち上げ。main に引数／戻り値や直接 return がある場合は省略）、\'index-out\'（#{index-out=DEF} の読み取りを明示的な match に展開）'
   '7uy8wmqv': '%s'
   '7zfvvuin': '問題は見つかりませんでした。'
   '802t452i': 'builtin %s: option の結果を %s の出力先へ'
