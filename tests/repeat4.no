@@ -1,7 +1,0 @@
-; test-repeat4 — str.repeat 簡化測試
-print('start')
-space = ' '
-print('space created')
-buf = space.repeat(3)
-print('buf created')
-print('end')

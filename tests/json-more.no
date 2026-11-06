@@ -1,0 +1,436 @@
+; json-more — 合併自同簇 json 回歸小件（heavy dedup）
+;
+; 每個原件整段包成函式（頂層語義在函式內等價），末尾依序呼叫。
+; 保留獨立：json.no(受 ast_write_gate_test.go/build.yml 引用)、
+; json-crosspool-mutate.no(§5.3 KNOWN-BUG 錨點，故意 FAIL 行，原樣保留)。
+
+; ── from tests/json-get-clone.no ──
+jgc-run = () {
+    ; json-get-clone.no — 回归：json.get / arr-get / get-key 返回“独立深拷贝子树”，
+    ; 使子句柄与父不再共享底层 vec 缓冲区。
+    ; 修复前：#{inline=false} 指针字段拷贝缺借用语义，父子各持 vec 头但共享同一 data 缓冲；
+    ; 任一 handle 扩容 realloc → 另一 handle 头失效 → 悬垂读（父 stringify=null / 数据错乱）。
+    ; 修复后：get 族返回独立副本，扩容互不影响；re-attach（set-key 回写）惯用法仍生效。
+    ; 运行：no run tests/json-get-clone.no
+
+    print('start')
+
+    ; ── case1: 子句柄 set-str（会 alloc）后父仍完好，且父不被污染 ──
+    j = json.parse('{"a":{"x":"1"},"b":"2"}')
+    j: {
+        ok -> {
+            root json = it
+            sub = root.get('a')
+            sub: {
+                ok -> {
+                    it.set-str('newkey', 'val')
+                    out = root.stringify()
+                    out == 'null' -> print('fail: case1 root null (regression)')
+                    out.contains('x') == false -> print('fail: case1 root lost x -> {out}')
+                    out.contains('newkey') -> print('fail: case1 child leaked to parent -> {out}')
+                    sout = it.stringify()
+                    sout.contains('newkey') == false -> print('fail: case1 child missing its own newkey')
+                    out.contains('x') -> {
+                        sout.contains('newkey') -> {
+                            out.contains('newkey') == false -> print('ok: case1 child-grow keeps parent intact')
+                        }
+                    }
+                }
+
+                nil -> print('fail: case1 sub nil')
+
+                err -> print('fail: case1 sub err')
+            }
+        }
+
+        nil -> print('fail: case1 parse nil')
+
+        err -> print('fail: case1 parse err')
+    }
+
+    ; ── case2: 子句柄直接 alloc-node 后父仍完好 ──
+    y = json.parse('{"obj":{"k":"v"},"tail":"t"}')
+    y: {
+        ok -> {
+            r json = it
+            c = r.get('obj')
+            c: {
+                ok -> {
+                    i = it.alloc-node()
+                    ro = r.stringify()
+                    ro == 'null' -> print('fail: case2 root null after child.alloc')
+                    ro.contains('obj') == false -> print('fail: case2 root lost obj -> {ro}')
+                    ro.contains('obj') -> print('ok: case2 root survives child.alloc')
+                }
+
+                nil -> print('fail: case2 child nil')
+
+                err -> print('fail: case2 child err')
+            }
+        }
+
+        nil -> print('fail: case2 parse nil')
+
+        err -> print('fail: case2 parse err')
+    }
+
+    ; ── case3: re-attach 惯用法（消费者真实写法）结果正确 ──
+    v = json.parse('{"dependencies":{"foo":"^1.0.0","bar":"^2.0.0"}}')
+    v: {
+        ok -> {
+            vv json = it
+            d = vv.get('dependencies')
+            d: {
+                ok -> {
+                    it.delete-key('foo')
+                    it.set-str('baz', '^3.0.0')
+                    vv.set-key('dependencies', it)
+                    vo = vv.stringify()
+                    vo.contains('foo') -> print('fail: case3 foo not removed -> {vo}')
+                    vo.contains('baz') == false -> print('fail: case3 baz not added -> {vo}')
+                    vo.contains('bar') == false -> print('fail: case3 bar lost -> {vo}')
+                    vo.contains('foo') == false -> {
+                        vo.contains('baz') -> {
+                            vo.contains('bar') -> print('ok: case3 re-attach idiom works')
+                        }
+                    }
+                }
+
+                nil -> print('fail: case3 dep nil')
+
+                err -> print('fail: case3 dep err')
+            }
+        }
+
+        nil -> print('fail: case3 parse nil')
+
+        err -> print('fail: case3 parse err')
+    }
+
+    ; ── case4: arr-get 元素子句柄 grow 后父数组仍完好 ──
+    a = json.parse('{"list":[{"n":1},{"n":2}]}')
+    a: {
+        ok -> {
+            root json = it
+            lst = root.get('list')
+            lst: {
+                ok -> {
+                    e = it.arr-get(0)
+                    e: {
+                        ok -> {
+                            it.set-str('extra', 'x'); grow the element copy
+                            ro = root.stringify()
+                            ro == 'null' -> print('fail: case4 root null after arr-get elem grow')
+                            ro.contains('list') == false -> print('fail: case4 root lost list -> {ro}')
+                            ro.contains('list') -> print('ok: case4 root survives arr-get elem grow')
+                        }
+
+                        nil -> print('fail: case4 elem nil')
+
+                        err -> print('fail: case4 elem err')
+                    }
+                }
+
+                nil -> print('fail: case4 list nil')
+
+                err -> print('fail: case4 list err')
+            }
+        }
+
+        nil -> print('fail: case4 parse nil')
+
+        err -> print('fail: case4 parse err')
+    }
+
+    print('end')
+}
+
+; ── from tests/json-heap-cap.no ──
+jhc-run = () {
+    ; json-heap-cap.no — 驗證 json 節點池改用堆 vec 後不再有固定容量上限
+    ;
+    ; 背景：舊實作以固定陣列作池，硬性限制 JSON-MAX-NODES=128 / JSON-MAX-CHILDREN=32，
+    ; 超過即靜默失敗。改為堆配置 vec（json.pool 以 #{inline=false} 存放指標）後，
+    ; 節點數與每節點子元素數皆無上限，僅受可用記憶體限制。
+    ;
+    ; 本測試為純計算，不需網路，可實際執行。
+
+    print('start')
+
+    ; 以 exit(1) 標記任何斷言失敗
+    fail = false
+
+    ; ── 1. 大陣列：2000 個元素（遠超舊 128 節點 / 32 子元素上限）──
+    arr-str = '['
+    i <- [0..2000): {
+        i > 0 -> arr-str = arr-str - ','
+        arr-str = arr-str - i.to-str()
+    }
+    arr-str = arr-str - ']'
+
+    j = json.parse(arr-str)
+    n = 0
+    parsed1 = false
+    j: {
+        ok -> {
+            n = it.arr-len()
+            parsed1 = true
+        }
+
+        nil ->
+
+        err ->
+    }
+    {
+        parsed1 && n == 2000 -> print('ok: array 2000 nodes')
+
+        -> {
+            print('fail: array node count (got ')
+            print(n)
+            print(')')
+            fail = true
+        }
+    }
+
+    ; ── 2. 大物件：500 個鍵（遠超舊每節點 32 子元素上限）──
+    obj-str = '{'
+    k <- [0..500): {
+        k > 0 -> obj-str = obj-str - ','
+        key = 'k' - k.to-str()
+        obj-str = obj-str - '"' - key - '":' - k.to-str()
+    }
+    obj-str = obj-str - '}'
+    o = json.parse(obj-str)
+    m = 0
+    lastv = 0.0
+    found-last = false
+    o: {
+        ok -> {
+            m = it.obj-len()
+            no = it.get-num('k499')
+            no: {
+                ok -> {
+                    found-last = true
+                    lastv = it
+                }
+
+                -> found-last = false
+            }
+        }
+
+        nil ->
+
+        err ->
+    }
+    {
+        m == 500 && found-last && lastv == 499.0 -> print('ok: object 500 keys')
+
+        -> {
+            print('fail: object keys (len=')
+            print(m)
+            print(')')
+            fail = true
+        }
+    }
+
+    ; ── 3. 深巢狀：結構可往返序列化，且不因池上限而截斷 ──
+    depth = 200
+    nested = ''
+    t <- [0..depth): {
+        nested = nested - '['
+    }
+    nested = nested - '1'
+    t <- [0..depth): {
+        nested = nested - ']'
+    }
+    d = json.parse(nested)
+    ok3 = false
+    rs = ''
+    d: {
+        ok -> {
+            rs = it.stringify()
+            ok3 = true
+        }
+
+        nil ->
+
+        err ->
+    }
+    {
+        ok3 && rs.len-bytes() == (2 * depth + 1) -> print('ok: deep nest roundtrip')
+
+        -> {
+            print('fail: deep nest (bytes=')
+            print(rs.len-bytes())
+            print(')')
+            fail = true
+        }
+    }
+
+    ; ── 4. 構建大陣列：逐個 push，無 128 上限 ──
+    b = json.new()
+    p <- [0..1000): {
+        b.arr-push-num(p.to-f64())
+    }
+    cnt = b.arr-len()
+    {
+        cnt == 1000 -> print('ok: build array 1000 via push')
+
+        -> {
+            print('fail: build array (len=')
+            print(cnt)
+            print(')')
+            fail = true
+        }
+    }
+    {
+        fail -> exit(1)
+
+        -> print('ok: all heap-pool cap tests done')
+    }
+}
+
+; ── from tests/json-set-key-self.no ──
+jks-run = () {
+    ; json-set-key-self.no — 回歸測試：set-key 寫回同池自引用子樹
+    ; 修复前：copy-tree 源池与接收者池共享底层 vec，扩容使快照 src 结构体的 vec 头失效 -> segfault。
+    ; 运行：no run tests/json-set-key-self.no
+
+    print('start')
+
+    ; ── case 1: get 子对象 -> delete-key -> set-key 覆盖同一个已存在的键 ──
+    j = json.parse('{"name":"test","dependencies":{"foo":"^1.0.0","bar":"^2.0.0"}}')
+    j: {
+        ok -> {
+            root json = it
+            dep = root.get('dependencies')
+            dep: {
+                ok -> {
+                    it.delete-key('foo')
+                    root.set-key('dependencies', it)
+                    out = root.stringify()
+                    out.contains('foo') -> {
+                        print('fail: case1 foo not removed -> {out}')
+                    }
+                    out.contains('bar') -> {
+                        print('ok: case1 set-key self existing')
+                    }
+                }
+
+                nil -> print('fail: case1 dep nil')
+
+                err -> print('fail: case1 dep err')
+            }
+        }
+
+        nil -> print('fail: case1 parse nil')
+
+        err -> print('fail: case1 parse err')
+    }
+
+    ; ── case 2: get 子对象 -> set-key 到一个新键（同为自引用） ──
+    k = json.parse('{"a":{"x":"1"},"b":"2"}')
+    k: {
+        ok -> {
+            r2 json = it
+            sub = r2.get('a')
+            sub: {
+                ok -> {
+                    r2.set-key('copied', it)
+                    out2 = r2.stringify()
+                    out2.contains('copied') -> {
+                        print('ok: case2 set-key self newkey')
+                    }
+                    out2.contains('copied') == false -> {
+                        print('fail: case2 copied missing -> {out2}')
+                    }
+                }
+
+                nil -> print('fail: case2 sub nil')
+
+                err -> print('fail: case2 sub err')
+            }
+        }
+
+        nil -> print('fail: case2 parse nil')
+
+        err -> print('fail: case2 parse err')
+    }
+
+    ; ── case 3: 跨池 set-key（确保没被改坏） ──
+    base = json.parse('{"deps":{"old":"1"}}')
+    other = json.parse('{"fresh":"9"}')
+    base: {
+        ok -> {
+            b json = it
+            other: {
+                ok -> {
+                    b.set-key('deps', it)
+                    out3 = b.stringify()
+                    out3.contains('fresh') -> {
+                        print('ok: case3 cross-pool set-key')
+                    }
+                    out3.contains('fresh') == false -> {
+                        print('fail: case3 fresh missing -> {out3}')
+                    }
+                }
+
+                nil -> print('fail: case3 other nil')
+
+                err -> print('fail: case3 other err')
+            }
+        }
+
+        nil -> print('fail: case3 parse nil')
+
+        err -> print('fail: case3 parse err')
+    }
+
+    ; ── case 4: 直接对同一池调用 copy-tree（根修验证：保护必须在 copy-tree 本身）──
+    ; 40 个嵌套对象 -> self-copy 期间 .alloc()/add-child 反复扩容共享 vec，使按值传入的
+    ; src 快照头失效。当前 set-key 的调用点中转不覆盖直接调用 copy-tree 的情形。
+    p = json-pool {}
+    p.init()
+    p-root, p-next, p-ok = p.parse('{"k0":{"v":"0"},"k1":{"v":"1"},"k2":{"v":"2"},"k3":{"v":"3"},"k4":{"v":"4"},"k5":{"v":"5"},"k6":{"v":"6"},"k7":{"v":"7"},"k8":{"v":"8"},"k9":{"v":"9"},"k10":{"v":"10"},"k11":{"v":"11"},"k12":{"v":"12"},"k13":{"v":"13"},"k14":{"v":"14"},"k15":{"v":"15"},"k16":{"v":"16"},"k17":{"v":"17"},"k18":{"v":"18"},"k19":{"v":"19"},"k20":{"v":"20"},"k21":{"v":"21"},"k22":{"v":"22"},"k23":{"v":"23"},"k24":{"v":"24"},"k25":{"v":"25"},"k26":{"v":"26"},"k27":{"v":"27"},"k28":{"v":"28"},"k29":{"v":"29"},"k30":{"v":"30"},"k31":{"v":"31"},"k32":{"v":"32"},"k33":{"v":"33"},"k34":{"v":"34"},"k35":{"v":"35"},"k36":{"v":"36"},"k37":{"v":"37"},"k38":{"v":"38"},"k39":{"v":"39"}}', 0)
+    {
+        {
+            p-ok -> {
+                {
+                    dup = p.copy-tree(p, p-root)
+                    {
+                        {
+                            dup >= 0 -> {
+                                {
+                                    last-opt = p.get-key(dup, 'k39')
+                                    last-opt: {
+                                        ok -> {
+                                            last-idx = it
+                                            inner-opt = p.get-key(last-idx, 'v')
+                                            inner-opt: {
+                                                ok -> print('ok: case4 copy-tree self-pool deep')
+
+                                                -> print('fail: case4 inner v missing')
+                                            }
+                                        }
+
+                                        -> print('fail: case4 deep k39 missing after realloc')
+                                    }
+                                }
+                            }
+
+                            -> print('fail: case4 copy-tree self returned -1')
+                        }
+                    }
+                }
+            }
+
+            -> print('fail: case4 parse')
+        }
+    }
+
+    print('end')
+}
+
+jgc-run()
+jhc-run()
+jks-run()

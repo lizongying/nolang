@@ -1,3 +1,0 @@
-; Test i8.to-str directly
-x i8 = 42
-print(x.to-str())

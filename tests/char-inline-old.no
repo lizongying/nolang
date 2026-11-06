@@ -1,7 +1,0 @@
-; test_char_inline_old
-print('start')
-
-s = 'A'
-print(s)
-
-print('done')

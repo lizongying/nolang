@@ -1,0 +1,227 @@
+; option-more — 合併自同簇 option/opt 小件（heavy dedup）
+;
+; 每個原件逐字搬入並將頂層符號加前綴避免衝突；main 依序呼叫，stdout 逐段可對拍。
+; 保護/重件保留獨立：option.no(CI)、option-capture/index/match/test、opt-box-drop、
+; opt-container-len、opt-struct-field、byte-option-index、slice-option-write、
+; option-match-silent-wrong(綁 src/mir/option_match_three_bugs_test.go)、
+; option-elem-container(大面積 place-match 擁有權探針)。
+
+; from opt-match-all.no — option match 的所有分支
+oma-test-err = () {
+    n ?i64 = err('boom')
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+oma-test-nil = () {
+    n ?i64 = nil
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+oma-test-val = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+oma-test-err-only = () {
+    n ?i64 = err('oops')
+    r = n: {
+        err -> 'only-err'
+
+        -> 'otherwise'
+    }
+    print(r)
+}
+
+; from opt-match2.no — 只有 catch-all 一臂
+om2-test1 = () {
+    n ?i64 = 42
+    r = n: {
+        -> 'ok'
+    }
+    print(r)
+}
+
+; from opt-match3.no — err/nil 臂不命中，落 catch-all
+om3-test1 = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+
+; from simple-opt.no — 最小可編譯樣本
+so-test1 = () {
+    n = 42
+    print('ok')
+}
+
+; from f64-option.no — str.to-f64 的 Option 化實現
+f64-print = (s str) {
+    f = s.to-f64()
+    {
+        f == nil -> print('nil')
+
+        f == err -> print('err')
+
+        -> print(f)
+    }
+}
+
+; from option-simple-minimal.no — 最小化 val/err 測試
+osm-simple = () {
+    n ?i64 = ok(42)
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+osm-simple2 = () {
+    n ?i64 = nil
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+osm-simple3 = () {
+    n ?i64 = err('oops')
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; from option-struct-payload-drop.no — 內聯 owning struct payload 每次重綁必釋放
+; 頂層片段：last 為模組全域，迴圈內覆寫（原檔即如此）。
+ospd-person {
+    name str
+}
+ospd-last = ''
+i <- [0..2000): {
+    p ospd-person
+    p.name = i.to-str()
+    ip ?ospd-person = p
+    q ospd-person = ip
+    ospd-last = q.name
+}
+print(ospd-last)
+j <- [0..2000): {
+    r = json.parse('{"name":"Alice"}')
+    r: {
+        ok -> {
+            s-opt = it.get-str('name')
+            s-opt: {
+                ok -> {
+                    ospd-last = it
+                }
+
+                -> _
+            }
+        }
+
+        err -> {
+            ospd-last = 'err'
+        }
+
+        nil -> {
+            ospd-last = 'nil'
+        }
+    }
+}
+print(ospd-last)
+
+; from option-copy.no — 隱式 ok 建構後覆寫（僅驗編譯 + D1 消費）
+ocopy-x = () {
+    a ?[]i64 = nil
+    a = [8]
+    _ = a
+}
+
+oma-test-err()
+oma-test-nil()
+oma-test-val()
+oma-test-err-only()
+om2-test1()
+om3-test1()
+so-test1()
+f64-print('3.14')
+f64-print('-2.5')
+f64-print('0.0')
+f64-print('')
+f64-print('abc')
+f64-print('42')
+f64-print('1.5e3')
+osm-simple()
+osm-simple2()
+osm-simple3()
+ocopy-x()
+
+; from option-nil-predeclare.no — nil 預宣告探針（頂層片段，含 io.out 無換行）
+onp-x ?i64 = nil
+onp-x: {
+    ok -> io.out('x=ok ')
+
+    nil -> io.out('x=nil ')
+
+    err -> io.out('x=err ')
+}
+print('')
+
+onp-y ?i64 = nil
+onp-y = 5
+onp-y: {
+    ok -> print(onp-y)
+
+    nil -> print('nil')
+
+    err -> print('err')
+}
+
+onp-s ?str = nil
+onp-s: {
+    ok -> print(onp-s)
+
+    nil -> print('s=nil')
+
+    err -> print('s=err')
+}

@@ -1,0 +1,172 @@
+; async-more — 合併自同簇 async 小件（heavy dedup）
+;
+; 僅併入「函式化、決定性」的協程探針（run/awy/co 皆封在函式內，末尾依序呼叫）；
+; 每個原件頂層符號加前綴避免單態化衝突。
+; 保留獨立：async.no(canonical)、async-arg-move/handle-alias/ownership/rc(被 src 引用)、
+; async-arg-retain(ownership-model §4.2 煙霧測，配 spawn_arg_retain_test.go)、
+; go-async/module-async(模組級 co 觸發全檔 async 狀態機變換，併檔會改語義)。
+
+; from async-cancel.no — cancel / cancelled / async-yield 探針
+ac-worker = (n i64) (r i64) {
+
+    #{overflow=wrap}
+    r = n * 2
+}
+
+ac-test-cancel = () {
+    h = run ac-worker(100)
+    async.cancel(h)
+    r = awy h
+    print(r); expect: 0
+}
+
+ac-test-no-cancel = () {
+    h = run ac-worker(21)
+    r = awy h
+    print(r); expect: 42
+}
+
+ac-test-cancelled = () {
+    c = async.cancelled()
+    print(c); expect: 0
+}
+
+ac-test-yield = () {
+    async-yield()
+    print(7); expect: 7
+}
+
+; from async-coop.no — 協作式自我取消檢查（cancelled 在 -async 目標內）
+ak-selfcheck = (n i64) (r i64) {
+    c = async.cancelled()
+    r = n
+    {
+        c -> r = 0
+    }
+}
+
+ak-test-run-ok = () {
+    h = run ak-selfcheck(7)
+    r = awy h
+    print(r); expect: 7
+}
+
+ak-test-cancelled = () {
+    h = run ak-selfcheck(7)
+    async.cancel(h)
+    r = awy h
+    print(r); expect: 0
+}
+
+; from async-yield.no — async-yield 在協程內（讓出控制權）
+ay-yielder = (n i64) (r i64) {
+    async-yield()
+
+    #{overflow=wrap}
+    r = n + 1
+}
+
+ay-test-inside = () {
+    r = co ay-yielder(5)
+    print(r); expect: 6
+}
+
+ay-test-plain = () {
+    async-yield()
+    print(9); expect: 9
+}
+
+; from async-group.no — 協程組（coroutine group）
+ag-hello = (i i64) (r i64) {
+    r = i
+}
+
+ag-test-independent = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = co ag-hello(1)
+        r2 = co ag-hello(2)
+    }
+    print(r1); expect: 1
+    print(r2); expect: 2
+}
+
+ag-test-dependent = () {
+    r1 i64
+    r2 i64
+    {
+        r1 = co ag-hello(1)
+        r2 = co ag-hello(r1)
+    }
+    print(r1); expect: 1
+    print(r2); expect: 1
+}
+
+ag-test-chain = () {
+    r1 i64
+    r2 i64
+    r3 i64
+    {
+        r1 = co ag-hello(1)
+        r2 = co ag-hello(r1)
+        r3 = co ag-hello(r2)
+    }
+    print(r3); expect: 1
+}
+
+ag-test-read-inside = () {
+    r1 i64
+    {
+        r1 = co ag-hello(7)
+        print(r1); expect: 7
+    }
+}
+
+ag-side = (n i64) {
+    print(n); expect: 5
+}
+
+ag-test-discarded = () {
+    {
+        co ag-side(5)
+    }
+}
+
+ag-echo = (s str) (r str) {
+    r = s
+}
+
+ag-test-heap-arg = () {
+    a = 'hello'
+    b = 'world'
+    ra str
+    rb str
+    {
+        ra = co ag-echo(a)
+        rb = co ag-echo(b)
+    }
+    print(ra); expect: hello
+    print(rb); expect: world
+}
+
+ag-test-statement-level = () {
+    f = co ag-hello(1)
+    print(f); expect: 1
+}
+
+ac-test-cancel()
+ac-test-no-cancel()
+ac-test-cancelled()
+ac-test-yield()
+ak-test-run-ok()
+ak-test-cancelled()
+ay-test-inside()
+ay-test-plain()
+ag-test-independent()
+ag-test-dependent()
+ag-test-chain()
+ag-test-read-inside()
+ag-test-discarded()
+ag-test-heap-arg()
+ag-test-statement-level()

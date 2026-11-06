@@ -1,0 +1,509 @@
+; test-vec — 測試 []t.reverse 修復
+;
+; 驗證 vec.reverse 正確反轉切片元素。
+; 修復前 .[i] = .[j] 賦值丟失，.[i] 從未被寫入。
+
+; 4 元素反轉，應輸出 4 3 2 1
+test-vec-reverse-4 = () {
+    v []i64 = with-cap(4)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    v.reverse()
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    print(v[3])
+}
+
+; 3 元素反轉，應輸出 3 2 1
+test-vec-reverse-3 = () {
+    v []i64 = with-cap(4)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.reverse()
+    print(v[0])
+    print(v[1])
+    print(v[2])
+}
+
+; 空切片反轉不報錯
+test-vec-reverse-empty = () {
+    v []i64 = with-cap(0)
+    v.reverse()
+    print('empty ok')
+}
+
+; 單元素反轉
+test-vec-reverse-single = () {
+    v []i64 = with-cap(4)
+    v.push(42)
+    v.reverse()
+    print(v[0])
+}
+test-vec-reverse-4()
+print('---')
+test-vec-reverse-3()
+print('---')
+test-vec-reverse-empty()
+print('---')
+test-vec-reverse-single()
+print('---')
+
+; 測試 insert 中間/末尾/首位插入
+test-vec-insert = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(3)
+    v.insert(1, 2)
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    v.insert(3, 4)
+    print(v[3])
+    v.insert(0, 0)
+    print(v[0])
+    print(v[1])
+}
+
+; 測試 remove 刪除並返回，越界返回 nil
+test-vec-remove = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    r = v.remove(1)
+    r: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+    print(v[0])
+    print(v[1])
+    r2 = v.remove(99)
+    r2: {
+        nil -> print('nil ok')
+
+        -> print('not nil')
+    }
+}
+
+; 測試 index-of 查找
+test-vec-index-of = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    idx = v.index-of(20)
+    print(idx)
+    idx2 = v.index-of(99)
+    print(idx2)
+}
+
+; 測試 first / last，含空切片
+test-vec-first-last = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    f = v.first()
+    f: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+    l = v.last()
+    l: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+    e []i64 = with-cap(0)
+    fe = e.first()
+    fe: {
+        nil -> print('nil ok')
+
+        -> print('not nil')
+    }
+    le = e.last()
+    le: {
+        nil -> print('nil ok')
+
+        -> print('not nil')
+    }
+}
+
+; 測試 at 安全索引，越界返回 nil
+test-vec-at = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    a = v.at(1)
+    a: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+    a2 = v.at(5)
+    a2: {
+        nil -> print('nil ok')
+
+        -> print('not nil')
+    }
+    a3 = v.at(-1)
+    a3: {
+        nil -> print('nil ok')
+
+        -> print('not nil')
+    }
+}
+
+; 測試 swap 交換
+test-vec-swap = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.swap(0, 2)
+    print(v[0])
+    print(v[1])
+    print(v[2])
+}
+
+; 測試 max / min，含空切片
+test-vec-max-min = () {
+    v []i64 = with-cap(8)
+    v.push(3)
+    v.push(1)
+    v.push(4)
+    v.push(1)
+    v.push(5)
+    m = v.max()
+    m: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+    mn = v.min()
+    mn: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+    e []i64 = with-cap(0)
+    me = e.max()
+    me: {
+        nil -> print('nil ok')
+
+        -> print('not nil')
+    }
+}
+
+; 測試 sum 求和
+test-vec-sum = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    s = v.sum()
+    print(s)
+}
+
+; 測試 truncate 截斷
+test-vec-truncate = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    v.truncate(2)
+    print(v[0])
+    print(v[1])
+    print(v.len())
+    v.truncate(10)
+    print(v.len())
+}
+
+; 測試 extend 追加另一切片
+test-vec-extend = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    b []i64 = with-cap(4)
+    b.push(3)
+    b.push(4)
+    b.push(5)
+    v.extend(b)
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    print(v[3])
+    print(v[4])
+    print(v.len())
+}
+
+; 測試 to-str 字串表示
+test-vec-to-str = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    s = v.to-str()
+    print(s)
+    e []i64 = with-cap(0)
+    s2 = e.to-str()
+    print(s2)
+}
+test-vec-insert()
+print('---')
+test-vec-remove()
+print('---')
+test-vec-index-of()
+print('---')
+test-vec-first-last()
+print('---')
+test-vec-at()
+print('---')
+test-vec-swap()
+print('---')
+test-vec-max-min()
+print('---')
+test-vec-sum()
+print('---')
+test-vec-truncate()
+print('---')
+test-vec-extend()
+print('---')
+test-vec-to-str()
+
+; ── 吸收變體：合併自同簇 vec-*.no（heavy dedup）──────────────────
+; 每個原件對映為下方的函式或頂層片段，stdout 逐段可對拍。
+
+; from vec-elem-ownership.no — 容器「元素賦值」擁有權：元素必須深拷貝
+; (emitIndexStore %vec vecDeepClone; 修復前 test-vec-elem 印 0 後 trap)
+test-vec-elem = () {
+    outer [][]i64 = with-len(1)
+    inner = [1, 2, 3]
+    outer[0] = inner
+    inner = [9, 9, 9]
+    print(outer[0][0]); 1
+}
+; 來源「原位寫入」（不是重綁）—— 深拷貝下容器應看到舊值
+test-vec-elem-inplace = () {
+    outer [][]i64 = with-len(1)
+    inner = [1, 2, 3]
+    outer[0] = inner
+    inner[0]: {
+        ok -> it = 99
+
+        -> _
+    }
+    print(outer[0][0]); 1
+}
+; 兩層巢狀：外層元素是 []i64，內層元素是 i64
+test-vec-nested = () {
+    a = [7, 8]
+    b = [1, 2]
+    outer [][]i64 = with-len(2)
+    outer[0] = a
+    outer[1] = b
+    a = [0, 0]
+    b = [0, 0]
+    print(outer[0][0]); 7
+    print(outer[1][1]); 2
+}
+; map 的值 + 來源重綁（同一元素寫入路徑）
+test-map-value = () {
+    list1 = [1, 2, 3]
+    m [str][]i64 = { }
+    m.put('k', list1)
+    list1 = [9, 9, 9]
+    v = m.get('k')
+    v: {
+        ok -> print(it[0]); 1
+
+        nil -> print('nil')
+
+        err(e) -> print('err')
+    }
+}
+; 對照組：vec.push 本來就深拷貝
+test-push-control = () {
+    outer [][]i64 = []
+    inner = [5, 6]
+    outer.push(inner)
+    inner = [0, 0]
+    print(outer[0][0]); 5
+}
+test-vec-elem()
+test-vec-elem-inplace()
+test-vec-nested()
+test-map-value()
+test-push-control()
+
+; from vec-fl-minimal.no — 隔離 first/last 行為（帶標籤）
+test-fl = () {
+    v []i64 = with-cap(8)
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    print('len:')
+    print(v.len())
+    f = v.first()
+    print('first:')
+    f: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+    l = v.last()
+    print('last:')
+    l: {
+        nil -> print('nil')
+
+        err -> print('err')
+
+        -> print(it)
+    }
+}
+test-fl()
+
+; from vec-sum-minimal.no — 隔離 sum() 行為（帶標籤）
+test-sum-min = () {
+    v []i64 = with-cap(8)
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+    print('len:')
+    print(v.len())
+    print('elems:')
+    print(v[0])
+    print(v[1])
+    print(v[2])
+    print(v[3])
+    s = v.sum()
+    print('sum:')
+    print(s)
+}
+test-sum-min()
+
+; from vec-assign.no / vec-assign2.no — []u32 元素讀寫 + sha256-block
+; 頂層片段：直接索引寫入僅在模組作用域合法，保留原語義。
+vaBlock []u32 = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+]
+print('start')
+print('block init done')
+print(vaBlock[0])
+print(vaBlock[15])
+vaBlock[0] = 1
+vaBlock[1] = 2
+print('assign done')
+print(vaBlock[0])
+print(vaBlock[1])
+vaH0 u32 = 1779033703
+vaH1 u32 = 3144134277
+vaH2 u32 = 1013904242
+vaH3 u32 = 2773480762
+vaH4 u32 = 1359893119
+vaH5 u32 = 2600822924
+vaH6 u32 = 528734635
+vaH7 u32 = 1541459225
+sha256.sha256-block(vaBlock, vaH0, vaH1, vaH2, vaH3, vaH4, vaH5, vaH6, vaH7)
+print('sha256-block done')
+print(vaH0)
+print('done')
+
+; from vec-u32-read.no — 驗證 []u32 元素讀取回傳正確值
+urBlock []u32 = [
+    1633837952, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 24,
+]
+print('start')
+print(urBlock[0])
+print(urBlock[15])
+print('done')
+
+; from u32-vec.no — 測試 []u32 數組字面量寫入
+uvBlock []u32 = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+]
+print('start')
+print('after init')
+uvBlock[0] = 0x12345678
+print(uvBlock[0])
+print('done')
+
+; from vec-len.no — []byte 的 len 欄位與寫入增長
+vlMsg []byte = with-cap(2)
+print('start')
+print('before len')
+vlN = vlMsg.len()
+print('after len')
+print(vlN)
+vlMsg[0] = 0x61
+vlMsg[1] = 0x62
+vlN = vlMsg.len()
+print(vlN)
+print('done')
+
+; from vec-push-clear.no — vec.push 與 vec.clear
+data []i64
+print('start')
+print('vec declared')
+data.push(10)
+data.push(20)
+data.push(30)
+print('pushed 3 elements')
+print(data.len())
+print(data[0])
+print(data[1])
+print(data[2])
+data.clear()
+print('cleared')
+print(data.len())
+data.push(40)
+data.push(50)
+print('pushed 2 after clear')
+print(data.len())
+print(data[0])
+print(data[1])
+print('done')
+
+; from vec-str-to-str.no — []str.to-str 依長度格式化且不得崩潰
+sstA = ['a', 'b', 'c']
+print(sstA.to-str())
+sstV = ['hello', 'world', 'foo']
+print(sstV[0])
+print(sstV.to-str())
+
+; from vec-to-str-flaky.no — 多元素 []i64.to-str 必須確定性正確
+flakyV []i64 = with-cap(8)
+flakyV.push(1)
+flakyV.push(2)
+flakyV.push(3)
+flakyV.push(10)
+flakyV.push(20)
+flakyV.push(256)
+print(flakyV.to-str())

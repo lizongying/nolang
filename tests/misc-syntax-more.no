@@ -1,0 +1,578 @@
+; misc-syntax-more — 合併自各語法/控制流殘片小件（heavy dedup）
+;
+; 每個原件以模組級片段串接，頂層符號（函式／全域／迴圈變數）加 per-file 前綴避免衝突；
+; 字串與註解內容不動。保留獨立：bool-render(struct 型別)、ifelse(頂層未加括號 else)、
+; guard(具名格式欄位 {q}/{q2} 綁定區域變數，改檔會破壞插值)、
+; diff-debug / minimal-ok(被 src 引用)。
+;
+; ── from tests/basic.no ──
+; basic.no — 核心編譯驗證
+
+; 兩數較大者（改用 a-b 的符號判斷，避免直接比較時的溢出）
+; a i64: 第一個運算元
+; b i64: 第二個運算元
+; r i64: 較大的運算元（兩者相等時為 b）
+b-i64-max = (a i64, b i64) (r i64) {
+
+    #{overflow=wrap}
+    d = a - b
+    {
+        d > 0 -> r = a
+
+        -> r = b
+    }
+}
+
+; 兩數較小者（同樣靠 a-b 的符號判斷）
+; a i64: 第一個運算元
+; b i64: 第二個運算元
+; r i64: 較小的運算元（兩者相等時為 a）
+b-i64-min = (a i64, b i64) (r i64) {
+
+    #{overflow=wrap}
+    d = a - b
+    {
+        d > 0 -> r = b
+
+        -> r = a
+    }
+}
+
+; 取絕對值 i64（i64.MIN 因溢出回繞仍為自身）
+; a i64: 來源數值，可為負
+; r i64: a >= 0 時為 a，否則為 0 - a
+b-abs-i64 = (a i64) (r i64) {
+    {
+        a < 0 -> {
+
+            #{overflow=wrap}
+            r = 0 - a
+        }
+
+        -> r = a
+    }
+}
+
+; 歐幾里得演算法求最大公因數：先取絕對值，再輾轉相除
+; a i64: 第一個整數，允許負數
+; b i64: 第二個整數，允許負數
+; r i64: |a| 與 |b| 的最大公因數；其中一個為 0 時取另一個的絕對值
+b-gcd = (a i64, b i64) (r i64) {
+    ra = a
+    rb = b
+    (ra < 0) {
+
+        #{overflow=wrap}
+        ra = 0 - ra
+    }
+    (rb < 0) {
+
+        #{overflow=wrap}
+        rb = 0 - rb
+    }
+    (rb != 0) {
+        t = rb
+        rb = ra % rb
+        ra = t
+    }
+    r = ra
+}
+
+; 驅動函式：依次呼叫上面四個函式並印出結果（無輸出參數，自驗端到端可用）
+b-caller = () {
+    r = 0
+
+    r = b-i64-max(10, 20)
+    print(r)
+
+    r = b-i64-min(10, 20)
+    print(r)
+
+    r = b-abs-i64(-42)
+    print(r)
+
+    r = b-gcd(12, 18)
+    print(r)
+
+    print('ok: all tests done')
+}
+b-caller()
+
+; ── from tests/bool-debug.no ──
+; bool-debug.no — 調試 str.to-bool
+boold-test-bool-true = () {
+    s = 'true'
+    b = s.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+
+; 測試 bool-false
+boold-test-bool-false = () {
+    s = 'false'
+    b = s.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+boold-test-bool-true()
+boold-test-bool-false()
+
+; ── from tests/bool-direct.no ──
+; bool-direct.no — 調試 str.to-bool 直接調用
+booldir-test1 = () {
+    b = 'true'.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+booldir-test1()
+
+; ── from tests/bool-print.no ──
+; minimal test: print bool literal
+print(true)
+print(false)
+
+; ── from tests/dup.no ──
+; 測試 func
+dupf-test-func = () {
+    i = 0
+    i = 0
+}
+
+; ── from tests/duplicate.no ──
+dupl-A = 0
+; 'A' already declared in this scope
+; A = 1
+;;
+rerere
+;;
+
+; ── from tests/func-simple.no ──
+fcs-s = 'hello'
+fcs-n = fcs-s.len-bytes()
+print(fcs-n)
+
+fcs-c = fcs-s[0]
+print(fcs-c)
+
+fcs-c2 = fcs-s[1]
+print(fcs-c2)
+
+fcs-a = 'foo' - 'bar'
+print(fcs-a)
+
+fcs-b = fcs-s[1..4]
+print(fcs-b.len-bytes())
+
+print(-1)
+
+; ── from tests/func1.no ──
+; 泛型最小範例：兩參數比較後回傳較小者（型別參數 t 在呼叫點單態化）
+; a t: 第一個運算元，型別由呼叫點決定
+; b t: 第二個運算元，必須與 a 同型別
+; r t: 較小的值（兩者相等時為 a）
+fc1-min = (a t, b t) (r t) {
+    r = a > b ? b : a
+}
+
+; ── from tests/if-str.no ──
+; if 表達式形式：條件為真時取 then 區塊的值 'hello'，否則取 'world'，結果存進 r 再印出
+ifstr-test1 = () {
+    r = if 1 {
+        'hello'
+    } else {
+        'world'
+    }
+    print(r)
+}
+ifstr-test1()
+
+; ── from tests/if1.no ──
+if1-sum = 10
+if1-max = if1-sum > 10 ? if1-sum : 10
+
+; ── from tests/if2.no ──
+if2-sum = 0
+
+if2-max = 10
+
+; ── from tests/ifelse2.no ──
+; test-ifelse2: test if-else with block
+
+; # std/str
+
+ife2-x = 5
+
+{
+    ife2-x == 5 -> print('five')
+
+    -> print('not five')
+}
+ife2-x = 10
+
+{
+    ife2-x == 5 -> print('five')
+
+    -> print('not five')
+}
+
+; ── from tests/let.no ──
+lt-a = 1
+
+; ── from tests/min-u8-bool-minimal.no ──
+; 最小化測試：to-u8
+m8-test-u8-ok = () {
+    n = '255'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u8-fail
+m8-test-u8-fail = () {
+    n = '256'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u8-zero
+m8-test-u8-zero = () {
+    n = '0'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u8-bool-true
+m8-test-u8-bool-true = () {
+    b = 'true'.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+
+; 測試 u8-u32
+m8-test-u8-u32 = () {
+    n = '4294967295'.to-u32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u8-u32-overflow
+m8-m8-test-u8-u32-overflow = () {
+    n = '4294967296'.to-u32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+m8-test-u8-ok()
+m8-test-u8-fail()
+m8-test-u8-zero()
+m8-test-u8-bool-true()
+m8-test-u8-u32()
+m8-m8-test-u8-u32-overflow()
+
+; ── from tests/minimal.no ──
+; test-minimal — 最小測試
+print('hello')
+
+; ── from tests/minimal-it.no ──
+; minimal-it.no — 最小化 it 測試
+mit-test-it = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 0
+
+        nil -> 0
+
+        -> 0
+    }
+    print(r)
+}
+mit-test-it()
+
+; ── from tests/minimal-it2.no ──
+; minimal-it2.no — 測試 it 後續有其他函數
+mit2-test-val-it = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 0
+
+        nil -> 0
+
+        -> 0
+    }
+    print(r)
+}
+
+; 測試 other
+mit2-test-other = () {
+    print('other')
+}
+mit2-test-val-it()
+mit2-test-other()
+
+; ── from tests/move.no ──
+; 單一輸出參數：體內寫入 1，用於驗證輸出參數 move 給呼叫方變數
+; res i8: 固定寫入 1 的輸出參數
+mv-foo = () (mv-res i8) {
+    mv-res = 1
+}
+
+; 兩側輸出參數：a 與 b 型別不同，用於驗證一次可 move 回多個值
+; a i8: 固定寫入 2 的第一個輸出
+; b i16: 固定寫入 3 的第二個輸出
+mv-bar = () (a i8, b i16) {
+    a = 2
+    b = 3
+}
+
+; 先定义res i8 i8初始0值
+; foo 赋值1 
+mv-res = mv-foo()
+
+; 第二次调用，res已经有值，是新赋值
+; foo 赋值1 
+mv-res = mv-foo()
+mv-res, res1 = mv-bar()
+
+; ── from tests/move1.no ──
+; 單一輸出參數：res 取自區域變數 x 的當下值，函式結束時才 move 給呼叫方
+; res i64: 固定寫入 1 的輸出參數
+mv1-foo = () (mv1-res i64) {
+    x = 1
+    mv1-res = x
+    print(x)
+}
+
+; 返回值延迟move，函数结束时move。
+; 所以a == 4
+; 这里由于b也=x  所以a、b实际是一个值
+; a i64: 讀 x 第一次的值 1（之後 x 改為 4 不影響它）
+; b i64: 讀 x 第二次的值 4（證明輸出是 move 當下快照）
+mv1-bar = () (a i64, b i64) {
+    x = 1
+    a = x
+    print(x)
+    x = 4
+    b = x
+    print(x)
+}
+
+; 先定义res i8 i8初始0值
+; foo 赋值1 
+mv1-res = mv1-foo()
+
+; 第二次调用，res已经有值，是新赋值
+; foo 赋值1 
+mv1-res = mv1-foo()
+mv1-res, res1 = mv1-bar()
+
+; ── from tests/move2.no ──
+; 字串輸出參數：把輸入 x 搬到輸出 res（呼叫方變數重複賦值不得造成懸垂）
+; x str: 來源字串（只讀）
+; res str: 與 x 內容相同的字串
+mv2-foo = (mv2-x str) (mv2-res str) {
+    mv2-res = mv2-x
+    print(mv2-x)
+}
+
+; 先定义res 
+; foo 赋值''
+mv2-res = mv2-foo('')
+
+; 第二次调用，res已经有值，是新赋值
+; foo 赋值
+mv2-x = 'a'
+mv2-res = mv2-foo(mv2-x)
+
+; ── from tests/oob-ok.no ──
+oob-arr = [1, 2, 3]
+print(oob-arr[0])
+print(oob-arr[1])
+print(oob-arr[2])
+
+#{overflow=wrap}
+print(oob-arr[2 - 1])
+
+#{overflow=wrap}
+print(oob-arr[1 + 1])
+
+oob-s = 'hello'
+print(oob-s[0])
+print(oob-s[4])
+
+oob-v = [10, 20, 30]
+print(oob-v[0])
+print(oob-v[2])
+oob-v[1] = 99
+print(oob-v[1])
+
+; ── from tests/q.no ──
+; 測試 match
+qq-test-match = () {
+    n = 42
+}
+qq-test-match()
+
+; ── from tests/simple.no ──
+print('hello world')
+
+; ── from tests/zz-min-cond3.no ──
+zmc-ka = ''
+
+zmc-i <- [0..4): {
+    zmc-ka = zmc-ka - 'x' - ' '
+}
+zmc-kb = ''
+
+zmc-i <- [0..4): {
+    zmc-kb = zmc-kb - 'y' - ' '
+}
+{
+    zmc-ka == zmc-kb -> print('eq')
+
+    zmc-ka != zmc-kb -> print('ne')
+}
+
+; ── from tests/zz-pushtest.no ──
+zpt-v []str
+zpt-s = 'hello'
+zpt-v.push(zpt-s)
+print(zpt-v[0])
+
+; ── from tests/zz-strindex-lint.no ──
+; zz-strindex-lint.no — 驗證 s[i] 性能告警（STR_INDEX_COMPLEXITY）的**不告警**侧
+;   - 單獨一次 s[i]（循环外）：不告警（即使非 ASCII）
+;   - 手動按下標遍歷但串可證明 ASCII：for j <- [0..a.count()): { x = a[j] } → 不告警
+;   - 直接遍歷字符串 for c <- s：無 s[i]，不告警（內部按碼點迭代）
+;   - 字節訪問 s.byte(i)：不是 IndexExpression，不告警（非 ASCII 串按下標遍歷的推荐寫法）
+;
+; ⚠️ 本語料已不再保留「故意違規」的分支：告警側（未證明 ASCII 的 str 在迴圈內
+; 用 s[i]）由 Go 單測 src/checker/str_index_complexity_test.go 把守——
+;   TestStrIndexComplexity_FiresForUnprovenAsciiParam（該報的要報）
+;   TestStrIndexComplexity_NotSuppressedByOtherFunction（真正的回歸守衛：同名
+;     變數不得跨作用域消音；修復前 FAIL）
+;   TestStrIndexComplexity_TopLevelNonAsciiLiteral
+; 語料裡留一條「必然告警」的寫法會讓 `no vet tests` 永遠非零退出，反而使
+; CI 門禁失去意義，故改由單測承擔覆蓋。
+zsi-test-str-index-lint = () {
+
+    ; ASCII 字面量：a[i] 單獨一次，不告警
+    a = 'hello'
+    xa char = a[1]
+
+    ; 非 ASCII 字面量（é 多字節）：b[i] 單獨一次，不告警（不在循环里）
+    b = 'héllo'
+    yb char = b[1]
+
+    ; 標識符傳播：c 繼承 b 的非 ASCII，c[i] 單獨一次，不告警
+    c = b
+    zc char = c[2]
+
+    ; 手動按下標遍歷 非 ASCII 串 → 走字節訪問逃生舱 s.byte(i)，不告警
+    sum-b = 0
+    i <- [0..b.count()): {
+        _ = b.byte(i)
+
+        #{overflow=wrap}
+        sum-b = sum-b + 1
+    }
+    print(sum-b)
+
+    ; 手動按下標遍歷 ASCII 串 → 不告警（可證明 ASCII，O(1)）
+    sum-a = 0
+    j <- [0..a.count()): {
+        ch2 char = a[j]
+
+        #{overflow=wrap}
+        sum-a = sum-a + 1
+    }
+    print(sum-a)
+
+    ; 直接遍歷字符串：無 s[i]，不告警
+    sum-c = 0
+    cc <- b: {
+
+        #{overflow=wrap}
+        sum-c = sum-c + 1
+    }
+    print(sum-c)
+
+    ; 字節訪問逃生舱：不是 IndexExpression，不告警
+    w = b.byte(0)
+
+    print(xa)
+    print(yb)
+    print(zc)
+    print(w)
+}
+zsi-test-str-index-lint()
+

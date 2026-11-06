@@ -1,7 +1,0 @@
-; 測試 arr-clone
-test-arr-clone = () {
-    a [3] = [10, 20, 30]
-    b = a.clone()
-    print(b[0])
-}
-test-arr-clone()

@@ -1,3 +1,0 @@
-; test: print arr.max() (returns t = i64)
-a [3] = [1, 2, 3]
-print(a.max())

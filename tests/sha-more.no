@@ -1,0 +1,80 @@
+; sha-more — 合併自同簇 sha 小件（heavy dedup）
+;
+; 每個原件頂層符號逐字搬入並加前綴避免衝突；皆為模組級片段（含 write-grows 直接索引寫）。
+; 保護/重件保留獨立：sha256.no、sha256-block-abc.no、i-sha256.no、sha3.no(引用清單)、
+; aes-vectors.no(golden)。sha256-block.no / sha256-min.no 輸出已被 sha256.no +
+; sha256-block-abc.no 完全覆蓋，直接刪除。
+
+; from sha256-only.no — import 探針（僅印一行）
+print('sha256 import ok')
+
+; from sha1-minimal.no — std sha1("abc")
+; # std/crypto/sha1
+sh1-data []byte = [0x61, 0x62, 0x63]
+sh1-hash = sha1.sha1(sh1-data)
+
+print('sha1(abc)=')
+sh1-i <- [0..20): {
+    print('{sh1-hash[sh1-i]:02x}')
+}
+print('')
+
+; from sha256-simplified.no — 簡化版 sha256 補齊前幾步
+; # std/crypto/sha256
+print('start')
+sgs-msg []byte = with-cap(3)
+sgs-msg[0] = 0x61
+sgs-msg[1] = 0x62
+sgs-msg[2] = 0x63
+
+sgs-dlen = 3
+print('dlen')
+print(sgs-dlen)
+
+#{overflow=wrap}
+sgs-bit-len = sgs-dlen * 8
+print('bit-len')
+print(sgs-bit-len)
+
+; 取餘 val-opt
+; dlen 為前面的資料長度（位元組）；(dlen + 9) % 64 是補上 0x80 與 8 位元組長度後的餘數
+sgs-mod-val-opt = (sgs-dlen + 9) % 64
+sgs-mod-val = 0
+sgs-mod-val-opt: {
+    ok -> sgs-mod-val = it
+
+    ->
+}
+print('mod-val')
+print(sgs-mod-val)
+
+sgs-pad-len = 0
+
+#{overflow=wrap}
+sgs-mod-val != 0 -> sgs-pad-len = 64 - sgs-mod-val
+print('pad-len')
+print(sgs-pad-len)
+
+#{overflow=wrap}
+sgs-total-len = sgs-dlen + 1 + sgs-pad-len + 8
+print('total-len')
+print(sgs-total-len)
+
+; 測試 padded []byte
+sgs-padded []byte = with-cap(sgs-total-len)
+sgs-i <- [0..sgs-total-len): {
+    sgs-padded[sgs-i] = 0
+}
+print('padded init done')
+
+; 複製原始資料
+sgs-j <- [0..sgs-dlen): {
+    sgs-padded[sgs-j] = sgs-msg[sgs-j]
+}
+print('copy done')
+
+; 填充 0x80
+sgs-padded[sgs-dlen] = 128
+print('0x80 done')
+
+print('done')

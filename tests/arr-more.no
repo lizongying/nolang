@@ -1,0 +1,608 @@
+; test-arr — 測試 [n]t 陣列操作
+;
+; 覆蓋 arr.no 中所有方法：
+;   - len, clone, eq, fill, reverse, contains, to-vec
+;   - max, min, sum, index-of, first, last
+;   - sort-asc, sort-desc
+;   - swap, count, at, to-str (新增)
+;
+; 注意：避免 format string（預存在 bug），改用多個 print 輸出。
+;
+; 本檔由 arr-test.no 改名並吸收以下同主題碎檔（重度合併，2026-11）：
+;   arr-at1 arr-byte arr-c1..c4 arr-cl1 arr-clone-method arr-ct1 arr-d1..d3
+;   arr-e1..e3 arr-eq1 arr-explicit-type arr-f1..f3 arr-field-lit arr-fl1
+;   arr-g1..g3 arr-h1 arr-half1 arr-half2 arr-i1 arr-i2 arr-j1 arr-j2 arr-k1
+;   arr-k2 arr-len-print arr-len1 arr-max-print arr-max-var arr-minimal
+;   arr-minimal2 arr-print-minimal arr-print2 arr-print3 arr-q1 arr-q2
+;   arr-range arr-reverse-void arr-slice arr-ts1
+; 吸收件中被引用保留：arr.no（CI 錨點）、arr-test-tmp.no、arr-at-minimal.no、
+;   arr-c2.no、arr-slice.no 之外另見保護名單；重複场景已去重，
+;   独有形态以 test-arr-* 變體函數保留於檔尾。
+
+; ═══════════════════════════════════════════════
+; 陣列長度
+; ═══════════════════════════════════════════════
+test-arr-len = () {
+    a [3] = [10, 20, 30]
+    print(a.len())
+}
+
+; ═══════════════════════════════════════════════
+; 複製陣列
+; ═══════════════════════════════════════════════
+test-arr-clone = () {
+    a [3] = [10, 20, 30]
+    b = a.clone()
+    print(b[0])
+    print(b[1])
+    print(b[2])
+}
+
+; ═══════════════════════════════════════════════
+; 陣列相等比較
+; ═══════════════════════════════════════════════
+test-arr-eq = () {
+    a [3] = [10, 20, 30]
+    b [3] = [10, 20, 30]
+    c [3] = [10, 20, 31]
+    yes = a.eq(b)
+    no = a.eq(c)
+    print(yes)
+    print(no)
+}
+
+; ═══════════════════════════════════════════════
+; 填充陣列
+; ═══════════════════════════════════════════════
+test-arr-fill = () {
+    a [3] = [0, 0, 0]
+    a.fill(99)
+    print(a[0])
+    print(a[1])
+    print(a[2])
+}
+
+; ═══════════════════════════════════════════════
+; 反轉陣列
+; 註：變量名用 arr 而非 a，避免與其他函數中 a [3] 產生 vet 作用域混淆
+; ═══════════════════════════════════════════════
+test-arr-reverse = () {
+    arr [4] = [1, 2, 3, 4]
+    arr.reverse()
+    print(arr[0])
+    print(arr[1])
+    print(arr[2])
+    print(arr[3])
+}
+
+; ═══════════════════════════════════════════════
+; 是否包含值
+; ═══════════════════════════════════════════════
+test-arr-contains = () {
+    a [3] = [1, 2, 3]
+    yes = a.contains(2)
+    no = a.contains(99)
+    print(yes)
+    print(no)
+}
+
+; ═══════════════════════════════════════════════
+; 轉為切片
+; ═══════════════════════════════════════════════
+test-arr-to-vec = () {
+    a [3] = [10, 20, 30]
+    v = a.to-vec()
+    print(v[0])
+    print(v[1])
+    print(v[2])
+}
+
+; ═══════════════════════════════════════════════
+; 最大值、最小值、總和
+; ═══════════════════════════════════════════════
+test-arr-max-min-sum = () {
+    a [5] = [3, 1, 4, 1, 5]
+    mx = a.max()
+    mn = a.min()
+    s = a.sum()
+    print(mx)
+    print(mn)
+    print(s)
+}
+
+; ═══════════════════════════════════════════════
+; 索引查找
+; ═══════════════════════════════════════════════
+test-arr-index-of = () {
+    a [3] = [1, 2, 3]
+    i1 = a.index-of(2)
+    i2 = a.index-of(99)
+    print(i1)
+    print(i2)
+}
+
+; ═══════════════════════════════════════════════
+; 首尾元素
+; ═══════════════════════════════════════════════
+test-arr-last-first = () {
+    a [3] = [10, 20, 30]
+    f = a.first()
+    l = a.last()
+    print(f)
+    print(l)
+}
+
+; ═══════════════════════════════════════════════
+; 升序排序
+; 註：變量名用 arr 而非 a，避免與其他函數中 a [3] 產生 vet 作用域混淆
+; ═══════════════════════════════════════════════
+test-arr-sort-asc = () {
+    arr [5] = [3, 1, 4, 1, 5]
+    arr.asc()
+    print(arr[0])
+    print(arr[1])
+    print(arr[2])
+    print(arr[3])
+    print(arr[4])
+}
+
+; ═══════════════════════════════════════════════
+; 降序排序
+; 註：變量名用 arr 而非 a，避免與其他函數中 a [3] 產生 vet 作用域混淆
+; ═══════════════════════════════════════════════
+test-arr-sort-desc = () {
+    arr [5] = [3, 1, 4, 1, 5]
+    arr.desc()
+    print(arr[0])
+    print(arr[1])
+    print(arr[2])
+    print(arr[3])
+    print(arr[4])
+}
+
+; ═══════════════════════════════════════════════
+; 交換元素
+; ═══════════════════════════════════════════════
+test-arr-swap = () {
+    a [3] = [1, 2, 3]
+    a.swap(0, 2)
+    print(a[0])
+    print(a[1])
+    print(a[2])
+}
+
+; ═══════════════════════════════════════════════
+; 統計值出現次數
+; ═══════════════════════════════════════════════
+test-arr-count = () {
+    a [5] = [1, 2, 1, 3, 1]
+    c1 = a.count(1)
+    c2 = a.count(99)
+    print(c1)
+    print(c2)
+}
+
+; ═══════════════════════════════════════════════
+; 安全索引訪問
+; ═══════════════════════════════════════════════
+test-arr-at = () {
+    a [3] = [1, 2, 3]
+    v0 = a.at(0)
+    v5 = a.at(5)
+    v-1 = a.at(-1)
+    v0: {
+        nil -> print('nil')
+
+        -> print('ok')
+    }
+    v5: {
+        nil -> print('nil')
+
+        -> print('ok')
+    }
+    v-1: {
+        nil -> print('nil')
+
+        -> print('ok')
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 字串表示
+; ═══════════════════════════════════════════════
+test-arr-to-str = () {
+    a [3] = [1, 2, 3]
+    s = a.to-str()
+    print(s)
+}
+
+; ═══════════════════════════════════════════════
+; 吸收變體（自 arr-*.no 碎檔）
+; ═══════════════════════════════════════════════
+
+; from arr-at1.no：直接 print option 結果
+print-arr-at = () {
+    xs [3] = [1, 2, 3]
+    print(xs.at(0))
+    print(xs.at(5))
+    print(xs.at(-1))
+}
+
+; from arr-byte.no：[32]byte 固定陣量宣告後下標寫入（函數域内需 place-match 寫回）
+test-arr-byte = () {
+    print('start')
+    b [32]byte
+    print('before assign')
+    b[0]: {
+        ok -> it = 0x42
+        -> _
+    }
+    print('after assign')
+    v = b[0]
+    v: {
+        ok -> print(it)
+        -> print('nil')
+    }
+    print('done')
+}
+
+; from arr-clone-method.no / arr-explicit-type.no：推斷 arr 後 clone 取元素
+test-arr-clone-infer = () {
+    src = [1, 2, 3]
+    dst = src.clone()
+    print(dst[0])
+    print(dst[1])
+    print(dst[2])
+}
+
+; from arr-field-lit.no：結構體定長陣列欄位字面量
+test-arr-field-lit = () (ok bool) {
+    ok = false
+    o = oid {
+        id: [1, 2, 3]
+        n: [10, 20, 30]
+    }
+    o.id[0] != 1 -> return
+    o.id[1] != 2 -> return
+    o.id[2] != 3 -> return
+    o.n[0] != 10 -> return
+    o.n[1] != 20 -> return
+    o.n[2] != 30 -> return
+    ok = true
+}
+
+oid {
+    id [3]byte
+    n [3]i64
+}
+
+; from arr-j1.no / arr-j2.no：[5] 宣告取中間元素
+test-arr-index-mid = () {
+    a [5] = [1, 2, 3, 4, 5]
+    print(a[3])
+}
+
+; from arr-len-print.no：print 直接嵌 arr.len()
+test-arr-len-expr = () {
+    a [3] = [1, 2, 3]
+    print(a.len())
+}
+
+; from arr-max-print.no / arr-max-var.no：print 嵌 max() 與先賦變量兩式
+test-arr-max = () {
+    a [3] = [1, 2, 3]
+    print(a.max())
+    m = a.max()
+    print(m)
+}
+
+; from arr-minimal.no / arr-minimal2.no：print 直接嵌 contains()
+test-arr-contains-expr = () {
+    a [3] = [1, 2, 3]
+    print(a.contains(2))
+}
+
+; from arr-print-minimal.no / arr-print2.no / arr-print3.no：陣量打印三式
+test-arr-print = () {
+    arr [3] = [1, 2, 3]
+    print('array:', arr)
+    print(arr)
+    s0 = arr[0]
+    print(s0)
+}
+
+; from arr-q2.no：print 直接嵌 count()
+test-arr-count-expr = () {
+    a [5] = [1, 2, 1, 3, 1]
+    print(a.count(1))
+    print(a.count(99))
+}
+
+; from arr-range.no：容器遍歷固定陣量
+test-arr-iterate = () {
+    a [3] = [1, 2, 3]
+    i <- a: {
+        print(i)
+    }
+}
+
+; from arr-reverse-void.no：[3] 反轉取首元素（不同於 [5] 主用例）
+test-arr-reverse-void = () {
+    a [3] = [1, 2, 3]
+    a.reverse()
+    print(a[0])
+}
+
+; from arr-f1.no 等：asc 後只打首元素
+test-arr-sort-asc-first = () {
+    a [5] = [3, 1, 4, 1, 5]
+    a.asc()
+    print(a[0])
+}
+
+; from arr-k1.no / arr-h1.no：asc 後只打中段元素
+test-arr-sort-asc-mid = () {
+    a [5] = [3, 1, 4, 1, 5]
+    a.asc()
+    print(a[3])
+}
+
+; from arr-g1.no：asc 後打首+中段兩元素
+test-arr-sort-asc-two = () {
+    a [5] = [3, 1, 4, 1, 5]
+    a.asc()
+    print(a[0])
+    print(a[3])
+}
+
+; from arr-i1.no / arr-i2.no：print 直接嵌 index-of()
+test-arr-index-of-expr = () {
+    b [3] = [1, 2, 3]
+    print(b.index-of(2))
+}
+
+; from arr-i2.no：print 直接嵌 first()
+test-arr-first-expr = () {
+    b [3] = [10, 20, 30]
+    print(b.first())
+}
+
+; from arr-f3.no / arr-ts1.no：[5] 元素的 to-str
+test-arr-to-str-5 = () {
+    a [5] = [1, 2, 3, 4, 5]
+    print(a.to-str())
+}
+
+; from arr-slice.no：定長陣量九種切片視圖形态（視圖共享原緩衝）
+test-arr-slice-views = () {
+    a [5] = [10, 20, 30, 40, 50]
+    b = a[..]
+    print(b[0])
+    print(b[1])
+    print(b[2])
+    print(b[3])
+    print(b[4])
+    c = a[2..]
+    print(c[0])
+    print(c[1])
+    print(c[2])
+    d = a[..3]
+    print(d[0])
+    print(d[1])
+    print(d[2])
+    e = a[1..4]
+    print(e[0])
+    print(e[1])
+    print(e[2])
+    f = a[1..4)
+    print(f[0])
+    print(f[1])
+    print(f[2])
+    g = a(1..4]
+    print(g[0])
+    print(g[1])
+    print(g[2])
+    h = a(1..4)
+    print(h[0])
+    print(h[1])
+    i = a[..1)
+    print(i[0])
+    j = a[1..2)
+    print(j[0])
+}
+
+; from arr-param.no：[32]byte 經兩層輸出參數傳遞（重現 X25519 fe-tobytes 前 8 bytes 歸零 bug）
+inner-write = () (s [32]byte) {
+    i <- [0..32): {
+        s[i] = (i + 1) & 255
+    }
+}
+
+outer-call = () (out [32]byte) {
+    out = inner-write()
+}
+
+test-arr-via-inner = () (pass bool) {
+    pass = false
+    arr [32]byte
+    arr = outer-call()
+    i <- [0..8): {
+        expected = (i + 1) & 255
+        arr[i] != expected -> {
+            print('FAIL: via inner byte mismatch')
+            return
+        }
+    }
+    pass = true
+}
+
+inner-write-i64 = (h []i64) (s [32]byte) {
+    i <- [0..32): {
+        s[i] = (h[i % 10]) & 255
+    }
+}
+
+outer-call-i64 = () (out [32]byte) {
+    h []i64 = with-len(10)
+    i <- [0..10): {
+
+        #{overflow=wrap}
+        h[i] = (i + 1) * 10
+    }
+    out = inner-write-i64(h)
+}
+
+test-arr-via-i64 = () (pass bool) {
+    pass = false
+    arr [32]byte
+    arr = outer-call-i64()
+    i <- [0..8): {
+        expected = (i + 1) * 10
+        arr[i] != expected -> {
+            print('FAIL: via i64 byte mismatch')
+            return
+        }
+    }
+    pass = true
+}
+
+; from arr-return.no：[32]byte 作為返回值直接接住 / 經參數填充
+test-arr-direct-return = () (pass bool) {
+    pass = false
+    arr [32]byte
+    arr = fill-bytes()
+    i <- [0..8): {
+        expected = (i + 1) & 255
+        arr[i] != expected -> {
+            print('FAIL: direct return byte mismatch at index')
+            return
+        }
+    }
+    pass = true
+}
+
+fill-bytes = () (out [32]byte) {
+    i <- [0..32): {
+        out[i] = (i + 1) & 255
+    }
+}
+
+fill-bytes-param = () (out [32]byte) {
+    i <- [0..32): {
+        out[i] = (i + 100) & 255
+    }
+}
+
+test-arr-param-pass = () (pass bool) {
+    pass = false
+    arr [32]byte
+    arr = fill-bytes-param()
+    i <- [0..8): {
+        expected = (i + 100) & 255
+        arr[i] != expected -> {
+            print('FAIL: param pass byte mismatch at index')
+            return
+        }
+    }
+    pass = true
+}
+
+; ═══════════════════════════════════════════════
+; 依次調用所有測試函數
+; ═══════════════════════════════════════════════
+test-arr-len()
+print('---')
+test-arr-clone()
+print('---')
+test-arr-eq()
+print('---')
+test-arr-fill()
+print('---')
+test-arr-reverse()
+print('---')
+test-arr-contains()
+print('---')
+test-arr-to-vec()
+print('---')
+test-arr-max-min-sum()
+print('---')
+test-arr-index-of()
+print('---')
+test-arr-last-first()
+print('---')
+test-arr-sort-asc()
+print('---')
+test-arr-sort-desc()
+print('---')
+test-arr-swap()
+print('---')
+test-arr-count()
+print('---')
+test-arr-at()
+print('---')
+test-arr-to-str()
+print('---')
+print-arr-at()
+print('---')
+test-arr-byte()
+print('---')
+test-arr-clone-infer()
+print('---')
+lit-ok = test-arr-field-lit()
+lit-ok == false -> print('FAIL: arr-field-lit')
+lit-ok == true -> print('arr-field-lit passed')
+print('---')
+test-arr-index-mid()
+print('---')
+test-arr-len-expr()
+print('---')
+test-arr-max()
+print('---')
+test-arr-contains-expr()
+print('---')
+test-arr-print()
+print('---')
+test-arr-count-expr()
+print('---')
+test-arr-iterate()
+print('---')
+test-arr-reverse-void()
+print('---')
+test-arr-sort-asc-first()
+print('---')
+test-arr-sort-asc-mid()
+print('---')
+test-arr-sort-asc-two()
+print('---')
+test-arr-index-of-expr()
+print('---')
+test-arr-first-expr()
+print('---')
+test-arr-to-str-5()
+print('---')
+test-arr-slice-views()
+print('---')
+p1 = test-arr-via-inner()
+{
+    p1 == true -> print('PASS: via inner')
+
+    p1 == false -> print('FAIL: via inner')
+}
+p2 = test-arr-via-i64()
+{
+    p2 == true -> print('PASS: via i64')
+
+    p2 == false -> print('FAIL: via i64')
+}
+p3 = test-arr-direct-return()
+{
+    p3 == true -> print('PASS: direct return')
+
+    p3 == false -> print('FAIL: direct return')
+}
+p4 = test-arr-param-pass()
+{
+    p4 == true -> print('PASS: param pass')
+
+    p4 == false -> print('FAIL: param pass')
+}

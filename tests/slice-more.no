@@ -1,0 +1,105 @@
+; slice-more — 合併自同簇 slice/view 小件（heavy dedup）
+;
+; 每個原件頂層符號逐字搬入並加前綴避免衝突；皆為模組級片段。
+; 保護/被 src 引用件保留獨立：slice.no、slice-heavy(hir2mir/codegen)、slice1(analysis)、
+; slice-view-liveness(view_liveness_test)、view-basic(redundant_fix_test/main)、
+; view-optional(codegen)、move-slice(analysis)、slice-option-write(idx_local_monomorph_test)。
+
+; from slice-simple.no — 最小 str.slice 呼叫
+ssc-s = 'hello,world'
+ssc-val = ssc-s.slice(0, 5)
+
+print('slice: ' - ssc-val)
+
+; from slice-open-inclusive.no — 無界上界 + 右閉語義
+; `x[a..]` 與 `x[a..)` 都必須是「從 a 到結尾」，長度相同；`x[..]` 必須等於容器總長。
+soi-v = [10, 20, 30, 40, 50]
+soi-a [5] = [10, 20, 30, 40, 50]
+soi-s = 'HelloWorld'
+soi-t txt = 'HelloWorld'
+
+; vec：到結尾，包含 = 排除 = 從 a 到末尾（4 個元素）
+print(soi-v[1..].len())
+print(soi-v[1..).len())
+print(soi-v(1..].len())
+print(soi-v(1..).len())
+print(soi-v[..].len())
+print(soi-v[..).len())
+
+; arr：同上
+print(soi-a[1..].len())
+print(soi-a[1..).len())
+print(soi-a(..].len())
+print(soi-a[..].len())
+
+; str：到結尾（9 個碼點），全切片 10
+print(soi-s[1..].len())
+print(soi-s[1..).len())
+print(soi-s[..].len())
+
+; txt：與 str 逐字一致
+print(soi-t[1..].len())
+print(soi-t[1..).len())
+print(soi-t[..].len())
+
+; 實際元素：v[1..] 必為 20,30,40,50（不再多讀一個殭屍元素）
+soi-w = soi-v[1..]
+print(soi-w[0], soi-w[1], soi-w[2], soi-w[3])
+
+; 顯式右閉仍舊 +1（未被此修復影響）：v[1..4] = 20,30,40,50（4 個）
+print(soi-v[1..4].len())
+
+; from slice-to-str.no — slice / array 的預設 to-str
+sts-s = ['a', 'b', 'c']
+print(sts-s); expect: [a, b, c]
+
+sts-e []i64 = []
+print(sts-e); expect: []
+
+sts-n = [1, 2, 3]
+print(sts-n); expect: [1, 2, 3]
+
+print('s={sts-s}'); expect: s=[a, b, c]
+print('n={sts-n}'); expect: n=[1, 2, 3]
+
+; from view-slice.no — 區間切片是 view（零拷貝別名），不再是 clone
+; ── 1. 切片是別名：改寫原容器，視圖可見 ──────────────────────
+vs-mk = () (out []i64) {
+    out = [1, 2, 3, 4, 5]
+}
+vs-a = vs-mk()
+vs-b = vs-a[1..3]
+vs-a[1] = 99
+print(vs-b[0]); 99 —— view 與原容器共享存儲（clone 語義下是 2）
+print(vs-b[1]); 3
+
+; ── 2. 逃逸到輸出參數：自動 clone ────────────────────────────
+vs-get-sub = () (out []i64) {
+    src = [10, 20, 30, 40]
+    out = src[1..3]
+}
+vs-v = vs-get-sub()
+print(vs-v[0]); 20
+print(vs-v[1]); 30
+
+; ── 3. 經由變數逃逸：自動 clone ──────────────────────────────
+vs-get-sub2 = () (out []i64) {
+    src = [10, 20, 30, 40]
+    tmp = src[1..3]
+    out = tmp
+}
+vs-v2 = vs-get-sub2()
+print(vs-v2[0]); 20
+print(vs-v2[1]); 30
+
+; ── 4. 源被重新賦值：自動 clone，視圖不懸垂 ──────────────────
+vs-f = () {
+    s = [1, 2, 3, 4, 5]
+    w = s[1..3]
+    s = [9, 9, 9]; 舊 buffer 被釋放，w 必須已是獨立副本
+    print(w[0]); 2
+    print(w[1]); 3
+}
+vs-f()
+
+print('PASS')

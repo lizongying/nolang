@@ -1,3 +1,0 @@
-; minimal test for array print
-arr [3] = [1, 2, 3]
-print('array:', arr)

@@ -1,8 +1,0 @@
-s = 'hello world'
-print(s.len-bytes())
-
-s.clear()
-print(s.len-bytes())
-
-s = ''
-print(s.len-bytes())

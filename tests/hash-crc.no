@@ -1,3 +1,0 @@
-; hash-crc.no
-
-print('hello')

@@ -1,0 +1,159 @@
+; fs-more — 合併自同簇 fs/os 小件（heavy dedup）
+;
+; 保護/重件保留獨立：fs-error-complete(hir2mir)、fs-error-simple(codegen)、fs-struct(hir2mir)、
+; open-perm/open-read(hir2mir/forward_call)、errno-basic(hir2mir/mir)、
+; std-unix-fs-os / std-unix-fs-os-2 / std-net-ext(引用+CI skip 名單)、
+; stat-fields(exit-code 整合斷言測，獨立保留)。
+; 併入：fs-error-final / fs-error-info / fs-open-err / open-write（皆 fs.open 探針）
+;      + mkdtemp/mkstemp/realpath/remove-debug（原檔只定義不成呼叫＝編譯探針，原樣保留）。
+
+; ── from mkdtemp-debug.no — fs.mkdtemp multi-assign 編譯探針（原檔未呼叫）──
+fsm-test-mkdtemp = () {
+    name-opt = fs.mkdtemp('/tmp/test.XXXXXX')
+    name-opt: {
+        ok -> print(it)
+
+        -> print('failed')
+    }
+}
+
+; ── from mkstemp-debug.no — fs.mkstemp multi-assign 編譯探針（原檔未呼叫）──
+fsm-test-mkstemp = () {
+    name, fd = fs.mkstemp('/tmp/test.XXXXXX')
+    {
+        fd >= 0 -> print(name)
+
+        -> print('failed')
+    }
+}
+
+; ── from realpath-debug.no — fs.realpath single-return 編譯探針（原檔未呼叫）──
+fsm-test-realpath = () {
+    abs = fs.realpath('/tmp')
+    print(abs)
+}
+
+; ── from remove-debug.no — fs.remove 編譯探針（原檔未呼叫）──
+fsm-test-remove = () {
+    ok = fs.remove('/tmp/nonexistent-test-file')
+    print(ok)
+}
+
+; ── from fs-error-info.no — 打開不存在檔案後丟棄 option ──
+fe-info-run = () {
+    print('测试: 打开不存在的文件')
+    f ?fs.file = fs.open('/nonexistent/file-12345.txt',  {
+        mode: file-mode.read
+    })
+    _ = f
+    print('结果已获取')
+    print('测试完成')
+}
+
+; ── from fs-open-err.no — fs.open 錯誤信息直接輸出 ──
+fe-open-err-run = () {
+    print('--- 测试 fs.open 错误 ---')
+    print('')
+
+    print('测试: 打开不存在的文件')
+    f ?fs.file = fs.open('/nonexistent/file-test-123.txt',  {
+        mode: file-mode.read
+    })
+    _ = f
+    print('  f 已获取')
+
+    print('')
+    print('--- 测试完成 ---')
+}
+
+; ── from open-write.no — 驗證 open() 寫入 ──
+ow-run = () {
+    tmp = '/tmp/nolang-write-test.txt'
+    fs.remove(tmp)
+
+    f = fs.open(tmp,  {
+        mode: file-mode.write
+        perm: file-perm.perm-600
+        excl: false
+        truncate: false
+        append: false
+    })
+    f: {
+        err -> print('fail: open-write err')
+
+        nil -> print('fail: open-write nil')
+
+        -> {
+            .write-str('hello')
+
+            .close()
+            print('ok: write')
+        }
+    }
+    fs.remove(tmp)
+}
+
+; ── from fs-error-final.no — 綜合：文件操作錯誤信息細分 ──
+fe-final-run = () {
+    print('======================================')
+    print('文件操作错误信息细分测试')
+    print('======================================')
+    print('')
+
+    print('测试 1: 文件不存在')
+    print('  路径: /nonexistent/file-xyz-12345.txt')
+    print('  模式: 只读')
+    f1 ?fs.file = fs.open('/nonexistent/file-xyz-12345.txt',  {
+        mode: file-mode.read
+    })
+    _ = f1
+    print('  f1 已获取')
+    print('')
+
+    print('测试 2: 打开目录')
+    print('  路径: /tmp')
+    print('  模式: 只读')
+    f2 ?fs.file = fs.open('/tmp',  {
+        mode: file-mode.read
+    })
+    _ = f2
+    print('  f2 已获取')
+    print('')
+
+    print('测试 3: 尝试访问受保护的文件')
+    print('  路径: /root/test.txt')
+    print('  模式: 写入')
+    f3 ?fs.file = fs.open('/root/test.txt',  {
+        mode: file-mode.write
+    })
+    _ = f3
+    print('  f3 已获取')
+    print('')
+
+    print('测试 4: 成功创建并写入文件')
+    print('  路径: /tmp/nolang-err-test.txt')
+    print('  模式: 写入')
+    f4 ?fs.file = fs.open('/tmp/nolang-err-test.txt',  {
+        mode: file-mode.write
+        perm: file-perm.perm-644
+    })
+    _ = f4
+    print('  f4 已获取')
+    print('')
+    print('======================================')
+    print('测试完成')
+    print('======================================')
+    print('')
+    print('注意：此测试演示了 fs.open 可以返回错误信息。')
+    print('      实际使用时，可以使用 match 来检查：')
+    print('        f: {')
+    print('            err -> print(\"错误: \" - it)')
+    print('            nil -> print(\"结果: nil\")')
+    print('            -> print(\"成功: \" - it)')
+    print('        }')
+}
+
+fe-info-run()
+fe-open-err-run()
+ow-run()
+fe-final-run()

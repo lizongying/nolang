@@ -1,7 +1,0 @@
-; test-forloop3 — 測試 for 循環變數 (不同名稱)
-print('start')
-cnt <- [0..3): {
-    print('cnt=')
-    print(cnt)
-}
-print('end')

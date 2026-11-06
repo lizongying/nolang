@@ -78,11 +78,12 @@ func TestCachedASTLowersToIdenticalHIR(t *testing.T) {
 
 	// Anti-vacuity: a glob that silently matched nothing, or a corpus that
 	// turned out to be all syntax errors, would make this gate pass forever.
-	if checked < 300 {
-		t.Fatalf("only %d files round-tripped (%d skipped); expected the bulk of the 481-file corpus", checked, skipped)
+	// Floor is ~20% below the 311 top-level files the merged corpus holds.
+	if checked < 250 {
+		t.Fatalf("only %d files round-tripped (%d skipped); expected the bulk of the 311-file corpus", checked, skipped)
 	}
 	// Only claim a clean sweep when there was one — the count alone is not the
-	// verdict (a run can round-trip 481 files and still diverge on 2 of them).
+	// verdict (a run can round-trip 311 files and still diverge on 2 of them).
 	if diverged == 0 {
 		t.Logf("%d files lowered identically from a decoded AST (%d skipped)", checked, skipped)
 	}

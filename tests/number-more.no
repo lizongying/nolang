@@ -1,0 +1,171 @@
+; number-more — 合併自同簇 number/int 邊角小件（heavy dedup）
+;
+; 每個原件的頂層符號（函式名／全域）加 per-file 前綴避免衝突，其餘逐字保留；
+; 原件為「模組級函式定義＋頂層呼叫」結構，故以模組級片段串接而非包成函式。
+; 保護/被 src 引用件保留獨立：number-div-mod-clamp(hir2mir)、number-generic(ast_write_gate_test)、
+; strconv(hir2mir)、push-narrow(funcargs/std_method_arg_test)。
+;
+; ── from tests/edge-i64.no ──
+; ===== 边界: i64 极值 =====
+edge-test-edge-i64 = () {
+    n = 9223372036854775807
+    s = n.to-str()
+    print(s); 期望: 9223372036854775807
+
+    n = -9223372036854775807 - 1
+    s = n.to-str()
+    print(s); 期望: -9223372036854775808
+}
+
+; ===== 运行测试 =====
+edge-test-edge-i64()
+
+; ── from tests/i64-max.no ──
+; 测试 i64.to-str 边界值
+i64max-test-9223372036854775807 = () {
+    n = 9223372036854775807
+    s = n.to-str()
+    print(s)
+}
+i64max-test-9223372036854775807()
+
+; ── from tests/i64-min.no ──
+; 测试 i64.to-str 边界值
+i64min-test-min-i64 = () {
+    s = (-9223372036854775807 - 1).to-str()
+    print(s)
+}
+i64min-test-min-i64()
+
+; ── from tests/i8-debug.no ──
+; i8-debug.no — 調試 str.to-i8
+i8d-test-to-i8-127 = () {
+    s = '127'
+    n = s.to-i8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i8-minmax
+i8d-test-to-i8-minmax = () {
+
+    ; 直接測試 i8.MIN 和 i8.MAX 常數
+    {
+        i8.MIN == -128 -> print('i8.MIN ok')
+
+        -> print('i8.MIN bad')
+    }
+    {
+        i8.MAX == 127 -> print('i8.MAX ok')
+
+        -> print('i8.MAX bad')
+    }
+}
+
+; 測試 to-i8-range
+i8d-test-to-i8-range = () {
+    n = 127
+    {
+        n >= i8.MIN && n <= i8.MAX -> print('127 in range')
+
+        -> print('127 not in range')
+    }
+}
+i8d-test-to-i8-127()
+i8d-test-to-i8-minmax()
+i8d-test-to-i8-range()
+
+; ── from tests/i8-debug2.no ──
+; i8-debug2.no — 調試 i8.MIN/MAX 直接訪問
+i8d2-test1 = () {
+    -128 == -128 -> print('-128 == -128 ok') -> print('-128 == -128 bad')
+}
+
+; 讀取 i8.MIN：-128 經型別映射取回仍須是 -128（不得因字面量邊界變成 127）
+i8d2-test2 = () {
+
+    ; 嘗試訪問 i8.MIN
+    m = i8.MIN
+    {
+        m == -128 -> print('i8.MIN access ok')
+
+        -> print('i8.MIN access bad')
+    }
+    print(m)
+}
+
+; 讀取 i8.MAX：127 須原樣取回（與 MIN 分開，避免一個錯掩蓋另一個）
+i8d2-test3 = () {
+
+    ; 嘗試訪問 i8.MAX
+    m = i8.MAX
+    {
+        m == 127 -> print('i8.MAX access ok')
+
+        -> print('i8.MAX access bad')
+    }
+    print(m)
+}
+i8d2-test1()
+i8d2-test2()
+i8d2-test3()
+
+; ── from tests/i8-to-str-test.no ──
+; Test i8.to-str directly
+i8s-x i8 = 42
+print(i8s-x.to-str())
+
+; ── from tests/u128-simple.no ──
+; u128 簡易測試：入口由頂層語句自動合成，無需顯式 main。
+
+; ── from tests/u128-types.no ──
+u128t-a u128 = 1
+u128t-b i128 = 1
+
+; ── from tests/minmax-debug.no ──
+; minmax-debug.no — 調試 i8.MIN
+mm-test1 = () {
+    m ?i64 = nil
+    m = -128
+    {
+        m == -128 -> print('var == -128 ok')
+
+        -> print('var == -128 bad')
+    }
+}
+
+; 對照組：直接把 i8.MIN 當值印出（應為 -128），驗證極值常數不經變數也能正確取值
+mm-test2 = () {
+
+    ; 嘗試作為函數定義
+    print(i8.MIN)
+}
+mm-test1()
+mm-test2()
+
+; ── from tests/to-i64-let.no ──
+; 通过 let 变量调用
+t64l-test-let = () {
+    s = '12345'
+    n = s.to-i64()
+    print(n)
+}
+t64l-test-let()
+
+; ── from tests/to-i64-simple.no ──
+; 简单测试 str.to-i64 多位数
+t64s-test-simple = () {
+    s = '12345'
+    n = s.to-i64()
+    print(n); 期望 12345
+}
+t64s-test-simple()
+

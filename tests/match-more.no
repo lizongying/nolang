@@ -1,0 +1,139 @@
+; match-more — 合併自同簇 match 小件（heavy dedup）
+;
+; 保護/重件維持獨立：match-it-scope(CI)、match-err-msg-scalar、match-index-option、
+; match-range-pattern、match-test、option-match、place-write-value-match、simple-match、
+; type-match、tagged-enum-*；以及面積較大、符號衝突風險高的 block-match /
+; match-raw-cond / match-arm-binding-scope / match-type-arm 亦原地保留。
+; match.no 與 option.no 位元組完全相同（option.no 受 CI 引用），故刪 match.no。
+
+; from match-basic.no — 裸 match（只有 catch-all 臂）
+mb-test1 = () {
+    n = 42
+    r = n: {
+        -> 'ok'
+    }
+    print(r)
+}
+
+; from match-2.no — err 臂不命中，落 catch-all 得 ''
+m2-test-match = () {
+    n = 42
+    result = n: {
+        err -> 'err'
+
+        -> ''
+    }
+    print(result)
+}
+
+; from simple-match2.no — 同形簡化
+s2-test1 = () {
+    n = 42
+    r = n: {
+        err -> 'err'
+
+        -> ''
+    }
+    print(r)
+}
+
+; from bare-match.no — 裸 match 分類（結構體方法內）
+bm-tree-set {
+    root i64
+    keys [4]i64
+    left [4]i64
+    right [4]i64
+}
+bm-tree-set.test-match = (key i64) (ok bool) {
+    ok = false
+    cur = .root
+    {
+        key < .keys[cur] -> cur = .left[cur]
+
+        -> cur = .right[cur]
+    }
+    ok = true
+}
+bm-main = () {
+    s = bm-tree-set {}
+    s.root = 0
+    s.keys[0] = 5
+    s.left[0] = -1
+    s.right[0] = -1
+    ok = s.test-match(3)
+    print(ok)
+    print('done')
+}
+
+; from match-it-type-scope.no — 臂內顯式 `?T` 宣告不得汙染 `it` 的型別
+mts-check = (name str, got str, want str) {
+    {
+        got == want -> print('ok: {name}')
+
+        -> print('fail: {name} got=[{got}] want=[{want}]')
+    }
+}
+mts-thing {
+    n i64
+}
+mts-thing.get = () (out ?bool) {
+    out = true
+}
+mts-thing.show = () (out str) {
+    out = 'n=' - .n.to-str()
+}
+mts-mk = () (out ?mts-thing) {
+    out = mts-thing {
+        n: 7
+    }
+}
+mts-main = () {
+    a = mts-mk()
+    got1 = ''
+    a: {
+        nil -> print('a nil')
+
+        err -> print('a err')
+
+        -> {
+            got1 = it.show()
+            w ?bool = it.get()
+            w: {
+                nil -> print('  w nil')
+
+                err -> print('  w err')
+
+                -> got1 = got1 - '|w=' - it.to-str()
+            }
+            got1 = got1 - '|after=' - it.show()
+        }
+    }
+    mts-check('explicit-?T-in-arm', got1, 'n=7|w=true|after=n=7')
+    b = mts-mk()
+    got2 = ''
+    b: {
+        nil -> print('b nil')
+
+        err -> print('b err')
+
+        -> {
+            got2 = it.show()
+            w = it.get()
+            w: {
+                nil -> print('  w nil')
+
+                err -> print('  w err')
+
+                -> got2 = got2 - '|w=' - it.to-str()
+            }
+            got2 = got2 - '|after=' - it.show()
+        }
+    }
+    mts-check('inferred-in-arm', got2, 'n=7|w=true|after=n=7')
+}
+
+mb-test1()
+m2-test-match()
+s2-test1()
+bm-main()
+mts-main()

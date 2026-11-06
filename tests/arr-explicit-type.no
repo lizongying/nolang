@@ -1,4 +1,0 @@
-; test: arr method with explicit type
-a = [1, 2, 3]
-b = a.clone()
-print(b[0])

@@ -1,9 +1,0 @@
-; 只有 catch-all 一臂的 option match：n 為 ok(42) 仍走兜底臂，得到 'ok'
-test1 = () {
-    n ?i64 = 42
-    r = n: {
-        -> 'ok'
-    }
-    print(r)
-}
-test1()

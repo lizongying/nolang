@@ -1,4 +1,0 @@
-v []str
-s = 'hello'
-v.push(s)
-print(v[0])

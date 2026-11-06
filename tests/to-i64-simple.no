@@ -1,7 +1,0 @@
-; 简单测试 str.to-i64 多位数
-test-simple = () {
-    s = '12345'
-    n = s.to-i64()
-    print(n); 期望 12345
-}
-test-simple()

@@ -1,0 +1,490 @@
+; x25519-more — 合併自同簇 x25519-*.no（heavy dedup）
+; # std/crypto/x25519
+;
+; 共享 hex-to-bytes / bytes-eq / print-bytes / key-holder 只保留一份；
+; 每個原件對映為一個带來源註解的測試流程。保護件 x25519-dh.no（完整 DH 流程）
+; 與 x25519-fe-diag.no（fe 對角診斷，配 x25519_fe_diff.py）維持獨立，不併入。
+
+key-holder {
+    priv [32]byte
+    pub [32]byte
+    shared [32]byte
+}
+
+; 將 hex 字串轉為 [32]byte
+; hex-str str: 64 字元 hex 字串（每 2 字元一個位元組）
+; out [32]byte: 解析出的 32 位元組
+hex-to-bytes = (hex-str str) (out [32]byte) {
+
+    ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
+    #{ascii}
+    hex-src = hex-str
+    i <- [0..32): {
+
+        #{overflow=wrap}
+        hi char = hex-src[i * 2]
+
+        #{overflow=wrap}
+        lo char = hex-src[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        {
+            hi >= 48 && hi <= 57 -> {
+                hi-v = hi - 48
+            }
+
+            hi >= 97 && hi <= 102 -> {
+                hi-v = hi - 87
+            }
+
+            hi >= 65 && hi <= 70 -> {
+                hi-v = hi - 55
+            }
+        }
+        {
+            lo >= 48 && lo <= 57 -> {
+                lo-v = lo - 48
+            }
+
+            lo >= 97 && lo <= 102 -> {
+                lo-v = lo - 87
+            }
+
+            lo >= 65 && lo <= 70 -> {
+                lo-v = lo - 55
+            }
+        }
+        out[i] = (hi-v << 4) | lo-v
+    }
+}
+
+; 比較兩個 [32]byte 是否相等
+bytes-eq = (a [32]byte, b [32]byte) (eq bool) {
+    eq = true
+    i <- [0..32): {
+        a[i] != b[i] -> {
+            eq = false
+            break
+        }
+    }
+}
+
+; 印出 bytes
+print-bytes = (label str, a [32]byte) {
+    eprint(label)
+    i <- [0..32): {
+        eprint(' ')
+        eprint(a[i])
+    }
+}
+
+; from x25519-alice-only.no — 只驗證 Alice 公鑰
+x-alice-only = () {
+    alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    eprint('alice-priv: ')
+    i <- [0..32): {
+        eprint(alice-priv[i])
+        eprint(' ')
+    }
+    alice-pub = x25519.x25519-scalarmult-base(alice-priv)
+    eprint('alice-pub: ')
+    i <- [0..32): {
+        eprint(alice-pub[i])
+        eprint(' ')
+    }
+    alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+    ok = bytes-eq(alice-pub, alice-pub-expected)
+    {
+        ok == true -> print('PASS: Alice only')
+
+        ok == false -> print('FAIL: Alice only')
+    }
+}
+
+; from x25519-bob-only.no — 只驗證 Bob 公鑰
+x-bob-only = () {
+    bob-priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
+    eprint('bob-priv: ')
+    i <- [0..32): {
+        eprint(bob-priv[i])
+        eprint(' ')
+    }
+    bob-pub = x25519.x25519-scalarmult-base(bob-priv)
+    eprint('bob-pub: ')
+    i <- [0..32): {
+        eprint(bob-pub[i])
+        eprint(' ')
+    }
+    bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
+    ok = bytes-eq(bob-pub, bob-pub-expected)
+    {
+        ok == true -> print('PASS: Bob only')
+
+        ok == false -> print('FAIL: Bob only')
+    }
+}
+
+; from x25519-alice-twice.no — 相同輸入兩次 scalarmult-base 必得相同結果
+x-alice-twice = () {
+    alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+    alice-pub-1 = x25519.x25519-scalarmult-base(alice-priv)
+    print-bytes('pub-1:', alice-pub-1)
+    ok1 = bytes-eq(alice-pub-1, alice-pub-expected)
+    {
+        ok1 == true -> print('PASS: Alice first call')
+
+        ok1 == false -> print('FAIL: Alice first call')
+    }
+    alice-pub-2 = x25519.x25519-scalarmult-base(alice-priv)
+    print-bytes('pub-2:', alice-pub-2)
+    ok2 = bytes-eq(alice-pub-2, alice-pub-expected)
+    {
+        ok2 == true -> print('PASS: Alice second call')
+
+        ok2 == false -> print('FAIL: Alice second call')
+    }
+    same = bytes-eq(alice-pub-1, alice-pub-2)
+    {
+        same == true -> print('SAME: both calls produce same result')
+
+        same == false -> print('DIFF: calls produce different results')
+    }
+}
+
+; from x25519-global.no — local vs global [32]byte 傳參 scalarmult-base
+x-global = () {
+    local-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    local-pub = x25519.x25519-scalarmult-base(local-priv)
+    expected-pub = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+    ok1 = bytes-eq(local-pub, expected-pub)
+    {
+        ok1 == true -> print('PASS: local priv -> correct pub')
+
+        ok1 == false -> print('FAIL: local priv -> wrong pub')
+    }
+    g-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    eprint('g-priv: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (g-priv[i]).to-str() - ' '
+    }
+    eprint(s)
+    global-pub = x25519.x25519-scalarmult-base(g-priv)
+    eprint('global-pub: ')
+    s = ''
+    i <- [0..32): {
+        s = s - (global-pub[i]).to-str() - ' '
+    }
+    eprint(s)
+    ok2 = bytes-eq(global-pub, expected-pub)
+    {
+        ok2 == true -> print('PASS: global priv -> correct pub')
+
+        ok2 == false -> print('FAIL: global priv -> wrong pub')
+    }
+    ok3 = bytes-eq(local-pub, global-pub)
+    {
+        ok3 == true -> print('PASS: local pub == global pub')
+
+        ok3 == false -> print('FAIL: local pub != global pub (global passing bug)')
+    }
+}
+
+; from x25519-shared.no — Alice/Bob scalarmult-base 與雙向共享金鑰
+x-shared = () {
+    alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    alice-pub = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+    bob-priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
+    bob-pub = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
+    shared-expected = hex-to-bytes('4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742')
+    alice-pub-comp = x25519.x25519-scalarmult-base(alice-priv)
+    print-bytes('alice-pub:', alice-pub-comp)
+    ok1 = bytes-eq(alice-pub-comp, alice-pub)
+    {
+        ok1 == true -> print('PASS: Alice scalarmult-base')
+
+        ok1 == false -> print('FAIL: Alice scalarmult-base')
+    }
+    bob-pub-comp = x25519.x25519-scalarmult-base(bob-priv)
+    print-bytes('bob-pub:', bob-pub-comp)
+    ok2 = bytes-eq(bob-pub-comp, bob-pub)
+    {
+        ok2 == true -> print('PASS: Bob scalarmult-base')
+
+        ok2 == false -> print('FAIL: Bob scalarmult-base')
+    }
+    shared-1 = x25519.x25519-scalarmult(alice-priv, bob-pub)
+    print-bytes('shared-1:', shared-1)
+    ok3 = bytes-eq(shared-1, shared-expected)
+    {
+        ok3 == true -> print('PASS: shared secret (alice-priv, bob-pub)')
+
+        ok3 == false -> print('FAIL: shared secret (alice-priv, bob-pub)')
+    }
+    shared-2 = x25519.x25519-scalarmult(bob-priv, alice-pub)
+    print-bytes('shared-2:', shared-2)
+    ok4 = bytes-eq(shared-2, shared-expected)
+    {
+        ok4 == true -> print('PASS: shared secret (bob-priv, alice-pub)')
+
+        ok4 == false -> print('FAIL: shared secret (bob-priv, alice-pub)')
+    }
+}
+
+; from x25519-minimal.no — 最小重現：先讀 alice-priv 元素再呼叫 scalarmult-base
+xm-min = () (pass bool) {
+    pass = false
+    alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    eprint('alice-priv[0..7]: ')
+    i <- [0..8): {
+        eprint(alice-priv[i])
+        eprint(' ')
+    }
+    alice-pub = x25519.x25519-scalarmult-base(alice-priv)
+    eprint('alice-pub: ')
+    i <- [0..32): {
+        eprint(alice-pub[i])
+        eprint(' ')
+    }
+    alice-pub[0] == 133 -> pass = true
+}
+x-main-minimal = () {
+    p = xm-min()
+    {
+        p == true -> print('PASS: minimal test')
+
+        p == false -> print('FAIL: minimal test')
+    }
+}
+
+; from x25519-struct.no — 結構體欄位 / 函數輸出 作為 scalarmult-base 參數
+xs-struct-field = () (pass bool) {
+    pass = false
+    kh = key-holder {}
+    hex-str = '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a'
+    i <- [0..32): {
+
+        #{overflow=wrap}
+        hi char = hex-str[i * 2]
+
+        #{overflow=wrap}
+        lo char = hex-str[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        {
+            hi >= 48 && hi <= 57 -> {
+                hi-v = hi - 48
+            }
+
+            hi >= 97 && hi <= 102 -> {
+                hi-v = hi - 87
+            }
+
+            hi >= 65 && hi <= 70 -> {
+                hi-v = hi - 55
+            }
+        }
+        {
+            lo >= 48 && lo <= 57 -> {
+                lo-v = lo - 48
+            }
+
+            lo >= 97 && lo <= 102 -> {
+                lo-v = lo - 87
+            }
+
+            lo >= 65 && lo <= 70 -> {
+                lo-v = lo - 55
+            }
+        }
+        kh.priv[i] = (hi-v << 4) | lo-v
+    }
+    kh.pub = x25519.x25519-scalarmult-base(kh.priv)
+    expected = [
+        133, 32, 240, 9, 137, 48, 167, 84,
+        116, 139, 125, 220, 180, 62, 247, 90,
+        13, 191, 58, 13, 38, 56, 26, 244,
+        235, 164, 169, 142, 170, 155, 78, 106,
+    ]
+    eprint('Struct field test pub:')
+    i <- [0..32): {
+        eprint(' ')
+        eprint(kh.pub[i])
+    }
+    match-val = 1
+    i <- [0..32): {
+        (kh.pub[i]) != expected[i] -> {
+            match-val = 0
+            break
+        }
+    }
+    match-val: {
+        0 -> {
+            print('FAIL: struct field scalarmult-base mismatch')
+            return
+        }
+    }
+    pass = true
+}
+xs-func-output = () (pass bool) {
+    pass = false
+    alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    eprint('alice-priv[0..7]: ')
+    i <- [0..8): {
+        eprint(alice-priv[i])
+        eprint(' ')
+    }
+    alice-pub = x25519.x25519-scalarmult-base(alice-priv)
+    expected = [
+        133, 32, 240, 9, 137, 48, 167, 84,
+        116, 139, 125, 220, 180, 62, 247, 90,
+        13, 191, 58, 13, 38, 56, 26, 244,
+        235, 164, 169, 142, 170, 155, 78, 106,
+    ]
+    eprint('Func output test pub:')
+    i <- [0..32): {
+        eprint(' ')
+        eprint(alice-pub[i])
+    }
+    match-val = 1
+    i <- [0..32): {
+        (alice-pub[i]) != expected[i] -> {
+            match-val = 0
+            break
+        }
+    }
+    match-val: {
+        0 -> {
+            print('FAIL: func output scalarmult-base mismatch')
+            return
+        }
+    }
+    pass = true
+}
+x-main-struct = () {
+    p1 = xs-struct-field()
+    {
+        p1 == true -> print('PASS: struct-field scalarmult')
+
+        p1 == false -> print('FAIL: struct-field scalarmult')
+    }
+    p2 = xs-func-output()
+    {
+        p2 == true -> print('PASS: func-output scalarmult')
+
+        p2 == false -> print('FAIL: func-output scalarmult')
+    }
+}
+
+; from x25519-vec.no — RFC 7748 測試向量
+xv-1 = () (pass bool) {
+    pass = false
+    alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    alice-pub = x25519.x25519-scalarmult-base(alice-priv)
+    alice-pub-expected = hex-to-bytes('8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+    ok = bytes-eq(alice-pub, alice-pub-expected)
+    ok == false -> {
+        print('FAIL: Alice public key mismatch')
+        return
+    }
+    print('PASS: Alice public key matches')
+    bob-priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
+    bob-pub-expected = hex-to-bytes('de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f')
+    bob-pub = x25519.x25519-scalarmult-base(bob-priv)
+    ok = bytes-eq(bob-pub, bob-pub-expected)
+    ok == false -> {
+        print('FAIL: Bob public key mismatch')
+        return
+    }
+    print('PASS: Bob public key matches')
+    shared-alice = x25519.x25519-scalarmult(alice-priv, bob-pub)
+    shared-bob = x25519.x25519-scalarmult(bob-priv, alice-pub)
+    ok = bytes-eq(shared-alice, shared-bob)
+    ok == false -> {
+        print('FAIL: shared secrets differ between Alice and Bob')
+        return
+    }
+    print('PASS: shared secrets match between Alice and Bob')
+    shared-expected = hex-to-bytes('4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742')
+    ok = bytes-eq(shared-alice, shared-expected)
+    ok == false -> {
+        print('FAIL: shared secret does not match expected value')
+        return
+    }
+    print('PASS: shared secret matches expected value')
+    pass = true
+}
+x-main-vec = () {
+    p1 = xv-1()
+    {
+        p1 == true -> print('PASS: X25519 RFC 7748 test vector')
+
+        p1 == false -> print('FAIL: X25519 RFC 7748 test vector')
+    }
+}
+
+; from x25519-keypair-diff.no — 不同 seed 產生不同金鑰對 + ECDH 共享金鑰一致
+; 頂層片段：ga-priv[i] 等對 [32]byte 全域的逐位元組寫入僅在模組作用域合法。
+ga-priv [32]byte
+ga-pub [32]byte
+gb-priv [32]byte
+gb-pub [32]byte
+g-shared-a [32]byte
+g-shared-b [32]byte
+state-a = 1785194361761886018
+i <- [0..32): {
+    state-a, r-a = rand(state-a)
+    ga-priv[i] = state-a & 255
+}
+ga-priv[0] = ga-priv[0] & 248
+ga-priv[31] = ga-priv[31] & 127
+ga-priv[31] = ga-priv[31] | 64
+ga-pub = x25519.x25519-scalarmult-base(ga-priv)
+state-b = 1785194361762171965
+i <- [0..32): {
+    state-b, r-b = rand(state-b)
+    gb-priv[i] = state-b & 255
+}
+gb-priv[0] = gb-priv[0] & 248
+gb-priv[31] = gb-priv[31] & 127
+gb-priv[31] = gb-priv[31] | 64
+gb-pub = x25519.x25519-scalarmult-base(gb-priv)
+priv-same = true
+i <- [0..32): {
+    ga-priv[i] != gb-priv[i] -> priv-same = false
+}
+pub-same = true
+i <- [0..32): {
+    ga-pub[i] != gb-pub[i] -> pub-same = false
+}
+{
+    priv-same == true -> print('FAIL: different seeds produce same priv')
+
+    priv-same == false -> print('PASS: different seeds produce different priv')
+}
+{
+    pub-same == true -> print('FAIL: different seeds produce same pub')
+
+    pub-same == false -> print('PASS: different seeds produce different pub')
+}
+g-shared-a = x25519.x25519-scalarmult(ga-priv, gb-pub)
+g-shared-b = x25519.x25519-scalarmult(gb-priv, ga-pub)
+shared-same = true
+i <- [0..32): {
+    g-shared-a[i] != g-shared-b[i] -> shared-same = false
+}
+{
+    shared-same == true -> print('PASS: ECDH shared secrets match')
+
+    shared-same == false -> print('FAIL: ECDH shared secrets mismatch')
+}
+
+x-alice-only()
+x-bob-only()
+x-alice-twice()
+x-global()
+x-shared()
+x-main-minimal()
+x-main-struct()
+x-main-vec()

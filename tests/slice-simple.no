@@ -1,5 +1,0 @@
-; Simple test - just call str.slice
-s = 'hello,world'
-val = s.slice(0, 5)
-
-print('slice: ' - val)

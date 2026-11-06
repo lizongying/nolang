@@ -1,1 +1,0 @@
-print('sha256 import ok')

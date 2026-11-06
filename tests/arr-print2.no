@@ -1,3 +1,0 @@
-; minimal test for multi-arg print with array
-arr [3] = [1, 2, 3]
-print(arr)

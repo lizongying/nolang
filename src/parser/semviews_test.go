@@ -114,9 +114,10 @@ func TestBuildSemViewsMatchesFreshParse(t *testing.T) {
 	}
 
 	// Anti-vacuity #1: a glob that matched nothing, or a corpus that turned out
-	// to be all syntax errors, would let this gate pass forever.
-	if checked < 500 {
-		t.Fatalf("only %d files round-tripped (%d skipped); expected the bulk of the 600-file corpus",
+	// to be all syntax errors, would let this gate pass forever. Floor is ~20%
+	// below the 355 files the merged corpus yields (313 top-level tests + src/std).
+	if checked < 280 {
+		t.Fatalf("only %d files round-tripped (%d skipped); expected the bulk of the corpus",
 			checked, skipped)
 	}
 	// Anti-vacuity #2: if the corpus produced no facts at all, comparing fact

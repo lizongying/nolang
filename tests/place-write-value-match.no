@@ -1,0 +1,62 @@
+; D11 回歸：place-match ok 臂裡 `it = <值 match>` 必須真的寫回元素位置。
+;
+; 修復前 a[i] 會保持原值：合成指派 `it = <SurfaceMatch>` 在 H0 降成空的
+; KIf 後整條消失，寫回 store 讀到的是 match 之前綁定的原始元素值。
+; lowering 改為先把值 match 提升成合成 let（`__place_val_L_C`），再重綁 it。
+
+check = (name str, got i64, want i64) {
+    {
+        got == want -> print('ok: {name}')
+
+        -> {
+            print('fail: {name} got={got} want={want}')
+            exit(1)
+        }
+    }
+}
+
+; 常數 RHS：既有 D9 行為，不能被本次改動破壞。
+pwConst = (i i64) (res i64) {
+    a = [10, 20, 30]
+    a[i]: {
+        ok -> it = 0
+
+        -> _
+    }
+    res = a[1]
+}
+
+; 值 match RHS（內層越界 → 0）：這是 D11 修復的目標形狀。
+pwValueMatch = (i i64) (res i64) {
+    a = [10, 20, 30]
+    a[i]: {
+        ok -> it = a[9]: {
+            ok(it1) -> it1
+
+            -> 0
+        }
+
+        -> _
+    }
+    res = a[1]
+}
+
+; 值 match RHS（內層在界內 → 30）：確認讀值正確，不是恆寫 0。
+pwValueMatchHit = (i i64) (res i64) {
+    a = [10, 20, 30]
+    a[i]: {
+        ok -> it = a[2]: {
+            ok(it1) -> it1
+
+            -> 0
+        }
+
+        -> _
+    }
+    res = a[1]
+}
+
+check('place-write constant', pwConst(1), 0)
+check('place-write value match OOB', pwValueMatch(1), 0)
+check('place-write value match in-bounds', pwValueMatchHit(1), 30)
+print('place-write-value-match: all ok')

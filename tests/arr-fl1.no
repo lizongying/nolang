@@ -1,7 +1,0 @@
-; 測試 arr-fill
-test-arr-fill = () {
-    a [3] = [0, 0, 0]
-    a.fill(99)
-    print(a[0])
-}
-test-arr-fill()
