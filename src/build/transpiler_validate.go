@@ -733,7 +733,22 @@ func validateStmtDuplicates(sem *parser.SemanticContext, stmt parser.Statement, 
 		}
 		for _, k := range dupKeys {
 			if seen[k] {
-				return i18n.Errorf("sm7rjfcm", "duplicate variable '%s'", s.Name.Value)
+				// 結構化返回（攜帶 Fixes 修復建議），Error() 渲染與舊 i18n.Errorf 字串一致，
+				// 指紋門禁零漂移；同時補上原本缺失的行列位置，使 no vet 輸出更精準。
+				return &DiagnosticError{
+					Lints: []checker.LintResult{{
+						Line:     s.Name.Token.Line,
+						Column:   s.Name.Token.Column,
+						Severity: checker.LintError,
+						Source:   "nolang-compile",
+						Message:  i18n.T("sm7rjfcm", "duplicate variable '%s'", s.Name.Value),
+						TraceID:  "sm7rjfcm",
+						Fixes: []parser.DiagnosticFix{{
+							Description: "rename the duplicate declaration, or remove it if it is redundant",
+						}},
+					}},
+					Prefix: "validation errors",
+				}
 			}
 		}
 		for _, k := range dupKeys {
@@ -810,10 +825,24 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 		// Check if this statement reads a loop-only variable in an expression
 		usedNames := collectExprIdentifiers(stmt)
 		for name := range usedNames {
-			if loopOnlyVars[name] && !definedBeforeLoop[name] {
-				return i18n.Errorf("sjuueqqo", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)",
-					stmtPosLine(stmt), name)
+		if loopOnlyVars[name] && !definedBeforeLoop[name] {
+			// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
+			// （含 "line %d:" 前綴），指紋門禁零漂移；同時補上原本缺失的行列位置。
+			return &DiagnosticError{
+				Lints: []checker.LintResult{{
+					Line:     stmt.Pos().Line,
+					Column:   stmt.Pos().Column,
+					Severity: checker.LintError,
+					Source:   "nolang-compile",
+					Message:  i18n.T("sjuueqqo", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when used here (loop might execute zero iterations)", stmtPosLine(stmt), name),
+					TraceID:  "sjuueqqo",
+					Fixes: []parser.DiagnosticFix{{
+						Description: "declare the variable before the loop, or initialize it inside the loop body before use",
+					}},
+				}},
+				Prefix: "validation errors",
 			}
+		}
 		}
 		// Check if a ForStatement's loop variable reuses a loop-only variable name.
 		// This is the exact pattern that caused the md5 hang: a variable declared
@@ -822,10 +851,24 @@ func validateLoopScopedStmts(stmts []parser.Statement, preDefined map[string]boo
 		if fs, ok := stmt.(*parser.ForStatement); ok {
 			if fs.IterRange != nil && fs.IterRange.Variable != "" {
 				v := fs.IterRange.Variable
-				if loopOnlyVars[v] && !definedBeforeLoop[v] {
-					return i18n.Errorf("h9cfkf84", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)",
-						fs.Token.Line, v)
+			if loopOnlyVars[v] && !definedBeforeLoop[v] {
+				// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
+				// （含 "line %d:" 前綴），指紋門禁零漂移；同時補上原本缺失的行列位置。
+				return &DiagnosticError{
+					Lints: []checker.LintResult{{
+						Line:     fs.Pos().Line,
+						Column:   fs.Pos().Column,
+						Severity: checker.LintError,
+						Source:   "nolang-compile",
+						Message:  i18n.T("h9cfkf84", "line %d: variable '%s' is declared inside a loop body and may be uninitialized when reused as loop variable here (loop might execute zero iterations)", fs.Token.Line, v),
+						TraceID:  "h9cfkf84",
+						Fixes: []parser.DiagnosticFix{{
+							Description: "use a distinct name for the loop variable, or declare the variable outside the loop",
+						}},
+					}},
+					Prefix: "validation errors",
 				}
+			}
 			}
 		}
 		// Track top-level variable declarations
@@ -1055,7 +1098,21 @@ func validateStmtArrayBounds(stmt parser.Statement, arraySizes map[string]int64,
 				isExplicitStr := s.Type != nil && (s.Type.String() == "str")
 				if isExplicitStr {
 					if !isStringExpr(s.Value, stringSizes, varTypes) && !isCharOrUntypedValue(s.Value, varTypes) {
-						return i18n.Errorf("5jsd564o", "cannot assign non-string value to string variable '%s'", s.Name.Value)
+						// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
+						return &DiagnosticError{
+							Lints: []checker.LintResult{{
+								Line:     s.Pos().Line,
+								Column:   s.Pos().Column,
+								Severity: checker.LintError,
+								Source:   "nolang-compile",
+								Message:  i18n.T("5jsd564o", "cannot assign non-string value to string variable '%s'", s.Name.Value),
+								TraceID:  "5jsd564o",
+								Fixes: []parser.DiagnosticFix{{
+									Description: "change the variable's declared type to match the assigned value, or assign a string value",
+								}},
+							}},
+							Prefix: "validation errors",
+						}
 					}
 				}
 			}
@@ -1191,10 +1248,36 @@ func checkConstIndexBounds(idxExpr parser.Expression, size int64, varName string
 		return nil
 	}
 	if idx < 0 {
-		return i18n.Errorf("uqby2pvs", "index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
+		return &DiagnosticError{
+			Lints: []checker.LintResult{{
+				Line:     idxExpr.Pos().Line,
+				Column:   idxExpr.Pos().Column,
+				Severity: checker.LintError,
+				Source:   "nolang-compile",
+				Message:  i18n.T("uqby2pvs", "index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size),
+				TraceID:  "uqby2pvs",
+				Fixes: []parser.DiagnosticFix{{
+					Description: "use a non-negative index within the bounds of the container",
+				}},
+			}},
+			Prefix: "validation errors",
+		}
 	}
 	if idx >= size {
-		return i18n.Errorf("uqby2pvs", "index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size)
+		return &DiagnosticError{
+			Lints: []checker.LintResult{{
+				Line:     idxExpr.Pos().Line,
+				Column:   idxExpr.Pos().Column,
+				Severity: checker.LintError,
+				Source:   "nolang-compile",
+				Message:  i18n.T("uqby2pvs", "index %d out of bounds for %s '%s' of size %d", idx, typeName, varName, size),
+				TraceID:  "uqby2pvs",
+				Fixes: []parser.DiagnosticFix{{
+					Description: "use an index strictly less than the container size",
+				}},
+			}},
+			Prefix: "validation errors",
+		}
 	}
 	return nil
 }
@@ -1232,7 +1315,21 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 			// is negative under either semantics.
 			if size, exists := stringSizes[ident.Value]; exists {
 				if idx, ok := tryEvalConstInt(e.Index); ok && idx < 0 {
-					return i18n.Errorf("gyuohhum", "index %d out of bounds for string '%s' of size %d", idx, ident.Value, size)
+					// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
+					return &DiagnosticError{
+						Lints: []checker.LintResult{{
+							Line:     ident.Pos().Line,
+							Column:   ident.Pos().Column,
+							Severity: checker.LintError,
+							Source:   "nolang-compile",
+							Message:  i18n.T("gyuohhum", "index %d out of bounds for string '%s' of size %d", idx, ident.Value, size),
+							TraceID:  "gyuohhum",
+							Fixes: []parser.DiagnosticFix{{
+								Description: "use a non-negative string index (code-point indices start at 0)",
+							}},
+						}},
+						Prefix: "validation errors",
+					}
 				}
 			}
 		}
@@ -1247,15 +1344,55 @@ func validateExprArrayBounds(expr parser.Expression, arraySizes map[string]int64
 		if dot, ok := e.Left.(*parser.DotExpression); ok {
 			if dot.Property == "len" {
 				if ident, ok := dot.Receiver.(*parser.Identifier); ok {
-					if _, exists := arraySizes[ident.Value]; exists {
-						return i18n.Errorf("xo6e53hm", "cannot modify read-only field 'len' of array '%s'", ident.Value)
+				if _, exists := arraySizes[ident.Value]; exists {
+					// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
+					return &DiagnosticError{
+						Lints: []checker.LintResult{{
+							Line:     ident.Pos().Line,
+							Column:   ident.Pos().Column,
+							Severity: checker.LintError,
+							Source:   "nolang-compile",
+							Message:  i18n.T("xo6e53hm", "cannot modify read-only field 'len' of array '%s'", ident.Value),
+							TraceID:  "xo6e53hm",
+							Fixes: []parser.DiagnosticFix{{
+								Description: "do not assign to '.len'; it is computed automatically (use a fresh container or truncate instead)",
+							}},
+						}},
+						Prefix: "validation errors",
 					}
-					if _, exists := sliceSizes[ident.Value]; exists {
-						return i18n.Errorf("xlppn81m", "cannot modify read-only field 'len' of slice '%s'", ident.Value)
+				}
+				if _, exists := sliceSizes[ident.Value]; exists {
+					return &DiagnosticError{
+						Lints: []checker.LintResult{{
+							Line:     ident.Pos().Line,
+							Column:   ident.Pos().Column,
+							Severity: checker.LintError,
+							Source:   "nolang-compile",
+							Message:  i18n.T("xlppn81m", "cannot modify read-only field 'len' of slice '%s'", ident.Value),
+							TraceID:  "xlppn81m",
+							Fixes: []parser.DiagnosticFix{{
+								Description: "do not assign to '.len'; it is computed automatically (use a fresh container or truncate instead)",
+							}},
+						}},
+						Prefix: "validation errors",
 					}
-					if _, exists := stringSizes[ident.Value]; exists {
-						return i18n.Errorf("qon2wsev", "cannot modify read-only field 'len' of string '%s'", ident.Value)
+				}
+				if _, exists := stringSizes[ident.Value]; exists {
+					return &DiagnosticError{
+						Lints: []checker.LintResult{{
+							Line:     ident.Pos().Line,
+							Column:   ident.Pos().Column,
+							Severity: checker.LintError,
+							Source:   "nolang-compile",
+							Message:  i18n.T("qon2wsev", "cannot modify read-only field 'len' of string '%s'", ident.Value),
+							TraceID:  "qon2wsev",
+							Fixes: []parser.DiagnosticFix{{
+								Description: "do not assign to '.len'; it is computed automatically (use str.truncate or build a new string instead)",
+							}},
+						}},
+						Prefix: "validation errors",
 					}
+				}
 				}
 			}
 		}
@@ -1441,10 +1578,22 @@ func validateEntryProgram(program *parser.Program, sourcePath string, varTypes m
 			lints = append(lints, validateResultToLint(e))
 		}
 	}
-	// 未處理的越界索引（D2：降為 HINT，不再阻斷建置）。arr/vec/slice 索引 b[i] 越界時
-	// 預設回傳 option<elem>，這是統一規則的常態；「沒解包」由上面的 optunuse 兜底。
-	// 診斷仍會經 RunAllLints 出現在 no vet / LSP（灰色提示），故此處不再呼叫
-	// checker.ValidateUnhandledIndex。
+	// 裸索引 option 當值用（D11）→ ERROR `idxbruse`，**阻斷建置**。
+	// arr/vec/slice 索引 `a[i]` 恆回傳 ?T；D11 移除 `#{index-out=DEF}` 註解後，
+	// 若它被放在中綴 / 呼叫引數 / return 等巢狀「值位置」而未經任何顯式消費者
+	// （`?=` / 值 match / place·block match / ?T 綁定 / `_ =`），舊檢查完全不遍歷
+	// 這些位置、optunuse 也只兜底 overflow，形成沉默漏洞。
+	// ValidateUnhandledIndexTHIR 同時產出兩種 TraceID：idxhndld（產生處 HINT，
+	// 含 std 的 223 處 place-match 臂）與 idxbruse（本硬錯誤）。此處**只過濾
+	// idxbruse** 匯入硬錯誤，切不可整批接入（否則 std 無法 build）。
+	if bareErrs := checker.ValidateUnhandledIndexTHIR(program, sourcePath, thirView); len(bareErrs) > 0 {
+		for _, e := range bareErrs {
+			if e.TraceID != checker.BareIndexUseTraceID {
+				continue
+			}
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
 	//
 	// 下標直寫 `a[i] = v`（D9）→ ERROR `idxwrite`，**阻斷建置**。
 	// 與上面「讀側只提示」相反：寫側走 emitIndexStore 的原始 GEP+store，

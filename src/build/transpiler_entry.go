@@ -371,7 +371,12 @@ func (t *Transpiler) parseEntryProgram(source string) (*parser.Program, error) {
 		t.astParseConfig(t.sourcePath).Apply(p)
 		program = p.ParseProgram()
 		if len(p.Errors()) > 0 {
-			return nil, i18n.Errorf("au6g7ji7", "parser errors: %s", parser.FormatDiagnostics(p.Diagnostics(), parser.SeverityError))
+			// 結構化返回 parser 診斷（含 Fixes 修復建議），供 no vet / LSP 直接消費；
+			// Error() 渲染與舊 parser.FormatDiagnostics 字串逐字一致，指紋門禁零漂移。
+			return nil, &DiagnosticError{
+				Lints:  parserDiagnosticsToLints(p.Diagnostics(), parser.SeverityError, ""),
+				Prefix: "parser errors",
+			}
 		}
 		// 收集主程序中链式 -> 条件的 lint 提示（仅主程序，不含自动载入的 std 库，
 		// 避免库代码触发噪音）。buildWithPkg 会在编译成功后打印。
@@ -402,10 +407,25 @@ func checkReservedMainName(program *parser.Program) error {
 			}
 			switch s := stmt.(type) {
 			case *parser.FunctionDefinition:
-				if s.Name == "main" || strings.HasSuffix(s.Name, ".main") {
-					mainErr = i18n.Errorf("xgs17cqx", "line %d, column %d: 'main' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)", s.Token.Line, s.Token.Column)
-					return
+			if s.Name == "main" || strings.HasSuffix(s.Name, ".main") {
+				// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致
+				// （含 "line %d, column %d:" 前綴），指紋門禁零漂移。
+				mainErr = &DiagnosticError{
+					Lints: []checker.LintResult{{
+						Line:     s.Token.Line,
+						Column:   s.Token.Column,
+						Severity: checker.LintError,
+						Source:   "nolang-compile",
+						Message:  i18n.T("xgs17cqx", "line %d, column %d: 'main' is a reserved name and cannot be used as a function name; use top-level statements instead (the entry point is synthesized automatically)", s.Token.Line, s.Token.Column),
+						TraceID:  "xgs17cqx",
+						Fixes: []parser.DiagnosticFix{{
+							Description: "rename the function (e.g. to 'main-fn'), or replace it with top-level statements; the entry point is synthesized automatically",
+						}},
+					}},
+					Prefix: "validation errors",
 				}
+				return
+			}
 				if s.Body != nil {
 					walkForMain(s.Body.Statements)
 				}
@@ -457,9 +477,23 @@ func collectEntryProgramFacts(program *parser.Program, isUserCode bool) (varType
 		if fd, ok := stmt.(*parser.FunctionDefinition); ok && isUserCode {
 			if fd.IsVariadic {
 				for _, p := range fd.Parameters {
-					if p.Type.String() == "[]any" {
-						return nil, nil, nil, nil, i18n.Errorf("2243l8if", "..any is only allowed in standard library, not in user code (function: %s)", fd.Name)
+				if p.Type.String() == "[]any" {
+					// 結構化返回：攜帶 Fixes 修復建議，Error() 渲染與舊 i18n.Errorf 字串一致。
+					return nil, nil, nil, nil, &DiagnosticError{
+						Lints: []checker.LintResult{{
+							Line:     fd.Pos().Line,
+							Column:   fd.Pos().Column,
+							Severity: checker.LintError,
+							Source:   "nolang-compile",
+							Message:  i18n.T("2243l8if", "..any is only allowed in standard library, not in user code (function: %s)", fd.Name),
+							TraceID:  "2243l8if",
+							Fixes: []parser.DiagnosticFix{{
+								Description: "remove the ..any parameter/annotation, or move this declaration into the standard library",
+							}},
+						}},
+						Prefix: "validation errors",
 					}
+				}
 				}
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/parser"
 )
 
 // DiagnosticError 是編譯期結構化診斷錯誤。它攜帶已結構化的 []checker.LintResult，
@@ -60,5 +61,37 @@ func validateResultToLint(e checker.ValidateResult) checker.LintResult {
 		Source:   "nolang-compile",
 		Message:  e.Message,
 		TraceID:  e.TraceID,
+		Fixes:    e.Fixes,
 	}
+}
+
+// parserDiagnosticsToLints 將 parser 診斷轉為結構化 checker.LintResult，
+// 保留 Fixes 欄位（修復建議），使 no vet / LSP 能直接消費，取代舊的
+// parser.FormatDiagnostics 字串往返（會丟失 Fixes）。
+//
+// file 為呼叫方擁有的檔案上下文（parseFile 的 filePath 前綴）；渲染字串與舊路徑
+// 逐字一致（見 DiagnosticError.Error / parser.FormatDiagnostics），故指紋門禁零漂移。
+// EndColumn 主動留 0 以匹配舊 reparse 路徑（見 validateResultToLint 註釋）。
+func parserDiagnosticsToLints(diags []parser.Diagnostic, sev parser.Severity, file string) []checker.LintResult {
+	var out []checker.LintResult
+	for _, d := range diags {
+		if d.Severity != sev {
+			continue
+		}
+		ref := d.ID
+		if ref == "" {
+			ref = d.Code
+		}
+		out = append(out, checker.LintResult{
+			File:     file,
+			Line:     d.Pos.Line,
+			Column:   d.Pos.Column,
+			Severity: checker.LintError,
+			Source:   "nolang-compile",
+			Message:  d.Message,
+			TraceID:  ref,
+			Fixes:    d.Fixes,
+		})
+	}
+	return out
 }
