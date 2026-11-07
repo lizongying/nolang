@@ -62,6 +62,11 @@ func TestVetFileWithLints_BuildLayerFixes(t *testing.T) {
 		{"len_ro", "a [3]i64 = [1, 2, 3]\na.len = 1\n", "xo6e53hm"},
 		{"main_reserved", "main = () {\n}\n", "xgs17cqx"},
 		{"any_user", "f = (args ..any) {\n}\n", "2243l8if"},
+		// optunuse：捕捉到 option 卻從未消費（既不 `?=` 上拋也不 match / `_ =`）。
+		// 這是 checker 層（非 build 層）的硬錯誤，走 ValidateUnhandledOverflowTHIR
+		// → validateResultToLint 透傳 Fixes；同時 RunAllLints 的 runLintUnhandledOverflow
+		// 也會在 no vet 路徑下回傳同一 Fixes。本用例鎖定兩條路徑都帶 Fixes。
+		{"opt_unused", "b i64 = 6\nc i64 = 2\na = b + c / 2\n", "optunuse"},
 	}
 
 	for _, tc := range cases {

@@ -565,6 +565,8 @@ type ValidateResult struct {
 	File      string // 来源文件（节点级，用于合併模式下跳过 std）；空则由 RunAllLints 回退归因
 	Message   string
 	TraceID   string
+	// Fixes 是該診斷可套用的修復建議（Nolang 源片段 + 替換 span）。為空表示無修復。
+	Fixes []parser.DiagnosticFix
 }
 
 func ValidateEmbedAnnotations(program *parser.Program, sourcePath string) []ValidateResult {
@@ -1695,6 +1697,9 @@ func ValidateUnusedVars(program *parser.Program, mainVarNames map[string]bool) [
 				Column:    def.column,
 				EndColumn: def.column + len(name) - 1,
 				Message:   i18n.T("6kryrbsq", "'%s' is defined but never used", name),
+				Fixes: []parser.DiagnosticFix{{
+					Description: "prefix the name with '_' to silence this hint, or remove the declaration if it is not needed",
+				}},
 			})
 		}
 	}
@@ -2329,6 +2334,9 @@ func ValidateUninitOutputParams(program *parser.Program) []ValidateResult {
 					Line:    p.line,
 					Column:  p.col,
 					Message: i18n.T("wdk3k728", "output parameter '%s' (?T) is read but never assigned in function body — uninitialized use of nullable output parameter", p.name),
+					Fixes: []parser.DiagnosticFix{{
+						Description: fmt.Sprintf("assign '%s' (e.g. `%s = ...`) before reading it in the function body", p.name, p.name),
+					}},
 				})
 			}
 		}
@@ -2400,6 +2408,9 @@ func ValidateUnassignedReturns(program *parser.Program) []ValidateResult {
 					Line:    p.line,
 					Column:  p.col,
 					Message: i18n.T("i3k422u3", "result parameter '%s' (%s) is never assigned in function body — will be zero-filled on return", p.name, p.typ),
+					Fixes: []parser.DiagnosticFix{{
+						Description: fmt.Sprintf("assign '%s' before returning, or drop the named result parameter and return a value explicitly", p.name),
+					}},
 				})
 			}
 		}
@@ -3390,6 +3401,9 @@ func checkStmtDuplicateVars(sem *parser.SemanticContext, stmt parser.Statement, 
 						Line:    s.Token.Line,
 						Column:  s.Token.Column,
 						Message: i18n.T("379z4njd", "'%s' already declared in this scope", s.Name.Value),
+						Fixes: []parser.DiagnosticFix{{
+							Description: "rename the duplicate declaration, or remove it if it is redundant",
+						}},
 					}}
 				}
 			}
@@ -5520,6 +5534,14 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 			File:    curFile,
 			Message: msg,
 			TraceID: "optunuse",
+			// Description-only 修復建議：option 綁定後既不 `?=` 上拋、也不
+			// match / `_ =` 解包，錯誤被靜默丟棄。最省事的做法是直接跑
+			// `no fix --fix=unwrap`（unwraps_fix.go 已能自動改寫本 TraceID 站點）；
+			// 手動則用訊息末尾 optionUnwrapRecipe 給的三種消費方式。此處只放
+			// 一行提示（不重複 recipe），避免與 gubuo5cb 訊息末段疊字。
+			Fixes: []parser.DiagnosticFix{{
+				Description: "run `no fix --fix=unwrap` to auto-consume, or manually consume the option via `?=`, `x = expr: { ok -> ... -> ... }`, or `_ = expr`",
+			}},
 		})
 	}
 
@@ -5851,64 +5873,34 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 
 const unhandledIndexTraceID = "idxhndld"
 
+// bareIndexUseTraceID：D11 新增「裸索引 option 當值用」硬錯誤的 TraceID。
+// arr/vec/slice 的直接變數索引讀取 a[i] 恆回傳 ?T；若它被放在中綴 / 呼叫引數 /
+// return 等「值位置」而未經任何顯式消費者（?= / match / ?T 綁定 / _ 丟棄），
+// 舊檢查對這些巢狀位置完全不遍歷、optunuse 也只兜底 overflow，形成沉默漏洞。
+// 本規則補上該缺口，並在 build 路徑（transpiler_validate.go）依此 TraceID 攔截。
+// 照 IndexWriteTraceID 的雙常量模式導出，供 build 套件過濾。
+const bareIndexUseTraceID = "idxbruse"
+
+// BareIndexUseTraceID 是 bareIndexUseTraceID 的導出別名。
+const BareIndexUseTraceID = bareIndexUseTraceID
+
 // ValidateUnhandledIndex 報告所有「可能越界但未被處理」的 arr/vec/slice 索引
-// （b[i]），作為編譯錯誤（亦由 RunAllLints 納入 no vet / LSP 診斷）。
+// （b[i]），作為診斷（亦由 RunAllLints 納入 no vet / LSP 診斷）。
 //
 // 背景：arr/vec/slice 的索引 b[i] 在越界時預設回傳 option<elem>（永不 panic），
-// 與整數溢出同理。這個 option 若不被處理，就會「沉默泄漏」：變數被推斷為 option
-// 但程式其實把它當普通 elem 用，運行期語意漂移（且 codegen 的 option 是
-// {tag,data} 結構，直接當 elem 解引用會錯）。本規則在編譯期攔截這種「產生 option
-// 卻沒處理」的寫法，迫使程式設計師顯式二選一：
-//  1. 用 `a ?= b[i]` 上拋（錯誤傳給呼叫者）；在返回 ?T 的函式中 `a = b[i]`
-//     會被 lowering 捕獲：`a` 推斷為 `?elem`，越界時就地存 `nil`（不提前 return）；
-//  2. 加 `#{index-out = DEF}` 註解（DEF 為字面量），越界時取預設值 DEF。
+// 與整數溢出同理。這個 option 若不被處理，就會「沉默泄漏」。D11 移除
+// `#{index-out = DEF}` 註解後，使用者必須顯式消費該 option：
+//   - `a ?= b[i]` 上拋（返回 ?T 的函式中 `a = b[i]` 由 lowering 就地捕獲）；
+//   - 值 match / place·block match 解包；
+//   - 宣告為 `?T` option 綁定或 `_ = b[i]` 顯式丟棄。
 //
-// 與 parser 的 isSafeIndexBase / maybeIndexOutAssign
-// 保持一致：str/txt 索引回傳字元（非 option，不報）；struct field 索引（receiver.field[i]）
-// 走既有 bounds_check 路徑（不報）；只有直接變數基底的 arr/vec/slice 索引會產生
-// option 並需被處理。
+// 與 parser 的 isSafeIndexBase 保持一致：只有直接變數基底的 arr/vec/slice 索引
+// 會產生此 option；struct field / map 基底與 str/txt 索引不在本規則範圍。
+// 本函式同時產出兩種 TraceID：idxhndld（產生處 HINT）與 idxbruse（巢狀值位置
+// 未消費的硬錯誤，見 runUnhandledIndexCore）。
 // 旧版入口（view=nil）；THIR 侧变体见 ValidateUnhandledIndexTHIR。
 func ValidateUnhandledIndex(program *parser.Program, mainFile string) []ValidateResult {
 	return runUnhandledIndexCore(program, mainFile, nil)
-}
-
-const redundantIndexOutTraceID = "idxoutrd"
-
-// ValidateRedundantIndexOut 報告「套用在 place-match 主體上的多餘 #{index-out=...}
-// 註解」：place-match 主體若為容器索引讀取（如 `state[1]: { ... }`），其越界已由 match
-// 的 ok/nil 臂保證，套用在主體上的 `#{index-out = DEF}` 對主體是多餘。僅在 safe-gate
-// （臂體內無依賴該註解預設值的容器索引讀取）下才報告，避免移除會破壞建置的註解
-// （D7 三方口徑一致）。診斷經 RunAllLints 以 HINT 出現在 no vet / LSP（與 idxhndld 同軌）。
-func ValidateRedundantIndexOut(program *parser.Program, mainFile string) []ValidateResult {
-	red := parser.AnalyzeRedundantIndexOut(program)
-	var results []ValidateResult
-	seen := map[string]bool{}
-	add := func(line, col int, file, nodeFile string) {
-		if file == "" {
-			file = nodeFile
-		}
-		if file == "" {
-			file = mainFile
-		}
-		key := fmt.Sprintf("%s|%d:%d", file, line, col)
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		msg := i18n.T("idxoutrd", "the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).")
-		results = append(results, ValidateResult{
-			Line:    line,
-			Column:  col,
-			File:    file,
-			Message: msg,
-			TraceID: redundantIndexOutTraceID,
-		})
-	}
-	for stmt := range red.Stmts {
-		pos := stmt.Pos()
-		add(pos.Line, pos.Column, program.Sem.SourceFileOf(stmt), "")
-	}
-	return results
 }
 
 // runUnhandledIndexCore 是 ValidateUnhandledIndex / THIR 两变体共享的走查主体。
@@ -5974,14 +5966,14 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 
 	report := func(idx *parser.IndexExpression, curFile string) {
 		// 標準庫（std）不再豁免（自 2026-09-11 起，與 overflow 規則一致）。未處理
-		// 越界索引必須逐站以 `#{index-out = DEF}` 或 `?=` 修復，使 `no vet` 與
-		// 合併程式的 lint 對 std 保持乾淨。
+		// 越界索引必須逐站以 D11 的顯式消費方式（`?=` / match / ?T 綁定 / `_ =`）
+		// 修復，使 `no vet` 與合併程式的 lint 對 std 保持乾淨。
 		line, col := idx.Pos().Line, idx.Pos().Column
 		// 剔除合併 std vet 的跨模組誤歸因：報告行必須確實含直接變數基底索引讀取。
 		if !lineHasIdentIndexRead(curFile, line) {
 			return
 		}
-		msg := i18n.T("ddvc98n2", "array/slice index `arr[i]` returns option<elem> on an out-of-range access by default. This option is never handled: propagate it with `a ?= arr[i]` (inside a function returning ?T you can also capture it in place with `a = arr[i]`), or annotate `#{index-out = DEF}` to take the default DEF when out of range, or declare the target as an option (e.g. `a ?elem = arr[i]`) to capture the error in place, or discard it explicitly with `_ = arr[i]`.")
+		msg := i18n.T("ddvc98n2", "array/slice index `arr[i]` (and map `m[k]`) returns option<elem> on an out-of-range access by default. The `#{index-out=DEF}` annotation was removed in D11. Consume the option explicitly: propagate with `a ?= arr[i]`, use a value match or a place/block match on the index read, bind to a `?T` option target (e.g. `a ?elem = arr[i]`), or discard it explicitly with `_ = arr[i]`.")
 		key := fmt.Sprintf("%s|%d:%d", canonPath(curFile), line, col)
 		if seen[key] {
 			return
@@ -5993,37 +5985,85 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			EndColumn: idx.EndPos().Column,
 			File:      curFile,
 			Message:   msg,
-			TraceID:   "idxhndld",
+			TraceID:   unhandledIndexTraceID,
 		})
 	}
 
-	// isSafeBase 複製 parser.isSafeIndexBase 的判定（僅直接變數基底、arr/vec/slice）。
-	isSafeBase := func(curFunc string, idx *parser.IndexExpression) bool {
+	// reportBare 產出 D11 新增的「裸索引 option 當值用」硬錯誤（idxbruse）。
+	// 與 report（idxhndld HINT）分流：此類索引讀取出現在中綴 / 呼叫引數 / return
+	// 等巢狀「值位置」，過去完全沒有任何診斷。seenBare 與 seen 各自去重，避免
+	// 同一行同時有 HINT 與 ERROR 時互相吃掉。
+	seenBare := map[string]bool{}
+	reportBare := func(idx *parser.IndexExpression, curFile string) {
+		line, col := idx.Pos().Line, idx.Pos().Column
+		if !lineHasIdentIndexRead(curFile, line) {
+			return
+		}
+		msg := i18n.T("idxbruse", "bare index `arr[i]`/`m[k]` returns `?T` (D11 removed the `#{index-out=DEF}` annotation), but it is used here as a plain value without being consumed. Handle the option explicitly with a value match, `?=`, a place/block match, or a legal `?T` binding.")
+		key := fmt.Sprintf("%s|%d:%d", canonPath(curFile), line, col)
+		if seenBare[key] {
+			return
+		}
+		seenBare[key] = true
+		cf := curFile
+		if cf == "" {
+			cf = mainFile
+		}
+		results = append(results, ValidateResult{
+			Line:      line,
+			Column:    col,
+			EndColumn: idx.EndPos().Column,
+			File:      cf,
+			Message:   msg,
+			TraceID:   bareIndexUseTraceID,
+		})
+	}
+
+	// baseTypeOf 取索引基底變數的容器型別字串；非直接變數基底回傳 ""。
+	baseTypeOf := func(curFunc string, idx *parser.IndexExpression) string {
 		if idx == nil || idx.Left == nil {
-			return false
+			return ""
 		}
 		ident, ok := idx.Left.(*parser.Identifier)
 		if !ok {
-			return false
+			return ""
 		}
-		// 合併 std vet 時，checker 的 curFunc 可能帶多餘的模組前綴
-		//（如 "path.path.join"），而 IdxLocalTypes 的鍵是 lower 期記錄的
-		// 單前綴名（"path.join"）。逐層去掉前綴嘗試，對齊鍵名。
-		// 只查 IdxLocalTypes（lower 預掃描所得，權威且無跨函數污染）；
-		// 不使用 FuncVarType / 全域 VarType 回退——那些在合併模式下會被
-		// 同名參數（其他函數的 `b []byte`）污染，導致 str 索引 b[0] 被誤判。
 		funcKeys := []string{curFunc}
 		if i := strings.Index(curFunc, "."); i >= 0 {
 			funcKeys = append(funcKeys, curFunc[i+1:])
 		}
-		lt := ""
 		if sem != nil && sem.IdxLocalTypes != nil {
 			for _, cf := range funcKeys {
 				if t, ok := sem.IdxLocalTypeRef(cf, ident.Value); ok && t.Raw() != "" {
-					lt = ty.StripOptionRaw(t.Raw())
-					break
+					return ty.StripOptionRaw(t.Raw())
 				}
 			}
+		}
+		return ""
+	}
+
+	// isSafeBase 複製 parser.isSafeIndexBase 的判定（僅直接變數基底、arr/vec/slice）。
+	// baseTypeOf 已處理「合併 std vet 的 curFunc 多餘模組前綴」與「只查
+	// IdxLocalTypes、不使用 FuncVarType / 全域 VarType 回退」兩點，避免同名參數
+	// 污染（str 索引 b[0] 被誤判）。
+	isSafeBase := func(curFunc string, idx *parser.IndexExpression) bool {
+		return parser.ContainerElemType(baseTypeOf(curFunc, idx)) != ""
+	}
+
+	// isBareIndexTarget 判定該索引讀取是否為 D11 新硬錯誤的適用對象：
+	// 直接變數基底的 arr / 定長陣列 / vec（[]T / [N]T / vec[T]），排除
+	//   - map `[K]V`：走 put/get，不產生越界 option（ContainerElemType 會把
+	//     map 型別字串誤判為陣列，故必須先判 IsMapTypeString）；
+	//   - str/txt 索引：D6 會產生 option，但它們的消費由既有 idxhndld 口徑覆蓋，
+	//     本規則只針對 arr/vec/slice 的「裸 option 當值用」；
+	//   - struct-field 基底（self.x[i]）：baseTypeOf 要求 *Identifier 基底，已排除。
+	isBareIndexTarget := func(curFunc string, idx *parser.IndexExpression) bool {
+		lt := baseTypeOf(curFunc, idx)
+		if lt == "" || lt == "str" || lt == "txt" {
+			return false
+		}
+		if parser.IsMapTypeString(lt) {
+			return false
 		}
 		return parser.ContainerElemType(lt) != ""
 	}
@@ -6043,45 +6083,31 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		return false
 	}
 
-	// indexOutAnnotated 報告節點（或其候選集合）是否攜帶 `#{index-out = DEF}` 註解。
-	//
-	// 為何需要：`#{index-out}` 的降級（parser/lowering.go 產生合成 __idx_out_ tmp）
-	// 只在**啟用安全索引降級**時執行。`no vet` 走降級，tmp 讓上報被豁免；但 LSP 編輯器
-	// 主解析走糖形態（SkipLowering=true，見 lsp/documents.go）——§4.3 已刪除
-	// SkipSafeIndexLowering 旗標，糖形態是唯一非編譯形態——此時註解原樣留在陳述上、
-	// 不會變成 tmp。若只認 tmp，編輯器就會對已正確標註的越界索引誤報「未處理」。
-	// 此處直接讀註解，讓兩端口徑一致。
-	// 與 overflowAnnotatedNode 同源：同時查 AnnotationsOf（ResolveProgram 後）與
-	// RawAnnotationsOf（解析期 side-table）。candidates 涵蓋「註解掛在外層
-	// ExpressionStatement / LetStatement」與「掛在內層 AssignExpression」兩種附着點。
-	indexOutAnnotated := func(candidates ...parser.Node) bool {
-		if sem == nil {
-			return false
-		}
-		for _, n := range candidates {
-			if n == nil {
-				continue
-			}
-			for _, e := range sem.AnnotationsOf(n) {
-				if e != nil && e.Key == "index-out" {
-					return true
-				}
-			}
-			for _, e := range sem.RawAnnotationsOf(n) {
-				if e != nil && e.Key == "index-out" {
-					return true
-				}
-			}
-		}
-		return false
-	}
-
-	// Pass 1：收錄「已處理」的索引表達式指標。
-	//   - `a ?= b[i]`（UnwrapAssignStatement）
-	//   - option 回傳函式內裸 `a = b[i]` 的就地捕獲（lowering 捕獲 pass）
-	//   - `#{index-out = DEF}` 降級產生的合成 tmp：`__idx_out_L_C = b[i]`（IsSynthetic）
-	//   - `#{index-out = DEF}` 行注解／尾隨注解（未經降級的 surface AST，LSP 路徑）
+	// Pass 1（D11 啟動）：收錄「已被顯式消費」的索引表達式指標，讓巢狀值位置的
+	// walkExpr 不對這些形狀誤報新的硬錯誤。涵蓋：
+	//   - `a ?= b[i]`（UnwrapAssignStatement.Value）
+	//   - SurfaceMatch.Matched（值 match / place-match 主語）
+	//   - 直接指派值索引讀取（由 report 以 idxhndld HINT 統一處理，避免雙重上報）
+	//   - `_ = b[i]` 顯式丟棄、`?T` option 目標綁定、推斷 option 的 let（就地捕獲）
+	//   - place-match `ok -> it = <索引讀>` 臂（其 RHS 亦是直接指派值）
+	//   - map `[K]V` / struct-field 基底（self.x[i]）/ str/txt 索引：
+	//     由 isBareIndexTarget 直接排除，不進入新規則。
 	handled := map[*parser.IndexExpression]bool{}
+	markHandled := func(e parser.Expression) {
+		if idx, ok := e.(*parser.IndexExpression); ok {
+			handled[idx] = true
+		}
+	}
+	resolveFile := func(n parser.Node, curFile string) string {
+		cf := program.Sem.SourceFileOf(n)
+		if cf == "" {
+			cf = curFile
+		}
+		if cf == "" {
+			cf = mainFile
+		}
+		return cf
+	}
 
 	var walkStmt func(stmt parser.Statement, curFunc string, fnOpt bool, curFile string)
 	var walkExpr func(e parser.Expression, curFunc string, curFile string)
@@ -6092,13 +6118,14 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		}
 		switch x := e.(type) {
 		case *parser.UnwrapAssignStatement:
-			if idx, ok := x.Value.(*parser.IndexExpression); ok {
-				handled[idx] = true
-			}
 			if x.Value != nil {
+				markHandled(x.Value)
 				walkExpr(x.Value, curFunc, curFile)
 			}
 		case *parser.IfExpression:
+			if x.Condition != nil {
+				walkExpr(x.Condition, curFunc, curFile)
+			}
 			if x.Consequence != nil {
 				for _, b := range x.Consequence.Statements {
 					walkStmt(b, curFunc, false, curFile)
@@ -6113,10 +6140,42 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			walkExpr(x.Expression, curFunc, curFile)
 		case *parser.PrefixExpression:
 			walkExpr(x.Right, curFunc, curFile)
+		case *parser.InfixExpression:
+			walkExpr(x.Left, curFunc, curFile)
+			walkExpr(x.Right, curFunc, curFile)
+		case *parser.CallExpression:
+			walkExpr(x.Function, curFunc, curFile)
+			for _, a := range x.Arguments {
+				walkExpr(a, curFunc, curFile)
+			}
+		case *parser.IndexExpression:
+			// 巢狀「值位置」的裸索引 option（未顯式消費）→ D11 新硬錯誤。
+			if isBareIndexTarget(curFunc, x) && !handled[x] {
+				reportBare(x, curFile)
+			}
+			walkExpr(x.Left, curFunc, curFile)
+			walkExpr(x.Index, curFunc, curFile)
+		case *parser.AssignExpression:
+			// 只遍歷 Value（RHS 值讀取）；Left 是寫入目標，不當作值讀取。
+			walkExpr(x.Value, curFunc, curFile)
+		case *parser.ArrayLiteral:
+			for _, el := range x.Elements {
+				walkExpr(el, curFunc, curFile)
+			}
+		case *parser.SliceExpression:
+			walkExpr(x.Left, curFunc, curFile)
+		case *parser.ConditionalExpression:
+			walkExpr(x.Condition, curFunc, curFile)
+			walkExpr(x.Consequence, curFunc, curFile)
+			walkExpr(x.Alternative, curFunc, curFile)
+		case *parser.CastExpression:
+			walkExpr(x.Expr, curFunc, curFile)
+		case *parser.DotExpression:
+			walkExpr(x.Receiver, curFunc, curFile)
 		case *parser.SurfaceMatch:
-			// S1：臂體內的索引讀取（含 `?=` 解包）也要被收進 handled 集合，
-			// 否則糖形態下臂子樹不可見。fnOpt 傳 false，與 IfExpression 分支
-			// 對臂體的處理一致。見 sugar_walk.go。
+			// S1：值 match / place-match 的主語是顯式消費者，標為 handled；
+			// 臂體子樹（含 `?=` 解包、臂內 RHS 索引讀）也要被看見。見 sugar_walk.go。
+			markHandled(x.Matched)
 			walkSurfaceMatchChildren(x, nil,
 				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile) },
 				func(sub parser.Statement) { walkStmt(sub, curFunc, false, curFile) })
@@ -6129,13 +6188,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		}
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
-			fcf := program.Sem.SourceFileOf(s)
-			if fcf == "" {
-				fcf = curFile
-			}
-			if fcf == "" {
-				fcf = mainFile
-			}
+			fcf := resolveFile(s, curFile)
 			fnOpt = false
 			// declaredResults drops the implicit `self` receiver of methods, so
 			// rs[0] is the real return type.
@@ -6151,11 +6204,17 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			}
 			return
 		case *parser.LetStatement:
-			// `#{index-out}` 降級產生的合成 tmp：`__idx_out_L_C = b[i]`。
-			if s.IsSynthetic && s.Name != nil && strings.HasPrefix(s.Name.Value, "__idx_out_") {
-				if idx, ok := s.Value.(*parser.IndexExpression); ok {
-					handled[idx] = true
-				}
+			// 直接指派值索引讀取由 report 以 idxhndld HINT 統一處理，標為 handled
+			// 避免 walkExpr 對同一節點再產出新的硬錯誤（雙重上報）。
+			//
+			// 但**合成捕獲 let**（lower 期 maybeCaptureOptionAssign 把
+			// `x = p[i] + 1` 降糖出的 `__cap_N = p[i]`，IsSynthetic=true）不在此列：
+			// 那條索引讀取正是「裸 option 當值用」的實例，若沿用 markHandled 會讓
+			// full-lowering 形狀（no build）靜默放行、而糖形狀（no vet / LSP）報錯，
+			// 造成兩軌診斷不一致。合成 let 不走 report（下面 !IsSynthetic 才報
+			// idxhndld），故放給 walkExpr 報 idxbruse 不會雙重上報，且兩形狀一致。
+			if !s.IsSynthetic {
+				markHandled(s.Value)
 			}
 			// 非合成 `x = b[i]`：若 LHS 顯式宣告 ?T（option 本地）則已接納
 			// 越界 option；否則（非 option 函式，或結果參數非 ?T）越界 option
@@ -6163,14 +6222,10 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			if !s.IsSynthetic {
 				if idx, ok := s.Value.(*parser.IndexExpression); ok {
 					discarded := s.Name != nil && s.Name.Value == "_"
-					annotated := indexOutAnnotated(s)
 					// D6：顯式 **plain** 型別（`c char = s[i]` / `v i64 = a[i]`）
 					// 與 `?T` 一樣會讓這條讀取保持 plain —— lower 期的合成
 					// （synthesizeNullableType）在 s.Type != nil 時直接短路。
-					// 這種讀取壓根不產生 option，自無「未處理」可言；不豁免
-					// 就會出現「補上 char → option 消失 → 仍被催著處理 option」
-					// 的自相矛盾，與 checkRedundantTypeInStmt 的 tcpoxtfd 豁免
-					// （producesOptionIndex）是同一件事的兩面。
+					// 這種讀取壓根不產生 option，自無「未處理」可言。
 					letType := ""
 					if s.Type != nil {
 						letType = declTypeOfRaw(view, s, s.Type.String())
@@ -6178,18 +6233,10 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 					plainDeclared := s.Type != nil && !ty.IsOptionRaw(letType)
 					// S3：lowering 把 `a = arr[i]` 的 ?elem 推斷寫入 Program.Sem.
 					// InferredType（synthesizeNullableType）。AST 上 s.Type 為空，
-					// 與「顯式 ?T」走同一條豁免（目標本身就是 option，越界 option
-					// 已被接納，不需要另報 idxhndld）。
+					// 與「顯式 ?T」走同一條豁免。
 					inferredOption := sem != nil && sem.HasInferredType(s)
-					if isSafeBase(curFunc, idx) && !discarded && !annotated && !plainDeclared && !(s.Type != nil && ty.IsOptionRaw(letType)) && !inferredOption {
-						cf := program.Sem.SourceFileOf(s)
-						if cf == "" {
-							cf = curFile
-						}
-						if cf == "" {
-							cf = mainFile
-						}
-						report(idx, cf)
+					if isSafeBase(curFunc, idx) && !discarded && !plainDeclared && !(s.Type != nil && ty.IsOptionRaw(letType)) && !inferredOption {
+						report(idx, resolveFile(s, curFile))
 					}
 				}
 			}
@@ -6201,22 +6248,15 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			// AssignExpression 出現：LHS 為 ?T 或處於 option 函式（codegen 自動
 			// wrap）時已接納；否則越界 option 未被處理 → 報錯。LHS 為 `_` 時豁免。
 			if ae, ok := s.Expression.(*parser.AssignExpression); ok {
+				markHandled(ae.Value)
 				if idx, ok := ae.Value.(*parser.IndexExpression); ok {
 					if isSafeBase(curFunc, idx) {
 						handledByType := false
 						if id, ok := ae.Left.(*parser.Identifier); ok {
 							handledByType = id.Value == "_" || lhsIsOption(curFunc, id.Value)
 						}
-						annotated := indexOutAnnotated(s, ae)
-						if !handledByType && !annotated && !fnOpt {
-							cf := program.Sem.SourceFileOf(s)
-							if cf == "" {
-								cf = curFile
-							}
-							if cf == "" {
-								cf = mainFile
-							}
-							report(idx, cf)
+						if !handledByType && !fnOpt {
+							report(idx, resolveFile(s, curFile))
 						}
 					}
 				}
@@ -6225,9 +6265,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 				walkExpr(s.Expression, curFunc, curFile)
 			}
 		case *parser.UnwrapAssignStatement:
-			if idx, ok := s.Value.(*parser.IndexExpression); ok {
-				handled[idx] = true
-			}
+			markHandled(s.Value)
 			if s.Value != nil {
 				walkExpr(s.Value, curFunc, curFile)
 			}
@@ -6251,13 +6289,21 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 				walkStmt(b, curFunc, fnOpt, curFile)
 			}
 		case *parser.BlockMatchStatement:
-			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
+			// 塊 match 主語（若為索引讀取）是顯式消費者；主體 / 臂體與一般區塊同口徑下鑽。
+			if s.Match != nil {
+				markHandled(s.Match.Matched)
+			}
 			for _, b := range blockMatchChildStatements(s) {
 				walkStmt(b, curFunc, fnOpt, curFile)
 			}
 		case *parser.MultiAssignStatement:
+			markHandled(s.Value)
 			if s.Value != nil {
 				walkExpr(s.Value, curFunc, curFile)
+			}
+		case *parser.ReturnStatement:
+			if s.ReturnValue != nil {
+				walkExpr(s.ReturnValue, curFunc, curFile)
 			}
 		}
 	}
@@ -8977,20 +9023,25 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 					Column:  e.Token.Column,
 					Message: i18n.T("iyn3rgtm", "'self' (.) can only be used inside struct methods; if you meant the match value, use 'it'"),
 				})
-			} else {
-				msg := fmt.Sprintf("'%s' is not defined", e.Value)
-				if mod := stdFuncModule(e.Value); mod != "" {
-					// global.no rule: cross-module calls must carry the module
-					// prefix. Suggest the qualified form.
-					msg = fmt.Sprintf("'%s' is not defined; call it as '%s.%s' (cross-module calls must be module-qualified)", e.Value, mod, e.Value)
-				}
-				results = append(results, ValidateResult{
-					TraceID: "4bek3xc6",
-					Line:    e.Token.Line,
-					Column:  e.Token.Column,
-					Message: msg,
-				})
+		} else {
+			msg := fmt.Sprintf("'%s' is not defined", e.Value)
+			var fixes []parser.DiagnosticFix
+			if mod := stdFuncModule(e.Value); mod != "" {
+				// global.no rule: cross-module calls must carry the module
+				// prefix. Suggest the qualified form.
+				msg = fmt.Sprintf("'%s' is not defined; call it as '%s.%s' (cross-module calls must be module-qualified)", e.Value, mod, e.Value)
+				qualified := mod + "." + e.Value
+				fixes = []parser.DiagnosticFix{fixSnippetSpan(qualified, "cross-module calls must be module-qualified",
+					e.Token.Line, e.Token.Column, e.Token.Line, e.Token.Column+len(e.Value))}
 			}
+			results = append(results, ValidateResult{
+				TraceID: "4bek3xc6",
+				Line:    e.Token.Line,
+				Column:  e.Token.Column,
+				Message: msg,
+				Fixes:   fixes,
+			})
+		}
 		}
 	case *parser.CallExpression:
 		// Function name: check as call target, not variable reference
@@ -9948,12 +9999,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								elemInferred := inferExprType(elem, varTypes, funcTypes, selfType)
 								if elemInferred != "" && elemInferred != elemType &&
 									!isArgTypeCompatible(elemType, elemInferred, elem) {
-									results = append(results, ValidateResult{
-										TraceID: "os0j8ix4",
-										Line:    s.Token.Line,
-										Column:  s.Token.Column,
-										Message: i18n.T("os0j8ix4", "cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, s.Name.Value, narrowingHint(elemInferred, elemType)),
-									})
+							results = append(results, ValidateResult{
+								TraceID: "os0j8ix4",
+								Line:    s.Token.Line,
+								Column:  s.Token.Column,
+								Message: i18n.T("os0j8ix4", "cannot assign %s value to %s element in array '%s'", elemInferred, elemType, s.Name.Value),
+								Fixes:   narrowingFixes(elemInferred, elemType),
+							})
 								}
 							}
 						}
@@ -10013,17 +10065,18 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						!isIntLiteralNarrowingToDeclared(s.Value, existingType) &&
 						// 浮點字面量指派給 f32/f64 變數：常量轉換（如 `v f32 = 4.0`），不視為執行期 f64→f32 丢精度
 						!isFloatLiteralToDeclared(s.Value, existingType) {
-						valPos := s.Value.Pos()
-						msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", inferredType, existingType, s.Name.Value, narrowingHint(inferredType, existingType))
-						if optionImplicitUnwrapRejected(existingType, inferredType) {
-							msg += optionUnwrapAssignHint(inferredType)
-						}
-						results = append(results, ValidateResult{
-							TraceID: "15w45dqk",
-							Line:    valPos.Line,
-							Column:  valPos.Column,
-							Message: msg,
-						})
+					valPos := s.Value.Pos()
+					msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, s.Name.Value)
+					if optionImplicitUnwrapRejected(existingType, inferredType) {
+						msg += optionUnwrapAssignHint(inferredType)
+					}
+					results = append(results, ValidateResult{
+						TraceID: "15w45dqk",
+						Line:    valPos.Line,
+						Column:  valPos.Column,
+						Message: msg,
+						Fixes:   narrowingFixes(inferredType, existingType),
+					})
 					}
 					// B4: char 是 Unicode 碼點，合法視窗為 [0, 0x10FFFF]。
 					// intToCharAssignOK 放行「整數值 → char」是針對執行期值；
@@ -10224,24 +10277,26 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 												TraceID: "3b9bxfnt",
 												Line:    assign.Token.Line,
 												Column:  assign.Token.Column,
-												Message: i18n.T("3b9bxfnt", "cannot assign %s value to %s element in array '%s'%s", elemInferred, elemType, ident.Value, narrowingHint(elemInferred, elemType)),
+												Message: i18n.T("3b9bxfnt", "cannot assign %s value to %s element in array '%s'", elemInferred, elemType, ident.Value),
+												Fixes:   narrowingFixes(elemInferred, elemType),
 											})
 										}
 									}
 								}
 							} else {
-								msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'%s", valType, existingType, ident.Value, narrowingHint(valType, existingType))
-								if subDefaultOpt && !ty.IsOptionRaw(existingType) {
-									msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", ty.StripOptionRaw(valType), ident.Value, existingType, ident.Value, ty.StripOptionRaw(valType))
-								} else if optionImplicitUnwrapRejected(existingType, valType) {
-									msg += optionUnwrapAssignHint(valType)
-								}
-								results = append(results, ValidateResult{
-									TraceID: "1mf3x79l",
-									Line:    assign.Token.Line,
-									Column:  assign.Token.Column,
-									Message: msg,
-								})
+							msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", valType, existingType, ident.Value)
+							if subDefaultOpt && !ty.IsOptionRaw(existingType) {
+								msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", ty.StripOptionRaw(valType), ident.Value, existingType, ident.Value, ty.StripOptionRaw(valType))
+							} else if optionImplicitUnwrapRejected(existingType, valType) {
+								msg += optionUnwrapAssignHint(valType)
+							}
+							results = append(results, ValidateResult{
+								TraceID: "1mf3x79l",
+								Line:    assign.Token.Line,
+								Column:  assign.Token.Column,
+								Message: msg,
+								Fixes:   narrowingFixes(valType, existingType),
+							})
 							}
 						}
 					} else if !exists {

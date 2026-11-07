@@ -49,6 +49,8 @@ type LintResult struct {
 	// 包含來自多個模組的語句，File 用於區分每條 lint 歸屬哪個檔案。
 	// 為空時由調用者使用默認路徑（如輸入檔案路徑）。
 	File string
+	// Fixes 是該診斷可套用的修復建議（Nolang 源片段 + 替換 span）。為空表示無修復。
+	Fixes []parser.DiagnosticFix
 }
 
 // LintOptions 控制 RunAllLints 的行為。
@@ -301,7 +303,6 @@ var lintSteps = []lintStep{
 	{"ineffective-overflow", true, runLintIneffectiveOverflow},
 	{"unhandled-overflow", false, runLintUnhandledOverflow},
 	{"unhandled-index", false, runLintUnhandledIndex},
-	{"redundant-index-out", true, runLintRedundantIndexOut},
 	{"catch-all-arms", true, runLintCatchAllArms},
 	{"range-index-loops", true, runLintRangeIndexLoops},
 	{"range-self-ellipsis", true, runLintRangeSelfEllipsis},
@@ -579,12 +580,17 @@ func runLintUnhandledOverflow(program *parser.Program, opts LintOptions) []LintR
 			Severity: sev, Source: "nolang-overflow",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
+			Fixes: u.Fixes,
 		})
 	}
 	return results
 }
 
-// runLintUnhandledIndex — 20e. 未處理的越界索引（D2：產生處 HINT）
+// runLintUnhandledIndex — 20e. 未處理的越界索引。D11 起同一趟
+// ValidateUnhandledIndexTHIR 產出兩種 TraceID，逐條分流嚴重度：
+//   - idxhndld（產生處）：HINT，不阻斷建置（含 std 的 223 處 place-match 臂）；
+//   - idxbruse（裸索引 option 當值用、巢狀值位置未顯式消費）：LintError，
+//     由 build/transpiler_validate.go 依此 TraceID 攔截建置。
 func runLintUnhandledIndex(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, u := range ValidateUnhandledIndexTHIR(program, opts.SourcePath, opts.thirView) {
@@ -592,28 +598,13 @@ func runLintUnhandledIndex(program *parser.Program, opts LintOptions) []LintResu
 		if file == "" {
 			file = opts.SourcePath
 		}
-		results = append(results, LintResult{
-			Line: u.Line, Column: u.Column,
-			Severity: LintHint, Source: "nolang-index",
-			File:    file,
-			Message: u.Message, TraceID: u.TraceID,
-		})
-	}
-	return results
-}
-
-// runLintRedundantIndexOut — 20f. 套用在 place-match 主體上的多餘 #{index-out}（safe-gate）
-// 診斷為 HINT：提示使用者移除（no fmt 會自動移除）。與 idxhndld 同軌（nolang-index / HINT）。
-func runLintRedundantIndexOut(program *parser.Program, opts LintOptions) []LintResult {
-	var results []LintResult
-	for _, u := range ValidateRedundantIndexOut(program, opts.SourcePath) {
-		file := u.File
-		if file == "" {
-			file = opts.SourcePath
+		sev := LintHint
+		if u.TraceID == bareIndexUseTraceID {
+			sev = LintError
 		}
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
-			Severity: LintHint, Source: "nolang-index",
+			Severity: sev, Source: "nolang-index",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})
