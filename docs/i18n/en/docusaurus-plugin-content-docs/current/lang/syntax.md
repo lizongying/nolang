@@ -2072,95 +2072,112 @@ v ?i64 = m['a']         ; read    (same as m.get('a'))
 
 For an index `v[i]` on `arr` / `vec` / `slice` (`[]T`) / fixed-length arrays / `str` / `txt`, the result is **always `?T`**: out of range yields `nil`, in range yields `ok(value)` — it never aborts (runtime error: index out of bounds). This is the same rule as the unannotated overflow behaviour of integer `+ - * / %` (see "Integer Overflow").
 
-There are four ways to consume that `?T`:
+There are only **three** ways to consume that `?T`. **`#{index-out=DEF}` was removed in D11** —
+a leftover annotation is a compile error, and there is no "explicit plain type pulls it back to plain"
+escape hatch either (`v i64 = a[i]` must also be consumed explicitly).
 
-**1. `x ?= v[i]` — propagate the error upwards**
+**1. READ — unwrap with a match**
 
-`?=` hands the out-of-range error straight to the enclosing function's `?T` result param (which is why the function must return `?T`).
+A value match yields the value directly, or a statement match assigns inside the `ok` arm.
+`-> _` is the discard arm; in a value context it yields the **element type's zero value**
+(i64 → 0, str → '', byte → 0, container → empty container).
 
 ```no
 #{fmt-skip}
-safe-get = (arr []i64, i i64) (res ?i64) {
-    x ?= arr[i]   ; out of range → res = None (no crash)
+; value match
+x = state[5]: {
+    ok -> it
+
+    -> _
+}
+
+; statement match
+state[5]: {
+    ok -> x = it
+
+    -> _
 }
 ```
 
-**2. `x = v[i] #{index-out=DEF}` — substitute a default when out of range (`zero` or a literal)**
+**2. WRITE — place match**
 
-With the `#{index-out=DEF}` annotation (on its own line above the assignment, or trailing on the same line), an out-of-range index does not crash; it substitutes `DEF` instead. `DEF` takes one of two forms: the **keyword `zero`** or a **literal**.
-
-- **`#{index-out=zero}`**: regardless of the container's element type, it always substitutes the **zero value of the current element type** — integer family / `byte` / `char` → `0`, `f32`/`f64` → `0.0`, `bool` → `false`, `str`/`txt` → `''`, container → empty container / zero-length array, struct → zero-valued struct. No need to know the element type details; best suited for "treat out-of-range as the default zero".
-- **`#{index-out=DEF}` (a literal)**: the kinds allowed depend on the container's element type, and `DEF` must be compatible with it:
-  - Integer / character containers (`i8`~`i128`, `u8`~`u128`, `byte`, `char`): an integer or character literal, e.g. `0`, `'x'`
-  - Floating-point containers (`f32`, `f64`): a float literal, e.g. `0.0`
-  - Boolean containers (`bool`): `true` / `false`
-  - String containers (`str`): a string literal, e.g. `''`
+`it` in the `ok` arm is the **element place** (readable and writable), not a value copy.
 
 ```no
 #{fmt-skip}
-get-default = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out=zero}     ; out of range → res = 0 (explicit literal)
-}
+state[5]: {
+    ok -> it = x
 
-get-zero = (arr []f64, i i64) (res f64) {
-    res = arr[i]  #{index-out=zero}  ; out of range → res = 0.0 (zero value of the type)
-}
-
-get-ch = (arr []byte, i i64) (res byte) {
-    res = arr[i]  #{index-out=zero}  ; byte container zero value 0
+    -> _
 }
 ```
 
-> The annotation may also go on its own line above the assignment: `#{index-out=zero}` ⏎ `res = arr[i]`. Writing it on the **same line in front of** the assignment (`#{index-out=zero} res = arr[i]`) is an error (see "Annotation Placement").
->
-> ⚠️ `#{index-out=…}` **only decides "what value to take on failure" — it does not unwrap**: the result type is still `?T`. The examples above compile because `res i64` — an **explicit plain type** — pulls the result back to plain (see form 4).
+> **map exception:** `m['k'] = 1` needs **no unwrapping** — a map subscript is a key and the write
+> is a put/insert (missing key inserts, existing key overwrites), so there is no out-of-bounds
+> write to guard. But a map **read** `m['k']` still returns `?V` and must be unwrapped.
+> `m[k] ?= v` is a **compile error** (the `?V` from `get` is only a copy; writing it back does not
+> reach the map) — write `m[k] = v` directly.
 
-**3. Unwrap with a match — `x = v[i]: { ok -> it, -> }`**
+**3. The `?=` shorthand — propagate the error**
 
-Take the `?T` apart right where it is produced; an empty catch-all arm takes the zero value of the target type (D4).
+`x ?= state[5]` (read) and `state[5] ?= x` (write) are the shorthands for the two match forms
+above; on failure the whole option is thrown upward. It is legal under **either** of two conditions:
+
+- the enclosing function has a `?T` result param — on failure the option is written there and
+  the function returns early;
+- the statement is inside the body of a **statement-level block match** `{ ... }: { ... }` —
+  the nearest block match captures it, the whole body stops and the arms run once; **no `?T`
+  result param required**.
+
+Outside both it is a compile error. So the standard way to keep the shorthand in a function
+**whose return type is not option** is to wrap the body in a block match:
 
 ```no
 #{fmt-skip}
-get-elem = (arr []i64, i i64) (out i64) {
-    x-opt = arr[i]
-    x = x-opt: {
-        ok -> it
-        ->              ; empty arm = zero value (i64 → 0)
+handle = (x i64) {
+    {
+        y ?= x + 1
+        print(1)
+    }: {
+        err -> _
+
+        -> _
     }
-    out = x
 }
 ```
 
-**4. An explicit plain type — `x i64 = v[i]`**
-
-An explicit plain type on the binding makes lowering short-circuit, reading the plain value back. This is the shortest form for "I know out-of-range means zero", and is equivalent to `#{index-out=zero}` — but without needing an annotation:
+**Nested reads:** an inner match rebinds `it`, so use a named binding `ok(it1) -> it1` there.
+Since 2026-11-06 the exact shape with a value match directly on the right of `it = ...` **does**
+write back to the container: lowering hoists that value match into a synthetic temporary before
+rebinding `it` (regression: `tests/place-write-value-match.no`). Hoisting the read into your own
+named temporary is still equivalent, and handy when the value is reused elsewhere:
 
 ```no
 #{fmt-skip}
-get-plain = (arr []i64, i i64) (out i64) {
-    v i64 = arr[i]        ; out of range → 0 (no crash)
-    out = v
+ixout1 = state[9]: {
+    ok -> it
+
+    -> _
+}
+state[5]: {
+    ok -> it = ixout1
+
+    -> _
 }
 ```
 
-`vec` (including an unannotated local produced by `to-vec()`) works the same way:
+> **Scope:** applies to `arr` / `vec` / `slice` / fixed-length arrays / `str` / `txt` alike; only a
+> **direct variable base** (`v[i]`) is rewritten into the safe form. `receiver.field[i]` goes
+> through the original bounds-check path. Comparison operands compare the payload (`a[i] == 5`),
+> not the whole `{tag, payload}`.
 
-```no
-#{fmt-skip}
-get-vec-default = (a [4]i64, i i64) (res i64) {
-    v = a.to-vec()          ; v's element type is derived from a, no annotation needed
-    res = v[i]  #{index-out=zero}   ; out of range → res = 0 (no crash)
-}
-```
+> ⛔ **Hard error:** using a `?T` as a plain value (`crc = crc ^ s[i]`, `f(s[i])`, `v i64 = a[i]`)
+> blocks `no build`; the compiler suggests a match or `?=` (wrap in a block match when the function
+> has no `?T` result param). The corpus was migrated in one pass by `no fmt --fix=index-out`;
+> that tool was retired with D11.
 
-> **Scope (important):** all four forms apply to `arr` / `vec` / `slice` / fixed-length arrays / `str` / `txt` alike.
-> Only reads that are **provably in bounds** (fixed-length array with a literal in-range index, or `for i <- [0..N)` over an `[N]T` base) have their option wrapper statically eliminated — there, `x i64 = a[i]` and `x = a[i]` are equivalent.
->
-> `receiver.field[i]` (indexing a struct field) goes through the original bounds-check path and is not rewritten into the safe form.
-
-> **Bulk migration:** `no fmt --fix=unwrap` rewrites bindings that "produce an option but never consume it" into form 1 (when the function already has a `?T` result param) or form 3 (match unwrapping), and is idempotent when re-run.
-
-> **Core guarantee:** whichever form you use, an out-of-range index never makes the program crash silently — it either returns `None`, returns the default value, or propagates the error upwards.
+> **Core guarantee:** an out-of-range index never crashes silently — it is either handled by a
+> match or propagated by `?=`.
 
 > **An index read used as a comparison operand** follows safe indexing too: `a[i] == 5` compares the
 > payload (the same rule as `?T == 5`), not the whole `{tag, payload}`. Out of range the read yields
@@ -3225,8 +3242,10 @@ overflow, wrap" (`overflow`). Writing them on two separate lines parses identica
 
 ### Error Propagation (the `?=` Operator)
 
-When a function returns an option type, the `?=` operator can unwrap the option automatically and throw the error
-upwards, simplifying error handling.
+`?=` is the **concise shorthand** for unwrapping an option and throwing the error upwards.
+**An option return type is not required**: either of the two conditions below is enough, so a
+function whose return type is not option can still write `y ?= x + 1` by wrapping its body in a
+block match.
 
 **Syntax:**
 
@@ -3236,9 +3255,32 @@ v ?= expr
 
 **Semantics:**
 - If `expr` returns `ok(value)`, `v` is assigned the unwrapped inner value (automatic unwrap)
-- If `expr` returns `nil` or `err`, the current function's option result parameter is set to that value and `return` runs (automatic propagation)
+- If `expr` returns `nil` or `err`:
+  - with a `?T` result param → the option is written there and the function returns early;
+  - inside a statement-level block match `{ ... }: { ... }` → the **nearest** block match captures
+    it, the **whole body stops** and the arms run once (**not** a `return`); no `?T` result param needed.
 
-**Restriction:** `?=` can only be used inside a function that has an option-typed result parameter, **or** inside the body of a statement-level block match `{ ... }: { ... }` (where the nearest block match captures it — see *The Three Match Subject Forms*). Outside both, the compiler reports an error.
+**Available under either condition:**
+1. The enclosing function has an option-typed result parameter; **or**
+2. The statement is inside the body of a statement-level block match `{ ... }: { ... }`
+   (see *The Three Match Subject Forms*).
+
+Outside both, the compiler reports an error. The two-arm `err -> _` / `-> _` form discards the
+propagated failure and is the standard fallback for functions without a `?T` result param:
+
+```no
+#{fmt-skip}
+handle = (x i64) {
+    {
+        y ?= x + 1
+        print(1)
+    }: {
+        err -> _
+
+        -> _
+    }
+}
+```
 
 **No pre-initialization needed:** the function prologue does not zero-initialize out parameters, but at return
 time any out parameter that was never explicitly assigned is auto-filled with its type's zero value (integer →

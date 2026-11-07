@@ -654,7 +654,13 @@ url-parse-basic-auth = (header str) (user str, password str) {
     ; 尋找冒號分隔符
     colon = -1
     i <- [0..raw.len()): {
-        raw[i] == 58 -> {
+        ixout657c12 = raw[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout657c12 == 58 -> {
             colon = i
             break
         }
@@ -665,9 +671,14 @@ url-parse-basic-auth = (header str) (user str, password str) {
     user-bytes []byte
     j <- [0..colon): {
 
-        #{index-out=zero}
+        ixout670c24 = raw[j]: {
+            ok -> it
+
+            -> _
+        }
+
         user-bytes[j]: {
-            ok -> it = raw[j]
+            ok -> it = ixout670c24
 
             -> _
         }
@@ -679,9 +690,14 @@ url-parse-basic-auth = (header str) (user str, password str) {
     #{overflow=wrap}
     j <- [colon + 1..raw.len()): {
 
-        #{index-out=zero}
+        ixout684c24 = raw[j]: {
+            ok -> it
+
+            -> _
+        }
+
         pass-bytes[k]: {
-            ok -> it = raw[j]
+            ok -> it = ixout684c24
 
             -> _
         }

@@ -92,6 +92,9 @@ func ValidateNonExhaustiveMatch(program *parser.Program) []ValidateResult {
 			File:    m.File,
 			Message: i18n.T("xl6uu81q", "non-exhaustive match on option '%s': missing arm(s): %s — add a `-> ` (else) arm, or handle every variant",
 				m.Subject, strings.Join(m.Missing, ", ")),
+			Fixes: []parser.DiagnosticFix{{
+				Description: "add a `-> ` (else) catch-all arm before the closing `}`, or handle each missing variant: " + strings.Join(m.Missing, ", "),
+			}},
 		})
 	}
 	return results

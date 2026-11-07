@@ -85,7 +85,7 @@ func TestDivByZeroNarrowOptionPayload(t *testing.T) {
     r = x % 256
 }`,
 		"index": `f = (s []byte, i i64) (r ?byte) {
-    #{index-out=zero}
+    #{d11-probe=wrap}
     r = s[i] % 256
 }`,
 	}

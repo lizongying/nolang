@@ -321,8 +321,8 @@ main = () {
     a [][]i64
     a.push(mk())
     n = 0
+    x ?[]i64
     i <- [0..4) {
-        #{index-out=zero}
         x = a[0]
         #{overflow=wrap}
         n = n + x.len()

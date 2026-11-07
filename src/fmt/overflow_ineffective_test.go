@@ -283,7 +283,7 @@ func TestFormatPreservesEffectiveOverflowInMethodReceiverIndex(t *testing.T) {
 	input := "tables.dyn-add = (name str, value str) {\n" +
 		"    i = .dyn-count\n" +
 		"    (i > 0) {\n" +
-		"        #{index-out=zero, overflow=wrap}\n" +
+		"        #{overflow=wrap}\n" +
 		"        prev-name-len = .dyn-names[i - 1].len-bytes()\n" +
 		"    }\n" +
 		"}\n"
@@ -293,11 +293,10 @@ func TestFormatPreservesEffectiveOverflowInMethodReceiverIndex(t *testing.T) {
 	}
 	relevant, governed := checker.OverflowAnnotationRelevance(program)
 	out := FormatProgramWithOverflow(program, input, relevant, governed)
-	// 接收者索引算式 `.dyn-names[i - 1]` 的 `#{overflow=wrap}` 與 `#{index-out=zero}`
-	// 都必須保留：`.dyn-names` 基底是 DotExpression（struct field），其型別在分析作用域
-	// 未必被解析成容器，`enumReadIndexAll` 保守把它当作「仍需 index-out 的讀取」→ 不刪
-	//（否則 `no fmt` 刪掉後 `no vet` 立刻新增 ERROR，见 commit 23038595 回归）。
-	if !strings.Contains(out, "#{index-out=zero, overflow=wrap}") {
+	// 接收者索引算式 `.dyn-names[i - 1]` 的 `#{overflow=wrap}` 必須保留：
+	// 該陳述必須落在 relevant 集合內（見上方 DotExpression → Receiver 遞回），
+	// 否則 `no fmt` 刪掉註解後 `no vet` 立刻新增 ERROR（commit 23038595 回歸）。
+	if !strings.Contains(out, "#{overflow=wrap}") {
 		t.Errorf("method-receiver index overflow annotation stripped:\n%s", out)
 	}
 	// 幂等：二次格式化不得再变动。

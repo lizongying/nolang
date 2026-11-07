@@ -18,8 +18,8 @@
 ; ⚠️ 訊息一律用單引號字串。nolang 的 "..." 是【char 字面量】，不是字串；
 ;    要在字串裡放單引號必須轉義：'\'x\'' 是三個位元組 ' x '。
 ;
-; ⚠️ 每一次「讀取」切片元素都要 `#{index-out=zero}`，**即使是字面量索引**
-;    （實測：`t = ts[0]` 沒有註解會報 [idxhndld] 並拒絕編譯）。
+; ⚠️ 每一次「讀取」切片元素都回傳 ?T，需以值 match / `?=` 顯式消費，**即使是字面量索引**
+;    （實測：`t = ts[0]` 未消費 ?T 會報錯並拒絕編譯）。
 
 # /test/runner.eq
 # /test/runner.str-eq
@@ -37,8 +37,13 @@ test-empty = () {
     ts = lx.scan-all('')
     runner.eq(ts.len(), 1, 'empty source -> exactly 1 token')
 
-    #{index-out=zero}
-    t = ts[0]
+    ixout41c9 = ts[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    t = ixout41c9
     runner.eq(t.typ, tok.EOF, 'empty source -> that token is EOF')
     runner.eq(t.ln, 1, 'EOF at line 1')
     runner.eq(t.cl, 1, 'EOF at col 1')
@@ -55,14 +60,29 @@ test-no-alias = () {
     ts = lx.scan-all('abc def ghi')
     runner.eq(ts.len(), 4, 'abc def ghi -> 4 tokens')
 
-    #{index-out=zero}
-    t0 = ts[0]
+    ixout59c10 = ts[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    t1 = ts[1]
+        -> _
+    }
 
-    #{index-out=zero}
-    t2 = ts[2]
+    t0 = ixout59c10
+
+    ixout62c10 = ts[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = ixout62c10
+
+    ixout65c10 = ts[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    t2 = ixout65c10
     runner.str-eq(t0.lit, 'abc', 3, 'elem 0 literal is abc (not aliased)')
     runner.str-eq(t1.lit, 'def', 3, 'elem 1 literal is def (not aliased)')
     runner.str-eq(t2.lit, 'ghi', 3, 'elem 2 literal is ghi (not aliased)')
@@ -83,17 +103,37 @@ test-assign = () {
     ts = lx.scan-all('a = 1')
     runner.eq(ts.len(), 4, 'a = 1 -> 4 tokens')
 
-    #{index-out=zero}
-    a = ts[0]
+    ixout87c9 = ts[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    b = ts[1]
+        -> _
+    }
 
-    #{index-out=zero}
-    c = ts[2]
+    a = ixout87c9
 
-    #{index-out=zero}
-    d = ts[3]
+    ixout90c9 = ts[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    b = ixout90c9
+
+    ixout93c9 = ts[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout93c9
+
+    ixout96c9 = ts[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    d = ixout96c9
     runner.eq(a.typ, tok.IDENT, 'tok0 IDENT')
     runner.eq(b.typ, tok.ASSIGN, 'tok1 ASSIGN')
     runner.eq(c.typ, tok.INT, 'tok2 INT')
@@ -113,20 +153,45 @@ test-newline = () {
     ts = lx.scan-all('1 + 2\n')
     runner.eq(ts.len(), 5, '1 + 2 NL -> 5 tokens')
 
-    #{index-out=zero}
-    a = ts[0]
+    ixout117c9 = ts[0]: {
+        ok -> it
 
-    #{index-out=zero}
-    b = ts[1]
+        -> _
+    }
 
-    #{index-out=zero}
-    c = ts[2]
+    a = ixout117c9
 
-    #{index-out=zero}
-    d = ts[3]
+    ixout120c9 = ts[1]: {
+        ok -> it
 
-    #{index-out=zero}
-    e = ts[4]
+        -> _
+    }
+
+    b = ixout120c9
+
+    ixout123c9 = ts[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout123c9
+
+    ixout126c9 = ts[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    d = ixout126c9
+
+    ixout129c9 = ts[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    e = ixout129c9
     runner.eq(a.typ, tok.INT, 'tok0 INT')
     runner.eq(b.typ, tok.ADD, 'tok1 ADD')
     runner.eq(c.typ, tok.INT, 'tok2 INT')
@@ -145,8 +210,13 @@ test-char-vs-string = () {
     cs = lx.scan-all('"x"')
     runner.eq(cs.len(), 2, 'char literal -> 2 tokens')
 
-    #{index-out=zero}
-    c = cs[0]
+    ixout149c9 = cs[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout149c9
     runner.eq(c.typ, tok.CHAR, 'double quotes -> CHAR')
     runner.str-eq(c.lit, 'x', 1, 'char value is x')
     runner.str-eq(c.raw, '"x"', 3, 'char raw keeps its quotes')
@@ -154,8 +224,13 @@ test-char-vs-string = () {
     ss = lx.scan-all('\'x\'')
     runner.eq(ss.len(), 2, 'string literal -> 2 tokens')
 
-    #{index-out=zero}
-    s = ss[0]
+    ixout158c9 = ss[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    s = ixout158c9
     runner.eq(s.typ, tok.STRING, 'single quotes -> STRING')
     runner.str-eq(s.lit, 'x', 1, 'string value is x')
     runner.str-eq(s.raw, '\'x\'', 3, 'string raw keeps its quotes')
@@ -170,16 +245,26 @@ test-comment-marker = () {
     ts = lx.scan-all('; hi\n')
     runner.eq(ts.len(), 3, 'semicolon comment + NL -> 3 tokens')
 
-    #{index-out=zero}
-    c = ts[0]
+    ixout174c9 = ts[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout174c9
     runner.eq(c.typ, tok.COMMENT, 'tok0 COMMENT')
     runner.str-eq(c.mk, ';', 1, 'semicolon comment marker is ;')
     runner.str-eq(c.lit, ' hi', 3, 'comment text keeps the leading space')
 
     ts2 = lx.scan-all('// hi\n')
 
-    #{index-out=zero}
-    c2 = ts2[0]
+    ixout182c10 = ts2[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    c2 = ixout182c10
     runner.eq(c2.typ, tok.COMMENT, 'slash comment -> COMMENT')
     runner.str-eq(c2.mk, '//', 2, 'slash comment marker is //')
 }
@@ -197,11 +282,21 @@ test-sci-notation = () {
     ts = lx.scan-all('x = 1e5')
     runner.eq(ts.len(), 5, 'x = 1e5 -> ILLEGAL + residual IDENT e5')
 
-    #{index-out=zero}
-    a = ts[2]
+    ixout201c9 = ts[2]: {
+        ok -> it
 
-    #{index-out=zero}
-    b = ts[3]
+        -> _
+    }
+
+    a = ixout201c9
+
+    ixout204c9 = ts[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    b = ixout204c9
     runner.eq(a.typ, tok.ILLEGAL, 'sci tok2 is ILLEGAL')
     runner.eq(a.ln, 1, 'sci line')
     runner.eq(a.cl, 5, 'sci col')
@@ -215,57 +310,97 @@ test-sci-notation = () {
     ts2 = lx.scan-all('3.5e-2')
     runner.eq(ts2.len(), 3, '3.5e-2 -> ILLEGAL + IDENT e-2')
 
-    #{index-out=zero}
-    a2 = ts2[0]
+    ixout219c10 = ts2[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    a2 = ixout219c10
     runner.eq(a2.typ, tok.ILLEGAL, 'dotted sci is ILLEGAL not FLOAT')
     runner.str-eq(a2.lit, '3.5', 3, 'dotted sci lit is the number part')
     runner.str-eq(a2.emsg, SCI, 156, 'dotted sci emsg')
 
-    #{index-out=zero}
-    b2 = ts2[1]
+    ixout225c10 = ts2[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    b2 = ixout225c10
     runner.str-eq(b2.lit, 'e-2', 3, 'e-2 residual IDENT (isLetter includes -)')
 
     ; 1e+5：'+' 後跟指數位 ⇒ sci
     ts3 = lx.scan-all('1e+5')
 
-    #{index-out=zero}
-    a3 = ts3[0]
+    ixout232c10 = ts3[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    a3 = ixout232c10
     runner.eq(a3.typ, tok.ILLEGAL, '1e+5 is sci')
     runner.str-eq(a3.emsg, SCI, 156, '1e+5 emsg')
 
     ; 大寫 E 同檢
     ts4 = lx.scan-all('2E7')
 
-    #{index-out=zero}
-    a4 = ts4[0]
+    ixout240c10 = ts4[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    a4 = ixout240c10
     runner.eq(a4.typ, tok.ILLEGAL, '2E7 is sci')
 
     ; 反例保衛：e 後無指數位 ⇒ 普通 INT（Go：x = 1e ⇒ 1 + IDENT e）
     ts5 = lx.scan-all('1e')
     runner.eq(ts5.len(), 3, '1e -> INT + IDENT + EOF')
 
-    #{index-out=zero}
-    a5 = ts5[0]
+    ixout248c10 = ts5[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    a5 = ixout248c10
     runner.eq(a5.typ, tok.INT, '1e is NOT sci (no exponent digit)')
 
-    #{index-out=zero}
-    b5 = ts5[1]
+    ixout252c10 = ts5[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    b5 = ixout252c10
     runner.str-eq(b5.lit, 'e', 1, '1e residual IDENT')
 
     ; 反例保衛：hex 的 e 被 isHex loop 吞掉，尾字符不可能是 e ⇒ 絕不觸發
     ts6 = lx.scan-all('0x1e5')
     runner.eq(ts6.len(), 2, '0x1e5 single hex token')
 
-    #{index-out=zero}
-    a6 = ts6[0]
+    ixout260c10 = ts6[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    a6 = ixout260c10
     runner.eq(a6.typ, tok.INT, 'hex 0x1e5 stays INT')
     runner.str-eq(a6.lit, '0x1e5', 5, 'hex lit intact')
 
     ; 裸 ILLEGAL（未知字符）無 emsg —— Go 走 ps 側 'illegal token %q' 第二句
     ts7 = lx.scan-all('$')
 
-    #{index-out=zero}
-    a7 = ts7[0]
+    ixout268c10 = ts7[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    a7 = ixout268c10
     runner.eq(a7.typ, tok.ILLEGAL, 'dollar is bare ILLEGAL')
     runner.str-eq(a7.emsg, '', 0, 'bare ILLEGAL has no emsg')
 }

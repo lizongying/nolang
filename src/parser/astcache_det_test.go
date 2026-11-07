@@ -36,9 +36,9 @@ func TestCachedProgramEncodingIsDeterministic(t *testing.T) {
 	// test alone.
 	src := "f = (a []i64, i i64) {\n" +
 		"    n [24]i64\n" +
-		"    #{index-out=zero}\n" +
+		"    #{d11-probe=wrap}\n" +
 		"    l = a[i]\n" +
-		"    #{index-out=zero, overflow=wrap}\n" +
+		"    #{overflow=wrap}\n" +
 		"    n[l] = n[l] + 1\n" +
 		"}\n"
 	p := New(lexer.NewCached("det.no", src))

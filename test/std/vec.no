@@ -16,8 +16,20 @@ t-len-push = () {
     v.push(10)
     v.push(20)
     runner.eq(v.len(), 2, 'push x2 len == 2')
-    runner.eq(v[0], 10, 'push [0] == 10')
-    runner.eq(v[1], 20, 'push [1] == 20')
+    ixout19c16 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout19c16, 10, 'push [0] == 10')
+    ixout20c16 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout20c16, 20, 'push [1] == 20')
 }
 
 ; 驗證 push 超出初始容量時自動擴容，仍保全部元素與順序
@@ -29,7 +41,13 @@ t-push-grow = () {
         v.push(i)
     }
     runner.eq(v.len(), 10, 'push 10 elems len == 10')
-    runner.eq(v[9], 9, 'last pushed value')
+    ixout32c16 = v[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout32c16, 9, 'last pushed value')
 }
 
 ; t-pop: []t.pop 有預存 codegen bug（表達式賦值報
@@ -110,8 +128,20 @@ t-insert = () {
     v.push(3)
     v.insert(1, 2)
     runner.eq(v.len(), 3, 'insert len == 3')
-    runner.eq(v[1], 2, 'insert [1] == 2')
-    runner.eq(v[2], 3, 'insert [2] == 3')
+    ixout113c16 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout113c16, 2, 'insert [1] == 2')
+    ixout114c16 = v[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout114c16, 3, 'insert [2] == 3')
 }
 
 ; 驗證 remove(i) 移除並回傳該索引元素，其後元素前移、長度減一
@@ -126,25 +156,67 @@ t-remove = () {
     }
     runner.is-true(ok, 'remove(1) returns 2')
     runner.eq(v.len(), 2, 'remove len == 2')
-    runner.eq(v[1], 3, 'remove [1] == 3')
+    ixout129c16 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout129c16, 3, 'remove [1] == 3')
 }
 
 ; 驗證 reverse 原地反轉向量元素順序
 t-reverse = () {
     v = [1, 2, 3, 4]
     v.reverse()
-    runner.eq(v[0], 4, 'reverse [0] == 4')
-    runner.eq(v[1], 3, 'reverse [1] == 3')
-    runner.eq(v[2], 2, 'reverse [2] == 2')
-    runner.eq(v[3], 1, 'reverse [3] == 1')
+    ixout136c16 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout136c16, 4, 'reverse [0] == 4')
+    ixout137c16 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout137c16, 3, 'reverse [1] == 3')
+    ixout138c16 = v[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout138c16, 2, 'reverse [2] == 2')
+    ixout139c16 = v[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout139c16, 1, 'reverse [3] == 1')
 }
 
 ; 驗證 swap 交換兩索引處的元素的值
 t-swap = () {
     v = [1, 2]
     v.swap(0, 1)
-    runner.eq(v[0], 2, 'swap [0] == 2')
-    runner.eq(v[1], 1, 'swap [1] == 1')
+    ixout146c16 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout146c16, 2, 'swap [0] == 2')
+    ixout147c16 = v[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout147c16, 1, 'swap [1] == 1')
 }
 
 ; 驗證 clone 產出內容相等且獨立的副本（改副本不影響原向量）
@@ -156,15 +228,33 @@ t-clone = () {
     runner.eq(c[1], 2, 'clone [1] == 2')
     runner.eq(c[2], 3, 'clone [2] == 3')
     c[0] = 99
-    runner.eq(v[0], 1, 'clone is independent')
+    ixout159c16 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout159c16, 1, 'clone is independent')
 }
 
 ; 驗證 fill 以指定值填滿向量所有元素
 t-fill = () {
     v = [0, 0, 0]
     v.fill(7)
-    runner.eq(v[0], 7, 'fill [0] == 7')
-    runner.eq(v[2], 7, 'fill [2] == 7')
+    ixout166c16 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout166c16, 7, 'fill [0] == 7')
+    ixout167c16 = v[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout167c16, 7, 'fill [2] == 7')
 }
 
 ; 驗證 clear 清空向量使長度歸零
@@ -179,24 +269,114 @@ t-eq = () {
     a = [1, 2, 3]
     b = [1, 2, 3]
     c = [1, 2, 4]
-    runner.eq(a[0], b[0], 'eq element 0')
-    runner.eq(a[1], b[1], 'eq element 1')
-    runner.eq(a[2], b[2], 'eq element 2')
-    runner.ne(a[2], c[2], 'ne element 2')
+    ixout182c16 = a[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout182c22 = b[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout182c16, ixout182c22, 'eq element 0')
+    ixout183c16 = a[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout183c22 = b[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout183c16, ixout183c22, 'eq element 1')
+    ixout184c16 = a[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout184c22 = b[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout184c16, ixout184c22, 'eq element 2')
+    ixout185c16 = a[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout185c22 = c[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.ne(ixout185c16, ixout185c22, 'ne element 2')
 }
 
 ; sort 目前僅支援固定長度陣列（[]t 切片特化未生成，預存問題）
 t-sort = () {
     arr [5] = [3, 1, 4, 1, 5]
     arr.asc()
-    runner.eq(arr[0], 1, 'sort-asc [0] == 1')
-    runner.eq(arr[1], 1, 'sort-asc [1] == 1')
-    runner.eq(arr[2], 3, 'sort-asc [2] == 3')
-    runner.eq(arr[3], 4, 'sort-asc [3] == 4')
-    runner.eq(arr[4], 5, 'sort-asc [4] == 5')
+    ixout192c18 = arr[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout192c18, 1, 'sort-asc [0] == 1')
+    ixout193c18 = arr[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout193c18, 1, 'sort-asc [1] == 1')
+    ixout194c18 = arr[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout194c18, 3, 'sort-asc [2] == 3')
+    ixout195c18 = arr[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout195c18, 4, 'sort-asc [3] == 4')
+    ixout196c18 = arr[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout196c18, 5, 'sort-asc [4] == 5')
     arr.desc()
-    runner.eq(arr[0], 5, 'sort-desc [0] == 5')
-    runner.eq(arr[4], 1, 'sort-desc [4] == 1')
+    ixout198c18 = arr[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout198c18, 5, 'sort-desc [0] == 5')
+    ixout199c18 = arr[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout199c18, 1, 'sort-desc [4] == 1')
 }
 
 ; ── 執行 ──────────────────────────────────────

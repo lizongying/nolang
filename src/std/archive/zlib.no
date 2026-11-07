@@ -30,8 +30,14 @@ adler-32 = (data []byte, n i64) (sum i64) {
     b = 0
     i <- [0..n): {
 
-        #{index-out=zero, overflow=wrap}
-        a = (a + data[i]) % mod-base
+        ixout34c18 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        a = (a + ixout34c18) % mod-base
 
         #{overflow=wrap}
         b = (b + a) % mod-base
@@ -95,14 +101,32 @@ zlib-decompress = (data []byte) (out ?[]byte) {
 
     ; 檢查 zlib header：CM(低 4 位)必須為 8(deflate)，CINFO(高 4 位)≤7
     ; 窗口大小僅供參考，inflate 一律用 32K 窗口解碼，故接受任意合法 CMF(如 sips 的 0x08)
-    (data[0] & 0x0f) != 8 || (data[0] >> 4) > 7 -> {
+    ixout104c10 = data[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout104c35 = data[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    (ixout104c10 & 0x0f) != 8 || (ixout104c35 >> 4) > 7 -> {
         return
     }
 
     ; 跳過 zlib header(2 bytes；若 FLG.FDICT 置位再多 4 bytes DICTID)，取 raw DEFLATE 資料
     hdr-len = 2
+    ixout111c13 = data[1]: {
+        ok -> it
+
+        -> _
+    }
+
     {
-        data[1] & 0x20 != 0 -> hdr-len = 6
+        ixout111c13 & 0x20 != 0 -> hdr-len = 6
     }
 
     #{overflow=wrap}
@@ -115,8 +139,14 @@ zlib-decompress = (data []byte) (out ?[]byte) {
     deflate-data []byte
     i <- [0..deflate-len): {
 
-        #{index-out=zero, overflow=wrap}
-        deflate-data.push(data[hdr-len + i])
+        #{overflow=wrap}
+        ixout119c27 = data[hdr-len + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        deflate-data.push(ixout119c27)
     }
 
     ; 預估輸出大小：100 倍輸入（上限 1MB，下限 64 bytes）
@@ -159,8 +189,19 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
         #{overflow=wrap}
         p = p + 1
 
-        #{index-out=zero}
-        blk-len i64 = data[p] | (data[p + 1] << 8)
+        ixout163c23 = data[p]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout163c34 = data[p + 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        blk-len i64 = ixout163c23 | (ixout163c34 << 8)
 
         #{overflow=wrap}
         p = p + 4; 跳過 LEN(2) + NLEN(2)
@@ -168,8 +209,14 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
         ; 提取 payload
         i <- [0..blk-len): {
 
-            #{index-out=zero, overflow=wrap}
-            buf.push(data[p + i])
+            #{overflow=wrap}
+            ixout172c22 = data[p + i]: {
+                ok -> it
+
+                -> _
+            }
+
+            buf.push(ixout172c22)
         }
 
         #{overflow=wrap}
@@ -192,18 +239,39 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
     !! {
         p >= data.len() -> return
 
-        #{index-out=zero}
-        bfinal i64 = data[p] & 1
+        ixout196c22 = data[p]: {
+            ok -> it
 
-        #{index-out=zero}
-        btype i64 = (data[p] >> 1) & 3
+            -> _
+        }
+
+        bfinal i64 = ixout196c22 & 1
+
+        ixout199c22 = data[p]: {
+            ok -> it
+
+            -> _
+        }
+
+        btype i64 = (ixout199c22 >> 1) & 3
         btype != 0 -> return
 
         #{overflow=wrap}
         p = p + 1
 
-        #{index-out=zero}
-        blk-len i64 = (data[p] & 255) | ((data[p + 1] & 255) << 8)
+        ixout206c24 = data[p]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout206c43 = data[p + 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        blk-len i64 = (ixout206c24 & 255) | ((ixout206c43 & 255) << 8)
 
         #{overflow=wrap}
         p = p + 4 + blk-len

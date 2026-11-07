@@ -266,32 +266,7 @@ func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.Annotat
 		*parser.ForStatement, *parser.MultiAssignStatement, *parser.ReturnStatement,
 		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition,
 		*parser.UseStatement:
-		all := f.sem.AnnotationsOf(stmt)
-		// `#{index-out = ...}` 有兩種來源：
-		//  1) 獨立成行寫在本陳述正上方：parser 對 IDENT 起始的陳述會把註解直接
-		//     attachAnnotations 到本陳述（Propagated=false、無獨立節點），此時**必須**
-		//     由附加註解路徑輸出，否則 `no fmt -w` 會整條遺失越界保護。
-		//  2) 由上一行獨立 AnnotationStatement 節點、或 for 迴圈表頭，經
-		//     applyLineIndexOutAnnotations 複製進本陳述 side-table 的副本
-		//     （Propagated=true）：其顯示已由該節點/表頭負責，此处再印一次會雙印、
-		//     非冪等，故只過濾掉 Propagated 副本。
-		// 尾隨寫法（`stmt #{index-out=zero}`）無獨立節點，永遠保留。
-		if len(all) == 0 {
-			return nil
-		}
-		filtered := all[:0:0]
-		for _, e := range all {
-			if e != nil && e.Key == "index-out" && !e.Trailing && e.Propagated {
-				continue
-			}
-			// 被標註陳述的所有容器索引讀取皆可證明在界內（bounds.go）——lowering
-			// 不為它降級成 option，這條 `#{index-out}` 是死碼，移除。
-			if e != nil && e.Key == "index-out" && f.indexOutRemovable[stmt] {
-				continue
-			}
-			filtered = append(filtered, e)
-		}
-		return filtered
+		return f.sem.AnnotationsOf(stmt)
 	}
 	return nil
 }
@@ -304,12 +279,12 @@ func (f *formatter) hasAttachedAnnotations(stmt parser.Statement) bool {
 
 // attachedAnnotationsWillEmit reports whether formatting this statement will emit
 // a `#{...}` line before its body — any non-trailing entry (platform / generic /
-// overflow / index-out). It is used by the gap logic to decide whether to insert
+// overflow). It is used by the gap logic to decide whether to insert
 // a separating blank line.
 //
 // 只要陳述上方會印出獨立一行註解，就必須與上方程式碼以一個空行分隔：整組
 // 「註釋 → 註解 → 陳述」是一個 node（見 nodeHeadWillEmit），node 之間以空行分隔。
-// overflow / index-out 也是行注解、同樣佔用陳述上方的一行，故一併計入。
+// overflow 也是行注解、同樣佔用陳述上方的一行，故一併計入。
 func (f *formatter) attachedAnnotationsWillEmit(stmt parser.Statement) bool {
 	for _, e := range f.attachedAnnotations(stmt) {
 		if e.Trailing {

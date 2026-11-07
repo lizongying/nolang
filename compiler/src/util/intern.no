@@ -15,7 +15,7 @@
 ; 已驗證【安全】的形狀（本檔只用這些）：
 ;   ✅ 普通函式（非方法）+ 結構體作參數（引用語義，修改會回傳）
 ;   ✅ 讀寫結構體的純量欄位
-;   ✅ 讀寫 []T 欄位的元素（讀取需 #{index-out=zero}）
+;   ✅ 讀寫 []T 欄位的元素（讀取回傳 ?T，需以值 match / ?= 顯式消費）
 ;   ✅ 對 []T 欄位 push
 ;   ✅ 對 []T 欄位整體重新賦值（= with-len(n)）
 ;   ✅ 在 []T 上做 range-for、帶 return 提前退出
@@ -26,8 +26,8 @@
 ;
 ; ⚠️ 必要註解（實測規則，不是風格偏好）：
 ;   #{overflow=wrap}   整數運算預設回 option<int>；只作用於緊跟的一條陳述。
-;   #{index-out=zero}  只有「x = arr[i]（i 非字面量，x 非 option）」需要；
-;                      索引出現在【條件】或【寫入】位置時不需要。
+;   索引讀取 arr[i]    回傳 ?T，需以值 match / ?= / place-match 顯式消費；
+;                      索引出現在【條件】或【寫入】位置時依語境處理。
 ;
 ; ⚠️ SHS：無模組級可變狀態、無一等函式值、無指針。
 
@@ -55,7 +55,6 @@ intern.find = (t itab, s str) (slot i64) {
     n = t.cnt
     i <- [0..n): {
 
-        #{index-out=zero}
         cur = t.pool[i]
         cur.eq-full(s) -> {
             slot = i
@@ -130,6 +129,5 @@ intern.at = (t itab, id i64) (r str) {
     #{overflow=wrap}
     i = id - 1
 
-    #{index-out=zero}
     r = t.pool[i]
 }

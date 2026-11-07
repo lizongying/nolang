@@ -1326,11 +1326,33 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     sep = -1
     scan = 0
 
-    #{index-out=0}
     (sep < 0 && (scan + 3) < alen) {
 
-        #{index-out=0}
-        (acc[scan] == 13 && acc[scan + 1] == 10 && acc[scan + 2] == 13 && acc[scan + 3] == 10) -> sep = scan
+        ixout1333c10 = acc[scan]: {
+            ok -> it
+
+            -> 0
+        }
+
+        ixout1333c29 = acc[scan + 1]: {
+            ok -> it
+
+            -> 0
+        }
+
+        ixout1333c52 = acc[scan + 2]: {
+            ok -> it
+
+            -> 0
+        }
+
+        ixout1333c75 = acc[scan + 3]: {
+            ok -> it
+
+            -> 0
+        }
+
+        (ixout1333c10 == 13 && ixout1333c29 == 10 && ixout1333c52 == 13 && ixout1333c75 == 10) -> sep = scan
 
         #{overflow=wrap}
         scan = scan + 1
@@ -1350,8 +1372,13 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     hdr []byte
     hi <- [0..sep): {
 
-        #{index-out=0}
-        hdr.push(acc[hi])
+        ixout1354c18 = acc[hi]: {
+            ok -> it
+
+            -> 0
+        }
+
+        hdr.push(ixout1354c18)
     }
     head-str = hdr.to-bytes-str()
 
@@ -1367,8 +1394,13 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     code = 0
     ci <- [0..code-str.len-bytes()): {
 
-        #{index-out=0}
-        c = code-str[ci]
+        ixout1371c13 = code-str[ci]: {
+            ok -> it
+
+            -> 0
+        }
+
+        c = ixout1371c13
         c < 48 || c > 57 -> return
 
         #{overflow=wrap}
@@ -1397,8 +1429,13 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     body-start < alen -> {
         yi <- [body-start..alen): {
 
-            #{index-out=0}
-            body.push(acc[yi])
+            ixout1401c23 = acc[yi]: {
+                ok -> it
+
+                -> 0
+            }
+
+            body.push(ixout1401c23)
         }
     }
 
@@ -1484,8 +1521,19 @@ http-dl-dechunk = (b []byte) (out []byte) {
     pos = 0
     !! {
 
-        #{index-out=0}
-        (pos < blen && (b[pos] == 13 || b[pos] == 10)) {
+        ixout1488c25 = b[pos]: {
+            ok -> it
+
+            -> 0
+        }
+
+        ixout1488c41 = b[pos]: {
+            ok -> it
+
+            -> 0
+        }
+
+        (pos < blen && (ixout1488c25 == 13 || ixout1488c41 == 10)) {
 
             #{overflow=wrap}
             pos = pos + 1
@@ -1494,7 +1542,6 @@ http-dl-dechunk = (b []byte) (out []byte) {
         size = 0
         size-done = false
 
-        #{index-out=0}
         (pos < blen && size-done == false) {
             c = b[pos]: {
                 ok -> it
@@ -1534,7 +1581,6 @@ http-dl-dechunk = (b []byte) (out []byte) {
         }
         line-done = false
 
-        #{index-out=0}
         (pos < blen && line-done == false) {
             c = b[pos]: {
                 ok -> it
@@ -1554,8 +1600,13 @@ http-dl-dechunk = (b []byte) (out []byte) {
                     #{overflow=wrap}
                     pos = pos + 1
 
-                    #{index-out=0}
-                    (pos < blen && b[pos] == 10) -> {
+                    ixout1558c36 = b[pos]: {
+                        ok -> it
+
+                        -> 0
+                    }
+
+                    (pos < blen && ixout1558c36 == 10) -> {
 
                         #{overflow=wrap}
                         pos = pos + 1
@@ -1572,11 +1623,15 @@ http-dl-dechunk = (b []byte) (out []byte) {
         }
         size <= 0 -> break
 
-        #{index-out=0}
         (pos < blen && size > 0) {
 
-            #{index-out=0}
-            out.push(b[pos])
+            ixout1579c22 = b[pos]: {
+                ok -> it
+
+                -> 0
+            }
+
+            out.push(ixout1579c22)
 
             #{overflow=wrap}
             pos = pos + 1

@@ -13,12 +13,23 @@ hex16 = (a [16]byte) (h str) {
     hc = '0123456789abcdef'
     h str = with-len(32)
     i <- [0..16): {
+        ixout18c25 = a[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        h[i * 2] = hc[(a[i] >> 4) & 15]
+        h[i * 2] = hc[(ixout18c25 >> 4) & 15]
+
+        ixout21c28 = a[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        h[i * 2 + 1] = hc[a[i] & 15]
+        h[i * 2 + 1] = hc[ixout21c28 & 15]
     }
 }
 

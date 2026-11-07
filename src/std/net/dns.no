@@ -252,8 +252,13 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                 #{overflow=wrap}
                 jumped == false -> end-pos = pos + 2
 
-                #{index-out=zero}
-                pointer i64 = ((len-byte & 0x3f) << 8) | (data[pos + 1])
+                ixout256c59 = data[pos + 1]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                pointer i64 = ((len-byte & 0x3f) << 8) | (ixout256c59)
                 pos = pointer
                 jumped = true
             }
@@ -263,9 +268,15 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                 pos = pos + 1
                 i <- [0..label-len): {
 
-                    #{index-out=zero, overflow=wrap}
+                    #{overflow=wrap}
+                    ixout268c36 = data[pos + i]: {
+                        ok -> it
+
+                        -> _
+                    }
+
                     buf[buf-pos]: {
-                        ok -> it = data[pos + i]
+                        ok -> it = ixout268c36
 
                         -> _
                     }
@@ -291,7 +302,13 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
     ; 移除末尾的點
     #{overflow=wrap}
     buf-pos > 0 -> {
-        buf[buf-pos - 1] == 46 -> {
+        ixout305c12 = buf[buf-pos - 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout305c12 == 46 -> {
             buf-pos = buf-pos - 1
         }
     }
@@ -334,12 +351,34 @@ parse-response = (data []byte) (ip ?str) {
     rcode != DNS-RCODE-NO-ERROR -> return
 
     ; 問題數
-    #{index-out=zero}
-    qdcount = ((data[4]) << 8) | (data[5])
+    ixout338c17 = data[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout338c35 = data[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    qdcount = ((ixout338c17) << 8) | (ixout338c35)
 
     ; 回答數
-    #{index-out=zero}
-    ancount = ((data[6]) << 8) | (data[7])
+    ixout342c17 = data[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout342c35 = data[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ancount = ((ixout342c17) << 8) | (ixout342c35)
     ancount == 0 -> return
     pos = 12
 
@@ -363,8 +402,19 @@ parse-response = (data []byte) (ip ?str) {
         #{overflow=wrap}
         pos + 10 > data.len() -> return
 
-        #{index-out=zero}
-        rtype = ((data[pos]) << 8) | (data[pos + 1])
+        ixout367c19 = data[pos]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout367c39 = data[pos + 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        rtype = ((ixout367c19) << 8) | (ixout367c39)
 
         #{overflow=wrap}
         pos = pos + 2
@@ -378,8 +428,19 @@ parse-response = (data []byte) (ip ?str) {
         pos = pos + 4
 
         ; RDLENGTH (2 bytes)
-        #{index-out=zero}
-        rdlength = ((data[pos]) << 8) | (data[pos + 1])
+        ixout382c22 = data[pos]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout382c42 = data[pos + 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        rdlength = ((ixout382c22) << 8) | (ixout382c42)
 
         #{overflow=wrap}
         pos = pos + 2

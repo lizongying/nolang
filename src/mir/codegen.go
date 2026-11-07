@@ -313,7 +313,7 @@ func isAggregateLLVM(lt string) bool {
 // Without this, a non-owned fixed-array receiver (e.g. `[3 x i64] %p0`) is
 // declared by value while the body emits `getelementptr [3 x i64], [3 x i64]*
 // %p0`, and opt rejects it ("%p0 defined with type '[3 x i64]' but expected
-// 'ptr'"). See tests/arr-test.no.
+// 'ptr'"). See tests/arr-more.no (renamed from arr-test.no).
 func byPointerLLVM(lt string, owned bool) bool {
 	if owned {
 		return true
@@ -16715,7 +16715,7 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 		// never handled the option slipped past the checker (MIR-only tests
 		// lower without it). Refuse rather than store an option into a scalar
 		// slot — that is a silent type-pun, not a coercion.
-		c.fail("builtin %s: ?byte result into %s destination; handle the option (match / ?= / #{index-out})", inst.Sym, dstLT)
+		c.fail("builtin %s: ?byte result into %s destination; handle the option (match / ?=)", inst.Sym, dstLT)
 		return i18n.Errorf("802t452i", "builtin %s: option result into %s dst", inst.Sym, dstLT)
 	}
 

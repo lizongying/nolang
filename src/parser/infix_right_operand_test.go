@@ -27,7 +27,7 @@ func TestInfixMissingRightOperandIsError(t *testing.T) {
 	// `|` at end of line, then a `#{…}` line, then the operand.
 	src := `g = (ks [96]byte, i i64) (sk i64) {
     sk = ks[i] |
-#{index-out = 0}
+#{d11-probe=wrap}
     ks[i + 1]
 }
 `
@@ -76,7 +76,7 @@ func TestInfixMultiLineContinuationStillParses(t *testing.T) {
 // spelling (the annotation applies to the whole statement) and must parse.
 func TestAnnotationAboveMultiLineStatementParses(t *testing.T) {
 	src := `h = (ks [96]byte, i i64) (sk i64) {
-    #{index-out = 0}
+    #{d11-probe=wrap}
     sk = (ks[i] << 8) |
         ks[i + 1]
 }

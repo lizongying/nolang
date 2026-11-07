@@ -134,8 +134,13 @@ set.contains = (val t) (yes bool) {
 set.union = (other []t, osize i64) (new-size i64) {
     j <- [0..osize): {
 
-        #{index-out=zero}
-        ov = other[j]
+        ixout138c14 = other[j]: {
+            ok -> it
+
+            -> _
+        }
+
+        ov = ixout138c14
 
         found = false
         sz = .size
@@ -174,8 +179,13 @@ set.intersection = (other []t, osize i64, out []t) (cnt i64) {
         found = false
         j <- [0..osize): {
 
-            #{index-out=zero}
-            ov = other[j]
+            ixout178c18 = other[j]: {
+                ok -> it
+
+                -> _
+            }
+
+            ov = ixout178c18
             ov == v -> {
                 found = true
                 break
@@ -211,8 +221,13 @@ set.difference = (other []t, osize i64, out []t) (cnt i64) {
         found = false
         j <- [0..osize): {
 
-            #{index-out=zero}
-            ov = other[j]
+            ixout215c18 = other[j]: {
+                ok -> it
+
+                -> _
+            }
+
+            ov = ixout215c18
             ov == v -> {
                 found = true
                 break

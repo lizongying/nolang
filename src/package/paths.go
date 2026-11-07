@@ -95,6 +95,56 @@ func ResolveEmbedBase(sourcePath string) string {
 // 底線 (_)、大寫字母與其他字元皆被拒絕。
 var SourcePathSegmentRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
+// IsIgnoredSourceDir 回報目錄名 name 是否為「被忽略」段：必須「以底線 '_' 開頭」
+// 且「去掉首個底線後的剩餘部分」符合命名規範（例如 _drafts→drafts、_tmp-vet-test→
+// tmp-vet-test 皆合法，但 _tmp_vet_test 去掉首 '_' 後仍是 tmp_vet_test 含底線，非法）。
+// 恰好為 "_" 的段（空名）不放行。
+func IsIgnoredSourceDir(name string) bool {
+	if !strings.HasPrefix(name, "_") || name == "_" {
+		return false
+	}
+	return isValidSourceSegment(name[1:])
+}
+
+// IsIgnoredSourcePath 回報 path 是否落在「被忽略」範圍內：
+//
+//   - 末段是 .no 檔，且其檔名主體「以 '_' 開頭且去掉首底線後剩餘部分合法」
+//     （單一草稿檔，如 tests/_jp7.no、_tmp-vet-test/no.no）；
+//   - 或路徑中任一「中間段」（皆為目錄）是 IsIgnoredSourceDir（如 _drafts/x.no）。
+//
+// 關鍵：領先底線只是「忽略標記」，剩餘部分仍須合法；否則（如 _tmp_vet_test/no.no
+// 去掉首 '_' 後仍是 tmp_vet_test，含底線）視為非法名，不忽略、照常報錯。
+// 非 .no 的末段（如 _readme.md）不是源檔，不計入忽略慣例。
+func IsIgnoredSourcePath(path string) bool {
+	segs := strings.Split(filepath.ToSlash(filepath.Clean(path)), "/")
+	for i, seg := range segs {
+		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		isLast := i == len(segs)-1
+		if isLast && strings.HasSuffix(seg, ".no") {
+			base := strings.TrimSuffix(seg, ".no")
+			// 末段 .no 檔：以 '_' 開頭、且去掉首底線後剩餘合法，才算被忽略。
+			if base != "_" && strings.HasPrefix(base, "_") && isValidSourceSegment(base[1:]) {
+				return true
+			}
+			continue
+		}
+		// 中間段皆為目錄：是被忽略目錄即整棵忽略。
+		// 末段非 .no（如 _readme.md）不算源檔，不在此列。
+		if !isLast && IsIgnoredSourceDir(seg) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsIgnoredSourceFile 是 IsIgnoredSourcePath 的檔名別名：path 為 .no 檔且其檔名主體
+// （或任一上層目錄）以底線開頭時回傳 true。保留以相容既有呼叫點與測試。
+func IsIgnoredSourceFile(path string) bool {
+	return IsIgnoredSourcePath(path)
+}
+
 // isValidSourceSegment 檢查單一路徑段（目錄名或去副檔名的檔名）是否符合
 // 源碼命名規範：只允許小寫字母、數字與中劃線，且不能以中劃線開頭/結尾、不能有連續中劃線。
 // 底線與大寫字母因不在字元集內而自然被拒。
@@ -156,6 +206,13 @@ func validatePathSegments(path string, skipHidden bool) error {
 		name := seg
 		if i == len(segs)-1 && strings.HasSuffix(name, ".no") {
 			name = strings.TrimSuffix(name, ".no")
+		}
+		// 底線 '_' 開頭的段是被忽略慣例的「標記」：命名校驗針對「去掉首個底線後」的
+		// 剩餘部分。剩餘部分合法 → 整段是「合法但被忽略」；剩餘仍含非法字元
+		// （如 _tmp_vet_test 去掉首 '_' 後仍是 tmp_vet_test，含底線）→ 照常報命名錯誤，
+		// 不當成忽略。恰好為 "_" 的段去掉首底線後為空，視為非法。
+		if strings.HasPrefix(name, "_") {
+			name = name[1:]
 		}
 		if !isValidSourceSegment(name) {
 			return i18n.Errorf("83xbz15x", "source file path is not a valid name: %s\n  the path segment %q contains disallowed characters (only lowercase letters, digits and hyphens are allowed; underscores are forbidden, and a hyphen may not lead, trail or repeat)\n  valid example: tmp/zz-stridx/r-index.no", path, seg)

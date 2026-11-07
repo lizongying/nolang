@@ -120,7 +120,7 @@ no se detectó la cadena de herramientas LLVM
   '379z4njd': '“%s” ya está declarado en este ámbito'
   '39o3yr8x': 'versión de archivo de sumas no admitida %q (se esperaba %s)'
   '3aeomnek': 'ranura de setfield'
-  '3b9bxfnt': 'no se puede asignar un valor %s al elemento %s del array \'%s\'%s'
+  '3b9bxfnt': 'no se puede asignar un valor %s al elemento %s del array \'%s\''
   '3bl2ts85': 'error de compilación JS: %w'
   '3ei0a0o0': 'se esperaba una expresión, se obtuvo nil'
   '3fulbc9g': 'la función %s recorre o borra sobre un resultado de fs.list-dir/fs.read-dir sin filtrar "." y ".."; ambas llamadas devuelven las entradas POSIX readdir "." / "..", y recursar en ".." escapa hacia arriba y puede borrar todo el árbol padre. Usa fs.dir-entries (ya filtrado), o salta "." / ".." explícitamente antes de recursar.'
@@ -279,7 +279,6 @@ Error al crear el directorio tests: %v
   '7t8ke5g1': 'cancelled: no hay ranura para el resultado'
   '7tcn8wox': 'Ejemplos:'
   '7usot77o': 'aplicar correcciones automáticas a una clase de problema: \'overflow\' (añade #{overflow=wrap} a la aritmética entera sin anotar), \'redundant\' (elimina anotaciones de tipo iguales al tipo inferido, p. ej. `x str = \'\'` -> `x = \'\'`), \'match\' (añade las ramas nil/err que faltan a los match de option no exhaustivos), o \'unwrap\' (consume las ligaduras option que nunca se propagan ni se desempaquetan: `x ?= expr` si la función ya tiene resultado ?T, si no `x-opt = expr` más un match de sentencia `x-opt: { ok -> x = it -> }` en las líneas siguientes), o \'main\' (omite el envoltorio de nivel superior `main = () { ... }` elevando sus sentencias al nivel superior; se omite si main tiene parámetros/resultados o un return directo), o \'index-out\' (expande las lecturas #{index-out=DEF} a matches explícitos)'
-  '7uy8wmqv': '%s'
   '7zfvvuin': 'No se encontraron problemas.'
   '802t452i': 'builtin %s: resultado option en el destino %s'
   '81b2ea3o': 'se esperaba \'(\' en la declaración extern, se obtuvo %s'
@@ -377,7 +376,6 @@ Error al resolver la última versión: %v
   'ap403a8m': 'net-recv: no se puede obtener el puntero de datos del argumento 1'
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       incluyendo las anotaciones #{...}'
-  'au6g7ji7': 'errores del analizador: %s'
   'awc98kqh': '  no fmt -md README.md        formatear los bloques Nolang de un archivo Markdown'
   'axj3m1pb': '\'as\' inesperado al inicio de la expresión'
   'axtpo500': 'win-find-first-file: no se puede convertir la ruta a una cadena C'
@@ -522,12 +520,14 @@ no se pudo limpiar: %v
 
 `
   'fh3ukes8': 'net-set-recv-timeout: no hay ranura para el resultado'
+  'fixlabel': 'fix:'
   'fk1sb6ss': 'syslog: no admitido en windows'
   'flfh2ueu': 'objetivo de instalación no válido %q: el repositorio debe ser <host>/<owner>/<repo> o <owner>/<repo>'
   'fs4qotyl': 'extrayendo el archivo zip: %w'
   'fu1ow141': 'No se encontraron archivos de prueba en '
   'fvk7yu8c': 'se esperaba un valor entero después de \'=\', se obtuvo %s'
   'fw8rehzu': 'la rama catch-all vacía `->` es inalcanzable: el compilador puede demostrar que \'%s\' siempre es ok (la aritmética con literales no puede desbordarse ni dividir por cero, o el índice está demostrablemente dentro de los límites). La rama debe permanecer por exhaustividad del match, y mantenerla significa que un cambio posterior de semántica no necesita editar la sintaxis.'
+  'fxapply1': 'Apply fix'
   'fxc0tilj': 'Empaquetar el AST del paquete actual como gob + zip.'
   'fxdzclp6': 'no se puede asignar el campo \'%s\' en el tipo struct \'%s\': instáncialo primero (p. ej. `%s0 = %s {}`)'
   'fxhkwtho': 'read-file: necesita una ruta'
@@ -623,7 +623,8 @@ Error al crear el directorio: %v
 Directorio de caché de AST: %s
 
 `
-  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
+  'idxbruse': 'El índice directo `arr[i]`/`m[k]` devuelve `?T` (D11 eliminó la anotación `#{index-out=DEF}`), pero aquí se usa como un valor simple sin consumirlo. Trata la opción de forma explícita con un match de valor, `?=`, un match de lugar o de bloque, o un enlace `?T` válido.'
+  'idxourmv': 'D11 eliminó la anotación `#{index-out=DEF}`; `a[i]`/`m[k]` ahora siempre devuelven `?T`. Consume la opción explícitamente con un match de valor, `?=`, un match de lugar o de bloque, o un enlace `?T` válido.'
   'ifmrg001': 'interfaz \'%s\': el método fusionado \'%s\' tiene firmas en conflicto (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: necesita el receptor'
   'iky4xsx4': 'el método “%s.%s” tiene %d resultado(s), la interfaz espera %d'
@@ -758,7 +759,7 @@ Error al escribir utils.no: %v
   'mi13i3vc': 'se esperaba un paréntesis derecho, se obtuvo %s'
   'mimqybn2': 'vec.pop: necesita el receptor'
   'mkpo3f8h': 'ranura de destino utf8-at'
-  'mlm7xpcj': '`%s %s= %s` está obsoleto; la función contenedora tiene un resultado option, así que `no fmt` lo reescribe como `%s ?= %s %s %s` al guardar (el lado derecho de una asignación compuesta ahora es `?T` y pasa por `?=` para desempaquetarlo o propagarlo)'
+  'mlm7xpcj': '`%s %s= %s` está obsoleto; la función contenedora tiene un resultado option, así que `no fmt` lo reescribe a la forma `?=` al guardar (el lado derecho de una asignación compuesta ahora es `?T` y pasa por `?=` para desempaquetarlo o propagarlo)'
   'mlyz11mg': 'Con --js-runtime <cmd>, elegir el runtime JS de `no run --js` (node, bun, deno, ...).'
   'mmcrtoio': 'Uso: no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': 'se esperaba \':\' después del nombre del campo del struct, se obtuvo %s'
@@ -839,16 +840,9 @@ compilador Zig no detectado
   'ol21t36r': '  no run --js --js-runtime bun main.no     igual pero con bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'el divisor de una división entera o módulo es la constante literal 0, lo cual es comportamiento indefinido en LLVM (sdiv/srem por cero) y produce resultados impredecibles. Añade una comprobación de cero en tiempo de ejecución, o haz que la función devuelva el fallo como option.'
-  'oraub2m9': `
-`%s %s= %s` no está admitido: una lectura de índice devuelve una option (nil cuando está fuera de rango), así que una asignación compuesta evaluaría el índice dos veces y descartaría el fallo. Reescríbelo como (el `it` de la rama ok es la ranura del elemento, legible y escribible):
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   o `%s ?= %s %s %s` (propaga el fallo; requiere que la función contenedora tenga un parámetro de resultado option)
-`
+  'oraub2m9': '`%s %s= %s` no está soportado: una lectura de índice devuelve una option (nil si está fuera de rango), así que una asignación compuesta evaluaría el índice dos veces y descartaría el fallo'
   'orjs902d': '\'switch/case/default\' está obsoleto, usa \'x: { 1-> ... }\' en su lugar'
-  'os0j8ix4': 'no se puede asignar un valor %s al elemento %s del array \'%s\'%s'
+  'os0j8ix4': 'no se puede asignar un valor %s al elemento %s del array \'%s\''
   'osrb7a78': 'ranura de move'
   'oswu0as1': 'se esperaba \':\' en la expresión condicional, se obtuvo %s'
   'oxgtqeo0': 'write-file: no hay ranura para el resultado'

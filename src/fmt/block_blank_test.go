@@ -123,12 +123,12 @@ func TestFormatBlankAfterMatchOpenBracePreserved(t *testing.T) {
 // meaningful when that statement carries a node head (doc comment and/or an
 // `#{...}` annotation) — the blank keeps the annotation from being misread as
 // belonging to the code ABOVE the block (bzip2.no: `i <- [0..alpha-size): {`
-// + `#{index-out=zero}` + `l = lengths[i]`). A plain first statement has no
+// + `#{mac-arm64}` + `l = lengths[i]`). A plain first statement has no
 // such ambiguity, so an authored blank there must be REMOVED on format:
 //   - loop body `.limit[i] = 0` (bzip2.no:104-106)  → blank removed
 //   - loop body starting with a bare match `e: {`  → blank removed
 //   - function body `sym = -1` (bzip2.no:211-213)  → blank removed
-//   - loop body starting with `#{index-out=zero}` (bzip2.no:127-130) → kept
+//   - loop body starting with `#{mac-arm64}` (bzip2.no:127-130) → kept
 func TestFormatBlockTopBlankOnlyForNodeHead(t *testing.T) {
 	cases := []struct {
 		name string
@@ -152,8 +152,8 @@ func TestFormatBlockTopBlankOnlyForNodeHead(t *testing.T) {
 		},
 		{
 			name: "annotation first stmt: loop-top blank kept",
-			in:   "f = (lengths []i64) {\n    i <- [0..3): {\n\n        #{index-out=zero}\n        l = lengths[i]\n    }\n}\n",
-			want: "f = (lengths []i64) {\n    i <- [0..3): {\n\n        #{index-out=zero}\n        l = lengths[i]\n    }\n}\n",
+			in:   "f = (lengths []i64) {\n    i <- [0..3): {\n\n        #{mac-arm64}\n        l = lengths[i]\n    }\n}\n",
+			want: "f = (lengths []i64) {\n    i <- [0..3): {\n\n        #{mac-arm64}\n        l = lengths[i]\n    }\n}\n",
 		},
 	}
 	for _, tc := range cases {

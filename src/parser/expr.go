@@ -259,7 +259,9 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		// expression is parsed (see AS handling after the infix loop below).
 		// If we reach here, `as` appeared where an expression was expected,
 		// which is a parse error. Skip it and return nil.
-		p.saveErrorf("axj3m1pb", "line %d, column %d: unexpected 'as' at start of expression",
+		p.saveErrorfFix("axj3m1pb", []DiagnosticFix{{
+			Description: "remove the leading 'as'; it is only valid after a value as a cast, e.g. `expr as *byte`",
+		}}, "line %d, column %d: unexpected 'as' at start of expression",
 			p.currentToken.Line, p.currentToken.Column)
 		p.nextToken()
 		return nil
@@ -598,8 +600,10 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			}
 			// 檢查目標型別是否為指標型別（PointerType）
 			if _, isPtr := typ.(*PointerType); !isPtr {
-				p.saveErrorf("ua5h1rpc", "line %d, column %d: 'as' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s",
-					asTok.Line, asTok.Column, typ.String())
+			p.saveErrorfFix("ua5h1rpc", []DiagnosticFix{{
+				Description: "use an FFI pointer type for the cast target (e.g. *byte, **byte), or remove the `as` cast",
+			}}, "line %d, column %d: 'as' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s",
+				asTok.Line, asTok.Column, typ.String())
 				// 仍建立 CastExpression 以維持後續解析流程，但已記錄錯誤
 			}
 			leftExp = &CastExpression{
@@ -682,11 +686,12 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			val := p.parseExpression(LOWEST)
 			tgt := exprToString(idx)
 			rhs := exprToString(val)
-			p.saveErrorf("oraub2m9",
-				"line %d, column %d: `%s %s= %s` is not supported: an index read returns an option (nil when out of range), so a compound assignment would evaluate the index twice and discard the failure. Rewrite it as (the `it` of the ok arm is the element slot, readable and writable):\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   or `%s ?= %s %s %s` (propagates the failure; requires the enclosing function to have an option result parameter)",
-				tok.Line, tok.Column, tgt, op, rhs,
-				tgt, op, rhs,
-				tgt, tgt, op, rhs)
+			p.saveErrorfFix("oraub2m9",
+				[]DiagnosticFix{{
+					Description: fmt.Sprintf("rewrite as:\n     %s: {\n         ok -> it = it %s %s\n         -> _\n     }\n   or `%s ?= %s %s %s` (propagates the failure; requires the enclosing function to have an option result parameter)", tgt, op, rhs, tgt, tgt, op, rhs),
+				}},
+				"line %d, column %d: `%s %s= %s` is not supported: an index read returns an option (nil when out of range), so a compound assignment would evaluate the index twice and discard the failure",
+				tok.Line, tok.Column, tgt, op, rhs)
 			return leftExp
 		}
 	}
@@ -1525,8 +1530,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			if !hasValArm {
 				missing = append(missing, "ok")
 			}
-			p.saveErrorf("u5qmp19f", "line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
-				tok.Line, tok.Column, strings.Join(missing, ", "))
+		p.saveErrorfFix("u5qmp19f", []DiagnosticFix{{
+			Description: "add the missing option branch(es): " + strings.Join(missing, ", "),
+		}}, "line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
+			tok.Line, tok.Column, strings.Join(missing, ", "))
 			return nil
 		}
 	}

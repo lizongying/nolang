@@ -986,8 +986,19 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
         i + 1 < len -> {
 
             ; 16-bit word: data[i] << 8 | data[i+1]
-            #{index-out=zero}
-            w = ((data[i]) << 8) | (data[i + 1])
+            ixout990c19 = data[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout990c37 = data[i + 1]: {
+                ok -> it
+
+                -> _
+            }
+
+            w = ((ixout990c19) << 8) | (ixout990c37)
             checksum = checksum + w
 
             ; 處理進位
@@ -1002,8 +1013,15 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
     #{overflow=wrap}
     len & 1 == 1 -> {
 
-        #{index-out=zero, overflow=wrap}
-        checksum = checksum + ((data[len - 1]) << 8)
+        #{overflow=wrap}
+        ixout1006c33 = data[len - 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        checksum = checksum + ((ixout1006c33) << 8)
         checksum > 65535 -> checksum = (checksum & 65535) + (checksum >> 16)
     }
 
@@ -1054,14 +1072,25 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
         n >= 20 -> {
 
             ; 檢查 IP 版本 (byte 0 >> 4 == 4 表示 IPv4)
-            #{index-out=zero}
-            ver = (recv-buf[0] >> 4) & 15
+            ixout1058c20 = recv-buf[0]: {
+                ok -> it
+
+                -> _
+            }
+
+            ver = (ixout1058c20 >> 4) & 15
             ver == 4 -> {
 
                 ; IHL = (byte 0 & 0x0F) * 4
                 ; D1：`*` 的結果恆為 `?i64`，此處要的是普通整數 → 顯式 plain i64。
-                #{index-out=zero, overflow=wrap}
-                ihl i64 = (recv-buf[0] & 15) * 4
+                ixout1064c28 = recv-buf[0]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                #{overflow=wrap}
+                ihl i64 = (ixout1064c28 & 15) * 4
                 offset = ihl
             }
         }
@@ -1080,13 +1109,35 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     icmp-type != ICMP-ECHO-REPLY -> return
 
     ; 驗證 Identifier
-    #{index-out=zero}
-    recv-ident = ((recv-buf[offset + 4]) << 8) | (recv-buf[offset + 5])
+    ixout1084c20 = recv-buf[offset + 4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1084c51 = recv-buf[offset + 5]: {
+        ok -> it
+
+        -> _
+    }
+
+    recv-ident = ((ixout1084c20) << 8) | (ixout1084c51)
     recv-ident != .ident -> return
 
     ; 驗證 Sequence（只比較低 16 位）
-    #{index-out=zero}
-    recv-seq = ((recv-buf[offset + 6]) << 8) | (recv-buf[offset + 7])
+    ixout1089c18 = recv-buf[offset + 6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1089c49 = recv-buf[offset + 7]: {
+        ok -> it
+
+        -> _
+    }
+
+    recv-seq = ((ixout1089c18) << 8) | (ixout1089c49)
     recv-seq != (.seq & 65535) -> return
 
     ; 計算 RTT
@@ -1223,7 +1274,13 @@ ifconfig-list = () (ifs []if-info) {
             info = if-info {}
             info.name = name
 
-            v0 ?i64 = fields[0].to-i64()
+            ixout1277c29 = fields[0]: {
+                ok -> it
+
+                -> _
+            }
+
+            v0 ?i64 = ixout1277c29.to-i64()
             v0: {
                 ok -> info.rx-bytes = it
 
@@ -1232,7 +1289,13 @@ ifconfig-list = () (ifs []if-info) {
                 err -> break
             }
 
-            v1 ?i64 = fields[1].to-i64()
+            ixout1286c29 = fields[1]: {
+                ok -> it
+
+                -> _
+            }
+
+            v1 ?i64 = ixout1286c29.to-i64()
             v1: {
                 ok -> info.rx-packets = it
 
@@ -1241,7 +1304,13 @@ ifconfig-list = () (ifs []if-info) {
                 err -> break
             }
 
-            v8 ?i64 = fields[8].to-i64()
+            ixout1295c29 = fields[8]: {
+                ok -> it
+
+                -> _
+            }
+
+            v8 ?i64 = ixout1295c29.to-i64()
             v8: {
                 ok -> info.tx-bytes = it
 
@@ -1250,7 +1319,13 @@ ifconfig-list = () (ifs []if-info) {
                 err -> break
             }
 
-            v9 ?i64 = fields[9].to-i64()
+            ixout1304c29 = fields[9]: {
+                ok -> it
+
+                -> _
+            }
+
+            v9 ?i64 = ixout1304c29.to-i64()
             v9: {
                 ok -> info.tx-packets = it
 

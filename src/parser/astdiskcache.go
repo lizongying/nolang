@@ -311,7 +311,7 @@ import (
 // 原始碼的樹因此從「`x = c[i]` + 主體為空的裸 match」變成「`x` 的賦值右值是
 // SurfaceMatch(主體=IndexExpression)」。舊 blob 仍是裂開的那棵樹，`-> DEF` 臂
 // 形同不存在（越界取 0 而不是 DEF），故必 bump。
-const ASTVersion = "2026-11-06.2"
+const ASTVersion = "2026-11-06.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

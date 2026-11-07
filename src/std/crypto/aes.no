@@ -154,23 +154,38 @@ shift-rows = (state []byte) {
         -> 0
     }
 
-    #{index-out=zero}
+    ixout159c20 = state[5]: {
+        ok -> it
+
+        -> _
+    }
+
     state[1]: {
-        ok -> it = state[5]
+        ok -> it = ixout159c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout166c20 = state[9]: {
+        ok -> it
+
+        -> _
+    }
+
     state[5]: {
-        ok -> it = state[9]
+        ok -> it = ixout166c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout173c20 = state[13]: {
+        ok -> it
+
+        -> _
+    }
+
     state[9]: {
-        ok -> it = state[13]
+        ok -> it = ixout173c20
 
         -> _
     }
@@ -193,16 +208,26 @@ shift-rows = (state []byte) {
         -> 0
     }
 
-    #{index-out=zero}
-    state[2]: {
-        ok -> it = state[10]
+    ixout198c20 = state[10]: {
+        ok -> it
 
         -> _
     }
 
-    #{index-out=zero}
+    state[2]: {
+        ok -> it = ixout198c20
+
+        -> _
+    }
+
+    ixout205c20 = state[14]: {
+        ok -> it
+
+        -> _
+    }
+
     state[6]: {
-        ok -> it = state[14]
+        ok -> it = ixout205c20
 
         -> _
     }
@@ -225,23 +250,38 @@ shift-rows = (state []byte) {
         -> 0
     }
 
-    #{index-out=zero}
+    ixout230c20 = state[11]: {
+        ok -> it
+
+        -> _
+    }
+
     state[15]: {
-        ok -> it = state[11]
+        ok -> it = ixout230c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout237c20 = state[7]: {
+        ok -> it
+
+        -> _
+    }
+
     state[11]: {
-        ok -> it = state[7]
+        ok -> it = ixout237c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout244c20 = state[3]: {
+        ok -> it
+
+        -> _
+    }
+
     state[7]: {
-        ok -> it = state[3]
+        ok -> it = ixout244c20
 
         -> _
     }
@@ -263,23 +303,38 @@ inv-shift-rows = (state []byte) {
         -> 0
     }
 
-    #{index-out=zero}
+    ixout268c20 = state[9]: {
+        ok -> it
+
+        -> _
+    }
+
     state[13]: {
-        ok -> it = state[9]
+        ok -> it = ixout268c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout275c20 = state[5]: {
+        ok -> it
+
+        -> _
+    }
+
     state[9]: {
-        ok -> it = state[5]
+        ok -> it = ixout275c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout282c20 = state[1]: {
+        ok -> it
+
+        -> _
+    }
+
     state[5]: {
-        ok -> it = state[1]
+        ok -> it = ixout282c20
 
         -> _
     }
@@ -302,16 +357,26 @@ inv-shift-rows = (state []byte) {
         -> 0
     }
 
-    #{index-out=zero}
-    state[2]: {
-        ok -> it = state[10]
+    ixout307c20 = state[10]: {
+        ok -> it
 
         -> _
     }
 
-    #{index-out=zero}
+    state[2]: {
+        ok -> it = ixout307c20
+
+        -> _
+    }
+
+    ixout314c20 = state[14]: {
+        ok -> it
+
+        -> _
+    }
+
     state[6]: {
-        ok -> it = state[14]
+        ok -> it = ixout314c20
 
         -> _
     }
@@ -334,23 +399,38 @@ inv-shift-rows = (state []byte) {
         -> 0
     }
 
-    #{index-out=zero}
+    ixout339c20 = state[7]: {
+        ok -> it
+
+        -> _
+    }
+
     state[3]: {
-        ok -> it = state[7]
+        ok -> it = ixout339c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout346c20 = state[11]: {
+        ok -> it
+
+        -> _
+    }
+
     state[7]: {
-        ok -> it = state[11]
+        ok -> it = ixout346c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout353c20 = state[15]: {
+        ok -> it
+
+        -> _
+    }
+
     state[11]: {
-        ok -> it = state[15]
+        ok -> it = ixout353c20
 
         -> _
     }
@@ -396,8 +476,31 @@ mix-columns = (state []byte) {
     d2 = 0
     d3 = 0
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = mix-col(state[0], state[1], state[2], state[3])
+    ixout400c30 = state[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout400c40 = state[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout400c50 = state[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout400c60 = state[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = mix-col(ixout400c30, ixout400c40, ixout400c50, ixout400c60)
 
     state[0]: {
         ok -> it = d0
@@ -423,8 +526,31 @@ mix-columns = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = mix-col(state[4], state[5], state[6], state[7])
+    ixout427c30 = state[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout427c40 = state[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout427c50 = state[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout427c60 = state[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = mix-col(ixout427c30, ixout427c40, ixout427c50, ixout427c60)
 
     state[4]: {
         ok -> it = d0
@@ -450,8 +576,31 @@ mix-columns = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = mix-col(state[8], state[9], state[10], state[11])
+    ixout454c30 = state[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout454c40 = state[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout454c50 = state[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout454c61 = state[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = mix-col(ixout454c30, ixout454c40, ixout454c50, ixout454c61)
 
     state[8]: {
         ok -> it = d0
@@ -477,8 +626,31 @@ mix-columns = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = mix-col(state[12], state[13], state[14], state[15])
+    ixout481c30 = state[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout481c41 = state[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout481c52 = state[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout481c63 = state[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = mix-col(ixout481c30, ixout481c41, ixout481c52, ixout481c63)
 
     state[12]: {
         ok -> it = d0
@@ -555,8 +727,31 @@ inv-mix-columns = (state []byte) {
     d2 = 0
     d3 = 0
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = inv-mix-col(state[0], state[1], state[2], state[3])
+    ixout559c34 = state[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout559c44 = state[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout559c54 = state[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout559c64 = state[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = inv-mix-col(ixout559c34, ixout559c44, ixout559c54, ixout559c64)
 
     state[0]: {
         ok -> it = d0
@@ -582,8 +777,31 @@ inv-mix-columns = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = inv-mix-col(state[4], state[5], state[6], state[7])
+    ixout586c34 = state[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout586c44 = state[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout586c54 = state[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout586c64 = state[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = inv-mix-col(ixout586c34, ixout586c44, ixout586c54, ixout586c64)
 
     state[4]: {
         ok -> it = d0
@@ -609,8 +827,31 @@ inv-mix-columns = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = inv-mix-col(state[8], state[9], state[10], state[11])
+    ixout613c34 = state[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout613c44 = state[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout613c54 = state[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout613c65 = state[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = inv-mix-col(ixout613c34, ixout613c44, ixout613c54, ixout613c65)
 
     state[8]: {
         ok -> it = d0
@@ -636,8 +877,31 @@ inv-mix-columns = (state []byte) {
         -> _
     }
 
-    #{index-out=zero}
-    d0, d1, d2, d3 = inv-mix-col(state[12], state[13], state[14], state[15])
+    ixout640c34 = state[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout640c45 = state[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout640c56 = state[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout640c67 = state[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    d0, d1, d2, d3 = inv-mix-col(ixout640c34, ixout640c45, ixout640c56, ixout640c67)
 
     state[12]: {
         ok -> it = d0
@@ -671,9 +935,20 @@ inv-mix-columns = (state []byte) {
 add-round-key = (state []byte, rk []byte) {
     i <- [0..16): {
 
-        #{index-out=zero}
+        ixout676c25 = state[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout676c38 = rk[i]: {
+            ok -> it
+
+            -> _
+        }
+
         state[i]: {
-            ok -> it = (state[i]) ^ (rk[i])
+            ok -> it = (ixout676c25) ^ (ixout676c38)
 
             -> _
         }
@@ -880,9 +1155,20 @@ key-expand-256 = (key [32]byte) (ek []byte) {
 add-round-key-at = (state []byte, rk []byte, off i64) {
     i <- [0..16): {
 
-        #{index-out=zero}
+        ixout885c25 = state[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout885c38 = rk[off + i]: {
+            ok -> it
+
+            -> _
+        }
+
         state[i]: {
-            ok -> it = (state[i]) ^ (rk[off + i])
+            ok -> it = (ixout885c25) ^ (ixout885c38)
 
             -> _
         }

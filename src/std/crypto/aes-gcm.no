@@ -69,14 +69,31 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         #{overflow=wrap}
         bit-idx = 7 - (i % 8)
 
-        #{index-out=zero}
-        xi = (x[byte-idx] >> bit-idx) & 1
+        ixout73c15 = x[byte-idx]: {
+            ok -> it
+
+            -> _
+        }
+
+        xi = (ixout73c15 >> bit-idx) & 1
 
         ; z = z XOR (xi * v) — 僅在 xi == 1 時執行
         xi == 1 -> {
             j <- [0..16): {
+                ixout84c33 = z[j]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                ixout84c40 = v[j]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 z[j]: {
-                    ok -> it = z[j] ^ v[j]
+                    ok -> it = ixout84c33 ^ ixout84c40
 
                     -> _
                 }
@@ -84,15 +101,32 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         }
 
         ; 判斷 v 的最低位元
-        v-lsb = v[15] & 1
+        ixout92c18 = v[15]: {
+            ok -> it
+
+            -> _
+        }
+
+        v-lsb = ixout92c18 & 1
 
         ; v = v >> 1
         j = 15
         (j > 0) {
 
-            #{index-out=zero}
+            ixout95c29 = v[j]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout95c44 = v[j - 1]: {
+                ok -> it
+
+                -> _
+            }
+
             v[j]: {
-                ok -> it = (v[j] >> 1) | ((v[j - 1] & 1) << 7)
+                ok -> it = (ixout95c29 >> 1) | ((ixout95c44 & 1) << 7)
 
                 -> _
             }
@@ -101,16 +135,28 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
             j = j - 1
         }
 
+        ixout121c25 = v[0]: {
+            ok -> it
+
+            -> _
+        }
+
         v[0]: {
-            ok -> it = v[0] >> 1
+            ok -> it = ixout121c25 >> 1
 
             -> _
         }
 
         ; 若 v_lsb == 1，v = v XOR R（R = 0xE1000...0）
         v-lsb == 1 -> {
+            ixout129c29 = v[0]: {
+                ok -> it
+
+                -> _
+            }
+
             v[0]: {
-                ok -> it = v[0] ^ 225
+                ok -> it = ixout129c29 ^ 225
 
                 -> _
             }
@@ -147,9 +193,15 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     (pos + 16 <= aad.len()) {
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
+            ixout152c28 = aad[pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
             blk[i]: {
-                ok -> it = aad[pos + i]
+                ok -> it = ixout152c28
 
                 -> _
             }
@@ -157,8 +209,20 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         ; y = (y XOR block) * H
         i <- [0..16): {
+            ixout183c29 = y[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout183c38 = blk[i]: {
+                ok -> it
+
+                -> _
+            }
+
             y[i]: {
-                ok -> it = y[i] ^ blk[i]
+                ok -> it = ixout183c29 ^ ixout183c38
 
                 -> _
             }
@@ -182,16 +246,34 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
         i <- [0..aad.len() - pos): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
+            ixout187c28 = aad[pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
             blk[i]: {
-                ok -> it = aad[pos + i]
+                ok -> it = ixout187c28
 
                 -> _
             }
         }
         i <- [0..16): {
+            ixout222c29 = y[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout222c38 = blk[i]: {
+                ok -> it
+
+                -> _
+            }
+
             y[i]: {
-                ok -> it = y[i] ^ blk[i]
+                ok -> it = ixout222c29 ^ ixout222c38
 
                 -> _
             }
@@ -207,16 +289,34 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     (pos + 16 <= cipher.len()) {
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
+            ixout212c28 = cipher[pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
             blk[i]: {
-                ok -> it = cipher[pos + i]
+                ok -> it = ixout212c28
 
                 -> _
             }
         }
         i <- [0..16): {
+            ixout253c29 = y[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout253c38 = blk[i]: {
+                ok -> it
+
+                -> _
+            }
+
             y[i]: {
-                ok -> it = y[i] ^ blk[i]
+                ok -> it = ixout253c29 ^ ixout253c38
 
                 -> _
             }
@@ -239,16 +339,34 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         }
         i <- [0..cipher.len() - pos): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
+            ixout244c28 = cipher[pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
             blk[i]: {
-                ok -> it = cipher[pos + i]
+                ok -> it = ixout244c28
 
                 -> _
             }
         }
         i <- [0..16): {
+            ixout291c29 = y[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout291c38 = blk[i]: {
+                ok -> it
+
+                -> _
+            }
+
             y[i]: {
-                ok -> it = y[i] ^ blk[i]
+                ok -> it = ixout291c29 ^ ixout291c38
 
                 -> _
             }
@@ -372,8 +490,20 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     }
 
     i <- [0..16): {
+        ixout416c25 = y[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout416c38 = len-blk[i]: {
+            ok -> it
+
+            -> _
+        }
+
         y[i]: {
-            ok -> it = y[i] ^ len-blk[i]
+            ok -> it = ixout416c25 ^ ixout416c38
 
             -> _
         }
@@ -427,8 +557,21 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         pos + n > data.len() -> n = data.len() - pos
         i <- [0..n): {
 
-            #{index-out=zero, overflow=wrap}
-            out[pos + i] = (data[pos + i]) ^ (ks[i])
+            #{overflow=wrap}
+            ixout431c29 = data[pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout431c47 = ks[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            out[pos + i] = (ixout431c29) ^ (ixout431c47)
         }
 
         aes-ctr.ctr-inc(cb)
@@ -516,8 +659,20 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     j0-enc = aes.enc-block(j0, ek)
     tag [16]byte
     i <- [0..16): {
+        ixout573c31 = j0-enc[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout573c48 = ghash-out[i]: {
+            ok -> it
+
+            -> _
+        }
+
         tag[i]: {
-            ok -> it = (j0-enc[i]) ^ (ghash-out[i])
+            ok -> it = (ixout573c31) ^ (ixout573c48)
 
             -> _
         }
@@ -528,8 +683,13 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
 
-        #{index-out=zero}
-        sealed[i] = cipher[i]
+        ixout532c21 = cipher[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        sealed[i] = ixout532c21
     }
     i <- [0..16): {
 
@@ -563,9 +723,14 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
 
-        #{index-out=zero}
+        ixout568c24 = sealed[i]: {
+            ok -> it
+
+            -> _
+        }
+
         cipher[i]: {
-            ok -> it = sealed[i]
+            ok -> it = ixout568c24
 
             -> _
         }
@@ -573,9 +738,15 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     tag [16]byte
     i <- [0..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout578c24 = sealed[cipher-len + i]: {
+            ok -> it
+
+            -> _
+        }
+
         tag[i]: {
-            ok -> it = sealed[cipher-len + i]
+            ok -> it = ixout578c24
 
             -> _
         }
@@ -588,8 +759,20 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     j0-enc = aes.enc-block(j0, ek)
     exp-tag [16]byte
     i <- [0..16): {
+        ixout661c31 = j0-enc[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout661c48 = ghash-out[i]: {
+            ok -> it
+
+            -> _
+        }
+
         exp-tag[i]: {
-            ok -> it = (j0-enc[i]) ^ (ghash-out[i])
+            ok -> it = (ixout661c31) ^ (ixout661c48)
 
             -> _
         }
@@ -598,7 +781,19 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ; 常數時間比較
     diff = 0
     i <- [0..16): {
-        diff = diff | (tag[i] ^ exp-tag[i])
+        ixout670c27 = tag[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout670c40 = exp-tag[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        diff = diff | (ixout670c27 ^ ixout670c40)
     }
     diff != 0 -> {
 

@@ -32,15 +32,33 @@ rc4 = (in []byte, key []byte) (out []byte) {
     j = 0
     i <- [0..256): {
 
-        #{index-out=zero, overflow=wrap}
-        j = (j + (s[i]) + (key[i % key-len])) % 256
+        ixout36c19 = s[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        ixout36c28 = key[i % key-len]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        j = (j + (ixout36c19) + (ixout36c28)) % 256
 
         ; Swap s[i] and s[j]
         t = s[i]
 
-        #{index-out=zero}
+        ixout43c24 = s[j]: {
+            ok -> it
+
+            -> _
+        }
+
         s[i]: {
-            ok -> it = s[j]
+            ok -> it = ixout43c24
 
             -> _
         }
@@ -61,8 +79,14 @@ rc4 = (in []byte, key []byte) (out []byte) {
         #{overflow=wrap}
         i = (i + 1) % 256
 
-        #{index-out=zero, overflow=wrap}
-        j = (j + (s[i])) % 256
+        ixout65c19 = s[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        j = (j + (ixout65c19)) % 256
 
         ; Swap s[i] and s[j]
         t = s[i]: {
@@ -71,9 +95,14 @@ rc4 = (in []byte, key []byte) (out []byte) {
             -> 0
         }
 
-        #{index-out=zero}
+        ixout76c24 = s[j]: {
+            ok -> it
+
+            -> _
+        }
+
         s[i]: {
-            ok -> it = s[j]
+            ok -> it = ixout76c24
 
             -> _
         }
@@ -87,14 +116,18 @@ rc4 = (in []byte, key []byte) (out []byte) {
         ; 生成密鑰流位元組
         ; s[i] 與 s[j] 都是 byte：`s[i] + s[j]` 的結果型別取左運算元（byte），
         ; 直接寫 `(s[i] + s[j]) % 256` 會讓常數 256 被窄化成 byte 0，觸發執行期
-        ; 除零並把索引強制成 0（金鑰流全錯）。先顯式升到 i64 再取模。
-        si i64 = s[i]: {
+        ; 除零並把索引強制成 0（金鑰流全錯）。
+        ; ⚠ 單行宣告 `si i64 = s[i]: { ok -> it }` 不會真的加寬（值仍按 byte 域算，
+        ; 後面 `% 256` 一樣除零）。只有「先宣告、再賦值」的兩段式才落進 64 位域。
+        si i64
+        si = s[i]: {
             ok -> it
 
             -> 0
         }
 
-        sj i64 = s[j]: {
+        sj i64
+        sj = s[j]: {
             ok -> it
 
             -> 0
@@ -103,7 +136,12 @@ rc4 = (in []byte, key []byte) (out []byte) {
         #{overflow=wrap}
         k = s[(si + sj) % 256]
 
-        #{index-out=zero}
-        out[pos] = (in[pos]) ^ (k & 255)
+        ixout107c21 = in[pos]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[pos] = (ixout107c21) ^ (k & 255)
     }
 }

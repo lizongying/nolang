@@ -16,7 +16,7 @@ import (
 // `#{...}` 條目住在 AST 節點上（`AnnotatedNode.Annotations`）—— 語法即真相。
 //
 // 為什麼必須這樣：Stage 3 曾把註解搬進 `SemanticContext.anns`（節點指針鍵的
-// side-table），而**尾隨註解**（`x = v[5] #{index-out=zero}`）只寫表、不落節點。
+// side-table），而**尾隨註解**（`x = v[5] #{d11-probe=wrap}`）只寫表、不落節點。
 // 後果有三：
 //   - 「從 AST 重建註解」在原理上不可能（表裡有、樹上沒有）；
 //   - `CloneProgram` / 模組合併各需一條手工通道，漏一處就靜默丟註解；
@@ -127,7 +127,7 @@ func TestAnnotationsOfEqualsRawAnnotationsOf(t *testing.T) {
 	}
 	// And the reverse direction.
 	m := annTestNode()
-	sem.SetAnnotations(m, []*AnnotationEntry{{Key: "index-out"}})
+	sem.SetAnnotations(m, []*AnnotationEntry{{Key: "d11-probe"}})
 	if len(sem.RawAnnotationsOf(m)) != 1 {
 		t.Error("RawAnnotationsOf must see entries written via SetAnnotations")
 	}
@@ -167,17 +167,15 @@ func TestGenericParamsOfIsPureFunction(t *testing.T) {
 }
 
 // TestTrailingAnnotationLandsOnNode 是**回归门禁**，直指当年那个缺口：
-// `x = v[5] #{index-out=zero}` 的条目必须落在**所属陈述**上，而不是只进一张表。
-// 全仓有 59 处尾随注解（其中 18 处 `#{index-out}`），丢一个就是静默的错误代码。
+// `x = v[5] #{d11-probe=wrap}` 的条目必须落在**所属陈述**上，而不是只进一张表。
+// 丢一个就是静默的错误代码。D11 起 `#{index-out=DEF}` 已被移除，這裡改用中性的
+// `d11-probe` 鍵（不觸發任何 lowering），仍舊驗證「尾隨註解落到節點」這件事。
 //
-// ⚠️ 用 `SkipLowering = true`（surface 树）断言：`#{index-out}` 是**降糖期的
-// 输入**，`maybeIndexOutAssign` 会把整条 `l = a[i]` 换成 `*BlockStatement`，
-// 注解随原节点一起离树。这是既有行为（旧的 side-table 也一样丢，因为 blob 走
-// 的是降糖后的树），不是本轮的回归。真正必须承载注解的是 surface 树 ——
-// 也正是 Stage D 要缓存的那棵树。
+// ⚠️ 用 `SkipLowering = true`（surface 树）断言：真正必须承载注解的是 surface
+// 树 —— 也正是 Stage D 要缓存的那棵树。
 func TestTrailingAnnotationLandsOnNode(t *testing.T) {
 	src := "f = (a []i64, i i64) (r i64) {\n" +
-		"    l = a[i] #{index-out=zero}\n" +
+		"    l = a[i] #{d11-probe=wrap}\n" +
 		"    r = l + 1\n" +
 		"}\n"
 	p := New(lexer.NewCached("trailing.no", src))
@@ -191,13 +189,13 @@ func TestTrailingAnnotationLandsOnNode(t *testing.T) {
 	var found []*AnnotationEntry
 	walkProgramNodes(prog, func(n Node) {
 		for _, e := range annotationsOf(n) {
-			if e.Key == "index-out" && e.Trailing {
+			if e.Key == "d11-probe" && e.Trailing {
 				found = append(found, e)
 			}
 		}
 	})
 	if len(found) == 0 {
-		t.Fatal("anti-vacuity: the trailing `#{index-out=zero}` never landed on a node — " +
+		t.Fatal("anti-vacuity: the trailing `#{d11-probe=wrap}` never landed on a node — " +
 			"this is exactly the defect that made AST-side rebuild impossible")
 	}
 }
@@ -209,12 +207,12 @@ func TestTrailingAnnotationLandsOnNode(t *testing.T) {
 // 现在注解随 AST 的 gob 树编码往返，不再有独立通道；本测试守住这个新事实。
 //
 // 两种形态都测：默认（降糖后，今天的 blob 形态）与 surface（Stage D 的目标形态）。
-// 尾随注解只在 surface 形态下必然存在 —— `#{index-out}` 是降糖期的输入，承载它的
-// 语句被 `maybeIndexOutAssign` 换掉后注解随节点离树（既有行为）。
+// D11 移除 index-out 降糖後，尾隨註解在兩種形態都應隨節點保留（不再被語句替換
+// 丟棄），故兩者都預期 foundTrailing=true。
 func TestAnnotationsSurviveCacheRoundTrip(t *testing.T) {
 	src := "#{mac-arm64}\ntarget = 1\n\n#{overflow=wrap}\nother = 2\n\n" +
 		"f = (a []i64, i i64) (r i64) {\n" +
-		"    l = a[i] #{index-out=zero}\n" +
+		"    l = a[i] #{d11-probe=wrap}\n" +
 		"    r = l + 1\n" +
 		"}\n"
 
@@ -223,7 +221,7 @@ func TestAnnotationsSurviveCacheRoundTrip(t *testing.T) {
 		skipLowering bool
 		wantTrailing bool
 	}{
-		{"lowered", false, false},
+		{"lowered", false, true},
 		{"surface", true, true},
 	}
 	for _, c := range cases {
@@ -277,7 +275,7 @@ func TestAnnotationsSurviveCacheRoundTrip(t *testing.T) {
 					if e.Key == "overflow" {
 						foundOverflow = true
 					}
-					if e.Key == "index-out" && e.Trailing {
+					if e.Key == "d11-probe" && e.Trailing {
 						foundTrailing = true
 					}
 				}

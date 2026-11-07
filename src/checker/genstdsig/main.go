@@ -5,9 +5,12 @@
 //
 // It reads the on-disk src/std tree (the same files //go:embed compiles into
 // StdFS), reuses the exact collection logic from the checker package, and
-// emits the signature-table maps plus the std AST blob. The std-content key
-// (`-key-only`) is printed separately so the Makefile can inject it via -X as
-// a "built via make" marker; at runtime only its non-emptiness is checked.
+// emits the signature-table maps plus the std AST blob. The std-content key is
+// used twice: printed separately (`-key-only`) so the Makefile can inject it
+// via -X as checker.StdSigKey, AND baked into StdASTBlob.StdKey. At runtime the
+// latter is compared against the injected key by value (see
+// checker.validateStdASTBlob), so a blob made from different std sources is
+// rejected; an empty injected key is still a hard failure.
 //
 // Run via `go generate ./checker/` (cwd = src/checker) or `make gen`.
 package main
@@ -51,9 +54,9 @@ func main() {
 	// Independent std-signature key computation. This hashes the CURRENT
 	// on-disk src/std tree from scratch — it does NOT read any key baked into
 	// generated files. The Makefile captures this output and injects it into
-	// the binary via -X (checker.StdSigKey). At runtime the ONLY validation is
-	// whether StdSigKey is empty: empty ⇒ binary not built via `make` (hard
-	// failure); non-empty ⇒ baked tables present and fresh (used directly).
+	// the binary via -X (checker.StdSigKey). SerializeStdAST bakes the same
+	// hash (same function, same fsys) into StdASTBlob.StdKey; runtime compares
+	// the two by value. An empty injected key is a hard failure.
 	if *keyOnly {
 		key, err := checker.ComputeStdSigKeyFromFS(fsys)
 		if err != nil {

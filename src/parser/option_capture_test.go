@@ -399,15 +399,6 @@ func TestCaptureSkippedCases(t *testing.T) {
 			varName: "a", wantType: "i64", wantCap: 0,
 		},
 		{
-			name: "index-out annotation on the statement",
-			src: `f = (v []i64, i i64) {
-    #{index-out = 0}
-    a = v[i]
-    print(a)
-}`,
-			varName: "a", wantType: "", wantCap: 0,
-		},
-		{
 			// D6：純算術本身就是可錯源 → 推斷為 ?T，但不走結構捕獲（根為算術）。
 			name: "pure arithmetic becomes option without capture",
 			src: `f = (b i64, c i64) {

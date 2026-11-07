@@ -64,7 +64,7 @@
 ; ⚠️ 一律用【普通函式 + 顯式結構體參數】，不用方法：
 ;    帶 map 欄位的結構體 + 方法 + 跨模組會炸（見 compiler/src/util/intern.no 檔頭）。
 ; ⚠️ 整數運算預設回 option<int>：每條算術陳述都要 #{overflow=wrap}。
-; ⚠️ 讀 `x = arr[i]`（i 非字面量）要 #{index-out=zero}；寫入位置不需要。
+; ⚠️ 索引讀取回傳 `?T`，需以值 match / `?=` / place-match 顯式消費；寫入位置為 lvalue 不需消費。
 ;
 ; ⚠️ 為什麼 type-string / expr-string 在本檔而不是 ty.no：
 ;    §4.3 的依賴圖是 `ast ──► ty`（ast 在上游）。dump 需要 `Type.String()`，
@@ -557,7 +557,6 @@ nd-at = (t ast, i i64) (d nd) {
     i <= 0 -> return
     i >= t.n -> return
 
-    #{index-out=zero}
     d = t.nodes[i]
 }
 
@@ -580,7 +579,6 @@ kid-at = (t ast, i i64) (v i64) {
     i < 0 -> return
     i >= t.kids.len() -> return
 
-    #{index-out=zero}
     v = t.kids[i]
 }
 
@@ -600,7 +598,6 @@ ins = (t ast, i i64, j i64) (v i64) {
     p < 0 -> return
     p >= t.tape.len() -> return
 
-    #{index-out=zero}
     v = t.tape[p]
 }
 
@@ -620,7 +617,6 @@ kind-f = (t ast, k i64, j i64) (v i64) {
     p < 0 -> return
     p >= t.kinds.len() -> return
 
-    #{index-out=zero}
     v = t.kinds[p]
 }
 
@@ -633,7 +629,6 @@ str-at = (t ast, id i64) (r str) {
     id <= 0 -> return
     id >= t.strs.len() -> return
 
-    #{index-out=zero}
     r = t.strs[id]
 }
 
@@ -646,7 +641,6 @@ aux-at = (t ast, idx i64) (v i64) {
     idx <= 0 -> return
     idx >= t.aux.len() -> return
 
-    #{index-out=zero}
     v = t.aux[idx]
 }
 

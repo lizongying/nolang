@@ -87,7 +87,8 @@ i64.to-str = () (out str) {
 ; out: 十進位表示（隱式拓寬至 i64 後複用原生路徑）
 ; [to-str](#number.i32.to-str)
 i32.to-str = () (out str) {
-    v i64 = .
+    v i64
+    v = .
     out = v.to-str()
 }
 
@@ -95,7 +96,8 @@ i32.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 i64 後格式化）
 ; [to-str](#number.i16.to-str)
 i16.to-str = () (out str) {
-    v i64 = .
+    v i64
+    v = .
     out = v.to-str()
 }
 
@@ -103,7 +105,8 @@ i16.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 i64 後格式化）
 ; [to-str](#number.i8.to-str)
 i8.to-str = () (out str) {
-    v i64 = .
+    v i64
+    v = .
     out = v.to-str()
 }
 
@@ -155,7 +158,8 @@ u64.to-str = () (out str) {
 ; out: 十進位表示（隱式拓寬至 u64 後複用 u64.to-str）
 ; [to-str](#number.u32.to-str)
 u32.to-str = () (out str) {
-    v u64 = .
+    v u64
+    v = .
     out = v.to-str()
 }
 
@@ -163,7 +167,8 @@ u32.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 u64 後格式化）
 ; [to-str](#number.u16.to-str)
 u16.to-str = () (out str) {
-    v u64 = .
+    v u64
+    v = .
     out = v.to-str()
 }
 
@@ -171,7 +176,8 @@ u16.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 u64 後格式化）
 ; [to-str](#number.u8.to-str)
 u8.to-str = () (out str) {
-    v u64 = .
+    v u64
+    v = .
     out = v.to-str()
 }
 
@@ -179,7 +185,8 @@ u8.to-str = () (out str) {
 ; out: 十進位表示（byte 按無號 0..255，拓寬至 u64 後格式化）
 ; [to-str](#number.byte.to-str)
 byte.to-str = () (out str) {
-    v u64 = .
+    v u64
+    v = .
     out = v.to-str()
 }
 

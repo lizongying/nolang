@@ -253,6 +253,8 @@ func main() {
 		testCommand(os.Args[2:])
 	case "vet":
 		vetCommand(os.Args[2:])
+	case "fix":
+		fixCommand(os.Args[2:])
 	case "ast":
 		astCommand(os.Args[2:])
 	case "cache":
@@ -295,7 +297,6 @@ func printUsage() {
 	fmt.Println("                      match       add missing nil/err arms to non-exhaustive option matches")
 	fmt.Println("                      unwrap      consume option bindings never propagated or unwrapped")
 	fmt.Println("                      main        hoist a top-level main body to top-level statements")
-	fmt.Println("                      index-out   expand #{index-out=DEF} index reads into explicit matches")
 	fmt.Println("      -loop-style=<s>  default loop spelling: prefix (default) or suffix")
 	fmt.Println("      -md   also format Nolang code blocks inside Markdown files (.md/.mdx)")
 	fmt.Println("    Examples:")
@@ -310,7 +311,6 @@ func printUsage() {
 	fmt.Println("      no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place")
 	fmt.Println("      no fmt -fix=redundant main.no   preview redundant annotation removal")
 	fmt.Println("      no fmt -fix=match -w src/       add missing match arms in src/ in-place")
-	fmt.Println("      no fmt -fix=index-out -w src/   expand #{index-out=DEF} reads into explicit match")
 	fmt.Println("      echo 'x=1' | no fmt         format from stdin")
 	fmt.Println("      no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'")
 	fmt.Println("      no fmt --md -w docs/        format Nolang blocks in every .md/.mdx under docs/")
@@ -1264,7 +1264,7 @@ func fmtCommand(args []string) {
 	fs := flag.NewFlagSet("fmt", flag.ExitOnError)
 	writeInPlace := fs.Bool("w", false, i18n.P("e0r5thlw", "write result to source file"))
 	diffMode := fs.Bool("d", false, i18n.P("k3g4ofs4", "output colored diff instead of formatted result"))
-	fixClass := fs.String("fix", "", i18n.P("7usot77o", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return), or 'index-out' (expands `#{index-out=DEF}` safe-index reads into explicit matches, dropping the annotation)"))
+	fixClass := fs.String("fix", "", i18n.P("7usot77o", "apply automatic fixes for one problem class: 'overflow' (adds #{overflow=wrap} to unannotated integer arithmetic), 'redundant' (removes type annotations that equal the inferred type, e.g. `x str = ''` -> `x = ''`), 'match' (adds the missing nil/err arms to non-exhaustive option matches), or 'unwrap' (consumes option bindings that are never propagated or unwrapped: `x ?= expr` when the function already has a ?T result, otherwise `x-opt = expr` + a statement match `x-opt: { ok -> x = it -> }` on the following lines), or 'main' (omits a top-level `main = () { ... }` wrapper by hoisting its body statements to the top level; skipped when main has params/results or a direct return)"))
 	loopStyle := fs.String("loop-style", "prefix", i18n.P("en9zq76f", "default loop spelling: 'prefix' -> '(cond) { }', 'N * { }', '!! { }', '! { }'; 'suffix' -> '{ } (cond)', '{ } * N', '{ } (true)', '{ } ()'"))
 	mdMode := fs.Bool("md", false, i18n.P("aze4pgle", "also format Nolang code blocks inside Markdown files (.md/.mdx)"))
 	fs.Usage = func() {
@@ -1299,7 +1299,6 @@ func fmtCommand(args []string) {
 		fmt.Println(i18n.P("jx1w7b52", "  no fmt -fix=overflow -w src/    add overflow annotations in src/ in-place"))
 		fmt.Println(i18n.P("lzgs7cds", "  no fmt -fix=redundant main.no   preview redundant annotation removal"))
 		fmt.Println(i18n.P("u3if6wak", "  no fmt -fix=match -w src/       add missing match arms in src/ in-place"))
-		fmt.Println("  no fmt -fix=index-out -w src/   expand #{index-out=DEF} reads into explicit match")
 		fmt.Println(i18n.P("mh9jwcfu", "  no fmt -loop-style=suffix f.no  format loops as '{ } (cond)' / '{ } * N'"))
 		fmt.Println(i18n.P("awc98kqh", "  no fmt -md README.md        format Nolang blocks in one Markdown file"))
 		fmt.Println(i18n.P("6c01vyr1", "  no fmt -md -w docs/         format Nolang blocks in every .md/.mdx under docs/"))
@@ -1569,6 +1568,10 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			return nil
 		}
 		if info.IsDir() {
+			// 底線開頭的目錄（如 _drafts）整棵跳過，不格式化、不報錯。
+			if pkg.IsIgnoredSourceDir(info.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		// Markdown 只在顯式 -md 時參與；其餘非 .no 檔一律略過。
@@ -1577,6 +1580,10 @@ func fmtProcessDirectory(dirname string, writeInPlace bool, diffMode bool, fixCl
 			return nil
 		}
 		if !isMd && !strings.HasSuffix(path, ".no") {
+			return nil
+		}
+		// 底線開頭的 .no 檔（或其上層底線目錄）是被忽略檔（草稿 / 私有），不格式化、不報錯。
+		if !isMd && pkg.IsIgnoredSourcePath(path) {
 			return nil
 		}
 		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
@@ -1750,10 +1757,8 @@ func fmtProcessFixDirectory(dirname string, writeInPlace bool, diffMode bool, fi
 
 // fmtOverflowFixes 對未標註 #{overflow} 的整數溢位運算做「手術式」文字插入，
 // 回傳「絕對檔名 -> 修復後源碼」。只有真正未標註的整數運算才會被插入
-// `#{overflow=wrap}`（若該陳述上方緊鄰已有其它單行註解，如 #{index-out=zero}，
-// 則合併為單行 `#{index-out=zero, overflow=wrap}`），不污染無溢出的
-// 陳述、不改排版、不改動其它註解，因此對 std 這種含手寫 `#{index-out}` 行註解的
-// 檔案安全。重跑冪等：已標註的陳述不再被報告。
+// `#{overflow=wrap}`（若該陳述上方緊鄰已有其它單行註解，則合併為單行），
+// 不污染無溢出的陳述、不改排版、不改動其它註解。重跑冪等：已標註的陳述不再被報告。
 //
 // 分析來源是「磁碟檔案自身」：解析後跑 checker.ValidateIntOverflow。這與 `no vet`
 // 的實質報告一致（`no vet` 原始輸出會把同一站點因模組重複引用而印很多次，去重後
@@ -1774,11 +1779,8 @@ func fmtOverflowFixes(arg string, fixClass string) (map[string]string, error) {
 	if fixClass == "main" {
 		return fixMainFixes(arg), nil
 	}
-	if fixClass == "index-out" {
-		return fixIndexOutFixes(arg), nil
-	}
 	if fixClass != "overflow" {
-		return nil, i18n.Errorf("hc3a6zzw", "unknown fix class %q (supported: overflow, redundant, match, unwrap, main, index-out)", fixClass)
+		return nil, i18n.Errorf("hc3a6zzw", "unknown fix class %q (supported: overflow, redundant, match, unwrap, main)", fixClass)
 	}
 	info, err := os.Stat(arg)
 	if err != nil {
@@ -3320,7 +3322,11 @@ func testCommand(args []string) {
 			if err != nil {
 				return err
 			}
+			// 底線開頭的目錄（如 _drafts）整棵跳過，不編入測試。
 			if d.IsDir() {
+				if pkg.IsIgnoredSourceDir(d.Name()) {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			name := d.Name()
@@ -3328,6 +3334,10 @@ func testCommand(args []string) {
 				return nil
 			}
 			if name == "main.no" || name == "lib.no" {
+				return nil
+			}
+			// 底線開頭的 .no 檔（或其上層底線目錄）是被忽略檔（草稿 / 私有），不編入測試。
+			if pkg.IsIgnoredSourcePath(path) {
 				return nil
 			}
 			// 跳過 ignore 列表中匹配的檔案
@@ -3568,7 +3578,35 @@ func vetCommand(args []string) {
 			if err != nil {
 				return err
 			}
+			// 底線開頭的目錄（如 _drafts / _scratch）整棵跳過：
+			// 給一條 HINT 說明，然後 SkipDir 不遞迴其子樹。
+			if d.IsDir() && pkg.IsIgnoredSourceDir(d.Name()) {
+				allLints = append(allLints, nbuild.LintResult{
+					File: path,
+					Lints: []checker.LintResult{{
+						Severity: checker.LintHint,
+						Source:   "nolang-lint",
+						Message:  fmt.Sprintf("directory name starts with '_': %s/ — this directory is ignored by nolang and its contents will be skipped", path),
+						TraceID:  "jfo4w2df",
+					}},
+				})
+				return filepath.SkipDir
+			}
 			if !d.IsDir() && strings.HasSuffix(path, ".no") {
+				// 底線開頭的 .no 檔是被忽略檔（草稿 / 私有），工具鏈跳過；
+				// 給一條 HINT 說明，而不是把底線當成命名違規報 ERROR。
+				if pkg.IsIgnoredSourcePath(path) {
+					allLints = append(allLints, nbuild.LintResult{
+						File: path,
+						Lints: []checker.LintResult{{
+							Severity: checker.LintHint,
+							Source:   "nolang-lint",
+							Message:  fmt.Sprintf("source file name starts with '_': %s — this file is ignored by nolang and will be skipped (rename without the leading underscore to include it)", path),
+							TraceID:  "jfo4w2df",
+						}},
+					})
+					return nil
+				}
 				// 跳過 ignore 列表中匹配的檔案
 				if vetPkg != nil && vetPkg.IsIgnored(path) {
 					return nil
@@ -3594,8 +3632,12 @@ func vetCommand(args []string) {
 			os.Exit(1)
 		}
 		if len(files) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: no .no files found in %s\n", inputPath)
-			os.Exit(1)
+			// 若只是全部被忽略（如根目錄本身是以 '_' 開頭的被忽略目錄），不報錯；
+			// 其 HINT 已收集在 allLints，下方會正常輸出並以 exit 0 結束。
+			if len(allLints) == 0 {
+				fmt.Fprintf(os.Stderr, "Error: no .no files found in %s\n", inputPath)
+				os.Exit(1)
+			}
 		}
 		// 並行驗證：每個文件獨立編譯，使用 worker pool 並行處理。
 		// vet 模式下跳過 ClearModuleCache，全域 parseProgramFileCache 為執行緒安全
@@ -3637,28 +3679,41 @@ func vetCommand(args []string) {
 		}
 	} else {
 		// 文件模式：驗證單個文件
-		// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
-		if verr := pkg.ValidateSourcePathName(inputPath); verr != nil {
+		if pkg.IsIgnoredSourcePath(inputPath) {
+			// 底線開頭的 .no 檔（或其上層底線目錄）是被忽略檔：給一條 HINT 說明，不驗證、不編譯。
 			allLints = append(allLints, nbuild.LintResult{
 				File: inputPath,
 				Lints: []checker.LintResult{{
-					Severity: checker.LintError,
+					Severity: checker.LintHint,
 					Source:   "nolang-lint",
-					Message:  verr.Error(),
+					Message:  fmt.Sprintf("source file name starts with '_': %s — this file is ignored by nolang and will be skipped (rename without the leading underscore to include it)", inputPath),
 					TraceID:  "jfo4w2df",
 				}},
 			})
-		}
-		lints, err := nbuild.VetFileWithLints(inputPath, opts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if len(lints) > 0 {
-			allLints = append(allLints, nbuild.LintResult{
-				File:  inputPath,
-				Lints: lints,
-			})
+		} else {
+			// 路徑命名規範：目錄與檔名只能含小寫字母、數字、中劃線，禁止底線。
+			if verr := pkg.ValidateSourcePathName(inputPath); verr != nil {
+				allLints = append(allLints, nbuild.LintResult{
+					File: inputPath,
+					Lints: []checker.LintResult{{
+						Severity: checker.LintError,
+						Source:   "nolang-lint",
+						Message:  verr.Error(),
+						TraceID:  "jfo4w2df",
+					}},
+				})
+			}
+			lints, err := nbuild.VetFileWithLints(inputPath, opts)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			if len(lints) > 0 {
+				allLints = append(allLints, nbuild.LintResult{
+					File:  inputPath,
+					Lints: lints,
+				})
+			}
 		}
 	}
 
@@ -3693,6 +3748,8 @@ type vetDiagnostic struct {
 	Rule      string `json:"rule"`     // 規則代碼，例如 nolang-index / nolang-overflow
 	Message   string `json:"message"`
 	TraceID   string `json:"traceId,omitempty"`
+	// Fix 是該診斷的首選修復建議（Nolang 源片段 + 替換 span）。為空表示無修復。
+	Fix parser.DiagnosticFix `json:"fix,omitempty"`
 }
 
 // vetReport 是 `no vet --json` 的頂層結構：扁平診斷陣列 + 嚴重性摘要。
@@ -3709,6 +3766,19 @@ type vetSummary struct {
 	Errors   int `json:"errors"`
 	Warnings int `json:"warnings"`
 	Hints    int `json:"hints"`
+}
+
+// firstFix 取修復列表中的首條可用修復（Snippet 非空）。無則返回零值。
+func firstFix(fixes []parser.DiagnosticFix) parser.DiagnosticFix {
+	for _, f := range fixes {
+		if f.Snippet != "" {
+			return f
+		}
+	}
+	if len(fixes) > 0 {
+		return fixes[0]
+	}
+	return parser.DiagnosticFix{}
 }
 
 // flattenLints 將文件級聚合結果拍平為單條診斷陣列，並做去重與嚴重性計數。
@@ -3737,16 +3807,17 @@ func flattenLints(results []nbuild.LintResult) (diags []vetDiagnostic, errors, w
 				continue
 			}
 			seen[dedupKey] = true
-			diags = append(diags, vetDiagnostic{
-				File:      filePath,
-				Line:      l.Line,
-				Column:    l.Column,
-				EndColumn: l.EndColumn,
-				Severity:  string(l.Severity),
-				Rule:      l.Source,
-				Message:   l.Message,
-				TraceID:   l.TraceID,
-			})
+		diags = append(diags, vetDiagnostic{
+			File:      filePath,
+			Line:      l.Line,
+			Column:    l.Column,
+			EndColumn: l.EndColumn,
+			Severity:  string(l.Severity),
+			Rule:      l.Source,
+			Message:   l.Message,
+			TraceID:   l.TraceID,
+			Fix:       firstFix(l.Fixes),
+		})
 			switch l.Severity {
 			case nbuild.LintError:
 				errors++
@@ -3786,6 +3857,16 @@ func printLintResults(results []nbuild.LintResult) int {
 		} else {
 			fmt.Printf("%s: [%s] %s: %s [%s]\n",
 				d.File, sev, d.Rule, d.Message, d.TraceID)
+		}
+		// 建議修復：在錯誤行下方縮進打印可套用代碼片段（Fixes 為結構化欄位，
+		// 不進入 [traceID] 尾綴，故不破壞既有輸出契約）。
+		if d.Fix.Snippet != "" {
+			fmt.Printf("    %s\n", i18n.P("fixlabel", "fix:"))
+			for _, fl := range strings.Split(d.Fix.Snippet, "\n") {
+				fmt.Printf("      | %s\n", fl)
+			}
+		} else if d.Fix.Description != "" {
+			fmt.Printf("    %s %s\n", i18n.P("fixlabel", "fix:"), d.Fix.Description)
 		}
 	}
 	if errorCount > 0 || warnCount > 0 || hintCount > 0 {

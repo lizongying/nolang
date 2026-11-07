@@ -58,12 +58,14 @@ s.compare(b) < 0      ; 正確寫法
 ```no
 #{fmt-skip}
 s = 'Hello World'
-c char = s[0]      ; 'H' 的碼點（顯式 plain 型別把結果拉回 char）
+c = s[0]: { ok -> it  -> _ }   ; 'H' 的碼點（?char 必須顯式解包，空臂取 '\0'）
 ```
 
-> 要把 `?char` 用掉有四條路：`?=` 上拋、match 解包（`x = s[i]: { ok -> it, -> }`）、
-> `#{index-out=DEF}` 指定越界取值、或在綁定上寫**顯式 plain 型別**（`c char = s[i]`）。
-> 細節見〈syntax · 安全索引〉；批量改寫用 `no fmt --fix=unwrap`。
+> 要把 `?char` 用掉只有三條路（**`#{index-out=DEF}` 已於 D11 廢棄並移除**，殘留註解是編譯錯誤；
+> 也沒有「顯式 plain 型別拉回 plain」這條捷徑，`c char = s[i]` 同樣必須顯式消費）：
+> **match 解包**（`x = s[i]: { ok -> it, -> _ }`，空臂取 `char` 零值 `'\0'`）、
+> **place-match 寫入**（`s[i]: { ok -> it = x, -> _ }`）、或**簡寫 `?=` 上拋**（函式有 `?T` 結果參數，
+> 或陳述位於塊 match 主體內）。細節與範例見〈syntax · 安全索引〉。
 
 **切片**：`s[a..b]` 回傳底層字串的一個**視圖**，型別仍是 **`str`**（共享記憶體，不複製）。切片下標是**碼點位置**，與 `s[i]` 一致：
 
@@ -197,8 +199,8 @@ c = s[1]                 ; O(n)，取第 1 个码点 'é'（而非字节）
   > `s.byte(i)` 的结果是 **`?byte`**（2026-10-21 起）：此前的裸字节读取不做边界检查，
   > 越界索引是未定义行为。现在越界返回 `nil`，与 `arr[i]` / `s[i]` 同一套规则
   > （见 design/option-unified.md §3.1 第 5 条）。因此 `b i64 = s.byte(0)` 会报
-  > `15w45dqk`——明文 plain 标注配上 option 呼叫就是静默拆包；要用 `?=`、两段式 match
-  > 或 `_ =` 消费。`#{index-out = DEF}` 只决定越界时的取值，结果仍是 `?byte`。
+  > `15w45dqk`——明文 plain 标注配上 option 呼叫就是静默拆包，是编译硬错误；
+  > 要用 `?=`、两段式 match（`b = s.byte(0): { ok -> it, -> _ }`）或 `_ =` 消费。
   > `txt.byte(i)` 语义相同（`txt` 的 `byte`  field 1 即字节长度）。
 
 > 标准库（src/std）内部的字节访问已全部迁移为 `s.byte(i)`：含 `str.no`/`txt.no` 的 UTF-8 编解码（`decode-cp`）、比较（`compare`/`starts-with`/`ends-with`）、哈希、切片复制（`slice`/`repeat`/`trim`/`copy`）、`to-bytes`/`to-upper`/`to-lower`/`reverse`/`replace-char`/`count`/`index` 等。因此 `no vet` 不再需要跳过标准库文件；其余 `[]byte`/切片/数组类型的元素访问 `x[i]` 本就是按元素（字节）索引，语义不变，亦不告警。

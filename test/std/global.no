@@ -32,8 +32,20 @@ t-with-len = () {
     runner.eq(v.len(), 3, 'with-len(3) vec len == 3')
 
     ; with-len 的內容是零初始化
-    runner.eq(v[0], 0, 'with-len vec element zero-initialised')
-    runner.eq(v[2], 0, 'with-len vec last element zero-initialised')
+    ixout35c16 = v[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout35c16, 0, 'with-len vec element zero-initialised')
+    ixout36c16 = v[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout36c16, 0, 'with-len vec last element zero-initialised')
     z str = with-len(0)
     runner.eq(z.len(), 0, 'with-len(0) str len == 0')
 }
@@ -58,7 +70,13 @@ t-with-cap-len = () {
     runner.eq(s.len(), 5, 'with-cap-len(16,5) str len == 5')
     v []i64 = with-cap-len(200, 100)
     runner.eq(v.len(), 100, 'with-cap-len(200,100) vec len == 100')
-    runner.eq(v[99], 0, 'with-cap-len vec zero-initialised')
+    ixout61c16 = v[99]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout61c16, 0, 'with-cap-len vec zero-initialised')
 
     ; len == cap
     e str = with-cap-len(4, 4)

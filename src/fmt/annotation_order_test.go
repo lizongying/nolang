@@ -146,9 +146,9 @@ func TestFormatAnnotationCommentOrdering(t *testing.T) {
 //     last ARGUMENT, not the paren), and
 //   - a slice/array literal whose `]` sits on its own line.
 //
-// For `#{index-out=…}` this is not cosmetic: the annotation stops guarding the
-// index it was written for (the out-of-range index is treated as unhandled), and
-// the LSP quickfix that appends `#{index-out = 0}` at end-of-line does nothing.
+// A misplaced trailing annotation is not cosmetic: once reinterpreted as a
+// leading annotation of the next statement, it stops guarding the statement it
+// was written for.
 //
 // The test is now "the previous non-comment token is on the same line as `#{`"
 // (annotationImmediatelyTrails), which is exactly the language's own rule: a
@@ -165,11 +165,11 @@ func TestFormatTrailingAnnotationAfterMultilineStatement(t *testing.T) {
 				"    v = pick(\n" +
 				"        1,\n" +
 				"        2\n" +
-				"    ) #{index-out=zero}\n" +
+				"    ) #{mac-arm64}\n" +
 				"    print(v)\n" +
 				"}\n",
 			expected: "f = () {\n" +
-				"    v = pick(1, 2) #{index-out=zero}\n" +
+				"    v = pick(1, 2) #{mac-arm64}\n" +
 				"    print(v)\n" +
 				"}\n",
 		},
@@ -197,13 +197,13 @@ func TestFormatTrailingAnnotationAfterMultilineStatement(t *testing.T) {
 				"        1,\n" +
 				"        2\n" +
 				"    )\n" +
-				"    #{index-out=zero}\n" +
+				"    #{mac-arm64}\n" +
 				"    print(v)\n" +
 				"}\n",
 			expected: "f = () {\n" +
 				"    v = pick(1, 2)\n" +
 				"\n" +
-				"    #{index-out=zero}\n" +
+				"    #{mac-arm64}\n" +
 				"    print(v)\n" +
 				"}\n",
 		},

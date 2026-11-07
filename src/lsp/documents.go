@@ -271,10 +271,8 @@ func (m *DocumentManager) ParseDocument(uri string) (*parser.Program, []string, 
 	//
 	// 在此之前这里是两个局部 skip 旗标（SkipUnwrapLowering +
 	// SkipSafeIndexLowering，§4.3（2026-10-17）已刪除，糖形態是唯一非編譯形態），它们恰好保留 surface AST 只是因为「这两处降糖
-	// 会把 `v ?= expr` / `#{index-out=DEF} x = v[i]` 改写成不可再解析的
-	// __unwrap_N / __idx_out_L_C 區塊，format-on-save 会把它們（且遺失
-	// DEF 字面量、變成 `x = =`）寫回使用者源碼」。SkipLowering 是同一动机的
-	// 全集：糖节点全部存活，formatter 原样渲染。
+	// 会把 `v ?= expr` 改写成不可再解析的 __unwrap_N 區塊，format-on-save 会把它們
+	// 寫回使用者源碼」。SkipLowering 是同一动机的全集：糖节点全部存活，formatter 原样渲染。
 	p.SkipLowering = true
 	// Inject std module function signatures and struct field types so that
 	// the parser can infer types from cross-module method calls (e.g.

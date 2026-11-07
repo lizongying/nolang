@@ -322,8 +322,13 @@ read-stdin = () (content ?[]byte) {
         n <= 0 -> break
         i <- [0..n): {
 
-            #{index-out=zero}
-            buf.push(tmp[i])
+            ixout326c22 = tmp[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            buf.push(ixout326c22)
         }
     }
     buf.len() == 0 -> {

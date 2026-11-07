@@ -194,11 +194,20 @@ func TestD9CompoundAssignOnIndexIsError(t *testing.T) {
 			if len(errs) != 1 {
 				t.Fatalf("`a[1] %s 1`: want exactly 1 parse error, got %d: %v", op, len(errs), errs)
 			}
-			// 兩種正確寫法都要印出來：place-match（讀改写）與 `?=`（上拋）。
-			want := []string{"`a[1] " + op + " 1`", "a[1]: {", "ok -> it = it " + op[:1] + " 1", "`a[1] ?= a[1] " + op[:1] + " 1`"}
+			diags := p.Diagnostics()
+			if len(diags) == 0 || len(diags[0].Fixes) == 0 {
+				t.Fatalf("`a[1] %s 1`: expected a diagnostic with a fix suggestion", op)
+			}
+			// 錯誤訊息需點名違規寫法 `a[1] op 1`（仍在 Message 中）。
+			if !strings.Contains(errs[0], "`a[1] "+op+" 1`") {
+				t.Errorf("error missing offending expression: %q", errs[0])
+			}
+			// 兩種正確寫法都要出現在修復建議（Fixes[0].Description）中。
+			hint := diags[0].Fixes[0].Description
+			want := []string{"a[1]: {", "ok -> it = it " + op[:1] + " 1", "`a[1] ?= a[1] " + op[:1] + " 1`"}
 			for _, w := range want {
-				if !strings.Contains(errs[0], w) {
-					t.Errorf("error missing %q:\n%s", w, errs[0])
+				if !strings.Contains(hint, w) {
+					t.Errorf("fix suggestion missing %q:\n%s", w, hint)
 				}
 			}
 		})

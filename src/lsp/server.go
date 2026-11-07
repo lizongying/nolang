@@ -14,6 +14,7 @@ import (
 
 	"github.com/lizongying/nolang/checker"
 	nolangfmt "github.com/lizongying/nolang/fmt"
+	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/i18n/catalog"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
@@ -209,27 +210,24 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 		if l.Source == "nolang-overflow" {
 			code = "overflow-wrap"
 		}
-		// 未處理越界索引帶固定 Code，供 code action 識別並提供
-		// 「插入 #{index-out = 0}」quickfix（越界取預設值）。
-		if l.Source == "nolang-index" {
-			code = "safe-index"
-		}
 		// 無效 overflow 註解（管轄陳述不含整數運算）帶固定 Code，供 code action
 		// 識別並提供「移除 #{overflow}」quickfix。
 		if l.Source == "nolang-overflow-ineffective" {
 			code = "overflow-ineffective"
 		}
-			diagnostics = append(diagnostics, Diagnostic{
-				Range: Range{
-					Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
-					End:   Position{Line: uint32(l.Line - 1), Character: endChar},
-				},
-				Severity: sev,
-				Code:     code,
-				Source:   l.Source,
-				Tags:     tags,
-				Message:  l.Message,
-			})
+		diagnostics = append(diagnostics, Diagnostic{
+			Range: Range{
+				Start: Position{Line: uint32(l.Line - 1), Character: uint32(l.Column - 1)},
+				End:   Position{Line: uint32(l.Line - 1), Character: endChar},
+			},
+			Severity: sev,
+			Code:     code,
+			Source:   l.Source,
+			Tags:     tags,
+			Message:  l.Message,
+			Fixes:    l.Fixes,
+			RelatedInformation: relatedFromFixes(l.Fixes, uri, l),
+		})
 			}
 		}
 	}
@@ -237,6 +235,40 @@ func (s *Server) publishDocumentDiagnostics(uri string, parseErrors []string, as
 	if err := s.publishDiagnostics(uri, diagnostics); err != nil {
 		log.Printf("Error publishing diagnostics: %v", err)
 	}
+}
+
+// relatedFromFixes 把診斷的修復建議轉成 LSP RelatedInformation（次級資訊），
+// 編輯器內可於診斷下方看到可套用代碼片段。
+func relatedFromFixes(fixes []parser.DiagnosticFix, uri string, l checker.LintResult) []DiagnosticRelatedInformation {
+	if len(fixes) == 0 {
+		return nil
+	}
+	startCh := uint32(l.Column - 1)
+	endCh := uint32(l.EndColumn - 1)
+	if l.EndColumn <= 0 {
+		endCh = startCh
+	}
+	var out []DiagnosticRelatedInformation
+	for _, f := range fixes {
+		msg := f.Description
+		if f.Snippet != "" {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += f.Snippet
+		}
+		out = append(out, DiagnosticRelatedInformation{
+			Location: Location{
+				URI: uri,
+				Range: Range{
+					Start: Position{Line: uint32(l.Line - 1), Character: startCh},
+					End:   Position{Line: uint32(l.Line - 1), Character: endCh},
+				},
+			},
+			Message: msg,
+		})
+	}
+	return out
 }
 
 // parseErrorToDiagnostic converts a parser diagnostic string
@@ -952,18 +984,6 @@ func (s *Server) handleTextDocumentCodeAction(params CodeActionParams) (any, err
 					})
 				}
 			}
-		case "safe-index":
-			// 越界索引的 quickfix：在該行行尾追加 `#{index-out = 0}` 尾隨註解，
-			// 越界時取預設值 0（與 `#{index-out = DEF}` 語法一致，DEF 為字面量）。
-			line := diag.Range.Start.Line
-			if edit := s.safeIndexAnnotationEdit(uri, line); edit != nil {
-				actions = append(actions, CodeAction{
-					Title:       "Add #{index-out = 0}",
-					Kind:        CodeActionKindQuickFix,
-					Diagnostics: []Diagnostic{diag},
-					Edit:        edit,
-				})
-			}
 		case "overflow-ineffective":
 			// 無效 overflow 註解的 quickfix：移除該 #{overflow = ...}（交由 formatter
 			// 依 no fmt 語意移除無效 overflow 並清理因此變空的整行註解）。
@@ -976,11 +996,51 @@ func (s *Server) handleTextDocumentCodeAction(params CodeActionParams) (any, err
 				})
 			}
 		}
+		// 通用分支：對診斷攜帶的修復建議各生成一個 QuickFix（替換 span 為 Snippet）。
+		for _, fix := range diag.Fixes {
+			if fix.Snippet == "" {
+				continue
+			}
+			edit := &WorkspaceEdit{Changes: map[string][]TextEdit{uri: {{
+				Range: fixEditRange(fix, diag),
+				NewText: fix.Snippet,
+			}}}}
+			title := i18n.P("fxapply1", "Apply fix")
+			if fix.Description != "" {
+				title = title + ": " + fix.Description
+			}
+			actions = append(actions, CodeAction{
+				Title:       title,
+				Kind:        CodeActionKindQuickFix,
+				Diagnostics: []Diagnostic{diag},
+				Edit:        edit,
+			})
+		}
 	}
 	if actions == nil {
 		return []CodeAction{}, nil
 	}
 	return actions, nil
+}
+
+// fixEditRange 把修復建議的源 span（1-based 行列）轉為 LSP 替換範圍；若未顯式指定
+// span，則回退到診斷自身範圍（diag.Range，已為 0-based）。
+func fixEditRange(fix parser.DiagnosticFix, diag Diagnostic) Range {
+	if fix.StartLine > 0 {
+		endLine := fix.EndLine
+		if endLine == 0 {
+			endLine = fix.StartLine
+		}
+		endCh := fix.EndCol
+		if endCh == 0 {
+			endCh = fix.StartCol + 1
+		}
+		return Range{
+			Start: Position{Line: uint32(fix.StartLine - 1), Character: uint32(fix.StartCol - 1)},
+			End:   Position{Line: uint32(endLine - 1), Character: uint32(endCh - 1)},
+		}
+	}
+	return diag.Range
 }
 
 // overflowAnnotationEdit 在 line 上方插入 `#{overflow = <mode>}` 註解，縮排與該行一致。
@@ -1014,36 +1074,6 @@ func leadingWhitespace(s string) string {
 		i++
 	}
 	return s[:i]
-}
-
-// safeIndexAnnotationEdit 在 line 行尾追加 `#{index-out = 0}` 尾隨註解（與
-// `#{overflow = ...}` 行註解不同，#{index-out} 必須貼在索引陳述同一行），縮排不變。
-func (s *Server) safeIndexAnnotationEdit(uri string, line uint32) *WorkspaceEdit {
-	doc, err := s.documents.GetDocument(uri)
-	if err != nil || doc == nil {
-		return nil
-	}
-	lines := strings.Split(doc.Text, "\n")
-	if int(line) >= len(lines) {
-		return nil
-	}
-	orig := lines[line]
-	// 行尾已有尾隨註解則不重複插入（避免與現有 #{...} 衝突）。
-	trimmed := strings.TrimRight(orig, " \t")
-	if strings.Contains(trimmed, "#{") {
-		return nil
-	}
-	newText := trimmed + " #{index-out = 0}\n"
-	te := TextEdit{
-		Range: Range{
-			Start: Position{Line: line, Character: uint32(len(orig))},
-			End:   Position{Line: line, Character: uint32(len(orig))},
-		},
-		NewText: newText,
-	}
-	return &WorkspaceEdit{
-		Changes: map[string][]TextEdit{uri: {te}},
-	}
 }
 
 // removeIneffectiveOverflowEdit 移除文件中所有「無效」的 #{overflow = ...} 註解

@@ -36,25 +36,25 @@ std 數字系全部「函數形式」API 集中於 math 模組（std/math.no）�
 
 **整數數學（int 泛型函數）：** `math.even`, `math.odd`, `math.gcd`, `math.lcm`, `math.div`（取商）, `math.mod`（取模）
 
-**型別轉換（函數）：** `math.i64-to-f64`, `math.f64-to-i64`, `math.f32-to-f64`, `math.f64-to-f32`
+**型別轉換（舊函數形式 `math.i64-to-f64` / `math.f64-to-i64` / `math.f32-to-f64` / `math.f64-to-f32` 已移除，改用方法形式）：** `v.to-f64()`、`v.to-i64()`、`f32.to-f64()` / `f64.to-f32()`（number 模組；整數各寬度均有 `.to-f64()`，i128 / u128 亦提供 `.to-f64()`）
 
-**數字轉字串底層（函數，已棄用；建議改用方法形式 `v.to-str()`）：** `math.i64-to-str`, `math.u64-to-str`, `math.char-to-str`, `math.f64-to-str`
+**數字轉字串底層：** 僅剩 `math.char-to-str`（已棄用，建議改用 `c.to-str()`）；`math.i64-to-str` / `math.u64-to-str` / `math.f64-to-str` 已移除，請用方法形式 `v.to-str()`
 
 **位元操作（函數）：** `math.swap`, `math.arr-zero`, `math.rotate-left`, `math.rotate-right`, `math.store-le-u32`
 
-> 例外：整數冪 `pow`（int 泛型）與本節 `math.pow`（f64）同名衝突，同一模組不容兩條 pow，故整數冪保留在 std/number.no（見下方 number 節）。
+> 整數冪：`math.pow-int`（int 泛型快速冪，與 f64 的 `math.pow` 分流不同模組）；`number.pow` 保留明確 i64 簽名以符合歷史斷言。
 
 ### number — 數值操作（方法形式 API）
 
 std 數字系「方法形式」API 集中在 number 模組（std/number.no）；函數形式 API 見上方 math 節。聯合型別 int / float / num 見各聯合節。
 
-**範圍常量：** i8.MIN / MAX … u64.MIN / MAX；`number.INF`
+**範圍常量：** i8.MIN / MAX … i128.MIN / MAX、u8.MIN / MAX … u128.MAX；`number.INF`
 
-**整數冪（函數，math.pow 同名衝突的唯一例外）：** `r = number.pow(a, n)`（a^n，n ≥ 0，快速冪 O(log n)，對所有整數型別通用）
+**整數冪（函數）：** `r = number.pow(base, n)`（base^n，n ≥ 0，快速冪 O(log n)，i64 簽名，溢出回繞；int 泛型版見上方 `math.pow-int`）
 
-**整數方法：** `n.sqrt()`（整數平方根 floor(√n)，負數返回 0）、`n.is-prime()`（質數判斷）——提供 i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 各寬度版本；i128、u128 因 runtime 將 128 位整數截斷至 64 位暫不提供
+**整數方法：** `n.sqrt()`（整數平方根 floor(√n)，負數返回 0）、`n.is-prime()`（質數判斷）——提供 i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 各寬度版本，並已提供 i128 / u128 版本（128 位算術走 LLVM i128 道，可用；須顯式標型區域變數如 `n i128 = .`，並按符號性正確佈局 `#{overflow=wrap}` 註解）
 
-**具體型別 to-str（方法）：** `v.to-str()`——i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 各寬度
+**具體型別 to-str（方法）：** `v.to-str()`——i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 各寬度；i128 / u128 亦支持（經原生 `@str_from_i128` / `@str_from_u128`）
 
 **浮點方法（f64 及同名 f32）：** 三角 `x.sin()`, `x.cos()`, `x.tan()`, `x.asin()`, `x.acos()`, `x.atan()`；雙曲 `x.sinh()`, `x.cosh()`, `x.tanh()`；取整 `x.ceil()`, `x.floor()`, `x.round()`, `x.trunc()`；指數/對數 `x.exp()`, `x.log()`, `x.log10()`, `x.log2()`；冪/根 `x.sqrt()`, `x.cbrt()`；角度/弧度 `x.degrees()`, `x.radians()`。f32 內部以 double 精度計算後收窄回 f32。
 
@@ -169,14 +169,19 @@ r = n.sqrt()                       ; 整數平方根 floor(√n)
 yes = n.is-prime()                 ; 質數判斷（int/u8…）
 q = x.sqrt()                       ; 浮點平方根（f64/f32 方法）
 q = x.floor()                      ; 取整（f64/f32 方法）
-r = number.pow(a, n)               ; 整數冪（math.pow f64 同名衝突的例外，保留於 number）
+r = number.pow(a, n)               ; 整數冪（i64 簽名；int 泛型版為 math.pow-int）
 
 ; 函數形式（math 模組）
 m = math.max(1, 2, 3)              ; num 泛型變參
 g = math.gcd(a, b)                 ; 最大公因數
 l = math.lcm(a, b)                 ; 最小公倍數
-f = math.i64-to-f64(v)            ; 數值轉換
+pi = math.pow-int(a, n)            ; 整數冪（int 泛型）
 sw = math.swap(a, b)              ; 交換
+
+; 數值轉換（方法形式，舊 math.*-to-* 函數已移除）
+f = v.to-f64()                     ; 整數 → f64
+n = x.to-i64()                     ; f64 → 整數（截斷）
+w = f32v.to-f64()                  ; f32 → f64；反向 f64.to-f32()
 
 ; 範圍常數（number 模組）
 i8.MIN / MAX                  ; -128 / 127

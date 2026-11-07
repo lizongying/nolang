@@ -454,6 +454,8 @@ type Diagnostic struct {
 	Message            string                         `json:"message"`
 	Tags               []DiagnosticTag                `json:"tags,omitempty"`
 	RelatedInformation []DiagnosticRelatedInformation `json:"relatedInformation,omitempty"`
+	// Fixes 是該診斷可套用的修復建議（Nolang 源片段 + 替換 span），供 Code Action 使用。
+	Fixes []parser.DiagnosticFix `json:"fixes,omitempty"`
 }
 
 type DiagnosticRelatedInformation struct {

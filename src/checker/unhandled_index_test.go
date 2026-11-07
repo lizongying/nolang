@@ -8,12 +8,12 @@ import (
 )
 
 // 本檔案是 ValidateUnhandledIndex 的回歸測試：arr/vec/slice 索引 b[i] 越界時
-// 預設回傳 option<elem>（永不 panic），若結果既沒被 `?=` 上拋、沒被 `#{index-out
-// = DEF}` 註解處理、也沒在返回 ?T 的函式中被就地捕獲（`a = b[i]` → `a: ?elem`），
-// 即「沉默泄漏」，必須報錯
-// （no vet / LSP 診斷，TraceID = idxhndld）。本規則僅作為診斷（非編譯硬錯誤），
-// 以免讓 `no build` / `no run` / `no test` 對既有（含 std）廣泛使用的舊式越界
-// panic 寫法全面失敗。
+// 預設回傳 option<elem>（永不 panic）。D11 移除 `#{index-out = DEF}` 註解後，
+// 該 option 必須被顯式消費：`?=` 上拋、值 match / place·block match 解包、
+// 宣告為 `?T` 綁定、或 `_ =` 丟棄。否則：
+//   - 直接的「產生處」以 idxhndld HINT 提示（不阻斷建置，含 std 的 place-match 臂）；
+//   - 巢狀「值位置」的裸索引 option 當普通值用，以 D11 新增的 idxbruse 硬錯誤
+//     阻斷建置（見 runUnhandledIndexCore / build/transpiler_validate.go）。
 
 // 未處理的索引（裸 `res = arr[i]` / `b = arr[i]`，結果非 ?T、非 option 函式）。
 const unhandledIdxSrc = `get = (arr []i64, i i64) (res i64) {
@@ -101,10 +101,13 @@ func TestUnhandledIndexAllowed(t *testing.T) {
 }`,
 		},
 		{
-			// `#{index-out = 0}` 註解 → 越界取預設值，已處理。
-			name: "index_out_annotation",
+			// D11：值 match 顯式解包 → 已處理（取代已移除的 index-out 註解）。
+			name: "value_match_consumes_index",
 			src: `get = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out = 0}
+    res = arr[i]: {
+        ok -> it
+        -> 0
+    }
 }`,
 		},
 		{
@@ -194,16 +197,19 @@ func TestUnhandledIndexProvablyInBounds(t *testing.T) {
 		})
 	}
 
-	// 正當消費路徑：加註解 / match 解包後不報。
+	// 正當消費路徑：D11 的顯式解包 / ?T 結果參數就地捕獲後不報。
 	allowed := []struct {
 		name string
 		src  string
 	}{
 		{
-			name: "fixed_array_with_index_out",
+			name: "fixed_array_with_value_match",
 			src: `f = () (res i64) {
     a [4]i64 = [10, 20, 30, 40]
-    res = a[0] #{index-out=zero}
+    res = a[0]: {
+        ok -> it
+        -> 0
+    }
 }`,
 		},
 		{
@@ -237,8 +243,8 @@ func TestUnhandledIndexCompositeIndexNotProvable(t *testing.T) {
 
 // TestUnhandledIndexNoStdExempt 驗證撤銷標準庫豁免後的統一檢查：不再因
 // mainFile 路徑含 std 而放行。原本的 std 豁免是為了繞開 merged 歸因不準導致的
-// 偽報，現歸因已修好且 std 自身沉默泄漏已以 `#{index-out = DEF}` / `?=` 逐站
-// 修復，故對所有程式碼（含路徑看似 std 的檔）一律檢查未處理索引。此與
+// 偽報，現歸因已修好且 std 自身的索引 option 已以 D11 的顯式消費寫法逐站修復，
+// 故對所有程式碼（含路徑看似 std 的檔）一律檢查未處理索引。此與
 // ValidateUnhandledOverflow 的 TestUnhandledOverflowNoStdExempt 保持對齊。
 func TestUnhandledIndexNoStdExempt(t *testing.T) {
 	cases := []struct {
@@ -262,11 +268,9 @@ func TestUnhandledIndexNoStdExempt(t *testing.T) {
 	}
 }
 
-// parseSurfaceProg 以「跳過安全索引降級」的方式解析（與 LSP 編輯器主解析同旗標，
-// 見 lsp/documents.go：SkipSafeIndexLowering=true，為保住可 format-on-save 的 surface
-// AST）。此時 `#{index-out = DEF}` 註解不會被降級成合成的 __idx_out_ tmp，
-// ValidateUnhandledIndex 必須直接辨識陳述上的註解，否則會對已正確標註的越界索引
-// 誤報「未處理」（編輯器持續提示，但 `no vet`（走降級）卻不報——兩端口徑不一致）。
+// parseSurfaceProg 以「跳過 lowering」的方式解析（與 LSP 編輯器主解析同旗標，
+// 見 lsp/documents.go：為保住可 format-on-save 的 surface AST）。D11 後索引 option
+// 必須顯式消費，checker 在 surface 形狀與降級形狀必須對顯式消費寫法一致地不誤報。
 func parseSurfaceProg(t *testing.T, src string) *parser.Program {
 	t.Helper()
 	l := lexer.New(src)
@@ -279,24 +283,42 @@ func parseSurfaceProg(t *testing.T, src string) *parser.Program {
 	return prog
 }
 
-// TestUnhandledIndexSurfaceAnnotationNotReported 驗證在 surface AST（未經降級）下，
-// `#{index-out}` 行注解／尾隨注解所標註的索引讀取不再被誤報為未處理。
-func TestUnhandledIndexSurfaceAnnotationNotReported(t *testing.T) {
+// TestUnhandledIndexSurfaceExplicitConsumptionNotReported 驗證在 surface AST
+// （未經降級）下，D11 的顯式消費寫法不會被誤報為「未處理」或「裸 option 當值用」。
+func TestUnhandledIndexSurfaceExplicitConsumptionNotReported(t *testing.T) {
 	cases := []struct {
 		name string
 		src  string
 	}{
 		{
-			name: "line_above_index_out_zero",
-			src: `detect = (buf []byte) (b0 i64) {
-    #{index-out=zero}
-    b0 = buf[0]
+			name: "unwrap_assign",
+			src: `get = (arr []i64, i i64) (res ?i64) {
+    x ?= arr[i]
+    res ?= x + 1
 }`,
 		},
 		{
-			name: "trailing_index_out",
+			name: "value_match",
 			src: `get = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out = 0}
+    res = arr[i]: {
+        ok -> it
+        -> 0
+    }
+}`,
+		},
+		{
+			name: "option_local_binding",
+			src: `detect = (buf []byte) (b0 i64) {
+    b0 ?i64 = nil
+    x ?i64 = buf[0]
+    b0 = 0
+}`,
+		},
+		{
+			name: "explicit_discard",
+			src: `get = (arr []i64, i i64) (res i64) {
+    _ = arr[i]
+    res = 0
 }`,
 		},
 	}
@@ -304,8 +326,94 @@ func TestUnhandledIndexSurfaceAnnotationNotReported(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			res := ValidateUnhandledIndex(parseSurfaceProg(t, c.src), "src/app.no")
 			for _, r := range res {
-				if r.TraceID == unhandledIndexTraceID {
-					t.Fatalf("surface AST false-positive on annotated index: L%d:C%d %s", r.Line, r.Column, r.Message)
+				if r.TraceID == unhandledIndexTraceID || r.TraceID == bareIndexUseTraceID {
+					t.Fatalf("surface AST false-positive on D11 explicit consumption: L%d:C%d %s", r.Line, r.Column, r.Message)
+				}
+			}
+		})
+	}
+}
+
+// TestBareIndexUseHardError 驗證 D11 新增的 idxbruse：裸索引 option 出現在中綴 /
+// 呼叫引數 / return 等巢狀值位置時必須報硬錯誤，而顯式消費寫法不報。
+func TestBareIndexUseHardError(t *testing.T) {
+	negatives := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "infix_combination",
+			src: `f = (a []i64) (res i64) {
+    res = a[0] + a[1]
+}`,
+		},
+		{
+			name: "xor_accumulator",
+			src: `f = (s []i64) (crc i64) {
+    i i64 = 0
+    crc = crc ^ s[i]
+}`,
+		},
+		{
+			name: "call_argument",
+			src: `g = (v i64) (r i64) {
+    r = v
+}
+f = (a []i64) (res i64) {
+    res = g(a[0])
+}`,
+		},
+	}
+	for _, c := range negatives {
+		t.Run(c.name, func(t *testing.T) {
+			found := false
+			for _, r := range ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no") {
+				if r.TraceID == bareIndexUseTraceID {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("expected idxbruse for bare index used as a plain value")
+			}
+		})
+	}
+
+	positives := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "unwrap_assign",
+			src: `f = (a []i64) (res ?i64) {
+    x ?= a[0]
+    res ?= x + 1
+}`,
+		},
+		{
+			name: "value_match",
+			src: `f = (a []i64) (res i64) {
+    x = a[0]: {
+        ok -> it
+        -> 0
+    }
+    res = x
+}`,
+		},
+		{
+			name: "place_match",
+			src: `f = (a []i64) {
+    a[0]: {
+        ok -> it = 9
+        -> _
+    }
+}`,
+		},
+	}
+	for _, c := range positives {
+		t.Run(c.name, func(t *testing.T) {
+			for _, r := range ValidateUnhandledIndex(parseProg(t, c.src), "src/app.no") {
+				if r.TraceID == bareIndexUseTraceID {
+					t.Fatalf("unexpected idxbruse on D11 explicit consumption: L%d:C%d %s", r.Line, r.Column, r.Message)
 				}
 			}
 		})

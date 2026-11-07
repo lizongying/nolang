@@ -121,7 +121,7 @@ LLVM 툴체인을 찾을 수 없습니다
   '379z4njd': '“%s”은(는) 이 스코프에서 이미 선언되었습니다'
   '39o3yr8x': '지원되지 않는 sum 파일 버전 %q입니다(기대: %s)'
   '3aeomnek': 'setfield 슬롯'
-  '3b9bxfnt': '배열 \'%s\'의 %s 요소에 %s 값을 할당할 수 없습니다%s'
+  '3b9bxfnt': '배열 \'%s\'의 %s 요소에 %s 값을 할당할 수 없습니다'
   '3bl2ts85': 'JS 빌드 오류: %w'
   '3ei0a0o0': '표현식을 기대했지만 nil을 받았습니다'
   '3fulbc9g': '함수 %s이(가) fs.list-dir/fs.read-dir 결과에서 "."과 ".."을(를) 걸러내지 않고 재귀하거나 삭제합니다. 두 호출 모두 POSIX readdir의 "." / ".." 항목을 반환하며, ".."으로 재귀하면 상위로 벗어나 상위 트리 전체를 지울 수 있습니다. fs.dir-entries(이미 필터링됨)를 사용하거나 재귀 전에 "." / ".."을(를) 명시적으로 건너뛰세요.'
@@ -281,7 +281,6 @@ tests 디렉터리 생성 오류: %v
   '7t8ke5g1': 'cancelled: 결과 슬롯이 없습니다'
   '7tcn8wox': '예시:'
   '7usot77o': '한 부류의 문제에 자동 수정을 적용합니다: \'overflow\'(주석 없는 정수 연산에 #{overflow=wrap} 추가), \'redundant\'(추론 타입과 같은 타입 주석 제거, 예 `x str = \'\'` -> `x = \'\'`), \'match\'(망라적이지 않은 option match 에 빠진 nil/err 분기 추가), \'unwrap\'(밖으로 전파도 언랩도 되지 않는 option 바인딩 소비: 함수가 ?T 를 반환하면 `x ?= expr`, 아니면 `x-opt = expr` 와 다음 줄의 문 match `x-opt: { ok -> x = it -> }`), \'main\'(최상위 `main = () { ... }` 래퍼를 생략하고 본문 문을 최상위로 올림; main 에 인자/반환값이나 직접 return 이 있으면 생략), \'index-out\'(#{index-out=DEF} 읽기를 명시적 match 로 확장)'
-  '7uy8wmqv': '%s'
   '7zfvvuin': '문제를 찾을 수 없습니다.'
   '802t452i': 'builtin %s: option 결과를 %s 대상으로'
   '81b2ea3o': 'extern 선언에서 \'(\'를 기대했지만 %s을(를) 받았습니다'
@@ -379,7 +378,6 @@ tests 디렉터리 생성 오류: %v
   'ap403a8m': 'net-recv: 첫 번째 인수의 데이터 포인터를 가져올 수 없습니다'
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       #{...} 주석도 포함'
-  'au6g7ji7': '파서 오류: %s'
   'awc98kqh': '  no fmt -md README.md        Markdown 파일 하나의 Nolang 블록 서식 적용'
   'axj3m1pb': '표현식 시작 부분에 예상치 못한 \'as\'가 있습니다'
   'axtpo500': 'win-find-first-file: 경로를 C 문자열로 변환할 수 없습니다'
@@ -524,12 +522,14 @@ AST 의존성 %s 동기화 오류: %v
 
 `
   'fh3ukes8': 'net-set-recv-timeout: 결과 슬롯이 없습니다'
+  'fixlabel': 'fix:'
   'fk1sb6ss': 'syslog: windows에서는 지원되지 않습니다'
   'flfh2ueu': '잘못된 설치 대상 %q입니다: 리포지토리는 <host>/<owner>/<repo> 또는 <owner>/<repo>여야 합니다'
   'fs4qotyl': 'zip 아카이브 압축 해제: %w'
   'fu1ow141': '테스트 파일을 찾을 수 없습니다: '
   'fvk7yu8c': '\'=\' 뒤에 정수 값을 기대했지만 %s을(를) 받았습니다'
   'fw8rehzu': '비어 있는 `->` catch-all arm에는 도달할 수 없습니다: 컴파일러가 \'%s\'이(가) 항상 ok임을 증명할 수 있습니다(리터럴 산술은 오버플로나 0으로 나누기가 발생하지 않으며 인덱스도 범위 내임이 증명됩니다). 그래도 match의 완전성을 위해 arm은 남겨야 하며, 유지하면 나중에 의미가 바뀌어도 문법을 수정할 필요가 없습니다.'
+  'fxapply1': 'Apply fix'
   'fxc0tilj': '현재 패키지의 AST 를 gob + zip 으로 묶습니다.'
   'fxdzclp6': 'struct 타입 \'%s\'의 필드 \'%s\'에 할당할 수 없습니다: 먼저 인스턴스를 생성하세요(예: `%s0 = %s {}`)'
   'fxhkwtho': 'read-file: 경로가 필요합니다'
@@ -625,7 +625,8 @@ workspace.noml 에 '%s' 을(를) 등록했습니다
 AST 캐시 디렉터리: %s
 
 `
-  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
+  'idxbruse': '생 인덱스 `arr[i]`/`m[k]`는 `?T`를 반환하지만(D11에서 `#{index-out=DEF}` 주석이 제거됨), 여기서는 소비하지 않고 일반 값으로 사용했습니다. 값 match, `?=`, place/block match, 또는 올바른 `?T` 바인딩으로 option을 명시적으로 처리하세요.'
+  'idxourmv': 'D11에서 `#{index-out=DEF}` 주석이 제거되었습니다. `a[i]`/`m[k]`는 이제 항상 `?T`를 반환합니다. 값 match, `?=`, place/block match, 또는 올바른 `?T` 바인딩으로 option을 명시적으로 소비하세요.'
   'ifmrg001': '인터페이스 \'%s\': 병합된 메서드 \'%s\'의 시그니처가 충돌합니다(\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: 수신자가 필요합니다'
   'iky4xsx4': '메서드 “%s.%s”은(는) %d개의 반환값을 가지지만 인터페이스는 %d개를 기대합니다'
@@ -760,7 +761,7 @@ utils.no 쓰기 오류: %v
   'mi13i3vc': '오른쪽 괄호를 기대했지만 %s을(를) 받았습니다'
   'mimqybn2': 'vec.pop: 수신자가 필요합니다'
   'mkpo3f8h': 'utf8-at 대상 슬롯'
-  'mlm7xpcj': '`%s %s= %s`은(는) 사용 중단되었습니다. 바깥 함수에 option 결과가 있으므로 저장 시 `no fmt`가 `%s ?= %s %s %s`로 다시 작성합니다(복합 할당의 우변은 이제 `?T`이며 언랩 또는 전파를 위해 `?=`를 거칩니다)'
+  'mlm7xpcj': '`%s %s= %s`은(는) 사용 중단되었습니다. 바깥 함수에 option 결과가 있으므로 저장 시 `no fmt`가 `?=` 형식으로 다시 작성합니다(복합 할당의 우변은 이제 `?T`이며 `?=`를 거쳐 언랩 또는 전파됩니다)'
   'mlyz11mg': '--js-runtime <cmd> 로 `no run --js` 의 JS 런타임을 고릅니다 (node, bun, deno 등).'
   'mmcrtoio': '사용법: no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': 'struct 필드 이름 뒤에 \':\'를 기대했지만 %s을(를) 받았습니다'
@@ -841,17 +842,9 @@ Zig 컴파일러를 찾을 수 없습니다
   'ol21t36r': '  no run --js --js-runtime bun main.no     위와 같되 bun 사용 (node, bun, deno 등)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '정수 나눗셈 또는 나머지 연산의 제수가 리터럴 상수 0입니다. 이는 LLVM에서 정의되지 않은 동작(0으로 나누는 sdiv/srem)이며 예측할 수 없는 결과를 낳습니다. 런타임 0 검사를 추가하거나, 함수가 실패를 option으로 반환하도록 하세요.'
-  'oraub2m9': `
-`%s %s= %s`은(는) 지원되지 않습니다: 인덱스 읽기는 option(범위를 벗어나면 nil)을 반환하므로 복합 할당은 인덱스를 두 번 평가하고 실패를 버리게 됩니다. 다음과 같이 다시 작성하세요(ok arm의 `it`이 요소 슬롯이며 읽고 쓸 수 있습니다):
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   또는 `%s ?= %s %s %s`(실패를 전파합니다. 바깥 함수에 option 결과 매개변수가 필요합니다)
-
-`
+  'oraub2m9': '`%s %s= %s`은(는) 지원되지 않습니다. 인덱스 읽기는 option(범위를 벗어나면 nil)을 반환하므로, 복합 할당은 인덱스를 두 번 평가하고 실패를 버리게 됩니다'
   'orjs902d': '\'switch/case/default\'은(는) 사용 중단되었습니다. 대신 \'x: { 1-> ... }\'을(를) 사용하세요'
-  'os0j8ix4': '배열 \'%s\'의 %s 요소에 %s 값을 할당할 수 없습니다%s'
+  'os0j8ix4': '배열 \'%s\'의 %s 요소에 %s 값을 할당할 수 없습니다'
   'osrb7a78': 'move 슬롯'
   'oswu0as1': '조건 표현식에 \':\'를 기대했지만 %s을(를) 받았습니다'
   'oxgtqeo0': 'write-file: 결과 슬롯이 없습니다'

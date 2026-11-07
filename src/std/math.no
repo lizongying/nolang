@@ -28,14 +28,30 @@ E = 2.718281828459045
 ; [max](#math.max)
 max = (a ..num) (r num) {
 
-    #{index-out=zero}
-    r = a[0]
+    ixout32c9 = a[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    r = ixout32c9
     n = len(a)
     i <- [1..n): {
-        a[i] > r -> {
+        ixout40c10 = a[i]: {
+            ok -> it
 
-            #{index-out=zero}
-            r = a[i]
+            -> _
+        }
+
+        ixout40c10 > r -> {
+
+            ixout38c17 = a[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            r = ixout38c17
         }
     }
 }
@@ -46,14 +62,30 @@ max = (a ..num) (r num) {
 ; [min](#math.min)
 min = (a ..num) (r num) {
 
-    #{index-out=zero}
-    r = a[0]
+    ixout50c9 = a[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    r = ixout50c9
     n = len(a)
     i <- [1..n): {
-        a[i] < r -> {
+        ixout68c10 = a[i]: {
+            ok -> it
 
-            #{index-out=zero}
-            r = a[i]
+            -> _
+        }
+
+        ixout68c10 < r -> {
+
+            ixout56c17 = a[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            r = ixout56c17
         }
     }
 }

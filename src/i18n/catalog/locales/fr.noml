@@ -121,7 +121,7 @@ chaîne d’outils LLVM non détectée
   '379z4njd': '“%s” est déjà déclaré dans cette portée'
   '39o3yr8x': 'version de fichier de sommes non prise en charge %q (%s attendue)'
   '3aeomnek': 'emplacement setfield'
-  '3b9bxfnt': 'impossible d’affecter une valeur %s à un élément %s du tableau « %s »%s'
+  '3b9bxfnt': 'impossible d’affecter une valeur %s à un élément %s du tableau « %s »'
   '3bl2ts85': 'erreur de compilation JS : %w'
   '3ei0a0o0': 'expression attendue, nil obtenu'
   '3fulbc9g': 'la fonction %s récurse dans ou supprime des éléments d’un résultat fs.list-dir/fs.read-dir sans filtrer « . » et « .. » ; les deux appels renvoient les entrées POSIX readdir « . » / « .. », et récurser dans « .. » remonte l’arborescence et peut effacer tout le parent. Utilisez fs.dir-entries (déjà filtré), ou ignorez explicitement « . » / « .. » avant de récurser.'
@@ -282,7 +282,6 @@ Erreur de création du répertoire tests : %v
   '7t8ke5g1': 'cancelled : aucun emplacement de résultat'
   '7tcn8wox': 'Exemples :'
   '7usot77o': 'appliquer des corrections automatiques pour une classe de problème : \'overflow\' (ajoute #{overflow=wrap} à l\'arithmétique entière non annotée), \'redundant\' (supprime les annotations de type égales au type inféré, ex. `x str = \'\'` -> `x = \'\'`), \'match\' (ajoute les bras nil/err manquants aux match d\'option non exhaustifs), ou \'unwrap\' (consomme les liaisons option qui ne sont jamais propagées ni déballées : `x ?= expr` si la fonction a déjà un résultat ?T, sinon `x-opt = expr` plus un match d\'instruction `x-opt: { ok -> x = it -> }` sur les lignes suivantes), ou \'main\' (omet le wrapper de haut niveau `main = () { ... }` en remontant ses instructions au niveau supérieur ; ignoré si main a des paramètres/résultats ou un return direct), ou \'index-out\' (développe les lectures #{index-out=DEF} en matchs explicites)'
-  '7uy8wmqv': '%s'
   '7zfvvuin': 'Aucun problème détecté.'
   '802t452i': 'builtin %s : résultat option dans la destination %s'
   '81b2ea3o': '« ( » attendu dans la déclaration extern, %s obtenu'
@@ -380,7 +379,6 @@ Erreur de résolution de la dernière version : %v
   'ap403a8m': 'net-recv : impossible de prendre le pointeur de données de l’argument 1'
   'appz8ry7': 'builtin %s : %v'
   'aqrceaf2': '  no ast -annotations main.no       y compris les annotations #{...}'
-  'au6g7ji7': 'erreurs de l’analyseur : %s'
   'awc98kqh': '  no fmt -md README.md        formater les blocs Nolang d\'un fichier Markdown'
   'axj3m1pb': '« as » inattendu au début de l’expression'
   'axtpo500': 'win-find-first-file : impossible de convertir le chemin en chaîne C'
@@ -525,12 +523,14 @@ Paquet créé : %s
 
 `
   'fh3ukes8': 'net-set-recv-timeout : aucun emplacement de résultat'
+  'fixlabel': 'fix:'
   'fk1sb6ss': 'syslog : non pris en charge sous windows'
   'flfh2ueu': 'cible d’installation invalide %q : le dépôt doit être <host>/<owner>/<repo> ou <owner>/<repo>'
   'fs4qotyl': 'extraction de l’archive zip : %w'
   'fu1ow141': 'Aucun fichier de test trouvé dans '
   'fvk7yu8c': 'valeur entière attendue après « = », %s obtenu'
   'fw8rehzu': 'la branche attrape-tout `->` vide est inatteignable : le compilateur peut prouver que « %s » est toujours ok (l’arithmétique littérale ne peut ni déborder ni diviser par zéro, ou l’index est prouvé dans les limites). La branche doit rester pour l’exhaustivité du match, et la conserver signifie qu’un futur changement de sémantique ne nécessitera aucune modification de syntaxe.'
+  'fxapply1': 'Apply fix'
   'fxc0tilj': 'Empaqueter l\'AST du paquet courant en gob + zip.'
   'fxdzclp6': 'impossible d’affecter le champ « %s » sur le type struct « %s » : instanciez-le d’abord (par ex. `%s0 = %s {}`)'
   'fxhkwtho': 'read-file : un chemin est requis'
@@ -626,7 +626,8 @@ Erreur de création du répertoire : %v
 Répertoire du cache AST : %s
 
 `
-  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
+  'idxbruse': 'L\'index brut `arr[i]`/`m[k]` renvoie `?T` (D11 a supprimé l\'annotation `#{index-out=DEF}`), mais il est utilisé ici comme une valeur simple sans être consommé. Traitez l\'option explicitement avec un match de valeur, `?=`, un match de place ou de bloc, ou une liaison `?T` légale.'
+  'idxourmv': 'D11 a supprimé l\'annotation `#{index-out=DEF}` ; `a[i]`/`m[k]` renvoient désormais toujours `?T`. Consommez l\'option explicitement avec un match de valeur, `?=`, un match de place ou de bloc, ou une liaison `?T` légale.'
   'ifmrg001': 'interface « %s » : la méthode fusionnée « %s » a des signatures en conflit (« %s.%s », « %s.%s »)'
   'ihr1vm8m': 'arr.zero : récepteur requis'
   'iky4xsx4': 'la méthode “%s.%s” a %d résultat(s), l’interface en attend %d'
@@ -761,7 +762,7 @@ Erreur d'écriture de utils.no : %v
   'mi13i3vc': 'parenthèse fermante attendue, %s obtenu'
   'mimqybn2': 'vec.pop : récepteur requis'
   'mkpo3f8h': 'emplacement de destination utf8-at'
-  'mlm7xpcj': '`%s %s= %s` est obsolète ; la fonction englobante a un résultat option, donc `no fmt` le réécrit en `%s ?= %s %s %s` à l’enregistrement (le membre de droite d’une affectation composée est désormais `?T` et passe par `?=` pour le déballer ou le propager)'
+  'mlm7xpcj': '`%s %s= %s` est obsolète ; la fonction englobante a un résultat option, donc `no fmt` le réécrit sous la forme `?=` à l’enregistrement (le membre de droite d’une affectation composée est désormais `?T` et passe par `?=` pour le déballer ou le propager)'
   'mlyz11mg': 'Avec --js-runtime <cmd>, choisir le runtime JS de `no run --js` (node, bun, deno, ...).'
   'mmcrtoio': 'Usage : no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': '« : » attendu après le nom du champ du struct, %s obtenu'
@@ -842,16 +843,9 @@ compilateur Zig non détecté
   'ol21t36r': '  no run --js --js-runtime bun main.no     idem avec bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new : %s'
   'onpn7zgb': 'le diviseur d’une division entière ou d’un modulo est la constante littérale 0, ce qui est un comportement indéfini en LLVM (sdiv/srem par zéro) et produit des résultats imprévisibles. Ajoutez une vérification de zéro à l’exécution, ou faites retourner l’échec à la fonction sous forme d’option.'
-  'oraub2m9': `
-`%s %s= %s` n’est pas pris en charge : une lecture d’index renvoie une option (nil hors limites), donc une affectation composée évaluerait l’index deux fois et ignorerait l’échec. Réécrivez-le ainsi (le `it` de la branche ok est l’emplacement de l’élément, lisible et modifiable) :
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   ou `%s ?= %s %s %s` (propage l’échec ; la fonction englobante doit avoir un paramètre de résultat option)
-`
+  'oraub2m9': '`%s %s= %s` n’est pas pris en charge : une lecture d’index renvoie une option (nil hors limites), donc une affectation composée évaluerait l’index deux fois et perdrait l’échec'
   'orjs902d': '« switch/case/default » est obsolète, utilisez « x: { 1-> ... } » à la place'
-  'os0j8ix4': 'impossible d’affecter une valeur %s à un élément %s du tableau « %s »%s'
+  'os0j8ix4': 'impossible d’affecter une valeur %s à un élément %s du tableau « %s »'
   'osrb7a78': 'emplacement move'
   'oswu0as1': '« : » attendu dans l’expression conditionnelle, %s obtenu'
   'oxgtqeo0': 'write-file : aucun emplacement de résultat'

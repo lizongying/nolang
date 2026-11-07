@@ -1188,7 +1188,18 @@ Use the `?=` operator to automatically unwrap an option or propagate the error t
 - If `expr` returns `ok(value)`, `v` is assigned the unwrapped inner value (auto-unwrap).
 - If `expr` returns `nil` or `err`, the current function's option result param is set to the option value and `return` is executed (auto-propagate).
 
-**Constraint:** `?=` is only valid inside a function that has an option-typed result param, **or** inside the body of a statement-level block match `{ ... }: { ... }` (see *Block Match* below). Outside both, it is a compile error.
+**When the `?=` shorthand is available — either one of these is enough:**
+
+1. The enclosing function has an **option-typed result param** (`?T`). On failure that
+   param receives the whole option and the function does an early `return`.
+2. The statement sits inside the body of a **statement-level block match**
+   `{ ... }: { ... }` (see *Block Match* below). The nearest block match captures the
+   failure, the body stops, and the arms run once — **no `?T` result param needed**.
+   Two `err -> _` / `-> _` arms are enough to discard the propagated failure.
+
+Outside both, `?=` is a compile error. In other words: for a function whose return type
+is **not** option, wrap the body in a block match and the concise `y ?= x + 1` form
+still works.
 
 > **Capture vs. propagate:** `?=` means "throw the error upward" — outside a block match it requires an option result param and does an early `return` on failure. If you want to handle the failure **in place** and keep going, use plain `=` instead (see *Error Capture Assignment* below).
 
@@ -1235,10 +1246,24 @@ value context (`v = x: { ok -> it, -> 0 }`). The third is **a statement only**: 
 cannot be assigned, has no block-tail value, and `-> _` discards the result.
 
 A block subject runs a statement body and funnels any `?=` failure inside it into
-one match — so a function **without a `?T` result param** can use `?=` locally:
+one match — so a function **without a `?T` result param** can use `?=` locally.
+This is the standard way to keep the concise `?=` shorthand when the function's
+return type is not option:
 
 ```no
 #{fmt-skip}
+; ✅ 返回值不是 option 也照样能用简写 y ?= x+1
+handle = (x i64) {
+    {
+        y ?= x + 1
+        print(1)
+    }: {
+        err -> _               ; 丢弃上抛的错误
+
+        -> _                   ; 兜底臂，丢弃结果
+    }
+}
+
 f = (d i64) {
     {
         v ?= 6 / d              ; failure no longer needs a ?T result param
@@ -1325,7 +1350,7 @@ ovf = (x i64) (r i64) {
 
 **Scope:** capture from safe indexing — like `?=` — fires **only inside functions that return a `?T` result** (see *Safe Indexing*, form 3). Capture from `/` `%` and from option operands applies in all functions.
 
-**Existing variables keep their type:** capture only applies to a target **first declared by that statement**. If the target already exists (`v = arr[i]` after `v i64 = 0`, or `d = x - 1` after `d = 0`), the compiler does **not** change its type in place — it reports an error asking you to pick a semantics explicitly (add an `#{overflow=...}` / `#{index-out=...}` annotation, use `?=`, or declare `?T`).
+**Existing variables keep their type:** capture only applies to a target **first declared by that statement**. If the target already exists (`v = arr[i]` after `v i64 = 0`, or `d = x - 1` after `d = 0`), the compiler does **not** change its type in place — it reports an error asking you to pick a semantics explicitly (add an `#{overflow=...}` annotation, use `?=` / a match, or declare `?T`).
 
 #### Deferred Zero-Init for Return Values (返回值變數延遲零值)
 
@@ -2664,57 +2689,63 @@ map[str]
 
 ### Safe Indexing (安全索引)
 
-Direct indexing of `arr` / `vec` / `slice` (`[]T`) with `v[i]` aborts on out-of-bounds. Three **safe** forms guarantee no silent crash:
+`arr` / `vec` / `slice` / `str` / `txt` 的 `v[i]` **恒返回 `?elem`**（越界为 `nil`）。
+`#{index-out=DEF}` 注解**已废弃并移除（D11）**：残留注解是编译错误，不存在「越界自动取默认零值」的捷径。
+必须显式消费，只有三种写法：
 
-**1. `x ?= v[i]` — propagate error upward.** Treats `v[i]` as returning `?elem`: OOB → `None`, else `some(elem)`. Combined with `?=`, the error propagates up (the function must return `?T`).
+**READ — 值 match 或简写 `?=`**
 
 ```no
 #{fmt-skip}
+; ✅ 完整写法：值 match，`-> _` 是元素型别的零值臂
+get-elem = (arr []i64, i i64) (out i64) {
+    out = arr[i]: {
+        ok -> it
+
+        -> _
+    }
+}
+
+; ✅ 完整写法：陈述 match
+read-statement = (arr []i64, i i64) (out i64) {
+    arr[i]: {
+        ok -> out = it
+
+        -> _
+    }
+}
+
+; ✅ 简写：上抛（函数有 ?T 结果参数，或包在块 match 主体里）
 safe-get = (arr []i64, i i64) (res ?i64) {
     x ?= arr[i]   ; OOB → res = None (no crash)
 }
 ```
 
-**2. `x = v[i] #{index-out=DEF}` — substitute a default on OOB (`zero` or a literal).** The annotation trails the assignment on the same line (or sits on its own line above it). `DEF` takes one of two forms:
-
-- **`zero`** — a keyword: regardless of the element type, always substitutes the **zero value of the current element type** (integer family / `byte` / `char` → `0`, `f32`/`f64` → `0.0`, `bool` → `false`, `str`/`txt` → `''`, container → empty container / zero-length array, struct → zero-valued struct). Use it when you want "out-of-range just reads as the type default" without naming a literal.
-- **a literal** (not an expression), typed by the element:
-  - integer/char containers (`i8`–`i128`, `u8`–`u128`, `byte`, `char`): int or char literal, e.g. `0`, `'x'`
-  - float containers (`f32`, `f64`): float literal, e.g. `0.0`
-  - bool containers (`bool`): `true` / `false`
-  - str containers (`str`): string literal, e.g. `''`
+**WRITE — place-match 或简写 `?=`**
 
 ```no
 #{fmt-skip}
-get-default = (arr []i64, i i64) (res i64) {
-    res = arr[i]  #{index-out=zero}     ; OOB → res = 0 (explicit literal)
+arr[i]: {
+    ok -> it = x
+
+    -> _
 }
 
-get-zero = (arr []f64, i i64) (res f64) {
-    res = arr[i]  #{index-out=zero}  ; OOB → res = 0.0 (zero value of the type)
-}
-```
-The **prefix** form `#{index-out=zero} res = arr[i]` is **not** accepted — it is a compile error. See
-[Annotation placement](#annotation-placement-only-two-legal-positions): writing the annotation in
-front of the target on the same line is rejected by both the compiler and nolang-lsp.
-
-**3. Bare `x = v[i]` inside an option-returning function — capture in place.** When the enclosing function returns `?T`, a bare safe-index assignment `x = v[i]` makes `x` infer `?elem`: on OOB, `x` is stored as `nil` **in place** (no crash, no early `return`) and flow continues. Consume it later with `x: { ... }`. The difference from form 1 (`?=`) is that the failure **stays put** instead of propagating upward.
-
-```no
-#{fmt-skip}
-capture-prop = (arr []i64, i i64) (res ?i64) {
-    x = arr[i]        ; x infers ?i64; OOB → x = nil
-    x: {
-        nil -> {}     ; OOB: handled here
-        err -> {}
-        -> { res = it }   ; success: res = element
-    }
-}
+arr[i] ?= x        ; 上抛简写
 ```
 
-> **Scope (important):** this capture rule fires **only inside functions that return a `?T` result** — the same scope as `?=`. In functions without an option result param, and in top-level scripts, `x = v[i]` keeps its ordinary "plain element read" meaning; for OOB safety there use form 1 (`?=`, requires an option result param) or form 2 (`#{index-out=DEF}`).
-> **Scope:** safe indexing applies only to direct variable indexing of `arr`/`vec`/`slice` (`v[i]`, `v` an identifier). `str`/`txt` indexing still returns a char; `receiver.field[i]` uses the normal bounds-check path and is not rewritten.
-> **Guarantee:** with any of these forms, out-of-bounds never silently crashes — it returns `None`, returns a default, or propagates the error.
+**MAP 例外**：`m['k'] = 1` 直接写、不需要解包（下标是键，写入是 put/insert，恒有定义）；
+但 **map 读取 `m['k']` 仍返回 `?V`，必须解包**。`m[k] ?= v` 是编译错误（get 的副本写不回 map）。
+
+**嵌套读取**：内层 match 会重绑 `it`，所以内层要用具名绑定 `ok(it1) -> it1`。
+自 2026-11-06 起，把值 match 直接写在 place-match 的 `it = ...` 右侧**会正确写回容器**
+（lowering 会把该值 match 提升为合成暂存再重绑 `it`，回归：`tests/place-write-value-match.no`）。
+若该值还要在别处复用，也可自行提升到具名暂存（`ixout1 = arr[9]: { ok -> it  -> _ }`），
+臂内再 `it = ixout1`；两种写法等价。
+
+> **Consume or fail:** 把 `?T` 当普通值用（例如 `crc = crc ^ s[i]`、`f(s[i])`、`v i64 = a[i]`）
+> 是**编译硬错误**，编译器会提示改用 match 或 `?=`（无 `?T` 结果参数时用块 match 包住）。
+> **Guarantee:** 越界永不静默崩溃 —— 不是被 match 处理、就是被 `?=` 上抛。
 
 ### Standard Library Struct Pattern
 

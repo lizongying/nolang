@@ -56,7 +56,7 @@ str.len = () (n i64) {
 ; 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
 ; 與 s[i] 不同：s[i] 按碼點索引，本方法按底層 UTF-8 緩衝區的位元組偏移取值
 ; 回傳 ?byte：越界（i < 0 或 i >= len-bytes()）時回傳 nil，與 arr[i] 的
-; 安全索引語義一致；呼叫端必須處理 option（match / ?= / #{index-out = DEF}）
+; 安全索引語義一致；呼叫端必須處理 option（match / ?= / place-match 顯式消費）
 ; 由編譯器內建處理（#{buildin}）：codegen 攔截後展開為「邊界檢查 + GEP+load」，
 ; 不存在 std 函式體；簽名同時註冊於 src/builtin/str.go 的 BuiltinMethodList
 ; （MethodName "byte"，Intercepted，經 bare-name 回落同時覆蓋 str 與 txt）
@@ -2348,8 +2348,14 @@ str.replace-n = (old str, new str, n i64) (val str) {
             }
         }
 
-        #{index-out=zero, overflow=wrap}
-        total = total + parts[i].len-bytes()
+        ixout2352c25 = parts[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        total = total + ixout2352c25.len-bytes()
     }
     val = with-cap(total)
     pos = 0

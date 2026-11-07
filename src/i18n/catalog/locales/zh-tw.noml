@@ -120,7 +120,7 @@
   '379z4njd': '“%s” 已在此作用域宣告'
   '39o3yr8x': '不支援的校驗和檔版本 %q（預期 %s）'
   '3aeomnek': 'setfield 槽位'
-  '3b9bxfnt': '不能將 %s 值賦給陣列 “%s” 的 %s 元素%s'
+  '3b9bxfnt': '不能將 %s 值賦給陣列 “%s” 的 %s 元素'
   '3bl2ts85': 'JS 建置錯誤: %w'
   '3ei0a0o0': '預期表達式，實際得到 nil'
   '3fulbc9g': '函數 %s 用 fs.list-dir/fs.read-dir 結果做遞歸/刪除，但未見過濾 "." 和 ".."；兩者都含 POSIX readdir 的 "."/".."，遞歸進入 ".." 會向上逃逸誤刪整棵父樹。請改用 fs.dir-entries（已自動過濾），或在遞歸前顯式跳過 "."/".."。'
@@ -279,7 +279,6 @@ Parser ASTVersion: %s
   '7t8ke5g1': 'cancelled: 沒有結果槽位'
   '7tcn8wox': '範例：'
   '7usot77o': '對某一類問題套用自動修復：\'overflow\'（給未標註的整數運算加上 #{overflow=wrap}）、\'redundant\'（刪除與推斷型別相同的型別標註，如 `x str = \'\'` -> `x = \'\'`）、\'match\'（為非窮盡的 option match 補上缺少的 nil/err 分支），或 \'unwrap\'（消費那些從不向外傳播、也從不解包的 option 繫結：函式已有 ?T 回傳型別時寫 `x ?= expr`，否則寫 `x-opt = expr` 並在後續行加陳述級 match `x-opt: { ok -> x = it -> }`），或 \'main\'（省略頂層 `main = () { ... }` 包裝，把其陳述提升到頂層；當 main 有參數／回傳值或直接 return 時跳過），或 \'index-out\'（把 #{index-out=DEF} 索引讀取展開成顯式 match）'
-  '7uy8wmqv': '%s'
   '7zfvvuin': '未發現問題。'
   '802t452i': 'builtin %s: option 結果寫入 %s 目標'
   '81b2ea3o': 'extern 宣告中預期 \'(\'，實際得到 %s'
@@ -376,7 +375,6 @@ Parser ASTVersion: %s
   'ap403a8m': 'net-recv: 無法取得第 1 個參數的資料指標'
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       同時包含 #{...} 註解'
-  'au6g7ji7': '解析錯誤: %s'
   'awc98kqh': '  no fmt -md README.md        格式化單一 Markdown 檔案中的 Nolang 程式碼區塊'
   'axj3m1pb': '表達式起始位置出現意外的 \'as\''
   'axtpo500': 'win-find-first-file: 無法將 path 編組為 C 字串'
@@ -521,12 +519,14 @@ Parser ASTVersion: %s
 
 `
   'fh3ukes8': 'net-set-recv-timeout: 沒有結果槽位'
+  'fixlabel': 'fix:'
   'fk1sb6ss': 'syslog: 在 windows 上不受支援'
   'flfh2ueu': '不合法的安裝目標 %q: 儲存庫必須是 <host>/<owner>/<repo> 或 <owner>/<repo>'
   'fs4qotyl': '解壓縮 zip 封存失敗: %w'
   'fu1ow141': '找不到測試檔，目錄 '
   'fvk7yu8c': '\'=\' 後應為整數值，實際得到 %s'
   'fw8rehzu': '空的 `->` 兜底臂不會被執行：編譯器可證明 \'%s\' 恆為 ok（字面量算術不會溢位/除零，或索引可證明在界內）。該臂仍須保留以滿足 match 窮盡性；保留也便於日後語意變化時無需改語法。'
+  'fxapply1': 'Apply fix'
   'fxc0tilj': '把目前套件的 AST 打包為 gob + zip。'
   'fxdzclp6': '不能給欄位 “%s” 賦值（結構體型別 “%s”）: 請先實例化（例如 `%s0 = %s {}`）'
   'fxhkwtho': 'read-file: 需要 path'
@@ -621,7 +621,8 @@ Parser ASTVersion: %s
 AST 快取目錄: %s
 
 `
-  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
+  'idxbruse': '裸索引 `arr[i]`/`m[k]` 回傳 `?T`（D11 已移除 `#{index-out=DEF}` 註解），但這裡把它當作普通值使用而沒有消費 option。請用值 match、`?=`、place/block match 或合法的 `?T` 綁定顯式處理該 option。'
+  'idxourmv': 'D11 已移除 `#{index-out=DEF}` 註解；`a[i]`/`m[k]` 現在總是回傳 `?T`。請用值 match、`?=`、place/block match 或合法的 `?T` 綁定顯式消費該 option。'
   'ifmrg001': '介面 “%s”: 合併後的方法 “%s” 簽名衝突 (“%s.%s”, “%s.%s”)'
   'ihr1vm8m': 'arr.zero: 需要 receiver'
   'iky4xsx4': '方法 “%s.%s” 有 %d 個返回值，介面期望 %d 個'
@@ -756,7 +757,7 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標讀取；若不
   'mi13i3vc': '預期右括號，實際得到 %s'
   'mimqybn2': 'vec.pop: 需要 receiver'
   'mkpo3f8h': 'utf8-at 目標槽位'
-  'mlm7xpcj': '`%s %s= %s` 已廢棄；所在函式結果是 option，儲存時 `no fmt` 會自動改寫為 `%s ?= %s %s %s`（複合賦值的右式現在是 ?T，走 `?=` 解包/上拋）'
+  'mlm7xpcj': '`%s %s= %s` 已廢棄；所在函式結果是 option，儲存時 `no fmt` 會自動改寫成 `?=` 形式（複合賦值的右式現在是 `?T`，透過 `?=` 解包或上拋）'
   'mlyz11mg': '用 --js-runtime <cmd> 選擇 `no run --js` 的 JS 執行環境（node、bun、deno……）。'
   'mmcrtoio': '用法：no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': '結構體欄位名稱後應為 \':\'，實際得到 %s'
@@ -836,16 +837,9 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標讀取；若不
   'ol21t36r': '  no run --js --js-runtime bun main.no     同上，改用 bun（node、bun、deno……）'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '整數除法 / 取模的除數是字面常數 0，會觸發 LLVM 未定義行為（sdiv/srem 除以零），產生不可預測的結果。請改以執行時期零檢查，或讓函式以 option 回傳錯誤。'
-  'oraub2m9': `
-`%s %s= %s` 不支援：下標讀取回傳 option（越界為 nil），複合賦值會重複求值下標並丟棄失敗。請改寫成（ok 臂的 it 是元素位置，可讀可寫）：
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   或 `%s ?= %s %s %s`（錯誤上拋，要求所在函式有 option 結果參數）
-`
+  'oraub2m9': '`%s %s= %s` 不支援：下標讀取回傳 option（越界為 nil），複合賦值會重複求值下標並丟棄失敗'
   'orjs902d': '\'switch/case/default\' 已廢棄，請改用 \'x: { 1-> ... }\''
-  'os0j8ix4': '不能將 %s 值賦給陣列 “%s” 的 %s 元素%s'
+  'os0j8ix4': '不能將 %s 值賦給陣列 “%s” 的 %s 元素'
   'osrb7a78': 'move 槽位'
   'oswu0as1': '條件表達式中預期冒號，實際得到 %s'
   'oxgtqeo0': 'write-file: 沒有結果槽位'

@@ -37,9 +37,14 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
         -> {
             i <- [0..salt.len()): {
 
-                #{index-out=zero}
+                ixout42c32 = salt[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 k[i]: {
-                    ok -> it = salt[i]
+                    ok -> it = ixout42c32
 
                     -> _
                 }
@@ -73,18 +78,29 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     msg []byte = with-len(msg-len)
     i <- [0..t-len): {
 
-        #{index-out=zero}
+        ixout78c24 = t-data[i]: {
+            ok -> it
+
+            -> _
+        }
+
         msg[i]: {
-            ok -> it = t-data[i]
+            ok -> it = ixout78c24
 
             -> _
         }
     }
     i <- [0..info.len()): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout87c24 = info[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         msg[t-len + i]: {
-            ok -> it = info[i]
+            ok -> it = ixout87c24
 
             -> _
         }
@@ -162,8 +178,14 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 off + copy-n > out-len -> copy-n = out-len - off
                 i <- [0..copy-n): {
 
-                    #{index-out=zero, overflow=wrap}
-                    okm[off + i] = t[i]
+                    ixout166c36 = t[i]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    #{overflow=wrap}
+                    okm[off + i] = ixout166c36
                 }
 
                 #{overflow=wrap}
@@ -253,9 +275,15 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     ; context bytes
     i <- [0..context.len()): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout258c24 = context[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         info[pos + i]: {
-            ok -> it = context[i]
+            ok -> it = ixout258c24
 
             -> _
         }
@@ -276,9 +304,14 @@ hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (ok
     prk-arr [32]byte
     i <- [0..32): {
 
-        #{index-out=zero}
+        ixout281c24 = prk[i]: {
+            ok -> it
+
+            -> _
+        }
+
         prk-arr[i]: {
-            ok -> it = prk[i]
+            ok -> it = ixout281c24
 
             -> _
         }

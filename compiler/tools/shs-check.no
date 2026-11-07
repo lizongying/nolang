@@ -1282,8 +1282,13 @@ shs-sort-strs = (arr []str) (r []str) {
             -> 0
         }
 
-        #{index-out=zero}
-        out.push(arr[pos])
+        ixout1286c18 = arr[pos]: {
+            ok -> it
+
+            -> _
+        }
+
+        out.push(ixout1286c18)
     }
     r = out
 }
@@ -1326,8 +1331,13 @@ shs-collect = (p str, out []str) (r []str) {
         sub = fs.walk(p)
         i <- [0..sub.len()): {
 
-            #{index-out=zero}
-            f = sub[i]
+            ixout1330c17 = sub[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            f = ixout1330c17
             nf = shs-is-no-file(f)
             nf -> r.push(f)
         }
@@ -1622,8 +1632,13 @@ shs-main = () (code i64) {
     }
     k <- [0..acc.len()): {
 
-        #{index-out=zero}
-        f = acc[k]
+        ixout1626c13 = acc[k]: {
+            ok -> it
+
+            -> _
+        }
+
+        f = ixout1626c13
         print(shs-render(f))
     }
     nf = acc.len()

@@ -27,8 +27,11 @@ import (
 // developer to run `make no`. A non-empty StdSigKey means the binary was built
 // via `make` (which runs `make gen` first), so the baked tables are present
 // and fresh and are used directly — there is no stale-table comparison and no
-// FS-walk fallback. The genstdsig content key previously carried an extra
-// staleness check but proved redundant: the build-path guarantees freshness.
+// FS-walk fallback. The key's VALUE is not compared against the baked tables,
+// but it IS compared against StdASTBlob.StdKey at load time
+// (checker.validateStdASTBlob): the generator bakes the same src/std content
+// hash into the Tier-0 std AST blob, so a blob produced from different std
+// sources is rejected instead of being consumed silently.
 
 // StdSigEntry holds both the declared PARAMETER types and the RESULT (return)
 // types for one std function or method. Merging the old *Sigs (results) and
@@ -51,9 +54,12 @@ var (
 	// from the CURRENT src/std via the independent genstdsig tool. At runtime
 	// the ONLY check is emptiness: empty means the binary was NOT built via
 	// `make` (e.g. `cd src && go build` or bare `go test`) — CollectStdModule
-	// Signatures / knownStdModules then hard-fail and require `make no`; there
-	// is deliberately NO computeStdSigKey fallback. A non-empty StdSigKey means
-	// the binary was built via `make` and the baked tables are present and fresh.
+	// Signatures / knownStdModules then hard-fail and require `make no`; the
+	// Tier-0 blob guard (validateStdASTBlob) now hard-fails on an empty key too.
+	// There is deliberately NO computeStdSigKey fallback. A non-empty
+	// StdSigKey means the binary was built via `make` and the baked tables are
+	// present and fresh; its value is additionally checked against
+	// StdASTBlob.StdKey so the blob must come from the same src/std content.
 	StdSigKey = ""
 	// embeddedStdFuncSigs merges the old funcSigs (RESULT types) and
 	// funcParams (PARAMETER types) tables into one map keyed by "module.fn"

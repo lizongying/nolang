@@ -18,9 +18,27 @@ t-len = () {
 ; 下標讀取：a[0]、a[1]、a[2] 依序為 10、20、30
 t-element-access = () {
     a = [10, 20, 30]
-    runner.eq(a[0], 10, 'a[0] == 10')
-    runner.eq(a[1], 20, 'a[1] == 20')
-    runner.eq(a[2], 30, 'a[2] == 30')
+    ixout21c16 = a[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout21c16, 10, 'a[0] == 10')
+    ixout22c16 = a[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout22c16, 20, 'a[1] == 20')
+    ixout23c16 = a[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout23c16, 30, 'a[2] == 30')
 }
 
 ; 元素可寫：改動 a[1] 後其值變 99，且不影響 a[0]
@@ -31,8 +49,20 @@ t-mutate = () {
 
         -> _
     }
-    runner.eq(a[1], 99, 'mutated a[1] == 99')
-    runner.eq(a[0], 1, 'a[0] unchanged')
+    ixout34c16 = a[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout34c16, 99, 'mutated a[1] == 99')
+    ixout35c16 = a[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout35c16, 1, 'a[0] unchanged')
 }
 
 ; arr.max：非空陣列應解出最大值 3（ok 臂）

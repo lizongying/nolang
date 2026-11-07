@@ -39,10 +39,11 @@ var (
 )
 
 // SetStdASTBlob installs the baked std AST blob into the checker at process
-// start. Called by cmd/no and cmd/lsp from the stdastembed package. The blob's
-// staleness is guarded by its parse-configuration fingerprint (see
-// StdASTBlob.Config) and by the build-path StdSigKey emptiness check — there is
-// no separate content key.
+// start. Called by cmd/no and cmd/lsp from the stdastembed package. Two
+// independent stamps guard the blob at load time: StdASTBlob.Config (the parser
+// configuration it was parsed with) and StdASTBlob.StdKey (the src/std content
+// hash it was parsed FROM). Both must match this binary; see
+// validateStdASTBlob.
 func SetStdASTBlob(blob []byte) {
 	stdASTMu.Lock()
 	stdASTBlob = blob
@@ -58,9 +59,9 @@ type StdASTEntry struct {
 	Data []byte
 }
 
-// StdASTBlob is the Tier-0 payload: the parse-configuration fingerprint the
-// blob was produced with, plus the module list. Mods is sorted by Path so the
-// encoded bytes are reproducible.
+// StdASTBlob is the Tier-0 payload: two stamps describing the inputs that
+// produced the AST, plus the module list. Mods is sorted by Path so the encoded
+// bytes are reproducible.
 //
 // Config is the Tier-0 counterpart of build.astCacheSalt. Parsing is not
 // inference-free (lowering consults the injected cross-module tables), so a
@@ -71,8 +72,16 @@ type StdASTEntry struct {
 // the build path would never have produced (`parts[i]` left as a bare element
 // read, so `s = it` bound a txt where an option payload was expected, and
 // `u.replace-n('one','1',1)` returned "1one" instead of "1 two one").
+//
+// StdKey is the other half: Config only moves when the SIGNATURE TABLES or
+// ASTVersion move, so editing a std function BODY leaves both Config and want
+// unchanged and a stale blob would pass. StdKey is the same src/std content
+// hash the Makefile injects as checker.StdSigKey, baked at generation time and
+// compared by value at load time. It closes that gap without relying solely on
+// the Makefile dependency chain.
 type StdASTBlob struct {
 	Config string
+	StdKey string
 	Mods   []StdASTEntry
 }
 
@@ -91,6 +100,43 @@ func stdParseConfigFingerprint(funcSigs, methodSigs map[string]StdSigEntry, stru
 		ms[k] = e.Results
 	}
 	return parser.ExternSignatureFingerprint(fs, ms, structFields, enumVariants)
+}
+
+// validateStdASTBlob proves that a decoded Tier-0 blob was produced from the
+// SAME src/std and with the SAME parser configuration as this binary would use.
+// It returns a human-readable reason on failure; loadStdAST turns that into a
+// hard exit.
+//
+// Empty values are errors, not "no expectation to compare". The old guard used
+// `blob.Config != "" && StdSigKey != ""` as a skip condition, so a blob baked
+// without a fingerprint (or a binary built without the baked tables) simply
+// skipped validation and its AST was consumed unchecked. Every empty stamp is
+// now a hard failure — including the embedded signature tables themselves.
+//
+// Keeping this as a pure function (rather than exiting inline) is what lets the
+// tests exercise each failure mode without killing the test binary.
+func validateStdASTBlob(blob StdASTBlob) error {
+	if len(embeddedStdFuncSigs) == 0 && len(embeddedStdMethodSigs) == 0 &&
+		len(embeddedStdStructFields) == 0 && len(embeddedStdEnumVariants) == 0 {
+		return fmt.Errorf("本二進位沒有內嵌 std 簽名表（embeddedStd* 全空，stdsig_gen.go 未產生）")
+	}
+	if StdSigKey == "" {
+		return fmt.Errorf("標準庫簽名 key 未注入（StdSigKey 為空，非 `make` 建構）")
+	}
+	if blob.Config == "" {
+		return fmt.Errorf("blob 未攜帶解析配置指紋（Config 為空）")
+	}
+	if blob.StdKey == "" {
+		return fmt.Errorf("blob 未攜帶 std 內容簽名（StdKey 為空，舊格式 blob）")
+	}
+	want := stdParseConfigFingerprint(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdEnumVariants)
+	if blob.Config != want {
+		return fmt.Errorf("解析配置指紋不符：blob=%s 本二進位=%s（blob 是用不同的 parser 配置烤出來的）", blob.Config, want)
+	}
+	if blob.StdKey != StdSigKey {
+		return fmt.Errorf("std 內容簽名不符：blob=%s 本二進位=%s（src/std 在 blob 產生後被改動，或 genstdsig 與 -key-only 讀到不同檔案）", blob.StdKey, StdSigKey)
+	}
+	return nil
 }
 
 // loadStdAST decodes stdASTBlob into stdASTMap exactly once.
@@ -113,23 +159,15 @@ func loadStdAST() {
 	if err := gob.NewDecoder(zr).Decode(&blob); err != nil {
 		return
 	}
-	// The blob's parse configuration must match the one this binary would use.
-	// A mismatch means the blob was baked by a parser that was configured
-	// differently (e.g. one that never received SetExternSignatures), so its
-	// AST is not what the build path would have produced — silently using it
-	// reintroduces the class of bug described on StdASTBlob.
-	//
-	// Skipped when the signature tables are not baked (no stdsig_gen.go), where
-	// there is no expectation to compare against; that build already hard-fails
-	// on the signature tables themselves (StdSigKey is empty).
-	if blob.Config != "" && StdSigKey != "" {
-		want := stdParseConfigFingerprint(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdEnumVariants)
-		if blob.Config != want {
-			fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌 std AST blob 的「解析配置指紋」與本二進位不符（建構不一致）。")
-			fmt.Fprintln(os.Stderr, "[no]   意即 blob 是用與建置路徑不同的 parser 配置烤出來的（例如未注入跨模組簽名表），其 AST 不等於建置路徑會產生的 AST。")
-			fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make gen`（或 `make no`）重新產生 blob。")
-			os.Exit(1)
-		}
+	// The blob must have been produced from THIS binary's baked signature
+	// tables (Config) and from the SAME src/std content (StdKey). Empty stamps
+	// are rejected too: skipping validation on an empty value is how a stale or
+	// unconfigured blob used to be consumed unchecked.
+	if err := validateStdASTBlob(blob); err != nil {
+		fmt.Fprintln(os.Stderr, "[no] ERROR: 內嵌 std AST blob 與本二進位不一致（建構不一致）："+err.Error())
+		fmt.Fprintln(os.Stderr, "[no]   意即 blob 的 AST 不等於建置路徑會產生的 AST：可能烤 blob 時未注入跨模組簽名表，或 src/std 在 blob 產生後被改動。")
+		fmt.Fprintln(os.Stderr, "[no]   修正：執行 `make gen`（或 `make no`）重新產生 blob 與簽名表。")
+		os.Exit(1)
 	}
 	dec := make(map[string][]byte, len(blob.Mods))
 	for _, e := range blob.Mods {
@@ -280,8 +318,8 @@ var (
 //
 // Every module goes through newStdModuleParser so the baked AST equals what the
 // build path would have parsed. Skipping that configuration used to bake a
-// silently different AST, because the staleness key only covers src/std
-// content, never the parser configuration. Concretely, std/txt.no's
+// silently different AST, because the only staleness key at the time covered
+// src/std content, never the parser configuration. Concretely, std/txt.no's
 // `txt.replace-n` was baked with `parts[i]` left as a bare element read, so
 // `s = it` bound a `txt` where an option payload was expected and
 // `u.replace-n('one', '1', 1)` returned "1one" instead of "1 two one"
@@ -292,7 +330,17 @@ func SerializeStdAST(fsys fs.FS) (*StdASTBlob, error) {
 	if err != nil {
 		return nil, i18n.Errorf("nh8jhhz7", "std AST: %w", err)
 	}
-	blob := &StdASTBlob{Mods: make([]StdASTEntry, 0, len(known))}
+	// Bake the src/std content hash with the SAME function the Makefile uses
+	// for -key-only (checker.ComputeStdSigKeyFromFS wraps
+	// computeStdSigKeyFromFS). Both runs read the same fsys, so a matching
+	// blob.StdKey proves the blob and the injected checker.StdSigKey were
+	// derived from identical std sources — even if only a function BODY moved
+	// and Config therefore stayed put.
+	stdKey, err := computeStdSigKeyFromFS(fsys)
+	if err != nil {
+		return nil, i18n.Errorf("nh8jhhz7", "std AST: %w", err)
+	}
+	blob := &StdASTBlob{StdKey: stdKey, Mods: make([]StdASTEntry, 0, len(known))}
 	for _, info := range known {
 		embedPath := "std/" + info.FullPath + ".no"
 		source, err := fs.ReadFile(fsys, embedPath)

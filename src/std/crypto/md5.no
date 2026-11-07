@@ -480,10 +480,15 @@ md5 = (data []byte) (out [16]byte) {
         #{overflow=wrap}
         base = num-copy-words * 4
 
-        #{index-out=zero}
         k <- [0..copy-rem): {
+            ixout486c28 = data[off + base + k]: {
+                ok -> it
+
+                -> _
+            }
+
             buf[base + k]: {
-                ok -> it = data[off + base + k]
+                ok -> it = ixout486c28
 
                 -> _
             }

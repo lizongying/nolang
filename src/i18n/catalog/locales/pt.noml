@@ -120,7 +120,7 @@ Cadeia de ferramentas LLVM não detectada
   '379z4njd': '\'%s\' já declarado neste escopo'
   '39o3yr8x': 'versão de arquivo sum não suportada %q (esperado %s)'
   '3aeomnek': 'espaço setfield'
-  '3b9bxfnt': 'não é possível atribuir valor %s ao elemento %s no array \'%s\'%s'
+  '3b9bxfnt': 'não é possível atribuir valor %s ao elemento %s no array \'%s\''
   '3bl2ts85': 'erro de build JS: %w'
   '3ei0a0o0': 'esperada expressão, obtido nil em vez disso'
   '3fulbc9g': 'a função %s recursa ou remove de um resultado fs.list-dir/fs.read-dir sem filtrar "." e ".."; ambas as chamadas devolvem as entradas POSIX readdir "." / "..", e recursar em ".." escapa para cima e pode apagar toda a árvore pai. Use fs.dir-entries (já filtrado), ou pule "." / ".." explicitamente antes de recursar.'
@@ -279,7 +279,6 @@ Erro ao criar o diretório tests: %v
   '7t8ke5g1': 'cancelled: sem espaço de resultado'
   '7tcn8wox': 'Exemplos:'
   '7usot77o': 'aplicar correções automáticas para uma classe de problema: \'overflow\' (adiciona #{overflow=wrap} à aritmética inteira sem anotação), \'redundant\' (remove anotações de tipo iguais ao tipo inferido, ex. `x str = \'\'` -> `x = \'\'`), \'match\' (adiciona os braços nil/err que faltam aos match de option não exaustivos), ou \'unwrap\' (consome as ligações option que nunca são propagadas nem desempacotadas: `x ?= expr` se a função já tem resultado ?T, senão `x-opt = expr` mais um match de instrução `x-opt: { ok -> x = it -> }` nas linhas seguintes), ou \'main\' (omite o wrapper de nível superior `main = () { ... }` elevando suas instruções ao nível superior; ignorado se main tiver parâmetros/resultados ou um return direto), ou \'index-out\' (expande leituras #{index-out=DEF} em matches explícitos)'
-  '7uy8wmqv': '%s'
   '7zfvvuin': 'Nenhum problema encontrado.'
   '802t452i': 'builtin %s: resultado option para o destino %s'
   '81b2ea3o': 'esperado \'(\' na declaração extern, obtido %s em vez disso'
@@ -376,7 +375,6 @@ Erro ao resolver a última versão: %v
   'ap403a8m': 'net-recv: não é possível obter o ponteiro de dados do argumento 1'
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       incluindo as anotações #{...}'
-  'au6g7ji7': 'erros de análise: %s'
   'awc98kqh': '  no fmt -md README.md        formatar os blocos Nolang de um arquivo Markdown'
   'axj3m1pb': '\'as\' inesperado no início da expressão'
   'axtpo500': 'win-find-first-file: não é possível marshalar o caminho como string C'
@@ -521,12 +519,14 @@ falha ao limpar: %v
 
 `
   'fh3ukes8': 'net-set-recv-timeout: sem espaço de resultado'
+  'fixlabel': 'fix:'
   'fk1sb6ss': 'syslog: não suportado em windows'
   'flfh2ueu': 'alvo de instalação inválido %q: o repositório deve ser <host>/<owner>/<repo> ou <owner>/<repo>'
   'fs4qotyl': 'extraindo arquivo zip: %w'
   'fu1ow141': 'Nenhum arquivo de teste encontrado em '
   'fvk7yu8c': 'esperado valor inteiro após \'=\', obtido %s'
   'fw8rehzu': 'o braço pegatudo `->` vazio é inatingível: o compilador pode provar que \'%s\' é sempre ok (aritmética literal não pode transbordar nem dividir por zero, ou o índice é comprovadamente dentro dos limites). O braço ainda precisa ficar pela exaustividade do match, e mantê-lo significa que uma mudança futura de semântica não exige edição de sintaxe.'
+  'fxapply1': 'Apply fix'
   'fxc0tilj': 'Empacotar a AST do pacote atual como gob + zip.'
   'fxdzclp6': 'não é possível atribuir o campo \'%s\' no tipo struct \'%s\': instancie primeiro (por exemplo `%s0 = %s {}`)'
   'fxhkwtho': 'read-file: precisa de caminho'
@@ -621,7 +621,8 @@ Erro ao criar o diretório: %v
 Diretório do cache AST: %s
 
 `
-  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
+  'idxbruse': 'O índice direto `arr[i]`/`m[k]` retorna `?T` (o D11 removeu a anotação `#{index-out=DEF}`), mas aqui é usado como um valor simples sem ser consumido. Trate a option explicitamente com um match de valor, `?=`, um match de lugar ou de bloco, ou uma ligação `?T` válida.'
+  'idxourmv': 'O D11 removeu a anotação `#{index-out=DEF}`; `a[i]`/`m[k]` agora sempre retornam `?T`. Consuma a option explicitamente com um match de valor, `?=`, um match de lugar ou de bloco, ou uma ligação `?T` válida.'
   'ifmrg001': 'interface \'%s\': o método mesclado \'%s\' tem assinaturas conflitantes (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: precisa de receptor'
   'iky4xsx4': 'o método \'%s.%s\' tem %d resultado(s), a interface espera %d'
@@ -756,7 +757,7 @@ Erro ao escrever utils.no: %v
   'mi13i3vc': 'esperado parêntese de fechamento, obtido %s em vez disso'
   'mimqybn2': 'vec.pop: precisa de receptor'
   'mkpo3f8h': 'espaço de destino utf8-at'
-  'mlm7xpcj': '`%s %s= %s` está obsoleto; a função envolvente tem um resultado option, então `no fmt` o reescreve como `%s ?= %s %s %s` ao salvar (o lado direito de uma atribuição composta agora é `?T` e passa por `?=` para desencapsulá-lo ou propagá-lo)'
+  'mlm7xpcj': '`%s %s= %s` está obsoleto; a função envolvente tem um resultado option, então `no fmt` o reescreve na forma `?=` ao salvar (o lado direito de uma atribuição composta agora é `?T` e passa por `?=` para desencapsular ou propagar)'
   'mlyz11mg': 'Com --js-runtime <cmd>, escolher o runtime JS de `no run --js` (node, bun, deno, ...).'
   'mmcrtoio': 'Uso: no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': 'esperado \':\' após o nome do campo do struct, obtido %s em vez disso'
@@ -836,16 +837,9 @@ Compilador Zig não detectado
   'ol21t36r': '  no run --js --js-runtime bun main.no     idem com bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'o divisor de uma divisão ou módulo inteiro é a constante literal 0, o que é comportamento indefinido em LLVM (sdiv/srem por zero) e produz resultados imprevisíveis. Adicione uma verificação de zero em tempo de execução, ou faça a função retornar a falha como option.'
-  'oraub2m9': `
-`%s %s= %s` não é suportado: uma leitura por índice devolve um option (nil fora dos limites), então uma atribuição composta avaliaria o índice duas vezes e descartaria a falha. Reescreva como (o `it` do braço ok é o espaço do elemento, legível e gravável):
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   ou `%s ?= %s %s %s` (propaga a falha; exige que a função envolvente tenha um parâmetro de resultado option)
-`
+  'oraub2m9': '`%s %s= %s` não é suportado: uma leitura de índice retorna uma option (nil quando fora do intervalo), então uma atribuição composta avaliaria o índice duas vezes e descartaria a falha'
   'orjs902d': '\'switch/case/default\' está obsoleto, use \'x: { 1-> ... }\' em vez disso'
-  'os0j8ix4': 'não é possível atribuir valor %s ao elemento %s no array \'%s\'%s'
+  'os0j8ix4': 'não é possível atribuir valor %s ao elemento %s no array \'%s\''
   'osrb7a78': 'espaço de move'
   'oswu0as1': 'esperado dois-pontos na expressão condicional, obtido %s em vez disso'
   'oxgtqeo0': 'write-file: sem espaço de resultado'

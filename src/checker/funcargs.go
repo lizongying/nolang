@@ -246,12 +246,15 @@ func checkArgCountInExpr(expr parser.Expression, sigs map[string]*funcSig) []Val
 				// This runs on the MERGED program where method calls have already
 				// been rewritten, so extra args are expected and legitimate.
 				if len(e.Arguments) < minArgs {
-					results = append(results, ValidateResult{
-						TraceID: "j7dzteja",
-						Line:    e.Token.Line,
-						Column:  e.Token.Column,
-						Message: i18n.T("j7dzteja", "function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
-					})
+				results = append(results, ValidateResult{
+					TraceID: "j7dzteja",
+					Line:    e.Token.Line,
+					Column:  e.Token.Column,
+					Message: i18n.T("j7dzteja", "function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
+					Fixes: []parser.DiagnosticFix{{
+						Description: fmt.Sprintf("add %d more argument(s) to the call", minArgs-len(e.Arguments)),
+					}},
+				})
 				}
 			}
 		}
@@ -2121,6 +2124,9 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
 						Message: i18n.T("uea62he5", "function '%s' expects at most %d input argument(s), got %d — output parameters should be bound via assignment, e.g. result = %s(...)", ident.Value, maxArgs, len(e.Arguments), ident.Value),
+						Fixes: []parser.DiagnosticFix{{
+							Description: fmt.Sprintf("bind output parameters via assignment, e.g. `%s = %s(...)`", ident.Value, ident.Value),
+						}},
 					})
 				} else if len(e.Arguments) < minArgs {
 					results = append(results, ValidateResult{
@@ -2128,6 +2134,9 @@ func checkCallArgsInExpr(expr parser.Expression, sigs map[string]*funcSig, varTy
 						Line:    e.Token.Line,
 						Column:  e.Token.Column,
 						Message: i18n.T("haahhq7o", "function '%s' expects at least %d argument(s), got %d", ident.Value, minArgs, len(e.Arguments)),
+						Fixes: []parser.DiagnosticFix{{
+							Description: fmt.Sprintf("add %d more argument(s) to the call", minArgs-len(e.Arguments)),
+						}},
 					})
 				} else {
 					// Check argument types using resolveExprType (handles struct fields, arrays, etc.)

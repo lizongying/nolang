@@ -153,8 +153,13 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             #{overflow=wrap}
             pos + 1 >= buf.len() -> return
 
-            #{index-out=zero}
-            val = ((first & 63) << 8) | (buf[pos + 1])
+            ixout157c42 = buf[pos + 1]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = ((first & 63) << 8) | (ixout157c42)
 
             #{overflow=wrap}
             next-pos = pos + 2
@@ -166,14 +171,29 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             pos + 3 >= buf.len() -> return
             val = ((first & 63) << 24)
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 1]) << 16)
+            ixout170c27 = buf[pos + 1]: {
+                ok -> it
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 2]) << 8)
+                -> _
+            }
 
-            #{index-out=zero}
-            val = val | (buf[pos + 3])
+            val = val | ((ixout170c27) << 16)
+
+            ixout173c27 = buf[pos + 2]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = val | ((ixout173c27) << 8)
+
+            ixout176c26 = buf[pos + 3]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = val | (ixout176c26)
 
             #{overflow=wrap}
             next-pos = pos + 4
@@ -185,26 +205,61 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             pos + 7 >= buf.len() -> return
             val = ((first & 63) << 56)
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 1]) << 48)
+            ixout189c27 = buf[pos + 1]: {
+                ok -> it
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 2]) << 40)
+                -> _
+            }
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 3]) << 32)
+            val = val | ((ixout189c27) << 48)
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 4]) << 24)
+            ixout192c27 = buf[pos + 2]: {
+                ok -> it
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 5]) << 16)
+                -> _
+            }
 
-            #{index-out=zero}
-            val = val | ((buf[pos + 6]) << 8)
+            val = val | ((ixout192c27) << 40)
 
-            #{index-out=zero}
-            val = val | (buf[pos + 7])
+            ixout195c27 = buf[pos + 3]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = val | ((ixout195c27) << 32)
+
+            ixout198c27 = buf[pos + 4]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = val | ((ixout198c27) << 24)
+
+            ixout201c27 = buf[pos + 5]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = val | ((ixout201c27) << 16)
+
+            ixout204c27 = buf[pos + 6]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = val | ((ixout204c27) << 8)
+
+            ixout207c26 = buf[pos + 7]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = val | (ixout207c26)
 
             #{overflow=wrap}
             next-pos = pos + 8
@@ -283,8 +338,14 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         data-len = frames[count].length
         i <- [0..data-len): {
 
-            #{index-out=zero, overflow=wrap}
-            frames[count].data[i] = buf[r-pos + i]
+            #{overflow=wrap}
+            ixout287c37 = buf[r-pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
+            frames[count].data[i] = ixout287c37
         }
 
         #{overflow=wrap}
@@ -453,8 +514,13 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     key-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic key', empty-ctx, QUIC-KEY-SIZE)
     i <- [0..QUIC-KEY-SIZE): {
 
-        #{index-out=zero}
-        key[i] = key-tmp[i]
+        ixout457c18 = key-tmp[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        key[i] = ixout457c18
     }
 
     ; 5. IV = HKDF-Expand-Label(Secret, "quic iv", "", 12)
@@ -462,8 +528,13 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     iv-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic iv', empty-ctx, QUIC-IV-SIZE)
     i <- [0..QUIC-IV-SIZE): {
 
-        #{index-out=zero}
-        iv[i] = iv-tmp[i]
+        ixout466c17 = iv-tmp[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        iv[i] = ixout466c17
     }
 
     ; 6. HP = HKDF-Expand-Label(Secret, "quic hp", "", 16)
@@ -471,8 +542,13 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     hp-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic hp', empty-ctx, QUIC-HP-SIZE)
     i <- [0..QUIC-HP-SIZE): {
 
-        #{index-out=zero}
-        hp[i] = hp-tmp[i]
+        ixout475c17 = hp-tmp[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        hp[i] = ixout475c17
     }
 }
 
@@ -495,9 +571,15 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     sample [16]byte
     i <- [0..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout500c24 = packet[pn-offset + 4 + i]: {
+            ok -> it
+
+            -> _
+        }
+
         sample[i]: {
-            ok -> it = packet[pn-offset + 4 + i]
+            ok -> it = ixout500c24
 
             -> _
         }
@@ -513,9 +595,20 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     mask-bits = 0x1f
     is-long-header -> mask-bits = 0x0f
 
-    #{index-out=zero}
+    ixout518c20 = packet[pn-offset]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout518c41 = mask[0]: {
+        ok -> it
+
+        -> _
+    }
+
     packet[pn-offset]: {
-        ok -> it = packet[pn-offset] ^ (mask[0] & mask-bits)
+        ok -> it = ixout518c20 ^ (ixout518c41 & mask-bits)
 
         -> _
     }
@@ -527,9 +620,20 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
         #{overflow=wrap}
         pn-offset + j < packet.len() -> {
 
-            #{index-out=zero}
+            ixout532c28 = packet[pn-offset + j]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout532c52 = mask[mask-offset + j]: {
+                ok -> it
+
+                -> _
+            }
+
             packet[pn-offset + j]: {
-                ok -> it = packet[pn-offset + j] ^ mask[mask-offset + j]
+                ok -> it = ixout532c28 ^ ixout532c52
 
                 -> _
             }
@@ -577,8 +681,13 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     truncated-pn = 0
     i <- [0..pn-len): {
 
-        #{index-out=zero}
-        truncated-pn = (truncated-pn << 8) | (packet[pn-offset + i])
+        ixout581c47 = packet[pn-offset + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        truncated-pn = (truncated-pn << 8) | (ixout581c47)
     }
 
     ; 清除長度位元
@@ -792,8 +901,14 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     len-buf, len-n = varint-encode(payload-len)
     i <- [0..len-n): {
 
-        #{index-out=zero, overflow=wrap}
-        packet[pos + i] = len-buf[i]
+        ixout796c27 = len-buf[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        packet[pos + i] = ixout796c27
     }
 
     #{overflow=wrap}
@@ -825,8 +940,14 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     crypto-ft, crypto-ft-n = varint-encode(QUIC-FRAME-CRYPTO)
     i <- [0..crypto-ft-n): {
 
-        #{index-out=zero, overflow=wrap}
-        packet[pos + i] = crypto-ft[i]
+        ixout829c27 = crypto-ft[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        packet[pos + i] = ixout829c27
     }
 
     #{overflow=wrap}
@@ -838,8 +959,14 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     off-buf, off-n = varint-encode(0)
     i <- [0..off-n): {
 
-        #{index-out=zero, overflow=wrap}
-        packet[pos + i] = off-buf[i]
+        ixout842c27 = off-buf[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        packet[pos + i] = ixout842c27
     }
 
     #{overflow=wrap}
@@ -851,8 +978,14 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     data-len-buf, data-len-n = varint-encode(crypto-data.len())
     i <- [0..data-len-n): {
 
-        #{index-out=zero, overflow=wrap}
-        packet[pos + i] = data-len-buf[i]
+        ixout855c27 = data-len-buf[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        packet[pos + i] = ixout855c27
     }
 
     #{overflow=wrap}
@@ -861,8 +994,14 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; Data
     i <- [0..crypto-data.len()): {
 
-        #{index-out=zero, overflow=wrap}
-        packet[pos + i] = crypto-data[i]
+        ixout865c27 = crypto-data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        packet[pos + i] = ixout865c27
     }
 
     #{overflow=wrap}
@@ -889,9 +1028,16 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     }
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout894c24 = nonce[4 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         nonce[4 + i]: {
-            ok -> it = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+            ok -> it = ixout894c24 ^ ((pn >> ((7 - i) * 8)) & 255)
 
             -> _
         }
@@ -930,8 +1076,14 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     final-pos = pn-offset
     i <- [0..sealed.len()): {
 
-        #{index-out=zero, overflow=wrap}
-        packet[final-pos + i] = sealed[i]
+        ixout934c33 = sealed[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        packet[final-pos + i] = ixout934c33
     }
 
     #{overflow=wrap}
@@ -1048,9 +1200,16 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout1053c24 = nonce[4 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         nonce[4 + i]: {
-            ok -> it = nonce[4 + i] ^ ((pn >> ((7 - i) * 8)) & 255)
+            ok -> it = ixout1053c24 ^ ((pn >> ((7 - i) * 8)) & 255)
 
             -> _
         }
@@ -1060,9 +1219,14 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     aad []byte
     i <- [0..pn-offset): {
 
-        #{index-out=zero}
+        ixout1065c24 = buf[i]: {
+            ok -> it
+
+            -> _
+        }
+
         aad[i]: {
-            ok -> it = buf[i]
+            ok -> it = ixout1065c24
 
             -> _
         }
@@ -1072,9 +1236,15 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     sealed []byte
     i <- [0..length-val): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout1077c24 = buf[pn-offset + i]: {
+            ok -> it
+
+            -> _
+        }
+
         sealed[i]: {
-            ok -> it = buf[pn-offset + i]
+            ok -> it = ixout1077c24
 
             -> _
         }

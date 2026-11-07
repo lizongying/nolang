@@ -22,7 +22,9 @@ set -u
 cd "$(dirname "$0")/.."
 
 NO=./no
-TEST=tests/vec-to-str-flaky.no
+# vec-to-str-flaky.no was merged into tests/vec-more.no (heavy test dedup);
+# probe the []i64.to-str line as a substring of the merged program's output.
+TEST=tests/vec-more.no
 EXPECT='[1, 2, 3, 10, 20, 256]'
 N="${1:-50}"
 
@@ -36,12 +38,15 @@ for mir in 3; do
     mism=0
     for i in $(seq 1 "$N"); do
         out=$(NOLANG_MIR=$mir "$NO" run "$TEST" 2>/dev/null)
-        if [ "$out" != "$EXPECT" ]; then
-            mism=$((mism + 1))
-            if [ "$mism" -le 3 ]; then
-                echo "  MISMATCH MIR=$mir run=$i: got [$out]"
-            fi
-        fi
+        case "$out" in
+            *"$EXPECT"*) ;;
+            *)
+                mism=$((mism + 1))
+                if [ "$mism" -le 3 ]; then
+                    echo "  MISMATCH MIR=$mir run=$i: got [$out]"
+                fi
+                ;;
+        esac
     done
     if [ "$mism" -ne 0 ]; then
         echo "FAIL: MIR=$mir — $mism/$N runs deviated from expected [$EXPECT]"

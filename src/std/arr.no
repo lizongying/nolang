@@ -43,7 +43,13 @@
 [n]t.eq = (b [n]t) (yes bool) {
     yes = true
     i <- [0..n): {
-        .[i] != b[i] -> {
+        ixout46c18 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .[i] != ixout46c18 -> {
             yes = false
             return
         }

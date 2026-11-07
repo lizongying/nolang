@@ -21,22 +21,118 @@ t-abc-full = () {
 
     ; md5("abc") = 900150983cd24fb0d6963f7d28e17f72
     h = md5.md5(ABC.to-bytes())
-    runner.eq(h[0], 0x90, 'md5 abc b0')
-    runner.eq(h[1], 0x01, 'md5 abc b1')
-    runner.eq(h[2], 0x50, 'md5 abc b2')
-    runner.eq(h[3], 0x98, 'md5 abc b3')
-    runner.eq(h[4], 0x3c, 'md5 abc b4')
-    runner.eq(h[5], 0xd2, 'md5 abc b5')
-    runner.eq(h[6], 0x4f, 'md5 abc b6')
-    runner.eq(h[7], 0xb0, 'md5 abc b7')
-    runner.eq(h[8], 0xd6, 'md5 abc b8')
-    runner.eq(h[9], 0x96, 'md5 abc b9')
-    runner.eq(h[10], 0x3f, 'md5 abc b10')
-    runner.eq(h[11], 0x7d, 'md5 abc b11')
-    runner.eq(h[12], 0x28, 'md5 abc b12')
-    runner.eq(h[13], 0xe1, 'md5 abc b13')
-    runner.eq(h[14], 0x7f, 'md5 abc b14')
-    runner.eq(h[15], 0x72, 'md5 abc b15')
+    ixout24c16 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout24c16, 0x90, 'md5 abc b0')
+    ixout25c16 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout25c16, 0x01, 'md5 abc b1')
+    ixout26c16 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout26c16, 0x50, 'md5 abc b2')
+    ixout27c16 = h[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout27c16, 0x98, 'md5 abc b3')
+    ixout28c16 = h[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout28c16, 0x3c, 'md5 abc b4')
+    ixout29c16 = h[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout29c16, 0xd2, 'md5 abc b5')
+    ixout30c16 = h[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout30c16, 0x4f, 'md5 abc b6')
+    ixout31c16 = h[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout31c16, 0xb0, 'md5 abc b7')
+    ixout32c16 = h[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout32c16, 0xd6, 'md5 abc b8')
+    ixout33c16 = h[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout33c16, 0x96, 'md5 abc b9')
+    ixout34c16 = h[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout34c16, 0x3f, 'md5 abc b10')
+    ixout35c16 = h[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout35c16, 0x7d, 'md5 abc b11')
+    ixout36c16 = h[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout36c16, 0x28, 'md5 abc b12')
+    ixout37c16 = h[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout37c16, 0xe1, 'md5 abc b13')
+    ixout38c16 = h[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout38c16, 0x7f, 'md5 abc b14')
+    ixout39c16 = h[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout39c16, 0x72, 'md5 abc b15')
 }
 
 ; 空輸入向量：md5('') = d41d8cd98f00b204e9800998ecf8427e，檢查首尾位元組
@@ -44,10 +140,34 @@ t-empty-ends = () {
 
     ; md5("") = d41d8cd98f00b204e9800998ecf8427e
     h = md5.md5(EMPTY.to-bytes())
-    runner.eq(h[0], 0xd4, 'md5 empty b0')
-    runner.eq(h[1], 0x1d, 'md5 empty b1')
-    runner.eq(h[14], 0x42, 'md5 empty b14')
-    runner.eq(h[15], 0x7e, 'md5 empty b15')
+    ixout47c16 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout47c16, 0xd4, 'md5 empty b0')
+    ixout48c16 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout48c16, 0x1d, 'md5 empty b1')
+    ixout49c16 = h[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout49c16, 0x42, 'md5 empty b14')
+    ixout50c16 = h[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout50c16, 0x7e, 'md5 empty b15')
 }
 
 ; 跨區塊：56 位元組輸入需兩次壓縮，md5 = 8215ef0796a20bcaaae116d3876c664a
@@ -55,10 +175,34 @@ t-twoblock-ends = () {
 
     ; md5(56-byte) = 8215ef0796a20bcaaae116d3876c664a
     h = md5.md5(TWOBLOCK.to-bytes())
-    runner.eq(h[0], 0x82, 'md5 two-block b0')
-    runner.eq(h[1], 0x15, 'md5 two-block b1')
-    runner.eq(h[14], 0x66, 'md5 two-block b14')
-    runner.eq(h[15], 0x4a, 'md5 two-block b15')
+    ixout58c16 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout58c16, 0x82, 'md5 two-block b0')
+    ixout59c16 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout59c16, 0x15, 'md5 two-block b1')
+    ixout60c16 = h[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout60c16, 0x66, 'md5 two-block b14')
+    ixout61c16 = h[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout61c16, 0x4a, 'md5 two-block b15')
 }
 p1 = runner.test('md5.digest-len', t-len)
 p2 = runner.test('md5.abc.full', t-abc-full)

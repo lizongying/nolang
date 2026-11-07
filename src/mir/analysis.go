@@ -2809,7 +2809,7 @@ func equalSet(a, b valueSet) bool {
 // redundant re-assignment such as `x = x`) copies a slot onto itself and moves
 // nothing: treating it as a transfer made the very next `drop x` look like a
 // double-free ("value 1400 dropped after move"), which blocked the MIR backend
-// on tests/str-test.no (std str.replace-n).
+// on tests/str-more.no (renamed from str-test.no) (std str.replace-n).
 // isOptionPeelMove reports whether inst is the OpMove that reads an option's
 // payload out into a slice value (`x = opt` where opt : ?[]T). That move is a
 // BORROW, not an ownership transfer: emitMove copies the %vec triple out of the

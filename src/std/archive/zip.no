@@ -564,8 +564,13 @@ zip-writer.write-local-file = (name str, content []byte, crc i64) {
     sig = [0x50, 0x4b, 0x03, 0x04]
     i <- [0..4): {
 
-        #{index-out=zero}
-        .put(sig[i])
+        ixout568c14 = sig[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .put(ixout568c14)
     }
 
     ; 版本 (20)
@@ -639,8 +644,13 @@ zip-writer.write-cd-entry = (name str, offset i64, size i64, compressed-size i64
     sig = [0x50, 0x4b, 0x01, 0x02]
     i <- [0..4): {
 
-        #{index-out=zero}
-        .cd-put(sig[i])
+        ixout643c17 = sig[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .cd-put(ixout643c17)
     }
 
     ; 版本 (20)
@@ -706,8 +716,13 @@ zip-writer.write-eocd = (cd-offset i64, cd-size i64) {
     sig = [0x50, 0x4b, 0x05, 0x06]
     i <- [0..4): {
 
-        #{index-out=zero}
-        .put(sig[i])
+        ixout710c14 = sig[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .put(ixout710c14)
     }
 
     ; 磁碟號 (0)

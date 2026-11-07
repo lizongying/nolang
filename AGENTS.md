@@ -58,8 +58,9 @@ no vet src/std               # 对标准库做 vet 检查
 ```
 
 ⚠️ 修改 `src/std/*.no` 后**必须** `make no`（重生成签名表）；直接 `go build` 会因签名表与源码
-不一致而被编译器**拒绝构建**。绝不要对 `src/std` 跑 `no fmt -w`（会丢失 `#{index-out}` 等
-`no build` 必需的注解）。
+不一致而被编译器**拒绝构建**。绝不要对 `src/std` 跑 `no fmt -w`：单档解析会丢注解与手写排版，
+需要格式化时一律 `no fmt <f>` 输出到 /tmp → `diff -u` → 只 `patch` 目标 hunk。
+（`#{index-out}` 已于 D11 全量移除，不得再新增。）
 
 ---
 
@@ -321,9 +322,6 @@ user.to-json = () (s str) {
 #{overflow=wrap}             ; 整数溢出策略（wrap / trap / 默认）；只作用于下一陈述，须独占一行
 digits = digits + 1
 
-#{index-out=zero}            ; 安全索引：越界返回元素零值（或字面量）
-res = arr[i]  #{index-out=zero}
-
 #{buildin}                  ; 内建方法 / 内建枚举（无 std 函数体，codegen 拦截展开）
 str.byte = (i i64) (c ?byte) { }
 
@@ -332,7 +330,8 @@ holder { inl pt #{inline=true}  out pt #{inline=false} }
 ```
 
 > ⚠️ `#{overflow=...}` 只作用下一陈述，须独占一行置上方；函数级注解已不「整函生效」。
-> `no fmt` 单档解析会丢 `#{index-out}`，故**绝不对 `src/std` 跑 `no fmt -w`**。
+> ⛔ `#{index-out=...}` **已废弃并移除（D11）**：索引读取恒返回 `?T`，只能显式用 match 或 `?=` 消费，
+> 写回也须 place-match / `?=`。残留注解是编译错误，不存在「默认零值」这条捷径。
 
 ### 3.10 导入
 
@@ -562,32 +561,47 @@ digits = digits + 1
 成员方法直接用 `str.*` / `txt.*` 原版。
 
 ### 6.6 绝不对 `src/std` 跑 `no fmt -w`
-`no fmt` 单档解析会丢 `#{index-out}` 等 `no build` 必需的注解，造成死循环。改 std 后只 `make no` 重编。
+`no fmt` 单档解析会丢注解与手写排版，改 std 后只 `make no` 重编；需要格式化时走
+`no fmt <f>` → /tmp → `diff -u` → 只 `patch` 目标 hunk。（D11 起 `#{index-out}` 已移除，不再有
+「build 必需注解」这一层，但排版漂移的风险仍在。）
 
-### 6.7 `?=` 需要 option 结果参数，或块 match 主体
-`?=` 是 option 解包 + 向上传播，函数无 `?T` 结果参数时使用是编译错误 —— **例外**：写在陈述层级块 match
-`{ ... }: { ... }` 的主体内时，由最近的块 match 捕捉（见 §3.6）。原地捕获用 `=`（函数无需 `?T`）。
+### 6.7 `?=` 简写：option 结果参数 **或** 块 match 主体，二者其一即可
+`?=` 是 option 解包 + 向上传播的**简便写法**。它在下列**任一**情形下都可用，不必先给函数加 `?T` 结果参数：
+
+1. **所在函数有 `?T` 结果参数** —— 失败时把该 option 写入结果参数并提前 `return`；
+2. **陈述位于陈述层级块 match** `{ ... }: { ... }` **的主体内** —— 由**最近的**块 match 捕捉
+   （巢状取最内层，优先于函数的 `?T` 结果参数）；失败时**整个主体停住**、arms 只跑一次，**不是** `return`。
+
+两者皆非才是编译错误。`err -> _` / `-> _` 两臂可以把上抛的错误就地吞掉，因此「无 `?T` 结果参数的函数
+也想用 `?=`」的标准兜底就是把函式体包进块 match。原地捕获（不中断流程）用 `=` 绑定 `?T` 后再 match / `_ =`。
 结果参数自动初始化为 nil（实测空函数体 `q = () (result ?i64) { }` 返回 nil），**无需写 `result = nil` 样板**（见 §3.11「返回值延迟零值」）。
 
 ```no
 #{fmt-skip}
-; ✅ 正例 1：option 结果参数
+; ✅ 正例 1：option 结果参数 —— 直接写简写
 process = (path str) (result ?str) {
     f ?= open(path)            ; 失败 → result = f; return
 }
-; ✅ 正例 2：块 match 主体（函数无需 ?T）
-handle = (d i64) {
+; ✅ 正例 2：函数返回值不是 option —— 用块 match 包住，照样能用简写 y ?= x+1
+handle = (x i64) {
     {
-        v ?= 6 / d             ; 失败 → 主体停止，arms 匹配 err
+        y ?= x + 1             ; x+1 回 ?i64；失败 → 主体停止、arms 跑一次
+        print(1)
     }: {
-        err -> print(it.msg())
+        err -> _               ; 丢弃上抛的错误（it 是 err.err）
 
-        nil -> _
-
-        ok -> _
+        -> _                   ; 兜底臂，丢弃结果
     }
 }
+; ✅ 正例 3：索引读取同样适用（D11 起 arr[i] 恒 ?T）
+pick = (a []i64, i i64) (out ?i64) {
+    v ?= a[i]                  ; 越界 → out = 该 option; return
+    out = v
+}
 ```
+
+> 块 match 只陈述、不是表达式、不能赋值、没有区块尾值；`-> _` 丢弃结果。
+> 索引**写入**同理：`a[i] ?= v` 是 place-match `a[i]: { ok -> it = v  -> _ }` 的简写。
 
 ```no
 #{fmt-skip}
@@ -622,6 +636,9 @@ handle = (d i64) {
    `i <- xs: { }`（数组 / 字符串 / vec）——`<-` 是遍历不是循环，两者不要归为一类。
 6. 协程衍生用 `co` 或协程组 `{}`；不用 `go`（非关键字）、不用手写 `run`/`awy`。
 7. 注解 `#{...}` 独占一行置于目标上方（或 trailing）；不手写 `free`；字符串拼接用 `-`。
+   **`#{index-out}` 已移除**：索引读 `a[i]` 恒 `?T`，必须 match / `?=` / 块 match 兜底消费；
+   索引写用 place-match `a[i]: { ok -> it = v  -> _ }` 或 `a[i] ?= v`；map 写 `m['k'] = 1` 例外（put 无需解包）。
+   显式 plain 型别标注（`v i64 = a[i]`）**不是**逃生口，同样要显式消费。
 8. 跨模块调用用 `ShortName.` 前缀；标准库自动加载，不要重新加裸 `# std/fmt`。
 9. 4 空格缩进、换行分隔语句、`{` 同行；提交前对改动文件跑 `no fmt`。
 10. 引用标准库 API 以 `src/std/*.no` 实际签名为准，不臆造；优先复用既有标准库实现。

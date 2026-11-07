@@ -33,7 +33,6 @@ Nolang 프로그래밍 언어 (버전 %s)
                       match       완전하지 않은 option 매치에 누락된 nil/err 분기 추가
                       unwrap      밖으로 전파도 언랩도 되지 않는 option 바인딩 소비
                       main        최상위 main 본문을 최상위 문으로 올리기
-                      index-out   #{index-out=DEF} 읽기를 명시적 match 로 확장
       -loop-style=<s>  기본 루프 표기: prefix(기본) 또는 suffix
       -md   Markdown 파일(.md/.mdx) 안의 Nolang 코드 블록도 서식 적용
     예:
@@ -48,7 +47,6 @@ Nolang 프로그래밍 언어 (버전 %s)
       no fmt -fix=overflow -w src/    src/에 제자리에서 overflow 주석 추가
       no fmt -fix=redundant main.no   중복 타입 주석 제거 미리보기
       no fmt -fix=match -w src/       src/에 누락된 match 분기를 제자리에서 추가
-      no fmt -fix=index-out -w src/   #{index-out=DEF} 읽기를 명시적 match로 확장
       echo 'x=1' | no fmt         stdin에서 서식 지정
       no fmt -loop-style=suffix f.no  루프를 '{ } (cond)' / '{ } * N' 형식으로 서식 지정
       no fmt --md -w docs/        docs/ 아래 모든 .md/.mdx 의 Nolang 블록 서식 적용

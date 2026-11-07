@@ -215,7 +215,13 @@ txt.from-bytes = (b []byte) (out txt) {
     n = b.len()
     n > 255 -> n = 255
     i <- [0..n): {
-        out.set-byte(i, b[i])
+        ixout218c26 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out.set-byte(i, ixout218c26)
     }
     out.len = n
 }
@@ -1448,8 +1454,14 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             }
         }
 
+        ixout1452c30 = parts[i]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        total = total + parts[i].len-bytes()
+        total = total + ixout1452c30.len-bytes()
     }
     total > 255 -> total = 255
     cap = 255

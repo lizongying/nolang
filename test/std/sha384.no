@@ -37,8 +37,20 @@ t-hex-twoblock = () {
 ; 位元組介面與 hex 介面一致：首位元組 0xcb、末位元組 0xa7
 t-bytes-match-hex = () {
     h = sha384.sha384(ABC.to-bytes())
-    runner.eq(h[0], 0xcb, 'sha384 byte[0]')
-    runner.eq(h[47], 0xa7, 'sha384 byte[47]')
+    ixout40c16 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout40c16, 0xcb, 'sha384 byte[0]')
+    ixout41c16 = h[47]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout41c16, 0xa7, 'sha384 byte[47]')
 }
 
 p1 = runner.test('sha384.digest-len', t-len)

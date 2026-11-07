@@ -44,7 +44,13 @@
 []t.eq = (b []t) (eq bool) {
     eq = true
     i <- [0..self.len()): {
-        .[i] != b[i] -> {
+        ixout47c18 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .[i] != ixout47c18 -> {
             eq = false
             return
         }
@@ -427,8 +433,13 @@ vec-clear = () {
         #{overflow=wrap}
         .len = cur + 1
 
-        #{index-out=zero}
-        .[cur] = b[i]
+        ixout431c18 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .[cur] = ixout431c18
 
         #{overflow=wrap}
         i = i + 1

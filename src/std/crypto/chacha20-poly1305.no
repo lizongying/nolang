@@ -48,60 +48,148 @@ rotl32 = (x u32, n i64) (r u32) {
 ; [qr](#chacha20-poly1305.qr)
 qr = (state []u32, a i64, b i64, c i64, d i64) {
 
-    #{index-out=zero}
+    ixout53c21 = state[a]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout53c32 = state[b]: {
+        ok -> it
+
+        -> _
+    }
+
     state[a]: {
-        ok -> it = (state[a] + state[b]) & CC-MASK32
+        ok -> it = (ixout53c21 + ixout53c32) & CC-MASK32
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout60c27 = state[d]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout60c38 = state[a]: {
+        ok -> it
+
+        -> _
+    }
+
     state[d]: {
-        ok -> it = rotl32(state[d] ^ state[a], 16)
+        ok -> it = rotl32(ixout60c27 ^ ixout60c38, 16)
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout67c21 = state[c]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout67c32 = state[d]: {
+        ok -> it
+
+        -> _
+    }
+
     state[c]: {
-        ok -> it = (state[c] + state[d]) & CC-MASK32
+        ok -> it = (ixout67c21 + ixout67c32) & CC-MASK32
 
         -> _
     }
 
     ; ⚠️ 原錯寫成 state[d] = rotl(state[d]^state[c], 12)：quarter-round 中
     ;    輪 16/8 作用於 d，輪 12/7 應作用於 b（RFC 8439 §2.1）。
-    #{index-out=zero}
-    state[b]: {
-        ok -> it = rotl32(state[b] ^ state[c], 12)
+    ixout76c27 = state[b]: {
+        ok -> it
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout76c38 = state[c]: {
+        ok -> it
+
+        -> _
+    }
+
+    state[b]: {
+        ok -> it = rotl32(ixout76c27 ^ ixout76c38, 12)
+
+        -> _
+    }
+
+    ixout83c21 = state[a]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout83c32 = state[b]: {
+        ok -> it
+
+        -> _
+    }
+
     state[a]: {
-        ok -> it = (state[a] + state[b]) & CC-MASK32
+        ok -> it = (ixout83c21 + ixout83c32) & CC-MASK32
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout90c27 = state[d]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout90c38 = state[a]: {
+        ok -> it
+
+        -> _
+    }
+
     state[d]: {
-        ok -> it = rotl32(state[d] ^ state[a], 8)
+        ok -> it = rotl32(ixout90c27 ^ ixout90c38, 8)
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout97c21 = state[c]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout97c32 = state[d]: {
+        ok -> it
+
+        -> _
+    }
+
     state[c]: {
-        ok -> it = (state[c] + state[d]) & CC-MASK32
+        ok -> it = (ixout97c21 + ixout97c32) & CC-MASK32
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout104c27 = state[b]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout104c38 = state[c]: {
+        ok -> it
+
+        -> _
+    }
+
     state[b]: {
-        ok -> it = rotl32(state[b] ^ state[c], 7)
+        ok -> it = rotl32(ixout104c27 ^ ixout104c38, 7)
 
         -> _
     }
@@ -153,9 +241,37 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     ; 金鑰（8 個 32-bit 小端字）
     i <- [0..8): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout158c25 = key[i * 4]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        ixout158c41 = key[i * 4 + 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        ixout158c67 = key[i * 4 + 2]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        ixout158c94 = key[i * 4 + 3]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         state[4 + i]: {
-            ok -> it = (key[i * 4]) | ((key[i * 4 + 1]) << 8) | ((key[i * 4 + 2]) << 16) | ((key[i * 4 + 3]) << 24)
+            ok -> it = (ixout158c25) | ((ixout158c41) << 8) | ((ixout158c67) << 16) | ((ixout158c94) << 24)
 
             -> _
         }
@@ -171,9 +287,37 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     ; Nonce（3 個 32-bit 小端字）
     i <- [0..3): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout176c25 = nonce[i * 4]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        ixout176c43 = nonce[i * 4 + 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        ixout176c71 = nonce[i * 4 + 2]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        ixout176c100 = nonce[i * 4 + 3]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         state[13 + i]: {
-            ok -> it = (nonce[i * 4]) | ((nonce[i * 4 + 1]) << 8) | ((nonce[i * 4 + 2]) << 16) | ((nonce[i * 4 + 3]) << 24)
+            ok -> it = (ixout176c25) | ((ixout176c43) << 8) | ((ixout176c71) << 16) | ((ixout176c100) << 24)
 
             -> _
         }
@@ -184,9 +328,14 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     init = with-len(16)
     i <- [0..16): {
 
-        #{index-out=zero}
+        ixout189c24 = state[i]: {
+            ok -> it
+
+            -> _
+        }
+
         init[i]: {
-            ok -> it = state[i]
+            ok -> it = ixout189c24
 
             -> _
         }
@@ -211,8 +360,19 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     ; state += init（序列化為小端位元組）
     i <- [0..16): {
 
-        #{index-out=zero}
-        val = (state[i] + init[i]) & CC-MASK32
+        ixout215c16 = state[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout215c27 = init[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        val = (ixout215c16 + ixout215c27) & CC-MASK32
 
         #{overflow=wrap}
         out[i * 4] = val & 255
@@ -249,8 +409,21 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
         pos + n > data.len() -> n = data.len() - pos
         i <- [0..n): {
 
-            #{index-out=zero, overflow=wrap}
-            out[pos + i] = (data[pos + i]) ^ (ks[i])
+            #{overflow=wrap}
+            ixout253c29 = data[pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout253c47 = ks[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            out[pos + i] = (ixout253c29) ^ (ixout253c47)
         }
 
         #{overflow=wrap}
@@ -418,9 +591,15 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     ; AAD
     i <- [0..aad.len()): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout423c24 = aad[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         mac-input[pos + i]: {
-            ok -> it = aad[i]
+            ok -> it = ixout423c24
 
             -> _
         }
@@ -449,9 +628,15 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     ; Cipher
     i <- [0..cipher.len()): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout454c24 = cipher[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         mac-input[pos + i]: {
-            ok -> it = cipher[i]
+            ok -> it = ixout454c24
 
             -> _
         }
@@ -610,8 +795,13 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
 
-        #{index-out=zero}
-        sealed[i] = cipher[i]
+        ixout614c21 = cipher[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        sealed[i] = ixout614c21
     }
     i <- [0..16): {
 
@@ -642,9 +832,14 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     cipher = with-len(cipher-len)
     i <- [0..cipher-len): {
 
-        #{index-out=zero}
+        ixout647c24 = sealed[i]: {
+            ok -> it
+
+            -> _
+        }
+
         cipher[i]: {
-            ok -> it = sealed[i]
+            ok -> it = ixout647c24
 
             -> _
         }
@@ -652,9 +847,15 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     tag [16]byte
     i <- [0..16): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout657c24 = sealed[cipher-len + i]: {
+            ok -> it
+
+            -> _
+        }
+
         tag[i]: {
-            ok -> it = sealed[cipher-len + i]
+            ok -> it = ixout657c24
 
             -> _
         }
@@ -672,9 +873,15 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     pos = 0
     i <- [0..aad.len()): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout677c24 = aad[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         mac-input[pos + i]: {
-            ok -> it = aad[i]
+            ok -> it = ixout677c24
 
             -> _
         }
@@ -701,9 +908,15 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
 
     i <- [0..cipher.len()): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout706c24 = cipher[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         mac-input[pos + i]: {
-            ok -> it = cipher[i]
+            ok -> it = ixout706c24
 
             -> _
         }
@@ -854,7 +1067,19 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     ; 4. 常數時間比較
     diff = 0
     i <- [0..16): {
-        diff = diff | (tag[i] ^ exp-tag[i])
+        ixout1070c27 = tag[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout1070c40 = exp-tag[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        diff = diff | (ixout1070c27 ^ ixout1070c40)
     }
     diff != 0 -> return
 

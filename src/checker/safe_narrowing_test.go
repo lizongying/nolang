@@ -163,23 +163,25 @@ func TestNarrowingHintMessage(t *testing.T) {
 			if len(errs) == 0 {
 				t.Fatal("expected at least one type error, got none")
 			}
-			msg := errs[0].Message
-			if tt.wantSigned {
-				if !strings.Contains(msg, "signed target") || !strings.Contains(msg, "ambiguous") {
-					t.Errorf("error message should mention signed-target caveat, got: %s", msg)
-				}
-				return
+		msg := errs[0].Message
+		// 修復建議已移至 Fixes[0].Description（見 narrowingFixes），故從此讀取。
+		hint := msg
+		if len(errs[0].Fixes) > 0 {
+			hint = errs[0].Fixes[0].Description
+		}
+		if tt.wantSigned {
+			if !strings.Contains(hint, "signed target") || !strings.Contains(hint, "ambiguous") {
+				t.Errorf("fix suggestion should mention signed-target caveat, got: %s", hint)
 			}
-			if !strings.Contains(msg, "hint:") {
-				t.Errorf("error message should contain a hint, got: %s", msg)
-			}
-			if !strings.Contains(msg, tt.wantMask) {
-				t.Errorf("error message should contain mask %s, got: %s", tt.wantMask, msg)
-			}
-			if !strings.Contains(msg, ">> "+tt.wantShift) {
-				t.Errorf("error message should contain shift >> %s, got: %s", tt.wantShift, msg)
-			}
-			t.Logf("hint message: %s", msg)
+			return
+		}
+		if !strings.Contains(hint, tt.wantMask) {
+			t.Errorf("fix suggestion should contain mask %s, got: %s", tt.wantMask, hint)
+		}
+		if !strings.Contains(hint, ">> "+tt.wantShift) {
+			t.Errorf("fix suggestion should contain shift >> %s, got: %s", tt.wantShift, hint)
+		}
+		t.Logf("hint message: %s", hint)
 		})
 	}
 }

@@ -1,74 +1,128 @@
 package checker
 
+// D11 regression guard: the `#{index-out = DEF}` annotation was removed.
+// Any residual occurrence must be rejected at parse time with `idxourmv`,
+// and programs that consume the index option explicitly must still parse
+// cleanly. The old "redundant idxoutrd HINT" lint no longer exists.
+
 import (
+	"strings"
 	"testing"
+
+	"github.com/lizongying/nolang/lexer"
+	"github.com/lizongying/nolang/parser"
 )
 
-// REGRESSION GUARD: a `#{index-out = ...}` annotation governing a place-match
-// (`state[1]: { ... }`) whose subject is a container index read is reported as a
-// redundant HINT (idxoutrd) only under the safe-gate: no arm-body container
-// index read depends on the annotation's default. If an inner read (e.g.
-// `state[5]`) needs the default, the annotation is kept and no idxoutrd is
-// emitted (D7 three-way consistency: fmt / vet / codegen must agree).
-
-// parseProgSurface uses the sugar AST (SkipLowering), matching the `no vet` path.
-
-func TestRedundantIndexOutHintEmitted(t *testing.T) {
-	src := `f = () {
-    state [4]i64 = [1, 2, 3, 4]
-    #{index-out=zero}
-    state[10]: {
-        ok(v) -> it = v
-        -> _
-    }
-    _ = state[1]
-}`
-	prog := parseProgSurface(t, src)
-	results := RunAllLints(prog, LintOptions{SourcePath: "src/app.no"})
-	found := false
-	for _, r := range results {
-		if r.TraceID == "idxoutrd" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected idxoutrd HINT for redundant place-match index-out")
-	}
+// parseErrors parses src on the surface AST and returns the joined parser
+// error strings (does not fail the test on errors, so it can assert on them).
+func parseErrors(src string) string {
+	p := parser.New(lexer.New(src))
+	p.SkipLowering = true
+	p.ParseProgram()
+	return strings.Join(p.Errors(), "\n")
 }
 
-func TestNoRedundantIndexOutHintForInnerRead(t *testing.T) {
-	src := `f = () {
-    state [4]i64 = [1, 2, 3, 4]
-    i i64 = 5
-    #{index-out=zero}
-    state[10]: {
-        ok -> it = state[i]
-        -> _
-    }
-    _ = state[1]
-}`
-	prog := parseProgSurface(t, src)
-	results := RunAllLints(prog, LintOptions{SourcePath: "src/app.no"})
-	for _, r := range results {
-		if r.TraceID == "idxoutrd" {
-			t.Fatalf("idxoutrd must NOT fire when an inner read depends on the default")
-		}
-	}
-}
-
-func TestNoRedundantIndexOutHintForNonPlaceMatch(t *testing.T) {
-	// A standalone #{index-out} on a plain container read (not a place-match
-	// subject) must NOT be flagged redundant — it carries DEF-match consumption.
-	src := `f = () {
+func TestResidualIndexOutAnnotationRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "standalone line",
+			src: `f = () {
     a [4]i64 = [1, 2, 3, 4]
     #{index-out=zero}
-    x = a[2]
-}`
-	prog := parseProgSurface(t, src)
-	results := RunAllLints(prog, LintOptions{SourcePath: "src/app.no"})
-	for _, r := range results {
-		if r.TraceID == "idxoutrd" {
-			t.Fatalf("idxoutrd must NOT fire for a non-place-match index read")
-		}
+    x = a[0]
+}`,
+		},
+		{
+			name: "trailing annotation",
+			src: `f = () {
+    a [4]i64 = [1, 2, 3, 4]
+    x = a[0] #{index-out=zero}
+}`,
+		},
+		{
+			name: "merged with other annotation keys",
+			src: `f = () {
+    a [4]i64 = [1, 2, 3, 4]
+    #{overflow=wrap, index-out=zero}
+    x = a[0]
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := parseErrors(c.src)
+			if !strings.Contains(got, "[idxourmv]") {
+				t.Fatalf("expected residual index-out to be rejected with idxourmv, got:\n%s", got)
+			}
+			if !strings.Contains(got, "D11") {
+				t.Fatalf("idxourmv message must state D11 removed the annotation, got:\n%s", got)
+			}
+			// The message must NOT recommend re-adding #{index-out} as a fix.
+			if strings.Contains(got, "use `#{index-out") || strings.Contains(got, "annotate `#{index-out") {
+				t.Fatalf("idxourmv must not suggest re-adding #{index-out}, got:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestD11ExplicitConsumptionFormsParseClean(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "unwrap assign propagation",
+			src: `f = () (res ?i64) {
+    a [4]i64 = [1, 2, 3, 4]
+    x ?= a[0]
+    res ?= x + 1
+}`,
+		},
+		{
+			name: "value match",
+			src: `f = () {
+    a [4]i64 = [1, 2, 3, 4]
+    x = a[0]: {
+        ok -> it
+        -> 0
+    }
+}`,
+		},
+		{
+			name: "place match",
+			src: `f = () {
+    a [4]i64 = [1, 2, 3, 4]
+    a[0]: {
+        ok -> it = 9
+        -> _
+    }
+}`,
+		},
+		{
+			name: "option target binding",
+			src: `f = () {
+    a [4]i64 = [1, 2, 3, 4]
+    x ?i64 = a[0]
+    _ = x
+}`,
+		},
+		{
+			name: "explicit discard",
+			src: `f = () {
+    a [4]i64 = [1, 2, 3, 4]
+    _ = a[0]
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := parseErrors(c.src)
+			if strings.Contains(got, "[idxourmv]") {
+				t.Fatalf("valid D11 form must not emit idxourmv, got:\n%s", got)
+			}
+		})
 	}
 }

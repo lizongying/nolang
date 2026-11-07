@@ -21,7 +21,7 @@ func TestParseDocumentReportsPrefixAnnotationError(t *testing.T) {
 	text := "f = () () {\n" +
 		"    arr [3]i64 = [1, 2, 3]\n" +
 		"    i = 5\n" +
-		"    #{index-out = 0} res = arr[i]\n" +
+		"    #{mac-arm64} res = arr[i]\n" +
 		"    print(res)\n" +
 		"}\n"
 
@@ -45,7 +45,7 @@ func TestParseDocumentReportsPrefixAnnotationError(t *testing.T) {
 	srv := NewServer()
 	d := srv.parseErrorToDiagnostic(hits[0])
 	if d.Range.Start.Line != 3 {
-		t.Errorf("diagnostic line = %d, want 3 (the `#{index-out = 0} res = arr[i]` line); msg=%q",
+		t.Errorf("diagnostic line = %d, want 3 (the `#{mac-arm64} res = arr[i]` line); msg=%q",
 			d.Range.Start.Line, hits[0])
 	}
 	if d.Range.Start.Character != 4 {
@@ -78,7 +78,7 @@ func TestParseDocumentReportsPrefixAnnotationError(t *testing.T) {
 	okText := "f = () () {\n" +
 		"    arr [3]i64 = [1, 2, 3]\n" +
 		"    i = 5\n" +
-		"    res = arr[i] #{index-out = 0}\n" +
+		"    res = arr[i] #{mac-arm64}\n" +
 		"    print(res)\n" +
 		"}\n"
 	if _, err := dm.OpenDocument(okURI, okText); err != nil {

@@ -58,6 +58,19 @@ var methodHelpers = map[string]helper{
 	"errorf":               {1, 3}, // (tok, id, code, format, ...)
 	"warnf":                {1, 3},
 	"fatalf":               {1, 3},
+	// The *Fix variants carry an extra []DiagnosticFix argument between the ID
+	// (or the semantic code) and the format string. They are the preferred
+	// entry points whenever a diagnostic can offer a machine-applicable repair,
+	// so a message that gains a fix moves into one of these and MUST keep its
+	// catalog entry — omitting them here silently dropped those messages from
+	// en.noml and made every non-English locale fall back to English.
+	"saveErrorfFix":           {0, 2}, // (id, fixes, format, ...)
+	"saveWarningfFix":         {0, 2},
+	"saveErrorAtFix":          {0, 4}, // (id, line, col, fixes, format, ...)
+	"saveWarningAtFix":        {0, 4},
+	"saveWarningWithCodefFix": {1, 3}, // (code, id, fixes, format, ...)
+	"errorfFix":               {1, 4}, // (tok, id, code, fixes, format, ...)
+	"warnfFix":                {1, 4},
 }
 
 // stripPrefixHelpers are the parser helpers that strip a leading "line N, column
@@ -69,9 +82,12 @@ var methodHelpers = map[string]helper{
 // receive the position as an explicit argument (…At / errorf / warnf / fatalf)
 // already carry the body only, so they are not in this set.
 var stripPrefixHelpers = map[string]bool{
-	"saveErrorf":           true,
-	"saveWarningf":         true,
-	"saveWarningWithCodef": true,
+	"saveErrorf":              true,
+	"saveWarningf":            true,
+	"saveWarningWithCodef":    true,
+	"saveErrorfFix":           true,
+	"saveWarningfFix":         true,
+	"saveWarningWithCodefFix": true,
 }
 
 // locPrefixFormats mirrors parser.locPrefixFormats: the machine-generated

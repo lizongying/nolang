@@ -47,9 +47,20 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         xored [16]byte
         i <- [0..16): {
 
-            #{index-out=zero}
+            ixout52c29 = in[blk + i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout52c45 = prev[i]: {
+                ok -> it
+
+                -> _
+            }
+
             xored[i]: {
-                ok -> it = (in[blk + i]) ^ (prev[i])
+                ok -> it = (ixout52c29) ^ (ixout52c45)
 
                 -> _
             }
@@ -110,9 +121,15 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         cur-cipher [16]byte
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
+            ixout115c28 = in[blk + i]: {
+                ok -> it
+
+                -> _
+            }
+
             cur-cipher[i]: {
-                ok -> it = in[blk + i]
+                ok -> it = ixout115c28
 
                 -> _
             }
@@ -125,8 +142,20 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ; XOR 與 prev 得到明文
         i <- [0..16): {
 
+            ixout146c36 = dec-blk[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout146c48 = prev[i]: {
+                ok -> it
+
+                -> _
+            }
+
             #{overflow=wrap}
-            out[blk + i] = (dec-blk[i]) ^ (prev[i])
+            out[blk + i] = (ixout146c36) ^ (ixout146c48)
         }
 
         ; 更新 prev 為當前密文區塊
@@ -204,8 +233,13 @@ pkcs7-pad = (in []byte) (out []byte) {
     out = with-len(in.len() + pad-len)
     i <- [0..in.len()): {
 
-        #{index-out=zero}
-        out[i] = in[i]
+        ixout208c18 = in[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout208c18
     }
     i <- [0..pad-len): {
 
@@ -238,7 +272,13 @@ pkcs7-unpad = (in []byte) (out-n i64) {
 
     ; 驗證填充
     i <- [0..pad-len): {
-        (in[in.len() - 1 - i]) != pad-len -> {
+        ixout263c12 = in[in.len() - 1 - i]: {
+            ok -> it
+
+            -> _
+        }
+
+        (ixout263c12) != pad-len -> {
             out-n = -1
             return
         }

@@ -11,8 +11,13 @@ f = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos = r-pos + 1
     (prefix & 0xe0) != 0x20 -> return
 
-    #{index-out=zero}
-    name-len = buf[r-pos] & 63
+    ixout15c16 = buf[r-pos]: {
+        ok -> it
+
+        -> _
+    }
+
+    name-len = ixout15c16 & 63
     r-pos = r-pos + 1
     r-pos + name-len > buf.len() -> return
 
@@ -25,8 +30,13 @@ f = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos = r-pos + name-len
     r-pos >= buf.len() -> return
 
-    #{index-out=zero}
-    value-len = buf[r-pos] & 63
+    ixout29c17 = buf[r-pos]: {
+        ok -> it
+
+        -> _
+    }
+
+    value-len = ixout29c17 & 63
     r-pos = r-pos + 1
     r-pos + value-len > buf.len() -> return
     valueopt = buf[r-pos..r-pos + value-len).to-str()

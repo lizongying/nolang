@@ -387,7 +387,13 @@ yaml-str-at = (a []str, i i64) (out str) {
     out = ''
     i < 0 -> return
     i >= a.len() -> return
-    out = out - a[i] #{index-out=''}
+    ixout390c17 = a[i]: {
+        ok -> it
+
+        -> ''
+    }
+
+    out = out - ixout390c17
 }
 
 ; 浮點是否為 NaN（NaN != NaN）
@@ -2004,8 +2010,20 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
     ok-vals = with-len(0)
     base = keys.len()
     b <- [0..base): {
-        ok-keys.push(keys[b])
-        ok-vals.push(vals[b])
+        ixout2013c26 = keys[b]: {
+            ok -> it
+
+            -> _
+        }
+
+        ok-keys.push(ixout2013c26)
+        ixout2014c26 = vals[b]: {
+            ok -> it
+
+            -> _
+        }
+
+        ok-vals.push(ixout2014c26)
     }
     src < 0 -> return
     .nodes[src].kind != YAML-KIND-MAP -> return
@@ -2037,8 +2055,20 @@ yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-va
     ok-vals = with-len(0)
     base = keys.len()
     b <- [0..base): {
-        ok-keys.push(keys[b])
-        ok-vals.push(vals[b])
+        ixout2046c26 = keys[b]: {
+            ok -> it
+
+            -> _
+        }
+
+        ok-keys.push(ixout2046c26)
+        ixout2047c26 = vals[b]: {
+            ok -> it
+
+            -> _
+        }
+
+        ok-vals.push(ixout2047c26)
     }
     src < 0 -> return
     k = .nodes[src].kind
@@ -2139,7 +2169,13 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             dup = -1
             total = keys.len()
             j <- [0..total): {
-                kj = keys[j] #{index-out=zero}
+                ixout2142c22 = keys[j]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                kj = ixout2142c22
                 yaml-key-eq(.nodes[key], .nodes[kj]) -> {
                     dup = j
                     break

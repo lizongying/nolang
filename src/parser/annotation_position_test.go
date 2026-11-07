@@ -25,11 +25,11 @@ func parseAnnotationErrs(t *testing.T, src string) []string {
 // source of truth for both surfaces.
 func TestAnnotationPrefixRejected(t *testing.T) {
 	cases := map[string]string{
-		"statement":    "#{overflow = wrap} x i8 = a + 100\n",
-		"index-out":    "#{index-out = 0} res = arr[i]\n",
-		"struct field": "pt {\n    x i64\n}\ns {\n    #{inline} p pt\n}\n",
-		"match arm":    "f = (n i64) (out i64) {\n    n: {\n        1 -> out = 1\n        #{overflow = wrap} 2 -> out = 2\n    }\n}\n",
-		"ffi decl":     "#{c} puts = (s str) ()\n",
+		"statement":        "#{overflow = wrap} x i8 = a + 100\n",
+		"value annotation": "#{d11-probe=wrap} res = arr[i]\n",
+		"struct field":     "pt {\n    x i64\n}\ns {\n    #{inline} p pt\n}\n",
+		"match arm":        "f = (n i64) (out i64) {\n    n: {\n        1 -> out = 1\n        #{overflow = wrap} 2 -> out = 2\n    }\n}\n",
+		"ffi decl":         "#{c} puts = (s str) ()\n",
 		// `if <cond> #{...} {` — the annotation sits between the condition and the
 		// body brace. That scan is lenient and used to swallow the group whole
 		// (annotation neither applied nor reported), so it is pinned here.
@@ -53,11 +53,11 @@ func TestAnnotationPrefixRejected(t *testing.T) {
 // trailing struct-field form `p pt #{inline}` that replaced the prefix spelling.
 func TestAnnotationAboveAndTrailingAccepted(t *testing.T) {
 	cases := map[string]string{
-		"above statement":    "a i8 = 100\n#{overflow = wrap}\nb i8 = a + 100\n",
-		"trailing statement": "a i8 = 100\nb i8 = a + 100 #{overflow = wrap}\n",
-		"above field":        "pt {\n    x i64\n}\ns {\n    #{inline}\n    p pt\n}\n",
-		"trailing field":     "pt {\n    x i64\n}\ns {\n    p pt #{inline}\n}\n",
-		"trailing index-out": "arr [3]i64 = [1, 2, 3]\ni = 5\nres = arr[i] #{index-out = 7}\n",
+		"above statement":           "a i8 = 100\n#{overflow = wrap}\nb i8 = a + 100\n",
+		"trailing statement":        "a i8 = 100\nb i8 = a + 100 #{overflow = wrap}\n",
+		"above field":               "pt {\n    x i64\n}\ns {\n    #{inline}\n    p pt\n}\n",
+		"trailing field":            "pt {\n    x i64\n}\ns {\n    p pt #{inline}\n}\n",
+		"trailing value annotation": "arr [3]i64 = [1, 2, 3]\ni = 5\nres = arr[i] #{d11-probe=wrap}\n",
 		// Control for the `if` scan: an own-line annotation above the first
 		// statement *inside* the body is the normal legal spelling and must not
 		// be caught by the new check.
@@ -72,8 +72,8 @@ func TestAnnotationAboveAndTrailingAccepted(t *testing.T) {
 
 // TestTrailingAnnotationBindsToPrecedingStatement guards the reason the
 // trailing form is worth allowing: `stmt #{...}` must attach to the statement it
-// trails. Attaching it to the *next* statement made `x = v[i] #{index-out=zero}`
-// (the spelling the LSP quickfix inserts) silently apply to the wrong target.
+// trails. Attaching it to the *next* statement made a trailing annotation
+// silently apply to the wrong target.
 func TestTrailingAnnotationBindsToPrecedingStatement(t *testing.T) {
 	src := "a i8 = 100\nb i8 = a + 100 #{overflow = wrap}\nprint(b)\n"
 	p := New(lexer.New(src))

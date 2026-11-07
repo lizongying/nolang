@@ -24,13 +24,19 @@ import (
 // spread element.
 
 const variadicSpreadPrelude = `mx = (a ..i64) (r i64) {
-    #{index-out=zero}
-    r = a[0]
+    r = a[0]: {
+        ok -> it
+
+        -> 0
+    }
     n = len(a)
     i <- [1..n): {
         a[i] > r -> {
-            #{index-out=zero}
-            r = a[i]
+            r = a[i]: {
+                ok -> it
+
+                -> 0
+            }
         }
     }
 }

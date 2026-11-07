@@ -1,5 +1,5 @@
-; 安全索引：#{index-out=zero} —— 越界時取「當前元素型別的零值」。
-; 與指定字面量預設值不同，zero 不需知道型別細節，一律回傳該元素型別的零值：
+; 安全索引：索引讀取回傳 ?T，需以值 match / ?= / place-match 顯式消費。
+; nil 臂可依元素型別提供零值：不需知道型別細節，一律回傳該元素型別的零值：
 ;   i64→0  f64→0.0  bool→false  str→''  char→'\0'  byte→0
 
 ; 越界取 i64 元素零值：下標 9 遠超長度 3 時得 0，不崩潰
@@ -56,8 +56,13 @@ z-str = (arr []str, i i64) (res str) {
 ; res char: arr[i]，越界時為 '\0'
 z-char = (arr []char, i i64) (res char) {
 
-    #{index-out=zero}
-    res = arr[i]
+    ixout60c11 = arr[i]: {
+        ok -> it
+
+        -> _
+    }
+
+    res = ixout60c11
 }
 
 ; 越界取 byte 元素零值：得 0

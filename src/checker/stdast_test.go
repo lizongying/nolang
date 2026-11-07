@@ -31,10 +31,13 @@ import (
 // `txt.replace-n` shipped a wrong AST: SerializeStdAST parsed std with a bare
 // parser.New, the key was unaffected, and the divergent AST was used silently.
 //
-// The test is three-sided on purpose:
-//   - the blob must carry a non-empty fingerprint;
+// The test is four-sided on purpose:
+//   - the blob must carry a non-empty parse-config fingerprint;
+//   - the blob must carry a non-empty src/std CONTENT signature (StdKey), and
+//     that signature must equal a fresh hash of the embedded StdFS — Config
+//     alone cannot detect a changed std function BODY;
 //   - a parser configured the way build.parseEmbeddedProgram configures std
-//     modules must reproduce it exactly;
+//     modules must reproduce Config exactly;
 //   - a bare parser must fingerprint DIFFERENTLY, otherwise the guard compares
 //     two always-equal values and proves nothing.
 func TestStdASTBlobCarriesParseConfig(t *testing.T) {
@@ -52,7 +55,27 @@ func TestStdASTBlobCarriesParseConfig(t *testing.T) {
 	}
 	if blob.Config == "" {
 		t.Fatal("baked blob carries no parse-configuration fingerprint; " +
-			"loadStdAST's guard is disarmed (regenerate with `make gen`)")
+			"validateStdASTBlob rejects it (regenerate with `make gen`)")
+	}
+	if blob.StdKey == "" {
+		t.Fatal("baked blob carries no src/std content signature; " +
+			"validateStdASTBlob rejects it (regenerate with `make gen`)")
+	}
+	keyFromFS, err := ComputeStdSigKeyFromFS(nolang.StdFS)
+	if err != nil {
+		t.Fatalf("hash embedded StdFS: %v", err)
+	}
+	if blob.StdKey != keyFromFS {
+		t.Fatalf("baked blob's StdKey is %s but the embedded StdFS hashes to %s — "+
+			"the blob was produced from different std sources; regenerate with `make gen`",
+			blob.StdKey, keyFromFS)
+	}
+	// `make test` injects StdSigKey via -X; a bare `go test` leaves it empty,
+	// in which case there is nothing to compare yet (validateStdASTBlob will
+	// reject that binary anyway).
+	if StdSigKey != "" && StdSigKey != keyFromFS {
+		t.Fatalf("injected StdSigKey %s differs from the embedded StdFS hash %s — "+
+			"the binary and the blob were built from different std sources", StdSigKey, keyFromFS)
 	}
 
 	want := stdParseConfigFingerprint(embeddedStdFuncSigs, embeddedStdMethodSigs, embeddedStdStructFields, embeddedStdEnumVariants)
@@ -86,6 +109,114 @@ func TestStdASTBlobCarriesParseConfig(t *testing.T) {
 		t.Fatalf("a build-path-configured parser fingerprints %s, but the baked blob "+
 			"carries %s — the blob is stale; regenerate with `make gen`", got, blob.Config)
 	}
+}
+
+// TestValidateStdASTBlobRejectsEmptyAndMismatchedStamps pins the "an empty
+// stamp is an ERROR, not a reason to skip validation" contract.
+//
+// The old guard read `if blob.Config != "" && StdSigKey != ""`, so a blob with
+// no fingerprint — or a binary with no baked tables / no injected key — passed
+// validation by doing nothing and had its AST consumed unchecked. It also had
+// no content stamp at all, so editing a std function BODY (Config unchanged)
+// could not be detected. This test mutates one stamp at a time and requires
+// validateStdASTBlob to reject exactly that case; a valid blob must still pass,
+// otherwise the guard is vacuous in the other direction.
+//
+// validateStdASTBlob is a pure function on purpose: loadStdAST hard-exits on
+// its error, which a unit test cannot observe without killing the test binary.
+func TestValidateStdASTBlobRejectsEmptyAndMismatchedStamps(t *testing.T) {
+	zr, err := gzip.NewReader(bytes.NewReader(stdastembed.Blob))
+	if err != nil {
+		t.Fatalf("gunzip baked blob: %v", err)
+	}
+	defer zr.Close()
+	var blob StdASTBlob
+	if err := gob.NewDecoder(zr).Decode(&blob); err != nil {
+		t.Fatalf("decode baked blob: %v", err)
+	}
+
+	origKey := StdSigKey
+	origFuncs, origMethods := embeddedStdFuncSigs, embeddedStdMethodSigs
+	origFields, origEnums := embeddedStdStructFields, embeddedStdEnumVariants
+	t.Cleanup(func() {
+		StdSigKey = origKey
+		embeddedStdFuncSigs, embeddedStdMethodSigs = origFuncs, origMethods
+		embeddedStdStructFields, embeddedStdEnumVariants = origFields, origEnums
+	})
+
+	const injected = "unit-test-std-key"
+	StdSigKey = injected
+	valid := blob
+	valid.StdKey = injected // the real blob's StdKey matches the make-injected key, not this test's
+	if err := validateStdASTBlob(valid); err != nil {
+		t.Fatalf("a blob whose Config and StdKey both match must validate: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		want   string
+		mutate func(*StdASTBlob)
+	}{
+		{"empty Config", "Config", func(b *StdASTBlob) { b.Config = "" }},
+		{"empty StdKey", "StdKey", func(b *StdASTBlob) { b.StdKey = "" }},
+		{"mismatched Config", "解析配置指紋不符", func(b *StdASTBlob) { b.Config = "bogus-config" }},
+		{"mismatched StdKey", "std 內容簽名不符", func(b *StdASTBlob) { b.StdKey = "bogus-key" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := valid
+			tc.mutate(&b)
+			err := validateStdASTBlob(b)
+			if err == nil {
+				t.Fatalf("validateStdASTBlob accepted a blob with %s; the guard has no teeth", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not name the failing stamp %q", err, tc.want)
+			}
+		})
+	}
+
+	t.Run("empty injected key", func(t *testing.T) {
+		StdSigKey = ""
+		if err := validateStdASTBlob(valid); err == nil || !strings.Contains(err.Error(), "StdSigKey") {
+			t.Fatalf("an empty StdSigKey must be rejected, got %v", err)
+		}
+		StdSigKey = injected
+	})
+
+	t.Run("empty baked signature tables", func(t *testing.T) {
+		embeddedStdFuncSigs, embeddedStdMethodSigs = nil, nil
+		embeddedStdStructFields, embeddedStdEnumVariants = nil, nil
+		if err := validateStdASTBlob(valid); err == nil || !strings.Contains(err.Error(), "簽名表") {
+			t.Fatalf("a binary with no baked signature tables must be rejected, got %v", err)
+		}
+	})
+}
+
+// useBakedStdSigKey installs the src/std content signature carried by the baked
+// blob as checker.StdSigKey for the duration of one test.
+//
+// validateStdASTBlob compares StdSigKey against blob.StdKey by value and
+// rejects empty stamps, so a placeholder key is no longer enough. Reading the
+// stamp off the blob keeps the decode / fresh-parse tests independent of how
+// the test binary was linked; TestValidateStdASTBlobRejectsEmptyAndMismatched
+// Stamps owns the guard contract itself.
+func useBakedStdSigKey(t *testing.T) {
+	t.Helper()
+	zr, err := gzip.NewReader(bytes.NewReader(stdastembed.Blob))
+	if err != nil {
+		t.Fatalf("gunzip baked blob: %v", err)
+	}
+	defer zr.Close()
+	var blob StdASTBlob
+	if err := gob.NewDecoder(zr).Decode(&blob); err != nil {
+		t.Fatalf("decode baked blob: %v", err)
+	}
+	if blob.StdKey == "" {
+		t.Fatal("baked blob carries no StdKey; regenerate with `make gen`")
+	}
+	orig := StdSigKey
+	StdSigKey = blob.StdKey
+	t.Cleanup(func() { StdSigKey = orig })
 }
 
 // buildPathStdParser reproduces the parser configuration build.parseEmbeddedProgram
@@ -161,12 +292,11 @@ func indexSubjectMatchKeys(prog *parser.Program) []string {
 // StdASTFor failed and the build always re-lexed+re-parsed src/std.
 //
 // The blob (stdastembed.Blob) is generated by genstdsig from the same src/std
-// walk. StdSigKey only needs to be non-empty to mirror a make-built binary (the
-// runtime gate is emptiness, not a content-key match), so loadStdAST's config
-// guard runs against the baked signature tables exactly as it does in a real
-// build.
+// walk. useBakedStdSigKey supplies the blob's own StdKey, because the runtime
+// gate now compares StdSigKey against blob.StdKey BY VALUE (and rejects empty
+// stamps); the old `StdSigKey = "test"` placeholder would hard-exit loadStdAST.
 func TestStdASTForDecodes(t *testing.T) {
-	StdSigKey = "test" // non-empty: mirrors a make-injected build
+	useBakedStdSigKey(t)
 	SetStdASTBlob(stdastembed.Blob)
 
 	prog, ok := StdASTFor("std/math.no")
@@ -215,7 +345,7 @@ func TestStdASTForDecodes(t *testing.T) {
 // which is exactly the invariant. It also fails when the blob is stale because
 // src/std was edited without re-running `make gen`.
 func TestStdASTBlobMatchesFreshParse(t *testing.T) {
-	StdSigKey = "test" // non-empty: mirrors a make-injected build
+	useBakedStdSigKey(t)
 	SetStdASTBlob(stdastembed.Blob)
 
 	tables, err := stdParseTablesFor(nolang.StdFS)
@@ -315,7 +445,7 @@ func TestStdASTBlobMatchesFreshParse(t *testing.T) {
 // comparing the two sets (rather than hard-coding a line number) keeps it
 // robust to edits in src/std/txt.no.
 func TestStdASTBlobHasSafeIndexNormalisation(t *testing.T) {
-	StdSigKey = "test" // non-empty: mirrors a make-injected build
+	useBakedStdSigKey(t)
 	SetStdASTBlob(stdastembed.Blob)
 
 	const embedPath = "std/txt.no"

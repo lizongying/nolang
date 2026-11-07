@@ -128,9 +128,15 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             -> 0
         }
 
-        #{index-out=zero, overflow=wrap}
+        ixout133c24 = len-count[l]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         len-count[l]: {
-            ok -> it = len-count[l] + 1
+            ok -> it = ixout133c24 + 1
 
             -> _
         }
@@ -147,8 +153,14 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
         .base[i] = pp
 
+        ixout157c28 = len-count[i]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        pp = pp + len-count[i]
+        pp = pp + ixout157c28
     }
 
     ; 計算 limit 陣列
@@ -157,8 +169,20 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; first-code[len+1] = (first-code[len] + count[len]) << 1
     vec = 0
     i <- [0..24): {
-        .limit[i] = vec + len-count[i] - 1
-        vec = (vec + len-count[i]) << 1
+        ixout166c36 = len-count[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .limit[i] = vec + ixout166c36 - 1
+        ixout167c31 = len-count[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        vec = (vec + ixout167c31) << 1
     }
 
     ; 填充 perm 陣列
@@ -178,12 +202,23 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             -> 0
         }
 
-        #{index-out=zero}
-        .perm[tmp-base[l]] = i
+        ixout182c15 = tmp-base[l]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
+            -> _
+        }
+
+        .perm[ixout182c15] = i
+
+        ixout186c24 = tmp-base[l]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         tmp-base[l]: {
-            ok -> it = tmp-base[l] + 1
+            ok -> it = ixout186c24 + 1
 
             -> _
         }
@@ -195,7 +230,7 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
         i > .min-len -> {
 
-            #{index-out=zero, overflow=wrap}
+            #{overflow=wrap}
             .base[i] = ((.limit[i - 1] + 1) << 1) - .base[i]
         }
     }
@@ -284,29 +319,59 @@ bzip2-decompress = (data []byte) (out []byte) {
 
     ; 檢查標頭: "BZh" + block_size_char
     data.len() < 4 -> return
-    data[0] != 66 -> {
+    ixout304c9 = data[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout304c9 != 66 -> {
 
         ; 'B'
         return
     }
-    data[1] != 90 -> {
+    ixout309c9 = data[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout309c9 != 90 -> {
 
         ; 'Z'
         return
     }
-    data[2] != 104 -> {
+    ixout314c9 = data[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout314c9 != 104 -> {
 
         ; 'h'
         return
     }
     {
-        data[3] < 49 -> {
+        ixout320c13 = data[3]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c13 < 49 -> {
 
             ; '1'
             return
         }
 
-        data[3] > 57 -> {
+        ixout326c13 = data[3]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout326c13 > 57 -> {
 
             ; '9'
             return
@@ -370,8 +435,14 @@ bzip2-decompress = (data []byte) (out []byte) {
             n-in-use = 0
             i <- [0..16): {
 
+                ixout391c26 = in-use-16[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 #{overflow=wrap}
-                in-use-16[i] == 1 -> {
+                ixout391c26 == 1 -> {
                     j <- [0..16): {
                         bit = br.read-bit()
                         bit == 1 -> {
@@ -394,8 +465,14 @@ bzip2-decompress = (data []byte) (out []byte) {
             k = 0
             i <- [0..256): {
 
+                ixout415c23 = in-use[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 #{overflow=wrap}
-                in-use[i] == 1 -> {
+                ixout415c23 == 1 -> {
                     seq-to-unseq[k]: {
                         ok -> it = i
 
@@ -451,9 +528,16 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
                 m <- [0..j): {
 
-                    #{index-out=zero, overflow=wrap}
+                    #{overflow=wrap}
+                    ixout456c36 = mtf-list[j - m - 1]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    #{overflow=wrap}
                     mtf-list[j - m]: {
-                        ok -> it = mtf-list[j - m - 1]
+                        ok -> it = ixout456c36
 
                         -> _
                     }
@@ -544,9 +628,14 @@ bzip2-decompress = (data []byte) (out []byte) {
             mtf-pos [258]i64
             i <- [0..n-in-use): {
 
-                #{index-out=zero}
+                ixout549c32 = seq-to-unseq[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 mtf-pos[i]: {
-                    ok -> it = seq-to-unseq[i]
+                    ok -> it = ixout549c32
 
                     -> _
                 }
@@ -611,7 +700,13 @@ bzip2-decompress = (data []byte) (out []byte) {
                     ; 輸出剩餘的 run
                     run-len > 0 -> {
                         i <- [0..run-len): {
-                            bwt-out.push(mtf-pos[0])
+                            ixout643c49 = mtf-pos[0]: {
+                                ok -> it
+
+                                -> _
+                            }
+
+                            bwt-out.push(ixout643c49)
                         }
                     }
                     block-done = 1
@@ -623,7 +718,13 @@ bzip2-decompress = (data []byte) (out []byte) {
                     ; 輸出累積的 run
                     run-len > 0 -> {
                         i <- [0..run-len): {
-                            bwt-out.push(mtf-pos[0])
+                            ixout655c49 = mtf-pos[0]: {
+                                ok -> it
+
+                                -> _
+                            }
+
+                            bwt-out.push(ixout655c49)
                         }
                         run-len = 0
                         run-n = 1
@@ -642,9 +743,16 @@ bzip2-decompress = (data []byte) (out []byte) {
                     ; 將 val 移到前面
                     j <- [1..mtf-idx + 1): {
 
-                        #{index-out=zero, overflow=wrap}
+                        #{overflow=wrap}
+                        ixout647c40 = mtf-pos[mtf-idx - j]: {
+                            ok -> it
+
+                            -> _
+                        }
+
+                        #{overflow=wrap}
                         mtf-pos[mtf-idx - j + 1]: {
-                            ok -> it = mtf-pos[mtf-idx - j]
+                            ok -> it = ixout647c40
 
                             -> _
                         }
@@ -682,9 +790,15 @@ bzip2-decompress = (data []byte) (out []byte) {
                 v >= 0 -> {
                     v < 256 -> {
 
-                        #{index-out=zero, overflow=wrap}
+                        ixout687c40 = count[v]: {
+                            ok -> it
+
+                            -> _
+                        }
+
+                        #{overflow=wrap}
                         count[v]: {
-                            ok -> it = count[v] + 1
+                            ok -> it = ixout687c40 + 1
 
                             -> _
                         }
@@ -702,8 +816,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                     -> _
                 }
 
+                ixout748c38 = count[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 #{overflow=wrap}
-                total = total + count[i]
+                total = total + ixout748c38
             }
 
             ; 計算 LF mapping
@@ -729,16 +849,34 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
                 v >= 0 -> v < 256 -> {
 
-                    #{index-out=zero, overflow=wrap}
-                    lf[i]: {
-                        ok -> it = cum[v] + rank[v]
+                    ixout734c36 = cum[v]: {
+                        ok -> it
 
                         -> _
                     }
 
-                    #{index-out=zero, overflow=wrap}
+                    ixout734c45 = rank[v]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    #{overflow=wrap}
+                    lf[i]: {
+                        ok -> it = ixout734c36 + ixout734c45
+
+                        -> _
+                    }
+
+                    ixout741c36 = rank[v]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    #{overflow=wrap}
                     rank[v]: {
-                        ok -> it = rank[v] + 1
+                        ok -> it = ixout741c36 + 1
 
                         -> _
                     }

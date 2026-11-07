@@ -46,6 +46,8 @@ type Diagnostic struct {
 	// no translatable message (a purely programmatic code is then shown instead).
 	ID      string
 	Message string // human-readable text WITHOUT the "line/col:" prefix
+	// Fixes 是該診斷可套用的修復建議（Nolang 源片段 + 替換 span）。為空表示無修復。
+	Fixes []DiagnosticFix
 }
 
 // ref is the token rendered in the bracketed slot. The message ID wins when
@@ -203,7 +205,7 @@ func asInt(v any) int {
 
 // emit 是唯一構造 parser 診斷的地方：翻譯在此發生（而不是在渲染時），所以
 // Message 已經是目標語言，Pos 是結構化欄位。
-func (p *Parser) emit(id string, sev Severity, code string, line, col int, format string, args ...any) {
+func (p *Parser) emit(id string, sev Severity, code string, line, col int, fixes []DiagnosticFix, format string, args ...any) {
 	p.addDiagnostic(Diagnostic{
 		Filename: p.Filename,
 		Pos:      lexer.Position{Line: line, Column: col},
@@ -211,6 +213,7 @@ func (p *Parser) emit(id string, sev Severity, code string, line, col int, forma
 		Code:     code,
 		ID:       id,
 		Message:  i18n.Translate(id, format, args...),
+		Fixes:    fixes,
 	})
 }
 
@@ -227,40 +230,83 @@ func (p *Parser) addDiagnostic(d Diagnostic) {
 
 // saveErrorAt 在給定位置記錄一條帶消息 ID 的錯誤。
 func (p *Parser) saveErrorAt(id string, line, col int, format string, args ...any) {
-	p.emit(id, SeverityError, "E_GENERAL", line, col, format, args...)
+	p.emit(id, SeverityError, "E_GENERAL", line, col, nil, format, args...)
 }
 
 // saveErrorf 記錄一條錯誤，位置取自格式串的 "line %d, column %d: " 前綴。
 func (p *Parser) saveErrorf(id, format string, args ...any) {
 	line, col, body, rest := splitLocFormat(format, args)
-	p.emit(id, SeverityError, "E_GENERAL", line, col, body, rest...)
+	p.emit(id, SeverityError, "E_GENERAL", line, col, nil, body, rest...)
 }
 
 // saveWarningAt 在給定位置記錄一條帶消息 ID 的警告。
 func (p *Parser) saveWarningAt(id string, line, col int, format string, args ...any) {
-	p.emit(id, SeverityWarning, "W_GENERAL", line, col, format, args...)
+	p.emit(id, SeverityWarning, "W_GENERAL", line, col, nil, format, args...)
 }
 
 // saveWarningf 記錄一條警告，位置取自格式串前綴。
 func (p *Parser) saveWarningf(id, format string, args ...any) {
 	line, col, body, rest := splitLocFormat(format, args)
-	p.emit(id, SeverityWarning, "W_GENERAL", line, col, body, rest...)
+	p.emit(id, SeverityWarning, "W_GENERAL", line, col, nil, body, rest...)
 }
 
 // saveWarningWithCodef 記錄一條帶語義碼的警告（碼用於 WarningsByCode 過濾）。
 func (p *Parser) saveWarningWithCodef(code, id, format string, args ...any) {
 	line, col, body, rest := splitLocFormat(format, args)
-	p.emit(id, SeverityWarning, code, line, col, body, rest...)
+	p.emit(id, SeverityWarning, code, line, col, nil, body, rest...)
 }
 
 // errorf records a structured error located at tok.
 func (p *Parser) errorf(tok lexer.Token, id, code, format string, args ...any) {
-	p.emit(id, SeverityError, code, tok.Line, tok.Column, format, args...)
+	p.emit(id, SeverityError, code, tok.Line, tok.Column, nil, format, args...)
 }
 
 // warnf records a structured warning located at tok.
 func (p *Parser) warnf(tok lexer.Token, id, code, format string, args ...any) {
-	p.emit(id, SeverityWarning, code, tok.Line, tok.Column, format, args...)
+	p.emit(id, SeverityWarning, code, tok.Line, tok.Column, nil, format, args...)
+}
+
+// ─── 帶修復的變體 ───────────────────────────────────────────────────────────
+// 以下 *Fix 變體與上面一一對應，唯一的差別是多了 fixes 參數（置於 format 之前，
+// args ...any 仍為唯一變參），用於掛載可套用的修復建議。無修復的呼叫點保持
+// 原呼叫（傳 nil），故 256 個既有呼叫點無需改寫。
+
+// saveErrorAtFix 在給定位置記錄一條帶消息 ID 與修復的錯誤。
+func (p *Parser) saveErrorAtFix(id string, line, col int, fixes []DiagnosticFix, format string, args ...any) {
+	p.emit(id, SeverityError, "E_GENERAL", line, col, fixes, format, args...)
+}
+
+// saveErrorfFix 記錄一條帶修復的錯誤，位置取自格式串前綴。
+func (p *Parser) saveErrorfFix(id string, fixes []DiagnosticFix, format string, args ...any) {
+	line, col, body, rest := splitLocFormat(format, args)
+	p.emit(id, SeverityError, "E_GENERAL", line, col, fixes, body, rest...)
+}
+
+// saveWarningAtFix 在給定位置記錄一條帶消息 ID 與修復的警告。
+func (p *Parser) saveWarningAtFix(id string, line, col int, fixes []DiagnosticFix, format string, args ...any) {
+	p.emit(id, SeverityWarning, "W_GENERAL", line, col, fixes, format, args...)
+}
+
+// saveWarningfFix 記錄一條帶修復的警告，位置取自格式串前綴。
+func (p *Parser) saveWarningfFix(id string, fixes []DiagnosticFix, format string, args ...any) {
+	line, col, body, rest := splitLocFormat(format, args)
+	p.emit(id, SeverityWarning, "W_GENERAL", line, col, fixes, body, rest...)
+}
+
+// saveWarningWithCodefFix 記錄一條帶語義碼與修復的警告。
+func (p *Parser) saveWarningWithCodefFix(code, id string, fixes []DiagnosticFix, format string, args ...any) {
+	line, col, body, rest := splitLocFormat(format, args)
+	p.emit(id, SeverityWarning, code, line, col, fixes, body, rest...)
+}
+
+// errorfFix records a structured error located at tok, with fixes.
+func (p *Parser) errorfFix(tok lexer.Token, id, code string, fixes []DiagnosticFix, format string, args ...any) {
+	p.emit(id, SeverityError, code, tok.Line, tok.Column, fixes, format, args...)
+}
+
+// warnfFix records a structured warning located at tok, with fixes.
+func (p *Parser) warnfFix(tok lexer.Token, id, code string, fixes []DiagnosticFix, format string, args ...any) {
+	p.emit(id, SeverityWarning, code, tok.Line, tok.Column, fixes, format, args...)
 }
 
 // fatalf reports an unrecoverable parse failure and unwinds to the enclosing

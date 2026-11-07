@@ -33,7 +33,6 @@ Nolang 程式語言（版本 %s）
                       match      為非窮盡 option 匹配補上缺失的 nil/err 分支
                       unwrap      消費從不向外傳播、也從不解包的 option 繫結
                       main        把頂層 main 的函式體提升為頂層陳述
-                      index-out   把 #{index-out=DEF} 索引讀取展開成顯式 match
       -loop-style=<s>  預設迴圈寫法：prefix（預設）或 suffix
       -md   同時格式化 Markdown 檔案（.md/.mdx）裡的 Nolang 程式碼區塊
     範例:
@@ -48,7 +47,6 @@ Nolang 程式語言（版本 %s）
       no fmt -fix=overflow -w src/    為 src/ 原地加上溢出標註
       no fmt -fix=redundant main.no   預覽冗餘標註的移除
       no fmt -fix=match -w src/       為 src/ 原地補上缺失的匹配分支
-      no fmt -fix=index-out -w src/   把 #{index-out=DEF} 讀取展開成顯式 match
       echo 'x=1' | no fmt         從 stdin 格式化
       no fmt -loop-style=suffix f.no  將迴圈格式化為 '{ } (cond)' / '{ } * N'
       no fmt --md -w docs/        格式化 docs/ 下所有 .md/.mdx 中的 Nolang 程式碼區塊

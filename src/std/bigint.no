@@ -659,9 +659,21 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         an2 u64 = (norm-a.limbs[qi + bl - 2] & MASK)
 
         BASE u64 = 4294967296
-        bt-u u64 = (norm-b[bl - 1] & MASK)
+        ixout662c27 = norm-b[bl - 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        bt-u u64 = (ixout662c27 & MASK)
         bt1 u64 = 0
-        bl >= 2 -> bt1 = (norm-b[bl - 2] & MASK)
+        ixout664c33 = norm-b[bl - 2]: {
+            ok -> it
+
+            -> _
+        }
+
+        bl >= 2 -> bt1 = (ixout664c33 & MASK)
 
         ; qhat = floor((an*BASE + an1) / bt)，全程 u64 避免 an*BASE 溢出 i64
         qhat u64 = (an * BASE + an1) / bt-u
@@ -714,7 +726,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         ; 乘減：norm-a[qi..qi+bl] -= qhat * norm-b[0..bl-1]
         borrow u64 = 0
         bj <- [0..bl): {
-            p u64 = qhat * (norm-b[bj] & MASK)
+            ixout717c35 = norm-b[bj]: {
+                ok -> it
+
+                -> _
+            }
+
+            p u64 = qhat * (ixout717c35 & MASK)
             p = p + borrow
             pl = p & 4294967295
             limb u64 = (norm-a.limbs[qi + bj] & MASK)
@@ -746,7 +764,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
                 qhat = qhat - 1
                 carry2 u64 = 0
                 bj2 <- [0..bl): {
-                    s u64 = (norm-a.limbs[qi + bj2] & MASK) + (norm-b[bj2] & MASK) + carry2
+                    ixout749c70 = norm-b[bj2]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    s u64 = (norm-a.limbs[qi + bj2] & MASK) + (ixout749c70 & MASK) + carry2
                     norm-a.limbs[qi + bj2] = (s & 4294967295)
                     carry2 = s >> 32
                 }
@@ -1073,8 +1097,13 @@ bigint.to-str = () (out str) {
     j = bufn - 1
     (j >= 0) {
 
-        #{index-out=zero}
-        out[out-n] = buf[j]
+        ixout1077c22 = buf[j]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[out-n] = ixout1077c22
 
         #{overflow=wrap}
         out-n = out-n + 1

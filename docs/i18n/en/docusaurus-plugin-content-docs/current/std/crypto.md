@@ -33,13 +33,19 @@ des.des-enc(plain, 8, key, out)        ; Encrypt 8-byte block
 des.des-dec(cipher, 8, key, out)       ; Decrypt 8-byte block
 ```
 
-### crypto/rsa — RSA Modular Exponentiation
+### crypto/rsa — RSA Encryption/Decryption (multi-precision modpow)
 
 ```no
-rsa.rsa-modpow(base, bn, exp, en, mod, mn, result, rn)
+#{fmt-skip}
+; High-level bytes API (preferred): inputs are big-endian unsigned integers, output is minimal big-endian encoding
+cipher = rsa.rsa-encrypt-bytes(msg, pub-exp, mod)     ; c = m^e mod n
+plain  = rsa.rsa-decrypt-bytes(cipher, priv-exp, mod) ; m = c^d mod n
+
+; Low-level limb API (base 2^32 little-endian, manual limb counts)
+result, rn = rsa.rsa-modpow(base, bn, exp, en, mod, mn)
 ```
 
-Does not include key generation; supports 1024~4096-bit.
+Does not include key generation (callers supply n, e, d); supports 1024~4096-bit. Underscore-prefixed limb wrappers / bignum utilities are module-internal and rejected across modules (private_std guard reports ERROR).
 
 ### crypto/md5 — MD5 (128-bit)
 

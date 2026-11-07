@@ -33,7 +33,6 @@ Nolang — язык программирования (версия %s)
                       match       добавить пропущенные ветви nil/err в неполные match по option
                       unwrap      использовать option-связывания, которые не пробрасываются и не распаковываются
                       main        поднять тело main верхнего уровня до операторов верхнего уровня
-                      index-out   развернуть чтения #{index-out=DEF} в явные match
       -loop-style=<s>  форма цикла по умолчанию: prefix (по умолчанию) или suffix
       -md   также форматировать блоки Nolang в файлах Markdown (.md/.mdx)
     Примеры:
@@ -48,7 +47,6 @@ Nolang — язык программирования (версия %s)
       no fmt -fix=overflow -w src/    добавить на месте аннотации overflow в src/
       no fmt -fix=redundant main.no   предпросмотр удаления избыточных аннотаций
       no fmt -fix=match -w src/       добавить на месте пропущенные ветви match в src/
-      no fmt -fix=index-out -w src/   развернуть чтения #{index-out=DEF} в явный match
       echo 'x=1' | no fmt         отформатировать из stdin
       no fmt -loop-style=suffix f.no  форматировать циклы как '{ } (cond)' / '{ } * N'
       no fmt --md -w docs/        форматировать блоки Nolang во всех .md/.mdx в docs/

@@ -174,15 +174,15 @@ test-gate = () {
     ir2 = h2m-lower-program(t2, agg2, r2)
     runner.eq(agg2.unsup > 0, 1, 'gate unknown name counted')
 
-    ; 带默认值的参数 ⇒ 签名不合格（整函数不产码）：默认值会让调用点 arity 判定失效
+    ; s92 翻正：带默认值的参数入形（旧门禁「默认值让 arity 判定失效」被调用点回填路推翻）——定义自身产码
     src-def = 'i = (x i64 = 5) (r i64) {\n    r = x\n}\n'
     t3 = ast.make()
     p3 = ps.new(src-def.to-bytes())
     r3 = ps.parse(t3, p3)
     agg3 = h2m-new()
     ir3 = h2m-lower-program(t3, agg3, r3)
-    runner.eq(agg3.unsup > 0, 1, 'gate default param counted')
-    runner.eq(ir3.contains('define'), 0, 'gate default param no code')
+    runner.eq(agg3.unsup, 0, 'default param def lowered')
+    runner.eq(ir3.contains('define'), 1, 'default param def code')
 
     ; 未知型别名 ⇒ 签名不合格
     src-ty = 'j = (x foo) (r i64) {\n    r = 1\n}\n'
@@ -1979,6 +1979,508 @@ test-prefix-not-f64-gate = () {
     runner.eq(ir.contains('define'), 0, 'prefix-~f64-gate no code')
 }
 
+; s89 裁定纪实：f64 主体 '!' 维持门禁——Go 侧 double→i1 无权威可镜像：
+;   运行路 codegen.go coerceInt(i64→i1) 对 f64 截出 poison 再 xor i1 1 ⇒ 恒 true（s88 d1 实钉）；
+;   自举端 '!' 臂（h2m.no K-PREFIX）只认 TY-I64/TY-U64，f64 主体落 ok-p==0 → h2m-mark
+;   本哨兵钉死门禁在位（实作零改件，红相缺席即门禁证据，镜像 s86 裁定族纪律）
+test-prefix-lnot-f64-gate = () {
+    src = 'q5y = (x f64) (r i64) {\n    r = !x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'prefix-!f64-gate counted')
+    runner.eq(ir.contains('define'), 0, 'prefix-!f64-gate no code')
+}
+
+; s89 裁定纪实：str 主体 '!' 维持门禁——Go 侧同样无路：
+;   运行路 str 形参 intWidth 查不到 ⇒ coerceInt 原样返回，emitNot 发 `xor i1 1, %str-long`
+;   类型错 build fail（trace d8en6a9j，tmp/s89-env-str.no 实测）；
+;   字面量路 hir inline comptime 折叠恒 true（空串也 true，证伪任何空检语义）
+test-prefix-lnot-str-gate = () {
+    src = 'q5z = (s str) (r i64) {\n    r = !s\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'prefix-!str-gate counted')
+    runner.eq(ir.contains('define'), 0, 'prefix-!str-gate no code')
+}
+
+; s90 裁决：bool 字面量降级——镜像 Go hir2mir.go KBoolLit ⇒ EmitInt(OpConst, 0/1)
+;   自举表示走 TY-I64 0/1（Go MIR 层载荷本就是 int64、i1 形属后端类型环境）；
+;   true ⇒ OP-CONST(TY-I64, 1) ⇒ cg 发 `%v = add i64 0, 1`
+test-bool-lit-true = () {
+    src = 'q6a = () (r i64) {\n    r = true\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bool-lit-true unsup')
+    runner.eq(ir.contains('add i64 0, 1'), 1, 'bool-lit-true const 1')
+    runner.eq(ir.contains('define'), 1, 'bool-lit-true code')
+}
+
+; false ⇒ OP-CONST(TY-I64, 0) ⇒ `%v = add i64 0, 0`
+test-bool-lit-false = () {
+    src = 'q6b = () (r i64) {\n    r = false\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bool-lit-false unsup')
+    runner.eq(ir.contains('add i64 0, 0'), 1, 'bool-lit-false const 0')
+    runner.eq(ir.contains('define'), 1, 'bool-lit-false code')
+}
+
+; s90：h2m-ty-code('bool') ⇒ TY-I64——bool 形参可铺槽（与整族共用 i64 宽口径同 s78/s83/s88）
+test-bool-param-tycode = () {
+    src = 'q6c = (b bool) (r i64) {\n    r = 0\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'bool-param unsup')
+    runner.eq(ir.contains('define'), 1, 'bool-param code')
+}
+
+; s91 裁决：char 字面量降级——镜像 Go lowerCharLit（KCharLit ⇒ EmitInt(OpConst, 首码点)）
+;   自举 char⇒TY-I64 码点（Go i32，自举无 i32 槽、码点 ≤0x10FFFF 落 i64 精确，同 bool 宽口径）
+;   ASCII："a" ⇒ 97 ⇒ cg 发 `%v = add i64 0, 97`
+test-char-lit-ascii = () {
+    src = 'q7a = () (r i64) {\n    r = "a"\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'char-lit-ascii unsup')
+    runner.eq(ir.contains('add i64 0, 97'), 1, 'char-lit-ascii const 97')
+    runner.eq(ir.contains('define'), 1, 'char-lit-ascii code')
+}
+
+; 多字节 UTF-8："中" ⇒ 首码点 20013（E4 B8 AD ⇒ (0xE4&0xF)<<12 | (0xB8&0x3F)<<6 | (0xAD&0x3F)）
+test-char-lit-cjk = () {
+    src = 'q7b = () (r i64) {\n    r = "中"\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'char-lit-cjk unsup')
+    runner.eq(ir.contains('add i64 0, 20013'), 1, 'char-lit-cjk const 20013')
+    runner.eq(ir.contains('define'), 1, 'char-lit-cjk code')
+}
+
+; s91：h2m-ty-code('char') ⇒ TY-I64——char 形参可铺槽（与整族共用 i64 宽口径）
+test-char-param-tycode = () {
+    src = 'q7c = (c char) (r i64) {\n    r = 0\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'char-param unsup')
+    runner.eq(ir.contains('define'), 1, 'char-param code')
+}
+
+; s92 裁决：默认参数放行——镜像 Go hir2mir.go:13175-13207 调用点尾部回填
+;   （实参缺于形参 ⇒ 缺失尾参逐个 lowerExpr(默认值 expr) 入 argv）
+;   单参缺省调用 ⇒ 默认常量 5 在调用者块降级并整段入池
+test-default-param-fill = () {
+    src = 'q7d = (n i64 = 5) (r i64) {\n    r = n\n}\nw7d = () (r i64) {\n    r = q7d()\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'default-fill unsup')
+    runner.eq(ir.contains('add i64 0, 5'), 1, 'default-fill const 5')
+    runner.eq(ir.contains('call i64 @q7d('), 1, 'default-fill call')
+}
+
+; 多参尾缺省：f(1) ⇒ 实参 1 + 回填默认 20
+test-default-param-trailing = () {
+    src = 'q7e = (a i64, b i64 = 20) (r i64) {\n    r = a + b\n}\nw7e = () (r i64) {\n    r = q7e(1)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'default-trailing unsup')
+    runner.eq(ir.contains('add i64 0, 20'), 1, 'default-trailing const 20')
+    runner.eq(ir.contains('define'), 1, 'default-trailing code')
+}
+
+; 负例门禁：无默认值形参被缺 ⇒ 仍拒（对齐 Go：checker 拒 + lowerer skip，不发垃圾）
+test-default-param-missing-gate = () {
+    src = 'q7f = (n i64) (r i64) {\n    r = n\n}\nw7f = () (r i64) {\n    r = q7f()\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'default-missing counted')
+    runner.eq(ir.contains('call i64 @q7f'), 0, 'default-missing no call')
+}
+
+; s93 语句位调用（镜像 Go hir2mir.go KExprStmt 的 lowerExpr(child) 路——结果丢弃）
+;   无输出参被调沿用既有「void ⇒ define i64 + ret 0」约定，调用发 call i64 并把结果值丢掉
+test-stmt-call-void = () {
+    src = 's7v = (n i64) {\n    x = n\n}\ns7w = () (r i64) {\n    s7v(3)\n    r = 8\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'stmt-call-void unsup')
+    runner.eq(ir.contains('call i64 @s7v('), 1, 'stmt-call-void call emitted')
+    runner.eq(ir.contains('add i64 0, 8'), 1, 'stmt-call-void caller body')
+}
+
+; 非 void 被调在陈述位：结果不绑变量 ⇒ 照样发调用（副作用在序）、呼叫者自身结果不受扰
+test-stmt-call-discard = () {
+    src = 's7q = () (q i64) {\n    q = 3\n}\ns7u = () (r i64) {\n    s7q()\n    r = 5\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'stmt-disc unsup')
+    runner.eq(ir.contains('call i64 @s7q('), 1, 'stmt-disc call emitted')
+}
+
+; guard 单陈述臂体里的调用（`n > 0 -> s7v(1)`）：走 lower-if → lower-block 同一条回填路
+test-stmt-call-guard = () {
+    src = 's7y = (n i64) {\n    x = n\n}\ns7z = (n i64) (r i64) {\n    r = 0\n    n > 0 -> s7y(1)\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'stmt-guard unsup')
+    runner.eq(ir.contains('call i64 @s7y('), 1, 'stmt-guard call emitted')
+}
+
+; 负例门禁：语句位裸字面量仍拒——Go 在 checker 层 checkBareExprStatement 专拒
+test-stmt-expr-bare-gate = () {
+    src = 's7b = () (r i64) {\n    7\n    r = 9\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'stmt-bare counted')
+    runner.eq(ir.contains('@s7b'), 0, 'stmt-bare no code')
+}
+
+; s94：?u64 option 三件套（镜像 Go wrapOptionIfNeeded／lowerNilLit／延迟零值 option→nil）
+;   覆盖面限直线式（mem==0）；TY-OPT 铺槽、option match 臂均在门外（哨兵钉住门禁）
+
+; 回值位隐式 some 包裹：?u64 输出参 + u64 右值 ⇒ OP-OPTSOME（tag=0 + slot[0]=%v）
+test-opt-wrap-return = () {
+    src = 'q8a = (n u64) (r ?u64) {\n    r = n\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-wrap unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 1, 'opt-wrap some emit')
+    runner.eq(ir.contains('define %option @q8a'), 1, 'opt-wrap define %option')
+}
+
+; nil 字面量降级：r = nil ⇒ OP-OPTNONE（tag=1 的 none 判别式，镜像 Go lowerNilLit）
+test-opt-nil-return = () {
+    src = 'q8b = () (r ?u64) {\n    r = nil\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-nil unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }'), 1, 'opt-nil none emit')
+}
+
+; 延迟零值：?u64 输出参全程未赋值 ⇒ 回值位补 OPTNONE（option→nil = tag=1，非 zeroinitializer 的 tag=0）
+test-opt-deferred-zero = () {
+    src = 'q8c = () (r ?u64) {\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-zero unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }'), 1, 'opt-zero none emit')
+}
+
+; capture 标注放行：`z = q8d()`（q8d 回 ?u64）的 let 标注被解析期合成成 NullableType ⇒ 调用+回绑皆入形
+test-opt-capture-call = () {
+    src = 'q8d = () (r ?u64) {\n    r = nil\n}\nw8d = () (res ?u64) {\n    z = q8d()\n    res = z\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-capture unsup')
+    runner.eq(ir.contains('call %option @q8d('), 1, 'opt-capture call %option')
+}
+
+; ?u64 形参入形：option 输入参直传（vty TY-OPT ⇒ %option/%op 命名空间）
+test-opt-param-tycode = () {
+    src = 'q8f = (o ?u64) (r ?u64) {\n    r = o\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-param unsup')
+    runner.eq(ir.contains('define %option @q8f(%option'), 1, 'opt-param %option formal')
+}
+
+; s97：控制流 + ?u64 输出参入形（TY-OPT 铺槽）——nil-init + 写点 some-wrap，未写路径读回 nil（非 some(0)）
+test-opt-flow-slot = () {
+    src = 'q8g = (n u64) (r ?u64) {\n    n > 0 -> r = n\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-flow-slot unsup')
+    runner.eq(ir.contains('%os4 = alloca %option'), 1, 'opt-flow-slot OPTALLOC')
+    ; entry 槽 tag=1 nil-init（正是 s94 门禁所防：误做 zeroinitializer/some(0) ⇒ tag=0）
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 1, 0'), 1, 'opt-flow-slot nil-init')
+    ; 取路写点包裹：payload %v → some（OP-OPTSOME）落槽
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 1, 'opt-flow-slot write wrap')
+    runner.eq(ir.contains('store %option'), 1, 'opt-flow-slot OPTSTORE')
+    runner.eq(ir.contains('load %option'), 1, 'opt-flow-slot OPTLOAD')
+    runner.eq(ir.contains('ret %option'), 1, 'opt-flow-slot ret %option')
+}
+
+; 负例门禁：非 i64 宽載荷不包（str 右值进 ?u64 回值位 ⇒ ty-match 门禁，不发 opt-vs-%sv 垃圾 IR）
+test-opt-payload-gate = () {
+    src = 'q8h = (s str) (r ?u64) {\n    r = s\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'opt-payload counted')
+    runner.eq(ir.contains('@q8h'), 0, 'opt-payload no code')
+}
+
+; s95：?i64 option 三件套——内层整型放宽（h2m-tynode-code 认 'i64'）
+;   %option 載荷槽 [3 x i64]，i64／u64 同 64 位整宽⇒与 ?u64 逐字节同形；镜像 Go wrapOptionIfNeeded 整型内层分岔
+
+; 回值位隐式 some 包裹：?i64 输出参 + i64 右值 ⇒ OP-OPTSOME（p-ty TY-I64 走 some-wrap 已放行分支）
+test-opt-i64-wrap-return = () {
+    src = 'q9a = (n i64) (r ?i64) {\n    r = n\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-i64-wrap unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 1, 'opt-i64-wrap some emit')
+    runner.eq(ir.contains('define %option @q9a'), 1, 'opt-i64-wrap define %option')
+}
+
+; nil 字面量降级：?i64 回值位 r = nil ⇒ OP-OPTNONE（tag=1）
+test-opt-i64-nil-return = () {
+    src = 'q9b = () (r ?i64) {\n    r = nil\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-i64-nil unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }'), 1, 'opt-i64-nil none emit')
+}
+
+; 延迟零值：?i64 输出参全程未赋值 ⇒ 回值位补 OPTNONE（tag=1，非 zeroinitializer）
+test-opt-i64-deferred-zero = () {
+    src = 'q9c = () (r ?i64) {\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-i64-zero unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }'), 1, 'opt-i64-zero none emit')
+}
+
+; capture 标注放行：`z = q9d()`（q9d 回 ?i64）的 let 标注合成成 NullableType{i64} ⇒ 同口径入形
+test-opt-i64-capture-call = () {
+    src = 'q9d = () (r ?i64) {\n    r = nil\n}\nw9d = () (res ?i64) {\n    z = q9d()\n    res = z\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-i64-capture unsup')
+    runner.eq(ir.contains('call %option @q9d('), 1, 'opt-i64-capture call %option')
+}
+
+; ?i64 形参入形：option 输入参直传（vty TY-OPT ⇒ %option/%op 命名空间）
+test-opt-i64-param-tycode = () {
+    src = 'q9f = (o ?i64) (r ?i64) {\n    r = o\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-i64-param unsup')
+    runner.eq(ir.contains('define %option @q9f(%option'), 1, 'opt-i64-param %option formal')
+}
+
+; 口径同形锁：?i64 与 ?u64 同体（some-wrap）回值位 IR 逐字节相等——[3 x i64] 槽不分盆
+test-opt-i64-u64-samecaliber = () {
+    src64 = 'qa = (n u64) (r ?u64) {\n    r = n\n}\n'
+    srci64 = 'qa = (n i64) (r ?i64) {\n    r = n\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src64.to-bytes()))
+    agg = h2m-new()
+    ir64 = h2m-lower-program(t, agg, r)
+    t2 = ast.make()
+    r2 = ps.parse(t2, ps.new(srci64.to-bytes()))
+    agg2 = h2m-new()
+    iri64 = h2m-lower-program(t2, agg2, r2)
+    runner.eq(agg.unsup, 0, 'opt-samecaliber u64 unsup')
+    runner.eq(agg2.unsup, 0, 'opt-samecaliber i64 unsup')
+    runner.eq(iri64 == ir64, 1, 'opt-samecaliber i64==u64 IR')
+}
+
+; s97：控制流 + ?i64 输出参入形——取路 some(n)、else 路 nil，汇聚 OPTLOAD 读出（两写皆落 %option 槽）
+test-opt-i64-flow-slot = () {
+    src = 'q9g = (n i64) (r ?i64) {\n    {\n        n > 0 -> r = n\n        -> r = nil\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-i64-flow-slot unsup')
+    runner.eq(ir.contains('alloca %option'), 1, 'opt-i64-flow-slot OPTALLOC')
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 1, 'opt-i64-flow-slot some arm')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }'), 1, 'opt-i64-flow-slot nil form')
+    runner.eq(ir.contains('load %option'), 1, 'opt-i64-flow-slot OPTLOAD')
+    runner.eq(ir.contains('ret %option'), 1, 'opt-i64-flow-slot ret')
+}
+
+; 负例门禁：非整宽載荷不包（str 右值进 ?i64 回值位 ⇒ ty-match 门禁）
+test-opt-i64-payload-gate = () {
+    src = 'q9h = (s str) (r ?i64) {\n    r = s\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'opt-i64-payload counted')
+    runner.eq(ir.contains('@q9h'), 0, 'opt-i64-payload no code')
+}
+
+; s96：?f64 option 三件套——内层 f64 放宽（h2m-tynode-code 认 'f64'）
+;   %option 載荷槽 [3 x i64]，double 舆槽元素等宽⇒回值位走 OP-OPTMKF64（bitcast double→i64）而非 OP-OPTSOME
+;   镜像 Go：optionPayloadCoerced 对 f64 内层不转（MIR 层无分岔），位形转换发生在 codegen 的 bitcast
+
+; 回值位隐式 some 包裹：?f64 输出参 + f64 右值 ⇒ OP-OPTMKF64（bitcast double %fd→i64 落 slot[0]）
+test-opt-f64-wrap-return = () {
+    src = 'qfa = (x f64) (r ?f64) {\n    r = x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-f64-wrap unsup')
+    runner.eq(ir.contains('bitcast double %fd'), 1, 'opt-f64-wrap bitcast emit')
+    runner.eq(ir.contains('define %option @qfa'), 1, 'opt-f64-wrap define %option')
+}
+
+; 載荷形制鉴别：?f64 回值位用 bitcast（OP-OPTMKF64），而非整型的 OP-OPTSOME 裸 %v insertvalue
+;   若误走 OPTSOME 会把 double SSA 名当 i64 喂（%v vs %fd 命名空间分岔）⇒ 锁定不同形制
+test-opt-f64-not-i64-some = () {
+    src = 'qfb = (x f64) (r ?f64) {\n    r = x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-f64-some unsup')
+    runner.eq(ir.contains('bitcast double %fd'), 1, 'opt-f64-some has bitcast')
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 0, 'opt-f64-some no bare %v some')
+}
+
+; nil 字面量降级：?f64 回值位 r = nil ⇒ OP-OPTNONE（tag=1，与内层型别无关）
+test-opt-f64-nil-return = () {
+    src = 'qfc = () (r ?f64) {\n    r = nil\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-f64-nil unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }'), 1, 'opt-f64-nil none emit')
+}
+
+; 延迟零值：?f64 输出参全程未赋值 ⇒ 回值位补 OPTNONE（tag=1）
+test-opt-f64-deferred-zero = () {
+    src = 'qfd = () (r ?f64) {\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-f64-zero unsup')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }'), 1, 'opt-f64-zero none emit')
+}
+
+; capture 标注放行：`z = qfe()`（qfe 回 ?f64）的 let 标注合成成 NullableType{f64} ⇒ 同口径入形
+test-opt-f64-capture-call = () {
+    src = 'qfe = () (r ?f64) {\n    r = nil\n}\nwe = () (res ?f64) {\n    z = qfe()\n    res = z\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-f64-capture unsup')
+    runner.eq(ir.contains('call %option @qfe('), 1, 'opt-f64-capture call %option')
+}
+
+; ?f64 形参入形：option 输入参直传（vty TY-OPT ⇒ %option/%op 命名空间）
+test-opt-f64-param-tycode = () {
+    src = 'qff = (o ?f64) (r ?f64) {\n    r = o\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-f64-param unsup')
+    runner.eq(ir.contains('define %option @qff(%option'), 1, 'opt-f64-param %option formal')
+}
+
+; s97：控制流 + ?f64 输出参入形——取路写点 OP-OPTMKF64 bitcast 落槽（非裸 %v some）
+test-opt-f64-flow-slot = () {
+    src = 'qfg = (x f64) (r ?f64) {\n    x > 0.0 -> r = x\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-f64-flow-slot unsup')
+    runner.eq(ir.contains('alloca %option'), 1, 'opt-f64-flow-slot OPTALLOC')
+    runner.eq(ir.contains('bitcast double %fd'), 1, 'opt-f64-flow-slot bitcast')
+    ; 載荷专属：f64 走 %mb bitcast insertvalue，不发裸 %v some（口径鉴别）
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 0, 'opt-f64-flow-slot no bare %v some')
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %mb'), 1, 'opt-f64-flow-slot mkf64 some')
+    runner.eq(ir.contains('load %option'), 1, 'opt-f64-flow-slot OPTLOAD')
+}
+
+; 负例门禁：非 64 位宽載荷不包（str 右值进 ?f64 回值位 ⇒ ty-match 门禁）
+test-opt-f64-payload-gate = () {
+    src = 'qfh = (s str) (r ?f64) {\n    r = s\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'opt-f64-payload counted')
+    runner.eq(ir.contains('@qfh'), 0, 'opt-f64-payload no code')
+}
+
+; s97：控制流全程未写 ?i64 输出参——铺 nil-init 槽、汇聚 OPTLOAD 读出 tag=1（与 Go 延迟零值 nil 一致，非 some(0)）
+test-opt-slot-deferred-nil = () {
+    src = 'qfb = (n i64) (r ?i64) {\n    a = 0\n    n > 0 -> a = 1\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup, 0, 'opt-slot-deferred unsup')
+    runner.eq(ir.contains('alloca %option'), 1, 'opt-slot-deferred OPTALLOC')
+    runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 1, 0'), 1, 'opt-slot-deferred nil-init')
+    ; 未写路径绝无 some(0)：槽内不存在 tag=0 的裸零包裹
+    runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 0, 'opt-slot-deferred no some(0)')
+    runner.eq(ir.contains('load %option'), 1, 'opt-slot-deferred OPTLOAD')
+    runner.eq(ir.contains('ret %option'), 1, 'opt-slot-deferred ret')
+}
+
+; s97 负例：控制流里 str 載荷写进 ?i64 option 槽——h2m-opt-wrap 不可包⇒写点计 unsup，宁缺勿错
+test-opt-slot-str-payload-gate = () {
+    src = 'qc = (n i64, s str) (r ?i64) {\n    {\n        n > 0 -> r = n\n        -> r = s\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    runner.eq(agg.unsup > 0, 1, 'opt-slot-str-payload counted')
+    runner.eq(ir.contains('@qc'), 0, 'opt-slot-str-payload no code')
+}
+
 ; f64 前缀负号（s70）：-x（x 为 f64 形参）⇒ fneg double %fd…，仅 widened 的 '-' 臂
 ;   ⚠ 无 f64 字面量降级（OP-CONST 只发 i64）⇒ 操作数必为 f64 形参
 ;   ⚠ 直线式（无控制流）⇒ 寄存器模式，f64 值以 %fd SSA 流动，不落 alloca double 槽
@@ -3044,6 +3546,46 @@ test-bitnot-nested()
 test-bitnot-in-expr()
 test-prefix-gate()
 test-prefix-not-f64-gate()
+test-prefix-lnot-f64-gate()
+test-prefix-lnot-str-gate()
+test-bool-lit-true()
+test-bool-lit-false()
+test-bool-param-tycode()
+test-char-lit-ascii()
+test-char-lit-cjk()
+test-char-param-tycode()
+test-default-param-fill()
+test-default-param-trailing()
+test-default-param-missing-gate()
+test-stmt-call-void()
+test-stmt-call-discard()
+test-stmt-call-guard()
+test-stmt-expr-bare-gate()
+test-opt-wrap-return()
+test-opt-nil-return()
+test-opt-deferred-zero()
+test-opt-capture-call()
+test-opt-param-tycode()
+test-opt-flow-slot()
+test-opt-payload-gate()
+test-opt-i64-wrap-return()
+test-opt-i64-nil-return()
+test-opt-i64-deferred-zero()
+test-opt-i64-capture-call()
+test-opt-i64-param-tycode()
+test-opt-i64-u64-samecaliber()
+test-opt-i64-flow-slot()
+test-opt-i64-payload-gate()
+test-opt-f64-wrap-return()
+test-opt-f64-not-i64-some()
+test-opt-f64-nil-return()
+test-opt-f64-deferred-zero()
+test-opt-f64-capture-call()
+test-opt-f64-param-tycode()
+test-opt-f64-flow-slot()
+test-opt-f64-payload-gate()
+test-opt-slot-deferred-nil()
+test-opt-slot-str-payload-gate()
 test-neg-f64-var()
 test-neg-f64-nested()
 test-neg-f64-gate()

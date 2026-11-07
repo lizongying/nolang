@@ -146,8 +146,13 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
     i <- [0..max-symbol + 1): {
 
-        #{index-out=zero}
-        .norm-count[i] = norm-count[i]
+        ixout150c26 = norm-count[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        .norm-count[i] = ixout150c26
     }
 
     ; 步驟 1: 計算每個符號的起始位置
@@ -170,8 +175,14 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     #{overflow=wrap}
     i <- [0..max-symbol + 1): {
 
+        ixout179c19 = norm-count[i]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        norm-count[i] == -1 -> {
+        ixout179c19 == -1 -> {
             .symbol[high-thresh] = i
             high-thresh = high-thresh - 1
         }
@@ -210,8 +221,14 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         nc > 0 -> {
             j <- [0..nc): {
 
-                #{index-out=zero, overflow=wrap}
-                .symbol[positions[i] + j] = i
+                ixout214c25 = positions[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                #{overflow=wrap}
+                .symbol[ixout214c25 + j] = i
             }
         }
     }
@@ -229,8 +246,14 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         #{overflow=wrap}
         .nb-bits[i] = table-log - bits-for-count(nc)
 
-        #{index-out=zero, overflow=wrap}
-        .next-state[i] = (nc << .nb-bits[i]) + (i - positions[sym])
+        ixout233c53 = positions[sym]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        .next-state[i] = (nc << .nb-bits[i]) + (i - ixout233c53)
     }
 }
 
@@ -304,12 +327,28 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
     ; 找最大碼長度
     i <- [0..max-symbol + 1): {
 
-        #{index-out=zero}
-        .lengths[i] = lengths[i]
-        lengths[i] > .table-log -> {
+        ixout308c23 = lengths[i]: {
+            ok -> it
 
-            #{index-out=zero}
-            .table-log = lengths[i]
+            -> _
+        }
+
+        .lengths[i] = ixout308c23
+        ixout331c16 = lengths[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout331c16 > .table-log -> {
+
+            ixout312c26 = lengths[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            .table-log = ixout312c26
         }
     }
 
@@ -360,12 +399,22 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         #{overflow=wrap}
         l > 0 -> {
 
-            #{index-out=zero}
-            .symbol[tmp-base[l]] = i
+            ixout364c21 = tmp-base[l]: {
+                ok -> it
 
-            #{index-out=zero}
+                -> _
+            }
+
+            .symbol[ixout364c21] = i
+
+            ixout368c28 = tmp-base[l]: {
+                ok -> it
+
+                -> _
+            }
+
             tmp-base[l]: {
-                ok -> it = tmp-base[l] + 1
+                ok -> it = ixout368c28 + 1
 
                 -> _
             }
@@ -682,16 +731,40 @@ zstd-decompress = (data []byte) (out []byte) {
     data.len() < 4 -> return
 
     ; 檢查 Zstandard magic number (小端序)
-    data[0] != 0x28 -> {
+    ixout722c9 = data[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout722c9 != 0x28 -> {
         return
     }
-    data[1] != 0xb5 -> {
+    ixout725c9 = data[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout725c9 != 0xb5 -> {
         return
     }
-    data[2] != 0x2f -> {
+    ixout728c9 = data[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout728c9 != 0x2f -> {
         return
     }
-    data[3] != 0xfd -> {
+    ixout731c9 = data[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout731c9 != 0xfd -> {
         return
     }
 

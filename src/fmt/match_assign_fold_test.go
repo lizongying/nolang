@@ -54,7 +54,7 @@ func TestFoldMatchAssign(t *testing.T) {
 			want: []string{"flags = m: {", "read -> 1", "-> 0"},
 		},
 		{
-			name: "index_out_subject_option",
+			name: "index_subject_option",
 			src: "f = (buf []byte, offset i64) (t i8) {\n" +
 				"    buf[offset]: {\n" +
 				"        ok -> t = it\n\n" +

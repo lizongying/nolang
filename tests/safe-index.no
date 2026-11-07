@@ -1,6 +1,6 @@
 ; 安全索引特性測試：v[i] 越界不再靜默崩潰。
 ;  1) x ?= v[i]            -> 越界向上傳播錯誤（option 函式）
-;  2) #{index-out=DEF} x=v[i] -> 越界用預設值替代（DEF 為關鍵字 zero 或字面量）
+;  2) 值 match / place-match -> 越界時由 nil 臂提供預設值（零值或字面量）
 ;  3) option 函式內裸 x = v[i] -> 自動轉為 x ?= v[i]
 ;  4) 範圍內取值正確（含各元素型別）
 
@@ -15,7 +15,7 @@ safe-get = (arr []i64, i i64) (res ?i64) {
 ; 取得 default
 ; arr: 待讀取的 i64 向量
 ; i: 下標位置
-; res: 範圍內元素值；越界時回傳 i64 零值（index-out=zero）
+; res: 範圍內元素值；越界時由 nil 臂提供 i64 零值
 get-default = (arr []i64, i i64) (res i64) {
     res = arr[i]: {
         ok -> it
@@ -139,7 +139,7 @@ get-default-bool = (arr []bool, i i64) (res bool) {
 ; byte(u8) 元素 + 整數預設值
 ; arr: 待讀取的 u8（byte）向量
 ; i: 下標位置
-; res: 範圍內元素值；越界時回傳 byte 零值（index-out=zero）
+; res: 範圍內元素值；越界時由 nil 臂提供 byte 零值
 get-default-byte = (arr []u8, i i64) (res u8) {
     res = arr[i]: {
         ok -> it
@@ -167,7 +167,7 @@ safe-get(a, 5)
 io.out('safe-get OOB: no-crash')
 print('')
 
-; 2) #{index-out} 預設值：越界回傳 0
+; 2) 值 match 預設值：越界回傳 0
 d = get-default(a, 5)
 io.out('get-default OOB -> ')
 io.out(d)
@@ -187,7 +187,7 @@ unwrap-call-rhs(21)
 unwrap-var-rhs(21)
 unwrap-infix-rhs(21)
 
-; 4a) #{index-out} 範圍內取值正確（i64）
+; 4a) 值 match 範圍內取值正確（i64）
 ok = get-default(a, 1)
 io.out('get-default in-bounds[1] -> ')
 io.out(ok)

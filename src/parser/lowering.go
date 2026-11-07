@@ -475,10 +475,9 @@ func (l *lowerer) walk(v reflect.Value) {
 		l.walk(v.Elem())
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
-			// 安全索引兩種 desugar（先 index-out 預設值，再 option 自動傳播）：
-			//   1. `#{index-out=DEF} x = v[5]` → 改寫為 match，越界用 DEF 替代。
-			//   2. option 回傳函式內的裸 `x = v[5]`（arr/vec）→ 視為 `x ?= v[5]`，
-			//      越界時向上傳播錯誤。
+			// D11：`#{index-out=DEF}` 已移除，安全索引只剩 option 自動傳播：
+			// option 回傳函式內的裸 `x = v[5]`（arr/vec）→ 視為 `x ?= v[5]`，
+			// 越界時向上傳播錯誤。
 			replaced := false
 			if v.Index(i).CanSet() {
 				stmt := v.Index(i).Interface()
@@ -489,13 +488,11 @@ func (l *lowerer) walk(v reflect.Value) {
 				if n, isNode := stmt.(Node); isNode {
 					carryFrom = n
 				}
-				// 展开 ExpressionStatement → AssignExpression：索引寫入
+				// 展開 ExpressionStatement → AssignExpression：索引寫入
 				//（`k[i] = key[i]`、`obj.field = arr[i]`）在 AST 上為
-				// ExpressionStatement 包裹 AssignExpression，必須取出內層
-				// AssignExpression 才能被 maybeIndexOutAssign 辨識（其 switch
-				// 直接匹配 *AssignExpression）。同時把外層 ExpressionStatement
-				// 攜帶的 `#{index-out}` 註解轉掛到內層 AssignExpression，否則
-				// 註解查不到、desugar 不觸發，越界索引仍被當成未處理。
+				// ExpressionStatement 包裹 AssignExpression；取出內層節點並把外層
+				// 攜帶的泛型註解（如 `#{overflow=...}`）一併轉掛，使下游 pass
+				// 能在正確節點上讀到 side-table。
 				if es, ok := stmt.(*ExpressionStatement); ok {
 					if l.p.sem != nil {
 						if anns := l.p.sem.RawAnnotationsOf(es); len(anns) > 0 {
@@ -510,30 +507,20 @@ func (l *lowerer) walk(v reflect.Value) {
 								l.p.sem.SetRawAnnotations(tgt, anns)
 								stmt = tgt
 							case *SurfaceMatch:
-								// D9 place-write：`#{index-out=DEF}` 註解套用到
-								// `v[i]: { ok -> it = ... }` 時，外層 ExpressionStatement
-								// 攜帶註解，但 desugar 主體是內層 SurfaceMatch。把
-								// index-out 條目轉掛到 sm，讓 buildMatchDesugar /
-								// rewriteItPlaceWrites 能還原「注解作用到臂內 RHS 下标
-								// 读取」的舊語意（与 maybeIndexOutAssign 对 AssignExpression
-								// 的處理一致：註解只帶外層、desugar 時才轉移進內層）。
+								// place-match 主體是內層 SurfaceMatch；外層
+								// ExpressionStatement 攜帶的泛型註解轉掛到 sm，
+								// 使 buildMatchDesugar / rewriteItPlaceWrites 能讀到。
 								l.p.sem.SetRawAnnotations(tgt, anns)
 							}
 						}
 					}
 				}
-				// analysisOnly 模式（prepareInferredTypes）：跳過所有結構
-				// 改寫（maybeIndexOutAssign / maybeCaptureOptionAssign 的取代節點
-				// 建構）；推斷分析由 inferOptionArith + maybeCaptureOptionAssign 內
-				// 的 synthesizeNullableType 完成（後者在 analysisOnly 下提早返回）。
-				// SkipSafeIndexLowering 旗標已隨 §4.3 刪除，安全索引展開在此一律進行。
-				if !l.analysisOnly {
-					if repl := l.maybeIndexOutAssign(stmt); repl != nil {
-						l.carryOverflowAnnotation(carryFrom, repl)
-						v.Index(i).Set(reflect.ValueOf(repl))
-						replaced = true
-					}
-				}
+				// D11：徹底移除 `#{index-out=DEF}` 註解（parseAnnotationBody 對任何
+				// 殘留的 index-out 鍵直接報錯 idxourmv）；安全索引預設值降糖
+				//（maybeIndexOutAssign / desugarIndexOutReads）與相關函式已刪除。
+				// 下方捕獲 / 推斷 pass 保持不變。
+				// analysisOnly 模式（prepareInferredTypes）：推斷分析由 inferOptionArith
+				// + maybeCaptureOptionAssign 內的 synthesizeNullableType 完成。
 				// 有號整數 `/` `%` 本身就會產生 option（除零/溢出時為 err），
 				// 因此以普通 `=` 綁定其結果時，變數型別必然是 `?T`：無需用戶
 				// 顯式標註，在此就地補上推斷出的註解（等同寫 `q ?int = a / b`），
@@ -604,14 +591,13 @@ func (l *lowerer) walk(v reflect.Value) {
 				savedFuncDef = l.curFuncDef
 				savedDeclared = l.declaredLocals
 				// p.curFuncName 必須與 l.curFuncName 同步：isSafeIndexBase 等函式
-				// 作用域查詢（idxLocalTypes / FuncVarType）以它為鍵。此前只有
-				// maybeIndexOutAssign（僅非 analysisOnly 路徑呼叫）會順手同步它，
-				// 於是 SkipLowering 形態（prepareInferredTypes 的 analysisOnly 走查）
-				// 整個函式體都在錯誤的（或上一個函式殘留的）作用域裡做索引查詢——
-				// 巢狀安全索引捕獲因此不漏記錄（captureFactsLen=0）、checker 的
-				// S3-c 護欄也隨之落空，LSP 診斷與 build 不一致。在此入口統一同步、
-				// 出口還原，full / H0 / SkipLowering 三形態一致；full 路徑本已由
-				// maybeIndexOutAssign 每陳述同步同值，故行為不變。
+				// 作用域查詢（idxLocalTypes / FuncVarType）以它為鍵。過去只有
+				// 安全索引降糖 pass 會順手同步它，SkipLowering 形態
+				//（prepareInferredTypes 的 analysisOnly 走查）整個函式體都在錯誤的
+				//（或上一個函式殘留的）作用域裡做索引查詢——巢狀安全索引捕獲因此
+				// 漏記錄（captureFactsLen=0）、checker 的 S3-c 護欄也隨之落空，
+				// LSP 診斷與 build 不一致。在此入口統一同步、出口還原，
+				// full / H0 / SkipLowering 三形態一致。
 				savedPFuncName = l.p.curFuncName
 				l.p.curFuncName = fd.Name
 				l.curFuncName = fd.Name
@@ -1440,11 +1426,10 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool)
 	if !l.captureTargetAllowsOption(ls) {
 		return nil
 	}
-	// D9 place-write / match-payload 重綁定：`it = X` 屬 ok 臂語義，由
-	// buildMatchDesugar 的 rewriteItPlaceWrites（+ desugarIndexOutReads 還原
-	// #{index-out=DEF} 作用域）統一處理 RHS 下标读取降糖與元素寫回。若在此走
+	// place-write / match-payload 重綁定：`it = X` 屬 ok 臂語義，由
+	// buildMatchDesugar 的 rewriteItPlaceWrites 統一處理元素寫回。若在此走
 	// 通用捕獲 pass，會把 `it = rotr64(v[d]^v[a],32)` 改寫成 capture SurfaceMatch，
-	// 使 itAssignParts 認不到、RHS 读取未被降糖（capture 產物仍被 checker 視為
+	// 使 itAssignParts 認不到、RHS 读取未被處理（capture 產物仍被 checker 視為
 	// ?u64）→ fxxoptarg。直接跳過，交給 place-write lowering 處理。
 	//
 	// ⚠️ 編譯期降糖模式跳過：此時 D9 place-write desugar 會接管 `it`。糖形態
@@ -1888,156 +1873,6 @@ func lowerSignedIntName(typ string) (string, bool) {
 	return "", false
 }
 
-// maybeIndexOutAssign 偵測帶 `#{index-out=DEF}` 註解的安全索引賦值
-// （`x = v[5]`，v 為 arr/vec/slice，DEF 為關鍵字 `zero`（當前元素型別零值）或字面量預設值），
-// 將其就地改寫為 match：越界時用 DEF 替代，否則取出元素。返回 *BlockStatement；非候選則回傳 nil。
-//
-// 這條路徑與 `x ?= v[5]` 共用安全索引 codegen（`__tmp = v[5]` 產生 %option，
-// 越界回傳 none），差別只在 none arm 的行為：?= 向上傳播錯誤，index-out 用 DEF 替代。
-func (l *lowerer) maybeIndexOutAssign(stmt interface{}) Statement {
-	// 確保後續 inferIndexElemType / isSafeIndexBase 的函數作用域型別查詢正確
-	// （desugar 區段會自行 save/restore，此處設定對早退路徑無副作用）。
-	l.p.curFuncName = l.curFuncName
-	var value Expression
-	var name *Identifier
-	var leftExpr Expression // 非識別符 LHS（如 `out[i] = .[i]` 的索引寫入 LHS）
-	var tok lexer.Token
-	switch s := stmt.(type) {
-	case *LetStatement:
-		if s.IsSynthetic {
-			return nil
-		}
-		value = s.Value
-		if s.Name != nil {
-			name = s.Name
-			tok = s.Token
-		}
-	case *AssignExpression:
-		value = s.Value
-		if id, ok := s.Left.(*Identifier); ok {
-			name = id
-			tok = s.Token
-		} else {
-			// 索引寫入 LHS（arr[i] = x[i] / obj.field = x[i]）：保留 LHS 表達式，
-			// 在兩個 match arm 中對其賦值（ok arm 寫解箱元素，none arm 寫 DEF）。
-			leftExpr = s.Left
-			tok = s.Token
-		}
-	default:
-		return nil
-	}
-	if (name == nil && leftExpr == nil) || value == nil {
-		return nil
-	}
-	idx, ok := value.(*IndexExpression)
-	if !ok {
-		return nil
-	}
-	if !l.p.isSafeIndexBase(idx) {
-		return nil
-	}
-	// 必須帶 #{index-out=...} 註解。
-	if l.p.sem == nil {
-		return nil
-	}
-	var defVal AnnotationValue
-	found := false
-	// 使用 RawAnnotationsOf（desugar walk 在將註解從外層 ExpressionStatement
-	// 轉移到內層 AssignExpression 後寫入的即時 side-table），而非 AnnotationsOf
-	// （後者讀取 ResolveProgram 階段填入的 ns.Annotations，對 index-write LHS
-	// 這類「註解掛在外層、desugar 時才轉移進內層」的語句會查不到而誤判為未處理）。
-	for _, e := range l.p.sem.RawAnnotationsOf(stmt.(Node)) {
-		if e != nil && e.Key == "index-out" {
-			defVal = e.Value
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil
-	}
-	// 推斷元素型別；推斷不出則無法產生安全的 none 預設值，報錯。
-	elem := l.p.inferIndexElemType(idx)
-	if elem == "" {
-		l.p.saveErrorf("cmpxd150", "line %d, column %d: cannot infer element type for safe index with #{index-out}; annotate the container or use an explicit type", tok.Line, tok.Column)
-		return nil
-	}
-	// 建構 __idx_out_N = v[i]（?elem 安全索引）。
-	tmpName := fmt.Sprintf("__idx_out_%d_%d", tok.Line, tok.Column)
-	tmpIdent := &Identifier{Token: tok, Value: tmpName}
-	l.p.setVarType(tmpName, "?"+elem)
-	tmpAssign := &LetStatement{
-		Token:       tok,
-		Name:        tmpIdent,
-		IsSynthetic: true, // 防止 walk 時被後續 capture / index-out pass 二次改寫
-		Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: elem}},
-		Value:       idx,
-	}
-	// 建構預設值字面量（依元素型別解釋 DEF）。
-	defLit, errMsg := defaultLiteralFor(tok, elem, defVal)
-	if errMsg != "" {
-		l.p.saveErrorf("b0k1laq8", "line %d, column %d: %s", tok.Line, tok.Column, errMsg)
-		return nil
-	}
-	if defLit == nil {
-		defLit = &IntegerLiteral{Token: tok, Value: 0}
-	}
-	// arms: ok -> lhs = it（解箱元素寫入 lhs）；-> 預設值（越界/錯誤時用 DEF）。
-	// 識別符 LHS（x = ...）走 LetStatement；索引/點 LHS（arr[i] = ... / obj.field = ...）
-	// 走 AssignExpression，在兩個 arm 中對同一 LHS 賦值（ok arm 寫解箱元素，none
-	// arm 寫 DEF）。none arm 從不使用 `it`，skipItBinding 避免其 %str-long 型別的
-	// `it` 綁定覆寫 ok arm 的元素型別 `it`。
-	assignToLHS := func(val Expression) Statement {
-		if name != nil {
-			return &LetStatement{Token: tok, Name: name, Value: val}
-		}
-		return &ExpressionStatement{Token: tok, Expression: &AssignExpression{Token: tok, Left: leftExpr, Value: val}}
-	}
-	okBody := &BlockStatement{Token: tok, Statements: []Statement{
-		assignToLHS(&Identifier{Token: tok, Value: "it"}),
-	}}
-	defAssign := assignToLHS(defLit)
-	arms := []MatchArm{
-		{Condition: &Identifier{Token: tok, Value: "ok"}, Body: okBody, IsBlockBody: true, Pos: posFromToken(tok)},
-		{IsWildcard: true, Body: &BlockStatement{Token: tok, Statements: []Statement{defAssign}}, IsBlockBody: true, SkipItBinding: true, Pos: posFromToken(tok)},
-	}
-	sm := &SurfaceMatch{Token: tok, Matched: tmpIdent, Arms: arms}
-	savedFuncName := l.p.curFuncName
-	l.p.curFuncName = l.curFuncName
-	lowered := l.p.desugarSurfaceMatchToIfExpr(sm)
-	l.p.curFuncName = savedFuncName
-	if lowered == nil {
-		return nil
-	}
-	// 識別符 LHS 預先 `let x = DEF` 宣告，使 x 在 match 臂外仍有 slot（ok/none 兩臂
-	// 都只對它賦值，不會自建宣告）；索引/點 LHS 是既有 lvalue，無需預先宣告。
-	//
-	// ⚠️ 位置是語意攸關的：preDecl 必須排在 tmpAssign（`__idx_out_N = container[i]`）
-	// **之後**。它本質上是「把 x 清零」，而 RHS 可以引用 x 本身——最典型的是自我索引
-	// 走訪 `p = lf[p]`（BWT 反變換的 LF 鏈、鏈式 next 走訪）。放在前面時，求值 RHS
-	// 用的是剛被清零的 x，索引恆為 0：p 每輪都讀 lf[0]，鏈條原地打轉。
-	//   p = 10
-	//   p = lf[p]   ; 舊： preDecl(p=0) → 讀 lf[0] → p 恆為 lf[0]
-	//               ; 新： 讀 lf[p]（p 的既有值）→ preDecl(p=0) → 兩臂覆寫 p
-	// 移到之後仍滿足原目的：兩臂都會寫 x，預宣告的零值從不被讀到，它只負責
-	// 「建立 slot」。
-	//
-	// 註：這裡刻意**不**去判斷 x「是否已宣告」來省掉 preDecl。曾試過用
-	// FuncVarTypeRef/IsFuncDeclared 判定，兩者的回退是「全域 VarTypes / 全域
-	// DeclaredVars」——那是跨模組的大雜燴，`a`、`b`、`f0` 這類短名幾乎必然命中別的
-	// 函式或別的模組的同名變數，於是本陳述的 LHS 被誤判為已宣告、preDecl 被跳過、
-	// slot 從未建立（實測 test/std/dns.no 的 parse-response 由 51/51 掉到 49/51，
-	// A 記錄 ip 的 a/b/c/d 全失真）。preDecl 本身無害，位置才是 bug。
-	var stmts []Statement
-	if name != nil {
-		preDecl := &LetStatement{Token: tok, Name: name, Value: defLit}
-		stmts = []Statement{tmpAssign, preDecl, &ExpressionStatement{Token: tok, Expression: lowered}}
-	} else {
-		stmts = []Statement{tmpAssign, &ExpressionStatement{Token: tok, Expression: lowered}}
-	}
-	return &BlockStatement{Token: tok, Statements: stmts}
-}
-
 // carryOverflowAnnotation 把被安全索引 desugar 取代的原陳述之 `#{overflow = ...}`
 // 條目轉掛到取代節點上。
 //
@@ -2109,114 +1944,6 @@ func overflowModeFieldOf(n Node) string {
 		return s.OverflowMode
 	}
 	return ""
-}
-
-// defaultLiteralFor 依元素型別 elem 解釋 #{index-out} 的預設註解值 defVal，
-// 產生對應的 AST 字面量。回傳 (字面量, 錯誤訊息)；錯誤訊息非空表示無法轉換。
-func defaultLiteralFor(tok lexer.Token, elem string, defVal AnnotationValue) (Expression, string) {
-	// `#{index-out=zero}`：不分元素型別，一律取「當前元素型別的零值」——
-	// 整數族→0、浮點→0.0、bool→false、str/txt→''、容器→空容器/零定長陣列、
-	// 結構體→零值結構體。由 scalarZeroLiteral 統一處理（對複合型別遞迴展開）。
-	if iv, ok := defVal.(*AnnotationIdentValue); ok && iv.Value == "zero" {
-		return scalarZeroLiteral(tok, elem), ""
-	}
-	// 非标量元素（切片 / 陣列 / 映射 / 結構體）：越界預設值可以是
-	//   - `nil` 或 `0`            → 零值（空容器 / 零定長陣列 / 空映射 / 零結構體）
-	//   - `[]` / `[1, 2]`         → 明確的複合（容器）字面量
-	//   - `T{}` / `T{name:'x'}`   → 明確的結構體字面量
-	// 三者皆直接建成對應的 AST 字面量，成為 index-out 展開時的 none 臂值。
-	if isContainerOrStructElem(elem) {
-		kind, elemType, _, _ := classifyCompositeElem(elem)
-		switch v := defVal.(type) {
-		case *AnnotationIdentValue:
-			if v.Value == "nil" {
-				return zeroValueLiteralFor(tok, elem), ""
-			}
-		case *AnnotationIntValue:
-			if v.Value == 0 {
-				return zeroValueLiteralFor(tok, elem), ""
-			}
-		case *AnnotationArrayValue:
-			// 陣列寫法只對容器（切片 / 定長陣列）有意義；映射的元素型別不接受
-			// 這種寫法（映射零值請用 `nil` / `0`）。
-			if kind != compositeMap {
-				elems := []Expression{}
-				for _, av := range v.Elements {
-					lit, emsg := defaultLiteralFor(tok, elemType, av)
-					if lit == nil {
-						return nil, emsg
-					}
-					elems = append(elems, lit)
-				}
-				return &ArrayLiteral{Token: tok, Elements: elems, WasSliceLiteral: true}, ""
-			}
-		case *AnnotationStructValue:
-			if kind == compositeStruct {
-				fields := []*StructField{}
-				for _, f := range v.Fields {
-					lit, emsg := looseLiteralFromAnnotationValue(tok, f.Value)
-					if lit == nil {
-						return nil, emsg
-					}
-					fields = append(fields, &StructField{Token: tok, Name: f.Name, Value: lit})
-				}
-				return &StructLiteral{Token: tok, Type: elem, Fields: fields}, ""
-			}
-		}
-		return nil, fmt.Sprintf("#{index-out} default for %s must be 'nil', 0, or a composite literal", elem)
-	}
-	switch elem {
-	case "f64", "f32":
-		switch val := defVal.(type) {
-		case *AnnotationIntValue:
-			return &FloatLiteral{Token: tok, Value: float64(val.Value), Raw: strconv.FormatInt(val.Value, 10)}, ""
-		case *AnnotationIdentValue:
-			f, err := strconv.ParseFloat(val.Value, 64)
-			if err != nil {
-				return nil, fmt.Sprintf("invalid float default %q for element type %s", val.Value, elem)
-			}
-			return &FloatLiteral{Token: tok, Value: f, Raw: val.Value}, ""
-		case *AnnotationStringValue:
-			f, err := strconv.ParseFloat(val.Value, 64)
-			if err != nil {
-				return nil, fmt.Sprintf("invalid float default %q for element type %s", val.Value, elem)
-			}
-			return &FloatLiteral{Token: tok, Value: f, Raw: val.Value}, ""
-		default:
-			return nil, fmt.Sprintf("#{index-out} default for %s must be a float literal (e.g. 0.0)", elem)
-		}
-	case "bool":
-		switch val := defVal.(type) {
-		case *AnnotationBoolValue:
-			return &BooleanLiteral{Token: tok, Value: val.Value}, ""
-		case *AnnotationIntValue:
-			return &BooleanLiteral{Token: tok, Value: val.Value != 0}, ""
-		}
-		return nil, "#{index-out} default for bool must be true or false"
-	case "str", "txt":
-		if sv, ok := defVal.(*AnnotationStringValue); ok {
-			return &StringLiteral{Token: tok, Value: sv.Value, Raw: "'" + sv.Value + "'"}, ""
-		}
-		if iv, ok := defVal.(*AnnotationIntValue); ok && iv.Value == 0 {
-			return &StringLiteral{Token: tok, Value: "", Raw: "''"}, ""
-		}
-		return nil, "#{index-out} default for str must be a string literal (e.g. '')"
-	default:
-		// 整數類元素：i8..i128, u8..u128, byte, char。
-		switch val := defVal.(type) {
-		case *AnnotationIntValue:
-			return &IntegerLiteral{Token: tok, Value: val.Value, Raw: strconv.FormatInt(val.Value, 10)}, ""
-		case *AnnotationStringValue:
-			// 字元預設：取首個 rune 的碼點。
-			r := []rune(val.Value)
-			if len(r) == 0 {
-				return &IntegerLiteral{Token: tok, Value: 0, Raw: "0"}, ""
-			}
-			return &IntegerLiteral{Token: tok, Value: int64(r[0]), Raw: val.Value}, ""
-		default:
-			return nil, fmt.Sprintf("#{index-out} default for %s must be an integer or char literal", elem)
-		}
-	}
 }
 
 // isContainerOrStructElem 報告元素型別 elem 是否為非标量（容器或結構體）。
@@ -2323,49 +2050,6 @@ func scalarZeroLiteral(tok lexer.Token, typeName string) Expression {
 		}
 		return &IntegerLiteral{Token: tok, Value: 0, Raw: "0"}
 	}
-}
-
-// looseLiteralFromAnnotationValue 依註解值自身的種類產生字面量。用於結構體欄位等
-// 「目標靜態型別不可得」的場合（defaultLiteralFor 拿不到符號表）：值先轉成通用
-// 字面量，型別相容性交由 checker 在 StructLiteral 上檢查。
-func looseLiteralFromAnnotationValue(tok lexer.Token, v AnnotationValue) (Expression, string) {
-	switch val := v.(type) {
-	case *AnnotationIntValue:
-		return &IntegerLiteral{Token: tok, Value: val.Value, Raw: strconv.FormatInt(val.Value, 10)}, ""
-	case *AnnotationBoolValue:
-		return &BooleanLiteral{Token: tok, Value: val.Value}, ""
-	case *AnnotationStringValue:
-		return &StringLiteral{Token: tok, Value: val.Value, Raw: "'" + val.Value + "'"}, ""
-	case *AnnotationIdentValue:
-		if val.Value == "nil" {
-			return &NilLiteral{Token: tok}, ""
-		}
-		if f, err := strconv.ParseFloat(val.Value, 64); err == nil {
-			return &FloatLiteral{Token: tok, Value: f, Raw: val.Value}, ""
-		}
-		return nil, fmt.Sprintf("unsupported value %q in composite #{index-out} default", val.Value)
-	case *AnnotationArrayValue:
-		elems := []Expression{}
-		for _, el := range val.Elements {
-			lit, emsg := looseLiteralFromAnnotationValue(tok, el)
-			if lit == nil {
-				return nil, emsg
-			}
-			elems = append(elems, lit)
-		}
-		return &ArrayLiteral{Token: tok, Elements: elems, WasSliceLiteral: true}, ""
-	case *AnnotationStructValue:
-		fields := []*StructField{}
-		for _, f := range val.Fields {
-			lit, emsg := looseLiteralFromAnnotationValue(tok, f.Value)
-			if lit == nil {
-				return nil, emsg
-			}
-			fields = append(fields, &StructField{Token: tok, Name: f.Name, Value: lit})
-		}
-		return &StructLiteral{Token: tok, Type: val.Type, Fields: fields}, ""
-	}
-	return nil, "unsupported value in composite #{index-out} default"
 }
 
 // preRegisterEnumArmBindings 在展開 match 之前，先依「被匹配變數的靜態型別」把
@@ -2802,16 +2486,15 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	return types[varName]
 }
 
-// prepareSurfaceMatch clones the match, carries the D9 index-out annotations
-// onto the clone, and runs the arm pre-checks. Every step here has side effects
-// that later lowering depends on:
+// prepareSurfaceMatch clones the match, carries annotations onto the clone,
+// and runs the arm pre-checks. Every step here has side effects that later
+// lowering depends on:
 //
 //   - the clone is what the emitters mutate (arm bodies get the narrowing let
 //     prepended), so the caller's SurfaceMatch stays untouched — required, since
 //     the same tree is walked more than once (checker, sugar diagnostics);
-//   - index-out annotations are keyed by node pointer, so a bare clone loses
-//     them and the arm-body rewrites (rewriteItPlaceWrites /
-//     desugarIndexOutReads) silently stop seeing the annotation;
+//   - annotations are keyed by node pointer, so a bare clone loses them and
+//     the arm-body rewrites (rewriteItPlaceWrites) silently stop seeing them;
 //   - armPreChecks registers destructuring bindings so an INNER match can
 //     resolve its own subject type, and validates `it` usage while that is
 //     still unambiguous (before any synthetic `let it` exists).
@@ -3370,7 +3053,6 @@ type subjectMatchPrep struct {
 	baseName           string
 	placeWriteUsed     bool
 	anyArmValueCtx     bool
-	idxOutDef          *AnnotationValue
 	matchedVarType     string
 	isEnumType         bool
 	enumVariants       []string
@@ -3517,32 +3199,8 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 		}
 	}
 
-	// D9 place-write 的 `#{index-out=DEF}` 注解作用域：旧 `x = v[i]` 寫法下，
-	// 注解作用於整條帶註解陳述的「全部」下标读取（RHS 读取亦变 u64，越界取 DEF）。
-	// place-write 把 RHS 读取移入 ok 臂體，註解須隨之進入臂體。walk 已把外層
-	// ExpressionStatement 攜帶的 index-out 條目轉掛到本 sm（见 lowerer.walk 的
-	// SurfaceMatch 分支），此處取出其預設值，交給 rewriteItPlaceWrites 在臂內
-	// RHS 读取上降糖（還原舊語意）。非 place-write 的 match 若帶此註解則忽略
-	// （rewriteItPlaceWrites 在 idxTempName=="" 時早退，不會誤用）。
-	var idxOutDef *AnnotationValue
-	if p.sem != nil {
-		for _, e := range p.sem.RawAnnotationsOf(sm) {
-			if e != nil && e.Key == "index-out" {
-				v := e.Value
-				idxOutDef = &v
-				break
-			}
-		}
-		if idxOutDef == nil {
-			for _, e := range p.sem.AnnotationsOf(sm) {
-				if e != nil && e.Key == "index-out" {
-					v := e.Value
-					idxOutDef = &v
-					break
-				}
-			}
-		}
-	}
+	// D11：`#{index-out=DEF}` 註解已徹底移除，不再有「越界取 DEF」的臂內 RHS
+	// 降糖，故不再需要取出其預設值（原 idxOutDef 計算鏈已刪除）。
 
 	// 類型推斷結果取自語義副表（Resolver pass 寫入 p.sem），不再依賴解析期快照。
 	// Use function-scoped lookup (curFuncName) to avoid cross-function type
@@ -3768,7 +3426,6 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	prep.baseName = baseName
 	prep.placeWriteUsed = placeWriteUsed
 	prep.anyArmValueCtx = anyArmValueCtx
-	prep.idxOutDef = idxOutDef
 	prep.matchedVarType = matchedVarType
 	prep.isEnumType = isEnumType
 	prep.enumVariants = enumVariants
@@ -3822,7 +3479,6 @@ func (p *Parser) rewriteSubjectArm(prep *subjectMatchPrep, arm *MatchArm) {
 	anyArmValueCtx := prep.anyArmValueCtx
 	origMatched := prep.origMatched
 	baseName := prep.baseName
-	idxOutDef := prep.idxOutDef
 	placeWriteUsed := prep.placeWriteUsed
 
 	var armType string
@@ -3953,7 +3609,7 @@ func (p *Parser) rewriteSubjectArm(prep *subjectMatchPrep, arm *MatchArm) {
 		if idx, ok := origMatched.(*IndexExpression); ok {
 			writeInBounds = p.sem.IndexIsInBounds(idx)
 		}
-		arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds, idxOutDef)
+		arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds)
 	}
 	if armType != "" {
 		// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
@@ -4701,11 +4357,11 @@ func itAssignParts(s Statement) (Expression, bool) {
 // Nested matches — already lowered into RTBareMatch-flagged IfExpressions by
 // the time this runs — are skipped: their `it` belongs to the inner match.
 // User-written if/for blocks are descended into.
-func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool, idxOutDef *AnnotationValue) *BlockStatement {
+func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) *BlockStatement {
 	if body == nil || baseName == "" || idxTempName == "" {
 		return body
 	}
-	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef)
+	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds)
 	if !changed {
 		return body // nothing rewritten
 	}
@@ -4716,25 +4372,36 @@ func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, bas
 	return nb
 }
 
-func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool, idxOutDef *AnnotationValue) ([]Statement, bool) {
+func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) ([]Statement, bool) {
 	changed := false
 	out := make([]Statement, 0, len(stmts)+2)
 	for _, s := range stmts {
 		if val, ok := itAssignParts(s); ok {
-			// D9 place-write + `#{index-out=DEF}`：舊 `x = v[i]` 寫法下註解作用於
-			// 整條陳述的全部下标读取（RHS 读取亦降為 u64，越界取 DEF）。把註解帶入
-			// 臂體後，此處先將 RHS 裡的每個安全索引读取（如 `it = rotr64(v[d]^v[a],32)`
-			// 的 `v[d]`/`v[a]`）降糖為「option 讀取 + DEF-match」的 u64 暫存，還原
-			// 舊語意；隨後的寫回使用這些 u64 暫存，rotr64 等函式不再收到
-			// 裸 option（消除 fxxoptarg）。糖形態（SkipLowering=true）不走此路徑，
-			// 本函數整體早退，不會誤觸。
+			// D11：`#{index-out=DEF}` 註解已移除，臂內 RHS 不再做「越界取 DEF」
+			// 降糖（desugarIndexOutReads 已刪除）。newVal 直接取原值，後續的
+			// __place_val_ 提升修復與寫回保持不變。
 			newVal := val
-			if idxOutDef != nil {
-				var ctr int
-				if dv, pre := p.desugarIndexOutReads(val, tok, *idxOutDef, &ctr); dv != nil {
-					out = append(out, pre...)
-					newVal = dv
-				}
+			// D11: `it = <value match>`（例如 `ok -> it = a[9]: { ok(it1) -> it1
+			// / -> 0 }`）不能把 SurfaceMatch 直接留在合成 AssignExpression 的
+			// RHS 上。H0 在 expression 位置降糖这种值 match 时會產出 cond/then
+			// 皆空的退化 KIf，導致整條 `it = …` 指派消失，隨後的寫回 store 仍
+			// 讀到 match 之前綁定的原始元素值（用戶可見症狀：寫回靜默失效）。
+			//
+			// 改成已驗證可用的「提升」形狀：先用合成 LetStatement 求值
+			// （`__place_val_L_C = <match>` 與源碼 `t = a[i]: { … }` 同構，
+			// H0 會正確展開），再讓 `it` 從該暫存重綁。暫存名帶陳述座標，
+			// 同一函式內多處 `it = <match>` 不會撞名；`__` 前綴只禁用於
+			// 使用者源碼，編譯器合成名本就沿用 `__idx_` / `__match_subj_`。
+			if _, isValueMatch := newVal.(*SurfaceMatch); isValueMatch {
+				pos := s.Pos()
+				tmpName := fmt.Sprintf("__place_val_%d_%d", pos.Line, pos.Column)
+				out = append(out, &LetStatement{
+					Token:       tok,
+					Name:        &Identifier{Token: tok, Value: tmpName},
+					Value:       newVal,
+					IsSynthetic: true,
+				})
+				newVal = &Identifier{Token: tok, Value: tmpName}
 			}
 			writeIndex := &IndexExpression{
 				Token: tok,
@@ -4790,20 +4457,20 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 		// 已降糖的巢狀 match（RTBareMatch 旗標）整棵跳過——它的 it 屬於內層。
 		switch n := s.(type) {
 		case *BlockStatement:
-			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
+			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 				n.Statements = ns
 				changed = true
 			}
 		case *ExpressionStatement:
 			if ie, ok := n.Expression.(*IfExpression); ok && !p.fmtTrivia.HasRTFlag(ie, RTBareMatch) {
 				if ie.Consequence != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 						ie.Consequence.Statements = ns
 						changed = true
 					}
 				}
 				if ie.Alternative != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 						ie.Alternative.Statements = ns
 						changed = true
 					}
@@ -4811,7 +4478,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			}
 		case *ForStatement:
 			if n.Body != nil {
-				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds, idxOutDef); ch {
+				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
 					n.Body.Statements = ns
 					changed = true
 				}
@@ -4820,160 +4487,6 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 		out = append(out, s)
 	}
 	return out, changed
-}
-
-// desugarIndexOutReads 走訪表達式 expr，把其中每個安全索引读取（base[idx]，
-// isSafeIndexBase 為真）替換為「option 讀取 + #{index-out=DEF}-match」降糖出的
-// u64 暫存，還原舊 `x = v[i]` 寫法下「注解作用到整條陳述全部下标读取」的語意。
-//
-// 用途：D9 place-write（`v[i]: { ok -> it = f(base[j], base[k]) }`）把 RHS 读取
-// 移入 ok 臂體，而 `#{index-out=DEF}` 註解必須隨之作用到這些臂內读取，否則
-// `base[j]` 仍是 ?elem，傳給 `f(..)` 會觸發 fxxoptarg（裸 option 當 T 實參）。
-//
-// 每個被替換的读取被提升為兩條合成陳述（option 讀取 __idx_out + DEF-match 綁定
-// __idx_val_u64），讀點替換為 __idx_val_u64 識別符。DEF-match 的建構複用
-// maybeIndexOutAssign 的讀取模式（ok 臂綁 payload 到 __idx_val，none 臂綁 DEF）；
-// 因為 match 走陳述語境、__idx_val 為普通 u64 區域變數，caller 之後的 __place
-// 寫回直接吃 u64，語意正確。counter 保證同一 expr 內多個读取的暫存命名不撞。
-//
-// 若某读取推不出元素型別（基底型別未知），則放行不降糖（交給下游報錯），不影響
-// 其餘读取。糖形態（SkipLowering=true）整條鏈不會進到此函數。
-func (p *Parser) desugarIndexOutReads(expr Expression, tok lexer.Token, defVal AnnotationValue, counter *int) (Expression, []Statement) {
-	if expr == nil {
-		return nil, nil
-	}
-	switch e := expr.(type) {
-	case *IndexExpression:
-		if p.isSafeIndexBase(e) {
-			elem := p.inferIndexElemType(e)
-			if elem == "" {
-				// 推不出元素型別就放行（交給下游報錯），不做降級。
-				return expr, nil
-			}
-			*counter++
-			outName := fmt.Sprintf("__idx_out_%d_%d_%d", tok.Line, tok.Column, *counter)
-			valName := fmt.Sprintf("__idx_val_%d_%d_%d", tok.Line, tok.Column, *counter)
-			p.sem.SetFuncVarType(p.curFuncName, outName, "?"+elem)
-			p.setVarType(outName, "?"+elem)
-			p.sem.SetFuncVarType(p.curFuncName, valName, elem)
-			p.setVarType(valName, elem)
-			// __idx_out_N = base[idx]（?elem 安全索引）。
-			outStmt := &LetStatement{
-				Token:       tok,
-				Name:        &Identifier{Token: tok, Value: outName},
-				Type:        &NullableType{Token: tok, Type: &NamedType{Token: tok, Value: elem}},
-				Value:       e,
-				IsSynthetic: true,
-			}
-			defLit, errMsg := defaultLiteralFor(tok, elem, defVal)
-			if errMsg != "" {
-				p.saveErrorf("7uy8wmqv", "line %d, column %d: %s", tok.Line, tok.Column, errMsg)
-				return expr, nil
-			}
-			if defLit == nil {
-				defLit = &IntegerLiteral{Token: tok, Value: 0}
-			}
-			// ok 臂：__idx_val = it（payload）；none 臂：__idx_val = DEF（SkipItBinding
-			// 避免 none 臂的 %str-long/nil 型別 it 覆寫 ok 臂元素型別 it）。
-			okArm := MatchArm{
-				Condition:   &Identifier{Token: tok, Value: "ok"},
-				Body:        &BlockStatement{Token: tok, Statements: []Statement{&LetStatement{Token: tok, Name: &Identifier{Token: tok, Value: valName}, Type: &NamedType{Token: tok, Value: elem}, Value: &Identifier{Token: tok, Value: "it"}}}},
-				IsBlockBody: true,
-				Pos:         posFromToken(tok),
-			}
-			noneArm := MatchArm{
-				IsWildcard:    true,
-				Body:          &BlockStatement{Token: tok, Statements: []Statement{&LetStatement{Token: tok, Name: &Identifier{Token: tok, Value: valName}, Type: &NamedType{Token: tok, Value: elem}, Value: defLit}}},
-				IsBlockBody:   true,
-				SkipItBinding: true,
-				Pos:           posFromToken(tok),
-			}
-			sm := &SurfaceMatch{Token: tok, Matched: &Identifier{Token: tok, Value: outName}, Arms: []MatchArm{okArm, noneArm}}
-			lowered := p.desugarSurfaceMatchToIfExpr(sm)
-			if lowered == nil {
-				return expr, nil
-			}
-			// 與 maybeIndexOutAssign 同形：先宣告 __idx_val_N = DEF，再把 match 當
-			// **陳述**發出（兩個臂各自對 __idx_val_N 賦值）。
-			// 不可把 lowered 當成 LetStatement 的右值：臂是 IsBlockBody 語句形態、
-			// 沒有 ValueCtx，放在值語境時整個 if 表達式求值為空 → 讀取恆取 DEF
-			// （place-match 臂內 `it = base[j]` 全變 0，AES 等 std 加解密因此算錯）。
-			preDecl := &LetStatement{
-				Token:       tok,
-				Name:        &Identifier{Token: tok, Value: valName},
-				Type:        &NamedType{Token: tok, Value: elem},
-				Value:       defLit,
-				IsSynthetic: true,
-			}
-			matchStmt := &ExpressionStatement{Token: tok, Expression: lowered}
-			return &Identifier{Token: tok, Value: valName}, []Statement{preDecl, outStmt, matchStmt}
-		}
-		// 遞歸進入索引的左右子表達式（如 `a[b[c]]`）。
-		newLeft, ls := p.desugarIndexOutReads(e.Left, tok, defVal, counter)
-		newIndex, is := p.desugarIndexOutReads(e.Index, tok, defVal, counter)
-		if newLeft != nil || newIndex != nil {
-			ne := *e
-			if newLeft != nil {
-				ne.Left = newLeft
-			}
-			if newIndex != nil {
-				ne.Index = newIndex
-			}
-			return &ne, append(ls, is...)
-		}
-		return expr, nil
-	case *CallExpression:
-		changed := false
-		var pre []Statement
-		args := make([]Expression, 0, len(e.Arguments))
-		for _, a := range e.Arguments {
-			nr, ps := p.desugarIndexOutReads(a, tok, defVal, counter)
-			pre = append(pre, ps...)
-			if nr != nil {
-				args = append(args, nr)
-				changed = true
-			} else {
-				args = append(args, a)
-			}
-		}
-		if changed {
-			ne := *e
-			ne.Arguments = args
-			return &ne, pre
-		}
-		return expr, nil
-	case *InfixExpression:
-		newLeft, ls := p.desugarIndexOutReads(e.Left, tok, defVal, counter)
-		newRight, rs := p.desugarIndexOutReads(e.Right, tok, defVal, counter)
-		if newLeft != nil || newRight != nil {
-			ne := *e
-			if newLeft != nil {
-				ne.Left = newLeft
-			}
-			if newRight != nil {
-				ne.Right = newRight
-			}
-			return &ne, append(ls, rs...)
-		}
-		return expr, nil
-	case *PrefixExpression:
-		nr, ps := p.desugarIndexOutReads(e.Right, tok, defVal, counter)
-		if nr != nil {
-			ne := *e
-			ne.Right = nr
-			return &ne, ps
-		}
-		return expr, nil
-	case *GroupedExpression:
-		nr, ps := p.desugarIndexOutReads(e.Expression, tok, defVal, counter)
-		if nr != nil {
-			ne := *e
-			ne.Expression = nr
-			return &ne, ps
-		}
-		return expr, nil
-	}
-	return expr, nil
 }
 
 // unionElemType 從聯合型別字串中提取 payload（非 err/nil）型別。
@@ -5652,8 +5165,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	//   p = 2
 	//   p ?= lf[p]  ; 舊： preDecl(p=0) → 讀 lf[0] → p = 1（永遠）
 	//               ; 新： 讀 lf[p]（p 的既有值）→ preDecl(p=0) → match 覆寫 p
-	// 注意 `=` 型的自我索引（`p = lf[p]`，帶 `#{index-out}`）走的是另一條降糖
-	// maybeIndexOutAssign，同類修正見該函式內「已宣告」查詢的說明。
+	// 自我索引的 `?=` 解箱（`p ?= lf[p]`）與 `=` 型寫法同受此位置約束。
 	// 移到之後仍滿足原目的：match 的兩條臂都會寫 v，預宣告的零值從不被讀到，
 	// 它只負責「建立 slot / 讓臂外可見」這一件事。
 	var preDecls []Statement

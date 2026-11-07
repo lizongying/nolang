@@ -447,137 +447,6 @@ func (p *Parser) applyLineOverflowAnnotations(block *BlockStatement) {
 	}
 }
 
-// applyLineIndexOutAnnotations 實作 `#{index-out = ...}` 的「行注解」語意：一個
-// 獨立的 AnnotationStatement 只把其 index-out 條目套用到**緊跟其後的下一條陳述**
-// （若該陳述尚未自帶 index-out 註解），不向區塊其餘陳述或巢狀區塊傳播。
-//
-// 之所以需要此 pass：`#{index-out=zero}` 緊跟的陳述可能以無法被
-// parseAnnotationStatement 附加的 token 開頭（如 `return arr[i]` 以 RETURN 開頭、
-// `.[i] = x` 以 DOT 開頭），此時註解會退化成獨立 AnnotationStatement，而其
-// index-out 條目不會出現在目標陳述的 side-table 上，desugar 讀取 AnnotationsOf
-// 就會漏掉、把已標註的越界索引誤報為未處理。本 pass 把該條目合併到下一條陳述
-// 的 RawAnnotations（供 ResolveProgram 拷貝進 Annotations，desugar 即可找到）。
-// 與 applyLineOverflowAnnotations 一致：index-out 條目寫入 side-table，而非註解行
-// 欄位——formatter 的 attachedAnnotations 已過濾 index-out 鍵，不會把同一行
-// 既以獨立註解、又以附加註解形式各印一次（雙印，破壞冪等）。
-func (p *Parser) applyLineIndexOutAnnotations(block *BlockStatement) {
-	if block == nil {
-		return
-	}
-	// 把 index-out 條目合併進 for 迴圈體的每一條陳述（desugar 只對 body 內的
-	// LetStatement / AssignExpression / ExpressionStatement 生效，不讀 for 本身）。
-	propagateToForBody := func(fs *ForStatement, entries []*AnnotationEntry) {
-		if fs == nil || fs.Body == nil {
-			return
-		}
-		// 記錄 for 體「自帶」的 index-out（避免重複套用）。
-		selfOut := p.indexOutEntries(p.sem.RawAnnotationsOf(fs))
-		for _, bs := range fs.Body.Statements {
-			if bs == nil {
-				continue
-			}
-			if p.indexOutEntries(p.sem.RawAnnotationsOf(bs)) == nil {
-				p.mergeIndexOutAnnotations(bs, entries)
-			}
-		}
-		_ = selfOut
-	}
-	apply := func(stmts []Statement) {
-		for i, s := range stmts {
-			as, ok := s.(*AnnotationStatement)
-			if !ok {
-				continue
-			}
-			entries := p.indexOutEntries(as.Entries)
-			if entries == nil {
-				continue
-			}
-			for j := i + 1; j < len(stmts); j++ {
-				next := stmts[j]
-				if next == nil {
-					continue
-				}
-				// 連續的獨立註解：以最後一條為準（前一條不覆蓋後一條的目標）。
-				if _, isAnn := next.(*AnnotationStatement); isAnn {
-					break
-				}
-				// 行注解語意：index-out 條目合併進下一條陳述的 side-table，
-				// 供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。
-				// 若下一條陳述已自帶 index-out，不覆蓋（避免重複套用）。
-				if p.indexOutEntries(p.sem.RawAnnotationsOf(next)) == nil {
-					p.mergeIndexOutAnnotations(next, entries)
-				}
-				// D9 place-write：`#{index-out=DEF}` 套用到 `v[i]: { ok -> it = ... }`
-				// 時，下一條陳述是 ExpressionStatement 包裹的 SurfaceMatch，desugar
-				// 主體是內層 SurfaceMatch。把 index-out 條目也合併進內層 sm，使
-				// buildMatchDesugar / rewriteItPlaceWrites 能直接從 sm 讀到註解、
-				// 還原「注解作用到臂內 RHS 下标读取」的舊語意（無須依賴 walk 從外層
-				// ExpressionStatement 轉移，且對 desugarSurfaceMatch 克隆 sm 的路徑
-				// 也生效，因為此處直接寫在原始 sm 上）。
-				if es, ok := next.(*ExpressionStatement); ok {
-					if sm, ok2 := es.Expression.(*SurfaceMatch); ok2 {
-						if p.indexOutEntries(p.sem.RawAnnotationsOf(sm)) == nil {
-							p.mergeIndexOutAnnotations(sm, entries)
-						}
-					}
-				}
-				// 若下一條是 for 迴圈（含 `k <- [0..N):` 計數迴圈），其體內的
-				// 索引讀取 `buf[base+k] = data[off+base+k]` 才是真正需要降級的
-				// 目標。desugar 只對 LetStatement / AssignExpression / ExpressionStatement
-				// 生效，不會讀取 ForStatement 本身的註解，故把 index-out 條目
-				// 一併合併進迴圈體的每條陳述，使其體內索引讀取能被正確處理。
-				if fs, ok := next.(*ForStatement); ok {
-					propagateToForBody(fs, entries)
-				}
-				break
-			}
-		}
-		// 備用路徑：parseAnnotationStatement 對 IDENT 開頭的 for（如 `i <- [0..]:`）
-		// 會把 index-out 直接 attachAnnotations(for, entries) 並回傳 for，註解陳述
-		// 被消費、不再出現於 block.Statements。此處補掃描「已自帶 index-out 的 for」，
-		// 把註解傳播進其體，使其體內索引讀取能被 desugar 處理（否則越界索引被誤報
-		// 未處理）。
-		for _, s := range stmts {
-			if fs, ok := s.(*ForStatement); ok {
-				if entries := p.indexOutEntries(p.sem.RawAnnotationsOf(fs)); entries != nil {
-					for _, bs := range fs.Body.Statements {
-						if bs == nil {
-							continue
-						}
-						if p.indexOutEntries(p.sem.RawAnnotationsOf(bs)) == nil {
-							p.mergeIndexOutAnnotations(bs, entries)
-						}
-					}
-				}
-			}
-		}
-	}
-	apply(block.Statements)
-	// 巢狀：ForStatement 體各自處理。
-	for _, s := range block.Statements {
-		if v, ok := s.(*ForStatement); ok && v.Body != nil {
-			apply(v.Body.Statements)
-		}
-	}
-}
-
-// indexOutEntries 從一組註解條目中挑出 index-out 鍵的條目。回傳 nil 表示無 index-out 註解。
-func (p *Parser) indexOutEntries(entries []*AnnotationEntry) []*AnnotationEntry {
-	if len(entries) == 0 {
-		return nil
-	}
-	var out []*AnnotationEntry
-	for _, e := range entries {
-		if e.Key == "index-out" {
-			out = append(out, e)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 // InlineAnnotationValue 取出 `#{inline}` 註解的布爾值，三種寫法等價關係為：
 //
 //	#{inline}        present=true, value=true   —— 簡寫，等於 inline=true
@@ -834,27 +703,6 @@ func (p *Parser) mergeAnnotations(n Node, entries []*AnnotationEntry) {
 	}
 }
 
-// mergeIndexOutAnnotations 把上一行獨立 `#{index-out=DEF}` 的條目複製進目標陳述的
-// side-table，供 desugar（maybeIndexOutAssign / maybeIndexOutReturn）辨識。副本一律
-// 標記 Propagated=true，讓 formatter 的 attachedAnnotations 跳過它們——否則同一行
-// index-out 會被同時印到每個受影響的陳述（for 迴圈體每條、或獨立節點的下一條）上方，
-// 造成雙印且非冪等。克隆條目避免污染來源節點自身的 Entries（同為 index-out 顯示用）。
-func (p *Parser) mergeIndexOutAnnotations(n Node, entries []*AnnotationEntry) {
-	if isNil(n) || len(entries) == 0 {
-		return
-	}
-	copies := make([]*AnnotationEntry, 0, len(entries))
-	for _, e := range entries {
-		if e == nil {
-			continue
-		}
-		c := *e
-		c.Propagated = true
-		copies = append(copies, &c)
-	}
-	p.mergeAnnotations(n, copies)
-}
-
 // dedupeAnnotationEntries 依 key 去重，同名鍵只保留最後一次出現的條目
 // （後到的 value 覆寫先前的）。例如 [index-out=zero, index-out=1] 收斂成
 // [index-out=1]。這避免同一陳述上寫多個同名註解時輸出
@@ -1016,6 +864,13 @@ func (p *Parser) parseAnnotationBody() []*AnnotationEntry {
 
 		keyTok := p.currentToken
 		key := p.currentToken.Literal
+		// D11：#{index-out=DEF} 已徹底移除。arr/vec/slice 索引 a[i] 與 map 索引
+		// m[k] 恆回傳 ?T，編譯器不再提供越界預設值。此處是前置／尾隨／連續多組
+		// 註解的共用入口，對任何殘留的 index-out 鍵一律直接報錯；請改以值 match、
+		// `?=`、place/block match 或合法 ?T 綁定顯式消費該 option。
+		if key == "index-out" {
+			p.saveErrorf("idxourmv", "line %d, column %d: D11 removed the `#{index-out=DEF}` annotation; `a[i]`/`m[k]` now always return `?T`. Consume the option explicitly with a value match, `?=`, a place/block match, or a legal `?T` binding instead.", keyTok.Line, keyTok.Column)
+		}
 		p.nextToken() // skip key
 
 		// 檢查是否有 = value
@@ -1069,7 +924,7 @@ func (p *Parser) parseAnnotationValue() AnnotationValue {
 	}
 	if p.currentToken.Type == lexer.LBRACKET {
 		openTok := p.currentToken
-		// 空陣列 `[]`（複合型別越界預設值 `#{index-out = []}` 的寫法）：範圍探測
+		// 空陣列 `[]`（以空陣列作值的註解，例如 `#{tags = []}`）：範圍探測
 		// 會先呼叫 parseAnnotationSimpleValue 去試讀第一個元素，遇到 `]` 就直接
 		// 報 "expected annotation value, got RBRACKET"，即使隨後回溯、由
 		// parseAnnotationArray 正確解析也留下了一條誤報錯誤。`[` 後緊接 `]` 時
@@ -1167,8 +1022,7 @@ func (p *Parser) parseAnnotationSimpleValue() AnnotationValue {
 		p.nextToken()
 		return val
 	case lexer.NIL:
-		// `#{index-out = nil}`：非标量元素（切片/陣列/映射/結構體）的越界預設值
-		// 用零值（空容器 / 零結構體）表示。lowering.defaultLiteralFor 據此產生字面量。
+		// `nil` 註解值：以 AnnotationIdentValue 承載（供需要 nil 值的泛型註解使用）。
 		val := &AnnotationIdentValue{
 			Token: p.currentToken,
 			Value: "nil",

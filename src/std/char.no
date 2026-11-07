@@ -289,7 +289,12 @@ char.to-txt = () (out txt) {
     out = with-len(m)
     j <- [0..m): {
 
-        #{index-out=zero}
-        out.set-byte(j, tmp[j])
+        ixout293c25 = tmp[j]: {
+            ok -> it
+
+            -> _
+        }
+
+        out.set-byte(j, ixout293c25)
     }
 }

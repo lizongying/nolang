@@ -39,8 +39,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[0]) & mask
+    ixout43c41 = s[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout43c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -49,8 +54,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[1]) & mask
+    ixout53c41 = s[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout53c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -59,8 +69,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[2]) & mask
+    ixout63c41 = s[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout63c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -69,8 +84,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[3]) & mask
+    ixout73c41 = s[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout73c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -79,8 +99,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[4]) & mask
+    ixout83c41 = s[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout83c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -89,8 +114,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[5]) & mask
+    ixout93c41 = s[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout93c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -99,8 +129,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[6]) & mask
+    ixout103c41 = s[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout103c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -109,8 +144,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[7]) & mask
+    ixout113c41 = s[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout113c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -119,8 +159,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[8]) & mask
+    ixout123c41 = s[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout123c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -129,8 +174,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[9]) & mask
+    ixout133c41 = s[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout133c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -139,8 +189,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[10]) & mask
+    ixout143c41 = s[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout143c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -149,8 +204,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[11]) & mask
+    ixout153c41 = s[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout153c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -159,8 +219,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[12]) & mask
+    ixout163c41 = s[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout163c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -169,8 +234,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[13]) & mask
+    ixout173c41 = s[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout173c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -179,8 +249,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[14]) & mask
+    ixout183c41 = s[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout183c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -189,8 +264,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     f = (b & c) | ((mask ^ b) & d)
     temp = ((a << 5) | (a >> 27)) & mask
 
-    #{index-out=zero}
-    temp = (temp + f + e + 1518500249 + s[15]) & mask
+    ixout193c41 = s[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    temp = (temp + f + e + 1518500249 + ixout193c41) & mask
     e = d
     d = c
     c = ((b << 30) | (b >> 2)) & mask
@@ -200,8 +280,31 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     ; 第 16-19 輪 — 擴展訊息，rotl(w_{t-3} ^ w_{t-8} ^ w_{t-14} ^ w_{t-16}, 1)
 
     ; w16 = rotl(w13 ^ w8 ^ w2 ^ w0, 1)
-    #{index-out=zero}
-    w = s[13] ^ s[8] ^ s[2] ^ s[0]
+    ixout204c9 = s[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout204c17 = s[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout204c24 = s[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout204c31 = s[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = ixout204c9 ^ ixout204c17 ^ ixout204c24 ^ ixout204c31
     w = ((w << 1) | (w >> 31)) & mask
     w16 = w
     f = (b & c) | ((mask ^ b) & d)
@@ -215,8 +318,31 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w17 = rotl(w14 ^ w9 ^ w3 ^ w1, 1)
-    #{index-out=zero}
-    w = s[14] ^ s[9] ^ s[3] ^ s[1]
+    ixout219c9 = s[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout219c17 = s[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout219c24 = s[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout219c31 = s[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = ixout219c9 ^ ixout219c17 ^ ixout219c24 ^ ixout219c31
     w = ((w << 1) | (w >> 31)) & mask
     w17 = w
     f = (b & c) | ((mask ^ b) & d)
@@ -230,8 +356,31 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w18 = rotl(w15 ^ w10 ^ w4 ^ w2, 1)
-    #{index-out=zero}
-    w = s[15] ^ s[10] ^ s[4] ^ s[2]
+    ixout234c9 = s[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout234c17 = s[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout234c25 = s[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout234c32 = s[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = ixout234c9 ^ ixout234c17 ^ ixout234c25 ^ ixout234c32
     w = ((w << 1) | (w >> 31)) & mask
     w18 = w
     f = (b & c) | ((mask ^ b) & d)
@@ -245,8 +394,25 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w19 = rotl(w16 ^ w11 ^ w5 ^ w3, 1)
-    #{index-out=zero}
-    w = w16 ^ s[11] ^ s[5] ^ s[3]
+    ixout249c15 = s[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout249c23 = s[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout249c30 = s[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w16 ^ ixout249c15 ^ ixout249c23 ^ ixout249c30
     w = ((w << 1) | (w >> 31)) & mask
     w19 = w
     f = (b & c) | ((mask ^ b) & d)
@@ -263,8 +429,25 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     ; f = b ^ c ^ d
 
     ; w20 = rotl(w17 ^ w12 ^ w6 ^ w4, 1)
-    #{index-out=zero}
-    w = w17 ^ s[12] ^ s[6] ^ s[4]
+    ixout267c15 = s[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout267c23 = s[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout267c30 = s[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w17 ^ ixout267c15 ^ ixout267c23 ^ ixout267c30
     w = ((w << 1) | (w >> 31)) & mask
     w20 = w
     f = b ^ c ^ d
@@ -278,8 +461,25 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w21 = rotl(w18 ^ w13 ^ w7 ^ w5, 1)
-    #{index-out=zero}
-    w = w18 ^ s[13] ^ s[7] ^ s[5]
+    ixout282c15 = s[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout282c23 = s[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout282c30 = s[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w18 ^ ixout282c15 ^ ixout282c23 ^ ixout282c30
     w = ((w << 1) | (w >> 31)) & mask
     w21 = w
     f = b ^ c ^ d
@@ -293,8 +493,25 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w22 = rotl(w19 ^ w14 ^ w8 ^ w6, 1)
-    #{index-out=zero}
-    w = w19 ^ s[14] ^ s[8] ^ s[6]
+    ixout297c15 = s[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout297c23 = s[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout297c30 = s[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w19 ^ ixout297c15 ^ ixout297c23 ^ ixout297c30
     w = ((w << 1) | (w >> 31)) & mask
     w22 = w
     f = b ^ c ^ d
@@ -308,8 +525,25 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w23 = rotl(w20 ^ w15 ^ w9 ^ w7, 1)
-    #{index-out=zero}
-    w = w20 ^ s[15] ^ s[9] ^ s[7]
+    ixout312c15 = s[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout312c23 = s[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout312c30 = s[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w20 ^ ixout312c15 ^ ixout312c23 ^ ixout312c30
     w = ((w << 1) | (w >> 31)) & mask
     w23 = w
     f = b ^ c ^ d
@@ -323,8 +557,19 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w24 = rotl(w21 ^ w16 ^ w10 ^ w8, 1)
-    #{index-out=zero}
-    w = w21 ^ w16 ^ s[10] ^ s[8]
+    ixout327c21 = s[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout327c29 = s[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w21 ^ w16 ^ ixout327c21 ^ ixout327c29
     w = ((w << 1) | (w >> 31)) & mask
     w24 = w
     f = b ^ c ^ d
@@ -338,8 +583,19 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w25 = rotl(w22 ^ w17 ^ w11 ^ w9, 1)
-    #{index-out=zero}
-    w = w22 ^ w17 ^ s[11] ^ s[9]
+    ixout342c21 = s[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout342c29 = s[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w22 ^ w17 ^ ixout342c21 ^ ixout342c29
     w = ((w << 1) | (w >> 31)) & mask
     w25 = w
     f = b ^ c ^ d
@@ -353,8 +609,19 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w26 = rotl(w23 ^ w18 ^ w12 ^ w10, 1)
-    #{index-out=zero}
-    w = w23 ^ w18 ^ s[12] ^ s[10]
+    ixout357c21 = s[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout357c29 = s[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w23 ^ w18 ^ ixout357c21 ^ ixout357c29
     w = ((w << 1) | (w >> 31)) & mask
     w26 = w
     f = b ^ c ^ d
@@ -368,8 +635,19 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w27 = rotl(w24 ^ w19 ^ w13 ^ w11, 1)
-    #{index-out=zero}
-    w = w24 ^ w19 ^ s[13] ^ s[11]
+    ixout372c21 = s[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout372c29 = s[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w24 ^ w19 ^ ixout372c21 ^ ixout372c29
     w = ((w << 1) | (w >> 31)) & mask
     w27 = w
     f = b ^ c ^ d
@@ -383,8 +661,19 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w28 = rotl(w25 ^ w20 ^ w14 ^ w12, 1)
-    #{index-out=zero}
-    w = w25 ^ w20 ^ s[14] ^ s[12]
+    ixout387c21 = s[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout387c29 = s[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w25 ^ w20 ^ ixout387c21 ^ ixout387c29
     w = ((w << 1) | (w >> 31)) & mask
     w28 = w
     f = b ^ c ^ d
@@ -398,8 +687,19 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w29 = rotl(w26 ^ w21 ^ w15 ^ w13, 1)
-    #{index-out=zero}
-    w = w26 ^ w21 ^ s[15] ^ s[13]
+    ixout402c21 = s[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout402c29 = s[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w26 ^ w21 ^ ixout402c21 ^ ixout402c29
     w = ((w << 1) | (w >> 31)) & mask
     w29 = w
     f = b ^ c ^ d
@@ -413,8 +713,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w30 = rotl(w27 ^ w22 ^ w16 ^ w14, 1)
-    #{index-out=zero}
-    w = w27 ^ w22 ^ w16 ^ s[14]
+    ixout417c27 = s[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w27 ^ w22 ^ w16 ^ ixout417c27
     w = ((w << 1) | (w >> 31)) & mask
     w30 = w
     f = b ^ c ^ d
@@ -428,8 +733,13 @@ sha1-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32) (r0 u32, r1 u32, 
     a = temp
 
     ; w31 = rotl(w28 ^ w23 ^ w17 ^ w15, 1)
-    #{index-out=zero}
-    w = w28 ^ w23 ^ w17 ^ s[15]
+    ixout432c27 = s[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    w = w28 ^ w23 ^ w17 ^ ixout432c27
     w = ((w << 1) | (w >> 31)) & mask
     w31 = w
     f = b ^ c ^ d
@@ -1172,9 +1482,14 @@ sha1 = (data []byte) (hash [20]byte) {
     ; 複製原始資料
     i <- [0..dlen): {
 
-        #{index-out=zero}
+        ixout1177c24 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
         padded[i]: {
-            ok -> it = data[i]
+            ok -> it = ixout1177c24
 
             -> _
         }
@@ -1217,8 +1532,35 @@ sha1 = (data []byte) (hash [20]byte) {
         ; 注意：必須用普通賦值；option 寫入 ok 分支主體內讀 []byte 會被編譯器錯算 GEP（+0x100）→ digest 錯。
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
-            block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
+            #{overflow=wrap}
+            ixout1221c25 = padded[offset + i * 4]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            ixout1221c58 = padded[offset + i * 4 + 1]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            ixout1221c95 = padded[offset + i * 4 + 2]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            ixout1221c130 = padded[offset + i * 4 + 3]: {
+                ok -> it
+
+                -> _
+            }
+
+            block[i] = (ixout1221c25 << 24) | (ixout1221c58 << 16) | (ixout1221c95 << 8) | ixout1221c130
         }
         h0, h1, h2, h3, h4 = sha1-block(block, h0, h1, h2, h3, h4)
 
@@ -1280,16 +1622,28 @@ sha1-hex = (data []byte) (hex str) {
 
     i <- [0..20): {
 
+        ixout1627c39 = hash[i]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(hash[i] >> 4) & 15]
+            ok -> it = hex-chars[(ixout1627c39 >> 4) & 15]
+
+            -> _
+        }
+
+        ixout1634c38 = hash[i]: {
+            ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[hash[i] & 15]
+            ok -> it = hex-chars[ixout1634c38 & 15]
 
             -> _
         }

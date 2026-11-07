@@ -2,6 +2,10 @@
 
 ## 未發布
 
+- **BREAKING(D11)**: 废弃并移除 `#{index-out=DEF}` 注解 —— `a[i]` 恒返回 `?T`，只能以 match 或 `?=` 显式消费；残留注解报专用错误；显式 plain 型别逃生口 `v i64 = a[i]` 同时废除，把 `?T` 当普通值用（`crc ^ s[i]`）升级为阻断 `no build` 的硬错误。全仓 90 个被跟踪 `.no` 文件 / 1029 行注解站点一次性迁移；`no fmt --fix=index-out` 作为迁移工具随 D11 退役
+- feat(lang): `?=` 简写在「函式有 `?T` 结果参数」**或**「陈述位于陈述层级块 match 主体内」两种情形之一即可使用；`err -> _` / `-> _` 两臂是无 `?T` 结果参数函式的标准兜底，AGENTS.md / syntax 指南 / nolang-syntax skill 已同步
+- docs(design): `option-unified.md` 加 D11 取代横幅，D4 / D7 / D9 / D10 与 map 规则继续有效
+- feat(parser): 块 match 的 `it = <值 match>` 具备 place-write 写回语义（修 `rewriteItPlaceWrites` 漏判）
 - feat(parser): add the block form of match subject `{ body }: { arms }` — captures `?=` failures inside the body so functions without a `?T` result param can handle errors locally; nearest (innermost) block match wins, one failure stops the whole body, standard three-state exhaustiveness applies
 - feat(fmt): round-trip `}: {` verbatim and keep the sugar AST pristine across H0 expansion
 - docs(lang): document the three match subject forms (value / expression / block) in the syntax guide, AGENTS.md and the nolang-syntax skill

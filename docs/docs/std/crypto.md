@@ -32,13 +32,19 @@ des.des-enc(plain, 8, key, out)        ; 加密 8-byte 區塊
 des.des-dec(cipher, 8, key, out)       ; 解密 8-byte 區塊
 ```
 
-### crypto/rsa — RSA 模冪運算
+### crypto/rsa — RSA 加解密（多精度模冪）
 
 ```no
-rsa.rsa-modpow(base, bn, exp, en, mod, mn, result, rn)
+#{fmt-skip}
+; 高階位元組介面（推薦）：位元組串按大端無符號整數解釋，輸出為最短大端編碼
+cipher = rsa.rsa-encrypt-bytes(msg, pub-exp, mod)     ; c = m^e mod n
+plain  = rsa.rsa-decrypt-bytes(cipher, priv-exp, mod) ; m = c^d mod n
+
+; 低階 limb 介面（base 2^32 little-endian，手動管理 limb 計數）
+result, rn = rsa.rsa-modpow(base, bn, exp, en, mod, mn)
 ```
 
-不包含金鑰生成，支援 1024~4096-bit。
+不包含金鑰生成（呼叫者自行提供 n、e、d），支援 1024~4096-bit。limb 包裝/大數工具等底線開頭符號為模組內部實作，跨模組禁用（private_std 守衛報 ERROR）。
 
 ### crypto/md5 — MD5（128-bit）
 

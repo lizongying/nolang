@@ -120,7 +120,7 @@ LLVM-Toolchain nicht erkannt
   '379z4njd': '\'%s\' ist in diesem Gültigkeitsbereich bereits deklariert'
   '39o3yr8x': 'nicht unterstützte sum-Dateiversion %q (erwartet %s)'
   '3aeomnek': 'setfield-Slot'
-  '3b9bxfnt': 'Wert %s kann nicht auf Element %s im Array \'%s\'%s zugewiesen werden'
+  '3b9bxfnt': 'Wert %s kann nicht auf Element %s im Array \'%s\' zugewiesen werden'
   '3bl2ts85': 'JS-Build-Fehler: %w'
   '3ei0a0o0': 'Ausdruck erwartet, stattdessen nil erhalten'
   '3fulbc9g': 'die Funktion %s rekursioniert in ein fs.list-dir/fs.read-dir-Ergebnis oder löscht daraus, ohne "." und ".." zu filtern; beide Aufrufe geben die POSIX-readdir-Einträge "." / ".." zurück, und das Rekursionieren in ".." entweicht nach oben und kann den gesamten Elternbaum löschen. Verwenden Sie fs.dir-entries (bereits gefiltert), oder überspringen Sie "." / ".." vor der Rekursion explizit.'
@@ -279,7 +279,6 @@ Fehler beim Anlegen von tests: %v
   '7t8ke5g1': 'cancelled: kein Ergebnis-Slot'
   '7tcn8wox': 'Beispiele:'
   '7usot77o': 'automatische Fixes für eine Problemklasse anwenden: \'overflow\' (fügt #{overflow=wrap} zu nicht annotierter Ganzzahlarithmetik hinzu), \'redundant\' (entfernt Typannotationen, die dem abgeleiteten Typ entsprechen, z. B. `x str = \'\'` -> `x = \'\'`), \'match\' (ergänzt fehlende nil/err-Arme bei nicht erschöpfenden option-matches) oder \'unwrap\' (konsumiert option-Bindings, die nie weitergereicht oder entpackt werden: `x ?= expr`, wenn die Funktion bereits ein ?T-Ergebnis hat, sonst `x-opt = expr` plus Statement-match `x-opt: { ok -> x = it -> }` in den Folgezeilen) oder \'main\' (lässt den Top-Level-Wrapper `main = () { ... }` weg und hebt die Anweisungen nach oben; entfällt, wenn main Parameter/Rückgabewerte oder ein direktes return hat), oder \'index-out\' (baut #{index-out=DEF}-Lesezugriffe zu expliziten matches aus)'
-  '7uy8wmqv': '%s'
   '7zfvvuin': 'Keine Probleme gefunden.'
   '802t452i': 'builtin %s: option-Ergebnis in %s-Ziel'
   '81b2ea3o': '\'(\' in extern-Deklaration erwartet, stattdessen %s erhalten'
@@ -376,7 +375,6 @@ Fehler beim Ermitteln des neuesten Releases: %v
   'ap403a8m': 'net-recv: Datenzeiger von Argument 1 kann nicht genommen werden'
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       inklusive #{...}-Annotationen'
-  'au6g7ji7': 'Parser-Fehler: %s'
   'awc98kqh': '  no fmt -md README.md        Nolang-Blöcke in einer Markdown-Datei formatieren'
   'axj3m1pb': 'unerwartetes \'as\' am Ausdruckanfang'
   'axtpo500': 'win-find-first-file: Pfad kann nicht als C-Zeichenkette marshalled werden'
@@ -521,12 +519,14 @@ Leeren fehlgeschlagen: %v
 
 `
   'fh3ukes8': 'net-set-recv-timeout: kein Ergebnis-Slot'
+  'fixlabel': 'fix:'
   'fk1sb6ss': 'syslog: auf windows nicht unterstützt'
   'flfh2ueu': 'ungültiges Installationsziel %q: Repository muss <host>/<owner>/<repo> oder <owner>/<repo> sein'
   'fs4qotyl': 'zip-Archiv wird extrahiert: %w'
   'fu1ow141': 'Keine Testdateien gefunden in '
   'fvk7yu8c': 'Ganzzahlwert nach \'=\' erwartet, %s erhalten'
   'fw8rehzu': 'der leere `->`-Auffangzweig ist unerreichbar: der Compiler kann beweisen, dass \'%s\' immer ok ist (Literal-Arithmetik kann nicht überlaufen oder durch null teilen, oder der Index ist nachweislich im Bereich). Der Zweig muss dennoch für die Vollständigkeit des match bleiben, und ihn zu behalten bedeutet, dass eine spätere semantische Änderung keine Syntax-Bearbeitung erfordert.'
+  'fxapply1': 'Apply fix'
   'fxc0tilj': 'Das AST des aktuellen Pakets als gob + zip packen.'
   'fxdzclp6': 'Feld \'%s\' kann im struct-Typ \'%s\' nicht zugewiesen werden: instantiieren Sie zuerst (z. B. `%s0 = %s {}`)'
   'fxhkwtho': 'read-file: benötigt Pfad'
@@ -621,7 +621,8 @@ Fehler beim Anlegen des Verzeichnisses: %v
 AST-Cache-Verzeichnis: %s
 
 `
-  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
+  'idxbruse': 'Der nackte Index `arr[i]`/`m[k]` liefert `?T` (D11 hat die Annotation `#{index-out=DEF}` entfernt), wird hier aber als einfacher Wert ohne Auspacken verwendet. Behandle die Option explizit mit einem Wert-match, `?=`, einem Platz- oder Block-match oder einer zulässigen `?T`-Bindung.'
+  'idxourmv': 'D11 hat die Annotation `#{index-out=DEF}` entfernt; `a[i]`/`m[k]` liefern jetzt immer `?T`. Packe die Option stattdessen explizit aus: mit einem Wert-match, `?=`, einem Platz- oder Block-match oder einer zulässigen `?T`-Bindung.'
   'ifmrg001': 'Schnittstelle \'%s\': zusammengeführte Methode \'%s\' hat konfliktierende Signaturen (\'%s.%s\', \'%s.%s\')'
   'ihr1vm8m': 'arr.zero: benötigt Empfänger'
   'iky4xsx4': 'Methode \'%s.%s\' hat %d Ergebnis(se), die Schnittstelle erwartet %d'
@@ -756,7 +757,7 @@ Fehler beim Schreiben von utils.no: %v
   'mi13i3vc': 'schließende Klammer erwartet, stattdessen %s erhalten'
   'mimqybn2': 'vec.pop: benötigt Empfänger'
   'mkpo3f8h': 'utf8-at-Ziel-Slot'
-  'mlm7xpcj': '`%s %s= %s` ist veraltet; die umgebende Funktion hat ein option-Ergebnis, daher schreibt `no fmt` es beim Speichern zu `%s ?= %s %s %s` um (die rechte Seite einer zusammengesetzten Zuweisung ist jetzt `?T` und durchläuft `?=`, um sie zu entpacken oder zu propagieren)'
+  'mlm7xpcj': '`%s %s= %s` ist veraltet; die umgebende Funktion hat ein option-Ergebnis, daher schreibt `no fmt` es beim Speichern in die `?=`-Form um (die rechte Seite einer zusammengesetzten Zuweisung ist jetzt `?T` und wird über `?=` entpackt oder weitergegeben)'
   'mlyz11mg': 'Mit --js-runtime <cmd> die JS-Laufzeit für `no run --js` wählen (node, bun, deno, ...).'
   'mmcrtoio': 'Aufruf: no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': '\':\' nach dem struct-Feldnamen erwartet, stattdessen %s erhalten'
@@ -836,16 +837,9 @@ Zig-Compiler nicht erkannt
   'ol21t36r': '  no run --js --js-runtime bun main.no     ebenso, aber mit bun (node, bun, deno, ...)'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': 'der Divisor einer Ganzzahl-Division oder eines Modulo ist die Literal-Konstante 0, was in LLVM undefiniertes Verhalten ist (sdiv/srem durch null) und unvorhersehbare Ergebnisse erzeugt. Fügen Sie eine Laufzeit-Nullprüfung hinzu, oder lassen Sie die Funktion den Fehler als option zurückgeben.'
-  'oraub2m9': `
-`%s %s= %s` wird nicht unterstützt: ein Index-Lesevorgang gibt ein option zurück (nil außerhalb des Bereichs), daher würde eine zusammengesetzte Zuweisung den Index zweimal auswerten und den Fehler verwerfen. Schreiben Sie ihn als um (das `it` des ok-Zweigs ist der Element-Slot, lesbar und schreibbar):
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   oder `%s ?= %s %s %s` (propagiert den Fehler; erfordert, dass die umgebende Funktion einen option-Ergebnisparameter hat)
-`
+  'oraub2m9': '`%s %s= %s` wird nicht unterstützt: ein Index-Lesevorgang gibt ein option zurück (nil außerhalb des Bereichs), daher würde eine zusammengesetzte Zuweisung den Index zweimal auswerten und den Fehler verwerfen'
   'orjs902d': '\'switch/case/default\' ist veraltet, verwenden Sie stattdessen \'x: { 1-> ... }\''
-  'os0j8ix4': 'Wert %s kann nicht auf Element %s im Array \'%s\'%s zugewiesen werden'
+  'os0j8ix4': 'Wert %s kann nicht auf Element %s im Array \'%s\' zugewiesen werden'
   'osrb7a78': 'move-Slot'
   'oswu0as1': 'Doppelpunkt im bedingten Ausdruck erwartet, stattdessen %s erhalten'
   'oxgtqeo0': 'write-file: kein Ergebnis-Slot'

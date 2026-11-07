@@ -413,8 +413,14 @@ tar-builder.add-file = (name str, content []byte) {
     sz = len(content)
     i <- [0..sz): {
 
-        #{index-out=zero, overflow=wrap}
-        .buf[.pos + i] = content[i]
+        ixout417c26 = content[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        .buf[.pos + i] = ixout417c26
     }
 
     #{overflow=wrap}
@@ -454,8 +460,14 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
     sz = len(content)
     i <- [0..sz): {
 
-        #{index-out=zero, overflow=wrap}
-        .buf[.pos + i] = content[i]
+        ixout458c26 = content[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        .buf[.pos + i] = ixout458c26
     }
 
     #{overflow=wrap}

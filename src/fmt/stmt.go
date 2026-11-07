@@ -90,7 +90,7 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 			}
 		}
 		if len(others) > 0 || len(overflowModes) > 0 {
-			// 多個註解合併為單行：#{index-out=zero, overflow=wrap}。overflow 與
+			// 多個註解合併為單行：#{mac-arm64, overflow=wrap}。overflow 與
 			// 平台/泛型等其它鍵同屬一行，避免為 overflow 多佔一行（否則幾乎
 			// 每條含算術的陳述都自帶一行、嚴重膨脹且影響冪等）。
 			f.write("#{")
@@ -196,8 +196,8 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 	}
 
 	// 尾隨註解：寫回陳述同一行的後方（位置規則只允許「上方獨立成行」或「同一行
-	// 尾隨」，搬到上方或丟掉都會改變使用者寫下的位置；index-out 遺失更會直接
-	// 讓越界保護消失）。輸出在行內註釋之前，得到 `stmt #{...} ; comment`。
+	// 尾隨」，搬到上方或丟掉都會改變使用者寫下的位置）。輸出在行內註釋之前，
+	// 得到 `stmt #{...} ; comment`。
 	if len(trailingAnns) > 0 {
 		f.write(" #{")
 		for i, e := range trailingAnns {
@@ -367,11 +367,6 @@ func (f *formatter) annotationStatementEmits(s *parser.AnnotationStatement) bool
 			if f.overflowEntryEffective(gov) {
 				return true
 			}
-			continue
-		}
-		// 管轄陳述的所有容器索引讀取皆可證明在界內（bounds.go）——lowering 不為它
-		// 降級成 option，這條獨立成行的 `#{index-out}` 是死碼，移除。
-		if e.Key == "index-out" && f.indexOutAnnRemovable[s] {
 			continue
 		}
 		return true
@@ -986,17 +981,12 @@ func (f *formatter) formatAnnotationStatement(s *parser.AnnotationStatement) boo
 				overflowModes = append(overflowModes, m)
 			}
 		} else {
-			// 管轄陳述的所有容器索引讀取皆可證明在界內（bounds.go）——冗餘註解，
-			// `no fmt` 移除。
-			if e.Key == "index-out" && f.indexOutAnnRemovable[s] {
-				continue
-			}
 			others = append(others, e)
 		}
 	}
 	emitted := false
 	if len(others) > 0 || len(overflowModes) > 0 {
-		// 多個註解合併為單行：#{index-out=zero, overflow=wrap}（與
+		// 多個註解合併為單行：#{mac-arm64, overflow=wrap}（與
 		// formatStatement 的附加註解路徑一致）。
 		f.write("#{")
 		first := true

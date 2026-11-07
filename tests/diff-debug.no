@@ -256,8 +256,13 @@ on = ops.len()
 eprint('ops.len={on}')
 i <- [0..on): {
 
-    #{index-out=zero}
-    op = ops[i]
+    ixout260c10 = ops[i]: {
+        ok -> it
+
+        -> _
+    }
+
+    op = ixout260c10
     k = op.kind
     eprint('  op[{i}] kind={k}')
 }

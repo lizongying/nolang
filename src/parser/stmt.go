@@ -866,7 +866,9 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 		// `_` 是丟棄佔位符，可出現在任意位置（`a, _ = f()` / `_, _ = f()`）。
 		// 先前只放行 IDENT，導致首位的 `_` 可用、其餘位置報 8wckpc2l。
 		if p.currentToken.Type != lexer.IDENT && p.currentToken.Type != lexer.UNDERSCORE {
-			p.saveErrorf("8wckpc2l", "line %d, column %d: expected variable name after ',', got %s",
+			p.saveErrorfFix("8wckpc2l", []DiagnosticFix{{
+				Description: "write a variable name (or `_`) after the comma",
+			}}, "line %d, column %d: expected variable name after ',', got %s",
 				p.currentToken.Line, p.currentToken.Column, p.currentToken.Type.String())
 			return nil
 		}
@@ -874,7 +876,9 @@ func (p *Parser) parseMultiAssignStatement() Statement {
 	}
 
 	if p.currentToken.Type != lexer.ASSIGN {
-		p.saveErrorf("r60tokvf", "line %d, column %d: expected '=' after multi-variable list",
+		p.saveErrorfFix("r60tokvf", []DiagnosticFix{{
+			Description: "add '=' followed by the value(s) to assign",
+		}}, "line %d, column %d: expected '=' after multi-variable list",
 			p.currentToken.Line, p.currentToken.Column)
 		return nil
 	}
@@ -1013,12 +1017,18 @@ func (p *Parser) flushCompoundAssigns(def *FunctionDefinition) {
 			pos = lexer.Position{Line: uas.Name.Token.Line, Column: uas.Name.Token.Column}
 		}
 		if hasOptionResult {
-			p.saveWarningWithCodef(WarnCompoundAssign, "mlm7xpcj",
-				"line %d, column %d: `%s %s= %s` is deprecated; the enclosing function has an option result, so `no fmt` rewrites it to `%s ?= %s %s %s` on save (the right-hand side of a compound assignment is now `?T` and goes through `?=` to unwrap or propagate it)",
-				pos.Line, pos.Column, target, op, rhs, target, target, op, rhs)
+			p.saveWarningWithCodefFix(WarnCompoundAssign, "mlm7xpcj",
+				[]DiagnosticFix{{
+					Description: fmt.Sprintf("rewrite as `%s ?= %s %s %s`", target, target, op, rhs),
+				}},
+				"line %d, column %d: `%s %s= %s` is deprecated; the enclosing function has an option result, so `no fmt` rewrites it to `?=` form on save (the right-hand side of a compound assignment is now `?T` and goes through `?=` to unwrap or propagate it)",
+				pos.Line, pos.Column, target, op, rhs)
 			continue
 		}
-		p.saveErrorf("985exavg",
+		p.saveErrorfFix("985exavg",
+			[]DiagnosticFix{{
+				Description: fmt.Sprintf("rewrite as `%s %s %s: { ok -> %s = it, -> }`, or make the result parameter `?T` and write `%s ?= %s %s %s`", target, op, rhs, target, target, target, op, rhs),
+			}},
 			"line %d, column %d: `%s %s= %s` is deprecated and the enclosing function has no option result, so the failure cannot be propagated: rewrite it as `%s %s %s: { ok -> %s = it, -> }` (what the non-ok arm does is up to you), or make the result parameter `?T` and write `%s ?= %s %s %s`",
 			pos.Line, pos.Column, target, op, rhs,
 			target, op, rhs, target,
@@ -1281,7 +1291,9 @@ func (p *Parser) parseLetStatement() Statement {
 		}
 		return stmt
 	} else if p.peekToken.Type != lexer.ASSIGN {
-		p.saveErrorf("yh8904fm", "line %d, column %d: expected assignment operator, got %s instead",
+		p.saveErrorfFix("yh8904fm", []DiagnosticFix{{
+			Description: "use '=' to assign the value to the variable",
+		}}, "line %d, column %d: expected assignment operator, got %s instead",
 			p.currentToken.Line, p.currentToken.Column, p.peekToken.Type.String())
 		return nil
 	} else {
@@ -1722,7 +1734,9 @@ func (p *Parser) parseReturnStatement() Statement {
 	// 禁止 `return <value>`：RETURN 之后若紧跟表达式起始符（非语句结束符），
 	// 说明写了「带返回值的 return」，而 Nolang 不允许返回值，必须报错。
 	if !isReturnTerminator(p.currentToken.Type) {
-		p.saveErrorf("tfwxqucs", "line %d, column %d: `return` cannot be followed by a value; Nolang returns results through named result parameters (out-params), so use a bare `return` to exit early and assign the result parameter inside the function body",
+		p.saveErrorfFix("tfwxqucs", []DiagnosticFix{{
+			Description: "remove the value after `return`; assign the named result parameter inside the function body instead",
+		}}, "line %d, column %d: `return` cannot be followed by a value; Nolang returns results through named result parameters (out-params), so use a bare `return` to exit early and assign the result parameter inside the function body",
 			p.currentToken.Line, p.currentToken.Column)
 	}
 	stmt.ReturnValue = nil
@@ -2643,9 +2657,6 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	// propagateBlockScopedOverflow）。
 	// 行注解語意：獨立的 `#{overflow=...}` 只作用於其緊跟的下一條陳述。
 	p.applyLineOverflowAnnotations(block)
-	// 行注解語意：`#{index-out = ...}` 獨立註解只作用於其緊跟的下一條陳述
-	//（供 desugar 辨識越界預設值路徑）。
-	p.applyLineIndexOutAnnotations(block)
 
 	// 遺留的區塊級傳播（僅遷移/校驗工具啟用）。
 	if p.LegacyBlockOverflowPropagation {

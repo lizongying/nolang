@@ -10,7 +10,8 @@ import (
 
 	"github.com/lizongying/nolang/lexer"
 
-	"github.com/lizongying/nolang/ty")
+	"github.com/lizongying/nolang/ty"
+)
 
 // TestProgramGobRoundTripPreservesNodeSemMapping is the DEEP counterpart of
 // TestProgramGobRoundTrip above: it compares the annotation attachment of EVERY
@@ -39,25 +40,24 @@ func TestProgramGobRoundTripPreservesNodeSemMapping(t *testing.T) {
 		src  string
 	}{
 		{
-			// The `#{index-out=zero}` desugar shares a default-value literal
-			// between its two match arms and a temp identifier between the
-			// binding and the match subject.
-			"index-out read",
+			// D11 移除 index-out 降糖後，改由 `#{overflow=wrap}` + 索引算式的
+			// 降糖（carryOverflowAnnotation 會讓取代節點共用註解條目）製造共享節點。
+			"indexed arithmetic with overflow annotation",
 			"f = (a []i64, i i64) {\n" +
-				"    #{index-out=zero}\n" +
-				"    x = a[i]\n" +
-				"    print(x)\n" +
+				"    n [24]i64\n" +
+				"    #{overflow=wrap}\n" +
+				"    n[a[i]] = n[a[i]] + 1\n" +
 				"}\n",
 		},
 		{
-			// Same, plus an annotated integer operation whose annotation must
-			// survive on the statement it governs.
-			"index-out read + annotated arith",
+			// Annotated integer operation whose annotation must survive on the
+			// statement it governs, plus an index read.
+			"index read + annotated arith",
 			"f = (a []i64, i i64) {\n" +
 				"    n [24]i64\n" +
-				"    #{index-out=zero}\n" +
+				"    #{d11-probe=wrap}\n" +
 				"    l = a[i]\n" +
-				"    #{index-out=zero, overflow=wrap}\n" +
+				"    #{overflow=wrap}\n" +
 				"    n[l] = n[l] + 1\n" +
 				"}\n",
 		},

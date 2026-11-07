@@ -129,10 +129,20 @@ func TestCompoundAssignInPlainFunctionIsError(t *testing.T) {
 		t.Fatalf("expected exactly 1 parse error, got %d: %v", len(errs), errs)
 	}
 	msg := errs[0]
-	// `a += 1` 在源碼第 3 行（1 = 函式頭，2 = `a i64 = x`）。
-	for _, want := range []string{"line 3, column 5", "`a += 1`", "`a + 1: { ok -> a = it, -> }`", "`a ?= a + 1`"} {
+	// 位置與違規寫法仍在 Message 中。
+	for _, want := range []string{"line 3, column 5", "`a += 1`"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error message missing %q:\n%s", want, msg)
+		}
+	}
+	// 兩種可寫法移至修復建議（Fixes[0].Description）。
+	diags := p.Diagnostics()
+	if len(diags) == 0 || len(diags[0].Fixes) == 0 {
+		t.Fatalf("expected a diagnostic with a fix suggestion")
+	}
+	for _, want := range []string{"`a + 1: { ok -> a = it, -> }`", "`a ?= a + 1`"} {
+		if !strings.Contains(diags[0].Fixes[0].Description, want) {
+			t.Errorf("fix suggestion missing %q:\n%s", want, diags[0].Fixes[0].Description)
 		}
 	}
 	// 不得同時發棄用警告（那條路的文案是「fmt 會自動改寫」，在這裡是錯的）。
@@ -154,8 +164,12 @@ func TestCompoundAssignAtTopLevelIsError(t *testing.T) {
 	if !strings.Contains(errs[0], "line 2, column 1") {
 		t.Errorf("error not anchored at the compound assign: %q", errs[0])
 	}
-	if !strings.Contains(errs[0], "`a + 1: { ok -> a = it, -> }`") {
-		t.Errorf("error does not suggest the match form: %q", errs[0])
+	diags := p.Diagnostics()
+	if len(diags) == 0 || len(diags[0].Fixes) == 0 {
+		t.Fatalf("expected a diagnostic with a fix suggestion")
+	}
+	if !strings.Contains(diags[0].Fixes[0].Description, "`a + 1: { ok -> a = it, -> }`") {
+		t.Errorf("fix suggestion does not suggest the match form: %q", diags[0].Fixes[0].Description)
 	}
 }
 
@@ -168,8 +182,12 @@ func TestCompoundAssignSuggestionUsesActualRhs(t *testing.T) {
 	if len(p.Errors()) != 1 {
 		t.Fatalf("expected 1 parse error, got %v", p.Errors())
 	}
-	if !strings.Contains(p.Errors()[0], "`a + g(y) * 2: { ok -> a = it, -> }`") {
-		t.Errorf("suggestion does not echo the real RHS: %q", p.Errors()[0])
+	diags := p.Diagnostics()
+	if len(diags) == 0 || len(diags[0].Fixes) == 0 {
+		t.Fatalf("expected a diagnostic with a fix suggestion")
+	}
+	if !strings.Contains(diags[0].Fixes[0].Description, "`a + g(y) * 2: { ok -> a = it, -> }`") {
+		t.Errorf("suggestion does not echo the real RHS: %q", diags[0].Fixes[0].Description)
 	}
 }
 

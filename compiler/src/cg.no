@@ -127,7 +127,13 @@ cg-val-prefix = (t i64) (s str) {
 ; id: 數值
 ; t: 型别码（越界 → TY-I64）
 cg-vty-at = (vty []i64, id i64) (t i64) {
-    t = vty[id] #{index-out=zero}
+    ixout130c9 = vty[id]: {
+        ok -> it
+
+        -> _
+    }
+
+    t = ixout130c9
 }
 
 ; 整數除法除零 select 護欄（s38 / §11 B14）：對齊 Go 權威 emitArith 的 plain 路徑護欄。
@@ -519,7 +525,13 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             j = 0
             (j < y) {
                 j > 0 -> b.push(', ')
-                q = args[x + j] #{index-out=zero}
+                ixout522c21 = args[x + j]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                q = ixout522c21
                 at = vty[q]
                 b.push(cg-ty-name(at))
                 b.push(' ')

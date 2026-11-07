@@ -226,31 +226,31 @@ After the 2026-10 math/number split, ALL function-form numeric APIs live in std/
 
 **Compare (num-generic variadic functions):** `math.max`, `math.min` (variadic generic `a ..num`; integers and floats share the same monomorphization path)
 
-**Power/Root (functions):** `math.pow` (f64 power a^b, maps to libm pow), `math.hypot` (sqrt(x*x + y*y))
+**Power/Root (functions):** `math.pow` (f64 power a^b, pure .no implementation `exp(y*ln|x|)` with negative-base sign correction — no libm dependency), `math.hypot` (sqrt(x*x + y*y))
 
 **Other functions:** `math.atan2`, `math.fmod` (float remainder), `math.clamp` (i64 saturating clamp)
 
 **Integer math (int-generic functions):** `math.even`, `math.odd`, `math.gcd`, `math.lcm`, `math.div` (quotient), `math.mod` (modulo)
 
-**Type conversions (functions):** `math.i64-to-f64`, `math.f64-to-i64`, `math.f32-to-f64`, `math.f64-to-f32`
+**Type conversions:** the old function forms `math.i64-to-f64` / `math.f64-to-i64` / `math.f32-to-f64` / `math.f64-to-f32` are REMOVED — use the method forms `v.to-f64()`, `v.to-i64()`, `f32.to-f64()` / `f64.to-f32()` (number module; every integer width has `.to-f64()`, including i128 / u128)
 
-**Number-to-string underlying (functions, deprecated; prefer the method form `v.to-str()`):** `math.i64-to-str`, `math.u64-to-str`, `math.char-to-str`, `math.f64-to-str`
+**Number-to-string underlying:** only `math.char-to-str` remains (deprecated; prefer `c.to-str()`); `math.i64-to-str` / `math.u64-to-str` / `math.f64-to-str` are REMOVED — prefer the method form `v.to-str()`
 
 **Bit operations (functions):** `math.swap`, `math.arr-zero`, `math.rotate-left`, `math.rotate-right`, `math.store-le-u32`
 
-> Exception: the integer power `pow` (int-generic) collides in name with `math.pow` (f64); one module cannot hold two `pow`, so the integer power stays in std/number.no.
+> Integer power: `math.pow-int` (int-generic fast exponentiation, `(a int, n int) (r int)`, overflow-wrapping) lives in std/math.no; `number.pow` keeps an explicit i64 signature `(base i64, n i64)` for legacy assertions.
 
 #### number — Numeric Operations (method-form API)
 
-**Range constants:** i8.MIN / MAX … u64.MIN / MAX; `number.INF`
+**Range constants:** i8.MIN / MAX … i128.MIN / MAX, u8.MIN / MAX … u128.MAX; `number.INF`
 
-**Integer power (function, the sole exception to the math.pow collision):** `r = number.pow(a, n)` (a^n, n ≥ 0, fast exponentiation O(log n), generic over all integer types)
+**Integer power (function, i64 signature):** `r = number.pow(base, n)` (base^n, n ≥ 0, fast exponentiation O(log n), explicit i64 signature with overflow wrap; for the int-generic form use `math.pow-int(a, n)`)
 
-**Concrete-type to-str (methods):** `v.to-str()` — i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 widths
+**Concrete-type to-str (methods):** `v.to-str()` — i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 widths; i128 / u128 also work (via native `@str_from_i128` / `@str_from_u128`)
 
 **Float methods (f64 and same-named f32):** trigonometric `x.sin()`, `x.cos()`, `x.tan()`, `x.asin()`, `x.acos()`, `x.atan()`; hyperbolic `x.sinh()`, `x.cosh()`, `x.tanh()`; rounding `x.ceil()`, `x.floor()`, `x.round()`, `x.trunc()`; exponential/logarithm `x.exp()`, `x.log()`, `x.log10()`, `x.log2()`; power/root `x.sqrt()`, `x.cbrt()`; degree/radian `x.degrees()`, `x.radians()`. All f64 methods have same-named f32 counterparts (f32 versions are implemented as pure .no widen→delegate→narrow: f32-to-f64, call the f64 method, f64-to-f32; f32 computes in double precision and narrows back).
 
-**Integer methods** (concrete widths i8/i16/i32/i64/u8/u16/u32/u64, declared in std/number.no after the 2026-10 math/number split): `n.sqrt()` (integer square root floor(√n), returns 0 for negatives), `n.is-prime()` (trial-division primality test). i128/u128 NOT provided — the runtime truncates 128-bit integers to 64 bits (print silently blank, loops trap). The former i8/u64 codegen gaps are FIXED in the compiler: i8 operands now sign-extend per declared type (codegen coerceIntSigned), and hir2mir routes `< <= > >=` plus `/ %` to unsigned ops (OpULt/OpULe/OpUGt/OpUGe/OpUDiv/OpUMod) when any operand — searched recursively through nested KInfix/KGrouped sub-expressions — has a declared unsigned raw type (u64/u32/u16/u8/byte), with a fallback that records the raw type from the lowered value for receiver bindings like `n T = .` whose annotation is lost after generic instantiation. Note: union-alias receiver methods (int/float/num) must be declared in the module that DEFINES the alias (std/int.no, std/float.no, std/num.no) — declaring `int.X` in another module breaks the prefix pipeline (double-prefixed `number.int.int.X`-style names, unknown callee at codegen), so integer methods must use concrete per-width forms. Bodies must give every intermediate variable an explicit concrete type (`lo i16 = 1`), otherwise literal-initialized vars infer i64 and narrow assignments to i16 outputs are rejected.
+**Integer methods** (concrete widths i8/i16/i32/i64/u8/u16/u32/u64 plus i128/u128, declared in std/number.no after the 2026-10 math/number split): `n.sqrt()` (integer square root floor(√n), returns 0 for negatives), `n.is-prime()` (trial-division primality test). i128/u128 versions (`i128.sqrt`, `i128.is-prime`, `u128.sqrt`, `u128.is-prime`, plus `.to-f64`) are NOW PROVIDED — 128-bit arithmetic runs on the LLVM i128 lane and is verified accurate over the full range (u128.sqrt(u128.MAX)=2^64-1). Two caveats when writing 128-bit method bodies or call sites: (1) locals must be explicitly typed (`n i128 = .`, `lo i128 = 1`) — untyped literals infer i64 and loops converge on wrong values or hang; (2) overflow-annotation layout: i128 (signed, division may overflow INT_MIN/-1) needs `#{overflow=wrap}` on every arithmetic statement; u128 (unsigned) only on `+ -` and divide-by-literal — annotations must be on their own line above the statement (a single-line `;`-joined guard makes 128-bit codegen drop the whole main). The former i8/u64 codegen gaps are FIXED in the compiler: i8 operands now sign-extend per declared type (codegen coerceIntSigned), and hir2mir routes `< <= > >=` plus `/ %` to unsigned ops (OpULt/OpULe/OpUGt/OpUGe/OpUDiv/OpUMod) when any operand — searched recursively through nested KInfix/KGrouped sub-expressions — has a declared unsigned raw type (u64/u32/u16/u8/byte), with a fallback that records the raw type from the lowered value for receiver bindings like `n T = .` whose annotation is lost after generic instantiation (isUnsignedRaw now includes u128). Note: union-alias receiver methods (int/float/num) must be declared in the module that DEFINES the alias (std/int.no, std/float.no, std/num.no) — declaring `int.X` in another module breaks the prefix pipeline (double-prefixed `number.int.int.X`-style names, unknown callee at codegen), so integer methods must use concrete per-width forms. Bodies must give every intermediate variable an explicit concrete type (`lo i16 = 1`), otherwise literal-initialized vars infer i64 and narrow assignments to i16 outputs are rejected.
 
 #### char — Character Operations
 
@@ -384,9 +384,10 @@ math.even(v)                       ; Even/odd check (function, math)
 math.odd(v)
 math.gcd(a, b)                     ; Greatest common divisor (function, math)
 math.lcm(a, b)                     ; Least common multiple (function, math)
-r = number.pow(a, n)                 ; Integer power (exception, kept in number)
-math.i64-to-f64(v)                 ; Numeric conversion (function, math)
-math.f64-to-i64(v)
+r = number.pow(a, n)                 ; Integer power (i64 signature; int-generic form is math.pow-int)
+pi = math.pow-int(a, n)            ; Integer power (int-generic, overflow wrap)
+f = v.to-f64()                       ; Numeric conversion (method form; old math.*-to-* functions removed)
+n = x.to-i64()
 s = n.to-str()                       ; to-str (method, number) — works on i8/i16/i32/i64/u8/u16/u32/u64/byte/f32/f64
 s = c.to-str()                       ; char to string (method, preferred)
 s = math.char-to-str(c)            ; char to string (deprecated function, use c.to-str())
@@ -851,7 +852,7 @@ p.is-abs() (yes bool)    ; Whether it is an absolute path
 p.exists() (yes bool)        ; Whether it exists
 p.is-dir() (yes bool)        ; Whether it is a directory
 p.is-file() (yes bool)       ; Whether it is a file
-p.size() (sz i64)            ; File size
+p.size() (sz ?i64)           ; File size (nil = not found / stat failure)
 p.make-dir() (ok bool)       ; Create directory
 p.remove() (ok bool)         ; Delete
 p.rename(new-p str) (ok bool)    ; Rename

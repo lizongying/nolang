@@ -113,11 +113,12 @@ var shadowSynth = []struct{ name, src string }{
 	{"uhof-unwrap", "add = (a i64, b i64) (out ?i64) {\n\tout ?= a + b\n}\n"},
 	{"uhof-str-concat", "f = (seg str) () {\n\tr str = 'ab'\n\tr = r - seg\n\tio.outln(r)\n}\n"},
 	{"uhof-return", "add = (a i64, b i64) (out i64) {\n\tout = a + b\n}\n"},
-	// UnhandledIndex：未處理索引讀取觸發 / ?= 豁免 / #{index-out} 豁免。
+	// UnhandledIndex：未處理索引讀取觸發 / ?= 豁免 / 帶中性註解的索引讀雙視圖對拍。
+	// D11 移除 #{index-out} 後，uhix-annot 改用中性鍵保留「帶註解行」的語料形狀。
 	// 判別力要點：uhix-let 的 option 宣告判定字串若錯值（?T 前綴翻轉）會改報告。
 	{"uhix-let", "get = (arr []i64, i i64) (res i64) {\n\tres = arr[i]\n}\n"},
 	{"uhix-unwrap", "get = (arr []i64, i i64) (res ?i64) {\n\tres ?= arr[i]\n}\n"},
-	{"uhix-annot", "get = (arr []i64, i i64) (res i64) {\n\tres = arr[i]  #{index-out = 0}\n}\n"},
+	{"uhix-annot", "get = (arr []i64, i i64) (res i64) {\n\tres = arr[i]  #{d11-probe = 0}\n}\n"},
 	// IndexWrite：下標直寫觸發 / map 放行。
 	{"ixw-fire", "set = () () {\n\ta [3]i64 = [1, 2, 3]\n\ta[1] = 2\n}\n"},
 	{"ixw-map", "set = (m [str]i64) () {\n\tm['k'] = 1\n}\n"},

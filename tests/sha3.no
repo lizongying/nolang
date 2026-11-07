@@ -63,10 +63,34 @@ hex-chars = '0123456789abcdef'
 got str = with-len(64)
 i <- [0..32): {
 
-    #{index-out=zero, overflow=wrap}
-    got[i * 2] = hex-chars[(h[i] >> 4) & 15]
+    ixout67c29 = h[i]: {
+        ok -> it
 
-    #{index-out=zero, overflow=wrap}
-    got[i * 2 + 1] = hex-chars[h[i] & 15]
+        -> _
+    }
+
+    ixout67c18 = hex-chars[(ixout67c29 >> 4) & 15]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    got[i * 2] = ixout67c18
+
+    ixout70c32 = h[i]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout70c22 = hex-chars[ixout70c32 & 15]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    got[i * 2 + 1] = ixout70c22
 }
 check('sha3-256("abc") via [32]byte', got, '3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532')

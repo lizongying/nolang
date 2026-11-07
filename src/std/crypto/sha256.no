@@ -47,8 +47,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 1116352408 + s[0]) & mask
+    ixout51c38 = s[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 1116352408 + ixout51c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -70,8 +75,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 1899447441 + s[1]) & mask
+    ixout74c38 = s[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 1899447441 + ixout74c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -93,8 +103,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 3049323471 + s[2]) & mask
+    ixout97c38 = s[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 3049323471 + ixout97c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -116,8 +131,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 3921009573 + s[3]) & mask
+    ixout120c38 = s[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 3921009573 + ixout120c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -139,8 +159,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 961987163 + s[4]) & mask
+    ixout143c37 = s[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 961987163 + ixout143c37) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -162,8 +187,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 1508970993 + s[5]) & mask
+    ixout166c38 = s[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 1508970993 + ixout166c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -185,8 +215,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 2453635748 + s[6]) & mask
+    ixout189c38 = s[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 2453635748 + ixout189c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -208,8 +243,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 2870763221 + s[7]) & mask
+    ixout212c38 = s[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 2870763221 + ixout212c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -231,8 +271,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 3624381080 + s[8]) & mask
+    ixout235c38 = s[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 3624381080 + ixout235c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -254,8 +299,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 310598401 + s[9]) & mask
+    ixout258c37 = s[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 310598401 + ixout258c37) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -277,8 +327,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 607225278 + s[10]) & mask
+    ixout281c37 = s[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 607225278 + ixout281c37) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -300,8 +355,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 1426881987 + s[11]) & mask
+    ixout304c38 = s[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 1426881987 + ixout304c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -323,8 +383,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 1925078388 + s[12]) & mask
+    ixout327c38 = s[12]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 1925078388 + ixout327c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -346,8 +411,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 2162078206 + s[13]) & mask
+    ixout350c38 = s[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 2162078206 + ixout350c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -369,8 +439,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 2614888103 + s[14]) & mask
+    ixout373c38 = s[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 2614888103 + ixout373c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -392,8 +467,13 @@ sha256-block = (s []u32, h0 u32, h1 u32, h2 u32, h3 u32, h4 u32, h5 u32, h6 u32,
     s0 = (s0 ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10))) & mask
     maj = (a & b) ^ (a & c) ^ (b & c)
 
-    #{index-out=zero}
-    t1 = (h + s1 + ch + 3248222580 + s[15]) & mask
+    ixout396c38 = s[15]: {
+        ok -> it
+
+        -> _
+    }
+
+    t1 = (h + s1 + ch + 3248222580 + ixout396c38) & mask
 
     t2 = (s0 + maj) & mask
     h = g
@@ -2202,9 +2282,14 @@ sha256 = (data []byte) (hash [32]byte) {
     ; 複製原始資料
     i <- [0..dlen): {
 
-        #{index-out=zero}
+        ixout2207c24 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
         padded[i]: {
-            ok -> it = data[i]
+            ok -> it = ixout2207c24
 
             -> _
         }
@@ -2260,8 +2345,35 @@ sha256 = (data []byte) (hash [32]byte) {
         ; 會算錯 GEP，讀到 +0x100 錯位的值，組出的 block 是垃圾 → digest 錯。
         i <- [0..16): {
 
-            #{index-out=zero, overflow=wrap}
-            block[i] = (padded[offset + i * 4] << 24) | (padded[offset + i * 4 + 1] << 16) | (padded[offset + i * 4 + 2] << 8) | padded[offset + i * 4 + 3]
+            #{overflow=wrap}
+            ixout2264c25 = padded[offset + i * 4]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            ixout2264c58 = padded[offset + i * 4 + 1]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            ixout2264c95 = padded[offset + i * 4 + 2]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            ixout2264c130 = padded[offset + i * 4 + 3]: {
+                ok -> it
+
+                -> _
+            }
+
+            block[i] = (ixout2264c25 << 24) | (ixout2264c58 << 16) | (ixout2264c95 << 8) | ixout2264c130
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
@@ -2347,16 +2459,28 @@ sha256-hex = (data []byte) (hex str) {
 
     i <- [0..32): {
 
+        ixout2464c39 = hash[i]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(hash[i] >> 4) & 15]
+            ok -> it = hex-chars[(ixout2464c39 >> 4) & 15]
+
+            -> _
+        }
+
+        ixout2471c38 = hash[i]: {
+            ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[hash[i] & 15]
+            ok -> it = hex-chars[ixout2471c38 & 15]
 
             -> _
         }

@@ -1177,7 +1177,7 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 // whether they are equal. Mirrors the legacy backend (build/llvm/call.go
 // "eq-raw"), which emits memcmp(a_data, b_data, n) == 0 and zero-extends the
 // i1 to the boolean result slot. Without it the generic dispatch fell through
-// to "unsupported builtin str.eq" (tests/str-test.no).
+// to "unsupported builtin str.eq" (tests/str-more.no (renamed from str-test.no)).
 func (c *codegen) emitBuiltinEqRaw(inst *Inst) error {
 	if len(inst.Args) < 3 {
 		return i18n.Errorf("mzxtskah", "eq-raw: needs (receiver, b, n)")

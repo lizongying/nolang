@@ -33,7 +33,6 @@ Opções globais:
                       match       adicionar ramos nil/err ausentes a matches de option não exaustivos
                       unwrap      consumir ligações option que nunca são propagadas nem desempacotadas
                       main        elevar o corpo de um main de nível superior a instruções de nível superior
-                      index-out   expandir leituras #{index-out=DEF} em matches explícitos
       -loop-style=<s>  forma de laço padrão: prefix (padrão) ou suffix
       -md   formatar também blocos Nolang em arquivos Markdown (.md/.mdx)
     Exemplos:
@@ -48,7 +47,6 @@ Opções globais:
       no fmt -fix=overflow -w src/    adicionar no local as anotações de overflow em src/
       no fmt -fix=redundant main.no   pré-visualizar a remoção de anotações redundantes
       no fmt -fix=match -w src/       adicionar no local os ramos match ausentes em src/
-      no fmt -fix=index-out -w src/   expandir leituras #{index-out=DEF} em match explícito
       echo 'x=1' | no fmt         formatar a partir de stdin
       no fmt -loop-style=suffix f.no  formatar laços como '{ } (cond)' / '{ } * N'
       no fmt --md -w docs/        formatar os blocos Nolang de todos os .md/.mdx em docs/

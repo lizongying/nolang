@@ -33,11 +33,23 @@ bhex = (data []byte) (hex str) {
     hex str = with-len(n * 2)
     i <- [0..n): {
 
-        #{overflow=wrap}
-        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+        ixout37c37 = data[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+        hex[i * 2] = hex-chars[(ixout37c37 >> 4) & 15]
+
+        ixout40c40 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = hex-chars[ixout40c40 & 15]
     }
 }
 
@@ -73,8 +85,20 @@ t-salt-sensitive = () {
     diff = 0
     i <- [0..32): {
 
-        #{index-out=zero, overflow=wrap}
-        (a[i] != b[i]) -> diff = diff + 1
+        ixout77c10 = a[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout77c18 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        (ixout77c10 != ixout77c18) -> diff = diff + 1
     }
     runner.gt(diff, 0, 'argon2id salt changes the tag')
 }

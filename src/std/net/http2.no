@@ -360,17 +360,37 @@ conn.send-headers = (stream-id i64, names [64]str, values [64]str, count i64, en
     i <- [0..count): {
 
         ; 用 slice 載入值（避開 IndexExpression codegen 問題）
-        #{index-out=zero}
-        nlen = names[i].len-bytes()
+        ixout364c16 = names[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        vlen = values[i].len-bytes()
+            -> _
+        }
 
-        #{index-out=zero}
-        n str = names[i].slice(0, nlen)
+        nlen = ixout364c16.len-bytes()
 
-        #{index-out=zero}
-        v str = values[i].slice(0, vlen)
+        ixout367c16 = values[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        vlen = ixout367c16.len-bytes()
+
+        ixout370c17 = names[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        n str = ixout370c17.slice(0, nlen)
+
+        ixout373c17 = values[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        v str = ixout373c17.slice(0, vlen)
         hdr-out = ' '
         hdr-out = .hpack.encode-header(n, v)
 
@@ -684,13 +704,37 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 i <- [0..dec-count): {
                     i >= 32 -> break
 
-                    nlen = dec-names[i].len-bytes()
+                    ixout707c37 = dec-names[i]: {
+                        ok -> it
 
-                    vlen = dec-values[i].len-bytes()
+                        -> _
+                    }
 
-                    names[i] = dec-names[i].slice(0, nlen)
+                    nlen = ixout707c37.len-bytes()
 
-                    values[i] = dec-values[i].slice(0, vlen)
+                    ixout709c38 = dec-values[i]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    vlen = ixout709c38.len-bytes()
+
+                    ixout711c41 = dec-names[i]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    names[i] = ixout711c41.slice(0, nlen)
+
+                    ixout713c43 = dec-values[i]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    values[i] = ixout713c43.slice(0, vlen)
                 }
                 {
                     dec-count <= 32 -> header-count = dec-count
@@ -869,24 +913,50 @@ do-req = (method str, url str, body str) (resp ?http.response) {
     r.header-count = header-count
     i <- [0..header-count): {
 
-        #{index-out=zero}
-        nlen = names[i].len-bytes()
+        ixout873c16 = names[i]: {
+            ok -> it
 
-        #{index-out=zero}
-        vlen = values[i].len-bytes()
+            -> _
+        }
 
-        #{index-out=zero}
-        r.header-names[i] = names[i].slice(0, nlen)
+        nlen = ixout873c16.len-bytes()
 
-        #{index-out=zero}
-        r.header-values[i] = values[i].slice(0, vlen)
+        ixout876c16 = values[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        vlen = ixout876c16.len-bytes()
+
+        ixout879c29 = names[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        r.header-names[i] = ixout879c29.slice(0, nlen)
+
+        ixout882c30 = values[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        r.header-values[i] = ixout882c30.slice(0, vlen)
 
         ; 尋找 :status
         nlen == 7 -> {
             is-status = 1
             status-hdr = ':status'
             j <- [0..7): {
-                names[i][j] != status-hdr[j] -> {
+                ixout929c22 = names[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                ixout929c22[j] != status-hdr[j] -> {
                     is-status = 0
                     break
                 }
@@ -895,12 +965,23 @@ do-req = (method str, url str, body str) (resp ?http.response) {
                 r.status-code = 0
                 j <- [0..vlen): {
 
-                    #{index-out=zero, overflow=wrap}
-                    r.status-code = r.status-code * 10 + (values[i][j] - 48)
+                    ixout939c65 = values[i]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    #{overflow=wrap}
+                    r.status-code = r.status-code * 10 + (ixout939c65[j] - 48)
                 }
 
-                #{index-out=zero}
-                r.status-text = values[i].slice(0, vlen)
+                ixout903c33 = values[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                r.status-text = ixout903c33.slice(0, vlen)
             }
         }
     }

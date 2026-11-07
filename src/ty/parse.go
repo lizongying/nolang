@@ -165,7 +165,12 @@ func (p *Pool) build(raw string, depth int) *Type {
 	}
 
 	// `fn(p0,p1)(r0,r1)?` — the spelling produced by parser.FunctionType.String().
-	if s == "fn()" {
+	// Bare `fn` (no signature) is the generic "any function" type and denotes
+	// the same KindFunc shape as `fn()`; without this it fell through to the
+	// Named-type fallback and a `fn`-typed parameter could never be called
+	// indirectly (codegen reported "unknown callee f"). Mirrors the existing
+	// `fn()` spelling — both intern to a KindFunc with an empty signature.
+	if s == "fn" || s == "fn()" {
 		return &Type{Kind: Func}
 	}
 	if strings.HasPrefix(s, "fn(") {

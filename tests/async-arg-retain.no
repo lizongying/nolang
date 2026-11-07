@@ -19,7 +19,7 @@
 
 ; 取首個
 ; v []i64: 來源 vec，由 run 深拷貝後交給協程
-; r i64: v[0]；越界由 #{index-out=zero} 補零
+; r i64: v[0]；索引讀取回傳 ?T，以值 match 顯式消費、越界由 nil 臂補零
 first = (v []i64) (r i64) {
     r = v[0]: {
         ok -> it

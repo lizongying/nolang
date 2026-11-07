@@ -3,14 +3,14 @@
 ; 歷史：早期編譯器對「陣列切片 + option 下標寫 `h[i]: { ok -> it = ... }`」
 ; 有靜默丟寫的 MIR bug（512d63b6 之前）。此測試鎖死該路徑：切片經 option
 ; 寫後必須保留寫入值，且與普通寫 `h[i] = ...` 語意一致。覆蓋四種忠實形態：
-; 全域陣列切片、for 迴圈 + #{index-out=zero}、切片自身讀改寫（RHS 含下標讀，
-; 觸發 desugarIndexOutReads）、函數返回切片。
+; 全域陣列切片、for 迴圈 + 值 match 消費 ?T、切片自身讀改寫（RHS 含下標讀，
+; 觸發索引讀降糖）、函數返回切片。
 
 # /test/runner
 
 IV [8]u64 = [11, 22, 33, 44, 55, 66, 77, 88]
 
-; 1) 全域陣列切片 + option 寫（無 index-out 註解），寫入值與源不同
+; 1) 全域陣列切片 + option 寫（無預設值註解），寫入值與源不同
 t-slice-write-simple = () {
     h = IV[..8)
     h[0]: {
@@ -21,7 +21,7 @@ t-slice-write-simple = () {
     runner.eq(h[0], 999, 'slice+option-write: h[0] == 999')
 }
 
-; 2) 切片 + for 迴圈 + #{index-out=zero} + option 寫
+; 2) 切片 + for 迴圈 + 值 match 消費 ?T + option 寫
 t-slice-write-loop = () {
     h = IV[..8)
     i <- [0..8): {
@@ -31,18 +31,23 @@ t-slice-write-loop = () {
             -> _
         }
     }
-    runner.eq(h[0], 999, 'slice+loop+index-out: h[0] == 999')
-    runner.eq(h[7], 999, 'slice+loop+index-out: h[7] == 999')
+    runner.eq(h[0], 999, 'slice+loop+option: h[0] == 999')
+    runner.eq(h[7], 999, 'slice+loop+option: h[7] == 999')
 }
 
-; 3) 切片自身讀改寫（RHS 含下標讀，觸發 desugarIndexOutReads）
+; 3) 切片自身讀改寫（RHS 含下標讀，觸發索引讀降糖）
 t-slice-write-self-rmw = () {
     h = IV[..8)
     i <- [0..8): {
 
-        #{index-out=zero}
+        ixout45c24 = h[i]: {
+            ok -> it
+
+            -> _
+        }
+
         h[i]: {
-            ok -> it = h[i] ^ 1
+            ok -> it = ixout45c24 ^ 1
 
             -> _
         }

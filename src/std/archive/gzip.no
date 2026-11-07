@@ -129,9 +129,15 @@ huffman.build = (lengths []i64, n i64) {
     }
     i <- [1..16): {
 
+        ixout134c28 = offs[i]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
         offs[i + 1]: {
-            ok -> it = offs[i] + .count[i]
+            ok -> it = ixout134c28 + .count[i]
 
             -> _
         }
@@ -142,8 +148,20 @@ huffman.build = (lengths []i64, n i64) {
         .symbol[i] = 0
     }
     i <- [0..n): {
-        lengths[i] != 0 -> {
-            idx = offs[lengths[i]]: {
+        ixout145c16 = lengths[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout145c16 != 0 -> {
+            ixout146c31 = lengths[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            idx = offs[ixout146c31]: {
                 ok -> it
 
                 -> 0
@@ -151,9 +169,27 @@ huffman.build = (lengths []i64, n i64) {
 
             .symbol[idx] = i
 
-            #{index-out=zero, overflow=wrap}
-            offs[lengths[i]]: {
-                ok -> it = offs[lengths[i]] + 1
+            ixout156c33 = lengths[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout156c28 = offs[ixout156c33]: {
+                ok -> it
+
+                -> _
+            }
+
+            ixout167c25 = lengths[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            offs[ixout167c25]: {
+                ok -> it = ixout156c28 + 1
 
                 -> _
             }
@@ -265,7 +301,13 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     ]
 
     i <- [0..hclen): {
-        clens[code-order[i]]: {
+        ixout280c25 = code-order[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        clens[ixout280c25]: {
             ok -> it = br.read-bits(3)
 
             -> _
@@ -363,9 +405,15 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     }
     i <- [0..hdist): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout368c24 = lengths[hlit + i]: {
+            ok -> it
+
+            -> _
+        }
+
         dlengths[i]: {
-            ok -> it = lengths[hlit + i]
+            ok -> it = ixout368c24
 
             -> _
         }
@@ -436,8 +484,13 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                 br.read-u16-le()
                 i <- [0..blen): {
 
-                    #{index-out=zero}
-                    result.push(data[br.pos])
+                    ixout440c33 = data[br.pos]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    result.push(ixout440c33)
 
                     #{overflow=wrap}
                     br.pos = br.pos + 1
@@ -499,8 +552,14 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         src = result.len() - distance
                         i <- [0..length): {
 
-                            #{index-out=zero, overflow=wrap}
-                            result.push(result[src + i])
+                            #{overflow=wrap}
+                            ixout503c41 = result[src + i]: {
+                                ok -> it
+
+                                -> _
+                            }
+
+                            result.push(ixout503c41)
                         }
                     }
                 }
@@ -561,8 +620,14 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                         src = result.len() - distance
                         i <- [0..length): {
 
-                            #{index-out=zero, overflow=wrap}
-                            result.push(result[src + i])
+                            #{overflow=wrap}
+                            ixout565c41 = result[src + i]: {
+                                ok -> it
+
+                                -> _
+                            }
+
+                            result.push(ixout565c41)
                         }
                     }
                 }
@@ -612,8 +677,14 @@ deflate-stored = (data []byte) (out []byte) {
         ; 資料
         i <- [0..blen): {
 
-            #{index-out=zero, overflow=wrap}
-            result.push(data[pos + i])
+            #{overflow=wrap}
+            ixout616c25 = data[pos + i]: {
+                ok -> it
+
+                -> _
+            }
+
+            result.push(ixout616c25)
         }
 
         #{overflow=wrap}
@@ -693,8 +764,13 @@ gzip-decompress = (data []byte) (out []byte) {
         }
         pos = pos + 1
 
-        #{index-out=zero}
-        xlen = xlen | ((data[pos]) << 8)
+        ixout697c25 = data[pos]: {
+            ok -> it
+
+            -> _
+        }
+
+        xlen = xlen | ((ixout697c25) << 8)
         pos = pos + xlen
     }
 
@@ -739,13 +815,41 @@ gzip-decompress = (data []byte) (out []byte) {
     deflate-end = data.len() - 8
     i <- [pos..deflate-end): {
 
-        #{index-out=zero}
-        deflate-data.push(data[i])
+        ixout743c27 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        deflate-data.push(ixout743c27)
     }
 
     ; 預期大小 = ISIZE（最後 4 bytes）
-    #{index-out=zero}
-    isize = (data[data.len() - 4]) | ((data[data.len() - 3]) << 8) | ((data[data.len() - 2]) << 16) | ((data[data.len() - 1]) << 24)
+    ixout748c14 = data[data.len() - 4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout748c40 = data[data.len() - 3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout748c72 = data[data.len() - 2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout748c105 = data[data.len() - 1]: {
+        ok -> it
+
+        -> _
+    }
+
+    isize = (ixout748c14) | ((ixout748c40) << 8) | ((ixout748c72) << 16) | ((ixout748c105) << 24)
 
     out = inflate-decompress(deflate-data, isize)
 }

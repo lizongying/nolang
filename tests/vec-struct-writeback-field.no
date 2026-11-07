@@ -25,7 +25,7 @@ seed = () {
     ks[1] = 2
     ks[2] = 3
     ks[3] = 4
-    _p.nodes[0].keys = ks #{index-out=0}
+    _p.nodes[0].keys = ks
 }
 
 ; rebuild keys excluding `drop`, via local copy + wholesale field reassign + writeback
@@ -36,7 +36,7 @@ del-via-copy = (i i64, drop i64) {
     nk []i64 = with-len(0)
     k = 0
     (k < node.keys.len()) {
-        kk i64 = node.keys[k] #{index-out=0}
+        kk i64 = node.keys[k]
         kk != drop -> nk.push(kk)
         k = k + 1 #{overflow=wrap}
     }
@@ -47,9 +47,9 @@ del-via-copy = (i i64, drop i64) {
 seed()
 del-via-copy(0, 3)
 t1len i64 = _p.nodes[0].keys.len()
-t1a i64 = _p.nodes[0].keys[0] #{index-out=0}
-t1b i64 = _p.nodes[0].keys[1] #{index-out=0}
-t1c i64 = _p.nodes[0].keys[2] #{index-out=0}
+t1a i64 = _p.nodes[0].keys[0]
+t1b i64 = _p.nodes[0].keys[1]
+t1c i64 = _p.nodes[0].keys[2]
 io.outln('T1 len=' - t1len.to-str() - ' order=' - t1a.to-str() - ',' - t1b.to-str() - ',' - t1c.to-str())
 
 ; 對照組 a：直接寫 slot 欄位

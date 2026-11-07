@@ -456,8 +456,13 @@ test-struct-array-clone = () (ok bool) {
     c0b = copy[0]
     c0b.name = 'Charlie'
 
-    #{index-out=zero}
-    o0 = people[0]
+    ixout460c10 = people[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    o0 = ixout460c10
     o0.name == 'Alice' -> ok = true
     c0b.name == 'Charlie' -> ok = true
 }

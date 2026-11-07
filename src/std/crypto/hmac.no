@@ -53,9 +53,14 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
         key-n <= 64 -> {
             i <- [0..key-n): {
 
-                #{index-out=zero}
+                ixout58c32 = key[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 k[i]: {
-                    ok -> it = key[i]
+                    ok -> it = ixout58c32
 
                     -> _
                 }
@@ -79,8 +84,14 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     ; ipad-key = K' ⊕ ipad
     ipad-key [64]byte
     i <- [0..64): {
+        ixout88c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         ipad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-IPAD
+            ok -> it = (ixout88c26) ^ HMAC-IPAD
 
             -> _
         }
@@ -89,8 +100,14 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     ; opad-key = K' ⊕ opad
     opad-key [64]byte
     i <- [0..64): {
+        ixout98c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         opad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-OPAD
+            ok -> it = (ixout98c26) ^ HMAC-OPAD
 
             -> _
         }
@@ -107,9 +124,15 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     }
     i <- [0..msg-n): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout112c24 = msg[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         inner-data[64 + i]: {
-            ok -> it = msg[i]
+            ok -> it = ixout112c24
 
             -> _
         }
@@ -178,9 +201,14 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
         key-n <= 64 -> {
             i <- [0..key-n): {
 
-                #{index-out=zero}
+                ixout183c32 = key[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 k[i]: {
-                    ok -> it = key[i]
+                    ok -> it = ixout183c32
 
                     -> _
                 }
@@ -200,16 +228,28 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     }
     ipad-key [64]byte
     i <- [0..64): {
+        ixout220c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         ipad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-IPAD
+            ok -> it = (ixout220c26) ^ HMAC-IPAD
 
             -> _
         }
     }
     opad-key [64]byte
     i <- [0..64): {
+        ixout228c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         opad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-OPAD
+            ok -> it = (ixout228c26) ^ HMAC-OPAD
 
             -> _
         }
@@ -224,9 +264,15 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     }
     i <- [0..msg-n): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout229c24 = msg[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         inner-data[64 + i]: {
-            ok -> it = msg[i]
+            ok -> it = ixout229c24
 
             -> _
         }
@@ -294,9 +340,14 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
         key-n <= 128 -> {
             i <- [0..key-n): {
 
-                #{index-out=zero}
+                ixout299c32 = key[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 k[i]: {
-                    ok -> it = key[i]
+                    ok -> it = ixout299c32
 
                     -> _
                 }
@@ -316,16 +367,28 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     }
     ipad-key [128]byte
     i <- [0..128): {
+        ixout347c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         ipad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-IPAD
+            ok -> it = (ixout347c26) ^ HMAC-IPAD
 
             -> _
         }
     }
     opad-key [128]byte
     i <- [0..128): {
+        ixout355c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         opad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-OPAD
+            ok -> it = (ixout355c26) ^ HMAC-OPAD
 
             -> _
         }
@@ -340,9 +403,15 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     }
     i <- [0..msg-n): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout345c24 = msg[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         inner-data[128 + i]: {
-            ok -> it = msg[i]
+            ok -> it = ixout345c24
 
             -> _
         }
@@ -403,9 +472,14 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
         key-n <= 128 -> {
             i <- [0..key-n): {
 
-                #{index-out=zero}
+                ixout408c32 = key[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 k[i]: {
-                    ok -> it = key[i]
+                    ok -> it = ixout408c32
 
                     -> _
                 }
@@ -425,16 +499,28 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     }
     ipad-key [128]byte
     i <- [0..128): {
+        ixout467c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         ipad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-IPAD
+            ok -> it = (ixout467c26) ^ HMAC-IPAD
 
             -> _
         }
     }
     opad-key [128]byte
     i <- [0..128): {
+        ixout475c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         opad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-OPAD
+            ok -> it = (ixout475c26) ^ HMAC-OPAD
 
             -> _
         }
@@ -449,9 +535,15 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     }
     i <- [0..msg-n): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout454c24 = msg[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         inner-data[128 + i]: {
-            ok -> it = msg[i]
+            ok -> it = ixout454c24
 
             -> _
         }
@@ -512,9 +604,14 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
         key-n <= 64 -> {
             i <- [0..key-n): {
 
-                #{index-out=zero}
+                ixout517c32 = key[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
                 k[i]: {
-                    ok -> it = key[i]
+                    ok -> it = ixout517c32
 
                     -> _
                 }
@@ -534,16 +631,28 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     }
     ipad-key [64]byte
     i <- [0..64): {
+        ixout587c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         ipad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-IPAD
+            ok -> it = (ixout587c26) ^ HMAC-IPAD
 
             -> _
         }
     }
     opad-key [64]byte
     i <- [0..64): {
+        ixout595c26 = k[i]: {
+            ok -> it
+
+            -> _
+        }
+
         opad-key[i]: {
-            ok -> it = (k[i]) ^ HMAC-OPAD
+            ok -> it = (ixout595c26) ^ HMAC-OPAD
 
             -> _
         }
@@ -558,9 +667,15 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     }
     i <- [0..msg-n): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout563c24 = msg[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         inner-data[64 + i]: {
-            ok -> it = msg[i]
+            ok -> it = ixout563c24
 
             -> _
         }

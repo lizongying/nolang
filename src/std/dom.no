@@ -1847,7 +1847,6 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             k = sl - 1
             (k >= 0) {
 
-                #{index-out=zero}
                 ti i64 = .stk[k]
                 tn str = .names[ti]
                 tn.eq-full(cnm) -> {
@@ -1868,7 +1867,6 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 topi = .stk.len() - 1
                 topi >= 0 -> {
 
-                    #{index-out=zero}
                     cur = .stk[topi]
                 }
             }
@@ -1894,7 +1892,6 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                     #{overflow=wrap}
                     topi = .stk.len() - 1
 
-                    #{index-out=zero}
                     ti i64 = .stk[topi]
                     tn str = .names[ti]
                     blob-has(closers, tn) == false -> break
@@ -1906,7 +1903,6 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 topi = .stk.len() - 1
                 topi >= 0 -> {
 
-                    #{index-out=zero}
                     cur = .stk[topi]
                 }
             }

@@ -28,8 +28,11 @@ import (
 const byteSliceGlobalSrc = `G []byte = [66, 90, 104, 57]
 
 probe = () (r i64) {
-    #{index-out=zero}
-    r = G[1]
+    r = G[1]: {
+        ok -> it
+
+        -> 0
+    }
 }
 
 x = probe()
@@ -106,8 +109,11 @@ const selfIndexAssignSrcA = `probeA = () (r i64) {
     p = orig
     k = 0
     (k < 3) {
-        #{index-out=zero}
-        p = lf[p]
+        p = lf[p]: {
+            ok -> it
+
+            -> 0
+        }
         #{overflow=wrap}
         k = k + 1
     }
@@ -127,8 +133,11 @@ probeB = () (r i64) {
     p = seed()
     k = 0
     (k < 3) {
-        #{index-out=zero}
-        p = lf[p]
+        p = lf[p]: {
+            ok -> it
+
+            -> 0
+        }
         #{overflow=wrap}
         k = k + 1
     }

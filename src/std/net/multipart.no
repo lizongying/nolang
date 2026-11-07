@@ -658,9 +658,14 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     iv [12]byte
     i <- [0..12): {
 
-        #{index-out=zero}
+        ixout663c24 = raw[i]: {
+            ok -> it
+
+            -> _
+        }
+
         iv[i]: {
-            ok -> it = raw[i]
+            ok -> it = ixout663c24
 
             -> _
         }
@@ -673,9 +678,15 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     sealed-n = raw.len() - 12
     i <- [0..sealed-n): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout678c24 = raw[12 + i]: {
+            ok -> it
+
+            -> _
+        }
+
         sealed[i]: {
-            ok -> it = raw[12 + i]
+            ok -> it = ixout678c24
 
             -> _
         }

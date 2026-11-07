@@ -297,8 +297,13 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
         program == 'sh' -> {
             args.len() >= 2 -> {
 
-                #{index-out=zero}
-                is-sh-c = args[0] == '-c'
+                ixout301c27 = args[0]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                is-sh-c = ixout301c27 == '-c'
             }
         }
     }
@@ -804,8 +809,13 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes())
     args.len() >= 2 -> {
 
-        #{index-out=zero}
-        args[0] == '-c' -> {
+        ixout808c9 = args[0]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout808c9 == '-c' -> {
             base == 'sh' -> is-sh-c = true
             base == 'bash' -> is-sh-c = true
             base == 'zsh' -> is-sh-c = true
@@ -1403,8 +1413,13 @@ list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
     i <- [0..names.len()): {
 
-        #{index-out=zero}
-        name = names[i]
+        ixout1407c16 = names[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        name = ixout1407c16
 
         ; 只處理全數字條目（PID 目錄）
         pid-val ?i64 = name.to-i64()
@@ -1470,8 +1485,13 @@ find-by-name = (name str) (pids []i64) {
     all = list-all()
     i <- [0..all.len()): {
 
-        #{index-out=zero}
-        p proc-info = all[i]
+        ixout1474c23 = all[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        p proc-info = ixout1474c23
         yes = find-match(p.name, name)
         yes -> pids.push(p.pid)
     }

@@ -120,7 +120,7 @@
   '379z4njd': '“%s” 已在此作用域声明'
   '39o3yr8x': '不支持的校验和文件版本 %q（期望 %s）'
   '3aeomnek': 'setfield 槽位'
-  '3b9bxfnt': '不能将 %s 值赋给数组 “%s” 的 %s 元素%s'
+  '3b9bxfnt': '不能将 %s 值赋给数组 “%s” 的 %s 元素'
   '3bl2ts85': 'JS 构建错误: %w'
   '3ei0a0o0': '期望表达式，实际得到 nil'
   '3fulbc9g': '函数 %s 用 fs.list-dir/fs.read-dir 结果做递归/删除，但未见过滤 "." 和 ".."；两者都含 POSIX readdir 的 "."/".."，递归进入 ".." 会向上逃逸误删整棵父树。请改用 fs.dir-entries（已自动过滤），或在递归前显式跳过 "."/".."。'
@@ -279,7 +279,6 @@ Parser ASTVersion: %s
   '7t8ke5g1': 'cancelled: 没有结果槽位'
   '7tcn8wox': '示例：'
   '7usot77o': '对某一类问题应用自动修复：\'overflow\'（给未标注的整数运算加上 #{overflow=wrap}）、\'redundant\'（删除与推断类型相同的类型标注，如 `x str = \'\'` -> `x = \'\'`）、\'match\'（为非穷尽的 option match 补上缺失的 nil/err 分支），或 \'unwrap\'（消费那些从不向外传播、也从不解包的 option 绑定：函数已有 ?T 返回类型时写 `x ?= expr`，否则写 `x-opt = expr` 并在后续行加陈述级 match `x-opt: { ok -> x = it -> }`），或 \'main\'（省略顶层 `main = () { ... }` 包装，把其语句提升到顶层；当 main 有参数/返回值或直接 return 时跳过），或 \'index-out\'（把 #{index-out=DEF} 索引读取展开成显式 match）'
-  '7uy8wmqv': '%s'
   '7zfvvuin': '未发现问题。'
   '802t452i': 'builtin %s: option 结果写入 %s 目标'
   '81b2ea3o': 'extern 声明中期望 \'(\'，实际得到 %s'
@@ -376,7 +375,6 @@ Parser ASTVersion: %s
   'ap403a8m': 'net-recv: 无法获取第 1 个参数的数据指针'
   'appz8ry7': 'builtin %s: %v'
   'aqrceaf2': '  no ast -annotations main.no       同时包含 #{...} 注解'
-  'au6g7ji7': '解析错误: %s'
   'awc98kqh': '  no fmt -md README.md        格式化单个 Markdown 文件中的 Nolang 代码块'
   'axj3m1pb': '表达式起始位置出现意外的 \'as\''
   'axtpo500': 'win-find-first-file: 无法将 path 编组为 C 字符串'
@@ -521,12 +519,14 @@ Parser ASTVersion: %s
 
 `
   'fh3ukes8': 'net-set-recv-timeout: 没有结果槽位'
+  'fixlabel': 'fix:'
   'fk1sb6ss': 'syslog: 在 windows 上不受支持'
   'flfh2ueu': '非法的安装目标 %q: 仓库必须是 <host>/<owner>/<repo> 或 <owner>/<repo>'
   'fs4qotyl': '解压 zip 归档失败: %w'
   'fu1ow141': '未找到测试文件，目录 '
   'fvk7yu8c': '\'=\' 后应为整数值，实际得到 %s'
   'fw8rehzu': '空的 `->` 兜底臂不会被执行：编译器可证明 \'%s\' 恒为 ok（字面量算术不会溢出/除零，或索引可证明在界内）。该臂仍须保留以满足 match 穷尽性；保留也便于日后语义变化时无需改语法。'
+  'fxapply1': 'Apply fix'
   'fxc0tilj': '把当前包的 AST 打包为 gob + zip。'
   'fxdzclp6': '不能给字段 “%s” 赋值（结构体类型 “%s”）: 请先实例化（例如 `%s0 = %s {}`）'
   'fxhkwtho': 'read-file: 需要 path'
@@ -621,7 +621,8 @@ Parser ASTVersion: %s
 AST 缓存目录: %s
 
 `
-  'idxoutrd': 'the `#{index-out = ...}` annotation here is redundant: the place-match subject `arr[i]` is already bounds-safe via its ok/nil arms, and no inner index read depends on its default. Remove the annotation (no fmt removes it automatically).'
+  'idxbruse': '裸索引 `arr[i]`/`m[k]` 返回 `?T`（D11 已移除 `#{index-out=DEF}` 注解），但这里把它当作普通值使用而没有消费 option。请用值 match、`?=`、place/block match 或合法的 `?T` 绑定显式处理该 option。'
+  'idxourmv': 'D11 已移除 `#{index-out=DEF}` 注解；`a[i]`/`m[k]` 现在总是返回 `?T`。请用值 match、`?=`、place/block match 或合法的 `?T` 绑定显式消费该 option。'
   'ifmrg001': '接口 “%s”: 合并后的方法 “%s” 签名冲突 (“%s.%s”, “%s.%s”)'
   'ihr1vm8m': 'arr.zero: 需要 receiver'
   'iky4xsx4': '方法 “%s.%s” 有 %d 个返回值，接口期望 %d 个'
@@ -756,7 +757,7 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'mi13i3vc': '期望右括号，实际得到 %s'
   'mimqybn2': 'vec.pop: 需要 receiver'
   'mkpo3f8h': 'utf8-at 目标槽位'
-  'mlm7xpcj': '`%s %s= %s` 已废弃；所在函数结果是 option，保存时 `no fmt` 会自动改写为 `%s ?= %s %s %s`（复合赋值的右式现在是 ?T，走 `?=` 解包/上抛）'
+  'mlm7xpcj': '`%s %s= %s` 已废弃；所在函数结果是 option，保存时 `no fmt` 会自动改写成 `?=` 形式（复合赋值的右式现在是 `?T`，通过 `?=` 解包或上抛）'
   'mlyz11mg': '用 --js-runtime <cmd> 选择 `no run --js` 的 JS 运行时（node、bun、deno……）。'
   'mmcrtoio': '用法：no add <tool>[:<version>]@<host>/<owner>/<repo>'
   'mooyq3ok': '结构体字段名后应为 \':\'，实际得到 %s'
@@ -836,16 +837,9 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'ol21t36r': '  no run --js --js-runtime bun main.no     同上，改用 bun（node、bun、deno……）'
   'ond8w2xr': 'builtin chars-new: %s'
   'onpn7zgb': '整数除法 / 取模的除数是字面常量 0，会触发 LLVM 未定义行为（sdiv/srem 除以零），产生不可预测的结果。请改用运行期零检查，或让函数以 option 回传错误。'
-  'oraub2m9': `
-`%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败。请改写成（ok 臂的 it 是元素位置，可读可写）：
-     %s: {
-         ok -> it = it %s %s
-         -> _
-     }
-   或 `%s ?= %s %s %s`（错误上抛，要求所在函数有 option 结果参数）
-`
+  'oraub2m9': '`%s %s= %s` 不支持：下标读取返回 option（越界为 nil），复合赋值会重复求值下标并丢弃失败'
   'orjs902d': '\'switch/case/default\' 已废弃，请改用 \'x: { 1-> ... }\''
-  'os0j8ix4': '不能将 %s 值赋给数组 “%s” 的 %s 元素%s'
+  'os0j8ix4': '不能将 %s 值赋给数组 “%s” 的 %s 元素'
   'osrb7a78': 'move 槽位'
   'oswu0as1': '条件表达式中期望冒号，实际得到 %s'
   'oxgtqeo0': 'write-file: 没有结果槽位'

@@ -37,8 +37,20 @@ t-hex-twoblock = () {
 ; 位元組介面與 hex 介面一致：首位元組 0x23、末位元組 0xa7
 t-bytes-match-hex = () {
     h = sha224.sha224(ABC.to-bytes())
-    runner.eq(h[0], 0x23, 'sha224 byte[0]')
-    runner.eq(h[27], 0xa7, 'sha224 byte[27]')
+    ixout40c16 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout40c16, 0x23, 'sha224 byte[0]')
+    ixout41c16 = h[27]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout41c16, 0xa7, 'sha224 byte[27]')
 }
 
 p1 = runner.test('sha224.digest-len', t-len)

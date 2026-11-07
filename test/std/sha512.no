@@ -51,8 +51,20 @@ t-hex-112a = () {
 ; 位元組介面與 hex 介面一致：首位元組 0xdd、末位元組 0x9f
 t-bytes-match-hex = () {
     h = sha512.sha512(ABC.to-bytes())
-    runner.eq(h[0], 0xdd, 'sha512 byte[0]')
-    runner.eq(h[63], 0x9f, 'sha512 byte[63]')
+    ixout54c16 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout54c16, 0xdd, 'sha512 byte[0]')
+    ixout55c16 = h[63]: {
+        ok -> it
+
+        -> _
+    }
+
+    runner.eq(ixout55c16, 0x9f, 'sha512 byte[63]')
 }
 p1 = runner.test('sha512.digest-len', t-len)
 p2 = runner.test('sha512.input-len-guard', t-input-len)

@@ -6,9 +6,9 @@
 ; 的降級路徑（bounds-check + none/ok 分支）正確；未標型別區域變數 x 承接
 ; 固定陣列 ?= 會受全域 VarTypes 同名污染（std 常見 x:str），屬另一獨立議題。
 
-; --- 固定陣列 [N]i64：#{index-out} 預設值 ---
+; --- 固定陣列 [N]i64：值 match 預設值 ---
 ; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
-; res i64: 命中為 a[i]（i = 1 得 20），越界由 #{index-out=zero} 補零
+; res i64: 命中為 a[i]（i = 1 得 20），越界由 nil 臂補零
 get-default-arr = (i i64) (res i64) {
     a = [10, 20, 30, 40]
 
@@ -19,15 +19,20 @@ get-default-arr = (i i64) (res i64) {
     }
 }
 
-; --- vec[T]：#{index-out} 預設值 ---
+; --- vec[T]：值 match 預設值 ---
 ; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
 ; res i64: 命中為 av[i]（i = 1 得 20），越界補零
 get-default-vec = (i i64) (res i64) {
     a [4] = [10, 20, 30, 40]
     av = a.to-vec()
 
-    #{index-out=zero}
-    res = av[i]
+    ixout30c11 = av[i]: {
+        ok -> it
+
+        -> _
+    }
+
+    res = ixout30c11
 }
 
 ; --- 固定陣列 [N]i64：?=（結果參數直接承接） ---
@@ -50,27 +55,27 @@ safe-get-vec = (i i64) (res ?i64) {
 oob = 9
 ib = 1
 
-; 固定陣列：#{index-out} 越界 → 0
+; 固定陣列：值 match 越界 → 0
 dao = get-default-arr(oob)
-io.out('arr #{index-out} OOB -> ')
+io.out('arr option-match OOB -> ')
 io.out(dao)
 print('')
 
 ; 固定陣列：範圍內正確
 dao2 = get-default-arr(ib)
-io.out('arr #{index-out} in-bounds[1] -> ')
+io.out('arr option-match in-bounds[1] -> ')
 io.out(dao2)
 print('')
 
-; vec：#{index-out} 越界 → 0
+; vec：值 match 越界 → 0
 dvo = get-default-vec(oob)
-io.out('vec #{index-out} OOB -> ')
+io.out('vec option-match OOB -> ')
 io.out(dvo)
 print('')
 
 ; vec：範圍內正確
 dvo2 = get-default-vec(2)
-io.out('vec #{index-out} in-bounds[2] -> ')
+io.out('vec option-match in-bounds[2] -> ')
 io.out(dvo2)
 print('')
 

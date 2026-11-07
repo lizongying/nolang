@@ -160,8 +160,13 @@ toml-table-eq = (name [32]byte, name-len i64, s str) (same bool) {
     name-len != s.len-bytes() -> return
     i <- [0..name-len): {
 
-        #{index-out=zero}
-        name[i] != s.byte(i) -> return
+        ixout164c9 = name[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout164c9 != s.byte(i) -> return
     }
     same = true
 }
@@ -624,11 +629,16 @@ toml.parse = (s str) (result ?toml-doc) {
     (i < lines.len()) {
         i >= lines.len() -> break
 
-        ; D1：索引讀取 `lines[i]` 恆為 `?str`，而 `#{index-out}` 只在「根為索引」的
-        ; 綁定上生效（maybeIndexOutAssign）。拆成兩條：先用註解把越界折成 ''，
+        ; D11 起索引讀取 `lines[i]` 回傳 `?str`，需以值 match 顯式消費；此處以
+        ; place-match 取出 ok 值、nil 臂以 `_` 丟棄（D11 起已移除註解折值），
         ; 再以純 str 傳給 toml-strip-comment（原本的寫法讓 option 直接流入 i64/str 形參）。
-        #{index-out=zero}
-        line-raw = lines[i]
+        ixout631c20 = lines[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        line-raw = ixout631c20
         line = toml-strip-comment(line-raw)
 
         #{overflow=wrap}
@@ -742,9 +752,14 @@ toml.parse = (s str) (result ?toml-doc) {
                 (j < lines.len()) {
                     j >= lines.len() -> break
 
-                    ; D1：同上 —— 索引讀取是 `?str`，先以 `#{index-out}` 折成 '' 再用。
-                    #{index-out=zero}
-                    next-line-raw = lines[j]
+                    ; D11 起同上 —— 索引讀取回傳 `?str`，以值 match 顯式消費 ?T 再用。
+                    ixout747c37 = lines[j]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    next-line-raw = ixout747c37
                     next-line = toml-strip-comment(next-line-raw)
 
                     raw-value = raw-value - '\n' - next-line

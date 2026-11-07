@@ -74,13 +74,6 @@ type formatter struct {
 	// 路徑以 governed 查 relevant。
 	overflowGoverned map[*parser.AnnotationStatement]parser.Statement
 
-	// indexOutRemovable：其全部容器索引讀取皆可證明在界內的陳述（parser/bounds.go
-	// 計算）。非 nil 時，formatter 會移除附加/尾隨於這些陳述的冗餘 `#{index-out}`
-	// 註解（該讀取永遠不會越界，option 處理無意義）。nil = 保留（舊行為）。
-	indexOutRemovable    map[parser.Statement]bool
-	// indexOutAnnRemovable：獨立成行、管轄陳述全部讀取在界內的 #{index-out} 註解節點。
-	indexOutAnnRemovable map[*parser.AnnotationStatement]bool
-
 	// forceInline：僅供 inlineWidth 量測使用 —— 為 true 時，格式化的中綴一律走
 	// 單行分支（不因源碼跨行而插入換行），讓量測得到「完全攤平」的宽度。
 	forceInline bool
@@ -282,41 +275,13 @@ func formatProgramASTWithOverflow(program *parser.Program, code string, style Lo
 	}
 
 	sourceLines := strings.Split(code, "\n")
-	// D7 最終定案（兩層分離）後，`#{index-out}` 只在「死碼」情形移除：純寫入
-	//（讀取位置完全沒有索引）或無主註解（其後無可支配實語句）。in-bounds 讀取
-	// **不再**觸發移除——那類讀取在用戶側仍產生 option，註解承載 maybeIndexOutAssign
-	// 的 DEF-match 解包，刪除會把「有解包」變成「無解包」，製造 idxhndld 假回歸。
-	// StmtRemovable / AnnRemovable 的口徑已由 parser/bounds.go computeRemovable
-	// 收窄為僅死碼情形。
-	inb := parser.AnalyzeInBoundsIndex(program)
-	// 多餘的 place-match 主體 #{index-out}：套用在 place-match 主體（容器索引讀取）
-	// 上的註解對主體是多餘（越界已由 match 的 ok/nil 臂保證），且臂內無依賴其預設值
-	// 的索引讀取（safe-gate）時，整條移除。併入 indexOutAnnRemovable /
-	// indexOutRemovable，由 formatter 的既有移除路徑統一處理。
-	red := parser.AnalyzeRedundantIndexOut(program)
-	// 多餘的 place-match 主體 #{index-out} 一律為「附著 / 尾隨」形式（其上方獨立成行
-	// 註解在解析期已 attach 到 place-match 陳述），不產生獨立 AnnotationStatement，
-	// 故只併入 indexOutRemovable（Stmts），不需要擴充 indexOutAnnRemovable。
-	indexOutAnnRemovable := make(map[*parser.AnnotationStatement]bool, len(inb.AnnRemovable))
-	for k := range inb.AnnRemovable {
-		indexOutAnnRemovable[k] = true
-	}
-	indexOutRemovable := make(map[parser.Statement]bool, len(inb.StmtRemovable)+len(red.Stmts))
-	for k := range inb.StmtRemovable {
-		indexOutRemovable[k] = true
-	}
-	for k := range red.Stmts {
-		indexOutRemovable[k] = true
-	}
 	f := &formatter{
-		sourceLines:          sourceLines,
-		sem:                  program.Sem,
-		trivia:               program.FmtTrivia,
-		loopStyle:            style,
-		overflowRelevant:     relevant,
-		overflowGoverned:     governed,
-		indexOutRemovable:    indexOutRemovable,
-		indexOutAnnRemovable: indexOutAnnRemovable,
+		sourceLines:      sourceLines,
+		sem:              program.Sem,
+		trivia:           program.FmtTrivia,
+		loopStyle:        style,
+		overflowRelevant: relevant,
+		overflowGoverned: governed,
 	}
 	f.formatProgram(program)
 

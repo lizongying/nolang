@@ -55,58 +55,194 @@ rotr = (x u64, n i64) (r u64) {
 ; [blake-g](#argon2.blake-g)
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
 
-    #{index-out=zero}
+    ixout60c21 = v[a]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout60c28 = v[b]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout60c40 = v[a]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout60c62 = v[b]: {
+        ok -> it
+
+        -> _
+    }
+
     v[a]: {
-        ok -> it = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
+        ok -> it = (ixout60c21 + ixout60c28 + 2 * (ixout60c40 & 4294967295) * (ixout60c62 & 4294967295)) & ARGON2-MASK
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout67c25 = v[d]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout67c32 = v[a]: {
+        ok -> it
+
+        -> _
+    }
+
     v[d]: {
-        ok -> it = rotr(v[d] ^ v[a], 32)
+        ok -> it = rotr(ixout67c25 ^ ixout67c32, 32)
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout74c21 = v[c]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout74c28 = v[d]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout74c40 = v[c]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout74c62 = v[d]: {
+        ok -> it
+
+        -> _
+    }
+
     v[c]: {
-        ok -> it = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
+        ok -> it = (ixout74c21 + ixout74c28 + 2 * (ixout74c40 & 4294967295) * (ixout74c62 & 4294967295)) & ARGON2-MASK
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout81c25 = v[b]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout81c32 = v[c]: {
+        ok -> it
+
+        -> _
+    }
+
     v[b]: {
-        ok -> it = rotr(v[b] ^ v[c], 24)
+        ok -> it = rotr(ixout81c25 ^ ixout81c32, 24)
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout88c21 = v[a]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout88c28 = v[b]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout88c40 = v[a]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout88c62 = v[b]: {
+        ok -> it
+
+        -> _
+    }
+
     v[a]: {
-        ok -> it = (v[a] + v[b] + 2 * (v[a] & 4294967295) * (v[b] & 4294967295)) & ARGON2-MASK
+        ok -> it = (ixout88c21 + ixout88c28 + 2 * (ixout88c40 & 4294967295) * (ixout88c62 & 4294967295)) & ARGON2-MASK
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout95c25 = v[d]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout95c32 = v[a]: {
+        ok -> it
+
+        -> _
+    }
+
     v[d]: {
-        ok -> it = rotr(v[d] ^ v[a], 16)
+        ok -> it = rotr(ixout95c25 ^ ixout95c32, 16)
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout102c21 = v[c]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout102c28 = v[d]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout102c40 = v[c]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout102c62 = v[d]: {
+        ok -> it
+
+        -> _
+    }
+
     v[c]: {
-        ok -> it = (v[c] + v[d] + 2 * (v[c] & 4294967295) * (v[d] & 4294967295)) & ARGON2-MASK
+        ok -> it = (ixout102c21 + ixout102c28 + 2 * (ixout102c40 & 4294967295) * (ixout102c62 & 4294967295)) & ARGON2-MASK
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout109c25 = v[b]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout109c32 = v[c]: {
+        ok -> it
+
+        -> _
+    }
+
     v[b]: {
-        ok -> it = rotr(v[b] ^ v[c], 63)
+        ok -> it = rotr(ixout109c25 ^ ixout109c32, 63)
 
         -> _
     }
@@ -185,9 +321,15 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             }
             i <- [0..input.len()): {
 
-                #{index-out=zero, overflow=wrap}
+                ixout190c32 = input[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                #{overflow=wrap}
                 combined[4 + i]: {
-                    ok -> it = input[i]
+                    ok -> it = ixout190c32
 
                     -> _
                 }
@@ -235,9 +377,15 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             }
             i <- [0..input.len()): {
 
-                #{index-out=zero, overflow=wrap}
+                ixout240c32 = input[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                #{overflow=wrap}
                 combined[4 + i]: {
-                    ok -> it = input[i]
+                    ok -> it = ixout240c32
 
                     -> _
                 }
@@ -300,9 +448,20 @@ compress = (x []byte, y []byte) (out []byte) {
     r []byte = with-len(1024)
     i <- [0..1024): {
 
-        #{index-out=zero}
+        ixout305c25 = x[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout305c34 = y[i]: {
+            ok -> it
+
+            -> _
+        }
+
         r[i]: {
-            ok -> it = (x[i]) ^ (y[i])
+            ok -> it = (ixout305c25) ^ (ixout305c34)
 
             -> _
         }
@@ -315,9 +474,56 @@ compress = (x []byte, y []byte) (out []byte) {
         #{overflow=wrap}
         off = i * 8
 
-        #{index-out=zero}
+        ixout320c25 = r[off]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c37 = r[off + 1]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c59 = r[off + 2]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c82 = r[off + 3]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c105 = r[off + 4]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c128 = r[off + 5]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c151 = r[off + 6]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout320c174 = r[off + 7]: {
+            ok -> it
+
+            -> _
+        }
+
         v[i]: {
-            ok -> it = (r[off]) | ((r[off + 1]) << 8) | ((r[off + 2]) << 16) | ((r[off + 3]) << 24) | ((r[off + 4]) << 32) | ((r[off + 5]) << 40) | ((r[off + 6]) << 48) | ((r[off + 7]) << 56)
+            ok -> it = (ixout320c25) | ((ixout320c37) << 8) | ((ixout320c59) << 16) | ((ixout320c82) << 24) | ((ixout320c105) << 32) | ((ixout320c128) << 40) | ((ixout320c151) << 48) | ((ixout320c174) << 56)
 
             -> _
         }
@@ -393,29 +599,83 @@ compress = (x []byte, y []byte) (out []byte) {
 
         val = v[i]
 
-        #{index-out=zero}
-        out[off] = ((val & 255) ^ r[off]) & 255
+        ixout397c35 = r[off]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
-        out[off + 1] = (((val >> 8) & 255) ^ r[off + 1]) & 255
+            -> _
+        }
 
-        #{index-out=zero, overflow=wrap}
-        out[off + 2] = (((val >> 16) & 255) ^ r[off + 2]) & 255
+        out[off] = ((val & 255) ^ ixout397c35) & 255
 
-        #{index-out=zero, overflow=wrap}
-        out[off + 3] = (((val >> 24) & 255) ^ r[off + 3]) & 255
+        #{overflow=wrap}
+        ixout400c46 = r[off + 1]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
-        out[off + 4] = (((val >> 32) & 255) ^ r[off + 4]) & 255
+            -> _
+        }
 
-        #{index-out=zero, overflow=wrap}
-        out[off + 5] = (((val >> 40) & 255) ^ r[off + 5]) & 255
+        #{overflow=wrap}
+        out[off + 1] = (((val >> 8) & 255) ^ ixout400c46) & 255
 
-        #{index-out=zero, overflow=wrap}
-        out[off + 6] = (((val >> 48) & 255) ^ r[off + 6]) & 255
+        #{overflow=wrap}
+        ixout403c47 = r[off + 2]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
-        out[off + 7] = (((val >> 56) & 255) ^ r[off + 7]) & 255
+            -> _
+        }
+
+        #{overflow=wrap}
+        out[off + 2] = (((val >> 16) & 255) ^ ixout403c47) & 255
+
+        #{overflow=wrap}
+        ixout406c47 = r[off + 3]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        out[off + 3] = (((val >> 24) & 255) ^ ixout406c47) & 255
+
+        #{overflow=wrap}
+        ixout409c47 = r[off + 4]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        out[off + 4] = (((val >> 32) & 255) ^ ixout409c47) & 255
+
+        #{overflow=wrap}
+        ixout412c47 = r[off + 5]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        out[off + 5] = (((val >> 40) & 255) ^ ixout412c47) & 255
+
+        #{overflow=wrap}
+        ixout415c47 = r[off + 6]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        out[off + 6] = (((val >> 48) & 255) ^ ixout415c47) & 255
+
+        #{overflow=wrap}
+        ixout418c47 = r[off + 7]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        out[off + 7] = (((val >> 56) & 255) ^ ixout418c47) & 255
     }
 }
 
@@ -697,9 +957,15 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     pos = pos + 4
     i <- [0..pw-len): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout702c24 = password[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         h0-input[pos + i]: {
-            ok -> it = password[i]
+            ok -> it = ixout702c24
 
             -> _
         }
@@ -743,9 +1009,15 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     pos = pos + 4
     i <- [0..salt-len): {
 
-        #{index-out=zero, overflow=wrap}
+        ixout748c24 = salt[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         h0-input[pos + i]: {
-            ok -> it = salt[i]
+            ok -> it = ixout748c24
 
             -> _
         }
@@ -913,16 +1185,27 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     ; 複製到記憶體
     i <- [0..1024): {
 
-        #{index-out=zero}
-        mem[i]: {
-            ok -> it = block0[i]
+        ixout918c24 = block0[i]: {
+            ok -> it
 
             -> _
         }
 
-        #{index-out=zero, overflow=wrap}
+        mem[i]: {
+            ok -> it = ixout918c24
+
+            -> _
+        }
+
+        ixout925c24 = block1[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
         mem[1024 + i]: {
-            ok -> it = block1[i]
+            ok -> it = ixout925c24
 
             -> _
         }
@@ -947,9 +1230,15 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
         i <- [0..1024): {
 
-            #{index-out=zero, overflow=wrap}
+            ixout952c28 = new-block[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
             mem[curr-idx * 1024 + i]: {
-                ok -> it = new-block[i]
+                ok -> it = ixout952c28
 
                 -> _
             }
@@ -977,9 +1266,22 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
             i <- [0..1024): {
 
-                #{index-out=zero, overflow=wrap}
+                #{overflow=wrap}
+                ixout982c33 = mem[curr-idx * 1024 + i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                ixout982c62 = new-block[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                #{overflow=wrap}
                 mem[curr-idx * 1024 + i]: {
-                    ok -> it = (mem[curr-idx * 1024 + i]) ^ (new-block[i])
+                    ok -> it = (ixout982c33) ^ (ixout982c62)
 
                     -> _
                 }
@@ -998,9 +1300,15 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     last-idx = blocks-per-lane - 1
     i <- [0..1024): {
 
-        #{index-out=zero, overflow=wrap}
+        #{overflow=wrap}
+        ixout1003c24 = mem[last-idx * 1024 + i]: {
+            ok -> it
+
+            -> _
+        }
+
         final-block[i]: {
-            ok -> it = mem[last-idx * 1024 + i]
+            ok -> it = ixout1003c24
 
             -> _
         }

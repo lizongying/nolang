@@ -21,11 +21,35 @@ bhex = (data []byte) (hex str) {
     hex = with-len(n * 2)
     i <- [0..n): {
 
-        #{index-out=zero, overflow=wrap}
-        hex[i * 2] = hex-chars[(data[i] >> 4) & 15]
+        ixout25c33 = data[i]: {
+            ok -> it
 
-        #{index-out=zero, overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[data[i] & 15]
+            -> _
+        }
+
+        ixout25c22 = hex-chars[(ixout25c33 >> 4) & 15]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        hex[i * 2] = ixout25c22
+
+        ixout28c36 = data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout28c26 = hex-chars[ixout28c36 & 15]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = ixout28c26
     }
 }
 
@@ -36,8 +60,13 @@ arr512 = (a [512]byte) (v []byte) {
     v = with-len(512)
     i <- [0..512): {
 
-        #{index-out=zero}
-        v[i] = a[i]
+        ixout40c16 = a[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        v[i] = ixout40c16
     }
 }
 

@@ -20,8 +20,11 @@ func TestSafeIndexStrComputedIndex(t *testing.T) {
   n = lines.len()
   k <- [0..n): {
     #{overflow=wrap}
-    #{index-out=zero}
-    a-line = lines[pre + k]
+    a-line = lines[pre + k]: {
+        ok -> it
+
+        -> ''
+    }
     print(a-line)
   }
 `

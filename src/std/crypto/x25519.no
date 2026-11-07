@@ -162,72 +162,122 @@ fe-one = (h []i64) {
 ; [fe-copy](#x25519.fe-copy)
 fe-copy = (h []i64, f []i64) {
 
-    #{index-out=zero}
+    ixout167c20 = f[0]: {
+        ok -> it
+
+        -> _
+    }
+
     h[0]: {
-        ok -> it = f[0]
+        ok -> it = ixout167c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout174c20 = f[1]: {
+        ok -> it
+
+        -> _
+    }
+
     h[1]: {
-        ok -> it = f[1]
+        ok -> it = ixout174c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout181c20 = f[2]: {
+        ok -> it
+
+        -> _
+    }
+
     h[2]: {
-        ok -> it = f[2]
+        ok -> it = ixout181c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout188c20 = f[3]: {
+        ok -> it
+
+        -> _
+    }
+
     h[3]: {
-        ok -> it = f[3]
+        ok -> it = ixout188c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout195c20 = f[4]: {
+        ok -> it
+
+        -> _
+    }
+
     h[4]: {
-        ok -> it = f[4]
+        ok -> it = ixout195c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout202c20 = f[5]: {
+        ok -> it
+
+        -> _
+    }
+
     h[5]: {
-        ok -> it = f[5]
+        ok -> it = ixout202c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout209c20 = f[6]: {
+        ok -> it
+
+        -> _
+    }
+
     h[6]: {
-        ok -> it = f[6]
+        ok -> it = ixout209c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout216c20 = f[7]: {
+        ok -> it
+
+        -> _
+    }
+
     h[7]: {
-        ok -> it = f[7]
+        ok -> it = ixout216c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout223c20 = f[8]: {
+        ok -> it
+
+        -> _
+    }
+
     h[8]: {
-        ok -> it = f[8]
+        ok -> it = ixout223c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout230c20 = f[9]: {
+        ok -> it
+
+        -> _
+    }
+
     h[9]: {
-        ok -> it = f[9]
+        ok -> it = ixout230c20
 
         -> _
     }
@@ -240,72 +290,192 @@ fe-copy = (h []i64, f []i64) {
 ; [fe-add](#x25519.fe-add)
 fe-add = (h []i64, f []i64, g []i64) {
 
-    #{index-out=zero, overflow=wrap}
+    ixout245c20 = f[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout245c27 = g[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[0]: {
-        ok -> it = f[0] + g[0]
+        ok -> it = ixout245c20 + ixout245c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout252c20 = f[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout252c27 = g[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[1]: {
-        ok -> it = f[1] + g[1]
+        ok -> it = ixout252c20 + ixout252c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout259c20 = f[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout259c27 = g[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[2]: {
-        ok -> it = f[2] + g[2]
+        ok -> it = ixout259c20 + ixout259c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout266c20 = f[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout266c27 = g[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[3]: {
-        ok -> it = f[3] + g[3]
+        ok -> it = ixout266c20 + ixout266c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout273c20 = f[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout273c27 = g[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[4]: {
-        ok -> it = f[4] + g[4]
+        ok -> it = ixout273c20 + ixout273c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout280c20 = f[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout280c27 = g[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[5]: {
-        ok -> it = f[5] + g[5]
+        ok -> it = ixout280c20 + ixout280c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout287c20 = f[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout287c27 = g[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[6]: {
-        ok -> it = f[6] + g[6]
+        ok -> it = ixout287c20 + ixout287c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout294c20 = f[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout294c27 = g[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[7]: {
-        ok -> it = f[7] + g[7]
+        ok -> it = ixout294c20 + ixout294c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout301c20 = f[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout301c27 = g[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[8]: {
-        ok -> it = f[8] + g[8]
+        ok -> it = ixout301c20 + ixout301c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout308c20 = f[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout308c27 = g[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[9]: {
-        ok -> it = f[9] + g[9]
+        ok -> it = ixout308c20 + ixout308c27
 
         -> _
     }
@@ -318,72 +488,192 @@ fe-add = (h []i64, f []i64, g []i64) {
 ; [fe-sub](#x25519.fe-sub)
 fe-sub = (h []i64, f []i64, g []i64) {
 
-    #{index-out=zero, overflow=wrap}
+    ixout323c20 = f[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout323c27 = g[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[0]: {
-        ok -> it = f[0] - g[0]
+        ok -> it = ixout323c20 - ixout323c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout330c20 = f[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout330c27 = g[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[1]: {
-        ok -> it = f[1] - g[1]
+        ok -> it = ixout330c20 - ixout330c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout337c20 = f[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout337c27 = g[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[2]: {
-        ok -> it = f[2] - g[2]
+        ok -> it = ixout337c20 - ixout337c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout344c20 = f[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout344c27 = g[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[3]: {
-        ok -> it = f[3] - g[3]
+        ok -> it = ixout344c20 - ixout344c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout351c20 = f[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout351c27 = g[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[4]: {
-        ok -> it = f[4] - g[4]
+        ok -> it = ixout351c20 - ixout351c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout358c20 = f[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout358c27 = g[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[5]: {
-        ok -> it = f[5] - g[5]
+        ok -> it = ixout358c20 - ixout358c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout365c20 = f[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout365c27 = g[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[6]: {
-        ok -> it = f[6] - g[6]
+        ok -> it = ixout365c20 - ixout365c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout372c20 = f[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout372c27 = g[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[7]: {
-        ok -> it = f[7] - g[7]
+        ok -> it = ixout372c20 - ixout372c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout379c20 = f[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout379c27 = g[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[8]: {
-        ok -> it = f[8] - g[8]
+        ok -> it = ixout379c20 - ixout379c27
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout386c20 = f[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout386c27 = g[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[9]: {
-        ok -> it = f[9] - g[9]
+        ok -> it = ixout386c20 - ixout386c27
 
         -> _
     }
@@ -403,19 +693,40 @@ fe-cswap = (a []i64, b []i64, mask i64) {
     m = 0 - mask
     i <- [0..10): {
 
-        #{index-out=zero}
-        t = m & (a[i] ^ b[i])
-
-        #{index-out=zero}
-        a[i]: {
-            ok -> it = a[i] ^ t
+        ixout407c18 = a[i]: {
+            ok -> it
 
             -> _
         }
 
-        #{index-out=zero}
+        ixout407c25 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        t = m & (ixout407c18 ^ ixout407c25)
+
+        ixout411c24 = a[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        a[i]: {
+            ok -> it = ixout411c24 ^ t
+
+            -> _
+        }
+
+        ixout418c24 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
         b[i]: {
-            ok -> it = b[i] ^ t
+            ok -> it = ixout418c24 ^ t
 
             -> _
         }
@@ -688,253 +999,469 @@ fe-mul = (h []i64, f []i64, g []i64) {
     ; 25-bit limbs: carry = floor((t + (1<<24)) / 2^25)
 
     ; limb 0 (26 bits)
+    ixout1003c11 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s0 = t[0] + 33554432
+    s0 = ixout1003c11 + 33554432
 
     #{overflow=wrap}
     c0 = (s0 >> 26) - ((s0 >> 63) << 38)
 
+    ixout1010c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (c0 << 26)
+        ok -> it = ixout1010c21 - (c0 << 26)
+
+        -> _
+    }
+
+    ixout1017c21 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] + c0
+        ok -> it = ixout1017c21 + c0
 
         -> _
     }
 
     ; limb 1 (25 bits)
+    ixout1024c11 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s1 = t[1] + 16777216
+    s1 = ixout1024c11 + 16777216
 
     #{overflow=wrap}
     c1 = (s1 >> 25) - ((s1 >> 63) << 39)
 
+    ixout1031c21 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] - (c1 << 25)
+        ok -> it = ixout1031c21 - (c1 << 25)
+
+        -> _
+    }
+
+    ixout1038c21 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] + c1
+        ok -> it = ixout1038c21 + c1
 
         -> _
     }
 
     ; limb 2 (26 bits)
+    ixout1045c11 = t[2]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s2 = t[2] + 33554432
+    s2 = ixout1045c11 + 33554432
 
     #{overflow=wrap}
     c2 = (s2 >> 26) - ((s2 >> 63) << 38)
 
+    ixout1052c21 = t[2]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] - (c2 << 26)
+        ok -> it = ixout1052c21 - (c2 << 26)
+
+        -> _
+    }
+
+    ixout1059c21 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] + c2
+        ok -> it = ixout1059c21 + c2
 
         -> _
     }
 
     ; limb 3 (25 bits)
+    ixout1066c11 = t[3]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s3 = t[3] + 16777216
+    s3 = ixout1066c11 + 16777216
 
     #{overflow=wrap}
     c3 = (s3 >> 25) - ((s3 >> 63) << 39)
 
+    ixout1073c21 = t[3]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] - (c3 << 25)
+        ok -> it = ixout1073c21 - (c3 << 25)
+
+        -> _
+    }
+
+    ixout1080c21 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] + c3
+        ok -> it = ixout1080c21 + c3
 
         -> _
     }
 
     ; limb 4 (26 bits)
+    ixout1087c11 = t[4]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s4 = t[4] + 33554432
+    s4 = ixout1087c11 + 33554432
 
     #{overflow=wrap}
     c4 = (s4 >> 26) - ((s4 >> 63) << 38)
 
+    ixout1094c21 = t[4]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] - (c4 << 26)
+        ok -> it = ixout1094c21 - (c4 << 26)
+
+        -> _
+    }
+
+    ixout1101c21 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] + c4
+        ok -> it = ixout1101c21 + c4
 
         -> _
     }
 
     ; limb 5 (25 bits)
+    ixout1108c11 = t[5]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s5 = t[5] + 16777216
+    s5 = ixout1108c11 + 16777216
 
     #{overflow=wrap}
     c5 = (s5 >> 25) - ((s5 >> 63) << 39)
 
+    ixout1115c21 = t[5]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] - (c5 << 25)
+        ok -> it = ixout1115c21 - (c5 << 25)
+
+        -> _
+    }
+
+    ixout1122c21 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] + c5
+        ok -> it = ixout1122c21 + c5
 
         -> _
     }
 
     ; limb 6 (26 bits)
+    ixout1129c11 = t[6]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s6 = t[6] + 33554432
+    s6 = ixout1129c11 + 33554432
 
     #{overflow=wrap}
     c6 = (s6 >> 26) - ((s6 >> 63) << 38)
 
+    ixout1136c21 = t[6]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] - (c6 << 26)
+        ok -> it = ixout1136c21 - (c6 << 26)
+
+        -> _
+    }
+
+    ixout1143c21 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] + c6
+        ok -> it = ixout1143c21 + c6
 
         -> _
     }
 
     ; limb 7 (25 bits)
+    ixout1150c11 = t[7]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s7 = t[7] + 16777216
+    s7 = ixout1150c11 + 16777216
 
     #{overflow=wrap}
     c7 = (s7 >> 25) - ((s7 >> 63) << 39)
 
+    ixout1157c21 = t[7]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] - (c7 << 25)
+        ok -> it = ixout1157c21 - (c7 << 25)
+
+        -> _
+    }
+
+    ixout1164c21 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] + c7
+        ok -> it = ixout1164c21 + c7
 
         -> _
     }
 
     ; limb 8 (26 bits)
+    ixout1171c11 = t[8]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s8 = t[8] + 33554432
+    s8 = ixout1171c11 + 33554432
 
     #{overflow=wrap}
     c8 = (s8 >> 26) - ((s8 >> 63) << 38)
 
+    ixout1178c21 = t[8]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] - (c8 << 26)
+        ok -> it = ixout1178c21 - (c8 << 26)
+
+        -> _
+    }
+
+    ixout1185c21 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] + c8
+        ok -> it = ixout1185c21 + c8
 
         -> _
     }
 
     ; limb 9 (25 bits)
+    ixout1192c11 = t[9]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s9 = t[9] + 16777216
+    s9 = ixout1192c11 + 16777216
 
     #{overflow=wrap}
     c9 = (s9 >> 25) - ((s9 >> 63) << 39)
 
+    ixout1199c21 = t[9]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] - (c9 << 25)
+        ok -> it = ixout1199c21 - (c9 << 25)
 
         -> _
     }
 
     ; wrap-around: 2^255 ≡ 19
+    ixout1207c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] + c9 * 19
+        ok -> it = ixout1207c21 + c9 * 19
 
         -> _
     }
 
     ; 第二次進位（處理 wrap-around 進位）
+    ixout1214c12 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s10 = t[0] + 33554432
+    s10 = ixout1214c12 + 33554432
 
     #{overflow=wrap}
     c10 = (s10 >> 26) - ((s10 >> 63) << 38)
 
+    ixout1221c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (c10 << 26)
+        ok -> it = ixout1221c21 - (c10 << 26)
+
+        -> _
+    }
+
+    ixout1228c21 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] + c10
+        ok -> it = ixout1228c21 + c10
+
+        -> _
+    }
+
+    ixout1234c12 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s11 = t[1] + 16777216
+    s11 = ixout1234c12 + 16777216
 
     #{overflow=wrap}
     c11 = (s11 >> 25) - ((s11 >> 63) << 39)
 
+    ixout1241c21 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] - (c11 << 25)
+        ok -> it = ixout1241c21 - (c11 << 25)
+
+        -> _
+    }
+
+    ixout1248c21 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] + c11
+        ok -> it = ixout1248c21 + c11
 
         -> _
     }
@@ -1020,313 +1547,589 @@ fe-sq = (h []i64, f []i64) {
 fe-mul121665 = (h []i64, f []i64) {
     t []i64 = with-len(10)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1025c29 = f[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[0]: {
-        ok -> it = 121665 * f[0]
+        ok -> it = 121665 * ixout1025c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1032c29 = f[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[1]: {
-        ok -> it = 121665 * f[1]
+        ok -> it = 121665 * ixout1032c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1039c29 = f[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[2]: {
-        ok -> it = 121665 * f[2]
+        ok -> it = 121665 * ixout1039c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1046c29 = f[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[3]: {
-        ok -> it = 121665 * f[3]
+        ok -> it = 121665 * ixout1046c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1053c29 = f[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[4]: {
-        ok -> it = 121665 * f[4]
+        ok -> it = 121665 * ixout1053c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1060c29 = f[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[5]: {
-        ok -> it = 121665 * f[5]
+        ok -> it = 121665 * ixout1060c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1067c29 = f[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[6]: {
-        ok -> it = 121665 * f[6]
+        ok -> it = 121665 * ixout1067c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1074c29 = f[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[7]: {
-        ok -> it = 121665 * f[7]
+        ok -> it = 121665 * ixout1074c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1081c29 = f[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[8]: {
-        ok -> it = 121665 * f[8]
+        ok -> it = 121665 * ixout1081c29
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1088c29 = f[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     t[9]: {
-        ok -> it = 121665 * f[9]
+        ok -> it = 121665 * ixout1088c29
 
         -> _
     }
 
     ; 進位傳播 (ref10 風格 + floor division，正確處理負數)
+    ixout1466c11 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    s0 = t[0] + 33554432
+    s0 = ixout1466c11 + 33554432
 
     #{overflow=wrap}
     c0 = (s0 >> 26) - ((s0 >> 63) << 38)
 
+    ixout1473c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (c0 << 26)
+        ok -> it = ixout1473c21 - (c0 << 26)
+
+        -> _
+    }
+
+    ixout1480c21 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] + c0
+        ok -> it = ixout1480c21 + c0
+
+        -> _
+    }
+
+    ixout1486c11 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s1 = t[1] + 16777216
+    s1 = ixout1486c11 + 16777216
 
     #{overflow=wrap}
     c1 = (s1 >> 25) - ((s1 >> 63) << 39)
 
+    ixout1493c21 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] - (c1 << 25)
+        ok -> it = ixout1493c21 - (c1 << 25)
+
+        -> _
+    }
+
+    ixout1500c21 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] + c1
+        ok -> it = ixout1500c21 + c1
+
+        -> _
+    }
+
+    ixout1506c11 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s2 = t[2] + 33554432
+    s2 = ixout1506c11 + 33554432
 
     #{overflow=wrap}
     c2 = (s2 >> 26) - ((s2 >> 63) << 38)
 
+    ixout1513c21 = t[2]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] - (c2 << 26)
+        ok -> it = ixout1513c21 - (c2 << 26)
+
+        -> _
+    }
+
+    ixout1520c21 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] + c2
+        ok -> it = ixout1520c21 + c2
+
+        -> _
+    }
+
+    ixout1526c11 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s3 = t[3] + 16777216
+    s3 = ixout1526c11 + 16777216
 
     #{overflow=wrap}
     c3 = (s3 >> 25) - ((s3 >> 63) << 39)
 
+    ixout1533c21 = t[3]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] - (c3 << 25)
+        ok -> it = ixout1533c21 - (c3 << 25)
+
+        -> _
+    }
+
+    ixout1540c21 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] + c3
+        ok -> it = ixout1540c21 + c3
+
+        -> _
+    }
+
+    ixout1546c11 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s4 = t[4] + 33554432
+    s4 = ixout1546c11 + 33554432
 
     #{overflow=wrap}
     c4 = (s4 >> 26) - ((s4 >> 63) << 38)
 
+    ixout1553c21 = t[4]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] - (c4 << 26)
+        ok -> it = ixout1553c21 - (c4 << 26)
+
+        -> _
+    }
+
+    ixout1560c21 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] + c4
+        ok -> it = ixout1560c21 + c4
+
+        -> _
+    }
+
+    ixout1566c11 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s5 = t[5] + 16777216
+    s5 = ixout1566c11 + 16777216
 
     #{overflow=wrap}
     c5 = (s5 >> 25) - ((s5 >> 63) << 39)
 
+    ixout1573c21 = t[5]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] - (c5 << 25)
+        ok -> it = ixout1573c21 - (c5 << 25)
+
+        -> _
+    }
+
+    ixout1580c21 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] + c5
+        ok -> it = ixout1580c21 + c5
+
+        -> _
+    }
+
+    ixout1586c11 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s6 = t[6] + 33554432
+    s6 = ixout1586c11 + 33554432
 
     #{overflow=wrap}
     c6 = (s6 >> 26) - ((s6 >> 63) << 38)
 
+    ixout1593c21 = t[6]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] - (c6 << 26)
+        ok -> it = ixout1593c21 - (c6 << 26)
+
+        -> _
+    }
+
+    ixout1600c21 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] + c6
+        ok -> it = ixout1600c21 + c6
+
+        -> _
+    }
+
+    ixout1606c11 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s7 = t[7] + 16777216
+    s7 = ixout1606c11 + 16777216
 
     #{overflow=wrap}
     c7 = (s7 >> 25) - ((s7 >> 63) << 39)
 
+    ixout1613c21 = t[7]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] - (c7 << 25)
+        ok -> it = ixout1613c21 - (c7 << 25)
+
+        -> _
+    }
+
+    ixout1620c21 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] + c7
+        ok -> it = ixout1620c21 + c7
+
+        -> _
+    }
+
+    ixout1626c11 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s8 = t[8] + 33554432
+    s8 = ixout1626c11 + 33554432
 
     #{overflow=wrap}
     c8 = (s8 >> 26) - ((s8 >> 63) << 38)
 
+    ixout1633c21 = t[8]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] - (c8 << 26)
+        ok -> it = ixout1633c21 - (c8 << 26)
+
+        -> _
+    }
+
+    ixout1640c21 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] + c8
+        ok -> it = ixout1640c21 + c8
+
+        -> _
+    }
+
+    ixout1646c11 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s9 = t[9] + 16777216
+    s9 = ixout1646c11 + 16777216
 
     #{overflow=wrap}
     c9 = (s9 >> 25) - ((s9 >> 63) << 39)
 
+    ixout1653c21 = t[9]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] - (c9 << 25)
+        ok -> it = ixout1653c21 - (c9 << 25)
+
+        -> _
+    }
+
+    ixout1660c21 = t[0]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] + c9 * 19
+        ok -> it = ixout1660c21 + c9 * 19
+
+        -> _
+    }
+
+    ixout1666c12 = t[0]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s10 = t[0] + 33554432
+    s10 = ixout1666c12 + 33554432
 
     #{overflow=wrap}
     c10 = (s10 >> 26) - ((s10 >> 63) << 38)
 
+    ixout1673c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (c10 << 26)
+        ok -> it = ixout1673c21 - (c10 << 26)
+
+        -> _
+    }
+
+    ixout1680c21 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] + c10
+        ok -> it = ixout1680c21 + c10
+
+        -> _
+    }
+
+    ixout1686c12 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    s11 = t[1] + 16777216
+    s11 = ixout1686c12 + 16777216
 
     #{overflow=wrap}
     c11 = (s11 >> 25) - ((s11 >> 63) << 39)
 
+    ixout1693c21 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] - (c11 << 25)
+        ok -> it = ixout1693c21 - (c11 << 25)
+
+        -> _
+    }
+
+    ixout1700c21 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] + c11
+        ok -> it = ixout1700c21 + c11
 
         -> _
     }
@@ -1517,64 +2320,256 @@ fe-invert = (out []i64, a []i64) {
 fe-frombytes = (h []i64, s [32]byte) {
 
     ; 載入未遮罩 limb（每個 limb 包含「跨界」位元，由後續進位傳播規整）
+    ixout1892c22 = s[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1892c32 = s[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1892c48 = s[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1892c65 = s[3]: {
+        ok -> it
+
+        -> _
+    }
+
     h[0]: {
-        ok -> it = (s[0]) | ((s[1]) << 8) | ((s[2]) << 16) | ((s[3]) << 24)
+        ok -> it = (ixout1892c22) | ((ixout1892c32) << 8) | ((ixout1892c48) << 16) | ((ixout1892c65) << 24)
+
+        -> _
+    }
+
+    ixout1898c23 = s[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1898c33 = s[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1898c49 = s[6]: {
+        ok -> it
 
         -> _
     }
 
     h[1]: {
-        ok -> it = ((s[4]) | ((s[5]) << 8) | ((s[6]) << 16)) << 6
+        ok -> it = ((ixout1898c23) | ((ixout1898c33) << 8) | ((ixout1898c49) << 16)) << 6
+
+        -> _
+    }
+
+    ixout1904c23 = s[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1904c33 = s[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1904c49 = s[9]: {
+        ok -> it
 
         -> _
     }
 
     h[2]: {
-        ok -> it = ((s[7]) | ((s[8]) << 8) | ((s[9]) << 16)) << 5
+        ok -> it = ((ixout1904c23) | ((ixout1904c33) << 8) | ((ixout1904c49) << 16)) << 5
+
+        -> _
+    }
+
+    ixout1910c23 = s[10]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1910c34 = s[11]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1910c51 = s[12]: {
+        ok -> it
 
         -> _
     }
 
     h[3]: {
-        ok -> it = ((s[10]) | ((s[11]) << 8) | ((s[12]) << 16)) << 3
+        ok -> it = ((ixout1910c23) | ((ixout1910c34) << 8) | ((ixout1910c51) << 16)) << 3
+
+        -> _
+    }
+
+    ixout1916c23 = s[13]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1916c34 = s[14]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1916c51 = s[15]: {
+        ok -> it
 
         -> _
     }
 
     h[4]: {
-        ok -> it = ((s[13]) | ((s[14]) << 8) | ((s[15]) << 16)) << 2
+        ok -> it = ((ixout1916c23) | ((ixout1916c34) << 8) | ((ixout1916c51) << 16)) << 2
+
+        -> _
+    }
+
+    ixout1922c22 = s[16]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1922c33 = s[17]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1922c50 = s[18]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1922c68 = s[19]: {
+        ok -> it
 
         -> _
     }
 
     h[5]: {
-        ok -> it = (s[16]) | ((s[17]) << 8) | ((s[18]) << 16) | ((s[19]) << 24)
+        ok -> it = (ixout1922c22) | ((ixout1922c33) << 8) | ((ixout1922c50) << 16) | ((ixout1922c68) << 24)
+
+        -> _
+    }
+
+    ixout1928c23 = s[20]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1928c34 = s[21]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1928c51 = s[22]: {
+        ok -> it
 
         -> _
     }
 
     h[6]: {
-        ok -> it = ((s[20]) | ((s[21]) << 8) | ((s[22]) << 16)) << 7
+        ok -> it = ((ixout1928c23) | ((ixout1928c34) << 8) | ((ixout1928c51) << 16)) << 7
+
+        -> _
+    }
+
+    ixout1934c23 = s[23]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1934c34 = s[24]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1934c51 = s[25]: {
+        ok -> it
 
         -> _
     }
 
     h[7]: {
-        ok -> it = ((s[23]) | ((s[24]) << 8) | ((s[25]) << 16)) << 5
+        ok -> it = ((ixout1934c23) | ((ixout1934c34) << 8) | ((ixout1934c51) << 16)) << 5
+
+        -> _
+    }
+
+    ixout1940c23 = s[26]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1940c34 = s[27]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1940c51 = s[28]: {
+        ok -> it
 
         -> _
     }
 
     h[8]: {
-        ok -> it = ((s[26]) | ((s[27]) << 8) | ((s[28]) << 16)) << 4
+        ok -> it = ((ixout1940c23) | ((ixout1940c34) << 8) | ((ixout1940c51) << 16)) << 4
 
         -> _
     }
 
     ; 最高 limb：遮罩最高位元（bit 255 之後無效），保留 23 位元後 << 2
     ; 使 V 貢獻 = (bits 232-254) * 2^2 * 2^230 = (bits 232-254) * 2^232（與位元組值一致）
+    ixout1948c24 = s[29]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1948c35 = s[30]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout1948c52 = s[31]: {
+        ok -> it
+
+        -> _
+    }
+
     h[9]: {
-        ok -> it = (((s[29]) | ((s[30]) << 8) | ((s[31]) << 16)) & 8388607) << 2
+        ok -> it = (((ixout1948c24) | ((ixout1948c35) << 8) | ((ixout1948c52) << 16)) & 8388607) << 2
 
         -> _
     }
@@ -1584,244 +2579,460 @@ fe-frombytes = (h []i64, s [32]byte) {
     ; 26-bit: carry = floor((h + (1<<25)) / 2^26)
     ; 25-bit: carry = floor((h + (1<<24)) / 2^25)
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[0] + 33554432
+    ixout1588c11 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1588c11 + 33554432
 
     #{overflow=wrap}
     c = (sum >> 26) - ((sum >> 63) << 38)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1595c20 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[0]: {
-        ok -> it = h[0] - (c << 26)
+        ok -> it = ixout1595c20 - (c << 26)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1602c20 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[1]: {
-        ok -> it = h[1] + c
+        ok -> it = ixout1602c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[1] + 16777216
+    ixout1608c11 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1608c11 + 16777216
 
     #{overflow=wrap}
     c = (sum >> 25) - ((sum >> 63) << 39)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1615c20 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[1]: {
-        ok -> it = h[1] - (c << 25)
+        ok -> it = ixout1615c20 - (c << 25)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1622c20 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[2]: {
-        ok -> it = h[2] + c
+        ok -> it = ixout1622c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[2] + 33554432
+    ixout1628c11 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1628c11 + 33554432
 
     #{overflow=wrap}
     c = (sum >> 26) - ((sum >> 63) << 38)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1635c20 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[2]: {
-        ok -> it = h[2] - (c << 26)
+        ok -> it = ixout1635c20 - (c << 26)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1642c20 = h[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[3]: {
-        ok -> it = h[3] + c
+        ok -> it = ixout1642c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[3] + 16777216
+    ixout1648c11 = h[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1648c11 + 16777216
 
     #{overflow=wrap}
     c = (sum >> 25) - ((sum >> 63) << 39)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1655c20 = h[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[3]: {
-        ok -> it = h[3] - (c << 25)
+        ok -> it = ixout1655c20 - (c << 25)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1662c20 = h[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[4]: {
-        ok -> it = h[4] + c
+        ok -> it = ixout1662c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[4] + 33554432
+    ixout1668c11 = h[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1668c11 + 33554432
 
     #{overflow=wrap}
     c = (sum >> 26) - ((sum >> 63) << 38)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1675c20 = h[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[4]: {
-        ok -> it = h[4] - (c << 26)
+        ok -> it = ixout1675c20 - (c << 26)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1682c20 = h[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[5]: {
-        ok -> it = h[5] + c
+        ok -> it = ixout1682c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[5] + 16777216
+    ixout1688c11 = h[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1688c11 + 16777216
 
     #{overflow=wrap}
     c = (sum >> 25) - ((sum >> 63) << 39)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1695c20 = h[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[5]: {
-        ok -> it = h[5] - (c << 25)
+        ok -> it = ixout1695c20 - (c << 25)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1702c20 = h[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[6]: {
-        ok -> it = h[6] + c
+        ok -> it = ixout1702c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[6] + 33554432
+    ixout1708c11 = h[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1708c11 + 33554432
 
     #{overflow=wrap}
     c = (sum >> 26) - ((sum >> 63) << 38)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1715c20 = h[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[6]: {
-        ok -> it = h[6] - (c << 26)
+        ok -> it = ixout1715c20 - (c << 26)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1722c20 = h[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[7]: {
-        ok -> it = h[7] + c
+        ok -> it = ixout1722c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[7] + 16777216
+    ixout1728c11 = h[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1728c11 + 16777216
 
     #{overflow=wrap}
     c = (sum >> 25) - ((sum >> 63) << 39)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1735c20 = h[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[7]: {
-        ok -> it = h[7] - (c << 25)
+        ok -> it = ixout1735c20 - (c << 25)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1742c20 = h[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[8]: {
-        ok -> it = h[8] + c
+        ok -> it = ixout1742c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[8] + 33554432
+    ixout1748c11 = h[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1748c11 + 33554432
 
     #{overflow=wrap}
     c = (sum >> 26) - ((sum >> 63) << 38)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1755c20 = h[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[8]: {
-        ok -> it = h[8] - (c << 26)
+        ok -> it = ixout1755c20 - (c << 26)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1762c20 = h[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[9]: {
-        ok -> it = h[9] + c
+        ok -> it = ixout1762c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[9] + 16777216
+    ixout1768c11 = h[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1768c11 + 16777216
 
     #{overflow=wrap}
     c = (sum >> 25) - ((sum >> 63) << 39)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1775c20 = h[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[9]: {
-        ok -> it = h[9] - (c << 25)
+        ok -> it = ixout1775c20 - (c << 25)
 
         -> _
     }
 
     ; wrap-around: 2^255 ≡ 19
-    #{index-out=zero, overflow=wrap}
+    ixout1783c20 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[0]: {
-        ok -> it = h[0] + c * 19
+        ok -> it = ixout1783c20 + c * 19
 
         -> _
     }
 
     ; 最終進位 h0 -> h1 -> h2
-    #{index-out=zero, overflow=wrap}
-    sum = h[0] + 33554432
+    ixout1790c11 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1790c11 + 33554432
 
     #{overflow=wrap}
     c = (sum >> 26) - ((sum >> 63) << 38)
 
-    #{index-out=zero, overflow=wrap}
+    ixout1797c20 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[0]: {
-        ok -> it = h[0] - (c << 26)
+        ok -> it = ixout1797c20 - (c << 26)
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    ixout1804c20 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[1]: {
-        ok -> it = h[1] + c
+        ok -> it = ixout1804c20 + c
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
-    sum = h[1] + 16777216
+    ixout1810c11 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1810c11 + 16777216
 
     #{overflow=wrap}
     c = (sum >> 25) - ((sum >> 63) << 39)
 
-    #{index-out=zero, overflow=wrap}
-    h[1]: {
-        ok -> it = h[1] - (c << 25)
+    ixout1817c20 = h[1]: {
+        ok -> it
 
         -> _
     }
 
-    #{index-out=zero, overflow=wrap}
+    #{overflow=wrap}
+    h[1]: {
+        ok -> it = ixout1817c20 - (c << 25)
+
+        -> _
+    }
+
+    ixout1824c20 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
     h[2]: {
-        ok -> it = h[2] + c
+        ok -> it = ixout1824c20 + c
 
         -> _
     }
@@ -1838,72 +3049,122 @@ fe-tobytes = (s [32]byte, h []i64) {
     ; 複製到局部陣列
     t []i64 = with-len(10)
 
-    #{index-out=zero}
+    ixout1843c20 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
     t[0]: {
-        ok -> it = h[0]
+        ok -> it = ixout1843c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1850c20 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
     t[1]: {
-        ok -> it = h[1]
+        ok -> it = ixout1850c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1857c20 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
     t[2]: {
-        ok -> it = h[2]
+        ok -> it = ixout1857c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1864c20 = h[3]: {
+        ok -> it
+
+        -> _
+    }
+
     t[3]: {
-        ok -> it = h[3]
+        ok -> it = ixout1864c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1871c20 = h[4]: {
+        ok -> it
+
+        -> _
+    }
+
     t[4]: {
-        ok -> it = h[4]
+        ok -> it = ixout1871c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1878c20 = h[5]: {
+        ok -> it
+
+        -> _
+    }
+
     t[5]: {
-        ok -> it = h[5]
+        ok -> it = ixout1878c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1885c20 = h[6]: {
+        ok -> it
+
+        -> _
+    }
+
     t[6]: {
-        ok -> it = h[6]
+        ok -> it = ixout1885c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1892c20 = h[7]: {
+        ok -> it
+
+        -> _
+    }
+
     t[7]: {
-        ok -> it = h[7]
+        ok -> it = ixout1892c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1899c20 = h[8]: {
+        ok -> it
+
+        -> _
+    }
+
     t[8]: {
-        ok -> it = h[8]
+        ok -> it = ixout1899c20
 
         -> _
     }
 
-    #{index-out=zero}
+    ixout1906c20 = h[9]: {
+        ok -> it
+
+        -> _
+    }
+
     t[9]: {
-        ok -> it = h[9]
+        ok -> it = ixout1906c20
 
         -> _
     }
@@ -1912,208 +3173,496 @@ fe-tobytes = (s [32]byte, h []i64) {
     ; 將 loose/semi-reduced limbs 規約到 [0, 2^bits-1]
     ; Nolang 的 >> 對 i64 是邏輯右移，需用 floor division 公式處理負數
     ; floor(x / 2^b) = (x >> b) - ((x >> 63) << (64 - b))
+    ixout2553c11 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2553c27 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    c = (t[0] >> 26) - ((t[0] >> 63) << 38)
+    c = (ixout2553c11 >> 26) - ((ixout2553c27 >> 63) << 38)
+
+    ixout2557c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (c << 26)
+        ok -> it = ixout2557c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2564c21 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] + c
+        ok -> it = ixout2564c21 + c
+
+        -> _
+    }
+
+    ixout2570c11 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2570c27 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[1] >> 25) - ((t[1] >> 63) << 39)
+    c = (ixout2570c11 >> 25) - ((ixout2570c27 >> 63) << 39)
+
+    ixout2574c21 = t[1]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] - (c << 25)
+        ok -> it = ixout2574c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2581c21 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] + c
+        ok -> it = ixout2581c21 + c
+
+        -> _
+    }
+
+    ixout2587c11 = t[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2587c27 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[2] >> 26) - ((t[2] >> 63) << 38)
+    c = (ixout2587c11 >> 26) - ((ixout2587c27 >> 63) << 38)
+
+    ixout2591c21 = t[2]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] - (c << 26)
+        ok -> it = ixout2591c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2598c21 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] + c
+        ok -> it = ixout2598c21 + c
+
+        -> _
+    }
+
+    ixout2604c11 = t[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2604c27 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[3] >> 25) - ((t[3] >> 63) << 39)
+    c = (ixout2604c11 >> 25) - ((ixout2604c27 >> 63) << 39)
+
+    ixout2608c21 = t[3]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] - (c << 25)
+        ok -> it = ixout2608c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2615c21 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] + c
+        ok -> it = ixout2615c21 + c
+
+        -> _
+    }
+
+    ixout2621c11 = t[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2621c27 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[4] >> 26) - ((t[4] >> 63) << 38)
+    c = (ixout2621c11 >> 26) - ((ixout2621c27 >> 63) << 38)
+
+    ixout2625c21 = t[4]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] - (c << 26)
+        ok -> it = ixout2625c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2632c21 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] + c
+        ok -> it = ixout2632c21 + c
+
+        -> _
+    }
+
+    ixout2638c11 = t[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2638c27 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[5] >> 25) - ((t[5] >> 63) << 39)
+    c = (ixout2638c11 >> 25) - ((ixout2638c27 >> 63) << 39)
+
+    ixout2642c21 = t[5]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] - (c << 25)
+        ok -> it = ixout2642c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2649c21 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] + c
+        ok -> it = ixout2649c21 + c
+
+        -> _
+    }
+
+    ixout2655c11 = t[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2655c27 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[6] >> 26) - ((t[6] >> 63) << 38)
+    c = (ixout2655c11 >> 26) - ((ixout2655c27 >> 63) << 38)
+
+    ixout2659c21 = t[6]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] - (c << 26)
+        ok -> it = ixout2659c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2666c21 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] + c
+        ok -> it = ixout2666c21 + c
+
+        -> _
+    }
+
+    ixout2672c11 = t[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2672c27 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[7] >> 25) - ((t[7] >> 63) << 39)
+    c = (ixout2672c11 >> 25) - ((ixout2672c27 >> 63) << 39)
+
+    ixout2676c21 = t[7]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] - (c << 25)
+        ok -> it = ixout2676c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2683c21 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] + c
+        ok -> it = ixout2683c21 + c
+
+        -> _
+    }
+
+    ixout2689c11 = t[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2689c27 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[8] >> 26) - ((t[8] >> 63) << 38)
+    c = (ixout2689c11 >> 26) - ((ixout2689c27 >> 63) << 38)
+
+    ixout2693c21 = t[8]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] - (c << 26)
+        ok -> it = ixout2693c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2700c21 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] + c
+        ok -> it = ixout2700c21 + c
+
+        -> _
+    }
+
+    ixout2706c11 = t[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2706c27 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[9] >> 25) - ((t[9] >> 63) << 39)
+    c = (ixout2706c11 >> 25) - ((ixout2706c27 >> 63) << 39)
+
+    ixout2710c21 = t[9]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] - (c << 25)
+        ok -> it = ixout2710c21 - (c << 25)
 
         -> _
     }
 
     ; wrap-around: 2^255 ≡ 19
+    ixout2718c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] + c * 19
+        ok -> it = ixout2718c21 + c * 19
 
         -> _
     }
 
     ; 第二輪進位（處理 wrap-around 進位）
+    ixout2725c11 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2725c27 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    c = (t[0] >> 26) - ((t[0] >> 63) << 38)
+    c = (ixout2725c11 >> 26) - ((ixout2725c27 >> 63) << 38)
+
+    ixout2729c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (c << 26)
+        ok -> it = ixout2729c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2736c21 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] + c
+        ok -> it = ixout2736c21 + c
+
+        -> _
+    }
+
+    ixout2742c11 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2742c27 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[1] >> 25) - ((t[1] >> 63) << 39)
+    c = (ixout2742c11 >> 25) - ((ixout2742c27 >> 63) << 39)
+
+    ixout2746c21 = t[1]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] - (c << 25)
+        ok -> it = ixout2746c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2753c21 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] + c
+        ok -> it = ixout2753c21 + c
 
         -> _
     }
@@ -2121,173 +3670,413 @@ fe-tobytes = (s [32]byte, h []i64) {
     ; 此時所有 limb 在 [0, 2^bits-1] 範圍內
     ; 但值可能 >= p，需條件減去 p
     ; 測試: 加 19 看是否溢出 bit 255
+    ixout2763c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] + 19
+        ok -> it = ixout2763c21 + 19
 
         -> _
     }
 
     ; 第三輪進位（+19 測試，無捨入常數）
+    ixout2770c11 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2770c27 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
-    c = (t[0] >> 26) - ((t[0] >> 63) << 38)
+    c = (ixout2770c11 >> 26) - ((ixout2770c27 >> 63) << 38)
+
+    ixout2774c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (c << 26)
+        ok -> it = ixout2774c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2781c21 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] + c
+        ok -> it = ixout2781c21 + c
+
+        -> _
+    }
+
+    ixout2787c11 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2787c27 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[1] >> 25) - ((t[1] >> 63) << 39)
+    c = (ixout2787c11 >> 25) - ((ixout2787c27 >> 63) << 39)
+
+    ixout2791c21 = t[1]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[1]: {
-        ok -> it = t[1] - (c << 25)
+        ok -> it = ixout2791c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2798c21 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] + c
+        ok -> it = ixout2798c21 + c
+
+        -> _
+    }
+
+    ixout2804c11 = t[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2804c27 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[2] >> 26) - ((t[2] >> 63) << 38)
+    c = (ixout2804c11 >> 26) - ((ixout2804c27 >> 63) << 38)
+
+    ixout2808c21 = t[2]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[2]: {
-        ok -> it = t[2] - (c << 26)
+        ok -> it = ixout2808c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2815c21 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] + c
+        ok -> it = ixout2815c21 + c
+
+        -> _
+    }
+
+    ixout2821c11 = t[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2821c27 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[3] >> 25) - ((t[3] >> 63) << 39)
+    c = (ixout2821c11 >> 25) - ((ixout2821c27 >> 63) << 39)
+
+    ixout2825c21 = t[3]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[3]: {
-        ok -> it = t[3] - (c << 25)
+        ok -> it = ixout2825c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2832c21 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] + c
+        ok -> it = ixout2832c21 + c
+
+        -> _
+    }
+
+    ixout2838c11 = t[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2838c27 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[4] >> 26) - ((t[4] >> 63) << 38)
+    c = (ixout2838c11 >> 26) - ((ixout2838c27 >> 63) << 38)
+
+    ixout2842c21 = t[4]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[4]: {
-        ok -> it = t[4] - (c << 26)
+        ok -> it = ixout2842c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2849c21 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] + c
+        ok -> it = ixout2849c21 + c
+
+        -> _
+    }
+
+    ixout2855c11 = t[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2855c27 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[5] >> 25) - ((t[5] >> 63) << 39)
+    c = (ixout2855c11 >> 25) - ((ixout2855c27 >> 63) << 39)
+
+    ixout2859c21 = t[5]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[5]: {
-        ok -> it = t[5] - (c << 25)
+        ok -> it = ixout2859c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2866c21 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] + c
+        ok -> it = ixout2866c21 + c
+
+        -> _
+    }
+
+    ixout2872c11 = t[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2872c27 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[6] >> 26) - ((t[6] >> 63) << 38)
+    c = (ixout2872c11 >> 26) - ((ixout2872c27 >> 63) << 38)
+
+    ixout2876c21 = t[6]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[6]: {
-        ok -> it = t[6] - (c << 26)
+        ok -> it = ixout2876c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2883c21 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] + c
+        ok -> it = ixout2883c21 + c
+
+        -> _
+    }
+
+    ixout2889c11 = t[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2889c27 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[7] >> 25) - ((t[7] >> 63) << 39)
+    c = (ixout2889c11 >> 25) - ((ixout2889c27 >> 63) << 39)
+
+    ixout2893c21 = t[7]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[7]: {
-        ok -> it = t[7] - (c << 25)
+        ok -> it = ixout2893c21 - (c << 25)
+
+        -> _
+    }
+
+    ixout2900c21 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] + c
+        ok -> it = ixout2900c21 + c
+
+        -> _
+    }
+
+    ixout2906c11 = t[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2906c27 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[8] >> 26) - ((t[8] >> 63) << 38)
+    c = (ixout2906c11 >> 26) - ((ixout2906c27 >> 63) << 38)
+
+    ixout2910c21 = t[8]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[8]: {
-        ok -> it = t[8] - (c << 26)
+        ok -> it = ixout2910c21 - (c << 26)
+
+        -> _
+    }
+
+    ixout2917c21 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] + c
+        ok -> it = ixout2917c21 + c
+
+        -> _
+    }
+
+    ixout2923c11 = t[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2923c27 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    c = (t[9] >> 25) - ((t[9] >> 63) << 39)
+    c = (ixout2923c11 >> 25) - ((ixout2923c27 >> 63) << 39)
+
+    ixout2927c21 = t[9]: {
+        ok -> it
+
+        -> _
+    }
 
     #{overflow=wrap}
     t[9]: {
-        ok -> it = t[9] - (c << 25)
+        ok -> it = ixout2927c21 - (c << 25)
 
         -> _
     }
@@ -2298,9 +4087,15 @@ fe-tobytes = (s [32]byte, h []i64) {
     #{overflow=wrap}
     mask = 0 - (1 - c)
 
+    ixout2940c21 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     #{overflow=wrap}
     t[0]: {
-        ok -> it = t[0] - (19 & mask)
+        ok -> it = ixout2940c21 - (19 & mask)
 
         -> _
     }
@@ -2314,188 +4109,428 @@ fe-tobytes = (s [32]byte, h []i64) {
         -> _
     }
 
+    ixout2955c22 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
     s[1]: {
-        ok -> it = (t[0] >> 8) & 255
+        ok -> it = (ixout2955c22 >> 8) & 255
+
+        -> _
+    }
+
+    ixout2961c22 = t[0]: {
+        ok -> it
 
         -> _
     }
 
     s[2]: {
-        ok -> it = (t[0] >> 16) & 255
+        ok -> it = (ixout2961c22 >> 16) & 255
+
+        -> _
+    }
+
+    ixout2967c23 = t[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2967c38 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     s[3]: {
-        ok -> it = ((t[0] >> 24) | (t[1] << 2)) & 255
+        ok -> it = ((ixout2967c23 >> 24) | (ixout2967c38 << 2)) & 255
+
+        -> _
+    }
+
+    ixout2973c22 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     s[4]: {
-        ok -> it = (t[1] >> 6) & 255
+        ok -> it = (ixout2973c22 >> 6) & 255
+
+        -> _
+    }
+
+    ixout2979c22 = t[1]: {
+        ok -> it
 
         -> _
     }
 
     s[5]: {
-        ok -> it = (t[1] >> 14) & 255
+        ok -> it = (ixout2979c22 >> 14) & 255
+
+        -> _
+    }
+
+    ixout2985c23 = t[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout2985c38 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     s[6]: {
-        ok -> it = ((t[1] >> 22) | (t[2] << 3)) & 255
+        ok -> it = ((ixout2985c23 >> 22) | (ixout2985c38 << 3)) & 255
+
+        -> _
+    }
+
+    ixout2991c22 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     s[7]: {
-        ok -> it = (t[2] >> 5) & 255
+        ok -> it = (ixout2991c22 >> 5) & 255
+
+        -> _
+    }
+
+    ixout2997c22 = t[2]: {
+        ok -> it
 
         -> _
     }
 
     s[8]: {
-        ok -> it = (t[2] >> 13) & 255
+        ok -> it = (ixout2997c22 >> 13) & 255
+
+        -> _
+    }
+
+    ixout3003c23 = t[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout3003c38 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     s[9]: {
-        ok -> it = ((t[2] >> 21) | (t[3] << 5)) & 255
+        ok -> it = ((ixout3003c23 >> 21) | (ixout3003c38 << 5)) & 255
+
+        -> _
+    }
+
+    ixout3009c22 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     s[10]: {
-        ok -> it = (t[3] >> 3) & 255
+        ok -> it = (ixout3009c22 >> 3) & 255
+
+        -> _
+    }
+
+    ixout3015c22 = t[3]: {
+        ok -> it
 
         -> _
     }
 
     s[11]: {
-        ok -> it = (t[3] >> 11) & 255
+        ok -> it = (ixout3015c22 >> 11) & 255
+
+        -> _
+    }
+
+    ixout3021c23 = t[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout3021c38 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     s[12]: {
-        ok -> it = ((t[3] >> 19) | (t[4] << 6)) & 255
+        ok -> it = ((ixout3021c23 >> 19) | (ixout3021c38 << 6)) & 255
+
+        -> _
+    }
+
+    ixout3027c22 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     s[13]: {
-        ok -> it = (t[4] >> 2) & 255
+        ok -> it = (ixout3027c22 >> 2) & 255
+
+        -> _
+    }
+
+    ixout3033c22 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     s[14]: {
-        ok -> it = (t[4] >> 10) & 255
+        ok -> it = (ixout3033c22 >> 10) & 255
+
+        -> _
+    }
+
+    ixout3039c22 = t[4]: {
+        ok -> it
 
         -> _
     }
 
     s[15]: {
-        ok -> it = (t[4] >> 18) & 255
+        ok -> it = (ixout3039c22 >> 18) & 255
+
+        -> _
+    }
+
+    ixout3045c23 = t[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout3045c38 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     s[16]: {
-        ok -> it = ((t[4] >> 26) | (t[5] << 0)) & 255
+        ok -> it = ((ixout3045c23 >> 26) | (ixout3045c38 << 0)) & 255
+
+        -> _
+    }
+
+    ixout3051c22 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     s[17]: {
-        ok -> it = (t[5] >> 8) & 255
+        ok -> it = (ixout3051c22 >> 8) & 255
+
+        -> _
+    }
+
+    ixout3057c22 = t[5]: {
+        ok -> it
 
         -> _
     }
 
     s[18]: {
-        ok -> it = (t[5] >> 16) & 255
+        ok -> it = (ixout3057c22 >> 16) & 255
+
+        -> _
+    }
+
+    ixout3063c23 = t[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout3063c38 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     s[19]: {
-        ok -> it = ((t[5] >> 24) | (t[6] << 1)) & 255
+        ok -> it = ((ixout3063c23 >> 24) | (ixout3063c38 << 1)) & 255
+
+        -> _
+    }
+
+    ixout3069c22 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     s[20]: {
-        ok -> it = (t[6] >> 7) & 255
+        ok -> it = (ixout3069c22 >> 7) & 255
+
+        -> _
+    }
+
+    ixout3075c22 = t[6]: {
+        ok -> it
 
         -> _
     }
 
     s[21]: {
-        ok -> it = (t[6] >> 15) & 255
+        ok -> it = (ixout3075c22 >> 15) & 255
+
+        -> _
+    }
+
+    ixout3081c23 = t[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout3081c38 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     s[22]: {
-        ok -> it = ((t[6] >> 23) | (t[7] << 3)) & 255
+        ok -> it = ((ixout3081c23 >> 23) | (ixout3081c38 << 3)) & 255
+
+        -> _
+    }
+
+    ixout3087c22 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     s[23]: {
-        ok -> it = (t[7] >> 5) & 255
+        ok -> it = (ixout3087c22 >> 5) & 255
+
+        -> _
+    }
+
+    ixout3093c22 = t[7]: {
+        ok -> it
 
         -> _
     }
 
     s[24]: {
-        ok -> it = (t[7] >> 13) & 255
+        ok -> it = (ixout3093c22 >> 13) & 255
+
+        -> _
+    }
+
+    ixout3099c23 = t[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout3099c38 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     s[25]: {
-        ok -> it = ((t[7] >> 21) | (t[8] << 4)) & 255
+        ok -> it = ((ixout3099c23 >> 21) | (ixout3099c38 << 4)) & 255
+
+        -> _
+    }
+
+    ixout3105c22 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     s[26]: {
-        ok -> it = (t[8] >> 4) & 255
+        ok -> it = (ixout3105c22 >> 4) & 255
+
+        -> _
+    }
+
+    ixout3111c22 = t[8]: {
+        ok -> it
 
         -> _
     }
 
     s[27]: {
-        ok -> it = (t[8] >> 12) & 255
+        ok -> it = (ixout3111c22 >> 12) & 255
+
+        -> _
+    }
+
+    ixout3117c23 = t[8]: {
+        ok -> it
+
+        -> _
+    }
+
+    ixout3117c38 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     s[28]: {
-        ok -> it = ((t[8] >> 20) | (t[9] << 6)) & 255
+        ok -> it = ((ixout3117c23 >> 20) | (ixout3117c38 << 6)) & 255
+
+        -> _
+    }
+
+    ixout3123c22 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     s[29]: {
-        ok -> it = (t[9] >> 2) & 255
+        ok -> it = (ixout3123c22 >> 2) & 255
+
+        -> _
+    }
+
+    ixout3129c22 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     s[30]: {
-        ok -> it = (t[9] >> 10) & 255
+        ok -> it = (ixout3129c22 >> 10) & 255
+
+        -> _
+    }
+
+    ixout3135c22 = t[9]: {
+        ok -> it
 
         -> _
     }
 
     s[31]: {
-        ok -> it = (t[9] >> 18) & 255
+        ok -> it = (ixout3135c22 >> 18) & 255
 
         -> _
     }
@@ -2523,20 +4558,38 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         }
     }
 
+    ixout3164c21 = k[0]: {
+        ok -> it
+
+        -> _
+    }
+
     k[0]: {
-        ok -> it = k[0] & 248
+        ok -> it = ixout3164c21 & 248
+
+        -> _
+    }
+
+    ixout3170c21 = k[31]: {
+        ok -> it
 
         -> _
     }
 
     k[31]: {
-        ok -> it = k[31] & 127
+        ok -> it = ixout3170c21 & 127
+
+        -> _
+    }
+
+    ixout3176c21 = k[31]: {
+        ok -> it
 
         -> _
     }
 
     k[31]: {
-        ok -> it = k[31] | 64
+        ok -> it = ixout3176c21 | 64
 
         -> _
     }
@@ -2593,8 +4646,13 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         byte-idx = t / 8
         bit-idx = t % 8
 
-        #{index-out=zero}
-        b i64 = (k[byte-idx] >> bit-idx) & 1
+        ixout2597c18 = k[byte-idx]: {
+            ok -> it
+
+            -> _
+        }
+
+        b i64 = (ixout2597c18 >> bit-idx) & 1
 
         ; 條件交換
         swap = swap ^ b
@@ -2704,28 +4762,51 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     k []byte = with-len(32)
     i <- [0..32): {
 
-        #{index-out=zero}
+        ixout2709c24 = scalar[i]: {
+            ok -> it
+
+            -> _
+        }
+
         k[i]: {
-            ok -> it = scalar[i]
+            ok -> it = ixout2709c24
 
             -> _
         }
     }
 
+    ixout3363c21 = k[0]: {
+        ok -> it
+
+        -> _
+    }
+
     k[0]: {
-        ok -> it = k[0] & 248
+        ok -> it = ixout3363c21 & 248
+
+        -> _
+    }
+
+    ixout3369c21 = k[31]: {
+        ok -> it
 
         -> _
     }
 
     k[31]: {
-        ok -> it = k[31] & 127
+        ok -> it = ixout3369c21 & 127
+
+        -> _
+    }
+
+    ixout3375c21 = k[31]: {
+        ok -> it
 
         -> _
     }
 
     k[31]: {
-        ok -> it = k[31] | 64
+        ok -> it = ixout3375c21 | 64
 
         -> _
     }
@@ -2734,9 +4815,14 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     point-arr [32]byte
     i <- [0..32): {
 
-        #{index-out=zero}
+        ixout2739c24 = point[i]: {
+            ok -> it
+
+            -> _
+        }
+
         point-arr[i]: {
-            ok -> it = point[i]
+            ok -> it = ixout2739c24
 
             -> _
         }
@@ -2790,8 +4876,13 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
         byte-idx = t / 8
         bit-idx = t % 8
 
-        #{index-out=zero}
-        b i64 = (k[byte-idx] >> bit-idx) & 1
+        ixout2794c18 = k[byte-idx]: {
+            ok -> it
+
+            -> _
+        }
+
+        b i64 = (ixout2794c18 >> bit-idx) & 1
 
         swap = swap ^ b
         fe-cswap(x2, x3, swap)

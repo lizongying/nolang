@@ -277,7 +277,7 @@ p.is-abs() (yes bool)    ; 是否為絕對路徑
 p.exists() (yes bool)        ; 是否存在
 p.is-dir() (yes bool)        ; 是否為目錄
 p.is-file() (yes bool)       ; 是否為檔案
-p.size() (sz i64)            ; 檔案大小
+p.size() (sz ?i64)           ; 檔案大小（nil = 不存在或 stat 失敗）
 p.make-dir() (ok bool)       ; 建立目錄
 p.remove() (ok bool)         ; 刪除
 p.rename(new-p str) (ok bool)    ; 重新命名

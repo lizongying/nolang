@@ -37,12 +37,12 @@ func runFuncArgs(t *testing.T, src string) []ValidateResult {
 // arguments must not be reported as taking too many.
 func TestVariadicCallAcceptsManyArgs(t *testing.T) {
 	src := `mx = (a ..i64) (r i64) {
-    #{index-out=zero}
+    #{d11-probe=wrap}
     r = a[0]
     n = len(a)
     i <- [1..n): {
         a[i] > r -> {
-            #{index-out=zero}
+            #{d11-probe=wrap}
             r = a[i]
         }
     }
@@ -64,7 +64,7 @@ print(v)
 // what every trailing argument has to satisfy.
 func TestVariadicCallChecksElementTypes(t *testing.T) {
 	src := `mx = (a ..i64) (r i64) {
-    #{index-out=zero}
+    #{d11-probe=wrap}
     r = a[0]
 }
 

@@ -279,7 +279,7 @@ p.is-abs() (yes bool)    ; Whether it is an absolute path
 p.exists() (yes bool)        ; Whether it exists
 p.is-dir() (yes bool)        ; Whether it is a directory
 p.is-file() (yes bool)       ; Whether it is a file
-p.size() (sz i64)            ; File size
+p.size() (sz ?i64)           ; File size (nil = not found or stat failure)
 p.make-dir() (ok bool)       ; Create directory
 p.remove() (ok bool)         ; Delete
 p.rename(new-p str) (ok bool)    ; Rename

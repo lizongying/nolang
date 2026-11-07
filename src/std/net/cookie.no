@@ -286,8 +286,19 @@ build-header = (names [16]str, values [16]str, count i64) (out str) {
     i <- [0..count): {
         out.len-bytes() > 0 -> out = out - '; '
 
-        #{index-out=zero}
-        out = out - names[i] - '=' - values[i]
+        ixout290c21 = names[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout290c38 = values[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out = out - ixout290c21 - '=' - ixout290c38
     }
 }
 
@@ -528,16 +539,28 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     hex-str str = with-len(64)
     i <- [0..32): {
 
+        ixout544c38 = mac[i]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
         hex-str[i * 2]: {
-            ok -> it = hex-chars[(mac[i] >> 4) & 15]
+            ok -> it = hex-chars[(ixout544c38 >> 4) & 15]
+
+            -> _
+        }
+
+        ixout551c37 = mac[i]: {
+            ok -> it
 
             -> _
         }
 
         #{overflow=wrap}
         hex-str[i * 2 + 1]: {
-            ok -> it = hex-chars[mac[i] & 15]
+            ok -> it = hex-chars[ixout551c37 & 15]
 
             -> _
         }

@@ -36,25 +36,25 @@ All "function-form" numeric APIs of std are gathered in the math module (std/mat
 
 **Integer math (int-generic functions):** `math.even`, `math.odd`, `math.gcd`, `math.lcm`, `math.div` (quotient), `math.mod` (modulo)
 
-**Type conversions (functions):** `math.i64-to-f64`, `math.f64-to-i64`, `math.f32-to-f64`, `math.f64-to-f32`
+**Type conversions:** the old function forms `math.i64-to-f64` / `math.f64-to-i64` / `math.f32-to-f64` / `math.f64-to-f32` are REMOVED — use the method forms `v.to-f64()`, `v.to-i64()`, `f32.to-f64()` / `f64.to-f32()` (number module; every integer width has `.to-f64()`, including i128 / u128)
 
-**Number-to-string underlying (functions, deprecated; prefer the method form `v.to-str()`):** `math.i64-to-str`, `math.u64-to-str`, `math.char-to-str`, `math.f64-to-str`
+**Number-to-string underlying:** only `math.char-to-str` remains (deprecated; prefer `c.to-str()`); `math.i64-to-str` / `math.u64-to-str` / `math.f64-to-str` are REMOVED — prefer the method form `v.to-str()`
 
 **Bit operations (functions):** `math.swap`, `math.arr-zero`, `math.rotate-left`, `math.rotate-right`, `math.store-le-u32`
 
-> Exception: the integer power `pow` (int-generic) collides in name with this section's `math.pow` (f64); one module cannot hold two `pow`, so the integer power stays in std/number.no (see the number section below).
+> Integer power: `math.pow-int` (int-generic fast exponentiation) lives in the math module alongside `math.pow` (f64) under a distinct name; `number.pow` keeps an explicit i64 signature (see the number section below).
 
 ### number — Numeric Operations (method-form API)
 
 The "method-form" numeric APIs are concentrated in the number module (std/number.no); function-form APIs are in the math section above. Union types int / float / num are covered in their own sections.
 
-**Range constants:** i8.MIN / MAX … u64.MIN / MAX; `number.INF`
+**Range constants:** i8.MIN / MAX … i128.MIN / MAX, u8.MIN / MAX … u128.MAX; `number.INF`
 
-**Integer power (function, the sole exception to the math.pow name collision):** `r = number.pow(a, n)` (a^n, n ≥ 0, fast exponentiation O(log n), generic over all integer types)
+**Integer power (function):** `r = number.pow(base, n)` (base^n, n ≥ 0, fast exponentiation O(log n), explicit i64 signature with overflow wrap; for the int-generic form use `math.pow-int(a, n)` above)
 
-**Integer methods:** `n.sqrt()` (integer square root floor(√n), returns 0 for negatives), `n.is-prime()` (primality test) — available at i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 widths; i128 and u128 are not provided yet because the runtime truncates 128-bit integers to 64 bits
+**Integer methods:** `n.sqrt()` (integer square root floor(√n), returns 0 for negatives), `n.is-prime()` (primality test) — available at i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 widths, and now also at i128 / u128 (128-bit arithmetic runs on the LLVM i128 lane; requires explicitly typed locals like `n i128 = .` and correct `#{overflow=wrap}` annotation placement)
 
-**Concrete-type to-str (methods):** `v.to-str()` — i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 widths
+**Concrete-type to-str (methods):** `v.to-str()` — i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / byte / f32 / f64 widths; i128 / u128 also work (via native `@str_from_i128` / `@str_from_u128`)
 
 **Float methods (f64 and same-named f32):** trigonometric `x.sin()`, `x.cos()`, `x.tan()`, `x.asin()`, `x.acos()`, `x.atan()`; hyperbolic `x.sinh()`, `x.cosh()`, `x.tanh()`; rounding `x.ceil()`, `x.floor()`, `x.round()`, `x.trunc()`; exponential/logarithm `x.exp()`, `x.log()`, `x.log10()`, `x.log2()`; power/root `x.sqrt()`, `x.cbrt()`; degree/radian `x.degrees()`, `x.radians()`. f32 computes in double precision and narrows back to f32.
 
@@ -169,14 +169,19 @@ r = n.sqrt()                       ; integer square root floor(√n)
 yes = n.is-prime()                 ; primality test (int/u8…)
 q = x.sqrt()                       ; float square root (f64/f32 method)
 q = x.floor()                      ; rounding (f64/f32 method)
-r = number.pow(a, n)               ; integer power (exception to the math.pow collision, kept in number)
+r = number.pow(a, n)               ; integer power (i64 signature; int-generic form is math.pow-int)
 
 ; Function form (math module)
 m = math.max(1, 2, 3)              ; num-generic variadic
 g = math.gcd(a, b)                 ; greatest common divisor
 l = math.lcm(a, b)                 ; least common multiple
-f = math.i64-to-f64(v)            ; numeric conversion
+pi = math.pow-int(a, n)            ; integer power (int-generic, overflow wrap)
 sw = math.swap(a, b)              ; swap
+
+; Numeric conversion (method form; old math.*-to-* functions removed)
+f = v.to-f64()                     ; integer -> f64
+n = x.to-i64()                     ; f64 -> integer (truncating)
+w = f32v.to-f64()                  ; f32 -> f64; reverse: f64.to-f32()
 
 ; Range constants (number module)
 i8.MIN / MAX                  ; -128 / 127
