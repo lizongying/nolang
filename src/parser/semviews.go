@@ -114,6 +114,17 @@ func BuildSemViews(prog *Program, cfg SemRebuildConfig) {
 	p.sem = prog.Sem
 	cfg.Apply(p)
 
+	// 坑 4：本檔 struct 欄位表。解析路徑在**宣告當下**填 Parser.structFields
+	//（decl.go:1560-1575），重建不重跑宣告 pass，表因此只剩 cfg 帶進來的 extern
+	// 條目、本檔定義的 struct 全缺。缺了它之後 indexBaseContainerRaw /
+	// resolveReceiverType 對 `.field[i]` 一律 miss —— fresh 把 `.limit[i]` 判成
+	// `?i64`，rebuilt 判成「非容器」（讀側不再是 option、寫側不再報錯），
+	// TestBuildSemViewsMatchesFreshParse 立刻抓到分叉。
+	//
+	// 只補缺失鍵：cfg.Apply 已按 fresh 路徑「extern 覆蓋本地」的語義寫入，
+	// 反向蓋回會造出建置路徑永遠不會產生的表。
+	p.mergeLocalStructFields(collectStructFieldsFromProg(prog))
+
 	// 坑 3：同檔簽名表。
 	p.rebuildLocalSignatures(prog)
 
@@ -125,6 +136,56 @@ func BuildSemViews(prog *Program, cfg SemRebuildConfig) {
 	// `?T` 推斷（`TypeFacts.InferredType` + `FuncVarTypes`）。與 ParseProgram
 	// 的 `prepareInferredTypes` 是同一個 analysisOnly 走查。
 	p.prepareInferredTypes(prog)
+}
+
+// collectStructFieldsFromProg 從已解析的語法樹收集 struct 名 → 欄位名 → 型別字串。
+//
+// 解析路徑（decl.go:1560-1575）在**解析 struct 定義當下**填 Parser.structFields；
+// 「從 blob 重建」（BuildSemViews）與「H0 直出」（tohir.go 的 scratchParser）
+// 兩條路徑都不重跑宣告 pass，該表為空，於是 indexBaseContainerRaw /
+// resolveReceiverType 對 `.field[i]` 一律 miss。兩條路徑都必須用它補齊。
+//
+// 型別字串的拼法與 decl.go 逐字一致（`[N]T` / `[]T`），option 前綴 `?` 由查表方
+// 以 ty.StripOptionRaw 處理——與解析期寫入的值完全同形，兩條路徑才能對拍。
+func collectStructFieldsFromProg(prog *Program) map[string]map[string]string {
+	out := make(map[string]map[string]string)
+	if prog == nil {
+		return out
+	}
+	walkNodes(prog, func(v interface{}) {
+		sd, ok := v.(*StructDefinition)
+		if !ok || sd == nil || sd.Name == "" {
+			return
+		}
+		fields := make(map[string]string, len(sd.Fields))
+		for _, f := range sd.Fields {
+			if f == nil || f.Type == nil || f.Name == "" {
+				continue
+			}
+			// 與 decl.go / checker.collectStructFields 同口徑：ArrayType/SliceType
+			// 的 String() 已自帶 [N]/[] 前綴，只有 legacy 的 ArraySize/IsSlice
+			// 修飾詞需要補（見 structFieldTypeString 註解；此處曾重複加前綴）。
+			fields[f.Name] = structFieldTypeString(f)
+		}
+		out[sd.Name] = fields
+	})
+	return out
+}
+
+// mergeLocalStructFields 把本檔 struct 欄位表併入 p.structFields，**只補缺失鍵**。
+func (p *Parser) mergeLocalStructFields(fields map[string]map[string]string) {
+	if p == nil || len(fields) == 0 {
+		return
+	}
+	if p.structFields == nil {
+		p.structFields = make(map[string]map[string]string)
+	}
+	for name, fs := range fields {
+		if _, exists := p.structFields[name]; exists {
+			continue
+		}
+		p.structFields[name] = fs
+	}
 }
 
 // rebuildLocalSignatures 依 `decl.go` 的登記規則，從樹上的函式定義重填

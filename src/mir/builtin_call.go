@@ -874,6 +874,26 @@ func (c *codegen) emitBuiltinConv(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		}
 		c.sb.WriteString(fmt.Sprintf("  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot))
 		return nil
+	case builtin.LLVMConvIntExtend:
+		// 整數拓寬。MIR 把 i16/i32/i64 攤平到同一槽寬，所以大部分組合
+		// （i32.to-i64 等）在 LLVM 層沒有寬度差，是純搬運；真正的 cast
+		// 只發生在 i8 車道。
+		//
+		// 符號性取註冊表的 ReceiverType，不看 LLVM 型別：byte 與 i8 都是
+		// i8 槽，byte 要 zext（200 → 200），i8 要 sext（-1 → -1）。這與
+		// emitMove 的 intSlotCastOp 口徑一致，但刻意不調用 c.coerce
+		// —— coerce 對 i8→i64 恆發 zext，會把 i8 的負值變成 255。
+		if srcTy == dstLT {
+			r = srcVal
+			break
+		}
+		op := "sext"
+		switch bm.ReceiverType {
+		case builtin.ReceiverByte, builtin.ReceiverU8, builtin.ReceiverU16,
+			builtin.ReceiverU32, builtin.ReceiverU64, builtin.ReceiverU128:
+			op = "zext"
+		}
+		c.sb.WriteString(fmt.Sprintf("  %s = %s %s %s to %s\n", r, op, srcTy, srcVal, dstLT))
 	default:
 		return i18n.Errorf("y4yjmhz2", "builtin %s: unknown LLVMConv kind %d", inst.Sym, *bm.LLVMConv)
 	}
@@ -2028,7 +2048,7 @@ func (c *codegen) resolveReceiverSlot(recv ValueID) (string, bool) {
 //
 // Under the flat ABI that double free was invisible — both calls were `free(B)`
 // on the SAME pointer, which the allocator silently tolerates (which is why
-// tests/nested-vec-test.no and tests/mem-safety/nested-container-clone.no
+// tests/vec-slice-more.no and tests/mem-safety/nested-container-clone.no
 // passed before). Under the header ABI it is fatal: the first call frees base,
 // and the second reads a freed header, misses the magic, falls to the raw
 // branch and calls `free(B)` where B == base+16 — an interior pointer, which

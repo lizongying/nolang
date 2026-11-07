@@ -561,12 +561,12 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             }
 
             ; a[i]、b[j] 是 byte，`byte * byte` 在 256 域回绕（255*255 会得 1），
-            ; 必须显式升 i64 再相乘。注意单行声明 `x i64 = <byte 表达式>` 不会真的
-            ; 加宽（值仍按窄域算），只有「先声明、再赋值」的两段式才落进 64 位域。
-            ai i64
-            ai = ixout484c29
-            bi i64
-            bi = ixout484c36
+            ; 必须显式升 i64 再相乘：声明类型决定绑定的存储与算术语域，故
+            ; `ai i64 = <单个 byte 值>` 与两段式等价。
+            ; 但初始化式**内部**的算术仍按操作数自身型别求值（`ai i64 = a[i] * b[j]`
+            ; 是在 byte 域相乘、还会触发溢出检查），必须各自先落进 i64 绑定再乘。
+            ai i64 = ixout484c29
+            bi i64 = ixout484c36
 
             #{overflow=wrap}
             v = ixout484c17 + ai * bi + carry
@@ -623,8 +623,7 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         }
 
         ; c[i] 同样是 byte，进 64 位域后再加，避免 256 回绕吃掉进位
-        ci i64
-        ci = ixout520c23
+        ci i64 = ixout520c23
 
         #{overflow=wrap}
         v = ixout520c13 + ci + carry

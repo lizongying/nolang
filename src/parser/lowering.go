@@ -3050,7 +3050,10 @@ type subjectMatchPrep struct {
 	subjElem           string
 	origIdxExpr        Expression
 	idxTempName        string
-	baseName           string
+	// baseLeft 是寫回的容器基底**表達式**（不是名字）：`a[i]` 的 `a`、`.limit[i]`
+	// 的 `.limit`、`a.b.f[i]` 的 `a.b.f`。早期只存 string 名字，欄位基底因此
+	// 拿不到、place-write 靜默不寫回（lowering.go 舊 baseName == "" 早退）。
+	baseLeft           Expression
 	placeWriteUsed     bool
 	anyArmValueCtx     bool
 	matchedVarType     string
@@ -3181,14 +3184,15 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	// 暫存識別符）。
 	var origIdxExpr Expression
 	idxTempName := ""
-	baseName := ""
+	var baseLeft Expression
 	if subjName != "" {
 		if idx, ok := origMatched.(*IndexExpression); ok {
 			origIdxExpr = idx.Index
 			idxTempName = fmt.Sprintf("__idx_%d_%d", tok.Line, tok.Column)
-			if id, ok2 := idx.Left.(*Identifier); ok2 {
-				baseName = id.Value
-			}
+			// 基底可以是表達式：`a[i]` 的識別符、`.limit[i]`／`self.f[i]`／
+			// `a.b.f[i]` 的 DotExpression（含元素作接收者的 `a[i].f[j]`）。
+			// 深拷貝避免寫回節點與原下標共享同一棵子樹（同時被走訪兩次）。
+			baseLeft = cloneIndexBase(idx.Left)
 		}
 	}
 	placeWriteUsed := false
@@ -3423,7 +3427,7 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	prep.subjElem = subjElem
 	prep.origIdxExpr = origIdxExpr
 	prep.idxTempName = idxTempName
-	prep.baseName = baseName
+	prep.baseLeft = baseLeft
 	prep.placeWriteUsed = placeWriteUsed
 	prep.anyArmValueCtx = anyArmValueCtx
 	prep.matchedVarType = matchedVarType
@@ -3478,7 +3482,7 @@ func (p *Parser) rewriteSubjectArm(prep *subjectMatchPrep, arm *MatchArm) {
 	idxTempName := prep.idxTempName
 	anyArmValueCtx := prep.anyArmValueCtx
 	origMatched := prep.origMatched
-	baseName := prep.baseName
+	baseLeft := prep.baseLeft
 	placeWriteUsed := prep.placeWriteUsed
 
 	var armType string
@@ -3609,7 +3613,7 @@ func (p *Parser) rewriteSubjectArm(prep *subjectMatchPrep, arm *MatchArm) {
 		if idx, ok := origMatched.(*IndexExpression); ok {
 			writeInBounds = p.sem.IndexIsInBounds(idx)
 		}
-		arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseName, idxTempName, elemType, &placeWriteUsed, writeInBounds)
+		arm.Body = p.rewriteItPlaceWrites(arm.Body, tok, baseLeft, idxTempName, elemType, &placeWriteUsed, writeInBounds)
 	}
 	if armType != "" {
 		// 析構綁定 `ok(v) -> ...`：把載荷綁到 v 而非隱含的 `it`。
@@ -3948,6 +3952,18 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 	}
 
 	// ok(cond): `if 1 { it = matched; <chain> }` — must mirror emitSubjectMatchAST.
+	//
+	// placeWriteUsed 的取值時點在這裡很關鍵：它在上面那圈 rewriteSubjectArm 裡才被
+	// 累積出來（rewriteItPlaceWrites 透過 *bool 回報），函式開頭抓到的是**進入時**
+	// 的值。早期版本整段直接用開頭那個 snapshot，於是「臂裡確實有 `it = v`」的
+	// match 仍然拿不到 `let __idx = <orig>`、讀取也不改寫成 `__idx`，而寫回 store
+	// 卻照樣用 `__idx_L_C` —— 產生一個**從未宣告的索引暫存**，MIR 靜默讀到 0，
+	// 用戶可見症狀就是 `?=` 寫入整批消失（`?= ` 由 lowerUnwrapAssignToIndex 直接
+	// 呼叫本函式，必經此路徑；用戶手寫的 `ok -> it = v` 走 walk 版 buildMatchDesugar，
+	// 那邊每個臂都即時更新，故只有 `?=` 形態壞掉）。
+	// H0（tohir.go 的 emitSubjectMatchHIR）本來就讀 prep.placeWriteUsed 的即時值，
+	// 兩條路徑必須一致。
+	placeWriteUsed = prep.placeWriteUsed
 	if hasRawCond && itStmt != nil {
 		ifExpr = &IfExpression{
 			Token:     tok,
@@ -3965,6 +3981,7 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 	// Index-subject normalisation: `if 1 { [let __idx = <orig>;] let __match_subj ?elem = <orig>; <chain> }`.
 	if subjName != "" && subjElem != "" && ifExpr != nil {
 		var preStmts []Statement
+		subjValue := origMatched
 		if placeWriteUsed && origIdxExpr != nil {
 			preStmts = append(preStmts, &LetStatement{
 				Token:       tok,
@@ -3972,8 +3989,34 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 				IsSynthetic: true,
 				Value:       origIdxExpr,
 			})
+			// 讀取索引改寫成 __idx 暫存 —— **建新節點，絕不就地改寫
+			// origMatched**（與 tohir.go 的 emitSubjectMatchHIR 同口徑）。
+			//
+			// 曾經這裡寫的是 `idx.Index = &Identifier{…idxTempName}`，直接改掉
+			// 用戶 AST 上那顆 *IndexExpression。同一份 AST 只要被降糖兩趟
+			//（`?=` 的目標索引節點在 block-match 展開與 H0 直出之間是共享的），
+			// 第二趟 prepareSurfaceMatch 取到的 origIdxExpr 就已經是 `__idx_L_C`，
+			// 於是宣告變成自我引用的 `let __idx_L_C = __idx_L_C`：讀取那個從未
+			// 初始化的暫存、寫回也落在同一個 0 索引 ⇒ `a[i] ?= v` 靜默無效
+			//（x8 探針：期望 99，實際 0；HIR dump 可見 `let s=__idx_4_14` 的初值
+			// 是 `ident s=__idx_4_14`）。
 			if idx, ok := origMatched.(*IndexExpression); ok {
-				idx.Index = &Identifier{Token: tok, Value: idxTempName}
+				fresh := &IndexExpression{
+					Token: idx.Token,
+					Left:  idx.Left,
+					Index: &Identifier{Token: tok, Value: idxTempName},
+				}
+				// 借用原節點（bounds 分析已證明）的 InBounds 事實，並標成寫入
+				// 主體：可增長容器要走 grow-write 下標（`i >= 0` 即擴容），而非
+				// 讀語義的 `0 <= i < len`。與 emitSubjectMatchHIR 逐條對應，
+				// 少了它兩軌在 MIR 上分叉（mir/d9_write_bce_test.go 會紅）。
+				if p.sem != nil {
+					if p.sem.IndexIsInBounds(origMatched) {
+						p.sem.SetIndexInBounds(fresh, true)
+					}
+					p.sem.SetGrowWrite(fresh, true)
+				}
+				subjValue = fresh
 			}
 		}
 		// The type NODE must be the same string the semantic table was given
@@ -3983,7 +4026,7 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 			Name:        &Identifier{Token: tok, Value: subjName},
 			IsSynthetic: true,
 			Type:        buildType(prep.subjTypeRaw(), tok),
-			Value:       origMatched,
+			Value:       subjValue,
 		}
 		wrapperStmts := make([]Statement, 0, len(preStmts)+2)
 		wrapperStmts = append(wrapperStmts, preStmts...)
@@ -4339,6 +4382,37 @@ func itAssignParts(s Statement) (Expression, bool) {
 	return nil, false
 }
 
+// cloneIndexBase 淺拷貝索引基底的 AST 節點。
+//
+// place-write 把基底塞進寫回的 IndexExpression（`<base>[__idx] = it`），而原下標
+// 節點仍留在樹上供讀取與診斷使用。共享同一指標會讓同一棵子樹被走訪兩次（H0
+// 降糖、bounds 分析、fmt 都會踩到），故必須獨立一份。
+func cloneIndexBase(e Expression) Expression {
+	switch x := e.(type) {
+	case *Identifier:
+		if x == nil {
+			return nil
+		}
+		c := *x
+		return &c
+	case *DotExpression:
+		if x == nil {
+			return nil
+		}
+		c := *x
+		c.Receiver = cloneIndexBase(x.Receiver)
+		return &c
+	case *GroupedExpression:
+		if x == nil {
+			return nil
+		}
+		c := *x
+		c.Expression = cloneIndexBase(x.Expression)
+		return &c
+	}
+	return e
+}
+
 // rewriteItPlaceWrites rewrites user-written `it = v` bindings inside a
 // place-match ok arm into a write-through sequence (D9):
 //
@@ -4357,11 +4431,11 @@ func itAssignParts(s Statement) (Expression, bool) {
 // Nested matches — already lowered into RTBareMatch-flagged IfExpressions by
 // the time this runs — are skipped: their `it` belongs to the inner match.
 // User-written if/for blocks are descended into.
-func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) *BlockStatement {
-	if body == nil || baseName == "" || idxTempName == "" {
+func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, baseLeft Expression, idxTempName, elemType string, used *bool, writeInBounds bool) *BlockStatement {
+	if body == nil || baseLeft == nil || idxTempName == "" {
 		return body
 	}
-	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds)
+	stmts, changed := p.rewriteItPlaceWritesStmts(body.Statements, tok, baseLeft, idxTempName, elemType, used, writeInBounds)
 	if !changed {
 		return body // nothing rewritten
 	}
@@ -4372,7 +4446,7 @@ func (p *Parser) rewriteItPlaceWrites(body *BlockStatement, tok lexer.Token, bas
 	return nb
 }
 
-func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseName, idxTempName, elemType string, used *bool, writeInBounds bool) ([]Statement, bool) {
+func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, baseLeft Expression, idxTempName, elemType string, used *bool, writeInBounds bool) ([]Statement, bool) {
 	changed := false
 	out := make([]Statement, 0, len(stmts)+2)
 	for _, s := range stmts {
@@ -4405,7 +4479,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			}
 			writeIndex := &IndexExpression{
 				Token: tok,
-				Left:  &Identifier{Token: tok, Value: baseName},
+				Left:  cloneIndexBase(baseLeft),
 				Index: &Identifier{Token: tok, Value: idxTempName},
 			}
 			if writeInBounds {
@@ -4457,20 +4531,20 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 		// 已降糖的巢狀 match（RTBareMatch 旗標）整棵跳過——它的 it 屬於內層。
 		switch n := s.(type) {
 		case *BlockStatement:
-			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+			if ns, ch := p.rewriteItPlaceWritesStmts(n.Statements, tok, baseLeft, idxTempName, elemType, used, writeInBounds); ch {
 				n.Statements = ns
 				changed = true
 			}
 		case *ExpressionStatement:
 			if ie, ok := n.Expression.(*IfExpression); ok && !p.fmtTrivia.HasRTFlag(ie, RTBareMatch) {
 				if ie.Consequence != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Consequence.Statements, tok, baseLeft, idxTempName, elemType, used, writeInBounds); ch {
 						ie.Consequence.Statements = ns
 						changed = true
 					}
 				}
 				if ie.Alternative != nil {
-					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+					if ns, ch := p.rewriteItPlaceWritesStmts(ie.Alternative.Statements, tok, baseLeft, idxTempName, elemType, used, writeInBounds); ch {
 						ie.Alternative.Statements = ns
 						changed = true
 					}
@@ -4478,7 +4552,7 @@ func (p *Parser) rewriteItPlaceWritesStmts(stmts []Statement, tok lexer.Token, b
 			}
 		case *ForStatement:
 			if n.Body != nil {
-				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseName, idxTempName, elemType, used, writeInBounds); ch {
+				if ns, ch := p.rewriteItPlaceWritesStmts(n.Body.Statements, tok, baseLeft, idxTempName, elemType, used, writeInBounds); ch {
 					n.Body.Statements = ns
 					changed = true
 				}
@@ -4797,6 +4871,28 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// struct hashmap-str-i64`；MIR 补上 map 下标降糖后变成**编译成功、运行期
 	// SIGBUS** 的三重 free。故此处必须是硬错误。
 	if uas.Name == nil {
+		// `.field[i]` 的基底解析（indexBaseContainerRaw → indexBaseReceiverType →
+		// resolveReceiverType）要靠 `Parser.methodStructStack` 把隱含的 `self`
+		// 解成 struct 名。解析期由 decl.go 在 parseFunctionBody 前後 push/pop，
+		// 而 lowering / H0 走查發生在 parse **之後**，那時棧早已清空 —— 不補推的話
+		// 方法體內的 `.keys[i] ?= v` 在 isSafeIndexBase 一律 miss，整條 D9 寫入側
+		// 分支落空，退化到通用分支後 rhsDefinitelyNonOption 把 RHS（普通變數 v）
+		// 判成「不是 option」而報 5l952ztl（y3 探針；方法內
+		// `.keys[i]: { ok -> it = v }` 之所以沒事，是因為那條路徑由 H0 的
+		// scratchParser 還原了棧）。
+		//
+		// 補推**只限這條分支**：它在整趟走查的層級上補推（形如「進入
+		// FunctionDefinition 就 push」）會改變所有 `.field` 接收者解析的既有結果，
+		// 使 BuildSemViews 的重建路徑（不走走查、只回放事實）與 fresh parse 分叉，
+		// semviews_test.go 的 TestBuildSemViewsMatchesFreshParse 會在 std/bigint.no
+		// 上報 `?bigint||-` vs `||-`。此處進來就 push、函式返回前 pop（defer），
+		// 影響面僅限本次 `?=` 下標降糖。與 tohir.go:1493 同口徑。
+		if savedLen := len(l.p.methodStructStack); savedLen == 0 {
+			if st := functionSelfType(l.curFuncDef); st != "" {
+				l.p.methodStructStack = append(l.p.methodStructStack, st)
+				defer func() { l.p.methodStructStack = l.p.methodStructStack[:savedLen] }()
+			}
+		}
 		if idx, ok := uas.Target.(*IndexExpression); ok {
 			if mt := l.p.mapIndexBaseType(idx); mt != "" {
 				l.p.saveErrorf("pvma2wsn", "line %d, column %d: `?=` on a map subscript is not supported (base type `%s`); write `%s = v` directly — a map key has no out-of-range case, so the write is a put and cannot fail",

@@ -1,0 +1,133 @@
+; tests/float-more.no — consolidated float NaN/Inf fragments
+; from: tests/float-is-inf-zero.no, tests/float-ne-nan.no, tests/number-nan-inf.no
+
+; float-is-inf-zero
+test-is-inf-zero = () {
+    z = 0.0
+    nz = 0.0 - 0.0
+    h = 1.0 / 0.0
+    hn = 0.0 - 1.0 / 0.0
+    nan = 0.0 / 0.0
+    z.is-inf() -> print('FAIL +0 reported inf')
+    nz.is-inf() -> print('FAIL -0 reported inf')
+    nan.is-inf() -> print('FAIL nan reported inf')
+    ! h.is-inf() -> print('FAIL +inf not detected')
+    ! hn.is-inf() -> print('FAIL -inf not detected')
+    print('DONE')
+}
+
+test-is-inf-zero()
+
+print('---')
+
+; float-ne-nan
+check = (name str, cond bool) {
+    {
+        cond -> print('ok: {name}')
+
+        -> print('fail: {name}')
+    }
+}
+
+nan-of = () (v f64) {
+    zero = 0.0
+    v = zero / zero
+}
+
+inf-of = () (v f64) {
+    v = 1.0 / 0.0
+}
+
+n = nan-of()
+i = inf-of()
+
+check('nan != nan', n != n)
+check('nan == nan 為假', (n == n) == false)
+check('nan != 0', n != 0.0)
+check('nan != inf', n != i)
+
+check('nan > 0 為假', (n > 0.0) == false)
+check('nan < 0 為假', (n < 0.0) == false)
+check('nan >= 0 為假', (n >= 0.0) == false)
+check('nan <= 0 為假', (n <= 0.0) == false)
+
+check('nan 印成 nan', n.to-str() == 'nan')
+check('inf 印成 inf', i.to-str() == 'inf')
+check('-inf 印成 -inf', (0.0 - i).to-str() == '-inf')
+
+check('inf - inf 是 nan', (i - i) != (i - i))
+check('0 * inf 是 nan', (0.0 * i) != (0.0 * i))
+check('inf / inf 是 nan', (i / i) != (i / i))
+
+check('常數 0.0/0.0 是 nan', (0.0 / 0.0).to-str() == 'nan')
+
+check('1.5 != 2.5', 1.5 != 2.5)
+check('1.5 == 1.5', 1.5 == 1.5)
+check('1.5 < 2.5', 1.5 < 2.5)
+
+print('---')
+
+; number-nan-inf
+test-nan-inf = () {
+    a = 1.0
+    yes = 0
+    a.is-nan(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+
+    a.is-inf(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+
+    b = 0.0 / 0.0
+    b.is-nan(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+
+    b.is-inf(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+
+    c = 1.0 / 0.0
+    c.is-nan(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+
+    c.is-inf(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+
+    d = -1.0 / 0.0
+    d.is-nan(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+
+    d.is-inf(yes)
+    {
+        yes -> print(1)
+
+        -> print(0)
+    }
+}
+test-nan-inf()

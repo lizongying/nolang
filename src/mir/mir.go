@@ -238,7 +238,7 @@ func (m *Module) StructFieldIsOwnedLeaf(key string, idx int) bool {
 //	tier 1  hashmap_ / static_hashmap_ — LANDED, on the back of the exact
 //	        matched 692-file compile+run A/B sweep (build rc, run rc and stdout
 //	        sha identical on every file; the single intentional difference is
-//	        tests/map-struct-deep-copy.no, which is the Rule 1 fix itself).
+//	        tests/map-more.no (deep-copy section), which is the Rule 1 fix itself).
 //	        Measured on the same probe the doc uses: `m [str]i64 = {}` + put
 //	        went from 164 MB @ 200k / 651 MB @ 800k (linear, unbounded) to
 //	        1.88 MB @ 200k / 1.80 MB @ 800k (flat), with the never-puts

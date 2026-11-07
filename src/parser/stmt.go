@@ -225,6 +225,22 @@ func (p *Parser) parseStatement() Statement {
 						if p.currentToken.Type == lexer.ASSIGN {
 							// Has assignment: name [N]type = value
 						}
+					} else if p.currentToken.Type == lexer.QUESTION && hasSpaceBeforeBracket {
+						// `name [N]?T` —— 可選元素型別的定長陣列宣告（`[N]?i64`、
+						// `[N]?[]str`…）。漏了這一支時 `b [4]?i64 = ...` 會落進
+						// 「不是宣告」的兜底，交給表達式解析，於是 `b[4]` 之後的
+						// `?` 被當成三元運算符，報 `expected colon in conditional
+						// expression`。
+						//
+						// 必須靠 hasSpaceBeforeBracket 把真正的三元 `a[0]?x:y`
+						// （姓名與 `[` 緊連）排除在外。
+						for p.currentToken.Type != lexer.ASSIGN &&
+							p.currentToken.Type != lexer.NEWLINE &&
+							p.currentToken.Type != lexer.EOF &&
+							p.currentToken.Type != lexer.SEMICOLON {
+							p.nextToken()
+						}
+						isArrayDecl = true
 					} else if p.currentToken.Type == lexer.ASSIGN && p.peekToken.Type == lexer.LBRACKET {
 						// No element type but RHS is array literal: a [3] = [1, 2, 3]
 						isArrayDecl = true

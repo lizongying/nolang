@@ -311,7 +311,13 @@ import (
 // 原始碼的樹因此從「`x = c[i]` + 主體為空的裸 match」變成「`x` 的賦值右值是
 // SurfaceMatch(主體=IndexExpression)」。舊 blob 仍是裂開的那棵樹，`-> DEF` 臂
 // 形同不存在（越界取 0 而不是 DEF），故必 bump。
-const ASTVersion = "2026-11-06.3"
+// 2026-11-07.1：索引基底判定統一（indexBaseContainerRaw）——`.field[i]` /
+// `self.f[i]` / `a.b.f[i]` / `a[i].f[j]` 不再被當成「非安全索引基底」，讀取
+// 因此**變成** `?T`（值位置 match 會歸一化成 `__match_subj ?elem`）；同時
+// place-write 的寫回基底由「識別符名字」改為「基底表達式」，`.keys[i]: {
+// ok -> it = v }` 從「靜默丟棄寫回」變成真的寫回元素。同一份原始碼的樹與
+// 降糖結果都變了，舊 blob 仍是不 option 化、不寫回的那棵，故必 bump。
+const ASTVersion = "2026-11-07.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

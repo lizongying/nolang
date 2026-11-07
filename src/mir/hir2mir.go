@@ -2748,6 +2748,129 @@ func (l *lowerer) globalVisible(name string) bool {
 	return true
 }
 
+// intBitsOfRaw returns the DECLARED bit width of a nolang integer type name,
+// or 0 when raw is not a builtin integer type. MIR flattens scalars to i64 at
+// runtime (see unsignedIntWidth), but the declared width is what decides
+// whether a binding-time conversion widens (allowed) or narrows (refused).
+// Aliases / structs / unions return 0: their Kind is already filtered by the
+// caller, and an unknown width must not authorise a narrowing conversion.
+func intBitsOfRaw(raw string) int {
+	switch raw {
+	case "i8", "u8", "byte":
+		return 8
+	case "i16", "u16":
+		return 16
+	case "i32", "u32":
+		return 32
+	case "i64", "u64", "usize":
+		return 64
+	case "i128", "u128":
+		return 128
+	}
+	return 0
+}
+
+// intConvCallee returns the name of the conventional conversion method
+// `<srcRaw>.to-<dstRaw>` — but only when it exists AND its contract holds
+// exactly: receiver == srcRaw, single result == dstRaw (never an option), no
+// extra parameters. Otherwise "" (the caller then falls back to its previous
+// behaviour and never silently narrows without a method).
+//
+// This is the "assignment target type is known ⇒ look up to-T" rule. The
+// language has no cast syntax that hir2mir can lower (KCast is only read by
+// typeOfNode), so every conversion has to exist as a METHOD. Two registries
+// are consulted, in this order:
+//
+//  1. l.funcNames — real, user-visible Nolang methods (a user-defined
+//     `u16.to-i64`, or any non-`#{buildin}` std method). Their signature is
+//     checked through the HIR nodes so a same-named method with a different
+//     shape (e.g. `str.to-i64`, which returns `?i64`) is rejected.
+//  2. builtin.FindBuiltinMethod — `#{buildin}` stubs are STRIPPED from the
+//     merged program (build/transpiler_inject.go stripBuiltinStubs), so they
+//     never appear in funcNames; their real emission lives in Go
+//     (src/builtin/strconv.go) and is dispatched by method name in codegen.
+func (l *lowerer) intConvCallee(srcRaw, dstRaw string) string {
+	if srcRaw == "" || dstRaw == "" || srcRaw == dstRaw {
+		return ""
+	}
+	// Aliases / unions / structs / char: intBitsOfRaw == 0. Converting those is
+	// out of scope (union aliases must keep their monomorphised member type).
+	if intBitsOfRaw(srcRaw) == 0 || intBitsOfRaw(dstRaw) == 0 {
+		return ""
+	}
+	callee := srcRaw + ".to-" + dstRaw
+	// Self-recursion guard: a method NAMED X.to-Y whose own body binds
+	// `v Y = .` (or assigns `out = .`) would otherwise call itself. Only the
+	// callee's own body is affected; `i32.to-str`'s `v i64 = .` still benefits
+	// from `i32.to-i64`.
+	if f := l.mod.Func(l.curFunc); f != nil {
+		if f.Name == callee || strings.HasSuffix(f.Name, "."+callee) {
+			return ""
+		}
+	}
+	// (1) real Nolang method
+	if _, ok := l.funcNames[callee]; ok {
+		params := l.paramRawTypesOfCallee(callee) // [0] is self
+		res := l.resultTypesOfCallee(callee)
+		if len(params) == 1 && params[0] == srcRaw && len(res) == 1 && l.typeRaw(res[0]) == dstRaw {
+			return callee
+		}
+		return ""
+	}
+	// (2) #{buildin} conversion
+	if bm := builtin.FindBuiltinMethod(callee); bm != nil &&
+		bm.LLVMConv != nil && len(bm.Params) == 0 && len(bm.Return) == 1 &&
+		bm.ReceiverType.String() == srcRaw && bm.Return[0].String() == dstRaw {
+		return callee
+	}
+	return ""
+}
+
+// intConvValue lowers `v` through the conventional `<src>.to-<dst>` method
+// when one satisfies intConvCallee. ok=false means the caller must keep its
+// own path (implicit OpMove widening); it is never an error.
+func (l *lowerer) intConvValue(v ValueID, dst TypeID, srcRaw, dstRaw string) (ValueID, bool) {
+	callee := l.intConvCallee(srcRaw, dstRaw)
+	if callee == "" {
+		return v, false
+	}
+	l.enqueueCallee(callee) // no-op for builtins, real work for Nolang methods
+	if d := l.b.EmitCallMulti([]TypeID{dst}, []ValueID{v}, callee); len(d) > 0 && d[0] != NoVal {
+		return d[0], true
+	}
+	return v, false
+}
+
+// convertForDeclaredTarget applies the `<src>.to-<dst>` contract when the
+// TARGET slot type is a concrete integer and the value carries a different
+// integer type. Returns val unchanged when no such method exists, so callers
+// keep their own fallback (implicit widening, or a rejection upstream).
+//
+// This is the one place the "assignment target type is known" rule is spelled
+// out; the three assignment shapes (new binding, local re-binding, module-level
+// write-back) all funnel through it.
+func (l *lowerer) convertForDeclaredTarget(val ValueID, dst TypeID) ValueID {
+	if val == NoVal || dst == NoType || dst == l.voidType {
+		return val
+	}
+	dty := l.mod.Type(dst)
+	if dty == nil || dty.Kind != KindInt {
+		return val
+	}
+	vt := l.valueTypeOf(val)
+	if vt == NoType || vt == l.voidType || vt == dst {
+		return val
+	}
+	vty := l.mod.Type(vt)
+	if vty == nil || vty.Kind != KindInt || vty.Raw == dty.Raw {
+		return val
+	}
+	if conv, ok := l.intConvValue(val, dst, vty.Raw, dty.Raw); ok {
+		return conv
+	}
+	return val
+}
+
 // unsignedIntWidth returns the bit width of an unsigned nolang raw integer
 // type, or 0 when raw is not an unsigned integer type. MIR flattens every
 // integer to i64, so u64/u128 are reported as 64 (no wider representation
@@ -2764,6 +2887,33 @@ func unsignedIntWidth(raw string) int {
 		return 64
 	}
 	return 0
+}
+
+// narrowDeclaredIntConst reinterprets an integer constant as the DECLARED
+// integer type `raw`: truncate to that type's width, then extend back to the
+// i64 lane the way the type's signedness demands (sign-extend for i16/i32,
+// zero-extend for u16/u32).
+//
+// This is exactly what the conventional `<wider>.to-<raw>` method computes, so
+// it keeps the two materialisation paths of a declared-type binding in
+// agreement:
+//
+//	x i32 = 5000000000      ; top-level  → constant-folded global
+//	f = () { x i32 = 5000000000 }  ; local → i64.to-i32 call at runtime
+//
+// Both must denote 705032704. Widths >= 64 (i64/u64/usize) and non-integer
+// raws are returned unchanged: the literal is already on its own lane.
+func narrowDeclaredIntConst(v int64, raw string) int64 {
+	bits := intBitsOfRaw(raw)
+	if bits <= 0 || bits >= 64 {
+		return v
+	}
+	mask := uint64(1)<<uint(bits) - 1
+	u := uint64(v) & mask
+	if unsignedIntWidth(raw) == 0 && u>>uint(bits-1) == 1 {
+		return int64(u | ^mask) // sign-extend
+	}
+	return int64(u)
 }
 
 // foldUnsignedIntConst converts a NEGATIVE integer constant into the value it
@@ -3269,6 +3419,62 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				}
 			}
 		}
+		// A binding DECLARED with a wider INTEGER type takes THAT type at the
+		// binding, even when the initializer is narrower. The fresh-binding
+		// path below types the new value from the INITIALIZER, so without this
+		// conversion the declaration was silently dropped:
+		//
+		//   v i64 = b        ; b: byte → %v.s = alloca i8,  `v*v` → mul i8
+		//   v i64            ; → %v.s = alloca i64, zext, `v*v` → mul i64
+		//   v = b
+		//
+		// Measured: `v i64 = b` with b=200 printed 64, the two-statement form
+		// printed 40000. Method dispatch still used the DECLARED i64, so the
+		// value was 8 bits wide while the type said 64 — the annotation only
+		// survived as a hint (l.typeHint / builtin result types / method
+		// resolution), never as storage. Numeric widening therefore belongs to
+		// the DECLARATION, which is also what makes the fold
+		//
+		//   v T            →   v T = <expr>
+		//   v = <expr>
+		//
+		// a pure layout change (no fmt rule may alter semantics).
+		//
+		// Direction and mechanism: the conventional conversion method
+		// `<src>.to-<dst>` wins whenever it exists with a matching contract —
+		// including NARROWING (`v i32 = <i64 expr>` → `i64.to-i32`, low 32
+		// bits). The method is the explicit statement of intent; without one we
+		// only ever widen implicitly (OpMove), never silently truncate.
+		//
+		// The initializer is evaluated in its OWN domain first, then converted:
+		// `ai i64 = a[i] * b[j]` multiplies two bytes in the 256 domain and
+		// only then widens, so it is NOT a substitute for binding each factor
+		// first (`ai i64 = a[i]` + `bi i64 = b[j]` + `ai * bi`).
+		// Interface targets are not KindInt and never reach this block (their
+		// conversion is handled elsewhere).
+		if val != NoVal {
+			if dt := l.letDeclaredType(n); dt != NoType && dt != l.voidType {
+				if dty := l.mod.Type(dt); dty != nil && dty.Kind == KindInt {
+					if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType && vt != dt {
+						if vty := l.mod.Type(vt); vty != nil && vty.Kind == KindInt && vty.Raw != dty.Raw {
+							if conv, ok := l.intConvValue(val, dt, vty.Raw, dty.Raw); ok {
+								val = conv
+							} else if dw, vw := intBitsOfRaw(dty.Raw), intBitsOfRaw(vty.Raw); dw > 0 && vw > 0 && dw >= vw {
+								conv := l.b.Emit(OpMove, dt, []ValueID{val}, "")
+								// Pin the converted value's type: the generic
+								// LocalTypes back-fill derives it from the HIR child
+								// (a KIdent → its own narrower type) and would undo
+								// the widening for strFromScalar's raw-type lookup.
+								if f := l.mod.Func(l.curFunc); f != nil {
+									f.LocalTypes[conv] = dt
+								}
+								val = conv
+							}
+						}
+					}
+				}
+			}
+		}
 		// `?=` desugaring: the initializer is an OPTION but the binding's
 		// declared type is the PAYLOAD (`let s=size t=i64` inside the
 		// desugared `__unwrap` match — see fs.file.read-bytes). Legacy stores
@@ -3518,6 +3724,17 @@ func (l *lowerer) lowerStmtInner(id int32) {
 				// tag 2 = err), so the caller's option held a %str-long whose
 				// fields were the payload's own and the drop freed a bogus
 				// pointer: `a ?str = f('hi')` died with trace/BPT.
+				// A RE-assignment whose target slot already carries a concrete
+				// integer type takes the same to-T contract as a single-line
+				// declaration: `v i32` followed by `v = <i64 expr>` must equal
+				// `v i32 = <i64 expr>`, or the `no fmt` decl+assign fold
+				// (src/fmt/decl_assign_fold.go) would change semantics.
+				// No method ⇒ leave `val` alone: EmitMoveInto/emitMove already
+				// widens by slot width (that is why the two-statement form of
+				// `v i64` + `v = <byte>` has always produced 64-bit arithmetic).
+				if evt := l.valueTypeOf(existing); evt != NoType && evt != l.voidType {
+					val = l.convertForDeclaredTarget(val, evt)
+				}
 				val = l.wrapOptionIfNeeded(l.valueTypeOf(existing), val)
 				l.b.EmitMoveInto(existing, val)
 				// The handle now lives in `existing`; carry the task's result
@@ -3549,6 +3766,13 @@ func (l *lowerer) lowerStmtInner(id int32) {
 			if l.globalVisible(name) && !armScoped {
 				if gv := l.lowerGlobalRef(name); gv != NoVal && !l.isOwnedLocal(gv) {
 					if gvt := l.valueTypeOf(gv); gvt != NoType && gvt != l.voidType {
+						// 目標型別已寫明（全域宣告處）⇒ 先按 `<src>.to-<目標>`
+						// 契約轉換，再談寫回。少了這一步，`x i32 = big` 之後的
+						// `x = big`（值是 i64）不會通過下面的 `vt == gvt` 檢查，
+						// 整條寫回被跳過、掉進「新綁定」把 x 綁到一個全新的區域
+						// i64 slot：全域永不更新，宣告型別也一併丟失 ——
+						// 後續 `x.to-i64()` 解析成不存在的 `i64.to-i64`。
+						val = l.convertForDeclaredTarget(val, gvt)
 						vt := l.valueTypeOf(val)
 						// 「重新繫結一個模組級全域」有兩種寫入型別：
 						//   1. 同型別：`px2 f64` 全域收到 f64 值，直接寫回。
@@ -4531,12 +4755,35 @@ func (l *lowerer) lowerNestedSafeIndex(id, outerID, idxID int32) ValueID {
 	if present != NoVal {
 		l.b.Mod.Insts[len(l.b.Mod.Insts)-1].TagOnly = true
 	}
+	// ERR test on the same tag-only basis. D11 起越界讀取回 err（tag 2）而非
+	// nil，於是 `a[i]` 的「無元素」有兩種來源，語義完全不同：
+	//   tag 1 (nil) —— 外層元素本身就是空的 `[]?T` 槽位，內層下標無從談起 → nil
+	//   tag 2 (err) —— 外層下標越界 → 必須原樣上拋成 err
+	// 只看 `!= nil` 會把 err 也當成「有元素」，接著把 err.err 的 payload 當成
+	// 元素去下標（型別對不上，讀出垃圾/段錯誤）。
+	errPattern := l.b.EmitOptionWrap(outerTy, 2, NoVal) // tag=2, zero payload
+	isErr := NoVal
+	if errPattern != NoVal {
+		isErr = l.b.Emit(OpEq, boolT, []ValueID{outerV, errPattern}, "")
+		if isErr != NoVal {
+			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].TagOnly = true
+		}
+	}
 
 	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil
 	okBlk := l.b.NewBlock("nidx.ok")
 	noneBlk := l.b.NewBlock("nidx.none")
 	mergeBlk := l.b.NewBlock("nidx.merge")
-	if present != NoVal {
+	errBlk := NoBlock
+	if isErr != NoVal && present != NoVal {
+		// nidx.check 只在這裡建立：未建立卻先 NewBlock 會留下一個無前驅、無終止
+		// 子的空塊，ensureReturn 會往裡補 `ret void`，非 void 函式直接驗證失敗。
+		errBlk = l.b.NewBlock("nidx.err")
+		checkBlk := l.b.NewBlock("nidx.check")
+		l.b.Terminate(OpCondBr, []ValueID{isErr}, []BlockID{errBlk, checkBlk}, "")
+		l.b.SetBlock(checkBlk)
+		l.b.Terminate(OpCondBr, []ValueID{present}, []BlockID{okBlk, noneBlk}, "")
+	} else if present != NoVal {
 		l.b.Terminate(OpCondBr, []ValueID{present}, []BlockID{okBlk, noneBlk}, "")
 	} else {
 		l.b.Terminate(OpBr, nil, []BlockID{okBlk}, "")
@@ -4568,6 +4815,18 @@ func (l *lowerer) lowerNestedSafeIndex(id, outerID, idxID int32) ValueID {
 	if l.mod.Block(noneBlk).Term == nil {
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
+	if errBlk != NoBlock {
+		// 外層越界：重新建一個 err，訊息仍寫「index out of range」，位置用整個
+		// 複合下標節點（外層與內層是同一個 `a[i][j]`）—— 上拋語義與
+		// lowerSafeIndexAt 一致，slot 型別也仍舊是 optT。
+		l.b.SetBlock(errBlk)
+		if l.mod.Block(errBlk).Term == nil {
+			if ev := l.indexOutOfRangeErr(optT, id); ev != NoVal {
+				l.b.EmitMoveInto(sink, ev)
+			}
+			l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
+		}
+	}
 	l.b.SetBlock(mergeBlk)
 	return sink
 }
@@ -4581,27 +4840,32 @@ func (l *lowerer) lowerIndexReadWith(id int32, arrV, idxV ValueID, elemT TypeID,
 	if l.hintIsOption() {
 		inBounds := l.pkg.Node(id).Has(hir.FlagInBounds)
 		if l.isUTF8IndexReceiver(arrV) {
-			return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, inBounds)
+			return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, inBounds, id)
 		}
 		if l.pkg.Node(id).Has(hir.FlagGrowWrite) && !inBounds && l.isGrowableContainer(arrV) {
-			return l.lowerGrowWriteIndex(arrV, idxV, elemT, l.typeHint)
+			return l.lowerGrowWriteIndex(arrV, idxV, elemT, l.typeHint, id)
 		}
-		return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint, inBounds)
+		return l.lowerSafeIndexAt(arrV, idxV, elemT, l.typeHint, inBounds, id)
 	}
 	iv := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
 	l.mod.SetValueOrigin(iv, promotedFrom)
 	return iv
 }
 
-// lowerSafeIndex lowers a bounds-checked element read whose result is an
-// option: in range -> ok(elem), out of range -> nil (tag 1). It backs the
-// parser's safe-index desugar (`x ?= v[i]` and `#{index-out=DEF} x = v[i]`),
-// which both lower the read into a `?elem` binding and then match on it.
+// lowerSafeIndexAt lowers a bounds-checked element read whose result is an
+// option: in range -> ok(elem), out of range -> err (tag 2, code.index-out).
+// It backs the parser's safe-index desugar (`x ?= v[i]` and
+// `#{index-out=DEF} x = v[i]`), which both lower the read into a `?elem`
+// binding and then match on it.
 //
 // The result slot is created in the block that dominates both arms (as an
 // option-typed constant, i.e. nil), so the arms only ever overwrite it — MIR
 // has no phi, every branch convergence goes through such a shared slot.
-func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID, inBounds bool) ValueID {
+//
+// `site` is the subscript node's id: the err built on the out-of-range branch
+// carries that node's own file:line:col, so the user can locate the failing
+// subscript. hir.NoID is only passed by internal callers that have no node.
+func (l *lowerer) lowerSafeIndexAt(arrV, idxV ValueID, elemT, optT TypeID, inBounds bool, site int32) ValueID {
 	i64T := l.b.Type("i64")
 	boolT := l.b.Type("bool")
 	if i64T == l.voidType || boolT == l.voidType {
@@ -4678,14 +4942,78 @@ func (l *lowerer) lowerSafeIndex(arrV, idxV ValueID, elemT, optT TypeID, inBound
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
-	// The none arm leaves the slot at its nil initial value.
+	// The out-of-range arm yields ERR (tag 2), not nil: D11 定案 —— 越界是程式
+	// 錯誤，nil 專門留給「值確實不存在」（map 缺鍵 / `?T` 槽位為空）。兩者若
+	// 都用 nil，`[N]?T` 的元素讀取就無法區分「越界」與「槽位是空的」。
+	// 歷史版本只是「讓 sink 保持初始 nil」（當時第三態還沒用於越界）；改成 err
+	// 後 sink 的 same-slot 語義不變（arm 只覆寫 sink），只是覆寫成一個帶
+	// code.index-out + 下標位置的結構化 err。
 	l.b.SetBlock(noneBlk)
 	if l.mod.Block(noneBlk).Term == nil {
+		if ev := l.indexOutOfRangeErr(optT, site); ev != NoVal {
+			l.b.EmitMoveInto(sink, ev)
+		}
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
 	l.b.SetBlock(mergeBlk)
 	return sink
+}
+
+// indexOutOfRangeErr builds the `?T` value an out-of-range subscript yields:
+// `err('index out of range', code.index-out)` carrying the subscript's own
+// file:line:col. Returns NoVal when the option cannot carry a structured err
+// (the historical 24-byte str payload build), in which case the caller leaves
+// the slot at nil and the old behaviour stands.
+func (l *lowerer) indexOutOfRangeErr(optT TypeID, site int32) ValueID {
+	if optT == NoType || optT == l.voidType {
+		return NoVal
+	}
+	if l.mod.OptionErrRaw != errPayloadRawStd {
+		return NoVal
+	}
+	msg := l.b.EmitStr(OpConst, l.b.Type("str"), "index out of range", "")
+	code := l.codeValueByName("index-out")
+	var node *hir.Node
+	if site != hir.NoID {
+		node = l.pkg.Node(site)
+	}
+	ev := l.buildErrValue(node, []ValueID{msg, code})
+	if ev == NoVal {
+		return NoVal
+	}
+	// tag 2 = err（見 codegen emitOptionWrap：0 = ok/val，1 = nil，2 = err）。
+	return l.b.EmitOptionWrap(optT, 2, ev)
+}
+
+// codeValueByName returns the discriminant of the named `code` enum variant,
+// falling back to `unknown` when std/err does not define it.
+func (l *lowerer) codeValueByName(name string) ValueID {
+	ct := l.b.Type("code")
+	if ct == NoType || ct == l.voidType {
+		ct = l.b.Type("i64")
+	}
+	idx := int64(0)
+	vs, ok := l.enumVariants["code"]
+	if !ok {
+		return l.b.EmitInt(OpConst, ct, idx, "")
+	}
+	found := false
+	for i, v := range vs {
+		if v == name {
+			idx, found = int64(i), true
+			break
+		}
+	}
+	if !found {
+		for i, v := range vs {
+			if v == "unknown" {
+				idx = int64(i)
+				break
+			}
+		}
+	}
+	return l.b.EmitInt(OpConst, ct, idx, "")
 }
 
 // isGrowableContainer reports whether indexing v targets a GROWABLE container
@@ -4738,11 +5066,11 @@ func (l *lowerer) isGrowableContainer(v ValueID) bool {
 // pointer is still null at subject-evaluation time and a read would deref null.
 // Guard it with `i < len` and fall back to elemT's zero — which is exactly what
 // a freshly grown slot holds, so the write path keeps its old behaviour.
-func (l *lowerer) lowerGrowWriteIndex(arrV, idxV ValueID, elemT, optT TypeID) ValueID {
+func (l *lowerer) lowerGrowWriteIndex(arrV, idxV ValueID, elemT, optT TypeID, site int32) ValueID {
 	i64T := l.b.Type("i64")
 	boolT := l.b.Type("bool")
 	if i64T == l.voidType || boolT == l.voidType {
-		return l.lowerSafeIndex(arrV, idxV, elemT, optT, false)
+		return l.lowerSafeIndexAt(arrV, idxV, elemT, optT, false, site)
 	}
 	sink := l.b.EmitInt(OpConst, optT, 0, "") // nil: tag=1, zero payload
 	zero := l.b.EmitInt(OpConst, i64T, 0, "")
@@ -4795,9 +5123,13 @@ func (l *lowerer) lowerGrowWriteIndex(arrV, idxV ValueID, elemT, optT TypeID) Va
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
-	// The none arm (negative index) leaves the slot at its nil initial value.
+	// The none arm (negative index) yields err —— 負下標同樣是程式錯誤，與
+	// 讀取側的越界語義一致（先前只讓 slot 停在 nil）。
 	l.b.SetBlock(noneBlk)
 	if l.mod.Block(noneBlk).Term == nil {
+		if ev := l.indexOutOfRangeErr(optT, site); ev != NoVal {
+			l.b.EmitMoveInto(sink, ev)
+		}
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
@@ -4833,7 +5165,8 @@ func (l *lowerer) isUTF8IndexReceiver(v ValueID) bool {
 
 // lowerSafeUTF8Index lowers a bounds-checked CODE POINT read `s[i]` on a str /
 // txt receiver whose binding is an option: in range -> ok(code point), out of
-// range -> nil (tag 1).
+// range -> err (tag 2, code.index-out) —— 與 lowerSafeIndexAt 同一定案：
+// nil 只留給「值確實不存在」，碼點越界是程式錯誤，必須與 nil 可區分。
 //
 // 🔴 为什么不能用 lowerSafeIndex（OpLen 比较）：str 的 OpLen 是**字节**长度，
 // 而 `s[i]` 的下标是**码点**下标；多字节串里后者恒不大于前者，却可以严格更小。
@@ -4845,11 +5178,11 @@ func (l *lowerer) isUTF8IndexReceiver(v ValueID) bool {
 // 修法是反过来信哨兵：先读，再拿读数与 -1 比较。这要求读数保持 i64 精度 ——
 // 若 OpIndex 的目标型别是 i8/i32，-1 会被截断成 0xFF / 0xFFFFFFFF 而永远不等
 // 于 -1，所以这里显式以 i64 发射读取，成功分支再 cast 回 elemT。
-func (l *lowerer) lowerSafeUTF8Index(arrV, idxV ValueID, elemT, optT TypeID, inBounds bool) ValueID {
+func (l *lowerer) lowerSafeUTF8Index(arrV, idxV ValueID, elemT, optT TypeID, inBounds bool, site int32) ValueID {
 	i64T := l.b.Type("i64")
 	boolT := l.b.Type("bool")
 	if i64T == l.voidType || boolT == l.voidType {
-		return l.lowerSafeIndex(arrV, idxV, elemT, optT, inBounds)
+		return l.lowerSafeIndexAt(arrV, idxV, elemT, optT, inBounds, site)
 	}
 	// Read at i64 so the -1 sentinel survives (see the comment above).
 	cp := l.b.Emit(OpIndex, i64T, []ValueID{arrV, idxV}, "")
@@ -4887,9 +5220,13 @@ func (l *lowerer) lowerSafeUTF8Index(arrV, idxV ValueID, elemT, optT TypeID, inB
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
-	// The none arm leaves the slot at its nil initial value.
+	// The none arm yields err (tag 2), not the initial nil —— 與 lowerSafeIndexAt
+	// 的越界語義一致；先前只讓 slot 停在 nil，`s[i]` 與「欄位不存在」就分不開。
 	l.b.SetBlock(noneBlk)
 	if l.mod.Block(noneBlk).Term == nil {
+		if ev := l.indexOutOfRangeErr(optT, site); ev != NoVal {
+			l.b.EmitMoveInto(sink, ev)
+		}
 		l.b.Terminate(OpBr, nil, []BlockID{mergeBlk}, "")
 	}
 
@@ -5854,6 +6191,8 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 		arrT := l.b.Type(arrRaw)
 		container = l.b.Emit(OpConst, arrT, nil, "")
 	}
+	// 槽位型別（`[N]?i64` 的 ?i64）：元素存儲要走隱式提升，見下方 wrap。
+	elemStoreT := l.b.Type(elemRaw)
 	for k, e := range elems {
 		ev := firstVal
 		if k != 0 || ev == NoVal {
@@ -5861,6 +6200,13 @@ func (l *lowerer) lowerArrayElems(elems []int32, asSlice bool) ValueID {
 		}
 		if ev == NoVal {
 			return NoVal
+		}
+		// 值 -> option 的隱式提升（`T -> ?T` 永不失敗）：`b [4]?i64 = [1, nil, 3,
+		// nil]` 的元素 `1` 降階後是 i64，OpIndexStore 卻按槽位型別 `?i64` 存，
+		// 於是 LLVM 看到 `store %option %lv(i64)` 直接拒收整個函式。已在 option
+		// 的元素（`nil` / `ok(x)`）由 wrapOptionIfNeeded 原樣放行。
+		if elemStoreT != NoType && elemStoreT != l.voidType {
+			ev = l.wrapOptionIfNeeded(elemStoreT, ev)
 		}
 		idxV := l.b.EmitInt(OpConst, l.b.Type("i64"), int64(k), "")
 		l.b.EmitVoid(OpIndexStore, []ValueID{container, idxV, ev}, "")
@@ -6459,7 +6805,13 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 			}
 			return fmt.Sprintf("i8 %d", v)
 		}
-		return fmt.Sprintf("i64 %d", n.Val)
+		// 其餘寬度（i16/u16/i32/u32）**只收窄值、不收窄槽位**：槽位仍是 i64
+		// （上面那句註解解釋了為什麼不能發 `global i16`），但常值本身必須是
+		// 「把字面量轉成宣告型別」的結果 —— 也就是 `i64.to-i32` 會算出來的值。
+		// 少了這一步，頂層 `x i32 = 5000000000` 會摺成 `i64 5000000000` 塞進
+		// 只有 i64 語意的槽位，印出 5000000000；同樣的程式碼寫在函式裡
+		// （走 hir2mir 的宣告型別轉換）卻是 705032704。兩條路徑必須一致。
+		return fmt.Sprintf("i64 %d", narrowDeclaredIntConst(n.Val, gtype))
 	case hir.KCharLit:
 		// The code point lives in S (the interned character TEXT), not in Val:
 		// tohir stores a char literal as `{Kind: KCharLit, S: <text>}` and
@@ -6497,7 +6849,18 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 		if operand == hir.NoID {
 			return ""
 		}
-		ct := l.foldConstText(l.pkg.Node(operand), gtype)
+		// Fold the MAGNITUDE without the declared-domain narrowing that the
+		// KIntLit branch applies: on `x i16 = -32768` the magnitude 32768 would
+		// narrow to -32768 and the negation below would then yield +32768. The
+		// narrowing belongs AFTER the operator; byte/u8/i8 keep it on the
+		// operand because there the LLVM lane really is i8 and the existing
+		// branches below rely on that text.
+		opGtype := gtype
+		if b := intBitsOfRaw(gtype); b > 0 && b < 64 &&
+			gtype != "byte" && gtype != "u8" && gtype != "i8" {
+			opGtype = "i64"
+		}
+		ct := l.foldConstText(l.pkg.Node(operand), opGtype)
 		if ct == "" {
 			return ""
 		}
@@ -6521,13 +6884,21 @@ func (l *lowerer) foldConstText(n *hir.Node, gtype string) string {
 			if err != nil {
 				return ""
 			}
-			return fmt.Sprintf("%s %d", typ, -v)
+			res := -v
+			if opGtype != gtype {
+				res = narrowDeclaredIntConst(res, gtype)
+			}
+			return fmt.Sprintf("%s %d", typ, res)
 		case "~":
 			v, err := strconv.ParseUint(lit, 10, 64)
 			if err != nil {
 				return ""
 			}
-			return fmt.Sprintf("%s %d", typ, int64(^v))
+			res := int64(^v)
+			if opGtype != gtype {
+				res = narrowDeclaredIntConst(res, gtype)
+			}
+			return fmt.Sprintf("%s %d", typ, res)
 		}
 		return ""
 	case hir.KIdent:
@@ -7784,6 +8155,9 @@ func (l *lowerer) evalConstBodyMulti(blockID int32, env map[string]comptimeVal, 
 				child = cc
 				break
 			}
+			if l.evalConstBindsNarrowDecl(cn, child) {
+				return nil, false
+			}
 			v, ok2 := l.evalConst(child, env, stack)
 			if !ok2 {
 				return nil, false
@@ -7992,6 +8366,35 @@ func (l *lowerer) methodResultType(callID int32) TypeID {
 	return NoType
 }
 
+// evalConstBindsNarrowDecl refuses to fold a binding whose DECLARED integer
+// type is narrower than the i64 lane and whose initializer is not a literal.
+//
+// The comptime evaluator has no method dispatch: it would alias the value into
+// the name, while the runtime binder routes the very same statement through the
+// `<src>.to-<dst>` contract (hir2mir.intConvCallee). Measured divergence — a
+// user-defined `u16.to-i32 = () (out i32) { out = 7 }` plus
+//
+//	user-conv-probe = (v u16) (out i32) { x i32 = v ; out = x }
+//
+// folded to 3 (the receiver) instead of 7 (the method). Refusing the fold makes
+// the real lowering run, which is the only place the contract is honoured.
+//
+// Literals are exempt: their value is already exact, and the fold-time range
+// guard (narrowIntRange on the declared type) rejects anything that does not
+// fit. 64-bit declarations are exempt too — they cannot narrow, and the
+// byte→i64 widening they usually express coincides with plain aliasing.
+func (l *lowerer) evalConstBindsNarrowDecl(let *hir.Node, child int32) bool {
+	dRaw := l.pkg.Type(let.Type)
+	if bits := intBitsOfRaw(dRaw); bits <= 0 || bits >= 64 {
+		return false
+	}
+	in := l.pkg.Node(child)
+	if in != nil && (in.Kind == hir.KIntLit || in.Kind == hir.KCharLit) {
+		return false
+	}
+	return true
+}
+
 func (l *lowerer) evalConstBody(blockID int32, env map[string]comptimeVal, stack []string, resultName string) (comptimeVal, bool) {
 	var last comptimeVal
 	found := false
@@ -8006,6 +8409,9 @@ func (l *lowerer) evalConstBody(blockID int32, env map[string]comptimeVal, stack
 			for _, cc := range l.pkg.Children(c) {
 				child = cc
 				break
+			}
+			if l.evalConstBindsNarrowDecl(cn, child) {
+				return comptimeVal{}, false
 			}
 			v, ok2 := l.evalConst(child, env, stack)
 			if !ok2 {
@@ -8580,7 +8986,7 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				// 这两类接收者必须改用哨兵判定。
 				inBounds := l.pkg.Node(id).Has(hir.FlagInBounds)
 				if l.isUTF8IndexReceiver(arrV) {
-					return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, inBounds)
+					return l.lowerSafeUTF8Index(arrV, idxV, elemT, l.typeHint, inBounds, id)
 				}
 				// D9 grow-write：place-match 写主体（FlagGrowWrite）落在可增长
 				// 容器（slice/vec）上时，ok 判定改用写语义 `i >= 0`——ok 臂里的
@@ -8589,9 +8995,9 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 				// （inBounds）时 buffer 必非空，走 lowerSafeIndex 快路同样满足
 				// 写语义（且不重发 gwo.* 块）。
 				if l.pkg.Node(id).Has(hir.FlagGrowWrite) && !inBounds && l.isGrowableContainer(arrV) {
-					return l.lowerGrowWriteIndex(arrV, idxV, elemT, l.typeHint)
+					return l.lowerGrowWriteIndex(arrV, idxV, elemT, l.typeHint, id)
 				}
-				return l.lowerSafeIndex(arrV, idxV, elemT, l.typeHint, inBounds)
+				return l.lowerSafeIndexAt(arrV, idxV, elemT, l.typeHint, inBounds, id)
 			}
 		}
 		iv := l.b.Emit(OpIndex, elemT, []ValueID{arrV, idxV}, "")
@@ -14794,6 +15200,19 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 		// the codegen would actually move it.
 		if l.mod.SetFieldConsumesRHS(recvV, fieldName) {
 			v = l.cloneIfBorrowedParamSlice(v)
+		}
+		// 值 → option 欄位的隐式 ok 包裝：`.n = 42`（n 是 `?i64`）必須存成
+		// {tag=0, payload=42}，不能把裸 i64 寫進 %option 槽 —— 後者 LLVM 直接
+		// 拒絕模組（`'%lv.29' defined with type 'i64' but expected '%option'`），
+		// 也就是「值可以賦值給 option」這條規則在**欄位**上完全沒兌現。
+		//
+		// KLet（新綁定）、局部重綁、元素存儲三處早已各自呼叫 wrapOptionIfNeeded，
+		// 只有 setfield 漏了；本支補上即四類目標同口徑。RHS 本身已是 option
+		// （`?i64` 變數 / nil / err(...)）時 wrap 原樣返回，故對既有程式零影響。
+		if key, idx, ok := l.mod.setFieldTarget(recvV, fieldName); ok {
+			if fields := l.mod.StructFields[key]; idx < len(fields) {
+				v = l.wrapOptionIfNeeded(l.b.Type(fields[idx].TypeRaw), v)
+			}
 		}
 		// Store the field name in inst.Str (not inst.Sym) so emitSetField's
 		// FieldIndex lookup matches the GETFIELD convention in lowerDotRead.

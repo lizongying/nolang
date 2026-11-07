@@ -187,6 +187,19 @@ type hirConv struct {
 	// curFuncDef, which the walk only sets on FunctionDefinition). Consumed by
 	// lowerUnwrapAssignToHIR to feed lowerUnwrapAssign's resultNameOverride.
 	curResultName string
+	// curSelfType is the receiver type of the method whose body is currently
+	// being lowered ("" outside a method). It is the scratch parser's stand-in
+	// for Parser.methodStructStack, which the real parser pushes while parsing a
+	// method body (decl.go:23). Without it, resolveReceiverType cannot resolve
+	// `self` inside H0 and indexBaseContainerRaw misses every `.field[i]` — the
+	// write-side place-write then silently drops the store, and reads are typed
+	// as plain values instead of `?T`.
+	curSelfType string
+	// structFieldsCache is the struct→field→type table rebuilt from c.prog
+	// once, for the same reason: H0 does not re-run the declaration pass, so
+	// Parser.structFields would be empty in every scratch parser. Lazily filled
+	// by structFieldsTable (see collectStructFieldsFromProg).
+	structFieldsCache map[string]map[string]string
 	// h0Diags collects diagnostics produced by desugaring done inside H0 (see
 	// desugarSurfaceMatch). They have no channel of their own, so they are
 	// gathered here and folded into Program.Warnings (warnings) / Program.Errors
@@ -806,6 +819,7 @@ func (c *hirConv) funcLike(
 		// inherits the enclosing one (matching lowerUnwrapAssign's use of
 		// curFuncDef, which the walk only sets on FunctionDefinition).
 		savedResult := c.curResultName
+		savedSelf := c.curSelfType
 		if kind == hir.KFuncDef {
 			c.curResultName = ""
 			// 運算符重載方法的 `?T` 是真實型別：結果名照常登記為 option 結果名，
@@ -819,10 +833,20 @@ func (c *hirConv) funcLike(
 					}
 				}
 			}
+			// 接收者型別（合成結果參數 self）：scratchParser 用它還原
+			// methodStructStack，供 indexBaseContainerRaw 解析 `.field[i]`。
+			c.curSelfType = ""
+			for _, res := range sig.Results {
+				if res.Name == "self" && res.Type != nil {
+					c.curSelfType = typeString(res.Type)
+					break
+				}
+			}
 		}
 		nodes = append(nodes, c.slot("body", c.stmt(body)))
 		c.curFunc = saved
 		c.curResultName = savedResult
+		c.curSelfType = savedSelf
 	}
 	return c.b.Add(hir.Node{
 		Kind:  kind,
@@ -1459,6 +1483,16 @@ func (c *hirConv) scratchParser() *Parser {
 	if c.sem != nil {
 		sp.idxLocalTypes = c.sem.IdxLocalTypes
 	}
+	// struct 欄位表與方法接收者型別：H0 不重跑宣告 pass，scratch parser 的
+	// structFields 恆為空、methodStructStack 恆為空 → indexBaseContainerRaw
+	// 對 `.limit[i]` / `self.f[i]` 一律 miss。後果是兩邊分叉：
+	//   - 寫側：place-write 的 baseLeft 取不到（早期靜默不寫回）；
+	//   - 讀側：`.base[i]` 不被判成 `?T`，與 fresh parse（含 no vet）不一致。
+	// structFieldsTable 只遍歷一次 c.prog 並快取。
+	sp.structFields = c.structFieldsTable()
+	if c.curSelfType != "" {
+		sp.methodStructStack = []string{c.curSelfType}
+	}
 	// funcSignatures drives inferTypeFromCallExpr (used by lowerUnwrapAssign
 	// for RHS type inference). The real Parser fills it during parsing; the
 	// scratch parser must reconstruct it from the merged Program's
@@ -1510,6 +1544,20 @@ func (c *hirConv) scratchParser() *Parser {
 		sp.unionMembers = c.sem.UnionMembers
 	}
 	return sp
+}
+
+// structFieldsTable 回傳本模組（合併後 Program）的 struct 欄位表，只建一次。
+//
+// 與 BuildSemViews 的 mergeLocalStructFields 同源：兩條「不重跑宣告 pass」的
+// 路徑都必須從樹上把 struct 欄位表補回來，否則索引基底判定會與 fresh parse 分叉。
+func (c *hirConv) structFieldsTable() map[string]map[string]string {
+	if c.structFieldsCache == nil {
+		c.structFieldsCache = collectStructFieldsFromProg(c.prog)
+		if c.structFieldsCache == nil {
+			c.structFieldsCache = map[string]map[string]string{}
+		}
+	}
+	return c.structFieldsCache
 }
 
 // lowerCaptureToHIR 在 H0 內部產出「結構捕獲」的 KLet + KIf 鏈（S3-b 第二步）。

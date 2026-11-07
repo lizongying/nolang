@@ -174,4 +174,41 @@ func init() {
 		Doc:          "Truncate i64 to i32",
 		LLVMConv:     &convI64ToI32,
 	})
+
+	// 整數拓寬矩陣：to-i64 / to-u64 家族。
+	//
+	// 這些方法的意義不在於 IR（MIR 把 i16/i32/i64 攤平成同一槽寬，多數是
+	// 無操作搬運），而在於給「宣告型別 ≠ 初始式型別」的綁定一個統一的
+	// 轉換通路：mir 的 intConvCallee 會按 <源>.to-<目標> 查找並合成调用，
+	// 查不到才退回 OpMove 隱式拓寬。只有 i8 車道（byte/u8/i8）真的發
+	// zext/sext。
+	extendToI64 := LLVMConvIntExtend
+	for _, e := range []struct {
+		recv ReceiverKind
+		name string
+		ret  parser.Type
+		doc  string
+	}{
+		{ReceiverByte, "byte.to-i64", parser.TypeI64, "Widen byte to i64"},
+		{ReceiverU8, "u8.to-i64", parser.TypeI64, "Widen u8 to i64"},
+		{ReceiverI8, "i8.to-i64", parser.TypeI64, "Widen i8 to i64"},
+		{ReceiverU16, "u16.to-i64", parser.TypeI64, "Widen u16 to i64"},
+		{ReceiverI16, "i16.to-i64", parser.TypeI64, "Widen i16 to i64"},
+		{ReceiverU32, "u32.to-i64", parser.TypeI64, "Widen u32 to i64"},
+		{ReceiverI32, "i32.to-i64", parser.TypeI64, "Widen i32 to i64"},
+		{ReceiverByte, "byte.to-u64", parser.TypeU64, "Widen byte to u64"},
+		{ReceiverU8, "u8.to-u64", parser.TypeU64, "Widen u8 to u64"},
+		{ReceiverU16, "u16.to-u64", parser.TypeU64, "Widen u16 to u64"},
+		{ReceiverU32, "u32.to-u64", parser.TypeU64, "Widen u32 to u64"},
+	} {
+		conv := extendToI64
+		BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+			ReceiverType: e.recv,
+			MethodName:   e.name,
+			Params:       []parser.Type{},
+			Return:       []parser.Type{e.ret},
+			Doc:          e.doc,
+			LLVMConv:     &conv,
+		})
+	}
 }

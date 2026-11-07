@@ -21,7 +21,7 @@ import (
 // borrowReleaseSrc is the canonical shape the release exists for: a borrow read
 // of a slice element (`b0 = b[0]`) whose value is then GROWN. The grow releases
 // the buffer it replaces, so the borrow must have retained it first — otherwise
-// the grow frees a buffer `b` still points at (measured: tests/nested-vec-test.no
+// the grow frees a buffer `b` still points at (measured: tests/vec-slice-more.no
 // aborts 20/20 without the retain). And the retain must be given back when b0
 // dies, or the buffer is pinned forever.
 const borrowReleaseSrc = `

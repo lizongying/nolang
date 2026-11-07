@@ -77,6 +77,27 @@ func arraySizeOf(e Expression) (string, int64) {
 	return "?", -1
 }
 
+// functionSelfType returns the receiver (struct) type name of a method
+// definition, or "" for a free function.
+//
+// The parser synthesises a `self` result param for methods (see decl.go), so
+// the receiver type is recoverable from the definition itself. lowering.go
+// pushes it onto Parser.methodStructStack while walking a function body —
+// the parse-time push/pop has long since unwound by then, and
+// indexBaseContainerRaw / resolveReceiverType both resolve `self` through
+// that stack (a miss silently disables the D9 write-side `?=` branch).
+func functionSelfType(fd *FunctionDefinition) string {
+	if fd == nil {
+		return ""
+	}
+	for _, res := range fd.Results {
+		if res != nil && res.Name == "self" && res.Type != nil {
+			return typeString(res.Type)
+		}
+	}
+	return ""
+}
+
 // resolveReceiverType 解析方法調用接收者的型別，用於推斷方法返回型別。
 // 支援：局部變數 (Identifier)、self 欄位 (DotExpression{self, field})、
 // 以及 self.field.subfield (嵌套 DotExpression{DotExpression{self, field}, subfield})
@@ -496,50 +517,93 @@ func containerElemType(lt string) string {
 // （區分 arr/vec/slice 與 str/txt、struct field 等不會產生 option 索引的基底）。
 func ContainerElemType(lt string) string { return containerElemType(lt) }
 
-// inferIndexElemType returns the element type of an IndexExpression's base
-// container, using the parser-resolved variable types (available at lowering
-// time). Returns "" if the element type cannot be determined.
-func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
-	if idx == nil || idx.Left == nil {
+// indexBaseVarType 取變數（參數 / 局部 / 全域）的型別原文（未剝 option）。
+// 查表順序與 isSafeIndexBase 一致：idxLocalTypes（lower 預掃描，無跨函數污染）
+// → FuncVarType（函數作用域，內部含全域回退）→ VarTypes（全域快照）。
+// 必須用函數作用域查詢以避免同名區域變數的跨函數型別污染：p.sem.VarTypes 是
+// 全域快照，其他函數的 `arr []byte` 會覆寫本函數的 `arr []i64`，導致元素型別
+// 被誤判為 byte（it 綁定成 i8 而崩潰）。
+func (p *Parser) indexBaseVarType(name string) string {
+	if name == "" {
 		return ""
 	}
-	lt := ""
-	// 必須用函數作用域查詢（FuncVarType）以避免同名區域變數的跨函數型別污染：
-	// p.sem.VarTypes 是全域快照，其他函數的 `arr []byte` 會覆寫本函數的
-	// `arr []i64`，導致元素型別被誤判為 byte（it 綁定成 i8 而崩潰）。
-	lookupVarType := func(name string) string {
+	if t, ok := p.idxLocalTypes[p.curFuncName][name]; ok && t != nil && t.Raw() != "" {
+		return t.Raw()
+	}
+	if p.sem != nil {
 		if t, ok := p.sem.FuncVarType(p.curFuncName, name); ok && t != "" {
 			return t
 		}
-		if t, ok := p.sem.VarTypes[name]; ok {
+		if t, ok := p.sem.VarTypes[name]; ok && t != nil {
 			return t.Raw()
 		}
+	}
+	return ""
+}
+
+// indexBaseReceiverType 是 resolveReceiverType 的索引专用包装：額外支援
+// 「元素作接收者」形態 `a[i].field`（receiver 本身是 IndexExpression），其型別
+// 取 a 的元素型別。resolveReceiverType 對 IndexExpression 沒有分支，直接沿用
+// 會讓 `frames[count].data[i]`／`p.nodes[i].keys[j]` 這類基底解析失敗。
+func (p *Parser) indexBaseReceiverType(recv Expression) string {
+	if recv == nil {
+		return ""
+	}
+	if ie, ok := recv.(*IndexExpression); ok {
+		if raw := p.indexBaseContainerRaw(ie); raw != "" {
+			return ty.StripOptionRaw(containerElemType(raw))
+		}
+		return ""
+	}
+	return ty.StripOptionRaw(p.resolveReceiverType(recv))
+}
+
+// indexBaseContainerRaw 是索引基底容器型別的**唯一**判定口徑：回傳剝除 option
+// 後的容器型別原文（`[24]i64` / `[]str` / `str` / `txt` / `[str]i64` 等），
+// 非容器回傳 ""。
+//
+// 支援的基底形態：
+//   - *Identifier：`a[i]`，含參數 / 局部 / 全域變數；
+//   - *DotExpression：`.limit[i]`（隱式 self）、`self.f[i]`、`obj.f[i]`、
+//     `a.b.f[i]`（鏈式，交給 resolveReceiverType 遞迴）、`a[i].f[j]`（元素作接收者）；
+//   - 自由函數中的 `.field`：無 methodStructStack 時回退為同名局部變數
+//     （與 resolveReceiverType:123-132 同口徑）。
+//
+// str / txt 刻意不特判：containerElemType 對二者回傳 "char"，與 arr/vec 走
+// 同一條路（讀側 `?char`、寫側必須解包）。map 也不在此攔——呼叫側要先以
+// IsMapTypeString 判別，因為 containerElemType 會把 `[str]i64` 當成陣列。
+func (p *Parser) indexBaseContainerRaw(idx *IndexExpression) string {
+	if idx == nil || idx.Left == nil {
 		return ""
 	}
 	switch b := idx.Left.(type) {
 	case *Identifier:
-		// 優先查詢「安全索引專用」本地型別表（lower 預掃描所得），
-		// 避免跨函數型別污染（見 isSafeIndexBase 註解）。
-		if t, ok := p.idxLocalTypes[p.curFuncName][b.Value]; ok && t.Raw() != "" {
-			lt = ty.StripOptionRaw(t.Raw())
-		} else if t := lookupVarType(b.Value); t != "" {
-			lt = ty.StripOptionRaw(t)
-		}
+		return ty.StripOptionRaw(p.indexBaseVarType(b.Value))
 	case *DotExpression:
-		// receiver.field[i] — resolve the struct field's container type.
-		rt := p.resolveReceiverType(b.Receiver)
-		if rt != "" {
+		if rt := p.indexBaseReceiverType(b.Receiver); rt != "" {
 			if fields, ok := p.structFields[rt]; ok {
 				if ft, ok := fields[b.Property]; ok {
-					lt = strings.TrimPrefix(ft, "?")
+					return ty.StripOptionRaw(ft)
 				}
 			}
 		}
+		// 自由函數回退：無 self 時 `.field` 是對同名局部變數的存取。
+		if id, ok := b.Receiver.(*Identifier); ok && id.Value == "self" && len(p.methodStructStack) == 0 {
+			return ty.StripOptionRaw(p.indexBaseVarType(b.Property))
+		}
 	}
-	if lt == "" {
+	return ""
+}
+
+// inferIndexElemType returns the element type of an IndexExpression's base
+// container, using the parser-resolved variable types (available at lowering
+// time). Returns "" if the element type cannot be determined.
+func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
+	raw := p.indexBaseContainerRaw(idx)
+	if raw == "" {
 		return ""
 	}
-	return containerElemType(lt)
+	return containerElemType(raw)
 }
 
 // isSafeIndexBase reports whether an IndexExpression indexes a direct
@@ -559,24 +623,14 @@ func (p *Parser) inferIndexElemType(idx *IndexExpression) string {
 // 故此处**不再**依据 p.inBoundsIdx 早退：in-bounds 读取照常返回 true、照常降级为
 // option。bounds.go 分析改由 codegen/MIR 消费（内部消除）与 rngidx 等诊断降噪使用。
 func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
-	if idx == nil || idx.Left == nil {
+	raw := p.indexBaseContainerRaw(idx)
+	if raw == "" {
 		return false
 	}
-	ident, ok := idx.Left.(*Identifier)
-	if !ok {
-		return false
-	}
-	lt := ""
-	// 優先查詢「安全索引專用」本地型別表（lower 預掃描區域變數容器型別所得，
-	// 如 `av = a.to-vec()` → []i64），其優先級高於全域快照，避免跨函數污染。
-	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t.Raw() != "" {
-		lt = ty.StripOptionRaw(t.Raw())
-	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
-		lt = ty.StripOptionRaw(t)
-	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
-		lt = ty.StripOptionRaw(t.Raw())
-	}
-	return containerElemType(lt) != ""
+	// map 在此刻意放行（回傳 true）：索引讀取本身仍產生 `?V`，與位置型容器
+	// 同口徑；寫側才有分歧，由 mapIndexBaseType 在 `?=` 降糖前攔下（map 的寫
+	// 是 put，沒有可傳播的 nil）。
+	return containerElemType(raw) != ""
 }
 
 // mapIndexBaseType returns the map type text of an IndexExpression's base when
@@ -591,23 +645,9 @@ func (p *Parser) isSafeIndexBase(idx *IndexExpression) bool {
 // Type lookup order mirrors isSafeIndexBase (per-function table first, to avoid
 // cross-function pollution from the global snapshot).
 func (p *Parser) mapIndexBaseType(idx *IndexExpression) string {
-	if idx == nil || idx.Left == nil {
-		return ""
-	}
-	ident, ok := idx.Left.(*Identifier)
-	if !ok {
-		return ""
-	}
-	lt := ""
-	if t, ok := p.idxLocalTypes[p.curFuncName][ident.Value]; ok && t.Raw() != "" {
-		lt = ty.StripOptionRaw(t.Raw())
-	} else if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
-		lt = ty.StripOptionRaw(t)
-	} else if t, ok := p.sem.VarTypes[ident.Value]; ok {
-		lt = ty.StripOptionRaw(t.Raw())
-	}
-	if IsMapTypeString(lt) {
-		return lt
+	raw := p.indexBaseContainerRaw(idx)
+	if raw != "" && IsMapTypeString(raw) {
+		return raw
 	}
 	return ""
 }

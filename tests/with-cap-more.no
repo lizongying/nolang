@@ -1,0 +1,60 @@
+; tests/with-cap-more.no — consolidated with-cap / with-cap-len fragments
+; from: tests/with-cap.no, tests/with-cap-len.no
+
+; with-cap
+s str = with-cap(256)
+slen = s.len-bytes()
+scap = s.cap
+print('str with-cap: len={slen} cap={scap}')
+
+v []i64 = with-cap(100)
+vlen = v.len()
+vcap = v.cap
+print('vec with-cap: len={vlen} cap={vcap}')
+
+v.push(10)
+v.push(20)
+v.push(30)
+vlen = v.len()
+vcap = v.cap
+print('vec after push: len={vlen} cap={vcap}')
+e0 = v[0]
+e1 = v[1]
+e2 = v[2]
+print('elements: {e0} {e1} {e2}')
+
+v.clear()
+vlen = v.len()
+vcap = v.cap
+print('vec after clear: len={vlen} cap={vcap}')
+
+v.push(40)
+v.push(50)
+vlen = v.len()
+vcap = v.cap
+print('vec after re-push: len={vlen} cap={vcap}')
+e0 = v[0]
+e1 = v[1]
+print('elements: {e0} {e1}')
+
+print('done')
+
+print('---')
+
+; with-cap-len (v/s renamed to wlv/wls to avoid clash with with-cap)
+wlv []i64 = with-cap-len(200, 100)
+wlv.len() == 100 -> print(1)
+wlv.cap == 200 -> print(2)
+
+wlv[50] = 42
+wlv[50] == 42 -> print(3)
+
+wlv.push(99)
+wlv.len() == 101 -> print(4)
+
+wls str = with-cap-len(256, 10)
+wls.len() == 10 -> print(5)
+
+v2 []i64 = with-cap-len(100, 100)
+v2.len() == 100 -> print(6)
+v2.cap == 100 -> print(7)

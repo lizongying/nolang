@@ -5871,6 +5871,106 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 	return results
 }
 
+// indexBaseVarRaw 取得變數（局部 / 參數）的容器型別原文，已剝 option。
+//
+// **只查 IdxLocalTypes**（lower 預掃描所得，按函數作用域），不退回
+// FuncVarType / 全域 VarTypes —— 與本函式改寫前的 baseTypeOf 口徑一致：
+//   - 全域快照會被其他函數的同名區域變數覆寫，把 `str` 索引誤判成陣列而誤報；
+//   - FuncVarType 內部含全域回退，會把**模組頂層腳本變數**一併納入，使
+//     `tests/*.no` 這類頂層腳本裡每一處裸索引讀／寫都新報錯。頂層腳本是否
+//     納入是獨立議題（parser 側的 isSafeIndexBase 確實查了全域，兩側本來就
+//     不一致），不在「取消 struct 欄位基底豁免」這一輪的範圍內。
+//
+// 函數作用域查不到就當「非容器」——寧漏報，不誤報。
+func indexBaseVarRaw(sem *parser.SemanticContext, curFunc, name string) string {
+	if name == "" || sem == nil {
+		return ""
+	}
+	funcKeys := []string{curFunc}
+	if i := strings.Index(curFunc, "."); i >= 0 {
+		funcKeys = append(funcKeys, curFunc[i+1:])
+	}
+	if sem.IdxLocalTypes != nil {
+		for _, cf := range funcKeys {
+			if t, ok := sem.IdxLocalTypeRef(cf, name); ok && t != nil && t.Raw() != "" {
+				return ty.StripOptionRaw(t.Raw())
+			}
+		}
+	}
+	return ""
+}
+
+// indexBaseContainerType 是 checker 側唯一的「索引基底容器型別」判定口徑，
+// 與 parser.indexBaseContainerRaw 對齊 —— 兩者不一致就會出現「parser 已把索引
+// 讀 option 化、checker 卻不要求消費」（漏報）或反向（報錯但無法修復）。
+//
+// 支援：直接變數、`.field[i]`（隱式 self）、`self.f[i]`、`obj.f[i]`、鏈式
+// `a.b.f[i]`、以及元素作接收者的 `a[i].f[j]`。
+//
+// structFields 由呼叫方以 collectStructFields(program) **局部**建表傳入：包級的
+// validationStructFields 在 merged vet 路徑下是合併前那份、且讀寫無鎖。
+func indexBaseContainerType(sem *parser.SemanticContext, structFields map[string]map[string]string, curFunc, selfType string, idx *parser.IndexExpression) string {
+	if idx == nil || idx.Left == nil {
+		return ""
+	}
+	return indexBaseExprRaw(sem, structFields, curFunc, selfType, idx.Left)
+}
+
+func indexBaseExprRaw(sem *parser.SemanticContext, structFields map[string]map[string]string, curFunc, selfType string, e parser.Expression) string {
+	switch b := e.(type) {
+	case *parser.Identifier:
+		return indexBaseVarRaw(sem, curFunc, b.Value)
+	case *parser.GroupedExpression:
+		return indexBaseExprRaw(sem, structFields, curFunc, selfType, b.Expression)
+	case *parser.DotExpression:
+		if b == nil {
+			return ""
+		}
+		if rt := indexBaseReceiverRaw(sem, structFields, curFunc, selfType, b.Receiver); rt != "" {
+			if fs, ok := structFields[rt]; ok {
+				if ft, ok := fs[b.Property]; ok {
+					return ty.StripOptionRaw(ft)
+				}
+			}
+		}
+		// 自由函數回退：無 self 時 `.field` 是對同名局部變數的存取
+		//（與 parser.indexBaseContainerRaw 的最後一條回退同口徑）。
+		if id, ok := b.Receiver.(*parser.Identifier); ok && id.Value == "self" && selfType == "" {
+			return indexBaseVarRaw(sem, curFunc, b.Property)
+		}
+	}
+	return ""
+}
+
+func indexBaseReceiverRaw(sem *parser.SemanticContext, structFields map[string]map[string]string, curFunc, selfType string, recv parser.Expression) string {
+	switch r := recv.(type) {
+	case *parser.Identifier:
+		if r.Value == "self" && selfType != "" {
+			return ty.StripOptionRaw(selfType)
+		}
+		return indexBaseVarRaw(sem, curFunc, r.Value)
+	case *parser.GroupedExpression:
+		return indexBaseReceiverRaw(sem, structFields, curFunc, selfType, r.Expression)
+	case *parser.DotExpression:
+		if r == nil {
+			return ""
+		}
+		if rt := indexBaseReceiverRaw(sem, structFields, curFunc, selfType, r.Receiver); rt != "" {
+			if fs, ok := structFields[rt]; ok {
+				if ft, ok := fs[r.Property]; ok {
+					return ty.StripOptionRaw(ft)
+				}
+			}
+		}
+	case *parser.IndexExpression:
+		// `a[i].f`／`frames[cnt].data[j]`：先取 a 的容器型別，再取元素型別。
+		if raw := indexBaseContainerType(sem, structFields, curFunc, selfType, r); raw != "" {
+			return ty.StripOptionRaw(parser.ContainerElemType(raw))
+		}
+	}
+	return ""
+}
+
 const unhandledIndexTraceID = "idxhndld"
 
 // bareIndexUseTraceID：D11 新增「裸索引 option 當值用」硬錯誤的 TraceID。
@@ -6019,46 +6119,35 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		})
 	}
 
-	// baseTypeOf 取索引基底變數的容器型別字串；非直接變數基底回傳 ""。
-	baseTypeOf := func(curFunc string, idx *parser.IndexExpression) string {
-		if idx == nil || idx.Left == nil {
-			return ""
-		}
-		ident, ok := idx.Left.(*parser.Identifier)
-		if !ok {
-			return ""
-		}
-		funcKeys := []string{curFunc}
-		if i := strings.Index(curFunc, "."); i >= 0 {
-			funcKeys = append(funcKeys, curFunc[i+1:])
-		}
-		if sem != nil && sem.IdxLocalTypes != nil {
-			for _, cf := range funcKeys {
-				if t, ok := sem.IdxLocalTypeRef(cf, ident.Value); ok && t.Raw() != "" {
-					return ty.StripOptionRaw(t.Raw())
-				}
-			}
-		}
-		return ""
+	// structFields 是本程式的 struct 欄位表。**局部建表**而非讀包級
+	// validationStructFields：merged vet（no vet src/std）走 SkipTypeChecks，
+	// 包級表停留在合併前那次 ValidateTypes 的結果、且讀寫不受同一把鎖保護。
+	structFields := collectStructFields(program)
+	// baseTypeOf 取索引基底容器的型別字串：支援直接變數、`.field`（隱式 self）、
+	// `self.field`、鏈式與「元素作接收者」。與 parser 側同口徑，見
+	// indexBaseContainerType 的註解。
+	baseTypeOf := func(curFunc, selfType string, idx *parser.IndexExpression) string {
+		return indexBaseContainerType(sem, structFields, curFunc, selfType, idx)
 	}
 
-	// isSafeBase 複製 parser.isSafeIndexBase 的判定（僅直接變數基底、arr/vec/slice）。
+	// isSafeBase 複製 parser.isSafeIndexBase 的判定（arr/vec/slice/str/txt，
+	// 基底含變數與 struct 欄位）。
 	// baseTypeOf 已處理「合併 std vet 的 curFunc 多餘模組前綴」與「只查
-	// IdxLocalTypes、不使用 FuncVarType / 全域 VarType 回退」兩點，避免同名參數
+	// IdxLocalTypes / 函數作用域、不使用全域 VarType 回退」兩點，避免同名參數
 	// 污染（str 索引 b[0] 被誤判）。
-	isSafeBase := func(curFunc string, idx *parser.IndexExpression) bool {
-		return parser.ContainerElemType(baseTypeOf(curFunc, idx)) != ""
+	isSafeBase := func(curFunc, selfType string, idx *parser.IndexExpression) bool {
+		return parser.ContainerElemType(baseTypeOf(curFunc, selfType, idx)) != ""
 	}
 
 	// isBareIndexTarget 判定該索引讀取是否為 D11 新硬錯誤的適用對象：
-	// 直接變數基底的 arr / 定長陣列 / vec（[]T / [N]T / vec[T]），排除
+	// arr / 定長陣列 / vec（[]T / [N]T / vec[T]）的「裸 option 當值用」，排除
 	//   - map `[K]V`：走 put/get，不產生越界 option（ContainerElemType 會把
 	//     map 型別字串誤判為陣列，故必須先判 IsMapTypeString）；
-	//   - str/txt 索引：D6 會產生 option，但它們的消費由既有 idxhndld 口徑覆蓋，
-	//     本規則只針對 arr/vec/slice 的「裸 option 當值用」；
-	//   - struct-field 基底（self.x[i]）：baseTypeOf 要求 *Identifier 基底，已排除。
-	isBareIndexTarget := func(curFunc string, idx *parser.IndexExpression) bool {
-		lt := baseTypeOf(curFunc, idx)
+	//   - str/txt 索引：D6 起它們的讀取本就產生 `?char`，但把它們升為硬錯誤
+	//     會同時引爆 std 內數百處既有字串索引（本輪目標是寫側解包），仍由
+	//     idxhndld HINT 覆蓋，留待獨立一批。
+	isBareIndexTarget := func(curFunc, selfType string, idx *parser.IndexExpression) bool {
+		lt := baseTypeOf(curFunc, selfType, idx)
 		if lt == "" || lt == "str" || lt == "txt" {
 			return false
 		}
@@ -6109,10 +6198,10 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		return cf
 	}
 
-	var walkStmt func(stmt parser.Statement, curFunc string, fnOpt bool, curFile string)
-	var walkExpr func(e parser.Expression, curFunc string, curFile string)
+	var walkStmt func(stmt parser.Statement, curFunc string, fnOpt bool, curFile, selfType string)
+	var walkExpr func(e parser.Expression, curFunc string, curFile, selfType string)
 
-	walkExpr = func(e parser.Expression, curFunc, curFile string) {
+	walkExpr = func(e parser.Expression, curFunc, curFile, selfType string) {
 		if e == nil {
 			return
 		}
@@ -6120,69 +6209,69 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		case *parser.UnwrapAssignStatement:
 			if x.Value != nil {
 				markHandled(x.Value)
-				walkExpr(x.Value, curFunc, curFile)
+				walkExpr(x.Value, curFunc, curFile, selfType)
 			}
 		case *parser.IfExpression:
 			if x.Condition != nil {
-				walkExpr(x.Condition, curFunc, curFile)
+				walkExpr(x.Condition, curFunc, curFile, selfType)
 			}
 			if x.Consequence != nil {
 				for _, b := range x.Consequence.Statements {
-					walkStmt(b, curFunc, false, curFile)
+					walkStmt(b, curFunc, false, curFile, selfType)
 				}
 			}
 			if x.Alternative != nil {
 				for _, b := range x.Alternative.Statements {
-					walkStmt(b, curFunc, false, curFile)
+					walkStmt(b, curFunc, false, curFile, selfType)
 				}
 			}
 		case *parser.GroupedExpression:
-			walkExpr(x.Expression, curFunc, curFile)
+			walkExpr(x.Expression, curFunc, curFile, selfType)
 		case *parser.PrefixExpression:
-			walkExpr(x.Right, curFunc, curFile)
+			walkExpr(x.Right, curFunc, curFile, selfType)
 		case *parser.InfixExpression:
-			walkExpr(x.Left, curFunc, curFile)
-			walkExpr(x.Right, curFunc, curFile)
+			walkExpr(x.Left, curFunc, curFile, selfType)
+			walkExpr(x.Right, curFunc, curFile, selfType)
 		case *parser.CallExpression:
-			walkExpr(x.Function, curFunc, curFile)
+			walkExpr(x.Function, curFunc, curFile, selfType)
 			for _, a := range x.Arguments {
-				walkExpr(a, curFunc, curFile)
+				walkExpr(a, curFunc, curFile, selfType)
 			}
 		case *parser.IndexExpression:
 			// 巢狀「值位置」的裸索引 option（未顯式消費）→ D11 新硬錯誤。
-			if isBareIndexTarget(curFunc, x) && !handled[x] {
+			if isBareIndexTarget(curFunc, selfType, x) && !handled[x] {
 				reportBare(x, curFile)
 			}
-			walkExpr(x.Left, curFunc, curFile)
-			walkExpr(x.Index, curFunc, curFile)
+			walkExpr(x.Left, curFunc, curFile, selfType)
+			walkExpr(x.Index, curFunc, curFile, selfType)
 		case *parser.AssignExpression:
 			// 只遍歷 Value（RHS 值讀取）；Left 是寫入目標，不當作值讀取。
-			walkExpr(x.Value, curFunc, curFile)
+			walkExpr(x.Value, curFunc, curFile, selfType)
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
-				walkExpr(el, curFunc, curFile)
+				walkExpr(el, curFunc, curFile, selfType)
 			}
 		case *parser.SliceExpression:
-			walkExpr(x.Left, curFunc, curFile)
+			walkExpr(x.Left, curFunc, curFile, selfType)
 		case *parser.ConditionalExpression:
-			walkExpr(x.Condition, curFunc, curFile)
-			walkExpr(x.Consequence, curFunc, curFile)
-			walkExpr(x.Alternative, curFunc, curFile)
+			walkExpr(x.Condition, curFunc, curFile, selfType)
+			walkExpr(x.Consequence, curFunc, curFile, selfType)
+			walkExpr(x.Alternative, curFunc, curFile, selfType)
 		case *parser.CastExpression:
-			walkExpr(x.Expr, curFunc, curFile)
+			walkExpr(x.Expr, curFunc, curFile, selfType)
 		case *parser.DotExpression:
-			walkExpr(x.Receiver, curFunc, curFile)
+			walkExpr(x.Receiver, curFunc, curFile, selfType)
 		case *parser.SurfaceMatch:
 			// S1：值 match / place-match 的主語是顯式消費者，標為 handled；
 			// 臂體子樹（含 `?=` 解包、臂內 RHS 索引讀）也要被看見。見 sugar_walk.go。
 			markHandled(x.Matched)
 			walkSurfaceMatchChildren(x, nil,
-				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile) },
-				func(sub parser.Statement) { walkStmt(sub, curFunc, false, curFile) })
+				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile, selfType) },
+				func(sub parser.Statement) { walkStmt(sub, curFunc, false, curFile, selfType) })
 		}
 	}
 
-	walkStmt = func(stmt parser.Statement, curFunc string, fnOpt bool, curFile string) {
+	walkStmt = func(stmt parser.Statement, curFunc string, fnOpt bool, curFile, selfType string) {
 		if stmt == nil {
 			return
 		}
@@ -6197,9 +6286,18 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 					fnOpt = true
 				}
 			}
+			// 方法接收者型別：declaredResults 刻意丟掉隱含 self，這裡直接取
+			// Results[0]。Dot 基底（`.field[i]` / `self.field[i]`）的欄位查表全靠
+			// 它，缺了會讓讀側判定與 parser 分叉（parser 已 option 化、checker 不報）。
+			fnSelf := ""
+			if len(s.Results) > 0 && s.Results[0] != nil && s.Results[0].Name == "self" && s.Results[0].Type != nil {
+				if st := declTypeOf(view, s.Results[0], s.Results[0].Type.String()); st != nil {
+					fnSelf = ty.StripOptionRaw(st.Raw())
+				}
+			}
 			if s.Body != nil {
 				for _, b := range s.Body.Statements {
-					walkStmt(b, s.Name, fnOpt, fcf)
+					walkStmt(b, s.Name, fnOpt, fcf, fnSelf)
 				}
 			}
 			return
@@ -6215,6 +6313,24 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			// idxhndld），故放給 walkExpr 報 idxbruse 不會雙重上報，且兩形狀一致。
 			if !s.IsSynthetic {
 				markHandled(s.Value)
+			} else if s.Name != nil && strings.HasPrefix(s.Name.Value, "__match_subj_") {
+				// 合成「索引主體歸一化」let：`let __match_subj_L_C ?elem = a[__idx_L_C]`。
+				// 這是 D9/D11 把 `a[i]: { … }` 與 `a[i] ?= v` 降糖出來的中間綁定，
+				// 緊接在後的那條 `if __match_subj == nil/err` 就是它的消費者——
+				// 讀取已被顯式消費，不是「裸 option 當值用」，故與用戶顯式寫的
+				// `x ?elem = a[i]` 同口徑放行。
+				//
+				// 為什麼不能「合成就放行」：捕獲鏈的 `__cap_N ?inner = p[i]`
+				// （`x = p[i] + 1` 的降糖）要照舊報錯——那正是把越界 option 直接
+				// 丟進算術的實例；故只認 __match_subj_ 這一個前綴（合成名不可
+				// 用於用戶源碼，見 funcargs.go:isLoweringTempArg）。
+				//
+				// 缺這條的後果（D-A）：`?=` 在**非塊 match** 位置於解析期就地展開
+				// 成 if 鏈，`?=` 目標的那次索引讀取變成上面這個合成 let 的 RHS，
+				// 於是 a[i] ?= v 本身被判成裸索引使用而報 idxbruse——塊 match 內的
+				// `?=` 因為 skipSugarExpand 保留糖節點、走 UnwrapAssignStatement
+				// 分支（只下鑽 Value、不碰 Target），才恰好沒事。
+				markHandled(s.Value)
 			}
 			// 非合成 `x = b[i]`：若 LHS 顯式宣告 ?T（option 本地）則已接納
 			// 越界 option；否則（非 option 函式，或結果參數非 ?T）越界 option
@@ -6222,10 +6338,10 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			if !s.IsSynthetic {
 				if idx, ok := s.Value.(*parser.IndexExpression); ok {
 					discarded := s.Name != nil && s.Name.Value == "_"
-					// D6：顯式 **plain** 型別（`c char = s[i]` / `v i64 = a[i]`）
-					// 與 `?T` 一樣會讓這條讀取保持 plain —— lower 期的合成
-					// （synthesizeNullableType）在 s.Type != nil 時直接短路。
-					// 這種讀取壓根不產生 option，自無「未處理」可言。
+					// D6 遺留的註解已作廢（D11 補洞）：顯式 **plain** 型別
+					// （`c char = s[i]` / `v i64 = a[i]`）確實會讓 lower 期的
+					// synthesizeNullableType 短路，但結論不是「自無未處理可言」，
+					// 而是「連邊界檢查都沒發」——見下方 D11 補洞段。
 					letType := ""
 					if s.Type != nil {
 						letType = declTypeOfRaw(view, s, s.Type.String())
@@ -6235,13 +6351,24 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 					// InferredType（synthesizeNullableType）。AST 上 s.Type 為空，
 					// 與「顯式 ?T」走同一條豁免。
 					inferredOption := sem != nil && sem.HasInferredType(s)
-					if isSafeBase(curFunc, idx) && !discarded && !plainDeclared && !(s.Type != nil && ty.IsOptionRaw(letType)) && !inferredOption {
+					// D11 補洞：顯式 plain 型別**不是**「已消費」，而是「把 option
+					// 連同邊界檢查一起關掉」。lowering 的 maybeCaptureOptionAssign
+					// 對 `ls.Type != nil && !option` 直接 return（lowering.go:1451，
+					// 註解寫著「交 checker 報錯」），synthesizeNullableType 因此從不
+					// 執行；而此處過去又按「壓根不產生 option，自無未處理可言」放行。
+					// 兩邊互推責任 ⇒ 誰都沒報，codegen 走的是裸 GEP + 裸 load
+					//（IR 實測：`v i64 = data[p]` 全無 icmp/branch，p=-1 讀到緩衝區
+					// 前一個位元組）。D11 的立場是索引讀取恆回傳 ?T，故這種宣告必須
+					// 是硬錯誤，而不是靜默的無檢查讀取。
+					if plainDeclared && isBareIndexTarget(curFunc, selfType, idx) {
+						reportBare(idx, resolveFile(s, curFile))
+					} else if isSafeBase(curFunc, selfType, idx) && !discarded && !plainDeclared && !(s.Type != nil && ty.IsOptionRaw(letType)) && !inferredOption {
 						report(idx, resolveFile(s, curFile))
 					}
 				}
 			}
 			if s.Value != nil {
-				walkExpr(s.Value, curFunc, curFile)
+				walkExpr(s.Value, curFunc, curFile, selfType)
 			}
 		case *parser.ExpressionStatement:
 			// `b = arr[i]`（既有變數的裸賦值）以 ExpressionStatement 包裹
@@ -6250,7 +6377,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			if ae, ok := s.Expression.(*parser.AssignExpression); ok {
 				markHandled(ae.Value)
 				if idx, ok := ae.Value.(*parser.IndexExpression); ok {
-					if isSafeBase(curFunc, idx) {
+					if isSafeBase(curFunc, selfType, idx) {
 						handledByType := false
 						if id, ok := ae.Left.(*parser.Identifier); ok {
 							handledByType = id.Value == "_" || lhsIsOption(curFunc, id.Value)
@@ -6262,31 +6389,31 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 				}
 			}
 			if s.Expression != nil {
-				walkExpr(s.Expression, curFunc, curFile)
+				walkExpr(s.Expression, curFunc, curFile, selfType)
 			}
 		case *parser.UnwrapAssignStatement:
 			markHandled(s.Value)
 			if s.Value != nil {
-				walkExpr(s.Value, curFunc, curFile)
+				walkExpr(s.Value, curFunc, curFile, selfType)
 			}
 		case *parser.ForStatement:
 			if s.Init != nil {
-				walkStmt(s.Init, curFunc, fnOpt, curFile)
+				walkStmt(s.Init, curFunc, fnOpt, curFile, selfType)
 			}
 			if s.Condition != nil {
-				walkExpr(s.Condition, curFunc, curFile)
+				walkExpr(s.Condition, curFunc, curFile, selfType)
 			}
 			if s.Update != nil {
-				walkStmt(s.Update, curFunc, fnOpt, curFile)
+				walkStmt(s.Update, curFunc, fnOpt, curFile, selfType)
 			}
 			if s.Body != nil {
 				for _, b := range s.Body.Statements {
-					walkStmt(b, curFunc, fnOpt, curFile)
+					walkStmt(b, curFunc, fnOpt, curFile, selfType)
 				}
 			}
 		case *parser.BlockStatement:
 			for _, b := range s.Statements {
-				walkStmt(b, curFunc, fnOpt, curFile)
+				walkStmt(b, curFunc, fnOpt, curFile, selfType)
 			}
 		case *parser.BlockMatchStatement:
 			// 塊 match 主語（若為索引讀取）是顯式消費者；主體 / 臂體與一般區塊同口徑下鑽。
@@ -6294,22 +6421,22 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 				markHandled(s.Match.Matched)
 			}
 			for _, b := range blockMatchChildStatements(s) {
-				walkStmt(b, curFunc, fnOpt, curFile)
+				walkStmt(b, curFunc, fnOpt, curFile, selfType)
 			}
 		case *parser.MultiAssignStatement:
 			markHandled(s.Value)
 			if s.Value != nil {
-				walkExpr(s.Value, curFunc, curFile)
+				walkExpr(s.Value, curFunc, curFile, selfType)
 			}
 		case *parser.ReturnStatement:
 			if s.ReturnValue != nil {
-				walkExpr(s.ReturnValue, curFunc, curFile)
+				walkExpr(s.ReturnValue, curFunc, curFile, selfType)
 			}
 		}
 	}
 
 	for _, stmt := range program.Statements {
-		walkStmt(stmt, "", false, mainFile)
+		walkStmt(stmt, "", false, mainFile, "")
 	}
 	return results
 }
@@ -6546,33 +6673,21 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		})
 	}
 
-	// baseTypeOf 取索引基底變數的容器型別字串；非直接變數基底回傳 ""。
-	// 與 isSafeBase 同口徑：只查 IdxLocalTypes（lower 預掃描，無跨函數污染）。
-	baseTypeOf := func(curFunc string, idx *parser.IndexExpression) string {
-		if idx == nil || idx.Left == nil {
-			return ""
-		}
-		ident, ok := idx.Left.(*parser.Identifier)
-		if !ok {
-			return ""
-		}
-		funcKeys := []string{curFunc}
-		if i := strings.Index(curFunc, "."); i >= 0 {
-			funcKeys = append(funcKeys, curFunc[i+1:])
-		}
-		if sem != nil && sem.IdxLocalTypes != nil {
-			for _, cf := range funcKeys {
-				if t, ok := sem.IdxLocalTypeRef(cf, ident.Value); ok && t.Raw() != "" {
-					return ty.StripOptionRaw(t.Raw())
-				}
-			}
-		}
-		return ""
+	// structFields 局部建表（理由同 ValidateUnhandledIndex）。
+	structFields := collectStructFields(program)
+	// baseTypeOf 取索引基底容器的型別字串：支援直接變數、`.field`（隱式 self）、
+	// `self.field`、鏈式與「元素作接收者」。與 parser 側同口徑，見
+	// indexBaseContainerType。
+	baseTypeOf := func(curFunc, selfType string, idx *parser.IndexExpression) string {
+		return indexBaseContainerType(sem, structFields, curFunc, selfType, idx)
 	}
 
 	// isContainerWriteBase 判定這個下標寫入是否落在 arr/vec/slice/str/txt 的
-	// 直接變數基底上（map 與 struct-field 基底都放行）。
-	isContainerWriteBase := func(curFunc string, idx *parser.IndexExpression) bool {
+	// 容器基底上（**map 放行**：`m[k] = v` 是 put，任何鍵恒有定義、沒有越界分支）。
+	// 基底形態不限於變數：`.limit[i]`（隱式 self）、`self.f[i]`、`a.b.f[i]` 一律
+	// 納入 —— D11 之後「索引讀一律 option」的對稱要求，寫側不得再有 struct 欄位
+	// 豁免區。
+	isContainerWriteBase := func(curFunc, selfType string, idx *parser.IndexExpression) bool {
 		// with-cap 豁免：基底若在本函式內曾被 `with-cap(...)` 指派過，它是
 		// len=0 的容量緩衝，直接下標寫入是唯一能正確增長的寫法，不報 idxwrite。
 		if ident, ok := idx.Left.(*parser.Identifier); ok && ident.Value != "" {
@@ -6586,7 +6701,7 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 				}
 			}
 		}
-		lt := baseTypeOf(curFunc, idx)
+		lt := baseTypeOf(curFunc, selfType, idx)
 		if lt == "" {
 			return false
 		}
@@ -6594,7 +6709,23 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		if parser.IsMapTypeString(lt) {
 			return false
 		}
-		return parser.ContainerElemType(lt) != ""
+		elem := parser.ContainerElemType(lt)
+		if elem == "" {
+			return false
+		}
+		// 元素**本身**是 option（`[4]?i64` / `[]?i64` / `[K]?V`）⇒ 槽位承載的
+		// 就是 ?T，`a[i] = v` 是「值 → option」的隱式提升（wrapOptionIfNeeded
+		// 會包成 ok(v)），越界與否根本不影響這次寫入，故不是直寫錯誤。
+		//
+		// 這條與 D11 的「索引讀一律 option」互為對偶：讀 `a[i]` 因為**不確定
+		// i 是否越界**才要 ?T；寫進一個本來就容納 ?T 的槽位沒有這個不確定性
+		// ——值 T 提升為 ?T 永不失敗，所以既不需要 place-match 也不需要 `?=`。
+		// 漏了這條，`slots [4]?i64` 這類「槽位即 option」的欄位只能靠 with-cap
+		// 豁免，`self.slots[i] = v` 會被誤報 idxwrite。
+		if ty.IsOptionRaw(elem) {
+			return false
+		}
+		return true
 	}
 
 	// resolveFile 與 ValidateUnhandledIndex 同款：節點自帶 SourceFile 優先。
@@ -6608,10 +6739,10 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		return mainFile
 	}
 
-	var walkStmt func(stmt parser.Statement, curFunc string, curFile string)
-	var walkExpr func(e parser.Expression, curFunc string, curFile string)
+	var walkStmt func(stmt parser.Statement, curFunc string, curFile, selfType string)
+	var walkExpr func(e parser.Expression, curFunc string, curFile, selfType string)
 
-	walkExpr = func(e parser.Expression, curFunc, curFile string) {
+	walkExpr = func(e parser.Expression, curFunc, curFile, selfType string) {
 		if e == nil {
 			return
 		}
@@ -6619,32 +6750,32 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 		case *parser.IfExpression:
 			if x.Consequence != nil {
 				for _, b := range x.Consequence.Statements {
-					walkStmt(b, curFunc, curFile)
+					walkStmt(b, curFunc, curFile, selfType)
 				}
 			}
 			if x.Alternative != nil {
 				for _, b := range x.Alternative.Statements {
-					walkStmt(b, curFunc, curFile)
+					walkStmt(b, curFunc, curFile, selfType)
 				}
 			}
 		case *parser.GroupedExpression:
-			walkExpr(x.Expression, curFunc, curFile)
+			walkExpr(x.Expression, curFunc, curFile, selfType)
 		case *parser.PrefixExpression:
-			walkExpr(x.Right, curFunc, curFile)
+			walkExpr(x.Right, curFunc, curFile, selfType)
 		case *parser.InfixExpression:
-			walkExpr(x.Left, curFunc, curFile)
-			walkExpr(x.Right, curFunc, curFile)
+			walkExpr(x.Left, curFunc, curFile, selfType)
+			walkExpr(x.Right, curFunc, curFile, selfType)
 		case *parser.SurfaceMatch:
 			// S1：臂體內的直寫下標（`a[1] = 2`）也要看得到。少了這一支，
 			// 糖形態下整棵臂子樹對本規則不可見（診斷被靜默丟棄，而非報錯）。
 			// 見 sugar_walk.go。
 			walkSurfaceMatchChildren(x, nil,
-				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile) },
-				func(sub parser.Statement) { walkStmt(sub, curFunc, curFile) })
+				func(sub parser.Expression) { walkExpr(sub, curFunc, curFile, selfType) },
+				func(sub parser.Statement) { walkStmt(sub, curFunc, curFile, selfType) })
 		}
 	}
 
-	walkStmt = func(stmt parser.Statement, curFunc string, curFile string) {
+	walkStmt = func(stmt parser.Statement, curFunc string, curFile, selfType string) {
 		if stmt == nil {
 			return
 		}
@@ -6653,9 +6784,17 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 			fcf := resolveFile(program.Sem.SourceFileOf(s), curFile)
 			// 收集本函式內 by with-cap 構造過的基底，供 isContainerWriteBase 豁免。
 			capBases[s.Name] = collectWithCapBases(s.Body)
+			// 方法接收者型別（見 indexBaseContainerType）：`.limit[i] = v` 這類
+			// 欄位基底的容器型別全靠它查 struct 欄位表。
+			fnSelf := ""
+			if len(s.Results) > 0 && s.Results[0] != nil && s.Results[0].Name == "self" && s.Results[0].Type != nil {
+				if st := declTypeOf(view, s.Results[0], s.Results[0].Type.String()); st != nil {
+					fnSelf = ty.StripOptionRaw(st.Raw())
+				}
+			}
 			if s.Body != nil {
 				for _, b := range s.Body.Statements {
-					walkStmt(b, s.Name, fcf)
+					walkStmt(b, s.Name, fcf, fnSelf)
 				}
 			}
 			return
@@ -6665,7 +6804,7 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 				// `a[__idx] = __place`（IsSynthetic），不能把它當用戶直寫。
 				if !ae.IsSynthetic {
 					if idx, ok := ae.Left.(*parser.IndexExpression); ok {
-						if isContainerWriteBase(curFunc, idx) {
+						if isContainerWriteBase(curFunc, selfType, idx) {
 							tgt := parser.ExprToString(ae.Left)
 							val := parser.ExprToString(ae.Value)
 							// 本语言 match 臂以换行分隔；`,` 與 `;` 均非臂分隔符，且 `;` 是注释
@@ -6679,13 +6818,13 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 				}
 			}
 			if s.Expression != nil {
-				walkExpr(s.Expression, curFunc, curFile)
+				walkExpr(s.Expression, curFunc, curFile, selfType)
 			}
 		case *parser.MultiAssignStatement:
 			// `x, a[i] = f()`：下標出現在多指派目標裡，同樣是未經解包的直寫。
 			for _, t := range s.Targets {
 				if idx, ok := t.(*parser.IndexExpression); ok {
-					if isContainerWriteBase(curFunc, idx) {
+					if isContainerWriteBase(curFunc, selfType, idx) {
 						tgt := parser.ExprToString(idx)
 						msg := i18n.T("jwegl6bv", "multi-assignment target `%s` is written through an index without unwrapping: an index read returns an option (nil when out of range), so writing straight through it turns an out-of-range access into an unchecked out-of-range write. Split that target out into a place-match (`it` in the ok arm is the element position, readable and writable), or propagate with `?=` in a function that returns an option.",
 							tgt)
@@ -6694,41 +6833,41 @@ func runIndexWriteCore(program *parser.Program, mainFile string, view *THIRView)
 				}
 			}
 			if s.Value != nil {
-				walkExpr(s.Value, curFunc, curFile)
+				walkExpr(s.Value, curFunc, curFile, selfType)
 			}
 		case *parser.LetStatement:
 			if s.Value != nil {
-				walkExpr(s.Value, curFunc, curFile)
+				walkExpr(s.Value, curFunc, curFile, selfType)
 			}
 		case *parser.ForStatement:
 			if s.Init != nil {
-				walkStmt(s.Init, curFunc, curFile)
+				walkStmt(s.Init, curFunc, curFile, selfType)
 			}
 			if s.Condition != nil {
-				walkExpr(s.Condition, curFunc, curFile)
+				walkExpr(s.Condition, curFunc, curFile, selfType)
 			}
 			if s.Update != nil {
-				walkStmt(s.Update, curFunc, curFile)
+				walkStmt(s.Update, curFunc, curFile, selfType)
 			}
 			if s.Body != nil {
 				for _, b := range s.Body.Statements {
-					walkStmt(b, curFunc, curFile)
+					walkStmt(b, curFunc, curFile, selfType)
 				}
 			}
 		case *parser.BlockStatement:
 			for _, b := range s.Statements {
-				walkStmt(b, curFunc, curFile)
+				walkStmt(b, curFunc, curFile, selfType)
 			}
 		case *parser.BlockMatchStatement:
 			// 塊 match 的主體 / 臂體與一般區塊同口徑下鑽。
 			for _, b := range blockMatchChildStatements(s) {
-				walkStmt(b, curFunc, curFile)
+				walkStmt(b, curFunc, curFile, selfType)
 			}
 		}
 	}
 
 	for _, stmt := range program.Statements {
-		walkStmt(stmt, "", mainFile)
+		walkStmt(stmt, "", mainFile, "")
 	}
 	return results
 }
@@ -9626,6 +9765,28 @@ func optionTypesCompatible(inferred, existing string) bool {
 	return false
 }
 
+// valuePromotesToOption 判斷「值型別 src 賦值給 option 目標 dst」是否屬於語言
+// 允許的**隱式提升**。
+//
+// 語義定案：`T -> ?T` 永不失敗（把值包成 ok），所以任何位置都可以直接寫；
+// 反向 `?T -> T` 才是必須顯式解包的方向（見 optionImplicitUnwrapRejected）。
+// 這條規則在一般宣告/重綁路徑早已生效（`x ?i64 = 5`、`x = n`），但集合字面量
+// 的**逐元素**檢查另有一套比較，漏了它 => `[4]?i64 = [1, nil, 3, nil]` 報
+// 「cannot assign i64 value to ?i64 element」（trace os0j8ix4）。
+func valuePromotesToOption(dst, src string) bool {
+	if !ty.IsOptionRaw(dst) || src == "" || ty.IsOptionRaw(src) || ty.IsViewRaw(src) {
+		return false
+	}
+	inner := ty.StripOptionRaw(dst)
+	if typeNamesEquivalent(inner, src) {
+		return true
+	}
+	// 整數之間沿用「宣告型別權威」的既有口徑（允許窄化，見 intConvMethodName）。
+	_, _, ok1 := intTypeRange(inner)
+	_, _, ok2 := intTypeRange(src)
+	return ok1 && ok2
+}
+
 // optionImplicitUnwrapRejected 報告 `target = value` 是否是一次**非法的隱式解包**
 // —— 目標是 plain `T`，值卻是 `?T`。
 //
@@ -9998,7 +10159,8 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							for _, elem := range elements {
 								elemInferred := inferExprType(elem, varTypes, funcTypes, selfType)
 								if elemInferred != "" && elemInferred != elemType &&
-									!isArgTypeCompatible(elemType, elemInferred, elem) {
+									!isArgTypeCompatible(elemType, elemInferred, elem) &&
+									!valuePromotesToOption(elemType, elemInferred) {
 							results = append(results, ValidateResult{
 								TraceID: "os0j8ix4",
 								Line:    s.Token.Line,
@@ -10064,7 +10226,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
 						!isIntLiteralNarrowingToDeclared(s.Value, existingType) &&
 						// 浮點字面量指派給 f32/f64 變數：常量轉換（如 `v f32 = 4.0`），不視為執行期 f64→f32 丢精度
-						!isFloatLiteralToDeclared(s.Value, existingType) {
+						!isFloatLiteralToDeclared(s.Value, existingType) &&
+						// 目標型別已寫明且存在約定型別轉換方法（`i64.to-i32`、使用者自訂的
+						// `u16.to-i64` …）⇒ 轉換是使用者顯式要求的，放行窄化。
+						// 只有本判定點放行：實參 / 欄位·索引賦值 / 多返回值賦值不查，
+						// 因為 MIR 不會在那些位置插入轉換（見 mir.intConvCallee）。
+						(IntConvMethodName(inferredType, existingType, funcNames) == "" ||
+							optionImplicitUnwrapRejected(existingType, inferredType)) {
 					valPos := s.Value.Pos()
 					msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, s.Name.Value)
 					if optionImplicitUnwrapRejected(existingType, inferredType) {

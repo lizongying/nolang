@@ -87,8 +87,7 @@ i64.to-str = () (out str) {
 ; out: 十進位表示（隱式拓寬至 i64 後複用原生路徑）
 ; [to-str](#number.i32.to-str)
 i32.to-str = () (out str) {
-    v i64
-    v = .
+    v i64 = .
     out = v.to-str()
 }
 
@@ -96,8 +95,7 @@ i32.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 i64 後格式化）
 ; [to-str](#number.i16.to-str)
 i16.to-str = () (out str) {
-    v i64
-    v = .
+    v i64 = .
     out = v.to-str()
 }
 
@@ -105,8 +103,7 @@ i16.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 i64 後格式化）
 ; [to-str](#number.i8.to-str)
 i8.to-str = () (out str) {
-    v i64
-    v = .
+    v i64 = .
     out = v.to-str()
 }
 
@@ -158,8 +155,7 @@ u64.to-str = () (out str) {
 ; out: 十進位表示（隱式拓寬至 u64 後複用 u64.to-str）
 ; [to-str](#number.u32.to-str)
 u32.to-str = () (out str) {
-    v u64
-    v = .
+    v u64 = .
     out = v.to-str()
 }
 
@@ -167,8 +163,7 @@ u32.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 u64 後格式化）
 ; [to-str](#number.u16.to-str)
 u16.to-str = () (out str) {
-    v u64
-    v = .
+    v u64 = .
     out = v.to-str()
 }
 
@@ -176,8 +171,7 @@ u16.to-str = () (out str) {
 ; out: 十進位表示（拓寬至 u64 後格式化）
 ; [to-str](#number.u8.to-str)
 u8.to-str = () (out str) {
-    v u64
-    v = .
+    v u64 = .
     out = v.to-str()
 }
 
@@ -185,8 +179,7 @@ u8.to-str = () (out str) {
 ; out: 十進位表示（byte 按無號 0..255，拓寬至 u64 後格式化）
 ; [to-str](#number.byte.to-str)
 byte.to-str = () (out str) {
-    v u64
-    v = .
+    v u64 = .
     out = v.to-str()
 }
 
@@ -1396,6 +1389,90 @@ f64.to-i32 = () (out i32) {
 ; [to-i32](#number.i64.to-i32)
 #{buildin}
 i64.to-i32 = () (out i32) {
+}
+
+; ── 整數拓寬矩陣：to-i64 / to-u64 ──────────────────────────
+; 這組方法的價值主要不在 IR（後端把 i16/i32/i64 攤平成同一槽寬，多數是
+; 等值搬運；只有 byte/u8/i8 的 i8 車道真的發 zext/sext），而在於給
+; 「宣告型別 ≠ 初始式型別」的綁定一個統一的轉換通路：編譯器按
+; <源型別>.to-<目標型別> 查找並合成呼叫，查不到才退回隱式 OpMove 拓寬。
+; 因此這裡只補「窄 → 64 位」這一圈；u64↔i64 屬同寬重解釋，不需要方法。
+
+; byte 轉 i64（無號零擴展）
+; out: 等值 i64
+; [to-i64](#number.byte.to-i64)
+#{buildin}
+byte.to-i64 = () (out i64) {
+}
+
+; u8 轉 i64（無號零擴展）
+; out: 等值 i64
+; [to-i64](#number.u8.to-i64)
+#{buildin}
+u8.to-i64 = () (out i64) {
+}
+
+; i8 轉 i64（有號符號擴展）
+; out: 等值 i64
+; [to-i64](#number.i8.to-i64)
+#{buildin}
+i8.to-i64 = () (out i64) {
+}
+
+; u16 轉 i64
+; out: 等值 i64
+; [to-i64](#number.u16.to-i64)
+#{buildin}
+u16.to-i64 = () (out i64) {
+}
+
+; i16 轉 i64
+; out: 等值 i64
+; [to-i64](#number.i16.to-i64)
+#{buildin}
+i16.to-i64 = () (out i64) {
+}
+
+; u32 轉 i64
+; out: 等值 i64
+; [to-i64](#number.u32.to-i64)
+#{buildin}
+u32.to-i64 = () (out i64) {
+}
+
+; i32 轉 i64
+; out: 等值 i64
+; [to-i64](#number.i32.to-i64)
+#{buildin}
+i32.to-i64 = () (out i64) {
+}
+
+; byte 轉 u64（無號零擴展）
+; out: 等值 u64
+; [to-u64](#number.byte.to-u64)
+#{buildin}
+byte.to-u64 = () (out u64) {
+}
+
+; u8 轉 u64（無號零擴展）
+; out: 等值 u64
+; [to-u64](#number.u8.to-u64)
+#{buildin}
+u8.to-u64 = () (out u64) {
+}
+
+; u16 轉 u64
+; out: 等值 u64
+; [to-u64](#number.u16.to-u64)
+#{buildin}
+u16.to-u64 = () (out u64) {
+}
+
+; u32 轉 u64
+; out: 等值 u64
+; [to-u64](#number.u32.to-u64)
+#{buildin}
+u32.to-u64 = () (out u64) {
 }
 
 ; 將 int64 轉為大端序 8 位元組

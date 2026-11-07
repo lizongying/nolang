@@ -1,0 +1,85 @@
+; tests/fn-type-more.no — consolidated named fn-type fragments
+; from: tests/fn-type-params.no, tests/fn-type-result.no
+
+; fn-type-params
+greet-cb = ()
+
+compute-cb = (n i64) (r i64)
+
+greet = () {
+    print('hi')
+}
+
+test-run = (name str, cb greet-cb) {
+    cb()
+}
+
+add-one = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n + 1
+}
+
+apply = (n i64, cb compute-cb) (out i64) {
+    out = cb(n)
+}
+
+test-run('hello', greet)
+print('ok: greet')
+
+result = 0
+result = apply(41, add-one)
+{
+    result == 42 -> print('ok: apply')
+
+    -> print('fail: apply')
+}
+
+print('---')
+
+; fn-type-result
+ret-cb = () (i64)
+
+mk-1 = () (r i64) {
+    r = 111
+}
+
+mk-2 = () (r i64) {
+    r = 222
+}
+
+mk-3 = () (r i64) {
+    r = 333
+}
+
+apply-cb = (cb ret-cb) (out i64) {
+    out = cb()
+}
+
+test-single-callback = () (ok bool) {
+    a = apply-cb(mk-1)
+    a == 111 -> ok = true
+}
+
+test-two-callbacks = () (ok bool) {
+    a = apply-cb(mk-1)
+    b = apply-cb(mk-2)
+    a == 111 && b == 222 -> ok = true
+}
+
+test-three-callbacks = () (ok bool) {
+    a = apply-cb(mk-1)
+    b = apply-cb(mk-2)
+    c = apply-cb(mk-3)
+    a == 111 && b == 222 && c == 333 -> ok = true
+}
+
+ok1 = test-single-callback()
+print('test-single-callback: {ok1}')
+
+ok2 = test-two-callbacks()
+print('test-two-callbacks: {ok2}')
+
+ok3 = test-three-callbacks()
+print('test-three-callbacks: {ok3}')
+
+print('all done')

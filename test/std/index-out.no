@@ -1,0 +1,347 @@
+; std-index-out.no — 下標越界＝err（第三態）與 值→option 隱式提升 回歸測試
+;
+; 執行：no test test/std/index-out.no
+;
+; 語義約定（本輪定案）：
+;   1. 下標讀取一律回 ?T，三態嚴格可區分：
+;        ok(元素)  —— 在界內
+;        nil       —— 值確實不存在（`[]?T` / `[N]?T` 的空槽位）
+;        err       —— 下標越界（含 str/txt 的碼點越界），程式錯誤
+;      越界回 nil 而非 err 會讓 `[N]?T` 的元素讀取無法區分「越界」與「空槽」。
+;   2. T 可隱式提升為 ?T（永不失敗）；?T 不能隱式落回 T（必須 `?=` / match）。
+
+# /test/runner
+
+passed = 0
+failed = 0
+
+; ── 定長陣列 [N]T：界內 ok、越界 err ────────────────────────────
+t-arr-fixed = () {
+    a [4]i64 = [10, 20, 30, 40]
+    in1 = a[1]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(in1, 'ok', 2, '[N]i64 界內 → ok')
+
+    out1 = a[9]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(out1, 'err', 3, '[N]i64 越界 → err（不是 nil）')
+
+    neg = a[0 - 1]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(neg, 'err', 3, '[N]i64 負下標 → err')
+}
+
+; ── 越界的 err 帶得動訊息與位置 ──────────────────────────────────
+t-arr-oob-msg = () {
+    a [4]i64 = [10, 20, 30, 40]
+    msg = a[9]: {
+        err -> it.msg()
+
+        -> 'no-err'
+    }
+    runner.str-eq(msg, 'index out of range', 18, '越界 err 的訊息可讀')
+}
+
+; ── 切片 []T ────────────────────────────────────────────────────
+t-slice = () {
+    v []i64 = [7, 8, 9]
+    in1 = v[2]: {
+        ok -> 'ok'
+
+        -> 'bad'
+    }
+    runner.str-eq(in1, 'ok', 2, '[]i64 界內 → ok')
+
+    out1 = v[5]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(out1, 'err', 3, '[]i64 越界 → err')
+}
+
+; ── str 的碼點下標（OpLen 是位元組，必須用 -1 哨兵判定）─────────
+t-str-codepoint = () {
+    s = 'héllo'
+    in1 = s[1]: {
+        ok -> 'ok'
+
+        -> 'bad'
+    }
+    runner.str-eq(in1, 'ok', 2, 'str 界內碼點 → ok')
+
+    ; 5 個碼點、6 個位元組：s[5] 在「位元組界內」但「碼點界外」。
+    out1 = s[5]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(out1, 'err', 3, 'str 碼點越界 → err')
+}
+
+; ── [N]?T / []?T：三態齊備（ok / nil / err）─────────────────────
+t-opt-elem-array = () {
+    b [4]?i64 = [1, nil, 3, nil]
+
+    st0 = b[0]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(st0, 'ok', 2, '[N]?i64 有值槽 → ok')
+
+    st1 = b[1]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(st1, 'nil', 3, '[N]?i64 空槽 → nil（不是 err）')
+
+    st9 = b[9]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(st9, 'err', 3, '[N]?i64 越界 → err')
+}
+
+t-opt-elem-slice = () {
+    b []?i64 = [1, nil, 3, nil]
+    st0 = b[0]: {
+        ok -> 'ok'
+
+        -> 'bad'
+    }
+    runner.str-eq(st0, 'ok', 2, '[]?i64 有值槽 → ok')
+
+    st1 = b[1]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(st1, 'nil', 3, '[]?i64 空槽 → nil')
+
+    st9 = b[9]: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(st9, 'err', 3, '[]?i64 越界 → err')
+}
+
+; ── map 缺鍵仍是 nil（值確實不存在，不是越界）───────────────────
+t-map-nil = () {
+    m [str]i64 = {}
+    r = m['nope']: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(r, 'nil', 3, 'map 缺鍵 → nil')
+}
+
+; ── 值 → option 的隱式提升：宣告、重綁、欄位、字面量元素、元素寫入 ──
+t-promote {
+    i ?i64
+}
+
+t-promote.set = () {
+    .i = 42
+}
+
+t-promote-decl = () {
+    x ?i64 = 5
+    v = x: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(v, 5, '宣告 x ?i64 = 5 → ok(5)')
+
+    n i64 = 9
+    x = n
+    v2 = x: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(v2, 9, '重绑 x = n 提升為 ok(9)')
+}
+
+t-promote-field = () {
+    p = t-promote {}
+    p.set()
+    v = p.i: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(v, 42, 'option 欄位直接指派值 → ok(42)')
+}
+
+t-promote-literal = () {
+    b [4]?i64 = [1, nil, 3, nil]
+    v0 = b[0]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(v0, 1, '[N]?i64 字面量的裸值元素 → ok(1)')
+
+    ; 元素寫入同理：值 → option 型別元素（元素是 ?T 時寫入不報 idxwrite）
+    b[2] = 33
+    v2 = b[2]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(v2, 33, '[N]?i64 元素 = 裸值 → ok(33)')
+}
+
+; ── ?T 不能隱式落回 T：`?=` 是推薦的上拋寫法 ─────────────────────
+;
+; 註：`runner.test` 目前無法接受「帶結果參數」的函式值（會 SIGTRAP，HEAD
+; 4179e2ee 同樣復現，屬既有限制），而 `?=` 需要外層有結果參數承載上拋，
+; 故此處把 `?=` 放進 helper，測試函式本身不帶結果參數。
+t-unwrap-helper = (i i64) (x i64) {
+    a [4]i64 = [10, 20, 30, 40]
+    x = 0
+    {
+        x ?= a[i]
+    }: {
+        err -> _
+
+        -> _
+    }
+}
+
+t-unwrap-assign = () {
+    runner.eq(t-unwrap-helper(2), 30, 'x ?= a[2] 取到 30')
+}
+
+p1, f1 = runner.test('index.out.fixed', t-arr-fixed)
+
+#{overflow=wrap}
+passed = passed + p1
+
+#{overflow=wrap}
+failed = failed + f1
+
+p2, f2 = runner.test('index.out.msg', t-arr-oob-msg)
+
+#{overflow=wrap}
+passed = passed + p2
+
+#{overflow=wrap}
+failed = failed + f2
+
+p3, f3 = runner.test('index.out.slice', t-slice)
+
+#{overflow=wrap}
+passed = passed + p3
+
+#{overflow=wrap}
+failed = failed + f3
+
+p4, f4 = runner.test('index.out.str', t-str-codepoint)
+
+#{overflow=wrap}
+passed = passed + p4
+
+#{overflow=wrap}
+failed = failed + f4
+
+p5, f5 = runner.test('index.out.opt-array', t-opt-elem-array)
+
+#{overflow=wrap}
+passed = passed + p5
+
+#{overflow=wrap}
+failed = failed + f5
+
+p6, f6 = runner.test('index.out.opt-slice', t-opt-elem-slice)
+
+#{overflow=wrap}
+passed = passed + p6
+
+#{overflow=wrap}
+failed = failed + f6
+
+p7, f7 = runner.test('index.out.map', t-map-nil)
+
+#{overflow=wrap}
+passed = passed + p7
+
+#{overflow=wrap}
+failed = failed + f7
+
+p8, f8 = runner.test('index.out.promote-decl', t-promote-decl)
+
+#{overflow=wrap}
+passed = passed + p8
+
+#{overflow=wrap}
+failed = failed + f8
+
+p9, f9 = runner.test('index.out.promote-field', t-promote-field)
+
+#{overflow=wrap}
+passed = passed + p9
+
+#{overflow=wrap}
+failed = failed + f9
+
+p10, f10 = runner.test('index.out.promote-literal', t-promote-literal)
+
+#{overflow=wrap}
+passed = passed + p10
+
+#{overflow=wrap}
+failed = failed + f10
+
+p11, f11 = runner.test('index.out.unwrap-assign', t-unwrap-assign)
+
+#{overflow=wrap}
+passed = passed + p11
+
+#{overflow=wrap}
+failed = failed + f11
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

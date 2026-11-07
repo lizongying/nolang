@@ -733,6 +733,11 @@ func (f *formatter) formatBlockInner(body *parser.BlockStatement, openBraceLine 
 		statements = append(statements, stmt)
 	}
 
+	// 合併「先宣告型別、緊接一行賦值」的相鄰陳述（`v i64` + `v = .` →
+	// `v i64 = .`）。語義等價性由 hir2mir 的宣告型別拓寬保證，見
+	// decl_assign_fold.go 的判據說明。
+	statements = f.foldDeclAssign(statements)
+
 	// 追踪上一個「有輸出」的陳述，使無輸出的陳述（如已生效的區塊級
 	// overflow 註解）不會產生空白行，且空白行保留以最後一個有輸出的陳述為基準。
 	lastEmitEndLine := 0

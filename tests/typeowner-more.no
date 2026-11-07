@@ -1,0 +1,60 @@
+; tests/typeowner-more.no — consolidated typeOwner resolution fragments
+; from: tests/typeowner-basic.no, tests/typeowner-ws-only.no, tests/typeowner-duplicate.no
+
+; typeowner-basic
+pi = math.PI
+r = 2.0
+area = pi.degrees()
+print('pi={pi} area={area}')
+print('typeOwner basic test: ok')
+
+print('---')
+
+; typeowner-ws-only (test-ws-client renamed to avoid clash with duplicate's)
+test-ws-client-min = () {
+    c = ws.connect('ws://127.0.0.1:8080/path')
+    c: {
+        nil -> return
+
+        -> {
+            c.send-text('hello')
+            c.close()
+        }
+    }
+}
+
+print('typeOwner ws-only test: ok')
+
+print('---')
+
+; typeowner-duplicate
+test-ws-client = () {
+    c = ws.connect('ws://127.0.0.1:8080/path')
+    c: {
+        nil -> return
+
+        -> {
+            c.send-text('hello')
+            c.close()
+        }
+    }
+}
+
+test-tcp-client = () {
+    c = client.client-create('127.0.0.1', 8080)
+    c: {
+        nil -> return
+
+        -> {
+            line = c.recv-line()
+            line: {
+                nil -> break
+
+                -> break
+            }
+            c.close()
+        }
+    }
+}
+
+print('typeOwner duplicate test: ok')

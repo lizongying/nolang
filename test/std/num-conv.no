@@ -120,6 +120,37 @@ t-conv-matrix = () {
     runner.eq(neg.to-u32(), 0, 'f64 负值.to-u32 → 0')
 }
 
+; ── B8：宣告型別 → 自動 `<src>.to-<dst>` 轉換 ────────────────
+; 賦值目標的型別寫明時，MIR 會去找約定型別轉換方法 `<src>.to-<dst>`
+; （src/mir/hir2mir.go intConvCallee）。有方法就呼叫它（允許窄化），
+; 沒有就只能隱式加寬。以下確保兩條路徑的結果與 `no fmt` 摺疊後一致：
+; `v T` + `v = <expr>` 與 `v T = <expr>` 必須同值。
+t-declared-conv = () {
+
+    ; 窄化：i64 值綁進 i32 宣告，命中 i64.to-i32 ⇒ 低 32 位截斷
+    big = 5000000000
+    x i32 = big
+    runner.eq(x.to-i64(), 705032704, 'i32 宣告 + i64 值 → 截断低 32 位')
+
+    ; 符號保留（i32 是 signed）
+    negv = -5
+    y i32 = negv
+    runner.eq(y.to-i64(), -5, 'i32 宣告保留负号')
+
+    ; 加寬：byte → i64 宣告，算術必須落在 64 位域（200*200=40000，不是 64）
+    b byte = 200
+    w i64 = b
+    runner.eq(w, 200, 'byte → i64 宣告加宽')
+    #{overflow=wrap}
+    sq = w * w
+    runner.eq(sq, 40000, 'byte → i64 宣告后按 64 位域运算')
+
+    ; u32 → u64 宣告加寬（不走 buildin 方法，應為零擴展）
+    u u32 = 4000000000
+    uu u64 = u
+    runner.eq(uu, 4000000000, 'u32 → u64 宣告加宽')
+}
+
 ; ── 編譯期用例（B4/B5/B7）：無法在 runtime 斷言，保留為文檔 ─────────
 ; 以下寫法應被 checker/lexer 拒绝，用 `no run` 單獨驗證：
 ;   B7:  x f64 = 1e40           → lexer 報「scientific notation ... not supported」
@@ -132,6 +163,7 @@ p1, f1 = runner.test('B1 float→int saturating', t-float-int-sat)
 p2, f2 = runner.test('B2 f64→str render', t-f64-str)
 p3, f3 = runner.test('B3 f64→f32 precision', t-f32-precision)
 p4, f4 = runner.test('B6 conv matrix', t-conv-matrix)
+p5, f5 = runner.test('B8 declared-type to-T', t-declared-conv)
 total = runner.summary()
 f = runner.failed-count()
 {

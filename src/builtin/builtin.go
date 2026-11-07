@@ -79,6 +79,11 @@ const (
 	LLVMConvFPToUI
 	// LLVMConvTrunc: 整数位宽收窄（如 i64.to-i32），低比特截断。
 	LLVMConvTrunc
+	// LLVMConvIntExtend: 整数位宽拓宽（如 byte.to-i64 / i8.to-i64）。
+	// MIR 把 i16/i32/i64 摊平为同一槽宽，故多数组合是「无操作搬运」；
+	// 真正的 cast 只发生在 i8 车道，且符号性必须取 ReceiverType
+	// （byte/u* 是 zext，i8 是 sext），不能看 LLVM 型别 —— 两者都是 i8。
+	LLVMConvIntExtend
 )
 
 type BuiltinMethod struct {

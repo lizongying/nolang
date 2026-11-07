@@ -1,0 +1,102 @@
+; tests/slot-more.no — consolidated stack-slot rebind fragments
+; from: tests/slot-rebind.no, tests/slot-rebind-gaps.no, tests/slot-rebind-unsafe.no
+
+pm_fn = (val i64) (ret i64) {
+    local = val; val 是参数 → 禁用重绑定 → 降级 copy
+    ret = local
+}
+
+rr_fn = () (ret i64) {
+    a = 1
+    b = a; rebind b->a（a 后续无引用）
+    b = 99; 重新赋值目标，旧别名失效
+    ret = b
+}
+
+consume = (x i64) (ret i64) {
+    #{overflow=wrap}
+    ret = x + 42
+}
+
+n = 42
+m = n
+print(m); 42
+
+wu u64 = 7
+v = wu
+print(v); 7
+
+pi i128 = 123
+qi = pi
+ri i128 = 123
+x1 = qi == ri ? 1 : 0
+print(x1); 1
+
+ps u128 = 456
+qs = ps
+rs u128 = 456
+x2 = qs == rs ? 1 : 0
+print(x2); 1
+
+tx txt = 'hello-slot-rebind'
+tx2 = tx
+print(tx2.len-bytes()); 17
+
+da = 5
+db = da; da 后续被引用（dc = da）→ copy
+dc = da
+a2 = db
+c = db
+print(a2); 5
+print(c); 5
+
+ra_a = 10
+ra_b = ra_a; rebind ra_b->ra_a
+ra = ra_b; ra = 10
+ra_b = 5; 重新赋值目标，别名失效，ra 不受影响
+print(ra); 10
+
+pm = pm_fn(100)
+print(pm); 100
+
+rr = rr_fn()
+print(rr); 99
+
+cm = consume(m)
+print(cm); 84
+
+print('---')
+
+; slot-rebind-gaps (x/y renamed to xg/yg to avoid clash with slot-rebind-unsafe)
+a = 5
+b = a
+a = 7
+print(b); expect 5 (rebind disabled: a written inside block; b is an independent copy)
+
+xg = 42
+yg = xg
+print(yg); expect 42
+
+p = 9
+q = p
+p = 1
+print(q); expect 9 (rebind disabled: p reassigned after move)
+
+print('---')
+
+; slot-rebind-unsafe
+double-async = (n i64) (r i64) {
+    #{overflow=wrap}
+    r = n * 2
+}
+
+coro-capture = () {
+    x = 7
+    y = x; 若誤重綁定：y 別名 x
+    h = run double-async(x); 協程捕獲 x（跨線程）
+    r = awy h
+    print(y); expect: 7
+    print(r); expect: 14
+}
+
+coro-capture()

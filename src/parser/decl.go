@@ -2,7 +2,6 @@
 package parser
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/lizongying/nolang/lexer"
@@ -1562,14 +1561,15 @@ func (p *Parser) parseStructDefinition() Statement {
 	}
 	fields := make(map[string]string)
 	for _, f := range sd.Fields {
-		if f.Type != nil {
-			typeStr := f.Type.String()
-			if f.ArraySize > 0 {
-				typeStr = fmt.Sprintf("[%d]%s", f.ArraySize, typeStr)
-			} else if f.IsSlice {
-				typeStr = "[]" + typeStr
-			}
-			fields[f.Name] = typeStr
+		// 型別字串一律走 structFieldTypeString：它已處理「ArrayType/SliceType 的
+		// String() 自帶 [N]/[] 前綴，只有 legacy 的 ArraySize/IsSlice 修飾詞才要補」
+		// 的分支。此處曾自行 `if f.ArraySize > 0 { "[N]" + f.Type.String() }`，
+		// 對 `keys [4]i64` 這種正常寫法會**重複加前綴**成 `[4][4]i64`——過去只被
+		// 方法接收者型別推斷消費，多出來的一層從未被當成容器元素型別解讀，故一直
+		// 潛伏；D11 的索引基底統一（isSafeIndexBase / inferIndexElemType）把它
+		// 暴露成 `?[4]i64` 的元素型別，place-write 因而把整個陣列寫進元素槽。
+		if s := structFieldTypeString(f); s != "" {
+			fields[f.Name] = s
 		}
 	}
 	p.structFields[sd.Name] = fields

@@ -420,6 +420,75 @@ f = (a []i64) (res i64) {
 	}
 }
 
+// TestUnwrapAssignIndexTargetNotReported 驗證 `a[i] ?= v` 的下標**寫入目標**
+// 不被當成「裸 option 當值用」。
+//
+// 為什麼會誤報：陳述層級（非塊 match）的 `?=` 在解析期就展開成 if 鏈，`?=` 目標
+// 的那次索引讀取因此變成合成的索引主體綁定
+// `let __match_subj_L_C ?elem = a[__idx_L_C]` 的 RHS。runUnhandledIndexCore 的
+// LetStatement 分支只對**非合成** let 呼叫 markHandled（合成 let 必須照常報錯，
+// 否則捕獲鏈的 `__cap_N ?inner = p[i]`——`x = p[i] + 1` 的降糖——會被靜默放行），
+// 於是這個讀取被判成裸索引使用而報 idxbruse，`a[i] ?= v` 本身編不過。
+//
+// 塊 match 內的 `?=` 恰好沒事：skipSugarExpand 讓 BlockMatchStatement 整棵保留，
+// checker 走 UnwrapAssignStatement 分支（只下鑽 Value、不碰 Target）。兩形態
+// 必須同口徑，故這裡同時覆蓋。
+func TestUnwrapAssignIndexTargetNotReported(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "bare_unwrap_assign",
+			src: `f = (i i64, v i64) (r ?i64) {
+    a [4]i64 = [0, 0, 0, 0]
+    a[i] ?= v
+    r = 0
+}`,
+		},
+		{
+			name: "block_match",
+			src: `f = (i i64, v i64) (r i64) {
+    a [4]i64 = [0, 0, 0, 0]
+    {
+        a[i] ?= v
+    }: {
+        err -> _
+        -> _
+    }
+    r = 0
+}`,
+		},
+		{
+			name: "method_field_base",
+			src: `node {
+    keys [4]i64
+}
+
+node.set = (i i64, v i64) (r ?i64) {
+    .keys[i] ?= v
+    r = 0
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// 降級形態（no build）與 surface 形態（no vet / LSP）都要乾淨。
+			for label, prog := range map[string]*parser.Program{
+				"lowered": parseProg(t, c.src),
+				"surface": parseSurfaceProg(t, c.src),
+			} {
+				for _, r := range ValidateUnhandledIndex(prog, "src/app.no") {
+					if r.TraceID == bareIndexUseTraceID || r.TraceID == unhandledIndexTraceID {
+						t.Fatalf("%s/%s: false positive on the `?=` write target: L%d:C%d %s",
+							c.name, label, r.Line, r.Column, r.Message)
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestUnhandledIndexWithLenLiteralSliceReported 驗證 D7 最終定案：`buf []T =
 // with-len(<字面量 K>)` 且本函數內未被重賦值的切片，其字面量下標 `< K` 雖可靜態
 // 證明界內，用戶側仍產生 option，未處理照常上報（surface AST 與降級 AST 兩端口徑

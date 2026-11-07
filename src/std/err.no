@@ -13,6 +13,9 @@
 ; ═══════════════════════════════════════════════
 
 ; code: 錯誤類別
+; index-out：索號越界（`a[i]` / `s[i]` 的 i 不在 `[0, len)` 內）。D11 定案：越界讀取
+; 回傳 err（不是 nil）—— nil 專門表示「值確實不存在」（map 缺鍵、`?T` 槽位為空），
+; 越界則是**程式錯誤**，故給 err 以便與空值區分。
 code {
     ok,
     not-found,
@@ -22,6 +25,7 @@ code {
     parse,
     invalid,
     overflow,
+    index-out,
     unknown,
 }
 
@@ -47,6 +51,8 @@ code.to-name = () (s str) {
         invalid -> s = 'invalid'
 
         overflow -> s = 'overflow'
+
+        index-out -> s = 'index-out'
 
         -> s = 'unknown'
     }

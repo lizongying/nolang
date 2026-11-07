@@ -1,0 +1,33 @@
+; tests/fields-more.no — consolidated str.fields fragments
+; from: tests/fields.no, tests/fields-debug.no
+
+; # std/str
+
+print('=== str.fields ===')
+
+fstr = '  hello   world  nolang  '
+fields []str
+fields = fstr.fields()
+n = fields.len()
+print('field count:{n.to-str()}')
+i <- [0..n): {
+    print('  [{i.to-str()}] {fields[i]}')
+}
+
+; 空字串
+fstr = ''
+fields = fstr.fields()
+print('empty fields:{fields.len()}')
+
+print('---')
+
+; # std/str (fields-debug; fstr/n/i renamed to avoid clash)
+fstr2 = '  hello   world  nolang  '
+n2 = fstr2.len-bytes()
+print('len:{n2.to-str()}')
+
+; 打印每個 byte
+j <- [0..n2): {
+    b = fstr2[j]
+    print('byte[{j.to-str()}]={b.to-str()}')
+}

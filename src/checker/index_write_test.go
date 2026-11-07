@@ -119,20 +119,51 @@ func TestIndexWriteUnwrapAssignNotReported(t *testing.T) {
 	}
 }
 
-// TestIndexWriteStructFieldBaseExempt 负例：struct-field 基底
-// （`s.keys[i] = v`）是 wave 1 豁免区——其读侧本就走 legacy 非 option 路径。
-// isContainerWriteBase 只认直接变量基底（*parser.Identifier），故天然排除。
-func TestIndexWriteStructFieldBaseExempt(t *testing.T) {
-	src := `node = struct {
+// TestIndexWriteStructFieldBaseReported 正例：struct-field 基底
+// （`.keys[i] = v` / `s.keys[i] = v`）与直接变量基底同罪。
+//
+// 旧用例写的是 `node = struct { ... }` —— 那不是合法的 Nolang struct 定义
+//（真实形式是 `node { ... }`，无 `=`），解析不出 StructDefinition，字段型别
+// 永远查不到，于是「不报」被误读成「豁免」。改用真实定义后，隐式 self 字段
+// 写入必须报 idxwrite：D11 之后索引读一律是 option，写侧不得再有豁免区。
+func TestIndexWriteStructFieldBaseReported(t *testing.T) {
+	src := `node {
     keys []i64
 }
-set = (s node) () {
-    s.keys[0] = 1
+
+node.set = (i i64) () {
+    .keys[i] = 1
 }`
 	prog := parseProg(t, src)
 	res := ValidateIndexWrite(prog, "src/app.no")
-	if len(res) != 0 {
-		t.Fatalf("struct-field base write is wave-1 exempt, must NOT be reported, got %d: %+v", len(res), res)
+	if len(res) != 1 {
+		t.Fatalf("struct-field base write must be reported, got %d: %+v", len(res), res)
+	}
+	if res[0].TraceID != indexWriteTraceID {
+		t.Fatalf("TraceID = %q, want %q", res[0].TraceID, indexWriteTraceID)
+	}
+}
+
+// TestIndexWriteStructFieldPlaceMatchNotReported 负例：字段基底的 place-match
+// 降糖产物是合成写入（IsSynthetic），不得二次上报。
+func TestIndexWriteStructFieldPlaceMatchNotReported(t *testing.T) {
+	src := `node {
+    keys []i64
+}
+
+node.set = (i i64) () {
+    .keys[i]: {
+        ok -> it = 1
+
+        -> _
+    }
+}`
+	prog := parseProg(t, src)
+	res := ValidateIndexWrite(prog, "src/app.no")
+	for _, r := range res {
+		if r.TraceID == indexWriteTraceID {
+			t.Fatalf("place-match on a struct field must NOT be reported, got %+v", r)
+		}
 	}
 }
 

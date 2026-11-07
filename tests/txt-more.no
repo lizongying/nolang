@@ -1,9 +1,55 @@
+; txt-more.no — 合併自 txt 碎片（頂層拼接，非函數包裹）
+;
+; 來源：txt-slice.no, txt-codepoint.no
+; 保留錨點：txt.no（基名，原樣保留，未併入）
+;
+; 採頂層拼接：txt-slice 的頂層變數 t/t2/m 加 _sl 後綴避免與 txt-codepoint 的 t 衝突；
+; 片段間以 print('---') 分隔以保全 stdout 指紋確定性（golden 比對用）。
+
+; ── 來自 txt-slice.no ──
+; txt 原始切片語法 t[a..b]。txt 索引是「碼點」語義（與 str 一致），
+; 切片結果仍是 txt，內容必須與 str 逐字一致。此檔在 txt 切片支援前無法編譯。
+
+t_sl txt = 'HelloWorld'
+
+; 邊界開合 + 無界上界：全部 16 種區間寫法的長度
+print(t_sl[..].len())
+print(t_sl[1..].len())
+print(t_sl[1..).len())
+print(t_sl(1..].len())
+print(t_sl(1..).len())
+print(t_sl[..4].len())
+print(t_sl[..4).len())
+print(t_sl(..4].len())
+print(t_sl(1..4].len())
+print(t_sl(1..4).len())
+
+; 內容檢查（`]` 為右閉，含端點）
+; t[..5]  -> 'HelloW'（碼點 0..5）  t[5..] -> 'World'  t[1..4] -> 'ello'
+print(t_sl[..5])
+print(t_sl[5..])
+print(t_sl[1..4])
+
+; 無界上界的包含性必須等於排除性（都表示「到結尾」）
+; 修復前 [1..] 會多算一個元素（越界讀取）
+t2_sl txt = 'abcde'
+print(t2_sl[1..].len())
+print(t2_sl[1..).len())
+print(t2_sl[..].len())
+
+; 多字节码点：切片按下标为码点（非字节），结果必与 str 逐字一致
+; 'héllo世界' = h é l l o 世 界 （7 个码点）
+m_sl txt = 'héllo世界'
+print(m_sl.len())
+print(m_sl[1..3])
+print(m_sl[5..])
+print(m_sl(0..2))
+print('---')
+
+; ── 來自 txt-codepoint.no ──
 ; test-txt-codepoint: txt 码点索引回归（读 + 写，MIR 后端）
 ; 每次 `no run` 输出应为纯 ok 行；任何 FAIL 行都代表回归。
 
-; 單行判定：條件為假才印 FAIL；本檔要求輸出全部是 ok 行
-; label str: 檢查項目名稱，直接接在 FAIL / ok 後面
-; cond bool: 判定結果，true 印 ok、false 印 FAIL
 ck = (label str, cond bool) {
     ! cond -> print('FAIL', label)
     cond -> print('ok', label)

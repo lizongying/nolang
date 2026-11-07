@@ -90,11 +90,14 @@ check "tests/slice-to-str.no" "$expect_slice"
 expect_map=$(cat <<'EOF'
 {c: 3, b: 2, a: 1}
 {}
-{y: 0, x: 1}
+{y: false, x: true}
 m={c: 3, b: 2, a: 1}
+---
+copied[a] = 1
+original[a] = X
 EOF
 )
-check "tests/map-to-str.no" "$expect_map"
+check "tests/map-more.no" "$expect_map"
 
 if [ "$fail" -ne 0 ]; then
     echo "RESULT: regression detected"
