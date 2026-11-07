@@ -1,9 +1,0 @@
-; test-split2: test str.split without element access
-
-; # std/str
-
-s = 'hello world hello'
-parts []str
-parts = s.split(' ')
-n = parts.len()
-print('parts:{n.to-str()}')

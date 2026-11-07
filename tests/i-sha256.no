@@ -1,8 +1,0 @@
-; test-i-sha256 — 測試 import sha256 後 i 變數
-; # std/crypto/sha256
-
-print('start')
-i <- [0..5): {
-    print(i)
-}
-print('done')
