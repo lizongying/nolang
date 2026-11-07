@@ -18,7 +18,13 @@
  * so reuse only happens if the client refrains from terminating.)
  */
 import './node-polyfills';
-import {init, WASI, MemFS} from '@wasmer/wasi';
+import {WASI, MemFS} from '@wasmer/wasi';
+import {
+  loadWasmRuntime,
+  warmupWasmRuntime,
+  clearWasmRuntimeCache,
+  type WasmLoadSpec,
+} from './wasm-loader';
 import {
   parseLspMessages,
   encodeLspMessage,
@@ -36,8 +42,6 @@ import {
 // ---------------------------------------------------------------------------
 
 let wasmModule: WebAssembly.Module | null = null;
-let wasmUrl: string | null = null;
-let wasiReady = false;
 let initError: string | null = null;
 let rootUri = '';
 let documentUri = '';
@@ -47,36 +51,31 @@ let documentText = '';
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+function assetFor(url: string): WasmLoadSpec {
+  return {name: 'lsp.wasm', url, immutable: /\.[0-9a-f]{8,}\.wasm(?:\?|$)/i.test(url)};
+}
+
 /**
- * Idempotently initialise `@wasmer/wasi`'s glue wasm and fetch+compile
- * `lsp.wasm`. The compiled module is cached for the worker's lifetime.
- * On failure `initError` is set and subsequent calls return early
- * (matching the original main-thread behaviour — no retry).
+ * Idempotently initialise the WASI glue and fetch+compile lsp.wasm through
+ * the shared loader (streaming compile, in-flight dedupe, module cache).
+ * A failed load evicts its cache entry, so `initialize` can be retried
+ * instead of latching the error for the whole session.
  */
 async function ensureLoaded(url: string): Promise<void> {
-  if (wasmModule && wasmUrl === url) return;
-  if (initError) return;
-
   try {
-    await init();
-    wasiReady = true;
+    wasmModule = (await loadWasmRuntime(assetFor(url))).module;
+    initError = null;
   } catch (e) {
-    initError = `@wasmer/wasi init failed: ${e instanceof Error ? e.message : String(e)}`;
-    return;
+    initError = e instanceof Error ? e.message : String(e);
   }
+}
 
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      initError = `Failed to fetch lsp.wasm: HTTP ${response.status}`;
-      return;
-    }
-    const bytes = await response.arrayBuffer();
-    wasmModule = await WebAssembly.compile(bytes);
-    wasmUrl = url;
-  } catch (e) {
-    initError = `Failed to compile lsp.wasm: ${e instanceof Error ? e.message : String(e)}`;
-  }
+/** Surface best-effort failures instead of swallowing them with `catch {}`. */
+function warn(where: string, e: unknown): void {
+  ctx.postMessage({
+    type: 'warning',
+    reason: `lsp.worker ${where}: ${e instanceof Error ? e.message : String(e)}`,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +196,15 @@ ctx.onmessage = async (e: MessageEvent) => {
   const {id, type, payload} = msg;
 
   try {
-    if (type === 'initialize') {
+    if (type === 'warmup') {
+      const url = (payload as {wasmUrl?: string} | undefined)?.wasmUrl;
+      if (url) {
+        warmupWasmRuntime(assetFor(url), (reason) => {
+          ctx.postMessage({type: 'warning', reason});
+        });
+      }
+      ctx.postMessage({id, type: 'result', payload: null});
+    } else if (type === 'initialize') {
       const {wasmUrl: url, rootUri: ru} = payload as {wasmUrl: string; rootUri: string};
       rootUri = ru;
       await ensureLoaded(url);
@@ -236,8 +243,8 @@ ctx.onmessage = async (e: MessageEvent) => {
             // to the `onDiagnostics` callback.
             ctx.postMessage({type: 'diagnostics', uri: push.uri, diagnostics: push.diagnostics});
           }
-        } catch {
-          // Diagnostics are best-effort — swallow runtime errors.
+        } catch (e) {
+          warn('diagnostics batch', e);
         }
       }
 
@@ -274,8 +281,8 @@ ctx.onmessage = async (e: MessageEvent) => {
               kind: item.kind,
             }));
           }
-        } catch {
-          // best-effort
+        } catch (e) {
+          warn('completion batch', e);
         }
       }
 
@@ -304,8 +311,8 @@ ctx.onmessage = async (e: MessageEvent) => {
             const contents = (resp.result as {contents?: unknown}).contents;
             result = {contents: extractHoverText(contents)};
           }
-        } catch {
-          // best-effort
+        } catch (e) {
+          warn('hover batch', e);
         }
       }
 
@@ -337,8 +344,8 @@ ctx.onmessage = async (e: MessageEvent) => {
               result = edits[0].newText ?? null;
             }
           }
-        } catch {
-          // best-effort
+        } catch (e) {
+          warn('formatting batch', e);
         }
       }
 
@@ -349,8 +356,7 @@ ctx.onmessage = async (e: MessageEvent) => {
       // terminates the worker after sending `dispose`; this defensive
       // clear handles the case where it does not.)
       wasmModule = null;
-      wasmUrl = null;
-      wasiReady = false;
+      clearWasmRuntimeCache();
       initError = null;
       rootUri = '';
       documentUri = '';

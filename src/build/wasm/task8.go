@@ -127,6 +127,48 @@ func (g *Generator) localKind(name string) ValKind {
 	return KindScalar
 }
 
+// markBoolLocal 記錄當前函數中某變數是否為 bool。
+// WASM 只有 i32，bool/char/byte/i32 共用同一個 ValType，無法由 localTypeMap
+// 區分；但輸出格式化時 bool 必須印 "true"/"false"，整數必須印數字。
+func (g *Generator) markBoolLocal(name string, isBool bool) {
+	if g.boolLocals == nil {
+		g.boolLocals = make(map[string]map[string]bool)
+	}
+	m := g.boolLocals[g.currentFunc]
+	if m == nil {
+		m = make(map[string]bool)
+		g.boolLocals[g.currentFunc] = m
+	}
+	m[name] = isBool
+}
+
+// isBoolLocal 回傳當前函數中某變數是否為 bool。
+func (g *Generator) isBoolLocal(name string) bool {
+	return g.boolLocals[g.currentFunc][name]
+}
+
+// isBoolExpr 以純語法方式判斷運算式結果是否為 bool。
+// 不可呼叫 emitExpr：這個函式會在型別查詢路徑被反覆呼叫，若發射指令會
+// 污染目前輸出的 WASM 位元組流。
+func (g *Generator) isBoolExpr(expr parser.Expression) bool {
+	switch e := expr.(type) {
+	case *parser.BooleanLiteral:
+		return true
+	case *parser.PrefixExpression:
+		return e.Operator == "!"
+	case *parser.InfixExpression:
+		switch e.Operator {
+		case "<", ">", "<=", ">=", "==", "!=", "&&", "||":
+			return true
+		}
+	case *parser.Identifier:
+		return g.isBoolLocal(e.Value)
+	case *parser.GroupedExpression:
+		return g.isBoolExpr(e.Expression)
+	}
+	return false
+}
+
 // setLocalKind 設定當前函數中某變數的 ValKind 與相關型別資訊。
 // 用於 emitLetStmt 在 addLocal 之後呼叫。
 func (g *Generator) setLocalKind(name string, ls *parser.LetStatement) {
@@ -139,6 +181,16 @@ func (g *Generator) setLocalKind(name string, ls *parser.LetStatement) {
 	if kmap, ok := g.localKindMap[g.currentFunc]; ok {
 		kmap[name] = kind
 	}
+
+	// bool 追蹤：顯式型別優先；否則由右值語法推斷。
+	// 同名變數重宣告（shadow）時明確清除舊標記。
+	isBool := false
+	if nt, ok := ls.Type.(*parser.NamedType); ok {
+		isBool = nt.Value == "bool"
+	} else if ls.Type == nil && ls.Value != nil {
+		isBool = g.isBoolExpr(ls.Value)
+	}
+	g.markBoolLocal(name, isBool)
 
 	// 記錄 struct 型別名稱
 	var structName string
@@ -428,6 +480,40 @@ func (g *Generator) emitMethodCall(sb *bytes.Buffer, de *parser.DotExpression, a
 	switch de.Property {
 	case "to-str", "to_str":
 		return g.emitToStrMethod(sb, de.Receiver)
+	case "sqrt":
+		// std/number.no exposes sqrt as a METHOD on the numeric types
+		// (f64.sqrt, i64.sqrt, ...). Direct-WASM has no std import graph, so
+		// lower the method form to the native WASM numeric op instead of
+		// falling through to OpUnreachable (which traps at runtime).
+		if len(args) != 0 {
+			sb.WriteByte(OpUnreachable)
+			return Void
+		}
+		t := g.emitExpr(sb, de.Receiver)
+		switch t {
+		case F64:
+			sb.WriteByte(OpF64Sqrt)
+			return F64
+		case I64, I32:
+			// Integer sqrt is defined via f64 math plus a truncating
+			// conversion back to the integer width. Negative inputs have no
+			// real square root and trap, matching the std contract for
+			// non-negative playground snippets.
+			if t == I32 {
+				sb.WriteByte(OpI64ExtendI32S)
+			}
+			sb.WriteByte(OpF64ConvertI64S)
+			sb.WriteByte(OpF64Sqrt)
+			sb.WriteByte(OpI64TruncF64S)
+			if t == I32 {
+				sb.WriteByte(OpI32WrapI64)
+				return I32
+			}
+			return I64
+		default:
+			sb.WriteByte(OpUnreachable)
+			return Void
+		}
 	default:
 		sb.WriteByte(OpUnreachable)
 		return Void
@@ -436,15 +522,17 @@ func (g *Generator) emitMethodCall(sb *bytes.Buffer, de *parser.DotExpression, a
 
 // emitModuleCall 處理模組限定呼叫 module.func(args)。
 // 支援：
-//   - number.max(a, b, ...) / number.min(a, b, ...) → f64（變參，逐個摺疊）
-//   - math.sqrt(x) → f64
+//   - math.max(a, b, ...) / math.min(a, b, ...) → f64（變參，逐個摺疊）
+//   - number.max / number.min（舊拼法，保留給快取的 playground 片段）
+//   - math.sqrt(x)（舊拼法；std 現在用方法形式 x.sqrt()）
 //   - rand.rand(state) → 留下 (new-state: i64, r: i64) 在堆疊上（多回傳值）
 //
-// max/min 原本掛在 math 下（2026-10-05 移除）：其為 src/std/number.no 的
-// 變參泛型函數，不是 math 的內建。
+// max/min 是 src/std/math.no 的變參泛型函數（(a ..num) (r num)），不是
+// number 模組的成員；早期 Direct-WASM 只認 number.max/min，導致既有
+// playground 的 rand demo 在執行期踩到 OpUnreachable。
 func (g *Generator) emitModuleCall(sb *bytes.Buffer, module, name string, args []parser.Expression) ValType {
 	switch module {
-	case "number":
+	case "math", "number":
 		switch name {
 		case "max", "min":
 			if len(args) == 0 {
@@ -461,11 +549,12 @@ func (g *Generator) emitModuleCall(sb *bytes.Buffer, module, name string, args [
 				sb.WriteByte(op)
 			}
 			return F64
-		}
-	case "math":
-		switch name {
 		case "sqrt":
 			// f64.sqrt (0x9F)
+			if len(args) != 1 {
+				sb.WriteByte(OpUnreachable)
+				return Void
+			}
 			g.emitExpr(sb, args[0])
 			sb.WriteByte(OpF64Sqrt)
 			return F64
@@ -481,19 +570,29 @@ func (g *Generator) emitModuleCall(sb *bytes.Buffer, module, name string, args [
 
 // emitRandRand 發射 rand.rand(state) 內建：xorshift32。
 // 輸入：state i64。輸出：堆疊留下 (new-state i64, r i64)，r 在頂端。
-//   new-state = state ^ (state << 13) ^ (state << 13 >> 17) ^ (state << 13 >> 17 << 5)
-//   r = new-state & 0xFFFFFFFF
+//
+// 與 src/std/crypto/rand.no 對齊：每一步都必須裁回 32 位元。i64 不會
+// 自然溢出，若只在最後遮罩 r，<< 13 與 >> 17 的語義會偏離標準
+// xorshift32，導致 Direct-WASM 印出的隨機序列與原生後端完全不同
+// （實測 seed=123456789：舊版首值 2937495369，正確值 2714967881）。
 func (g *Generator) emitRandRand(sb *bytes.Buffer, args []parser.Expression) ValType {
 	stateIdx := g.addLocal("$rr.s", I64)
 	tmpIdx := g.addLocal("$rr.t", I64)
 	rIdx := g.addLocal("$rr.r", I64)
 
-	// state = arg
+	mask32 := func() {
+		sb.WriteByte(OpI64Const)
+		writeSLEB(sb, 0xFFFFFFFF)
+		sb.WriteByte(OpI64And)
+	}
+
+	// state = arg & 0xFFFFFFFF
 	g.emitExpr(sb, args[0])
+	mask32()
 	sb.WriteByte(OpLocalSet)
 	writeU32LEB(sb, uint32(stateIdx))
 
-	// tmp = state ^ (state << 13)
+	// tmp = (state ^ (state << 13)) & 0xFFFFFFFF
 	sb.WriteByte(OpLocalGet)
 	writeU32LEB(sb, uint32(stateIdx))
 	sb.WriteByte(OpLocalGet)
@@ -502,10 +601,11 @@ func (g *Generator) emitRandRand(sb *bytes.Buffer, args []parser.Expression) Val
 	writeSLEB(sb, 13)
 	sb.WriteByte(OpI64Shl)
 	sb.WriteByte(OpI64Xor)
+	mask32()
 	sb.WriteByte(OpLocalSet)
 	writeU32LEB(sb, uint32(tmpIdx))
 
-	// tmp = tmp ^ (tmp >> 17)  (logical shift for unsigned behavior)
+	// tmp = (tmp ^ (tmp >> 17)) & 0xFFFFFFFF (logical shift)
 	sb.WriteByte(OpLocalGet)
 	writeU32LEB(sb, uint32(tmpIdx))
 	sb.WriteByte(OpLocalGet)
@@ -514,10 +614,11 @@ func (g *Generator) emitRandRand(sb *bytes.Buffer, args []parser.Expression) Val
 	writeSLEB(sb, 17)
 	sb.WriteByte(OpI64ShrU)
 	sb.WriteByte(OpI64Xor)
+	mask32()
 	sb.WriteByte(OpLocalSet)
 	writeU32LEB(sb, uint32(tmpIdx))
 
-	// tmp = tmp ^ (tmp << 5)
+	// tmp = (tmp ^ (tmp << 5)) & 0xFFFFFFFF
 	sb.WriteByte(OpLocalGet)
 	writeU32LEB(sb, uint32(tmpIdx))
 	sb.WriteByte(OpLocalGet)
@@ -526,15 +627,13 @@ func (g *Generator) emitRandRand(sb *bytes.Buffer, args []parser.Expression) Val
 	writeSLEB(sb, 5)
 	sb.WriteByte(OpI64Shl)
 	sb.WriteByte(OpI64Xor)
+	mask32()
 	sb.WriteByte(OpLocalSet)
 	writeU32LEB(sb, uint32(tmpIdx))
 
-	// r = tmp & 0xFFFFFFFF
+	// r = tmp（此刻已是 32 位元）
 	sb.WriteByte(OpLocalGet)
 	writeU32LEB(sb, uint32(tmpIdx))
-	sb.WriteByte(OpI64Const)
-	writeSLEB(sb, 0xFFFFFFFF)
-	sb.WriteByte(OpI64And)
 	sb.WriteByte(OpLocalSet)
 	writeU32LEB(sb, uint32(rIdx))
 
@@ -820,6 +919,24 @@ func (g *Generator) emitIndexExpr(sb *bytes.Buffer, ie *parser.IndexExpression) 
 	sb.WriteByte(OpI32Add)
 	g.emitI32Load(sb)
 	g.emitBoundsCheck(sb)
+
+	// str 索引：原生後端 s[i] 回傳碼點（ASCII 即單一位元組值）。
+	// str descriptor 的 data 指向位元組陣列；若沿用 vec 的 i64.load，
+	// 會把後續位元組一起讀進來，印出像 2332073351381729857 的垃圾值。
+	// 目前 Direct-WASM 只處理單一位元組（ASCII）；多位元組 UTF-8 碼點
+	// 需要解碼序列，屬已知限制，playground demo 只用 ASCII。
+	if g.inferKind(ie.Left) == KindStr {
+		sb.WriteByte(OpLocalGet)
+		writeU32LEB(sb, uint32(descIdx))
+		g.emitI32ConstOffset(sb, DescriptorFieldData)
+		sb.WriteByte(OpI32Add)
+		g.emitI32Load(sb) // data 指標
+		sb.WriteByte(OpLocalGet)
+		writeU32LEB(sb, uint32(idxIdx))
+		sb.WriteByte(OpI32Add)
+		g.emitI32Load8U(sb)
+		return I32
+	}
 
 	// 計算 addr = data + idx * elemSize
 	sb.WriteByte(OpLocalGet)

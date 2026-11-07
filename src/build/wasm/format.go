@@ -49,6 +49,9 @@ func (g *Generator) emitFormatField(sb *bytes.Buffer, field *parser.FormatField)
 	case kind == KindStr:
 		// str 變數：從描述符載入 data/len 並輸出
 		g.emitPrintStrVar(sb, name)
+	case g.isBoolLocal(name):
+		// bool 變數：原生後端印 "true"/"false"，不是 1/0。
+		g.emitPrintBoolVar(sb, name)
 	case t == F64:
 		// f64 變數：帶精度格式化
 		g.emitPrintF64Var(sb, name, precision, typeChar)
@@ -77,6 +80,27 @@ func (g *Generator) emitFormatField(sb *bytes.Buffer, field *parser.FormatField)
 		// 未知型別：輸出 "?"
 		g.emitPrintString(sb, "?")
 	}
+}
+
+// emitPrintBoolVar 輸出 bool 變數為 "true"/"false"。
+func (g *Generator) emitPrintBoolVar(sb *bytes.Buffer, name string) {
+	idx, ok := g.lookupLocal(name)
+	if !ok {
+		g.emitPrintString(sb, "?")
+		return
+	}
+	sb.WriteByte(OpLocalGet)
+	writeU32LEB(sb, uint32(idx))
+	g.emitPrintBoolOnStack(sb)
+}
+
+// emitPrintBoolOnStack 消耗堆疊頂端的 i32 條件，輸出 "true" 或 "false"。
+func (g *Generator) emitPrintBoolOnStack(sb *bytes.Buffer) {
+	g.emitIfVoid(sb)
+	g.emitPrintString(sb, "true")
+	g.emitElse(sb)
+	g.emitPrintString(sb, "false")
+	g.emitEnd(sb)
 }
 
 // emitPrintF64Var 將 f64 變數格式化為字串並輸出。
@@ -329,7 +353,9 @@ func (g *Generator) emitF64ToBuffer(sb *bytes.Buffer, precision int) {
 }
 
 // emitMemcpyLoop 發射一個位元組複製迴圈：
-//   for i in 0..len: dst[pos+i] = src[ptr+i]
+//
+//	for i in 0..len: dst[pos+i] = src[ptr+i]
+//
 // 輸入：posIdx (dst 位置 local), srcPtrIdx (src 指標 local), lenIdx (長度 local)
 func (g *Generator) emitMemcpyLoop(sb *bytes.Buffer, posIdx, srcPtrIdx, lenIdx int) {
 	iIdx := g.addLocal("$fmt.i", I32)

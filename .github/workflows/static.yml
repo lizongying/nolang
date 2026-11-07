@@ -49,6 +49,16 @@ jobs:
         with:
           bun-version: latest
 
+      # ── WASM alignment invariant ──────────────────────────────────────
+      # no.wasm / lsp.wasm are rebuilt HERE, from THIS clean checkout, and the
+      # site is built in the SAME job. The playground page in the published
+      # artifact therefore loads a compiler + Direct-WASM codegen that are byte-
+      # for-byte consistent with the docs it ships. Never vendor a stale
+      # docs/static/wasm/*.wasm: a mismatch between the embedded compiler and the
+      # Direct-WASM backend only surfaces as a runtime validation failure in the
+      # browser, long after the deploy job has gone green. (The Direct-WASM
+      # drift regression itself is caught earlier by `make playground-demos` in
+      # the pr-verify job.)
       - name: Build no.wasm
         run: make no-wasm
 
@@ -63,6 +73,12 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: docs
+
+      - name: Playground TypeScript typecheck
+        # Same gate pr-verify runs: fail the deploy fast on a type error in the
+        # rewritten runner / worker / lsp-bridge / lsp-worker / wasm-loader.
+        run: bun run typecheck
         working-directory: docs
 
       - name: Build website

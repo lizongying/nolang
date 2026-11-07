@@ -49,9 +49,11 @@ Nolang Playground 是一個基於 Docusaurus 的在線 IDE，可在瀏覽器中�
 | 路徑 | 說明 |
 | --- | --- |
 | `docs/src/pages/playground/` | Playground 主頁面（React 組件） |
-| `docs/src/playground/` | Playground 共用模組（`nolang-cm.ts` CodeMirror 集成、`lsp-bridge.ts` LSP 橋接、`examples.ts` 範例集） |
-| `docs/static/wasm/` | 編譯產出的 `no.wasm`、`lsp.wasm`（由 Makefile 構建後落入此目錄） |
-| `src/build/wasm/` | Direct WASM 後端（`no build -target wasm32-wasi` 使用） |
+| `docs/src/playground/` | Playground 共用模組（`nolang-cm.ts` CodeMirror 集成、`lsp-bridge.ts` LSP 橋接、`runner.ts` 執行看門狗、`wasm-loader.ts` 共享 WASM 載入器、`examples.ts` 範例集、`i18n.ts` 介面語系） |
+| `docs/static/wasm/` | 編譯產出的 `no.wasm`、`lsp.wasm`（由 Makefile 構建後落入此目錄；`.gitignore` 排除，不提交） |
+| `src/build/wasm/` | Direct WASM 後端（`no build --wasm-direct -target wasm32-wasi` 使用） |
+| `scripts/playground_demos.ts` | 範例驗證閘：編譯並以 `wasmtime` 執行 `examples.ts` 中全部範例 |
+| `scripts/playground_ui_check.ts` | 前端行為閘：診斷解析、逾時看門狗、worker 恢復、i18n |
 | `docs/docusaurus.config.ts` | Docusaurus 站點配置（`baseUrl: /nolang/`） |
 
 ### 構建 WASM 產物
@@ -106,11 +108,45 @@ make playground-smoke
 make playground-smoke PLAYGROUND_PORT=3001
 ```
 
+### 驗證閘
+
+修改語言、Direct-WASM 後端或範例後，依序執行：
+
+```bash
+make playground-demos                       # 編譯 + wasmtime 執行全部 24 個範例
+bun scripts/playground_ui_check.ts          # 診斷解析、看門狗、worker 恢復、i18n
+cd docs && bun run typecheck                # TypeScript 型別檢查
+```
+
+`make playground-demos` 會用當前原始碼構建一個原生 `no`，再以
+`no build --wasm-direct -target wasm32-wasi` 編譯 `examples.ts` 的每個範例，
+最後用 `wasmtime` 執行並斷言每個 `expect` 出現在 stdout。不需要重建瀏覽器
+WASM，也不會碰 `docs/static/wasm/`。若本機沒有 `wasmtime`，可加
+`--compile-only`（見 `scripts/playground_demos.ts --help`）。
+
+### WASM 二進位對齊
+
+`no.wasm` 與 `lsp.wasm` 由 CI 從**乾淨樹**的同一次建置產生，兩者共用同一個
+`checker.StdSigKey`。瀏覽器端的編譯器、內嵌 std AST blob 與 Direct-WASM 後端
+必須來自同一次建置；版本錯位會導致 `unreachable` trap 或 WASM 驗證錯誤。
+
+`docs/static/wasm/*.wasm` 被 `.gitignore` 排除（僅追蹤 `.gitkeep`）。請勿提交
+本機產物，也不要在有多個並行工作階段的髒樹上執行 `make playground`——
+`stamp-traceid` 會改寫 checker 檔案。CI 才是 WASM 的唯一發布來源。
+
+前端載入由 `wasm-loader.ts` 統一處理：串流編譯、並發請求去重、worker 生命週期
+內的 module 快取、頁面空閒預熱，以及可見的載入失敗。請求預設 `cache: no-cache`
+（條件式重新驗證），避免站台重新部署後瀏覽器仍執行舊編譯器；當 CI 改為輸出
+內容雜湊檔名時，載入器會自動切到 `cache: force-cache`。
+
 ### CI
 
-GitHub Actions（`.github/workflows/build.yml`）中的 `wasm-smoke` job 會在每個 PR 和非 tag push 時：
+GitHub Actions（`.github/workflows/build.yml`）中的 `pr-verify` job 會在每個 PR 和非 tag push 時：
 
 - 構建 `no.wasm` 與 `lsp.wasm`（`wasip1` 目標）
 - 以 `wasmtime` 驗證 `no.wasm version` 與 `lsp.wasm -version` 輸出版本號
 - 構建並運行 `tests/wasi-hello.no` 與 `tests/wasi-fib.no`（`wasm32-wasi` 目標，使用 Zig）
+- 執行 `make playground-demos`、`bun scripts/playground_ui_check.ts` 與 `bun run typecheck`
+
+`.github/workflows/static.yml` 負責從乾淨樹重建兩個 WASM 並部署站台。
 

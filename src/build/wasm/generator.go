@@ -148,15 +148,26 @@ type Generator struct {
 
 	// localStructTypeMap 記錄當前函數中 struct 變數的型別名稱（對應 structDefs）。
 	localStructTypeMap map[string]map[string]string
+
+	// boolLocals 記錄當前函數中哪些變數是 bool。WASM 只有 i32，不能靠
+	// ValType 區分 bool 與 char/byte/i32；但原生後端把 bool 格式化成
+	// "true"/"false"，純量整數則印數字。少了這張表，print('{flag}') 在
+	// Direct-WASM 會印 1/0 而與原生輸出不一致。
+	boolLocals map[string]map[string]bool
 }
 
 // loopFrame 記錄一個 for 迴圈的 break/continue 目標深度。
-// blockIndex = 開啟 break 目標 block 後的 ctrlDepth；
-// loopIndex  = 開啟 continue 目標 loop 後的 ctrlDepth。
-// br 深度 = 當前 ctrlDepth - 目標 index。
+// blockIndex    = 開啟 break 目標 block 後的 ctrlDepth；
+// loopIndex     = 開啟 continue 目標 loop 後的 ctrlDepth（迴圈回邊）；
+// continueIndex = 開啟「包住迴圈主體」的 continue block 後的 ctrlDepth。
+//
+// continue 必須跳到「主體結束後、累加之前」，而不是跳回迴圈開頭：
+// 否則 i 永遠不變，條件永遠成立，產生無限迴圈。br 深度 =
+// 當前 ctrlDepth - 目標 index。
 type loopFrame struct {
-	blockIndex int
-	loopIndex  int
+	blockIndex    int
+	loopIndex     int
+	continueIndex int
 }
 
 // 記憶體佈局常數（避開 WASI runtime 使用的低位）。
@@ -278,18 +289,53 @@ func (g *Generator) emitSkeletonStart() {
 	g.addCode(nil, code)
 }
 
+// implicitMethodSelf reports whether fd is a method whose receiver is carried
+// as an implicit FIRST RESULT named "self" rather than as a parameter.
+//
+// The surface syntax (`user.greet = () { .name }`) declares no receiver
+// parameter; the AST uses a result slot for the write-back convention of the
+// main (LLVM) backend. Direct-WASM represents a struct value as a POINTER, so
+// mutation through it is already visible to the caller: the receiver only has
+// to be passed IN. Declaring it as a result instead emits a `() -> (i32)`
+// function while every call site pushes the receiver as an argument, which
+// leaves one stray stack value per call and makes the whole module fail
+// WebAssembly validation ("stack has: N values" at _start).
+func implicitMethodSelf(fd *parser.FunctionDefinition) (parser.Type, bool) {
+	if !strings.Contains(fd.Name, ".") || len(fd.Results) == 0 {
+		return nil, false
+	}
+	if fd.Results[0].Name != "self" {
+		return nil, false
+	}
+	for _, p := range fd.Parameters {
+		if p.Name == "self" {
+			return nil, false // already an explicit receiver parameter
+		}
+	}
+	return fd.Results[0].Type, true
+}
+
 // declareFunction 掃描 FunctionDefinition 並將其簽名註冊到 funcTable 與型別表。
 // 不發射程式碼主體（主體由 emitFunctionBody 負責）。
 func (g *Generator) declareFunction(fd *parser.FunctionDefinition) {
-	params := make([]ValType, len(fd.Parameters))
-	paramNames := make([]string, len(fd.Parameters))
-	for i, p := range fd.Parameters {
-		params[i] = ValTypeFromName(p.Type)
-		paramNames[i] = p.Name
+	selfType, hasImplicitSelf := implicitMethodSelf(fd)
+	resultsDef := fd.Results
+	if hasImplicitSelf {
+		resultsDef = resultsDef[1:]
 	}
-	results := make([]ValType, len(fd.Results))
-	resultNames := make([]string, len(fd.Results))
-	for i, r := range fd.Results {
+	params := make([]ValType, 0, len(fd.Parameters)+1)
+	paramNames := make([]string, 0, len(fd.Parameters)+1)
+	if hasImplicitSelf {
+		params = append(params, ValTypeFromName(selfType))
+		paramNames = append(paramNames, "self")
+	}
+	for _, p := range fd.Parameters {
+		params = append(params, ValTypeFromName(p.Type))
+		paramNames = append(paramNames, p.Name)
+	}
+	results := make([]ValType, len(resultsDef))
+	resultNames := make([]string, len(resultsDef))
+	for i, r := range resultsDef {
 		results[i] = ValTypeFromName(r.Type)
 		resultNames[i] = r.Name
 	}
@@ -336,6 +382,14 @@ func (g *Generator) emitFunctionBody(fd *parser.FunctionDefinition) {
 	g.localKindMap[fd.Name] = kmap
 	g.localElemTypeMap[fd.Name] = emap
 	g.localStructTypeMap[fd.Name] = smap
+	// bool 參數：格式化輸出需印 "true"/"false" 而非 1/0。
+	for _, p := range fd.Parameters {
+		isBool := false
+		if nt, ok := p.Type.(*parser.NamedType); ok {
+			isBool = nt.Value == "bool"
+		}
+		g.markBoolLocal(p.Name, isBool)
+	}
 	resultNames := g.funcResultNames[fd.Name]
 	resultTypes := g.funcResults[fd.Name]
 	for i, r := range resultNames {
@@ -502,6 +556,7 @@ func (g *Generator) reset() {
 	g.localKindMap = make(map[string]map[string]ValKind)
 	g.localElemTypeMap = make(map[string]map[string]ValType)
 	g.localStructTypeMap = make(map[string]map[string]string)
+	g.boolLocals = make(map[string]map[string]bool)
 }
 
 // internType 加入（或重用）一個 functype，回傳其 type index。

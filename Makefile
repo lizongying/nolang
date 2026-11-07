@@ -30,6 +30,9 @@ WASM_DIR  = docs/static/wasm
 NO_WASM   = $(WASM_DIR)/no.wasm
 LSP_WASM  = $(WASM_DIR)/lsp.wasm
 PLAYGROUND_PORT ?= 3000
+# Runtime used by the playground demo gate. Set WASMTIME= (empty) on hosts
+# without wasmtime to fall back to a compile-only gate.
+WASMTIME  ?= wasmtime
 
 # ── TRACE ID ────────────────────────────────────
 # Each ValidateResult{} literal in the checker source carries
@@ -40,7 +43,7 @@ PLAYGROUND_PORT ?= 3000
 # same IDs.
 TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/lsp/vet.go
 
-.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke gen stamp-traceid install test
+.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke playground-demos gen stamp-traceid install test
 
 all: $(NO_BIN) $(LSP_BIN) install
 
@@ -54,6 +57,11 @@ $(BINDIR):
 # ── STDSIG GEN ────────────────────────────────────
 # Generate stdsig_gen.go (baked-in std signature tables) before building no/lsp.
 STDSIG_GEN = src/checker/stdsig_gen.go
+# One genstdsig run writes TWO artifacts: the baked signature tables AND the
+# Tier-0 std AST blob pulled in by //go:embed (src/checker/stdastembed/embed.go).
+# Both are gitignored, so a clean checkout has neither. See the $(STD_AST_BIN)
+# rule below for why the blob must also be an explicit wasm prerequisite.
+STD_AST_BIN = src/checker/stdastembed/std_ast.bin
 # The tables are collected by walking HIR, so the generator output depends on
 # the hir/parser/lexer packages just as much as on the checker itself: a change
 # to how a definition is lowered (e.g. dropping the implicit `self` result from
@@ -63,6 +71,17 @@ STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) src/checker/checker.go
 
 $(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/go.mod src/go.sum
 	cd src && $(GOHOST) run ./checker/genstdsig
+
+# Listing the blob explicitly on the two wasm binaries closes a real gap: if
+# std_ast.bin is deleted (or the generator is interrupted after writing the
+# .go file) while stdsig_gen.go is still newer than all of its inputs, make
+# skips `gen` and the wasm build embeds a missing/stale blob. The resulting
+# no.wasm then hard-fails at RUNTIME in checker.validateStdASTBlob with a
+# content-signature mismatch — a failure visible only in the browser, long
+# after CI has gone green. genstdsig is idempotent, so re-running it when the
+# blob is missing is cheap and cannot dirty tracked sources.
+$(STD_AST_BIN): $(STDSIG_GEN)
+	@test -s $@ || { echo "regenerating $@ (missing std AST blob)"; cd src && $(GOHOST) run ./checker/genstdsig; }
 
 .PHONY: gen
 gen: $(STDSIG_GEN)
@@ -104,7 +123,10 @@ verify-ty:
 # hard-fails and demands `make no`; non-empty means `make gen` baked the
 # signature tables from this same src/std before compiling, so they are present
 # and fresh and are used directly. There is no stale-table comparison — the
-# build path (`make` always runs `make gen` first) guarantees freshness.
+# build path (`make` always runs `make gen` first) guarantees freshness. The
+# key's VALUE is additionally compared against StdASTBlob.StdKey at load time
+# (checker.validateStdASTBlob): genstdsig bakes that same hash into the Tier-0
+# std AST blob, so a blob generated from a different src/std is rejected.
 # STD_SIG_KEY is a recursive var, so the tool runs at recipe time — after
 # `make gen` has regenerated stdsig_gen.go from the same src/std.
 STD_SIG_KEY = $(shell cd src && GOOS= GOARCH= CGO_ENABLED=0 $(GO) run ./checker/genstdsig -key-only 2>/dev/null)
@@ -327,7 +349,7 @@ package: FORCE
 # Requires Go 1.21+ (project uses 1.25.4). Output: docs/static/wasm/no.wasm
 no-wasm: $(NO_WASM)
 
-$(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
+$(NO_WASM): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) $(STD_AST_BIN) src/go.mod src/go.sum | $(WASM_DIR)
 	$(MAKE) stamp-traceid
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/no
 
@@ -338,7 +360,7 @@ $(WASM_DIR):
 # Cross-compile LSP server to WebAssembly (wasip1) for the browser playground.
 lsp-wasm: $(LSP_WASM)
 
-$(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(WASM_DIR)
+$(LSP_WASM): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) $(STD_AST_BIN) src/go.mod src/go.sum | $(WASM_DIR)
 	$(MAKE) stamp-traceid
 	cd src && GOOS=wasip1 GOARCH=wasm $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$@ ./cmd/lsp
 
@@ -374,6 +396,28 @@ playground-smoke: no-wasm lsp-wasm
 	curl -sf --noproxy '*' http://localhost:$(PLAYGROUND_PORT)/nolang/wasm/lsp.wasm -o /dev/null; \
 	echo "Playground smoke test passed."
 
+# ── PLAYGROUND DEMO GATE ────────────────────────────
+# Deliberately stamp-free: this target does NOT call `make no`, `make no-wasm`
+# or `stamp-traceid`, and it never writes to docs/static/wasm/. Its only
+# prerequisite is $(STDSIG_GEN), whose recipe runs genstdsig alone (no perl
+# rewriting of checker sources), so it is safe on a dirty tree with parallel
+# sessions in flight.
+#
+# docs/src/playground/examples.ts is the single source of truth. The script
+# imports it directly and drives every demo through the EXACT compiler path
+# the browser uses (`no build --wasm-direct -target wasm32-wasi`), then runs
+# the emitted module under wasmtime and asserts the `expect` stdout substring.
+# This is the only gate that catches Direct-WASM backend drift before CI
+# publishes no.wasm to GitHub Pages.
+#
+#   make playground-demos                  # compile + run all demos
+#   make playground-demos WASMTIME=       # compile-only (no wasmtime locally)
+#   make playground-demos WASMTIME=/path/to/wasmtime
+playground-demos: $(STDSIG_GEN)
+	@mkdir -p /tmp/nobin
+	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o /tmp/nobin/no_demo ./cmd/no
+	bun scripts/playground_demos.ts --no /tmp/nobin/no_demo $(if $(WASMTIME),--wasmtime $(WASMTIME),--compile-only)
+
 FORCE:
 
 clean:
@@ -394,6 +438,7 @@ help:
 	@echo "  make lsp-wasm   跨譯 LSP 為 WebAssembly (wasip1) → docs/static/wasm/lsp.wasm"
 	@echo "  make playground 建構 no.wasm + lsp.wasm + Docusaurus 站點"
 	@echo "  make playground-smoke 啟動 dev server 並驗證 playground + wasm 資源可訪問"
+	@echo "  make playground-demos 以 --wasm-direct 編譯並用 wasmtime 執行全部範例（不重建 wasm）"
 	@echo "  make clean      清理"
 	@echo "  make help       幫助"
 	@echo ""
@@ -403,3 +448,5 @@ help:
 	@echo "  LD_FLAGS=...    自定義鏈接標誌（內建注入 Git commit）"
 	@echo "  WASI_SYSROOT=path  wasi-sysroot 路徑（no build -target wasm32-wasi 時需要）"
 	@echo "  PLAYGROUND_PORT=3000  playground-smoke 使用的端口（默認 3000）"
+	@echo "  WASMTIME=wasmtime  playground-demos 的執行器（設為空值即只編譯不執行）"
+	@echo "  NO=/path/to/no    playground-demos 若已有編譯器可直接用 bun scripts/playground_demos.ts --no 指定"

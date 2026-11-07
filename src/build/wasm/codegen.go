@@ -361,20 +361,120 @@ func (g *Generator) emitReturnStmt(sb *bytes.Buffer, rs *parser.ReturnStatement)
 	sb.WriteByte(OpReturn)
 }
 
-// emitForStmt 處理 for 迴圈。Task 7 支援 for i in [a..b) 等範圍形式。
+// ---- 迴圈框架 ----
+//
+// WASM 沒有 continue 指令：continue 必須 br 到「主體之後、累加之前」。
+// 因此每個迴圈發射三層標籤：
+//
+//	block            <- break 目標
+//	  loop           <- 回邊目標
+//	    block        <- continue 目標（跳到主體尾端）
+//	      離開條件 br_if
+//	      主體
+//	    end
+//	    累加（range loop）
+//	    br 0         <- 回到 loop
+//	  end
+//	end
+//
+// 舊版讓 continue 直接 br 回 loop，i 永遠不會累加，條件永遠成立，
+// 造成無限迴圈（break-continue demo 直接逾時）。
+
+func (g *Generator) beginLoopFrame(sb *bytes.Buffer) loopFrame {
+	g.emitBlock(sb)
+	frame := loopFrame{blockIndex: g.ctrlDepth}
+	g.emitLoop(sb)
+	frame.loopIndex = g.ctrlDepth
+	g.emitBlock(sb) // continue 目標：離開此 block 即抵達主體尾端
+	frame.continueIndex = g.ctrlDepth
+	g.loopStack = append(g.loopStack, frame)
+	return frame
+}
+
+// emitLoopExit 消耗堆疊上的 i32「是否離開」條件，為真時跳到 break 目標。
+func (g *Generator) emitLoopExit(sb *bytes.Buffer, frame loopFrame) {
+	sb.WriteByte(OpBrIf)
+	writeU32LEB(sb, uint32(g.ctrlDepth-frame.blockIndex))
+}
+
+// emitNeverExit 發射恆不離開的條件，用於無上界 range 與 while(true)；
+// 這類迴圈必須由主體內的 break 結束。
+func (g *Generator) emitNeverExit(sb *bytes.Buffer, frame loopFrame) {
+	sb.WriteByte(OpI32Const)
+	writeSLEB(sb, 0)
+	g.emitLoopExit(sb, frame)
+}
+
+// closeLoopFrame 關閉三層標籤並移除框架。postBody 在 continue block 關閉後、
+// 回到 loop 前發射（例如 i = i + 1）。
+func (g *Generator) closeLoopFrame(sb *bytes.Buffer, frame loopFrame, postBody func(*bytes.Buffer)) {
+	g.emitEnd(sb) // end continue block
+	if postBody != nil {
+		postBody(sb)
+	}
+	sb.WriteByte(OpBr)
+	writeU32LEB(sb, uint32(g.ctrlDepth-frame.loopIndex))
+	g.emitEnd(sb) // end loop
+	g.emitEnd(sb) // end break block
+	g.loopStack = g.loopStack[:len(g.loopStack)-1]
+}
+
+// emitForStmt 分派範圍迭代（i <- [a..b)）與條件式 while 迴圈（(cond) { ... }）。
 func (g *Generator) emitForStmt(sb *bytes.Buffer, fs *parser.ForStatement) {
-	if fs.IterRange == nil || fs.IterRange.Range == nil {
-		// C-style for 或 count expr 不屬 Task 7 基礎範圍；不發射。
+	if fs.IterRange != nil && fs.IterRange.Range != nil {
+		g.emitRangeForStmt(sb, fs)
 		return
 	}
+	// (cond) { ... } 在原生後端是 while 迴圈：重複執行主體直到 cond 為假。
+	// 舊版 Direct-WASM 遇到 IterRange == nil 就直接 return，主體被靜默丟棄
+	// （while-loop demo 只印出初始值 0）。
+	// IsCondWrapper / CountExpr / C-style for / 守衛 IfExpression 不是 while，
+	// 不在此處理，避免把標籤區塊合成節點誤降成無限迴圈。
+	if fs.Condition == nil || fs.IsCondWrapper || fs.CountExpr != nil ||
+		fs.Init != nil || fs.Update != nil || fs.IterRange != nil {
+		return
+	}
+	if _, isGuard := fs.Condition.(*parser.IfExpression); isGuard {
+		return
+	}
+
+	frame := g.beginLoopFrame(sb)
+	alwaysTrue := false
+	switch c := fs.Condition.(type) {
+	case *parser.BooleanLiteral:
+		alwaysTrue = c.Value
+	case *parser.Identifier:
+		alwaysTrue = c.Value == "true"
+	}
+	if alwaysTrue {
+		g.emitNeverExit(sb, frame)
+	} else {
+		g.emitCondition(sb, fs.Condition)
+		sb.WriteByte(OpI32Eqz) // !cond → 離開
+		g.emitLoopExit(sb, frame)
+	}
+	if fs.Body != nil {
+		for _, s := range fs.Body.Statements {
+			g.emitStmt(sb, s)
+		}
+	}
+	g.closeLoopFrame(sb, frame, nil)
+}
+
+// emitRangeForStmt 發射範圍迭代。Start/End 可省略（[a..) / [..b)）。
+func (g *Generator) emitRangeForStmt(sb *bytes.Buffer, fs *parser.ForStatement) {
 	iter := fs.IterRange
 	rng := iter.Range
-	varName := iter.Variable
-	idx := g.addLocal(varName, I64)
+	idx := g.addLocal(iter.Variable, I64)
 
-	// i = Start + (LeftInc ? 0 : 1)  —— 必須在 block/loop 之前初始化，
-	// 否則每次迴圈迭代都會重置 i，造成無限迴圈。
-	g.emitExpr(sb, rng.Start)
+	// i = Start (省略時 0) + (LeftInc ? 0 : 1)
+	// 必須在 block/loop 之前初始化，否則每次迭代都重置 i。
+	if rng.Start != nil {
+		g.emitExpr(sb, rng.Start)
+	} else {
+		sb.WriteByte(OpI64Const)
+		writeSLEB(sb, 0)
+	}
 	if !rng.LeftInc {
 		sb.WriteByte(OpI64Const)
 		writeSLEB(sb, 1)
@@ -383,49 +483,36 @@ func (g *Generator) emitForStmt(sb *bytes.Buffer, fs *parser.ForStatement) {
 	sb.WriteByte(OpLocalSet)
 	writeU32LEB(sb, uint32(idx))
 
-	// block (break target)
-	g.emitBlock(sb)
-	frame := loopFrame{blockIndex: g.ctrlDepth}
-	// loop (continue target)
-	g.emitLoop(sb)
-	frame.loopIndex = g.ctrlDepth
-	g.loopStack = append(g.loopStack, frame)
-
-	// 條件：若 (RightInc ? i > End : i >= End) 則 break
-	sb.WriteByte(OpLocalGet)
-	writeU32LEB(sb, uint32(idx))
-	g.emitExpr(sb, rng.End)
-	if rng.RightInc {
-		sb.WriteByte(OpI64GtS) // i > End → 不滿足 i <= End，跳出
+	frame := g.beginLoopFrame(sb)
+	if rng.End == nil {
+		// 無上界：舊版仍呼叫 emitExpr(nil)（不產生值）卻接著比較指令，
+		// 產生 "can't pop empty stack in binary left" 的非法模組。
+		g.emitNeverExit(sb, frame)
 	} else {
-		sb.WriteByte(OpI64GeS) // i >= End → 不滿足 i < End，跳出
+		sb.WriteByte(OpLocalGet)
+		writeU32LEB(sb, uint32(idx))
+		g.emitExpr(sb, rng.End)
+		if rng.RightInc {
+			sb.WriteByte(OpI64GtS) // i > End → 離開
+		} else {
+			sb.WriteByte(OpI64GeS) // i >= End → 離開
+		}
+		g.emitLoopExit(sb, frame)
 	}
-	sb.WriteByte(OpBrIf)
-	writeU32LEB(sb, 1) // 跳出 block（break）
-
-	// 迴圈主體
 	if fs.Body != nil {
 		for _, s := range fs.Body.Statements {
 			g.emitStmt(sb, s)
 		}
 	}
-
-	// i = i + 1
-	sb.WriteByte(OpLocalGet)
-	writeU32LEB(sb, uint32(idx))
-	sb.WriteByte(OpI64Const)
-	writeSLEB(sb, 1)
-	sb.WriteByte(OpI64Add)
-	sb.WriteByte(OpLocalSet)
-	writeU32LEB(sb, uint32(idx))
-
-	// 回到迴圈頭
-	sb.WriteByte(OpBr)
-	writeU32LEB(sb, 0)
-
-	g.emitEnd(sb) // end loop
-	g.emitEnd(sb) // end block
-	g.loopStack = g.loopStack[:len(g.loopStack)-1]
+	g.closeLoopFrame(sb, frame, func(body *bytes.Buffer) {
+		body.WriteByte(OpLocalGet)
+		writeU32LEB(body, uint32(idx))
+		body.WriteByte(OpI64Const)
+		writeSLEB(body, 1)
+		body.WriteByte(OpI64Add)
+		body.WriteByte(OpLocalSet)
+		writeU32LEB(body, uint32(idx))
+	})
 }
 
 // emitBreakStmt 發射 break：br 到最內層迴圈的 block（break 目標）。
@@ -434,20 +521,19 @@ func (g *Generator) emitBreakStmt(sb *bytes.Buffer, bs *parser.BreakStatement) {
 		return
 	}
 	frame := g.loopStack[len(g.loopStack)-1]
-	depth := uint32(g.ctrlDepth - frame.blockIndex)
 	sb.WriteByte(OpBr)
-	writeU32LEB(sb, depth)
+	writeU32LEB(sb, uint32(g.ctrlDepth-frame.blockIndex))
 }
 
-// emitContinueStmt 發射 continue：br 到最內層迴圈的 loop（continue 目標）。
+// emitContinueStmt 發射 continue：br 到包住主體的 block 尾端，
+// 讓累加指令照常執行後再回到迴圈開頭。
 func (g *Generator) emitContinueStmt(sb *bytes.Buffer, cs *parser.ContinueStatement) {
 	if len(g.loopStack) == 0 {
 		return
 	}
 	frame := g.loopStack[len(g.loopStack)-1]
-	depth := uint32(g.ctrlDepth - frame.loopIndex)
 	sb.WriteByte(OpBr)
-	writeU32LEB(sb, depth)
+	writeU32LEB(sb, uint32(g.ctrlDepth-frame.continueIndex))
 }
 
 // ---- 表達式分派 ----
@@ -829,6 +915,10 @@ func (g *Generator) emitPrint(sb *bytes.Buffer, args []parser.Expression, addNew
 					g.emitPrintStrVar(sb, a.Value)
 					continue
 				}
+				if g.isBoolLocal(a.Value) {
+					g.emitPrintBoolVar(sb, a.Value)
+					continue
+				}
 				if t == I64 {
 					sb.WriteByte(OpLocalGet)
 					writeU32LEB(sb, uint32(idx))
@@ -841,6 +931,17 @@ func (g *Generator) emitPrint(sb *bytes.Buffer, args []parser.Expression, addNew
 				}
 			}
 		default:
+			// 一般表達式：bool 運算結果（比較、&&、||、!）印 true/false。
+			if g.isBoolExpr(arg) {
+				bt := g.emitExpr(sb, arg)
+				if bt == I64 {
+					sb.WriteByte(OpI64Const)
+					writeSLEB(sb, 0)
+					sb.WriteByte(OpI64Ne)
+				}
+				g.emitPrintBoolOnStack(sb)
+				continue
+			}
 			// 一般表達式：先檢查 kind，str 描述符需走 fd_write 路徑。
 			if g.inferKind(arg) == KindStr {
 				// 發射描述符指標後，從描述符載入 data/len 並 fd_write
@@ -1184,23 +1285,36 @@ func (g *Generator) inferType(expr parser.Expression) ValType {
 				return results[0]
 			}
 		}
-		// 模組限定呼叫：number.max/min 與 math.sqrt 回傳 f64
+		// 呼叫的結果型別必須與 emitMethodCall / emitModuleCall 完全一致，
+		// 否則 emitLetStmt 會宣告一個 I64 local 卻收到 F64 值，整份模組
+		// 在 WebAssembly 驗證階段就被拒絕（set_local to type F64 expected I64）。
 		if de, ok := e.Function.(*parser.DotExpression); ok {
+			// receiver.to-str() 回傳 str 描述符指標（I32），但 emitLetStmt
+			// 會用 inferType 決定 local 型別。少了這條分支會宣告 I64 local
+			// 卻寫入 I32 值，整份模組在驗證階段被拒絕
+			// ("set_local to type I64 expected I32")。
+			if de.Property == "to-str" || de.Property == "to_str" {
+				return I32
+			}
+			// 模組限定呼叫：std/math.no 的 max/min/sqrt 回傳 f64；
+			// number.max/min 是舊拼法，一併保留。
 			if ident, ok := de.Receiver.(*parser.Identifier); ok {
 				if _, isLocal := g.lookupLocal(ident.Value); !isLocal {
-					switch ident.Value {
-					case "number":
+					if ident.Value == "math" || ident.Value == "number" {
 						switch de.Property {
-						case "max", "min":
-							return F64
-						}
-					case "math":
-						switch de.Property {
-						case "sqrt":
+						case "max", "min", "sqrt":
 							return F64
 						}
 					}
 				}
+			}
+			// 方法形式 sqrt（std/number.no 的現行 API）：結果寬度跟著
+			// receiver 走，f64.sqrt() → F64、i64.sqrt() → I64。
+			if de.Property == "sqrt" && len(e.Arguments) == 0 {
+				if g.inferType(de.Receiver) == F64 {
+					return F64
+				}
+				return I64
 			}
 		}
 		return I64

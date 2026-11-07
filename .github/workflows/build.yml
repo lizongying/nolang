@@ -565,6 +565,31 @@ jobs:
           echo "$output" | grep -q "^version:" || (echo "ERROR: lsp.wasm version output mismatch" && exit 1)
           echo "lsp.wasm version check passed"
 
+      # ---- Playground gates: keep the browser Direct-WASM path honest ----
+      # Three independent gates, all bun-driven (bun already set up above):
+      #   1. TypeScript typecheck of the whole docs tree — catches type errors
+      #      in the rewritten runner / worker / lsp-bridge / lsp-worker / wasm-loader.
+      #   2. playground_ui_check.ts — pure TS logic (parseErrorLines + Runner
+      #      watchdog / worker-recovery / concurrency guards / i18n). No browser,
+      #      WASM or compiler build required.
+      #   3. playground-demos (make target) — drives every example through the
+      #      browser's EXACT `no build --wasm-direct -target wasm32-wasi` path,
+      #      runs each emitted module under wasmtime (already on PATH), and
+      #      asserts the `expect` stdout substring. Stamp-free, so safe on a
+      #      dirty tree. This is the only gate that catches Direct-WASM backend
+      #      drift before CI publishes no.wasm to GitHub Pages.
+      - name: Install docs dependencies (typecheck)
+        run: cd docs && bun install
+
+      - name: Playground TypeScript typecheck
+        run: cd docs && bun run typecheck
+
+      - name: Playground UI behaviour gate
+        run: bun scripts/playground_ui_check.ts
+
+      - name: Playground demo gate (Direct-WASM drift)
+        run: make playground-demos
+
       # ---- PR 门禁：编译/测试质量闸 ----
       # 说明：本作业已安装 LLVM 21（opt/llc），故可同时跑原生编译闸，无需二次安装。
       # 各步骤设计原则：只闸「当前全绿」的项；已知 pre-existing 失败的项（见下）

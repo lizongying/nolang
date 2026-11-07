@@ -188,11 +188,27 @@ export function extractHoverText(contents: unknown): string {
 // LspBridge — main-thread Worker client
 // ---------------------------------------------------------------------------
 
+export interface LspBridgeOptions {
+  /** Non-fatal worker failures, surfaced in the UI instead of `catch {}`. */
+  onWarning?: (reason: string) => void;
+  /** Per-request watchdog. A hung LSP batch terminates the worker. */
+  requestTimeoutMs?: number;
+}
+
+interface LspPending {
+  resolve: (v: any) => void;
+  reject: (e: any) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
 export class LspBridge {
   private readonly wasmUrl: string;
+  private readonly options: LspBridgeOptions;
   private worker: Worker | null = null;
   private nextId = 1;
-  private pending: Map<number, {resolve: (v: any) => void; reject: (e: any) => void}> = new Map();
+  private pending: Map<number, LspPending> = new Map();
   private diagnosticsCallback:
     | ((uri: string, diagnostics: LspDiagnostic[]) => void)
     | null = null;
@@ -200,20 +216,19 @@ export class LspBridge {
   private disposed = false;
   private rootUri = '';
 
-  constructor(wasmUrl: string) {
+  constructor(wasmUrl: string, options: LspBridgeOptions = {}) {
     this.wasmUrl = wasmUrl;
+    this.options = options;
   }
 
   /**
-   * Load `@wasmer/wasi`'s wasm glue, fetch + compile `lsp.wasm`, and
-   * verify the server responds to `initialize`.
+   * Load the WASI glue, fetch + compile `lsp.wasm`, and verify the server
+   * responds to `initialize`.
    *
-   * Delegated to the worker. If the underlying glue cannot be loaded
-   * (known packaging issue: `wasmer_wasi_js_bg.wasm` may be absent
-   * from the npm tarball), the worker records the error and
-   * `this.initError` is set — subsequent operations degrade
-   * gracefully and the playground UI still functions without LSP
-   * features.
+   * A load failure is THROWN (previously it was only stored in `initError`,
+   * so the page's `.catch()` never saw it and the failure was invisible).
+   * The page still degrades to an editor without LSP features, but now shows
+   * a visible warning. A later `initialize()` call retries from scratch.
    */
   async initialize(rootUri: string): Promise<void> {
     this.rootUri = rootUri;
@@ -222,6 +237,17 @@ export class LspBridge {
       rootUri,
     });
     this.initError = result.initError;
+    if (this.initError) throw new Error(this.initError);
+  }
+
+  /** Start fetching lsp.wasm in the background before it is first needed. */
+  warmup(): void {
+    if (this.disposed) return;
+    this.ensureWorker().postMessage({
+      id: this.nextId++,
+      type: 'warmup',
+      payload: {wasmUrl: this.wasmUrl},
+    });
   }
 
   /** Track the latest document text and request fresh diagnostics. */
@@ -262,20 +288,10 @@ export class LspBridge {
   dispose(): void {
     this.disposed = true;
     this.diagnosticsCallback = null;
-    if (this.worker) {
-      // Fire-and-forget: ask the worker to clear its state, then
-      // terminate. A fresh Worker will be created if the bridge is
-      // reused (a new `initialize` call).
-      try {
-        this.worker.postMessage({id: this.nextId++, type: 'dispose', payload: undefined});
-      } catch {
-        // ignore — terminate below anyway
-      }
-      this.worker.terminate();
-      this.worker = null;
-    }
+    this.terminateWorker();
     // Reject any pending requests so callers don't hang.
-    for (const {reject} of this.pending.values()) {
+    for (const {reject, timer} of this.pending.values()) {
+      clearTimeout(timer);
       reject(new Error('LspBridge disposed'));
     }
     this.pending.clear();
@@ -290,6 +306,26 @@ export class LspBridge {
    * `result` / `error` responses to the matching pending promise and
    * forwards `diagnostics` push notifications to the callback.
    */
+  private terminateWorker(): void {
+    if (!this.worker) return;
+    this.worker.onmessage = null;
+    this.worker.onerror = null;
+    this.worker.onmessageerror = null;
+    this.worker.terminate();
+    this.worker = null;
+  }
+
+  /** Worker crash / hang: drop the worker so the next request rebuilds it. */
+  private handleWorkerFailure(reason: string): void {
+    this.terminateWorker();
+    this.options.onWarning?.(reason);
+    for (const {reject, timer} of this.pending.values()) {
+      clearTimeout(timer);
+      reject(new Error(reason));
+    }
+    this.pending.clear();
+  }
+
   private ensureWorker(): Worker {
     if (this.worker) return this.worker;
     const worker = new Worker(new URL('./lsp.worker.ts', import.meta.url), {type: 'module'});
@@ -298,6 +334,7 @@ export class LspBridge {
       if ((data.type === 'result' || data.type === 'error') && typeof data.id === 'number') {
         const entry = this.pending.get(data.id);
         if (entry) {
+          clearTimeout(entry.timer);
           this.pending.delete(data.id);
           if (data.type === 'error') {
             entry.reject(new Error(data.message ?? 'Worker error'));
@@ -307,22 +344,33 @@ export class LspBridge {
         }
       } else if (data.type === 'diagnostics') {
         this.diagnosticsCallback?.(data.uri as string, data.diagnostics as LspDiagnostic[]);
+      } else if (data.type === 'warning') {
+        this.options.onWarning?.(String(data.reason ?? 'LSP worker warning'));
       }
     };
+    worker.onerror = (e: ErrorEvent) => this.handleWorkerFailure(e.message || 'LSP worker error');
+    worker.onmessageerror = () => this.handleWorkerFailure('LSP worker posted an uncloneable message');
     this.worker = worker;
     return worker;
   }
 
   /**
-   * Post a `{id, type, payload}` message to the worker and return a
-   * Promise that resolves/rejects when the worker posts the matching
-   * `{id, type: 'result' | 'error'}` response.
+   * Post a `{id, type, payload}` message to the worker and return a Promise
+   * that resolves/rejects on the matching response. A watchdog prevents a
+   * hung synchronous `wasi.start()` inside the worker from leaking a pending
+   * promise forever.
    */
   private send<T>(type: string, payload?: any): Promise<T> {
+    if (this.disposed) return Promise.reject(new Error('LspBridge disposed'));
     const worker = this.ensureWorker();
     const id = this.nextId++;
+    const timeout = this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, {resolve: resolve as (v: any) => void, reject});
+      const timer = setTimeout(() => {
+        if (!this.pending.has(id)) return;
+        this.handleWorkerFailure(`LSP request '${type}' timed out after ${timeout} ms`);
+      }, timeout);
+      this.pending.set(id, {resolve: resolve as (v: any) => void, reject, timer});
       worker.postMessage({id, type, payload});
     });
   }

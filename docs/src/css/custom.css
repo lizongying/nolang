@@ -147,3 +147,47 @@
 .cm-editor .cm-cursor {
   border-left-color: var(--nolang-editor-cursor);
 }
+
+/**
+ * Playground panels (output / stderr / diagnostics / banners).
+ *
+ * The React page used hardcoded light-theme colours, which made the output
+ * panes unreadable in dark mode. All panel colours now resolve through these
+ * variables and switch with [data-theme].
+ */
+:root,
+[data-theme='light'] {
+  --nolang-panel-bg: #f8f9fa;
+  --nolang-panel-border: #dcdde1;
+  --nolang-muted: #666a73;
+  --nolang-placeholder: #9498a0;
+  --nolang-error-bg: #fff5f5;
+  --nolang-error-border: #ffc9c9;
+  --nolang-error-fg: #c92a2a;
+  --nolang-warn-fg: #b35c00;
+  --nolang-info-fg: #1462a8;
+  --nolang-banner-bg: #fff5f5;
+}
+
+:root[data-theme='dark'] {
+  --nolang-panel-bg: #1b1d23;
+  --nolang-panel-border: #3a3f49;
+  --nolang-muted: #a8aebb;
+  --nolang-placeholder: #6f7580;
+  --nolang-error-bg: #2a1b1e;
+  --nolang-error-border: #633038;
+  --nolang-error-fg: #ff9b9b;
+  --nolang-warn-fg: #ffc078;
+  --nolang-info-fg: #8ec5ff;
+  --nolang-banner-bg: #332024;
+}
+
+/* Panels inherit the site font but keep the editor's monospace feel. */
+.nolang-panel {
+  background: var(--nolang-panel-bg);
+  border: 1px solid var(--nolang-panel-border);
+  color: var(--nolang-editor-fg);
+}
+.nolang-panel-muted {
+  color: var(--nolang-muted);
+}
