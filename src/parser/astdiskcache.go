@@ -327,7 +327,21 @@ import (
 // 且 option 回傳的呼叫主語會歸一化成 `if 1 { let __match_subj ?T = <call>; ... }`。
 // 同一份原始碼的樹從「`v = f()` + 裸 match 兩條陳述」變成「單一值位 match」，
 // 舊 blob 是前者，故必 bump。
-const ASTVersion = "2026-11-08.3"
+// 2026-11-08.4：值位 match 的**方法呼叫**主語現在真的歸一化成 `__match_subj ?T`
+// 了。此前兩處簽名查表都落空（H0 scratch parser 用 fd.Results 把方法的隱含
+// `self` 也算進回傳列表；LLVM 路的 callee 已降成帶點的 Identifier，方法簽名卻
+// 在 methodSignatures 裡），`returnTypeFromCallExpr` 恆回空 ⇒ 不歸一化 ⇒ ok 臂
+// 沒有 `let it` ⇒ 臂內讀到 0。同一份原始碼的樹從「裸呼叫 + 無 it 綁定」變成
+// 「`if 1 { let __match_subj ?T = <call>; ... }` + `let it T`」，舊 blob 是前者，
+// 故必 bump。
+// 2026-11-08.5：值位 match 的主語放寬到**任意表達式**（典型是中綴算術
+// `r = a % b: { ok -> it  -> 0 }`）。`: {` 的附加從 Pratt 中綴迴圈之前
+// 挪到之後也補一次（CTX_EXPR 閘門），option 算術主語會歸一化成
+// `if 1 { let __match_subj ?T = <expr>; ... }`；同時值位 match 的結果變數
+// 會把 payload 型別登記進語義副表，讓後續算術／下一段 match 的 `let it`
+// 有型別。同一份原始碼的樹從「`r = a % b` + 主體為空的裸 match 兩條陳述」
+// 變成「單一 SurfaceMatch(主體=InfixExpression)」，舊 blob 是前者，故必 bump。
+const ASTVersion = "2026-11-08.5"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

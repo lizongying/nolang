@@ -203,7 +203,7 @@ client.next-event = () (ev ?event) {
                                 val-start = colon + 1
                                 val-start < line.len-bytes() -> {
                                     line[val-start] == 32 -> {
-                                        val-start = val-start + 1
+                                        val-start ?= val-start + 1
                                     }
                                 }
                                 value = line.slice(val-start, line.len-bytes())
@@ -445,7 +445,14 @@ client.reconnect = () (ok bool) {
         }
 
         #{overflow=wrap}
-        total = total + n
+        {
+            #{overflow=wrap}
+            total-opt = total + n
+            total-opt: {
+                ok -> total = it
+                ->
+            }
+        }
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
@@ -702,7 +709,7 @@ sse-connect = (url str) (client ?client) {
         }
 
         #{overflow=wrap}
-        total = total + n
+        total ?= total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break

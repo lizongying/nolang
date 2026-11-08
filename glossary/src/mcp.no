@@ -1,0 +1,430 @@
+; mcp — MCP 服务器（JSON-RPC 2.0 over stdio）
+;
+; 本模块独占全部 JSON 处理：入站用 std/json 解析，出站用手写 writer（jq + 拼装），
+; 这样能保证每条消息输出为**单行**——json.stringify 只转义 " \ \n \t \r，其余
+; 控制字符会原样输出（src/std/json.no:1150-1163），一旦落进消息就会出现真换行，
+; 把换行分帧的行协议打断。
+;
+; 分帧读取不用 fs.get-line / io.read-line：实测 fs.get-line 在 4095 字节处截断，
+; 且 EOF 之后仍持续返回 ok('') 而不是 nil（会死循环）；io.reader.read-line 更只是
+; 单次 4KB read。这里按字节读，请求体量小，代价可忽略。
+;
+; 状态一律放模块级结构体：给模块级 str 标量赋值会被同名局部遮蔽（实测），
+; 结构体字段则正常。多返回值也尽量收进结构体，避免多赋值语法带来的未知。
+
+MCP-PROTOCOL = '2025-06-18'
+MCP-NAME = 'glossary'
+MCP-VERSION = 'v0.1.0'
+MCP-MAX-LINE = 8388608
+
+; 行缓冲与响应缓冲
+io-buf {
+    line str
+    eof bool
+    resp str
+}
+
+IOB io-buf
+
+; 写游标（write-all 需要计数，计数靠结构体字段才能绕过 15w45dqk）
+wr {
+    at i64
+    n i64
+}
+
+W wr
+
+; 工具调用结果
+tool-out {
+    text str
+    is-error bool
+}
+
+TOOL tool-out
+
+; ═══════════════════════════════════════════════
+; JSON 输出
+; ═══════════════════════════════════════════════
+
+; 转义与字符串字面量都收在 jsono 里（render 的 json 形态也走同一套），
+; 这里不再自己实现，避免两处对控制字符的处理口径跑偏。
+
+; 成功响应
+; id-text: id 原文（数字 / 字符串 / null 的 JSON 字面量）
+; result: 已序列化的 result 值
+; out: 完整 JSON-RPC 响应
+; [resp-ok](#mcp.resp-ok)
+resp-ok = (id-text str, result str) (out str) {
+    out = '{"jsonrpc":"2.0","id":' - id-text - ',"result":' - result - '}'
+}
+
+; 错误响应
+; id-text: id 原文
+; code: JSON-RPC 错误码
+; msg: 错误说明
+; out: 完整 JSON-RPC 响应
+; [resp-err](#mcp.resp-err)
+resp-err = (id-text str, code i64, msg str) (out str) {
+    out = '{"jsonrpc":"2.0","id":' - id-text - ',"error":{"code":' - code.to-str() - ',"message":' - jsono.jqs(msg) - '}}'
+}
+
+; ═══════════════════════════════════════════════
+; 入站字段读取
+; ═══════════════════════════════════════════════
+
+; 入站解析全部交给 jsonp（本工具自带的极简读取器）。不用 std/json 的原因见
+; jsonp.no 文件头：工作区里的 src/std/json.no 正被另一个 session 改写，其 parse
+; 对非 ASCII 字符串会截断成 NUL，MCP 的 arguments 里必然有中文，不能押在上面。
+
+; ═══════════════════════════════════════════════; 工具 schema
+; ═══════════════════════════════════════════════
+
+; 单个工具的 tools/list 条目
+; name: 工具名
+; desc: 一句话说明
+; schema: inputSchema 的 JSON 字面量
+; out: 形如 {"name":…,"description":…,"inputSchema":…}
+; [tool-entry](#mcp.tool-entry)
+tool-entry = (name str, desc str, schema str) (out str) {
+    out = '{"name":' - jsono.jqs(name) - ',"description":' - jsono.jqs(desc) - ',"inputSchema":' - schema - '}'
+}
+
+; tools/list 的 result
+; out: 形如 {"tools":[…]} 的 JSON
+; [tools-json](#mcp.tools-json)
+tools-json = () (out str) {
+    get-schema = '{"type":"object","properties":{"id":{"type":"string","description":"词条 id，如 option、str、#overflow"}},"required":["id"],"additionalProperties":false}'
+    search-schema = '{"type":"object","properties":{"query":{"type":"string","description":"关键词，大小写不敏感"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":10}},"required":["query"],"additionalProperties":false}'
+    list-schema = '{"type":"object","properties":{"domain":{"type":"string","description":"语义域名，如 types、traps"},"kind":{"type":"string","description":"条目种类，如 type、annotation、keyword"},"status":{"type":"string","description":"状态，如 stable、removed、unused、trap"}},"required":[],"additionalProperties":false}'
+    related-schema = '{"type":"object","properties":{"id":{"type":"string","description":"词条 id"},"depth":{"type":"integer","minimum":1,"maximum":3,"default":1}},"required":["id"],"additionalProperties":false}'
+    t1 = tool-entry('glossary_get', '取单条词条的完整内容（定义 / 语法 / 示例 / 关联 / 来源）。查任何 Nolang 名词先用它。', get-schema)
+    t2 = tool-entry('glossary_search', '按关键词检索词条，返回 id 与摘要。不确定确切 id 时用它。', search-schema)
+    t3 = tool-entry('glossary_list', '列出词条。不带参数返回语义域索引与条数；带 domain / kind / status 则过滤。', list-schema)
+    t4 = tool-entry('glossary_related', '沿 related 引用展开关联词条，用于顺藤摸瓜。', related-schema)
+    out = '{"tools":[' - t1 - ',' - t2 - ',' - t3 - ',' - t4 - ']}'
+}
+
+; initialize 的 result
+; out: 形如 {"protocolVersion":…,"capabilities":…,"serverInfo":…}
+; [init-result](#mcp.init-result)
+init-result = () (out str) {
+    out = '{"protocolVersion":' - jsono.jqs(MCP-PROTOCOL) - ',"capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":' - jsono.jqs(MCP-NAME) - ',"version":' - jsono.jqs(MCP-VERSION) - '}}'
+}
+
+; ═══════════════════════════════════════════════
+; 工具调用
+; ═══════════════════════════════════════════════
+
+; 把工具结果包成 tools/call 的 result
+; text: 结果正文（markdown 或纯文本）
+; is-error: true=业务失败
+; out: 形如 {"content":[{"type":"text","text":…}],"isError":…}
+; [call-result](#mcp.call-result)
+call-result = (text str, is-error bool) (out str) {
+    flag = 'false'
+    is-error: {
+        true -> flag = 'true'
+
+        false -> _
+    }
+    out = '{"content":[{"type":"text","text":' - jsono.jqs(text) - '}],"isError":' - flag - '}'
+}
+
+; 取 arguments 里的字符串参数
+; t: 整条消息原文
+; key: 参数名
+; v: 参数值；缺失或非字符串为空串
+; [arg-str](#mcp.arg-str)
+arg-str = (t str, key str) (v str) {
+    v = jsonp.str-at(t, jsonp.args-field(t, key))
+}
+
+; 取 arguments 里的整数参数
+; t: 整条消息原文
+; key: 参数名
+; dft: 缺失或非数字时的默认值
+; v: 参数值
+; [arg-int](#mcp.arg-int)
+arg-int = (t str, key str, dft i64) (v i64) {
+    v = jsonp.int-at(t, jsonp.args-field(t, key), dft)
+}
+
+; 执行一个工具调用，结果写入 TOOL
+; t: 整条消息原文（字段就地扫描，不做 DOM）
+; [call-tool](#mcp.call-tool)
+call-tool = (t str) {
+    TOOL.text = ''
+    TOOL.is-error = false
+
+    name = jsonp.str-at(t, jsonp.params-field(t, 'name'))
+    name: {
+        'glossary_get' -> {
+            id = arg-str(t, 'id')
+            has-id = id.len-bytes() > 0
+            has-id: {
+                false -> {
+                    TOOL.text = '缺少参数 id'
+                    TOOL.is-error = true
+                }
+
+                true -> {
+                    idx = db.find(id)
+                    idx: {
+                        -1 -> {
+                            TOOL.text = '未找到词条: ' - id - '。可先用 glossary_list 或 glossary_search 定位。'
+                            TOOL.is-error = true
+                        }
+
+                        -> TOOL.text = render.get-md(idx)
+                    }
+                }
+            }
+        }
+
+        'glossary_search' -> {
+            q = arg-str(t, 'query')
+            lim = arg-int(t, 'limit', 0)
+            lim <= 0 -> lim = 10
+            ids = db.search(q, lim)
+            cnt = ids.len()
+            cnt: {
+                0 -> TOOL.text = '没有匹配「' - q - '」的词条。'
+
+                -> TOOL.text = render.list-md(ids)
+            }
+        }
+
+        'glossary_list' -> {
+            dom = arg-str(t, 'domain')
+            kind = arg-str(t, 'kind')
+            st = arg-str(t, 'status')
+            bare = dom.len-bytes() == 0 && kind.len-bytes() == 0 && st.len-bytes() == 0
+            bare: {
+                true -> TOOL.text = render.domains-md()
+
+                false -> {
+                    ids = db.filter(dom, kind, st)
+                    cnt = ids.len()
+                    cnt: {
+                        0 -> TOOL.text = '（无匹配词条）'
+
+                        -> TOOL.text = render.list-md(ids)
+                    }
+                }
+            }
+        }
+
+        'glossary_related' -> {
+            id = arg-str(t, 'id')
+            dp = arg-int(t, 'depth', 0)
+            dp <= 0 -> dp = 1
+            idx = db.find(id)
+            idx: {
+                -1 -> {
+                    TOOL.text = '未找到词条: ' - id
+                    TOOL.is-error = true
+                }
+
+                -> {
+                    ids = db.related(idx, dp)
+                    cnt = ids.len()
+                    cnt: {
+                        0 -> TOOL.text = '「' - id - '」没有关联词条。'
+
+                        -> TOOL.text = render.list-md(ids)
+                    }
+                }
+            }
+        }
+
+        -> {
+            TOOL.text = '未知工具: ' - name
+            TOOL.is-error = true
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 单行分派
+; ═══════════════════════════════════════════════
+
+; 处理一行输入，结果写入 IOB.resp
+; t: 已去掉首尾空白的输入行
+; has-resp: true=需要输出 IOB.resp（通知不回应）
+; [handle-line](#mcp.handle-line)
+handle-line = (t str) (has-resp bool) {
+    has-resp = false
+    IOB.resp = ''
+
+    ; 顶层必须是合法 JSON 对象；数组 / 标量合法但不是请求 → -32600
+    k = jsonp.classify(t)
+    not-obj = k != 1
+    not-obj: {
+        true -> {
+            k: {
+                0 -> IOB.resp = resp-err('null', -32700, 'Parse error: 入站消息不是合法 JSON')
+
+                -> IOB.resp = resp-err('null', -32600, 'Invalid Request: 顶层必须是 JSON 对象')
+            }
+            has-resp = true
+            return
+        }
+
+        false -> _
+    }
+
+    ; id 原文：直接取值的原始切片，数字 / 字符串 / null 都保真，不重编码
+    id-text = 'null'
+    notif = true
+    iv = jsonp.root-field(t, 'id')
+    has-id = iv >= 0
+    has-id: {
+        true -> {
+            id-text = jsonp.raw-at(t, iv)
+            notif = false
+        }
+
+        false -> _
+    }
+
+    mv = jsonp.root-field(t, 'method')
+    method = jsonp.str-at(t, mv)
+    method: {
+        'initialize' -> {
+            IOB.resp = resp-ok(id-text, init-result())
+            has-resp = true
+        }
+
+        'ping' -> {
+            IOB.resp = resp-ok(id-text, '{}')
+            has-resp = true
+        }
+
+        'tools/list' -> {
+            IOB.resp = resp-ok(id-text, tools-json())
+            has-resp = true
+        }
+
+        'tools/call' -> {
+            call-tool(t)
+            IOB.resp = resp-ok(id-text, call-result(TOOL.text, TOOL.is-error))
+            has-resp = true
+        }
+
+        -> notif: {
+            true -> has-resp = false
+
+            false -> {
+                IOB.resp = resp-err(id-text, -32601, 'Method not found: ' - method)
+                has-resp = true
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; stdio 传输
+; ═══════════════════════════════════════════════
+
+; 读一行到 IOB.line；EOF 时置 IOB.eof
+; 逐字节 fs.read：不依赖任何带长度上限或 EOF 语义可疑的读行 API
+; [read-line](#mcp.read-line)
+read-line = () {
+    buf []byte = []
+    one []byte = with-len(1)
+    IOB.line = ''
+    IOB.eof = false
+    hit-eof = false
+    !! {
+        got = fs.read(fs.STDIN-FD, one, 1)
+        got <= 0 -> {
+            hit-eof = true
+            break
+        }
+        c = one[0]
+        c: {
+            nil -> {
+                hit-eof = true
+                break
+            }
+
+            err -> {
+                hit-eof = true
+                break
+            }
+
+            ok -> {
+                bv = it
+                bi = bv.to-i64()
+                {
+                    bi == 10 -> break
+
+                    bi == 13 -> _
+
+                    -> buf.push(bv)
+                }
+            }
+        }
+        buf.len() > MCP-MAX-LINE -> break
+    }
+    IOB.line = buf.to-bytes-str()
+
+    ; 只有「撞到 EOF」且「一个字节都没拿到」才是真的流结束；
+    ; 末行没有尾随换行时这里 n > 0，必须先交出去，下一轮再收 EOF。
+    n = IOB.line.len-bytes()
+    empty = n == 0
+    IOB.eof = hit-eof && empty
+}
+
+; 把整串写入 stdout，短写时续写
+; s: 待写文本
+; ok: true=全部写完
+; [write-all](#mcp.write-all)
+write-all = (s str) (ok bool) {
+    ok = false
+    b = s.to-bytes()
+    W.n = b.len()
+    W.at = 0
+    (W.at < W.n) {
+        part = b.slice(W.at, W.n)
+        plen = part.len()
+        got = fs.write(fs.STDOUT-FD, part, plen)
+        got <= 0 -> break
+        W.at = W.at + got
+    }
+    ok = W.at == W.n
+}
+
+; 取最近一次 handle-line 的响应文本
+; 跨模块只能走访问器（直接读 mcp.IOB.resp 不成立），HTTP 传输靠它拿结果
+; v: 响应 JSON；无需回应时为空串
+; [last-resp](#mcp.last-resp)
+last-resp = () (v str) {
+    v = IOB.resp
+}
+
+; stdio 主循环：逐行读、逐行回，读不到东西就退出
+; code: 进程退出码（正常 EOF 为 0）
+; [serve](#mcp.serve)
+serve = () (code i64) {
+    code = 0
+    !! {
+        IOB.eof -> break
+        read-line()
+        IOB.eof -> break
+        t = IOB.line.trim()
+        empty = t.len-bytes() == 0
+        empty: {
+            true -> _
+
+            false -> {
+                want = handle-line(t)
+                want: {
+                    true -> _ = write-all(IOB.resp - '\n')
+
+                    false -> _
+                }
+            }
+        }
+    }
+}

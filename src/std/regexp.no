@@ -461,7 +461,14 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         .tmp-atom-type = RE-OP-ANY
 
         #{overflow=wrap}
-        result-i = i + 1
+        {
+            #{overflow=wrap}
+            result-i-opt = i + 1
+            result-i-opt: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; [ — 字元類別
@@ -481,7 +488,14 @@ regexp.parse-atom = (pattern str, i i64) (new-i i64) {
         .tmp-atom-char = c
 
         #{overflow=wrap}
-        result-i = i + 1
+        {
+            #{overflow=wrap}
+            result-i-opt2 = i + 1
+            result-i-opt2: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
     new-i = result-i
 }
@@ -503,7 +517,14 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     n = pattern.len-bytes()
 
     #{overflow=wrap}
-    ri = ri + 1
+    {
+        #{overflow=wrap}
+        ri-opt2 = ri + 1
+        ri-opt2: {
+            ok -> ri = it
+            ->
+        }
+    }
 
     ; 檢查反向 ^
     negated = 0
@@ -512,7 +533,13 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
     ri < n -> {
         pattern[ri] == 94 -> {
             negated = 1
-            ri = ri + 1
+            {
+                ri-opt3 = ri + 1
+                ri-opt3: {
+                    ok -> ri = it
+                    ->
+                }
+            }
         }
     }
 
@@ -529,7 +556,14 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         c == 93 && first == 0 -> {
 
             #{overflow=wrap}
-            ri = ri + 1
+            {
+                #{overflow=wrap}
+                ri-opt4 = ri + 1
+                ri-opt4: {
+                    ok -> ri = it
+                    ->
+                }
+            }
             break
         }
         first = 0
@@ -558,7 +592,13 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
                         .set-class-bit(cls-idx, k)
                         k = k + 1
                     }
-                    next-i = ri + 3
+                    {
+                        next-i-opt = ri + 3
+                        next-i-opt: {
+                            ok -> next-i = it
+                            ->
+                        }
+                    }
                 }
             }
         }
@@ -570,21 +610,32 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
             c == 92 -> {
 
                 #{overflow=wrap}
-                next-i = ri + 1
+                {
+                    #{overflow=wrap}
+                    next-i-opt2 = ri + 1
+                    next-i-opt2: {
+                        ok -> next-i = it
+                        ->
+                    }
+                }
                 ri < n -> {
 
                     ; D6：`esc-c = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
                     #{overflow=wrap}
                     esc-c char = pattern[ri + 1]
                     .set-class-escape(cls-idx, esc-c)
-                    next-i = ri + 2
+                    {
+                        next-i-opt3 = ri + 2
+                        next-i-opt3: {
+                            ok -> next-i = it
+                            ->
+                        }
+                    }
                 }
             }
             c != 92 -> .set-class-bit(cls-idx, c)
         }
-        ri-opt = next-i
-        ri = 0
-        ri = ri-opt: {
+        ri = next-i: {
             ok -> it
 
             -> 0
@@ -632,7 +683,14 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     n = pattern.len-bytes()
 
     #{overflow=wrap}
-    ri = ri + 1
+    {
+        #{overflow=wrap}
+        ri-opt5 = ri + 1
+        ri-opt5: {
+            ok -> ri = it
+            ->
+        }
+    }
     ri >= n -> {
         new-i = result-i
         return
@@ -646,7 +704,13 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 100 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-digits()
-        result-i = ri + 1
+        {
+            result-i-opt3 = ri + 1
+            result-i-opt3: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \D — 非數字
@@ -654,7 +718,13 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 68 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nondigits()
-        result-i = ri + 1
+        {
+            result-i-opt4 = ri + 1
+            result-i-opt4: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \w — 文字字元
@@ -662,7 +732,13 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 119 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-word()
-        result-i = ri + 1
+        {
+            result-i-opt5 = ri + 1
+            result-i-opt5: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \W — 非文字字元
@@ -670,7 +746,13 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 87 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonword()
-        result-i = ri + 1
+        {
+            result-i-opt6 = ri + 1
+            result-i-opt6: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \s — 空白字元
@@ -678,7 +760,13 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 115 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-space()
-        result-i = ri + 1
+        {
+            result-i-opt7 = ri + 1
+            result-i-opt7: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \S — 非空白字元
@@ -686,35 +774,65 @@ regexp.parse-escape = (pattern str, i i64) (new-i i64) {
     c == 83 -> {
         .tmp-atom-type = RE-OP-CLASS
         .tmp-atom-cls = .make-class-nonspace()
-        result-i = ri + 1
+        {
+            result-i-opt8 = ri + 1
+            result-i-opt8: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \n
     #{overflow=wrap}
     c == 110 -> {
         .tmp-atom-char = 10
-        result-i = ri + 1
+        {
+            result-i-opt9 = ri + 1
+            result-i-opt9: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \t
     #{overflow=wrap}
     c == 116 -> {
         .tmp-atom-char = 9
-        result-i = ri + 1
+        {
+            result-i-opt10 = ri + 1
+            result-i-opt10: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; \r
     #{overflow=wrap}
     c == 114 -> {
         .tmp-atom-char = 13
-        result-i = ri + 1
+        {
+            result-i-opt11 = ri + 1
+            result-i-opt11: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
 
     ; 跳脫特殊字元或常字元
     #{overflow=wrap}
     c != 100 && c != 68 && c != 119 && c != 87 && c != 115 && c != 83 && c != 110 && c != 116 && c != 114 -> {
         .tmp-atom-char = c
-        result-i = ri + 1
+        {
+            result-i-opt12 = ri + 1
+            result-i-opt12: {
+                ok -> result-i = it
+                ->
+            }
+        }
     }
     new-i = result-i
 }
@@ -984,7 +1102,14 @@ regexp.matches = (text str) (matched bool) {
         }
 
         #{overflow=wrap}
-        sp = sp + 1
+        {
+            #{overflow=wrap}
+            sp-opt = sp + 1
+            sp-opt: {
+                ok -> sp = it
+                ->
+            }
+        }
     }
     matched = result-matched
 }
@@ -1025,7 +1150,14 @@ regexp.find = (text str) (result str) {
         }
 
         #{overflow=wrap}
-        sp = sp + 1
+        {
+            #{overflow=wrap}
+            sp-opt2 = sp + 1
+            sp-opt2: {
+                ok -> sp = it
+                ->
+            }
+        }
     }
 }
 

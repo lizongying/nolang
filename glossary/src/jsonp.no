@@ -1,0 +1,689 @@
+; jsonp — 极简 JSON 读取器（只为 MCP 入站消息服务）
+;
+; 为什么不用 std/json：本仓库工作区的 src/std/json.no 正被另一个 session 改写
+; （把 i64 算术改成两段式解包），实测在改到一半的状态下它的 parse 对非 ASCII
+; 字符串已经错乱：
+;     {"q":"三态标签"}  →  .get('q').str() 只剩 9 个有效字节，其余补 0
+;     .stringify()      →  末字符被重复，还输出 U+FFFD
+; MCP 的 arguments 里必然出现中文（query / domain），不能押在这个上面。
+;
+; 本模块只实现本工具真正需要的子集：识别顶层形态、定位对象成员、按**字节**切片、
+; 解常用转义。不做通用 DOM，不做修改。
+;
+; 下标口径：str.slice 按**码点**，[]byte.slice 与 str.byte 按**字节**（实测）。
+; 本文件所有切片都走 bslice()，即按字节，避免 CJK 串被截断。
+; 所有下标算术走 add/sub（15w45dqk 下 i64 算术结果是 ?i64，不能直接赋给局部变量）。
+
+; 整数加法（两段式解包）
+; a: 左
+; b: 右
+; r: a + b；溢出取 0
+; [jsonp.add](#jsonp.add)
+add = (a i64, b i64) (r i64) {
+    t = a + b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 整数减法（两段式解包）
+; a: 左
+; b: 右
+; r: a - b；溢出取 0
+; [jsonp.sub](#jsonp.sub)
+sub = (a i64, b i64) (r i64) {
+    t = a - b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 按字节切片
+; s: 文本
+; a: 起始字节下标（含）
+; b: 结束字节下标（不含）
+; v: 切片；区间非法回空串
+; [jsonp.bslice](#jsonp.bslice)
+bslice = (s str, a i64, b i64) (v str) {
+    v = ''
+    a < 0 -> return
+    n = s.len-bytes()
+    b > n -> return
+    a >= b -> return
+    v = s.slice-bytes(a, b)
+}
+
+; 取第 i 个字节值
+; s: 文本
+; i: 字节下标
+; v: 字节值 0-255；越界回 -1
+; [jsonp.byte-at](#jsonp.byte-at)
+byte-at = (s str, i i64) (v i64) {
+    v = -1
+    i < 0 -> return
+    n = s.len-bytes()
+    i >= n -> return
+    c = s.byte(i)
+    c: {
+        ok -> {
+            bv = it
+            v = bv.to-i64()
+        }
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 跳过 JSON 空白
+; s: 文本
+; i: 起始字节下标
+; j: 第一个非空白字节下标
+; [jsonp.skip-ws](#jsonp.skip-ws)
+skip-ws = (s str, i i64) (j i64) {
+    j = i
+    n = s.len-bytes()
+    !! {
+        j >= n -> break
+        b = byte-at(s, j)
+        ws = (b == 32) || (b == 9) || (b == 10) || (b == 13)
+        ws: {
+            false -> break
+
+            true -> j = add(j, 1)
+        }
+    }
+}
+
+; 跳过字符串字面量
+; s: 文本
+; i: 左引号的字节下标
+; e: 右引号之后的字节下标；未闭合回 -1
+; [jsonp.scan-string](#jsonp.scan-string)
+scan-string = (s str, i i64) (e i64) {
+    e = -1
+    n = s.len-bytes()
+    j = add(i, 1)
+    esc = false
+    !! {
+        j >= n -> break
+        b = byte-at(s, j)
+        esc: {
+            true -> esc = false
+
+            false -> {
+                b == 92 -> esc = true
+
+                b == 34 -> {
+                    e = add(j, 1)
+                    break
+                }
+
+                -> _
+            }
+        }
+        j = add(j, 1)
+    }
+}
+
+; 跳过一段括号嵌套（对象或数组），字符串内的括号不计
+; s: 文本
+; i: 起始括号的字节下标
+; e: 匹配的右括号之后的字节下标；未闭合回 -1
+; [jsonp.scan-nested](#jsonp.scan-nested)
+scan-nested = (s str, i i64) (e i64) {
+    e = -1
+    n = s.len-bytes()
+    depth = 0
+    j = i
+    !! {
+        j >= n -> break
+        b = byte-at(s, j)
+        is-str = b == 34
+        is-str: {
+            true -> {
+                se = scan-string(s, j)
+                se < 0 -> break
+                j = se
+            }
+
+            false -> {
+                op = (b == 123) || (b == 91)
+                cl = (b == 125) || (b == 93)
+                op: {
+                    true -> {
+                        depth = add(depth, 1)
+                        j = add(j, 1)
+                    }
+
+                    false -> cl: {
+                        true -> {
+                            depth = sub(depth, 1)
+                            j = add(j, 1)
+                            z = depth == 0
+                            z: {
+                                true -> {
+                                    e = j
+                                    break
+                                }
+
+                                false -> _
+                            }
+                        }
+
+                        false -> j = add(j, 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+; 跳过一个裸标量（数字 / true / false / null）
+; s: 文本
+; i: 起始字节下标
+; e: 标量之后的字节下标
+; [jsonp.scan-bare](#jsonp.scan-bare)
+scan-bare = (s str, i i64) (e i64) {
+    e = -1
+    n = s.len-bytes()
+    j = i
+    !! {
+        j >= n -> break
+        b = byte-at(s, j)
+        stop = (b == 32) || (b == 9) || (b == 10) || (b == 13) || (b == 44) || (b == 125) || (b == 93)
+        stop: {
+            true -> break
+
+            false -> j = add(j, 1)
+        }
+    }
+    e = j
+}
+
+; 一个值的结束位置
+; s: 文本
+; i: 值的起始字节下标（可含前导空白）
+; e: 值之后的字节下标；无法识别回 -1
+; [jsonp.value-end](#jsonp.value-end)
+value-end = (s str, i i64) (e i64) {
+    e = -1
+    j = skip-ws(s, i)
+    b = byte-at(s, j)
+    b < 0 -> return
+    {
+        b == 34 -> e = scan-string(s, j)
+
+        b == 123 -> e = scan-nested(s, j)
+
+        b == 91 -> e = scan-nested(s, j)
+
+        -> e = scan-bare(s, j)
+    }
+}
+
+; 在对象的直接成员里找 key，返回值起始下标
+; s: 文本
+; obj-start: 对象 '{' 的字节下标（可含前导空白）
+; key: 键名（逐字节比较）
+; vs: 值的起始字节下标；未找到回 -1
+; [jsonp.field-of](#jsonp.field-of)
+field-of = (s str, obj-start i64, key str) (vs i64) {
+    vs = -1
+    o = skip-ws(s, obj-start)
+    ob = byte-at(s, o)
+    ob != 123 -> return
+    oe = scan-nested(s, o)
+    oe < 0 -> return
+    pos = add(o, 1)
+    !! {
+        p0 = skip-ws(s, pos)
+        p0 >= oe -> break
+        b0 = byte-at(s, p0)
+        p1 = p0
+        b0 == 44 -> p1 = add(p0, 1)
+        p2 = skip-ws(s, p1)
+        p2 >= oe -> break
+        b1 = byte-at(s, p2)
+        is-key = b1 == 34
+        is-key: {
+            false -> break
+
+            true -> {
+                kend = scan-string(s, p2)
+                kend < 0 -> break
+                kn = bslice(s, add(p2, 1), sub(kend, 1))
+                colon = skip-ws(s, kend)
+                colon >= oe -> break
+                vstart = skip-ws(s, add(colon, 1))
+                vend = value-end(s, vstart)
+                vend < 0 -> break
+                same = kn.eq-full(key)
+                same: {
+                    true -> {
+                        vs = vstart
+                        break
+                    }
+
+                    false -> pos = vend
+                }
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 层级便捷入口
+; ═══════════════════════════════════════════════
+
+; 顶层对象的成员
+; s: 整条消息
+; key: 键名
+; vs: 值起始下标；缺失回 -1
+; [jsonp.root-field](#jsonp.root-field)
+root-field = (s str, key str) (vs i64) {
+    vs = field-of(s, 0, key)
+}
+
+; params 对象的成员
+; s: 整条消息
+; key: 键名
+; vs: 值起始下标；缺失回 -1
+; [jsonp.params-field](#jsonp.params-field)
+params-field = (s str, key str) (vs i64) {
+    vs = -1
+    p = root-field(s, 'params')
+    p < 0 -> return
+    vs = field-of(s, p, key)
+}
+
+; params.arguments 对象的成员
+; s: 整条消息
+; key: 键名
+; vs: 值起始下标；缺失回 -1
+; [jsonp.args-field](#jsonp.args-field)
+args-field = (s str, key str) (vs i64) {
+    vs = -1
+    p = root-field(s, 'params')
+    p < 0 -> return
+    a = field-of(s, p, 'arguments')
+    a < 0 -> return
+    vs = field-of(s, a, key)
+}
+
+; ═══════════════════════════════════════════════
+; 取值
+; ═══════════════════════════════════════════════
+
+; 值的原始文本（不转义、不剥引号）
+; s: 整条消息
+; vs: 值起始下标
+; v: 原始切片；下标非法回空串
+; [jsonp.raw-at](#jsonp.raw-at)
+raw-at = (s str, vs i64) (v str) {
+    v = ''
+    vs < 0 -> return
+    ve = value-end(s, vs)
+    ve < 0 -> return
+    v = bslice(s, vs, ve)
+}
+
+; 字符串值的正文（剥引号并解转义）
+; s: 整条消息
+; vs: 值起始下标
+; v: 正文；非字符串或下标非法回空串
+; [jsonp.str-at](#jsonp.str-at)
+str-at = (s str, vs i64) (v str) {
+    v = ''
+    vs < 0 -> return
+    b = byte-at(s, vs)
+    b != 34 -> return
+    ve = scan-string(s, vs)
+    ve < 0 -> return
+    v = unescape(bslice(s, add(vs, 1), sub(ve, 1)))
+}
+
+; 整数值
+; s: 整条消息
+; vs: 值起始下标
+; dft: 非数字时的默认值
+; v: 结果
+; [jsonp.int-at](#jsonp.int-at)
+int-at = (s str, vs i64, dft i64) (v i64) {
+    v = dft
+    raw = raw-at(s, vs)
+    t = raw.trim()
+    n = t.len-bytes()
+    n == 0 -> return
+    r = t.to-i64()
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 解转义
+; ═══════════════════════════════════════════════
+
+; 解常用 JSON 转义（\" \\ \/ \b \f \n \r \t 与 \uXXXX）
+; 无反斜杠时原样返回（常见路径，零拷贝开销）
+; s: 原始正文
+; out: 解转义后的正文
+; [jsonp.unescape](#jsonp.unescape)
+unescape = (s str) (out str) {
+    out = s
+    has = s.contains('\\')
+    has: {
+        false -> return
+
+        true -> _
+    }
+    buf []byte = []
+    n = s.len-bytes()
+    i = 0
+    !! {
+        i >= n -> break
+        b = byte-at(s, i)
+        nb = b == 92
+        nb: {
+            false -> {
+                buf.push(b)
+                i = add(i, 1)
+            }
+
+            true -> {
+                ni = add(i, 1)
+                e = byte-at(s, ni)
+                {
+                    e == 34 -> {
+                        buf.push(34)
+                        i = add(i, 2)
+                    }
+
+                    e == 92 -> {
+                        buf.push(92)
+                        i = add(i, 2)
+                    }
+
+                    e == 47 -> {
+                        buf.push(47)
+                        i = add(i, 2)
+                    }
+
+                    e == 98 -> {
+                        buf.push(8)
+                        i = add(i, 2)
+                    }
+
+                    e == 102 -> {
+                        buf.push(12)
+                        i = add(i, 2)
+                    }
+
+                    e == 110 -> {
+                        buf.push(10)
+                        i = add(i, 2)
+                    }
+
+                    e == 114 -> {
+                        buf.push(13)
+                        i = add(i, 2)
+                    }
+
+                    e == 116 -> {
+                        buf.push(9)
+                        i = add(i, 2)
+                    }
+
+                    e == 117 -> {
+                        hex-start = add(i, 2)
+                        hex-end = add(i, 6)
+                        hex = bslice(s, hex-start, hex-end)
+                        cp = hex-to-i64(hex)
+                        push-cp(buf, cp)
+                        i = add(i, 6)
+                    }
+
+                    -> {
+                        buf.push(92)
+                        i = add(i, 1)
+                    }
+                }
+            }
+        }
+    }
+    out = buf.to-bytes-str()
+}
+
+; 十六进制串转整数
+; s: 十六进制文本（1-8 位）
+; v: 结果；非法回 0
+; [jsonp.hex-to-i64](#jsonp.hex-to-i64)
+hex-to-i64 = (s str) (v i64) {
+    v = 0
+    n = s.len-bytes()
+    i <- [0..n): {
+        d = hex-digit(s, i)
+        d < 0 -> break
+        v = add(hex-mul(v), d)
+    }
+}
+
+; 乘以 16（两段式解包）
+; v: 数值
+; r: v * 16；溢出取 0
+; [jsonp.hex-mul](#jsonp.hex-mul)
+hex-mul = (v i64) (r i64) {
+    t = v * 16
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 取一位十六进制数字
+; s: 文本
+; i: 字节下标
+; v: 0-15；非十六进制回 -1
+; [jsonp.hex-digit](#jsonp.hex-digit)
+hex-digit = (s str, i i64) (v i64) {
+    v = -1
+    b = byte-at(s, i)
+    b < 0 -> return
+    is-digit = (b >= 48) && (b <= 57)
+    is-lower = (b >= 97) && (b <= 102)
+    is-upper = (b >= 65) && (b <= 70)
+    is-digit: {
+        true -> v = sub(b, 48)
+
+        false -> is-lower: {
+            true -> v = sub(b, 87)
+
+            false -> is-upper: {
+                true -> v = sub(b, 55)
+
+                false -> _
+            }
+        }
+    }
+}
+
+; 把一个码点按 UTF-8 压入字节缓冲
+; buf: 目标缓冲
+; cp: 码点
+; [jsonp.push-cp](#jsonp.push-cp)
+push-cp = (buf []byte, cp i64) {
+    cp < 0 -> return
+    small = cp < 128
+    small: {
+        true -> buf.push(cp)
+
+        false -> {
+            two = cp < 2048
+            two: {
+                true -> {
+                    b1 = add(192, div-64(cp))
+                    b2 = add(128, mod-64(cp))
+                    buf.push(b1)
+                    buf.push(b2)
+                }
+
+                false -> {
+                    b1 = add(224, div-4096(cp))
+                    b2 = add(128, mod-64(div-64(cp)))
+                    b3 = add(128, mod-64(cp))
+                    buf.push(b1)
+                    buf.push(b2)
+                    buf.push(b3)
+                }
+            }
+        }
+    }
+}
+
+; 除以 64（两段式解包）
+; v: 数值
+; r: v / 64
+; [jsonp.div-64](#jsonp.div-64)
+div-64 = (v i64) (r i64) {
+    t = v / 64
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 除以 4096（两段式解包）
+; v: 数值
+; r: v / 4096
+; [jsonp.div-4096](#jsonp.div-4096)
+div-4096 = (v i64) (r i64) {
+    t = v / 4096
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 对 64 取余（两段式解包）
+; v: 数值
+; r: v % 64
+; [jsonp.mod-64](#jsonp.mod-64)
+mod-64 = (v i64) (r i64) {
+    t = v % 64
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 顶层形态判定
+; ═══════════════════════════════════════════════
+
+; 判断像不像 JSON 数字
+; s: 文本
+; yes: true=只由数字与 - + . e E 组成且首字符合法
+; [jsonp.num-token](#jsonp.num-token)
+num-token = (s str) (yes bool) {
+    yes = false
+    n = s.len-bytes()
+    n == 0 -> return
+    b0 = byte-at(s, 0)
+    head = (b0 == 45) || ((b0 >= 48) && (b0 <= 57))
+    head: {
+        false -> return
+
+        true -> _
+    }
+    bad = 0
+    i <- [0..n): {
+        b = byte-at(s, i)
+        is-d = (b >= 48) && (b <= 57)
+        is-s = (b == 45) || (b == 43) || (b == 46) || (b == 101) || (b == 69)
+        fine = is-d || is-s
+        fine: {
+            true -> _
+
+            false -> bad = add(bad, 1)
+        }
+    }
+    z = bad == 0
+    z: {
+        true -> yes = true
+
+        false -> _
+    }
+}
+
+; 顶层形态判定
+; s: 整条消息
+; kind: 0=非法 JSON 1=对象 2=数组 3=其它合法标量
+; [jsonp.classify](#jsonp.classify)
+classify = (s str) (kind i64) {
+    kind = 0
+    n = s.len-bytes()
+    i = skip-ws(s, 0)
+    i >= n -> return
+    b = byte-at(s, i)
+    {
+        b == 123 -> {
+            e = scan-nested(s, i)
+            good = e > i
+            good: {
+                true -> kind = 1
+
+                false -> _
+            }
+        }
+
+        b == 91 -> {
+            e = scan-nested(s, i)
+            good = e > i
+            good: {
+                true -> kind = 2
+
+                false -> _
+            }
+        }
+
+        b == 34 -> {
+            e = scan-string(s, i)
+            good = e > i
+            good: {
+                true -> kind = 3
+
+                false -> _
+            }
+        }
+
+        -> {
+            e = scan-bare(s, i)
+            tok = bslice(s, i, e)
+            is-true = tok.eq-full('true')
+            is-false = tok.eq-full('false')
+            is-null = tok.eq-full('null')
+            is-lit = is-true || is-false || is-null
+            is-num = num-token(tok)
+            good = is-lit || is-num
+            good: {
+                true -> kind = 3
+
+                false -> _
+            }
+        }
+    }
+}

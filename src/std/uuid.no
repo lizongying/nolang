@@ -58,7 +58,14 @@ new-v4 = (state i64) (out uuid) {
         }
 
         #{overflow=wrap}
-        i = i + 4
+        {
+            #{overflow=wrap}
+            i-opt = i + 4
+            i-opt: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 
     ; 設定版本位：byte[6] 的高 4 位 = 0100 (version 4)
@@ -832,21 +839,42 @@ hex-val = (c i64) (v i64) {
         c >= 48 && c <= 57 -> {
 
             #{overflow=wrap}
-            v = c - 48
+            {
+                #{overflow=wrap}
+                v-opt = c - 48
+                v-opt: {
+                    ok -> v = it
+                    ->
+                }
+            }
             return
         }
 
         c >= 65 && c <= 70 -> {
 
             #{overflow=wrap}
-            v = c - 65 + 10
+            {
+                #{overflow=wrap}
+                v-opt2 = c - 65 + 10
+                v-opt2: {
+                    ok -> v = it
+                    ->
+                }
+            }
             return
         }
 
         c >= 97 && c <= 102 -> {
 
             #{overflow=wrap}
-            v = c - 97 + 10
+            {
+                #{overflow=wrap}
+                v-opt3 = c - 97 + 10
+                v-opt3: {
+                    ok -> v = it
+                    ->
+                }
+            }
         }
     }
 }

@@ -169,7 +169,14 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
             val < 0 -> {
 
                 #{overflow=wrap}
-                val = val + 256
+                {
+                    #{overflow=wrap}
+                    val-opt = val + 256
+                    val-opt: {
+                        ok -> val = it
+                        ->
+                    }
+                }
                 borrow = 1
             }
 
@@ -292,7 +299,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             }
 
             #{overflow=wrap}
-            val = pv2 + carry
+            {
+                #{overflow=wrap}
+                val-opt2 = pv2 + carry
+                val-opt2: {
+                    ok -> val = it
+                    ->
+                }
+            }
 
             product[idx]: {
                 ok -> it = val & 255
@@ -352,7 +366,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
 
         #{overflow=wrap}
-        bit = bit - 1
+        {
+            #{overflow=wrap}
+            bit-opt = bit - 1
+            bit-opt: {
+                ok -> bit = it
+                ->
+            }
+        }
     }
 
     ; 更簡單的方法：將 64 位元組分為高低兩半
@@ -431,12 +452,26 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
 
                     #{overflow=wrap}
-                    val = wv - pi - borrow
+                    {
+                        #{overflow=wrap}
+                        val-opt3 = wv - pi - borrow
+                        val-opt3: {
+                            ok -> val = it
+                            ->
+                        }
+                    }
                     {
                         val < 0 -> {
 
                             #{overflow=wrap}
-                            val = val + 256
+                            {
+                                #{overflow=wrap}
+                                val-opt4 = val + 256
+                                val-opt4: {
+                                    ok -> val = it
+                                    ->
+                                }
+                            }
                             borrow = 1
                         }
 
@@ -515,7 +550,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         val < 0 -> {
 
                             #{overflow=wrap}
-                            val = val + 256
+                            {
+                                #{overflow=wrap}
+                                val-opt5 = val + 256
+                                val-opt5: {
+                                    ok -> val = it
+                                    ->
+                                }
+                            }
                             borrow = 1
                         }
 
@@ -528,7 +570,13 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
                 }
                 (borrow != 0) {
-                    idx = pos + 32
+                    {
+                        idx-opt = pos + 32
+                        idx-opt: {
+                            ok -> idx = it
+                            ->
+                        }
+                    }
                     (idx < 64) {
                         wv i64 = work[idx]: {
                             ok -> it
@@ -537,12 +585,26 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         }
 
                         #{overflow=wrap}
-                        val = wv - borrow
+                        {
+                            #{overflow=wrap}
+                            val-opt6 = wv - borrow
+                            val-opt6: {
+                                ok -> val = it
+                                ->
+                            }
+                        }
                         {
                             val < 0 -> {
 
                                 #{overflow=wrap}
-                                val = val + 256
+                                {
+                                    #{overflow=wrap}
+                                    val-opt7 = val + 256
+                                    val-opt7: {
+                                        ok -> val = it
+                                        ->
+                                    }
+                                }
                                 borrow = 1
                             }
 
@@ -555,7 +617,14 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         }
 
                         #{overflow=wrap}
-                        idx = idx + 1
+                        {
+                            #{overflow=wrap}
+                            idx-opt2 = idx + 1
+                            idx-opt2: {
+                                ok -> idx = it
+                                ->
+                            }
+                        }
                     }
                 }
             }
@@ -564,11 +633,25 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
             }
 
             #{overflow=wrap}
-            corr = corr + 1
+            {
+                #{overflow=wrap}
+                corr-opt = corr + 1
+                corr-opt: {
+                    ok -> corr = it
+                    ->
+                }
+            }
         }
 
         #{overflow=wrap}
-        pos = pos - 1
+        {
+            #{overflow=wrap}
+            pos-opt = pos - 1
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
     i <- [0..32): {
         out[i] = work[i]
@@ -618,7 +701,14 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     (shift-byte > 0) {
 
         #{overflow=wrap}
-        shift-byte = shift-byte - 1
+        {
+            #{overflow=wrap}
+            shift-byte-opt = shift-byte - 1
+            shift-byte-opt: {
+                ok -> shift-byte = it
+                ->
+            }
+        }
 
         ; 嘗試在 acc[shift-byte..shift-byte+32) 處減去 m
         ; 同 bn-mulmod：真實值為 floor(acc / 256^shift_byte)，佔位元組
@@ -687,7 +777,14 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             val < 0 -> {
 
                                 #{overflow=wrap}
-                                val = val + 256
+                                {
+                                    #{overflow=wrap}
+                                    val-opt8 = val + 256
+                                    val-opt8: {
+                                        ok -> val = it
+                                        ->
+                                    }
+                                }
                                 borrow = 1
                             }
 
@@ -710,12 +807,26 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                             }
 
                             #{overflow=wrap}
-                            val = av - borrow
+                            {
+                                #{overflow=wrap}
+                                val-opt9 = av - borrow
+                                val-opt9: {
+                                    ok -> val = it
+                                    ->
+                                }
+                            }
                             {
                                 val < 0 -> {
 
                                     #{overflow=wrap}
-                                    val = val + 256
+                                    {
+                                        #{overflow=wrap}
+                                        val-opt10 = val + 256
+                                        val-opt10: {
+                                            ok -> val = it
+                                            ->
+                                        }
+                                    }
                                     borrow = 1
                                 }
 
@@ -736,7 +847,13 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             ; 傳播最後的借位到上位元組（強制減時窗口可能 < m 而產生借位）
             (borrow != 0) {
-                idx = shift-byte + 32
+                {
+                    idx-opt3 = shift-byte + 32
+                    idx-opt3: {
+                        ok -> idx = it
+                        ->
+                    }
+                }
                 (idx < 64) {
                     av i64 = acc[idx]: {
                         ok -> it
@@ -745,12 +862,26 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
 
                     #{overflow=wrap}
-                    val = av - borrow
+                    {
+                        #{overflow=wrap}
+                        val-opt11 = av - borrow
+                        val-opt11: {
+                            ok -> val = it
+                            ->
+                        }
+                    }
                     {
                         val < 0 -> {
 
                             #{overflow=wrap}
-                            val = val + 256
+                            {
+                                #{overflow=wrap}
+                                val-opt12 = val + 256
+                                val-opt12: {
+                                    ok -> val = it
+                                    ->
+                                }
+                            }
                             borrow = 1
                         }
 
@@ -763,12 +894,26 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     }
 
                     #{overflow=wrap}
-                    idx = idx + 1
+                    {
+                        #{overflow=wrap}
+                        idx-opt4 = idx + 1
+                        idx-opt4: {
+                            ok -> idx = it
+                            ->
+                        }
+                    }
                 }
             }
 
             #{overflow=wrap}
-            shift-byte = shift-byte + 1
+            {
+                #{overflow=wrap}
+                shift-byte-opt2 = shift-byte + 1
+                shift-byte-opt2: {
+                    ok -> shift-byte = it
+                    ->
+                }
+            }
         }
     }
     i <- [0..32): {
@@ -1251,7 +1396,14 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         }
 
         #{overflow=wrap}
-        bit = bit - 1
+        {
+            #{overflow=wrap}
+            bit-opt2 = bit - 1
+            bit-opt2: {
+                ok -> bit = it
+                ->
+            }
+        }
     }
 }
 

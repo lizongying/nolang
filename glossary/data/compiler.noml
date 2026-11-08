@@ -1,0 +1,304 @@
+{
+  version: 1
+  domain: 'compiler'
+  title: '编译器内部'
+  terms: {
+    'pipeline': {
+      title: '编译流水线'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'lexer → parser → checker → transpiler（LLVM IR）→ opt → llc → clang。'
+      aliases: ['pipeline', '编译流程', '阶段']
+      definition: `
+一次构建的固定顺序：
+1. lexer 切词；
+2. parser 建 AST（含降糖）；
+3. checker 做语义检查（签名、型别、所有权相关的静态检查）；
+4. transpiler 生成 LLVM IR；
+5. opt 优化 IR；
+6. llc 出目标文件；
+7. clang 链接出可执行。
+
+多数「莫名」的失败落在 4-7 段：报错信息短、位置指向链接或 IR 层。
+排查时应先确认前 3 段是否真的通过（用 no vet / fmt 单档对照）。
+`
+      syntax: `
+no build -o out pkg
+`
+      example: `
+lexer -> parser -> checker -> transpiler -> opt -> llc -> clang
+`
+      related: ['lexer', 'parser', 'checker', 'transpiler', 'llvm-toolchain']
+      refs: ['src', 'compiler/main.no']
+    }
+    'lexer': {
+      title: 'lexer'
+      kind: 'concept'
+      status: 'stable'
+      summary: '切词：关键字、标识符、字面量、注解与注释。'
+      aliases: ['词法', '切词', 'scanner']
+      definition: `
+把源码切成 token 流。要点：单引号是字符串、双引号是字符、反引号是原始块；
+分号起注释；# 起导入指令或 #{...} 注解。
+
+保留字里有几个反直觉的名字（如 run），用它们当函数名会得到离奇的语法错误。
+`
+      syntax: `
+'文本' "c" 42 3.14 true
+`
+      example: `
+# /pkg/src/a
+#{overflow=wrap}
+`
+      related: ['parser', 'syntax-raw-string', 'syntax-char-literal', 'reserved-run']
+      refs: ['src/lexer']
+    }
+    'parser': {
+      title: 'parser'
+      kind: 'concept'
+      status: 'stable'
+      summary: '递归下降建 AST，并在解析期做降糖；单文件规模近万行。'
+      aliases: ['语法分析', '降糖', 'AST']
+      definition: `
+单文件递归下降实现（规模近万行），负责把 token 变 AST，并完成多数语法糖的降糖：
+match 降成 if 链、option 解包、区间循环等。
+
+两条工程约束：
+1. 改动推断或降糖行为 ⇒ 必须 bump ASTVersion，否则磁盘缓存与内嵌 blob 会用旧结果；
+2. 形态敏感的改写必须过 shape gate —— 糖形态与 surface 形态的产物不同。
+`
+      syntax: `
+go test ./src/parser/
+`
+      example: `
+ASTVersion = '2026-11-08.4'
+`
+      related: ['lexer', 'checker', 'ast-version', 'fmt-shape-gate']
+      refs: ['src/parser', 'src/parser/lowering.go']
+    }
+    'checker': {
+      title: 'checker'
+      kind: 'concept'
+      status: 'stable'
+      summary: '语义检查：型别、签名、所有权与溢出注解的静态验证。'
+      aliases: ['语义分析', '类型检查']
+      definition: `
+在 AST 上做语义检查，产出诊断。它掌握四张签名表投影（与 std blob 的 Config 戳相关），
+也是 StdSigKey 校验发生的地方之一。
+
+近年趋严的两条规则都在这一层：
+1. 整型算术结果是 ?i64，把它赋给非 option 目标（局部变量 / 结果参数）是硬错误；
+2. 已存在的 plain 变量不能收到 option 右值（由 HINT 收紧为硬错误）。
+
+这类收紧会让既有语料成批失败 —— 判定回归时要先分清「自身回归」与「规则收紧」。
+`
+      syntax: `
+./bin/no vet src/std
+`
+      example: `
+[ERROR] ... plain 變數收到 option 右值 [15w45dqk]
+`
+      related: ['parser', 'builtin-method', 'diagnostic', 'std-sig-key']
+      refs: ['src/checker', 'src/checker/checker.go']
+    }
+    'hir': {
+      title: 'HIR（高层中间表示）'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'AST 之后的高层 IR；单态化与 HIR 重建后仍需还原注解语义。'
+      aliases: ['HIR', '高层 IR']
+      definition: `
+位于 AST 与 MIR 之间的高层中间表示，承担单态化等工作。
+
+一个实做约束：HIR 重建后 side-table 不可靠，因此注解里影响语义的部分
+（如 overflow 模式）必须存进节点字段，靠 AST 流转而不是侧表查。
+`
+      syntax: `
+tohir(ast)
+`
+      example: `
+fd.OverflowMode = 'wrap'
+`
+      related: ['parser', 'mir', 'overflow']
+      refs: ['src/parser/tohir.go', 'src/hir']
+    }
+    'mir': {
+      title: 'MIR（中间表示后端）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '比 AST 更低层的中间表示；原生后端 nocg/nold 的目标载体。'
+      aliases: ['MIR', '中间表示', 'MIR 后端']
+      definition: `
+中间表示层。目前 IR 生成主要仍走 LLVM（transpiler + opt + llc + clang），
+MIR 是「原生后端」方案的载体，目标是减少对 LLVM 的依赖与启动开销。
+
+MIR 后端当前还有明确的开放问题，集中在内存安全三项：
+长串下标写缺增长护栏、数组转切片后非平凡元素视图可能悬垂、
+向量元素赋值共享缓冲缺 clone。
+`
+      syntax: `
+MIR codegen could not handle <file>: EmitLLVM: unknown callee x.y
+`
+      example: `
+[ERROR] MIR codegen could not handle foo.no: EmitLLVM: unsupported value type %e [4qhyyund]
+`
+      related: ['hir', 'transpiler', 'memory-safety-gap']
+      refs: ['src/mir', 'docs/design/nolang-native-backend.md']
+    }
+    'transpiler': {
+      title: 'transpiler（LLVM IR 生成）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '把 AST/HIR 翻成 LLVM IR；EmitLLVM 系列报错都在这一层。'
+      aliases: ['IR 生成', 'codegen', 'EmitLLVM']
+      definition: `
+生成 LLVM IR 的阶段。诊断前缀写 EmitLLVM，常见形态：
+- unknown callee x.y：跨模块方法解析失败（多见于模块级变量的非平凡型别）；
+- unsupported value type %e：结构体作纯值未被使用之类；
+- setfield: field not found：字段解析与预期型别不符。
+
+这类错误的共同特征是「位置信息少」，排查要回到 AST 层看实际推断型别。
+`
+      syntax: `
+EmitLLVM: unknown callee [str]i64.put
+`
+      example: `
+[ERROR] ... EmitLLVM: setfield: field "buf" not found on "sb.sb"
+`
+      related: ['mir', 'pipeline', 'llvm-toolchain']
+      refs: ['src/build', 'compiler/src/cg.no']
+    }
+    'builtin-method': {
+      title: 'BuiltinMethod'
+      kind: 'concept'
+      status: 'stable'
+      summary: '编译器里登记「内建方法」的机制，键即 #{buildin} 的函数名。'
+      aliases: ['BuiltinMethod', '内建方法表']
+      definition: `
+Go 侧登记内建方法的表：以方法名（或型别.方法名）为键，指向 runtime 实现。
+nolang 侧用 #{buildin} 声明同名函数（体可以为空），两边靠名字对上。
+
+其中 ElemParams 字段描述元素型别参数，用于参数检查时放行 / 收窄元素型别。
+新增内建要同时改两边，否则会出现「能编译但运行时找不到实现」。
+`
+      syntax: `
+#{buildin}
+net-accept = (listen-fd fd) (fd fd) {
+}
+`
+      example: `
+BuiltinMethod{Name: "listen-on", ElemParams: ...}
+`
+      related: ['buildin', 'checker', 'elem-params']
+      refs: ['src/checker', 'src/std/net/net.no']
+    }
+    'elem-params': {
+      title: 'ElemParams'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'BuiltinMethod 上描述元素型别的参数；检查取参数型别时按它放行。'
+      aliases: ['ElemParams', '元素参数']
+      definition: `
+内建方法常对「元素型别」做泛化，例如接收 []T 的 push。ElemParams 用来声明
+这类参数如何从调用点推断，让 checkStdMethodCallArgs 在参数检查时按元素型别放行。
+配错的表现是「明明型别一致却报参数不匹配」，或反之放行过宽。
+`
+      syntax: `
+ElemParams: []ElemParam{...}
+`
+      example: `
+push: {Params: [T], ElemParams: [index 0]}
+`
+      related: ['builtin-method', 'checker']
+      refs: ['src/checker', 'src/std/vec.no']
+    }
+    'golden-test': {
+      title: '金标回归（golden）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '冻结某次提交的输出作为基线，逐档比对；冻结越久越难判读。'
+      aliases: ['golden', '金标', '基线回归']
+      definition: `
+把某个历史提交的编译输出冻结成基线，之后逐档比对，用来抓「不该变却变了」的回归。
+
+代价：基线冻结得越久，与当前实现的差距越大，出现差异时很难判断是
+「新引入的回归」还是「基线早就过期」。当前的金标已明显过期，
+数字类回归需要逐档二分而不是看总数。
+`
+      syntax: `
+REGRESS 12 / PASS 340
+`
+      example: `
+63895e59  (2026-09-22 冻结)
+`
+      related: ['make-test', 'no-test']
+      refs: ['test/std', 'Makefile']
+    }
+    'i18n': {
+      title: 'i18n（诊断多语言）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '诊断文案按 locale 分档，九个 locale 必须全覆盖。'
+      aliases: ['i18n', '多语言', '本地化']
+      definition: `
+编译器诊断与 CLI 文案都在 i18n 目录下按 locale 分档（de/en/es/fr/ja/ko/pt/ru/zh-cn/zh-tw）。
+新增讯息要跑 make i18n 并补齐九个档，测试 TestEveryLocaleCoversEn 会把关。
+
+硬约束：i18n.T 的 message ID 必须是字串字面量（不能拼），否则提取工具抓不到。
+`
+      syntax: `
+i18n.T('hc3a6zzw')
+`
+      example: `
+make i18n
+`
+      related: ['diagnostic', 'error-id']
+      refs: ['src/i18n', 'src/i18n/catalog/locales']
+    }
+    'diagnostic': {
+      title: '诊断（diagnostic）'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'ERROR / WARNING / HINT 三档，各带稳定 ID 与位置。'
+      aliases: ['诊断', '报错']
+      definition: `
+统一的三档诊断：ERROR 阻断编译，WARNING 提示，HINT 建议。
+每条都带位置（文件:行:列）与稳定 ID。
+
+「HINT 收紧为 ERROR」是本项目常见的演进方式：先以 HINT 上线观察语料，
+再一次性收紧。遇到成批失败时先确认是不是这类收紧。
+`
+      syntax: `
+file.no:12:5: [ERROR] nolang-compile: ... [15w45dqk]
+`
+      example: `
+1 error(s), 0 warning(s), 0 hint(s)
+`
+      related: ['i18n', 'error-id', 'checker']
+      refs: ['src/checker', 'src/i18n']
+    }
+    'memory-safety-gap': {
+      title: 'MIR 内存安全开放项'
+      kind: 'concept'
+      status: 'unstable'
+      summary: 'MIR 后端三项已知缺口：长串下标写、数组转切片视图、向量元素赋值。'
+      aliases: ['内存安全缺口', '开放问题']
+      definition: `
+MIR 后端当前明确未修的三项：
+1. 长串（%str-long）下标写缺少增长护栏；
+2. vecFromArraySink 对非平凡元素产生的视图可能悬垂；
+3. %vec 元素赋值共享缓冲、缺少 clone。
+
+这三项属于「已在设计里登记、实现未跟上」，写 MIR 相关代码时要主动规避。
+`
+      syntax: `
+%str-long / %vec / vecFromArraySink
+`
+      example: `
+%vec 元素赋值 ⇒ 需要 clone
+`
+      related: ['mir', 'view-alias', 'deep-clone']
+      refs: ['src/mir', 'docs/design/nolang-native-backend.md']
+    }
+  }
+}

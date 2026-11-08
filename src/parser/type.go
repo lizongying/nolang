@@ -252,6 +252,20 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 	if ident, ok := call.Function.(*Identifier); ok {
 		// 同檔案函數調用（如 foo()）：以裸名查找
 		fnName := ident.Value
+		// 🔴 接收者糖已被降掉的**方法呼叫**（`b.to-i()` → `box.to-i(b)`）在這裡
+		// 以「裸識別符 + 帶點名字」的形式出現，其結果列表落在 methodSignatures
+		// （decl.go 的 IsMethodDef 分支），下面就只查 funcSignatures，於是回傳型別
+		// 恆為空。這不是小事：值位 match 的呼叫主語靠這個型別判定 `?T` 並歸一化成
+		// `__match_subj` 臨時變數；判定失敗 ⇒ 不歸一化 ⇒ ok 臂沒有 `let it` ⇒
+		// 臂內 `it` 未綁定，觀測為 0（`bv = b.to-i(): { ok -> it  -> 999 }`）。
+		//
+		// LLVM 路徑必然走這裡：merged program 在此之前已把方法呼叫改寫成
+		// 「全名 + 接收者當第一實參」，所以 H0 看到的 callee 是 Identifier。
+		if strings.Contains(fnName, ".") && p.methodSignatures != nil {
+			if rets, ok := p.methodSignatures[fnName]; ok && len(rets) == 1 {
+				return rets[0]
+			}
+		}
 		if p.funcSignatures != nil {
 			if rets, ok := p.funcSignatures[fnName]; ok && len(rets) == 1 {
 				return rets[0]

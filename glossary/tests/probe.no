@@ -1,0 +1,211 @@
+; probe — Phase 0 探针
+;
+; 验证 glossary 依赖的三个前提，任一失败就说明主选方案要换：
+;   1. 跨模块访问 noml-doc 的 pool 字段并按节点索引取子节点
+;      （noml-doc 的访问器全部写死 .root，遍历 terms 必须走 noml-pool）
+;   2. 全 i64 字段的结构体放进 []T，push 与索引读（?T 解包）可用
+;   3. 文件级 #{embed} 的路径基准与 []byte 返回（目录级 fs.embed 在本二进制
+;      实测不可用：count 恒 0、read 方法不派发，故数据自包含走逐文件嵌入）
+;
+; 写法说明：15w45dqk 严格模式下，「局部变量/结果参数」直接接收整数算术结果是
+; 硬错误（#{overflow=wrap} 只改溢出取值、不改结果型别）；模块级变量与结构体
+; 字段的赋值走 AssignExpression 路径，不受该规则约束。本探针的计数器因此用
+; 模块级变量。
+;
+; 执行：./bin/no build -o /tmp/probe glossary/tests/probe.no && /tmp/probe
+
+#{embed='/glossary/data/index.noml'}
+F_INDEX []byte
+
+; 探针用结构体：字段全 i64（[]T 元素不携带 str）
+probe-term {
+    a i64
+    b i64
+}
+
+bad-total = 0
+
+; 记录一次失败
+fail-note = (what str) {
+    bad-total = bad-total + 1
+    print('FAIL ' - what)
+}
+
+; 记录一次通过
+pass-note = (what str) {
+    print('ok   ' - what)
+}
+
+; 前提 1：跨模块 pool 索引访问
+probe-pool = () {
+    text = '{\nterms: {\noption: {\nsummary: \'hello-sentinel\'\n}\n}\n}'
+    r = noml.parse(text)
+    d noml-doc
+    parsed = false
+    r: {
+        ok -> {
+            d = it
+            parsed = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    parsed: {
+        true -> pass-note('noml.parse -> ok')
+
+        false -> {
+            fail-note('noml.parse 未返回 ok')
+            return
+        }
+    }
+
+    ; 根是对象，按根相对 API 取 terms
+    ti = -1
+    tv = d.get('terms')
+    tv: {
+        ok -> ti = it
+
+        nil -> _
+
+        err -> _
+    }
+    ti: {
+        -1 -> {
+            fail-note('d.get(terms) 未取到子节点')
+            return
+        }
+
+        -> pass-note('d.get(terms) 取到子节点 ' - ti.to-str())
+    }
+
+    ; 关键：按节点索引取子节点，必须走 pool
+    ci = -1
+    cv = d.pool.get(ti, 'option')
+    cv: {
+        ok -> ci = it
+
+        nil -> _
+
+        err -> _
+    }
+    ci: {
+        -1 -> {
+            fail-note('d.pool.get(terms, option) 不可用 —— 需切备选方案')
+            return
+        }
+
+        -> pass-note('d.pool.get(terms, option) 取到子节点 ' - ci.to-str())
+    }
+
+    ; 关键：按节点索引取字符串值
+    sv = d.pool.get-str(ci, 'summary')
+    s = ''
+    hit = false
+    sv: {
+        ok -> {
+            s = it
+            hit = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    hit: {
+        false -> fail-note('d.pool.get-str(option, summary) 不可用')
+
+        true -> {
+
+            ; match 主题必须是裸标识符，先把呼叫结果落到变量
+            same = s.eq-full('hello-sentinel')
+            same: {
+                true -> pass-note('d.pool.get-str 取到 summary=' - s)
+
+                false -> fail-note('d.pool.get-str 取到的值不对: ' - s)
+            }
+        }
+    }
+}
+
+; 前提 2：[]T（全 i64 字段）+ push + 索引读解包
+probe-vec = () {
+    ts []probe-term = []
+    x = probe-term {
+        a: 11
+        b: 22
+    }
+    ts.push(x)
+    n = ts.len()
+    n: {
+        1 -> pass-note('[]probe-term push 后 len=1')
+
+        -> fail-note('[]probe-term push 后 len=' - n.to-str())
+    }
+
+    e probe-term
+    got = false
+    ev = ts[0]
+    ev: {
+        ok -> {
+            e = it
+            got = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    got: {
+        false -> fail-note('ts[0] 未返回 ok')
+
+        true -> {
+            ok-fields = false
+            ok-fields = e.a == 11 && e.b == 22
+            ok-fields: {
+                true -> pass-note('ts[0] 字段读回正确')
+
+                false -> fail-note('ts[0] 字段读回错: ' - e.a.to-str() - '/' - e.b.to-str())
+            }
+        }
+    }
+}
+
+; 前提 3：文件级嵌入（自包含兜底）
+probe-embed = () {
+    nbytes = F_INDEX.len()
+    nbytes: {
+        0 -> fail-note('F_INDEX 为空，文件嵌入未生效')
+
+        -> pass-note('文件嵌入取到 index.noml ' - nbytes.to-str() - ' 字节')
+    }
+
+    ; 内嵌内容应能被 noml.parse 接受
+    txt = F_INDEX.to-bytes-str()
+    pr = noml.parse(txt)
+    pr: {
+        ok -> pass-note('内嵌 index.noml 可被 noml.parse 解析')
+
+        nil -> fail-note('内嵌 index.noml 解析返回 nil')
+
+        err -> fail-note('内嵌 index.noml 解析失败')
+    }
+}
+
+probe-pool()
+probe-vec()
+probe-embed()
+
+print('---')
+{
+    bad-total == 0 -> {
+        print('PROBE PASS (binding: noml-doc.pool indexed access works)')
+        exit(0)
+    }
+
+    -> {
+        print('PROBE FAIL: ' - bad-total.to-str() - ' 项不成立')
+        exit(1)
+    }
+}

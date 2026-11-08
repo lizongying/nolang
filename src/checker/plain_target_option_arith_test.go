@@ -6,26 +6,28 @@ import (
 	"github.com/lizongying/nolang/parser"
 )
 
-// 本檔案是 D1 嚴格模式（2026-10-14）的回歸釘：**寫在收到算術那一行上**的 plain
-// 整數標註不是「把 option 拉回 plain」的開關，而是把 err 分支靜默丟掉的隱含解包，
-// 因此必須是 ERROR。
+// 本檔案是 D1 嚴格模式（2026-10-14；2026-11-08 收緊）的回歸釘：把 option 值
+// 直接指派給 **plain 變數**（不論標註寫在哪一行）都是把 err 分支靜默丟掉的隱含
+// 解包，因此必須是 ERROR。
 //
-// 使用者原始需求（nouv/src/settings.no）：
+// 使用者原始需求（src/std/json.no 的 `p = p + 1`）：
 //
-//	k i64 = i + 1 #{overflow=wrap}   ; ← 錯誤（本檔的拒絕清單）
+//	k i64 = i + 1 #{overflow=wrap}   ; ← 錯誤（本行明文標註）
+//	p = 0; p = p + 1                ; ← 錯誤（標註在前一行／結果參數）
 //	k = i + 1 #{overflow=wrap}       ; ← 唯一合法形狀，k 是 ?i64，接著 match 解包
 //
 // 判據：`#{overflow=...}` 註解只改變「失敗時怎麼取值」，不改變結果型別 ——
 // 見 parser/lowering.go inferOptionArith 的 D1 段。因此帶不帶註解，右值都是 `?T`。
 //
-// 🔴 邊界（與 lowering 逐字鏡像，改動前必讀 upgradeOptionArithTargetType 的註解）：
-// 明文標註只有寫在「本行」才算靜默解包。plain 宣告在別的陳述／簽名上時，
-// captureTargetAllowsOption 會以「已存在變數不改型別」否決 option 合成，得到的是
-// 自洽的 plain（t58 `hold`／`pna`、blake2_mask 的 `i = 0; i = i + 1`）——
-// 那些形狀**合法**，在本檔的 legal 清單裡釘死，不許回歸成誤報。
+// 🔴 2026-11-08 收緊：過去只有「標註寫在本行」被拒絕；「先 plain 宣告、之後重
+// 指派」（t58 `hold`／`pna`、blake2_mask 的 `i = 0; i = i + 1`）與結果參數重綁定
+// 靠 lowering 的 captureTargetAllowsOption 否決 option 合成，被當成自洽的 plain
+// 放行。那是實作品面的妥協，不是語言語意，使用者裁定撤銷：如今全部是硬錯誤，
+// 在 TestPlainTargetRejectsOptionArithReassignment 的拒絕清單裡釘死。
 //
-// 實作在 checker.go：upgradeOptionArithTargetType 把推斷型別升格為 `?T`，
-// 交由既有的 15w45dqk（let）判定開火。AssignExpression 路徑刻意不接
+// 實作在 checker.go：upgradeOptionArithTargetType（本行標註）與 validateStmtTypes
+// 後段（已存在 plain 變數）把推斷型別升格為 `?T`，交由既有的 15w45dqk（let）
+// 判定開火。AssignExpression 路徑刻意不接
 // （見 TestAssignExpressionIdentifierLHSIsUnreachable）。
 
 // TestPlainTargetRejectsOptionArith 只有一種形狀必須是 ERROR：**本行**帶著使用者
@@ -116,6 +118,89 @@ func TestPlainTargetRejectsOptionArith(t *testing.T) {
 			results := ValidateTypes(parseProg(t, c.src))
 			if n := countTrace(results, "15w45dqk"); n == 0 {
 				t.Fatalf("explicit plain annotation on option arithmetic must be rejected, got 0; all: %v", results)
+			}
+		})
+	}
+}
+
+// TestPlainTargetRejectsOptionArithReassignment 是 2026-11-08 收緊的回歸釘：
+// **已存在的 plain 變數**（含結果參數）收到 option 算術／option 呼叫同樣是隱含
+// 解包，必須是 ERROR。標註寫在前一行或函式簽名上都不構成豁免。
+//
+// 首例即使用者回報的 src/std/json.no 真實形狀：
+//
+//	#{overflow=wrap}
+//	p = p + 1
+//
+// 過去 inferExprType 對它只回 "i64"（看不到 overflow option），所以整條型別比對
+// 被跳過；現在 checker 把右值本質升格為 `?i64`，讓既有 15w45dqk 開火。
+func TestPlainTargetRejectsOptionArithReassignment(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "json_no_wrap_counter",
+			src: `f = (r i64) {
+    p = 0
+    #{overflow=wrap}
+    p = p + 1
+    r = p
+}`,
+		},
+		{
+			name: "reassign_into_plain_declared_local",
+			src: `f = (a i64, b i64) (r i64) {
+    x i64 = 0
+    x = a + b
+    r = x
+}`,
+		},
+		{
+			name: "reassign_into_inferred_plain_local",
+			src: `f = (a i64, b i64) (r i64) {
+    #{overflow=wrap}
+    x = 0
+    x = a + b
+    r = x
+}`,
+		},
+		{
+			name: "result_param_plain_target",
+			src: `f = (a i64, b i64) (r i64) {
+    r = a + b
+}`,
+		},
+		{
+			name: "result_param_plain_target_wrap",
+			src: `f = (a i64, b i64) (r i64) {
+    #{overflow=wrap}
+    r = a + b
+}`,
+		},
+		{
+			name: "nested_arith_reassign",
+			src: `f = (a i64, b i64) (r i64) {
+    x = 0
+    x = a + b * 2
+    r = x
+}`,
+		},
+		{
+			// 呼叫版：已存在的 plain 變數收到 option-returning 模組函式。
+			name: "option_call_reassign_into_plain_local",
+			src: `f = (i i64) (r i64) {
+    x str = ''
+    x = os.arg(i + 1)
+    r = 1
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			results := ValidateTypes(parseProg(t, c.src))
+			if n := countTrace(results, "15w45dqk"); n != 1 {
+				t.Fatalf("existing plain target must be rejected exactly once, got %d diagnostic(s): %v", n, results)
 			}
 		})
 	}
@@ -223,44 +308,36 @@ func TestPlainTargetOptionArithLegalShapes(t *testing.T) {
 }`,
 		},
 		{
-			// 純量出參：plain 宣告在簽名上，本行無標註。lowering 的
-			// captureTargetAllowsOption 以「已存在變數不改型別」否決 option 合成，
-			// 是自洽的 plain；由 ovf-int-default / ovfhndld HINT 提示。
-			// 回歸依據：src/build/lib_export_sem_test.go 的 bad.no 反向斷言
-			// （只看「有沒有報」，不看 severity）。
-			name: "result_param_plain_target",
+			// 目標本來就是 option：重指派 option 算術不是隱含解包，必須放行。
+			name: "reassign_into_option_declared_local",
 			src: `f = (a i64, b i64) (r i64) {
-    r = a + b
-}`,
-		},
-		{
-			name: "result_param_plain_target_wrap",
-			src: `f = (a i64, b i64) (r i64) {
-    #{overflow=wrap}
-    r = a + b
-}`,
-		},
-		{
-			// 先明文宣告 plain、之後無標註重指派。合成被「已存在變數不改型別」
-			// 否決，靜默解包不發生在本行的任何標註上。
-			// 回歸依據：compiler/tests/fixtures/t58-d6-arith-option.no 的 `hold`。
-			name: "reassign_into_plain_declared_local",
-			src: `f = (a i64, b i64) (r i64) {
-    x i64 = 0
+    x ?i64 = ok(0)
     x = a + b
-    r = x
+    r = 0
+    x: {
+        ok -> {
+            r = it
+        }
+        -> {
+            r = -1
+        }
+    }
 }`,
 		},
 		{
-			// 先無標註（推斷出 plain）、之後無標註重指派。t58 的 `pna` / `fnb` 形狀，
-			// 也是 corpus 裡 `i = 0` + `i = i + 1 #{overflow=wrap}` 迴圈的真實形狀
-			// （回歸依據：src/checker/blake2_mask_test.go、src/build/lib_export_sem_test.go）。
-			name: "reassign_into_inferred_plain_local",
+			// 新綁定（不在 varTypes）：lowering 就地合成 ?T，合法。
+			name: "new_binding_of_option_arith",
 			src: `f = (a i64, b i64) (r i64) {
-    #{overflow=wrap}
-    x = 0
     x = a + b
-    r = x
+    r = 0
+    x: {
+        ok -> {
+            r = it
+        }
+        -> {
+            r = -1
+        }
+    }
 }`,
 		},
 		{
@@ -276,6 +353,16 @@ func TestPlainTargetOptionArithLegalShapes(t *testing.T) {
 			name: "string_concat",
 			src: `f = (a str, b str) (r str) {
     r = a - b
+}`,
+		},
+		{
+			// 純字面算術是 comptime 常數（`0 - 1` 會折成 -1），沒有 option tag 可丟。
+			// 誤報會讓 --fix=unwrap 造出 `x ?= 0 - 1`，撞上 5l952ztl。
+			name: "pure_literal_arith_reassign",
+			src: `f = () (r i64) {
+    exp-sign = 1
+    exp-sign = 0 - 1
+    r = exp-sign
 }`,
 		},
 		{

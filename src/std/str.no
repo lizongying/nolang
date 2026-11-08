@@ -264,10 +264,28 @@ str.cp-index = (byte-pos i64) (cp i64) {
         b = .byte(i)
 
         #{overflow=wrap}
-        b < 0x80 -> cp = cp + 1
+        b < 0x80 -> {
+            {
+                #{overflow=wrap}
+                cp-opt = cp + 1
+                cp-opt: {
+                    ok -> cp = it
+                    ->
+                }
+            }
+        }
 
         #{overflow=wrap}
-        b >= 0x80 && (b & 0xc0) == 0xc0 -> cp = cp + 1
+        b >= 0x80 && (b & 0xc0) == 0xc0 -> {
+            {
+                #{overflow=wrap}
+                cp-opt2 = cp + 1
+                cp-opt2: {
+                    ok -> cp = it
+                    ->
+                }
+            }
+        }
     }
 }
 
@@ -285,23 +303,62 @@ str.byte-index = (cp-pos i64) (byte i64) {
 
         #{overflow=wrap}
         {
-            b < 0x80 -> byte = byte + 1
+            b < 0x80 -> {
+                {
+                    byte-opt = byte + 1
+                    byte-opt: {
+                        ok -> byte = it
+                        ->
+                    }
+                }
+            }
 
             -> {
 
                 #{overflow=wrap}
                 {
-                    b >= 0xf0 -> byte = byte + 4
+                    b >= 0xf0 -> {
+                        {
+                            byte-opt2 = byte + 4
+                            byte-opt2: {
+                                ok -> byte = it
+                                ->
+                            }
+                        }
+                    }
 
-                    b >= 0xe0 -> byte = byte + 3
+                    b >= 0xe0 -> {
+                        {
+                            byte-opt3 = byte + 3
+                            byte-opt3: {
+                                ok -> byte = it
+                                ->
+                            }
+                        }
+                    }
 
-                    -> byte = byte + 2
+                    -> {
+                        {
+                            byte-opt4 = byte + 2
+                            byte-opt4: {
+                                ok -> byte = it
+                                ->
+                            }
+                        }
+                    }
                 }
             }
         }
 
         #{overflow=wrap}
-        cp = cp + 1
+        {
+            #{overflow=wrap}
+            cp-opt3 = cp + 1
+            cp-opt3: {
+                ok -> cp = it
+                ->
+            }
+        }
     }
     byte = .len-bytes()
 }
@@ -642,7 +699,7 @@ str.to-i64 = () (val ?i64) {
                             #{overflow=wrap}
                             n = 0 - 922337203685477580
 
-                            n = n * 10 - 8
+                            n ?= n * 10 - 8
                             val = n
                             return
                         }
@@ -665,7 +722,16 @@ str.to-i64 = () (val ?i64) {
     }
 
     #{overflow=wrap}
-    neg == 1 -> n = 0 - n
+    neg == 1 -> {
+        {
+            #{overflow=wrap}
+            n-opt = 0 - n
+            n-opt: {
+                ok -> n = it
+                ->
+            }
+        }
+    }
     val = n
 }
 
@@ -980,9 +1046,21 @@ bigint-bitlen = (b bigint) (out i64) {
     t = top
     (t > 0) {
         t = t >> 1
-        sh = sh + 1
+        {
+            sh-opt = sh + 1
+            sh-opt: {
+                ok -> sh = it
+                ->
+            }
+        }
     }
-    out = out + sh
+    {
+        out-opt = out + sh
+        out-opt: {
+            ok -> out = it
+            ->
+        }
+    }
 }
 
 ; 將十進位/科學記號文本解析為 f64（Nolang 實作，不依賴 strtod）
@@ -1010,7 +1088,15 @@ str-to-f64 = (s str) (result f64) {
             -> 0
         }
         {
-            c == 32 || c == 9 || c == 10 || c == 13 -> i = i + 1
+            c == 32 || c == 9 || c == 10 || c == 13 -> {
+                {
+                    i-opt = i + 1
+                    i-opt: {
+                        ok -> i = it
+                        ->
+                    }
+                }
+            }
 
             -> break
         }
@@ -1027,10 +1113,24 @@ str-to-f64 = (s str) (result f64) {
     {
         c == 45 -> {
             sign = -1
-            i = i + 1
+            {
+                i-opt2 = i + 1
+                i-opt2: {
+                    ok -> i = it
+                    ->
+                }
+            }
         }
 
-        c == 43 -> i = i + 1
+        c == 43 -> {
+            {
+                i-opt3 = i + 1
+                i-opt3: {
+                    ok -> i = it
+                    ->
+                }
+            }
+        }
     }
 
     ; 整數部分 → int-mant = int-mant * 10 + digit
@@ -1050,7 +1150,13 @@ str-to-f64 = (s str) (result f64) {
                 dig = bigint.from-i64(c - 48)
                 int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
                 has-digit = 1
-                i = i + 1
+                {
+                    i-opt4 = i + 1
+                    i-opt4: {
+                        ok -> i = it
+                        ->
+                    }
+                }
             }
 
             -> break
@@ -1067,7 +1173,13 @@ str-to-f64 = (s str) (result f64) {
         }
         {
             c == 46 -> {
-                i = i + 1
+                {
+                    i-opt5 = i + 1
+                    i-opt5: {
+                        ok -> i = it
+                        ->
+                    }
+                }
                 (i < n) {
                     copt = s.byte(i)
                     c = copt: {
@@ -1081,9 +1193,21 @@ str-to-f64 = (s str) (result f64) {
                             ; 同整數部分：巢狀 block 裡用公開方法鏈累積。
                             dig = bigint.from-i64(c - 48)
                             int-mant = int-mant.mul-bigint(ten).add-bigint(dig)
-                            frac-count = frac-count + 1
+                            {
+                                frac-count-opt = frac-count + 1
+                                frac-count-opt: {
+                                    ok -> frac-count = it
+                                    ->
+                                }
+                            }
                             has-digit = 1
-                            i = i + 1
+                            {
+                                i-opt6 = i + 1
+                                i-opt6: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
                         }
 
                         -> break
@@ -1106,7 +1230,13 @@ str-to-f64 = (s str) (result f64) {
         }
         {
             c == 101 || c == 69 -> {
-                i = i + 1
+                {
+                    i-opt7 = i + 1
+                    i-opt7: {
+                        ok -> i = it
+                        ->
+                    }
+                }
                 (i < n) {
                     copt = s.byte(i)
                     c = copt: {
@@ -1117,10 +1247,24 @@ str-to-f64 = (s str) (result f64) {
                     {
                         c == 45 -> {
                             exp-sign = -1
-                            i = i + 1
+                            {
+                                i-opt8 = i + 1
+                                i-opt8: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
                         }
 
-                        c == 43 -> i = i + 1
+                        c == 43 -> {
+                            {
+                                i-opt9 = i + 1
+                                i-opt9: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
+                        }
 
                         -> break
                     }
@@ -1136,8 +1280,21 @@ str-to-f64 = (s str) (result f64) {
                         c >= 48 && c <= 57 -> {
 
                             #{overflow=wrap}
-                            exp-val = exp-val * 10 + (c - 48)
-                            i = i + 1
+                            {
+                                #{overflow=wrap}
+                                exp-val-opt = exp-val * 10 + (c - 48)
+                                exp-val-opt: {
+                                    ok -> exp-val = it
+                                    ->
+                                }
+                            }
+                            {
+                                i-opt10 = i + 1
+                                i-opt10: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
                         }
 
                         -> break
@@ -1181,11 +1338,27 @@ str-to-f64 = (s str) (result f64) {
     e = nbl - dbl
     {
         e >= 0 -> {
-            (bigint.shl(den, e).cmp(num) > 0) -> e = e - 1
+            (bigint.shl(den, e).cmp(num) > 0) -> {
+                {
+                    e-opt = e - 1
+                    e-opt: {
+                        ok -> e = it
+                        ->
+                    }
+                }
+            }
         }
 
         -> {
-            (bigint.shl(num, 0 - e).cmp(den) < 0) -> e = e - 1
+            (bigint.shl(num, 0 - e).cmp(den) < 0) -> {
+                {
+                    e-opt2 = e - 1
+                    e-opt2: {
+                        ok -> e = it
+                        ->
+                    }
+                }
+            }
         }
     }
 
@@ -1229,7 +1402,13 @@ str-to-f64 = (s str) (result f64) {
             j = 0
             (j < 1074) {
                 inv1074f = inv1074f / 2.0
-                j = j + 1
+                {
+                    j-opt = j + 1
+                    j-opt: {
+                        ok -> j = it
+                        ->
+                    }
+                }
             }
             frac-f64 f64 = frac-b.to-i64(): {
                 ok -> it.to-f64()
@@ -1270,7 +1449,13 @@ str-to-f64 = (s str) (result f64) {
 
     ; 溢位保護：wv >= 2^53 ⇒ e+1, m=0（最終由 scale 迴圈得 inf）
     (wv.cmp(two53) >= 0) -> {
-        e = e + 1
+        {
+            e-opt3 = e + 1
+            e-opt3: {
+                ok -> e = it
+                ->
+            }
+        }
         wv = two52.copy()
     }
 
@@ -1288,17 +1473,35 @@ str-to-f64 = (s str) (result f64) {
     k = 0
     (k < 52) {
         two52f = two52f * 2.0
-        k = k + 1
+        {
+            k-opt = k + 1
+            k-opt: {
+                ok -> k = it
+                ->
+            }
+        }
     }
     val-f = 1.0 + (mv / two52f)
     scale = 1.0
     (e > 0) {
         scale = scale * 2.0
-        e = e - 1
+        {
+            e-opt4 = e - 1
+            e-opt4: {
+                ok -> e = it
+                ->
+            }
+        }
     }
     (e < 0) {
         scale = scale / 2.0
-        e = e + 1
+        {
+            e-opt5 = e + 1
+            e-opt5: {
+                ok -> e = it
+                ->
+            }
+        }
     }
     result = val-f * scale
     (sign < 0) -> result = -result
@@ -1484,17 +1687,56 @@ str.count = () (cnt i64) {
 
         #{overflow=wrap}
         {
-            b < 0x80 -> i = i + 1
+            b < 0x80 -> {
+                {
+                    i-opt11 = i + 1
+                    i-opt11: {
+                        ok -> i = it
+                        ->
+                    }
+                }
+            }
 
-            b < 0xe0 -> i = i + 2
+            b < 0xe0 -> {
+                {
+                    i-opt12 = i + 2
+                    i-opt12: {
+                        ok -> i = it
+                        ->
+                    }
+                }
+            }
 
-            b < 0xf0 -> i = i + 3
+            b < 0xf0 -> {
+                {
+                    i-opt13 = i + 3
+                    i-opt13: {
+                        ok -> i = it
+                        ->
+                    }
+                }
+            }
 
-            -> i = i + 4
+            -> {
+                {
+                    i-opt14 = i + 4
+                    i-opt14: {
+                        ok -> i = it
+                        ->
+                    }
+                }
+            }
         }
 
         #{overflow=wrap}
-        cnt = cnt + 1
+        {
+            #{overflow=wrap}
+            cnt-opt = cnt + 1
+            cnt-opt: {
+                ok -> cnt = it
+                ->
+            }
+        }
     }
 }
 
@@ -1550,21 +1792,68 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
 
                 #{overflow=wrap}
                 {
-                    new-ch < 0x80 -> out-n = out-n + 1
+                    new-ch < 0x80 -> {
+                        {
+                            out-n-opt = out-n + 1
+                            out-n-opt: {
+                                ok -> out-n = it
+                                ->
+                            }
+                        }
+                    }
 
-                    new-ch < 0x800 -> out-n = out-n + 2
+                    new-ch < 0x800 -> {
+                        {
+                            out-n-opt2 = out-n + 2
+                            out-n-opt2: {
+                                ok -> out-n = it
+                                ->
+                            }
+                        }
+                    }
 
-                    new-ch < 0x10000 -> out-n = out-n + 3
+                    new-ch < 0x10000 -> {
+                        {
+                            out-n-opt3 = out-n + 3
+                            out-n-opt3: {
+                                ok -> out-n = it
+                                ->
+                            }
+                        }
+                    }
 
-                    -> out-n = out-n + 4
+                    -> {
+                        {
+                            out-n-opt4 = out-n + 4
+                            out-n-opt4: {
+                                ok -> out-n = it
+                                ->
+                            }
+                        }
+                    }
                 }
             }
 
-            -> out-n = out-n + clen
+            -> {
+                {
+                    out-n-opt5 = out-n + clen
+                    out-n-opt5: {
+                        ok -> out-n = it
+                        ->
+                    }
+                }
+            }
         }
 
         #{overflow=wrap}
-        i = i + clen
+        {
+            #{overflow=wrap}
+            i-opt15 = i + clen
+            i-opt15: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 
     ; 第二遍：寫入输出
@@ -1607,20 +1896,38 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             cp == old-ch -> {
                 new-ch < 0x80 -> {
                     val[j] = new-ch
-                    j = j + 1
+                    {
+                        j-opt2 = j + 1
+                        j-opt2: {
+                            ok -> j = it
+                            ->
+                        }
+                    }
                 }
 
                 new-ch < 0x800 -> {
                     val[j] = 0xc0 | ((new-ch >> 6) & 0x1f)
                     val[j + 1] = 0x80 | (new-ch & 0x3f)
-                    j = j + 2
+                    {
+                        j-opt3 = j + 2
+                        j-opt3: {
+                            ok -> j = it
+                            ->
+                        }
+                    }
                 }
 
                 new-ch < 0x10000 -> {
                     val[j] = 0xe0 | ((new-ch >> 12) & 0x0f)
                     val[j + 1] = 0x80 | ((new-ch >> 6) & 0x3f)
                     val[j + 2] = 0x80 | (new-ch & 0x3f)
-                    j = j + 3
+                    {
+                        j-opt4 = j + 3
+                        j-opt4: {
+                            ok -> j = it
+                            ->
+                        }
+                    }
                 }
 
                 -> {
@@ -1628,7 +1935,13 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                     val[j + 1] = 0x80 | ((new-ch >> 12) & 0x3f)
                     val[j + 2] = 0x80 | ((new-ch >> 6) & 0x3f)
                     val[j + 3] = 0x80 | (new-ch & 0x3f)
-                    j = j + 4
+                    {
+                        j-opt5 = j + 4
+                        j-opt5: {
+                            ok -> j = it
+                            ->
+                        }
+                    }
                 }
             }
 
@@ -1640,12 +1953,26 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 }
 
                 #{overflow=wrap}
-                j = j + clen
+                {
+                    #{overflow=wrap}
+                    j-opt6 = j + clen
+                    j-opt6: {
+                        ok -> j = it
+                        ->
+                    }
+                }
             }
         }
 
         #{overflow=wrap}
-        i = i + clen
+        {
+            #{overflow=wrap}
+            i-opt16 = i + clen
+            i-opt16: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 }
 
@@ -1694,7 +2021,14 @@ str.trim-char = (ch char) (val str) {
         cp != ch -> break
 
         #{overflow=wrap}
-        start = start + clen
+        {
+            #{overflow=wrap}
+            start-opt = start + clen
+            start-opt: {
+                ok -> start = it
+                ->
+            }
+        }
     }
 
     ; 後向裁剪：從 start 開始掃描，找到最後一個不等於 ch 的 code point 的結束位置
@@ -1732,10 +2066,26 @@ str.trim-char = (ch char) (val str) {
         }
 
         #{overflow=wrap}
-        cp != ch -> end = i + clen
+        cp != ch -> {
+            {
+                #{overflow=wrap}
+                end-opt = i + clen
+                end-opt: {
+                    ok -> end = it
+                    ->
+                }
+            }
+        }
 
         #{overflow=wrap}
-        i = i + clen
+        {
+            #{overflow=wrap}
+            i-opt17 = i + clen
+            i-opt17: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 
     #{overflow=wrap}
@@ -1836,21 +2186,42 @@ str-hex-val = (c i64) (v i64) {
         c >= 48 && c <= 57 -> {
 
             #{overflow=wrap}
-            v = c - 48
+            {
+                #{overflow=wrap}
+                v-opt = c - 48
+                v-opt: {
+                    ok -> v = it
+                    ->
+                }
+            }
             return
         }
 
         c >= 65 && c <= 70 -> {
 
             #{overflow=wrap}
-            v = c - 65 + 10
+            {
+                #{overflow=wrap}
+                v-opt2 = c - 65 + 10
+                v-opt2: {
+                    ok -> v = it
+                    ->
+                }
+            }
             return
         }
 
         c >= 97 && c <= 102 -> {
 
             #{overflow=wrap}
-            v = c - 97 + 10
+            {
+                #{overflow=wrap}
+                v-opt3 = c - 97 + 10
+                v-opt3: {
+                    ok -> v = it
+                    ->
+                }
+            }
         }
     }
 }
@@ -1906,21 +2277,42 @@ _str-dig-val = (c i64) (d i64) {
         c >= 48 && c <= 57 -> {
 
             #{overflow=wrap}
-            d = c - 48
+            {
+                #{overflow=wrap}
+                d-opt = c - 48
+                d-opt: {
+                    ok -> d = it
+                    ->
+                }
+            }
             return
         }
 
         c >= 65 && c <= 70 -> {
 
             #{overflow=wrap}
-            d = c - 55
+            {
+                #{overflow=wrap}
+                d-opt2 = c - 55
+                d-opt2: {
+                    ok -> d = it
+                    ->
+                }
+            }
             return
         }
 
         c >= 97 && c <= 102 -> {
 
             #{overflow=wrap}
-            d = c - 87
+            {
+                #{overflow=wrap}
+                d-opt3 = c - 87
+                d-opt3: {
+                    ok -> d = it
+                    ->
+                }
+            }
         }
     }
 }
@@ -1947,7 +2339,7 @@ str.to-bigint = () (out ?bigint) {
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
         #{overflow=wrap}
-        pos = pos + 1
+        pos ?= pos + 1
     }
 
     ; 可選正負號
@@ -1958,13 +2350,13 @@ str.to-bigint = () (out ?bigint) {
             sign = -1
 
             #{overflow=wrap}
-            pos = pos + 1
+            pos ?= pos + 1
         }
 
         c == 43 -> {
 
             #{overflow=wrap}
-            pos = pos + 1
+            pos ?= pos + 1
         }
     }
 
@@ -1979,21 +2371,21 @@ str.to-bigint = () (out ?bigint) {
                     radix = 2
 
                     #{overflow=wrap}
-                    pos = pos + 2
+                    pos ?= pos + 2
                 }
 
                 c1 == 111 || c1 == 79 -> {
                     radix = 8
 
                     #{overflow=wrap}
-                    pos = pos + 2
+                    pos ?= pos + 2
                 }
 
                 c1 == 120 || c1 == 88 -> {
                     radix = 16
 
                     #{overflow=wrap}
-                    pos = pos + 2
+                    pos ?= pos + 2
                 }
             }
         }
@@ -2012,7 +2404,7 @@ str.to-bigint = () (out ?bigint) {
         started = 1
 
         #{overflow=wrap}
-        pos = pos + 1
+        pos ?= pos + 1
     }
 
     started == 0 -> {
@@ -2134,7 +2526,14 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             #{overflow=wrap}
-            j = j + 1
+            {
+                #{overflow=wrap}
+                j-opt7 = j + 1
+                j-opt7: {
+                    ok -> j = it
+                    ->
+                }
+            }
         }
         {
             match -> {
@@ -2149,10 +2548,24 @@ str.replace-str = (old str, new str) (val str) {
             -> {
 
                 #{overflow=wrap}
-                out-len = out-len + 1
+                {
+                    #{overflow=wrap}
+                    out-len-opt = out-len + 1
+                    out-len-opt: {
+                        ok -> out-len = it
+                        ->
+                    }
+                }
 
                 #{overflow=wrap}
-                i = i + 1
+                {
+                    #{overflow=wrap}
+                    i-opt18 = i + 1
+                    i-opt18: {
+                        ok -> i = it
+                        ->
+                    }
+                }
             }
         }
     }
@@ -2181,7 +2594,14 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             #{overflow=wrap}
-            j = j + 1
+            {
+                #{overflow=wrap}
+                j-opt8 = j + 1
+                j-opt8: {
+                    ok -> j = it
+                    ->
+                }
+            }
         }
         {
             match -> {
@@ -2189,7 +2609,14 @@ str.replace-str = (old str, new str) (val str) {
                     val[pos] = new.byte(k)
 
                     #{overflow=wrap}
-                    pos = pos + 1
+                    {
+                        #{overflow=wrap}
+                        pos-opt = pos + 1
+                        pos-opt: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
                 }
 
                 #{overflow=wrap}
@@ -2200,10 +2627,24 @@ str.replace-str = (old str, new str) (val str) {
                 val[pos] = .byte(i)
 
                 #{overflow=wrap}
-                pos = pos + 1
+                {
+                    #{overflow=wrap}
+                    pos-opt2 = pos + 1
+                    pos-opt2: {
+                        ok -> pos = it
+                        ->
+                    }
+                }
 
                 #{overflow=wrap}
-                i = i + 1
+                {
+                    #{overflow=wrap}
+                    i-opt19 = i + 1
+                    i-opt19: {
+                        ok -> i = it
+                        ->
+                    }
+                }
             }
         }
     }
@@ -2365,7 +2806,13 @@ str.replace-n = (old str, new str, n i64) (val str) {
             i > repl -> sep = old
             j <- [0..sep.len-bytes()): {
                 val[pos] = sep.byte(j)
-                pos = pos + 1
+                {
+                    pos-opt3 = pos + 1
+                    pos-opt3: {
+                        ok -> pos = it
+                        ->
+                    }
+                }
             }
         }
 
@@ -2378,7 +2825,14 @@ str.replace-n = (old str, new str, n i64) (val str) {
             val[pos] = s.byte(j)
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt4 = pos + 1
+                pos-opt4: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
     }
 }
@@ -2418,7 +2872,14 @@ str.split-n = (sep str, maxsplit i64) (out []str) {
         start = pos + sep.len-bytes()
 
         #{overflow=wrap}
-        count = count + 1
+        {
+            #{overflow=wrap}
+            count-opt = count + 1
+            count-opt: {
+                ok -> count = it
+                ->
+            }
+        }
         pos = .find-byte-from(sep, start)
     }
     result.push(.slice-bytes(start, .len-bytes()))
@@ -2448,14 +2909,35 @@ str.lines = () (out []str) {
 
                 #{overflow=wrap}
                 prev = .byte(i - 1)
-                prev == 13 -> end = i - 1
+                prev == 13 -> {
+                    {
+                        end-opt2 = i - 1
+                        end-opt2: {
+                            ok -> end = it
+                            ->
+                        }
+                    }
+                }
             }
             result.push(.slice-bytes(start, end))
-            start = i + 1
+            {
+                start-opt2 = i + 1
+                start-opt2: {
+                    ok -> start = it
+                    ->
+                }
+            }
         }
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt20 = i + 1
+            i-opt20: {
+                ok -> i = it
+                ->
+            }
+        }
     }
     start < .len-bytes() -> result.push(.slice-bytes(start, .len-bytes()))
     out = result

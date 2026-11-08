@@ -145,7 +145,14 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = first & 63
 
             #{overflow=wrap}
-            next-pos = pos + 1
+            {
+                #{overflow=wrap}
+                next-pos-opt = pos + 1
+                next-pos-opt: {
+                    ok -> next-pos = it
+                    ->
+                }
+            }
         }
 
         prefix == 1 -> {
@@ -162,7 +169,14 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = ((first & 63) << 8) | (ixout157c42)
 
             #{overflow=wrap}
-            next-pos = pos + 2
+            {
+                #{overflow=wrap}
+                next-pos-opt2 = pos + 2
+                next-pos-opt2: {
+                    ok -> next-pos = it
+                    ->
+                }
+            }
         }
 
         prefix == 2 -> {
@@ -196,7 +210,14 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = val | (ixout176c26)
 
             #{overflow=wrap}
-            next-pos = pos + 4
+            {
+                #{overflow=wrap}
+                next-pos-opt3 = pos + 4
+                next-pos-opt3: {
+                    ok -> next-pos = it
+                    ->
+                }
+            }
         }
 
         -> {
@@ -262,7 +283,14 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
             val = val | (ixout207c26)
 
             #{overflow=wrap}
-            next-pos = pos + 8
+            {
+                #{overflow=wrap}
+                next-pos-opt4 = pos + 8
+                next-pos-opt4: {
+                    ok -> next-pos = it
+                    ->
+                }
+            }
         }
     }
 }
@@ -352,7 +380,14 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         r-pos = r-pos + frames[count].length
 
         #{overflow=wrap}
-        count = count + 1
+        {
+            #{overflow=wrap}
+            count-opt = count + 1
+            count-opt: {
+                ok -> count = it
+                ->
+            }
+        }
     }
 
     ; CONNECTION_CLOSE (0x1c)
@@ -385,12 +420,26 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             #{overflow=wrap}
-            r-pos = rl-np + rl-val
+            {
+                #{overflow=wrap}
+                r-pos-opt = rl-np + rl-val
+                r-pos-opt: {
+                    ok -> r-pos = it
+                    ->
+                }
+            }
 
             frames[count].length = 0
 
             #{overflow=wrap}
-            count = count + 1
+            {
+                #{overflow=wrap}
+                count-opt2 = count + 1
+                count-opt2: {
+                    ok -> count = it
+                    ->
+                }
+            }
         }
 
         ft == QUIC-FRAME-CONNECTION-CLOSE-APP -> {
@@ -414,12 +463,26 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             #{overflow=wrap}
-            r-pos = rl-np + rl-val
+            {
+                #{overflow=wrap}
+                r-pos-opt2 = rl-np + rl-val
+                r-pos-opt2: {
+                    ok -> r-pos = it
+                    ->
+                }
+            }
 
             frames[count].length = 0
 
             #{overflow=wrap}
-            count = count + 1
+            {
+                #{overflow=wrap}
+                count-opt3 = count + 1
+                count-opt3: {
+                    ok -> count = it
+                    ->
+                }
+            }
         }
 
         ft == QUIC-FRAME-HANDSHAKE-DONE -> {
@@ -429,7 +492,14 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             #{overflow=wrap}
-            count = count + 1
+            {
+                #{overflow=wrap}
+                count-opt4 = count + 1
+                count-opt4: {
+                    ok -> count = it
+                    ->
+                }
+            }
         }
 
         ft == QUIC-FRAME-NEW-TOKEN -> {
@@ -445,12 +515,26 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             }
 
             #{overflow=wrap}
-            r-pos = tl-np + tl-val
+            {
+                #{overflow=wrap}
+                r-pos-opt3 = tl-np + tl-val
+                r-pos-opt3: {
+                    ok -> r-pos = it
+                    ->
+                }
+            }
 
             frames[count].length = 0
 
             #{overflow=wrap}
-            count = count + 1
+            {
+                #{overflow=wrap}
+                count-opt5 = count + 1
+                count-opt5: {
+                    ok -> count = it
+                    ->
+                }
+            }
         }
 
         ft == QUIC-FRAME-MAX-DATA || ft == QUIC-FRAME-MAX-STREAMS-BIDI || ft == QUIC-FRAME-DATA-BLOCKED || ft == QUIC-FRAME-STREAM-DATA-BLOCKED -> {
@@ -469,7 +553,14 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
             frames[count].length = 0
 
             #{overflow=wrap}
-            count = count + 1
+            {
+                #{overflow=wrap}
+                count-opt6 = count + 1
+                count-opt6: {
+                    ok -> count = it
+                    ->
+                }
+            }
         }
     }
     r-pos = end
@@ -640,7 +731,14 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
         }
 
         #{overflow=wrap}
-        j = j + 1
+        {
+            #{overflow=wrap}
+            j-opt = j + 1
+            j-opt: {
+                ok -> j = it
+                ->
+            }
+        }
     }
 }
 
@@ -733,9 +831,25 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
 
     #{overflow=wrap}
     {
-        candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> candidate-pn = candidate-pn + pn-win
+        candidate-pn <= expected-pn - pn-hwin && candidate-pn < (1 << 62) - pn-win -> {
+            {
+                candidate-pn-opt = candidate-pn + pn-win
+                candidate-pn-opt: {
+                    ok -> candidate-pn = it
+                    ->
+                }
+            }
+        }
 
-        candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win -> candidate-pn = candidate-pn - pn-win
+        candidate-pn > expected-pn + pn-hwin && candidate-pn >= pn-win -> {
+            {
+                candidate-pn-opt2 = candidate-pn - pn-win
+                candidate-pn-opt2: {
+                    ok -> candidate-pn = it
+                    ->
+                }
+            }
+        }
     }
     pn = candidate-pn
 }
@@ -847,7 +961,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     packet[pos + 3] = 1
 
     #{overflow=wrap}
-    pos = pos + 4
+    pos ?= pos + 4
 
     ; 3. Destination CID length + CID
     dcid-len = .remote-cid.len()
@@ -855,7 +969,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     packet[pos] = dcid-len & 255
 
     #{overflow=wrap}
-    pos = pos + 1
+    pos ?= pos + 1
     i <- [0..dcid-len): {
 
         #{overflow=wrap}
@@ -863,7 +977,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     }
 
     #{overflow=wrap}
-    pos = pos + dcid-len
+    pos ?= pos + dcid-len
 
     ; 4. Source CID length + CID
     scid-len = .local-cid.len()
@@ -871,7 +985,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     packet[pos] = scid-len & 255
 
     #{overflow=wrap}
-    pos = pos + 1
+    pos ?= pos + 1
     i <- [0..scid-len): {
 
         #{overflow=wrap}
@@ -879,13 +993,13 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     }
 
     #{overflow=wrap}
-    pos = pos + scid-len
+    pos ?= pos + scid-len
 
     ; 5. Token length (0 for client Initial)
     packet[pos] = 0
 
     #{overflow=wrap}
-    pos = pos + 1
+    pos ?= pos + 1
 
     ; 6. Length (varint) — 預留位置，稍後填入
     length-pos = pos
@@ -912,7 +1026,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     }
 
     #{overflow=wrap}
-    pos = pos + len-n
+    pos ?= pos + len-n
 
     ; 7. Packet Number (4 bytes, big-endian)
     pn-offset = pos
@@ -929,7 +1043,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     packet[pos + 3] = pn & 255
 
     #{overflow=wrap}
-    pos = pos + pn-len
+    pos ?= pos + pn-len
 
     ; 8. CRYPTO frame
     frame-start = pos
@@ -951,7 +1065,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     }
 
     #{overflow=wrap}
-    pos = pos + crypto-ft-n
+    pos ?= pos + crypto-ft-n
 
     ; Offset = 0
     off-buf []byte
@@ -970,7 +1084,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     }
 
     #{overflow=wrap}
-    pos = pos + off-n
+    pos ?= pos + off-n
 
     ; Length
     data-len-buf []byte
@@ -989,7 +1103,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     }
 
     #{overflow=wrap}
-    pos = pos + data-len-n
+    pos ?= pos + data-len-n
 
     ; Data
     i <- [0..crypto-data.len()): {
@@ -1013,7 +1127,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
         packet[pos] = 0
 
         #{overflow=wrap}
-        pos = pos + 1
+        pos ?= pos + 1
     }
 
     ; ── AEAD 加密 ──
@@ -1134,7 +1248,14 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     ; 跳過 Version (4 bytes)
     #{overflow=wrap}
-    pos = pos + 4
+    {
+        #{overflow=wrap}
+        pos-opt = pos + 4
+        pos-opt: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; Destination CID
     pos >= end -> return
@@ -1146,7 +1267,14 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
 
     #{overflow=wrap}
-    pos = pos + 1 + dcid-len
+    {
+        #{overflow=wrap}
+        pos-opt2 = pos + 1 + dcid-len
+        pos-opt2: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; Source CID
     pos >= end -> return
@@ -1158,7 +1286,14 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     }
 
     #{overflow=wrap}
-    pos = pos + 1 + scid-len
+    {
+        #{overflow=wrap}
+        pos-opt3 = pos + 1 + scid-len
+        pos-opt3: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; Token length (varint)
     token-len = 0
@@ -1167,7 +1302,14 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     token-np < 0 -> return
 
     #{overflow=wrap}
-    pos = token-np + token-len
+    {
+        #{overflow=wrap}
+        pos-opt4 = token-np + token-len
+        pos-opt4: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; Length (varint)
     length-val = 0

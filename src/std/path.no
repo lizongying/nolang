@@ -338,9 +338,7 @@ path.clean = () {
 
                                 ; 保留該 '/' 本身 ⇒ 後續內容從它後面接上
                                 #{overflow=wrap}
-                                out-n-opt = j + 1
-                                out-n = 0
-                                out-n = out-n-opt: {
+                                out-n = j + 1: {
                                     ok -> it
 
                                     -> 0
@@ -350,7 +348,14 @@ path.clean = () {
                             }
 
                             #{overflow=wrap}
-                            j = j - 1
+                            {
+                                #{overflow=wrap}
+                                j-opt = j - 1
+                                j-opt: {
+                                    ok -> j = it
+                                    ->
+                                }
+                            }
                         }
                         {
                             j < 0 -> {
@@ -375,7 +380,14 @@ path.clean = () {
                             }
 
                             #{overflow=wrap}
-                            out-n = out-n + 1
+                            {
+                                #{overflow=wrap}
+                                out-n-opt2 = out-n + 1
+                                out-n-opt2: {
+                                    ok -> out-n = it
+                                    ->
+                                }
+                            }
                         }
                     }
 
@@ -389,7 +401,14 @@ path.clean = () {
                         }
 
                         #{overflow=wrap}
-                        out-n = out-n + 1
+                        {
+                            #{overflow=wrap}
+                            out-n-opt3 = out-n + 1
+                            out-n-opt3: {
+                                ok -> out-n = it
+                                ->
+                            }
+                        }
                     }
                 }
                 dot-count = 0
@@ -398,7 +417,14 @@ path.clean = () {
             c == DOT-BYTE -> {
 
                 #{overflow=wrap}
-                dot-count = dot-count + 1
+                {
+                    #{overflow=wrap}
+                    dot-count-opt = dot-count + 1
+                    dot-count-opt: {
+                        ok -> dot-count = it
+                        ->
+                    }
+                }
             }
 
             -> {
@@ -414,7 +440,14 @@ path.clean = () {
                     }
 
                     #{overflow=wrap}
-                    out-n = out-n + 1
+                    {
+                        #{overflow=wrap}
+                        out-n-opt4 = out-n + 1
+                        out-n-opt4: {
+                            ok -> out-n = it
+                            ->
+                        }
+                    }
                 }
 
                 dot-count = 0
@@ -428,7 +461,14 @@ path.clean = () {
                 }
 
                 #{overflow=wrap}
-                out-n = out-n + 1
+                {
+                    #{overflow=wrap}
+                    out-n-opt5 = out-n + 1
+                    out-n-opt5: {
+                        ok -> out-n = it
+                        ->
+                    }
+                }
             }
         }
     }
@@ -440,14 +480,28 @@ path.clean = () {
         dot-count == 2 -> {
 
             #{overflow=wrap}
-            j = out-n - 2
+            {
+                #{overflow=wrap}
+                j-opt2 = out-n - 2
+                j-opt2: {
+                    ok -> j = it
+                    ->
+                }
+            }
             (j >= 0) {
 
                 #{overflow=wrap}
                 .p.byte(j) == SEP-BYTE -> {
 
                     #{overflow=wrap}
-                    out-n-opt = j + 1
+                    {
+                        #{overflow=wrap}
+                        out-n-opt-opt = j + 1
+                        out-n-opt-opt: {
+                            ok -> out-n-opt = it
+                            ->
+                        }
+                    }
                     out-n = 0
                     out-n = out-n-opt: {
                         ok -> it
@@ -459,7 +513,14 @@ path.clean = () {
                 }
 
                 #{overflow=wrap}
-                j = j - 1
+                {
+                    #{overflow=wrap}
+                    j-opt3 = j - 1
+                    j-opt3: {
+                        ok -> j = it
+                        ->
+                    }
+                }
             }
             {
                 j < 0 -> {
@@ -478,7 +539,16 @@ path.clean = () {
         prev = .p.byte(out-n - 1)
 
         #{overflow=wrap}
-        prev == SEP-BYTE -> out-n = out-n - 1
+        prev == SEP-BYTE -> {
+            {
+                #{overflow=wrap}
+                out-n-opt6 = out-n - 1
+                out-n-opt6: {
+                    ok -> out-n = it
+                    ->
+                }
+            }
+        }
     }
     .p.len = out-n
 }

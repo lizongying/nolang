@@ -50,7 +50,14 @@ from-i64 = (v i64) (out bigint) {
             out.sign = -1
 
             #{overflow=wrap}
-            r-v = 0 - r-v
+            {
+                #{overflow=wrap}
+                r-v-opt = 0 - r-v
+                r-v-opt: {
+                    ok -> r-v = it
+                    ->
+                }
+            }
         }
 
         -> out.sign = 1
@@ -543,7 +550,13 @@ bigint._mul-i64 = (v i64) (c bigint) {
     #{overflow=wrap}
     r-v < 0 -> {
         sign = -sign
-        r-v = 0 - r-v
+        {
+            r-v-opt2 = 0 - r-v
+            r-v-opt2: {
+                ok -> r-v = it
+                ->
+            }
+        }
     }
 
     ; 把 r-v（完整 64-bit 無號值）拆成至多 2 個 32-bit limb，再交給 mul 處理。
@@ -655,7 +668,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     shift = 0
     (bt >> 31 == 0) {
         bt = bt << 1
-        shift = shift + 1
+        {
+            shift-opt = shift + 1
+            shift-opt: {
+                ok -> shift = it
+                ->
+            }
+        }
     }
 
     ; 正規化除數 norm-b = b << shift
@@ -839,7 +858,14 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         }
 
         #{overflow=wrap}
-        qi = qi - 1
+        {
+            #{overflow=wrap}
+            qi-opt = qi - 1
+            qi-opt: {
+                ok -> qi = it
+                ->
+            }
+        }
     }
 
     #{overflow=wrap}
@@ -861,7 +887,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             -> _
         }
         rc = ((rcur & ((1 << shift) - 1)) << (32 - shift)) & MASK
-        ri = ri - 1
+        {
+            ri-opt = ri - 1
+            ri-opt: {
+                ok -> ri = it
+                ->
+            }
+        }
     }
     r.normalize()
 }
@@ -874,7 +906,16 @@ bigint._div-i64 = (v i64) (q bigint) {
     r-v = v
 
     #{overflow=wrap}
-    r-v < 0 -> r-v = 0 - r-v
+    r-v < 0 -> {
+        {
+            #{overflow=wrap}
+            r-v-opt3 = 0 - r-v
+            r-v-opt3: {
+                ok -> r-v = it
+                ->
+            }
+        }
+    }
     q.sign = .sign
     q.limbs = with-len(.len)
     q.len = .len
@@ -890,7 +931,13 @@ bigint._div-i64 = (v i64) (q bigint) {
 
         #{overflow=wrap}
         q.limbs[i] = cur / r-v
-        rem = cur % r-v
+        {
+            rem-opt = cur % r-v
+            rem-opt: {
+                ok -> rem = it
+                ->
+            }
+        }
     }
     q.normalize()
 }
@@ -905,7 +952,16 @@ bigint._mod-i64 = (v i64) (r ?i64) {
     r-v = v
 
     #{overflow=wrap}
-    r-v < 0 -> r-v = 0 - r-v
+    r-v < 0 -> {
+        {
+            #{overflow=wrap}
+            r-v-opt4 = 0 - r-v
+            r-v-opt4: {
+                ok -> r-v = it
+                ->
+            }
+        }
+    }
     rem = 0
 
     #{overflow=wrap}
@@ -915,7 +971,7 @@ bigint._mod-i64 = (v i64) (r ?i64) {
             -> 0
         }
         cur = (rem << 32) | (li & MASK)
-        rem = cur % r-v
+        rem ?= cur % r-v
     }
     r = rem
 }
@@ -969,7 +1025,14 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
         tv = tv >> 1
 
         #{overflow=wrap}
-        lead = lead + 1
+        {
+            #{overflow=wrap}
+            lead-opt = lead + 1
+            lead-opt: {
+                ok -> lead = it
+                ->
+            }
+        }
     }
 
     #{overflow=wrap}
@@ -1194,7 +1257,14 @@ bigint.to-str = () (out str) {
         }
 
         #{overflow=wrap}
-        bufn = bufn + 1
+        {
+            #{overflow=wrap}
+            bufn-opt = bufn + 1
+            bufn-opt: {
+                ok -> bufn = it
+                ->
+            }
+        }
         next = tmp._div-i64(10)
         tmp = next
     }
@@ -1212,10 +1282,24 @@ bigint.to-str = () (out str) {
         out[out-n] = ixout1077c22
 
         #{overflow=wrap}
-        out-n = out-n + 1
+        {
+            #{overflow=wrap}
+            out-n-opt = out-n + 1
+            out-n-opt: {
+                ok -> out-n = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        j = j - 1
+        {
+            #{overflow=wrap}
+            j-opt = j - 1
+            j-opt: {
+                ok -> j = it
+                ->
+            }
+        }
     }
 }
 
@@ -1326,9 +1410,21 @@ bigint.to-hex = () (out str) {
                         done == 1 || nibble != 0
                         done = 1
                         out[out-n] = hex[nibble]
-                        out-n = out-n + 1
+                        {
+                            out-n-opt2 = out-n + 1
+                            out-n-opt2: {
+                                ok -> out-n = it
+                                ->
+                            }
+                        }
                     }
-                    shift = shift - 4
+                    {
+                        shift-opt2 = shift - 4
+                        shift-opt2: {
+                            ok -> shift = it
+                            ->
+                        }
+                    }
                 }
             }
         }
@@ -1338,10 +1434,24 @@ bigint.to-hex = () (out str) {
             out[out-n] = hex[nibble]
 
             #{overflow=wrap}
-            out-n = out-n + 1
+            {
+                #{overflow=wrap}
+                out-n-opt3 = out-n + 1
+                out-n-opt3: {
+                    ok -> out-n = it
+                    ->
+                }
+            }
 
             #{overflow=wrap}
-            shift = shift - 4
+            {
+                #{overflow=wrap}
+                shift-opt3 = shift - 4
+                shift-opt3: {
+                    ok -> shift = it
+                    ->
+                }
+            }
         }
     }
 }

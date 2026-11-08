@@ -115,7 +115,14 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
             }
 
             #{overflow=wrap}
-            idx = idx + 1
+            {
+                #{overflow=wrap}
+                idx-opt = idx + 1
+                idx-opt: {
+                    ok -> idx = it
+                    ->
+                }
+            }
             idx >= .cap -> idx = 0
         }
 
@@ -161,7 +168,7 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
         }
 
         #{overflow=wrap}
-        idx = idx + 1
+        idx ?= idx + 1
         idx >= .cap -> idx = 0
     }
 }
@@ -206,7 +213,14 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
             }
 
             #{overflow=wrap}
-            idx = idx + 1
+            {
+                #{overflow=wrap}
+                idx-opt2 = idx + 1
+                idx-opt2: {
+                    ok -> idx = it
+                    ->
+                }
+            }
             idx >= .cap -> idx = 0
         }
     }: {
@@ -294,7 +308,14 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
                     used != 0 -> break
 
                     #{overflow=wrap}
-                    idx = idx + 1
+                    {
+                        #{overflow=wrap}
+                        idx-opt3 = idx + 1
+                        idx-opt3: {
+                            ok -> idx = it
+                            ->
+                        }
+                    }
                     idx >= .cap -> idx = 0
                 }
 
@@ -384,7 +405,14 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
             }
 
             #{overflow=wrap}
-            idx = idx + 1
+            {
+                #{overflow=wrap}
+                idx-opt4 = idx + 1
+                idx-opt4: {
+                    ok -> idx = it
+                    ->
+                }
+            }
             idx >= .cap -> idx = 0
         }
         insert-idx = idx
@@ -427,7 +455,7 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
         }
 
         #{overflow=wrap}
-        idx = idx + 1
+        idx ?= idx + 1
         idx >= .cap -> idx = 0
     }
 }
@@ -471,7 +499,14 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
             }
 
             #{overflow=wrap}
-            idx = idx + 1
+            {
+                #{overflow=wrap}
+                idx-opt5 = idx + 1
+                idx-opt5: {
+                    ok -> idx = it
+                    ->
+                }
+            }
             idx >= .cap -> idx = 0
         }
     }: {
@@ -556,7 +591,14 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
                     used != 0 -> break
 
                     #{overflow=wrap}
-                    idx = idx + 1
+                    {
+                        #{overflow=wrap}
+                        idx-opt6 = idx + 1
+                        idx-opt6: {
+                            ok -> idx = it
+                            ->
+                        }
+                    }
                     idx >= .cap -> idx = 0
                 }
 

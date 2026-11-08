@@ -9,9 +9,16 @@ import (
 // mir.Module.NoMainEntry before EmitLLVM, and CABIHeader must be available to
 // BuildProgram (which refuses a shared build with no exports). The MIR tests
 // cover wrapper/header generation; these cover the flag propagation.
+// D1（2026-11-08）：結果參數 r 是 plain i64，而 `a + b` 本質是 ?i64，
+// 不能再直接指派。改用兩段式 match 顯式解包；本測試關心的是 --shared 的
+// 旗標傳遞與 wrapper/header 生成，算術只是讓函式有個非平凡身體。
 const cabiSharedSrc = `#{cabi='nolang_add'}
 nl-add = (a i64, b i64) (r i64) {
-  r = a + b
+  r-opt = a + b
+  r-opt: {
+      ok -> r = it
+      ->
+  }
 }
 `
 

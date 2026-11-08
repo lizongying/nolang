@@ -98,7 +98,7 @@ Added dependency: %s = %s
   '2nvmt2tf': 'writing LLVM IR file: %w'
   '2psk9dma': 'Generate browser-targeted output (HTML + JS, requires --js)'
   '2q3wfrie': 'Parse a Nolang source file and print its AST to stdout.'
-  '2qdpadhy': 'Use the two-step unwrap: first `%s = <expr>` (inferred as ?T), then `v = %s: {` with `ok -> it` and `-> <default>` on separate lines; or use a match statement `%s: { ok -> { ... } -> { ... } }`, or propagate with `%s ?= <expr>`, or discard explicitly with `_ = <expr>`. Note that match arms must be separated by newlines (the comma form is a parse error), and the one-line form `%s = <expr>: { ... }` only attaches when <expr> is a bare identifier; otherwise the match detaches into a standalone statement and %s is still an unwrapped ?T.'
+  '2qdpadhy': 'Use the two-step unwrap: first `%s = <expr>` (inferred as ?T), then `v = %s: {` with `ok -> it` and `-> <default>` on separate lines; or use a match statement `%s: { ok -> { ... } -> { ... } }`, or propagate with `%s ?= <expr>`, or discard explicitly with `_ = <expr>`. Note that match arms must be separated by newlines (the comma form is a parse error); you may also write the match directly on the expression as `%s = <expr>: {` followed by newline-separated `ok -> it` and `-> <default>` arms — `: { ... }` binds tighter than `=`. If that trailing block is not a match block, `%s` is still an unwrapped ?T.'
   '2qoxhl6a': 'win-create-process: cannot marshal cmdline as C string'
   '2rkb38mw': 'creating cache directory: %w'
   '2t4wkn7s': 'expected \'}\' to close field annotation, got %s instead'

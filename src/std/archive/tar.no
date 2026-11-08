@@ -94,7 +94,14 @@ tar.count = () (count i64) {
         empty == 1 -> return
 
         #{overflow=wrap}
-        count = count + 1
+        {
+            #{overflow=wrap}
+            count-opt = count + 1
+            count-opt: {
+                ok -> count = it
+                ->
+            }
+        }
 
         ; 讀取 size 欄位（偏移 124，12 位元組八進制）
         sz = 0
@@ -735,19 +742,47 @@ tar-builder.write-octal = (offset i64, width i64, val i64) {
         (v > 0) {
 
             #{overflow=wrap}
-            p = base + pos
+            {
+                #{overflow=wrap}
+                p-opt = base + pos
+                p-opt: {
+                    ok -> p = it
+                    ->
+                }
+            }
 
             .buf[p] ?= 48 + (v % 8)
 
             #{overflow=wrap}
-            v = v / 8
+            {
+                #{overflow=wrap}
+                v-opt = v / 8
+                v-opt: {
+                    ok -> v = it
+                    ->
+                }
+            }
 
             #{overflow=wrap}
-            pos = pos - 1
+            {
+                #{overflow=wrap}
+                pos-opt = pos - 1
+                pos-opt: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         #{overflow=wrap}
-        p = base + width
+        {
+            #{overflow=wrap}
+            p-opt2 = base + width
+            p-opt2: {
+                ok -> p = it
+                ->
+            }
+        }
 
         .buf[p] ?= 0
     }: {

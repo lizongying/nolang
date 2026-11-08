@@ -169,7 +169,14 @@ tree-set.bf = (idx i64) (b i64) {
         rh = .ht(r)
 
         #{overflow=wrap}
-        b = lh - rh
+        {
+            #{overflow=wrap}
+            b-opt = lh - rh
+            b-opt: {
+                ok -> b = it
+                ->
+            }
+        }
     }: {
         err -> _
 

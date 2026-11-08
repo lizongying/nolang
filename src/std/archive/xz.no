@@ -461,7 +461,13 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
             sub-probs.push(ixout406c28)
         }
         sym = .rd.decode-bit-tree(sub-probs, 3)
-        length = sym + 8
+        {
+            length-opt = sym + 8
+            length-opt: {
+                ok -> length = it
+                ->
+            }
+        }
         return
     }
 
@@ -481,7 +487,14 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
     sym = .rd.decode-bit-tree(sub-probs, 8)
 
     #{overflow=wrap}
-    length = sym + 16
+    {
+        #{overflow=wrap}
+        length-opt2 = sym + 16
+        length-opt2: {
+            ok -> length = it
+            ->
+        }
+    }
 }
 
 ; 解碼匹配距離
@@ -537,7 +550,13 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
             }
         }
         sym = .rd.decode-reverse-bit-tree(sub-probs, num-direct-bits)
-        dist = base + sym
+        {
+            dist-opt = base + sym
+            dist-opt: {
+                ok -> dist = it
+                ->
+            }
+        }
         return
     }
 
@@ -953,7 +972,14 @@ xz-decompress = (data []byte) (out []byte) {
         header-size = (ixout760c24 + 1) * 4
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt = pos + 1
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         ; 讀取 Block Flags
         block-flags = data[pos]: {
@@ -963,7 +989,14 @@ xz-decompress = (data []byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt2 = pos + 1
+            pos-opt2: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         ; 檢查 filter count（低 2 bits，此解析器不消費，顯式丟棄 option）
         _ = (block-flags & 0x3) + 1
@@ -974,7 +1007,14 @@ xz-decompress = (data []byte) (out []byte) {
 
             ; 壓縮大小使用變長整數編碼
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt3 = pos + 1
+                pos-opt3: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         ; 跳過解壓大小（如果有）
@@ -983,18 +1023,38 @@ xz-decompress = (data []byte) (out []byte) {
 
             ; 解壓大小使用變長整數編碼
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt4 = pos + 1
+                pos-opt4: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         ; 讀取 Filter ID（應為 0x21 = LZMA2）
-        filter-id = data[pos]: {
-            ok -> it
+        {
+            filter-id-opt = data[pos]: {
+                ok -> it
 
-            -> 0
+                -> 0
+            }
+            filter-id-opt: {
+                ok -> filter-id = it
+                ->
+            }
         }
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt5 = pos + 1
+            pos-opt5: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         ; 讀取 Filter Properties Size
         props-size = data[pos]: {
@@ -1004,19 +1064,38 @@ xz-decompress = (data []byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt6 = pos + 1
+            pos-opt6: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         ; 讀取 LZMA2 屬性
         lzma2-props = 0
 
         #{overflow=wrap}
         props-size > 0 -> {
-            lzma2-props = data[pos]: {
-                ok -> it
+            {
+                lzma2-props-opt = data[pos]: {
+                    ok -> it
 
-                -> 0
+                    -> 0
+                }
+                lzma2-props-opt: {
+                    ok -> lzma2-props = it
+                    ->
+                }
             }
-            pos = pos + 1
+            {
+                pos-opt7 = pos + 1
+                pos-opt7: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         ; 跳到 Block Header 結尾
@@ -1060,7 +1139,14 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
         }
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt8 = pos + 1
+            pos-opt8: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         ; 結束標記
         ctrl == 0 -> break
@@ -1085,10 +1171,22 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
             #{overflow=wrap}
             size = ((ixout881c22 << 8) | ixout881c40) + 1
-            pos = pos + 2
+            {
+                pos-opt9 = pos + 2
+                pos-opt9: {
+                    ok -> pos = it
+                    ->
+                }
+            }
 
             ; 跳過 4-byte 字典 ID（解碼端不使用）
-            pos = pos + 4
+            {
+                pos-opt10 = pos + 4
+                pos-opt10: {
+                    ok -> pos = it
+                    ->
+                }
+            }
 
             ; 複製未壓縮資料
             i <- [0..size): {
@@ -1125,7 +1223,13 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
             #{overflow=wrap}
             size = ((ixout902c22 << 8) | ixout902c40) + 1
-            pos = pos + 2
+            {
+                pos-opt11 = pos + 2
+                pos-opt11: {
+                    ok -> pos = it
+                    ->
+                }
+            }
             i <- [0..size): {
 
                 #{overflow=wrap}
@@ -1161,7 +1265,13 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             }
 
             size = (size-hi << 16) | (ixout921c39 << 8) | ixout921c57
-            pos = pos + 2
+            {
+                pos-opt12 = pos + 2
+                pos-opt12: {
+                    ok -> pos = it
+                    ->
+                }
+            }
 
             ; 解壓大小 (2 bytes)
             ixout926c30 = data[pos]: {
@@ -1177,7 +1287,13 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             }
 
             unpacked-size = (ixout926c30 << 8) | ixout926c48
-            pos = pos + 2
+            {
+                pos-opt13 = pos + 2
+                pos-opt13: {
+                    ok -> pos = it
+                    ->
+                }
+            }
 
             ; 檢查字典重置（此解析器不消費，顯式丟棄 option）
             _ = (ctrl & 0x20) != 0
@@ -1186,12 +1302,24 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
             ctrl >= 0xc0 -> {
 
                 ; 屬性位元組
-                props = data[pos]: {
-                    ok -> it
+                {
+                    props-opt = data[pos]: {
+                        ok -> it
 
-                    -> 0
+                        -> 0
+                    }
+                    props-opt: {
+                        ok -> props = it
+                        ->
+                    }
                 }
-                pos = pos + 1
+                {
+                    pos-opt14 = pos + 1
+                    pos-opt14: {
+                        ok -> pos = it
+                        ->
+                    }
+                }
             }
 
             ; 使用 LZMA 解碼器解壓縮
@@ -1219,7 +1347,13 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
                 comp-data.push(ixout961c32)
             }
-            pos = pos + size
+            {
+                pos-opt15 = pos + size
+                pos-opt15: {
+                    ok -> pos = it
+                    ->
+                }
+            }
 
             dec.decode(comp-data, 0, unpacked-size + 1)
 

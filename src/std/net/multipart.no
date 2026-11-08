@@ -465,7 +465,7 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
 
                 ; 引號開始，找結束引號
                 #{overflow=wrap}
-                bstart = bstart + 1
+                bstart ?= bstart + 1
                 bend = content-type.index-from('"', bstart)
                 bend < 0 -> return
                 boundary = content-type.slice(bstart, bend)
@@ -505,7 +505,13 @@ multipart-extract-boundary = (content-type str) (boundary str) {
     {
         bstart < content-type.len-bytes() -> {
             content-type[bstart] == 34 -> {
-                bstart = bstart + 1
+                {
+                    bstart-opt = bstart + 1
+                    bstart-opt: {
+                        ok -> bstart = it
+                        ->
+                    }
+                }
                 bend = content-type.index-from('"', bstart)
                 bend < 0 -> return
                 boundary = content-type.slice(bstart, bend)

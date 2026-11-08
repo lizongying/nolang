@@ -86,7 +86,14 @@ url-parse = (url-str str) (u url-info) {
     u.scheme = url-str.slice(0, scheme-end)
 
     #{overflow=wrap}
-    pos = scheme-end + 3
+    {
+        #{overflow=wrap}
+        pos-opt = scheme-end + 3
+        pos-opt: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; 解析 fragment（#）
     frag-pos = url-str.index-from('#', pos)
@@ -464,20 +471,68 @@ url-decode = (s str) (out str) {
 
                 ; 解析十六進制（-1 表示無效字元）
                 {
-                    h1 >= 48 && h1 <= 57 -> v1 = h1 - 48
+                    h1 >= 48 && h1 <= 57 -> {
+                        {
+                            v1-opt = h1 - 48
+                            v1-opt: {
+                                ok -> v1 = it
+                                ->
+                            }
+                        }
+                    }
 
-                    h1 >= 65 && h1 <= 70 -> v1 = h1 - 55
+                    h1 >= 65 && h1 <= 70 -> {
+                        {
+                            v1-opt2 = h1 - 55
+                            v1-opt2: {
+                                ok -> v1 = it
+                                ->
+                            }
+                        }
+                    }
 
-                    h1 >= 97 && h1 <= 102 -> v1 = h1 - 87
+                    h1 >= 97 && h1 <= 102 -> {
+                        {
+                            v1-opt3 = h1 - 87
+                            v1-opt3: {
+                                ok -> v1 = it
+                                ->
+                            }
+                        }
+                    }
 
                     ->
                 }
                 {
-                    h2 >= 48 && h2 <= 57 -> v2 = h2 - 48
+                    h2 >= 48 && h2 <= 57 -> {
+                        {
+                            v2-opt = h2 - 48
+                            v2-opt: {
+                                ok -> v2 = it
+                                ->
+                            }
+                        }
+                    }
 
-                    h2 >= 65 && h2 <= 70 -> v2 = h2 - 55
+                    h2 >= 65 && h2 <= 70 -> {
+                        {
+                            v2-opt2 = h2 - 55
+                            v2-opt2: {
+                                ok -> v2 = it
+                                ->
+                            }
+                        }
+                    }
 
-                    h2 >= 97 && h2 <= 102 -> v2 = h2 - 87
+                    h2 >= 97 && h2 <= 102 -> {
+                        {
+                            v2-opt3 = h2 - 87
+                            v2-opt3: {
+                                ok -> v2 = it
+                                ->
+                            }
+                        }
+                    }
 
                     ->
                 }
@@ -486,7 +541,14 @@ url-decode = (s str) (out str) {
                         out[out.len-bytes()] = (v1 << 4) | v2
 
                         #{overflow=wrap}
-                        i = i + 2
+                        {
+                            #{overflow=wrap}
+                            i-opt = i + 2
+                            i-opt: {
+                                ok -> i = it
+                                ->
+                            }
+                        }
                     }
 
                     -> {
@@ -507,7 +569,14 @@ url-decode = (s str) (out str) {
         }
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt2 = i + 1
+            i-opt2: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 }
 
@@ -683,7 +752,13 @@ url-parse-basic-auth = (header str) (user str, password str) {
             -> _
         }
     }
-    user = user-bytes.to-str()
+    {
+        user-opt = user-bytes.to-str()
+        user-opt: {
+            ok -> user = it
+            ->
+        }
+    }
     pass-bytes []byte
     k = 0
 
@@ -703,7 +778,20 @@ url-parse-basic-auth = (header str) (user str, password str) {
         }
 
         #{overflow=wrap}
-        k = k + 1
+        {
+            #{overflow=wrap}
+            k-opt = k + 1
+            k-opt: {
+                ok -> k = it
+                ->
+            }
+        }
     }
-    password = pass-bytes.to-str()
+    {
+        password-opt = pass-bytes.to-str()
+        password-opt: {
+            ok -> password = it
+            ->
+        }
+    }
 }

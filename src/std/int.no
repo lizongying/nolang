@@ -30,7 +30,14 @@ int.to-str = () (out str) {
     (tmp != 0) {
 
         #{overflow=wrap}
-        digits = digits + 1
+        {
+            #{overflow=wrap}
+            digits-opt = digits + 1
+            digits-opt: {
+                ok -> digits = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
         tmp = tmp / 10
@@ -38,7 +45,16 @@ int.to-str = () (out str) {
     total = digits
 
     #{overflow=wrap}
-    neg == 1 -> total = total + 1
+    neg == 1 -> {
+        {
+            #{overflow=wrap}
+            total-opt = total + 1
+            total-opt: {
+                ok -> total = it
+                ->
+            }
+        }
+    }
     out = with-cap(total)
 
     #{overflow=wrap}
@@ -61,7 +77,14 @@ int.to-str = () (out str) {
         n = n / 10
 
         #{overflow=wrap}
-        pos = pos - 1
+        {
+            #{overflow=wrap}
+            pos-opt = pos - 1
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
     neg == 1 -> {
         out[0] = 45

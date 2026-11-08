@@ -201,8 +201,132 @@ test-gate = () {
     r4 = ps.parse(t4, p4)
     agg4 = h2m-new()
     ir4 = h2m-lower-program(t4, agg4, r4)
-    runner.eq(agg4.unsup > 0, 1, 'gate non-func counted')
+    ; s99：结构体定义不再计入 unsup（前扫描登记进模块表，不计不支持构造）
+    runner.eq(agg4.unsup, 0, 'struct def not counted')
     runner.eq(ir4.contains('define i64 @s()'), 1, 'gate sibling still emitted')
+}
+
+; ── s99：结构体定义 + 字段读/写（局部变量）──
+; 证明：前扫描登记结构体表 ⇒ 模块 IR 前置 `%struct.s0 = type { i64, i64 }`；
+;   struct 字面量降级成 OP-STRUCT-MK（字段值 id 连续，insertvalue 链式装配）；
+;   点号读降级成 extractvalue（OP-STRUCT-GET）；字段写降级成 insertvalue 出新值
+;   （OP-STRUCT-SET，新字段值 id = 旧结构体值 + 1 连续约定）并 rebind 回变量。
+;   字段写后 p.y 由 2 改 5，故末句 r = p.x + p.y = 1 + 5 = 6（验证 SET rebind 真生效）。
+test-s99-struct = () {
+    src = 'Point {\n    x i64\n    y i64\n}\n\nf = () (r i64) {\n    p = Point { x: 1, y: 2 }\n    a = p.x + p.y\n    p.y = 5\n    r = p.x + p.y\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 's99 unsup')
+    runner.eq(ir.contains('%struct.s0 = type { i64, i64 }'), 1, 's99 struct decl emitted')
+    runner.eq(ir.contains('define i64 @f()'), 1, 's99 define f')
+    ; MK：首步 insertvalue 以 zeroinitializer 起手
+    runner.eq(ir.contains('insertvalue %struct.s0 zeroinitializer'), 1, 's99 mk')
+    ; GET：extractvalue 读字段
+    runner.eq(ir.contains('extractvalue %struct.s0'), 1, 's99 get')
+    ; SET：insertvalue 以 %st<旧值> 为输入产生新值
+    runner.eq(ir.contains('insertvalue %struct.s0 %st'), 1, 's99 set')
+    ; 末句 r = p.x + p.y 必须降级成 add（读两个字段后相加）
+    runner.eq(ir.contains('ret i64 %v'), 1, 's99 ret present')
+}
+
+; ── s99b：结构体作形参（字段读）+ 作返回值（MK） + 形参字段写后返回 ──
+; 证明：h2m-tynode-code 在 h2m-ty-code 回 -1 时回退查模块级结构体表，把具名结构体型别
+;   解析成 TY-STRUCT-BASE + sid；h2m-func-sig / h2m-param-ty / h2m-lower-let 透传 agg 上下文后，
+;   函数签名（形参 ptys、retty）即可携带结构体码，cg 按 cg-ty-name 渲染 %struct.s0 签名。
+;   pre-pass 拆两段（先登记全部结构体、再解析函数签名）保证书写序无关。
+test-s99b-param-get = () {
+    src = 'Point {\n    x i64\n    y i64\n}\n\nf = (p Point) (r i64) {\n    r = p.x + p.y\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99b param-get unsup')
+    runner.eq(ir.contains('%struct.s0 = type { i64, i64 }'), 1, 's99b struct decl')
+    runner.eq(ir.contains('define i64 @f(%struct.s0 %st1)'), 1, 's99b param sig')
+    runner.eq(ir.contains('extractvalue %struct.s0 %st1, 0'), 1, 's99b get x')
+    runner.eq(ir.contains('extractvalue %struct.s0 %st1, 1'), 1, 's99b get y')
+    runner.eq(ir.contains('add i64 %v2, %v3'), 1, 's99b add')
+    runner.eq(ir.contains('ret i64 %v4'), 1, 's99b ret')
+}
+
+test-s99b-return-mk = () {
+    src = 'Point {\n    x i64\n    y i64\n}\n\nf = () (p Point) {\n    p = Point { x: 1, y: 2 }\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99b return-mk unsup')
+    runner.eq(ir.contains('define %struct.s0 @f()'), 1, 's99b return sig')
+    runner.eq(ir.contains('insertvalue %struct.s0 zeroinitializer'), 1, 's99b mk')
+    runner.eq(ir.contains('ret %struct.s0 %st3'), 1, 's99b ret struct')
+}
+
+test-s99b-param-set-return = () {
+    src = 'Point {\n    x i64\n    y i64\n}\n\nf = (p Point) (p Point) {\n    p.y = p.y + 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99b param-set-return unsup')
+    runner.eq(ir.contains('define %struct.s0 @f(%struct.s0 %st1)'), 1, 's99b param+ret sig')
+    runner.eq(ir.contains('insertvalue %struct.s0 %st1, i64 %v4, 1'), 1, 's99b set rebind')
+    runner.eq(ir.contains('ret %struct.s0 %st5'), 1, 's99b ret')
+}
+
+; ── s99c：结构体跨基本块槽（STALLOC / STSTORE / STLOAD）──
+; 证明：mem 模式下（函数体含循环）局部量落 entry 的 alloca %struct.sN 槽（%sts<id>）；
+;   MK 把字面量值 store 进槽、GET 从槽 load 后再 extractvalue、SET 先 load 旧值再 insertvalue 后 store 回槽，
+;   槽在循环迭代间正确携带 mutation；循环后读字段得到的是改后的值。
+;   h2m-struct-find / h2m-tynode-code / h2m-ty-of(DOT) 链路把结构体名与字段型别解析进局部量表，
+;   槽声明、读、写三处均已接 struct 分支（与 i64/str/opt 同形）。
+test-s99c-local-loop = () {
+    src = 'Point {\n    x i64\n    y i64\n}\n\nf = () (r i64) {\n    p = Point { x: 1, y: 2 }\n    n = 0\n    (n < 5) {\n        p.y = p.y + 1\n        n = n + 1\n    }\n    r = p.x + p.y\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99c local-loop unsup')
+    runner.eq(ir.contains('%struct.s0 = type { i64, i64 }'), 1, 's99c struct decl')
+    runner.eq(ir.contains('define i64 @f()'), 1, 's99c define f')
+    ; mem 模式：槽声明 + 控制流块
+    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99c slot alloca')
+    runner.eq(ir.contains('br label %bb1'), 1, 's99c control flow')
+    ; 字面量 MK 写入槽、循环内 SET 写回槽、循环后 GET 从槽读
+    runner.eq(ir.contains('store %struct.s0 %st'), 1, 's99c store to slot')
+    runner.eq(ir.contains('load %struct.s0, %struct.s0* %sts'), 1, 's99c load from slot')
+    runner.eq(ir.contains('ret i64 %v'), 1, 's99c ret')
+}
+
+test-s99c-param-loop = () {
+    src = 'Point {\n    x i64\n    y i64\n}\n\nf = (p Point) (r Point) {\n    n = 0\n    (n < 5) {\n        p.y = p.y + 1\n        n = n + 1\n    }\n    r = p\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99c param-loop unsup')
+    runner.eq(ir.contains('define %struct.s0 @f(%struct.s0 %st1)'), 1, 's99c param sig')
+    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99c slot alloca')
+    ; 形参 incoming 值落槽
+    runner.eq(ir.contains('store %struct.s0 %st1, %struct.s0* %sts'), 1, 's99c param init slot')
+    ; 循环内：从槽 load、insertvalue 改 y、store 回槽
+    runner.eq(ir.contains('load %struct.s0, %struct.s0* %sts'), 1, 's99c load from slot')
+    runner.eq(ir.contains('store %struct.s0 %st'), 1, 's99c store to slot')
+    runner.eq(ir.contains('ret %struct.s0 %st'), 1, 's99c ret')
 }
 
 ; ── 单个输入参数：形参占值 id 1，body 从 id 2 起 ──
@@ -3687,6 +3811,12 @@ test-log-or()
 test-log-chain()
 test-log-u64-mem()
 test-gate()
+test-s99-struct()
+test-s99b-param-get()
+test-s99b-return-mk()
+test-s99b-param-set-return()
+test-s99c-local-loop()
+test-s99c-param-loop()
 
 runner.summary()
 f = runner.failed-count()

@@ -1516,11 +1516,30 @@ func (c *hirConv) scratchParser() *Parser {
 			if !ok || fd.Name == "" {
 				continue
 			}
-			rets := make([]string, 0, len(fd.Results))
-			for _, res := range fd.Results {
+			// ⚠️ 必須走 DeclaredResults，不能用 fd.Results。方法定義（`box.to-i = () (r ?i64)`）
+			// 的 Results[0] 是 parser 插入的隱含接收者（"box"），不是回傳值；直接取
+			// fd.Results 會得到 ["box", "?i64"]，於是 returnTypeFromCallExpr 的
+			// `len(rets) == 1` 守衛整條略過 → 呼叫主語的 `?T` 回傳型別推不出來 →
+			// 值位 match 主語不歸一化、ok 臂沒有 `let it` → 臂內 `it` 變成未綁定
+			// （觀測值 0）。decl.go:1876 的正式註冊路徑早已用 DeclaredResults，
+			// 這裡是 H0 scratch parser 的鏡像，必須同口徑。
+			//
+			// 方法同樣要落 methodSignatures（decl.go:1891 的 IsMethodDef 分支），
+			// 否則查表端（returnTypeFromCallExpr 的 `receiverType.method` 鍵）
+			// 兩張表都碰不到。
+			results := DeclaredResults(fd)
+			rets := make([]string, 0, len(results))
+			for _, res := range results {
 				if res.Type != nil {
 					rets = append(rets, typeString(res.Type))
 				}
+			}
+			if fd.IsMethodDef && len(fd.Name) > 0 && fd.Name[0] != '[' {
+				if sp.methodSignatures == nil {
+					sp.methodSignatures = make(map[string][]string)
+				}
+				sp.methodSignatures[fd.Name] = rets
+				continue
 			}
 			sp.funcSignatures[fd.Name] = rets
 		}

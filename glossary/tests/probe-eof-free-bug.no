@@ -1,0 +1,55 @@
+; probe4 — 精确复刻崩溃版本（只把模块名换成 probe 自己的）
+; 崩法：printf '' | ./probe4  ⇒ malloc: pointer being freed was not allocated (rc=134)
+
+io-buf {
+    line str
+    eof bool
+}
+
+IOB io-buf
+
+MAX-LINE = 8388608
+
+read-one = () {
+    buf []byte = []
+    one []byte = with-len(1)
+    IOB.line = ''
+    IOB.eof = false
+    !! {
+        got = fs.read(fs.STDIN-FD, one, 1)
+        got <= 0 -> {
+            buf.len() == 0 -> IOB.eof = true
+            break
+        }
+        c = one[0]
+        c: {
+            nil -> {
+                IOB.eof = true
+                break
+            }
+
+            err -> {
+                IOB.eof = true
+                break
+            }
+
+            ok -> {
+                bv = it
+                bi = bv.to-i64()
+                {
+                    bi == 10 -> break
+
+                    bi == 13 -> _
+
+                    -> buf.push(bv)
+                }
+            }
+        }
+        buf.len() > MAX-LINE -> break
+    }
+    IOB.line = buf.to-bytes-str()
+}
+
+read-one()
+print('eof=' - IOB.eof.to-str() - ' len=' - IOB.line.len-bytes().to-str())
+print('PROBE4 PASS')

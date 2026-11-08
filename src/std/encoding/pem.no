@@ -87,13 +87,27 @@ pem-encode = (label str, data []byte) (out str) {
         out[pos] = header.byte(i)
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt = pos + 1
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 
     out[pos] = 10
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt2 = pos + 1
+        pos-opt2: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; 寫入 Base64（每行 64 字元）
     src = 0
@@ -110,13 +124,27 @@ pem-encode = (label str, data []byte) (out str) {
             out[pos] = b64[src + j]
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt3 = pos + 1
+                pos-opt3: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         out[pos] = 10
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt4 = pos + 1
+            pos-opt4: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
         src = src + PEM-LINE-LEN
@@ -127,13 +155,27 @@ pem-encode = (label str, data []byte) (out str) {
         out[pos] = footer.byte(i)
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt5 = pos + 1
+            pos-opt5: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 
     out[pos] = 10
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt6 = pos + 1
+        pos-opt6: {
+            ok -> pos = it
+            ->
+        }
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -207,7 +249,7 @@ pem-decode = (pem-str str) (result ?pem-block) {
             ; （place-match 以讀作閘門，len=0 時讀越界回 nil，ok 臂永不執行），
             ; 必須直接下標寫入才能增長長度。
             b64-data[dst] = c
-            dst = dst + 1
+            dst ?= dst + 1
         }
     }
 

@@ -65,7 +65,14 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     }
 
     #{overflow=wrap}
-    adv = 1 + n
+    {
+        #{overflow=wrap}
+        adv-opt = 1 + n
+        adv-opt: {
+            ok -> adv = it
+            ->
+        }
+    }
 }
 
 ; 跳過一個 DER TLV 元素
@@ -78,9 +85,7 @@ der-skip = (data []byte, pos i64) (next i64) {
     ; 跳過標籤（1 位元組）
     ; D1：`+` 的結果恆為 `?i64`，此處要的是「回繞的普通整數」，故以兩段式 match 解包
     #{overflow=wrap}
-    p-opt = pos + 1
-    p = 0
-    p = p-opt: {
+    p = pos + 1: {
         ok -> it
 
         -> 0
@@ -129,24 +134,45 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
 
     ; 印出 TBS 標頭位元組以驗證
     #{overflow=wrap}
-    b0 = data[start + 1]: {
-        ok -> it
+    {
+        #{overflow=wrap}
+        b0-opt = data[start + 1]: {
+            ok -> it
 
-        -> 0
+            -> 0
+        }
+        b0-opt: {
+            ok -> b0 = it
+            ->
+        }
     }
 
     #{overflow=wrap}
-    b1 = data[start + 2]: {
-        ok -> it
+    {
+        #{overflow=wrap}
+        b1-opt = data[start + 2]: {
+            ok -> it
 
-        -> 0
+            -> 0
+        }
+        b1-opt: {
+            ok -> b1 = it
+            ->
+        }
     }
 
     #{overflow=wrap}
-    b2 = data[start + 3]: {
-        ok -> it
+    {
+        #{overflow=wrap}
+        b2-opt = data[start + 3]: {
+            ok -> it
 
-        -> 0
+            -> 0
+        }
+        b2-opt: {
+            ok -> b2 = it
+            ->
+        }
     }
     end = der-skip(data, start)
 }
@@ -255,7 +281,14 @@ x509-rsa-e = (data []byte) (e i64) {
 
     ; 步驟 7：進入 SPKI 內容（跳過 SPKI SEQUENCE 標籤 + 長度）
     #{overflow=wrap}
-    p = p + 1
+    {
+        #{overflow=wrap}
+        p-opt2 = p + 1
+        p-opt2: {
+            ok -> p = it
+            ->
+        }
+    }
     spki-len, adv = der-len(data, p)
 
     #{overflow=wrap}
@@ -355,7 +388,14 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     ; 進入 SPKI
     #{overflow=wrap}
-    p = p + 1
+    {
+        #{overflow=wrap}
+        p-opt3 = p + 1
+        p-opt3: {
+            ok -> p = it
+            ->
+        }
+    }
     spki-len, adv = der-len(data, p)
 
     #{overflow=wrap}
@@ -412,7 +452,14 @@ x509-rsa-n = (data []byte) (out []byte) {
         (ixout392c10) == 0 -> {
 
             #{overflow=wrap}
-            actual-start = mod-val-start + 1
+            {
+                #{overflow=wrap}
+                actual-start-opt = mod-val-start + 1
+                actual-start-opt: {
+                    ok -> actual-start = it
+                    ->
+                }
+            }
             actual-len = mod-len - 1
         }
     }
@@ -2359,7 +2406,13 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
 
         #{overflow=wrap}
         start < n - 1 && ixout2349c30 == 0 -> {
-            start = start + 1
+            {
+                start-opt = start + 1
+                start-opt: {
+                    ok -> start = it
+                    ->
+                }
+            }
         }
     }
 
@@ -2453,7 +2506,14 @@ der-enc-integer-i64 = (val i64) (out []byte) {
     (tmp != 0) {
 
         #{overflow=wrap}
-        n = n + 1
+        {
+            #{overflow=wrap}
+            n-opt = n + 1
+            n-opt: {
+                ok -> n = it
+                ->
+            }
+        }
         tmp = tmp >> 8
     }
 

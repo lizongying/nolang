@@ -77,7 +77,14 @@ rc4 = (in []byte, key []byte) (out []byte) {
     pos <- [0..in.len()): {
 
         #{overflow=wrap}
-        i = (i + 1) % 256
+        {
+            #{overflow=wrap}
+            i-opt = (i + 1) % 256
+            i-opt: {
+                ok -> i = it
+                ->
+            }
+        }
 
         ixout65c19 = s[i]: {
             ok -> it

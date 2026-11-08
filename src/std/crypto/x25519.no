@@ -4699,7 +4699,14 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
 
         ; 結束 Montgomery ladder step
         #{overflow=wrap}
-        t = t - 1
+        {
+            #{overflow=wrap}
+            t-opt = t - 1
+            t-opt: {
+                ok -> t = it
+                ->
+            }
+        }
     }
 
     ; 最後一次交換
@@ -4916,7 +4923,14 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
         fe-add(z2, z2, a)
 
         #{overflow=wrap}
-        t = t - 1
+        {
+            #{overflow=wrap}
+            t-opt2 = t - 1
+            t-opt2: {
+                ok -> t = it
+                ->
+            }
+        }
     }
     fe-cswap(x2, x3, swap)
     fe-cswap(z2, z3, swap)

@@ -363,7 +363,14 @@ tables.dyn-add = (name str, value str) {
             .dyn-values[i] ?= dv-tmp
 
             #{overflow=wrap}
-            i = i - 1
+            {
+                #{overflow=wrap}
+                i-opt = i - 1
+                i-opt: {
+                    ok -> i = it
+                    ->
+                }
+            }
         }: {
             err -> _
 
@@ -652,7 +659,14 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
         t = t >> 7
 
         #{overflow=wrap}
-        n = n + 1
+        {
+            #{overflow=wrap}
+            n-opt = n + 1
+            n-opt: {
+                ok -> n = it
+                ->
+            }
+        }
     }
     out = with-len(n)
 
@@ -660,13 +674,27 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
     out[0] = prefix-byte | max-prefix
 
     #{overflow=wrap}
-    r-val = r-val - max-prefix
+    {
+        #{overflow=wrap}
+        r-val-opt = r-val - max-prefix
+        r-val-opt: {
+            ok -> r-val = it
+            ->
+        }
+    }
     i = 1
     (r-val >= 128) {
         out[i] = (r-val & 127) | 128
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt2 = i + 1
+            i-opt2: {
+                ok -> i = it
+                ->
+            }
+        }
         r-val = r-val >> 7
     }
     out[i] = r-val
@@ -700,7 +728,14 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     val = first
 
     #{overflow=wrap}
-    next-pos = pos + 1
+    {
+        #{overflow=wrap}
+        next-pos-opt = pos + 1
+        next-pos-opt: {
+            ok -> next-pos = it
+            ->
+        }
+    }
     first < max-prefix -> return
 
     ; 多 byte 編碼
@@ -714,12 +749,26 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
         b = data.byte(next-pos)
 
         #{overflow=wrap}
-        next-pos = next-pos + 1
+        {
+            #{overflow=wrap}
+            next-pos-opt2 = next-pos + 1
+            next-pos-opt2: {
+                ok -> next-pos = it
+                ->
+            }
+        }
 
         val = val + ((b & 127) << m)
 
         #{overflow=wrap}
-        m = m + 7
+        {
+            #{overflow=wrap}
+            m-opt = m + 7
+            m-opt: {
+                ok -> m = it
+                ->
+            }
+        }
         (b & 128) == 0 -> break
         m >= 35 -> {
             next-pos = -1
@@ -773,10 +822,16 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
 
     first-opt = data.byte(pos)
-    first = first-opt: {
-        ok -> it
+    {
+        first-opt2 = first-opt: {
+            ok -> it
 
-        -> _
+            -> _
+        }
+        first-opt2: {
+            ok -> first = it
+            ->
+        }
     }
 
     ; H bit = first & 128，本實作不支援 Huffman
@@ -807,7 +862,14 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
     }
 
     #{overflow=wrap}
-    next-pos = p + len
+    {
+        #{overflow=wrap}
+        next-pos-opt3 = p + len
+        next-pos-opt3: {
+            ok -> next-pos = it
+            ->
+        }
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -965,7 +1027,14 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = lv-tmp
 
                 #{overflow=wrap}
-                count = count + 1
+                {
+                    #{overflow=wrap}
+                    count-opt = count + 1
+                    count-opt: {
+                        ok -> count = it
+                        ->
+                    }
+                }
                 pos = next
             }
 
@@ -1021,7 +1090,14 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 #{overflow=wrap}
-                count = count + 1
+                {
+                    #{overflow=wrap}
+                    count-opt2 = count + 1
+                    count-opt2: {
+                        ok -> count = it
+                        ->
+                    }
+                }
 
                 ; 加入動態表
                 .dyn-add(name, value)
@@ -1077,7 +1153,14 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 #{overflow=wrap}
-                count = count + 1
+                {
+                    #{overflow=wrap}
+                    count-opt3 = count + 1
+                    count-opt3: {
+                        ok -> count = it
+                        ->
+                    }
+                }
             }
 
             (b & 240) == 16 -> {
@@ -1130,7 +1213,14 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
                 values[count] = vb-tmp
 
                 #{overflow=wrap}
-                count = count + 1
+                {
+                    #{overflow=wrap}
+                    count-opt4 = count + 1
+                    count-opt4: {
+                        ok -> count = it
+                        ->
+                    }
+                }
             }
 
             -> return

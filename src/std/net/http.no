@@ -421,7 +421,7 @@ do = (method str, url str, body str) (resp ?response) {
         n <= 0 -> break
 
         #{overflow=wrap}
-        total = total + n
+        total ?= total + n
 
         ; 動態累積到 raw（不再受限於 HTTP-MAX-RESPONSE，避免大回應被截斷）
         raw = raw - buf.slice(0, n)
@@ -671,7 +671,7 @@ do-req = (req request) (resp ?response) {
         n <= 0 -> break
 
         #{overflow=wrap}
-        total = total + n
+        total ?= total + n
         raw = raw - buf.slice(0, n)
     }
     {
@@ -1381,14 +1381,19 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         (ixout1333c10 == 13 && ixout1333c29 == 10 && ixout1333c52 == 13 && ixout1333c75 == 10) -> sep = scan
 
         #{overflow=wrap}
-        scan = scan + 1
+        {
+            #{overflow=wrap}
+            scan-opt = scan + 1
+            scan-opt: {
+                ok -> scan = it
+                ->
+            }
+        }
     }
     sep < 0 -> return
 
     #{overflow=wrap}
-    body-start-opt = sep + 4
-    body-start = 0
-    body-start = body-start-opt: {
+    body-start = sep + 4: {
         ok -> it
 
         -> 0
@@ -1562,7 +1567,14 @@ http-dl-dechunk = (b []byte) (out []byte) {
         (pos < blen && (ixout1488c25 == 13 || ixout1488c41 == 10)) {
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt = pos + 1
+                pos-opt: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
         pos >= blen -> break
         size = 0
@@ -1578,28 +1590,70 @@ http-dl-dechunk = (b []byte) (out []byte) {
                 c >= 48 && c <= 57 -> {
 
                     #{overflow=wrap}
-                    size = size * 16 + c - 48
+                    {
+                        #{overflow=wrap}
+                        size-opt = size * 16 + c - 48
+                        size-opt: {
+                            ok -> size = it
+                            ->
+                        }
+                    }
 
                     #{overflow=wrap}
-                    pos = pos + 1
+                    {
+                        #{overflow=wrap}
+                        pos-opt2 = pos + 1
+                        pos-opt2: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
                 }
 
                 c >= 97 && c <= 102 -> {
 
                     #{overflow=wrap}
-                    size = size * 16 + c - 87
+                    {
+                        #{overflow=wrap}
+                        size-opt2 = size * 16 + c - 87
+                        size-opt2: {
+                            ok -> size = it
+                            ->
+                        }
+                    }
 
                     #{overflow=wrap}
-                    pos = pos + 1
+                    {
+                        #{overflow=wrap}
+                        pos-opt3 = pos + 1
+                        pos-opt3: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
                 }
 
                 c >= 65 && c <= 70 -> {
 
                     #{overflow=wrap}
-                    size = size * 16 + c - 55
+                    {
+                        #{overflow=wrap}
+                        size-opt3 = size * 16 + c - 55
+                        size-opt3: {
+                            ok -> size = it
+                            ->
+                        }
+                    }
 
                     #{overflow=wrap}
-                    pos = pos + 1
+                    {
+                        #{overflow=wrap}
+                        pos-opt4 = pos + 1
+                        pos-opt4: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
                 }
 
                 -> size-done = true
@@ -1617,14 +1671,28 @@ http-dl-dechunk = (b []byte) (out []byte) {
                 c == 10 -> {
 
                     #{overflow=wrap}
-                    pos = pos + 1
+                    {
+                        #{overflow=wrap}
+                        pos-opt5 = pos + 1
+                        pos-opt5: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
                     line-done = true
                 }
 
                 c == 13 -> {
 
                     #{overflow=wrap}
-                    pos = pos + 1
+                    {
+                        #{overflow=wrap}
+                        pos-opt6 = pos + 1
+                        pos-opt6: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
 
                     ixout1558c36 = b[pos]: {
                         ok -> it
@@ -1635,7 +1703,14 @@ http-dl-dechunk = (b []byte) (out []byte) {
                     (pos < blen && ixout1558c36 == 10) -> {
 
                         #{overflow=wrap}
-                        pos = pos + 1
+                        {
+                            #{overflow=wrap}
+                            pos-opt7 = pos + 1
+                            pos-opt7: {
+                                ok -> pos = it
+                                ->
+                            }
+                        }
                     }
                     line-done = true
                 }
@@ -1643,7 +1718,14 @@ http-dl-dechunk = (b []byte) (out []byte) {
                 -> {
 
                     #{overflow=wrap}
-                    pos = pos + 1
+                    {
+                        #{overflow=wrap}
+                        pos-opt8 = pos + 1
+                        pos-opt8: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
                 }
             }
         }
@@ -1660,10 +1742,24 @@ http-dl-dechunk = (b []byte) (out []byte) {
             out.push(ixout1579c22)
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt9 = pos + 1
+                pos-opt9: {
+                    ok -> pos = it
+                    ->
+                }
+            }
 
             #{overflow=wrap}
-            size = size - 1
+            {
+                #{overflow=wrap}
+                size-opt4 = size - 1
+                size-opt4: {
+                    ok -> size = it
+                    ->
+                }
+            }
         }
     }
 }

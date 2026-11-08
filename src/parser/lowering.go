@@ -533,6 +533,13 @@ func (l *lowerer) walk(v reflect.Value) {
 				arithRoot := false
 				if ls, ok := stmt.(*LetStatement); ok {
 					arithRoot = l.inferOptionArith(ls)
+					// 值位 match 的結果也是一個 plain 綁定：`x = opt: { ok -> it  -> 0 }`
+					// 的 x 是 option payload（如 i64），不是 option。此前這條綁定完全
+					// 沒進語義副表，於是緊接著的 `y-opt = x % b` 推不出 ?i64，下一次
+					// match 的 `let it` 無型別、MIR 零填 ⇒ 連續兩段值位 match 的第二段
+					// 永遠得到 0（tmp/zz-valmatch/q1-consec.no 實測）。補上型別登記後
+					// 型別鏈即可延續，與 checker 的 inferExprType(SurfaceMatch) 口徑一致。
+					l.inferValueMatchResult(ls)
 				}
 				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
 				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
@@ -1162,6 +1169,83 @@ func (l *lowerer) inferOptionArith(s *LetStatement) bool {
 	// 推斷結果改走語義副表（Program.Sem 的 typeFacts），不再寫 AST。
 	l.publishInferredType(s, "?"+base)
 	return true
+}
+
+// inferValueMatchResult 把「值位 option match 的結果」登記為 plain payload 型別。
+//
+// `x = opt: { ok -> it  -> 0 }` 的右值是 SurfaceMatch，不是 InfixExpression，
+// inferOptionArith 不會碰它；checker 雖然能從臂尾推出 i64，但那是 checker 自己的
+// varTypes，parser 的語義副表看不到。後果是 x 在語義副表裡「沒有型別」：
+//   - 接著寫 `y-opt = x % b`：signedIntOperandType 查不到 x ⇒ inferOptionArith
+//     不發 ?i64 ⇒ y-opt 無型別；
+//   - 再寫 `y = y-opt: { ok -> it  -> 0 }`：resolveSubjectMatch 的
+//     matchedVarType 為空 ⇒ `let it` 無型別 ⇒ MIR 把 it 零填，結果恆為 0。
+//
+// 只在能靜態判定 option payload 時發布，其他形狀一律保守跳過（與
+// inferOptionArith 的「推不出就不改寫」同守則）。顯式標註與合成 let 不碰：
+// 前者已有型別，後者是降糖產物。
+func (l *lowerer) inferValueMatchResult(s *LetStatement) {
+	if s == nil || s.IsSynthetic || s.Name == nil || s.Type != nil || s.Value == nil {
+		return
+	}
+	sm, ok := unwrapLowerExpr(s.Value).(*SurfaceMatch)
+	if !ok || sm.Matched == nil {
+		return
+	}
+	// 必須真的有 ok／值臂承接 payload；純萬用臂或型別 match 的結果型別
+	// 不一定等於 payload，交給既有推斷路徑。
+	hasOkArm := false
+	for i := range sm.Arms {
+		a := &sm.Arms[i]
+		if a.IsDotVal {
+			hasOkArm = true
+			break
+		}
+		if id, ok := a.Condition.(*Identifier); ok && id.Value == "ok" {
+			hasOkArm = true
+			break
+		}
+	}
+	if !hasOkArm {
+		return
+	}
+	if t := l.p.optionSubjectElemType(l.curFuncName, sm.Matched); t != "" {
+		l.publishInferredType(s, t)
+	}
+}
+
+// optionSubjectElemType 回報「option match 主語」的 payload 型別。
+// 涵蓋識別字（?T 變數）、option 算術（`a % b`）、option 回傳呼叫、安全索引，
+// 與 resolveSubjectMatch 的 isOptMatch 歸一化判定同口徑。推不出時回傳 ""。
+func (p *Parser) optionSubjectElemType(funcName string, m Expression) string {
+	switch x := unwrapLowerExpr(m).(type) {
+	case *Identifier:
+		typ := ""
+		if p.sem != nil {
+			if t, ok := p.sem.FuncVarType(funcName, x.Value); ok {
+				typ = t
+			}
+		}
+		if typ == "" {
+			typ = p.astLocalVarType(funcName, x.Value)
+		}
+		if ty.IsOptionRaw(typ) {
+			return ty.StripOptionRaw(typ)
+		}
+	case *InfixExpression:
+		return p.inferOptionArithSubjectElem(x)
+	case *CallExpression:
+		if rt := p.returnTypeFromCallExpr(x); ty.IsOptionRaw(rt) {
+			return ty.StripOptionRaw(rt)
+		}
+	case *IndexExpression:
+		if p.isSafeIndexBase(x) {
+			if e := p.inferIndexElemType(x); e != "" && !ty.IsOptionRaw(e) {
+				return e
+			}
+		}
+	}
+	return ""
 }
 
 // synthesizeNullableType 把推斷出的 `?inner` 型別字串記入 Program.Sem，
@@ -3235,6 +3319,83 @@ func matchSubjectTypeRaw(elem string) string {
 // subjTypeRaw is the prep-level spelling of matchSubjectTypeRaw.
 func (p *subjectMatchPrep) subjTypeRaw() string { return matchSubjectTypeRaw(p.subjElem) }
 
+// inferOptionArithSubjectElem 回報 option 算術主語（`a % b`、`x + y * z` …）
+// 的 payload 型別，供 resolveSubjectMatch 把它歸一化成
+// `__match_subj_L_C ?elem`。規則與 lowerer.inferOptionArith / D6 一致：
+// 只認 `+ - * / %`，結果型別取兩側較寬的有號整數；比較／邏輯運算子
+// 的結果是 plain bool，不在 option 範圍內。
+//
+// 推斷不出時回傳空字串，呼叫端保守跳過歸一化（維持既有行為，不猜型別）。
+// 這裡刻意做成 *Parser 方法而非 lowerer 方法：resolveSubjectMatch 是 H0
+// 直出與 AST 降糖共用的準備層，手上只有 *Parser 的語義副表；型別查找因此
+// 同時走 FuncVarType（正式註冊路徑）與 astLocalVarType（H0 scratch parser
+// 的 AST 回放路徑），與 resolveReceiverType 的雙來源同口徑。
+func (p *Parser) inferOptionArithSubjectElem(e Expression) string {
+	inf, ok := unwrapLowerExpr(e).(*InfixExpression)
+	if !ok || !isOptionArithOperator(inf.Operator) {
+		return ""
+	}
+	lt, okL := p.optionArithSubjectOperandInt(inf.Left)
+	rt, okR := p.optionArithSubjectOperandInt(inf.Right)
+	if !okL || !okR {
+		return ""
+	}
+	if len(rt) > len(lt) {
+		return rt
+	}
+	return lt
+}
+
+// optionArithSubjectOperandInt 回報運算元的有號整數型別名；字面量→i64、
+// 識別字→語義表／AST 回放、巢狀 option 算術→遞迴取較寬者。與
+// lowerer.signedIntOperandType 的差別只在型別表的取得方式（*Parser 版本），
+// 判定本身複用同一個 lowerSignedIntName。
+func (p *Parser) optionArithSubjectOperandInt(e Expression) (string, bool) {
+	switch x := unwrapLowerExpr(e).(type) {
+	case *IntegerLiteral:
+		return "i64", true
+	case *Identifier:
+		if x.Value == "self" || x.Value == "." {
+			return "", false
+		}
+		typ := ""
+		if p.sem != nil {
+			if t, has := p.sem.FuncVarType(p.curFuncName, x.Value); has {
+				typ = t
+			}
+		}
+		if name, ok := lowerSignedIntName(typ); ok {
+			return name, true
+		}
+		// 語義副表的精確鍵落空時會退回全域 VarTypes，可能撿到別處同名變數的
+		// `?T`；變數本身也可能因 option 捕捉而被升級成 `?T`。兩者都不是「這個
+		// 運算元的宣告型別」，`lowerSignedIntName` 必須拒絕，但拒絕之後不能就此
+		// 放棄 —— 再走一次函式作用域的 AST 回放（來源是宣告式／呼叫簽名），
+		// 它不受全域同名殘值影響。少了這一步，`close + 1` 這類主語就推不出
+		// `?i64`，`ok -> it` 的 it 沒有綁定，觀測值恆為 0（markdown.inline
+		// 的迴圈索引因此永不推進）。
+		if name, ok := lowerSignedIntName(p.astLocalVarType(p.curFuncName, x.Value)); ok {
+			return name, true
+		}
+		return "", false
+	case *InfixExpression:
+		if !isOptionArithOperator(x.Operator) {
+			return "", false
+		}
+		lt, okL := p.optionArithSubjectOperandInt(x.Left)
+		rt, okR := p.optionArithSubjectOperandInt(x.Right)
+		if !okL || !okR {
+			return "", false
+		}
+		if len(rt) > len(lt) {
+			return rt, true
+		}
+		return lt, true
+	default:
+		return "", false
+	}
+}
+
 // resolveSubjectMatch runs every side effect buildMatchDesugar performs on the
 // tree and on the parser side tables, and returns the resulting plan. It is
 // deliberately free of any emission: no IfExpression is built here.
@@ -3320,6 +3481,16 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 			if rt := p.returnTypeFromCallExpr(call); rt != "" && ty.IsOptionRaw(rt) {
 				subjValueElem = ty.StripOptionRaw(rt)
 			}
+		} else if inf, ok := matched.(*InfixExpression); ok {
+			// option 算術主語（`r = a % b: { ok -> it  -> 0 }`）：D6 統一規則下
+			// `+ - * / %` 的結果是 `?T`，不是 plain。不歸一化時 buildItBinding
+			// 認不出中綴主語 ⇒ ok 臂的 `it` 沒有綁定 ⇒ MIR 把 it 零填，
+			// 觀測結果永遠是 0；而且 `<expr>` 會在條件鏈與每個臂裡重複求值。
+			// 走同一個 `__match_subj_L_C ?T = <orig>` wrapper 後，tag 比較、
+			// `it` 綁定、單次求值三者都與識別字／索引／呼叫主語同口徑。
+			// 只認兩側型別都可靜態判定的有號整數算術；其餘（比較運算、
+			// 字串拼接、型別未知）保守維持原樣，交由既有路徑處理。
+			subjValueElem = p.inferOptionArithSubjectElem(inf)
 		}
 		if subjValueElem != "" {
 			subjElem = subjValueElem

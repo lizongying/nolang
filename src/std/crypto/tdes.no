@@ -108,7 +108,14 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        blk = blk + 8
+        {
+            #{overflow=wrap}
+            blk-opt = blk + 8
+            blk-opt: {
+                ok -> blk = it
+                ->
+            }
+        }
     }
 }
 
@@ -201,7 +208,14 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        blk = blk + 8
+        {
+            #{overflow=wrap}
+            blk-opt2 = blk + 8
+            blk-opt2: {
+                ok -> blk = it
+                ->
+            }
+        }
     }
 }
 
@@ -283,7 +297,14 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        blk = blk + 8
+        {
+            #{overflow=wrap}
+            blk-opt3 = blk + 8
+            blk-opt3: {
+                ok -> blk = it
+                ->
+            }
+        }
     }
 }
 
@@ -350,6 +371,13 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        blk = blk + 8
+        {
+            #{overflow=wrap}
+            blk-opt4 = blk + 8
+            blk-opt4: {
+                ok -> blk = it
+                ->
+            }
+        }
     }
 }

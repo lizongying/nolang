@@ -93,7 +93,14 @@ sleep-ns = (ns i64) {
 duration-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
-    diff = end - start
+    {
+        #{overflow=wrap}
+        diff-opt = end - start
+        diff-opt: {
+            ok -> diff = it
+            ->
+        }
+    }
 }
 
 ; 計算兩個時間戳的差（毫秒）
@@ -104,7 +111,14 @@ duration-between = (start i64, end i64) (diff i64) {
 duration-ms-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
-    diff = end - start
+    {
+        #{overflow=wrap}
+        diff-opt2 = end - start
+        diff-opt2: {
+            ok -> diff = it
+            ->
+        }
+    }
 }
 
 ; 計算兩個時間戳的差（微秒）
@@ -115,7 +129,14 @@ duration-ms-between = (start i64, end i64) (diff i64) {
 duration-us-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
-    diff = end - start
+    {
+        #{overflow=wrap}
+        diff-opt3 = end - start
+        diff-opt3: {
+            ok -> diff = it
+            ->
+        }
+    }
 }
 
 ; 從 start 到現在的經過秒數
@@ -137,7 +158,14 @@ since-ms = (start i64) (diff i64) {
     end = now-ms()
 
     #{overflow=wrap}
-    diff = end - start
+    {
+        #{overflow=wrap}
+        diff-opt4 = end - start
+        diff-opt4: {
+            ok -> diff = it
+            ->
+        }
+    }
 }
 
 ; 從 start 到現在的經過微秒數
@@ -148,7 +176,14 @@ since-us = (start i64) (diff i64) {
     end = now-us()
 
     #{overflow=wrap}
-    diff = end - start
+    {
+        #{overflow=wrap}
+        diff-opt5 = end - start
+        diff-opt5: {
+            ok -> diff = it
+            ->
+        }
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -164,9 +199,7 @@ format-duration = (seconds i64) (out str) {
 
     #{overflow=wrap}
     h = seconds / 3600
-    rem-opt = seconds % 3600
-    rem = 0
-    rem = rem-opt: {
+    rem = seconds % 3600: {
         ok -> it
 
         -> 0
@@ -174,9 +207,7 @@ format-duration = (seconds i64) (out str) {
 
     #{overflow=wrap}
     m = rem / 60
-    sec-opt = rem % 60
-    sec = 0
-    sec = sec-opt: {
+    sec = rem % 60: {
         ok -> it
 
         -> 0
@@ -230,7 +261,14 @@ timer.elapsed-s = () (s i64) {
     ms = .end-ts - .start-ts
 
     #{overflow=wrap}
-    s = ms / 1000
+    {
+        #{overflow=wrap}
+        s-opt = ms / 1000
+        s-opt: {
+            ok -> s = it
+            ->
+        }
+    }
 }
 
 ; 經過微秒數
@@ -242,7 +280,14 @@ timer.elapsed-us = () (us i64) {
     ms = .end-ts - .start-ts
 
     #{overflow=wrap}
-    us = ms * 1000
+    {
+        #{overflow=wrap}
+        us-opt = ms * 1000
+        us-opt: {
+            ok -> us = it
+            ->
+        }
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -323,7 +368,14 @@ unix-to-date = (ts i64) (d date) {
     rem < 0 -> {
 
         #{overflow=wrap}
-        days = days - 1
+        {
+            #{overflow=wrap}
+            days-opt = days - 1
+            days-opt: {
+                ok -> days = it
+                ->
+            }
+        }
         rem = rem + 86400
     }
 
@@ -344,7 +396,16 @@ unix-to-date = (ts i64) (d date) {
     era = z / 146097
 
     #{overflow=wrap}
-    z < 0 && z % 146097 != 0 -> era = era - 1
+    z < 0 && z % 146097 != 0 -> {
+        {
+            #{overflow=wrap}
+            era-opt = era - 1
+            era-opt: {
+                ok -> era = it
+                ->
+            }
+        }
+    }
 
     #{overflow=wrap}
     doe = z - era * 146097
@@ -407,13 +468,31 @@ date-to-unix = (d date) (ts i64) {
 
     ; 調整：3月為年初
     #{overflow=wrap}
-    m <= 2 -> y = y - 1
+    m <= 2 -> {
+        {
+            #{overflow=wrap}
+            y-opt = y - 1
+            y-opt: {
+                ok -> y = it
+                ->
+            }
+        }
+    }
 
     #{overflow=wrap}
     era = y / 400
 
     #{overflow=wrap}
-    y < 0 && y % 400 != 0 -> era = era - 1
+    y < 0 && y % 400 != 0 -> {
+        {
+            #{overflow=wrap}
+            era-opt2 = era - 1
+            era-opt2: {
+                ok -> era = it
+                ->
+            }
+        }
+    }
 
     #{overflow=wrap}
     yoe = y - era * 400
@@ -421,9 +500,25 @@ date-to-unix = (d date) (ts i64) {
 
     #{overflow=wrap}
     {
-        m2 > 2 -> m2 = m2 - 3
+        m2 > 2 -> {
+            {
+                m2-opt = m2 - 3
+                m2-opt: {
+                    ok -> m2 = it
+                    ->
+                }
+            }
+        }
 
-        -> m2 = m2 + 9
+        -> {
+            {
+                m2-opt2 = m2 + 9
+                m2-opt2: {
+                    ok -> m2 = it
+                    ->
+                }
+            }
+        }
     }
 
     #{overflow=wrap}
@@ -451,7 +546,13 @@ format-date = (d date) (out str) {
     #{overflow=wrap}
     yr < 0 -> {
         neg = 1
-        yr = 0 - yr
+        {
+            yr-opt = 0 - yr
+            yr-opt: {
+                ok -> yr = it
+                ->
+            }
+        }
     }
     out-len = 19
     neg == 1 -> out-len = 20

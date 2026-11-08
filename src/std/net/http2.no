@@ -280,7 +280,7 @@ conn.recv-frame = () (frame ?frame) {
         }
 
         #{overflow=wrap}
-        hdr-total = hdr-total + recv-n
+        hdr-total ?= hdr-total + recv-n
     }
 
     ; 解析標頭
@@ -319,7 +319,7 @@ conn.recv-frame = () (frame ?frame) {
             }
 
             #{overflow=wrap}
-            payload-total = payload-total + recv-n
+            payload-total ?= payload-total + recv-n
         }
     }
     frame = f

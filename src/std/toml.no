@@ -217,7 +217,14 @@ toml-find-eq = (s str) (pos i64) {
         }
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt2 = i + 1
+            i-opt2: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 }
 
@@ -254,7 +261,14 @@ toml-strip-comment = (s str) (out str) {
                     quote = 0
 
                     #{overflow=wrap}
-                    i = i + 2
+                    {
+                        #{overflow=wrap}
+                        i-opt3 = i + 2
+                        i-opt3: {
+                            ok -> i = it
+                            ->
+                        }
+                    }
                 }
             }
 
@@ -266,7 +280,14 @@ toml-strip-comment = (s str) (out str) {
                         quote = 0
 
                         #{overflow=wrap}
-                        i = i + 2
+                        {
+                            #{overflow=wrap}
+                            i-opt4 = i + 2
+                            i-opt4: {
+                                ok -> i = it
+                                ->
+                            }
+                        }
                     }
                 }
             }
@@ -280,7 +301,14 @@ toml-strip-comment = (s str) (out str) {
                             quote = 3
 
                             #{overflow=wrap}
-                            i = i + 2
+                            {
+                                #{overflow=wrap}
+                                i-opt5 = i + 2
+                                i-opt5: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
                         }
 
                         -> quote = 1
@@ -294,7 +322,14 @@ toml-strip-comment = (s str) (out str) {
                             quote = 4
 
                             #{overflow=wrap}
-                            i = i + 2
+                            {
+                                #{overflow=wrap}
+                                i-opt6 = i + 2
+                                i-opt6: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
                         }
 
                         -> quote = 2
@@ -308,7 +343,14 @@ toml-strip-comment = (s str) (out str) {
         }
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt7 = i + 1
+            i-opt7: {
+                ok -> i = it
+                ->
+            }
+        }
     }
     out = s.slice-bytes(0, end).trim()
 }
@@ -377,7 +419,7 @@ toml-unquote = (raw str) (value ?str) {
         c == 92 -> {
 
             #{overflow=wrap}
-            i = i + 1
+            i ?= i + 1
 
             #{overflow=wrap}
             i >= n - 1 -> return
@@ -404,10 +446,10 @@ toml-unquote = (raw str) (value ?str) {
         v[j] = c
 
         #{overflow=wrap}
-        j = j + 1
+        j ?= j + 1
 
         #{overflow=wrap}
-        i = i + 1
+        i ?= i + 1
     }
     value = v
 }
@@ -449,7 +491,14 @@ toml-value-complete = (raw str) (complete bool) {
                         q = 0
 
                         #{overflow=wrap}
-                        i = i + 2
+                        {
+                            #{overflow=wrap}
+                            i-opt8 = i + 2
+                            i-opt8: {
+                                ok -> i = it
+                                ->
+                            }
+                        }
                     }
                 }
             }
@@ -462,7 +511,14 @@ toml-value-complete = (raw str) (complete bool) {
                         q = 0
 
                         #{overflow=wrap}
-                        i = i + 2
+                        {
+                            #{overflow=wrap}
+                            i-opt9 = i + 2
+                            i-opt9: {
+                                ok -> i = it
+                                ->
+                            }
+                        }
                     }
                 }
             }
@@ -476,7 +532,14 @@ toml-value-complete = (raw str) (complete bool) {
                             q = 3
 
                             #{overflow=wrap}
-                            i = i + 2
+                            {
+                                #{overflow=wrap}
+                                i-opt10 = i + 2
+                                i-opt10: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
                         }
 
                         -> q = 1
@@ -490,7 +553,14 @@ toml-value-complete = (raw str) (complete bool) {
                             q = 4
 
                             #{overflow=wrap}
-                            i = i + 2
+                            {
+                                #{overflow=wrap}
+                                i-opt11 = i + 2
+                                i-opt11: {
+                                    ok -> i = it
+                                    ->
+                                }
+                            }
                         }
 
                         -> q = 2
@@ -499,19 +569,40 @@ toml-value-complete = (raw str) (complete bool) {
                 c == 91 || c == 123 -> {
 
                     #{overflow=wrap}
-                    depth = depth + 1
+                    {
+                        #{overflow=wrap}
+                        depth-opt = depth + 1
+                        depth-opt: {
+                            ok -> depth = it
+                            ->
+                        }
+                    }
                 }
                 c == 93 || c == 125 -> {
 
                     #{overflow=wrap}
-                    depth = depth - 1
+                    {
+                        #{overflow=wrap}
+                        depth-opt2 = depth - 1
+                        depth-opt2: {
+                            ok -> depth = it
+                            ->
+                        }
+                    }
                     depth < 0 -> return
                 }
             }
         }
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt12 = i + 1
+            i-opt12: {
+                ok -> i = it
+                ->
+            }
+        }
     }
     complete = q == 0 && depth == 0
 }
@@ -677,11 +768,11 @@ toml.parse = (s str) (result ?toml-doc) {
         line = toml-strip-comment(line-raw)
 
         #{overflow=wrap}
-        line-no = i + 1
+        line-no ?= i + 1
         line.len-bytes() == 0 -> {
 
             #{overflow=wrap}
-            i = i + 1
+            i ?= i + 1
             continue
         }
 
@@ -743,7 +834,7 @@ toml.parse = (s str) (result ?toml-doc) {
             }
 
             #{overflow=wrap}
-            i = i + 1
+            i ?= i + 1
             continue
         }
 
@@ -777,9 +868,7 @@ toml.parse = (s str) (result ?toml-doc) {
             complete == false -> {
 
                 #{overflow=wrap}
-                j-opt = i + 1
-                j = 0
-                j = j-opt: {
+                j = i + 1: {
                     ok -> it
 
                     -> 0
@@ -801,7 +890,7 @@ toml.parse = (s str) (result ?toml-doc) {
                     complete = toml-value-complete(raw-value)
 
                     #{overflow=wrap}
-                    j = j + 1
+                    j ?= j + 1
                     complete -> break
                 }
                 complete == false -> {
@@ -810,9 +899,7 @@ toml.parse = (s str) (result ?toml-doc) {
                 }
 
                 #{overflow=wrap}
-                i-opt = j - 1
-                i = 0
-                i = i-opt: {
+                i = j - 1: {
                     ok -> it
 
                     -> 0
@@ -852,7 +939,7 @@ toml.parse = (s str) (result ?toml-doc) {
         doc.count = doc.count + 1
 
         #{overflow=wrap}
-        i = i + 1
+        i ?= i + 1
     }
     result = doc
 }
@@ -1024,12 +1111,12 @@ toml-parse-i64 = (s str) (value ?i64) {
         neg = true
 
         #{overflow=wrap}
-        start = start + 1
+        start ?= start + 1
     }
     c == 43 -> {
 
         #{overflow=wrap}
-        start = start + 1
+        start ?= start + 1
     }
     base = 10
 
@@ -1044,21 +1131,21 @@ toml-parse-i64 = (s str) (value ?i64) {
                 base = 16
 
                 #{overflow=wrap}
-                start = start + 2
+                start ?= start + 2
             }
 
             (p0 == 48 && (p1 == 111 || p1 == 79)) -> {
                 base = 8
 
                 #{overflow=wrap}
-                start = start + 2
+                start ?= start + 2
             }
 
             (p0 == 48 && (p1 == 98 || p1 == 66)) -> {
                 base = 2
 
                 #{overflow=wrap}
-                start = start + 2
+                start ?= start + 2
             }
         }
     }
@@ -1091,16 +1178,16 @@ toml-parse-i64 = (s str) (value ?i64) {
         d < 0 || d >= base -> return
 
         #{overflow=wrap}
-        v = v * base + d
+        v ?= v * base + d
 
         #{overflow=wrap}
-        digits = digits + 1
+        digits ?= digits + 1
     }
     digits == 0 -> return
     neg -> {
 
         #{overflow=wrap}
-        v = 0 - v
+        v ?= 0 - v
     }
     value = v
 }

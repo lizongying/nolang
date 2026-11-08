@@ -1,0 +1,511 @@
+{
+  version: 1
+  domain: 'traps'
+  title: '已知坑'
+  terms: {
+    'arithmetic-option-assign': {
+      title: '算术结果不能直接赋给已有变量'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'i64 算术结果是 ?i64；赋给已存在的局部变量或结果参数是硬错误。'
+      aliases: ['15w45dqk', '算术解包', 'option 右值']
+      definition: `
+整型 + - * / % 的结果型别是 ?i64。把它直接赋给「已存在的」局部变量或结果参数
+会报硬错误（早期是 HINT，后收紧为 ERROR）。
+
+可用的写法（都验证过）：赋给**新变量**（推断为 ?i64）后立刻 match 解包；
+赋给模块级结构体字段（字段读回 i64 需要再解包）；或集中一个 add()/bump() 帮手。
+不可用：+= 等复合赋值、let 目标为已存在的 i64 变量。
+
+最容易误判的地方：加了 #{overflow=wrap} 也不行 —— 它只改溢出取值，不改型别。
+`
+      syntax: `
+t = a + b
+r = t: {
+    ok -> it
+
+    -> 0
+}
+`
+      example: `
+add = (a i64, b i64) (r i64) {
+    t = a + b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+`
+      related: ['syntax-arithmetic', 'overflow', 'i64', 'syntax-assign-op']
+      refs: ['glossary/src/db.no', 'glossary/src/jsonp.no']
+    }
+    'bare-arrow-else': {
+      title: '裸 -> 兜底臂必须在 if-group 内'
+      kind: 'trap'
+      status: 'stable'
+      summary: '把 cond -> / -> 写在组外会报 m7vq3xrt 或 k3r7mbqd，且提示的位置常错。'
+      aliases: ['m7vq3xrt', 'k3r7mbqd', 'else arm', 'if-group']
+      definition: `
+裸写的 cond -> 体 只绑定紧随其后的那一条语句。想写「多条件 + 兜底」时必须
+把全部臂包进花括号组 { ... }；否则裸 -> 会报
+bare '->' else arm outside an if-group，而且它会把上面那条 cond 臂判定为无效。
+
+同类错误还有：把两条 cond -> stmt 连着写（第二条会被当成第一条链的一部分）。
+判定口诀：只要有兜底臂，就一定加大括号。
+`
+      syntax: `
+{
+    cond-a -> 体一
+
+    cond-b -> 体二
+
+    -> 兜底
+}
+`
+      example: `
+{
+    bi == 10 -> break
+
+    bi == 13 -> _
+
+    -> buf.push(bv)
+}
+`
+      related: ['syntax-if-group', 'syntax-presence']
+      refs: ['glossary/src/jsono.no']
+    }
+    'reserved-run': {
+      title: 'run 是保留字'
+      kind: 'trap'
+      status: 'stable'
+      summary: '用 run 当函数名会得到 expected right parenthesis, got NEWLINE，且位置指向文件末尾。'
+      aliases: ['run', '保留字']
+      definition: `
+run 是保留字。写成 run = () { ... } 时，解析器不会报「保留字被占用」，
+而是把整行当表达式解析，最终在文件末尾报
+expected right parenthesis, got NEWLINE（位置完全误导）。
+
+同类行为会出现在其他保留字上：报错位置与真实原因无关，看到指向 EOF 的括号错误，
+先怀疑标识符撞了保留字。
+`
+      syntax: `
+do-it = () {
+}
+`
+      example: `
+check-all = (root str) (errors i64) {
+    errors = 0
+}
+`
+      related: ['lexer', 'syntax-fn']
+      refs: ['glossary/src/schema.no']
+    }
+    'it-to-i64-toplevel': {
+      title: '脚本顶层与函数体的推断差异'
+      kind: 'trap'
+      status: 'stable'
+      summary: '同一句 it.to-i64() 在脚本顶层被当成 i64.to-i64，报 unknown callee。'
+      aliases: ['脚本顶层', 'i64.to-i64', '探针']
+      definition: `
+在单文件脚本（no run file.no）的**顶层**写 bv = it 再 bv.to-i64()，
+会被解析成 i64.to-i64，报 EmitLLVM: unknown callee i64.to-i64；
+把同一段代码放进函数体内则正常（走 byte.to-i64）。
+
+因此诊断性小程序（probe）要把循环与解包逻辑放进函数，不要写在顶层。
+`
+      syntax: `
+read-all = () (raw str) {
+    ...
+}
+`
+      example: `
+probe = () {
+    c = s.byte(0)
+    c: {
+        ok -> {
+            bv = it
+            bi = bv.to-i64()
+        }
+    }
+}
+`
+      related: ['byte', 'no-run']
+      refs: ['glossary/src/mcp.no', 'src/builtin']
+    }
+    'cross-module-field-access': {
+      title: '不能读别的模块的模块级字段'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'mcp.IOB.resp 这类写法不成立，必须在对方模块加访问器函数。'
+      aliases: ['跨模块字段', '访问器']
+      definition: `
+跨模块可以调用函数，但**不能**直接读别的模块的模块级变量字段。
+遇到这类需求就在对方模块里加一个薄访问器（last-resp() 这种），
+再跨模块调用函数。
+
+设计上也更稳：访问器把「读哪一份状态」收在模块内部，
+将来换实现（结构体改阵列）不用改调用方。
+`
+      syntax: `
+v = mcp.last-resp()
+`
+      example: `
+last-resp = () (v str) {
+    v = IOB.resp
+}
+`
+      related: ['module-system', 'bare-module-array']
+      refs: ['glossary/src/mcp.no']
+    }
+    'bare-module-array': {
+      title: '模块级裸数组上的 .len() / .join 不可用'
+      kind: 'trap'
+      status: 'stable'
+      summary: '模块级 []str 裸变量调用方法会报 builtin str-len: missing receiver。'
+      aliases: ['模块级数组', 'missing receiver']
+      definition: `
+把 []str 直接声明在模块级（ERR []str = []）再调 .len() / .join()，
+会报 builtin str-len: missing receiver 或 unknown callee ERR.join。
+放进结构体字段（CK.errs）则一切正常 —— 与 db 的 DB.terms 同款。
+
+变通：要么改用结构体字段，要么在函数里先拷进局部阵列再 join。
+`
+      syntax: `
+chk {
+    errs []str
+}
+
+CK chk
+CK.errs.push(line)
+`
+      example: `
+result []str = []
+i <- [0..CK.errs.len()): {
+    e = CK.errs[i]
+    e: {
+        ok -> result.push(it)
+
+        -> _
+    }
+}
+out = result.join('\n')
+`
+      related: ['struct', 'cross-module-field-access']
+      refs: ['glossary/src/schema.no']
+    }
+    'str-index-units': {
+      title: 'str 切片是码点，不是字节'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'str.slice 按码点；按字节要 slice-bytes / byte(i) / to-bytes。'
+      aliases: ['码点', 'slice-bytes', '下标口径']
+      definition: `
+两套口径必须分清：
+- 码点：s.len()、s.slice(a,b)、s[i]（返回 ?char）；
+- 字节：s.len-bytes()、s.byte(i)（返回 ?byte，O(1)）、s.slice-bytes(a,b)、s.to-bytes()。
+
+用字节偏移去调 slice() 会切到字符中间，产生非法 UTF-8；
+反过来用码点偏移去算网络长度会少算字节。CJK 场景下这个错特别容易犯，
+而 []byte.slice 恰好是按字节的，两套 API 摆在一起时更要小心。
+`
+      syntax: `
+s.slice(0, 3)
+s.slice-bytes(0, 3)
+`
+      example: `
+kend = scan-string(s, p2)
+kn = bslice(s, add(p2, 1), sub(kend, 1))
+`
+      related: ['str', 'byte', 'char', 'slice']
+      refs: ['docs/docs/lang/str.md', 'glossary/src/jsonp.no']
+    }
+    'fs-get-line-truncation': {
+      title: 'fs.get-line 截断且 EOF 死循环'
+      kind: 'trap'
+      status: 'stable'
+      summary: '4095 字节处截断；EOF 之后仍持续返回 ok 空串，会死循环。'
+      aliases: ['get-line', 'read-line', '行读取']
+      definition: `
+fs.get-line 有两处不能用的行为：单行超过 4095 字节会被截断；
+读到 EOF 之后不返回失败，而是继续返回 ok 的空串 —— 拿它做循环条件会死循环。
+
+替代：需要可靠行读取就自己逐字节 fs.read(fd, one, 1) 攒缓冲，
+并且用「撞到 EOF 且本次一个字节都没读到」判定结束（不能只看行是否为空，
+否则末行没有尾随换行时会被丢掉）。
+`
+      syntax: `
+got = fs.read(fs.STDIN-FD, one, 1)
+`
+      example: `
+!! {
+    got = fs.read(fs.STDIN-FD, one, 1)
+    got <= 0 -> break
+    攒字节()
+}
+`
+      related: ['net-recv-line-not-line', 'line-framing-eof']
+      refs: ['src/std/fs.no', 'glossary/src/mcp.no']
+    }
+    'line-framing-eof': {
+      title: '末行无换行时不能丢'
+      kind: 'trap'
+      status: 'stable'
+      summary: '读到 EOF 时缓冲里可能还有一行没交出去；只按「缓冲区空」判 EOF 会丢末行。'
+      aliases: ['EOF', '末行', '分帧']
+      definition: `
+行分帧的正确结束条件是「撞到 EOF」且「本次一个字节都没读到」。
+只判断「缓冲为空」是错的：空行（立即遇到换行）同样是空缓冲，
+会把后续数据全部丢掉；而撞到 EOF 时缓冲非空，则说明末行没有尾随换行，
+必须先把它交出去、下一轮再收 EOF。
+
+这类错误在交互式测试里很难发现（客户端通常补尾随换行），
+只有 printf 不带换行时才暴露。
+`
+      syntax: `
+IOB.eof = hit-eof && empty
+`
+      example: `
+IOB.line = buf.to-bytes-str()
+n = IOB.line.len-bytes()
+empty = n == 0
+IOB.eof = hit-eof && empty
+`
+      related: ['fs-get-line-truncation', 'net-recv-line-not-line']
+      refs: ['glossary/src/mcp.no']
+    }
+    'net-recv-line-not-line': {
+      title: 'net.conn.recv-line 不按行切分'
+      kind: 'trap'
+      status: 'stable'
+      summary: '名字叫 recv-line，实际只做一次 recv，返回整块数据。'
+      aliases: ['recv-line', 'TCP 收包']
+      definition: `
+net.conn.recv-line 只做一次 recv(NET-BUF-SIZE)，返回值是「这一次收到的整块数据」，
+并不按换行切分。指望它给出一行 HTTP 头会直接错位。
+
+自己实现要点：累积到出现 \\r\\n\\r\\n 为止，再按 Content-Length 补齐正文；
+判定要在字节层做（str.slice 是码点，会把多字节字符算错）。
+`
+      syntax: `
+chunk str = with-len(HBUF)
+n = c.recv(chunk, HBUF)
+`
+      example: `
+part = chunk.slice(0, n)
+`
+      related: ['fs-get-line-truncation', 'stdlib-http-server-location']
+      refs: ['src/std/net/net.no', 'glossary/src/mcph.no']
+    }
+    'embed-dir-unusable': {
+      title: '目录级 embed 不可用'
+      kind: 'trap'
+      status: 'stable'
+      summary: '目录嵌入的 count 恒为 0、read 方法不派发；只能逐文件嵌。'
+      aliases: ['embed 目录', '内嵌目录']
+      definition: `
+#{embed=...} 指向目录时，拿到的句柄 count 恒为 0，read 方法也不派发，
+连 to-str / to-bytes-str 都解析不出来（表现为 unknown callee）。
+
+可行做法：只能**文件级**嵌入 —— 每个文件写一条 #{embed=...}，
+绑定到 []byte 全局，需要时 to-bytes-str()。要嵌多个文件就逐个写。
+`
+      syntax: `
+#{embed='/pkg/data/a.noml'}
+F-A []byte
+`
+      example: `
+#{embed='/glossary/data/index.noml'}
+F-INDEX []byte
+`
+      related: ['embed', 'embed-path-base']
+      refs: ['glossary/tests/probe.no', 'src/std/embed.no']
+    }
+    'embed-path-base': {
+      title: 'embed 路径基准随工作区而变'
+      kind: 'trap'
+      status: 'stable'
+      summary: '有 workspace.noml 时 / 按工作区根解析，没有时按源文件所在目录。'
+      aliases: ['embed 路径', '路径基准']
+      definition: `
+#{embed='/pkg/data/x.noml'} 的 / 前缀不是文件系统绝对路径：
+- 存在 workspace.noml 时，按工作区根解析；
+- 不存在时，按**源文件所在目录**解析。
+
+所以同一份 embed 路径在仓库内能编译、把文件复制到 /tmp 单跑就报
+embed: file not found（并提示它解析到了 /tmp/pkg/data）。测试文件要放仓库内。
+`
+      syntax: `
+#{embed='/glossary/data/index.noml'}
+`
+      example: `
+embed: file not found: /glossary/data (resolved: /tmp/glossary/data)
+`
+      related: ['embed', 'workspace-noml', 'embed-dir-unusable']
+      refs: ['workspace.noml', 'glossary/tests/probe.no']
+    }
+    'noml-member-newline': {
+      title: 'noml 成员必须换行分隔'
+      kind: 'trap'
+      status: 'stable'
+      summary: '单行写两个成员会解析失败；只有数组元素用逗号。'
+      aliases: ['noml 语法', '成员分隔']
+      definition: `
+.noml 的对象成员用**换行**分隔，不是逗号；数组元素用**逗号**分隔。
+因此 { a: 1  b: 2 } 是错的（解析失败），必须写成两行；
+而 { domains: ['a.noml', 'b.noml'] } 是对的。
+
+反过来把成员之间加逗号也是错的。两种分隔符混在同一层时最容易写错，
+生成 .noml 的脚本要特别注意这一点。
+`
+      syntax: `
+{ version: 1
+  domains: ['a.noml', 'b.noml'] }
+`
+      example: `
+{ terms: {
+    'x': {
+        title: 'X'
+        kind: 'type'
+    }
+} }
+`
+      related: ['noml-format', 'node-pool']
+      refs: ['glossary/data/index.noml', 'src/std/noml.no']
+    }
+    'index-read-err-vs-nil': {
+      title: '越界是 err，缺键是 nil'
+      kind: 'trap'
+      status: 'stable'
+      summary: '索引越界返回 err（编码错误），map 缺键返回 nil（值不存在）。'
+      aliases: ['越界', '缺键', 'err vs nil']
+      definition: `
+option 的两态语义不同，不能混：
+- a[i] / s[i] 越界 ⇒ err（这是编码错误，属于 bug）；
+- map / 对象缺键 ⇒ nil（值本来就不存在，属于正常分支）。
+
+把两者都当「没有」处理会掩盖越界 bug；把两者都当错误会让正常缺省变成失败。
+分派时按语义分别处理。
+`
+      syntax: `
+xs[0]: {
+    ok -> 有值
+
+    nil -> 没有
+
+    err -> 越界（bug）
+}
+`
+      example: `
+c = s.byte(i)
+c: {
+    ok -> buf.push(it)
+
+    nil -> _
+
+    err -> _
+}
+`
+      related: ['option', 'nil', 'err']
+      refs: ['docs/docs/lang/syntax.md', 'glossary/src/jsono.no']
+    }
+    'stdlib-http-server-location': {
+      title: 'HTTP 服务端在 net/server.no'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'net/http.no 只有客户端；找服务端请去 net/server.no。'
+      aliases: ['http server', 'server.no', 'HTTP 服务端']
+      definition: `
+按名字找会误判：src/std/net/http.no 是 HTTP/1.1 **客户端**（含 REST 支持），
+服务端在 src/std/net/server.no（HTTP/1.1 伺服器）。另有 sse.no 提供 SSE 的
+客户端与服务端、ws.no 提供 WebSocket 两端。
+
+在 http.no 里搜 listen / accept 会一无所获，从而误以为 std 没有服务端能力。
+`
+      syntax: `
+# /std/net/server
+`
+      example: `
+src/std/net/server.no  ; HTTP/1.1 伺服器
+src/std/net/sse.no     ; SSE 客户端与服务器
+`
+      related: ['net-recv-line-not-line', 'server']
+      refs: ['src/std/net/server.no', 'src/std/net/http.no']
+    }
+    'std-json-nonascii': {
+      title: 'std/json 非 ASCII 解析异常（当前工作区）'
+      kind: 'trap'
+      status: 'unstable'
+      summary: '解析含中文的 JSON 时字符串尾部会被截成 NUL，stringify 还会输出 U+FFFD。'
+      aliases: ['json 中文', 'non-ascii', 'U+FFFD']
+      definition: `
+在某一时刻的工作区状态下实测：{"q":"三态标签"} 经 .get('q').str() 取回的值
+只有前 9 个字节有效，其余补 0；.stringify() 会把末字符重复并输出 U+FFFD。
+str.copy 本身是对的（12 字节全对），所以损坏发生在解析建节点的阶段。
+
+判定要点：这是「std 层」而不是业务层的问题，用 str.copy 对照即可分清。
+规避办法有两条：等 std 修复；或自带一个只做取值的最小读取器（不依赖 DOM）。
+
+状态标为 unstable，因为它是特定工作区状态下的现象，修复后应改回。
+`
+      syntax: `
+p = json.parse('{"q":"中文"}')
+q = p.get('q').str()
+`
+      example: `
+{"q":"三态标签"}  =>  只剩 9 字节有效
+`
+      related: ['node-pool', 'json']
+      refs: ['src/std/json.no', 'glossary/src/jsonp.no']
+    }
+    'fmt-vet-scope-mismatch': {
+      title: 'fmt 与 vet 的解析口径可能相反'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'fmt 单档解析、vet 看包上下文；极端情况下会形成「fmt 删注解 → build 失败」。'
+      aliases: ['fmt vet 冲突', 'build 注解']
+      definition: `
+no fmt 只按单个文件解析，no vet 有整包上下文。两者对同一段代码的判断可能相反，
+极端的表现是：fmt 认为某个注解无用而删掉，随后构建因为缺这个注解而失败，
+再跑 fmt 又删一次 —— 形成死循环。
+遇到时不要反复 fmt，先看构建真正需要的是什么，并避免让 fmt 碰到该文件。
+`
+      syntax: `
+no fmt file.no
+no vet pkg
+`
+      example: `
+fmt 删掉 build 必需注解 -> build 失败 -> 再 fmt 又删
+`
+      related: ['no-fmt', 'no-vet', 'fmt-shape-gate']
+      refs: ['src/cmd/no']
+    }
+    'move-after-pass': {
+      title: '传结构体后再用同一实例'
+      kind: 'trap'
+      status: 'stable'
+      summary: '结构体按值传递且可能被 move；传出去之后继续用同一实参有风险。'
+      aliases: ['move', '传参', '所有权']
+      definition: `
+结构体按值传递，但堆拥有型别的字段会受 move / clone 语义支配；
+把实例传给函数后，原实例可能已被标记为 moved。
+规避方式：让接收方负责收尾（例如 close 放在被调函数里），
+调用方传出去之后就不再触碰同一实例。
+`
+      syntax: `
+serve-conn(cn)
+`
+      example: `
+ac: {
+    ok -> serve-conn(it)
+
+    nil -> break
+
+    err -> break
+}
+`
+      related: ['move', 'assignment-semantics', 'single-owner']
+      refs: ['docs/docs/lang/memory.md', 'glossary/src/mcph.no']
+    }
+  }
+}

@@ -3338,7 +3338,14 @@ sha512 = (data []byte) (hash [64]byte) {
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
         #{overflow=wrap}
-        offset = offset + 128
+        {
+            #{overflow=wrap}
+            offset-opt = offset + 128
+            offset-opt: {
+                ok -> offset = it
+                ->
+            }
+        }
     }
 
     ; 輸出 64 位元組雜湊值（big-endian）

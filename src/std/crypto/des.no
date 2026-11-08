@@ -204,7 +204,14 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
         r = r | (bit << (n - 1 - i))
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt = i + 1
+            i-opt: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 }
 

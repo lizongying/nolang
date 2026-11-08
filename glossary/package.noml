@@ -1,0 +1,21 @@
+{
+  name: 'glossary'
+  version: 'v0.1.0'
+  description: 'Nolang 词条化知识库：类型、注解、关键字、语法构造、std 模块与陷阱的 CLI + MCP 检索前端'
+  keywords: ['nolang', 'glossary', 'mcp', 'knowledge-base']
+  author: 'lizongying'
+  email: 'lizongying@msn.com'
+  organization: ''
+  repository: 'https://github.com/lizongying/nolang'
+  homepage: ''
+  license: 'Apache-2.0'
+  dependencies: []
+  dev-dependencies: []
+  compiler: {
+    version: 'v0.4.19'
+    link-libs: []
+    anonymous-fn-type: false
+  }
+  output: './dist'
+  ignore: ['dist']
+}

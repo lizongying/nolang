@@ -1240,6 +1240,8 @@ A match subject can be a **value** (`x: { }`), an **expression** (`x + 1: { }`),
 **block** (`{ ... }: { ... }`). The first two are expressions and can be used in a
 value context (`v = x: { ok -> it, -> 0 }`). The third is **a statement only**: it
 cannot be assigned, has no block-tail value, and `-> _` discards the result.
+For an expression subject on the right-hand side of `=`, the `expr: { ... }` match
+binds **tighter than `=`** — see [Expression subject in value context](#expression-subject-in-value-context).
 
 A block subject runs a statement body and funnels any `?=` failure inside it into
 one match — so a function **without a `?T` result param** can use `?=` locally.
@@ -1743,6 +1745,65 @@ x: {
 ```
 
 > **Multi-line arm body rule**: When an arm body contains multiple statements, it must be enclosed in braces `-> { ... }`. Single-line body can be written directly after `->`. If a multi-line body does not use braces, the `it` binding for option match will not be inserted correctly, causing a compile error.
+
+#### Expression subject in value context
+
+`: { ... }` binds **tighter than `=`**: on an assignment RHS it is the whole
+right-hand side, not a detached standalone match. This lets option arithmetic be
+unwrapped in **one statement** instead of the old three-step dance:
+
+```no
+; ✅ one-step: `seconds % 3600: { ... }` is the entire RHS of `rem = ...`
+#{overflow=wrap}
+rem = seconds % 3600: {
+    ok -> it
+
+    -> 0
+}
+
+; ✅ the result is plain i64, so it can feed another option arithmetic +
+;    value match without losing the payload
+#{overflow=wrap}
+sec = rem % 60: {
+    ok -> it
+
+    -> 0
+}
+
+; ✅ first assignment may carry an explicit type
+rem i64 = seconds % 3600: {
+    ok -> it
+
+    -> 0
+}
+```
+
+Replaces the verbose form `rem-opt = seconds % 3600` / `rem = 0` /
+`rem = rem-opt: { ok -> it  -> 0 }`. Rules:
+
+- A D6 option-arithmetic subject (`+ - * / %`) produces `?T`. The match
+  normalises it into a synthetic `__match_subj_L_C ?T` temp, so the subject is
+  evaluated **exactly once**, `ok -> it` binds the payload, conditions use option
+  tag comparison, and `-> 0` covers `nil` / `err`. Synthetic names never appear
+  in diagnostics or `no fmt` output.
+- The match result is **plain T** (from the arms' trailing expressions) and is
+  registered in the semantic side table. Chaining several value matches therefore
+  keeps its payload — `sec = rem % 60: { ... }` does not silently become `0`.
+- The value-position tail attaches only in a **value context** (RHS of `=`, `?=`,
+  compound assignment) and only when `: { ... }` really is a match block.
+  Statement-level `cond: { body }` condition loops and struct literals keep their
+  existing parse path.
+- `no fmt` round-trips `expr: { ... }` verbatim and is idempotent; it never splits
+  it into an assignment plus a detached match.
+- The existing block-subject form `{r ?= a % b}: { ok -> it  -> 0 }` is unchanged.
+- `src/std` migrated all 52 eligible three-step unwraps (14 modules) on
+  2026-11-09, including sites where the loop index comes from a method-call
+  return value. The compiler falls back to the function-scoped AST declaration
+  when the semantic side table hands back a stale `?T` for such a variable, so
+  `ok -> it` keeps its binding instead of silently reading `0`.
+- **Exception**: keep the three-step form when an inner match writes back to the
+  `-opt` variable itself (`ok -> x-opt = it`) — that variable is the subject of a
+  later value match and must survive.
 
 > **`->` is a short-circuit pipeline — the same operator everywhere.** It is
 > left-associative and its meaning never depends on the surrounding context

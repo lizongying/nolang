@@ -1,0 +1,116 @@
+; jsono — 极简 JSON 输出（手写序列化，保证**单行**）
+;
+; 为什么不用 std/json 的 stringify：它只转义 " \ \n \t \r，其余控制字符原样输出
+; （src/std/json.no:1150-1163）。MCP 的 stdio 传输按换行分帧，一旦正文里出现
+; 真换行，一帧就被劈成两帧，对端直接解析失败。这里把 <0x20 的控制字符一律
+; 换成空格：本词库正文里不会出现这类字节，换掉即可，且省掉 \u00XX 的进制转换。
+;
+; 本模块只依赖 str/byte 内建，不依赖 db / render，供二者与 mcp 共用。
+
+; JSON 字符串转义（不含首尾引号）
+; s: 原始文本
+; out: 转义后的文本
+; [jsono.jq](#jsono.jq)
+jq = (s str) (out str) {
+    buf []byte = []
+    n = s.len-bytes()
+    i <- [0..n): {
+        c = s.byte(i)
+        c: {
+            ok -> {
+                bv = it
+                bi = bv.to-i64()
+                {
+                    bi == 34 -> {
+                        buf.push(92)
+                        buf.push(34)
+                    }
+
+                    bi == 92 -> {
+                        buf.push(92)
+                        buf.push(92)
+                    }
+
+                    bi == 10 -> {
+                        buf.push(92)
+                        buf.push(110)
+                    }
+
+                    bi == 13 -> {
+                        buf.push(92)
+                        buf.push(114)
+                    }
+
+                    bi == 9 -> {
+                        buf.push(92)
+                        buf.push(116)
+                    }
+
+                    bi < 32 -> buf.push(32)
+
+                    -> buf.push(bv)
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = buf.to-bytes-str()
+}
+
+; 带引号的 JSON 字符串字面量
+; s: 原始文本
+; out: 形如 "…" 的字面量
+; [jsono.jqs](#jsono.jqs)
+jqs = (s str) (out str) {
+    out = '"' - jq(s) - '"'
+}
+
+; 字符串阵列
+; vs: 字符串阵列
+; out: 形如 ["a","b"] 的 JSON（空阵列得到 []）
+; [jsono.jstr-arr](#jsono.jstr-arr)
+jstr-arr = (vs []str) (out str) {
+    result []str = []
+    i <- [0..vs.len()): {
+        e = vs[i]
+        e: {
+            ok -> result.push(jqs(it))
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = '[' - result.join(',') - ']'
+}
+
+; 整数阵列
+; vs: 整数阵列
+; out: 形如 [1,2] 的 JSON（空阵列得到 []）
+; [jsono.ji64-arr](#jsono.ji64-arr)
+ji64-arr = (vs []i64) (out str) {
+    result []str = []
+    i <- [0..vs.len()): {
+        e = vs[i]
+        e: {
+            ok -> result.push(it.to-str())
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = '[' - result.join(',') - ']'
+}
+
+; 字符串键值对片段（"key":value）
+; key: 键名
+; val: 已序列化的值
+; out: 形如 "key":value 的片段，供拼对象用
+; [jsono.pair](#jsono.pair)
+pair = (key str, val str) (out str) {
+    out = jqs(key) - ':' - val
+}

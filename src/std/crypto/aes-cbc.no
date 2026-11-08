@@ -89,7 +89,14 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        blk = blk + 16
+        {
+            #{overflow=wrap}
+            blk-opt = blk + 16
+            blk-opt: {
+                ok -> blk = it
+                ->
+            }
+        }
     }
 }
 
@@ -168,7 +175,14 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        blk = blk + 16
+        {
+            #{overflow=wrap}
+            blk-opt2 = blk + 16
+            blk-opt2: {
+                ok -> blk = it
+                ->
+            }
+        }
     }
 }
 

@@ -1565,7 +1565,14 @@ sha1 = (data []byte) (hash [20]byte) {
         h0, h1, h2, h3, h4 = sha1-block(block, h0, h1, h2, h3, h4)
 
         #{overflow=wrap}
-        offset = offset + 64
+        {
+            #{overflow=wrap}
+            offset-opt = offset + 64
+            offset-opt: {
+                ok -> offset = it
+                ->
+            }
+        }
     }
 
     ; 輸出 20 位元組雜湊值（big-endian）

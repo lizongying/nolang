@@ -132,7 +132,14 @@ parse-set = (set-cookie-str str) (c cookie) {
         (pos < rest.len-bytes() && rest[pos] == 32) {
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt = pos + 1
+                pos-opt: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         pos >= rest.len-bytes() -> break
@@ -221,7 +228,14 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
         (pos < cookie-header.len-bytes() && cookie-header[pos] == 32) {
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt2 = pos + 1
+                pos-opt2: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         pos >= cookie-header.len-bytes() -> break
@@ -239,7 +253,13 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
             names[count] = pair.slice(0, eq-pos)
 
             values[count] = pair.slice(eq-pos + 1, pair.len-bytes())
-            count = count + 1
+            {
+                count-opt = count + 1
+                count-opt: {
+                    ok -> count = it
+                    ->
+                }
+            }
         }
         next-semi < 0 -> break
 

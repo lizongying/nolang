@@ -268,7 +268,16 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     }
 
     #{overflow=wrap}
-    mask -> header-len = header-len + 4
+    mask -> {
+        {
+            #{overflow=wrap}
+            header-len-opt = header-len + 4
+            header-len-opt: {
+                ok -> header-len = it
+                ->
+            }
+        }
+    }
 
     #{overflow=wrap}
     total = header-len + dlen
@@ -517,7 +526,13 @@ server-conn.handshake = () {
     #{overflow=wrap}
     {
         val-start < head.len-bytes() && head[val-start] == 32 -> {
-            val-start = val-start + 1
+            {
+                val-start-opt = val-start + 1
+                val-start-opt: {
+                    ok -> val-start = it
+                    ->
+                }
+            }
         }
 
         ->
@@ -544,7 +559,13 @@ server-conn.handshake = () {
     #{overflow=wrap}
     {
         up-val-start < head.len-bytes() && head[up-val-start] == 32 -> {
-            up-val-start = up-val-start + 1
+            {
+                up-val-start-opt = up-val-start + 1
+                up-val-start-opt: {
+                    ok -> up-val-start = it
+                    ->
+                }
+            }
         }
 
         ->
@@ -1091,7 +1112,16 @@ server-conn.recv-nb = () (msg ?message) {
     payload-start = mask-start
 
     #{overflow=wrap}
-    masked -> payload-start = mask-start + 4
+    masked -> {
+        {
+            #{overflow=wrap}
+            payload-start-opt = mask-start + 4
+            payload-start-opt: {
+                ok -> payload-start = it
+                ->
+            }
+        }
+    }
     payload str = with-len(payload-len)
     p <- [0..payload-len): {
 
@@ -1484,7 +1514,7 @@ client.recv = () (msg ?message) {
         (b1 & 127) == 127 -> actual-extra = 8
 
         #{overflow=wrap}
-        mask-start = 2 + actual-extra
+        mask-start ?= 2 + actual-extra
 
         #{overflow=wrap}
         masked -> {
@@ -1796,7 +1826,7 @@ connect = (url str) (c ?client) {
         }
 
         #{overflow=wrap}
-        total = total + n
+        total ?= total + n
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
@@ -1877,7 +1907,7 @@ connect = (url str) (c ?client) {
     #{overflow=wrap}
     {
         val-start < head.len-bytes() && head[val-start] == 32 -> {
-            val-start = val-start + 1
+            val-start ?= val-start + 1
         }
 
         ->

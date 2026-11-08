@@ -1,0 +1,1197 @@
+{
+  version: 1
+  domain: 'std'
+  title: '标准库模块索引'
+  terms: {
+    'bzip2': {
+      title: 'bzip2'
+      kind: 'module'
+      status: 'stable'
+      summary: 'BZIP2 壓縮與解壓縮（純 Nolang 實現）'
+      definition: `
+标准库分组 archive。源码 src/std/archive/bzip2.no。
+`
+      refs: ['src/std/archive/bzip2.no']
+    }
+    'gzip': {
+      title: 'gzip'
+      kind: 'module'
+      status: 'stable'
+      summary: 'GZIP 壓縮與解壓縮（純 Nolang 實現）'
+      definition: `
+标准库分组 archive。源码 src/std/archive/gzip.no。
+`
+      refs: ['src/std/archive/gzip.no']
+    }
+    'tar': {
+      title: 'tar'
+      kind: 'module'
+      status: 'stable'
+      summary: 'TAR 歸檔讀寫'
+      definition: `
+标准库分组 archive。源码 src/std/archive/tar.no。
+`
+      refs: ['src/std/archive/tar.no']
+    }
+    'xz': {
+      title: 'xz'
+      kind: 'module'
+      status: 'stable'
+      summary: 'XZ / LZMA 壓縮與解壓縮（純 Nolang 實現）'
+      definition: `
+标准库分组 archive。源码 src/std/archive/xz.no。
+`
+      refs: ['src/std/archive/xz.no']
+    }
+    'zip': {
+      title: 'zip'
+      kind: 'module'
+      status: 'stable'
+      summary: 'ZIP 歸檔解析'
+      definition: `
+标准库分组 archive。源码 src/std/archive/zip.no。
+`
+      refs: ['src/std/archive/zip.no']
+    }
+    'zlib': {
+      title: 'zlib'
+      kind: 'module'
+      status: 'stable'
+      summary: 'RFC 1950 zlib 壓縮與解壓縮（純 Nolang 實現）'
+      definition: `
+标准库分组 archive。源码 src/std/archive/zlib.no。
+`
+      refs: ['src/std/archive/zlib.no']
+    }
+    'zstd': {
+      title: 'zstd'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Zstandard 壓縮與解壓縮（純 Nolang 實現）'
+      definition: `
+标准库分组 archive。源码 src/std/archive/zstd.no。
+`
+      refs: ['src/std/archive/zstd.no']
+    }
+    'args': {
+      title: 'args'
+      kind: 'module'
+      status: 'stable'
+      summary: '命令行參數解析'
+      definition: `
+标准库顶层模块。源码 src/std/args.no。
+`
+      refs: ['src/std/args.no']
+    }
+    'arr': {
+      title: 'arr'
+      kind: 'module'
+      status: 'stable'
+      summary: '陣列操作'
+      definition: `
+标准库顶层模块。源码 src/std/arr.no。
+`
+      refs: ['src/std/arr.no']
+    }
+    'async': {
+      title: 'async'
+      kind: 'module'
+      status: 'stable'
+      summary: '协程 / 异步任务与取消原语（D10）'
+      definition: `
+标准库顶层模块。源码 src/std/async.no。
+`
+      refs: ['src/std/async.no']
+    }
+    'bigint': {
+      title: 'bigint'
+      kind: 'module'
+      status: 'stable'
+      summary: '任意精度整數'
+      definition: `
+标准库顶层模块。源码 src/std/bigint.no。
+`
+      refs: ['src/std/bigint.no']
+    }
+    'std-bool': {
+      title: 'std/bool'
+      kind: 'module'
+      status: 'stable'
+      summary: '布爾型別標準庫'
+      definition: `
+标准库顶层模块。源码 src/std/bool.no。
+`
+      refs: ['src/std/bool.no']
+    }
+    'bufio': {
+      title: 'bufio'
+      kind: 'module'
+      status: 'stable'
+      summary: '緩衝 I/O'
+      definition: `
+标准库顶层模块。源码 src/std/bufio.no。
+`
+      refs: ['src/std/bufio.no']
+    }
+    'std-byte': {
+      title: 'std/byte'
+      kind: 'module'
+      status: 'stable'
+      summary: '位元組操作'
+      definition: `
+标准库顶层模块。源码 src/std/byte.no。
+`
+      refs: ['src/std/byte.no']
+    }
+    'std-char': {
+      title: 'std/char'
+      kind: 'module'
+      status: 'stable'
+      summary: '字元操作'
+      definition: `
+标准库顶层模块。源码 src/std/char.no。
+`
+      refs: ['src/std/char.no']
+    }
+    'arr-stack': {
+      title: 'arr-stack'
+      kind: 'module'
+      status: 'stable'
+      summary: '泛型堆疊（基於定長陣列）'
+      definition: `
+标准库分组 collection。源码 src/std/collection/arr-stack.no。
+`
+      refs: ['src/std/collection/arr-stack.no']
+    }
+    'deque': {
+      title: 'deque'
+      kind: 'module'
+      status: 'stable'
+      summary: '雙端佇列'
+      definition: `
+标准库分组 collection。源码 src/std/collection/deque.no。
+`
+      refs: ['src/std/collection/deque.no']
+    }
+    'hash-set': {
+      title: 'hash-set'
+      kind: 'module'
+      status: 'stable'
+      summary: 'i64 哈希集合'
+      definition: `
+标准库分组 collection。源码 src/std/collection/hash-set.no。
+`
+      refs: ['src/std/collection/hash-set.no']
+    }
+    'link': {
+      title: 'link'
+      kind: 'module'
+      status: 'stable'
+      summary: '泛型雙向鏈結串列（基於定長陣列節點池）'
+      definition: `
+标准库分组 collection。源码 src/std/collection/link.no。
+`
+      refs: ['src/std/collection/link.no']
+    }
+    'linked-hash-map': {
+      title: 'linked-hash-map'
+      kind: 'module'
+      status: 'stable'
+      summary: 'i64→i64 有序哈希表'
+      definition: `
+标准库分组 collection。源码 src/std/collection/linked-hash-map.no。
+`
+      refs: ['src/std/collection/linked-hash-map.no']
+    }
+    'map': {
+      title: 'map'
+      kind: 'module'
+      status: 'stable'
+      summary: '泛型動態雜湊映射表'
+      definition: `
+标准库分组 collection。源码 src/std/collection/map.no。
+`
+      refs: ['src/std/collection/map.no']
+    }
+    'queue': {
+      title: 'queue'
+      kind: 'module'
+      status: 'stable'
+      summary: '泛型佇列（基於定長陣列的環形緩衝區）'
+      definition: `
+标准库分组 collection。源码 src/std/collection/queue.no。
+`
+      refs: ['src/std/collection/queue.no']
+    }
+    'stack': {
+      title: 'stack'
+      kind: 'module'
+      status: 'stable'
+      summary: '堆疊'
+      definition: `
+标准库分组 collection。源码 src/std/collection/stack.no。
+`
+      refs: ['src/std/collection/stack.no']
+    }
+    'static-hashmap': {
+      title: 'static-hashmap'
+      kind: 'module'
+      status: 'stable'
+      summary: '固定容量泛型雜湊映射表'
+      definition: `
+标准库分组 collection。源码 src/std/collection/static-hashmap.no。
+`
+      refs: ['src/std/collection/static-hashmap.no']
+    }
+    'str-map': {
+      title: 'str-map'
+      kind: 'module'
+      status: 'stable'
+      summary: 'str→str 哈希映射表'
+      definition: `
+标准库分组 collection。源码 src/std/collection/str-map.no。
+`
+      refs: ['src/std/collection/str-map.no']
+    }
+    'str-set': {
+      title: 'str-set'
+      kind: 'module'
+      status: 'stable'
+      summary: 'str 哈希集合'
+      definition: `
+标准库分组 collection。源码 src/std/collection/str-set.no。
+`
+      refs: ['src/std/collection/str-set.no']
+    }
+    'tree-map': {
+      title: 'tree-map'
+      kind: 'module'
+      status: 'stable'
+      summary: '有序映射表（基於 AVL 自平衡二元搜尋樹）'
+      definition: `
+标准库分组 collection。源码 src/std/collection/tree-map.no。
+`
+      refs: ['src/std/collection/tree-map.no']
+    }
+    'tree-set': {
+      title: 'tree-set'
+      kind: 'module'
+      status: 'stable'
+      summary: '有序集合（基於 AVL 自平衡二元搜尋樹）'
+      definition: `
+标准库分组 collection。源码 src/std/collection/tree-set.no。
+`
+      refs: ['src/std/collection/tree-set.no']
+    }
+    'aes-cbc': {
+      title: 'aes-cbc'
+      kind: 'module'
+      status: 'stable'
+      summary: 'AES-CBC 加密/解密模式（AES-128 與 AES-256）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/aes-cbc.no。
+`
+      refs: ['src/std/crypto/aes-cbc.no']
+    }
+    'aes-ctr': {
+      title: 'aes-ctr'
+      kind: 'module'
+      status: 'stable'
+      summary: 'AES-CTR 計數器模式（AES-128 與 AES-256）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/aes-ctr.no。
+`
+      refs: ['src/std/crypto/aes-ctr.no']
+    }
+    'aes-gcm': {
+      title: 'aes-gcm'
+      kind: 'module'
+      status: 'stable'
+      summary: 'AES-GCM AEAD 加密/解密（NIST SP 800-38D，AES-128 與 AES-256）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/aes-gcm.no。
+`
+      refs: ['src/std/crypto/aes-gcm.no']
+    }
+    'aes': {
+      title: 'aes'
+      kind: 'module'
+      status: 'stable'
+      summary: 'AES 區塊加密核心（AES-128 與 AES-256）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/aes.no。
+`
+      refs: ['src/std/crypto/aes.no']
+    }
+    'argon2': {
+      title: 'argon2'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Argon2id 記憶體困難金鑰推導函數（RFC 9106）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/argon2.no。
+`
+      refs: ['src/std/crypto/argon2.no']
+    }
+    'base32': {
+      title: 'base32'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Base32 編碼/解碼（RFC 4648）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/base32.no。
+`
+      refs: ['src/std/crypto/base32.no']
+    }
+    'blake2': {
+      title: 'b'
+      kind: 'module'
+      status: 'stable'
+      summary: 'BLAKE2b 哈希算法（RFC 7693）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/blake2.no。
+`
+      refs: ['src/std/crypto/blake2.no']
+    }
+    'chacha20-poly1305': {
+      title: 'chacha20-poly1305'
+      kind: 'module'
+      status: 'stable'
+      summary: 'ChaCha20-Poly1305 AEAD 加密（RFC 8439）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/chacha20-poly1305.no。
+`
+      refs: ['src/std/crypto/chacha20-poly1305.no']
+    }
+    'crc-16': {
+      title: 'crc16'
+      kind: 'module'
+      status: 'stable'
+      summary: 'CRC-16 循環冗餘校驗（CCITT 變體）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/crc-16.no。
+`
+      refs: ['src/std/crypto/crc-16.no']
+    }
+    'crc-32': {
+      title: 'crc32'
+      kind: 'module'
+      status: 'stable'
+      summary: 'CRC32 循環冗餘校驗'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/crc-32.no。
+`
+      refs: ['src/std/crypto/crc-32.no']
+    }
+    'crc-64': {
+      title: 'crc64'
+      kind: 'module'
+      status: 'stable'
+      summary: 'CRC-64 循環冗餘校驗（ECMA-182 變體）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/crc-64.no。
+`
+      refs: ['src/std/crypto/crc-64.no']
+    }
+    'des': {
+      title: 'des'
+      kind: 'module'
+      status: 'stable'
+      summary: 'DES 加密/解密（ECB 模式）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/des.no。
+`
+      refs: ['src/std/crypto/des.no']
+    }
+    'ecdsa': {
+      title: 'ecdsa'
+      kind: 'module'
+      status: 'stable'
+      summary: 'ECDSA 數位簽章（NIST P-256 / secp256r1）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/ecdsa.no。
+`
+      refs: ['src/std/crypto/ecdsa.no']
+    }
+    'ed25519': {
+      title: 'ed25519'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Ed25519 簽名算法（RFC 8032）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/ed25519.no。
+`
+      refs: ['src/std/crypto/ed25519.no']
+    }
+    'fnv-1a-32': {
+      title: 'fnv-1a'
+      kind: 'module'
+      status: 'stable'
+      summary: 'FNV-1a 非加密哈希（32bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/fnv-1a-32.no。
+`
+      refs: ['src/std/crypto/fnv-1a-32.no']
+    }
+    'fnv': {
+      title: 'fnv'
+      kind: 'module'
+      status: 'stable'
+      summary: 'FNV-1a 哈希函數（32-bit 和 64-bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/fnv.no。
+`
+      refs: ['src/std/crypto/fnv.no']
+    }
+    'hkdf': {
+      title: 'hkdf'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HMAC-based Key Derivation Function（RFC 5869）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/hkdf.no。
+`
+      refs: ['src/std/crypto/hkdf.no']
+    }
+    'hmac': {
+      title: 'hmac'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HMAC 金鑰雜湊訊息認證碼（RFC 2104）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/hmac.no。
+`
+      refs: ['src/std/crypto/hmac.no']
+    }
+    'md5': {
+      title: 'md5'
+      kind: 'module'
+      status: 'stable'
+      summary: 'MD5 訊息摘要算法（128-bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/md5.no。
+`
+      refs: ['src/std/crypto/md5.no']
+    }
+    'pbkdf2': {
+      title: 'pbkdf2'
+      kind: 'module'
+      status: 'stable'
+      summary: 'PBKDF2 金鑰推導函數（RFC 2898 / PKCS#5 v2.0）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/pbkdf2.no。
+`
+      refs: ['src/std/crypto/pbkdf2.no']
+    }
+    'rand': {
+      title: 'rand'
+      kind: 'module'
+      status: 'stable'
+      summary: '簡易隨機數生成器 (xorshift32)'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/rand.no。
+`
+      refs: ['src/std/crypto/rand.no']
+    }
+    'rc4': {
+      title: 'rc4'
+      kind: 'module'
+      status: 'stable'
+      summary: 'RC4 串流加密器'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/rc4.no。
+`
+      refs: ['src/std/crypto/rc4.no']
+    }
+    'rsa': {
+      title: 'rsa'
+      kind: 'module'
+      status: 'stable'
+      summary: 'RSA 加解密（多精度整數模冪）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/rsa.no。
+`
+      refs: ['src/std/crypto/rsa.no']
+    }
+    'scrypt': {
+      title: 'scrypt'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Scrypt 記憶體困難金鑰推導函數（RFC 7914）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/scrypt.no。
+`
+      refs: ['src/std/crypto/scrypt.no']
+    }
+    'sha1': {
+      title: 'sha1'
+      kind: 'module'
+      status: 'stable'
+      summary: 'SHA-1 安全哈希算法（160-bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/sha1.no。
+`
+      refs: ['src/std/crypto/sha1.no']
+    }
+    'sha224': {
+      title: 'sha224'
+      kind: 'module'
+      status: 'stable'
+      summary: 'SHA-224 安全哈希算法（224-bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/sha224.no。
+`
+      refs: ['src/std/crypto/sha224.no']
+    }
+    'sha256': {
+      title: 'sha256'
+      kind: 'module'
+      status: 'stable'
+      summary: 'SHA-256 安全哈希算法（256-bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/sha256.no。
+`
+      refs: ['src/std/crypto/sha256.no']
+    }
+    'sha3': {
+      title: 'sha3'
+      kind: 'module'
+      status: 'stable'
+      summary: 'SHA-3 (Keccak) 安全哈希算法'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/sha3.no。
+`
+      refs: ['src/std/crypto/sha3.no']
+    }
+    'sha384': {
+      title: 'sha384'
+      kind: 'module'
+      status: 'stable'
+      summary: 'SHA-384 安全哈希算法（384-bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/sha384.no。
+`
+      refs: ['src/std/crypto/sha384.no']
+    }
+    'sha512': {
+      title: 'sha512'
+      kind: 'module'
+      status: 'stable'
+      summary: 'SHA-512 安全哈希算法（512-bit）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/sha512.no。
+`
+      refs: ['src/std/crypto/sha512.no']
+    }
+    'tdes': {
+      title: 'tdes'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Triple DES (3DES) 加密/解密（ECB 模式）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/tdes.no。
+`
+      refs: ['src/std/crypto/tdes.no']
+    }
+    'x25519': {
+      title: 'x25519'
+      kind: 'module'
+      status: 'stable'
+      summary: 'X25519 橢圓曲線 Diffie-Hellman 金鑰交換（RFC 7748）'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/x25519.no。
+`
+      refs: ['src/std/crypto/x25519.no']
+    }
+    'x509': {
+      title: 'x509'
+      kind: 'module'
+      status: 'stable'
+      summary: 'X.509 憑證 DER 解析工具'
+      definition: `
+标准库分组 crypto。源码 src/std/crypto/x509.no。
+`
+      refs: ['src/std/crypto/x509.no']
+    }
+    'sql': {
+      title: 'sql'
+      kind: 'module'
+      status: 'stable'
+      summary: '資料庫存取介面定義'
+      definition: `
+标准库分组 database。源码 src/std/database/sql.no。
+`
+      refs: ['src/std/database/sql.no']
+    }
+    'dom': {
+      title: 'dom'
+      kind: 'module'
+      status: 'stable'
+      summary: 'XML / HTML DOM 解析與操作'
+      definition: `
+标准库顶层模块。源码 src/std/dom.no。
+`
+      refs: ['src/std/dom.no']
+    }
+    'std-embed': {
+      title: 'std/embed'
+      kind: 'module'
+      status: 'stable'
+      summary: 'embed: 跨譯期嵌入的文件系統'
+      definition: `
+标准库顶层模块。源码 src/std/embed.no。
+`
+      refs: ['src/std/embed.no']
+    }
+    'base64': {
+      title: 'encoding/base64'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Base64 編解碼（RFC 4648）'
+      definition: `
+标准库分组 encoding。源码 src/std/encoding/base64.no。
+`
+      refs: ['src/std/encoding/base64.no']
+    }
+    'csv': {
+      title: 'csv'
+      kind: 'module'
+      status: 'stable'
+      summary: 'CSV 檔案解析'
+      definition: `
+标准库分组 encoding。源码 src/std/encoding/csv.no。
+`
+      refs: ['src/std/encoding/csv.no']
+    }
+    'pem': {
+      title: 'encoding/pem'
+      kind: 'module'
+      status: 'stable'
+      summary: 'PEM 格式編解碼（RFC 7468）'
+      definition: `
+标准库分组 encoding。源码 src/std/encoding/pem.no。
+`
+      refs: ['src/std/encoding/pem.no']
+    }
+    'enter': {
+      title: 'enter'
+      kind: 'module'
+      status: 'stable'
+      summary: '作用域进入钩子介面：定义 enter() 供类型实现进入语义。'
+      definition: `
+标准库顶层模块。源码 src/std/enter.no。
+`
+      refs: ['src/std/enter.no']
+    }
+    'env': {
+      title: 'env'
+      kind: 'module'
+      status: 'stable'
+      summary: '環境變數工具'
+      definition: `
+标准库顶层模块。源码 src/std/env.no。
+`
+      refs: ['src/std/env.no']
+    }
+    'std-err': {
+      title: 'std/err'
+      kind: 'module'
+      status: 'stable'
+      summary: '錯誤處理'
+      definition: `
+标准库顶层模块。源码 src/std/err.no。
+`
+      refs: ['src/std/err.no']
+    }
+    'std-float': {
+      title: 'std/float'
+      kind: 'module'
+      status: 'stable'
+      summary: 'float 聯合型別與 float 方法'
+      definition: `
+标准库顶层模块。源码 src/std/float.no。
+`
+      refs: ['src/std/float.no']
+    }
+    'fmt': {
+      title: 'fmt'
+      kind: 'module'
+      status: 'stable'
+      summary: '格式化輸入輸出標準庫'
+      definition: `
+标准库顶层模块。源码 src/std/fmt.no。
+`
+      refs: ['src/std/fmt.no']
+    }
+    'fs': {
+      title: 'fs'
+      kind: 'module'
+      status: 'stable'
+      summary: '檔案系統工具'
+      definition: `
+标准库顶层模块。源码 src/std/fs.no。
+`
+      refs: ['src/std/fs.no']
+    }
+    'global': {
+      title: 'global.no'
+      kind: 'module'
+      status: 'stable'
+      summary: '全局內置函數声明'
+      definition: `
+标准库顶层模块。源码 src/std/global.no。
+`
+      refs: ['src/std/global.no']
+    }
+    'heap': {
+      title: 'heap'
+      kind: 'module'
+      status: 'stable'
+      summary: '泛型二元堆積 / 優先權佇列'
+      definition: `
+标准库顶层模块。源码 src/std/heap.no。
+`
+      refs: ['src/std/heap.no']
+    }
+    'std-int': {
+      title: 'std/int'
+      kind: 'module'
+      status: 'stable'
+      summary: 'int 聯合型別與 int 方法'
+      definition: `
+标准库顶层模块。源码 src/std/int.no。
+`
+      refs: ['src/std/int.no']
+    }
+    'io': {
+      title: 'io'
+      kind: 'module'
+      status: 'stable'
+      summary: '基本輸入輸出介面'
+      definition: `
+标准库顶层模块。源码 src/std/io.no。
+`
+      refs: ['src/std/io.no']
+    }
+    'json': {
+      title: 'json'
+      kind: 'module'
+      status: 'stable'
+      summary: 'JSON 序列化/反序列化'
+      definition: `
+标准库顶层模块。源码 src/std/json.no。
+`
+      refs: ['src/std/json.no']
+    }
+    'leave': {
+      title: 'leave'
+      kind: 'module'
+      status: 'stable'
+      summary: '作用域离开钩子介面：定义 leave() 供类型实现离开语义。'
+      definition: `
+标准库顶层模块。源码 src/std/leave.no。
+`
+      refs: ['src/std/leave.no']
+    }
+    'log': {
+      title: 'log'
+      kind: 'module'
+      status: 'stable'
+      summary: '分級日誌'
+      definition: `
+标准库顶层模块。源码 src/std/log.no。
+`
+      refs: ['src/std/log.no']
+    }
+    'magic': {
+      title: 'magic'
+      kind: 'module'
+      status: 'stable'
+      summary: '簡化版檔案類型檢測'
+      definition: `
+标准库顶层模块。源码 src/std/magic.no。
+`
+      refs: ['src/std/magic.no']
+    }
+    'markdown': {
+      title: 'markdown'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Markdown 渲染標準庫'
+      definition: `
+标准库顶层模块。源码 src/std/markdown.no。
+`
+      refs: ['src/std/markdown.no']
+    }
+    'math': {
+      title: 'math'
+      kind: 'module'
+      status: 'stable'
+      summary: '數学與數字函數（函數形式 API）'
+      definition: `
+标准库顶层模块。源码 src/std/math.no。
+`
+      refs: ['src/std/math.no']
+    }
+    'client': {
+      title: 'client'
+      kind: 'module'
+      status: 'stable'
+      summary: '高階 TCP 客戶端'
+      definition: `
+标准库分组 net。源码 src/std/net/client.no。
+`
+      refs: ['src/std/net/client.no']
+    }
+    'cookie': {
+      title: 'cookie'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HTTP Cookie 處理'
+      definition: `
+标准库分组 net。源码 src/std/net/cookie.no。
+`
+      refs: ['src/std/net/cookie.no']
+    }
+    'dns': {
+      title: 'dns'
+      kind: 'module'
+      status: 'stable'
+      summary: 'DNS 解析器（純 Nolang 實作）'
+      definition: `
+标准库分组 net。源码 src/std/net/dns.no。
+`
+      refs: ['src/std/net/dns.no']
+    }
+    'hpack': {
+      title: 'hpack'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HPACK 標頭壓縮（RFC 7541）'
+      definition: `
+标准库分组 net。源码 src/std/net/hpack.no。
+`
+      refs: ['src/std/net/hpack.no']
+    }
+    'http': {
+      title: 'http'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HTTP/1.1 客戶端（含 REST 支援）'
+      definition: `
+标准库分组 net。源码 src/std/net/http.no。
+`
+      refs: ['src/std/net/http.no']
+    }
+    'http2': {
+      title: 'http2'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HTTP/2.0 影格與連線管理（RFC 7540）'
+      definition: `
+标准库分组 net。源码 src/std/net/http2.no。
+`
+      refs: ['src/std/net/http2.no']
+    }
+    'http3': {
+      title: 'http3'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HTTP/3.0 客戶端（RFC 9114）'
+      definition: `
+标准库分组 net。源码 src/std/net/http3.no。
+`
+      refs: ['src/std/net/http3.no']
+    }
+    'ip': {
+      title: 'ip'
+      kind: 'module'
+      status: 'stable'
+      summary: 'IP 地址操作'
+      definition: `
+标准库分组 net。源码 src/std/net/ip.no。
+`
+      refs: ['src/std/net/ip.no']
+    }
+    'multipart': {
+      title: 'multipart'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Multipart/form-data 編解碼（RFC 2046）'
+      definition: `
+标准库分组 net。源码 src/std/net/multipart.no。
+`
+      refs: ['src/std/net/multipart.no']
+    }
+    'net': {
+      title: 'net'
+      kind: 'module'
+      status: 'stable'
+      summary: '網路操作'
+      definition: `
+标准库分组 net。源码 src/std/net/net.no。
+`
+      refs: ['src/std/net/net.no']
+    }
+    'pool': {
+      title: 'pool'
+      kind: 'module'
+      status: 'stable'
+      summary: 'TCP 連接池'
+      definition: `
+标准库分组 net。源码 src/std/net/pool.no。
+`
+      refs: ['src/std/net/pool.no']
+    }
+    'proxy': {
+      title: 'proxy'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HTTP/HTTPS 代理支援'
+      definition: `
+标准库分组 net。源码 src/std/net/proxy.no。
+`
+      refs: ['src/std/net/proxy.no']
+    }
+    'quic': {
+      title: 'quic'
+      kind: 'module'
+      status: 'stable'
+      summary: 'QUIC 傳輸協定（RFC 9000）核心實現'
+      definition: `
+标准库分组 net。源码 src/std/net/quic.no。
+`
+      refs: ['src/std/net/quic.no']
+    }
+    'server': {
+      title: 'server'
+      kind: 'module'
+      status: 'stable'
+      summary: 'HTTP/1.1 伺服器'
+      definition: `
+标准库分组 net。源码 src/std/net/server.no。
+`
+      refs: ['src/std/net/server.no']
+    }
+    'sse': {
+      title: 'sse'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Server-Sent Events 客戶端與服務端'
+      definition: `
+标准库分组 net。源码 src/std/net/sse.no。
+`
+      refs: ['src/std/net/sse.no']
+    }
+    'tls-server-keys': {
+      title: 'tls-server-keys'
+      kind: 'module'
+      status: 'stable'
+      summary: '預產生之 2048-bit RSA 金鑰對（內嵌）'
+      definition: `
+标准库分组 net。源码 src/std/net/tls-server-keys.no。
+`
+      refs: ['src/std/net/tls-server-keys.no']
+    }
+    'tls': {
+      title: 'tls'
+      kind: 'module'
+      status: 'stable'
+      summary: 'TLS 1.2 / 1.3 客戶端（純 Nolang 實現，不依賴 OpenSSL）'
+      definition: `
+标准库分组 net。源码 src/std/net/tls.no。
+`
+      refs: ['src/std/net/tls.no']
+    }
+    'unix': {
+      title: 'unix'
+      kind: 'module'
+      status: 'stable'
+      summary: 'Unix Domain Socket 支援'
+      definition: `
+标准库分组 net。源码 src/std/net/unix.no。
+`
+      refs: ['src/std/net/unix.no']
+    }
+    'url': {
+      title: 'url'
+      kind: 'module'
+      status: 'stable'
+      summary: 'URL 解析與建構'
+      definition: `
+标准库分组 net。源码 src/std/net/url.no。
+`
+      refs: ['src/std/net/url.no']
+    }
+    'ws': {
+      title: 'ws'
+      kind: 'module'
+      status: 'stable'
+      summary: 'WebSocket 客戶端與服務端'
+      definition: `
+标准库分组 net。源码 src/std/net/ws.no。
+`
+      refs: ['src/std/net/ws.no']
+    }
+    'noml': {
+      title: 'noml'
+      kind: 'module'
+      status: 'stable'
+      summary: 'NOML 配置檔解析與產生'
+      definition: `
+标准库顶层模块。源码 src/std/noml.no。
+`
+      refs: ['src/std/noml.no']
+    }
+    'std-num': {
+      title: 'std/num'
+      kind: 'module'
+      status: 'stable'
+      summary: 'num 聯合型別與 num 方法'
+      definition: `
+标准库顶层模块。源码 src/std/num.no。
+`
+      refs: ['src/std/num.no']
+    }
+    'number': {
+      title: 'number'
+      kind: 'module'
+      status: 'stable'
+      summary: '數字操作（方法形式 API）'
+      definition: `
+标准库顶层模块。源码 src/std/number.no。
+`
+      refs: ['src/std/number.no']
+    }
+    'os': {
+      title: 'os'
+      kind: 'module'
+      status: 'stable'
+      summary: '作業系統介面標準庫'
+      definition: `
+标准库顶层模块。源码 src/std/os.no。
+`
+      refs: ['src/std/os.no']
+    }
+    'path': {
+      title: 'path'
+      kind: 'module'
+      status: 'stable'
+      summary: '路徑操作'
+      definition: `
+标准库顶层模块。源码 src/std/path.no。
+`
+      refs: ['src/std/path.no']
+    }
+    'process': {
+      title: 'process'
+      kind: 'module'
+      status: 'stable'
+      summary: '進程操作'
+      definition: `
+标准库顶层模块。源码 src/std/process.no。
+`
+      refs: ['src/std/process.no']
+    }
+    'regexp': {
+      title: 'regexp'
+      kind: 'module'
+      status: 'stable'
+      summary: '正規表示式標準庫（純 Nolang 實作）'
+      definition: `
+标准库顶层模块。源码 src/std/regexp.no。
+`
+      refs: ['src/std/regexp.no']
+    }
+    'set': {
+      title: 'set'
+      kind: 'module'
+      status: 'stable'
+      summary: '泛型集合資料結構'
+      definition: `
+标准库顶层模块。源码 src/std/set.no。
+`
+      refs: ['src/std/set.no']
+    }
+    'sort': {
+      title: 'sort'
+      kind: 'module'
+      status: 'stable'
+      summary: '排序介面 ord（t.gt(b)）与各整型的 ord 实现。'
+      definition: `
+标准库顶层模块。源码 src/std/sort.no。
+`
+      refs: ['src/std/sort.no']
+    }
+    'std-str': {
+      title: 'std/str'
+      kind: 'module'
+      status: 'stable'
+      summary: '字串操作標準庫'
+      definition: `
+标准库顶层模块。源码 src/std/str.no。
+`
+      refs: ['src/std/str.no']
+    }
+    'time': {
+      title: 'time'
+      kind: 'module'
+      status: 'stable'
+      summary: '時間操作'
+      definition: `
+标准库顶层模块。源码 src/std/time.no。
+`
+      refs: ['src/std/time.no']
+    }
+    'toml': {
+      title: 'toml'
+      kind: 'module'
+      status: 'stable'
+      summary: 'TOML 設定檔解析與產生'
+      definition: `
+标准库顶层模块。源码 src/std/toml.no。
+`
+      refs: ['src/std/toml.no']
+    }
+    'std-txt': {
+      title: 'std/txt'
+      kind: 'module'
+      status: 'stable'
+      summary: '固定長度文本類型'
+      definition: `
+标准库顶层模块。源码 src/std/txt.no。
+`
+      refs: ['src/std/txt.no']
+    }
+    'uuid': {
+      title: 'uuid'
+      kind: 'module'
+      status: 'stable'
+      summary: '通用唯一識別碼（RFC 4122）'
+      definition: `
+标准库顶层模块。源码 src/std/uuid.no。
+`
+      refs: ['src/std/uuid.no']
+    }
+    'vec': {
+      title: 'vec'
+      kind: 'module'
+      status: 'stable'
+      summary: '切片操作'
+      definition: `
+标准库顶层模块。源码 src/std/vec.no。
+`
+      refs: ['src/std/vec.no']
+    }
+    'yaml': {
+      title: 'yaml'
+      kind: 'module'
+      status: 'stable'
+      summary: 'YAML 1.2 解析與生成'
+      definition: `
+标准库顶层模块。源码 src/std/yaml.no。
+`
+      refs: ['src/std/yaml.no']
+    }
+  }
+}

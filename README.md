@@ -125,6 +125,30 @@ make help       # 查看所有構建目標
 
 ---
 
+## 詞條庫（glossary）
+
+`glossary/` 是一份**詞條化的 Nolang 知識庫**：每個名詞一條記錄，帶類型、定義、語法、
+示例、關聯引用與一句話摘要。共 **244 條 / 10 個語義域**（類型、語法、註解、內存、
+錯誤、模組、編譯器內部、工具鏈、std 全部模組、已知坑），資料本身是 `.noml`。
+
+前端用 Nolang 寫成，同時提供 CLI 與 MCP（stdio / HTTP），人和 AI 都能查：
+
+```bash
+no build glossary                        # 產物：glossary/dist/glossary
+
+./glossary/dist/glossary get option      # 取單條詞條全文
+./glossary/dist/glossary search 三態      # 關鍵詞檢索
+./glossary/dist/glossary list --domain=traps   # 已知坑一覽
+./glossary/dist/glossary check           # 一致性體檢（CI 用）
+
+./glossary/dist/glossary mcp             # MCP server（stdio）
+./glossary/dist/glossary mcp --http=127.0.0.1:8765
+```
+
+輸出可切 `--format=text|md|json`。接入與資料格式說明見 [`glossary/README.md`](glossary/README.md)。
+
+---
+
 ## 相關項目
 
 - [Benchmarks Game — Nolang vs C vs Rust 性能對比報告](https://github.com/lizongying/no-benchmarks/results/report.md)

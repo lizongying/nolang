@@ -74,7 +74,16 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     msg-len = t-len + info.len()
 
     #{overflow=wrap}
-    counter > 0 -> msg-len = msg-len + 1
+    counter > 0 -> {
+        {
+            #{overflow=wrap}
+            msg-len-opt = msg-len + 1
+            msg-len-opt: {
+                ok -> msg-len = it
+                ->
+            }
+        }
+    }
     msg []byte = with-len(msg-len)
     i <- [0..t-len): {
 
@@ -175,7 +184,16 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 copy-n = 32
 
                 #{overflow=wrap}
-                off + copy-n > out-len -> copy-n = out-len - off
+                off + copy-n > out-len -> {
+                    {
+                        #{overflow=wrap}
+                        copy-n-opt = out-len - off
+                        copy-n-opt: {
+                            ok -> copy-n = it
+                            ->
+                        }
+                    }
+                }
                 i <- [0..copy-n): {
 
                     ixout166c36 = t[i]: {
@@ -189,10 +207,24 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 }
 
                 #{overflow=wrap}
-                off = off + copy-n
+                {
+                    #{overflow=wrap}
+                    off-opt = off + copy-n
+                    off-opt: {
+                        ok -> off = it
+                        ->
+                    }
+                }
 
                 #{overflow=wrap}
-                counter = counter + 1
+                {
+                    #{overflow=wrap}
+                    counter-opt = counter + 1
+                    counter-opt: {
+                        ok -> counter = it
+                        ->
+                    }
+                }
             }
         }
     }
@@ -270,7 +302,14 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt = pos + 1
+        pos-opt: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; context bytes
     i <- [0..context.len()): {

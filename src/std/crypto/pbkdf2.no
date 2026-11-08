@@ -127,7 +127,16 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         copy-len = h-len
 
         #{overflow=wrap}
-        out-pos + copy-len > key-len -> copy-len = key-len - out-pos
+        out-pos + copy-len > key-len -> {
+            {
+                #{overflow=wrap}
+                copy-len-opt = key-len - out-pos
+                copy-len-opt: {
+                    ok -> copy-len = it
+                    ->
+                }
+            }
+        }
         i <- [0..copy-len): {
 
             ixout117c32 = t[i]: {
@@ -141,10 +150,24 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
         }
 
         #{overflow=wrap}
-        out-pos = out-pos + copy-len
+        {
+            #{overflow=wrap}
+            out-pos-opt = out-pos + copy-len
+            out-pos-opt: {
+                ok -> out-pos = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        block-idx = block-idx + 1
+        {
+            #{overflow=wrap}
+            block-idx-opt = block-idx + 1
+            block-idx-opt: {
+                ok -> block-idx = it
+                ->
+            }
+        }
     }
 }
 
@@ -249,7 +272,16 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
         copy-len = h-len
 
         #{overflow=wrap}
-        out-pos + copy-len > key-len -> copy-len = key-len - out-pos
+        out-pos + copy-len > key-len -> {
+            {
+                #{overflow=wrap}
+                copy-len-opt2 = key-len - out-pos
+                copy-len-opt2: {
+                    ok -> copy-len = it
+                    ->
+                }
+            }
+        }
         i <- [0..copy-len): {
 
             ixout216c32 = t[i]: {
@@ -263,10 +295,24 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
         }
 
         #{overflow=wrap}
-        out-pos = out-pos + copy-len
+        {
+            #{overflow=wrap}
+            out-pos-opt2 = out-pos + copy-len
+            out-pos-opt2: {
+                ok -> out-pos = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        block-idx = block-idx + 1
+        {
+            #{overflow=wrap}
+            block-idx-opt2 = block-idx + 1
+            block-idx-opt2: {
+                ok -> block-idx = it
+                ->
+            }
+        }
     }
 }
 
@@ -372,7 +418,16 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
         copy-len = h-len
 
         #{overflow=wrap}
-        out-pos + copy-len > key-len -> copy-len = key-len - out-pos
+        out-pos + copy-len > key-len -> {
+            {
+                #{overflow=wrap}
+                copy-len-opt3 = key-len - out-pos
+                copy-len-opt3: {
+                    ok -> copy-len = it
+                    ->
+                }
+            }
+        }
         i <- [0..copy-len): {
 
             ixout316c32 = t[i]: {
@@ -386,9 +441,23 @@ pbkdf2-hmac-sha1 = (password []byte, salt []byte, iterations i64, key-len i64) (
         }
 
         #{overflow=wrap}
-        out-pos = out-pos + copy-len
+        {
+            #{overflow=wrap}
+            out-pos-opt3 = out-pos + copy-len
+            out-pos-opt3: {
+                ok -> out-pos = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        block-idx = block-idx + 1
+        {
+            #{overflow=wrap}
+            block-idx-opt3 = block-idx + 1
+            block-idx-opt3: {
+                ok -> block-idx = it
+                ->
+            }
+        }
     }
 }

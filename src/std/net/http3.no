@@ -76,7 +76,14 @@ encode-header = (name str, value str) (buf []byte, n i64) {
     buf[pos] = QPACK-LITERAL-PREFIX
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt = pos + 1
+        pos-opt: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; 名稱長度（varint，高位=0 表示 Huffman 關閉）
     {
@@ -84,7 +91,14 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos] = name-bytes.len() & 255
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt2 = pos + 1
+                pos-opt2: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         -> {
@@ -96,7 +110,14 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos + 1] = name-bytes.len() & 255
 
             #{overflow=wrap}
-            pos = pos + 2
+            {
+                #{overflow=wrap}
+                pos-opt3 = pos + 2
+                pos-opt3: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
     }
 
@@ -122,7 +143,14 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos] = value-bytes.len() & 255
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt4 = pos + 1
+                pos-opt4: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         -> {
@@ -132,7 +160,14 @@ encode-header = (name str, value str) (buf []byte, n i64) {
             buf[pos + 1] = value-bytes.len() & 255
 
             #{overflow=wrap}
-            pos = pos + 2
+            {
+                #{overflow=wrap}
+                pos-opt5 = pos + 2
+                pos-opt5: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
     }
 
@@ -201,7 +236,14 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
         }
 
         #{overflow=wrap}
-        pos = pos + hdr-n
+        {
+            #{overflow=wrap}
+            pos-opt6 = pos + hdr-n
+            pos-opt6: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
     n = pos
 }
@@ -226,7 +268,14 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     }
 
     #{overflow=wrap}
-    r-pos = r-pos + 1
+    {
+        #{overflow=wrap}
+        r-pos-opt = r-pos + 1
+        r-pos-opt: {
+            ok -> r-pos = it
+            ->
+        }
+    }
 
     ; 檢查是否為字面標頭（001x xxxx）
     (prefix & 0xe0) != 0x20 -> {
@@ -245,7 +294,14 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     name-len = ixout211c16 & 63
 
     #{overflow=wrap}
-    r-pos = r-pos + 1
+    {
+        #{overflow=wrap}
+        r-pos-opt2 = r-pos + 1
+        r-pos-opt2: {
+            ok -> r-pos = it
+            ->
+        }
+    }
 
     #{overflow=wrap}
     r-pos + name-len > buf.len() -> return
@@ -273,7 +329,14 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     value-len = ixout234c17 & 63
 
     #{overflow=wrap}
-    r-pos = r-pos + 1
+    {
+        #{overflow=wrap}
+        r-pos-opt3 = r-pos + 1
+        r-pos-opt3: {
+            ok -> r-pos = it
+            ->
+        }
+    }
 
     #{overflow=wrap}
     r-pos + value-len > buf.len() -> return
@@ -322,7 +385,14 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     }
 
     #{overflow=wrap}
-    pos = pos + ft-n
+    {
+        #{overflow=wrap}
+        pos-opt7 = pos + ft-n
+        pos-opt7: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; 影格長度（varint）
     len-buf []byte
@@ -341,7 +411,14 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     }
 
     #{overflow=wrap}
-    pos = pos + len-n
+    {
+        #{overflow=wrap}
+        pos-opt8 = pos + len-n
+        pos-opt8: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; 影格資料
     i <- [0..payload.len()): {
@@ -446,7 +523,14 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
     }
 
     #{overflow=wrap}
-    next-pos = r-pos + len-val
+    {
+        #{overflow=wrap}
+        next-pos-opt = r-pos + len-val
+        next-pos-opt: {
+            ok -> next-pos = it
+            ->
+        }
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -577,7 +661,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    hdr-count = hdr-count + 1
+    hdr-count ?= hdr-count + 1
 
     ; :path
     hdr-names[hdr-count]: {
@@ -593,7 +677,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    hdr-count = hdr-count + 1
+    hdr-count ?= hdr-count + 1
 
     ; :scheme
     hdr-names[hdr-count]: {
@@ -609,7 +693,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    hdr-count = hdr-count + 1
+    hdr-count ?= hdr-count + 1
 
     ; :authority
     hdr-names[hdr-count]: {
@@ -625,7 +709,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    hdr-count = hdr-count + 1
+    hdr-count ?= hdr-count + 1
 
     ; user-agent
     hdr-names[hdr-count]: {
@@ -641,7 +725,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    hdr-count = hdr-count + 1
+    hdr-count ?= hdr-count + 1
 
     ; content-length（如有主體）
     body.len-bytes() > 0 -> {
@@ -658,7 +742,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
         }
 
         #{overflow=wrap}
-        hdr-count = hdr-count + 1
+        hdr-count ?= hdr-count + 1
     }
 
     ; ── 編碼 HEADERS 影格 ──
@@ -691,7 +775,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    stream-pos = stream-pos + hdr-n
+    stream-pos ?= stream-pos + hdr-n
     i <- [0..data-n): {
 
         ixout630c24 = data-buf[i]: {
@@ -709,7 +793,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    stream-pos = stream-pos + data-n
+    stream-pos ?= stream-pos + data-n
 
     ; ── 構建 QUIC STREAM 影格 ──
     ; 串流 ID = 4（客戶端雙向串流）
@@ -741,7 +825,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    pkt-pos = pkt-pos + stream-ft-n
+    pkt-pos ?= pkt-pos + stream-ft-n
 
     ; 串流 ID
     sid-buf []byte
@@ -764,7 +848,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    pkt-pos = pkt-pos + sid-n
+    pkt-pos ?= pkt-pos + sid-n
 
     ; Offset = 0
     off-buf []byte
@@ -787,7 +871,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    pkt-pos = pkt-pos + off-n
+    pkt-pos ?= pkt-pos + off-n
 
     ; Length
     len-buf []byte
@@ -810,7 +894,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    pkt-pos = pkt-pos + len-n
+    pkt-pos ?= pkt-pos + len-n
 
     ; 資料
     i <- [0..stream-pos): {
@@ -830,7 +914,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     }
 
     #{overflow=wrap}
-    pkt-pos = pkt-pos + stream-pos
+    pkt-pos ?= pkt-pos + stream-pos
 
     ; ── 發送 QUIC 封包（1-RTT 短標頭 + STREAM 影格）──
     ; 注意: 此處需要 1-RTT 金鑰來加密

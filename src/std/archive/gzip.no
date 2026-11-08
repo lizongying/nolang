@@ -174,15 +174,36 @@ huffman.decode = (br bit-reader) (sym i64) {
         }
 
         #{overflow=wrap}
-        index = index + cnt
+        {
+            #{overflow=wrap}
+            index-opt = index + cnt
+            index-opt: {
+                ok -> index = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        first = first + cnt
+        {
+            #{overflow=wrap}
+            first-opt = first + cnt
+            first-opt: {
+                ok -> first = it
+                ->
+            }
+        }
         first = first << 1
         code = code << 1
 
         #{overflow=wrap}
-        len = len + 1
+        {
+            #{overflow=wrap}
+            len-opt = len + 1
+            len-opt: {
+                ok -> len = it
+                ->
+            }
+        }
     }
     sym = -1
 }
@@ -291,7 +312,13 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
                     -> _
                 }
-                idx = idx + 1
+                {
+                    idx-opt = idx + 1
+                    idx-opt: {
+                        ok -> idx = it
+                        ->
+                    }
+                }
             }
 
             sym == 16 -> {
@@ -311,7 +338,13 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
                         -> _
                     }
-                    idx = idx + 1
+                    {
+                        idx-opt2 = idx + 1
+                        idx-opt2: {
+                            ok -> idx = it
+                            ->
+                        }
+                    }
                 }
             }
 
@@ -326,7 +359,13 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
                         -> _
                     }
-                    idx = idx + 1
+                    {
+                        idx-opt3 = idx + 1
+                        idx-opt3: {
+                            ok -> idx = it
+                            ->
+                        }
+                    }
                 }
             }
 
@@ -341,7 +380,13 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 
                         -> _
                     }
-                    idx = idx + 1
+                    {
+                        idx-opt4 = idx + 1
+                        idx-opt4: {
+                            ok -> idx = it
+                            ->
+                        }
+                    }
                 }
             }
         }
@@ -534,7 +579,14 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
                         ; 長度/距離回參考
                         #{overflow=wrap}
-                        code = sym - 257
+                        {
+                            #{overflow=wrap}
+                            code-opt = sym - 257
+                            code-opt: {
+                                ok -> code = it
+                                ->
+                            }
+                        }
 
                         length = length-base[code]: {
                             ok -> it
@@ -640,7 +692,14 @@ deflate-stored = (data []byte) (out []byte) {
         }
 
         #{overflow=wrap}
-        pos = pos + blen
+        {
+            #{overflow=wrap}
+            pos-opt = pos + blen
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
     out = result
 }
@@ -714,7 +773,13 @@ gzip-decompress = (data []byte) (out []byte) {
 
             -> 0
         }
-        pos = pos + 1
+        {
+            pos-opt2 = pos + 1
+            pos-opt2: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         ixout697c25 = data[pos]: {
             ok -> it
@@ -723,7 +788,13 @@ gzip-decompress = (data []byte) (out []byte) {
         }
 
         xlen = xlen | ((ixout697c25) << 8)
-        pos = pos + xlen
+        {
+            pos-opt3 = pos + xlen
+            pos-opt3: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 
     ; FNAME (bit 3) — 以 \0 結尾的字串
@@ -735,7 +806,13 @@ gzip-decompress = (data []byte) (out []byte) {
 
                 -> 0
             }
-            pos = pos + 1
+            {
+                pos-opt4 = pos + 1
+                pos-opt4: {
+                    ok -> pos = it
+                    ->
+                }
+            }
             c == 0 -> break
         }
     }
@@ -749,14 +826,29 @@ gzip-decompress = (data []byte) (out []byte) {
 
                 -> 0
             }
-            pos = pos + 1
+            {
+                pos-opt5 = pos + 1
+                pos-opt5: {
+                    ok -> pos = it
+                    ->
+                }
+            }
             c == 0 -> break
         }
     }
 
     ; FHCRC (bit 0) — 2 bytes CRC16
     #{overflow=wrap}
-    (flg & 1) != 0 -> pos = pos + 2
+    (flg & 1) != 0 -> {
+        {
+            #{overflow=wrap}
+            pos-opt6 = pos + 2
+            pos-opt6: {
+                ok -> pos = it
+                ->
+            }
+        }
+    }
 
     ; DEFLATE 資料從 pos 開始
     ; 複製 DEFLATE 資料到新切片（inflate 需要獨立的位元讀取器）

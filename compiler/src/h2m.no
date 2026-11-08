@@ -102,6 +102,7 @@
 # /compiler/src/ast
 # /compiler/src/mir
 # /compiler/src/cg
+# /compiler/src/util/sb.sb
 
 ; ── 降级上下文（指令流 + 值 id arena + 变量绑定表 + 块游标 + 诚实计数器）──
 ; ⚠️ 块游标纪律（s57）：cg 主循环按 `blks[k] != cur` 发标签 ⇒ **每块必须是指令序中的连续段**。
@@ -147,6 +148,15 @@ h2m-ctx {
     aln []str
     alv []i64
     alidx []i64
+    ; s99：模块级结构体表（B10 唯一装配点的前置数据）。并行数组、按定义序稳定 id：
+    ;   stn = 结构体名；stid = 结构体 id（= 型别码 - TY-STRUCT-BASE）；stfc = 字段数；
+    ;   stft = 字段型别码拼接表（按 id 升序，长度 = Σ stfc）；stfldn = 字段名拼接表（与 stft 同序、同下标）
+    ; ⚠️ 数组在 h2m-lower-func 里从模块级 agg 浅拷进函数 ctx（只增不写），函数体只读，不另发独立副本
+    stn []str
+    stid []i64
+    stfc []i64
+    stft []i64
+    stfldn []str
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -201,6 +211,16 @@ h2m-new = () (c h2m-ctx) {
         i64
         alidx: []
         i64
+        stn: []
+        str
+        stid: []
+        i64
+        stfc: []
+        i64
+        stft: []
+        i64
+        stfldn: []
+        str
     }
     c.vty.push(TY-I64)
 }
@@ -337,7 +357,7 @@ h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
     ty != TY-VEC -> {
         sid = h2m-alloc(c, ty)
         ok-slot = 1
-        ty != TY-I64 && ty != TY-U64 && ty != TY-STR && ty != TY-F64 && ty != TY-OPT -> ok-slot = 0
+        ty != TY-I64 && ty != TY-U64 && ty != TY-STR && ty != TY-F64 && ty != TY-OPT && !(ty >= TY-STRUCT-BASE) -> ok-slot = 0
         ok-slot == 1 && ty != TY-STR && ty != TY-OPT -> {
             h2m-emit(c, OP-ALLOC, sid, 0, 0, '', ty)
             zid = h2m-alloc(c, ty)
@@ -363,6 +383,12 @@ h2m-slot-decl = (c h2m-ctx, name str, ty i64) {
             zid3 = h2m-alloc(c, TY-OPT)
             h2m-emit(c, OP-OPTNONE, zid3, 0, 0, '', TY-OPT)
             h2m-emit(c, OP-OPTSTORE, 0, zid3, sid, '', 0)
+        }
+
+        ; s99c：结构体局部量落 entry 的 alloca %struct.sN 槽（%sts<sid>，与值 %st<sid> 分开命名空间）；
+        ;   无零初始化——写前读会拿 poison，但良构程序每条路径写先于读；cg 的 OP-STALLOC 用 b 槽传结构体 id
+        ok-slot == 1 && ty >= TY-STRUCT-BASE -> {
+            h2m-emit(c, OP-STALLOC, sid, 0, ty - TY-STRUCT-BASE, '', 0)
         }
         ok-slot == 0 -> h2m-mark(c)
         ok-slot == 1 -> {
@@ -393,8 +419,10 @@ h2m-slot-init-arg = (c h2m-ctx, name str, vid i64, ty i64) {
         sid = c.vids[i]
         st = c.tys[i]
     }
-    st == ty && ty != TY-VEC && ty != TY-STR -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
+    st == ty && ty != TY-VEC && ty != TY-STR && ty < TY-STRUCT-BASE -> h2m-emit(c, OP-STORE, 0, vid, sid, '', 0)
     st == ty && ty == TY-STR -> h2m-emit(c, OP-SSTORE, 0, vid, sid, '', 0)
+    ; s99c：结构体形参 incoming 值落 %sts<sid> 槽（cg OP-STSTORE：xa=值、bs=槽）
+    st == ty && ty >= TY-STRUCT-BASE -> h2m-emit(c, OP-STSTORE, 0, vid, sid, '', 0)
 
     ; s62：TY-VEC 形参无槽可存——绑在名字上的值 id 就是该 incoming vid ⇒ 空操作
     st != ty -> h2m-mark(c)
@@ -448,7 +476,11 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
 
                 ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
                 st == TY-VEC -> v = sid
-                st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-F64 && st != TY-OPT -> h2m-mark(c)
+                st >= TY-STRUCT-BASE -> {
+                    v = h2m-alloc(c, st)
+                    h2m-emit(c, OP-STLOAD, v, sid, 0, '', st)
+                }
+                st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-F64 && st != TY-OPT && !(st >= TY-STRUCT-BASE) -> h2m-mark(c)
             }
         }
     }
@@ -514,7 +546,7 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
             sid = c.vids[i]
             st = c.tys[i]
             vt = h2m-vty-at(c, val)
-            st == vt && st != TY-STR && st != TY-VEC && st != TY-OPT -> {
+            st == vt && st != TY-STR && st != TY-VEC && st != TY-OPT && st < TY-STRUCT-BASE -> {
                 h2m-emit(c, OP-STORE, 0, val, sid, '', 0)
                 ok-w = 1
             }
@@ -537,6 +569,12 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
                     h2m-emit(c, OP-OPTSTORE, 0, wv, sid, '', 0)
                     ok-w = 1
                 }
+            }
+
+            ; s99c：结构体槽写——整结构体值 %st<val> 落 %sts<sid>（cg OP-STSTORE：xa=值、bs=槽）
+            st == vt && st >= TY-STRUCT-BASE -> {
+                h2m-emit(c, OP-STSTORE, 0, val, sid, '', 0)
+                ok-w = 1
             }
         }
         ok-w == 0 -> h2m-mark(c)
@@ -580,11 +618,20 @@ h2m-ty-code = (s str) (t i64) {
 ; t: AST arena
 ; tn: 型别节点 id（0 = 缺位）
 ; code: 型别码（-1 = 不在覆盖面）
-h2m-tynode-code = (t ast, tn i64) (code i64) {
+h2m-tynode-code = (t ast, agg h2m-ctx, tn i64) (code i64) {
     code = -1
     tn > 0 -> {
         d = ast.nd-at(t, tn)
-        d.kind == asp.K-NAMED-TYPE -> code = h2m-ty-code(ast.str-at(t, d.s0))
+        d.kind == asp.K-NAMED-TYPE -> {
+            nm = ast.str-at(t, d.s0)
+            code = h2m-ty-code(nm)
+            ; s99b：具名型别若不是基本型，回退查模块级结构体表（定义序即 id 序）
+            ;   ⇒ 结构体作形参／返回值／let 标注型别时，名字解析成 TY-STRUCT-BASE + sid
+            code < 0 -> {
+                sid = h2m-struct-find(agg, nm)
+                sid >= 0 -> code = TY-STRUCT-BASE + sid
+            }
+        }
         d.kind == asp.K-NULLABLE-TYPE && d.nkid == 1 -> {
             ik = h2m-kid-i(t, tn, 0)
             ik > 0 -> {
@@ -601,6 +648,136 @@ h2m-tynode-code = (t ast, tn i64) (code i64) {
             }
         }
     }
+}
+
+; ── s99：结构体表查询 helper（表存 c.stn/stid/stfc/stft/stfldn，定义序即 id 序）──
+; 按名查结构体 id（-1 = 未登记）
+h2m-struct-find = (c h2m-ctx, name str) (sid i64) {
+    sid = -1
+    i = 0
+    (i < c.stn.len() && sid < 0) {
+        c.stn[i] == name -> sid = i
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; 取结构体 sid 的字段数
+h2m-struct-fc = (c h2m-ctx, sid i64) (fc i64) {
+    fc = c.stfc[sid]
+}
+
+; 取结构体 sid 第 fi 个字段的型别码（stft 为拼接表，需跳过前 sid 个结构体的字段）
+h2m-struct-field-ty = (c h2m-ctx, sid i64, fi i64) (ty i64) {
+    ty = -1
+    off = 0
+    i = 0
+    (i < sid) {
+        off = off + c.stfc[i]
+        #{overflow=wrap}
+        i = i + 1
+    }
+    ty = c.stft[off + fi]
+}
+
+; 按字段名查字段下标（-1 = 该结构体无此字段）；stfldn 与 stft 同序同下标
+h2m-struct-field-idx = (c h2m-ctx, sid i64, fname str) (fi i64) {
+    fi = -1
+    off = 0
+    i = 0
+    (i < sid) {
+        off = off + c.stfc[i]
+        #{overflow=wrap}
+        i = i + 1
+    }
+    j = 0
+    (j < c.stfc[sid] && fi < 0) {
+        c.stfldn[off + j] == fname -> fi = j
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
+; s99：在前扫描里登记一个结构体定义（K-STRUCT-DEFINITION 节点 n）。
+; 定义序即 id 序：新结构体 id = 当前 stn 长度。字段逐个登记，型别只收 i64（其余字段型 ⇒ 计 unsup，
+;   整模块不产码，宁缺勿错）；字段数不符/重复定义 ⇒ 视后续降级诚实门禁兜底。
+; 字段型别码与字段名分别进 stft / stfldn（拼接表，与 stfc 计数对应）。
+h2m-struct-register = (c h2m-ctx, t ast, n i64) {
+    d = ast.nd-at(t, n)
+    ; ps-parse-struct-def 把名字存进 slot0（s1=implements 数、s2=fields 数），故此处读 s0
+    sname = ast.str-at(t, d.s0)
+    sid = h2m-struct-find(c, sname)
+    sid >= 0 -> {
+        ; 重复定义：保留首定义，静默跳过（Go 同名 struct 后定义不覆盖）
+    }
+    sid < 0 -> {
+        nid = c.stn.len()
+        c.stn.push(sname)
+        c.stid.push(nid)
+        fc = 0
+        i = 0
+        (i < d.nkid) {
+            ; 字段跨定义逐个推进：d.kid0 是首 kid 的【位置】基址（非节点 id），
+            ;   必须先 ast.kid-at 取该位置的子节点 id，再 ast.nd-at 取结构体（直传 d.kid0+i 给 nd-at 会读错节点）。
+            fchild = ast.kid-at(t, d.kid0 + i)
+            fnode = ast.nd-at(t, fchild)
+            ; 定义内 StructField：s0 = 字段名，kid0 = NamedType（s0 = 型别名如 "i64"）
+            ffname = ast.str-at(t, fnode.s0)
+            ntk = ast.kid-at(t, fnode.kid0)
+            ntd = ast.nd-at(t, ntk)
+            ftname = ast.str-at(t, ntd.s0)
+            fty = h2m-ty-code(ftname)
+            fty != TY-I64 -> {
+                h2m-mark(c)
+                i = d.nkid
+            }
+            fty == TY-I64 -> {
+                fc = fc + 1
+                c.stft.push(fty)
+                c.stfldn.push(ffname)
+            }
+            #{overflow=wrap}
+            i = i + 1
+        }
+        c.stfc.push(fc)
+    }
+}
+
+; s99：模块级结构体型别声明串（§11 B10 唯一装配点）。id 升序、nf>0 才发；
+;   型别名经 cg.cg-ty-name 唯一映射（与 cg 发射端 %struct.s<id> 同源），避免两处各写一份。
+;   stft 是按 id 升序拼接的字段型别表，需按 stfc 计数跳过前 sid 个结构体的字段求偏移。
+h2m-struct-decls = (c h2m-ctx) (r str) {
+    b = sb.init(256)
+    n = c.stn.len()
+    i = 0
+    (i < n) {
+        fc = c.stfc[i]
+        fc > 0 -> {
+            off = 0
+            k = 0
+            (k < i) {
+                off = off + c.stfc[k]
+                #{overflow=wrap}
+                k = k + 1
+            }
+            b.push('%struct.s')
+            b.push(i.to-str())
+            b.push(' = type { ')
+            j = 0
+            (j < fc) {
+                j > 0 -> b.push(', ')
+                tn = cg.cg-ty-name(c.stft[off + j])
+                b.push(tn)
+                #{overflow=wrap}
+                j = j + 1
+            }
+            b.push(' }')
+            b.push('\n')
+        }
+        #{overflow=wrap}
+        i = i + 1
+    }
+    r = b.str()
 }
 
 ; 计数循环计数器的合成槽名（s60m）：带上 ForStatement 节点 id ⇒ 同函数内多个／嵌套计数循环各占一槽；
@@ -877,7 +1054,7 @@ h2m-lst-add = (l h2m-lst, name str, ty i64) {
 ; l: 已登记的局部量表（标识符型别查此表）
 ; n: 表达式节点 id
 ; code: 型别码（-1 = 推不出）
-h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
+h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
     code = -1
     n > 0 -> {
         d = ast.nd-at(t, n)
@@ -898,13 +1075,13 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
         d.kind == asp.K-FLOAT-LITERAL -> code = TY-F64
         d.kind == asp.K-GROUPED-EXPRESSION -> {
             k = ast.kid-at(t, d.kid0)
-            code = h2m-ty-of(t, sg, l, k)
+            code = h2m-ty-of(t, sg, l, agg, k)
         }
         d.kind == asp.K-INFIX-EXPRESSION -> {
             xk = ast.kid-at(t, d.kid0)
             yk = h2m-kid-i(t, n, 1)
-            a = h2m-ty-of(t, sg, l, xk)
-            b = h2m-ty-of(t, sg, l, yk)
+            a = h2m-ty-of(t, sg, l, agg, xk)
+            b = h2m-ty-of(t, sg, l, agg, yk)
             a == TY-I64 && b == TY-I64 -> code = TY-I64
 
             ; s76：整族含 u64（任一侧 TY-U64、另一侧整族）⇒ TY-U64，与降级侧 uty 同口径——
@@ -940,7 +1117,7 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
         }
         d.kind == asp.K-PREFIX-EXPRESSION -> {
             k = ast.kid-at(t, d.kid0)
-            code = h2m-ty-of(t, sg, l, k)
+            code = h2m-ty-of(t, sg, l, agg, k)
         }
         d.kind == asp.K-CALL-EXPRESSION -> {
             ck = ast.kid-at(t, d.kid0)
@@ -951,6 +1128,28 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, n i64) (code i64) {
                     si = h2m-sig-find(sg, cn)
                     si >= 0 -> code = sg.fret[si]
                 }
+            }
+        }
+        ; s99c：点号字段读 ⇒ 解析接收者型别，按字段名查结构体字段型别；
+        ;   接收者若直接是标识符 ⇒ 查 loc 表拿其型别码（struct 局部量／形参已登记 TY-STRUCT-BASE+sid）；
+        ;   否则递归 h2m-ty-of 推接收者型别。字段型别码经 h2m-struct-field-ty 查模块结构体表。
+        d.kind == asp.K-DOT-EXPRESSION -> {
+            rk = ast.kid-at(t, d.kid0)
+            rkd = ast.nd-at(t, rk)
+            rt = -1
+            rkd.kind == asp.K-IDENTIFIER -> {
+                rnm = ast.str-at(t, rkd.s0)
+                ri = h2m-lst-find(l, rnm)
+                ri >= 0 -> rt = l.lty[ri]
+                ri < 0 -> rt = h2m-ty-of(t, sg, l, agg, rk)
+            }
+            rkd.kind != asp.K-IDENTIFIER -> rt = h2m-ty-of(t, sg, l, agg, rk)
+            rt >= TY-STRUCT-BASE -> {
+                rsid = rt - TY-STRUCT-BASE
+                rfn = ast.str-at(t, d.s0)
+                rfi = h2m-struct-field-idx(agg, rsid, rfn)
+                rfi >= 0 -> code = h2m-struct-field-ty(agg, rsid, rfi)
+                rfi < 0 -> code = -1
             }
         }
     }
@@ -981,7 +1180,7 @@ h2m-kid-i = (t ast, n i64, i i64) (k i64) {
 ; l: 局部量表
 ; n: 父节点 id
 ; flow: 其子树是否含控制流
-h2m-scan-kids = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
+h2m-scan-kids = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
     flow = 0
     n > 0 -> {
         d = ast.nd-at(t, n)
@@ -991,7 +1190,7 @@ h2m-scan-kids = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
             kf = 0
             kid > 0 -> {
                 kd = ast.nd-at(t, kid)
-                kd.kind != asp.K-FUNCTION-DEFINITION -> kf = h2m-scan(t, sg, l, kid)
+                kd.kind != asp.K-FUNCTION-DEFINITION -> kf = h2m-scan(t, sg, l, agg, kid)
             }
             kf > flow -> flow = kf
 
@@ -1007,7 +1206,7 @@ h2m-scan-kids = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
 ; l: 局部量表
 ; n: SurfaceMatch 节点 id
 ; flow: 1 = 臂体内含控制流
-h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
+h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
     flow = 0
     n > 0 -> {
         d = ast.nd-at(t, n)
@@ -1019,10 +1218,10 @@ h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
             cn = ast.aux-at(t, hb + 10)
             bn = ast.aux-at(t, hb + 11)
             cf = 0
-            cn > 0 -> cf = h2m-scan(t, sg, l, cn)
+            cn > 0 -> cf = h2m-scan(t, sg, l, agg, cn)
             cf > flow -> flow = cf
             bf = 0
-            bn > 0 -> bf = h2m-scan(t, sg, l, bn)
+            bn > 0 -> bf = h2m-scan(t, sg, l, agg, bn)
             bf > flow -> flow = bf
 
             #{overflow=wrap}
@@ -1039,7 +1238,7 @@ h2m-scan-arms = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
 ; l: 局部量表（呼叫方预先播种形参）
 ; n: 节点 id
 ; flow: 1 = 含控制流（需 mem 模式）
-h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
+h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
     flow = 0
     n > 0 -> {
         d = ast.nd-at(t, n)
@@ -1051,9 +1250,19 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
                 #{overflow=wrap}
                 vc = vc - 1
                 vk = h2m-kid-i(t, n, vc)
-                ty = h2m-ty-of(t, sg, l, vk)
+                ; s99c：结构体字面量 RHS ⇒ 直接查模块结构体表解析型别码（h2m-ty-of 不认 K-STRUCT-LITERAL）；
+                ;   表在 pre-pass 先登记，此处必已就绪；查不到留 -1 ⇒ slot-decl 计 unsup
+                ty = -1
+                vkd = ast.nd-at(t, vk)
+                vkd.kind == asp.K-STRUCT-LITERAL -> {
+                    vsn = ast.str-at(t, vkd.s0)
+                    vsid = h2m-struct-find(agg, vsn)
+                    vsid >= 0 -> ty = TY-STRUCT-BASE + vsid
+                    vsid < 0 -> ty = -1
+                }
+                vkd.kind != asp.K-STRUCT-LITERAL -> ty = h2m-ty-of(t, sg, l, agg, vk)
                 h2m-lst-add(l, nm, ty)
-                f0 = h2m-scan-kids(t, sg, l, vk)
+                f0 = h2m-scan-kids(t, sg, l, agg, vk)
                 f0 > flow -> flow = f0
             }
 
@@ -1084,10 +1293,10 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
                     }
                 }
 
-                f1 = h2m-scan-kids(t, sg, l, n)
+                f1 = h2m-scan-kids(t, sg, l, agg, n)
                 f1 > flow -> flow = f1
                 fa = 0
-                d.kind == asp.K-SURFACE-MATCH -> fa = h2m-scan-arms(t, sg, l, n)
+                d.kind == asp.K-SURFACE-MATCH -> fa = h2m-scan-arms(t, sg, l, agg, n)
                 fa > flow -> flow = fa
             }
 
@@ -1095,12 +1304,12 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, n i64) (flow i64) {
             d.kind == asp.K-RETURN-STATEMENT || d.kind == asp.K-BREAK-STATEMENT || d.kind == asp.K-CONTINUE-STATEMENT -> flow = 1
 
             d.kind == asp.K-BLOCK-STATEMENT || d.kind == asp.K-EXPRESSION-STATEMENT -> {
-                f2 = h2m-scan-kids(t, sg, l, n)
+                f2 = h2m-scan-kids(t, sg, l, agg, n)
                 f2 > flow -> flow = f2
             }
 
             -> {
-                f3 = h2m-scan-kids(t, sg, l, n)
+                f3 = h2m-scan-kids(t, sg, l, agg, n)
                 f3 > flow -> flow = f3
             }
         }
@@ -1652,6 +1861,67 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ok-p == 0 -> h2m-mark(c)
         }
 
+        ; s99：结构体字面量降级——K-STRUCT-LITERAL：s0 = 结构体名，kids = StructField（s0 = 字段名、kid0 = 值 expr）。
+        ;   逐字段降级（顺序、背靠背）⇒ 字段值 id 连续（x0, x0+1, ...），正好喂 cg 的 OP-STRUCT-MK 连续约定；
+        ;   每个字段值的型别由 h2m-lower-expr 自己登记进 vty（字段序即 ast 字段序，与定义序一致）。
+        ;   ⚠️ 字段数必须与定义一致（nf != stfc ⇒ 诚实门禁，避免 cg 按 nf 步数 insertvalue 与型别声明错位）。
+        d.kind == asp.K-STRUCT-LITERAL -> {
+            sname = ast.str-at(t, d.s0)
+            sid = h2m-struct-find(c, sname)
+            sid < 0 -> h2m-mark(c)
+            sid >= 0 -> {
+                nf = d.nkid
+                want = h2m-struct-fc(c, sid)
+                nf != want -> h2m-mark(c)
+                nf == want -> {
+                    f0 = 0
+                    i = 0
+                    (i < nf) {
+                        ; d.kid0 是首 kid 位置基址（非节点 id）：先 ast.kid-at 取子节点 id 再 ast.nd-at（同 h2m-struct-register）
+                        fchild = ast.kid-at(t, d.kid0 + i)
+                        fnode = ast.nd-at(t, fchild)
+                        ; 字面量 StructField：kid0 = Type 占位(0)，Value 是【第二个 kid】⇒ 走 fnode.kid0 + 1 位置取（nd 结构体无 kid1 字段，多 kid 连续存于 kid0 起）
+                        vexpr = ast.kid-at(t, fnode.kid0 + 1)
+                        fv = h2m-lower-expr(t, c, sg, vexpr)
+                        i == 0 -> f0 = fv
+                        fv == 0 -> h2m-mark(c)
+                        #{overflow=wrap}
+                        i = i + 1
+                    }
+                    #{overflow=wrap}
+                    stcode = TY-STRUCT-BASE + sid
+                    sv = h2m-alloc(c, stcode)
+                    h2m-emit(c, OP-STRUCT-MK, sv, f0, nf, '', stcode)
+                    v = sv
+                }
+            }
+        }
+
+        ; s99：点号字段读——K-DOT-EXPRESSION：s0 = 字段名，kid0 = 接收者（变量或字面量）。
+        ;   降级接收者得结构体值 id（vty 含 TY-STRUCT-BASE 偏移），按名查字段下标，发 OP-STRUCT-GET；
+        ;   cg 取 vty[xa[k]] 推结构体 id、cty[k] 推字段型别前缀。
+        d.kind == asp.K-DOT-EXPRESSION -> {
+            fname = ast.str-at(t, d.s0)
+            recv = ast.kid-at(t, d.kid0)
+            sv = h2m-lower-expr(t, c, sg, recv)
+            sv > 0 -> {
+                stcode = h2m-vty-at(c, sv)
+                #{overflow=wrap}
+                sid = stcode - TY-STRUCT-BASE
+                (sid < 0 || sid >= c.stn.len()) -> h2m-mark(c)
+                sid >= 0 && sid < c.stn.len() -> {
+                    fi = h2m-struct-field-idx(c, sid, fname)
+                    fi < 0 -> h2m-mark(c)
+                    fi >= 0 -> {
+                        fty = h2m-struct-field-ty(c, sid, fi)
+                        fv = h2m-alloc(c, fty)
+                        h2m-emit(c, OP-STRUCT-GET, fv, sv, fi, '', fty)
+                        v = fv
+                    }
+                }
+            }
+        }
+
         -> h2m-mark(c)
     }
 }
@@ -1689,7 +1959,7 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             tkp = d.kid0
             tk = ast.kid-at(t, tkp)
             tk > 0 -> {
-                code = h2m-tynode-code(t, tk)
+                code = h2m-tynode-code(t, c, tk)
                 code != h2m-vty-at(c, vv) -> tc = -1
                 code >= 0 && code == h2m-vty-at(c, vv) -> tc = 1
             }
@@ -1774,6 +2044,52 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 ;   ⚠ lower-expr 失败时自己已经 mark 过（其每条不支持路皆 h2m-mark），故 hd 置 1 不再补计，避免双账
                 hd == 0 && sd.kind == asp.K-CALL-EXPRESSION -> {
                     h2m-lower-expr(t, c, sg, sub)
+                    hd = 1
+                }
+
+                ; s99：字段写——K-ASSIGN-EXPRESSION 且 LHS 是 K-DOT-EXPRESSION（var.field = rhs）：
+                ;   降 RHS 得值 id；读旧结构体值（h2m-var-read）、按名查字段下标与型别；
+                ;   OP-STRUCT-SET 产「读旧 + insertvalue 出新值」（LLVM 结构不可变），再 h2m-var-write 把变量重绑到新值。
+                ;   ⚠️ ast.kid-at 回 i64 节点 id（非结构体），取 kind 走 ast.kind-at、取名走 ast.nd-at 落地局部再 .s0，
+                ;     不得对 kid-at 结果直接 .kind（bin/no 旧后端报 NoVal）；nd-at 结构体拷贝字段亦不得裸进区块臂条件。
+                hd == 0 && sd.kind == asp.K-ASSIGN-EXPRESSION -> {
+                    lk = h2m-kid-i(t, sub, 0)
+                    lk > 0 -> {
+                        lkd = ast.nd-at(t, lk)
+                        lkd.kind == asp.K-DOT-EXPRESSION -> {
+                            recv = ast.kid-at(t, lkd.kid0)
+                            rk = ast.kind-at(t, recv)
+                            rk == asp.K-IDENTIFIER -> {
+                                rd = ast.nd-at(t, recv)
+                                varnm = ast.str-at(t, rd.s0)
+                                sv = h2m-var-read(c, varnm)
+                                sv > 0 -> {
+                                    stcode = h2m-vty-at(c, sv)
+                                    ; #{overflow=wrap}
+                                    sid = stcode - TY-STRUCT-BASE
+                                    (sid < 0 || sid >= c.stn.len()) -> h2m-mark(c)
+                                    sid >= 0 && sid < c.stn.len() -> {
+                                        fname = ast.str-at(t, lkd.s0)
+                                        fi = h2m-struct-field-idx(c, sid, fname)
+                                        fi < 0 -> h2m-mark(c)
+                                        fi >= 0 -> {
+                                            fty = h2m-struct-field-ty(c, sid, fi)
+                                            rhsn = h2m-kid-i(t, sub, 1)
+                                            rv = h2m-lower-expr(t, c, sg, rhsn)
+                                            rv > 0 -> {
+                                                dsv = h2m-alloc(c, stcode)
+                                                h2m-emit(c, OP-STRUCT-SET, dsv, sv, rv, '', fi)
+                                                h2m-var-write(c, varnm, dsv)
+                                            }
+                                            rv == 0 -> h2m-mark(c)
+                                        }
+                                    }
+                                }
+                                sv == 0 -> h2m-mark(c)
+                            }
+                            rk != asp.K-IDENTIFIER -> h2m-mark(c)
+                        }
+                    }
                     hd = 1
                 }
             }
@@ -2718,7 +3034,7 @@ h2m-lower-term-stmt = (t ast, c h2m-ctx, sg h2m-sigs, kid i64, last i64) (hd i64
 ; code: 型别码（-1 = 不在覆盖面）
 ; bad: 形状不合格标记
 ; de: 默认值表达式 AST 节点 id（0 = 无默认值）
-h2m-param-ty = (t ast, p i64) (code i64, bad i64, de i64) {
+h2m-param-ty = (t ast, agg h2m-ctx, p i64) (code i64, bad i64, de i64) {
     bad = 1
     code = -1
     de = 0
@@ -2729,7 +3045,7 @@ h2m-param-ty = (t ast, p i64) (code i64, bad i64, de i64) {
 
         ; s94：具名型别与 ?u64 同走 h2m-tynode-code 共用判据（旧 K-NAMED-TYPE 单臂上提进 helper）
         td.kind == asp.K-NAMED-TYPE || td.kind == asp.K-NULLABLE-TYPE -> {
-            code = h2m-tynode-code(t, tk)
+            code = h2m-tynode-code(t, agg, tk)
             code >= 0 -> bad = 0
         }
 
@@ -2769,7 +3085,7 @@ h2m-param-ty = (t ast, p i64) (code i64, bad i64, de i64) {
 ; argt: 输入型别表（顺序即 LLVM 形参序）
 ; deft: 默认值表达式节点表（与 argt 平行，0 = 无默认值；s92）
 ; bad: 形状不合格标记
-h2m-func-sig = (t ast, n i64) (name str, ret i64, argt []i64, deft []i64, bad i64) {
+h2m-func-sig = (t ast, agg h2m-ctx, n i64) (name str, ret i64, argt []i64, deft []i64, bad i64) {
     bad = 0
     ret = TY-I64
     d = ast.nd-at(t, n)
@@ -2786,7 +3102,7 @@ h2m-func-sig = (t ast, n i64) (name str, ret i64, argt []i64, deft []i64, bad i6
         #{overflow=wrap}
         p = p + i
         pk = ast.kid-at(t, p)
-        pc, pb, pde = h2m-param-ty(t, pk)
+        pc, pb, pde = h2m-param-ty(t, agg, pk)
         pb != 0 -> bad = 1
         pb == 0 -> argt.push(pc)
         pb == 0 -> deft.push(pde)
@@ -2803,7 +3119,7 @@ h2m-func-sig = (t ast, n i64) (name str, ret i64, argt []i64, deft []i64, bad i6
         #{overflow=wrap}
         rp = rp + d.c4
         rk = ast.kid-at(t, rp)
-        rc, rb, rde = h2m-param-ty(t, rk)
+        rc, rb, rde = h2m-param-ty(t, agg, rk)
         rb != 0 -> bad = 1
 
         ; s92：输出参带默认值不入形——Go 回填循环只遍输入参（hir2mir.go:13176 paramNodes），
@@ -2830,8 +3146,14 @@ h2m-func-sig = (t ast, n i64) (name str, ret i64, argt []i64, deft []i64, bad i6
 h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     r = ''
     c = h2m-new()
+    ; s99：模块级结构体表从 agg 浅拷进函数 ctx（只增不写，函数体只读）。MK/GET/SET 降级时按名字查 id 与字段
+    c.stn = agg.stn
+    c.stid = agg.stid
+    c.stfc = agg.stfc
+    c.stft = agg.stft
+    c.stfldn = agg.stfldn
     d = ast.nd-at(t, n)
-    fnm, frt, fap, fdp, fb = h2m-func-sig(t, n)
+    fnm, frt, fap, fdp, fb = h2m-func-sig(t, agg, n)
     fb != 0 -> {
         h2m-mark(c)
     }
@@ -2881,7 +3203,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
 
         ; ⚠️ 槽必须在 body 之前铺完（entry 块的连续段纪律）⇒ 先前扫描定「有无控制流 + 局部量表」
         flow = 0
-        bc >= 0 -> flow = h2m-scan(t, sg, loc, body)
+        bc >= 0 -> flow = h2m-scan(t, sg, loc, agg, body)
         flow > 0 -> c.mem = 1
 
         ; s97：option 输出参的槽必须按【声明型 TY-OPT】铺（nil-init），但 h2m-scan 把体内 `r = <payload>`
@@ -3026,7 +3348,23 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
     sg = h2m-sigs-new()
     d = ast.nd-at(t, root)
 
-    ; 前置 pass：只登记合格签名（不合格的此处跳登、不计数）
+    ; s99b：前置 pass 拆两段——①先登记全部结构体定义（定义序即 id 序、字段表拼接），
+    ;   ②再登记合格函数签名。这样函数签名里的 Point 等结构体型别名，无论「函数先于结构体定义」
+    ;   与否，解析时结构体表都已就绪（struct 名 → TY-STRUCT-BASE + sid 由 h2m-tynode-code 回退查表）
+    i = 0
+    (i < d.nkid) {
+        p = d.kid0
+
+        #{overflow=wrap}
+        p = p + i
+        kid = ast.kid-at(t, p)
+        kk = ast.nd-at(t, kid)
+        kk.kind == asp.K-STRUCT-DEFINITION -> h2m-struct-register(agg, t, kid)
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    ; 前置 pass ②：登记合格函数签名（调用可前向引用；此时结构体表已全就绪）
     i = 0
     (i < d.nkid) {
         p = d.kid0
@@ -3036,7 +3374,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kid = ast.kid-at(t, p)
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
-            nm, rt, ap, dp, bd = h2m-func-sig(t, kid)
+            nm, rt, ap, dp, bd = h2m-func-sig(t, agg, kid)
             bd == 0 -> h2m-sig-add(sg, nm, rt, ap, dp)
         }
 
@@ -3054,7 +3392,7 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kid = ast.kid-at(t, p)
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
-            nm2, rt2, ap2, dp2, bd2 = h2m-func-sig(t, kid)
+            nm2, rt2, ap2, dp2, bd2 = h2m-func-sig(t, agg, kid)
             bd2 != 0 -> {
                 h2m-mark(agg)
             }
@@ -3065,11 +3403,19 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
                 }
             }
         }
-        kk.kind != asp.K-FUNCTION-DEFINITION -> {
+        ; s99：结构体定义不是函数、也不是不支持构造——前扫描已登记，此处跳过（不计入 unsup）
+        kk.kind != asp.K-FUNCTION-DEFINITION && kk.kind != asp.K-STRUCT-DEFINITION -> {
             h2m-mark(agg)
         }
 
         #{overflow=wrap}
         j = j + 1
+    }
+
+    ; s99：模块级结构体型别声明（§11 B10 唯一装配点）——按 id 升序一次性发全部，前置于函数文本；
+    ;   多结构体模块若分散各函数发会报 "redefinition of type named"，故必须于此集中、且只此一处。
+    decls = h2m-struct-decls(agg)
+    decls.len() > 0 -> {
+        r = decls - '\n' - r
     }
 }

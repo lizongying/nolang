@@ -1,0 +1,657 @@
+{
+  version: 1
+  domain: 'syntax'
+  title: '语法'
+  terms: {
+    'syntax-binding': {
+      title: '绑定（name = expr）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '赋值与声明同一套语法：name = expr 或 name T = expr。'
+      aliases: ['赋值', '声明', 'binding']
+      definition: `
+没有 let / var / const 关键字。写 name = expr 就是绑定/赋值；
+带型别注解写 name T = expr。型别能推断，注解主要用于显式收窄或加宽。
+
+没有独立的声明作用域规则差异：在最外层写就是模块级绑定，
+在函数体内写就是局部绑定。
+`
+      syntax: `
+n = 42
+m i64 = 7
+s = 'text'
+`
+      example: `
+count = 0
+name = 'glossary'
+`
+      related: ['type-conversion', 'syntax-fn', 'module-global-shadow']
+      refs: ['docs/docs/lang/syntax.md']
+    }
+    'syntax-fn': {
+      title: '函数定义（name = (参数) (结果) { }）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '函数也是绑定；参数表与结果表各一个括号，省略结果表即无返回。'
+      aliases: ['函数', 'function']
+      definition: `
+形如 name = (a i64, b str) (r i64) { ... }。
+结果值通过给结果参数赋值产生（不是 return 值）；也可以显式 return 提前退出。
+
+省略第二个括号即无返回值（void）。函数名可以带连字符，如 check-all。
+`
+      syntax: `
+add = (a i64, b i64) (r i64) {
+    r = a + b
+}
+
+greet = (name str) {
+    print(name)
+}
+`
+      example: `
+eprint-line = (msg str) {
+    eprint(msg)
+}
+`
+      related: ['void', 'fn-type', 'syntax-return', 'reserved-run']
+      refs: ['docs/docs/lang/syntax.md']
+    }
+    'syntax-method': {
+      title: '方法定义（T.method = ）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '用 型别.方法名 定义方法，第一个参数是接收者 self（写作 .）。'
+      aliases: ['方法', 'method']
+      definition: `
+方法定义写成 型别.方法名 = (参数) (结果) { ... }，例如 str.trim = () (val str) { }。
+方法体内用 .field 访问接收者字段，用 .method() 调用接收者的其它方法。
+
+内建型别（str / []byte / i64 …）的方法在 std 里以同名形式声明；
+std 里大量 API 是「方法形式」与「函数形式」成对出现（如 number.no 与 math.no）。
+`
+      syntax: `
+str.shout = () (out str) {
+    out = .to-upper() - '!'
+}
+`
+      example: `
+s = 'hi'
+print(s.shout())
+`
+      related: ['struct', 'syntax-fn', 'symbol-overloading']
+      refs: ['src/std/str.no', 'docs/docs/lang/symbol.md']
+    }
+    'syntax-match': {
+      title: 'match（主题: { 臂 }）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '主题后接冒号与花括号臂组；主题必须是裸标识符，不能是方法调用。'
+      aliases: ['match', '模式匹配', '分派']
+      definition: `
+写法是 主题: { 模式 -> 体 }。主题必须是**裸标识符**：
+写成 s.eq-full('x'): { ... } 或 f(x): { ... } 会报
+expected left parenthesis, got LBRACE —— 先落到变量再 match。
+
+模式可以是字符串字面量、整数字面量、true/false、型别名、或 _ 通配。
+最后一个臂可以写成裸 -> ，作为兜底。
+`
+      syntax: `
+cmd: {
+    'get' -> handle-get()
+
+    'list' -> handle-list()
+
+    -> usage()
+}
+`
+      example: `
+n = ids.len()
+n: {
+    0 -> print('空')
+
+    -> print('有')
+}
+`
+      related: ['option', 'syntax-underscore', 'it', 'syntax-if-group']
+      refs: ['docs/docs/lang/syntax.md', 'glossary/src/drv.no']
+    }
+    'syntax-if-group': {
+      title: 'if-group（{ cond -> 体 }）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '带条件的臂组；裸 -> 兜底臂必须包在花括号组内。'
+      aliases: ['条件臂', 'if-group', '单条件语句']
+      definition: `
+三种形态：
+1) 单条件语句（裸用，不加大括号）：cond -> 体 —— 只对紧随其后的这一条生效，
+   不向后续语句传播。
+2) if-group：{ cond -> 体 ... } —— 多个条件臂成组，最后一个可写裸 -> 兜底。
+3) 裸 -> 兜底臂**必须**在 if-group 内。写在组外会报
+   bare '->' else arm outside an if-group（m7vq3xrt / k3r7mbqd）。
+
+单条件语句与 if-group 的差别很容易踩：连续写两条 cond -> stmt 时，
+第二条会被当成第一条链的一部分而被忽略，所以成组场景一律加大括号。
+`
+      syntax: `
+{
+    a > 0 -> 体一
+
+    a < 0 -> 体二
+
+    -> 兜底
+}
+`
+      example: `
+bi = bv.to-i64()
+{
+    bi == 10 -> 换行
+
+    bi == 13 -> 跳过回车
+
+    -> buf.push(bv)
+}
+`
+      related: ['syntax-match', 'syntax-presence', 'syntax-underscore']
+      refs: ['glossary/src/jsono.no', 'glossary/src/mcp.no']
+    }
+    'syntax-presence': {
+      title: '单条件语句（cond -> 体）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '不加 if 关键字的存在判断；只作用于紧随其后的那一条语句。'
+      aliases: ['存在判断', 'guard', 'cond-arrow']
+      definition: `
+cond -> 体 是最常用的守卫写法：条件成立就执行体（体可以是单条语句或花括号块），
+不成立就跳过。它不带 else —— 需要 else 就用 if-group 或 match。
+
+关键语义：裸写的 cond -> 只绑定**下一条语句**，不会向后传播。
+因此后续还有语句时，绝不会意外被包进条件里。
+`
+      syntax: `
+name.len-bytes() > 0 -> {
+    ...
+}
+
+ok -> break
+`
+      example: `
+found: {
+    false -> print('没有')
+}
+`
+      related: ['syntax-if-group', 'syntax-match']
+      refs: ['glossary/src/drv.no', 'src/parser/annotation.go']
+    }
+    'syntax-underscore': {
+      title: '下划线（_）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '通配模式 / 丢弃值；_ = f() 表示故意忽略返回值。'
+      aliases: ['通配', 'wildcard', '丢弃']
+      definition: `
+两种用途：
+1) 作为 match 臂的模式，匹配任意值且不关心载荷：nil -> _。
+2) 作为赋值左边丢弃结果：_ = write-all(text)。
+`
+      syntax: `
+x: {
+    ok -> 用 it
+
+    nil -> _
+
+    err -> _
+}
+`
+      example: `
+_ = fs.write(fs.STDOUT-FD, part, n)
+`
+      related: ['syntax-match', 'it']
+      refs: ['glossary/src/mcp.no']
+    }
+    'it': {
+      title: 'it（隐式载荷）'
+      kind: 'keyword'
+      status: 'stable'
+      summary: 'match 臂体里指代当前臂的载荷；ok 臂里就是被解包的值。'
+      aliases: ['隐式值', 'payload']
+      definition: `
+在臂体中用 it 取当前臂携带的载荷，省去再起一个变量名。
+例如 option 的 ok -> 用 it 就是 ok 的值；err -> 用 it.msg() 就是错误对象。
+
+注意载荷型别随臂而异：同一个 it 在 ok 臂是 T，在 err 臂是 err.err。
+但载荷是**裸 it** 时曾有取值错位的 bug，已修；复杂场景仍建议先落变量。
+`
+      syntax: `
+x: {
+    ok -> v = it
+
+    err -> msg = it.msg()
+}
+`
+      example: `
+c = s.byte(i)
+c: {
+    ok -> buf.push(it)
+
+    nil -> _
+
+    err -> _
+}
+`
+      related: ['option', 'syntax-match', 'syntax-underscore']
+      refs: ['docs/docs/lang/syntax.md', 'glossary/src/jsono.no']
+    }
+    'syntax-loop': {
+      title: '区间循环（i <- [0..n):）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '遍历整数区间的唯一 for 形态；冒号后接循环体。'
+      aliases: ['for', '循环', 'range']
+      definition: `
+写法 i <- [起..止): { 体 }，下标从起（含）到止（不含）。
+数组 / 切片遍历通常写成 i <- [0..xs.len()): 再 xs[i] 取值，
+因为元素访问统一返回 option，需要在循环体里解包。
+
+没有 C 式 for(;;)；条件循环用 (cond) { }，无限循环用 !! { }。
+`
+      syntax: `
+i <- [0..n): {
+    处理(i)
+}
+`
+      example: `
+ids = db.filter(dom, kind, st)
+result []str = []
+i <- [0..ids.len()): {
+    e = ids[i]
+    e: {
+        ok -> result.push(render.row(it))
+
+        nil -> _
+
+        err -> _
+    }
+}
+`
+      related: ['syntax-forever', 'syntax-while', 'syntax-break', 'slice']
+      refs: ['glossary/src/db.no']
+    }
+    'syntax-forever': {
+      title: '无限循环（!! { }）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '无条件的循环体，靠 break 退出；等价于 loop。'
+      aliases: ['loop', '无限循环']
+      definition: `
+!! { 体 } 是唯一无条件循环。必须在内部用 break（可带条件）退出，
+否则永不结束。MCP 的 stdio 主循环、HTTP 的 accept 循环都用它。
+
+与 cond -> 组合时，写法是先判断再 break，例如 空 -> break。
+`
+      syntax: `
+!! {
+    条件 -> break
+
+    干活()
+}
+`
+      example: `
+!! {
+    got = fs.read(fs.STDIN-FD, one, 1)
+    got <= 0 -> break
+    处理(got)
+}
+`
+      related: ['syntax-while', 'syntax-break', 'syntax-loop']
+      refs: ['glossary/src/mcp.no', 'glossary/src/mcph.no']
+    }
+    'syntax-while': {
+      title: '条件循环（(cond) { }）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '括号里放条件、后接循环体；条件为真就继续。'
+      aliases: ['while']
+      definition: `
+写法 (cond) { 体 }。注意它和「单条件语句 cond -> 体」的区别：
+带圆括号的才是循环，不带的是只执行一次的守卫。
+`
+      syntax: `
+(W.at < W.n) {
+    写一块()
+}
+`
+      example: `
+more = true
+(more) {
+    more = fs.exists(p)
+}
+`
+      related: ['syntax-forever', 'syntax-presence']
+      refs: ['glossary/src/mcp.no']
+    }
+    'syntax-break': {
+      title: 'break / continue'
+      kind: 'keyword'
+      status: 'stable'
+      summary: 'break 退出最近一层循环，continue 跳过本轮剩余部分。'
+      aliases: ['跳出', '继续']
+      definition: `
+break 退出最近的一层循环（不是最近的块）。在 match 臂或 if-group 里写 break
+同样作用于外层循环，这点和函数式语言的 return 不同，常用来「找到即停」。
+`
+      syntax: `
+!! {
+    hit >= 0 -> break
+
+    继续()
+}
+`
+      example: `
+i <- [0..n): {
+    a = xs[i]
+    a: {
+        ok -> {
+            v = it
+            v == target -> break
+
+            -> _
+        }
+    }
+}
+`
+      related: ['syntax-loop', 'syntax-forever', 'syntax-while']
+      refs: ['glossary/src/jsonp.no']
+    }
+    'syntax-return': {
+      title: 'return'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '提前退出函数；结果仍靠结果参数赋值，return 只是控制流。'
+      aliases: ['返回']
+      definition: `
+nolang 的结果值是「给结果参数赋值」，不是 return 一个表达式。
+所以常见写法是先给结果参数赋初值，再在守卫分支里 return：
+
+ok = false
+不可用 -> return
+ok = true
+
+也让代码能写成「早退」风格而不是层层嵌套。
+`
+      syntax: `
+f = () (ok bool) {
+    ok = false
+    前置条件不满足 -> return
+    ok = true
+}
+`
+      example: `
+arg-at = (i i64) (v str) {
+    v = ''
+    r = os.arg(i)
+    r: {
+        ok -> v = it
+
+        -> _
+    }
+}
+`
+      related: ['syntax-fn', 'void']
+      refs: ['glossary/src/drv.no']
+    }
+    'syntax-concat': {
+      title: '串接（-）'
+      kind: 'operator'
+      status: 'stable'
+      summary: '字符串拼接用 -，不是 +。'
+      aliases: ['拼接', 'concatenation', '加号']
+      definition: `
+str 的拼接运算符是减号 -：'a' - b - 'c'。
+用 + 拼接字符串不成立（+ 是数值加法，结果型别是 ?T）。
+这条设计让「字符串拼接」与「数值相加」在视觉上分得开，
+代价是从别处过来的人几乎都会写错一次。
+`
+      syntax: `
+msg = 'prefix: ' - name - ' (' - n.to-str() - ')'
+`
+      example: `
+out = 'ERROR  ' - dom - ' [ ' - id - ' ]：缺少 ' - field
+`
+      related: ['syntax-arithmetic', 'str']
+      refs: ['glossary/src/schema.no']
+    }
+    'syntax-arithmetic': {
+      title: '算术运算（结果 ?T）'
+      kind: 'operator'
+      status: 'stable'
+      summary: '+ - * / % 的整型结果一律是 ?i64，必须解包才能当 i64 用。'
+      aliases: ['算术', '运算符', '溢出']
+      definition: `
+整型 + - * / % 的结果型别是 ?i64：溢出走 err，正常走 ok(v)。
+字符串的 - 是拼接（结果直接是 str，不是 option），别和数值减法混淆。
+
+这意味着「已存在的 i64 变量 = 算术表达式」是硬编译错误（15w45dqk），
+必须两段式解包：先落到新变量（得到 ?i64），再 match 取出。
+惯用做法是集中一个 add() 帮手，让上层不必重复解包。
+`
+      syntax: `
+sum = a + b
+sum: {
+    ok -> 用 it
+
+    -> 溢出
+}
+`
+      example: `
+add = (a i64, b i64) (r i64) {
+    t = a + b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+`
+      related: ['overflow', 'i64', 'syntax-assign-op', 'syntax-concat']
+      refs: ['glossary/src/db.no', 'glossary/src/jsonp.no']
+    }
+    'syntax-assign-op': {
+      title: '复合赋值（+= 等）'
+      kind: 'operator'
+      status: 'stable'
+      summary: '+= 对算术非法（右值是 ?T）；计数器请写成 v = v - 1 之外的形式。'
+      aliases: ['+=', '自增', 'compound assign']
+      definition: `
+因为算术结果是 ?T，把 += 用在数值上类型不成立。
+计数器要么用「取新值再赋回」的形式（v = bump(v)，bump 内部解包），
+要么把计数放进结构体字段并在需要时整体解包。
+
+注意字符串拼接也不能写 -=。
+`
+      syntax: `
+n = bump(n)
+`
+      example: `
+bump = (v i64) (r i64) {
+    t = v + 1
+    r = t: {
+        ok -> it
+
+        -> v
+    }
+}
+`
+      related: ['syntax-arithmetic', 'i64']
+      refs: ['glossary/src/schema.no']
+    }
+    'syntax-comment': {
+      title: '注释与文档链接'
+      kind: 'concept'
+      status: 'stable'
+      summary: '注释用分号；每个绑定上方写参数说明与 ; [名](#模块.名) 文档链接。'
+      aliases: ['注释', 'comment', 'doc']
+      definition: `
+行注释以分号开头。项目约定每个绑定上方整齐排列：
+一行用途、逐参数的 名: 说明、以及可跳转的 ; [名](#模块.名) 链接。
+
+文档链接被工具链（以及本词库的 refs 约定）用来做交叉引用，
+写错只会让链接失效，不影响编译。
+`
+      syntax: `
+; 取第 i 项，越界回空串
+; i: 下标
+; v: 值
+; [arg-at](#drv.arg-at)
+arg-at = (i i64) (v str) {
+`
+      example: `
+; ═══════════════════════════════
+; 小工具
+; ═══════════════════════════════
+`
+      related: ['syntax-binding', 'code-style']
+      refs: ['docs/docs/lang/code-style.md', 'glossary/src/drv.no']
+    }
+    'syntax-raw-string': {
+      title: '原始串（反引号）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '反引号包裹的原始块：不转义、可跨行；块内不能再出现反引号。'
+      aliases: ['raw string', '反引号', '多行串']
+      definition: `
+反引号包起来的块不做转义、可以跨行，适合放长文本、帮助信息、以及 noml 源码片段。
+限制：块内不能出现反引号（没有转义机制），所以内容里带反引号就写不进去。
+
+单引号串才是普通字符串，支持 \n \t \' 等转义。
+`
+      syntax: `
+help = <反引号开>
+用法: tool 子命令
+<反引号闭>
+`
+      example: `
+src = <反引号开>
+{ terms: { ... } }
+<反引号闭>
+`
+      related: ['str', 'syntax-char-literal']
+      refs: ['glossary/data/types.noml']
+    }
+    'syntax-char-literal': {
+      title: '字符字面量（双引号）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '双引号是字符字面量；写多字符会报 multi-character literal。'
+      aliases: ['char literal', '双引号']
+      definition: `
+双引号只用于单个字符，例如 "x"。在双引号里写多个字符会报
+multi-character literal in double quotes，并提示改用单引号。
+
+字符串一律单引号；这是把「字符」与「串」在词法上分开的做法。
+`
+      syntax: `
+c = "x"
+`
+      example: `
+sep = ","
+print(sep)
+`
+      related: ['char', 'str', 'syntax-raw-string']
+      refs: ['docs/docs/lang/str.md']
+    }
+    'syntax-import': {
+      title: '模块导入（# /path）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '井号加绝对路径导入模块；入口文件必须直接导入每个用到的子模块。'
+      aliases: ['import', '导入', '#']
+      definition: `
+导入写法是一行 # /模块路径，例如 # /glossary/src/db。
+路径以 / 开头（相对工作区根），不带扩展名。
+
+关键约束：模块的顶层绑定（常量、全局结构体实例）只有在**入口文件直接导入**
+该模块时才会被生成；只被间接依赖时，跨模块读到的常量会静默变成 0。
+所以入口文件要把它依赖的模块逐个列全。
+`
+      syntax: `
+# /glossary/src/db
+# /glossary/src/render
+
+main = () {
+    print(db.count())
+}
+`
+      example: `
+# /glossary/src/nav
+# /glossary/src/db
+# /glossary/src/jsono
+# /glossary/src/jsonp
+# /glossary/src/render
+# /glossary/src/schema
+# /glossary/src/mcp
+# /glossary/src/mcph
+# /glossary/src/drv
+`
+      related: ['module-global-shadow', 'module-system', 'symbol-overloading']
+      refs: ['glossary/main.no', 'docs/docs/lang/module.md']
+    }
+    'syntax-with-len': {
+      title: 'with-len / with-cap'
+      kind: 'builtin'
+      status: 'stable'
+      summary: '按长度或容量新建 str 缓冲；with-len 会把长度设满并填 0。'
+      aliases: ['分配', '缓冲', 'with-len', 'with-cap']
+      definition: `
+with-len(n) 新建长度与容量都为 n 的 str（内容 0 填充）；
+with-cap(n) 新建容量 n、长度 0 的 str。
+
+用 with-len 建缓冲再逐字节写，是「按字节拼串」的常规做法；
+拿到结果后要用实际字节数截断（slice-bytes），否则尾部 0 会留在串里。
+`
+      syntax: `
+buf str = with-len(4096)
+one []byte = with-len(1)
+`
+      example: `
+buf str = with-len(NET-BUF-SIZE)
+n = c.recv(buf, NET-BUF-SIZE)
+part = buf.slice(0, n)
+`
+      related: ['str', 'byte', 'slice']
+      refs: ['src/std/net/net.no', 'src/std/str.no']
+    }
+    'code-style': {
+      title: '代码风格约定'
+      kind: 'concept'
+      status: 'stable'
+      summary: '两空格缩进、连字符命名、每个绑定带注释块、阈值靠 make test 守。'
+      aliases: ['风格', 'style']
+      definition: `
+项目内稳定下来的约定：
+- 缩进 2 空格；结构体字段与函数参数逗号分隔，对象成员换行分隔。
+- 标识符用连字符（check-all / str-at），不用下划线或驼峰。
+- 每个绑定上方写用途 + 逐参数说明 + 文档链接。
+- 分节用 ═══ 长横线，条目用短横线。
+- 不写行尾注释堆砌，注释在绑定之上。
+
+改动语言行为前先读 docs/docs/lang/ 下的对应文档。
+`
+      syntax: `
+; ═══════════════════════════════
+; 小节名
+; ═══════════════════════════════
+`
+      example: `
+; 取词条字段
+; idx: 词条下标
+; name: 字段名
+; v: 字段值
+; [field](#db.field)
+field = (idx i64, name str) (v str) {
+`
+      related: ['syntax-comment']
+      refs: ['docs/docs/lang/code-style.md']
+    }
+  }
+}

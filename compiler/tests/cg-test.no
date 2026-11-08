@@ -56,7 +56,7 @@ test-alu = () {
     xa.push(1)
     bs.push(2)
     syms.push('')
-    ops.push(OP-SHR)
+    ops.push(OP-SHRU)
     dsts.push(7)
     xa.push(1)
     bs.push(2)
@@ -123,9 +123,9 @@ test-alu = () {
     runner.eq(s.contains('%v5 = xor i64 %v1, %v2'), 1, 'xor')
     runner.eq(s.contains('%v6 = shl i64 %v1, %v2'), 1, 'shl')
 
-    ; 移位必须是有符号（ashr），不是 lshr
-    runner.eq(s.contains('%v7 = ashr i64 %v1, %v2'), 1, 'shr ashr')
-    runner.eq(s.contains('lshr'), 0, 'shr not lshr')
+    ; s80 起 '>>' 恒发逻辑移位 lshr（ashr 臂已转死代码清理）：移位须是 lshr，不是 ashr
+    runner.eq(s.contains('%v7 = lshr i64 %v1, %v2'), 1, 'shr lshr')
+    runner.eq(s.contains('ashr'), 0, 'shr not ashr')
 
     ; s38 除零 select 護欄（DIV=k7、MOD=k8）：整數 sdiv/srem 不再是裸指令——
     ;   先算安全除數（select 1）、除零結果再 select 成 0；有符號另含 (MIN,-1) UB 檢測
@@ -3538,11 +3538,11 @@ test-struct-set = () {
     bs.push(0)
     syms.push('')
 
-    ; k4: STRUCT-SET st5 = set(st3, 字段 1, v4)；xa=3 ⇒ 新字段值取 v4
+    ; k4: STRUCT-SET st5 = set(st3, 字段 1, v4)；xa=3(旧) bs=4(新字段值 v4) cty=1(字段下标)
     ops.push(OP-STRUCT-SET)
     dsts.push(5)
     xa.push(3)
-    bs.push(1)
+    bs.push(4)
     syms.push('')
 
     ; k5: STRUCT-GET v6 = st5.1（应读到 42）
@@ -3613,7 +3613,7 @@ test-struct-set = () {
     cty.push(TY-I64); k1 CONST
     cty.push(TY-STRUCT-BASE); k2 STRUCT-MK
     cty.push(TY-I64); k3 CONST
-    cty.push(TY-STRUCT-BASE); k4 STRUCT-SET
+    cty.push(1); k4 STRUCT-SET
     cty.push(TY-I64); k5 STRUCT-GET
     cty.push(TY-I64); k6 STALLOC（无值结果，占位 I64）
     cty.push(TY-I64); k7 STSTORE

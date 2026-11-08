@@ -82,7 +82,7 @@ func TestModuleAliasImportJS(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(utilDir, "helper.no"),
-		[]byte("h-fn = (x i64) (r i64) {\n    r = x + 1\n}\n"), 0644); err != nil {
+		[]byte("h-fn = (x i64) (r i64) {\n    r-opt = x + 1\n    r-opt: {\n        ok -> r = it\n        ->\n    }\n}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

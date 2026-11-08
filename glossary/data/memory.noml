@@ -1,0 +1,331 @@
+{
+  version: 1
+  domain: 'memory'
+  title: '内存管理'
+  terms: {
+    'no-gc': {
+      title: '无 GC（no GC）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '没有垃圾回收器；内存安全由编译器自动插入 free 保证。'
+      aliases: ['GC', '垃圾回收', 'no-gc']
+      definition: `
+nolang 是**无 GC** 语言。堆缓冲区的释放不是运行期回收，而是编译器在作用域出口
+按所有权信息自动插入 free。因此：
+
+- 没有 STW 暂停、没有回收线程，延迟可预测；
+- 但每个堆分配都必须有明确的所有者，编译器要能证明「谁来 free」。
+
+内存安全的目标就是「所有 free 都由编译器证明过」，而不是靠运行时兜底。
+`
+      syntax: `
+s = 'heap data'
+p []i64 = []
+`
+      example: `
+f = () {
+    buf []i64 = []
+    buf.push(1)
+    ; 作用域出口自动 free
+}
+`
+      related: ['single-owner', 'auto-free', 'assignment-semantics']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'single-owner': {
+      title: '单一所有权'
+      kind: 'concept'
+      status: 'stable'
+      summary: '每个堆 data 缓冲区只有一个所有者；所有权可 move，转移后原主不再负责 free。'
+      aliases: ['所有权', 'ownership']
+      definition: `
+每个堆 data 缓冲区**只有一个所有者**。所有权可以通过 move 转移，
+转移之后原所有者放弃 free 责任，由新所有者负责。
+
+局部变量之间写 b = a 时，走的是「深层 clone」而不是共享 ——
+两个变量各自拥有独立的 data，函数结束时各自 free。
+只有元素/字段读取（b = a[i]、b = a.f）才保持视图别名语义。
+`
+      syntax: `
+b = a
+`
+      example: `
+f = () {
+    a []i64 = []
+    a.push(1)
+    b = a
+    ; 此时 a 与 b 各自拥有独立缓冲
+}
+`
+      related: ['no-gc', 'deep-clone', 'move', 'view-alias']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'assignment-semantics': {
+      title: '赋值语义（b = a 的五种降低）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '同一个 = 按上下文选择：值拷贝、栈槽重绑定、深层 clone、move 或视图别名。'
+      aliases: ['赋值语义', '= 语义']
+      definition: `
+b = a 不是单一语义，编译器按上下文选一种降低：
+
+1. 值拷贝：基本型别（i64/f64/bool 等）且不满足 can_slot_rebind —— 直接拷数值。
+2. 栈槽重绑定：局部变量间，a 是栈型别（i64/u64/i128/u128/txt）且满足
+   can_slot_rebind —— b 与 a 共享同一栈槽，0 拷贝。
+3. 深层 clone：a 是堆拥有型别（vec/arr/str/可克隆结构体/?str/?[]T）
+   且赋值后仍被引用 —— 新分配 + memcpy + 递归 clone。
+4. move（源已死）：同上型别但赋值后不再被引用 —— 零拷贝转移所有权。
+   与深层 clone **可观测等价**，只省掉一次拷贝。
+5. move（输出参数）：out = x —— 浅拷贝结构体 + 标记源为 moved，源跳过 free。
+
+铁律：值对值赋值一律深拷，禁止零拷贝别名。
+`
+      syntax: `
+b = a
+`
+      example: `
+consume = (xs []i64) (n i64) {
+    n = xs.len()
+}
+`
+      related: ['deep-clone', 'move', 'slot-rebind', 'single-owner', 'view-alias']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'deep-clone': {
+      title: '深层 clone'
+      kind: 'concept'
+      status: 'stable'
+      summary: '堆拥有型别赋值后源仍存活时，新分配缓冲 + memcpy + 递归克隆元素。'
+      aliases: ['deep clone', '深拷', '克隆']
+      definition: `
+触发条件：局部变量间 b = a，a 是堆拥有型别（vec / arr / str / 可克隆结构体 /
+?str / ?[]T），并且赋值之后 a 仍然被引用。
+
+行为：malloc 新 data + memcpy + 递归 clone 元素；之后 a 与 b 各自独立拥有 data，
+作用域结束各自 free。代价是一次完整拷贝，换来的是「没有别名、没有悬垂」。
+`
+      syntax: `
+b = a
+`
+      example: `
+f = () {
+    a []i64 = []
+    b = a
+    b.push(1)   ; 不影响 a
+    print(a.len())
+}
+`
+      related: ['assignment-semantics', 'move', 'single-owner']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'move': {
+      title: 'move（所有权转移）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '源不再被引用时零拷贝转移所有权；输出参数 out = x 一律 move。'
+      aliases: ['移动', '所有权转移']
+      definition: `
+两种形态：
+1. 局部变量间 b = a，堆拥有型别且赋值后 a 不再被引用 —— 零拷贝转移，
+   源跳过 free。与深层 clone 可观测等价。
+2. 输出参数 out = x —— 浅拷贝结构体 + 标记源为 moved，源跳过 free。
+
+因为 move 与 clone 可观测等价，编译器才能安全地把「源已死」的场景优化成 move；
+一旦源在后续还有引用，就必须退回 clone。
+`
+      syntax: `
+out = x
+`
+      example: `
+make = () (out []i64) {
+    out = []
+    out.push(1)
+}
+`
+      related: ['assignment-semantics', 'deep-clone', 'single-owner']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'slot-rebind': {
+      title: '栈槽重绑定（slot-rebind）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '栈型别的 b = a 若源后续完全无引用，则共享同一栈槽，0 拷贝。'
+      aliases: ['slot rebind', '栈槽重绑定']
+      definition: `
+栈型别（i64/u64/i128/u128/txt）的 b = a 语义上默认是值拷贝（memcpy 栈值）。
+当满足 can_slot_rebind 时，编译器令 b 别名到 a 的栈槽（0 拷贝，优于值拷贝）。
+
+安全性由 computeSlotRebindSafety 静态求解：扫描 move 之后的所有语句
+（含分支与循环回边），只要源还被任何方式引用，就降级为完整值拷贝
+—— 语义不变，只多一次 memcpy。
+
+别名失效：目标被重新赋值时先清掉残留别名，并沿别名链找到最终源栈槽。
+`
+      syntax: `
+b = a
+`
+      example: `
+a i64 = 42
+b = a
+print(b)
+`
+      related: ['can-slot-rebind', 'assignment-semantics', 'stack-type', 'alias-invalidation']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'can-slot-rebind': {
+      title: 'can_slot_rebind'
+      kind: 'concept'
+      status: 'stable'
+      summary: '重绑定的前置约束：源后续完全无引用，且不在禁用场景里。'
+      aliases: ['can_slot_rebind', '重绑定约束']
+      definition: `
+允许重绑定的前提是「重绑定不会改变可观测语义」。禁用场景（一律降级为值拷贝）：
+
+- 目标为输出参数 / 全局变量 / 堆型别变量；
+- 源为参数 / 全局变量（参数按引用传递，重绑定会破坏调用方栈帧）；
+- stdlib 函数内部（别名绑定与引用分析难以完全建模）；
+- 用户函数体含闭包或协程 spawn（变量生命周期超出单函数别名作用域）。
+
+设计取舍：闭包/协程采用「整函数禁用」而非逐变量精算 —— 只损失优化，
+绝不引入错误，符合保守正确原则。
+`
+      syntax: `
+b = a
+`
+      example: `
+f = (pm []i64) {
+    ; 源是参数 ⇒ 不重绑定，走拷贝
+    x = pm
+}
+`
+      related: ['slot-rebind', 'alias-invalidation', 'stack-type']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'alias-invalidation': {
+      title: '别名失效（alias invalidation）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '目标被重新赋值时清掉残留旧别名，避免污染旧源栈槽。'
+      aliases: ['别名失效']
+      definition: `
+栈槽重绑定建立的是别名关系。目标变量一旦被**重新赋值**，必须先把旧别名删掉，
+否则通用赋值路径仍会指向旧源栈槽，把旧源写坏。
+
+重绑定时还要沿别名链传递性解析（a -> c -> …）找到最终源栈槽，
+避免多跳别名错位；并同步更新型别表，让后续型别查询保持一致。
+`
+      syntax: `
+b = a
+b = 7
+`
+      example: `
+a i64 = 1
+b = a
+b = 7
+print(a)
+`
+      related: ['slot-rebind', 'can-slot-rebind']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'view-alias': {
+      title: '视图别名（元素/字段读取）'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'b = a[i] 与 b = a.f 不做深拷，仍是共享缓冲的视图。'
+      aliases: ['视图', '别名', 'view']
+      definition: `
+深拷禁令只约束「值对值赋值」（RHS 是整个具名变量）。
+**元素与字段读取**保持视图别名语义：b = a[i]、b = a.f 得到的是指向同一缓冲的视图，
+不复制内容。
+
+这条差异是许多悬垂问题的来源：从 slice 取出的元素视图，在 push 触发扩容后失效。
+`
+      syntax: `
+e = xs[i]
+f = obj.field
+`
+      example: `
+xs []i64 = []
+e = xs[0]
+xs.push(1)   ; 可能扩容，e 视图随之失效
+`
+      related: ['single-owner', 'assignment-semantics', 'slice']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'auto-free': {
+      title: '自动 free（作用域出口）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '编译器在作用域出口统一插入 free；被 move 走的源跳过 free。'
+      aliases: ['自动释放', 'free']
+      definition: `
+释放点由编译器决定：作用域出口按所有权信息插入 free，被 move 走的源跳过。
+输出参数、返回值等「所有权已交出去」的位置同样不再 free。
+
+代价与风险集中在「释放点选错」：早释放即悬垂，晚释放即泄漏。
+MIR 后端目前的做法偏保守（在函数出口统一释放本函数的变量），
+更精细的 must/may 分析式回收仍在规划中。
+`
+      syntax: `
+f = () {
+    x []i64 = []
+}
+`
+      example: `
+f = () (out []i64) {
+    out = []
+}
+`
+      related: ['no-gc', 'single-owner', 'move']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'stack-type': {
+      title: '栈型别'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'i64 / u64 / i128 / u128 / txt —— 值直接存在 alloca 栈槽，无堆 data。'
+      aliases: ['stack type', '栈类型']
+      definition: `
+值直接存放在栈槽（alloca）里的型别：i64 / u64 / i128 / u128 / txt。
+没有堆 data，因此不需要 free，也不会产生悬垂。
+
+这类型别的 b = a 默认是值拷贝；满足 can_slot_rebind 时优化为栈槽重绑定。
+`
+      syntax: `
+a i128 = 1
+t txt = with-len(8)
+`
+      example: `
+a u64 = 1
+b = a
+`
+      related: ['slot-rebind', 'can-slot-rebind', 'heap-type']
+      refs: ['docs/docs/lang/memory.md']
+    }
+    'heap-type': {
+      title: '堆拥有型别'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'vec / arr / str / 可克隆结构体 / ?str / ?[]T —— 拥有堆 data，需要 free。'
+      aliases: ['heap type', '堆类型']
+      definition: `
+拥有堆 data 的型别：vec（[]T）、arr、str、可克隆结构体，以及它们的 option
+形式（?str、?[]T）。赋值时走深层 clone 或 move，作用域出口由编译器 free。
+
+堆型别的赋值语义比栈型别重（clone 是一次完整拷贝），
+这也是为什么「把大缓冲传来传去」要尽量用视图或输出参数。
+`
+      syntax: `
+s = 'heap'
+xs []i64 = []
+`
+      example: `
+f = (s str) (n i64) {
+    n = s.len-bytes()
+}
+`
+      related: ['deep-clone', 'move', 'single-owner', 'slice', 'str']
+      refs: ['docs/docs/lang/memory.md']
+    }
+  }
+}

@@ -93,8 +93,25 @@ STD_AST_BIN = src/checker/stdastembed/std_ast.bin
 # the hir/parser/lexer packages just as much as on the checker itself: a change
 # to how a definition is lowered (e.g. dropping the implicit `self` result from
 # method signatures) alters the baked tables without touching checker/*.go.
-STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) src/checker/checker.go src/checker/stdsig_cache.go \
-	$(wildcard src/hir/*.go) $(wildcard src/parser/*.go) $(wildcard src/lexer/*.go)
+#
+# 🔴 The list must ALSO cover every directory src/hash.noml includes. StdSigKey
+# is computed over that include set, and the Tier-0 blob bakes the SAME hash
+# into its StdKey; validateStdASTBlob then refuses to start unless the two are
+# equal. So any directory whose changes can move the key must also re-bake the
+# blob — otherwise editing (say) src/mir/*.go changes STD_SIG_KEY while leaving
+# std_ast.bin stale, and EVERY `no build` / `no run` / `no test` dies at
+# startup with "內嵌 std AST blob 與本二進位不一致" after an otherwise green
+# `make no`. Observed exactly that on 2026-11-08: the key moved
+# d3354b63… → b3592ce3… while the blob kept the old one, because mir/ was not
+# a prerequisite here even though hash.noml hashes it.
+# (stdsig_gen.go itself is excluded: it is the target, and src/checker/*.go
+# would otherwise make the rule depend on its own output.)
+STDSIG_KEY_SRCS := $(filter-out %_test.go src/checker/stdsig_gen.go,$(wildcard src/build/*.go) $(wildcard src/builtin/*.go) \
+	$(wildcard src/checker/*.go) $(wildcard src/extract_checker/*.go) \
+	$(wildcard src/hir/*.go) $(wildcard src/i18n/*.go) $(wildcard src/lexer/*.go) \
+	$(wildcard src/mir/*.go) $(wildcard src/mmast/*.go) $(wildcard src/package/*.go) \
+	$(wildcard src/parser/*.go) $(wildcard src/ty/*.go))
+STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) $(STDSIG_KEY_SRCS)
 
 # src/hash.noml is a build input in its own right: it is the manifest that
 # decides WHICH sources the std-sig key hashes, so editing it changes the key

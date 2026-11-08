@@ -67,10 +67,24 @@ encode = (data []byte, table str) (out str) {
         out[j + 3] = table[b2 & 63]
 
         #{overflow=wrap}
-        i = i + 3
+        {
+            #{overflow=wrap}
+            i-opt = i + 3
+            i-opt: {
+                ok -> i = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        j = j + 4
+        {
+            #{overflow=wrap}
+            j-opt = j + 4
+            j-opt: {
+                ok -> j = it
+                ->
+            }
+        }
     }
 
     ; 處理剩餘 1 或 2 位元組
@@ -236,10 +250,10 @@ decode = (s str, table str) (out ?[]byte) {
         }
 
         #{overflow=wrap}
-        j = j + 3
+        j ?= j + 3
 
         #{overflow=wrap}
-        i = i + 4
+        i ?= i + 4
     }
 
     #{overflow=wrap}

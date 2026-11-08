@@ -121,7 +121,14 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
             sign-v = c
 
             #{overflow=wrap}
-            i = i + 1
+            {
+                #{overflow=wrap}
+                i-opt = i + 1
+                i-opt: {
+                    ok -> i = it
+                    ->
+                }
+            }
         }
     }
 
@@ -131,7 +138,14 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
             alt-v = 1
 
             #{overflow=wrap}
-            i = i + 1
+            {
+                #{overflow=wrap}
+                i-opt2 = i + 1
+                i-opt2: {
+                    ok -> i = it
+                    ->
+                }
+            }
         }
     }
 
@@ -141,7 +155,14 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
             zero-v = 1
 
             #{overflow=wrap}
-            i = i + 1
+            {
+                #{overflow=wrap}
+                i-opt3 = i + 1
+                i-opt3: {
+                    ok -> i = it
+                    ->
+                }
+            }
         }
     }
 
@@ -170,7 +191,14 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
             grouping-v = c
 
             #{overflow=wrap}
-            i = i + 1
+            {
+                #{overflow=wrap}
+                i-opt4 = i + 1
+                i-opt4: {
+                    ok -> i = it
+                    ->
+                }
+            }
         }
     }
 
@@ -179,7 +207,14 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         spec[i] == 46 -> {
 
             #{overflow=wrap}
-            i = i + 1
+            {
+                #{overflow=wrap}
+                i-opt5 = i + 1
+                i-opt5: {
+                    ok -> i = it
+                    ->
+                }
+            }
             precision-v = 0
             last-pi = i
             pi <- [i..n): {
@@ -325,7 +360,14 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
         (tmp > 0) {
 
             #{overflow=wrap}
-            digits = digits + 1
+            {
+                #{overflow=wrap}
+                digits-opt = digits + 1
+                digits-opt: {
+                    ok -> digits = it
+                    ->
+                }
+            }
 
             #{overflow=wrap}
             tmp = tmp / base
@@ -364,7 +406,14 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
             ru = ru / base
 
             #{overflow=wrap}
-            pos = pos - 1
+            {
+                #{overflow=wrap}
+                pos-opt = pos - 1
+                pos-opt: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
         return
     }
@@ -428,10 +477,24 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
         sh = bpd * (maxd - 1 - start - k)
 
         #{overflow=wrap}
-        m = base - 1
+        {
+            #{overflow=wrap}
+            m-opt = base - 1
+            m-opt: {
+                ok -> m = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        avail = 64 - sh
+        {
+            #{overflow=wrap}
+            avail-opt = 64 - sh
+            avail-opt: {
+                ok -> avail = it
+                ->
+            }
+        }
         avail < bpd -> {
             m = 1
         }
@@ -490,20 +553,41 @@ fmt-group-digits = (digits str, sep i64) (out str) {
         out[pos] = digits.byte(i)
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt2 = pos + 1
+            pos-opt2: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
     g <- [1..ngroups): {
         out[pos] = sep
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt3 = pos + 1
+            pos-opt3: {
+                ok -> pos = it
+                ->
+            }
+        }
         k <- [0..3): {
 
             #{overflow=wrap}
             out[pos] = digits.byte(first + (g - 1) * 3 + k)
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt4 = pos + 1
+                pos-opt4: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
     }
 }
@@ -603,7 +687,16 @@ fmt-int = (n i64, spec str) (out str) {
     body-len = dlen-v
 
     #{overflow=wrap}
-    sign-char != 0 -> body-len = body-len + 1
+    sign-char != 0 -> {
+        {
+            #{overflow=wrap}
+            body-len-opt = body-len + 1
+            body-len-opt: {
+                ok -> body-len = it
+                ->
+            }
+        }
+    }
     body str = with-cap(body-len)
     pos = 0
     sign-char != 0 -> {

@@ -98,7 +98,7 @@ Dependência adicionada: %s = %s
   '2nvmt2tf': 'gravando arquivo LLVM IR: %w'
   '2psk9dma': 'Gerar saída voltada ao navegador (HTML + JS, com --js)'
   '2q3wfrie': 'Analisar um arquivo-fonte Nolang e imprimir sua AST na saída padrão.'
-  '2qdpadhy': 'Use o desencapsulamento em duas etapas: primeiro `%s = <expr>` (inferido como ?T), depois `v = %s: {` com `ok -> it` e `-> <default>` em linhas separadas; ou use uma instrução match `%s: { ok -> { ... } -> { ... } }`, ou propague com `%s ?= <expr>`, ou descarte explicitamente com `_ = <expr>`. Observe que os braços do match devem ser separados por quebras de linha (a forma com vírgula é erro de análise), e a forma de uma linha `%s = <expr>: { ... }` só se anexa quando <expr> é um identificador simples; caso contrário o match se solta como instrução autônoma e %s ainda é um ?T não desencapsulado.'
+  '2qdpadhy': 'Use o desencapsulamento em duas etapas: primeiro `%s = <expr>` (inferido como ?T), depois `v = %s: {` com `ok -> it` e `-> <default>` em linhas separadas; ou use uma instrução match `%s: { ok -> { ... } -> { ... } }`, ou propague com `%s ?= <expr>`, ou descarte explicitamente com `_ = <expr>`. Observe que os braços do match devem ser separados por quebras de linha (a forma com vírgula é erro de análise); o match também pode ser escrito diretamente na expressão como `%s = <expr>: {` com os braços `ok -> it` e `-> <default>` em linhas separadas — `: { ... }` tem precedência sobre `=`. Se o bloco não for um match, `%s` ainda é um ?T não desencapsulado.'
   '2qoxhl6a': 'win-create-process: não é possível marshalar cmdline como string C'
   '2rkb38mw': 'criando diretório de cache: %w'
   '2t4wkn7s': 'esperado \'}\' para fechar a anotação de campo, obtido %s em vez disso'

@@ -1,0 +1,595 @@
+{
+  version: 1
+  domain: 'types'
+  title: '类型系统'
+  terms: {
+    'option': {
+      title: 'option (?T)'
+      kind: 'type'
+      status: 'stable'
+      summary: '三态标签枚举 ok(v) / nil / err(e)；可空值与可失败调用统一用它。'
+      aliases: ['?t', '?T', 'optional', '可空']
+      definition: `
+可失败/可空的统一表示。?T 不是指针，而是三态标签枚举：
+ok 携带值；nil 表示值确实不存在；err 携带结构化 err.err
+（code / msg / file / line / col，位置在构造点自动注入）。
+
+越界索引读取 a[i] / s[i] 返回 err（编码错误）；
+map 缺键返回 nil（值不存在）。两者语义不同，不要混用。
+
+option 本身是 #{buildin} 标签枚举：底层表示与构造由 runtime 的 %option 承载，
+不产生用户可见的 struct / union。
+`
+      syntax: `
+name = (input i64) (result ?str) {
+    result = ...
+}
+
+name: {
+    ok -> 用 it
+
+    nil -> 值不存在
+
+    err -> 用 it.msg()
+}
+`
+      example: `
+c = fs.read-bytes(path)
+c: {
+    ok -> { src = it }
+
+    nil -> { }
+
+    err -> { }
+}
+`
+      related: ['err', 'syntax-match', 'nil', 'it']
+      refs: ['src/std/str.no', 'src/std/err.no', 'docs/docs/lang/syntax.md', 'src/parser/annotation.go']
+    }
+    'str': {
+      title: 'str'
+      kind: 'type'
+      status: 'stable'
+      summary: 'UTF-8 字符串，堆分配 {*byte, i64, i64}；切片仍是 str 视图。'
+      aliases: ['字符串', 'string']
+      definition: `
+UTF-8 编码的字节序列，底层是堆分配的 {p, len, cap}。
+长度有两种口径：len() 是码点数，len-bytes() 是字节数；按字节寻址必须用
+byte(i) / slice-bytes(a,b) / to-bytes() 视图，混用口径会错位。
+
+字面量用单引号；双引号只用于字符字面量。反引号是原始串（不转义、可跨行）。
+`
+      syntax: `
+s = 'hello'
+c = 'x'
+r = 原始串：反引号包裹，不转义、可跨行
+`
+      example: `
+s = '中a'
+print('codepoints=', s.len(), 'bytes=', s.len-bytes())
+
+head = s.slice-bytes(0, 3)
+`
+      related: ['txt', 'slice', 'byte', 'char']
+      refs: ['src/std/str.no', 'docs/docs/lang/str.md']
+    }
+    'i64': {
+      title: 'i64'
+      kind: 'type'
+      status: 'stable'
+      summary: '64 位有符号整数，唯一整型；算术结果一律是 ?i64。'
+      aliases: ['int64', '整数']
+      definition: `
+唯一的整型宽度。算术 + - * / % 的结果型别是 ?i64（可能溢出），
+这与索引读取统一到同一套规则：要拿到裸 i64 必须解包（match ok -> it）。
+
+溢出策略由注解决定：默认走检查（溢出即 err），
+#{overflow=wrap} 环绕，#{overflow=clamp0} 夹到 0。
+注意 wrap / clamp0 只改变溢出时的取值，不改变结果型别 —— 仍是 ?i64。
+`
+      syntax: `
+n = 42
+sum = a + b
+sum: {
+    ok -> 用 it
+
+    -> 溢出
+}
+`
+      example: `
+add = (a i64, b i64) (r i64) {
+    t = a + b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+`
+      related: ['overflow', 'option', 'f64', 'type-conversion']
+      refs: ['src/parser/annotation.go', 'src/std/number.no', 'docs/docs/lang/syntax.md']
+    }
+    'f64': {
+      title: 'f64'
+      kind: 'type'
+      status: 'stable'
+      summary: '64 位浮点数；转整数用 f64.to-i64()，越界时取值未定义。'
+      aliases: ['float', '浮点数']
+      definition: `
+双精度浮点。浮点与整数的宽度转换由 math.no 的顶层函数与内建方法承载：
+i64-to-f64 / f64-to-i64 等走 LLVM 的转换指令，浮点转整数不做范围守卫 ——
+超出 i64 值域时结果由硬件决定，需要守卫时自己先比较。
+`
+      syntax: `
+x = 3.14
+n i64 = x.to-i64()
+y f64 = i64-to-f64(7)
+`
+      example: `
+x = 2.5
+n = x.to-i64()
+print(n)
+`
+      related: ['i64', 'float', 'num']
+      refs: ['src/std/math.no', 'docs/docs/lang/syntax.md']
+    }
+    'bool': {
+      title: 'bool'
+      kind: 'type'
+      status: 'stable'
+      summary: 'true / false；逻辑运算 && || 短路，! 取反。'
+      aliases: ['boolean', '布尔']
+      definition: `
+只有 true / false 两个值。比较运算（== != < <= > >=）产出 bool；
+&& 与 || 短路求值。bool 也是 match 的合法主题，通常写成两臂：
+
+flag: {
+    true -> ...
+
+    false -> ...
+}
+`
+      syntax: `
+ok = a > b && c <= d
+flag: {
+    true -> ...
+
+    false -> ...
+}
+`
+      example: `
+has = s.contains('x')
+has: {
+    true -> print('yes')
+
+    false -> print('no')
+}
+`
+      related: ['i64', 'syntax-match']
+      refs: ['src/std/bool.no', 'docs/docs/lang/syntax.md']
+    }
+    'byte': {
+      title: 'byte'
+      kind: 'type'
+      status: 'stable'
+      summary: '无符号 8 位；str.byte(i) 返回 ?byte，是字节级访问的逃生舱口。'
+      aliases: ['uint8', '字节']
+      definition: `
+0-255 的无符号量。str.byte(i) 恒为 O(1) 的直接寻址，返回 ?byte（越界 nil），
+不进入 std 函数体；需要码点时用 s[i]（返回 ?char）。
+
+[]byte.push 接受整数表达式（无需强转）；nolang 没有 byte(expr) 这种显式转型语法，
+数值进 byte 位置由内建参数检查放行。
+`
+      syntax: `
+b []byte = []
+b.push(92)
+v = s.byte(0)
+`
+      example: `
+out = ''
+buf []byte = []
+i <- [0..s.len-bytes()): {
+    c = s.byte(i)
+    c: {
+        ok -> buf.push(it)
+
+        nil -> _
+
+        err -> _
+    }
+}
+out = buf.to-bytes-str()
+`
+      related: ['char', 'str', 'bstr']
+      refs: ['src/std/byte.no', 'src/std/str.no', 'docs/docs/lang/str.md']
+    }
+    'char': {
+      title: 'char'
+      kind: 'type'
+      status: 'stable'
+      summary: 'Unicode 码点；s[i] 返回 ?char（按码点计数，非 O(1)）。'
+      aliases: ['rune', '字符', '码点']
+      definition: `
+码点型别。s[i] 的推断型别是 ?char：界内 ok(码点)，越界 nil。
+对含多字节字符的串，s[i] 会从串首前向解码 UTF-8 数到第 i 个码点，
+因此是 O(n) —— 需要随机访问字节请用 s.byte(i)。
+字符字面量用双引号，如 "x"。
+`
+      syntax: `
+c = s[0]
+c: {
+    ok -> 码点 = it
+
+    nil -> 越界
+}
+`
+      example: `
+s = '中文'
+c = s[1]
+`
+      related: ['byte', 'str', 'slice']
+      refs: ['docs/docs/lang/str.md', 'src/std/char.no']
+    }
+    'void': {
+      title: 'void（无返回值）'
+      kind: 'type'
+      status: 'stable'
+      summary: '没有 (结果 型别) 子句的函数即无返回值，调用处不能取值。'
+      aliases: ['unit', '无返回']
+      definition: `
+函数定义形如 name = (参数 型别) (结果 型别) { } —— 省略第二个括号即无返回值。
+调用它只能作为语句，不能出现在表达式位置（不能赋值、不能拼接）。
+`
+      syntax: `
+greet = (name str) {
+    print(name)
+}
+
+greet('x')
+`
+      example: `
+usage = () {
+    print('用法: ...')
+}
+`
+      related: ['fn-type', 'syntax-fn']
+      refs: ['docs/docs/lang/syntax.md']
+    }
+    'array': {
+      title: 'array（定长数组）'
+      kind: 'type'
+      status: 'stable'
+      summary: '定长、内联存储的 [N]T；元素可以是 byte，也可以是结构体。'
+      aliases: ['数组', 'fixed array']
+      definition: `
+写 [N]T，长度是型别的一部分。内联在宿主里（结构体字段、局部变量），
+不额外堆分配。按值传递时会整块复制。
+
+注意 []T（无长度）是 slice，不是 array —— 两者型别不同。
+`
+      syntax: `
+buf [32]byte
+key [12]byte = with-len(12)
+`
+      example: `
+fn init = (c conn, key [32]byte) {
+    ...
+}
+`
+      related: ['slice', 'byte']
+      refs: ['docs/docs/lang/syntax.md', 'src/std/net/net.no']
+    }
+    'slice': {
+      title: 'slice（T[]）'
+      kind: 'type'
+      status: 'stable'
+      summary: '带长度的视图 T[]；push / len / join / slice 是常用方法。'
+      aliases: ['切片', 'vec', '动态数组']
+      definition: `
+写 []T（源码里也常写成 T[]）。是 {ptr, len, cap} 视图：slice(a,b) 不复制内容。
+push 在容量不足时扩容，可能使已有视图悬垂 —— 持有旧视图又 push 时要当心。
+
+[](空格)T 是切片；[N]T 是定长数组。
+`
+      syntax: `
+xs []i64 = []
+xs.push(1)
+n = xs.len()
+head = xs.slice(0, 1)
+`
+      example: `
+result []str = []
+i <- [0..n): {
+    result.push('行 ' - i.to-str())
+}
+out = result.join('\n')
+`
+      related: ['array', 'vec', 'arr']
+      refs: ['docs/docs/lang/syntax.md', 'src/std/vec.no', 'src/std/arr.no']
+    }
+    'struct': {
+      title: 'struct（结构体）'
+      kind: 'type'
+      status: 'stable'
+      summary: '命名字段的聚合型别；字段名与型别换行分隔，按值语义传递。'
+      aliases: ['结构体', 'record']
+      definition: `
+定义形如 name { field 型别 ... }，字段之间换行分隔（不是逗号）。
+用 name {} 构造，用 .field 访问；.method 形式定义方法。
+
+结构体按值传递。要跨函数共享可变状态，就把实例放模块级。
+注意：模块级 str 标量赋值会被同名局部遮蔽（见 traps 域），
+因此模块级状态优先用结构体字段承载。
+`
+      syntax: `
+point {
+    x i64
+    y i64
+}
+
+p point {}
+p.x = 1
+`
+      example: `
+io-buf {
+    line str
+    eof bool
+}
+
+IOB io-buf
+IOB.eof = true
+`
+      related: ['union', 'tagged-enum', 'syntax-method']
+      refs: ['docs/docs/lang/syntax.md', 'docs/docs/lang/module.md']
+    }
+    'union': {
+      title: 'union（联合型别）'
+      kind: 'type'
+      status: 'stable'
+      summary: '多型别统一表示；?T 是 option 的统一，std 里另有 num / int / float。'
+      aliases: ['联合', 'sum type']
+      definition: `
+把若干型别统一成一个型别，用于「参数可以收多种型别」的场合。
+std 的定义在 float.no / int.no / num.no：float 统一 f32 与 f64，
+int 统一各整型宽度，num 再统一 int 与 float。
+
+option（?T）在语法层也是统一，但语义是三态标签枚举，与普通 union 不同。
+`
+      syntax: `
+f float = 1.5
+n num = 7
+`
+      example: `
+sum = (a num, b num) (r num) {
+    r = a + b
+}
+`
+      related: ['option', 'num', 'int', 'float', 'tagged-enum']
+      refs: ['src/std/float.no', 'src/std/int.no', 'src/std/num.no']
+    }
+    'num': {
+      title: 'num'
+      kind: 'type'
+      status: 'stable'
+      summary: 'int 与 float 的统一型别；数值运算的通用入口。'
+      aliases: ['数值联合']
+      definition: `
+std/num.no 提供的联合型别，统一 int（整型家族）与 float（f32/f64），
+让同一份算术代码能收整数与浮点两种实参。方法形式 API 在 number.no。
+`
+      syntax: `
+v num = 3
+w num = 2.5
+`
+      example: `
+r = v + w
+`
+      related: ['int', 'float', 'union']
+      refs: ['src/std/num.no', 'src/std/number.no']
+    }
+    'int': {
+      title: 'int'
+      kind: 'type'
+      status: 'stable'
+      summary: '整型家族的统一型别；面向「宽度未知的整数」场景。'
+      aliases: ['整型联合']
+      definition: `
+std/int.no 提供的联合型别，统一各整型宽度，避免为每种宽度写一份重载。
+nolang 源码层最常用的仍是 i64；int 主要用于接受多种宽度实参的库接口。
+`
+      syntax: `
+a int = 1
+`
+      example: `
+n i64 = 42
+a int = n
+`
+      related: ['num', 'i64', 'union']
+      refs: ['src/std/int.no']
+    }
+    'float': {
+      title: 'float'
+      kind: 'type'
+      status: 'stable'
+      summary: 'f32 与 f64 的统一型别；方法形式 API 在 float.no。'
+      aliases: ['浮点联合']
+      definition: `
+std/float.no 提供的联合型别，统一 f32 与 f64。
+注意：浮点转整数（f64.to-i64）不做值域守卫，越界结果是硬件相关的。
+`
+      syntax: `
+x float = 1.5
+`
+      example: `
+y f64 = 2.25
+x float = y
+`
+      related: ['f64', 'num', 'union']
+      refs: ['src/std/float.no']
+    }
+    'txt': {
+      title: 'txt'
+      kind: 'type'
+      status: 'stable'
+      summary: '定长文本：{byte 字段, 长度}，长度固定、内容原地改写。'
+      aliases: ['文本', '固定长度文本']
+      definition: `
+std/txt.no 的定长文本型别。与 str 的差别是「容量固定、可原地改写」，
+适合反复覆写的缓冲场景（例如逐行读入的处理管线）。
+
+txt.byte(i) 与 str.byte(i) 语义相同（字段 1 即字节长度）。
+`
+      syntax: `
+t txt = with-len(64)
+`
+      example: `
+line txt = with-len(128)
+`
+      related: ['str', 'byte', 'bufio']
+      refs: ['src/std/txt.no']
+    }
+    'tagged-enum': {
+      title: 'tagged-enum（标签枚举）'
+      kind: 'type'
+      status: 'stable'
+      summary: '带标签的枚举；加 #{buildin} 时表示由 runtime 承载的内建枚举。'
+      aliases: ['标签枚举', 'enum']
+      definition: `
+枚举定义的一类。变体用于 match 与穷尽性检查。
+标上 #{buildin} 的标签枚举不产生用户可见的 struct / union，
+底层表示与构造由 runtime/builtin 提供 —— option 就是这么实现的
+（其载荷由 builtin 的 %option 承载）。
+`
+      syntax: `
+#{buildin}
+name = ... {
+    variant-a
+    variant-b
+}
+`
+      example: `
+x: {
+    variant-a -> ...
+
+    variant-b -> ...
+}
+`
+      related: ['buildin', 'union', 'option', 'syntax-match']
+      refs: ['src/parser/annotation.go']
+    }
+    'nil': {
+      title: 'nil'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'option 的「值不存在」态；没有 null。'
+      aliases: ['null', '空']
+      definition: `
+option 的第二态：值确实不存在。nolang 没有 null 这个关键字或值，
+写 null 会解析失败。缺失键、可选配置缺省都用 nil 表达。
+
+与 err 的区别：nil 是「本来就没有」，err 是「本该有但出错」。
+`
+      syntax: `
+x = nil
+x: {
+    nil -> 不存在
+
+    ok -> 有值
+}
+`
+      example: `
+opt = json.get('missing')
+opt: {
+    nil -> print('没有这个键')
+
+    ok -> print('有')
+
+    err -> print('取值失败')
+}
+`
+      related: ['option', 'err']
+      refs: ['docs/docs/lang/syntax.md']
+    }
+    'type-conversion': {
+      title: 'type-conversion（型别转换）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '没有 C 式强转；用声明式 name T = expr 做同宽/加宽转换。'
+      aliases: ['转型', 'cast', '强转']
+      definition: `
+nolang 不允许 expr T 这种显式强转（写 byte(x) 之类会报错），
+统一用声明形式 name T = expr 完成同宽或加宽的转换。
+跨宽度（如 f64 到 i64）走 math.no 的转换函数 / 内建方法。
+`
+      syntax: `
+n i64 = some-i64
+f f64 = 1
+`
+      example: `
+x = 3
+n i64 = x
+`
+      related: ['i64', 'f64', 'byte']
+      refs: ['docs/docs/lang/syntax.md']
+    }
+    'fn-type': {
+      title: 'fn（函数型别）'
+      kind: 'type'
+      status: 'stable'
+      summary: '函数是值；型别由参数表与结果表决定，可作参数与字段。'
+      aliases: ['函数型别', '闭包', 'lambda']
+      definition: `
+函数定义本身就是绑定一个值：name = (a i64) (r i64) { ... }。
+因此函数能作参数、作结构体字段、存进阵列。
+
+匿名函数由 package.noml 的 anonymous-fn-type 开关控制（默认 false）。
+`
+      syntax: `
+twice = (x i64) (r i64) {
+    r = x + x
+}
+
+r = twice(3)
+`
+      example: `
+twice = (x i64) (r i64) {
+    r = x + x
+}
+`
+      related: ['void', 'syntax-fn', 'struct']
+      refs: ['docs/docs/lang/export.md', 'glossary/package.noml']
+    }
+    'bstr': {
+      title: 'bstr（字节串视图）'
+      kind: 'type'
+      status: 'stable'
+      summary: 'str 与 []byte 之间的桥；to-bytes / to-bytes-str 互转。'
+      aliases: ['bytes', '字节串']
+      definition: `
+把 str 看作字节序列、以及把 []byte 还原成 str 的两个方法：
+s.to-bytes() 得到 []byte 视图，b.to-bytes-str() 得到 str。
+写文件时必须走 read-bytes + to-bytes-str —— 用 read-str 会二次编码。
+`
+      syntax: `
+b = s.to-bytes()
+s2 = b.to-bytes-str()
+`
+      example: `
+raw = fs.read-bytes(path)
+raw: {
+    ok -> {
+        b = it
+        txt = b.to-bytes-str()
+    }
+
+    nil -> _
+
+    err -> _
+}
+`
+      related: ['str', 'byte', 'slice']
+      refs: ['src/std/str.no', 'src/std/byte.no']
+    }
+  }
+}

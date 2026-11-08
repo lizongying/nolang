@@ -42,7 +42,14 @@ ctr-inc = (cb []byte) {
         }
 
         #{overflow=wrap}
-        j = j - 1
+        {
+            #{overflow=wrap}
+            j-opt = j - 1
+            j-opt: {
+                ok -> j = it
+                ->
+            }
+        }
     }
 
     ; 進位傳播
@@ -97,7 +104,14 @@ ctr-inc = (cb []byte) {
             }
 
             #{overflow=wrap}
-            j = j - 1
+            {
+                #{overflow=wrap}
+                j-opt2 = j - 1
+                j-opt2: {
+                    ok -> j = it
+                    ->
+                }
+            }
         }
     }
 }
@@ -163,7 +177,14 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         ctr-inc(cb)
 
         #{overflow=wrap}
-        pos = pos + n
+        {
+            #{overflow=wrap}
+            pos-opt = pos + n
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 }
 

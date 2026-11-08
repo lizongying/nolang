@@ -32,7 +32,14 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
             ; 空欄位（逗號開頭）
             #{overflow=wrap}
-            new-pos = r-pos + 1
+            {
+                #{overflow=wrap}
+                new-pos-opt = r-pos + 1
+                new-pos-opt: {
+                    ok -> new-pos = it
+                    ->
+                }
+            }
             return
         }
 
@@ -40,7 +47,14 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
 
             ; 雙引號包圍的欄位
             #{overflow=wrap}
-            r-pos = r-pos + 1
+            {
+                #{overflow=wrap}
+                r-pos-opt = r-pos + 1
+                r-pos-opt: {
+                    ok -> r-pos = it
+                    ->
+                }
+            }
             (r-pos < s.len-bytes()) {
                 c = s.byte(r-pos)
                 c == 34 -> {
@@ -53,22 +67,50 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                         nc = s.byte(r-pos + 1)
                         nc == 34 -> {
                             field[fn] = 34
-                            fn = fn + 1
-                            r-pos = r-pos + 2
+                            {
+                                fn-opt = fn + 1
+                                fn-opt: {
+                                    ok -> fn = it
+                                    ->
+                                }
+                            }
+                            {
+                                r-pos-opt2 = r-pos + 2
+                                r-pos-opt2: {
+                                    ok -> r-pos = it
+                                    ->
+                                }
+                            }
                             continue
                         }
                     }
 
                     ; 結束雙引號
                     #{overflow=wrap}
-                    r-pos = r-pos + 1
+                    {
+                        #{overflow=wrap}
+                        r-pos-opt3 = r-pos + 1
+                        r-pos-opt3: {
+                            ok -> r-pos = it
+                            ->
+                        }
+                    }
 
                     ; 跳過後續逗號
                     r-pos < s.len-bytes() -> {
                         nc = s.byte(r-pos)
 
                         #{overflow=wrap}
-                        nc == 44 -> r-pos = r-pos + 1
+                        nc == 44 -> {
+                            {
+                                #{overflow=wrap}
+                                r-pos-opt4 = r-pos + 1
+                                r-pos-opt4: {
+                                    ok -> r-pos = it
+                                    ->
+                                }
+                            }
+                        }
                     }
                     new-pos = r-pos
                     return
@@ -79,20 +121,48 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
                     field[fn] = c
 
                     #{overflow=wrap}
-                    fn = fn + 1
+                    {
+                        #{overflow=wrap}
+                        fn-opt2 = fn + 1
+                        fn-opt2: {
+                            ok -> fn = it
+                            ->
+                        }
+                    }
 
                     #{overflow=wrap}
-                    r-pos = r-pos + 1
+                    {
+                        #{overflow=wrap}
+                        r-pos-opt5 = r-pos + 1
+                        r-pos-opt5: {
+                            ok -> r-pos = it
+                            ->
+                        }
+                    }
                     continue
                 }
 
                 field[fn] = c
 
                 #{overflow=wrap}
-                fn = fn + 1
+                {
+                    #{overflow=wrap}
+                    fn-opt3 = fn + 1
+                    fn-opt3: {
+                        ok -> fn = it
+                        ->
+                    }
+                }
 
                 #{overflow=wrap}
-                r-pos = r-pos + 1
+                {
+                    #{overflow=wrap}
+                    r-pos-opt6 = r-pos + 1
+                    r-pos-opt6: {
+                        ok -> r-pos = it
+                        ->
+                    }
+                }
             }
             new-pos = r-pos
             return
@@ -108,7 +178,14 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
             c == 44 -> {
 
                 #{overflow=wrap}
-                r-pos = r-pos + 1
+                {
+                    #{overflow=wrap}
+                    r-pos-opt7 = r-pos + 1
+                    r-pos-opt7: {
+                        ok -> r-pos = it
+                        ->
+                    }
+                }
                 new-pos = r-pos
                 return
             }
@@ -124,10 +201,24 @@ parse-field = (s str, pos i64) (field str, new-pos i64) {
         field[fn] = c
 
         #{overflow=wrap}
-        fn = fn + 1
+        {
+            #{overflow=wrap}
+            fn-opt4 = fn + 1
+            fn-opt4: {
+                ok -> fn = it
+                ->
+            }
+        }
 
         #{overflow=wrap}
-        r-pos = r-pos + 1
+        {
+            #{overflow=wrap}
+            r-pos-opt8 = r-pos + 1
+            r-pos-opt8: {
+                ok -> r-pos = it
+                ->
+            }
+        }
     }
     new-pos = r-pos
 }
@@ -146,7 +237,14 @@ parse-line = (s str, max-fields i64 = 1024) (fields []str) {
         fields[n], pos = parse-field(s, pos)
 
         #{overflow=wrap}
-        n = n + 1
+        {
+            #{overflow=wrap}
+            n-opt = n + 1
+            n-opt: {
+                ok -> n = it
+                ->
+            }
+        }
     }
     fields.truncate(n)
 }
@@ -177,7 +275,14 @@ encode-field = (field str) (out str) {
     out[j] = 34
 
     #{overflow=wrap}
-    j = j + 1
+    {
+        #{overflow=wrap}
+        j-opt = j + 1
+        j-opt: {
+            ok -> j = it
+            ->
+        }
+    }
     i <- [0..field.len-bytes()): {
         c = field.byte(i)
 
@@ -185,7 +290,13 @@ encode-field = (field str) (out str) {
         {
             c == 34 -> {
                 out[j] = 34
-                j = j + 1
+                {
+                    j-opt2 = j + 1
+                    j-opt2: {
+                        ok -> j = it
+                        ->
+                    }
+                }
 
                 out[j] = 34
             }
@@ -196,7 +307,14 @@ encode-field = (field str) (out str) {
         }
 
         #{overflow=wrap}
-        j = j + 1
+        {
+            #{overflow=wrap}
+            j-opt3 = j + 1
+            j-opt3: {
+                ok -> j = it
+                ->
+            }
+        }
     }
 
     out[j] = 34

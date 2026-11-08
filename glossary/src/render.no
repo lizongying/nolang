@@ -1,0 +1,275 @@
+; render — 词条渲染（text / markdown / json）
+;
+; 只做「把 db 里的下标变成字符串」，不碰文件与网络。
+; 所有返回 []str 的函数遵守一条实测约束：先建 result []str 再 out = result——
+; 直接把 .push 打在输出参数上不生效（src/std/str.no:2316 的注释记录了同一坑）。
+
+; 固定宽度的分隔线
+RULE = '────────────────────────────────────────────────────────'
+
+; 把多行文本逐行缩进 4 格
+; body: 原始多行文本（首尾空白会被去掉）
+; out: 缩进后的文本
+; [indent](#render.indent)
+indent = (body str) (out str) {
+    out = ''
+    t = body.trim()
+    t.len-bytes() == 0 -> return
+    ls = t.lines()
+    result []str = []
+    i <- [0..ls.len()): {
+        e = ls[i]
+        e: {
+            ok -> result.push('    ' - it)
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = result.join('\n')
+}
+
+; 渲染一个带标题的小节（内容为空则整节省略）
+; label: 小节标题
+; body: 小节正文
+; out: 形如「标题\n    正文\n」的文本
+; [section](#render.section)
+section = (label str, body str) (out str) {
+    out = ''
+    t = body.trim()
+    t.len-bytes() == 0 -> return
+    out = label - '\n' - indent(t) - '\n\n'
+}
+
+; 逗号连接的字符串列
+; vs: 字符串阵列
+; out: 以 ', ' 连接的结果
+; [join-comma](#render.join-comma)
+join-comma = (vs []str) (out str) {
+    out = vs.join(', ')
+}
+
+; 单条词条的 text 形态
+; idx: 词条下标（-1 或越界回空串）
+; out: 可读文本
+; [get-text](#render.get-text)
+get-text = (idx i64) (out str) {
+    out = ''
+    idx < 0 -> return
+    title = db.field(idx, 'title')
+    kind = db.field(idx, 'kind')
+    status = db.field(idx, 'status')
+    summary = db.field(idx, 'summary')
+    s = title - '\n'
+    s = s - kind - ' · ' - status - '\n'
+    s = s - RULE - '\n\n'
+    s = s - section('摘要', summary)
+    s = s - section('定义', db.field(idx, 'definition'))
+    s = s - section('语法', db.field(idx, 'syntax'))
+    s = s - section('示例', db.field(idx, 'example'))
+    al = join-comma(db.list(idx, 'aliases'))
+    s = s - section('别名', al)
+    rl = join-comma(db.list(idx, 'related'))
+    s = s - section('关联', rl)
+    rf = db.list(idx, 'refs')
+    rf-text = rf.join('\n')
+    s = s - section('来源', rf-text)
+    out = s
+}
+
+; 词条清单的 text 形态
+; ids: 词条下标阵列
+; out: 每行「id  summary」的可读文本
+; [list-text](#render.list-text)
+list-text = (ids []i64) (out str) {
+    result []str = []
+    i <- [0..ids.len()): {
+        e = ids[i]
+        e: {
+            ok -> {
+                idx = it
+                tid = db.field(idx, 'id')
+                kd = db.field(idx, 'kind')
+                sm = db.field(idx, 'summary')
+                result.push('  ' - tid - '  [' - kd - ']' - '\n' - '      ' - sm)
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = result.join('\n')
+}
+
+; 语义域清单的 text 形态
+; out: 每行「域名（标题）  N 条」
+; [domains-text](#render.domains-text)
+domains-text = () (out str) {
+    result []str = []
+    n = db.domain-count()
+    i <- [0..n): {
+        dom = db.domain-at(i)
+        title = db.domain-title-at(i)
+        ids = db.filter(dom, '', '')
+        cnt = ids.len()
+        result.push('  ' - dom - '（' - title - '）  ' - cnt.to-str() - ' 条')
+    }
+    out = result.join('\n')
+}
+
+; 单条词条的 markdown 形态
+; idx: 词条下标
+; out: markdown 文本
+; [get-md](#render.get-md)
+get-md = (idx i64) (out str) {
+    out = ''
+    idx < 0 -> return
+    title = db.field(idx, 'title')
+    kind = db.field(idx, 'kind')
+    status = db.field(idx, 'status')
+    s = '## ' - title - '\n\n'
+    s = s - '`' - kind - '` · `' - status - '`'
+    dom = db.field(idx, 'domain')
+    s = s - ' · 域 `' - dom - '`' - '\n\n'
+    s = s - '**摘要**　' - db.field(idx, 'summary') - '\n\n'
+    s = s - md-block('定义', db.field(idx, 'definition'))
+    s = s - md-block('语法', db.field(idx, 'syntax'))
+    s = s - md-block('示例', db.field(idx, 'example'))
+    al = join-comma(db.list(idx, 'aliases'))
+    al.len-bytes() > 0 -> s = s - '**别名**　' - al - '\n\n'
+    rl = join-comma(db.list(idx, 'related'))
+    rl.len-bytes() > 0 -> s = s - '**关联**　' - rl - '\n\n'
+    rf = db.list(idx, 'refs')
+    rf.len() > 0 -> s = s - '**来源**\n\n' - rf.join('\n\n') - '\n\n'
+    out = s
+}
+
+; markdown 小节（内容为空则省略）
+; label: 小节标题
+; body: 正文
+; out: markdown 片段
+; [md-block](#render.md-block)
+md-block = (label str, body str) (out str) {
+    out = ''
+    t = body.trim()
+    t.len-bytes() == 0 -> return
+    out = '**' - label - '**\n\n' - t - '\n\n'
+}
+
+; 词条清单的 markdown 形态
+; ids: 词条下标阵列
+; out: 每条形如「- id（kind） — 摘要」
+; [list-md](#render.list-md)
+list-md = (ids []i64) (out str) {
+    result []str = []
+    i <- [0..ids.len()): {
+        e = ids[i]
+        e: {
+            ok -> {
+                idx = it
+                tid = db.field(idx, 'id')
+                kd = db.field(idx, 'kind')
+                sm = db.field(idx, 'summary')
+                result.push('- `' - tid - '`（' - kd - '） — ' - sm)
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = result.join('\n')
+}
+
+; 语义域清单的 markdown 形态
+; out: 每行「- domain（标题）：N 条」
+; [domains-md](#render.domains-md)
+domains-md = () (out str) {
+    result []str = []
+    n = db.domain-count()
+    i <- [0..n): {
+        dom = db.domain-at(i)
+        title = db.domain-title-at(i)
+        ids = db.filter(dom, '', '')
+        cnt = ids.len()
+        result.push('- `' - dom - '`（' - title - '）：' - cnt.to-str() - ' 条')
+    }
+    head = '语义域索引：\n\n'
+    out = head - result.join('\n')
+}
+
+; ═══════════════════════════════════════════════
+; JSON 形态
+; ═══════════════════════════════════════════════
+
+; 单条词条的 json 形态（全字段）
+; idx: 词条下标；-1 得到 {}
+; out: 单行 JSON 对象
+; [term-json](#render.term-json)
+term-json = (idx i64) (out str) {
+    out = '{}'
+    idx < 0 -> return
+    p []str = []
+    p.push(jsono.pair('id', jsono.jqs(db.field(idx, 'id'))))
+    p.push(jsono.pair('domain', jsono.jqs(db.field(idx, 'domain'))))
+    p.push(jsono.pair('title', jsono.jqs(db.field(idx, 'title'))))
+    p.push(jsono.pair('kind', jsono.jqs(db.field(idx, 'kind'))))
+    p.push(jsono.pair('status', jsono.jqs(db.field(idx, 'status'))))
+    p.push(jsono.pair('summary', jsono.jqs(db.field(idx, 'summary'))))
+    p.push(jsono.pair('definition', jsono.jqs(db.field(idx, 'definition'))))
+    p.push(jsono.pair('syntax', jsono.jqs(db.field(idx, 'syntax'))))
+    p.push(jsono.pair('example', jsono.jqs(db.field(idx, 'example'))))
+    p.push(jsono.pair('aliases', jsono.jstr-arr(db.list(idx, 'aliases'))))
+    p.push(jsono.pair('related', jsono.jstr-arr(db.list(idx, 'related'))))
+    p.push(jsono.pair('refs', jsono.jstr-arr(db.list(idx, 'refs'))))
+    out = '{' - p.join(',') - '}'
+}
+
+; 词条清单的 json 形态（仅索引字段，正文留在 get）
+; ids: 词条下标阵列
+; out: 单行 JSON 阵列；空清单得到 []
+; [list-json](#render.list-json)
+list-json = (ids []i64) (out str) {
+    result []str = []
+    i <- [0..ids.len()): {
+        e = ids[i]
+        e: {
+            ok -> {
+                idx = it
+                p []str = []
+                p.push(jsono.pair('id', jsono.jqs(db.field(idx, 'id'))))
+                p.push(jsono.pair('domain', jsono.jqs(db.field(idx, 'domain'))))
+                p.push(jsono.pair('kind', jsono.jqs(db.field(idx, 'kind'))))
+                p.push(jsono.pair('status', jsono.jqs(db.field(idx, 'status'))))
+                p.push(jsono.pair('summary', jsono.jqs(db.field(idx, 'summary'))))
+                result.push('{' - p.join(',') - '}')
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = '[' - result.join(',') - ']'
+}
+
+; 语义域清单的 json 形态
+; out: 形如 [{"domain":…,"title":…,"count":…}] 的单行 JSON
+; [domains-json](#render.domains-json)
+domains-json = () (out str) {
+    result []str = []
+    n = db.domain-count()
+    i <- [0..n): {
+        dom = db.domain-at(i)
+        title = db.domain-title-at(i)
+        ids = db.filter(dom, '', '')
+        p []str = []
+        p.push(jsono.pair('domain', jsono.jqs(dom)))
+        p.push(jsono.pair('title', jsono.jqs(title)))
+        p.push(jsono.pair('count', ids.len().to-str()))
+        result.push('{' - p.join(',') - '}')
+    }
+    out = '[' - result.join(',') - ']'
+}

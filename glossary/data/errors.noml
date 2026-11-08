@@ -1,0 +1,266 @@
+{
+  version: 1
+  domain: 'errors'
+  title: '错误处理'
+  terms: {
+    'err': {
+      title: 'err（错误值）'
+      kind: 'type'
+      status: 'stable'
+      summary: 'option 的失败态载荷：code / msg / file / line / col，位置在构造点自动注入。'
+      aliases: ['错误', 'error', 'err.err']
+      definition: `
+option 的第三态 err 携带的结构化错误对象。字段：code（错误码）、msg（说明）、
+file / line / col（构造位置，由语言在错误产生点自动填，不需要手写）。
+
+它不是异常：没有 throw / catch，错误是值，必须显式解包处理。
+不解包就取不到值 —— 这是「错误必须被看见」的机制保证。
+`
+      syntax: `
+c: {
+    ok -> 用 it
+
+    err -> 用 it
+}
+`
+      example: `
+r = fs.read-bytes(path)
+r: {
+    ok -> print('ok')
+
+    err -> eprint(it.msg())
+}
+`
+      related: ['option', 'err-msg', 'err-code', 'error-position']
+      refs: ['src/std/err.no', 'docs/docs/lang/syntax.md']
+    }
+    'err-msg': {
+      title: 'err.msg()'
+      kind: 'builtin'
+      status: 'stable'
+      summary: '取错误的可读说明。'
+      aliases: ['msg', '错误信息']
+      definition: `
+取错误对象里的可读说明文本（str）。给人看的场合用它；
+要按错误类别分支请用 err.code() 或 err.is(code)。
+`
+      syntax: `
+e.msg()
+`
+      example: `
+c: {
+    ok -> _
+
+    nil -> _
+
+    err -> eprint('失败: ' - it.msg())
+}
+`
+      related: ['err', 'err-code', 'err-is']
+      refs: ['src/std/err.no']
+    }
+    'err-code': {
+      title: 'err.code()'
+      kind: 'builtin'
+      status: 'stable'
+      summary: '取错误码（code 型别），用于分类判断。'
+      aliases: ['code', '错误码']
+      definition: `
+取错误对象的 code。code 自身有 to-name() 可以拿到稳定的名字串，
+适合日志与跨语言边界；直接比数字则适合内部分支。
+`
+      syntax: `
+c = e.code()
+`
+      example: `
+c: {
+    err -> {
+        code = it.code()
+        print(code.to-name())
+    }
+}
+`
+      related: ['err', 'err-msg', 'err-is', 'error-code-name']
+      refs: ['src/std/err.no']
+    }
+    'err-is': {
+      title: 'err.is(code)'
+      kind: 'builtin'
+      status: 'stable'
+      summary: '判断错误是否属于某个错误码。'
+      aliases: ['is', '错误匹配']
+      definition: `
+传入一个 code，返回 bool：该错误是不是这一类。比手写 code == 某个数字清楚，
+也是库对外暴露「可判别的错误类别」的惯用方式。
+`
+      syntax: `
+e.is(some-code)
+`
+      example: `
+c: {
+    ok -> _
+
+    err -> {
+        not-found = it.is(err.NOT-FOUND)
+        not-found: {
+            true -> print('不存在')
+
+            false -> print('其它错误')
+        }
+    }
+}
+`
+      related: ['err-code', 'err']
+      refs: ['src/std/err.no']
+    }
+    'err-format': {
+      title: 'err.format()'
+      kind: 'builtin'
+      status: 'stable'
+      summary: '把错误格式化成一行可打印文本（含位置）。'
+      aliases: ['format', '格式化错误']
+      definition: `
+把 code / msg / file / line / col 拼成一行可直接打印的文本，
+省去手工拼接，也保证各处日志格式一致。
+`
+      syntax: `
+e.format()
+`
+      example: `
+c: {
+    err -> eprint(it.format())
+
+    -> _
+}
+`
+      related: ['err', 'err-msg', 'error-position']
+      refs: ['src/std/err.no']
+    }
+    'error-code-name': {
+      title: 'code.to-name()'
+      kind: 'builtin'
+      status: 'stable'
+      summary: '把错误码转成稳定的名字串。'
+      aliases: ['to-name']
+      definition: `
+错误码到名字的映射。日志、IPC、测试断言都应该用名字而不是数字 ——
+数字会随实现调整，名字是契约的一部分。
+`
+      syntax: `
+code.to-name()
+`
+      example: `
+print(it.code().to-name())
+`
+      related: ['err-code', 'error-id']
+      refs: ['src/std/err.no']
+    }
+    'error-position': {
+      title: '错误位置（file / line / col）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '错误在构造点自动带上文件、行、列，调用链不必层层传。'
+      aliases: ['位置', '行列', 'position']
+      definition: `
+错误对象自带构造位置。位置是在**错误产生的那一行**注入的，
+不是调用栈 —— 因此不需要手写上下文，也不会像异常栈那样昂贵。
+`
+      syntax: `
+r = s.to-i64()
+r: {
+    err -> print(it.format())
+}
+`
+      example: `
+p = 'abc'.to-i64()
+p: {
+    err -> eprint('解析失败: ' - it.format())
+
+    -> _
+}
+`
+      related: ['err', 'err-format']
+      refs: ['src/std/err.no', 'docs/docs/lang/syntax.md']
+    }
+    'eprint': {
+      title: 'eprint（写 stderr）'
+      kind: 'builtin'
+      status: 'stable'
+      summary: '把诊断信息写 stderr；stdout 留给程序输出与协议帧。'
+      aliases: ['stderr', '标准错误']
+      definition: `
+与 print 对应：print 走 stdout，eprint 走 stderr。
+
+在协议类程序里这条分流是硬要求：MCP 的 stdio 传输把 stdout 当作帧通道，
+任何诊断信息写进 stdout 都会污染协议、让对端解析失败。因此运行时提示一律 eprint。
+`
+      syntax: `
+eprint('提示: ' - msg)
+`
+      example: `
+ok: {
+    false -> {
+        eprint(GNAME - ': 找不到词库数据目录。')
+        return
+    }
+
+    true -> _
+}
+`
+      related: ['exit-code', 'err-format']
+      refs: ['glossary/src/drv.no', 'glossary/src/mcp.no']
+    }
+    'exit-code': {
+      title: '退出码约定'
+      kind: 'concept'
+      status: 'stable'
+      summary: '0 成功 / 1 一般失败 / 2 用法错误 / 3 尚未实现。'
+      aliases: ['退出码', 'exit code', 'rc']
+      definition: `
+命令行工具的退出码在项目内是约定好的：
+0 成功；1 一般失败（查不到、体检有错）；2 用法错误（缺参数、未知子命令）；
+3 尚未实现（占位实现）。
+
+好处是脚本可以直接按码分支，不必解析 stderr 文案。
+`
+      syntax: `
+exit(code)
+`
+      example: `
+cmd: {
+    'version' -> code = 0
+
+    'get' -> code = cmd-get()
+
+    -> code = 2
+}
+
+exit(code)
+`
+      related: ['eprint', 'error-id']
+      refs: ['glossary/src/drv.no', 'glossary/main.no']
+    }
+    'error-id': {
+      title: '错误码 ID（如 15w45dqk）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '编译器诊断各带一个稳定短 ID，便于检索、抑制与跨语言文案对齐。'
+      aliases: ['诊断 ID', 'error id', '诊断码']
+      definition: `
+编译器每条诊断都带一个稳定短 ID（形如 15w45dqk / m7vq3xrt / tlwmf1le），
+出现在消息末尾的方括号里。ID 与 locale 无关，是检索与回归的锚点：
+同一个 ID 在不同语言文案下指向同一条规则。
+
+新增诊断必须同步 i18n 目录（九个 locale 全覆盖），并把 message ID 写成字串字面量。
+`
+      syntax: `
+[ERROR] ... [15w45dqk]
+`
+      example: `
+[ERROR] nolang-compile: explicit type cast is not allowed ... [tlwmf1le]
+`
+      related: ['exit-code', 'i18n']
+      refs: ['src/i18n', 'docs/docs/lang/syntax.md']
+    }
+  }
+}

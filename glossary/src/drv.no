@@ -1,0 +1,532 @@
+; drv — glossary CLI 子命令分派
+;
+; 退出码沿用 compiler/src/drv.no:9-13 的约定：
+;   0 成功 / 1 一般失败（查不到、check 有错）/ 2 用法错误 / 3 尚未实现
+;
+; 数据目录解析顺序：--data=DIR → GLOSSARY_DATA 环境变量 → 从 cwd 逐级向上探测。
+; 之所以按「../ 前缀」探测而不是切路径串：切路径需要下标算术，而 i64 算术在
+; 15w45dqk 严格模式下返回 ?T，会把代码写成一堆两段式解包。
+;
+; ⚠️ 实测约束：给**模块级 str 标量**赋值会被同名局部变量遮蔽（函数内写
+;    DATA-DIR = v 之后全局仍是空串）；模块级 i64 标量与结构体字段则正常。
+;    因此解析结果统一放进模块级结构体 RES，不用裸 str 全局。
+
+; resolved: 数据目录解析结果
+; dir: 词库数据目录（含 index.noml）
+; root: refs 相对路径的解析基准（回到仓库根的 ../ 前缀，可能为空串）
+; ok: 是否解析成功
+resolved {
+    dir str
+    root str
+    ok bool
+}
+
+RES resolved
+
+SCAN-LIMIT = 8
+
+GNAME = 'glossary'
+GVERSION = 'v0.1.0'
+
+; ═══════════════════════════════════════════════
+; 小工具
+; ═══════════════════════════════════════════════
+
+; 取 argv 第 i 项，越界回空串
+; i: 参数下标（含 argv[0]）
+; v: 参数值或空串
+; [arg-at](#drv.arg-at)
+arg-at = (i i64) (v str) {
+    v = ''
+    r = os.arg(i)
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 读环境变量，缺失回空串
+; key: 变量名
+; v: 变量值或空串
+; [env-of](#drv.env-of)
+env-of = (key str) (v str) {
+    v = ''
+    r = os.get-env(key)
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 读 --key=value 形式的选项，缺失回空串
+; key: 选项名，含前导 --，如 --domain
+; v: 选项值或空串
+; [opt-of](#drv.opt-of)
+opt-of = (key str) (v str) {
+    v = ''
+    r = args.get-option(key)
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 文本转整数，解析失败回默认值（str.to-i64 返回 ?i64，必须解包）
+; s: 文本
+; dft: 失败时的默认值
+; v: 结果
+; [int-of](#drv.int-of)
+int-of = (s str, dft i64) (v i64) {
+    v = dft
+    r = s.to-i64()
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取第一个非选项位置参数
+; start: 起始下标
+; v: 参数值或空串
+; [positional](#drv.positional)
+positional = (start i64) (v str) {
+    v = ''
+    n = os.args().len()
+    i <- [start..n): {
+        a = arg-at(i)
+        is-opt = a.contains('--')
+        is-opt: {
+            true -> _
+
+            false -> {
+                v = a
+                break
+            }
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 数据目录解析
+; ═══════════════════════════════════════════════
+
+; 解析数据目录，结果写入 RES
+; explicit: --data 的值；空串表示未指定
+; ok: true=找到可用的数据目录
+; [resolve](#drv.resolve)
+resolve = (explicit str) (ok bool) {
+    ok = false
+    explicit.len-bytes() > 0 -> {
+        RES.dir = explicit
+        RES.root = ''
+        RES.ok = true
+        ok = true
+        return
+    }
+
+    env = env-of('GLOSSARY_DATA')
+    env.len-bytes() > 0 -> {
+        RES.dir = env
+        RES.root = ''
+        RES.ok = true
+        ok = true
+        return
+    }
+
+    up = ''
+    i <- [0..SCAN-LIMIT): {
+        ok -> break
+        probe = up - 'glossary/data/index.noml'
+        yes = fs.exists(probe)
+        yes: {
+            true -> {
+                RES.dir = up - 'glossary/data'
+                RES.root = up
+                RES.ok = true
+                ok = true
+            }
+
+            false -> up = up - '../'
+        }
+    }
+}
+
+; 确保词库已载入
+; ok: true=可用
+; [ensure](#drv.ensure)
+ensure = () (ok bool) {
+    ok = false
+    found = resolve(opt-of('--data'))
+    found: {
+        false -> {
+            eprint(GNAME - ': 找不到词库数据目录。')
+            eprint('  请用 --data=<dir> 指定，或设置 GLOSSARY_DATA，或在仓库内运行。')
+            return
+        }
+
+        true -> _
+    }
+    opened = db.open(RES.dir)
+    opened: {
+        false -> {
+            eprint(GNAME - ': 词库载入失败: ' - db.last-error())
+            ok = false
+        }
+
+        true -> ok = true
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 输出形态选择
+; ═══════════════════════════════════════════════
+
+; 空清单兜底（json 形态要保留 []，不能换成一句人话）
+; s: 已渲染文本
+; msg: 空清单时替代的一行说明
+; out: 空串时给 msg，否则原样返回
+; [or-empty](#drv.or-empty)
+or-empty = (s str, msg str) (out str) {
+    out = s
+    n = s.len-bytes()
+    n == 0 -> out = msg
+}
+
+; 单条词条输出
+; idx: 词条下标
+; fmt: text / md / markdown / json
+; [emit-term](#drv.emit-term)
+emit-term = (idx i64, fmt str) (out str) {
+    out = ''
+    out = fmt: {
+        'json' -> render.term-json(idx)
+
+        'md' -> render.get-md(idx)
+
+        'markdown' -> render.get-md(idx)
+
+        -> render.get-text(idx)
+    }
+}
+
+; 词条清单输出
+; ids: 词条下标阵列
+; fmt: text / md / markdown / json
+; msg: 空清单时给 text/md 的一行说明（json 恒为 []）
+; [emit-list](#drv.emit-list)
+emit-list = (ids []i64, fmt str, msg str) (out str) {
+    out = ''
+    out = fmt: {
+        'json' -> render.list-json(ids)
+
+        'md' -> or-empty(render.list-md(ids), msg)
+
+        'markdown' -> or-empty(render.list-md(ids), msg)
+
+        -> or-empty(render.list-text(ids), msg)
+    }
+}
+
+; 语义域清单输出
+; fmt: text / md / markdown / json
+; [emit-domains](#drv.emit-domains)
+emit-domains = (fmt str) (out str) {
+    out = ''
+    out = fmt: {
+        'json' -> render.domains-json()
+
+        'md' -> render.domains-md()
+
+        'markdown' -> render.domains-md()
+
+        -> render.domains-text()
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 子命令
+; ═══════════════════════════════════════════════
+
+; 打印用法
+; [usage](#drv.usage)
+usage = () {
+    print(GNAME - ' — Nolang 词条化知识库')
+    print('')
+    print('用法: ' - GNAME - ' <子命令> [参数]')
+    print('')
+    print('  get <id>              取单条词条全文')
+    print('  search <关键词>       关键词检索（大小写不敏感）')
+    print('  related <id>          沿关联引用展开')
+    print('  list [--domain=X]     列出词条（默认全部）')
+    print('  domains               列出语义域与条数')
+    print('  check                 一致性体检（CI 用）')
+    print('  mcp                   启动 MCP 服务器（stdio）')
+    print('  mcp --http=<host:port>')
+    print('                        启动 MCP 服务器（HTTP）')
+    print('  version               版本与数据信息')
+    print('  help                  本帮助')
+    print('')
+    print('选项:')
+    print('  --data=<dir>          指定词库数据目录（默认自动探测）')
+    print('  --format=text|md|json 输出形态（默认 text）')
+    print('  --limit=N             search 的条数上限（默认 10）')
+    print('  --depth=N       related 的展开层数（1-3，默认 1）')
+}
+
+; version 子命令
+; code: 退出码
+; [cmd-version](#drv.cmd-version)
+cmd-version = () (code i64) {
+    code = 0
+    print(GNAME - ' ' - GVERSION)
+    ok = ensure()
+    ok: {
+        false -> {
+            print('data: (未载入)')
+            code = 1
+        }
+
+        true -> {
+            c = db.count()
+            d = db.domain-count()
+            print('data: ' - RES.dir)
+            print('词条: ' - c.to-str() - ' 条 / 语义域: ' - d.to-str() - ' 个')
+        }
+    }
+}
+
+; get 子命令
+; code: 退出码
+; [cmd-get](#drv.cmd-get)
+cmd-get = () (code i64) {
+    code = 0
+    id = positional(2)
+    id.len-bytes() == 0 -> {
+        eprint('用法: ' - GNAME - ' get <id>')
+        code = 2
+        return
+    }
+    ok = ensure()
+    ok: {
+        false -> {
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    idx = db.find(id)
+    idx: {
+        -1 -> {
+            eprint('未找到词条: ' - id)
+            code = 1
+        }
+
+        -> print(emit-term(idx, opt-of('--format')))
+    }
+}
+
+; search 子命令：关键词检索
+; code: 退出码
+; [cmd-search](#drv.cmd-search)
+cmd-search = () (code i64) {
+    code = 0
+    q = positional(2)
+    q.len-bytes() == 0 -> {
+        eprint('用法: ' - GNAME - ' search <关键词> [--limit=N] [--format=text|md|json]')
+        code = 2
+        return
+    }
+    ok = ensure()
+    ok: {
+        false -> {
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    lim = int-of(opt-of('--limit'), 10)
+    lim <= 0 -> lim = 10
+    ids = db.search(q, lim)
+    print(emit-list(ids, opt-of('--format'), '没有匹配「' - q - '」的词条。'))
+}
+
+; related 子命令：沿关联引用展开
+; code: 退出码
+; [cmd-related](#drv.cmd-related)
+cmd-related = () (code i64) {
+    code = 0
+    id = positional(2)
+    id.len-bytes() == 0 -> {
+        eprint('用法: ' - GNAME - ' related <id> [--depth=N] [--format=text|md|json]')
+        code = 2
+        return
+    }
+    ok = ensure()
+    ok: {
+        false -> {
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    dp = int-of(opt-of('--depth'), 1)
+    dp <= 0 -> dp = 1
+    dp > 3 -> dp = 3
+    idx = db.find(id)
+    idx: {
+        -1 -> {
+            eprint('未找到词条: ' - id)
+            code = 1
+        }
+
+        -> print(emit-list(db.related(idx, dp), opt-of('--format'), '「' - id - '」没有关联词条。'))
+    }
+}
+
+; list 子命令
+; code: 退出码
+; [cmd-list](#drv.cmd-list)
+cmd-list = () (code i64) {
+    code = 0
+    ok = ensure()
+    ok: {
+        false -> {
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    dom = opt-of('--domain')
+    kind = opt-of('--kind')
+    st = opt-of('--status')
+    ids = db.filter(dom, kind, st)
+    print(emit-list(ids, opt-of('--format'), '（无匹配词条）'))
+}
+
+; domains 子命令
+; code: 退出码
+; [cmd-domains](#drv.cmd-domains)
+cmd-domains = () (code i64) {
+    code = 0
+    ok = ensure()
+    ok: {
+        false -> {
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    print(emit-domains(opt-of('--format')))
+}
+
+; mcp 子命令
+; code: 退出码
+; [cmd-mcp](#drv.cmd-mcp)
+cmd-mcp = () (code i64) {
+    code = 0
+    ok = ensure()
+    ok: {
+        false -> {
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    h = opt-of('--http')
+    h.len-bytes() > 0 -> {
+        code = mcph.serve-spec(h)
+        return
+    }
+
+    ; stdio 模式下 stdout 专属协议帧，任何提示都必须走 stderr
+    code = mcp.serve()
+}
+
+; check 子命令：一致性体检
+; code: 退出码（有 ERROR 即 1）
+; [cmd-check](#drv.cmd-check)
+cmd-check = () (code i64) {
+    code = 0
+    ok = ensure()
+    ok: {
+        false -> {
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    errs = schema.check-all(RES.root)
+    e-lines = schema.err-report()
+    en = e-lines.len-bytes()
+    en > 0 -> print(e-lines)
+    w-lines = schema.warn-report()
+    wn = w-lines.len-bytes()
+    wn > 0 -> print(w-lines)
+    print(schema.summary(errs))
+    errs > 0 -> code = 1
+}
+
+; ═══════════════════════════════════════════════
+; 分派
+; ═══════════════════════════════════════════════
+
+; 子命令分派入口
+; code: 进程退出码
+; [dispatch](#drv.dispatch)
+dispatch = () (code i64) {
+    code = 0
+    n = os.args().len()
+    n <= 1 -> {
+        usage()
+        return
+    }
+    cmd = arg-at(1)
+    cmd: {
+        'version' -> code = cmd-version()
+
+        'get' -> code = cmd-get()
+
+        'search' -> code = cmd-search()
+
+        'related' -> code = cmd-related()
+
+        'list' -> code = cmd-list()
+
+        'domains' -> code = cmd-domains()
+
+        'check' -> code = cmd-check()
+
+        'mcp' -> code = cmd-mcp()
+
+        'help' -> usage()
+
+        '--help' -> usage()
+
+        '-h' -> usage()
+
+        -> {
+            eprint(GNAME - ': 未知子命令 "' - cmd - '"')
+            usage()
+            code = 2
+        }
+    }
+}

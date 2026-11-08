@@ -297,7 +297,14 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
             }
 
             #{overflow=wrap}
-            zn = zn + 1
+            {
+                #{overflow=wrap}
+                zn-opt = zn + 1
+                zn-opt: {
+                    ok -> zn = it
+                    ->
+                }
+            }
             zj = br.read-bit()
             zvec = (zvec << 1) | zj
             lim ?= .limit[zn]
@@ -342,7 +349,14 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
             }
 
             #{overflow=wrap}
-            zn = zn + 1
+            {
+                #{overflow=wrap}
+                zn-opt2 = zn + 1
+                zn-opt2: {
+                    ok -> zn = it
+                    ->
+                }
+            }
             zj = br.read-bit()
             zvec = (zvec << 1) | zj
             lim ?= .limit[zn]
@@ -512,7 +526,13 @@ bzip2-decompress = (data []byte) (out []byte) {
 
                                 -> _
                             }
-                            n-in-use = n-in-use + 1
+                            {
+                                n-in-use-opt = n-in-use + 1
+                                n-in-use-opt: {
+                                    ok -> n-in-use = it
+                                    ->
+                                }
+                            }
                         }
                     }
                 }
@@ -537,7 +557,13 @@ bzip2-decompress = (data []byte) (out []byte) {
 
                         -> _
                     }
-                    k = k + 1
+                    {
+                        k-opt = k + 1
+                        k-opt: {
+                            ok -> k = it
+                            ->
+                        }
+                    }
                 }
             }
 
@@ -575,7 +601,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                     bit == 0 -> break
 
                     #{overflow=wrap}
-                    j = j + 1
+                    {
+                        #{overflow=wrap}
+                        j-opt = j + 1
+                        j-opt: {
+                            ok -> j = it
+                            ->
+                        }
+                    }
                 }
                 j >= n-tables -> j = 0
 
@@ -645,7 +678,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                         }
 
                         #{overflow=wrap}
-                        i = i + 1
+                        {
+                            #{overflow=wrap}
+                            i-opt = i + 1
+                            i-opt: {
+                                ok -> i = it
+                                ->
+                            }
+                        }
                     }
                     bit == 1 -> {
                         bit2 = br.read-bit()
@@ -653,13 +693,27 @@ bzip2-decompress = (data []byte) (out []byte) {
                             bit2 == 0 -> {
 
                                 #{overflow=wrap}
-                                curr-len = curr-len + 1
+                                {
+                                    #{overflow=wrap}
+                                    curr-len-opt = curr-len + 1
+                                    curr-len-opt: {
+                                        ok -> curr-len = it
+                                        ->
+                                    }
+                                }
                             }
 
                             bit2 == 1 -> {
 
                                 #{overflow=wrap}
-                                curr-len = curr-len - 1
+                                {
+                                    #{overflow=wrap}
+                                    curr-len-opt2 = curr-len - 1
+                                    curr-len-opt2: {
+                                        ok -> curr-len = it
+                                        ->
+                                    }
+                                }
                             }
                         }
                     }
@@ -723,12 +777,26 @@ bzip2-decompress = (data []byte) (out []byte) {
                     }
 
                     #{overflow=wrap}
-                    selector-idx = selector-idx + 1
+                    {
+                        #{overflow=wrap}
+                        selector-idx-opt = selector-idx + 1
+                        selector-idx-opt: {
+                            ok -> selector-idx = it
+                            ->
+                        }
+                    }
                     group-remaining = BZ-GROUP-SIZE
                 }
 
                 #{overflow=wrap}
-                group-remaining = group-remaining - 1
+                {
+                    #{overflow=wrap}
+                    group-remaining-opt = group-remaining - 1
+                    group-remaining-opt: {
+                        ok -> group-remaining = it
+                        ->
+                    }
+                }
 
                 ; 根據選擇器解碼符號
                 sym = -1
@@ -743,14 +811,38 @@ bzip2-decompress = (data []byte) (out []byte) {
                 ; 每多一個符號權重翻倍（bzip2：es += val*N; N *= 2，RUNA=1、RUNB=2）。
                 #{overflow=wrap}
                 sym == 0 -> {
-                    run-len = run-len + run-n
-                    run-n = run-n * 2
+                    {
+                        run-len-opt = run-len + run-n
+                        run-len-opt: {
+                            ok -> run-len = it
+                            ->
+                        }
+                    }
+                    {
+                        run-n-opt = run-n * 2
+                        run-n-opt: {
+                            ok -> run-n = it
+                            ->
+                        }
+                    }
                 }
 
                 #{overflow=wrap}
                 sym == 1 -> {
-                    run-len = run-len + 2 * run-n
-                    run-n = run-n * 2
+                    {
+                        run-len-opt2 = run-len + 2 * run-n
+                        run-len-opt2: {
+                            ok -> run-len = it
+                            ->
+                        }
+                    }
+                    {
+                        run-n-opt2 = run-n * 2
+                        run-n-opt2: {
+                            ok -> run-n = it
+                            ->
+                        }
+                    }
                 }
 
                 ; EOB
@@ -963,7 +1055,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
 
                 #{overflow=wrap}
-                k = k + 1
+                {
+                    #{overflow=wrap}
+                    k-opt2 = k + 1
+                    k-opt2: {
+                        ok -> k = it
+                        ->
+                    }
+                }
             }
 
             ; 反轉成正序（bwt-n 個元素）
@@ -972,7 +1071,14 @@ bzip2-decompress = (data []byte) (out []byte) {
             (ri > 0) {
 
                 #{overflow=wrap}
-                ri = ri - 1
+                {
+                    #{overflow=wrap}
+                    ri-opt = ri - 1
+                    ri-opt: {
+                        ok -> ri = it
+                        ->
+                    }
+                }
 
                 rv = flat-data[ri]: {
                     ok -> it
@@ -995,10 +1101,25 @@ bzip2-decompress = (data []byte) (out []byte) {
                 }
 
                 #{overflow=wrap}
-                i = i + 1
+                {
+                    #{overflow=wrap}
+                    i-opt2 = i + 1
+                    i-opt2: {
+                        ok -> i = it
+                        ->
+                    }
+                }
                 out.push(v)
                 {
-                    v == last-b -> rep = rep + 1
+                    v == last-b -> {
+                        {
+                            rep-opt = rep + 1
+                            rep-opt: {
+                                ok -> rep = it
+                                ->
+                            }
+                        }
+                    }
 
                     v != last-b -> {
                         last-b = v
@@ -1015,7 +1136,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                         }
 
                         #{overflow=wrap}
-                        i = i + 1
+                        {
+                            #{overflow=wrap}
+                            i-opt3 = i + 1
+                            i-opt3: {
+                                ok -> i = it
+                                ->
+                            }
+                        }
                     }
                     j <- [0..c): {
                         out.push(last-b)

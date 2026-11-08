@@ -246,7 +246,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
         c != 32 && c != 9 && c != 10 && c != 13 -> break
 
         #{overflow=wrap}
-        p = p + 1
+        p-opt = p + 1
+        p-opt: {
+            ok -> p = it
+            ->
+        }
     }
     p >= sn -> return
 
@@ -267,7 +271,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].kind = JSON-KIND-NULL
 
             #{overflow=wrap}
-            next-pos = p + 4
+            next-pos-opt2 = p + 4
+            next-pos-opt2: {
+                ok -> next-pos = it
+                ->
+            }
             ok = true
             return
         }
@@ -280,7 +288,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].bool-val = true
 
             #{overflow=wrap}
-            next-pos = p + 4
+            next-pos-opt3 = p + 4
+            next-pos-opt3: {
+                ok -> next-pos = it
+                ->
+            }
             ok = true
             return
         }
@@ -293,7 +305,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].bool-val = false
 
             #{overflow=wrap}
-            next-pos = p + 5
+            next-pos-opt4 = p + 5
+            next-pos-opt4: {
+                ok -> next-pos = it
+                ->
+            }
             ok = true
             return
         }
@@ -352,7 +368,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].count = 0
 
             #{overflow=wrap}
-            p = p + 1
+            p-opt2 = p + 1
+            p-opt2: {
+                ok -> p = it
+                ->
+            }
             p = .skip-ws(s, p)
             p >= sn -> return
 
@@ -360,7 +380,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             s.byte(p) == 93 -> {
 
                 #{overflow=wrap}
-                next-pos = p + 1
+                next-pos-opt5 = p + 1
+                next-pos-opt5: {
+                    ok -> next-pos = it
+                    ->
+                }
                 ok = true
                 return
             }
@@ -388,7 +412,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 c2 == 93 -> {
 
                     #{overflow=wrap}
-                    next-pos = p + 1
+                    next-pos-opt6 = p + 1
+                    next-pos-opt6: {
+                        ok -> next-pos = it
+                        ->
+                    }
                     ok = true
                     return
                 }
@@ -396,7 +424,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     c2 == 44 -> {
 
                         #{overflow=wrap}
-                        p = p + 1
+                        p-opt3 = p + 1
+                        p-opt3: {
+                            ok -> p = it
+                            ->
+                        }
                     }
 
                     -> return
@@ -412,7 +444,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             .nodes[node-idx].count = 0
 
             #{overflow=wrap}
-            p = p + 1
+            p-opt4 = p + 1
+            p-opt4: {
+                ok -> p = it
+                ->
+            }
             p = .skip-ws(s, p)
             p >= sn -> return
 
@@ -420,7 +456,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
             s.byte(p) == 125 -> {
 
                 #{overflow=wrap}
-                next-pos = p + 1
+                next-pos-opt7 = p + 1
+                next-pos-opt7: {
+                    ok -> next-pos = it
+                    ->
+                }
                 ok = true
                 return
             }
@@ -447,7 +487,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 }
 
                 #{overflow=wrap}
-                p = p + 1
+                p-opt5 = p + 1
+                p-opt5: {
+                    ok -> p = it
+                    ->
+                }
                 val-idx, val-next, val-ok = .parse(s, p)
                 val-ok == false -> return
 
@@ -467,7 +511,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 c2 == 125 -> {
 
                     #{overflow=wrap}
-                    next-pos = p + 1
+                    next-pos-opt8 = p + 1
+                    next-pos-opt8: {
+                        ok -> next-pos = it
+                        ->
+                    }
                     ok = true
                     return
                 }
@@ -475,7 +523,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                     c2 == 44 -> {
 
                         #{overflow=wrap}
-                        p = p + 1
+                        p-opt6 = p + 1
+                        p-opt6: {
+                            ok -> p = it
+                            ->
+                        }
                     }
 
                     -> return
@@ -508,9 +560,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     ; D1：`+` 的結果恆為 `?i64`。`i` 在本函式全程是普通游標（`i = i + 1` 多處），
     ; 兩段式 match 解包讓整條鏈回到 plain 算術，也讓 `next-pos = i + 1` 不再被傳染。
     #{overflow=wrap}
-    i-opt = pos + 1
-    i = 0
-    i = i-opt: {
+    i = pos + 1: {
         ok -> it
 
         -> 0
@@ -547,9 +597,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
 
                 ; D1：`+` 的結果恆為 `?i64`，此處要的是回繞的普通整數 → 兩段式 match 解包。
                 #{overflow=wrap}
-                next-pos-opt = i + 1
-                next-pos = 0
-                next-pos = next-pos-opt: {
+                next-pos = i + 1: {
                     ok -> it
 
                     -> 0
@@ -562,7 +610,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 ; 跳過轉義字元
 
                 #{overflow=wrap}
-                i = i + 1
+                i ?= i + 1
                 i >= s.len-bytes() -> return
 
                 copt = s.byte(i)
@@ -586,10 +634,10 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         }
 
         #{overflow=wrap}
-        j = j + 1
+        j ?= j + 1
 
         #{overflow=wrap}
-        i = i + 1
+        i ?= i + 1
     }
 }
 
@@ -610,7 +658,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     s.byte(i) == 45 -> {
         negative = 1
-        i = i + 1
+        i ?= i + 1
     }
 
     ; 整數部分
@@ -629,7 +677,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         .nodes[node-idx].num-val = nv * 10.0 + (c - 48)
 
         #{overflow=wrap}
-        i = i + 1
+        i ?= i + 1
     }
 
     ; 小數部分
@@ -644,7 +692,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         c == 46 -> {
 
             #{overflow=wrap}
-            i = i + 1
+            i ?= i + 1
             frac = 0.1
             (i < s.len-bytes()) {
                 i >= s.len-bytes() -> break
@@ -660,7 +708,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 nv ?= .nodes[node-idx].num-val
                 .nodes[node-idx].num-val = nv + frac * (c - 48)
                 frac = frac * 0.1
-                i = i + 1
+                i ?= i + 1
             }
         }
     }
@@ -677,7 +725,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
         c == 101 || c == 69 -> {
 
             #{overflow=wrap}
-            i = i + 1
+            i ?= i + 1
             exp-sign = 1
             i < s.len-bytes() -> {
                 copt = s.byte(i)
@@ -690,9 +738,9 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
 
                     #{overflow=wrap}
                     exp-sign = 0 - 1
-                    i = i + 1
+                    i ?= i + 1
                 }
-                c == 43 -> i = i + 1
+                c == 43 -> i ?= i + 1
             }
             exp-val = 0
             (i < s.len-bytes()) {
@@ -705,8 +753,8 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                     -> 0
                 }
                 c < 48 || c > 57 -> break
-                exp-val = exp-val * 10 + (c - 48)
-                i = i + 1
+                exp-val ?= exp-val * 10 + (c - 48)
+                i ?= i + 1
             }
 
             ; 計算 10^exp-val（exp-val 始終為非負值）
@@ -1112,7 +1160,11 @@ json-pool.stringify = (node-idx i64) (out str) {
                 }
 
                 #{overflow=wrap}
-                j = j + 1
+                j-opt = j + 1
+                j-opt: {
+                    ok -> j = it
+                    ->
+                }
             }
             out = out - '"'
             return

@@ -40,7 +40,14 @@ adler-32 = (data []byte, n i64) (sum i64) {
         a = (a + ixout34c18) % mod-base
 
         #{overflow=wrap}
-        b = (b + a) % mod-base
+        {
+            #{overflow=wrap}
+            b-opt = (b + a) % mod-base
+            b-opt: {
+                ok -> b = it
+                ->
+            }
+        }
     }
     sum = ((b << 16) | a) & 4294967295
 }
@@ -187,7 +194,7 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
         btype != 0 -> return
 
         #{overflow=wrap}
-        p = p + 1
+        p ?= p + 1
 
         ixout163c23 = data[p]: {
             ok -> it
@@ -204,7 +211,7 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
         blk-len i64 = ixout163c23 | (ixout163c34 << 8)
 
         #{overflow=wrap}
-        p = p + 4; 跳過 LEN(2) + NLEN(2)
+        p ?= p + 4; 跳過 LEN(2) + NLEN(2)
 
         ; 提取 payload
         i <- [0..blk-len): {
@@ -220,7 +227,7 @@ zlib-decompress-stored = (data []byte) (out ?[]byte) {
         }
 
         #{overflow=wrap}
-        p = p + blk-len
+        p ?= p + blk-len
         bfinal == 1 -> break
     }
     out = buf
@@ -257,7 +264,14 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
         btype != 0 -> return
 
         #{overflow=wrap}
-        p = p + 1
+        {
+            #{overflow=wrap}
+            p-opt = p + 1
+            p-opt: {
+                ok -> p = it
+                ->
+            }
+        }
 
         ixout206c24 = data[p]: {
             ok -> it
@@ -274,11 +288,25 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
         blk-len i64 = (ixout206c24 & 255) | ((ixout206c43 & 255) << 8)
 
         #{overflow=wrap}
-        p = p + 4 + blk-len
+        {
+            #{overflow=wrap}
+            p-opt2 = p + 4 + blk-len
+            p-opt2: {
+                ok -> p = it
+                ->
+            }
+        }
         bfinal == 1 -> break
     }
 
     ; p 現在指向 Adler-32（4 bytes）
     #{overflow=wrap}
-    consumed = p + 4
+    {
+        #{overflow=wrap}
+        consumed-opt = p + 4
+        consumed-opt: {
+            ok -> consumed = it
+            ->
+        }
+    }
 }

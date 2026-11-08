@@ -541,21 +541,39 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             -> _
         }
-        pos = pos + 1
+        {
+            pos-opt = pos + 1
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         auth-req[pos]: {
             ok -> it = username.len-bytes() & 255
 
             -> _
         }
-        pos = pos + 1
+        {
+            pos-opt2 = pos + 1
+            pos-opt2: {
+                ok -> pos = it
+                ->
+            }
+        }
         i <- [0..username.len-bytes()): {
             auth-req[pos]: {
                 ok -> it = username.byte(i)
 
                 -> _
             }
-            pos = pos + 1
+            {
+                pos-opt3 = pos + 1
+                pos-opt3: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
 
         auth-req[pos]: {
@@ -563,14 +581,26 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
             -> _
         }
-        pos = pos + 1
+        {
+            pos-opt4 = pos + 1
+            pos-opt4: {
+                ok -> pos = it
+                ->
+            }
+        }
         i <- [0..password.len-bytes()): {
             auth-req[pos]: {
                 ok -> it = password.byte(i)
 
                 -> _
             }
-            pos = pos + 1
+            {
+                pos-opt5 = pos + 1
+                pos-opt5: {
+                    ok -> pos = it
+                    ->
+                }
+            }
         }
         auth-str = auth-req.to-str()
         written = net.net-send(fd, auth-str, pos)
@@ -606,7 +636,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt6 = pos + 1
+        pos-opt6: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     conn-req[pos]: {
         ok -> it = SOCKS5-CMD-CONNECT
@@ -615,7 +652,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt7 = pos + 1
+        pos-opt7: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     conn-req[pos]: {
         ok -> it = 0
@@ -624,7 +668,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt8 = pos + 1
+        pos-opt8: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; 使用域名地址類型
     conn-req[pos]: {
@@ -634,7 +685,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt9 = pos + 1
+        pos-opt9: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     conn-req[pos]: {
         ok -> it = target-host.len-bytes() & 255
@@ -643,7 +701,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt10 = pos + 1
+        pos-opt10: {
+            ok -> pos = it
+            ->
+        }
+    }
     i <- [0..target-host.len-bytes()): {
         conn-req[pos]: {
             ok -> it = target-host.byte(i)
@@ -652,7 +717,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
         }
 
         #{overflow=wrap}
-        pos = pos + 1
+        {
+            #{overflow=wrap}
+            pos-opt11 = pos + 1
+            pos-opt11: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 
     conn-req[pos]: {
@@ -662,7 +734,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt12 = pos + 1
+        pos-opt12: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     conn-req[pos]: {
         ok -> it = target-port & 255
@@ -671,7 +750,14 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt13 = pos + 1
+        pos-opt13: {
+            ok -> pos = it
+            ->
+        }
+    }
     conn-str = conn-req.to-str()
     written = net.net-send(fd, conn-str, pos)
     written < 0 -> {

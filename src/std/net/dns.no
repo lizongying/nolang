@@ -94,7 +94,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 1
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt = pos + 2
+        pos-opt: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; Flags: 標準查詢（RD=1）
     query[pos] = 0x01
@@ -103,7 +110,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0x00
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt2 = pos + 2
+        pos-opt2: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; QDCOUNT = 1
     query[pos] = 0
@@ -112,7 +126,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 1
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt3 = pos + 2
+        pos-opt3: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; ANCOUNT = 0
     query[pos] = 0
@@ -121,7 +142,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt4 = pos + 2
+        pos-opt4: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; NSCOUNT = 0
     query[pos] = 0
@@ -130,7 +158,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt5 = pos + 2
+        pos-opt5: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; ARCOUNT = 0
     query[pos] = 0
@@ -139,7 +174,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 0
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt6 = pos + 2
+        pos-opt6: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; QNAME: 將域名編碼為長度前綴標籤
     label-start = 0
@@ -161,26 +203,58 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
             label-len = i - label-start
             label-len > 0 -> {
                 query[pos] = label-len & 255
-                pos = pos + 1
+                {
+                    pos-opt7 = pos + 1
+                    pos-opt7: {
+                        ok -> pos = it
+                        ->
+                    }
+                }
                 j <- [0..label-len): {
 
                     #{overflow=wrap}
                     query[pos] = domain[label-start + j]
-                    pos = pos + 1
+                    {
+                        pos-opt8 = pos + 1
+                        pos-opt8: {
+                            ok -> pos = it
+                            ->
+                        }
+                    }
                 }
             }
-            label-start = i + 1
+            {
+                label-start-opt = i + 1
+                label-start-opt: {
+                    ok -> label-start = it
+                    ->
+                }
+            }
         }
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt = i + 1
+            i-opt: {
+                ok -> i = it
+                ->
+            }
+        }
     }
 
     ; 終止零標籤
     query[pos] = 0
 
     #{overflow=wrap}
-    pos = pos + 1
+    {
+        #{overflow=wrap}
+        pos-opt9 = pos + 1
+        pos-opt9: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; QTYPE
     query[pos] = (qtype >> 8) & 255
@@ -189,7 +263,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = qtype & 255
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt10 = pos + 2
+        pos-opt10: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; QCLASS = IN (1)
     query[pos] = 0
@@ -198,7 +279,14 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
     query[pos + 1] = 1
 
     #{overflow=wrap}
-    pos = pos + 2
+    {
+        #{overflow=wrap}
+        pos-opt11 = pos + 2
+        pos-opt11: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     qlen = pos
 }
@@ -239,7 +327,14 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         len-byte == 0 -> {
 
             #{overflow=wrap}
-            pos = pos + 1
+            {
+                #{overflow=wrap}
+                pos-opt12 = pos + 1
+                pos-opt12: {
+                    ok -> pos = it
+                    ->
+                }
+            }
             jumped == false -> end-pos = pos
             break
         }
@@ -250,7 +345,16 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
             (len-byte & 0xc0) == 0xc0 -> {
 
                 #{overflow=wrap}
-                jumped == false -> end-pos = pos + 2
+                jumped == false -> {
+                    {
+                        #{overflow=wrap}
+                        end-pos-opt = pos + 2
+                        end-pos-opt: {
+                            ok -> end-pos = it
+                            ->
+                        }
+                    }
+                }
 
                 ixout256c59 = data[pos + 1]: {
                     ok -> it
@@ -265,7 +369,13 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
             (len-byte & 0xc0) == 0 -> {
                 label-len = len-byte
-                pos = pos + 1
+                {
+                    pos-opt13 = pos + 1
+                    pos-opt13: {
+                        ok -> pos = it
+                        ->
+                    }
+                }
                 i <- [0..label-len): {
 
                     #{overflow=wrap}
@@ -280,7 +390,13 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
                         -> _
                     }
-                    buf-pos = buf-pos + 1
+                    {
+                        buf-pos-opt = buf-pos + 1
+                        buf-pos-opt: {
+                            ok -> buf-pos = it
+                            ->
+                        }
+                    }
                 }
 
                 buf[buf-pos]: {
@@ -288,8 +404,20 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
 
                     -> _
                 }
-                buf-pos = buf-pos + 1
-                pos = pos + label-len
+                {
+                    buf-pos-opt2 = buf-pos + 1
+                    buf-pos-opt2: {
+                        ok -> buf-pos = it
+                        ->
+                    }
+                }
+                {
+                    pos-opt14 = pos + label-len
+                    pos-opt14: {
+                        ok -> pos = it
+                        ->
+                    }
+                }
             }
 
             -> {
@@ -309,7 +437,13 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
         }
 
         ixout305c12 == 46 -> {
-            buf-pos = buf-pos - 1
+            {
+                buf-pos-opt3 = buf-pos - 1
+                buf-pos-opt3: {
+                    ok -> buf-pos = it
+                    ->
+                }
+            }
         }
     }
 
@@ -336,7 +470,7 @@ parse-response = (data []byte) (ip ?str) {
     data.len() < 12 -> return
 
     ; 檢查回應碼
-    flags-hi = data[2]: {
+    flags-hi ?= data[2]: {
         ok -> it
 
         -> 0
@@ -390,7 +524,7 @@ parse-response = (data []byte) (ip ?str) {
 
         ; 跳過 QTYPE(2) + QCLASS(2)
         #{overflow=wrap}
-        pos = pos + 4
+        pos ?= pos + 4
     }
 
     ; 解析回答部分
@@ -417,15 +551,15 @@ parse-response = (data []byte) (ip ?str) {
         rtype = ((ixout367c19) << 8) | (ixout367c39)
 
         #{overflow=wrap}
-        pos = pos + 2
+        pos ?= pos + 2
 
         ; CLASS (2 bytes)
         #{overflow=wrap}
-        pos = pos + 2
+        pos ?= pos + 2
 
         ; TTL (4 bytes)
         #{overflow=wrap}
-        pos = pos + 4
+        pos ?= pos + 4
 
         ; RDLENGTH (2 bytes)
         ixout382c22 = data[pos]: {
@@ -443,7 +577,7 @@ parse-response = (data []byte) (ip ?str) {
         rdlength = ((ixout382c22) << 8) | (ixout382c42)
 
         #{overflow=wrap}
-        pos = pos + 2
+        pos ?= pos + 2
 
         #{overflow=wrap}
         pos + rdlength > data.len() -> return

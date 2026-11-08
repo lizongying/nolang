@@ -31,6 +31,7 @@ Nolang 是一门**内存安全、无 GC、语法极简**的系统编程语言。
 | `src/builtin/` | 编译器内建（print、数值转换、str/vec 内建方法等）。 |
 | `tests/` | 端到端测试。每个 `.no` 独立构建并运行，失败返回非零退出码。 |
 | `example/` | 示例程序（如 `example/test1`）。 |
+| `glossary/` | **Nolang 词条化知识库**（244 条 / 10 域）。数据是 `glossary/data/*.noml`，前端是 Nolang 写的 CLI + MCP。**查语言名词、std 模块、已知坑先查它**：`./glossary/dist/glossary get <id>`、`search <关键词>`、`list --domain=traps`。详见 `glossary/README.md`。 |
 | `workspace.noml` | 工作区根定义，登记各包路径（如 `test: '/test'`）。 |
 | `Makefile` | 构建入口。**改编译器或 std 一律走 `make`，勿 `cd src && go build`。** |
 
@@ -55,6 +56,9 @@ no build [-o out] <file|dir>  # 构建可执行文件
 no run <pkg|dir|file>         # 构建并运行
 no test [file|dir]            # 运行测试
 no vet src/std               # 对标准库做 vet 检查
+
+no build glossary            # 构建词条库前端 -> glossary/dist/glossary
+./glossary/dist/glossary check   # 词条一致性体检（基线 0 error / 0 warning）
 ```
 
 ⚠️ 修改 `src/std/*.no` 后**必须** `make no`（重生成签名表）；直接 `go build` 会因签名表与源码
@@ -288,6 +292,34 @@ handle = (b i64, c i64, d i64) (r i64) {
   **一次失敗停住整個主體**（後續陳述與迴圈 iteration 都不跑），arms 只跑一次。
   穷尽性沿用标准三态 `?T` 规则：无兜底臂时即使 `ok ->` 不可达也必须补齐。
   `no fmt` 原樣往返 `}: {`；詳見 `docs/docs/lang/syntax.md`〈Match 主語的三種形態〉。
+- **表达式主语的值位 match（2026-11-08 起）**：`expr: { ... }` 的 `: {` **优先于 `=`**，
+  在赋值右侧是整段 RHS，因此 option 算术可一段式解包，**不要**再写
+  `x-opt = a % b` / `x = 0` / `x = x-opt: { ... }` 三段式：
+  ```no
+  #{overflow=wrap}
+  rem = seconds % 3600: {
+      ok -> it
+
+      -> 0
+  }
+
+  #{overflow=wrap}
+  sec = rem % 60: {
+      ok -> it
+
+      -> 0
+  }
+  ```
+  首次赋值可带显式型别（`rem i64 = seconds % 3600: { ... }`），二次赋值直接
+  `rem = ...: { ... }`。主语是 D6 option 算术时归一化为 `__match_subj_L_C ?T`
+  合成暂存（恰好求值一次、`ok -> it` 绑到 payload）；match 结果是 **plain T**
+  并登记进语义副表，所以连续多段值位 match 不会丢 payload。`no fmt` 原样往返且幂等。
+  该附加只在**值语境**（`=` / `?=` / 复合赋值的右侧）且 `: { ... }` 确为 match 块时生效；
+  `cond: { body }` 条件循环与 struct 字面量不受影响。块主语 `{r ?= a % b}: { ... }` 不变。
+  **`src/std` 已于 2026-11-09 完成折叠**（52 处 / 14 档，含循环索引由方法调用回传值
+  声明的站点）；编译器对「语义副表查到 `?T` 但宣告其实是 `i64`」的全域同名残值会回退
+  AST 回放，`it` 不会丢绑定。唯一例外：**内层 match 会写回 `-opt` 变量本身**时，该
+  `-opt` 是后续值位 match 的主语，保留三段式，别折。
 - **if/elif/else**：写成 `{}` 包裹的短路链，条件臂各占一行（`{` / `c1 -> b1` / `c2 -> b2` / `-> b` / `}`）；独立单行 `cond -> body`
   是独立 if，不与相邻 if 短路。**但 else 强制成组**：独占一行的 `->` 写在 `{}` 外是 **ERROR**——解析器只会把它
   折叠到**最近的一条**裸 if，上方兄弟 `cond ->` 臂静默失效（字面读起来像互斥，实际不是）。所以：有 `->` else 就

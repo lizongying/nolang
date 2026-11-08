@@ -326,7 +326,14 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         keccak-f1600(state)
 
         #{overflow=wrap}
-        absorbed = absorbed + rate
+        {
+            #{overflow=wrap}
+            absorbed-opt = absorbed + rate
+            absorbed-opt: {
+                ok -> absorbed = it
+                ->
+            }
+        }
     }
 
     ; 剩餘的最後一個區塊（0..rate-1 位元組）：只吸收，尚未置換
@@ -432,7 +439,14 @@ keccak-sponge = (data []byte, rate i64, capacity i64, out-len i64, suffix byte) 
         }
 
         #{overflow=wrap}
-        squeezed = squeezed + rate
+        {
+            #{overflow=wrap}
+            squeezed-opt = squeezed + rate
+            squeezed-opt: {
+                ok -> squeezed = it
+                ->
+            }
+        }
         squeezed < out-len -> keccak-f1600(state)
     }
 }

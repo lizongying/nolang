@@ -1,0 +1,289 @@
+; schema — 词条一致性体检（glossary check）
+;
+; 检查项分两档：
+;   ERROR（退出码 1）：缺必填字段、kind / status 不在允许集、id 与域内键不一致、
+;                      跨域重复 id、domain 字段与所在文件不符
+;   WARN （退出码仍为 0）：related 指向不存在的词条、refs 指向的文件不存在
+;
+; 之所以把 related / refs 归到 WARN：词库是逐步补的，引用先写下来、目标稍后补，
+; 是正常过程；但结构与字段错了就是错，必须挡住。
+;
+; 15w45dqk 下 i64 算术结果是 ?i64，计数器一律走 bump() 两段式解包。
+
+; 允许的 kind 取值
+; trap = 已知坑（易踩的语言/工具链陷阱），单独一格便于过滤。
+KINDS = 'type|annotation|keyword|operator|concept|builtin|attr|macro|flag|module|trap'
+
+; 允许的 status 取值
+STATUSES = 'stable|unstable|removed|unused|deprecated|trap|experimental'
+
+; 计数与报告行
+; 注意：模块级**裸**数组上的 .len()/.join 会报 "builtin str-len: missing receiver"，
+; 必须像 db 那样把阵列放进结构体字段。
+chk {
+    errors i64
+    warns i64
+    errs []str
+    wrns []str
+}
+
+CK chk
+
+; 计数器加一（两段式解包）
+; v: 旧值
+; r: 新值
+; [bump](#schema.bump)
+bump = (v i64) (r i64) {
+    t = v + 1
+    r = t: {
+        ok -> it
+
+        -> v
+    }
+}
+
+; 判断取值是否在竖线分隔的允许集里
+; v: 取值
+; set: 形如 'a|b|c'
+; yes: true=在集合内
+; [in-set](#schema.in-set)
+in-set = (v str, set str) (yes bool) {
+    yes = false
+    parts = set.split('|')
+    i <- [0..parts.len()): {
+        e = parts[i]
+        e: {
+            ok -> {
+                eq = it.eq-full(v)
+                eq: {
+                    true -> {
+                        yes = true
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 记一条 ERROR
+; msg: 说明
+; [err](#schema.err)
+err = (msg str) {
+    CK.errs.push('ERROR  ' - msg)
+    CK.errors = bump(CK.errors)
+}
+
+; 记一条 WARN
+; msg: 说明
+; [warn](#schema.warn)
+warn = (msg str) {
+    CK.wrns.push('WARN   ' - msg)
+    CK.warns = bump(CK.warns)
+}
+
+; 必填字段检查
+; v: 字段值
+; name: 字段名
+; id: 词条 id
+; dom: 语义域
+; [need](#schema.need)
+need = (v str, name str, id str, dom str) {
+    n = v.len-bytes()
+    n == 0 -> err('[' - dom - '] `' - id - '`：缺少必填字段 ' - name)
+}
+
+; 去掉 refs 里的 ':行号' 后缀
+; s: 形如 src/std/str.no:628
+; out: 纯路径
+; [path-of](#schema.path-of)
+path-of = (s str) (out str) {
+    out = s
+    p = s.index(':')
+    hit = p >= 0
+    hit: {
+        true -> out = s.slice-bytes(0, p)
+
+        false -> _
+    }
+}
+
+; 单条词条体检
+; idx: 词条下标
+; root: 仓库根前缀（refs 的解析基准，可能为空串）
+; [check-one](#schema.check-one)
+check-one = (idx i64, root str) {
+    id = db.field(idx, 'id')
+    dom = db.field(idx, 'domain')
+    tag = '[' - dom - '] `' - id - '`：'
+
+    need(id, 'id', id, dom)
+    need(db.field(idx, 'title'), 'title', id, dom)
+    need(db.field(idx, 'kind'), 'kind', id, dom)
+    need(db.field(idx, 'summary'), 'summary', id, dom)
+    need(db.field(idx, 'definition'), 'definition', id, dom)
+
+    k = db.field(idx, 'kind')
+    kn = k.len-bytes()
+    kn > 0 -> {
+        good = in-set(k, KINDS)
+        good: {
+            false -> err(tag - 'kind 取值非法: ' - k - '（允许: ' - KINDS - '）')
+
+            true -> _
+        }
+    }
+
+    st = db.field(idx, 'status')
+    sn = st.len-bytes()
+    sn > 0 -> {
+        good = in-set(st, STATUSES)
+        good: {
+            false -> err(tag - 'status 取值非法: ' - st - '（允许: ' - STATUSES - '）')
+
+            true -> _
+        }
+    }
+
+    ; related 必须能落到词条上（允许稍后补，故记 WARN）
+    rl = db.list(idx, 'related')
+    i <- [0..rl.len()): {
+        e = rl[i]
+        e: {
+            ok -> {
+                rid = it
+                ri = db.find(rid)
+                ri < 0 -> warn(tag - 'related 指向不存在的词条 `' - rid - '`')
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+
+    ; refs 必须指向真实存在的文件
+    rf = db.list(idx, 'refs')
+    j <- [0..rf.len()): {
+        e = rf[j]
+        e: {
+            ok -> {
+                raw = it
+                p = path-of(raw)
+                probe = root - p
+                ex = fs.exists(probe)
+                ex: {
+                    false -> warn(tag - 'refs 指向的文件不存在: ' - p)
+
+                    true -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 重复 id 检查（跨域）
+; n: 词条总数
+; [check-dups](#schema.check-dups)
+check-dups = (n i64) {
+    i <- [0..n): {
+        a = db.field(i, 'id')
+        j <- [0..n): {
+            later = j > i
+            later: {
+                true -> {
+                    b = db.field(j, 'id')
+                    same = a.eq-full(b)
+                    same: {
+                        true -> err('重复 id `' - a - '`（下标 ' - i.to-str() - ' 与 ' - j.to-str() - '）')
+
+                        false -> _
+                    }
+                }
+
+                false -> _
+            }
+        }
+    }
+}
+
+; 跑一遍体检
+; root: 仓库根前缀
+; errors: ERROR 条数
+; [check-all](#schema.check-all)
+check-all = (root str) (errors i64) {
+    CK.errors = 0
+    CK.warns = 0
+    n = db.count()
+    n == 0 -> err('词库为空：一条词条都没载入')
+    n > 0 -> {
+        i <- [0..n): check-one(i, root)
+        check-dups(n)
+    }
+    errors = CK.errors
+}
+
+; WARN 条数
+; v: 条数
+; [warn-count](#schema.warn-count)
+warn-count = () (v i64) {
+    v = CK.warns
+}
+
+; ERROR 报告文本（每行一条）
+; out: 以换行连接的报告；无错时为空串
+; [err-report](#schema.err-report)
+err-report = () (out str) {
+    out = ''
+    result []str = []
+    i <- [0..CK.errs.len()): {
+        e = CK.errs[i]
+        e: {
+            ok -> result.push(it)
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    n = result.len()
+    n > 0 -> out = result.join('\n')
+}
+
+; WARN 报告文本（每行一条）
+; out: 以换行连接的报告；无警告时为空串
+; [warn-report](#schema.warn-report)
+warn-report = () (out str) {
+    out = ''
+    result []str = []
+    i <- [0..CK.wrns.len()): {
+        e = CK.wrns[i]
+        e: {
+            ok -> result.push(it)
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    n = result.len()
+    n > 0 -> out = result.join('\n')
+}
+
+; 汇总行
+; errors: ERROR 条数
+; out: 形如「合计: 0 error, 2 warning」
+; [summary](#schema.summary)
+summary = (errors i64) (out str) {
+    out = '合计: ' - errors.to-str() - ' error, ' - CK.warns.to-str() - ' warning'
+}

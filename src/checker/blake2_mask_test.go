@@ -32,7 +32,13 @@ blake2b-compress = (h []u64, block []byte, t u64, last i64) {
     i = 0
     for i < 8 {
         v[i] = h[i]
-        i = i + 1
+        ; D1（2026-11-08）：i + 1 本質是 ?i64，不可直接指派回 plain 的 i。
+        ; 用兩段式 match 顯式解包，與 src/std 的修復形狀一致。
+        i-opt = i + 1
+        i-opt: {
+            ok -> i = it
+            ->
+        }
     }
     v[12] = (v[12] ^ (t & BLAKE2B-MASK)) & BLAKE2B-MASK
     if last != 0 {

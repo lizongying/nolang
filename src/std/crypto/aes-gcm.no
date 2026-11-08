@@ -132,7 +132,14 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
             }
 
             #{overflow=wrap}
-            j = j - 1
+            {
+                #{overflow=wrap}
+                j-opt = j - 1
+                j-opt: {
+                    ok -> j = it
+                    ->
+                }
+            }
         }
 
         ixout121c25 = v[0]: {
@@ -231,7 +238,14 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         y = ghash-mul(y, h)
 
         #{overflow=wrap}
-        pos = pos + 16
+        {
+            #{overflow=wrap}
+            pos-opt = pos + 16
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 
     ; AAD 最後不完整區塊
@@ -325,7 +339,14 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
         y = ghash-mul(y, h)
 
         #{overflow=wrap}
-        pos = pos + 16
+        {
+            #{overflow=wrap}
+            pos-opt2 = pos + 16
+            pos-opt2: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 
     #{overflow=wrap}
@@ -577,7 +598,14 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         aes-ctr.ctr-inc(cb)
 
         #{overflow=wrap}
-        pos = pos + n
+        {
+            #{overflow=wrap}
+            pos-opt3 = pos + n
+            pos-opt3: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 }
 

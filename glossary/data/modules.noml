@@ -1,0 +1,185 @@
+{
+  version: 1
+  domain: 'modules'
+  title: '模块与符号'
+  terms: {
+    'module-system': {
+      title: '模块系统'
+      kind: 'concept'
+      status: 'stable'
+      summary: '一个目录一个包，跨模块用 # /路径 导入；跨模块调用写成 模块.名字。'
+      aliases: ['模块', 'module', '包']
+      definition: `
+模块以文件为单位（一个 .no 文件就是一个模块），包以目录为单位（由 package.noml 界定）。
+跨模块引用必须先 # /路径 导入，再用 模块.名字 调用（如 db.open、render.get-md）。
+
+跨模块的限制（实测）：
+- 不能读别人的模块级字段（mcp.IOB.resp 不成立），要么在对方模块加访问器函数；
+- 结构体字段用 map 型别跨模块时可能触发 unknown callee（[str]i64.put），
+  项目内的做法是避免把 map 当结构体字段跨模块用。
+`
+      syntax: `
+# /pkg/src/db
+n = db.count()
+`
+      example: `
+# /glossary/src/render
+print(render.get-md(idx))
+`
+      related: ['syntax-import', 'two-pass-loading', 'symbol-overloading', 'cross-module-field-access']
+      refs: ['docs/docs/lang/module.md', 'glossary/main.no']
+    }
+    'symbol-overloading': {
+      title: '符号重载（symbol overloading）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '同一个名字按型别解析到不同实现；是语言的核心设计之一。'
+      aliases: ['重载', 'overloading', '同名多义']
+      definition: `
+同一个符号可以按接收者型别 / 参数型别解析到不同实现，例如 len() 在 str、数组、
+集合上各有定义。这是 nolang 保持「关键字极少」的主要手段：
+用重载而不是加新语法来扩展表达力。
+
+配套约束：不要为了解析方便牺牲这套简洁语法。改 parser 时若需要新关键字，
+先想能不能用重载或注解表达。
+`
+      syntax: `
+s.len()
+xs.len()
+`
+      example: `
+n = s.len-bytes()
+m = xs.len()
+`
+      related: ['module-system', 'syntax-method']
+      refs: ['docs/docs/lang/symbol.md', 'docs/docs/lang/module.md']
+    }
+    'two-pass-loading': {
+      title: '两遍加载（PASS1 / PASS2）'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'PASS1 只收签名，PASS2 按需惰性载入函数体。'
+      aliases: ['two-pass', '两遍', '惰性加载']
+      definition: `
+std 的载入是两遍的：PASS1 收集全部函数签名（约一千余条），
+PASS2 只在真正用到某函数时才惰性载入其函数体。
+
+这样做的收益是启动快：不读函数体就没有解析与检查成本。
+代价是「签名与函数体不一致」这类问题可能到很晚才暴露，且签名表必须与
+StdSigKey / blob 的戳严格对应，否则会拿到过期签名。
+`
+      syntax: `
+PASS1 收签名 -> PASS2 lazy-load 函数体
+`
+      example: `
+百余个 std 模块 / 约五万行 / 上千条函数签名
+`
+      related: ['std-sig-key', 'module-system', 'std-ast-blob']
+      refs: ['src/checker', 'docs/docs/lang/module.md']
+    }
+    'module-global-shadow': {
+      title: '模块级 str 标量被遮蔽'
+      kind: 'concept'
+      status: 'stable'
+      summary: '给模块级 str 标量赋值不生效：函数内同名局部把它遮住了。'
+      aliases: ['全局遮蔽', 'global shadow', '模块级变量']
+      definition: `
+实测约束：模块级 **str 标量**的赋值会被同名局部变量遮蔽 ——
+在函数内写 NAME = v 之后，全局仍是空串。而模块级 i64 标量与结构体字段赋值正常。
+
+这不是「语义设计」而是当前实现的行为，踩了会得到「明明赋了值却是空」的诡异结果。
+规避方式：模块级可变状态一律用结构体字段承载（RES resolved 这种写法）。
+`
+      syntax: `
+RES resolved
+RES.dir = path
+`
+      example: `
+resolved {
+    dir str
+    ok bool
+}
+
+RES resolved
+`
+      related: ['struct', 'module-system', 'syntax-binding']
+      refs: ['glossary/src/drv.no']
+    }
+    'export': {
+      title: 'export（对外接口）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '包对外暴露的型别与服务端 / 宿主互操作的边界声明。'
+      aliases: ['导出', 'export', '对外接口']
+      definition: `
+把包的能力暴露给宿主（JS 后端、host interop）。导出的边界决定了哪些型别
+可以跨语言传递、哪些只能在 nolang 内部使用。
+
+跨语言边界上的取舍集中在两处：型别可表示性（是否有等价宿主型别）与
+内存所有权（谁负责释放）。这两点决定了 API 形状，而不是反过来。
+`
+      syntax: `
+export { ... }
+`
+      related: ['module-system', 'symbol-overloading', 'two-pass-loading']
+      refs: ['docs/docs/lang/export.md', 'docs/docs/lang/host-interop.md']
+    }
+    'noml-format': {
+      title: '.noml（NOML 格式）'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'Nolang 字面量语法的序列化格式：成员换行分隔，数组元素逗号分隔。'
+      aliases: ['noml', 'NOML', '配置文件格式']
+      definition: `
+.noml 就是 nolang 字面量语法的落地：对象成员**换行**分隔（不是逗号），
+数组元素**逗号**分隔。裸键只能匹配 [a-z_][a-z0-9-]*，其余键要加单引号。
+
+其余要点：
+- 只有 nil，没有 null；
+- 重复键是解析错误；
+- 反引号原始块里不能再出现反引号；
+- 单行写多个成员会解析失败（两人以上的成员必须分多行）。
+
+这条「单行多成员」限制最容易踩：{ a: 1  b: 2 } 是错的，必须换行。
+`
+      syntax: `
+{ version: 1
+  domains: ['types.noml', 'syntax.noml'] }
+`
+      example: `
+{ terms: {
+    'x': {
+        title: 'X'
+        kind: 'type'
+    }
+} }
+`
+      related: ['node-pool', 'noml-member-newline', 'package-noml']
+      refs: ['src/std/noml.no', 'glossary/data/index.noml']
+    }
+    'node-pool': {
+      title: '节点池（node pool）'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'noml / json 文档内部按 i64 索引寻址节点；访问器多写死 .root。'
+      aliases: ['node pool', '节点池', '索引寻址']
+      definition: `
+noml / json 的文档对象内部是「节点池 + 平行阵列」，节点用 i64 索引寻址。
+便利访问器（noml-doc.get / .str / .num）默认只看 .root，
+要按索引遍历必须走池级 API：pool.get(idx, key) / .at / .key / .get-str。
+
+正因为索引是裸 i64，访问下层节点时要自己保证不越界，
+越界通常表现为取到空值而不是报错。
+`
+      syntax: `
+pool.get(idx, key)
+pool.get-str(idx)
+`
+      example: `
+nav.str-arr(d, tidx, 'aliases')
+`
+      related: ['noml-format']
+      refs: ['src/std/noml.no', 'src/std/json.no', 'glossary/src/nav.no']
+    }
+  }
+}

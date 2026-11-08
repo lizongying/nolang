@@ -1,0 +1,176 @@
+; nav — noml 节点索引级访问
+;
+; src/std/noml.no 的 noml-doc 访问器全部写死 .root（:2625 get / :2677 get-str），
+; 需要「按节点索引」遍历 terms 这种嵌套对象时，只能下沉到 noml-pool
+; （:2094 get / :2125 at / :2155 key / :2256 get-str）。noml-pool 没有 sealed，
+; 字段公开，因此本模块只做一层薄封装，顺便把 ?T 解包收敛成带默认值的少数几个
+; 函数，避免上层到处写三臂 match。
+;
+; 约定：所有 idx 都是节点索引，-1 视为无效（各函数自行短路）。
+
+; 按节点索引取子节点
+; d: 文档
+; idx: 父节点索引（必须是对象）
+; key: 成员键名
+; c: ok=子节点索引, nil=非对象或键不存在
+; [child](#nav.child)
+child = (d noml-doc, idx i64, key str) (c ?i64) {
+    c = d.pool.get(idx, key)
+}
+
+; 按位置取阵列元素
+; d: 文档
+; idx: 父节点索引（必须是阵列）
+; pos: 元素下标（0 起算）
+; c: ok=元素节点索引, nil=非阵列或越界
+; [at](#nav.at)
+at = (d noml-doc, idx i64, pos i64) (c ?i64) {
+    c = d.pool.at(idx, pos)
+}
+
+; 按位置取对象成员键名（依文件顺序）
+; d: 文档
+; idx: 父节点索引（必须是对象）
+; pos: 成员下标（0 起算）
+; k: ok=键名, nil=非对象或越界
+; [key-at](#nav.key-at)
+key-at = (d noml-doc, idx i64, pos i64) (k ?str) {
+    k = d.pool.key(idx, pos)
+}
+
+; 子元素数量
+; d: 文档
+; idx: 节点索引
+; n: 对象成员数或阵列长度，其余为 0
+; [len-of](#nav.len-of)
+len-of = (d noml-doc, idx i64) (n i64) {
+    n = d.pool.len(idx)
+}
+
+; 节点是否为对象
+; d: 文档
+; idx: 节点索引
+; y: true=对象
+; [is-obj](#nav.is-obj)
+is-obj = (d noml-doc, idx i64) (y bool) {
+    y = d.pool.is-obj(idx)
+}
+
+; 节点是否为阵列
+; d: 文档
+; idx: 节点索引
+; y: true=阵列
+; [is-arr](#nav.is-arr)
+is-arr = (d noml-doc, idx i64) (y bool) {
+    y = d.pool.is-arr(idx)
+}
+
+; 取节点的字串值
+; d: 文档
+; idx: 节点索引
+; v: ok=字串内容, nil=非字串
+; [val-str](#nav.val-str)
+val-str = (d noml-doc, idx i64) (v ?str) {
+    v = d.pool.val-str(idx)
+}
+
+; 取成员的整数子节点值
+; d: 文档
+; idx: 对象节点索引
+; key: 成员键名
+; v: ok=数值, nil=键不存在或非数字
+; [i64-of](#nav.i64-of)
+i64-of = (d noml-doc, idx i64, key str) (v ?i64) {
+    v = d.pool.get-i64(idx, key)
+}
+
+; 取成员字串值，缺失时回默认值
+; d: 文档
+; idx: 对象节点索引
+; key: 成员键名
+; dflt: 缺失或非字串时的默认值
+; v: 字串内容或 dflt
+; [str-or](#nav.str-or)
+str-or = (d noml-doc, idx i64, key str, dflt str) (v str) {
+    v = dflt
+    r = d.pool.get-str(idx, key)
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取成员整数值，缺失时回默认值
+; d: 文档
+; idx: 对象节点索引
+; key: 成员键名
+; dflt: 缺失或非数字时的默认值
+; v: 数值或 dflt
+; [i64-or](#nav.i64-or)
+i64-or = (d noml-doc, idx i64, key str, dflt i64) (v i64) {
+    v = dflt
+    r = d.pool.get-i64(idx, key)
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取成员的子节点索引，缺失时回 -1
+; d: 文档
+; idx: 对象节点索引
+; key: 成员键名
+; c: 子节点索引或 -1
+; [idx-or](#nav.idx-or)
+idx-or = (d noml-doc, idx i64, key str) (c i64) {
+    c = -1
+    r = d.pool.get(idx, key)
+    r: {
+        ok -> c = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取成员的字符串阵列（元素不是字串的项被跳过）
+; d: 文档
+; idx: 对象节点索引
+; key: 成员键名
+; out: 字符串阵列，缺失时为空阵列
+; [str-arr](#nav.str-arr)
+str-arr = (d noml-doc, idx i64, key str) (out []str) {
+    result []str = []
+    ai = idx-or(d, idx, key)
+    ai >= 0 -> {
+        n = len-of(d, ai)
+        i <- [0..n): {
+            e = at(d, ai, i)
+            e: {
+                ok -> {
+                    ei = it
+                    s = val-str(d, ei)
+                    s: {
+                        ok -> result.push(it)
+
+                        nil -> _
+
+                        err -> _
+                    }
+                }
+
+                nil -> _
+
+                err -> _
+            }
+        }
+    }
+    out = result
+}

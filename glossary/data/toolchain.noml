@@ -1,0 +1,388 @@
+{
+  version: 1
+  domain: 'toolchain'
+  title: '工具链'
+  terms: {
+    'no-build': {
+      title: 'no build'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '把包编译成单文件可执行；-o 指定输出路径。'
+      aliases: ['build', '编译', '构建']
+      definition: `
+按包目录编译：no build -o 输出路径 包目录。包的身份由包目录里的 package.noml 决定。
+
+产物是单文件可执行，内嵌运行期与（若使用）内嵌资源。依赖 LLVM 工具链，
+需要 PATH 里有 llvm-config / opt / llc / clang。
+`
+      syntax: `
+no build -o dist/tool mypkg
+no build mypkg
+`
+      example: `
+./bin/no build -o /tmp/glossary glossary
+`
+      related: ['no-run', 'package-noml', 'llvm-toolchain']
+      refs: ['docs/docs/lang/module.md', 'src/cmd/no']
+    }
+    'no-run': {
+      title: 'no run'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '直接运行单个 .no 文件或包，不落盘产物。'
+      aliases: ['run', '运行']
+      definition: `
+对单个 .no 文件：把它当脚本编译后立即执行。脚本可以带导入（# /path），
+顶层语句就是主流程。对包目录：等价于构建后运行。
+
+注意脚本顶层与函数体在类型推断上有细微差异（见 traps 域的 it-to-i64-toplevel），
+诊断性小程序建议把逻辑放进函数。
+`
+      syntax: `
+no run path/to/file.no
+`
+      example: `
+./bin/no run glossary/tests/probe-json.no
+`
+      related: ['no-build', 'no-test']
+      refs: ['src/cmd/no']
+    }
+    'no-test': {
+      title: 'no test'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '跑 nolang 写的测试（test/std 等语料目录）。'
+      aliases: ['test', '测试']
+      definition: `
+执行用 nolang 写的测试文件。项目里 test/std/ 下有成套语料；
+这些测试是自举链路的实跑验证，和 Go 侧单测互补。
+`
+      syntax: `
+no test test/std/
+`
+      example: `
+./bin/no test test/std/
+`
+      related: ['make-test', 'no-build']
+      refs: ['test/std', 'Makefile']
+    }
+    'no-fmt': {
+      title: 'no fmt'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '代码格式化；--fix= 可挂修复器（如 index-out）。'
+      aliases: ['fmt', '格式化']
+      definition: `
+重排源码为规范形态。除了空白与对齐，还能挂「修复器」自动改写特定模式，
+例如 --fix=index-out。
+
+注意：fmt 走糖（保留 SurfaceMatch 形态），与 surface 形态的降糖路径不同；
+因此「fmt 后能编译」与「vet 能过」并不等价。
+另有一条死循环风险：fmt 单档解析与 vet 的包上下文口径可能相反，
+导致 fmt 删掉 build 必需的注解。
+`
+      syntax: `
+no fmt path/to/file.no
+no fmt --fix=index-out path/to/file.no
+`
+      example: `
+no fmt src/std/str.no
+`
+      related: ['no-vet', 'fmt-shape-gate']
+      refs: ['src/cmd/no', 'scripts/check_ty_strings.sh']
+    }
+    'no-vet': {
+      title: 'no vet'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '静态体检整包（含源码风格与类型串口径检查）。'
+      aliases: ['vet', '体检']
+      definition: `
+以包为上下文做静态检查。与 fmt 的单档解析不同，vet 看得到整个包，
+因此对跨档引用更严格。
+
+项目基线：no vet src/std 应为 0 error；scripts/check_ty_strings.sh 限制
+「型别串前缀 / 切分判断」只能出现在白名单里。
+`
+      syntax: `
+no vet 包目录
+`
+      example: `
+./bin/no vet src/std
+`
+      related: ['no-fmt', 'make-test']
+      refs: ['src/cmd/no', 'scripts/check_ty_strings.sh']
+    }
+    'make-gen': {
+      title: 'make gen'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '重新生成内嵌 std AST blob 与签名指纹；改 src/std 后必须跑。'
+      aliases: ['gen', '生成', 'inner blob']
+      definition: `
+生成两样东西：checker.StdSigKey（src/std 全部源码 + hash.noml include 集的 SHA-256）
+与内嵌的 std AST blob（只存两枚戳：Config 与 StdKey）。
+
+为什么必须跑：no build / no test 不读磁盘上的 src/std，而是用二进制里内嵌的 blob。
+因此在临时树里覆盖 src/std 做 A/B 完全无效 —— 必须重新 make gen。
+`
+      syntax: `
+make gen
+`
+      example: `
+make gen && make no
+`
+      related: ['std-sig-key', 'std-ast-blob', 'make-no']
+      refs: ['Makefile', 'src/checker/genstdsig', 'src/hash.noml']
+    }
+    'make-no': {
+      title: 'make no'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '构建 no 二进制；必须走 make，不能直接 go build。'
+      aliases: ['make', '构建二进制']
+      definition: `
+构建 ./bin/no。必须用 make no：recipe 会先跑 genstdsig 拿到 StdSigKey 再用
+-ldflags -X 注入，直接 go build 出来的二进制 StdSigKey 为空，程序启动即退出。
+
+另外：go build 之后要先删掉 bin/no 再 make no，否则可能因时间戳跳过重建。
+`
+      syntax: `
+make no
+`
+      example: `
+/bin/rm -f bin/no && make gen no
+`
+      related: ['make-gen', 'std-sig-key']
+      refs: ['Makefile']
+    }
+    'make-test': {
+      title: 'make test'
+      kind: 'keyword'
+      status: 'stable'
+      summary: '注入 StdSigKey 后跑全部 Go 单测，是唯一的测试门禁入口。'
+      aliases: ['make test', '单测门禁']
+      definition: `
+make test 会注入 StdSigKey 再跑 go test ./...。直接 go test 会因为缺少注入而失败，
+单包调试时需要自己取 key：
+
+KEY=$(cd src && GOOS= GOARCH= CGO_ENABLED=0 go run ./checker/genstdsig -key-only)
+cd src && go test -ldflags="-X .../checker.StdSigKey=$KEY" ./pkg/
+`
+      syntax: `
+make test
+`
+      example: `
+make test
+`
+      related: ['no-test', 'std-sig-key']
+      refs: ['Makefile']
+    }
+    'package-noml': {
+      title: 'package.noml'
+      kind: 'concept'
+      status: 'stable'
+      summary: '包的元信息：名字、版本、输出目录、忽略项、编译器版本与链接库。'
+      aliases: ['package.noml', '包描述']
+      definition: `
+包目录下的声明文件，用 noml 写。常用字段：name / version / output / ignore /
+compiler{version, link-libs, anonymous-fn-type}。
+
+compiler.anonymous-fn-type 控制匿名函数型别是否启用（默认 false）。
+link-libs 用来链接外部库。
+`
+      syntax: `
+{ name: 'glossary'
+  version: 'v0.1.0'
+  output: './dist'
+  ignore: ['dist']
+  compiler: { version: 'v0.4.19'  link-libs: []  anonymous-fn-type: false } }
+`
+      example: `
+{ name: 'mypkg'
+  version: 'v0.1.0'
+  output: './dist' }
+`
+      related: ['no-build', 'workspace-noml', 'noml-format']
+      refs: ['glossary/package.noml', 'docs/docs/lang/module.md']
+    }
+    'workspace-noml': {
+      title: 'workspace.noml'
+      kind: 'concept'
+      status: 'stable'
+      summary: '工作区清单：名字到包目录的映射，决定 # /path 的解析根。'
+      aliases: ['workspace', '工作区']
+      definition: `
+仓库根的 workspace.noml 把「名字」映射到「包目录」，例如 glossary: '/glossary'。
+有它时，# /path 与 #{embed=...} 的 / 前缀按工作区根解析；
+没有它时按源文件所在目录解析。
+
+这解释了为什么同一份 embed 路径在仓库内能用、搬到 /tmp 就报 file not found。
+`
+      syntax: `
+{ test: '/test'  glossary: '/glossary' }
+`
+      example: `
+{ example: '/example'
+  glossary: '/glossary' }
+`
+      related: ['package-noml', 'syntax-import', 'embed']
+      refs: ['workspace.noml']
+    }
+    'ast-cache': {
+      title: 'AST 磁盘缓存'
+      kind: 'concept'
+      status: 'stable'
+      summary: '~/.cache/nolang/ast 下的解析结果缓存，键含 ASTVersion、salt 与内容。'
+      aliases: ['缓存', 'ast cache']
+      definition: `
+解析结果按内容寻址落盘缓存，键由三部分组成：ASTVersion（版本戳）、
+salt（含 StdSigKey）、以及文件内容。因此：
+
+- 改 parser 的推断/降糖 ⇒ 必须 bump parser.ASTVersion，否则旧缓存会被误用；
+- 改 src/std ⇒ StdSigKey 变，salt 变，缓存自动失效（不必手清）。
+`
+      syntax: `
+~/.cache/nolang/ast
+`
+      example: `
+ASTVersion = '2026-11-08.4'
+`
+      related: ['ast-version', 'std-sig-key', 'make-gen']
+      refs: ['src/parser/astdiskcache.go']
+    }
+    'std-sig-key': {
+      title: 'StdSigKey'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'std 源码集合的 SHA-256 指纹，构建期注入；为空则程序立即退出。'
+      aliases: ['StdSigKey', '签名指纹']
+      definition: `
+不是「签名表」，而是 src/std/*.no 加 hash.noml 的 include 集（含编译器源码）
+一起算出的 SHA-256。Makefile 在构建前跑 genstdsig -key-only，再用 -ldflags -X 注入。
+
+它同时充当 Tier-1 磁盘 AST 缓存 salt 的一部分，所以 std 一改缓存就整体失效。
+它为空的二进制会在启动时直接 os.Exit(1)。
+
+已知缺口：指纹不含 Filename / AllowAnonymousFnType；
+build 路径注入的 externFuncSigs 含用户模块签名，而 generator 只有 std。
+`
+      syntax: `
+KEY=$(cd src && GOOS= GOARCH= CGO_ENABLED=0 go run ./checker/genstdsig -key-only)
+`
+      example: `
+cd src && go test -ldflags="-X .../checker.StdSigKey=$KEY" ./pkg/
+`
+      related: ['std-ast-blob', 'make-no', 'ast-cache', 'make-test']
+      refs: ['src/checker/genstdsig', 'Makefile', 'src/hash.noml']
+    }
+    'std-ast-blob': {
+      title: '内嵌 std AST blob'
+      kind: 'concept'
+      status: 'stable'
+      summary: '二进制里内嵌的 std AST 与两枚一致性戳；不一致则启动即退出。'
+      aliases: ['std blob', '内嵌 AST']
+      definition: `
+只存两枚戳：Config（sha256(ASTVersion + 四张签名表投影)）与 StdKey
+（与 StdSigKey 同源的 computeStdSigKeyFromFS）。装载时逐条核对，
+任何一项为空或不等就直接 os.Exit(1)。
+注意 len(blob)==0 时仍会静默回退到 StdFS —— 这掩盖了「忘记 make gen」的情况。
+`
+      syntax: `
+make gen
+`
+      example: `
+validateStdASTBlob(); loadStdAST()
+`
+      related: ['std-sig-key', 'make-gen', 'ast-version']
+      refs: ['src/checker', 'Makefile']
+    }
+    'ast-version': {
+      title: 'ASTVersion'
+      kind: 'concept'
+      status: 'stable'
+      summary: 'parser 的语义版本戳；改动推断或降糖行为必须 bump。'
+      aliases: ['ASTVersion', '版本戳']
+      definition: `
+标记「AST 语义 + 降糖产物」的版本。改 parser 的推断、降糖、或 AST 结构时
+必须 bump 它，否则磁盘缓存与内嵌 blob 会把旧结果当新结果用。
+
+它同时进入磁盘 AST 缓存键与 std blob 的 Config 戳，是两套缓存的总开关。
+`
+      syntax: `
+ASTVersion = '2026-11-08.4'
+`
+      example: `
+const ASTVersion = "2026-11-08.4"
+`
+      related: ['ast-cache', 'std-ast-blob']
+      refs: ['src/parser']
+    }
+    'selfhost': {
+      title: '自举（selfhost）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '用 nolang 写的编译器 compiler/（noc）编译自己，是语言成熟度的实跑验证。'
+      aliases: ['自举', 'selfhost', 'noc']
+      definition: `
+compiler/ 目录里是用 nolang 写的编译器（入口 compiler/main.no），
+用 no 编译它得到 noc，再用 noc 编译 nolang 程序。
+
+自举是最强的真实语料：任何语法或语义回归都会在这里暴露。
+目前已知自举链路上仍有未修的 codegen 问题（见 traps 域）。
+`
+      syntax: `
+no build compiler
+`
+      example: `
+no build compiler/main.no
+`
+      related: ['no-build', 'pipeline']
+      refs: ['compiler/main.no', 'docs/design/nolang-selfhost.md']
+    }
+    'llvm-toolchain': {
+      title: 'LLVM 工具链'
+      kind: 'concept'
+      status: 'stable'
+      summary: '后端依赖 llvm-config / opt / llc / clang；PATH 里要能找到。'
+      aliases: ['llvm', 'clang', '后端依赖']
+      definition: `
+代码生成链路：生成 LLVM IR → opt 优化 → llc 出目标文件 → clang 链接。
+四个可执行都要在 PATH 里（本机在 /opt/homebrew/opt/llvm/bin）。
+缺少时构建失败，且报错位置通常落在链接阶段，容易被误判成代码问题。
+`
+      syntax: `
+export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:$PATH"
+`
+      example: `
+export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:$PATH"
+./bin/no build -o /tmp/x mypkg
+`
+      related: ['no-build', 'transpiler']
+      refs: ['Makefile', 'src/build']
+    }
+    'fmt-shape-gate': {
+      title: '翻形态门禁（shape gate）'
+      kind: 'concept'
+      status: 'stable'
+      summary: '修复器改写 AST 前必须保持形状；每条修复器都有对应的形状门禁测试。'
+      aliases: ['shape gate', '形态门禁']
+      definition: `
+fmt 的修复器（fixer）会改写 AST，改写后必须保持「形态」不变形 ——
+例如 surface 形态（SkipUnwrap + SkipSafeIndex）把 match 降成 if 链，
+而糖形态（SkipLowering）保留 SurfaceMatch。两者产物不同，不能混。
+
+门禁做法：每个修复器都有一份 shape gate 测试，固定住「输入形状 → 输出形状」。
+新增修复器必须同时补门禁，否则形态漂移不会被发现。
+`
+      syntax: `
+go test ./src/cmd/no/ -run ShapeGate
+`
+      example: `
+src/cmd/no/no_fix_shape_gate_test.go
+`
+      related: ['no-fmt']
+      refs: ['src/cmd/no', 'src/parser/lowering.go']
+    }
+  }
+}

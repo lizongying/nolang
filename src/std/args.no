@@ -155,7 +155,7 @@ get-positional = (idx i64) (val ?str) {
         c0 == 45 -> {
 
             #{overflow=wrap}
-            j = j + 1
+            j ?= j + 1
 
             ; 如果是 --key value 形式，也跳過下一個
             c1 = arg[1]
@@ -169,7 +169,15 @@ get-positional = (idx i64) (val ?str) {
                 }
 
                 nc = next[0]
-                nc != 45 -> j = j + 1
+                nc != 45 -> {
+                    {
+                        j-opt = j + 1
+                        j-opt: {
+                            ok -> j = it
+                            ->
+                        }
+                    }
+                }
             }
             continue
         }
@@ -180,9 +188,9 @@ get-positional = (idx i64) (val ?str) {
         }
 
         #{overflow=wrap}
-        pos = pos + 1
+        pos ?= pos + 1
 
         #{overflow=wrap}
-        j = j + 1
+        j ?= j + 1
     }
 }

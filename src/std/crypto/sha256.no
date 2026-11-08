@@ -2378,7 +2378,14 @@ sha256 = (data []byte) (hash [32]byte) {
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 
         #{overflow=wrap}
-        offset = offset + 64
+        {
+            #{overflow=wrap}
+            offset-opt = offset + 64
+            offset-opt: {
+                ok -> offset = it
+                ->
+            }
+        }
     }
 
     ; 輸出 32 位元組雜湊值（big-endian）

@@ -427,7 +427,14 @@ chacha20-xor = (key [32]byte, counter u32, nonce [12]byte, data []byte) (out []b
         }
 
         #{overflow=wrap}
-        pos = pos + n
+        {
+            #{overflow=wrap}
+            pos-opt = pos + n
+            pos-opt: {
+                ok -> pos = it
+                ->
+            }
+        }
 
         blk-counter = (blk-counter + 1) & CC-MASK32
     }
@@ -531,7 +538,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         h = poly1305-reduce(hc._mul(r))
 
         #{overflow=wrap}
-        pos = pos + 16
+        {
+            #{overflow=wrap}
+            pos-opt2 = pos + 16
+            pos-opt2: {
+                ok -> pos = it
+                ->
+            }
+        }
     }
 
     ; tag = (h + s) 的低 128 位，小端输出（逐字節）
@@ -543,8 +557,7 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
         #{overflow=wrap}
         shifted bigint.bigint = bigint.shr(hs, out * 8)
         bs = shifted % 256
-        bm ?i64 = bs.to-i64()
-        bv = bm: {
+        bv = bs.to-i64(): {
             ok -> it
 
             -> 0
@@ -637,7 +650,14 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     #{overflow=wrap}
-    pos = pos + pad-len
+    {
+        #{overflow=wrap}
+        pos-opt3 = pos + pad-len
+        pos-opt3: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; Cipher
     i <- [0..cipher.len()): {
@@ -674,7 +694,14 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     #{overflow=wrap}
-    pos = pos + pad-len
+    {
+        #{overflow=wrap}
+        pos-opt4 = pos + pad-len
+        pos-opt4: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; aad_len (64-bit LE)
     aad-len = aad.len()
@@ -736,7 +763,14 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     #{overflow=wrap}
-    pos = pos + 8
+    {
+        #{overflow=wrap}
+        pos-opt5 = pos + 8
+        pos-opt5: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; cipher_len (64-bit LE)
     cipher-len = cipher.len()
@@ -798,7 +832,14 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     }
 
     #{overflow=wrap}
-    pos = pos + 8
+    {
+        #{overflow=wrap}
+        pos-opt6 = pos + 8
+        pos-opt6: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     ; 4. 計算 tag
     tag [16]byte
@@ -918,7 +959,14 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     #{overflow=wrap}
-    pos = pos + pad-len
+    {
+        #{overflow=wrap}
+        pos-opt7 = pos + pad-len
+        pos-opt7: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     i <- [0..cipher.len()): {
 
@@ -953,7 +1001,14 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     #{overflow=wrap}
-    pos = pos + pad-len
+    {
+        #{overflow=wrap}
+        pos-opt8 = pos + pad-len
+        pos-opt8: {
+            ok -> pos = it
+            ->
+        }
+    }
 
     aad-len = aad.len()
 
@@ -1014,7 +1069,14 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     #{overflow=wrap}
-    pos = pos + 8
+    {
+        #{overflow=wrap}
+        pos-opt9 = pos + 8
+        pos-opt9: {
+            ok -> pos = it
+            ->
+        }
+    }
     cipher-len-val = cipher.len()
 
     #{overflow=wrap}
@@ -1074,7 +1136,14 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     #{overflow=wrap}
-    pos = pos + 8
+    {
+        #{overflow=wrap}
+        pos-opt10 = pos + 8
+        pos-opt10: {
+            ok -> pos = it
+            ->
+        }
+    }
     exp-tag [16]byte
     exp-tag = poly1305(otk, mac-input)
 

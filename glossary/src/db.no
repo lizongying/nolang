@@ -1,0 +1,884 @@
+; db — 词库内存索引
+;
+; 设计要点（都来自实测约束，改动前请先看注释）：
+;   1. []T 的元素**不携带 str**：golang 侧的 json-pool / noml-pool 都为此把字符串
+;      挪进平行 []str（src/std/json.no:64、src/std/noml.no:68）。这里照做：
+;      gl-term 全是 i64 下标，文本统一驻留在 DB.strs。
+;   2. 不用 [K]V 做字段：结构体带 map 字段 + 方法 + 跨模块会触发
+;      EmitLLVM: unknown callee [str]i64.put（compiler/src/util/intern.no:9）。
+;      词条量级 250 上下，线性扫描足够。
+;   3. 计数一律不做 +1/-1：15w45dqk 严格模式下整数算术结果是 ?T，只有模块级变量
+;      与结构体字段的赋值能直接收（见 glossary/tests/probe.no 头注释）。这里靠
+;      「先取 len() 再赋给字段」和「n = 阵列长度」规避全部算术。
+;   4. 外部模块只通过 db.* 函数访问，不传 gl-db 值：结构体跨模块按值传参有 MIR 坑。
+;
+; 词条以「下标」而不是结构体外传，避免结构体跨函数/跨模块按值复制。
+
+; gl-term: 一条词条的字段下标（全 i64，可安全放进 []T）
+; id/title/domain/kind/status/summary/definition/syntax/example: DB.strs 下标
+; alias-off/alias-n: DB.alias-ids 的起始位置与长度
+; rel-off/rel-n: DB.rel-ids 的起始位置与长度
+; ref-off/ref-n: DB.ref-ids 的起始位置与长度
+gl-term {
+    id i64
+    title i64
+    domain i64
+    kind i64
+    status i64
+    summary i64
+    definition i64
+    syntax i64
+    example i64
+    alias-off i64
+    alias-n i64
+    rel-off i64
+    rel-n i64
+    ref-off i64
+    ref-n i64
+}
+
+; gl-db: 词库全量内存状态（模块级单例 DB）
+; terms: 词条表
+; strs: 文本驻留池（所有字串都进这里，词条只存下标）
+; alias-ids/rel-ids/ref-ids: 三类字符串列的扁平存储，词条按下标区间取用
+; domains/domain-titles: 语义域名与中文标题，顺序与 data/index.noml 一致
+; loaded: 已载入的词条数
+; err: 最近一次载入失败的说明
+gl-db {
+    terms []gl-term
+    strs []str
+    alias-ids []i64
+    rel-ids []i64
+    ref-ids []i64
+    domains []str
+    domain-titles []str
+    loaded i64
+    err str
+}
+
+DB gl-db
+
+; 整数加法（带默认值解包）
+;
+; 15w45dqk 严格模式下 i64 算术结果是 ?i64，且 #{overflow=wrap} 不改变结果型别；
+; 赋给局部变量/结果参数会硬错误。这里集中做一次两段式解包，让上层不必重复。
+; a: 左操作数
+; b: 右操作数
+; r: a + b；溢出时取 0
+; [add](#db.add)
+add = (a i64, b i64) (r i64) {
+    t = a + b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 文本驻留
+; ═══════════════════════════════════════════════
+
+; 取驻留串
+; i: DB.strs 下标；越界或空位回空串
+; v: 字串内容
+; [str-at](#db.str-at)
+str-at = (i i64) (v str) {
+    v = ''
+    i < 0 -> return
+    e = DB.strs[i]
+    e: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 驻留一个字符串，返回其下标（相同内容复用同一槽）
+; s: 待驻留字符串
+; idx: DB.strs 下标
+; [intern](#db.intern)
+intern = (s str) (idx i64) {
+    hit = -1
+    n = DB.strs.len()
+    i <- [0..n): {
+        e = DB.strs[i]
+        e: {
+            ok -> {
+                ev = it
+                same = ev.eq-full(s)
+                same: {
+                    true -> {
+                        hit = i
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    idx = hit
+    hit < 0 -> {
+        idx = DB.strs.len()
+        DB.strs.push(s)
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 载入
+; ═══════════════════════════════════════════════
+
+; 读文件为字符串（逐字节无损：read-bytes + to-bytes-str，不用 fs.read-str）
+; path: 文件路径
+; txt: 文件内容；读失败为空串
+; [read-text](#db.read-text)
+read-text = (path str) (txt str) {
+    txt = ''
+    c = fs.read-bytes(path)
+    c: {
+        ok -> txt = it.to-bytes-str()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 从文件名推导域名（去掉 .noml 后缀）
+; file: 文件名，如 types.noml
+; stem: 域名，如 types
+; [stem-of](#db.stem-of)
+stem-of = (file str) (stem str) {
+    stem = file
+    p = file.index('.noml')
+    p >= 0 -> stem = file.slice-bytes(0, p)
+}
+
+; 把一条词条追加进 arena
+; d: 域文件文档
+; tidx: 词条对象节点索引
+; tid: 词条 id（即 terms 对象里的键）
+; dom: 所属语义域名
+; [load-term](#db.load-term)
+load-term = (d noml-doc, tidx i64, tid str, dom str) {
+    t gl-term
+    t.id = intern(tid)
+    t.title = intern(nav.str-or(d, tidx, 'title', tid))
+    t.domain = intern(dom)
+    t.kind = intern(nav.str-or(d, tidx, 'kind', ''))
+    t.status = intern(nav.str-or(d, tidx, 'status', 'stable'))
+    t.summary = intern(nav.str-or(d, tidx, 'summary', ''))
+    t.definition = intern(nav.str-or(d, tidx, 'definition', ''))
+    t.syntax = intern(nav.str-or(d, tidx, 'syntax', ''))
+    t.example = intern(nav.str-or(d, tidx, 'example', ''))
+
+    ; 别名：先记录起始位置，再全量追加，最后用「阵列长度」确定条数（不做算术）
+    al = nav.str-arr(d, tidx, 'aliases')
+    t.alias-off = DB.alias-ids.len()
+    t.alias-n = al.len()
+    i <- [0..al.len()): {
+        e = al[i]
+        e: {
+            ok -> DB.alias-ids.push(intern(it))
+
+            nil -> _
+
+            err -> _
+        }
+    }
+
+    rl = nav.str-arr(d, tidx, 'related')
+    t.rel-off = DB.rel-ids.len()
+    t.rel-n = rl.len()
+    i <- [0..rl.len()): {
+        e = rl[i]
+        e: {
+            ok -> DB.rel-ids.push(intern(it))
+
+            nil -> _
+
+            err -> _
+        }
+    }
+
+    rf = nav.str-arr(d, tidx, 'refs')
+    t.ref-off = DB.ref-ids.len()
+    t.ref-n = rf.len()
+    i <- [0..rf.len()): {
+        e = rf[i]
+        e: {
+            ok -> DB.ref-ids.push(intern(it))
+
+            nil -> _
+
+            err -> _
+        }
+    }
+
+    DB.terms.push(t)
+    DB.loaded = DB.terms.len()
+}
+
+; 载入单个语义域文件
+; dir: 数据目录
+; file: 文件名，如 types.noml
+; ok: true=成功
+; [load-domain](#db.load-domain)
+load-domain = (dir str, file str) (ok bool) {
+    ok = false
+    stem = stem-of(file)
+    path = dir - '/' - file
+    txt = read-text(path)
+    txt.len-bytes() == 0 -> {
+        DB.err = '读不到域文件: ' - path
+        return
+    }
+
+    r = noml.parse(txt)
+    d noml-doc
+    got = false
+    r: {
+        ok -> {
+            d = it
+            got = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    got == false -> {
+        DB.err = '域文件解析失败: ' - path
+        return
+    }
+
+    dom = nav.str-or(d, d.root, 'domain', stem)
+    title = nav.str-or(d, d.root, 'title', dom)
+    DB.domains.push(dom)
+    DB.domain-titles.push(title)
+
+    ti = nav.idx-or(d, d.root, 'terms')
+    ti < 0 -> {
+        DB.err = '域文件缺少 terms 对象: ' - path
+        return
+    }
+
+    n = nav.len-of(d, ti)
+    i <- [0..n): {
+        k = nav.key-at(d, ti, i)
+        k: {
+            ok -> {
+                tid = it
+                ci = nav.idx-or(d, ti, tid)
+                ci >= 0 -> load-term(d, ci, tid, dom)
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    ok = true
+}
+
+; 打开词库：读 index.noml 的域清单，逐个载入
+; dir: 数据目录（含 index.noml）
+; ok: true=全部域文件载入成功
+; [open](#db.open)
+open = (dir str) (ok bool) {
+    ok = false
+    DB.err = ''
+    idx-path = dir - '/index.noml'
+    txt = read-text(idx-path)
+    txt.len-bytes() == 0 -> {
+        DB.err = '读不到域清单: ' - idx-path
+        return
+    }
+
+    r = noml.parse(txt)
+    d noml-doc
+    got = false
+    r: {
+        ok -> {
+            d = it
+            got = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    got == false -> {
+        DB.err = '域清单解析失败: ' - idx-path
+        return
+    }
+
+    files = nav.str-arr(d, d.root, 'domains')
+    files.len() == 0 -> {
+        DB.err = '域清单为空: ' - idx-path
+        return
+    }
+
+    ok = true
+    i <- [0..files.len()): {
+        f = files[i]
+        f: {
+            ok -> {
+                one = load-domain(dir, it)
+                one: {
+                    false -> ok = false
+
+                    true -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 查询
+; ═══════════════════════════════════════════════
+
+; 词条总数
+; n: 词条数
+; [count](#db.count)
+count = () (n i64) {
+    n = DB.terms.len()
+}
+
+; 最近一次载入失败的说明
+; v: 错误说明；未出错为空串
+; [last-error](#db.last-error)
+last-error = () (v str) {
+    v = DB.err
+}
+
+; 语义域数量
+; n: 域数
+; [domain-count](#db.domain-count)
+domain-count = () (n i64) {
+    n = DB.domains.len()
+}
+
+; 第 i 个语义域名
+; i: 域下标
+; v: 域名；越界为空串
+; [domain-at](#db.domain-at)
+domain-at = (i i64) (v str) {
+    v = ''
+    d = DB.domains[i]
+    d: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 第 i 个语义域中文标题
+; i: 域下标
+; v: 标题；越界为空串
+; [domain-title-at](#db.domain-title-at)
+domain-title-at = (i i64) (v str) {
+    v = ''
+    d = DB.domain-titles[i]
+    d: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 按 id 查词条下标
+; id: 词条 id
+; idx: 词条下标；-1 表示不存在
+; [find](#db.find)
+find = (id str) (idx i64) {
+    idx = -1
+    n = DB.terms.len()
+    i <- [0..n): {
+        e = DB.terms[i]
+        e: {
+            ok -> {
+                et = it
+                sid = str-at(et.id)
+                same = sid.eq-full(id)
+                same: {
+                    true -> {
+                        idx = i
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 取词条字段
+; idx: 词条下标
+; name: 字段名（id/title/domain/kind/status/summary/definition/syntax/example）
+; v: 字段值；下标或字段名非法时为空串
+; [field](#db.field)
+field = (idx i64, name str) (v str) {
+    v = ''
+    idx < 0 -> return
+    idx >= DB.terms.len() -> return
+    e = DB.terms[idx]
+    t gl-term
+    got = false
+    e: {
+        ok -> {
+            t = it
+            got = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    got == false -> return
+    {
+        name.eq-full('id') -> v = str-at(t.id)
+
+        name.eq-full('title') -> v = str-at(t.title)
+
+        name.eq-full('domain') -> v = str-at(t.domain)
+
+        name.eq-full('kind') -> v = str-at(t.kind)
+
+        name.eq-full('status') -> v = str-at(t.status)
+
+        name.eq-full('summary') -> v = str-at(t.summary)
+
+        name.eq-full('definition') -> v = str-at(t.definition)
+
+        name.eq-full('syntax') -> v = str-at(t.syntax)
+
+        name.eq-full('example') -> v = str-at(t.example)
+
+        -> _
+    }
+}
+
+; 取词条的字符串列（aliases/related/refs）
+; idx: 词条下标
+; name: 列名
+; out: 字符串阵列
+; [list](#db.list)
+list = (idx i64, name str) (out []str) {
+    result []str = []
+    idx < 0 -> {
+        out = result
+        return
+    }
+    idx >= DB.terms.len() -> {
+        out = result
+        return
+    }
+    e = DB.terms[idx]
+    t gl-term
+    got = false
+    e: {
+        ok -> {
+            t = it
+            got = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    got == false -> {
+        out = result
+        return
+    }
+
+    which = 0
+    {
+        name.eq-full('aliases') -> which = 1
+
+        name.eq-full('related') -> which = 2
+
+        name.eq-full('refs') -> which = 3
+
+        -> _
+    }
+
+    ; 三列都是 []i64，元素是 DB.strs 的下标，因此要两级取值。
+    ; 区间上界用 add() 求，避免逐元素算术。
+    which: {
+        1 -> {
+            stop = add(t.alias-off, t.alias-n)
+            i <- [t.alias-off..stop): {
+                x = DB.alias-ids[i]
+                x: {
+                    ok -> result.push(str-at(it))
+
+                    nil -> _
+
+                    err -> _
+                }
+            }
+        }
+
+        2 -> {
+            stop = add(t.rel-off, t.rel-n)
+            i <- [t.rel-off..stop): {
+                x = DB.rel-ids[i]
+                x: {
+                    ok -> result.push(str-at(it))
+
+                    nil -> _
+
+                    err -> _
+                }
+            }
+        }
+
+        3 -> {
+            stop = add(t.ref-off, t.ref-n)
+            i <- [t.ref-off..stop): {
+                x = DB.ref-ids[i]
+                x: {
+                    ok -> result.push(str-at(it))
+
+                    nil -> _
+
+                    err -> _
+                }
+            }
+        }
+
+        -> _
+    }
+    out = result
+}
+
+; 按域筛选词条下标
+; dom: 域名；空串表示不筛选
+; kind: kind 名；空串表示不筛选
+; status: status 名；空串表示不筛选
+; out: 命中的词条下标
+; [filter](#db.filter)
+filter = (dom str, kind str, status str) (out []i64) {
+    result []i64 = []
+    n = DB.terms.len()
+    i <- [0..n): {
+        e = DB.terms[i]
+        e: {
+            ok -> {
+                t = it
+                keep = true
+                {
+                    dom.eq-full('') -> _
+
+                    -> {
+                        same = str-at(t.domain).eq-full(dom)
+                        same: {
+                            false -> keep = false
+
+                            true -> _
+                        }
+                    }
+                }
+                {
+                    keep == false -> _
+
+                    kind.eq-full('') -> _
+
+                    -> {
+                        same = str-at(t.kind).eq-full(kind)
+                        same: {
+                            false -> keep = false
+
+                            true -> _
+                        }
+                    }
+                }
+                {
+                    keep == false -> _
+
+                    status.eq-full('') -> _
+
+                    -> {
+                        same = str-at(t.status).eq-full(status)
+                        same: {
+                            false -> keep = false
+
+                            true -> _
+                        }
+                    }
+                }
+                keep: {
+                    true -> result.push(i)
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = result
+}
+
+; ═══════════════════════════════════════════════
+; 检索
+; ═══════════════════════════════════════════════
+
+; 大小写不敏感的子串包含（to-lower 只折叠 ASCII A-Z，中日韩不受影响）
+; hay: 被搜索文本
+; needle: 关键词
+; yes: true=包含
+; [contains-fold](#db.contains-fold)
+contains-fold = (hay str, needle str) (yes bool) {
+    yes = hay.to-lower().contains(needle.to-lower())
+}
+
+; 单条词条的匹配得分（0 表示不匹配）
+; 分层给分而不是累加：命中即停，既省比较也避免算术（i64 算术返回 ?T）
+; idx: 词条下标
+; q: 关键词（调用方已确保非空）
+; s: 0 / 10 / 30 / 50 / 60 / 80 / 100
+; [score-of](#db.score-of)
+score-of = (idx i64, q str) (s i64) {
+    s = 0
+    tid = field(idx, 'id')
+    same = tid.eq-full(q)
+    same: {
+        true -> s = 100
+
+        false -> _
+    }
+    s == 0 -> {
+        hit = contains-fold(tid, q)
+        hit: {
+            true -> s = 80
+
+            false -> _
+        }
+    }
+    s == 0 -> {
+        hit = contains-fold(field(idx, 'title'), q)
+        hit: {
+            true -> s = 60
+
+            false -> _
+        }
+    }
+    s == 0 -> {
+        hit = contains-fold(list(idx, 'aliases').join(' '), q)
+        hit: {
+            true -> s = 50
+
+            false -> _
+        }
+    }
+    s == 0 -> {
+        hit = contains-fold(field(idx, 'summary'), q)
+        hit: {
+            true -> s = 30
+
+            false -> _
+        }
+    }
+    s == 0 -> {
+        hit = contains-fold(field(idx, 'definition'), q)
+        hit: {
+            true -> s = 10
+
+            false -> _
+        }
+    }
+}
+
+; 关键词检索，按得分降序返回词条下标
+; q: 关键词；空串直接回空阵列
+; limit: 最多返回条数；<=0 表示不限
+; out: 词条下标（已排序、已截断）
+; [search](#db.search)
+search = (q str, limit i64) (out []i64) {
+    result []i64 = []
+    q.len-bytes() == 0 -> {
+        out = result
+        return
+    }
+    hits []i64 = []
+    scores []i64 = []
+    n = DB.terms.len()
+    i <- [0..n): {
+        s = score-of(i, q)
+        keep = s > 0
+        keep: {
+            true -> {
+                hits.push(i)
+                scores.push(s)
+            }
+
+            false -> _
+        }
+    }
+
+    ; 选择排序（N 很小）：每次取当前最高分
+    m = hits.len()
+    ordered []i64 = []
+    (ordered.len() < m) {
+        best i64 = 0
+        best-pos i64 = -1
+        k <- [0..m): {
+            sv = scores[k]
+            sv: {
+                ok -> {
+                    cur = it
+                    better = cur > best
+                    better: {
+                        true -> {
+                            best = cur
+                            best-pos = k
+                        }
+
+                        false -> _
+                    }
+                }
+
+                nil -> _
+
+                err -> _
+            }
+        }
+        best-pos < 0 -> break
+        got = hits[best-pos]
+        got: {
+            ok -> ordered.push(it)
+
+            nil -> _
+
+            err -> _
+        }
+        scores[best-pos] = 0
+    }
+
+    ; 截断
+    take i64 = m
+    limit > 0 -> {
+        limit < m -> take = limit
+    }
+    i <- [0..take): {
+        e = ordered[i]
+        e: {
+            ok -> result.push(it)
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    out = result
+}
+
+; 整数阵列是否含某值
+; vs: 待搜索阵列
+; v: 目标值
+; yes: true=存在
+; [vec-has](#db.vec-has)
+vec-has = (vs []i64, v i64) (yes bool) {
+    yes = false
+    i <- [0..vs.len()): {
+        e = vs[i]
+        e: {
+            ok -> {
+                ev = it
+                same = ev == v
+                same: {
+                    true -> {
+                        yes = true
+                        break
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 关联闭包（广度优先，不含自身）
+; idx: 起始词条下标
+; depth: 展开层数；<=0 回空阵列
+; out: 依次发现的关联词条下标
+; [related](#db.related)
+related = (idx i64, depth i64) (out []i64) {
+    result []i64 = []
+    visited []i64 = []
+    frontier []i64 = []
+    visited.push(idx)
+    frontier.push(idx)
+    d <- [0..depth): {
+        nxt []i64 = []
+        i <- [0..frontier.len()): {
+            e = frontier[i]
+            e: {
+                ok -> {
+                    fidx = it
+                    rels = list(fidx, 'related')
+                    j <- [0..rels.len()): {
+                        re = rels[j]
+                        re: {
+                            ok -> {
+                                ti = find(it)
+                                ti >= 0 -> {
+                                    seen = vec-has(visited, ti)
+                                    seen: {
+                                        false -> {
+                                            visited.push(ti)
+                                            nxt.push(ti)
+                                            result.push(ti)
+                                        }
+
+                                        true -> _
+                                    }
+                                }
+                            }
+
+                            nil -> _
+
+                            err -> _
+                        }
+                    }
+                }
+
+                nil -> _
+
+                err -> _
+            }
+        }
+        frontier = nxt
+    }
+    out = result
+}

@@ -24,6 +24,30 @@ package main
 // 即使寫成多行）：實測整段會被推成 `err | nil`，下游當引數用時報 6fgg3htw
 // （`expected 'i64', got 'err | nil'`），見 §11 實測邊界 #2，勿改回值上下文。
 //
+// 🔴 情況 B 的產物**一律再包一層純區塊**。實測「陳述式 match 直接落在 if 臂
+// 體內」時，`ok -> x = it` 只改到臂作用域的副本，函式後面讀到的仍是舊值；
+// 多一層純區塊就讓捕獲回到正常路徑。不猜上下文，所有站點同一形狀。
+//
+// 🔴 單行臂（`cond -> x = expr`，含 match 臂與裸 catch-all）再多包一層
+// `cond -> { ... }`：把改名 + match 直接展開成多行時，只有第一行留在臂內，
+// 其餘掉到外層並插進 if-group 的臂之間 → k3r7mbqd / m7vq3xrt
+// （2026-11-08 全 std 批量修復實測）。故單行臂一律改成：
+//
+//	cond -> {
+//	    {
+//	        x-opt = expr
+//	        x-opt: {
+//	            ok -> x = it
+//	            ->
+//	        }
+//	    }
+//	}
+//
+// 單行臂也**不走情況 A**：實測 `cond -> x ?= expr` 同樣捕獲不到外層 x，且會把
+// 失敗上拋到函式結果、改變原本「就地取值」的語意。這類站點一律用情況 B。
+// 上方緊鄰的 `#{...}` 註解會在內層區塊複製一份，確保它仍作用在算術本身
+// （外層那份現在作用在 `cond -> { ... }` 這條陳述上）。
+//
 // 與既有 fix 類同風格：手術式文字替換、不改排版、不改動其它註解、重跑冪等。
 // 情況 B 刻意「只把原陳述改名」後原樣保留：其上方緊鄰的 `#{overflow=…}`
 // 註解因此仍作用在同一個運算上，而新舊兩行都還在同一個縮排層級，排版不被打散。
@@ -44,10 +68,10 @@ import (
 	"sort"
 	"strings"
 
+	nbuild "github.com/lizongying/nolang/build"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 	"github.com/lizongying/nolang/ty"
-	nbuild "github.com/lizongying/nolang/build"
 )
 
 // unwrapOptTraceID 是 `--fix=unwrap` 唯一認可的診斷來源：D2 之下 option 的
@@ -239,6 +263,9 @@ func fixUnwrapSourceShape(filename, src string) (string, bool) {
 			skipped++
 			continue
 		}
+		// 這條綁定是否為「單行臂的主體」（`cond -> x = expr`）。裸 catch-all
+		// （`-> x = expr`）也算，差別只在包塊的開頭寫 `-> {` 而非 `cond -> {`。
+		armCond, hasArm := inlineArmCondition(first, col-1)
 		rest := lines[start-1 : end]
 		// typed：這一站是 15w45dqk（option 綁到 plain 型別變數）。必須先把
 		// `<name> <type> =` 剝成 `<name> =`（推斷為 ?T），否則情況 B 會把型別標註
@@ -263,7 +290,8 @@ func fixUnwrapSourceShape(filename, src string) (string, bool) {
 			}
 			eq = nameEnd + eqRel
 		}
-		useCaseA := site.optRes != "" && name != site.optRes && (s.Type == nil || typed)
+		// 單行臂一律走情況 B（`?=` 在臂內捕獲不到外層變數，實測 x 仍是舊值）。
+		useCaseA := site.optRes != "" && name != site.optRes && (s.Type == nil || typed) && !hasArm
 		if useCaseA {
 			// 情況 A：上拋。`x = <expr>` → `x ?= <expr>`，只動 `=` 那一個字元。
 			out := make([]string, len(rest))
@@ -300,32 +328,73 @@ func fixUnwrapSourceShape(filename, src string) (string, bool) {
 		taken[tmp] = true
 		out := make([]string, len(rest))
 		copy(out, rest)
+		// 單行臂要把 `cond -> ` 從改寫後的第一行拿掉：條件會搬到外層的
+		// `cond -> {`，這裡只留純指派，否則內層會出現第二個 `->` 變成巢狀臂。
+		stmtPrefix := first[:col-1]
+		if hasArm {
+			stmtPrefix = indent
+		}
 		if typed {
-			out[0] = first[:col-1] + tmp + " " + first[eq:]
+			out[0] = stmtPrefix + tmp + " " + first[eq:]
 		} else {
-			out[0] = first[:col-1] + tmp + first[col-1+len(name):]
+			out[0] = stmtPrefix + tmp + first[col-1+len(name):]
 		}
 		unit := indentUnit(indent)
-		lines := []string{strings.Join(out, "\n")}
+		gen := []string{strings.Join(out, "\n")}
 		// 新鮮綁定（本函式內尚未宣告過 <name>）必須預宣告：否則臂內的
 		// `<name> = it` 只建出臂作用域變數，函式後續看不到。型別與零值取自
-		// 被剝掉的那枚 plain 標註（只有 15w45dqk 站點有）。optunuse 站點要麼
-		// 變數已存在、要麼從未被讀取，都不需要預宣告。
+		// 被剝掉的那枚 plain 標註（只有 15w45dqk 站點有）。非臂站點的預宣告
+		// 必須放在純區塊**外**，否則 x 自己會變成區塊區域變數。
+		var pre []string
 		if typed && !site.predeclared {
 			zero, zok := zeroLiteralFor(s.Type.String())
 			if !zok {
 				skipped++
 				continue
 			}
-			lines = append(lines, indent+name+" "+s.Type.String()+" = "+zero)
+			decl := indent + name + " " + s.Type.String() + " = " + zero
+			if hasArm {
+				gen = append(gen, decl)
+			} else {
+				pre = append(pre, decl)
+			}
 		}
-		lines = append(lines,
+		gen = append(gen,
 			indent+tmp+": {",
 			indent+unit+"ok -> "+name+" = it",
 			indent+unit+"->",
 			indent+"}",
 		)
-		edits[start] = strings.Join(lines, "\n")
+		// 🔴 一律再包一層純區塊。實測「陳述式 match 直接落在 if 臂體內」時，
+		// `ok -> x = it` 只改到臂作用域的副本，函式後面讀到的仍是舊值；多一層
+		// 純區塊就讓捕獲回到正常路徑。單行臂還要再包一層 `cond -> { ... }`，
+		// 否則展開出的多行只有第一行留在臂內（k3r7mbqd / m7vq3xrt）。
+		// 統一包裹（而非只對 if 臂）是刻意的：不猜上下文，所有站點同一形狀。
+		blockIndent := indent
+		var head, tail []string
+		if hasArm {
+			armHead := indent + armCond + " -> {"
+			if armCond == "" {
+				// 裸 catch-all：沒有條件可搬，開頭只需 `-> {`。
+				armHead = indent + "-> {"
+			}
+			head = append(head, armHead)
+			blockIndent = indent + unit
+			tail = append(tail, indent+"}")
+		}
+		head = append(head, blockIndent+"{")
+		inner := blockIndent + unit
+		wrapped := append([]string{}, head...)
+		// 原註解現在作用在 `cond -> {`／純區塊上，內層複製一份，讓
+		// `overflow=wrap` 之類的行為仍落在算術本身。
+		if ann := annotationAbove(lines, start); ann != "" {
+			wrapped = append(wrapped, inner+ann)
+		}
+		wrapped = append(wrapped, reindentBlock(strings.Join(gen, "\n"), indent, inner)...)
+		wrapped = append(wrapped, blockIndent+"}")
+		wrapped = append(wrapped, tail...)
+		gen = append(pre, wrapped...)
+		edits[start] = strings.Join(gen, "\n")
 	}
 	if len(edits) == 0 {
 		if skipped > 0 {
@@ -389,20 +458,20 @@ func collectUnwrapSites(prog *parser.Program, reportLines map[int]bool) []unwrap
 				if v.Name != nil {
 					bound[v.Name.Value] = true
 				}
-			if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
-				inner := map[string]bool{}
-				for k := range bound {
-					inner[k] = true
+				if fl, ok := v.Value.(*parser.FunctionLiteral); ok && fl.Body != nil {
+					inner := map[string]bool{}
+					for k := range bound {
+						inner[k] = true
+					}
+					walk(fl.Body.Statements, firstOptionResult(fl.Results), inner)
 				}
-				walk(fl.Body.Statements, firstOptionResult(fl.Results), inner)
-			}
-			// 值上下文 match：`v = x: { ok -> w = arr[i] … }`——臂體裡的站點
-			// 同樣要可見（與下面 ExpressionStatement 的 SurfaceMatch 分支同理由）。
-			if sm, ok := v.Value.(*parser.SurfaceMatch); ok {
-				parser.WalkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) {
-					walk(stmts, optRes, bound)
-				})
-			}
+				// 值上下文 match：`v = x: { ok -> w = arr[i] … }`——臂體裡的站點
+				// 同樣要可見（與下面 ExpressionStatement 的 SurfaceMatch 分支同理由）。
+				if sm, ok := v.Value.(*parser.SurfaceMatch); ok {
+					parser.WalkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) {
+						walk(stmts, optRes, bound)
+					})
+				}
 			case *parser.FunctionDefinition:
 				if v.Body != nil {
 					inner := map[string]bool{}
@@ -410,6 +479,19 @@ func collectUnwrapSites(prog *parser.Program, reportLines map[int]bool) []unwrap
 						inner[k] = true
 					}
 					walk(v.Body.Statements, firstOptionResult(v.Results), inner)
+				}
+			case *parser.BlockMatchStatement:
+				// `{ ... }: { err -> … -> … }`：主體區塊（Body）裡的站點原本對
+				// walker 完全不可見，2026-11-08 全 std 批量修復後剩下的 32 個
+				// 15w45dqk 都落在這裡（collection/*.no 的 idx 計數器、
+				// archive/tar.no 的 p、net/hpack.no 的 i…）。臂體同理要下鑽。
+				if v.Body != nil {
+					walk(v.Body.Statements, optRes, bound)
+				}
+				if v.Match != nil {
+					parser.WalkSurfaceMatchArmBodies(v.Match, func(stmts []parser.Statement) {
+						walk(stmts, optRes, bound)
+					})
 				}
 			case *parser.ForStatement:
 				if v.Init != nil {
@@ -423,26 +505,26 @@ func collectUnwrapSites(prog *parser.Program, reportLines map[int]bool) []unwrap
 				}
 			case *parser.BlockStatement:
 				walk(v.Statements, optRes, bound)
-		case *parser.ExpressionStatement:
-			if ie, ok := v.Expression.(*parser.IfExpression); ok {
-				if ie.Consequence != nil {
-					walk(ie.Consequence.Statements, optRes, bound)
+			case *parser.ExpressionStatement:
+				if ie, ok := v.Expression.(*parser.IfExpression); ok {
+					if ie.Consequence != nil {
+						walk(ie.Consequence.Statements, optRes, bound)
+					}
+					if ie.Alternative != nil {
+						walk(ie.Alternative.Statements, optRes, bound)
+					}
 				}
-				if ie.Alternative != nil {
-					walk(ie.Alternative.Statements, optRes, bound)
+				// S4 糖形態：match 不再被降糖成 if 鏈，臂體是 SurfaceMatch 的直接
+				// 子節點。少了這一條，臂內的 optunuse 站點對本 walker 不可見 ⇒
+				// `--fix=unwrap` 靜默漏修（surface 形態下同一站點走上面的
+				// IfExpression 分支、是能修的——實測 fixture 見
+				// no_fix_shape_gate_test.go 的 TestFixUnwrapRuleIsShapeParity）。
+				if sm, ok := v.Expression.(*parser.SurfaceMatch); ok {
+					parser.WalkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) {
+						walk(stmts, optRes, bound)
+					})
 				}
 			}
-			// S4 糖形態：match 不再被降糖成 if 鏈，臂體是 SurfaceMatch 的直接
-			// 子節點。少了這一條，臂內的 optunuse 站點對本 walker 不可見 ⇒
-			// `--fix=unwrap` 靜默漏修（surface 形態下同一站點走上面的
-			// IfExpression 分支、是能修的——實測 fixture 見
-			// no_fix_shape_gate_test.go 的 TestFixUnwrapRuleIsShapeParity）。
-			if sm, ok := v.Expression.(*parser.SurfaceMatch); ok {
-				parser.WalkSurfaceMatchArmBodies(sm, func(stmts []parser.Statement) {
-					walk(stmts, optRes, bound)
-				})
-			}
-		}
 		}
 	}
 	walk(prog.Statements, "", map[string]bool{})
@@ -483,8 +565,10 @@ func freshUnwrapName(name string, taken map[string]bool) string {
 // 讓呼叫方把該站點標為「需人工處理」——寧可漏改也不亂填零值。
 func zeroLiteralFor(typeStr string) (string, bool) {
 	switch typeStr {
-	case "i8", "i16", "i32", "i64", "int",
-		"u8", "u16", "u32", "u64", "uint", "byte":
+	case "i8", "i16", "i32", "i64", "i128", "int",
+		"u8", "u16", "u32", "u64", "u128", "uint", "byte", "char":
+		// char 也收：`h1 char = 48 + v` 是 15w45dqk 站點，預宣告
+		// `h1 char = 0` 經 vet 驗證合法（char 零值即碼點 0）。
 		return "0", true
 	case "str":
 		return "''", true
@@ -529,4 +613,59 @@ func indentUnit(indent string) string {
 		return "\t"
 	}
 	return "    "
+}
+
+// inlineArmCondition 判斷一條單行綁定是否為「臂的主體」：`cond -> x = expr`。
+// upto 是變數名稱的 0-based 位元組索引；只認它之前的 `->`，避免把 RHS 裡的
+// 箭頭誤當成臂分隔符。回傳 (條件文字, 有臂分隔符)；裸 catch-all
+// （`-> x = expr`）的條件文字為空字串，呼叫方據此改寫成 `-> { ... }`。
+func inlineArmCondition(line string, upto int) (string, bool) {
+	if upto < 0 {
+		upto = 0
+	}
+	if upto > len(line) {
+		upto = len(line)
+	}
+	i := strings.LastIndex(line[:upto], "->")
+	if i < 0 {
+		return "", false
+	}
+	return strings.TrimSpace(line[:i]), true
+}
+
+// annotationAbove 回傳緊鄰在陳述（1-based start）上方的 `#{...}` 註解文字；
+// 中間只容許空行與 `;` 註解，最多回望 4 行。沒有則回空字串。單行臂被包進
+// `cond -> { ... }` 後，原本作用於算術的註解會改作用在 if 陳述，故需在內層
+// 區塊複製一份，讓 `overflow=wrap` 之類的行為不變。
+func annotationAbove(srcLines []string, start int) string {
+	for back, i := 0, start-2; back < 4 && i >= 0; back, i = back+1, i-1 {
+		t := strings.TrimSpace(srcLines[i])
+		if t == "" || strings.HasPrefix(t, ";") {
+			continue
+		}
+		if strings.HasPrefix(t, "#{") {
+			return t
+		}
+		return ""
+	}
+	return ""
+}
+
+// reindentBlock 把一整段（可能多行）產物從 oldIndent 搬到 newIndent，逐行處理
+// 以覆蓋跨行陳述的續行；舊縮排不存在時退化成「去掉左側空白再補新縮排」。
+func reindentBlock(block, oldIndent, newIndent string) []string {
+	parts := strings.Split(block, "\n")
+	out := make([]string, 0, len(parts))
+	for _, l := range parts {
+		if l == "" {
+			out = append(out, "")
+			continue
+		}
+		if strings.HasPrefix(l, oldIndent) {
+			out = append(out, newIndent+l[len(oldIndent):])
+		} else {
+			out = append(out, newIndent+strings.TrimLeft(l, " \t"))
+		}
+	}
+	return out
 }

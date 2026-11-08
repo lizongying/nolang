@@ -74,10 +74,18 @@ func TestVetLibExportFilteredModuleKeepsOverflowAnnotation(t *testing.T) {
 				l.Line, l.Column, l.File)
 		}
 	}
-	// 反向保障：真正未標註的整數運算仍要報錯（側表不是被整體放寬）。
+	// 反向保障：真正未標註的整數運算仍要報出溢出診斷（側表不是被整體放寬）。
+	// D1（2026-11-08）：不能再寫成 `r = a + b` 收進 plain 結果參數——那現在是
+	// 15w45dqk 硬錯誤，會蓋掉本測試想看的 xmicjezl/ovfhndld。改成先綁成
+	// 推斷為 ?i64 的新變數、再用陳述式 match 消費，讓第 4 行仍是那條未標註
+	// 的算術，同時不違反「option 不可窄化成 plain」。
 	write("bad.no", "# /drv/src/mod\n\n"+
 		"bad = (a i64, b i64) (r i64) {\n"+
-		"    r = a + b\n"+
+		"    k = a + b\n"+
+		"    k: {\n"+
+		"        ok -> r = it\n"+
+		"        ->\n"+
+		"    }\n"+
 		"}\n")
 	lints, err = VetFileWithLints(filepath.Join(tmpDir, "bad.no"), BuildOptions{})
 	if err != nil {

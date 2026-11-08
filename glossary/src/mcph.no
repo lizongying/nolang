@@ -1,0 +1,455 @@
+; mcph — MCP over HTTP（Streamable HTTP 的最小可用子集）
+;
+; 只服务一个动作：POST /mcp → 读头 → 读体 → 交给 mcp.handle-line() → 回 JSON。
+; GET 回 405（本实现不提供 SSE 流），OPTIONS 回 204 供浏览器预检。
+;
+; 为什么自己攒缓冲而不用现成 API：
+;   - src/std/net/http.no 只有客户端，全文 grep 'listen' 零命中，没有 server；
+;   - net.conn.recv-line 不是按行切分，它只做一次 recv（src/std/net/net.no:247-253），
+;     返回值还是整块数据，不能直接当 HTTP 头行用。
+; 所以这里按「读一块 → 追加 → 找 \r\n\r\n → 按 Content-Length 补足正文」自己实现。
+;
+; 编译期注意：本文件所有下标算术都走 add()，因为 15w45dqk 严格模式下 i64 算术结果
+; 是 ?i64，直接赋给局部变量/结果参数会硬错误。
+
+; 一次连接的请求解析状态
+hreq {
+    method str
+    path str
+    body str
+    clen i64
+    head-end i64
+}
+
+HR hreq
+
+HBUF = 4096
+HREQ-LIMIT = 65536
+DEFAULT-PORT = 8765
+
+; ═══════════════════════════════════════════════
+; 小工具
+; ═══════════════════════════════════════════════
+
+; 整数加法（带默认值解包，两段式）
+; a: 左操作数
+; b: 右操作数
+; r: a + b；溢出取 0
+; [add](#mcph.add)
+add = (a i64, b i64) (r i64) {
+    t = a + b
+    r = t: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 文本转整数
+; s: 文本
+; dft: 解析失败时的默认值
+; v: 结果
+; [int-of](#mcph.int-of)
+int-of = (s str, dft i64) (v i64) {
+    v = dft
+    r = s.to-i64()
+    r: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取字符串的一行（首个 \r\n 之前）
+; head: 文本
+; v: 首行
+; [first-line](#mcph.first-line)
+first-line = (head str) (v str) {
+    v = head
+    pos = head.index('\r\n')
+    hit = pos >= 0
+    hit: {
+        true -> v = head.slice(0, pos)
+
+        false -> _
+    }
+}
+
+; 取空格分隔的第 k 段
+; s: 文本
+; k: 段下标（从 0 起）
+; out: 该段内容；越界回空串
+; [nth-field](#mcph.nth-field)
+nth-field = (s str, k i64) (out str) {
+    out = ''
+    rest = s
+    cur = ''
+    i = 0
+    want = add(k, 1)
+    !! {
+        done = i >= want
+        done: {
+            true -> break
+
+            false -> _
+        }
+        p = rest.index(' ')
+        hit = p >= 0
+        hit: {
+            true -> {
+                cur = rest.slice(0, p)
+                nxt = add(p, 1)
+                rest = rest.slice(nxt, rest.len-bytes())
+            }
+
+            false -> {
+                cur = rest
+                rest = ''
+            }
+        }
+        i = add(i, 1)
+    }
+    out = cur
+}
+
+; 从头部文本里取 Content-Length
+; head: 请求头文本（含请求行）
+; cl: 长度；缺失或非法为 0
+; [content-length-of](#mcph.content-length-of)
+content-length-of = (head str) (cl i64) {
+    cl = 0
+    low = head.to-lower()
+    ls = low.lines()
+    i <- [0..ls.len()): {
+        e = ls[i]
+        e: {
+            ok -> {
+                ln = it
+                is-cl = ln.starts-with('content-length:')
+                is-cl: {
+                    true -> {
+                        tail = ln.slice(15, ln.len-bytes())
+                        cl = int-of(tail.trim(), 0)
+                    }
+
+                    false -> _
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+    }
+}
+
+; 扫描 \r\n\r\n，返回其后第一个字节的下标
+; b: 已收到的字节
+; p: 正文起始下标；未找到回 -1
+; [head-end-of](#mcph.head-end-of)
+head-end-of = (b []byte) (p i64) {
+    p = -1
+    n = b.len()
+    st = 0
+    hit = -1
+    i <- [0..n): {
+        e = b[i]
+        e: {
+            ok -> {
+                bv = it.to-i64()
+                {
+                    st == 0 -> {
+                        bv == 13 -> st = 1
+                    }
+
+                    st == 1 -> {
+                        bv == 10 -> st = 2
+
+                        -> st = 0
+                    }
+
+                    st == 2 -> {
+                        bv == 13 -> st = 3
+
+                        -> st = 0
+                    }
+
+                    st == 3 -> {
+                        bv == 10 -> hit = add(i, 1)
+
+                        -> st = 0
+                    }
+
+                    -> st = 0
+                }
+            }
+
+            nil -> _
+
+            err -> _
+        }
+        found = hit >= 0
+        found: {
+            true -> break
+
+            false -> _
+        }
+    }
+    p = hit
+}
+
+; ═══════════════════════════════════════════════
+; 请求读取
+; ═══════════════════════════════════════════════
+
+; 读一块并追加进 acc
+; c: 连接
+; acc: 累积缓冲（同一份堆上的阵列，追加对调用方可见）
+; got: 本次读到的字节数；<=0 表示对端关闭或出错
+; [pull](#mcph.pull)
+pull = (c conn, acc []byte) (got i64) {
+    got = 0
+    chunk str = with-len(HBUF)
+    n = c.recv(chunk, HBUF)
+    n <= 0 -> return
+    part = chunk.slice(0, n)
+    j <- [0..n): {
+        bc = part.byte(j)
+        bc: {
+            ok -> acc.push(it)
+
+            nil -> _
+
+            err -> _
+        }
+    }
+    got = n
+}
+
+; 读一个完整请求到 HR
+; c: 连接
+; ok: true=头与正文都收齐
+; [read-req](#mcph.read-req)
+read-req = (c conn) (ok bool) {
+    ok = false
+    HR.method = ''
+    HR.path = ''
+    HR.body = ''
+    HR.clen = 0
+    HR.head-end = -1
+    acc []byte = []
+
+    ; 第一阶段：凑齐请求头
+    !! {
+        g = pull(c, acc)
+        g <= 0 -> break
+        p = head-end-of(acc)
+        p >= 0 -> {
+            HR.head-end = p
+            break
+        }
+        sz = acc.len()
+        over = sz > HREQ-LIMIT
+        over: {
+            true -> break
+
+            false -> _
+        }
+    }
+    HR.head-end < 0 -> return
+
+    head = acc.slice(0, HR.head-end).to-bytes-str()
+    first = first-line(head)
+    HR.method = nth-field(first, 0)
+    HR.path = nth-field(first, 1)
+    HR.clen = content-length-of(head)
+
+    ; 第二阶段：按 Content-Length 补足正文
+    need = add(HR.head-end, HR.clen)
+    !! {
+        have = acc.len()
+        enough = have >= need
+        enough: {
+            true -> break
+
+            false -> _
+        }
+        g2 = pull(c, acc)
+        g2 <= 0 -> break
+    }
+
+    have2 = acc.len()
+    ready = have2 >= need
+    ready: {
+        true -> {
+            HR.body = acc.slice(HR.head-end, need).to-bytes-str()
+            ok = true
+        }
+
+        false -> _
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 响应写出
+; ═══════════════════════════════════════════════
+
+; 循环写直到全部送出
+; c: 连接
+; s: 待写文本
+; ok: true=全部写出
+; [write-str](#mcph.write-str)
+write-str = (c conn, s str) (ok bool) {
+    ok = false
+    total = s.len-bytes()
+    sent = 0
+    !! {
+        enough = sent >= total
+        enough: {
+            true -> break
+
+            false -> _
+        }
+        rest = s.slice(sent, total)
+        w = c.send(rest)
+        w <= 0 -> break
+        sent = add(sent, w)
+    }
+    ok = sent >= total
+}
+
+; 发一个完整的 HTTP 响应
+; c: 连接
+; status: 状态描述，如 "200 OK"
+; ctype: Content-Type；空串则不写该头
+; body: 响应体
+; [respond](#mcph.respond)
+respond = (c conn, status str, ctype str, body str) {
+    b = body
+    h = 'HTTP/1.1 ' - status - '\r\n'
+    ctype.len-bytes() > 0 -> h = h - 'Content-Type: ' - ctype - '\r\n'
+    h = h - 'Content-Length: ' - b.len-bytes().to-str() - '\r\n'
+    h = h - 'Access-Control-Allow-Origin: *\r\n'
+    h = h - 'Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n'
+    h = h - 'Access-Control-Allow-Headers: Content-Type, Mcp-Protocol-Version, Accept\r\n'
+    h = h - 'Connection: close\r\n\r\n'
+    _ = write-str(c, h)
+    bl = b.len-bytes()
+    bl > 0 -> {
+        _ = write-str(c, b)
+    }
+}
+
+; ═══════════════════════════════════════════════
+; 单连接处理
+; ═══════════════════════════════════════════════
+
+; 处理一个连接后关闭它
+; c: 连接
+; [serve-conn](#mcph.serve-conn)
+serve-conn = (c conn) {
+    got = read-req(c)
+    got: {
+        false -> respond(c, '400 Bad Request', 'text/plain', 'bad request')
+
+        true -> {
+            m = HR.method
+            m: {
+                'POST' -> {
+                    want = mcp.handle-line(HR.body.trim())
+                    want: {
+                        true -> respond(c, '200 OK', 'application/json', mcp.last-resp())
+
+                        false -> respond(c, '202 Accepted', 'application/json', '')
+                    }
+                }
+
+                'OPTIONS' -> respond(c, '204 No Content', '', '')
+
+                'GET' -> respond(c, '405 Method Not Allowed', 'text/plain', 'only POST /mcp')
+
+                -> respond(c, '405 Method Not Allowed', 'text/plain', 'only POST /mcp')
+            }
+        }
+    }
+    c.close()
+}
+
+; ═══════════════════════════════════════════════
+; 主循环
+; ═══════════════════════════════════════════════
+
+; 在 host:port 上提供服务
+; host: 绑定地址
+; port: 端口
+; code: 进程退出码
+; [serve-http](#mcph.serve-http)
+serve-http = (host str, port i64) (code i64) {
+    code = 0
+    l = net.listen-on(host, port)
+    lc listener
+    ok = false
+    l: {
+        ok -> {
+            lc = it
+            ok = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    ok: {
+        false -> {
+            eprint('glossary mcp: 监听 ' - host - ':' - port.to-str() - ' 失败')
+            code = 1
+            return
+        }
+
+        true -> _
+    }
+    eprint('glossary mcp: listening on http://' - host - ':' - port.to-str() - '/mcp')
+    !! {
+        ac = lc.accept()
+        ac: {
+            ok -> serve-conn(it)
+
+            nil -> break
+
+            err -> break
+        }
+    }
+    lc.close()
+}
+
+; 解析 --http 的值并启动
+; spec: 形如 127.0.0.1:8765、:8765、8765
+; code: 进程退出码
+; [serve-spec](#mcph.serve-spec)
+serve-spec = (spec str) (code i64) {
+    code = 0
+    host = '127.0.0.1'
+    port = DEFAULT-PORT
+    p = spec.index(':')
+    hit = p >= 0
+    hit: {
+        true -> {
+            h = spec.slice(0, p)
+            nxt = add(p, 1)
+            ptxt = spec.slice(nxt, spec.len-bytes())
+            host = h
+            port = int-of(ptxt.trim(), DEFAULT-PORT)
+        }
+
+        false -> port = int-of(spec.trim(), DEFAULT-PORT)
+    }
+    empty = host.len-bytes() == 0
+    empty: {
+        true -> host = '127.0.0.1'
+
+        false -> _
+    }
+    code = serve-http(host, port)
+}

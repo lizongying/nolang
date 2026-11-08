@@ -624,6 +624,45 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		leftExp = p.parseInfixExpression(leftExp)
 	}
 
+	// `expr: { … }` 值位 match：主語是**任意表達式**（典型是中綴算術 `a % b`）
+	// 時，`: { … }` 必須附著成 RHS 的一部分，優先級高於外層 `=`。
+	//
+	// 上面 IDENT 分支與索引／呼叫分支都在 Pratt 中綴迴圈**之前**附加 `: {`；
+	// 中綴運算的結果卻要等迴圈跑完才成形。於是
+	// `r = a % b: { ok -> it  -> 0 }` 會裂成兩條：`r = a % b`（把 ?i64 隱式
+	// 塞進 plain 目標，checker 15w45dqk）＋ 一條主體為空的獨立 match，
+	// `-> DEF` 臂靜默失效。中綴迴圈之後補一次附加即可讓整段 match 成為右值。
+	//
+	// 閘門（刻意收窄，避免動到語句層的既有語法）：
+	//   - precedence == LOWEST 且 CTX_EXPR（賦值／?=／+= 的右值），精確對應
+	//     「match 的優先級大於 =」；語句位置的 `cond: { … }` 仍留給
+	//     parseExpressionStatement 的 colon tail（while-loop／struct 字面量）；
+	//   - 區塊必須真的是 match 形狀，否則 restore 後把 `: {` 還給上層；
+	//   - Identifier／Index／Call 已在前面的分支處理，不重複嘗試
+	//     （避免同一個失敗的 match 被解析兩次、重複記診斷）。
+	// 誤判風險由 parseMatchExprFrom 吸收：非 match 形狀回傳 nil，
+	// restoreState 把 `: {` 原樣交回。
+	if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE &&
+		precedence == LOWEST && p.ctx.contains(CTX_EXPR) &&
+		!p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) {
+		switch leftExp.(type) {
+		case *Identifier, *IndexExpression, *CallExpression:
+			// 已由前面的分支處理
+		default:
+			state := p.saveState()
+			p.nextToken() // skip :
+			if p.classifyBlockAtCurrent() == blockMatch {
+				if me := p.parseMatchExprFrom(leftExp); me != nil {
+					leftExp = me
+				} else {
+					p.restoreState(state)
+				}
+			} else {
+				p.restoreState(state)
+			}
+		}
+	}
+
 	// 处理三元表达式（最低优先级）
 	// 只有当当前 precedence 允许时才处理 `?`，否则 `?` 属于外层表达式
 	// （如 `a > 5 ? b : c` 中 `?` 不应绑定到 `5`，而应绑定到 `a > 5`）

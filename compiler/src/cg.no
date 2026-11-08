@@ -425,15 +425,6 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(y.to-str())
             b.push('\n')
         }
-        op == OP-SHR -> {
-            b.push('\t%v')
-            b.push(d.to-str())
-            b.push(' = ashr i64 %v')
-            b.push(x.to-str())
-            b.push(', %v')
-            b.push(y.to-str())
-            b.push('\n')
-        }
         op == OP-DIV -> {
             cg-vty-at(vty, d) == TY-F64 -> {
                 b.push('\t%fd')
@@ -2260,15 +2251,12 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         }
         op == OP-STRUCT-SET -> {
 
-            ; dst = 新结构体值 id；xa[k] = 旧结构体值 id；xa[k]+1 = 新字段值 id；bs[k] = 字段下标。
-            ; LLVM 结构不可变 ⇒ 只能是「读旧 + insertvalue 出新值」，旧值仍可用。
-            ; 结构体 id 取 vty[xa[k]] - TY-STRUCT-BASE。
-            ; ⚠️ 新字段值 id 按【连续】约定取 xa[k]+1（本 op 自带约定；s64 后 OP-CALL 已改侧池 args，
-            ;   两者不再同形），不是另开一槽。
-            vf = x
-
-            #{overflow=wrap}
-            vf = vf + 1
+            ; dst = 新结构体值 id；xa[k] = 旧结构体值 id；bs[k] = 新字段值 id；cty[k] = 字段下标。
+            ; ⚠️ 与 MK 不同：新字段值由 h2m 显式传入 bs[k]，不再依赖 xa[k]+1 连续约定——
+            ;   h2m 顺序分配下旧结构体值 id+1 通常已被首字段值占用，强制连续会读取错误值（见 compiler/src/h2m.no s99）。
+            ;   LLVM 结构不可变 ⇒ 只能是「读旧 + insertvalue 出新值」，旧值仍可用。
+            ;   结构体 id 取 vty[xa[k]] - TY-STRUCT-BASE。
+            vf = y
             b.push('\t%st')
             b.push(d.to-str())
             b.push(' = insertvalue ')
@@ -2281,7 +2269,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(cg-val-prefix(vty[vf]))
             b.push(vf.to-str())
             b.push(', ')
-            b.push(y.to-str())
+            b.push(cty[k].to-str())
             b.push('\n')
         }
         op == OP-STALLOC -> {

@@ -1096,7 +1096,14 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         }
 
         #{overflow=wrap}
-        n-idx = n-idx + 1
+        {
+            #{overflow=wrap}
+            n-idx-opt = n-idx + 1
+            n-idx-opt: {
+                ok -> n-idx = it
+                ->
+            }
+        }
     }
 
     ; 第一階段結束後，X 需再套用一次 BlockMix（標準 ROMix：X = BlockMix^N(B)）
@@ -1165,7 +1172,14 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         }
 
         #{overflow=wrap}
-        n-idx = n-idx + 1
+        {
+            #{overflow=wrap}
+            n-idx-opt2 = n-idx + 1
+            n-idx-opt2: {
+                ok -> n-idx = it
+                ->
+            }
+        }
     }
 
     ; 輸出 X

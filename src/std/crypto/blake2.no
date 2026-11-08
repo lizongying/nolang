@@ -660,7 +660,14 @@ b = (data []byte) (hash [64]byte) {
         b-compress(h, data[offset..], t, 0)
 
         #{overflow=wrap}
-        offset = offset + 128
+        {
+            #{overflow=wrap}
+            offset-opt = offset + 128
+            offset-opt: {
+                ok -> offset = it
+                ->
+            }
+        }
     }
 
     ; 處理最後一個區塊（可能不完整）
@@ -808,7 +815,14 @@ b-256 = (data []byte) (hash [32]byte) {
         b-compress(h, data[offset..], t, 0)
 
         #{overflow=wrap}
-        offset = offset + 128
+        {
+            #{overflow=wrap}
+            offset-opt2 = offset + 128
+            offset-opt2: {
+                ok -> offset = it
+                ->
+            }
+        }
     }
     last-block []byte = with-len(128)
 
@@ -1553,7 +1567,14 @@ s = (data []byte) (hash [32]byte) {
         s-compress(h, data[offset..], t, 0)
 
         #{overflow=wrap}
-        offset = offset + 64
+        {
+            #{overflow=wrap}
+            offset-opt3 = offset + 64
+            offset-opt3: {
+                ok -> offset = it
+                ->
+            }
+        }
     }
     last-block []byte = with-len(64)
 

@@ -2,4 +2,5 @@
   test1: '/example/test1'
   test2: '/example/test2'
   test: '/test'
+  glossary: '/glossary'
 }

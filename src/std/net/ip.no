@@ -117,7 +117,14 @@ ip-addr.parse = (s str) (ok bool) {
                 has-digit == 0 -> return
 
                 #{overflow=wrap}
-                dot-count = dot-count + 1
+                {
+                    #{overflow=wrap}
+                    dot-count-opt = dot-count + 1
+                    dot-count-opt: {
+                        ok -> dot-count = it
+                        ->
+                    }
+                }
                 dot-count > 3 -> return
 
                 ; 存入對應欄位

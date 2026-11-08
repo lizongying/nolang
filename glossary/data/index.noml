@@ -1,0 +1,22 @@
+; glossary 词库域清单
+;
+; 只负责「有哪些域文件」与它们的顺序：数组顺序即 CLI / 渲染时的域顺序。
+; 域名（domain）由文件名去掉扩展名推导，域标题与词条都在域文件自身里；
+; `glossary check` 会核对每份域文件的 domain 字段与文件名 stem 一致。
+;
+; 新增一个语义域 = 在这里加一行文件名 + 新建对应的 .noml 文件。
+{
+  version: 1
+  domains: [
+    'types.noml',
+    'syntax.noml',
+    'annotations.noml',
+    'memory.noml',
+    'errors.noml',
+    'modules.noml',
+    'compiler.noml',
+    'toolchain.noml',
+    'std.noml',
+    'traps.noml',
+  ]
+}

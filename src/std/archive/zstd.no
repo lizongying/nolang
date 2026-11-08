@@ -88,7 +88,14 @@ zs-bit-reader.read-varint = () (v i64) {
         (b & 0x80) == 0 -> break
 
         #{overflow=wrap}
-        shift = shift + 7
+        {
+            #{overflow=wrap}
+            shift-opt = shift + 7
+            shift-opt: {
+                ok -> shift = it
+                ->
+            }
+        }
     }
 }
 
@@ -189,7 +196,14 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
                 .symbol[high-thresh] ?= i
 
                 #{overflow=wrap}
-                high-thresh = high-thresh - 1
+                {
+                    #{overflow=wrap}
+                    high-thresh-opt = high-thresh - 1
+                    high-thresh-opt: {
+                        ok -> high-thresh = it
+                        ->
+                    }
+                }
             }: {
                 err -> _
 
@@ -213,7 +227,16 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         }
 
         #{overflow=wrap}
-        nc > 0 -> pos = pos + nc
+        nc > 0 -> {
+            {
+                #{overflow=wrap}
+                pos-opt = pos + nc
+                pos-opt: {
+                    ok -> pos = it
+                    ->
+                }
+            }
+        }
     }
 
     ; 分配符號到表中
@@ -293,7 +316,14 @@ bits-for-count = (count i64) (n i64) {
         r-count = r-count >> 1
 
         #{overflow=wrap}
-        n = n + 1
+        {
+            #{overflow=wrap}
+            n-opt = n + 1
+            n-opt: {
+                ok -> n = it
+                ->
+            }
+        }
     }
 }
 
@@ -317,7 +347,14 @@ fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
     base = .next-state[state]
 
     #{overflow=wrap}
-    new-state = base + extra
+    {
+        #{overflow=wrap}
+        new-state-opt = base + extra
+        new-state-opt: {
+            ok -> new-state = it
+            ->
+        }
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -419,7 +456,14 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         cnt-i = .count[i]
 
         #{overflow=wrap}
-        pp = pp + cnt-i
+        {
+            #{overflow=wrap}
+            pp-opt = pp + cnt-i
+            pp-opt: {
+                ok -> pp = it
+                ->
+            }
+        }
     }
 
     ; 填充 symbol 表
@@ -506,7 +550,14 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
         }
 
         #{overflow=wrap}
-        len = len + 1
+        {
+            #{overflow=wrap}
+            len-opt = len + 1
+            len-opt: {
+                ok -> len = it
+                ->
+            }
+        }
     }
 }
 

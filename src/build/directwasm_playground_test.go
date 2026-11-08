@@ -40,7 +40,9 @@ func TestBuildDirectWasmPlaygroundShapes(t *testing.T) {
 	}{
 		{"hello", "print('Hello, World!')\n"},
 		{"named-format", "x i64 = 42\nprint('x={x}')\n"},
-		{"plain-function", "add = (a i64, b i64) (r i64) {\n    r = a + b\n}\nprint(add(2, 3))\n"},
+		// D1（2026-11-08）：plain 結果參數不能直接收 ?i64；用兩段式
+		// match 解包，順便讓 Direct-WASM 路徑也覆蓋陳述式 match。
+		{"plain-function", "add = (a i64, b i64) (r i64) {\n    r-opt = a + b\n    r-opt: {\n        ok -> r = it\n        ->\n    }\n}\nprint(add(2, 3))\n"},
 		{"range-loop", "i <- [0..3): {\n    print('i={i}')\n}\n"},
 		{"struct-method", "user {\n    name str\n}\nuser.greet = () {\n    print('hi')\n}\nu = user{\n    name: 'Alice'\n}\nu.greet()\n"},
 		{"struct-method-return", "counter {\n    n i64\n}\ncounter.read = () (v i64) {\n    v = .n\n}\nc = counter{\n    n: 42\n}\nprint(c.read())\n"},

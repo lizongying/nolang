@@ -5032,13 +5032,14 @@ func isDirectOverflowValue(v parser.Expression, varTypes map[string]string, self
 //	k i64 = a + b                 ; 未標註
 //	k i64 = a + b #{overflow=wrap}  ; 已標註
 //
-// 反過來，plain 目標**不是**本規則要管的（見 upgradeOptionArithTargetType 的
-// 開火條件）：
+// 2026-11-08 收緊：**已存在的 plain 變數**（含結果參數）也必須拒絕。原本
+// `x i64 = 0; x = a + b` 之類「標註寫在別行」的形狀靠 lowering 的
+// captureTargetAllowsOption 否決 option 合成，被當成自洽的 plain 放行；那是實作
+// 妥協而非語言語意（`#{}` 註解只改溢位取值，不改結果型別），如今同樣是硬錯誤：
 //
 //	k = a + b                     ; 無標註的新綁定 → lowering 就地合成 ?T，合法
-//	x i64 = 0; x = a + b          ; plain 宣告在別行 → 合成被「已存在變數不改
-//	                              ; 型別」否決，是自洽的 plain，合法
-//	f = (r i64) (r = a + b)       ; 結果參數同理，合法（由 HINT 提示）
+//	x i64 = 0; x = a + b          ; plain 重指派 → ERROR（改用兩段式 match／`?=`）
+//	f = (r i64) (r = a + b)       ; 結果參數重綁定 → ERROR
 //
 // 實作方式不是另立一條診斷，而是把「右值本質」升格為 `?T`，讓下方既有的
 // 15w45dqk / 1mf3x79l 判定自然開火 —— 訊息、trace、硬錯誤分級全部沿用既有管道。
@@ -5158,33 +5159,43 @@ func ovfOptionArithPayloadType(v parser.Expression, varTypes map[string]string, 
 	return lt
 }
 
+// isPureLiteralArith 回報一棵算術樹是否「葉子全是字面量」，與 parser/lowering.go
+// 的 infixAllLiterals 逐字同構（那正是 rhsDefinitelyNonOption 用來拒絕 `?=` 的判據）。
+//
+// 純字面算術是編譯期常量，comptime 會折成單一 plain 字面量，運行期根本沒有
+// option tag 可丟，因而不構成「option 當值傳遞」的隱含解包。若把它誤報成 `?T`，
+// `no fmt --fix=unwrap` 會改寫成 `x ?= 0 - 1`，反而撞上 5l952ztl
+// 「`?=` RHS 不是 option」——一個由誤報製造出來的非法修復。
+func isPureLiteralArith(e parser.Expression) bool {
+	switch v := e.(type) {
+	case *parser.IntegerLiteral, *parser.FloatLiteral, *parser.StringLiteral,
+		*parser.BooleanLiteral:
+		return true
+	case *parser.GroupedExpression:
+		return isPureLiteralArith(v.Expression)
+	case *parser.InfixExpression:
+		return isPureLiteralArith(v.Left) && isPureLiteralArith(v.Right)
+	}
+	return false
+}
+
 // upgradeOptionArithTargetType 實作 D1 嚴格模式：當**本 let 帶著使用者親手寫下的
 // plain 整數標註**、而右值本質是 option 算術時，回傳升格後的推斷型別 `?T`，
 // 交由下方既有的 15w45dqk 判定開火（硬錯誤、訊息、trace 全部沿用既有管道）。
 //
-// 🔴 為什麼只看「本陳述的標註」（explicitPlain），不看 varTypes 的現值？
+// 🔴 本函式只服務「標註就在這一行」的形狀；「標註在**前一行**、這行只是重指派」
+// 與「結果參數重綁定」由 validateStmtTypes 後段的「已存在 plain 變數」分支處理
+// （見 2026-11-08 收緊說明）。兩者合起來才構成完整的 D1，缺一不可：
 //
-// compiler 對三種「plain 目標」的處置完全不同（parser/lowering.go
-// inferOptionArith / maybeCaptureOptionAssign → captureTargetAllowsOption），
-// checker 必須逐字鏡像，否則會漂移出兩種事故：
-//   - 「vet 說非法、build 卻接受」（誤報既有設計決策）；
-//   - 更常見的：把 corpus／std 裡大量自洽的 plain 程式一次全軍覆沒（誤報）。
-//
-// 鏡像表（lowering 的否決點 → checker 的處置）：
-//
-//	k i64 = a + b            ; lowering `s.Type != nil → return`：option 合成被
-//	                          ; **這一行**的明文標註吞掉 → ERROR（本規則唯一的
-//	                          ; 開火條件：靜默解包）
+//	k i64 = a + b            ; 本行明文標註 → 本函式升格 → ERROR
+//	x i64 = 0; x = a + b     ; 前一行標註 → validateStmtTypes 升格 → ERROR
+//	f = (r i64) { r = a + b } ; 結果參數   → validateStmtTypes 升格 → ERROR
 //	k = a + b                ; 新綁定、本行無標註 → lowering 合成 `?T`
 //	                          ; → 合法（k 就是 option，未消費由 optunuse 管）
-//	x i64 = 0; x = a + b     ; 重指派，標註在**前一行** →
-//	                          ; captureTargetAllowsOption 以「已存在變數不改型別」
-//	                          ; 否決合成 → 合法（自洽 plain）
-//	f = (r i64) { r = a + b } ; 結果參數同上 → 合法（由 ovf-int-default／ovfhndld
-//	                          ; HINT 提示，severity 由 D2 刻意壓到 HINT）
 //
-// 換言之：明文標註只有寫在「收到 option 算術的那一行」上才是靜默解包開關；寫在
-// 別處只是聲明「這個變數是 plain」，而 plain 變數配 plain 運算元是自洽的。
+// 後三者過去被當成「自洽 plain」放行，理由是 lowering 的 captureTargetAllowsOption
+// 以「已存在變數不改型別」否決 option 合成；那是實作品面的妥協，不是語言語意，
+// 2026-11-08 起已由使用者裁定撤銷。
 //
 // 已知會開火的形狀皆由呼叫端保證：
 //   - explicitPlain == false（無標註／推斷標註）→ 不升格；
@@ -5208,10 +5219,14 @@ func upgradeOptionArithTargetType(explicitPlain bool, value parser.Expression, t
 	return ""
 }
 
-// optionResultOfCallTarget 是 upgradeOptionArithTargetType 的**呼叫版**：當**本 let
-// 帶著使用者親手寫下的 plain 標註**、而右值是一個「可靜態判定回傳 option」的方法呼叫
-// 時，回傳該 option 型別 `?T`，交由既有的 15w45dqk 拒絕（訊息／trace／severity 全部
-// 沿用既有管道，與算術那一支完全同構）。
+// optionResultOfCallTarget 是 upgradeOptionArithTargetType 的**呼叫版**：當右值是
+// 一個「可靜態判定回傳 option」的方法／模組限定呼叫時，回傳該 option 型別 `?T`，
+// 交由既有的 15w45dqk 拒絕（訊息／trace／severity 全部沿用既有管道，與算術那一支
+// 完全同構）。
+//
+// 呼叫端有兩處：本行明文 plain 標註（D1 原本的形狀），以及 validateStmtTypes 後段
+// 的「已存在 plain 變數」重指派／結果參數（2026-11-08 收緊）。本函式只回答「右值
+// 是不是 option」，不摻雜目標形狀的判斷。
 //
 // 為什麼需要這一支：`str.byte` / `txt.byte` 的回傳型別在 2026-10-21 改成 `?byte`
 // （越界回 nil）之後，`b i64 = s.byte(j)` 會走到 MIR 的靜默拆包——option 的 payload
@@ -5221,8 +5236,7 @@ func upgradeOptionArithTargetType(explicitPlain bool, value parser.Expression, t
 // 從不參與回傳型別推斷，於是單檔 vet 下 `s.byte(j)` 推斷為 ""（未知）→ 整條型別比對
 // 被 `inferredType != ""` 守衛跳過 → 一句話都不說。
 //
-// 🔴 邊界（與 arithmetic 那一支逐字鏡像，兩者共用同一份「明文標註只在本行算開關」
-// 的判據）：
+// 🔴 邊界（與 arithmetic 那一支對齊的「寧可漏報、不可誤報」原則）：
 //   - 只處理 **CallExpression + DotExpression 接收者**（`recv.method(...)` 與
 //     模組限定的 `mod.fn(...)`）；
 //   - 目標必須是 plain（`?T` / `&T` 由 optionTypesCompatible / 借用規則管）——
@@ -9818,18 +9832,16 @@ func optionImplicitUnwrapRejected(targetType, valueType string) bool {
 
 // optionUnwrapRecipe 統一產出「怎麼解包一個 option」的建議文字。
 //
-// 🔴 2026-10-14：原本四處 hint 都推薦 `k = expr: { ok -> it, -> 0 }`，實測**兩種
-// 形態都不成立**，照做會得到更壞的結果：
+// 🔴 2026-10-14：原本四處 hint 都推薦 `k = expr: { ok -> it, -> 0 }`；逗號分隔臂
+// 是**解析錯誤**（`expected variable name after ',', got RARROW(->)`），match 臂
+// 必須**換行**分隔（`->` 是短路管線，見 parser/stmt.go）。
 //
-//  1. 逗號分隔臂是**解析錯誤**：`expected variable name after ',', got RARROW(->)`。
-//     match 臂必須**換行**分隔（`->` 是短路管線，見 parser/stmt.go）。
-//  2. `<expr>: { ... }` 只有當 `<expr>` 是**裸識別字**時才附著成 match 表達式；
-//     右值是 infix 或 call 時，par先結成 `k = <expr>`，`: { … }` 脫離成一條
-//     以 `ok` 為主體的獨立 match 陳述 —— k 保持未解包的 `?T`，錯誤被靜默丟棄。
-//
-// 因此這裡只推荐實測可用的兩段式（rsa.no / r2.no 均驗證通過）。
+// 2026-11-08：`: { … }` 的附加已放寬到任意表達式主語（`k = a % b: { … }`），
+// 且 `expr: { … }` 的優先級高於 `=`；option 算術主語會歸一化成合成 `?T`
+// 暫存，`ok -> it` 拿到 payload。故文案不再說「只認裸識別字」，並把
+// 表達式主語的一段式列為可行修法。
 func optionUnwrapRecipe(name string) string {
-	return i18n.T("2qdpadhy", "Use the two-step unwrap: first `%s = <expr>` (inferred as ?T), then `v = %s: {` with `ok -> it` and `-> <default>` on separate lines; or use a match statement `%s: { ok -> { ... } -> { ... } }`, or propagate with `%s ?= <expr>`, or discard explicitly with `_ = <expr>`. Note that match arms must be separated by newlines (the comma form is a parse error), and the one-line form `%s = <expr>: { ... }` only attaches when <expr> is a bare identifier; otherwise the match detaches into a standalone statement and %s is still an unwrapped ?T.",
+	return i18n.T("2qdpadhy", "Use the two-step unwrap: first `%s = <expr>` (inferred as ?T), then `v = %s: {` with `ok -> it` and `-> <default>` on separate lines; or use a match statement `%s: { ok -> { ... } -> { ... } }`, or propagate with `%s ?= <expr>`, or discard explicitly with `_ = <expr>`. Note that match arms must be separated by newlines (the comma form is a parse error); you may also write the match directly on the expression as `%s = <expr>: {` followed by newline-separated `ok -> it` and `-> <default>` arms — `: { ... }` binds tighter than `=`. If that trailing block is not a match block, `%s` is still an unwrapped ?T.",
 		name, name, name, name, name, name)
 }
 
@@ -10063,10 +10075,10 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 			// plain 的開關，而是靜默丟掉 err 分支的隱含解包）。
 			//
 			// 只在 hasRealTypeAnnotation 為真時開火：無標註的新綁定由 lowering
-			// inferOptionArith 就地合成 `?T`（本就是 option，合法）；「先 plain 宣告、
-			// 之後重指派」（`x i64 = 0; x = a + b`）與結果參數重綁定則被
-			// captureTargetAllowsOption 的「已存在變數不改型別」否決合成，是自洽的
-			// plain，刻意不報（見 upgradeOptionArithTargetType 的鏡像表）。
+			// inferOptionArith 就地合成 `?T`（本就是 option，合法）。「先 plain 宣告、
+			// 之後重指派」與結果參數重綁定**同樣是硬錯誤**，但由緊接在後的
+			// 「已存在 plain 變數」分支處理（那裡才看得到 varTypes 的現值），
+			// 見 2026-11-08 收緊說明。
 			if s.Name != nil && hasRealTypeAnnotation(s) {
 				if up := upgradeOptionArithTargetType(true, s.Value, declTypeOfRaw(view, s, s.Type.String()), varTypes, selfType); up != "" {
 					inferredType = up
@@ -10081,21 +10093,40 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 					}
 				}
 			}
-			// 重指派到「已存在的 plain 變數」：標註寫在**前一行**（先 `x str = ''`、
-			// 之後 `x = os.arg(i + 1)`），但這仍是同一個「option 當值傳遞」的靜默解包
-			// ——option 的 payload 被讀進 plain 變數，tag（ok/nil/err）被丟掉，越界時
-			// 拿到的是空字串而不是錯誤。與本行標註是同一條 D1 規則，只是標註的位置
-			// 不同，因此同樣開火 15w45dqk。
+			// 「已存在的 plain 變數」收到 option 右值 —— 一律是硬錯誤（2026-11-08 收緊）。
 			//
-			// 沒有豁免：結果參數（如 `path.size = () (sz i64) { sz = fs.stat-size(.p) }`）
-			// 也一樣是「?i64 直接進 i64」的靜默解包，必須改成 `sz ?i64` 或顯式 match。
-			// option/借用目標本來就該是 option，由下游 optionTypesCompatible / isViewBorrow 管。
-			// 新綁定（不在 varTypes）不在此列：`x = os.arg(...)` 的 x 本身就是 `?T`，
-			// 由 match 消費，是 D1 鏡像表的合法列。
-			if s.Name != nil && inferredType == "" {
+			// 覆蓋三種同源形狀，全部走下方既有的 15w45dqk 判定（訊息／trace／severity
+			// 沿用同一條管道）：
+			//  1. 本行明文 plain 標註 + option 算術／option 呼叫 → 上面的
+			//     upgradeOptionArithTargetType / optionResultOfCallTarget 分支；
+			//  2. 標註寫在**前一行**（`x i64 = 0; x = a + b`）、結果參數重綁定
+			//     （`f = () (r i64) { #{overflow=wrap} r = a + b }`）—— 右值本質仍是
+			//     `?T`，只是 `#{overflow=...}` 註解讓 MIR 先前把它降成 plain（靜默丟掉
+			//     err 分支）；
+			//  3. `x = os.arg(i + 1)` 等可靜態判定回傳 option 的呼叫。
+			//
+			// 🔴 不再豁免「plain 宣告在別行」：那是 lowering 的 captureTargetAllowsOption
+			// 以「已存在變數不改型別」否決 option 合成的結果，屬於**實作品面**的妥協，
+			// 不是語言語意；使用者要求此形狀必須強制報錯，改用兩段式 match 或 `?=`。
+			//
+			// 邊界：目標本來就是 `?T`／`&T` 者由 optionTypesCompatible / isViewBorrow 管；
+			// 新綁定（不在 varTypes）由 lowering 合成 `?T`，是合法列；純字面算術由
+			// isPureLiteralArith 排除（comptime 折成 plain）；右值型別解析不出時
+			// ovfOptionArithPayloadType 回 ""，向寬鬆方向失敗（寧可漏報，不可誤報）。
+			if s.Name != nil {
 				if existing, exists := varTypes[s.Name.Value]; exists && isConcreteType(existing) && !ty.IsOptionRaw(existing) && !ty.IsViewRaw(existing) {
-					if up := optionResultOfCallTarget(s.Value, varTypes, selfType); up != "" {
-						inferredType = up
+					optRHS := optionResultOfCallTarget(s.Value, varTypes, selfType)
+					// 純字面算術（comptime 常數）與非 option 呼叫都不升格：前者根本
+					// 沒有 tag 可丟，硬報會讓 --fix=unwrap 造出非法的 `?=`。
+					if optRHS == "" && !isPureLiteralArith(s.Value) {
+						if p := ovfOptionArithPayloadType(s.Value, varTypes, selfType); p != "" {
+							optRHS = "?" + p
+						}
+					}
+					// inferExprType 對 `p = p + 1` 只回 "i64"（它看不到 overflow option），
+					// 故必須覆寫；已推出 ?T 者保留原值，讓既有判定直接開火。
+					if optRHS != "" && !ty.IsOptionRaw(inferredType) {
+						inferredType = optRHS
 					}
 				}
 			}

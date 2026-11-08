@@ -178,7 +178,14 @@ zip.entry-off = (idx i64) (off i64) {
         skip = 46 + name-len + extra-len + comment-len
 
         #{overflow=wrap}
-        cur = cur + skip
+        {
+            #{overflow=wrap}
+            cur-opt = cur + skip
+            cur-opt: {
+                ok -> cur = it
+                ->
+            }
+        }
     }
     off = cur
 }

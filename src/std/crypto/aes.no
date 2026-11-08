@@ -1246,12 +1246,26 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
         inv-sub-bytes(st, 16)
 
         #{overflow=wrap}
-        rk-off = round * 16
+        {
+            #{overflow=wrap}
+            rk-off-opt = round * 16
+            rk-off-opt: {
+                ok -> rk-off = it
+                ->
+            }
+        }
         add-round-key-at(st, ek, rk-off)
         inv-mix-columns(st)
 
         #{overflow=wrap}
-        round = round - 1
+        {
+            #{overflow=wrap}
+            round-opt = round - 1
+            round-opt: {
+                ok -> round = it
+                ->
+            }
+        }
     }
     inv-shift-rows(st)
     inv-sub-bytes(st, 16)
