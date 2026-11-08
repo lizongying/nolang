@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -61,9 +62,15 @@ func TestStdASTBlobCarriesParseConfig(t *testing.T) {
 		t.Fatal("baked blob carries no src/std content signature; " +
 			"validateStdASTBlob rejects it (regenerate with `make gen`)")
 	}
-	keyFromFS, err := ComputeStdSigKeyFromFS(nolang.StdFS)
+	// The generator hashes the ON-DISK src/ tree through the hash.noml manifest
+	// (306 files: std + the compiler packages). StdFS only embeds `std/`, so it
+	// cannot see hash.noml and would silently fall back to the 119-file legacy
+	// walk — a different key by construction. Compare against the same FS the
+	// generator sees, or this assertion tests nothing but its own fallback.
+	// (cwd is this package's directory, so ".." is src/.)
+	keyFromFS, err := ComputeStdSigKeyFromFS(os.DirFS(".."))
 	if err != nil {
-		t.Fatalf("hash embedded StdFS: %v", err)
+		t.Fatalf("hash on-disk src tree: %v", err)
 	}
 	if blob.StdKey != keyFromFS {
 		t.Fatalf("baked blob's StdKey is %s but the embedded StdFS hashes to %s — "+

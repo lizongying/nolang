@@ -875,13 +875,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 
                     ; :status 標頭
                     name == ':status' -> {
-                        status-val ?i64 = value.to-i64()
-                        status-val: {
-                            nil -> r.status-code = 0
+                        r.status-code = value.to-i64(): {
+                            ok -> it
 
-                            err -> r.status-code = 0
-
-                            ok -> r.status-code = it
+                            -> 0
                         }
                     }
                     r.header-count < 32 -> {

@@ -1490,6 +1490,18 @@ func (c *hirConv) scratchParser() *Parser {
 	//   - 讀側：`.base[i]` 不被判成 `?T`，與 fresh parse（含 no vet）不一致。
 	// structFieldsTable 只遍歷一次 c.prog 並快取。
 	sp.structFields = c.structFieldsTable()
+	// 上面那張表只覆蓋**當前模塊**的 struct（collectStructFieldsFromProg 走的是
+	// c.prog，實測用戶文件 built=0）。std / 其它模塊的欄位表在語義副表上，
+	// 必須一併併入，否則 `?= .field[i]`（接收者是別人的 struct）推不出元素型別，
+	// LHS 既不標型別也不發預宣告 → 綁定名無型別無 slot（uuid.eq/cmp 的
+	// `sa ?= .bytes[i]` 即此）。只補缺失鍵，本地定義優先。
+	if c.sem != nil && len(c.sem.ExternStructFields) > 0 {
+		for k, v := range c.sem.ExternStructFields {
+			if _, exists := sp.structFields[k]; !exists {
+				sp.structFields[k] = v
+			}
+		}
+	}
 	if c.curSelfType != "" {
 		sp.methodStructStack = []string{c.curSelfType}
 	}

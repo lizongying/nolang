@@ -18,7 +18,11 @@
 // 只剩 `TypeFacts` / `NodeFacts` 兩張。
 package parser
 
-import "github.com/lizongying/nolang/ty"
+import (
+	"strings"
+
+	"github.com/lizongying/nolang/ty"
+)
 
 // CalleeKind 描述一個 CallExpression 在整程式改寫後代表哪一類呼叫。
 //
@@ -189,6 +193,20 @@ type SemanticContext struct {
 	// 匯出到可跨 H0 存活的 side-table。
 	ExternFuncSigs   map[string][]string
 	ExternMethodSigs map[string][]string
+
+	// ExternStructFields 是跨模塊 / 內置（std）的 struct 欄位表快照，與上面兩張
+	// 簽名表同一注入點（SetExternSignatures 一次寫入 p.structFields 與這裡）。
+	//
+	// 為什麼非導出不可：H0 的 scratchParser 只能用 collectStructFieldsFromProg
+	// 從**當前模塊**的樹上撿 struct 定義，標準庫 / 其它模塊的 struct 一個也撿不到
+	// （實測：用戶文件 lowered 時 built=0，而真實 parser 的表有 128 項 std struct）。
+	// 缺這張表時，RHS 是「別人的 struct 欄位下標」的 `?=`（`sa ?= .bytes[i]`，
+	// 接收者是 std 的 uuid）推不出元素型別 → lowerUnwrapAssign 既不標
+	// `__unwrap_*` 的 ?T，也不發 LHS 預宣告 → 綁定名既無型別也無 slot：下游
+	// `sb.to-str()` 報 "unknown callee"、比較讀到垃圾（src/std/uuid.no 的
+	// eq/cmp 曾因此對不同 UUID 返回 true）。與 IdxLocalTypes / UnionMembers
+	// 同一模式：語義事實從被丟棄的 Parser 實例匯出到可跨 H0 存活的 side-table。
+	ExternStructFields map[string]map[string]string
 }
 
 // NewSemanticContext 建立空語義副表。
@@ -820,6 +838,28 @@ func (s *SemanticContext) FuncVarTypeRef(funcName, varName string) (*ty.Type, bo
 		if vars, ok := s.FuncVarTypes[funcName]; ok {
 			if t, ok := vars[varName]; ok {
 				return t, true
+			}
+		}
+		// 同一函式的「另一種限定層數」：std 模塊從 AST blob 回放時 curFuncName
+		// 會多出一層模塊前綴（`uuid.eq` → `uuid.uuid.eq`），而參數 / 局部的型別
+		// 是在烤 blob 那條路徑上以單層名登記的。精確鍵落空時逐層剝掉開頭限定名
+		// 再查——否則 `b.bytes[i]`（接收者是**參數**，不是 self）取不到 `b` 的
+		// 型別，`?=` 推不出元素型別、不發 LHS 預宣告，綁定名無型別無 slot
+		// （src/std/uuid.no 的 `sb ?= b.bytes[i]` 即此：`sa` 因為走 self 分支
+		// 有 methodStructStack 兜底所以正常，`sb` 直接失效）。
+		//
+		// 只剝前綴、不猜後綴：`a.b.c` → `b.c` → `c`，每一步都是合法鍵才採用，
+		// 最壞情況是與同名跨模塊函式同鍵（精確鍵優先，故不會覆蓋正確結果）。
+		for name := funcName; ; {
+			i := strings.IndexByte(name, '.')
+			if i <= 0 {
+				break
+			}
+			name = name[i+1:]
+			if vars, ok := s.FuncVarTypes[name]; ok {
+				if t, ok := vars[varName]; ok {
+					return t, true
+				}
 			}
 		}
 	}

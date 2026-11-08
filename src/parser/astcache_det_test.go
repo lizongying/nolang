@@ -239,11 +239,12 @@ func TestCachedProgramCarriesProgOnly(t *testing.T) {
 // gate: every exported map-typed field on SemanticContext must appear in the
 // detSem shadow, otherwise gob encodes it directly and in randomized order.
 //
-// `ExternFuncSigs` / `ExternMethodSigs` are the ONLY allowed exceptions, and
-// for a different reason than determinism: they are injected from outside the
-// file (cross-module / std signature tables), so putting them in a
-// content-addressed blob would bake caller state into a source artifact. They
-// are restored by SemRebuildConfig.Apply during BuildSemViews.
+// `ExternFuncSigs` / `ExternMethodSigs` / `ExternStructFields` are the ONLY
+// allowed exceptions, and for a different reason than determinism: they are
+// injected from outside the file (cross-module / std signature and struct-field
+// tables), so putting them in a content-addressed blob would bake caller state
+// into a source artifact. They are restored by SemRebuildConfig.Apply during
+// BuildSemViews.
 func TestDetSemCoversEverySemMapField(t *testing.T) {
 	shadowed := map[string]bool{}
 	for _, n := range fieldNames(reflect.TypeOf(detSem{})) {
@@ -253,7 +254,11 @@ func TestDetSemCoversEverySemMapField(t *testing.T) {
 		t.Fatalf("detSem has only %d fields — the gate would be vacuous", len(shadowed))
 	}
 
-	injected := map[string]bool{"ExternFuncSigs": true, "ExternMethodSigs": true}
+	injected := map[string]bool{
+		"ExternFuncSigs":     true,
+		"ExternMethodSigs":   true,
+		"ExternStructFields": true,
+	}
 
 	typ := reflect.TypeOf(SemanticContext{})
 	checked := 0

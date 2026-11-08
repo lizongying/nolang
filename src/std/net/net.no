@@ -1274,64 +1274,48 @@ ifconfig-list = () (ifs []if-info) {
             info = if-info {}
             info.name = name
 
-            ixout1277c29 = fields[0]: {
-                ok -> it
+            v0 = fields[0]: {
+                ok -> it.to-i64()
 
                 -> _
             }
-
-            v0 ?i64 = ixout1277c29.to-i64()
             v0: {
                 ok -> info.rx-bytes = it
 
-                nil -> break
-
-                err -> break
+                -> break
             }
 
-            ixout1286c29 = fields[1]: {
-                ok -> it
+            v1 = fields[1]: {
+                ok -> it.to-i64()
 
                 -> _
             }
-
-            v1 ?i64 = ixout1286c29.to-i64()
             v1: {
                 ok -> info.rx-packets = it
 
-                nil -> break
-
-                err -> break
+                -> break
             }
 
-            ixout1295c29 = fields[8]: {
-                ok -> it
+            v8 = fields[8]: {
+                ok -> it.to-i64()
 
                 -> _
             }
-
-            v8 ?i64 = ixout1295c29.to-i64()
             v8: {
                 ok -> info.tx-bytes = it
 
-                nil -> break
-
-                err -> break
+                -> break
             }
 
-            ixout1304c29 = fields[9]: {
-                ok -> it
+            v9 = fields[9]: {
+                ok -> it.to-i64()
 
                 -> _
             }
-
-            v9 ?i64 = ixout1304c29.to-i64()
             v9: {
                 ok -> info.tx-packets = it
 
-                nil -> break
-
-                err -> break
+                -> break
             }
             ifs.push(info)
         }

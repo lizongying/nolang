@@ -800,14 +800,7 @@ uuid.cmp = (b uuid) (r i64) {
     i <- [0..16): {
         {
             ab ?= .bytes[i]
-
             bb ?= b.bytes[i]
-        }: {
-            err -> _
-
-            -> _
-        }
-        {
             ab < bb -> {
                 r = -1
                 return
@@ -817,6 +810,10 @@ uuid.cmp = (b uuid) (r i64) {
                 r = 1
                 return
             }
+        }: {
+            err -> _
+
+            -> _
         }
     }
 }

@@ -1225,14 +1225,13 @@ str-to-f64 = (s str) (result f64) {
                 }
             }
             _, frac-b = fb-q.div-mod(two52)
-            frac-i64 ?i64 = frac-b.to-i64()
             inv1074f f64 = 1.0
             j = 0
             (j < 1074) {
                 inv1074f = inv1074f / 2.0
                 j = j + 1
             }
-            frac-f64 f64 = frac-i64: {
+            frac-f64 f64 = frac-b.to-i64(): {
                 ok -> it.to-f64()
 
                 -> _
@@ -1280,8 +1279,7 @@ str-to-f64 = (s str) (result f64) {
     ; to-i64 是取回 i64 的公開出口（值域守衛見 bigint.no）。
     mw = wv.sub-bigint(two52)
     _, mb = mw.div-mod(two52)
-    m ?i64 = mb.to-i64()
-    mv = m: {
+    mv = mb.to-i64(): {
         ok -> it.to-f64()
 
         -> _

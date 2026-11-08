@@ -116,6 +116,19 @@ new-pool = () (p json-pool) {
 }
 
 ; 把 src 池中以 idx 為根的子樹深拷貝到一個全新的獨立池，返回持有該子樹根的新 json
+; 返回持有該子樹根的新 json。供 json.get / json.arr-get / json.get-key 等
+; 「取子句柄」介面使用：返回體與源 json 不共享底層 vec 緩衝區。
+;
+; 為何必需深拷貝：json.pool 是 #{inline=false} 指標欄位，而編譯器的指標欄位
+; 拷貝目前尚缺借用語義（見 copy-tree 註釋與 src/mir 的 hybrid-ownership 說明），
+; 直接 `child = json { pool: .pool, ... }` 會讓父子各持一份 vec 頭但共享同一
+; data 緩衝；一旦任一 handle 觸發 vec realloc，另一 handle 的 vec 頭即指向已
+; 釋放的舊緩衝 → 懸垂讀（stringify 返回 null / 資料錯亂）。改為獨立深拷貝後，
+; 雙方的 alloc/擴容各寫自有緩衝，互不影響。
+; src: 來源池
+; idx: 子樹根在 src 中的索引
+; out: 持拷貝子樹的新 json（out.root=新根索引；idx 無效時 root=-1）
+; [json-clone-tree](#json.json-clone-tree)
 clone-json-tree = (src json-pool, idx i64) (out json) {
     out.pool.init()
     out.root = out.pool.copy-tree(src, idx)
@@ -843,6 +856,7 @@ json-pool.copy-tree = (src json-pool, node-idx i64) (dst-idx i64) {
     d < 0 -> return
     dst-idx = d
 
+    ; 索引已在上面用 `node-idx >= src.count` 檢查過，故解包只可能走 ok。
     dv json-value
     sn = src.nodes[node-idx]: {
         ok -> it
@@ -1177,30 +1191,6 @@ json-pool.stringify = (node-idx i64) (out str) {
 ; ═══════════════════════════════════════════════
 ; 高級 API：json 結構體方法
 ; ═══════════════════════════════════════════════
-
-; json.parse: 從字串解析 JSON，返回 ?json
-; 成功返回 ok(json)，失敗返回 err('parse error')
-; 用法：
-;   j = json.parse('{"name":"Alice","age":30}')
-;   j: {
-;       ok -> {
-;           name, found = it.get-str('name')
-;       }
-;   }
-; 把 src 池中以 idx 為根的子樹深拷貝到一個全新的獨立池，
-; 返回持有該子樹根的新 json。供 json.get / json.arr-get / json.get-key 等
-; 「取子句柄」介面使用：返回體與源 json 不共享底層 vec 緩衝區。
-;
-; 為何必需深拷貝：json.pool 是 #{inline=false} 指標欄位，而編譯器的指標欄位
-; 拷貝目前尚缺借用語義（見 copy-tree 註釋與 src/mir 的 hybrid-ownership 說明），
-; 直接 `child = json { pool: .pool, ... }` 會讓父子各持一份 vec 頭但共享同一
-; data 緩衝；一旦任一 handle 觸發 vec realloc，另一 handle 的 vec 頭即指向已
-; 釋放的舊緩衝 → 懸垂讀（stringify 返回 null / 資料錯亂）。改為獨立深拷貝後，
-; 雙方的 alloc/擴容各寫自有緩衝，互不影響。
-; src: 來源池
-; idx: 子樹根在 src 中的索引
-; out: 持拷貝子樹的新 json（out.root=新根索引；idx 無效時 root=-1）
-; [json-clone-tree](#json.json-clone-tree)
 
 ; 全域函式 — 從 json 物件中按鍵取得子節點
 ; 返回 child ?json: 子節點（nil 表示不存在）

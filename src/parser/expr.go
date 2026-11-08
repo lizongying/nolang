@@ -551,12 +551,24 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	// 一直正常（stmt.go parseExpressionStatement → parseMatchExprFrom），兩處必須
 	// 同口徑，否則同一段邏輯寫成值形態就悄悄丟掉越界保護。
 	//
-	// 只認索引主體、只在 LOWEST 與非 for/match 條件上下文中處理：其他 : { 都有
+	// 呼叫主體同理（2026-11-08 補）：`v = mb.to-i64(): { ok -> it.to-f64()  -> 0.0 }`
+	// 此前同樣裂成 `v = mb.to-i64()` ＋ 主體為空的 match，`it` 因而落在 body 為空的
+	// 那層，臂內對 `it` 的方法派發拿不到載荷型別。表現是
+	// `EmitLLVM: unknown callee byte.to-f64`（裸 match 的 `it` 取了接收者殘型別）。
+	//
+	// 只認索引／呼叫主體、只在 LOWEST 與非 for/match 條件上下文中處理：其他 : { 都有
 	// 各自的既有歸屬（for 條件體、map/struct 字面量的鍵、臂內 range pattern）。
+	// 誤判風險由 parseMatchExprFrom 自行吸收——它不是 match 形態就回傳 nil，
+	// 呼叫端 restoreState 後 `: {` 仍留給 for-loop 分支。
 	if p.currentToken.Type == lexer.COLON && p.peekToken.Type == lexer.LBRACE &&
 		precedence == LOWEST &&
 		!p.ctx.contains(CTX_FOR_COND) && !p.ctx.contains(CTX_MATCH_COND) {
-		if _, isIndex := leftExp.(*IndexExpression); isIndex {
+		isValueMatchSubject := false
+		switch leftExp.(type) {
+		case *IndexExpression, *CallExpression:
+			isValueMatchSubject = true
+		}
+		if isValueMatchSubject {
 			state := p.saveState()
 			p.nextToken() // skip :
 			if me := p.parseMatchExprFrom(leftExp); me != nil {

@@ -110,13 +110,26 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 		if t, ok := p.sem.FuncVarType(p.curFuncName, ident.Value); ok && t != "" {
 			return strings.TrimPrefix(t, "?")
 		}
+		// S1 翻轉後，std 模塊以 surface 形態從 blob 回放，H0 的 scratchParser 帶來
+		// 的是**新建**的語義副表——參數與局部的型別條目整體缺席，FuncVarType 必然
+		// 落空。缺這條兜底時，「方法呼叫的接收者是參數」一律推不出型別：
+		// `mb.to-i64()` 的 receiverType 為空 ⇒ 回傳型別推不出 ⇒ 值位 match 主語
+		// 無法歸一化成 `__match_subj` ⇒ 臂內 `it` 沒有綁定，方法派發拿殘型別
+		// （src/std/str.no 的 str-to-f64 報 `unknown callee byte.to-f64`）。
+		// astLocalVarType 直接讀 prog 的函式宣告（參數 → 顯式標註 → 呼叫回傳 → 識別符鏈），
+		// 與副表無關，正是為這條路徑準備的。
+		// 放在 FuncVarType 之後、self 欄位查詢之前：參數名不會撞 self 欄位名，
+		// 而未命中時（self 欄位名）回傳空字串，下方分支照舊。
+		if at := p.astLocalVarType(p.curFuncName, ident.Value); at != "" {
+			return strings.TrimPrefix(at, "?")
+		}
 		// self 欄位：在方法體中，`.field` 語法會解析為裸識別符 `field`，
 		// 其型別應從所屬 struct 的欄位表中查詢（而非區域變數表）。
 		// 例如 sse-client.reconnect 中的 `.tls-c.recv`：receiver 為裸識別符
 		// `tls-c`，其型別是 sse-client 結構的 tls-c 欄位（tls.conn）。
 		if len(p.methodStructStack) > 0 {
 			structName := p.methodStructStack[len(p.methodStructStack)-1]
-			if fields, ok := p.structFields[structName]; ok {
+			if fields, ok := p.structFieldsOf(structName); ok {
 				if fieldType, ok := fields[ident.Value]; ok {
 					return strings.TrimPrefix(fieldType, "?")
 				}
@@ -136,7 +149,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 		if selfIdent, ok := dot.Receiver.(*Identifier); ok && selfIdent.Value == "self" {
 			if len(p.methodStructStack) > 0 {
 				structName := p.methodStructStack[len(p.methodStructStack)-1]
-				if fields, ok := p.structFields[structName]; ok {
+				if fields, ok := p.structFieldsOf(structName); ok {
 					if fieldType, ok := fields[dot.Property]; ok {
 						return strings.TrimPrefix(fieldType, "?")
 					}
@@ -156,7 +169,7 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 		if innerDot, ok := dot.Receiver.(*DotExpression); ok {
 			innerType := p.resolveReceiverType(innerDot)
 			if innerType != "" {
-				if fields, ok := p.structFields[innerType]; ok {
+				if fields, ok := p.structFieldsOf(innerType); ok {
 					if fieldType, ok := fields[dot.Property]; ok {
 						return strings.TrimPrefix(fieldType, "?")
 					}
@@ -572,6 +585,43 @@ func (p *Parser) indexBaseReceiverType(recv Expression) string {
 // str / txt 刻意不特判：containerElemType 對二者回傳 "char"，與 arr/vec 走
 // 同一條路（讀側 `?char`、寫側必須解包）。map 也不在此攔——呼叫側要先以
 // IsMapTypeString 判別，因為 containerElemType 會把 `[str]i64` 當成陣列。
+// structFieldsOf 查詢結構欄位表，容忍「鍵限定、型別裸名」的不對稱。
+//
+// p.structFields 的鍵在**模組檔案內**是模組限定的（src/std/yaml.no 的
+// `yaml-node { … }` 記為 "yaml.yaml-node"，見 decl.go:1575），而變數宣告、
+// 參數、欄位型別原文一律是**裸名**（"yaml-node"）。直接以變數型別原文查表
+// 因此必然落空——後果不是「推斷為空」這麼無害：`?=` 的 LHS 型別推斷拿不到
+// 元素型別就不發預宣告，綁定名根本不存在，後續 `nk.kids.len()` 被當成模組
+// 命名空間呼叫（callee "nk.kids.len"）→ 落到 `str-len` 內建而報
+// 「missing receiver」（src/std/yaml.no 的 yaml-emit / yaml-json-of）。
+//
+// 查表順序：精確 → 本模組限定 → 唯一後綴匹配。後綴匹配要求唯一，避免兩個
+// 模組同名結構互相冒充。
+func (p *Parser) structFieldsOf(typeName string) (map[string]string, bool) {
+	if typeName == "" || p.structFields == nil {
+		return nil, false
+	}
+	if f, ok := p.structFields[typeName]; ok {
+		return f, true
+	}
+	if m := p.currentModuleName(); m != "" {
+		if f, ok := p.structFields[m+"."+typeName]; ok {
+			return f, true
+		}
+	}
+	var found map[string]string
+	for k, f := range p.structFields {
+		if !strings.HasSuffix(k, "."+typeName) {
+			continue
+		}
+		if found != nil {
+			return nil, false // 多個模組同名：不猜
+		}
+		found = f
+	}
+	return found, found != nil
+}
+
 func (p *Parser) indexBaseContainerRaw(idx *IndexExpression) string {
 	if idx == nil || idx.Left == nil {
 		return ""
@@ -581,7 +631,7 @@ func (p *Parser) indexBaseContainerRaw(idx *IndexExpression) string {
 		return ty.StripOptionRaw(p.indexBaseVarType(b.Value))
 	case *DotExpression:
 		if rt := p.indexBaseReceiverType(b.Receiver); rt != "" {
-			if fields, ok := p.structFields[rt]; ok {
+			if fields, ok := p.structFieldsOf(rt); ok {
 				if ft, ok := fields[b.Property]; ok {
 					return ty.StripOptionRaw(ft)
 				}

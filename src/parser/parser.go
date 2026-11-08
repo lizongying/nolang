@@ -43,6 +43,17 @@ type Parser struct {
 	methodSignatures map[string][]string          // 結構體方法 → 結果型別字串列表（鍵：module.struct.method）
 	structFields     map[string]map[string]string // struct 名 → 欄位名 → 型別字串
 
+	// astVarTypeBusy 是 astLocalVarType 的在途集合（鍵 "func\x00var"）。
+	// astLocalVarType 會為「let 的 RHS 是呼叫」去問 returnTypeFromCallExpr，
+	// 後者又要解析接收者型別，可能再回到 astLocalVarType（`x = f(x)`、
+	// `a = b` / `b = a` 之類的自引用或環）。沒有這道守衛就是無限遞迴——
+	// 表現為 genstdsig 在 runtime 疊爆堆疊（mgc.go 崩）。
+	astVarTypeBusy map[string]bool
+	// astVarTypeCache 是 astLocalVarType 的結果快取（同鍵），含「查無」的負快取。
+	// H0 降糖期同一個 (函式, 變數) 會被反覆發問，每次都重走函式體會讓
+	// genstdsig 跑不完。
+	astVarTypeCache map[string]string
+
 	// extern* 記錄 SetExternSignatures / SetExternEnumVariants 收到的**注入**
 	// 表（僅記引用，不複製）。刻意與 funcSignatures/methodSignatures/structFields
 	// 分開：後三者在解析過程中會被本地定義續寫（decl.go），而這裡要回答的是
@@ -1205,6 +1216,19 @@ func (p *Parser) SetExternSignatures(funcSigs map[string][]string, methodSigs ma
 	}
 	for k, v := range structFields {
 		p.structFields[k] = v
+	}
+	// 同一份欄位表也要進語義副表：H0 的 scratchParser 只能從當前模塊的樹上撿
+	// struct 定義，std / 其它模塊的欄位只能從這裡讀（見
+	// SemanticContext.ExternStructFields 註解）。不覆蓋既有鍵。
+	if p.sem != nil && len(structFields) > 0 {
+		if p.sem.ExternStructFields == nil {
+			p.sem.ExternStructFields = make(map[string]map[string]string, len(structFields))
+		}
+		for k, v := range structFields {
+			if _, exists := p.sem.ExternStructFields[k]; !exists {
+				p.sem.ExternStructFields[k] = v
+			}
+		}
 	}
 }
 

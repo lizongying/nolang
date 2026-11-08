@@ -102,9 +102,15 @@ t-to-bytes = () {
     s = 'hello'
     b = s.to-bytes()
     runner.eq(b.len(), 5, 'to-bytes len')
-    b0 i64 = b[0]
+    b0 = b[0]: {
+        ok -> it
+        -> 0
+    }
     runner.eq(b0, 104, 'to-bytes 0 == h')
-    b4 i64 = b[4]
+    b4 = b[4]: {
+        ok -> it
+        -> 0
+    }
     runner.eq(b4, 111, 'to-bytes 4 == o')
 }
 

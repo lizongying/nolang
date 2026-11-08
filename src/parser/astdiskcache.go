@@ -320,7 +320,14 @@ import (
 // 2026-11-08.1：lexer 不再按位元組判斷字母（isLetter 只看 ASCII），並把多字節
 // 碼點整顆報成 ILLEGAL。同一份含非 ASCII 文字的源碼，樹從「IDENT("\xe5")
 // + ILLEGAL 位元組碎片」變成「每個碼點一個 ILLEGAL」，故必 bump。
-const ASTVersion = "2026-11-08.1"
+// 2026-11-08.2：值位 match 的主語是呼叫表達式時（`v = f(...): { ok -> it }`）
+// 現在也會推出主語型別，合成的 `let it` 因而帶上 elemType。同一份原始碼的降糖
+// 結果從「it 無型別」變成「it: T」，舊 blob 是前者，故必 bump。
+// 2026-11-08.3：值位 `expr: { ... }` 的 `: {` 附加從「只認索引主語」擴到呼叫主語，
+// 且 option 回傳的呼叫主語會歸一化成 `if 1 { let __match_subj ?T = <call>; ... }`。
+// 同一份原始碼的樹從「`v = f()` + 裸 match 兩條陳述」變成「單一值位 match」，
+// 舊 blob 是前者，故必 bump。
+const ASTVersion = "2026-11-08.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

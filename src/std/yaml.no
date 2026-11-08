@@ -2993,11 +2993,18 @@ yaml.find = (path str) (out ?yaml) {
             found = -1
             cnt = nd.keys.len()
             j <- [0..cnt): {
-                kn ?= nd.keys[j]
-                nkn ?= .pool.nodes[kn]
-                yaml-key-text-eq(nkn, seg) -> {
-                    found ?= nd.kids[j]
-                    break
+                (found < 0) -> {
+                    kn ?= nd.keys[j]
+                    nkn ?= .pool.nodes[kn]
+                    kk = nkn.kind
+                    is-scalar = kk != YAML-KIND-SEQ && kk != YAML-KIND-MAP
+                    hit = 0
+                    is-scalar -> {
+                        nkn.text.eq-full(seg) -> hit = 1
+                    }
+                    hit == 1 -> {
+                        found ?= nd.kids[j]
+                    }
                 }
             }
             cur = found
@@ -3020,6 +3027,7 @@ yaml.find = (path str) (out ?yaml) {
         cur = -1
         break
     }
+
     (true)
     cur < 0 -> return
     out = yaml {

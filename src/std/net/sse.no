@@ -226,13 +226,10 @@ client.next-event = () (ev ?event) {
                                 }
 
                                 field == 'retry' -> {
-                                    retry-val ?i64 = value.to-i64()
-                                    retry-val: {
-                                        nil -> e-retry = -1
+                                    e-retry = value.to-i64(): {
+                                        ok -> it
 
-                                        err -> e-retry = -1
-
-                                        ok -> e-retry = it
+                                        -> -1
                                     }
                                 }
                             }

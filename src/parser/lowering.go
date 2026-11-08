@@ -885,6 +885,54 @@ func (l *lowerer) collectLocalTypes(fd *FunctionDefinition) {
 	l.curFuncName = savedL
 }
 
+// gatherMultiAssignsInFuncScope 與 gatherLetsInFuncScope 同構，收集的是
+// *MultiAssignStatement（`_, mb = f(...)` 這類多目標賦值）。分開一個函式是因為
+// 兩者節點型別不同，而收集口徑（同作用域、遇巢狀函式停、按指標去重）必須一致。
+func gatherMultiAssignsInFuncScope(body *BlockStatement) []*MultiAssignStatement {
+	var out []*MultiAssignStatement
+	if body == nil {
+		return out
+	}
+	seen := map[uintptr]bool{}
+	var walk func(rv reflect.Value)
+	walk = func(rv reflect.Value) {
+		switch rv.Kind() {
+		case reflect.Ptr:
+			if rv.IsNil() {
+				return
+			}
+			ptr := rv.Pointer()
+			if seen[ptr] {
+				return
+			}
+			seen[ptr] = true
+			if _, isFn := rv.Interface().(*FunctionDefinition); isFn {
+				return
+			}
+			if ma, isMA := rv.Interface().(*MultiAssignStatement); isMA {
+				out = append(out, ma)
+			}
+			walk(rv.Elem())
+		case reflect.Interface:
+			if rv.IsNil() {
+				return
+			}
+			walk(rv.Elem())
+		case reflect.Slice:
+			for i := 0; i < rv.Len(); i++ {
+				walk(rv.Index(i))
+			}
+		case reflect.Struct:
+			t := rv.Type()
+			for _, i := range exportedFieldIndices(t) {
+				walk(rv.Field(i))
+			}
+		}
+	}
+	walk(reflect.ValueOf(body))
+	return out
+}
+
 // gatherLetsInFuncScope 以反射走訪 body 子樹，依原始碼順序回傳「本函數作用域內」
 // （含巢狀區塊 / 迴圈體 / if-match 臂體）的所有 *LetStatement；遇到巢狀
 // FunctionDefinition（閉包 / 巢狀函式）即停止下钻——那是另一個作用域、另有自己的
@@ -1268,7 +1316,7 @@ func (l *lowerer) indexContainerType(e Expression) string {
 		}
 	case *DotExpression:
 		if rt := l.p.resolveReceiverType(b.Receiver); rt != "" {
-			if fields, ok := l.p.structFields[rt]; ok {
+			if fields, ok := l.p.structFieldsOf(rt); ok {
 				if ft, ok := fields[b.Property]; ok {
 					return strings.TrimPrefix(ft, "?")
 				}
@@ -1297,7 +1345,7 @@ func (l *lowerer) chainOuterType(e Expression) string {
 		}
 	case *DotExpression:
 		if rt := l.chainOuterType(b.Receiver); rt != "" {
-			if fields, ok := l.p.structFields[rt]; ok {
+			if fields, ok := l.p.structFieldsOf(rt); ok {
 				if ft, ok := fields[b.Property]; ok {
 					return ty.StripOptionRaw(ft)
 				}
@@ -2461,6 +2509,36 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	if p == nil || p.prog == nil || varName == "" || funcName == "" {
 		return ""
 	}
+	// 在途守衛：本函式為「RHS 是呼叫」的 let 會問 returnTypeFromCallExpr，
+	// 而它解析接收者型別時又會回到這裡（`x = f(x)`、`a = b` / `b = a`）。
+	// 環上再問一次只會同義反覆，直接回空讓呼叫端用它的弱回退。
+	if p.astVarTypeBusy == nil {
+		p.astVarTypeBusy = make(map[string]bool)
+	}
+	busyKey := funcName + "\x00" + varName
+	if p.astVarTypeBusy[busyKey] {
+		return ""
+	}
+	// 結果快取：本函式每次都要 gatherLetsInFuncScope 走完整個函式體，而 H0
+	// 降糖期 resolveReceiverType 會對同一個 (函式, 變數) 反覆發問（每個臂、每個
+	// 巢狀 match 各一次）。沒有快取時 genstdsig 直接跑不完（O(N·M)，被 OOM/超時
+	// 砍掉）。H0 期 AST 已凍結，快取安全；快取掛在 *Parser 上，不同 Program
+	// 用不同 parser，不會互相污染。
+	if v, ok := p.astVarTypeCache[busyKey]; ok {
+		return v
+	}
+	p.astVarTypeBusy[busyKey] = true
+	defer delete(p.astVarTypeBusy, busyKey)
+	t := p.computeAstLocalVarType(funcName, varName)
+	if p.astVarTypeCache == nil {
+		p.astVarTypeCache = make(map[string]string)
+	}
+	p.astVarTypeCache[busyKey] = t
+	return t
+}
+
+// computeAstLocalVarType is the uncached body of astLocalVarType.
+func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 	fd := findFuncDef(p.prog, funcName)
 	if fd == nil {
 		// Monomorphized / suffixed copies keep the original declaration under a
@@ -2513,6 +2591,40 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 		if id, ok := ls.Value.(*Identifier); ok {
 			if t, ok := types[id.Value]; ok {
 				types[name] = t
+			}
+		}
+	}
+	// Third pass: 多重賦值 `_, mb = f(...)` —— 目標型別按位置取 RHS 呼叫的多值
+	// 返回值簽名。缺這遍時 `mb`（src/std/str.no 的 str-to-f64：
+	// `_, mb = mw.div-mod(two52)`）兩邊都查不到——不在參數、不是 let（多目標
+	// 賦值是 MultiAssignStatement），於是 `mb.to-i64()` 的接收者型別為空、回傳
+	// 型別推不出、值位 match 主語不歸一化、臂內 `it` 沒有綁定，最後在 codegen
+	// 炸成 `unknown callee byte.to-f64`。
+	for _, ma := range gatherMultiAssignsInFuncScope(fd.Body) {
+		if ma == nil || len(ma.Targets) == 0 {
+			continue
+		}
+		call, ok := ma.Value.(*CallExpression)
+		if !ok {
+			continue
+		}
+		rets := p.multiReturnTypesFromCallExpr(call)
+		if len(rets) == 0 {
+			continue
+		}
+		for i, tgt := range ma.Targets {
+			if i >= len(rets) {
+				break
+			}
+			id, ok := tgt.(*Identifier)
+			if !ok || id.Value == "" || id.Value == "_" {
+				continue
+			}
+			if _, exists := types[id.Value]; exists {
+				continue
+			}
+			if rets[i] != "" {
+				types[id.Value] = rets[i]
 			}
 		}
 	}
@@ -3172,32 +3284,50 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	origMatched := matched
 	subjName := ""
 	subjElem := ""
-	if idx, ok := matched.(*IndexExpression); ok && p.isSafeIndexBase(idx) {
-		isOptMatch := false
-		for _, a := range arms {
-			if a.IsDotVal {
+	// 「這是不是 option match」——臂裡出現 `ok ->`（IsDotVal）或 ok/nil/err 模式
+	// 即成立。索引與呼叫兩種主語的歸一化共用此判定。
+	isOptMatch := false
+	for _, a := range arms {
+		if a.IsDotVal {
+			isOptMatch = true
+			break
+		}
+		if ident, ok := a.Condition.(*Identifier); ok {
+			if ident.Value == "ok" || ident.Value == "nil" || ident.Value == "err" {
 				isOptMatch = true
 				break
 			}
-			if ident, ok := a.Condition.(*Identifier); ok {
-				if ident.Value == "ok" || ident.Value == "nil" || ident.Value == "err" {
-					isOptMatch = true
-					break
-				}
-			} else if _, ok := a.Condition.(*NilLiteral); ok {
-				isOptMatch = true
-				break
+		} else if _, ok := a.Condition.(*NilLiteral); ok {
+			isOptMatch = true
+			break
+		}
+	}
+	if isOptMatch {
+		subjValueElem := ""
+		if idx, ok := matched.(*IndexExpression); ok && p.isSafeIndexBase(idx) {
+			subjValueElem = p.inferIndexElemType(idx)
+		} else if call, ok := matched.(*CallExpression); ok {
+			// 呼叫主語（`v = mb.to-i64(): { ok -> it.to-f64()  -> 0.0 }`）：回傳
+			// `?T` 時同樣歸一化。不歸一化會同時壞兩件事——
+			//   ① buildItBinding 只認 Identifier / IndexExpression，主語是呼叫時
+			//      `it` 根本沒有綁定，臂內 `it.<method>()` 拿接收者殘型別猜
+			//      （yaml 的 `unknown callee byte.to-f64`）；
+			//   ② `it = <call>` 若真的生成，呼叫會在每個臂裡重求值一次，而條件鏈
+			//      又求值一次 —— 有副作用的呼叫會多跑。
+			// 歸一化走既有的 `if 1 { let __match_subj ?T = <orig>; <chain> }`
+			// wrapper（下方 emitSubjectMatchPlain 4028 段），呼叫恰好求值一次。
+			// 只認 option 回傳；union（`i64 | err`）主語維持原樣，不在本次擴張。
+			if rt := p.returnTypeFromCallExpr(call); rt != "" && ty.IsOptionRaw(rt) {
+				subjValueElem = ty.StripOptionRaw(rt)
 			}
 		}
-		if isOptMatch {
-			if elem := p.inferIndexElemType(idx); elem != "" {
-				subjElem = elem
-				subjName = fmt.Sprintf("__match_subj_%d_%d", tok.Line, tok.Column)
-				subjType := matchSubjectTypeRaw(elem)
-				p.sem.SetFuncVarType(p.curFuncName, subjName, subjType)
-				p.setVarType(subjName, subjType)
-				matched = &Identifier{Token: tok, Value: subjName}
-			}
+		if subjValueElem != "" {
+			subjElem = subjValueElem
+			subjName = fmt.Sprintf("__match_subj_%d_%d", tok.Line, tok.Column)
+			subjType := matchSubjectTypeRaw(subjElem)
+			p.sem.SetFuncVarType(p.curFuncName, subjName, subjType)
+			p.setVarType(subjName, subjType)
+			matched = &Identifier{Token: tok, Value: subjName}
 		}
 	}
 	// Capture the (possibly normalised) subject now that the index→`__match_subj`
@@ -3295,6 +3425,16 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 	if ident, ok := matched.(*Identifier); ok && bareModuleType(matchedVarType) {
 		if at := p.astLocalVarType(p.curFuncName, ident.Value); typeQualifiedOver(at, matchedVarType) {
 			matchedVarType = at
+		}
+	}
+
+	// 主語是呼叫表達式時的型別推斷。option 回傳（`?T`）的情形已被上方的
+	// `__match_subj` 歸一化接管——matched 那時已換成識別符，走第一條路徑。
+	// 此處只剩**非 option** 回傳的兜底：union（`T | err`）主語不歸一化，
+	// 但 elemType 仍要能算出來，否則值語境的空臂（`-> 0.0`）取不到零值。
+	if matchedVarType == "" {
+		if call, ok := matched.(*CallExpression); ok {
+			matchedVarType = p.returnTypeFromCallExpr(call)
 		}
 	}
 
