@@ -113,11 +113,10 @@ Nolang 是**无 GC** 语言，内存安全完全依赖编译器在正确位置�
 #### 3.2.4 运行时位图按需分配（`detectBranchMoveToOut` 预扫描）
 
 ```no
-#{fmt-skip}
 cond-move = (flag i64) (out []i64) {
     x = [1, 2, 3]
     if flag == 1 {
-        out = x   ; move 僅在 flag==1 時發生
+        out = x; move 僅在 flag==1 時發生
     }
     ; flag==0 時 x 仍擁有 data，函數結束需 free
     ; flag==1 時 x 所有權已轉移，函數結束需跳過 free
@@ -261,21 +260,19 @@ g.cfgEdge(backEdgeFrom, loopCondLabel) // 真實 back edge
 
 ### 5.1 单返回值 move
 ```no
-#{fmt-skip}
 get-slice = () (out []i64) {
     local = [1, 2, 3]
-    out = local   ; local 标记为 moved，不 free；out 由调用者管理
+    out = local; local 标记为 moved，不 free；out 由调用者管理
 }
 ```
 
 ### 5.2 多返回值 move（按参数位置顺序）
 ```no
-#{fmt-skip}
 get-pair = () (a []i64, b []i64) {
     x = [1, 2]
     y = [3, 4]
-    a = x   ; 第一个输出参数，x 标记为 moved
-    b = y   ; 第二个输出参数，y 标记为 moved
+    a = x; 第一个输出参数，x 标记为 moved
+    b = y; 第二个输出参数，y 标记为 moved
 }
 ```
 
@@ -527,9 +524,8 @@ if srcHeapType != "%vec" && srcHeapType != "%arr" && srcHeapType != "%str-long" 
 
 ### 问题
 ```no
-#{fmt-skip}
-local [4]i64 = [100, 200, 300, 400]   ; local 是 %arr (16 字节)
-local = [100, 200, 300]                ; SliceLiteral 当作 %vec 写入 3 字段 → 越界
+local [4]i64 = [100, 200, 300, 400]; local 是 %arr (16 字节)
+local = [100, 200, 300]; SliceLiteral 当作 %vec 写入 3 字段 → 越界
 ```
 
 ### 修复
@@ -625,9 +621,8 @@ hashmap 模板（`hashmap-str-tmpl` 等）已實現 key/value 的堆數據釋放
 
 **原問題**：
 ```no
-#{fmt-skip}
-view = arr[1..3]   ; view 共享 arr.data
-arr = [9, 8, 7]    ; free 旧 arr.data → view 悬空
+view = arr[1..3]; view 共享 arr.data
+arr = [9, 8, 7]; free 旧 arr.data → view 悬空
 ```
 
 **已解決（2026-07 設計變更）**：`view = arr[1..3]` 現在總是 clone（malloc+memcpy），view 獨立擁有 data，原數組釋放不影響 view。`sliceViews` map 不再被填充，`freeOldHeapValue` 無需檢查視圖映射。測試見 `slice-view-escape.no` 測試 5。

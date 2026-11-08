@@ -74,8 +74,14 @@ set.add = (val t) (new-size i64) {
         return
     }
 
-    .data[sz] = val
-    .size = sz + 1
+    {
+        .data[sz] ?= val
+        .size = sz + 1
+    }: {
+        err -> _
+
+        -> _
+    }
     new-size = .size
 }
 
@@ -105,8 +111,14 @@ set.remove = (val t) (new-size i64) {
     ; 將最後一個元素移到被移除位置
     #{overflow=wrap}
     last = sz - 1
-    .data[idx] = .data[last]
-    .size = last
+    {
+        .data[idx] ?= .data[last]
+        .size = last
+    }: {
+        err -> _
+
+        -> _
+    }
     new-size = .size
 }
 
@@ -154,8 +166,14 @@ set.union = (other []t, osize i64) (new-size i64) {
 
         found == false -> {
             .size < .cap -> {
-                .data[.size] = ov
-                .size = .size + 1
+                {
+                    .data[.size] ?= ov
+                    .size = .size + 1
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
         }
     }

@@ -65,13 +65,14 @@ Nolang supports two **single-line comment** markers and one **multi-line (block)
 ; this is also a comment, same meaning
 x = 1 ; inline comment, to end of line
 
-;; this is a multi-line (block) comment
+;;
+   this is a multi-line (block) comment
    it can span several lines
    ending with ;; ;;
 y = 2 ;; inline block comment ;;
 ```
 
-**Block delimiting**: `;;` opens and `;;` closes; everything between them (including newlines) is comment content. A single `;` inside does not close the block — only `;;` does. If no closing `;;` is found, the comment runs from the opening `;;` all the way to the end of file.
+**Block delimiting**: `;;` opens and `;;` closes; everything between them (including newlines) is comment content. A single `;` inside does not close the block — only `;;` does. If no closing `;;` is found, the comment runs from the opening `;;` all the way to the end of file. The opening `;;` only enters multi-line mode when **nothing but whitespace follows it on that line** — with text after the `;;` on the same line it is an ordinary single-line comment (`;; note` comments that line only, the next line is still code). The closing delimiter works the same way: only whitespace may follow the `;;`.
 
 **The formatter preserves the original marker**: `no fmt` never changes any comment marker — `;` stays `;`, `//` stays `//`, `;; ... ;;` stays `;; ... ;;`. The formatter records the original marker via `Comment.Marker` and emits it verbatim; block-comment content (including internal newlines) is also preserved as-is, so formatting is idempotent.
 

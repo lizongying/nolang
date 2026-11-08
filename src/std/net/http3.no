@@ -475,7 +475,7 @@ response.get-header = (name str) (val ?str) {
     val = nil
     target = name.to-lower()
     i <- [0..self.header-count): {
-        h = .header-names[i].to-lower()
+        h ?= .header-names[i].to-lower()
         h == target -> {
             val = .header-values[i]
             return
@@ -885,9 +885,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
                         }
                     }
                     r.header-count < 32 -> {
-                        r.header-names[r.header-count] = name
+                        r.header-names[r.header-count] ?= name
 
-                        r.header-values[r.header-count] = value
+                        r.header-values[r.header-count] ?= value
 
                         #{overflow=wrap}
                         r.header-count = r.header-count + 1
@@ -901,13 +901,7 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 
                 i <- [0..payload.len()): {
 
-                    ixout800c50 = payload[i]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    r.body[r.body.len-bytes()] = ixout800c50
+                    r.body[r.body.len-bytes()] ?= payload[i]
                 }
             }
         }

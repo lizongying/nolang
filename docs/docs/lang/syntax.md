@@ -147,11 +147,10 @@ buf = [16]u8
 聯合類型可以引用其他聯合類型，形成層次結構：
 
 ```no
-#{fmt-skip}
 int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 float = f32 | f64
-num = int | float     ; num 是 int 和 float 的聯合
-string = str | txt    ; string 直接聯合兩個具體字符串類型
+num = int | float; num 是 int 和 float 的聯合
+string = str | txt; string 直接聯合兩個具體字符串類型
 ```
 
 ### 在函數中使用
@@ -183,7 +182,6 @@ num.sign = () (r num) {
 `string`（= `str | txt`）同樣可用於參數與返回值：
 
 ```no
-#{fmt-skip}
 ; str 與 txt 實參都能傳入，各自單態化一份具體函數
 take = (s string) (n i64) {
     n = len(s)
@@ -191,8 +189,8 @@ take = (s string) (n i64) {
 
 a str = 'hello'
 b txt = 'hi'
-n1 = take(a)   ; take__str
-n2 = take(b)   ; take__txt
+n1 = take(a); take__str
+n2 = take(b); take__txt
 ```
 
 > 聯合類型函數體的既有限制（`num` 與 `string` 相同）：函數體內對 union 參數調用成員方法（如 `s.len()`）尚不支持，需使用全域內建（`len(s)`，字節數）或拆成具體類型的函數；聯合類型的變量聲明（`s string = 'x'`）也尚不支持。另注意不要定義與成員方法同名的別名方法（如 `string.len`）——它會接管 `s.len()` 調用並在方法體中遞迴分发回自身。
@@ -211,7 +209,6 @@ n2 = take(b)   ; take__txt
 
 ```no
 #{fmt-skip}
-
 ; 變量沒有關鍵字
 ; i64、f64、byte、bool、byte、str可以省略類型標注
 i = 1
@@ -222,17 +219,16 @@ f = 1.0
 ; byte
 b = 0x00
 
-
 ; i8 如果變量名和類型一致，可以忽略類型標注
 i8 = 3
 
 ; 顯式標註若與推斷型別相同則冗餘（no vet 報 tcpoxtfd，no fmt --fix=redundant 可自動去除）
 x str = ''
-x = ''          ; 等價，標註冗餘
+x = ''; 等價，標註冗餘
 
 ; 默認0值
 ; 變量定義不需要提前聲明
-u16
+u16 u16
 
 ; str 單引號包裹
 name = 'nolang'
@@ -242,8 +238,8 @@ flag = true
 flag = false
 
 ; bool 簡寫：!! 等價 true、! 等價 false（獨立字面量）
-flag = !!    ; true
-flag = !     ; false
+flag = true; true
+flag = false; false
 
 ; 變量賦值
 ; 不允許同名，如果同名則視為修改變量
@@ -254,11 +250,9 @@ name = 'world'
 greeting = 'hello, ' - name
 
 ; 原始字符串（反引號包裹，多行，不轉義）
-sql = `
-SELECT id,name
+sql = 'SELECT id,name
 FROM user
-WHERE id > 100
-`
+WHERE id > 100'
 
 ; 顯式類型標注
 a u64 = 10
@@ -267,7 +261,8 @@ a u64 = 10
 ; - 十進制整數字面量（如 771）推斷為 i64（默認整數類型）
 ; - 十六進制字面量（如 0x0303）推斷為 byte（u8）
 ; - 如果 hex 值超過 byte 範圍（> 255），必須添加顯式類型標注：
-PORT i64 = 0x0303        ; 正確：顯式 i64，值 = 771
+PORT i64 = 0x0303; 正確：顯式 i64，值 = 771
+
 ; PORT = 0x0303          ; 錯誤：推斷為 byte，值被截斷！
 ; PORT = 771             ; 正確：十進制默認為 i64
 ; - 十六進制字面量建議使用小寫字母（0x00ff，而非 0x00FF）
@@ -292,7 +287,8 @@ typed []u8 = [1, 2, 3]
 typed [3]u16 = [1, 2, 3]
 
 ; 自動推斷長度（i64）
-a [?] = [1, 2, 3]
+a[nil] = [1, 2, 3]
+```
 ```
 
 ## 原始字符串（Raw String）
@@ -396,16 +392,15 @@ re = regexp-compile('\\d+')
 ### 使用示例
 
 ```no
-#{fmt-skip}
 ; 創建正則並匹配
 re = /\d+/
 matched = re.matches('hello 123 world')
-print(matched)  ; true
+print(matched); true
 
 ; 查找匹配
 re = /[a-z]+/g
 result = re.find('hello 42 world')
-print(result)  ; "hello"
+print(result); "hello"
 
 ; 作為函數參數
 result = match-text(/\d+/, text)
@@ -451,8 +446,10 @@ _PRIVATE-CONST = 42
 ; foo-bar = 42
 ; hello-world = 'Hello World'
 ```
+```
 
 ```no
+#{fmt-skip}
 ; ✅ 局部變量（函數內）使用小寫字母，不加 _ 前綴
 ; fn-example = () {
 ;     x1 = 10
@@ -462,6 +459,7 @@ _PRIVATE-CONST = 42
 ;     ; ❌ 錯誤：局部變量不需要 _ 前綴
 ;     ; _x = 10
 ; }
+```
 ```
 
 ### 模組中避免使用全局變量
@@ -490,12 +488,12 @@ _PRIVATE-CONST = 42
 ;     g-conn.send(g-buf)   ; 全局變量跨函式可能位址不一致
 ; }
 ```
+```
 
 ```no
-#{fmt-skip}
 ; ✅ 推薦：使用局部變量，狀態透過參數/返回值傳遞
 fn-a = () {
-    conn = tls.conn {}    ; 局部變量，位址一致
+    conn = tls.conn {}; 局部變量，位址一致
     buf = ' '
     conn.send(buf)
 }
@@ -504,7 +502,7 @@ fn-a = () {
 serve-once = (listen-fd fd, body str) (ok bool) {
     ok = false
     client-fd = net.net-accept(listen-fd)
-    conn = tls.server-init(client-fd)   ; 局部變量
+    conn = tls.server-init(client-fd); 局部變量
     conn: {
         ok -> {
             c = it
@@ -513,6 +511,7 @@ serve-once = (listen-fd fd, body str) (ok bool) {
             c.close()
             ok = true
         }
+
         -> fs.close(client-fd)
     }
 }
@@ -534,6 +533,7 @@ serve-once = (listen-fd fd, body str) (ok bool) {
 ; ❌ 錯誤：缺少型別，缺少返回參數名
 ; sha1(data) (hash)
 ; sha1-block(s, h0..h4)
+```
 ```
 
 ```no
@@ -590,11 +590,12 @@ Nolang 標準庫提供了豐富的常用功能，包括字串操作、位元組�
 str-to-bytes = (s str) (out []byte) {
     n = s.len-bytes()
     i = 0
-    {
+    (i < n) {
         out[i] = s[i]
         i = i + 1
-    } (i < n)
+    }
 }
+```
 ```
 
 ```no
@@ -642,7 +643,6 @@ text = toml.stringify(doc)
 標準庫 `yaml` 解析與產生 YAML 1.2 core schema 文件，支援塊映射、塊序列、流式集合、三種引號標量、塊標量 `|` / `>`、註解、多文檔、錨點與別名、合併鍵 `<<`、顯式鍵，以及型別推斷（null / bool / int / float / `.inf` / `.nan`）。
 
 ```no
-#{fmt-skip}
 doc ?yaml = yaml.parse('name: Alice\nserver:\n  port: 8080\ntags:\n  - a\n  - b\n')
 doc: {
     nil -> print('nil')
@@ -651,10 +651,11 @@ doc: {
 
     -> {
         doc = it
-        name = doc.find-str('name')          ; ?str
-        port = doc.find-i64('server.port')   ; ?i64
+        name = doc.find-str('name'); ?str
+        port = doc.find-i64('server.port'); ?i64
         name: {
             ok -> print(it)
+
             -> print('')
         }
         print(doc.to-json())
@@ -712,15 +713,16 @@ Nolang 的函數定義形式為 `name = (in-params) (out-params) { body }`：第
 變數：
 
 ```no
-#{fmt-skip}
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
-    ...            ; 函數體內對 fields 賦值
+    ...; 函數體內對 fields 賦值
 }
 
 ; 調用處定義接收變數（LHS 綁定，型別由簽名推斷）
 fields = parse-line(line)
+
 ; 多結果按順序綁定
 a, b = swap(x, y)
+
 ; 或尾隨引數形式：res 作為額外的輸出引數傳入
 add1(5, 3, res)
 ```
@@ -741,23 +743,20 @@ Nolang 的函數有以下特點：
 函數參數可以使用 `name type = expr` 語法指定默認值。帶有默認值的參數在調用時可以省略，編譯器會自動填充默認值。帶默認值的參數必須放在參數列表末尾。
 
 ```no
-#{fmt-skip}
 ; 帶默認值的函數定義
 parse-line = (s str, max-fields i64 = 1024) (fields []str) {
     ...
 }
 
 ; 以下兩種調用方式都合法：
-fields = csv.parse-line(line)              ; max-fields 默認為 1024
-fields = csv.parse-line(line, 256)         ; max-fields = 256
+fields = csv.parse-line(line); max-fields 默認為 1024
+fields = csv.parse-line(line, 256); max-fields = 256
 ```
 
 ```no
-#{fmt-skip}
-
 add = (a i64, b i64) (result i64) {
-    result = a + b             ; 通過參數返回結果
-    ...                        ; 佔位陳述：不做任何事，build 時整條丟棄（見〈佔位陳述〉）
+    result = a + b; 通過參數返回結果
+    ...; 佔位陳述：不做任何事，build 時整條丟棄（見〈佔位陳述〉）
 }
 
 ; 可變參數
@@ -765,10 +764,12 @@ add3 = (a ..i64) {
 }
 
 ; 函數調用
-sum = add(1, 2)                 ; sum == 3
+sum = add(1, 2); sum == 3
 
 ; 匿名函數 和for？ 有傳參？
-(a i64) { print(a) }(10)
+(a i64) {
+    print(a)
+}(10)
 
 ; 函数调用
 add(a, b)
@@ -812,7 +813,7 @@ a, b = swap(5, 3)
 !! {
     ...
 }
-true {
+!! {
     ...
 }
 
@@ -820,10 +821,10 @@ true {
 ! {
     ...
 }
-false {
+! {
     ...
 }
-() {
+! {
     ...
 }
 
@@ -851,74 +852,77 @@ false {
 }
 
 ; === 後綴式（suffix，條件寫在主體後面，舊式）===
-{
+!! {
     ...
-} (true)
+}
 
 ; 不執行（空括號代表 false）
-{
+! {
     ...
-} ()
+}
 
 ; 條件循環
-{
+(x == 1) {
     do-something()
-} (x == 1)
+}
 
 ; 限定執行次數
-{
-} * 10
+10 * {
+}
 
 ; N ≤ 0 時循環體不執行（0 次或負數次均跳過）
-{
+0 * {
     print('不會執行')
-} * 0
+}
 
-{
+-3 * {
     print('也不會執行')
-} * -3
+}
 
 ; 區間語法（已支持 i64/u8 等數值類型、arr、vec、str）
 ; 共 16 種組合：'[' 包含左端點，'(' 不包含；']' 包含右端點，')' 不包含。
 ; 有界（4 種）：兩端都有值
-i <- [a..b]: {     ; 闭区间：a ≤ i ≤ b
+i <- [a..b]: {
 }
-i <- (a..b]: {     ; 左开右闭：a < i ≤ b
+i <- (a..b]: {
 }
-i <- [a..b): {     ; 左闭右开：a ≤ i < b
+i <- [a..b): {
 }
-i <- (a..b): {     ; 开区间：a < i < b
+i <- (a..b): {
 }
+
 ; 無上限（4 種）：省略右端點，迭代至類型最大值
-i <- [a..]: {      ; a ≤ i ≤ 類型最大值
+i <- [a..]: {
 }
-i <- [a..): {      ; a ≤ i < 類型最大值
+i <- [a..): {
 }
-i <- (a..]: {      ; a < i ≤ 類型最大值
+i <- (a..]: {
 }
-i <- (a..): {      ; a < i < 類型最大值
+i <- (a..): {
 }
+
 ; 無下限（4 種）：省略左端點，從類型最小值開始迭代
-i <- [..b]: {      ; 類型最小值 ≤ i ≤ b
+i <- [..b]: {
 }
-i <- [..b): {      ; 類型最小值 ≤ i < b
+i <- [..b): {
 }
-i <- (..b]: {      ; 類型最小值 < i ≤ b
+i <- (..b]: {
 }
-i <- (..b): {      ; 類型最小值 < i < b
+i <- (..b): {
 }
+
 ; 完全無界（4 種）：兩端都省略，基於類型最小值/最大值
-i <- [..]: {       ; 類型最小值 ≤ i ≤ 類型最大值
+i <- [..]: {
 }
-i <- [..): {       ; 類型最小值 ≤ i < 類型最大值
+i <- [..): {
 }
-i <- (..]: {       ; 類型最小值 < i ≤ 類型最大值
+i <- (..]: {
 }
-i <- (..): {       ; 類型最小值 < i < 類型最大值
+i <- (..): {
 }
-i <- [5..0]: {   ; 递减 — 运行时方向检测：start > end 时自动递减
+i <- [5..0]: {
 }
-i <- 'abc': {   ; 遍历字符串中的每个字符
+i <- abc: {
 }
 
 ; 运行时方向检测：当 start > end 时，迭代自动递减（步长 -1）。
@@ -958,6 +962,7 @@ i <- 'abc': {   ; 遍历字符串中的每个字符
     do-something()
 }
 ```
+```
 
 ### 跳出 / 跳過 / 提前返回
 
@@ -965,27 +970,45 @@ i <- 'abc': {   ; 遍历字符串中的每个字符
 > 英文關鍵字 `continue` / `break` / `return`；`no fmt` 會把已支援的簡寫一律規範回關鍵字形式。
 
 ```no
-#{fmt-skip}
 i <- [0..10): {
-    *      ; continue（跳過本輪，暫不推薦）
-    **     ; break（跳出循環，暫不推薦）
-    ***    ; return/terminate（提前返回，僅終止函數；規劃中，暫不推薦）
+
+    ; continue（跳過本輪，暫不推薦）
+    continue
+
+    ; break（跳出循環，暫不推薦）
+    break
+
+    ; return/terminate（提前返回，僅終止函數；規劃中，暫不推薦）
+    break
+    continue
 }
 
 ; 推薦使用英文關鍵字（與 C/Rust 一致，便於移植、且能正常編譯執行）：
 i <- [0..10): {
-    continue  ; 等價 *（暫不推薦）
-    break     ; 等價 **（暫不推薦）
-    return    ; 等價 ***（暫不推薦），僅提前終止函數
+
+    ; 等價 *（暫不推薦）
+    continue
+
+    ; 等價 **（暫不推薦）
+    break
+
+    ; 等價 ***（暫不推薦），僅提前終止函數
+    return
 }
 
 ; 關鍵字別名（lexer 完整支援，與原關鍵字完全等價）：
 ;   ctn ≡ continue、brk ≡ break、rtn ≡ return；`no fmt` 保留別名原拼寫
 i <- [0..10): {
-    ctn   ; 等價 continue
-    brk   ; 等價 break
+
+    ; 等價 continue
+    ctn
+
+    ; 等價 break
+    brk
 }
-rtn     ; 等價 return，僅提前終止函數
+
+; 等價 return，僅提前終止函數
+rtn
 ```
 
 > ⚠️ **`return`（及其簡寫形式 `***`，簡寫暫不推薦使用）只能裸用，不能帶返回值。**  
@@ -1068,29 +1091,33 @@ i <- [0...n): {  ; ❌ 語法錯誤：`...` 不是範圍運算子，應寫 [0..s
 ### Match
 
 ```no
-#{fmt-skip}
 ; 簡單寫法，it 用於取參數
 x: {
-    err -> log(it.msg())       ; it 是結構化錯誤 err.err
+    err -> log(it.msg()); it 是結構化錯誤 err.err
+
     nil -> log('nil')
-    ->
-        do-right-thing(it)
+
+    -> do-right-thing(it)
 }
 
 ; 析構寫法
 x: {
     err(e) -> log(e.msg())
+
     nil -> log('nil')
-    ok(v) ->
-        do-right-thing(v)
+
+    ok(v) -> do-right-thing(v)
 }
 
 ; 註：struct 模式匹配（`user: { User{id=1} -> ... }`）與欄位綁定尚未支援，故不示範
 
 score: {
     [0..59] -> print('不及格')
+
     [60..89] -> print('良好')
+
     [90..100] -> print('優秀')
+
     -> print('分數非法')
 }
 
@@ -1127,25 +1154,34 @@ score: {
 ; 範例：使用無界區間做完整分類
 v = 85
 result = v: {
-    [..0)    -> 'negative'
-    [0..60)  -> 'fail'
+    [..0) -> 'negative'
+
+    [0..60) -> 'fail'
+
     [60..80) -> 'pass'
+
     [80..90) -> 'good'
-    [90..100]-> 'excellent'
-    (100..)  -> 'extraordinary'
+
+    [90..100] -> 'excellent'
+
+    (100..) -> 'extraordinary'
 }
 print(result)
 
 num: {
     1 || 3 || 5 || 7 -> print('奇數小數')
+
     2 || 4 || 6 -> print('偶數小數')
+
     -> print('更大數字')
 }
 
 ; 有返回值，最後一個語句/值
 result = x: {
     1 -> 1
+
     2 -> 2 + 1
+
     -> a + b
 }
 
@@ -1156,11 +1192,13 @@ x: {
         do-cleanup()
         return
     }
+
     err -> {
         log(it.msg())
         do-cleanup()
         return
     }
+
     ok -> print(it)
 }
 ```
@@ -1234,12 +1272,15 @@ w: {
         tls-c.close()
         return
     }
+
     err -> {
         tls-c.close()
         return
     }
+
     ok -> n = it
 }
+```
 ```
 
 ```no
@@ -1291,12 +1332,13 @@ val: {
 ```
 
 ```no
-#{fmt-skip}
 ; it 隱式綁定
 val: {
-    ok -> process(it)       ; it = 解包後的值
-    err -> log(it.msg())    ; it = 結構化錯誤 err.err（非 str）
-    -> log('empty')         ; catch-all，此處為 nil
+    ok -> process(it); it = 解包後的值
+
+    err -> log(it.msg()); it = 結構化錯誤 err.err（非 str）
+
+    -> log('empty'); catch-all，此處為 nil
 }
 ```
 
@@ -1334,6 +1376,7 @@ outer: {
 ```no
 #{fmt-skip}
 ; ❌ 不允許：a[1] = 2
+```
 ```
 
 ```no
@@ -1420,8 +1463,10 @@ v: {
 ; ❌ -> 可能是 nil 也可能是 err —— 編譯錯誤
 v: {
     ok -> process(it)
+
     -> log(it)
 }
+```
 ```
 
 補上 `nil ->` / `err ->`，或改用 `ok ->`，即可通過。enum 與裸 match（`{ cond -> ... }`）  
@@ -1500,13 +1545,12 @@ v: {
 1. **管道可以產值**：寫在賦值右側時，管道的結果就是**末尾的值節點**（僅在 state 仍為 Ok 時求值）。
 
 ```no
-#{fmt-skip}
 n = 7
-x = 1 > 2 -> 42        ; 條件不成立 → x 保持原值 7
-y = 2 > 1 -> 42        ; y == 42
+x = 1 > 2 -> 42; 條件不成立 → x 保持原值 7
+y = 2 > 1 -> 42; y == 42
 s str = 'old'
-s = 1 > 2 -> 'new'     ; 短路 → s 仍是 'old'
-r = print('E') -> might-fail(bad) -> 99   ; 中段失敗 → r 保持原值
+s = 1 > 2 -> 'new'; 短路 → s 仍是 'old'
+r = print('E') -> might-fail(bad) -> 99; 中段失敗 → r 保持原值
 ```
 
 失敗（條件不成立或被 `?T` 節點短路）時**賦值不生效**：變數保留它原本的值；若是首次宣告則為該型別的零值。這一點和敘述形式一致 —— `{ 1 > 2 -> x = 42 }` 同樣不會改動 `x`。
@@ -1548,6 +1592,7 @@ max = sum > 10 ? sum : 10
 3. **禁止混雜** — `{}` 短路組內的直接子節點必須全部是 `cond -> body` 分支，不能混入普通語句。
 
 ```no
+#{fmt-skip}
 ; ❌ 不會短路 — 這些是獨立 if，所有條件都會被檢查
 git-dispatch = (cmd str) {
     cmd == 'a' -> {
@@ -1557,6 +1602,7 @@ git-dispatch = (cmd str) {
         fb()
     }
 }
+```
 ```
 
 ```no
@@ -1588,6 +1634,7 @@ git-dispatch = (cmd str) {
 ;   c == 43 -> i = i + 1
 ;   -> break
 ```
+```
 
 ```no
 ; ✅ 同一份代碼寫成 if 組 — 臂間互斥，`->` 才是真正的兜底臂
@@ -1607,10 +1654,15 @@ git-dispatch = (cmd str) {
 #{fmt-skip}
 ; ❌ match-block 混雜普通語句 → 編譯報錯
 {
-    cmd == 'a' -> { fa() }
+    cmd == 'a' -> {
+        fa()
+    }
     print(cmd)
-    cmd == 'b' -> { fb() }
+    cmd == 'b' -> {
+        fb()
+    }
 }
+```
 ```
 
 ```no
@@ -1640,7 +1692,6 @@ Nolang 使用 `run` 和 `awy` 實現異步並發。異步函數的名稱必須�
 - `awy` — 等待異步線程完成並取得結果
 
 ```no
-#{fmt-skip}
 ; 異步函數定義（名稱以 -async 結尾）
 compute-async = (n i64) (r i64) {
     r = n * 2
@@ -1650,7 +1701,7 @@ compute-async = (n i64) (r i64) {
 test-basic = () {
     h = run compute-async(21)
     r = awy h
-    print(r)  ; 42
+    print(r); 42
 }
 
 ; 並發多個任務
@@ -1659,14 +1710,14 @@ test-concurrent = () {
     h2 = run compute-async(20)
     r1 = awy h1
     r2 = awy h2
-    print(r1)  ; 20
-    print(r2)  ; 40
+    print(r1); 20
+    print(r2); 40
 }
 
 ; 內聯等待
 test-inline = () {
     r = awy run compute-async(5)
-    print(r)  ; 10
+    print(r); 10
 }
 ```
 
@@ -1678,7 +1729,6 @@ test-inline = () {
 結果在**需要它的地方**才 `awy`。不需要寫 `run` / `awy`。
 
 ```no
-#{fmt-skip}
 hello-async = (i i64) (r i64) {
     r = i
 }
@@ -1691,8 +1741,8 @@ test-concurrent = () {
         r1 = hello-async(1)
         r2 = hello-async(2)
     }
-    print(r1)  ; 1
-    print(r2)  ; 2
+    print(r1); 1
+    print(r2); 2
 }
 
 ; 有依賴：r2 讀 r1，不能並發 —— 退化成 await（順序執行）
@@ -1703,8 +1753,8 @@ test-sequential = () {
         r1 = hello-async(1)
         r2 = hello-async(r1)
     }
-    print(r1)  ; 1
-    print(r2)  ; 1
+    print(r1); 1
+    print(r2); 1
 }
 ```
 
@@ -1726,17 +1776,18 @@ test-sequential = () {
 `co` 是建立在協程組之上的**無色（colorless）**&#x8A9E;法：你寫未染色的函式名 `worker`，編譯器自動單態化出 `worker-async` 變體，並在底層以染色無棧協程執行。你不需要手寫 `-async` 後綴，也不需要手寫 `run` / `awy`。
 
 ```no
-#{fmt-skip}
 worker = (n i64) (r i64) {
+
     #{overflow=wrap}
     r = n + 1
 }
+
 ; 入口由頂層語句自動合成（無需、也不允許顯式 `main`）
 r1 i64
 r2 i64
 {
-    r1 = co worker(1)   ; 自動單態 worker-async 並 spawn
-    r2 = co worker(2)   ; 與 r1 並發執行
+    r1 = co worker(1); 自動單態 worker-async 並 spawn
+    r2 = co worker(2); 與 r1 並發執行
 }
 print(r1.to-str() + ' ' + r2.to-str())
 ```
@@ -1753,7 +1804,6 @@ print(r1.to-str() + ' ' + r2.to-str())
 函數可以返回多個值，調用時使用多重賦值接收：
 
 ```no
-#{fmt-skip}
 ; 函數定義返回多個結果參數
 swap = (a i64, b i64) (x i64, y i64) {
     x = b
@@ -1764,13 +1814,16 @@ swap = (a i64, b i64) (x i64, y i64) {
 a, b = swap(5, 3)
 
 ; 使用 _ 忽略不需要的返回值（占位變數）
-_, b = swap(5, 3)   ; 只取第二個值，忽略第一個
-a, _ = swap(5, 3)   ; 只取第一個值，忽略第二個
-_, _ = swap(5, 3)   ; 忽略全部返回值（呼叫僅為副作用）
+_, b = swap(5, 3); 只取第二個值，忽略第一個
+a, _ = swap(5, 3); 只取第一個值，忽略第二個
+_, _ = swap(5, 3); 忽略全部返回值（呼叫僅為副作用）
 
 ; 也支援作為 match arm 的 body
 val: {
-    ok -> a, b = parse-pair(it)
+    ok -> {
+        a, b = parse-pair(it)
+    }
+
     -> return
 }
 ```
@@ -1788,7 +1841,6 @@ val: {
 | `%` | `_mod` |
 
 ```no
-#{fmt-skip}
 big {
     v i64
 }
@@ -1801,7 +1853,7 @@ big._add = (b big) (c ?big) {
 }
 
 f = (a big, b big) (out big) {
-    r big = a + b      ; 編譯器改寫為 a._add(b)
+    r big = a + b; 編譯器改寫為 a._add(b)
     out = r
 }
 ```
@@ -1822,28 +1874,26 @@ f = (a big, b big) (out big) {
 **定長数组arr：**
 
 ```no
-#{fmt-skip}
-
 ; 使用定長数组
-a [3] = [1, 2, 3]    ; 长度为 3 的定長数组 i64
-a [3]u16 = [1, 2, 3] ; 指定类型的定長数组
+a [3] = [1, 2, 3]; 长度为 3 的定長数组 i64
+a [3]u16 = [1, 2, 3]; 指定类型的定長数组
 
-a [?]u16 = [1, 2, 3] ; 自動推斷長度（指定類型）
-a [?] = [1, 2, 3]    ; 自動推斷長度（i64）
+a[nil]
+u16 = [1, 2, 3]; 自動推斷長度（指定類型）
+a[nil] = [1, 2, 3]; 自動推斷長度（i64）
 ```
 
 **變長數組vec：**
 
 ```no
-#{fmt-skip}
-v = [1, 2, 3]     ; 變長數組 i64
+v = [1, 2, 3]; 變長數組 i64
 bs = [0x11, 0x22, 0x33]
-v []u8 = [1, 2, 3] ; 指定类型的變長數組
+v []u8 = [1, 2, 3]; 指定类型的變長數組
 
 ; 預分配（避免反覆擴容）
-v = with-cap(100)          ; len=0, cap=100（需 push 後索引）
-v = with-len(100)          ; len=100, cap=100（可直接索引）
-v = with-cap-len(200, 100) ; len=100, cap=200（預留擴容空間）
+v = with-cap(100); len=0, cap=100（需 push 後索引）
+v = with-len(100); len=100, cap=100（可直接索引）
+v = with-cap-len(200, 100); len=100, cap=200（預留擴容空間）
 ```
 
 **切片slice（視圖，非獨立類型）：**
@@ -1856,24 +1906,23 @@ v = with-cap-len(200, 100) ; len=100, cap=200（預留擴容空間）
 - 切片的類型由原始類型決定，方法自然適用，無需「繼承」機制
 
 ```no
-#{fmt-skip}
 ; 支持arr/vec/str
 ; 支持範圍 和for <- 的表示一致
 nums [5]u8 = [0, 1, 2, 3, 4]
 
-nums[..] ;  [0 1 2 3 4]   完全無界，等同整個切片
-nums[1..] ; [1 2 3 4]     無上限，從索引 1 到末尾
-nums[..4] ; [0 1 2 3 4]   無下限，從開頭到索引 4
-nums[2..3] ; [2 3]        有界，兩端都包含
-nums[1..3] ; [1 2 3]      有界，兩端都包含
-nums[1..3) ; [1 2]        左閉右開
-nums(1..3) ; [2]          兩端開區間
+nums[..]; [0 1 2 3 4]   完全無界，等同整個切片
+nums[1..]; [1 2 3 4]     無上限，從索引 1 到末尾
+nums[..4]; [0 1 2 3 4]   無下限，從開頭到索引 4
+nums[2..3]; [2 3]        有界，兩端都包含
+nums[1..3]; [1 2 3]      有界，兩端都包含
+nums[1..3); [1 2]        左閉右開
+nums(1..3); [2]          兩端開區間
 
 ; 字符串（切片結果型別為 str 視圖，共享底層記憶體；下標為碼點位置，與 s[i] 一致）
 s = 'abc'
-s[1..]   ; 'bc'
-s[1..s.len()) ; 'bc'
-b str = s[0..1]   ; 切片結果已是 str，可直接賦值給 str 變數
+s[1..]; 'bc'
+s[1..s.len()); 'bc'
+b str = s[0..1]; 切片結果已是 str，可直接賦值給 str 變數
 ```
 
 > 切片語法支援與 match/range-for 相同的 16 種區間組合。在切片上下文中，無界區間基於切片的長度：`[..]` 表示整個切片，`[a..]` 表示從索引 a 到末尾，`[..b]` 表示從開頭到索引 b。
@@ -1890,44 +1939,40 @@ b str = s[0..1]   ; 切片結果已是 str，可直接賦值給 str 變數
 | `str`          | `str<range>` | `str` 的所有方法（如 `to-upper`、`to-lower`、`index`、`contains`、`slice`、`copy`、`fill` 等）  |
 
 ```no
-#{fmt-skip}
 ; arr 切片 → vec 視圖，共享 arr 的底層記憶體
 a [5]u8 = [0, 1, 2, 3, 4]
-s = a[1..4]    ; s 是 []u8 視圖，指向 a 的記憶體
-n = s.len()    ; slice.len()
+s = a[1..4]; s 是 []u8 視圖，指向 a 的記憶體
+n = s.len(); slice.len()
 
 ; vec 切片 → vec 視圖，共享 vec 的底層記憶體
 v = [10, 20, 30, 40, 50]
-s = v[2..]     ; s 是 []i64 視圖
-s.reverse(s.len())  ; slice.reverse
+s = v[2..]; s 是 []i64 視圖
+s.reverse(s.len()); slice.reverse
 
 ; str 切片 → str 視圖，共享 str 的底層記憶體
 s = 'Hello World'
-sub = s[6..]   ; sub 是 'World' 視圖
-upper = sub.to-upper()  ; str.to-upper
+sub = s[6..]; sub 是 'World' 視圖
+upper = sub.to-upper(); str.to-upper
 
 ; 通過切片修改元素會影響原始資料
 data = [10, 20, 30, 40, 50]
-view = data[1..4]    ; view = [20, 30, 40]
-view[0] = 99         ; 修改 view 的元素
+view = data[1..4]; view = [20, 30, 40]
+view[0] = 99; 修改 view 的元素
 ; data[1] 現在也是 99，因為 view 共享 data 的記憶體
 ```
 
 ### 索引
 
 ```no
-#{fmt-skip}
-
 ; 字符串索引 → 回傳 ?char（Unicode 碼點，不是字節）
-c char = s[i]              ; 顯式 plain 型別把結果拉回 char（見〈安全索引〉）
+c char = s[i]; 顯式 plain 型別把結果拉回 char（見〈安全索引〉）
 
- ; arr、vec獲取元素
-arr[i]                     ; → ?elem
-vec[i]                     ; → ?elem
+; arr、vec獲取元素
+arr[i]; → ?elem
+vec[i]; → ?elem
 
- ; map 獲取 value
+; map 獲取 value
 map[str]
-
 ```
 
 > **索引讀取的結果恆為 `?T`**：`arr[i]` / `vec[i]` / 定長陣列 / `slice` → `?elem`，  
@@ -1939,13 +1984,12 @@ map[str]
 > `char` 可**隱式轉換為 `str`**（編碼為單字元字串），因此下列寫法皆合法，無需手動呼叫 `char.to-str()`：
 
 ```no
-#{fmt-skip}
 s = 'héllo'
-c char = s[1]               ; 'é'（char，其碼點為 233）
-a str  = s[1]               ; 'é'（char → str 隱式轉換）
-b str  = s[0..1]            ; 'hé'（切片結果本身已是 str）
-msg    = 'first: ' - s[0]   ; char 參與拼接（-）時隱式轉為 str
-ok     = s[0] == 'h'        ; char 與 str 比較時隱式轉為 str
+c char = s[1]; 'é'（char，其碼點為 233）
+a str = s[1]; 'é'（char → str 隱式轉換）
+b str = s[0..1]; 'hé'（切片結果本身已是 str）
+msg = 'first: ' - s[0]; char 參與拼接（-）時隱式轉為 str
+ok = s[0] == 'h'; char 與 str 比較時隱式轉為 str
 ```
 
 ### 安全索引（Safe Indexing）
@@ -1961,7 +2005,6 @@ ok     = s[0] == 'h'        ; char 與 str 比較時隱式轉為 str
 在值語境下产出**元素型別的零值**（i64→0、str→''、byte→0、容器→空容器）。
 
 ```no
-#{fmt-skip}
 ; 值 match
 x = state[5]: {
     ok -> it
@@ -1982,7 +2025,6 @@ state[5]: {
 `it` 在 `ok` 臂裡是**元素位置**（可讀可寫），不是值副本。
 
 ```no
-#{fmt-skip}
 state[5]: {
     ok -> it = x
 
@@ -2006,7 +2048,6 @@ state[5]: {
 兩者皆非是編譯錯誤。因此「回傳值不是 option 也想用簡寫」的標準兜底就是把函式體包進塊 match：
 
 ```no
-#{fmt-skip}
 handle = (x i64) {
     {
         y ?= x + 1
@@ -2026,7 +2067,6 @@ lowering 時把該值 match 提升為合成暫存再重綁 `it`，回歸見
 仍可自行提升到具名暫存，兩種寫法等價：
 
 ```no
-#{fmt-skip}
 ixout1 = state[9]: {
     ok -> it
 
@@ -2116,6 +2156,7 @@ db-mysql db {
     fd i64
 }
 ```
+```
 
 ```no
 ; ✅ 正確：使用 sql.db、sql.rows、sql.stmt
@@ -2162,7 +2203,6 @@ type.method-name = (params) (results) {
 ### 示例
 
 ```no
-#{fmt-skip}
 ; str 方法
 str.to-upper = () (out str) {
     out = with-cap(.len-bytes())
@@ -2170,6 +2210,7 @@ str.to-upper = () (out str) {
         c = .byte(i)
         {
             c >= 97 && c <= 122 -> out[i] = c - 32
+
             -> out[i] = c
         }
     }
@@ -2193,10 +2234,10 @@ user.greet = () {
 
 ; 調用
 s = 'hello'
-u = s.to-upper()     ; receiver.method()
+u = s.to-upper(); receiver.method()
 c char = 5
-d = c.is-digit()     ; receiver.method()
-u = user{
+d = c.is-digit(); receiver.method()
+u = user {
     name: 'Alice'
     age: 30
 }
@@ -2338,33 +2379,44 @@ struct-name {
 #{fmt-skip}
 ; 標籤列舉：變體可帶載荷，tag 依聲明順序為 0,1,2...
 result {
-    ok(v t),        ; 有值：載荷欄位 v，型別 t
-    nil,            ; 空值：無載荷
-    err(e str),     ; 錯誤：載荷欄位 e，型別 str（用戶自定義枚舉，與內建 option 無關）
+    ok(v t),
+    nil,
+    err(e str),
 }
 
+; 有值：載荷欄位 v，型別 t
+; 空值：無載荷
+; 錯誤：載荷欄位 e，型別 str（用戶自定義枚舉，與內建 option 無關）
+
 shape {
-    circle(r f64),           ; 單欄位
-    rect(w f64, h f64),      ; 多欄位
-    dot,                     ; 無載荷
+    circle(r f64),
+    rect(w f64, h f64),
+    dot,
 }
+; 單欄位
+; 多欄位
+; 無載荷
+```
 ```
 
 匹配時用變體名作為臂模式；帶載荷的變體可析構綁定載荷（多欄位按位置一一綁定）：
 
 ```no
-#{fmt-skip}
 r result = ok(42)
 r: {
-    ok(v) -> print(v)    ; 把 ok 的載荷綁定到 v
+    ok(v) -> print(v); 把 ok 的載荷綁定到 v
+
     nil -> print('empty')
+
     err(e) -> print(e)
 }
 
 s shape = rect(3.0, 4.0)
 s: {
-    circle(r) -> print(r)        ; 綁定單欄位
-    rect(w, h) -> print(w * h)   ; 按位置綁定多欄位
+    circle(r) -> print(r); 綁定單欄位
+
+    rect(w, h) -> print(w * h); 按位置綁定多欄位
+
     dot -> print('dot')
 }
 ```
@@ -2372,9 +2424,8 @@ s: {
 變體可在**表達式位置**直接建構，作為函數引數或其它變體的載荷：
 
 ```no
-#{fmt-skip}
-x f64 = perimeter(rect(3.0, 4.0))   ; 內聯建構並傳參
-o outer = wrap(a(5))                ; 枚舉載荷本身是另一個枚舉
+x f64 = perimeter(rect(3.0, 4.0)); 內聯建構並傳參
+o outer = wrap(a(5)); 枚舉載荷本身是另一個枚舉
 ```
 
 > **命名空間與裸名解析**：編譯器內部以「完整限定名」登記變體（`模組.枚舉.變體`，  
@@ -2496,16 +2547,15 @@ color {
 **按值內聯**在宿主結構體內（`%pt`），還是存成**指標**（`ptr`）。
 
 ```no
-#{fmt-skip}
 pt {
     x i64
     y i64
 }
 
 holder {
-    inl pt #{inline=true}    ; 按值：結構體直接長在 holder 裡
-    out pt #{inline=false}   ; 指標：欄位存的是指向 pt 的指標
-    bare pt #{inline}        ; 簡寫，等於 inline=true
+    inl pt #{inline=true}; 按值：結構體直接長在 holder 裡
+    out pt #{inline=false}; 指標：欄位存的是指向 pt 的指標
+    bare pt #{inline}; 簡寫，等於 inline=true
 }
 ```
 
@@ -2552,16 +2602,15 @@ holder {
 唯一的寫法就是明確要求指標：
 
 ```no
-#{fmt-skip}
 node {
     v i64
-    next node #{inline=false}   ; 指標：這樣 node 才有有限大小
+    next node #{inline=false}; 指標：這樣 node 才有有限大小
 }
 
 n node
 n.v = 1
 n.next.v = 2
-print(n.next.v)                 ; 2
+print(n.next.v); 2
 ```
 
 若把上面的 `#{inline=false}` 拿掉（或寫成 `#{inline=true}`），LLVM 會直接拒絕這個  
@@ -2587,6 +2636,7 @@ print(n.next.v)                 ; 2
 ; ❌ 錯誤：直接使用裸值
 kind = null
 yes = e.is(io)
+```
 ```
 
 ```no
@@ -2637,13 +2687,15 @@ read-file = () {
 `?t` 是內建標籤列舉，其變體定義於 `src/std/global.no`：
 
 ```no
-#{fmt-skip}
 #{buildin}
 option {
-    ok(v t),        ; tag 0：有值
-    nil,            ; tag 1：空值
-    err(e err.err), ; tag 2：錯誤（std 結構化錯誤 err.err）
+    ok(v t),
+    nil,
+    err(e err.err),
 }
+; tag 0：有值
+; tag 1：空值
+; tag 2：錯誤（std 結構化錯誤 err.err）
 ```
 
 `err` 變體的載荷**不是 `str`**，而是 `std/err` 的 `err` 結構體（`code` / `msg` / `file` / `line` / `col`）。
@@ -2654,12 +2706,10 @@ option {
 構造器），`option` 的列舉聲明僅用於匹配與窮盡性檢查。詳見「標籤列舉」與「內建標籤列舉」。
 
 ```no
-#{fmt-skip}
-
 o ?i64
-o = nil          ; 設為空
-o = 42           ; 設為有值
-o = err('msg')   ; 設為錯誤
+o = nil; 設為空
+o = 42; 設為有值
+o = err('msg'); 設為錯誤
 
 nullableValue ?[]str
 nullableString ?str
@@ -2672,15 +2722,16 @@ nullableString = err('some error')
 
 ; 可通過match判斷
 x: {
-    err -> log(it.msg())      ; it 是 err.err，訊息靠 .msg()
+    err -> log(it.msg()); it 是 err.err，訊息靠 .msg()
+
     nil -> log('nil')
-    ->
-        do-right-thing(it)
+
+    -> do-right-thing(it)
 }
 
 ; 強制解包
 ; 取消實現
-;!x.say()
+; !x.say()
 ```
 
 ### 風格指引：使用 ?t option 取代 (val, ok)
@@ -2698,9 +2749,9 @@ stack.pop = () (val i64, ok bool) {
     ok = true
 }
 ```
+```
 
 ```no
-#{fmt-skip}
 ; ✅ 推薦：option 類型（nil 表示空，err 表示錯誤）
 stack.pop = () (val ?i64) {
     .n == 0 -> {
@@ -2716,6 +2767,7 @@ file.read = () (data ?str) {
         data = err('file not open')
         return
     }
+
     ; ... 讀取資料
     data = buf
 }
@@ -2724,12 +2776,13 @@ file.read = () (data ?str) {
 使用 match 解包 option：
 
 ```no
-#{fmt-skip}
 val = s.pop()
 val: {
     nil -> print('empty')
-    err -> print(it.msg())    ; it = 結構化錯誤 err.err
-    -> print(it)              ; it = 彈出的值
+
+    err -> print(it.msg()); it = 結構化錯誤 err.err
+
+    -> print(it); it = 彈出的值
 }
 ```
 
@@ -2778,14 +2831,15 @@ Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或
 未標註時，`a - b` 的結果型別是 `option<int>`。接收端必須是 `?T`（可空型別），並用 match 解構 `err` / `nil` / `ok` 三個分支：
 
 ```nolang
-#{fmt-skip}
 main = () {
     x i64 = 100
-    d ?i64 = x - 1          ; 默認：返回 option<i64>
+    d ?i64 = x - 1; 默認：返回 option<i64>
     d: {
-        err -> print(-1)    ; 溢出（如 x - 2^63 下溢）
+        err -> print(-1); 溢出（如 x - 2^63 下溢）
+
         nil -> print(0)
-        -> print(1)         ; ok(value)：正常結果
+
+        -> print(1); ok(value)：正常結果
     }
 }
 main()
@@ -2796,30 +2850,29 @@ main()
 ### wrap：靜默回繞
 
 ```nolang
-#{fmt-skip}
-#{overflow = wrap}
+#{overflow=wrap}
 sub-wrap = (a i64, b i64) (r i64) {
-    r = a - b              ; 溢出時靜默 2's 補數回繞；r 是 plain i64（顯式型別）
+    r = a - b; 溢出時靜默 2's 補數回繞；r 是 plain i64（顯式型別）
 }
 ```
 
 語句級：
 
 ```nolang
-#{fmt-skip}
 x i64 = -9223372036854775807
-#{overflow = wrap}
-w i64 = x - 2             ; 下溢回繞 → 9223372036854775807
+
+#{overflow=wrap}
+w i64 = x - 2; 下溢回繞 → 9223372036854775807
 print(w)
 ```
 
 ### clamp0：溢出歸零
 
 ```nolang
-#{fmt-skip}
 x i64 = -9223372036854775807
-#{overflow = clamp0}
-c i64 = x - 2             ; 下溢 → 0（上溢同樣歸零）
+
+#{overflow=clamp0}
+c i64 = x - 2; 下溢 → 0（上溢同樣歸零）
 print(c)
 ```
 
@@ -2828,35 +2881,33 @@ print(c)
 三種模式把溢出結果「夾」在型別可表示區間內，而非回繞或歸零：
 
 ```nolang
-#{fmt-skip}
-#{overflow = min}
+#{overflow=min}
 floor = (a i64, b i64) (r i64) {
-    r = a - b              ; 下溢 → i64 最小值；上溢 → i64 最大值
+    r = a - b; 下溢 → i64 最小值；上溢 → i64 最大值
 }
 
-#{overflow = max}
+#{overflow=max}
 cap = (a i64, b i64) (r i64) {
-    r = a * b              ; 上溢 → i64 最大值；下溢 → i64 最小值
+    r = a * b; 上溢 → i64 最大值；下溢 → i64 最小值
 }
 
-#{overflow = saturate}
+#{overflow=saturate}
 sat = (a i64, b i64) (r i64) {
-    r = a + b              ; 上溢→max、下溢→min
+    r = a + b; 上溢→max、下溢→min
 }
 ```
 
 型別前綴形式可精確控制窄型別的飽和界限（函數級註解會套用到體內所有對應型別運算）：
 
 ```nolang
-#{fmt-skip}
-#{overflow = u8-max}
+#{overflow=max}
 inc = (x u8) (r u8) {
-    r = x + 1              ; x = 255 時上溢 → 255（而非回繞成 0）
+    r = x + 1; x = 255 時上溢 → 255（而非回繞成 0）
 }
 
-#{overflow = i8-min}
+#{overflow=min}
 dec = (x i8) (r i8) {
-    r = x - 1              ; x = -128 時下溢 → -128（而非回繞成 127）
+    r = x - 1; x = -128 時下溢 → -128（而非回繞成 127）
 }
 ```
 
@@ -2900,14 +2951,13 @@ dec = (x i8) (r i8) {
 | plain `int` | 陳述帶 `#{overflow = ...}` | 結果強制為 `0`，並在 **stderr** 印出 `nolang: integer division or remainder by zero ...` |
 
 ```nolang
-#{fmt-skip}
 safe = (a i64, b i64) (r ?i64) {
-    r = a / b                ; b == 0 → err（呼叫方必須處理）
+    r = a / b; b == 0 → err（呼叫方必須處理）
 }
 
-#{overflow = wrap}
+#{overflow=wrap}
 fast = (a i64, b i64) (r i64) {
-    r = a / b                ; b == 0 → 0 並印一行 stderr 診斷（不再是裸 sdiv 的 UB）
+    r = a / b; b == 0 → 0 並印一行 stderr 診斷（不再是裸 sdiv 的 UB）
 }
 ```
 
@@ -3012,6 +3062,7 @@ x = x-opt: {
 `#{...}` 註解**綁定到節點**，因此同一條陳述可同時帶多個鍵；多個註解一律**合併成單行**：
 
 ```nolang
+#{fmt-skip}
 i <- [0..16): {
 
     #{index-out=0, overflow=wrap}
@@ -3051,7 +3102,6 @@ v ?= expr
 也想用簡寫」的標準兜底：
 
 ```no
-#{fmt-skip}
 handle = (x i64) {
     {
         y ?= x + 1
@@ -3069,11 +3119,10 @@ handle = (x i64) {
 **示例：**
 
 ```no
-#{fmt-skip}
 ; 逐行讀取檔案並處理 — 使用 ?= 簡化錯誤傳播
 process-file = (path str) (result ?str) {
-    f ?= open(path)             ; 失敗時自動 result = f; return
-    line ?= f.read-line()      ; EOF 或錯誤時自動上拋
+    f ?= open(path); 失敗時自動 result = f; return
+    line ?= f.read-line(); EOF 或錯誤時自動上拋
     result = line
 }
 ```
@@ -3107,10 +3156,9 @@ process-file = (path str) (result ?str) {
 **鏈式使用：** 多個 `?=` 可以串聯使用，實現管道式錯誤傳播：
 
 ```no
-#{fmt-skip}
 pipeline = (input str) (result ?str) {
-    a ?= step1(input)     ; 失敗則上拋
-    b ?= step2(a)         ; 失敗則上拋
+    a ?= step1(input); 失敗則上拋
+    b ?= step2(a); 失敗則上拋
     result = b
 }
 ```
@@ -3118,15 +3166,14 @@ pipeline = (input str) (result ?str) {
 **裸算術運算：** `?=` 的右側不限於函數呼叫——任何回傳 `option` 的整數運算（如未標註的 `a - b`、`a + b`、`a * b`）都可以直接用 `?=` 上拋溢出錯誤，無需先綁定到中間變數：
 
 ```no
-#{fmt-skip}
 ; 溢出時自動 result = err; return，正常時 v 解包為內部值
 sub-safe = (a i64, b i64) (result ?i64) {
-    v ?= a - b          ; 下溢/上溢 → err 自動上拋；否則 v = 內部 i64
+    v ?= a - b; 下溢/上溢 → err 自動上拋；否則 v = 內部 i64
     result = v
 }
 
 add-safe = (a i64, b i64) (result ?i64) {
-    v ?= a + b          ; 同上，適用於 + * 與有號 /
+    v ?= a + b; 同上，適用於 + * 與有號 /
     result = v
 }
 ```
@@ -3156,19 +3203,18 @@ sub-safe = (a i64, b i64) (result ?i64) {
 **複合右側（compound RHS）：** `?=` 的右側可以是一個含多個 option 運算元的複合運算式。每個 option 運算元會被自動解包，並注入傳播守衛——只要任一運算元為 `nil` / `err`，當前函數的 option 結果參數即被設為該值並 `return`（向上拋）；全部成功才把內部值賦給左值：
 
 ```no
-#{fmt-skip}
 sum3 = () (result ?i64) {
     a ?i64 = ok(10)
     b ?i64 = ok(20)
     c ?i64 = ok(30)
-    total ?= a + b + c          ; 每個 option 運算元自動解包並傳播
+    total ?= a + b + c; 每個 option 運算元自動解包並傳播
     result = total
 }
 
 comp = () (result ?i64) {
     a ?i64 = ok(4)
     b ?i64 = ok(6)
-    v ?= dbl(a + b)            ; a + b 可能是 option，同樣自動解包並傳播
+    v ?= dbl(a + b); a + b 可能是 option，同樣自動解包並傳播
     result = v
 }
 ```
@@ -3201,12 +3247,13 @@ comp = () (result ?i64) {
 
 ```no
 #{fmt-skip}
-pair = () (a ?i64, b ?i64) {     ; 錯誤：兩個 ?T 返回參數
+pair = () (a ?i64, b ?i64) {; 錯誤：兩個 ?T 返回參數
     a = ok(1)
-    v ?= boom()                  ; boom() 回 err('boom')
+    v ?= boom(); boom() 回 err('boom')
     a = v
-    b = ok(2)                    ; 永不執行 —— 呼叫方看到 (err, nil)
+    b = ok(2); 永不執行 —— 呼叫方看到 (err, nil)
 }
+```
 ```
 
 正確寫法是把獨立值宣告成 plain 型別，只留一個 `?T` 當錯誤通道：
@@ -3226,13 +3273,20 @@ lookup = (k str) (value str, found bool, err ?str) {
 `?=` 的語義是「錯誤向上拋」——它要求所在函式有 option 結果參數，失敗時提前 `return`。當你不希望提前返回、而是想在原地處理錯誤時，用普通 `=`：只要右側含**可錯源**，目標變數就會自動推斷為 `?T`，`nil` / `err` **就地存進該變數**，流程繼續。
 
 ```no
-#{fmt-skip}
 handle = (b i64, c i64, d i64) (r i64) {
-    a = b + c / d        ; a 推斷為 ?i64；除零 → a = err
+    a = b + c / d; a 推斷為 ?i64；除零 → a = err
     a: {
-        err -> { r = -1 }    ; 就地處理錯誤
-        nil -> { r = -1 }
-        -> { r = it }        ; 成功：r = b + c/d
+        err -> {
+            r = -1; 就地處理錯誤
+        }
+
+        nil -> {
+            r = -1
+        }
+
+        -> {
+            r = it; 成功：r = b + c/d
+        }
     }
 }
 ```
@@ -3251,13 +3305,20 @@ handle = (b i64, c i64, d i64) (r i64) {
 **純算術不是可錯源**：`+ - * <<` 與取負本身不觸發捕獲（否則所有算術都會變成 option）。但一旦落在 option 路徑上（例如右側另有 `/`，或目標顯式宣告 `?T`），這些運算會帶**運行期溢出檢查**，溢出 → `err`：
 
 ```no
-#{fmt-skip}
 ovf = (x i64) (r i64) {
-    a ?i64 = x + 1        ; 顯式 ?T → 走 option 包裝路徑
+    a ?i64 = x + 1; 顯式 ?T → 走 option 包裝路徑
     a: {
-        err -> { r = 0 }     ; x = i64-max 時溢出 → err
-        nil -> { r = 0 }
-        -> { r = it }
+        err -> {
+            r = 0; x = i64-max 時溢出 → err
+        }
+
+        nil -> {
+            r = 0
+        }
+
+        -> {
+            r = it
+        }
     }
 }
 ```
@@ -3305,10 +3366,9 @@ y = x as *byte
 窄整數型別的值可以自動賦值給更寬的型別，因為目標型別的範圍完全包含來源型別：
 
 ```no
-#{fmt-skip}
 b byte = 200
-i i64 = b        ; ✓ byte 範圍 [0,255] ⊆ i64 範圍
-u u32 = b        ; ✓ byte 範圍 ⊆ u32 範圍
+i i64 = b; ✓ byte 範圍 [0,255] ⊆ i64 範圍
+u u32 = b; ✓ byte 範圍 ⊆ u32 範圍
 ```
 
 #### 整數字面量賦值
@@ -3317,9 +3377,10 @@ u u32 = b        ; ✓ byte 範圍 ⊆ u32 範圍
 
 ```no
 #{fmt-skip}
-n u8 = 200       ; ✓ 200 ∈ [0,255]
-m u8 = 300       ; ✗ 300 > 255，編譯錯誤
-big u64 = 18446744073709551615  ; ✓ 2^64-1，u64 最大值
+n u8 = 200; ✓ 200 ∈ [0,255]
+m u8 = 300; ✗ 300 > 255，編譯錯誤
+big u64 = 18446744073709551615; ✓ 2^64-1，u64 最大值
+```
 ```
 
 #### 不安全的窄化（編譯錯誤）
@@ -3329,11 +3390,12 @@ big u64 = 18446744073709551615  ; ✓ 2^64-1，u64 最大值
 ```no
 #{fmt-skip}
 d u64 = 42
-h u32 = d        ; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
-h u16 = d        ; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
-h u8 = d         ; ✗ cannot assign u64 value to u8 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 255`) or right shift (e.g. `>> 56`)
-x u32 = d + 1    ; ✗ 加法結果仍為 u64，不安全
-y u32 = foo()    ; ✗ 函式呼叫結果型別不匹配
+h u32 = d; ✗ cannot assign u64 value to u32 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 4294967295`) or right shift (e.g. `>> 32`)
+h u16 = d; ✗ cannot assign u64 value to u16 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 65535`) or right shift (e.g. `>> 48`)
+h u8 = d; ✗ cannot assign u64 value to u8 variable 'h'; hint: narrow safely with a bitwise mask (e.g. `& 255`) or right shift (e.g. `>> 56`)
+x u32 = d + 1; ✗ 加法結果仍為 u64，不安全
+y u32 = foo(); ✗ 函式呼叫結果型別不匹配
+```
 ```
 
 > **修復提示**：編譯器會根據目標型別自動計算精確的 mask 值和位移量。按照提示套用 mask 或位移後，即可安全窄化（見下節）。
@@ -3345,19 +3407,18 @@ y u32 = foo()    ; ✗ 函式呼叫結果型別不匹配
 當賦值的右側是**位元運算表達式**（`&`、`|`、`^`、`<<`、`>>`）且目標型別為**無號整數**（`u8`/`u16`/`u32`/`u64`/`byte`）時，編譯器允許隱式窄化——因為截斷高位是位元操作的標準語義，不會造成非預期的資料遺失：
 
 ```no
-#{fmt-skip}
 d u64 = 42
 
 ; ✓ mask 運算：結果必 ≤ mask 值，安全落入 u32
-h u32 = d & 67108863          ; mask = 2^26-1 < 2^32
-h u32 = d & 4294967295        ; mask = 2^32-1，正好 u32 範圍
+h u32 = d & 67108863; mask = 2^26-1 < 2^32
+h u32 = d & 4294967295; mask = 2^32-1，正好 u32 範圍
 
 ; ✓ 位移運算：右移後高位為 0，安全
-hi u32 = d >> 32              ; u64 >> 32 留 32 bits
+hi u32 = d >> 32; u64 >> 32 留 32 bits
 
 ; ✓ XOR / OR 組合
-c u32 = a ^ b                 ; 位元運算結果
-b byte = v & 255              ; mask 到 byte 範圍
+c u32 = a ^ b; 位元運算結果
+b byte = v & 255; mask 到 byte 範圍
 
 ; ✓ 複合位元運算（常見於密碼學/編解碼）
 s u32 = (key[0] & 255) | ((key[1] & 255) << 8) | ((key[2] & 255) << 16) | ((key[3] & 255) << 24)
@@ -3431,11 +3492,10 @@ utils/
 ```
 
 ```no
-#{fmt-skip}
 # /cfg/server
 
-print(server.port)             ; 8080
-print(server.compiler.version) ; v0.1.0
+print(server.port); 8080
+print(server.compiler.version); v0.1.0
 ```
 
 - 欄位型別優先取成員的 `#{type = '...'}` 註解（值是完整的 nolang 型別表達式，如
@@ -3459,11 +3519,11 @@ print(server.compiler.version) ; v0.1.0
 ```
 
 ```no
-#{fmt-skip}
 # /cfg/db
 # /cfg/db as db2
-print(db-options.host)   ; localhost
-print(db2.host)          ; localhost
+
+print(db-options.host); localhost
+print(db2.host); localhost
 ```
 
 - 兩個不同檔案生成同一型別名時（例如不同目錄下的同名檔案）會報錯，用頂部
@@ -3938,11 +3998,10 @@ no build -ld-KEY=VALUE [更多 -ld...] <file>
 ### 範例
 
 ```no
-#{fmt-skip}
 ; 假設使用 -ld-VERSION=0.1.2 -ld-COUNT=42 -ld-DEBUG=true 編譯
-print('VERSION:', VERSION)  ; 輸出: VERSION: 0.1.2
-print('COUNT:', COUNT)      ; 輸出: COUNT: 42
-print('DEBUG:', DEBUG)      ; 輸出: DEBUG: 1 (bool 在原生後端印為 1)
+print('VERSION:', VERSION); 輸出: VERSION: 0.1.2
+print('COUNT:', COUNT); 輸出: COUNT: 42
+print('DEBUG:', DEBUG); 輸出: DEBUG: 1 (bool 在原生後端印為 1)
 ```
 
 ```bash

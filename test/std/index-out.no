@@ -250,6 +250,37 @@ t-unwrap-assign = () {
     runner.eq(t-unwrap-helper(2), 30, 'x ?= a[2] 取到 30')
 }
 
+; ── 寫目標 `?=` 的 RHS 也是 option：一次 `?=` 同時消費「寫目標位置」與「RHS 值」──
+;
+; 重點是 RHS 越界時 err 必須上拋到函式的 option 結果，不能被 `it = <option>`
+; 的隱式解包靜默吞掉（舊行為：dst 維持 0、函式回 ok(0)）。
+t-index-rhs-helper = (k i64) (r ?i64) {
+    src [4]i64 = [10, 20, 30, 40]
+    dst [4]i64 = [0, 0, 0, 0]
+    dst[0] ?= src[k]
+    r = dst[0]
+}
+
+t-unwrap-index-rhs = () {
+    v = t-index-rhs-helper(2)
+    got = v: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(got, 30, 'dst[0] ?= src[2] 真的寫入 30')
+
+    w = t-index-rhs-helper(9)
+    st = w: {
+        ok -> 'ok'
+
+        nil -> 'nil'
+
+        err -> 'err'
+    }
+    runner.str-eq(st, 'err', 3, 'RHS 越界由 ?= 上拋 err（不是靜默略過）')
+}
+
 p1, f1 = runner.test('index.out.fixed', t-arr-fixed)
 
 #{overflow=wrap}
@@ -337,6 +368,14 @@ passed = passed + p11
 
 #{overflow=wrap}
 failed = failed + f11
+
+p12, f12 = runner.test('index.out.unwrap-index-rhs', t-unwrap-index-rhs)
+
+#{overflow=wrap}
+passed = passed + p12
+
+#{overflow=wrap}
+failed = failed + f12
 
 total = runner.summary()
 f = runner.failed-count()

@@ -43,11 +43,38 @@ WASMTIME  ?= wasmtime
 # same IDs.
 TRACE_ID_FILES = src/checker/checker.go src/checker/funcargs.go src/checker/unresolved.go src/checker/option_compare.go src/lsp/vet.go
 
-.PHONY: all no lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke playground-demos gen stamp-traceid install test
+.PHONY: all no force lsp package clean help FORCE no-wasm lsp-wasm playground playground-smoke playground-demos gen stamp-traceid install test
+
+# ── FORCE REBUILD ─────────────────────────────────
+# GNU make (3.81 and 4.x) has NO `--force` long option: `make no --force` dies
+# with "unrecognized option" before this file is even read. Use a make VARIABLE:
+#
+#   make no FORCE=1     # force a full rebuild, keep every generated artifact
+#   make force          # alias for the above
+#   make -B no          # built-in equivalent (--always-make)
+#
+# FORCE=1 makes the baked std signature tables (stdsig_gen.go + std_ast.bin)
+# and bin/no unconditionally out of date, so both are regenerated from the
+# CURRENT sources. This replaces the old "rm the artifacts / make clean, then
+# rebuild" ritual: nothing is deleted, and the default incremental `make no`
+# stays exactly as it was. genstdsig skips writing when the content is
+# unchanged, so a forced run does not make the next plain `make no` rebuild
+# again for no reason.
+#
+# FORCE here is a variable; the FORCE target below is the usual empty .PHONY
+# prerequisite (make keeps variables and targets in separate namespaces).
+FORCE_DEP =
+ifneq ($(filter 1 yes true on,$(FORCE)),)
+FORCE_DEP = FORCE
+endif
 
 all: $(NO_BIN) $(LSP_BIN) install
 
-no: $(NO_BIN) install
+no: $(NO_BIN)
+
+.PHONY: force
+force:
+	$(MAKE) FORCE=1 no
 
 lsp: $(LSP_BIN)
 
@@ -69,8 +96,22 @@ STD_AST_BIN = src/checker/stdastembed/std_ast.bin
 STDSIG_GEN_SRCS := $(wildcard src/checker/genstdsig/*.go) src/checker/checker.go src/checker/stdsig_cache.go \
 	$(wildcard src/hir/*.go) $(wildcard src/parser/*.go) $(wildcard src/lexer/*.go)
 
-$(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/go.mod src/go.sum
+# src/hash.noml is a build input in its own right: it is the manifest that
+# decides WHICH sources the std-sig key hashes, so editing it changes the key
+# the next `make no` injects. It must therefore also re-bake the blob, whose
+# StdKey is compared against that injected key at runtime.
+#
+# The `touch` is required, not cosmetic: genstdsig deliberately PRESERVES the
+# mtime of stdsig_gen.go when the regenerated content is byte-identical (so a
+# forced run does not make the next plain `make no` relink). With src/hash.noml
+# now a prerequisite, that preservation would leave the target OLDER than the
+# manifest forever — make would re-run genstdsig (~3.5s) and then relink bin/no
+# on EVERY build. Touching the target here makes the rule converge instead: the
+# generator only runs when a real input changed, and the single relink that
+# follows is the one that injects the new key.
+$(STDSIG_GEN): $(STDSIG_GEN_SRCS) $(NO_SOURCES) src/hash.noml src/go.mod src/go.sum $(FORCE_DEP)
 	cd src && $(GOHOST) run ./checker/genstdsig
+	@touch $@
 
 # Listing the blob explicitly on the two wasm binaries closes a real gap: if
 # std_ast.bin is deleted (or the generator is interrupted after writing the
@@ -174,7 +215,10 @@ i18n-missing: FORCE
 	cd src && $(GO) run ./i18n/cmd/genen -doc-missing
 
 # ── NO ────────────────────────────────
-$(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/go.mod src/go.sum | $(BINDIR)
+# src/hash.noml is a prerequisite because it feeds the StdSigKey injected via
+# -X below; without it a manifest-only edit would leave the binary carrying a
+# key computed from the previous manifest.
+$(NO_BIN): $(GO_SOURCES) $(NO_SOURCES) $(I18N_SOURCES) $(STDSIG_GEN) src/hash.noml src/go.mod src/go.sum $(FORCE_DEP) | $(BINDIR)
 	$(MAKE) stamp-traceid
 	cd src && $(GO) build $(LD_FLAGS_WITH_SIG) -o ../$(NO_BIN) ./cmd/no
 	chmod +x $(NO_BIN)
@@ -427,6 +471,8 @@ help:
 	@echo "Nolang 構建目標："
 	@echo "  make            構建所有目標"
 	@echo "  make no         構建 bin/no 並重裝全局 no"
+	@echo "  make no FORCE=1 強制全量重建（不清理生成物，重烤 std 簽名表 + 重鏈 bin/no）"
+	@echo "  make force      同 make no FORCE=1；make 無 --force 選項，請用變量或 make -B no"
 	@echo "  make no-capi    構建 bin/no-capi（帶 LLVM C API 後端，開關默認關閉）"
 	@echo "  make no-llvm    構建 bin/no-llvm（靜態內置 LLVM，C API 默認開啟）"
 	@echo "  make install    強制重裝全局 no（~/no/bin/no + /usr/local/bin/no 軟鏈接）"
@@ -444,6 +490,7 @@ help:
 	@echo ""
 	@echo "環境變量："
 	@echo "  GO=go           指定 Go 跨譯器（默認 go）"
+	@echo "  FORCE=1         強制重建（make no FORCE=1）；不刪除任何生成物"
 	@echo "  BINDIR=bin      指定輸出目錄（默認 bin）"
 	@echo "  LD_FLAGS=...    自定義鏈接標誌（內建注入 Git commit）"
 	@echo "  WASI_SYSROOT=path  wasi-sysroot 路徑（no build -target wasm32-wasi 時需要）"

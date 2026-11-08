@@ -13410,6 +13410,16 @@ func (l *lowerer) lowerCallArgs(n *hir.Node, recvV ValueID, callee string) []Val
 // hands over the str value its {fields} were substituted into.
 func (l *lowerer) lowerCallArgsWith(n *hir.Node, recvV ValueID, callee string, pre func(nodeID int32) (ValueID, bool)) []ValueID {
 	args := l.slotArgs(n.Id, "arg")
+	if callee == "str-len" {
+		println("DBG str-len call: recvV=" + fmt.Sprint(recvV) + " nargs=" + fmt.Sprint(len(args)) + " nodeKind=" + fmt.Sprint(n.Kind))
+		for _, a := range args {
+			if an := l.pkg.Node(a); an != nil {
+				println("DBG   arg kind=" + fmt.Sprint(an.Kind) + " s=" + l.pkg.Str(an.S))
+			} else {
+				println("DBG   arg node nil")
+			}
+		}
+	}
 	// For a VARIADIC callee in arg-form (`f(..., r)`), drop the trailing
 	// out-parameter arguments: the result is returned via the out-pointer, not
 	// as a normal LLVM argument. If left in, emitCallBody's variadic spread packs

@@ -464,7 +464,13 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         ; A(i+1) = HMAC(secret, A(i))
         a-tmp = hmac.hmac-sha256(secret, a)
         i <- [0..32): {
-            a[i] = a-tmp[i]
+            {
+                a[i] ?= a-tmp[i]
+            }: {
+                err -> _
+
+                -> _
+            }
         }
     }
 }
@@ -724,7 +730,14 @@ conn.append-hs = (data []byte) {
         }
 
         #{overflow=wrap}
-        .hs-buf[.hs-buf-len + i] = ixout660c36
+        hs-wr-idx = .hs-buf-len + i
+        {
+            .hs-buf[hs-wr-idx] ?= ixout660c36
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -748,7 +761,14 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
         }
 
         #{overflow=wrap}
-        .hs-buf[.hs-buf-len + i] = ixout677c36
+        hs-wr-idx = .hs-buf-len + i
+        {
+            .hs-buf[hs-wr-idx] ?= ixout677c36
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -1553,14 +1573,41 @@ conn.gen-x25519-keypair = () {
     i <- [0..32): {
         kp-state, kp-r = rand.rand(kp-state)
 
-        .client-priv[i] = kp-state & 255
+        {
+            .client-priv[i] ?= kp-state & 255
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
-    .client-priv[0] = .client-priv[0] & 248
+    {
+        old ?= .client-priv[0]
+        .client-priv[0] ?= old & 248
+    }: {
+        err -> _
 
-    .client-priv[31] = .client-priv[31] & 127
+        -> _
+    }
 
-    .client-priv[31] = .client-priv[31] | 64
+    {
+        old ?= .client-priv[31]
+        .client-priv[31] ?= old & 127
+    }: {
+        err -> _
+
+        -> _
+    }
+
+    {
+        old ?= .client-priv[31]
+        .client-priv[31] ?= old | 64
+    }: {
+        err -> _
+
+        -> _
+    }
 
     ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
     priv-slice []byte = with-len(32)
@@ -1580,7 +1627,13 @@ conn.gen-x25519-keypair = () {
             -> _
         }
 
-        .client-pub[i] = ixout1400c26
+        {
+            .client-pub[i] ?= ixout1400c26
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -1595,14 +1648,26 @@ conn.gen-p256-keypair = () {
     i <- [0..32): {
         s, r = rand.rand(s)
 
-        .client-priv[i] = s & 255
+        {
+            .client-priv[i] ?= s & 255
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 透過 []byte 複製公鑰（避開跨模組 [65]byte 傳回的編譯器 bug）
     pub-arr [65]byte
     pub-arr = ecdsa.ecdsa-publickey(.client-priv)
     i <- [0..65): {
-        .pub-p256[i] = pub-arr[i]
+        {
+            .pub-p256[i] ?= pub-arr[i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -1662,7 +1727,13 @@ conn.send-client-hello = () (ok bool) {
             -> _
         }
 
-        .client-random[i] = ixout1471c29
+        {
+            .client-random[i] ?= ixout1471c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -2008,7 +2079,13 @@ conn.read-server-hello = () (ok bool) {
             -> _
         }
 
-        .server-random[i] = ixout1811c29
+        {
+            .server-random[i] ?= ixout1811c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -2172,7 +2249,13 @@ conn.read-server-key-exchange = () (ok bool) {
                 -> _
             }
 
-            .peer-p256[i] = ixout1957c29
+            {
+                .peer-p256[i] ?= ixout1957c29
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         ok = true
         return
@@ -2187,7 +2270,13 @@ conn.read-server-key-exchange = () (ok bool) {
                 -> _
             }
 
-            .server-pub[i] = ixout1966c30
+            {
+                .server-pub[i] ?= ixout1966c30
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         ok = true
         return
@@ -2213,7 +2302,13 @@ conn.read-server-key-exchange = () (ok bool) {
                 -> _
             }
 
-            .server-pub[i] = ixout1980c30
+            {
+                .server-pub[i] ?= ixout1980c30
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         ok = true
         return
@@ -2599,7 +2694,13 @@ conn.derive-keys = (premaster []byte) {
                 -> _
             }
 
-            .client-enc-key[i] = ixout2343c34
+            {
+                .client-enc-key[i] ?= ixout2343c34
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         i <- [0..16): {
 
@@ -2610,7 +2711,13 @@ conn.derive-keys = (premaster []byte) {
                 -> _
             }
 
-            .server-enc-key[i] = ixout2348c34
+            {
+                .server-enc-key[i] ?= ixout2348c34
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         i <- [0..4): {
 
@@ -2621,7 +2728,13 @@ conn.derive-keys = (premaster []byte) {
                 -> _
             }
 
-            .client-gcm-salt[i] = ixout2353c35
+            {
+                .client-gcm-salt[i] ?= ixout2353c35
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         i <- [0..4): {
 
@@ -2632,7 +2745,13 @@ conn.derive-keys = (premaster []byte) {
                 -> _
             }
 
-            .server-gcm-salt[i] = ixout2358c35
+            {
+                .server-gcm-salt[i] ?= ixout2358c35
+            }: {
+                err -> _
+
+                -> _
+            }
         }
 
         ; 重置序號
@@ -2654,7 +2773,13 @@ conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .client-mac-key[i] = ixout2375c30
+        {
+            .client-mac-key[i] ?= ixout2375c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; server_write_MAC_key (32)
@@ -2667,7 +2792,13 @@ conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .server-mac-key[i] = ixout2382c30
+        {
+            .server-mac-key[i] ?= ixout2382c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; client_write key (16)
@@ -2680,7 +2811,13 @@ conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .client-enc-key[i] = ixout2389c30
+        {
+            .client-enc-key[i] ?= ixout2389c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; server_write key (16)
@@ -2693,7 +2830,13 @@ conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .server-enc-key[i] = ixout2396c30
+        {
+            .server-enc-key[i] ?= ixout2396c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 重置序號
@@ -2884,7 +3027,13 @@ conn.send-client-hello-13 = () (ok bool) {
             -> _
         }
 
-        .client-random[i] = ixout2570c29
+        {
+            .client-random[i] ?= ixout2570c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -3302,7 +3451,13 @@ conn.read-server-hello-13 = () (ok bool) {
             -> _
         }
 
-        .server-random[i] = ixout2976c29
+        {
+            .server-random[i] ?= ixout2976c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -3388,7 +3543,13 @@ conn.read-server-hello-13 = () (ok bool) {
                             -> _
                         }
 
-                        .server-pub[i] = ixout3056c42
+                        {
+                            .server-pub[i] ?= ixout3056c42
+                        }: {
+                            err -> _
+
+                            -> _
+                        }
                     }
                 }
             }
@@ -3439,7 +3600,13 @@ conn.compute-shared-secret-13 = () {
             -> _
         }
 
-        .shared-secret[i] = ixout3102c29
+        {
+            .shared-secret[i] ?= ixout3102c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -3486,7 +3653,13 @@ conn.derive-handshake-keys-13 = () {
 
     ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
     i <- [0..32): {
-        .hs-prk-field[i] = hs-prk[i]
+        {
+            .hs-prk-field[i] ?= hs-prk[i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 5. 計算 transcript hash = SHA-256(ClientHello + ServerHello)
@@ -3508,7 +3681,13 @@ conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-c-secret[i] = ixout3166c27
+        {
+            .hs-c-secret[i] ?= ixout3166c27
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 7. server_handshake_traffic_secret = Derive-Secret(HS, "s hs traffic", transcript)
@@ -3528,7 +3707,13 @@ conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-client-key[i] = ixout3181c29
+        {
+            .hs-client-key[i] ?= ixout3181c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; client handshake IV = HKDF-Expand-Label(c_hs_secret, "iv", "", 12)
@@ -3542,7 +3727,13 @@ conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-client-iv[i] = ixout3190c28
+        {
+            .hs-client-iv[i] ?= ixout3190c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; server handshake key
@@ -3555,7 +3746,13 @@ conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-server-key[i] = ixout3198c29
+        {
+            .hs-server-key[i] ?= ixout3198c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; server handshake IV
@@ -3568,13 +3765,25 @@ conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-server-iv[i] = ixout3206c28
+        {
+            .hs-server-iv[i] ?= ixout3206c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 儲存 handshake secret 供後續推導應用金鑰
     ; 保存到 shared-secret 的空間（重用）
     i <- [0..32): {
-        .shared-secret[i] = hs-prk[i]
+        {
+            .shared-secret[i] ?= hs-prk[i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .hs-write-seq = 0
     .hs-read-seq = 0
@@ -3645,7 +3854,13 @@ conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-client-key[i] = ixout3278c29
+        {
+            .ap-client-key[i] ?= ixout3278c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
@@ -3657,7 +3872,13 @@ conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-client-iv[i] = ixout3285c28
+        {
+            .ap-client-iv[i] ?= ixout3285c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
@@ -3668,7 +3889,13 @@ conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-server-key[i] = ixout3291c29
+        {
+            .ap-server-key[i] ?= ixout3291c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
@@ -3679,7 +3906,13 @@ conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-server-iv[i] = ixout3297c28
+        {
+            .ap-server-iv[i] ?= ixout3297c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .ap-write-seq = 0
     .ap-read-seq = 0
@@ -4578,7 +4811,14 @@ server-conn.append-hs = (data []byte) {
         }
 
         #{overflow=wrap}
-        .hs-buf[.hs-buf-len + i] = ixout4132c36
+        hs-wr-idx = .hs-buf-len + i
+        {
+            .hs-buf[hs-wr-idx] ?= ixout4132c36
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4602,7 +4842,14 @@ server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
         }
 
         #{overflow=wrap}
-        .hs-buf[.hs-buf-len + i] = ixout4149c36
+        hs-wr-idx = .hs-buf-len + i
+        {
+            .hs-buf[hs-wr-idx] ?= ixout4149c36
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4640,7 +4887,13 @@ server-conn.read-client-hello = () (ok bool) {
             -> _
         }
 
-        .client-random[i] = ixout4181c29
+        {
+            .client-random[i] ?= ixout4181c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -4812,7 +5065,13 @@ server-conn.read-client-hello = () (ok bool) {
                                         -> _
                                     }
 
-                                    .client-pub[i] = ixout4347c54
+                                    {
+                                        .client-pub[i] ?= ixout4347c54
+                                    }: {
+                                        err -> _
+
+                                        -> _
+                                    }
                                 }
                             }
                             ks-pos = ks-pos + 4 + ks-key-len
@@ -4828,8 +5087,15 @@ server-conn.read-client-hello = () (ok bool) {
     .is-tls13 -> {
         has-key = false
         i <- [0..32): {
-            .client-pub[i] != 0 -> {
-                has-key = true
+            {
+                old ?= .client-pub[i]
+                old != 0 -> {
+                    has-key = true
+                }
+            }: {
+                err -> _
+
+                -> _
             }
         }
         has-key == false -> {
@@ -4890,7 +5156,13 @@ server-conn.send-server-hello = () (ok bool) {
             -> _
         }
 
-        .server-random[i] = ixout4414c29
+        {
+            .server-random[i] ?= ixout4414c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -5280,7 +5552,13 @@ server-conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .client-mac-key[i] = ixout4752c30
+        {
+            .client-mac-key[i] ?= ixout4752c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; server_write_MAC_key (32)
@@ -5293,7 +5571,13 @@ server-conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .server-mac-key[i] = ixout4759c30
+        {
+            .server-mac-key[i] ?= ixout4759c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; client_write key (16)
@@ -5306,7 +5590,13 @@ server-conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .client-enc-key[i] = ixout4766c30
+        {
+            .client-enc-key[i] ?= ixout4766c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; server_write key (16)
@@ -5319,7 +5609,13 @@ server-conn.derive-keys = (premaster []byte) {
             -> _
         }
 
-        .server-enc-key[i] = ixout4773c30
+        {
+            .server-enc-key[i] ?= ixout4773c30
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 重置序號
@@ -5823,14 +6119,41 @@ server-conn.send-server-hello-13 = () (ok bool) {
     i <- [0..32): {
         kp-state, kp-r = rand.rand(kp-state)
 
-        .server-priv[i] = kp-state & 255
+        {
+            .server-priv[i] ?= kp-state & 255
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
-    .server-priv[0] = .server-priv[0] & 248
+    {
+        old ?= .server-priv[0]
+        .server-priv[0] ?= old & 248
+    }: {
+        err -> _
 
-    .server-priv[31] = .server-priv[31] & 127
+        -> _
+    }
 
-    .server-priv[31] = .server-priv[31] | 64
+    {
+        old ?= .server-priv[31]
+        .server-priv[31] ?= old & 127
+    }: {
+        err -> _
+
+        -> _
+    }
+
+    {
+        old ?= .server-priv[31]
+        .server-priv[31] ?= old | 64
+    }: {
+        err -> _
+
+        -> _
+    }
 
     ; 透過 []byte 傳遞給 x25519（避開全域 [32]byte 傳參的編譯器 bug）
     priv-slice []byte = with-len(32)
@@ -5850,7 +6173,13 @@ server-conn.send-server-hello-13 = () (ok bool) {
             -> _
         }
 
-        .server-pub[i] = ixout5242c26
+        {
+            .server-pub[i] ?= ixout5242c26
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 構建 ServerHello
@@ -5897,7 +6226,13 @@ server-conn.send-server-hello-13 = () (ok bool) {
             -> _
         }
 
-        .server-random[i] = ixout5278c29
+        {
+            .server-random[i] ?= ixout5278c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -6044,7 +6379,13 @@ server-conn.compute-shared-secret-13 = () {
             -> _
         }
 
-        .shared-secret[i] = ixout5420c29
+        {
+            .shared-secret[i] ?= ixout5420c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -6088,7 +6429,13 @@ server-conn.derive-handshake-keys-13 = () {
 
     ; 儲存 Handshake Secret 供 derive-application-keys-13 使用
     i <- [0..32): {
-        .hs-prk-field[i] = hs-prk[i]
+        {
+            .hs-prk-field[i] ?= hs-prk[i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 5. transcript hash = SHA-256(ClientHello + ServerHello)
@@ -6107,7 +6454,13 @@ server-conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-c-secret[i] = ixout5478c27
+        {
+            .hs-c-secret[i] ?= ixout5478c27
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 7. server_handshake_traffic_secret
@@ -6122,7 +6475,13 @@ server-conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-s-secret[i] = ixout5488c27
+        {
+            .hs-s-secret[i] ?= ixout5488c27
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 8. 推導金鑰和 IV
@@ -6136,7 +6495,13 @@ server-conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-client-key[i] = ixout5497c29
+        {
+            .hs-client-key[i] ?= ixout5497c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
@@ -6148,7 +6513,13 @@ server-conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-client-iv[i] = ixout5504c28
+        {
+            .hs-client-iv[i] ?= ixout5504c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
@@ -6159,7 +6530,13 @@ server-conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-server-key[i] = ixout5510c29
+        {
+            .hs-server-key[i] ?= ixout5510c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
@@ -6170,12 +6547,24 @@ server-conn.derive-handshake-keys-13 = () {
             -> _
         }
 
-        .hs-server-iv[i] = ixout5516c28
+        {
+            .hs-server-iv[i] ?= ixout5516c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 儲存 handshake secret 供推導應用金鑰
     i <- [0..32): {
-        .shared-secret[i] = hs-prk[i]
+        {
+            .shared-secret[i] ?= hs-prk[i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .hs-write-seq = 0
     .hs-read-seq = 0
@@ -6258,7 +6647,13 @@ server-conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-client-key[i] = ixout5599c29
+        {
+            .ap-client-key[i] ?= ixout5599c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
@@ -6270,7 +6665,13 @@ server-conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-client-iv[i] = ixout5606c28
+        {
+            .ap-client-iv[i] ?= ixout5606c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
@@ -6281,7 +6682,13 @@ server-conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-server-key[i] = ixout5612c29
+        {
+            .ap-server-key[i] ?= ixout5612c29
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
@@ -6292,7 +6699,13 @@ server-conn.derive-application-keys-13 = () {
             -> _
         }
 
-        .ap-server-iv[i] = ixout5618c28
+        {
+            .ap-server-iv[i] ?= ixout5618c28
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .ap-write-seq = 0
     .ap-read-seq = 0

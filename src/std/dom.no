@@ -181,7 +181,13 @@ dom-pool.append = (parent i64, child i64) {
     .valid(child) == false -> return
     .detach(child)
     .nodes[child].parent = parent
-    last = .nodes[parent].last
+    {
+        last ?= .nodes[parent].last
+    }: {
+        err -> _
+
+        -> _
+    }
     last >= 0 -> {
         .nodes[last].next = child
         .nodes[child].prev = last
@@ -190,7 +196,13 @@ dom-pool.append = (parent i64, child i64) {
         .nodes[parent].first = child
     }
     .nodes[parent].last = child
-    cnt = .nodes[parent].count
+    {
+        cnt ?= .nodes[parent].count
+    }: {
+        err -> _
+
+        -> _
+    }
 
     #{overflow=wrap}
     .nodes[parent].count = cnt + 1
@@ -201,10 +213,16 @@ dom-pool.append = (parent i64, child i64) {
 ; [detach](#dom.dom-pool.detach)
 dom-pool.detach = (child i64) {
     .valid(child) == false -> return
-    p = .nodes[child].parent
+    {
+        p ?= .nodes[child].parent
+        prev ?= .nodes[child].prev
+        next ?= .nodes[child].next
+    }: {
+        err -> _
+
+        -> _
+    }
     p < 0 -> return
-    prev = .nodes[child].prev
-    next = .nodes[child].next
     prev >= 0 -> {
         .nodes[prev].next = next
     }
@@ -220,7 +238,13 @@ dom-pool.detach = (child i64) {
     .nodes[child].parent = -1
     .nodes[child].prev = -1
     .nodes[child].next = -1
-    cnt = .nodes[p].count
+    {
+        cnt ?= .nodes[p].count
+    }: {
+        err -> _
+
+        -> _
+    }
 
     #{overflow=wrap}
     .nodes[p].count = cnt - 1
@@ -235,12 +259,26 @@ dom-pool.insert-before = (parent i64, node i64, ref i64) {
     parent < 0 || node < 0 -> return
     .valid(parent) == false -> return
     .valid(node) == false -> return
-    ref < 0 || .valid(ref) == false || .nodes[ref].parent != parent -> {
+    {
+        rp ?= .nodes[ref].parent
+    }: {
+        err -> _
+
+        -> _
+    }
+    ref < 0 || .valid(ref) == false || rp != parent -> {
         .append(parent, node)
         return
     }
     .detach(node)
-    prev = .nodes[ref].prev
+    {
+        prev ?= .nodes[ref].prev
+        cnt ?= .nodes[parent].count
+    }: {
+        err -> _
+
+        -> _
+    }
     .nodes[node].parent = parent
     .nodes[node].prev = prev
     .nodes[node].next = ref
@@ -251,7 +289,6 @@ dom-pool.insert-before = (parent i64, node i64, ref i64) {
     prev < 0 -> {
         .nodes[parent].first = node
     }
-    cnt = .nodes[parent].count
 
     #{overflow=wrap}
     .nodes[parent].count = cnt + 1
@@ -269,13 +306,32 @@ dom-pool.insert-before = (parent i64, node i64, ref i64) {
 dom-pool.find-attr = (node i64, name str) (e i64) {
     e = -1
     .valid(node) == false -> return
-    p = .nodes[node].attr-first
+    {
+        p ?= .nodes[node].attr-first
+    }: {
+        err -> _
+
+        -> _
+    }
     (p >= 0) {
-        .an[p].eq-full(name) -> {
+        {
+            s ?= .an[p]
+        }: {
+            err -> _
+
+            -> _
+        }
+        s.eq-full(name) -> {
             e = p
             return
         }
-        p = .ax[p]
+        {
+            p ?= .ax[p]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -288,22 +344,46 @@ dom-pool.set-attr = (node i64, name str, val str) {
     .valid(node) == false -> return
     e = .find-attr(node, name)
     e >= 0 -> {
-        .av[e] = val
+        {
+            .av[e] ?= val
+        }: {
+            err -> _
+
+            -> _
+        }
         return
     }
     ne = .an.len()
     .an.push(name)
     .av.push(val)
     .ax.push(-1)
-    last = .nodes[node].attr-last
+    {
+        last ?= .nodes[node].attr-last
+    }: {
+        err -> _
+
+        -> _
+    }
     last >= 0 -> {
-        .ax[last] = ne
+        {
+            .ax[last] ?= ne
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     last < 0 -> {
         .nodes[node].attr-first = ne
     }
     .nodes[node].attr-last = ne
-    cnt = .nodes[node].attr-count
+    {
+        cnt ?= .nodes[node].attr-count
+    }: {
+        err -> _
+
+        -> _
+    }
 
     #{overflow=wrap}
     .nodes[node].attr-count = cnt + 1
@@ -318,33 +398,68 @@ dom-pool.remove-attr = (node i64, name str) (yes bool) {
     yes = false
     .valid(node) == false -> return
     prev = -1
-    e = .nodes[node].attr-first
+    {
+        e ?= .nodes[node].attr-first
+    }: {
+        err -> _
+
+        -> _
+    }
     (e >= 0) {
         {
-            .an[e].eq-full(name) -> {
-                nxt = .ax[e]
-                prev >= 0 -> {
-                    .ax[prev] = nxt
-                }
-                prev < 0 -> {
-                    .nodes[node].attr-first = nxt
-                }
-                nxt < 0 && prev >= 0 -> {
-                    .nodes[node].attr-last = prev
-                }
-                nxt < 0 && prev < 0 -> {
-                    .nodes[node].attr-last = -1
-                }
-                cnt = .nodes[node].attr-count
+            s ?= .an[e]
+        }: {
+            err -> _
 
-                #{overflow=wrap}
-                .nodes[node].attr-count = cnt - 1
-                yes = true
-                return
+            -> _
+        }
+        s.eq-full(name) -> {
+            {
+                nxt ?= .ax[e]
+            }: {
+                err -> _
+
+                -> _
             }
+            prev >= 0 -> {
+                {
+                    .ax[prev] ?= nxt
+                }: {
+                    err -> _
+
+                    -> _
+                }
+            }
+            prev < 0 -> {
+                .nodes[node].attr-first = nxt
+            }
+            nxt < 0 && prev >= 0 -> {
+                .nodes[node].attr-last = prev
+            }
+            nxt < 0 && prev < 0 -> {
+                .nodes[node].attr-last = -1
+            }
+            {
+                cnt ?= .nodes[node].attr-count
+            }: {
+                err -> _
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            .nodes[node].attr-count = cnt - 1
+            yes = true
+            return
         }
         prev = e
-        e = .ax[e]
+        {
+            e ?= .ax[e]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -356,10 +471,23 @@ dom-pool.remove-attr = (node i64, name str) (yes bool) {
 dom-pool.attr-edge-at = (node i64, i i64) (e i64) {
     e = -1
     .valid(node) == false -> return
-    i < 0 || i >= .nodes[node].attr-count -> return
-    p = .nodes[node].attr-first
+    {
+        ac ?= .nodes[node].attr-count
+        p ?= .nodes[node].attr-first
+    }: {
+        err -> _
+
+        -> _
+    }
+    i < 0 || i >= ac -> return
     k <- [0..i): {
-        p = .ax[p]
+        {
+            p ?= .ax[p]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     e = p
 }
@@ -708,7 +836,13 @@ dom-pool.xml-add-text = (parent i64, s str, from i64, to i64) (ok bool) {
         -> return
     }
     idx = .alloc(DOM-KIND-TEXT)
-    .vals[idx] = val
+    {
+        .vals[idx] ?= val
+    }: {
+        err -> _
+
+        -> _
+    }
     .append(parent, idx)
     ok = true
 }
@@ -735,7 +869,7 @@ dom-pool.xml-parse-comment = (parent i64, s str, p i64) (np ?i64) {
     }
     found == false -> return
     idx = .alloc(DOM-KIND-COMMENT)
-    .vals[idx] = s.slice-bytes(p + 4, j)
+    .vals[idx] ?= s.slice-bytes(p + 4, j)
     .append(parent, idx)
     np = j + 3
 }
@@ -762,7 +896,7 @@ dom-pool.xml-parse-cdata = (parent i64, s str, p i64) (np ?i64) {
     }
     found == false -> return
     idx = .alloc(DOM-KIND-CDATA)
-    .vals[idx] = s.slice-bytes(p + 9, j)
+    .vals[idx] ?= s.slice-bytes(p + 9, j)
     .append(parent, idx)
     np = j + 3
 }
@@ -798,12 +932,12 @@ dom-pool.xml-parse-pi = (parent i64, s str, p i64) (np ?i64) {
     }
     found == false -> return
     idx = .alloc(DOM-KIND-PI)
-    .names[idx] = tgt
+    .names[idx] ?= tgt
 
     ; 值從目標名後的首個非空白起算，序列化時不致產生雙空格
     vs = xml-skip-ws(s, ne)
     vs > j -> vs = j
-    .vals[idx] = s.slice-bytes(vs, j)
+    .vals[idx] ?= s.slice-bytes(vs, j)
     .append(parent, idx)
     np = j + 2
 }
@@ -861,7 +995,7 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
     }
     found == false -> return
     idx = .alloc(DOM-KIND-DOCTYPE)
-    .vals[idx] = s.slice-bytes(p + 2, j)
+    .vals[idx] ?= s.slice-bytes(p + 2, j)
 
     ; names 存放文檔元素名（跳過 'DOCTYPE' 關鍵字後的第二個名字）
     kwopt-start = p + 2
@@ -872,7 +1006,7 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
             ns = xml-skip-ws(s, kw)
             nopt = xml-read-name(s, ns)
             nopt: {
-                ok(nv) -> .names[idx] = s.slice-bytes(ns, nv)
+                ok(nv) -> .names[idx] ?= s.slice-bytes(ns, nv)
 
                 -> _
             }
@@ -993,7 +1127,8 @@ dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
         -> return
     }
     cnm = s.slice-bytes(p + 2, ne)
-    .names[node].eq-full(cnm) == false -> return
+    cn ?= .names[node]
+    cn.eq-full(cnm) == false -> return
     cpos = xml-skip-ws(s, ne)
     cpos >= n -> return
     s.byte(cpos) != 62 -> return
@@ -1023,7 +1158,7 @@ dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
         -> return
     }
     idx = .alloc(DOM-KIND-ELEMENT)
-    .names[idx] = s.slice-bytes(p + 1, ne)
+    .names[idx] ?= s.slice-bytes(p + 1, ne)
     .append(parent, idx)
     cpos = ne
 
@@ -1342,7 +1477,13 @@ dom-pool.html-add-text = (parent i64, s str, from i64, to i64) {
         -> return
     }
     idx = .alloc(DOM-KIND-TEXT)
-    .vals[idx] = val
+    {
+        .vals[idx] ?= val
+    }: {
+        err -> _
+
+        -> _
+    }
     .append(parent, idx)
 }
 
@@ -1373,7 +1514,13 @@ dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
         cend = j
     }
     idx = .alloc(DOM-KIND-COMMENT)
-    .vals[idx] = s.slice-bytes(p + 4, cend)
+    {
+        .vals[idx] ?= s.slice-bytes(p + 4, cend)
+    }: {
+        err -> _
+
+        -> _
+    }
     .append(parent, idx)
     np = n
     found -> {
@@ -1397,7 +1544,13 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
         q = q + 1
     }
     idx = .alloc(DOM-KIND-COMMENT)
-    .vals[idx] = s.slice-bytes(p + 2, q)
+    {
+        .vals[idx] ?= s.slice-bytes(p + 2, q)
+    }: {
+        err -> _
+
+        -> _
+    }
     .append(parent, idx)
     np = n
     q < n -> {
@@ -1437,7 +1590,13 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
         j = j + 1
     }
     idx = .alloc(DOM-KIND-PI)
-    .names[idx] = tgt.to-lower()
+    {
+        .names[idx] ?= tgt.to-lower()
+    }: {
+        err -> _
+
+        -> _
+    }
     vs = xml-skip-ws(s, ne)
     dend = n
     found -> {
@@ -1448,7 +1607,13 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
     }
     vs > dend -> vs = dend
     dend > vs -> {
-        .vals[idx] = s.slice-bytes(vs, dend)
+        {
+            .vals[idx] ?= s.slice-bytes(vs, dend)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .append(parent, idx)
     np = n
@@ -1595,7 +1760,13 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
         return
     }
     el = .alloc(DOM-KIND-ELEMENT)
-    .names[el] = nm
+    {
+        .names[el] ?= nm
+    }: {
+        err -> _
+
+        -> _
+    }
 
     #{overflow=wrap}
     np = p + 1 + nm.len-bytes()
@@ -1684,11 +1855,23 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
                     -> s.slice-bytes(np, cend)
                 }
-                .vals[tidx] = val
+                {
+                    .vals[tidx] ?= val
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
 
             -> {
-                .vals[tidx] = s.slice-bytes(np, cend)
+                {
+                    .vals[tidx] ?= s.slice-bytes(np, cend)
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
         }
         .append(el, tidx)
@@ -1846,9 +2029,14 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             #{overflow=wrap}
             k = sl - 1
             (k >= 0) {
+                {
+                    ti ?= .stk[k]
+                    tn ?= .names[ti]
+                }: {
+                    err -> _
 
-                ti i64 = .stk[k]
-                tn str = .names[ti]
+                    -> _
+                }
                 tn.eq-full(cnm) -> {
                     hit-k = k
                     break
@@ -1892,8 +2080,14 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                     #{overflow=wrap}
                     topi = .stk.len() - 1
 
-                    ti i64 = .stk[topi]
-                    tn str = .names[ti]
+                    {
+                        ti ?= .stk[topi]
+                        tn ?= .names[ti]
+                    }: {
+                        err -> _
+
+                        -> _
+                    }
                     blob-has(closers, tn) == false -> break
                     .stk.pop()
                 }
@@ -2017,10 +2211,22 @@ esc-attr = (s str) (out str) {
 dom-pool.ser-children = (idx i64, html bool) (out str) {
     out = ''
     .valid(idx) == false -> return
-    c = .nodes[idx].first
+    {
+        c ?= .nodes[idx].first
+    }: {
+        err -> _
+
+        -> _
+    }
     (c >= 0) {
         out = out - .ser(c, html)
-        c = .nodes[c].next
+        {
+            c ?= .nodes[c].next
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -2032,7 +2238,13 @@ dom-pool.ser-children = (idx i64, html bool) (out str) {
 dom-pool.ser = (idx i64, html bool) (out str) {
     out = ''
     .valid(idx) == false -> return
-    k = .nodes[idx].kind
+    {
+        k ?= .nodes[idx].kind
+    }: {
+        err -> _
+
+        -> _
+    }
     {
         k == DOM-KIND-DOCUMENT -> {
             out = .ser-children(idx, html)
@@ -2040,21 +2252,40 @@ dom-pool.ser = (idx i64, html bool) (out str) {
         }
 
         k == DOM-KIND-ELEMENT -> {
-            nm str = .names[idx]
+            {
+                nm ?= .names[idx]
+                e ?= .nodes[idx].attr-first
+                cnt ?= .nodes[idx].count
+            }: {
+                err -> _
+
+                -> _
+            }
             out = '<' - nm
-            e = .nodes[idx].attr-first
             (e >= 0) {
-                ev str = .av[e]
-                en str = .an[e]
+                {
+                    ev ?= .av[e]
+                    en ?= .an[e]
+                }: {
+                    err -> _
+
+                    -> _
+                }
                 out = out - ' ' - en - '="' - esc-attr(ev) - '"'
-                e = .ax[e]
+                {
+                    e ?= .ax[e]
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
             {
                 html && blob-has(DOM-VOID-BLOB, nm) -> {
                     out = out - '>'
                 }
 
-                .nodes[idx].count == 0 -> {
+                cnt == 0 -> {
                     html -> {
                         out = out - '>' - '</' - nm - '>'
                     }
@@ -2072,11 +2303,23 @@ dom-pool.ser = (idx i64, html bool) (out str) {
         }
 
         k == DOM-KIND-TEXT -> {
-            v str = .vals[idx]
-            p = .nodes[idx].parent
+            {
+                v ?= .vals[idx]
+                p ?= .nodes[idx].parent
+            }: {
+                err -> _
+
+                -> _
+            }
             raw = false
             html && p >= 0 -> {
-                pn str = .names[p]
+                {
+                    pn ?= .names[p]
+                }: {
+                    err -> _
+
+                    -> _
+                }
                 blob-has(DOM-RAWTEXT-BLOB, pn) -> raw = true
             }
             {
@@ -2088,20 +2331,38 @@ dom-pool.ser = (idx i64, html bool) (out str) {
         }
 
         k == DOM-KIND-CDATA -> {
-            v str = .vals[idx]
+            {
+                v ?= .vals[idx]
+            }: {
+                err -> _
+
+                -> _
+            }
             out = '<![CDATA[' - v - ']]>'
             return
         }
 
         k == DOM-KIND-COMMENT -> {
-            v str = .vals[idx]
+            {
+                v ?= .vals[idx]
+            }: {
+                err -> _
+
+                -> _
+            }
             out = '<!--' - v - '-->'
             return
         }
 
         k == DOM-KIND-PI -> {
-            nm str = .names[idx]
-            v str = .vals[idx]
+            {
+                nm ?= .names[idx]
+                v ?= .vals[idx]
+            }: {
+                err -> _
+
+                -> _
+            }
             v.len-bytes() == 0 -> {
                 out = '<?' - nm - '?>'
                 return
@@ -2111,7 +2372,13 @@ dom-pool.ser = (idx i64, html bool) (out str) {
         }
 
         k == DOM-KIND-DOCTYPE -> {
-            v str = .vals[idx]
+            {
+                v ?= .vals[idx]
+            }: {
+                err -> _
+
+                -> _
+            }
             out = '<!' - v - '>'
             return
         }
@@ -2125,17 +2392,29 @@ dom-pool.ser = (idx i64, html bool) (out str) {
 dom-pool.text-of = (idx i64) (out str) {
     out = ''
     .valid(idx) == false -> return
-    k = .nodes[idx].kind
+    {
+        k ?= .nodes[idx].kind
+        c ?= .nodes[idx].first
+    }: {
+        err -> _
+
+        -> _
+    }
     {
         k == DOM-KIND-TEXT || k == DOM-KIND-CDATA -> {
             out = .vals[idx]
             return
         }
     }
-    c = .nodes[idx].first
     (c >= 0) {
         out = out - .text-of(c)
-        c = .nodes[c].next
+        {
+            c ?= .nodes[c].next
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -2152,19 +2431,42 @@ dom-pool.text-of = (idx i64) (out str) {
 dom-pool.collect-tag = (node i64, want str, star bool) (out []i64) {
     out = with-len(0)
     .valid(node) == false -> return
-    c = .nodes[node].first
+    {
+        c ?= .nodes[node].first
+    }: {
+        err -> _
+
+        -> _
+    }
     (c >= 0) {
         {
-            .nodes[c].kind == DOM-KIND-ELEMENT -> {
-                cn str = .names[c]
-                star || cn.eq-full(want) -> out.push(c)
+            k ?= .nodes[c].kind
+        }: {
+            err -> _
+
+            -> _
+        }
+        k == DOM-KIND-ELEMENT -> {
+            {
+                cn ?= .names[c]
+            }: {
+                err -> _
+
+                -> _
             }
+            star || cn.eq-full(want) -> out.push(c)
         }
         sub = .collect-tag(c, want, star)
         sv <- sub: {
             out.push(sv)
         }
-        c = .nodes[c].next
+        {
+            c ?= .nodes[c].next
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -2176,22 +2478,45 @@ dom-pool.collect-tag = (node i64, want str, star bool) (out []i64) {
 dom-pool.collect-class = (node i64, cls str) (out []i64) {
     out = with-len(0)
     .valid(node) == false -> return
-    c = .nodes[node].first
+    {
+        c ?= .nodes[node].first
+    }: {
+        err -> _
+
+        -> _
+    }
     (c >= 0) {
         {
-            .nodes[c].kind == DOM-KIND-ELEMENT -> {
-                e = .find-attr(c, 'class')
-                e >= 0 -> {
-                    cv str = .av[e]
-                    class-has(cv, cls) -> out.push(c)
+            k ?= .nodes[c].kind
+        }: {
+            err -> _
+
+            -> _
+        }
+        k == DOM-KIND-ELEMENT -> {
+            e = .find-attr(c, 'class')
+            e >= 0 -> {
+                {
+                    cv ?= .av[e]
+                }: {
+                    err -> _
+
+                    -> _
                 }
+                class-has(cv, cls) -> out.push(c)
             }
         }
         sub = .collect-class(c, cls)
         sv <- sub: {
             out.push(sv)
         }
-        c = .nodes[c].next
+        {
+            c ?= .nodes[c].next
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -2203,17 +2528,34 @@ dom-pool.collect-class = (node i64, cls str) (out []i64) {
 dom-pool.find-id-node = (node i64, id str) (idx i64) {
     idx = -1
     .valid(node) == false -> return
-    c = .nodes[node].first
+    {
+        c ?= .nodes[node].first
+    }: {
+        err -> _
+
+        -> _
+    }
     (c >= 0) {
         {
-            .nodes[c].kind == DOM-KIND-ELEMENT -> {
-                e = .find-attr(c, 'id')
-                e >= 0 -> {
-                    tv str = .av[e]
-                    tv.eq-full(id) -> {
-                        idx = c
-                        return
-                    }
+            k ?= .nodes[c].kind
+        }: {
+            err -> _
+
+            -> _
+        }
+        k == DOM-KIND-ELEMENT -> {
+            e = .find-attr(c, 'id')
+            e >= 0 -> {
+                {
+                    tv ?= .av[e]
+                }: {
+                    err -> _
+
+                    -> _
+                }
+                tv.eq-full(id) -> {
+                    idx = c
+                    return
                 }
             }
         }
@@ -2222,7 +2564,13 @@ dom-pool.find-id-node = (node i64, id str) (idx i64) {
             idx = r
             return
         }
-        c = .nodes[c].next
+        {
+            c ?= .nodes[c].next
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -2314,7 +2662,13 @@ dom.new-document = (html bool) (d dom) {
 dom.kind = (idx i64) (k i64) {
     k = -1
     .pool.valid(idx) == false -> return
-    k = .pool.nodes[idx].kind
+    {
+        k ?= .pool.nodes[idx].kind
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 元素標籤名 / PI 目標 / DOCTYPE 名稱
@@ -2343,7 +2697,13 @@ dom.value = (idx i64) (v str) {
 ; [set-node-value](#dom.set-node-value)
 dom.set-node-value = (idx i64, v str) {
     .pool.valid(idx) == false -> return
-    .pool.vals[idx] = v
+    {
+        .pool.vals[idx] ?= v
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 父節點索引（-1=無）
@@ -2353,7 +2713,13 @@ dom.set-node-value = (idx i64, v str) {
 dom.parent = (idx i64) (p i64) {
     p = -1
     .pool.valid(idx) == false -> return
-    p = .pool.nodes[idx].parent
+    {
+        p ?= .pool.nodes[idx].parent
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; dom.first-child / last-child / next-sibling / prev-sibling
@@ -2363,7 +2729,13 @@ dom.parent = (idx i64) (p i64) {
 dom.first-child = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
-    c = .pool.nodes[idx].first
+    {
+        c ?= .pool.nodes[idx].first
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 取末個 child
@@ -2372,7 +2744,13 @@ dom.first-child = (idx i64) (c i64) {
 dom.last-child = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
-    c = .pool.nodes[idx].last
+    {
+        c ?= .pool.nodes[idx].last
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 取下一個 sibling
@@ -2381,7 +2759,13 @@ dom.last-child = (idx i64) (c i64) {
 dom.next-sibling = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
-    c = .pool.nodes[idx].next
+    {
+        c ?= .pool.nodes[idx].next
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 取上一個 sibling
@@ -2390,7 +2774,13 @@ dom.next-sibling = (idx i64) (c i64) {
 dom.prev-sibling = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
-    c = .pool.nodes[idx].prev
+    {
+        c ?= .pool.nodes[idx].prev
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 子節點數
@@ -2400,7 +2790,13 @@ dom.prev-sibling = (idx i64) (c i64) {
 dom.child-count = (idx i64) (n i64) {
     n = 0
     .pool.valid(idx) == false -> return
-    n = .pool.nodes[idx].count
+    {
+        n ?= .pool.nodes[idx].count
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 第 i 個子節點（越界返回 nil）
@@ -2411,10 +2807,11 @@ dom.child-count = (idx i64) (n i64) {
 dom.child-at = (idx i64, i i64) (out ?i64) {
     out = nil
     .pool.valid(idx) == false -> return
-    i < 0 || i >= .pool.nodes[idx].count -> return
-    c = .pool.nodes[idx].first
+    cnt ?= .pool.nodes[idx].count
+    i < 0 || i >= cnt -> return
+    c ?= .pool.nodes[idx].first
     k <- [0..i): {
-        c = .pool.nodes[c].next
+        c ?= .pool.nodes[c].next
     }
     out = c
 }
@@ -2425,13 +2822,14 @@ dom.child-at = (idx i64, i i64) (out ?i64) {
 dom.document-element = () (idx ?i64) {
     idx = nil
     .pool.valid(.root) == false -> return
-    c = .pool.nodes[.root].first
+    c ?= .pool.nodes[.root].first
     (c >= 0) {
-        .pool.nodes[c].kind == DOM-KIND-ELEMENT -> {
+        k ?= .pool.nodes[c].kind
+        k == DOM-KIND-ELEMENT -> {
             idx = c
             return
         }
-        c = .pool.nodes[c].next
+        c ?= .pool.nodes[c].next
     }
 }
 
@@ -2450,7 +2848,7 @@ dom.get-attribute = (idx i64, name str) (val ?str) {
     .format == 1 -> want = name.to-lower()
     e = .pool.find-attr(idx, want)
     e < 0 -> return
-    v str = .pool.av[e]
+    v ?= .pool.av[e]
     val = v
 }
 
@@ -2497,7 +2895,13 @@ dom.remove-attribute = (idx i64, name str) (yes bool) {
 dom.attribute-count = (idx i64) (n i64) {
     n = 0
     .pool.valid(idx) == false -> return
-    n = .pool.nodes[idx].attr-count
+    {
+        n ?= .pool.nodes[idx].attr-count
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 第 i 個屬性名（按文檔順序，越界 nil）
@@ -2509,7 +2913,7 @@ dom.attribute-name = (idx i64, i i64) (nm ?str) {
     nm = nil
     e = .pool.attr-edge-at(idx, i)
     e < 0 -> return
-    v str = .pool.an[e]
+    v ?= .pool.an[e]
     nm = v
 }
 
@@ -2522,7 +2926,7 @@ dom.attribute-value = (idx i64, i i64) (val ?str) {
     val = nil
     e = .pool.attr-edge-at(idx, i)
     e < 0 -> return
-    v str = .pool.av[e]
+    v ?= .pool.av[e]
     val = v
 }
 
@@ -2581,7 +2985,13 @@ dom.create-element = (name str) (idx i64) {
     nm = name
     .format == 1 -> nm = name.to-lower()
     idx = .pool.alloc(DOM-KIND-ELEMENT)
-    .pool.names[idx] = nm
+    {
+        .pool.names[idx] ?= nm
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 建立文字節點
@@ -2590,7 +3000,13 @@ dom.create-element = (name str) (idx i64) {
 ; [create-text-node](#dom.create-text-node)
 dom.create-text-node = (data str) (idx i64) {
     idx = .pool.alloc(DOM-KIND-TEXT)
-    .pool.vals[idx] = data
+    {
+        .pool.vals[idx] ?= data
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 建立註解節點
@@ -2599,7 +3015,13 @@ dom.create-text-node = (data str) (idx i64) {
 ; [create-comment](#dom.create-comment)
 dom.create-comment = (data str) (idx i64) {
     idx = .pool.alloc(DOM-KIND-COMMENT)
-    .pool.vals[idx] = data
+    {
+        .pool.vals[idx] ?= data
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 附加（或移動）子節點到 parent 尾端
@@ -2643,13 +3065,32 @@ dom.replace-child = (parent i64, new i64, old i64) {
 ; [set-text-content](#dom.set-text-content)
 dom.set-text-content = (idx i64, text str) {
     .pool.valid(idx) == false -> return
-    (.pool.nodes[idx].first >= 0) {
-        c = .pool.nodes[idx].first
+    {
+        c ?= .pool.nodes[idx].first
+    }: {
+        err -> _
+
+        -> _
+    }
+    (c >= 0) {
         .pool.detach(c)
+        {
+            c ?= .pool.nodes[idx].first
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     text.len-bytes() == 0 -> return
     t = .pool.alloc(DOM-KIND-TEXT)
-    .pool.vals[t] = text
+    {
+        .pool.vals[t] ?= text
+    }: {
+        err -> _
+
+        -> _
+    }
     .pool.append(idx, t)
 }
 

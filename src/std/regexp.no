@@ -104,14 +104,20 @@ regexp {
 ; arg2 i64: 參數2
 ; [emit](#regexp.emit)
 regexp.emit = (op i64, arg1 i64, arg2 i64) {
-    .op[.n] = op
+    {
+        .op[.n] ?= op
 
-    .arg1[.n] = arg1
+        .arg1[.n] ?= arg1
 
-    .arg2[.n] = arg2
+        .arg2[.n] ?= arg2
 
-    #{overflow=wrap}
-    .n = .n + 1
+        #{overflow=wrap}
+        .n = .n + 1
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 發射一個 atom 指令
@@ -141,8 +147,16 @@ regexp.set-class-bit = (cls-idx i64, c i64) {
     bit-idx = c & 7
     mask = 1 << bit-idx
 
-    #{overflow=wrap}
-    .cls[base + byte-idx] = .cls[base + byte-idx] | mask
+    {
+        #{overflow=wrap}
+        cur ?= .cls[base + byte-idx]
+
+        .cls[base + byte-idx] ?= cur | mask
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 清除位元
@@ -157,8 +171,16 @@ regexp.clear-class-bit = (cls-idx i64, c i64) {
     bit-idx = c & 7
     mask = 255 ^ (1 << bit-idx)
 
-    #{overflow=wrap}
-    .cls[base + byte-idx] = .cls[base + byte-idx] & mask
+    {
+        #{overflow=wrap}
+        cur ?= .cls[base + byte-idx]
+
+        .cls[base + byte-idx] ?= cur & mask
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 判斷字元是否在類別中
@@ -174,8 +196,15 @@ regexp.in-class = (cls-idx i64, c i64) (yes bool) {
     bit-idx = c & 7
     mask = 1 << bit-idx
 
-    (.cls[base + byte-idx] & mask) != 0 -> {
-        yes = true
+    {
+        cur ?= .cls[base + byte-idx]
+        (cur & mask) != 0 -> {
+            yes = true
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -188,8 +217,15 @@ regexp.init-class-zero = (cls-idx i64) {
     base = cls-idx * RE-CLS-SIZE
     j <- [0..RE-CLS-SIZE): {
 
-        #{overflow=wrap}
-        .cls[base + j] = 0
+        {
+            #{overflow=wrap}
+            k = base + j
+            .cls[k] ?= 0
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -202,8 +238,15 @@ regexp.init-class-all = (cls-idx i64) {
     base = cls-idx * RE-CLS-SIZE
     j <- [0..RE-CLS-SIZE): {
 
-        #{overflow=wrap}
-        .cls[base + j] = 255
+        {
+            #{overflow=wrap}
+            k = base + j
+            .cls[k] ?= 255
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -556,8 +599,16 @@ regexp.parse-class = (pattern str, i i64) (new-i i64) {
         base = cls-idx * RE-CLS-SIZE
         j <- [0..RE-CLS-SIZE): {
 
-            #{overflow=wrap}
-            .cls[base + j] = .cls[base + j] ^ 255
+            {
+                #{overflow=wrap}
+                cur ?= .cls[base + j]
+
+                .cls[base + j] ?= cur ^ 255
+            }: {
+                err -> _
+
+                -> _
+            }
         }
     }
     result-i = ri
@@ -691,12 +742,18 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         .emit-atom(atom-type, atom-char, atom-cls)
         .emit(RE-OP-JUMP, split-pc)
 
-        .arg1[split-pc] = l1
+        {
+            .arg1[split-pc] ?= l1
 
-        .arg2[split-pc] = .n
+            .arg2[split-pc] ?= .n
 
-        #{overflow=wrap}
-        .tmp-next-i = atom-i + 1
+            #{overflow=wrap}
+            .tmp-next-i = atom-i + 1
+        }: {
+            err -> _
+
+            -> _
+        }
         return
     }
 
@@ -720,12 +777,18 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
 
-        .arg1[split-pc] = l1
+        {
+            .arg1[split-pc] ?= l1
 
-        .arg2[split-pc] = .n
+            .arg2[split-pc] ?= .n
 
-        #{overflow=wrap}
-        .tmp-next-i = atom-i + 1
+            #{overflow=wrap}
+            .tmp-next-i = atom-i + 1
+        }: {
+            err -> _
+
+            -> _
+        }
         return
     }
 
@@ -834,57 +897,66 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
     pc < .n -> {
         op = .op[pc]
 
-        op == RE-OP-CHAR -> {
-            sp < text.len-bytes() -> {
-                (text[sp]) == .arg1[pc] -> {
+        {
+            a1 ?= .arg1[pc]
+            a2 ?= .arg2[pc]
 
-                    #{overflow=wrap}
-                    result-ok = .match-at(pc + 1, sp + 1, text)
+            op == RE-OP-CHAR -> {
+                sp < text.len-bytes() -> {
+                    (text[sp]) == a1 -> {
+
+                        #{overflow=wrap}
+                        result-ok = .match-at(pc + 1, sp + 1, text)
+                    }
                 }
             }
-        }
-        op == RE-OP-ANY -> {
-            sp < text.len-bytes() -> {
-                (text[sp]) != 10 -> {
+            op == RE-OP-ANY -> {
+                sp < text.len-bytes() -> {
+                    (text[sp]) != 10 -> {
 
-                    #{overflow=wrap}
-                    result-ok = .match-at(pc + 1, sp + 1, text)
+                        #{overflow=wrap}
+                        result-ok = .match-at(pc + 1, sp + 1, text)
+                    }
                 }
             }
-        }
-        op == RE-OP-CLASS -> sp < text.len-bytes() -> {
+            op == RE-OP-CLASS -> sp < text.len-bytes() -> {
 
-            ; D6：`ch = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
-            ch char = text[sp]
+                ; D6：`ch = ...[...]` 的結果是 ?char；這里要的是舊的行為（plain char），顯式標註 char。
+                ch char = text[sp]
 
-            yes = .in-class(.arg1[pc], ch)
+                yes = .in-class(a1, ch)
+
+                #{overflow=wrap}
+                yes -> result-ok = .match-at(pc + 1, sp + 1, text)
+            }
+            op == RE-OP-SPLIT -> {
+
+                ; 貪婪：先嘗試第一分支
+                result-ok = .match-at(a1, sp, text)
+
+                ; 第一分支失敗時回溯到第二分支
+                ! result-ok -> {
+                    result-ok = .match-at(a2, sp, text)
+                }
+            }
+            op == RE-OP-JUMP -> {
+                result-ok = .match-at(a1, sp, text)
+            }
+            op == RE-OP-MATCH -> {
+                result-ok = true
+                .match-end = sp
+            }
 
             #{overflow=wrap}
-            yes -> result-ok = .match-at(pc + 1, sp + 1, text)
-        }
-        op == RE-OP-SPLIT -> {
+            op == RE-OP-START -> sp == 0 -> result-ok = .match-at(pc + 1, sp, text)
 
-            ; 貪婪：先嘗試第一分支
-            result-ok = .match-at(.arg1[pc], sp, text)
+            #{overflow=wrap}
+            op == RE-OP-END -> sp == text.len-bytes() -> result-ok = .match-at(pc + 1, sp, text)
+        }: {
+            err -> _
 
-            ; 第一分支失敗時回溯到第二分支
-            ! result-ok -> {
-                result-ok = .match-at(.arg2[pc], sp, text)
-            }
+            -> _
         }
-        op == RE-OP-JUMP -> {
-            result-ok = .match-at(.arg1[pc], sp, text)
-        }
-        op == RE-OP-MATCH -> {
-            result-ok = true
-            .match-end = sp
-        }
-
-        #{overflow=wrap}
-        op == RE-OP-START -> sp == 0 -> result-ok = .match-at(pc + 1, sp, text)
-
-        #{overflow=wrap}
-        op == RE-OP-END -> sp == text.len-bytes() -> result-ok = .match-at(pc + 1, sp, text)
     }
     ok = result-ok
 }

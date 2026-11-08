@@ -55,16 +55,14 @@ hello = () {
 `path` 模塊的 `func`，效果與寫全 `<path>.<func>(...)` 完全相同。
 
 ```no
-#{fmt-skip}
 ; std/global.no —— 兩種寫法，語義相同
-@ std/err.new err      ; 導出式
-err = err.new          ; 賦值式
+@ std/err.new err; 導出式
+err = err.new; 賦值式
 ```
 
 ```no
-#{fmt-skip}
-e = err('disk full')        ; 等同 e = err.new('disk full')
-m = e.msg()                 ; 'disk full'
+e = err('disk full'); 等同 e = err.new('disk full')
+m = e.msg(); 'disk full'
 ```
 
 規則：

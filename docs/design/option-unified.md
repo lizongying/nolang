@@ -374,10 +374,10 @@ match 穷尽性规则保持单一。§7.2 需有回归钉钉住这一点（写�
 #{overflow=wrap}
 z-opt = a + b
 z = 0
-z-opt: {
-    ok -> z = it
+z = z-opt: {
+    ok -> it
 
-    -> z = 0
+    -> 0
 }
 ```
 
@@ -467,20 +467,25 @@ MIR 补上 map 下标降糖后变成**编译成功、运行期 SIGBUS**。故必
 之前并给出「直接写 `m[k] = v`」的指引。place-match（`m[k]: { ok -> it = v }`）不受影响——
 它的 `it = v` 走的是写侧 dispatch，落成 put，实测正确。
 
-⚠️ **验证纪律（本次踩到）**：AST 缓存是**内容寻址**的（`~/.cache/nolang/ast`），改编译器
-却保持被测程序内容不变时，`no build` 会**重放旧 AST**——本次因此误判过「`?=` 改写成 put
-后不再崩溃」。跨编译器版本做 A/B 必须 `NOLANG_AST_CACHE_OFF=1`（或让程序内容变化）。
-若解析期输出形状真的变了，则按 `parser/astdiskcache.go` 的规矩 bump `parser.ASTVersion`。
+⚠️ **验证纪律（2026-11-08 更新：已不必清缓存）**：AST 缓存是**内容寻址**的
+（`~/.cache/nolang/ast`），键 = `sha256(ASTVersion ‖ 解析期 salt ‖ 源文件内容)`
+（`parser/astdiskcache.go:403-419`），而 salt 里折入了 `checker.StdSigKey`
+（`build/transpiler_entry.go:105-114`）—— 即 `src/hash.noml` 所列全部源文件
+（标准库 + 编译器自身）的内容签名。**只要 `no` 是用 `make` 重建的，改编译器就会换一把新键，
+旧 AST 条目自然 miss，跨编译器版本做 A/B 天然隔离**：不必清缓存，通常也不必
+`NOLANG_AST_CACHE_OFF=1`（后者只留给手搓二进制的场景：`src/hash.noml` 已覆盖解析链上的全部包，
+`package/`、`lsp/`、`fmt/`、`cmd/`、`tools/` 都不改变 `ParseProgram` 的输出，与这份缓存无关）。
+若解析期输出形状真的变了，仍建议 bump `parser.ASTVersion`（键会跟着变，属双保险）。
 
 ### 12.3 语义规格：两种正确写法
 
 **(1) place-match（自行处理越界臂）**
 
 ```no
-#{fmt-skip}
 a[1]: {
-    ok -> it = 2      ; it = 元素位置（可读可写）：it = 2 是写入，it = it + 1 亦可
-    -> _              ; 越界臂：行为由用户自定
+    ok -> it = 2; it = 元素位置（可读可写）：it = 2 是写入，it = it + 1 亦可
+
+    -> _; 越界臂：行为由用户自定
 }
 ```
 
@@ -495,10 +500,9 @@ a[1]: {
 **(2) 错误上抛 `?=`（要求所在函数有 option 结果参数）**
 
 ```no
-#{fmt-skip}
 f = (i i64) (res ?i64) {
     a = [1, 2, 3]
-    a[i] ?= 2          ; ok → 写入；越界 → res = <option>; return
+    a[i] ?= 2; ok → 写入；越界 → res = <option>; return
     res = nil
 }
 ```
@@ -685,4 +689,106 @@ bare `ok` / `err` / `nil` / `some` 是**模式**，payload 是零常量（`nil` 
   `optStoreRawBytes` 类型双关进标量槽，读回来的是 `%str-long` 的**首字段（len）**，不是消息
   本身。于是 `err('a') == err('b')` 仍为 true（两者 len 都是 1）。这是 `?非str` 承载 err
   消息这一既有设计的性质，与本次比较语义无关（修复前后一致）。
+
+---
+
+## 14. D12 规格：`?=` 按左值型别容量分流（2026-11-07 定案）
+
+> ⚠️ **状态：仅规格，代码未实施。** 本节只钉设计口径，不改任何当前行为。
+> 默认 `?=`（`v ?= expr`，无型别标注）**维持现状：`nil` 与 `err` 都上抛**。
+> 曾短暂落地的「`?=` 只上抛 `err`」改动已全数撤回（未使用 `git checkout` / `reset` / `restore`），
+> 重编 `bin/no` 后实测行为已复原。本节沿用 D 编号，但不表示已实施。
+
+### 14.1 触发问题（实测，2026-11-07）
+
+以 `b [4]?i64 = [1, nil, 3, nil]` 为例，当前 `bin/no` 实测：
+
+| 探针 | 结果 |
+|---|---|
+| `v ?= b[0]`（元素为 1） | 后续陈述执行，得到 `ok` |
+| `v ?= b[1]`（空槽 `nil`） | **后续陈述不执行**，函式返回 `nil` |
+| `v ?= b[9]`（越界） | 后续陈述不执行，函式返回 `err` |
+
+源码依据：`src/parser/lowering.go` 的 `lowerUnwrapAssign`（三处 `nil` / `err` 臂）、
+`lowerUnwrapAssignToIndex`、`makePropagateGuard`，以及 `src/parser/block_match.go` 的
+`halt` 旗标（其注释明写「`?=` 的 `nil` 传播会把 subject 写成 `nil`」）。
+`nil` 臂共 **5 个生成点**，只改其中一处会造成「函式层级与块 match 行为分叉」。
+
+### 14.2 定案规则
+
+`?=` 不是「错误上抛」开关，而是**依左值能盛哪些 option 变体来决定去留**：
+
+1. **左值无型别标注时，`v` 预设就是 `ok` 的 payload 容器**（只能盛 `ok(v)`）。
+   `nil` 与 `err` 都盛不下 ⇒ **都上抛**（写 `?T` 结果参数 + 提前 `return`；块 match 下
+   由最近的块 match 捕捉、主体停住）。此为**现状，保持不变** —— `src/std` 与既有测试不受影响。
+2. **左值显式标注为 plain `T`：`v T ?= expr`** —— 同 1，`nil` / `err` 都上抛。
+3. **左值显式标注为 `?T`：`v ?T ?= expr`** —— 三态都盛得下 ⇒ `ok` / `nil` / `err`
+   **都不上抛**，整个 option 值（含 tag）落进 `v`，流程继续。
+4. **只想收 `ok | nil` 二态**：自定 `mayok = ok | nil`，写成 `v mayok ?= expr`；
+   此时 `err` 盛不下 ⇒ 上抛，`nil` 落进 `v`。**不再用 `?T` 表达「可能是 ok 或 nil」**。
+
+判定原则一句话：**左值能盛下的变体落进左值，盛不下的变体上抛**。
+`?=` 是否仍受 D10 约束（函式有 `?T` 结果参数，或位于陈述层级块 match 主体内）——
+即便所有变体都被左值收下、实际不会上抛，该约束是否保留属实施期待定项（见 14.5）。
+
+### 14.3 语义矩阵
+
+| 左值型别 | RHS `ok(v)` | RHS `nil` | RHS `err(e)` |
+|---|---|---|---|
+| 未标注（预设 = `ok` 容器） | `v = payload` | 上抛 | 上抛 |
+| `v T ?= ...` | `v = payload` | 上抛 | 上抛 |
+| `v ?T ?= ...` | `v = ok(v)` | `v = nil`，继续 | `v = err(e)`，继续 |
+| `v mayok ?= ...`（`mayok = ok \| nil`） | `v = ok(v)` | `v = nil`，继续 | 上抛 |
+| 写入侧 `a[i] ?= x` | 依目标位置的型别容量套用同上规则 | | |
+
+> `[]?i64` 一类容器的空槽是「值确实为 `nil`」，不是「值不存在」：这正是 3 / 4 要保留
+> `nil` 的动机。D11 之后「越界」已是 `err`，不要再把它算进 `nil` 的语义。
+
+### 14.4 当前语法缺口（实测，均编不过）
+
+| 写法 | `bin/no` 报错 |
+|---|---|
+| `mayok = ok \| nil` | `expected type after '\|'` [cvl8rf8s] —— `ok` / `nil` 目前不能当型别名成员 |
+| `v i64 ?= a[0]` | `expected assignment operator, got IDENT` [yh8904fm] |
+| `v ?i64 ?= a[1]` | `expected assignment operator, got IDENT` [yh8904fm] |
+
+`UnwrapAssignStatement`（`src/parser/ast.go:632`）**没有型别栏位**；
+`parseUnwrapAssignStatement`（`src/parser/stmt.go:1055`）与分派点 `stmt.go:142`
+只认 `IDENT` 紧跟 `QUESTION_ASSIGN`。⇒ 14.2 的 2 / 3 / 4 全属**语言扩展**，
+不是改某个语义开关就能达成。
+
+### 14.5 影响面与分阶段实施（未开工）
+
+| 阶段 | 内容 | 主要触点 |
+|---|---|---|
+| A | `?=` 左值型别标注语法 | `UnwrapAssignStatement` 新增 `DeclaredType Type`；`stmt.go:142 / 1055` 解析 `IDENT Type ?=`、`IDENT ?Type ?=`（注意 `?T` 与 `?=` 的词法歧义）；`gob_register.go` / `dump` / `fmt/stmt.go` / `lsp/walker.go` / `checker` 同步加 case；AST 结构变动须 bump `parser.ASTVersion`（AST 缓存键随 `ASTVersion` + `StdSigKey` 自动失效，无需手动清缓存） |
+| B | 按左值容量分流 | `lowerUnwrapAssign` 三处 `nil` / `err` 臂、`lowerUnwrapAssignToIndex`、`makePropagateGuard` 共 5 个生成点；`?T` / `mayok` 左值改走 `IsPropagation` 整包浅拷（现有机制，见 `ast.go:712`），**预设路径一行不动**；`block_match.go` 的 `halt` 旗标相应只在「仍会上抛」时置位 |
+| C | `ok` / `nil` 作为 union 成员 | `mayok = ok \| nil` 的型别解析与单态化；确认变体作为型别名成员后的 tag 表示与 `match` 穷尽性 |
+| D | 缺值改 `err`（见 14.6） | builtin / codegen 的 map `get` 等站点 |
+| E | 回归与文档 | 新增「`?T` 左值收下 `nil` / `err`」「`mayok` 上抛 `err`」「预设 `?=` 仍上抛 `nil`」三组断言；`make test` + `no test test/std`；同步 `AGENTS.md` / `nolang-syntax/SKILL.md` / `docs/docs/lang/syntax.md` / i18n en |
+
+验收：`make gen no` 通过；`make test` 与 `no test test/std` 全绿；`tests/` 语料冒烟；
+预设 `?=` 的三态行为与 14.1 表格**逐行一致**（不回归）。
+
+### 14.6 配套规则：值本身可能是 `nil` 的「缺值」改 `err`
+
+map 缺键、EOF / 无帧、数据不足、空容器等「异常 / 缺失」信号一律改用 `err`，
+**不用 `nil`**：因为 `nil` 现在可能是合法值（如 `[K]?V` 里值就是 `nil`），
+用 `nil` 无法区分「键不存在」与「键存在但值为 `nil`」。
+`nil` 保留给「值确实为 `nil`」这一种正常情形。
+
+按语义分类处理，不一刀切：
+
+- 改 `err`：map 缺键、压缩数据不足、连接无帧、stat 失败、越界（D11 已改）。
+- 保留 `nil` 并改写控制流：空槽、`[]?T` 元素为 `nil`、「未找到标头」这类查询结果。
+- std 唯读盘点：约 16 档 116 处 `?=`；D11 后越界已是 `err`，故多数站点不受影响。
+- `=` 就地捕获（`buildCaptureChain`）本来就允许 `nil` 继续，**不在改动范围**。
+
+### 14.7 与既有决策的关系
+
+- **D10（块 match）**：预设 `?=` 的 `nil` / `err` 上抛仍由最近的块 match 捕捉；
+  主体走完匹配 `nil`、失败匹配该次变体的既有叙述**继续有效**。
+- **D11（索引恒 `?T`、越界 `err`）**：不变；本规格不改变索引结果与写入侧的解包要求。
+- **不改的部分**：预设 `?=` 的降糖形态、结果参数自动零值、`=` 就地捕获、
+  `optunuse` / `idxhndld` 诊断分级、`src/std` 现状。
 

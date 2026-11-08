@@ -113,12 +113,11 @@ Nolang 使用**具名格式字串**語法 `{name[:spec]}`，直接引用作用�
 **多參數時，字面量默認是模板，不是 C 風格的格式串。** `print('result={val}', 42, 'result={val}')` 中，每個字串字面量**各自**是一個模板：它的 `{val}` 從**呼叫點作用域**取值，與同一調用裡的其它參數無關。字面量**不會**去描述或消費後面的參數——它不是 `printf('%d', 42)` 那樣的替換。非字面量的參數（變數、運算式）則按普通可變參數處理，以空格分隔，整行末尾只有一個換行。
 
 ```no
-#{fmt-skip}
 val = 42
-print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
+print('result={val}', 42, 'result={val}'); result=42 42 result=42
 tmpl = '{val}'
-print(tmpl)                                ; {val} —— 變數是純文字，不做替換
-print('a={val}', val)                      ; a=42 42
+print(tmpl); {val} —— 變數是純文字，不做替換
+print('a={val}', val); a=42 42
 ```
 
 `format(s)` 以及已廢棄的 `sprintf(s)` 仍只接受**單一格式字串**，沒有多參數形式。
@@ -133,30 +132,29 @@ print('a={val}', val)                      ; a=42 42
 > `io.out`/`io.err` 是底層命令，輸出**不換行**。由於模組調用必須加模組名，`io.err` 明確了模組前綴，不會與 Option 構造函數 `err()` 衝突；即使同名，模組前綴也能區分。
 
 ```no
-#{fmt-skip}
 ; 容量/長度構造（無前綴）
-s str = with-cap(256)            ; ✅ 預分配 256 位元組的 str
-v []i64 = with-cap(100)          ; ✅ 預分配 100 個元素的切片
-v []i64 = with-cap-len(200, 100) ; ✅ 容量 200、長度 100
-v []i64 = with-len(100)          ; ✅ 長度 100 的切片
+s str = with-cap(256); ✅ 預分配 256 位元組的 str
+v []i64 = with-cap(100); ✅ 預分配 100 個元素的切片
+v []i64 = with-cap-len(200, 100); ✅ 容量 200、長度 100
+v []i64 = with-len(100); ✅ 長度 100 的切片
 
 ; 輸出/格式化（無前綴）
-print('hello {n}')               ; ✅ 自動換行
-print(a, b, c)                   ; ✅ 多參數，空格分隔，自動換行
-print('x={n}', n)                ; ✅ 字面量是模板，變數是值
-print('result={val}', 42, 'result={val}')  ; ✅ 每個字面量各自替換
-print()                          ; ✅ 空參數，只輸出換行
-s = format('x={x}')              ; ✅ 返回格式化字串（單一格式字串）
-eprint('err: {n}')               ; ✅ 輸出到 stderr 並換行
-eprint('err:', a, b)             ; ✅ 多參數，stderr 空格分隔
-print('編號 {id:06} 金額 {money:.2f}')  ; ✅ 支援對齊、填充、寬度、精度
+print('hello {n}'); ✅ 自動換行
+print(a, b, c); ✅ 多參數，空格分隔，自動換行
+print('x={n}', n); ✅ 字面量是模板，變數是值
+print('result={val}', 42, 'result={val}'); ✅ 每個字面量各自替換
+print(); ✅ 空參數，只輸出換行
+s = format('x={x}'); ✅ 返回格式化字串（單一格式字串）
+eprint('err: {n}'); ✅ 輸出到 stderr 並換行
+eprint('err:', a, b); ✅ 多參數，stderr 空格分隔
+print('編號 {id:06} 金額 {money:.2f}'); ✅ 支援對齊、填充、寬度、精度
 
 ; 底層命令（需要模組前綴）
-io.out('no-newline-here')        ; ✅ 輸出不換行（替代 printf）
-io.err('err-no-newline')         ; ✅ stderr 不換行（替代 eprintf）
+io.out('no-newline-here'); ✅ 輸出不換行（替代 printf）
+io.err('err-no-newline'); ✅ stderr 不換行（替代 eprintf）
 
 ; 其他所有跨模組調用都需要前綴
-fs.open(path, opts)              ; ✅ 帶前綴（builtin 也需要）
+fs.open(path, opts); ✅ 帶前綴（builtin 也需要）
 ```
 
 #### 格式說明符
@@ -177,20 +175,19 @@ fs.open(path, opts)              ; ✅ 帶前綴（builtin 也需要）
 - `type` — `d`(整數)、`x`/`X`(十六進制)、`o`(八進制)、`b`(二進制)、`c`(字元)、`f`(定點)、`e`/`E`(科學記號)、`g`/`G`(通用)、`s`(字串，預設)、`t`(資料型別名，編譯期確定)、`v`(字面量值，字串加單引號，vec 調用 to-str)
 
 ```no
-#{fmt-skip}
 x i64 = 42
 u u64 = 255
 pi f64 = 3.14159
 s str = 'hello'
-print('{x:06}')              ; 000042
-print('{x:>10}')             ; 右對齊寬度 10
-print('{u:#x}')              ; 0xff
-print('{pi:.2f}')            ; 3.14
-print('{pi:8.3e}')           ; 3.142e+00
-print('{s:<10}')             ; hello     （左對齊）
-print('{s:.3}')              ; hel（截斷為 3 字元）
-print('{x:t}')              ; i64（印出變數 x 的型別名）
-print('{s:v}')              ; 'hello'（字串用單引號包裹）
+print('{x:06}'); 000042
+print('{x:>10}'); 右對齊寬度 10
+print('{u:#x}'); 0xff
+print('{pi:.2f}'); 3.14
+print('{pi:8.3e}'); 3.142e+00
+print('{s:<10}'); hello     （左對齊）
+print('{s:.3}'); hel（截斷為 3 字元）
+print('{x:t}'); i64（印出變數 x 的型別名）
+print('{s:v}'); 'hello'（字串用單引號包裹）
 ```
 
 `{{` 與 `}}` 用於輸出字面 `{` 與 `}`，但**僅當同一字串中至少還有一個真正的 `{name}` 欄位時才會生效**。只含轉義、不含欄位的字面量會被原樣輸出：`print('{{n}}')` 輸出 `{{n}}`（而不是 `{n}`），`print('{{')` 輸出 `{{`。要輸出單獨的大括號，直接用 `print('{')` / `print('}')` 即可。
@@ -200,10 +197,11 @@ print('{s:v}')              ; 'hello'（字串用單引號包裹）
 在同一 `.no` 檔案內定義的函數、常量、方法，直接使用，不需前綴。
 
 ```no
-#{fmt-skip}
 ; 在 sha256.no 中：
-sha256(data)              ; sha256 定義在本檔案
-HMAC-BLOCK-SIZE           ; 常量定義在本檔案
+sha256(data); sha256 定義在本檔案
+
+; 常量定義在本檔案
+HMAC-BLOCK-SIZE
 ```
 
 ### 3. 內置類型方法
@@ -211,12 +209,11 @@ HMAC-BLOCK-SIZE           ; 常量定義在本檔案
 內置類型（`str`、`i64`、`vec`、`arr`、`byte`、`char`、`bool` 等）的方法調用不需前綴。方法已內建於型別，通過接收者型別直接解析。
 
 ```no
-#{fmt-skip}
-'hello'.starts-with('he')  ; str 方法
-n.to-str()                 ; int 方法
-v.push(42)                 ; vec 方法
-a.contains(3)              ; arr 方法
-c.is-digit()               ; char 方法
+'hello'.starts-with('he'); str 方法
+n.to-str(); int 方法
+v.push(42); vec 方法
+a.contains(3); arr 方法
+c.is-digit(); char 方法
 ```
 
 ### 4. 結構體實例方法
@@ -224,15 +221,14 @@ c.is-digit()               ; char 方法
 對已建立的結構體實例調用方法不需模組前綴。方法通過實例的型別解析，編譯器自動找到對應的 `struct.method` 定義。
 
 ```no
-#{fmt-skip}
-f = fs.open(path, opts)    ; fs.open 是模組級函數，需前綴
-f.read(buf, n)             ; file.read 是結構體方法，不需前綴
-f.close()                  ; file.close 是結構體方法，不需前綴
+f = fs.open(path, opts); fs.open 是模組級函數，需前綴
+f.read(buf, n); file.read 是結構體方法，不需前綴
+f.close(); file.close 是結構體方法，不需前綴
 
-p = path{
+p = path {
     p: '/tmp'
 }
-p.exists()                 ; path.exists 是結構體方法，不需前綴
+p.exists(); path.exists 是結構體方法，不需前綴
 ```
 
 ## 方法調用 vs 模組函數調用

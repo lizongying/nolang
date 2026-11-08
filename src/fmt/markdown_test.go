@@ -259,6 +259,42 @@ func TestMdUnparseablePreserved(t *testing.T) {
 	mdCheck(t, "unparseable", input, want, []int{3})
 }
 
+// REGRESSION GUARD: 塊裡出現中綴位置的詞法錯誤字元（`→`、`、`…）時，整塊必須
+// 原樣留底並回報 skipped，絕不能被「格式化」成別的內容。
+//
+// `y = 1 → 2` 的 `→` 不屬任何中綴運算子，parseExpression 在 `1` 之後結束；
+// 若該 token 不被報告，parser 會把它靜默丟掉，formatter 於是輸出兩條陳述
+// （`y = 1` / `2`）——`no fmt -w -md` 就把文檔裡的 `→` 從原文裡刪掉了。
+// 更早的版本還把 `→`(E2 86 92) 按位元組拆成三個 ILLEGAL，訊息印成 `\u0086`。
+func TestMdInfixIllegalRuneKeepsBlockVerbatim(t *testing.T) {
+	input := mdDoc(
+		"prose",
+		"",
+		mdFence+"no",
+		"y = 1 → 2",
+		mdFence,
+		"",
+	)
+	mdCheck(t, "infix-illegal-rune", input, input, []int{3})
+}
+
+// REGRESSION GUARD: 塊裡出現非 ASCII 文字（漢字）時，整塊原樣留底並回報 skipped。
+//
+// 舊版 isLetter 拿位元組去查 unicode 表（rune(0xE5) = `å`），漢字被拆成
+// IDENT + ILLEGAL，於是 `可以 = 1` 報 `illegal token "\u008f"`。現在每個漢字
+// 是一個完整碼點的 ILLEGAL，診斷給的是「識別字只允許 ASCII」這句可操作的話。
+func TestMdNonASCIITextKeepsBlockVerbatim(t *testing.T) {
+	input := mdDoc(
+		"prose",
+		"",
+		mdFence+"no",
+		"可以 = 1",
+		mdFence,
+		"",
+	)
+	mdCheck(t, "non-ascii-text", input, input, []int{3})
+}
+
 // REGRESSION GUARD: 跳過塊的行號必須是**原文件**行號。
 //
 // 格式化會改變前面塊的長度，而掃描游標走的是「當前緩衝區」下標。早期版本

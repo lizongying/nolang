@@ -18,11 +18,11 @@ import whose package is not declared there, so add the package to
 ## Usage in Nolang source
 
 ```nolang
-# npm/lodash                ; whole module object: lodash.get(x, 'a.b')
-# npm/lodash.get as gt      ; one named export: gt(x, 'a.b')
-# npm/lodash.default as d   ; the package default export: d(props)
-# npm/@scope/pkg            ; scoped packages
-# npm/lodash/fp.get as fp-  ; subpath imports (fp is a keyword-free alias here)
+# npm/lodash; whole module object: lodash.get(x, 'a.b')
+# npm/lodash.get as gt; one named export: gt(x, 'a.b')
+# npm/lodash.default as d; the package default export: d(props)
+# npm/@scope/pkg; scoped packages
+# npm/lodash/fp.get as fp-; subpath imports (fp is a keyword-free alias here)
 ```
 
 ## Build & run (Node.js)

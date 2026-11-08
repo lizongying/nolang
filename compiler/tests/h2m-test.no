@@ -2328,6 +2328,27 @@ test-opt-i64-u64-samecaliber = () {
     runner.eq(iri64 == ir64, 1, 'opt-samecaliber i64==u64 IR')
 }
 
+; s98：option 主体三态臂解构（ok(v)/nil/err(e)）——撤销 s63 门禁，镜像 Go desugar 的 tag 顺序比较
+;   覆盖面：TY-OPT 主体 + ok(v) 绑定 payload（OP-OPTGET：extractvalue %option %vN, 1, 0）、nil/err 仅比 tag
+;   （ok=0 / nil=1 / err=2，OP-CONST + icmp eq i64）；err(e) 的 e 暂不可绑（无 TY-ERR），体未引用 e 时照降
+;   （引用 e ⇒ h2m-var-read 查不到 ⇒ unsup，安全）。⚠️ 本件依赖 compiler 包可编译（idxwrite 迁移落地）后运行。
+test-opt-match-arms = () {
+    src = 'qS = (o ?i64) (r i64) {\n    o: {\n        ok(v) -> r = v\n        nil -> r = -1\n        err(e) -> r = -2\n    }\n}\n'
+    t = ast.make()
+    r = ps.parse(t, ps.new(src.to-bytes()))
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, r)
+    ; 关键行为改变：s98 前 option match 走门禁 ⇒ unsup > 0；撤销门禁后整函数产码 ⇒ unsup == 0
+    runner.eq(agg.unsup, 0, 's98 optmatch unsup==0 (gate lifted)')
+    ; ok(v) payload 读取（OP-OPTGET）：extractvalue %option %vN, 1, 0
+    runner.eq(ir.contains(', 1, 0') > 0, 1, 's98 ok(v) payload OPTGET emitted')
+    ; 三态 tag 读取与比较（OP-OPTTAG：extractvalue %option %vN, 0；OP-CONST：add i64 0, {0,1,2}）
+    runner.eq(ir.contains('extractvalue %option') > 0, 1, 's98 option tag reads emitted')
+    runner.eq(ir.contains('add i64 0, 0') > 0, 1, 's98 ok tag const 0')
+    runner.eq(ir.contains('add i64 0, 1') > 0, 1, 's98 nil tag const 1')
+    runner.eq(ir.contains('add i64 0, 2') > 0, 1, 's98 err tag const 2')
+}
+
 ; s97：控制流 + ?i64 输出参入形——取路 some(n)、else 路 nil，汇聚 OPTLOAD 读出（两写皆落 %option 槽）
 test-opt-i64-flow-slot = () {
     src = 'q9g = (n i64) (r ?i64) {\n    {\n        n > 0 -> r = n\n        -> r = nil\n    }\n}\n'
@@ -3574,6 +3595,7 @@ test-opt-i64-deferred-zero()
 test-opt-i64-capture-call()
 test-opt-i64-param-tycode()
 test-opt-i64-u64-samecaliber()
+test-opt-match-arms()
 test-opt-i64-flow-slot()
 test-opt-i64-payload-gate()
 test-opt-f64-wrap-return()

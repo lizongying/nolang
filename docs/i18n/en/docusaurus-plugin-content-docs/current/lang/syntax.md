@@ -3223,6 +3223,7 @@ As with the other fix classes: surgical text replacement, no re-layout, and the 
 annotations are always **merged onto one line**:
 
 ```nolang
+#{fmt-skip}
 i <- [0..16): {
 
     #{index-out=0, overflow=wrap}

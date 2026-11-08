@@ -93,24 +93,30 @@ link {
     idx = l.free-head
     idx < 0 -> return
 
-    l.free-head = l.next[idx]
+    {
+        l.free-head = l.next[idx]
 
-    ; 寫入值
-    .[idx] = val
+        ; 寫入值
+        .[idx] = val
 
-    ; 鏈結到頭部
-    l.next[idx] = l.head
+        ; 鏈結到頭部
+        l.next[idx] ?= l.head
 
-    l.prev[idx] = -1
-    l.head >= 0 -> {
-        l.prev[l.head] = idx
+        l.prev[idx] ?= -1
+        l.head >= 0 -> {
+            l.prev[l.head] ?= idx
+        }
+        l.head = idx
+        l.tail < 0 -> l.tail = idx
+
+        #{overflow=wrap}
+        l.size = l.size + 1
+        ok = true
+    }: {
+        err -> _
+
+        -> _
     }
-    l.head = idx
-    l.tail < 0 -> l.tail = idx
-
-    #{overflow=wrap}
-    l.size = l.size + 1
-    ok = true
 }
 
 ; [n]t.link-push-back: 插入元素到鏈結串列尾部
@@ -123,21 +129,27 @@ link {
     idx = l.free-head
     idx < 0 -> return
 
-    l.free-head = l.next[idx]
-    .[idx] = val
+    {
+        l.free-head = l.next[idx]
+        .[idx] = val
 
-    l.next[idx] = -1
+        l.next[idx] ?= -1
 
-    l.prev[idx] = l.tail
-    l.tail >= 0 -> {
-        l.next[l.tail] = idx
+        l.prev[idx] ?= l.tail
+        l.tail >= 0 -> {
+            l.next[l.tail] ?= idx
+        }
+        l.tail = idx
+        l.head < 0 -> l.head = idx
+
+        #{overflow=wrap}
+        l.size = l.size + 1
+        ok = true
+    }: {
+        err -> _
+
+        -> _
     }
-    l.tail = idx
-    l.head < 0 -> l.head = idx
-
-    #{overflow=wrap}
-    l.size = l.size + 1
-    ok = true
 }
 
 ; [n]t.link-pop-front: 從鏈結串列頭部彈出元素
@@ -152,21 +164,27 @@ link {
     idx = l.head
     val = .[idx]
 
-    l.head = l.next[idx]
     {
-        l.head >= 0 -> {
-            l.prev[l.head] = -1
+        l.head = l.next[idx]
+        {
+            l.head >= 0 -> {
+                l.prev[l.head] ?= -1
+            }
+
+            -> l.tail = -1
         }
 
-        -> l.tail = -1
+        ; 回收節點到空閒鏈結串列
+        l.next[idx] ?= l.free-head
+        l.free-head = idx
+
+        #{overflow=wrap}
+        l.size = l.size - 1
+    }: {
+        err -> _
+
+        -> _
     }
-
-    ; 回收節點到空閒鏈結串列
-    l.next[idx] = l.free-head
-    l.free-head = idx
-
-    #{overflow=wrap}
-    l.size = l.size - 1
 }
 
 ; [n]t.link-pop-back: 從鏈結串列尾部彈出元素
@@ -181,20 +199,26 @@ link {
     idx = l.tail
     val = .[idx]
 
-    l.tail = l.prev[idx]
     {
-        l.tail >= 0 -> {
-            l.next[l.tail] = -1
+        l.tail = l.prev[idx]
+        {
+            l.tail >= 0 -> {
+                l.next[l.tail] ?= -1
+            }
+
+            -> l.head = -1
         }
 
-        -> l.head = -1
+        l.next[idx] ?= l.free-head
+        l.free-head = idx
+
+        #{overflow=wrap}
+        l.size = l.size - 1
+    }: {
+        err -> _
+
+        -> _
     }
-
-    l.next[idx] = l.free-head
-    l.free-head = idx
-
-    #{overflow=wrap}
-    l.size = l.size - 1
 }
 
 ; [n]t.link-peek-front: 查看頭部元素（不移除）
@@ -230,82 +254,88 @@ link {
 [n]t.link-insert-at = (l link, pos i64, val t) (ok bool) {
     ok = false
 
-    #{overflow=wrap}
     {
-        pos < 0 || pos > l.size -> return
+        #{overflow=wrap}
+        {
+            pos < 0 || pos > l.size -> return
 
-        pos == 0 -> {
+            pos == 0 -> {
 
-            ; 插入頭部
-            idx = l.free-head
-            idx < 0 -> return
+                ; 插入頭部
+                idx = l.free-head
+                idx < 0 -> return
 
-            l.free-head = l.next[idx]
-            .[idx] = val
+                l.free-head = l.next[idx]
+                .[idx] = val
 
-            l.next[idx] = l.head
+                l.next[idx] ?= l.head
 
-            l.prev[idx] = -1
-            l.head >= 0 -> {
-                l.prev[l.head] = idx
+                l.prev[idx] ?= -1
+                l.head >= 0 -> {
+                    l.prev[l.head] ?= idx
+                }
+                l.head = idx
+                l.tail < 0 -> l.tail = idx
+                l.size = l.size + 1
+                ok = true
+                return
             }
-            l.head = idx
-            l.tail < 0 -> l.tail = idx
-            l.size = l.size + 1
-            ok = true
-            return
+
+            pos == l.size -> {
+
+                ; 插入尾部
+                idx = l.free-head
+                idx < 0 -> return
+
+                l.free-head = l.next[idx]
+                .[idx] = val
+
+                l.next[idx] ?= -1
+
+                l.prev[idx] ?= l.tail
+                l.tail >= 0 -> {
+                    l.next[l.tail] ?= idx
+                }
+                l.tail = idx
+                l.head < 0 -> l.head = idx
+                l.size = l.size + 1
+                ok = true
+                return
+            }
         }
 
-        pos == l.size -> {
-
-            ; 插入尾部
-            idx = l.free-head
-            idx < 0 -> return
-
-            l.free-head = l.next[idx]
-            .[idx] = val
-
-            l.next[idx] = -1
-
-            l.prev[idx] = l.tail
-            l.tail >= 0 -> {
-                l.next[l.tail] = idx
-            }
-            l.tail = idx
-            l.head < 0 -> l.head = idx
-            l.size = l.size + 1
-            ok = true
-            return
+        ; 插入中間：定位到 pos 的節點
+        idx = l.head
+        i <- [0..pos): {
+            idx = l.next[idx]
         }
+
+        ; 分配新節點
+        new = l.free-head
+        new < 0 -> return
+
+        l.free-head = l.next[new]
+        .[new] = val
+
+        ; 插入到 idx 之前
+        p = l.prev[idx]
+
+        l.prev[new] ?= p
+
+        l.next[new] ?= idx
+
+        l.next[p] ?= new
+
+        l.prev[idx] ?= new
+
+        #{overflow=wrap}
+        l.size = l.size + 1
+        ok = true
+    }: {
+        err -> _
+
+        -> _
     }
-
-    ; 插入中間：定位到 pos 的節點
-    idx = l.head
-    i <- [0..pos): {
-        idx = l.next[idx]
-    }
-
-    ; 分配新節點
-    new = l.free-head
-    new < 0 -> return
-
-    l.free-head = l.next[new]
-    .[new] = val
-
-    ; 插入到 idx 之前
-    p = l.prev[idx]
-
-    l.prev[new] = p
-
-    l.next[new] = idx
-
-    l.next[p] = new
-
-    l.prev[idx] = new
-
-    #{overflow=wrap}
-    l.size = l.size + 1
-    ok = true
 }
 
 ; [n]t.link-remove-at: 移除指定位置的元素
@@ -315,77 +345,83 @@ link {
 ; [link-remove-at](#arr.link-remove-at)
 [n]t.link-remove-at = (l link, pos i64) (val ?t) {
 
-    #{overflow=wrap}
     {
-        pos < 0 || pos >= l.size -> {
-            val = nil
-            return
-        }
-
-        pos == 0 -> {
-
-            ; 移除頭部
-            idx = l.head
-            val = .[idx]
-
-            l.head = l.next[idx]
-            {
-                l.head >= 0 -> {
-                    l.prev[l.head] = -1
-                }
-
-                -> l.tail = -1
+        #{overflow=wrap}
+        {
+            pos < 0 || pos >= l.size -> {
+                val = nil
+                return
             }
 
-            l.next[idx] = l.free-head
-            l.free-head = idx
-            l.size = l.size - 1
-            return
-        }
+            pos == 0 -> {
 
-        pos == l.size - 1 -> {
+                ; 移除頭部
+                idx = l.head
+                val = .[idx]
 
-            ; 移除尾部
-            idx = l.tail
-            val = .[idx]
+                l.head = l.next[idx]
+                {
+                    l.head >= 0 -> {
+                        l.prev[l.head] ?= -1
+                    }
 
-            l.tail = l.prev[idx]
-            {
-                l.tail >= 0 -> {
-                    l.next[l.tail] = -1
+                    -> l.tail = -1
                 }
 
-                -> l.head = -1
+                l.next[idx] ?= l.free-head
+                l.free-head = idx
+                l.size = l.size - 1
+                return
             }
 
-            l.next[idx] = l.free-head
-            l.free-head = idx
-            l.size = l.size - 1
-            return
+            pos == l.size - 1 -> {
+
+                ; 移除尾部
+                idx = l.tail
+                val = .[idx]
+
+                l.tail = l.prev[idx]
+                {
+                    l.tail >= 0 -> {
+                        l.next[l.tail] ?= -1
+                    }
+
+                    -> l.head = -1
+                }
+
+                l.next[idx] ?= l.free-head
+                l.free-head = idx
+                l.size = l.size - 1
+                return
+            }
         }
+
+        ; 移除中間：定位到 pos 的節點
+        idx = l.head
+        i <- [0..pos): {
+            idx = l.next[idx]
+        }
+        val = .[idx]
+
+        p = l.prev[idx]
+
+        nx = l.next[idx]
+
+        l.next[p] ?= nx
+
+        l.prev[nx] ?= p
+
+        ; 回收節點
+        l.next[idx] ?= l.free-head
+        l.free-head = idx
+
+        #{overflow=wrap}
+        l.size = l.size - 1
+    }: {
+        err -> _
+
+        -> _
     }
-
-    ; 移除中間：定位到 pos 的節點
-    idx = l.head
-    i <- [0..pos): {
-        idx = l.next[idx]
-    }
-    val = .[idx]
-
-    p = l.prev[idx]
-
-    nx = l.next[idx]
-
-    l.next[p] = nx
-
-    l.prev[nx] = p
-
-    ; 回收節點
-    l.next[idx] = l.free-head
-    l.free-head = idx
-
-    #{overflow=wrap}
-    l.size = l.size - 1
 }
 
 ; [n]t.link-get-at: 取得指定位置的元素
@@ -448,35 +484,47 @@ link {
 ; l link: 鏈結串列狀態
 ; [link-reverse](#arr.link-reverse)
 [n]t.link-reverse = (l link) {
-    idx = l.head
-    (idx >= 0) {
-        nx = l.next[idx]
+    {
+        idx = l.head
+        (idx >= 0) {
+            nx = l.next[idx]
 
-        l.next[idx] = l.prev[idx]
+            l.next[idx] ?= l.prev[idx]
 
-        l.prev[idx] = nx
-        idx = nx
+            l.prev[idx] ?= nx
+            idx = nx
+        }
+        tmp = l.head
+        l.head = l.tail
+        l.tail = tmp
+    }: {
+        err -> _
+
+        -> _
     }
-    tmp = l.head
-    l.head = l.tail
-    l.tail = tmp
 }
 
 ; [n]t.link-clear: 清空鏈結串列，回收所有節點
 ; l link: 鏈結串列狀態
 ; [link-clear](#arr.link-clear)
 [n]t.link-clear = (l link) {
-    idx = l.head
-    (idx >= 0) {
-        nx = l.next[idx]
+    {
+        idx = l.head
+        (idx >= 0) {
+            nx = l.next[idx]
 
-        l.next[idx] = l.free-head
-        l.free-head = idx
-        idx = nx
+            l.next[idx] ?= l.free-head
+            l.free-head = idx
+            idx = nx
+        }
+        l.head = -1
+        l.tail = -1
+        l.size = 0
+    }: {
+        err -> _
+
+        -> _
     }
-    l.head = -1
-    l.tail = -1
-    l.size = 0
 }
 
 ; ═══════════════════════════════════════════════

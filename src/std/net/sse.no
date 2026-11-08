@@ -166,7 +166,7 @@ client.next-event = () (ev ?event) {
 
                 ; 將剩餘資料移到緩衝區開頭
                 i <- [0..remaining.len-bytes()): {
-                    .recv-buf[i] = remaining.byte(i)
+                    .recv-buf[i] ?= remaining.byte(i)
                 }
                 .recv-buf-len = remaining.len-bytes()
 
@@ -287,7 +287,7 @@ client.next-event = () (ev ?event) {
                 i <- [0..n): {
 
                     #{overflow=wrap}
-                    .recv-buf[.recv-buf-len + i] = tmp.byte(i)
+                    .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
                 .recv-buf-len = .recv-buf-len + n
             }
@@ -493,10 +493,16 @@ client.reconnect = () (ok bool) {
 
     .recv-buf = with-len(SSE-BUF-SIZE)
     .recv-buf-len = remaining.len-bytes()
-    i <- [0..remaining.len-bytes()): {
-        .recv-buf[i] = remaining.byte(i)
+    {
+        i <- [0..remaining.len-bytes()): {
+            .recv-buf[i] ?= remaining.byte(i)
+        }
+        ok = true
+    }: {
+        err -> ok = false
+
+        -> ok = false
     }
-    ok = true
 }
 
 ; ═══════════════════════════════════════════════

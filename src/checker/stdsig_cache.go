@@ -3,8 +3,11 @@ package checker
 import (
 	crypto "crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	fs "io/fs"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/lizongying/nolang/cache"
 )
@@ -29,9 +32,15 @@ import (
 // and fresh and are used directly — there is no stale-table comparison and no
 // FS-walk fallback. The key's VALUE is not compared against the baked tables,
 // but it IS compared against StdASTBlob.StdKey at load time
-// (checker.validateStdASTBlob): the generator bakes the same src/std content
-// hash into the Tier-0 std AST blob, so a blob produced from different std
-// sources is rejected instead of being consumed silently.
+// (checker.validateStdASTBlob): the generator bakes the same std CONTENT hash
+// into the Tier-0 std AST blob, so a blob produced from different std sources
+// is rejected instead of being consumed silently.
+//
+// The StdSigKey is derived from src/hash.noml — a hand-written .noml that
+// declares which src/** files participate in the hash. Any change to the
+// compiler sources (parser/checker/hir/lexer/build) invalidates the baked
+// tables and forces a rebuild — so the key is a function of both Nolang
+// sources AND the Go compiler sources that parse them.
 
 // StdSigEntry holds both the declared PARAMETER types and the RESULT (return)
 // types for one std function or method. Merging the old *Sigs (results) and
@@ -51,15 +60,13 @@ type StdSigEntry struct {
 var (
 	// StdSigKey is injected at build time via -X (Makefile LD_FLAGS_WITH_SIG ->
 	// github.com/lizongying/nolang/checker.StdSigKey). The Makefile derives it
-	// from the CURRENT src/std via the independent genstdsig tool. At runtime
-	// the ONLY check is emptiness: empty means the binary was NOT built via
-	// `make` (e.g. `cd src && go build` or bare `go test`) — CollectStdModule
-	// Signatures / knownStdModules then hard-fail and require `make no`; the
-	// Tier-0 blob guard (validateStdASTBlob) now hard-fails on an empty key too.
-	// There is deliberately NO computeStdSigKey fallback. A non-empty
-	// StdSigKey means the binary was built via `make` and the baked tables are
-	// present and fresh; its value is additionally checked against
-	// StdASTBlob.StdKey so the blob must come from the same src/std content.
+	// from src/hash.noml via the independent genstdsig tool. At runtime the ONLY
+	// check is emptiness: empty means the binary was NOT built via `make` —
+	// CollectStdModuleSignatures / knownStdModules hard-fail and require
+	// `make no`; the Tier-0 blob guard (validateStdASTBlob) hard-fails on an
+	// empty key too. Non-empty means `make gen` baked the tables from the
+	// same src/hash.noml; value is additionally checked against
+	// StdASTBlob.StdKey so blob and injection must match.
 	StdSigKey = ""
 	// embeddedStdFuncSigs merges the old funcSigs (RESULT types) and
 	// funcParams (PARAMETER types) tables into one map keyed by "module.fn"
@@ -90,26 +97,327 @@ var (
 // Makefile injects via -X. It is the single source of truth for the std
 // content hash; the Makefile injects it as the runtime StdSigKey, whose
 // emptiness is the sole runtime validation gate.
+//
+// The input fsys is rooted at src/ (os.DirFS(srcDir)). We look for
+// "hash.noml" inside that fsys root and parse its include/exclude lists. If
+// the manifest is missing or can't be parsed we fall back to the legacy
+// behavior: walkDir("std") hashing only src/std/*.no.
 func ComputeStdSigKeyFromFS(fsys fs.FS) (string, error) {
 	return computeStdSigKeyFromFS(fsys)
 }
 
+// hash.noml 的相对路径（相对于 fsys 根 src/）。手工维护，genstdsig 和
+// checker 只读取不写入。见 parseNoml 里的格式说明。
+const StdSigManifestRelpath = "hash.noml"
+
 func computeStdSigKeyFromFS(fsys fs.FS) (string, error) {
+	files, err := readManifestOrFallback(fsys, StdSigManifestRelpath)
+	if err != nil {
+		return "", err
+	}
+	return hashFileList(fsys, files), nil
+}
+
+// readManifestOrFallback 读取 src/hash.noml，解析 include / exclude，返回
+// 实际要参与 hash 的文件列表（相对于 fsys 根，已排序、已去重）。
+//
+// 清单格式 = Nolang .noml 简化子集：
+//
+//   - 一行一个条目，既可以是文件也可以是目录（目录递归展开成 .no + .go）
+//   - `;` 开头是注释，空行跳过
+//   - 结尾必须有一个单独的 `{ ... }` 块，包含：
+//       include: [ 'path/to/dir/'  'path/to/file.go'  ... ]
+//       exclude: [ '*_test.go'  'checker/stdsig_gen.go'  ... ]
+//     块是可选的；没有就只靠裸行
+//   - exclude 匹配语义：
+//       * 通配符匹配 basename，如 '*_test.go' 能筛掉所有 _test.go
+//       * 带斜杠的路径（相对 fsys 根）做精确后缀匹配，如 'checker/stdsig_gen.go'
+//       * 以 '/' 结尾 → 目录前缀匹配，如 'test/' 能筛掉 test/ 下所有
+//
+// 返回的条目保证是文件（不是目录），路径相对于 fsys 根、已排序。
+// 清单不存在时回退 legacy：只 hash src/std/*.no。
+func readManifestOrFallback(fsys fs.FS, manifestRel string) ([]string, error) {
+	data, err := fs.ReadFile(fsys, manifestRel)
+	if err != nil {
+		return listStdFilesLegacy(fsys), nil
+	}
+
+	entries, includeList, excludeList := parseNoml(string(data))
+	// 合并：裸行 + include 块
+	for _, e := range includeList {
+		entries = append(entries, e)
+	}
+
+	expanded := expandEntries(fsys, entries)
+	if len(expanded) == 0 {
+		return nil, fmt.Errorf("checker: %s expanded to zero files", manifestRel)
+	}
+
+	filtered := applyExcludes(expanded, excludeList)
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("checker: %s all files excluded", manifestRel)
+	}
+	sort.Strings(filtered)
+	return filtered, nil
+}
+
+// parseNoml 解析 hash.noml，返回：
+//   entries    — 裸行里的条目（include 列表 + 目录/文件路径）
+//   includeList — { include: [...] } 里的条目（如果有）
+//   excludeList — { exclude: [...] } 里的 glob（如果有）
+//
+// 块的解析是简化版：找到匹配的 `{` `}`，中间用 noml 数组语法
+// `include: [ 'a' 'b' ]` / `exclude: [ 'a' 'b' ]`。我们只识别这两个
+// 键，键名后面必须跟 `:`，值必须是方括号数组，数组项是单引号包裹
+// 的字符串（允许跨行、逗号可选）。解析失败就静默跳过那个块——
+// 裸行本身仍然生效。
+func parseNoml(content string) (entries, includeList, excludeList []string) {
+	// 分两段处理：块外 = 裸行（file 或 dir）；块内 = { include/exclude }
+	// 先把整体块捞出来（支持多层嵌套时我们只关心顶层 { }）。
+	pre, block, ok := splitTopLevelBlock(content)
+
+	// --- 裸行部分 ---
+	for _, ln := range strings.Split(pre, "\n") {
+		ln = strings.TrimRight(ln, "\r")
+		ln = strings.TrimSpace(ln)
+		if ln == "" || strings.HasPrefix(ln, ";") {
+			continue
+		}
+		// 如果是未被 split 干净的块尾部碎片，跳过（split 失败时 block == ""）
+		if strings.HasPrefix(ln, "{") || strings.HasPrefix(ln, "}") {
+			continue
+		}
+		ln = strings.TrimSuffix(ln, "/")
+		if ln == "" {
+			continue
+		}
+		entries = append(entries, ln)
+	}
+
+	if !ok {
+		return entries, nil, nil
+	}
+
+	// --- 块内 ---
+	includeList, excludeList = parseBlock(block)
+	return entries, includeList, excludeList
+}
+
+// splitTopLevelBlock 把文本拆成 "块前" + 顶层 { ... } 的 "块内" + 是否成功。
+// 只处理第一个顶层 `{`...`}`，返回的块内容已去掉最外层大括号。
+// 失败（不平衡、找不到）时 ok=false。
+func splitTopLevelBlock(content string) (pre, block string, ok bool) {
+	start := -1
+	depth := 0
+	for i, r := range content {
+		if r == '{' {
+			if depth == 0 {
+				start = i
+			}
+			depth++
+		} else if r == '}' {
+			depth--
+			if depth == 0 && start >= 0 {
+				return content[:start], content[start+1 : i], true
+			}
+		}
+	}
+	return content, "", false
+}
+
+// parseBlock 从 { ... } 的内容里挑出 include / exclude 两个数组。
+// 每一项形如 `key: [ 'a' 'b' ... ]`，允许跨行，逗号可选。
+// 不认识的 key 忽略。
+func parseBlock(body string) (includeList, excludeList []string) {
+	keys := []struct {
+		name    string
+		list    *[]string
+	}{
+		{"include:", nil},
+		{"exclude:", nil},
+	}
+	for i := range keys {
+		if keys[i].name == "include:" {
+			keys[i].list = &includeList
+		} else {
+			keys[i].list = &excludeList
+		}
+	}
+
+	for _, k := range keys {
+		idx := strings.Index(body, k.name)
+		if idx < 0 {
+			continue
+		}
+		rest := body[idx+len(k.name):]
+		// 找 [ ... ]
+		bracketOpen := strings.Index(rest, "[")
+		if bracketOpen < 0 {
+			continue
+		}
+		rest = rest[bracketOpen+1:]
+		bracketClose := strings.Index(rest, "]")
+		if bracketClose < 0 {
+			continue
+		}
+		inner := rest[:bracketClose]
+		for _, v := range splitQuotedStrings(inner) {
+			*k.list = append(*k.list, v)
+		}
+	}
+	return
+}
+
+// splitQuotedStrings 从方括号数组内部提取所有单引号字符串的值。
+// 例如 `'build/'  'foo.go' , 'bar/baz.go'` -> ["build/", "foo.go", "bar/baz.go"]
+func splitQuotedStrings(s string) []string {
+	var out []string
+	i := 0
+	for i < len(s) {
+		if s[i] != '\'' {
+			i++
+			continue
+		}
+		j := strings.IndexByte(s[i+1:], '\'')
+		if j < 0 {
+			break
+		}
+		out = append(out, s[i+1:i+1+j])
+		i = i + 1 + j + 1
+	}
+	return out
+}
+
+// expandEntries 把 entry 列表里的每一项展开成真正的文件列表。
+// entry 可以是文件（.no/.go 后缀，直接进 set）或目录（递归展开）。
+// 不存在的路径静默跳过。
+func expandEntries(fsys fs.FS, entries []string) []string {
+	seen := make(map[string]bool)
+	for _, e := range entries {
+		e = strings.TrimSuffix(strings.TrimSpace(e), "/")
+		if e == "" {
+			continue
+		}
+		info, err := fs.Stat(fsys, e)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			expandDir(fsys, e, seen)
+		} else {
+			// 只接受 .no / .go，避免把 hash.noml 自己或别的东西算进 hash
+			ext := filepath.Ext(e)
+			if ext == ".no" || ext == ".go" {
+				seen[e] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// expandDir 递归展开目录下所有 .no / .go 文件进 seen set。
+func expandDir(fsys fs.FS, dir string, seen map[string]bool) {
+	_ = fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		ext := filepath.Ext(d.Name())
+		if ext != ".no" && ext != ".go" {
+			return nil
+		}
+		clean := strings.TrimPrefix(p, "./")
+		seen[clean] = true
+		return nil
+	})
+}
+
+// applyExcludes 从 files 里移除被任何 exclude glob 命中的条目。
+// 匹配规则：
+//
+//   - glob 以 '/' 结尾 → 目录前缀匹配（相对 fsys 根的完整路径）
+//     如 'test/' 筛掉 test/x/no.go，但会保留 test_data/x.go
+//   - glob 带 '/'  → 相对 fsys 根的路径做后缀匹配
+//     如 'checker/stdsig_gen.go' 筛掉 checker/stdsig_gen.go
+//   - glob 不带 '/' → 只匹配 basename（最后一个斜杠后的部分）
+//     如 '*_test.go' 筛掉所有 _test.go
+//
+// filepath.Match 支持 '*' '?' '[...]' 这三类模式。
+func applyExcludes(files, globs []string) []string {
+	if len(globs) == 0 {
+		return files
+	}
+	out := files[:0]
+	for _, p := range files {
+		if excludeHit(p, globs) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func excludeHit(path string, globs []string) bool {
+	base := filepath.Base(path)
+	for _, g := range globs {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		// 目录前缀：以 '/' 结尾
+		if strings.HasSuffix(g, "/") {
+			prefix := strings.TrimSuffix(g, "/")
+			if strings.HasPrefix(path, prefix+"/") || path == prefix {
+				return true
+			}
+			continue
+		}
+		// 路径后缀：带 '/'
+		if strings.Contains(g, "/") {
+			if path == g || strings.HasSuffix(path, "/"+g) {
+				return true
+			}
+			continue
+		}
+		// 纯 basename glob
+		if ok, _ := filepath.Match(g, base); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// listStdFilesLegacy 返回每个 "std/<mod>.no"（ListStdModules 产物），
+// 用于 manifest 不存在时的 fallback。
+func listStdFilesLegacy(fsys fs.FS) []string {
 	known := ListStdModules(fsys)
 	sorted := append([]StdModuleInfo(nil), known...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].FullPath < sorted[j].FullPath })
+	out := make([]string, len(sorted))
+	for i, info := range sorted {
+		out[i] = "std/" + info.FullPath + ".no"
+	}
+	return out
+}
 
+// hashFileList 把每条 "<path>\x00<content-hash>\x00" 喂进 SHA256。
+// 文件读不到就跳过（不 crash），因为 manifest 可能列了被 exclude 掉
+// 之后根本不存在的路径，或者 typo。
+func hashFileList(fsys fs.FS, files []string) string {
 	h := crypto.New()
-	for _, info := range sorted {
-		embedPath := "std/" + info.FullPath + ".no"
-		source, err := fs.ReadFile(fsys, embedPath)
+	for _, p := range files {
+		source, err := fs.ReadFile(fsys, p)
 		if err != nil {
-			return "", err
+			continue
 		}
-		h.Write([]byte(info.FullPath))
+		h.Write([]byte(p))
 		h.Write([]byte{0})
 		h.Write([]byte(cache.ContentKey(string(source))))
 		h.Write([]byte{0})
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil))
 }

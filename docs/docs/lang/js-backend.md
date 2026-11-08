@@ -296,12 +296,11 @@ HTML wrapper 特性：
 JS 後端可以直接引入 npm 生態的套件（TypeScript 的 `import` 等價物），**不需要新的 `import` 語句**——複用 `#` use 指令加上保留前綴 `npm/`：
 
 ```no
-#{fmt-skip}
-# npm/lodash                ; 整個模組物件：lodash.get(x, 'a.b')
-# npm/lodash.get as get     ; 單個命名導出：get(x, 'a.b')
-# npm/lodash.default as d   ; 套件的預設導出：d(props)
-# npm/@scope/pkg            ; scoped 套件
-# npm/lodash/fp.get as fpg  ; 子路徑導入
+# npm/lodash; 整個模組物件：lodash.get(x, 'a.b')
+# npm/lodash.get as get; 單個命名導出：get(x, 'a.b')
+# npm/lodash.default as d; 套件的預設導出：d(props)
+# npm/@scope/pkg; scoped 套件
+# npm/lodash/fp.get as fpg; 子路徑導入
 ```
 
 規則：

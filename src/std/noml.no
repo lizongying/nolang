@@ -196,15 +196,35 @@ noml-pool.add-child = (node-idx i64, child-idx i64, key str) {
     .ec.push(child-idx)
     .ek.push(key)
     .en.push(-1)
-    last = .nodes[node-idx].last
+    last = -1
+    {
+        nd ?= .nodes[node-idx]
+        last = nd.last
+    }: {
+        err -> _
+        -> _
+    }
     last >= 0 -> {
-        .en[last] = e
+        {
+            .en[last] ?= e
+        }: {
+            err -> _
+            -> _
+        }
     }
     last < 0 -> {
         .nodes[node-idx].first = e
     }
     .nodes[node-idx].last = e
-    .nodes[node-idx].count = .nodes[node-idx].count + 1
+    c = 0
+    {
+        nd ?= .nodes[node-idx]
+        c = nd.count
+    }: {
+        err -> _
+        -> _
+    }
+    .nodes[node-idx].count = c + 1
 }
 
 ; 物件是否已有同名成員（重複鍵報錯）
@@ -214,9 +234,20 @@ noml-pool.add-child = (node-idx i64, child-idx i64, key str) {
 ; [has-key](#noml.noml-pool.has-key)
 noml-pool.has-key = (obj-idx i64, key str) (found bool) {
     found = false
-    e = .nodes[obj-idx].first
+    nd noml-value
+    {
+        nd ?= .nodes[obj-idx]
+        e = nd.first
+    }: {
+        err -> _
+        -> _
+    }
     (e >= 0) {
-        .ek[e].eq-full(key) -> {
+        ekv = .ek[e]: {
+            ok -> it
+            -> ''
+        }
+        ekv.eq-full(key) -> {
             found = true
             return
         }
@@ -493,7 +524,10 @@ noml-pool.parse = (s str) (idx i64, ok bool) {
         idx = -1
         return
     }
-    ann.len-bytes() > 0 -> .anns[idx] = ann
+    ann.len-bytes() > 0 -> .anns[idx]: {
+        ok -> it = ann
+        -> _
+    }
     q = .skip-blanks(s, np)
     (q < sn && s.byte(q) == 35) {
         np2 = .scan-ann(s, q)
@@ -501,7 +535,13 @@ noml-pool.parse = (s str) (idx i64, ok bool) {
             ok = .fail(s, q, 'unterminated annotation')
             return
         }
-        .anns[idx] = .join-ann(.anns[idx], s.slice-bytes(q + 2, np2 - 1))
+        {
+            av ?= .anns[idx]
+            .anns[idx] ?= .join-ann(av, s.slice-bytes(q + 2, np2 - 1))
+        }: {
+            err -> _
+            -> _
+        }
         q = .skip-blanks(s, np2)
     }
     q = .skip-trivia(s, q)
@@ -649,7 +689,10 @@ noml-pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
             ann = .join-ann(ann, s.slice-bytes(p + 2, np - 1))
             p = .skip-blanks(s, np)
         }
-        ann.len-bytes() > 0 -> .anns[child] = ann
+        ann.len-bytes() > 0 -> .anns[child]: {
+            ok -> it = ann
+            -> _
+        }
         p, eok = .require-end(s, p, key)
         eok == false -> {
             ok = false
@@ -1164,7 +1207,12 @@ noml-pool.parse-str-node = (s str, pos i64) (idx i64, next i64, ok bool) {
     vok == false -> return
     idx = .alloc()
     .nodes[idx].kind = NOML-KIND-STR
-    .strs[idx] = v
+    {
+        .strs[idx] ?= v
+    }: {
+        err -> _
+        -> _
+    }
 }
 
 ; 解析原始串值並落地成節點
@@ -1182,7 +1230,12 @@ noml-pool.parse-raw-node = (s str, pos i64) (idx i64, next i64, ok bool) {
     vok == false -> return
     idx = .alloc()
     .nodes[idx].kind = NOML-KIND-STR
-    .strs[idx] = v
+    {
+        .strs[idx] ?= v
+    }: {
+        err -> _
+        -> _
+    }
 }
 
 ; 解析布林值並落地成節點
@@ -1503,19 +1556,36 @@ noml-pool.stringify = (idx i64, indent i64) (out str) {
     out = ''
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    k = .nodes[idx].kind
+    nd noml-value
+    k = NOML-KIND-NIL
+    {
+        nd ?= .nodes[idx]
+        k = nd.kind
+    }: {
+        err -> _
+        -> _
+    }
     {
         k == NOML-KIND-NIL -> out = 'nil'
 
         k == NOML-KIND-BOOL -> {
-            .nodes[idx].bool-val -> out = 'true'
+            bv = nd.bool-val
+            {
+                bv -> out = 'true'
 
-            -> out = 'false'
+                -> out = 'false'
+            }
         }
 
-        k == NOML-KIND-NUM -> out = .fmt-num(.nodes[idx].num-val)
+        k == NOML-KIND-NUM -> out = .fmt-num(nd.num-val)
 
-        k == NOML-KIND-STR -> out = .quote-value(.strs[idx])
+        k == NOML-KIND-STR -> {
+            sv = .strs[idx]: {
+                ok -> it
+                -> ''
+            }
+            out = .quote-value(sv)
+        }
 
         k == NOML-KIND-ARR -> out = .stringify-arr(idx, indent)
 
@@ -1532,15 +1602,37 @@ noml-pool.stringify = (idx i64, indent i64) (out str) {
 ; [stringify-obj](#noml.noml-pool.stringify-obj)
 noml-pool.stringify-obj = (idx i64, indent i64) (out str) {
     out = '{}'
-    e = .nodes[idx].first
+    nd noml-value
+    e = -1
+    {
+        nd ?= .nodes[idx]
+        e = nd.first
+    }: {
+        err -> _
+        -> _
+    }
     e < 0 -> return
     pad = '  '.repeat(indent + 1)
     out = '{\n'
     (e >= 0) {
-        c = .ec[e]
-        .anns[c].len-bytes() > 0 -> out = out - pad - '#{' - .anns[c] - '}\n'
-        out = out - pad - .fmt-key(.ek[e]) - ': ' - .stringify(c, indent + 1) - '\n'
-        e = .en[e]
+        c = .ec[e]: {
+            ok -> it
+            -> -1
+        }
+        a = .anns[c]: {
+            ok -> it
+            -> ''
+        }
+        a.len-bytes() > 0 -> out = out - pad - '#{' - a - '}\n'
+        kk = .ek[e]: {
+            ok -> it
+            -> ''
+        }
+        out = out - pad - .fmt-key(kk) - ': ' - .stringify(c, indent + 1) - '\n'
+        e = .en[e]: {
+            ok -> it
+            -> -1
+        }
     }
     out = out - '  '.repeat(indent) - '}'
 }
@@ -1552,13 +1644,28 @@ noml-pool.stringify-obj = (idx i64, indent i64) (out str) {
 ; [stringify-arr](#noml.noml-pool.stringify-arr)
 noml-pool.stringify-arr = (idx i64, indent i64) (out str) {
     out = '[]'
-    e = .nodes[idx].first
+    nd noml-value
+    e = -1
+    {
+        nd ?= .nodes[idx]
+        e = nd.first
+    }: {
+        err -> _
+        -> _
+    }
     e < 0 -> return
     pad = '  '.repeat(indent + 1)
     out = '[\n'
     (e >= 0) {
-        out = out - pad - .stringify(.ec[e], indent + 1) - ',\n'
-        e = .en[e]
+        c = .ec[e]: {
+            ok -> it
+            -> -1
+        }
+        out = out - pad - .stringify(c, indent + 1) - ',\n'
+        e = .en[e]: {
+            ok -> it
+            -> -1
+        }
     }
     out = out - '  '.repeat(indent) - ']'
 }
@@ -1576,7 +1683,14 @@ noml-pool.kind = (idx i64) (k i64) {
     k = NOML-KIND-NIL
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    k = .nodes[idx].kind
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+        k = nd.kind
+    }: {
+        err -> _
+        -> _
+    }
 }
 
 ; 是否 nil
@@ -1635,7 +1749,14 @@ noml-pool.len = (idx i64) (n i64) {
     n = 0
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    n = .nodes[idx].count
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+        n = nd.count
+    }: {
+        err -> _
+        -> _
+    }
 }
 
 ; 按鍵取子節點索引
@@ -1647,10 +1768,21 @@ noml-pool.get = (idx i64, key str) (child ?i64) {
     child = nil
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    .nodes[idx].kind != NOML-KIND-OBJ -> return
-    e = .nodes[idx].first
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-OBJ -> return
+    e = nd.first
     (e >= 0) {
-        .ek[e].eq-full(key) -> {
+        ekv = .ek[e]: {
+            ok -> it
+            -> ''
+        }
+        ekv.eq-full(key) -> {
             child = .ec[e]
             return
         }
@@ -1668,8 +1800,15 @@ noml-pool.at = (idx i64, i i64) (child ?i64) {
     i < 0 -> return
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    .nodes[idx].kind != NOML-KIND-ARR -> return
-    e = .nodes[idx].first
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-ARR -> return
+    e = nd.first
     k = 0
     (e >= 0) {
         k == i -> {
@@ -1691,8 +1830,15 @@ noml-pool.key = (idx i64, i i64) (key ?str) {
     i < 0 -> return
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    .nodes[idx].kind != NOML-KIND-OBJ -> return
-    e = .nodes[idx].first
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-OBJ -> return
+    e = nd.first
     k = 0
     (e >= 0) {
         k == i -> {
@@ -1712,7 +1858,14 @@ noml-pool.val-str = (idx i64) (v ?str) {
     v = nil
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    .nodes[idx].kind != NOML-KIND-STR -> return
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-STR -> return
     v = .strs[idx]
 }
 
@@ -1724,8 +1877,15 @@ noml-pool.val-num = (idx i64) (v ?f64) {
     v = nil
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    .nodes[idx].kind != NOML-KIND-NUM -> return
-    v = .nodes[idx].num-val
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-NUM -> return
+    v = nd.num-val
 }
 
 ; 取整數值（截斷小數）
@@ -1750,8 +1910,15 @@ noml-pool.val-bool = (idx i64) (v ?bool) {
     v = nil
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    .nodes[idx].kind != NOML-KIND-BOOL -> return
-    v = .nodes[idx].bool-val
+    nd noml-value
+    {
+        nd ?= .nodes[idx]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-BOOL -> return
+    v = nd.bool-val
 }
 
 ; 按鍵取字串值
@@ -1850,7 +2017,12 @@ noml-pool.set-ann = (idx i64, text str) (ok bool) {
     ok = false
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    .anns[idx] = text
+    {
+        .anns[idx] ?= text
+    }: {
+        err -> _
+        -> _
+    }
     ok = true
 }
 
@@ -2218,7 +2390,16 @@ noml-doc.stringify = () (out str) {
     r = .root
     r < 0 -> return
     r >= .pool.anns.len() -> return
-    .pool.anns[r].len-bytes() > 0 -> out = '#{' - .pool.anns[r] - '}\n'
+    {
+        a = .pool.anns[r]: {
+            ok -> it
+            -> ''
+        }
+        a.len-bytes() > 0 -> out = '#{' - a - '}\n'
+    }: {
+        err -> _
+        -> _
+    }
     out = out - .pool.stringify(r, 0)
 }
 
@@ -2257,7 +2438,12 @@ noml-doc.new-arr = () (idx i64) {
 noml-doc.new-str = (v str) (idx i64) {
     idx = .pool.alloc()
     .pool.nodes[idx].kind = NOML-KIND-STR
-    .pool.strs[idx] = v
+    {
+        .pool.strs[idx] ?= v
+    }: {
+        err -> _
+        -> _
+    }
 }
 
 ; 建立數字節點
@@ -2297,7 +2483,14 @@ noml-doc.put = (obj i64, key str, child i64) (ok bool) {
     ok = false
     obj < 0 -> return
     obj >= .pool.nodes.len() -> return
-    .pool.nodes[obj].kind != NOML-KIND-OBJ -> return
+    nd noml-value
+    {
+        nd ?= .pool.nodes[obj]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-OBJ -> return
     .pool.add-child(obj, child, key)
     ok = true
 }
@@ -2311,7 +2504,14 @@ noml-doc.push = (arr i64, child i64) (ok bool) {
     ok = false
     arr < 0 -> return
     arr >= .pool.nodes.len() -> return
-    .pool.nodes[arr].kind != NOML-KIND-ARR -> return
+    nd noml-value
+    {
+        nd ?= .pool.nodes[arr]
+    }: {
+        err -> _
+        -> _
+    }
+    nd.kind != NOML-KIND-ARR -> return
     .pool.add-child(arr, child, '')
     ok = true
 }

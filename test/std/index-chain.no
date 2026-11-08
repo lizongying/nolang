@@ -1,0 +1,145 @@
+; std-index-chain.no — `?=` 讀側「結構欄位下標 / 方法鏈」回歸
+;
+; 執行：no test test/std/index-chain.no
+;
+; 覆蓋：
+;   1. `h ?= .field[i]` 直接解包結構欄位下標，不需 `h T = <零值>` 預宣告；
+;   2. `h ?= .field[i].method()` —— option 由鏈根索引產生，方法只作用在 it 上；
+;   3. 鏈最外層回傳型別可異於鏈根元素型別（str → i64）；
+;   4. 界內 ok、越界 err 由 `?=` 一肩上拋（有 option 結果參數 / 小範圍塊 match）。
+
+# /test/runner
+
+box {
+    names [4]str
+    slots [4]i64
+}
+
+box.init = (a [4]str, d [4]i64) (b box) {
+    b.names = a
+    b.slots = d
+}
+
+; 有 option 結果參數：chain 直接上拋
+box.get-name = (i i64) (r ?str) {
+    r ?= .names[i].to-lower()
+}
+
+; 無 option 結果參數：小範圍塊 match 捕捉
+box.get-name-plain = (i i64) (out str) {
+    out = 'bad'
+    {
+        h ?= .names[i].to-lower()
+        out = h
+    }: {
+        err -> out = 'err'
+
+        -> _
+    }
+}
+
+; 鏈最外層回傳 i64，鏈根元素 str
+box.get-name-len = (i i64) (r ?i64) {
+    r ?= .names[i].len()
+}
+
+; 裸結構欄位下標，不帶方法
+box.get-slot = (i i64) (r ?i64) {
+    r ?= .slots[i]
+}
+
+; 兩層鏈 + 引數
+box.get-head = (i i64) (r ?str) {
+    r ?= .names[i].to-upper().slice(0, 1)
+}
+
+t-chain-direct = () {
+    a [4]str = ['AA', 'BB', 'CC', 'DD']
+    d [4]i64 = [10, 20, 30, 40]
+    b = box.init(a, d)
+
+    in2 = b.get-name(2)
+    s2 = in2: {
+        ok -> it
+
+        -> 'bad'
+    }
+    runner.str-eq(s2, 'cc', 2, '?= .names[i].to-lower() 界內 → it.to-lower()')
+
+    oob = b.get-name(9)
+    e2 = oob: {
+        err -> 'err'
+
+        -> 'bad'
+    }
+    runner.str-eq(e2, 'err', 3, '?= 鏈根越界 → err 上拋')
+}
+
+t-chain-block-match = () {
+    a [4]str = ['AA', 'BB', 'CC', 'DD']
+    d [4]i64 = [10, 20, 30, 40]
+    b = box.init(a, d)
+    runner.str-eq(b.get-name-plain(1), 'bb', 2, '小範圍塊 match 界內 → bb')
+    runner.str-eq(b.get-name-plain(9), 'err', 3, '小範圍塊 match 越界 → err')
+}
+
+t-chain-result-type = () {
+    a [4]str = ['aa', 'bbbb', 'cc', 'dd']
+    d [4]i64 = [10, 20, 30, 40]
+    b = box.init(a, d)
+    v = b.get-name-len(1)
+    n = v: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(n, 4, '鏈最外層 str.len() → i64（不是 str）')
+}
+
+t-chain-bare-field = () {
+    a [4]str = ['AA', 'BB', 'CC', 'DD']
+    d [4]i64 = [10, 20, 30, 40]
+    b = box.init(a, d)
+    v = b.get-slot(2)
+    n = v: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(n, 30, '?= .slots[i] 直接解包，無預宣告')
+
+    w = b.get-slot(9)
+    m = w: {
+        err -> -7
+
+        -> -8
+    }
+    runner.eq(m, -7, '?= .slots[i] 越界 → err')
+}
+
+t-chain-two-level = () {
+    a [4]str = ['AA', 'BB', 'CC', 'DD']
+    d [4]i64 = [10, 20, 30, 40]
+    b = box.init(a, d)
+    v = b.get-head(2)
+    s = v: {
+        ok -> it
+
+        -> 'bad'
+    }
+    runner.str-eq(s, 'C', 1, '兩層鏈 + 引數 → it.to-upper().slice(0,1)')
+}
+
+p1, f1 = runner.test('index.chain.direct', t-chain-direct)
+p2, f2 = runner.test('index.chain.block-match', t-chain-block-match)
+p3, f3 = runner.test('index.chain.result-type', t-chain-result-type)
+p4, f4 = runner.test('index.chain.bare-field', t-chain-bare-field)
+p5, f5 = runner.test('index.chain.two-level', t-chain-two-level)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

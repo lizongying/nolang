@@ -40,15 +40,14 @@ s = 'Hello' * 3
 需要字典序時用 `str.compare(b)`：
 
 ```no
-#{fmt-skip}
 s = 'abc'
 b = 'abd'
-c = s.compare(b)      ; -1（s < b）/ 0（相等）/ 1（s > b）
+c = s.compare(b); -1（s < b）/ 0（相等）/ 1（s > b）
 
-'a' <= 'z'            ; true — 單字元字串隱式 char
-ch >= 'a'             ; ch 為 char，OK
-s < b                 ; 編譯錯誤：多字元字串
-s.compare(b) < 0      ; 正確寫法
+'a' <= 'z'; true — 單字元字串隱式 char
+ch >= 'a'; ch 為 char，OK
+s < b; 編譯錯誤：多字元字串
+s.compare(b) < 0; 正確寫法
 ```
 
 ## 索引與切片
@@ -70,20 +69,18 @@ c = s[0]: { ok -> it  -> _ }   ; 'H' 的碼點（?char 必須顯式解包，空�
 **切片**：`s[a..b]` 回傳底層字串的一個**視圖**，型別仍是 **`str`**（共享記憶體，不複製）。切片下標是**碼點位置**，與 `s[i]` 一致：
 
 ```no
-#{fmt-skip}
-sub = s[6..]       ; 'World'
-sub = s[6..11]     ; 'World'
-sub = s[0..5)      ; 'Hello'（左閉右開）
+sub = s[6..]; 'World'
+sub = s[6..11]; 'World'
+sub = s[0..5); 'Hello'（左閉右開）
 ```
 
 > 切片的下標是**碼點位置**，不是字節偏移。若需字節偏移的切片（例如配合 `s.byte(i)` 遍歷），用 `s.slice-bytes(start, end)`。
 
 ```no
-#{fmt-skip}
 ; 長度
-n = s.len()          ; code point 數（Unicode 字符數）
-n = s.count()        ; 同上（舊方法名，仍可用）
-n = s.len-bytes()    ; byte 長度（UTF-8 位元組數）
+n = s.len(); code point 數（Unicode 字符數）
+n = s.count(); 同上（舊方法名，仍可用）
+n = s.len-bytes(); byte 長度（UTF-8 位元組數）
 ; 注意：裸 s.len（結構體欄位）已不再支援，讀寫都會報錯；請改用 s.len() / s.len-bytes()
 ```
 
@@ -92,20 +89,19 @@ n = s.len-bytes()    ; byte 長度（UTF-8 位元組數）
 `char` 可以**隱式轉換**為 `str`：把該碼點 UTF-8 編碼成一個新字串。因此下列寫法都合法，**無需**手動呼叫 `char.to-str()`：
 
 ```no
-#{fmt-skip}
-s = 'héllo'              ; 'h' 'é' 'l' 'l' 'o'（é 為多字節）
+s = 'héllo'; 'h' 'é' 'l' 'l' 'o'（é 為多字節）
 
 ; 1) s[i] 的 char 直接賦值給 str 變數 → 隱式轉成單字元字串
-a str = s[0]             ; 'h'
+a str = s[0]; 'h'
 
 ; 2) 切片結果本身型別已是 str，直接賦值即可
-b str = s[0..1]          ; 'hé'（下標 0..1，兩端皆含）
+b str = s[0..1]; 'hé'（下標 0..1，兩端皆含）
 
 ; 3) char 參與字串拼接（-）時隱式轉為 str
-msg = 'first: ' - s[0]   ; 'first: h'
+msg = 'first: ' - s[0]; 'first: h'
 
 ; 4) char 與 str 比較時隱式轉為 str
-ok = s[0] == 'h'         ; true
+ok = s[0] == 'h'; true
 ```
 
 > **`'...'` 是 `str` 字面量，`"..."` 是 `char` 字面量** —— 即使 `'x'` 只有一個碼點，它仍是 `str`。因此 `+` / `-` 的**兩側都是字面量**時（`'...'` 配 `"..."`），走上面的隱式轉換，結果是**拼接**而不是整數運算：
@@ -162,14 +158,13 @@ ok = s[0] == 'h'         ; true
 - 拼接（`-`）两侧都已证明 ASCII。
 
 ```no
-#{fmt-skip}
 ; ASCII 字面量 → 编译器证明为纯 ASCII，s[i] 为 O(1)
 name = 'hello'
-c = name[1]              ; O(1)，取字节 'e'
+c = name[1]; O(1)，取字节 'e'
 
 ; 含多字节字符 → 无法证明 ASCII，s[i] 为 O(n) 码点迭代
 s = 'héllo'
-c = s[1]                 ; O(n)，取第 1 个码点 'é'（而非字节）
+c = s[1]; O(n)，取第 1 个码点 'é'（而非字节）
 ```
 
 ### 性能告警（LSP / `no vet`）
@@ -188,12 +183,16 @@ c = s[1]                 ; O(n)，取第 1 个码点 'é'（而非字节）
   ```
 - 若只需按字节访问（如编解码、哈希、memcmp），使用逃生舱口 `s.byte(i)` —— 永远直接定址第 i 个字节，**恒为 O(1)**，且不会进入 std 函数体：
   ```no
-  #{fmt-skip}
-  b = s.byte(0)          ; 取第 0 个字节，类型 ?byte，O(1)
+  b = s.byte(0); 取第 0 个字节，类型 ?byte，O(1)
   out = 0
   b: {
-      ok -> { out = it }   ; 在界内：ok(byte)
-      -> { out = 0 }       ; 越界：nil（空臂合成零值）
+      ok -> {
+          out = it; 在界内：ok(byte)
+      }
+
+      -> {
+          out = 0; 越界：nil（空臂合成零值）
+      }
   }
   ```
   > `s.byte(i)` 的结果是 **`?byte`**（2026-10-21 起）：此前的裸字节读取不做边界检查，
@@ -268,19 +267,18 @@ s.fill(val byte)               ; 填充 byte 值
 ## 字串與數值轉換
 
 ```no
-#{fmt-skip}
 ; 數值轉字串（方法）
-s = i64.to-str()               ; i64 轉字串
-s = f64.to-str()               ; f64 轉字串
-s = bool.to-str()              ; bool 轉 "true"/"false"
-s = byte.to-str()              ; byte 轉字串
-s = char.to-str()              ; char 轉字串
+s = i64.to-str(); i64 轉字串
+s = f64.to-str(); f64 轉字串
+s = bool.to-str(); bool 轉 "true"/"false"
+s = byte.to-str(); byte 轉字串
+s = char.to-str(); char 轉字串
 
 ; 字串轉數值（返回 option）
-v = s.to-i64()                 ; 回傳 ?i64
-v = s.to-i32()                 ; 回傳 ?i32
-v = s.to-u64()                 ; 回傳 ?u64
-v = s.to-f64()                 ; 回傳 ?f64
+v = s.to-i64(); 回傳 ?i64
+v = s.to-i32(); 回傳 ?i32
+v = s.to-u64(); 回傳 ?u64
+v = s.to-f64(); 回傳 ?f64
 ```
 
 ## 自動長度追蹤
@@ -288,14 +286,13 @@ v = s.to-f64()                 ; 回傳 ?f64
 對 `s[i] = v` 賦值時，LLVM codegen 會自動更新 `len` 欄位為 `max(len, idx+1)`，不需手動設置：
 
 ```no
-#{fmt-skip}
 s = ''
-s[0] = 72                      ; len 自動變為 1
-s[1] = 105                     ; len 自動變為 2
+s[0] = 72; len 自動變為 1
+s[1] = 105; len 自動變為 2
 
 ; 截斷（縮短）：裸 s.len = n 已不再支援，改用切片
-s = s.slice(0, 5)             ; 碼點截斷（與 s[i] 一致）
-s = s.slice-bytes(0, 5)       ; 字節截斷
+s = s.slice(0, 5); 碼點截斷（與 s[i] 一致）
+s = s.slice-bytes(0, 5); 字節截斷
 ```
 
 > **`str` 寫入是字節級，`txt` 寫入是碼點級（有意分叉）**：上面的 `s[i] = v` 對 `str` 而言是把 `v` 當成一個**字節**直接寫進底層緩衝區的第 `i` 個字節槽位（`len` 更新為 `max(len, i+1)`）。而固定字串 `txt` 的 `t[i] = c` 則以**碼點**為單位：`c` 會被重新 UTF-8 編碼、向後移動尾部字節，`i` 等於碼點數時為追加，總字節長超過 255 的部分丟棄。兩者讀取（`s[i]` / `t[i]`）都回傳碼點 `char`，只有寫入語義不同。若需要對 `txt` 做字節級原始寫入，用 `t.set-byte(i, b byte)`（`b` 為 `byte`，回傳 `?bool`：索引超出 255 字節實體容量時回傳 nil 並跳過寫入，成功回傳 `some(true)`；邊界以實體容量而非 `len` 為準）。
@@ -305,15 +302,14 @@ s = s.slice-bytes(0, 5)       ; 字節截斷
 透過 `with-cap`、`with-len`、`with-cap-len` 三個內建語法可預先分配堆記憶體，避免後續 `push` / `s[i]=` 觸發反覆擴容：
 
 ```no
-#{fmt-skip}
 ; with-cap(cap)：配置 cap 容量，len=0（需 push 後才能索引）
-s = with-cap(256)               ; str，len=0, cap=256
+s = with-cap(256); str，len=0, cap=256
 
 ; with-len(len)：配置 len 容量，len=cap（可直接索引讀寫）
-s = with-len(128)               ; str，len=128, cap=128
+s = with-len(128); str，len=128, cap=128
 
 ; with-cap-len(cap, len)：同時指定容量與長度，適合「預留成長空間」場景
-s = with-cap-len(512, 64)       ; str，len=64, cap=512
+s = with-cap-len(512, 64); str，len=64, cap=512
 ```
 
 | 內建語法 | 參數 | len | cap | 適用場景 |

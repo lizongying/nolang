@@ -1715,6 +1715,22 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 // by-value struct load.
 func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 	if len(inst.Args) == 0 {
+		if c.curFn != nil {
+			println("DBG missing-recv ff="+ff+" fn="+c.curFn.Name+" line="+fmt.Sprint(inst.Line)+" col="+fmt.Sprint(inst.Col)+" instID="+fmt.Sprint(inst.ID)+" sym="+inst.Sym+" block="+fmt.Sprint(inst.Block))
+			for _, bid := range c.curFn.Blocks {
+				blk := c.mod.Block(bid)
+				if blk == nil {
+					continue
+				}
+				for _, iid := range blk.Insts {
+					it := c.mod.Inst(iid)
+					if it == nil {
+						continue
+					}
+					println(fmt.Sprintf("DBG   inst %d op=%d dst=%d args=%v sym=%q line=%d", it.ID, it.Op, it.Dst, it.Args, it.Sym, it.Line))
+				}
+			}
+		}
 		return i18n.Errorf("1u2vckag", "builtin %s: missing receiver", ff)
 	}
 	lt, _ := c.ptype(inst.Args[0])

@@ -213,13 +213,20 @@ zip.name = (idx i64) (name str) {
     #{overflow=wrap}
     off46 = off + 46
     result = ''
-    i <- [0..name-len): {
+    {
+        i <- [0..name-len): {
 
-        #{overflow=wrap}
-        idx2 = off46 + i
+            #{overflow=wrap}
+            idx2 = off46 + i
 
-        cc char = .data[idx2]
-        result = result - cc.to-str()
+            b ?= .data[idx2]
+            cc char = b
+            result = result - cc.to-str()
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     name = result
 }
@@ -302,12 +309,19 @@ zip.extract = (idx i64) (out []byte) {
     #{overflow=wrap}
     {
         method == 0 && sz > 0 -> {
-            i <- [0..sz): {
+            {
+                i <- [0..sz): {
 
-                #{overflow=wrap}
-                src-off = data-off + i
+                    #{overflow=wrap}
+                    src-off = data-off + i
 
-                result.push(.data[src-off])
+                    b ?= .data[src-off]
+                    result.push(b)
+                }
+            }: {
+                err -> _
+
+                -> _
             }
         }
 
@@ -315,10 +329,17 @@ zip.extract = (idx i64) (out []byte) {
 
             ; 提取壓縮資料
             compressed []byte
-            i <- [0..csz): {
+            {
+                i <- [0..csz): {
 
-                #{overflow=wrap}
-                compressed.push(.data[data-off + i])
+                    #{overflow=wrap}
+                    b ?= .data[data-off + i]
+                    compressed.push(b)
+                }
+            }: {
+                err -> _
+
+                -> _
             }
 
             ; 解壓縮 DEFLATE
@@ -343,13 +364,20 @@ zip-entry.name = () (name str) {
     #{overflow=wrap}
     off46 = off + 46
     result = ''
-    i <- [0..name-len): {
+    {
+        i <- [0..name-len): {
 
-        #{overflow=wrap}
-        idx2 = off46 + i
+            #{overflow=wrap}
+            idx2 = off46 + i
 
-        cc char = .data[idx2]
-        result = result - cc.to-str()
+            b ?= .data[idx2]
+            cc char = b
+            result = result - cc.to-str()
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     name = result
 }
@@ -425,12 +453,19 @@ zip-entry.extract = () (out []byte) {
     #{overflow=wrap}
     {
         method == 0 && sz > 0 -> {
-            i <- [0..sz): {
+            {
+                i <- [0..sz): {
 
-                #{overflow=wrap}
-                src-off = data-off + i
+                    #{overflow=wrap}
+                    src-off = data-off + i
 
-                result.push(.data[src-off])
+                    b ?= .data[src-off]
+                    result.push(b)
+                }
+            }: {
+                err -> _
+
+                -> _
             }
         }
 
@@ -438,10 +473,17 @@ zip-entry.extract = () (out []byte) {
 
             ; 提取壓縮資料
             compressed []byte
-            i <- [0..csz): {
+            {
+                i <- [0..csz): {
 
-                #{overflow=wrap}
-                compressed.push(.data[data-off + i])
+                    #{overflow=wrap}
+                    b ?= .data[data-off + i]
+                    compressed.push(b)
+                }
+            }: {
+                err -> _
+
+                -> _
             }
 
             ; 解壓縮 DEFLATE
@@ -524,8 +566,15 @@ zip-writer.cd-put = (b i64) {
 zip-writer.finalize = () (out []byte) {
     cd-offset = .data.len()
     cd-size = .cd-data.len()
-    i <- [0..cd-size): {
-        .put(.cd-data[i])
+    {
+        i <- [0..cd-size): {
+            b ?= .cd-data[i]
+            .put(b)
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     .write-eocd(cd-offset, cd-size)
     dlen = .data.len()

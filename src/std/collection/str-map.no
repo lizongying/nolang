@@ -27,12 +27,18 @@ str-map {
 str-map.init = () {
     .cap = 256
     .size = 0
-    i <- [0..256): {
-        .occ[i] = 0
+    {
+        i <- [0..256): {
+            .occ[i] ?= 0
 
-        .keys[i].len = 0
+            .keys[i].len = 0
 
-        .vals[i].len = 0
+            .vals[i].len = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -75,33 +81,45 @@ str-map.str-eq = (a str, b str) (eq bool) {
 str-map.put = (key str, val str) (is-new bool) {
     idx = .hash(key)
 
-    (.occ[idx] == 1) {
-        eq = .str-eq(.keys[idx], key)
-        eq -> {
+    ; 探測與寫入都在同一個最小 try/catch 裡：本方法沒有 option 結果參數，
+    ; 越界的 ?= 只能就地攔下。
+    {
+        !! {
+            used ?= .occ[idx]
+            used != 1 -> break
 
-            ; 直接指派；結構欄位寫入會深拷貝 inline str，不需要手動 .len + 逐字節拷貝
-            .vals[idx] = val
-            is-new = false
-            return
+            k ?= .keys[idx]
+            eq = .str-eq(k, key)
+            eq -> {
+
+                ; 直接指派；結構欄位寫入會深拷貝 inline str，不需要手動 .len + 逐字節拷貝
+                .vals[idx] ?= val
+                is-new = false
+                return
+            }
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
         }
 
+        ; 複製 key / val。
+        ; 不能用 `.keys[idx].len = key.len-bytes()` 再逐字節寫：`.len = n` 是裸欄位寫入，
+        ; 不會分配緩衝區，而新槽位的 keys[idx] 緩衝區還是 null，下一個 [i] = 會對 null
+        ; 做 GEP+store（SIGSEGV）。直接指派會深拷貝，才是正確寫法。
+        .keys[idx] ?= key
+
+        .vals[idx] ?= val
+
+        .occ[idx] ?= 1
+
         #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        .size = .size + 1
+    }: {
+        err -> _
+
+        -> _
     }
-
-    ; 複製 key / val。
-    ; 不能用 `.keys[idx].len = key.len-bytes()` 再逐字節寫：`.len = n` 是裸欄位寫入，
-    ; 不會分配緩衝區，而新槽位的 keys[idx] 緩衝區還是 null，下一個 [i] = 會對 null
-    ; 做 GEP+store（SIGSEGV）。直接指派會深拷貝，才是正確寫法。
-    .keys[idx] = key
-
-    .vals[idx] = val
-
-    .occ[idx] = 1
-
-    #{overflow=wrap}
-    .size = .size + 1
     is-new = true
 }
 
@@ -113,8 +131,12 @@ str-map.get = (key str) (result ?str) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] == 1) {
-        eq = .str-eq(.keys[idx], key)
+    !! {
+        used ?= .occ[idx]
+        used != 1 -> break
+
+        k ?= .keys[idx]
+        eq = .str-eq(k, key)
         eq -> {
             result = .vals[idx]
             return
@@ -149,36 +171,52 @@ str-map.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] == 1) {
-        eq = .str-eq(.keys[idx], key)
+    {
+        !! {
+            used ?= .occ[idx]
+            used != 1 -> break
 
-        #{overflow=wrap}
-        eq -> {
-            .occ[idx] = 0
+            k ?= .keys[idx]
+            eq = .str-eq(k, key)
+            eq -> {
+                .occ[idx] ?= 0
 
-            .keys[idx].len = 0
+                .keys[idx].len = 0
 
-            .vals[idx].len = 0
-            .size = .size - 1
-            removed = true
-            return
+                .vals[idx].len = 0
+
+                #{overflow=wrap}
+                .size = .size - 1
+                removed = true
+                return
+            }
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
         }
+    }: {
+        err -> _
 
-        #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        -> _
     }
 }
 
 ; 清空
 ; [clear](#str-map.str-map.clear)
 str-map.clear = () {
-    i <- [0..self.cap): {
-        .occ[i] = 0
+    {
+        i <- [0..self.cap): {
+            .occ[i] ?= 0
 
-        .keys[i].len = 0
+            .keys[i].len = 0
 
-        .vals[i].len = 0
+            .vals[i].len = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     .size = 0
 }
@@ -202,12 +240,19 @@ str-map.is-empty = () (empty bool) {
 ; v: 該佔用條目對應的值
 ; [for-each](#str-map.str-map.for-each)
 str-map.for-each = () (k str, v str) {
-    i <- [0..self.cap): {
-        .occ[i] == 1 -> {
-            k = .keys[i]
+    {
+        i <- [0..self.cap): {
+            used ?= .occ[i]
+            used == 1 -> {
+                k ?= .keys[i]
 
-            v = .vals[i]
+                v ?= .vals[i]
+            }
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -218,19 +263,28 @@ str-map.for-each = () (k str, v str) {
 str-map.to-str = () (out str) {
     out = '{'
     first = true
-    i <- [0..self.cap): {
-        .occ[i] == 1 -> {
-            {
-                first -> {
-                    out = out - .keys[i] - ': ' - .vals[i]
-                    first = false
-                }
+    {
+        i <- [0..self.cap): {
+            used ?= .occ[i]
+            used == 1 -> {
+                k ?= .keys[i]
+                v ?= .vals[i]
+                {
+                    first -> {
+                        out = out - k - ': ' - v
+                        first = false
+                    }
 
-                -> {
-                    out = out - ', ' - .keys[i] - ': ' - .vals[i]
+                    -> {
+                        out = out - ', ' - k - ': ' - v
+                    }
                 }
             }
         }
+    }: {
+        err -> _
+
+        -> _
     }
     out = out - '}'
 }

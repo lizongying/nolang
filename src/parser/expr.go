@@ -396,17 +396,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 
 	case lexer.ILLEGAL:
 		// ILLEGAL token（如多字符雙引號字串）— 報告詞法錯誤並跳過
-		key := fmt.Sprintf("%d:%d", p.currentToken.Line, p.currentToken.Column)
-		if !p.reportedIllegal[key] {
-			p.reportedIllegal[key] = true
-			if p.currentToken.ErrMsg != "" {
-				p.saveErrorf("1gybkrrq", "line %d, column %d: %s",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.ErrMsg)
-			} else {
-				p.saveErrorf("ghvjbe8q", "line %d, column %d: illegal token %q",
-					p.currentToken.Line, p.currentToken.Column, p.currentToken.Literal)
-			}
-		}
+		p.reportIllegalToken(p.currentToken)
 		p.nextToken()
 		return nil
 
@@ -600,10 +590,10 @@ func (p *Parser) parseExpression(precedence int) Expression {
 			}
 			// 檢查目標型別是否為指標型別（PointerType）
 			if _, isPtr := typ.(*PointerType); !isPtr {
-			p.saveErrorfFix("ua5h1rpc", []DiagnosticFix{{
-				Description: "use an FFI pointer type for the cast target (e.g. *byte, **byte), or remove the `as` cast",
-			}}, "line %d, column %d: 'as' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s",
-				asTok.Line, asTok.Column, typ.String())
+				p.saveErrorfFix("ua5h1rpc", []DiagnosticFix{{
+					Description: "use an FFI pointer type for the cast target (e.g. *byte, **byte), or remove the `as` cast",
+				}}, "line %d, column %d: 'as' cast is only allowed for FFI pointer types (e.g., *byte, **byte), got %s",
+					asTok.Line, asTok.Column, typ.String())
 				// 仍建立 CastExpression 以維持後續解析流程，但已記錄錯誤
 			}
 			leftExp = &CastExpression{
@@ -710,7 +700,32 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		p.nextToken() // 吞掉型別 token，避免成為下一條陳述
 	}
 
+	// 詞法錯誤 token（`→`、全形逗號、`、`…）落在**中綴位置**時，parseExpression
+	// 只會在此結束，該 token 由上層掃描跳過——不報告就等於靜默丟棄。
+	// `no fmt` 會據此把非法字元從源碼／文檔代碼塊裡悄悄刪掉（`y = 1 → 2` 變成
+	// 兩行 `y = 1` / `2`），所以這裡必須報告，讓 parse 失敗 → 代碼塊原樣保留。
+	if leftExp != nil && p.currentToken.Type == lexer.ILLEGAL {
+		p.reportIllegalToken(p.currentToken)
+	}
+
 	return leftExp
+}
+
+// reportIllegalToken 報告一個 ILLEGAL token（詞法錯誤）。同一位置只報告一次
+// （回溯重放會重複看到同一個 token）。帶 ErrMsg 的 ILLEGAL 用詞法器給的說明，
+// 否則印出 token 本身——多字節字元已由 lexer 整顆收入 Literal，所以 `%q` 顯示
+// 的就是原字元（`→`），不會再是 `\u0086` 這種半顆位元組。
+func (p *Parser) reportIllegalToken(tok lexer.Token) {
+	key := fmt.Sprintf("%d:%d", tok.Line, tok.Column)
+	if p.reportedIllegal[key] {
+		return
+	}
+	p.reportedIllegal[key] = true
+	if tok.ErrMsg != "" {
+		p.saveErrorf("1gybkrrq", "line %d, column %d: %s", tok.Line, tok.Column, tok.ErrMsg)
+		return
+	}
+	p.saveErrorf("ghvjbe8q", "line %d, column %d: illegal token %q", tok.Line, tok.Column, tok.Literal)
 }
 
 // isPostfixCastType 判斷某個識別字是否為內建型別名（可作為後綴 cast 的目標）。
@@ -1530,10 +1545,10 @@ func (p *Parser) parseMatchExprFrom(matched Expression) Expression {
 			if !hasValArm {
 				missing = append(missing, "ok")
 			}
-		p.saveErrorfFix("u5qmp19f", []DiagnosticFix{{
-			Description: "add the missing option branch(es): " + strings.Join(missing, ", "),
-		}}, "line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
-			tok.Line, tok.Column, strings.Join(missing, ", "))
+			p.saveErrorfFix("u5qmp19f", []DiagnosticFix{{
+				Description: "add the missing option branch(es): " + strings.Join(missing, ", "),
+			}}, "line %d, column %d: option match must handle all branches: err, nil, ok (missing: %s)",
+				tok.Line, tok.Column, strings.Join(missing, ", "))
 			return nil
 		}
 	}

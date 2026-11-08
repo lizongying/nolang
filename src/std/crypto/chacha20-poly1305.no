@@ -469,7 +469,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     ; 字節 3,7,11,15 高兩位清零（& 15）；字節 4,8,12 低兩位清零（& 252）
     r = bigint.zero()
     i <- [15..0]: {
-        bvr i64 = key[i]
+        bvr i64 = 0
+        {
+            bvr ?= key[i]
+        }: {
+            err -> _
+
+            -> _
+        }
         {
             i == 3 || i == 7 || i == 11 || i == 15 -> bvr = bvr & 15
 
@@ -481,7 +488,14 @@ poly1305 = (key [32]byte, data []byte) (tag [16]byte) {
     ; s = key[16..32]（小端 128-bit，無 clamp）
     s = bigint.zero()
     j <- [31..16]: {
-        bvs i64 = key[j]
+        bvs i64 = 0
+        {
+            bvs ?= key[j]
+        }: {
+            err -> _
+
+            -> _
+        }
         s = s * 256 + bigint.from-i64(bvs)
     }
 

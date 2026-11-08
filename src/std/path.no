@@ -133,7 +133,13 @@ path.join = (b str) (out str) {
     }
     out-n == 0 -> need-sep = 0
     need-sep == 1 -> {
-        .p[out-n] = SEP
+        {
+            .p[out-n] ?= SEP
+        }: {
+            err -> _
+
+            -> _
+        }
 
         #{overflow=wrap}
         out-n = out-n + 1
@@ -148,7 +154,13 @@ path.join = (b str) (out str) {
 
     ; 複製 b
     j <- [start-b..bn): {
-        .p[out-n] = b.byte(j)
+        {
+            .p[out-n] ?= b.byte(j)
+        }: {
+            err -> _
+
+            -> _
+        }
 
         #{overflow=wrap}
         out-n = out-n + 1
@@ -202,7 +214,13 @@ path.dir = () (out str) {
         last-sep < 0 -> {
 
             ; 無 '/'，變為 '.'
-            .p[0] = DOT
+            {
+                .p[0] ?= DOT
+            }: {
+                err -> _
+
+                -> _
+            }
             .p.len = 1
             out = .p
             return
@@ -213,7 +231,13 @@ path.dir = () (out str) {
             out-n == 0 -> {
 
                 ; 根目錄 '/'
-                .p[0] = SEP
+                {
+                    .p[0] ?= SEP
+                }: {
+                    err -> _
+
+                    -> _
+                }
                 .p.len = 1
                 out = .p
                 return
@@ -342,7 +366,13 @@ path.clean = () {
                         #{overflow=wrap}
                         prev = .p.byte(out-n - 1)
                         prev != SEP-BYTE -> {
-                            .p[out-n] = SEP
+                            {
+                                .p[out-n] ?= SEP
+                            }: {
+                                err -> _
+
+                                -> _
+                            }
 
                             #{overflow=wrap}
                             out-n = out-n + 1
@@ -350,7 +380,13 @@ path.clean = () {
                     }
 
                     -> {
-                        .p[out-n] = SEP
+                        {
+                            .p[out-n] ?= SEP
+                        }: {
+                            err -> _
+
+                            -> _
+                        }
 
                         #{overflow=wrap}
                         out-n = out-n + 1
@@ -369,7 +405,13 @@ path.clean = () {
 
                 ; 寫入之前積累的 '.' 字元
                 j <- [0..dot-count): {
-                    .p[out-n] = DOT
+                    {
+                        .p[out-n] ?= DOT
+                    }: {
+                        err -> _
+
+                        -> _
+                    }
 
                     #{overflow=wrap}
                     out-n = out-n + 1
@@ -377,7 +419,13 @@ path.clean = () {
 
                 dot-count = 0
 
-                .p[out-n] = c
+                {
+                    .p[out-n] ?= c
+                }: {
+                    err -> _
+
+                    -> _
+                }
 
                 #{overflow=wrap}
                 out-n = out-n + 1
@@ -472,7 +520,13 @@ path.split = () (f str) {
         last-sep < 0 -> {
 
             ; 無 '/'，.p 變為 '.'
-            .p[0] = DOT
+            {
+                .p[0] ?= DOT
+            }: {
+                err -> _
+
+                -> _
+            }
             .p.len = 1
             return
         }
@@ -480,7 +534,13 @@ path.split = () (f str) {
         last-sep == 0 -> {
 
             ; 根目錄 '/'
-            .p[0] = SEP
+            {
+                .p[0] ?= SEP
+            }: {
+                err -> _
+
+                -> _
+            }
             .p.len = 1
             return
         }

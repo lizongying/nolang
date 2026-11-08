@@ -193,10 +193,14 @@ server-conn.recv-more = () (n i64) {
     tmp str = with-len(HTTP-SRV-RECV-SIZE)
     n = net.net-recv(.fd, tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
-        i <- [0..n): {
+        {
+            i <- [0..n): {
+                .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
+            }
+        }: {
+            err -> _
 
-            #{overflow=wrap}
-            .recv-buf[.recv-buf-len + i] = tmp.byte(i)
+            -> _
         }
 
         #{overflow=wrap}
@@ -284,13 +288,19 @@ server-conn.parse = () (ok bool) {
     ; 解析標頭到 header-names / header-values
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
-        .header-names[i] = ' '
+        {
+            .header-names[i] ?= ' '
 
-        .header-names[i].len = 0
+            .header-names[i].len = 0
 
-        .header-values[i] = ' '
+            .header-values[i] ?= ' '
 
-        .header-values[i].len = 0
+            .header-values[i].len = 0
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     hs = .headers
     hn = hs.len-bytes()
@@ -394,8 +404,9 @@ server-conn.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
     i <- [0..cnt): {
+        hn ?= .header-names[i]
         matched = 1
-        .header-names[i].len-bytes() != name.len-bytes() -> {
+        hn.len-bytes() != name.len-bytes() -> {
             matched = 0
         }
 
@@ -405,7 +416,7 @@ server-conn.get-header = (name str) (val ?str) {
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
-                    c1 = .header-names[i][j]
+                    c1 = hn[j]
 
                     c2 = name.byte(j)
 
@@ -421,9 +432,10 @@ server-conn.get-header = (name str) (val ?str) {
                     }
                 }
                 matched == 1 -> {
-                    vlen = .header-values[i].len-bytes()
+                    hv ?= .header-values[i]
+                    vlen = hv.len-bytes()
 
-                    val = .header-values[i].slice(0, vlen)
+                    val = hv.slice(0, vlen)
                     return
                 }
             }
@@ -894,10 +906,14 @@ https-server-conn.recv-more = () (n i64) {
     tmp str = with-len(HTTP-SRV-RECV-SIZE)
     n = .tls.recv(tmp, HTTP-SRV-RECV-SIZE)
     n > 0 -> {
-        i <- [0..n): {
+        {
+            i <- [0..n): {
+                .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
+            }
+        }: {
+            err -> _
 
-            #{overflow=wrap}
-            .recv-buf[.recv-buf-len + i] = tmp.byte(i)
+            -> _
         }
 
         #{overflow=wrap}
@@ -980,13 +996,19 @@ https-server-conn.parse = () (ok bool) {
     ; 解析標頭
     .header-count = 0
     i <- [0..HTTP-SRV-MAX-HEADERS): {
-        .header-names[i] = ' '
+        {
+            .header-names[i] ?= ' '
 
-        .header-names[i].len = 0
+            .header-names[i].len = 0
 
-        .header-values[i] = ' '
+            .header-values[i] ?= ' '
 
-        .header-values[i].len = 0
+            .header-values[i].len = 0
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     hs = .headers
     hn = hs.len-bytes()
@@ -1087,8 +1109,9 @@ https-server-conn.get-header = (name str) (val ?str) {
     val = nil
     cnt = .header-count
     i <- [0..cnt): {
+        hn ?= .header-names[i]
         matched = 1
-        .header-names[i].len-bytes() != name.len-bytes() -> {
+        hn.len-bytes() != name.len-bytes() -> {
             matched = 0
         }
 
@@ -1098,7 +1121,7 @@ https-server-conn.get-header = (name str) (val ?str) {
         {
             matched == 1 -> {
                 j <- [0..name.len-bytes()): {
-                    c1 = .header-names[i][j]
+                    c1 = hn[j]
 
                     c2 = name.byte(j)
 
@@ -1113,9 +1136,10 @@ https-server-conn.get-header = (name str) (val ?str) {
                     }
                 }
                 matched == 1 -> {
-                    vlen = .header-values[i].len-bytes()
+                    hv ?= .header-values[i]
+                    vlen = hv.len-bytes()
 
-                    val = .header-values[i].slice(0, vlen)
+                    val = hv.slice(0, vlen)
                     return
                 }
             }

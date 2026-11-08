@@ -49,11 +49,10 @@ src/builtin/
 非字面量参数（变量、表达式）按普通可变参数处理。
 
 ```no
-#{fmt-skip}
 val = 42
-print('result={val}', 42, 'result={val}')  ; result=42 42 result=42
+print('result={val}', 42, 'result={val}'); result=42 42 result=42
 tmpl = '{val}'
-print(tmpl)                                ; {val} —— 变量是纯文字，不做替换
+print(tmpl); {val} —— 变量是纯文字，不做替换
 ```
 
 - 拦截点：`src/mir/hir2mir.go` 的 `lowerNamedFormat`（单参数走 `lowerNamedFormatStream`，
@@ -234,7 +233,6 @@ grep -r 'MethodName.*"read-file"' src/builtin/
 
 2. 在对应的标准库 `.no` 文件中添加注释文档：
    ```no
-   #{fmt-skip}
    ; build-in (ForwardFunc: my-builtin)
    ; my-builtin: 我的内建函数
    ; p: 参数说明

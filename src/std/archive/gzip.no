@@ -98,102 +98,54 @@ huffman {
 ; n i64: 有效符號數（字面/長度表為 288，距離表為 30）；超出 n 的項不被讀取
 ; [build](#gzip.huffman.build)
 huffman.build = (lengths []i64, n i64) {
-
-    ; 初始化 count[0..16] = 0
-    i <- [0..17): {
-        .count[i] = 0
-    }
-
-    ; 計算各長度的碼數
-    i <- [0..n): {
-        l = lengths[i]: {
-            ok -> it
-
-            -> 0
+    {
+        ; 初始化 count[0..16] = 0
+        i <- [0..17): {
+            .count[i] ?= 0
         }
 
-        #{overflow=wrap}
-        .count[l] = .count[l] + 1
-    }
-
-    .count[0] = 0
-
-    ; 計算各長度的起始偏移
-    offs [17]i64
-    e <- offs: {
-        e: {
-            ok -> it = 0
-
-            -> _
-        }
-    }
-    i <- [1..16): {
-
-        ixout134c28 = offs[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        offs[i + 1]: {
-            ok -> it = ixout134c28 + .count[i]
-
-            -> _
-        }
-    }
-
-    ; 排序符號
-    i <- [0..n): {
-        .symbol[i] = 0
-    }
-    i <- [0..n): {
-        ixout145c16 = lengths[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        ixout145c16 != 0 -> {
-            ixout146c31 = lengths[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            idx = offs[ixout146c31]: {
-                ok -> it
-
-                -> 0
-            }
-
-            .symbol[idx] = i
-
-            ixout156c33 = lengths[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            ixout156c28 = offs[ixout156c33]: {
-                ok -> it
-
-                -> _
-            }
-
-            ixout167c25 = lengths[i]: {
-                ok -> it
-
-                -> _
-            }
+        ; 計算各長度的碼數
+        i <- [0..n): {
+            cl ?= lengths[i]
+            old ?= .count[cl]
 
             #{overflow=wrap}
-            offs[ixout167c25]: {
-                ok -> it = ixout156c28 + 1
+            .count[cl] ?= old + 1
+        }
 
-                -> _
+        .count[0] ?= 0
+
+        ; 計算各長度的起始偏移
+        offs [17]i64
+        i <- [0..17): {
+            offs[i] ?= 0
+        }
+        i <- [1..16): {
+            off ?= offs[i]
+            cnt ?= .count[i]
+
+            #{overflow=wrap}
+            offs[i + 1] ?= off + cnt
+        }
+
+        ; 排序符號
+        i <- [0..n): {
+            .symbol[i] ?= 0
+        }
+        i <- [0..n): {
+            sl ?= lengths[i]
+            sl != 0 -> {
+                at ?= offs[sl]
+                .symbol[at] ?= i
+
+                #{overflow=wrap}
+                offs[sl] ?= at + 1
             }
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 

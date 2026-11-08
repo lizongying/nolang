@@ -31,16 +31,16 @@ sidebar_position: 4.2
 `co` 是建立在協程組之上的**無色（colorless）**語法：你寫的是未染色的函式名 `worker`，編譯器自動單態化出 `worker-async` 變體並在底層以染色無棧協程執行。你不需要手寫 `-async` 後綴，也不需要手寫 `run` / `awy`。
 
 ```no
-#{fmt-skip}
 worker = (n i64) (r i64) {
+
     #{overflow=wrap}
     r = n + 1
 }
 r1 i64
 r2 i64
 {
-    r1 = co worker(1)   ; 自動單態 worker-async 並 spawn
-    r2 = co worker(2)   ; 與 r1 並發執行
+    r1 = co worker(1); 自動單態 worker-async 並 spawn
+    r2 = co worker(2); 與 r1 並發執行
 }
 print(r1.to-str() + ' ' + r2.to-str())
 ```
@@ -56,7 +56,6 @@ print(r1.to-str() + ' ' + r2.to-str())
 Nolang 提供協作式、單執行緒、無棧的異步協程模型：
 
 ```no
-#{fmt-skip}
 ; 啟動 -async 函數為後台任務，返回不透明 task 句柄
 h = run worker-async(args)
 
@@ -64,10 +63,10 @@ h = run worker-async(args)
 r = awy h
 
 ; 取消後台任務（協作式，已廢棄）
-cancel(h)                        ; 設置任務 h 的取消標誌
+cancel(h); 設置任務 h 的取消標誌
 
 ; 協作式自我取消檢查（在異步函數內調用，已廢棄）
-yes = cancelled()                ; 返回當前任務是否已被取消
+yes = cancelled(); 返回當前任務是否已被取消
 ```
 
 > **注意：** 取消是協作式而非搶占式。長阻塞調用（如網路請求）無法被強制中斷。任務會在下一個協作檢查點（`cancelled()` 調用或事件迴圈下次調度）真正停止。

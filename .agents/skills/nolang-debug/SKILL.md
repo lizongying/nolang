@@ -322,7 +322,8 @@ str.path-is-abs = () (yes bool) {
 ```no
 #{fmt-skip}
 ; ❌ Incorrect — i64 is not a boolean type
-uuid.is-nil = () (yes i64) { }
+uuid.is-nil = () (yes i64) {
+}
 ```
 
 ### Type-bound functions should use method form
@@ -339,7 +340,7 @@ str.path-join = (b str, bn i64) (out str, out-n i64) {
 ```no
 #{fmt-skip}
 ; ❌ Incorrect — no receiver, missing types
-join(a, an, b, bn, out) (out-n)
+join(a, an, b, bn, out)(out-n)
 ```
 
 This follows Nolang's compiler semantics where the hidden `self` parameter enables `GenericUnion` detection and monomorphization (see [nolang-syntax-reference](file://../nolang-syntax/SKILL.md) for details).
@@ -365,7 +366,8 @@ In the old syntax, `for {}` and `if x {}` and `match x {}` all use the same `{}`
 ```no
 #{fmt-skip}
 ; ❌ Old syntax — empty body
-for { }
+!! {
+}
 ```
 
 ```no
@@ -379,7 +381,6 @@ for { }
 The new bare-match expression is the recommended way to express if/else chains. Each arm is `cond -> body`, with the **last arm's condition optional** (`-> body` is the default branch).
 
 ```no
-#{fmt-skip}
 ; ✅ Recommended (single-line body)
 {
     a == 1 -> x = 1

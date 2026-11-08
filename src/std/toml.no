@@ -106,7 +106,14 @@ toml-entry-key-eq = (e toml-entry, key str) (same bool) {
     same = false
     e.key-len != key.len-bytes() -> return
     i <- [0..e.key-len): {
-        e.key[i] != key.byte(i) -> return
+        {
+            c ?= e.key[i]
+            c != key.byte(i) -> return
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     same = true
 }
@@ -548,13 +555,26 @@ toml-valid-value = (raw str) (valid bool) {
 toml-register-table = (doc toml-doc, name str) (ok bool) {
     ok = false
     i <- [0..doc.table-count): {
-        table-name = toml-table-name(doc.tables[i])
-        table-name.eq-full(name) -> return
+        {
+            t ?= doc.tables[i]
+            table-name = toml-table-name(t)
+            table-name.eq-full(name) -> return
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     doc.table-count >= TOML-MAX-TABLES -> return
     doc.tables[doc.table-count].name-len = name.len-bytes()
     i <- [0..name.len-bytes()): {
-        doc.tables[doc.table-count].name[i] = name.byte(i)
+        {
+            doc.tables[doc.table-count].name[i] ?= name.byte(i)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -570,17 +590,25 @@ toml-register-table = (doc toml-doc, name str) (ok bool) {
 toml-resolve-section = (doc toml-doc, name str) (resolved str) {
     resolved = name
     i <- [0..doc.array-count): {
-        base = toml-array-name(doc.arrays[i])
-        name.starts-with(base) -> {
-            blen = base.len-bytes()
-            name.len-bytes() > blen -> {
-                name.byte(blen) == 46 -> {
-                    suffix = name.slice-bytes(blen, name.len-bytes())
+        a toml-array-table
+        {
+            a ?= doc.arrays[i]
+            base = toml-array-name(a)
+            name.starts-with(base) -> {
+                blen = base.len-bytes()
+                name.len-bytes() > blen -> {
+                    name.byte(blen) == 46 -> {
+                        suffix = name.slice-bytes(blen, name.len-bytes())
 
-                    resolved = base - '[' - doc.arrays[i].index.to-str() - ']' - suffix
-                    return
+                        resolved = base - '[' - a.index.to-str() - ']' - suffix
+                        return
+                    }
                 }
             }
+        }: {
+            err -> _
+
+            -> _
         }
     }
 }
@@ -592,11 +620,12 @@ toml-resolve-section = (doc toml-doc, name str) (resolved str) {
 ; [toml-next-array-table](#toml.toml-next-array-table)
 toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     i <- [0..doc.array-count): {
-        array-name = toml-array-name(doc.arrays[i])
+        a ?= doc.arrays[i]
+        array-name = toml-array-name(a)
         array-name.eq-full(name) -> {
 
             #{overflow=wrap}
-            n = doc.arrays[i].index + 1
+            n = a.index + 1
 
             doc.arrays[i].index = n
             idx = n
@@ -606,7 +635,13 @@ toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     doc.array-count >= TOML-MAX-ARRAY-TABLES -> return
     doc.arrays[doc.array-count].name-len = name.len-bytes()
     i <- [0..name.len-bytes()): {
-        doc.arrays[doc.array-count].name[i] = name.byte(i)
+        {
+            doc.arrays[doc.array-count].name[i] ?= name.byte(i)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     doc.arrays[doc.array-count].index = 0
@@ -796,7 +831,8 @@ toml.parse = (s str) (result ?toml-doc) {
         }
         key-exists = false
         k <- [0..doc.count): {
-            entry-key = toml-entry-key(doc.entries[k])
+            e ?= doc.entries[k]
+            entry-key = toml-entry-key(e)
             entry-key.eq-full(key) -> {
                 key-exists = true
                 break
@@ -810,7 +846,7 @@ toml.parse = (s str) (result ?toml-doc) {
             result = err('toml document is full')
             return
         }
-        doc.entries[doc.count] = toml-make-entry(key, raw-value)
+        doc.entries[doc.count] ?= toml-make-entry(key, raw-value)
 
         #{overflow=wrap}
         doc.count = doc.count + 1
@@ -888,19 +924,32 @@ toml-doc.put = (key str, value str) (ok bool) {
     value-ok = toml-valid-value(value)
     value-ok == false -> return
     i <- [0..self.count): {
-        entry-key = toml-entry-key(.entries[i])
-        entry-key.eq-full(key) -> {
-            .entries[i] = toml-make-entry(key, value)
-            ok = true
-            return
+        {
+            e ?= .entries[i]
+            entry-key = toml-entry-key(e)
+            entry-key.eq-full(key) -> {
+                .entries[i] ?= toml-make-entry(key, value)
+                ok = true
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
     .count >= TOML-MAX-ENTRIES -> return
-    .entries[.count] = toml-make-entry(key, value)
+    {
+        .entries[.count] ?= toml-make-entry(key, value)
 
-    #{overflow=wrap}
-    .count = .count + 1
-    ok = true
+        #{overflow=wrap}
+        .count = .count + 1
+        ok = true
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 取得原始 TOML 字面值
@@ -911,9 +960,10 @@ toml-doc.put = (key str, value str) (ok bool) {
 ; [get](#toml.get)
 get = (doc toml-doc, key str) (value ?str) {
     i <- [0..doc.count): {
-        entry-key = toml-entry-key(doc.entries[i])
+        e ?= doc.entries[i]
+        entry-key = toml-entry-key(e)
         entry-key.eq-full(key) -> {
-            value = toml-entry-value(doc.entries[i])
+            value = toml-entry-value(e)
             return
         }
     }
@@ -926,10 +976,17 @@ get = (doc toml-doc, key str) (value ?str) {
 ; [has](#toml.has)
 has = (doc toml-doc, key str) (found bool) {
     i <- [0..doc.count): {
-        entry-key = toml-entry-key(doc.entries[i])
-        entry-key.eq-full(key) -> {
-            found = true
-            return
+        {
+            e ?= doc.entries[i]
+            entry-key = toml-entry-key(e)
+            entry-key.eq-full(key) -> {
+                found = true
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
 }

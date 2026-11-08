@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"unicode"
+	"unicode/utf8"
 )
 
 // Lexer 在 New() 時一次性預掃描全部 token 到 allTokens，
@@ -111,6 +112,34 @@ func (l *Lexer) skipWhitespace() {
 	}
 }
 
+// curRune 解碼當前位置的完整 UTF-8 碼點與其位元組長度。
+//
+// l.ch 只是**首字節**。任何依「字元」而非「位元組」判斷的地方（非法字元的
+// 報告）都必須走這裡；否則 `可`(E5 8F AF) 會被逐位元組拆開，報成看不懂的
+// `illegal token "\u008f"`。
+// 非法 / 截斷的 UTF-8 序列退回單字節，由上層原樣報告該位元組。
+func (l *Lexer) curRune() (rune, int) {
+	if l.ch == 0 {
+		return 0, 1
+	}
+	r, size := utf8.DecodeRuneInString(l.input[l.position:])
+	if r == utf8.RuneError && size <= 1 {
+		return rune(l.ch), 1
+	}
+	return r, size
+}
+
+// advanceBytes 前進 size 個位元組。跨多字節碼點時用，line/column 記賬交給
+// readChar 統一處理（列號仍以**位元組**計，與既有診斷位置保持一致）。
+func (l *Lexer) advanceBytes(size int) {
+	for i := 0; i < size; i++ {
+		l.readChar()
+	}
+}
+
+// readIdentifier 讀識別字。識別字**只由 ASCII 組成**（見 isLetter），所以這裡
+// 逐位元組前進是安全的：UTF-8 的續位元組一律 >= 0x80，不可能落在 isLetter /
+// isDigit 的 ASCII 範圍內，掃描不會切進多字節字元中間。
 func (l *Lexer) readIdentifier() string {
 	start := l.position
 	for isLetter(l.ch) || isDigit(l.ch) {
@@ -144,15 +173,16 @@ func (l *Lexer) readNumber() string {
 
 // readString 讀取引號字串（單引號字串或雙引號字元字面量）。
 // 性能優化：
-// 1. 零分配快路徑：先掃描是否含 '\' 轉義，若無則直接返回 input 子串（零分配），
-//    避免 append 擴容與末尾 string(buf) 拷貝。常見的無轉義字串佔絕大多數。
-// 2. 預分配：含轉義時按掃描長度預分配 buf 容量，避免多次擴容。
+//  1. 零分配快路徑：先掃描是否含 '\' 轉義，若無則直接返回 input 子串（零分配），
+//     避免 append 擴容與末尾 string(buf) 拷貝。常見的無轉義字串佔絕大多數。
+//  2. 預分配：含轉義時按掃描長度預分配 buf 容量，避免多次擴容。
+//
 // 返回 (literal, raw)：literal 為解析後內容，raw 為原始源碼文字（含轉義序列）。
 func (l *Lexer) readString() (string, string) {
-	quote := l.ch               // 记录引号类型（单引号或双引号）
-	rawStart := l.position      // 記錄開始引號位置
-	l.readChar()                // 跳过开始的引号
-	contentStart := l.position  // 內容起始位置
+	quote := l.ch              // 记录引号类型（单引号或双引号）
+	rawStart := l.position     // 記錄開始引號位置
+	l.readChar()               // 跳过开始的引号
+	contentStart := l.position // 內容起始位置
 
 	// 快路徑：掃描到 quote 或 '\' 或 EOF，判斷是否含轉義
 	hasEscape := false
@@ -860,7 +890,7 @@ func (l *Lexer) scanToken() (tok Token) {
 			tok.Type = ILLEGAL
 			tok.Literal = "__"
 			tok.ErrMsg = "identifier may start with at most one underscore; a leading '__' (double underscore) is not allowed"
-		} else if unicode.IsLetter(rune(l.peekChar())) || isDigit(l.peekChar()) {
+		} else if isLetter(l.peekChar()) || isDigit(l.peekChar()) {
 			literal := l.readIdentifier()
 			tok.Type = lookupKeyword(literal)
 			if tok.Type == 0 {
@@ -971,6 +1001,14 @@ func (l *Lexer) scanToken() (tok Token) {
 		tok.Type = NEWLINE
 		tok.Literal = charLits[l.ch]
 	default:
+		// ASCII 快路徑不解碼：識別字 / 數字是熱路徑，每 token 一次
+		// utf8.DecodeRuneInString 是白付的成本。只有首字節 >= 0x80（可能是
+		// 多字節字元）才需要知道整顆碼點。
+		var r rune
+		var size int
+		if l.ch >= utf8.RuneSelf {
+			r, size = l.curRune()
+		}
 		if isLetter(l.ch) {
 			literal := l.readIdentifier()
 			// ⚠️ There is deliberately NO `xNN` byte-literal rule here. The
@@ -984,12 +1022,12 @@ func (l *Lexer) scanToken() (tok Token) {
 			//
 			// Do not reintroduce it: `x00` must lex as a single IDENT.
 			tok.Type = lookupKeyword(literal)
-		if tok.Type == 0 {
-			tok.Type = IDENT
-		}
-		tok.Literal = literal
-		return tok
-	} else if isDigit(l.ch) {
+			if tok.Type == 0 {
+				tok.Type = IDENT
+			}
+			tok.Literal = literal
+			return tok
+		} else if isDigit(l.ch) {
 			tok.Type = INT
 			literal := l.readNumber()
 			tok.Literal = literal
@@ -1006,6 +1044,20 @@ func (l *Lexer) scanToken() (tok Token) {
 					tok.ErrMsg = "scientific notation literals (e.g. 1e40) are not supported; write the value in full (100000000000000000000000000000.0) or build it with math.pow(10.0, 40.0)"
 				}
 			}
+			return tok
+		} else if size > 1 {
+			// 多字節碼點（`→`、`、`、全形括號、漢字…）：整顆碼點報告，
+			// 不要拆成首尾位元組（`→` = E2 86 92 → `\u00e2\u0086\u0092`）。
+			tok.Type = ILLEGAL
+			tok.Literal = string(r)
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				// 非 ASCII 字母/數字：識別字**只允許 ASCII**。這裡給出可操作的
+				// 說明，而不是讓作者面對一個光禿禿的 `illegal token "可"`。
+				// （真要支援，得先讓 codegen 給每個符號名加引號——目前 `@可以`
+				// 直發進 IR 會被 opt 判定 `expected top-level entity`。）
+				tok.ErrMsg = "non-ASCII characters are not allowed in identifiers; use ASCII letters, digits, '_' or '-' (e.g. rename `可以` to `can`)"
+			}
+			l.advanceBytes(size)
 			return tok
 		} else {
 			tok.Type = ILLEGAL
@@ -1030,35 +1082,28 @@ func init() {
 	}
 }
 
-// isLetter 對 ASCII 字節走快路徑（直接範圍比較），
-// 僅對 >= 0x80 的非 ASCII 字節才走 unicode.IsLetter 查分區表。
-// ASCII 源碼佔絕大多數，此優化消除約 99% 的 unicode 表查找開銷。
+// isLetter 判定識別字可用的字元：a-z, A-Z, _, -。**只認 ASCII**。
+//
+// 🔴 舊版對 >= 0x80 的位元組做 `unicode.IsLetter(rune(ch))`，而 rune(0xE5) 是
+// `å`（U+00E5）——於是任何 UTF-8 多字節字元的**首字節**都被當成字母，識別字
+// 在第二個位元組處斷掉，後續位元組變成 ILLEGAL token（`可` → IDENT("\xe5")
+// + ILLEGAL("\x8f") + ILLEGAL("\xaf")，診斷印成 `\u008f`）。
+//
+// 這個 bug 不能靠「按碼點吃整顆」修：識別字本身**不支援非 ASCII**（codegen 直發
+// 符號名，`@可以` 會讓 opt 報 `expected top-level entity`）。所以非 ASCII 字元
+// 一律由 scanToken 的 default 分支整顆報成 ILLEGAL（見 curRune）。
 func isLetter(ch byte) bool {
-	// ASCII 快路徑：a-z, A-Z, _, -
-	if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '-' {
-		return true
-	}
-	// 非 ASCII：走 unicode 表查找（支援 UTF-8 多字節字符的首字節）
-	if ch >= 0x80 {
-		return unicode.IsLetter(rune(ch))
-	}
-	return false
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '-'
 }
 
 func isHex(ch byte) bool {
 	return isDigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
-// isDigit 對 ASCII 數字走快路徑，僅對 >= 0x80 才走 unicode.IsDigit。
-// ASCII 數字 '0'-'9' 佔絕大多數，此優化消除 unicode 表查找開銷。
+// isDigit 只認 ASCII 數字 '0'-'9'（源碼裡的數字字面量一律是 ASCII）。
+// 碼點級的數字判斷（識別字內的非 ASCII 數字）走 isIdentRune。
 func isDigit(ch byte) bool {
-	if ch >= '0' && ch <= '9' {
-		return true
-	}
-	if ch >= 0x80 {
-		return unicode.IsDigit(rune(ch))
-	}
-	return false
+	return ch >= '0' && ch <= '9'
 }
 
 func containsDot(s string) bool {

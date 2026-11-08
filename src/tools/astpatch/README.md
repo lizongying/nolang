@@ -244,8 +244,6 @@ AST 节点”。规则：
 输入 `in.no`：
 
 ```nolang
-# std/fmt
-
 greet = (name str) (msg str) {
     msg = 'hello ' + name
     print(msg)
@@ -284,8 +282,6 @@ go run ./tools/astpatch -in ../tmp/in.no -patch patch.json -out ../tmp/out.no
 输出 `out.no`：
 
 ```nolang
-# std/fmt
-
 greet = (name str) (msg str) {
     msg = 'hello ' + name
     print(msg)

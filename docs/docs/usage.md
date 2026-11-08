@@ -42,6 +42,7 @@ sudo mv nolang /usr/local/bin/no
 | `no uninstall <name>`                                        | 移除 binary             |
 | `no pack [-o <file>] [<dir\|file.no>]`                       | 打包 AST（`<tool>.ast.zip`）|
 | `no pub [-o <file>]`                                         | 同 `no pack`（registry 上傳未實現）|
+| `no cache <stat\|clear>`                                     | 檢視 / 清空 AST 快取（正常情況下不需要清）|
 
 ## 快速開始
 
@@ -247,6 +248,39 @@ no test -target x86_64-windows-gnu
 - 每個測試文件獨立構建
 - 若任一測試失敗，返回非零退出碼
 
+## AST 快取
+
+`no build` / `no run` / `no test` 會把每個用戶源文件解析出的 AST 落到磁碟
+（預設 `~/.cache/nolang/ast`，可用 `$NOLANG_AST_CACHE_DIR` 改路徑），下次內容沒變就直接複用，
+省掉 lex + parse。標準庫走的是編譯器內嵌的 blob，不佔這份快取。
+
+**不需要手動清理。** 快取鍵是
+
+```
+sha256( ASTVersion ‖ 解析期 salt ‖ 源文件內容 )
+```
+
+其中 salt 的一項就是 `checker.StdSigKey` —— 即 `src/hash.noml` 所列全部源文件
+（標準庫 + 編譯器自身）的內容簽名。所以編譯器或標準庫的任何改動，都會讓用 `make` 重建出的
+`no` 換一把新鍵，舊條目自然 miss、不會被覆用。
+
+| 命令 | 說明 |
+| --- | --- |
+| `no cache stat` | 顯示快取目錄、條目數、總大小與目前 `ASTVersion` |
+| `no cache clear` | 清空全部條目（僅應急：懷疑條目陳舊時） |
+
+環境變量：
+
+| 變量 | 作用 |
+| --- | --- |
+| `NOLANG_AST_CACHE_OFF=1` | 關閉快取（做編譯器 A/B 對比、排查「修好的錯誤又出現」時可用） |
+| `NOLANG_AST_CACHE_DIR` | 自訂快取目錄。**同時**作用於預編 AST 依賴的 `.ast.zip` 快取（該快取預設在 `~/no/cache/ast`，見下文「預編 AST 依賴」） |
+| `NOLANG_AST_CACHE_MAX` | 快取條目數上限（預設 4096） |
+
+> 舊條目只是不再被命中，會隨新條目寫入按上限淘汰，因此**不必**刪 `~/.cache/nolang/ast`。
+> 注意 `no` 必須用 `make gen` / `make no` 重建：用 `cd src && go build` 自行編譯出來的二進位
+> 沒有注入 `StdSigKey`，它會直接報錯退出而不是靜默複用快取。
+
 ## 安裝與卸載 Binary
 
 ### 安裝
@@ -370,8 +404,7 @@ no sync
 `<tool>.ast.zip`（MetaMessage + zip），解碼後直接注入編譯管線。用法：
 
 ```nolang
-#{fmt-skip}
-use nogit            ; 或 use <host>/<owner>/<repo>/nogit
+# nogit; 或 use <host>/<owner>/<repo>/nogit
 ```
 
 一個 zip 就是一個模組，不支持 `use <repo>/<submod>` 這種更深的路徑。版本必須是具體值
@@ -575,12 +608,14 @@ Nolang 對路徑引用實施嚴格的工作區邊界控制，確保項目的可�
 `package.noml` 是項目對外發布、CI、多人協作的標準基線配置，提交到代碼倉庫。
 
 ```noml
+#{fmt-skip}
 dependencies: [
   ; ✅ 合法：以 / 開頭，相對於 workspace 根
   '/vendor/test',
   ; ❌ 禁止：作業系統絕對路徑 /home/xxx/...
   ; ❌ 禁止：./ ../ 相對跳轉
 ]
+```
 ```
 
 **約束：**

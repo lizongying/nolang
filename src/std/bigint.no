@@ -176,11 +176,19 @@ bigint.abs-cmp = (b bigint) (r i64) {
     }
 
     i <- [.len - 1..0]: {
-        .limbs[i] > b.limbs[i] -> {
+        av = .limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        bv = b.limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        av > bv -> {
             r = 1
             return
         }
-        .limbs[i] < b.limbs[i] -> {
+        av < bv -> {
             r = -1
             return
         }
@@ -192,7 +200,11 @@ bigint.abs-cmp = (b bigint) (r i64) {
 ; r: 數值是否恰為 0
 ; [is-zero](#bigint.is-zero)
 bigint.is-zero = () (r bool) {
-    r = .len == 1 && .limbs[0] == 0
+    l0 = .limbs[0]: {
+        ok -> it
+        -> 0
+    }
+    r = .len == 1 && l0 == 0
 }
 
 ; 是否為負數
@@ -219,7 +231,15 @@ bigint.eq = (b bigint) (r bool) {
     .len != b.len -> return
 
     i <- [.len - 1..0]: {
-        .limbs[i] & MASK != b.limbs[i] & MASK -> {
+        av = .limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        bv = b.limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        av & MASK != bv & MASK -> {
             return
         }
     }
@@ -361,13 +381,21 @@ bigint.mul-bigint = (b bigint) (c bigint) {
         ; 因此產品運算全部走 u64（邏輯 >>、乾淨 &）。limb 值本身仍落在
         ; [0,2^32)，可安全存回 []i64。
         carry u64 = 0
-        av u64 = (.limbs[i] & MASK)
+        av0 = .limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        av u64 = (av0 & MASK)
         j <- [0..bl): {
 
             ; 累積順序：先 av*bv（< 2^64），再加既有 limb（< 2^32），最後加 carry
             ; （< 2^32）。三者之和嚴格小於 2^64，故全程不會回繞，carry 正確落在
             ; [0, 2^32)。Nolang 的 u64 乘法是 mod 2^64 正確、>> 為邏輯移位、& 低位乾淨。
-            bv u64 = (b.limbs[j] & MASK)
+            bv0 = b.limbs[j]: {
+                ok -> it
+                -> 0
+            }
+            bv u64 = (bv0 & MASK)
             p u64 = av * bv
             p = p + (c.limbs[i + j] & MASK)
             p = p + carry
@@ -552,7 +580,11 @@ bigint._mul-i64 = (v i64) (c bigint) {
 ; r: 餘數（符號跟隨被除數；|self| < |b| 時即 self 本身）
 ; [div-mod](#bigint.div-mod)
 bigint.div-mod = (b bigint) (q bigint, r bigint) {
-    b.len == 1 && b.limbs[0] == 0 -> {
+    b0 = b.limbs[0]: {
+        ok -> it
+        -> 0
+    }
+    b.len == 1 && b0 == 0 -> {
         q = zero()
         r = zero()
         return
@@ -578,7 +610,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     ; 單 limb 除數：使用簡單的 _div-i64/_mod-i64
     #{overflow=wrap}
     b.len == 1 -> {
-        v = b.limbs[0] & MASK
+        v = b0 & MASK
         q = ._div-i64(v)
         r.limbs = with-len(1)
 
@@ -588,7 +620,13 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
             -> 0
         }
-        r.limbs[0] = mv
+        {
+            r.limbs[0] ?= mv
+        }: {
+            err -> _
+
+            -> _
+        }
         r.len = 1
         q.sign = .sign * b.sign
         r.sign = .sign
@@ -599,13 +637,21 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     q.len = .len - b.len + 1
     q.limbs = with-len(q.len)
     i <- [0..q.len): {
-        q.limbs[i] = 0
+        q.limbs[i]: {
+            ok -> it = 0
+
+            -> _
+        }
     }
     bl = b.len
 
     ; 正規化位移：讓除數最高 limb >= BASE/2。
     ; 用 u64 與 (bt >> 31 == 0) 判斷，避免 i64 有符號比較把 [2^31,2^32) 誤判為負數而過度位移。
-    bt u64 = (b.limbs[bl - 1] & MASK)
+    bt0 = b.limbs[bl - 1]: {
+        ok -> it
+        -> 0
+    }
+    bt u64 = (bt0 & MASK)
     shift = 0
     (bt >> 31 == 0) {
         bt = bt << 1
@@ -618,7 +664,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     norm-b []i64 = with-len(bl)
     nb-carry = 0
     nbi <- [0..bl): {
-        nbv = (b.limbs[nbi] & MASK) << shift | nb-carry
+        nb0 = b.limbs[nbi]: {
+            ok -> it
+            -> 0
+        }
+        nbv = (nb0 & MASK) << shift | nb-carry
         norm-b[nbi]: {
             ok -> it = nbv & MASK
 
@@ -755,7 +805,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         {
             (top >= borrow) -> {
                 norm-a.limbs[qi + bl] = (top - borrow)
-                q.limbs[qi] = qhat
+                q.limbs[qi]: {
+                    ok -> it = qhat
+
+                    -> _
+                }
             }
 
             -> {
@@ -776,7 +830,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
                 }
                 carry2-i i64 = carry2
                 norm-a.limbs[qi + bl] = norm-a.limbs[qi + bl] + carry2-i
-                q.limbs[qi] = qhat
+                q.limbs[qi]: {
+                    ok -> it = qhat
+
+                    -> _
+                }
             }
         }
 
@@ -797,7 +855,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     ri = b.len - 1
     (ri >= 0) {
         rcur = norm-a.limbs[ri] & MASK
-        r.limbs[ri] = ((rcur >> shift) | rc) & MASK
+        r.limbs[ri]: {
+            ok -> it = ((rcur >> shift) | rc) & MASK
+
+            -> _
+        }
         rc = ((rcur & ((1 << shift) - 1)) << (32 - shift)) & MASK
         ri = ri - 1
     }
@@ -820,7 +882,11 @@ bigint._div-i64 = (v i64) (q bigint) {
 
     #{overflow=wrap}
     i <- [.len - 1..0]: {
-        cur = (rem << 32) | (.limbs[i] & MASK)
+        li = .limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        cur = (rem << 32) | (li & MASK)
 
         #{overflow=wrap}
         q.limbs[i] = cur / r-v
@@ -844,7 +910,11 @@ bigint._mod-i64 = (v i64) (r ?i64) {
 
     #{overflow=wrap}
     i <- [.len - 1..0]: {
-        cur = (rem << 32) | (.limbs[i] & MASK)
+        li = .limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        cur = (rem << 32) | (li & MASK)
         rem = cur % r-v
     }
     r = rem
@@ -887,11 +957,16 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
     b = .copy()
 
     #{overflow=wrap}
-    top = exp.limbs[exp.len - 1] & MASK
+    ehi = (exp.len) - 1
+    top0 = exp.limbs[ehi]: {
+        ok -> it
+        -> 0
+    }
+    top = top0 & MASK
     lead = 0
-    tmp = top
-    (tmp != 0) {
-        tmp = tmp >> 1
+    tv = top
+    (tv != 0) {
+        tv = tv >> 1
 
         #{overflow=wrap}
         lead = lead + 1
@@ -908,7 +983,12 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
         #{overflow=wrap}
         elimb = i / 32
         ebit = i % 32
-        (exp.limbs[elimb] >> ebit) & 1 == 1 -> {
+        el0 = exp.limbs[elimb]: {
+            ok -> it
+
+            -> 0
+        }
+        (el0 >> ebit) & 1 == 1 -> {
             r = r._mul(b)
         }
     }
@@ -966,10 +1046,17 @@ bigint.lcm = (b bigint) (l bigint) {
 bigint.shl1 = () {
     carry = 0
     i <- [0..self.len): {
-        v = (.limbs[i] & MASK) << 1 | carry
-        carry = v >> 32
+        {
+            li ?= .limbs[i]
+            v = (li & MASK) << 1 | carry
+            nv = v & MASK
+            .limbs[i] ?= nv
+            carry = v >> 32
+        }: {
+            err -> _
 
-        .limbs[i] = v & MASK
+            -> _
+        }
     }
     carry > 0 -> {
 
@@ -997,9 +1084,17 @@ bigint.shr1 = () {
     inb = 0
 
     i <- [.len - 1..0]: {
-        outb = .limbs[i] & 1
-        .limbs[i] = ((.limbs[i] >> 1) | (inb << 31)) & MASK
-        inb = outb
+        {
+            li ?= .limbs[i]
+            outb = li & 1
+            nv = ((li >> 1) | (inb << 31)) & MASK
+            .limbs[i] ?= nv
+            inb = outb
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .normalize()
 }
@@ -1035,9 +1130,16 @@ shr = (a bigint, n i64) (c bigint) {
 ; 移除前導零，確保 len >= 1
 ; [normalize](#bigint.normalize)
 bigint.normalize = () {
+    !! {
+        .len <= 1 -> break
 
-    #{overflow=wrap}
-    (.len > 1 && .limbs[.len - 1] == 0) {
+        #{overflow=wrap}
+        hi = .len - 1
+        top = .limbs[hi]: {
+            ok -> it
+            -> 0
+        }
+        top != 0 -> break
 
         #{overflow=wrap}
         .len = .len - 1
@@ -1071,7 +1173,11 @@ bigint.to-str = () (out str) {
         ; 裸 `.` 會解析到「外層方法（to-str）的接收者」而非 tmp，
         ; 導致 is-zero 永遠檢查錯誤的物件 → 迴圈不會在零值停住（bus error / 前導零）。
         ; 因此這裡用顯式欄位存取來判斷 tmp 是否為零。
-        tz = tmp.len == 1 && tmp.limbs[0] == 0
+        tl = tmp.limbs[0]: {
+            ok -> it
+            -> 0
+        }
+        tz = (tmp.len == 1) && tl == 0
         tz -> break
         dm = tmp._mod-i64(10)
         d = dm: {
@@ -1147,9 +1253,19 @@ bigint.to-i64 = () (v ?i64) {
         return
     }
 
-    lo-m = .limbs[0] & MASK
+    lo0 = .limbs[0]: {
+        ok -> it
+        -> 0
+    }
+    lo-m = lo0 & MASK
     hi-m = 0
-    (.len > 1) -> hi-m = .limbs[1] & MASK
+    (.len > 1) -> {
+        hi0 = .limbs[1]: {
+            ok -> it
+            -> 0
+        }
+        hi-m = hi0 & MASK
+    }
 
     ; hi-m 經 MASK 遮罩後必落在 [0, 2^32)，故可與 2^31 直接無符號比較。
     ; 正數上限 2^63-1：hi-m ≥ 2^31 即出界。
@@ -1193,7 +1309,11 @@ bigint.to-hex = () (out str) {
 
     #{overflow=wrap}
     i <- [.len - 1..0]: {
-        limb = .limbs[i] & MASK
+        li0 = .limbs[i]: {
+            ok -> it
+            -> 0
+        }
+        limb = li0 & MASK
 
         #{overflow=wrap}
         {

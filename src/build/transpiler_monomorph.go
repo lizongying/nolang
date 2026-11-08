@@ -2269,6 +2269,28 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 		}
 		newMulti.Value = substituteExpr(s.Value, subst)
 		return newMulti
+	case *parser.UnwrapAssignStatement:
+		// `?=`：模板方法体里大量使用（块 match 内的 `occ[i] ?= ...`）。若不下钻，
+		// 其 Value 里對模板方法的呼叫（如 `.str-eq(k, key)`）會保留 tmpl 名，
+		// 具現化後成為 unknown callee。
+		return &parser.UnwrapAssignStatement{
+			Token:        s.Token,
+			Name:         s.Name,
+			Target:       substituteExpr(s.Target, subst),
+			Value:        substituteExpr(s.Value, subst),
+			DeprecatedOp: s.DeprecatedOp,
+		}
+	case *parser.BlockMatchStatement:
+		// 塊 match `{ ... }: { err -> ... }`：Body 是真正的陳述式主體，必須遞迴；
+		// Match 是臂表（SurfaceMatch），交由 substituteExpr 走 SurfaceMatch 分支。
+		nb := *s
+		nb.Body = substituteBody(s.Body, subst)
+		if s.Match != nil {
+			if m, ok := substituteExpr(s.Match, subst).(*parser.SurfaceMatch); ok {
+				nb.Match = m
+			}
+		}
+		return &nb
 	default:
 		return stmt
 	}
@@ -2340,6 +2362,16 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 			Token:      e.Token,
 			Expression: substituteExpr(e.Expression, subst),
 		}
+	case *parser.BlockMatchStatement:
+		// 塊 match 也可能出現在表達式位置（本檔另有 statement 分支）。
+		nb := *e
+		nb.Body = substituteBody(e.Body, subst)
+		if e.Match != nil {
+			if m, ok := substituteExpr(e.Match, subst).(*parser.SurfaceMatch); ok {
+				nb.Match = m
+			}
+		}
+		return &nb
 	case *parser.SurfaceMatch:
 		// S1：糖形態 match。重建 Matched + 每臂 Condition / MultiValuePatterns / Body，
 		// 其餘 MatchArm 欄位隨值拷貝保留。對應 IfExpression 分支的 Condition /

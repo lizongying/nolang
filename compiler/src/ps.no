@@ -9919,7 +9919,9 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             dot-val = 0
             kvar == 'ok' -> dot-val = 1
 
-            ; bindingVariant：僅解構綁定名存在時填（ok(v)⇒ok / err(e)⇒err）
+            ; bindingVariant：記錄 option 三態臂的變體名（ok(v)⇒ok / err(e)⇒err / nil⇒nil）。
+            ;   h2m 降級側依此區分三態並決定 tag（ok=0 / nil=1 / err=2）；nil 無載荷故即便無綁定名也填 'nil'，
+            ;   否則 nil 臂的 bindingVariant 留空、與真·兜底臂（wildcard）無法區分 ⇒ 門禁誤判。
             bvar = ''
             kvar == 'ok' -> {
                 bname != '' -> bvar = 'ok'
@@ -9927,6 +9929,7 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             kvar == 'err' -> {
                 bname != '' -> bvar = 'err'
             }
+            kvar == 'nil' -> bvar = 'nil'
             sw-a.push(sw)
             dot-val-a.push(dot-val)
             bind-a.push(bname)

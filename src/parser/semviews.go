@@ -133,9 +133,51 @@ func BuildSemViews(prog *Program, cfg SemRebuildConfig) {
 	// 結果一致；`precomputeIdxLocalTypes` 只讀樹、寫 p.idxLocalTypes。
 	p.prepareInBoundsMetadata(prog)
 
+	// 坑 5：`NodeFacts.GrowWrite`。place-write `?=` 降糖會新建一顆
+	// `*IndexExpression`（`__match_subj_L_C` 綁定的 value、index 走 `__idx_L_C`
+	// 暫存），並在 lowering.go 的 emitSubjectMatchPlain 裡直接對它
+	// `SetGrowWrite(true)`。這顆節點本身是語法樹的一部分，但 fact 存在
+	// node-keyed 副表裡，gob 不搬；`prepareInBoundsMetadata` 也只重建
+	// IndexInBounds。不補的話 ASTToHIR 少掉 hir.FlagGrowWrite，
+	// TestBuildSemViewsMatchesFreshParse 的 HIR 對拍會抓到（std/heap.no 三處
+	// `?=` 寫目標 → 3 × 15 bytes 分叉）。
+	rebuildGrowWriteFacts(prog)
+
 	// `?T` 推斷（`TypeFacts.InferredType` + `FuncVarTypes`）。與 ParseProgram
 	// 的 `prepareInferredTypes` 是同一個 analysisOnly 走查。
 	p.prepareInferredTypes(prog)
+}
+
+// rebuildGrowWriteFacts 補回 place-write 降糖產物上的 GrowWrite 標記。
+//
+// 識別依據完全來自樹形狀，與 emitSubjectMatchPlain 的建造條件逐條對應：
+//   - 只有「合成」的 `__match_subj_L_C` LetStatement 會承載寫主體；
+//   - 只有當 origMatched 是 *IndexExpression 時才會新建 fresh 節點並標記，
+//     該節點的 Index 必定是 `__idx_L_C` 這個合成暫存（使用者原始下標不會長這樣）。
+//
+// 因此不用猜行號、不用重跑降糖，也不會對一般索引讀取誤標。
+func rebuildGrowWriteFacts(prog *Program) {
+	if prog == nil || prog.Sem == nil {
+		return
+	}
+	walkProgramNodes(prog, func(n Node) {
+		ls, ok := n.(*LetStatement)
+		if !ok || ls == nil || !ls.IsSynthetic || ls.Name == nil {
+			return
+		}
+		if !strings.HasPrefix(ls.Name.Value, "__match_subj_") {
+			return
+		}
+		idx, ok := ls.Value.(*IndexExpression)
+		if !ok || idx == nil {
+			return
+		}
+		tmp, ok := idx.Index.(*Identifier)
+		if !ok || tmp == nil || !strings.HasPrefix(tmp.Value, "__idx_") {
+			return
+		}
+		prog.Sem.SetGrowWrite(idx, true)
+	})
 }
 
 // collectStructFieldsFromProg 從已解析的語法樹收集 struct 名 → 欄位名 → 型別字串。

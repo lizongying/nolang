@@ -317,7 +317,10 @@ import (
 // place-write 的寫回基底由「識別符名字」改為「基底表達式」，`.keys[i]: {
 // ok -> it = v }` 從「靜默丟棄寫回」變成真的寫回元素。同一份原始碼的樹與
 // 降糖結果都變了，舊 blob 仍是不 option 化、不寫回的那棵，故必 bump。
-const ASTVersion = "2026-11-07.1"
+// 2026-11-08.1：lexer 不再按位元組判斷字母（isLetter 只看 ASCII），並把多字節
+// 碼點整顆報成 ILLEGAL。同一份含非 ASCII 文字的源碼，樹從「IDENT("\xe5")
+// + ILLEGAL 位元組碎片」變成「每個碼點一個 ILLEGAL」，故必 bump。
+const ASTVersion = "2026-11-08.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

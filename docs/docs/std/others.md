@@ -15,26 +15,24 @@ Unicode 相關功能已分散至 `char` 和 `str` 模組：
 ### uuid — UUID v4 產生與解析
 
 ```no
-#{fmt-skip}
-out = uuid.new-v4(state)                  ; 產生 UUID v4
-out-n = uuid.to-str(out)             ; 轉小寫字串（方法）
-out-n = uuid.to-str-upper(out)       ; 轉大寫字串（方法）
-ok = uuid.from-str(s, sn, out)            ; 從字串解析（支援連字號/不帶）
-ok = uuid.parse-with-dashes(s, pos, out)  ; 含連字號解析
-ok = uuid.parse-no-dashes(s, pos, out)    ; 無連字號解析
-ok = uuid.validate()                 ; 驗證 UUID 格式（方法）
-v = uuid.version()                   ; 取得版本（方法）
-v = uuid.variant()                   ; 取得變體（方法）
-yes = uuid.is-nil()                  ; 是否為 nil（方法）
-yes = uuid.eq(b)                     ; 相等比較（方法）
-r = uuid.cmp(b)                      ; 比較（方法）
-uuid.nil-uuid(out)                        ; 回傳 nil UUID
+out = uuid.new-v4(state); 產生 UUID v4
+out-n = uuid.to-str(out); 轉小寫字串（方法）
+out-n = uuid.to-str-upper(out); 轉大寫字串（方法）
+ok = uuid.from-str(s, sn, out); 從字串解析（支援連字號/不帶）
+ok = uuid.parse-with-dashes(s, pos, out); 含連字號解析
+ok = uuid.parse-no-dashes(s, pos, out); 無連字號解析
+ok = uuid.validate(); 驗證 UUID 格式（方法）
+v = uuid.version(); 取得版本（方法）
+v = uuid.variant(); 取得變體（方法）
+yes = uuid.is-nil(); 是否為 nil（方法）
+yes = uuid.eq(b); 相等比較（方法）
+r = uuid.cmp(b); 比較（方法）
+uuid.nil-uuid(out); 回傳 nil UUID
 ```
 
 ### bigint — 任意精度整數
 
 ```no
-#{fmt-skip}
 ; 型別
 bigint {
     sign i64
@@ -57,16 +55,17 @@ r = bigint.is-neg(a)
 r = bigint.is-pos(a)
 
 ; 運算（+ - * / % 已對 bigint 運算符重載，見「語法 > 運算符重載」）
-c = a + b                     ; 等價 a._add(b)
-c = a - b                     ; 等價 a._sub(b)
-c = a * b                     ; 等價 a._mul(b)
-q = a / b                     ; 等價 a._div(b)，除零依 div-mod 回傳零
-r = a % b                     ; 等價 a._mod(b)
+c = a + b; 等價 a._add(b)
+c = a - b; 等價 a._sub(b)
+c = a * b; 等價 a._mul(b)
+q = a / b; 等價 a._div(b)，除零依 div-mod 回傳零
+r = a % b; 等價 a._mod(b)
+
 ; 混合運算數：運算符重載參數為 `bigint | i64` 聯合，編譯期按右運算元型別單態化選臂，
 ; `a + 1` / `a * 256` 等原生可用（零運行期 tag）。僅限「左運算元是 bigint」，`1 + a` 不支援。
-c = a + 1                     ; bigint ⊕ i64
-c = a * 256                   ; bigint ⊕ i64
-q, r = a.div-mod(b)           ; 同時取商與餘數
+c = a + 1; bigint ⊕ i64
+c = a * 256; bigint ⊕ i64
+q, r = a.div-mod(b); 同時取商與餘數
 c = a.pow(n)
 r = base.mod-pow(exp, mod)
 
@@ -92,7 +91,6 @@ out = bigint.from-hex(s, sn)
 結構化錯誤型別與工具函式：
 
 ```no
-#{fmt-skip}
 ; 錯誤碼枚舉
 code {
     ok,
@@ -116,26 +114,27 @@ err {
 }
 
 ; 函數
-e = err.new(msg, code.io)            ; 建立錯誤
-e = err.from-errno(errno)         ; 從 C errno 建立
-yes = e.is(code.io)                  ; 判斷錯誤碼
-msg = e.msg()                       ; 取得錯誤訊息
-c = e.code()                        ; 取得錯誤碼
-s = e.format()                       ; 格式化為字串
+e = err.new(msg, code.io); 建立錯誤
+e = err.from-errno(errno); 從 C errno 建立
+yes = e.is(code.io); 判斷錯誤碼
+msg = e.msg(); 取得錯誤訊息
+c = e.code(); 取得錯誤碼
+s = e.format(); 格式化為字串
 ```
 
 這個 `err` 結構體就是內建 option 的 `err` 變體載荷（`option { ok(v t), nil, err(e err.err) }`）：
 匹配 `?t` 時 `err ->` 臂裡隱式綁定的 `it` 就是它，而不是 `str`。
 
 ```no
-#{fmt-skip}
-x = f()               ; f 返回 ?i64
+x = f(); f 返回 ?i64
 x: {
     ok -> n = it
+
     nil -> n = 0
+
     err -> {
-        log.error(it.msg())        ; 純訊息
-        print(it.format())         ; 'code.unknown: ... at file:line:col'
+        log.error(it.msg()); 純訊息
+        print(it.format()); 'code.unknown: ... at file:line:col'
         it.is(code.io) -> print('io error')
     }
 }
@@ -167,8 +166,7 @@ leave {
 基於副檔名與魔數（magic bytes）判斷檔案類型，不依賴 libmagic：
 
 ```no
-#{fmt-skip}
-kind = magic.detect-type(path)                  ; 檢測檔案類型
+kind = magic.detect-type(path); 檢測檔案類型
 ; 返回類型描述字串，如 'PNG image'、'ELF executable'、'ASCII text'、'directory'、'unknown'、'data'
 ```
 

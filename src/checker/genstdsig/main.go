@@ -12,6 +12,12 @@
 // checker.validateStdASTBlob), so a blob made from different std sources is
 // rejected; an empty injected key is still a hard failure.
 //
+// The std-content key is derived from repo-root hash/MANIFEST.txt — a sorted
+// list of src/**/*.no + src/**/*.go — so any change to the compiler itself
+// (parser/checker/hir/...) invalidates the baked tables and forces a rebuild.
+// This command REGENERATES hash/MANIFEST.txt on every run before computing
+// the key.
+//
 // Run via `go generate ./checker/` (cwd = src/checker) or `make gen`.
 package main
 
@@ -57,6 +63,12 @@ func main() {
 	// the binary via -X (checker.StdSigKey). SerializeStdAST bakes the same
 	// hash (same function, same fsys) into StdASTBlob.StdKey; runtime compares
 	// the two by value. An empty injected key is a hard failure.
+	//
+	// The key is read from src/hash.noml — a HAND-WRITTEN .noml file that
+	// lists which .no/.go files should participate. Entries may be FILE paths
+	// or DIR paths (dirs recursively expand under src/); `;` starts comments.
+	// genstdsig does NOT write this file — it is the user's input. If the file
+	// is missing, checker falls back to hashing only src/std/*.no.
 	if *keyOnly {
 		key, err := checker.ComputeStdSigKeyFromFS(fsys)
 		if err != nil {

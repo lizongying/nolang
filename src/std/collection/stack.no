@@ -27,10 +27,16 @@ stack {
 ; val i64: 要壓入的值；寫入 data[n] 後 n 加 1
 ; [push](#stack.stack.push)
 stack.push = (val i64) {
-    .data[.n] = val
+    {
+        .data[.n] ?= val
 
-    #{overflow=wrap}
-    .n = .n + 1
+        #{overflow=wrap}
+        .n = .n + 1
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 從堆疊頂端彈出元素

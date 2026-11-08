@@ -10,14 +10,20 @@ import (
 // cacheCommand implements `no cache` — management of the on-disk user AST
 // cache (~/.cache/nolang/ast, overridable via $NOLANG_AST_CACHE_DIR).
 //
-// Why this exists: the cache is content-addressed with ASTVersion in the key,
-// so bumping ASTVersion (required whenever a parse-time output shape changes —
-// inferred types, synthetic nodes) invalidates old blobs AUTOMATICALLY. The
-// failure mode is forgetting the bump: old blobs then keep hitting and serve
-// pre-change inferred types, and the only symptom is a confusing "old error
-// still reported after the fix". `no cache clear` is the manual escape hatch;
-// `no cache stat` shows what is on disk. For a build-time detection of the
-// forgotten-bump case see NOLANG_AST_CACHE_VERIFY (UserASTCache.Get).
+// Why this exists: the cache key is
+//
+//	sha256(ASTVersion ‖ parse-time salt ‖ source content)
+//
+// (parser.UserASTCache.KeyFor), and the salt carries checker.StdSigKey — the
+// content signature of every file listed in src/hash.noml, i.e. the std library
+// AND the compiler's own sources (see build.(*Transpiler).astCacheSalt). So a
+// `no` built via `make` re-keys itself whenever the compiler or std changes:
+// old blobs stop being hit automatically, and no manual cleaning is required.
+// `no cache clear` is only an escape hatch (hand-rolled binaries, entries
+// written by a compiler that predates the salt); `no cache stat` shows what is
+// on disk. ASTVersion still matters as the second axis — bump it when a
+// parse-time output shape changes (inferred types, synthetic nodes) so caches
+// shared across machines are invalidated too.
 func cacheCommand(args []string) {
 	sub := "help"
 	if len(args) > 0 {

@@ -144,6 +144,9 @@ h2m-ctx {
     args []i64
     itv []i64
     itv-n i64
+    aln []str
+    alv []i64
+    alidx []i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -192,6 +195,12 @@ h2m-new = () (c h2m-ctx) {
         itv: []
         i64
         itv-n: 0
+        aln: []
+        str
+        alv: []
+        i64
+        alidx: []
+        i64
     }
     c.vty.push(TY-I64)
 }
@@ -402,30 +411,45 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
     v = 0
     name == 'it' && c.itv-n > 0 -> v = c.itv[c.itv-n - 1]
     name != 'it' || c.itv-n <= 0 -> {
-        i = h2m-name-find(c, name)
-        i < 0 -> h2m-mark(c)
-        i >= 0 && c.mem == 0 -> v = c.vids[i]
-        i >= 0 && c.mem == 1 -> {
-            sid = c.vids[i]
-            st = c.tys[i]
-            st == TY-I64 || st == TY-U64 || st == TY-F64 -> {
-                v = h2m-alloc(c, st)
-                h2m-emit(c, OP-LOAD, v, sid, 0, '', st)
-            }
-            st == TY-STR -> {
-                v = h2m-alloc(c, TY-STR)
-                h2m-emit(c, OP-SLOAD, v, sid, 0, '', TY-STR)
+        ; s98：臂局部名（ok(v) 等 match 臂绑定）——跨 mem 模式直返 SSA 值，绕过槽 LOAD；
+        ;   后入栈者优先（同名取最近一臂），臂退出时由调用方 pop 还原外层绑定
+        ai = c.aln.len() - 1
+        fal = 0
+        (ai >= 0 && fal == 0) {
+            c.aln[ai] == name -> {
+                v = c.alv[ai]
+                fal = 1
             }
 
-            ; s97：TY-OPT 槽读——OP-OPTLOAD 交出 %option 值（cg %op 命名空间，与 SLOAD 同形：槽在 a、结果在 dst）
-            st == TY-OPT -> {
-                v = h2m-alloc(c, TY-OPT)
-                h2m-emit(c, OP-OPTLOAD, v, sid, 0, '', TY-OPT)
-            }
+            #{overflow=wrap}
+            ai = ai - 1
+        }
+        fal == 0 -> {
+            i = h2m-name-find(c, name)
+            i < 0 -> h2m-mark(c)
+            i >= 0 && c.mem == 0 -> v = c.vids[i]
+            i >= 0 && c.mem == 1 -> {
+                sid = c.vids[i]
+                st = c.tys[i]
+                st == TY-I64 || st == TY-U64 || st == TY-F64 -> {
+                    v = h2m-alloc(c, st)
+                    h2m-emit(c, OP-LOAD, v, sid, 0, '', st)
+                }
+                st == TY-STR -> {
+                    v = h2m-alloc(c, TY-STR)
+                    h2m-emit(c, OP-SLOAD, v, sid, 0, '', TY-STR)
+                }
 
-            ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
-            st == TY-VEC -> v = sid
-            st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-F64 && st != TY-OPT -> h2m-mark(c)
+                ; s97：TY-OPT 槽读——OP-OPTLOAD 交出 %option 值（cg %op 命名空间，与 SLOAD 同形：槽在 a、结果在 dst）
+                st == TY-OPT -> {
+                    v = h2m-alloc(c, TY-OPT)
+                    h2m-emit(c, OP-OPTLOAD, v, sid, 0, '', TY-OPT)
+                }
+
+                ; s62：TY-VEC 不铺槽 ⇒ 绑定的 sid 就是 entry 的 incoming 形参值 id，支配全函数各块，直返即可
+                st == TY-VEC -> v = sid
+                st != TY-I64 && st != TY-U64 && st != TY-STR && st != TY-VEC && st != TY-F64 && st != TY-OPT -> h2m-mark(c)
+            }
         }
     }
 }
@@ -1189,11 +1213,35 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             nm = ast.str-at(t, d.s0)
 
             ; s65：`it` 不在 names/槽表——值匹配臂降级时住在 c.itv 栈上，栈非空即读栈顶
+            ; s98：臂局部名（ok(v) 等）住在 c.alidx/c.alv 栈，不在 names——
+            ;   预检必须一并纳入，否则 vi<0 会直接 h2m-mark 跳过错过的降级臂。
+            ;   ⚠️ 用「名字在 str 表的下标」(i64) 作键，而非名字串本身：本构建里
+            ;   []str.push 对非字面串（ast.str-at 的回传）会存成空串，故串比对不可靠；
+            ;   下标是 i64，push/cmp 都稳。d.s0 即本标识符名字的下标，臂绑定名下标
+            ;   由 emit 侧 ast.aux-at(hb+0) 推入 c.alidx，同一 t.strs 表 ⇒ 可直接比下标。
+            aln-hit = 0
+            found-ai = -1
+            ai = c.alidx.len() - 1
+            (ai >= 0 && aln-hit == 0) {
+                ; 按内容比对：把臂绑定名的 str 表下标现取现比（ast.str-at 此时已可靠），
+                ;   不与 d.s0 比下标——同一 'v' 在 t.strs 里可能有多份，下标不等但内容相等。
+                inm = ast.str-at(t, c.alidx[ai])
+                inm == nm -> {
+                    aln-hit = 1
+                    found-ai = ai
+                }
+
+                #{overflow=wrap}
+                ai = ai - 1
+            }
             it-on = 0
             nm == 'it' && c.itv-n > 0 -> it-on = 1
             vi = h2m-name-find(c, nm)
-            it-on == 1 || vi >= 0 -> v = h2m-var-read(c, nm)
-            it-on == 0 && vi < 0 -> h2m-mark(c)
+
+            ; 优先级：臂局部 (alidx) > it 栈 > names 表；命中即取对应 SSA 值
+            aln-hit == 1 -> v = c.alv[found-ai]
+            aln-hit == 0 && (it-on == 1 || vi >= 0) -> v = h2m-var-read(c, nm)
+            aln-hit == 0 && it-on == 0 && vi < 0 -> h2m-mark(c)
         }
 
         d.kind == asp.K-GROUPED-EXPRESSION -> {
@@ -2307,10 +2355,12 @@ h2m-subtree-uses-it = (t ast, n i64) (u i64) {
 ; s63 值匹配（主体存在）：Go 权威 desugar 是 `raw-a[i] == 0 -> cond = ps-mk-eq(t, subj-node, pat-a[i])`
 ;   （ps.no:10372），即每臂比「主体 == 型样」，且主体节点被每臂重复引用 ⇒ noc 侧同样在【本臂判定块内】
 ;   各读一次主体（块必须是指令序连续段，把某块发的 LOAD 结果拿到别的块用会破支配关系）
-; ⚠️ 本件只收「主体 = i64 变量名 + 型样 = 裸整型字面量」一形（臂体里 `it` 可读自 s65）：解构绑定、'ok' 关键字臂（dot-val）、
-;   raw-cond `ok(<expr>)`、typePattern／typeArm、非 i64 主体（str／vec／option）、非字面量型样
+; ⚠️ 本件收两形主体：① i64 变量名 + 型样 = 裸整型字面量（s63 值匹配，臂体里 `it` 可读自 s65）；
+;   ② option 变量名 + 三态臂 ok(v)/nil/err(e)（s98，tag 比较）。两者外：解构绑定、'ok' 关键字臂（dot-val）、
+;   raw-cond `ok(<expr>)`、typePattern／typeArm、非 i64/option 主体（str／vec）、非字面量型样
 ;   （具名型样、负数前缀式、布尔／字符串字面量）一律走形状门禁 ⇒ 整函数不产码；
-;   写 `it`（`it = ...`）与裸链（无主体）臂体里的 `it` 读均在 h2m-var-read/write 就地计 unsup
+;   s98 缺口：err(e) 的 e 暂不可绑（无 TY-ERR 代表型别），体引用 e ⇒ h2m-var-read 查不到 ⇒ unsup（安全）；
+;   其余臂体 `it` 读仍走 h2m-var-read（option 主体下 `it` = 整个 %option 值）；写 `it`（`it = ...`）计 unsup。
 ; ⚠️ 收闸前的行为是【静默错码】不是 unsup：主体被丢、型样字面量当布尔条件 ⇒ `1 -> …` 恒真
 ;   （实测 tmp/probe-s63-now.no：unsup=0、%c10 = icmp ne i64 1, 0、主体 %v1 从未 load）
 ; ⚠️ 先跑整链形状前置校验再发指令：cg 要求每块都是指令序的**连续段**且每个被引用的块至少拿到一条终结指令，
@@ -2326,15 +2376,16 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
     arms = d.hcount
     sname = ''
     vmode = 0
+    omode = 0
     arms <= 0 -> h2m-mark(c)
     arms > 0 -> {
         bad = 0
 
-        ; s63：主体判定——裸链 kid[0] = 0（占位），显式 match kid[0] = 主体节点
-        ;   主体只认【已在槽表登记且槽型 i64 的裸标识符】：查表在发指令之前完成，校验期不发 LOAD
+        ; 主体判定——裸链 kid[0] = 0（占位），显式 match kid[0] = 主体节点
+        ;   主体只认【已在槽表登记且槽型 i64 或 option 的裸标识符】：查表在发指令之前完成，校验期不发 LOAD
+        ;   i64 主体走 s63 值匹配（vmode）；option 主体走 s98 三态臂匹配（omode）
         subj = h2m-kid-i(t, n, 0)
         subj > 0 -> {
-            vmode = 1
             sd = ast.nd-at(t, subj)
             sd.kind != asp.K-IDENTIFIER || sd.nkid != 0 -> bad = 1
             bad == 0 -> {
@@ -2343,8 +2394,10 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 si < 0 -> bad = 1
                 si >= 0 -> {
                     sty = c.tys[si]
-                    sty != TY-I64 -> bad = 1
-                }
+                    sty == TY-I64 -> vmode = 1
+                    sty == TY-OPT -> omode = 1
+                sty != TY-I64 && sty != TY-OPT -> bad = 1
+            }
             }
         }
 
@@ -2356,9 +2409,19 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             cn = ast.aux-at(t, hb + 10)
             bn = ast.aux-at(t, hb + 11)
             wi = ast.aux-at(t, hb + 4)
+            ; bvx = 臂 variant 字段的 strs 下标（ok/err/nil 之一，或 0 表示无 variant / 真·兜底）
+            ;   ⚠️ 不能用 ast.str-at 读 variant 内容：strs 切片长度在降级早期滞后，
+            ;      早读会越界回 ''，晚读才正确；故一律比「原始下标」而非字串內容。
+            bvx = ast.aux-at(t, hb + 1)
             bn <= 0 -> bad = 1
-            wi <= 0 && cn <= 0 -> bad = 1
-            wi > 0 -> {
+
+            ; 真·兜底臂（catch-all `_`）：无 variant（bvx==0）、无 Condition、wildcard 标记置位。
+            ;   仅此一种需「末位」约束；option 三态臂 ok/nil/err 各吃掉一个变体，不是 catch-all。
+            ;   ⚠️ hb+4 是 wildcard 字符串字段（'true'/''），parser 对 nil 臂也填非空，
+            ;      故不能单凭 wi>0 判 catch-all——必须叠加 bvx==0 才是真兜底。
+            is-wild = 0
+            wi > 0 && cn <= 0 && bvx == 0 -> is-wild = 1
+            is-wild == 1 -> {
                 last-j = j + 1
                 last-j < arms -> bad = 1
             }
@@ -2375,6 +2438,19 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 wi <= 0 -> {
                     pd = ast.nd-at(t, cn)
                     pd.kind != asp.K-INTEGER-LITERAL || pd.nkid != 0 -> bad = 1
+                }
+            }
+            ; s98 option 三态臂门禁：只认 ok(v) / nil / err(e) 三类 variant 标记（bvx 非零），
+            ;   型别臂（typePattern/typeBinding/typeArm）与 raw-cond 一律出局（自举未支持）。
+            ;   variant 具体是哪一态不在此区分（str-at 早期越界不可靠），由 emit 侧按 tag 降。
+            omode == 1 -> {
+                ast.aux-at(t, hb + 2) != 0 -> bad = 1
+                ast.aux-at(t, hb + 3) != 0 -> bad = 1
+                ast.aux-at(t, hb + 6) != 0 -> bad = 1
+                ast.aux-at(t, hb + 8) != 0 -> bad = 1
+                ; 无 variant（bvx==0）：只能是真·兜底臂（is-wild），否则不合法
+                bvx == 0 -> {
+                    is-wild == 0 -> bad = 1
                 }
             }
 
@@ -2394,8 +2470,10 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 cn = ast.aux-at(t, hb + 10)
                 bn = ast.aux-at(t, hb + 11)
                 wi = ast.aux-at(t, hb + 4)
+                bvar = ast.str-at(t, ast.aux-at(t, hb + 1))
                 wild = 0
-                wi > 0 -> wild = 1
+                ; 真·兜底臂才走 s65 无判定块路；option 三态臂（ok/nil/err，bvar 非空）必须走 tag 比较
+                wi > 0 && cn <= 0 && bvar == '' -> wild = 1
                 h2m-set-block(c, next-id)
 
                 #{overflow=wrap}
@@ -2405,7 +2483,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                     ; s65：兜底臂无判定块——仅当体子树引用 `it` 时在体首块补一次主体 LOAD 并压栈
                     ;   （判定臂的栈压入复用判定块已有 load，不新增指令）
                     bound = 0
-                    vmode == 1 && h2m-subtree-uses-it(t, bn) == 1 -> {
+                    (vmode == 1 || omode == 1) && h2m-subtree-uses-it(t, bn) == 1 -> {
                         iv1 = h2m-var-read(c, sname)
                         iv1 <= 0 -> h2m-mark(c)
                         iv1 > 0 -> {
@@ -2428,48 +2506,107 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 }
                 wild == 0 -> {
 
-                    ; 型样求值 → （有主体时）与主体值发 OP-CMPEQ；裸链仍拿条件本身（s58 路）
-                    pv = h2m-lower-expr(t, c, sg, cn)
-                    cv = pv
-                    sv = 0
-                    vmode == 1 && pv > 0 -> {
+                    ; s98：option 主体三态臂降级（ok/nil/err），tag 比较而非整值比较
+                    omode == 1 -> {
                         sv = h2m-var-read(c, sname)
+                        sv <= 0 -> {
+                            stop = 1
+                        }
                         sv > 0 -> {
+                            ; tag = extractvalue %option, 0
+                            tg = h2m-alloc(c, TY-I64)
+                            h2m-emit(c, OP-OPTTAG, tg, sv, 0, '', TY-I64)
+                            ; 期望 tag：ok=0 / nil=1 / err=2
+                            bvar = ast.str-at(t, ast.aux-at(t, hb + 1))
+                            et = 1
+                            bvar == 'ok' -> et = 0
+                            bvar == 'err' -> et = 2
+                            ect = h2m-alloc(c, TY-I64)
+                            h2m-emit(c, OP-CONST, ect, et, 0, '', TY-I64)
                             eqv = h2m-alloc(c, TY-I64)
-                            h2m-emit(c, OP-CMPEQ, eqv, sv, pv, '', TY-I64)
+                            h2m-emit(c, OP-CMPEQ, eqv, tg, ect, '', TY-I64)
                             cv = eqv
+                            cv == 0 -> {
+                                stop = 1
+                            }
+                            cv > 0 -> {
+                                arm-id = h2m-block-new(c)
+                                ftgt = merge-id
+                                last < arms -> ftgt = h2m-block-new(c)
+                                h2m-emit(c, OP-CONDBR, ftgt, cv, arm-id, '', 0)
+                                h2m-set-block(c, arm-id)
+                                ; it = subject option 值（同 i64 路）
+                                c.itv.push(sv)
+
+                                #{overflow=wrap}
+                                c.itv-n = c.itv-n + 1
+                                ; ok(v)：payload 绑定到臂局部名（跨 mem 直返 SSA，出臂 pop 还原）
+                                bvar == 'ok' -> {
+                                    bidx = ast.aux-at(t, hb + 0)
+                                    pv = h2m-alloc(c, TY-I64)
+                                    h2m-emit(c, OP-OPTGET, pv, sv, 0, '', TY-I64)
+                                    c.alidx.push(bidx)
+                                    c.alv.push(pv)
+                                }
+                                ; err(e)：err 结构暂不可绑（无 TY-ERR），体引用 e → h2m-var-read 查不到 → unsup（安全）
+                                h2m-lower-branch(t, c, sg, bn)
+                                h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+                                bvar == 'ok' -> {
+                                    c.alidx.pop()
+                                    c.alv.pop()
+                                }
+                                c.itv.pop()
+
+                                #{overflow=wrap}
+                                c.itv-n = c.itv-n - 1
+                                next-id = ftgt
+                            }
                         }
-                        sv <= 0 -> cv = 0
                     }
-                    cv == 0 -> {
-                        h2m-mark(c)
-                        stop = 1
-                    }
-                    cv > 0 -> {
-                        arm-id = h2m-block-new(c)
-                        ftgt = merge-id
-                        last < arms -> ftgt = h2m-block-new(c)
-                        h2m-emit(c, OP-CONDBR, ftgt, cv, arm-id, '', 0)
-                        h2m-set-block(c, arm-id)
 
-                        ; s65：本臂绑定值 = 判定块刚 LOAD 的主体值（判定块支配臂块）⇒ 压入后臂体里的 `it` 可读
-                        ab = 0
-                        sv > 0 -> {
-                            ab = 1
-                            c.itv.push(sv)
-
-                            #{overflow=wrap}
-                            c.itv-n = c.itv-n + 1
+                    ; 原有 i64 值匹配（s63）+ 裸链（s58）路
+                    omode == 0 -> {
+                        pv = h2m-lower-expr(t, c, sg, cn)
+                        cv = pv
+                        sv = 0
+                        vmode == 1 && pv > 0 -> {
+                            sv = h2m-var-read(c, sname)
+                            sv > 0 -> {
+                                eqv = h2m-alloc(c, TY-I64)
+                                h2m-emit(c, OP-CMPEQ, eqv, sv, pv, '', TY-I64)
+                                cv = eqv
+                            }
+                            sv <= 0 -> cv = 0
                         }
-                        h2m-lower-branch(t, c, sg, bn)
-                        h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
-                        ab == 1 -> {
-                            c.itv.pop()
-
-                            #{overflow=wrap}
-                            c.itv-n = c.itv-n - 1
+                        cv == 0 -> {
+                            stop = 1
                         }
-                        next-id = ftgt
+                        cv > 0 -> {
+                            arm-id = h2m-block-new(c)
+                            ftgt = merge-id
+                            last < arms -> ftgt = h2m-block-new(c)
+                            h2m-emit(c, OP-CONDBR, ftgt, cv, arm-id, '', 0)
+                            h2m-set-block(c, arm-id)
+
+                            ; s65：本臂绑定值 = 判定块刚 LOAD 的主体值（判定块支配臂块）⇒ 压入后臂体里的 `it` 可读
+                            ab = 0
+                            sv > 0 -> {
+                                ab = 1
+                                c.itv.push(sv)
+
+                                #{overflow=wrap}
+                                c.itv-n = c.itv-n + 1
+                            }
+                            h2m-lower-branch(t, c, sg, bn)
+                            h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
+                            ab == 1 -> {
+                                c.itv.pop()
+
+                                #{overflow=wrap}
+                                c.itv-n = c.itv-n - 1
+                            }
+                            next-id = ftgt
+                        }
                     }
                 }
 
@@ -2695,7 +2832,9 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     c = h2m-new()
     d = ast.nd-at(t, n)
     fnm, frt, fap, fdp, fb = h2m-func-sig(t, n)
-    fb != 0 -> h2m-mark(c)
+    fb != 0 -> {
+        h2m-mark(c)
+    }
     fb == 0 -> {
 
         ; 形参：值 id 按 LLVM 形参序单调分配（h2m-new 起 nid = 1 ⇒ 恰为 1..nargs），
@@ -2782,7 +2921,9 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
                 m = m + 1
             }
         }
-        bc < 0 -> h2m-mark(c)
+        bc < 0 -> {
+            h2m-mark(c)
+        }
         bc >= 0 -> h2m-lower-block(t, c, sg, body)
 
         ; 恰一个输出参数时：它绑定的值 id 即返回值
@@ -2914,7 +3055,9 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         kk = ast.nd-at(t, kid)
         kk.kind == asp.K-FUNCTION-DEFINITION -> {
             nm2, rt2, ap2, dp2, bd2 = h2m-func-sig(t, kid)
-            bd2 != 0 -> h2m-mark(agg)
+            bd2 != 0 -> {
+                h2m-mark(agg)
+            }
             bd2 == 0 -> {
                 one = h2m-lower-func(t, agg, sg, kid)
                 one != '' -> {
@@ -2922,7 +3065,9 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
                 }
             }
         }
-        kk.kind != asp.K-FUNCTION-DEFINITION -> h2m-mark(agg)
+        kk.kind != asp.K-FUNCTION-DEFINITION -> {
+            h2m-mark(agg)
+        }
 
         #{overflow=wrap}
         j = j + 1

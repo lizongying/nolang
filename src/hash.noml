@@ -1,0 +1,22 @@
+{
+  include: [
+    'build/'
+    'builtin/'
+    'checker/'
+    'extract_checker/'
+    'hir/'
+    'i18n/'
+    'lexer/'
+    'mir/'
+    'mmast/'
+    'package/'
+    'parser/'
+    'std/'
+    'ty/'
+  ]
+  exclude: [
+    '*_test.go'
+    'checker/stdastembed/std_ast.bin'
+    'checker/stdsig_gen.go'
+  ]
+}

@@ -132,8 +132,10 @@ failed = 0
 
 ; …每個 test 之後累加（注意 #{overflow=wrap}：整數加法預設會回 option）…
 p1, f1 = runner.test('arr.len', t-len)
+
 #{overflow=wrap}
 passed = passed + p1
+
 #{overflow=wrap}
 failed = failed + f1
 

@@ -39,7 +39,14 @@ lzma-rd.init = (data []byte, start-pos i64) {
     .range = 0xffffffff
     .code = 0
     i <- [0..4): {
-        .code = (.code << 8) | .data[.pos]
+        {
+            v ?= .data[.pos]
+            .code = (.code << 8) | v
+        }: {
+            err -> _
+
+            -> _
+        }
 
         #{overflow=wrap}
         .pos = .pos + 1
@@ -50,7 +57,14 @@ lzma-rd.init = (data []byte, start-pos i64) {
 ; [normalize](#xz.lzma-rd.normalize)
 lzma-rd.normalize = () {
     .range < 0x1000000 -> {
-        .code = (.code << 8) | .data[.pos]
+        {
+            v ?= .data[.pos]
+            .code = (.code << 8) | v
+        }: {
+            err -> _
+
+            -> _
+        }
 
         #{overflow=wrap}
         .pos = .pos + 1
@@ -245,46 +259,53 @@ lzma-decoder {
 ; 初始化所有機率值為 0x400（一半機率）
 ; [init-probs](#xz.lzma-decoder.init-probs)
 lzma-decoder.init-probs = () {
-    i <- [0..16): {
-        .is-match[i] = 0x400
+    {
+        i <- [0..16): {
+            .is-match[i] ?= 0x400
 
-        .is-rep[i] = 0x400
+            .is-rep[i] ?= 0x400
 
-        .is-rep-g0[i] = 0x400
+            .is-rep-g0[i] ?= 0x400
 
-        .is-rep-g1[i] = 0x400
+            .is-rep-g1[i] ?= 0x400
 
-        .is-rep-g2[i] = 0x400
+            .is-rep-g2[i] ?= 0x400
 
-        .is-rep0-long[i] = 0x400
-    }
-    i <- [0..4): {
-        j <- [0..64): {
-
-            #{overflow=wrap}
-            .pos-slot[i * 64 + j] = 0x400
+            .is-rep0-long[i] ?= 0x400
         }
-    }
-    i <- [0..128): {
-        .spec-pos[i] = 0x400
-    }
-    i <- [0..16): {
-        .align[i] = 0x400
-    }
-    i <- [0..0x200): {
-        .len-coder[i] = 0x400
+        i <- [0..4): {
+            j <- [0..64): {
 
-        .rep-len-coder[i] = 0x400
+                #{overflow=wrap}
+                lid = i * 64 + j
+                .pos-slot[lid] ?= 0x400
+            }
+        }
+        i <- [0..128): {
+            .spec-pos[i] ?= 0x400
+        }
+        i <- [0..16): {
+            .align[i] ?= 0x400
+        }
+        i <- [0..0x200): {
+            .len-coder[i] ?= 0x400
+
+            .rep-len-coder[i] ?= 0x400
+        }
+        i <- [0..0x300): {
+            .literal[i] ?= 0x400
+        }
+        .state = 0
+        .rep0 = 0
+        .rep1 = 0
+        .rep2 = 0
+        .rep3 = 0
+        .prev-byte = 0
+    }: {
+        err -> _
+
+        -> _
     }
-    i <- [0..0x300): {
-        .literal[i] = 0x400
-    }
-    .state = 0
-    .rep0 = 0
-    .rep1 = 0
-    .rep2 = 0
-    .rep3 = 0
-    .prev-byte = 0
 }
 
 ; 更新狀態（字面量後）
@@ -357,13 +378,21 @@ lzma-decoder.decode-literal = () {
         prob-idx = ctx + 0x100
         symbol = 1
         (symbol < 0x100) {
+            {
+                #{overflow=wrap}
+                lid = prob-idx + symbol
 
-            #{overflow=wrap}
-            bit, tmp = .rd.decode-bit(.literal[prob-idx + symbol])
+                p ?= .literal[lid]
 
-            #{overflow=wrap}
-            .literal[prob-idx + symbol] = tmp
-            symbol = (symbol << 1) | bit
+                bit, tmp = .rd.decode-bit(p)
+
+                .literal[lid] ?= tmp
+                symbol = (symbol << 1) | bit
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         b = (b << 1) | (symbol & 1)
     }
@@ -468,9 +497,15 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     ; 解碼 pos-slot（6 bits）
     slot-probs []i64
     i <- [0..64): {
+        {
+            #{overflow=wrap}
+            v ?= .pos-slot[st * 64 + i]
+            slot-probs.push(v)
+        }: {
+            err -> _
 
-        #{overflow=wrap}
-        slot-probs.push(.pos-slot[st * 64 + i])
+            -> _
+        }
     }
     pos-slot = .rd.decode-bit-tree(slot-probs, 6)
 
@@ -491,9 +526,15 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
         ; 使用反向位元樹
         sub-probs []i64
         i <- [0..1 << num-direct-bits): {
+            {
+                #{overflow=wrap}
+                v ?= .spec-pos[base - pos-slot - 1 + i]
+                sub-probs.push(v)
+            }: {
+                err -> _
 
-            #{overflow=wrap}
-            sub-probs.push(.spec-pos[base - pos-slot - 1 + i])
+                -> _
+            }
         }
         sym = .rd.decode-reverse-bit-tree(sub-probs, num-direct-bits)
         dist = base + sym
@@ -505,7 +546,14 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     direct = .rd.decode-direct-bits(num-direct-bits - 4)
     align-probs []i64
     i <- [0..16): {
-        align-probs.push(.align[i])
+        {
+            v ?= .align[i]
+            align-probs.push(v)
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     align = .rd.decode-reverse-bit-tree(align-probs, 4)
 
@@ -528,9 +576,19 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
         unpacked-size >= 0 -> .out.len() >= unpacked-size -> break
 
         ; 解碼 is_match
-        bit, tmp = .rd.decode-bit(.is-match[.state])
+        bit = 0
+        tmp = 0
+        {
+            prob ?= .is-match[.state]
 
-        .is-match[.state] = tmp
+            bit, tmp = .rd.decode-bit(prob)
+
+            .is-match[.state] ?= tmp
+        }: {
+            err -> _
+
+            -> _
+        }
 
         bit == 0 -> {
 
@@ -540,9 +598,18 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
         bit == 1 -> {
 
             ; 匹配或重複
-            bit2, tmp = .rd.decode-bit(.is-rep[.state])
+            bit2 = 0
+            {
+                prob ?= .is-rep[.state]
 
-            .is-rep[.state] = tmp
+                bit2, tmp = .rd.decode-bit(prob)
+
+                .is-rep[.state] ?= tmp
+            }: {
+                err -> _
+
+                -> _
+            }
 
             {
                 bit2 == 0 -> {
@@ -582,16 +649,34 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                 bit2 == 1 -> {
 
                     ; 重複匹配
-                    bit3, tmp = .rd.decode-bit(.is-rep-g0[.state])
+                    bit3 = 0
+                    {
+                        prob ?= .is-rep-g0[.state]
 
-                    .is-rep-g0[.state] = tmp
+                        bit3, tmp = .rd.decode-bit(prob)
+
+                        .is-rep-g0[.state] ?= tmp
+                    }: {
+                        err -> _
+
+                        -> _
+                    }
 
                     bit3 == 0 -> {
 
                         ; rep0
-                        bit4, tmp = .rd.decode-bit(.is-rep0-long[.state])
+                        bit4 = 0
+                        {
+                            prob ?= .is-rep0-long[.state]
 
-                        .is-rep0-long[.state] = tmp
+                            bit4, tmp = .rd.decode-bit(prob)
+
+                            .is-rep0-long[.state] ?= tmp
+                        }: {
+                            err -> _
+
+                            -> _
+                        }
                         bit4 == 0 -> {
 
                             ; 短重複（1 字節）
@@ -1140,7 +1225,14 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
             ; 將解壓結果附加到輸出
             i <- [0..dec.out.len()): {
-                res.push(dec.out[i])
+                {
+                    b ?= dec.out[i]
+                    res.push(b)
+                }: {
+                    err -> _
+
+                    -> _
+                }
             }
         }
     }

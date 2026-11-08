@@ -489,6 +489,58 @@ node.set = (i i64, v i64) (r ?i64) {
 	}
 }
 
+// TestUnwrapAssignIndexReceiverChainNotReported 驗證 `h ?= .names[i].to-lower()`
+// 的鏈根索引由 `?=` 顯式消費，不報 idxbruse。
+//
+// 鏈根索引藏在 CallExpression.Function → DotExpression.Receiver 裡，
+// walkExpr 會沿這條路下探；若 markHandled 只認「RHS 正好是 IndexExpression」
+// 就會誤報。相對地，沒有 `?=` 的普通指派 `h = .names[i].to-lower()` 沒有
+// 任何消費者，仍須照舊報 idxbruse —— 這個對照組確保豁免沒有被放大。
+func TestUnwrapAssignIndexReceiverChainNotReported(t *testing.T) {
+	src := `node {
+    names [4]str
+}
+
+node.get = (i i64) (r ?str) {
+    h ?= .names[i].to-lower()
+    r = h
+}`
+	for label, prog := range map[string]*parser.Program{
+		"lowered": parseProg(t, src),
+		"surface": parseSurfaceProg(t, src),
+	} {
+		for _, res := range ValidateUnhandledIndex(prog, "src/app.no") {
+			if res.TraceID == bareIndexUseTraceID {
+				t.Fatalf("%s: false positive idxbruse on `?=` chain root: L%d:C%d %s",
+					label, res.Line, res.Column, res.Message)
+			}
+		}
+	}
+
+	plain := `node {
+    names [4]str
+}
+
+node.get = (i i64) (r str) {
+    h = .names[i].to-lower()
+    r = h
+}`
+	for label, prog := range map[string]*parser.Program{
+		"lowered": parseProg(t, plain),
+		"surface": parseSurfaceProg(t, plain),
+	} {
+		found := false
+		for _, res := range ValidateUnhandledIndex(prog, "src/app.no") {
+			if res.TraceID == bareIndexUseTraceID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s: plain `h = .names[i].to-lower()` must still report idxbruse", label)
+		}
+	}
+}
+
 // TestUnhandledIndexWithLenLiteralSliceReported 驗證 D7 最終定案：`buf []T =
 // with-len(<字面量 K>)` 且本函數內未被重賦值的切片，其字面量下標 `< K` 雖可靜態
 // 證明界內，用戶側仍產生 option，未處理照常上報（surface AST 與降級 AST 兩端口徑

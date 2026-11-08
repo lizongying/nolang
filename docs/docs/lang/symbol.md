@@ -51,13 +51,12 @@ sidebar_position: 4
 - 需要字典序比較時用 `str.compare(b)`（回傳 -1 / 0 / 1）。
 
 ```nolang
-#{fmt-skip}
-'a' <= 'z'      ; true  — 單字元字串隱式 char
-ch >= 'a'       ; ch 為 char，OK
-'a' > "b"       ; 單字元字串 vs char，OK
-'abc' < 'abd'   ; 編譯錯誤：多字元字串
-s1 < s2         ; 編譯錯誤：str 變數
-s1.compare(s2) > 0   ; 正確寫法
+'a' <= 'z'; true  — 單字元字串隱式 char
+ch >= 'a'; ch 為 char，OK
+'a' > "b"; 單字元字串 vs char，OK
+'abc' < 'abd'; 編譯錯誤：多字元字串
+s1 < s2; 編譯錯誤：str 變數
+s1.compare(s2) > 0; 正確寫法
 ```
 :::
 

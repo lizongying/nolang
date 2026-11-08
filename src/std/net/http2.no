@@ -315,7 +315,7 @@ conn.recv-frame = () (frame ?frame) {
             i <- [0..recv-n): {
 
                 #{overflow=wrap}
-                f.payload[payload-total + i] = f.payload.byte(i)
+                f.payload[payload-total + i] ?= f.payload.byte(i)
             }
 
             #{overflow=wrap}
@@ -935,7 +935,7 @@ do-req = (method str, url str, body str) (resp ?http.response) {
             -> _
         }
 
-        r.header-names[i] = ixout879c29.slice(0, nlen)
+        r.header-names[i] ?= ixout879c29.slice(0, nlen)
 
         ixout882c30 = values[i]: {
             ok -> it
@@ -943,7 +943,7 @@ do-req = (method str, url str, body str) (resp ?http.response) {
             -> _
         }
 
-        r.header-values[i] = ixout882c30.slice(0, vlen)
+        r.header-values[i] ?= ixout882c30.slice(0, vlen)
 
         ; 尋找 :status
         nlen == 7 -> {

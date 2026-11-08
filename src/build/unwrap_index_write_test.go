@@ -111,3 +111,36 @@ n.set(2, 99)
 		})
 	}
 }
+
+// REGRESSION GUARD (2026-11-07): `v ?= .field[i]` (read side, struct-field
+// subscript) must compile to a REAL element load. lowerUnwrapAssign rejected
+// such RHS with `gcvwum3g`; the AST-side guard lives in
+// src/parser/unwrap_index_write_test.go, this one pins the emitted IR.
+func TestUnwrapAssignRHSFieldIndexEmitsRealLoad(t *testing.T) {
+	src := `unwrap-rhs-field {
+    keys [4]i64
+}
+
+unwrap-rhs-field.get = (i i64) (r ?i64) {
+    v i64 = 0
+    v ?= .keys[i]
+    r = v
+}
+
+n = unwrap-rhs-field {}
+_ = n.get(2)
+`
+	body, ok := defineBody(t, compileWith(t, src, "src/std/number.no"), "unwrap_rhs_field_get")
+	if !ok {
+		t.Fatalf("unwrap_rhs_field_get not emitted in LLVM IR (a caller is required so MIR keeps it reachable)")
+	}
+	if !strings.Contains(body, "getelementptr [4 x i64]") {
+		t.Fatalf("no [4 x i64] element pointer — the struct-field safe-index read was dropped:\n%s", body)
+	}
+	if !strings.Contains(body, "load i64") {
+		t.Fatalf("no i64 load in the desugared read:\n%s", body)
+	}
+	if strings.Contains(body, "i64 undef") {
+		t.Fatalf("index temp uninitialised (`i64 undef`):\n%s", body)
+	}
+}

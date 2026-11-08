@@ -50,24 +50,35 @@ heap.push = (val t) {
     ; 已滿則不推入
     .n >= .cap -> return
 
-    .data[.n] = val
-
-    #{overflow=wrap}
-    .n = .n + 1
-
-    ; sift-up：向上調整維持最小堆性質
-    #{overflow=wrap}
-    i = .n - 1
-    (i > 0) {
+    ; 一次 try/catch 包住「寫入 + sift-up」：本方法沒有 option 結果參數，
+    ; 越界只能就地攔下；迴圈內的比較需要把兩個 ?t 解包成純值，範圍已壓到
+    ; 一次 push 的操作本身。
+    {
+        .data[.n] ?= val
 
         #{overflow=wrap}
-        parent = (i - 1) / 2
-        .data[i] >= .data[parent] -> break
+        .n = .n + 1
 
-        tmp = .data[i]
-        .data[i] = .data[parent]
-        .data[parent] = tmp
-        i = parent
+        ; sift-up：向上調整維持最小堆性質
+        #{overflow=wrap}
+        i = .n - 1
+        (i > 0) {
+
+            #{overflow=wrap}
+            parent = (i - 1) / 2
+
+            ci ?= .data[i]
+            cp ?= .data[parent]
+            ci >= cp -> break
+
+            .data[i] ?= cp
+            .data[parent] ?= ci
+            i = parent
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -80,13 +91,15 @@ heap.pop = () (val ?t) {
         return
     }
 
-    val = .data[0]
+    val ?= .data[0]
 
     #{overflow=wrap}
     .n = .n - 1
-    .data[0] = .data[.n]
+    .data[0] ?= .data[.n]
 
     ; sift-down：向下調整維持最小堆性質
+    ; 原本的 `left < .n && .data[left] < .data[smallest]` 靠短路避免越界讀取；
+    ; 改成先判邊界、再在小區塊裡用 `?=` 解包比較，語意等價且 option 有消費。
     i = 0
     !! {
         smallest = i
@@ -96,13 +109,21 @@ heap.pop = () (val ?t) {
 
         #{overflow=wrap}
         right = 2 * i + 2
-        left < .n && .data[left] < .data[smallest] -> smallest = left
-        right < .n && .data[right] < .data[smallest] -> smallest = right
+        left < .n -> {
+            s-left ?= .data[smallest]
+            v-left ?= .data[left]
+            v-left < s-left -> smallest = left
+        }
+        right < .n -> {
+            s-right ?= .data[smallest]
+            v-right ?= .data[right]
+            v-right < s-right -> smallest = right
+        }
         smallest == i -> break
 
-        tmp = .data[i]
-        .data[i] = .data[smallest]
-        .data[smallest] = tmp
+        tmp ?= .data[i]
+        .data[i] ?= .data[smallest]
+        .data[smallest] ?= tmp
         i = smallest
     }
 }
@@ -115,7 +136,7 @@ heap.peek = () (val ?t) {
         val = nil
         return
     }
-    val = .data[0]
+    val ?= .data[0]
 }
 
 ; ═══════════════════════════════════════════════

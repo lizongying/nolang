@@ -23,12 +23,22 @@
 B 的最小重現：
 
 ```no
-#{fmt-skip}
-e-res { ok(v str), fail, }
+e-res {
+    ok(v str),
+    fail,
+}
 
 q e-res = ok('hi')
-q: { ok(v) -> print('first: '  - v)  fail -> print('no') }
-q: { ok(v) -> print('second: ' - v)  fail -> print('no') }   ; 印出空字串
+q: {
+    ok(v) -> print('first: ' - v)
+
+    fail -> print('no')
+}
+q: {
+    ok(v) -> print('second: ' - v)
+
+    fail -> print('no'); 印出空字串
+}
 ```
 
 ## 2. 設計原則（使用者指定）
@@ -65,9 +75,8 @@ owning(v) ⟺ extra(v) >= 2          ; ❌ 錯的
 **為什麼錯**：一次 match 一個**多欄位**變體會抽**每一個**欄位 ——
 
 ```no
-#{fmt-skip}
 rect(w, h) -> {
-    ...                ; 產生 OpEnumField slot 0 與 slot 1
+    ...; 產生 OpEnumField slot 0 與 slot 1
 }
 ```
 
@@ -668,9 +677,8 @@ Phase 1/2/2b 的所有權模型全部建立在「**抽取**把載荷搬出去」
 （`Type.Owned` 依設計 false），載荷就這樣漏掉：
 
 ```no
-#{fmt-skip}
 q e-res = ok('hi')
-print('never matched')      ; 完全沒有 match
+print('never matched'); 完全沒有 match
 ```
 
 MIR 實測（`main`）：`drops=1`，而那唯一的 drop 是 `print` 的字串常數 —— enum 的
@@ -1047,8 +1055,7 @@ b []byte = with-len(4)     ; HEAD: SIGSEGV（rc=139），v0.3.5 / 4ed84631 / d40
 精確根因（MIR 實證）：`src/std/fs.no:564` 的 `fs.file.close` 方法體內用**裸名**呼叫 libc：
 
 ```no
-#{fmt-skip}
-rc = close(.fd)      ; 意圖是 libc close(2)，回 i64
+rc = close(.fd); 意圖是 libc close(2)，回 i64
 ```
 
 而 `close` **也是**一個已註冊的 builtin 方法名（`src/builtin/os.go:248`）。窄名單不含
@@ -1175,9 +1182,8 @@ commit**（這裡是 `d407f2b0`）當基準，否則「HEAD == NOW」這個判�
 ### 13.6 等價替代
 
 ```no
-#{fmt-skip}
-b = 0x00        ; byte，值 0（hex 在 byte 範圍內推斷為 byte）
-PORT i64 = 0x0303   ; 超出 byte 範圍 → 必須顯式標註
+b = 0x00; byte，值 0（hex 在 byte 範圍內推斷為 byte）
+PORT i64 = 0x0303; 超出 byte 範圍 → 必須顯式標註
 ```
 
 ### 13.7 迴歸測試

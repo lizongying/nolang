@@ -402,7 +402,15 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 		// 型別/常量聲明隨「整個模組導入」一起合併——含模組別名導入
 		// （`# std/err error`：別名只換前綴，不改變「導入整個模組」的語義）。
 		// 只有單函數導入（`# path.fn as alias`）才跳過。
-		if use.Function == "" {
+		//
+		// 成員式 struct/interface/enum/typealias 匯入（`# path.Type`，use.Function
+		// 填成該型別名，如 `# /compiler/src/util/sb.sb` ⇒ use.Function="sb"）也在此
+		// 放行——只合併名稱對應的型別定義。漏掉這支會讓成員式 struct 匯入下
+		// KStructDef 不進 merged，codegen setfield 報 "field ... not found on sb.sb"
+		// （見 compiler/src/util/sb.no）。
+		// ⚠️ prefixModuleStatements 已把型別名改寫成 "module.name"（sb → sb.sb），
+		// 故成員式比對要用改名後的 useModShort+"."+use.Function，而非裸名。
+		if use.Function == "" || getTypeDefName(ms) == useModShort+"."+use.Function {
 			if sd, ok := ms.(*parser.StructDefinition); ok {
 				a.merged.Statements = append(a.merged.Statements, sd)
 				a.merged.Sem.SetSourceFileOf(sd, modFile)
@@ -425,9 +433,12 @@ func (a *compileAssembly) processUseAndMerge(use *parser.UseStatement) error {
 			}
 			// FFI extern 宣告必須隨模組一起合併，否則 codegen 的 externFuncs
 			// 會缺少條目，導致 extern 呼叫走 Nolang by-reference 路徑而非 FFI 路徑。
-			if es, ok := ms.(*parser.ExternStatement); ok {
-				a.merged.Statements = append(a.merged.Statements, es)
-				a.merged.Sem.SetSourceFileOf(es, modFile)
+			// 僅整模組匯入時合併（成員式匯入不帶 extern）。
+			if use.Function == "" {
+				if es, ok := ms.(*parser.ExternStatement); ok {
+					a.merged.Statements = append(a.merged.Statements, es)
+					a.merged.Sem.SetSourceFileOf(es, modFile)
+				}
 			}
 		}
 	}

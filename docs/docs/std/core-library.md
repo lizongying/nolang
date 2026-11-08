@@ -9,14 +9,13 @@ sidebar_position: 3.2
 Nolang 使用**具名格式字串** `{name[:spec]}`，直接引用作用域變量，無需位置參數。輸出透過 `io.out`/`io.err` 系統調用，不依賴 libc `printf`。
 
 ```no
-#{fmt-skip}
-print('x={x}')                 ; 具名格式，自動換行（stdout）
-print('result={val}', 42, 'result={val}')  ; 多參數：空格分隔；每個字面量各自是模板
-eprint('err {x}')              ; 具名格式，自動換行（stderr）
-print('編號 {id:06} 金額 {money:.2f}')  ; 支援對齊/填充/寬度/精度
-s = format('x={x}')            ; 返回格式化字串（替代 sprintf）
-io.out('no-newline-here')      ; 底層命令，輸出不換行（stdout）
-io.err('err-no-newline')       ; 底層命令，輸出不換行（stderr）
+print('x={x}'); 具名格式，自動換行（stdout）
+print('result={val}', 42, 'result={val}'); 多參數：空格分隔；每個字面量各自是模板
+eprint('err {x}'); 具名格式，自動換行（stderr）
+print('編號 {id:06} 金額 {money:.2f}'); 支援對齊/填充/寬度/精度
+s = format('x={x}'); 返回格式化字串（替代 sprintf）
+io.out('no-newline-here'); 底層命令，輸出不換行（stdout）
+io.err('err-no-newline'); 底層命令，輸出不換行（stderr）
 ; printf/eprintf 已移除（呼叫即編譯錯誤 [printf-depr]）：printf→print/io.out、eprintf→eprint/io.err
 ; sprintf 仍可用但已廢棄：sprintf→format
 ; io.err 明確模組前綴，不會與 Option 構造函數 err() 衝突
@@ -63,19 +62,18 @@ std 數字系「方法形式」API 集中在 number 模組（std/number.no）；
 char 本質為 i32（Unicode 碼點），所有操作以方法形式提供：
 
 ```no
-#{fmt-skip}
 c char = 'A'
-c.is-digit()       ; 是否為數字 (0-9)（方法）
-c.is-letter()      ; 是否為字母 (a-z, A-Z)（方法）
-c.is-alpha()       ; is-letter 別名（方法）
-c.is-alnum()       ; 是否為字母或數字（方法）
-c.is-space()       ; 是否為空白字元（方法）
-c.is-upper()       ; 是否為大寫字母（方法）
-c.is-lower()       ; 是否為小寫字母（方法）
-c.to-upper()       ; 轉大寫（ASCII）（方法）
-c.to-lower()       ; 轉小寫（ASCII）（方法）
-c.to-bytes()       ; Unicode → UTF-8 位元組（方法）
-c.to-str()         ; Unicode → 字串（UTF-8，方法）
+c.is-digit(); 是否為數字 (0-9)（方法）
+c.is-letter(); 是否為字母 (a-z, A-Z)（方法）
+c.is-alpha(); is-letter 別名（方法）
+c.is-alnum(); 是否為字母或數字（方法）
+c.is-space(); 是否為空白字元（方法）
+c.is-upper(); 是否為大寫字母（方法）
+c.is-lower(); 是否為小寫字母（方法）
+c.to-upper(); 轉大寫（ASCII）（方法）
+c.to-lower(); 轉小寫（ASCII）（方法）
+c.to-bytes(); Unicode → UTF-8 位元組（方法）
+c.to-str(); Unicode → 字串（UTF-8，方法）
 ```
 
 ### str — 字串操作
@@ -127,10 +125,9 @@ out = ss.join(sep)            ; []str 用分隔符連接（方法）
 `num = int | float`（std/num.no）。num 型別的方法在 num 模組（泛型函數 max/min 見上方 math）：
 
 ```no
-#{fmt-skip}
-r = num.abs()                        ; 絕對值（方法）
-r = num.clamp(lo, hi)                  ; 限制範圍（方法）
-r = num.sign()                         ; 正負號（-1/0/1，方法）
+r = num.abs(); 絕對值（方法）
+r = num.clamp(lo, hi); 限制範圍（方法）
+r = num.sign(); 正負號（-1/0/1，方法）
 ```
 
 ### int — int 聯合型別與 int 方法
@@ -138,10 +135,9 @@ r = num.sign()                         ; 正負號（-1/0/1，方法）
 `int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128`（std/int.no）。int 型別的方法在 int 模組：
 
 ```no
-#{fmt-skip}
-s = v.to-str()                       ; 整數轉字串（方法）
-q = v.div(b)                         ; 除法取商（回傳 option）
-r = v.mod(b)                         ; 取模（回傳 option）
+s = v.to-str(); 整數轉字串（方法）
+q = v.div(b); 除法取商（回傳 option）
+r = v.mod(b); 取模（回傳 option）
 ```
 
 ### float — float 聯合型別與 float 方法
@@ -149,10 +145,9 @@ r = v.mod(b)                         ; 取模（回傳 option）
 `float = f32 | f64`（std/float.no）。float 型別的方法在 float 模組：
 
 ```no
-#{fmt-skip}
-q = v.div(b)                         ; 浮點除法
-yes = v.is-nan()                     ; NaN 判斷（方法）
-yes = v.is-inf()                     ; Inf 判斷（方法）
+q = v.div(b); 浮點除法
+yes = v.is-nan(); NaN 判斷（方法）
+yes = v.is-inf(); Inf 判斷（方法）
 ```
 
 （不定義 float.to-str 聯合方法；f64/f32 變數直接用具體型別方法 `v.to-str()`。）
@@ -162,39 +157,38 @@ yes = v.is-inf()                     ; Inf 判斷（方法）
 （完整 API 見上方「number — 數值操作（方法形式 API）」；函數形式見「math」節。）
 
 ```no
-#{fmt-skip}
 ; 方法形式（number 模組）
-s = v.to-str()                     ; 整數/浮點轉字串（各寬度）
-r = n.sqrt()                       ; 整數平方根 floor(√n)
-yes = n.is-prime()                 ; 質數判斷（int/u8…）
-q = x.sqrt()                       ; 浮點平方根（f64/f32 方法）
-q = x.floor()                      ; 取整（f64/f32 方法）
-r = number.pow(a, n)               ; 整數冪（i64 簽名；int 泛型版為 math.pow-int）
+s = v.to-str(); 整數/浮點轉字串（各寬度）
+r = n.sqrt(); 整數平方根 floor(√n)
+yes = n.is-prime(); 質數判斷（int/u8…）
+q = x.sqrt(); 浮點平方根（f64/f32 方法）
+q = x.floor(); 取整（f64/f32 方法）
+r = number.pow(a, n); 整數冪（i64 簽名；int 泛型版為 math.pow-int）
 
 ; 函數形式（math 模組）
-m = math.max(1, 2, 3)              ; num 泛型變參
-g = math.gcd(a, b)                 ; 最大公因數
-l = math.lcm(a, b)                 ; 最小公倍數
-pi = math.pow-int(a, n)            ; 整數冪（int 泛型）
-sw = math.swap(a, b)              ; 交換
+m = math.max(1, 2, 3); num 泛型變參
+g = math.gcd(a, b); 最大公因數
+l = math.lcm(a, b); 最小公倍數
+pi = math.pow-int(a, n); 整數冪（int 泛型）
+sw = math.swap(a, b); 交換
 
 ; 數值轉換（方法形式，舊 math.*-to-* 函數已移除）
-f = v.to-f64()                     ; 整數 → f64
-n = x.to-i64()                     ; f64 → 整數（截斷）
-w = f32v.to-f64()                  ; f32 → f64；反向 f64.to-f32()
+f = v.to-f64(); 整數 → f64
+n = x.to-i64(); f64 → 整數（截斷）
+w = f32v.to-f64(); f32 → f64；反向 f64.to-f32()
 
 ; 範圍常數（number 模組）
-i8.MIN / MAX                  ; -128 / 127
-i16.MIN / MAX                 ; -32768 / 32767
-i32.MIN / MAX                 ; -2147483648 / 2147483647
-i64.MIN / MAX                 ; -2^63 / 2^63-1
-i128.MIN / MAX                ; -2^127 / 2^127-1
-u8.MIN / MAX                  ; 0 / 255
-u16.MIN / MAX                 ; 0 / 65535
-u32.MIN / MAX                 ; 0 / 4294967295
-u64.MIN / MAX                 ; 0 / 2^64-1
-u128.MIN / MAX                ; 0 / 2^128-1
-number.INF                    ; 浮點無窮大
+i8.MIN / MAX; -128 / 127
+i16.MIN / MAX; -32768 / 32767
+i32.MIN / MAX; -2147483648 / 2147483647
+i64.MIN / MAX; -2^63 / 2^63-1
+i128.MIN / MAX; -2^127 / 2^127-1
+u8.MIN / MAX; 0 / 255
+u16.MIN / MAX; 0 / 65535
+u32.MIN / MAX; 0 / 4294967295
+u64.MIN / MAX; 0 / 2^64-1
+u128.MIN / MAX; 0 / 2^128-1
+number.INF; 浮點無窮大
 ```
 
 ### byte — 位元組操作
@@ -271,29 +265,41 @@ arr = []t.to-arr()             ; 轉陣列
 ### arr — 陣列操作
 
 ```no
-#{fmt-skip}
-out = [n]t.clone()             ; 複製
-ok = [n]t.eq(b)                ; 相等比較
-[n]t.fill(val)                  ; 填充
-[n]t.reverse()                  ; 反轉
-ok = [n]t.contains(val)        ; 是否包含
-v = [n]t.to-vec()              ; 轉切片
-v = [n]t.max()                 ; 最大值
-v = [n]t.min()                 ; 最小值
-v = [n]t.sum()                 ; 總和
-i = [n]t.index-of(val)          ; 索引
-v = [n]t.last()                ; 最後元素
-v = [n]t.first()               ; 首元素
-[n]t.sort-asc()                 ; 升序排序
-[n]t.sort-desc()                ; 降序排序
+out = [n]
+t.clone(); 複製
+ok = [n]
+t.eq(b); 相等比較
+[n]
+t.fill(val); 填充
+[n]
+t.reverse(); 反轉
+ok = [n]
+t.contains(val); 是否包含
+v = [n]
+t.to-vec(); 轉切片
+v = [n]
+t.max(); 最大值
+v = [n]
+t.min(); 最小值
+v = [n]
+t.sum(); 總和
+i = [n]
+t.index-of(val); 索引
+v = [n]
+t.last(); 最後元素
+v = [n]
+t.first(); 首元素
+[n]
+t.sort-asc(); 升序排序
+[n]
+t.sort-desc(); 降序排序
 ```
 
 ### sort — 排序常量
 
 ```no
-#{fmt-skip}
-sort.ast                         ; 升序
-sort.desc                        ; 降序
+sort.ast; 升序
+sort.desc; 降序
 ```
 
 ---

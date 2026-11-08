@@ -45,8 +45,14 @@ deque.push-front = (val i64) {
     #{overflow=wrap}
     idx < 0 -> idx = idx + .cap
 
-    .buf[idx] = val
-    .head = new-head
+    {
+        .buf[idx] ?= val
+        .head = new-head
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 從後端推入元素
@@ -67,10 +73,16 @@ deque.push-back = (val i64) {
         -> idx = .cap - ((-idx) % .cap)
     }
 
-    .buf[idx] = val
+    {
+        .buf[idx] ?= val
 
-    #{overflow=wrap}
-    .tail = .tail + 1
+        #{overflow=wrap}
+        .tail = .tail + 1
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 從前端彈出元素

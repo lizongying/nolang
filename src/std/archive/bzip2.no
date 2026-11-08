@@ -102,12 +102,24 @@ bz-huffman {
 ; [build](#bzip2.bz-huffman.build)
 bz-huffman.build = (lengths []i64, alpha-size i64) {
     i <- [0..24): {
-        .limit[i] = 0
+        {
+            .limit[i] ?= 0
 
-        .base[i] = 0
+            .base[i] ?= 0
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     i <- [0..258): {
-        .perm[i] = 0
+        {
+            .perm[i] ?= 0
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .min-len = 24
     .max-len = 0
@@ -151,7 +163,13 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; base[len] = 在 perm 中，長度 len 的起始索引
     pp = 0
     i <- [0..24): {
-        .base[i] = pp
+        {
+            .base[i] ?= pp
+        }: {
+            err -> _
+
+            -> _
+        }
 
         ixout157c28 = len-count[i]: {
             ok -> it
@@ -175,7 +193,13 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             -> _
         }
 
-        .limit[i] = vec + ixout166c36 - 1
+        {
+            .limit[i] ?= vec + ixout166c36 - 1
+        }: {
+            err -> _
+
+            -> _
+        }
         ixout167c31 = len-count[i]: {
             ok -> it
 
@@ -208,7 +232,13 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
             -> _
         }
 
-        .perm[ixout182c15] = i
+        {
+            .perm[ixout182c15] ?= i
+        }: {
+            err -> _
+
+            -> _
+        }
 
         ixout186c24 = tmp-base[l]: {
             ok -> it
@@ -229,9 +259,18 @@ bz-huffman.build = (lengths []i64, alpha-size i64) {
     ; 解碼時以 perm[zvec - base[zn]] 取得符號。
     i <- [0..24): {
         i > .min-len -> {
+            {
+                lim ?= .limit[i - 1]
+                b ?= .base[i]
 
-            #{overflow=wrap}
-            .base[i] = ((.limit[i - 1] + 1) << 1) - .base[i]
+                #{overflow=wrap}
+                nb = ((lim + 1) << 1) - b
+                .base[i] ?= nb
+            }: {
+                err -> _
+
+                -> _
+            }
         }
     }
 }
@@ -250,28 +289,38 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
     .min-len == 0 -> return
 
     ; 持續讀取直到找到匹配的碼
-    (zvec > .limit[zn] && zn < 23) {
-        zvec <= .limit[zn] -> {
-            break
+    {
+        lim ?= .limit[zn]
+        (zvec > lim && zn < 23) {
+            zvec <= lim -> {
+                break
+            }
+
+            #{overflow=wrap}
+            zn = zn + 1
+            zj = br.read-bit()
+            zvec = (zvec << 1) | zj
+            lim ?= .limit[zn]
+        }
+
+        ; 計算符號
+        b ?= .base[zn]
+
+        #{overflow=wrap}
+        idx = zvec - b
+        {
+            idx < 0 -> return
+
+            idx >= BZ-MAX-ALPHA-SIZE -> return
         }
 
         #{overflow=wrap}
-        zn = zn + 1
-        zj = br.read-bit()
-        zvec = (zvec << 1) | zj
+        sym = .perm[idx + b - b]
+    }: {
+        err -> _
+
+        -> _
     }
-
-    ; 計算符號
-    #{overflow=wrap}
-    idx = zvec - .base[zn]
-    {
-        idx < 0 -> return
-
-        idx >= BZ-MAX-ALPHA-SIZE -> return
-    }
-
-    #{overflow=wrap}
-    sym = .perm[idx + .base[zn] - .base[zn]]
 }
 
 ; 解碼一個符號（修正版：直接用 perm[zvec - base[zn]] 取符號）
@@ -285,26 +334,36 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
     zvec = br.read-bits(.min-len)
 
     .min-len == 0 -> return
-    (zvec > .limit[zn] && zn < 23) {
-        zvec <= .limit[zn] -> {
-            break
+    {
+        lim ?= .limit[zn]
+        (zvec > lim && zn < 23) {
+            zvec <= lim -> {
+                break
+            }
+
+            #{overflow=wrap}
+            zn = zn + 1
+            zj = br.read-bit()
+            zvec = (zvec << 1) | zj
+            lim ?= .limit[zn]
         }
 
+        b ?= .base[zn]
+
         #{overflow=wrap}
-        zn = zn + 1
-        zj = br.read-bit()
-        zvec = (zvec << 1) | zj
+        idx = zvec - b
+        {
+            idx < 0 -> return
+
+            idx >= BZ-MAX-ALPHA-SIZE -> return
+        }
+
+        sym = .perm[idx]
+    }: {
+        err -> _
+
+        -> _
     }
-
-    #{overflow=wrap}
-    idx = zvec - .base[zn]
-    {
-        idx < 0 -> return
-
-        idx >= BZ-MAX-ALPHA-SIZE -> return
-    }
-
-    sym = .perm[idx]
 }
 
 ; ═══════════════════════════════════════════════

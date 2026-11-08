@@ -51,10 +51,16 @@ static-hashmap-str-tmpl {
 static-hashmap-str-tmpl.init = () {
     .cap = 256
     .size = 0
-    i <- [0..256): {
-        .occ[i] = 0
+    {
+        i <- [0..256): {
+            .occ[i] ?= 0
 
-        .keys[i].len = 0
+            .keys[i].len = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -100,37 +106,47 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     idx = .hash(key)
     first-tomb = -1
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            eq = .str-eq(.keys[idx], key)
-            eq -> {
-                .vals[idx] = val
-                is-new = false
-                return
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
+
+            used == 1 -> {
+                k ?= .keys[idx]
+                eq = .str-eq(k, key)
+                eq -> {
+                    .vals[idx] ?= val
+                    is-new = false
+                    return
+                }
             }
+            used == 2 -> {
+                first-tomb < 0 -> first-tomb = idx
+            }
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+
+        ; 未找到相同 key，插入
+        insert-idx = idx
+        first-tomb >= 0 -> insert-idx = first-tomb
+
+        .keys[insert-idx] ?= key
+
+        .vals[insert-idx] ?= val
+
+        .occ[insert-idx] ?= 1
 
         #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        .size = .size + 1
+        is-new = true
+    }: {
+        err -> _
+
+        -> _
     }
-
-    ; 未找到相同 key，插入
-    insert-idx = idx
-    first-tomb >= 0 -> insert-idx = first-tomb
-
-    .keys[insert-idx] = key
-
-    .vals[insert-idx] = val
-
-    .occ[insert-idx] = 1
-
-    #{overflow=wrap}
-    .size = .size + 1
-    is-new = true
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
@@ -141,11 +157,15 @@ static-hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            eq = .str-eq(.keys[idx], key)
+    !! {
+        used ?= .occ[idx]
+        used == 0 -> break
+
+        used == 1 -> {
+            k ?= .keys[idx]
+            eq = .str-eq(k, key)
             eq -> {
-                result = .vals[idx]
+                result ?= .vals[idx]
                 return
             }
         }
@@ -179,32 +199,46 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
 
-        #{overflow=wrap}
-        .occ[idx] == 1 -> {
-            eq = .str-eq(.keys[idx], key)
-            eq -> {
-                .occ[idx] = 2
-                .size = .size - 1
-                removed = true
-                return
+            used == 1 -> {
+                k ?= .keys[idx]
+                eq = .str-eq(k, key)
+                eq -> {
+                    .occ[idx] ?= 2
+                    .size = .size - 1
+                    removed = true
+                    return
+                }
             }
-        }
 
-        #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
 ; 清空
 ; [clear](#static-hashmap.static-hashmap-str-tmpl.clear)
 static-hashmap-str-tmpl.clear = () {
-    i <- [0..self.cap): {
-        .occ[i] = 0
+    {
+        i <- [0..self.cap): {
+            .occ[i] ?= 0
 
-        .keys[i].len = 0
+            .keys[i].len = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     .size = 0
 }
@@ -228,19 +262,27 @@ static-hashmap-str-tmpl.is-empty = () (empty bool) {
 ; v: 本次迭代的值
 ; [for-each](#static-hashmap.static-hashmap-str-tmpl.for-each)
 static-hashmap-str-tmpl.for-each = () (k str, v v) {
-    i <- [0..self.cap): {
-        .occ[i] == 1 -> {
+    {
+        i <- [0..self.cap): {
+            used ?= .occ[i]
+            used == 1 -> {
 
-            ; ⚠️ 上界必須是 len-bytes()（位元組數），且下面必須用 .byte(j)：
-            ; str[j] 是碼點索引，用位元組上界會讀越界並把非 ASCII 鍵弄壞。
-            ; 上界必須顯式寫出接收者（self.keys[i]）；三點 `[0...keys[i])` 是
-            ; 語法錯誤——`...` 是佔位陳述 token，不是「`..` 接隱式 self」。
-            j <- [0..self.keys[i].len-bytes()): {
-                k[j] = .keys[i].byte(j)
+                ; ⚠️ 上界必須是 len-bytes()（位元組數），且下面必須用 .byte(j)：
+                ; str[j] 是碼點索引，用位元組上界會讀越界並把非 ASCII 鍵弄壞。
+                ; 上界必須顯式寫出接收者（self.keys[i]）；三點 `[0...keys[i])` 是
+                ; 語法錯誤——`...` 是佔位陳述 token，不是「`..` 接隱式 self」。
+                src ?= .keys[i]
+                j <- [0..src.len-bytes()): {
+                    k[j] = src.byte(j)
+                }
+
+                v = .vals[i]
             }
-
-            v = .vals[i]
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -272,10 +314,16 @@ static-hashmap-int-tmpl {
 static-hashmap-int-tmpl.init = () {
     .cap = 256
     .size = 0
-    i <- [0..256): {
-        .occ[i] = 0
+    {
+        i <- [0..256): {
+            .occ[i] ?= 0
 
-        .keys[i] = 0
+            .keys[i] ?= 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -298,34 +346,44 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     idx = .hash(key)
     first-tomb = -1
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .vals[idx] = val
-                is-new = false
-                return
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
+
+            used == 1 -> {
+                kk ?= .keys[idx]
+                kk == key -> {
+                    .vals[idx] ?= val
+                    is-new = false
+                    return
+                }
             }
+            used == 2 -> {
+                first-tomb < 0 -> first-tomb = idx
+            }
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+        insert-idx = idx
+        first-tomb >= 0 -> insert-idx = first-tomb
+
+        .keys[insert-idx] ?= key
+
+        .vals[insert-idx] ?= val
+
+        .occ[insert-idx] ?= 1
 
         #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        .size = .size + 1
+        is-new = true
+    }: {
+        err -> _
+
+        -> _
     }
-    insert-idx = idx
-    first-tomb >= 0 -> insert-idx = first-tomb
-
-    .keys[insert-idx] = key
-
-    .vals[insert-idx] = val
-
-    .occ[insert-idx] = 1
-
-    #{overflow=wrap}
-    .size = .size + 1
-    is-new = true
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
@@ -336,10 +394,14 @@ static-hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                result = .vals[idx]
+    !! {
+        used ?= .occ[idx]
+        used == 0 -> break
+
+        used == 1 -> {
+            kk ?= .keys[idx]
+            kk == key -> {
+                result ?= .vals[idx]
                 return
             }
         }
@@ -373,31 +435,45 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
 
-        #{overflow=wrap}
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .occ[idx] = 2
-                .size = .size - 1
-                removed = true
-                return
+            used == 1 -> {
+                kk ?= .keys[idx]
+                kk == key -> {
+                    .occ[idx] ?= 2
+                    .size = .size - 1
+                    removed = true
+                    return
+                }
             }
-        }
 
-        #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
 ; 清空
 ; [clear](#static-hashmap.static-hashmap-int-tmpl.clear)
 static-hashmap-int-tmpl.clear = () {
-    i <- [0..self.cap): {
-        .occ[i] = 0
+    {
+        i <- [0..self.cap): {
+            .occ[i] ?= 0
 
-        .keys[i] = 0
+            .keys[i] ?= 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     .size = 0
 }
@@ -421,12 +497,19 @@ static-hashmap-int-tmpl.is-empty = () (empty bool) {
 ; v: 本次迭代的值
 ; [for-each](#static-hashmap.static-hashmap-int-tmpl.for-each)
 static-hashmap-int-tmpl.for-each = () (k k, v v) {
-    i <- [0..self.cap): {
-        .occ[i] == 1 -> {
-            k = .keys[i]
+    {
+        i <- [0..self.cap): {
+            used ?= .occ[i]
+            used == 1 -> {
+                k = .keys[i]
 
-            v = .vals[i]
+                v = .vals[i]
+            }
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -458,10 +541,16 @@ static-hashmap-bool-tmpl {
 static-hashmap-bool-tmpl.init = () {
     .cap = 2
     .size = 0
-    i <- [0..2): {
-        .occ[i] = 0
+    {
+        i <- [0..2): {
+            .occ[i] ?= 0
 
-        .keys[i] = false
+            .keys[i] ?= false
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -487,21 +576,28 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 
     idx = .hash(key)
 
-    .occ[idx] == 1 -> {
-        .vals[idx] = val
-        is-new = false
-        return
+    {
+        used ?= .occ[idx]
+        used == 1 -> {
+            .vals[idx] ?= val
+            is-new = false
+            return
+        }
+
+        .keys[idx] ?= key
+
+        .vals[idx] ?= val
+
+        .occ[idx] ?= 1
+
+        #{overflow=wrap}
+        .size = .size + 1
+        is-new = true
+    }: {
+        err -> _
+
+        -> _
     }
-
-    .keys[idx] = key
-
-    .vals[idx] = val
-
-    .occ[idx] = 1
-
-    #{overflow=wrap}
-    .size = .size + 1
-    is-new = true
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
@@ -512,7 +608,8 @@ static-hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
 
-    .occ[idx] == 1 -> {
+    used ?= .occ[idx]
+    used == 1 -> {
         result = .vals[idx]
         return
     }
@@ -541,22 +638,35 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    .occ[idx] == 1 -> {
-        .occ[idx] = 2
+    {
+        used ?= .occ[idx]
+        used == 1 -> {
+            .occ[idx] ?= 2
 
-        #{overflow=wrap}
-        .size = .size - 1
-        removed = true
+            #{overflow=wrap}
+            .size = .size - 1
+            removed = true
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
 ; 清空
 ; [clear](#static-hashmap.static-hashmap-bool-tmpl.clear)
 static-hashmap-bool-tmpl.clear = () {
-    i <- [0..self.cap): {
-        .occ[i] = 0
+    {
+        i <- [0..self.cap): {
+            .occ[i] ?= 0
 
-        .keys[i] = false
+            .keys[i] ?= false
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     .size = 0
 }
@@ -580,11 +690,18 @@ static-hashmap-bool-tmpl.is-empty = () (empty bool) {
 ; v: 本次迭代的值
 ; [for-each](#static-hashmap.static-hashmap-bool-tmpl.for-each)
 static-hashmap-bool-tmpl.for-each = () (k bool, v v) {
-    i <- [0..self.cap): {
-        .occ[i] == 1 -> {
-            k = .keys[i]
+    {
+        i <- [0..self.cap): {
+            used ?= .occ[i]
+            used == 1 -> {
+                k = .keys[i]
 
-            v = .vals[i]
+                v = .vals[i]
+            }
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }

@@ -91,7 +91,6 @@ cond -> {
 ```
 
 ```no
-#{fmt-skip}
 ; ❌ 反例：用 ; 当语句分隔符 —— 块永不闭合，return 被吞
 ; cond -> { print('X'); return }
 ```
@@ -134,7 +133,6 @@ catch-all `->` 用 `it` 会编译错误（含义不唯一）。`it` 仅在 match
 **`self` / `super`**：接口方法体内，`self` 指接收者；`super.method()` 调用父接口实现（见 §3.8）。
 
 ```no
-#{fmt-skip}
 ; 区间迭代 + 条件循环 + match
 i <- [0..5): {
     print(i)
@@ -144,15 +142,24 @@ i <- [0..5): {
 }
 val: {
     nil -> print('empty')
-    err -> log.error(it.msg())   ; it 是 err.err，不是 str
-    ok -> process(it)       ; it 是解包值
+
+    err -> log.error(it.msg()); it 是 err.err，不是 str
+
+    ok -> process(it); it 是解包值
 }
 
 ; if/elif/else 写成 {} 包裹的短路链
 {
-    cmd == 'a' -> { fa() }
-    cmd == 'b' -> { fb() }
-    -> {}
+    cmd == 'a' -> {
+        fa()
+    }
+
+    cmd == 'b' -> {
+        fb()
+    }
+
+    -> {
+    }
 }
 ```
 
@@ -182,10 +189,9 @@ val: {
 `int` / `float` / `num` / `string` 都是 std 用此语法定义的普通代码，**不是关键字**。
 
 ```no
-#{fmt-skip}
-int    = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
+int = i8 | i16 | i32 | i64 | i128 | u8 | u16 | u32 | u64 | u128
 string = str | txt
-bytes  = []byte          ; 单类型别名（newtype 语义：别名与底层类型互不相通）
+bytes = []byte; 单类型别名（newtype 语义：别名与底层类型互不相通）
 ```
 
 > ⚠️ **union 别名方法遮蔽**：不要定义与成员同名的方法（如 `string.len`）——它会接管
@@ -229,17 +235,29 @@ user.greet = () {
 **Option 错误传播 vs 就地捕获**：
 
 ```no
-#{fmt-skip}
 ; ?= 向上抛：函数须有 ?T 结果参数，失败时设结果并提前 return
 process-file = (path str) (result ?str) {
-    f ?= open(path)            ; 失败 → result = f; return
-    line ?= f.read-line()      ; EOF/错误 → 自动传播
+    f ?= open(path); 失败 → result = f; return
+    line ?= f.read-line(); EOF/错误 → 自动传播
     result = line
 }
+
 ; 就地捕获：用 = ；函数无需 ?T 结果参数，nil/err 存入该变量、流程继续
 handle = (b i64, c i64, d i64) (r i64) {
-    a = b + c / d              ; a 推断 ?i64；除零 → a = err
-    a: { err -> { r = -1 }  nil -> { r = -1 }  -> { r = it } }
+    a = b + c / d; a 推断 ?i64；除零 → a = err
+    a: {
+        err -> {
+            r = -1
+        }
+
+        nil -> {
+            r = -1
+        }
+
+        -> {
+            r = it
+        }
+    }
 }
 ```
 
@@ -252,7 +270,6 @@ handle = (b i64, c i64, d i64) (r i64) {
   块 `{ ... }: { ... }`（**只是陈述**，不能赋值、沒有区塊尾值，`-> _` 丟棄結果）。第三种把主体内
   `?=` 的上抛收斂成一條 match，因此**函数无需 `?T` 结果参数**也能用 `?=`：
   ```no
-  #{fmt-skip}
   f = (d i64) {
       {
           v ?= 6 / d
@@ -295,17 +312,19 @@ handle = (b i64, c i64, d i64) (r i64) {
 ### 3.8 接口
 
 ```no
-#{fmt-skip}
-json {                       ; 接口定义（方法签名，或合并父接口名）
+json {
     to-json()
 }
-user json {                  ; 类型实现接口（同模块无需前缀；跨模块须 module.prefix）
+
+; 接口定义（方法签名，或合并父接口名）
+user json {
+    ; 类型实现接口（同模块无需前缀；跨模块须 module.prefix）
     name str
-    age  i64
+    age i64
 }
 user.to-json = () (s str) {
     s = 'json:' - .name
-    ..to-json()              ; 调用父接口实现（super）
+    to-json(); 调用父接口实现（super）
 }
 ```
 
@@ -318,15 +337,23 @@ user.to-json = () (s str) {
 **同行的行首前缀写法（`#{...} target`）是编译错误**（对所有注解目标一致）。
 
 ```no
-#{fmt-skip}
-#{overflow=wrap}             ; 整数溢出策略（wrap / trap / 默认）；只作用于下一陈述，须独占一行
+#{overflow=wrap}
 digits = digits + 1
 
-#{buildin}                  ; 内建方法 / 内建枚举（无 std 函数体，codegen 拦截展开）
-str.byte = (i i64) (c ?byte) { }
+; 整数溢出策略（wrap / trap / 默认）；只作用于下一陈述，须独占一行
 
-#{inline}                   ; 结构体字段按值内联（默认）；#{inline=false} 强制指针（递归类型必需）
-holder { inl pt #{inline=true}  out pt #{inline=false} }
+#{buildin}
+str.byte = (i i64) (c ?byte) {
+}
+
+; 内建方法 / 内建枚举（无 std 函数体，codegen 拦截展开）
+
+#{inline}
+holder {
+    ; 结构体字段按值内联（默认）；#{inline=false} 强制指针（递归类型必需）
+    inl pt #{inline=true}
+    out pt #{inline=false}
+}
 ```
 
 > ⚠️ `#{overflow=...}` 只作用下一陈述，须独占一行置上方；函数级注解已不「整函生效」。
@@ -336,11 +363,10 @@ holder { inl pt #{inline=true}  out pt #{inline=false} }
 ### 3.10 导入
 
 ```no
-#{fmt-skip}
-# std/math.add              ; std 模块
-# github.com/utils/math.add ; 远程模块
-# /utils/math.add          ; 本地模块（以 / 开头）
-# std/math.add a           ; 别名
+# std/math.add; std 模块
+# github.com/utils/math.add; 远程模块
+# /utils/math.add; 本地模块（以 / 开头）
+# std/math.add a; 别名
 ```
 
 - 标准库模块由编译器自动加载，**无需显式导入**——跨模块调用直接用 `ShortName.` 前缀
@@ -406,13 +432,13 @@ holder { inl pt #{inline=true}  out pt #{inline=false} }
 - **文件名（含目录名）用连字符 `-`**，不用下划线 `_`（如 `string-helper.no`）。
 
 ```no
-#{fmt-skip}
 ; ✅ 正例
-NO-LANG = 'nolang'           ; 全局常量，大写
+NO-LANG = 'nolang'; 全局常量，大写
 MAX-SIZE = 1024
-_PRIVATE-CONST = 42          ; 私有全局：_ + 大写
-add = (a i64, b i64) (r i64) ; 函数名小写
-user {                      ; 结构体名小写
+_PRIVATE-CONST = 42; 私有全局：_ + 大写
+add = (a i64, b i64) (r i64); 函数名小写
+user {
+    ; 结构体名小写
     name str
     age i64
 }
@@ -421,12 +447,11 @@ user {                      ; 结构体名小写
 ```
 
 ```no
-#{fmt-skip}
 ; ❌ 反例
-x = 10                       ; 全局不能小写 → 错误
-foo-bar = 42                 ; 全局不能小写 → 错误
-_X = 10                      ; 局部变量不要 _ 前缀
-StringHelper.no              ; 文件名用 _ 而非 -
+x = 10; 全局不能小写 → 错误
+foo-bar = 42; 全局不能小写 → 错误
+_X = 10; 局部变量不要 _ 前缀
+StringHelper.no; 文件名用 _ 而非 -
 ```
 
 ### 5.2 文档注释
@@ -434,7 +459,6 @@ StringHelper.no              ; 文件名用 _ 而非 -
 函数文档注释须含完整参数名与类型、返回名与类型；模块顶部 API 摘要同样用完整签名。
 
 ```no
-#{fmt-skip}
 ; ❌ 缺类型、缺返回名
 ; sha1(data) (hash)
 ```
@@ -493,7 +517,6 @@ keep(buf)
 ```
 
 ```no
-#{fmt-skip}
 ; ❌ 反例：手写 free
 ; free(buf)
 ```
@@ -503,13 +526,14 @@ keep(buf)
 编译通过但运行错乱**。每个臂的绑定变量一律加唯一后缀。
 
 ```no
-#{fmt-skip}
 ; 枚举声明：state { a(v i64), b(s str) }；类型写在变体声明里，
 ; 臂上的绑定只写名字（写 `a(tn i64)` 是语法错误：expected comma or right parenthesis）
 ; ❌ 反例：两臂都用 tn（一为 i64、一为 str）→ 静默串型
 st: {
     a(tn) -> keep(tn)
+
     b(tn) -> keep-str(tn)
+
     -> r = 0
 }
 ```
@@ -550,7 +574,6 @@ digits = digits + 1
 ```
 
 ```no
-#{fmt-skip}
 ; ❌ 反例（误以为整函数生效 / 与语句同行 / 行首前缀）
 ; #{overflow=wrap} digits = digits + 1
 ; #{overflow=wrap} digits = digits + 1   ; 前缀写法 → 编译错误
@@ -577,25 +600,26 @@ digits = digits + 1
 结果参数自动初始化为 nil（实测空函数体 `q = () (result ?i64) { }` 返回 nil），**无需写 `result = nil` 样板**（见 §3.11「返回值延迟零值」）。
 
 ```no
-#{fmt-skip}
 ; ✅ 正例 1：option 结果参数 —— 直接写简写
 process = (path str) (result ?str) {
-    f ?= open(path)            ; 失败 → result = f; return
+    f ?= open(path); 失败 → result = f; return
 }
+
 ; ✅ 正例 2：函数返回值不是 option —— 用块 match 包住，照样能用简写 y ?= x+1
 handle = (x i64) {
     {
-        y ?= x + 1             ; x+1 回 ?i64；失败 → 主体停止、arms 跑一次
+        y ?= x + 1; x+1 回 ?i64；失败 → 主体停止、arms 跑一次
         print(1)
     }: {
-        err -> _               ; 丢弃上抛的错误（it 是 err.err）
+        err -> _; 丢弃上抛的错误（it 是 err.err）
 
-        -> _                   ; 兜底臂，丢弃结果
+        -> _; 兜底臂，丢弃结果
     }
 }
+
 ; ✅ 正例 3：索引读取同样适用（D11 起 arr[i] 恒 ?T）
 pick = (a []i64, i i64) (out ?i64) {
-    v ?= a[i]                  ; 越界 → out = 该 option; return
+    v ?= a[i]; 越界 → out = 该 option; return
     out = v
 }
 ```
@@ -604,7 +628,6 @@ pick = (a []i64, i i64) (out ?i64) {
 > 索引**写入**同理：`a[i] ?= v` 是 place-match `a[i]: { ok -> it = v  -> _ }` 的简写。
 
 ```no
-#{fmt-skip}
 ; ❌ 反例：既无 ?T 结果参数、也不在块 match 主体里
 ; g = (x i64) { y ?= might-fail(x) }
 ```

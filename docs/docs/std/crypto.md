@@ -27,18 +27,16 @@ out = aes.dec-block(in [16]byte, ek)
 ### crypto/des — DES 加解密（ECB 模式）
 
 ```no
-#{fmt-skip}
-des.des-enc(plain, 8, key, out)        ; 加密 8-byte 區塊
-des.des-dec(cipher, 8, key, out)       ; 解密 8-byte 區塊
+des.des-enc(plain, 8, key, out); 加密 8-byte 區塊
+des.des-dec(cipher, 8, key, out); 解密 8-byte 區塊
 ```
 
 ### crypto/rsa — RSA 加解密（多精度模冪）
 
 ```no
-#{fmt-skip}
 ; 高階位元組介面（推薦）：位元組串按大端無符號整數解釋，輸出為最短大端編碼
-cipher = rsa.rsa-encrypt-bytes(msg, pub-exp, mod)     ; c = m^e mod n
-plain  = rsa.rsa-decrypt-bytes(cipher, priv-exp, mod) ; m = c^d mod n
+cipher = rsa.rsa-encrypt-bytes(msg, pub-exp, mod); c = m^e mod n
+plain = rsa.rsa-decrypt-bytes(cipher, priv-exp, mod); m = c^d mod n
 
 ; 低階 limb 介面（base 2^32 little-endian，手動管理 limb 計數）
 result, rn = rsa.rsa-modpow(base, bn, exp, en, mod, mn)
@@ -108,9 +106,8 @@ fnv-1a-32.fnv-1a-32(s []byte, n, h)
 ### crypto/rand — 隨機數產生器（xorshift32）
 
 ```no
-#{fmt-skip}
-r = rand.rand(state)                     ; 32-bit 偽隨機數
-rand.rand-str(state, n, s)              ; 隨機字母數字字串
+r = rand.rand(state); 32-bit 偽隨機數
+rand.rand-str(state, n, s); 隨機字母數字字串
 ```
 
 ### crypto/x509 — X.509 憑證 DER 解析

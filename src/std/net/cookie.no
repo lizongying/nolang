@@ -318,24 +318,39 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
 
     ; 檢查是否已存在同名 Cookie
     i <- [0..self.count): {
-        .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
-            .values[i] = value
-            return
+        {
+            nm ?= .names[i]
+            dm ?= .domains[i]
+            pm ?= .paths[i]
+            nm == name && dm == domain && pm == path -> {
+                .values[i] ?= value
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
 
     ; 新增 Cookie
     .count < COOKIE-JAR-MAX -> {
-        .names[.count] = name
+        {
+            .names[.count] ?= name
 
-        .values[.count] = value
+            .values[.count] ?= value
 
-        .domains[.count] = domain
+            .domains[.count] ?= domain
 
-        .paths[.count] = path
+            .paths[.count] ?= path
 
-        #{overflow=wrap}
-        .count = .count + 1
+            #{overflow=wrap}
+            .count = .count + 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -348,22 +363,25 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
 jar.get = (name str, domain str, path str) (val ?str) {
     val = nil
     i <- [0..self.count): {
-        .names[i] == name -> {
+        nm ?= .names[i]
+        dm ?= .domains[i]
+        pm ?= .paths[i]
+        nm == name -> {
 
             ; 域名匹配（簡化：精確匹配或子域名匹配）
             domain-match = false
             {
-                .domains[i] == domain -> {
+                dm == domain -> {
                     domain-match = true
                 }
 
-                .domains[i].len-bytes() > 0 -> {
-                    domain.ends-with('.' - .domains[i]) -> {
+                dm.len-bytes() > 0 -> {
+                    domain.ends-with('.' - dm) -> {
                         domain-match = true
                     }
                 }
 
-                .domains[i].len-bytes() == 0 -> {
+                dm.len-bytes() == 0 -> {
                     domain-match = true
                 }
             }
@@ -371,11 +389,11 @@ jar.get = (name str, domain str, path str) (val ?str) {
             ; 路徑匹配（簡化：前綴匹配）
             path-match = false
             {
-                .paths[i] == '/' -> {
+                pm == '/' -> {
                     path-match = true
                 }
 
-                path.starts-with(.paths[i]) -> {
+                path.starts-with(pm) -> {
                     path-match = true
                 }
             }
@@ -394,24 +412,33 @@ jar.get = (name str, domain str, path str) (val ?str) {
 ; [delete](#cookie.jar.delete)
 jar.delete = (name str, domain str, path str) {
     i <- [0..self.count): {
-        .names[i] == name && .domains[i] == domain && .paths[i] == path -> {
+        {
+            nm ?= .names[i]
+            dm ?= .domains[i]
+            pm ?= .paths[i]
+            nm == name && dm == domain && pm == path -> {
 
-            ; 將最後一個移到當前位置
-            #{overflow=wrap}
-            last = .count - 1
-            i != last -> {
-                .names[i] = .names[last]
+                ; 將最後一個移到當前位置
+                #{overflow=wrap}
+                last = .count - 1
+                i != last -> {
+                    .names[i] ?= .names[last]
 
-                .values[i] = .values[last]
+                    .values[i] ?= .values[last]
 
-                .domains[i] = .domains[last]
+                    .domains[i] ?= .domains[last]
 
-                .paths[i] = .paths[last]
+                    .paths[i] ?= .paths[last]
+                }
+
+                #{overflow=wrap}
+                .count = .count - 1
+                return
             }
+        }: {
+            err -> _
 
-            #{overflow=wrap}
-            .count = .count - 1
-            return
+            -> _
         }
     }
 }
@@ -424,39 +451,49 @@ jar.delete = (name str, domain str, path str) {
 jar.build-header = (domain str, path str) (out str) {
     out = ''
     i <- [0..self.count): {
-
-        ; 域名匹配
-        domain-match = false
-
         {
-            .domains[i].len-bytes() == 0 -> {
-                domain-match = true
+            nm ?= .names[i]
+            vm ?= .values[i]
+            dm ?= .domains[i]
+            pm ?= .paths[i]
+
+            ; 域名匹配
+            domain-match = false
+
+            {
+                dm.len-bytes() == 0 -> {
+                    domain-match = true
+                }
+
+                dm == domain -> {
+                    domain-match = true
+                }
+
+                domain.ends-with('.' - dm) -> {
+                    domain-match = true
+                }
             }
 
-            .domains[i] == domain -> {
-                domain-match = true
-            }
+            ; 路徑匹配
+            path-match = false
+            {
+                pm == '/' -> {
+                    path-match = true
+                }
 
-            domain.ends-with('.' - .domains[i]) -> {
-                domain-match = true
+                path.starts-with(pm) -> {
+                    path-match = true
+                }
             }
-        }
+            domain-match && path-match -> {
+                out.len-bytes() > 0 -> out = out - '; '
 
-        ; 路徑匹配
-        path-match = false
-        {
-            .paths[i] == '/' -> {
-                path-match = true
+                out = out - nm - '=' - vm
             }
+        }: {
+            err -> _
 
-            path.starts-with(.paths[i]) -> {
-                path-match = true
-            }
-        }
-        domain-match && path-match -> {
-            out.len-bytes() > 0 -> out = out - '; '
-
-            out = out - .names[i] - '=' - .values[i]
+            -> _
         }
     }
 }

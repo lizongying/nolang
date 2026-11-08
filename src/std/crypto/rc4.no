@@ -92,7 +92,7 @@ rc4 = (in []byte, key []byte) (out []byte) {
         t = s[i]: {
             ok -> it
 
-            -> 0
+            -> _
         }
 
         ixout76c24 = s[j]: {

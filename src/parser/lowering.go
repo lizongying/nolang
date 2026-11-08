@@ -1278,6 +1278,39 @@ func (l *lowerer) indexContainerType(e Expression) string {
 	return ""
 }
 
+// chainOuterType 推断「读取一个表达式所得的值」的型别，用于链式 `?=` 的最外层
+// 型别覆写。与 indexContainerType（只回答「e 作为容器的型别」）不同，这里对
+// IndexExpression 返回其元素型别、对 DotExpression 返回字段型别，因此
+// `.pool.nodes[idx].first` 会得到 i64，而不是链根元素 dom-node。
+// 不可判定时返回空字符串。
+func (l *lowerer) chainOuterType(e Expression) string {
+	switch b := unwrapLowerExpr(e).(type) {
+	case *Identifier:
+		if l.p.sem != nil {
+			if t, has := l.p.sem.FuncVarType(l.curFuncName, b.Value); has && t != "" {
+				return ty.StripOptionRaw(t)
+			}
+		}
+	case *IndexExpression:
+		if cont := l.indexContainerType(b.Left); cont != "" {
+			return ty.StripOptionRaw(containerElemType(cont))
+		}
+	case *DotExpression:
+		if rt := l.chainOuterType(b.Receiver); rt != "" {
+			if fields, ok := l.p.structFields[rt]; ok {
+				if ft, ok := fields[b.Property]; ok {
+					return ty.StripOptionRaw(ft)
+				}
+			}
+		}
+	case *CallExpression:
+		if t := l.p.inferTypeFromCallExpr(b); t != "" {
+			return ty.StripOptionRaw(t)
+		}
+	}
+	return ""
+}
+
 // addCaptureNode 把 e 登記為捕獲節點（分配 __cap_N、註冊型別），回傳替代 e 的識別符。
 func (l *lowerer) addCaptureNode(e Expression, inner string, out *[]captureNode, tok lexer.Token) Expression {
 	l.capTmpSeq++
@@ -4806,6 +4839,53 @@ func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStateme
 	return nb
 }
 
+// SplitIndexReceiverChain 拆解「以安全索引為接收者的方法／欄位呼叫鏈」：
+//
+//	.names[i].to-lower()   → root = .names[i]
+//	a[i].f().g(x)          → root = a[i]
+//	obj.f[i].field         → root = obj.f[i]
+//
+// 回傳鏈根的 *IndexExpression 與一個「把鏈根換成別的表達式」的重建函式。
+// 重建一律複製節點、共享未變子樹（H0 直出不得改寫使用者 AST）。
+// 非此形狀回傳 (nil, nil)；鏈根恰好就是 e 本身時回傳 identity 重建。
+//
+// 關鍵：只沿 CallExpression.Function / DotExpression.Receiver 下探，**不**進入
+// Arguments —— `f(a[i])` 的索引是呼叫引數，不是接收者，不能當成 `?=` 的傳播點。
+// checker 亦以此函式判定 `?=` RHS 鏈根的裸索引已被顯式消費（idxbruse 豁免）。
+func SplitIndexReceiverChain(e Expression) (*IndexExpression, func(Expression) Expression) {
+	switch v := e.(type) {
+	case *IndexExpression:
+		return v, func(r Expression) Expression { return r }
+	case *DotExpression:
+		if v.Receiver == nil {
+			return nil, nil
+		}
+		root, rebuild := SplitIndexReceiverChain(v.Receiver)
+		if root == nil {
+			return nil, nil
+		}
+		return root, func(r Expression) Expression {
+			nd := *v
+			nd.Receiver = rebuild(r)
+			return &nd
+		}
+	case *CallExpression:
+		if v.Function == nil {
+			return nil, nil
+		}
+		root, rebuild := SplitIndexReceiverChain(v.Function)
+		if root == nil {
+			return nil, nil
+		}
+		return root, func(r Expression) Expression {
+			nc := *v
+			nc.Function = rebuild(r)
+			return &nc
+		}
+	}
+	return nil, nil
+}
+
 // lowerUnwrapAssign desugars `v ?= expr` into a match/if chain:
 //
 //	__unwrap_N = expr
@@ -4822,6 +4902,38 @@ func (p *Parser) prependStmt(body *BlockStatement, stmt Statement) *BlockStateme
 // (the checker will report it).
 func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	tok := uas.Token
+
+	// ok 臂要寫給 LHS 的值。一般情形是解箱後的 `it`；當 RHS 是「以安全索引
+	// 為接收者的方法鏈」（如 `h ?= .names[i].to-lower()`）時改成 `it.to-lower()`
+	// —— option 由鏈根索引產生，方法只作用在解箱後的值上。
+	itIdent := &Identifier{Token: tok, Value: "it"}
+	okValue := Expression(itIdent)
+	// 鏈式 RHS 的最外層回傳型別（可能不同於鏈根元素型別，例如
+	// `h ?= .names[i].len()` 的 elem=str / result=i64）。空值代表沿用 elemType。
+	var lhsTypeOverride string
+
+	// `.field[i]` 的基底解析（indexBaseContainerRaw → indexBaseReceiverType →
+	// resolveReceiverType）要靠 `Parser.methodStructStack` 把隱含的 `self`
+	// 解成 struct 名。解析期由 decl.go 在 parseFunctionBody 前後 push/pop，
+	// 而 lowering / H0 走查發生在 parse **之後**，那時棧早已清空。
+	//
+	// `?=` 的**兩側**都可能是結構欄位下標：寫側目標 `a[i] ?= v` 的
+	// uas.Target，以及讀側 RHS `v ?= self.f[i]`。故補推必須覆蓋整次降糖，
+	// 不能只放在寫側分支裡。補推層級維持「單一 `?=` 呼叫」：若改成在走查
+	// 進入 FunctionDefinition 時就 push，會改變所有 `.field` 接收者解析的既有
+	// 結果，使 BuildSemViews 的重建路徑（不走走查、只回放事實）與 fresh parse
+	// 分叉，semviews_test.go 的 TestBuildSemViewsMatchesFreshParse 會在
+	// std/bigint.no 上報 `?bigint||-` vs `||-`。此處進來就 push、函式返回前
+	// pop（defer），影響面僅限本次 `?=` 降糖。與 tohir.go:1493 同口徑：
+	// H0 直出由 scratchParser 以 c.curSelfType 補齊，這裡 savedLen != 0 時
+	// 不重複推。
+	if savedLen := len(l.p.methodStructStack); savedLen == 0 {
+		if st := functionSelfType(l.curFuncDef); st != "" {
+			l.p.methodStructStack = append(l.p.methodStructStack, st)
+			defer func() { l.p.methodStructStack = l.p.methodStructStack[:savedLen] }()
+		}
+	}
+
 	if os.Getenv("NOLANG_DEBUG_IT") != "" {
 		nm := ""
 		if uas.Name != nil {
@@ -4871,28 +4983,8 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// struct hashmap-str-i64`；MIR 补上 map 下标降糖后变成**编译成功、运行期
 	// SIGBUS** 的三重 free。故此处必须是硬错误。
 	if uas.Name == nil {
-		// `.field[i]` 的基底解析（indexBaseContainerRaw → indexBaseReceiverType →
-		// resolveReceiverType）要靠 `Parser.methodStructStack` 把隱含的 `self`
-		// 解成 struct 名。解析期由 decl.go 在 parseFunctionBody 前後 push/pop，
-		// 而 lowering / H0 走查發生在 parse **之後**，那時棧早已清空 —— 不補推的話
-		// 方法體內的 `.keys[i] ?= v` 在 isSafeIndexBase 一律 miss，整條 D9 寫入側
-		// 分支落空，退化到通用分支後 rhsDefinitelyNonOption 把 RHS（普通變數 v）
-		// 判成「不是 option」而報 5l952ztl（y3 探針；方法內
-		// `.keys[i]: { ok -> it = v }` 之所以沒事，是因為那條路徑由 H0 的
-		// scratchParser 還原了棧）。
-		//
-		// 補推**只限這條分支**：它在整趟走查的層級上補推（形如「進入
-		// FunctionDefinition 就 push」）會改變所有 `.field` 接收者解析的既有結果，
-		// 使 BuildSemViews 的重建路徑（不走走查、只回放事實）與 fresh parse 分叉，
-		// semviews_test.go 的 TestBuildSemViewsMatchesFreshParse 會在 std/bigint.no
-		// 上報 `?bigint||-` vs `||-`。此處進來就 push、函式返回前 pop（defer），
-		// 影響面僅限本次 `?=` 下標降糖。與 tohir.go:1493 同口徑。
-		if savedLen := len(l.p.methodStructStack); savedLen == 0 {
-			if st := functionSelfType(l.curFuncDef); st != "" {
-				l.p.methodStructStack = append(l.p.methodStructStack, st)
-				defer func() { l.p.methodStructStack = l.p.methodStructStack[:savedLen] }()
-			}
-		}
+		// 寫入側 `?=`：methodStructStack 已在函式開頭補推（見上），此處直接
+		// 用 isSafeIndexBase / mapIndexBaseType 判定 `.field[i]` 基底。
 		if idx, ok := uas.Target.(*IndexExpression); ok {
 			if mt := l.p.mapIndexBaseType(idx); mt != "" {
 				l.p.saveErrorf("pvma2wsn", "line %d, column %d: `?=` on a map subscript is not supported (base type `%s`); write `%s = v` directly — a map key has no out-of-range case, so the write is a put and cannot fail",
@@ -4919,7 +5011,27 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 				tok.Line, tok.Column, uas.String())
 			return nil
 		}
-		rhs = l.guardOptionOperands(uas.Value, &guards, resultName, tok)
+		// `h ?= .names[i].to-lower()`：option 來自**鏈根的安全索引**，不是最外層
+		// 呼叫的回傳值。把 RHS 換成鏈根索引，讓下面 `case *IndexExpression`
+		// 正確標註 __unwrap_N 為 `?elem`；ok 臂再把 `it` 放回鏈根呼叫方法。
+		// 這樣寫法與 `h = .names[i]: { ok -> it.to-lower() -> '' }` 等價，但
+		// 由 `?=` 一肩上拋 nil/err，不需額外宣告 `h str = ''`。
+		if root, rebuild := SplitIndexReceiverChain(uas.Value); root != nil {
+			rhs = root
+			okValue = rebuild(itIdent)
+			if call, ok := uas.Value.(*CallExpression); ok {
+				if t := l.p.inferTypeFromCallExpr(call); t != "" {
+					lhsTypeOverride = ty.StripOptionRaw(t)
+				}
+			} else if t := l.chainOuterType(uas.Value); t != "" {
+				// 純字段鏈（`.nodes[i].first`）：最外層是 DotExpression，
+				// 需要取該字段的宣告型別；否則 LHS 會拿到鏈根的
+				// 元素型別（整個 struct），下游把它當純量用會炸。
+				lhsTypeOverride = t
+			}
+		} else {
+			rhs = l.guardOptionOperands(uas.Value, &guards, resultName, tok)
+		}
 	}
 
 	// Create a unique temporary variable name for the option value.
@@ -4991,20 +5103,27 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			}
 		}
 	case *IndexExpression:
-		// 安全索引：`v[i]` 越界回傳 None；?= 解箱並向上傳播錯誤。
-		// 僅支援直接 arr/vec/slice 變數（識別符基底）；struct 欄位索引
-		// （receiver.field[i]）安全索引 codegen 尚未支援，直接報錯。
-		if _, ok := v.Left.(*Identifier); !ok {
-			l.p.saveErrorf("gcvwum3g", "line %d, column %d: safe-index `?=` only supports direct array/vec variables, not struct fields (receiver.field[i])", tok.Line, tok.Column)
-			return nil
-		}
+		// 安全索引：`v[i]` 越界回傳 err（D11 起 nil 只代表值確實不存在）；
+		// `?=` 解箱並向上傳播。基底可以是直接變數（`a[i]`）或結構欄位下標
+		// （`.field[i]` / `obj.field[i]` / `a[i].f[j]`）——兩者都由
+		// indexBaseContainerRaw 統一判定，且 codegen / MIR 的安全索引降糖
+		// 早已涵蓋 DotExpression 基底（isSafeIndexBase 對它回傳 true）。
+		// 舊版在此以 `v.Left.(*Identifier)` 硬擋結構欄位（gcvwum3g），
+		// 與其餘索引語意不一致，D11 後移除：讀側 `v ?= .field[i]` 與寫側
+		// `.field[i] ?= v` 現在共用同一套基底解析。
 		// 推斷元素型別以便讓 match desugar 的 it 綁定拿到正確型別。
 		if elem := l.p.inferIndexElemType(v); elem != "" {
-			elemType = elem
-			l.p.setVarType(tmpName, "?"+elem)
+			// `[N]?T` / `[]?T` 的下標讀取本身**就是** `?T`（三態 ok/nil/err
+			// 全在同一個 option 的 tag 上），不是 `??T`。containerElemType
+			// 回傳的是宣告的元素型別原文 `?T`，直接用會把 __unwrap_N 標成
+			// `??T`、把 LHS 標成 `?T`，ok 臂再把整個 option 結構當成純量
+			// 讀出 → 執行期出現指標大小的垃圾值。故這裡剝掉一層 option：
+			// 暫存變數 `?T`、it / LHS 都是 `T`。
+			elemType = ty.StripOptionRaw(elem)
+			l.p.setVarType(tmpName, "?"+elemType)
 			tmpType = &NullableType{
 				Token: tok,
-				Type:  &NamedType{Token: tok, Value: elem},
+				Type:  &NamedType{Token: tok, Value: elemType},
 			}
 			// 記錄 LHS 區域變數（如未標型別的 x）的元素型別到「函數作用域」
 			// FuncVarTypes，避免 codegen 退回被全域 VarTypes 同名污染
@@ -5013,7 +5132,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			// （見 safe-index-utl.no 的 safe-utl）。寫入當前函數作用域
 			// （非全域）確保不跨函數污染 std。
 			if uas.Name != nil {
-				l.p.sem.SetFuncVarType(l.curFuncName, uas.Name.Value, elem)
+				l.p.sem.SetFuncVarType(l.curFuncName, uas.Name.Value, elemType)
 			}
 		}
 	}
@@ -5042,6 +5161,16 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 					l.p.sem.SetFuncVarType(l.curFuncName, uas.Name.Value, elemType)
 				}
 			}
+		}
+	}
+
+	// LHS 的型別標註：一般與 __unwrap_N 的內部型別相同；鏈式 RHS 則以最外層
+	// 呼叫的回傳型別為準（`h ?= .names[i].len()` 的 h 是 i64，不是 str）。
+	lhsType := elemType
+	if lhsTypeOverride != "" {
+		lhsType = lhsTypeOverride
+		if uas.Name != nil && uas.Name.Value != resultName {
+			l.p.sem.SetFuncVarType(l.curFuncName, uas.Name.Value, lhsType)
 		}
 	}
 
@@ -5164,8 +5293,9 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		})
 	}
 
-	// -> { v = it }（wildcard / ok 臂：r 已在 match 前寫入 __unwrap_N，
-	// 此處僅把內部值解箱給 v）。欄位/索引目標改用 AssignExpression（target = it）。
+	// -> { v = okValue }（wildcard / ok 臂：r 已在 match 前寫入 __unwrap_N，
+	// 此處僅把內部值解箱給 v）。一般 okValue 就是 `it`；鏈式 RHS 則是
+	// `it.method(...)`。欄位/索引目標改用 AssignExpression（target = okValue）。
 	var okArm Statement
 	if uas.Target != nil {
 		okArm = &ExpressionStatement{
@@ -5173,19 +5303,19 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			Expression: &AssignExpression{
 				Token: tok,
 				Left:  uas.Target,
-				Value: &Identifier{Token: tok, Value: "it"},
+				Value: okValue,
 			},
 		}
 	} else if uas.Name != nil && uas.Name.Value != resultName {
 		// 非結果參數目標（v != result）：v 已在 match 前預宣告（見下方 stmts 組裝），
-		// 此處僅賦值 `v = it`（AssignExpression 寫入預宣告的 slot）。若用 LetStatement
+		// 此處僅賦值 `v = okValue`（AssignExpression 寫入預宣告的 slot）。若用 LetStatement
 		// 會把 v 定義成臂內局部，臂外 `r = v` 讀不到 ⇒ MIR "move src slot"（bug #85 鄰域）。
 		okArm = &ExpressionStatement{
 			Token: tok,
 			Expression: &AssignExpression{
 				Token: tok,
 				Left:  uas.Name,
-				Value: &Identifier{Token: tok, Value: "it"},
+				Value: okValue,
 			},
 		}
 	} else {
@@ -5193,14 +5323,14 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		la := &LetStatement{
 			Token: tok,
 			Name:  uas.Name,
-			Value: &Identifier{Token: tok, Value: "it"},
+			Value: okValue,
 		}
 		// 標註 LHS 區域變數的元素型別（安全索引 v[i] 的解箱值），使 generateLet
 		// 以正確型別配置 x 的 alloca，而非退回被全域 VarTypes 同名污染（std 常見
 		// x:str → %str-long）的型別——否則 `%x.val defined with type '%str-long'
 		// but expected 'i64'。節點級標註，零跨函數污染風險。
-		if elemType != "" {
-			la.Type = &NamedType{Token: tok, Value: elemType}
+		if lhsType != "" {
+			la.Type = &NamedType{Token: tok, Value: lhsType}
 		}
 		okArm = la
 	}
@@ -5212,7 +5342,7 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 			&LetStatement{
 				Token: tok,
 				Name:  uas.Name,
-				Value: &Identifier{Token: tok, Value: "it"},
+				Value: itIdent,
 			},
 		}
 	}
@@ -5265,12 +5395,12 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	// 移到之後仍滿足原目的：match 的兩條臂都會寫 v，預宣告的零值從不被讀到，
 	// 它只負責「建立 slot / 讓臂外可見」這一件事。
 	var preDecls []Statement
-	if uas.Name != nil && uas.Name.Value != resultName && elemType != "" {
-		if zero := scalarZeroLiteral(tok, elemType); zero != nil {
+	if uas.Name != nil && uas.Name.Value != resultName && lhsType != "" {
+		if zero := scalarZeroLiteral(tok, lhsType); zero != nil {
 			preDecls = append(preDecls, &LetStatement{
 				Token: tok,
 				Name:  uas.Name,
-				Type:  &NamedType{Token: tok, Value: elemType},
+				Type:  &NamedType{Token: tok, Value: lhsType},
 				Value: zero,
 			})
 		}
@@ -5344,6 +5474,40 @@ func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *Inde
 		l.p.saveErrorf("g1v1b6qi", "line %d, column %d: cannot determine element type of index target `%s` for `?=` write",
 			tok.Line, tok.Column, exprToString(uas.Target))
 		return nil
+	}
+
+	// `a[i] ?= b[j]` / `a[i] ?= s.byte(j)`：RHS 本身也是 option。若直接放進 ok
+	// 臂的 `it = <RHS>`，`?T -> T` 的隱式解包會把 nil/err 靜默丟掉 —— 寫入不
+	// 發生、錯誤也不上拋（探針 `dst[0] ?= src[9]` 會得到 ok(0) 而非 err）。
+	// D11 的「越界即 err、`?=` 負責上拋」要求這裡先用讀側 `?=` 把 RHS 解箱到
+	// 純值暫存變數（同一個 resultName / blockMatchSubject 傳播），再把純值寫回
+	// place。兩段都復用既有降糖，不新增控制流形狀。
+	if inner := ty.StripOptionRaw(l.exprOptionInnerType(uas.Value)); inner != "" && resultName != "" {
+		valName := fmt.Sprintf("__place_val_%d_%d", tok.Line, tok.Column)
+		valIdent := &Identifier{Token: tok, Value: valName}
+		first := &UnwrapAssignStatement{
+			Token: tok,
+			Name:  valIdent,
+			Value: uas.Value,
+		}
+		// 同一行可能已有別的 `?=` 用到 `__unwrap_<line>`，給讀側一個獨立暫存名。
+		savedOverride := l.unwrapTmpOverride
+		l.unwrapTmpOverride = fmt.Sprintf("__unwrap_val_%d_%d", tok.Line, tok.Column)
+		loweredFirst := l.lowerUnwrapAssign(first)
+		l.unwrapTmpOverride = savedOverride
+		if loweredFirst != nil {
+			second := &UnwrapAssignStatement{
+				Token:  tok,
+				Target: idx,
+				Value:  valIdent,
+			}
+			if loweredSecond := l.lowerUnwrapAssignToIndex(second, idx, resultName); loweredSecond != nil {
+				return &BlockStatement{
+					Token:      tok,
+					Statements: []Statement{loweredFirst, loweredSecond},
+				}
+			}
+		}
 	}
 
 	// subjName 與 buildMatchDesugar 內部歸一化命名一致（__match_subj_L_C），
@@ -5695,11 +5859,18 @@ func (l *lowerer) bindAndGuard(e Expression, inner string, guards *[]Statement, 
 func (l *lowerer) makePropagateGuard(optName, resultName string, tok lexer.Token) Statement {
 	tmpIdent := &Identifier{Token: tok, Value: optName}
 	mkBody := func() *BlockStatement {
+		// 這是編譯器合成的「整個 option 結構」上拋拷貝：nil/err 的 tag 與
+		// err.err 載荷必須原樣轉送，內部型別 T 與結果參數的 T 可以不同
+		// （`dst[i] ?= s.byte(k)` 在 `?message` 函式裡，守衛的 __opt_N 是
+		// ?i64、結果是 ?message）。與 lowerUnwrapAssign / lowerUnwrapAssignToIndex
+		// 的傳播臂同口徑，一律標 IsPropagation，讓 checker 跳過 15w45dqk
+		// 的型別比對；過去只在塊 match 下標記，會讓一般函式裡的 option
+		// 運算元守衛誤報「cannot assign ?i64 value to ?message variable」。
 		assignRes := &LetStatement{
 			Token:         tok,
 			Name:          &Identifier{Token: tok, Value: resultName},
 			Value:         tmpIdent,
-			IsPropagation: l.blockMatchSubject != "",
+			IsPropagation: true,
 		}
 		stmts := []Statement{assignRes}
 		stmts = append(stmts, blockMatchTail(l.blockMatchSubject, tok)...)

@@ -9,7 +9,6 @@ sidebar_position: 3.7
 定義資料庫連線、查詢、預編譯陳述式的標準介面，由具體驅動實現：
 
 ```no
-#{fmt-skip}
 ; 執行結果
 result {
     last-id i64
@@ -17,7 +16,9 @@ result {
 }
 
 ; 連線介面（enter/leave 自動管理）
-db enter, leave {
+db {
+    enter
+    leave
     close() (ok bool)
     exec(sql str) (r result)
     query(sql str) (rs rows)
@@ -25,16 +26,25 @@ db enter, leave {
 }
 
 ; 結果集介面
-rows enter, leave {
-    next() (ok bool)                    ; 迭代下一行
-    scan-int(col i64) (v i64)           ; 讀取整數
-    scan-str(col i64) (v str)           ; 讀取字串
-    scan-float(col i64) (v f64)         ; 讀取浮點數
+rows {
+    enter
+    leave
+    next() (ok bool)
+    scan-int(col i64) (v i64)
+    scan-str(col i64) (v str)
+    scan-float(col i64) (v f64)
     close() (ok bool)
 }
 
+; 迭代下一行
+; 讀取整數
+; 讀取字串
+; 讀取浮點數
+
 ; 預編譯陳述式介面
-stmt enter, leave {
+stmt {
+    enter
+    leave
     bind-int(idx i64, v i64) (ok bool)
     bind-str(idx i64, v str) (ok bool)
     bind-bool(idx i64, v bool) (ok bool)

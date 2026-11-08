@@ -2026,20 +2026,29 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
         ok-vals.push(ixout2014c26)
     }
     src < 0 -> return
-    .nodes[src].kind != YAML-KIND-MAP -> return
-    cnt = .nodes[src].keys.len()
-    i <- [0..cnt): {
-        k = .nodes[src].keys[i]
-        dup = false
-        total = ok-keys.len()
-        j <- [0..total): {
-            k2 = ok-keys[j]
-            yaml-key-eq(.nodes[k], .nodes[k2]) -> dup = true
+    {
+        sn ?= .nodes[src]
+        sn.kind != YAML-KIND-MAP -> return
+        cnt = sn.keys.len()
+        i <- [0..cnt): {
+            k ?= sn.keys[i]
+            dup = false
+            total = ok-keys.len()
+            j <- [0..total): {
+                k2 = ok-keys[j]
+                nk ?= .nodes[k]
+                nk2 ?= .nodes[k2]
+                yaml-key-eq(nk, nk2) -> dup = true
+            }
+            dup == false -> {
+                ok-keys.push(k)
+                kk ?= sn.kids[i]
+                ok-vals.push(kk)
+            }
         }
-        dup == false -> {
-            ok-keys.push(k)
-            ok-vals.push(.nodes[src].kids[i])
-        }
+    }: {
+        err -> return
+        -> return
     }
 }
 
@@ -2071,16 +2080,23 @@ yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-va
         ok-vals.push(ixout2047c26)
     }
     src < 0 -> return
-    k = .nodes[src].kind
-    k == YAML-KIND-MAP -> {
-        ok-keys, ok-vals = .merge-one(ok-keys, ok-vals, src)
-        return
-    }
-    k == YAML-KIND-SEQ -> {
-        cnt = .nodes[src].kids.len()
-        i <- [0..cnt): {
-            ok-keys, ok-vals = .merge-one(ok-keys, ok-vals, .nodes[src].kids[i])
+    {
+        sn ?= .nodes[src]
+        k = sn.kind
+        k == YAML-KIND-MAP -> {
+            ok-keys, ok-vals = .merge-one(ok-keys, ok-vals, src)
+            return
         }
+        k == YAML-KIND-SEQ -> {
+            cnt = sn.kids.len()
+            i <- [0..cnt): {
+                ki ?= sn.kids[i]
+                ok-keys, ok-vals = .merge-one(ok-keys, ok-vals, ki)
+            }
+        }
+    }: {
+        err -> return
+        -> return
     }
 }
 
@@ -2157,8 +2173,14 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
         }
         .failed -> break
         is-merge = false
-        .nodes[key].kind == YAML-KIND-STR -> {
-            .nodes[key].text.eq-full('<<') -> is-merge = true
+        {
+            nk ?= .nodes[key]
+        }: {
+            err -> _
+            -> _
+        }
+        nk.kind == YAML-KIND-STR -> {
+            nk.text.eq-full('<<') -> is-merge = true
         }
         is-merge -> {
             keys, vals = .merge-into(keys, vals, val)
@@ -2176,9 +2198,15 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
                 }
 
                 kj = ixout2142c22
-                yaml-key-eq(.nodes[key], .nodes[kj]) -> {
-                    dup = j
-                    break
+                {
+                    nkj ?= .nodes[kj]
+                    yaml-key-eq(nk, nkj) -> {
+                        dup = j
+                        break
+                    }
+                }: {
+                    err -> _
+                    -> _
                 }
             }
             dup >= 0 -> {
@@ -2563,7 +2591,13 @@ yaml.kind = () (k i64) {
     k = YAML-KIND-NULL
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    k = .pool.nodes[.root].kind
+    {
+        nd ?= .pool.nodes[.root]
+        k = nd.kind
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 當前節點風格
@@ -2573,7 +2607,13 @@ yaml.style = () (s i64) {
     s = YAML-STYLE-PLAIN
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    s = .pool.nodes[.root].style
+    {
+        nd ?= .pool.nodes[.root]
+        s = nd.style
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 當前節點顯式標簽
@@ -2583,7 +2623,13 @@ yaml.tag = () (t str) {
     t = ''
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    t = .pool.nodes[.root].tag
+    {
+        nd ?= .pool.nodes[.root]
+        t = nd.tag
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 當前節點锚點名
@@ -2593,7 +2639,13 @@ yaml.anchor = () (a str) {
     a = ''
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    a = .pool.nodes[.root].anchor
+    {
+        nd ?= .pool.nodes[.root]
+        a = nd.anchor
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 當前節點起始行
@@ -2603,7 +2655,13 @@ yaml.line-of = () (n i64) {
     n = 0
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    n = .pool.nodes[.root].line
+    {
+        nd ?= .pool.nodes[.root]
+        n = nd.line
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 是否為 null
@@ -2635,7 +2693,13 @@ yaml.is-nan = () (yes bool) {
     yes = false
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    yes = yaml-node-is-nan(.pool.nodes[.root])
+    {
+        nd ?= .pool.nodes[.root]
+        yes = yaml-node-is-nan(nd)
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 判斷是否 float
@@ -2680,7 +2744,13 @@ yaml.len = () (n i64) {
     n = 0
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    n = .pool.nodes[.root].kids.len()
+    {
+        nd ?= .pool.nodes[.root]
+        n = nd.kids.len()
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 當前節點的標量原文
@@ -2690,7 +2760,13 @@ yaml.text = () (t str) {
     t = ''
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    t = .pool.nodes[.root].text
+    {
+        nd ?= .pool.nodes[.root]
+        t = nd.text
+    }: {
+        err -> return
+        -> return
+    }
 }
 
 ; 取字符串值（數值/布爾返回其原文）
@@ -2699,9 +2775,9 @@ yaml.text = () (t str) {
 yaml.str = () (val ?str) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    k = .pool.nodes[.root].kind
+    k ?= .pool.nodes[.root].kind
     k == YAML-KIND-SEQ || k == YAML-KIND-MAP || k == YAML-KIND-NULL -> return
-    val = .pool.nodes[.root].text
+    val ?= .pool.nodes[.root].text
 }
 
 ; 取整數值
@@ -2710,15 +2786,15 @@ yaml.str = () (val ?str) {
 yaml.i64 = () (val ?i64) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    k = .pool.nodes[.root].kind
+    k ?= .pool.nodes[.root].kind
     k == YAML-KIND-INT -> {
-        val = .pool.nodes[.root].ival
+        val ?= .pool.nodes[.root].ival
         return
     }
     k == YAML-KIND-FLOAT -> {
 
         ; val 是 i64 出參，fval 是 f64：必須顯式轉換，不能靠隱式截斷
-        val = .pool.nodes[.root].fval.to-i64()
+        val ?= .pool.nodes[.root].fval.to-i64()
     }
 }
 
@@ -2728,13 +2804,13 @@ yaml.i64 = () (val ?i64) {
 yaml.f64 = () (val ?f64) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    k = .pool.nodes[.root].kind
+    k ?= .pool.nodes[.root].kind
     k == YAML-KIND-FLOAT -> {
-        val = .pool.nodes[.root].fval
+        val ?= .pool.nodes[.root].fval
         return
     }
     k == YAML-KIND-INT -> {
-        val = .pool.nodes[.root].ival.to-f64()
+        val ?= .pool.nodes[.root].ival.to-f64()
     }
 }
 
@@ -2744,9 +2820,9 @@ yaml.f64 = () (val ?f64) {
 yaml.bool = () (val ?bool) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    k = .pool.nodes[.root].kind
+    k ?= .pool.nodes[.root].kind
     k == YAML-KIND-BOOL -> {
-        val = .pool.nodes[.root].bval
+        val ?= .pool.nodes[.root].bval
     }
 }
 
@@ -2758,9 +2834,10 @@ yaml.at = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    cnt = .pool.nodes[.root].kids.len()
+    nd ?= .pool.nodes[.root]
+    cnt = nd.kids.len()
     i >= cnt -> return
-    k = .pool.nodes[.root].kids[i]
+    k ?= nd.kids[i]
     out = yaml {
         pool: .pool
         root: k
@@ -2777,9 +2854,10 @@ yaml.key-node = (i i64) (out ?yaml) {
     i < 0 -> return
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    cnt = .pool.nodes[.root].keys.len()
+    nd ?= .pool.nodes[.root]
+    cnt = nd.keys.len()
     i >= cnt -> return
-    k = .pool.nodes[.root].keys[i]
+    k ?= nd.keys[i]
     out = yaml {
         pool: .pool
         root: k
@@ -2816,12 +2894,14 @@ yaml.value = (i i64) (out ?yaml) {
 yaml.get = (key str) (out ?yaml) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    .pool.nodes[.root].kind != YAML-KIND-MAP -> return
-    cnt = .pool.nodes[.root].keys.len()
+    nd ?= .pool.nodes[.root]
+    nd.kind != YAML-KIND-MAP -> return
+    cnt = nd.keys.len()
     i <- [0..cnt): {
-        k = .pool.nodes[.root].keys[i]
-        yaml-key-text-eq(.pool.nodes[k], key) -> {
-            v = .pool.nodes[.root].kids[i]
+        k ?= nd.keys[i]
+        nk ?= .pool.nodes[k]
+        yaml-key-text-eq(nk, key) -> {
+            v ?= nd.kids[i]
             out = yaml {
                 pool: .pool
                 root: v
@@ -2891,9 +2971,9 @@ yaml.get-bool = (key str) (out ?bool) {
 yaml.scalar-text = () (out ?str) {
     .root < 0 -> return
     .root >= .pool.nodes.len() -> return
-    k = .pool.nodes[.root].kind
+    k ?= .pool.nodes[.root].kind
     k == YAML-KIND-SEQ || k == YAML-KIND-MAP -> return
-    out = .pool.nodes[.root].text
+    out ?= .pool.nodes[.root].text
 }
 
 ; 按點號路径查找（序列可用數字下標）
@@ -2907,14 +2987,16 @@ yaml.find = (path str) (out ?yaml) {
     i <- [0..parts.len()): {
         cur < 0 -> return
         seg = yaml-str-at(parts, i)
-        k = .pool.nodes[cur].kind
+        nd ?= .pool.nodes[cur]
+        k = nd.kind
         k == YAML-KIND-MAP -> {
             found = -1
-            cnt = .pool.nodes[cur].keys.len()
+            cnt = nd.keys.len()
             j <- [0..cnt): {
-                kn = .pool.nodes[cur].keys[j]
-                yaml-key-text-eq(.pool.nodes[kn], seg) -> {
-                    found = .pool.nodes[cur].kids[j]
+                kn ?= nd.keys[j]
+                nkn ?= .pool.nodes[kn]
+                yaml-key-text-eq(nkn, seg) -> {
+                    found ?= nd.kids[j]
                     break
                 }
             }
@@ -2927,12 +3009,12 @@ yaml.find = (path str) (out ?yaml) {
                 cur = -1
                 break
             }
-            cnt = .pool.nodes[cur].kids.len()
+            cnt = nd.kids.len()
             idx >= cnt -> {
                 cur = -1
                 break
             }
-            cur = .pool.nodes[cur].kids[idx]
+            cur ?= nd.kids[idx]
             continue
         }
         cur = -1
@@ -3230,9 +3312,16 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
             out = '{'
             i <- [0..nd.kids.len()): {
                 i > 0 -> out = out - ','
-                kn = nd.keys[i]
-                out = out - yaml-json-escape(pool.nodes[kn].text) - ':'
-                out = out - yaml-json-of(pool, nd.kids[i], d)
+                {
+                    kn ?= nd.keys[i]
+                    knn ?= pool.nodes[kn]
+                    out = out - yaml-json-escape(knn.text) - ':'
+                    ki ?= nd.kids[i]
+                    out = out - yaml-json-of(pool, ki, d)
+                }: {
+                    err -> _
+                    -> _
+                }
             }
             out = out - '}'
         }
@@ -3256,7 +3345,13 @@ yaml.to-json-all = () (out str) {
     total = .roots.len()
     i <- [0..total): {
         i > 0 -> out = out - ','
-        out = out - yaml-json-of(.pool, .roots[i], 1)
+        {
+            ri ?= .roots[i]
+            out = out - yaml-json-of(.pool, ri, 1)
+        }: {
+            err -> _
+            -> _
+        }
     }
     out = out - ']'
 }
@@ -3455,40 +3550,46 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             i <- [0..total): {
                 i > 0 -> out = out - '\n'
                 out = out - yaml-spaces(indent) - '-'
-                k = nd.kids[i]
-                ck = pool.nodes[k].kind
-                container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
-                container -> {
-                    pool.nodes[k].kids.len() == 0 -> {
-                        {
-                            ck == YAML-KIND-SEQ -> out = out - ' []'
+                {
+                    k ?= nd.kids[i]
+                    nk ?= pool.nodes[k]
+                    ck = nk.kind
+                    container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
+                    container -> {
+                        nk.kids.len() == 0 -> {
+                            {
+                                ck == YAML-KIND-SEQ -> out = out - ' []'
 
-                            -> out = out - ' {}'
+                                -> out = out - ' {}'
+                            }
+                        }
+                        nk.kids.len() > 0 -> {
+
+                            ; D1：`+` 的結果恆為 `?i64`；cut 是普通縮排整數 → 兩段式 match 解包。
+                            #{overflow=wrap}
+                            cut-opt = indent + 2
+                            cut = 0
+                            cut = cut-opt: {
+                                ok -> it
+
+                                -> 0
+                            }
+                            inner = yaml-emit(pool, k, cut, d)
+                            inner.len-bytes() > 0 -> {
+                                rest = inner.slice-bytes(cut, inner.len-bytes())
+                                out = out - ' ' - rest
+                            }
+                            inner.len-bytes() == 0 -> {
+                                out = out - ' ' - yaml-scalar-repr(nk)
+                            }
                         }
                     }
-                    pool.nodes[k].kids.len() > 0 -> {
-
-                        ; D1：`+` 的結果恆為 `?i64`；cut 是普通縮排整數 → 兩段式 match 解包。
-                        #{overflow=wrap}
-                        cut-opt = indent + 2
-                        cut = 0
-                        cut = cut-opt: {
-                            ok -> it
-
-                            -> 0
-                        }
-                        inner = yaml-emit(pool, k, cut, d)
-                        inner.len-bytes() > 0 -> {
-                            rest = inner.slice-bytes(cut, inner.len-bytes())
-                            out = out - ' ' - rest
-                        }
-                        inner.len-bytes() == 0 -> {
-                            out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
-                        }
+                    container == false -> {
+                        out = out - ' ' - yaml-scalar-repr(nk)
                     }
-                }
-                container == false -> {
-                    out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
+                }: {
+                    err -> _
+                    -> _
                 }
             }
             return
@@ -3513,32 +3614,39 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             total = nd.kids.len()
             i <- [0..total): {
                 i > 0 -> out = out - '\n'
-                kn = nd.keys[i]
-                ktext = yaml-scalar-repr(pool.nodes[kn])
-                out = out - yaml-spaces(indent) - ktext - ':'
-                k = nd.kids[i]
-                ck = pool.nodes[k].kind
-                container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
-                container -> {
-                    pool.nodes[k].kids.len() == 0 -> {
-                        {
-                            ck == YAML-KIND-SEQ -> out = out - ' []'
+                {
+                    kn ?= nd.keys[i]
+                    knn ?= pool.nodes[kn]
+                    ktext = yaml-scalar-repr(knn)
+                    out = out - yaml-spaces(indent) - ktext - ':'
+                    k ?= nd.kids[i]
+                    nk ?= pool.nodes[k]
+                    ck = nk.kind
+                    container = ck == YAML-KIND-SEQ || ck == YAML-KIND-MAP
+                    container -> {
+                        nk.kids.len() == 0 -> {
+                            {
+                                ck == YAML-KIND-SEQ -> out = out - ' []'
 
-                            -> out = out - ' {}'
+                                -> out = out - ' {}'
+                            }
+                        }
+                        nk.kids.len() > 0 -> {
+
+                            #{overflow=wrap}
+                            inner = yaml-emit(pool, k, indent + 2, d)
+                            inner.len-bytes() > 0 -> out = out - '\n' - inner
+                            inner.len-bytes() == 0 -> {
+                                out = out - ' ' - yaml-scalar-repr(nk)
+                            }
                         }
                     }
-                    pool.nodes[k].kids.len() > 0 -> {
-
-                        #{overflow=wrap}
-                        inner = yaml-emit(pool, k, indent + 2, d)
-                        inner.len-bytes() > 0 -> out = out - '\n' - inner
-                        inner.len-bytes() == 0 -> {
-                            out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
-                        }
+                    container == false -> {
+                        out = out - ' ' - yaml-scalar-repr(nk)
                     }
-                }
-                container == false -> {
-                    out = out - ' ' - yaml-scalar-repr(pool.nodes[k])
+                }: {
+                    err -> _
+                    -> _
                 }
             }
             return

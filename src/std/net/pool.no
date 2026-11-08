@@ -66,7 +66,13 @@ pool.init = (host str, port i64, max-size i64) {
     .max-size = r-max-size
     .count = 0
     i <- [0..POOL-MAX-CONNS): {
-        .in-use[i] = false
+        {
+            .in-use[i] ?= false
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -78,8 +84,9 @@ pool.get = () (c ?net.conn) {
 
     ; 尋找空閒連接
     i <- [0..self.count): {
-        .in-use[i] == false -> {
-            .in-use[i] = true
+        in-use-val ?= .in-use[i]
+        in-use-val == false -> {
+            .in-use[i] ?= true
 
             c = .conns[i]
             return
@@ -92,9 +99,9 @@ pool.get = () (c ?net.conn) {
         ok = false
         ok = cn.dial(.host, .port)
         ok -> {
-            .conns[.count] = cn
+            .conns[.count] ?= cn
 
-            .in-use[.count] = true
+            .in-use[.count] ?= true
 
             #{overflow=wrap}
             .count = .count + 1
@@ -110,9 +117,16 @@ pool.put = (c net.conn) {
 
     ; 尋找該連接在池中的位置
     i <- [0..self.count): {
-        .conns[i].fd == c.fd -> {
-            .in-use[i] = false
-            return
+        {
+            conn ?= .conns[i]
+            conn.fd == c.fd -> {
+                .in-use[i] ?= false
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
     }
 
@@ -126,15 +140,28 @@ pool.put = (c net.conn) {
 pool.close-conn = (idx i64) {
     idx < 0 || idx >= .count -> return
 
-    .conns[idx].close()
+    {
+        conn ?= .conns[idx]
+        conn.close()
+    }: {
+        err -> _
+
+        -> _
+    }
 
     ; 將最後一個移到當前位置
     #{overflow=wrap}
     last = .count - 1
     idx != last -> {
-        .conns[idx] = .conns[last]
+        {
+            .conns[idx] ?= .conns[last]
 
-        .in-use[idx] = .in-use[last]
+            .in-use[idx] ?= .in-use[last]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -145,7 +172,14 @@ pool.close-conn = (idx i64) {
 ; [close-all](#pool.pool.close-all)
 pool.close-all = () {
     i <- [0..self.count): {
-        .conns[i].close()
+        {
+            conn ?= .conns[i]
+            conn.close()
+        }: {
+            err -> _
+
+            -> _
+        }
     }
     .count = 0
 }
@@ -156,10 +190,16 @@ pool.close-all = () {
 pool.active-count = () (n i64) {
     n = 0
     i <- [0..self.count): {
+        {
+            in-use-val ?= .in-use[i]
+            in-use-val -> {
+                #{overflow=wrap}
+                n = n + 1
+            }
+        }: {
+            err -> _
 
-        #{overflow=wrap}
-        .in-use[i] -> {
-            n = n + 1
+            -> _
         }
     }
 }
@@ -170,10 +210,16 @@ pool.active-count = () (n i64) {
 pool.idle-count = () (n i64) {
     n = 0
     i <- [0..self.count): {
+        {
+            in-use-val ?= .in-use[i]
+            in-use-val == false -> {
+                #{overflow=wrap}
+                n = n + 1
+            }
+        }: {
+            err -> _
 
-        #{overflow=wrap}
-        .in-use[i] == false -> {
-            n = n + 1
+            -> _
         }
     }
 }

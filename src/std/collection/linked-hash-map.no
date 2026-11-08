@@ -38,12 +38,18 @@ linked-hash-map.init = () {
     .head = -1
     .tail = -1
     .size = 0
-    i <- [0..64): {
-        .occ[i] = 0
+    {
+        i <- [0..64): {
+            .occ[i] ?= 0
 
-        .nxt[i] = -1
+            .nxt[i] ?= -1
 
-        .prv[i] = -1
+            .prv[i] ?= -1
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -65,42 +71,54 @@ linked-hash-map.hash = (key i64) (idx i64) {
 linked-hash-map.put = (key i64, val i64) (is-new bool) {
     idx = .hash(key)
 
-    (.occ[idx] == 1) {
-        .keys[idx] == key -> {
-            .vals[idx] = val
-            is-new = false
-            return
+    ; 探測與寫入都在同一個最小 try/catch 裡：本方法沒有 option 結果參數，
+    ; 越界的 ?= 只能就地攔下。
+    {
+        !! {
+            used ?= .occ[idx]
+            used != 1 -> break
+
+            k ?= .keys[idx]
+            k == key -> {
+                .vals[idx] ?= val
+                is-new = false
+                return
+            }
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
+        }
+
+        .keys[idx] ?= key
+
+        .vals[idx] ?= val
+
+        .occ[idx] ?= 1
+
+        .nxt[idx] ?= -1
+
+        .prv[idx] ?= .tail
+
+        {
+            .head == -1 -> {
+                .head = idx
+                .tail = idx
+            }
+
+            -> {
+                .nxt[.tail] ?= idx
+                .tail = idx
+            }
         }
 
         #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        .size = .size + 1
+    }: {
+        err -> _
+
+        -> _
     }
-
-    .keys[idx] = key
-
-    .vals[idx] = val
-
-    .occ[idx] = 1
-
-    .nxt[idx] = -1
-
-    .prv[idx] = .tail
-
-    {
-        .head == -1 -> {
-            .head = idx
-            .tail = idx
-        }
-
-        -> {
-            .nxt[.tail] = idx
-            .tail = idx
-        }
-    }
-
-    #{overflow=wrap}
-    .size = .size + 1
     is-new = true
 }
 
@@ -112,8 +130,12 @@ linked-hash-map.get = (key i64) (result ?i64) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] == 1) {
-        .keys[idx] == key -> {
+    !! {
+        used ?= .occ[idx]
+        used != 1 -> break
+
+        k ?= .keys[idx]
+        k == key -> {
             result = .vals[idx]
             return
         }
@@ -148,45 +170,61 @@ linked-hash-map.contains = (key i64) (found bool) {
 linked-hash-map.remove = (key i64) (removed bool) {
     idx = .hash(key)
 
-    (.occ[idx] == 1) {
+    {
+        !! {
+            used ?= .occ[idx]
+            used != 1 -> break
 
-        #{overflow=wrap}
-        .keys[idx] == key -> {
-            .occ[idx] = 0
-            .size = .size - 1
+            k ?= .keys[idx]
+            k == key -> {
+                .occ[idx] ?= 0
 
-            prev = .prv[idx]
+                #{overflow=wrap}
+                .size = .size - 1
 
-            next = .nxt[idx]
-            {
-                prev == -1 -> .head = next
+                prev ?= .prv[idx]
 
-                -> {
-                    .nxt[prev] = next
+                next ?= .nxt[idx]
+                {
+                    prev == -1 -> .head = next
+
+                    -> {
+                        .nxt[prev] ?= next
+                    }
                 }
-            }
-            {
-                next == -1 -> .tail = prev
+                {
+                    next == -1 -> .tail = prev
 
-                -> {
-                    .prv[next] = prev
+                    -> {
+                        .prv[next] ?= prev
+                    }
                 }
+                removed = true
+                return
             }
-            removed = true
-            return
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
         }
+    }: {
+        err -> _
 
-        #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        -> _
     }
 }
 
 ; 清空
 ; [clear](#linked-hash-map.linked-hash-map.clear)
 linked-hash-map.clear = () {
-    i <- [0..self.cap): {
-        .occ[i] = 0
+    {
+        i <- [0..self.cap): {
+            .occ[i] ?= 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
     .head = -1
     .tail = -1
@@ -215,13 +253,20 @@ linked-hash-map.is-empty = () (empty bool) {
 ; [for-each](#linked-hash-map.linked-hash-map.for-each)
 linked-hash-map.for-each = () (k i64, v i64) {
     idx = .head
-    (idx != -1) {
-        .occ[idx] == 1 -> {
-            k = .keys[idx]
+    {
+        (idx != -1) {
+            used ?= .occ[idx]
+            used == 1 -> {
+                k ?= .keys[idx]
 
-            v = .vals[idx]
+                v ?= .vals[idx]
+            }
+
+            idx ?= .nxt[idx]
         }
+    }: {
+        err -> _
 
-        idx = .nxt[idx]
+        -> _
     }
 }

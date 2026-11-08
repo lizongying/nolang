@@ -13,7 +13,7 @@ in a small ES module, with no npm install and no CDN involved.
 `main.no` imports the local wasm module and declares the C functions it calls:
 
 ```no
-#{bind = wasm, wasm = './math-wasm.mjs'}
+#{bind=wasm, wasm='./math-wasm.mjs'}
 # /math
 
 #{c}
@@ -73,7 +73,7 @@ at a **bare** specifier instead — an npm package (declared in
 `package.jsonc` `dependencies`) that the import map resolves through a CDN:
 
 ```no
-#{bind = wasm, wasm = '@sqlite.org/sqlite-wasm'}
+#{bind=wasm, wasm='@sqlite.org/sqlite-wasm'}
 # /src/sqlite
 ```
 

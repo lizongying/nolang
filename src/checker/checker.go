@@ -6187,6 +6187,16 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 			handled[idx] = true
 		}
 	}
+	// `h ?= .names[i].to-lower()`：option 來自鏈根的安全索引，整個鏈由 `?=`
+	// 消費。walkExpr 會沿 Function/Receiver 下探到那個索引，若不放行就報
+	// idxbruse。僅限 UnwrapAssignStatement 的 RHS —— 普通 `h = .names[i].f()`
+	// 沒有消費者，仍須照舊報錯。與 parser.SplitIndexReceiverChain 同口徑。
+	markHandledUnwrap := func(e parser.Expression) {
+		markHandled(e)
+		if root, _ := parser.SplitIndexReceiverChain(e); root != nil {
+			handled[root] = true
+		}
+	}
 	resolveFile := func(n parser.Node, curFile string) string {
 		cf := program.Sem.SourceFileOf(n)
 		if cf == "" {
@@ -6208,7 +6218,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 		switch x := e.(type) {
 		case *parser.UnwrapAssignStatement:
 			if x.Value != nil {
-				markHandled(x.Value)
+				markHandledUnwrap(x.Value)
 				walkExpr(x.Value, curFunc, curFile, selfType)
 			}
 		case *parser.IfExpression:
@@ -6392,7 +6402,7 @@ func runUnhandledIndexCore(program *parser.Program, mainFile string, view *THIRV
 				walkExpr(s.Expression, curFunc, curFile, selfType)
 			}
 		case *parser.UnwrapAssignStatement:
-			markHandled(s.Value)
+			markHandledUnwrap(s.Value)
 			if s.Value != nil {
 				walkExpr(s.Value, curFunc, curFile, selfType)
 			}

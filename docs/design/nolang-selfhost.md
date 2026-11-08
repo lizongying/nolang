@@ -180,11 +180,10 @@ B 仍二次 ⇒ 二次項**不在** `len-bytes()`，而在**字段借用本身**
 看實作就明白（`src/std/str.no:464`）：
 
 ```nolang
-#{fmt-skip}
 str.to-bytes = () (val []byte) {
-    val = with-len(.len-bytes())   ; 新配置一塊緩衝
+    val = with-len(.len-bytes()); 新配置一塊緩衝
     i <- [0..self.len-bytes()): {
-        val[i] = .byte(i)          ; 逐位元組複製
+        val[i] = .byte(i); 逐位元組複製
     }
 }
 ```
@@ -250,12 +249,14 @@ str.to-bytes = () (val []byte) {
 #### 🔴 2.2.2 整數運算默認返回 `option<int>`，且**只能逐敘述標註**
 
 ```no
-#{fmt-skip}
 f = () (r i64) {
-    #{overflow=wrap}      ; ← 只作用於緊跟其後的那一條敘述
+
+    #{overflow=wrap}
     a = 1
-    b = a + 2             ; ← 這裡仍然報錯 [ovfhndld]
-    c = b * 3             ; ← 這裡也報錯
+
+    ; ← 只作用於緊跟其後的那一條敘述
+    b = a + 2; ← 這裡仍然報錯 [ovfhndld]
+    c = b * 3; ← 這裡也報錯
     r = c - 1
 }
 ```
@@ -706,13 +707,12 @@ util/{sb,arena,intern,idxmap,pathx}
 **解法**：**一切圖狀結構都用 arena + `i64` 索引**
 
 ```no
-#{fmt-skip}
 ; 節點資料與指向節點的引用分離
 nodedata {
     kind i64
-    a i64          ; 子索引 / 值 / 位置
+    a i64; 子索引 / 值 / 位置
     b i64
-    s str          ; 詞素 / 名稱
+    s str; 詞素 / 名稱
 }
 
 ast {
@@ -747,19 +747,21 @@ ast.push = (k i64, a i64, b i64, s str) (idx i64) {
 
 
 ```no
-#{fmt-skip}
 sb {
     buf []byte
     n i64
 }
 
 sb.init = (cap i64) (r sb) {
-    r = sb { buf: with-cap(cap) n: 0 }
+    r = sb {
+        buf: with-cap(cap)
+        n: 0
+    }
 }
 
 sb.push = (s str) {
     base = .buf.len()
-    .buf.truncate(base)          ; 確保 len 反映實際寫入
+    .buf.truncate(base); 確保 len 反映實際寫入
     i <- [0..s.len-bytes()): {
         .buf.push(s.byte(i))
     }
@@ -2976,15 +2978,14 @@ M4 的驗收**不能只靠程式跑得對**，因為：
 ### 5.8 診斷模型（`diag.no`）
 
 ```no
-#{fmt-skip}
 diag {
     file str
     line i64
-    col  i64
-    level i64     ; 0=HINT 1=WARNING 2=ERROR
-    src  str      ; "nolang-parser" / "nolang-lint" / ...
-    msg  str
-    code str      ; 8 字元 base36 TraceID
+    col i64
+    level i64; 0=HINT 1=WARNING 2=ERROR
+    src str; "nolang-parser" / "nolang-lint" / ...
+    msg str
+    code str; 8 字元 base36 TraceID
 }
 ```
 
@@ -5445,18 +5446,18 @@ drv.dispatch()
 ### B.4 `compiler/src/ast.no`（arena 化的 AST）
 
 ```no
-#{fmt-skip}
 ; 節點種類（與 parser/ast.go 的 71 個 Node 一一對應；此處僅示範）
 KIND-LET = 1
 KIND-IDENT = 2
 KIND-INFIX = 3
+
 ; …
 
 nodedata {
     kind i64
-    a i64        ; 子節點索引 / 位置
-    b i64        ; 子節點索引 / 長度
-    s i64        ; 詞素索引（指向 intern 表）
+    a i64; 子節點索引 / 位置
+    b i64; 子節點索引 / 長度
+    s i64; 詞素索引（指向 intern 表）
 }
 
 ast {
@@ -5473,9 +5474,11 @@ ast.push = (k i64, a i64, b i64, s i64) (idx i64) {
         s: s
     }
     .nodes.push(d)
+
     ; ⚠️ 逐敘述標註：區塊級 #{overflow=wrap} 無效（§2.2.2）
     #{overflow=wrap}
     .n = .n + 1
+
     #{overflow=wrap}
     idx = .n - 1
 }

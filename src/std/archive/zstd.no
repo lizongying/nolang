@@ -141,18 +141,21 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
     ; 儲存 norm-count
     i <- [0..256): {
-        .norm-count[i] = 0
-    }
-
-    i <- [0..max-symbol + 1): {
-
-        ixout150c26 = norm-count[i]: {
-            ok -> it
+        .norm-count[i]: {
+            ok -> it = 0
 
             -> _
         }
+    }
 
-        .norm-count[i] = ixout150c26
+    i <- [0..max-symbol + 1): {
+        {
+            .norm-count[i] ?= norm-count[i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 步驟 1: 計算每個符號的起始位置
@@ -181,10 +184,17 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
             -> _
         }
 
-        #{overflow=wrap}
         ixout179c19 == -1 -> {
-            .symbol[high-thresh] = i
-            high-thresh = high-thresh - 1
+            {
+                .symbol[high-thresh] ?= i
+
+                #{overflow=wrap}
+                high-thresh = high-thresh - 1
+            }: {
+                err -> _
+
+                -> _
+            }
         }
     }
 
@@ -228,7 +238,11 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
                 }
 
                 #{overflow=wrap}
-                .symbol[ixout214c25 + j] = i
+                .symbol[ixout214c25 + j]: {
+                    ok -> it = i
+
+                    -> _
+                }
             }
         }
     }
@@ -243,17 +257,25 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
             -> 0
         }
 
-        #{overflow=wrap}
-        .nb-bits[i] = table-log - bits-for-count(nc)
+        {
+            #{overflow=wrap}
+            .nb-bits[i] ?= table-log - bits-for-count(nc)
 
-        ixout233c53 = positions[sym]: {
-            ok -> it
+            nb = .nb-bits[i]
+
+            ixout233c53 = positions[sym]: {
+                ok -> it
+
+                -> _
+            }
+
+            #{overflow=wrap}
+            .next-state[i] ?= (nc << nb) + (i - ixout233c53)
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        .next-state[i] = (nc << .nb-bits[i]) + (i - ixout233c53)
     }
 }
 
@@ -333,7 +355,11 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
             -> _
         }
 
-        .lengths[i] = ixout308c23
+        .lengths[i]: {
+            ok -> it = ixout308c23
+
+            -> _
+        }
         ixout331c16 = lengths[i]: {
             ok -> it
 
@@ -354,7 +380,11 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 
     ; 計算各長度的碼數
     i <- [0..16): {
-        .count[i] = 0
+        .count[i]: {
+            ok -> it = 0
+
+            -> _
+        }
     }
 
     #{overflow=wrap}
@@ -365,17 +395,31 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
             -> 0
         }
 
-        #{overflow=wrap}
-        .count[l] = .count[l] + 1
+        {
+            c ?= .count[l]
+
+            #{overflow=wrap}
+            .count[l] ?= c + 1
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 
     ; 計算 base
     pp = 0
     i <- [0..16): {
-        .base[i] = pp
+        .base[i]: {
+            ok -> it = pp
+
+            -> _
+        }
+
+        cnt-i = .count[i]
 
         #{overflow=wrap}
-        pp = pp + .count[i]
+        pp = pp + cnt-i
     }
 
     ; 填充 symbol 表
@@ -405,7 +449,11 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
                 -> _
             }
 
-            .symbol[ixout364c21] = i
+            .symbol[ixout364c21]: {
+                ok -> it = i
+
+                -> _
+            }
 
             ixout368c28 = tmp-base[l]: {
                 ok -> it
@@ -439,12 +487,22 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
 
         cnt = .count[len]
 
-        #{overflow=wrap}
-        code - .base[len] < cnt -> {
+        {
+            b ?= .base[len]
 
             #{overflow=wrap}
-            sym = .symbol[.base[len] + code - .base[len]]
-            return
+            code - b < cnt -> {
+
+                #{overflow=wrap}
+                v ?= .symbol[b + code - b]
+
+                sym = v
+                return
+            }
+        }: {
+            err -> _
+
+            -> _
         }
 
         #{overflow=wrap}
@@ -475,7 +533,12 @@ zs-frame {
 zs-frame.read-frame-header = () (ok bool) {
     ok = false
     .pos < .data.len() -> break
-    .data[.pos] != 0x28 -> {
+    hb0 = .data[.pos]: {
+        ok -> it
+
+        -> _
+    }
+    hb0 != 0x28 -> {
 
         ; magic 低字節
         break
@@ -483,19 +546,22 @@ zs-frame.read-frame-header = () (ok bool) {
 
     #{overflow=wrap}
     .pos = .pos + 1
-    .data[.pos] != 0xb5 -> {
+    m1 = .data[.pos]
+    m1 != 0xb5 -> {
         break
     }
 
     #{overflow=wrap}
     .pos = .pos + 1
-    .data[.pos] != 0x2f -> {
+    m2 = .data[.pos]
+    m2 != 0x2f -> {
         break
     }
 
     #{overflow=wrap}
     .pos = .pos + 1
-    .data[.pos] != 0xfd -> {
+    m3 = .data[.pos]
+    m3 != 0xfd -> {
         break
     }
 
@@ -548,26 +614,40 @@ zs-frame.read-frame-header = () (ok bool) {
         }
 
         fcs-flag == 1 -> {
-            fcs = .data[.pos] | (.data[.pos + 1] << 8)
+            lo = .data[.pos]
+            hi = .data[.pos + 1]
+            fcs = lo | (hi << 8)
             .pos = .pos + 2
             fcs = fcs + 256
         }
 
         fcs-flag == 2 -> {
-            fcs = .data[.pos] | (.data[.pos + 1] << 8) | (.data[.pos + 2] << 16) | (.data[.pos + 3] << 24)
+            e0 = .data[.pos]
+            e1 = .data[.pos + 1]
+            e2 = .data[.pos + 2]
+            e3 = .data[.pos + 3]
+            fcs = e0 | (e1 << 8) | (e2 << 16) | (e3 << 24)
             .pos = .pos + 4
         }
 
         fcs-flag == 3 -> {
             fcs = .data[.pos]
 
-            fcs = fcs | (.data[.pos + 1] << 8)
+            g1 = .data[.pos + 1]
 
-            fcs = fcs | (.data[.pos + 2] << 16)
+            fcs = fcs | (g1 << 8)
 
-            fcs = fcs | (.data[.pos + 3] << 24)
+            g2 = .data[.pos + 2]
 
-            fcs = fcs | (.data[.pos + 4] << 32)
+            fcs = fcs | (g2 << 16)
+
+            g3 = .data[.pos + 3]
+
+            fcs = fcs | (g3 << 24)
+
+            g4 = .data[.pos + 4]
+
+            fcs = fcs | (g4 << 32)
             .pos = .pos + 5
         }
     }
@@ -607,9 +687,10 @@ zs-frame.decode-block = () (last-block ?bool) {
 
             ; 直接複製未壓縮資料
             i <- [0..block-size): {
-
                 #{overflow=wrap}
-                .out.push(.data[.pos + i])
+                d ?= .data[.pos + i]
+
+                .out.push(d)
             }
 
             #{overflow=wrap}
@@ -682,9 +763,16 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         br.align-to-byte()
         literals []byte
         i <- [0..lit-size): {
+            {
+                #{overflow=wrap}
+                d ?= .data[br.pos + i]
 
-            #{overflow=wrap}
-            literals.push(.data[br.pos + i])
+                literals.push(d)
+            }: {
+                err -> _
+
+                -> _
+            }
         }
         br.pos = br.pos + lit-size
 

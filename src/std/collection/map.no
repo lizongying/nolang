@@ -96,38 +96,47 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
     idx = .hash(key)
     first-tomb = -1
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            k str = .keys[idx]
-            eq = .str-eq(k, key)
-            eq -> {
-                .vals[idx] = val
-                is-new = false
-                return
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
+
+            used == 1 -> {
+                k ?= .keys[idx]
+                eq = .str-eq(k, key)
+                eq -> {
+                    .vals[idx] ?= val
+                    is-new = false
+                    return
+                }
             }
+            used == 2 -> {
+                first-tomb < 0 -> first-tomb = idx
+            }
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+
+        ; 未找到相同 key，插入
+        insert-idx = idx
+        first-tomb >= 0 -> insert-idx = first-tomb
+
+        .keys[insert-idx] ?= key
+
+        .vals[insert-idx] ?= val
+
+        .occ[insert-idx] ?= 1
 
         #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        .size = .size + 1
+        is-new = true
+    }: {
+        err -> _
+
+        -> _
     }
-
-    ; 未找到相同 key，插入
-    insert-idx = idx
-    first-tomb >= 0 -> insert-idx = first-tomb
-
-    .keys[insert-idx] = key
-
-    .vals[insert-idx] = val
-
-    .occ[insert-idx] = 1
-
-    #{overflow=wrap}
-    .size = .size + 1
-    is-new = true
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
@@ -138,9 +147,12 @@ hashmap-str-tmpl.get = (key str) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            k str = .keys[idx]
+    !! {
+        used ?= .occ[idx]
+        used == 0 -> break
+
+        used == 1 -> {
+            k ?= .keys[idx]
             eq = .str-eq(k, key)
             eq -> {
                 result = .vals[idx]
@@ -177,23 +189,30 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
 
-        #{overflow=wrap}
-        .occ[idx] == 1 -> {
-            k str = .keys[idx]
-            eq = .str-eq(k, key)
-            eq -> {
-                .occ[idx] = 2
-                .size = .size - 1
-                removed = true
-                return
+            used == 1 -> {
+                k ?= .keys[idx]
+                eq = .str-eq(k, key)
+                eq -> {
+                    .occ[idx] ?= 2
+                    .size = .size - 1
+                    removed = true
+                    return
+                }
             }
-        }
 
-        #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -224,15 +243,22 @@ hashmap-str-tmpl.is-empty = () (empty bool) {
 ; [for-each](#map.hashmap-str-tmpl.for-each)
 hashmap-str-tmpl.for-each = () (k str, v v) {
     n = .cap
-    i <- [0..n): {
-        .occ[i] == 1 -> {
-            src str = .keys[i]
-            j <- [0..src.len-bytes()): {
-                k[j] = src.byte(j)
-            }
+    {
+        i <- [0..n): {
+            used ?= .occ[i]
+            used == 1 -> {
+                src ?= .keys[i]
+                j <- [0..src.len-bytes()): {
+                    k[j] = src.byte(j)
+                }
 
-            v = .vals[i]
+                v = .vals[i]
+            }
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -254,29 +280,35 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
     .cap = new-cap
 
     ; 遷移 occ==1 條目
-    i <- [0..old-cap): {
-        old-occ[i] == 1 -> {
-            k str = old-keys[i]
+    {
+        i <- [0..old-cap): {
+            old-occ[i] == 1 -> {
+                k str = old-keys[i]
 
-            v = old-vals[i]
-            idx = .hash(k)
+                v = old-vals[i]
+                idx = .hash(k)
 
-            ; 找到第一個空槽插入
-            (.occ[idx] != 0) {
-                .occ[idx] != 0 -> {
+                ; 找到第一個空槽插入
+                !! {
+                    used ?= .occ[idx]
+                    used != 0 -> break
 
                     #{overflow=wrap}
                     idx = idx + 1
                     idx >= .cap -> idx = 0
                 }
+
+                .keys[idx] ?= k
+
+                .vals[idx] ?= v
+
+                .occ[idx] ?= 1
             }
-
-            .keys[idx] = k
-
-            .vals[idx] = v
-
-            .occ[idx] = 1
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -334,34 +366,44 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
     idx = .hash(key)
     first-tomb = -1
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .vals[idx] = val
-                is-new = false
-                return
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
+
+            used == 1 -> {
+                kk ?= .keys[idx]
+                kk == key -> {
+                    .vals[idx] ?= val
+                    is-new = false
+                    return
+                }
             }
+            used == 2 -> {
+                first-tomb < 0 -> first-tomb = idx
+            }
+
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
         }
-        .occ[idx] == 2 -> {
-            first-tomb < 0 -> first-tomb = idx
-        }
+        insert-idx = idx
+        first-tomb >= 0 -> insert-idx = first-tomb
+
+        .keys[insert-idx] ?= key
+
+        .vals[insert-idx] ?= val
+
+        .occ[insert-idx] ?= 1
 
         #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+        .size = .size + 1
+        is-new = true
+    }: {
+        err -> _
+
+        -> _
     }
-    insert-idx = idx
-    first-tomb >= 0 -> insert-idx = first-tomb
-
-    .keys[insert-idx] = key
-
-    .vals[insert-idx] = val
-
-    .occ[insert-idx] = 1
-
-    #{overflow=wrap}
-    .size = .size + 1
-    is-new = true
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
@@ -372,9 +414,13 @@ hashmap-int-tmpl.get = (key k) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
+    !! {
+        used ?= .occ[idx]
+        used == 0 -> break
+
+        used == 1 -> {
+            kk ?= .keys[idx]
+            kk == key -> {
                 result = .vals[idx]
                 return
             }
@@ -409,21 +455,29 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    (.occ[idx] != 0) {
+    {
+        !! {
+            used ?= .occ[idx]
+            used == 0 -> break
 
-        #{overflow=wrap}
-        .occ[idx] == 1 -> {
-            .keys[idx] == key -> {
-                .occ[idx] = 2
-                .size = .size - 1
-                removed = true
-                return
+            used == 1 -> {
+                kk ?= .keys[idx]
+                kk == key -> {
+                    .occ[idx] ?= 2
+                    .size = .size - 1
+                    removed = true
+                    return
+                }
             }
-        }
 
-        #{overflow=wrap}
-        idx = idx + 1
-        idx >= .cap -> idx = 0
+            #{overflow=wrap}
+            idx = idx + 1
+            idx >= .cap -> idx = 0
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -454,12 +508,19 @@ hashmap-int-tmpl.is-empty = () (empty bool) {
 ; [for-each](#map.hashmap-int-tmpl.for-each)
 hashmap-int-tmpl.for-each = () (k k, v v) {
     n = .cap
-    i <- [0..n): {
-        .occ[i] == 1 -> {
-            k = .keys[i]
+    {
+        i <- [0..n): {
+            used ?= .occ[i]
+            used == 1 -> {
+                k = .keys[i]
 
-            v = .vals[i]
+                v = .vals[i]
+            }
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -481,29 +542,35 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
     .cap = new-cap
 
     ; 遷移 occ==1 條目
-    i <- [0..old-cap): {
-        old-occ[i] == 1 -> {
-            k = old-keys[i]
+    {
+        i <- [0..old-cap): {
+            old-occ[i] == 1 -> {
+                k = old-keys[i]
 
-            v = old-vals[i]
-            idx = .hash(k)
+                v = old-vals[i]
+                idx = .hash(k)
 
-            ; 找到第一個空槽插入
-            (.occ[idx] != 0) {
-                .occ[idx] != 0 -> {
+                ; 找到第一個空槽插入
+                !! {
+                    used ?= .occ[idx]
+                    used != 0 -> break
 
                     #{overflow=wrap}
                     idx = idx + 1
                     idx >= .cap -> idx = 0
                 }
+
+                .keys[idx] ?= k
+
+                .vals[idx] ?= v
+
+                .occ[idx] ?= 1
             }
-
-            .keys[idx] = k
-
-            .vals[idx] = v
-
-            .occ[idx] = 1
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -556,21 +623,28 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 
     idx = .hash(key)
 
-    .occ[idx] == 1 -> {
-        .vals[idx] = val
-        is-new = false
-        return
+    {
+        used ?= .occ[idx]
+        used == 1 -> {
+            .vals[idx] ?= val
+            is-new = false
+            return
+        }
+
+        .keys[idx] ?= key
+
+        .vals[idx] ?= val
+
+        .occ[idx] ?= 1
+
+        #{overflow=wrap}
+        .size = .size + 1
+        is-new = true
+    }: {
+        err -> _
+
+        -> _
     }
-
-    .keys[idx] = key
-
-    .vals[idx] = val
-
-    .occ[idx] = 1
-
-    #{overflow=wrap}
-    .size = .size + 1
-    is-new = true
 }
 
 ; 查找 key，返回 ?v（nil=未找到）
@@ -581,7 +655,8 @@ hashmap-bool-tmpl.get = (key bool) (result ?v) {
     .size == 0 -> return
     idx = .hash(key)
 
-    .occ[idx] == 1 -> {
+    used ?= .occ[idx]
+    used == 1 -> {
         result = .vals[idx]
         return
     }
@@ -610,12 +685,19 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
     .size == 0 -> return
     idx = .hash(key)
 
-    .occ[idx] == 1 -> {
-        .occ[idx] = 2
+    {
+        used ?= .occ[idx]
+        used == 1 -> {
+            .occ[idx] ?= 2
 
-        #{overflow=wrap}
-        .size = .size - 1
-        removed = true
+            #{overflow=wrap}
+            .size = .size - 1
+            removed = true
+        }
+    }: {
+        err -> _
+
+        -> _
     }
 }
 
@@ -646,11 +728,18 @@ hashmap-bool-tmpl.is-empty = () (empty bool) {
 ; [for-each](#map.hashmap-bool-tmpl.for-each)
 hashmap-bool-tmpl.for-each = () (k bool, v v) {
     n = .cap
-    i <- [0..n): {
-        .occ[i] == 1 -> {
-            k = .keys[i]
+    {
+        i <- [0..n): {
+            used ?= .occ[i]
+            used == 1 -> {
+                k = .keys[i]
 
-            v = .vals[i]
+                v = .vals[i]
+            }
         }
+    }: {
+        err -> _
+
+        -> _
     }
 }
