@@ -1270,7 +1270,6 @@ arp-info {
 ; macOS/Windows: 暫時返回空列表（需 getifaddrs 或 GetIfTable 系統 API）
 ; ifs: 各網路介面的統計列表（name/rx-bytes/rx-packets/tx-bytes/tx-packets）
 ; [ifconfig-list](#net.ifconfig-list)
-
 #{linux-amd64, linux-arm64}
 ifconfig-list = () (ifs []if-info) {
     content = fs.read-file('/proc/net/dev').to-str()
@@ -1344,7 +1343,6 @@ ifconfig-list = () (ifs []if-info) {
 
 ; macOS 變體：尚未實裝（需 getifaddrs(3)）
 ; ifs: 恆為空列表
-
 #{mac-amd64, mac-arm64}
 ifconfig-list = () (ifs []if-info) {
 
@@ -1354,7 +1352,6 @@ ifconfig-list = () (ifs []if-info) {
 
 ; Windows 變體：尚未實裝（需 GetIfTable）
 ; ifs: 恆為空列表
-
 #{win-amd64, win-arm64}
 ifconfig-list = () (ifs []if-info) {
 
@@ -1368,7 +1365,6 @@ ifconfig-list = () (ifs []if-info) {
 ; macOS/Windows: 暫時返回空列表（需 PF_ROUTE socket）
 ; routes: 路由條目列表（iface/destination/gateway/flags/mask，位址欄位為十六進位字串）
 ; [route-list](#net.route-list)
-
 #{linux-amd64, linux-arm64}
 route-list = () (routes []route-info) {
     content = fs.read-file('/proc/net/route').to-str()
@@ -1400,7 +1396,6 @@ route-list = () (routes []route-info) {
 
 ; macOS 變體：尚未實裝（需 PF_ROUTE socket 或 sysctl CTL_NET/NET_RT_DUMP）
 ; routes: 恆為空列表
-
 #{mac-amd64, mac-arm64}
 route-list = () (routes []route-info) {
 
@@ -1410,7 +1405,6 @@ route-list = () (routes []route-info) {
 
 ; Windows 變體：尚未實裝（需 GetIpForwardTable）
 ; routes: 恆為空列表
-
 #{win-amd64, win-arm64}
 route-list = () (routes []route-info) {
 
@@ -1424,7 +1418,6 @@ route-list = () (routes []route-info) {
 ; macOS/Windows: 暫時返回空列表（需 sysctl net.inet.arp 或 GetIpNetTable）
 ; arps: ARP 表項列表（ip/hw-type/flags/mac/iface）
 ; [arp-list](#net.arp-list)
-
 #{linux-amd64, linux-arm64}
 arp-list = () (arps []arp-info) {
     content = fs.read-file('/proc/net/arp').to-str()
@@ -1456,7 +1449,6 @@ arp-list = () (arps []arp-info) {
 
 ; macOS 變體：尚未實裝（需 sysctl net.inet.arp 或 ARP ioctl）
 ; arps: 恆為空列表
-
 #{mac-amd64, mac-arm64}
 arp-list = () (arps []arp-info) {
 
@@ -1466,7 +1458,6 @@ arp-list = () (arps []arp-info) {
 
 ; Windows 變體：尚未實裝（需 GetIpNetTable）
 ; arps: 恆為空列表
-
 #{win-amd64, win-arm64}
 arp-list = () (arps []arp-info) {
 

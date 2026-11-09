@@ -485,7 +485,6 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
 ; input: 寫入子進程 stdin 的內容；空字串 = 不提供
 ; merge-err: true = 將 stderr 合併到 stdout
 ; ok: 是否成功（Windows 變體恆為 false）
-
 #{win-amd64, win-arm64}
 process.start-with-opts = (program str, args []str, dir str, input str, merge-err bool) (ok bool) {
     ok = false
@@ -523,7 +522,6 @@ process.wait = () (status i64) {
 
 ; Windows 變體：不阻塞，直接返回實例記錄的退出碼
 ; status: .exit-code 記錄值（啟動失敗或未記錄時為 0）
-
 #{win-amd64, win-arm64}
 process.wait = () (status i64) {
     status = .exit-code
@@ -554,7 +552,6 @@ process.wait-nohang = () (status ?i64) {
 
 ; Windows 變體：未實裝輪詢，恆返回 nil（呼叫方會視為仍在執行）
 ; status: 退出碼（Windows 恆為 nil）
-
 #{win-amd64, win-arm64}
 process.wait-nohang = () (status ?i64) {
     status = nil
@@ -577,7 +574,6 @@ process.kill = (sig i64) (ok bool) {
 ; Windows 變體：未實裝 POSIX 信號語義，恆返回 false（可改用 terminate/force-kill 的 Windows 對應）
 ; sig: 信號編號（POSIX 語義，Windows 未處理）
 ; ok: 是否成功（Windows 恆為 false）
-
 #{win-amd64, win-arm64}
 process.kill = (sig i64) (ok bool) {
     ok = false
@@ -784,11 +780,9 @@ shell-quote = (s str) (out str) {
 ;   stderr str: 子進程標準錯誤全文（merge-err 為 true 時為空串）
 ;   code i64: 退出碼；>=0 為正常退出，-1 表示啟動 / exec 失敗，-2 表示超時（子進程已被殺死）
 ;   err str: 啟動失敗或超時的錯誤描述；成功時為空串
-
 ; POSIX 版本：使用純 Nolang 實現（process-fork/pipe/dup2/exec-shell/waitpid）。
 ; 不依賴 process.c C runtime，與 Windows 版本對稱。
 ; [cmd](#process.cmd)
-
 #{mac-amd64, mac-arm64, linux-amd64, linux-arm64, wasi-wasm32}
 cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merge-err bool) (out str, stderr str, code i64, err str) {
     out = ''
@@ -1449,7 +1443,6 @@ list-all = () (procs []proc-info) {
 
 ; macOS 變體：未實裝，返回空列表（需 libproc proc_listallpids 或 sysctl）
 ; procs: 空的進程列表
-
 #{mac-amd64, mac-arm64}
 list-all = () (procs []proc-info) {
 
@@ -1459,7 +1452,6 @@ list-all = () (procs []proc-info) {
 
 ; Windows 變體：未實裝，返回空列表（需 CreateToolhelp32Snapshot）
 ; procs: 空的進程列表
-
 #{win-amd64, win-arm64}
 list-all = () (procs []proc-info) {
 
@@ -1537,7 +1529,6 @@ spawn = (cmd str) (pid i64) {
 ; Windows 變體：未實裝，恆返回 -1
 ; cmd: 完整命令字串（Windows 未處理）
 ; pid: 恆為 -1（未實裝）
-
 #{win-amd64, win-arm64}
 spawn = (cmd str) (pid i64) {
     pid = -1

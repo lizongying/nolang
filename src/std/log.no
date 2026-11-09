@@ -154,7 +154,6 @@ log-emit = (tag str, msg str, loc str) {
 ; [debug](#log.debug)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
-
 #{track-caller}
 debug = (msg str, loc str = '') {
     LEVEL <= 0 -> log-emit('DEBUG', msg, loc)
@@ -164,7 +163,6 @@ debug = (msg str, loc str = '') {
 ; [info](#log.info)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
-
 #{track-caller}
 info = (msg str, loc str = '') {
     LEVEL <= 1 -> log-emit('INFO', msg, loc)
@@ -174,7 +172,6 @@ info = (msg str, loc str = '') {
 ; [warn](#log.warn)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
-
 #{track-caller}
 warn = (msg str, loc str = '') {
     LEVEL <= 2 -> log-emit('WARN', msg, loc)
@@ -184,7 +181,6 @@ warn = (msg str, loc str = '') {
 ; [error](#log.error)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
-
 #{track-caller}
 error = (msg str, loc str = '') {
     LEVEL <= 3 -> log-emit('ERROR', msg, loc)
@@ -195,7 +191,6 @@ error = (msg str, loc str = '') {
 ; msg: 日誌正文
 ; code: 輸出後傳給 exit 的進程結束狀態碼
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
-
 #{track-caller}
 fatal = (msg str, code i64, loc str = '') {
     log-emit('FATAL', msg, loc)

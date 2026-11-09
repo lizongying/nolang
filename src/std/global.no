@@ -111,7 +111,6 @@ with-cap-len = (cap i64, len i64) {
 ;   {{ 與 }} 用於输出字面 { 與 }，但僅當同一字串中至少還有一個真正的 {name} 欄位時
 ;   才生效；只含轉義、不含欄位的字面量會原樣输出（print('{{n}}') → {{n}}）。
 ;   要输出單獨的大括號，直接用 print('{') / print('}')。
-
 ; 输出字串到標準输出並換行，支援 {name:spec} 命名格式欄位
 ;   print('hello {name}')       → hello world（若 name = 'world'）
 ;   print('{x:.2f}')            → 3.14（若 x = 3.14159）

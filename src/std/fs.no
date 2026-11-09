@@ -371,7 +371,6 @@ read-stdin-str = () (content ?str) {
 ; p: 目錄路徑（不存在或無讀取權限時開不了）
 ; dirp: 目錄控制代碼，供 read-dir/close-dir 使用（0=開啟失敗）
 ; [open-dir](#fs.open-dir)
-
 #{buildin}
 open-dir = (p str) (dirp i64) {
 }
@@ -383,7 +382,6 @@ open-dir = (p str) (dirp i64) {
 ; dirp: open-dir 返回的目錄控制代碼
 ; name: ok=下一個條目名稱（可為 '.'/'..'）, nil=已讀完或控制代碼無效
 ; [read-dir](#fs.read-dir)
-
 #{buildin}
 read-dir = (dirp i64) (name ?str) {
 }
@@ -392,7 +390,6 @@ read-dir = (dirp i64) (name ?str) {
 ; dirp: open-dir 返回的目錄控制代碼（關閉後不可再讀）
 ; ok: true=已釋放目錄串流緩衝區
 ; [close-dir](#fs.close-dir)
-
 #{buildin}
 close-dir = (dirp i64) (ok bool) {
 }
@@ -401,7 +398,6 @@ close-dir = (dirp i64) (ok bool) {
 ; p: 檔案路徑
 ; ok: true=存取/修改時間已刷新為當下（路徑不可達時為 false）
 ; [touch-file](#fs.touch-file)
-
 #{buildin}
 touch-file = (p str) (ok bool) {
 }
