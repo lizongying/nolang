@@ -46,6 +46,10 @@
 ;         回值位与写点共用 h2m-opt-wrap 单口径；撤除 s94 的 mem==1+option 整函数门禁（str/vec 載荷仍计 unsup）；option 的 match 臂仍走 s63 门禁
 ;         算术语义：二元 + - * 与六个比较符仅 i64（其余型别的值进运算符即计 unsup，不发错码）；
 ;         例外：前缀 '-'（s70）与二元 + - * /（s71）接受 f64 操作数（发 fneg/fadd/fsub/fmul/fdiv double）；s72：六个比较符亦接受 f64 操作数（发 fcmp 后 zext i1→i64，结果恒 i64）；位运算/移位/逻辑仍不收 f64；s76：u64 的 '/' '%' 经无符號重映射放行（OP-DIVU/OP-MODU，dest TY-U64）；s77：六个比较符亦接受 u64 操作数（< <= > >= 重映射为 OP-CMP*U 发 icmp u*，== != 與符號无关保持原 op，结果恒 i64）；s78：u64 的 '+ - *' 放行（不重映射，64 位宽下签／无签位元相同，dest TY-U64 发裸 add/sub/mul i64）；s79：u64 位运算/移位放行（'& | ^ <<' 发裸 and/or/xor/shl i64，'>>' 经 OP-SHRU 发 lshr）；s80：'>>' 改无条件重映射 OP-SHRU（i64 侧同发 lshr，与 Go 对齐）；u64 逻辑族仍不收
+;   s99l：str 拼接——二元 '+' / '-' 于两侧皆 TY-STR 时降 OP-STRCAT（镜像 Go emitBinary：lt=="%str-long"
+;         时非 '*' 一律 @str_concat；'*' 是重复 @_mir_str_repeat，h2m 无对应 op 故不放行）。@str_concat
+;         造 rc=1 自拥有（两操作数各 memcpy 一份、不消耗）⇒ 结果登记 scope-exit 释放（与 s99j/s99k 同一
+;         释放清单）；操作数按只读不释放（字面量指向静态常量）。混合 str/i64、str/txt（Go 先转标量再拼）未建模 ⇒ 计 unsup
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）（s92：带默认值的参数已放行——调用点尾部回填，见上 CallExpression；带默认值的输出参与无默认值而被缺的形参仍入门禁）、
@@ -1822,7 +1826,22 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 v = mid
                 ok-u = 1
             }
-            bop == 0 || lv == 0 || rv == 0 || (ok-i == 0 && ok-f == 0 && ok-u == 0) -> h2m-mark(c)
+
+            ; s99l：str 拼接——两侧皆 TY-STR 时 '+' / '-' 皆走 OP-STRCAT（镜像 Go emitBinary：
+            ;   lt=="%str-long" 时非 '*' 的二元 op 一律 @str_concat；'*' 是重复 @_mir_str_repeat，
+            ;   h2m 无对应 op ⇒ 不在此臂，落默认 mark）。
+            ;   @str_concat 造 rc=1 自拥有（两操作数各 memcpy 一份、不消耗）⇒ 结果登记 scope-exit 释放；
+            ;   操作数按只读不释放（字面量指向静态常量、另一 STRCAT 结果各自已在清单中）。
+            ;   混合 str/i64、str/txt（Go 会先转标量再拼）h2m 未建模 ⇒ 落默认 mark（宁缺勿错）。
+            ok-s = 0
+            bop > 0 && lv > 0 && rv > 0 && (bop == OP-ADD || bop == OP-SUB) && h2m-vty-at(c, lv) == TY-STR && h2m-vty-at(c, rv) == TY-STR -> {
+                scid = h2m-alloc(c, TY-STR)
+                h2m-emit(c, OP-STRCAT, scid, lv, rv, '', TY-STR)
+                h2m-rel-add(c, scid, TY-STR, 0)
+                v = scid
+                ok-s = 1
+            }
+            bop == 0 || lv == 0 || rv == 0 || (ok-i == 0 && ok-f == 0 && ok-u == 0 && ok-s == 0) -> h2m-mark(c)
         }
 
         ; 调用降级：kid 序 = [被调用者][实参…]，c0 = 实参个数；

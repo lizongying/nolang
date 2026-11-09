@@ -5083,7 +5083,7 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **整檔狀態（預期，待復測）**：h2m-test.no +74 行（4 用例 + 註冊）；h2m.no +27/-3。既有 6 失仍為 s98 option 回歸（併發 session 改 cg.no），非本件。
 
-**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`）**已於 §5.3.4.ek（s99j）完成（mem==0；運行時驗證待 `15w45dqk` 門禁落地後復測）**——結構體 MK 取得所有權後即登記釋放清單，函數退出時配對發 `OP-STRUCT-RELEASE`，與 §5.3.4.eh 的取得所有權半邊閉環；純 str / vec 的取得所有權站點（strcat / vec-release OP）尚缺，釋放清單機制已預留；②MK 欄位值 id 連續性假設（§5.3.4.ei s99h 已解）、③vec 欄位就地索引（本件 §5.3.4.ej s99i 已解）——兩者均不再依賴 MK 連續 id 假設。
+**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`）**已於 §5.3.4.ek（s99j）完成（mem==0；運行時驗證待 `15w45dqk` 門禁落地後復測）**——結構體 MK 取得所有權後即登記釋放清單，函數退出時配對發 `OP-STRUCT-RELEASE`，與 §5.3.4.eh 的取得所有權半邊閉環；純 str 的取得所有權站點（strcat）**已於 §5.3.4.em（s99l）補上**（`OP-STRCAT` 降級 + 結果登記釋放）；vec 的（vec-release OP）尚缺，釋放清單機制已預留；②MK 欄位值 id 連續性假設（§5.3.4.ei s99h 已解）、③vec 欄位就地索引（本件 §5.3.4.ej s99i 已解）——兩者均不再依賴 MK 連續 id 假設。
 
 ### 5.3.4.ek s99j——M4-e 第五十件續：str 欄位 RC 的 scope-exit 釋放半邊（2026-11-09 本輪）
 
@@ -5107,7 +5107,7 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **整檔狀態（預期，待復測）**：h2m.no +釋放清單基礎設施；h2m-test.no +58 行（3 用例 + 註冊）。既有 6 失仍為 s98 option 回歸（併發 session 改 cg.no），非本件。
 
-**後續**：①**純 str RC / vec RC 的取得所有權站點**：h2m 尚未降級 `OP-STRCAT`（純 str 無 heap 取得所有權站點可配對），且無 vec-release OP（vec 欄位釋放暫不可行）——兩者釋放清單機制已預留，待對應取得所有權站點就位後即閉環；②**控制流函數（mem==1）的 scope-exit 釋放**：**已於 §5.3.4.el（s99k）完成（mem==1 不含 OP-CALL 即放行；含 call 仍保守保持 leak 待 move 分析）**。
+**後續**：①**純 str RC / vec RC 的取得所有權站點**：**純 str 半邊已於 §5.3.4.em（s99l）完成（`OP-STRCAT` 降級 + 結果登記釋放）**；vec 半邊仍缺（無 vec-release OP / 無 vec 構造降級，見 §5.3.4.em 未及）——釋放清單機制已預留；②**控制流函數（mem==1）的 scope-exit 釋放**：**已於 §5.3.4.el（s99k）完成（mem==1 不含 OP-CALL 即放行；含 call 仍保守保持 leak 待 move 分析）**。
 
 ### 5.3.4.el s99k——M4-e 第五十一件續：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 `mem==0` 限制）（2026-11-09 本輪）
 
@@ -5132,6 +5132,34 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 **驗證狀態**：本輪 `15w45dqk` 門禁已不再阻塞——`h2m-test.no` 可完整跑完（baseline 989→本輪 1001 passed；剩 6 失均為 `s98 optmatch`，屬併發 session 改 cg.no 的 option 回歸，非本件）。s99j 修復後的 retain/release 配對與 s99k 三用例全綠。
 
 **整檔狀態**：h2m.no +outn/outsv/hc 三欄與 `h2m-emit-releases` 放行/跳過放寬；h2m-test.no +3 用例（test-s99k-*）+ s99j 兩用例斷言由「硬碼值 id」改為「retain/release 計數」以抗 id 漂移。
+
+### 5.3.4.em s99l——M4-e 第五十二件續：純 str RC 的取得所有權站點（str 拼接 `'a' + 'b'` / `'a' - 'b'` ⇒ `OP-STRCAT`）（2026-11-09 本輪）
+
+**動機**：s99j/s99k 建立了 scope-exit 釋放清單機制，但純 str 一直沒有「取得所有權站點」——h2m 從未降級 `OP-STRCAT`，故字符串拼接 `a + b` 直接落默認 `h2m-mark` 計 unsup，釋放清單對純 str 空轉。本件補上 str 拼接的取得所有權站點，把「拼接產生自擁有 str」與「該 str 的 scope-exit 釋放」閉環。
+
+**調查（先讀實碼定事實）**：
+- **str 字面量不擁有**：`OP-STRCONST`（cg.no:1790-1815）發 `getelementptr` 指向靜態全局常量 `[N x i8]`，非 `@nolang_rc_alloc` 堆，`%str-long` 的 data 指針指向只讀常量 ⇒ **借用、不登記釋放**（若釋放即誤 free 靜態常量）。
+- **`@str_concat` 造自擁有**：cg-runtime.no:152-166 兩操作數各 `llvm.memcpy` 一份進 `@nolang_rc_alloc` 新緩衝，返回新 `%str-long`（rc=1）——**結果擁有、操作數只讀不消耗**。故僅結果登記釋放；操作數（字面量或另一 strcat 結果）各自按自身所有權處置。
+- **`+` 與 `-` 皆拼接**：Go 側 `emitBinary`（codegen.go:5983-6018）在 `lt=="%str-long"` 時，`*` 走 `@_mir_str_repeat`（重複）、其餘二元 op 一律 `@str_concat`；`infixOp` 把 `+`→`OpAdd`、`-`→`OpSub`。故 h2m 對 `+`/`-` 且兩側 TY-STR 一律降 `OP-STRCAT`（鏡像 Go）。`*`（重複）h2m 無對應 op ⇒ 不放行。
+
+**改動（`compiler/src/h2m.no`，純 h2m，cg 零改）**：
+- `h2m-lower-expr` 的 `K-INFIX-EXPRESSION` 新增 `ok-s` 臂：`bop ∈ {OP-ADD, OP-SUB}` 且 `h2m-vty-at(lv)==TY-STR && h2m-vty-at(rv)==TY-STR` ⇒ `OP-STRCAT(dst, lv, rv)`（dst 新 id、TY-STR），緊接 `h2m-rel-add(c, dst, TY-STR, 0)` 登記 scope-exit 釋放（與 s99j/s99k 同一清單同機制）。
+- 最終門禁 `(ok-i==0 && ok-f==0 && ok-u==0)` 追加 `&& ok-s==0`。
+- 混合 `str/i64`、`str/txt`（Go 會先轉標量/拓寬再拼）h2m 未建模 ⇒ 不入該臂、落默認 mark 計 unsup（寧缺勿錯，不引入錯碼）。
+
+**IR 核實（`compiler/tests/h2m-test.no` 新增 4 用例，全過）**：
+- `test-s99l-strcat-release`：`s = 'a' + 'b'` 非回傳值 ⇒ `call %str-long @str_concat(` 1 次 **且** `call i1 @nolang_rc_release(i8* %dp` 1 次（結果登記並在 scope-exit 釋放）。
+- `test-s99l-strcat-return-no-release`：`r = 'a' - 'b'` 即回傳值（同時證 `-` 亦拼接）⇒ `@str_concat` 1 次、release **0 次**（被 skip 跳過，防呼叫方 double-free）。
+- `test-s99l-strcat-nested-release`：`('a' + 'b') + 'c'` ⇒ 2 條 `@str_concat`、2 次 release（內層結果被外層 memcpy 複製後即可釋放）；因 `str.contains` 只回布林不能計數，改用 `split(marker).len()==3`（2 次出現）斷言。
+- `test-s99l-strcat-mixed-gate`：`'a' + 1`（str+i64）⇒ `agg.unsup > 0`、無 `@str_concat`（誠實門禁）。
+
+**驗證狀態**：`./bin/no run compiler/tests/h2m-test.no` ⇒ **1012 passed / 6 failed / 1018 total**（baseline 1001；本件 +11 斷言 = 4 用例）。剩 6 失均為 `s98 optmatch`（併發 session 改 cg.no 的 option 回歸，非本件，首輪 baseline 即已失）。**判別力實測**：註釋掉 `h2m-rel-add(c, scid, TY-STR, 0)` ⇒ `test-s99l-strcat-release` 的 release 斷言與 `test-s99l-strcat-nested-release` 的 2-release 斷言**恰好失敗**（其餘不動），恢復後復綠。
+
+**未及（誠實標注，vec 半邊仍缺）**：
+- **純 vec RC 未建**：cg-runtime.no 僅有 `@vec_new`（返回裸 `{i64 0, i64 0, i64 0}`，內部用裸 `@malloc`/`@free`，**無 RC 頭**）／`@vec_len`／`@vec_get_i64`／`@vec_push_i64`；**無 `@vec_free`、無 `OP-VEC-RELEASE`**；h2m 亦無任何降級發 `OP-VECNEW`（vec 僅由 `[]i64` 形參注入，自舉無 vec 構造語法）。⇒ vec 的「取得所有權站點」當前**不可達**，需先建 vec 的 RC 原語（retain/release/free）＋構造降級，方能閉環；非本件範圍，留待後續。
+- **mem==1 且含 OP-CALL**：`h2m-emit-releases` 對該情形整體不放行（s99k 保守閘門），故 strcat 結果在此情形仍 leak（與 s99k 一致，寧 leak 不 double-free，待 move 分析）。
+
+**整檔狀態**：h2m.no +`K-INFIX-EXPRESSION` 的 str 拼接臂與門禁 `ok-s`（cg 零改）；h2m-test.no +4 用例（test-s99l-*，其中 nested 用 `split().len()` 計數）。
 
 ## 6. 里程碑與進度
 

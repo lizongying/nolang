@@ -4231,6 +4231,10 @@ test-s99j-struct-mixed-release()
 test-s99k-local-release()
 test-s99k-return-no-release()
 test-s99k-call-gate()
+test-s99l-strcat-release()
+test-s99l-strcat-return-no-release()
+test-s99l-strcat-nested-release()
+test-s99l-strcat-mixed-gate()
 
 ; ── s99k：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 mem==0 限制）──
 ;   證明：mem==1 下輸出參住槽、退出重讀是 STLOAD 新 id，故 s99j 原本只放行 mem==0；本件
@@ -4287,6 +4291,67 @@ test-s99k-call-gate = () {
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99k call-gate retain emitted')
     ; 保守閘門：mem==1 + 含 OP-CALL ⇒ 不發 release（避免與被調 g 雙重釋放）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99k call-gate NO release (conservative gate)')
+}
+
+; ── s99l：純 str RC 的取得所有權站點（str 拼接 'a' + 'b' / 'a' - 'b' ⇒ OP-STRCAT）──
+;   @str_concat 造 rc=1 自擁有（兩操作數各 memcpy 一份、不消耗）⇒ 結果登記 scope-exit 釋放；
+;   操作數按只讀不釋放（字面量指向靜態常量）。混合 str/i64、str/txt（Go 會先轉標量再拼）
+;   h2m 未建模 ⇒ 落默認 mark 計 unsup（寧缺勿錯）。
+
+test-s99l-strcat-release = () {
+    ; 非返回值：STRCAT 結果必被 scope-exit 釋放（OP-RELEASE，%dp 命名空間）
+    src = 'f = () (r i64) {\n    s = \'a\' + \'b\'\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99l strcat-release unsup')
+    runner.eq(ir.contains('call %str-long @str_concat('), 1, 's99l strcat emitted')
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %dp'), 1, 's99l strcat result released')
+}
+
+test-s99l-strcat-return-no-release = () {
+    ; '-' 亦为拼接（镜像 Go emitBinary：非 '*' 一律 @str_concat）；返回值被 skip 跳过 ⇒ 不释放
+    src = 'f = () (r str) {\n    r = \'a\' - \'b\'\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99l strcat-return unsup')
+    runner.eq(ir.contains('call %str-long @str_concat('), 1, 's99l strcat(-) emitted')
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %dp'), 0, 's99l strcat return NO release (skip)')
+}
+
+test-s99l-strcat-nested-release = () {
+    ; 嵌套拼接 ('a' + 'b') + 'c' ⇒ 两条 STRCAT、两次 release（内层被外层 memcpy 复制后即可释放）
+    src = 'f = () (r i64) {\n    s = (\'a\' + \'b\') + \'c\'\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99l nested unsup')
+    ; contains 只回布林，不能计数 ⇒ 用 split 段数 - 1 得出现次数（2 次 ⇒ 3 段）
+    runner.eq(ir.split('call %str-long @str_concat(').len(), 3, 's99l nested 2 strcat')
+    runner.eq(ir.split('call i1 @nolang_rc_release(i8* %dp').len(), 3, 's99l nested 2 release')
+}
+
+test-s99l-strcat-mixed-gate = () {
+    ; 'a' + 1（str + i64）：Go 会把 1 转 '1' 再拼，h2m 未建模 ⇒ 计 unsup、不产码
+    src = 'f = () (r i64) {\n    s = \'a\' + 1\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 's99l mixed str+i64 counted unsup')
+    runner.eq(ir.contains('call %str-long @str_concat('), 0, 's99l mixed no strcat')
 }
 
 runner.summary()
