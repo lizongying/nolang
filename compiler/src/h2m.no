@@ -161,6 +161,10 @@ h2m-ctx {
     stft []i64
     stfldn []str
     stftn []i64
+    ; s99j：scope-exit 释放清单（见下方 h2m-new 初始化处的说明）
+    rls []i64
+    rlsm []i64
+    rlst []i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -225,9 +229,20 @@ h2m-new = () (c h2m-ctx) {
         i64
         stfldn: []
         str
-        stftn: []
-        i64
-    }
+    stftn: []
+    i64
+    ; s99j：scope-exit 释放清单——函数退出时为仍持有堆的活变量发 OP-RELEASE / OP-STRUCT-RELEASE。
+    ;   与 s99g 的「取得所有权」半边配对（s99g 在 MK 后发 OP-STRUCT-RETAIN，本件在退出时发 RELEASE）。
+    ;   rls = 待释放值 id（%st / %sv）；rlsm = 字段掩码（>0 ⇒ OP-STRUCT-RELEASE，bit j 置位 ⇔ 欄位 j 是 str；
+    ;     0 ⇒ TY-STR 纯 str ⇒ OP-RELEASE）；rlst = 值型别码（TY-STR 或 TY-STRUCT-BASE+sid），用于选 OP 码。
+    ;   按 vid 去重（同一值只释放一次）。⚠️ 仅 mem==0 放行（见 h2m-emit-releases）。
+    rls: []
+    i64
+    rlsm: []
+    i64
+    rlst: []
+    i64
+}
     c.vty.push(TY-I64)
 }
 
@@ -259,6 +274,45 @@ h2m-emit = (c h2m-ctx, op i64, d i64, a i64, b i64, sym str, res i64) {
     c.syms.push(sym)
     c.blks.push(c.blk)
     c.cty.push(res)
+}
+
+; s99j：登记一个待释放值（scope-exit 时发 OP-RELEASE / OP-STRUCT-RELEASE）。按 vid 去重。
+;   vid = 值 id（%st / %sv）；ty = 型别码（TY-STR 或 TY-STRUCT-BASE+sid）；
+;   mask = 字段掩码（含 str 欄位 ⇒ >0，走 OP-STRUCT-RELEASE；纯 str ⇒ 0，走 OP-RELEASE）。
+h2m-rel-add = (c h2m-ctx, vid i64, ty i64, mask i64) {
+    dup = 0
+    i = 0
+    (i < c.rls.len() && dup == 0) {
+        c.rls[i] == vid -> dup = 1
+        #{overflow=wrap}
+        i = i + 1
+    }
+    dup == 0 -> {
+        c.rls.push(vid)
+        c.rlsm.push(mask)
+        c.rlst.push(ty)
+    }
+}
+
+; s99j：函数 scope-exit 释放——遍历释放清单，对每条未被「返回值占用」的值发释放指令。
+;   skip = 返回值的值 id（输出参当前绑定值 / 共享 ret 块重读值）；等于它的值视为已 move 给调用方，跳过（防双重释放）。
+;   ⚠️ 仅 mem==0 放行：mem==1 下输出参住槽、退出重读是 STLOAD 新 id，与清单里的 MK 原 id 不同 ⇒ 跳过失效，
+;     故 mem==1 暂不放行（保持 leak，不引入 double-free；完整修复需 must/may move 分析，见 §5.3.4.ej 後續①）。
+h2m-emit-releases = (c h2m-ctx, skip i64) {
+    c.mem == 0 -> {
+        i = 0
+        (i < c.rls.len()) {
+            vid = c.rls[i]
+            m = c.rlsm[i]
+            ty = c.rlst[i]
+            (vid != skip) -> {
+                ty == TY-STR -> h2m-emit(c, OP-RELEASE, 0, vid, 0, '', TY-STR)
+                ty >= TY-STRUCT-BASE && m > 0 -> h2m-emit(c, OP-STRUCT-RELEASE, 0, vid, m, '', 0)
+            }
+            #{overflow=wrap}
+            i = i + 1
+        }
+    }
 }
 
 ; 新开一个基本块并回它的 id（只分配 id，不发指令；块内容由后续 h2m-set-block 写入）
@@ -1973,10 +2027,12 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                     ; s99g：含 str 欄位 ⇒ 構造後即取得所有權，緊接 OP-STRUCT-RETAIN
                     ;   （mir.no L194：MK 只存不 retain；cg L2315 依 bs[k] 掩碼對每個 str 欄位 call @nolang_rc_retain）。
                     ;   掩碼 bit j 置位 ⇔ 欄位 j 是 str；無 str 欄位（mask==0）不發。
-                    ;   ⚠️ 釋放側待 scope-exit 生命週期追蹤基礎設施（h2m 目前無變量生命週期追蹤，
-                    ;      連純 str 亦未發 OP-RELEASE）就位後補——本件只補「取得所有權」半邊。
+                    ; s99j：取得所有權後緊接登記 scope-exit 釋放（與本行 RETAIN 配對）——函數退出時由
+                    ;   h2m-emit-releases 對該 %st 值發 OP-STRUCT-RELEASE（跳過「已被回傳佔用」的值，防雙重釋放）。
+                    ;   僅 mem==0 放行（控制流函數暫保持 leak，見 h2m-emit-releases）。
                     mk-mask = h2m-struct-str-mask(c, sid)
                     mk-mask != 0 -> h2m-emit(c, OP-STRUCT-RETAIN, 0, sv, mk-mask, '', 0)
+                    mk-mask != 0 -> h2m-rel-add(c, sv, stcode, mk-mask)
                     v = sv
                 }
             }
@@ -3425,12 +3481,16 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             }
             ret-ok = zc2 > 0
             ret-ok -> {
+                ; s99j：scope-exit 释放（跳過回傳值 id 防雙重釋放；僅 mem==0 放行，見 h2m-emit-releases）
+                h2m-emit-releases(c, zc2)
                 h2m-emit(c, OP-RET, 0, zc2, 0, '', frt)
                 r = cg.cg-emit-cfg-t(fnm, frt, fap.len(), fap, c.vty, c.cty, c.blks, c.ops, c.dsts, c.xa, c.bs, c.syms, c.args)
             }
             zc2 == 0 -> h2m-mark(c)
         }
         ret-ok && c.ret <= 0 -> {
+            ; s99j：scope-exit 释放（直落路徑同款；跳過回傳值 id）
+            h2m-emit-releases(c, rid)
             h2m-emit(c, OP-RET, 0, rid, 0, '', frt)
             r = cg.cg-emit-cfg-t(fnm, frt, fap.len(), fap, c.vty, c.cty, c.blks, c.ops, c.dsts, c.xa, c.bs, c.syms, c.args)
         }

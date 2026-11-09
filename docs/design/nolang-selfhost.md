@@ -5032,7 +5032,7 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 **測試**（h2m-test.no 新增三用例，全過）：`test-s99g-struct-str-retain`（str@idx1，掩碼 2）/`test-s99g-struct-mixed-mask`（str@idx2，掩碼 4，證位位置）/`test-s99g-struct-no-retain`（無 str ⇒ 不發 retain）。
 
 **已知限制（本件邊界，誠實標注）**：
-1. **只有「取得所有權」半邊**：發了 `OP-STRUCT-RETAIN` 卻無對應 `OP-STRUCT-RELEASE` ⇒ 運行期會漏釋放（leak）。釋放側需 h2m 在「變量生命週期結束 / 函數返回」時發 `OP-STRUCT-RELEASE`，但 h2m 目前**無變量生命週期追蹤基礎設施**（連純 str 的 `OP-RELEASE` 都沒發）。這是 RC 子系統的更大一塊，須與「純 str RC」「vec 返回 RC」共用同一套 scope-exit 釋放機制，單獨補不完整。
+1. **「取得所有權」半邊已配對 scope-exit 釋放（mem==0）**：本件發 `OP-STRUCT-RETAIN` 後緊接把該 %st 值登記進 h2m 的釋放清單；函數退出時 `h2m-emit-releases` 對清單裡每個值發 `OP-STRUCT-RELEASE`（欄位掩碼同 retain），與取得所有權半邊配對，修掉原 leak。**限制（誠實標注）**：①僅 `mem==0`（無控制流的直落函數）放行——`mem==1` 下輸出參住槽、退出重讀是 STLOAD 新 id，與清單裡的 MK 原 id 不同 ⇒ 跳過失效，故控制流函數暫保持 leak（不引入 double-free；完整修復需 must/may move 分析）；②純 str / vec 的 scope-exit 釋放清單機制已備妥，但 h2m 目前無對應的取得所有權站點（無 `OP-STRCAT` 降級、無 vec-release OP），故實際只對「含 str 欄位的結構體 MK」生效，見 §5.3.4.ek（s99j）。
 2. **測試層級**：h2m-test.no 只斷言「降級產出正確的 retain 呼叫串」（IR 文本 `contains`），不編譯執行；bootstrap 的 cg 管線不發 runtime prelude（@nolang_rc_retain 等定義不進測試 IR，與 s62 斷言 @vec_len 呼叫的現狀一致）。故本件驗證的是「欄位掩碼正確設置 + retain 發射點正確」，非端到端 RC 平衡。
 3. **CALL 返回的結構體 / LOAD 出的結構體**目前不發 retain（僅 MK 字面量發）；結構體作返回值穿 call 的完整 RC 待釋放基礎設施一併補。
 
@@ -5083,7 +5083,31 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **整檔狀態（預期，待復測）**：h2m-test.no +74 行（4 用例 + 註冊）；h2m.no +27/-3。既有 6 失仍為 s98 option 回歸（併發 session 改 cg.no），非本件。
 
-**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`，見 §5.3.4.eh）——建 h2m scope-exit 變量生命週期追蹤基礎設施，對含 str/vec 欄位活變量發 `OP-STRUCT-RELEASE`、純 str 發 `OP-RELEASE`（同時解鎖「純 str RC」「vec 返回 RC」）；②MK 欄位值 id 連續性假設（§5.3.4.ei s99h 已解）、③vec 欄位就地索引（本件 §5.3.4.ej s99i 已解）——兩者均不再依賴 MK 連續 id 假設。
+**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`）**已於 §5.3.4.ek（s99j）完成（mem==0；運行時驗證待 `15w45dqk` 門禁落地後復測）**——結構體 MK 取得所有權後即登記釋放清單，函數退出時配對發 `OP-STRUCT-RELEASE`，與 §5.3.4.eh 的取得所有權半邊閉環；純 str / vec 的取得所有權站點（strcat / vec-release OP）尚缺，釋放清單機制已預留；②MK 欄位值 id 連續性假設（§5.3.4.ei s99h 已解）、③vec 欄位就地索引（本件 §5.3.4.ej s99i 已解）——兩者均不再依賴 MK 連續 id 假設。
+
+### 5.3.4.ek s99j——M4-e 第五十件續：str 欄位 RC 的 scope-exit 釋放半邊（2026-11-09 本輪）
+
+**動機**：§5.3.4.eh（s99g）只補了「取得所有權」半邊（結構體 MK 後發 `OP-STRUCT-RETAIN`），無對應 `OP-STRUCT-RELEASE` ⇒ 運行期 leak。本件補上釋放半邊，與 s99g 閉環。這也是 h2m **變量生命週期追蹤基礎設施**的首步：建「scope-exit 釋放清單」，函數退出時對仍持有堆的活值發釋放指令；未來的純 str RC / vec RC 共用同一清單機制。
+
+**改動（`compiler/src/h2m.no`，純 h2m，cg 零改）**：
+- `h2m-ctx` 新增釋放清單三欄：`rls []i64`（待釋放值 id）、`rlsm []i64`（欄位掩碼：>0 ⇒ `OP-STRUCT-RELEASE`，0 ⇒ 純 str `OP-RELEASE`）、`rlst []i64`（值型別碼，用於選 OP 碼）；`h2m-new` 同步初始化。
+- 輔助 `h2m-rel-add(c, vid, ty, mask)`：按 vid 去重後 push 進清單。
+- `h2m-emit-releases(c, skip)`：遍歷清單，對 `vid != skip` 的每條發釋放——`TY-STR` 發 `OP-RELEASE`、結構體（`ty >= TY-STRUCT-BASE && mask > 0`）發 `OP-STRUCT-RELEASE(x=vid, y=mask)`。`skip` = 回傳值的值 id（輸出參當前綁定值 / 共享 ret 塊重讀值），相等者視為已 move 給呼叫方而跳過，**防雙重釋放**。
+- s99g 的 MK 取得所有權站點：`mk-mask != 0 -> h2m-rel-add(c, sv, stcode, mk-mask)`（緊接既有 `OP-STRUCT-RETAIN`）。
+- `h2m-lower-func` 兩個回傳路徑（共享 ret 塊 `c.ret>0`、直落 `c.ret<=0`）在 `OP-RET` 之前各插入 `h2m-emit-releases(c, 回傳值id)`。
+
+**關鍵安全邊界（誠實標注，關鍵）**：`h2m-emit-releases` **僅 `mem==0` 放行**。`c.ret>0` 必伴 `mem==1`（顯式 return 觸發 flow），故 ret 塊路徑實際不發射；直落路徑在 `mem==1`（如含迴圈但無顯式 return）時也不發射。原因：`mem==1` 下輸出參住槽、函數退出時 `zc2` 是 `STLOAD` 新 id，與清單裡的 MK 原 id 不同 ⇒ 跳過失效，會對「已被回傳的結構體」誤釋放（呼叫方 double-free）。故控制流函數暫保持 leak（不引入 double-free），完整修復需 must/may move 分析（工作記憶標「尚屬規劃」）。
+
+**IR 核實（`compiler/tests/h2m-test.no` 新增 3 用例，全過預期）**：
+- `test-s99j-struct-release`：本地結構體（含 str@idx1 ⇒ 掩碼 2）⇒ `call void @nolang_rc_retain(i8* %rp…)`（s99g 取得所有權）**與** `call i1 @nolang_rc_release(i8* %rp…)`（本件釋放）同現，且兩者皆 `extractvalue %struct.s0 %st3, 1`（同一 %st 值配對）。
+- `test-s99j-struct-ret-no-release`：結構體即回傳值（`r: User`）⇒ retain 仍發，但 `OP-STRUCT-RELEASE` **不出現**（`vid == 回傳值id` 被 skip，防呼叫方 double-free）。
+- `test-s99j-struct-mixed-release`：str@idx2 ⇒ 掩碼 4 ⇒ retain 與 release 皆只抽欄位 2（`extractvalue %struct.s0 %st4, 2` ×2），證明掩碼正確傳遞到釋放側。
+
+**驗證狀態（誠實標注）**：⚠️ 運行時端到端驗證被並發 session 的 `15w45dqk` checker 收口阻塞（同 s99h/s99i：cg-emit-cfg-t 內層 `j=j+1` 死循環/segfault），`h2m-test.no` 暫無法跑完——環境門禁問題，非本件。IR 文本斷言（contains 配對）為本件主要驗證手段；代碼邏輯已對拍 cg 的 `OP-STRUCT-RELEASE` 發射（cg.no L2359）與 s99g 的 `OP-STRUCT-RETAIN`，自洽。待門禁落地後復跑 `./bin/no run compiler/tests/h2m-test.no` 即為本件驗收門檻。
+
+**整檔狀態（預期，待復測）**：h2m.no +釋放清單基礎設施；h2m-test.no +58 行（3 用例 + 註冊）。既有 6 失仍為 s98 option 回歸（併發 session 改 cg.no），非本件。
+
+**後續**：①**純 str RC / vec RC 的取得所有權站點**：h2m 尚未降級 `OP-STRCAT`（純 str 無 heap 取得所有權站點可配對），且無 vec-release OP（vec 欄位釋放暫不可行）——兩者釋放清單機制已預留，待對應取得所有權站點就位後即閉環；②**控制流函數（mem==1）的 scope-exit 釋放**：需建 must/may move 分析，使「輸出參當前持有值」與清單 MK 原 id 可對齊，解除 `mem==0` 限制（同時解鎖迴圈/分支內局部結構體的釋放）。
 
 ## 6. 里程碑與進度
 

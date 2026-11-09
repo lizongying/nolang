@@ -544,8 +544,7 @@ test-s99f-vec-field-gate = () {
 ;   發 OP-STRUCT-RETAIN（bs[k]=欄位掩碼，bit j 置位 ⇔ 欄位 j 是 str）；cg 依掩碼對每個 str 欄位
 ;   call @nolang_rc_retain。純 h2m 改動（cg 的 OP-STRUCT-RETAIN/RELEASE 與 @nolang_rc_retain/release
 ;   早已就位）。無 str 欄位的結構體不發 retain。
-; ⚠️ 釋放半邊（scope-exit 的 OP-STRUCT-RELEASE）待 h2m 變量生命週期追蹤基礎設施就位後補——
-;   h2m 目前連純 str 都未發 OP-RELEASE，本件只補「取得所有權」這一側。
+;   釋放半邊已由 s99j（§5.3.4.ek）補上：函數退出時 h2m-emit-releases 對同一 %st 值發 OP-STRUCT-RELEASE（mem==0）。
 test-s99g-struct-str-retain = () {
     ; str 欄位在索引 1 ⇒ 掩碼 = 1<<1 = 2；retain 必須抽欄位 1（非 0）
     src = 'User {\n    id i64\n    name str\n}\n\nf = () (r str) {\n    u = User { id: 1, name: \'alice\' }\n    r = u.name\n}\n'
@@ -666,6 +665,61 @@ test-s99i-index-scalar-gate = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup > 0, 1, 's99i scalar index counted unsup')
     runner.eq(ir.contains('call i64 @vec_get_i64('), 0, 's99i no VECGET for scalar base')
+}
+
+; ── s99j：結構體 str 欄位 RC——scope-exit 釋放半邊（與 s99g 取得所有權配對）（M4-e 第五十件續）──
+; 核心：s99g 在 MK 後發 OP-STRUCT-RETAIN，本件在函數退出時由 h2m-emit-releases 對同一 %st 值發
+;   OP-STRUCT-RELEASE（欄位掩碼同 s99g）。跳過「已被回傳佔用」的值防雙重釋放。僅 mem==0 放行。
+;   ⚠️ 運行時驗證受 15w45dqk 門禁阻塞（同 s99h/s99i），IR 文本斷言為本件主要驗證手段。
+test-s99j-struct-release = () {
+    ; 本地結構體（非回傳值，含 str 欄位@idx1 ⇒ 掩碼=2）：MK 取得所有權 + scope-exit 釋放
+    src = 'User {\n    id i64\n    name str\n}\n\nf = () (r i64) {\n    u = User { id: 1, name: \'alice\' }\n    r = u.id\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99j struct release unsup')
+    runner.eq(ir.contains('%struct.s0 = type { i64, %str-long }'), 1, 's99j struct decl')
+    ; 取得所有權（s99g）：retain 抽欄位 1
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain still emitted')
+    ; 釋放半邊（本件）：同一 %st3 值退出時發 release（抽欄位 1 兩次：retain 一次、release 一次）
+    runner.eq(ir.contains('extractvalue %struct.s0 %st3, 1'), 2, 's99j retain+release both extract str field idx 1')
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99j release emitted at scope exit')
+}
+
+test-s99j-struct-ret-no-release = () {
+    ; 結構體即回傳值（r: User）：RETAIN 仍發（取得所有權），但 scope-exit 釋放須跳過回傳值防雙重釋放
+    src = 'User {\n    id i64\n    name str\n}\n\nf = () (r User) {\n    r = User { id: 1, name: \'alice\' }\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99j ret struct unsup')
+    ; 取得所有權仍發
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain emitted for returned struct')
+    ; 關鍵：回傳值被 skip ⇒ 不得發 release（否則呼叫方 double-free）
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99j NO release for returned struct')
+}
+
+test-s99j-struct-mixed-release = () {
+    ; 混合掩碼（str@idx2 ⇒ 掩碼=4）：release 須抽欄位 2（與 retain 同掩碼），證明掩碼正確傳遞到釋放側
+    src = 'Rec {\n    a i64\n    b i64\n    c str\n}\n\nf = () (r i64) {\n    u = Rec { a: 1, b: 2, c: \'x\' }\n    r = u.a\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99j mixed-mask release unsup')
+    runner.eq(ir.contains('%struct.s0 = type { i64, i64, %str-long }'), 1, 's99j mixed struct decl')
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain emitted (mask 4)')
+    ; 掩碼只置位 bit 2 ⇒ retain 與 release 皆只抽欄位 2
+    runner.eq(ir.contains('extractvalue %struct.s0 %st4, 2'), 2, 's99j retain+release both extract str field idx 2')
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99j mixed-mask release emitted')
 }
 
 ; ── 单个输入参数：形参占值 id 1，body 从 id 2 起 ──
@@ -4173,6 +4227,9 @@ test-s99i-vec-index-param()
 test-s99i-vec-field-index()
 test-s99i-vec-local-bind()
 test-s99i-index-scalar-gate()
+test-s99j-struct-release()
+test-s99j-struct-ret-no-release()
+test-s99j-struct-mixed-release()
 
 runner.summary()
 f = runner.failed-count()
