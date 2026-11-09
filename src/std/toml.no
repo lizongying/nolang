@@ -15,6 +15,7 @@
 ;   doc.put('server.port', '8080')
 ;   text = toml.stringify(doc)
 ;
+; [toml](#toml)
 
 TOML-MAX-ENTRIES = 4
 TOML-MAX-TABLES = 2

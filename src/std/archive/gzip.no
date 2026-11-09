@@ -13,8 +13,10 @@
 ;   compressed = gzip-compress(data)
 ;   decompressed = gzip-decompress(compressed)
 ;   raw = inflate-decompress(deflate-data, expected-size)
+; [gzip](#gzip)
 
-; ─── 位元讀取器 ───────────────────────────────
+; 位元讀取器
+...
 
 ; bit-reader: DEFLATE 位元讀取器（LSB-first）
 ; data []byte: 待解碼的原始位元組緩衝
@@ -94,7 +96,8 @@ bit-reader.read-u16-le = () (v i64) {
     v = lo | (hi << 8)
 }
 
-; ─── Huffman 解碼 ─────────────────────────────
+; Huffman 解碼
+...
 
 ; huffman: 規範 Huffman 解碼碼表（DEFLATE）
 ; count [17]i64: 各碼長（0–15）的符號個數；count[0] 在建表時被歸零、count[16] 僅作佔位
@@ -220,7 +223,8 @@ huffman.decode = (br bit-reader) (sym i64) {
     sym = -1
 }
 
-; ─── 固定 Huffman 表建構 ──────────────────────
+; 固定 Huffman 表建構
+...
 
 ; 建構固定 Huffman 表
 ; 依 DEFLATE 規範 §3.2.6 填入固定碼長：0–143 碼長 8、144–255 碼長 9、
@@ -255,7 +259,8 @@ build-fixed = (lc huffman, dc huffman) {
     dc.build(dlengths, 30)
 }
 
-; ─── 動態 Huffman 表建構 ──────────────────────
+; 動態 Huffman 表建構
+...
 
 ; 從位元串流建構動態 Huffman 表
 ; 先讀 HLIT/HDIST/HCLEN，再按 code-order 讀碼長度碼，最後展開重複碼長得到字面/距離表。
@@ -430,7 +435,8 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     dc.build(dlengths, hdist)
 }
 
-; ─── DEFLATE 解壓縮 ───────────────────────────
+; DEFLATE 解壓縮
+...
 
 ; 解壓縮原始 DEFLATE 資料（RFC 1951，ZIP method 8）
 ;   data: 壓縮資料 ([]byte)
@@ -656,7 +662,8 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
     out = result
 }
 
-; ─── DEFLATE 壓縮（stored blocks）─────────────
+; DEFLATE 壓縮（stored blocks）
+...
 
 ; 使用 stored blocks 的 DEFLATE 壓縮
 ;   data: 原始資料 ([]byte)
@@ -719,7 +726,8 @@ deflate-stored = (data []byte) (out []byte) {
     out = result
 }
 
-; ─── GZIP 格式 ────────────────────────────────
+; GZIP 格式
+...
 
 ; 使用 gzip 格式壓縮資料
 ;   data: 原始資料 ([]byte)

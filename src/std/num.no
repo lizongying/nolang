@@ -5,6 +5,7 @@
 ; 本模組承載 num 型別的方法：abs, clamp, sign。
 ; 泛型數字函數 max / min 見 math 模組；
 ; 具體型別操作（範圍常數、型別轉換、to-str、位元操作等）見 number 模組。
+; [num](#num)
 
 num = int | float
 

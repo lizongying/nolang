@@ -452,6 +452,22 @@ func TestLoweringIsDeterministic(t *testing.T) {
 	t.Logf("%d modules lowered deterministically (%d with statements)", checked, nonEmpty)
 }
 
+// loweredStatements 回傳「會產生 HIR 節點」的頂層陳述。
+//
+// `...`（佔位陳述）依設計在 AST→HIR 時整條丟棄（AST 有節點、HIR 沒有，見
+// parser 的 empty_statement_test.go）。把它留在配對清單裡，任何帶 `...` 的模組
+// 都會以「陳述數 != 頂層節點數」假失敗——而 `...` 現在也用在 std 的章節標題上。
+func loweredStatements(prog *parser.Program) []parser.Statement {
+	out := make([]parser.Statement, 0, len(prog.Statements))
+	for _, s := range prog.Statements {
+		if _, isPlaceholder := s.(*parser.EmptyStatement); isPlaceholder {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 // TestAnnotationsSurviveLowering pins the annotation side table down.
 //
 // #{...} entries are not AST statements; the parser files them in
@@ -478,13 +494,14 @@ func TestAnnotationsSurviveLowering(t *testing.T) {
 			continue
 		}
 		pkg := parser.ASTToHIR(prog)
+		stmts := loweredStatements(prog)
 
-		if len(prog.Statements) != len(pkg.Top) {
+		if len(stmts) != len(pkg.Top) {
 			t.Fatalf("module %s: %d statements lowered to %d top-level nodes; the "+
 				"index-wise comparison below assumes they line up",
-				full, len(prog.Statements), len(pkg.Top))
+				full, len(stmts), len(pkg.Top))
 		}
-		for i, stmt := range prog.Statements {
+		for i, stmt := range stmts {
 			want := prog.Sem.AnnotationsOf(stmt)
 			gotKeys, gotHasValue := pkg.AnnotationKeys(pkg.Top[i])
 			if len(want) != len(gotKeys) {
@@ -574,9 +591,9 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 	// filter had also quietly turned this into a test of that backend rather
 	// than of HIR. PlatformKeysOf returns only bare platform keys, so it needs
 	// no hasValue filter of its own.
-	astMatches := func(prog *parser.Program, i int, goos, goarch string) bool {
+	astMatches := func(prog *parser.Program, stmt parser.Statement, goos, goarch string) bool {
 		hasPlatform := false
-		for _, k := range prog.Sem.PlatformKeysOf(prog.Statements[i]) {
+		for _, k := range prog.Sem.PlatformKeysOf(stmt) {
 			m, isPlatform := pkgutil.PlatformKeys[k]
 			if !isPlatform {
 				continue
@@ -602,14 +619,15 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 			continue
 		}
 		pkg := parser.ASTToHIR(prog)
-		if len(prog.Statements) != len(pkg.Top) {
+		stmts := loweredStatements(prog)
+		if len(stmts) != len(pkg.Top) {
 			t.Fatalf("module %s: statement/top-level count mismatch", full)
 		}
 
 		for _, tgt := range targets {
 			var keptAST, keptHIR []int
-			for i := range prog.Statements {
-				if astMatches(prog, i, tgt.goos, tgt.goarch) {
+			for i, stmt := range stmts {
+				if astMatches(prog, stmt, tgt.goos, tgt.goarch) {
 					keptAST = append(keptAST, i)
 				}
 				if hirMatches(pkg, pkg.Top[i], tgt.goos, tgt.goarch) {
@@ -628,7 +646,7 @@ func TestPlatformFilteringMatchesAST(t *testing.T) {
 					break
 				}
 			}
-			dropped += len(prog.Statements) - len(keptAST)
+			dropped += len(stmts) - len(keptAST)
 		}
 	}
 

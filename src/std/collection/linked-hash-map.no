@@ -8,6 +8,7 @@
 ;   m.put(42, 100)
 ;   val = m.get(42)   // val = ok(100) 或 nil
 ;   m.for-each(key, val)
+; [linked-hash-map](#linked-hash-map)
 
 ; linked-hash-map: 依插入順序維護的 i64→i64 哈希表實例
 ; cap i64: 槽位總數（固定 64，須為 2 的冪）

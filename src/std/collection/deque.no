@@ -15,6 +15,7 @@
 ;       nil -> print('empty')
 ;       -> print(it)
 ;   }
+; [deque](#deque)
 
 ; deque: 雙端佇列狀態
 ; buf []i64: 環形緩衝區，容量 = cap（由呼叫方提供並保活）

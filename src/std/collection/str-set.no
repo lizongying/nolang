@@ -9,6 +9,7 @@
 ;   s.add('hello')
 ;   yes = s.contains('hello')   // yes = true
 ;   s.for-each(val)
+; [str-set](#str-set)
 
 ; FNV-1a 常量
 SS-FNV-OFFSET = -3750763034362895579

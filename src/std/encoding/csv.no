@@ -8,6 +8,8 @@
 ;   line = 'a,b,c'
 ;   fields = csv.parse-line(line)           // max-fields 默認 1024
 ;   fields = csv.parse-line(line, 3)        // 限制最多 3 個欄位
+; [csv](#csv)
+
 ; 解析 CSV 中的一個欄位
 ; 從 s[pos] 開始解析，處理雙引號和逗號；雙引號內的 "" 會還原為單一 "，
 ; 引號外的逗號 / 行尾即為欄位邊界。

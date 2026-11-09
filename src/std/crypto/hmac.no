@@ -15,8 +15,10 @@
 ;   msg []byte = 'hello'
 ;   out = hmac-sha256(key, msg)
 ;   // out 為 [32]byte 雜湊值
+; [hmac](#hmac)
 
-; ─── 常量 ─────────────────────────────────────────
+; 常量
+...
 
 ; SHA-256 區塊大小（位元組）
 HMAC-BLOCK-SIZE = 64
@@ -28,7 +30,8 @@ HMAC-HASH-SIZE = 32
 HMAC-IPAD = 54
 HMAC-OPAD = 92
 
-; ─── HMAC-SHA256 ─────────────────────────────────
+; HMAC-SHA256
+...
 
 ; 計算 HMAC-SHA256
 ; key: 雜湊金鑰（超過底層雜湊區塊長度 64 位元組時先雜湊縮減，不足則補零）
@@ -172,7 +175,8 @@ hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
     out.truncate(32)
 }
 
-; ─── HMAC-SHA1 ──────────────────────────────────
+; HMAC-SHA1
+...
 
 ; HMAC-SHA1 區塊大小
 HMAC-SHA1-BLOCK-SIZE = 64
@@ -310,7 +314,8 @@ hmac-sha1-vec = (key []byte, msg []byte) (out []byte) {
     out = h[..20)
 }
 
-; ─── HMAC-SHA512 ─────────────────────────────────
+; HMAC-SHA512
+...
 
 ; HMAC-SHA512 區塊大小（SHA-512 使用 128 位元組區塊）
 HMAC-SHA512-BLOCK-SIZE = 128
@@ -449,7 +454,8 @@ hmac-sha512-vec = (key []byte, msg []byte) (out []byte) {
     out = h[..64)
 }
 
-; ─── HMAC-SHA384 ─────────────────────────────────
+; HMAC-SHA384
+...
 
 ; 計算 HMAC-SHA384（使用 SHA-384 底層雜湊，區塊大小 128）
 ; key: 雜湊金鑰（超過 128 位元組區塊時先雜湊縮減，不足則補零）
@@ -581,7 +587,8 @@ hmac-sha384-vec = (key []byte, msg []byte) (out []byte) {
     out = h[..48)
 }
 
-; ─── HMAC-MD5 ───────────────────────────────────
+; HMAC-MD5
+...
 
 ; 計算 HMAC-MD5（使用 MD5 底層雜湊，區塊大小 64）
 ; key: 雜湊金鑰（超過 64 位元組區塊時先雜湊縮減，不足則補零）

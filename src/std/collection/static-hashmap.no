@@ -14,6 +14,7 @@
 ;   m.init()
 ;   m.put('name', 42)
 ;   val = m.get('name')   // val = ok(42) 或 nil
+; [static-hashmap](#static-hashmap)
 
 ; FNV-1a 常量
 FNV-OFFSET = -3750763034362895579
@@ -23,9 +24,8 @@ HASHMAP-STR-I64-CAP = 256
 HASHMAP-I64-I64-CAP = 256
 HASHMAP-STR-STR-CAP = 256
 
-; ============================================================
 ; 1. static-hashmap-str-tmpl — str 鍵泛型雜湊映射表
-; ============================================================
+...
 
 ; static-hashmap-str-tmpl — str 鍵泛型雜湊映射表
 ;
@@ -306,9 +306,8 @@ static-hashmap-str-tmpl.for-each = () (k str, v v) {
     }
 }
 
-; ============================================================
 ; 2. static-hashmap-int-tmpl — int 鍵泛型雜湊映射表
-; ============================================================
+...
 
 ; static-hashmap-int-tmpl — int 鍵泛型雜湊映射表
 ;
@@ -553,9 +552,8 @@ static-hashmap-int-tmpl.for-each = () (k k, v v) {
     }
 }
 
-; ============================================================
 ; 3. static-hashmap-bool-tmpl — bool 鍵泛型雜湊映射表
-; ============================================================
+...
 
 ; static-hashmap-bool-tmpl — bool 鍵泛型雜湊映射表
 ;

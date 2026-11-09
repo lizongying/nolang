@@ -1,3 +1,11 @@
+; leave — 作用域離開掛鉤（介面聲明）
+;
+; 型別提供 `T.leave = () { … }` 後，編譯器會在 `return` 之前按作用域逆序自動插入
+; `變數.leave()`：注入由 src/build/transpiler_inject.go 的 injectEnterLeave
+; 按**方法名**完成，與本聲明無耦合。本檔只登記介面本身，供文檔與 LSP 導航；
+; std 語料目前沒有型別實作它。
+; [leave](#leave)
+
 leave {
     leave()
 }

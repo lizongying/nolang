@@ -36,10 +36,10 @@
 ;           }
 ;       }
 ;   }
+; [multipart](#multipart)
 
-; ═══════════════════════════════════════════════
 ; 常量
-; ═══════════════════════════════════════════════
+...
 
 ; 邊界前綴
 MULTIPART-BOUNDARY-PREFIX = '----NolangBoundary'
@@ -50,9 +50,8 @@ MULTIPART-MAX-FIELDS = 32
 ; 邊界長度
 MULTIPART-BOUNDARY-LEN = 32
 
-; ═══════════════════════════════════════════════
 ; 工具函數
-; ═══════════════════════════════════════════════
+...
 
 ; 生成隨機邊界字串
 ; seed i64: 隨機種子（輸入/輸出）
@@ -70,9 +69,8 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; multipart-writer 結構體
-; ═══════════════════════════════════════════════
+...
 
 ; multipart-writer: Multipart 表單編碼器
 ; boundary str: 邊界字串
@@ -194,9 +192,8 @@ multipart-writer.content-type = () (ct str) {
     ct = 'multipart/form-data; boundary=' - .boundary
 }
 
-; ═══════════════════════════════════════════════
 ; multipart-reader 結構體（解析）
-; ═══════════════════════════════════════════════
+...
 
 ; multipart-part: 單個 multipart 部分
 ; name str: 欄位名稱
@@ -418,9 +415,8 @@ multipart-reader.has-current-part = () (yes bool) {
     yes = .has-current
 }
 
-; ═══════════════════════════════════════════════
 ; 便捷函數
-; ═══════════════════════════════════════════════
+...
 
 ; 建立新的 multipart 編碼器
 ; 返回 w ?multipart-writer: ok=編碼器, nil=失敗
@@ -529,9 +525,8 @@ multipart-extract-boundary = (content-type str) (boundary str) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 加密檔案上傳（AES-256-GCM）
-; ═══════════════════════════════════════════════
+...
 
 ; 寫入 AES-256-GCM 加密檔案欄位
 ; name str: 欄位名稱

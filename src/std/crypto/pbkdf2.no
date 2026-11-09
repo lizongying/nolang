@@ -9,10 +9,10 @@
 ;   iterations = 10000
 ;   key-len = 32
 ;   derived = pbkdf2-hmac-sha256(password, salt, iterations, key-len)
+; [pbkdf2](#pbkdf2)
 
-; ═══════════════════════════════════════════════
 ; PBKDF2-HMAC-SHA256
-; ═══════════════════════════════════════════════
+...
 
 ; PBKDF2 使用 HMAC-SHA256
 ; password []byte: 密碼（UTF-8 位元組序列）
@@ -171,9 +171,8 @@ pbkdf2-hmac-sha256 = (password []byte, salt []byte, iterations i64, key-len i64)
     }
 }
 
-; ═══════════════════════════════════════════════
 ; PBKDF2-HMAC-SHA512
-; ═══════════════════════════════════════════════
+...
 
 ; PBKDF2 使用 HMAC-SHA512
 ; password []byte: 密碼（UTF-8 位元組序列）
@@ -316,9 +315,8 @@ pbkdf2-hmac-sha512 = (password []byte, salt []byte, iterations i64, key-len i64)
     }
 }
 
-; ═══════════════════════════════════════════════
 ; PBKDF2-HMAC-SHA1
-; ═══════════════════════════════════════════════
+...
 
 ; PBKDF2 使用 HMAC-SHA1
 ; 僅供相容舊協議；新設計請用 SHA-256 / SHA-512 版本。

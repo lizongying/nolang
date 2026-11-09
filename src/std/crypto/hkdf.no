@@ -8,10 +8,10 @@
 ;   prk = hkdf-extract(salt, ikm)           // 返回 [32]byte
 ;   okm = hkdf-expand(prk, info, 32)        // 返回 []byte
 ;   okm = hkdf-expand-label(prk, 'label', ctx, 32)  // TLS 1.3 專用
+; [hkdf](#hkdf)
 
-; ═══════════════════════════════════════════════
 ; HKDF-Extract
-; ═══════════════════════════════════════════════
+...
 
 ; HKDF-Extract（RFC 5869 §2.2）
 ; salt []byte: 鹽值（可為空；空時以 32 個零位元組代替）
@@ -54,9 +54,8 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
     prk = hmac.hmac-sha256(k, ikm)
 }
 
-; ═══════════════════════════════════════════════
 ; HKDF-Expand
-; ═══════════════════════════════════════════════
+...
 
 ; 計算 HMAC-SHA256(prk, t-prefix || info || counter-byte)
 ; 內部輔助函數，避免在 hkdf-expand 中修改 slice.len()
@@ -230,9 +229,8 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; HKDF-Expand-Label（TLS 1.3 專用）
-; ═══════════════════════════════════════════════
+...
 
 ; TLS 1.3 HKDF-Expand-Label（RFC 8446 §7.1）
 ; 先按 HkdfLabel 結構組出 info（length + "tls13 "+label + context），再調用 HKDF-Expand。
@@ -358,9 +356,8 @@ hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (ok
     okm = hkdf-expand-label(prk-arr, label, context, out-len)
 }
 
-; ═══════════════════════════════════════════════
 ; 輔助：Derive-Secret（TLS 1.3 §7.1）
-; ═══════════════════════════════════════════════
+...
 
 ; Derive-Secret(Secret, Label, Messages)（TLS 1.3 §7.1）
 ; 等同 hkdf-expand-label-vec(secret, label, messages, 32)。

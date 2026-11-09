@@ -24,10 +24,10 @@
 ;   req.add-header('Content-Type', 'application/json')
 ;   req.add-header('Authorization', 'Bearer token123')
 ;   resp = do-req(req)
+; [http](#http)
 
-; ═══════════════════════════════════════════════
 ; 常量
-; ═══════════════════════════════════════════════
+...
 
 ; 接收緩衝區大小
 ; 必須 ≥ TLS 單筆記錄最大明文 (2^14 = 16384 位元組)。否則 tls.conn.recv 在
@@ -50,9 +50,8 @@ HTTP-MAX-REQ-HEADERS = 16
 ; 回應最大解析標頭數
 HTTP-MAX-RESP-HEADERS = 32
 
-; ═══════════════════════════════════════════════
 ; 結構體
-; ═══════════════════════════════════════════════
+...
 
 ; request: HTTP 請求（支援自訂標頭）
 ; headers: 標頭行陣列，每行格式 'Name: Value'
@@ -82,9 +81,8 @@ response {
     body str
 }
 
-; ═══════════════════════════════════════════════
 ; request 方法
-; ═══════════════════════════════════════════════
+...
 
 ; 初始化請求
 ; method: HTTP 方法（GET、POST、PUT、DELETE、PATCH 等）
@@ -139,9 +137,8 @@ request.add-header = (name str, value str) (ok bool) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; response 方法
-; ═══════════════════════════════════════════════
+...
 
 ; 將 headers 字串拆分到 header-names / header-values
 ; 必須在 headers 欄位被填入後呼叫（do / do-req 內部會自動呼叫）
@@ -257,9 +254,8 @@ response.get-header = (name str) (val ?str) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 主要 API
-; ═══════════════════════════════════════════════
+...
 
 ; 執行 HTTP 請求
 ; method: HTTP 方法（GET、POST、PUT、DELETE 等）
@@ -741,9 +737,8 @@ do-req = (req request) (resp ?response) {
     resp = r
 }
 
-; ═══════════════════════════════════════════════
 ; 便捷函數
-; ═══════════════════════════════════════════════
+...
 
 ; 執行 HTTP GET 請求
 ; url: 完整 URL
@@ -1138,9 +1133,8 @@ upload-put = (url str, token str, file-path str) (ok bool) {
     code >= 200 && code < 300 -> ok = true
 }
 
-; ═══════════════════════════════════════════════
 ; 認證便捷函數
-; ═══════════════════════════════════════════════
+...
 
 ; 為請求加入 HTTP Basic 認證標頭
 ; req request: 請求結構體
@@ -1207,7 +1201,6 @@ post-auth = (url str, body str, user str, password str) (resp ?response) {
     resp = do-req(r)
 }
 
-; ═══════════════════════════════════════════════
 ; download-to-file: 純 Nolang 二進位下載到檔案
 ; 與 do/do-req 不同：以 []byte 累積整個回應（不受 HTTP-MAX-RESPONSE 限制），
 ; 在位元組層級切分標頭與主旨（避免 str 碼點 slice 損壞二進位資料），
@@ -1215,7 +1208,8 @@ post-auth = (url str, body str, user str, password str) (resp ?response) {
 ; url str: 完整 URL（http:// 或 https://）
 ; dest str: 本地寫入路徑
 ; 返回 ok bool: true=成功
-; ═══════════════════════════════════════════════
+...
+
 ; [download-to-file](#http.download-to-file)
 ; 下載 URL 內容到本地檔案（公開入口）：委託 http-dl-open，重定向計數從 0 起
 ; url: 完整 URL（http/https）

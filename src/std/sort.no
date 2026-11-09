@@ -1,3 +1,10 @@
+; sort — ord 比較介面與升／降序原地排序
+;
+; ord 只要求一個方法：`.gt(b) bool`（接收者大於 b 時為 true）。本檔同時提供
+; 內建型別（i8…u64、f32/f64、byte、char、str）的 gt 實作，以及元素為 ord 的
+; 陣列／切片視圖上的原地插入排序：`[n]ord.asc` / `.desc` 與 `[]ord.asc` / `.desc`。
+; [sort](#sort)
+
 ord {
     t.gt(b t) (res bool)
 }

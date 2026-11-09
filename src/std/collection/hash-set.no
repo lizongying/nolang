@@ -10,6 +10,7 @@
 ;   yes = s.contains(42)    // yes = true
 ;   s.remove(42)
 ;   s.for-each(val)
+; [hash-set](#hash-set)
 
 hash-set {
     cap i64

@@ -13,6 +13,7 @@
 ;   html = markdown.to-html(source)
 ;   html = markdown.render(source)
 ;   text = markdown.inline('**bold** and `code`')
+; [markdown](#markdown)
 
 ; 使用小型記錄承載多值解析結果，避免調用方處理可選索引結果。
 markdown-line {

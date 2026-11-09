@@ -7,6 +7,8 @@
 ;   # std/crypto/sha384
 ;   hash = sha384(data)       // hash = 48 位元組 [48]byte
 ;   hex = sha384-hex(data)    // hex = 96 字元 hex 字串
+; [sha384](#sha384)
+
 ; 計算 SHA-384 雜湊（含填充與多區塊處理；壓縮函數與 SHA-512 相同，初始值不同）
 ; data []byte: 輸入位元組陣列（任意長度）
 ; hash [48]byte: 384-bit 摘要（取 SHA-512 前 6 個狀態字），大端序存放

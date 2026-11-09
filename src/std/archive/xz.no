@@ -14,10 +14,10 @@
 ; 演算法參考：
 ;   - LZMA specification: https://www.7-zip.org/sdk.html (LZMA SDK)
 ;   - XZ format: https://tukaani.org/xz/xz-file-format.txt
+; [xz](#xz)
 
-; ═══════════════════════════════════════════════
 ; LZMA 範圍解碼器（Range Decoder）
-; ═══════════════════════════════════════════════
+...
 
 ; lzma-range-decoder: LZMA 算術範圍解碼器
 lzma-rd {
@@ -204,9 +204,8 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; LZMA 解碼器狀態
-; ═══════════════════════════════════════════════
+...
 
 ; LZMA 機率模型大小
 LZMA-NUM-STATES = 12
@@ -783,9 +782,8 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; .lzma 格式解壓縮（傳統 LZMA alone 格式）
-; ═══════════════════════════════════════════════
+...
 
 ; 解壓縮傳統 .lzma 格式
 ;   data: .lzma 壓縮資料 ([]byte)
@@ -930,9 +928,8 @@ lzma-decompress = (data []byte) (out []byte) {
     out = dec.out
 }
 
-; ═══════════════════════════════════════════════
 ; .xz 格式解壓縮（XZ container + LZMA2）
-; ═══════════════════════════════════════════════
+...
 
 ; XZ 常數
 XZ-MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]
@@ -1399,9 +1396,8 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
     out = res
 }
 
-; ═══════════════════════════════════════════════
 ; 壓縮（基本實現 — stored block）
-; ═══════════════════════════════════════════════
+...
 
 ; 使用 xz 格式壓縮資料（基本實現）
 ;   data: 原始資料 ([]byte)

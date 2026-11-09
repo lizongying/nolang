@@ -11,6 +11,8 @@
 ;   key [24]byte  // K1=key[0:8], K2=key[8:16], K3=key[16:24]
 ;   out = tdes-enc(plain, plain.len(), key)   // 加密
 ;   out = tdes-dec(cipher, cipher.len(), key) // 解密
+; [tdes](#tdes)
+
 ; Triple DES 加密（ECB 模式）
 ; 對每個 8 位元組區塊執行 E_K1 → D_K2 → E_K3，區塊之間互不影響（相同明文得到相同密文）。
 ; in []byte: 輸入資料（長度需為 8 的倍數；不足一區塊的尾部不會被處理）
@@ -218,9 +220,8 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 3DES-CBC 模式
-; ═══════════════════════════════════════════════
+...
 
 ; Triple DES-CBC 加密
 ; 每個區塊先與前一區塊的密文（首塊為 iv）異或再走 3DES-ECB，

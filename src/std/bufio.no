@@ -1,6 +1,7 @@
 ; bufio — 緩衝 I/O
 ;
 ; 為 os.read / os.write 提供緩衝讀寫和行讀取功能。
+; [bufio](#bufio)
 
 ; reader: 緩衝讀取器狀態
 ; fd fd: 已開啟的檔案描述符，由 fs.read 消費

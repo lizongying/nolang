@@ -14,8 +14,10 @@
 ;
 ;   // 提取 RSA 公鑰指數
 ;   e = x509-rsa-e(cert)
+; [x509](#x509)
 
-; ─── DER TLV 底層解析 ─────────────────────────────────
+; DER TLV 底層解析
+...
 
 ; 讀取 DER 標籤位元組
 ; data: DER 編碼資料, pos: 位置
@@ -100,7 +102,8 @@ der-skip = (data []byte, pos i64) (next i64) {
     next = p + l
 }
 
-; ─── X.509 結構導航 ─────────────────────────────────
+; X.509 結構導航
+...
 
 ; 找出 TBSCertificate 的位元組範圍
 ; data: DER 編碼憑證
@@ -478,7 +481,8 @@ x509-rsa-n = (data []byte) (out []byte) {
     }
 }
 
-; ─── SHA-256 憑證指紋 ─────────────────────────────────
+; SHA-256 憑證指紋
+...
 
 ; x509-fingerprint: 計算 X.509 憑證的 SHA-256 指紋
 ; 即憑證內 TBSCertificate 子結構的 SHA-256 哈希值（非整份 DER 的哈希）。
@@ -569,7 +573,8 @@ x509-fingerprint = (data []byte) (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64
 }
 
 ; 找到 TBSCertificate 範圍
-; ─── SHA-256 壓縮函數（內建，直接用 w0..w15 變數）───
+; SHA-256 壓縮函數（內建，直接用 w0..w15 變數）
+...
 
 ; SHA-256 單區塊壓縮
 ; 對 16 個 32-bit 訊息字執行 64 輪壓縮，並把結果疊加到輸入狀態上。
@@ -2281,9 +2286,8 @@ sha256-compress = (w0 i64, w1 i64, w2 i64, w3 i64, w4 i64, w5 i64, w6 i64, w7 i6
     h7 = (hin7 + h) & mask
 }
 
-; ═══════════════════════════════════════════════
 ; DER 編碼（用於 X.509 自簽憑證產生）
-; ═══════════════════════════════════════════════
+...
 
 ; 編碼 DER 長度
 ; val i64: 長度值
@@ -2676,9 +2680,8 @@ der-enc-explicit = (tag-num i64, content []byte) (out []byte) {
     out = der-enc-tlv(tag, content)
 }
 
-; ═══════════════════════════════════════════════
 ; OID 與 AlgorithmIdentifier
-; ═══════════════════════════════════════════════
+...
 
 ; 從原始 OID 內容位元組編碼（不含 tag+length）
 ; raw []byte: OID 內容位元組（例如 rsaEncryption = [0x2A, 0x86, 0x48, ...]）
@@ -2878,9 +2881,8 @@ alg-id-sha256-with-rsa = () (out []byte) {
     out = der-enc-sequence(content)
 }
 
-; ═══════════════════════════════════════════════
 ; X.509 元件建構
-; ═══════════════════════════════════════════════
+...
 
 ; 建構 RSAPublicKey DER
 ; n []byte: 模數（big-endian，不含前導 0x00）
@@ -3276,9 +3278,8 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     out = der-enc-sequence(content)
 }
 
-; ═══════════════════════════════════════════════
 ; RSA PKCS#1 v1.5 簽章
-; ═══════════════════════════════════════════════
+...
 
 ; 使用 RSA PKCS#1 v1.5 簽署資料
 ; data []byte: 待簽資料
@@ -3542,9 +3543,8 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     sig.truncate(mod-len)
 }
 
-; ═══════════════════════════════════════════════
 ; X.509 自簽憑證產生
-; ═══════════════════════════════════════════════
+...
 
 ; 建構自簽 X.509 憑證
 ; n []byte: RSA 模數（big-endian）

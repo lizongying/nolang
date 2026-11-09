@@ -6,10 +6,10 @@
 ; 用法：
 ;   conn = connect(host, port)            // 返回 ?conn
 ;   resp = do('GET', 'http://host/path', '')  // 返回 ?http.response
+; [http2](#http2)
 
-; ═══════════════════════════════════════════════
 ; 常量
-; ═══════════════════════════════════════════════
+...
 
 HTTP2-FRAME-HEADER-SIZE = 9
 HTTP2-MAX-PAYLOAD = 16384
@@ -37,9 +37,8 @@ FLAG-END-HEADERS = 4
 FLAG-PADDED = 8
 FLAG-PRIORITY = 32
 
-; ═══════════════════════════════════════════════
 ; 結構體
-; ═══════════════════════════════════════════════
+...
 
 ; frame: HTTP/2 影格
 frame {
@@ -68,9 +67,8 @@ conn {
     tls-c tls.conn
 }
 
-; ═══════════════════════════════════════════════
 ; 影格解析/序列化
-; ═══════════════════════════════════════════════
+...
 
 ; 從 data 的 pos 位置解析 9-byte 影格標頭
 ; 返回 next-pos ?i64: ok=下一個位置, nil=錯誤
@@ -180,9 +178,8 @@ frame.serialize = (buf str, pos i64) (next-pos i64) {
     next-pos = pos + HTTP2-FRAME-HEADER-SIZE
 }
 
-; ═══════════════════════════════════════════════
 ; 連線管理
-; ═══════════════════════════════════════════════
+...
 
 ; 初始化連線狀態
 ; [init](#http2.conn.init)
@@ -450,9 +447,8 @@ conn.send-data = (stream-id i64, data str, end-stream bool) (ok bool) {
     ok = .send-frame(f)
 }
 
-; ═══════════════════════════════════════════════
 ; 高層 API
-; ═══════════════════════════════════════════════
+...
 
 ; 建立 HTTP/2 h2c 連線
 ; 送出 preface + SETTINGS，接收並 ACK 伺服器 SETTINGS
@@ -897,9 +893,8 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 便捷函數（返回 http.response）
-; ═══════════════════════════════════════════════
+...
 
 ; HTTP/2 請求，返回 ?http.response
 ; method: 'GET'/'POST'/'PUT'/'DELETE'/'PATCH'

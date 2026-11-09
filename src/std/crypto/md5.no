@@ -6,6 +6,8 @@
 ;   data = [0x61, 0x62, 0x63]  // ["a", "b", c"]
 ;   hash = md5(data)
 ;   // hash == [0x90, 0x01, 0x50, 0x98, ...]
+; [md5](#md5)
+
 ; 32-bit 左旋。math.rotate-left 為 64-bit 寬度，不適用於 MD5 的 u32 輪函數，
 ; 故以移位＋遮罩 (0xFFFFFFFF) 手動實作真正的 32-bit 旋轉。
 ; x u32: 要旋轉的 32 位元值

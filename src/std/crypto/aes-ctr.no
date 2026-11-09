@@ -12,6 +12,8 @@
 ;   cipher = aes-ctr.crypt-128(plain, key, iv)   ; 加密
 ;   plain  = aes-ctr.crypt-128(cipher, key, iv)  ; 解密（同一個函式）
 ;   ; AES-256 改用 key [32]byte 與 crypt-256
+; [aes-ctr](#aes-ctr)
+
 ; 計數器遞增（大端序，先加最低 32 位元，進位再往高位傳播）
 ; cb []byte: 16 位元組計數器區塊，原地修改；只會動到後 4 位元組（下標 12–15）
 ; [ctr-inc](#aes-ctr.ctr-inc)

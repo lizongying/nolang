@@ -11,10 +11,10 @@
 ;   # std/net/http3
 ;   resp = get('https://example.com/path')   // 返回 ?http.response
 ;   resp = http3-do('GET', 'https://example.com/path', '')
+; [http3](#http3)
 
-; ═══════════════════════════════════════════════
 ; HTTP/3 常量
-; ═══════════════════════════════════════════════
+...
 
 ; HTTP 方法
 HTTP3-METHOD-GET = 'GET'
@@ -54,9 +54,8 @@ HTTP3-MAX-RESPONSE = 65536
 ; QPACK 字面標頭前綴
 QPACK-LITERAL-PREFIX i64 = 0x20
 
-; ═══════════════════════════════════════════════
 ; 簡化版 QPACK 編解碼
-; ═══════════════════════════════════════════════
+...
 
 ; 將單個標頭編碼為 QPACK 字面格式
 ; name: 標頭名稱（以字面值編碼，不走靜態表）
@@ -353,9 +352,8 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     next-pos = r-pos
 }
 
-; ═══════════════════════════════════════════════
 ; HTTP/3 影格編解碼
-; ═══════════════════════════════════════════════
+...
 
 ; 編碼 HTTP/3 影格
 ; frame-type: HTTP/3 影格類型碼（varint 編碼，如 0x00 DATA、0x01 HEADERS）
@@ -531,9 +529,8 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
     }
 }
 
-; ═══════════════════════════════════════════════
 ; HTTP/3 回應結構體
-; ═══════════════════════════════════════════════
+...
 
 ; response: HTTP/3 回應
 ; status-code i64: 狀態碼
@@ -565,9 +562,8 @@ response.get-header = (name str) (val ?str) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; URL 解析
-; ═══════════════════════════════════════════════
+...
 
 ; 解析 HTTPS URL
 ; url: 以 'https://' 開頭的完整 URL（如 https://host:port/path）
@@ -614,9 +610,8 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
     ok = true
 }
 
-; ═══════════════════════════════════════════════
 ; HTTP/3 客戶端連接
-; ═══════════════════════════════════════════════
+...
 
 ; 建立 HTTP/3 連線
 ; host: 伺服器主機名或 IP
@@ -993,9 +988,8 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     resp = r
 }
 
-; ═══════════════════════════════════════════════
 ; 便捷函數
-; ═══════════════════════════════════════════════
+...
 
 ; 發送 HTTP/3 GET 請求
 ; url: 完整 URL（如 https://example.com/path）

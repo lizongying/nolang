@@ -4,6 +4,8 @@
 ;
 ; 用法：
 ;   h = new(data)
+; [crc-16](#crc-16)
+
 ; 計算 CRC-16-CCITT（多項式 0x1021，初值 0xFFFF）校驗和
 ; data []byte: 輸入位元組，全部參與計算
 ; crc i64: 16-bit 校驗和（0..65535）

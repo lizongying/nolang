@@ -26,8 +26,10 @@
 ;   builder.add-file('hello.txt', 'hello world')
 ;   builder.add-dir('subdir/')
 ;   archive = builder.finish()
+; [tar](#tar)
 
-; ─── 結構體定義 ───────────────────────────────
+; 結構體定義
+...
 
 ; tar: TAR 歸檔唯讀視圖
 tar {
@@ -46,7 +48,8 @@ tar-builder {
     pos i64
 }
 
-; ─── 常量 ─────────────────────────────────────
+; 常量
+...
 
 ; TAR 區塊大小
 TAR-BLOCK = 512
@@ -55,7 +58,8 @@ TAR-BLOCK = 512
 TAR-TYPE-FILE = "0"
 TAR-TYPE-DIR = "5"
 
-; ─── tar 方法 ─────────────────────────────────
+; tar 方法
+...
 
 ; 從 gzip 壓縮資料建立 tar 視圖（.tar.gz）
 ;   gz-data: gzip 壓縮的 tar 資料 ([]byte)
@@ -298,7 +302,8 @@ tar.mtime = (idx i64) (ts i64) {
     }
 }
 
-; ─── tar-entry 方法 ───────────────────────────
+; tar-entry 方法
+...
 
 ; 讀取條目檔名
 ; name: 該條目的檔名
@@ -431,7 +436,8 @@ tar-entry.mtime = () (ts i64) {
     }
 }
 
-; ─── tar-builder 方法 ─────────────────────────
+; tar-builder 方法
+...
 
 ; 預分配緩衝區（用局部變數 push，避免結構體欄位 push 限制）
 ; size: 預分配的緩衝區位元組數（零填充至該長度）

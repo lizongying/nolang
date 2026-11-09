@@ -13,10 +13,10 @@
 ; 演算法參考：
 ;   - Zstandard format: https://datatracker.ietf.org/doc/html/rfc8878
 ;   - FSE: https://github.com/Cyan4973/FiniteStateEntropy
+; [zstd](#zstd)
 
-; ═══════════════════════════════════════════════
 ; 位元讀取器（LSB-first，zstd 使用小端序位元）
-; ═══════════════════════════════════════════════
+...
 
 zs-bit-reader {
     data []byte
@@ -114,9 +114,8 @@ zs-bit-reader.align-to-byte = () {
     .bit-cnt = 0
 }
 
-; ═══════════════════════════════════════════════
 ; FSE (Finite State Entropy) 解碼表
-; ═══════════════════════════════════════════════
+...
 
 ; Zstandard 常數
 ZS-MAGIC = 0xfd2fb528
@@ -365,9 +364,8 @@ fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; Huffman 解碼（zstd 風格）
-; ═══════════════════════════════════════════════
+...
 
 ; zs-huffman: zstd Huffman 解碼表
 zs-huffman {
@@ -567,9 +565,8 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; Zstandard Frame 解碼
-; ═══════════════════════════════════════════════
+...
 
 ; zs-frame: Zstandard frame 解碼狀態
 zs-frame {
@@ -913,9 +910,8 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
     ok = true
 }
 
-; ═══════════════════════════════════════════════
 ; Zstandard 解壓縮主函數
-; ═══════════════════════════════════════════════
+...
 
 ; 解壓縮 Zstandard 格式的資料
 ;   data: zstd 壓縮資料 ([]byte)
@@ -995,9 +991,8 @@ zstd-decompress = (data []byte) (out []byte) {
     out = frame.out
 }
 
-; ═══════════════════════════════════════════════
 ; Zstandard 壓縮（基本實現 — raw block）
-; ═══════════════════════════════════════════════
+...
 
 ; 使用 zstd 格式壓縮資料（基本實現）
 ;   data: 原始資料 ([]byte)

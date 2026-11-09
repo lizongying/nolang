@@ -4,6 +4,7 @@
 ; 用途：HTTPS 伺服器自簽憑證與 TLS 交握簽章。
 ; 由於 RSA 金鑰生成在純 Nolang 中需 20+ 分鐘，此處嵌入預產生之金鑰。
 ; 憑證本身由 Nolang 程式碼以 DER 編碼 + RSA 簽章產生，驗證 Nolang 的 PEM/DER 能力。
+; [tls-server-keys](#tls-server-keys)
 
 ; RSA 模數 n（256 位元組，big-endian，不含 DER 前導 0x00）
 TLS-SERVER-RSA-N [256]byte = [

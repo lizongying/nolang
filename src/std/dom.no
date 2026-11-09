@@ -35,10 +35,10 @@
 ;           print(items.len())
 ;       }
 ;   }
+; [dom](#dom)
 
-; ═══════════════════════════════════════════════
 ; 常量
-; ═══════════════════════════════════════════════
+...
 
 ; 節點類型（對齊 W3C nodeType 編號）
 DOM-KIND-DOCUMENT = 0
@@ -82,9 +82,8 @@ DOM-PBLOCK-BLOB = ' address article aside blockquote div dl fieldset footer form
 ; HTML4 完整命名實體表（'name:codepoint' 空格分隔）+ XML 預定義實體
 DOM-ENTITY-BLOB = 'amp:38 lt:60 gt:62 quot:34 apos:39 nbsp:160 iexcl:161 cent:162 pound:163 curren:164 yen:165 brvbar:166 sect:167 uml:168 copy:169 ordf:170 laquo:171 not:172 shy:173 reg:174 macr:175 degree:176 plusmn:177 sup2:178 sup3:179 acute:180 micro:181 para:182 middot:183 cedil:184 sup1:185 ordm:186 raquo:187 frac14:188 frac12:189 frac34:190 iquest:191 Agrave:192 Aacute:193 Acirc:194 Atilde:195 Auml:196 Aring:197 AElig:198 Ccedil:199 Egrave:200 Eacute:201 Ecirc:202 Euml:203 Igrave:204 Iacute:205 Icirc:206 Iuml:207 ETH:208 Ntilde:209 Ograve:210 Oacute:211 Ocirc:212 Otilde:213 Ouml:214 times:215 Oslash:216 Ugrave:217 Uacute:218 Ucirc:219 Uuml:220 Yacute:221 THORN:222 szlig:223 agrave:224 aacute:225 acirc:226 atilde:227 auml:228 aring:229 aelig:230 ccedil:231 egrave:232 eacute:233 ecirc:234 euml:235 igrave:236 iacute:237 icirc:238 iuml:239 eth:240 ntilde:241 ograve:242 oacute:243 ocirc:244 otilde:245 ouml:246 divide:247 oslash:248 ugrave:249 uacute:250 ucirc:251 uuml:252 yacute:253 thorn:254 yuml:255 OElig:338 oelig:339 Scaron:352 scaron:353 Yuml:376 circ:710 tilde:732 ensp:8194 emsp:8195 thinsp:8201 zwnj:8204 zwj:8205 lrm:8206 rlm:8207 ndash:8211 mdash:8212 lsquo:8216 rsquo:8217 sbquo:8218 ldquo:8220 rdquo:8221 bdquo:8222 dagger:8224 Dagger:8225 bull:8226 hellip:8230 permil:8240 prime:8242 Prime:8243 oline:8254 frasl:8260 euro:8364 larr:8592 uarr:8593 rarr:8594 darr:8595 harr:8596 crarr:8629 lArr:8656 uArr:8657 rArr:8658 dArr:8659 hArr:8660 weierp:8472 real:8476 trade:8482 image:8471 mho:8487 alefsym:8501 Alpha:913 Beta:914 Gamma:915 Delta:916 Epsilon:917 Zeta:918 Eta:919 Theta:920 Iota:921 Kappa:922 Lambda:923 Mu:924 Nu:925 Xi:926 Omicron:927 Pi:928 Rho:929 Sigma:931 Tau:932 Upsilon:933 Phi:934 Chi:935 Psi:936 Omega:937 alpha:945 beta:946 gamma:947 delta:948 epsilon:949 zeta:950 eta:951 theta:952 iota:953 kappa:954 lambda:955 mu:956 nu:957 xi:958 omicron:959 pi:960 rho:961 sigmaf:962 sigma:963 tau:964 upsilon:965 phi:966 chi:967 psi:968 omega:969 thetasym:977 upsih:982 piv:982 there4:8756 kappav:954 middotv:183 forall:8704 part:8706 exist:8707 empty:8709 nabla:8711 isin:8712 notin:8713 ni:8715 prod:8719 sum:8721 minus:8722 lowast:8727 radic:8730 le:8804 ge:8805 ne:8800 equiv:8801 infin:8734 ang:8736 and:8743 or:8744 cap:8745 cup:8746 int:8747 therefore:8756 sim:8764 cong:8773 asymp:8776 nsub:8836 sube:8838 supe:8835 oplus:8853 otimes:8855 perp:8869 sdot:8901'
 
-; ═══════════════════════════════════════════════
 ; 結構
-; ═══════════════════════════════════════════════
+...
 
 ; dom-node: DOM 節點（純標量欄位，可安全存放於堆 vec）
 ; 樹結構以索引雙向鏈表表示：parent/prev/next/first/last
@@ -125,9 +124,8 @@ dom {
     format i64
 }
 
-; ═══════════════════════════════════════════════
 ; 池基礎操作
-; ═══════════════════════════════════════════════
+...
 
 ; 初始化節點池（堆 vec 需先初始化方能安全 push）
 ; [init](#dom.dom-pool.init)
@@ -294,9 +292,8 @@ dom-pool.insert-before = (parent i64, node i64, ref i64) {
     .nodes[parent].count = cnt + 1
 }
 
-; ═══════════════════════════════════════════════
 ; 屬性操作（池層）
-; ═══════════════════════════════════════════════
+...
 
 ; 查找節點 name 屬性對應的邊索引，返回 -1 表示不存在
 ; node: 目標元素節點索引
@@ -492,9 +489,8 @@ dom-pool.attr-edge-at = (node i64, i i64) (e i64) {
     e = p
 }
 
-; ═══════════════════════════════════════════════
 ; 名字判別與實體
-; ═══════════════════════════════════════════════
+...
 
 ; 在空格補齊的詞表 blob 中查找整詞 name
 ; blob: 前後補空格的整詞表字串
@@ -814,9 +810,8 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
     cp = v
 }
 
-; ═══════════════════════════════════════════════
 ; 掃描輔助
-; ═══════════════════════════════════════════════
+...
 
 ; 跳過 XML 空白（空格/Tab/CR/LF）
 ; s: 來源字串
@@ -874,9 +869,8 @@ dom-strip-bom = (s str) (p i64) {
     s.len-bytes() >= 3 && s.byte(0) == 239 && s.byte(1) == 187 && s.byte(2) == 191 -> p = 3
 }
 
-; ═══════════════════════════════════════════════
 ; XML 解析（嚴謹模式：不合法即失敗）
-; ═══════════════════════════════════════════════
+...
 
 ; 把 s[from..to) 解碼為文字節點附加到 parent
 ; parent: 附加目標的父節點索引
@@ -1449,9 +1443,8 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
     failpos = -1
 }
 
-; ═══════════════════════════════════════════════
 ; HTML 解析（寬鬆模式：任何輸入都不報錯，尽力恢復）
-; ═══════════════════════════════════════════════
+...
 
 ; 判斷 s[pos..] 是否為 name 的結尾標籤名（大小寫不敏感，
 ;   結束後必須紧跟 '>'、'/'、'=' 或空白）
@@ -2331,9 +2324,8 @@ dom-pool.html-parse-doc = (s str) (root i64) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 轉義與序列化
-; ═══════════════════════════════════════════════
+...
 
 ; 轉義文字中的 & < >
 ; s: 原文字
@@ -2700,9 +2692,8 @@ dom-pool.text-of = (idx i64) (out str) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 查詢輔助（池層）
-; ═══════════════════════════════════════════════
+...
 
 ; 收集 node 子樹中標籤名為 want（star=true 时所有元素）的元素索引
 ; node: 查找子樹的根節點索引
@@ -2898,9 +2889,8 @@ class-has = (val str, cls str) (yes bool) {
     tail.eq-full(cls) -> yes = true
 }
 
-; ═══════════════════════════════════════════════
 ; 公共 API：解析入口
-; ═══════════════════════════════════════════════
+...
 
 ; 嚴謹解析 XML，失敗返回 err(含錯誤位置)
 ; source: XML 源文本
@@ -2947,9 +2937,8 @@ dom.new-document = (html bool) (d dom) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 公共 API：節點訪問
-; ═══════════════════════════════════════════════
+...
 
 ; 節點類型（DOM-KIND-* 常量，-1=非法索引）
 ; idx: 節點索引
@@ -3129,9 +3118,8 @@ dom.document-element = () (idx ?i64) {
     }
 }
 
-; ═══════════════════════════════════════════════
 ; 公共 API：屬性
-; ═══════════════════════════════════════════════
+...
 
 ; 讀取屬性值（nil=不存在；HTML 模式下名字大小寫不敏感）
 ; idx: 元素節點索引
@@ -3226,9 +3214,8 @@ dom.attribute-value = (idx i64, i i64) (val ?str) {
     val = v
 }
 
-; ═══════════════════════════════════════════════
 ; 公共 API：查詢
-; ═══════════════════════════════════════════════
+...
 
 ; 按 id 屬性查找元素
 ; id: 目標 id 值
@@ -3269,9 +3256,8 @@ dom.text-content = (idx i64) (out str) {
     out = .pool.text-of(idx)
 }
 
-; ═══════════════════════════════════════════════
 ; 公共 API：變異
-; ═══════════════════════════════════════════════
+...
 
 ; 建立游離元素節點（尚未附加）
 ; name: 標籤名（HTML 模式轉小寫）
@@ -3390,9 +3376,8 @@ dom.set-text-content = (idx i64, text str) {
     .pool.append(idx, t)
 }
 
-; ═══════════════════════════════════════════════
 ; 公共 API：序列化
-; ═══════════════════════════════════════════════
+...
 
 ; 是否為 HTML 模式（影響 void 元素序列化與名字大小寫）
 ; yes: 文檔格式是否為 HTML

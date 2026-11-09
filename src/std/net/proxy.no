@@ -16,17 +16,16 @@
 ;       nil -> print('proxy TLS connection failed')
 ;       -> w = tc.send('GET / HTTP/1.1\r\nHost: target.example.com\r\n\r\n')
 ;   }
+; [proxy](#proxy)
 
-; ═══════════════════════════════════════════════
 ; 常量
-; ═══════════════════════════════════════════════
+...
 
 ; 代理緩衝區大小
 PROXY-BUF-SIZE = 4096
 
-; ═══════════════════════════════════════════════
 ; 結構體
-; ═══════════════════════════════════════════════
+...
 
 ; config: 代理配置
 ; host str: 代理伺服器主機
@@ -40,9 +39,8 @@ config {
     password str
 }
 
-; ═══════════════════════════════════════════════
 ; HTTP CONNECT 代理
-; ═══════════════════════════════════════════════
+...
 
 ; 通過 HTTP CONNECT 建立代理隧道
 ; 連上代理後發送 CONNECT target-host:target-port，收到 200 即完成握手；
@@ -198,9 +196,8 @@ dial-auth = (proxy-host str, proxy-port i64, target-host str, target-port i64, u
     fd = connect(proxy-host, proxy-port, target-host, target-port, username, password)
 }
 
-; ═══════════════════════════════════════════════
 ; 通過代理建立 TLS 連接
-; ═══════════════════════════════════════════════
+...
 
 ; 通過代理建立 TLS 連接
 ; 先做 HTTP CONNECT（不帶認證）得到隧道，再在隧道上發起 TLS 握手。
@@ -422,9 +419,8 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
     tc = c
 }
 
-; ═══════════════════════════════════════════════
 ; SOCKS5 代理（基本支援）
-; ═══════════════════════════════════════════════
+...
 
 ; SOCKS5 版本
 SOCKS5-VERSION = 5

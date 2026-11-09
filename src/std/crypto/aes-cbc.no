@@ -15,6 +15,7 @@
 ;   plain  = aes-cbc.dec-128(cipher, key, iv)
 ;   n      = aes-cbc.pkcs7-unpad(plain)
 ;   ; AES-256 改用 key [32]byte 與 enc-256 / dec-256
+; [aes-cbc](#aes-cbc)
 
 ; AES 區塊大小
 AES-BLOCK-SIZE = 16

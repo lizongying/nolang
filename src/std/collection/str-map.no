@@ -9,6 +9,7 @@
 ;   m.put('name', 'Alice')
 ;   val = m.get('name')   // val = ok('Alice') 或 nil
 ;   m.for-each(k, v)
+; [str-map](#str-map)
 
 ; FNV-1a 常量
 FNV-OFFSET = -3750763034362895579

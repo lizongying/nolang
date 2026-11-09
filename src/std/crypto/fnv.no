@@ -6,6 +6,7 @@
 ; 用法：
 ;   h32 = fnv-1a-32(data)
 ;   h64 = fnv-1a-64(data)
+; [fnv](#fnv)
 
 ; FNV-1a-32 參數
 FNV32-OFFSET = 2166136261

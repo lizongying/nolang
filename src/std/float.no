@@ -4,6 +4,7 @@
 ; 本模組承載 float 型別的方法：div, is-nan, is-inf。
 ; int 聯合型別見 std/int.no；num 聯合型別見 std/num.no；
 ; 具體型別操作（範圍常數、型別轉換、f64/f32.to-str、位元操作等）見 number 模組。
+; [float](#float)
 
 float = f32 | f64
 
@@ -39,3 +40,4 @@ float.is-inf = () (yes bool) {
 ; union 方法的 codegen 分派在無法推斷局部變數型別時會回退到非單態化名稱，
 ; 導致 undefined @float.to-str 錯誤。改為依賴 codegen 的 fallback 機制：
 ; 當變數 LLVM 型別為 double 時，自動分派到 f64.to-str（具體型別方法在 std/number.no）。
+...

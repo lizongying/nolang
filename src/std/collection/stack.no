@@ -13,6 +13,7 @@
 ;       nil -> print('empty')
 ;       -> print(it)
 ;   }
+; [stack](#stack)
 
 ; stack: 堆疊狀態
 ; data []i64: 底層儲存切片，容量上限 = len(data)
