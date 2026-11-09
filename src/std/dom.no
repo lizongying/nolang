@@ -748,10 +748,15 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 
             -> 0
         }
+        ; b 是 `?byte` 的載荷，屬無號型別。D6 的有號整數算術才會產生 `?T`，
+        ; 所以 `b - 48` 是 plain 整數 —— 後面的 `d-opt: { ok -> ... }` 永遠不命中，
+        ; d 卡在 -1，`d < 0 -> return` 直接判「非法數字實體」，`&#65;` 全部解析失敗。
+        ; 先升成 i64 再減，才算有號運算、拿得到 `?i64` 與溢位檢查。
+        bi i64 = b
         d i64 = -1
         b >= 48 && b <= 57 -> {
             {
-                d-opt = b - 48
+                d-opt = bi - 48
                 d-opt: {
                     ok -> d = it
                     ->
@@ -760,7 +765,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
         }
         hex == true && b >= 65 && b <= 70 -> {
             {
-                d-opt2 = b - 55
+                d-opt2 = bi - 55
                 d-opt2: {
                     ok -> d = it
                     ->
@@ -769,7 +774,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
         }
         hex == true && b >= 97 && b <= 102 -> {
             {
-                d-opt3 = b - 87
+                d-opt3 = bi - 87
                 d-opt3: {
                     ok -> d = it
                     ->
