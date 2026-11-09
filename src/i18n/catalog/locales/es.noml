@@ -700,7 +700,7 @@ Espacio de trabajo inicializado en %s
 `
   'l48rpvr9': 'se esperaba \')\' para cerrar la condición del bucle, se obtuvo %s'
   'l62tgcu4': 'import %q: %w'
-  'l6euu21x': 'tiempo máximo por prueba en segundos (0 = ilimitado); un cuelgue se mata y se informa, sin abortar toda la ejecución'
+  'l6euu21x': 'tiempo máximo por prueba en segundos (60 por defecto, 0 = ilimitado); un cuelgue se mata y se informa, sin abortar toda la ejecución'
   'l90oz2gr': 'sysctl: no se puede convertir el nombre a una cadena C'
   'l9eytl0v': 'se esperaba \'(\''
   'l9lio3b1': 'net-dial: no se puede convertir el host a una cadena C'

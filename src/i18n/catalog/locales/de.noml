@@ -698,7 +698,7 @@ Workspace in %s initialisiert
 `
   'l48rpvr9': '\')\' zum Schließen der Schleifenbedingung erwartet, %s erhalten'
   'l62tgcu4': 'Import %q: %w'
-  'l6euu21x': 'Zeitlimit pro Testlauf in Sekunden (0 = unbegrenzt); ein einzelner Hänger wird beendet und gemeldet, ohne den ganzen Lauf zu stoppen'
+  'l6euu21x': 'Zeitlimit pro Testlauf in Sekunden (Standard 60, 0 = unbegrenzt); ein einzelner Hänger wird beendet und gemeldet, ohne den ganzen Lauf zu stoppen'
   'l90oz2gr': 'sysctl: Name kann nicht als C-Zeichenkette marshalled werden'
   'l9eytl0v': '\'(\' erwartet'
   'l9lio3b1': 'net-dial: Host kann nicht als C-Zeichenkette marshalled werden'
