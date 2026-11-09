@@ -73,7 +73,6 @@ u128.MAX = 340282366920938463463374607431768211455
 INF = 1.0 / 0.0
 
 ; int.to-str 聯合方法已移至 std/int.no（此處保留具體型別 i64.to-str 等方法）
-
 ; i64 轉字串
 ; #{buildin}：底層走原生 @str_from_i64（builtin strconv.go 註冊 ForwardFunc "i64-to-str"，
 ; 由 codegen 按名命中原生內聯路徑）。i64 有原生格式化器，故直接 builtin、不再包裝 Nolang 迴圈。
@@ -2068,7 +2067,6 @@ i64.to-i32 = () (out i32) {
 ; 「宣告型別 ≠ 初始式型別」的綁定一個統一的轉換通路：編譯器按
 ; <源型別>.to-<目標型別> 查找並合成呼叫，查不到才退回隱式 OpMove 拓寬。
 ; 因此這裡只補「窄 → 64 位」這一圈；u64↔i64 屬同寬重解釋，不需要方法。
-
 ; byte 轉 i64（無號零擴展）
 ; out: 等值 i64
 ; [to-i64](#number.byte.to-i64)
@@ -2195,11 +2193,8 @@ i64.to-bytes-le = () (out [?]byte) {
 }
 
 ; 注意：不定義 float.to-str 聯合方法（原因見 std/float.no 末尾說明）。
-
 ; int.div / int.mod 已移至 std/int.no；float.div 已移至 std/float.no
-
 ; float.is-nan / float.is-inf 已移至 std/float.no
-
 ; f32 同名方法：以下所有 f64 方法均配 f32 版本，方法體統一
 ; 「f32-to-f64 拓寬 → 調 f64 方法 → f64-to-f32 收窄」（同上方
 ; f32.to-str 先例），以 double 精度計算後收窄。不寫成 float
@@ -2207,7 +2202,6 @@ i64.to-bytes-le = () (out [?]byte) {
 ; 單態化複製；純 .no 方法（degrees/radians/cbrt）的 f32 實例體內
 ; f32*f64 混合算術會被提升成 f64，破壞「接收者 f32 → 返回 f32」。
 ; 故具體雙套（f64./f32.）是唯一穩定形態。
-
 ; 冪與根（f64/f32 方法）
 ; res: √x（libm 原生 sqrt；負數返回 NaN）
 ; [sqrt](#number.f64.sqrt)
@@ -2872,7 +2866,6 @@ i64.is-prime = () (yes bool) {
 ; 文字走 Inst.IntBig）取值；128 位字面量直接宣告給帶型區域變數、其 .to-str()
 ; （經 int.to-str 或原生 @str_from_i128/@str_from_u128）、以及對合法 128 位值
 ; 的比較，均已驗證。）
-
 ; i8（有符號：保留負數守衛）
 ; r: floor(√n)（有符號，n<0 返回 0）
 ; [sqrt](#number.i8.sqrt)

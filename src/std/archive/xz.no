@@ -261,10 +261,8 @@ lzma-decoder {
 ; literal position bits
 ; position bits
 ; 輸出
-
 ; 機率模型
 ; 12 states * 4 (padded)
-
 ; 4 states * 64 slots (flattened)
 ; special positions
 ; alignment
@@ -272,9 +270,7 @@ lzma-decoder {
 ; rep length coder
 ; literal (simplified)
 ; 狀態
-
 ; 前一個字節
-
 ; 初始化所有機率值為 0x400（一半機率）
 ; [init-probs](#xz.lzma-decoder.init-probs)
 lzma-decoder.init-probs = () {

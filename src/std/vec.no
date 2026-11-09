@@ -114,7 +114,6 @@ vec-push = (val t) {
 ;     .len = n + 1
 ;     .[n] = val
 ; }
-
 ; []t.clear: 清空切片（原地修改長度為 0）— builtin，函數體由 codegen 展開
 ; 不 free 堆、不縮 cap，data 指標完全不變
 ; 只有寫入帶長度新內容時才走擴容邏輯

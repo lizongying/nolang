@@ -5416,7 +5416,6 @@ conn.send = (data str) (written ?i64) {
 ; buf str: 接收緩衝區
 ; n i64: 最大接收位元組數
 ; 返回 read-n i64: 已接收位元組數（-1=錯誤, 0=連線關閉）
-
 ; 診斷用 — 暴露底層 socket fd
 ; fd: 底層 socket 的檔案描述符（僅供診斷）
 ; [get-fd](#tls.conn.get-fd)

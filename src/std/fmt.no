@@ -32,7 +32,6 @@
 
 ; 全局函數 print / eprint / format 的声明已移至 global.no
 ; 以下為需要模塊前綴的 fmt 模塊函數
-
 ; 已移除（名稱保留供解析）——呼叫即編譯錯誤，請改用 print（自動換行）或 io.out（不換行）
 ; s: 格式字符串（本函數已移除，調用即編譯錯誤）
 ; [printf](#fmt.printf)

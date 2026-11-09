@@ -57,7 +57,6 @@ mkdir = (p str, mode i64) (ok bool) {
 ; ═══════════════════════════════════════════════
 
 ; exit 已提升為全局內建函式（見 global.no），可不加模組前綴直接呼叫 exit(c)
-
 ; 取得行程 ID
 ; pid: 當前行程 PID
 ; [get-pid](#os.get-pid)

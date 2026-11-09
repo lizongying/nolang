@@ -37,7 +37,6 @@ string = str | txt
 ; str.len-bytes = () (n i64) {
 ;    n = .len
 ; }
-
 ; 返回字串的「字符（碼點）數量」
 ; 與 s[i] 的碼點索引語義一致；要字節數請用 s.len-bytes()
 ; n: 碼點（字符）數量（與 s[i] 索引語義一致）
@@ -52,7 +51,6 @@ str.len = () (n i64) {
 ; str.cap = () (n int64) {
 ;    n = .cap
 ; }
-
 ; 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
 ; 與 s[i] 不同：s[i] 按碼點索引，本方法按底層 UTF-8 緩衝區的位元組偏移取值
 ; 回傳 ?byte：越界（i < 0 或 i >= len-bytes()）時回傳 nil，與 arr[i] 的
@@ -1032,7 +1030,6 @@ str.to-byte = () (val ?byte) {
 ; str-to-f64: 將字串精確解析為 f64（bigint 精確 strtod）
 ; 以 bigint 建立精確有理數 int-mant * 10^K，再求最近可表示 f64（捨入至偶），
 ; 取代原本 f64 累積（17 位字面量會差 1 ULP）。支援 [+-][數字][.數字][eE[+-]數字]。
-
 ; 回傳正 bigint 的位元長度（floor(log2)+1）
 ; b: 正 bigint 值
 ; out: 位元長度（floor(log2)+1）
@@ -2104,13 +2101,11 @@ str.empty = () (yes bool) {
 ; 只有寫入帶長度新內容（拼接、賦值非空字串、填充等）時，才走擴容/縮容邏輯
 ; build-in
 ; str.clear = () { }
-
 ; str.truncate: 原地截斷字串至至多 n 個位元組（len = min(len, n)）
 ; 不 free 堆、不改變 cap/ptr，僅調整 len
 ; 替代低階 s.len = n 寫法（驗證器拒絕直接修改 .len）
 ; build-in
 ; str.truncate = (n i64) { }
-
 ; 全局函數 with-cap / with-len / with-cap-len 的声明已移至 global.no
 
 ; ═══════════════════════════════════════════════

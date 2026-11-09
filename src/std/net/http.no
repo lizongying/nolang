@@ -1217,7 +1217,6 @@ post-auth = (url str, body str, user str, password str) (resp ?response) {
 ; 返回 ok bool: true=成功
 ; ═══════════════════════════════════════════════
 ; [download-to-file](#http.download-to-file)
-
 ; 下載 URL 內容到本地檔案（公開入口）：委託 http-dl-open，重定向計數從 0 起
 ; url: 完整 URL（http/https）
 ; dest: 目的地檔案路徑（寫入成功時建立或覆蓋）

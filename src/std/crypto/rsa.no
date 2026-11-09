@@ -920,7 +920,6 @@ rsa-modpow = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn i64) (res
 ; ─── RSA 加密/解密（高階介面）────────────────────
 ; 公開介面不再手動傳 limb 計數：輸入以 vec 自身 .len() 量得（前導零 limb 僅多掃位、不影響正確性）；
 ; 輸出為精確修剪後的 vec，out.len() 即有效 limb 數（低階 rsa-modpow 回傳的緩衝區長度含多餘零 limb）。
-
 ; 把 rsa-modpow 的寬緩衝輸出修剪成精確長度的 vec
 ; base: 冪的底
 ; bn: base 的 limb 數

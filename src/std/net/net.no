@@ -847,7 +847,6 @@ enc-accept = (c conn, key [32]byte) (ec enc-conn) {
 ;
 ;   ; 多次 ping
 ;   icmp-conn.ping-host('8.8.8.8', 4)
-
 ; 建立 ICMP socket
 ; 返回 fd fd（-1=失敗）
 ; fd: ICMP socket 的檔案描述符（-1=失敗；macOS 走非特權 SOCK_DGRAM，Linux 走 SOCK_RAW 需 root）

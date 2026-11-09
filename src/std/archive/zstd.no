@@ -136,13 +136,9 @@ fse-table {
 }
 
 ; 狀態轉移表
-
 ; 符號表
-
 ; 位元數表
-
 ; 符號出現次數
-
 ; 從正規化計數建構 FSE 表
 ; norm-count: 各符號的正規化計數
 ; max-symbol: 最大符號值
@@ -384,9 +380,7 @@ zs-huffman {
 }
 
 ; 碼長度
-
 ; 解碼表（簡化版：使用碼長度 + 符號映射）
-
 ; 建構 Huffman 解碼表
 ; lengths: 各符號的 Huffman 碼長度表（長度決定碼的分佈權重）
 ; max-symbol: 符號值上界（遍歷 lengths 的終點，zstd 字節符號通常為 255）
@@ -587,9 +581,7 @@ zs-frame {
 }
 
 ; window size
-
 ; 上一個 frame 的字典
-
 ; 讀取 frame header
 ; ok: magic 魔數驗證通過且 header 字段解析完整時為 true（此時 pos 已推進到首個區塊起點）
 ; [read-frame-header](#zstd.zs-frame.read-frame-header)
