@@ -1,5 +1,6 @@
 ; fetch.no — Browser Fetch API declarations (JS backend)
 ; Actual mapping is in src/build/js/builtin.go
+; [js-fetch](#js-fetch)
 #{js}
 
 fetch.async = (url str) (data str) {

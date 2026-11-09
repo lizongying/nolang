@@ -1,5 +1,6 @@
 ; history.no — Browser History API declarations (JS backend)
 ; Actual mapping is in src/build/js/builtin.go
+; [js-history](#js-history)
 #{js}
 
 history.back = () {

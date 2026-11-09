@@ -3,6 +3,7 @@
 ; Wraps the JavaScript console.log API.
 ; Under the JS backend, calls to console-log(msg) map directly to console.log(msg).
 ; On non-JS backends this declaration is excluded by the #{js} platform annotation.
+; [js-console-log](#js-console-log)
 #{js}
 console-log = (msg str) {
     print(msg)

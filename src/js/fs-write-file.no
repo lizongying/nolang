@@ -4,6 +4,7 @@
 ; Under the JS backend, calls to fs-write-file(path, data) map to
 ; require('fs').writeFileSync(path, data).
 ; On non-JS backends this declaration is excluded by the #{js} platform annotation.
+; [js-fs-write-file](#js-fs-write-file)
 #{js}
 fs-write-file = (path str, data str) {
     print(path)

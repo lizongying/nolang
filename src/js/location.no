@@ -1,5 +1,6 @@
 ; location.no — Browser Location API declarations (JS backend)
 ; Actual mapping is in src/build/js/builtin.go
+; [js-location](#js-location)
 #{js}
 
 location.href = () (val str) {

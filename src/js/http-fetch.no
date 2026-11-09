@@ -4,6 +4,7 @@
 ; Under the JS backend, calls to http-fetch(url) map to fetch(url) and
 ; return the response body as a string.
 ; On non-JS backends this declaration is excluded by the #{js} platform annotation.
+; [js-http-fetch](#js-http-fetch)
 #{js}
 http-fetch = (url str) (data str) {
     data = ''

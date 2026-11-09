@@ -1,5 +1,6 @@
 ; ws-browser.no — Browser WebSocket API declarations (JS backend)
 ; Actual mapping is in src/build/js/builtin.go
+; [js-ws-browser](#js-ws-browser)
 #{js}
 
 ws-browser.connect = (url str) (ws str) {
