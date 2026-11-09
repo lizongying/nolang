@@ -308,6 +308,7 @@ var lintSteps = []lintStep{
 	{"range-self-ellipsis", true, runLintRangeSelfEllipsis},
 	{"index-write", false, runLintIndexWrite},
 	{"parser-warnings", true, runLintParserWarnings},
+	{"trailing-comments", true, runLintTrailingComments},
 }
 
 // ── THIR 軌（surface=false）─────────────────────────────────────────────────────
@@ -1034,6 +1035,35 @@ func runLintParserWarnings(program *parser.Program, opts LintOptions) []LintResu
 		})
 	}
 	return results
+}
+
+// runLintTrailingComments — 22. 游離註解（檔案尾端無處附著）
+//
+// nolang 的註解只有一條歸宿：成為「下一個陳述」的 Doc（parser.collectDocComments）。
+// 因此真正無處附著的只有一種——最後一條陳述之後、直到 EOF 的那段，parser 把它
+// 收進 Program.TrailingComments。要保留一段獨立註解（不是寫給下面哪個宣告看的），
+// 作者只要在它後面補一行 `...`（佔位陳述）：註解就成了 EmptyStatement 的 Doc，
+// 不再游離（AST 有節點、HIR 無節點、fmt 原樣印回）。
+//
+// 只報「無處附著」這一種，故意不碰「註解與下方宣告之間隔了空行」的情形：
+// 空行不中斷 doc group，那種註解仍附著在宣告上，屬作者風格而非結構問題。
+func runLintTrailingComments(program *parser.Program, opts LintOptions) []LintResult {
+	if program == nil || program.TrailingComments == nil {
+		return nil
+	}
+	if len(program.TrailingComments.List) == 0 {
+		return nil
+	}
+	// 一個群組報一條（群組是 parser 在 EOF 一次性收齊的），位置取首行。
+	// 注意：i18n.T 的 ID 必須是字串字面量（msgscan 靜態掃描），不可抽成常量。
+	first := program.TrailingComments.List[0]
+	return []LintResult{{
+		Line: first.Pos.Line, Column: first.Pos.Column,
+		Severity: LintWarning, Source: "nolang-comment",
+		File:    opts.SourcePath,
+		TraceID: "894luer5",
+		Message: i18n.T("894luer5", "this comment is attached to nothing; put a `...` (placeholder statement) after it to keep it as a standalone comment, or move/delete it"),
+	}}
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

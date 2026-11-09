@@ -162,6 +162,10 @@ func newCompileAssembly(t *Transpiler, program *parser.Program, varTypes, global
 	// 處理 use 陳述句：載入模組並合併函數定義和常量
 	// 註：importedModules 和 mainVarNames 已在上方合併 PASS 中收集完成
 	merged := &parser.Program{Statements: []parser.Statement{}}
+	// 檔案尾端註解是 Program 級資料：合併只拼接 Statements，不搬就等於丟掉。
+	// vet 的 trailing-comments lint 靠它報「游離註解」——沒有這一行，
+	// `no vet`（合併路徑）永遠看不到，只有 LSP（原始 parse，不合併）看得到。
+	merged.TrailingComments = program.TrailingComments
 	// 合併語義副表：merged 匯集主程序與各模塊的 AST 節點，
 	// 各自 side-table 中的節點語義（註解/平台鍵/embed 等）也必須匯集。
 	merged.Sem = parser.NewSemanticContext()

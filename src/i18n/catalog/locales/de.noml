@@ -296,6 +296,7 @@ Pfad der Quelldatei ist kein gültiger Name: %s
 `
   '87zc5awf': 'schreibgeschütztes Feld \'%s\' von %s kann nicht geändert werden; die Länge wird aus dem Puffer abgeleitet — verwenden Sie stattdessen truncate(n)'
   '8870qbob': 'unzulässiges indirektes Aufrufziel in %s'
+  '894luer5': 'Dieser Kommentar hängt an nichts; setze `...` (Platzhalter-Anweisung) dahinter, um ihn als eigenständigen Kommentar zu behalten, oder verschiebe/lösche ihn'
   '89pwo0vg': 'noml: map-Schlüssel muss Zeichenkette sein: %T'
   '8apmtyk6': 'Eingabedatei wird gelesen: %w'
   '8dbrd5fk': 'Moduldatei nicht gefunden: %s'

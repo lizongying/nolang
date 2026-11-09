@@ -297,6 +297,7 @@ la ruta del archivo fuente no es un nombre válido: %s
 `
   '87zc5awf': 'no se puede modificar el campo de solo lectura \'%s\' de %s; la longitud se deriva del búfer — usa truncate(n) en su lugar'
   '8870qbob': 'llamado indirecto incorrecto en %s'
+  '894luer5': 'Este comentario no está adjunto a nada; añade `...` (sentencia de relleno) después para conservarlo como comentario independiente, o muévelo/elimínalo'
   '89pwo0vg': 'noml: la clave del map debe ser string: %T'
   '8apmtyk6': 'leyendo el archivo de entrada: %w'
   '8dbrd5fk': 'archivo de módulo no encontrado: %s'

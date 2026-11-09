@@ -296,6 +296,7 @@ o caminho do arquivo fonte não é um nome válido: %s
 `
   '87zc5awf': 'não é possível modificar o campo somente-leitura \'%s\' de %s; o comprimento é derivado do buffer — use truncate(n) em vez disso'
   '8870qbob': 'callee indireto inválido em %s'
+  '894luer5': 'Este comentário não está anexado a nada; coloque `...` (instrução de preenchimento) depois dele para mantê-lo como comentário autónomo, ou mova/apague-o'
   '89pwo0vg': 'noml: chave de map deve ser string: %T'
   '8apmtyk6': 'lendo arquivo de entrada: %w'
   '8dbrd5fk': 'arquivo de módulo não encontrado: %s'

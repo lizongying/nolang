@@ -298,6 +298,7 @@ source file path is not a valid name: %s
 `
   '87zc5awf': 'cannot modify read-only field \'%s\' of %s; the length is derived from the buffer — use truncate(n) instead'
   '8870qbob': 'bad indirect callee in %s'
+  '894luer5': 'this comment is attached to nothing; put a `...` (placeholder statement) after it to keep it as a standalone comment, or move/delete it'
   '89pwo0vg': 'noml: map key must be string: %T'
   '8apmtyk6': 'reading input file: %w'
   '8dbrd5fk': 'module file not found: %s'

@@ -300,6 +300,7 @@ le chemin du fichier source n’est pas un nom valide : %s
 `
   '87zc5awf': 'impossible de modifier le champ en lecture seule « %s » de %s ; la longueur est dérivée du tampon — utilisez truncate(n) à la place'
   '8870qbob': 'callee indirect invalide dans %s'
+  '894luer5': 'Ce commentaire n’est rattaché à rien ; ajoutez `...` (instruction de remplissage) après lui pour le conserver comme commentaire autonome, sinon déplacez-le ou supprimez-le'
   '89pwo0vg': 'noml : la clé de map doit être une chaîne : %T'
   '8apmtyk6': 'lecture du fichier d’entrée : %w'
   '8dbrd5fk': 'fichier de module introuvable : %s'
