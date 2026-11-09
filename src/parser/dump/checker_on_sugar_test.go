@@ -736,6 +736,15 @@ var sugarDriftAllowlist = map[string]string{
 	// ── STOP firing on the sugar AST — S1 must add sugar cases ──────────────
 	"m2fh7rfg":          "ValidateRangeIndexLoops (checker/range_index_lint.go) — keys on the lowered index read; moves position as well as count",
 	"xmicjezl": "ValidateIntOverflow (checker/checker.go) — the inferred-?T decision depends on desugared arithmetic (moves position too)",
+
+	// 2026-11-09：`?T` 的 len/cap 與下標診斷（checker/option_member_access.go）
+	// 從 MIR 後端兜底（`t5qq2leo`）搬到 checker。它與 xmicjezl 同源：判定要讀
+	// `sem.FuncVarType` / `sem.VarType` 這兩張**由 lowering 填充**的型別副表。
+	// `SkipLowering` 形態下副表為空 ⇒ 規則必然失明，不是漏寫 sugar case。
+	// 發布形態（`no vet` / `no build`）走 lowered，故使用者看到的診斷不受影響；
+	// 真正要 S1 補的 sugar case 需要型別推斷本身搬到 parse 期（同 xmicjezl）。
+	"qwl2enr7": "ValidateOptionMemberAccess's len/cap half (checker/option_member_access.go) — reads the FuncVarType/VarType side tables, which only lowering populates; invisible under SkipLowering by construction, not a missing sugar case",
+	"qwl2idx4": "ValidateOptionMemberAccess's index half (checker/option_member_access.go) — same root cause as qwl2enr7: the receiver's ?T only exists in the lowering-populated side tables",
 	"tcpoxtfd":        "ValidateRedundantTypeAnnotation (checker/checker.go) — compares the annotation against an inferred type that lowering rewrites",
 	"idxwrite":        "ValidateIndexWrite (checker/checker.go) — one residual program (tests/range-inline.no); the 121-diagnostic bulk was fixed by making idxLocalTypes a parse-time product",
 

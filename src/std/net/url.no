@@ -152,7 +152,11 @@ url-parse = (url-str str) (u url-info) {
     {
         colon-pos >= 0 -> {
             u.host = authority.slice(0, colon-pos)
-            port-str = authority.slice(colon-pos + 1, authority.len-bytes())
+            ofs = colon-pos + 1: {
+                ok -> it
+                -> 0
+            }
+            port-str = authority.slice(ofs, authority.len-bytes())
             p = 0
             valid = true
             i <- [0..port-str.len-bytes()): {

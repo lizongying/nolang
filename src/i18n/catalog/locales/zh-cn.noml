@@ -900,6 +900,8 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'qogvayg4': '用法：no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': '不能修改字符串 \'%s\' 的只读字段 \'len\''
   'qoykdxqy': 'noml: 字段 %s: 期望数组，得到 %T'
+  'qwl2enr7': '`%s()` 的接收者是 %s，其类型为 %s —— option 没有自己的成员（它是标签加载荷）。请先解包，再对载荷调用 `%s()`：`%s: { ok -> it.%s() ... -> <默认值> }`；或用 `%s ?= <表达式>` 上抛；或先绑定解包后的局部变量 `v = <option 表达式>: { ok -> it ... }`。'
+  'qwl2idx4': '对 %s 取了下标，其类型为 %s —— option 不能下标（它是标签加载荷，不是容器）。请先解包，再对载荷下标：`%s: { ok -> it[<i>] ... -> <默认值> }`；或用 `%s ?= <表达式>` 上抛；或先绑定解包后的局部变量 `v = <option 表达式>: { ok -> it ... }`。'
   'qxkk7mt2': 'win-close-handle: 需要 handle 参数'
   'qzwxurol': '数组中应为 \',\' 或 \']\'，实际得到 %s'
   'r001bqqr': 'builtin %s: 无法获取第 %d 个参数的数据指针'

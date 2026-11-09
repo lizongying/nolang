@@ -900,6 +900,8 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 裡手動按下標讀取；若不
   'qogvayg4': '用法：no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': '不能修改字串 \'%s\' 的唯讀欄位 \'len\''
   'qoykdxqy': 'noml: 欄位 %s: 預期陣列，得到 %T'
+  'qwl2enr7': '`%s()` 的接收者是 %s，其型別為 %s —— option 沒有自己的成員（它是標籤加載荷）。請先解包，再對載荷呼叫 `%s()`：`%s: { ok -> it.%s() ... -> <預設值> }`；或用 `%s ?= <運算式>` 上拋；或先綁定解包後的區域變數 `v = <option 運算式>: { ok -> it ... }`。'
+  'qwl2idx4': '對 %s 取了下標，其型別為 %s —— option 不能下標（它是標籤加載荷，不是容器）。請先解包，再對載荷下標：`%s: { ok -> it[<i>] ... -> <預設值> }`；或用 `%s ?= <運算式>` 上拋；或先綁定解包後的區域變數 `v = <option 運算式>: { ok -> it ... }`。'
   'qxkk7mt2': 'win-close-handle: 需要 handle 參數'
   'qzwxurol': '陣列中應為 \',\' 或 \']\'，實際得到 %s'
   'r001bqqr': 'builtin %s: 無法取得第 %d 個參數的資料指標'

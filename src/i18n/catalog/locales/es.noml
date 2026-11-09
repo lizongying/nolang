@@ -903,6 +903,8 @@ Error al escribir lib.no: %v
   'qogvayg4': 'Uso: no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': 'no se puede modificar el campo de solo lectura \'len\' de la cadena \'%s\''
   'qoykdxqy': 'noml: campo %s: se esperaba un array, se obtuvo %T'
+  'qwl2enr7': 'se llama a `%s()` sobre %s, cuyo tipo es %s — un option no tiene miembros propios (es una etiqueta más una carga útil). Desenvuélvelo primero y llama a `%s()` sobre la carga útil: `%s: { ok -> it.%s() ... -> <valor por defecto> }`, o propágalo con `%s ?= <expresión>`, o enlaza una variable local ya desenvuelta `v = <expresión option>: { ok -> it ... }`.'
+  'qwl2idx4': 'se aplica un índice sobre %s, cuyo tipo es %s — un option no se puede indexar (es una etiqueta más una carga útil, no un contenedor). Desenvuélvelo primero e indexa la carga útil: `%s: { ok -> it[<i>] ... -> <valor por defecto> }`, o propágalo con `%s ?= <expresión>`, o enlaza una variable local ya desenvuelta `v = <expresión option>: { ok -> it ... }`.'
   'qxkk7mt2': 'win-close-handle: necesita un argumento handle'
   'qzwxurol': 'se esperaba \',\' o \']\' en el array, se obtuvo %s'
   'r001bqqr': 'builtin %s: no se puede obtener el puntero de datos del argumento %d'

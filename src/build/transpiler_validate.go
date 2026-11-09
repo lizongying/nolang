@@ -1595,6 +1595,20 @@ func validateEntryProgram(program *parser.Program, sourcePath string, varTypes m
 		}
 	}
 	//
+	// 對 option 值取 len/cap 或下標（D6）→ ERROR `qwl2enr7` / `qwl2idx4`，
+	// **阻斷建置**。`?T` 是 {tag,payload} 標籤結構，`p.len()` / `p[i]` 對它
+	// 沒有語意；過去一路活到 MIR，由 emitLenCap 的 default 分支拋
+	// t5qq2leo（只有 codegen 內部訊息、無原始碼位置，vet 也看不到）。
+	// 修法是先解包再取成員，故在此擋在建置前。
+	if optErrs := checker.ValidateOptionMemberAccess(program); len(optErrs) > 0 {
+		for _, e := range optErrs {
+			if e.TraceID != checker.OptionLenCapRecvTraceID && e.TraceID != checker.OptionIndexRecvTraceID {
+				continue
+			}
+			lints = append(lints, validateResultToLint(e))
+		}
+	}
+	//
 	// 下標直寫 `a[i] = v`（D9）→ ERROR `idxwrite`，**阻斷建置**。
 	// 與上面「讀側只提示」相反：寫側走 emitIndexStore 的原始 GEP+store，
 	// **沒有任何邊界檢查**，越界即 raw OOB write，是記憶體安全洞而非風格問題。

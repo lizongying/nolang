@@ -602,7 +602,11 @@ parse-url = (url str) (host str, port i64, path str, ok bool) {
         host-only = host.slice(0, colon-pos)
 
         #{overflow=wrap}
-        port-str = host.slice(colon-pos + 1, host.len-bytes())
+        ofs = colon-pos + 1: {
+            ok -> it
+            -> 0
+        }
+        port-str = host.slice(ofs, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
             c = port-str[i]

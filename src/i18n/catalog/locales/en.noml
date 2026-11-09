@@ -902,6 +902,8 @@ Error writing lib.no: %v
   'qogvayg4': 'Usage: no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': 'cannot modify read-only field \'len\' of string \'%s\''
   'qoykdxqy': 'noml: field %s: expected array, got %T'
+  'qwl2enr7': '`%s()` is called on %s, whose type is %s — an option has no members of its own (it is a tag plus a payload). Unwrap it first and call `%s()` on the payload: `%s: { ok -> it.%s() ... -> <fallback> }`, or propagate with `%s ?= <expr>`, or bind an unwrapped local `v = <option expr>: { ok -> it ... }`.'
+  'qwl2idx4': 'an index is taken on %s, whose type is %s — an option cannot be indexed (it is a tag plus a payload, not a container). Unwrap it first and index the payload: `%s: { ok -> it[<i>] ... -> <fallback> }`, or propagate with `%s ?= <expr>`, or bind an unwrapped local `v = <option expr>: { ok -> it ... }`.'
   'qxkk7mt2': 'win-close-handle: needs a handle argument'
   'qzwxurol': 'expected \',\' or \']\' in array, got %s instead'
   'r001bqqr': 'builtin %s: cannot take data pointer of arg %d'

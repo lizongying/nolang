@@ -2219,7 +2219,6 @@ str.from-hex = () (out ?[]byte) {
     #{overflow=wrap}
     half = n / 2
     buf []byte = with-len(half)
-    out = buf
     i <- [0..half): {
 
         #{overflow=wrap}
@@ -2231,8 +2230,11 @@ str.from-hex = () (out ?[]byte) {
             out = err('invalid hex character')
             return
         }
-        out[i] = (hi << 4) | lo
+        ; out 的回傳型別是 ?[]byte，不能直接在上面寫下標（option 沒有成員）；
+        ; 寫進 plain 緩衝 buf，迴圈結束再統一包成 ok。
+        buf[i] = (hi << 4) | lo
     }
+    out = buf
 }
 
 ; 大數（bigint）轉換

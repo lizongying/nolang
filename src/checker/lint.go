@@ -303,6 +303,7 @@ var lintSteps = []lintStep{
 	{"ineffective-overflow", true, runLintIneffectiveOverflow},
 	{"unhandled-overflow", false, runLintUnhandledOverflow},
 	{"unhandled-index", false, runLintUnhandledIndex},
+	{"option-member-access", false, runLintOptionMemberAccess},
 	{"catch-all-arms", true, runLintCatchAllArms},
 	{"range-index-loops", true, runLintRangeIndexLoops},
 	{"range-self-ellipsis", true, runLintRangeSelfEllipsis},
@@ -606,6 +607,28 @@ func runLintUnhandledIndex(program *parser.Program, opts LintOptions) []LintResu
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
 			Severity: sev, Source: "nolang-index",
+			File:    file,
+			Message: u.Message, TraceID: u.TraceID,
+		})
+	}
+	return results
+}
+
+// runLintOptionMemberAccess — 20i. 對 option 值取 len/cap 或下標 → ERROR。
+//
+// 這兩個形態過去靠 MIR 的 emitLenCap default 分支兜底（t5qq2leo），使用者拿到
+// 的是 codegen 內部訊息、沒有原始碼位置，`no vet` 也看不到。判定搬到 checker
+// 後與其他 option 規則（optunuse / idxbruse / idxwrite）同級：建置即擋下。
+func runLintOptionMemberAccess(program *parser.Program, opts LintOptions) []LintResult {
+	var results []LintResult
+	for _, u := range ValidateOptionMemberAccess(program) {
+		file := u.File
+		if file == "" {
+			file = opts.SourcePath
+		}
+		results = append(results, LintResult{
+			Line: u.Line, Column: u.Column,
+			Severity: LintError, Source: "nolang-option",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})

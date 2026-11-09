@@ -161,7 +161,13 @@ parse-set = (set-cookie-str str) (c cookie) {
                 attr-name = attr.slice(0, attr-eq)
                 attr-name = attr-name.trim()
                 attr-name-lower = attr-name.to-lower()
-                attr-val = attr.slice(attr-eq + 1, attr.len-bytes())
+                ; D6：`attr-eq + 1` 的型別是 ?i64，直接把 option 當 slice 實參會把
+                ; 回傳型別污染成 ?str。先解包成 plain 區域變數再取切片。
+                ofs = attr-eq + 1: {
+                    ok -> it
+                    -> 0
+                }
+                attr-val = attr.slice(ofs, attr.len-bytes())
                 attr-val = attr-val.trim()
 
                 {

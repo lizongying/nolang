@@ -900,6 +900,8 @@ Erro ao escrever lib.no: %v
   'qogvayg4': 'Uso: no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': 'não é possível modificar o campo somente-leitura \'len\' da string \'%s\''
   'qoykdxqy': 'noml: campo %s: esperado array, obtido %T'
+  'qwl2enr7': '`%s()` é chamado em %s, cujo tipo é %s — um option não tem membros próprios (é uma etiqueta mais uma carga útil). Desembrulhe-o primeiro e chame `%s()` na carga útil: `%s: { ok -> it.%s() ... -> <valor padrão> }`, ou propague com `%s ?= <expressão>`, ou vincule uma variável local já desembrulhada `v = <expressão option>: { ok -> it ... }`.'
+  'qwl2idx4': 'um índice é aplicado a %s, cujo tipo é %s — um option não pode ser indexado (é uma etiqueta mais uma carga útil, não um contêiner). Desembrulhe-o primeiro e indexe a carga útil: `%s: { ok -> it[<i>] ... -> <valor padrão> }`, ou propague com `%s ?= <expressão>`, ou vincule uma variável local já desembrulhada `v = <expressão option>: { ok -> it ... }`.'
   'qxkk7mt2': 'win-close-handle: precisa de um argumento handle'
   'qzwxurol': 'esperado \',\' ou \']\' no array, obtido %s em vez disso'
   'r001bqqr': 'builtin %s: não é possível obter o ponteiro de dados do argumento %d'

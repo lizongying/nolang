@@ -906,6 +906,8 @@ Erreur d'écriture de lib.no : %v
   'qogvayg4': 'Usage : no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': 'impossible de modifier le champ en lecture seule « len » de la chaîne « %s »'
   'qoykdxqy': 'noml : champ %s : tableau attendu, %T obtenu'
+  'qwl2enr7': '`%s()` est appelé sur %s, dont le type est %s — une option n’a pas de membres propres (c’est une étiquette plus une charge utile). Déballez-la d’abord et appelez `%s()` sur la charge utile : `%s: { ok -> it.%s() ... -> <valeur de repli> }`, ou propagez-la avec `%s ?= <expression>`, ou liez une variable locale déjà déballée `v = <expression option>: { ok -> it ... }`.'
+  'qwl2idx4': 'un indice est appliqué à %s, dont le type est %s — une option ne peut pas être indexée (c’est une étiquette plus une charge utile, pas un conteneur). Déballez-la d’abord et indexez la charge utile : `%s: { ok -> it[<i>] ... -> <valeur de repli> }`, ou propagez-la avec `%s ?= <expression>`, ou liez une variable locale déjà déballée `v = <expression option>: { ok -> it ... }`.'
   'qxkk7mt2': 'win-close-handle : un argument handle est requis'
   'qzwxurol': '« , » ou « ] » attendu dans le tableau, %s obtenu'
   'r001bqqr': 'builtin %s : impossible de prendre le pointeur de données de l’argument %d'

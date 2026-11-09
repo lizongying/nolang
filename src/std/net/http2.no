@@ -875,7 +875,11 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
         host-only = host.slice(0, colon-idx)
 
         #{overflow=wrap}
-        port-str = host.slice(colon-idx + 1, host.len-bytes())
+        ofs = colon-idx + 1: {
+            ok -> it
+            -> 0
+        }
+        port-str = host.slice(ofs, host.len-bytes())
         port = 0
         i <- [0..port-str.len-bytes()): {
 

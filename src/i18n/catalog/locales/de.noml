@@ -900,6 +900,8 @@ Fehler beim Schreiben von lib.no: %v
   'qogvayg4': 'Aufruf: no vet [--strict] [--json] [<file|dir>]'
   'qon2wsev': 'schreibgeschütztes Feld \'len\' der Zeichenkette \'%s\' kann nicht geändert werden'
   'qoykdxqy': 'noml: Feld %s: Array erwartet, %T erhalten'
+  'qwl2enr7': '`%s()` wird auf %s aufgerufen, dessen Typ %s ist — ein option hat keine eigenen Mitglieder (es ist ein Tag plus eine Nutzlast). Packen Sie es zuerst aus und rufen Sie `%s()` auf der Nutzlast auf: `%s: { ok -> it.%s() ... -> <Ersatzwert> }`, oder reichen Sie es mit `%s ?= <Ausdruck>` weiter, oder binden Sie zuerst eine ausgepackte lokale Variable `v = <option-Ausdruck>: { ok -> it ... }`.'
+  'qwl2idx4': 'Auf %s wird ein Index angewendet, dessen Typ %s ist — ein option kann nicht indiziert werden (es ist ein Tag plus eine Nutzlast, kein Container). Packen Sie es zuerst aus und indizieren Sie die Nutzlast: `%s: { ok -> it[<i>] ... -> <Ersatzwert> }`, oder reichen Sie es mit `%s ?= <Ausdruck>` weiter, oder binden Sie zuerst eine ausgepackte lokale Variable `v = <option-Ausdruck>: { ok -> it ... }`.'
   'qxkk7mt2': 'win-close-handle: benötigt ein handle-Argument'
   'qzwxurol': '\',\' oder \']\' im Array erwartet, stattdessen %s erhalten'
   'r001bqqr': 'builtin %s: Datenzeiger von Argument %d kann nicht genommen werden'

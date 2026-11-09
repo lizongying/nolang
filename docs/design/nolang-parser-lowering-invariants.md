@@ -880,8 +880,26 @@ block 14 (err 传播臂):
 | ---------- | --- |
 | 主改点        | `src/parser/parser.go`、`lowering.go`、`tohir.go`、`match.go`、`match_warn.go`、`ast.go`、`resolver.go`、`astdiskcache.go`、`clone.go` |
 | 副表         | `src/parser/fmttrivia.go`、`anntable.go`、`typefacts.go`、`nodefacts.go` |
-| checker    | `src/checker/checker.go`、`sugar_walk.go`、`match_exhaustive.go`、`match_arm_reach.go`、`lint.go`（Stage 6A 拆分）、`lint_split_test.go` |
+| checker    | `src/checker/checker.go`、`sugar_walk.go`、`match_exhaustive.go`、`match_arm_reach.go`、`lint.go`（Stage 6A 拆分）、`lint_split_test.go`、`option_member_access.go`（`?T` 取 len/cap 或下标的 checker 診斷） |
 | 装配与消费方     | `src/build/transpiler*.go`、`src/cmd/no/main.go`、`src/tools/*`、`src/lsp/*.go`、`src/fmt/*.go` |
 | MIR        | `src/mir/hir2mir.go` |
 | 门禁与 oracle | `src/parser/dump/*_test.go`、`src/parser/hir_cache_equivalence_test.go`、`src/hir/sugar_kinds_test.go`、`src/build/ast_write_gate_test.go`、`src/mir/hir_capture_mir_test.go`、`src/build/capture_llvm_parity_test.go`、`scripts/mir_golden.sh`、`scripts/selfhost_diff.sh` |
 | 自举         | `compiler/src/ps.no`、`compiler/src/ast.no`、`compiler/src/asp.no`、`docs/design/nolang-selfhost.md` |
+
+### 14.1 `?T` 成员取用的雙軌可見性（2026-11-09）
+
+`checker/option_member_access.go` 把「對 `?T` 取 `.len()` / `.cap()` / 下標」的診斷
+從 MIR 後端兜底（`t5qq2leo`，只有 MIR 函式索引、沒有原始碼位置）搬到 checker。
+兩個 TraceID：`qwl2enr7`（len/cap 接收者）、`qwl2idx4`（下標基底）。
+
+它在 `TestCheckerSugarDriftIsWithinKnownSet` 裡是 **STOP firing on the sugar AST**，
+與 `xmicjezl`（ValidateIntOverflow）同源，不是漏寫 sugar case：
+
+- 判定要讀 `sem.FuncVarType(curFunc, name)` / `sem.VarType(name)`；
+- 這兩張型別副表**由 lowering 填充**（§20 把推斷 `?T` 遷入 side-table 的直接後果）；
+- `SkipLowering`（`sugarShape`）根本沒跑 lowering ⇒ 副表為空 ⇒ `rawOf` 一律取不到
+  型別 ⇒ 規則失明。
+
+發布形態 `no vet` / `no build` 走 lowered，使用者看到的診斷不受影響。要讓它在 sugar
+形態也生效，前提是把 `?T` 的型別推斷本身搬到 parse 期（與 `xmicjezl` 同一筆前置工作），
+不是在本規則裡補 sugar 分支。
