@@ -363,7 +363,20 @@ import (
 // 回放恆回空字串）。同一份原始碼會多出／改變一批 let 的 InferredType
 // （`n = data.len() / 16` 由「無型別」變 `?i64`），舊 blob 沒有這些事實，
 // 重用會退回「ok 臂永不命中」的老症狀，故必 bump。
-const ASTVersion = "2026-11-09.4"
+// 2026-11-09.5：astLocalVarType 的 AST 回放補上 range-for 迭代變數
+// （gatherForStatementsInFuncScope + iterVarType）。此前 `i <- [a..b]` 的 `i`
+// 不是 LetStatement、問不到型別，迴圈體裡 `t = i + 1` 不被發成 `?i64`，
+// 值位 match 的 ok 臂因此永不命中（bigint._div-i64 的 rem 從不更新，
+// f64.to-str 輸出退化成亂碼）。舊 blob 沒有這些 let 的 InferredType，故必 bump。
+// 2026-11-09.6：三條型別鏈同時補齊 —— 位元／移位右值的型別登記
+// （inferBitwiseResult）+ signedIntOperandType 的位元分支；`x.field` 的欄位
+// 型別回放（astFieldAccessType，接上 computeAstLocalVarType 與
+// signedIntOperandType）；以及值位 match 主語為欄位時的 `it` 綁定
+// （buildItBinding 收 DotExpression）。同一份原始碼會多出一批 let 的
+// InferredType（`c = a & 255` 之後的 `c % 10` 由裸 i64 變 `?i64`、
+// `y = d.year` 由無型別變 i64）與一批先前沒有的 `it` 綁定；舊 blob 沒有這些
+// 事實，重用會退回「ok 臂永不命中」「it 恆 0」的老症狀，故必 bump。
+const ASTVersion = "2026-11-09.6"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

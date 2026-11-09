@@ -107,6 +107,22 @@ func (t *CaptureFacts) Of(n Node) *CaptureFact {
 	return t.entries[n]
 }
 
+// Delete 撤銷節點 n 的判定記錄，使它回到「未判定」。
+//
+// 與 Set(n, nil) 不同：nil 是一條「已判定為不捕獲」的記錄，會計入 Len 並參與
+// Merge；Delete 之後 n 在表裡不存在。
+//
+// 存在的理由：捕獲判定會被走查**多趟**寫入（analysisOnly 的 prepareInferredTypes
+// 一趟、真正的降糖一趟），而兩趟可見的型別集合不同，判定可能相反。真正那一趟
+// 是權威，它在「根-算術短路」這類「確定不捕獲」的出口必須把前一趟留下的記錄
+// 撤掉，否則 H0 會讀到過期判定而多產一條捕獲鏈（AST 軌不讀表，兩軌於是發散）。
+func (t *CaptureFacts) Delete(n Node) {
+	if t == nil || t.entries == nil || n == nil {
+		return
+	}
+	delete(t.entries, n)
+}
+
 // Len 回傳已登記的條目數（測試用）。
 func (t *CaptureFacts) Len() int {
 	if t == nil || t.entries == nil {
@@ -177,6 +193,15 @@ func (s *SemanticContext) CaptureFactOf(n Node) *CaptureFact {
 		return nil
 	}
 	return s.captureFacts.Of(n)
+}
+
+// DeleteCaptureFact 撤銷節點 n 的捕獲判定（sem 或表為 nil 時無動作）。
+// 語意見 CaptureFacts.Delete：讓 n 回到「未判定」，不同於登記一條 nil 記錄。
+func (s *SemanticContext) DeleteCaptureFact(n Node) {
+	if s == nil || n == nil || s.captureFacts == nil {
+		return
+	}
+	s.captureFacts.Delete(n)
 }
 
 // CaptureFactsLen 回傳已登記條目數（測試用）。

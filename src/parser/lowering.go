@@ -548,6 +548,9 @@ func (l *lowerer) walk(v reflect.Value) {
 					// 永遠得到 0（tmp/zz-valmatch/q1-consec.no 實測）。補上型別登記後
 					// 型別鏈即可延續，與 checker 的 inferExprType(SurfaceMatch) 口徑一致。
 					l.inferValueMatchResult(ls)
+					// 位元／移位運算的結果是 plain 整數，但仍是後續算術的「型別來源」：
+					// `c = a & 255` 之後 `rem-opt = c % 10` 需要知道 c 是 i64。
+					l.inferBitwiseResult(ls)
 				}
 				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
 				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
@@ -997,6 +1000,59 @@ func gatherLetsInFuncScope(body *BlockStatement) []*LetStatement {
 	return out
 }
 
+// gatherForStatementsInFuncScope 與 gatherLetsInFuncScope 同構，收集的是迴圈
+// （*ForStatement）。存在理由：range-for 的迭代變數 `i <- [a..b]` 沒有對應的
+// LetStatement，它是 IterRange.Variable 上的一個裸名字。少了這一遍，
+// computeAstLocalVarType 對迴圈體內的 `i` 一律回空 ⇒ `t = i + 1` 不被發成
+// ?i64 ⇒ `t: { ok -> … }` 的值位 match 主語是 plain i64 ⇒ ok 臂**永不命中**，
+// 而整體沒有任何診斷（bigint._div-i64 的 `rem` 因此從不更新，f64.to-str 輸出
+// 退化成亂碼）。收集口徑（遇巢狀函式停、按指標去重）與 gatherLetsInFuncScope
+// 必須一致。
+func gatherForStatementsInFuncScope(body *BlockStatement) []*ForStatement {
+	var out []*ForStatement
+	if body == nil {
+		return out
+	}
+	seen := map[uintptr]bool{}
+	var walk func(rv reflect.Value)
+	walk = func(rv reflect.Value) {
+		switch rv.Kind() {
+		case reflect.Ptr:
+			if rv.IsNil() {
+				return
+			}
+			ptr := rv.Pointer()
+			if seen[ptr] {
+				return
+			}
+			seen[ptr] = true
+			if _, isFn := rv.Interface().(*FunctionDefinition); isFn {
+				return // 巢狀函式：獨立作用域，不下钻
+			}
+			if fs, isFor := rv.Interface().(*ForStatement); isFor {
+				out = append(out, fs)
+			}
+			walk(rv.Elem())
+		case reflect.Interface:
+			if rv.IsNil() {
+				return
+			}
+			walk(rv.Elem())
+		case reflect.Slice:
+			for i := 0; i < rv.Len(); i++ {
+				walk(rv.Index(i))
+			}
+		case reflect.Struct:
+			t := rv.Type()
+			for _, i := range exportedFieldIndices(t) {
+				walk(rv.Field(i))
+			}
+		}
+	}
+	walk(reflect.ValueOf(body))
+	return out
+}
+
 // gatherFuncDefs 以反射走訪整棵程式樹，回傳其中所有的 *FunctionDefinition
 // （含巢狀函式 / 閉包——它們各有自己的 idxLocalTypes 鍵）。只讀導出欄位、
 // 按指標去重（AST 是 DAG，可能有共享節點）。
@@ -1286,6 +1342,107 @@ func (l *lowerer) inferValueMatchResult(s *LetStatement) {
 	if t := l.p.optionSubjectElemType(l.curFuncName, sm.Matched); t != "" {
 		l.publishInferredType(s, t)
 	}
+}
+
+// inferBitwiseResult 把「位元／移位運算的結果」登記為 plain 整數型別。
+//
+// 位元運算不會溢位，結果本身是 plain 整數（不是 ?T），但它同時是後續算術的
+// 型別來源：`c = a & 255` 之後寫 `rem-opt = c % 10`，signedIntOperandType 必須
+// 知道 c 是 i64 才能發 ?i64。少了這條登記，c 在語義副表裡無型別 ⇒
+// inferOptionArith 直接放棄捕獲 ⇒ MIR 發出未檢查的裸 mod，而呼叫端寫的是
+// `rem-opt: { ok -> rem = it  -> }`（拿「值 == ok 標籤」比對）⇒ ok 臂永不命中。
+//
+// std/bigint 的 `_div-i64` 正是此形態：`cur = (rem << 32) | (li & MASK)` 之後
+// `rem-opt = cur % v` 從不賦值 ⇒ 餘數恆 0 ⇒ 商全錯、`to-str` 只剩個位數
+// （`bigint.from-i64(4294967296).to-str()` 實測回 "6"）。yaml／toml／txt／
+// num-conv 的浮點解析失敗同源（str-to-f64 的 bigint 累積鏈）。
+//
+// 型別取「兩側較寬者」：位元運算的結果槽型別由較寬一側決定（`byte & 127`
+// 在 MIR 是 `bitand dst:i64`，`byte & byte` 才是 `bitand dst:byte`）。這一格
+// 不能省 —— x509 的 `der-len` 是 `n = b & 127`（b 由 `data[pos]` 取出，型別
+// 是 byte），取左運算元會得到 byte，下游 `adv-opt = 1 + n` 仍推不出 ?i64。
+func (l *lowerer) inferBitwiseResult(s *LetStatement) {
+	if l == nil || s == nil || s.IsSynthetic || s.Name == nil || s.Type != nil || s.Value == nil {
+		return
+	}
+	inf, ok := unwrapLowerExpr(s.Value).(*InfixExpression)
+	if !ok || !isBitwiseOperator(inf.Operator) {
+		return
+	}
+	lt, ltW, okLT := l.bitwiseOperandIntType(inf.Left)
+	if !okLT {
+		return
+	}
+	if rt, rtW, okRT := l.bitwiseOperandIntType(inf.Right); okRT && rtW > ltW {
+		lt = rt
+	}
+	l.publishInferredType(s, lt)
+}
+
+// bitwiseOperandIntType 解析位元／移位運算元的整數型別與位寬。
+//
+// 與 signedIntOperandType 的差別只有一處：位元運算對**無號與窄整數**也合法
+// （且實際用途多半就是 `[]byte` 取出的 byte），而 signedIntOperandType 依 D6
+// 只認有號整數。先在它那裡試一次（涵蓋巢狀算術／呼叫／self），失敗再補查
+// 識別符與呼叫的原始型別。
+func (l *lowerer) bitwiseOperandIntType(e Expression) (string, int, bool) {
+	if t, ok := l.signedIntOperandType(e); ok {
+		return t, intTypeWidth(t), true
+	}
+	raw := ""
+	switch x := unwrapLowerExpr(e).(type) {
+	case *Identifier:
+		if x.Value == "self" || x.Value == "." {
+			return "", 0, false
+		}
+		if l.p.sem != nil {
+			if t, has := l.p.sem.FuncVarType(l.curFuncName, x.Value); has {
+				raw = t
+			}
+		}
+		if raw == "" {
+			raw = l.p.astLocalVarType(l.curFuncName, x.Value)
+		}
+	case *CallExpression:
+		raw = l.p.returnTypeFromCallExpr(x)
+	}
+	raw = ty.StripOptionRaw(raw)
+	if w := intTypeWidth(raw); w > 0 {
+		return raw, w, true
+	}
+	return "", 0, false
+}
+
+// intTypeWidth 回傳整數型別名稱的位寬；非整數型別回 0。口徑與 checker 的
+// intTypeBits 一致（`int` 在 nolang 是 i64 的別名）。
+func intTypeWidth(t string) int {
+	t = strings.TrimSpace(t)
+	if i := strings.LastIndex(t, "."); i >= 0 {
+		t = t[i+1:]
+	}
+	switch t {
+	case "i8", "u8", "byte":
+		return 8
+	case "i16", "u16":
+		return 16
+	case "i32", "u32":
+		return 32
+	case "int", "i64", "u64":
+		return 64
+	case "i128", "u128":
+		return 128
+	}
+	return 0
+}
+
+// isBitwiseOperator 回報 op 是否為位元／移位運算子。這族與 D6 的五個算術不同：
+// 不會溢位，結果是左運算元型別的 plain 整數。
+func isBitwiseOperator(op string) bool {
+	switch op {
+	case "&", "|", "^", "<<", ">>":
+		return true
+	}
+	return false
 }
 
 // optionSubjectElemType 回報「option match 主語」的 payload 型別。
@@ -1734,6 +1891,18 @@ func (l *lowerer) maybeCaptureOptionAssign(stmt interface{}, byOptionArith bool)
 	// 兩條短路合併成一個條件是安全的：`ls.Type != nil` 時 inferOptionArith 必定
 	// 提前返回 false（顯式標註不碰），故二者互斥且並集即「根-算術已被別處收手」。
 	if inf, isInf := root.(*InfixExpression); isInf && isOptionArithOperator(inf.Operator) && (ls.Type != nil || byOptionArith) {
+		// 根-算術短路意味著「本陳述不捕獲」，因此必須**主動清掉**先前寫入的
+		// 捕獲事實：analysisOnly 那一趟（prepareInferredTypes）跑在型別集合尚未
+		// 補齊的時機，`byOptionArith` 常為 false，於是它會替同一條陳述記下一筆
+		// 結構捕獲；真實那一趟短路後不覆寫，H0 就讀到過期事實、多產一條
+		// `__cap_N` + KIf 鏈，而 AST 軌（不讀表）沒有 —— 兩軌 HIR 逐字節發散
+		// （tests/byte-option-index.no 的 `j = k - 1 - i #{overflow=wrap}`，
+		// 2026-11-09 由「range-for 迭代變數補型別」觸發）。
+		// 只在此處清：這是唯一「型別系統已收手、結構捕獲不得介入」的判定，
+		// 且同一趟 walk 內對同一節點的判定是穩定的（H0 軌不改 AST，重訪同答案）。
+		if l.p != nil && l.p.sem != nil {
+			l.p.sem.DeleteCaptureFact(ls)
+		}
 		return nil
 	}
 	// 根為 option 變數：賦值本身即整體拷貝，現有行為已正確。
@@ -2036,6 +2205,13 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 		// 巢狀算術運算元（`a + b * c` 的右運算元 `b * c`）：其值為 option 的
 		// 內部 payload，型別即兩側較寬的有號整數型別。這是 D6 統一規則的必要
 		// 條件 —— 否則根運算元判定不出型別，整個綁定就推不出 `?T`。
+		//
+		// 位元／移位（`(rem << 32) | (li & MASK)` 的左運算元）：結果是左運算元
+		// 型別的 plain 整數（與 checker.inferExprType 同口徑），照樣是上面這條
+		// 型別鏈的一環 —— 缺這格時 `cur` 的型別推不出，`cur % v` 就退化成裸 mod。
+		if isBitwiseOperator(x.Operator) {
+			return l.signedIntOperandType(x.Left)
+		}
 		if !isOptionArithOperator(x.Operator) {
 			return "", false
 		}
@@ -2048,6 +2224,17 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 			return rt, true
 		}
 		return lt, true
+	case *DotExpression:
+		// 欄位運算元（`d.hour * 3600`、`d.sec`）：型別取結構體宣告的欄位型別。
+		// 與 computeAstLocalVarType 的欄位回放同一條規則。缺這格時行內直接用
+		// 欄位做算術的綁定（time.date-to-unix 的
+		// `ts = days * 86400 + d.hour * 3600 + …`）整條鏈都發不出 ?i64。
+		if ft := l.p.astFieldAccessType(l.curFuncName, x); ft != "" {
+			if t, ok := lowerSignedIntName(ft); ok {
+				return t, true
+			}
+		}
+		return "", false
 	case *CallExpression:
 		// 呼叫運算元（`nr = ek.len() / 16 - 1`、`x = n.to-i64() + 1`）：回傳型別
 		// 取自簽名表 / 內建容器方法表（見 builtinContainerMethodReturnType）。
@@ -2720,6 +2907,98 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	return t
 }
 
+// iterVarType 推導 range-for 迭代變數的靜態型別。口徑與 checker.iterElemType
+// 一致（見 checker/checker.go）：純區間 `[a..b]` 的迭代變數是 i64；字串來源
+// （RangeStr / 字串字面量 / 已知為 str 的識別符）是 char；`[]T` 來源是 T。
+// 其餘（hashmap、未知型別）一律回空——寧可讓呼叫端維持舊的弱回退，也不猜。
+func iterVarType(ie *IterationExpr, types map[string]string) string {
+	if ie == nil || ie.Variable == "" {
+		return ""
+	}
+	if ie.RangeStr != "" {
+		return "char"
+	}
+	if ie.Range != nil {
+		return "i64"
+	}
+	src := ie.RangeExpr
+	if src == nil {
+		return ""
+	}
+	if _, ok := src.(*StringLiteral); ok {
+		return "char"
+	}
+	id, ok := src.(*Identifier)
+	if !ok {
+		return ""
+	}
+	st := types[id.Value]
+	switch {
+	case st == "":
+		return ""
+	case st == "str":
+		return "char"
+	case strings.HasPrefix(st, "[]"):
+		if elem := st[2:]; elem != "" {
+			return elem
+		}
+	}
+	return ""
+}
+
+// astFieldAccessType 解析 `x.field` 的宣告型別（供 AST 回放式推斷）。
+//
+// 這是「`y = d.year` 之後 y 才有型別」的那一環：date-to-unix 的
+// `y = d.year` / `m = d.month` / `d.day` / `d.hour` 全是欄位讀取，缺這一步
+// 時 y、m2 無型別 ⇒ `y-opt = y - 1`、`m2-opt = m2 - 3` 推不出 ?i64 ⇒
+// ok 臂不賦值 ⇒ 1970-01-01 的年沒減成 1969、月份沒對齊到「3 月為年初」，
+// 換算出的 Unix 秒全錯（test/std/time.no 的 date-to-unix/parse-date 五條）。
+//
+// 欄位表一律走 structFieldsOf（parse 期由 decl.go 登記、blob 載入後由
+// mergeLocalStructFields 補回）。**不要**改用「在 p.prog 裡按名字找
+// StructDefinition」：`p.prog` 在多檔編譯下可能同時看到多個模組的同名結構體，
+// 按名字取會撞錯（實測 test/std/ 目錄模式下 dom.no 的實體解碼因此回歸）。
+// structFieldsOf 是模組感知的，同名跨模組時直接拒答。
+//
+// 只認「接收者是識別符或另一層欄位」的形態；其餘（指標成員、泛型實例、
+// 介面、未知型別）一律回空，讓呼叫端維持舊的弱回退。
+func (p *Parser) astFieldAccessType(funcName string, e *DotExpression) string {
+	if p == nil || e == nil || e.Property == "" {
+		return ""
+	}
+	recvType := ""
+	switch r := unwrapLowerExpr(e.Receiver).(type) {
+	case *Identifier:
+		name := r.Value
+		if name == "self" || name == "." {
+			return ""
+		}
+		if p.sem != nil {
+			if t, ok := p.sem.FuncVarType(funcName, name); ok {
+				recvType = t
+			}
+		}
+		if recvType == "" {
+			recvType = p.astLocalVarType(funcName, name)
+		}
+	case *DotExpression:
+		recvType = p.astFieldAccessType(funcName, r)
+	}
+	recvType = strings.TrimSpace(recvType)
+	if recvType == "" {
+		return ""
+	}
+	recvType = ty.StripOptionRaw(ty.StripPtrAllRaw(recvType))
+	if i := strings.LastIndex(recvType, "."); i >= 0 {
+		recvType = recvType[i+1:]
+	}
+	fields, ok := p.structFieldsOf(recvType)
+	if !ok {
+		return ""
+	}
+	return fields[e.Property]
+}
+
 // computeAstLocalVarType is the uncached body of astLocalVarType.
 func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 	fd := findFuncDef(p.prog, funcName)
@@ -2788,11 +3067,36 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 				types[name] = selfType
 				continue
 			}
+		case *DotExpression:
+			// 欄位讀取：`y = d.year`（time.date-to-unix 的整條換算鏈起點）。
+			// 只有接收者型別可解析、且欄位在 prog 裡真的存在時才登記。
+			if t := p.astFieldAccessType(funcName, v); t != "" {
+				types[name] = t
+				continue
+			}
 		}
 		if call, ok := ls.Value.(*CallExpression); ok {
 			if rt := p.returnTypeFromCallExpr(call); rt != "" {
 				types[name] = rt
 			}
+		}
+	}
+	// Iteration-variable pass: `i <- [a..b]` / `ch <- s` 的變數沒有 LetStatement，
+	// 它是 IterRange.Variable 上的裸名字。口徑對齊 checker 的 iterElemType（區間
+	// 迭代 → i64、字串來源 → char、`[]T` 來源 → T）。缺這遍時迴圈體內的 `i` 無型別。
+	for _, fs := range gatherForStatementsInFuncScope(fd.Body) {
+		if fs == nil || fs.IterRange == nil {
+			continue
+		}
+		name := fs.IterRange.Variable
+		if name == "" || name == "_" {
+			continue
+		}
+		if _, exists := types[name]; exists {
+			continue
+		}
+		if t := iterVarType(fs.IterRange, types); t != "" {
+			types[name] = t
 		}
 	}
 	// Second pass: follow identifier RHS chains (`x = otherVar`).
@@ -4923,10 +5227,13 @@ func typeQualifiedOver(a, b string) bool {
 // binding with Type = nil is created. The codegen determines the type from
 // g.varTypes at generation time.
 func (p *Parser) buildItBinding(tok lexer.Token, matched Expression) *LetStatement {
-	// 識別符與索引表達式（如 `parts[i]`）都可作為 option-match 主體：索引主體
-	// 回傳的選項 rvalue 需綁定到 `it`，後續臂體 `s = it` 才能取到 payload。
+	// 識別符、索引與欄位讀取（如 `parts[i]`、`rec.i`）都可作為 option-match 主體：
+	// 索引／欄位主體回傳的選項 rvalue 需綁定到 `it`，後續臂體 `s = it` 才能取到
+	// payload。缺 DotExpression 這格時 `v = box.i: { ok -> it  -> -1 }` 的 ok 臂
+	// 拿不到綁定，MIR 把 `it` 零填 ⇒ 恆得 0（test/std/index-out.no 的
+	// `option 欄位直接指派值 → ok(42)`）。
 	switch matched.(type) {
-	case *Identifier, *IndexExpression:
+	case *Identifier, *IndexExpression, *DotExpression:
 	default:
 		return nil
 	}
