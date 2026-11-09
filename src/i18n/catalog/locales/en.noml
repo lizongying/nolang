@@ -700,7 +700,7 @@ Workspace initialized in %s
 `
   'l48rpvr9': 'expected \')\' to close loop condition, got %s'
   'l62tgcu4': 'import %q: %w'
-  'l6euu21x': 'per-test run timeout in seconds (default 60, 0 = unlimited); a single hang is killed and reported, not fatal to the whole run'
+  'l6euu21x': 'per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run'
   'l90oz2gr': 'sysctl: cannot marshal name as C string'
   'l9eytl0v': 'expected \'(\''
   'l9lio3b1': 'net-dial: cannot marshal host as C string'

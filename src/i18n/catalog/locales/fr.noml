@@ -703,7 +703,7 @@ Espace de travail initialisé dans %s
 `
   'l48rpvr9': '« ) » attendu pour fermer la condition de boucle, %s obtenu'
   'l62tgcu4': 'import %q : %w'
-  'l6euu21x': 'délai d\'exécution par test en secondes (60 par défaut, 0 = illimité) ; un seul blocage est tué et signalé, sans arrêter toute l\'exécution'
+  'l6euu21x': 'délai d\'exécution par test en secondes (0 = illimité) ; un seul blocage est tué et signalé, sans arrêter toute l\'exécution'
   'l90oz2gr': 'sysctl : impossible de convertir le nom en chaîne C'
   'l9eytl0v': '« ( » attendu'
   'l9lio3b1': 'net-dial : impossible de convertir l’hôte en chaîne C'

@@ -3264,7 +3264,7 @@ func testCommand(args []string) {
 	cc := fs.String("cc", "clang", i18n.P("7k5x9q9a", "C compiler: clang (default), zig"))
 	target := fs.String("target", "", i18n.P("g2ex1gxt", "Target triple (e.g. x86_64-linux-gnu, aarch64-macos-gnu, x86_64-windows-gnu, wasm32-wasi)"))
 	wasmDirect := fs.Bool("wasm-direct", false, i18n.P("23ki71z9", "Use Direct WASM backend (no LLVM toolchain required, browser-compatible)"))
-	timeoutSec := fs.Int("timeout", 60, i18n.P("l6euu21x", "per-test run timeout in seconds (default 60, 0 = unlimited); a single hang is killed and reported, not fatal to the whole run"))
+	timeoutSec := fs.Int("timeout", 60, i18n.P("l6euu21x", "per-test run timeout in seconds (0 = unlimited); a single hang is killed and reported, not fatal to the whole run"))
 	fs.Usage = func() {
 		fmt.Println(i18n.P("su2q9at6", "Usage: no test [<file>]"))
 		fmt.Println("")

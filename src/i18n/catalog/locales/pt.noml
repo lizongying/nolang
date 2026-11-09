@@ -698,7 +698,7 @@ Workspace inicializado em %s
 `
   'l48rpvr9': 'esperado \')\' para fechar a condição do laço, obtido %s'
   'l62tgcu4': 'importação %q: %w'
-  'l6euu21x': 'tempo limite por teste em segundos (padrão 60, 0 = ilimitado); um travamento é encerrado e reportado, sem abortar toda a execução'
+  'l6euu21x': 'tempo limite por teste em segundos (0 = ilimitado); um travamento é encerrado e reportado, sem abortar toda a execução'
   'l90oz2gr': 'sysctl: não é possível marshalar o nome como string C'
   'l9eytl0v': 'esperado \'(\''
   'l9lio3b1': 'net-dial: não é possível marshalar host como string C'
