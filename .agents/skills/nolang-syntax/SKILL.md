@@ -873,6 +873,30 @@ sha1 = (data []byte) (hash [20]byte) {
 }
 ```
 
+**Do not use separator banners** (`; ═══════ title ═══════`, `; ─── title ───`, `; =====`). The problem is
+not only visual noise: a comment has exactly one destination in the AST — it becomes the doc of the
+**next declaration**. A banner is therefore swallowed into the following function's or type's doc header,
+which then opens with a section name that has nothing to do with it. Write the section title as a plain
+comment line, and when it really is a standalone note (not documentation for what follows), put a `...`
+(placeholder statement) immediately after it so the title hangs on something of its own.
+
+```no
+; ❌ Banner, and it lands in to-str's doc header
+; ═══════════════════════════════════════
+; Number formatting
+; ═══════════════════════════════════════
+
+; i64.to-str(v i64) (s str) — decimal
+```
+
+```no
+; ✅ Title stands alone (`...` anchors it); only the rest documents to-str
+; Number formatting
+...
+
+; i64.to-str(v i64) (s str) — decimal
+```
+
 ### Prefer Standard Library
 
 The Nolang standard library provides a rich set of common functionality, including string operations, byte conversions, hash computation, network communication, etc.
