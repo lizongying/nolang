@@ -598,6 +598,76 @@ test-s99g-struct-no-retain = () {
     runner.eq(ir.contains('call void @nolang_rc_retain('), 0, 's99g no retain for non-str struct')
 }
 
+; ── s99i：vec 欄位就地索引 b.data[i] / 本地 vec 變量 v[i]（M4-e 第四十九件續）──
+; 核心：h2m-lower-expr 新增 K-INDEX-EXPRESSION 分支——base 降級出 %vec 值 id 後發 OP-VECGET 取第 i 個 i64 元素；
+;   base 須是 TY-VEC（[]i64 欄位 / vec 形參 / mem==0 下綁定的 vec 局部），其餘型別（str/struct/arr）計 unsup。
+;   cg 早已支援 OP-VECGET（→ call i64 @vec_get_i64(%vec, i64)），本件是純 h2m 改動。
+test-s99i-vec-index-param = () {
+    ; 本地 vec 變量（形參 v: []i64）就地索引：r = v[i]
+    src = 'consume = (v []i64, i i64) (r i64) {\n    r = v[i]\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99i vec param index unsup')
+    runner.eq(ir.contains('define i64 @consume(%vec %vc1'), 1, 's99i consume sig')
+    ; 就地索引：vec 形參 %vc1 直接 OP-VECGET，下標是形參 i（%v2），結果 i64 %v3
+    runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc1, i64 %v2)'), 1, 's99i vec param index VECGET')
+    runner.eq(ir.contains('ret i64 %v3'), 1, 's99i consume ret i64')
+}
+
+test-s99i-vec-field-index = () {
+    ; vec 欄位就地索引：r = b.data[i]（結構體欄位 GET + 索引，兩步皆 %vec 值流轉，無槽）
+    src = 'Buf {\n    data []i64\n    id i64\n}\n\nconsume = (v []i64, i i64) (r i64) {\n    r = v[i]\n}\n\nsum = (b Buf, i i64) (r i64) {\n    r = b.data[i]\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99i vec field index unsup')
+    runner.eq(ir.contains('%struct.s0 = type { %vec, i64 }'), 1, 's99i struct decl')
+    runner.eq(ir.contains('define i64 @sum(%struct.s0 %st1'), 1, 's99i sum sig')
+    ; b.data → OP-STRUCT-GET 抽 %vec（%vc3 = extractvalue %struct.s0 %st1, 0）
+    runner.eq(ir.contains('%vc3 = extractvalue %struct.s0 %st1, 0'), 1, 's99i GET vec field')
+    ; 就地索引：被抽出的 %vc3 直接 OP-VECGET，下標是形參 i（%v2）
+    runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc3, i64 %v2)'), 1, 's99i vec field index VECGET')
+    runner.eq(ir.contains('ret i64 %v4'), 1, 's99i sum ret i64')
+}
+
+test-s99i-vec-local-bind = () {
+    ; 本地 vec 變量：d = b.data；r = d[i]（mem==0 直綁值 id，無槽；d 綁定到 GET 抽出的 %vec）
+    src = 'Buf {\n    data []i64\n    id i64\n}\n\ng = (b Buf, i i64) (r i64) {\n    d = b.data\n    r = d[i]\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99i vec local bind unsup')
+    runner.eq(ir.contains('define i64 @g(%struct.s0 %st1'), 1, 's99i g sig')
+    ; d = b.data → GET 抽 %vec（%vc3）
+    runner.eq(ir.contains('%vc3 = extractvalue %struct.s0 %st1, 0'), 1, 's99i local bind GET')
+    ; r = d[i] → 直接對綁定的 %vc3 做 OP-VECGET（下標 %v2）
+    runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc3, i64 %v2)'), 1, 's99i local bind VECGET')
+    runner.eq(ir.contains('ret i64 %v4'), 1, 's99i g ret i64')
+}
+
+test-s99i-index-scalar-gate = () {
+    ; 門禁：對非 vec 基底索引（x 是 i64 標量）→ 計 unsup，不產 OP-VECGET
+    src = 'f = (x i64, i i64) (r i64) {\n    r = x[i]\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 's99i scalar index counted unsup')
+    runner.eq(ir.contains('call i64 @vec_get_i64('), 0, 's99i no VECGET for scalar base')
+}
+
 ; ── 单个输入参数：形参占值 id 1，body 从 id 2 起 ──
 ; 证明 s56 的签名侧降级：不建 alloca，名字直接绑到形参 id（与 §3.11 重绑模型一致）。
 test-param-one = () {
@@ -4099,6 +4169,10 @@ test-s99f-vec-field-gate()
 test-s99g-struct-str-retain()
 test-s99g-struct-mixed-mask()
 test-s99g-struct-no-retain()
+test-s99i-vec-index-param()
+test-s99i-vec-field-index()
+test-s99i-vec-local-bind()
+test-s99i-index-scalar-gate()
 
 runner.summary()
 f = runner.failed-count()

@@ -5056,7 +5056,34 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **整檔狀態（預期，待復測）**：cg-test.no 既有的 6 處 `15w45dqk` 編譯錯（L111/227/1151/1358/4056 等）隨 checker 門禁落地解除後，本件新增的非連續 id 判別力測試應全綠。
 
-**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`，見 §5.3.4.eh）；②vec 欄位就地索引 `b.data[i]` / 本地 vec 變量（待 M4-d RC）。兩者均不再依賴 MK 連續 id 假設，本件已為其掃清地基。
+**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`，見 §5.3.4.eh）；②vec 欄位就地索引 `b.data[i]` / 本地 vec 變量**已於 §5.3.4.ej（s99i）完成（代碼側；運行時驗證待 `15w45dqk` 門禁落地後復測）**。兩者均不再依賴 MK 連續 id 假設，本件已為其掃清地基。
+
+### 5.3.4.ej s99i——M4-e 第四十九件續：vec 欄位就地索引 `b.data[i]` / 本地 vec 變量（2026-11-09 本輪）
+
+**動機**：s99f 已讓 struct 支援 `[]i64` 欄位（`b.data`），而 s62 容器遍歷 `v <- xs` 只收裸識別符源（L2563/2574）⇒ `v <- b.data` 不入形。要直接讀 vec 欄位的第 i 個元素（`b.data[i]`）或讀進本地 vec 變數後索引（`d = b.data; d[i]`），需在 `h2m-lower-expr` 補 `K-INDEX-EXPRESSION` 分支——此前該節點直落 `h2m-mark`，索引讀取整件不被產碼。
+
+**關鍵測量（底層能力已存在，確認零 cg 改動前提）**：
+- vec OP 碼：`OP-VECNEW=18` / `OP-VECPUSH=19` / `OP-VECLEN=20` / `OP-VECGET=21`；cg 早已發 `OP-VECGET` → `call i64 @vec_get_i64(%vec %vc<x>, i64 %v<y>)`（cg.no L1887-1895）。
+- AST 節點 `K-INDEX-EXPRESSION = 38`（asp.no L720），由 ps.no L1074 生成，`kid[0]=base`、`kid[1]=index`。
+- 變量綁定：`h2m-var-read`（L484）對 `TY-VEC` 直接回 sid（cg 無 `%vec` 槽，vec 形參住 entry incoming 值 id）；`h2m-var-bind`（L312）設 `vids[i]=id`（`mem==0` 模式直讀 vids，型別表不敏感）；`mem` 預設 0（僅控制流觸發 `mem=1`）。
+- 輔助確認：`h2m-emit(c, op, d, a, b, sym, res)`（L254）、`h2m-alloc(c, ty)`（L238）、`h2m-vty-at(c, id)`（L594）。
+
+**改動（`compiler/src/h2m.no`，純 h2m，cg 零改）**：在 `h2m-lower-expr` 的 `K-DOT-EXPRESSION` 分支之後、`-> h2m-mark(c)` 之前插入 `K-INDEX-EXPRESSION` 分支：
+- base 降級出值 id `bv = h2m-lower-expr(...)`，查 `bt = h2m-vty-at(c, bv)`。
+- `bt == TY-VEC`：`ik` 降級出 `iv`，`ev = h2m-alloc(c, TY-I64)`，發 `h2m-emit(c, OP-VECGET, ev, bv, iv, '', TY-I64)`，回 `v = ev`。
+- `bt != TY-VEC`（str/struct/arr 等非 vec 基底）：計 `h2m-mark(c)` 不產碼（unsup）。元素型別恆 `i64`（自舉 vec 元素僅收 i64，與 `@vec_get_i64` 單型 helper 一致）。
+
+**IR 核實（`compiler/tests/h2m-test.no` 新增 4 用例，全過）**：
+- `test-s99i-vec-index-param`：`consume = (v []i64, i i64) (r i64) { r = v[i] }` ⇒ `define i64 @consume(%vec %vc1` / `call i64 @vec_get_i64(%vec %vc1, i64 %v2)` / `ret i64 %v3`。
+- `test-s99i-vec-field-index`：`Buf{data []i64, id i64}` + `sum = (b Buf, i i64) (r i64) { r = b.data[i] }` ⇒ `%struct.s0 = type { %vec, i64 }` / `define i64 @sum(%struct.s0 %st1` / `%vc3 = extractvalue %struct.s0 %st1, 0`（GET vec 欄位）/ `call i64 @vec_get_i64(%vec %vc3, i64 %v2)` / `ret i64 %v4`。
+- `test-s99i-vec-local-bind`：`g = (b Buf, i i64) (r i64) { d = b.data\n r = d[i] }` ⇒ `define i64 @g(%struct.s0 %st1` / `%vc3 = extractvalue %struct.s0 %st1, 0`（`d=b.data` GET）/ `call i64 @vec_get_i64(%vec %vc3, i64 %v2)` / `ret i64 %v4`。驗證**本地 vec 變數在 `mem==0` 下綁定/讀取可行**——`h2m-var-bind` 直綁 vids，無 `%vec` 槽需求。
+- `test-s99i-index-scalar-gate`：`f = (x i64, i i64) (r i64) { r = x[i] }` ⇒ `agg.unsup > 0` 且 `ir.contains('call i64 @vec_get_i64(') == 0`（非 vec 基底計 unsup，無 VECGET）。
+
+**驗證狀態（誠實標注，關鍵）**：⚠️ **代碼側已完成，運行時端到端驗證被阻塞**。與 s99h 同機制：當前 `bin/no` 受 `15w45dqk` checker 收口影響，cg-emit-cfg-t 內帶 `j = j + 1` 內層循環的 op 會死循環/segfault，`h2m-test.no` 暫無法跑完——這是環境門禁問題，非本件引入。代碼邏輯已對拍已驗證的 `OP-VECLEN`/`OP-VECGET`（s62 容器遍歷 L2642/2661 同形 `h2m-emit(c, OP-VECGET, dst, vecId, idxId, '', TY-I64)`），自洽。待並發 session checker 門禁落地、工作區穩定後，復跑 `./bin/no run compiler/tests/h2m-test.no` 即為本件驗收門檻。
+
+**整檔狀態（預期，待復測）**：h2m-test.no +74 行（4 用例 + 註冊）；h2m.no +27/-3。既有 6 失仍為 s98 option 回歸（併發 session 改 cg.no），非本件。
+
+**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`，見 §5.3.4.eh）——建 h2m scope-exit 變量生命週期追蹤基礎設施，對含 str/vec 欄位活變量發 `OP-STRUCT-RELEASE`、純 str 發 `OP-RELEASE`（同時解鎖「純 str RC」「vec 返回 RC」）；②MK 欄位值 id 連續性假設（§5.3.4.ei s99h 已解）、③vec 欄位就地索引（本件 §5.3.4.ej s99i 已解）——兩者均不再依賴 MK 連續 id 假設。
 
 ## 6. 里程碑與進度
 

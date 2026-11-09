@@ -2001,14 +2001,35 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         fty = h2m-struct-field-ty(c, sid, fi)
                         fv = h2m-alloc(c, fty)
                         h2m-emit(c, OP-STRUCT-GET, fv, sv, fi, '', fty)
-                        v = fv
-                    }
+                    v = fv
                 }
             }
         }
-
-        -> h2m-mark(c)
     }
+
+    ; s99i：索引读取 expr[i]（就地索引 vec 欄位 / 本地 vec 變量）——base 降級出 %vec 值 id 後發 OP-VECGET 取第 i 個 i64 元素
+    ;   base 須是 TY-VEC（[]i64 欄位 / vec 形參 / mem==0 下綁定的 vec 局部）；其餘型別（str/struct/arr）不在本臂，計 unsup
+    ;   kid[0] = base、kid[1] = 下標（i64）；元素型別恒 i64（自舉 vec 元素僅收 i64，與 @vec_get_i64 單型 helper 一致）
+    d.kind == asp.K-INDEX-EXPRESSION -> {
+        bk = ast.kid-at(t, d.kid0)
+        ik = ast.kid-at(t, d.kid0 + 1)
+        bv = h2m-lower-expr(t, c, sg, bk)
+        bv > 0 -> {
+            bt = h2m-vty-at(c, bv)
+            bt == TY-VEC -> {
+                iv = h2m-lower-expr(t, c, sg, ik)
+                iv > 0 -> {
+                    ev = h2m-alloc(c, TY-I64)
+                    h2m-emit(c, OP-VECGET, ev, bv, iv, '', TY-I64)
+                    v = ev
+                }
+            }
+            bt != TY-VEC -> h2m-mark(c)
+        }
+    }
+
+    -> h2m-mark(c)
+}
 }
 
 ; LetStatement 降级：右值降级出的 id 直接绑到名字（不发 alloca/store/load）
