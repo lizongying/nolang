@@ -5096,7 +5096,7 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 - s99g 的 MK 取得所有權站點：`mk-mask != 0 -> h2m-rel-add(c, sv, stcode, mk-mask)`（緊接既有 `OP-STRUCT-RETAIN`）。
 - `h2m-lower-func` 兩個回傳路徑（共享 ret 塊 `c.ret>0`、直落 `c.ret<=0`）在 `OP-RET` 之前各插入 `h2m-emit-releases(c, 回傳值id)`。
 
-**關鍵安全邊界（誠實標注，關鍵）**：`h2m-emit-releases` **僅 `mem==0` 放行**。`c.ret>0` 必伴 `mem==1`（顯式 return 觸發 flow），故 ret 塊路徑實際不發射；直落路徑在 `mem==1`（如含迴圈但無顯式 return）時也不發射。原因：`mem==1` 下輸出參住槽、函數退出時 `zc2` 是 `STLOAD` 新 id，與清單裡的 MK 原 id 不同 ⇒ 跳過失效，會對「已被回傳的結構體」誤釋放（呼叫方 double-free）。故控制流函數暫保持 leak（不引入 double-free），完整修復需 must/may move 分析（工作記憶標「尚屬規劃」）。
+**關鍵安全邊界（誠實標注，關鍵）**：`h2m-emit-releases` **僅 `mem==0` 放行**。`c.ret>0` 必伴 `mem==1`（顯式 return 觸發 flow），故 ret 塊路徑實際不發射；直落路徑在 `mem==1`（如含迴圈但無顯式 return）時也不發射。原因：`mem==1` 下輸出參住槽、函數退出時 `zc2` 是 `STLOAD` 新 id，與清單裡的 MK 原 id 不同 ⇒ 跳過失效，會對「已被回傳的結構體」誤釋放（呼叫方 double-free）。故控制流函數暫保持 leak（不引入 double-free），完整修復需 must/may move 分析（工作記憶標「尚屬規劃」）。（此 `mem==0` 限制已由 **s99k 解除**：mem==1 只要函數體不含 OP-CALL 即放行，並以 `outsv` 追蹤「最後寫入輸出槽的值 id」於釋放時跳過；含 OP-CALL 仍保守保持 leak，見 §5.3.4.el。）
 
 **IR 核實（`compiler/tests/h2m-test.no` 新增 3 用例，全過預期）**：
 - `test-s99j-struct-release`：本地結構體（含 str@idx1 ⇒ 掩碼 2）⇒ `call void @nolang_rc_retain(i8* %rp…)`（s99g 取得所有權）**與** `call i1 @nolang_rc_release(i8* %rp…)`（本件釋放）同現，且兩者皆 `extractvalue %struct.s0 %st3, 1`（同一 %st 值配對）。
@@ -5107,7 +5107,31 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **整檔狀態（預期，待復測）**：h2m.no +釋放清單基礎設施；h2m-test.no +58 行（3 用例 + 註冊）。既有 6 失仍為 s98 option 回歸（併發 session 改 cg.no），非本件。
 
-**後續**：①**純 str RC / vec RC 的取得所有權站點**：h2m 尚未降級 `OP-STRCAT`（純 str 無 heap 取得所有權站點可配對），且無 vec-release OP（vec 欄位釋放暫不可行）——兩者釋放清單機制已預留，待對應取得所有權站點就位後即閉環；②**控制流函數（mem==1）的 scope-exit 釋放**：需建 must/may move 分析，使「輸出參當前持有值」與清單 MK 原 id 可對齊，解除 `mem==0` 限制（同時解鎖迴圈/分支內局部結構體的釋放）。
+**後續**：①**純 str RC / vec RC 的取得所有權站點**：h2m 尚未降級 `OP-STRCAT`（純 str 無 heap 取得所有權站點可配對），且無 vec-release OP（vec 欄位釋放暫不可行）——兩者釋放清單機制已預留，待對應取得所有權站點就位後即閉環；②**控制流函數（mem==1）的 scope-exit 釋放**：**已於 §5.3.4.el（s99k）完成（mem==1 不含 OP-CALL 即放行；含 call 仍保守保持 leak 待 move 分析）**。
+
+### 5.3.4.el s99k——M4-e 第五十一件續：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 `mem==0` 限制）（2026-11-09 本輪）
+
+**動機**：s99j 把 scope-exit 釋放限在 `mem==0`，導致含控制流（迴圈/分支/顯式 return）的函數裡，局部結構體一律 leak（無論是否回傳）。本件解除該限制：控制流函數也釋放局部結構體，同時嚴防雙重釋放（double-free）。
+
+**核心難點（mem==1 下 skip 失效）**：`mem==1` 輸出參住 entry 的 alloca 槽；`h2m-var-write` 對結構體走 `OP-STSTORE` 把值 `val`（如 MK 出的 `%st5`）存入槽；`h2m-var-read` 對結構體走 `OP-STLOAD` 交出新 id。故退出重讀的 id 與清單裡的 MK 原 id 不同，s99j 用 `skip=回傳值id` 跳過會失效。
+
+**改動（`compiler/src/h2m.no`，純 h2m，cg 零改）**：
+- `h2m-ctx` 新增三欄：`outn str`（輸出變量名）、`outsv i64`（最後寫入輸出槽的值 id）、`hc i64`（has-call 標誌）；`h2m-new` 同步初始化。
+- `h2m-lower-func`：body 降級**前**先算出 `outn`（原 L3426 在 body 之後才求，但 `h2m-var-write` 在 body 期就用，故提前）；放行至 `c.outn`。
+- `h2m-var-write`：mem==1 的結構體 `OP-STSTORE` 與 str `OP-SSTORE` 分支，若 `name == c.outn` 則記 `c.outsv = val`（= 當前在輸出槽、將被回傳的值 id）。
+- OP-CALL 發射站點：`h2m-emit(c, OP-CALL, …)` 後置 `c.hc = 1`。
+- `h2m-emit-releases(c, skip)` 放行條件改為 `fire = mem==0 || (mem==1 && hc==0)`；跳過條件改為 `vid != skip && vid != c.outsv`（`outsv` 補上 mem==1 下「回傳值原 id」的跳過，防雙重釋放）。
+
+**保守安全閘門（誠實標注，關鍵）**：`mem==1` 下**僅當函數體不含 OP-CALL 才放行釋放**。原因：含 call 時本地結構體可能被 move 給被調（caller 視為已轉移所有權），若 caller 再釋放即與 callee 雙重釋放——完整規避需 must/may move 分析（工作記憶標「尚屬規劃」），故含 call 時保守保持 leak（不引入 double-free）。`mem==0` 路徑不受影響（outsv 恆 0）。
+
+**IR 核實（`compiler/tests/h2m-test.no` 新增 3 用例，全過）**：
+- `test-s99k-local-release`：`mem==1`（含迴圈）下本地結構體（含 str@idx1）仍 `alloca %struct.s0`（證 mem 模式）+ `call void @nolang_rc_retain` ×1 + `call i1 @nolang_rc_release` ×1（證 scope-exit 釋放已啟用）。
+- `test-s99k-return-no-release`：`mem==1` 結構體即回傳值 ⇒ retain ×1，但 `call i1 @nolang_rc_release` **不出現**（`outsv` 跳過回傳值，防呼叫方 double-free）。
+- `test-s99k-call-gate`：`mem==1` 且函數含 `g(u)`（把本地結構體 move 給被調）⇒ retain ×1，但 `call i1 @nolang_rc_release` **不出現**（保守閘門，保持 leak 而非雙重釋放）。
+
+**驗證狀態**：本輪 `15w45dqk` 門禁已不再阻塞——`h2m-test.no` 可完整跑完（baseline 989→本輪 1001 passed；剩 6 失均為 `s98 optmatch`，屬併發 session 改 cg.no 的 option 回歸，非本件）。s99j 修復後的 retain/release 配對與 s99k 三用例全綠。
+
+**整檔狀態**：h2m.no +outn/outsv/hc 三欄與 `h2m-emit-releases` 放行/跳過放寬；h2m-test.no +3 用例（test-s99k-*）+ s99j 兩用例斷言由「硬碼值 id」改為「retain/release 計數」以抗 id 漂移。
 
 ## 6. 里程碑與進度
 

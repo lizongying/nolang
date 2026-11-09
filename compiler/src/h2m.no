@@ -165,6 +165,10 @@ h2m-ctx {
     rls []i64
     rlsm []i64
     rlst []i64
+    ; s99k：mem==1 scope-exit 释放扩展（解除 s99j 的 mem==0 限制）
+    outn str        ; 输出（回传）变量名：body 降级时用它识别「写入输出槽」以记录 outsv
+    outsv i64       ; 最后写入输出槽的值 id（= 该值当前在输出槽、将被回传给呼叫方 ⇒ 释放时跳过防双重释放）
+    hc i64          ; has-call 标志：函数体含 OP-CALL 置 1；mem==1 下与 call 配对需 move 分析，故含 call 时保守不放行
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -242,6 +246,9 @@ h2m-new = () (c h2m-ctx) {
     i64
     rlst: []
     i64
+    outn: ''
+    outsv: 0
+    hc: 0
 }
     c.vty.push(TY-I64)
 }
@@ -294,18 +301,25 @@ h2m-rel-add = (c h2m-ctx, vid i64, ty i64, mask i64) {
     }
 }
 
-; s99j：函数 scope-exit 释放——遍历释放清单，对每条未被「返回值占用」的值发释放指令。
-;   skip = 返回值的值 id（输出参当前绑定值 / 共享 ret 块重读值）；等于它的值视为已 move 给调用方，跳过（防双重释放）。
-;   ⚠️ 仅 mem==0 放行：mem==1 下输出参住槽、退出重读是 STLOAD 新 id，与清单里的 MK 原 id 不同 ⇒ 跳过失效，
-;     故 mem==1 暂不放行（保持 leak，不引入 double-free；完整修复需 must/may move 分析，见 §5.3.4.ej 後續①）。
+; s99j/s99k：函数 scope-exit 释放——遍历释放清单，对每条未被「返回值占用」的值发释放指令。
+;   skip = 返回值的值 id（mem==0：输出参直接绑定的 MK 原 id；mem==1：共享 ret 块 STLOAD 出的新 id）；
+;   outsv = 最后写入输出槽的值 id（mem==1 下输出参住槽，退出重读是 STLOAD 新 id，故跳过须用写入槽的原 id）。
+;   等于 skip 或 outsv 的值视为已 move 给调用方，跳过（防双重释放）。
+;   ⚠️ 放行条件（s99k 解除 s99j 的 mem==0 限制）：
+;     · mem==0 直接放行；
+;     · mem==1 仅当函数体【不含 OP-CALL】才放行——含 call 时本地結構體可能被 move 给被调，
+;        caller/callee 双釋放需 must/may move 分析才能正确规避，故保守保持 leak（不引入 double-free）。
+;   完整修复（任意 mem + 任意 call 均正确释放）留待 move 分析，见 §5.3.4.el 後續。
 h2m-emit-releases = (c h2m-ctx, skip i64) {
-    c.mem == 0 -> {
+    fire = c.mem == 0
+    c.mem == 1 && c.hc == 0 -> fire = 1
+    fire == 1 -> {
         i = 0
         (i < c.rls.len()) {
             vid = c.rls[i]
             m = c.rlsm[i]
             ty = c.rlst[i]
-            (vid != skip) -> {
+            (vid != skip && vid != c.outsv) -> {
                 ty == TY-STR -> h2m-emit(c, OP-RELEASE, 0, vid, 0, '', TY-STR)
                 ty >= TY-STRUCT-BASE && m > 0 -> h2m-emit(c, OP-STRUCT-RELEASE, 0, vid, m, '', 0)
             }
@@ -612,6 +626,7 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
             }
             st == vt && st == TY-STR -> {
                 h2m-emit(c, OP-SSTORE, 0, val, sid, '', 0)
+                name == c.outn -> c.outsv = val
                 ok-w = 1
             }
 
@@ -634,6 +649,7 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
             ; s99c：结构体槽写——整结构体值 %st<val> 落 %sts<sid>（cg OP-STSTORE：xa=值、bs=槽）
             st == vt && st >= TY-STRUCT-BASE -> {
                 h2m-emit(c, OP-STSTORE, 0, val, sid, '', 0)
+                name == c.outn -> c.outsv = val
                 ok-w = 1
             }
         }
@@ -1891,6 +1907,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                 ; s92：入池实参个数是回填后的 want-n（非 AST 原实基数 na），OP-CALL 计数与 args 段长对齐
                 h2m-emit(c, OP-CALL, cid, base, want-n, cn, rt)
+                c.hc = 1
                 v = cid
             }
             ok-call == 0 -> h2m-mark(c)
@@ -2029,7 +2046,8 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                     ;   掩碼 bit j 置位 ⇔ 欄位 j 是 str；無 str 欄位（mask==0）不發。
                     ; s99j：取得所有權後緊接登記 scope-exit 釋放（與本行 RETAIN 配對）——函數退出時由
                     ;   h2m-emit-releases 對該 %st 值發 OP-STRUCT-RELEASE（跳過「已被回傳佔用」的值，防雙重釋放）。
-                    ;   僅 mem==0 放行（控制流函數暫保持 leak，見 h2m-emit-releases）。
+                    ;   放行條件見 h2m-emit-releases：mem==0 直接放行；mem==1 僅當函數不含 OP-CALL 才放行
+                    ;   （含 call 時保守保持 leak，需 move 分析方能正確釋放，見 §5.3.4.el 後續）。
                     mk-mask = h2m-struct-str-mask(c, sid)
                     mk-mask != 0 -> h2m-emit(c, OP-STRUCT-RETAIN, 0, sv, mk-mask, '', 0)
                     mk-mask != 0 -> h2m-rel-add(c, sv, stcode, mk-mask)
@@ -3408,6 +3426,20 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
         }
         bc < 0 -> {
             h2m-mark(c)
+        }
+        ; s99k：提前算出输出变量名，供 body 降级时 h2m-var-write 识别「写入输出槽」并记录 outsv
+        ;   （out-name 原在 body 之后才求，但 h2m-var-write 在 body 降级期就会用到，故此处先定）
+        d.c5 == 1 -> {
+            op2 = d.kid0
+
+            #{overflow=wrap}
+            op2 = op2 + d.c3
+
+            #{overflow=wrap}
+            op2 = op2 + d.c4
+            ok2 = ast.kid-at(t, op2)
+            od2 = ast.nd-at(t, ok2)
+            c.outn = ast.str-at(t, od2.s0)
         }
         bc >= 0 -> h2m-lower-block(t, c, sg, body)
 

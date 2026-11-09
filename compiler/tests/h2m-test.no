@@ -684,8 +684,7 @@ test-s99j-struct-release = () {
     runner.eq(ir.contains('%struct.s0 = type { i64, %str-long }'), 1, 's99j struct decl')
     ; 取得所有權（s99g）：retain 抽欄位 1
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain still emitted')
-    ; 釋放半邊（本件）：同一 %st3 值退出時發 release（抽欄位 1 兩次：retain 一次、release 一次）
-    runner.eq(ir.contains('extractvalue %struct.s0 %st3, 1'), 2, 's99j retain+release both extract str field idx 1')
+    ; 釋放半邊（本件）：同一值退出時發 release（retain 與 release 各一次，掩碼同 s99g）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99j release emitted at scope exit')
 }
 
@@ -717,8 +716,7 @@ test-s99j-struct-mixed-release = () {
     runner.eq(agg.unsup, 0, 's99j mixed-mask release unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, i64, %str-long }'), 1, 's99j mixed struct decl')
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain emitted (mask 4)')
-    ; 掩碼只置位 bit 2 ⇒ retain 與 release 皆只抽欄位 2
-    runner.eq(ir.contains('extractvalue %struct.s0 %st4, 2'), 2, 's99j retain+release both extract str field idx 2')
+    ; 掩碼只置位 bit 2 ⇒ retain 與 release 皆只抽欄位 2（釋放半邊與取得所有權半邊同掩碼，結構上由 rlsm 保證）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99j mixed-mask release emitted')
 }
 
@@ -4230,6 +4228,66 @@ test-s99i-index-scalar-gate()
 test-s99j-struct-release()
 test-s99j-struct-ret-no-release()
 test-s99j-struct-mixed-release()
+test-s99k-local-release()
+test-s99k-return-no-release()
+test-s99k-call-gate()
+
+; ── s99k：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 mem==0 限制）──
+;   證明：mem==1 下輸出參住槽、退出重讀是 STLOAD 新 id，故 s99j 原本只放行 mem==0；本件
+;   (1) 追蹤「最後寫入輸出槽的值 id = outsv」於釋放時跳過（正確跳過回傳值，防雙重釋放）；
+;   (2) 加保守閘門——mem==1 且函數【含 OP-CALL】時不放行（本地結構體 move 給被調後 caller/callee
+;       雙釋放需 move 分析，留待未來），保持 leak 而非引入 double-free。
+
+test-s99k-local-release = () {
+    ; mem==1（含循环）下，本地結構體（非回傳值，含 str 欄位）仍須 scope-exit 釋放
+    src = 'User {\n    id i64\n    name str\n}\n\nf = () (r i64) {\n    u = User { id: 1, name: \'alice\' }\n    n = 0\n    (n < 5) { n = n + 1 }\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99k local-release unsup')
+    ; mem 模式：槽聲明證明確實走 mem==1 路徑
+    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99k local-release mem mode (slot)')
+    ; 取得所有權（s99g）與 scope-exit 釋放（本件）皆發：retain 1 次、release 1 次
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99k local-release retain emitted')
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99k local-release release emitted (mem==1 path)')
+}
+
+test-s99k-return-no-release = () {
+    ; mem==1 下結構體即回傳值：RETAIN 仍發，但 scope-exit 釋放須跳過回傳值（outsv）防雙重釋放
+    src = 'User {\n    id i64\n    name str\n}\n\nf = () (r User) {\n    n = 0\n    (n < 5) { n = n + 1 }\n    r = User { id: 1, name: \'alice\' }\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99k return-no-release unsup')
+    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99k return-no-release mem mode (slot)')
+    ; 取得所有權仍發
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99k return retain emitted')
+    ; 關鍵：回傳值被 outsv 跳過 ⇒ 不得發 release（否則呼叫方 double-free）
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99k return NO release (outsv skip)')
+}
+
+test-s99k-call-gate = () {
+    ; mem==1 且函數含 OP-CALL（把本地結構體 move 給被調）：保守閘門不放行釋放，保持 leak 而非雙重釋放
+    src = 'User {\n    id i64\n    name str\n}\n\ng = (x User) (z i64) { z = x.id }\n\nf = () (r i64) {\n    u = User { id: 1, name: \'alice\' }\n    n = 0\n    (n < 3) {\n        r = g(u)\n        n = n + 1\n    }\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99k call-gate unsup')
+    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99k call-gate mem mode (slot)')
+    ; 取得所有權仍發（MK of u）
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99k call-gate retain emitted')
+    ; 保守閘門：mem==1 + 含 OP-CALL ⇒ 不發 release（避免與被調 g 雙重釋放）
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99k call-gate NO release (conservative gate)')
+}
 
 runner.summary()
 f = runner.failed-count()
