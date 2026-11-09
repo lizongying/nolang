@@ -156,7 +156,7 @@ get-default-char = (arr []char, i i64) (res char) {
     res = arr[i]: {
         ok -> it
 
-        -> 'x'
+        -> "x"
     }
 }
 

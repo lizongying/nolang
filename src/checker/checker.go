@@ -542,20 +542,31 @@ func inferExprType(expr parser.Expression, varTypes map[string]string, funcTypes
 	}
 }
 
+// blockTrailingExpr reports the value expression a block yields when it is used
+// as an expression: its last statement, when that statement is a bare
+// expression (MIR captures exactly that; see captureArmValue). A block ending in
+// an assignment or a call-with-no-value yields nothing, hence nil.
+func blockTrailingExpr(b *parser.BlockStatement) parser.Expression {
+	if b == nil || len(b.Statements) == 0 {
+		return nil
+	}
+	last := b.Statements[len(b.Statements)-1]
+	es, ok := last.(*parser.ExpressionStatement)
+	if !ok {
+		return nil
+	}
+	return es.Expression
+}
+
 // blockTrailingExprType reports the type of the value a block yields when it is
 // used as an expression: its last statement, when that statement is a bare
 // expression (MIR captures exactly that; see captureArmValue). A block ending in
 // an assignment or a call-with-no-value yields nothing, hence "".
 func blockTrailingExprType(b *parser.BlockStatement, varTypes map[string]string, funcTypes map[string]string, selfType string) string {
-	if b == nil || len(b.Statements) == 0 {
-		return ""
+	if e := blockTrailingExpr(b); e != nil {
+		return inferExprType(e, varTypes, funcTypes, selfType)
 	}
-	last := b.Statements[len(b.Statements)-1]
-	es, ok := last.(*parser.ExpressionStatement)
-	if !ok {
-		return ""
-	}
-	return inferExprType(es.Expression, varTypes, funcTypes, selfType)
+	return ""
 }
 
 type ValidateResult struct {
@@ -10273,6 +10284,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						!intToCharAssignOK(existingType, inferredType) &&
 						// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
 						!isIntLiteralNarrowingToDeclared(s.Value, existingType) &&
+						// 值 match 臂裡的整數字面量同理：`res u8 = arr[i]: { ok -> it  -> 0 }`
+						// 的 `-> 0` 是常數轉換，不是執行期 i64→u8 窄化。
+						!isMatchArmLiteralToDeclared(s.Value, existingType, varTypes, funcTypes, selfType) &&
 						// 浮點字面量指派給 f32/f64 變數：常量轉換（如 `v f32 = 4.0`），不視為執行期 f64→f32 丢精度
 						!isFloatLiteralToDeclared(s.Value, existingType) &&
 						// 目標型別已寫明且存在約定型別轉換方法（`i64.to-i32`、使用者自訂的
@@ -10483,7 +10497,9 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 							(!isArgTypeCompatible(existingType, valType, assign.Value) || optionImplicitUnwrapRejected(existingType, valType)) &&
 							!optionTypesCompatible(valType, existingType) &&
 							// 整數字面量指派給已宣告型別的變數：常數轉換（如 -1 → byte == 255），不報窄化
-							!isIntLiteralNarrowingToDeclared(assign.Value, existingType) {
+							!isIntLiteralNarrowingToDeclared(assign.Value, existingType) &&
+							// 值 match 臂裡的整數字面量同理（與 LetStatement 路徑同口徑）。
+							!isMatchArmLiteralToDeclared(assign.Value, existingType, varTypes, funcTypes, selfType) {
 							// Check if this is an array/slice literal assignment to a typed array variable
 							_, isSlice := assign.Value.(*parser.SliceLiteral)
 							_, isArrayLit := assign.Value.(*parser.ArrayLiteral)

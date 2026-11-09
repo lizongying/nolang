@@ -1072,6 +1072,89 @@ func isIntLiteralNarrowingToDeclared(expr parser.Expression, targetType string) 
 	return val >= -(int64(1) << uint(w-1))
 }
 
+// isMatchArmLiteralToDeclared 報告「值 match（或 if 鏈）的每個臂值都能以常數
+// 轉換落到 targetType」。
+//
+// 數字型別都可以用 `0` 這樣的字面量（使用者 2026-11-09 更正）。所以
+//
+//	res u8 = arr[i]: {
+//	    ok -> it
+//	    -> 0
+//	}
+//
+// 的 `-> 0` 是常數轉換，不是執行期 i64→u8 窄化，不該報 15w45dqk。誤報來源是
+// inferExprType 對值 match 只回報「第一個可解析臂」的型別：ok 臂的 `it` 在
+// matchArmBindings 拿不到型別（Matched 是 IndexExpression 而非 Identifier）而
+// 回空，於是落到 `-> 0` 的 i64，賦值判定就看到 i64 → u8。
+//
+// 與 isIntLiteralNarrowingToDeclared 同口徑（常數轉換不算窄化），差別只在
+// 字面量藏在臂裡、s.Value 不是裸字面量。逐臂判定，任一臂不合法就整體不放行：
+//   - 整數字面量：必須落在 targetType 的範圍內（`-> 300` 到 u8 仍報錯）；
+//   - 其他值：型別必須等同 targetType；推不出型別（""）時不猜、放行，與
+//     其餘「無法在 vet 期判定」的路徑同一口徑。
+func isMatchArmLiteralToDeclared(expr parser.Expression, targetType string, varTypes map[string]string, funcTypes map[string]string, selfType string) bool {
+	min, max, ok := intTypeRange(targetType)
+	if !ok {
+		return false
+	}
+	arms := matchArmTrailingExprs(expr)
+	if len(arms) == 0 {
+		return false
+	}
+	for _, arm := range arms {
+		// 巢狀的值 match / if 鏈：展開後逐臂判定。
+		if _, nested := arm.(*parser.SurfaceMatch); nested {
+			if !isMatchArmLiteralToDeclared(arm, targetType, varTypes, funcTypes, selfType) {
+				return false
+			}
+			continue
+		}
+		if _, nested := arm.(*parser.IfExpression); nested {
+			if !isMatchArmLiteralToDeclared(arm, targetType, varTypes, funcTypes, selfType) {
+				return false
+			}
+			continue
+		}
+		if val, isLit := integerLiteralValue(arm); isLit {
+			if val < min || val > max {
+				return false
+			}
+			continue
+		}
+		t := inferExprType(arm, varTypes, funcTypes, selfType)
+		if t == "" || typeNamesEquivalent(t, targetType) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// matchArmTrailingExprs 收集「值 match / if 鏈」每個臂作為值時產出的表達式
+// （臂體末尾的裸表達式）。臂體是 BlockStatement，末尾陳述不是裸表達式時該臂
+// 沒有值，直接略過。
+func matchArmTrailingExprs(expr parser.Expression) []parser.Expression {
+	switch e := expr.(type) {
+	case *parser.SurfaceMatch:
+		out := make([]parser.Expression, 0, len(e.Arms))
+		for i := range e.Arms {
+			if v := blockTrailingExpr(e.Arms[i].Body); v != nil {
+				out = append(out, v)
+			}
+		}
+		return out
+	case *parser.IfExpression:
+		var out []parser.Expression
+		for _, b := range []*parser.BlockStatement{e.Consequence, e.Alternative} {
+			if v := blockTrailingExpr(b); v != nil {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 // isFloatLiteralToDeclared 放行「浮點常量 → 已宣告浮點變數」的常量轉換。
 // 小數字面量一律推斷為 f64，但 `v f32 = 4.0`、`wn f32 = 0.0 - 8.0` 這類
 // 寫法是编译器可折叠的常量表达式（与整数字面量窄化同口径），不应被当成
