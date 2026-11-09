@@ -1,0 +1,131 @@
+; merged category 'option' -- 2 source files
+; sources: opt-container-len.no, view-basic.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/opt-container-len.no =====================
+; opt-container-len.no — option 承載容器時，容器 method 的 self 必須剝殼
+;
+; `?[]i64` / `?str` 這類「option 包住容器」的值呼叫 `v.len()` 時，method 的 self
+; out-param 是**內層型別**（`[]i64` / `str`），但呼叫端原本直接把 option 的槽位
+; 地址當成 `%vec*` / `%str-long*` 傳出去。
+;
+; 兩個佈局的第一個欄位剛好不同：
+;   %vec       = { len, cap, data }   → 欄位 0 是 len
+;   %option    = { tag, slot[3] }     → 欄位 0 是 tag
+; 於是 `v.len()` 讀到的是 **tag**＝0（ok），而不是 payload 的 len。
+;
+; 修法：receiver 是 option 而 self 是內層型別時，改傳 payload 地址
+; （optPayloadTypedAddr，與 emitGetField 處理 `?T.field` 的剝殼一致）。
+
+; 填充 slice
+; out ?[]i64: ok([10, 20, 30])，用來驗證 v.len() 能剝殼取得 3
+fill-slice = () (out ?[]i64) {
+    out = [10, 20, 30]
+}
+
+; 填充 str
+; out ?str: ok('hello')，用來驗證 v.len() 能剝殼取得 5
+fill-str = () (out ?str) {
+    out = 'hello'
+}
+
+; (1) option 包 slice：.len() 必須是 3，不是 tag 0
+v = fill-slice()
+v.len() == 3 -> print('ok: ?[]i64 len peels the option')
+
+-> print('fail: ?[]i64 len got={v.len()}')
+
+; (2) 讀回元素也要正確（走同一個 self 剝殼）
+v[0] == 10 && v[2] == 30 -> print('ok: ?[]i64 element read')
+
+-> print('fail: ?[]i64 element read')
+
+; (3) option 包 str：.len() 是位元組數 5
+s = fill-str()
+s.len() == 5 -> print('ok: ?str len peels the option')
+
+-> print('fail: ?str len got={s.len()}')
+
+; (4) 標量 option 不受影響（本來就走別的路徑）
+n = scalar-opt()
+n == 42 -> print('ok: ?i64 scalar unchanged')
+
+-> print('fail: ?i64 scalar got={n.to-str()}')
+
+; (5) nil option 的 .len() 不應崩潰
+e = empty-slice()
+e.len() == 0 -> print('ok: nil ?[]i64 len is 0')
+
+-> print('fail: nil ?[]i64 len got={e.len()}')
+
+; (6) 剝殼出來的 slice 是**借用**，不是所有權轉移：先讀 .len() 再取元素，
+;     緩衝區不能被中途釋放（曾經把 option 當成 move source，讀出的副本
+;     成了唯一的釋放點 → 後面的 v[i] 讀到已釋放的記憶體，印出 0）
+w = fill-slice()
+print('peel len={w.len()}')
+i <- [0..3): {
+
+    #{overflow=wrap}
+    {
+        w[i] == 10 + i * 10 -> {
+        }
+
+        -> print('fail: borrow peel freed the buffer at {i.to-str()}')
+    }
+}
+print('ok: peel borrows, buffer survives len()')
+
+; 純量選項（不涉及借用）：直接回 ok(42)，作為容器型的對照組
+; out ?i64: 內容為 42 的 ok 選項
+scalar-opt = () (out ?i64) {
+    out = 42
+}
+
+; 空函式體：輸出參數延遲零值，?[]i64 未賦值即為 nil（不需手寫 out = nil）
+; out ?[]i64: 必為 nil
+empty-slice = () (out ?[]i64) {
+}
+
+; ===================== merged from tests/view-basic.no =====================
+; view-basic — view（`&T`）基礎測試
+;
+; `&T` 是方法返回裡的**借用**：不拷貝、不分配、不用 free。
+; 生命週期自動綁定 `self`，因此只能綁 self。
+
+view-point {
+    x i64
+    y i64
+}
+
+; 返回 self 的視圖
+; v &view-point: 指向 self 的借用（與呼叫端實例同一塊記憶體，無拷貝、無分配）
+view-point.self-view = () (v &view-point) {
+    v = .
+}
+
+; 一般方法，用來驗證透過 view 呼叫方法
+; s i64: x + y 的結果（overflow 採 wrap）；p 為 (7, 9) 時得 16
+view-point.sum = () (s i64) {
+
+    #{overflow=wrap}
+    s = .x + .y
+}
+
+p = view-point {
+    x: 7
+    y: 9
+}
+
+; 1) view 讀取欄位（不拷貝）
+q = p.self-view()
+print(q.x)
+print(q.y)
+
+; 2) 透過 view 呼叫方法
+print(q.sum())
+
+; 3) 透過 view 寫入欄位 → 原對象同步改變（證明是別名，不是副本）
+q.x = 42
+print(p.x)
+print(q.x)
+print(q.y)

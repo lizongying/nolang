@@ -1,3 +1,8 @@
+; merged category 'platform' -- 2 source files
+; sources: platform.no, wasi-hello.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/platform.no =====================
 ; merged category 'platform' -- members: platform-const.no, platform.no
 ; (originals backed up under tests/_archive/platform/)
 ; ===================== merged from tests/platform-const.no =====================
@@ -112,3 +117,8 @@ print('arm64 unix (mac or linux)')
 ; Should print current arch
 arch = os.get-arch()
 print('arch: {arch}')
+
+; ===================== merged from tests/wasi-hello.no =====================
+; wasi-hello.no — wasm32-wasi 端對端驗證
+; 預期輸出：Hello, WASI!
+print('Hello, WASI!')

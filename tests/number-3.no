@@ -1,0 +1,161 @@
+; merged category 'number' -- 2 source files
+; sources: test-div-zero.no, test-num.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/test-div-zero.no =====================
+; test-div-zero.no — 除零（division by zero）行為探針
+;
+; ═══ 現行語意（2026-10-12 起，MIR 後端）═══
+;
+; 整數 `/` 與 `%` 的除數為 0 是 UB，編譯器在**兩條路徑都插零檢查**，差別只在怎麼報告：
+;   ?int（未標註）           → option tag = err，用 ?= / match 處理
+;   plain int（帶 #{overflow}）→ 結果強制為 0，並在 stderr 印一行診斷
+; 編譯期可判定的「字面 0 除數」（如 10 / 0）是硬錯誤，trace id `div-by-zero`，
+; 且**不受 #{overflow} 豁免**。同一守衛覆蓋 `sdiv (INT_MIN, -1)`（同屬 UB，x86-64 會 SIGFPE）。
+;
+; 本檔只印觀察值，不做 assert（UB 類觀測不適合斷言）。完整規則見
+; docs/docs/lang/syntax.md〈除零〉；IR 級迴歸釘在 src/mir/div_zero_guard_test.go。
+;
+; ⚠️ 舊版（2026-09-23）的結論「Nolang 不做任何執行時期檢查、src/ 內搜尋 div-by-zero 防護零筆」
+;    已失效。當時 zero-divisor 守衛只掛在 option 路徑，而本檔全篇使用 #{overflow=wrap}，
+;    恰好繞過守衛 ⇒ 觀察到的全是裸 sdiv 的 UB 值（10/0 → -2、0/0 → 1 之類）。
+;    守衛現在獨立於註解存在，故下列期望值全部改為「有定義的」值。
+
+z = 0
+
+print('── 1. 對照組：正常除法（wrap 路徑）')
+
+#{overflow=wrap}
+print(10 / 5); 期望 2
+
+print('── 2. wrap 路徑：變數除數為 0 → 結果強制 0（並在 stderr 印診斷）')
+
+#{overflow=wrap}
+q1 = 10 / z
+print(q1); 期望 0（舊版是裸 sdiv 的 UB 值）
+
+print('── 3. wrap 路徑：% 0 → 0')
+
+#{overflow=wrap}
+q2 = 10 % z
+print(q2); 期望 0
+
+print('── 4. 0 / 0 → 0（不再被折成常數 1）')
+
+#{overflow=wrap}
+q3 = z / z
+print(q3); 期望 0
+
+print('── 5. wrap 路徑：INT_MIN / -1 → 2 補數回繞值')
+
+neg1 = -1
+mn = -9223372036854775808
+
+#{overflow=wrap}
+q4 = mn / neg1
+print(q4); 期望 -9223372036854775808
+
+print('── 6. option 路徑：變數除數為 0 → err（可被 match 觀察）')
+
+r1 = 10 / z
+r1: {
+    ok -> print('ok')
+
+    nil -> print('nil')
+
+    err -> print('err'); 期望 err
+}
+
+print('── 7. 無號 u64 / 0：u64 除法不可能溢出 ⇒ 不產生 option，走 plain 路徑 → 0 + stderr')
+
+n u64 = 0
+m u64 = 10
+r2 = m / n
+print(r2); 期望 0（舊版是裸 udiv 的 UB 值）
+
+print('── 8. std int.div / int.mod：b == 0 → err（不是「行為未定義」）')
+
+d = 10
+r3 = d.div(0)
+r3: {
+    ok -> print('ok')
+
+    nil -> print('nil')
+
+    err -> print('err'); 期望 err
+}
+r4 = d.mod(0)
+r4: {
+    ok -> print('ok')
+
+    nil -> print('nil')
+
+    err -> print('err'); 期望 err
+}
+
+print('── 9. 浮點 / 0：IEEE-754 有定義（inf），不插守衛')
+
+zf = 0.0
+f = 10.0 / zf
+f > 0.0 -> print('float 10.0 / 0.0 > 0 (inf)')
+
+print('── 10. 字面 0 除數：編譯期硬錯誤，故無法收錄於本檔')
+
+; x = 10 / 0   ; Error: ... [div-by-zero]，且 #{overflow=wrap} 不豁免
+
+print('── done（rc=0；第 2/3/4/7 條各另有一行 stderr 診斷）')
+
+; ===================== merged from tests/test-num.no =====================
+; merged category 'test-num' -- members: 1-test.no, 2-test.no
+; (originals backed up under tests/_archive/test-num/)
+; ===================== merged from tests/1-test.no =====================
+; Nolang 综合测试
+
+; 变量声明（隐式类型推断）
+x = 1; i64
+y = 1.0; f64
+name = 'hello'; str
+flag = true; bool
+
+; 显式类型标注
+a i8 = 2; i8 类型
+
+; 特殊类型标注
+i8 i8 = 3; i8 类型
+
+i8 i8
+
+; 中连接符变量名
+foo-bar = 42
+foo-bar = 41
+foo-bar = 40
+hello-world = 'Hello World'
+
+; 函数定义
+; a i64: 第一個加數
+; b i64: 第二個加數
+add = (a i64, b i64) {
+
+    #{overflow=wrap}
+    result = a + b
+    print('result: {result}')
+}
+
+; 帶輸出參數的版本：c、d 雖然宣告為輸出，但體內只顯式置 0，未把和寫回
+; a i64: 第一個加數（只參與印出）
+; b i64: 第二個加數（只參與印出）
+; c i64: 固定寫入 0，與 a+b 無關
+; d i64: 固定寫入 0，與 a+b 無關
+add2 = (a i64, b i64) (c i64, d i64) {
+    c = 0
+    d = 0
+
+    #{overflow=wrap}
+    result = a + b
+    print('result: {result}')
+}
+
+; ===================== merged from tests/2-test.no =====================
+i <- [0..5): {
+    print(i)
+}

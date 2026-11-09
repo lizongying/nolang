@@ -1,0 +1,71 @@
+; merged category 'arr' -- 2 source files
+; sources: arr-at1.no, arr-slice.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/arr-at1.no =====================
+; 測試 arr-at
+test-arr-at = () {
+    a [3] = [1, 2, 3]
+    print(a.at(0))
+    print(a.at(5))
+    print(a.at(-1))
+}
+test-arr-at()
+
+; ===================== merged from tests/arr-slice.no =====================
+; arr-slice test
+; cd src && go run ./cmd/cli/. build ../tests/arr-slice.no
+; ../dist/arr-slice
+
+a [5] = [10, 20, 30, 40, 50]
+
+; full slice: a[..]
+b = a[..]
+print(b[0])
+print(b[1])
+print(b[2])
+print(b[3])
+print(b[4])
+
+; from index: a[2..]
+c = a[2..]
+print(c[0])
+print(c[1])
+print(c[2])
+
+; to index inclusive: a[..3]
+d = a[..3]
+print(d[0])
+print(d[1])
+print(d[2])
+
+; range: a[1..4]
+e = a[1..4]
+print(e[0])
+print(e[1])
+print(e[2])
+
+; range exclusive end: a[1..4)
+f = a[1..4)
+print(f[0])
+print(f[1])
+print(f[2])
+
+; range exclusive start: a(1..4]
+g = a(1..4]
+print(g[0])
+print(g[1])
+print(g[2])
+
+; range exclusive both: a(1..4) → indices 2,3 (len=2)
+h = a(1..4)
+print(h[0])
+print(h[1])
+
+; till index exclusive: a[..1)
+i = a[..1)
+print(i[0])
+
+; single element: a[1..2)
+j = a[1..2)
+print(j[0])

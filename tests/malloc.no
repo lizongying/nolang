@@ -1,6 +1,0 @@
-; test malloc
-
-print('start')
-p = 256
-print('malloc ok')
-print(p)

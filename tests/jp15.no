@@ -1,7 +1,0 @@
-f = () {
-    s txt = 'a-b-c-d'
-    parts = s.split('-')
-    j = parts.join('.')
-    print('fn=[{j.to-str()}] len={j.len-bytes()}')
-}
-f()

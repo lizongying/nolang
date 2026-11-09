@@ -1,3 +1,8 @@
+; merged category 'range' -- 2 source files
+; sources: range.no, range-inline.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/range.no =====================
 ; cd src && go run ./cmd/cli/. build ../tests/range.no
 ; ../dist/range
 
@@ -12,4 +17,33 @@ i <- (1..3): {
 }
 i <- (1..3]: {
     print(i)
+}
+
+; ===================== merged from tests/range-inline.no =====================
+; 驗證區間上界取自變數（copy-rem）的行內遍歷：每圈把 data 的元素搬到 buf 的 base + k 位置，
+; 容器下標讀回的 option 在 place-match 的 ok 臂寫回，越界則靜默略過
+foo = () {
+    buf = [0, 0, 0, 0, 0, 0, 0, 0]
+    data = [10, 20, 30, 40]
+    base = 2
+    off = 0
+    copy-rem = 2
+
+    #{overflow=wrap}
+    k <- [0..copy-rem): {
+
+        ; 索引讀取返回 option，寫入必須走 place-match（見 [idxwrite] 規則）。
+        #{overflow=wrap}
+        ixout15c24 = data[off + base + k]: {
+            ok -> it
+
+            -> _
+        }
+
+        buf[base + k]: {
+            ok -> it = ixout15c24
+
+            -> _
+        }
+    }
 }

@@ -1,0 +1,22 @@
+; merged category 'txt' -- 2 source files
+; sources: jp10.no, jp12.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/jp10.no =====================
+# /test/runner
+
+s txt = 'a-b-c-d'
+parts = s.split('-')
+j = parts.join('.')
+print('top=[{j.to-str()}] len={j.len-bytes()}')
+
+; ===================== merged from tests/jp12.no =====================
+# /test/runner
+
+t-join = () {
+    s txt = 'a-b-c-d'
+    parts = s.split('-')
+    j = parts.join('.')
+    print('viarunner=[{j.to-str()}] len={j.len-bytes()}')
+}
+runner.test('join', t-join)

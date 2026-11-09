@@ -1,0 +1,237 @@
+; merged category 'tls' -- 5 source files
+; sources: tls-import.no, tls-more.no, tls-part1.no, tls-part2.no, tls-part3.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/tls-import.no =====================
+print('tls import ok')
+
+; ===================== merged from tests/tls-more.no =====================
+; tls-more — 合併自同簇 tls 除錯殘片（heavy dedup）
+; # std/net/tls
+;
+; 保護件 tls.no / tls-partial.no / tls-prf-only.no / tls13-crypto.no /
+; tls-part1~3.no / tls-import.no 均維持獨立（原始碼註解或計畫指定）。此檔只吸收
+; 四個最小除錯殘片：tls-minimal / tls-simple / tls-import-repeat / tls-debug。
+
+; from tls-minimal.no — 隔離 TLS 測試崩潰
+tm-minimal = () {
+    print('start')
+    print('done')
+}
+
+; from tls-simple.no — 最簡單 TLS 測試
+ts-simple = () {
+    print('=== TLS Simple Test ===')
+    print('=== Done ===')
+}
+
+; from tls-import-repeat.no — import tls 後 str.repeat 是否正常
+; 頂層片段：字串索引比較與 return 於模組作用域。
+tir-space = ' '
+print('start')
+print('before repeat')
+tir-buf = tir-space.repeat(8)
+print('after repeat')
+{
+    tir-buf[0] != 32 -> print('FAIL: expected space')
+
+    -> print('PASS: str.repeat with tls import')
+}
+
+; from tls-debug.no — 逐個測試 TLS 功能
+; 頂層片段：[]byte 逐位元組寫入（寫入增長語義）僅在模組作用域合法。
+print('=== TLS Debug Test ===')
+
+print('test 1: tls-put-u16')
+td-buf []byte
+tls.put-u16(td-buf, 0, 0x1234)
+td-buf[0] != 0x12 -> print('FAIL: expected 0x12')
+print('PASS: tls-put-u16')
+
+print('test 2: tls-get-u16')
+td-val = tls.get-u16(td-buf, 0)
+td-val != 0x1234 -> print('FAIL: expected 0x1234')
+print('PASS: tls-get-u16')
+
+print('test 3: tls-bytes-cat')
+td-a []byte
+td-a[0] = 1
+td-a[1] = 2
+td-b []byte
+td-b[0] = 3
+td-b[1] = 4
+td-out = tls.bytes-cat(td-a, td-b)
+td-out.len() != 4 -> print('FAIL: expected out.len=4')
+print('PASS: tls-bytes-cat')
+
+print('test 4: tls-rand-bytes')
+td-r-out = tls.rand-bytes(12345, 8)
+print('PASS: tls-rand-bytes')
+
+print('=== Done ===')
+
+tm-minimal()
+ts-simple()
+
+; ===================== merged from tests/tls-part1.no =====================
+; test-tls-part1 — 前四個測試
+; # std/net/tls
+
+print('=== TLS Part 1 ===')
+
+; test-tls-put-u16
+buf []byte
+tls.put-u16(buf, 0, 0x1234)
+buf[0] != 0x12 -> {
+    print('FAIL: put-u16')
+    return
+}
+print('PASS: put-u16')
+
+; test-tls-get-u16
+val = 0
+val = tls.get-u16(buf, 0)
+val != 0x1234 -> {
+    print('FAIL: get-u16')
+    return
+}
+print('PASS: get-u16')
+
+; test-tls-put-u24
+tls.put-u24(buf, 0, 0x123456)
+buf[0] != 0x12 -> {
+    print('FAIL: put-u24')
+    return
+}
+print('PASS: put-u24')
+
+; test-tls-get-u24
+val = tls.get-u24(buf, 0)
+val != 0x123456 -> {
+    print('FAIL: get-u24')
+    return
+}
+print('PASS: get-u24')
+
+print('=== Done ===')
+
+; ===================== merged from tests/tls-part2.no =====================
+; test-tls-part2 — bytes 相關測試
+; # std/net/tls
+
+print('=== TLS Part 2 ===')
+
+; test-tls-bytes-cat
+a []byte = with-cap(3)
+a[0] = 1
+a[1] = 2
+a[2] = 3
+b []byte = with-cap(2)
+b[0] = 4
+b[1] = 5
+out []byte
+out = tls.bytes-cat(a, b)
+out.len() != 5 -> {
+    print('FAIL: bytes-cat len')
+    return
+}
+out[0] != 1 -> {
+    print('FAIL: bytes-cat out[0]')
+    return
+}
+out[3] != 4 -> {
+    print('FAIL: bytes-cat out[3]')
+    return
+}
+print('PASS: bytes-cat')
+
+; test-tls-bytes-to-bn
+data []byte = with-cap(4)
+data[0] = 0x01
+data[1] = 0x02
+data[2] = 0x03
+data[3] = 0x04
+bn-out []i64
+bn-out = tls.bytes-to-bn(data)
+bn-out.len() != 1 -> {
+    print('FAIL: bytes-to-bn n')
+    return
+}
+bn-out[0] != 0x01020304 -> {
+    print('FAIL: bytes-to-bn val')
+    return
+}
+print('PASS: bytes-to-bn')
+
+; test-tls-bn-to-bytes
+num []i64 = with-cap(1)
+num[0] = 0x01020304
+bb-out []byte
+bb-out = tls.bn-to-bytes(num)
+bb-out.len() != 4 -> {
+    print('FAIL: bn-to-bytes n')
+    return
+}
+bb-out[0] != 0x01 -> {
+    print('FAIL: bn-to-bytes out[0]')
+    return
+}
+print('PASS: bn-to-bytes')
+
+; test-tls-rand-bytes
+state = 12345
+r-out []byte
+r-out = tls.rand-bytes(state, 16)
+print('PASS: rand-bytes')
+
+print('=== Done ===')
+
+; ===================== merged from tests/tls-part3.no =====================
+; test-tls-part3 — prf 和 conn-init
+; # std/net/tls
+
+print('=== TLS Part 3 ===')
+
+; test-tls-prf
+print('before prf')
+secret []byte = with-cap(4)
+secret[0] = 1
+secret[1] = 2
+secret[2] = 3
+secret[3] = 4
+seed []byte = with-cap(3)
+seed[0] = 0xaa
+seed[1] = 0xbb
+seed[2] = 0xcc
+prf-out []byte
+prf-out = tls.prf(secret, 'test label', seed, 32)
+print('after prf')
+has-nonzero = 0
+i <- [0..32): {
+    prf-out[i] != 0 -> has-nonzero = 1
+}
+has-nonzero == 0 -> {
+    print('FAIL: prf all zeros')
+    return
+}
+print('PASS: prf')
+
+; test-tls-conn-init
+print('before conn-init')
+c tls.conn
+c.init()
+c.connected != false -> {
+    print('FAIL: conn-init connected')
+    return
+}
+c.fd != 0 -> {
+    print('FAIL: conn-init fd')
+    return
+}
+c.write-seq != 0 -> {
+    print('FAIL: conn-init write-seq')
+    return
+}
+print('PASS: conn-init')
+
+print('=== Done ===')

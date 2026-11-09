@@ -1,0 +1,82 @@
+; merged category 'tls' -- 2 source files
+; sources: tls-partial.no, tls-prf-only.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/tls-partial.no =====================
+; test-tls-partial — 部分 TLS 測試
+; # std/net/tls
+
+print('=== TLS Partial Tests ===')
+
+; 測試 1: tls-put-u16
+space = ' '
+buf = space.repeat(8)
+tls.put-u16(buf, 0, 0x1234)
+buf[0] != 0x12 -> {
+    print('FAIL: put-u16 expected 0x12')
+    return
+}
+print('PASS: tls-put-u16')
+
+; 測試 2: tls-get-u16
+buf2 = space.repeat(8)
+buf2[0] = 0xab
+buf2[1] = 0xcd
+val = 0
+val = tls.get-u16(buf2, 0)
+val != 0xabcd -> {
+    print('FAIL: get-u16 expected 0xABCD')
+    return
+}
+print('PASS: tls-get-u16')
+
+; 測試 3: tls-put-u24
+buf3 = space.repeat(8)
+tls.put-u24(buf3, 0, 0x123456)
+buf3[0] != 0x12 -> {
+    print('FAIL: put-u24 expected 0x12')
+    return
+}
+print('PASS: tls-put-u24')
+
+; 測試 4: tls-get-u24
+buf4 = space.repeat(8)
+buf4[0] = 0x12
+buf4[1] = 0x34
+buf4[2] = 0x56
+val2 = 0
+val2 = tls.get-u24(buf4, 0)
+val2 != 0x123456 -> {
+    print('FAIL: get-u24 expected 0x123456')
+    return
+}
+print('PASS: tls-get-u24')
+
+print('=== Done ===')
+
+; ===================== merged from tests/tls-prf-only.no =====================
+; test-tls-prf-only — 只測試 prf
+; # std/net/tls
+
+print('before prf')
+secret []byte = with-cap(4)
+secret[0] = 1
+secret[1] = 2
+secret[2] = 3
+secret[3] = 4
+seed []byte = with-cap(3)
+seed[0] = 0xaa
+seed[1] = 0xbb
+seed[2] = 0xcc
+prf-out []byte
+prf-out = tls.prf(secret, 'test label', seed, 32)
+print('after prf')
+has-nonzero = 0
+i <- [0..32): {
+    prf-out[i] != 0 -> has-nonzero = 1
+}
+has-nonzero == 0 -> {
+    print('FAIL: prf all zeros')
+    return
+}
+print('PASS: prf')

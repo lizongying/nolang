@@ -1,3 +1,8 @@
+; merged category 'number' -- 8 source files
+; sources: number.no, number-div-mod-clamp.no, zero.no, unsigned-lit.no, bnot.no, i.no, i-more.no, boundary-minimal.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/number.no =====================
 ; merged category 'number' -- members: number-generic.no, number-int-more.no, number.no
 ; (originals backed up under tests/_archive/number/)
 ; ===================== merged from tests/number-generic.no =====================
@@ -189,3 +194,335 @@ demo-number = () {
     print(r)
 }
 demo-number()
+
+; ===================== merged from tests/number-div-mod-clamp.no =====================
+; math.div-mod-clamp.no — 測試 div, mod, clamp（現行 API）
+;
+; 覆蓋以下函數 / 運算：
+;   - 整數除法：直接運算元 / （int.div 內部即 . / b）
+;   - 整數取模：直接運算元 % （int.mod 內部即 . % b）
+;   - clamp：num.clamp = (lo num, hi num) (r num) 方法，結果經結果參數 r 回傳
+;
+; 註：原測試使用已移除的舊 API `math.div(a, b, r)` / `math.mod(a, b, r)`
+; （以 r 作為第 3 個 out-argument）。現行 std 為 `int.div=(b int)(q ?int)`、
+; `int.mod=(b int)(r ?int)`，且 clamp 以結果參數接收，故改寫如下。
+
+; ── div：整數除法 ──
+test-div = () {
+    r = 0
+
+    #{overflow=wrap}
+    r = 10 / 3
+    print(r); expect: 3
+
+    #{overflow=wrap}
+    r = 7 / 2
+    print(r); expect: 3
+
+    #{overflow=wrap}
+    r = 100 / 4
+    print(r); expect: 25
+
+    #{overflow=wrap}
+    r = 1 / 1
+    print(r); expect: 1
+
+    #{overflow=wrap}
+    r = 0 / 5
+    print(r); expect: 0
+}
+test-div()
+print(111)
+
+; ── mod：整數取模 ──
+test-mod = () {
+    r = 0
+
+    r = 10 % 3
+    print(r); expect: 1
+
+    r = 7 % 2
+    print(r); expect: 1
+
+    r = 100 % 4
+    print(r); expect: 0
+
+    r = 5 % 5
+    print(r); expect: 0
+
+    r = 1 % 3
+    print(r); expect: 1
+}
+test-mod()
+print(222)
+
+; ── clamp：數值限幅（方法，結果參數 r）──
+test-clamp = () {
+    r = 0
+
+    ; Within bounds
+    x = 5
+    r = x.clamp(1, 10)
+    print(r); expect: 5
+
+    ; Below lower bound
+    y = -3
+    r = y.clamp(0, 5)
+    print(r); expect: 0
+
+    ; Above upper bound
+    z = 20
+    r = z.clamp(0, 5)
+    print(r); expect: 5
+
+    ; Exactly at lower bound
+    w = 1
+    r = w.clamp(1, 10)
+    print(r); expect: 1
+
+    ; Exactly at upper bound
+    v = 10
+    r = v.clamp(1, 10)
+    print(r); expect: 10
+}
+test-clamp()
+print(333)
+
+; ===================== merged from tests/zero.no =====================
+; test_zero — 測試 .zero() 方法
+
+data = [1, 2, 3, 4]
+data.zero()
+print(data[0])
+print(data[3])
+
+; ===================== merged from tests/unsigned-lit.no =====================
+; test-unsigned-lit — 負整數字面量指派給無號整數型別，必須讀回無號值
+;
+; Regression（src/std/archive/xz.no:649 的 `unpacked-size = -1`，unpacked-size 為 byte）：
+;   checker  原本報 "cannot assign i64 value to byte variable"（阻塞 no build）；
+;   codegen  側即使放行，MIR 也把所有純量整數扁平化成 i64，byte 綁定存的是 i64 -1，
+;            print 出來是 "-1"；
+;   而同一個字面量寫進 []byte 元素會被截成 i8、print 走 zext → 印 255。兩邊不一致。
+; 現在統一成無號：
+;   1. checker：整數字面量指派給已宣告型別的變數 → 常數轉換，只放行
+;      「負字面量 → 無號目標」（checker.isIntLiteralNarrowingToDeclared）；
+;   2. mir：lower 時把該常數摺進目標值域（mir.tryUnsignedLitFold）。
+;
+; 有號目標（i8/i64）不受影響，仍讀回 -1。
+;
+; 注意：本檔刻意把斷言放進 main() —— 腳本頂層的綁定會被降成 global（拿到真實
+; i8 槽位），走的不是這條路徑。
+
+b byte = -1
+print('byte -1 = ')
+print(b)
+print('\n')
+
+c byte = 0
+c = -1
+print('reassign byte -1 = ')
+print(c)
+print('\n')
+
+u u16 = -1
+print('u16 -1 = ')
+print(u)
+print('\n')
+
+w u32 = -2
+print('u32 -2 = ')
+print(w)
+print('\n')
+
+; ── 反向守衛：有號型別維持原樣 ──
+s i8 = -1
+print('i8 -1 = ')
+print(s)
+print('\n')
+
+n = -1
+print('i64 -1 = ')
+print(n)
+print('\n')
+
+; ── []byte 元素必須與上面一致（同一個字面量，兩種存放位置）──
+v []byte = with-len(1)
+v[0] = -1
+print('vec elem -1 = ')
+print(v[0])
+print('\n')
+
+; ===================== merged from tests/bnot.no =====================
+x u32 = 100
+y = ~x
+print(y)
+
+; ===================== merged from tests/i.no =====================
+; cd src && go run ./cmd/cli/. build ../tests/i.no
+; a = 1
+
+a = 'abc'
+
+; a = 2
+
+; compilation error: duplicate variable 'a'
+; a i16
+
+i64 i64
+
+i8 i8
+
+; a.len() is the element count (live call below); the bare `.len` property form is removed
+; print(a.len())
+
+print(a.len())
+; compilation error: cannot modify read-only field 'len' of string 'a'
+; a.len = 2
+
+; ===================== merged from tests/i-more.no =====================
+; tests/i-more.no — consolidated `i` loop-variable pollution fragments
+; from: tests/i-pollution.no, tests/i-sha256.no
+
+print('start')
+i <- [0..5): {
+    print(i)
+}
+print('done')
+
+print('---')
+
+print('start')
+j <- [0..5): {
+    print(j)
+}
+print('done')
+
+; ===================== merged from tests/boundary-minimal.no =====================
+; 邊界值測試
+test-u8-100 = () {
+    n = '100'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u8-200
+test-u8-200 = () {
+    n = '200'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u8-255
+test-u8-255 = () {
+    n = '255'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u16-65535
+test-u16-65535 = () {
+    n = '65535'.to-u16()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u32-4b
+test-u32-4b = () {
+    n = '4294967295'.to-u32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 u32-3b
+test-u32-3b = () {
+    n = '1000000000'.to-u32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 i8-127
+test-i8-127 = () {
+    n = '127'.to-i8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 i8-128
+test-i8-128 = () {
+    n = '128'.to-i8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+test-u8-100()
+test-u8-200()
+test-u8-255()
+test-u16-65535()
+test-u32-4b()
+test-u32-3b()
+test-i8-127()
+test-i8-128()

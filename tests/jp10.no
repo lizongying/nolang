@@ -1,6 +1,0 @@
-# /test/runner
-
-s txt = 'a-b-c-d'
-parts = s.split('-')
-j = parts.join('.')
-print('top=[{j.to-str()}] len={j.len-bytes()}')

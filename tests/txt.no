@@ -1,3 +1,32 @@
+; merged category 'txt' -- 2 source files
+; sources: jp14.no, txt.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/jp14.no =====================
+# /test/runner
+
+t-join = () {
+    s txt = 'a-b-c-d'
+    parts = s.split('-')
+    print('n={parts.len()}')
+    i <- [0..parts.len()): {
+        parts[i]: {
+            ok -> {
+                q = it
+            }
+
+            -> {
+                q = ''
+            }
+        }
+        print('  part[{i}] len={q.len-bytes()} val={q.to-str()}')
+    }
+    j = parts.join('.')
+    print('J=[{j.to-str()}] len={j.len-bytes()}')
+}
+t-join()
+
+; ===================== merged from tests/txt.no =====================
 ; merged category 'txt' -- members: txt-methods.no, txt.no
 ; (originals backed up under tests/_archive/txt/)
 ; ===================== merged from tests/txt-methods.no =====================

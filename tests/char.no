@@ -1,3 +1,8 @@
+; merged category 'char' -- 2 source files
+; sources: char.no, char-more.no
+; originals recoverable from git HEAD (ed7b5236)
+
+; ===================== merged from tests/char.no =====================
 ; merged category 'char' -- members: char-render.no, multi-char-dquote.no, path-char.no, path-char2.no
 ; (originals backed up under tests/_archive/char/)
 ; ===================== merged from tests/char-render.no =====================
@@ -122,3 +127,127 @@ joined = p2.join('local/bin')
 print(joined)
 
 print('=== done ===')
+
+; ===================== merged from tests/char-more.no =====================
+; char-more — 合併自同簇 char-*.no（heavy dedup）
+;
+; 每個原件對映為下方一個带來源註解的函式；main 依序呼叫，stdout 可逐段對拍。
+; 引號規則："" = char (rune, i32 code point)，'' = str。
+; 保護件 char-render.no（char 渲染符號擴展回歸）維持獨立，不併入。
+
+; from char-new-syntax.no — 雙引號 char 字面量 + 算術 + 方法全集
+cm-literal-methods = () {
+    print('=== char literal test ===')
+    c = "中"
+    print(c); 20013
+    a = "A"
+    print(a); 65
+    b = a + 1
+    print(b); 66
+    n = "\n"
+    print(n); 10
+    t = "\t"
+    print(t); 9
+    z = "\0"
+    print(z); 0
+    d = "5"
+    print(d.is-digit()); true
+    e = "a"
+    print(e.is-letter()); true
+    print(e.is-lower()); true
+    up = e.to-upper()
+    print(up); 65 (A)
+    lo = "Z".to-lower()
+    print(lo); 122 (z)
+    s = "中".to-str()
+    print(s.len-bytes()); 3 (UTF-8 bytes)
+    print(s); 中
+    print('=== done ===')
+}
+
+; from char-fix.no — replace-char / trim-char（含多字節 UTF-8）
+cm-fix = () {
+    s = 'hello'
+    print(s.len-bytes())
+    r1 = s.replace-char(101, 120)
+    print(r1.len-bytes())
+    tc1 = s.trim-char(108)
+    print(tc1.len-bytes())
+    s2 = 'aTa'
+    r2 = s2.replace-char(0x61, 0x4e2d)
+    print(r2.len-bytes())
+    s3 = '中hello中'
+    tc3 = s3.trim-char(0x4e2d)
+    print(tc3.len-bytes())
+}
+
+; from char-inline-method.no — "A".to-str()
+cm-inline-method = () {
+    print('start')
+    s = "A".to-str()
+    print(s)
+    print('done')
+}
+
+; from char-inline-old.no — 舊語法 'A'（str）
+cm-inline-old = () {
+    print('start')
+    s = 'A'
+    print(s)
+    print('done')
+}
+
+; from char-new-method.no / char-old-syntax2.no — char.is-upper()
+cm-is-upper = () {
+    print('start')
+    c = "A"
+    print(c.is-upper())
+    print('done')
+}
+
+; from char-old-syntax.no — 顯式 char 型別標註 c char = 65
+cm-old-typed = () {
+    print('start')
+    c char = 65
+    print(c.is-upper())
+    print('done')
+}
+
+; from char-str.no — 單字元 str 字面量（',' = 1-char str）
+cm-str = () {
+    sep = ','
+    print('sep len: ' - sep.len-bytes().to-str())
+    print('sep[0]: ' - sep[0].to-str())
+}
+
+; from char-to-i64-field.no — char/bool(i32) 賦給 i64 struct 欄位（emitSetField 加寬）
+box {
+    ch i64
+    flag i64
+    b i64
+}
+cm-to-i64-field = () {
+    x box
+    ca = "A"
+    x.ch = ca
+    x.ch != 65 -> exit(1)
+    cz = "z"
+    x.b = cz
+    x.b != 122 -> exit(2)
+    t = true
+    f = false
+    x.flag = t
+    x.flag != 1 -> exit(3)
+    x.flag = f
+    x.flag != 0 -> exit(4)
+    print('char-to-i64-field passed')
+}
+
+cm-literal-methods()
+cm-fix()
+cm-inline-method()
+cm-inline-old()
+cm-is-upper()
+cm-old-typed()
+cm-str()
+cm-to-i64-field()
