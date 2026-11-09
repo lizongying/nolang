@@ -1086,6 +1086,19 @@ func cloneStmtForUnion(stmt parser.Statement, oldName, newName, memberType strin
 		if ov := sem.TypeOverrideOf(s); ov != "" {
 			sem.SetTypeOverrideOf(&ls, ov)
 		}
+		// 推斷型別同樣是 Program 級、以節點為鍵的事實（TypeFacts.Inferred），
+		// clone 是新節點，不搬就不會有條目。少了它，clone 內的
+		// `digits-opt = digits + 1` 退回 i64：值槽只剩 payload、沒有 option
+		// 標籤，接著 `digits-opt: { ok -> … -> … }` 的分派整個失效（三臂
+		// 全不執行、兩臂恆落 catch-all）。
+		//
+		// 外顯症狀：int.to-str（union 方法）對 i64 以外的整數型別輸出空字串
+		// ——位數靠 digits-opt 累加，clone 內恆為 0，with-cap(0) 後逐位寫入
+		// 越界，結果是 len=0 或內容全 0。test/std/number.no 的
+		// "u64-to-str 255 len/content" 即此。
+		if inf := sem.InferredType(s); inf != "" {
+			sem.SetInferredType(&ls, inf)
+		}
 		ls.Value = cloneExprForUnion(s.Value, oldName, newName, memberType, sem)
 		return &ls
 	case *parser.BlockStatement:
