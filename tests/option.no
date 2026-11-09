@@ -1,9 +1,764 @@
+; merged category 'option' -- members: match-index-option.no, option-elem-container.no, option-index.no, option-more.no, option-test.no, option.no
+; (originals backed up under tests/_archive/option/)
+; ===================== merged from tests/match-index-option.no =====================
+; match-index-option.no — 索引主体 option-match 回归（[]txt.join / txt.replace-n 旧崩点）
+;
+; 执行：no test tests/match-index-option.no
+; 覆盖：parts[i]: { ok -> s = it -> s = '' } 的 in-bounds / 越界语义，
+;       以及依赖该语法（索引主体 option-match）的 std 函数 txt.replace-n / txt-join。
+;
+; 历史：索引表达式主体（*IndexExpression parts[i]）原本在 buildMatchDesugar 取不到
+;       matchedVarType，退化为 streq(parts[i],'') 字串比较，使 `it` 绑定阙如、
+;       `s = it` 变 void，codegen 报 "receiver has no slot"。现归一化为合成 ?elem
+;       变量（安全索引 → %option）后走识别符 option-match 路径。
+
+# /test/runner
+
+; in-bounds：ok 臂取到 payload
+t-in-bounds = () {
+    s txt = 'a-b-c'
+    parts = s.split('-')
+    i = 0
+    parts[i]: {
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = ''
+        }
+    }
+    runner.str-eq(p.to-str(), 'a', 1, 'in-bounds payload == a')
+}
+
+; 越界：nil 臂生效（安全索引回传 nil option）
+t-out-of-bounds = () {
+    s txt = 'a-b-c'
+    parts = s.split('-')
+    i = 99
+    parts[i]: {
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = 'OOB'
+        }
+    }
+    runner.str-eq(p.to-str(), 'OOB', 3, 'out-of-bounds -> nil arm == OOB')
+}
+
+; 依赖该语法的 std 函数（之前 bus error / receiver has no slot）
+t-replace-n = () {
+    s txt = 'a-b-c-d'
+    r = s.replace-n('-', '.', 2)
+    runner.str-eq(r.to-str(), 'a.b.c-d', 7, 'txt.replace-n 2x')
+}
+
+; txt.split 得到 []txt 後呼叫 join('.'): 'a-b-c-d' → 'a.b.c.d'
+t-join = () {
+    s txt = 'a-b-c-d'
+    parts = s.split('-')
+    j = parts.join('.')
+    runner.str-eq(j.to-str(), 'a.b.c.d', 7, '[]txt.join')
+}
+
+; 直接字面量数组（['a','b','c','d'] → []str）的索引主体 option-match：
+; 修前 parts 的 []str 型别未登记到语义表，inferIndexElemType 回 ""，
+; match 退化为 streq(parts[i],'')、与 nil/err tag 比较触发 LLVM verifier
+; 崩溃（trace/BPT trap）。现 parser 为 SliceLiteral/ArrayLiteral 赋值登记
+; []elem 型别，使其被识别为 slice 基底、归一化为安全索引（%option）。
+t-literal-in-bounds = () {
+    parts = ['a', 'b', 'c', 'd']
+    i = 1
+    parts[i]: {
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = 'MISS'
+        }
+    }
+    runner.str-eq(p, 'b', 1, 'literal in-bounds payload == b')
+}
+
+; 字面量陣列越界：下標 9 應落進 nil 臂（p 取得 'OOB'），不得崩潰
+t-literal-out-of-bounds = () {
+    parts = ['a', 'b', 'c', 'd']
+    j = 9
+    parts[j]: {
+        ok -> {
+            p = it
+        }
+
+        -> {
+            p = 'OOB'
+        }
+    }
+    runner.str-eq(p, 'OOB', 1, 'literal out-of-bounds -> nil arm == OOB')
+}
+
+p1, f1 = runner.test('in-bounds', t-in-bounds)
+p2, f2 = runner.test('out-of-bounds', t-out-of-bounds)
+p3, f3 = runner.test('replace-n', t-replace-n)
+p4, f4 = runner.test('join', t-join)
+p5, f5 = runner.test('literal-in-bounds', t-literal-in-bounds)
+p6, f6 = runner.test('literal-out-of-bounds', t-literal-out-of-bounds)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}
+
+; ===================== merged from tests/option-elem-container.no =====================
+; option-elem-container — `[]?T`：元素本身是 option 的容器
+;
+; `[]?T` 這條路徑過去整體不可用，而且失敗方式是「靜默改型別」：
+; parser 的 let 型別註解在 `]` 之後只認 IDENT 與 `[`，`?` 落進「省略元素型別」
+; 的兜底分支被偽造成 `[]i64`（Elem.IsInferred=true）。於是
+;   - `a []?str = [ok('x')]` 的元素型別是 i64 ⇒ `a[0]: { ok -> it = 'z' }`
+;     的寫回報 "index-store of a '%str-long' value into a 'i64' element"；
+;   - `no fmt` 因為 IsInferred 把整個註解刪掉，印成 `a = []`。
+; 註解修好之後暴露的三處下游缺口，本檔逐一釘住：
+;   1) 讀：元素已是 option，安全索引不得再包一層（`??str`）；
+;   2) 寫：元素 store 必須深拷貝 payload，否則容器元素與臨時值共用緩衝；
+;   3) push：同上，第三處「按值寫入 owned 元素」。
+;
+; 斷言口徑：`a[i]` 恆為 `?T`，故一律在 match 的 ok 臂裡以「顯式 plain 型別」
+; 拉回值再比較。
+
+; 1. 字面量初始化 + 逐元素讀取：nil 必須讀成 nil，不能折成 0
+oa []?i64 = [ok(1), nil, ok(3)]
+n = oa.len()
+n != 3 -> exit(1)
+oa[0]: {
+    ok -> {
+        v0 i64 = it
+        v0 != 1 -> exit(2)
+    }
+
+    nil -> exit(3)
+
+    err -> exit(4)
+}
+oa[1]: {
+    ok -> exit(5)
+
+    nil -> {
+    }
+
+    err -> exit(6)
+}
+oa[2]: {
+    ok -> {
+        v2 i64 = it
+        v2 != 3 -> exit(7)
+    }
+
+    nil -> exit(8)
+
+    err -> exit(9)
+}
+
+; 2. `[]?str` 讀取（owned payload）
+os []?str = [ok('ab'), nil, ok('cd')]
+os[0]: {
+    ok -> {
+        s0 str = it
+        s0 != 'ab' -> exit(10)
+    }
+
+    nil -> exit(11)
+
+    err -> exit(12)
+}
+os[1]: {
+    ok -> exit(13)
+
+    nil -> {
+    }
+
+    err -> exit(14)
+}
+
+; 3. 下標形式 place-write + 讀-改-寫：`it = it + '!'` 的 RHS 必須讀到**元素值**
+;    （修復前 parser 又發一次 `let it = __place`，把整塊的 `it` 綁到新槽 ⇒ 讀成空字串）
+i <- [0..3): {
+    os[i]: {
+        ok -> it = it + '!'
+
+        -> {
+        }
+    }
+}
+os[0]: {
+    ok -> {
+        t0 str = it
+        t0 != 'ab!' -> exit(15)
+    }
+
+    nil -> exit(16)
+
+    err -> exit(17)
+}
+os[1]: {
+    ok -> exit(18)
+
+    nil -> {
+    }
+
+    err -> exit(19)
+}
+os[2]: {
+    ok -> {
+        t2 str = it
+        t2 != 'cd!' -> exit(20)
+    }
+
+    nil -> exit(21)
+
+    err -> exit(22)
+}
+
+; 4. 迭代變數形式必須與下標形式等價
+oi []?str = [ok('ab'), nil, ok('cd')]
+x <- oi: {
+    x: {
+        ok -> it = it + '!'
+
+        -> {
+        }
+    }
+}
+oi[0]: {
+    ok -> {
+        u0 str = it
+        u0 != 'ab!' -> exit(23)
+    }
+
+    nil -> exit(24)
+
+    err -> exit(25)
+}
+oi[2]: {
+    ok -> {
+        u2 str = it
+        u2 != 'cd!' -> exit(26)
+    }
+
+    nil -> exit(27)
+
+    err -> exit(28)
+}
+
+; 5. push 進 `[]?str`：元素必須拿到自己的堆積
+op []?str = []
+j <- [0..3): {
+    op.push(ok('p'))
+}
+opn = op.len()
+opn != 3 -> exit(30)
+op[0]: {
+    ok -> {
+        p0 str = it
+        p0 != 'p' -> exit(31)
+    }
+
+    nil -> exit(32)
+
+    err -> exit(33)
+}
+
+; 6. 整元素賦值：`= nil` 與 `= ok(v)` 都要落回元素
+or []?str = [ok('a'), ok('b')]
+or[1] = nil
+or[1]: {
+    ok -> exit(40)
+
+    nil -> {
+    }
+
+    err -> exit(41)
+}
+or[0] = ok('zz')
+or[0]: {
+    ok -> {
+        z0 str = it
+        z0 != 'zz' -> exit(42)
+    }
+
+    nil -> exit(43)
+
+    err -> exit(44)
+}
+
+; 7. 讀-改-寫 + 增長寫入（grow-write 路徑的 ok 載荷必須是**真讀**，不是零）
+rw = [5, 6, 7]
+m <- [0..3): {
+    rw[m]: {
+        ok -> it = it + 1
+
+        -> {
+        }
+    }
+}
+r0 i64 = rw[0]
+r0 != 6 -> exit(50)
+r1 i64 = rw[1]
+r1 != 7 -> exit(51)
+r2 i64 = rw[2]
+r2 != 8 -> exit(52)
+
+og []i64 = []
+k <- [0..3): {
+    og[k]: {
+        ok -> it = k + 10
+
+        -> {
+        }
+    }
+}
+ogn = og.len()
+ogn != 3 -> exit(53)
+g0 i64 = og[0]
+g0 != 10 -> exit(54)
+g2 i64 = og[2]
+g2 != 12 -> exit(55)
+
+; 8. 大量元素 + owned payload：push 與讀-改-寫各 200 次，不得重複釋放
+ch []?str = []
+q <- [0..200): {
+    ch.push(ok('item'))
+}
+c <- [0..200): {
+    ch[c]: {
+        ok -> it = it + '-'
+
+        -> {
+        }
+    }
+}
+cn = ch.len()
+cn != 200 -> exit(60)
+ch[0]: {
+    ok -> {
+        c0 str = it
+        c0 != 'item-' -> exit(61)
+    }
+
+    nil -> exit(62)
+
+    err -> exit(63)
+}
+ch[199]: {
+    ok -> {
+        c9 str = it
+        c9 != 'item-' -> exit(64)
+    }
+
+    nil -> exit(65)
+
+    err -> exit(66)
+}
+
+; 9. 純量直寫進 `[]?T` 元素：隱式包一層 ok
+;    元素槽是 `?T`、RHS 是純量時，寫入必須自動 `ok(...)` 包裝 —— 既不能靜默寫
+;    裸載荷（option tag 會是垃圾），也不能因為型別不同就拒收（`?T` 元素接受 `T`
+;    是容器元素賦值的既定寬容度）。owned 載荷另要深拷貝，臨時值不能與容器共用
+;    緩衝。三種寫入形都要覆蓋：下標直寫、臨時值、place-write 的 `it = <純量>`。
+w []?i64 = [ok(1), nil]
+w[1] = 7
+w[1]: {
+    ok -> {
+        w1 i64 = it
+        w1 != 7 -> exit(70)
+    }
+
+    nil -> exit(71)
+
+    err -> exit(72)
+}
+
+ws []?str = [ok('a'), nil]
+ws[1] = 'zz'
+ws[1]: {
+    ok -> {
+        s1 str = it
+        s1 != 'zz' -> exit(73)
+    }
+
+    nil -> exit(74)
+
+    err -> exit(75)
+}
+
+mk-temp = () (r str) {
+    r = 'temp'
+}
+
+ws[0] = mk-temp()
+ws[0]: {
+    ok -> {
+        s0 str = it
+        s0 != 'temp' -> exit(76)
+    }
+
+    nil -> exit(77)
+
+    err -> exit(78)
+}
+
+; place-write：ok 臂的 `it` 就是 `?str` 元素槽，右側仍是純量
+ws[1]: {
+    ok -> it = 'q'
+
+    -> {
+    }
+}
+ws[1]: {
+    ok -> {
+        s2 str = it
+        s2 != 'q' -> exit(79)
+    }
+
+    nil -> exit(80)
+
+    err -> exit(81)
+}
+
+print('option-elem-container OK')
+
+; ===================== merged from tests/option-index.no =====================
+; 回歸測試：%option（可空型別）作為陣列索引值。
+; Bug：a[off + 1] 的結果 res 為 ?i64（%option），
+;      codegen 取 a[res] 時未對 %option 索引解包，
+;      導致 "defined with type '%option' but expected 'i64'"。
+; 修復後應輸出 x=3。
+a = [1, 2, 3, 4]
+off = 0
+res ?i64 = a[off + 1]
+
+x = a[res]: {
+    ok -> it
+
+    -> 0
+}
+io.out('x=')
+io.out(x)
+print('')
+
+; ===================== merged from tests/option-more.no =====================
+; option-more — 合併自同簇 option/opt 小件（heavy dedup）
+;
+; 每個原件逐字搬入並將頂層符號加前綴避免衝突；main 依序呼叫，stdout 逐段可對拍。
+; 保護/重件保留獨立：option.no(CI)、option-capture/index/match/test、opt-box-drop、
+; opt-container-len、opt-struct-field、byte-option-index、slice-option-write、
+; option-match-silent-wrong(綁 src/mir/option_match_three_bugs_test.go)、
+; option-elem-container(大面積 place-match 擁有權探針)。
+
+; from opt-match-all.no — option match 的所有分支
+oma-test-err = () {
+    n ?i64 = err('boom')
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+oma-test-nil = () {
+    n ?i64 = nil
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+oma-test-val = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+oma-test-err-only = () {
+    n ?i64 = err('oops')
+    r = n: {
+        err -> 'only-err'
+
+        -> 'otherwise'
+    }
+    print(r)
+}
+
+; from opt-match2.no — 只有 catch-all 一臂
+om2-test1 = () {
+    n ?i64 = 42
+    r = n: {
+        -> 'ok'
+    }
+    print(r)
+}
+
+; from opt-match3.no — err/nil 臂不命中，落 catch-all
+om3-test1 = () {
+    n ?i64 = 42
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+
+; from simple-opt.no — 最小可編譯樣本
+so-test1 = () {
+    n = 42
+    print('ok')
+}
+
+; from f64-option.no — str.to-f64 的 Option 化實現
+f64-print = (s str) {
+    f = s.to-f64()
+    {
+        f == nil -> print('nil')
+
+        f == err -> print('err')
+
+        -> print(f)
+    }
+}
+
+; from option-simple-minimal.no — 最小化 val/err 測試
+osm-simple = () {
+    n ?i64 = ok(42)
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+osm-simple2 = () {
+    n ?i64 = nil
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+osm-simple3 = () {
+    n ?i64 = err('oops')
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; from option-struct-payload-drop.no — 內聯 owning struct payload 每次重綁必釋放
+; 頂層片段：last 為模組全域，迴圈內覆寫（原檔即如此）。
+ospd-person {
+    name str
+}
+ospd-last = ''
+i <- [0..2000): {
+    p ospd-person
+    p.name = i.to-str()
+    ip ?ospd-person = p
+    q ospd-person = ip
+    ospd-last = q.name
+}
+print(ospd-last)
+j <- [0..2000): {
+    r = json.parse('{"name":"Alice"}')
+    r: {
+        ok -> {
+            s-opt = it.get-str('name')
+            s-opt: {
+                ok -> {
+                    ospd-last = it
+                }
+
+                -> _
+            }
+        }
+
+        err -> {
+            ospd-last = 'err'
+        }
+
+        nil -> {
+            ospd-last = 'nil'
+        }
+    }
+}
+print(ospd-last)
+
+; from option-copy.no — 隱式 ok 建構後覆寫（僅驗編譯 + D1 消費）
+ocopy-x = () {
+    a ?[]i64 = nil
+    a = [8]
+    _ = a
+}
+
+oma-test-err()
+oma-test-nil()
+oma-test-val()
+oma-test-err-only()
+om2-test1()
+om3-test1()
+so-test1()
+f64-print('3.14')
+f64-print('-2.5')
+f64-print('0.0')
+f64-print('')
+f64-print('abc')
+f64-print('42')
+f64-print('1.5e3')
+osm-simple()
+osm-simple2()
+osm-simple3()
+ocopy-x()
+
+; from option-nil-predeclare.no — nil 預宣告探針（頂層片段，含 io.out 無換行）
+onp-x ?i64 = nil
+onp-x: {
+    ok -> io.out('x=ok ')
+
+    nil -> io.out('x=nil ')
+
+    err -> io.out('x=err ')
+}
+print('')
+
+onp-y ?i64 = nil
+onp-y = 5
+onp-y: {
+    ok -> print(onp-y)
+
+    nil -> print('nil')
+
+    err -> print('err')
+}
+
+onp-s ?str = nil
+onp-s: {
+    ok -> print(onp-s)
+
+    nil -> print('s=nil')
+
+    err -> print('s=err')
+}
+
+; ===================== merged from tests/option-test.no =====================
+; Test 1: Declare and set nil
+test-option-1 = () {
+    x1 ?str
+    x1 = nil
+    print(x1)
+}
+
+; Test 2: Set value via val()
+test-option-2 = () {
+    x2 ?str
+    x2 = 'hello'
+    print(x2)
+}
+
+; Test 3: Set error
+test-option-3 = () {
+    x3 ?str
+    x3 = err('error msg')
+    print(x3)
+}
+
+; Test 4: Match on option with err-> nil-> -> patterns
+test-option-4 = () {
+    x4 ?str
+    x4 = err('error msg')
+    x4: {
+        err -> print(it)
+
+        nil -> print(0)
+
+        -> print(1)
+    }
+}
+
+; Test 5: Match on nil
+test-option-5 = () {
+    x5 ?str
+    x5 = nil
+    x5: {
+        err -> print(100)
+
+        nil -> print(200)
+
+        -> print(300)
+    }
+}
+
+; Test 6: Match on val
+test-option-6 = () {
+    x6 ?str
+    x6 = 'test'
+    x6: {
+        err -> print(1000)
+
+        nil -> print(2000)
+
+        -> print(3000)
+    }
+}
+test-option-1()
+print(0)
+test-option-2()
+print(1)
+test-option-3()
+print(2)
+test-option-4()
+print(3)
+test-option-5()
+print(4)
+test-option-6()
+print(5)
+
+; ===================== merged from tests/option.no =====================
 ; cd src && go run ./cmd/cli/. build ../tests/match.no
 ; ../dist/match
 
 ; ✅ match 語句：分支是代碼塊
 
-x = 3
+x__1 = 3
 x: {
     1 -> print(11)
 
@@ -11,7 +766,7 @@ x: {
 
     -> print(33)
 }
-x = 4
+x__1 = 4
 x: {
     1 -> print(111)
 
@@ -21,7 +776,7 @@ x: {
 }
 
 ; ✅ match 表達式：分支體是單一表達式
-a = 100
+a__1 = 100
 b = 101
 
 #{overflow=wrap}
@@ -31,21 +786,21 @@ result = x: {
 
     2 -> 2 + 1; 簡單表達式
 
-    -> a + b
+    -> a__1 + b
 }
 print(result)
 
 ; todo 特殊match 現在有問題
 {
-    a == 99 -> {
-        a = 1
+    a__1 == 99 -> {
+        a__1 = 1
         b = 2
 
         ; todo      print(a+b)
         print(b)
     }
 
-    a == 2 -> print('a')
+    a__1 == 2 -> print('a')
 
     -> print('b')
 }

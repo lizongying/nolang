@@ -1,0 +1,124 @@
+; merged category 'char' -- members: char-render.no, multi-char-dquote.no, path-char.no, path-char2.no
+; (originals backed up under tests/_archive/char/)
+; ===================== merged from tests/char-render.no =====================
+; char is an i32 code point and renders as its DECIMAL value, consistently
+; across every path that turns it into text.
+;
+; Quoting reminder (this is the part that is easy to invert):
+;   "..."  is a CHAR literal (i32 code point) — "x" is 120
+;   '...'  is a STR literal, even for a single code point — 'x' is a 1-char str
+;
+; Regression: interpolation zero-extended the i32 while `print(c)` sign-extended
+; it, so ONE value rendered TWO ways:
+;     print(c)       -> -1
+;     print('{c}')   -> 4294967295
+; The interpolation path widens through OpCast (to reach fmt-int's i64), and the
+; sign test there only looked at an `i` prefix — `char` has none, so it fell
+; through to zext. char arithmetic is signed (`"x" - "y"` is -1), so sext is
+; correct. Every VALID code point is 0..=0x10FFFF, where the two agree, so this
+; only affects out-of-range char arithmetic results.
+
+; Char arithmetic is signed i32.
+"x" - "y" != -1 -> exit(1)
+"x" - 1 != 119 -> exit(2)
+"x" * 3 != 360 -> exit(3)
+"x" - "x" != 0 -> exit(4)
+
+; The same value through interpolation, which is the path that was wrong.
+n = "x" - "y"
+sn = format('{n}')
+sn != '-1' -> exit(5)
+
+; An explicitly annotated char takes the same path.
+c = "x" - "y"
+sc = format('{c}')
+sc != '-1' -> exit(6)
+
+; Positive code points are unaffected by the sign extension — pin them so a
+; future "fix" cannot turn them negative.
+e = "A"
+se = format('{e}')
+se != '65' -> exit(7)
+"z" != 122 -> exit(8)
+
+; Multi-byte: the code point, not the first UTF-8 byte (0xC3 = 195).
+m = "é"
+sm = format('{m}')
+sm != '233' -> exit(9)
+
+; The format spec still applies to the widened value.
+sp = format('[{e:>5}]')
+sp != '[   65]' -> exit(10)
+
+; char.to-str() yields the CHARACTER, not the number — a different operation
+; from rendering the code point, and it must stay that way.
+e.to-str() != 'A' -> exit(11)
+
+; '...' is a str literal, so this is concatenation, not 120 - 98.
+sx = 'x' - 'y'
+sx != 'xy' -> exit(12)
+
+; Not cosmetic: format's fmt-* callees are only materialized into the module
+; when the program also contains a print-family call (pre-existing lowering
+; quirk; without it this file fails to link with "unknown callee fmt-int").
+print('char-render: ok')
+
+; ===================== merged from tests/multi-char-dquote.no =====================
+; 测试多字符双引号字面量报错
+; 双引号只能用于单字符 char，多字符应使用单引号
+; 预期：LSP/vet 报错 "multi-character literal in double quotes"
+
+print('done')
+
+; ===================== merged from tests/path-char.no =====================
+; test_path_char — 驗證 path.no 使用 char 字面量常量後正常工作
+; # std/path
+print('=== path char test ===')
+
+p = path {
+    p: '/usr/local/bin'
+}
+print(p.p)
+
+; path.dir() 會**原地修改 .p**，同時回傳修改後的結果。
+; 早期版本只有原地修改、沒有回傳值，`dir = p.dir()` 會拿到空字串，
+; 而且 .p 被改成 '/usr/local' 之後，下面 base() 會印出 'local' 而不是 'bin'。
+; 現在兩種用法都可用，這裡用回傳值（並各自用獨立物件，避免互相干擾）。
+d = path {
+    p: '/usr/local/bin'
+}
+dir = d.dir()
+print(dir)
+
+b = path {
+    p: '/usr/local/bin'
+}
+base = b.base()
+print(base)
+
+ok = p.exists()
+{
+    ok -> print('exists: ok')
+
+    -> print('not exists: ok')
+}
+
+; ===================== merged from tests/path-char2.no =====================
+; test_path_char2 — 驗證 path.no 使用 char 字面量常量後正常工作
+; # std/path
+print('=== path char test ===')
+
+p__1 = path {
+    p: '/usr/local/bin'
+}
+print(p__1.p)
+
+; path.join() 會**原地修改 .p**，同時回傳拼接後的結果。
+; 早期版本無回傳值，`joined = p2.join(...)` 只會拿到空字串。
+p2 = path {
+    p: '/usr'
+}
+joined = p2.join('local/bin')
+print(joined)
+
+print('=== done ===')

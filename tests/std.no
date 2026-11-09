@@ -1,0 +1,61 @@
+; merged category 'std' -- members: std-lib.no, win-env-stdin.no
+; (originals backed up under tests/_archive/std/)
+; ===================== merged from tests/std-lib.no =====================
+; std-lib.no — 方法調用測試
+
+; [n]t.fill: 全部填充為 val
+[n]t.fill = (val t) {
+    i <- [0..n): {
+        .[i] = val
+    }
+}
+
+; [n]t.reverse: 反轉陣列
+[n]t.reverse = () {
+
+    #{overflow=wrap}
+    i <- [0..n / 2): {
+
+        #{overflow=wrap}
+        j = n - 1 - i
+        tmp = .[i]
+        .[i] = .[j]
+        .[j] = tmp
+    }
+}
+
+; 測試 fill
+test-fill = () {
+    data [4] = [1, 2, 3, 4]
+    data.fill(42)
+
+    v0 = data[0]
+
+    v3 = data[3]
+    print(v0)
+    print(v3)
+}
+
+; 測試 reverse
+test-reverse = () {
+    data [4] = [1, 2, 3, 4]
+    data.reverse()
+
+    v0 = data[0]
+
+    v3 = data[3]
+    print(v0)
+    print(v3)
+}
+test-fill()
+print(-1)
+test-reverse()
+print(0)
+
+; ===================== merged from tests/win-env-stdin.no =====================
+; probe for windows cross-compile: set-env + get-line must lower without
+; referencing POSIX-only symbols (setenv/__stdinp)
+ok = os.set-env('PROBE', '1')
+print('set-env ok: ', ok)
+line, rok = fs.get-line()
+print('get-line rok: ', rok)

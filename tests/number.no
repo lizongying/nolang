@@ -1,3 +1,181 @@
+; merged category 'number' -- members: number-generic.no, number-int-more.no, number.no
+; (originals backed up under tests/_archive/number/)
+; ===================== merged from tests/number-generic.no =====================
+; test/number-generic.no — 測試 std/math、std/num 與 std/number 中泛型函數的運行結果
+;
+; 覆蓋以下函數：
+;   - max  (a ..num)  (r num)  — 變參泛型（math 模組）
+;   - min  (a ..num)  (r num)  — 變參泛型（math 模組）
+;   - abs  ()         (r num)  — num 方法（num 模組）
+;   - sign (a num)    (r num)  — 方法泛型（num 模組）
+;   - even (a int)    (yes bool) — 整型泛型
+;   - odd  (a int)    (yes bool) — 整型泛型
+;   - pow  (a int, n int) (r int) — 整型泛型
+;   - gcd  (a int, b int) (r int) — 整型泛型
+;   - lcm  (a int, b int) (r int) — 整型泛型
+
+; ── max：變參泛型，回傳最大值 ──
+test-max = () {
+    r = math.max(10, 20)
+    print(r); expect: 20
+
+    r = math.max(3, 1, 4, 1, 5)
+    print(r); expect: 5
+
+    r = math.max(100, 50)
+    print(r); expect: 100
+}
+test-max()
+print(0)
+
+; ── min：變參泛型，回傳最小值 ──
+test-min = () {
+    r = math.min(10, 20)
+    print(r); expect: 10
+
+    r = math.min(3, 1, 4, 1, 5)
+    print(r); expect: 1
+}
+test-min()
+print(1)
+
+; ── abs：num 方法（裸函數形式 abs(x)，x 為接收者），回傳絕對值 ──
+test-abs = () {
+
+    #{overflow=wrap}
+    r = abs(0 - 42)
+    print(r); expect: 42
+    r = abs(7)
+    print(r); expect: 7
+    r = abs(0)
+    print(r); expect: 0
+}
+test-abs()
+print(2)
+
+; ── sign：方法泛型，回傳符號（-1, 0, 1）──
+test-sign = () {
+    r = sign(5)
+    print(r); expect: 1
+
+    #{overflow=wrap}
+    r = sign(0 - 3)
+    print(r); expect: -1
+    r = sign(0)
+    print(r); expect: 0
+}
+test-sign()
+print(3)
+
+; ── even / odd：整型泛型，回傳 bool ──
+test-even-odd = () {
+    yes = math.even(4)
+    print(yes); expect: true
+    yes = math.even(7)
+    print(yes); expect: false
+    yes = math.odd(4)
+    print(yes); expect: false
+    yes = math.odd(7)
+    print(yes); expect: true
+}
+test-even-odd()
+print(4)
+
+; ── pow：整型冪 ──
+test-pow = () {
+    r = number.pow(2, 10)
+    print(r); expect: 1024
+    r = number.pow(3, 4)
+    print(r); expect: 81
+    r = number.pow(5, 0)
+    print(r); expect: 1
+    r = number.pow(7, 1)
+    print(r); expect: 7
+}
+test-pow()
+print(5)
+
+; ── gcd：最大公因數 ──
+test-gcd = () {
+    r = math.gcd(48, 18)
+    print(r); expect: 6
+    r = math.gcd(42, 21)
+    print(r); expect: 21
+    r = math.gcd(17, 23)
+    print(r); expect: 1
+    r = math.gcd(0, 12)
+    print(r); expect: 12
+
+    #{overflow=wrap}
+    r = math.gcd(0 - 12, 8)
+    print(r); expect: 4
+}
+test-gcd()
+print(6)
+
+; ── lcm：最小公倍數 ──
+test-lcm = () {
+    r = math.lcm(4, 6)
+    print(r); expect: 12
+    r = math.lcm(12, 63)
+    print(r); expect: 252
+    r = math.lcm(0, 5)
+    print(r); expect: 0
+    r = math.lcm(7, 7)
+    print(r); expect: 7
+    r = math.lcm(2, 5)
+    print(r); expect: 10
+}
+test-lcm()
+print(7)
+
+; ===================== merged from tests/number-int-more.no =====================
+; number-int-more.no — 合併自 number/int 邊角碎片（頂層拼接，非函數包裹）
+; 來源：mod.no, u8-direct-minimal.no, u128.no
+; 保留錨點：number.no（基名）；unsigned-lit.no（無符號字面量獨立）；
+;           number-more.no（既有合併檔，另行保留）
+; ── 來自 mod.no ──
+; mod.no — 測試取模運算
+test = () {
+    a = 12
+    b = 18
+    r = a % b
+    print(r)
+}
+test()
+
+print('---')
+
+; ── 來自 u8-direct-minimal.no ──
+test-method = () {
+    n = 'abc'.to-i64()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+test-method()
+
+print('---')
+
+; ── 來自 u128.no ──
+; 測試 u128-basic（編譯探針，無 stdout）
+test-u128-basic = () (r i64) {
+    r = 1
+    return
+}
+
+r
+i64 i64
+r = test-u128-basic()
+
+; ===================== merged from tests/number.no =====================
 ; number.no — 數字操作測試（max/min 已移至 math 模組）
 
 ; 示範 math.max / math.min：結果經輸出參數回寫，不做斷言

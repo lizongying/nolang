@@ -1,0 +1,69 @@
+; merged category 'fn' -- members: fn-type-return.no, modfn-builtin-collision.no
+; (originals backed up under tests/_archive/fn/)
+; ===================== merged from tests/fn-type-return.no =====================
+; fn-type-return.no — 驗證函式型别帶返回值語法
+;
+; 測試具名函式型别帶返回值：cb ()(i64) 形式（透過具名型别定義）
+;
+; 注意：匿名函式型別語法 `cb ()(i64)` 需在 package.jsonc 設定
+; `"anonymous-fn-type": true` 才能使用。此測試改用具名函式型別定義，
+; 在預設開關關閉下亦可運作。
+
+; 具名函式型別：無參，返回 i64
+ret-cb = () (i64)
+
+; 取得 42
+; r i64: 固定值 42
+get-42 = () (r i64) {
+    r = 42
+}
+
+; 以函式型別參數做間接呼叫，並把結果接住回傳（回歸：Results 為空時要取 Dst）
+; cb ret-cb: 無參、回 i64 的回呼參考
+; out i64: cb() 的回傳值
+apply-ret = (cb ret-cb) (out i64) {
+    out = cb()
+}
+result = 0
+result = apply-ret(get-42)
+{
+    result == 42 -> print('ok: fn-type-return')
+
+    -> print('fail: fn-type-return')
+}
+
+; ===================== merged from tests/modfn-builtin-collision.no =====================
+; Regression: a user function sharing a std builtin's BARE name must not
+; hijack qualified std calls. Before the fix, checker.resolveModuleCalls /
+; mir.resolveModuleCallName flattened `fs.is-file()` to the bare name without
+; checking which module owns the definition, so the call resolved to THIS
+; module's `is-file` — whose body calls `fs.is-file()` — direct
+; self-recursion: a stack-overflow SIGSEGV at runtime (no compile error).
+; The std builtin stub (#{buildin}) is never merged, so no `fs`-owned
+; definition exists and the qualified call must route to the builtin.
+; p str: 要檢查的路徑
+; ok bool: fs.is-file(p) 的結果；本函式名故意與 builtin 同名以驗證解析不串錯
+is-file = (p str) (ok bool) {
+    ok = fs.is-file(p)
+}
+print('start')
+
+; qualified std call on a directory: must be false via the builtin
+fs.is-file('/tmp') -> {
+    print('BAD: fs.is-file says /tmp is a file')
+}
+
+; the user wrapper resolves by its bare name and must NOT recurse
+wrap-ok = is-file('/tmp')
+wrap-ok -> {
+    print('BAD: wrapper says /tmp is a file')
+}
+
+; both agree on a real file
+fs.is-file('/dev/null') -> {
+    print('fs: /dev/null is a file')
+}
+is-file('/dev/null') -> {
+    print('wrap: /dev/null is a file')
+}
+print('done')

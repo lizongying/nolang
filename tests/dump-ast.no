@@ -1,8 +1,0 @@
-; Simple test to dump parser AST
-; val i64: 固定 0（本檔只用來 dump AST，佔住 str.to-i64 的方法槽）
-str.to-i64 = () (val i64) {
-    val = 0
-}
-s = '12345'
-n = s.to-i64()
-print(n)

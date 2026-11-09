@@ -1,0 +1,82 @@
+; merged category 'open' -- members: open-perm.no, open-read.no
+; (originals backed up under tests/_archive/open/)
+; ===================== merged from tests/open-perm.no =====================
+; open-perm.no — 驗證 open() 檔案權限
+
+tmp = '/tmp/nolang-perm-test.txt'
+fs.remove(tmp)
+
+f = fs.open(tmp,  {
+    mode: file-mode.write
+    perm: file-perm.perm-600
+    excl: false
+    truncate: false
+    append: false
+})
+f: {
+    err -> print('fail')
+
+    nil -> print('fail')
+
+    -> {
+        .write-str('x')
+
+        .close()
+        print('ok')
+    }
+}
+fs.remove(tmp)
+
+; ===================== merged from tests/open-read.no =====================
+; open-read.no — 驗證 open() 讀取
+
+tmp__1 = '/tmp/nolang-read-test.txt'
+payload = 'hello nolang'
+fs.remove(tmp__1)
+
+; 先寫入
+f-w = fs.open(tmp__1,  {
+    mode: file-mode.write
+    perm: file-perm.perm-600
+    excl: false
+    truncate: false
+    append: false
+})
+f-w: {
+    err -> print('fail: write err')
+
+    nil -> print('fail: write nil')
+
+    -> {
+        it.write-str(payload)
+        it.close()
+        print('ok: write')
+    }
+}
+
+; 再讀取
+f-r = fs.open(tmp__1,  {
+    mode: file-mode.read
+    perm: file-perm.perm-600
+    excl: false
+    truncate: false
+    append: false
+})
+f-r: {
+    err -> print('fail: read err')
+
+    nil -> print('fail: read nil')
+
+    -> {
+        r = it.read-str()
+        r: {
+            err -> print('fail: read-str err')
+
+            nil -> print('ok: read empty')
+
+            -> print('ok: read')
+        }
+        it.close()
+    }
+}
+fs.remove(tmp__1)

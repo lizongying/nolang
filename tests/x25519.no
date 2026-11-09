@@ -1,0 +1,220 @@
+; merged category 'x25519' -- members: diag-x25519.no, x25519-fe-diag.no
+; (originals backed up under tests/_archive/x25519/)
+; ===================== merged from tests/diag-x25519.no =====================
+; test-diag-x25519 — 診斷 x25519 對特定純量 [1..32] 是否輸出全零
+; 用 hex-to-bytes 建構純量（與 RFC 測試相同路徑），排除純量建構的編譯器問題。
+; 預期值由正確的 Python 參考實作（X25519, a24=121665, RFC 7748 §6.1 驗證）計算：
+;   scalarmult-base(010203...1f20) = 07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c
+;
+; 2026-09-21 更正：原本這裡寫的是 50408a669d1de6d052975d75fe6461ff976701188ff1bf5aeb98f43092d25d3f，
+; 那個常數是錯的（用任何約定——clamp/不 clamp、LE/BE——都算不出來）。
+; 重新以 RFC 7748 §6.1 驗證過的獨立參考實作核對後確認：
+;   * 本檔的純量 0102...20 正確結果是 07a37cbc...6d1c7c
+;   * std 的 x25519 實作對 RFC 官方向量（priv 77076d0a...）算出
+;     8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a，與 RFC 完全一致
+; 所以壞的是這個測試的期望常數，不是 std 的 x25519 實作。
+
+; 把 64 字元的十六進位字串解成 32 位元組（小寫 a-f 與大寫 A-F 都接受）
+; hex-str str: 長度至少 64 的 ASCII hex 字串
+; out [32]byte: 第 i 個位元組 = hex-str[2i] 與 hex-str[2i+1] 合起來的高/低位
+hex-to-bytes = (hex-str str) (out [32]byte) {
+
+    ; #{ascii} 證明此 hex 串為純 ASCII：s[i] 由 O(n) 碼點迭代退化為 O(1) 定址
+    #{ascii}
+    hex-src = hex-str
+    i <- [0..32): {
+
+        #{overflow=wrap}
+        hi char = hex-src[i * 2]
+
+        #{overflow=wrap}
+        lo char = hex-src[i * 2 + 1]
+        hi-v = 0
+        lo-v = 0
+        {
+            hi >= 48 && hi <= 57 -> {
+                hi-v = hi - 48
+            }
+
+            hi >= 97 && hi <= 102 -> {
+                hi-v = hi - 87
+            }
+
+            hi >= 65 && hi <= 70 -> {
+                hi-v = hi - 55
+            }
+        }
+        {
+            lo >= 48 && lo <= 57 -> {
+                lo-v = lo - 48
+            }
+
+            lo >= 97 && lo <= 102 -> {
+                lo-v = lo - 87
+            }
+
+            lo >= 65 && lo <= 70 -> {
+                lo-v = lo - 55
+            }
+        }
+        out[i] = (hi-v << 4) | lo-v
+    }
+}
+
+expected [32]byte
+priv = hex-to-bytes('0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20')
+pub = x25519.x25519-scalarmult-base(priv)
+
+expected[0] = 7
+expected[1] = 163
+expected[2] = 124
+expected[3] = 188
+expected[4] = 20
+expected[5] = 32
+expected[6] = 147
+expected[7] = 200
+expected[8] = 183
+expected[9] = 85
+expected[10] = 220
+expected[11] = 27
+expected[12] = 16
+expected[13] = 232
+expected[14] = 108
+expected[15] = 180
+expected[16] = 38
+expected[17] = 55
+expected[18] = 74
+expected[19] = 209
+expected[20] = 106
+expected[21] = 168
+expected[22] = 83
+expected[23] = 237
+expected[24] = 11
+expected[25] = 223
+expected[26] = 192
+expected[27] = 178
+expected[28] = 184
+expected[29] = 109
+expected[30] = 28
+expected[31] = 124
+
+eq = true
+i <- [0..32): {
+    pub[i] != expected[i] -> {
+        eq = false
+        break
+    }
+}
+
+{
+    eq == true -> print('PASS: scalarmult-base([1..32]) matches reference')
+
+    eq == false -> {
+        print('FAIL: scalarmult-base([1..32]) mismatch')
+        i <- [0..32): {
+            eprint(pub[i])
+        }
+    }
+}
+
+; ===================== merged from tests/x25519-fe-diag.no =====================
+; test-x25519-fe-diag — 隔離診斷每個 fe-* 原語（無 for 循環版本，避開 codegen 迴歸）
+; 直接餵 []i64 / [32]byte，打印輸出 limb，供 Python 以「域值 mod p」獨立對照。
+; # std/crypto/x25519
+
+A []i64 = with-len(10)
+A[0] = 11111
+A[1] = 22222
+A[2] = 33333
+A[3] = 44444
+A[4] = 55555
+A[5] = 66666
+A[6] = 77777
+A[7] = 88888
+A[8] = 99999
+A[9] = 101010
+
+B []i64 = with-len(10)
+B[0] = 10007
+B[1] = 20017
+B[2] = 30037
+B[3] = 40057
+B[4] = 50077
+B[5] = 60097
+B[6] = 70117
+B[7] = 80137
+B[8] = 90157
+B[9] = 100177
+
+S []i64 = with-len(10)
+S[0] = 12345
+
+OUT []i64 = with-len(10)
+
+BYTES [32]byte
+BYTES[0] = 133
+BYTES[1] = 32
+BYTES[2] = 240
+BYTES[3] = 9
+BYTES[4] = 137
+BYTES[5] = 48
+BYTES[6] = 167
+BYTES[7] = 84
+BYTES[8] = 116
+BYTES[9] = 139
+BYTES[10] = 125
+BYTES[11] = 220
+BYTES[12] = 180
+BYTES[13] = 62
+BYTES[14] = 247
+BYTES[15] = 90
+BYTES[16] = 13
+BYTES[17] = 191
+BYTES[18] = 58
+BYTES[19] = 13
+BYTES[20] = 38
+BYTES[21] = 56
+BYTES[22] = 26
+BYTES[23] = 244
+BYTES[24] = 235
+BYTES[25] = 164
+BYTES[26] = 152
+BYTES[27] = 234
+BYTES[28] = 169
+BYTES[29] = 180
+BYTES[30] = 230
+BYTES[31] = 106
+
+OUTB [32]byte
+
+x25519.fe-add(OUT, A, B)
+print('FEADD')
+print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+x25519.fe-sub(OUT, A, B)
+print('FESUB')
+print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+x25519.fe-mul(OUT, A, B)
+print('FEMUL')
+print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+x25519.fe-sq(OUT, A)
+print('FESQ')
+print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+x25519.fe-mul121665(OUT, A)
+print('FEMUL121665')
+print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+x25519.fe-frombytes(OUT, BYTES)
+print('FEFROMBYTES')
+print(OUT[0]); print(' '); print(OUT[1]); print(' '); print(OUT[2]); print(' '); print(OUT[3]); print(' '); print(OUT[4]); print(' '); print(OUT[5]); print(' '); print(OUT[6]); print(' '); print(OUT[7]); print(' '); print(OUT[8]); print(' '); print(OUT[9]); print(' ')
+
+x25519.fe-tobytes(OUTB, S)
+print('FETOBYTES_S')
+print(OUTB[0]); print(' '); print(OUTB[1]); print(' '); print(OUTB[2]); print(' '); print(OUTB[3]); print(' '); print(OUTB[4]); print(' '); print(OUTB[5]); print(' '); print(OUTB[6]); print(' '); print(OUTB[7]); print(' '); print(OUTB[8]); print(' '); print(OUTB[9]); print(' '); print(OUTB[10]); print(' '); print(OUTB[11]); print(' '); print(OUTB[12]); print(' '); print(OUTB[13]); print(' '); print(OUTB[14]); print(' '); print(OUTB[15]); print(' '); print(OUTB[16]); print(' '); print(OUTB[17]); print(' '); print(OUTB[18]); print(' '); print(OUTB[19]); print(' '); print(OUTB[20]); print(' '); print(OUTB[21]); print(' '); print(OUTB[22]); print(' '); print(OUTB[23]); print(' '); print(OUTB[24]); print(' '); print(OUTB[25]); print(' '); print(OUTB[26]); print(' '); print(OUTB[27]); print(' '); print(OUTB[28]); print(' '); print(OUTB[29]); print(' '); print(OUTB[30]); print(' '); print(OUTB[31]); print(' ')
+
+x25519.fe-tobytes(OUTB, A)
+print('FETOBYTES_A')
+print(OUTB[0]); print(' '); print(OUTB[1]); print(' '); print(OUTB[2]); print(' '); print(OUTB[3]); print(' '); print(OUTB[4]); print(' '); print(OUTB[5]); print(' '); print(OUTB[6]); print(' '); print(OUTB[7]); print(' '); print(OUTB[8]); print(' '); print(OUTB[9]); print(' '); print(OUTB[10]); print(' '); print(OUTB[11]); print(' '); print(OUTB[12]); print(' '); print(OUTB[13]); print(' '); print(OUTB[14]); print(' '); print(OUTB[15]); print(' '); print(OUTB[16]); print(' '); print(OUTB[17]); print(' '); print(OUTB[18]); print(' '); print(OUTB[19]); print(' '); print(OUTB[20]); print(' '); print(OUTB[21]); print(' '); print(OUTB[22]); print(' '); print(OUTB[23]); print(' '); print(OUTB[24]); print(' '); print(OUTB[25]); print(' '); print(OUTB[26]); print(' '); print(OUTB[27]); print(' '); print(OUTB[28]); print(' '); print(OUTB[29]); print(' '); print(OUTB[30]); print(' '); print(OUTB[31]); print(' ')

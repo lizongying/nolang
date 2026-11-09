@@ -1,0 +1,21 @@
+; merged category 'for' -- members: for-more.no, for2.no
+; (originals backed up under tests/_archive/for/)
+; ===================== merged from tests/for-more.no =====================
+; tests/for-more.no — consolidated loop fragments
+; from: tests/for1.no, tests/for3.no
+; (tests/for2.no is an anchored test left untouched)
+
+i <- [0..5): {
+}
+
+print('---')
+
+i2 = 0
+i3 = 0
+
+5 * {
+}
+
+; ===================== merged from tests/for2.no =====================
+; {
+; } (true)

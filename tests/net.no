@@ -1,0 +1,122 @@
+; merged category 'net' -- members: net-client.no, std-net-ext.no
+; (originals backed up under tests/_archive/net/)
+; ===================== merged from tests/net-client.no =====================
+; net-client.no — 高階 TCP client 測試
+;
+; 測試 client 結構體的 connect/send/recv/request/send-line/reconnect/is-connected/close。
+; 需 live TCP echo server 才能執行（vet-only，不執行）。
+;
+; 可用 nc -l 8080 作為 echo server 手動測試。
+
+; # std/net/client
+
+; 測試 1: connect
+c client.client =  {}
+ok = c.connect('127.0.0.1', 8080)
+{
+    ok -> print('ok: connect')
+
+    -> {
+        print('fail: connect')
+        return
+    }
+}
+
+; 測試 2: is-connected
+yes = c.is-connected()
+{
+    yes -> print('ok: is-connected')
+
+    -> print('fail: is-connected')
+}
+
+; 測試 3: send / recv
+buf = ''
+written = c.send('hello')
+{
+    written > 0 -> print('ok: send')
+
+    -> print('fail: send')
+}
+read-n = c.recv(buf, 1024)
+{
+    read-n > 0 -> print('ok: recv')
+
+    -> print('fail: recv')
+}
+
+; 測試 4: send-line / recv-line
+written2 = c.send-line('world')
+{
+    written2 > 0 -> print('ok: send-line')
+
+    -> print('fail: send-line')
+}
+line = c.recv-line()
+line: {
+    nil -> print('fail: recv-line')
+
+    -> print('ok: recv-line')
+}
+
+; 測試 5: close
+c.close()
+yes2 = c.is-connected()
+{
+    yes2 == false -> print('ok: close')
+
+    -> print('fail: close')
+}
+
+; 測試 6: reconnect
+re-ok = c.reconnect()
+{
+    re-ok -> print('ok: reconnect')
+
+    -> print('fail: reconnect')
+}
+
+; 測試 7: 便捷函數 net-client
+c2 = client.client-create('127.0.0.1', 8080)
+c2: {
+    nil -> print('fail: net-client')
+
+    -> {
+        print('ok: net-client')
+
+        .close()
+    }
+}
+print('ok: all tests done')
+
+; ===================== merged from tests/std-net-ext.no =====================
+; std-net-ext.no — 驗證 Task 1.6 net 擴展函數
+; 覆蓋：ifconfig-list / route-list / arp-list
+; 說明：macOS 上這些函數返回空列表，僅驗證可呼叫且不崩潰
+
+; # std/net/net
+
+; ═══════════════════════════════════════════════
+; 1. ifconfig-list — 列出網路介面
+; ═══════════════════════════════════════════════
+ifs = net.ifconfig-list()
+eprint('ifconfig-list returned ')
+print(ifs.len().to-str() - ' interfaces')
+ifs.len() >= 0 -> print('PASS: ifconfig-list returned non-negative count')
+
+; ═══════════════════════════════════════════════
+; 2. route-list — 列出路由表
+; ═══════════════════════════════════════════════
+routes = net.route-list()
+eprint('route-list returned ')
+print(routes.len().to-str() - ' routes')
+routes.len() >= 0 -> print('PASS: route-list returned non-negative count')
+
+; ═══════════════════════════════════════════════
+; 3. arp-list — 列出 ARP 表
+; ═══════════════════════════════════════════════
+arps = net.arp-list()
+eprint('arp-list returned ')
+print(arps.len().to-str() - ' entries')
+arps.len() >= 0 -> print('PASS: arp-list returned non-negative count')
+print('--- All tests done ---')

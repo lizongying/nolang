@@ -1,5 +1,0 @@
-; Test str.index-from
-s = 'hello,world'
-pos = s.index-from(',', 0)
-
-print('pos: ' - pos.to-str())

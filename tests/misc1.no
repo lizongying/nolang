@@ -1,0 +1,30 @@
+; merged category 'misc1' -- members: 1.no, 2.no
+; (originals backed up under tests/_archive/misc1/)
+; ===================== merged from tests/1.no =====================
+input []byte = ["a", "b", "c"]
+print(len(input))
+print(input[0])
+print(input[1])
+print(input[2])
+input[2] = 99
+print(input[2])
+
+; ===================== merged from tests/2.no =====================
+probs = [1, 2, 3]
+m = 1
+
+bit, probs[m] = decode-bit(probs[m])
+
+; bit, tmp = decode-bit(probs[m])
+; probs[m] = tmp
+
+; 解碼 bit
+; prob i64: 目前的機率狀態值
+; bit i64: 解出的位元（本實作固定給 0）
+; new-prob i64: 更新後的機率，prob - (prob >> 5)（overflow 採 wrap）
+decode-bit = (prob i64) (bit i64, new-prob i64) {
+    bit = 0
+
+    #{overflow=wrap}
+    new-prob = prob - (prob >> 5)
+}

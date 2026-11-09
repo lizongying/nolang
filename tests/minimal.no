@@ -1,0 +1,17 @@
+; merged category 'minimal' -- members: minimal-hello.no, minimal-ok.no
+; (originals backed up under tests/_archive/minimal/)
+; ===================== merged from tests/minimal-hello.no =====================
+print('hello')
+
+; ===================== merged from tests/minimal-ok.no =====================
+; minimal-ok.no — 最小化 ok(cond) 測試
+test-ok = () {
+    n ?i64 = 200
+    r = n: {
+        ok(it > 127) -> 'too-big'
+
+        -> 'in-range'
+    }
+    print(r)
+}
+test-ok()

@@ -1,0 +1,58 @@
+; merged category 'cmp' -- members: cmp-more.no, icmp-test.no
+; (originals backed up under tests/_archive/cmp/)
+; ===================== merged from tests/cmp-more.no =====================
+; tests/cmp-more.no — consolidated byte-comparison fragments
+; from: tests/cmp.no, tests/cmp2.no
+
+; # std/str
+fstr = '  hello   world  nolang  '
+n = fstr.len-bytes()
+
+i <- [0..n): {
+    b = fstr[i]
+    is-ws = false
+    {
+        b == 32 -> is-ws = true
+
+        b == 9 -> is-ws = true
+
+        b == 10 -> is-ws = true
+
+        b == 13 -> is-ws = true
+    }
+    {
+        is-ws -> print('byte[{i.to-str()}]={b.to-str()} WS')
+
+        -> print('byte[{i.to-str()}]={b.to-str()} non-WS')
+    }
+}
+
+print('---')
+
+; # std/str
+fstr2 = '  hello   world  nolang  '
+n2 = fstr2.len-bytes()
+
+i2 <- [0..n2): {
+    b = fstr2[i2]
+    {
+        b == 32 -> print('byte[{i2.to-str()}]=32 WS')
+
+        b == 9 -> print('byte[{i2.to-str()}]=9 WS')
+
+        b == 10 -> print('byte[{i2.to-str()}]=10 WS')
+
+        b == 13 -> print('byte[{i2.to-str()}]=13 WS')
+
+        b != 32 && b != 9 && b != 10 && b != 13 -> print('byte[{i2.to-str()}]={b.to-str()} non-WS')
+    }
+}
+
+; ===================== merged from tests/icmp-test.no =====================
+; 測試 fn
+; fd i64: net.net-icmp-open() 回傳的 socket 描述符；成功為非負、失敗為負值
+test-fn = () (fd i64) {
+    fd = net.net-icmp-open()
+}
+r = test-fn()
+print(r)

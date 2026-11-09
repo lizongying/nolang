@@ -1,0 +1,265 @@
+; merged category 're' -- members: min-repro.no, re-debug.no, rebind-retracts-view.no, regex-literal.no, regexp.no, replace.no, slot-rebind-gaps.no
+; (originals backed up under tests/_archive/re/)
+; ===================== merged from tests/min-repro.no =====================
+test-struct {
+    result i64
+}
+
+; 方法分派的最小復現：按 quant 逐值比對寫入 .result，其餘值落到 99
+; quant i64: 要分派的數量，0 / 42 / 43 / 63 有專門分支
+test-struct.dispatch = (quant i64) {
+    {
+        quant == 0 -> .result = 0
+
+        quant == 42 -> .result = 42
+
+        quant == 43 -> .result = 43
+
+        quant == 63 -> .result = 63
+
+        -> .result = 99
+    }
+}
+t = test-struct {
+    result: 0
+}
+
+t.dispatch(0)
+r0 = t.result
+print('dispatch(0) => {r0}')
+
+t.dispatch(42)
+r42 = t.result
+print('dispatch(42) => {r42}')
+
+t.dispatch(43)
+r43 = t.result
+print('dispatch(43) => {r43}')
+
+t.dispatch(99)
+r99 = t.result
+print('dispatch(99) => {r99}')
+
+; ===================== merged from tests/re-debug.no =====================
+; # std/regexp
+
+print('start')
+m1 = regexp.regexp-match('hello', 'hello')
+print('hello vs hello: {m1}')
+
+m2 = regexp.regexp-match('a*', 'aaa')
+print('a* vs aaa: {m2}')
+
+m3 = regexp.regexp-match('a*', 'bbb')
+print('a* vs bbb (empty match): {m3}')
+
+m4 = regexp.regexp-match('.*', 'anything')
+print('.* vs anything: {m4}')
+
+m5 = regexp.regexp-match('hello.*world', 'hello nolang world')
+print('hello.*world vs hello nolang world: {m5}')
+
+m6 = regexp.regexp-match('hello.world', 'helloXworld')
+print('hello.world vs helloXworld: {m6}')
+
+m7 = regexp.regexp-match('a+', 'aaa')
+print('a+ vs aaa: {m7}')
+
+f8 = regexp.regexp-find('[0-9]+', 'abc123def456')
+print('find [0-9]+ in abc123def456: {f8}')
+
+; ===================== merged from tests/rebind-retracts-view.no =====================
+; rebind-retracts-view.no — 變數被重新綁定後，接收者投影必須失效
+;
+; MIR 的 value id 是「變數」不是 SSA 名：`line = lines[0]` 用 OpIndex 定義 line，
+; 之後 `line = line.trim()` 用 move **重新定義同一個 id**。codegen 的 defInst 只記
+; 「第一」個定義（move 的 dst 是 NoVal，根本不進表），於是重新綁定之後的每一次讀取
+; 仍被投影回**舊的容器元素**：
+;
+;   lines = ['  a  ']
+;   line  = lines[0]
+;   line  = line.trim()
+;   line.len()        ; 讀 &lines[0].len (= 5)，不是 line 自己的 (= 1)
+;
+; 症狀是「內容正確、長度是舊的」—— trim 的結果寫進 line 自己的槽（沒人讀），
+; 長度卻透過容器元素讀回來。同一族的寫入更糟：`v = ls[0]; v = ls[1]; v.len()`
+; 會去讀 ls[0]。
+;
+; 修法：一個 value 被定義第二次就撤回 defInst 的投影（defCount > 1 ⇒ delete），
+; 退回它自己的槽位。**單一定義**的投影不受影響 —— 那些是本檔的對照組：
+; `m.rows.push(x)`、`rows[0].set-byte(...)`、`h.f.set-byte(...)` 都必須照舊寫回。
+;
+; 第二層（case 8/9）：視圖本身沒被重綁，但**被投影的儲存位置**被寫了 ——
+; 投影指向 `&ls[0]` / `&h.f`，容器或欄位一換，那個位址就不再是視圖的值。
+; case 8 在修復前是 **SIGTRAP**（舊容器的 buffer 已被 drop，是 use-after-free），
+; case 9 沒有任何 drop，單獨釘住「寫入」這條守則。
+
+Holder {
+    f str
+}
+
+; (1) 重綁定的視圖：長度必須是 trim 之後的長度
+lines = ['  a  ']
+
+line = lines[0]: {
+    ok -> it
+
+    -> ''
+}
+line = line.trim()
+line.len() == 1 -> print('ok 1: rebound view length')
+
+-> print('fail 1: rebound view length got={line.len()}')
+
+; (2) 內容同時必須正確（修復前這裡是對的，用來證明只有長度壞掉）
+line == 'a' -> print('ok 2: rebound view content')
+
+-> print('fail 2: rebound view content got=[{line}]')
+
+; (3) 對照組：單一定義的切片元素接收者，set-byte 必須寫回元素本身
+rows = ['x', 'y']
+rows[0].set-byte(0, 90)
+rows[0] == 'Z' -> print('ok 3: single-def element receiver writes back')
+
+-> print('fail 3: element receiver got=[{rows[0]}]')
+
+; (4) 對照組：單一定義的結構體欄位接收者
+h = Holder {
+    f: 'hello'
+}
+h.f.set-byte(0, 72)
+h.f == 'Hello' -> print('ok 4: single-def struct field receiver writes back')
+
+-> print('fail 4: struct field receiver got=[{h.f}]')
+
+; (5) 重綁定的**欄位**視圖：`g = h.f` 之後重綁定，長度必須是自己的
+h2 = Holder {
+    f: '  hi  '
+}
+g = h2.f
+g = g.trim()
+g.len() == 2 -> print('ok 5: rebound field view length')
+
+-> print('fail 5: rebound field view length got={g.len()}')
+
+; (6) 重綁定到**另一個**元素後，不得再讀到第一個元素
+ls = ['aaaa', 'b']
+
+v = ls[0]: {
+    ok -> it
+
+    -> ''
+}
+
+v = ls[1]: {
+    ok -> it
+
+    -> ''
+}
+v.len() == 1 -> print('ok 6: rebind to another element')
+
+-> print('fail 6: rebind to another element got={v.len()}')
+
+; (7) 對照組：單一定義的視圖仍必須投影（寫回元素）
+box = Holder {
+    f: 'xy'
+}
+w = box.f
+w.set-byte(0, 90)
+box.f == 'Zy' -> print('ok 7: single-def view still projects to the field')
+
+-> print('fail 7: field got=[{box.f}]')
+
+; (8) **容器本身**被重新綁定：投影指向 &ls[0]，容器換了它就指向別的字串
+ls2 = ['aaaa']
+
+ln2 = ls2[0]: {
+    ok -> it
+
+    -> ''
+}
+ls2 = ['bb']
+ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')
+
+-> print('fail 8: rebound container got={ln2.len()}')
+
+; (9) **欄位本身**被重新綁定：投影指向 &h.f，欄位換了它就不是 g2 了
+h4 = Holder {
+    f: '  hi  '
+}
+g2 = h4.f
+h4.f = 'zzzz'
+g2.len() == 6 -> print('ok 9: rebound field does not leak into the view')
+
+-> print('fail 9: rebound field got={g2.len()}')
+
+; ===================== merged from tests/regex-literal.no =====================
+; regex-literal.no — 端到端測試 /pattern/flags 正則字面量語法
+
+; 使用正則字面量創建已編譯的正規表示式
+re = /\d+/
+matched = re.matches('hello 123 world')
+
+; matched 應為 true (1)
+
+print('matched = {matched}')
+
+; 帶旗標的正則字面量
+re2 = /hello/gi
+re2-pattern = re2.pattern
+print('re2.pattern = {re2-pattern}')
+
+; ===================== merged from tests/regexp.no =====================
+; # std/regexp
+
+matched__1 = regexp.regexp-match('hello.*world', 'hello nolang world')
+print('regexp-match test 1: {matched}')
+
+not_matched = regexp.regexp-match('foo.*bar', 'hello world')
+print('regexp-match test 2: {not_matched}')
+
+match_str = regexp.regexp-find('[0-9]+', 'abc123def456')
+print('regexp-find test: {match_str}')
+
+; ===================== merged from tests/replace.no =====================
+; test-replace: 验证 str.replace-str
+
+; # std/str
+
+print('=== str.replace-str ===')
+
+s = 'hello world, hello nolang'
+replaced str
+replaced = s.replace-str('hello', 'HI')
+print(replaced)
+
+; ===================== merged from tests/slot-rebind-gaps.no =====================
+; slot-rebind reference-analysis gap coverage (defensive correctness hardening).
+; `slot-rebind.no` already exercises the happy-path rebind + degrade-to-copy.
+; This file isolates constructs the *source-reference* scanner must walk so that a
+; later write to the move source forces a value-copy (not a 0-copy stack-slot
+; rebind, which would alias and corrupt the target).
+;
+; NOTE: for-range (`i <- [..]`) is intentionally NOT used here because the
+; in-tree on-demand-std transpiler refactor (WIP, out of scope for slot-rebind)
+; currently fails to preload `fmt` for `print` inside a for-range body; that is a
+; separate transpiler bug, not a rebind bug. The IterRange gap is covered by code
+; inspection of stmtContainsVarRefAny (ForStatement.IterRange.
+
+; (1) bare block that writes the move source: BlockStatement must be scanned.
+a = 5
+b = a
+a = 7
+print(b); expect 5 (rebind disabled: a written inside block; b is an independent copy)
+
+; (2) read-only reference of the source after the move: safe to keep the
+;     optimization; the value is preserved.
+x = 42
+y = x
+print(y); expect 42
+
+; (3) degenerate: source written again after the move in the open scope.
+p = 9
+q = p
+p = 1
+print(q); expect 9 (rebind disabled: p reassigned after move)

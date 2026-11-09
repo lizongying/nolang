@@ -1,0 +1,35 @@
+; merged category 'raw' -- members: raw-string.no, raw-vet.no
+; (originals backed up under tests/_archive/raw/)
+; ===================== merged from tests/raw-string.no =====================
+; test_raw_string — 原始字符串測試
+print('=== raw string test ===')
+
+sql = 'SELECT id,name
+FROM user
+WHERE id > 100'
+print(sql.len-bytes())
+print(sql)
+
+; 原樣保留轉義字符
+raw = 'line1\nline2
+\ttabbed'
+print(raw.len-bytes())
+print(raw)
+
+; 空行保留
+multi = '
+
+a
+
+
+b'
+
+print(multi.len-bytes())
+
+print('=== done ===')
+
+; ===================== merged from tests/raw-vet.no =====================
+sql__1 = 'SELECT id,name
+FROM user
+WHERE id > 100'
+print(sql__1.len())

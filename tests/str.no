@@ -1,3 +1,541 @@
+; merged category 'str' -- members: self-write-str.no, str-order.no, str-split-replace-more.no, str-test-tmp.no, str-to-option.no, str.no, string-union.no
+; (originals backed up under tests/_archive/str/)
+; ===================== merged from tests/self-write-str.no =====================
+; self-write-str.no — 最小化成：match arm 中 `it.to-str()`（it = 匹配值）
+; 驗證 ?i64.to-str stripping 的正確 codegen（self 解析的配套）。
+
+; 測試 val
+test-val = () {
+    n ?i64 = 42
+    n: {
+        err -> print('got-err')
+
+        nil -> print('got-nil')
+
+        -> {
+            s = it.to-str()
+            print(s)
+        }
+    }
+}
+
+test-val()
+
+; ===================== merged from tests/str-order.no =====================
+; test-str-order — ordering comparisons (< <= > >=) on one-character strings
+; and chars.
+;
+; nolang has no lexicographic string comparison: str only implements equality
+; (runtime @str_eq). So `a >= b` on str used to COMPILE and silently return
+; false — only `==` was ever meaningful. The rule now is:
+;
+;   - a ONE-character string literal ('a') is implicitly a char (its code
+;     point), so it may take part in < <= > >=
+;   - it may be compared with another one-char literal or with a char ("a")
+;   - a multi-character string (literal / str variable / call returning str)
+;     is rejected at compile time (checker.ValidateStrOrdering), and codegen
+;     fails loudly if one ever slips through
+;   - equality (== / !=) is unaffected: it is a real string comparison
+
+print('=== one-char string literals ===')
+print('e' >= 'a'); 1
+print('a' >= 'e'); 0
+print('e' > 'a'); 1
+print('a' < 'e'); 1
+print('e' <= 'a'); 0
+print('a' <= 'a'); 1
+
+print('=== one-char string vs char (implicit char either way) ===')
+print('e' >= "a"); 1
+print("e" >= 'a'); 1
+print("e" >= "a"); 1
+print('a' >= "e"); 0
+
+print('=== string equality / inequality is unaffected ===')
+print('a' == 'a'); 1
+print('ab' == 'ab'); 1
+print('ab' == 'cd'); 0
+print('ab' != 'cd'); 1
+
+print('=== iterating a string yields chars ===')
+s = 'Hi There'
+ch <- s: {
+    {
+        ch >= 'a' && ch <= 'z' -> print('lower')
+    }
+
+    {
+        ch >= 'A' && ch <= 'Z' -> print('upper')
+    }
+
+    -> print('other')
+}
+
+print('=== range patterns still work (chars) ===')
+n = 5
+n: {
+    [1..10) -> print('in range')
+
+    -> print('out of range')
+}
+c = "m"
+c: {
+    ["a".."z") -> print('alpha')
+
+    -> print('not alpha')
+}
+
+print('=== done ===')
+
+; ===================== merged from tests/str-split-replace-more.no =====================
+; str-split-replace-more.no — 合併自 str split / replace 碎片（頂層拼接，非函數包裹）
+; 來源：split2.no, replace2.no
+; 保留錨點：split.no（基名）；replace.no（基名）；str.no / str-more.no（str 標準庫測試，另行保留）
+; ── 來自 split2.no ──
+; test-split2: test str.split without element access
+s__1 = 'hello world hello'
+parts []str
+parts = s__1.split(' ')
+n__1 = parts.len()
+print('parts:{n.to-str()}')
+
+print('---')
+
+; ── 來自 replace2.no ──
+; test-replace2: simpler str.replace-str test
+; 頂層 s 與 split2 衝突，改名 s2 避免模組級重宣告
+s2 = 'abc'
+r str
+r = s2.replace-str('b', 'X')
+print('result: {r}')
+
+; ===================== merged from tests/str-test-tmp.no =====================
+word [64]byte
+word[0] = 104
+word[1] = 101
+word[2] = 108
+word[3] = 108
+word[4] = 111
+wlen = 5
+
+tmp-word = ''
+tmp-word = with-cap(64)
+print('tmp-word type test')
+k = 0
+k <- [0..wlen): {
+    tmp-word[k] = word[k]
+}
+print('after assign')
+print(tmp-word)
+
+; ===================== merged from tests/str-to-option.no =====================
+; str-to-option.no — 驗證 str.to-i8/i16/i32/u8/u16/u32/u64/byte/bool 返回 Option
+;
+; 使用 if n == err / if n == nil 模式處理 Option（不依賴 match 語法）
+
+; ===== str.to-i64 =====
+test-to-i64-ok = () {
+    n = '12345'.to-i64()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i64-neg
+test-to-i64-neg = () {
+    n = '-42'.to-i64()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i64-empty
+test-to-i64-empty = () {
+    n = ''.to-i64()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i64-invalid
+test-to-i64-invalid = () {
+    n = 'abc'.to-i64()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-i8 =====
+test-to-i8-ok = () {
+    n = '127'.to-i8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i8-neg
+test-to-i8-neg = () {
+    n = '-128'.to-i8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i8-overflow
+test-to-i8-overflow = () {
+    n = '128'.to-i8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i8-invalid
+test-to-i8-invalid = () {
+    n = '12a'.to-i8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-i16 =====
+test-to-i16-ok = () {
+    n = '32767'.to-i16()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i16-overflow
+test-to-i16-overflow = () {
+    n = '32768'.to-i16()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-i32 =====
+test-to-i32-ok = () {
+    n = '2147483647'.to-i32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-i32-overflow
+test-to-i32-overflow = () {
+    n = '2147483648'.to-i32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-u8 =====
+test-to-u8-ok = () {
+    n = '255'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-u8-overflow
+test-to-u8-overflow = () {
+    n = '256'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-u8-negative
+test-to-u8-negative = () {
+    n = '-1'.to-u8()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-u16 =====
+test-to-u16-ok = () {
+    n = '65535'.to-u16()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-u16-overflow
+test-to-u16-overflow = () {
+    n = '65536'.to-u16()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-u32 =====
+test-to-u32-ok = () {
+    n = '4294967295'.to-u32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-u32-overflow
+test-to-u32-overflow = () {
+    n = '4294967296'.to-u32()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-u64 =====
+test-to-u64-ok = () {
+    n = '99999'.to-u64()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; 測試 to-u64-negative
+test-to-u64-negative = () {
+    n = '-1'.to-u64()
+    {
+        n == nil -> print('nil')
+
+        n == err -> print('err')
+
+        -> {
+            print('val=')
+            print(n)
+        }
+    }
+}
+
+; ===== str.to-bool =====
+test-to-bool-true = () {
+    b = 'true'.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+
+; 測試 to-bool-false
+test-to-bool-false = () {
+    b = 'false'.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+
+; 測試 to-bool-empty
+test-to-bool-empty = () {
+    b = ''.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+
+; 測試 to-bool-invalid
+test-to-bool-invalid = () {
+    b = 'yes'.to-bool()
+    {
+        b == nil -> print('nil')
+
+        b == err -> print('err')
+
+        -> {
+            print('val=')
+            print(b)
+        }
+    }
+}
+
+; 執行
+test-to-i64-ok()
+test-to-i64-neg()
+test-to-i64-empty()
+test-to-i64-invalid()
+test-to-i8-ok()
+test-to-i8-neg()
+test-to-i8-overflow()
+test-to-i8-invalid()
+test-to-i16-ok()
+test-to-i16-overflow()
+test-to-i32-ok()
+test-to-i32-overflow()
+test-to-u8-ok()
+test-to-u8-overflow()
+test-to-u8-negative()
+test-to-u16-ok()
+test-to-u16-overflow()
+test-to-u32-ok()
+test-to-u32-overflow()
+test-to-u64-ok()
+test-to-u64-negative()
+test-to-bool-true()
+test-to-bool-false()
+test-to-bool-empty()
+test-to-bool-invalid()
+
+; ===================== merged from tests/str.no =====================
 ; cd src && go run ./cmd/cli/. build ../tests/str.no
 a = 'abc'
 
@@ -21,3 +559,85 @@ a = 'cabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcab
 ; compilation error: cannot assign non-string value to string variable 'a'
 a = '2'
 ; a.full(8)
+
+; ===================== merged from tests/string-union.no =====================
+; test/string-union.no — 測試 std/str 中 string = str | txt 聯合類型別名
+;
+; 覆蓋能力（與 number.no 的 num = int | float 同構）：
+;   - union 參數單態化：f(s string) 分別以 str / txt 實參調用
+;   - union 返回值單態化：pick(a string, b string) (r string)
+;   - 檢查器相容性：具體成員實參傳給 union 別名形參不報 6fgg3htw
+;   - 成員方法（str.*/txt.* 原版）不受別名影響
+
+; ── union 參數：str 實參單態化 ──
+; s string: 要量長度的字串；本檔用 'hello' 與 txt 各呼叫一次
+; n i64: len(s) 的結果，'hello' 得 5
+take-bytes = (s string) (n i64) {
+    n = len(s)
+}
+
+; 測試 str-arg
+test-str-arg = () {
+    a = 'hello'
+    n = take-bytes(a)
+    print(n); expect: 5
+
+    b = '你好ab'
+    n = take-bytes(b)
+    print(n); expect: 8 ; len() 內建為字節數（UTF-8）
+}
+test-str-arg()
+print(0)
+
+; ── union 參數：txt 實參單態化 ──
+test-txt-arg = () {
+    t txt = 'hi'
+    n = take-bytes(t)
+    print(n); expect: 2
+
+    u txt = 'abc'
+    n = take-bytes(u)
+    print(n); expect: 3
+}
+test-txt-arg()
+print(1)
+
+; ── union 返回值：pick 按實參型別單態化，str/txt 各自保留原型別 ──
+; a string: 首選字串，本測試傳 'hello'
+; b string: 備選字串 'world'（此實作未使用，僅示範多參數單態化）
+; r string: 直接回傳 a，型別與實參一致
+pick = (a string, b string) (r string) {
+    r = a
+}
+
+; 測試 pick
+test-pick = () {
+    a = 'hello'
+    b = 'world'
+    x = pick(a, b)
+    print(x); expect: hello
+
+    p txt = 'yes'
+    q txt = 'no'
+    y = pick(p, q)
+    n = len(y)
+    print(n); expect: 3
+}
+test-pick()
+print(2)
+
+; ── 成員方法不受 string 別名影響（str.len/txt.len 仍為碼點數）──
+test-member-methods = () {
+    a = '你好ab'
+    n = a.len()
+    print(n); expect: 4
+
+    t txt = '你好'
+    n = t.len()
+    print(n); expect: 2
+
+    ok = a.empty()
+    print(ok); expect: false
+}
+test-member-methods()
+print(3)

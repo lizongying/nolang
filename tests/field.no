@@ -1,0 +1,306 @@
+; merged category 'field' -- members: field-inline-annotation.no, field-tag.no, opt-struct-field.no, stat-fields.no
+; (originals backed up under tests/_archive/field/)
+; ===================== merged from tests/field-inline-annotation.no =====================
+; 結構體欄位的 `#{inline=true}` / `#{inline=false}` —— 端到端測試。
+;
+; `#{inline=false}` 不是「沒寫註解」的同義詞。兩者都是對全域預設（由
+; NOLANG_FIELD_PTR 選擇）的**覆寫**：
+;
+;   #{inline}        —— 簡寫，等於 inline=true：欄位的位元組放在宿主裡面
+;   #{inline=true}   —— 按值內聯（%pt）
+;   #{inline=false}  —— 欄位是指標（%pt*），pointee 在堆上、由該欄位擁有
+;
+; 差別只在「全域開關沒開」時看得出來：那時預設是按值內聯，`#{inline=false}`
+; 是唯一能讓單一欄位變成指標的寫法 —— 也是唯一能在不開全域開關的前提下
+; 寫出遞迴型別的寫法（見下面 ①）。
+;
+; 因此本檔真正的判別式是 ①：若 `next` 被當成按值內聯，`node` 就不可能有
+; 有限大小，程式根本無法編譯/執行。②③ 則確保三種寫法能並存且讀寫正確。
+
+; ① 遞迴型別：只有指標欄位才能成立
+node {
+    v i64
+    next node #{inline=false}
+}
+
+; ②③ 三種寫法並存於不同宿主
+pt {
+    x i64
+}
+
+by-value {
+    p pt #{inline=true}
+}
+
+explicit-ptr {
+    p pt #{inline=false}
+}
+
+bare {
+    p pt #{inline}
+}
+
+; 帶 owned 葉子的結構體：指標欄位的 pointee 也要能正確釋放
+person {
+    name str
+    age i64
+}
+
+owner-inline {
+    who person #{inline=true}
+}
+
+owner-ptr {
+    who person #{inline=false}
+}
+
+; ① 遞迴欄位可寫可讀 —— 這本身就證明了它是指標
+n node
+n.v = 1
+n.next.v = 2
+print(n.v)
+print(n.next.v)
+
+; ②③ 三種寫法讀寫一致
+a by-value
+a.p.x = 10
+print(a.p.x)
+
+b explicit-ptr
+b.p.x = 20
+print(b.p.x)
+
+c bare
+c.p.x = 30
+print(c.p.x)
+
+; 指標欄位的 pointee 必須是獨立的：`d = b` 之後改 d 不動 b
+d = b
+d.p.x = 21
+print(b.p.x)
+print(d.p.x)
+
+; inline 欄位帶 owned 葉子：覆寫舊值不能造成懸垂/雙重釋放
+oi owner-inline
+oi.who.name = 'alice'
+oi.who.age = 1
+print(oi.who.name)
+oi.who.name = 'bob'
+print(oi.who.name)
+
+; 指標欄位帶 owned 葉子：pointee 的葉子也要被釋放
+op owner-ptr
+op.who.name = 'carol'
+op.who.age = 2
+print(op.who.name)
+op.who.name = 'dave'
+print(op.who.name)
+
+; 反覆分配／釋放指標欄位的 pointee：洩漏或 double free 都會在這裡顯形
+i <- [0..2000): {
+    t explicit-ptr
+    t.p.x = i
+}
+print('ok')
+
+; ===================== merged from tests/field-tag.no =====================
+; field-tag — 結構體欄位標記與宣告順序
+;
+; 1) 欄位註解（`a pt #{inline}`，同一行尾隨）必須被辨識。
+;    註解只允許「獨立成行置於欄位上方」或「寫在欄位同一行後方」；同一行前綴
+;    （`#{inline} a pt`）是解析錯誤。另外，若首個欄位用「獨立成行」寫法，`{` 後
+;    第一個非 NEWLINE token 會是 HASH_LBRACE，整個 `{...}` 會被判成 block
+;    statement、結構體根本不註冊（"'annotated' is not defined"）——故首欄位用尾隨寫法。
+; 2) 欄位型別引用「後面才宣告」的結構體必須正確。
+;    否則 internType 的裸識別字修正把未知名字折成 KindInt 並快取，
+;    欄位存取發出 `getelementptr inbounds i64`，LLVM 驗證失敗。
+; 3) `#{inline}` 有三種寫法且值被遵循：`#{inline}` / `#{inline=true}` 為按值內聯，
+;    `#{inline=false}` 為指標，不寫則取決於 NOLANG_FIELD_PTR（預設關＝按值）。
+;    三者在此都必須正確賦值／讀取；欄位標記（Owned / Inline）在定義處確定，
+;    可用 NOLANG_MIR_DUMP_MIR 檢視。
+
+; (2) 前向引用：holder 在 pt 之前宣告
+holder {
+    p pt
+}
+
+pt {
+    x i64
+    y i64
+}
+
+; (1) 首欄位註解 + (3) #{inline} 結構體欄位維持內聯值
+annotated {
+    a pt #{inline}
+    b i64
+}
+
+; (3) 三種寫法並存：裸簡寫 / 顯式 true / 顯式 false / 不寫（預設）
+box {
+    inl pt #{inline}
+    tr pt #{inline=true}
+    fl pt #{inline=false}
+    own pt
+}
+
+h = holder {
+    p: pt {
+        x: 7
+        y: 8
+    }
+}
+print(h.p.x)
+print(h.p.y)
+
+n = annotated {
+    a: pt {
+        x: 1
+        y: 2
+    }
+    b: 3
+}
+print(n.a.x)
+print(n.a.y)
+print(n.b)
+
+k = box {
+    inl: pt {
+        x: 3
+        y: 4
+    }
+    tr: pt {
+        x: 5
+        y: 6
+    }
+    fl: pt {
+        x: 7
+        y: 8
+    }
+    own: pt {
+        x: 9
+        y: 10
+    }
+}
+print(k.inl.x)
+print(k.tr.x)
+print(k.fl.y)
+print(k.own.y)
+
+; ===================== merged from tests/opt-struct-field.no =====================
+; opt-struct-field.no — ?struct 载荷字段访问 (?T.field 剥离 %option)
+;
+; 回归测试：D23 之后的特性缺口 —— opt.field 直接访问（不经过 it 解包）。
+; 验证 ?T 类型的变量可以直接用 .field 访问其内层 struct 的字段，
+; 编译器需剥离 %option 包装（{i64 tag, <inner>* payload}）取出 payload
+; 指针后再 GEP 到内层 struct 的字段，并且字段的类型推断（含堆持有类型
+; 如 str 的深拷贝）也必须正确。
+;
+; 运行: no test tests/opt-struct-field.no
+
+conn {
+    path str
+    port i64
+}
+
+; 產生 ok(conn) 的 ?conn：path='/api/health'、port=8080
+; result ?conn: 內容為上述 conn 的 ok 選項
+make-conn = () (result ?conn) {
+    result = nil
+
+    c = conn {
+        path: '/api/health'
+        port: 8080
+    }
+    result = c
+}
+
+; 直接访问 ?struct 的字段（不经 it 解包）
+test-opt-field = () {
+    opt = make-conn()
+
+    ; str 字段直接访问
+    p = opt.path
+    print(p); expect: /api/health
+
+    ; i64 字段直接访问
+    port = opt.port
+    print(port); expect: 8080
+
+    ; str 字段参与字符串拼接（触发堆持有类型的深拷贝）
+    s = 'path=' - p
+    print(s); expect: path=/api/health
+
+    ; 多个字段组合
+    combined = p - ':' - port.to-str()
+    print(combined); expect: /api/health:8080
+}
+test-opt-field()
+print(0)
+
+; 多个不同的 ?struct 类型，验证内层类型推断互不干扰
+server {
+    host str
+    connections i64
+}
+
+; 產生 ok(server) 的 ?server：host='localhost'、connections=42
+; result ?server: 內容為上述 server 的 ok 選項
+make-server = () (result ?server) {
+    result = nil
+    s = server {
+        host: 'localhost'
+        connections: 42
+    }
+    result = s
+}
+
+; 測試 opt-multi
+test-opt-multi = () {
+    a = make-conn()
+    b = make-server()
+    print(a.path); expect: /api/health
+    print(b.host); expect: localhost
+    print(a.port); expect: 8080
+    print(b.connections); expect: 42
+}
+test-opt-multi()
+print(1)
+
+; ===================== merged from tests/stat-fields.no =====================
+; test-stat-fields — 新增 fs.stat-{nlink,ino,atime,ctime,blocks,blksize} 內建
+;
+; 這些 builtin 走 cRetField 路径：按 struct stat 的「字段偏移 + 原生位寬」讀取。
+; 位寬讀錯會把相鄰字段折進結果（stat-mode 曾因按 64-bit 讀 16-bit st_mode 返回垃圾）。
+; 本測試驗證：(a) 每個字段讀出合理值；(b) 不同文件的 st_ino 不同——若 ino 被摺疊/
+; 讀成常數就會相等，可借此钉住偏移/位寬正確性。所有值已在 darwin 上逐一對照 BSD
+; `stat -f` 確認一致（nlink/ino/atime/ctime/blocks/blksize 全等）。
+
+ls = '/bin/ls'
+
+nlink = fs.stat-nlink(ls)
+ino = fs.stat-ino(ls)
+blksize = fs.stat-blksize(ls)
+blocks = fs.stat-blocks(ls)
+mtime = fs.stat-mtime(ls)
+ctime = fs.stat-ctime(ls)
+atime = fs.stat-atime(ls)
+
+nlink < 1 -> exit(2)
+ino <= 0 -> exit(3)
+blksize <= 0 -> exit(4)
+blocks <= 0 -> exit(5)
+mtime <= 0 -> exit(6)
+ctime <= 0 -> exit(7)
+
+; atime 在 noatime/relatime 掛載下可能為 0，只讀取不強求 >0
+atime < 0 -> exit(8)
+
+; 不同 inode：ino 字段未被摺疊成常數
+tmp = '/tmp'
+dino = fs.stat-ino(tmp)
+dino == ino -> exit(9)
+
+dnlink = fs.stat-nlink(tmp)
+dnlink < 1 -> exit(10)
+
+print('stat-fields passed')

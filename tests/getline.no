@@ -1,8 +1,0 @@
-line = ''
-ok = false
-line, ok = fs.get-line()
-ok == false -> {
-    print('no input')
-    return
-}
-print('got: {line}')

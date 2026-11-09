@@ -1,0 +1,135 @@
+; merged category 'index' -- members: index-from.no, safe-index-containers.no, safe-index-more.no
+; (originals backed up under tests/_archive/index/)
+; ===================== merged from tests/index-from.no =====================
+; Test str.index-from
+s = 'hello,world'
+pos = s.index-from(',', 0)
+
+print('pos: ' - pos.to-str())
+
+; ===================== merged from tests/safe-index-containers.no =====================
+; 安全索引：固定陣列 [N]T 與 vec[T] 也必須安全（越界不崩潰）。
+; 與 safe-index.no 互補：那個只測了切片 []T。
+; 容器以區域變數宣告（避免參數型別語法）；索引用執行期變數以觸發
+; 執行期安全降級（固定陣列的常數越界會在編譯期就被擋下，更嚴格）。
+; 說明：本測試用「結果參數res（已標型別）」承接安全索引，以確認 %arr/%vec
+; 的降級路徑（bounds-check + none/ok 分支）正確；未標型別區域變數 x 承接
+; 固定陣列 ?= 會受全域 VarTypes 同名污染（std 常見 x:str），屬另一獨立議題。
+
+; --- 固定陣列 [N]i64：值 match 預設值 ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res i64: 命中為 a[i]（i = 1 得 20），越界由 nil 臂補零
+get-default-arr = (i i64) (res i64) {
+    a = [10, 20, 30, 40]
+
+    res = a[i]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; --- vec[T]：值 match 預設值 ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res i64: 命中為 av[i]（i = 1 得 20），越界補零
+get-default-vec = (i i64) (res i64) {
+    a [4] = [10, 20, 30, 40]
+    av = a.to-vec()
+
+    ixout30c11 = av[i]: {
+        ok -> it
+
+        -> _
+    }
+
+    res = ixout30c11
+}
+
+; --- 固定陣列 [N]i64：?=（結果參數直接承接） ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res ?i64: 命中為 ok(a[i])，越界為 nil（不再補零）
+safe-get-arr = (i i64) (res ?i64) {
+    a = [10, 20, 30, 40]
+    res = a[i]; 安全索引回傳 ?i64，直接賦值給 ?i64 結果
+}
+
+; --- vec[T]：?=（結果參數直接承接） ---
+; i i64: 要讀的索引；本測試傳 1（命中）與 9（越界）
+; res ?i64: 命中為 ok(av[i])，越界為 nil
+safe-get-vec = (i i64) (res ?i64) {
+    a [4] = [10, 20, 30, 40]
+    av = a.to-vec()
+    res = av[i]
+}
+
+oob = 9
+ib = 1
+
+; 固定陣列：值 match 越界 → 0
+dao = get-default-arr(oob)
+io.out('arr option-match OOB -> ')
+io.out(dao)
+print('')
+
+; 固定陣列：範圍內正確
+dao2 = get-default-arr(ib)
+io.out('arr option-match in-bounds[1] -> ')
+io.out(dao2)
+print('')
+
+; vec：值 match 越界 → 0
+dvo = get-default-vec(oob)
+io.out('vec option-match OOB -> ')
+io.out(dvo)
+print('')
+
+; vec：範圍內正確
+dvo2 = get-default-vec(2)
+io.out('vec option-match in-bounds[2] -> ')
+io.out(dvo2)
+print('')
+
+; 固定陣列：?= 越界不崩（回傳 none）
+safe-get-arr(oob)
+io.out('arr ?= OOB: no-crash')
+print('')
+
+; vec：?= 越界不崩
+safe-get-vec(oob)
+io.out('vec ?= OOB: no-crash')
+print('')
+
+; ===================== merged from tests/safe-index-more.no =====================
+; tests/safe-index-more.no — consolidated safe-index fragment
+; from: tests/safe-index-utl.no
+; NOTE: tests/safe-index-zero.no is currently a compile-fail (u8 narrow regression,
+; pre-existing baseline staleness) and is left standalone until that is fixed; it is
+; intentionally NOT folded in here so this file stays a clean rc=0 run.
+
+safe-utl = (i i64) (res ?i64) {
+    a = [10, 20, 30, 40]
+    x = a[i]; 未標型別區域變數承接安全索引 → 捕獲 x: ?i64
+    x: {
+        nil -> {
+        }
+
+        err -> {
+        }
+
+        -> {
+            io.out('untyped-local x = ')
+            io.out(it); 應印出 20（ib__1=1），證明 payload 正確推論為 i64 而非被污染成 str
+            print('')
+        }
+    }
+    res = x
+}
+
+ib__1 = 1
+oob__1 = 9
+
+safe-utl(ib__1)
+
+safe-utl(oob__1)
+io.out('utl OOB: no-crash')
+print('')

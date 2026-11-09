@@ -1,0 +1,539 @@
+; merged category 'match' -- members: match-2.no, match-range-pattern.no, match-test.no, match-type-arm.no, option-match-silent-wrong.no, option-match.no, place-write-value-match.no, simple-match.no, simple-match2.no, type-match.no
+; (originals backed up under tests/_archive/match/)
+; ===================== merged from tests/match-2.no =====================
+; 測試 match
+test-match = () {
+    n = 42
+    result = n: {
+        err -> 'err'
+
+        -> ''
+    }
+    print(result)
+}
+test-match()
+
+; ===================== merged from tests/match-range-pattern.no =====================
+; match-range-pattern.no — P3: match 臂 range 模式（[a..b)）端到端
+;
+; 覆蓋说明：range 模式 match 在語料中早有 fixture（tests/fmt-heuristic.no 的
+; [0..60)/[60..80)/[80..90)、tests/str-order.no 的 [1..10) 與 ["a".."z")），
+; 本文件是補強而非補洞——它把 range 模式放進「帶回傳值的函式」並用 4 個臂
+; （含默認臂）覆蓋，與上述兩文件的用法不同。
+; 由 src/parser/dump/hir_subform_coverage_test.go 的 TestS1RangePatternFixtureIsExercised 钉住。
+
+; 用區間模式分級：驗證帶回傳值的函式體內 4 個臂（含默認臂）都走對
+; score i64: 分數；[0..60)→low、[60..70)→pass、[70..100)→high，其餘為 invalid
+score-of = (score i64) {
+    grade = score: {
+        [0..60) -> 'low'
+
+        [60..70) -> 'pass'
+
+        [70..100) -> 'high'
+
+        -> 'invalid'
+    }
+    print(grade)
+}
+
+score-of(55)
+score-of(65)
+score-of(85)
+score-of(120)
+
+; ===================== merged from tests/match-test.no =====================
+status {
+    status1,
+    status2,
+    status3,
+    status4,
+}
+
+; 測試 match
+test-match__1 = () {
+    x ?i64
+
+    ; 直接->是else
+    x: {
+        err -> log(); it的型態是err
+
+        nil -> log(); it的型態是nil
+
+        ok -> log(); it的型態是i64
+
+        -> log()
+    }
+
+    ; 全部列舉
+    x: {
+        err -> log()
+
+        nil -> log()
+
+        ok -> log()
+    }
+
+    ; it的型態是err
+    ; it的型態是nil
+    ; it的型態是i64
+
+    ; 這裡-> 有else的意思
+    x: {
+        ok -> log()
+
+        -> log()
+    }
+    x: {
+        ok -> log()
+
+        nil -> log()
+
+        -> log()
+    }
+    x: {
+        -> log()
+    }
+    a i64
+
+    x: {
+        err -> log()
+
+        ok -> {
+            a == 1 -> log()
+
+            -> log('else')
+        }
+
+        -> log()
+    }
+    x: {
+        err -> log()
+
+        -> log()
+    }
+    s status
+    s: {
+        status1 -> log()
+
+        status2 -> log()
+
+        status3 -> log()
+
+        status4 -> log()
+
+        -> log()
+    }
+
+    ; 這是if/else
+    {
+        a == 1 -> log('1')
+
+        -> log('else')
+    }
+    a == 2 -> log('2')
+}
+
+; ===================== merged from tests/match-type-arm.no =====================
+; match-type-arm.no — 型別解構 match（union 靜態派發）強化 fixture，S1 設計稿 §3 P5。
+;
+; type-match.no 已有 i32|i64|f64 全數值 union 的最小形態；本檔補強：
+;   1) 鏈式 union（union 的 union）：mixed = num | bool——臂模式校驗前
+;      flattenUnion 必須遞歸展開，直接成員 num 本身不是合法臂模式
+;   2) 非數值成員（bool）的型別臂，派發路徑與數值成員不同
+;   3) 裸型別臂（i64 -> …）與帶綁定型別臂（v bool -> …，v 臂內可見為 bool）混用
+;   4) 巢狀型別 match：型別臂體內再對具象 i64 值做型別 match（P5 × P5）
+;   5) 跨函式承擔：bool 上的值 match 由獨立函式 bool-str 完成（P1 形態）
+;
+; 已知限制（2026-10-18 實測，基線與工作樹一致，非本輪回歸）：
+;   a) union 成員若是聚合型別（str / vec / struct），單態化複本參數雖被換成
+;      具體成員，呼叫點仍以標量通路傳參，MIR codegen 報
+;      "parameter 'mixed' expects a scalar (LLVM i64) but the argument has
+;       aggregate type 'str' (LLVM %str-long)"
+;      ⇒ 本檔只收標量成員（num 族 + bool）。
+;   b) checker.ValidateUnionTypes 的 findSingleUnionName 只在「整個函數只使用
+;      同一個 union 別名」時才標 GenericUnion ⇒ 單態化只複製那種函數；帶兩個
+;      不同 union 參數的函數不會被複製，模板直接被呼叫，union 參數退化成標量、
+;      派發全落預設臂。故本檔每個函數只用一個 union（巢狀 match 的主體用具象
+;      型別的全域變數，而非第二個 union 參數）。
+;
+; 注意：普查分類器只把帶綁定的型別臂（IsTypeArm，即 `v T ->` 形）計入 P5，
+; 裸型別臂（`i64 ->`）算 P1——故本檔兩種形態都寫，覆蓋才不會有盲區。
+
+num = i32 | i64 | f64
+mixed = num | bool
+
+; (5) bool 上的值 match（P1 形態，由型別臂呼叫）
+; b bool: 待轉字串的布林
+; r str: true 為 'yes'、false 為 'no'
+bool-str = (b bool) (r str) {
+    r = b: {
+        true -> 'yes'
+
+        -> 'no'
+    }
+}
+
+; (1)(2)(3)(4) 裸臂 + 綁定臂混用；bool 臂內巢狀第二條型別 match。
+; 內層 match 的主體是 union 別名（num）型別的局部變數——靜態型別是 union，
+; 走 buildTypeMatchDesugar 的主體型別派發路徑（與外層 mixed 同形）。
+gi64 = 7
+
+; 巢狀型別 match：外層對 mixed 判 bool，內層再對 union 別名 num 判具體寬度
+; a mixed: 外層要判型別的 union 值
+; r str: bool 臂回 'bool+<內層型別>'，其餘成員回 'bare-i64' / 'bare-i32' / 'bare-f64'，都不符則 'other'
+nested = (a mixed) (r str) {
+    r = a: {
+        v bool -> {
+            inner num = gi64
+            w = inner: {
+                u i64 -> 'bool+int64'
+
+                u i32 -> 'bool+int32'
+
+                u f64 -> 'bool+float64'
+
+                -> 'bool+other'
+            }
+            w
+        }
+
+        i64 -> 'bare-i64'
+
+        i32 -> 'bare-i32'
+
+        f64 -> 'bare-f64'
+
+        -> 'other'
+    }
+}
+
+; ---- 驅動：每個 concrete 成員各跑一次 ----
+ba = true
+b1 = 7
+b2 i32 = 3
+b3 = 2.5
+print(nested(ba)); -> bool+int64（外層 bool 臂 × 內層 i64 臂）
+print(nested(b1)); -> bare-i64（裸型別臂）
+print(nested(b2)); -> bare-i32
+print(nested(b3)); -> bare-f64
+
+; ===================== merged from tests/option-match-silent-wrong.no =====================
+; option-match-silent-wrong.no — option / match 的三個靜默錯答（2026-09-26 修）
+;
+; 三條都是「重解釋」型 bug：程式能編、rc=0，但值是錯的（或錯誤訊息指到錯的型別），
+; 所以只能靠「可觀測輸出」釘住。逐條的機理與 IR 證據見
+; src/mir/option_match_three_bugs_test.go。
+;
+; ── 迴歸 1（bug #1）：模組頂層 `?T` + match，一個臂都不執行 ──
+; 修復前：全域 emit 成 `@V = private global i64 7`（型別 i64），main 卻以 %option
+;         讀它，`=== ok` 永不成立 ⇒ 一個臂都不跑、rc 仍 0（靜默）。
+; 修復後：emit 成 `%option { i64 0, [3 x i64] [i64 7, 0, 0] }` ⇒ 印 7。
+;         （大寫＝真全局，修復前是一律靜默的那個分支，所以這裡刻意用大寫。）
+;
+; ── 迴歸 2（bug #2）：`?bool` 的 match 取值恆為 false ──
+; 修復前：`print(x)` 印 true，但 `ok(b) -> print(b)` 印 0 —— 剝殼把槽讀成 i64，
+;         coerce 沒有 i64→i1，於是把 i64 直接 store 進 b 的 i1 槽，load i1 讀到 0。
+; 修復後：coerce 補上 i64→i1 的 trunc ⇒ 印 1 / 0。
+;
+; ── 迴歸 3（bug #3）：option 當函式參數 + match ⇒ 編譯期 opt-verify ──
+; 修復前：`g-str` 對 %option 參數呼叫 str_clone ⇒
+;         opt-verify "'%lv' defined with type '%option' but expected '%str-long'"。
+; 修復後：參數是 option 時跳過「借用參數 clone」閘門，改走剝殼 ⇒ 印 hello。
+;
+; 期望輸出（依序）：7 / 1 / 0 / hello
+
+V ?i64 = 7
+
+; 選項作為函式參數 + match：修復前借用 clone 誤用 str_clone，觸發 opt-verify 失敗
+; r ?str: 待匹配的選項；ok 時印出內含字串，nil / err 各印標記
+g-str = (r ?str) {
+    r: {
+        ok(s) -> print(s)
+
+        nil -> print('NIL')
+
+        err -> print('ERR')
+    }
+}
+
+; 回呼：產生 ok('hello') 的 ?str（驗證參數傳遞路徑）
+; r ?str: 內容為 'hello' 的 ok 選項
+mk-str = () (r ?str) {
+    r = 'hello'
+}
+
+; 回呼：產生 ok(true) 的 ?bool（回歸 2：剝殼後不得恒為 false）
+; r ?bool: 內容為 true 的 ok 選項
+mk-bt = () (r ?bool) {
+    r = true
+}
+
+; 回呼：產生 ok(false) 的 ?bool（與 mk-bt 成對，驗證 true/false 都能正確剝殼）
+; r ?bool: 內容為 false 的 ok 選項
+mk-bf = () (r ?bool) {
+    r = false
+}
+
+V: {
+    ok(x) -> print(x)
+
+    nil -> print('NIL')
+
+    err -> print('ERR')
+}
+
+bt = mk-bt()
+bt: {
+    ok(b) -> print(b)
+
+    nil -> print('NIL')
+
+    err -> print('ERR')
+}
+bf = mk-bf()
+bf: {
+    ok(b) -> print(b)
+
+    nil -> print('NIL')
+
+    err -> print('ERR')
+}
+
+s = mk-str()
+g-str(s)
+
+; ===================== merged from tests/option-match.no =====================
+; option-match.no — 測試 option 變數的 match 語法
+;
+; match 語法（每個臂獨立一行）：
+;     n: { err -> body
+;          nil -> body
+;          -> body }
+; 其中 err/nil 為 option 分支，-> 為預設（ok/val）分支
+
+; 測試 err
+test-err = () {
+    n ?str
+    n = err('boom')
+    r = ''
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+
+; 測試 nil
+test-nil = () {
+    n ?str
+    n = nil
+    r = ''
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+
+; 測試 val
+test-val = () {
+    n ?i64
+    n = 42
+    r = ''
+    r = n: {
+        err -> 'got-err'
+
+        nil -> 'got-nil'
+
+        -> 'got-val'
+    }
+    print(r)
+}
+
+; 測試 err-only
+test-err-only = () {
+    n ?str
+    n = err('boom')
+    r = ''
+    r = n: {
+        err -> 'only-err'
+
+        -> 'otherwise'
+    }
+    print(r)
+}
+test-err()
+test-nil()
+test-val()
+test-err-only()
+
+; ===================== merged from tests/place-write-value-match.no =====================
+; D11 回歸：place-match ok 臂裡 `it = <值 match>` 必須真的寫回元素位置。
+;
+; 修復前 a[i] 會保持原值：合成指派 `it = <SurfaceMatch>` 在 H0 降成空的
+; KIf 後整條消失，寫回 store 讀到的是 match 之前綁定的原始元素值。
+; lowering 改為先把值 match 提升成合成 let（`__place_val_L_C`），再重綁 it。
+
+check = (name str, got i64, want i64) {
+    {
+        got == want -> print('ok: {name}')
+
+        -> {
+            print('fail: {name} got={got} want={want}')
+            exit(1)
+        }
+    }
+}
+
+; 常數 RHS：既有 D9 行為，不能被本次改動破壞。
+pwConst = (i i64) (res i64) {
+    a = [10, 20, 30]
+    a[i]: {
+        ok -> it = 0
+
+        -> _
+    }
+    res = a[1]
+}
+
+; 值 match RHS（內層越界 → 0）：這是 D11 修復的目標形狀。
+pwValueMatch = (i i64) (res i64) {
+    a = [10, 20, 30]
+    a[i]: {
+        ok -> it = a[9]: {
+            ok(it1) -> it1
+
+            -> 0
+        }
+
+        -> _
+    }
+    res = a[1]
+}
+
+; 值 match RHS（內層在界內 → 30）：確認讀值正確，不是恆寫 0。
+pwValueMatchHit = (i i64) (res i64) {
+    a = [10, 20, 30]
+    a[i]: {
+        ok -> it = a[2]: {
+            ok(it1) -> it1
+
+            -> 0
+        }
+
+        -> _
+    }
+    res = a[1]
+}
+
+check('place-write constant', pwConst(1), 0)
+check('place-write value match OOB', pwValueMatch(1), 0)
+check('place-write value match in-bounds', pwValueMatchHit(1), 30)
+print('place-write-value-match: all ok')
+
+; ===================== merged from tests/simple-match.no =====================
+; 簡化測試 - 用空格
+test1 = () {
+    n = 42
+    r = n: {
+        err -> 'err'
+
+        -> ''
+    }
+    print(r)
+}
+test1()
+
+; ===================== merged from tests/simple-match2.no =====================
+; 簡化測試
+test1__1 = () {
+    n = 42
+    r = n: {
+        err -> 'err'
+
+        -> ''
+    }
+    print(r)
+}
+test1__1()
+
+; ===================== merged from tests/type-match.no =====================
+; 類型解構 match（union / type-set 靜態單態化派發）端到端測試
+num__1 = i32 | i64 | f64
+
+; 用戶範例：按被匹配值的具體型別靜態選臂
+; x num: 被匹配的值，i32 與 i64 走不同臂、其餘走 catch-all
+; lo num: i32 臂要回傳的下界值
+; hi num: i64 臂要回傳的上界值
+; r num: 依 x 的具體型別選出的 lo / hi / x
+clamp0 = (x num__1, lo num__1, hi num__1) (r num__1) {
+    r = x: {
+        i32 -> lo
+
+        i64 -> hi
+
+        -> x
+    }
+}
+
+; 帶綁定型別臂 + 預設臂
+; x num: 被匹配的 union 值；i64 / i32 / f64 臂各自具名綁定 v 取載荷，其餘落 catch-all
+classify = (x num__1) {
+    y = x: {
+        v i64 -> v.to-str()
+
+        v i32 -> v.to-str()
+
+        v f64 -> v.to-str()
+
+        -> 'other'
+    }
+    print(y)
+}
+
+; 各臂回傳不同值，驗證確實選對臂
+; x num: 被匹配的 union 值；i64 臂 +1、i32 臂 +2、f64 臂 +3.0，其餘回 0
+add1 = (x num__1) {
+    r = x: {
+        w i64 -> w + 1
+
+        w i32 -> w + 2
+
+        w f64 -> w + 3.0
+
+        -> 0
+    }
+    print(r)
+}
+
+; ---- clamp0 ----
+ai64 = 5
+hi64 = 10
+a = clamp0(ai64, 0, hi64); -> i64 臂 -> hi = 10
+print(a)
+bi32 i32 = 3
+hi32 i32 = 9
+b = clamp0(bi32, bi32, 0); -> i32 臂 -> lo = 3
+print(b)
+bf64 = 2.5
+hf64 = 9.0
+c = clamp0(bf64, bf64, hf64); -> 無 f64 臂 -> 預設臂 -> r = x = 2.5
+print(c)
+
+; ---- classify ----
+bi64 = 7
+classify(bi64); -> "7"
+classify(bi32); -> "7"
+classify(bf64); -> "7.5"
+
+; ---- add1 ----
+add1(bi64); -> 11
+add1(bi32); -> 12
+add1(bf64); -> 13

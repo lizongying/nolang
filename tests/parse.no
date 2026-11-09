@@ -1,0 +1,26 @@
+; merged category 'parse' -- members: parse-grouped.no, parse-min.no
+; (originals backed up under tests/_archive/parse/)
+; ===================== merged from tests/parse-grouped.no =====================
+; parse-grouped.no — 測試 (-42 - 1).to-str() 的解析結構
+; 簡化版: (-42 - 1).to-str()
+s = (-42 - 1).to-str()
+print(s)
+
+; ===================== merged from tests/parse-min.no =====================
+; test parse min
+
+print('start')
+json-str = '"hello"'
+root = -1
+next = 0
+ok = false
+p = json-pool {}
+p.init()
+root, next, ok = p.parse(json-str, 0)
+{
+    ok -> print('ok: parse str')
+
+    -> print('fail: parse str')
+}
+print('next=')
+print(next)
