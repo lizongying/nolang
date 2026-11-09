@@ -1266,7 +1266,13 @@ yaml-parser.is-seq-dash = () (yes bool) {
 ; [looks-like-map-entry](#yaml.yaml-parser.looks-like-map-entry)
 yaml-parser.looks-like-map-entry = () (yes bool) {
     yes = false
-    i = .pos
+    ; 計數器必須顯式標註 i64。寫成 `i = .pos` 由欄位推斷型別時，本函式下方
+    ; 那批 `i-optN = i + N` ＋ `i-optN: { ok -> i = it ... }` 的兩步解包會
+    ; 整批退化成普通 i64：`i + N` 不再是有號運算、不產生 `?i64`，`ok` 臂於是
+    ; 變成「值與 ok 標籤常數比較」而永不命中，`i` 原地不動 → 死循環，整個
+    ; yaml 解析卡死（`yaml.parse('abc')` 即可復現）。顯式標註後 `i + N` 才是
+    ; `?i64`，`ok` 臂恢復為 option 對 option 的比較。
+    i i64 = .pos
     depth = 0
     in-s = false
     in-d = false
