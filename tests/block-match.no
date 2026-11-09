@@ -150,7 +150,13 @@ loop-stop = (z i64) (out str) {
         3 * {
             v ?= 6 / z
             print('  loop v=' - v.to-str())
-            n = n + 1
+            {
+                n-opt = n + 1
+                n-opt: {
+                    ok -> n = it
+                    ->
+                }
+            }
         }
     }: {
         nil -> out = 'nil'

@@ -17,16 +17,20 @@
 ...
 
 ; Argon2 版本
+; [ARGON2-VERSION](#argon2.argon2-version)
 ARGON2-VERSION = 19
 
 ; Argon2 類型
+; [ARGON2-ID](#argon2.argon2-id)
 ARGON2-ID = 2
 
 ; 區塊大小（1024 位元組 = 128 × 8 位元組）
+; [ARGON2-BLOCK-SIZE](#argon2.argon2-block-size)
 ARGON2-BLOCK-SIZE = 1024
 ARGON2-BLOCK-QWORDS = 128
 
 ; 64-bit 全 1 遮罩
+; [ARGON2-MASK](#argon2.argon2-mask)
 ARGON2-MASK u64 = 18446744073709551615
 
 ; 輔助函數

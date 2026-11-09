@@ -20,9 +20,11 @@
 ...
 
 ; 連接池最大容量
+; [POOL-MAX-CONNS](#pool.pool-max-conns)
 POOL-MAX-CONNS = 32
 
 ; 空閒逾時（毫秒）
+; [POOL-IDLE-TIMEOUT](#pool.pool-idle-timeout)
 POOL-IDLE-TIMEOUT = 30000
 
 ; 結構體
@@ -35,6 +37,7 @@ POOL-IDLE-TIMEOUT = 30000
 ; conns [32]conn: 連接陣列
 ; in-use [32]bool: 連接是否在使用中
 ; count i64: 當前連接數
+; [pool](#pool.pool)
 pool {
     host str
     port i64

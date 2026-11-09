@@ -15,7 +15,14 @@
 gen-add-i64 = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
-    r = a + b
+    {
+        #{overflow=wrap}
+        r-opt = a + b
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 模擬泛型的 i64 減法：結果可直接當相等比較用（差為 0 即相等）
@@ -25,7 +32,14 @@ gen-add-i64 = (a i64, b i64) (r i64) {
 gen-sub-i64 = (a i64, b i64) (d i64) {
 
     #{overflow=wrap}
-    d = a - b
+    {
+        #{overflow=wrap}
+        d-opt = a - b
+        d-opt: {
+            ok -> d = it
+            ->
+        }
+    }
 }
 
 ; 模擬泛型的 i64 乘法
@@ -35,7 +49,14 @@ gen-sub-i64 = (a i64, b i64) (d i64) {
 gen-mul-i64 = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
-    r = a * b
+    {
+        #{overflow=wrap}
+        r-opt2 = a * b
+        r-opt2: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; ── i32 型別的「泛型」函式 ──
@@ -47,7 +68,14 @@ gen-mul-i64 = (a i64, b i64) (r i64) {
 gen-add-i32 = (a i32, b i32) (r i32) {
 
     #{overflow=wrap}
-    r = a + b
+    {
+        #{overflow=wrap}
+        r-opt3 = a + b
+        r-opt3: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; i32 版的減法：用於 i32 相等性驗證（差為 0 即相等）
@@ -57,7 +85,14 @@ gen-add-i32 = (a i32, b i32) (r i32) {
 gen-sub-i32 = (a i32, b i32) (d i32) {
 
     #{overflow=wrap}
-    d = a - b
+    {
+        #{overflow=wrap}
+        d-opt2 = a - b
+        d-opt2: {
+            ok -> d = it
+            ->
+        }
+    }
 }
 
 ; ── 1. gen-add-i64 加法 ──

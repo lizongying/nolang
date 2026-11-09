@@ -78,14 +78,27 @@ test-share-loop = () {
         a []i64 = [i, i + 1]
         n = co first(a)
 
-        m = a[1]: {
-            ok -> it
+        {
+            m-opt = a[1]: {
+                ok -> it
 
-            -> 0
+                -> 0
+            }
+            m-opt: {
+                ok -> m = it
+                ->
+            }
         }
 
         #{overflow=wrap}
-        total = total + n
+        {
+            #{overflow=wrap}
+            total-opt = total + n
+            total-opt: {
+                ok -> total = it
+                ->
+            }
+        }
     }
     print(total); expect: 190
 }

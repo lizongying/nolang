@@ -10,7 +10,14 @@
 ac-worker = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n * 2
+    {
+        #{overflow=wrap}
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ac-test-cancel = () {
@@ -63,7 +70,14 @@ ay-yielder = (n i64) (r i64) {
     async-yield()
 
     #{overflow=wrap}
-    r = n + 1
+    {
+        #{overflow=wrap}
+        r-opt2 = n + 1
+        r-opt2: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ay-test-inside = () {

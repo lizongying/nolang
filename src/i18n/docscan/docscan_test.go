@@ -169,3 +169,78 @@ func TestScanSkipsVendorDirs(t *testing.T) {
 		t.Fatalf("got %+v, want only the keep.no entry", entries)
 	}
 }
+
+// TestScanCollectsModuleDoc 校準模組 doc 的收集口徑，與 parser.takeModuleDoc 一致：
+// 檔案最前面那段以**無點**錨點收尾的註解就是模組說明，它與下方的程式碼之間照例
+// 隔著空行——也就是說，「段後接空行就不算 doc」這條規則對模組 doc 不適用，
+// 否則模組說明永遠進不了翻譯目錄。
+func TestScanCollectsModuleDoc(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "arr.no", strings.Join([]string{
+		"; arr — 陣列操作",
+		";",
+		"; 提供固定大小陣列的通用操作。",
+		"; [arr](#arr)",
+		"",
+		"; len: 回傳陣列長度",
+		"; [len](#arr.len)",
+		"[n]t.len = () (out i64) {",
+		"    out = n",
+		"}",
+	}, "\n"))
+
+	entries, err := Scan(dir)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	byAnchor := map[string]Entry{}
+	for _, e := range entries {
+		byAnchor[e.Anchor] = e
+	}
+	mod, ok := byAnchor["arr"]
+	if !ok {
+		t.Fatalf("module anchor #arr not collected; got %+v", entries)
+	}
+	// 註解行去掉 `;` 後仍留一個前導空白，Text 會逐行 TrimSpace（見 SplitDocBlock）。
+	want := "arr — 陣列操作\n\n提供固定大小陣列的通用操作。"
+	if mod.Text != want {
+		t.Fatalf("module doc text =\n%q\nwant\n%q", mod.Text, want)
+	}
+	if mod.Line != 4 {
+		t.Fatalf("module doc Line = %d, want 4 (the link line)", mod.Line)
+	}
+	if m, ok := byAnchor["arr.len"]; !ok || m.Text != "len: 回傳陣列長度" {
+		t.Fatalf("member anchor #arr.len = %+v, want its own one-line doc", m)
+	}
+}
+
+// TestScanModuleDocRequiresFileStart 是負向對照：無點錨點若出現在程式碼之後，
+// parser 不會把它掛成模組 doc（takeModuleDoc 只認檔案開頭），所以掃描端也不能收，
+// 否則翻譯目錄裡會多出一個沒有任何節點對應的孤兒鍵。
+func TestScanModuleDocRequiresFileStart(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "m.no", strings.Join([]string{
+		"; a: 第一個函式",
+		"; [a](#m.a)",
+		"a = () () {",
+		"}",
+		"",
+		"; 檔案中間的說明",
+		"; [mid](#mid)",
+		"b = () () {",
+		"}",
+	}, "\n"))
+
+	entries, err := Scan(dir)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	for _, e := range entries {
+		if e.Anchor == "mid" {
+			t.Fatalf("mid-file dotless anchor collected as a doc block: %+v", e)
+		}
+	}
+	if len(entries) != 1 || entries[0].Anchor != "m.a" {
+		t.Fatalf("got %+v, want only #m.a", entries)
+	}
+}

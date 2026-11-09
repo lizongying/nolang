@@ -28,6 +28,7 @@
 ; host: 目標主機（記錄供 reconnect 使用）
 ; port: 目標埠號
 ; connected: 連接狀態
+; [client](#client.client)
 client {
     c net.conn
     host str

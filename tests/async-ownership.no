@@ -59,7 +59,14 @@ first-async = (v []i64) (r i64) {
 double-async = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n * 2
+    {
+        #{overflow=wrap}
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 7/8 用的結構體：內聯擁有的 `str` 葉子。

@@ -17,6 +17,7 @@
 ; [map](#map)
 
 ; FNV-1a 常量
+; [FNV-OFFSET](#map.fnv-offset)
 FNV-OFFSET = -3750763034362895579
 FNV-PRIME = 1099511628211
 

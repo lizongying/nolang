@@ -19,6 +19,7 @@ HTTP2-DEFAULT-PORT = 80
 HTTP2-DEFAULT-TLS-PORT = 443
 
 ; 影格類型
+; [FRAME-DATA](#http2.frame-data)
 FRAME-DATA = 0
 FRAME-HEADERS = 1
 FRAME-PRIORITY = 2
@@ -31,6 +32,7 @@ FRAME-WINDOW-UPDATE = 8
 FRAME-CONTINUATION = 9
 
 ; 旗標
+; [FLAG-END-STREAM](#http2.flag-end-stream)
 FLAG-END-STREAM = 1
 FLAG-ACK = 1
 FLAG-END-HEADERS = 4
@@ -41,6 +43,7 @@ FLAG-PRIORITY = 32
 ...
 
 ; frame: HTTP/2 影格
+; [frame](#http2.frame)
 frame {
     length i64
     frame-type i64
@@ -56,6 +59,7 @@ frame {
 ; 影格資料
 
 ; conn: HTTP/2 連線
+; [conn](#http2.conn)
 conn {
     fd fd
     hpack hpack.tables

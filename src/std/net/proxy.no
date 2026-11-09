@@ -22,6 +22,7 @@
 ...
 
 ; 代理緩衝區大小
+; [PROXY-BUF-SIZE](#proxy.proxy-buf-size)
 PROXY-BUF-SIZE = 4096
 
 ; 結構體
@@ -32,6 +33,7 @@ PROXY-BUF-SIZE = 4096
 ; port i64: 代理伺服器埠號
 ; username str: 認證用戶名（空=不認證）
 ; password str: 認證密碼
+; [config](#proxy.config)
 config {
     host str
     port i64
@@ -423,17 +425,21 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
 ...
 
 ; SOCKS5 版本
+; [SOCKS5-VERSION](#proxy.socks5-version)
 SOCKS5-VERSION = 5
 
 ; SOCKS5 認證方法
+; [SOCKS5-METHOD-NO-AUTH](#proxy.socks5-method-no-auth)
 SOCKS5-METHOD-NO-AUTH = 0
 SOCKS5-METHOD-USER-PASS = 2
 SOCKS5-METHOD-NONE-ACCEPTABLE = 255
 
 ; SOCKS5 命令
+; [SOCKS5-CMD-CONNECT](#proxy.socks5-cmd-connect)
 SOCKS5-CMD-CONNECT = 1
 
 ; SOCKS5 地址類型
+; [SOCKS5-ATYP-IPV4](#proxy.socks5-atyp-ipv4)
 SOCKS5-ATYP-IPV4 = 1
 SOCKS5-ATYP-DOMAIN = 3
 

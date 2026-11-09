@@ -164,6 +164,11 @@ func (d *dumper) node(node parser.Node, depth int) {
 	case *parser.Program:
 		fmt.Fprintf(&d.buf, "%sProgram{%s}\n", indent(depth),
 			fields(kvc("warnings", len(n.Warnings))))
+		// 模組 doc 先於陳述輸出：它是「這個模組是什麼」，語義上在檔案最前面。
+		if n.Doc != nil {
+			fmt.Fprintf(&d.buf, "%sModuleDoc\n", indent(depth+1))
+			d.commentGroup(n.Doc, depth+2)
+		}
 		for _, s := range n.Statements {
 			d.node(s, depth+1)
 		}

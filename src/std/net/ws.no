@@ -59,21 +59,27 @@
 ...
 
 ; 接收緩衝區大小
+; [WS-BUF-SIZE](#ws.ws-buf-size)
 WS-BUF-SIZE = 8192
 
 ; 單次接收大小
+; [WS-RECV-SIZE](#ws.ws-recv-size)
 WS-RECV-SIZE = 4096
 
 ; 預設 WS 埠號
+; [WS-DEFAULT-PORT](#ws.ws-default-port)
 WS-DEFAULT-PORT = 80
 
 ; 預設 WSS 埠號
+; [WS-DEFAULT-TLS-PORT](#ws.ws-default-tls-port)
 WS-DEFAULT-TLS-PORT = 443
 
 ; RFC 6455 固定 GUID（用於 Sec-WebSocket-Accept 計算）
+; [WS-GUID](#ws.ws-guid)
 WS-GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 ; Opcode 常量
+; [WS-OP-CONT](#ws.ws-op-cont)
 WS-OP-CONT = 0
 WS-OP-TEXT = 1
 WS-OP-BINARY = 2
@@ -82,6 +88,7 @@ WS-OP-PING = 9
 WS-OP-PONG = 10
 
 ; 全域偽隨機計數器（用於產生 mask key 與 Sec-WebSocket-Key）
+; [RAND-COUNTER](#ws.rand-counter)
 RAND-COUNTER = 0
 
 ; 結構體
@@ -91,6 +98,7 @@ RAND-COUNTER = 0
 ; opcode i64: 1=text, 2=binary, 8=close, 9=ping, 10=pong
 ; data str: 訊息內容
 ; fin bool: 是否為最終片段
+; [message](#ws.message)
 message {
     opcode i64
     data str
@@ -101,6 +109,7 @@ message {
 ; fd fd: 監聽 socket 檔案描述符（-1=未開啟）
 ; host str: 綁定的 IP 地址
 ; port i64: 監聽埠號
+; [server](#ws.server)
 server {
     fd fd
     host str
@@ -112,6 +121,7 @@ server {
 ; connected bool: 連線狀態
 ; recv-buf str: 接收緩衝區
 ; recv-buf-len i64: 緩衝區中實際資料長度
+; [server-conn](#ws.server-conn)
 server-conn {
     fd fd
     connected bool
@@ -130,6 +140,7 @@ server-conn {
 ; recv-buf str: 接收緩衝區
 ; recv-buf-len i64: 緩衝區中實際資料長度
 ; send-counter i64: mask key 偽隨機計數器
+; [client](#ws.client)
 client {
     fd fd
     use-tls bool

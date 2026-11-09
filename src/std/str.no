@@ -29,6 +29,7 @@
 ;   - 聯合變數聲明（s string = 'x'）尚不支持；
 ;   - 不要定義 string.len 這類「與成員同名」的別名方法：會接管 s.len()
 ;     調用且方法體遞迴分發回自身（段錯誤）。成員方法請直接用 str.*/txt.* 原版。
+; [string](#str.string)
 string = str | txt
 
 ; str.len-bytes(): 返回字串的「字節數量」（底層 UTF-8 緩衝區長度）
@@ -1057,6 +1058,7 @@ bigint-bitlen = (b bigint) (out i64) {
 ; 將十進位/科學記號文本解析為 f64（Nolang 實作，不依賴 strtod）
 ; s: 數字文本
 ; result: 解析得到的 f64（合法性由呼叫端 to-f64 先行校驗）
+; [str-to-f64](#str.str-to-f64)
 str-to-f64 = (s str) (result f64) {
     n i64 = s.len-bytes()
     n == 0 -> return

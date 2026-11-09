@@ -22,6 +22,7 @@
 ; data: 元素緩衝區切片（容量 = 其長度）
 ; cap:  容量（= 緩衝區陣列長度）
 ; n:    目前元素數量
+; [heap](#heap.heap)
 heap {
     data []t
     cap i64

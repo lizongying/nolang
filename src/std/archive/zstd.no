@@ -28,6 +28,7 @@ zs-bit-reader {
 ; 初始化
 ; data: 待解碼的壓縮位元組流（只讀不改）
 ; pos: 開始讀取的位元組偏移（解碼器從這裡進入位元流）
+; [init](#zstd.zs-bit-reader.init)
 zs-bit-reader.init = (data []byte, pos i64) {
     .data = data
     .pos = pos
@@ -118,12 +119,14 @@ zs-bit-reader.align-to-byte = () {
 ...
 
 ; Zstandard 常數
+; [ZS-MAGIC](#zstd.zs-magic)
 ZS-MAGIC = 0xfd2fb528
 ZS-WINDOW-LOG-MAX = 27
 ZS-MAX-SEQ = 3
 ZS-MAX-SYMBOL = 255
 
 ; fse-table: FSE 解碼表
+; [fse-table](#zstd.fse-table)
 fse-table {
     table-log i64
     table-size i64
@@ -368,6 +371,7 @@ fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
 ...
 
 ; zs-huffman: zstd Huffman 解碼表
+; [zs-huffman](#zstd.zs-huffman)
 zs-huffman {
     max-symbol i64
     table-log i64
@@ -569,6 +573,7 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
 ...
 
 ; zs-frame: Zstandard frame 解碼狀態
+; [zs-frame](#zstd.zs-frame)
 zs-frame {
     data []byte
     pos i64

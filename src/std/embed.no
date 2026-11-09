@@ -19,6 +19,7 @@
 ; blob: 所有文件內容拼接
 ; dataStarts: 每個文件在 blob 中的起始偏移
 ; dataLens: 每個文件的長度
+; [embed](#embed.embed)
 embed {
     count i64
     paths str

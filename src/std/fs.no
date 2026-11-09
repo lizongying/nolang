@@ -401,6 +401,7 @@ touch-file = (p str) (ok bool) {
 
 ; open() 旗標常數（平台特定）
 ; O_RDONLY/O_WRONLY/O_RDWR 跨平台通用（0/1/2）
+; [O-RDONLY](#fs.o-rdonly)
 O-RDONLY = 0
 O-WRONLY = 1
 O-RDWR = 2
@@ -501,6 +502,7 @@ O-EXCL = 2048
 ; fd 是檔案描述符的 newtype 別名（底層 i64），與 i64 在型別系統中互斥，
 ; 防止 fd 被亂用為任意整數（端口号、PID 等）。
 ; 整數字面量可賦值給 fd（如 STDIN-FD fd = 0），fd 可與整數字面量比較。
+; [fd](#fs.fd)
 fd = i64
 STDIN-FD fd = 0
 STDOUT-FD fd = 1
@@ -511,6 +513,7 @@ STDERR-FD fd = 2
 
 ; file: 開啟的檔案
 ; fd=-1 表示未開啟；path 為來源路徑
+; [file](#fs.file)
 file {
     fd fd
     path str
@@ -520,24 +523,28 @@ file {
 ...
 
 ; 標準輸入（fd=0）
+; [STDIN](#fs.stdin)
 STDIN = file {
     fd: 0
     path: '<stdin>'
 }
 
 ; 標準輸出（fd=1）
+; [STDOUT](#fs.stdout)
 STDOUT = file {
     fd: 1
     path: '<stdout>'
 }
 
 ; 標準錯誤（fd=2）
+; [STDERR](#fs.stderr)
 STDERR = file {
     fd: 2
     path: '<stderr>'
 }
 
 ; file-mode: 檔案開啟模式（預組合）
+; [file-mode](#fs.file-mode)
 file-mode {
     read,
     write,
@@ -546,6 +553,7 @@ file-mode {
 }
 
 ; file-perm: 檔案權限（預組合）
+; [file-perm](#fs.file-perm)
 file-perm {
     perm-600,
     perm-644,
@@ -561,6 +569,7 @@ file-perm {
 ; excl: 獨佔建立（同 O_EXCL）
 ; truncate: 截斷至 0 長度（同 O_TRUNC）
 ; append: 附加寫入（同 O_APPEND）
+; [file-opts](#fs.file-opts)
 file-opts {
     mode file-mode
     perm file-perm

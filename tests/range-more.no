@@ -54,7 +54,13 @@ ro-run = () {
         if cnt == 0 {
             first = i
         }
-        cnt = cnt + 1
+        {
+            cnt-opt = cnt + 1
+            cnt-opt: {
+                ok -> cnt = it
+                ->
+            }
+        }
         if cnt >= 3 {
             break
         }
@@ -68,7 +74,13 @@ ro-run = () {
         if cnt == 0 {
             first = i
         }
-        cnt = cnt + 1
+        {
+            cnt-opt2 = cnt + 1
+            cnt-opt2: {
+                ok -> cnt = it
+                ->
+            }
+        }
         if cnt >= 3 {
             break
         }
@@ -84,7 +96,13 @@ ro-run = () {
         if cnt == 0 {
             first = i
         }
-        cnt = cnt + 1
+        {
+            cnt-opt3 = cnt + 1
+            cnt-opt3: {
+                ok -> cnt = it
+                ->
+            }
+        }
         if cnt >= 2 {
             break
         }
@@ -98,7 +116,13 @@ ro-run = () {
         if cnt == 0 {
             first = i
         }
-        cnt = cnt + 1
+        {
+            cnt-opt4 = cnt + 1
+            cnt-opt4: {
+                ok -> cnt = it
+                ->
+            }
+        }
         if cnt >= 2 {
             break
         }
@@ -114,7 +138,13 @@ ro-run = () {
         if cnt == 0 {
             first = i
         }
-        cnt = cnt + 1
+        {
+            cnt-opt5 = cnt + 1
+            cnt-opt5: {
+                ok -> cnt = it
+                ->
+            }
+        }
         if cnt >= 2 {
             break
         }
@@ -128,7 +158,13 @@ ro-run = () {
         if cnt == 0 {
             first = i
         }
-        cnt = cnt + 1
+        {
+            cnt-opt6 = cnt + 1
+            cnt-opt6: {
+                ok -> cnt = it
+                ->
+            }
+        }
         if cnt >= 2 {
             break
         }

@@ -13,7 +13,14 @@ keep = true
 (keep) {
 
     #{overflow=wrap}
-    count = count + 1
+    {
+        #{overflow=wrap}
+        count-opt = count + 1
+        count-opt: {
+            ok -> count = it
+            ->
+        }
+    }
 
     count >= 3 -> keep = false
 }
@@ -32,10 +39,24 @@ iter = 0
 (n > 0) {
 
     #{overflow=wrap}
-    n = n - 1
+    {
+        #{overflow=wrap}
+        n-opt = n - 1
+        n-opt: {
+            ok -> n = it
+            ->
+        }
+    }
 
     #{overflow=wrap}
-    iter = iter + 1
+    {
+        #{overflow=wrap}
+        iter-opt = iter + 1
+        iter-opt: {
+            ok -> iter = it
+            ->
+        }
+    }
 }
 print('3 ident-cmp loop iters: ' - iter.to-str())
 
@@ -60,7 +81,14 @@ keep-trimming = true
             ixout53c13 == 0 -> {
 
                 #{overflow=wrap}
-                cn = cn - 1
+                {
+                    #{overflow=wrap}
+                    cn-opt = cn - 1
+                    cn-opt: {
+                        ok -> cn = it
+                        ->
+                    }
+                }
             }
 
             #{overflow=wrap}
@@ -84,7 +112,14 @@ goon = true
 #1 (goon) {
 
     #{overflow=wrap}
-    hits = hits + 1
+    {
+        #{overflow=wrap}
+        hits-opt = hits + 1
+        hits-opt: {
+            ok -> hits = it
+            ->
+        }
+    }
 
     hits >= 2 -> break #1
 }

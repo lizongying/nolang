@@ -94,7 +94,14 @@ client: {
                     print('---')
 
                     #{overflow=wrap}
-                    count = count + 1
+                    {
+                        #{overflow=wrap}
+                        count-opt = count + 1
+                        count-opt: {
+                            ok -> count = it
+                            ->
+                        }
+                    }
                     count >= 3 -> break
                 }
             }

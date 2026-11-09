@@ -29,28 +29,34 @@ LEVEL-FATAL = 4
 ...
 
 ; 前置時間戳 YYYY-MM-DD HH:MM:SS（UTC）
+; [F-TIME](#log.f-time)
 F-TIME = 1
 
 ; 前置 [INFO] / [ERROR] 等級標籤
+; [F-LEVEL](#log.f-level)
 F-LEVEL = 2
 
 ; 前置呼叫點 [檔案:行:列]（由 #{track-caller} 自動注入）
+; [F-LOC](#log.f-loc)
 F-LOC = 4
 
 ; 全域設定
 ...
 
 ; 當前日誌級別（預設 INFO）
+; [LEVEL](#log.level)
 LEVEL = 1
 
 ; 輸出格式位（預設僅 [INFO] 級別標籤，貼近舊輸出以保持相容；
 ; 需要的話用 set-format 疊加 F-TIME / F-LOC）
+; [FMT-FLAGS](#log.fmt-flags)
 FMT-FLAGS = 2
 
 ; OUT-FD: 日誌輸出目標 fd（預設標準錯誤 stderr=2）。
 ; 說明：對外的輸出介面以 io.writer 抽象承載（見 set-writer / get-writer），但真正
 ; 持久化的狀態只能是這個標量 fd —— Nolang 的 std 合併模組中，struct global 的寫入
 ; 不會持久（只有標量 global 可變），故以 fd 作為唯一可信的儲存，寫入時再組裝 writer。
+; [OUT-FD](#log.out-fd)
 OUT-FD fd = fs.STDERR-FD
 
 ; 設定介面
@@ -146,46 +152,46 @@ log-emit = (tag str, msg str, loc str) {
 ...
 
 ; debug: 輸出 DEBUG 級別日誌
-; [debug](#log.debug)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; [debug](#log.debug)
 #{track-caller}
 debug = (msg str, loc str = '') {
     LEVEL <= 0 -> log-emit('DEBUG', msg, loc)
 }
 
 ; info: 輸出 INFO 級別日誌
-; [info](#log.info)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; [info](#log.info)
 #{track-caller}
 info = (msg str, loc str = '') {
     LEVEL <= 1 -> log-emit('INFO', msg, loc)
 }
 
 ; warn: 輸出 WARN 級別日誌
-; [warn](#log.warn)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; [warn](#log.warn)
 #{track-caller}
 warn = (msg str, loc str = '') {
     LEVEL <= 2 -> log-emit('WARN', msg, loc)
 }
 
 ; error: 輸出 ERROR 級別日誌
-; [error](#log.error)
 ; msg: 日誌正文
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; [error](#log.error)
 #{track-caller}
 error = (msg str, loc str = '') {
     LEVEL <= 3 -> log-emit('ERROR', msg, loc)
 }
 
 ; fatal: 輸出 FATAL 級別日誌並退出
-; [fatal](#log.fatal)
 ; msg: 日誌正文
 ; code: 輸出後傳給 exit 的進程結束狀態碼
 ; loc: 呼叫點 檔案:行:列（由 #{track-caller} 自動注入，可留空）
+; [fatal](#log.fatal)
 #{track-caller}
 fatal = (msg str, code i64, loc str = '') {
     log-emit('FATAL', msg, loc)

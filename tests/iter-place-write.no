@@ -148,9 +148,25 @@ sub-ok = 0
 sub-nil = 0
 ii <- [0..3): {
     oa[ii]: {
-        ok -> sub-ok = sub-ok + 1
+        ok -> {
+            {
+                sub-ok-opt = sub-ok + 1
+                sub-ok-opt: {
+                    ok -> sub-ok = it
+                    ->
+                }
+            }
+        }
 
-        nil -> sub-nil = sub-nil + 1
+        nil -> {
+            {
+                sub-nil-opt = sub-nil + 1
+                sub-nil-opt: {
+                    ok -> sub-nil = it
+                    ->
+                }
+            }
+        }
 
         -> {
         }
@@ -161,9 +177,25 @@ iter-ok = 0
 iter-nil = 0
 ov <- ob: {
     ov: {
-        ok -> iter-ok = iter-ok + 1
+        ok -> {
+            {
+                iter-ok-opt = iter-ok + 1
+                iter-ok-opt: {
+                    ok -> iter-ok = it
+                    ->
+                }
+            }
+        }
 
-        nil -> iter-nil = iter-nil + 1
+        nil -> {
+            {
+                iter-nil-opt = iter-nil + 1
+                iter-nil-opt: {
+                    ok -> iter-nil = it
+                    ->
+                }
+            }
+        }
 
         -> {
         }

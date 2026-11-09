@@ -24,6 +24,7 @@
 ...
 
 ; 每行最大 Base64 字元數
+; [PEM-LINE-LEN](#pem.pem-line-len)
 PEM-LINE-LEN = 64
 
 ; 結構體
@@ -32,6 +33,7 @@ PEM-LINE-LEN = 64
 ; pem-block: PEM 解碼結果
 ; label str: BEGIN/END 之間的標籤（如 'CERTIFICATE'）
 ; data []byte: Base64 解碼後的二進位載荷
+; [pem-block](#pem.pem-block)
 pem-block {
     label str
     data []byte

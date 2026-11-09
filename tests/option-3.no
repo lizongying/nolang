@@ -108,7 +108,14 @@ view-point.self-view = () (v &view-point) {
 view-point.sum = () (s i64) {
 
     #{overflow=wrap}
-    s = .x + .y
+    {
+        #{overflow=wrap}
+        s-opt = .x + .y
+        s-opt: {
+            ok -> s = it
+            ->
+        }
+    }
 }
 
 p = view-point {

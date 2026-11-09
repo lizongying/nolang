@@ -17,9 +17,11 @@
 ...
 
 ; QUIC 版本
+; [QUIC-VERSION-1](#quic.quic-version-1)
 QUIC-VERSION-1 i64 = 0x00000001
 
 ; QUIC Initial Salt (RFC 9001 §5.2)
+; [QUIC-INITIAL-SALT](#quic.quic-initial-salt)
 QUIC-INITIAL-SALT [20]byte = [
     0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3,
     0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8, 0x0c, 0xad,
@@ -27,18 +29,22 @@ QUIC-INITIAL-SALT [20]byte = [
 ]
 
 ; 封包類型（Long Header 第一位元組高位）
+; [QUIC-PACKET-INITIAL](#quic.quic-packet-initial)
 QUIC-PACKET-INITIAL i64 = 0x00
 QUIC-PACKET-ZERO-RTT i64 = 0x10
 QUIC-PACKET-HANDSHAKE i64 = 0x20
 QUIC-PACKET-RETRY i64 = 0x30
 
 ; Long Header 固定位元
+; [QUIC-LONG-HEADER-FIXED-BIT](#quic.quic-long-header-fixed-bit)
 QUIC-LONG-HEADER-FIXED-BIT i64 = 0x80
 
 ; Short Header 固定位元
+; [QUIC-SHORT-HEADER-FIXED-BIT](#quic.quic-short-header-fixed-bit)
 QUIC-SHORT-HEADER-FIXED-BIT i64 = 0x40
 
 ; 影格類型
+; [QUIC-FRAME-PADDING](#quic.quic-frame-padding)
 QUIC-FRAME-PADDING i64 = 0x00
 QUIC-FRAME-PING i64 = 0x01
 QUIC-FRAME-ACK i64 = 0x02
@@ -54,17 +60,21 @@ QUIC-FRAME-CONNECTION-CLOSE-APP i64 = 0x1d
 QUIC-FRAME-HANDSHAKE-DONE i64 = 0x1e
 
 ; 金鑰長度
+; [QUIC-KEY-SIZE](#quic.quic-key-size)
 QUIC-KEY-SIZE = 16
 QUIC-IV-SIZE = 12
 QUIC-HP-SIZE = 16
 
 ; 最大封包大小
+; [QUIC-MAX-PACKET-SIZE](#quic.quic-max-packet-size)
 QUIC-MAX-PACKET-SIZE = 1200
 
 ; 最大 CID 長度
+; [QUIC-MAX-CID-LEN](#quic.quic-max-cid-len)
 QUIC-MAX-CID-LEN = 20
 
 ; 最大影格數量
+; [QUIC-MAX-FRAMES](#quic.quic-max-frames)
 QUIC-MAX-FRAMES = 32
 
 ; 變長整數編解碼（RFC 9000 §16）
@@ -325,6 +335,7 @@ gen-cid = (len i64) (cid []byte) {
 ; length i64: 影格資料長度
 ; stream-id i64: STREAM 影格的串流 ID
 ; data []byte: 影格資料
+; [frame](#quic.frame)
 frame {
     frame-type i64
     offset i64
@@ -856,6 +867,7 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
 ...
 
 ; conn: QUIC 連線
+; [conn](#quic.conn)
 conn {
     fd fd
     host str
@@ -893,6 +905,7 @@ conn {
 ; HS 緩衝區
 
 ; 連線狀態
+; [QUIC-STATE-NEW](#quic.quic-state-new)
 QUIC-STATE-NEW = 0
 QUIC-STATE-INITIAL-SENT = 1
 QUIC-STATE-INITIAL-RECV = 2

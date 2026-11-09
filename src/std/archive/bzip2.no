@@ -23,6 +23,7 @@
 ; pos i64: 下一個要載入 bit-buf 的位元組下標
 ; bit-buf i64: 位元緩衝；只剩尚未消費的低 bit-cnt 位
 ; bit-cnt i64: bit-buf 中仍可讀的位元數（0 表示需要載入下一個位元組）
+; [bz-bit-reader](#bzip2.bz-bit-reader)
 bz-bit-reader {
     data []byte
     pos i64
@@ -91,6 +92,7 @@ BZ-GROUP-SIZE = 50
 ; perm [258]i64: 按碼長與字典序排好的符號表
 ; min-len i64: 最短碼長；為 0 表示此表為空，解碼直接失敗
 ; max-len i64: 最長碼長
+; [bz-huffman](#bzip2.bz-huffman)
 bz-huffman {
     limit [24]i64
     base [24]i64

@@ -16,7 +16,14 @@ test-run = (name str, cb greet-cb) {
 
 add-one = (n i64) (r i64) {
     #{overflow=wrap}
-    r = n + 1
+    {
+        #{overflow=wrap}
+        r-opt = n + 1
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 apply = (n i64, cb compute-cb) (out i64) {

@@ -24,6 +24,7 @@ TOML-MAX-KEY = 32
 TOML-MAX-VALUE = 128
 
 ; toml-entry 使用固定 byte 緩衝區，避免文件值在 struct 複製時發生所有權別名。
+; [toml-entry](#toml.toml-entry)
 toml-entry {
     key [32]byte
     key-len i64
@@ -43,6 +44,7 @@ toml-array-table {
 }
 
 ; toml: TOML 文件。表格以完整 dotted key 儲存，例如 server.port。
+; [toml-doc](#toml.toml-doc)
 toml-doc {
     entries [4]toml-entry
     count i64

@@ -19,7 +19,7 @@ package parser
 
 import "reflect"
 
-// CloneProgram 回傳 prog 的深拷貝工作副本：Statements / FreeComments /
+// CloneProgram 回傳 prog 的深拷貝工作副本：Statements / Doc / FreeComments /
 // TrailingComments / BuiltinFuncNames 全部深拷貝，Sem 經 nodes 對映把
 // node-keyed 條目換鍵到副本節點後複製（名稱級映射原樣帶過）。
 // prog 本身及其可達節點不被觸碰。
@@ -49,6 +49,9 @@ func CloneProgram(prog *Program) *Program {
 	}
 	if prog.TrailingComments != nil {
 		out.TrailingComments = c.cloneValue(reflect.ValueOf(prog.TrailingComments)).Interface().(*CommentGroup)
+	}
+	if prog.Doc != nil {
+		out.Doc = c.cloneValue(reflect.ValueOf(prog.Doc)).Interface().(*CommentGroup)
 	}
 	if prog.Warnings != nil {
 		out.Warnings = append([]string(nil), prog.Warnings...)

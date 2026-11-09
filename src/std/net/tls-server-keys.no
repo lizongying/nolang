@@ -7,6 +7,7 @@
 ; [tls-server-keys](#tls-server-keys)
 
 ; RSA 模數 n（256 位元組，big-endian，不含 DER 前導 0x00）
+; [TLS-SERVER-RSA-N](#tls-server-keys.tls-server-rsa-n)
 TLS-SERVER-RSA-N [256]byte = [
     0xbe, 0x4b, 0xaa, 0x8f, 0x6b, 0xb0, 0x1a, 0x33,
     0x64, 0x5e, 0xe5, 0x37, 0x33, 0x12, 0xfa, 0x36,
@@ -43,9 +44,11 @@ TLS-SERVER-RSA-N [256]byte = [
 ]
 
 ; RSA 公鑰指數 e = 65537 (0x10001)
+; [TLS-SERVER-RSA-E](#tls-server-keys.tls-server-rsa-e)
 TLS-SERVER-RSA-E = 65537
 
 ; RSA 私鑰指數 d（256 位元組，big-endian）
+; [TLS-SERVER-RSA-D](#tls-server-keys.tls-server-rsa-d)
 TLS-SERVER-RSA-D [256]byte = [
     0x1d, 0xe6, 0x33, 0x50, 0x76, 0x89, 0xef, 0x0b,
     0xf2, 0x72, 0x20, 0x8f, 0x59, 0x94, 0x85, 0x40,

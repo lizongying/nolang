@@ -28,6 +28,7 @@
 ...
 
 ; 節點類型
+; [YAML-KIND-NULL](#yaml.yaml-kind-null)
 YAML-KIND-NULL = 0
 YAML-KIND-BOOL = 1
 YAML-KIND-INT = 2
@@ -37,6 +38,7 @@ YAML-KIND-SEQ = 5
 YAML-KIND-MAP = 6
 
 ; 標量風格
+; [YAML-STYLE-PLAIN](#yaml.yaml-style-plain)
 YAML-STYLE-PLAIN = 0
 YAML-STYLE-SINGLE = 1
 YAML-STYLE-DOUBLE = 2
@@ -45,13 +47,16 @@ YAML-STYLE-FOLDED = 4
 YAML-STYLE-ALIAS = 5
 
 ; 集合風格
+; [YAML-STYLE-BLOCK](#yaml.yaml-style-block)
 YAML-STYLE-BLOCK = 6
 YAML-STYLE-FLOW = 7
 
 ; 序列化遞歸深度上限（防御自引用锚點）
+; [YAML-MAX-DEPTH](#yaml.yaml-max-depth)
 YAML-MAX-DEPTH = 32
 
 ; chomping 模式
+; [YAML-CHOMP-CLIP](#yaml.yaml-chomp-clip)
 YAML-CHOMP-CLIP = 0
 YAML-CHOMP-STRIP = 1
 YAML-CHOMP-KEEP = 2
@@ -67,6 +72,7 @@ YAML-CHOMP-KEEP = 2
 ;   text   標量原文（引號已解轉義）；集合為空
 ;   ival/fval/bval 解析後的標量值
 ;   keys   映射键節點索引；kids 序列元素 / 映射值節點索引
+; [yaml-node](#yaml.yaml-node)
 yaml-node {
     kind i64
     style i64
@@ -83,11 +89,13 @@ yaml-node {
 }
 
 ; yaml-pool: 節點池
+; [yaml-pool](#yaml.yaml-pool)
 yaml-pool {
     nodes []yaml-node
 }
 
 ; yaml: 已解析文檔（可含多份文檔）
+; [yaml](#yaml.yaml)
 yaml {
     pool yaml-pool
     root i64
@@ -96,6 +104,7 @@ yaml {
 }
 
 ; yaml-parser: 解析器状態（方法接收者為引用，可原地推進）
+; [yaml-parser](#yaml.yaml-parser)
 yaml-parser {
     src str
     n i64
@@ -2950,6 +2959,7 @@ yaml.is-nan = () (yes bool) {
 
 ; 判斷是否 float
 ; yes: 節點為浮點數
+; [is-float](#yaml.yaml.is-float)
 yaml.is-float = () (yes bool) {
     yes = .kind() == YAML-KIND-FLOAT
 }

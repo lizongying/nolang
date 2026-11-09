@@ -33,21 +33,27 @@
 ; 必須 ≥ TLS 單筆記錄最大明文 (2^14 = 16384 位元組)。否則 tls.conn.recv 在
 ; copy-n > n 時會靜默丟棄超過 n 的位元組，造成回應中段缺漏（見 tls.no recv）。
 ; 使用 16640 (= 16384 + 256 餘量，與 tls 內部 rec 緩衝區一致) 確保單筆記錄完整。
+; [HTTP-BUF-SIZE](#http.http-buf-size)
 HTTP-BUF-SIZE = 16640
 
 ; 最大回應大小
+; [HTTP-MAX-RESPONSE](#http.http-max-response)
 HTTP-MAX-RESPONSE = 16384
 
 ; 預設 HTTP 埠號
+; [HTTP-DEFAULT-PORT](#http.http-default-port)
 HTTP-DEFAULT-PORT = 80
 
 ; 預設 HTTPS 埠號
+; [HTTPS-DEFAULT-PORT](#http.https-default-port)
 HTTPS-DEFAULT-PORT = 443
 
 ; 請求最大自訂標頭數
+; [HTTP-MAX-REQ-HEADERS](#http.http-max-req-headers)
 HTTP-MAX-REQ-HEADERS = 16
 
 ; 回應最大解析標頭數
+; [HTTP-MAX-RESP-HEADERS](#http.http-max-resp-headers)
 HTTP-MAX-RESP-HEADERS = 32
 
 ; 結構體
@@ -56,6 +62,7 @@ HTTP-MAX-RESP-HEADERS = 32
 ; request: HTTP 請求（支援自訂標頭）
 ; headers: 標頭行陣列，每行格式 'Name: Value'
 ; header-count: 已加入的標頭數
+; [request](#http.request)
 request {
     method str
     url str
@@ -71,6 +78,7 @@ request {
 ; header-names/header-values: 解析後的標頭名/值（parse-headers 填入）
 ; header-count: 解析後的標頭數
 ; body: 回應主體
+; [response](#http.response)
 response {
     status-code i64
     status-text str
@@ -1210,11 +1218,11 @@ post-auth = (url str, body str, user str, password str) (resp ?response) {
 ; 返回 ok bool: true=成功
 ...
 
-; [download-to-file](#http.download-to-file)
 ; 下載 URL 內容到本地檔案（公開入口）：委託 http-dl-open，重定向計數從 0 起
 ; url: 完整 URL（http/https）
 ; dest: 目的地檔案路徑（寫入成功時建立或覆蓋）
 ; ok: true=寫入成功且 HTTP 狀態為 2xx, false=失敗或重定向超過 5 次
+; [download-to-file](#http.download-to-file)
 download-to-file = (url str, dest str) (ok bool) {
     ok = http-dl-open(url, dest, 0)
 }

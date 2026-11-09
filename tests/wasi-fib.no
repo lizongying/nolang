@@ -61,7 +61,14 @@ fib-rec = (n i64) (r i64) {
     p2 = fib-rec(n2)
 
     #{overflow=wrap}
-    r = p1 + p2
+    {
+        #{overflow=wrap}
+        r-opt = p1 + p2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 loop10 = fib-loop(10)
 print('fib-loop(10) = {loop10.to-str()}')

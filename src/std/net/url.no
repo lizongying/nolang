@@ -39,6 +39,7 @@
 ; fragment str: 片段（不含 #）
 ; user str: 用戶名（如 user:pass@host 中的 user）
 ; password str: 密碼
+; [url-info](#url.url-info)
 url-info {
     ok bool
     scheme str

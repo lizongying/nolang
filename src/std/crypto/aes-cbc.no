@@ -18,6 +18,7 @@
 ; [aes-cbc](#aes-cbc)
 
 ; AES 區塊大小
+; [AES-BLOCK-SIZE](#aes-cbc.aes-block-size)
 AES-BLOCK-SIZE = 16
 
 ; CBC 加密核心（輪金鑰由呼叫端展開一次）

@@ -21,12 +21,15 @@
 ...
 
 ; SHA-256 區塊大小（位元組）
+; [HMAC-BLOCK-SIZE](#hmac.hmac-block-size)
 HMAC-BLOCK-SIZE = 64
 
 ; SHA-256 輸出大小（位元組）
+; [HMAC-HASH-SIZE](#hmac.hmac-hash-size)
 HMAC-HASH-SIZE = 32
 
 ; ipad / opad 常量
+; [HMAC-IPAD](#hmac.hmac-ipad)
 HMAC-IPAD = 54
 HMAC-OPAD = 92
 
@@ -179,9 +182,11 @@ hmac-sha256-vec = (key []byte, msg []byte) (out []byte) {
 ...
 
 ; HMAC-SHA1 區塊大小
+; [HMAC-SHA1-BLOCK-SIZE](#hmac.hmac-sha1-block-size)
 HMAC-SHA1-BLOCK-SIZE = 64
 
 ; HMAC-SHA1 輸出大小
+; [HMAC-SHA1-HASH-SIZE](#hmac.hmac-sha1-hash-size)
 HMAC-SHA1-HASH-SIZE = 20
 
 ; 計算 HMAC-SHA1
@@ -318,9 +323,11 @@ hmac-sha1-vec = (key []byte, msg []byte) (out []byte) {
 ...
 
 ; HMAC-SHA512 區塊大小（SHA-512 使用 128 位元組區塊）
+; [HMAC-SHA512-BLOCK-SIZE](#hmac.hmac-sha512-block-size)
 HMAC-SHA512-BLOCK-SIZE = 128
 
 ; HMAC-SHA512 輸出大小
+; [HMAC-SHA512-HASH-SIZE](#hmac.hmac-sha512-hash-size)
 HMAC-SHA512-HASH-SIZE = 64
 
 ; 計算 HMAC-SHA512

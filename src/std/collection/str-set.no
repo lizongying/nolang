@@ -12,6 +12,7 @@
 ; [str-set](#str-set)
 
 ; FNV-1a 常量
+; [SS-FNV-OFFSET](#str-set.ss-fnv-offset)
 SS-FNV-OFFSET = -3750763034362895579
 SS-FNV-PRIME = 1099511628211
 
@@ -20,6 +21,7 @@ SS-FNV-PRIME = 1099511628211
 ; keys [256]str: 各槽位存放的字串（共 256 個槽），有效與否由 occ 決定
 ; occ [256]i64: 佔用標記，1=該槽有位, 0=空槽
 ; size i64: 目前元素個數
+; [str-set](#str-set.str-set)
 str-set {
     cap i64
     keys [256]str

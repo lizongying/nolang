@@ -222,6 +222,7 @@ format-duration = (seconds i64) (out str) {
 ; timer: 計時器結構體
 ; start-ts: 起始時間戳（毫秒）
 ; end-ts: 結束時間戳（毫秒）
+; [timer](#time.timer)
 timer {
     start-ts i64
     end-ts i64
@@ -293,6 +294,7 @@ timer.elapsed-us = () (us i64) {
 ...
 
 ; date: 日期時間結構體（UTC）
+; [date](#time.date-2)
 date {
     year i64
     month i64
@@ -304,6 +306,7 @@ date {
 }
 
 ; 月份天數表（非閏年）
+; [_days-in-month](#time._days-in-month)
 _days-in-month = [
     31, 28, 31, 30, 31, 30, 31, 31,
     30, 31, 30, 31,
@@ -775,6 +778,7 @@ now-date = () (d date) {
 ; 以 Unix 秒（sec）與納秒（nsec，0~999,999,999）表示一個絕對時間點。
 ; 搭配 now-time、unix-to-time 等構造函式與 .unix、.date、.format 等方法，
 ; 讓呼叫端以 time 而非裸 i64 時間戳操作時間。
+; [time](#time.time)
 time {
     sec i64
     nsec i64

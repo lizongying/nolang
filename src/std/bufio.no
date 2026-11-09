@@ -8,6 +8,7 @@
 ; buf []byte: 由呼叫方提供的緩衝區（容量決定單次讀取上限）
 ; pos i64: 下一次從 buf 取用的下標
 ; avail i64: buf 中已填充、尚未消費的位元組數
+; [reader](#bufio.reader)
 reader {
     fd fd
     buf []byte

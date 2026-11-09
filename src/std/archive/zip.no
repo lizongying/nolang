@@ -20,11 +20,13 @@
 ...
 
 ; zip: ZIP 歸檔唯讀視圖
+; [zip](#zip.zip)
 zip {
     data []byte
 }
 
 ; zip-entry: ZIP 條目（指向 archive.data 中的某個 central directory 條目）
+; [zip-entry](#zip.zip-entry)
 zip-entry {
     data []byte
     off i64

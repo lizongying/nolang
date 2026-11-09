@@ -73,9 +73,23 @@ f(a, 10)
 {
 
     #{overflow=wrap}
-    sum = sum + i
+    {
+        #{overflow=wrap}
+        sum-opt = sum + i
+        sum-opt: {
+            ok -> sum = it
+            ->
+        }
+    }
 
     #{overflow=wrap}
-    i = i + 1
+    {
+        #{overflow=wrap}
+        i-opt = i + 1
+        i-opt: {
+            ok -> i = it
+            ->
+        }
+    }
 }
 5

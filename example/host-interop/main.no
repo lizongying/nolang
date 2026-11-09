@@ -16,7 +16,13 @@
 
 #{cabi='nolang_add'}
 nl-add = (a i64, b i64) (r i64) {
-    r = a + b
+    {
+        r-opt = a + b
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 #{cabi='nolang_scale'}
@@ -26,5 +32,11 @@ nl-scale = (x f64, k f64) (r f64) {
 
 #{cabi='nolang_sum3'}
 nl-sum3 = (a i64, b i64, c i64) (r i64) {
-    r = a + b + c
+    {
+        r-opt2 = a + b + c
+        r-opt2: {
+            ok -> r = it
+            ->
+        }
+    }
 }

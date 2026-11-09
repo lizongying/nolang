@@ -9,7 +9,14 @@
 compute = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n * 2
+    {
+        #{overflow=wrap}
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 多參數
@@ -19,7 +26,14 @@ compute = (n i64) (r i64) {
 add = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
-    r = a + b
+    {
+        #{overflow=wrap}
+        r-opt2 = a + b
+        r-opt2: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 條件邏輯

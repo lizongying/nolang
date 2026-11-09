@@ -46,7 +46,14 @@ b-abs-i64 = (a i64) (r i64) {
         a < 0 -> {
 
             #{overflow=wrap}
-            r = 0 - a
+            {
+                #{overflow=wrap}
+                r-opt = 0 - a
+                r-opt: {
+                    ok -> r = it
+                    ->
+                }
+            }
         }
 
         -> r = a
@@ -63,16 +70,36 @@ b-gcd = (a i64, b i64) (r i64) {
     (ra < 0) {
 
         #{overflow=wrap}
-        ra = 0 - ra
+        {
+            #{overflow=wrap}
+            ra-opt = 0 - ra
+            ra-opt: {
+                ok -> ra = it
+                ->
+            }
+        }
     }
     (rb < 0) {
 
         #{overflow=wrap}
-        rb = 0 - rb
+        {
+            #{overflow=wrap}
+            rb-opt = 0 - rb
+            rb-opt: {
+                ok -> rb = it
+                ->
+            }
+        }
     }
     (rb != 0) {
         t = rb
-        rb = ra % rb
+        {
+            rb-opt2 = ra % rb
+            rb-opt2: {
+                ok -> rb = it
+                ->
+            }
+        }
         ra = t
     }
     r = ra
@@ -543,7 +570,14 @@ zsi-test-str-index-lint = () {
         _ = b.byte(i)
 
         #{overflow=wrap}
-        sum-b = sum-b + 1
+        {
+            #{overflow=wrap}
+            sum-b-opt = sum-b + 1
+            sum-b-opt: {
+                ok -> sum-b = it
+                ->
+            }
+        }
     }
     print(sum-b)
 
@@ -553,7 +587,14 @@ zsi-test-str-index-lint = () {
         ch2 char = a[j]
 
         #{overflow=wrap}
-        sum-a = sum-a + 1
+        {
+            #{overflow=wrap}
+            sum-a-opt = sum-a + 1
+            sum-a-opt: {
+                ok -> sum-a = it
+                ->
+            }
+        }
     }
     print(sum-a)
 
@@ -562,7 +603,14 @@ zsi-test-str-index-lint = () {
     cc <- b: {
 
         #{overflow=wrap}
-        sum-c = sum-c + 1
+        {
+            #{overflow=wrap}
+            sum-c-opt = sum-c + 1
+            sum-c-opt: {
+                ok -> sum-c = it
+                ->
+            }
+        }
     }
     print(sum-c)
 

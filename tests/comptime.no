@@ -5,7 +5,13 @@
 ; x i64: 底數
 ; r i64: x * x
 square = (x i64) (r i64) {
-    r = x * x
+    {
+        r-opt = x * x
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 純函式：相加，供 compose 內層折疊
@@ -13,7 +19,13 @@ square = (x i64) (r i64) {
 ; b i64: 第二個加數
 ; r i64: a + b
 add = (a i64, b i64) (r i64) {
-    r = a + b
+    {
+        r-opt2 = a + b
+        r-opt2: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 巢狀純呼叫：先 add 再 square，兩層都應在 comptime 折疊
@@ -29,7 +41,13 @@ compose = (a i64, b i64) (r i64) {
 ; r i64: 21
 propagate = () (r i64) {
     k = 10
-    r = k * 2 + 1
+    {
+        r-opt3 = k * 2 + 1
+        r-opt3: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; pure-fn call folded
@@ -70,7 +88,13 @@ point {
 ; 以自身座標算平方距離（不開根號），示範方法可被內聯求值
 ; r i64: x*x + y*y；p 為 (3, 4) 時得 25
 point.dist = () (r i64) {
-    r = .x * .x + .y * .y
+    {
+        r-opt4 = .x * .x + .y * .y
+        r-opt4: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 p = point {

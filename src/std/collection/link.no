@@ -44,6 +44,7 @@
 ; size: 當前元素數量
 ; next: 下一節點索引陣列（由呼叫者提供）
 ; prev: 前一節點索引陣列（由呼叫者提供）
+; [link](#link.link)
 link {
     head i64
     tail i64

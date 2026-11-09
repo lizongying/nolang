@@ -247,7 +247,11 @@ type detSem struct {
 }
 
 type detProgram struct {
-	Statements       []Statement
+	Statements []Statement
+	// Doc 是模組 doc（見 Program.Doc）。它與 TrailingComments 同類：都是掛在
+	// Program 上的註解群組，必須原樣往返，否則「讀快取」與「fresh parse」會
+	// 得到兩棵不同的樹（Program.Doc 為 nil）。
+	Doc              *CommentGroup
 	FreeComments     []*CommentGroup
 	TrailingComments *CommentGroup
 	Warnings         []string
@@ -358,6 +362,7 @@ func detFromProgram(p *Program) *detProgram {
 	}
 	d := &detProgram{
 		Statements:       p.Statements,
+		Doc:              p.Doc,
 		FreeComments:     p.FreeComments,
 		TrailingComments: p.TrailingComments,
 		Warnings:         p.Warnings,
@@ -377,6 +382,7 @@ func detToProgram(d *detProgram) *Program {
 	}
 	p := &Program{
 		Statements:       d.Statements,
+		Doc:              d.Doc,
 		FreeComments:     d.FreeComments,
 		TrailingComments: d.TrailingComments,
 		Warnings:         d.Warnings,

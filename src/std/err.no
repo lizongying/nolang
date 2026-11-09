@@ -16,6 +16,7 @@
 ; index-out：索號越界（`a[i]` / `s[i]` 的 i 不在 `[0, len)` 內）。D11 定案：越界讀取
 ; 回傳 err（不是 nil）—— nil 專門表示「值確實不存在」（map 缺鍵、`?T` 槽位為空），
 ; 越界則是**程式錯誤**，故給 err 以便與空值區分。
+; [code](#err.code-2)
 code {
     ok,
     not-found,
@@ -65,6 +66,7 @@ code.to-name = () (s str) {
 ; code: 錯誤碼（code 枚舉值）
 ; msg: 人類可讀的錯誤描述文本
 ; file / line / col: 錯誤發生位置（由編譯器在構造點自動注入；手動建構時留空字串與 0）
+; [err](#err.err)
 err {
     code code
     msg str

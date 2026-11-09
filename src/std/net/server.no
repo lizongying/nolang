@@ -28,21 +28,27 @@
 ...
 
 ; 伺服器接收緩衝區大小
+; [HTTP-SRV-BUF-SIZE](#server.http-srv-buf-size)
 HTTP-SRV-BUF-SIZE = 8192
 
 ; 單次接收大小
+; [HTTP-SRV-RECV-SIZE](#server.http-srv-recv-size)
 HTTP-SRV-RECV-SIZE = 4096
 
 ; 最大請求標頭數
+; [HTTP-SRV-MAX-HEADERS](#server.http-srv-max-headers)
 HTTP-SRV-MAX-HEADERS = 32
 
 ; 最大請求體大小
+; [HTTP-SRV-MAX-BODY](#server.http-srv-max-body)
 HTTP-SRV-MAX-BODY = 1048576
 
 ; Keep-Alive 最大請求數
+; [HTTP-SRV-MAX-KEEPALIVE](#server.http-srv-max-keepalive)
 HTTP-SRV-MAX-KEEPALIVE = 100
 
 ; Keep-Alive 逾時（毫秒）
+; [HTTP-SRV-KEEPALIVE-TIMEOUT](#server.http-srv-keepalive-timeout)
 HTTP-SRV-KEEPALIVE-TIMEOUT = 5000
 
 ; 結構體
@@ -52,6 +58,7 @@ HTTP-SRV-KEEPALIVE-TIMEOUT = 5000
 ; fd: 監聽 socket fd（-1=未開啟）
 ; host: 綁定的 IP 地址
 ; port: 監聽埠號
+; [server](#server.server)
 server {
     fd fd
     host str
@@ -73,6 +80,7 @@ server {
 ; keep-alive: 是否保持連接
 ; recv-buf: 接收緩衝區
 ; recv-buf-len: 緩衝區中實際資料長度
+; [server-conn](#server.server-conn)
 server-conn {
     fd fd
     method str
@@ -792,6 +800,7 @@ server-conn.set-signed-cookie = (name str, value str, key []byte) {
 ; fd: 監聽 socket fd（-1=未開啟）
 ; host: 綁定的 IP 地址
 ; port: 監聽埠號
+; [https-server](#server.https-server)
 https-server {
     fd fd
     host str
@@ -812,6 +821,7 @@ https-server {
 ; keep-alive: 是否保持連接
 ; recv-buf: 接收緩衝區
 ; recv-buf-len: 緩衝區中實際資料長度
+; [https-server-conn](#server.https-server-conn)
 https-server-conn {
     tls tls.server-conn
     method str

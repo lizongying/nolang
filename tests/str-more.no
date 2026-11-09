@@ -1176,7 +1176,14 @@ print-str-loop-assign = () {
         b3 = s3
 
         #{overflow=wrap}
-        n3 = n3 + 1
+        {
+            #{overflow=wrap}
+            n3-opt = n3 + 1
+            n3-opt: {
+                ok -> n3 = it
+                ->
+            }
+        }
     }
     print(b3)
     print(b3.len())

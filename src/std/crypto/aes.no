@@ -1004,6 +1004,7 @@ rcon-val = (round i64) (r i64) {
 ; 32 位元字循環左移 8 位（RotWord：最高位元組轉到低端）
 ; w: 32 位元字（按大端位元組序理解）
 ; r: 旋轉後的 32 位元字
+; [rot-word](#aes.rot-word)
 rot-word = (w i64) (r i64) {
     r = ((w << 8) | (w >> 24)) & 4294967295
 }
@@ -1011,6 +1012,7 @@ rot-word = (w i64) (r i64) {
 ; 32 位元字的 4 個位元組逐一查 S-box 替換（SubWord）
 ; w: 32 位元字
 ; r: 替換後重新組成的 32 位元字
+; [sub-word](#aes.sub-word)
 sub-word = (w i64) (r i64) {
     b0 = 0
     b1 = 0
@@ -1081,6 +1083,7 @@ key-expand = (key [16]byte) (ek []byte) {
 ; 在 GF(2^8) 中乘以 {03}（即 x+1）
 ; x: 0..255 的位元組值
 ; r: x·{03} 的結果
+; [gf-mul3](#aes.gf-mul3)
 gf-mul3 = (x i64) (r i64) {
     m2 = 0
     m2 = gf-mul2(x)

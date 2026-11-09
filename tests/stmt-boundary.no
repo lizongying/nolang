@@ -26,7 +26,14 @@
 dbl-async = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n * 2
+    {
+        #{overflow=wrap}
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; ── 缺陷 1：裸 { } 區塊不吞後續語句 ─────────────────────────────────

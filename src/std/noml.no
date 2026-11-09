@@ -39,6 +39,7 @@
 ...
 
 ; noml-kind: 節點種類（用常量而非枚舉，與 json 模組一致）
+; [NOML-KIND-NIL](#noml.noml-kind-nil)
 NOML-KIND-NIL = 0
 NOML-KIND-BOOL = 1
 NOML-KIND-NUM = 2
@@ -50,6 +51,7 @@ NOML-KIND-OBJ = 5
 ; kind/num-val/bool-val: 標量值
 ; count: 陣列/物件的子元素數量
 ; first/last: 子元素在邊表的單向鏈表首/尾邊索引（-1=無子元素）
+; [noml-value](#noml.noml-value)
 noml-value {
     kind i64
     num-val f64
@@ -65,6 +67,7 @@ noml-value {
 ; anns: 每個節點的 `#{...}` 註解原文（空字串＝無註解，與 nodes 同索引）
 ; ec/ek/en: 邊表——子節點索引、鍵名、下一同級邊索引
 ; err: 最近一次解析失敗的訊息（帶行號），由 parse 讀出
+; [noml-pool](#noml.noml-pool)
 noml-pool {
     nodes []noml-value
     strs []str
@@ -83,6 +86,7 @@ noml-pool {
 ;   d.put(o, 'name', k)
 ;   d.set-root(o)
 ;   print(d.stringify())
+; [noml-doc](#noml.noml-doc)
 noml-doc {
     pool noml-pool #{inline=false}
     root i64

@@ -42,7 +42,14 @@ my-teardown = () {
 my-compute = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n + 1
+    {
+        #{overflow=wrap}
+        r-opt = n + 1
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 測試 1: 無參無返回的具名函式型別

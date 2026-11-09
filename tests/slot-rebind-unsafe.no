@@ -9,7 +9,14 @@
 double-async = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n * 2
+    {
+        #{overflow=wrap}
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 驗證協程引數與呼叫端變數不共用槽位：y 先複製 x（7），再 spawn double-async(x) 跨執行緒讀 x，

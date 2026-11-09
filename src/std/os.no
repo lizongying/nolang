@@ -282,6 +282,7 @@ uname = () (u utsname) {
 
 ; utsname: 作業系統資訊結構體（uname 系統呼叫結果）
 ; 各欄位為 null-terminated 字串（最長 64 字元）
+; [utsname](#os.utsname)
 utsname {
     sysname str
     nodename str

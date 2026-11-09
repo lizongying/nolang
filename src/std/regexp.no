@@ -41,6 +41,7 @@
 ...
 
 ; 指令類型常量
+; [RE-OP-CHAR](#regexp.re-op-char)
 RE-OP-CHAR = 1
 RE-OP-ANY = 2
 RE-OP-CLASS = 3
@@ -52,12 +53,14 @@ RE-OP-END = 11
 
 ; 量詞內部代碼（避免使用 42/43/63 等原始字元值作為比較常量，
 ; 因為 LLVM 對 == 42 有優化 bug。改用 1/2/3 這些安全值。）
+; [_RE-QUANT-NONE](#regexp._re-quant-none)
 _RE-QUANT-NONE = 0
 _RE-QUANT-STAR = 1
 _RE-QUANT-PLUS = 2
 _RE-QUANT-QUESTION = 3
 
 ; 每個字元類別 bitmap 大小（32 bytes = 256 bits）
+; [RE-CLS-SIZE](#regexp.re-cls-size)
 RE-CLS-SIZE = 32
 
 ; 結構體
@@ -76,6 +79,7 @@ RE-CLS-SIZE = 32
 ; tmp-atom-type: 解析暫存 — atom 類型
 ; tmp-atom-char: 解析暫存 — atom 字元值
 ; tmp-atom-cls: 解析暫存 — atom 類別索引
+; [regexp](#regexp.regexp)
 regexp {
     pattern str
     compiled bool

@@ -23,7 +23,7 @@
 //     lexer.Position, comment payload strings, etc. are ordinary values.
 //   - Unexported fields cannot be read through reflect. Each node records how
 //     many it has; a change in that count is still reported as a write.
-//   - Program-level side tables (Sem, FmtTrivia, Warnings, Errors,
+//   - Program-level side tables (Sem, FmtTrivia, Warnings, Errors, Doc,
 //     TrailingComments, FreeComments, BuiltinFuncNames) are deliberately out of
 //     scope: §1.4 permits them. FmtTrivia (added 2026-10-23) is the formatter's
 //     own node-keyed table (RTFlags / opening-brace comments); like Sem it is a
@@ -151,8 +151,8 @@ func Capture(prog *parser.Program) *Snapshot {
 	c.keep = append(c.keep, prog)
 	// Program is the root container, not an AST node. §1.4 permits writes to
 	// its side tables (Sem / Warnings / Errors / TrailingComments /
-	// FreeComments / BuiltinFuncNames), so exactly one field is audited:
-	// Statements.
+	// FreeComments / Doc / BuiltinFuncNames), so exactly one field is
+	// audited: Statements.
 	c.walkValue(pv.Elem().FieldByName("Statements"), "Statements", rec, 0, "Statements")
 	return c
 }

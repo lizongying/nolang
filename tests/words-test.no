@@ -55,7 +55,14 @@ found == 0 -> {
     counts.push(1)
 
     #{overflow=wrap}
-    n = n + 1
+    {
+        #{overflow=wrap}
+        n-opt = n + 1
+        n-opt: {
+            ok -> n = it
+            ->
+        }
+    }
 }
 
 ; 輸出

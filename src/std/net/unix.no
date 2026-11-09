@@ -50,12 +50,15 @@ unix-dial = (path str) (fd fd) {
 ...
 
 ; Unix Domain Socket 路徑最大長度
+; [UNIX-MAX-PATH](#unix.unix-max-path)
 UNIX-MAX-PATH = 103
 
 ; 預設緩衝區大小
+; [UNIX-BUF-SIZE](#unix.unix-buf-size)
 UNIX-BUF-SIZE = 4096
 
 ; 監聽佇列長度
+; [UNIX-BACKLOG](#unix.unix-backlog)
 UNIX-BACKLOG = 128
 
 ; unix-listener 結構體
@@ -64,6 +67,7 @@ UNIX-BACKLOG = 128
 ; unix-listener: Unix Domain Socket 監聽器
 ; fd: 監聽 socket 的檔案描述符（-1=未開啟）
 ; path: socket 檔案路徑
+; [unix-listener](#unix.unix-listener)
 unix-listener {
     fd fd
     path str
@@ -152,6 +156,7 @@ unix-listener.path-of = () (path str) {
 
 ; unix-conn: Unix Domain Socket 連接
 ; fd: 連接 socket 的檔案描述符（-1=未連接）
+; [unix-conn](#unix.unix-conn)
 unix-conn {
     fd fd
 }

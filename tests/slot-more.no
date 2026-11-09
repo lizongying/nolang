@@ -15,7 +15,14 @@ rr_fn = () (ret i64) {
 
 consume = (x i64) (ret i64) {
     #{overflow=wrap}
-    ret = x + 42
+    {
+        #{overflow=wrap}
+        ret-opt = x + 42
+        ret-opt: {
+            ok -> ret = it
+            ->
+        }
+    }
 }
 
 n = 42
@@ -87,7 +94,14 @@ print('---')
 ; slot-rebind-unsafe
 double-async = (n i64) (r i64) {
     #{overflow=wrap}
-    r = n * 2
+    {
+        #{overflow=wrap}
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 coro-capture = () {

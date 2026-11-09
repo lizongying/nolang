@@ -23,6 +23,7 @@
 ; pos i64: 下一個要載入 bit-buf 的位元組下標
 ; bit-buf i64: 位元緩衝；尚未消費的位元存在最低位，讀取時右移
 ; bit-cnt i64: bit-buf 中仍可讀的位元數（0 表示需要載入下一個位元組）
+; [bit-reader](#gzip.bit-reader)
 bit-reader {
     data []byte
     pos i64
@@ -102,6 +103,7 @@ bit-reader.read-u16-le = () (v i64) {
 ; huffman: 規範 Huffman 解碼碼表（DEFLATE）
 ; count [17]i64: 各碼長（0–15）的符號個數；count[0] 在建表時被歸零、count[16] 僅作佔位
 ; symbol [288]i64: 按碼長遞增、同長度按符號值遞增排序後的符號表
+; [huffman](#gzip.huffman)
 huffman {
     count [17]i64
     symbol [288]i64

@@ -66,7 +66,14 @@ count = 0
     }
 
     #{overflow=wrap}
-    count = count + 1
+    {
+        #{overflow=wrap}
+        count-opt = count + 1
+        count-opt: {
+            ok -> count = it
+            ->
+        }
+    }
 }
 rs.close()
 
@@ -110,7 +117,14 @@ rs3.n-cols != 0 -> {
     (rs3.next()) {
 
         #{overflow=wrap}
-        total = total + 1
+        {
+            #{overflow=wrap}
+            total-opt = total + 1
+            total-opt: {
+                ok -> total = it
+                ->
+            }
+        }
     }
     {
         total == 2 -> print('ok: total rows')

@@ -8,18 +8,22 @@
 ...
 
 ; UUID 版本 4（隨機）
+; [VERSION-4](#uuid.version-4)
 VERSION-4 = 4
 
 ; RFC 4122 變體
+; [VARIANT-RFC4122](#uuid.variant-rfc4122)
 VARIANT-RFC4122 = 2
 
 ; 小寫十六進制字元表
+; [HEX](#uuid.hex)
 HEX = '0123456789abcdef'
 
 ; 結構定義
 ...
 
 ; uuid: 128-bit 通用唯一識別碼
+; [uuid](#uuid.uuid)
 uuid {
     bytes [16]byte
 }

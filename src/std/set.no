@@ -27,6 +27,7 @@
 ; data: 元素緩衝區切片（容量 = 其長度）
 ; cap:  容量（= 緩衝區陣列長度）
 ; size: 目前元素數量
+; [set](#set.set)
 set {
     data []t
     cap i64

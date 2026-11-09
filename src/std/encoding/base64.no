@@ -7,12 +7,15 @@
 ...
 
 ; 標準 Base64 字母表
+; [BASE64-STD](#base64.base64-std)
 BASE64-STD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
 ; URL 安全 Base64 字母表
+; [BASE64-URL](#base64.base64-url)
 BASE64-URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
 ; 填充字元 '='
+; [PAD](#base64.pad)
 PAD = 61
 
 ; 編碼

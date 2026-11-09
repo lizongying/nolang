@@ -352,7 +352,11 @@ import (
 // `SurfaceMatch(主語 = AssignExpression(b.n, b.n+1))` 變成
 // `AssignExpression(b.n, SurfaceMatch(主語 = InfixExpression))`，舊 blob 是
 // 前者，故必 bump。
-const ASTVersion = "2026-11-09.2"
+// 2026-11-09.3：新增 Program.Doc（模組 doc）。檔案開頭以「無點 doc 錨點」
+// （`; [arr](#arr)`）收尾的那段註解，從「首個宣告的 Doc」改掛到 Program.Doc：
+// 樹上多了一個欄位、且 detProgram 影子也多一個（gob 線格式變），舊 blob 的
+// 首個宣告會多帶一段註解而 Program.Doc 是 nil，故必 bump。
+const ASTVersion = "2026-11-09.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

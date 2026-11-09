@@ -20,6 +20,7 @@
 ; head i64: 鏈表頭槽位下標（最早插入的鍵），-1=空表
 ; tail i64: 鏈表尾槽位下標（最後插入的鍵），-1=空表
 ; size i64: 目前鍵值對數量
+; [linked-hash-map](#linked-hash-map.linked-hash-map)
 linked-hash-map {
     cap i64
     keys [64]i64

@@ -16,6 +16,7 @@
 ; [markdown](#markdown)
 
 ; 使用小型記錄承載多值解析結果，避免調用方處理可選索引結果。
+; [markdown-line](#markdown.markdown-line)
 markdown-line {
     text str
     next-pos i64

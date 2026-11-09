@@ -73,7 +73,14 @@ bob-ok = 0
     age = rs.scan-float(2)
 
     #{overflow=wrap}
-    n = n + 1
+    {
+        #{overflow=wrap}
+        n-opt = n + 1
+        n-opt: {
+            ok -> n = it
+            ->
+        }
+    }
 
     #{overflow=wrap}
     sum-id = sum-id + id
@@ -148,7 +155,14 @@ ok-bind = 0
     s.bind-str(1, 'Carol') -> {
 
         #{overflow=wrap}
-        ok-bind = ok-bind + 1
+        {
+            #{overflow=wrap}
+            ok-bind-opt = ok-bind + 1
+            ok-bind-opt: {
+                ok -> ok-bind = it
+                ->
+            }
+        }
     }
 
     -> ok-bind = 0
@@ -157,7 +171,14 @@ ok-bind = 0
     s.bind-int(2, 40) -> {
 
         #{overflow=wrap}
-        ok-bind = ok-bind + 1
+        {
+            #{overflow=wrap}
+            ok-bind-opt2 = ok-bind + 1
+            ok-bind-opt2: {
+                ok -> ok-bind = it
+                ->
+            }
+        }
     }
 
     -> ok-bind = 0
@@ -166,7 +187,14 @@ ok-bind = 0
     s.bind-bool(3, true) -> {
 
         #{overflow=wrap}
-        ok-bind = ok-bind + 1
+        {
+            #{overflow=wrap}
+            ok-bind-opt3 = ok-bind + 1
+            ok-bind-opt3: {
+                ok -> ok-bind = it
+                ->
+            }
+        }
     }
 
     -> ok-bind = 0
@@ -253,7 +281,14 @@ total = 0
 (rs3.next()) {
 
     #{overflow=wrap}
-    total = total + 1
+    {
+        #{overflow=wrap}
+        total-opt = total + 1
+        total-opt: {
+            ok -> total = it
+            ->
+        }
+    }
 }
 {
     total == 1 -> print('ok: rows after delete')

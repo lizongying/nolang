@@ -28,7 +28,14 @@ rr_fn = () (ret i64) {
 consume = (x i64) (ret i64) {
 
     #{overflow=wrap}
-    ret = x + 42
+    {
+        #{overflow=wrap}
+        ret-opt = x + 42
+        ret-opt: {
+            ok -> ret = it
+            ->
+        }
+    }
 }
 
 ; 1. i64 栈槽重绑定

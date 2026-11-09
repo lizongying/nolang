@@ -12,13 +12,16 @@
 ...
 
 ; 32-bit 遮罩
+; [MASK](#bigint.mask)
 MASK = 4294967295
 
 ; 2^32
+; [BASE](#bigint.base)
 BASE = 4294967296
 
 ; 型別定義
 ; bigint: 任意精度整數
+; [bigint](#bigint.bigint)
 bigint {
     sign i64
     limbs []i64
@@ -30,6 +33,7 @@ bigint {
 ; i64 臂（借道既有 `_*-i64` 私有方法），bigint 走同型臂（原 big⊕big 核心）。
 ; 私有約定：`_add-i64` / `_mul-i64` / `_div-i64` / `_mod-i64` 等小整數快速路徑僅供
 ; 本模組內部使用，其他模組一律改用運算符重載（`+ - * / %`，即 `_add`/`_sub`/`_mul`/`_div`/`_mod`）。
+; [big](#bigint.big)
 big = bigint | i64
 
 ; 建構與初始化

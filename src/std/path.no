@@ -9,15 +9,18 @@
 ; 會讓 `c == SEP` 恆為 false → dir()/base()/ext() 永遠找不到分隔符
 ; （last-sep 停在 -1，dir() 一律回 '.'、base() 回整串）。
 ; SEP/DOT 只用於**寫入**（`.p[n] = SEP`）；掃描時請用下面的 SEP-BYTE / DOT-BYTE。
+; [SEP](#path.sep)
 SEP = "/"
 
 ; 當前目錄（'.' = 46；同上，雙引號 char 字面量）
+; [DOT](#path.dot)
 DOT = "."
 
 ; 位元組版分隔符常量。`.p.byte(i)` 讀出的是**數值**（非 char），所以掃描迴圈裡的
 ; 比較必須用數值常量。所有「讀取」一律走 .byte(i)：語義是位元組，且與 len-bytes()、
 ; out-n 這些位元組游標同一單位 —— 混用碼點索引（.p[i]）與位元組游標會把非 ASCII
 ; 路徑切壞（見 tests/std-byte-indexing.no）。
+; [SEP-BYTE](#path.sep-byte)
 SEP-BYTE = 47
 
 DOT-BYTE = 46
@@ -26,6 +29,7 @@ DOT-BYTE = 46
 ...
 
 ; path: 以字串欄位 p 承載一條路徑的值物件（各方法皆作用於 .p）
+; [path](#path.path)
 path {
     p str
 }

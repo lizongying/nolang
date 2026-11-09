@@ -19,21 +19,27 @@
 ...
 
 ; DNS 埠號
+; [DNS-PORT](#dns.dns-port)
 DNS-PORT = 53
 
 ; 預設 DNS 伺服器（Google Public DNS）
+; [DNS-DEFAULT-SERVER](#dns.dns-default-server)
 DNS-DEFAULT-SERVER = '8.8.8.8'
 
 ; 備用 DNS 伺服器（Cloudflare）
+; [DNS-BACKUP-SERVER](#dns.dns-backup-server)
 DNS-BACKUP-SERVER = '1.1.1.1'
 
 ; DNS 查詢逾時（毫秒）
+; [DNS-TIMEOUT](#dns.dns-timeout)
 DNS-TIMEOUT = 3000
 
 ; 最大 DNS 封包大小
+; [DNS-MAX-PACKET](#dns.dns-max-packet)
 DNS-MAX-PACKET = 512
 
 ; DNS 記錄類型
+; [DNS-TYPE-A](#dns.dns-type-a)
 DNS-TYPE-A = 1
 DNS-TYPE-AAAA = 28
 DNS-TYPE-CNAME = 5
@@ -42,9 +48,11 @@ DNS-TYPE-TXT = 16
 DNS-TYPE-NS = 2
 
 ; DNS 類別
+; [DNS-CLASS-IN](#dns.dns-class-in)
 DNS-CLASS-IN = 1
 
 ; DNS 回應碼
+; [DNS-RCODE-NO-ERROR](#dns.dns-rcode-no-error)
 DNS-RCODE-NO-ERROR = 0
 DNS-RCODE-FORMAT-ERROR = 1
 DNS-RCODE-SERVER-FAILURE = 2
@@ -60,6 +68,7 @@ DNS-RCODE-REFUSED = 5
 ; name str: 域名
 ; value str: 記錄值（A 記錄為 IP 地址）
 ; ttl i64: 存活時間
+; [record](#dns.record)
 record {
     rtype i64
     name str

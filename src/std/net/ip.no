@@ -31,6 +31,7 @@
 ...
 
 ; 0.0.0.0
+; [IP-ZERO](#ip.ip-zero)
 IP-ZERO = ip-addr {
     a: 0
     b: 0
@@ -39,6 +40,7 @@ IP-ZERO = ip-addr {
 }
 
 ; 127.0.0.1
+; [IP-LOOPBACK](#ip.ip-loopback)
 IP-LOOPBACK = ip-addr {
     a: 127
     b: 0
@@ -47,6 +49,7 @@ IP-LOOPBACK = ip-addr {
 }
 
 ; 0.0.0.0（同 IP-ZERO，語義化命名）
+; [IP-ANY](#ip.ip-any)
 IP-ANY = ip-addr {
     a: 0
     b: 0
@@ -55,6 +58,7 @@ IP-ANY = ip-addr {
 }
 
 ; 255.255.255.255
+; [IP-BROADCAST](#ip.ip-broadcast)
 IP-BROADCAST = ip-addr {
     a: 255
     b: 255
@@ -67,6 +71,7 @@ IP-BROADCAST = ip-addr {
 
 ; ip-addr: IPv4 地址
 ; a, b, c, d: 四個 octet（0~255）
+; [ip-addr](#ip.ip-addr)
 ip-addr {
     a i64
     b i64

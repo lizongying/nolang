@@ -973,10 +973,10 @@ _rsa-decrypt = (ct []i64, priv-exp []i64, mod []i64) (out []i64) {
     out = _rsa-modpow-trimmed(ct, ct.len(), priv-exp, priv-exp.len(), mod, mod.len())
 }
 
-; [_bytes-to-limbs](#rsa._bytes-to-limbs)
 ; bytes → limbs（模組內私有）：大端無符號位元組串轉 base 2^32 little-endian limb 陣列
 ; v []byte: 大端無符號整數（前導零位元組無害）
 ; out []i64: limb 陣列，長度 ceil(len/4)；空輸入回傳 [0]
+; [_bytes-to-limbs](#rsa._bytes-to-limbs)
 _bytes-to-limbs = (v []byte) (out []i64) {
     n = v.len()
     limbs-n = (n + 3) / 4
@@ -1003,10 +1003,10 @@ _bytes-to-limbs = (v []byte) (out []i64) {
     }
 }
 
-; [_limbs-to-bytes](#rsa._limbs-to-bytes)
 ; limbs → bytes（模組內私有）：base 2^32 little-endian limb 陣列轉最短大端無符號位元組串
 ; v []i64: limb 陣列（允許前導零 limb）
 ; out []byte: 最短大端編碼；值 0 回傳單位元組 [0]
+; [_limbs-to-bytes](#rsa._limbs-to-bytes)
 _limbs-to-bytes = (v []i64) (out []byte) {
     n = v.len()
 

@@ -51,7 +51,16 @@ print(sgs-mod-val)
 sgs-pad-len = 0
 
 #{overflow=wrap}
-sgs-mod-val != 0 -> sgs-pad-len = 64 - sgs-mod-val
+sgs-mod-val != 0 -> {
+    {
+        #{overflow=wrap}
+        sgs-pad-len-opt = 64 - sgs-mod-val
+        sgs-pad-len-opt: {
+            ok -> sgs-pad-len = it
+            ->
+        }
+    }
+}
 print('pad-len')
 print(sgs-pad-len)
 

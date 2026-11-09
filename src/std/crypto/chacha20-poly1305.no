@@ -18,12 +18,14 @@
 
 ; ChaCha20 常量 "expand 32-byte k"
 ; 各 32-bit 小端值
+; [CC-SIGMA0](#chacha20-poly1305.cc-sigma0)
 CC-SIGMA0 u32 = 1634760805; "expa"
 CC-SIGMA1 u32 = 857760878; "nd 3"
 CC-SIGMA2 u32 = 2036477234; "2-by"
 CC-SIGMA3 u32 = 1797285236; "te k"
 
 ; 32-bit 全 1 遮罩
+; [CC-MASK32](#chacha20-poly1305.cc-mask32)
 CC-MASK32 u32 = 4294967295
 
 ; 輔助函數

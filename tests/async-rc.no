@@ -15,7 +15,14 @@
 worker-async = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n * 2
+    {
+        #{overflow=wrap}
+        r-opt = n * 2
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; a task whose RESULT IS VOID — a handle with no result type at all

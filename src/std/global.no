@@ -178,6 +178,7 @@ exit = (c i64) {
 ;       err -> log(it)
 ;       -> log(it)
 ;   }
+; [option](#global.option)
 #{buildin}
 option {
     ok(v t),

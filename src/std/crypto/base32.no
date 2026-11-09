@@ -9,6 +9,7 @@
 ; [base32](#base32)
 
 ; Base32 字母表
+; [BASE32-ALPHABET](#base32.base32-alphabet)
 BASE32-ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 
 ; Base32 編碼（RFC 4648 標準字母表，每 5 位元一組，末尾以 '=' 補齊到 8 的倍數）

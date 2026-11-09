@@ -23,38 +23,46 @@
 ...
 
 ; i8: -128 ~ 127
+; [MIN](#number.i8.min)
 i8.MIN = -128
 i8.MAX = 127
 
 ; i16: -32768 ~ 32767
+; [MIN](#number.i16.min)
 i16.MIN = -32768
 i16.MAX = 32767
 
 ; i32: -2147483648 ~ 2147483647
+; [MIN](#number.i32.min)
 i32.MIN = -2147483648
 i32.MAX = 2147483647
 
 ; i64: -9223372036854775808 ~ 9223372036854775807
 ; MIN 不可直接寫為字面量（解析器不支援），用 -MAX - 1 表達
+; [MAX](#number.i64.max)
 i64.MAX = 9223372036854775807
 
 #{overflow=wrap}
 i64.MIN = 0 - 9223372036854775807 - 1
 
 ; u8: 0 ~ 255
+; [MIN](#number.u8.min)
 u8.MIN = 0
 u8.MAX = 255
 
 ; u16: 0 ~ 65535
+; [MIN](#number.u16.min)
 u16.MIN = 0
 u16.MAX = 65535
 
 ; u32: 0 ~ 4294967295
+; [MIN](#number.u32.min)
 u32.MIN = 0
 u32.MAX = 4294967295
 
 ; u64: 0 ~ 18446744073709551615
 ; MAX 無法用整數字面量表示（超過 i64 上限），可透過 0 - 1 間接取得
+; [MIN](#number.u64.min)
 u64.MIN = 0
 
 #{overflow=wrap}
@@ -63,10 +71,12 @@ u64.MAX = 0 - 1
 ; i128: -170141183460469231731687303715884105728 ~ 170141183460469231731687303715884105727
 ; 型別層常量取值經 hir2mir 的 typeConstantText128 常數表（i128 lane 走
 ; 全精度十進位文字），以下定義為 API/文件用（與其他寬度一致）
+; [MAX](#number.i128.max)
 i128.MAX = 170141183460469231731687303715884105727
 i128.MIN = -170141183460469231731687303715884105728
 
 ; u128: 0 ~ 340282366920938463463374607431768211455
+; [MIN](#number.u128.min)
 u128.MIN = 0
 u128.MAX = 340282366920938463463374607431768211455
 
@@ -2211,6 +2221,7 @@ f64.sqrt = () (res f64) {
 
 ; 平方根
 ; res: √x（拓寬至 f64 計算後收窄；負數返回 NaN）
+; [sqrt](#number.f32.sqrt)
 f32.sqrt = () (res f32) {
     d = .to-f64()
     res = d.sqrt().to-f32()
@@ -2243,6 +2254,7 @@ f64.cbrt = () (res f64) {
 
 ; 立方根（f32 方法，拓寬至 f64 後複用 f64.cbrt）
 ; res: ³√x（結果收窄至 f32）
+; [cbrt](#number.f32.cbrt)
 f32.cbrt = () (res f32) {
     d = .to-f64()
     res = d.cbrt().to-f32()
@@ -2323,6 +2335,7 @@ f64.sin = () (res f64) {
 
 ; 正弦
 ; res: sin(x)（拓寬至 f64 計算後收窄）
+; [sin](#number.f32.sin)
 f32.sin = () (res f32) {
     d = .to-f64()
     res = d.sin().to-f32()
@@ -2330,12 +2343,14 @@ f32.sin = () (res f32) {
 
 ; 餘弦
 ; res: cos(x)（x 為弧度）
+; [cos](#number.f64.cos)
 f64.cos = () (res f64) {
     res = (. + 1.5707963267948966).sin()
 }
 
 ; 餘弦
 ; res: cos(x)（拓寬至 f64 計算後收窄）
+; [cos](#number.f32.cos)
 f32.cos = () (res f32) {
     d = .to-f64()
     res = d.cos().to-f32()
@@ -2352,6 +2367,7 @@ f64.tan = () (res f64) {
 
 ; 正切
 ; res: tan(x)（拓寬至 f64 計算後收窄）
+; [tan](#number.f32.tan)
 f32.tan = () (res f32) {
     d = .to-f64()
     res = d.tan().to-f32()
@@ -2359,6 +2375,7 @@ f32.tan = () (res f32) {
 
 ; 反正弦（asin = atan2(x, √(1-x²))）
 ; res: asin(x)（主值域 [-π/2, π/2]；|x|>1 返回 NaN）
+; [asin](#number.f64.asin)
 f64.asin = () (res f64) {
     s = . * .
     one = 1.0 - s
@@ -2367,6 +2384,7 @@ f64.asin = () (res f64) {
 
 ; 反正弦（f32 方法，拓寬至 f64 後複用）
 ; res: asin(x)（結果收窄至 f32）
+; [asin](#number.f32.asin)
 f32.asin = () (res f32) {
     d = .to-f64()
     res = d.asin().to-f32()
@@ -2374,6 +2392,7 @@ f32.asin = () (res f32) {
 
 ; 反餘弦（acos = atan2(√(1-x²), x)）
 ; res: acos(x)（主值域 [0, π]；|x|>1 返回 NaN）
+; [acos](#number.f64.acos)
 f64.acos = () (res f64) {
     s = . * .
     one = 1.0 - s
@@ -2382,6 +2401,7 @@ f64.acos = () (res f64) {
 
 ; 反餘弦（f32 方法，拓寬至 f64 後複用）
 ; res: acos(x)（結果收窄至 f32）
+; [acos](#number.f32.acos)
 f32.acos = () (res f32) {
     d = .to-f64()
     res = d.acos().to-f32()
@@ -2389,12 +2409,14 @@ f32.acos = () (res f32) {
 
 ; 反正切（atan = atan2(x, 1.0)）
 ; res: atan(x)（值域 (-π/2, π/2)）
+; [atan](#number.f64.atan)
 f64.atan = () (res f64) {
     res = math.atan2(., 1.0)
 }
 
 ; 反正切（f32 方法，拓寬至 f64 後複用）
 ; res: atan(x)（結果收窄至 f32）
+; [atan](#number.f32.atan)
 f32.atan = () (res f32) {
     d = .to-f64()
     res = d.atan().to-f32()
@@ -2411,6 +2433,7 @@ f64.sinh = () (res f64) {
 
 ; 雙曲正弦（f32 方法，拓寬至 f64 後複用）
 ; res: sinh(x)（結果收窄至 f32）
+; [sinh](#number.f32.sinh)
 f32.sinh = () (res f32) {
     d = .to-f64()
     res = d.sinh().to-f32()
@@ -2418,6 +2441,7 @@ f32.sinh = () (res f32) {
 
 ; 雙曲餘弦
 ; res: cosh(x) = (eˣ + e⁻ˣ)/2
+; [cosh](#number.f64.cosh)
 f64.cosh = () (res f64) {
     e = .exp()
     ei = 1.0 / e
@@ -2426,6 +2450,7 @@ f64.cosh = () (res f64) {
 
 ; 雙曲餘弦（f32 方法，拓寬至 f64 後複用）
 ; res: cosh(x)（結果收窄至 f32）
+; [cosh](#number.f32.cosh)
 f32.cosh = () (res f32) {
     d = .to-f64()
     res = d.cosh().to-f32()
@@ -2433,6 +2458,7 @@ f32.cosh = () (res f32) {
 
 ; 雙曲正切
 ; res: tanh(x) = (e²ˣ-1)/(e²ˣ+1)（值域 (-1, 1)）
+; [tanh](#number.f64.tanh)
 f64.tanh = () (res f64) {
     e = .exp()
 
@@ -2442,6 +2468,7 @@ f64.tanh = () (res f64) {
 
 ; 雙曲正切（f32 方法，拓寬至 f64 後複用）
 ; res: tanh(x)（結果收窄至 f32）
+; [tanh](#number.f32.tanh)
 f32.tanh = () (res f32) {
     d = .to-f64()
     res = d.tanh().to-f32()
@@ -2469,6 +2496,7 @@ f64.ceil = () (res f64) {
 
 ; 向上取整（f32 方法，拓寬至 f64 後複用）
 ; res: ceil(x)（結果收窄至 f32）
+; [ceil](#number.f32.ceil)
 f32.ceil = () (res f32) {
     d = .to-f64()
     res = d.ceil().to-f32()
@@ -2476,6 +2504,7 @@ f32.ceil = () (res f32) {
 
 ; 向下取整
 ; res: 不大於 x 的最大整數值（向下取整，結果仍為 f64）
+; [floor](#number.f64.floor)
 f64.floor = () (res f64) {
     t = (.to-i64()).to-f64()
     {
@@ -2495,6 +2524,7 @@ f64.floor = () (res f64) {
 
 ; 向下取整（f32 方法，拓寬至 f64 後複用）
 ; res: floor(x)（結果收窄至 f32）
+; [floor](#number.f32.floor)
 f32.floor = () (res f32) {
     d = .to-f64()
     res = d.floor().to-f32()
@@ -2502,6 +2532,7 @@ f32.floor = () (res f32) {
 
 ; 四捨五入（.5 進位，負數對稱）
 ; res: 最接近 x 的整數值（|小數|≥0.5 時向遠端進位）
+; [round](#number.f64.round)
 f64.round = () (res f64) {
     t = (.to-i64()).to-f64()
     f = . - t
@@ -2534,6 +2565,7 @@ f64.round = () (res f64) {
 
 ; 四捨五入（f32 方法，拓寬至 f64 後複用）
 ; res: round(x)（結果收窄至 f32）
+; [round](#number.f32.round)
 f32.round = () (res f32) {
     d = .to-f64()
     res = d.round().to-f32()
@@ -2541,12 +2573,14 @@ f32.round = () (res f32) {
 
 ; 截斷取整（捨去小數）
 ; res: x 的整數部分（向零截斷，如 -3.9→-3.0）
+; [trunc](#number.f64.trunc)
 f64.trunc = () (res f64) {
     res = (.to-i64()).to-f64()
 }
 
 ; 截斷取整（f32 方法，拓寬至 f64 後複用）
 ; res: trunc(x)（結果收窄至 f32）
+; [trunc](#number.f32.trunc)
 f32.trunc = () (res f32) {
     d = .to-f64()
     res = d.trunc().to-f32()
@@ -2594,12 +2628,14 @@ exp-f64 = (x f64) (res f64) {
 
 ; 指數
 ; res: e 的 x 次冪（轉呼叫 exp-f64 自由函數）
+; [exp](#number.f64.exp)
 f64.exp = () (res f64) {
     res = exp-f64(.)
 }
 
 ; 指數
 ; res: e 的 x 次冪（拓寬至 f64 計算後收窄）
+; [exp](#number.f32.exp)
 f32.exp = () (res f32) {
     d = .to-f64()
     res = exp-f64(d).to-f32()
@@ -2607,6 +2643,7 @@ f32.exp = () (res f32) {
 
 ; 記錄日誌
 ; res: ln(x) 自然對數（x≤0 返回 NaN；先範圍遞減至 [1,√2) 再以 z³ 級數逼近）
+; [log](#number.f64.log)
 f64.log = () (res f64) {
     x = .
     x <= 0.0 -> {
@@ -2669,6 +2706,7 @@ f64.log = () (res f64) {
 
 ; 記錄日誌
 ; res: ln(x)（拓寬至 f64 計算後收窄）
+; [log](#number.f32.log)
 f32.log = () (res f32) {
     d = .to-f64()
     res = d.log().to-f32()
@@ -2676,12 +2714,14 @@ f32.log = () (res f32) {
 
 ; 常用對數（以 10 為底）
 ; res: log10(x) = ln(x)/ln(10)
+; [log10](#number.f64.log10)
 f64.log10 = () (res f64) {
     res = .log() / 2.302585092994046
 }
 
 ; 常用對數（f32 方法，拓寬至 f64 後複用）
 ; res: log10(x)（結果收窄至 f32）
+; [log10](#number.f32.log10)
 f32.log10 = () (res f32) {
     d = .to-f64()
     res = d.log10().to-f32()
@@ -2689,12 +2729,14 @@ f32.log10 = () (res f32) {
 
 ; 以 2 為底的對數
 ; res: log2(x) = ln(x)/ln(2)
+; [log2](#number.f64.log2)
 f64.log2 = () (res f64) {
     res = .log() / 0.6931471805599453
 }
 
 ; 以 2 為底的對數（f32 方法，拓寬至 f64 後複用）
 ; res: log2(x)（結果收窄至 f32）
+; [log2](#number.f32.log2)
 f32.log2 = () (res f32) {
     d = .to-f64()
     res = d.log2().to-f32()
@@ -2709,6 +2751,7 @@ f64.degrees = () (res f64) {
 
 ; 弧度轉角度（f32 方法，拓寬至 f64 後複用）
 ; res: 角度值（結果收窄至 f32）
+; [degrees](#number.f32.degrees)
 f32.degrees = () (res f32) {
     d = .to-f64()
     res = d.degrees().to-f32()
@@ -2723,6 +2766,7 @@ f64.radians = () (res f64) {
 
 ; 角度轉弧度（f32 方法，拓寬至 f64 後複用）
 ; res: 弧度值（結果收窄至 f32）
+; [radians](#number.f32.radians)
 f32.radians = () (res f32) {
     d = .to-f64()
     res = d.radians().to-f32()
@@ -2942,6 +2986,7 @@ i8.sqrt = () (r i8) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（n<2 恆 false）
+; [is-prime](#number.i8.is-prime)
 i8.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3082,6 +3127,7 @@ i16.sqrt = () (r i16) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（n<2 恆 false）
+; [is-prime](#number.i16.is-prime)
 i16.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3221,6 +3267,7 @@ i32.sqrt = () (r i32) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（n<2 恆 false）
+; [is-prime](#number.i32.is-prime)
 i32.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3324,6 +3371,7 @@ u8.sqrt = () (r u8) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（n<2 恆 false）
+; [is-prime](#number.u8.is-prime)
 u8.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3393,6 +3441,7 @@ u16.sqrt = () (r u16) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（n<2 恆 false）
+; [is-prime](#number.u16.is-prime)
 u16.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3462,6 +3511,7 @@ u32.sqrt = () (r u32) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（n<2 恆 false）
+; [is-prime](#number.u32.is-prime)
 u32.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3531,6 +3581,7 @@ u64.sqrt = () (r u64) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（n<2 恆 false）
+; [is-prime](#number.u64.is-prime)
 u64.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3619,6 +3670,7 @@ i128.sqrt = () (r i128) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（128 位有符號，n<2 恆 false）
+; [is-prime](#number.i128.is-prime)
 i128.is-prime = () (yes bool) {
     n = .
     n < 2 -> {
@@ -3656,6 +3708,7 @@ i128.is-prime = () (yes bool) {
 
 ; 平方根
 ; r: floor(√n)（128 位無符號，u128.MAX 亦精確）
+; [sqrt](#number.u128.sqrt)
 u128.sqrt = () (r u128) {
     n = .
     n < 2 -> {
@@ -3691,6 +3744,7 @@ u128.sqrt = () (r u128) {
 
 ; 判斷是否 prime
 ; yes: 是否為質數（128 位無符號，n<2 恆 false）
+; [is-prime](#number.u128.is-prime)
 u128.is-prime = () (yes bool) {
     n = .
     n < 2 -> {

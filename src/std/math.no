@@ -204,6 +204,7 @@ atan-kernel = (t f64) (r f64) {
 ; y f64: 纵坐標
 ; x f64: 橫坐標
 ; res f64: 極角（弧度）
+; [atan2](#math.atan2)
 atan2 = (y f64, x f64) (res f64) {
     x > 0.0 -> {
         res = atan-kernel(y / x)

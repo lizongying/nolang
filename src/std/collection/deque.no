@@ -22,6 +22,7 @@
 ; cap i64: 佇列容量上限（等於 buf 長度）
 ; head i64: 前端虛擬下標；實際儲存下標為 head mod cap
 ; tail i64: 後端虛擬下標；tail - head = 元素數量
+; [deque](#deque.deque)
 deque {
     buf []i64
     cap i64

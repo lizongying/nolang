@@ -318,6 +318,19 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 					return rets[0]
 				}
 			}
+			// 內建容器方法（`.len()` / `.cap()`）回傳 i64，但它們在使用者可見的
+			// 簽名表裡**沒有條目**（實作在 Go runtime 的 BuiltinMethod 表）。
+			// 少了這一支，`nr = ek.len() / 16 - 1` 這種「呼叫開頭的算術」整條鏈
+			// 都推不出型別：signedIntOperandType 沒有呼叫算子 ⇒ inferOptionArith
+			// 不發 ?i64 ⇒ 之後 `round-opt: { ok -> round = it  -> }` 的主語型別
+			// 為空 ⇒ 臂條件退化成 `<slot> == 0`（ok 當常量 0）⇒ ok 臂從不執行
+			// ⇒ aes.dec-block 的輪次計數器不遞減，測試掛死。
+			//
+			// 只認容器接收者（slice `[]T` / array `[N]T` / hashmap-*）：`str` 的
+			// `.len` 是唯讀欄位而非方法（`s.len()` 的既有語意不變），不得套用。
+			if t, ok := builtinContainerMethodReturnType(receiverType, dot.Property); ok {
+				return t
+			}
 			return ""
 		}
 		// Module-path receiver（如 http.do-req(...)）：receiver 是模組
@@ -362,6 +375,28 @@ func (p *Parser) returnTypeFromCallExpr(call *CallExpression) string {
 		return ""
 	}
 	return ""
+}
+
+// builtinContainerMethodReturnType 回報內建容器方法（`.len()` / `.cap()`）的回傳
+// 型別。這兩個方法在使用者可見的簽名表（funcSignatures / methodSignatures）裡沒有
+// 條目——實作在 Go runtime 的 BuiltinMethod 表，parser 看不到——所以呼叫開頭的
+// 算術（`nr = ek.len() / 16 - 1`）在 inferOptionArith 眼裡是「運算元型別不可判定」，
+// 整條鏈不發 ?T，下游值位 match 的主語型別為空、臂條件退化成 `<slot> == 0`。
+//
+// 只認**容器**接收者：slice（`[]T`，也含 `[]?T`）、array（`[N]T`）、hashmap
+// （lookup 前已把 `[K]V` 轉成 `hashmap-K-V`）。`str` 的 `.len` 是唯讀欄位而非
+// 方法，`s.len()` 走既有語意，不在此處改寫。
+func builtinContainerMethodReturnType(receiverType, method string) (string, bool) {
+	if !strings.HasPrefix(receiverType, "[]") &&
+		!strings.HasPrefix(receiverType, "[") &&
+		!strings.HasPrefix(receiverType, "hashmap-") {
+		return "", false
+	}
+	switch method {
+	case "len", "cap":
+		return "i64", true
+	}
+	return "", false
 }
 
 // multiReturnTypesFromCallExpr 回報「多返回值呼叫」宣告的全部回傳型別（按宣告

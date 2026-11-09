@@ -41,6 +41,7 @@ TS-CAP = 64
 ; keys: 鍵儲存
 ; left/right/parent: 樹結構索引，-1=NIL
 ; height: 節點高度（葉=1，NIL=0）
+; [tree-set](#tree-set.tree-set)
 tree-set {
     root i64
     free-head i64

@@ -41,6 +41,7 @@
 ...
 
 ; 節點類型（對齊 W3C nodeType 編號）
+; [DOM-KIND-DOCUMENT](#dom.dom-kind-document)
 DOM-KIND-DOCUMENT = 0
 DOM-KIND-ELEMENT = 1
 DOM-KIND-TEXT = 2
@@ -50,9 +51,11 @@ DOM-KIND-PI = 5
 DOM-KIND-DOCTYPE = 6
 
 ; 解析嵌套深度上限（防禦超深巢狀導致棧溢出）
+; [DOM-MAX-DEPTH](#dom.dom-max-depth)
 DOM-MAX-DEPTH = 256
 
 ; 常用位元組值
+; [DOM-BYTE-SPACE](#dom.dom-byte-space)
 DOM-BYTE-SPACE = 32
 DOM-BYTE-LT = 60
 DOM-BYTE-GT = 62
@@ -68,18 +71,23 @@ DOM-BYTE-MINUS = 45
 DOM-BYTE-RBRACKET = 93
 
 ; HTML void 元素（前後補空格便於整詞查找）
+; [DOM-VOID-BLOB](#dom.dom-void-blob)
 DOM-VOID-BLOB = ' area base br col embed hr img input link meta param source track wbr '
 
 ; HTML raw-text / RCDATA 元素：內容直到配對結尾標籤，不再詞法分析
+; [DOM-RAWTEXT-BLOB](#dom.dom-rawtext-blob)
 DOM-RAWTEXT-BLOB = ' script style textarea title xmp iframe noembed noframes '
 
 ; RCDATA 集合（內容需解實體）：title / textarea；其余 raw-text 不解碼
+; [DOM-RCDATA-BLOB](#dom.dom-rcdata-blob)
 DOM-RCDATA-BLOB = ' title textarea '
 
 ; 開新塊級標籤時會自動閉合的開放 <p>
+; [DOM-PBLOCK-BLOB](#dom.dom-pblock-blob)
 DOM-PBLOCK-BLOB = ' address article aside blockquote div dl fieldset footer form header hgroup hr main nav ol p pre section table ul '
 
 ; HTML4 完整命名實體表（'name:codepoint' 空格分隔）+ XML 預定義實體
+; [DOM-ENTITY-BLOB](#dom.dom-entity-blob)
 DOM-ENTITY-BLOB = 'amp:38 lt:60 gt:62 quot:34 apos:39 nbsp:160 iexcl:161 cent:162 pound:163 curren:164 yen:165 brvbar:166 sect:167 uml:168 copy:169 ordf:170 laquo:171 not:172 shy:173 reg:174 macr:175 degree:176 plusmn:177 sup2:178 sup3:179 acute:180 micro:181 para:182 middot:183 cedil:184 sup1:185 ordm:186 raquo:187 frac14:188 frac12:189 frac34:190 iquest:191 Agrave:192 Aacute:193 Acirc:194 Atilde:195 Auml:196 Aring:197 AElig:198 Ccedil:199 Egrave:200 Eacute:201 Ecirc:202 Euml:203 Igrave:204 Iacute:205 Icirc:206 Iuml:207 ETH:208 Ntilde:209 Ograve:210 Oacute:211 Ocirc:212 Otilde:213 Ouml:214 times:215 Oslash:216 Ugrave:217 Uacute:218 Ucirc:219 Uuml:220 Yacute:221 THORN:222 szlig:223 agrave:224 aacute:225 acirc:226 atilde:227 auml:228 aring:229 aelig:230 ccedil:231 egrave:232 eacute:233 ecirc:234 euml:235 igrave:236 iacute:237 icirc:238 iuml:239 eth:240 ntilde:241 ograve:242 oacute:243 ocirc:244 otilde:245 ouml:246 divide:247 oslash:248 ugrave:249 uacute:250 ucirc:251 uuml:252 yacute:253 thorn:254 yuml:255 OElig:338 oelig:339 Scaron:352 scaron:353 Yuml:376 circ:710 tilde:732 ensp:8194 emsp:8195 thinsp:8201 zwnj:8204 zwj:8205 lrm:8206 rlm:8207 ndash:8211 mdash:8212 lsquo:8216 rsquo:8217 sbquo:8218 ldquo:8220 rdquo:8221 bdquo:8222 dagger:8224 Dagger:8225 bull:8226 hellip:8230 permil:8240 prime:8242 Prime:8243 oline:8254 frasl:8260 euro:8364 larr:8592 uarr:8593 rarr:8594 darr:8595 harr:8596 crarr:8629 lArr:8656 uArr:8657 rArr:8658 dArr:8659 hArr:8660 weierp:8472 real:8476 trade:8482 image:8471 mho:8487 alefsym:8501 Alpha:913 Beta:914 Gamma:915 Delta:916 Epsilon:917 Zeta:918 Eta:919 Theta:920 Iota:921 Kappa:922 Lambda:923 Mu:924 Nu:925 Xi:926 Omicron:927 Pi:928 Rho:929 Sigma:931 Tau:932 Upsilon:933 Phi:934 Chi:935 Psi:936 Omega:937 alpha:945 beta:946 gamma:947 delta:948 epsilon:949 zeta:950 eta:951 theta:952 iota:953 kappa:954 lambda:955 mu:956 nu:957 xi:958 omicron:959 pi:960 rho:961 sigmaf:962 sigma:963 tau:964 upsilon:965 phi:966 chi:967 psi:968 omega:969 thetasym:977 upsih:982 piv:982 there4:8756 kappav:954 middotv:183 forall:8704 part:8706 exist:8707 empty:8709 nabla:8711 isin:8712 notin:8713 ni:8715 prod:8719 sum:8721 minus:8722 lowast:8727 radic:8730 le:8804 ge:8805 ne:8800 equiv:8801 infin:8734 ang:8736 and:8743 or:8744 cap:8745 cup:8746 int:8747 therefore:8756 sim:8764 cong:8773 asymp:8776 nsub:8836 sube:8838 supe:8835 oplus:8853 otimes:8855 perp:8869 sdot:8901'
 
 ; 結構
@@ -88,6 +96,7 @@ DOM-ENTITY-BLOB = 'amp:38 lt:60 gt:62 quot:34 apos:39 nbsp:160 iexcl:161 cent:16
 ; dom-node: DOM 節點（純標量欄位，可安全存放於堆 vec）
 ; 樹結構以索引雙向鏈表表示：parent/prev/next/first/last
 ; attr-first/attr-last/attr-count: 屬性邊表鏈表（邊索引存於 pool.an/av/ax）
+; [dom-node](#dom.dom-node)
 dom-node {
     kind i64
     parent i64
@@ -105,6 +114,7 @@ dom-node {
 ; nodes: 節點平行陣列；names/vals: 以節點 idx 索引的字串
 ;   element→標籤名，pi→目標，doctype→原始內部文字，text/cdata/comment→值
 ; an/av/ax: 屬性邊表（名、值、下一同級邊索引；-1=鏈尾）
+; [dom-pool](#dom.dom-pool)
 dom-pool {
     nodes []dom-node
     names []str
@@ -118,6 +128,7 @@ dom-pool {
 ; dom: 文檔句柄（節點池 + document 根索引 + 格式）
 ; format: 0=XML, 1=HTML（影響序列化 void 元素與大小寫處理）
 ; pool 以 #{inline=false} 存放為指標欄位，dom 按值傳遞時深拷貝池
+; [dom](#dom.dom)
 dom {
     pool dom-pool #{inline=false}
     root i64
@@ -3026,6 +3037,7 @@ dom.first-child = (idx i64) (c i64) {
 ; 取末個 child
 ; idx: 節點索引
 ; c: 末個子節點索引（-1=無）
+; [last-child](#dom.dom.last-child)
 dom.last-child = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
@@ -3041,6 +3053,7 @@ dom.last-child = (idx i64) (c i64) {
 ; 取下一個 sibling
 ; idx: 節點索引
 ; c: .nextSibling 節點索引（-1=無）
+; [next-sibling](#dom.dom.next-sibling)
 dom.next-sibling = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return
@@ -3056,6 +3069,7 @@ dom.next-sibling = (idx i64) (c i64) {
 ; 取上一個 sibling
 ; idx: 節點索引
 ; c: 上一個兄弟節點索引（-1=無）
+; [prev-sibling](#dom.dom.prev-sibling)
 dom.prev-sibling = (idx i64) (c i64) {
     c = -1
     .pool.valid(idx) == false -> return

@@ -99,6 +99,14 @@ func (p *Parser) LowerSurface(program *Program) {
 		fmt.Fprintf(os.Stderr, "[debug-it] LowerSurface called: %d top-level statements, filename=%s\n",
 			len(program.Statements), p.Filename)
 	}
+	// astLocalVarType 的 AST 回放需要 p.prog。生產路徑原本從不賦值（只有單測
+	// 手動 `p.prog = prog`），於是「語義副表查不到型別就回放 AST」這條兜底在
+	// 真實編譯裡恆回空字串——降糖期所有依賴它解析接收者／區域變數型別的推斷
+	//（option 算術鏈、值位 match 主語、`.len()` 呼叫的回傳型別）全部靜默失效。
+	// 在這裏綁定：LowerSurface 是降糖唯一入口，program 已解析完成、AST 凍結。
+	if p.prog == nil {
+		p.prog = program
+	}
 
 	p.lowerProgram(program)
 	// S1 flip (2026-10-17): the default pipeline now KEEPS *SurfaceMatch nodes
@@ -1277,6 +1285,9 @@ func (l *lowerer) publishInferredType(s *LetStatement, typ string) {
 	if s == nil || s.Name == nil || typ == "" || l == nil || l.p == nil {
 		return
 	}
+	if os.Getenv("NOLANG_DEBUG_SIT") != "" {
+		fmt.Fprintf(os.Stderr, "[pub] fn=%q name=%q typ=%q\n", l.curFuncName, s.Name.Value, typ)
+	}
 	if l.p.sem != nil {
 		l.p.sem.SetInferredType(s, typ)
 	}
@@ -1947,7 +1958,32 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 				typ = t
 			}
 		}
-		return lowerSignedIntName(typ)
+		if typ == "" {
+			// 語義副表沒收錄的區域變數（無標註、RHS 是呼叫／欄位讀取的 let）：
+			// 改用 AST 回放推斷。少了這一步，`n = data.len()` 之後的
+			// `c = n / 16` 兩側都判定失敗 ⇒ c 無型別 ⇒ `c: { ok -> ... }`
+			// 的 ok 臂退化成 `c == 0`、永不命中。
+			typ = l.p.astLocalVarType(l.curFuncName, name)
+		}
+		if os.Getenv("NOLANG_DEBUG_SIT") != "" {
+			fmt.Fprintf(os.Stderr, "[sit] fn=%q name=%q typ=%q\n", l.curFuncName, name, typ)
+		}
+		if t, ok := lowerSignedIntName(typ); ok {
+			return t, true
+		}
+		// option 運算元：D6 規則下算術「消費 payload、結果仍是 ?T」，
+		// `x ?i64` 寫 `x - 1` 的 checker 型別實測就是 `?i64`（`y i64 = round - 1`
+		// 觸發 15w45dqk）。所以運算元對結果型別的貢獻就是它的 payload 型別。
+		//
+		// 少了這支，`round = nr - 1`（?i64）之後的 `round-opt = round - 1`
+		// 整條鏈都沒有型別：inferOptionArith 兩側判定失敗 ⇒ 不發 ?i64 ⇒
+		// `round-opt: { ok -> round = it  -> }` 的主語型別為空 ⇒ 臂條件退化成
+		// `<slot> == 0`（ok 當常量 0）⇒ ok 臂從不執行 ⇒ aes.dec-block 的
+		// 計數器不遞減 ⇒ 死迴圈。
+		if ty.IsOptionRaw(typ) {
+			return lowerSignedIntName(ty.StripOptionRaw(typ))
+		}
+		return "", false
 	case *InfixExpression:
 		// 巢狀算術運算元（`a + b * c` 的右運算元 `b * c`）：其值為 option 的
 		// 內部 payload，型別即兩側較寬的有號整數型別。這是 D6 統一規則的必要
@@ -1964,6 +2000,21 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 			return rt, true
 		}
 		return lt, true
+	case *CallExpression:
+		// 呼叫運算元（`nr = ek.len() / 16 - 1`、`x = n.to-i64() + 1`）：回傳型別
+		// 取自簽名表 / 內建容器方法表（見 builtinContainerMethodReturnType）。
+		// 缺這支時，凡是以呼叫開頭的算術都推不出 `?T`——aes 的 `nr` 由
+		// `ek.len()` 起算，於是整條輪次鏈（nr → round → round-opt）全部無型別，
+		// `round-opt: { ok -> round = it  -> }` 的 ok 臂不執行，dec-block 掛死。
+		if rt := l.p.returnTypeFromCallExpr(x); rt != "" {
+			if t, ok := lowerSignedIntName(rt); ok {
+				return t, true
+			}
+			if ty.IsOptionRaw(rt) {
+				return lowerSignedIntName(ty.StripOptionRaw(rt))
+			}
+		}
+		return "", false
 	default:
 		return "", false
 	}
@@ -2591,6 +2642,9 @@ func findFuncDef(prog *Program, name string) *FunctionDefinition {
 // if it is nil we return "" and the caller keeps its existing (weaker) fallback.
 func (p *Parser) astLocalVarType(funcName, varName string) string {
 	if p == nil || p.prog == nil || varName == "" || funcName == "" {
+		if os.Getenv("NOLANG_DEBUG_SIT") != "" {
+			fmt.Fprintf(os.Stderr, "[alt0] fn=%q var=%q nil=%v\n", funcName, varName, p == nil)
+		}
 		return ""
 	}
 	// 在途守衛：本函式為「RHS 是呼叫」的 let 會問 returnTypeFromCallExpr，
@@ -2601,6 +2655,9 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	}
 	busyKey := funcName + "\x00" + varName
 	if p.astVarTypeBusy[busyKey] {
+		if os.Getenv("NOLANG_DEBUG_SIT") != "" && funcName == "f" {
+			fmt.Fprintf(os.Stderr, "[altbusy] fn=%q var=%q\n", funcName, varName)
+		}
 		return ""
 	}
 	// 結果快取：本函式每次都要 gatherLetsInFuncScope 走完整個函式體，而 H0
@@ -2609,6 +2666,9 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	// 砍掉）。H0 期 AST 已凍結，快取安全；快取掛在 *Parser 上，不同 Program
 	// 用不同 parser，不會互相污染。
 	if v, ok := p.astVarTypeCache[busyKey]; ok {
+		if os.Getenv("NOLANG_DEBUG_SIT") != "" && funcName == "f" {
+			fmt.Fprintf(os.Stderr, "[cache] fn=%q var=%q hit=%q\n", funcName, varName, v)
+		}
 		return v
 	}
 	p.astVarTypeBusy[busyKey] = true
@@ -2624,6 +2684,13 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 // computeAstLocalVarType is the uncached body of astLocalVarType.
 func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 	fd := findFuncDef(p.prog, funcName)
+	if os.Getenv("NOLANG_DEBUG_SIT") != "" && funcName == "f" {
+		n := 0
+		if fd != nil && fd.Body != nil {
+			n = len(gatherLetsInFuncScope(fd.Body))
+		}
+		fmt.Fprintf(os.Stderr, "[alt] fn=%q var=%q progNil=%v fdNil=%v lets=%d\n", funcName, varName, p.prog == nil, fd == nil, n)
+	}
 	if fd == nil {
 		// Monomorphized / suffixed copies keep the original declaration under a
 		// base name; strip a trailing "@…" suffix and retry.
@@ -2642,6 +2709,16 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 			}
 		}
 	}
+	// 方法接收者型別：`n = .` / `n = self` 的 RHS 是識別符 `.`／`self`，識別符
+	// 鏈第二遍查不到它（`.` 不是變數名）。缺這一步，`i64.sqrt` 的 `n = .` 無型別
+	// ⇒ `hi = n / 2` 不發 ?i64 ⇒ `mid = (lo + hi) / 2`、`lo-opt`／`hi-opt` 全無
+	// 型別 ⇒ 二分迴圈的 ok 臂不執行 ⇒ sqrt 掛死。取法與 lowerer.lowerSelfType 同源。
+	selfType := ""
+	if fd.IsMethodDef && len(fd.Results) > 0 {
+		if r := fd.Results[0]; r != nil && r.Name == "self" && r.Type != nil {
+			selfType = typeString(r.Type)
+		}
+	}
 	// First pass: explicit annotations + call-RHS return types.
 	for _, ls := range gatherLetsInFuncScope(fd.Body) {
 		if ls == nil || ls.Name == nil || ls.Name.Value == "" || ls.IsSynthetic {
@@ -2654,6 +2731,23 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 		if ls.Type != nil {
 			if t := typeString(ls.Type); t != "" {
 				types[name] = t
+				continue
+			}
+		}
+		// 純量字面量：無標註的 `i = 0` / `scale = 1.5`。整數字面量在 checker 的
+		// 口徑是 i64（`x = 1; y i64 = x` 通過、`y str = x` 報 5jsd564o），浮點是
+		// f64。少了這支，`str-to-f64` 的 `i = 0` 無型別 ⇒ `i-opt = i + 1` 不發
+		// ?i64 ⇒ `ok -> i = it` 從不執行 ⇒ 掃描位標記不前進，解析結果是垃圾。
+		switch v := ls.Value.(type) {
+		case *IntegerLiteral:
+			types[name] = "i64"
+			continue
+		case *FloatLiteral:
+			types[name] = "f64"
+			continue
+		case *Identifier:
+			if (v.Value == "." || v.Value == "self") && selfType != "" {
+				types[name] = selfType
 				continue
 			}
 		}

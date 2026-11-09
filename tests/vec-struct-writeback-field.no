@@ -38,7 +38,13 @@ del-via-copy = (i i64, drop i64) {
     (k < node.keys.len()) {
         kk i64 = node.keys[k]
         kk != drop -> nk.push(kk)
-        k = k + 1 #{overflow=wrap}
+        {
+            k-opt = k + 1 #{overflow=wrap}
+            k-opt: {
+                ok -> k = it
+                ->
+            }
+        }
     }
     node.keys = nk
     _p.nodes[i] = node

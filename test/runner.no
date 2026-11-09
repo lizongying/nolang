@@ -232,7 +232,14 @@ test = (name str, cb callback) (passed i64, failed i64) {
 pass = (passed i64) (new-passed i64) {
 
     #{overflow=wrap}
-    new-passed = passed + 1
+    {
+        #{overflow=wrap}
+        new-passed-opt = passed + 1
+        new-passed-opt: {
+            ok -> new-passed = it
+            ->
+        }
+    }
 }
 
 ; 記錄一筆測試失敗（兼容舊用法）
@@ -241,5 +248,12 @@ pass = (passed i64) (new-passed i64) {
 fail = (failed i64) (new-failed i64) {
 
     #{overflow=wrap}
-    new-failed = failed + 1
+    {
+        #{overflow=wrap}
+        new-failed-opt = failed + 1
+        new-failed-opt: {
+            ok -> new-failed = it
+            ->
+        }
+    }
 }

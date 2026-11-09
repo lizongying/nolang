@@ -25,6 +25,7 @@ HPACK-OUT-BUF = 4096
 ...
 
 ; tables: HPACK 編解碼狀態（含靜態表 + 動態表）
+; [tables](#hpack.tables)
 tables {
     static-names [61]str
     static-values [61]str

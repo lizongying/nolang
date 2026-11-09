@@ -25,6 +25,10 @@ type Parser struct {
 
 	ctx             contextStack     // replaces inForCond, inMatchCond, inMatchArm, inExprContext
 	comments        []lexer.Token    // collected comment tokens
+	// moduleDocEndLine 是模組 doc 最後一行（0 = 本檔沒有模組 doc）。由
+	// takeModuleDoc 在 ParseProgram 開頭寫入，只給「剔除首個宣告 Doc 裡的
+	// 模組註解」用，不是語義資訊，故不入 Sem。見 takeModuleDoc。
+	moduleDocEndLine int
 	warnedSemiEat   map[int]bool     // 已警告過的「; 註釋疑似吞代碼」token 絕對索引（回溯重放去重）
 	reportedIllegal map[string]bool  // 已報告的 ILLEGAL token 位置（避免重複）
 	sem             *SemanticContext // 語義副表（類型推斷 + 註解/平台鍵/embed/泛型）
@@ -1651,8 +1655,80 @@ func dbgLeakState(tag string, prog *Program) {
 	fmt.Fprintf(os.Stderr, "[debug-self][%s] from-hex bodyLen=%d topLeakedLets=%d totalTop=%d\n", tag, bodyLen, topLets, len(prog.Statements))
 }
 
+// takeModuleDoc 取出檔案開頭的**模組 doc** 註解群組（Program.Doc）。
+//
+// 判定規則刻意只有兩條，都與「已經在用的寫法」對齊，不引入新語法：
+//
+//  1. 這一段必須從檔案開頭開始（允許前置空行）。這裡直接從 token 流的索引 0
+//     往後掃，而不是看 p.comments：進入 ParseProgram 時註解緩衝裡只有緊鄰
+//     前兩個 token 的那一兩行（advanceCollect 遇到 NEWLINE 就停），檔案頭的
+//     其餘註解要等 parse 迴圈推進時才陸續收集——所以「檔案開頭那段」這件事
+//     只有 token 流說得準。
+//  2. 這一段的**第一條無點 doc 錨點行**（`; [arr](#arr)`，見 doclink.go）是它的
+//     結尾——含錨點那一行在內、從檔案首行到此為止全部歸模組。錨點記在
+//     p.moduleDocEndLine，parse 迴圈隨後把這些行從首個宣告的 Doc 裡剔掉，
+//     錨點之後的註解則原樣留給下面的宣告。
+//
+// 為什麼用「無點錨點」當界線而不是空行：doclink 的既有規則要求錨點是註解群組的
+// **最後一行**（「注解在下」，兩端唯一可無歧義定位的端點），模組錨點沿用同一條
+// 規則就自然得到「從檔案頭到錨點為止」的區間；而空行在註解緩衝裡根本不是
+// token（advanceCollect 只收 COMMENT），靠空行分段會讓 parser 與 docscan 各猜
+// 一次，正是 docscan 檔頭警告的那類分歧。用 `.` 區分模組/成員錨點也有語料依據：
+// 全庫 2275 條錨點無一例外都帶 `.`（成員），無點錨點是尚未被佔用的命名空間。
+//
+// 找不到無點錨點時回傳 nil，緩衝與 parse 行為完全不變（舊行為：整段併進首個
+// 宣告的 Doc）。
+func (p *Parser) takeModuleDoc() *CommentGroup {
+	var toks []lexer.Token
+	for idx := 0; ; idx++ {
+		t := p.tokAt(idx)
+		switch t.Type {
+		case lexer.NEWLINE:
+			continue
+		case lexer.COMMENT:
+			// 只有普通的 `;` 行能參與（`;;` / `;;block` 的內文行在原始碼裡沒有
+			// marker，docscan 端也照同一條規則排除，見 CommentCarriesDocLink）。
+			if !CommentCarriesDocLink(t.Marker) {
+				return nil
+			}
+			toks = append(toks, t)
+			_, anchor, ok := ParseDocLinkLine(t.Literal)
+			if !ok || strings.Contains(anchor, ".") {
+				continue
+			}
+			p.moduleDocEndLine = t.Line
+			return commentGroupFromTokens(toks)
+		default:
+			// 已經走到程式碼（或 EOF）：檔案開頭那段沒有模組錨點。
+			return nil
+		}
+	}
+}
+
+// dropCommentsUpTo 回傳一個去掉「行號 <= endLine」註解的新群組。
+// 用於把已經掛在 Program.Doc 上的模組註解從首個陳述的 Doc 裡剔除。
+func dropCommentsUpTo(cg *CommentGroup, endLine int) *CommentGroup {
+	if cg == nil || endLine <= 0 {
+		return cg
+	}
+	kept := &CommentGroup{}
+	for _, c := range cg.List {
+		if c.Pos.Line > endLine {
+			kept.List = append(kept.List, c)
+		}
+	}
+	if len(kept.List) == 0 {
+		return nil
+	}
+	kept.Start = kept.List[0].Pos
+	kept.End = kept.List[len(kept.List)-1].End
+	return kept
+}
+
 func (p *Parser) ParseProgram() *Program {
 	program := &Program{Statements: []Statement{}}
+	// 模組 doc 必須在任何陳述被解析前取走：它只認檔案開頭那段。
+	program.Doc = p.takeModuleDoc()
 	for p.currentToken.Type != lexer.EOF {
 		// 尾隨註解（`stmt #{...}`，與上一條陳述同一行、位於其後方）屬於該陳述。
 		// 不攔截的話註解會退化成「下一條陳述的前置註解」，`#{index-out}` 便套用到
@@ -1671,6 +1747,8 @@ func (p *Parser) ParseProgram() *Program {
 			}
 		}
 		doc := p.collectDocComments()
+		// 模組 doc 已經掛在 Program.Doc 上，不能再重複成為首個宣告的 Doc。
+		doc = dropCommentsUpTo(doc, p.moduleDocEndLine)
 		stmt := p.recoverStatement()
 		if stmt != nil {
 			setDoc(stmt, doc)

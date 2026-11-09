@@ -20,6 +20,7 @@
 ...
 
 ; lzma-range-decoder: LZMA 算術範圍解碼器
+; [lzma-rd](#xz.lzma-rd)
 lzma-rd {
     data []byte
     pos i64
@@ -208,6 +209,7 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
 ...
 
 ; LZMA 機率模型大小
+; [LZMA-NUM-STATES](#xz.lzma-num-states)
 LZMA-NUM-STATES = 12
 LZMA-NUM-LEN-LOW-BITS = 3
 LZMA-NUM-LEN-LOW-SYMS = 8; 1 << 3
@@ -225,10 +227,12 @@ LZMA-NUM-ALIGN-BITS = 4
 LZMA-NUM-ALIGN-SYMS = 16; 1 << 4
 
 ; LZMA 解碼常數
+; [LZMA-EOF-SYM](#xz.lzma-eof-sym)
 LZMA-EOF-SYM = 0x100
 LZMA-MIN-MATCH = 2
 
 ; lzma-decoder: LZMA 解碼器
+; [lzma-decoder](#xz.lzma-decoder)
 lzma-decoder {
     rd lzma-rd
     lc i64
@@ -932,6 +936,7 @@ lzma-decompress = (data []byte) (out []byte) {
 ...
 
 ; XZ 常數
+; [XZ-MAGIC](#xz.xz-magic)
 XZ-MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]
 
 ; 解壓縮 .xz 格式

@@ -32,17 +32,20 @@
 ...
 
 ; tar: TAR 歸檔唯讀視圖
+; [tar](#tar.tar)
 tar {
     data []byte
 }
 
 ; tar-entry: TAR 條目（指向 archive.data 中的某個 header）
+; [tar-entry](#tar.tar-entry)
 tar-entry {
     data []byte
     idx i64
 }
 
 ; tar-builder: TAR 歸檔建構器
+; [tar-builder](#tar.tar-builder)
 tar-builder {
     buf []byte
     pos i64
@@ -52,9 +55,11 @@ tar-builder {
 ...
 
 ; TAR 區塊大小
+; [TAR-BLOCK](#tar.tar-block)
 TAR-BLOCK = 512
 
 ; 條目類型
+; [TAR-TYPE-FILE](#tar.tar-type-file)
 TAR-TYPE-FILE = "0"
 TAR-TYPE-DIR = "5"
 

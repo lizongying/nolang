@@ -514,7 +514,21 @@ func (cn *CommentedNode) SetDoc(d *CommentGroup)    { cn.Doc = d }
 // lowers the main program once, at build/transpiler.go's ASTToHIRWithMap call).
 
 type Program struct {
-	Statements       []Statement
+	Statements []Statement
+	// Doc 是**模組層**文檔註解：檔案開頭那段以「無點 doc 錨點」收尾的 `;` 註解
+	// （如 `; [arr](#arr)`），整段（含錨點那一行）掛在這裡，**不**併進首個宣告的
+	// Doc。錨點是「模組名」而非「模組名.成員」——後者屬於成員（函式/方法）的 Doc，
+	// 兩者靠有無 `.` 區分，故同一份原始碼裡兩種註解可以同時存在且互不干擾。
+	//
+	// 為什麼要獨立成欄位：parser 的註解緩衝不分空行，檔案頭的說明段原本會被
+	// collectDocComments 整段併進第一個宣告的 Doc——於是「這個模組是什麼」與
+	// 「這個函式做什麼」混成一團，取模組說明沒有任何可靠入口（fmt 只知道它屬於
+	// 某個函式）。掛到 Program 之後，模組說明有唯一歸屬，檢索端（i18n 的
+	// docscan、LSP、文檔生成）可以只按錨點 `#<模組名>` 取用。
+	//
+	// 判定規則（見 Parser.takeModuleDoc）：只在**檔案開頭**取、只在遇到**第一條
+	// 無點錨點行**為止取；錨點之後的註解仍留給下面的宣告。
+	Doc              *CommentGroup
 	FreeComments     []*CommentGroup // standalone comments at file start, between stmts, EOF
 	TrailingComments *CommentGroup
 	Warnings         []string         // parser warnings (e.g., dead code, deprecation)
@@ -547,6 +561,15 @@ func (p *Program) Pos() lexer.Position {
 		return p.Statements[0].Pos()
 	}
 	return lexer.Position{}
+}
+
+// GetDoc 讓 *Program 滿足 CommentedNode 形狀的介面（fmt 以 GetDoc 取 Doc），
+// 與各 Statement 的同名方法一致。nil receiver 安全。
+func (p *Program) GetDoc() *CommentGroup {
+	if p == nil {
+		return nil
+	}
+	return p.Doc
 }
 
 // TypeFacts 回傳 Program 級型別事實表（Stage 4，見 typefacts.go）。

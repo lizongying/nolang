@@ -28,6 +28,7 @@
 
 ; reader: 讀取器
 ; fd: 底層檔案描述符
+; [reader](#io.reader)
 reader {
     fd fd
 }
@@ -102,6 +103,7 @@ reader.read-all = (buf []byte, size i64) (total i64) {
 
 ; writer: 寫入器
 ; fd: 底層檔案描述符
+; [writer](#io.writer)
 writer {
     fd fd
 }

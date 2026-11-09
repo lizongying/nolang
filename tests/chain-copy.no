@@ -51,7 +51,10 @@ json-pool.alloc = () (idx i64) {
     idx = .count
 
     #{overflow=wrap}
-    .count = .count + 1
+    .count = .count + 1: {
+        ok -> it
+        ->
+    }
     .nodes[idx].count = 0
     .nodes[idx].kind = json-kind.null
     .nodes[idx].str-val = ''

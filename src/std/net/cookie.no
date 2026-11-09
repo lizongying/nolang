@@ -32,6 +32,7 @@
 ...
 
 ; Cookie Jar 最大容量
+; [COOKIE-JAR-MAX](#cookie.cookie-jar-max)
 COOKIE-JAR-MAX = 64
 
 ; 結構體
@@ -48,6 +49,7 @@ COOKIE-JAR-MAX = 64
 ; secure bool: 是否僅 HTTPS
 ; http-only bool: 是否禁止 JS 存取
 ; same-site str: SameSite 策略（'Strict', 'Lax', 'None'）
+; [cookie](#cookie.cookie)
 cookie {
     valid bool
     name str
@@ -67,6 +69,7 @@ cookie {
 ; domains [64]str: 域名陣列
 ; paths [64]str: 路徑陣列
 ; count i64: 已存儲的 Cookie 數量
+; [jar](#cookie.jar)
 jar {
     names [64]str
     values [64]str

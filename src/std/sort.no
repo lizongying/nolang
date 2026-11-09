@@ -12,6 +12,7 @@ ord {
 ; i8.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 i8 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.i8.gt)
 i8.gt = (b i8) (res bool) {
     res = . > b
 }
@@ -19,6 +20,7 @@ i8.gt = (b i8) (res bool) {
 ; i16.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 i16 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.i16.gt)
 i16.gt = (b i16) (res bool) {
     res = . > b
 }
@@ -26,6 +28,7 @@ i16.gt = (b i16) (res bool) {
 ; i32.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 i32 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.i32.gt)
 i32.gt = (b i32) (res bool) {
     res = . > b
 }
@@ -33,6 +36,7 @@ i32.gt = (b i32) (res bool) {
 ; i64.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 i64 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.i64.gt)
 i64.gt = (b i64) (res bool) {
     res = . > b
 }
@@ -40,6 +44,7 @@ i64.gt = (b i64) (res bool) {
 ; u8.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 u8 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.u8.gt)
 u8.gt = (b u8) (res bool) {
     res = . > b
 }
@@ -47,6 +52,7 @@ u8.gt = (b u8) (res bool) {
 ; u16.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 u16 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.u16.gt)
 u16.gt = (b u16) (res bool) {
     res = . > b
 }
@@ -54,6 +60,7 @@ u16.gt = (b u16) (res bool) {
 ; u32.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 u32 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.u32.gt)
 u32.gt = (b u32) (res bool) {
     res = . > b
 }
@@ -61,6 +68,7 @@ u32.gt = (b u32) (res bool) {
 ; u64.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 u64 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.u64.gt)
 u64.gt = (b u64) (res bool) {
     res = . > b
 }
@@ -68,6 +76,7 @@ u64.gt = (b u64) (res bool) {
 ; f32.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 f32 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.f32.gt)
 f32.gt = (b f32) (res bool) {
     res = . > b
 }
@@ -75,6 +84,7 @@ f32.gt = (b f32) (res bool) {
 ; f64.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的 f64 值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.f64.gt)
 f64.gt = (b f64) (res bool) {
     res = . > b
 }
@@ -82,6 +92,7 @@ f64.gt = (b f64) (res bool) {
 ; byte.gt: ord 介面實作——判斷接收者是否大於 b
 ; b: 比較的位元組值
 ; res: 接收者大於 b 時為 true
+; [gt](#sort.byte.gt)
 byte.gt = (b byte) (res bool) {
     res = . > b
 }
@@ -89,6 +100,7 @@ byte.gt = (b byte) (res bool) {
 ; char.gt: ord 介面實作——依碼點判斷接收者是否大於 b
 ; b: 比較的字符
 ; res: 接收者碼點大於 b 時為 true
+; [gt](#sort.char.gt)
 char.gt = (b char) (res bool) {
     res = . > b
 }
@@ -96,6 +108,7 @@ char.gt = (b char) (res bool) {
 ; str.gt: ord 介面實作——以字典序判斷接收者是否排在 b 之後
 ; b: 比較的字符串
 ; res: 接收者字典序大於 b（compare 回正值）時為 true
+; [gt](#sort.str.gt)
 str.gt = (b str) (res bool) {
 
     ; nolang 的關係運算子（< <= > >=）沒有字串字典序語意（str 只有 @str_eq

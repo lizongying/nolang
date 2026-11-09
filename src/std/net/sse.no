@@ -42,15 +42,19 @@
 ...
 
 ; 接收緩衝區大小
+; [SSE-BUF-SIZE](#sse.sse-buf-size)
 SSE-BUF-SIZE = 8192
 
 ; 單次接收大小
+; [SSE-RECV-SIZE](#sse.sse-recv-size)
 SSE-RECV-SIZE = 4096
 
 ; 預設 HTTP 埠號
+; [SSE-DEFAULT-PORT](#sse.sse-default-port)
 SSE-DEFAULT-PORT = 80
 
 ; 預設 HTTPS 埠號
+; [SSE-DEFAULT-TLS-PORT](#sse.sse-default-tls-port)
 SSE-DEFAULT-TLS-PORT = 443
 
 ; 結構體
@@ -61,6 +65,7 @@ SSE-DEFAULT-TLS-PORT = 443
 ; data: 事件資料（多行 data 以 \n 連接）
 ; id: 事件 ID
 ; retry: 重連等待毫秒數（-1=未設定）
+; [event](#sse.event)
 event {
     event str
     data str
@@ -79,6 +84,7 @@ event {
 ; last-event-id: 最後收到的事件 ID（用於重連）
 ; recv-buf: 接收緩衝區
 ; recv-buf-len: 緩衝區中實際資料長度
+; [client](#sse.client)
 client {
     fd fd
     tls-c tls.conn
@@ -791,6 +797,7 @@ sse-connect = (url str) (client ?client) {
 ; fd: 監聽 socket 檔案描述符（-1=未開啟）
 ; host: 綁定的 IP 地址
 ; port: 監聽埠號
+; [server](#sse.server)
 server {
     fd fd
     host str
@@ -800,6 +807,7 @@ server {
 ; server-conn: SSE 服務端客戶端連接
 ; fd: 客戶端 socket 檔案描述符（-1=未連接）
 ; connected: 連線狀態
+; [server-conn](#sse.server-conn)
 server-conn {
     fd fd
     connected bool

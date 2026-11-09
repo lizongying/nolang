@@ -107,21 +107,27 @@ close = (fd fd) (ok i64) {
 ...
 
 ; 地址族
+; [AF-INET](#net.af-inet)
 AF-INET = 2
 
 ; socket 類型
+; [SOCK-STREAM](#net.sock-stream)
 SOCK-STREAM = 1
 
 ; setsockopt 層級
+; [SOL-SOCKET](#net.sol-socket)
 SOL-SOCKET = 65535
 
 ; socket 選項
+; [SO-REUSEADDR](#net.so-reuseaddr)
 SO-REUSEADDR = 4
 
 ; 監聽佇列長度
+; [BACKLOG](#net.backlog)
 BACKLOG = 128
 
 ; 預設緩衝區大小
+; [NET-BUF-SIZE](#net.net-buf-size)
 NET-BUF-SIZE = 4096
 
 ; Windows Winsock 初始化
@@ -138,6 +144,7 @@ os.win-wsa-startup()
 
 ; listener: TCP 監聽器
 ; fd: 監聽 socket 的檔案描述符（-1=未開啟）
+; [listener](#net.listener)
 listener {
     fd fd
 }
@@ -192,6 +199,7 @@ listener.fd-of = () (fd fd) {
 
 ; conn: TCP 連接
 ; fd: 連接 socket 的檔案描述符（-1=未連接）
+; [conn](#net.conn)
 conn {
     fd fd
 }
@@ -371,15 +379,18 @@ net-set-recv-timeout = (fd fd, timeout-ms i64) (ok i64) {
 }
 
 ; socket 類型（UDP）
+; [SOCK-DGRAM](#net.sock-dgram)
 SOCK-DGRAM = 2
 
 ; SO_RCVTIMEO
+; [SO-RCVTIMEO](#net.so-rcvtimeo)
 SO-RCVTIMEO = 20
 
 ; udp-conn: UDP 連接
 ; fd: socket 檔案描述符（-1=未開啟）
 ; host: 目標主機 IP
 ; port: 目標埠號
+; [udp-conn](#net.udp-conn)
 udp-conn {
     fd fd
     host str
@@ -601,6 +612,7 @@ dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
 ; send-seq i64: 發送序號（用於生成 IV）
 ; recv-seed i64: 接收序號（用於驗證 IV 唯一性）
 ; rand-seed i64: 隨機種子（用於生成 IV）
+; [enc-conn](#net.enc-conn)
 enc-conn {
     underlying conn
     key [32]byte
@@ -846,6 +858,7 @@ net-icmp-open = () (fd fd) {
 }
 
 ; ICMP 常量
+; [ICMP-ECHO-REQUEST](#net.icmp-echo-request)
 ICMP-ECHO-REQUEST = 8
 ICMP-ECHO-REPLY = 0
 ICMP-HEADER-SIZE = 8
@@ -857,6 +870,7 @@ PING-RECV-BUF-SIZE = 128
 ; fd: socket 檔案描述符（-1=未開啟）
 ; ident: ICMP 標識符（大端序）
 ; seq: 當前序號
+; [icmp-conn](#net.icmp-conn)
 icmp-conn {
     fd fd
     ident i64
@@ -1215,6 +1229,7 @@ ping-count = (host str, count i64) {
 ; tx-bytes: 發送位元組數
 ; rx-packets: 接收封包數
 ; tx-packets: 發送封包數
+; [if-info](#net.if-info)
 if-info {
     name str
     rx-bytes i64
@@ -1229,6 +1244,7 @@ if-info {
 ; gateway: 閘道
 ; flags str: 旗標欄（/proc/net/route 第 4 欄的十六進位值，如 0003 = U|G）
 ; iface: 介面名稱
+; [route-info](#net.route-info)
 route-info {
     destination str
     mask str
@@ -1243,6 +1259,7 @@ route-info {
 ; flags str: 旗標欄（/proc/net/arp 第 3 欄的十六進位值，0x2 表 complete）
 ; mac: MAC 地址
 ; iface: 介面名稱
+; [arp-info](#net.arp-info)
 arp-info {
     ip str
     hw-type str
@@ -1330,6 +1347,7 @@ ifconfig-list = () (ifs []if-info) {
 
 ; macOS 變體：尚未實裝（需 getifaddrs(3)）
 ; ifs: 恆為空列表
+; [ifconfig-list](#net.ifconfig-list-2)
 #{mac-amd64, mac-arm64}
 ifconfig-list = () (ifs []if-info) {
 
@@ -1339,6 +1357,7 @@ ifconfig-list = () (ifs []if-info) {
 
 ; Windows 變體：尚未實裝（需 GetIfTable）
 ; ifs: 恆為空列表
+; [ifconfig-list](#net.ifconfig-list-3)
 #{win-amd64, win-arm64}
 ifconfig-list = () (ifs []if-info) {
 
@@ -1383,6 +1402,7 @@ route-list = () (routes []route-info) {
 
 ; macOS 變體：尚未實裝（需 PF_ROUTE socket 或 sysctl CTL_NET/NET_RT_DUMP）
 ; routes: 恆為空列表
+; [route-list](#net.route-list-2)
 #{mac-amd64, mac-arm64}
 route-list = () (routes []route-info) {
 
@@ -1392,6 +1412,7 @@ route-list = () (routes []route-info) {
 
 ; Windows 變體：尚未實裝（需 GetIpForwardTable）
 ; routes: 恆為空列表
+; [route-list](#net.route-list-3)
 #{win-amd64, win-arm64}
 route-list = () (routes []route-info) {
 
@@ -1436,6 +1457,7 @@ arp-list = () (arps []arp-info) {
 
 ; macOS 變體：尚未實裝（需 sysctl net.inet.arp 或 ARP ioctl）
 ; arps: 恆為空列表
+; [arp-list](#net.arp-list-2)
 #{mac-amd64, mac-arm64}
 arp-list = () (arps []arp-info) {
 
@@ -1445,6 +1467,7 @@ arp-list = () (arps []arp-info) {
 
 ; Windows 變體：尚未實裝（需 GetIpNetTable）
 ; arps: 恆為空列表
+; [arp-list](#net.arp-list-3)
 #{win-amd64, win-arm64}
 arp-list = () (arps []arp-info) {
 

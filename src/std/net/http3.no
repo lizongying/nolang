@@ -17,6 +17,7 @@
 ...
 
 ; HTTP 方法
+; [HTTP3-METHOD-GET](#http3.http3-method-get)
 HTTP3-METHOD-GET = 'GET'
 HTTP3-METHOD-POST = 'POST'
 HTTP3-METHOD-PUT = 'PUT'
@@ -26,6 +27,7 @@ HTTP3-METHOD-HEAD = 'HEAD'
 HTTP3-METHOD-OPTIONS = 'OPTIONS'
 
 ; HTTP/3 影格類型
+; [HTTP3-FRAME-DATA](#http3.http3-frame-data)
 HTTP3-FRAME-DATA i64 = 0x00
 HTTP3-FRAME-HEADERS i64 = 0x01
 HTTP3-FRAME-CANCEL-PUSH i64 = 0x03
@@ -35,23 +37,28 @@ HTTP3-FRAME-GOAWAY i64 = 0x07
 HTTP3-FRAME-MAX-PUSH-ID i64 = 0x0d
 
 ; HTTP/3 SETTINGS ID
+; [HTTP3-SETTING-MAX-FIELD-SECTION-SIZE](#http3.http3-setting-max-field-section-size)
 HTTP3-SETTING-MAX-FIELD-SECTION-SIZE i64 = 0x06
 HTTP3-SETTING-QPACK-MAX-TABLE-CAPACITY i64 = 0x01
 HTTP3-SETTING-QPACK-BLOCKED-STREAMS i64 = 0x07
 
 ; QUIC 串流 ID
+; [HTTP3-CONTROL-STREAM-ID](#http3.http3-control-stream-id)
 HTTP3-CONTROL-STREAM-ID = 0
 HTTP3-QPACK-ENC-STREAM-ID = 2
 HTTP3-QPACK-DEC-STREAM-ID = 3
 HTTP3-CLIENT-STREAM-BASE = 4
 
 ; 預設埠號
+; [HTTP3-DEFAULT-PORT](#http3.http3-default-port)
 HTTP3-DEFAULT-PORT = 443
 
 ; 最大回應大小
+; [HTTP3-MAX-RESPONSE](#http3.http3-max-response)
 HTTP3-MAX-RESPONSE = 65536
 
 ; QPACK 字面標頭前綴
+; [QPACK-LITERAL-PREFIX](#http3.qpack-literal-prefix)
 QPACK-LITERAL-PREFIX i64 = 0x20
 
 ; 簡化版 QPACK 編解碼
@@ -538,6 +545,7 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
 ; header-values [32]str: 標頭值
 ; header-count i64: 標頭數量
 ; body str: 回應主體
+; [response](#http3.response)
 response {
     status-code i64
     header-names [32]str

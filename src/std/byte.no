@@ -235,9 +235,11 @@
 ...
 
 ; 大寫十六進制字元表
+; [HEX-UPPER](#byte.hex-upper)
 HEX-UPPER = '0123456789ABCDEF'
 
 ; 小寫十六進制字元表
+; [HEX-LOWER](#byte.hex-lower)
 HEX-LOWER = '0123456789abcdef'
 
 ; []byte.to-hex: 將 []byte 編碼為大寫十六進制字串

@@ -135,13 +135,29 @@ func (f *formatter) newline() {
 func (f *formatter) formatProgram(p *parser.Program) {
 	// 導入區段規範化：去重、移除無別名的 `# std/fmt`、按字典序排序（imports.go）。
 	normalizeImportRun(p)
+	// 模組 doc（`; [arr](#arr)` 收尾的那段）先輸出：它在 AST 上掛在 Program
+	// 而非首個陳述，故不能交給 formatStatement。與陳述的 Doc 一樣保留它與下方
+	// 程式碼之間的空行（由 formatStatement 的同一套 hasBlankLineBetween 判定），
+	// 否則 `no fmt` 會把檔案頭的空行吃掉、與原檔不一致。
+	moduleDocEmitted := false
+	if p.Doc != nil && len(p.Doc.List) > 0 {
+		f.formatDocComments(p.Doc)
+		moduleDocEmitted = true
+	}
 	// 追蹤上一個「有輸出」的頂層陳述，使無輸出的陳述不會產生空白行，且空白行
 	// 保留以最後一個有輸出的陳述為基準（見 formatBlockInner 的同名邏輯）。
 	lastEmitEndLine := 0
 	prevEmitted := false
 	for i, stmt := range p.Statements {
 		emits := f.statementEmitsSomething(stmt)
-		if i > 0 && emits {
+		if emits && i == 0 && moduleDocEmitted {
+			// 首個陳述緊接在模組 doc 之後：空行與否看原始碼，收尾換行交出去。
+			lastDocLine := p.Doc.List[len(p.Doc.List)-1].Pos.Line
+			if lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtFirstLine(stmt)) {
+				f.write("\n") // bare blank line (no indent)
+			}
+			f.newline()
+		} else if i > 0 && emits {
 			prevEndLine := lastEmitEndLine
 			currStartLine := stmtFirstLine(stmt)
 			_, prevIsFunc := p.Statements[i-1].(*parser.FunctionDefinition)

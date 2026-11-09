@@ -19,7 +19,14 @@ fib = () {
         }
 
         #{overflow=wrap}
-        i = i + 1
+        {
+            #{overflow=wrap}
+            i-opt = i + 1
+            i-opt: {
+                ok -> i = it
+                ->
+            }
+        }
     }
     print(b)
 }

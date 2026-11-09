@@ -11,7 +11,14 @@
 worker = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n + 1
+    {
+        #{overflow=wrap}
+        r-opt = n + 1
+        r-opt: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; 無色子函式：乘十；被 worker 以 go 呼叫後會被單態成 child-async
@@ -20,7 +27,14 @@ worker = (n i64) (r i64) {
 child = (n i64) (r i64) {
 
     #{overflow=wrap}
-    r = n * 10
+    {
+        #{overflow=wrap}
+        r-opt2 = n * 10
+        r-opt2: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 ; worker 內部呼叫異步 child：worker 因此也被單態為 worker-async（傳遞性）
@@ -31,7 +45,14 @@ worker-with-child = (n i64) (r i64) {
     c = co child(n)
 
     #{overflow=wrap}
-    r = n + c
+    {
+        #{overflow=wrap}
+        r-opt3 = n + c
+        r-opt3: {
+            ok -> r = it
+            ->
+        }
+    }
 }
 
 a i64

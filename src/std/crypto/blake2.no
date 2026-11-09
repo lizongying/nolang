@@ -16,9 +16,11 @@
 ; BLAKE2b 初始向量（IV，= SHA-512 IV）。
 ; IV[0] = 0x6a09e667f3bcc908 是原始值；參數塊（0x01010000 | out-len）由
 ; b()/b-256() 自行在 h[0] 上 XOR，不可把參數塊預先併入 IV。
+; [BLAKE2B-IV](#blake2.blake2b-iv)
 BLAKE2B-IV [8]u64 = [7640891576956012808, 13503953896175478587, 4354685564936845355, 11912009170470909681, 5840696475078001361, 11170449401992604703, 2270897969802886507, 6620516959819538809]
 
 ; 排列表（sigma）
+; [BLAKE2B-SIGMA](#blake2.blake2b-sigma)
 BLAKE2B-SIGMA = [
     0, 1, 2, 3, 4, 5, 6, 7,
     8, 9, 10, 11, 12, 13, 14, 15,
@@ -47,6 +49,7 @@ BLAKE2B-SIGMA = [
 ]
 
 ; 64-bit 全 1 遮罩
+; [BLAKE2B-MASK](#blake2.blake2b-mask)
 BLAKE2B-MASK u64 = 18446744073709551615
 
 ; 輔助函數
@@ -996,9 +999,11 @@ b-256-hex = (data []byte) (hex str) {
 
 ; BLAKE2s 初始向量（IV）—— 與 SHA-256 相同
 ; 注意：過去誤用 ChaCha "expand 32-byte k" 常數（0x61707865...），導致所有 BLAKE2s 雜湊錯誤。
+; [BLAKE2S-IV](#blake2.blake2s-iv)
 BLAKE2S-IV [8]u32 = [1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]
 
 ; BLAKE2s 排列表（與 BLAKE2b 相同）
+; [BLAKE2S-SIGMA](#blake2.blake2s-sigma)
 BLAKE2S-SIGMA = [
     0, 1, 2, 3, 4, 5, 6, 7,
     8, 9, 10, 11, 12, 13, 14, 15,

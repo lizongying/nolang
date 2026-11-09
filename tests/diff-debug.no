@@ -119,17 +119,37 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op.line = tmp-line
 
                 #{overflow=wrap}
-                op.a-no = i + 1
+                op.a-no = i + 1: {
+                    ok -> it
+                    ->
+                }
 
                 #{overflow=wrap}
-                op.b-no = j + 1
+                op.b-no = j + 1: {
+                    ok -> it
+                    ->
+                }
                 ops.push(op)
 
                 #{overflow=wrap}
-                i = i + 1
+                {
+                    #{overflow=wrap}
+                    i-opt = i + 1
+                    i-opt: {
+                        ok -> i = it
+                        ->
+                    }
+                }
 
                 #{overflow=wrap}
-                j = j + 1
+                {
+                    #{overflow=wrap}
+                    j-opt = j + 1
+                    j-opt: {
+                        ok -> j = it
+                        ->
+                    }
+                }
             }
 
             #{overflow=wrap}
@@ -145,11 +165,21 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op.line = tmp-line
 
                 #{overflow=wrap}
-                op.a-no = i + 1
+                op.a-no = i + 1: {
+                    ok -> it
+                    ->
+                }
                 ops.push(op)
 
                 #{overflow=wrap}
-                i = i + 1
+                {
+                    #{overflow=wrap}
+                    i-opt2 = i + 1
+                    i-opt2: {
+                        ok -> i = it
+                        ->
+                    }
+                }
             }
 
             #{overflow=wrap}
@@ -165,11 +195,21 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 op.line = tmp-line
 
                 #{overflow=wrap}
-                op.b-no = j + 1
+                op.b-no = j + 1: {
+                    ok -> it
+                    ->
+                }
                 ops.push(op)
 
                 #{overflow=wrap}
-                j = j + 1
+                {
+                    #{overflow=wrap}
+                    j-opt2 = j + 1
+                    j-opt2: {
+                        ok -> j = it
+                        ->
+                    }
+                }
             }
         }
         i < na -> {
@@ -184,11 +224,21 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op.line = tmp-line
 
             #{overflow=wrap}
-            op.a-no = i + 1
+            op.a-no = i + 1: {
+                ok -> it
+                ->
+            }
             ops.push(op)
 
             #{overflow=wrap}
-            i = i + 1
+            {
+                #{overflow=wrap}
+                i-opt3 = i + 1
+                i-opt3: {
+                    ok -> i = it
+                    ->
+                }
+            }
         }
         j < nb -> {
             op = diff-op {}
@@ -202,11 +252,21 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             op.line = tmp-line
 
             #{overflow=wrap}
-            op.b-no = j + 1
+            op.b-no = j + 1: {
+                ok -> it
+                ->
+            }
             ops.push(op)
 
             #{overflow=wrap}
-            j = j + 1
+            {
+                #{overflow=wrap}
+                j-opt3 = j + 1
+                j-opt3: {
+                    ok -> j = it
+                    ->
+                }
+            }
         }
     }
 }

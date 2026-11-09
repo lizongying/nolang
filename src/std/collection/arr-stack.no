@@ -34,6 +34,7 @@
 ; arr-stack: 堆疊狀態（不含緩衝區，緩衝區由 [n]t receiver 提供）
 ; cap: 容量（= 陣列長度 n）
 ; top: 堆疊頂端索引（下一個寫入位置，同時等於元素數量）
+; [arr-stack](#arr-stack.arr-stack)
 arr-stack {
     cap i64
     top i64

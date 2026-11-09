@@ -42,12 +42,15 @@
 ...
 
 ; 邊界前綴
+; [MULTIPART-BOUNDARY-PREFIX](#multipart.multipart-boundary-prefix)
 MULTIPART-BOUNDARY-PREFIX = '----NolangBoundary'
 
 ; 最大欄位數
+; [MULTIPART-MAX-FIELDS](#multipart.multipart-max-fields)
 MULTIPART-MAX-FIELDS = 32
 
 ; 邊界長度
+; [MULTIPART-BOUNDARY-LEN](#multipart.multipart-boundary-len)
 MULTIPART-BOUNDARY-LEN = 32
 
 ; 工具函數
@@ -77,6 +80,7 @@ multipart-gen-boundary = (seed i64) (boundary str) {
 ; body str: 已建構的請求體
 ; closed bool: 是否已關閉（已寫入結束邊界）
 ; seed i64: 隨機種子
+; [multipart-writer](#multipart.multipart-writer)
 multipart-writer {
     boundary str
     body str
@@ -200,6 +204,7 @@ multipart-writer.content-type = () (ct str) {
 ; filename str: 檔案名稱（空=非檔案）
 ; content-type str: 內容類型（空=未指定）
 ; data str: 部分資料
+; [multipart-part](#multipart.multipart-part)
 multipart-part {
     name str
     filename str
@@ -214,6 +219,7 @@ multipart-part {
 ; end i64: 資料總長度
 ; current multipart-part: 當前部分
 ; has-current bool: 是否有當前部分
+; [multipart-reader](#multipart.multipart-reader)
 multipart-reader {
     boundary str
     data str
