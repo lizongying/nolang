@@ -680,7 +680,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		if _, ok := leftExp.(*DotExpression); ok {
 			tok := p.currentToken
 			p.nextToken()
-			val := p.parseExpression(LOWEST)
+			val := p.parseAssignValueExpr()
 			if tok.Type == lexer.QUESTION_ASSIGN {
 				// 欄位目標的 ?=：解箱並向上傳播（溢出/option 錯誤）。
 				leftExp = &UnwrapAssignStatement{
@@ -698,7 +698,7 @@ func (p *Parser) parseExpression(precedence int) Expression {
 		} else if _, ok := leftExp.(*IndexExpression); ok {
 			tok := p.currentToken
 			p.nextToken()
-			val := p.parseExpression(LOWEST)
+			val := p.parseAssignValueExpr()
 			if tok.Type == lexer.QUESTION_ASSIGN {
 				// 索引目標的 ?=：解箱並向上傳播（溢出/option 錯誤）。
 				leftExp = &UnwrapAssignStatement{
@@ -760,6 +760,26 @@ func (p *Parser) parseExpression(precedence int) Expression {
 	}
 
 	return leftExp
+}
+
+// parseAssignValueExpr 解析「欄位／索引目標賦值的右值」——`=` / `?=` 後面那一段。
+//
+// 右值是**值位置**，語義上等同 parseLetStatement 的 CTX_EXPR 區段（`x = <here>`）：
+// 少了這個 context，`b.n = b.n + 1: { ok -> it  -> }` 裡的 `: {` 不會掛到右值上，
+// 而是被 parseExpressionStatement 的 colon tail 撿走、套在**整個賦值**外面——
+// 解析成 `match(主語 = (b.n = b.n + 1))`，條件變成 `(b.n = b.n + 1) == ok`。
+//
+// 為何只有算術主語歪：識別字（expr.go 開頭的 IDENT 分支）、索引、呼叫（中綴迴圈
+// 後的第一個 `: {` 附加塊）各自有**不帶 CTX_EXPR 閘門**的附加分支，所以在欄位
+// 賦值右值裡照樣能附上；而「任意表達式主語」（典型 `a % b`）依賴 CTX_EXPR 閘門
+// 那個塊，於是只有它漏掉。表現就是 `b.n = k: {…}` 正常、`b.n = b.n + 1: {…}`
+// 語義全錯（整條指派被當成 match 主語求值、欄位永遠拿不到臂值；舊 MIR 更把
+// 這種「值位 match 作賦值右值」整條丟棄，見 mir/hir2mir.go lowerAssignNode）。
+func (p *Parser) parseAssignValueExpr() Expression {
+	p.ctx.push(CTX_EXPR)
+	v := p.parseExpression(LOWEST)
+	p.ctx.pop()
+	return v
 }
 
 // reportIllegalToken 報告一個 ILLEGAL token（詞法錯誤）。同一位置只報告一次

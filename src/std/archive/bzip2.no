@@ -41,7 +41,10 @@ bz-bit-reader.read-bit = () (bit i64) {
                 .bit-buf = .data[.pos]
 
                 #{overflow=wrap}
-                .pos = .pos + 1
+                .pos = .pos + 1: {
+                    ok -> it
+                    ->
+                }
                 .bit-cnt = 8
             }
         }
@@ -51,7 +54,10 @@ bz-bit-reader.read-bit = () (bit i64) {
             .bit-buf = (.bit-buf << 1) & 0xff
 
             #{overflow=wrap}
-            .bit-cnt = .bit-cnt - 1
+            .bit-cnt = .bit-cnt - 1: {
+                ok -> it
+                ->
+            }
         }
     }
 }
@@ -299,9 +305,8 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
             #{overflow=wrap}
             {
                 #{overflow=wrap}
-                zn-opt = zn + 1
-                zn-opt: {
-                    ok -> zn = it
+                zn = zn + 1: {
+                    ok -> it
                     ->
                 }
             }
@@ -351,9 +356,8 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
             #{overflow=wrap}
             {
                 #{overflow=wrap}
-                zn-opt2 = zn + 1
-                zn-opt2: {
-                    ok -> zn = it
+                zn = zn + 1: {
+                    ok -> it
                     ->
                 }
             }
@@ -527,9 +531,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                                 -> _
                             }
                             {
-                                n-in-use-opt = n-in-use + 1
-                                n-in-use-opt: {
-                                    ok -> n-in-use = it
+                                n-in-use = n-in-use + 1: {
+                                    ok -> it
                                     ->
                                 }
                             }
@@ -558,9 +561,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                         -> _
                     }
                     {
-                        k-opt = k + 1
-                        k-opt: {
-                            ok -> k = it
+                        k = k + 1: {
+                            ok -> it
                             ->
                         }
                     }
@@ -603,9 +605,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                     #{overflow=wrap}
                     {
                         #{overflow=wrap}
-                        j-opt = j + 1
-                        j-opt: {
-                            ok -> j = it
+                        j = j + 1: {
+                            ok -> it
                             ->
                         }
                     }
@@ -680,9 +681,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                         #{overflow=wrap}
                         {
                             #{overflow=wrap}
-                            i-opt = i + 1
-                            i-opt: {
-                                ok -> i = it
+                            i = i + 1: {
+                                ok -> it
                                 ->
                             }
                         }
@@ -695,9 +695,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                                 #{overflow=wrap}
                                 {
                                     #{overflow=wrap}
-                                    curr-len-opt = curr-len + 1
-                                    curr-len-opt: {
-                                        ok -> curr-len = it
+                                    curr-len = curr-len + 1: {
+                                        ok -> it
                                         ->
                                     }
                                 }
@@ -708,9 +707,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                                 #{overflow=wrap}
                                 {
                                     #{overflow=wrap}
-                                    curr-len-opt2 = curr-len - 1
-                                    curr-len-opt2: {
-                                        ok -> curr-len = it
+                                    curr-len = curr-len - 1: {
+                                        ok -> it
                                         ->
                                     }
                                 }
@@ -779,9 +777,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                     #{overflow=wrap}
                     {
                         #{overflow=wrap}
-                        selector-idx-opt = selector-idx + 1
-                        selector-idx-opt: {
-                            ok -> selector-idx = it
+                        selector-idx = selector-idx + 1: {
+                            ok -> it
                             ->
                         }
                     }
@@ -791,9 +788,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 {
                     #{overflow=wrap}
-                    group-remaining-opt = group-remaining - 1
-                    group-remaining-opt: {
-                        ok -> group-remaining = it
+                    group-remaining = group-remaining - 1: {
+                        ok -> it
                         ->
                     }
                 }
@@ -812,16 +808,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 sym == 0 -> {
                     {
-                        run-len-opt = run-len + run-n
-                        run-len-opt: {
-                            ok -> run-len = it
+                        run-len = run-len + run-n: {
+                            ok -> it
                             ->
                         }
                     }
                     {
-                        run-n-opt = run-n * 2
-                        run-n-opt: {
-                            ok -> run-n = it
+                        run-n = run-n * 2: {
+                            ok -> it
                             ->
                         }
                     }
@@ -830,16 +824,14 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 sym == 1 -> {
                     {
-                        run-len-opt2 = run-len + 2 * run-n
-                        run-len-opt2: {
-                            ok -> run-len = it
+                        run-len = run-len + 2 * run-n: {
+                            ok -> it
                             ->
                         }
                     }
                     {
-                        run-n-opt2 = run-n * 2
-                        run-n-opt2: {
-                            ok -> run-n = it
+                        run-n = run-n * 2: {
+                            ok -> it
                             ->
                         }
                     }
@@ -1057,9 +1049,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 {
                     #{overflow=wrap}
-                    k-opt2 = k + 1
-                    k-opt2: {
-                        ok -> k = it
+                    k = k + 1: {
+                        ok -> it
                         ->
                     }
                 }
@@ -1073,9 +1064,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 {
                     #{overflow=wrap}
-                    ri-opt = ri - 1
-                    ri-opt: {
-                        ok -> ri = it
+                    ri = ri - 1: {
+                        ok -> it
                         ->
                     }
                 }
@@ -1103,9 +1093,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                 #{overflow=wrap}
                 {
                     #{overflow=wrap}
-                    i-opt2 = i + 1
-                    i-opt2: {
-                        ok -> i = it
+                    i = i + 1: {
+                        ok -> it
                         ->
                     }
                 }
@@ -1113,9 +1102,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                 {
                     v == last-b -> {
                         {
-                            rep-opt = rep + 1
-                            rep-opt: {
-                                ok -> rep = it
+                            rep = rep + 1: {
+                                ok -> it
                                 ->
                             }
                         }
@@ -1138,9 +1126,8 @@ bzip2-decompress = (data []byte) (out []byte) {
                         #{overflow=wrap}
                         {
                             #{overflow=wrap}
-                            i-opt3 = i + 1
-                            i-opt3: {
-                                ok -> i = it
+                            i = i + 1: {
+                                ok -> it
                                 ->
                             }
                         }

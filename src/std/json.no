@@ -164,7 +164,10 @@ json-pool.alloc = () (idx i64) {
     .strs.push('')
 
     #{overflow=wrap}
-    .count = .count + 1
+    .count = .count + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 將子節點 child-idx（鍵名 key，陣列傳空字串）附加到節點 node-idx
@@ -202,7 +205,10 @@ json-pool.add-child = (node-idx i64, child-idx i64, key str) {
     }
 
     #{overflow=wrap}
-    .nodes[node-idx].count = cd + 1
+    .nodes[node-idx].count = cd + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -237,8 +243,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
 
     ; 跳過空白
     (p < sn) {
-        copt = s.byte(p)
-        c = copt: {
+        c = s.byte(p): {
             ok -> it
 
             -> 0
@@ -254,8 +259,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
     }
     p >= sn -> return
 
-    copt = s.byte(p)
-    c = copt: {
+    c = s.byte(p): {
         ok -> it
 
         -> 0
@@ -403,8 +407,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 p = .skip-ws(s, p)
                 p >= sn -> return
 
-                c2opt = s.byte(p)
-                c2 = c2opt: {
+                c2 = s.byte(p): {
                     ok -> it
 
                     -> 0
@@ -502,8 +505,7 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 p = .skip-ws(s, p)
                 p >= sn -> return
 
-                c2opt = s.byte(p)
-                c2 = c2opt: {
+                c2 = s.byte(p): {
                     ok -> it
 
                     -> 0
@@ -579,8 +581,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> return
 
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -613,8 +614,7 @@ json-pool.parse-str = (node-idx i64, s str, pos i64) (next-pos ?i64) {
                 i ?= i + 1
                 i >= s.len-bytes() -> return
 
-                copt = s.byte(i)
-                c = copt: {
+                c = s.byte(i): {
                     ok -> it
 
                     -> 0
@@ -665,8 +665,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     (i < s.len-bytes()) {
         i >= s.len-bytes() -> break
 
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -683,8 +682,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     ; 小數部分
     #{overflow=wrap}
     i < s.len-bytes() -> {
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -697,8 +695,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
             (i < s.len-bytes()) {
                 i >= s.len-bytes() -> break
 
-                copt = s.byte(i)
-                c = copt: {
+                c = s.byte(i): {
                     ok -> it
 
                     -> 0
@@ -716,8 +713,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
     ; 指數部分（e/E [+/-] digits）
     #{overflow=wrap}
     i < s.len-bytes() -> {
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -728,8 +724,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
             i ?= i + 1
             exp-sign = 1
             i < s.len-bytes() -> {
-                copt = s.byte(i)
-                c = copt: {
+                c = s.byte(i): {
                     ok -> it
 
                     -> 0
@@ -746,8 +741,7 @@ json-pool.parse-num = (node-idx i64, s str, pos i64) (next-pos ?i64) {
             (i < s.len-bytes()) {
                 i >= s.len-bytes() -> break
 
-                copt = s.byte(i)
-                c = copt: {
+                c = s.byte(i): {
                     ok -> it
 
                     -> 0
@@ -1419,9 +1413,7 @@ json.get = (key str) (child ?json) {
 
     ; 非物件直接回傳 nil（不在這裡把 root 變成新物件）
     .pool.get-kind(.root) != JSON-KIND-OBJ -> return
-    gi = .pool.get-key(.root, key)
-    val-idx = -1
-    val-idx = gi: {
+    val-idx = .pool.get-key(.root, key): {
         ok -> it
 
         -> -1
@@ -1909,7 +1901,10 @@ json.delete-key = (key str) (ok bool) {
             }
 
             #{overflow=wrap}
-            .pool.nodes[.root].count = cnt - 1
+            .pool.nodes[.root].count = cnt - 1: {
+                ok -> it
+                ->
+            }
             ok = true
             return
         }
@@ -1980,8 +1975,7 @@ json.obj-keys-str = () (keys str) {
 ; val: 根節點字串值（非字串節點返回空字串）
 ; [str-val](#json.str-val)
 json.str-val = () (val str) {
-    v-opt = .pool.get-str(.root)
-    val = v-opt: {
+    val = .pool.get-str(.root): {
         ok -> it
 
         -> ''

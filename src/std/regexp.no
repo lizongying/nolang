@@ -112,7 +112,10 @@ regexp.emit = (op i64, arg1 i64, arg2 i64) {
         .arg2[.n] ?= arg2
 
         #{overflow=wrap}
-        .n = .n + 1
+        .n = .n + 1: {
+            ok -> it
+            ->
+        }
     }: {
         err -> _
 
@@ -257,7 +260,10 @@ regexp.alloc-class = () (cls-idx i64) {
     cls-idx = .ncls
 
     #{overflow=wrap}
-    .ncls = .ncls + 1
+    .ncls = .ncls + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -866,7 +872,10 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
             .arg2[split-pc] ?= .n
 
             #{overflow=wrap}
-            .tmp-next-i = atom-i + 1
+            .tmp-next-i = atom-i + 1: {
+                ok -> it
+                ->
+            }
         }: {
             err -> _
 
@@ -884,7 +893,10 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         .emit(RE-OP-SPLIT, l1, .n + 1)
 
         #{overflow=wrap}
-        .tmp-next-i = atom-i + 1
+        .tmp-next-i = atom-i + 1: {
+            ok -> it
+            ->
+        }
         return
     }
 
@@ -901,7 +913,10 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
             .arg2[split-pc] ?= .n
 
             #{overflow=wrap}
-            .tmp-next-i = atom-i + 1
+            .tmp-next-i = atom-i + 1: {
+                ok -> it
+                ->
+            }
         }: {
             err -> _
 
@@ -949,20 +964,29 @@ regexp.compile = () {
 
         ; 預設前進 1
         #{overflow=wrap}
-        .tmp-next-i = i + 1
+        .tmp-next-i = i + 1: {
+            ok -> it
+            ->
+        }
 
         ; ^ — 行首錨點
         #{overflow=wrap}
         c == 94 -> {
             .emit(RE-OP-START, 0, 0)
-            .tmp-next-i = i + 1
+            .tmp-next-i = i + 1: {
+                ok -> it
+                ->
+            }
         }
 
         ; $ — 行尾錨點
         #{overflow=wrap}
         c == 36 -> {
             .emit(RE-OP-END, 0, 0)
-            .tmp-next-i = i + 1
+            .tmp-next-i = i + 1: {
+                ok -> it
+                ->
+            }
         }
 
         ; 其他 atom

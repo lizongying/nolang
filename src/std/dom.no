@@ -736,8 +736,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
     any = false
     b = 0
     (p < end) {
-        bopt = s.byte(p)
-        b = bopt: {
+        b = s.byte(p): {
             ok(bv) -> bv
 
             -> 0
@@ -853,8 +852,7 @@ xml-read-name = (s str, p i64) (np ?i64) {
     pos = p
     c = 0
     (pos < n) {
-        copt = s.byte(pos)
-        c = copt: {
+        c = s.byte(pos): {
             ok(cv) -> cv
 
             -> 0
@@ -1025,8 +1023,7 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
     found = false
     b = 0
     (j < n) {
-        bopt = s.byte(j)
-        b = bopt: {
+        b = s.byte(j): {
             ok(bv) -> bv
 
             -> 0
@@ -1760,8 +1757,7 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
         ve = cpos
         q = 0
         cpos < n -> {
-            qopt = s.byte(cpos)
-            q = qopt: {
+            q = s.byte(cpos): {
                 ok(qv) -> qv
 
                 -> 0
@@ -1820,8 +1816,7 @@ dom-pool.html-parse-attr = (node i64, s str, p i64) (np ?i64) {
             }
         }
         val str = ''
-        dopt = decode-entities(s, vs, ve, true)
-        val = dopt: {
+        val = decode-entities(s, vs, ve, true): {
             ok -> it
 
             -> s.slice-bytes(vs, ve)
@@ -2000,8 +1995,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
         {
             rc -> {
                 val str = ''
-                dopt = decode-entities(s, np, cend, true)
-                val = dopt: {
+                val = decode-entities(s, np, cend, true): {
                     ok -> it
 
                     -> s.slice-bytes(np, cend)
@@ -2153,7 +2147,10 @@ dom-pool.html-parse-doc = (s str) (root i64) {
     (p < n) {
         c = s.byte(p)
         c != 60 -> {
-            te = p + 1
+            te = p + 1: {
+                ok -> it
+                ->
+            }
             (te < n) {
                 s.byte(te) == 60 -> break
 
@@ -2187,8 +2184,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             }
             continue
         }
-        m1opt = s.byte(p + 1)
-        m1 = m1opt: {
+        m1 = s.byte(p + 1): {
             ok(m1v) -> m1v
 
             -> 0
@@ -2233,7 +2229,10 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             hit-k = -1
 
             #{overflow=wrap}
-            k = sl - 1
+            k = sl - 1: {
+                ok -> it
+                ->
+            }
             (k >= 0) {
                 {
                     ti ?= .stk[k]

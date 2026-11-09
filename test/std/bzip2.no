@@ -55,7 +55,14 @@ t-decompress-golden = () {
             a == b -> {
             }
 
-            -> m = m + 1
+            -> {
+                #{overflow=wrap}
+                m-opt = m + 1
+                m-opt: {
+                    ok -> m = it
+                    -> _
+                }
+            }
         }
     }
     runner.eq(m, 0, 'all bytes match golden bzip2 output')

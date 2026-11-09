@@ -170,6 +170,11 @@ func exprToString(e Expression) string {
 		return exprListToString(ex.Elements, "[", "]", true)
 	case *UnwrapAssignStatement:
 		return ex.String()
+	case *SurfaceMatch:
+		// 值位 match（`expr: { … }`）沒有單行等價寫法。沒有這支會落到 default
+		// 印出 Go 型別名（`<*parser.SurfaceMatch>`），被 checker 的 idxwrite 等
+		// 診斷原樣吐給用戶。印主語 + 省略號至少指出「這裡是一段 match」。
+		return exprToString(ex.Matched) + ": { … }"
 	default:
 		if s, ok := e.(interface{ String() string }); ok {
 			return s.String()

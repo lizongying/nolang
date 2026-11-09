@@ -58,7 +58,10 @@ reader.read-byte = () (b ?byte) {
     b = .buf[.pos]
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 讀取一行（遇 '\n' 停止，換行符不包含在結果內）
@@ -86,7 +89,10 @@ reader.read-line = () (line ?str) {
             c = .buf[.pos]
 
             #{overflow=wrap}
-            .pos = .pos + 1
+            .pos = .pos + 1: {
+                ok -> it
+                ->
+            }
             c == 10 -> {
                 line = acc
                 return

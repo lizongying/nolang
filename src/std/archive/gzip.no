@@ -37,14 +37,20 @@ bit-reader.read-bit = () (bit i64) {
     #{overflow=wrap}
     .bit-cnt == 0 -> .pos < .data.len() -> {
         .bit-buf = .data[.pos]
-        .pos = .pos + 1
+        .pos = .pos + 1: {
+            ok -> it
+            ->
+        }
         .bit-cnt = 8
     }
     bit = .bit-buf & 1
     .bit-buf = .bit-buf >> 1
 
     #{overflow=wrap}
-    .bit-cnt = .bit-cnt - 1
+    .bit-cnt = .bit-cnt - 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 讀取 n 個位元（LSB-first）
@@ -73,12 +79,18 @@ bit-reader.read-u16-le = () (v i64) {
     lo = .data[.pos]
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
 
     hi = .data[.pos]
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
     v = lo | (hi << 8)
 }
 
@@ -490,7 +502,10 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
                     result.push(ixout440c33)
 
                     #{overflow=wrap}
-                    br.pos = br.pos + 1
+                    br.pos = br.pos + 1: {
+                        ok -> it
+                        ->
+                    }
                 }
             }
 

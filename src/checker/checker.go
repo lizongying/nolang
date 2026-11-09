@@ -5112,6 +5112,13 @@ func ovfOptionArithOperandType(e parser.Expression, varTypes map[string]string, 
 			return signedIntPayloadName(selfType)
 		}
 		return signedIntPayloadName(varTypes[x.Value])
+	case *parser.DotExpression:
+		// 欄位讀取運算元（`b.n + 1`）：型別由 validationStructFields 決定，
+		// 與 Identifier 運算元同口徑。少了這支，ovfOptionArithPayloadType
+		// 對欄位算術一律回 "" ⇒ `b.n = b.n + 1` 的 option→plain 靜默拆包
+		// 抓不到（使用者 2026-11-09 點名）。查不到型別時
+		// signedIntPayloadName 回 ok=false，維持向寬鬆方向失敗。
+		return signedIntPayloadName(inferExprType(x, varTypes, nil, selfType))
 	case *parser.InfixExpression:
 		// 巢狀算術運算元（`a + b * c` 的右運算元 `b * c`）：遞迴取兩側較寬者。
 		if !ovfOptionArithRootOps[x.Operator] {
@@ -10300,7 +10307,19 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						})
 					}
 				} else {
-					// 首次賦值，記錄推斷型別
+					// 首次賦值，記錄推斷型別。
+					// 無標註的 option 算術／option 呼叫右值在 lowering 會就地合成 `?T`，
+					// 但 inferExprType 只看得見 `T`；若此處記成 `T`，之後 `plain = k`
+					// 會被當成 plain→plain 放行 —— option 的 tag 被靜默丟掉卻不報錯。
+					// 補上升格，讓既有的 15w45dqk 在取用點開火（與 10116 的
+					// 「已存在 plain 變數」升格同源，差別只在這裡是新綁定）。
+					if !ty.IsOptionRaw(inferredType) && !isPureLiteralArith(s.Value) {
+						if optRHS := optionResultOfCallTarget(s.Value, varTypes, selfType); optRHS != "" {
+							inferredType = optRHS
+						} else if p := ovfOptionArithPayloadType(s.Value, varTypes, selfType); p != "" {
+							inferredType = "?" + p
+						}
+					}
 					varTypes[s.Name.Value] = inferredType
 				}
 			}
@@ -10525,6 +10544,46 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						}
 						if valType != "" {
 							varTypes[ident.Value] = valType
+						}
+					}
+				}
+			} else {
+				// 欄位 LHS（`b.n = b.n + 1`）：AssignExpression 過去只對
+				// Identifier LHS 做型別比對，這裡是 option→plain 門禁最後一塊
+				// 空白。option 右值直接寫進 plain 欄位，tag（nil / err）同樣被
+				// 靜默丟掉，與 LetStatement 的「已存在 plain 變數」完全同源，
+				// 必須報 15w45dqk（使用者 2026-11-09 點名）。
+				//
+				// 🔴 刻意不含 *IndexExpression：emitIndexStore 的 optionPayloadOf
+				// 是 codegen 既有設計（`px [4]byte; v ?i64 = 200; px[0] = v`，
+				// 見 build/option_store_scalar_test.go），索引寫入另由
+				// nolang-index-write 管。把它一併拒絕會推翻既有語意。
+				if _, isField := assign.Left.(*parser.DotExpression); isField {
+					targetType := inferExprType(assign.Left, varTypes, funcTypes, selfType)
+					// 型別推不出、目標本來就是 ?T / 借用 ⇒ 向寬鬆方向放行，
+					// 不猜、不誤報（與 10116 的邊界同口徑）。
+					if targetType != "" && isConcreteType(targetType) &&
+						!ty.IsOptionRaw(targetType) && !ty.IsViewRaw(targetType) {
+						valType := inferExprType(assign.Value, varTypes, funcTypes, selfType)
+						// inferExprType 只看得見 T，看不到 overflow option 算術／
+						// option 呼叫合成的 tag；補上升格讓既有判定開火。
+						if !ty.IsOptionRaw(valType) && !isPureLiteralArith(assign.Value) {
+							if optRHS := optionResultOfCallTarget(assign.Value, varTypes, selfType); optRHS != "" {
+								valType = optRHS
+							} else if p := ovfOptionArithPayloadType(assign.Value, varTypes, selfType); p != "" {
+								valType = "?" + p
+							}
+						}
+						if valType != "" && optionImplicitUnwrapRejected(targetType, valType) {
+							valPos := assign.Value.Pos()
+							msg := fmt.Sprintf("cannot assign %s value to %s field target", valType, targetType)
+							msg += optionUnwrapAssignHint(valType)
+							results = append(results, ValidateResult{
+								TraceID: "15w45dqk",
+								Line:    valPos.Line,
+								Column:  valPos.Column,
+								Message: msg,
+							})
 						}
 					}
 				}

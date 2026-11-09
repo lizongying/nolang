@@ -1531,7 +1531,11 @@ f64.to-str-general = (precision i64) (out str) {
     ln10 = 2.302585092994046
     lg10 = ax.log10()
     flr = lg10.floor()
-    e = flr.to-i64()
+    ; 顯式標註讓 parser 的 AST 型別回放看得見 `e`：來源是深層方法鏈
+    ; （ax.log10 → lg10.floor → flr.to-i64），回放推不出時，下方
+    ; `precision - 1 - e: { … }` 的 option 算術主語無法歸一化，
+    ; ok 臂的 `it` 會沒有綁定而觀測為 0。
+    e i64 = flr.to-i64()
     epw f64 = (e + 1).to-f64() * ln10
     upper = epw.exp()
 
@@ -1617,8 +1621,7 @@ f64.to-str-general = (precision i64) (out str) {
 
     #{overflow=wrap}
     mn < precision -> {
-        tmp-pad = precision - mn
-        pad = tmp-pad: {
+        pad = precision - mn: {
             ok -> it
 
             -> _
@@ -1823,11 +1826,9 @@ f64.to-str-general = (precision i64) (out str) {
     #{overflow=wrap}
     e >= 0 -> {
 
-        ; e 為普通 i64（非 option），直接參與運算；`-` 結果為 ?i64 → 兩段式解包
+        ; e 為普通 i64（非 option），直接參與運算；`-` 結果為 ?i64 → 一段式解包
         #{overflow=wrap}
-        dp-opt = precision - 1 - e
-        dec-places i64 = 0
-        dec-places = dp-opt: {
+        dec-places i64 = precision - 1 - e: {
             ok -> it
 
             -> 0

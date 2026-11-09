@@ -1796,14 +1796,31 @@ Replaces the verbose form `rem-opt = seconds % 3600` / `rem = 0` /
 - `no fmt` round-trips `expr: { ... }` verbatim and is idempotent; it never splits
   it into an assignment plus a detached match.
 - The existing block-subject form `{r ?= a % b}: { ok -> it  -> 0 }` is unchanged.
-- `src/std` migrated all 52 eligible three-step unwraps (14 modules) on
-  2026-11-09, including sites where the loop index comes from a method-call
-  return value. The compiler falls back to the function-scoped AST declaration
-  when the semantic side table hands back a stale `?T` for such a variable, so
-  `ok -> it` keeps its binding instead of silently reading `0`.
-- **Exception**: keep the three-step form when an inner match writes back to the
-  `-opt` variable itself (`ok -> x-opt = it`) — that variable is the subject of a
-  later value match and must survive.
+- `src/std` migrated **122 option unwraps across 22 modules** on 2026-11-09:
+  three-step forms, two-step forms (no zero init), explicitly typed first
+  assignments (`x i64 = expr: { ... }`), and middle variables declared in
+  several decl+match pairs within one function. Subjects may be method calls,
+  indexes or option arithmetic; `ok -> it`, `ok(v) -> v`, constant arms and
+  `-> _` were all verified equivalent, and `no fmt` is idempotent on them.
+  The compiler falls back to the function-scoped AST declaration when the
+  semantic side table hands back a stale `?T`, so `ok -> it` keeps its binding
+  instead of silently reading `0`.
+- **Type-visibility boundary**: both operands of an option-arithmetic subject
+  must have statically visible declared types. When an operand comes from a deep
+  method chain whose receiver type even the AST replay cannot infer, add an
+  explicit annotation on its declaration (`e i64 = flr.to-i64()`). Without it
+  normalisation is conservatively skipped, `ok -> it` has no binding and MIR
+  zero-fills the result. `src/std/number.no::f64.to-str-general` is exactly this
+  case: dropping the annotation turns `fmt.fmt-f64(2.5, '')` from `'2.5'` into
+  `'3'`. Pinned by `TestValueMatchExprSubjectASTAnnotatedOperand` in
+  `src/parser/value_match_expr_subject_test.go` (removing the annotation makes
+  it fail).
+- **Keep the verbose form (9 sites left)** when: an inner match writes back to
+  the `-opt` variable itself (`ok -> x-opt = it`); there are two chained option
+  matches; the match is value dispatch (e.g. errno → message) rather than an
+  option unwrap; or statements sit between the declaration and the match / the
+  middle variable accumulates across branches — folding would change evaluation
+  order or semantics.
 
 > **`->` is a short-circuit pipeline — the same operator everywhere.** It is
 > left-associative and its meaning never depends on the surrounding context

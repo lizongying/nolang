@@ -34,8 +34,12 @@ lzma-rd {
 lzma-rd.init = (data []byte, start-pos i64) {
     .data = data
 
+    ; 跳過第一個位元組（必須為 0）
     #{overflow=wrap}
-    .pos = start-pos + 1; 跳過第一個位元組（必須為 0）
+    .pos = start-pos + 1: {
+        ok -> it
+        ->
+    }
     .range = 0xffffffff
     .code = 0
     i <- [0..4): {
@@ -49,7 +53,10 @@ lzma-rd.init = (data []byte, start-pos i64) {
         }
 
         #{overflow=wrap}
-        .pos = .pos + 1
+        .pos = .pos + 1: {
+            ok -> it
+            ->
+        }
     }
 }
 
@@ -67,7 +74,10 @@ lzma-rd.normalize = () {
         }
 
         #{overflow=wrap}
-        .pos = .pos + 1
+        .pos = .pos + 1: {
+            ok -> it
+            ->
+        }
         .range = .range << 8
     }
 }
@@ -96,8 +106,14 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
         .code >= bound -> {
 
             #{overflow=wrap}
-            .range = .range - bound
-            .code = .code - bound
+            .range = .range - bound: {
+                ok -> it
+                ->
+            }
+            .code = .code - bound: {
+                ok -> it
+                ->
+            }
             new-prob = prob - (prob >> 5)
             bit = 1
         }
@@ -115,7 +131,10 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
         .range = .range >> 1
 
         #{overflow=wrap}
-        t = .code - .range
+        t = .code - .range: {
+            ok -> it
+            ->
+        }
         {
             t < 0 -> .code = t
 
@@ -317,13 +336,19 @@ lzma-decoder.update-state-literal = () {
         .state < 10 -> {
 
             #{overflow=wrap}
-            .state = .state - 3
+            .state = .state - 3: {
+                ok -> it
+                ->
+            }
         }
 
         .state >= 10 -> {
 
             #{overflow=wrap}
-            .state = .state - 6
+            .state = .state - 6: {
+                ok -> it
+                ->
+            }
         }
     }
 }
@@ -894,7 +919,10 @@ lzma-decompress = (data []byte) (out []byte) {
     }
     dec.lc = lc
     dec.lp = lp
-    dec.pb = pb
+    pb: {
+        ok -> dec.pb = it
+        -> _
+    }
     dec.state = 0
     dec.rep0 = 0
     dec.rep1 = 0

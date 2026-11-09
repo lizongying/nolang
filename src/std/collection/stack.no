@@ -31,7 +31,10 @@ stack.push = (val i64) {
         .data[.n] ?= val
 
         #{overflow=wrap}
-        .n = .n + 1
+        .n = .n + 1: {
+            ok -> it
+            ->
+        }
     }: {
         err -> _
 
@@ -49,7 +52,10 @@ stack.pop = () (val ?i64) {
     }
 
     #{overflow=wrap}
-    .n = .n - 1
+    .n = .n - 1: {
+        ok -> it
+        ->
+    }
 
     val = .data[.n]
 }

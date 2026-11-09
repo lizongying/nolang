@@ -129,8 +129,7 @@ str.fill = (val byte) {
 ; clen: 該碼點 UTF-8 序列的位元組長度（1~4）
 ; [decode-cp](#str.decode-cp)
 str.decode-cp = (i i64) (cp i64, clen i64) {
-    b-opt = .byte(i)
-    b = b-opt: {
+    b = .byte(i): {
         ok -> it
 
         -> _
@@ -1081,8 +1080,7 @@ str-to-f64 = (s str) (result f64) {
 
     ; 跳過前導空白
     (i < n) {
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -1104,8 +1102,7 @@ str-to-f64 = (s str) (result f64) {
     i >= n -> return
 
     ; 正負號
-    copt = s.byte(i)
-    c = copt: {
+    c = s.byte(i): {
         ok -> it
 
         -> 0
@@ -1135,8 +1132,7 @@ str-to-f64 = (s str) (result f64) {
 
     ; 整數部分 → int-mant = int-mant * 10 + digit
     (i < n) {
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -1165,8 +1161,7 @@ str-to-f64 = (s str) (result f64) {
 
     ; 小數部分 → int-mant = int-mant * 10 + digit; frac-count++
     (i < n) {
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -1181,8 +1176,7 @@ str-to-f64 = (s str) (result f64) {
                     }
                 }
                 (i < n) {
-                    copt = s.byte(i)
-                    c = copt: {
+                    c = s.byte(i): {
                         ok -> it
 
                         -> 0
@@ -1222,8 +1216,7 @@ str-to-f64 = (s str) (result f64) {
 
     ; 指數部分
     (i < n) {
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -1238,8 +1231,7 @@ str-to-f64 = (s str) (result f64) {
                     }
                 }
                 (i < n) {
-                    copt = s.byte(i)
-                    c = copt: {
+                    c = s.byte(i): {
                         ok -> it
 
                         -> 0
@@ -1270,8 +1262,7 @@ str-to-f64 = (s str) (result f64) {
                     }
                 }
                 (i < n) {
-                    copt = s.byte(i)
-                    c = copt: {
+                    c = s.byte(i): {
                         ok -> it
 
                         -> 0
@@ -1756,8 +1747,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
     out-n = 0
     i = 0
     (i < .len-bytes()) {
-        b-opt = .byte(i)
-        b = b-opt: {
+        b = .byte(i): {
             ok -> it
 
             -> _
@@ -1861,8 +1851,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
     j = 0
     i = 0
     (i < .len-bytes()) {
-        b-opt = .byte(i)
-        b = b-opt: {
+        b = .byte(i): {
             ok -> it
 
             -> _
@@ -1989,8 +1978,7 @@ str.trim-char = (ch char) (val str) {
     ; 前向裁剪：跳過所有等於 ch 的 code point
     start = 0
     (start < .len-bytes()) {
-        b-opt = .byte(start)
-        b = b-opt: {
+        b = .byte(start): {
             ok -> it
 
             -> _
@@ -2035,8 +2023,7 @@ str.trim-char = (ch char) (val str) {
     end = start
     i = start
     (i < .len-bytes()) {
-        b-opt = .byte(i)
-        b = b-opt: {
+        b = .byte(i): {
             ok -> it
 
             -> _

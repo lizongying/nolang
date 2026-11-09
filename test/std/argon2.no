@@ -97,8 +97,14 @@ t-salt-sensitive = () {
             -> _
         }
 
-        #{overflow=wrap}
-        (ixout77c10 != ixout77c18) -> diff = diff + 1
+        (ixout77c10 != ixout77c18) -> {
+            #{overflow=wrap}
+            diff-opt = diff + 1
+            diff-opt: {
+                ok -> diff = it
+                -> _
+            }
+        }
     }
     runner.gt(diff, 0, 'argon2id salt changes the tag')
 }

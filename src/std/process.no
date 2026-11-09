@@ -1272,8 +1272,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
                 ! wait-status == 0 -> {
 
                     ; 已退出
-                    ec-opt = win-get-exit-code(proc-handle)
-                    code = ec-opt: {
+                    code = win-get-exit-code(proc-handle): {
                         ok -> it
 
                         -> -1
@@ -1286,8 +1285,7 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
             ; 無限等待
             win-wait-process(proc-handle, 0)
-            ec-opt2 = win-get-exit-code(proc-handle)
-            code = ec-opt2: {
+            code = win-get-exit-code(proc-handle): {
                 ok -> it
 
                 -> -1
@@ -1558,7 +1556,6 @@ wait = (pid i64) (status i64) {
 ; Windows 變體：未實裝，恆返回 -1
 ; pid: 子進程 ID（Windows 未處理）
 ; status: 恆為 -1（未實裝）
-
 #{win-amd64, win-arm64}
 wait = (pid i64) (status i64) {
     status = -1
@@ -1582,7 +1579,6 @@ shell = (cmd str) (code i64) {
 ; Windows 變體：未實裝，恆返回 -1
 ; cmd: 完整命令字串（Windows 未處理）
 ; code: 恆為 -1（未實裝）
-
 #{win-amd64, win-arm64}
 shell = (cmd str) (code i64) {
     code = -1

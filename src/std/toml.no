@@ -669,7 +669,10 @@ toml-register-table = (doc toml-doc, name str) (ok bool) {
     }
 
     #{overflow=wrap}
-    doc.table-count = doc.table-count + 1
+    doc.table-count = doc.table-count + 1: {
+        ok -> it
+        ->
+    }
     ok = true
 }
 
@@ -738,7 +741,10 @@ toml-next-array-table = (doc toml-doc, name str) (idx ?i64) {
     doc.arrays[doc.array-count].index = 0
 
     #{overflow=wrap}
-    doc.array-count = doc.array-count + 1
+    doc.array-count = doc.array-count + 1: {
+        ok -> it
+        ->
+    }
     idx = 0
 }
 
@@ -936,7 +942,10 @@ toml.parse = (s str) (result ?toml-doc) {
         doc.entries[doc.count] ?= toml-make-entry(key, raw-value)
 
         #{overflow=wrap}
-        doc.count = doc.count + 1
+        doc.count = doc.count + 1: {
+            ok -> it
+            ->
+        }
 
         #{overflow=wrap}
         i ?= i + 1
@@ -1030,7 +1039,10 @@ toml-doc.put = (key str, value str) (ok bool) {
         .entries[.count] ?= toml-make-entry(key, value)
 
         #{overflow=wrap}
-        .count = .count + 1
+        .count = .count + 1: {
+            ok -> it
+            ->
+        }
         ok = true
     }: {
         err -> _
@@ -1152,8 +1164,7 @@ toml-parse-i64 = (s str) (value ?i64) {
     start >= n -> return
     digits = 0
     i <- [start..n): {
-        ch-opt = clean.byte(i)
-        ch = ch-opt: {
+        ch = clean.byte(i): {
             ok -> it
 
             -> _

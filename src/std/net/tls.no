@@ -786,7 +786,10 @@ conn.append-hs = (data []byte) {
     }
 
     #{overflow=wrap}
-    .hs-buf-len = .hs-buf-len + n
+    .hs-buf-len = .hs-buf-len + n: {
+        ok -> it
+        ->
+    }
     .hs-buf.len = .hs-buf-len
 }
 
@@ -817,7 +820,10 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
     }
 
     #{overflow=wrap}
-    .hs-buf-len = .hs-buf-len + n
+    .hs-buf-len = .hs-buf-len + n: {
+        ok -> it
+        ->
+    }
     .hs-buf.len = .hs-buf-len
 }
 
@@ -917,7 +923,10 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     exp-nonce = rand-bytes(.rand-state, 8)
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 8
+    .rand-state = .rand-state + 8: {
+        ok -> it
+        ->
+    }
 
     ; nonce(12) = salt(4) || explicit(8)
     nonce [12]byte
@@ -1134,7 +1143,10 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         ok == false -> return
 
         #{overflow=wrap}
-        .write-seq = .write-seq + 1
+        .write-seq = .write-seq + 1: {
+            ok -> it
+            ->
+        }
         ok = true
         return
     }
@@ -1293,7 +1305,10 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     sent < 0 -> return
 
     #{overflow=wrap}
-    .write-seq = .write-seq + 1
+    .write-seq = .write-seq + 1: {
+        ok -> it
+        ->
+    }
     ok = true
 }
 
@@ -1312,7 +1327,10 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
         ct < 0 -> return
 
         #{overflow=wrap}
-        .read-seq = .read-seq + 1
+        .read-seq = .read-seq + 1: {
+            ok -> it
+            ->
+        }
         return
     }
     rlen = get-u16(buf, 3)
@@ -1448,7 +1466,10 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ct = expected-ct
 
     #{overflow=wrap}
-    .read-seq = .read-seq + 1
+    .read-seq = .read-seq + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; ═══════════════════════════════════════════════
@@ -1611,7 +1632,10 @@ conn.gen-x25519-keypair = () {
     seed = .rand-state
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 1
+    .rand-state = .rand-state + 1: {
+        ok -> it
+        ->
+    }
 
     ; 生成私鑰
     kp-state = seed
@@ -1689,7 +1713,10 @@ conn.gen-p256-keypair = () {
     s = .rand-state
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 32
+    .rand-state = .rand-state + 32: {
+        ok -> it
+        ->
+    }
     i <- [0..32): {
         s, r = rand.rand(s)
 
@@ -1757,7 +1784,10 @@ conn.send-client-hello = () (ok bool) {
     rand-bytes-val = rand-bytes(.rand-state, 32)
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 32
+    .rand-state = .rand-state + 32: {
+        ok -> it
+        ->
+    }
     i <- [0..32): {
 
         ixout1465c24 = rand-bytes-val[i]: {
@@ -3285,7 +3315,10 @@ conn.handshake-12-body = () (ok bool) {
         rand-bytes-val = rand-bytes(.rand-state, 46)
 
         #{overflow=wrap}
-        .rand-state = .rand-state + 46
+        .rand-state = .rand-state + 46: {
+            ok -> it
+            ->
+        }
         i <- [0..46): {
 
             ixout2496c28 = rand-bytes-val[i]: {
@@ -3366,7 +3399,10 @@ conn.send-client-hello-13 = () (ok bool) {
     rand-bytes-val = rand-bytes(.rand-state, 32)
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 32
+    .rand-state = .rand-state + 32: {
+        ok -> it
+        ->
+    }
     i <- [0..32): {
 
         ixout2564c24 = rand-bytes-val[i]: {
@@ -4977,7 +5013,10 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
-        .hs-read-seq = .hs-read-seq + 1
+        .hs-read-seq = .hs-read-seq + 1: {
+            ok -> it
+            ->
+        }
         ct < 0 -> return
 
         ; 可能是 alert 或其他
@@ -5061,7 +5100,10 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
 
     ; 更新緩衝區位置
     #{overflow=wrap}
-    .hs-plain-pos = pos + 4 + msg-len
+    .hs-plain-pos = pos + 4 + msg-len: {
+        ok -> it
+        ->
+    }
 }
 
 ; TLS 1.3 完整交握
@@ -5193,7 +5235,10 @@ conn.send-finished-13 = () (ok bool) {
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-client-key, .hs-client-iv, .hs-write-seq)
 
     #{overflow=wrap}
-    .hs-write-seq = .hs-write-seq + 1
+    .hs-write-seq = .hs-write-seq + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 初始化連線（未連線狀態）
@@ -5230,7 +5275,10 @@ conn.connect = (host str, port i64) (ok bool) {
     ; 1. TCP 連線（使用 dns-dial 支援 hostname 解析）
     tcpfd = dns.dial(host, port)
     tcpfd < 0 -> return
-    .fd = tcpfd
+    tcpfd: {
+        ok -> .fd = it
+        -> _
+    }
     .connected = true
 
     ; 2. 送出 TLS 1.3 ClientHello（同時支援 1.2 fallback）
@@ -5285,7 +5333,10 @@ conn.connect-12 = (host str, port i64) (ok bool) {
     ; 1. TCP 連線
     tcpfd = dns.dial(host, port)
     tcpfd < 0 -> return
-    .fd = tcpfd
+    tcpfd: {
+        ok -> .fd = it
+        -> _
+    }
     .connected = true
 
     ; 2. 送出 TLS 1.2 ClientHello
@@ -5345,7 +5396,10 @@ conn.send = (data str) (written ?i64) {
             ok == false -> return
 
             #{overflow=wrap}
-            .ap-write-seq = .ap-write-seq + 1
+            .ap-write-seq = .ap-write-seq + 1: {
+                ok -> it
+                ->
+            }
         }
 
         -> {
@@ -5404,7 +5458,10 @@ conn.recv = (buf str, n i64) (read-n i64) {
                         d-ct, plain = .decrypt-record-13(rec, .ap-server-key, .ap-server-iv, .ap-read-seq)
 
                         #{overflow=wrap}
-                        .ap-read-seq = .ap-read-seq + 1
+                        .ap-read-seq = .ap-read-seq + 1: {
+                            ok -> it
+                            ->
+                        }
                         {
                             d-ct < 0 -> return
 
@@ -5585,7 +5642,10 @@ server-conn.append-hs = (data []byte) {
     }
 
     #{overflow=wrap}
-    .hs-buf-len = .hs-buf-len + n
+    .hs-buf-len = .hs-buf-len + n: {
+        ok -> it
+        ->
+    }
     .hs-buf.len = .hs-buf-len
 }
 
@@ -5616,7 +5676,10 @@ server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
     }
 
     #{overflow=wrap}
-    .hs-buf-len = .hs-buf-len + n
+    .hs-buf-len = .hs-buf-len + n: {
+        ok -> it
+        ->
+    }
     .hs-buf.len = .hs-buf-len
 }
 
@@ -5959,7 +6022,10 @@ server-conn.send-server-hello = () (ok bool) {
     rand-bytes-val = rand-bytes(.rand-state, 32)
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 32
+    .rand-state = .rand-state + 32: {
+        ok -> it
+        ->
+    }
     i <- [0..32): {
 
         ixout4408c24 = rand-bytes-val[i]: {
@@ -6571,7 +6637,10 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     iv-bytes = rand-bytes(.rand-state, 16)
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 16
+    .rand-state = .rand-state + 16: {
+        ok -> it
+        ->
+    }
     i <- [0..16): {
 
         ixout4864c24 = iv-bytes[i]: {
@@ -6642,7 +6711,10 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     sent < 0 -> return
 
     #{overflow=wrap}
-    .write-seq = .write-seq + 1
+    .write-seq = .write-seq + 1: {
+        ok -> it
+        ->
+    }
     ok = true
 }
 
@@ -6783,7 +6855,10 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ct = expected-ct
 
     #{overflow=wrap}
-    .read-seq = .read-seq + 1
+    .read-seq = .read-seq + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 發送 ChangeCipherSpec
@@ -6973,7 +7048,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     seed = .rand-state
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 1
+    .rand-state = .rand-state + 1: {
+        ok -> it
+        ->
+    }
     kp-state = seed
     i <- [0..32): {
         kp-state, kp-r = rand.rand(kp-state)
@@ -7070,7 +7148,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     rand-bytes-val = rand-bytes(.rand-state, 32)
 
     #{overflow=wrap}
-    .rand-state = .rand-state + 32
+    .rand-state = .rand-state + 32: {
+        ok -> it
+        ->
+    }
     i <- [0..32): {
 
         ixout5272c24 = rand-bytes-val[i]: {
@@ -7940,7 +8021,10 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         ct = 0
         plain []byte
         ct, plain = .read-encrypted-record-13(.hs-client-key, .hs-client-iv, .hs-read-seq)
-        .hs-read-seq = .hs-read-seq + 1
+        .hs-read-seq = .hs-read-seq + 1: {
+            ok -> it
+            ->
+        }
         ct < 0 -> return
         ct != TLS-CT-HANDSHAKE -> return
         .hs-plain-buf = plain
@@ -8006,7 +8090,10 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     .append-hs(full-msg)
 
     #{overflow=wrap}
-    .hs-plain-pos = pos + 4 + msg-len
+    .hs-plain-pos = pos + 4 + msg-len: {
+        ok -> it
+        ->
+    }
 }
 
 ; 發送 EncryptedExtensions
@@ -8034,7 +8121,10 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-server-key, .hs-server-iv, .hs-write-seq)
 
     #{overflow=wrap}
-    .hs-write-seq = .hs-write-seq + 1
+    .hs-write-seq = .hs-write-seq + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 發送 TLS 1.3 Certificate
@@ -8099,7 +8189,10 @@ server-conn.send-certificate-13 = () (ok bool) {
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-server-key, .hs-server-iv, .hs-write-seq)
 
     #{overflow=wrap}
-    .hs-write-seq = .hs-write-seq + 1
+    .hs-write-seq = .hs-write-seq + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 發送 server Finished
@@ -8162,7 +8255,10 @@ server-conn.send-finished-13 = () (ok bool) {
     ok = .encrypt-record-13(TLS-CT-HANDSHAKE, hs, .hs-server-key, .hs-server-iv, .hs-write-seq)
 
     #{overflow=wrap}
-    .hs-write-seq = .hs-write-seq + 1
+    .hs-write-seq = .hs-write-seq + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 讀取並驗證 client Finished
@@ -8331,7 +8427,10 @@ server-conn.send = (data str) (written ?i64) {
             ok == false -> return
 
             #{overflow=wrap}
-            .ap-write-seq = .ap-write-seq + 1
+            .ap-write-seq = .ap-write-seq + 1: {
+                ok -> it
+                ->
+            }
         }
 
         -> {
@@ -8363,7 +8462,10 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
             ct, out = .read-encrypted-record-13(.ap-client-key, .ap-client-iv, .ap-read-seq)
 
             #{overflow=wrap}
-            .ap-read-seq = .ap-read-seq + 1
+            .ap-read-seq = .ap-read-seq + 1: {
+                ok -> it
+                ->
+            }
             {
                 ct < 0 -> return
 

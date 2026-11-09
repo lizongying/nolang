@@ -162,7 +162,10 @@ bigint.cmp = (b bigint) (r i64) {
     result = .abs-cmp(b)
 
     #{overflow=wrap}
-    r = result * .sign
+    r = result * .sign: {
+        ok -> it
+        ->
+    }
 }
 
 ; 比較 |self| 和 |b|（1=大, 0=等, -1=小）
@@ -376,7 +379,10 @@ bigint.mul-bigint = (b bigint) (c bigint) {
     c.limbs = with-len(al + bl)
 
     #{overflow=wrap}
-    c.len = al + bl
+    c.len = al + bl: {
+        ok -> it
+        ->
+    }
 
     i <- [0..al + bl): {
         c.limbs[i] = 0
@@ -415,7 +421,10 @@ bigint.mul-bigint = (b bigint) (c bigint) {
     }
 
     #{overflow=wrap}
-    c.sign = .sign * b.sign
+    c.sign = .sign * b.sign: {
+        ok -> it
+        ->
+    }
     c.normalize()
 }
 
@@ -450,8 +459,7 @@ bigint._mod = (b big) (r ?bigint) {
         }
 
         v i64 -> {
-            m = ._mod-i64(v)
-            mv = m: {
+            mv = ._mod-i64(v): {
                 ok -> it
 
                 -> 0
@@ -476,7 +484,10 @@ bigint.abs-add = (b bigint) (c bigint) {
     c.limbs = with-len(cl + 1)
 
     #{overflow=wrap}
-    c.len = cl + 1
+    c.len = cl + 1: {
+        ok -> it
+        ->
+    }
     i <- [0..cl): {
         av = 0
         i < al -> {
@@ -614,7 +625,10 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
         ac == 0 -> {
             q = one()
-            q.sign = .sign * b.sign
+            q.sign = .sign * b.sign: {
+                ok -> it
+                ->
+            }
             r = zero()
             return
         }
@@ -627,8 +641,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         q = ._div-i64(v)
         r.limbs = with-len(1)
 
-        md = ._mod-i64(v)
-        mv = md: {
+        mv = ._mod-i64(v): {
             ok -> it
 
             -> 0
@@ -641,13 +654,19 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             -> _
         }
         r.len = 1
-        q.sign = .sign * b.sign
+        q.sign = .sign * b.sign: {
+            ok -> it
+            ->
+        }
         r.sign = .sign
         return
     }
 
     #{overflow=wrap}
-    q.len = .len - b.len + 1
+    q.len = .len - b.len + 1: {
+        ok -> it
+        ->
+    }
     q.limbs = with-len(q.len)
     i <- [0..q.len): {
         q.limbs[i]: {
@@ -700,7 +719,10 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     norm-a-len = .len + 1
     norm-a = bigint {}
     norm-a.limbs = with-len(norm-a-len)
-    norm-a.len = norm-a-len
+    norm-a-len: {
+        ok -> norm-a.len = it
+        -> _
+    }
     norm-a.sign = 1
     i <- [0..norm-a-len): {
         av = 0
@@ -869,7 +891,10 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     }
 
     #{overflow=wrap}
-    q.sign = .sign * b.sign
+    q.sign = .sign * b.sign: {
+        ok -> it
+        ->
+    }
     q.normalize()
 
     r.limbs = with-len(b.len)
@@ -1134,7 +1159,10 @@ bigint.shl1 = () {
         .limbs = grown
 
         #{overflow=wrap}
-        .len = .len + 1
+        .len = .len + 1: {
+            ok -> it
+            ->
+        }
     }
 }
 
@@ -1205,7 +1233,10 @@ bigint.normalize = () {
         top != 0 -> break
 
         #{overflow=wrap}
-        .len = .len - 1
+        .len = .len - 1: {
+            ok -> it
+            ->
+        }
     }
 }
 
@@ -1242,8 +1273,7 @@ bigint.to-str = () (out str) {
         }
         tz = (tmp.len == 1) && tl == 0
         tz -> break
-        dm = tmp._mod-i64(10)
-        d = dm: {
+        d = tmp._mod-i64(10): {
             ok -> it
 
             -> 0

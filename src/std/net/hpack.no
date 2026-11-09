@@ -399,7 +399,10 @@ tables.dyn-add = (name str, value str) {
     }
 
     #{overflow=wrap}
-    .dyn-count = .dyn-count + 1
+    .dyn-count = .dyn-count + 1: {
+        ok -> it
+        ->
+    }
 
     #{overflow=wrap}
     .dyn-size = .dyn-size + name.len-bytes() + value.len-bytes() + 32
@@ -718,8 +721,7 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
     #{overflow=wrap}
     max-prefix = (1 << prefix-bits) - 1
 
-    first-opt = data.byte(pos)
-    first-b = first-opt: {
+    first-b = data.byte(pos): {
         ok -> it
 
         -> _

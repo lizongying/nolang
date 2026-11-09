@@ -39,7 +39,10 @@ deque.push-front = (val i64) {
     n >= .cap -> return
 
     #{overflow=wrap}
-    new-head = .head - 1
+    new-head = .head - 1: {
+        ok -> it
+        ->
+    }
     idx = new-head
 
     #{overflow=wrap}
@@ -68,16 +71,29 @@ deque.push-back = (val i64) {
 
     #{overflow=wrap}
     {
-        idx >= 0 -> idx = idx % .cap
+        idx >= 0 -> {
+            idx = idx % .cap: {
+                ok -> it
+                ->
+            }
+        }
 
-        -> idx = .cap - ((-idx) % .cap)
+        -> {
+            idx = .cap - ((-idx) % .cap): {
+                ok -> it
+                ->
+            }
+        }
     }
 
     {
         .buf[idx] ?= val
 
         #{overflow=wrap}
-        .tail = .tail + 1
+        .tail = .tail + 1: {
+            ok -> it
+            ->
+        }
     }: {
         err -> _
 
@@ -100,15 +116,28 @@ deque.pop-front = () (val ?i64) {
 
     #{overflow=wrap}
     {
-        idx >= 0 -> idx = idx % .cap
+        idx >= 0 -> {
+            idx = idx % .cap: {
+                ok -> it
+                ->
+            }
+        }
 
-        -> idx = .cap - ((-idx) % .cap)
+        -> {
+            idx = .cap - ((-idx) % .cap): {
+                ok -> it
+                ->
+            }
+        }
     }
 
     val = .buf[idx]
 
     #{overflow=wrap}
-    .head = .head + 1
+    .head = .head + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 從後端彈出元素
@@ -124,14 +153,27 @@ deque.pop-back = () (val ?i64) {
     }
 
     #{overflow=wrap}
-    new-tail = .tail - 1
+    new-tail = .tail - 1: {
+        ok -> it
+        ->
+    }
     idx = new-tail
 
     #{overflow=wrap}
     {
-        idx >= 0 -> idx = idx % .cap
+        idx >= 0 -> {
+            idx = idx % .cap: {
+                ok -> it
+                ->
+            }
+        }
 
-        -> idx = .cap - ((-idx) % .cap)
+        -> {
+            idx = .cap - ((-idx) % .cap): {
+                ok -> it
+                ->
+            }
+        }
     }
 
     val = .buf[idx]
@@ -153,9 +195,19 @@ deque.peek-front = () (val ?i64) {
 
     #{overflow=wrap}
     {
-        idx >= 0 -> idx = idx % .cap
+        idx >= 0 -> {
+            idx = idx % .cap: {
+                ok -> it
+                ->
+            }
+        }
 
-        -> idx = .cap - ((-idx) % .cap)
+        -> {
+            idx = .cap - ((-idx) % .cap): {
+                ok -> it
+                ->
+            }
+        }
     }
 
     val = .buf[idx]
@@ -178,9 +230,19 @@ deque.peek-back = () (val ?i64) {
 
     #{overflow=wrap}
     {
-        idx >= 0 -> idx = idx % .cap
+        idx >= 0 -> {
+            idx = idx % .cap: {
+                ok -> it
+                ->
+            }
+        }
 
-        -> idx = .cap - ((-idx) % .cap)
+        -> {
+            idx = .cap - ((-idx) % .cap): {
+                ok -> it
+                ->
+            }
+        }
     }
 
     val = .buf[idx]
@@ -192,7 +254,10 @@ deque.peek-back = () (val ?i64) {
 deque.size = () (sz i64) {
 
     #{overflow=wrap}
-    sz = .tail - .head
+    sz = .tail - .head: {
+        ok -> it
+        ->
+    }
 }
 
 ; 判斷雙端佇列是否為空

@@ -307,8 +307,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos + name-len > buf.len() -> return
 
     ; 讀取名稱
-    nameopt = buf[r-pos..r-pos + name-len).to-str()
-    name = nameopt: {
+    name = buf[r-pos..r-pos + name-len).to-str(): {
         ok -> it
 
         -> ''
@@ -342,8 +341,7 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos + value-len > buf.len() -> return
 
     ; 讀取值
-    valueopt = buf[r-pos..r-pos + value-len).to-str()
-    value = valueopt: {
+    value = buf[r-pos..r-pos + value-len).to-str(): {
         ok -> it
 
         -> ''
@@ -971,7 +969,10 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
                         r.header-values[r.header-count] ?= value
 
                         #{overflow=wrap}
-                        r.header-count = r.header-count + 1
+                        r.header-count = r.header-count + 1: {
+                            ok -> it
+                            ->
+                        }
                     }
                 }
             }

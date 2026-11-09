@@ -120,7 +120,10 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
         }
 
         #{overflow=wrap}
-        .size = .size + 1
+        .size = .size + 1: {
+            ok -> it
+            ->
+        }
     }: {
         err -> _
 
@@ -187,7 +190,10 @@ linked-hash-map.remove = (key i64) (removed bool) {
                 .occ[idx] ?= 0
 
                 #{overflow=wrap}
-                .size = .size - 1
+                .size = .size - 1: {
+                    ok -> it
+                    ->
+                }
 
                 prev ?= .prv[idx]
 

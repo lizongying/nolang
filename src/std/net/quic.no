@@ -377,7 +377,10 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         }
 
         #{overflow=wrap}
-        r-pos = r-pos + frames[count].length
+        r-pos = r-pos + frames[count].length: {
+            ok -> it
+            ->
+        }
 
         #{overflow=wrap}
         {
@@ -1209,7 +1212,10 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     apply-header-protection(packet, pn-offset, .client-initial-hp, true)
 
     #{overflow=wrap}
-    .initial-pn = .initial-pn + 1
+    .initial-pn = .initial-pn + 1: {
+        ok -> it
+        ->
+    }
     out = packet
 }
 

@@ -104,7 +104,10 @@ pool.get = () (c ?net.conn) {
             .in-use[.count] ?= true
 
             #{overflow=wrap}
-            .count = .count + 1
+            .count = .count + 1: {
+                ok -> it
+                ->
+            }
             c = cn
         }
     }
@@ -165,7 +168,10 @@ pool.close-conn = (idx i64) {
     }
 
     #{overflow=wrap}
-    .count = .count - 1
+    .count = .count - 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 關閉所有連接

@@ -249,7 +249,10 @@ timer.stop = () {
 timer.elapsed-ms = () (ms i64) {
 
     #{overflow=wrap}
-    ms = .end-ts - .start-ts
+    ms = .end-ts - .start-ts: {
+        ok -> it
+        ->
+    }
 }
 
 ; 經過秒數
@@ -432,19 +435,40 @@ unix-to-date = (ts i64) (d date) {
     mp = (5 * doy + 2) / 153
 
     #{overflow=wrap}
-    d.day = doy - (153 * mp + 2) / 5 + 1
+    d.day = doy - (153 * mp + 2) / 5 + 1: {
+        ok -> it
+        ->
+    }
 
     #{overflow=wrap}
-    d.month = mp + 3
+    d.month = mp + 3: {
+        ok -> it
+        ->
+    }
 
     #{overflow=wrap}
-    mp >= 10 -> d.month = mp - 9
+    mp >= 10 -> {
+        d.month = mp - 9: {
+            ok -> it
+            ->
+        }
+    }
 
     #{overflow=wrap}
     {
-        d.month <= 2 -> d.year = y + 1
+        d.month <= 2 -> {
+            d.year = y + 1: {
+                ok -> it
+                ->
+            }
+        }
 
-        -> d.year = y
+        -> {
+            y: {
+                ok -> d.year = it
+                -> _
+            }
+        }
     }
 
     ; 星期幾（1970-01-01 是星期四 = 4）
@@ -528,10 +552,16 @@ date-to-unix = (d date) (ts i64) {
     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
 
     #{overflow=wrap}
-    days = era * 146097 + doe - 719468
+    days = era * 146097 + doe - 719468: {
+        ok -> it
+        ->
+    }
 
     #{overflow=wrap}
-    ts = days * 86400 + d.hour * 3600 + d.min * 60 + d.sec
+    ts = days * 86400 + d.hour * 3600 + d.min * 60 + d.sec: {
+        ok -> it
+        ->
+    }
 }
 
 ; 將 date 結構體格式化為字串
@@ -764,10 +794,16 @@ now-time = () (t time) {
     ns = now-ns()
 
     #{overflow=wrap}
-    t.sec = ns / 1000000000
+    t.sec = ns / 1000000000: {
+        ok -> it
+        ->
+    }
 
     #{overflow=wrap}
-    t.nsec = ns % 1000000000
+    t.nsec = ns % 1000000000: {
+        ok -> it
+        ->
+    }
 }
 
 ; 由 Unix 秒時間戳構造 time（nsec=0）
@@ -787,7 +823,10 @@ unix-to-time = (ts i64) (t time) {
 duration-time = (start time, end time) (diff i64) {
 
     #{overflow=wrap}
-    diff = end.sec - start.sec
+    diff = end.sec - start.sec: {
+        ok -> it
+        ->
+    }
 }
 
 ; 從 start 到現在的經過秒數
@@ -799,7 +838,10 @@ since-time = (start time) (diff i64) {
     now-t = now-time()
 
     #{overflow=wrap}
-    diff = now-t.sec - start.sec
+    diff = now-t.sec - start.sec: {
+        ok -> it
+        ->
+    }
 }
 
 ; 解析日期字串為 time
@@ -832,7 +874,10 @@ time.unix = () (ts i64) {
 time.unix-ms = () (ms i64) {
 
     #{overflow=wrap}
-    ms = .sec * 1000 + .nsec / 1000000
+    ms = .sec * 1000 + .nsec / 1000000: {
+        ok -> it
+        ->
+    }
 }
 
 ; 轉換為 date 結構體（UTC，忽略 nsec）
@@ -858,7 +903,10 @@ time.format = () (out str) {
 time.add-seconds = (n i64) (t time) {
 
     #{overflow=wrap}
-    t.sec = .sec + n
+    t.sec = .sec + n: {
+        ok -> it
+        ->
+    }
     t.nsec = .nsec
 }
 
@@ -869,5 +917,8 @@ time.add-seconds = (n i64) (t time) {
 time.sub = (other time) (diff i64) {
 
     #{overflow=wrap}
-    diff = .sec - other.sec
+    diff = .sec - other.sec: {
+        ok -> it
+        ->
+    }
 }

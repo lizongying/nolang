@@ -113,7 +113,10 @@ zip.find-eocd = () (off i64) {
     i <- [0..start + 1): {
 
         #{overflow=wrap}
-        idx = start - i
+        idx = start - i: {
+            ok -> it
+            ->
+        }
         sig = u32le(.data, idx)
         ! sig == 101010256 -> continue
         off = idx
@@ -528,7 +531,10 @@ zip-writer.add-file = (name str, content []byte) {
     .write-cd-entry(name, off, content.len(), content.len(), crc)
 
     #{overflow=wrap}
-    .count = .count + 1
+    .count = .count + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 添加目錄條目
@@ -544,7 +550,10 @@ zip-writer.add-dir = (name str) {
     .write-cd-entry(dname, off, 0, 0, 0)
 
     #{overflow=wrap}
-    .count = .count + 1
+    .count = .count + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 追加一個位元組到 data（透過局部變數支援 push）

@@ -143,7 +143,10 @@ queue {
 queue.size = () (sz i64) {
 
     #{overflow=wrap}
-    sz = .tail - .head
+    sz = .tail - .head: {
+        ok -> it
+        ->
+    }
 }
 
 ; 判斷佇列是否為空

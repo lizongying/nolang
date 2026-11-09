@@ -341,7 +341,18 @@ import (
 // 會把 payload 型別登記進語義副表，讓後續算術／下一段 match 的 `let it`
 // 有型別。同一份原始碼的樹從「`r = a % b` + 主體為空的裸 match 兩條陳述」
 // 變成「單一 SurfaceMatch(主體=InfixExpression)」，舊 blob 是前者，故必 bump。
-const ASTVersion = "2026-11-08.5"
+// 2026-11-09.1：option 算術主語的型別推斷鏈補上 *PrefixExpression（一元
+// `-` / `+`）。`.cap - ((-idx) % .cap): { ok -> it  -> }` 過去因一元負號
+// 不在 partialArithElem / operandAllowsIntFallback /
+// optionArithSubjectOperandInt 而整棵樹回 ""，舊 blob 沒有對應的
+// `__match_subj ?i64` 歸一化，故必 bump。
+// 2026-11-09.2：欄位／索引目標賦值的**右值**改在 CTX_EXPR 下解析
+// （parseAssignValueExpr）。`b.n = b.n + 1: { … }` 的 `: {` 從「掛在整個賦值
+// 外層」變成「掛在右值上」：同一份原始碼的樹從
+// `SurfaceMatch(主語 = AssignExpression(b.n, b.n+1))` 變成
+// `AssignExpression(b.n, SurfaceMatch(主語 = InfixExpression))`，舊 blob 是
+// 前者，故必 bump。
+const ASTVersion = "2026-11-09.2"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

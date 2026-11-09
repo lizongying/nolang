@@ -80,7 +80,10 @@ hash-set.add = (key i64) (is-new bool) {
         .occ[idx] ?= 1
 
         #{overflow=wrap}
-        .size = .size + 1
+        .size = .size + 1: {
+            ok -> it
+            ->
+        }
     }: {
         err -> _
 
@@ -145,7 +148,10 @@ hash-set.remove = (key i64) (removed bool) {
                 .occ[idx] ?= 0
 
                 #{overflow=wrap}
-                .size = .size - 1
+                .size = .size - 1: {
+                    ok -> it
+                    ->
+                }
                 removed = true
                 return
             }

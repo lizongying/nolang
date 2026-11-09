@@ -14986,9 +14986,41 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 			}
 		}
 	}
+	// 值位 match / if 作為指派右值（`obj.f = k: { ok -> it  -> 0 }`）：
+	// MIR 是 statement-oriented，lowerExpr 的 KIf 分支在沒有 exprCapture 時
+	// 直接回 NoVal（「control flow used as expression value」）。舊程式拿到
+	// NoVal 就 `return NoVal`，**整條指派被靜默丟棄** —— 生成的 LLVM IR
+	// 既沒有 match 鏈也沒有 setfield，欄位維持舊值（觀測恆為 0）。這正是
+	// `b.n = k: { ok -> it  -> }` 印 0、而同一 match 寫成 statement
+	//（`k: { ok -> b.n = it  -> _ }`）卻正確的原因，也是 bzip2 解碼迴圈
+	// 計數器不推進的同源缺陷。
+	//
+	// KLet 分支（~3108）早有 exprSink capture 機制，KAssign 缺這一段。
+	// 這裡對稱補上：把 if 鏈當語句 lower，各 arm 的值經 captureArmValue
+	// 匯入共享 slot，再讓該 slot 走原本的 KIdent / KDot / KIndex store
+	// 分支；型別註冊也比照 KLet，讓後續 ownership / drop 分析看得到它。
+	var v ValueID = NoVal
+	if value != hir.NoID {
+		if vn := l.pkg.Node(value); vn != nil && vn.Kind == hir.KIf {
+			savedCap, savedSink := l.exprCapture, l.exprSink
+			savedInit := l.exprSinkInit
+			l.exprCapture = true
+			l.exprSink = NoVal
+			l.exprSinkInit = NoVal
+			l.lowerIf(vn)
+			v = l.exprSink
+			l.exprCapture, l.exprSink, l.exprSinkInit = savedCap, savedSink, savedInit
+			if v != NoVal {
+				if f := l.mod.Func(l.curFunc); f != nil {
+					if _, ok := f.LocalTypes[v]; !ok {
+						f.LocalTypes[v] = l.valueTypeOf(v)
+					}
+				}
+			}
+		}
+	}
 	// 整數字面量指派給無號型別的綁定：常數轉換（`b = -1`（b 為 byte）存 255 而非 -1）。
 	// 與 KLet 分支同源，只對「整個右側就是（負）整數字面量」生效。
-	var v ValueID = NoVal
 	if tn.Kind == hir.KIdent && value != hir.NoID {
 		if nm := l.pkg.Str(tn.S); nm != "" {
 			if t, ok := l.localTypes[nm]; ok {

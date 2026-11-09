@@ -474,7 +474,10 @@ tar-builder.add-file = (name str, content []byte) {
     }
 
     #{overflow=wrap}
-    .pos = .pos + sz
+    .pos = .pos + sz: {
+        ok -> it
+        ->
+    }
 
     ; 補齊到 512 邊界
     rem = sz % TAR-BLOCK
@@ -537,7 +540,10 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
     }
 
     #{overflow=wrap}
-    .pos = .pos + sz
+    .pos = .pos + sz: {
+        ok -> it
+        ->
+    }
 
     ; 補齊到 512 邊界
     rem = sz % TAR-BLOCK
@@ -609,80 +615,125 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
         ; 類型（偏移 156，1 位元組）
         #{overflow=wrap}
-        p = .pos + 156
+        p = .pos + 156: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= typ
 
         ; ustar magic（偏移 257，6 位元組 "ustar\0"）
         #{overflow=wrap}
-        p = .pos + 257
+        p = .pos + 257: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 117
 
         #{overflow=wrap}
-        p = .pos + 258
+        p = .pos + 258: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 115
 
         #{overflow=wrap}
-        p = .pos + 259
+        p = .pos + 259: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 116
 
         #{overflow=wrap}
-        p = .pos + 260
+        p = .pos + 260: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 97
 
         #{overflow=wrap}
-        p = .pos + 261
+        p = .pos + 261: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 114
 
         #{overflow=wrap}
-        p = .pos + 262
+        p = .pos + 262: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 0
 
         ; 計算校驗和（偏移 148，8 位元組）
         ; 先填空白
         #{overflow=wrap}
-        p = .pos + 148
+        p = .pos + 148: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
         #{overflow=wrap}
-        p = .pos + 149
+        p = .pos + 149: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
         #{overflow=wrap}
-        p = .pos + 150
+        p = .pos + 150: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
         #{overflow=wrap}
-        p = .pos + 151
+        p = .pos + 151: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
         #{overflow=wrap}
-        p = .pos + 152
+        p = .pos + 152: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
         #{overflow=wrap}
-        p = .pos + 153
+        p = .pos + 153: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
         #{overflow=wrap}
-        p = .pos + 154
+        p = .pos + 154: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
         #{overflow=wrap}
-        p = .pos + 155
+        p = .pos + 155: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 
@@ -697,12 +748,18 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         .write-octal(148, 6, checksum)
 
         #{overflow=wrap}
-        p = .pos + 154
+        p = .pos + 154: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 0
 
         #{overflow=wrap}
-        p = .pos + 155
+        p = .pos + 155: {
+            ok -> it
+            ->
+        }
 
         .buf[p] ?= 32
 

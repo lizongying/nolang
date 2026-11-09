@@ -264,7 +264,10 @@ noml-pool.add-child = (node-idx i64, child-idx i64, key str) {
         err -> _
         -> _
     }
-    .nodes[node-idx].count = c + 1
+    .nodes[node-idx].count = c + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 物件是否已有同名成員（重複鍵報錯）
@@ -1404,8 +1407,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
     }
     (i < sn) {
         i >= sn -> break
-        copt = s.byte(i)
-        c = copt: {
+        c = s.byte(i): {
             ok -> it
 
             -> 0
@@ -1443,8 +1445,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
         fd = 0
         (i < sn) {
             i >= sn -> break
-            copt = s.byte(i)
-            c = copt: {
+            c = s.byte(i): {
                 ok -> it
 
                 -> 0
@@ -1495,8 +1496,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
         ed = 0
         (i < sn) {
             i >= sn -> break
-            copt = s.byte(i)
-            c = copt: {
+            c = s.byte(i): {
                 ok -> it
 
                 -> 0
@@ -2451,8 +2451,7 @@ noml-pool.get-bool = (idx i64, key str) (v ?bool) {
 ; [has](#noml.noml-pool.has)
 noml-pool.has = (idx i64, key str) (found bool) {
     found = false
-    c = .get(idx, key)
-    found = c: {
+    found = .get(idx, key): {
         ok -> true
 
         -> false

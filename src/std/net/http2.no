@@ -88,10 +88,17 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     .length = (data.byte(pos) << 16) | (data.byte(pos + 1) << 8) | data.byte(pos + 2)
 
     #{overflow=wrap}
-    .frame-type = data.byte(pos + 3)
+    .frame-type = data.byte(pos + 3): {
+        ok -> it
+        ->
+    }
 
+    ; 31-bit stream-id（big-endian，高位保留）
     #{overflow=wrap}
-    .flags = data.byte(pos + 4); 31-bit stream-id（big-endian，高位保留）
+    .flags = data.byte(pos + 4): {
+        ok -> it
+        ->
+    }
 
     #{overflow=wrap}
     .stream-id = ((data.byte(pos + 5) & 127) << 24) | (data.byte(pos + 6) << 16) | (data.byte(pos + 7) << 8) | data.byte(pos + 8)
@@ -580,7 +587,10 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     stream-id = .next-stream-id
 
     #{overflow=wrap}
-    .next-stream-id = .next-stream-id + 2
+    .next-stream-id = .next-stream-id + 2: {
+        ok -> it
+        ->
+    }
 
     ; 構建標頭
     hdr-names [64]str

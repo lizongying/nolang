@@ -3330,6 +3330,15 @@ func (p *subjectMatchPrep) subjTypeRaw() string { return matchSubjectTypeRaw(p.s
 // 直出與 AST 降糖共用的準備層，手上只有 *Parser 的語義副表；型別查找因此
 // 同時走 FuncVarType（正式註冊路徑）與 astLocalVarType（H0 scratch parser
 // 的 AST 回放路徑），與 resolveReceiverType 的雙來源同口徑。
+//
+// 2026-11-09：新增「單側已知」回退。std 模組烘焙成 AST blob 後，函式內以
+// 欄位讀取／索引讀取／呼叫回傳建立的局部變數（如 bzip2 的 `zn = .min-len`）
+// 常沒有語義副表條目，AST 回放也只認顯式標註與呼叫簽名 ⇒ 兩側同時要求
+// 「查得到」會讓 `zn + 1: { ok -> it  -> }` 整段放棄歸一化，ok 臂的 it 沒有
+// 綁定、值語境空臂又因 elemType 未知而報 hcdpwnpp。語言層面 `x + 1` 的 `1`
+// 已經是有號整數字面量，另一側只要不是**明確的非整數**（str/u8/f64/…），
+// 該運算就仍是整數算術，結果仍是 `?T`。故取已知側當 payload，詳見
+// operandAllowsIntFallback 的守衛。
 func (p *Parser) inferOptionArithSubjectElem(e Expression) string {
 	inf, ok := unwrapLowerExpr(e).(*InfixExpression)
 	if !ok || !isOptionArithOperator(inf.Operator) {
@@ -3337,13 +3346,114 @@ func (p *Parser) inferOptionArithSubjectElem(e Expression) string {
 	}
 	lt, okL := p.optionArithSubjectOperandInt(inf.Left)
 	rt, okR := p.optionArithSubjectOperandInt(inf.Right)
-	if !okL || !okR {
-		return ""
+	if okL && okR {
+		if len(rt) > len(lt) {
+			return rt
+		}
+		return lt
 	}
-	if len(rt) > len(lt) {
+	if okL && !okR && p.operandAllowsIntFallback(inf.Right) {
+		return lt
+	}
+	if okR && !okL && p.operandAllowsIntFallback(inf.Left) {
 		return rt
 	}
-	return lt
+	// 兩側都查不到（std blob 載入後副表缺條目的典型形狀，如
+	// `start - i`、`days * 86400 + d.hour * 3600`）：整棵樹只要沒有明確的
+	// 非整數葉子，就按語言預設整數 i64 處理，讓使用者不必補 `?i64` 標註。
+	return p.partialArithElem(inf)
+}
+
+// partialArithElem 從整棵 option 算術樹收集整數證據：每個葉子要嘛能判定為
+// 有號整數，要嘛只是「查不到型別」（副表缺條目），明確的非整數葉子一律否決。
+// 回傳其中最寬的有號整數型別；查不到型別者記為語言預設 i64。
+func (p *Parser) partialArithElem(e Expression) string {
+	switch x := unwrapLowerExpr(e).(type) {
+	case *InfixExpression:
+		if !isOptionArithOperator(x.Operator) {
+			return ""
+		}
+		l, r := p.partialArithElem(x.Left), p.partialArithElem(x.Right)
+		if l == "" || r == "" {
+			return ""
+		}
+		if len(r) > len(l) {
+			return r
+		}
+		return l
+	case *PrefixExpression:
+		// 一元負號／正號不改變運算元的整數型別：`(-idx) % .cap` 的證據
+		// 由 `-idx` 的運算元提供。少了這支，deque 的
+		// `.cap - ((-idx) % .cap): { ok -> it  -> }` 整棵樹回 ""，值語境
+		// 空臂推不出型別而報 s8gh6opt。`!` 等布林前綴一律否決。
+		if x.Operator != "-" && x.Operator != "+" {
+			return ""
+		}
+		return p.partialArithElem(x.Right)
+	default:
+		if t, ok := p.optionArithSubjectOperandInt(e); ok {
+			return t
+		}
+		if p.operandAllowsIntFallback(e) {
+			return "i64"
+		}
+		return ""
+	}
+}
+
+// operandAllowsIntFallback 判斷「推不出有號整數型別」的運算元是否只是語義
+// 副表缺資料（blob-loaded std 的局部變數），而不是明確的非整數。明確的非整數
+// 必須維持原本的保守跳過：`s str = …; s + 1` 不是 option 算術，`u8 + 1` 也不
+// 產生 option，硬猜 i64 會合成錯誤型別的 `__match_subj ?i64`。
+//
+// 只認三種形狀：整數字面量、識別字、同類運算子的巢狀中綴式。其餘（呼叫、
+// 索引、欄位讀取）一律不放行，避免把 `str-fn() + 1` 誤當整數算術。
+func (p *Parser) operandAllowsIntFallback(e Expression) bool {
+	switch x := unwrapLowerExpr(e).(type) {
+	case *IntegerLiteral:
+		return true
+	case *Identifier:
+		if x.Value == "self" || x.Value == "." {
+			return false
+		}
+		typ := ""
+		if p.sem != nil {
+			if t, has := p.sem.FuncVarType(p.curFuncName, x.Value); has {
+				typ = t
+			}
+		}
+		if typ == "" {
+			typ = p.astLocalVarType(p.curFuncName, x.Value)
+		}
+		if typ == "" {
+			// 副表與 AST 回放都沒有條目：無法證明它不是整數，放行回退。
+			return true
+		}
+		if ty.IsOptionRaw(typ) {
+			typ = ty.StripOptionRaw(typ)
+		}
+		_, ok := lowerSignedIntName(typ)
+		return ok
+	case *InfixExpression:
+		if !isOptionArithOperator(x.Operator) {
+			return false
+		}
+		return p.operandAllowsIntFallback(x.Left) && p.operandAllowsIntFallback(x.Right)
+	case *DotExpression:
+		// 欄位讀取（`d.hour`）在 AST 回放／語義副表裡通常沒有條目，但欄位
+		// 參與整數算術時就是有號整數；視為「未知」而非「明確非整數」。
+		// 明確宣告成 str 的運算元仍會在上面 *Identifier 分支被否決。
+		return true
+	case *PrefixExpression:
+		// 一元 `-` / `+` 只看運算元：`(-idx)` 仍是有號整數。`!` 是布林，
+		// 參與 option 整數算術時不能放行。
+		if x.Operator != "-" && x.Operator != "+" {
+			return false
+		}
+		return p.operandAllowsIntFallback(x.Right)
+	default:
+		return false
+	}
 }
 
 // optionArithSubjectOperandInt 回報運算元的有號整數型別名；字面量→i64、
@@ -3391,6 +3501,13 @@ func (p *Parser) optionArithSubjectOperandInt(e Expression) (string, bool) {
 			return rt, true
 		}
 		return lt, true
+	case *PrefixExpression:
+		// 與 partialArithElem / operandAllowsIntFallback 同口徑：一元 `-` / `+`
+		// 透傳運算元的有號整數型別，`(-idx) % .cap` 才能走精確推斷路徑。
+		if x.Operator != "-" && x.Operator != "+" {
+			return "", false
+		}
+		return p.optionArithSubjectOperandInt(x.Right)
 	default:
 		return "", false
 	}

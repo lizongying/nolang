@@ -428,7 +428,10 @@ tree-set.add = (key i64) (ok bool) {
                         .parent[idx] ?= cur
 
                         #{overflow=wrap}
-                        .size = .size + 1
+                        .size = .size + 1: {
+                            ok -> it
+                            ->
+                        }
                         ok = true
                         .rebalance-up(cur)
                         return
@@ -450,7 +453,10 @@ tree-set.add = (key i64) (ok bool) {
                         .parent[idx] ?= cur
 
                         #{overflow=wrap}
-                        .size = .size + 1
+                        .size = .size + 1: {
+                            ok -> it
+                            ->
+                        }
                         ok = true
                         .rebalance-up(cur)
                         return
@@ -525,7 +531,10 @@ tree-set.remove = (key i64) (ok bool) {
         ok = true
 
         #{overflow=wrap}
-        .size = .size - 1
+        .size = .size - 1: {
+            ok -> it
+            ->
+        }
 
         ; 雙子節點：用後繼替換後刪除後繼
         l ?= .left[idx]

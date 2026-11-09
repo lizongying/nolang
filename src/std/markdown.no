@@ -163,8 +163,7 @@ markdown.thematic-break = (line str) (yes bool) {
     i = 0
     (i < n) {
         i >= n -> break
-        c-opt = s.byte(i)
-        c = c-opt: {
+        c = s.byte(i): {
             ok -> it
 
             -> _
@@ -329,8 +328,7 @@ markdown.fence = (line str) (out markdown-fence) {
     s = line.trim()
     n = s.len-bytes()
     n >= 3 -> {
-        c-opt = s.byte(0)
-        c = c-opt: {
+        c = s.byte(0): {
             ok -> it
 
             -> _

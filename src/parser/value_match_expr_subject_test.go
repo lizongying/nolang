@@ -62,6 +62,24 @@ const valueMatchExprSubjectChainSrc = `two = (a i64, b i64) (out i64) {
 }
 `
 
+// 運算元型別「只能從 AST 顯式標註取得」的一段式值位 match。
+// src/std/number.no 的 f64.to-str-general 就是這個形狀：`e` 的來源是深層
+// 方法鏈（ax.log10 → lg10.floor → flr.to-i64），parser 的 AST 回放推不出
+// 接收者型別、語義副表也沒有 e 的條目。少了 `e i64 = …` 的標註，
+// `precision - 1 - e: { … }` 就不會歸一化成 `__match_subj ?i64`，ok 臂
+// 沒有 `let it` ⇒ MIR 零填 ⇒ dec-places 恆為 0 ⇒ fmt.fmt-f64(2.5, '')
+// 從 '2.5' 退化成 '3'（test/std/fmt.no 的 fmt-f64 default）。
+const valueMatchExprSubjectASTAnnotatedSrc = `f = (precision i64) (out i64) {
+    e i64 = flr.to-i64()
+    dec-places i64 = precision - 1 - e: {
+        ok -> it
+
+        -> 0
+    }
+    out = dec-places
+}
+`
+
 // exprSubjectRHS 斷言函式主體第一條 let 的右值就是 SurfaceMatch，
 // 且主語是 InfixExpression（不是裸識別字／索引／呼叫）。
 func exprSubjectRHS(t *testing.T, src string) *SurfaceMatch {
@@ -160,6 +178,21 @@ func TestValueMatchExprSubjectHIRBindsIt(t *testing.T) {
 	chain := dumpHIR(t, valueMatchExprSubjectChainSrc)
 	if got := strings.Count(chain, "let s=it t=i64"); got < 2 {
 		t.Fatalf("want both value matches to carry a typed `it`, got %d typed bindings.\n--- HIR ---\n%s", got, chain)
+	}
+}
+
+// TestValueMatchExprSubjectASTAnnotatedOperand 釘住「顯式標註是深層方法鏈
+// 運算元唯一的型別來源」這條邊界。判別力：把來源常數裡的 `e i64 = …`
+// 改成 `e = …`（標註拿掉、簽名表又查不到 f64.to-i64），本測試會因
+// HIR 缺少 `__match_subj`/typed `it` 而失敗 —— 正是 fmt-f64 default 的成因。
+func TestValueMatchExprSubjectASTAnnotatedOperand(t *testing.T) {
+	dump := dumpHIR(t, valueMatchExprSubjectASTAnnotatedSrc)
+	if !strings.Contains(dump, "let s=__match_subj_") {
+		t.Fatalf("expression subject whose operand type comes only from an AST "+
+			"annotation must still be normalised.\n--- HIR ---\n%s", dump)
+	}
+	if !strings.Contains(dump, "let s=it t=i64") {
+		t.Fatalf("ok arm `it` binding has no i64 type; MIR will zero-fill it.\n--- HIR ---\n%s", dump)
 	}
 }
 

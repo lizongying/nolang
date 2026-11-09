@@ -206,6 +206,134 @@ func TestPlainTargetRejectsOptionArithReassignment(t *testing.T) {
 	}
 }
 
+// TestPlainTargetRejectsImplicitOptionBindingToPlain 釘住「option 值直接指派給
+// plain 變數」的第二種來源：右值不是算術，而是**先前無標註綁定的 option 變數**
+// （`k = a + 1` 在 lowering 合成 `?i64`）。舊實作在首次綁定時把 varTypes 記成
+// inferExprType 看到的 `i64`，於是後續 `r = k` 被當成 plain→plain 放行 ——
+// 正是使用者點名的 `zn = zn-opt2`：把一個 option 直接塞進 i64，tag 被靜默丟掉。
+//
+// 判別力：撤掉 validateStmtTypes 首次綁定分支的 `?T` 升格，本測試立刻失敗。
+//
+// 邊界：option-returning call 的首次綁定（`k = os.arg(i + 1)`）由
+// optionResultOfCallTarget 覆蓋，但 ValidateTypes 單測裡 StdSigKey 為空、
+// stdFuncOptionResult 會靜默回 ""，故此處只釘算術路徑；CLI 實測該形狀
+// 同樣報 15w45dqk。
+func TestPlainTargetRejectsImplicitOptionBindingToPlain(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "option_binding_then_plain_result_param",
+			src: `f = (a i64) (r i64) {
+    k = a + 1
+    r = k
+}`,
+		},
+		{
+			name: "option_binding_then_plain_local",
+			src: `f = (a i64) (r i64) {
+    k = a + 1
+    v i64 = 0
+    v = k
+    r = v
+}`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			results := ValidateTypes(parseProg(t, c.src))
+			if n := countTrace(results, "15w45dqk"); n != 1 {
+				t.Fatalf("assigning an option value to a plain variable must be rejected exactly once, got %d diagnostic(s): %v", n, results)
+			}
+		})
+	}
+}
+
+// TestPlainTargetRejectsFieldLHS 是 2026-11-09 使用者點名補上的最後一塊
+// 邊界：`b.n = b.n + 1`。欄位 LHS 走 ExpressionStatement 的
+// AssignExpression，過去 validateStmtTypes 只對 Identifier LHS 做型別比對，
+// 整條路徑完全沒有 option→plain 判定 ⇒ `no vet` 回 "No issues found"。
+//
+// 兩處實作共同構成這條規則：validateStmtTypes 的 AssignExpression 非 Identifier
+// 分支（目標型別 + valType 升格 + 15w45dqk），以及 ovfOptionArithOperandType
+// 的 *DotExpression 分支（否則欄位運算元讓右值推不出 ?T）。
+// 判別力：撤掉任一處，第一個 case 立刻回到 0 diagnostics。
+func TestPlainTargetRejectsFieldLHS(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want int
+	}{
+		{
+			name: "field_counter_wrap",
+			src: `box {
+    n i64
+}
+f = (a i64) (r i64) {
+    b = box {}
+    b.n = 0
+    #{overflow=wrap}
+    b.n = b.n + 1
+    r = b.n
+}`,
+			want: 1,
+		},
+		{
+			name: "field_option_value",
+			src: `box {
+    n i64
+}
+f = (a i64) (r i64) {
+    b = box {}
+    k = a + 1
+    b.n = k
+    r = b.n
+}`,
+			want: 1,
+		},
+		{
+			// 反向守衛：一步式值位 match 是合法修法，不得被誤報。
+			name: "field_one_step_value_match",
+			src: `box {
+    n i64
+}
+f = (a i64) (r i64) {
+    b = box {}
+    b.n = 0
+    #{overflow=wrap}
+    b.n = b.n + 1: {
+        ok -> it
+        ->
+    }
+    r = b.n
+}`,
+			want: 0,
+		},
+		{
+			// 反向守衛：目標本來就是 ?T，option 拷貝不是隱含解包。
+			name: "option_typed_field",
+			src: `box {
+    n ?i64
+}
+f = (a i64) (r i64) {
+    b = box {}
+    b.n = a + 1
+    r = 1
+}`,
+			want: 0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			results := ValidateTypes(parseProg(t, c.src))
+			if n := countTrace(results, "15w45dqk"); n != c.want {
+				t.Fatalf("field LHS option→plain gate: want %d diagnostic(s), got %d: %v", c.want, n, results)
+			}
+		})
+	}
+}
+
 // TestAssignExpressionIdentifierLHSIsUnreachable 釘住上面只用 15w45dqk 的理由：
 // ExpressionStatement 的 AssignExpression 左側永遠不是裸識別符（那種寫法在
 // parser 就變成 LetStatement），所以 AssignExpression 路徑不可能收到
@@ -253,6 +381,20 @@ func TestPlainTargetOptionArithLegalShapes(t *testing.T) {
         -> -1
     }
     r = t
+}`,
+		},
+		{
+			// 一步式值位 match：option 算術直接當 subject，不需要中繼 option
+			// 變數、也不需要 `?i64` 標註（`zn + 1` 本身就是 `?i64`）。
+			// 使用者指定的形狀，src/std/archive/bzip2.no 全檔採此寫法。
+			name: "one_step_expr_subject_value_match",
+			src: `f = (a i64) (r i64) {
+    zn = 0
+    zn = zn + 1: {
+        ok -> it
+        ->
+    }
+    r = zn
 }`,
 		},
 		{

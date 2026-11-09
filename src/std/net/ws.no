@@ -186,9 +186,7 @@ next-rand = () (r i64) {
     ; `+ 0` 讓它落回一般的 `?i64` 算術，再以兩段式解包取回 plain i64。
     #{overflow=wrap}
     RAND-COUNTER = RAND-COUNTER + 1
-    rand-val = RAND-COUNTER + 0
-    c = 0
-    c = rand-val: {
+    c = RAND-COUNTER + 0: {
         ok -> it
 
         -> 0
@@ -746,15 +744,13 @@ server-conn.recv = () (msg ?message) {
         }
 
         ; 解析 frame header
-        b0-opt = .recv-buf.byte(0)
-        b0 = b0-opt: {
+        b0 = .recv-buf.byte(0): {
             ok -> it
 
             -> _
         }
 
-        b1-opt = .recv-buf.byte(1)
-        b1 = b1-opt: {
+        b1 = .recv-buf.byte(1): {
             ok -> it
 
             -> _
@@ -1037,15 +1033,13 @@ server-conn.recv-nb = () (msg ?message) {
     ; 2) 只從已緩衝的 recv-buf 解析一個完整 frame；資料不足則回傳 nil（would-block）
     .recv-buf-len < 2 -> return
 
-    b0-opt = .recv-buf.byte(0)
-    b0 = b0-opt: {
+    b0 = .recv-buf.byte(0): {
         ok -> it
 
         -> _
     }
 
-    b1-opt = .recv-buf.byte(1)
-    b1 = b1-opt: {
+    b1 = .recv-buf.byte(1): {
         ok -> it
 
         -> _
@@ -1205,7 +1199,10 @@ client.send = (opcode i64, data str) (ok bool) {
     .connected == false -> return
 
     #{overflow=wrap}
-    .send-counter = .send-counter + 1
+    .send-counter = .send-counter + 1: {
+        ok -> it
+        ->
+    }
 
     #{overflow=wrap}
     seed = next-rand() + .send-counter
@@ -1354,18 +1351,19 @@ client.recv = () (msg ?message) {
                 #{overflow=wrap}
                 .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
             }
-            .recv-buf-len = .recv-buf-len + n
+            .recv-buf-len = .recv-buf-len + n: {
+                ok -> it
+                ->
+            }
         }
 
-        b0-opt = .recv-buf.byte(0)
-        b0 = b0-opt: {
+        b0 = .recv-buf.byte(0): {
             ok -> it
 
             -> _
         }
 
-        b1-opt = .recv-buf.byte(1)
-        b1 = b1-opt: {
+        b1 = .recv-buf.byte(1): {
             ok -> it
 
             -> _
@@ -1421,7 +1419,10 @@ client.recv = () (msg ?message) {
                     #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
-                .recv-buf-len = .recv-buf-len + n
+                .recv-buf-len = .recv-buf-len + n: {
+                    ok -> it
+                    ->
+                }
             }
             payload-len = 0
             i <- [0..8): {
@@ -1462,7 +1463,10 @@ client.recv = () (msg ?message) {
                     #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
-                .recv-buf-len = .recv-buf-len + n
+                .recv-buf-len = .recv-buf-len + n: {
+                    ok -> it
+                    ->
+                }
             }
 
             payload-len = (.recv-buf.byte(2) << 8) | .recv-buf.byte(3)
@@ -1503,7 +1507,10 @@ client.recv = () (msg ?message) {
                     #{overflow=wrap}
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
-                .recv-buf-len = .recv-buf-len + n
+                .recv-buf-len = .recv-buf-len + n: {
+                    ok -> it
+                    ->
+                }
                 need = frame-total - .recv-buf-len
             }
         }

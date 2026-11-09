@@ -121,8 +121,7 @@ yaml-parser.byte-at = (i i64) (c i64) {
     c = 0
     i < 0 -> return
     i >= .n -> return
-    copt = .src.byte(i)
-    c = copt: {
+    c = .src.byte(i): {
         ok -> it
 
         -> 0
@@ -159,7 +158,10 @@ yaml-parser.eof = () (yes bool) {
 yaml-parser.advance = () {
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
 }
 
 ; 消費一個換行（\n 或 \r\n）
@@ -174,7 +176,10 @@ yaml-parser.newline = () (yes bool) {
         yes = true
 
         #{overflow=wrap}
-        .line = .line + 1
+        .line = .line + 1: {
+            ok -> it
+            ->
+        }
         return
     }
     c == 10 -> {
@@ -182,7 +187,10 @@ yaml-parser.newline = () (yes bool) {
         yes = true
 
         #{overflow=wrap}
-        .line = .line + 1
+        .line = .line + 1: {
+            ok -> it
+            ->
+        }
     }
 }
 
@@ -282,7 +290,10 @@ yaml-parser.indent-at = () (ind i64) {
     ls = .line-start-of(.pos)
 
     #{overflow=wrap}
-    ind = .pos - ls
+    ind = .pos - ls: {
+        ok -> it
+        ->
+    }
 }
 
 ; 記錄解析錯誤
@@ -508,8 +519,7 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
     digits = 0
     (i < n) {
         i >= n -> break
-        c-opt = t.byte(i)
-        c = c-opt: {
+        c = t.byte(i): {
             ok -> it
 
             -> _
@@ -748,8 +758,7 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                 }
             }
             i < n -> {
-                sopt = t.byte(i)
-                s = sopt: {
+                s = t.byte(i): {
                     ok -> it
 
                     -> 0
@@ -951,8 +960,7 @@ yaml-unescape-double = (body str) (out ?str) {
     n = body.len-bytes()
     (i < n) {
         i >= n -> break
-        c-opt = body.byte(i)
-        c = c-opt: {
+        c = body.byte(i): {
             ok -> it
 
             -> _
@@ -1680,8 +1688,7 @@ yaml-parser.parse-double = () (idx i64) {
             #{overflow=wrap}
             i = .pos + 1
             i < .n -> {
-                e-opt = .src.byte(i)
-                e-b = e-opt: {
+                e-b = .src.byte(i): {
                     ok -> it
 
                     -> _
@@ -1820,7 +1827,10 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
             }
 
             #{overflow=wrap}
-            content-ind = .pos - ls
+            content-ind = .pos - ls: {
+                ok -> it
+                ->
+            }
             .pos = save
             break
         }
@@ -3463,8 +3473,7 @@ yaml-hex-char = (v i64) (ch str) {
 yaml-json-escape = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
-        c-opt = s.byte(i)
-        c = c-opt: {
+        c = s.byte(i): {
             ok -> it
 
             -> _
@@ -3709,8 +3718,7 @@ yaml-plain-safe = (s str) (yes bool) {
 yaml-quote = (s str) (out str) {
     out = '"'
     i <- [0..s.len-bytes()): {
-        c-opt = s.byte(i)
-        c = c-opt: {
+        c = s.byte(i): {
             ok -> it
 
             -> _

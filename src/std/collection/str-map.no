@@ -121,7 +121,10 @@ str-map.put = (key str, val str) (is-new bool) {
         .occ[idx] ?= 1
 
         #{overflow=wrap}
-        .size = .size + 1
+        .size = .size + 1: {
+            ok -> it
+            ->
+        }
     }: {
         err -> _
 
@@ -193,7 +196,10 @@ str-map.remove = (key str) (removed bool) {
                 .vals[idx].len = 0
 
                 #{overflow=wrap}
-                .size = .size - 1
+                .size = .size - 1: {
+                    ok -> it
+                    ->
+                }
                 removed = true
                 return
             }

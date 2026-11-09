@@ -174,7 +174,11 @@ t-stress-order = () {
             prev = cur
 
             #{overflow=wrap}
-            steps = steps + 1
+            steps-opt = steps + 1
+            steps-opt: {
+                ok -> steps = it
+                -> _
+            }
         }
         nf bool = false
         nx i64 = 0

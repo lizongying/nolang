@@ -46,7 +46,10 @@ zs-bit-reader.read-bit = () (bit i64) {
                 .bit-buf = .data[.pos]
 
                 #{overflow=wrap}
-                .pos = .pos + 1
+                .pos = .pos + 1: {
+                    ok -> it
+                    ->
+                }
                 .bit-cnt = 8
             }
         }
@@ -56,7 +59,10 @@ zs-bit-reader.read-bit = () (bit i64) {
             .bit-buf = .bit-buf >> 1
 
             #{overflow=wrap}
-            .bit-cnt = .bit-cnt - 1
+            .bit-cnt = .bit-cnt - 1: {
+                ok -> it
+                ->
+            }
         }
     }
 }
@@ -83,7 +89,10 @@ zs-bit-reader.read-varint = () (v i64) {
         b = .data[.pos]
 
         #{overflow=wrap}
-        .pos = .pos + 1
+        .pos = .pos + 1: {
+            ok -> it
+            ->
+        }
         v = v | ((b & 0x7f) << shift)
         (b & 0x80) == 0 -> break
 
@@ -144,7 +153,10 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     .table-size = 1 << table-log
 
     #{overflow=wrap}
-    .n-symbols = max-symbol + 1
+    .n-symbols = max-symbol + 1: {
+        ok -> it
+        ->
+    }
 
     ; 儲存 norm-count
     i <- [0..256): {
@@ -596,35 +608,50 @@ zs-frame.read-frame-header = () (ok bool) {
     }
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
     m1 = .data[.pos]
     m1 != 0xb5 -> {
         break
     }
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
     m2 = .data[.pos]
     m2 != 0x2f -> {
         break
     }
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
     m3 = .data[.pos]
     m3 != 0xfd -> {
         break
     }
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
 
     ; Frame Header
     ; Frame_Header_Descriptor
     fhd = .data[.pos]
 
     #{overflow=wrap}
-    .pos = .pos + 1
+    .pos = .pos + 1: {
+        ok -> it
+        ->
+    }
 
     ; 解析 frame header descriptor
     single-segment = (fhd & 0x20) != 0
@@ -638,7 +665,10 @@ zs-frame.read-frame-header = () (ok bool) {
     #{overflow=wrap}
     single-segment == false -> {
         wd = .data[.pos]
-        .pos = .pos + 1
+        .pos = .pos + 1: {
+            ok -> it
+            ->
+        }
 
         ; window_size = (1 << (10 + (wd >> 3))) + (wd & 7) * (1 << (10 + (wd >> 3)))
         exponent = wd >> 3
@@ -651,7 +681,10 @@ zs-frame.read-frame-header = () (ok bool) {
     #{overflow=wrap}
     dict-id-flag > 0 -> {
         dict-id-size = 1 << (dict-id-flag - 1)
-        .pos = .pos + dict-id-size
+        .pos = .pos + dict-id-size: {
+            ok -> it
+            ->
+        }
     }
 
     ; Frame Content Size（如果存在）
@@ -660,7 +693,10 @@ zs-frame.read-frame-header = () (ok bool) {
         fcs-flag == 0 -> {
             single-segment -> {
                 fcs = .data[.pos]
-                .pos = .pos + 1
+                .pos = .pos + 1: {
+                    ok -> it
+                    ->
+                }
             }
         }
 
@@ -668,7 +704,10 @@ zs-frame.read-frame-header = () (ok bool) {
             lo = .data[.pos]
             hi = .data[.pos + 1]
             fcs = lo | (hi << 8)
-            .pos = .pos + 2
+            .pos = .pos + 2: {
+                ok -> it
+                ->
+            }
             fcs = fcs + 256
         }
 
@@ -678,7 +717,10 @@ zs-frame.read-frame-header = () (ok bool) {
             e2 = .data[.pos + 2]
             e3 = .data[.pos + 3]
             fcs = e0 | (e1 << 8) | (e2 << 16) | (e3 << 24)
-            .pos = .pos + 4
+            .pos = .pos + 4: {
+                ok -> it
+                ->
+            }
         }
 
         fcs-flag == 3 -> {
@@ -699,7 +741,10 @@ zs-frame.read-frame-header = () (ok bool) {
             g4 = .data[.pos + 4]
 
             fcs = fcs | (g4 << 32)
-            .pos = .pos + 5
+            .pos = .pos + 5: {
+                ok -> it
+                ->
+            }
         }
     }
     ok = true
@@ -724,7 +769,10 @@ zs-frame.decode-block = () (last-block ?bool) {
     b2 = .data[.pos + 2]
 
     #{overflow=wrap}
-    .pos = .pos + 3
+    .pos = .pos + 3: {
+        ok -> it
+        ->
+    }
 
     ; 解析 block header
     last-block = (b0 & 1) != 0
@@ -755,7 +803,10 @@ zs-frame.decode-block = () (last-block ?bool) {
 
             ; 重複單個字節
             b = .data[.pos]
-            .pos = .pos + 1
+            .pos = .pos + 1: {
+                ok -> it
+                ->
+            }
             i <- [0..block-size): {
                 .out.push(b)
             }
@@ -825,7 +876,10 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
                 -> _
             }
         }
-        br.pos = br.pos + lit-size
+        br.pos = br.pos + lit-size: {
+            ok -> it
+            ->
+        }
 
         ; 讀取 Sequences_Section
         ; 簡化處理：如果沒有序列，直接輸出 literals
@@ -834,7 +888,10 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
                 .out.push(b)
             }
             ok = true
-            .pos = block-end
+            block-end: {
+                ok -> .pos = it
+                -> _
+            }
             return
         }
 
@@ -848,13 +905,19 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
             .out.push(b1)
         }
         ok = true
-        .pos = block-end
+        block-end: {
+            ok -> .pos = it
+            -> _
+        }
         return
     }
 
     ; 其他 literals 類型（RLE, Compressed, Tree）
     ; 簡化處理：跳過
-    .pos = block-end
+    block-end: {
+        ok -> .pos = it
+        -> _
+    }
     ok = true
 }
 
