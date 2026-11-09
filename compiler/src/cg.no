@@ -2196,8 +2196,10 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         }
         op == OP-STRUCT-MK -> {
 
-            ; dst = 结构体值 id；xa[k] = 字段0 值 id、字段值 id **连续**（xa..xa+nf-1）；bs[k] = 字段数 nf。
-            ; 结构体 id 取 cty[k] - TY-STRUCT-BASE（型别码里编了 id，见 mir.no）。
+            ; dst = 结构体值 id；xa[k] = args 侧池基址、bs[k] = 字段数 nf；
+            ;   第 j 个字段值 id = args[xa[k] + j]（s64 同形的侧池机制，解除「xa[k]+j 连续」假设：
+            ;   嵌套结构体字面量作非首位字段值时字段值 id 不连续，连续假设会读错 id）。
+            ;   结构体 id 取 cty[k] - TY-STRUCT-BASE（型别码里编了 id，见 mir.no）。
             ; 初值用 zeroinitializer：字段数由型别声明决定，不必逐字段写 0 字面量（s31 泛化）；
             ;   s29 用的 `{ i64 0, i64 0 }` 只能表达 2 字段，已废弃。
             ; ⚠️ 中间步名 %sm<k>_<j>（k = 指令下标、j = 字段下标），**最后一步**才落 %st<dst>：
@@ -2209,10 +2211,11 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             (j < nf) {
                 nm = '%sm' - k.to-str() - '_' - j.to-str()
                 j + 1 == nf -> nm = '%st' - d.to-str()
-                fv = x
-
-                #{overflow=wrap}
-                fv = fv + j
+                fvx = args[x + j]: {
+                    ok -> it
+                    -> _
+                }
+                fv = fvx
                 b.push('\t')
                 b.push(nm)
                 b.push(' = insertvalue ')

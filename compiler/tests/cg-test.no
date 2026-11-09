@@ -1054,6 +1054,8 @@ test-struct-nested = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+    ; args 側池（②MK 非連續 id 修復）：k1 欄位 [v1=1]、k3 欄位 [st2=2, v3=3]，依 op 序 push
+    args []i64 = []
 
     ; k0: CONST v1 = 7
     ops.push(OP-CONST)
@@ -1062,12 +1064,13 @@ test-struct-nested = () {
     bs.push(0)
     syms.push('')
 
-    ; k1: STRUCT-MK st2 = struct#0{ v1 }
+    ; k1: STRUCT-MK st2 = struct#0{ v1 }（xa=0 是 args 側池基址；欄位值 id=1）
     ops.push(OP-STRUCT-MK)
     dsts.push(2)
-    xa.push(1)
+    xa.push(0)
     bs.push(1)
     syms.push('')
+    args.push(1)
 
     ; k2: CONST v3 = 9
     ops.push(OP-CONST)
@@ -1076,12 +1079,14 @@ test-struct-nested = () {
     bs.push(0)
     syms.push('')
 
-    ; k3: STRUCT-MK st4 = struct#1{ st2, v3 }
+    ; k3: STRUCT-MK st4 = struct#1{ st2, v3 }（xa=1 是 args 側池基址；欄位值 id=2,3）
     ops.push(OP-STRUCT-MK)
     dsts.push(4)
-    xa.push(2)
+    xa.push(1)
     bs.push(2)
     syms.push('')
+    args.push(2)
+    args.push(3)
 
     ; k4: STRUCT-GET st5 = st4.0（字段是结构体 ⇒ dst 落 %st）
     ops.push(OP-STRUCT-GET)
@@ -1145,7 +1150,7 @@ test-struct-nested = () {
         #{overflow=wrap}
         j = j + 1
     }
-    s = cg-emit-cfg-t('nest', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
+    s = cg-emit-cfg-t('nest', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 
     ; 嵌套字段的 insertvalue：型别名 %struct.s0、值前缀 %st2
     runner.eq(s.contains('%sm3_0 = insertvalue %struct.s1 zeroinitializer, %struct.s0 %st2, 0'), 1, 'nested field mk')
@@ -3389,6 +3394,8 @@ test-struct-mk-get = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+    ; args 側池：k2 欄位 [v1=1, v2=2]
+    args []i64 = []
 
     ; k0: CONST v1 = 3（字段 0）
     ops.push(OP-CONST)
@@ -3404,12 +3411,14 @@ test-struct-mk-get = () {
     bs.push(0)
     syms.push('')
 
-    ; k2: STRUCT-MK st3 = {v1, v2}（xa = 字段0 值 id，bs = 字段数）
+    ; k2: STRUCT-MK st3 = {v1, v2}（xa = args 側池基址 0；欄位值 id = 1,2）
     ops.push(OP-STRUCT-MK)
     dsts.push(3)
-    xa.push(1)
+    xa.push(0)
     bs.push(2)
     syms.push('')
+    args.push(1)
+    args.push(2)
 
     ; k3: STRUCT-GET v4 = st3.0
     ops.push(OP-STRUCT-GET)
@@ -3487,7 +3496,7 @@ test-struct-mk-get = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('pt', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
+    s = cg-emit-cfg-t('pt', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 
     ; 构造：链式 insertvalue，中间步 %sm2_0（k=2, j=0），末步落 %st3（s31 起初值用 zeroinitializer）
     runner.eq(s.contains('%sm2_0 = insertvalue %struct.s0 zeroinitializer, i64 %v1, 0'), 1, 'struct field0')
@@ -3509,6 +3518,8 @@ test-struct-set = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+    ; args 側池：k2 欄位 [v1=1, v2=2]
+    args []i64 = []
 
     ; k0: CONST v1 = 7
     ops.push(OP-CONST)
@@ -3524,12 +3535,14 @@ test-struct-set = () {
     bs.push(0)
     syms.push('')
 
-    ; k2: STRUCT-MK st3 = {v1, v2}
+    ; k2: STRUCT-MK st3 = {v1, v2}（xa = args 側池基址 0；欄位值 id = 1,2）
     ops.push(OP-STRUCT-MK)
     dsts.push(3)
-    xa.push(1)
+    xa.push(0)
     bs.push(2)
     syms.push('')
+    args.push(1)
+    args.push(2)
 
     ; k3: CONST v4 = 42
     ops.push(OP-CONST)
@@ -3634,7 +3647,7 @@ test-struct-set = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('bump', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
+    s = cg-emit-cfg-t('bump', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 
     ; SET：读旧 %st3 + 新字段值 %v4 + 下标 1，产出 %st5（旧值未被改写）
     runner.eq(s.contains('%st5 = insertvalue %struct.s0 %st3, i64 %v4, 1'), 1, 'struct set reads old value')
@@ -3660,6 +3673,8 @@ test-struct-wide = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+    ; args 側池：k3 欄位 [v1=1, v2=2, v3=3]
+    args []i64 = []
     ops.push(OP-CONST)
     dsts.push(1)
     xa.push(1)
@@ -3676,12 +3691,15 @@ test-struct-wide = () {
     bs.push(0)
     syms.push('')
 
-    ; k3: STRUCT-MK st4 = {v1,v2,v3}，字段数 3、结构体 #1
+    ; k3: STRUCT-MK st4 = {v1,v2,v3}（xa = args 側池基址 0；欄位值 id = 1,2,3）
     ops.push(OP-STRUCT-MK)
     dsts.push(4)
-    xa.push(1)
+    xa.push(0)
     bs.push(3)
     syms.push('')
+    args.push(1)
+    args.push(2)
+    args.push(3)
 
     ; k4: STRUCT-GET v5 = st4.2
     ops.push(OP-STRUCT-GET)
@@ -3716,7 +3734,7 @@ test-struct-wide = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('wide', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
+    s = cg-emit-cfg-t('wide', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 
     ; 三步链：j=0/1 用中间名 %sm3_0 / %sm3_1，j=2 落 %st4
     runner.eq(s.contains('%sm3_0 = insertvalue %struct.s1 zeroinitializer, i64 %v1, 0'), 1, 'wide field0')
@@ -3736,6 +3754,8 @@ test-struct-str-field = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+    ; args 側池：k2 欄位 [sv1=1, v2=2]
+    args []i64 = []
 
     ; k0: STRCONST sv1 = 'abcd'
     ops.push(OP-STRCONST)
@@ -3751,12 +3771,14 @@ test-struct-str-field = () {
     bs.push(0)
     syms.push('')
 
-    ; k2: STRUCT-MK st3 = {sv1, v2}（结构体 #1：{str, i64}）
+    ; k2: STRUCT-MK st3 = {sv1, v2}（xa = args 側池基址 0；欄位值 id = 1,2）
     ops.push(OP-STRUCT-MK)
     dsts.push(3)
-    xa.push(1)
+    xa.push(0)
     bs.push(2)
     syms.push('')
+    args.push(1)
+    args.push(2)
 
     ; k3: STRUCT-GET sv4 = st3.0（str 字段）
     ops.push(OP-STRUCT-GET)
@@ -3798,7 +3820,7 @@ test-struct-str-field = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('hold', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
+    s = cg-emit-cfg-t('hold', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 
     ; 字段 0 是 %str-long：型别名与前缀都取自 vty[1]（不是硬编 i64 %v）
     runner.eq(s.contains('%sm2_0 = insertvalue %struct.s1 zeroinitializer, %str-long %sv1, 0'), 1, 'str field mk')
@@ -3817,6 +3839,8 @@ test-struct-field-rc = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+    ; args 側池：k1 欄位 [sv1=1]
+    args []i64 = []
 
     ; k0: STRCONST sv1 = 'abcd'
     ops.push(OP-STRCONST)
@@ -3825,12 +3849,13 @@ test-struct-field-rc = () {
     bs.push(0)
     syms.push('abcd')
 
-    ; k1: STRUCT-MK st2 = {sv1}（结构体 #0 = {%str-long}；MK 本身不发 retain）
+    ; k1: STRUCT-MK st2 = {sv1}（xa = args 側池基址 0；欄位值 id = 1；MK 本身不发 retain）
     ops.push(OP-STRUCT-MK)
     dsts.push(2)
-    xa.push(1)
+    xa.push(0)
     bs.push(1)
     syms.push('')
+    args.push(1)
 
     ; k2: STRUCT-RETAIN st2（掩码 1 ⇒ 只处理字段 0）
     ops.push(OP-STRUCT-RETAIN)
@@ -3897,7 +3922,7 @@ test-struct-field-rc = () {
     blks.push(0)
     blks.push(0)
     blks.push(0)
-    s = cg-emit-cfg-t('keep', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, [])
+    s = cg-emit-cfg-t('keep', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 
     ; RETAIN（k=2）：struct → %str-long → data 指针 → call
     runner.eq(s.contains('%rf2_0 = extractvalue %struct.s0 %st2, 0'), 1, 'rc retain extract struct')
@@ -3912,12 +3937,144 @@ test-struct-field-rc = () {
     runner.eq(s.contains('%rf6_1'), 0, 'mask bit1 not set')
 }
 
+; ── ②MK 非連續字段值 id（嵌套結構體作非首位欄位值）：直接驗 cg 從 args 側池取真實 id ──
+; 構造：Inner{a i64, b i64}、Outer{x i64, y Inner}。
+;   v1=1(x) / v2=2(人造間隙，不屬 Outer) / va=4,vb=5(Inner 兩欄) / st3=Inner{va,vb} /
+;   v6=6(另一間隙) / st7=Outer{v1,st3} / st8=GET st7.1。
+;   ⇒ Outer 欄位值 id = [1, 3]（1→3 不連續，中間隔了 v2=2 的 id）。舊契約（xa[k]+j 讀 1,2）會把
+;     v2 當成 Outer.x 插入（field0 型別錯：scalar 當 i64 仍拼得起，但值錯）；新契約（args 側池）讀 [1,3] ⇒ 對。
+test-struct-mk-noncontig = () {
+    ; 型別聲明：Inner=#0{2 欄 i64}、Outer=#1{x:i64, y:Inner}
+    sfc = [2, 2]
+    sft []i64 = [TY-I64, TY-I64, TY-I64, TY-STRUCT-BASE]
+    d = cg-runtime-struct-decls(sfc, sft)
+    runner.eq(d.contains('%struct.s0 = type { i64, i64 }'), 1, 'inner decl')
+    runner.eq(d.contains('%struct.s1 = type { i64, %struct.s0 }'), 1, 'outer decl with nested field')
+
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    ; args 側池：k4 欄位 [va=4, vb=5]（基址 0）、k6 欄位 [v1=1, st3=3]（基址 2）——非連續 [1,3]
+    args []i64 = []
+
+    ; k0: CONST v1 = 1（Outer.x）
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(1)
+    bs.push(0)
+    syms.push('')
+
+    ; k1: CONST v2 = 2（人造間隙，不屬 Outer）
+    ops.push(OP-CONST)
+    dsts.push(2)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; k2: CONST va = 4（Inner.a）
+    ops.push(OP-CONST)
+    dsts.push(4)
+    xa.push(4)
+    bs.push(0)
+    syms.push('')
+
+    ; k3: CONST vb = 5（Inner.b）
+    ops.push(OP-CONST)
+    dsts.push(5)
+    xa.push(5)
+    bs.push(0)
+    syms.push('')
+
+    ; k4: STRUCT-MK st3 = Inner{va, vb}（xa=0 側池基址；欄位值 id=4,5）
+    ops.push(OP-STRUCT-MK)
+    dsts.push(3)
+    xa.push(0)
+    bs.push(2)
+    syms.push('')
+    args.push(4)
+    args.push(5)
+
+    ; k5: CONST v6 = 6（另一間隙，不屬 Outer）
+    ops.push(OP-CONST)
+    dsts.push(6)
+    xa.push(6)
+    bs.push(0)
+    syms.push('')
+
+    ; k6: STRUCT-MK st7 = Outer{v1, st3}（xa=2 側池基址；欄位值 id=1,3 非連續）
+    ops.push(OP-STRUCT-MK)
+    dsts.push(7)
+    xa.push(2)
+    bs.push(2)
+    syms.push('')
+    args.push(1)
+    args.push(3)
+
+    ; k7: STRUCT-GET st8 = st7.1（讀 Inner 欄位）
+    ops.push(OP-STRUCT-GET)
+    dsts.push(8)
+    xa.push(7)
+    bs.push(1)
+    syms.push('')
+
+    ; k8: RET st8
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(8)
+    bs.push(0)
+    syms.push('')
+
+    ptyps []i64 = []
+    vty []i64 = []
+    vty.push(TY-I64)              ; id0 啞元
+    vty.push(TY-I64)             ; id1 v1
+    vty.push(TY-I64)             ; id2 v2
+    vty.push(TY-STRUCT-BASE)     ; id3 st3 (Inner)
+    vty.push(TY-I64)             ; id4 va
+    vty.push(TY-I64)             ; id5 vb
+    vty.push(TY-I64)             ; id6 v6
+    vty.push(TY-STRUCT-BASE + 1) ; id7 st7 (Outer)
+    vty.push(TY-STRUCT-BASE)     ; id8 st8 (Inner)
+    cty []i64 = []
+    cty.push(TY-I64)             ; k0
+    cty.push(TY-I64)             ; k1
+    cty.push(TY-I64)             ; k2
+    cty.push(TY-I64)             ; k3
+    cty.push(TY-STRUCT-BASE)     ; k4 st3
+    cty.push(TY-I64)             ; k5
+    cty.push(TY-STRUCT-BASE + 1) ; k6 st7
+    cty.push(TY-STRUCT-BASE)     ; k7 st8
+    cty.push(TY-STRUCT-BASE)     ; k8 ret
+    blks []i64 = []
+    j = 0
+    n = ops.len()
+    (j < n) {
+        blks.push(0)
+        #{overflow=wrap}
+        j = j + 1
+    }
+    s = cg-emit-cfg-t('noncontig', TY-STRUCT-BASE, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
+
+    ; 內層 MK 正常
+    runner.eq(s.contains('%sm4_0 = insertvalue %struct.s0 zeroinitializer, i64 %v4, 0'), 1, 'inner field0')
+    runner.eq(s.contains('%st3 = insertvalue %struct.s0 %sm4_0, i64 %v5, 1'), 1, 'inner field1')
+
+    ; 外層 MK：field0 必須是 %v1（id1），field1 必須是 %st3（Inner 值）
+    runner.eq(s.contains('%sm6_0 = insertvalue %struct.s1 zeroinitializer, i64 %v1, 0'), 1, 'outer field0 is v1')
+    runner.eq(s.contains('%st7 = insertvalue %struct.s1 %sm6_0, %struct.s0 %st3, 1'), 1, 'outer nested field is struct value')
+    ; 關鍵判別：舊契約（xa[k]+j 讀 1,2）會把 v2 當 Outer.x 插入 field0 ⇒ 此串絕不能出現
+    runner.eq(s.contains('insertvalue %struct.s1 zeroinitializer, i64 %v2, 0'), 0, 'OLD contiguous bug must NOT appear (field0)')
+}
+
 test-const-ret()
 test-struct-mk-get()
 test-struct-set()
 test-struct-wide()
 test-struct-str-field()
 test-struct-field-rc()
+test-struct-mk-noncontig()
 test-struct-param-ret()
 test-struct-nested()
 test-alu()

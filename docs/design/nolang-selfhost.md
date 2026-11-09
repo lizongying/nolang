@@ -4930,6 +4930,134 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **後續**：①s99 欄位型別目前只收 `i64`，待擴 `str`/`vec`/嵌套 struct 欄位（需協調 cg 側 OP-STRUCT-MK/GET/SET 對非 i64 欄位的命名與前綴）。優化項：SET 分支內 DOT 字段讀與基址各發一次 `OP-STLOAD`（`%st14`/`%st15` 同讀 `%sts1`），語義正確、LLVM 會合併，可留待後續去冗。
 
+### 5.3.4.ee s99d——M4-e 第四十五件續：struct 跨函數調用（mem 模式，含控制流）（2026-11-09 本輪）
+
+**動機**：s99c 解決了 struct 在單函數內跨基本塊存活；但 struct 的完整生命周期還須覆蓋「作為實參按值穿過 call、被調按值返 struct、調用方讀出/改寫字段」這一集成點。本件驗證 h2m 在 mem 模式（含循環）下，struct 實參/返回值的型別碼（`TY-STRUCT-BASE+sid`）在 call 發射路徑上被正確處理——純 h2m，零改 cg/ps/mir，與並發 session 的 cg.no 改動不衝突。
+
+**關鍵觀察（本輪 IR 核實）**：三檔用例均 `UNSUP=0`，且 IR 顯示 struct 在 call 邊界按值傳遞（非指標）：
+- **da（本地 struct 建好→傳參→返回→讀字段）**：`%sts1 = alloca %struct.s0` → `store %struct.s0 %st11, %struct.s0* %sts1`（MK 落槽）→ 循環跑 `n` → `%st19 = load %struct.s0, %struct.s0* %sts1` → `%st20 = call %struct.s0 @f(%struct.s0 %st19)`（**按值傳入並按值返回**）→ `store %struct.s0 %st20, %struct.s0* %sts5` → `extractvalue %struct.s0 %st21, 0`（x）/ `extractvalue %struct.s0 %st23, 1`（y）→ `add` → `ret i64 %v`。`f` 簽名為 `define %struct.s0 @f(%struct.s0 %st1)` 且 `ret %struct.s0 %st1`，證明被調按值收/返。
+- **db（形參 struct 在循環後傳參）**：`define i64 @g(%struct.s0 %st1)` → `store %struct.s0 %st1, %struct.s0* %sts2`（形參 incoming 落槽）→ 循環後 `load %sts2` → `call %struct.s0 @f(%struct.s0 %st17)` → `extractvalue` 讀 x/y。
+- **dc（函數返 struct、調用方改字段）**：`define %struct.s0 @mk()` 內 `insertvalue` 搭 struct 後 `ret %struct.s0 %st3` → 調用方 `%st14 = call %struct.s0 @mk()` → 落槽 → `load` → `insertvalue %struct.s0 %st15, i64 %v19, 1`（按值改 y 字段，改的是 load 出來的副本）→ `store` 回槽 → 再 `extractvalue` 讀 x/y。語義等價於「slot 上改字段」。
+
+**改動**：本件**無需改 h2m.no**——s99c 已把 `h2m-slot-decl`/`h2m-var-read`/`h2m-var-write`/`h2m-slot-init-arg`/`h2m-ty-of` 的 struct 分支與型別解析鏈補齊，call 發射路徑（`h2m` 對 `K-CALL-EXPRESSION` 的 retty/argty 查 `h2m-func-sig` + `h2m-param-ty` → `h2m-tynode-code` 回退查 `agg` 結構體表）在 mem 模式下自動正確。本件價值在於把「struct 完整生命周期」的最後一塊集成點端到端釘死，確認此前修復無遺漏。
+
+**驗證（`h2m-test.no` 新增 3 用例，+18 斷言全綠）**：
+- `test-s99d-local-call`：斷言 `define %struct.s0 @f(%struct.s0 %st1)` / `ret %struct.s0 %st1`（被調按值收返）/ `store %struct.s0 %st`（落槽）/ `call %struct.s0 @f(%struct.s0 %st`（按值傳參）/ `extractvalue %struct.s0 %st`（返回讀字段）。
+- `test-s99d-param-call`：斷言 `define i64 @g(%struct.s0 %st1)` / `store %struct.s0 %st1, %struct.s0* %sts`（形參落槽）/ `call %struct.s0 @f(%struct.s0 %st` / `extractvalue %struct.s0 %st`。
+- `test-s99d-return-call`：斷言 `define %struct.s0 @mk()` / `ret %struct.s0 %st`（被調返 struct）/ `call %struct.s0 @mk()`（接回 struct）/ `insertvalue %struct.s0 %st`（調用方改字段）/ `extractvalue %struct.s0 %st`（改後讀字段）。
+
+整檔 **907 過 / 913 總 / 6 失**（6 失仍為既有 s98 option 回歸，非本件）。
+
+**已知回歸（非本件）**：同 §5.3.4.eb——s98 6 項、cg-test 4 處 `15w45dqk` 編譯錯，待並發 session checker 門禁落地後復測。
+
+**後續**：①s99 欄位型別目前只收 `i64`，待擴 `str`/`vec`/嵌套 struct 欄位（需協調 cg 側 OP-STRUCT-MK/GET/SET 對非 i64 欄位的命名與前綴）。優化項：call 返回後讀 x/y 各發一次 `OP-STLOAD`（`%st21`/`%st23` 同讀 `%sts5`），語義正確、留待後續去冗。
+
+### 5.3.4.ef s99e——M4-e 第四十五件續：結構體欄位型別擴充（str / f64 / 嵌套結構體）（2026-11-09 本輪）
+
+**動機**：s99～s99d 的結構體欄位只收 `i64`，`h2m-struct-register` 對非 i64 欄位直接 `mark` 整模組。本件把欄位型別擴到 `str` / `f64` / 嵌套結構體（vec 仍不支援，見後續）。
+
+**關鍵發現（本輪測量）**：cg 側 `OP-STRUCT-MK/GET/SET` 與 `OP-STALLOC/STSTORE/STLOAD` **本就依 `vty[]`/`cty[]` 選 `%str-long` / `%vc` / `%struct.sN`**（cg-ty-name / cg-val-prefix 全由型別碼驅動，無硬編 i64），故 **cg 零改**；工作全在 h2m 側。
+
+**改動（`compiler/src/h2m.no`，純 h2m）**：
+1. **兩遍欄位型別解析**——`h2m-struct-register` 第一遍只把欄位【型別節點 id】壓進新表 `stftn`（不再當場解析、不再對非 i64 `mark`）；新增 `h2m-struct-resolve` 在全部結構體名就位後，用 `h2m-tynode-code(t,c,nodeId)` 逐欄位解析成型別碼壓進 `stft`。
+   - 益處：支持「欄位引用較後定義的結構體」（如 `Box { p Point }` 寫在 `Point` 之前也成立），定義序不再敏感。
+   - 不支援的欄位型別（`vec` / 函數指標等）解析回 -1 ⇒ 整模組 `mark`，寧缺勿錯。
+2. **str 字面量降級**——`h2m-lower-expr` 補 `K-STRING-LITERAL` 分支發 `OP-STRCONST`（cg 發全局常量 + `%str-long` 值）。此前 str 字面量不在該 switch ⇒ 直落預設 `mark`（UNSUP 暴漲）；`h2m-ty-of` 早有 `K-STRING-LITERAL -> TY-STR`，故型別推導本就通，只差降級出口。
+
+**驗證（`h2m-test.no` 新增 4 用例，+24 斷言全綠）**：
+- `test-s99e-str-field`：`User { id i64, name str }`，`u = User { id: 1, name: 'alice' }` / `u.name = 'bob'` / `r = u.name`；關鍵斷言 `%struct.s0 = type { i64, %str-long }` / `insertvalue %struct.s0 %sm2_0, %str-long %sv2, 1`（MK str 欄位）/ `insertvalue %struct.s0 %st3, %str-long %sv4, 1`（SET）/ `extractvalue %struct.s0 %st5, 1`（GET）/ `ret %str-long %sv6`。
+- `test-s99e-f64-field`：`%struct.s0 = type { i64, double }` / `insertvalue %struct.s0 %sm2_0, double %fd2, 1` / `ret double %fd4`。
+- `test-s99e-nested-struct-field`：`%struct.s1 = type { %struct.s0, i64 }` / 嵌套 MK（`insertvalue %struct.s1 zeroinitializer, %struct.s0 %st3, 0`）/ 雙層 `extractvalue`（`%struct.s1 %st5, 0` → `%struct.s0 %st6, 0` 取內層 x、`%struct.s0 %st8, 1` 取 y）/ `add i64 %v7, %v9`。
+- `test-s99e-mixed-field`：`%struct.s1 = type { %struct.s0, i64, %str-long }`（單一結構體混合三種欄位型別），證明 i64 + str + 嵌套可共存；嵌套欄位刻意放首位（見下「已知限制」）。
+
+**已知限制（已於 §5.3.4.ei／s99h 修）**：`OP-STRUCT-MK` 的欄位值 id 原由 cg 用 `xa[k]+j` 推連續序，假設各欄位值的降級恰好各佔一個連續 id。當某欄位值是「降級多分配 id」的表達式（如**嵌套結構體字面量**會多分配內層欄位 id），該欄位若**非首位**，cg 會讀到錯 id（誤把內層 i64 當結構體插入）。`nested` 用例因嵌套欄位恰在首位而過；`mixed` 用例把嵌套欄位置首以迴避。
+- 根治：**已落地**——仿 `OP-CALL` 把欄位值 id 顯式經 `args` 池傳遞（h2m 推入 `c.args`、cg 自 `args[base+j]` 取），徹底解除連續性假設（cg.no L2197-2239 / h2m.no L1946-1979 / mir.no OP-STRUCT-MK 註解；cg-test.no 新增 `test-struct-mk-noncontig` 非連續 id 判別力測試）。⚠️ **代碼側完成，運行時端到端驗證因 `15w45dqk` 系統性破壞 cg-emit-cfg-t 內層 `j=j+1` 循環（純 OP-CALL 現也 segfault）而阻塞，待並發 session checker 門禁落地、工作區穩定後復測**（見 §5.3.4.ei）。
+
+**整檔 931 過 / 937 總 / 6 失**（6 失仍為既有 s98 option 回歸，非本件）。
+
+**後續**：①vec 欄位已於 §5.3.4.eg（s99f）支援 `[]i64` 欄位（按值存搬 + 作實參穿 call；元素仍限 i64，門禁已驗 `[]str` 不入形）；②修 MK 欄位值 id 連續性假設（args 池方案，需協調 cg）**已於 §5.3.4.ei（s99h）完成（代碼側；運行時驗證待 `15w45dqk` 門禁落地後復測）**；③str 欄位 RC 的「取得所有權」半邊已於 §5.3.4.eh（s99g）完成（MK 後緊接 `OP-STRUCT-RETAIN`，欄位掩碼由 h2m 設置）；「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`）待 h2m 變量生命週期追蹤基礎設施就位後補（見 §5.3.4.eh）。
+
+### 5.3.4.eg s99f——M4-e 第四十六件續：結構體欄位型別支援 []i64（vec 欄位）（2026-11-09 本輪）
+
+**動機**：§5.3.4.ef 的「後續 ①」列 vec 欄位未支援（`h2m-tynode-code` 未處理 `K-SLICE-TYPE`，且 `TY-VEC` 不攜元素型別）。本件補上：結構體欄位可以是 `[]i64`（vec），按值存於結構體內（一個 3 字 i64 的 `%vec` 值），MK / GET / 作實參穿 call 全部正確。
+
+**改動（純 h2m）**：`h2m-tynode-code`（h2m.no）補 `K-SLICE-TYPE` 分支——僅收元素為 `i64` 的切片（`d.nkid==1` 且 `kid[0]` 是 `K-NAMED-TYPE` 且名為 `i64`），回 `TY-VEC`；其餘（`[]str` 等元素非 i64）回 `-1` 讓 `h2m-struct-resolve` 計 unsup。與 s62 形參口径（`h2m-param-ty` 僅收 `[]i64`）一致。
+- `h2m-struct-resolve` 本就調 `h2m-tynode-code` 解析欄位型別，故 `stft` 自動落到 `TY-VEC`，**cg 零改**（cg-runtime-ty-name 把 `TY-VEC → %vec`，欄位就是一個 `%vec` 值，依 `vty[]`/`cty[]` 走 `insertvalue`/`extractvalue`/`call` 的 `%vec`/`%vc` 命名空間）。
+
+**IR 核實**（runner 實測）：
+- MK：`Buf { data []i64, id i64 }` + `mk = (d []i64, id i64) (r Buf) { r = Buf { data: d, id: id } }`
+  - `%struct.s0 = type { %vec, i64 }`
+  - `define %struct.s0 @mk(%vec %vc1, i64 %v2)`
+  - `insertvalue %struct.s0 zeroinitializer, %vec %vc1, 0`（vec 欄位在索引 0，按值插入）
+  - `insertvalue %struct.s0 %sm0_0, i64 %v2, 1`
+  - `ret %struct.s0 %st3`
+- GET + call-by-value：`consume = (v []i64) (r i64) { r=0; x <- v: { r = r + x } }` + `sum = (b Buf) (r i64) { r = consume(b.data) }`
+  - `define i64 @sum(%struct.s0 %st1)`
+  - `%vc2 = extractvalue %struct.s0 %st1, 0`（GET vec 欄位 → %vec 值）
+  - `call i64 @consume(%vec %vc2)`（vec 欄位按值傳給 []i64 形參函數）
+  - `ret i64 %v3`
+
+**測試**（`compiler/tests/h2m-test.no`，本輪新增，全過）：
+- `test-s99f-vec-field-mk`：MK 路徑，斷言 `%struct.s0 = type { %vec, i64 }` / `define %struct.s0 @mk(%vec %vc1, i64 %v2)` / `insertvalue ... %vec %vc1, 0` / `insertvalue ... i64 %v2, 1` / `ret %struct.s0 %st3`。
+- `test-s99f-vec-field-get`：GET + call-by-value，斷言 `define i64 @sum(%struct.s0 %st1)` / `%vc2 = extractvalue %struct.s0 %st1, 0` / `call i64 @consume(%vec %vc2)` / `ret i64 %v3`。
+- `test-s99f-vec-field-gate`：門禁——`[]str` 欄位解析回 `-1` ⇒ 整模組計 unsup 不產碼（`agg.unsup > 0` 且 IR 無 `define`）。
+
+**已知限制（M4-e 既有門禁，非本件引入）**：
+1. vec 返回不入形（h2m L3164 `rb==0 && rc==TY-VEC -> bad=1`）⇒ 欄位值須由 `[]i64` 形參注入，不能本地構造 vec 字面量（無 `%vec` 槽、無 vec 字面量降級）。故本件測試以形參注入 vec 值。
+2. 容器遍歷 `v <- xs` 只收裸識別符源（L2563/L2574），故 `v <- b.data` 不入形——本件改用「extractvalue %vec 後作 `%vec` 實參傳給 `[]i64` 形參函數」驗 GET。
+3. 元素非 i64 的 vec 欄位（如 `[]str`）不攜元素型別、會被 i64 helper（`@vec_get_i64`/`@vec_push_i64`）誤讀 ⇒ 欄位解析回 `-1` 計 unsup（門禁已驗）。
+
+**整檔 946 過 / 952 總 / 6 失**（6 失仍為既有 s98 option 回歸，非本件；vec 欄位三用例全過）。
+
+**後續**：①MK 欄位值 id 連續性假設（args 池方案，需協調 cg，見 §5.3.4.ef）**已於 §5.3.4.ei（s99h）完成（代碼側；運行時驗證待 `15w45dqk` 門禁落地後復測）**；②str 欄位 RC 的「取得所有權」半邊已於 §5.3.4.eh（s99g）完成（MK 後緊接 `OP-STRUCT-RETAIN`，欄位掩碼由 h2m 設置）；「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`）待 h2m 變量生命週期追蹤基礎設施就位後補（見 §5.3.4.eh）；③vec 欄位的「就地索引 `b.data[i]`」與「本地 vec 變量」須待 vec 返回/本地量入形（M4-d RC 後）才支援，本件只驗證「欄位按值存搬 + 作實參穿 call」。
+
+### 5.3.4.eh s99g——M4-e 第四十七件續：結構體 str 欄位 RC（取得所有權半邊）（2026-11-09 本輪）
+
+**動機**：§5.3.4.ef 的「後續 ③」與 §5.3.4.eg 的「後續 ②」列 str 欄位 RC 待補——`OP-STRUCT-RETAIN/RELEASE` 的欄位掩碼尚未由 h2m 設置，結構體賦值/返回的 str 欄位 RC 正確性待補。本件補上「取得所有權」這一側：結構體字面量 MK 後，對含 str 欄位的結構體緊接 `OP-STRUCT-RETAIN`，欄位掩碼（bit j ⇔ 欄位 j 是 str）由 h2m 計算。
+
+**測量（先於改動）**：cg 已完整支援 `OP-STRUCT-RETAIN`(37)/`OP-STRUCT-RELEASE`(38)（cg.no L2315/L2356），依 `xa[k]`=結構體值 id、`bs[k]`=欄位掩碼，對每個置位欄位 `extractvalue` 出 `%str-long` → 取 data ptr（欄位 2）→ `call @nolang_rc_retain/release`；`@nolang_rc_retain/release` 由 `cg-rc.no` 定義。h2m 當前**完全不發**任何 `OP-RETAIN`/`OP-RELEASE`（連純 str 都沒發）——故本件是 RC 生命週期追蹤的首步，且是純 h2m 改動（cg 零改）。
+
+**改動（純 h2m）**：
+- 新增 `h2m-struct-str-mask(c, sid)`：掃結構體 `sid` 各欄位，欄位型別 == `TY-STR` 則置 bit j（1<<j），回欄位掩碼；無 str 欄位回 0。
+- `h2m-lower-expr` 的 `K-STRUCT-LITERAL` 分支：MK 發出後，若 `h2m-struct-str-mask(c, sid) != 0`，緊接 `h2m-emit(c, OP-STRUCT-RETAIN, 0, sv, mask, '', 0)`（`a=sv`→xa，`b=mask`→bs，對應 cg `y=bs[k]`）。符合 mir.no L194「MK 只存不 retain，取得所有權須緊接 OP-RETAIN」約定。
+- **cg 零改**（OP 與 runtime helper 早已就位）。
+
+**IR 核實**（runner 實測，unsup=0）：
+- `User { id i64, name str }` + `u = User { id: 1, name: 'alice' }`：str 欄位在索引 1 ⇒ 掩碼 2。
+  `%struct.s0 = type { i64, %str-long }` / `insertvalue %struct.s0 %sm2_0, %str-long %sv2, 1`（MK name 欄位）/
+  `%rf3_1 = extractvalue %struct.s0 %st3, 1` → `%rp3_1 = extractvalue %str-long %rf3_1, 2` → `call void @nolang_rc_retain(i8* %rp3_1)`。
+- `Rec { a i64, b i64, c str }` + `u = Rec { a: 1, b: 2, c: 'x' }`：str 欄位在索引 2 ⇒ 掩碼 4；retain 只抽欄位 2（`%rf4_2 = extractvalue %struct.s0 %st4, 2`），不碰 a/b，證明掩碼位位置正確。
+- `Point { x i64, y i64 }`（無 str）：IR 無 `call void @nolang_rc_retain(`。
+
+**測試**（h2m-test.no 新增三用例，全過）：`test-s99g-struct-str-retain`（str@idx1，掩碼 2）/`test-s99g-struct-mixed-mask`（str@idx2，掩碼 4，證位位置）/`test-s99g-struct-no-retain`（無 str ⇒ 不發 retain）。
+
+**已知限制（本件邊界，誠實標注）**：
+1. **只有「取得所有權」半邊**：發了 `OP-STRUCT-RETAIN` 卻無對應 `OP-STRUCT-RELEASE` ⇒ 運行期會漏釋放（leak）。釋放側需 h2m 在「變量生命週期結束 / 函數返回」時發 `OP-STRUCT-RELEASE`，但 h2m 目前**無變量生命週期追蹤基礎設施**（連純 str 的 `OP-RELEASE` 都沒發）。這是 RC 子系統的更大一塊，須與「純 str RC」「vec 返回 RC」共用同一套 scope-exit 釋放機制，單獨補不完整。
+2. **測試層級**：h2m-test.no 只斷言「降級產出正確的 retain 呼叫串」（IR 文本 `contains`），不編譯執行；bootstrap 的 cg 管線不發 runtime prelude（@nolang_rc_retain 等定義不進測試 IR，與 s62 斷言 @vec_len 呼叫的現狀一致）。故本件驗證的是「欄位掩碼正確設置 + retain 發射點正確」，非端到端 RC 平衡。
+3. **CALL 返回的結構體 / LOAD 出的結構體**目前不發 retain（僅 MK 字面量發）；結構體作返回值穿 call 的完整 RC 待釋放基礎設施一併補。
+
+**整檔 961 過 / 967 總 / 6 失**（6 失仍為既有 s98 option 回歸，非本件；s99g 三用例全過）。
+
+**後續**：①MK 欄位值 id 連續性假設（args 池方案，需協調 cg）**已於 §5.3.4.ei（s99h）完成（代碼側；運行時驗證待 `15w45dqk` 門禁落地後復測）**；②str 欄位 RC 的「釋放」半邊——建 h2m scope-exit 釋放基礎設施（變量生命週期追蹤），對所有含 str/vec 欄位的活變量在作用域退出時發 `OP-STRUCT-RELEASE`、純 str 發 `OP-RELEASE`；此基礎設施同時解鎖「純 str RC」「vec 返回 RC」；③vec 欄位就地索引/本地 vec 變量（待 M4-d RC）。
+
+### 5.3.4.ei s99h——M4-e 第四十八件續：MK 欄位值 id 連續性假設（args 池方案，與 cg 協調）（2026-11-09 本輪）
+
+**動機**：§5.3.4.ef 的「已知限制」與「後續 ②」、§5.3.4.eg 的「後續 ①」、§5.3.4.eh 的「後續 ①」均列 `OP-STRUCT-MK` 欄位值 id 由 cg 用 `xa[k]+j` 推連續序的隱含契約——它假設每個欄位值的降級恰好各佔一個連續 id。當某欄位值是「降級多分配 id」的表達式（如**嵌套結構體字面量**作非首位欄位值，會多分配內層欄位 id），cg 會讀到錯 id（誤把內層 i64 當結構體插入），產生錯 IR。本件根治此契約，徹底解除連續性假設。
+
+**關鍵發現（對拍 OP-CALL）**：`OP-CALL`（s64，§5.3.4.cs）已用「args 側池」破解同一類連續 id 契約——h2m 把實參值 id 推入共享 `c.args` 池、CALL 只帶「池基址 base + 個數 want-n」，cg 發射時 `args[base+j]` 取第 j 個實參值 id。MK 的欄位值正可複用同一機制（op 循環頂部 `x = xa[k]`、`y = bs[k]`，與 CALL 同形），無須新開命名空間。
+
+**改動**：
+- `compiler/src/cg.no` `OP-STRUCT-MK`（L2197-2239）：原 `fv = x; fv = fv + j`（連續假設）改為 `fvx = args[x + j]: { ok -> it; -> _ }; fv = fvx`——第 j 個欄位值 id 直接從 args 側池 `args[xa[k]+j]` 取。註解同步標明「解除 xa[k]+j 連續假設」。
+- `compiler/src/h2m.no` `K-STRUCT-LITERAL`（L1946-1979）：MK 前先收齊全部欄位值 `fvs []i64`，再 `base = c.args.len()` 整段 `c.args.push(fvs[m])` 入池，發 `OP-STRUCT-MK(sv, base, nf, '', stcode)`。s99g 的「取得所有權」半邊（MK 後緊接 `OP-STRUCT-RETAIN`）保持不變。
+- `compiler/src/mir.no` `OP-STRUCT-MK` 註解：改寫為「`xa[k]` = args 側池基址；`bs[k]` = 欄位個數；第 j 個欄位值 id = `args[xa[k]+j]`（s64 同形的側池機制，解除「`xa[k]+j` 連續」假設）。
+- `compiler/tests/cg-test.no`：6 個含 MK 的測試（test-struct-nested / mk-get / set / wide / str-field / field-rc）由「空 args + `xa.push(欄位0值id)`」改為「建 `args`、push 欄位值 id、`xa.push(基址)`、`cg-emit-cfg-t(..., args)`」；新增 **`test-struct-mk-noncontig`**（L3946）：構造 `Inner{a,b}` / `Outer{x, y Inner}`，讓 Outer 欄位值 id = [1,3] 非連續（中隔 v2=2），斷言 `insertvalue %struct.s1 zeroinitializer, i64 %v1, 0` 與 `%st7 = insertvalue %struct.s1 %sm6_0, %struct.s0 %st3, 1`，並斷言舊契約 bug 串 `insertvalue %struct.s1 zeroinitializer, i64 %v2, 0` 不得出現（`contains == 0`）。
+
+**驗證狀態（誠實標注，關鍵）**：⚠️ **代碼側已完成，運行時端到端驗證被阻塞**。當前工作區的 `bin/no` 是 stale bootstrap（v0.4.19-13-g44712c50-dirty），且並發 session 引入的 `15w45dqk` checker 收口（把「`#{overflow=wrap}` 下的 `+` 返回 `?i64` 賦值給 plain 變數」收成硬錯）系統性破壞了 cg.no 自身：凡是 cg-emit-cfg-t 內帶 `j = j + 1` 內層循環的 op（OP-CALL、OP-STRUCT-MK 等），在當前 `bin/no` 運行時下 plain 變數收到 `?i64` 右值被丟棄、j 恆 0 ⇒ **死循環（EXIT=124）或越界 segfault**（已用隔離二分證實：純 OP-CALL 現也直接 segmentation fault，與本件改動無關）。故 `./bin/no run compiler/tests/cg-test.no` 目前無法跑完——這是環境門禁問題，非本件引入。**待並發 session 的 checker 門禁落地、工作區穩定後，復跑 `./bin/no run compiler/tests/cg-test.no`（含 `test-struct-mk-noncontig`）即為本件驗收門檻**。代碼邏輯已對拍已驗證的 OP-CALL args 機制，自洽。
+
+**整檔狀態（預期，待復測）**：cg-test.no 既有的 6 處 `15w45dqk` 編譯錯（L111/227/1151/1358/4056 等）隨 checker 門禁落地解除後，本件新增的非連續 id 判別力測試應全綠。
+
+**後續**：①str 欄位 RC 的「釋放」半邊（scope-exit 的 `OP-STRUCT-RELEASE`，見 §5.3.4.eh）；②vec 欄位就地索引 `b.data[i]` / 本地 vec 變量（待 M4-d RC）。兩者均不再依賴 MK 連續 id 假設，本件已為其掃清地基。
+
 ## 6. 里程碑與進度
 
 > 本節是**唯一**的實際進度來源：§0 是決策§5 是架構§7 是門禁**每完成一個里程碑就更新這裡的狀態與證據**（證據必須是可重跑命令 + 觀測值）

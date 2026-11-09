@@ -378,9 +378,10 @@ OP-OPTGESCF = 93
 ; 结构体值住 %st<id>；IR 型别名 %struct.s<结构体 id>，由 cg-runtime-struct-decls(sfc)
 ; 一次性发射（sfc[结构体 id] = 字段数）。本层支持【构造 + 读字段 + 写字段 + 跨块槽】。
 ; 字段型别当前**只有 i64**（ADD/MUL 等分支硬编 %v）；str/vec/option 字段需逐字段 RC，属后续。
-; OP-STRUCT-MK ：dst = 结构体值 id；xa[k] = 字段0 值 id；bs[k] = 字段个数；
-;               字段值 id 连续（xa..xa+count-1）。发射 count 步链式 insertvalue，
-;               初值用 `zeroinitializer`（字段数由型别声明决定，不必逐字段写 0）。
+; OP-STRUCT-MK ：dst = 结构体值 id；xa[k] = args 侧池基址；bs[k] = 字段个数；
+;               第 j 个字段值 id = args[xa[k] + j]（s64 同形的侧池机制，解除「xa[k]+j 连续」假设：
+;               嵌套结构体字面量作非首位字段值时字段值 id 不连续，连续假设会读错 id）。
+;               发射 count 步链式 insertvalue，初值用 `zeroinitializer`（字段数由型别声明决定，不必逐字段写 0）。
 ;               结构体 id 取 cty[k] - TY-STRUCT-BASE。
 ; ⚠️ 中间步用 %sm<k>_<j>（k = 指令下标、j = 字段下标），最后一步才落到规范的 %st<dst>
 ;    （避免 multiple definition of local value）。

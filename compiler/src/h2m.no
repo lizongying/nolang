@@ -150,13 +150,17 @@ h2m-ctx {
     alidx []i64
     ; s99：模块级结构体表（B10 唯一装配点的前置数据）。并行数组、按定义序稳定 id：
     ;   stn = 结构体名；stid = 结构体 id（= 型别码 - TY-STRUCT-BASE）；stfc = 字段数；
-    ;   stft = 字段型别码拼接表（按 id 升序，长度 = Σ stfc）；stfldn = 字段名拼接表（与 stft 同序、同下标）
+    ;   stft = 字段型别码拼接表（按 id 升序，长度 = Σ stfc）；stfldn = 字段名拼接表（与 stft 同序、同下标）；
+    ;   stftn = 字段型别【节点 id】拼接表（与 stft/stfldn 同序、同下标）——两遍注册用：
+    ;     第一遍只登记节点 id，第二遍（h2m-struct-resolve）等全部结构体名就位后再解析成型别码，
+    ;     以支持「结构体字段引用较后定义的结构体」（单遍无法解析）。
     ; ⚠️ 数组在 h2m-lower-func 里从模块级 agg 浅拷进函数 ctx（只增不写），函数体只读，不另发独立副本
     stn []str
     stid []i64
     stfc []i64
     stft []i64
     stfldn []str
+    stftn []i64
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -221,6 +225,8 @@ h2m-new = () (c h2m-ctx) {
         i64
         stfldn: []
         str
+        stftn: []
+        i64
     }
     c.vty.push(TY-I64)
 }
@@ -647,6 +653,23 @@ h2m-tynode-code = (t ast, agg h2m-ctx, tn i64) (code i64) {
                 }
             }
         }
+
+        ; s99f：结构体栏位型别支援 []i64（K-SLICE-TYPE）→ TY-VEC。
+        ;   与 s62 形参口径一致——仅收元素为 i64 的切片（@vec_get_i64 / @vec_push_i64 是单型 helper）；
+        ;   元素非 i64 的 vec（[]str 等）不携元素型别且运行期会被 i64 helper 误读 ⇒ 回 -1 计 unsup。
+        ;   栏位位存／搬只认 %vec（3 字 i64 值），元素型别在栏位布局层面不敏感，故 []i64 栏位可正确
+        ;   MK（insertvalue %vec）/ GET（extractvalue %vec）/ 作实参穿过 call；vec 返回与本地 vec 量仍不入形
+        ;   （见 L3164 的 rb==0 && rc==TY-VEC -> bad=1 门禁），须由调用方以 []i64 形参注入 vec 值。
+        d.kind == asp.K-SLICE-TYPE && d.nkid == 1 -> {
+            ek = ast.kid-at(t, d.kid0)
+            ek > 0 -> {
+                ed = ast.nd-at(t, ek)
+                ed.kind == asp.K-NAMED-TYPE -> {
+                    enm = ast.str-at(t, ed.s0)
+                    enm == 'i64' -> code = TY-VEC
+                }
+            }
+        }
     }
 }
 
@@ -680,6 +703,21 @@ h2m-struct-field-ty = (c h2m-ctx, sid i64, fi i64) (ty i64) {
     ty = c.stft[off + fi]
 }
 
+; s99g：结构体 str 欄位位掩码——bit j 置位 ⇔ 第 j 個欄位型別是 TY-STR。
+;   喂 OP-STRUCT-RETAIN/RELEASE 的 bs[k]（欄位掩碼）；無 str 欄位回 0（不發 retain）。
+;   與 cg OP-STRUCT-RETAIN/RELEASE 的「bit j 置位 ⇒ 欄位 j 持有堆（且必須是 str）」約定一致。
+h2m-struct-str-mask = (c h2m-ctx, sid i64) (mask i64) {
+    mask = 0
+    fc = h2m-struct-fc(c, sid)
+    j = 0
+    (j < fc) {
+        fty = h2m-struct-field-ty(c, sid, j)
+        fty == TY-STR -> mask = mask | (1 << j)
+        #{overflow=wrap}
+        j = j + 1
+    }
+}
+
 ; 按字段名查字段下标（-1 = 该结构体无此字段）；stfldn 与 stft 同序同下标
 h2m-struct-field-idx = (c h2m-ctx, sid i64, fname str) (fi i64) {
     fi = -1
@@ -699,9 +737,10 @@ h2m-struct-field-idx = (c h2m-ctx, sid i64, fname str) (fi i64) {
 }
 
 ; s99：在前扫描里登记一个结构体定义（K-STRUCT-DEFINITION 节点 n）。
-; 定义序即 id 序：新结构体 id = 当前 stn 长度。字段逐个登记，型别只收 i64（其余字段型 ⇒ 计 unsup，
-;   整模块不产码，宁缺勿错）；字段数不符/重复定义 ⇒ 视后续降级诚实门禁兜底。
-; 字段型别码与字段名分别进 stft / stfldn（拼接表，与 stfc 计数对应）。
+; 定义序即 id 序：新结构体 id = 当前 stn 长度。字段逐个登记：本遍只把【型别节点 id】压进 stftn，
+;   型别码留待 h2m-struct-resolve 在全部结构体名就位后统一解析（支持嵌套结构体字段、定义序无关）。
+; 字段名进 stfldn；字段数进 stfc；型别码最终进 stft（与 stftn/stfldn 同序、同下标）。
+; 字段型别覆盖面见 h2m-struct-resolve（i64/u64/f64/str/bool/char/嵌套结构体；vec/函數指標等不支援⇒计 unsup）。
 h2m-struct-register = (c h2m-ctx, t ast, n i64) {
     d = ast.nd-at(t, n)
     ; ps-parse-struct-def 把名字存进 slot0（s1=implements 数、s2=fields 数），故此处读 s0
@@ -721,25 +760,42 @@ h2m-struct-register = (c h2m-ctx, t ast, n i64) {
             ;   必须先 ast.kid-at 取该位置的子节点 id，再 ast.nd-at 取结构体（直传 d.kid0+i 给 nd-at 会读错节点）。
             fchild = ast.kid-at(t, d.kid0 + i)
             fnode = ast.nd-at(t, fchild)
-            ; 定义内 StructField：s0 = 字段名，kid0 = NamedType（s0 = 型别名如 "i64"）
+            ; 定义内 StructField：s0 = 字段名，kid0 = 型别节点（NamedType / NullableType 等）
             ffname = ast.str-at(t, fnode.s0)
             ntk = ast.kid-at(t, fnode.kid0)
-            ntd = ast.nd-at(t, ntk)
-            ftname = ast.str-at(t, ntd.s0)
-            fty = h2m-ty-code(ftname)
-            fty != TY-I64 -> {
-                h2m-mark(c)
-                i = d.nkid
-            }
-            fty == TY-I64 -> {
-                fc = fc + 1
-                c.stft.push(fty)
-                c.stfldn.push(ffname)
-            }
+            ; 先登记型别【节点 id】，型别码延后由 h2m-struct-resolve 解析
+            fc = fc + 1
+            c.stftn.push(ntk)
+            c.stfldn.push(ffname)
             #{overflow=wrap}
             i = i + 1
         }
         c.stfc.push(fc)
+    }
+}
+
+; s99：第二遍——全部结构体名就位后，把 stftn（字段型别节点 id）逐字段解析成型别码压进 stft。
+; 覆盖面与 h2m-tynode-code 一致：i64/u64/f64/str/bool/char（basic）+ 嵌套结构体（K-NAMED-TYPE 回退查表）；
+; 不支援的栏位型别（vec／函數指標等）解析回 -1 ⇒ 整模块计 unsup，宁缺勿错。
+; stft 与 stftn/stfldn 同序同下标、按结构体 id 升序拼接，故偏移算法与 h2m-struct-field-ty/-idx 一致。
+h2m-struct-resolve = (c h2m-ctx, t ast) {
+    n = c.stn.len()
+    off = 0
+    i = 0
+    (i < n) {
+        fc = c.stfc[i]
+        j = 0
+        (j < fc) {
+            ftn = c.stftn[off + j]
+            fty = h2m-tynode-code(t, c, ftn)
+            fty < 0 -> h2m-mark(c)
+            c.stft.push(fty)
+            #{overflow=wrap}
+            j = j + 1
+        }
+        off = off + fc
+        #{overflow=wrap}
+        i = i + 1
     }
 }
 
@@ -1418,6 +1474,17 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             v = oid
         }
 
+        ; s99e：str 字面量降级——镜像其他字面量，发 OP-STRCONST（cg 发全局常量 + %str-long 值，落 %sv 命名空间）。
+        ;   ps.no 把去引号内文存进 s0，直接作全局初始化串文（cg 包成 c"..."\00）。
+        ;   本件让「结构体 str 字段 = '字面量'」与「调用方传 str 字面量进 str 字段」成立；
+        ;   此前 K-STRING-LITERAL 不在本 switch ⇒ 直落默认 mark（UNSUP 暴涨）。
+        d.kind == asp.K-STRING-LITERAL -> {
+            lit = ast.str-at(t, d.s0)
+            cid = h2m-alloc(c, TY-STR)
+            h2m-emit(c, OP-STRCONST, cid, 0, 0, lit, TY-STR)
+            v = cid
+        }
+
         d.kind == asp.K-IDENTIFIER -> {
             nm = ast.str-at(t, d.s0)
 
@@ -1862,7 +1929,9 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
         }
 
         ; s99：结构体字面量降级——K-STRUCT-LITERAL：s0 = 结构体名，kids = StructField（s0 = 字段名、kid0 = 值 expr）。
-        ;   逐字段降级（顺序、背靠背）⇒ 字段值 id 连续（x0, x0+1, ...），正好喂 cg 的 OP-STRUCT-MK 连续约定；
+        ;   逐字段降级，字段值 id 经 args 侧池传给 cg 的 OP-STRUCT-MK（xa[k]=基址、bs[k]=字段数，
+        ;   第 j 个字段值 id = args[xa[k]+j]）——解除「字段值 id 连续」假设（嵌套结构体字面量作非首位
+        ;   字段值时值 id 不连续，cg 侧池索引取真實 id，与 OP-CALL 同形）；
         ;   每个字段值的型别由 h2m-lower-expr 自己登记进 vty（字段序即 ast 字段序，与定义序一致）。
         ;   ⚠️ 字段数必须与定义一致（nf != stfc ⇒ 诚实门禁，避免 cg 按 nf 步数 insertvalue 与型别声明错位）。
         d.kind == asp.K-STRUCT-LITERAL -> {
@@ -1874,7 +1943,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 want = h2m-struct-fc(c, sid)
                 nf != want -> h2m-mark(c)
                 nf == want -> {
-                    f0 = 0
+                    fvs []i64 = []
                     i = 0
                     (i < nf) {
                         ; d.kid0 是首 kid 位置基址（非节点 id）：先 ast.kid-at 取子节点 id 再 ast.nd-at（同 h2m-struct-register）
@@ -1883,15 +1952,31 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         ; 字面量 StructField：kid0 = Type 占位(0)，Value 是【第二个 kid】⇒ 走 fnode.kid0 + 1 位置取（nd 结构体无 kid1 字段，多 kid 连续存于 kid0 起）
                         vexpr = ast.kid-at(t, fnode.kid0 + 1)
                         fv = h2m-lower-expr(t, c, sg, vexpr)
-                        i == 0 -> f0 = fv
                         fv == 0 -> h2m-mark(c)
+                        fvs.push(fv)
                         #{overflow=wrap}
                         i = i + 1
                     }
                     #{overflow=wrap}
                     stcode = TY-STRUCT-BASE + sid
                     sv = h2m-alloc(c, stcode)
-                    h2m-emit(c, OP-STRUCT-MK, sv, f0, nf, '', stcode)
+                    ; ②MK 連續 id 修復（args 側池）：先收齊全部欄位值再整段入池（同 OP-CALL 的 al 暫存再 push，
+                    ;   避免嵌套降級往池中間插入孤兒項擠偏 base）；cg 依 base+j 取，不再假設 xa[k]+j。
+                    base = c.args.len()
+                    m = 0
+                    (m < nf) {
+                        c.args.push(fvs[m])
+                        #{overflow=wrap}
+                        m = m + 1
+                    }
+                    h2m-emit(c, OP-STRUCT-MK, sv, base, nf, '', stcode)
+                    ; s99g：含 str 欄位 ⇒ 構造後即取得所有權，緊接 OP-STRUCT-RETAIN
+                    ;   （mir.no L194：MK 只存不 retain；cg L2315 依 bs[k] 掩碼對每個 str 欄位 call @nolang_rc_retain）。
+                    ;   掩碼 bit j 置位 ⇔ 欄位 j 是 str；無 str 欄位（mask==0）不發。
+                    ;   ⚠️ 釋放側待 scope-exit 生命週期追蹤基礎設施（h2m 目前無變量生命週期追蹤，
+                    ;      連純 str 亦未發 OP-RELEASE）就位後補——本件只補「取得所有權」半邊。
+                    mk-mask = h2m-struct-str-mask(c, sid)
+                    mk-mask != 0 -> h2m-emit(c, OP-STRUCT-RETAIN, 0, sv, mk-mask, '', 0)
                     v = sv
                 }
             }
@@ -3152,6 +3237,7 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
     c.stfc = agg.stfc
     c.stft = agg.stft
     c.stfldn = agg.stfldn
+    c.stftn = agg.stftn
     d = ast.nd-at(t, n)
     fnm, frt, fap, fdp, fb = h2m-func-sig(t, agg, n)
     fb != 0 -> {
@@ -3364,6 +3450,8 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
         #{overflow=wrap}
         i = i + 1
     }
+    ; 前置 pass ①b：全部结构体名就位后，解析字段型别码（支持嵌套结构体字段、定义序无关）
+    h2m-struct-resolve(agg, t)
     ; 前置 pass ②：登记合格函数签名（调用可前向引用；此时结构体表已全就绪）
     i = 0
     (i < d.nkid) {
