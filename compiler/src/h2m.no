@@ -50,6 +50,10 @@
 ;         时非 '*' 一律 @str_concat；'*' 是重复 @_mir_str_repeat，h2m 无对应 op 故不放行）。@str_concat
 ;         造 rc=1 自拥有（两操作数各 memcpy 一份、不消耗）⇒ 结果登记 scope-exit 释放（与 s99j/s99k 同一
 ;         释放清单）；操作数按只读不释放（字面量指向静态常量）。混合 str/i64、str/txt（Go 先转标量再拼）未建模 ⇒ 计 unsup
+;   s99m：scope-exit 释放的放行/跳过（move 分析小型化）——撤除 s99k 的「含 OP-CALL 即整函数不放行」闸门：§5.6.1
+;         铁律（传参不 retain／callee 不 release 参数／caller 在最后使用后 release）证明 call 是借用而非 move，含 call
+;         亦释放；双释放改由 owner provenance 兜住——按「变量→owner」追踪 + retset（may-return）跳过「间接回传 r = u」
+;         与「分支多写输出槽」两种 outsv 单值覆盖不到的情形。残余均为 leak（循环多迭代、may 近似、别名缺 retain），见 §5.3.4.en
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）（s92：带默认值的参数已放行——调用点尾部回填，见上 CallExpression；带默认值的输出参与无默认值而被缺的形参仍入门禁）、
@@ -170,9 +174,16 @@ h2m-ctx {
     rlsm []i64
     rlst []i64
     ; s99k：mem==1 scope-exit 释放扩展（解除 s99j 的 mem==0 限制）
-    outn str        ; 输出（回传）变量名：body 降级时用它识别「写入输出槽」以记录 outsv
-    outsv i64       ; 最后写入输出槽的值 id（= 该值当前在输出槽、将被回传给呼叫方 ⇒ 释放时跳过防双重释放）
-    hc i64          ; has-call 标志：函数体含 OP-CALL 置 1；mem==1 下与 call 配对需 move 分析，故含 call 时保守不放行
+    outn str        ; 输出（回传）变量名：body 降级时用它识别「写入输出槽」以记录 outsv/retset
+    outsv i64       ; 最后写入输出槽的 owner id（= 该拥有值当前在输出槽、将被回传给呼叫方 ⇒ 释放时跳过防双重释放）
+    ; s99m：所有权 provenance（may-move 分析）——mem==1 下 `r = u` 走 STLOAD 交出新 id ≠ owner，skip 失效；
+    ;   故按「变量 → owner」追踪：间接回传时把 owner 正确并入 retset 跳过，防双重释放。
+    ;   （§5.6.1 铁律：传参不 retain、callee 不 release 参数 ⇒ call 是借用而非 move，故 s99k 的 hc 整函数闸门可撤）
+    ownn []str      ; 变量名（独立维护，避免与 vids 并行数组同步风险；name 键，同 h2m-name-find 口径）
+    ownv []i64      ; 该变量当前持有的 owner 值 id（0 = 不拥有）
+    rdval i64       ; 最近一次 var-read 交出的值 id（供 var-write 判定「右值是否就是某次读」以传 owner）
+    rdown i64       ; 最近一次 var-read 的 owner（该名字当时的 owner）
+    retset []i64    ; 「可能被回传」的 owner 集合（may-return：任一次写输出槽的 owner 并入；释放时跳过）
 }
 
 ; 新建降级上下文：vty 先占 id 0（哑元），下一个可用 id = 1；块 0 = entry
@@ -252,7 +263,14 @@ h2m-new = () (c h2m-ctx) {
     i64
     outn: ''
     outsv: 0
-    hc: 0
+    ownn: []
+    str
+    ownv: []
+    i64
+    rdval: 0
+    rdown: 0
+    retset: []
+    i64
 }
     c.vty.push(TY-I64)
 }
@@ -305,31 +323,118 @@ h2m-rel-add = (c h2m-ctx, vid i64, ty i64, mask i64) {
     }
 }
 
-; s99j/s99k：函数 scope-exit 释放——遍历释放清单，对每条未被「返回值占用」的值发释放指令。
-;   skip = 返回值的值 id（mem==0：输出参直接绑定的 MK 原 id；mem==1：共享 ret 块 STLOAD 出的新 id）；
-;   outsv = 最后写入输出槽的值 id（mem==1 下输出参住槽，退出重读是 STLOAD 新 id，故跳过须用写入槽的原 id）。
-;   等于 skip 或 outsv 的值视为已 move 给调用方，跳过（防双重释放）。
-;   ⚠️ 放行条件（s99k 解除 s99j 的 mem==0 限制）：
-;     · mem==0 直接放行；
-;     · mem==1 仅当函数体【不含 OP-CALL】才放行——含 call 时本地結構體可能被 move 给被调，
-;        caller/callee 双釋放需 must/may move 分析才能正确规避，故保守保持 leak（不引入 double-free）。
-;   完整修复（任意 mem + 任意 call 均正确释放）留待 move 分析，见 §5.3.4.el 後續。
-h2m-emit-releases = (c h2m-ctx, skip i64) {
-    fire = c.mem == 0
-    c.mem == 1 && c.hc == 0 -> fire = 1
-    fire == 1 -> {
-        i = 0
-        (i < c.rls.len()) {
-            vid = c.rls[i]
-            m = c.rlsm[i]
-            ty = c.rlst[i]
-            (vid != skip && vid != c.outsv) -> {
-                ty == TY-STR -> h2m-emit(c, OP-RELEASE, 0, vid, 0, '', TY-STR)
-                ty >= TY-STRUCT-BASE && m > 0 -> h2m-emit(c, OP-STRUCT-RELEASE, 0, vid, m, '', 0)
-            }
-            #{overflow=wrap}
-            i = i + 1
+; s99m：变量 → owner 存取（name 键；owner = 0 表示不拥有/清除）。owner 即「该变量当前持有的自拥有值 id」
+;   （MK 结构体值 / STRCAT 结果），是个 SSA 值 id；用于间接回传识别与释放时跳过。
+; c: 上下文
+; name: 变量名
+; owner: owner 值 id（0 = 清除）
+h2m-own-set = (c h2m-ctx, name str, owner i64) {
+    found = 0
+    i = 0
+    (i < c.ownn.len() && found == 0) {
+        c.ownn[i] == name -> {
+            c.ownv[i] = owner
+            found = 1
         }
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    found == 0 -> {
+        c.ownn.push(name)
+        c.ownv.push(owner)
+    }
+}
+
+; s99m：查变量当前 owner（未登记或已清除 ⇒ 0）
+; c: 上下文
+; name: 变量名
+; owner: owner 值 id（0 = 不拥有）
+h2m-own-get = (c h2m-ctx, name str) (owner i64) {
+    owner = 0
+    i = 0
+    (i < c.ownn.len() && owner == 0) {
+        c.ownn[i] == name -> owner = c.ownv[i]
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; s99m：值 id 是否在释放清单里（= 是 h2m 自造的自拥有值：MK 结构体 / STRCAT 结果）
+; c: 上下文
+; vid: 值 id
+; yes: 1 = 在清单
+h2m-rel-has = (c h2m-ctx, vid i64) (yes i64) {
+    yes = 0
+    i = 0
+    (i < c.rls.len() && yes == 0) {
+        c.rls[i] == vid -> yes = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; s99m：把一个 owner 并入「可能被回传」集合（按 vid 去重；may-return 分析）
+; c: 上下文
+; vid: owner 值 id
+h2m-ret-add = (c h2m-ctx, vid i64) {
+    dup = 0
+    i = 0
+    (i < c.retset.len() && dup == 0) {
+        c.retset[i] == vid -> dup = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+    dup == 0 -> c.retset.push(vid)
+}
+
+; s99m：值 id 是否「可能被回传」（释放时跳过防双重释放）
+; c: 上下文
+; vid: 值 id
+; yes: 1 = 可能被回传
+h2m-ret-has = (c h2m-ctx, vid i64) (yes i64) {
+    yes = 0
+    i = 0
+    (i < c.retset.len() && yes == 0) {
+        c.retset[i] == vid -> yes = 1
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; s99j/s99k/s99m：函数 scope-exit 释放——遍历释放清单，对每条未被「回传/占用」的值发释放指令。
+;   三路跳过（防双重释放）：
+;     · skip = 返回值的值 id（mem==0：输出参直接绑定的 MK 原 id；mem==1：共享 ret 块 STLOAD 出的新 id）；
+;     · outsv = 最后写入输出槽的 owner（mem==1 下输出参住槽，退出重读是 STLOAD 新 id，故须用写入槽的 owner）；
+;     · retset = 「可能被回传」的 owner 集合（may-return，覆盖「间接回传 r = u」与「分支多写输出槽」——
+;       两者 outsv 单值都覆盖不到，用集合兜住）。
+;   ⚠️ 放行（s99m 撤除 s99k 的 hc 整函数闸门）：
+;     · 恒放行——§5.6.1 铁律证明 call 是借用、非 move（传参不 retain、callee 不 release 参数、caller 在最后
+;       使用后 release），故含 OP-CALL 的 mem==1 函数亦可释放局部自拥有值，不产生双释放。
+;     · 已知残余（诚实标注，均为 leak 非 double-free）：
+;       ①循环体内 MK 出的值按「一个 SSA 值」静态释放一次，多迭代者每次迭代的堆会漏（非本件，s99j/s99k 同）；
+;       ②「可能被回传」是 may 近似，分支多写输出槽时非实际回传的那支也跳过 ⇒ leak；
+;       ③别名缺 retain（v = u 不复刻 §5.6.1 的「赋第二变量须 retain」）——当前靠「单值单释放 + scope-exit」不显形，属 M7 精确所有权留待。
+h2m-emit-releases = (c h2m-ctx, skip i64) {
+    ; s99m：撤除 s99k 的 hc 整函数闸门——§5.6.1 铁律（传参不 retain／callee 不 release 参数／caller 在最后
+    ;   使用后 release）⇒ call 是借用而非 move，含 call 的 mem==1 函数亦可在 scope-exit 释放局部自拥有值。
+    ;   双重释放改由三路跳过兜住：skip（mem==0 直返 id）／outsv（最后写入输出槽的 owner）／retset（may-return，
+    ;   覆盖「间接回传 r = u」与「分支多写输出槽」两种 outsv 单值覆盖不到的情形）。
+    i = 0
+    (i < c.rls.len()) {
+        vid = c.rls[i]
+        m = c.rlsm[i]
+        ty = c.rlst[i]
+        (vid != skip && vid != c.outsv && h2m-ret-has(c, vid) == 0) -> {
+            ty == TY-STR -> h2m-emit(c, OP-RELEASE, 0, vid, 0, '', TY-STR)
+            ty >= TY-STRUCT-BASE && m > 0 -> h2m-emit(c, OP-STRUCT-RELEASE, 0, vid, m, '', 0)
+        }
+        #{overflow=wrap}
+        i = i + 1
     }
 }
 
@@ -562,6 +667,11 @@ h2m-var-read = (c h2m-ctx, name str) (v i64) {
             }
         }
     }
+    ; s99m：记录本次读的值 id 与其 owner（供 var-write 判定「右值是否就是某次读」并传递 owner）
+    v > 0 -> {
+        c.rdval = v
+        c.rdown = h2m-own-get(c, name)
+    }
 }
 
 ; 把非 option 右值包成 %option（镜像 Go wrapOptionIfNeeded：hir2mir.go:14893）：TY-I64/TY-U64→OP-OPTSOME、
@@ -630,7 +740,6 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
             }
             st == vt && st == TY-STR -> {
                 h2m-emit(c, OP-SSTORE, 0, val, sid, '', 0)
-                name == c.outn -> c.outsv = val
                 ok-w = 1
             }
 
@@ -653,8 +762,19 @@ h2m-var-write = (c h2m-ctx, name str, val i64) {
             ; s99c：结构体槽写——整结构体值 %st<val> 落 %sts<sid>（cg OP-STSTORE：xa=值、bs=槽）
             st == vt && st >= TY-STRUCT-BASE -> {
                 h2m-emit(c, OP-STSTORE, 0, val, sid, '', 0)
-                name == c.outn -> c.outsv = val
                 ok-w = 1
+            }
+
+            ; s99m：owner provenance——val 是自拥有值（在 rel-list：MK 结构体 / STRCAT 结果）或直接来自某次读
+            ;   （val == rdval，如 `r = u`）⇒ 记该变量的 owner；写输出槽（name == outn）时把 owner 记入
+            ;   outsv 与 retset（间接回传的 owner 在此被正确捕获，退出释放时跳过，防双重释放）。
+            ownr = 0
+            val > 0 && h2m-rel-has(c, val) == 1 -> ownr = val
+            ownr == 0 && val > 0 && val == c.rdval -> ownr = c.rdown
+            h2m-own-set(c, name, ownr)
+            name == c.outn -> {
+                c.outsv = ownr
+                ownr > 0 -> h2m-ret-add(c, ownr)
             }
         }
         ok-w == 0 -> h2m-mark(c)
@@ -1926,7 +2046,6 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
 
                 ; s92：入池实参个数是回填后的 want-n（非 AST 原实基数 na），OP-CALL 计数与 args 段长对齐
                 h2m-emit(c, OP-CALL, cid, base, want-n, cn, rt)
-                c.hc = 1
                 v = cid
             }
             ok-call == 0 -> h2m-mark(c)

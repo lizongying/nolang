@@ -4230,7 +4230,8 @@ test-s99j-struct-ret-no-release()
 test-s99j-struct-mixed-release()
 test-s99k-local-release()
 test-s99k-return-no-release()
-test-s99k-call-gate()
+test-s99m-call-borrow-release()
+test-s99m-indirect-return-no-release()
 test-s99l-strcat-release()
 test-s99l-strcat-return-no-release()
 test-s99l-strcat-nested-release()
@@ -4276,8 +4277,12 @@ test-s99k-return-no-release = () {
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99k return NO release (outsv skip)')
 }
 
-test-s99k-call-gate = () {
-    ; mem==1 且函數含 OP-CALL（把本地結構體 move 給被調）：保守閘門不放行釋放，保持 leak 而非雙重釋放
+; ── s99m：解除 s99k 的 hc 整函數閘門（§5.6.1 鐵律：傳參不 retain／callee 不 release 參數／caller 最後使用後
+;   release）⇒ call 是借用而非 move，含 OP-CALL 的 mem==1 函數亦可釋放局部自擁有值；雙重釋放改由 retset
+;   兜住「間接回傳 r = u」（mem==1 下 STLOAD 新 id ≠ owner，舊 skip/outsv 覆蓋不到）。──
+
+test-s99m-call-borrow-release = () {
+    ; mem==1 + 含 OP-CALL，本地結構體【傳給被調】（借用）：caller 仍擁有 ⇒ scope-exit 必須釋放（不再因 call 而 leak）
     src = 'User {\n    id i64\n    name str\n}\n\ng = (x User) (z i64) { z = x.id }\n\nf = () (r i64) {\n    u = User { id: 1, name: \'alice\' }\n    n = 0\n    (n < 3) {\n        r = g(u)\n        n = n + 1\n    }\n}\n'
     t = ast.make()
     b = src.to-bytes()
@@ -4285,12 +4290,29 @@ test-s99k-call-gate = () {
     root = ps.parse(t, p)
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
-    runner.eq(agg.unsup, 0, 's99k call-gate unsup')
-    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99k call-gate mem mode (slot)')
+    runner.eq(agg.unsup, 0, 's99m call-borrow unsup')
+    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99m call-borrow mem mode (slot)')
+    ; 取得所有權（MK of u）
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99m call-borrow retain emitted')
+    ; s99m：撤除 hc 閘門 ⇒ 含 call 亦釋放（g 借用 u，caller 釋放不雙重釋放）
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99m call-borrow release emitted (gate removed)')
+}
+
+test-s99m-indirect-return-no-release = () {
+    ; 間接回傳 r = u：mem==1 下 STLOAD 交出新 id ≠ owner，舊 skip/outsv 失效 ⇒ 本件用 owner provenance 跳過防雙重釋放
+    src = 'User {\n    id i64\n    name str\n}\n\nf = () (r User) {\n    u = User { id: 1, name: \'alice\' }\n    n = 0\n    (n < 3) { n = n + 1 }\n    r = u\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99m indirect-return unsup')
+    runner.eq(ir.contains('alloca %struct.s0'), 1, 's99m indirect-return mem mode (slot)')
     ; 取得所有權仍發（MK of u）
-    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99k call-gate retain emitted')
-    ; 保守閘門：mem==1 + 含 OP-CALL ⇒ 不發 release（避免與被調 g 雙重釋放）
-    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99k call-gate NO release (conservative gate)')
+    runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99m indirect-return retain emitted')
+    ; 關鍵：u 經 r 回傳 ⇒ owner 併入 outsv/retset ⇒ 不得釋放（否則呼叫方拿到懸垂串 / 雙重釋放）
+    runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99m indirect-return NO release (owner skip)')
 }
 
 ; ── s99l：純 str RC 的取得所有權站點（str 拼接 'a' + 'b' / 'a' - 'b' ⇒ OP-STRCAT）──

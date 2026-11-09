@@ -5107,7 +5107,7 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **整檔狀態（預期，待復測）**：h2m.no +釋放清單基礎設施；h2m-test.no +58 行（3 用例 + 註冊）。既有 6 失仍為 s98 option 回歸（併發 session 改 cg.no），非本件。
 
-**後續**：①**純 str RC / vec RC 的取得所有權站點**：**純 str 半邊已於 §5.3.4.em（s99l）完成（`OP-STRCAT` 降級 + 結果登記釋放）**；vec 半邊仍缺（無 vec-release OP / 無 vec 構造降級，見 §5.3.4.em 未及）——釋放清單機制已預留；②**控制流函數（mem==1）的 scope-exit 釋放**：**已於 §5.3.4.el（s99k）完成（mem==1 不含 OP-CALL 即放行；含 call 仍保守保持 leak 待 move 分析）**。
+**後續**：①**純 str RC / vec RC 的取得所有權站點**：**純 str 半邊已於 §5.3.4.em（s99l）完成（`OP-STRCAT` 降級 + 結果登記釋放）**；vec 半邊仍缺（無 vec-release OP / 無 vec 構造降級，見 §5.3.4.em 未及）——釋放清單機制已預留；②**控制流函數（mem==1）的 scope-exit 釋放**：mem==1 不含 OP-CALL 於 §5.3.4.el（s99k）完成；**含 OP-CALL 的整函數閘門已於 §5.3.4.en（s99m）撤除**——依 §5.6.1 鐵律（call 是借用非 move）放行釋放，並以 owner provenance（retset）跳過「間接回傳 r = u」，防雙重釋放。
 
 ### 5.3.4.el s99k——M4-e 第五十一件續：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 `mem==0` 限制）（2026-11-09 本輪）
 
@@ -5131,7 +5131,7 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **驗證狀態**：本輪 `15w45dqk` 門禁已不再阻塞——`h2m-test.no` 可完整跑完（baseline 989→本輪 1001 passed；剩 6 失均為 `s98 optmatch`，屬併發 session 改 cg.no 的 option 回歸，非本件）。s99j 修復後的 retain/release 配對與 s99k 三用例全綠。
 
-**整檔狀態**：h2m.no +outn/outsv/hc 三欄與 `h2m-emit-releases` 放行/跳過放寬；h2m-test.no +3 用例（test-s99k-*）+ s99j 兩用例斷言由「硬碼值 id」改為「retain/release 計數」以抗 id 漂移。
+**整檔狀態**：h2m.no +outn/outsv/hc 三欄與 `h2m-emit-releases` 放行/跳過放寬；h2m-test.no +3 用例（test-s99k-*）+ s99j 兩用例斷言由「硬碼值 id」改為「retain/release 計數」以抗 id 漂移。（s99m 後續：`hc` 欄位已撤、改用 `ownn/ownv/rdval/rdown/retset` owner provenance，`test-s99k-call-gate` 改名 `test-s99m-call-borrow-release` 並翻轉期望，見 §5.3.4.en。）
 
 ### 5.3.4.em s99l——M4-e 第五十二件續：純 str RC 的取得所有權站點（str 拼接 `'a' + 'b'` / `'a' - 'b'` ⇒ `OP-STRCAT`）（2026-11-09 本輪）
 
@@ -5157,9 +5157,47 @@ clang -O2 tmp/s52.opt.ll -o tmp/s52.bin && ./tmp/s52.bin  # exit 167 = 40 + 1+2+
 
 **未及（誠實標注，vec 半邊仍缺）**：
 - **純 vec RC 未建**：cg-runtime.no 僅有 `@vec_new`（返回裸 `{i64 0, i64 0, i64 0}`，內部用裸 `@malloc`/`@free`，**無 RC 頭**）／`@vec_len`／`@vec_get_i64`／`@vec_push_i64`；**無 `@vec_free`、無 `OP-VEC-RELEASE`**；h2m 亦無任何降級發 `OP-VECNEW`（vec 僅由 `[]i64` 形參注入，自舉無 vec 構造語法）。⇒ vec 的「取得所有權站點」當前**不可達**，需先建 vec 的 RC 原語（retain/release/free）＋構造降級，方能閉環；非本件範圍，留待後續。
-- **mem==1 且含 OP-CALL**：`h2m-emit-releases` 對該情形整體不放行（s99k 保守閘門），故 strcat 結果在此情形仍 leak（與 s99k 一致，寧 leak 不 double-free，待 move 分析）。
+- **mem==1 且含 OP-CALL**：原 s99k 保守閘門對該情形整體不放行（strcat 結果 leak）——**已於 §5.3.4.en（s99m）撤除**（call 是借用，見 §5.6.1；間接回傳由 owner provenance 跳過）。
 
 **整檔狀態**：h2m.no +`K-INFIX-EXPRESSION` 的 str 拼接臂與門禁 `ok-s`（cg 零改）；h2m-test.no +4 用例（test-s99l-*，其中 nested 用 `split().len()` 計數）。
+
+### 5.3.4.en s99m——M4-e 第五十三件續：撤除 mem==1+含 OP-CALL 的整函數閘門（call 是借用；owner provenance 兜間接回傳）（2026-11-09 本輪）
+
+**動機**：s99k 對「mem==1 + 含 OP-CALL」的函數整函數不放行釋放（保守 leak），理由記為「本地結構體可能被 move 給被調」。本輪讀 §5.6.1 鐵律與其 ASan e2e 證詞（見下行）確認該前提不成立，遂撤閘門，並補「間接回傳」的雙重釋放防護。
+
+**關鍵事實（§5.6.1 鐵律，docs 第 2605 行三條落地規則）**：
+- ① 傳參**不 retain**（caller 保留所有權）；
+- ② callee **不得** release 參數（它是借用）；
+- ③ caller 的 release 必須在**最後一次使用之後**——包括把結構體傳出去這件事。
+- e2e 證詞：結構體持堆串 `'nolang'` 傳給 `read1` 做 STRCAT，**call 之後**才 `STRUCT-RELEASE`（exit 7）；負向對照把 release 挪到 call 前 ⇒ ASan `heap-use-after-free`。
+⇒ **call 是借用而非 move**；caller 在 scope-exit（必在所有使用之後）釋放正確。s99k 的 `hc` 整函數閘門屬過度保守。
+- 另：h2m 只在兩處發 `h2m-rel-add`（MK 結構體、STRCAT 結果），**形參從不登記釋放**（`h2m-lower-func` 只 bind + 鋪槽，不 rel-add）⇒ callee 端不 release 借用參數，與 ② 一致。
+
+**先堵住的雙重釋放風險（撤閘門前必須先修）**：mem==1 下 `r = u`（間接回傳）經 `h2m-var-read(u)` 得 `OP-STLOAD` **新 id**，與 rel-list 裡的 MK 原 id（owner）不同。s99k 的 `skip`（ret 塊 STLOAD 新 id）與 `outsv`（寫槽的 val，也是 STLOAD 新 id）都抓不到 owner ⇒ 仍會對「已回傳的結構體」誤釋放。此 bug **在 mem==1 不含 call 時已存在**（s99k 遺留），撤閘門會把它擴到含 call 的情形，故必須同時修。
+
+**改動（`compiler/src/h2m.no`，純 h2m，cg 零改）**：
+- `h2m-ctx`：撤 `hc`；新增 `ownn/ownv`（變數→owner）、`rdval/rdown`（最近一次 var-read 的值 id 與 owner）、`retset`（可能被回傳的 owner 集合）。
+- 5 個 helper：`h2m-own-set` / `h2m-own-get` / `h2m-rel-has` / `h2m-ret-add` / `h2m-ret-has`。
+- `h2m-var-read` 尾：`v > 0` 時記 `c.rdval = v; c.rdown = h2m-own-get(name)`。
+- `h2m-var-write`（mem==1）：算 `ownr`（val 在 rel-list ⇒ val；否則 val==rdval ⇒ rdown；否則 0）→ `h2m-own-set(name, ownr)`；`name==outn` 時 `c.outsv = ownr` 且 `ownr>0 ⇒ h2m-ret-add(ownr)`。撤 str/struct 分支舊的 `outsv = val`。
+- `h2m-emit-releases`：`fire` 恆真（撤 `hc` 閘門）；跳過條件加 `h2m-ret-has(vid)==0`。
+- 撤 OP-CALL 站的 `c.hc = 1`。
+
+**判據（為何 sound；最壞 leak 但絕不 double-free）**：`retset` 只「多跳過」不「少跳過」（may 近似、owner 只增）⇒ 最壞 leak，不會漏跳一個該跳的 owner ⇒ 無 double-free/UAF。舊 bug 的 `r = u`：owner 經 `r = u` 的 `val==rdval` 傳遞到 MK 原 id，併入 outsv/retset ⇒ 正確跳過。
+
+**IR 核實（`compiler/tests/h2m-test.no`）**：
+- `test-s99m-call-borrow-release`（原 `test-s99k-call-gate` 改名並翻轉期望）：mem==1 + `r = g(u)`（u 傳給被調）⇒ retain 1、release **1**（撤閘門後 caller 釋放；g 借用 u）。
+- `test-s99m-indirect-return-no-release`：`r = u`（間接回傳）⇒ retain 1、release **0**（owner 併入 retset，防 caller 懸垂）。
+- 既有 `test-s99k-local-release`（1）/`test-s99k-return-no-release`（0）/s99j 三例/s99l 四例全綠。
+
+**驗證狀態**：`./bin/no run compiler/tests/h2m-test.no` ⇒ **1016 passed / 6 failed / 1022 total**（baseline 1012；+4 斷言 = call-gate 改名翻轉 + indirect-return 新增）。剩 6 失均 `s98 optmatch`（併發 session cg.no option 回歸，非本件）。**判別力實測**：註釋掉 `ownr == 0 && val == c.rdval -> ownr = c.rdown` ⇒ `test-s99m-indirect-return-no-release` 恰好失敗（release 變 1），其餘不動；恢復後復綠。
+
+**殘餘（誠實標注，均 leak 非 double-free）**：
+- ① 循環體內 MK 出的值按一個 SSA 值靜態釋放一次 ⇒ 多迭代者每次迭代的堆漏（s99j/s99k 同，非本件）；
+- ② `retset` 是 may 近似，分支多寫輸出槽時非實際回傳那支也跳過 ⇒ leak；
+- ③ 別名缺 retain（`v = u` 不復刻 §5.6.1「賦第二變數須 retain」）——當前靠「單值單釋放 + scope-exit」不顯形，屬 M7 精確所有權留待。
+
+**整檔狀態**：h2m.no −`hc`、+`ownn/ownv/rdval/rdown/retset` 與 5 helper；`h2m-emit-releases` 恆放行 + retset 跳過；var-read/var-write 記 provenance。h2m-test.no：`s99k-call-gate` ⇒ `s99m-call-borrow-release`（翻轉 0→1），+`s99m-indirect-return-no-release`。
 
 ## 6. 里程碑與進度
 
