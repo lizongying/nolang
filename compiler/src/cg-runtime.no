@@ -323,6 +323,28 @@ cg-runtime-vec-push = () (r str) {
     r = b.str()
 }
 
+; vec 释放（M4-e s99n）：与切片字面量的取得所有权配对，scope-exit 调一次。
+;   ⚠️ 数据缓冲**无 RC 头**（§11 B5）⇒ 这不是「减引用计数」，是**一次性 free**：
+;      调用后该 %vec 全部字段作废（所有权唯一，见 mir.no OP-VEC-FREE）。
+;   ⚠️ dat == 0 短路：@vec_new 的初值 / 空字面量 `[]` 都是 {0,0,0}，free(0) 虽合法但
+;      多一次越界分支没有意义，且显式短路让 IR 文本断言能钉住「空字面量不调 free」。
+; r: 結果字串
+cg-runtime-vec-free = () (r str) {
+    b = sb.init(512)
+    b.push('define void @vec_free(%vec %v) {\n')
+    b.push('entry:\n')
+    b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%nul = icmp eq i64 %dat, 0\n')
+    b.push('\tbr i1 %nul, label %done, label %freeme\n')
+    b.push('freeme:\n')
+    b.push('\t%p = inttoptr i64 %dat to i8*\n')
+    b.push('\tcall void @free(i8* %p)\n')
+    b.push('\tbr label %done\n')
+    b.push('done:\n')
+    b.push('\tret void\n}\n')
+    r = b.str()
+}
+
 ; prelude：类型 + 声明（RC helper 见 cg-rc.no）。M4-a 的「最小 prelude」。
 ; r: 結果字串
 cg-runtime-prelude = () (r str) {
@@ -368,6 +390,7 @@ cg-runtime-prelude-full = () (r str) {
     b.push(cg-runtime-vec-len())
     b.push(cg-runtime-vec-get())
     b.push(cg-runtime-vec-push())
+    b.push(cg-runtime-vec-free())
     b.push(cg-runtime-vec-eq())
     r = b.str()
 }

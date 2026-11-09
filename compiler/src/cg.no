@@ -1893,6 +1893,14 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(y.to-str())
             b.push(')\n')
         }
+        op == OP-VEC-FREE -> {
+
+            ; s99n：x = 向量值 id（TY-VEC）。破坏性一次性释放（缓冲无 RC 头，§11 B5），无结果值。
+            ;   @vec_free 内部对 dat == 0 短路（空字面量），故这里不做判空。
+            b.push('\tcall void @vec_free(%vec %vc')
+            b.push(x.to-str())
+            b.push(')\n')
+        }
         op == OP-STRFROMVEC -> {
 
             ; s49（鏡像 Go emitStrFromVec, codegen.go:13069）：dst = 字符串值 id；x = 向量值 id（TY-VEC）。

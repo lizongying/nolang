@@ -444,3 +444,16 @@ OP-STRUCT-RELEASE = 38
 ; OP-RELEASE：x = 字符串值 id（TY-STR）。发射 extractvalue 取 data ptr + call release。
 OP-RETAIN = 27
 OP-RELEASE = 28
+
+; ── vec 的释放原语（M4-e s99n：与切片字面量取得所有权配对）────────────────
+;   ⚠️ 与 OP-RETAIN/RELEASE **不同族**：vec 的数据缓冲没有 RC 头（§11 B5——元素只有 i64，
+;      缓冲走裸 @malloc/@free），因此**没有 retain**，只有「一次性 free」。本 op 是破坏性的。
+; OP-VEC-FREE：x = 向量值 id（TY-VEC）；无结果。发射
+;              `call void @vec_free(%vec %vc<x>)` —— 取 f2（dat 整数指针）⇒ inttoptr i64→i8*
+;              ⇒ @free；dat == 0（@vec_new 的初值、空字面量 `[]`）短路，不调 free。
+;   ⚠️ 所有权必须唯一：两个 owner 持同一 vec 值 = double free。发射端（h2m）以两条保证：
+;      ① 只有切片字面量的【最终】%vec 入释放清单（@vec_push_i64 已自释放旧缓冲，中间值无主）；
+;      ② 所有权外流（写进结构体字段 / 作返回值）一律计 unsup——没有 vec retain 可用，
+;         外流后 scope-exit 仍 free 就是悬垂指针（UAF），宁缺勿错。
+;   ⚠️ op 码接在既有最大码 OP-OPTGESCF=93 之后（取 94），不重排既有码以免影响 arena 数据。
+OP-VEC-FREE = 94

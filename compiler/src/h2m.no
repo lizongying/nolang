@@ -54,6 +54,12 @@
 ;         铁律（传参不 retain／callee 不 release 参数／caller 在最后使用后 release）证明 call 是借用而非 move，含 call
 ;         亦释放；双释放改由 owner provenance 兜住——按「变量→owner」追踪 + retset（may-return）跳过「间接回传 r = u」
 ;         与「分支多写输出槽」两种 outsv 单值覆盖不到的情形。残余均为 leak（循环多迭代、may 近似、别名缺 retain），见 §5.3.4.en
+;   s99n：vec 的取得所有权站点 + scope-exit 释放——切片字面量（K-SLICE-LITERAL，元素限 i64）降
+;         OP-VECNEW + 逐元素 OP-VECPUSH，**最终** %vec 登记释放清单；退出时发 OP-VEC-FREE（cg 发
+;         `call void @vec_free(%vec)`，运行时取 f2=dat ⇒ inttoptr ⇒ @free，dat==0 短路）。
+;         ⚠️ vec 缓冲无 RC 头（§11 B5）⇒ 无 retain、只有一次性 free ⇒ 所有权必须唯一：中间 push 值
+;            不入清单（@vec_push_i64 已自 free 旧缓冲），且所有权外流（结构体字面量字段 / 字段写 /
+;            返回值）一律计 unsup——外流后 scope-exit 仍 free 就是 UAF。元素非 i64 的切片仍计 unsup
 ;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
 ;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）（s92：带默认值的参数已放行——调用点尾部回填，见上 CallExpression；带默认值的输出参与无默认值而被缺的形参仍入门禁）、
@@ -376,6 +382,17 @@ h2m-rel-has = (c h2m-ctx, vid i64) (yes i64) {
     }
 }
 
+; s99n：值 id 是否「自拥有 vec」（= 切片字面量产出的 %vec，已入释放清单）
+;   所有权外流（写进结构体字段 / 作返回值）必须计 unsup——vec 缓冲无 RC 头（§11 B5），
+;   没有 retain 可用，一旦外流而 scope-exit 仍 free，就是悬垂指针（UAF）。
+; c: 上下文
+; vid: 值 id
+; yes: 1 = 自拥有 vec
+h2m-vec-own = (c h2m-ctx, vid i64) (yes i64) {
+    yes = 0
+    vid > 0 && h2m-rel-has(c, vid) == 1 && h2m-vty-at(c, vid) == TY-VEC -> yes = 1
+}
+
 ; s99m：把一个 owner 并入「可能被回传」集合（按 vid 去重；may-return 分析）
 ; c: 上下文
 ; vid: owner 值 id
@@ -431,6 +448,8 @@ h2m-emit-releases = (c h2m-ctx, skip i64) {
         ty = c.rlst[i]
         (vid != skip && vid != c.outsv && h2m-ret-has(c, vid) == 0) -> {
             ty == TY-STR -> h2m-emit(c, OP-RELEASE, 0, vid, 0, '', TY-STR)
+            ; s99n：vec 走破坏性一次性释放（缓冲无 RC 头，§11 B5 —— 无 retain，只有 free）
+            ty == TY-VEC -> h2m-emit(c, OP-VEC-FREE, 0, vid, 0, '', 0)
             ty >= TY-STRUCT-BASE && m > 0 -> h2m-emit(c, OP-STRUCT-RELEASE, 0, vid, m, '', 0)
         }
         #{overflow=wrap}
@@ -2166,6 +2185,16 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                         #{overflow=wrap}
                         i = i + 1
                     }
+                    ; s99n：逃逸门禁——切片字面量的自拥有 %vec 被放进结构体字段 ⇒ 所有权外流。
+                    ;   vec 缓冲无 RC 头（§11 B5）、没有 retain 可用 ⇒ scope-exit 仍 free 就是悬垂指针，
+                    ;   故整函数计 unsup（宁缺勿错，与 s62「vec 作返回值」同一处置）。
+                    vi = 0
+                    (vi < fvs.len()) {
+                        h2m-vec-own(c, fvs[vi]) == 1 -> h2m-mark(c)
+
+                        #{overflow=wrap}
+                        vi = vi + 1
+                    }
                     #{overflow=wrap}
                     stcode = TY-STRUCT-BASE + sid
                     sv = h2m-alloc(c, stcode)
@@ -2237,6 +2266,52 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 }
             }
             bt != TY-VEC -> h2m-mark(c)
+        }
+    }
+
+    ; s99n：切片字面量 [e0, e1, …] → OP-VECNEW + 逐元素 OP-VECPUSH（镜像 Go lowerSliceLiteral 的整数元素形）
+    ;   ⚠️ @vec_push_i64 是单型 helper（§11 B5：vec 元素目前只有 i64）⇒ 任一个元素非 i64 即计 unsup，
+    ;      []str 等元素型别支路整条不入形（与 s62 形参、s99f 欄位同一口径）。
+    ;   ⚠️ 只登记【最终】%vec 入释放清单：@vec_push_i64 返回新 %vec 且已自行 free 旧缓冲，
+    ;      中间值无主（登记中间值 = free 一个已释放的指针）。空字面量 `[]` 无 push，登记 @vec_new
+    ;      的裸值（dat=0，@vec_free 内短路，见 cg-runtime.no）。
+    ;   ⚠️ 所有权唯一的另一半是「不许外流」：结构体字段写 / 返回值两处由调用点门禁拦（无 vec retain）。
+    d.kind == asp.K-SLICE-LITERAL -> {
+        vcnew = h2m-alloc(c, TY-VEC)
+        h2m-emit(c, OP-VECNEW, vcnew, 0, 0, '', TY-VEC)
+        vc-cur = vcnew
+        ok-sl = 1
+        ei = 0
+        (ei < d.nkid && ok-sl == 1) {
+            ep = d.kid0
+
+            #{overflow=wrap}
+            ep = ep + ei
+            ek = ast.kid-at(t, ep)
+            evo = h2m-lower-expr(t, c, sg, ek)
+            evo == 0 -> {
+                h2m-mark(c)
+                ok-sl = 0
+            }
+            evo > 0 -> {
+                eto = h2m-vty-at(c, evo)
+                eto == TY-I64 -> {
+                    vcn = h2m-alloc(c, TY-VEC)
+                    h2m-emit(c, OP-VECPUSH, vcn, vc-cur, evo, '', TY-VEC)
+                    vc-cur = vcn
+                }
+                eto != TY-I64 -> {
+                    h2m-mark(c)
+                    ok-sl = 0
+                }
+            }
+
+            #{overflow=wrap}
+            ei = ei + 1
+        }
+        ok-sl == 1 -> {
+            v = vc-cur
+            h2m-rel-add(c, vc-cur, TY-VEC, 0)
         }
     }
 
@@ -2394,6 +2469,9 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                                             fty = h2m-struct-field-ty(c, sid, fi)
                                             rhsn = h2m-kid-i(t, sub, 1)
                                             rv = h2m-lower-expr(t, c, sg, rhsn)
+                                            ; s99n：逃逸门禁——自拥有 %vec 写进结构体字段 ⇒ 所有权外流
+                                            ;   （无 vec retain，§11 B5）⇒ 计 unsup，整函数不产码
+                                            h2m-vec-own(c, rv) == 1 -> h2m-mark(c)
                                             rv > 0 -> {
                                                 dsv = h2m-alloc(c, stcode)
                                                 h2m-emit(c, OP-STRUCT-SET, dsv, sv, rv, '', fi)

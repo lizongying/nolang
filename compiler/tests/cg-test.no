@@ -2807,6 +2807,61 @@ test-vec-len = () {
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret len')
 }
 
+; ── s99n：vec 释放发射（OP-VEC-FREE ⇒ call void @vec_free(%vec)）──
+; vec 缓冲无 RC 头（§11 B5——元素仅 i64、缓冲走裸 @malloc/@free）⇒ 一次性 free，
+; 绝不走 @nolang_rc_release（那是 str 的引用计数，对裸缓冲发就是读越界头）。
+test-vec-free = () {
+    blks []i64 = []
+    ops []i64 = []
+    dsts []i64 = []
+    xa []i64 = []
+    bs []i64 = []
+    syms []str = []
+    blks.push(0)
+    ops.push(OP-VECNEW)
+    dsts.push(1)
+    xa.push(0)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-CONST)
+    dsts.push(1)
+    xa.push(7)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECPUSH)
+    dsts.push(2)
+    xa.push(1)
+    bs.push(1)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-VECLEN)
+    dsts.push(2)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+
+    ; k4：scope-exit 释放最终 %vc2（push 的结果，不是中间 %vc1）
+    blks.push(0)
+    ops.push(OP-VEC-FREE)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    blks.push(0)
+    ops.push(OP-RET)
+    dsts.push(0)
+    xa.push(2)
+    bs.push(0)
+    syms.push('')
+    s = cg-emit-cfg('vecfree', 0, blks, ops, dsts, xa, bs, syms, [])
+    runner.eq(s.contains('call void @vec_free(%vec %vc2)'), 1, 'vec_free call')
+    runner.eq(s.contains('define i64 @vecfree'), 1, 'vecfree sig')
+    runner.eq(s.contains('nolang_rc_release'), 0, 'vec free is not rc release')
+    runner.eq(s.contains('nolang_rc_retain'), 0, 'vec free has no retain')
+}
+
 ; ── 型别签名：str 形参 + str 返回（纯转发）──────────────
 test-sig-str = () {
     ops []i64 = []
@@ -4110,6 +4165,7 @@ test-opt-f64()
 test-opt-eq-f64()
 test-vec()
 test-vec-len()
+test-vec-free()
 test-sig-str()
 test-sig-mixed()
 test-sig-vec()

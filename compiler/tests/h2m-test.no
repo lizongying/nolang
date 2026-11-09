@@ -4236,6 +4236,11 @@ test-s99l-strcat-release()
 test-s99l-strcat-return-no-release()
 test-s99l-strcat-nested-release()
 test-s99l-strcat-mixed-gate()
+test-s99n-vec-literal-release()
+test-s99n-vec-empty-literal()
+test-s99n-vec-elem-type-gate()
+test-s99n-vec-field-mk-gate()
+test-s99n-vec-field-set-gate()
 
 ; ── s99k：控制流函數（mem==1）的 scope-exit 釋放（解除 s99j 的 mem==0 限制）──
 ;   證明：mem==1 下輸出參住槽、退出重讀是 STLOAD 新 id，故 s99j 原本只放行 mem==0；本件
@@ -4374,6 +4379,84 @@ test-s99l-strcat-mixed-gate = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup > 0, 1, 's99l mixed str+i64 counted unsup')
     runner.eq(ir.contains('call %str-long @str_concat('), 0, 's99l mixed no strcat')
+}
+
+; ── s99n：vec 的取得所有權站點 + scope-exit 釋放（M4-e 最後一件）──
+; 核心：切片字面量 K-SLICE-LITERAL（元素限 i64）降 OP-VECNEW + 逐元素 OP-VECPUSH，**最終** %vec
+;   登記釋放清單；函數退出時 h2m-emit-releases 對 TY-VEC 發 OP-VEC-FREE（cg → `call void @vec_free`）。
+; ⚠️ vec 緩衝無 RC 頭（§11 B5）⇒ 無 retain、只有一次性 free ⇒ 所有權必須唯一：
+;   ① 中間 push 值不入清單（@vec_push_i64 已自 free 舊緩衝）⇒ 只 free 最後那個 %vec；
+;   ② 所有權外流（結構體字面量欄位 / 欄位寫 / 返回值）一律計 unsup——外流後 exit 仍 free 就是 UAF。
+test-s99n-vec-literal-release = () {
+    ; v = [1, 2, 3] 非回傳 ⇒ VECNEW 1、PUSH 3、VECFREE 1（只 free 最終 %vc8，不 free 中間值）
+    src = 'sum = (x i64) (r i64) {\n    v = [1, 2, 3]\n    r = v[0] + x\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99n vec literal unsup')
+    ; contains 只回布林 ⇒ 用 split 段數 − 1 計數（1 次 ⇒ 2 段、3 次 ⇒ 4 段）
+    runner.eq(ir.split('call %vec @vec_new()').len(), 2, 's99n one vec_new')
+    runner.eq(ir.split('call %vec @vec_push_i64(').len(), 4, 's99n three pushes')
+    runner.eq(ir.split('call void @vec_free(%vec ').len(), 2, 's99n one vec_free')
+    ; 中間值（%vc4 / %vc6）不得被 free —— 只 free 最後那次 push 的結果 %vc8
+    runner.eq(ir.contains('call void @vec_free(%vec %vc8)'), 1, 's99n frees final vec only')
+}
+
+test-s99n-vec-empty-literal = () {
+    ; 空切片 []：只發 VECNEW（無 PUSH）；仍登記釋放（@vec_free 對 dat==0 內部短路）
+    src = 'z = () (r i64) {\n    w []i64 = []\n    r = w[0]\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's99n empty literal unsup')
+    runner.eq(ir.split('call %vec @vec_new()').len(), 2, 's99n empty one vec_new')
+    runner.eq(ir.split('call %vec @vec_push_i64(').len(), 1, 's99n empty no push')
+    runner.eq(ir.split('call void @vec_free(%vec ').len(), 2, 's99n empty still frees')
+}
+
+test-s99n-vec-elem-type-gate = () {
+    ; 元素非 i64（['a', 'b']）：@vec_push_i64 是單型 helper ⇒ 計 unsup、整函數不產碼
+    src = 'f = () (r i64) {\n    v = [\'a\', \'b\']\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 's99n str elements counted unsup')
+    runner.eq(ir.contains('@vec_new'), 0, 's99n no vec_new for str elements')
+}
+
+test-s99n-vec-field-mk-gate = () {
+    ; 逃逸門禁①：切片字面量放進結構體欄位（P { v: [1, 2], id: 7 }）⇒ 所有權外流、無 vec retain ⇒ unsup
+    src = 'P {\n    v []i64\n    id i64\n}\n\nmk = () (r i64) {\n    p = P { v: [1, 2], id: 7 }\n    r = p.id\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 's99n vec into field counted unsup')
+    runner.eq(ir.contains('@vec_new'), 0, 's99n no vec_new when escaping into field')
+}
+
+test-s99n-vec-field-set-gate = () {
+    ; 逃逸門禁②：欄位寫 b.data = [1, 2]（OP-STRUCT-SET）⇒ 同款外流 ⇒ unsup
+    src = 'B {\n    data []i64\n    id i64\n}\n\nset = (b B) (r i64) {\n    b.data = [1, 2]\n    r = b.id\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 's99n vec into field-set counted unsup')
+    runner.eq(ir.contains('@vec_new'), 0, 's99n no vec_new when escaping via field-set')
 }
 
 runner.summary()
