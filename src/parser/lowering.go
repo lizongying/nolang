@@ -1165,8 +1165,8 @@ func (l *lowerer) inferOptionArith(s *LetStatement) bool {
 	if !ok || !isOptionArithOperator(inf.Operator) {
 		return false
 	}
-	lt, okLT := l.signedIntOperandType(inf.Left)
-	rt, okRT := l.signedIntOperandType(inf.Right)
+	lt, okLT := l.optionAwareOperandType(inf.Left)
+	rt, okRT := l.optionAwareOperandType(inf.Right)
 	if !okLT || !okRT {
 		return false
 	}
@@ -1176,7 +1176,73 @@ func (l *lowerer) inferOptionArith(s *LetStatement) bool {
 	}
 	// 推斷結果改走語義副表（Program.Sem 的 typeFacts），不再寫 AST。
 	l.publishInferredType(s, "?"+base)
+	// 運算元本身已是 option（`round-opt = round - 1`，round 為 ?i64）：
+	// **型別照發**（否則整條 ?T 鏈斷掉，下游值位 match 主語無型別、ok 臂退化成
+	// `<slot> == 0` 永不命中），但**不短路結構捕獲**。理由：option 運算元的
+	// nil/err 傳播是 maybeCaptureOptionAssign 的職責（`__cap_N` 暫存 + if 鏈，
+	// H0 讀 CaptureFacts 重建），根-算術短路只覆蓋「純量運算元」的 shape。
+	// 兩件事拆開做才能同時滿足：型別鏈完整 + S3-c 捕獲契約不變
+	//（capturefacts_test 的 opt-operand 條目正是在釘住後者）。
+	if l.operandValueIsOption(inf.Left) || l.operandValueIsOption(inf.Right) {
+		return false
+	}
 	return true
+}
+
+// operandValueIsOption 回報「運算元求值結果本身是 option」。
+func (l *lowerer) operandValueIsOption(e Expression) bool {
+	switch x := unwrapLowerExpr(e).(type) {
+	case *Identifier:
+		name := x.Value
+		if name == "self" || name == "." {
+			return false
+		}
+		typ := ""
+		if l.p.sem != nil {
+			if t, has := l.p.sem.FuncVarType(l.curFuncName, name); has {
+				typ = t
+			}
+		}
+		if typ == "" {
+			typ = l.p.astLocalVarType(l.curFuncName, name)
+		}
+		return ty.IsOptionRaw(typ)
+	case *CallExpression:
+		return ty.IsOptionRaw(l.p.returnTypeFromCallExpr(x))
+	case *IndexExpression:
+		if !l.p.isSafeIndexBase(x) {
+			return false
+		}
+		elem := l.p.inferIndexElemType(x)
+		return elem != "" && ty.IsOptionRaw(elem)
+	}
+	return false
+}
+
+// optionAwareOperandType 是 inferOptionArith 專用的運算元型別解析。
+func (l *lowerer) optionAwareOperandType(e Expression) (string, bool) {
+	if t, ok := l.signedIntOperandType(e); ok {
+		return t, true
+	}
+	if id, ok := unwrapLowerExpr(e).(*Identifier); ok {
+		name := id.Value
+		if name == "self" || name == "." {
+			return "", false
+		}
+		typ := ""
+		if l.p.sem != nil {
+			if t, has := l.p.sem.FuncVarType(l.curFuncName, name); has {
+				typ = t
+			}
+		}
+		if typ == "" {
+			typ = l.p.astLocalVarType(l.curFuncName, name)
+		}
+		if ty.IsOptionRaw(typ) {
+			return lowerSignedIntName(ty.StripOptionRaw(typ))
+		}
+	}
+	return "", false
 }
 
 // inferValueMatchResult 把「值位 option match 的結果」登記為 plain payload 型別。
@@ -1284,9 +1350,6 @@ func (l *lowerer) synthesizeNullableType(s *LetStatement, inner string) {
 func (l *lowerer) publishInferredType(s *LetStatement, typ string) {
 	if s == nil || s.Name == nil || typ == "" || l == nil || l.p == nil {
 		return
-	}
-	if os.Getenv("NOLANG_DEBUG_SIT") != "" {
-		fmt.Fprintf(os.Stderr, "[pub] fn=%q name=%q typ=%q\n", l.curFuncName, s.Name.Value, typ)
 	}
 	if l.p.sem != nil {
 		l.p.sem.SetInferredType(s, typ)
@@ -1965,23 +2028,8 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 			// 的 ok 臂退化成 `c == 0`、永不命中。
 			typ = l.p.astLocalVarType(l.curFuncName, name)
 		}
-		if os.Getenv("NOLANG_DEBUG_SIT") != "" {
-			fmt.Fprintf(os.Stderr, "[sit] fn=%q name=%q typ=%q\n", l.curFuncName, name, typ)
-		}
 		if t, ok := lowerSignedIntName(typ); ok {
 			return t, true
-		}
-		// option 運算元：D6 規則下算術「消費 payload、結果仍是 ?T」，
-		// `x ?i64` 寫 `x - 1` 的 checker 型別實測就是 `?i64`（`y i64 = round - 1`
-		// 觸發 15w45dqk）。所以運算元對結果型別的貢獻就是它的 payload 型別。
-		//
-		// 少了這支，`round = nr - 1`（?i64）之後的 `round-opt = round - 1`
-		// 整條鏈都沒有型別：inferOptionArith 兩側判定失敗 ⇒ 不發 ?i64 ⇒
-		// `round-opt: { ok -> round = it  -> }` 的主語型別為空 ⇒ 臂條件退化成
-		// `<slot> == 0`（ok 當常量 0）⇒ ok 臂從不執行 ⇒ aes.dec-block 的
-		// 計數器不遞減 ⇒ 死迴圈。
-		if ty.IsOptionRaw(typ) {
-			return lowerSignedIntName(ty.StripOptionRaw(typ))
 		}
 		return "", false
 	case *InfixExpression:
@@ -2642,9 +2690,6 @@ func findFuncDef(prog *Program, name string) *FunctionDefinition {
 // if it is nil we return "" and the caller keeps its existing (weaker) fallback.
 func (p *Parser) astLocalVarType(funcName, varName string) string {
 	if p == nil || p.prog == nil || varName == "" || funcName == "" {
-		if os.Getenv("NOLANG_DEBUG_SIT") != "" {
-			fmt.Fprintf(os.Stderr, "[alt0] fn=%q var=%q nil=%v\n", funcName, varName, p == nil)
-		}
 		return ""
 	}
 	// 在途守衛：本函式為「RHS 是呼叫」的 let 會問 returnTypeFromCallExpr，
@@ -2655,9 +2700,6 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	}
 	busyKey := funcName + "\x00" + varName
 	if p.astVarTypeBusy[busyKey] {
-		if os.Getenv("NOLANG_DEBUG_SIT") != "" && funcName == "f" {
-			fmt.Fprintf(os.Stderr, "[altbusy] fn=%q var=%q\n", funcName, varName)
-		}
 		return ""
 	}
 	// 結果快取：本函式每次都要 gatherLetsInFuncScope 走完整個函式體，而 H0
@@ -2666,9 +2708,6 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 	// 砍掉）。H0 期 AST 已凍結，快取安全；快取掛在 *Parser 上，不同 Program
 	// 用不同 parser，不會互相污染。
 	if v, ok := p.astVarTypeCache[busyKey]; ok {
-		if os.Getenv("NOLANG_DEBUG_SIT") != "" && funcName == "f" {
-			fmt.Fprintf(os.Stderr, "[cache] fn=%q var=%q hit=%q\n", funcName, varName, v)
-		}
 		return v
 	}
 	p.astVarTypeBusy[busyKey] = true
@@ -2684,13 +2723,6 @@ func (p *Parser) astLocalVarType(funcName, varName string) string {
 // computeAstLocalVarType is the uncached body of astLocalVarType.
 func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 	fd := findFuncDef(p.prog, funcName)
-	if os.Getenv("NOLANG_DEBUG_SIT") != "" && funcName == "f" {
-		n := 0
-		if fd != nil && fd.Body != nil {
-			n = len(gatherLetsInFuncScope(fd.Body))
-		}
-		fmt.Fprintf(os.Stderr, "[alt] fn=%q var=%q progNil=%v fdNil=%v lets=%d\n", funcName, varName, p.prog == nil, fd == nil, n)
-	}
 	if fd == nil {
 		// Monomorphized / suffixed copies keep the original declaration under a
 		// base name; strip a trailing "@…" suffix and retry.
@@ -2746,7 +2778,13 @@ func (p *Parser) computeAstLocalVarType(funcName, varName string) string {
 			types[name] = "f64"
 			continue
 		case *Identifier:
-			if (v.Value == "." || v.Value == "self") && selfType != "" {
+			// ⚠️ union 別名（`int.int` 這種泛型模板的接收者）與泛型模板本體不可套用：
+			// `int.int` 的末段 `int` 會被 lowerSignedIntName 當成有號整數，於是在模板
+			// 體裡 `x = n / 10` 被發成 `?int`（走整數除法 + 除零守衛），單態化到
+			// `bigint.bigint` 後就變成 `icmp eq %bigint_bigint …, 0`（number.no 實測
+			// 編譯失敗）。模板體的型別應由單態化複本自己決定，此處一律不猜。
+			if (v.Value == "." || v.Value == "self") && selfType != "" &&
+				!p.isUnionType(selfType) && !strings.Contains(funcName, "_TEMPLATE") {
 				types[name] = selfType
 				continue
 			}

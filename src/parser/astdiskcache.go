@@ -356,7 +356,14 @@ import (
 // （`; [arr](#arr)`）收尾的那段註解，從「首個宣告的 Doc」改掛到 Program.Doc：
 // 樹上多了一個欄位、且 detProgram 影子也多一個（gob 線格式變），舊 blob 的
 // 首個宣告會多帶一段註解而 Program.Doc 是 nil，故必 bump。
-const ASTVersion = "2026-11-09.3"
+// 2026-11-09.4：option 算術型別鏈補齊四條來源 —— `.len()` / `.cap()` 的
+// i64 回傳（builtinContainerMethodReturnType）、呼叫運算元的
+// signedIntOperandType 分支、字面量與 self RHS 的 astLocalVarType 回放、
+// 以及 LowerSurface 綁定 p.prog（此前只有單測手動設定，生產路徑的 AST
+// 回放恆回空字串）。同一份原始碼會多出／改變一批 let 的 InferredType
+// （`n = data.len() / 16` 由「無型別」變 `?i64`），舊 blob 沒有這些事實，
+// 重用會退回「ok 臂永不命中」的老症狀，故必 bump。
+const ASTVersion = "2026-11-09.4"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent
