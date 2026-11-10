@@ -201,6 +201,7 @@ test-gate = () {
     r4 = ps.parse(t4, p4)
     agg4 = h2m-new()
     ir4 = h2m-lower-program(t4, agg4, r4)
+
     ; s99：结构体定义不再计入 unsup（前扫描登记进模块表，不计不支持构造）
     runner.eq(agg4.unsup, 0, 'struct def not counted')
     runner.eq(ir4.contains('define i64 @s()'), 1, 'gate sibling still emitted')
@@ -224,12 +225,16 @@ test-s99-struct = () {
     runner.eq(agg.unsup, 0, 's99 unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, i64 }'), 1, 's99 struct decl emitted')
     runner.eq(ir.contains('define i64 @f()'), 1, 's99 define f')
+
     ; MK：首步 insertvalue 以 zeroinitializer 起手
     runner.eq(ir.contains('insertvalue %struct.s0 zeroinitializer'), 1, 's99 mk')
+
     ; GET：extractvalue 读字段
     runner.eq(ir.contains('extractvalue %struct.s0'), 1, 's99 get')
+
     ; SET：insertvalue 以 %st<旧值> 为输入产生新值
     runner.eq(ir.contains('insertvalue %struct.s0 %st'), 1, 's99 set')
+
     ; 末句 r = p.x + p.y 必须降级成 add（读两个字段后相加）
     runner.eq(ir.contains('ret i64 %v'), 1, 's99 ret present')
 }
@@ -301,9 +306,11 @@ test-s99c-local-loop = () {
     runner.eq(agg.unsup, 0, 's99c local-loop unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, i64 }'), 1, 's99c struct decl')
     runner.eq(ir.contains('define i64 @f()'), 1, 's99c define f')
+
     ; mem 模式：槽声明 + 控制流块
     runner.eq(ir.contains('alloca %struct.s0'), 1, 's99c slot alloca')
     runner.eq(ir.contains('br label %bb1'), 1, 's99c control flow')
+
     ; 字面量 MK 写入槽、循环内 SET 写回槽、循环后 GET 从槽读
     runner.eq(ir.contains('store %struct.s0 %st'), 1, 's99c store to slot')
     runner.eq(ir.contains('load %struct.s0, %struct.s0* %sts'), 1, 's99c load from slot')
@@ -321,8 +328,10 @@ test-s99c-param-loop = () {
     runner.eq(agg.unsup, 0, 's99c param-loop unsup')
     runner.eq(ir.contains('define %struct.s0 @f(%struct.s0 %st1)'), 1, 's99c param sig')
     runner.eq(ir.contains('alloca %struct.s0'), 1, 's99c slot alloca')
+
     ; 形参 incoming 值落槽
     runner.eq(ir.contains('store %struct.s0 %st1, %struct.s0* %sts'), 1, 's99c param init slot')
+
     ; 循环内：从槽 load、insertvalue 改 y、store 回槽
     runner.eq(ir.contains('load %struct.s0, %struct.s0* %sts'), 1, 's99c load from slot')
     runner.eq(ir.contains('store %struct.s0 %st'), 1, 's99c store to slot')
@@ -344,12 +353,15 @@ test-s99d-local-call = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99d local-call unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, i64 }'), 1, 's99d struct decl')
+
     ; 被调函数按值收/返 struct
     runner.eq(ir.contains('define %struct.s0 @f(%struct.s0 %st1)'), 1, 's99d callee sig by-value')
     runner.eq(ir.contains('ret %struct.s0 %st1'), 1, 's99d callee ret by-value')
+
     ; 调用点：本地 struct 字面量落槽后 load，按值传入 call，call 按值返回
     runner.eq(ir.contains('store %struct.s0 %st'), 1, 's99d store struct to slot')
     runner.eq(ir.contains('call %struct.s0 @f(%struct.s0 %st'), 1, 's99d call passes struct by value')
+
     ; 返回后读字段
     runner.eq(ir.contains('extractvalue %struct.s0 %st'), 1, 's99d read fields after call')
 }
@@ -363,9 +375,11 @@ test-s99d-param-call = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99d param-call unsup')
+
     ; 形参 struct 落槽
     runner.eq(ir.contains('define i64 @g(%struct.s0 %st1)'), 1, 's99d param sig')
     runner.eq(ir.contains('store %struct.s0 %st1, %struct.s0* %sts'), 1, 's99d param init slot')
+
     ; 循环后在调用点把形参槽 load 出来按值传给 f
     runner.eq(ir.contains('call %struct.s0 @f(%struct.s0 %st'), 1, 's99d call passes param struct')
     runner.eq(ir.contains('extractvalue %struct.s0 %st'), 1, 's99d read fields after call')
@@ -380,9 +394,11 @@ test-s99d-return-call = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99d return-call unsup')
+
     ; 被调按值返 struct
     runner.eq(ir.contains('define %struct.s0 @mk()'), 1, 's99d mk ret sig')
     runner.eq(ir.contains('ret %struct.s0 %st'), 1, 's99d mk ret value')
+
     ; 调用方：call 按值接回 struct → 落槽 → load → insertvalue 改写 y → store 回槽
     runner.eq(ir.contains('call %struct.s0 @mk()'), 1, 's99d call returns struct')
     runner.eq(ir.contains('insertvalue %struct.s0 %st'), 1, 's99d caller mutates field')
@@ -405,10 +421,13 @@ test-s99e-str-field = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99e str-field unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, %str-long }'), 1, 's99e str field decl')
+
     ; MK：str 字面量落 %str-long 後 insertvalue 進結構體槽（索引 1）
     runner.eq(ir.contains('insertvalue %struct.s0 %sm2_0, %str-long %sv2, 1'), 1, 's99e MK str field')
+
     ; SET：把 name 欄位改成另一 %str-long
     runner.eq(ir.contains('insertvalue %struct.s0 %st3, %str-long %sv4, 1'), 1, 's99e SET str field')
+
     ; GET：從結構體讀 str 欄位（結果落 %sv 命名空間）
     runner.eq(ir.contains('extractvalue %struct.s0 %st5, 1'), 1, 's99e GET str field')
     runner.eq(ir.contains('ret %str-long %sv6'), 1, 's99e ret str')
@@ -438,10 +457,13 @@ test-s99e-nested-struct-field = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99e nested-field unsup')
+
     ; 嵌套結構體：Box 含 Point 欄位（定義序 Point 先於 Box，但兩遍註冊與序無關）
     runner.eq(ir.contains('%struct.s1 = type { %struct.s0, i64 }'), 1, 's99e nested struct decl')
+
     ; MK：嵌套結構體值 insertvalue 進外層槽（索引 0；首步以 zeroinitializer 起手）
     runner.eq(ir.contains('insertvalue %struct.s1 zeroinitializer, %struct.s0 %st3, 0'), 1, 's99e MK nested field')
+
     ; GET：先取 Point 欄位、再取內層 x / y
     runner.eq(ir.contains('extractvalue %struct.s1 %st5, 0'), 1, 's99e GET nested struct field')
     runner.eq(ir.contains('extractvalue %struct.s0 %st6, 0'), 1, 's99e GET inner x')
@@ -450,6 +472,7 @@ test-s99e-nested-struct-field = () {
 }
 
 test-s99e-mixed-field = () {
+
     ; ⚠️ 嵌套結構體欄位特意放首位：MK 目前假設欄位值 id 連續（xa[k]+j），當某欄位值的
     ;   降級多分配了 id（如嵌套結構體字面量多分配內層欄位 id），非首欄位會讀到錯 id。
     ;   本用例把嵌套欄位置首，避開該既有缺陷（見 §5.3.4.ef 後續），證明三種欄位型別可共存。
@@ -461,12 +484,16 @@ test-s99e-mixed-field = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99e mixed-field unsup')
+
     ; 單一結構體混合三種欄位型別：嵌套 %struct.s0 + i64 + %str-long
     runner.eq(ir.contains('%struct.s1 = type { %struct.s0, i64, %str-long }'), 1, 's99e mixed struct decl')
+
     ; MK：嵌套欄位在索引 0、str 字面量在索引 2
     runner.eq(ir.contains('insertvalue %struct.s1 zeroinitializer, %struct.s0 %st3, 0'), 1, 's99e MK nested field at idx 0')
+
     ; SET：把 str 欄位（索引 2）改成另一字面量
     runner.eq(ir.contains('insertvalue %struct.s1 %st6, %str-long %sv7, 2'), 1, 's99e SET str field at idx 2')
+
     ; GET：讀 i64 欄位（索引 1）與嵌套內層 x（索引 0 → %struct.s0 → 字段 0）
     runner.eq(ir.contains('extractvalue %struct.s1 %st8, 0'), 1, 's99e GET nested field at idx 0')
     runner.eq(ir.contains('extractvalue %struct.s0 %st10, 0'), 1, 's99e GET inner x')
@@ -484,6 +511,7 @@ test-s99e-mixed-field = () {
 ;        本件改用「extractvalue %vec 後作 %vec 實參傳給 []i64 形參函數」驗 GET + call-by-value；
 ;     ③ 元素非 i64 的 vec（[]str 等）不攜元素型別且會被 i64 helper 誤讀 ⇒ 欄位解析回 -1 计 unsup。
 test-s99f-vec-field-mk = () {
+
     ; MK：以 []i64 形參 d 注入 vec 值，按值 insertvalue 進結構體欄位（索引 0）
     src = 'Buf {\n    data []i64\n    id i64\n}\n\nmk = (d []i64, id i64) (r Buf) {\n    r = Buf { data: d, id: id }\n}\n'
     t = ast.make()
@@ -493,18 +521,23 @@ test-s99f-vec-field-mk = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99f vec-field MK unsup')
+
     ; 結構體布局：vec 欄位佔 %vec（3 字 i64 值）
     runner.eq(ir.contains('%struct.s0 = type { %vec, i64 }'), 1, 's99f vec field decl')
+
     ; 形參：[]i64 形參是 %vec、i64 形參是 i64
     runner.eq(ir.contains('define %struct.s0 @mk(%vec %vc1, i64 %v2)'), 1, 's99f mk sig')
+
     ; MK：vec 欄位在索引 0（insertvalue %vec），i64 欄位在索引 1
     runner.eq(ir.contains('insertvalue %struct.s0 zeroinitializer, %vec %vc1, 0'), 1, 's99f MK vec field at idx 0')
     runner.eq(ir.contains('insertvalue %struct.s0 %sm0_0, i64 %v2, 1'), 1, 's99f MK i64 field at idx 1')
+
     ; 返回含 vec 欄位的結構體（按值）
     runner.eq(ir.contains('ret %struct.s0 %st3'), 1, 's99f mk ret struct with vec field')
 }
 
 test-s99f-vec-field-get = () {
+
     ; GET：讀 vec 欄位（extractvalue %vec）→ 作 %vec 實參傳給 consume（其形參 v 是 []i64，裸識別符可遍歷）
     ; 驗 GET + call-by-value 傳 vec 欄位；避開 vec 返回門禁與「v <- b.data」裸識別符限制
     src = 'Buf {\n    data []i64\n    id i64\n}\n\nconsume = (v []i64) (r i64) {\n    r = 0\n    x <- v: {\n        r = r + x\n    }\n}\n\nsum = (b Buf) (r i64) {\n    r = consume(b.data)\n}\n'
@@ -516,17 +549,21 @@ test-s99f-vec-field-get = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99f vec-field GET unsup')
     runner.eq(ir.contains('%struct.s0 = type { %vec, i64 }'), 1, 's99f get struct decl')
+
     ; consume 以 []i64 形參 v 遍歷（裸識別符源，s62 路徑）
     runner.eq(ir.contains('define i64 @consume(%vec %vc1)'), 1, 's99f consume sig')
+
     ; sum 收結構體形參 → GET vec 欄位（extractvalue %vec %st1, 0）→ %vc2
     runner.eq(ir.contains('define i64 @sum(%struct.s0 %st1)'), 1, 's99f sum sig')
     runner.eq(ir.contains('%vc2 = extractvalue %struct.s0 %st1, 0'), 1, 's99f GET vec field extractvalue')
+
     ; vec 欄位按值傳給 consume（%vec %vc2 實參）
     runner.eq(ir.contains('call i64 @consume(%vec %vc2)'), 1, 's99f pass vec field by value')
     runner.eq(ir.contains('ret i64 %v3'), 1, 's99f sum ret i64')
 }
 
 test-s99f-vec-field-gate = () {
+
     ; 門禁：元素非 i64 的 vec 欄位（[]str）不攜元素型別 ⇒ 欄位解析回 -1 ⇒ 整模組計 unsup 不產碼
     src = 'Buf {\n    data []str\n    id i64\n}\n\nmk = (id i64) (r Buf) {\n    r = Buf { id: id }\n}\n'
     t = ast.make()
@@ -546,6 +583,7 @@ test-s99f-vec-field-gate = () {
 ;   早已就位）。無 str 欄位的結構體不發 retain。
 ;   釋放半邊已由 s99j（§5.3.4.ek）補上：函數退出時 h2m-emit-releases 對同一 %st 值發 OP-STRUCT-RELEASE（mem==0）。
 test-s99g-struct-str-retain = () {
+
     ; str 欄位在索引 1 ⇒ 掩碼 = 1<<1 = 2；retain 必須抽欄位 1（非 0）
     src = 'User {\n    id i64\n    name str\n}\n\nf = () (r str) {\n    u = User { id: 1, name: \'alice\' }\n    r = u.name\n}\n'
     t = ast.make()
@@ -556,8 +594,10 @@ test-s99g-struct-str-retain = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99g str-field retain unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, %str-long }'), 1, 's99g struct decl')
+
     ; MK：str 欄位在索引 1（insertvalue %str-long）
     runner.eq(ir.contains('insertvalue %struct.s0 %sm2_0, %str-long %sv2, 1'), 1, 's99g MK str field at idx 1')
+
     ; retain：抽欄位 1 → %str-long → data ptr(2) → call @nolang_rc_retain
     runner.eq(ir.contains('%rf3_1 = extractvalue %struct.s0 %st3, 1'), 1, 's99g retain extracts str field idx 1')
     runner.eq(ir.contains('%rp3_1 = extractvalue %str-long %rf3_1, 2'), 1, 's99g retain gets data ptr')
@@ -565,6 +605,7 @@ test-s99g-struct-str-retain = () {
 }
 
 test-s99g-struct-mixed-mask = () {
+
     ; str 欄位在索引 2 ⇒ 掩碼 = 1<<2 = 4；retain 必須抽欄位 2（非 0/1），證明掩碼位位置正確
     src = 'Rec {\n    a i64\n    b i64\n    c str\n}\n\nf = () (r str) {\n    u = Rec { a: 1, b: 2, c: \'x\' }\n    r = u.c\n}\n'
     t = ast.make()
@@ -576,6 +617,7 @@ test-s99g-struct-mixed-mask = () {
     runner.eq(agg.unsup, 0, 's99g mixed-mask retain unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, i64, %str-long }'), 1, 's99g mixed struct decl')
     runner.eq(ir.contains('insertvalue %struct.s0 %sm3_1, %str-long %sv3, 2'), 1, 's99g MK str field at idx 2')
+
     ; 掩碼只置位 bit 2 ⇒ 只抽欄位 2 retain，不碰 a/b
     runner.eq(ir.contains('%rf4_2 = extractvalue %struct.s0 %st4, 2'), 1, 's99g retain extracts str field idx 2')
     runner.eq(ir.contains('%rp4_2 = extractvalue %str-long %rf4_2, 2'), 1, 's99g retain gets data ptr')
@@ -583,6 +625,7 @@ test-s99g-struct-mixed-mask = () {
 }
 
 test-s99g-struct-no-retain = () {
+
     ; 無 str 欄位 ⇒ 掩碼 = 0 ⇒ 不發任何 OP-STRUCT-RETAIN
     src = 'Point {\n    x i64\n    y i64\n}\n\nf = () (r i64) {\n    p = Point { x: 1, y: 2 }\n    r = p.x + p.y\n}\n'
     t = ast.make()
@@ -593,6 +636,7 @@ test-s99g-struct-no-retain = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99g no-str unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, i64 }'), 1, 's99g no-str struct decl')
+
     ; 關鍵：不含任何 retain 呼叫（str 欄位 RC 只對含 str 的結構體生效）
     runner.eq(ir.contains('call void @nolang_rc_retain('), 0, 's99g no retain for non-str struct')
 }
@@ -602,6 +646,7 @@ test-s99g-struct-no-retain = () {
 ;   base 須是 TY-VEC（[]i64 欄位 / vec 形參 / mem==0 下綁定的 vec 局部），其餘型別（str/struct/arr）計 unsup。
 ;   cg 早已支援 OP-VECGET（→ call i64 @vec_get_i64(%vec, i64)），本件是純 h2m 改動。
 test-s99i-vec-index-param = () {
+
     ; 本地 vec 變量（形參 v: []i64）就地索引：r = v[i]
     src = 'consume = (v []i64, i i64) (r i64) {\n    r = v[i]\n}\n'
     t = ast.make()
@@ -612,12 +657,14 @@ test-s99i-vec-index-param = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99i vec param index unsup')
     runner.eq(ir.contains('define i64 @consume(%vec %vc1'), 1, 's99i consume sig')
+
     ; 就地索引：vec 形參 %vc1 直接 OP-VECGET，下標是形參 i（%v2），結果 i64 %v3
     runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc1, i64 %v2)'), 1, 's99i vec param index VECGET')
     runner.eq(ir.contains('ret i64 %v3'), 1, 's99i consume ret i64')
 }
 
 test-s99i-vec-field-index = () {
+
     ; vec 欄位就地索引：r = b.data[i]（結構體欄位 GET + 索引，兩步皆 %vec 值流轉，無槽）
     src = 'Buf {\n    data []i64\n    id i64\n}\n\nconsume = (v []i64, i i64) (r i64) {\n    r = v[i]\n}\n\nsum = (b Buf, i i64) (r i64) {\n    r = b.data[i]\n}\n'
     t = ast.make()
@@ -629,14 +676,17 @@ test-s99i-vec-field-index = () {
     runner.eq(agg.unsup, 0, 's99i vec field index unsup')
     runner.eq(ir.contains('%struct.s0 = type { %vec, i64 }'), 1, 's99i struct decl')
     runner.eq(ir.contains('define i64 @sum(%struct.s0 %st1'), 1, 's99i sum sig')
+
     ; b.data → OP-STRUCT-GET 抽 %vec（%vc3 = extractvalue %struct.s0 %st1, 0）
     runner.eq(ir.contains('%vc3 = extractvalue %struct.s0 %st1, 0'), 1, 's99i GET vec field')
+
     ; 就地索引：被抽出的 %vc3 直接 OP-VECGET，下標是形參 i（%v2）
     runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc3, i64 %v2)'), 1, 's99i vec field index VECGET')
     runner.eq(ir.contains('ret i64 %v4'), 1, 's99i sum ret i64')
 }
 
 test-s99i-vec-local-bind = () {
+
     ; 本地 vec 變量：d = b.data；r = d[i]（mem==0 直綁值 id，無槽；d 綁定到 GET 抽出的 %vec）
     src = 'Buf {\n    data []i64\n    id i64\n}\n\ng = (b Buf, i i64) (r i64) {\n    d = b.data\n    r = d[i]\n}\n'
     t = ast.make()
@@ -647,14 +697,17 @@ test-s99i-vec-local-bind = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99i vec local bind unsup')
     runner.eq(ir.contains('define i64 @g(%struct.s0 %st1'), 1, 's99i g sig')
+
     ; d = b.data → GET 抽 %vec（%vc3）
     runner.eq(ir.contains('%vc3 = extractvalue %struct.s0 %st1, 0'), 1, 's99i local bind GET')
+
     ; r = d[i] → 直接對綁定的 %vc3 做 OP-VECGET（下標 %v2）
     runner.eq(ir.contains('call i64 @vec_get_i64(%vec %vc3, i64 %v2)'), 1, 's99i local bind VECGET')
     runner.eq(ir.contains('ret i64 %v4'), 1, 's99i g ret i64')
 }
 
 test-s99i-index-scalar-gate = () {
+
     ; 門禁：對非 vec 基底索引（x 是 i64 標量）→ 計 unsup，不產 OP-VECGET
     src = 'f = (x i64, i i64) (r i64) {\n    r = x[i]\n}\n'
     t = ast.make()
@@ -672,6 +725,7 @@ test-s99i-index-scalar-gate = () {
 ;   OP-STRUCT-RELEASE（欄位掩碼同 s99g）。跳過「已被回傳佔用」的值防雙重釋放。僅 mem==0 放行。
 ;   ⚠️ 運行時驗證受 15w45dqk 門禁阻塞（同 s99h/s99i），IR 文本斷言為本件主要驗證手段。
 test-s99j-struct-release = () {
+
     ; 本地結構體（非回傳值，含 str 欄位@idx1 ⇒ 掩碼=2）：MK 取得所有權 + scope-exit 釋放
     src = 'User {\n    id i64\n    name str\n}\n\nf = () (r i64) {\n    u = User { id: 1, name: \'alice\' }\n    r = u.id\n}\n'
     t = ast.make()
@@ -682,13 +736,16 @@ test-s99j-struct-release = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99j struct release unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, %str-long }'), 1, 's99j struct decl')
+
     ; 取得所有權（s99g）：retain 抽欄位 1
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain still emitted')
+
     ; 釋放半邊（本件）：同一值退出時發 release（retain 與 release 各一次，掩碼同 s99g）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99j release emitted at scope exit')
 }
 
 test-s99j-struct-ret-no-release = () {
+
     ; 結構體即回傳值（r: User）：RETAIN 仍發（取得所有權），但 scope-exit 釋放須跳過回傳值防雙重釋放
     src = 'User {\n    id i64\n    name str\n}\n\nf = () (r User) {\n    r = User { id: 1, name: \'alice\' }\n}\n'
     t = ast.make()
@@ -698,13 +755,16 @@ test-s99j-struct-ret-no-release = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99j ret struct unsup')
+
     ; 取得所有權仍發
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain emitted for returned struct')
+
     ; 關鍵：回傳值被 skip ⇒ 不得發 release（否則呼叫方 double-free）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99j NO release for returned struct')
 }
 
 test-s99j-struct-mixed-release = () {
+
     ; 混合掩碼（str@idx2 ⇒ 掩碼=4）：release 須抽欄位 2（與 retain 同掩碼），證明掩碼正確傳遞到釋放側
     src = 'Rec {\n    a i64\n    b i64\n    c str\n}\n\nf = () (r i64) {\n    u = Rec { a: 1, b: 2, c: \'x\' }\n    r = u.a\n}\n'
     t = ast.make()
@@ -716,6 +776,7 @@ test-s99j-struct-mixed-release = () {
     runner.eq(agg.unsup, 0, 's99j mixed-mask release unsup')
     runner.eq(ir.contains('%struct.s0 = type { i64, i64, %str-long }'), 1, 's99j mixed struct decl')
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99j retain emitted (mask 4)')
+
     ; 掩碼只置位 bit 2 ⇒ retain 與 release 皆只抽欄位 2（釋放半邊與取得所有權半邊同掩碼，結構上由 rlsm 保證）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99j mixed-mask release emitted')
 }
@@ -2747,8 +2808,10 @@ test-opt-flow-slot = () {
     ir = h2m-lower-program(t, agg, r)
     runner.eq(agg.unsup, 0, 'opt-flow-slot unsup')
     runner.eq(ir.contains('%os4 = alloca %option'), 1, 'opt-flow-slot OPTALLOC')
+
     ; entry 槽 tag=1 nil-init（正是 s94 门禁所防：误做 zeroinitializer/some(0) ⇒ tag=0）
     runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 1, 0'), 1, 'opt-flow-slot nil-init')
+
     ; 取路写点包裹：payload %v → some（OP-OPTSOME）落槽
     runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 1, 'opt-flow-slot write wrap')
     runner.eq(ir.contains('store %option'), 1, 'opt-flow-slot OPTSTORE')
@@ -2853,10 +2916,13 @@ test-opt-match-arms = () {
     r = ps.parse(t, ps.new(src.to-bytes()))
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, r)
+
     ; 关键行为改变：s98 前 option match 走门禁 ⇒ unsup > 0；撤销门禁后整函数产码 ⇒ unsup == 0
     runner.eq(agg.unsup, 0, 's98 optmatch unsup==0 (gate lifted)')
+
     ; ok(v) payload 读取（OP-OPTGET）：extractvalue %option %vN, 1, 0
     runner.eq(ir.contains(', 1, 0') > 0, 1, 's98 ok(v) payload OPTGET emitted')
+
     ; 三态 tag 读取与比较（OP-OPTTAG：extractvalue %option %vN, 0；OP-CONST：add i64 0, {0,1,2}）
     runner.eq(ir.contains('extractvalue %option') > 0, 1, 's98 option tag reads emitted')
     runner.eq(ir.contains('add i64 0, 0') > 0, 1, 's98 ok tag const 0')
@@ -2973,6 +3039,7 @@ test-opt-f64-flow-slot = () {
     runner.eq(agg.unsup, 0, 'opt-f64-flow-slot unsup')
     runner.eq(ir.contains('alloca %option'), 1, 'opt-f64-flow-slot OPTALLOC')
     runner.eq(ir.contains('bitcast double %fd'), 1, 'opt-f64-flow-slot bitcast')
+
     ; 載荷专属：f64 走 %mb bitcast insertvalue，不发裸 %v some（口径鉴别）
     runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 0, 'opt-f64-flow-slot no bare %v some')
     runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %mb'), 1, 'opt-f64-flow-slot mkf64 some')
@@ -3000,6 +3067,7 @@ test-opt-slot-deferred-nil = () {
     runner.eq(agg.unsup, 0, 'opt-slot-deferred unsup')
     runner.eq(ir.contains('alloca %option'), 1, 'opt-slot-deferred OPTALLOC')
     runner.eq(ir.contains('insertvalue %option { i64 1, [3 x i64] zeroinitializer }, i64 1, 0'), 1, 'opt-slot-deferred nil-init')
+
     ; 未写路径绝无 some(0)：槽内不存在 tag=0 的裸零包裹
     runner.eq(ir.contains('insertvalue %option { i64 0, [3 x i64] zeroinitializer }, i64 %v'), 0, 'opt-slot-deferred no some(0)')
     runner.eq(ir.contains('load %option'), 1, 'opt-slot-deferred OPTLOAD')
@@ -4249,6 +4317,7 @@ test-s99n-vec-field-set-gate()
 ;       雙釋放需 move 分析，留待未來），保持 leak 而非引入 double-free。
 
 test-s99k-local-release = () {
+
     ; mem==1（含循环）下，本地結構體（非回傳值，含 str 欄位）仍須 scope-exit 釋放
     src = 'User {\n    id i64\n    name str\n}\n\nf = () (r i64) {\n    u = User { id: 1, name: \'alice\' }\n    n = 0\n    (n < 5) { n = n + 1 }\n    r = 1\n}\n'
     t = ast.make()
@@ -4258,14 +4327,17 @@ test-s99k-local-release = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99k local-release unsup')
+
     ; mem 模式：槽聲明證明確實走 mem==1 路徑
     runner.eq(ir.contains('alloca %struct.s0'), 1, 's99k local-release mem mode (slot)')
+
     ; 取得所有權（s99g）與 scope-exit 釋放（本件）皆發：retain 1 次、release 1 次
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99k local-release retain emitted')
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99k local-release release emitted (mem==1 path)')
 }
 
 test-s99k-return-no-release = () {
+
     ; mem==1 下結構體即回傳值：RETAIN 仍發，但 scope-exit 釋放須跳過回傳值（outsv）防雙重釋放
     src = 'User {\n    id i64\n    name str\n}\n\nf = () (r User) {\n    n = 0\n    (n < 5) { n = n + 1 }\n    r = User { id: 1, name: \'alice\' }\n}\n'
     t = ast.make()
@@ -4276,8 +4348,10 @@ test-s99k-return-no-release = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99k return-no-release unsup')
     runner.eq(ir.contains('alloca %struct.s0'), 1, 's99k return-no-release mem mode (slot)')
+
     ; 取得所有權仍發
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99k return retain emitted')
+
     ; 關鍵：回傳值被 outsv 跳過 ⇒ 不得發 release（否則呼叫方 double-free）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99k return NO release (outsv skip)')
 }
@@ -4287,6 +4361,7 @@ test-s99k-return-no-release = () {
 ;   兜住「間接回傳 r = u」（mem==1 下 STLOAD 新 id ≠ owner，舊 skip/outsv 覆蓋不到）。──
 
 test-s99m-call-borrow-release = () {
+
     ; mem==1 + 含 OP-CALL，本地結構體【傳給被調】（借用）：caller 仍擁有 ⇒ scope-exit 必須釋放（不再因 call 而 leak）
     src = 'User {\n    id i64\n    name str\n}\n\ng = (x User) (z i64) { z = x.id }\n\nf = () (r i64) {\n    u = User { id: 1, name: \'alice\' }\n    n = 0\n    (n < 3) {\n        r = g(u)\n        n = n + 1\n    }\n}\n'
     t = ast.make()
@@ -4297,13 +4372,16 @@ test-s99m-call-borrow-release = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99m call-borrow unsup')
     runner.eq(ir.contains('alloca %struct.s0'), 1, 's99m call-borrow mem mode (slot)')
+
     ; 取得所有權（MK of u）
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99m call-borrow retain emitted')
+
     ; s99m：撤除 hc 閘門 ⇒ 含 call 亦釋放（g 借用 u，caller 釋放不雙重釋放）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 1, 's99m call-borrow release emitted (gate removed)')
 }
 
 test-s99m-indirect-return-no-release = () {
+
     ; 間接回傳 r = u：mem==1 下 STLOAD 交出新 id ≠ owner，舊 skip/outsv 失效 ⇒ 本件用 owner provenance 跳過防雙重釋放
     src = 'User {\n    id i64\n    name str\n}\n\nf = () (r User) {\n    u = User { id: 1, name: \'alice\' }\n    n = 0\n    (n < 3) { n = n + 1 }\n    r = u\n}\n'
     t = ast.make()
@@ -4314,8 +4392,10 @@ test-s99m-indirect-return-no-release = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99m indirect-return unsup')
     runner.eq(ir.contains('alloca %struct.s0'), 1, 's99m indirect-return mem mode (slot)')
+
     ; 取得所有權仍發（MK of u）
     runner.eq(ir.contains('call void @nolang_rc_retain(i8* %rp'), 1, 's99m indirect-return retain emitted')
+
     ; 關鍵：u 經 r 回傳 ⇒ owner 併入 outsv/retset ⇒ 不得釋放（否則呼叫方拿到懸垂串 / 雙重釋放）
     runner.eq(ir.contains('call i1 @nolang_rc_release(i8* %rp'), 0, 's99m indirect-return NO release (owner skip)')
 }
@@ -4326,6 +4406,7 @@ test-s99m-indirect-return-no-release = () {
 ;   h2m 未建模 ⇒ 落默認 mark 計 unsup（寧缺勿錯）。
 
 test-s99l-strcat-release = () {
+
     ; 非返回值：STRCAT 結果必被 scope-exit 釋放（OP-RELEASE，%dp 命名空間）
     src = 'f = () (r i64) {\n    s = \'a\' + \'b\'\n    r = 1\n}\n'
     t = ast.make()
@@ -4340,6 +4421,7 @@ test-s99l-strcat-release = () {
 }
 
 test-s99l-strcat-return-no-release = () {
+
     ; '-' 亦为拼接（镜像 Go emitBinary：非 '*' 一律 @str_concat）；返回值被 skip 跳过 ⇒ 不释放
     src = 'f = () (r str) {\n    r = \'a\' - \'b\'\n}\n'
     t = ast.make()
@@ -4354,6 +4436,7 @@ test-s99l-strcat-return-no-release = () {
 }
 
 test-s99l-strcat-nested-release = () {
+
     ; 嵌套拼接 ('a' + 'b') + 'c' ⇒ 两条 STRCAT、两次 release（内层被外层 memcpy 复制后即可释放）
     src = 'f = () (r i64) {\n    s = (\'a\' + \'b\') + \'c\'\n    r = 1\n}\n'
     t = ast.make()
@@ -4363,12 +4446,14 @@ test-s99l-strcat-nested-release = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99l nested unsup')
+
     ; contains 只回布林，不能计数 ⇒ 用 split 段数 - 1 得出现次数（2 次 ⇒ 3 段）
     runner.eq(ir.split('call %str-long @str_concat(').len(), 3, 's99l nested 2 strcat')
     runner.eq(ir.split('call i1 @nolang_rc_release(i8* %dp').len(), 3, 's99l nested 2 release')
 }
 
 test-s99l-strcat-mixed-gate = () {
+
     ; 'a' + 1（str + i64）：Go 会把 1 转 '1' 再拼，h2m 未建模 ⇒ 计 unsup、不产码
     src = 'f = () (r i64) {\n    s = \'a\' + 1\n    r = 1\n}\n'
     t = ast.make()
@@ -4388,6 +4473,7 @@ test-s99l-strcat-mixed-gate = () {
 ;   ① 中間 push 值不入清單（@vec_push_i64 已自 free 舊緩衝）⇒ 只 free 最後那個 %vec；
 ;   ② 所有權外流（結構體字面量欄位 / 欄位寫 / 返回值）一律計 unsup——外流後 exit 仍 free 就是 UAF。
 test-s99n-vec-literal-release = () {
+
     ; v = [1, 2, 3] 非回傳 ⇒ VECNEW 1、PUSH 3、VECFREE 1（只 free 最終 %vc8，不 free 中間值）
     src = 'sum = (x i64) (r i64) {\n    v = [1, 2, 3]\n    r = v[0] + x\n}\n'
     t = ast.make()
@@ -4397,15 +4483,18 @@ test-s99n-vec-literal-release = () {
     agg = h2m-new()
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup, 0, 's99n vec literal unsup')
+
     ; contains 只回布林 ⇒ 用 split 段數 − 1 計數（1 次 ⇒ 2 段、3 次 ⇒ 4 段）
     runner.eq(ir.split('call %vec @vec_new()').len(), 2, 's99n one vec_new')
     runner.eq(ir.split('call %vec @vec_push_i64(').len(), 4, 's99n three pushes')
     runner.eq(ir.split('call void @vec_free(%vec ').len(), 2, 's99n one vec_free')
+
     ; 中間值（%vc4 / %vc6）不得被 free —— 只 free 最後那次 push 的結果 %vc8
     runner.eq(ir.contains('call void @vec_free(%vec %vc8)'), 1, 's99n frees final vec only')
 }
 
 test-s99n-vec-empty-literal = () {
+
     ; 空切片 []：只發 VECNEW（無 PUSH）；仍登記釋放（@vec_free 對 dat==0 內部短路）
     src = 'z = () (r i64) {\n    w []i64 = []\n    r = w[0]\n}\n'
     t = ast.make()
@@ -4421,6 +4510,7 @@ test-s99n-vec-empty-literal = () {
 }
 
 test-s99n-vec-elem-type-gate = () {
+
     ; 元素非 i64（['a', 'b']）：@vec_push_i64 是單型 helper ⇒ 計 unsup、整函數不產碼
     src = 'f = () (r i64) {\n    v = [\'a\', \'b\']\n    r = 1\n}\n'
     t = ast.make()
@@ -4434,6 +4524,7 @@ test-s99n-vec-elem-type-gate = () {
 }
 
 test-s99n-vec-field-mk-gate = () {
+
     ; 逃逸門禁①：切片字面量放進結構體欄位（P { v: [1, 2], id: 7 }）⇒ 所有權外流、無 vec retain ⇒ unsup
     src = 'P {\n    v []i64\n    id i64\n}\n\nmk = () (r i64) {\n    p = P { v: [1, 2], id: 7 }\n    r = p.id\n}\n'
     t = ast.make()
@@ -4447,6 +4538,7 @@ test-s99n-vec-field-mk-gate = () {
 }
 
 test-s99n-vec-field-set-gate = () {
+
     ; 逃逸門禁②：欄位寫 b.data = [1, 2]（OP-STRUCT-SET）⇒ 同款外流 ⇒ unsup
     src = 'B {\n    data []i64\n    id i64\n}\n\nset = (b B) (r i64) {\n    b.data = [1, 2]\n    r = b.id\n}\n'
     t = ast.make()

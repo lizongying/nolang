@@ -1,11 +1,13 @@
 f = (k i64) (out str) {
     out = ''
     {
-        k == 1 -> {
-            out = 'a'
-        }
+        {
+            k == 1 -> {
+                out = 'a'
+            }
 
-        -> out = 'b'
+            -> out = 'b'
+        }
         return
     }
     out
@@ -14,12 +16,14 @@ f = (k i64) (out str) {
 g = (k i64) (out str) {
     out = ''
     {
-        k == 1 -> {
-            out = 'x'
-        }
+        {
+            k == 1 -> {
+                out = 'x'
+            }
 
-        -> {
-            out = 'y'
+            -> {
+                out = 'y'
+            }
         }
         return
     }
@@ -29,11 +33,13 @@ g = (k i64) (out str) {
 h = (m i64) (out str) {
     out = ''
     {
-        -> out = 'p'
+        {
+            -> out = 'p'
 
-        -> out = 'q'
+            -> out = 'q'
 
-        -> out = 'r'
+            -> out = 'r'
+        }
         return
     }
     out

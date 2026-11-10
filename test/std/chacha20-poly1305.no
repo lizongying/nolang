@@ -195,7 +195,10 @@ at32 = (v []u32, i i64) (x u32) {
 }
 
 ; 0..15 的 u32 序列（qr 的測試起態）
-qr-in [16]u32 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+qr-in [16]u32 = [
+    0, 1, 2, 3, 4, 5, 6, 7,
+    8, 9, 10, 11, 12, 13, 14, 15,
+]
 
 ; ---- AEAD 入口 ----
 
@@ -245,6 +248,7 @@ t-open = () {
     blen = back.len() * 2
     runner.str-eq(bhex(back), bhex(plain), blen, 'ccpoly open round-trip')
 }
+
 ; ---- 內部構成 ----
 
 ; 32-bit 循環左移
@@ -259,7 +263,7 @@ t-rotl32 = () {
 ; quarter-round：state = 0..15，作用於 (0,4,8,12)。
 ; 金標由 python 依 RFC 8439 §2.1 的 16/12/8/7 順序算出。
 t-qr = () {
-    st []u32 = qr-in[..16)
+    st = qr-in[..16)
     chacha20-poly1305.qr(st, 0, 4, 8, 12)
 
     runner.str-eq(u32-hex(at32(st, 0)), '8000c004', 8, 'qr state[a]')
@@ -272,7 +276,7 @@ t-qr = () {
     runner.str-eq(u32-hex(at32(st, 5)), '00000005', 8, 'qr 不動 state[5]')
 
     ; 不同 (a,b,c,d) 應給出不同結果 —— 驗證索引確實被使用
-    st2 []u32 = qr-in[..16)
+    st2 = qr-in[..16)
     chacha20-poly1305.qr(st2, 1, 5, 9, 13)
     runner.str-eq(u32-hex(at32(st2, 1)), 'b000c006', 8, 'qr 換索引起點 state[1]')
     runner.str-eq(u32-hex(at32(st2, 5)), 'e5e35cdd', 8, 'qr 換索引起點 state[5]')
@@ -354,6 +358,7 @@ t-poly1305 = () {
 
     ; r 的 clamp 生效：兩把只差在 clamp 位元的金鑰應得同一標籤
     ka [32]byte = mk32('ffffffffffffffffffffffffffffffff101112131415161718191a1b1c1d1e1f')
+
     ; clamp 後的小端位元組序列 = ffffff0f fcffff0f fcffff0f fcffff0f
     kb [32]byte = mk32('ffffff0ffcffff0ffcffff0ffcffff0f101112131415161718191a1b1c1d1e1f')
     ta [16]byte = chacha20-poly1305.poly1305(ka, msg)

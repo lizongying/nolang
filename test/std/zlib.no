@@ -25,12 +25,12 @@ t-adler-32 = () {
     runner.eq(zlib.adler-32(empty, 0), 1, 'adler-32 空輸入 = 1（初始 a=1, b=0）')
 
     hello []byte = [104, 101, 108, 108, 111]
-    runner.eq(zlib.adler-32(hello, 5), 0x062C0215, 'adler-32 "hello" = 0x062C0215')
-    runner.eq(zlib.adler-32(hello, 3), 0x0271013A, 'adler-32 只累加前 3 位元組 = "hel"')
+    runner.eq(zlib.adler-32(hello, 5), 0x062c0215, 'adler-32 "hello" = 0x062C0215')
+    runner.eq(zlib.adler-32(hello, 3), 0x0271013a, 'adler-32 只累加前 3 位元組 = "hel"')
     runner.eq(zlib.adler-32(hello, 0), 1, 'adler-32 n=0 = 1')
 
     upper []byte = [72, 101, 108, 108, 111]
-    runner.eq(zlib.adler-32(upper, 5), 0x058C01F5, 'adler-32 "Hello" = 0x058C01F5（大小寫敏感）')
+    runner.eq(zlib.adler-32(upper, 5), 0x058c01f5, 'adler-32 "Hello" = 0x058C01F5（大小寫敏感）')
 }
 
 ; ── 2. zlib-compress 輸出佈局 ────────────────────────────────────────
@@ -63,7 +63,7 @@ t-compress = () {
 
         -> -1
     }
-    runner.eq(nlen, 0xFA, 'NLEN 低位 = ~5 & 0xFF = 0xFA')
+    runner.eq(nlen, 0xfa, 'NLEN 低位 = ~5 & 0xFF = 0xFA')
 
     tail = comp.slice(12, 16)
     runner.str-eq(tail.to-hex(), '062C0215', 8, '尾端 4 位元組 = Adler-32 大端')
@@ -92,6 +92,7 @@ t-stored-single = () {
 }
 
 t-stored-multi = () {
+
     ; 200000 > 65535 → 4 個 stored block（65535, 65535, 65535, 3395）
     big []byte = with-len(200000)
     comp = zlib.zlib-compress(big)
@@ -108,10 +109,11 @@ t-stored-multi = () {
 }
 
 t-stored-nil = () {
+
     ; 太短：< 6 位元組
-    tiny []byte = [0x78, 0x9C, 0x00]
+    tiny []byte = [0x78, 0x9c, 0x00]
     o1 = zlib.zlib-decompress-stored(tiny)
-    n1 i64 = o1: {
+    n1 = o1: {
         ok -> 1
 
         -> 0
@@ -128,7 +130,7 @@ t-stored-nil = () {
         -> fixed
     }
     o2 = zlib.zlib-decompress-stored(fixed)
-    n2 i64 = o2: {
+    n2 = o2: {
         ok -> 1
 
         -> 0
@@ -139,7 +141,10 @@ t-stored-nil = () {
 ; ── 4. zlib-decompress：完整路徑 ────────────────────────────────────
 
 t-decompress-stored = () {
-    data []byte = [104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]
+    data []byte = [
+        104, 101, 108, 108, 111, 32, 119, 111,
+        114, 108, 100,
+    ]
     comp = zlib.zlib-compress(data)
 
     o = zlib.zlib-decompress(comp)
@@ -178,10 +183,11 @@ t-decompress-inflate = () {
 }
 
 t-decompress-nil = () {
+
     ; 太短
-    tiny []byte = [0x78, 0x9C, 0x00]
+    tiny []byte = [0x78, 0x9c, 0x00]
     o1 = zlib.zlib-decompress(tiny)
-    n1 i64 = o1: {
+    n1 = o1: {
         ok -> 1
 
         -> 0
@@ -189,9 +195,9 @@ t-decompress-nil = () {
     runner.eq(n1, 0, 'len < 6 → nil')
 
     ; CM(低 4 位) != 8
-    badcm []byte = [0x11, 0x9C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    badcm []byte = [0x11, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     o2 = zlib.zlib-decompress(badcm)
-    n2 i64 = o2: {
+    n2 = o2: {
         ok -> 1
 
         -> 0
@@ -199,9 +205,9 @@ t-decompress-nil = () {
     runner.eq(n2, 0, 'CM != 8 → nil')
 
     ; CINFO(高 4 位) > 7
-    badcinfo []byte = [0x88, 0x9C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    badcinfo []byte = [0x88, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     o3 = zlib.zlib-decompress(badcinfo)
-    n3 i64 = o3: {
+    n3 = o3: {
         ok -> 1
 
         -> 0
@@ -256,7 +262,7 @@ t-consumed = () {
 }
 
 t-consumed-zero = () {
-    tiny []byte = [0x78, 0x9C, 0x00]
+    tiny []byte = [0x78, 0x9c, 0x00]
     runner.eq(zlib.zlib-consumed-stored(tiny), 0, 'len < 6 → 0')
 
     hex = '789CCB48CDC9C957C84022CBF38B7252206C00A4020AF9'

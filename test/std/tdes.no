@@ -49,6 +49,16 @@ t-enc = () {
     pt []byte = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
     ct = tdes.tdes-enc(pt, 8, key)
     runner.str-eq(bhex(ct), '1a4d672dca6cb335', 16, '3des enc KAT')
+
+    ; n 不是 8 的倍數時只處理完整區塊（輸出長度 = (n/8)*8）
+    two = mkb('0123456789abcdef0123456789abcdef')
+    ct20 = tdes.tdes-enc(two, 20, key)
+    runner.eq(ct20.len(), 16, 'tdes-enc n=20 → 16 位元組（丟棄尾部 4 位元組）')
+    ct16 = tdes.tdes-enc(two, 16, key)
+    runner.str-eq(bhex(ct20), bhex(ct16), 32, 'tdes-enc n=20 與 n=16 結果一致')
+
+    ; 空輸入 ⇒ 空輸出
+    runner.eq(tdes.tdes-enc(zeros(0), 0, key).len(), 0, 'tdes-enc 空輸入 → 空')
 }
 
 ; 3DES-EDE 解密：同一金鑰對密文解密應還原出明文 0123456789abcdef
@@ -161,6 +171,16 @@ t-cbc = () {
     c11 = tdes.tdes-cbc-enc(mkb('4e6f772069732074686520'), key, iv)
     runner.eq(c11.len(), 8, 'tdes-cbc-enc 丟棄不足一塊的尾部')
     runner.str-eq(bhex(c11), '314f8327fa7a09a8', 16, 'tdes-cbc-enc 11B → 1 塊')
+
+    ; 剛好越過一塊邊界的 9 位元組 ⇒ 仍只輸出 1 塊
+    c9 = tdes.tdes-cbc-enc(mkb('4e6f77206973207468'), key, iv)
+    runner.eq(c9.len(), 8, 'tdes-cbc-enc 9B → 1 塊')
+    runner.str-eq(bhex(c9), bhex(c11), 16, 'tdes-cbc-enc 9B 與 11B 首塊一致')
+
+    ; 解密同樣只處理完整區塊：11 位元組密文 → 8 位元組明文
+    d11 = tdes.tdes-cbc-dec(c11, key, iv)
+    runner.eq(d11.len(), 8, 'tdes-cbc-dec 丟棄不足一塊的尾部')
+    runner.str-eq(bhex(d11), '4e6f772069732074', 16, 'tdes-cbc-dec 11B → 1 塊')
 
     ; 空輸入 ⇒ 空輸出
     e = tdes.tdes-cbc-enc(zeros(0), key, iv)

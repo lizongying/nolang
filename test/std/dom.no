@@ -1,7 +1,9 @@
 ; test/std/dom.no — std/dom 模組測試
 ;
 ; 執行：no test test/std/dom.no
-; 覆蓋：parse-xml / parse-html / 節點導航 / 屬性 / 查詢 / 變異 / 序列化 / 實體
+; 覆蓋：parse-xml / parse-html / 節點導航 / 屬性 / 查詢 / 變異 / 序列化 / 實體；
+;       節點池原語（init/alloc/valid/append/detach/insert-before/屬性邊表）、
+;       名字與實體助手、轉義、class 比對、裸池上的 xml/html 解析與序列化入口
 
 # /test/runner
 
@@ -31,6 +33,15 @@ u-str = (o ?str) (v str) {
     }
 }
 
+; 斷言兩字串等長且等內容（先比長度，避免 str-eq 前綴通過掩蓋差異）
+; got str: 實際字串
+; want str: 期望字串
+; msg str: 斷言描述，長度不符時自動加 ' [len]' 後綴
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
 ; ?dom 是否為 err（1=err, 0=其他）
 ; o: 待判定的 ?dom 解析結果
 ; yes: 1=err（解析失敗）, 0=ok 或 nil
@@ -40,6 +51,33 @@ err-of = (o ?dom) (yes i64) {
         err -> 1
 
         -> 0
+    }
+}
+
+; 在裸池上建立具名元素節點（`?=` 僅可用於有 option 結果參數的函式）
+; p: 目標節點池
+; nm: 標籤名
+; idx: 新節點索引
+; e: 佔位結果（恆為 nil，僅為放行 `?=`）
+dp-mk-el = (p dom-pool, nm str) (idx i64, e ?str) {
+    idx = p.alloc(dom.DOM-KIND-ELEMENT)
+    p.names[idx] ?= nm
+}
+
+; 讀回屬性值（裸池版；未設定時回哨兵 '<none>'）
+; p: 目標節點池
+; node: 元素節點索引
+; nm: 屬性名
+; v: 屬性值
+dp-attr = (p dom-pool, node i64, nm str) (v str) {
+    v = '<none>'
+    e = p.find-attr(node, nm)
+    e >= 0 -> {
+        v = p.av[e]: {
+            ok -> it
+
+            -> '<err>'
+        }
     }
 }
 
@@ -587,6 +625,431 @@ t-misc = () {
 
 ; ── 執行 ──────────────────────────────────────
 
+; ── 節點池基礎操作直測 ──────────────────────────
+
+; 節點池的分配/合法性/子鏈表/屬性邊表/摘除等原語，
+; 以及 XML 解析與序列化入口在「裸池」上的行為
+t-pool = () {
+    pool dom-pool
+    pool.init()
+    d = pool.alloc(dom.DOM-KIND-DOCUMENT)
+    e = pool.alloc(dom.DOM-KIND-ELEMENT)
+    t = pool.alloc(dom.DOM-KIND-TEXT)
+    runner.eq(d, 0, 'alloc document = 0')
+    runner.eq(e, 1, 'alloc element = 1')
+    runner.eq(t, 2, 'alloc text = 2')
+
+    runner.is-true(pool.valid(0), 'valid(0)')
+    runner.is-true(pool.valid(2), 'valid(2)')
+    runner.is-false(pool.valid(3), 'valid(3) 越界')
+    runner.is-false(pool.valid(-1), 'valid(-1) 負索引')
+
+    pool.append(d, e)
+    n dom-node
+    o = pool.nodes[d]
+    o: {
+        ok -> n = it
+
+        -> _
+    }
+    runner.eq(n.count, 1, 'append 後 document 有 1 子節點')
+    runner.eq(n.first, e, 'append 後首子節點為 element')
+    runner.eq(n.last, e, 'append 後末子節點為 element')
+
+    pool.append(d, t)
+    o2 = pool.nodes[d]
+    o2: {
+        ok -> n = it
+
+        -> _
+    }
+    runner.eq(n.count, 2, '再 append 後有 2 子節點')
+    runner.eq(n.last, t, '末子節點換成 text')
+
+    ; insert-before(d, node=t, ref=e) ⇒ 順序變 t, e
+    pool.insert-before(d, t, e)
+    o3 = pool.nodes[d]
+    o3: {
+        ok -> n = it
+
+        -> _
+    }
+    runner.eq(n.first, t, 'insert-before 後首子節點為 text')
+    runner.eq(n.count, 2, 'insert-before 不改變子節點數')
+
+    ; 屬性邊表：set → find → attr-edge-at → remove
+    pool.set-attr(e, 'id', 'x')
+    fid = pool.find-attr(e, 'id')
+    runner.is-true(fid >= 0, 'set-attr 後 find-attr 命中')
+    runner.eq(pool.attr-edge-at(e, 0), fid, 'attr-edge-at(0) 等於該屬性邊')
+    runner.is-true(pool.remove-attr(e, 'id'), 'remove-attr 首次命中')
+    runner.is-false(pool.remove-attr(e, 'id'), 'remove-attr 第二次未命中')
+    runner.is-true(pool.find-attr(e, 'id') < 0, 'remove-attr 後 find-attr 回 -1')
+
+    ; 非法輸入的守衛：不崩、不改變樹
+    pool.append(-1, e)
+    pool.append(d, -1)
+    o4 = pool.nodes[d]
+    o4: {
+        ok -> n = it
+
+        -> _
+    }
+    runner.eq(n.first, t, 'append 非法參數為 no-op')
+
+    ; detach 摘除子節點
+    pool.detach(e)
+    o5 = pool.nodes[e]
+    o5: {
+        ok -> n = it
+
+        -> _
+    }
+    runner.eq(n.parent, -1, 'detach 後父節點為 -1')
+}
+
+; ── 自由函數直測（名字判定 / 實體 / 跳空白 / 轉義 / class） ──────
+
+t-free-helpers = () {
+
+    ; blob-has：整詞匹配，不是子串匹配
+    runner.is-true(dom.blob-has(' a b ', 'b'), 'blob-has 命中整詞')
+    runner.is-false(dom.blob-has(' a b ', 'ab'), 'blob-has 不匹配部分詞')
+    runner.is-false(dom.blob-has(' a b ', ''), 'blob-has 空名回 false')
+
+    ; is-name-byte：字母/數字/-/_/:/./高位元組放行，空白與標點不放行
+    runner.is-true(dom.is-name-byte(97), 'name-byte 小寫字母')
+    runner.is-true(dom.is-name-byte(65), 'name-byte 大寫字母')
+    runner.is-true(dom.is-name-byte(48), 'name-byte 數字')
+    runner.is-true(dom.is-name-byte(45), 'name-byte 連字號')
+    runner.is-true(dom.is-name-byte(58), 'name-byte 冒號')
+    runner.is-true(dom.is-name-byte(46), 'name-byte 點')
+    runner.is-true(dom.is-name-byte(200), 'name-byte 高位元組放行')
+    runner.is-false(dom.is-name-byte(32), 'name-byte 空白不放行')
+    runner.is-false(dom.is-name-byte(60), 'name-byte < 不放行')
+
+    ; find-entity：預定義實體碼點，未知/空回 -1
+    runner.eq(dom.find-entity('amp'), 38, 'entity amp = 38')
+    runner.eq(dom.find-entity('lt'), 60, 'entity lt = 60')
+    runner.eq(dom.find-entity('gt'), 62, 'entity gt = 62')
+    runner.eq(dom.find-entity('quot'), 34, 'entity quot = 34')
+    runner.eq(dom.find-entity('apos'), 39, 'entity apos = 39')
+    runner.eq(dom.find-entity('nbsp'), 160, 'entity nbsp = 160')
+    runner.eq(dom.find-entity('zzz'), -1, 'entity 未知回 -1')
+    runner.eq(dom.find-entity(''), -1, 'entity 空名回 -1')
+
+    ; cp-append：UTF-8 追加，非法碼點原樣返回
+    eq-str(dom.cp-append('x', 65), 'xA', 'cp-append ASCII')
+    eq-str(dom.cp-append('', 20013), '中', 'cp-append 非 ASCII')
+    eq-str(dom.cp-append('x', 0), 'x', 'cp-append 拒絕 0 碼點')
+    eq-str(dom.cp-append('x', 1114112), 'x', 'cp-append 拒絕越界碼點')
+
+    ; decode-entities：命名/數字實體解碼；HTML 模式保留未知實體，XML 模式判錯
+    eq-str(u-str(dom.decode-entities('&amp;x', 0, 6, false)), '&x', 'decode-entities 命名實體')
+    eq-str(u-str(dom.decode-entities('&#65;', 0, 5, false)), 'A', 'decode-entities 十進位數字實體')
+    eq-str(u-str(dom.decode-entities('&zzz;', 0, 5, true)), '&zzz;', 'decode-entities HTML 保留未知實體')
+    eq-str(u-str(dom.decode-entities('&zzz;', 0, 5, false)), '', 'decode-entities XML 未知實體回 nil')
+    eq-str(u-str(dom.decode-entities('abc', 0, 0, false)), '', 'decode-entities 空片段')
+
+    ; parse-numeric-entity：pos 指向數字部分（含 x/X 前綴），end 為分號位置
+    runner.eq(dom.parse-numeric-entity('&#65;', 2, 4), 65, 'numeric 十進位 65')
+    runner.eq(dom.parse-numeric-entity('&#x41;', 2, 5), 65, 'numeric 十六進位 0x41')
+    runner.eq(dom.parse-numeric-entity('&#zz;', 2, 4), -1, 'numeric 非法數字回 -1')
+    runner.eq(dom.parse-numeric-entity('&#;', 2, 2), -1, 'numeric 空數字回 -1')
+
+    ; xml-skip-ws / xml-read-name / dom-strip-bom
+    runner.eq(dom.xml-skip-ws('  a', 0), 2, 'xml-skip-ws 跳過兩個空格')
+    runner.eq(dom.xml-skip-ws('a', 0), 0, 'xml-skip-ws 無空白不動')
+    runner.eq(u-i64(dom.xml-read-name('abc>', 0)), 3, 'xml-read-name 讀到非名字元')
+    runner.eq(u-i64(dom.xml-read-name('1abc', 0)), 4, 'xml-read-name 允許數字開頭（本實作放行）')
+    bomch char = 65279
+    boms = bomch.to-str() - 'abc'
+    runner.eq(dom.dom-strip-bom(boms), 3, 'dom-strip-bom 去 UTF-8 BOM')
+    runner.eq(dom.dom-strip-bom('abc'), 0, 'dom-strip-bom 無 BOM 回 0')
+
+    ; html-close-match：大小寫不敏感，且要求名字邊界
+    runner.is-true(dom.html-close-match('</div>', 2, 'div'), 'close-match 命中')
+    runner.is-true(dom.html-close-match('</DIV >', 2, 'div'), 'close-match 大小寫不敏感')
+    runner.is-false(dom.html-close-match('</divx>', 2, 'div'), 'close-match 拒絕前綴詞')
+    runner.is-false(dom.html-close-match('</di', 2, 'div'), 'close-match 拒絕過短輸入')
+
+    ; dom-closers-of：隱式閉合詞表
+    eq-str(dom.dom-closers-of('li'), ' li ', 'closers-of li')
+    eq-str(dom.dom-closers-of('dd'), ' dd dt ', 'closers-of dd')
+    eq-str(dom.dom-closers-of('td'), ' td th ', 'closers-of td')
+    eq-str(dom.dom-closers-of('tr'), ' td th tr ', 'closers-of tr')
+    eq-str(dom.dom-closers-of('span'), '', 'closers-of span 無規則')
+
+    ; html-peek-name：取 '<' 後的標籤名並轉小寫
+    eq-str(dom.html-peek-name('<Div>', 0), 'div', 'peek-name 轉小寫')
+    eq-str(dom.html-peek-name('<p', 0), 'p', 'peek-name 無結尾亦可')
+    eq-str(dom.html-peek-name('<>', 0), '', 'peek-name 空標籤回空串')
+
+    ; esc-text / esc-attr：文字只轉 & < >，屬性另轉引號
+    eq-str(dom.esc-text('a<b&c'), 'a&lt;b&amp;c', 'esc-text 轉 & <')
+    eq-str(dom.esc-text('a>b'), 'a&gt;b', 'esc-text 轉 >')
+    eq-str(dom.esc-attr('a"b&c'), 'a&quot;b&amp;c', 'esc-attr 轉引號與 &')
+    eq-str(dom.esc-text('plain'), 'plain', 'esc-text 無需轉義原樣返回')
+
+    ; class-has：按空白切詞整詞匹配
+    runner.is-true(dom.class-has('a b', 'b'), 'class-has 命中第二個詞')
+    runner.is-false(dom.class-has('ab', 'a'), 'class-has 不匹配前綴')
+    runner.is-false(dom.class-has('', 'a'), 'class-has 空值回 false')
+}
+
+; ── 解析/序列化入口在裸池上的直測 ──────────────────
+
+t-pool-parse = () {
+    px dom-pool
+    px.init()
+    root, failpos, ok = px.xml-parse-doc('<r x="1">hi</r>')
+    runner.is-true(ok, 'xml-parse-doc ok')
+    runner.eq(failpos, -1, 'xml-parse-doc 成功時 failpos = -1')
+    eq-str(px.ser(root, false), '<r x="1">hi</r>', 'ser XML 回環')
+    eq-str(px.text-of(root), 'hi', 'text-of 取文字內容')
+    eq-str(px.ser-children(root, false), '<r x="1">hi</r>', 'ser-children 對 document 根序列化整個子樹')
+
+    ; 查詢類原語
+    pq dom-pool
+    pq.init()
+    qroot, qfp, qok = pq.xml-parse-doc('<r><a id="z" class="c">1</a><a>2</a><b>3</b></r>')
+    runner.is-true(qok, 'xml-parse-doc 第二棵樹 ok')
+    na = pq.collect-tag(qroot, 'a', false)
+    runner.eq(na.len(), 2, 'collect-tag 找到 2 個 a')
+    nb = pq.collect-tag(qroot, 'zzz', false)
+    runner.eq(nb.len(), 0, 'collect-tag 無匹配回空')
+    cs = pq.collect-class(qroot, 'c')
+    runner.eq(cs.len(), 1, 'collect-class 找到 1 個 .c')
+    runner.is-true(pq.find-id-node(qroot, 'z') >= 0, 'find-id-node 找到 #z')
+    runner.is-true(pq.find-id-node(qroot, 'nope') < 0, 'find-id-node 未找到回負值')
+    nz = pq.find-id-node(qroot, 'z')
+    eq-str(pq.ser-children(nz, true), '1', 'ser-children 對元素只序列化其子節點')
+
+    ; 未閉合 XML 應失敗並回報錯誤位置
+    bad dom-pool
+    bad.init()
+    broot, bpos, bok = bad.xml-parse-doc('<r><a></r>')
+    runner.is-false(bok, 'xml-parse-doc 標籤不配對判失敗')
+    runner.eq(bpos, 3, 'xml-parse-doc 回報最內層失敗元素位置')
+    runner.eq(bad.err-pos-or(0), 3, 'err-pos-or 取較大的 errpos')
+    runner.eq(bad.err-pos-or(99), 99, 'err-pos-or 落後時回退 dflt')
+
+    ; 頂層第二個根元素：位置取自掃描點（而非元素起點）
+    two dom-pool
+    two.init()
+    troot, tpos, tok = two.xml-parse-doc('<r/>x')
+    runner.is-false(tok, 'xml-parse-doc 第二個根判失敗')
+    runner.eq(tpos, 4, 'xml-parse-doc 第二根位置為掃描點')
+
+    ; HTML 寬鬆解析（li 隱式閉合）
+    ph dom-pool
+    ph.init()
+    hroot = ph.html-parse-doc('<ul><li>a<li>b</ul>')
+    lis = ph.collect-tag(hroot, 'li', false)
+    runner.eq(lis.len(), 2, 'html-parse-doc 隱式閉合出 2 個 li')
+    eq-str(ph.ser(hroot, true), '<ul><li>a</li><li>b</li></ul>', 'ser HTML 補齊結尾標籤')
+}
+
+; ── 解析原語直測（xml/html 各自的單步掃描器） ──────────
+
+t-parse-prims = () {
+
+    ; xml-parse-comment
+    a dom-pool
+    a.init()
+    ar = a.alloc(dom.DOM-KIND-DOCUMENT)
+    c1 = a.xml-parse-comment(ar, '<!--c-->', 0)
+    runner.eq(u-i64(c1), 8, 'xml-parse-comment 回 > 之後位置')
+    eq-str(a.ser(ar, false), '<!--c-->', 'xml-parse-comment 值為註解內容')
+    c2 = a.xml-parse-comment(ar, '<!--c', 0)
+    runner.eq(u-i64(c2), -999, 'xml-parse-comment 未閉合回 nil')
+
+    ; xml-parse-cdata
+    b dom-pool
+    b.init()
+    br = b.alloc(dom.DOM-KIND-DOCUMENT)
+    d1 = b.xml-parse-cdata(br, '<![CDATA[x<y]]>', 0)
+    runner.eq(u-i64(d1), 15, 'xml-parse-cdata 回 > 之後位置')
+    eq-str(b.ser(br, false), '<![CDATA[x<y]]>', 'xml-parse-cdata 內容不轉義')
+    eq-str(b.text-of(br), 'x<y', 'xml-parse-cdata text-of 取內容')
+    d2 = b.xml-parse-cdata(br, '<![CDATA[x<y', 0)
+    runner.eq(u-i64(d2), -999, 'xml-parse-cdata 未閉合回 nil')
+
+    ; xml-parse-pi
+    c dom-pool
+    c.init()
+    cr = c.alloc(dom.DOM-KIND-DOCUMENT)
+    e1 = c.xml-parse-pi(cr, '<?xml version="1.0"?>', 0)
+    runner.eq(u-i64(e1), 21, 'xml-parse-pi 回 > 之後位置')
+    eq-str(c.ser(cr, false), '<?xml version="1.0"?>', 'xml-parse-pi 名與值分離後可回環')
+    e2 = c.xml-parse-pi(cr, '<?xml', 0)
+    runner.eq(u-i64(e2), -999, 'xml-parse-pi 未閉合回 nil')
+
+    ; parse-doctype-node
+    d dom-pool
+    d.init()
+    dr = d.alloc(dom.DOM-KIND-DOCUMENT)
+    f1 = d.parse-doctype-node(dr, '<!DOCTYPE html>', 0)
+    runner.eq(u-i64(f1), 15, 'parse-doctype-node 回 > 之後位置')
+    eq-str(d.ser(dr, false), '<!DOCTYPE html>', 'parse-doctype-node 保留原文')
+    f2 = d.parse-doctype-node(dr, '<!DOCTYPE html', 0)
+    runner.eq(u-i64(f2), -999, 'parse-doctype-node 未閉合回 nil')
+
+    ; xml-add-text
+    e dom-pool
+    e.init()
+    er = e.alloc(dom.DOM-KIND-ELEMENT)
+    runner.is-true(e.xml-add-text(er, 'a&amp;b', 0, 7), 'xml-add-text 解實體成功')
+    eq-str(e.text-of(er), 'a&b', 'xml-add-text 解出 &')
+    runner.is-true(e.xml-add-text(er, 'abc', 2, 2), 'xml-add-text 空區間視為成功')
+    runner.is-false(e.xml-add-text(er, '&foo;', 0, 5), 'xml-add-text 未知實體失敗')
+
+    ; xml-parse-attr
+    f dom-pool
+    f.init()
+    fn1, fe1 = dp-mk-el(f, 'r')
+    g1 = f.xml-parse-attr(fn1, 'k="v"', 0, true)
+    runner.eq(u-i64(g1), 5, 'xml-parse-attr 回值後位置')
+    eq-str(dp-attr(f, fn1, 'k'), 'v', 'xml-parse-attr 寫入屬性值')
+    g1b = f.xml-parse-attr(fn1, 'k="dup"', 0, true)
+    runner.eq(u-i64(g1b), -999, 'xml-parse-attr 重複屬性在 XML 判失敗')
+    eq-str(dp-attr(f, fn1, 'k'), 'v', 'xml-parse-attr 重複時首個值不變')
+    g1c = f.xml-parse-attr(fn1, 'k="dup"', 0, false)
+    runner.eq(u-i64(g1c), 7, 'xml-parse-attr 重複屬性在 HTML 跳過')
+    eq-str(dp-attr(f, fn1, 'k'), 'v', 'xml-parse-attr HTML 首個為準')
+    g2 = f.xml-parse-attr(fn1, 'u=1', 0, true)
+    runner.eq(u-i64(g2), -999, 'xml-parse-attr 未加引號在 XML 判失敗')
+    g3 = f.xml-parse-attr(fn1, 'u=1', 0, false)
+    runner.eq(u-i64(g3), 3, 'xml-parse-attr 未加引號在 HTML 可解析')
+    eq-str(dp-attr(f, fn1, 'u'), '1', 'xml-parse-attr HTML 未加引號取值')
+    g4 = f.xml-parse-attr(fn1, 'noeq', 0, true)
+    runner.eq(u-i64(g4), -999, 'xml-parse-attr 缺 = 判失敗')
+    g5 = f.xml-parse-attr(fn1, 'q="oops', 0, true)
+    runner.eq(u-i64(g5), -999, 'xml-parse-attr 引號未閉合判失敗')
+
+    ; xml-parse-close
+    g dom-pool
+    g.init()
+    gn, ge = dp-mk-el(g, 'r')
+    h1 = g.xml-parse-close(gn, '</r>', 0)
+    runner.eq(u-i64(h1), 4, 'xml-parse-close 回 > 之後位置')
+    h2 = g.xml-parse-close(gn, '</x>', 0)
+    runner.eq(u-i64(h2), -999, 'xml-parse-close 名字不符判失敗')
+    h3 = g.xml-parse-close(gn, '</r', 0)
+    runner.eq(u-i64(h3), -999, 'xml-parse-close 未閉合判失敗')
+
+    ; xml-parse-element
+    h dom-pool
+    h.init()
+    hr = h.alloc(dom.DOM-KIND-DOCUMENT)
+    i1 = h.xml-parse-element('<a b="1">t</a>', hr, 0, 1)
+    runner.eq(u-i64(i1), 14, 'xml-parse-element 回結尾標籤之後位置')
+    eq-str(h.ser(hr, false), '<a b="1">t</a>', 'xml-parse-element 建出完整子樹')
+    i2 = h.xml-parse-element('<a/>', hr, 0, dom.DOM-MAX-DEPTH + 1)
+    runner.eq(u-i64(i2), -999, 'xml-parse-element 超過深度上限判失敗')
+
+    ; html-add-text
+    j dom-pool
+    j.init()
+    jr = j.alloc(dom.DOM-KIND-ELEMENT)
+    j.html-add-text(jr, 'a&amp;b', 0, 7)
+    eq-str(j.text-of(jr), 'a&b', 'html-add-text 解實體')
+    j.html-add-text(jr, 'xx', 1, 1)
+    eq-str(j.text-of(jr), 'a&b', 'html-add-text 空區間不新增節點')
+
+    ; html-parse-comment
+    k dom-pool
+    k.init()
+    kr = k.alloc(dom.DOM-KIND-DOCUMENT)
+    k1 = k.html-parse-comment(kr, '<!--c-->', 0)
+    runner.eq(k1, 8, 'html-parse-comment 回 > 之後位置')
+    eq-str(k.ser(kr, false), '<!--c-->', 'html-parse-comment 值為註解內容')
+    k2 = k.html-parse-comment(kr, '<!--c', 0)
+    runner.eq(k2, 5, 'html-parse-comment 未閉合吃到 EOF')
+
+    ; html-bogus-comment
+    l dom-pool
+    l.init()
+    lr = l.alloc(dom.DOM-KIND-DOCUMENT)
+    l1 = l.html-bogus-comment(lr, '<!x>', 0)
+    runner.eq(l1, 4, 'html-bogus-comment 回 > 之後位置')
+    eq-str(l.ser(lr, false), '<!--x-->', 'html-bogus-comment 內容取 <! 之後')
+
+    ; html-parse-pi
+    m dom-pool
+    m.init()
+    mr = m.alloc(dom.DOM-KIND-DOCUMENT)
+    m1 = m.html-parse-pi(mr, '<?PHP echo 1 ?>', 0)
+    runner.eq(m1, 15, 'html-parse-pi 回 > 之後位置')
+    eq-str(m.ser(mr, false), '<?php echo 1 ?>', 'html-parse-pi 目標名轉小寫並回環')
+    m2 = m.html-parse-pi(mr, '<?>', 0)
+    runner.eq(m2, 3, 'html-parse-pi 無名字時退回 bogus comment')
+
+    ; html-parse-attr
+    n dom-pool
+    n.init()
+    nn, ne2 = dp-mk-el(n, 'div')
+    o1 = n.html-parse-attr(nn, 'K="V"', 0)
+    runner.eq(u-i64(o1), 5, 'html-parse-attr 回值後位置')
+    eq-str(dp-attr(n, nn, 'k'), 'V', 'html-parse-attr 屬性名轉小寫')
+    o2 = n.html-parse-attr(nn, 'b=2', 0)
+    runner.eq(u-i64(o2), 3, 'html-parse-attr 未加引號回值後位置')
+    eq-str(dp-attr(n, nn, 'b'), '2', 'html-parse-attr 未加引號取值')
+    o3 = n.html-parse-attr(nn, 'c', 0)
+    runner.eq(u-i64(o3), 1, 'html-parse-attr 布爾屬性只吃名字')
+    eq-str(dp-attr(n, nn, 'c'), '', 'html-parse-attr 布爾屬性值為空串')
+    o4 = n.html-parse-attr(nn, 'd=>', 0)
+    runner.eq(u-i64(o4), 2, 'html-parse-attr = 後直接 > 時停在 >')
+    eq-str(dp-attr(n, nn, 'd'), '', 'html-parse-attr = 後直接 > 給空值')
+    o5 = n.html-parse-attr(nn, 'f="x', 0)
+    runner.eq(u-i64(o5), 4, 'html-parse-attr 引號未閉合吃到 EOF')
+    eq-str(dp-attr(n, nn, 'f'), 'x', 'html-parse-attr 引號未閉合仍取值')
+    o6 = n.html-parse-attr(nn, '=1', 0)
+    runner.eq(u-i64(o6), -999, 'html-parse-attr 無屬性名判失敗')
+
+    ; html-set-attr-once
+    p dom-pool
+    p.init()
+    pn, pe = dp-mk-el(p, 'div')
+    p.html-set-attr-once(pn, 'x', '1')
+    p.html-set-attr-once(pn, 'x', '2')
+    eq-str(dp-attr(p, pn, 'x'), '1', 'html-set-attr-once 首個為準')
+
+    ; html-parse-open
+    q dom-pool
+    q.init()
+    qr = q.alloc(dom.DOM-KIND-DOCUMENT)
+    r1, qe1, qm1 = q.html-parse-open('<div class="c">', 0, qr)
+    runner.eq(r1, 15, 'html-parse-open 回 > 之後位置')
+    runner.eq(qm1, 1, 'html-parse-open 普通元素 mode=1')
+    eq-str(dp-attr(q, qe1, 'class'), 'c', 'html-parse-open 解析屬性')
+    r2, qe2, qm2 = q.html-parse-open('<br>', 0, qr)
+    runner.eq(qm2, 2, 'html-parse-open void 元素 mode=2')
+    r3, qe3, qm3 = q.html-parse-open('<img/>', 0, qr)
+    runner.eq(r3, 6, 'html-parse-open 自閉合回 > 之後位置')
+    runner.eq(qm3, 2, 'html-parse-open 自閉合 mode=2')
+    r4, qe4, qm4 = q.html-parse-open('<script>a<b</script>', 0, qr)
+    runner.eq(qm4, 3, 'html-parse-open raw-text 元素 mode=3')
+    r5, qe5, qm5 = q.html-parse-open('<title>a&lt;b</title>', 0, qr)
+    runner.eq(r5, 21, 'html-parse-open RCDATA 回結尾標籤之後位置')
+    r6, qe6, qm6 = q.html-parse-open('<!x>', 0, qr)
+    runner.eq(r6, 1, 'html-parse-open 無名字只前進 1 位元組')
+    runner.eq(qe6, -1, 'html-parse-open 無名字不建元素')
+    runner.eq(qm6, 0, 'html-parse-open 無名字 mode=0')
+
+    ; html-parse-close-name
+    s1, sn1, sok1 = q.html-parse-close-name('</DIV>', 0)
+    runner.eq(s1, 6, 'html-parse-close-name 回 > 之後位置')
+    eq-str(sn1, 'div', 'html-parse-close-name 名字轉小寫')
+    runner.is-true(sok1, 'html-parse-close-name 有名字時 ok')
+    s2, sn2, sok2 = q.html-parse-close-name('</>', 0)
+    runner.eq(s2, 3, 'html-parse-close-name 無名字時吃整個標籤')
+    runner.is-false(sok2, 'html-parse-close-name 無名字時 ok=false')
+    s3, sn3, sok3 = q.html-parse-close-name('</a', 0)
+    runner.eq(s3, 3, 'html-parse-close-name 未閉合停在 EOF')
+    eq-str(sn3, 'a', 'html-parse-close-name 未閉合仍取名字')
+}
+
 p1, f1 = runner.test('dom.xml-basic', t-xml-basic)
 p2, f2 = runner.test('dom.xml-tree', t-xml-tree)
 p3, f3 = runner.test('dom.xml-nodes', t-xml-nodes)
@@ -607,6 +1070,11 @@ p17, f17 = runner.test('dom.mutation', t-mutation)
 p18, f18 = runner.test('dom.mutation-move', t-mutation-move)
 p19, f19 = runner.test('dom.esc-serialize', t-esc-serialize)
 p20, f20 = runner.test('dom.misc', t-misc)
+
+p21, f21 = runner.test('dom.pool', t-pool)
+p22, f22 = runner.test('dom.free-helpers', t-free-helpers)
+p23, f23 = runner.test('dom.pool-parse', t-pool-parse)
+p24, f24 = runner.test('dom.parse-prims', t-parse-prims)
 
 total = runner.summary()
 f = runner.failed-count()

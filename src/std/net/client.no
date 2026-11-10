@@ -155,7 +155,7 @@ client.close = () {
 ; [client-create](#client.client-create)
 client-create = (host str, port i64) (c ?client) {
     c = nil
-    cl = client {}
+    cl = client{}
     ok = false
     ok = cl.connect(host, port)
     ok -> c = cl

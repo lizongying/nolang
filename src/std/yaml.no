@@ -346,7 +346,7 @@ yaml-parser.push-node = (nd yaml-node) (idx i64) {
 ; idx: 新建 null 節點的池索引
 ; [push-null](#yaml.yaml-parser.push-null)
 yaml-parser.push-null = () (idx i64) {
-    nd = yaml-node {
+    nd = yaml-node{
         kind: YAML-KIND-NULL
         style: YAML-STYLE-PLAIN
         tag: ''
@@ -1202,7 +1202,7 @@ yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
             }
         }
     }
-    nd = yaml-node {
+    nd = yaml-node{
         kind: kind
         style: style
         tag: tag
@@ -1807,7 +1807,7 @@ yaml-parser.parse-alias = () (idx i64) {
         return
     }
     src = .nodes[target]
-    nd = yaml-node {
+    nd = yaml-node{
         kind: src.kind
         style: YAML-STYLE-ALIAS
         tag: src.tag
@@ -2158,7 +2158,7 @@ yaml-parser.parse-flow-seq = () (idx i64) {
         .fail-at('expected , or ] in flow sequence')
         break
     }
-    nd = yaml-node {
+    nd = yaml-node{
         kind: YAML-KIND-SEQ
         style: YAML-STYLE-FLOW
         tag: ''
@@ -2233,7 +2233,7 @@ yaml-parser.parse-flow-map = () (idx i64) {
         .fail-at('expected , or } in flow mapping')
         break
     }
-    nd = yaml-node {
+    nd = yaml-node{
         kind: YAML-KIND-MAP
         style: YAML-STYLE-FLOW
         tag: ''
@@ -2322,7 +2322,7 @@ yaml-parser.parse-block-seq = (indent i64) (idx i64) {
         .is-seq-dash() -> continue
         break
     }
-    nd = yaml-node {
+    nd = yaml-node{
         kind: YAML-KIND-SEQ
         style: YAML-STYLE-BLOCK
         tag: ''
@@ -2574,7 +2574,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
         .looks-like-map-entry() -> continue
         break
     }
-    nd = yaml-node {
+    nd = yaml-node{
         kind: YAML-KIND-MAP
         style: YAML-STYLE-BLOCK
         tag: ''
@@ -2782,7 +2782,7 @@ yaml.parse = (source str) (out ?yaml) {
 yaml.parse-all = (source str) (out ?yaml) {
     out = nil
     src = yaml.strip-bom(source)
-    p = yaml-parser {
+    p = yaml-parser{
         src: src
         n: src.len-bytes()
         pos: 0
@@ -2812,8 +2812,8 @@ yaml.parse-all = (source str) (out ?yaml) {
             -> 0
         }
     }
-    doc = yaml {
-        pool: yaml-pool {
+    doc = yaml{
+        pool: yaml-pool{
             nodes: p.nodes
         }
         root: root
@@ -2863,7 +2863,7 @@ yaml.error = () (msg str) {
 yaml.valid-of = (source str) (yes bool) {
     yes = false
     s = yaml.strip-bom(source)
-    p = yaml-parser {
+    p = yaml-parser{
         src: s
         n: s.len-bytes()
         pos: 0
@@ -2883,7 +2883,7 @@ yaml.valid-of = (source str) (yes bool) {
 yaml.error-of = (source str) (msg str) {
     msg = ''
     s = yaml.strip-bom(source)
-    p = yaml-parser {
+    p = yaml-parser{
         src: s
         n: s.len-bytes()
         pos: 0
@@ -2912,7 +2912,7 @@ yaml.doc = (i i64) (out ?yaml) {
     i < 0 -> return
     i >= .roots.len() -> return
     r = .roots[i]
-    out = yaml {
+    out = yaml{
         pool: .pool
         root: r
         roots: .roots
@@ -3190,7 +3190,7 @@ yaml.at = (i i64) (out ?yaml) {
     cnt = nd.kids.len()
     i >= cnt -> return
     k ?= nd.kids[i]
-    out = yaml {
+    out = yaml{
         pool: .pool
         root: k
         roots: .roots
@@ -3210,7 +3210,7 @@ yaml.key-node = (i i64) (out ?yaml) {
     cnt = nd.keys.len()
     i >= cnt -> return
     k ?= nd.keys[i]
-    out = yaml {
+    out = yaml{
         pool: .pool
         root: k
         roots: .roots
@@ -3254,7 +3254,7 @@ yaml.get = (key str) (out ?yaml) {
         nk ?= .pool.nodes[k]
         yaml-key-text-eq(nk, key) -> {
             v ?= nd.kids[i]
-            out = yaml {
+            out = yaml{
                 pool: .pool
                 root: v
                 roots: .roots
@@ -3382,7 +3382,7 @@ yaml.find = (path str) (out ?yaml) {
 
     (true)
     cur < 0 -> return
-    out = yaml {
+    out = yaml{
         pool: .pool
         root: cur
         roots: .roots

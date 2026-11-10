@@ -114,7 +114,7 @@ new = () (j json) {
 ; p: 已 init 的空節點池（各堆 vec 長度 0、overflowed=false）
 ; [new-pool](#json.new-pool)
 new-pool = () (p json-pool) {
-    p = json-pool {}
+    p = json-pool{}
     p.init()
 }
 

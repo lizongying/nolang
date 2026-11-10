@@ -856,7 +856,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
     block-end = .pos + block-size
 
     ; 建立位元讀取器
-    br = zs-bit-reader {}
+    br = zs-bit-reader{}
     br.init(.data, .pos)
 
     ; 讀取 Literals_Section
@@ -993,7 +993,7 @@ zstd-decompress = (data []byte) (out []byte) {
     }
 
     ; 建立 frame 解碼器
-    frame = zs-frame {
+    frame = zs-frame{
         data: data
         pos: 0
         window-size: 0

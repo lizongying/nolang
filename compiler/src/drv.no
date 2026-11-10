@@ -250,7 +250,7 @@ drv.cmd-vet = () (code i64) {
     nerr = 0
     i = 0
     (i < ps-errs) {
-        d = diag {
+        d = diag{
             file: path
             line: 0
             col: 0
@@ -301,7 +301,7 @@ drv.cmd-vet = () (code i64) {
             msg-part = rest2.slice-bytes(p3 + 1, rest2.len-bytes())
         }
 
-        d = diag {
+        d = diag{
             file: path
             line: 0
             col: 0

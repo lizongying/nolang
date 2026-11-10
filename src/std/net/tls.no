@@ -5567,7 +5567,7 @@ conn.connect-12 = (host str, port i64) (ok bool) {
 ; [dial-12](#tls.dial-12)
 dial-12 = (host str, port i64) (conn ?conn) {
     conn = nil
-    c = conn {}
+    c = conn{}
     c.init()
     ok = c.connect-12(host, port)
     ok == false -> {
@@ -5733,7 +5733,7 @@ conn.close = () {
 ; [dial](#tls.dial)
 dial = (host str, port i64) (conn ?conn) {
     conn = nil
-    c = conn {}
+    c = conn{}
     c.init()
     ok = c.connect(host, port)
     ok == false -> {
@@ -8767,7 +8767,7 @@ server-conn.close = () {
 ; [server-init](#tls.server-init)
 server-init = (fd fd) (conn ?server-conn) {
     conn = nil
-    c = server-conn {}
+    c = server-conn{}
     c.fd = fd
     c.rand-state = time.now-ns() ^ os.get-pid()
     c.encrypted = false

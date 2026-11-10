@@ -92,6 +92,7 @@ arr96 = (a [96]byte) (v []byte) {
 
 ; 位元排列：IP / FP / E 三個方向各驗一組
 t-permute = () {
+
     ; IP(0123456789abcdef) = cc00ccfff0aaf0aa（DES 教學標準中間值）
     runner.str-eq(i64-hex(des.permute(0x0123456789abcdef, des.IP-TBL[..64), 64, 64)), 'cc00ccfff0aaf0aa', 16, 'permute IP')
 

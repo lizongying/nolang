@@ -429,7 +429,7 @@ multipart-reader.has-current-part = () (yes bool) {
 ; [multipart-create](#multipart.multipart-create)
 multipart-create = () (w ?multipart-writer) {
     w = nil
-    writer = multipart-writer {}
+    writer = multipart-writer{}
     ok = false
     ok = writer.init()
     ok -> w = writer
@@ -485,7 +485,7 @@ multipart-parse = (content-type str, body str) (r ?multipart-reader) {
 
         -> return
     }
-    reader = multipart-reader {}
+    reader = multipart-reader{}
     reader.init(boundary, body)
     r = reader
 }

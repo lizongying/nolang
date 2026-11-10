@@ -26,7 +26,7 @@ AES-BLOCK-SIZE = 16
 ; in []byte: 輸入資料（長度需為 16 的倍數）
 ; iv [16]byte: 初始向量；同一金鑰下不可重複使用
 ; ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
-; 返回 out []byte: 加密後的密文，長度與 in 相同
+; 返回 out []byte: 加密後的密文，長度為 (in.len()/16)*16（不足一整塊的尾部丟棄）
 ; [cbc-enc](#aes-cbc.cbc-enc)
 cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
@@ -40,10 +40,10 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         }
     }
 
-    ; 逐區塊加密
-    out = with-len(in.len())
+    ; 逐區塊加密（只處理完整區塊：不足 16 位元組的尾部丟棄）
+    out = with-len((in.len() / 16) * 16)
     blk = 0
-    (blk < in.len()) {
+    (blk + 16 <= in.len()) {
 
         ; XOR 當前區塊與 prev
         xored [16]byte
@@ -108,7 +108,7 @@ cbc-enc = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 ; in []byte: 輸入密文（長度需為 16 的倍數）
 ; iv [16]byte: 初始向量，必須與加密時相同
 ; ek []byte: aes.key-expand / aes.key-expand-256 展開後的輪金鑰
-; 返回 out []byte: 解密後的明文，長度與 in 相同（仍帶著 PKCS#7 填充）
+; 返回 out []byte: 解密後的明文，長度為 (in.len()/16)*16，仍帶著 PKCS#7 填充（不足一整塊的尾部丟棄）
 ; [cbc-dec](#aes-cbc.cbc-dec)
 cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 
@@ -122,10 +122,10 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         }
     }
 
-    ; 逐區塊解密
-    out = with-len(in.len())
+    ; 逐區塊解密（只處理完整區塊：不足 16 位元組的尾部丟棄）
+    out = with-len((in.len() / 16) * 16)
     blk = 0
-    (blk < in.len()) {
+    (blk + 16 <= in.len()) {
 
         ; 保存當前密文區塊（解密前）
         cur-cipher [16]byte
@@ -195,7 +195,7 @@ cbc-dec = (in []byte, iv [16]byte, ek []byte) (out []byte) {
 ; in []byte: 輸入資料（長度需為 16 的倍數）
 ; key [16]byte: 128-bit 金鑰
 ; iv [16]byte: 初始向量，每個訊息應隨機且唯一
-; 返回 out []byte: 加密後的密文，長度與 in 相同
+; 返回 out []byte: 加密後的密文，長度為 (in.len()/16)*16（不足一整塊的尾部丟棄）
 ; [enc-128](#aes-cbc.enc-128)
 enc-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand(key)
@@ -218,7 +218,7 @@ dec-128 = (in []byte, key [16]byte, iv [16]byte) (out []byte) {
 ; in []byte: 輸入資料（長度需為 16 的倍數）
 ; key [32]byte: 256-bit 金鑰
 ; iv [16]byte: 初始向量，每個訊息應隨機且唯一
-; 返回 out []byte: 加密後的密文，長度與 in 相同
+; 返回 out []byte: 加密後的密文，長度為 (in.len()/16)*16（不足一整塊的尾部丟棄）
 ; [enc-256](#aes-cbc.enc-256)
 enc-256 = (in []byte, key [32]byte, iv [16]byte) (out []byte) {
     ek = aes.key-expand-256(key)

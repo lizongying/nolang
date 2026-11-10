@@ -173,7 +173,7 @@ listener.accept = () (c ?conn) {
     .fd < 0 -> return
     fd = net-accept(.fd)
     fd < 0 -> return
-    c = conn {
+    c = conn{
         fd: fd
     }
 }
@@ -315,7 +315,7 @@ conn.fd-of = () (fd fd) {
 ; [listen-on](#net.listen-on)
 listen-on = (host str, port i64) (l ?listener) {
     l = nil
-    lst = listener {}
+    lst = listener{}
     ok = false
     ok = lst.listen(host, port)
     ok -> l = lst
@@ -329,7 +329,7 @@ listen-on = (host str, port i64) (l ?listener) {
 ; [dial-to](#net.dial-to)
 dial-to = (host str, port i64) (c ?conn) {
     c = nil
-    cn = conn {}
+    cn = conn{}
     ok = false
     ok = cn.dial(host, port)
     ok -> c = cn
@@ -490,7 +490,7 @@ udp-conn.fd-of = () (fd fd) {
 ; [udp-dial-to](#net.udp-dial-to)
 udp-dial-to = (host str, port i64) (c ?udp-conn) {
     c = nil
-    uc = udp-conn {}
+    uc = udp-conn{}
     ok = false
     ok = uc.open()
     ok == false -> return
@@ -576,7 +576,7 @@ listener.accept-with-timeout = (timeout-ms i64) (c ?conn) {
     fd = net-accept(.fd)
     net-set-recv-timeout(.fd, 0)
     fd < 0 -> return
-    c = conn {
+    c = conn{
         fd: fd
     }
 }
@@ -595,7 +595,7 @@ dial-timeout = (host str, port i64, timeout-ms i64) (c ?conn) {
     fd = net-dial(host, port)
     fd < 0 -> return
     net-set-recv-timeout(fd, timeout-ms)
-    cn = conn {
+    cn = conn{
         fd: fd
     }
     c = cn
@@ -1300,7 +1300,7 @@ ifconfig-list = () (ifs []if-info) {
         stats-str = line.slice(colon-pos + 1, line.len-bytes()).trim()
         fields = split-ws(stats-str)
         fields.len-bytes() >= 10 -> {
-            info = if-info {}
+            info = if-info{}
             info.name = name
 
             v0 = fields[0]: {
@@ -1390,7 +1390,7 @@ route-list = () (routes []route-info) {
         line.len-bytes() == 0 -> break
         fields = split-ws(line)
         fields.len-bytes() >= 11 -> {
-            r = route-info {}
+            r = route-info{}
 
             r.iface = fields[0]
 
@@ -1445,7 +1445,7 @@ arp-list = () (arps []arp-info) {
         line.len-bytes() == 0 -> break
         fields = split-ws(line)
         fields.len-bytes() >= 6 -> {
-            a = arp-info {}
+            a = arp-info{}
 
             a.ip = fields[0]
 

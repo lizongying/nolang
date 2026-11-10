@@ -221,6 +221,7 @@ t-cbc-256 = () {
 ; ---- PKCS#7 填充 ----
 
 t-pkcs7 = () {
+
     ; 空輸入 ⇒ 一整塊 16 個 0x10
     p0 = aes-cbc.pkcs7-pad(zeros(0))
     runner.eq(p0.len(), 16, 'pad(空) 長度 16')

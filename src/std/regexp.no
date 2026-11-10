@@ -1229,7 +1229,7 @@ regexp.find = (text str) (result str) {
 ; [regexp-match](#regexp.regexp-match)
 regexp-match = (pattern str, text str) (matched bool) {
     matched = false
-    re = regexp {
+    re = regexp{
         pattern: pattern
     }
     re.compile()
@@ -1243,7 +1243,7 @@ regexp-match = (pattern str, text str) (matched bool) {
 ; [regexp-find](#regexp.regexp-find)
 regexp-find = (pattern str, text str) (result str) {
     result = ''
-    re = regexp {
+    re = regexp{
         pattern: pattern
     }
     re.compile()
@@ -1256,7 +1256,7 @@ regexp-find = (pattern str, text str) (result str) {
 ; 返回 re regexp: 已編譯的正規表示式實例
 ; [regexp-compile](#regexp.regexp-compile)
 regexp-compile = (pattern str) (re regexp) {
-    re = regexp {
+    re = regexp{
         pattern: pattern
     }
     re.compile()

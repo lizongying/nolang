@@ -96,7 +96,7 @@ pool.get = () (c ?net.conn) {
 
     ; 沒有空閒連接，嘗試新建
     .count < .max-size -> {
-        cn = net.conn {}
+        cn = net.conn{}
         ok = false
         ok = cn.dial(.host, .port)
         ok -> {

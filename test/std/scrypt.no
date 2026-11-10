@@ -1,8 +1,9 @@
 ; test/std/scrypt.no — crypto/scrypt 模組測試
 ;
 ; 執行：no test test/std/scrypt.no
-; 覆蓋：scrypt
-; 向量來源：RFC 7914 附錄 A，並與 python hashlib.scrypt 交叉核對
+; 覆蓋：scrypt（入口）、rotl32 / salsa20-8-core / scrypt-blockmix / scrypt-romix（內部核心直測）
+; 向量來源：RFC 7914 附錄 A；核心函數金標由純 Python 參考實作產生，
+;   該實作先通過 RFC 7914 A.1 / A.2 自檢（等同 hashlib.scrypt 交叉核對）
 
 # /test/runner
 
@@ -49,8 +50,115 @@ t-scrypt-2 = () {
     out = scrypt.scrypt('password'.to-bytes(), 'NaCl'.to-bytes(), 1024, 8, 16, 64)
     runner.str-eq(bhex(out), 'fdbabe1c9d3472007856e7190d01e9fe7c6ad7cbc8237830e77376634b3731622eaf30d92e22a3886ff109279d9830dac727afb94a83ee6d8360cbdfa2cc0640', 128, 'scrypt N=1024 r=8 p=16')
 }
+
+; ---- 助手（供內部函數直測） ----
+
+; 產生 0,1,2,…,(n-1) 的位元組序列，作為可重現的輸入
+; n i64: 長度（<= 256）
+seq = (n i64) (out []byte) {
+    out = with-len(n)
+    i <- [0..n): {
+        out[i]: {
+            ok -> it = i
+
+            -> _
+        }
+    }
+}
+
+; u32 → i64（runner.eq 只接受 i64）
+u32i = (x u32) (v i64) {
+    v = x
+}
+
+; ---- rotl32：Salsa20 quarter-round 的 32-bit 循環左移 ----
+
+t-rotl32 = () {
+    runner.eq(u32i(scrypt.rotl32(1, 1)), 2, 'rotl32(1,1) = 2')
+    runner.eq(u32i(scrypt.rotl32(2147483648, 1)), 1, 'rotl32(0x80000000,1) 高位繞回 = 1')
+    runner.eq(u32i(scrypt.rotl32(305419896, 8)), 878082066, 'rotl32(0x12345678,8) = 0x34567812')
+    runner.eq(u32i(scrypt.rotl32(3735928559, 0)), 3735928559, 'rotl32(x,0) = x')
+    runner.eq(u32i(scrypt.rotl32(3735928559, 31)), 4015447927, 'rotl32(0xdeadbeef,31) = 0xef56df77')
+    runner.eq(u32i(scrypt.rotl32(4294967295, 16)), 4294967295, 'rotl32(全 1,n) = 全 1')
+
+    ; 左旋 32 位元組的位移量會回捲，此處只驗 0..31 的合法域
+    runner.eq(u32i(scrypt.rotl32(1, 0)), 1, 'rotl32(1,0) = 1')
+}
+
+; ---- salsa20-8-core：對 64 位元組區塊做 8 輪混合（原地） ----
+
+t-salsa = () {
+
+    ; 全零區塊是不動點（每個 QR 都是 0+0 再 xor 0）
+    z = seq(0)
+    zz []byte = with-len(64)
+    scrypt.salsa20-8-core(zz)
+    runner.str-eq(bhex(zz), '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', 128, 'salsa20-8(全零) = 全零')
+    runner.eq(z.len(), 0, 'seq(0) 為空')
+
+    ; 對 0x00..0x3f 的標準輸出（純 Python 參考實作，先過 RFC 7914 A.1/A.2 自檢）
+    blk = seq(64)
+    scrypt.salsa20-8-core(blk)
+    runner.eq(blk.len(), 64, 'salsa20-8-core 不改變長度')
+    runner.str-eq(bhex(blk), '0480a95cad0a1fe3377c65670cf6443d26683f7605af36ad9dcd018d9d18017aaad09751c075fe3547a9e0002388304dac7f8e77c4c0bbe7d90288100c15e705', 128, 'salsa20-8(0x00..0x3f)')
+
+    ; 不是對合：原地再跑一次結果會變
+    before = bhex(blk)
+    scrypt.salsa20-8-core(blk)
+    runner.is-false(before.eq(bhex(blk), 128), 'salsa20-8-core 非對合（二次結果不同）')
+}
+
+; ---- scrypt-blockmix：BlockMix_{Salsa20/8}，輸入輸出皆 128*r 位元組 ----
+
+t-blockmix = () {
+
+    ; r=1：只有 2 個子區塊，偶/奇分組等同原序
+    b1 = seq(128)
+    o1 = scrypt.scrypt-blockmix(b1, 1)
+    runner.eq(o1.len(), 128, 'blockmix r=1 長度 128')
+    runner.str-eq(bhex(o1), '6cb2215ae0feecea4f8223b8371a931c371a931c6cb2215ae0feecea4f8223b84f8223b8371a931c6cb2215ae0feeceae0feecea4f8223b8371a931c6cb2215aeff83bd71972b81ae62ff52785baadfdb204d4a20bfb1bebf1cf1c8ea2c404a9ab2945a5b300d6a3bc9f2b916bc4af3d2e74f81e88ce886f43d1cda38feddc0e', 256, 'blockmix r=1')
+
+    ; r=2：4 個子區塊，輸出 = Y0 Y2 Y1 Y3（偶在前、奇在後）
+    b2 = seq(256)
+    o2 = scrypt.scrypt-blockmix(b2, 2)
+    runner.eq(o2.len(), 256, 'blockmix r=2 長度 256')
+    runner.str-eq(bhex(o2), 'a86a7c7d9f05bcf2bcbc01bf25db335825db3358a86a7c7d9f05bcf2bcbc01bfbcbc01bf25db3358a86a7c7d9f05bcf29f05bcf2bcbc01bf25db3358a86a7c7d7d245205036acfefd0ce8f98ec328cb6f3a8ff47ecf7cd351ba6ab369de47e8150c26d0dc11b4c1387a780b725db6245bc0e35c491f8fb89cb346c1c8d8a820173f8944b2cc413ed9f7fcbda04252a6f698118fedbfaeba6d12ad1b6a08877d2d16d4c45a6e0248d9a64287f8a067e09f98d2a9a277d6d6a19c0a366adf3176fb718185c739c44b50e90cf6969a494c2910f8f5bf7d5bf8d0bd1d5aef765304e183db536bc600dd1052b85db36912bff5d3317a86c2720470d468c119267fbcf', 512, 'blockmix r=2（偶奇重排）')
+
+    ; 決定性：同樣輸入兩次得到同結果，但輸入不同則輸出不同
+    o1b = scrypt.scrypt-blockmix(seq(128), 1)
+    runner.str-eq(bhex(o1), bhex(o1b), 256, 'blockmix 決定性')
+    runner.is-false(bhex(o1).eq(bhex(o2), 256), 'blockmix r=1 與 r=2 輸出不同')
+}
+
+; ---- scrypt-romix：[V 填充] + [隨機索引異或回捲] ----
+
+t-romix = () {
+    b1 = seq(128)
+    r1 = scrypt.scrypt-romix(b1, 16, 1)
+    runner.eq(r1.len(), 128, 'romix N=16 r=1 長度 128')
+    runner.str-eq(bhex(r1), '2d54462bd397ca6d3239e3a97378d08a033f803d1793a60f998b8bd91c1f9056c665ee2395aa47e1ed4970d543c90ff87691fffcaf53d46c8ddbc047b47c373b87439b0210b0c993648482d1b09c27dbe26eea7ba1fd0f7999c94419373d130ac1f272f26c62169f5ed6ed98da599d03dea0e377b2ccf2070113e55fdc1edfd5', 256, 'romix N=16 r=1')
+
+    b2 = seq(256)
+    r2 = scrypt.scrypt-romix(b2, 8, 2)
+    runner.eq(r2.len(), 256, 'romix N=8 r=2 長度 256')
+    runner.str-eq(bhex(r2), '421e5c770f3637acfcf1266b84b1a3a0311b0fc6f210d68a6a12dff1fd60004cc577fde173471d95e5945a8c9dc4a0e06f07b3fb281f1f2a6b97ba03b2d4cec4b1060143940f591b5bffd1b3bae1c9be8bfb77fab8f11cdc8a2f10abe3497bc3be666da451966c642fd04c261d4e113e8e4b4da20750aaa688badf3a54deaa7e561efc07adda59449185009bc89e5b80d915d956e880e9c54868a9134541328780c7f2b3e1180d01e42451ecfee9b1ba1d2b5621364c70a069b25ee876e3b3c4c7eb3a943f3c7a35d4ac1c9733d6c3ed342905c948f00f2ba1d28b8c548cc98e444081762882173d648f8f3fef4c9137687722b18a7866bc6f8b55e373f7beb6', 512, 'romix N=8 r=2（Integerify 取尾塊）')
+
+    ; N=1 時退化為 blockmix(blockmix(B) ^ B)：j 恆為 0（mod 1）
+    one = scrypt.scrypt-romix(b1, 1, 1)
+    runner.str-eq(bhex(one), 'a7cfdd13ce4d35adfd3b45189da9b7bed289d4854519b3e27441d691e13b2a1f5f21bf76d8831d854e9f110a40d0a3b964a65397f4cc29187ff7b1b013f3693da34ed95b42f1624723f6396253e289ae3c52973dce35059639f08e7299e4ee141e5ea7a55d2bd6cc9fdc6df554480f88c233bc7cbdef959a9180ae1bab6fe097', 256, 'romix N=1 退化形態')
+
+    ; N 不同 ⇒ 記憶體填充不同 ⇒ 輸出不同
+    r16 = bhex(scrypt.scrypt-romix(b1, 16, 1))
+    r32 = bhex(scrypt.scrypt-romix(b1, 32, 1))
+    runner.is-false(r16.eq(r32, 256), 'romix N 參與運算（16 與 32 不同）')
+}
+
 p1 = runner.test('scrypt.n16', t-scrypt-1)
 p2 = runner.test('scrypt.n1024', t-scrypt-2)
+p3 = runner.test('scrypt.rotl32', t-rotl32)
+p4 = runner.test('scrypt.salsa20-8-core', t-salsa)
+p5 = runner.test('scrypt.blockmix', t-blockmix)
+p6 = runner.test('scrypt.romix', t-romix)
 
 total = runner.summary()
 f = runner.failed-count()

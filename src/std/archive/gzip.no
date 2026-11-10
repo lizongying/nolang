@@ -303,7 +303,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
     }
 
     ; 建構碼長度 Huffman 表
-    clcodec = huffman {}
+    clcodec = huffman{}
     clcodec.build(clens, 19)
 
     ; 解碼字面/長度和距離碼長度
@@ -446,7 +446,7 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
 ;   out: 解壓後的資料 ([]byte)
 ; [inflate-decompress](#gzip.inflate-decompress)
 inflate-decompress = (data []byte, out-size i64) (out []byte) {
-    br = bit-reader {
+    br = bit-reader{
         data: data
         pos: 0
         bit-buf: 0
@@ -521,8 +521,8 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
                 ; Fixed Huffman (method 1)
 
-                lc = huffman {}
-                dc = huffman {}
+                lc = huffman{}
+                dc = huffman{}
                 build-fixed(lc, dc)
 
                 done = 0
@@ -589,8 +589,8 @@ inflate-decompress = (data []byte, out-size i64) (out []byte) {
 
                 ; Dynamic Huffman (method 2)
 
-                lc = huffman {}
-                dc = huffman {}
+                lc = huffman{}
+                dc = huffman{}
                 build-dynamic(br, lc, dc)
 
                 done = 0
@@ -686,8 +686,8 @@ deflate-stored = (data []byte) (out []byte) {
         result.push(1)
         result.push(0)
         result.push(0)
-        result.push(0xFF)
-        result.push(0xFF)
+        result.push(0xff)
+        result.push(0xff)
     }
 
     (pos < n) {

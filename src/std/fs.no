@@ -523,21 +523,21 @@ file {
 
 ; 標準輸入（fd=0）
 ; [STDIN](#fs.stdin)
-STDIN = file {
+STDIN = file{
     fd: 0
     path: '<stdin>'
 }
 
 ; 標準輸出（fd=1）
 ; [STDOUT](#fs.stdout)
-STDOUT = file {
+STDOUT = file{
     fd: 1
     path: '<stdout>'
 }
 
 ; 標準錯誤（fd=2）
 ; [STDERR](#fs.stderr)
-STDERR = file {
+STDERR = file{
     fd: 2
     path: '<stderr>'
 }
@@ -629,7 +629,7 @@ open = (p str, opts file-opts) (f ?file) {
         f = err(err-msg)
         return
     }
-    f = file {
+    f = file{
         fd: fd
         path: p
     }
@@ -836,7 +836,7 @@ file.write-bytes = (data []byte) (ok ?bool) {
 ; content: ok=檔案內容, nil=檔案為空, err=開啟或讀取失敗
 ; [read-bytes](#fs.read-bytes)
 read-bytes = (p str) (content ?[]byte) {
-    f = open(p,  {
+    f = open(p, {
         mode: read
         perm: perm-644
         excl: false
@@ -865,7 +865,7 @@ read-bytes = (p str) (content ?[]byte) {
 ; content: ok=檔案內容, nil=檔案為空, err=開啟或讀取失敗
 ; [read-str](#fs.read-str)
 read-str = (p str) (content ?str) {
-    f = open(p,  {
+    f = open(p, {
         mode: read
         perm: perm-644
         excl: false
@@ -895,7 +895,7 @@ read-str = (p str) (content ?str) {
 ; ok: ok(true)=成功, err=寫入失敗
 ; [write-str](#fs.write-str)
 write-str = (p str, data str) (ok ?bool) {
-    f = open(p,  {
+    f = open(p, {
         mode: write
         perm: perm-644
         excl: false
@@ -925,7 +925,7 @@ write-str = (p str, data str) (ok ?bool) {
 ; ok: ok(true)=成功, err=寫入失敗
 ; [write-bytes](#fs.write-bytes)
 write-bytes = (p str, data []byte) (ok ?bool) {
-    f = open(p,  {
+    f = open(p, {
         mode: write
         perm: perm-644
         excl: false

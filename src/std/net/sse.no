@@ -244,7 +244,7 @@ client.next-event = () (ev ?event) {
 
                 ; 只有包含 data 的事件才回傳
                 has-data -> {
-                    ev = event {
+                    ev = event{
                         event: e-event
                         data: e-data
                         id: e-id
@@ -777,7 +777,7 @@ sse-connect = (url str) (client ?client) {
             -> _
         }
     }
-    cli = client {
+    cli = client{
         fd: fd
         tls-c: tls-c
         use-tls: use-tls
@@ -843,7 +843,7 @@ server.accept = () (c ?server-conn) {
     .fd < 0 -> return
     client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
-    conn = server-conn {
+    conn = server-conn{
         fd: client-fd
         connected: false
     }
@@ -1048,7 +1048,7 @@ server-conn.close = () {
 ; [listen-on](#sse.listen-on)
 listen-on = (host str, port i64) (s ?server) {
     s = nil
-    srv = server {}
+    srv = server{}
     ok = false
     ok = srv.listen(host, port)
     ok -> s = srv

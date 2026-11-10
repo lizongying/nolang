@@ -123,6 +123,7 @@ dom-pool {
     av []str
     ax []i64
     stk []i64
+    errpos i64
 }
 
 ; dom: 文檔句柄（節點池 + document 根索引 + 格式）
@@ -148,6 +149,7 @@ dom-pool.init = () {
     .av = with-len(0)
     .ax = with-len(0)
     .stk = with-len(0)
+    .errpos = -1
 }
 
 ; 分配新節點（附帶平行 names/vals 槽位），返回索引
@@ -1236,6 +1238,7 @@ dom-pool.xml-parse-close = (node i64, s str, p i64) (np ?i64) {
 ; [xml-parse-element](#dom.dom-pool.xml-parse-element)
 dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
     n = s.len-bytes()
+    .errpos = p
     depth > DOM-MAX-DEPTH -> return
     p + 1 >= n -> return
     ne = 0
@@ -1375,14 +1378,25 @@ dom-pool.xml-parse-element = (s str, parent i64, p i64, depth i64) (np ?i64) {
     }
 }
 
+; 取失敗位置：優先取 .errpos（最近嘗試解析的元素起點），否則回退 dflt
+; dflt: 回退值（呼叫端的掃描位置）
+; v: 較大的那個位置
+; [err-pos-or](#dom.dom-pool.err-pos-or)
+dom-pool.err-pos-or = (dflt i64) (v i64) {
+    v = dflt
+    .errpos > v -> v = .errpos
+}
+
 ; 解析整份 XML 文檔，返回 document 根索引
 ; s: XML 源文本
 ; root: document 根節點索引
-; failpos: 解析失敗的位元組位置（-1=成功）
+; failpos: 解析失敗的位元組位置（-1=成功）；嵌套失敗時為最內層失敗元素的
+;   起始位置（元素 entry 記錄，取與掃描位置較大者）
 ; ok: 整份文檔是否解析成功
 ; [xml-parse-doc](#dom.dom-pool.xml-parse-doc)
 dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
     ok = false
+    .errpos = -1
     root = .alloc(DOM-KIND-DOCUMENT)
     n = s.len-bytes()
     p = dom-strip-bom(s)
@@ -1391,11 +1405,11 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
         p = xml-skip-ws(s, p)
         p >= n -> break
         s.byte(p) != 60 -> {
-            failpos = p
+            failpos = .err-pos-or(p)
             return
         }
         p + 1 >= n -> {
-            failpos = p
+            failpos = .err-pos-or(p)
             return
         }
         h2 str = s.slice-bytes(p, p + 2)
@@ -1406,7 +1420,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                     ok -> p = it
 
                     -> {
-                        failpos = p
+                        failpos = .err-pos-or(p)
                         return
                     }
                 }
@@ -1418,14 +1432,14 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                     ok -> p = it
 
                     -> {
-                        failpos = p
+                        failpos = .err-pos-or(p)
                         return
                     }
                 }
             }
 
             h2.eq-full('</') -> {
-                failpos = p
+                failpos = .err-pos-or(p)
                 return
             }
 
@@ -1436,7 +1450,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                     d9.eq-full('<!DOCTYPE') -> is-dt = true
                 }
                 is-dt == false -> {
-                    failpos = p
+                    failpos = .err-pos-or(p)
                     return
                 }
                 dtopt = .parse-doctype-node(root, s, p)
@@ -1444,7 +1458,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                     ok -> p = it
 
                     -> {
-                        failpos = p
+                        failpos = .err-pos-or(p)
                         return
                     }
                 }
@@ -1452,7 +1466,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
 
             -> {
                 seen -> {
-                    failpos = p
+                    failpos = .err-pos-or(p)
                     return
                 }
                 elopt = .xml-parse-element(s, root, p, 1)
@@ -1460,7 +1474,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
                     ok -> p = it
 
                     -> {
-                        failpos = p
+                        failpos = .err-pos-or(p)
                         return
                     }
                 }
@@ -1469,7 +1483,7 @@ dom-pool.xml-parse-doc = (s str) (root i64, failpos i64, ok bool) {
         }
     }
     seen == false -> {
-        failpos = p
+        failpos = .err-pos-or(p)
         return
     }
     ok = true

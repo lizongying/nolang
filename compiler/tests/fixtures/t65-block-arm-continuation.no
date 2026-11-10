@@ -20,9 +20,11 @@ outer: {
 
             nil -> print('in-nil\n')
         }
-        m == 'outer-msg' -> print('match {m}\n')
+        {
+            m == 'outer-msg' -> print('match {m}\n')
 
-        -> print('alt {m}\n')
+            -> print('alt {m}\n')
+        }
     }
 
     nil -> print('nil\n')
@@ -40,9 +42,11 @@ flag: {
 
             nil -> print('deep-nil\n')
         }
-        x > 5 -> print('gt {x}\n')
+        {
+            x > 5 -> print('gt {x}\n')
 
-        -> print('le {x}\n')
+            -> print('le {x}\n')
+        }
     }
 
     err -> print('fe\n')

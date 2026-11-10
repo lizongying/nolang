@@ -427,7 +427,7 @@ server.accept = () (c ?server-conn) {
     client-fd = net.net-accept(.fd)
     client-fd < 0 -> return
     buf str = with-len(WS-BUF-SIZE)
-    conn = server-conn {
+    conn = server-conn{
         fd: client-fd
         connected: false
         recv-buf: buf
@@ -963,7 +963,7 @@ server-conn.recv = () (msg ?message) {
         ; 未知 opcode，忽略
 
         has-acc && fin -> {
-            msg = message {
+            msg = message{
                 opcode: acc-opcode
                 data: acc-data
                 fin: true
@@ -1168,7 +1168,7 @@ server-conn.recv-nb = () (msg ?message) {
         opcode == WS-OP-PING -> .send-pong(payload)
 
         opcode == WS-OP-TEXT || opcode == WS-OP-BINARY -> {
-            msg = message {
+            msg = message{
                 opcode: opcode
                 data: payload
                 fin: true
@@ -1603,7 +1603,7 @@ client.recv = () (msg ?message) {
             acc-data = acc-data - payload
         }
         has-acc && fin -> {
-            msg = message {
+            msg = message{
                 opcode: acc-opcode
                 data: acc-data
                 fin: true
@@ -1644,7 +1644,7 @@ client.close = () {
 ; [listen-on](#ws.listen-on)
 listen-on = (host str, port i64) (s ?server) {
     s = nil
-    srv = server {}
+    srv = server{}
     ok = false
     ok = srv.listen(host, port)
     ok -> s = srv
@@ -1968,7 +1968,7 @@ connect = (url str) (c ?client) {
             }
         }
     }
-    cli = client {
+    cli = client{
         fd: fd
         use-tls: use-tls
         tls-c: tc

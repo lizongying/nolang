@@ -4,7 +4,6 @@ reader {
     buf []byte
 }
 reader.fill = () (ok bool) {
-
     .pos = .avail
 
     .pos = 1

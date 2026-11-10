@@ -439,7 +439,7 @@ bigint.mul-bigint = (b bigint) (c bigint) {
 bigint._div = (b big) (q ?bigint) {
     b: {
         v bigint -> {
-            r = bigint {}
+            r = bigint{}
             q, r = .div-mod(v)
         }
 
@@ -458,7 +458,7 @@ bigint._div = (b big) (q ?bigint) {
 bigint._mod = (b big) (r ?bigint) {
     b: {
         v bigint -> {
-            q = bigint {}
+            q = bigint{}
             q, r = .div-mod(v)
         }
 
@@ -577,7 +577,7 @@ bigint._mul-i64 = (v i64) (c bigint) {
     ; 原實作用 (r-v & MASK) 只取低 32 位，當 |v| >= 2^32（如 10^10）時會錯誤截斷。
     lo-v = r-v & MASK
     hi-v = r-v >> 32
-    b = bigint {}
+    b = bigint{}
     {
         hi-v > 0 -> {
             b.limbs = with-len(2)
@@ -724,7 +724,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
     #{overflow=wrap}
     norm-a-len = .len + 1
-    norm-a = bigint {}
+    norm-a = bigint{}
     norm-a.limbs = with-len(norm-a-len)
     norm-a-len: {
         ok -> norm-a.len = it
@@ -1028,7 +1028,7 @@ bigint._mod-i64 = (v i64) (r ?i64) {
 bigint.pow = (n i64) (c bigint) {
     c = one()
     n == 0 -> return
-    b = bigint {}
+    b = bigint{}
     b = .copy()
     i = n
     (i > 0) {
@@ -1050,7 +1050,7 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
         return
     }
     r = one()
-    b = bigint {}
+    b = bigint{}
     b = .copy()
 
     #{overflow=wrap}
@@ -1107,16 +1107,16 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
 ; g: 最大公因數（恆取正值；兩者皆零時為 0）
 ; [gcd](#bigint.gcd)
 bigint.gcd = (b bigint) (g bigint) {
-    x = bigint {}
+    x = bigint{}
     x = .copy()
-    y = bigint {}
+    y = bigint{}
     y = b.copy()
     x.sign = 1
     y.sign = 1
     yz = y.is-zero()
     (! yz) {
         x = x._mod(y)
-        tmp = bigint {}
+        tmp = bigint{}
         tmp = y.copy()
         y = x.copy()
         x = tmp.copy()
@@ -1268,7 +1268,7 @@ bigint.to-str = () (out str) {
         out[0] = 45
         out-n = 1
     }
-    tmp = bigint {}
+    tmp = bigint{}
     tmp = .copy()
     tmp.sign = 1
     buf [256]byte
@@ -1357,7 +1357,7 @@ bigint.to-str = () (out str) {
 ; c: self + v（經 from-i64 提升後走 bigint 加法）
 ; [_add-i64](#bigint._add-i64)
 bigint._add-i64 = (v i64) (c bigint) {
-    tmp = bigint {}
+    tmp = bigint{}
     tmp = from-i64(v)
     c = ._add(tmp)
 }

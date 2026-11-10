@@ -114,7 +114,7 @@ markdown.heading = (line str) (out markdown-heading) {
             title-v = title-v.slice-bytes(0, end).trim()
         }
     }
-    out = markdown-heading {
+    out = markdown-heading{
         level: level-v
         text: title-v
     }
@@ -285,7 +285,7 @@ markdown.list-item = (line str) (out markdown-list) {
             content-v = s.slice-bytes(i + 2, n)
         }
     }
-    out = markdown-list {
+    out = markdown-list{
         kind: kind-v
         text: content-v
     }
@@ -325,7 +325,7 @@ markdown.blockquote = (line str) (out markdown-quote) {
         n > 1 && s.byte(1) == 32 -> content-v = s.slice-bytes(2, n)
         n > 1 && s.byte(1) != 32 -> content-v = s.slice-bytes(1, n)
     }
-    out = markdown-quote {
+    out = markdown-quote{
         yes: found
         text: content-v
     }
@@ -359,7 +359,7 @@ markdown.fence = (line str) (out markdown-fence) {
             }
         }
     }
-    out = markdown-fence {
+    out = markdown-fence{
         yes: yes-v
         marker: marker-v
         width: width-v
@@ -823,7 +823,7 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
         }
         valid-v = true
     }
-    out = markdown-line {
+    out = markdown-line{
         text: line-v
         next-pos: next-v
         valid: valid-v

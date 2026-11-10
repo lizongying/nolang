@@ -49,7 +49,9 @@ t-parent-pid = () {
 
 ; cmd：執行 echo 退出碼 0，且擷取到的標準輸出非空
 t-cmd = () {
-    args = ['hello']
+    args = [
+        'hello',
+    ]
     out, stderr, code, err = process.cmd('echo', args, '', '', [], 0, false)
     runner.eq(code, 0, 'cmd echo exit 0')
     runner.gt(out.len(), 0, 'cmd echo out len > 0')

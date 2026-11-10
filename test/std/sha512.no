@@ -68,6 +68,7 @@ t-bytes-match-hex = () {
 }
 p1 = runner.test('sha512.digest-len', t-len)
 p2 = runner.test('sha512.input-len-guard', t-input-len)
+
 ; 低階單區塊壓縮："abc" 填充區塊 → ddaf35a1... 共 8 個 64-bit 字
 t-block-abc = () {
     s []u64 = with-len(16)
@@ -88,9 +89,7 @@ t-block-abc = () {
 
         -> _
     }
-    r0, r1, r2, r3, r4, r5, r6, r7 = sha512.sha512-block(
-        s, 0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
-        0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179)
+    r0, r1, r2, r3, r4, r5, r6, r7 = sha512.sha512-block(s, 0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1, 0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179)
     runner.is-true(r0 == 0xddaf35a193617aba, 'sha512 block r0')
     runner.is-true(r1 == 0xcc417349ae204131, 'sha512 block r1')
     runner.is-true(r2 == 0x12e6fa4e89a97ea2, 'sha512 block r2')

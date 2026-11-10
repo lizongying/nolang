@@ -220,6 +220,7 @@ t-hex-api = () {
     runner.str-eq(blake2.b-hex('abc'.to-bytes()), 'ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923', 128, 'blake2.b-hex abc')
     runner.str-eq(blake2.s-hex('abc'.to-bytes()), '508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982', 64, 'blake2.s-hex abc')
 }
+
 ; ---- 內部構成 ----
 
 ; 64-bit / 32-bit 循環右移：BLAKE2b 用 32/24/16/63，BLAKE2s 用 16/12/8/7

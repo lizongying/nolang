@@ -106,7 +106,6 @@ bhex = (data []byte) (hex str) {
             ok -> it
 
             -> '?'
-
         }
         lo = hex-chars[b & 15]: {
             ok -> it
@@ -201,31 +200,31 @@ tail-zero = (v []i64, rn i64) (ok bool) {
 ; ---- 低階數值介面：rsa.rsa-modpow ----
 
 t-modpow-small = () {
-    b1 []i64 = [65]
-    e1 []i64 = [17]
-    n1 []i64 = [3233]
+    b1 = [65]
+    e1 = [17]
+    n1 = [3233]
     r1, rn1 = rsa.rsa-modpow(b1, 1, e1, 1, n1, 1)
     runner.eq(rn1, 1, 'modpow 65^17 mod 3233 limb 數')
     runner.eq(limb(r1, 0), 2790, 'modpow 65^17 mod 3233 = 2790')
 
     ; 指數 0 → bits=0，平方乘迴圈一次都不跑，結果留在初值 1
-    e0 []i64 = [0]
+    e0 = [0]
     r2, rn2 = rsa.rsa-modpow(b1, 1, e0, 1, n1, 1)
     runner.eq(rn2, 1, 'modpow exp=0 limb 數')
     runner.eq(limb(r2, 0), 1, 'modpow exp=0 -> 1')
 
     ; 50^2 mod 97 = 2500 - 25*97 = 75
-    b3 []i64 = [50]
-    e3 []i64 = [2]
-    n3 []i64 = [97]
+    b3 = [50]
+    e3 = [2]
+    n3 = [97]
     r3, rn3 = rsa.rsa-modpow(b3, 1, e3, 1, n3, 1)
     runner.eq(rn3, 1, 'modpow 50^2 mod 97 limb 數')
     runner.eq(limb(r3, 0), 75, 'modpow 50^2 mod 97 = 75')
 
     ; 模數跨兩個 limb（2^32）：3^100 mod 2^32 = 3476558801（Python 算）
-    b4 []i64 = [3]
-    e4 []i64 = [100]
-    n4 []i64 = [0, 1]
+    b4 = [3]
+    e4 = [100]
+    n4 = [0, 1]
     r4, rn4 = rsa.rsa-modpow(b4, 1, e4, 1, n4, 2)
     runner.eq(rn4, 1, 'modpow 3^100 mod 2^32 limb 數（已修剪）')
     runner.eq(limb(r4, 0), 3476558801, 'modpow 3^100 mod 2^32')
@@ -233,16 +232,16 @@ t-modpow-small = () {
 
 ; 256-bit 金鑰：Python 生成 p,q（128-bit）、e=65537、d=e^-1 mod φ
 t-modpow-256 = () {
-    n []byte = mkb('7a07d00849abb39182a4c7298b80afa45c4df968212dd77e1845de6ef861a061')
-    d []byte = mkb('72dd91c38b5d14fcfe058ef71b3a399961c4da071296fae52c4d56f30d9c9101')
-    m []byte = mkb('1234567890abcdef1122334455667788990011223344556677')
-    c []byte = mkb('2cdfe6e6b30dd7d06630b18ff774614dfebe9e0f31680113a0a91ce346fed20a')
+    n = mkb('7a07d00849abb39182a4c7298b80afa45c4df968212dd77e1845de6ef861a061')
+    d = mkb('72dd91c38b5d14fcfe058ef71b3a399961c4da071296fae52c4d56f30d9c9101')
+    m = mkb('1234567890abcdef1122334455667788990011223344556677')
+    c = mkb('2cdfe6e6b30dd7d06630b18ff774614dfebe9e0f31680113a0a91ce346fed20a')
 
-    nl []i64 = b2l(n)
-    ml []i64 = b2l(m)
-    cl []i64 = b2l(c)
-    dl []i64 = b2l(d)
-    el []i64 = [65537]
+    nl = b2l(n)
+    ml = b2l(m)
+    cl = b2l(c)
+    dl = b2l(d)
+    el = [65537]
     runner.eq(nl.len(), 8, '256-bit 模數 8 個 limb')
     runner.eq(ml.len(), 7, '197-bit 明文 7 個 limb')
 
@@ -302,9 +301,9 @@ t-bytes-edge = () {
 
 ; 256-bit 金鑰的位元組往返
 t-bytes-256 = () {
-    n []byte = mkb('7a07d00849abb39182a4c7298b80afa45c4df968212dd77e1845de6ef861a061')
-    d []byte = mkb('72dd91c38b5d14fcfe058ef71b3a399961c4da071296fae52c4d56f30d9c9101')
-    m []byte = mkb('1234567890abcdef1122334455667788990011223344556677')
+    n = mkb('7a07d00849abb39182a4c7298b80afa45c4df968212dd77e1845de6ef861a061')
+    d = mkb('72dd91c38b5d14fcfe058ef71b3a399961c4da071296fae52c4d56f30d9c9101')
+    m = mkb('1234567890abcdef1122334455667788990011223344556677')
     e []byte = [1, 0, 1]
 
     c = rsa.rsa-encrypt-bytes(m, e, n)

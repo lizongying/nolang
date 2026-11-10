@@ -58,7 +58,7 @@ toml-doc {
 ; doc: 空的 TOML 文件（0 條目、0 表格）
 ; [new](#toml.new)
 toml.new = () (doc toml-doc) {
-    doc = toml-doc {
+    doc = toml-doc{
         count: 0
         table-count: 0
         array-count: 0

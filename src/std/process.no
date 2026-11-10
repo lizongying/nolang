@@ -1357,7 +1357,7 @@ exec-result {
 ; [exec](#process.exec)
 exec = (program str, args []str, o cmdopts) (res exec-result) {
     out, stderr, code, err = cmd(program, args, o.dir, o.stdin, o.env, o.timeout, o.merge-err)
-    res = exec-result {
+    res = exec-result{
         stdout: out
         stderr: stderr
         code: code
@@ -1369,7 +1369,7 @@ exec = (program str, args []str, o cmdopts) (res exec-result) {
 ; p: 新建的 process 實例（尚未啟動，欄位為零值）
 ; [new](#process.new)
 new = () (p process) {
-    p = process {}
+    p = process{}
 }
 
 ; 執行命令並捕獲 stdout 輸出（實例方法）
@@ -1421,7 +1421,7 @@ list-all = () (procs []proc-info) {
         pid-val ?i64 = name.to-i64()
         pid-val: {
             ok -> {
-                p = proc-info {}
+                p = proc-info{}
                 p.pid = it
 
                 ; 讀取 /proc/<pid>/comm 取得進程名

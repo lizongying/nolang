@@ -269,7 +269,7 @@ static-hashmap-str-tmpl.init`，泛型參數 v 無從特化），且全 repo 沒
 把 `zip.u16le` 虛報成已覆蓋（`zip.u32le` 卻沒有，才露了餡）。
 所以舊快照裡的百分比含少量虛報，本輪起的數字才是可信的。
 
-### 5.0c 快照：2026-11-10 傍晚（crypto/x25519 輪，**當前**）
+### 5.0c 快照：2026-11-10 傍晚（crypto/x25519 輪；數字已被 5.0d 取代）
 
 | 項目 | 數值 |
 |---|---:|
@@ -300,6 +300,152 @@ segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（
 ⚠️ 本輪新增了 3 個**公開**輔助函式（`x25519.num-add` / `num-sub` / `num-floor`），
 所以 API 面分母從 2139 長到 2142。這是為了繞開「`i64 op i64` 回傳 `?i64`」的型別規則
 （詳見 §5.1c），不是純粹的測試基建。
+
+### 5.0d 快照：2026-11-10 深夜（crypto 家族收口輪；數字已被 5.0e 取代）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2117（797 + 1320） |
+| 已覆蓋 | **990（46.8%）**（x25519 輪後 872 / 40.7%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 | 108 |
+| **`crypto` 家族 33 個模組** | **全部 100%** |
+
+分母從 2142 降到 2117：私有符號（`_` 前綴，使用者碼不可呼叫，checker 報
+`raqvyltn`）改為不計入分母，共 25 個，詳見 §5.2。
+
+本輪補到 100% 的 10 個模組（缺口 → 全綠）：
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 向量來源 |
+|---|---|---:|---|
+| `crypto/hkdf` | 3 → 6 / 6 | 24 | RFC 5869 + RFC 8446 §7.1 HkdfLabel |
+| `crypto/aes-gcm` | 3 → 11 / 11 | 50 | NIST SP 800-38D TC1–6 / 13–16 |
+| `crypto/blake2` | 8 → 14 / 14 | 49 | RFC 7693 + 自算 G 函數 |
+| `crypto/chacha20-poly1305` | 2 → 9 / 9 | 42 | RFC 8439 §2.3.2 / 2.5.2 / 2.6.2 |
+| `crypto/aes-cbc` | 2 → 8 / 8 | 33 | SP 800-38A F.2.1 / F.2.5 |
+| `crypto/aes-ctr` | 2 → 4 / 4 | 22 | SP 800-38A F.5.1 / F.5.5 |
+| `crypto/des` | 2 → 7 / 7 | 24 | FIPS 46-3 子金鑰排程 |
+| `crypto/tdes` | 2 → 4 / 4 | 21 | 3DES-CBC 自算 + 退化驗證 |
+| `crypto/scrypt` | 1 → 5 / 5 | 26 | RFC 7914 A.1 / A.2 + 純 Python 核心 |
+| `crypto/argon2` | 1 → 5 / 5 | 30 | RFC 9106 §3.5（另見下方缺口） |
+
+環境沒有 `pycryptodome` / `cryptography`，所以全部金標都是**純 Python 自實作 →
+先通過官方/標準向量自檢 → 再取金標**。這一步是必要的：`scrypt` 的
+`salsa20-8-core` 金標就靠「Python 實作能重現 RFC 7914 A.1/A.2」才取得信任。
+
+### 5.0e 快照：2026-11-11 凌晨（`toml` + `dom` 收口輪，**當前**）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2118（797 + 1321） |
+| 已覆蓋 | **1057（49.9%）**（crypto 收口時 990 / 46.8%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 | 108 |
+
+本輪補到 100% 的 2 個模組：
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---:|---|
+| `toml` | 16 → 26 / 26 + 方法 3 / 3 | 97 | 條目/表名/`find-eq`/key 正規化/值規則/文檔模型/數字與布林 |
+| `dom` | 49 → 全綠 | 313 | 節點池原語、free 助手、裸池解析入口、**15 個單步解析原語** |
+
+`dom` 這一輪把 16 個「內部但公開」的掃描器全部直測（不必繞 `parse-xml`）：
+`xml-{add-text,parse-comment,parse-cdata,parse-pi,parse-attr,parse-close,parse-element}`、
+`parse-doctype-node`、`html-{add-text,parse-comment,bogus-comment,parse-pi,parse-attr,set-attr-once,parse-open,parse-close-name}`。
+斷言全部落在「回傳的下一個位置 + 節點池裡真的寫了什麼」兩個維度上（`ser` / `text-of` / `find-attr` 讀回）。
+
+分母 2117 → 2118 的 +1 是 `dom-pool.err-pos-or`（本輪新增，見 §5.1f）。
+
+### 5.1f 本輪修好的 std 缺陷（`src/std/dom.no` 的錯誤位置回報）
+
+**症狀**：`dom-pool.xml-parse-doc` 的 `failpos` 文件寫「解析失敗的位元組位置」，
+但實測 `<r><a></r>` 回 **0**（外層 `<r>` 的起點），不是內層 `<a>` 該失敗的 3。
+`dom.parse-xml` 的錯誤字串因此永遠指向文件開頭：`xml parse error at byte 0`。
+
+**根因**：`xml-parse-doc` 每個失敗分支都寫 `failpos = p`，而 `p` 是**頂層**掃描位置；
+`xml-parse-element` 遞迴失敗時只回 `?i64` 的 nil，位置信息在遞迴中被丟掉。
+
+**修法**（不動任何既有函式簽名）：
+
+1. `dom-pool` 加純量欄位 `errpos i64`（`init()` 設 -1）；
+2. `xml-parse-element` **進入時**寫 `.errpos = p` —— 遞迴是外→內，最後寫入的自然是
+   最內層嘗試解析的元素起點，一行就拿到「最深」；
+3. 新增 `dom-pool.err-pos-or(dflt)` 取 `max(errpos, dflt)`：嵌套失敗給內層位置，
+   頂層失敗（第二個根、非 `<` 字元）給掃描點，兩者都正確；
+4. `xml-parse-doc` 10 處 `failpos = p` 全改 `failpos = .err-pos-or(p)`。
+
+實測：`<r><a></r>` → 3；`<r/>x` → 4；成功 → -1。`no vet` 0 error。
+
+### 5.1d 本輪修好的 std bug（`src/std/crypto/tdes.no`、`src/std/crypto/aes-cbc.no`）
+
+**症狀**：CBC 加密在輸入長度不是塊大小整數倍時，輸出長度 = **向上取整**到塊的倍數，
+尾端多出一個「用零填充的殘塊」加密結果。`tdes-cbc-enc(11 bytes)` 回 16 位元組，
+`aes-cbc.cbc-enc(20 bytes)` 同理回 32 位元組。
+
+但四處 doc 都寫「不足一區塊的尾部會被丟棄」「長度與 in 相同」⇒ 文件與實作相反。
+
+**根因**：迴圈條件寫成 `(blk < in.len())`，但內層固定跑 8（或 16）次下標讀寫：
+
+```
+out = with-len(in.len())
+blk = 0
+(blk < in.len()) {                       ; ← 少了 blk + 8 <= in.len()
+    i <- [0..8): { ... in[blk + i] ... out[blk + i] ... }
+    blk += 8
+}
+```
+
+`in[blk + i]` 越界時走 option 空分支（被靜默吞掉，當 0 用），而 `out[blk + i]`
+越界時**會自動把 vec 增長到 blk+8**，所以最終長度變成 `ceil(len/8)*8`，不會 SIGSEGV
+但語意錯、且多吐一段密文。這條「vec 下標寫越界會自動增長」的行為本輪順手實測確認。
+
+**修法**（`tdes-enc` / `tdes-dec` / `tdes-cbc-enc` / `tdes-cbc-dec` /
+`aes-cbc.cbc-enc` / `aes-cbc.cbc-dec` 共 6 處）：
+
+```
+out = with-len((in.len() / 8) * 8)       ; aes 版為 /16*16
+blk = 0
+(blk + 8 <= in.len()) {
+```
+
+四處 doc 的「長度與 in 相同」同步改成「長度為 (in.len()/8)*8，不足一整塊的尾部丟棄」。
+
+**影響面**：`tdes-cbc-*` 除測試外無呼叫者；`aes-cbc.enc-128/dec-128` 的呼叫者
+（`src/std/net/tls.no` 四處）傳的都是 pkcs7 對齊後的資料，行為不變。
+
+**回歸**：`test/std/tdes.no` 13/14 → **21/21**（新增 11B/9B 未對齊、解密未對齊、
+`tdes-enc` 的 n=20 等）；`test/std/aes-cbc.no` 33/33 不變。
+
+### 5.1e `crypto/argon2` 的實測結論（仍未修，但已量化）
+
+模組頭注原本只籠統寫「與 RFC 9106 不一致」。本輪用 RFC 參考實作逐函式比對，
+把缺口縮小到兩個函式：
+
+| 函式 | 與 RFC 9106 | 說明 |
+|---|---|---|
+| `rotr` | ✅ 完全一致 | 64-bit 循環右移 |
+| `blake-g` | ✅ 完全一致 | §3.5 GB（含 `2*lo32(a)*lo32(b)` 乘數）|
+| `h-prime` | ❌ 只有 out-len=64、以及 out-len>64 的前 32 位元組對 | 見下 |
+| `compress` | ❌ 列置換仍與 §3.4 有差異 | 見下 |
+
+`h-prime` 的病灶很明確：它只有 `blake2.b()`（固定 64 位元組）可用，
+於是 **≤64 的分支直接截斷 64 位元組摘要**，而 RFC 要的是
+`Blake2b(LE32(T)||X, digest_size=T)` —— BLAKE2 的 digest_size 會改變參數塊
+（`h[0] ^= 0x01010000 ^ digest_len`），**不是截斷**。同理 >64 分支的最後一段
+`last-hash = blake2.b(v)` 也丟掉了「長度 = remaining」這個參數（T=72 時應為 40，
+實作給 64 截斷；T=1024 時 remaining 恰為 64 才僥倖正確）。
+
+要修就得先給 `src/std/crypto/blake2.no` 加一個可變摘要長度的入口（目前只有
+`b` 固定 64、`b-256` 固定 32），再重寫 `compress` 的列索引。這是獨立一輪的工作，
+故本輪只寫「可精確對齊的部分 + 結構不變量」，不寫假金標：
+
+- `h-prime`：長度契約（1/32/200/1024）、確定性、
+  **`h-prime(x,64) == blake2.b(LE32(64)||x)`**（這條是真·RFC 斷言且通過）、
+  `h-prime(x,128)` 前 32 位元組 == `blake2.b(LE32(128)||x)` 前 32 位元組。
+- `compress`：長度 1024、**`compress(X,X)` 全零**（X⊕X=0 ⇒ 所有 GB 作用在全零上）、
+  **對稱性 `compress(X,Y)==compress(Y,X)`**、確定性。
 
 ### 5.1 (a) 地圖輪修好的 std bug（`src/std/collection/map.no`）
 
@@ -395,6 +541,13 @@ segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（
 | 21 | **同一段程式在 `no vet`（包上下文）與 `no test`（單檔）對 `x - i` 的型別推論相反**：包上下文判 `?i64`（於是 `off = idx` 報 `15w45dqk`），單檔判純 i64（於是套 `{ ok -> it; -> 0 }` **靜默取 0**）。任何一種寫法都無法同時通過兩者，只能繞開（避免在迴圈裡做減法） | `src/std/archive/zip.no` 的 `find-eocd` 註解 |
 | 22 | **`>>` 對 i64 的語意不固定且與註解相反**：`x = -9` 這種字面量來源的 i64 是**算術**右移（`-9 >> 26 == -1`），但從 `arr[i]: { ok -> it; -> 0 }` 取出、或帶 `i64` 註解的值卻是**邏輯**右移（`== 274877906943`）。`src/std/crypto/x25519.no` 的註解因此寫錯了兩年（「`>>` 對 i64 是邏輯右移」），並據此加了 `- ((x >> 63) << (64-b))` 的 floor 補償項 ⇒ 對負數反而算錯。**寫 floor 除法請一律先加 2^40 抬正** | §5.1c C3、探針 `/tmp/x5.no` vs `/tmp/x9.no` |
 | 23 | **`i64 op i64` 回傳 `?i64`（檢查式算術），但 `i64 op 字面量` 回傳 `i64`** ⇒ 純量累加式程式碼（進位鏈）每一行都撞 `15w45dqk`，只能寫成 `#{overflow=wrap}` + 兩步解包，或整段包進 i64→i64 的輔助函式。本案的繞法見 `x25519.num-add` / `num-sub` / `num-floor`（同時也是 API 面分母 +3 的原因） | §5.0c 註記、`src/std/crypto/x25519.no` 檔尾 |
+| 25 | **match 的各 arm 必須以換行分隔**：寫成單行 `{ ok -> it  -> 0 }` 會被當成**同一條 arm**，報 `match arm never returns a value [fdwcn8i8]`（訊息本身也提示 "match arms must be separated by newlines"）。本輪在探針與 `blake2`/chacha 測試上來回踩了三次 | `test/std/{blake2,chacha20-poly1305}.no` 的取值助手 |
+| 26 | **`> i64.MAX` 的整數字面量直接當 `u64` 實參傳入時，位元樣式對、但移位/比較仍按 i64 求值**：`rotr64(0x8000000000000000, 1)` 會走**算術**右移得到 `0xc000000000000000`，`0x8000000000000000 > 0` 也回 `false`。先落到 `u64` 局部變數（`top u64 = 0x8000000000000000`）即恢復正常。**所有 `crypto/argon2.rotr` 與 `blake2.rotr64` 的邊界斷言都必須這樣寫** | `test/std/blake2.no`、`test/std/argon2.no` 的 `w1 u64 = ...` |
+| 27 | **`vec` 下標寫越界不會崩，而是把長度自動增長到 `idx+1`**：`out = with-len(11)` 後寫 `out[8..16]`，`out.len()` 變成 16。這是 §5.1d 那個 CBC 殘塊 bug 的「為什麼沒 SIGSEGV」的答案，也意味著**任何「先 with-len(n) 再按塊寫」的迴圈都要自己加對齊守衛** | §5.1d、探針 `tmp/probe/ptdes.no` |
+| 28 | **單元測試檔名只允許小寫字母、數字、連字號**：`test/std/_tmp_salsa.no` 直接被拒（`[83xbz15x]`，底線禁用、連字號不可開頭/結尾/連寫） | 本輪抽離 `t-salsa` 單測時 |
+| 29 | **`in` 是保留字**：探針裡宣告 `in []byte` 會報 `'in' is not defined [4bek3xc6]`（不是「保留字」的友善訊息）。改用 `buf`。std 內部同名參數是特例 | 探針 `tmp/probe/ptdes.no` |
+| 30 | **私有符號（`_` 前綴）無法從測試呼叫**，checker 硬性禁止（`raqvyltn`）⇒ 已從覆蓋率分母剔除（2142 → 2117，共 25 個）。想知道某個 `_` 函式是否被覆蓋，只能靠它被公開函式間接命中 | `scripts/std_test_coverage.py` |
+
 | 24 | **`tests/match-test.no` 已被 `ed7b5236`（「同類測試合併為單一檔案」）刪掉，但 `src/parser/dump/warnings_shape_test.go::TestUnreachableArmHintSurvivesBothShapes` 仍硬編該路徑** ⇒ `make test` 的 `parser/dump` 必紅（`match-test.no did not parse`）。與本次改動無關，屬預存缺陷 | `git log --oneline -- tests/match-test.no` |
 
 > 以上都在 `bin/no`（v0.4.19-40-g72e157cb-dirty，2026-11-10）上複現。

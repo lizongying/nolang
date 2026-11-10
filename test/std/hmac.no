@@ -89,6 +89,7 @@ t-hmac-fixed-len = () {
     h20 = hmac.hmac-sha1(K1, D1.to-bytes())
     runner.eq(h20.len(), 20, 'hmac-sha1 fixed digest len 20')
 }
+
 ; 定長陣列 → hex（bhex 只吃 []byte）
 h64 = (a [64]byte) (s str) {
     v []byte = with-len(64)

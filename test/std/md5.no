@@ -204,6 +204,7 @@ t-twoblock-ends = () {
 
     runner.eq(ixout61c16, 0x4a, 'md5 two-block b15')
 }
+
 ; 低階循環左移：rotl(x, n) = (x << n) | (x >> (32-n))
 t-rotl = () {
     runner.eq(u32i(md5.md5-rotl(1, 1)), 2, 'rotl(1,1) = 2')

@@ -61,6 +61,7 @@ t-bytes-match-hex = () {
 }
 
 p1 = runner.test('sha1.digest-len', t-len)
+
 ; 低階單區塊壓縮："abc" 填充區塊 → a9993e36 4706816a ba3e2571 7850c26c 9cd0d89d
 t-block-abc = () {
     s []u32 = with-len(16)

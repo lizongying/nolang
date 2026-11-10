@@ -461,7 +461,7 @@ bzip2-decompress = (data []byte) (out []byte) {
     }
 
     ; 建立位元讀取器（跳過 4 位元組標頭）
-    br = bz-bit-reader {
+    br = bz-bit-reader{
         data: data
         pos: 4
         bit-buf: 0
@@ -658,12 +658,12 @@ bzip2-decompress = (data []byte) (out []byte) {
 
             ; 讀取每個碼表的碼長度
             ; 使用 6 個獨立的 Huffman 結構體
-            ht0 = bz-huffman {}
-            ht1 = bz-huffman {}
-            ht2 = bz-huffman {}
-            ht3 = bz-huffman {}
-            ht4 = bz-huffman {}
-            ht5 = bz-huffman {}
+            ht0 = bz-huffman{}
+            ht1 = bz-huffman{}
+            ht2 = bz-huffman{}
+            ht3 = bz-huffman{}
+            ht4 = bz-huffman{}
+            ht5 = bz-huffman{}
 
             t <- [0..n-tables): {
 

@@ -32,7 +32,7 @@
 
 ; 0.0.0.0
 ; [IP-ZERO](#ip.ip-zero)
-IP-ZERO = ip-addr {
+IP-ZERO = ip-addr{
     a: 0
     b: 0
     c: 0
@@ -41,7 +41,7 @@ IP-ZERO = ip-addr {
 
 ; 127.0.0.1
 ; [IP-LOOPBACK](#ip.ip-loopback)
-IP-LOOPBACK = ip-addr {
+IP-LOOPBACK = ip-addr{
     a: 127
     b: 0
     c: 0
@@ -50,7 +50,7 @@ IP-LOOPBACK = ip-addr {
 
 ; 0.0.0.0（同 IP-ZERO，語義化命名）
 ; [IP-ANY](#ip.ip-any)
-IP-ANY = ip-addr {
+IP-ANY = ip-addr{
     a: 0
     b: 0
     c: 0
@@ -59,7 +59,7 @@ IP-ANY = ip-addr {
 
 ; 255.255.255.255
 ; [IP-BROADCAST](#ip.ip-broadcast)
-IP-BROADCAST = ip-addr {
+IP-BROADCAST = ip-addr{
     a: 255
     b: 255
     c: 255
@@ -162,7 +162,7 @@ ip-addr.parse = (s str) (ok bool) {
 ; [from-str](#ip.ip-addr.from-str)
 ip-addr.from-str = (s str) (addr ?ip-addr) {
     addr = nil
-    a = ip-addr {}
+    a = ip-addr{}
     ok = false
     ok = a.parse(s)
     ok -> addr = a
@@ -382,7 +382,7 @@ ip-addr.in-subnet = (base ip-addr, prefix-len i64) (yes bool) {
 ; [ip-parse](#ip.ip-parse)
 ip-parse = (s str) (addr ?ip-addr) {
     addr = nil
-    a = ip-addr {}
+    a = ip-addr{}
     ok = false
     ok = a.parse(s)
     ok -> addr = a
@@ -393,7 +393,7 @@ ip-parse = (s str) (addr ?ip-addr) {
 ; yes: true=解析成功且為 127.0.0.0/8 環回地址
 ; [ip-is-loopback](#ip.ip-is-loopback)
 ip-is-loopback = (s str) (yes bool) {
-    addr = ip-addr {}
+    addr = ip-addr{}
     ok = addr.parse(s)
     ok -> yes = addr.is-loopback()
 }
@@ -403,7 +403,7 @@ ip-is-loopback = (s str) (yes bool) {
 ; yes: true=解析成功且落在 10/8、172.16/12、192.168/16 私有網段之一
 ; [ip-is-private](#ip.ip-is-private)
 ip-is-private = (s str) (yes bool) {
-    addr = ip-addr {}
+    addr = ip-addr{}
     ok = addr.parse(s)
     ok -> yes = addr.is-private()
 }

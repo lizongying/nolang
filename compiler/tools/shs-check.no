@@ -227,7 +227,6 @@ shs-rest-blank = (s str, j i64) (yes bool) {
 
     #{overflow=wrap}
     (j < n) {
-
         c = shs-byte(s, j)
         c == B-LF -> j = n
         c != B-LF -> {
@@ -276,7 +275,6 @@ shs-semi-block = (s str, i i64) (yes bool) {
 
     #{overflow=wrap}
     (i + 1 < n) -> {
-
         c = shs-byte(s, i + 1)
         c == B-SEMI -> {
 
@@ -297,7 +295,6 @@ shs-slash-line = (s str, i i64) (yes bool) {
 
     #{overflow=wrap}
     (i + 1 < n) -> {
-
         c = shs-byte(s, i + 1)
         c == B-SLASH -> yes = true
     }
@@ -313,7 +310,6 @@ shs-block-end = (s str, i i64) (yes bool) {
 
     #{overflow=wrap}
     (i + 1 < n) -> {
-
         c = shs-byte(s, i + 1)
         c == B-SEMI -> {
 
@@ -345,7 +341,6 @@ shs-mask = (s str) (out str) {
 
     #{overflow=wrap}
     (i < n) {
-
         c = shs-byte(s, i)
         st: {
             0 -> {
@@ -641,7 +636,6 @@ shs-lines = (s str) (out []str) {
 
     #{overflow=wrap}
     (i < n) {
-
         c = shs-byte(s, i)
         c == B-LF -> {
             out.push(cur.str())
@@ -664,7 +658,6 @@ shs-trim-range = (ln str) (a i64, b i64) {
     a = 0
     b = n
     i <- [0..n): {
-
         c = shs-byte(ln, i)
         shs-is-blank(c) -> {
 
@@ -679,7 +672,6 @@ shs-trim-range = (ln str) (a i64, b i64) {
     }
     j = a
     k <- [a..n): {
-
         c2 = shs-byte(ln, k)
         shs-is-blank(c2) == false -> j = k
     }
@@ -707,7 +699,6 @@ shs-type-decl = (ln str) (yes bool, name str) {
     shs-is-ident-start(c0) == false -> return
     je = a
     k <- [a..b): {
-
         ch = shs-byte(ln, k)
         shs-is-ident-char(ch) -> {
 
@@ -724,7 +715,6 @@ shs-type-decl = (ln str) (yes bool, name str) {
     j = je
     hit = false
     k2 <- [je..b): {
-
         sp = shs-byte(ln, k2)
         shs-is-blank(sp) == false -> {
             j = k2
@@ -736,7 +726,6 @@ shs-type-decl = (ln str) (yes bool, name str) {
 
     ch2 = shs-byte(ln, j)
     ch2 == B-LC -> {
-
         (j + 1 == b) -> {
             name = shs-sub(ln, a, je)
             yes = true
@@ -759,7 +748,6 @@ shs-meth-decl = (ln str) (yes bool, owner str) {
     shs-is-ident-start(c0) == false -> return
     j = a
     k <- [a..b): {
-
         ch = shs-byte(ln, k)
         shs-is-ident-char(ch) -> {
 
@@ -799,7 +787,6 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
 
     je = a
     k <- [a..b): {
-
         ch = shs-byte(ln, k)
         ok = false
         oc = shs-is-ident-char(ch)
@@ -820,7 +807,6 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     j = je
     hit = false
     k2 <- [je..b): {
-
         sp = shs-byte(ln, k2)
         shs-is-blank(sp) == false -> {
             j = k2
@@ -840,7 +826,6 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     #{overflow=wrap}
     q0 = j + 1
     k3 <- [q0..b): {
-
         sp2 = shs-byte(ln, k3)
         shs-is-blank(sp2) == false -> {
             p1 = k3
@@ -857,7 +842,6 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     depth = 0
     e1 = -1
     k4 <- [p1..b): {
-
         q = shs-byte(ln, k4)
         q == B-LP -> {
 
@@ -883,7 +867,6 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     #{overflow=wrap}
     q1 = e1 + 1
     k5 <- [q1..b): {
-
         sp3 = shs-byte(ln, k5)
         shs-is-blank(sp3) == false -> {
             p2 = k5
@@ -906,7 +889,6 @@ shs-def-sig = (ln str) (yes bool, dotted bool, nout i64) {
     commas = 0
     depth2 = 0
     k6 <- [p2..b): {
-
         r2 = shs-byte(ln, k6)
         r2 == B-LP -> {
 
@@ -953,7 +935,6 @@ shs-map-at = (ln str, i i64) (yes bool) {
 
     #{overflow=wrap}
     (j < n) {
-
         ch = shs-byte(ln, j)
         ch == B-RB -> {
             rb-opt = j
@@ -995,7 +976,6 @@ shs-map-at = (ln str, i i64) (yes bool) {
         m == 0 -> return
         alld = true
         k <- [0..m): {
-
             d = shs-byte(xs, k)
             shs-is-digit(d) == false -> alld = false
         }
@@ -1016,7 +996,6 @@ shs-line-has-map = (ln str) (yes bool) {
     yes = false
     n = ln.len-bytes()
     i <- [0..n): {
-
         ch = shs-byte(ln, i)
         ch == B-LB -> {
             r = shs-map-at(ln, i)
@@ -1046,7 +1025,6 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
     (i + wn <= n) {
         hit = true
         k <- [0..wn): {
-
             ca = shs-byte(ln, i + k)
 
             cb = shs-byte(w, k)
@@ -1056,7 +1034,6 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
             before-ok = false
             before-ok = i == 0
             (i > 0) -> {
-
                 p-opt = shs-byte(ln, i - 1)
 
                 ; ⚠️ 實參 `i - 1` 是裸算術（D6：本身產生 option）⇒ 捕獲 pass 會把
@@ -1077,7 +1054,6 @@ shs-find-word = (ln str, w str) (found bool, col i64) {
             ae = i + wn
             ae == n -> after-ok = true
             (ae < n) -> {
-
                 q = shs-byte(ln, ae)
                 shs-is-ident-char(q) == false -> after-ok = true
             }
@@ -1106,16 +1082,12 @@ shs-has-ffi-c = (ln str) (yes bool) {
 
     #{overflow=wrap}
     (i + 3 < n) {
-
         c0 = shs-byte(ln, i)
         c0 == B-HASH -> {
-
             c1 = shs-byte(ln, i + 1)
             c1 == B-LC -> {
-
                 c2 = shs-byte(ln, i + 2)
                 c2 == B-LOWER-C -> {
-
                     c3 = shs-byte(ln, i + 3)
                     c3 == B-RC -> yes = true
                     c3 == B-SP -> yes = true
@@ -1167,7 +1139,6 @@ shs-str-gt = (a str, b str) (yes bool) {
     m = na
     nb < na -> m = nb
     i <- [0..m): {
-
         ca = shs-byte(a, i)
 
         cb = shs-byte(b, i)
@@ -1195,7 +1166,6 @@ shs-str-eq = (a str, b str) (yes bool) {
         return
     }
     i <- [0..na): {
-
         ca = shs-byte(a, i)
 
         cb = shs-byte(b, i)
@@ -1223,30 +1193,32 @@ shs-sort-strs = (arr []str) (r []str) {
     n = arr.len()
     idx []i64 = []
     i <- [0..n): {
-
         idx.push(i)
     }
     a <- [0..n): {
         best = a
         b <- [a..n): {
-
             ib = idx[b]: {
                 ok -> it
+
                 -> 0
             }
 
             ibest = idx[best]: {
                 ok -> it
+
                 -> 0
             }
 
             kb = arr[ib]: {
                 ok -> it
+
                 -> ''
             }
 
             kbest = arr[ibest]: {
                 ok -> it
+
                 -> ''
             }
             g = shs-str-gt(kbest, kb)
@@ -1255,6 +1227,7 @@ shs-sort-strs = (arr []str) (r []str) {
 
         t = idx[a]: {
             ok -> it
+
             -> 0
         }
 
@@ -1276,9 +1249,9 @@ shs-sort-strs = (arr []str) (r []str) {
     }
     out []str = []
     k <- [0..n): {
-
         pos = idx[k]: {
             ok -> it
+
             -> 0
         }
 
@@ -1330,7 +1303,6 @@ shs-collect = (p str, out []str) (r []str) {
     d -> {
         sub = fs.walk(p)
         i <- [0..sub.len()): {
-
             ixout1330c17 = sub[i]: {
                 ok -> it
 
@@ -1357,7 +1329,7 @@ shs-collect = (p str, out []str) (r []str) {
 ; msg: 訊息
 ; r: 結果容器
 shs-add = (acc []finding, file str, line i64, rule str, msg str) (r []finding) {
-    f = finding {
+    f = finding{
         file: file
         line: line
         rule: rule
@@ -1424,9 +1396,9 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     meth-line []i64 = []
     cur = -1
     li <- [0..nl): {
-
         ln = lines[li]: {
             ok -> it
+
             -> ''
         }
 
@@ -1438,7 +1410,6 @@ shs-check-file = (path str, acc []finding) (r []finding) {
         c0 = shs-byte(ln, a)
         cur >= 0 -> {
             c0 == B-RC -> {
-
                 (b == a + 1) -> cur = -1
                 continue
             }
@@ -1482,9 +1453,9 @@ shs-check-file = (path str, acc []finding) (r []finding) {
 
     ; ── Pass 2：逐行查 S3 / S4 ──
     li2 <- [0..nl): {
-
         ln2 = lines[li2]: {
             ok -> it
+
             -> ''
         }
 
@@ -1510,28 +1481,28 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     ; meths 存的是 `shs-meth-decl` 回傳的【擁有者】（`hashy.put1` ⇒ `hashy`），
     ; 所以這裡用相等比較。
     i <- [0..tnames.len()): {
-
         tm = tmaps[i]: {
             ok -> it
+
             -> false
         }
         tm -> {
-
             tn = tnames[i]: {
                 ok -> it
+
                 -> ''
             }
             k <- [0..meths.len()): {
-
                 mf = meths[k]: {
                     ok -> it
+
                     -> ''
                 }
                 eq = shs-str-eq(mf, tn)
                 eq -> {
-
                     mln = meth-line[k]: {
                         ok -> it
+
                         -> 0
                     }
                     r = shs-add(r, path, mln, 'S5', 'type `' + tn + '` has a [K]V map field AND a method - forbidden, see docs/design/nolang-selfhost.md §2.2.8')
@@ -1550,9 +1521,9 @@ shs-check-file = (path str, acc []finding) (r []finding) {
     ; 方法（擁有者是本檔宣告的型別）走的是另一條路徑，實測 2 個 out-param 正常，
     ; 故排除。
     li3 <- [0..nl): {
-
         ln3 = lines[li3]: {
             ok -> it
+
             -> ''
         }
 
@@ -1568,7 +1539,6 @@ shs-check-file = (path str, acc []finding) (r []finding) {
                     a3, b3 = shs-trim-range(ln3)
                     j3 = a3
                     k3 <- [a3..b3): {
-
                         ch3 = shs-byte(ln3, k3)
                         shs-is-ident-char(ch3) -> {
 
@@ -1579,9 +1549,9 @@ shs-check-file = (path str, acc []finding) (r []finding) {
                     }
                     own = shs-sub(ln3, a3, j3)
                     m <- [0..tnames.len()): {
-
                         t3 = tnames[m]: {
                             ok -> it
+
                             -> ''
                         }
                         e3 = shs-str-eq(t3, own)
@@ -1610,7 +1580,6 @@ shs-main = () (code i64) {
     }
     paths []str = []
     i <- [1..n): {
-
         opt-p = os.arg(i)
         p str = ''
         opt-p: {
@@ -1623,15 +1592,14 @@ shs-main = () (code i64) {
     paths = shs-sort-strs(paths)
     acc []finding = []
     j <- [0..paths.len()): {
-
         fp = paths[j]: {
             ok -> it
+
             -> ''
         }
         acc = shs-check-file(fp, acc)
     }
     k <- [0..acc.len()): {
-
         ixout1626c13 = acc[k]: {
             ok -> it
 
