@@ -74,7 +74,6 @@ rotr64 = (x u64, n i64) (r u64) {
 ; y: 第二條訊息字（併入 a 的次輪加法）
 ; [b-g](#blake2.b-g)
 b-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
-
     ixout78c21 = v[a]: {
         ok -> it
 
@@ -234,7 +233,6 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     ; （2026-10-30：argon2「換 salt 輸出不變」的真正根因）。
     v []u64 = with-len(16)
     i <- [0..8): {
-
         ixout150c24 = h[i]: {
             ok -> it
 
@@ -275,7 +273,6 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 
     ; 如果是最後一個區塊，反轉 v[14]
     last != 0 -> {
-
         ixout181c24 = v[14]: {
             ok -> it
 
@@ -578,7 +575,6 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
 
     ; 最終化: h[i] ^= v[i] ^ v[i+8]
     i <- [0..8): {
-
         ixout248c25 = h[i]: {
             ok -> it
 
@@ -662,10 +658,12 @@ b = (data []byte) (hash [64]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             offset-opt = offset + 128
             offset-opt: {
                 ok -> offset = it
+
                 ->
             }
         }
@@ -817,10 +815,12 @@ b-256 = (data []byte) (hash [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             offset-opt2 = offset + 128
             offset-opt2: {
                 ok -> offset = it
+
                 ->
             }
         }
@@ -943,7 +943,6 @@ b-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(128)
     i <- [0..64): {
-
         ixout933c37 = hash[i]: {
             ok -> it
 
@@ -973,7 +972,6 @@ b-256-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(64)
     i <- [0..32): {
-
         ixout951c37 = hash[i]: {
             ok -> it
 
@@ -1048,7 +1046,6 @@ rotr32 = (x u32, n i64) (r u32) {
 ; y: 第二條訊息字（u32）
 ; [s-g](#blake2.s-g)
 s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
-
     ixout547c21 = v[a]: {
         ok -> it
 
@@ -1203,7 +1200,6 @@ s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
 s-compress = (h []u32, block []byte, t u32, last i64) {
     v []u32 = with-len(16)
     i <- [0..8): {
-
         ixout614c24 = h[i]: {
             ok -> it
 
@@ -1238,7 +1234,6 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         -> _
     }
     last != 0 -> {
-
         ixout639c24 = v[14]: {
             ok -> it
 
@@ -1511,7 +1506,6 @@ s-compress = (h []u32, block []byte, t u32, last i64) {
         s-g(v, 3, 4, 9, 14, ixout694c29, ixout694c39)
     }
     i <- [0..8): {
-
         ixout700c25 = h[i]: {
             ok -> it
 
@@ -1570,10 +1564,12 @@ s = (data []byte) (hash [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             offset-opt3 = offset + 64
             offset-opt3: {
                 ok -> offset = it
+
                 ->
             }
         }
@@ -1659,7 +1655,6 @@ s-hex = (data []byte) (hex str) {
     hex-chars = '0123456789abcdef'
     hex = with-len(64)
     i <- [0..32): {
-
         ixout1617c37 = hash[i]: {
             ok -> it
 

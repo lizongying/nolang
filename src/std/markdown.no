@@ -74,10 +74,12 @@ markdown.prefix-count = (s str, c i64) (n i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             n-opt = n + 1
             n-opt: {
                 ok -> n = it
+
                 ->
             }
         }
@@ -136,10 +138,12 @@ markdown.setext-level = (line str) (level i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt2 = i + 1
             i-opt2: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -174,10 +178,12 @@ markdown.thematic-break = (line str) (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt3 = i + 1
                 i-opt3: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -189,20 +195,24 @@ markdown.thematic-break = (line str) (yes bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             count-opt = count + 1
             count-opt: {
                 ok -> count = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt4 = i + 1
             i-opt4: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -235,10 +245,12 @@ markdown.list-item = (line str) (out markdown-list) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt5 = i + 1
                 i-opt5: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -258,10 +270,12 @@ markdown.list-item = (line str) (out markdown-list) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     d-opt = d + 1
                     d-opt: {
                         ok -> d = it
+
                         ->
                     }
                 }
@@ -443,10 +457,12 @@ markdown.inline = (s str) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt6 = i + 2
                 i-opt6: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -599,10 +615,12 @@ markdown.inline = (s str) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt7 = i + 2
                 i-opt7: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -620,10 +638,12 @@ markdown.inline = (s str) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt8 = i + 2
                 i-opt8: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -641,10 +661,12 @@ markdown.inline = (s str) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt9 = i + 2
                 i-opt9: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -664,10 +686,12 @@ markdown.inline = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt10 = i + 1
                     i-opt10: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -682,10 +706,12 @@ markdown.inline = (s str) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt11 = i + 1
                 i-opt11: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -695,10 +721,12 @@ markdown.inline = (s str) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt12 = i + 1
             i-opt12: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -764,10 +792,12 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 j-opt = j + 1
                 j-opt: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -778,10 +808,12 @@ markdown.read-line = (source str, pos i64) (out markdown-line) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     next-v-opt = end-v + 1
                     next-v-opt: {
                         ok -> next-v = it
+
                         ->
                     }
                 }

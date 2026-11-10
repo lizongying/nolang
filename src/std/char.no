@@ -283,7 +283,6 @@ char.to-txt = () (out txt) {
     m = tmp.len()
     out = with-len(m)
     j <- [0..m): {
-
         ixout293c25 = tmp[j]: {
             ok -> it
 

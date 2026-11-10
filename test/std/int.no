@@ -1,0 +1,138 @@
+; std-int.no — int 联合型别（i8 | … | u128）方法测试
+;
+; 执行：no test test/std/int.no
+; 覆盖：int.to-str（i128 / u128）、int.div、int.mod（i64 / u64 及除零）
+;
+; 未测：i128 / u128 的 int.div / int.mod —— **预存 codegen bug**。
+;   复现（HEAD，bin/no 2026-11-10）：
+;       a i128 = 10
+;       b i128 = 3
+;       q = a.div(b)      ; ok 分支的 it 印出 4349468368（垃圾，非 3）
+;   u128 同样（10/3 印出 4349468400）。同一支二进制上 i64/u64 的
+;   int.div / int.mod 完全正常（14 / 2 / 除零 err），故 bug 落在
+;   **?i128 / ?u128 的 option 载荷**（16 字节载荷被按 i64 槽读写）。
+;   本档已用 i64 / u64 覆盖 int.div / int.mod 本身，只有「宽型别单态化」
+;   这一条路径留空。
+;
+; 注意：number 模块已为 i8/i16/i32/i64/u8/u16/u32/u64/byte 定义了具体的 to-str，
+;       因此 int.to-str 实际只对 i128 / u128 生效，本档特意只测宽型别。
+
+# /test/runner
+
+; to-str：i128 的零 / 正 / 负，以及 u128 跨 i64 上界
+t-to-str = () {
+    a i128 = 42
+    s = a.to-str()
+    runner.str-eq(s, '42', 2, 'i128.to-str 42')
+
+    z i128 = 0
+    s0 = z.to-str()
+    runner.str-eq(s0, '0', 1, 'i128.to-str 0')
+
+    n i128 = -17
+    sn = n.to-str()
+    runner.str-eq(sn, '-17', 3, 'i128.to-str -17')
+
+    ; 2^64：超出 i64 范围，检验逐位除法在宽型别高位也正确
+    big u128 = 18446744073709551616
+    sb = big.to-str()
+    runner.str-eq(sb, '18446744073709551616', 20, 'u128.to-str 2^64')
+
+    one u128 = 1
+    s1 = one.to-str()
+    runner.str-eq(s1, '1', 1, 'u128.to-str 1')
+}
+
+; div：商数向零截断；除零必须是 err（编译器插入的零除守卫）
+t-div = () {
+    a i64 = 100
+    b i64 = 7
+    q = a.div(b)
+    q: {
+        ok -> runner.eq(it, 14, 'i64 100.div(7) == 14')
+
+        nil -> runner.is-true(false, 'div never returns nil')
+
+        err -> runner.is-true(false, 'div(7) must not err')
+    }
+
+    na i64 = -100
+    q2 = na.div(b)
+    q2: {
+        ok -> runner.eq(it, -14, 'i64 (-100).div(7) == -14 (trunc toward zero)')
+
+        nil -> runner.is-true(false, 'div never returns nil')
+
+        err -> runner.is-true(false, 'div(7) must not err')
+    }
+
+    ; u64 单态化：无号数不得走有号路径
+    ua u64 = 100
+    ub u64 = 7
+    q3 = ua.div(ub)
+    q3: {
+        ok -> runner.is-true(it == 14, 'u64 100.div(7) == 14')
+
+        nil -> runner.is-true(false, 'u64 div never nil')
+
+        err -> runner.is-true(false, 'u64 div(7) must not err')
+    }
+
+    z i64 = 0
+    q4 = a.div(z)
+    q4: {
+        ok -> runner.is-true(false, 'div by zero must not return ok')
+
+        nil -> runner.is-true(false, 'div by zero must not return nil')
+
+        err -> runner.is-true(true, 'div by zero returns err')
+    }
+}
+
+; mod：余数符号跟随被除数；除零回 err
+t-mod = () {
+    a i64 = 100
+    b i64 = 7
+    r = a.mod(b)
+    r: {
+        ok -> runner.eq(it, 2, 'i64 100.mod(7) == 2')
+
+        nil -> runner.is-true(false, 'mod never returns nil')
+
+        err -> runner.is-true(false, 'mod(7) must not err')
+    }
+
+    na i64 = -100
+    r2 = na.mod(b)
+    r2: {
+        ok -> runner.eq(it, -2, 'i64 (-100).mod(7) == -2 (sign follows dividend)')
+
+        nil -> runner.is-true(false, 'mod never returns nil')
+
+        err -> runner.is-true(false, 'mod(7) must not err')
+    }
+
+    z i64 = 0
+    r3 = a.mod(z)
+    r3: {
+        ok -> runner.is-true(false, 'mod by zero must not return ok')
+
+        nil -> runner.is-true(false, 'mod by zero must not return nil')
+
+        err -> runner.is-true(true, 'mod by zero returns err')
+    }
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('int.to-str', t-to-str)
+p2, f2 = runner.test('int.div', t-div)
+p3, f3 = runner.test('int.mod', t-mod)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

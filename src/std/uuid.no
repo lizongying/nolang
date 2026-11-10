@@ -61,10 +61,12 @@ new-v4 = (state i64) (out uuid) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + 4
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -705,6 +707,7 @@ parse-hex-byte = (s str, pos i64) (v i64) {
 uuid.validate = () (ok bool) {
     ok = true
     {
+
         ; 檢查版本位（byte[6] 的 4-7 位應為 4）
         b6 ?= .bytes[6]
         ver = (b6 >> 4) & 15
@@ -837,10 +840,12 @@ hex-val = (c i64) (v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 v-opt = c - 48
                 v-opt: {
                     ok -> v = it
+
                     ->
                 }
             }
@@ -851,10 +856,12 @@ hex-val = (c i64) (v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 v-opt2 = c - 65 + 10
                 v-opt2: {
                     ok -> v = it
+
                     ->
                 }
             }
@@ -865,10 +872,12 @@ hex-val = (c i64) (v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 v-opt3 = c - 97 + 10
                 v-opt3: {
                     ok -> v = it
+
                     ->
                 }
             }

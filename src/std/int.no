@@ -32,10 +32,12 @@ int.to-str = () (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             digits-opt = digits + 1
             digits-opt: {
                 ok -> digits = it
+
                 ->
             }
         }
@@ -48,10 +50,12 @@ int.to-str = () (out str) {
     #{overflow=wrap}
     neg == 1 -> {
         {
+
             #{overflow=wrap}
             total-opt = total + 1
             total-opt: {
                 ok -> total = it
+
                 ->
             }
         }
@@ -79,10 +83,12 @@ int.to-str = () (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt = pos - 1
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }

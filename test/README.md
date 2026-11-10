@@ -189,6 +189,89 @@ f = runner.failed-count()
 
 ## 5. 目前覆蓋狀況
 
+### 5.0 快照：2026-11-10（本輪新增盤點工具）
+
+盤點工具：`python3 scripts/std_test_coverage.py`（`--missing` 列缺口、
+`--module <名>` 看單一模組、`--markdown` 出表、`--strict` 有缺口回 rc=1）。
+
+口徑：API 面取自 `src/std/**/*.no` 的頂層宣告（`name = (` 為模組函數、
+`type.method = (` 為方法）；「已覆蓋」= 測試檔裡真的出現該呼叫形態
+（模組函數看 `<alias>.<name>`，方法看**本模組測試檔**裡的 `.<name>(`）。
+方法覆蓋是**近似**——同模組內多個結構體共用同名方法時會高估。
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2139（810 + 1329） |
+| 已覆蓋 | **739（34.5%）**（本輪前 675 / 31.6%） |
+| 有專用測試檔的模組 | 99 / 119（本輪前 92 / 119） |
+| 測試檔數 | 103（本輪 +7） |
+
+本輪新增 7 個測試檔（164 個斷言）＋ 擴充 `aes.no`（8 → 52 個斷言），全綠：
+
+| 檔 | 斷言 | 覆蓋 |
+|---|---:|---|
+| `float.no` | 14 | `float.div` / `is-nan` / `is-inf` |
+| `int.no` | 12 | `int.to-str`（i128/u128）/ `int.div` / `int.mod` |
+| `num.no` | 19 | `num.clamp` / `sign` / `abs` |
+| `fnv.no` | 8 | `fnv-1a-32` / `fnv-1a-64` |
+| `fnv-1a-32.no` | 5 | `fnv-1a-32(s, n)` |
+| `sha3.no` | 30 | `rotl64` / `keccak-f1600` / `keccak-sponge` / `sha3-{224,256,384,512}` 及 4 個 `-hex` |
+| `map.no` | 76 | `hashmap-{str,int,bool}-tmpl` 的 init/hash/str-eq/put/get/contains/remove/rehash/clear/len/is-empty + 自動擴容 |
+| `aes.no`（擴充） | 52 | `crypto/aes` **23/23 全覆蓋**：gf-mul2/3、rcon-val、sub/inv-sub-bytes、shift/inv-shift-rows、mix-col(s)/inv-mix-col(s)、add-round-key(-at)、rot-word、sub-word、key-expand(-256)、enc/dec-block、enc/dec-128/256（FIPS-197 KAT） |
+
+**仍無專用測試檔的 20 個模組**：`archive/{tar,xz,zip,zstd}`、`async`、
+`collection/static-hashmap`、`embed`、`net/{client,http,http2,http3,net,pool,proxy,quic,server,sse,tls,unix,ws}`。
+
+其中 `collection/static-hashmap`（31 個方法）**目前測不了**：模組註釋寫的
+`m = static-hashmap-str-tmpl {}` 實際編不過（`EmitLLVM: unknown callee
+static-hashmap-str-tmpl.init`，泛型參數 v 無從特化），且全 repo 沒有任何
+`.no` 檔真正使用這三個模板 —— 屬**死代碼 + 缺實例化語法**，不是漏測。
+
+全量執行（`./bin/no test test/std/`，103 檔）：**100 檔全綠、3 檔失敗**，
+失敗檔全部與本輪改動無關（見 §5.2）。
+
+### 5.1 本輪修好的 std bug（`src/std/collection/map.no`）
+
+寫 `map.no` 時撞出來的，兩處都已修並被 `test/std/map.no` 釘住：
+
+1. **`rehash` 死循環**：遷移條目的探測循環寫成 `used != 0 -> break`
+   （應該是「找到空槽才停」），舊表只要有一條目就永遠找不到停點。
+   修法：改 `used == 0 -> break`（str / int 兩個模板各一處）。
+2. **探測遞增不生效**：`#{overflow=wrap} { #{overflow=wrap} idx-opt = idx + 1
+   idx-opt: { ok -> idx = it; -> } }` 這種「裸塊 + 臨時變數 + match 臂賦值」
+   的形態，在 `!!` 循環裡對外層 `idx` 的寫入**靜默丟失**（實測 `idx` 卡在同一槽），
+   於是哈希一旦衝突就死循環 —— 表現為 `map[str]i64` 插到第 13 個鍵整支程式掛死
+   （12 個鍵以內不衝突，所以從前沒被發現）。
+   修法：5 處一律改成直接賦值形態 `idx = idx + 1: { ok -> it; -> }`，
+   改完 20 鍵自動擴容、`rehash` 後續插全部正常。
+   ⚠️ 這是 std 端的繞道，**編譯器「裸塊內 match 臂賦值丟寫」的根因還沒修**。
+
+### 5.2 本輪新挖到、**尚未修**的問題
+
+| # | 症狀 | 復現 |
+|---|---|---|
+| 9 | `map` 的 `for-each`（str/int/bool 三模板，以及 str-map / str-set / hash-set / tree-map 等所有容器）**沒有可用的用戶態調用語法**：`m.for-each(k, v) { … }` 報 `'k' is not defined`，`k, v = m.for-each()` 也不行 | `test/std/map.no` 檔頭「未測」 |
+| 10 | `?i128` / `?u128` 的 **option 載荷**被按 i64 槽讀寫 ⇒ `int.div` / `int.mod` 在 i128/u128 上回垃圾（`10.div(3)` 印 `4349468368`）；同一 binary 上 i64/u64 正常 | `test/std/int.no` 檔頭 |
+| 11 | **模組函數名與另一模組別名撞名 ⇒ 函數體內無法調用**：函數體內寫 `fnv.fnv-1a-32(...)` 報 `EmitLLVM: unknown callee fnv-1a-32`（函數名 = 模組別名 `fnv-1a-32`）；同一調用在**頂層**正常 | `test/std/fnv.no`、`test/std/fnv-1a-32.no` 檔頭 |
+| 12 | **固定長度陣列的切片若直接接在表達式裡**（`h.slice(0,4).to-hex()`）會退化成未特化的 `[]t.slice` → `unknown callee []t.slice`；先落到局部變數就正常 | `test/std/sha3.no` 註解 |
+| 13 | **浮點的 `num.abs` 回 0**（`abs(-3.5)` → `0.0`，`abs(3.5)` → `3.5`）；`0.0 - x` 直接算正常 ⇒ 問題在 `num.abs` 的 f64 單態化裡那句 `r = 0 - .` | `test/std/num.no` 檔頭 |
+
+> 以上都在 `bin/no`（v0.4.19-39-g72e157cb-dirty，2026-11-10）上複現。
+> 注意：該 binary 由**共享工作區**建出，含其它 session 未提交的
+> `src/parser/*`、`src/checker/checker.go` 改動；那批改動落地後應重測一遍。
+
+全量執行的 3 個紅檔（**與本輪改動無關**：三檔都不含 `map`，而本輪只動過
+`src/std/collection/map.no` 與新增測試檔）：
+
+| 檔 | 現象 |
+|---|---|
+| `dns.no` | `parse-name` / `parse-response` 6 條斷言失敗，最後 **segmentation fault**（A 記錄解析後崩） |
+| `ecdsa.no` | 5 條失敗：`publickey` 與 OpenSSL 不一致、OpenSSL golden 簽名驗不過、自有 round-trip 驗不過、兩條 ECDH 共享密鑰不符 |
+| `multipart.no` | `quoted boundary [len]` 失敗，然後 **segmentation fault** |
+
+### 5.3 歷史快照（2026-09-26，保留供對照）
+
 最後一次全量執行（本輪修復後，`./bin/no`）：**41 檔、906 個斷言通過、14 個失敗**
 （6 個檔失敗，**全部是預存問題**，見下節）。
 

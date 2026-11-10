@@ -50,7 +50,6 @@ pem-block {
 pem-encode = (label str, data []byte) (out str) {
 
     ; Base64 編碼
-    b64 str
     b64 = base64.encode-std(data)
 
     ; 構建頭尾
@@ -88,10 +87,12 @@ pem-encode = (label str, data []byte) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt = pos + 1
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -101,10 +102,12 @@ pem-encode = (label str, data []byte) (out str) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt2 = pos + 1
         pos-opt2: {
             ok -> pos = it
+
             ->
         }
     }
@@ -125,10 +128,12 @@ pem-encode = (label str, data []byte) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 pos-opt3 = pos + 1
                 pos-opt3: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -138,10 +143,12 @@ pem-encode = (label str, data []byte) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt4 = pos + 1
             pos-opt4: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -156,10 +163,12 @@ pem-encode = (label str, data []byte) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt5 = pos + 1
             pos-opt5: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -169,10 +178,12 @@ pem-encode = (label str, data []byte) (out str) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt6 = pos + 1
         pos-opt6: {
             ok -> pos = it
+
             ->
         }
     }

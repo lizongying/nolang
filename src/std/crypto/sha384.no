@@ -48,7 +48,6 @@ sha384 = (data []byte) (hash [48]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-
         ixout53c24 = data[i]: {
             ok -> it
 
@@ -170,10 +169,12 @@ sha384 = (data []byte) (hash [48]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             offset-opt = offset + 128
             offset-opt: {
                 ok -> offset = it
+
                 ->
             }
         }
@@ -288,7 +289,6 @@ sha384-hex = (data []byte) (hex str) {
     hex str = with-len(96)
 
     i <- [0..48): {
-
         ixout286c39 = hash[i]: {
             ok -> it
 

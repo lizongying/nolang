@@ -321,6 +321,7 @@ tables.dyn-add = (name str, value str) {
     i = .dyn-count
     (i > 0) {
         {
+
             ; 用 slice 複製（CallExpression 正確載入 str-long value）
             #{overflow=wrap}
             prev-name ?= .dyn-names[i - 1]
@@ -362,10 +363,12 @@ tables.dyn-add = (name str, value str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt = i - 1
                 i-opt: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -399,6 +402,7 @@ tables.dyn-add = (name str, value str) {
     #{overflow=wrap}
     .dyn-count = .dyn-count + 1: {
         ok -> it
+
         ->
     }
 
@@ -659,10 +663,12 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             n-opt = n + 1
             n-opt: {
                 ok -> n = it
+
                 ->
             }
         }
@@ -674,10 +680,12 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-val-opt = r-val - max-prefix
         r-val-opt: {
             ok -> r-val = it
+
             ->
         }
     }
@@ -687,10 +695,12 @@ encode-int = (val i64, prefix-bits i64, prefix-byte i64) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt2 = i + 1
             i-opt2: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -727,10 +737,12 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         next-pos-opt = pos + 1
         next-pos-opt: {
             ok -> next-pos = it
+
             ->
         }
     }
@@ -748,10 +760,12 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             next-pos-opt2 = next-pos + 1
             next-pos-opt2: {
                 ok -> next-pos = it
+
                 ->
             }
         }
@@ -760,10 +774,12 @@ decode-int = (data str, pos i64, prefix-bits i64) (val i64, next-pos i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             m-opt = m + 7
             m-opt: {
                 ok -> m = it
+
                 ->
             }
         }
@@ -827,6 +843,7 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
         }
         first-opt2: {
             ok -> first = it
+
             ->
         }
     }
@@ -860,10 +877,12 @@ decode-str = (data str, pos i64) (out str, next-pos i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         next-pos-opt3 = p + len
         next-pos-opt3: {
             ok -> next-pos = it
+
             ->
         }
     }
@@ -1024,10 +1043,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     count-opt = count + 1
                     count-opt: {
                         ok -> count = it
+
                         ->
                     }
                 }
@@ -1087,10 +1108,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     count-opt2 = count + 1
                     count-opt2: {
                         ok -> count = it
+
                         ->
                     }
                 }
@@ -1150,10 +1173,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     count-opt3 = count + 1
                     count-opt3: {
                         ok -> count = it
+
                         ->
                     }
                 }
@@ -1210,10 +1235,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     count-opt4 = count + 1
                     count-opt4: {
                         ok -> count = it
+
                         ->
                     }
                 }

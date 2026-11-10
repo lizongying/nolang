@@ -939,7 +939,6 @@ inv-mix-columns = (state []byte) {
 ; [add-round-key](#aes.add-round-key)
 add-round-key = (state []byte, rk []byte) {
     i <- [0..16): {
-
         ixout676c25 = state[i]: {
             ok -> it
 
@@ -1164,7 +1163,6 @@ key-expand-256 = (key [32]byte) (ek []byte) {
 ; [add-round-key-at](#aes.add-round-key-at)
 add-round-key-at = (state []byte, rk []byte, off i64) {
     i <- [0..16): {
-
         ixout885c25 = state[i]: {
             ok -> it
 
@@ -1257,10 +1255,12 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             rk-off-opt = round * 16
             rk-off-opt: {
                 ok -> rk-off = it
+
                 ->
             }
         }
@@ -1269,10 +1269,12 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             round-opt = round - 1
             round-opt: {
                 ok -> round = it
+
                 ->
             }
         }

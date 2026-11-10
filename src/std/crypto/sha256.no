@@ -2282,7 +2282,6 @@ sha256 = (data []byte) (hash [32]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-
         ixout2207c24 = data[i]: {
             ok -> it
 
@@ -2380,10 +2379,12 @@ sha256 = (data []byte) (hash [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             offset-opt = offset + 64
             offset-opt: {
                 ok -> offset = it
+
                 ->
             }
         }
@@ -2466,7 +2467,6 @@ sha256-hex = (data []byte) (hex str) {
     hex str = with-len(64)
 
     i <- [0..32): {
-
         ixout2464c39 = hash[i]: {
             ok -> it
 

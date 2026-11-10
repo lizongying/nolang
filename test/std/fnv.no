@@ -1,0 +1,58 @@
+; std-fnv.no — crypto/fnv 模块测试（FNV-1a 32/64 位，整段缓冲区接口）
+;
+; 执行：no test test/std/fnv.no
+; 覆盖：fnv-1a-32 / fnv-1a-64
+; 向量来源：FNV 官方 test vector（offset basis / 'a' / 'abc' / 'hello'），
+;           另以 Python 独立实现交叉核对。
+;
+; 为什么 fnv-1a-32 的断言写在**顶层**而不是 runner.test 回调里：
+;   预存 codegen bug（HEAD，bin/no 2026-11-10）——**函数体内**调用
+;   `fnv.fnv-1a-32(...)` 会报
+;       EmitLLVM: unknown callee fnv-1a-32 in func <name>
+;   因为该函数名与另一个模块别名 `fnv-1a-32`（crypto/fnv-1a-32）撞名，
+;   函数体里的模块前缀被跳过。顶层（main 合成体）里同样的调用正常。
+;   同一 bug 让 `fnv-1a-32.fnv-1a-32(...)` 也只能在顶层调用，
+;   见 test/std/fnv-1a-32.no。
+;   `fnv.fnv-1a-64` 不受影响，正常在回调里测。
+;
+; 注意：fnv-1a-64 回 u64，越过 i64 上界，故经 u64.to-str() 比十进制字串。
+
+# /test/runner
+
+; fnv-1a-64：空输入即 offset basis；单字节与多字节按 XOR-then-multiply 递推
+t-64 = () {
+    src = 'abc'.to-bytes()
+    e = src.slice(0, 0)
+    h0 = fnv.fnv-1a-64(e)
+    runner.str-eq(h0.to-str(), '14695981039346656037', 20, 'fnv-1a-64("") == offset basis')
+
+    ha = fnv.fnv-1a-64('a'.to-bytes())
+    runner.str-eq(ha.to-str(), '12638187200555641996', 20, 'fnv-1a-64("a")')
+
+    habc = fnv.fnv-1a-64(src)
+    runner.str-eq(habc.to-str(), '16654208175385433931', 20, 'fnv-1a-64("abc")')
+
+    hh = fnv.fnv-1a-64('hello'.to-bytes())
+    runner.str-eq(hh.to-str(), '11831194018420276491', 20, 'fnv-1a-64("hello")')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('fnv-1a-64', t-64)
+
+; ── 顶层断言：fnv-1a-32（受上述撞名 bug 限制，只能在顶层调用）──
+
+src32 = 'abc'.to-bytes()
+e32 = src32.slice(0, 0)
+runner.eq(fnv.fnv-1a-32(e32), 2166136261, 'fnv-1a-32("") == offset basis')
+runner.eq(fnv.fnv-1a-32('a'.to-bytes()), 3826002220, 'fnv-1a-32("a") == 3826002220')
+runner.eq(fnv.fnv-1a-32(src32), 440920331, 'fnv-1a-32("abc") == 440920331')
+runner.eq(fnv.fnv-1a-32('hello'.to-bytes()), 1335831723, 'fnv-1a-32("hello") == 1335831723')
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

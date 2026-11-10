@@ -167,6 +167,7 @@ yaml-parser.advance = () {
     #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
+
         ->
     }
 }
@@ -185,6 +186,7 @@ yaml-parser.newline = () (yes bool) {
         #{overflow=wrap}
         .line = .line + 1: {
             ok -> it
+
             ->
         }
         return
@@ -196,6 +198,7 @@ yaml-parser.newline = () (yes bool) {
         #{overflow=wrap}
         .line = .line + 1: {
             ok -> it
+
             ->
         }
     }
@@ -252,10 +255,12 @@ yaml-parser.line-end-of = (i i64) (le i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             le-opt = le + 1
             le-opt: {
                 ok -> le = it
+
                 ->
             }
         }
@@ -299,6 +304,7 @@ yaml-parser.indent-at = () (ind i64) {
     #{overflow=wrap}
     ind = .pos - ls: {
         ok -> it
+
         ->
     }
 }
@@ -473,10 +479,12 @@ yaml-hex-digit = (c i64) (d i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             d-opt2 = c - 48
             d-opt2: {
                 ok -> d = it
+
                 ->
             }
         }
@@ -486,10 +494,12 @@ yaml-hex-digit = (c i64) (d i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             d-opt3 = c - 97 + 10
             d-opt3: {
                 ok -> d = it
+
                 ->
             }
         }
@@ -499,10 +509,12 @@ yaml-hex-digit = (c i64) (d i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             d-opt4 = c - 65 + 10
             d-opt4: {
                 ok -> d = it
+
                 ->
             }
         }
@@ -533,10 +545,12 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt2 = i + 1
                 i-opt2: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -548,30 +562,36 @@ yaml-parse-radix = (t str, start i64, radix i64) (kind i64, v i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             v-opt = v * radix + d
             v-opt: {
                 ok -> v = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             digits-opt = digits + 1
             digits-opt: {
                 ok -> digits = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt3 = i + 1
             i-opt3: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -642,10 +662,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                     #{overflow=wrap}
                     neg -> {
                         {
+
                             #{overflow=wrap}
                             v-opt2 = 0 - v
                             v-opt2: {
                                 ok -> v = it
+
                                 ->
                             }
                         }
@@ -659,10 +681,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     s-opt = j + 1
                     s-opt: {
                         ok -> s = it
+
                         ->
                     }
                 }
@@ -674,10 +698,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                     #{overflow=wrap}
                     neg -> {
                         {
+
                             #{overflow=wrap}
                             v-opt3 = 0 - v
                             v-opt3: {
                                 ok -> v = it
+
                                 ->
                             }
                         }
@@ -701,10 +727,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt4 = i + 1
                 i-opt4: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -714,20 +742,24 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 digits-opt2 = digits + 1
                 digits-opt2: {
                     ok -> digits = it
+
                     ->
                 }
             }
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt5 = i + 1
                 i-opt5: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -739,10 +771,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt6 = i + 1
                 i-opt6: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -755,10 +789,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt7 = i + 1
                 i-opt7: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -772,10 +808,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
                 #{overflow=wrap}
                 s == 45 || s == 43 -> {
                     {
+
                         #{overflow=wrap}
                         i-opt8 = i + 1
                         i-opt8: {
                             ok -> i = it
+
                             ->
                         }
                     }
@@ -812,10 +850,12 @@ yaml-scan-number = (t str) (kind i64, ival i64, fval f64) {
         #{overflow=wrap}
         neg -> {
             {
+
                 #{overflow=wrap}
                 v-opt4 = 0 - v
                 v-opt4: {
                     ok -> v = it
+
                     ->
                 }
             }
@@ -1266,6 +1306,7 @@ yaml-parser.is-seq-dash = () (yes bool) {
 ; [looks-like-map-entry](#yaml.yaml-parser.looks-like-map-entry)
 yaml-parser.looks-like-map-entry = () (yes bool) {
     yes = false
+
     ; 計數器必須顯式標註 i64。寫成 `i = .pos` 由欄位推斷型別時，本函式下方
     ; 那批 `i-optN = i + N` ＋ `i-optN: { ok -> i = it ... }` 的兩步解包會
     ; 整批退化成普通 i64：`i + N` 不再是有號運算、不產生 `?i64`，`ok` 臂於是
@@ -1290,10 +1331,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
                         #{overflow=wrap}
                         {
+
                             #{overflow=wrap}
                             i-opt9 = i + 2
                             i-opt9: {
                                 ok -> i = it
+
                                 ->
                             }
                         }
@@ -1305,10 +1348,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt10 = i + 1
                 i-opt10: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1319,10 +1364,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt11 = i + 2
                     i-opt11: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -1332,10 +1379,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt12 = i + 1
                 i-opt12: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1346,10 +1395,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt13 = i + 1
                 i-opt13: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1360,10 +1411,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt14 = i + 1
                 i-opt14: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1373,20 +1426,24 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 depth-opt = depth + 1
                 depth-opt: {
                     ok -> depth = it
+
                     ->
                 }
             }
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt15 = i + 1
                 i-opt15: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1396,20 +1453,24 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 depth-opt2 = depth - 1
                 depth-opt2: {
                     ok -> depth = it
+
                     ->
                 }
             }
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt16 = i + 1
                 i-opt16: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1426,10 +1487,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 j-opt = i + 1
                 j-opt: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -1447,10 +1510,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 j-opt2 = i + 1
                 j-opt2: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -1467,10 +1532,12 @@ yaml-parser.looks-like-map-entry = () (yes bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt17 = i + 1
             i-opt17: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1588,10 +1655,12 @@ yaml-parser.parse-plain = (cont-min i64, key-mode bool, flow bool) (idx i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     breaks-opt = breaks + 1
                     breaks-opt: {
                         ok -> breaks = it
+
                         ->
                     }
                 }
@@ -1781,10 +1850,12 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 ind-ind-opt = c - 48
                 ind-ind-opt: {
                     ok -> ind-ind = it
+
                     ->
                 }
             }
@@ -1813,10 +1884,12 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             content-ind-opt = parent-indent + ind-ind
             content-ind-opt: {
                 ok -> content-ind = it
+
                 ->
             }
         }
@@ -1835,6 +1908,7 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
             #{overflow=wrap}
             content-ind = .pos - ls: {
                 ok -> it
+
                 ->
             }
             .pos = save
@@ -1880,10 +1954,12 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 trail-opt = trail + 1
                 trail-opt: {
                     ok -> trail = it
+
                     ->
                 }
             }
@@ -1912,10 +1988,12 @@ yaml-parser.parse-block-scalar = (cont-min i64) (idx i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     pending-opt = pending + 1
                     pending-opt: {
                         ok -> pending = it
+
                         ->
                     }
                 }
@@ -2312,6 +2390,7 @@ yaml-parser.merge-one = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-val
         }
     }: {
         err -> return
+
         -> return
     }
 }
@@ -2360,6 +2439,7 @@ yaml-parser.merge-into = (keys []i64, vals []i64, src i64) (ok-keys []i64, ok-va
         }
     }: {
         err -> return
+
         -> return
     }
 }
@@ -2441,6 +2521,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             nk ?= .nodes[key]
         }: {
             err -> _
+
             -> _
         }
         nk.kind == YAML-KIND-STR -> {
@@ -2470,6 +2551,7 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
                     }
                 }: {
                     err -> _
+
                     -> _
                 }
             }
@@ -2857,6 +2939,7 @@ yaml.kind = () (k i64) {
         k = nd.kind
     }: {
         err -> return
+
         -> return
     }
 }
@@ -2873,6 +2956,7 @@ yaml.style = () (s i64) {
         s = nd.style
     }: {
         err -> return
+
         -> return
     }
 }
@@ -2889,6 +2973,7 @@ yaml.tag = () (t str) {
         t = nd.tag
     }: {
         err -> return
+
         -> return
     }
 }
@@ -2905,6 +2990,7 @@ yaml.anchor = () (a str) {
         a = nd.anchor
     }: {
         err -> return
+
         -> return
     }
 }
@@ -2921,6 +3007,7 @@ yaml.line-of = () (n i64) {
         n = nd.line
     }: {
         err -> return
+
         -> return
     }
 }
@@ -2959,6 +3046,7 @@ yaml.is-nan = () (yes bool) {
         yes = yaml-node-is-nan(nd)
     }: {
         err -> return
+
         -> return
     }
 }
@@ -3011,6 +3099,7 @@ yaml.len = () (n i64) {
         n = nd.kids.len()
     }: {
         err -> return
+
         -> return
     }
 }
@@ -3027,6 +3116,7 @@ yaml.text = () (t str) {
         t = nd.text
     }: {
         err -> return
+
         -> return
     }
 }
@@ -3398,10 +3488,12 @@ yaml-to-i64 = (s str) (v i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt18 = i + 1
             i-opt18: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -3438,14 +3530,14 @@ yaml-hex-char = (v i64) (ch str) {
 
     #{overflow=wrap}
     v < 10 -> {
-
-        #{overflow=wrap}
         h1 char = 0
         {
+
             #{overflow=wrap}
             h1-opt = 48 + v
             h1-opt: {
                 ok -> h1 = it
+
                 ->
             }
         }
@@ -3453,13 +3545,14 @@ yaml-hex-char = (v i64) (ch str) {
         return
     }
 
-    #{overflow=wrap}
     h2 char = 0
     {
+
         #{overflow=wrap}
         h2-opt = 87 + v
         h2-opt: {
             ok -> h2 = it
+
             ->
         }
     }
@@ -3591,10 +3684,12 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
             ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 d-opt-opt = depth + 1
                 d-opt-opt: {
                     ok -> d-opt = it
+
                     ->
                 }
             }
@@ -3615,6 +3710,7 @@ yaml-json-of = (pool yaml-pool, idx i64, depth i64) (out str) {
                     out = out - yaml-json-of(pool, ki, d)
                 }: {
                     err -> _
+
                     -> _
                 }
             }
@@ -3645,6 +3741,7 @@ yaml.to-json-all = () (out str) {
             out = out - yaml-json-of(.pool, ri, 1)
         }: {
             err -> _
+
             -> _
         }
     }
@@ -3878,6 +3975,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                     }
                 }: {
                     err -> _
+
                     -> _
                 }
             }
@@ -3890,10 +3988,12 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
             ; （否則它會被當成 option 傳給 yaml-json-of / yaml-emit 的 i64 參數）。
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 d-opt-opt2 = depth + 1
                 d-opt-opt2: {
                     ok -> d-opt = it
+
                     ->
                 }
             }
@@ -3942,6 +4042,7 @@ yaml-emit = (pool yaml-pool, idx i64, indent i64, depth i64) (out str) {
                     }
                 }: {
                     err -> _
+
                     -> _
                 }
             }

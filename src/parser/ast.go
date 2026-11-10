@@ -671,6 +671,12 @@ type UnwrapAssignStatement struct {
 	// 降糖成 UnwrapAssignStatement（no fmt 因此會輸出重寫後的寫法）。原運算符字面量
 	// 只保留給 checker 發廢棄提示用；lowering / codegen 一律不讀。
 	DeprecatedOp string
+	// OverflowMode 攜帶 #{overflow = wrap|clamp0|...} 行注解指定的溢出處理模式
+	// （見 LetStatement）。它管轄的是右式裡那幾個整數運算，而右式在降糖時被搬進
+	// 「`__unwrap_N = <rhs>`」這條合成 let（見 lowerUnwrapAssign），故 lowerUnwrapAssign
+	// 必須把本欄位複製到那條 let 上，否則 HIR 的 KLet 旗標為空 → MIR 不設
+	// Inst.OvfAnnotated → 溢出仍走預設 err（`a ?= a + 1` 明明標了 wrap 卻回 err）。
+	OverflowMode string
 	CommentedNode
 }
 

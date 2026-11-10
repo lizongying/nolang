@@ -14,7 +14,6 @@
 new = (s []byte, n i64) (crc i64) {
     crc = 4294967295
     i <- [0..n): {
-
         ixout18c21 = s[i]: {
             ok -> it
 

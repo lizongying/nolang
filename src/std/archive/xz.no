@@ -39,6 +39,7 @@ lzma-rd.init = (data []byte, start-pos i64) {
     #{overflow=wrap}
     .pos = start-pos + 1: {
         ok -> it
+
         ->
     }
     .range = 0xffffffff
@@ -56,6 +57,7 @@ lzma-rd.init = (data []byte, start-pos i64) {
         #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
+
             ->
         }
     }
@@ -77,6 +79,7 @@ lzma-rd.normalize = () {
         #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
+
             ->
         }
         .range = .range << 8
@@ -109,10 +112,12 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
             #{overflow=wrap}
             .range = .range - bound: {
                 ok -> it
+
                 ->
             }
             .code = .code - bound: {
                 ok -> it
+
                 ->
             }
             new-prob = prob - (prob >> 5)
@@ -134,6 +139,7 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
         #{overflow=wrap}
         t = .code - .range: {
             ok -> it
+
             ->
         }
         {
@@ -156,7 +162,6 @@ lzma-rd.decode-direct-bits = (num-bits i64) (res i64) {
 lzma-rd.decode-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     m = 1
     i <- [0..num-bits): {
-
         ixout127c32 = probs[m]: {
             ok -> it
 
@@ -186,7 +191,6 @@ lzma-rd.decode-reverse-bit-tree = (probs []i64, num-bits i64) (sym i64) {
     m = 1
     sym = 0
     i <- [0..num-bits): {
-
         ixout152c32 = probs[m]: {
             ok -> it
 
@@ -329,57 +333,59 @@ lzma-decoder.init-probs = () {
 ; 更新狀態（字面量後）
 ; [update-state-literal](#xz.lzma-decoder.update-state-literal)
 lzma-decoder.update-state-literal = () {
-    {
-        .state < 4 -> .state = 0
+    .state < 4 -> {
+        .state = 0
+        return
+    }
+    .state < 10 -> {
 
-        .state < 10 -> {
+        #{overflow=wrap}
+        st = .state - 3
+        .state = st: {
+            ok -> it
 
-            #{overflow=wrap}
-            .state = .state - 3: {
-                ok -> it
-                ->
-            }
+            -> .state
         }
+        return
+    }
 
-        .state >= 10 -> {
+    #{overflow=wrap}
+    st2 = .state - 6
+    .state = st2: {
+        ok -> it
 
-            #{overflow=wrap}
-            .state = .state - 6: {
-                ok -> it
-                ->
-            }
-        }
+        -> .state
     }
 }
 
 ; 更新狀態（匹配後）
 ; [update-state-match](#xz.lzma-decoder.update-state-match)
 lzma-decoder.update-state-match = () {
-    {
-        .state < 7 -> .state = 7
-
-        .state >= 7 -> .state = 10
+    .state >= 7 -> {
+        .state = 10
+        return
     }
+    .state = 7
 }
 
 ; 更新狀態（重複匹配後）
 ; [update-state-rep](#xz.lzma-decoder.update-state-rep)
 lzma-decoder.update-state-rep = () {
-    {
-        .state < 7 -> .state = 8
-
-        .state >= 7 -> .state = 11
+    .state >= 7 -> {
+        .state = 11
+        return
     }
+    .state = 8
 }
 
 ; 更新狀態（短重複後）
 ; [update-state-shortrep](#xz.lzma-decoder.update-state-shortrep)
 lzma-decoder.update-state-shortrep = () {
-    {
-        .state < 7 -> .state = 9
-
-        .state >= 7 -> .state = 11
+    .state >= 7 -> {
+        .state = 11
+        return
     }
+    .state = 9
 }
 
 ; 解碼字面量
@@ -403,6 +409,7 @@ lzma-decoder.decode-literal = () {
         symbol = 1
         (symbol < 0x100) {
             {
+
                 #{overflow=wrap}
                 lid = prob-idx + symbol
 
@@ -489,6 +496,7 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
             length-opt = sym + 8
             length-opt: {
                 ok -> length = it
+
                 ->
             }
         }
@@ -512,10 +520,12 @@ lzma-decoder.decode-length = (probs []i64) (length i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         length-opt2 = sym + 16
         length-opt2: {
             ok -> length = it
+
             ->
         }
     }
@@ -535,6 +545,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
     slot-probs []i64
     i <- [0..64): {
         {
+
             #{overflow=wrap}
             v ?= .pos-slot[st * 64 + i]
             slot-probs.push(v)
@@ -564,6 +575,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
         sub-probs []i64
         i <- [0..1 << num-direct-bits): {
             {
+
                 #{overflow=wrap}
                 v ?= .spec-pos[base - pos-slot - 1 + i]
                 sub-probs.push(v)
@@ -578,6 +590,7 @@ lzma-decoder.decode-distance = (length i64) (dist i64) {
             dist-opt = base + sym
             dist-opt: {
                 ok -> dist = it
+
                 ->
             }
         }
@@ -919,6 +932,7 @@ lzma-decompress = (data []byte) (out []byte) {
     dec.lp = lp
     pb: {
         ok -> dec.pb = it
+
         -> _
     }
     dec.state = 0
@@ -999,10 +1013,12 @@ xz-decompress = (data []byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt = pos + 1
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -1016,10 +1032,12 @@ xz-decompress = (data []byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt2 = pos + 1
             pos-opt2: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -1034,10 +1052,12 @@ xz-decompress = (data []byte) (out []byte) {
             ; 壓縮大小使用變長整數編碼
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 pos-opt3 = pos + 1
                 pos-opt3: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1050,10 +1070,12 @@ xz-decompress = (data []byte) (out []byte) {
             ; 解壓大小使用變長整數編碼
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 pos-opt4 = pos + 1
                 pos-opt4: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1068,16 +1090,19 @@ xz-decompress = (data []byte) (out []byte) {
             }
             filter-id-opt: {
                 ok -> filter-id = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt5 = pos + 1
             pos-opt5: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -1091,10 +1116,12 @@ xz-decompress = (data []byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt6 = pos + 1
             pos-opt6: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -1112,6 +1139,7 @@ xz-decompress = (data []byte) (out []byte) {
                 }
                 lzma2-props-opt: {
                     ok -> lzma2-props = it
+
                     ->
                 }
             }
@@ -1119,6 +1147,7 @@ xz-decompress = (data []byte) (out []byte) {
                 pos-opt7 = pos + 1
                 pos-opt7: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1166,10 +1195,12 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt8 = pos + 1
             pos-opt8: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -1201,6 +1232,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                 pos-opt9 = pos + 2
                 pos-opt9: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1210,6 +1242,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                 pos-opt10 = pos + 4
                 pos-opt10: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1253,6 +1286,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                 pos-opt11 = pos + 2
                 pos-opt11: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1295,6 +1329,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                 pos-opt12 = pos + 2
                 pos-opt12: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1317,6 +1352,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                 pos-opt13 = pos + 2
                 pos-opt13: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -1336,6 +1372,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                     }
                     props-opt: {
                         ok -> props = it
+
                         ->
                     }
                 }
@@ -1343,6 +1380,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                     pos-opt14 = pos + 1
                     pos-opt14: {
                         ok -> pos = it
+
                         ->
                     }
                 }
@@ -1377,6 +1415,7 @@ lzma2-decompress-stream = (data []byte, start-pos i64) (out []byte) {
                 pos-opt15 = pos + size
                 pos-opt15: {
                     ok -> pos = it
+
                     ->
                 }
             }

@@ -92,6 +92,7 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     .frame-type = data.byte(pos + 3): {
         ok -> it
+
         ->
     }
 
@@ -99,6 +100,7 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     .flags = data.byte(pos + 4): {
         ok -> it
+
         ->
     }
 
@@ -589,6 +591,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     #{overflow=wrap}
     .next-stream-id = .next-stream-id + 2: {
         ok -> it
+
         ->
     }
 
@@ -877,6 +880,7 @@ do = (method str, url str, body str) (names [32]str, values [32]str, header-coun
         #{overflow=wrap}
         ofs = colon-idx + 1: {
             ok -> it
+
             -> 0
         }
         port-str = host.slice(ofs, host.len-bytes())
@@ -925,7 +929,6 @@ do-req = (method str, url str, body str) (resp ?http.response) {
     ; 複製標頭到 r（用 slice 載入值）
     r.header-count = header-count
     i <- [0..header-count): {
-
         ixout873c16 = names[i]: {
             ok -> it
 
@@ -977,7 +980,6 @@ do-req = (method str, url str, body str) (resp ?http.response) {
             is-status == 1 -> {
                 r.status-code = 0
                 j <- [0..vlen): {
-
                     ixout939c65 = values[i]: {
                         ok -> it
 

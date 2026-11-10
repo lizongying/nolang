@@ -162,7 +162,6 @@ fe-one = (h []i64) {
 ; f: 來源域元素
 ; [fe-copy](#x25519.fe-copy)
 fe-copy = (h []i64, f []i64) {
-
     ixout167c20 = f[0]: {
         ok -> it
 
@@ -290,7 +289,6 @@ fe-copy = (h []i64, f []i64) {
 ; g: 右加數
 ; [fe-add](#x25519.fe-add)
 fe-add = (h []i64, f []i64, g []i64) {
-
     ixout245c20 = f[0]: {
         ok -> it
 
@@ -488,7 +486,6 @@ fe-add = (h []i64, f []i64, g []i64) {
 ; g: 減數
 ; [fe-sub](#x25519.fe-sub)
 fe-sub = (h []i64, f []i64, g []i64) {
-
     ixout323c20 = f[0]: {
         ok -> it
 
@@ -693,7 +690,6 @@ fe-cswap = (a []i64, b []i64, mask i64) {
     #{overflow=wrap}
     m = 0 - mask
     i <- [0..10): {
-
         ixout407c18 = a[i]: {
             ok -> it
 
@@ -4697,10 +4693,12 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
         ; 結束 Montgomery ladder step
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             t-opt = t - 1
             t-opt: {
                 ok -> t = it
+
                 ->
             }
         }
@@ -4763,7 +4761,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     ; Clamping
     k []byte = with-len(32)
     i <- [0..32): {
-
         ixout2709c24 = scalar[i]: {
             ok -> it
 
@@ -4816,7 +4813,6 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     ; 載入點座標 — 複製到 local [32]byte 再呼叫 fe-frombytes
     point-arr [32]byte
     i <- [0..32): {
-
         ixout2739c24 = point[i]: {
             ok -> it
 
@@ -4919,10 +4915,12 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             t-opt2 = t - 1
             t-opt2: {
                 ok -> t = it
+
                 ->
             }
         }

@@ -104,10 +104,12 @@ str-set.add = (key str) (is-new bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt = idx + 1
                 idx-opt: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -122,6 +124,7 @@ str-set.add = (key str) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
     }: {
@@ -154,10 +157,12 @@ str-set.contains = (key str) (found bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt2 = idx + 1
                 idx-opt2: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -194,6 +199,7 @@ str-set.remove = (key str) (removed bool) {
                 #{overflow=wrap}
                 .size = .size - 1: {
                     ok -> it
+
                     ->
                 }
                 removed = true
@@ -202,10 +208,12 @@ str-set.remove = (key str) (removed bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt3 = idx + 1
                 idx-opt3: {
                     ok -> idx = it
+
                     ->
                 }
             }

@@ -92,10 +92,12 @@ duration-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         diff-opt = end - start
         diff-opt: {
             ok -> diff = it
+
             ->
         }
     }
@@ -110,10 +112,12 @@ duration-ms-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         diff-opt2 = end - start
         diff-opt2: {
             ok -> diff = it
+
             ->
         }
     }
@@ -128,10 +132,12 @@ duration-us-between = (start i64, end i64) (diff i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         diff-opt3 = end - start
         diff-opt3: {
             ok -> diff = it
+
             ->
         }
     }
@@ -157,10 +163,12 @@ since-ms = (start i64) (diff i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         diff-opt4 = end - start
         diff-opt4: {
             ok -> diff = it
+
             ->
         }
     }
@@ -175,10 +183,12 @@ since-us = (start i64) (diff i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         diff-opt5 = end - start
         diff-opt5: {
             ok -> diff = it
+
             ->
         }
     }
@@ -248,6 +258,7 @@ timer.elapsed-ms = () (ms i64) {
     #{overflow=wrap}
     ms = .end-ts - .start-ts: {
         ok -> it
+
         ->
     }
 }
@@ -262,10 +273,12 @@ timer.elapsed-s = () (s i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         s-opt = ms / 1000
         s-opt: {
             ok -> s = it
+
             ->
         }
     }
@@ -281,10 +294,12 @@ timer.elapsed-us = () (us i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         us-opt = ms * 1000
         us-opt: {
             ok -> us = it
+
             ->
         }
     }
@@ -345,8 +360,7 @@ days-in-month-fn = (y i64, m i64) (d i64) {
     #{overflow=wrap}
     d = _days-in-month[m - 1]
     m == 2 -> {
-        leap bool
-        leap = is-leap(y)
+        leap bool = is-leap(y)
         leap -> d = 29
     }
 }
@@ -370,10 +384,12 @@ unix-to-date = (ts i64) (d date) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             days-opt = days - 1
             days-opt: {
                 ok -> days = it
+
                 ->
             }
         }
@@ -399,10 +415,12 @@ unix-to-date = (ts i64) (d date) {
     #{overflow=wrap}
     z < 0 && z % 146097 != 0 -> {
         {
+
             #{overflow=wrap}
             era-opt = era - 1
             era-opt: {
                 ok -> era = it
+
                 ->
             }
         }
@@ -435,12 +453,14 @@ unix-to-date = (ts i64) (d date) {
     #{overflow=wrap}
     d.day = doy - (153 * mp + 2) / 5 + 1: {
         ok -> it
+
         ->
     }
 
     #{overflow=wrap}
     d.month = mp + 3: {
         ok -> it
+
         ->
     }
 
@@ -448,6 +468,7 @@ unix-to-date = (ts i64) (d date) {
     mp >= 10 -> {
         d.month = mp - 9: {
             ok -> it
+
             ->
         }
     }
@@ -457,6 +478,7 @@ unix-to-date = (ts i64) (d date) {
         d.month <= 2 -> {
             d.year = y + 1: {
                 ok -> it
+
                 ->
             }
         }
@@ -464,6 +486,7 @@ unix-to-date = (ts i64) (d date) {
         -> {
             y: {
                 ok -> d.year = it
+
                 -> _
             }
         }
@@ -492,10 +515,12 @@ date-to-unix = (d date) (ts i64) {
     #{overflow=wrap}
     m <= 2 -> {
         {
+
             #{overflow=wrap}
             y-opt = y - 1
             y-opt: {
                 ok -> y = it
+
                 ->
             }
         }
@@ -507,10 +532,12 @@ date-to-unix = (d date) (ts i64) {
     #{overflow=wrap}
     y < 0 && y % 400 != 0 -> {
         {
+
             #{overflow=wrap}
             era-opt2 = era - 1
             era-opt2: {
                 ok -> era = it
+
                 ->
             }
         }
@@ -527,6 +554,7 @@ date-to-unix = (d date) (ts i64) {
                 m2-opt = m2 - 3
                 m2-opt: {
                     ok -> m2 = it
+
                     ->
                 }
             }
@@ -537,6 +565,7 @@ date-to-unix = (d date) (ts i64) {
                 m2-opt2 = m2 + 9
                 m2-opt2: {
                     ok -> m2 = it
+
                     ->
                 }
             }
@@ -552,12 +581,14 @@ date-to-unix = (d date) (ts i64) {
     #{overflow=wrap}
     days = era * 146097 + doe - 719468: {
         ok -> it
+
         ->
     }
 
     #{overflow=wrap}
     ts = days * 86400 + d.hour * 3600 + d.min * 60 + d.sec: {
         ok -> it
+
         ->
     }
 }
@@ -578,6 +609,7 @@ format-date = (d date) (out str) {
             yr-opt = 0 - yr
             yr-opt: {
                 ok -> yr = it
+
                 ->
             }
         }
@@ -660,7 +692,6 @@ format-date = (d date) (out str) {
 ; out: 格式化後的 UTC 時間字串
 ; [format-time-str](#time.format-time-str)
 format-time-str = (ts i64) (out str) {
-    d date
     d = unix-to-date(ts)
     out = format-date(d)
 }
@@ -794,12 +825,14 @@ now-time = () (t time) {
     #{overflow=wrap}
     t.sec = ns / 1000000000: {
         ok -> it
+
         ->
     }
 
     #{overflow=wrap}
     t.nsec = ns % 1000000000: {
         ok -> it
+
         ->
     }
 }
@@ -823,6 +856,7 @@ duration-time = (start time, end time) (diff i64) {
     #{overflow=wrap}
     diff = end.sec - start.sec: {
         ok -> it
+
         ->
     }
 }
@@ -832,12 +866,12 @@ duration-time = (start time, end time) (diff i64) {
 ; diff: 現在與 start 的秒差（忽略 nsec）
 ; [since-time](#time.since-time)
 since-time = (start time) (diff i64) {
-    now-t time
     now-t = now-time()
 
     #{overflow=wrap}
     diff = now-t.sec - start.sec: {
         ok -> it
+
         ->
     }
 }
@@ -874,6 +908,7 @@ time.unix-ms = () (ms i64) {
     #{overflow=wrap}
     ms = .sec * 1000 + .nsec / 1000000: {
         ok -> it
+
         ->
     }
 }
@@ -889,7 +924,6 @@ time.date = () (d date) {
 ; out: 'YYYY-MM-DD HH:MM:SS' 字串
 ; [format](#time.format)
 time.format = () (out str) {
-    d date
     d = unix-to-date(.sec)
     out = format-date(d)
 }
@@ -903,6 +937,7 @@ time.add-seconds = (n i64) (t time) {
     #{overflow=wrap}
     t.sec = .sec + n: {
         ok -> it
+
         ->
     }
     t.nsec = .nsec
@@ -917,6 +952,7 @@ time.sub = (other time) (diff i64) {
     #{overflow=wrap}
     diff = .sec - other.sec: {
         ok -> it
+
         ->
     }
 }

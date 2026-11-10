@@ -97,7 +97,6 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
         ; 寫回輸出
         i <- [0..8): {
-
             ixout83c28 = tmp3[i]: {
                 ok -> it
 
@@ -110,10 +109,12 @@ tdes-enc = (in []byte, n i64, key [24]byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             blk-opt = blk + 8
             blk-opt: {
                 ok -> blk = it
+
                 ->
             }
         }
@@ -197,7 +198,6 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
         tmp3 = des.des-dec(tmp2, 8, k1)
 
         i <- [0..8): {
-
             ixout152c28 = tmp3[i]: {
                 ok -> it
 
@@ -210,10 +210,12 @@ tdes-dec = (in []byte, n i64, key [24]byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             blk-opt2 = blk + 8
             blk-opt2: {
                 ok -> blk = it
+
                 ->
             }
         }
@@ -247,7 +249,6 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         ; XOR 當前區塊與 prev
         xored [8]byte
         i <- [0..8): {
-
             ixout191c29 = in[blk + i]: {
                 ok -> it
 
@@ -273,7 +274,6 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
         ; 寫回輸出並更新 prev
         i <- [0..8): {
-
             ixout205c28 = enc-block[i]: {
                 ok -> it
 
@@ -298,10 +298,12 @@ tdes-cbc-enc = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             blk-opt3 = blk + 8
             blk-opt3: {
                 ok -> blk = it
+
                 ->
             }
         }
@@ -347,7 +349,6 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
         dec-block = tdes-dec(cipher-block, 8, key)
 
         i <- [0..8): {
-
             ixout255c29 = dec-block[i]: {
                 ok -> it
 
@@ -372,10 +373,12 @@ tdes-cbc-dec = (in []byte, key [24]byte, iv [8]byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             blk-opt4 = blk + 8
             blk-opt4: {
                 ok -> blk = it
+
                 ->
             }
         }

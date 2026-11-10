@@ -31,10 +31,12 @@ encode = (data []byte) (out str) {
     #{overflow=wrap}
     remainder != 0 -> {
         {
+
             #{overflow=wrap}
             out-len-opt = out-len + 8
             out-len-opt: {
                 ok -> out-len = it
+
                 ->
             }
         }
@@ -139,20 +141,24 @@ encode = (data []byte) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt = pos + 5
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             out-pos-opt = out-pos + 8
             out-pos-opt: {
                 ok -> out-pos = it
+
                 ->
             }
         }
@@ -409,6 +415,7 @@ decode = (in str) (out []byte) {
                     pad-count-opt = pad-count + 1
                     pad-count-opt: {
                         ok -> pad-count = it
+
                         ->
                     }
                 }
@@ -490,20 +497,24 @@ decode = (in str) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt2 = pos + 8
             pos-opt2: {
                 ok -> pos = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             out-pos-opt2 = out-pos + 5
             out-pos-opt2: {
                 ok -> out-pos = it
+
                 ->
             }
         }
@@ -518,6 +529,7 @@ decode = (in str) (out []byte) {
                 out-pos-opt3 = out-pos - 4
                 out-pos-opt3: {
                     ok -> out-pos = it
+
                     ->
                 }
             }
@@ -528,6 +540,7 @@ decode = (in str) (out []byte) {
                 out-pos-opt4 = out-pos - 3
                 out-pos-opt4: {
                     ok -> out-pos = it
+
                     ->
                 }
             }
@@ -538,6 +551,7 @@ decode = (in str) (out []byte) {
                 out-pos-opt5 = out-pos - 2
                 out-pos-opt5: {
                     ok -> out-pos = it
+
                     ->
                 }
             }
@@ -548,6 +562,7 @@ decode = (in str) (out []byte) {
                 out-pos-opt6 = out-pos - 1
                 out-pos-opt6: {
                     ok -> out-pos = it
+
                     ->
                 }
             }

@@ -933,7 +933,6 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
         ; X = B[i] XOR X
         j <- [0..64): {
-
             ixout323c29 = b[i * 64 + j]: {
                 ok -> it
 
@@ -958,7 +957,6 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
         ; Y[i] = X
         j <- [0..64): {
-
             ixout337c28 = x[j]: {
                 ok -> it
 
@@ -1029,7 +1027,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     ; X = B
     x []byte
     i <- [0..block-bytes): {
-
         ixout389c24 = b[i]: {
             ok -> it
 
@@ -1047,7 +1044,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     ; V[0] = X, V[i] = BlockMix(V[i-1])
     v []byte
     i <- [0..block-bytes): {
-
         ixout402c24 = x[i]: {
             ok -> it
 
@@ -1066,7 +1062,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         ; X = BlockMix(X)
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
-
             ixout416c28 = mixed[i]: {
                 ok -> it
 
@@ -1095,10 +1090,12 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             n-idx-opt = n-idx + 1
             n-idx-opt: {
                 ok -> n-idx = it
+
                 ->
             }
         }
@@ -1132,7 +1129,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
         ; X = X XOR V[j]
         i <- [0..block-bytes): {
-
             ixout457c29 = x[i]: {
                 ok -> it
 
@@ -1155,7 +1151,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         ; X = BlockMix(X)
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
-
             ixout469c28 = mixed[i]: {
                 ok -> it
 
@@ -1171,10 +1166,12 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             n-idx-opt2 = n-idx + 1
             n-idx-opt2: {
                 ok -> n-idx = it
+
                 ->
             }
         }
@@ -1182,7 +1179,6 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
     ; 輸出 X
     i <- [0..block-bytes): {
-
         ixout483c18 = x[i]: {
             ok -> it
 
@@ -1243,7 +1239,6 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
 
         ; 寫回 B
         j <- [0..block-bytes): {
-
             ixout535c28 = mixed[j]: {
                 ok -> it
 

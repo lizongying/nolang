@@ -376,7 +376,11 @@ import (
 // InferredType（`c = a & 255` 之後的 `c % 10` 由裸 i64 變 `?i64`、
 // `y = d.year` 由無型別變 i64）與一批先前沒有的 `it` 綁定；舊 blob 沒有這些
 // 事實，重用會退回「ok 臂永不命中」「it 恆 0」的老症狀，故必 bump。
-const ASTVersion = "2026-11-09.6"
+// 2026-11-10.1：UnwrapAssignStatement 新增 OverflowMode 欄位，並在降糖時複製到
+// 合成的 `__unwrap_N = <rhs>`（及 option 運算元守衛 `__opt_N = ...`）。舊 blob
+// 沒有這個欄位，重用會讓 `?=` 上方 #{overflow=wrap} 重新退回預設「溢出回 err」
+// ——正是 `no fmt` 把該註解判成無效刪掉的同一批位置。故必 bump。
+const ASTVersion = "2026-11-10.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

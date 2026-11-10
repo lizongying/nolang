@@ -80,6 +80,10 @@ no test test/std/
 因此「fmt 后能编译」与「vet 能过」并不等价。
 另有一条死循环风险：fmt 单档解析与 vet 的包上下文口径可能相反，
 导致 fmt 删掉 build 必需的注解。
+
+结构体实例化的左花括号一律紧贴型别名：zip{}、net.conn{...}；
+写成 zip {} 会被 fmt 归一成 zip{}。结构体定义仍是 zip { ... }（带空格），
+两者不要再混。规则落在 src/fmt/expr.go 的 formatStructLiteral。
 `
       syntax: `
 no fmt path/to/file.no
@@ -88,8 +92,8 @@ no fmt --fix=index-out path/to/file.no
       example: `
 no fmt src/std/str.no
 `
-      related: ['no-vet', 'fmt-shape-gate']
-      refs: ['src/cmd/no', 'scripts/check_ty_strings.sh']
+      related: ['no-vet', 'fmt-shape-gate', 'struct']
+      refs: ['src/cmd/no', 'src/fmt/expr.go', 'scripts/check_ty_strings.sh']
     }
     'no-vet': {
       title: 'no vet'

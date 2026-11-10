@@ -1482,7 +1482,6 @@ sha1 = (data []byte) (hash [20]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-
         ixout1177c24 = data[i]: {
             ok -> it
 
@@ -1567,10 +1566,12 @@ sha1 = (data []byte) (hash [20]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             offset-opt = offset + 64
             offset-opt: {
                 ok -> offset = it
+
                 ->
             }
         }
@@ -1629,7 +1630,6 @@ sha1-hex = (data []byte) (hex str) {
     hex str = with-len(40)
 
     i <- [0..20): {
-
         ixout1627c39 = hash[i]: {
             ok -> it
 

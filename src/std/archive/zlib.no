@@ -29,7 +29,6 @@ adler-32 = (data []byte, n i64) (sum i64) {
     a = 1
     b = 0
     i <- [0..n): {
-
         ixout34c18 = data[i]: {
             ok -> it
 
@@ -41,10 +40,12 @@ adler-32 = (data []byte, n i64) (sum i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             b-opt = (b + a) % mod-base
             b-opt: {
                 ok -> b = it
+
                 ->
             }
         }
@@ -262,10 +263,12 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             p-opt = p + 1
             p-opt: {
                 ok -> p = it
+
                 ->
             }
         }
@@ -286,10 +289,12 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             p-opt2 = p + 4 + blk-len
             p-opt2: {
                 ok -> p = it
+
                 ->
             }
         }
@@ -299,10 +304,12 @@ zlib-consumed-stored = (data []byte) (consumed i64) {
     ; p 現在指向 Adler-32（4 bytes）
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         consumed-opt = p + 4
         consumed-opt: {
             ok -> consumed = it
+
             ->
         }
     }

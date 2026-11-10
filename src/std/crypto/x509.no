@@ -56,7 +56,6 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
     n = b & 127
     len = 0
     i <- [0..n): {
-
         ixout59c29 = data[pos + 1 + i]: {
             ok -> it
 
@@ -68,10 +67,12 @@ der-len = (data []byte, pos i64) (len i64, adv i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         adv-opt = 1 + n
         adv-opt: {
             ok -> adv = it
+
             ->
         }
     }
@@ -138,6 +139,7 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
     ; 印出 TBS 標頭位元組以驗證
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         b0-opt = data[start + 1]: {
             ok -> it
@@ -146,12 +148,14 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
         }
         b0-opt: {
             ok -> b0 = it
+
             ->
         }
     }
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         b1-opt = data[start + 2]: {
             ok -> it
@@ -160,12 +164,14 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
         }
         b1-opt: {
             ok -> b1 = it
+
             ->
         }
     }
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         b2-opt = data[start + 3]: {
             ok -> it
@@ -174,6 +180,7 @@ x509-tbs-range = (data []byte) (start i64, end i64) {
         }
         b2-opt: {
             ok -> b2 = it
+
             ->
         }
     }
@@ -229,7 +236,6 @@ x509-serial = (data []byte) (serial i64) {
     ; 讀取序號值
     val = 0
     i <- [0..int-len): {
-
         ixout200c29 = data[p + 1 + adv + i]: {
             ok -> it
 
@@ -285,10 +291,12 @@ x509-rsa-e = (data []byte) (e i64) {
     ; 步驟 7：進入 SPKI 內容（跳過 SPKI SEQUENCE 標籤 + 長度）
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         p-opt2 = p + 1
         p-opt2: {
             ok -> p = it
+
             ->
         }
     }
@@ -351,7 +359,6 @@ x509-rsa-e = (data []byte) (e i64) {
     }
     val = 0
     i <- [0..exp-len): {
-
         ixout310c29 = data[rsa-start + 1 + adv + i]: {
             ok -> it
 
@@ -392,10 +399,12 @@ x509-rsa-n = (data []byte) (out []byte) {
     ; 進入 SPKI
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         p-opt3 = p + 1
         p-opt3: {
             ok -> p = it
+
             ->
         }
     }
@@ -445,7 +454,6 @@ x509-rsa-n = (data []byte) (out []byte) {
 
     #{overflow=wrap}
     mod-len > 0 -> {
-
         ixout392c10 = data[mod-val-start]: {
             ok -> it
 
@@ -456,10 +464,12 @@ x509-rsa-n = (data []byte) (out []byte) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 actual-start-opt = mod-val-start + 1
                 actual-start-opt: {
                     ok -> actual-start = it
+
                     ->
                 }
             }
@@ -2346,7 +2356,6 @@ der-enc-tlv = (tag i64, content []byte) (out []byte) {
 
     out[0] = tag & 255
     i <- [0..lb): {
-
         ixout2263c22 = len-bytes[i]: {
             ok -> it
 
@@ -2357,7 +2366,6 @@ der-enc-tlv = (tag i64, content []byte) (out []byte) {
         out[1 + i] = ixout2263c22
     }
     i <- [0..cl): {
-
         ixout2268c27 = content[i]: {
             ok -> it
 
@@ -2401,7 +2409,6 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
 
     #{overflow=wrap}
     (start < n - 1 && ixout2346c27 == 0) {
-
         ixout2349c30 = data[start]: {
             ok -> it
 
@@ -2414,6 +2421,7 @@ der-enc-integer-bytes = (data []byte) (out []byte) {
                 start-opt = start + 1
                 start-opt: {
                     ok -> start = it
+
                     ->
                 }
             }
@@ -2511,10 +2519,12 @@ der-enc-integer-i64 = (val i64) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             n-opt = n + 1
             n-opt: {
                 ok -> n = it
+
                 ->
             }
         }
@@ -2569,7 +2579,6 @@ der-enc-bitstring = (data []byte) (out []byte) {
         -> _; 未使用位元數
     }
     i <- [0..n): {
-
         ixout2431c24 = data[i]: {
             ok -> it
 
@@ -2752,7 +2761,6 @@ alg-id-rsa-encryption = () (out []byte) {
     #{overflow=wrap}
     content []byte = with-len(oid-tlv.len() + null-tlv.len())
     i <- [0..oid-tlv.len()): {
-
         ixout2598c24 = oid-tlv[i]: {
             ok -> it
 
@@ -2766,7 +2774,6 @@ alg-id-rsa-encryption = () (out []byte) {
         }
     }
     i <- [0..null-tlv.len()): {
-
         ixout2607c24 = null-tlv[i]: {
             ok -> it
 
@@ -2847,7 +2854,6 @@ alg-id-sha256-with-rsa = () (out []byte) {
     #{overflow=wrap}
     content []byte = with-len(oid-tlv.len() + null-tlv.len())
     i <- [0..oid-tlv.len()): {
-
         ixout2682c24 = oid-tlv[i]: {
             ok -> it
 
@@ -2861,7 +2867,6 @@ alg-id-sha256-with-rsa = () (out []byte) {
         }
     }
     i <- [0..null-tlv.len()): {
-
         ixout2691c24 = null-tlv[i]: {
             ok -> it
 
@@ -2898,7 +2903,6 @@ x509-build-rsa-public-key = (n []byte, e i64) (out []byte) {
     #{overflow=wrap}
     content []byte = with-len(n-int.len() + e-int.len())
     i <- [0..n-int.len()): {
-
         ixout2723c24 = n-int[i]: {
             ok -> it
 
@@ -2912,7 +2916,6 @@ x509-build-rsa-public-key = (n []byte, e i64) (out []byte) {
         }
     }
     i <- [0..e-int.len()): {
-
         ixout2732c24 = e-int[i]: {
             ok -> it
 
@@ -2948,7 +2951,6 @@ x509-build-spki = (n []byte, e i64) (out []byte) {
     #{overflow=wrap}
     content []byte = with-len(alg-id.len() + bit-str.len())
     i <- [0..alg-id.len()): {
-
         ixout2762c24 = alg-id[i]: {
             ok -> it
 
@@ -2962,7 +2964,6 @@ x509-build-spki = (n []byte, e i64) (out []byte) {
         }
     }
     i <- [0..bit-str.len()): {
-
         ixout2771c24 = bit-str[i]: {
             ok -> it
 
@@ -3015,7 +3016,6 @@ x509-build-name-cn = (cn str) (out []byte) {
     #{overflow=wrap}
     atv-content []byte = with-len(oid-tlv.len() + val-tlv.len())
     i <- [0..oid-tlv.len()): {
-
         ixout2818c24 = oid-tlv[i]: {
             ok -> it
 
@@ -3029,7 +3029,6 @@ x509-build-name-cn = (cn str) (out []byte) {
         }
     }
     i <- [0..val-tlv.len()): {
-
         ixout2827c24 = val-tlv[i]: {
             ok -> it
 
@@ -3071,7 +3070,6 @@ x509-build-validity = (not-before str, not-after str) (out []byte) {
     #{overflow=wrap}
     content []byte = with-len(nb.len() + na.len())
     i <- [0..nb.len()): {
-
         ixout2863c24 = nb[i]: {
             ok -> it
 
@@ -3085,7 +3083,6 @@ x509-build-validity = (not-before str, not-after str) (out []byte) {
         }
     }
     i <- [0..na.len()): {
-
         ixout2872c24 = na[i]: {
             ok -> it
 
@@ -3152,7 +3149,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     content []byte = with-len(total)
     pos = 0
     i <- [0..version.len()): {
-
         ixout2933c24 = version[i]: {
             ok -> it
 
@@ -3170,7 +3166,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     #{overflow=wrap}
     pos = pos + version.len()
     i <- [0..serial.len()): {
-
         ixout2945c24 = serial[i]: {
             ok -> it
 
@@ -3188,7 +3183,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     #{overflow=wrap}
     pos = pos + serial.len()
     i <- [0..sig-alg.len()): {
-
         ixout2957c24 = sig-alg[i]: {
             ok -> it
 
@@ -3206,7 +3200,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     #{overflow=wrap}
     pos = pos + sig-alg.len()
     i <- [0..issuer.len()): {
-
         ixout2969c24 = issuer[i]: {
             ok -> it
 
@@ -3224,7 +3217,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     #{overflow=wrap}
     pos = pos + issuer.len()
     i <- [0..validity.len()): {
-
         ixout2981c24 = validity[i]: {
             ok -> it
 
@@ -3242,7 +3234,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     #{overflow=wrap}
     pos = pos + validity.len()
     i <- [0..subject.len()): {
-
         ixout2993c24 = subject[i]: {
             ok -> it
 
@@ -3260,7 +3251,6 @@ x509-build-tbs = (n []byte, e i64, cn str, not-before str, not-after str) (out [
     #{overflow=wrap}
     pos = pos + subject.len()
     i <- [0..spki.len()): {
-
         ixout3005c24 = spki[i]: {
             ok -> it
 
@@ -3355,7 +3345,6 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     #{overflow=wrap}
     inner-content []byte = with-len(oid-tlv.len() + null-tlv.len())
     i <- [0..oid-tlv.len()): {
-
         ixout3095c24 = oid-tlv[i]: {
             ok -> it
 
@@ -3369,7 +3358,6 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
         }
     }
     i <- [0..null-tlv.len()): {
-
         ixout3104c24 = null-tlv[i]: {
             ok -> it
 
@@ -3395,7 +3383,6 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
     #{overflow=wrap}
     di-content []byte = with-len(inner-seq.len() + hash-octet.len())
     i <- [0..inner-seq.len()): {
-
         ixout3124c24 = inner-seq[i]: {
             ok -> it
 
@@ -3409,7 +3396,6 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
         }
     }
     i <- [0..hash-octet.len()): {
-
         ixout3133c24 = hash-octet[i]: {
             ok -> it
 
@@ -3467,7 +3453,6 @@ rsa-pkcs1-sign-sha256 = (data []byte, n []byte, d []byte) (sig []byte) {
         -> _
     }
     i <- [0..di-len): {
-
         ixout3185c24 = digest-info[i]: {
             ok -> it
 
@@ -3579,7 +3564,6 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     content []byte = with-len(total)
     pos = 0
     i <- [0..tbs.len()): {
-
         ixout3292c24 = tbs[i]: {
             ok -> it
 
@@ -3597,7 +3581,6 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     #{overflow=wrap}
     pos = pos + tbs.len()
     i <- [0..sig-alg.len()): {
-
         ixout3304c24 = sig-alg[i]: {
             ok -> it
 
@@ -3615,7 +3598,6 @@ x509-build-self-signed-cert = (n []byte, e i64, d []byte, cn str) (cert []byte) 
     #{overflow=wrap}
     pos = pos + sig-alg.len()
     i <- [0..sig-bitstr.len()): {
-
         ixout3316c24 = sig-bitstr[i]: {
             ok -> it
 

@@ -349,10 +349,12 @@ path.clean = () {
 
                             #{overflow=wrap}
                             {
+
                                 #{overflow=wrap}
                                 j-opt = j - 1
                                 j-opt: {
                                     ok -> j = it
+
                                     ->
                                 }
                             }
@@ -381,10 +383,12 @@ path.clean = () {
 
                             #{overflow=wrap}
                             {
+
                                 #{overflow=wrap}
                                 out-n-opt2 = out-n + 1
                                 out-n-opt2: {
                                     ok -> out-n = it
+
                                     ->
                                 }
                             }
@@ -402,10 +406,12 @@ path.clean = () {
 
                         #{overflow=wrap}
                         {
+
                             #{overflow=wrap}
                             out-n-opt3 = out-n + 1
                             out-n-opt3: {
                                 ok -> out-n = it
+
                                 ->
                             }
                         }
@@ -418,10 +424,12 @@ path.clean = () {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     dot-count-opt = dot-count + 1
                     dot-count-opt: {
                         ok -> dot-count = it
+
                         ->
                     }
                 }
@@ -441,10 +449,12 @@ path.clean = () {
 
                     #{overflow=wrap}
                     {
+
                         #{overflow=wrap}
                         out-n-opt4 = out-n + 1
                         out-n-opt4: {
                             ok -> out-n = it
+
                             ->
                         }
                     }
@@ -462,10 +472,12 @@ path.clean = () {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     out-n-opt5 = out-n + 1
                     out-n-opt5: {
                         ok -> out-n = it
+
                         ->
                     }
                 }
@@ -481,10 +493,12 @@ path.clean = () {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 j-opt2 = out-n - 2
                 j-opt2: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -495,10 +509,12 @@ path.clean = () {
 
                     #{overflow=wrap}
                     {
+
                         #{overflow=wrap}
                         out-n-opt-opt = j + 1
                         out-n-opt-opt: {
                             ok -> out-n-opt = it
+
                             ->
                         }
                     }
@@ -514,10 +530,12 @@ path.clean = () {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     j-opt3 = j - 1
                     j-opt3: {
                         ok -> j = it
+
                         ->
                     }
                 }
@@ -541,10 +559,12 @@ path.clean = () {
         #{overflow=wrap}
         prev == SEP-BYTE -> {
             {
+
                 #{overflow=wrap}
                 out-n-opt6 = out-n - 1
                 out-n-opt6: {
                     ok -> out-n = it
+
                     ->
                 }
             }

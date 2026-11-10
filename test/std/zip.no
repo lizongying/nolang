@@ -1,0 +1,198 @@
+; test/std/zip.no — archive/zip 模組測試
+;
+; 執行：no test test/std/zip.no
+; 覆蓋：u16le / u32le、zip 唯讀視圖（find-eocd/get-cd-off/get-total/entry-off/
+;       count/entry/name/size/compressed-size/method/extract）、
+;       zip-entry 全部方法、zip-writer 全部方法
+;       （put/cd-put/write-u16/write-u32/write-local-file/cd-write-u16/
+;         cd-write-u32/write-cd-entry/write-eocd/add-file/add-dir/finalize）
+;
+; 判準：本地標頭／中央目錄／EOCD 的期望位元組依 PKWARE APPNOTE 推導；
+;       method=8（deflate）樣本由 Python zipfile 產生，內容另以真實 unzip
+;       交叉驗證（見 test/README.md §5.1）。
+;
+; 語言坑：`[]byte.to-hex()` 輸出大寫。
+
+# /test/runner
+
+; 把 n 個位元組填成指定值
+; n: 位元組數
+; ch: 填入值
+; out: 長度 n 的內容
+mk-fill = (n i64, ch i64) (out []byte) {
+    i <- [0..n): {
+        out.push(ch)
+    }
+}
+
+; ── 1. u16le / u32le 位元組輔助 ──────────────────────────────────────
+t-bytes-helpers = () {
+    raw [8]byte = [0x34, 0x12, 0xEF, 0xCD, 0xAB, 0x89, 0x01, 0x00]
+    v = raw.slice(0, 8)
+
+    runner.eq(u16le(v, 0), 0x1234, 'u16le 偏移 0 = 0x1234')
+    runner.eq(u16le(v, 3), 0xABCD, 'u16le 跨位元組偏移 3 = 0xABCD')
+    runner.eq(u32le(v, 2), 0x89ABCDEF, 'u32le 偏移 2 = 0x89ABCDEF')
+    runner.eq(u32le(v, 4), 0x000189AB, 'u32le 偏移 4 = 0x000189AB')
+}
+
+; ── 2. writer 基本寫入單元 ───────────────────────────────────────────
+t-primitives = () {
+    w = zip-writer{}
+    w.write-u16(0x1234)
+    w.write-u32(0x89ABCDEF)
+    w.put(7)
+
+    d = w.data.slice(0, len(w.data))
+    runner.str-eq(d.to-hex(), '3412EFCDAB8907', 14, 'write-u16/u32/put 皆為小端序')
+
+    runner.eq(len(w.cd-data), 0, 'put 不寫入中央目錄緩衝')
+
+    w.cd-put(9)
+    w.cd-write-u16(0x0102)
+    w.cd-write-u32(0x11223344)
+    c = w.cd-data.slice(0, len(w.cd-data))
+    runner.str-eq(c.to-hex(), '09020144332211', 14, 'cd-put/cd-write-u16/u32 寫入中央目錄緩衝')
+    runner.eq(len(w.data), 7, 'cd-* 不影響本地資料區')
+}
+
+; ── 3. write-local-file 標頭布局（PK\x03\x04）────────────────────────
+t-local = () {
+    w = zip-writer{}
+    w.write-local-file('m.txt', 'xy'.to-bytes(), 0x12345678)
+
+    runner.eq(len(w.data), 37, 'local header = 30 + 名稱 5 + 內容 2')
+
+    h = w.data.slice(0, 30)
+    want = '504B03041400000000000000000078563412020000000200000005000000'
+    runner.str-eq(h.to-hex(), want, 60, 'local file header 各欄位')
+
+    nm = w.data.slice(30, 35)
+    runner.str-eq(nm.to-hex(), '6D2E747874', 10, '名稱緊跟標頭')
+
+    ct = w.data.slice(35, 37)
+    runner.str-eq(ct.to-hex(), '7879', 4, '內容緊跟名稱')
+}
+
+; ── 4. write-cd-entry（PK\x01\x02）與 write-eocd（PK\x05\x06）────────
+t-cd-eocd = () {
+    w = zip-writer{}
+    w.write-cd-entry('m.txt', 0, 2, 2, 0x12345678)
+    runner.eq(len(w.cd-data), 51, 'central directory entry = 46 + 名稱 5')
+
+    sig = w.cd-data.slice(0, 4)
+    runner.str-eq(sig.to-hex(), '504B0102', 8, '中央目錄簽名')
+
+    nl = w.cd-data.slice(28, 30)
+    runner.str-eq(nl.to-hex(), '0500', 4, '中央目錄名稱長度欄 = 5')
+
+    e = zip-writer{}
+    e.write-eocd(0, 0)
+    runner.eq(len(e.data), 22, 'EOCD 固定 22 位元組')
+    eh = e.data.slice(0, 22)
+    runner.str-eq(eh.to-hex(), '504B0506000000000000000000000000000000000000', 44, 'EOCD 空歸檔全 0')
+}
+
+; ── 5. writer round-trip：add-file ×2 + add-dir + finalize ────────────
+t-roundtrip = () {
+    w = zip-writer{}
+    w.add-file('a.txt', 'hello'.to-bytes())
+    w.add-file('b.txt', 'second entry'.to-bytes())
+    w.add-dir('sub')
+    out = w.finalize()
+
+    runner.eq(w.count, 3, 'writer count = 3')
+    runner.eq(len(out), 295, '歸檔長度 = 本地區 + 中央目錄 + EOCD')
+
+    z = zip{}
+    z.data = out
+
+    runner.eq(z.count(), 3, 'zip.count() = 3')
+    runner.eq(z.get-total(), 3, 'get-total() = 3')
+    runner.eq(z.find-eocd(), 273, 'find-eocd() = 長度 - 22')
+    runner.eq(z.get-cd-off(), 121, 'get-cd-off() = 本地資料區長度（40+47+34）')
+
+    ; entry-off 回的是中央目錄條目偏移（不是本地標頭偏移）
+    runner.eq(z.entry-off(0), 121, 'entry-off(0) = 中央目錄起點')
+    runner.eq(z.entry-off(1), 172, 'entry-off(1) = 121 + (46+5)')
+    runner.eq(z.entry-off(2), 223, 'entry-off(2) = 172 + (46+5)')
+
+    runner.str-eq(z.name(0), 'a.txt', 5, 'name(0)')
+    runner.str-eq(z.name(1), 'b.txt', 5, 'name(1)')
+    runner.str-eq(z.name(2), 'sub/', 4, 'add-dir 自動補斜線')
+
+    runner.eq(z.size(0), 5, 'size(0) = 5')
+    runner.eq(z.size(1), 12, 'size(1) = 12')
+    runner.eq(z.compressed-size(0), 5, 'stored 條目壓縮後大小等於原始大小')
+    runner.eq(z.method(0), 0, 'stored 條目 method = 0')
+
+    runner.str-eq(z.extract(0).to-str(), 'hello', 5, 'extract(0)')
+    runner.str-eq(z.extract(1).to-str(), 'second entry', 12, 'extract(1)')
+    runner.eq(len(z.extract(2)), 0, '目錄條目內容為空')
+
+    ; zip-entry 視圖必須與 zip.* 一致
+    e0 = z.entry(0)
+    e1 = z.entry(2)
+    runner.str-eq(e0.name(), 'a.txt', 5, 'entry.name()')
+    runner.eq(e0.size(), 5, 'entry.size()')
+    runner.eq(e0.compressed-size(), 5, 'entry.compressed-size()')
+    runner.eq(e0.method(), 0, 'entry.method()')
+    runner.str-eq(e0.extract().to-str(), 'hello', 5, 'entry.extract()')
+    runner.str-eq(e1.name(), 'sub/', 4, 'entry(2).name() 目錄補斜線')
+}
+
+; ── 6. method=8（deflate）讀取：Python zipfile 產生的樣本 ─────────────
+; 條目 d.txt，原始 29 位元組 'hello hello hello world hello'，deflate 後 17 位元組
+t-deflate = () {
+    hex = '504B0304140000000800F64D6A5D2BBF7A74110000001D00000005000000642E747874CB48CDC9C957C84022CBF38B7252206C00504B01021403140000000800F64D6A5D2BBF7A74110000001D000000050000000000000000000000800100000000642E747874504B0506000000000100010033000000340000000000'
+    dec = hex.from-hex()
+    raw = dec: {
+        ok -> it
+
+        -> mk-fill(0, 0)
+    }
+    runner.eq(len(raw), 125, '樣本長度 125')
+
+    z = zip{}
+    z.data = raw
+
+    runner.eq(z.count(), 1, 'count = 1')
+    runner.str-eq(z.name(0), 'd.txt', 5, 'name(0)')
+    runner.eq(z.size(0), 29, 'size = 29（解壓後）')
+    runner.eq(z.compressed-size(0), 17, 'compressed-size = 17')
+    runner.eq(z.method(0), 8, 'method = 8（deflate）')
+
+    out = z.extract(0)
+    runner.eq(len(out), 29, 'extract 還原長度 29')
+    runner.str-eq(out.to-str(), 'hello hello hello world hello', 29, 'extract 還原內容')
+}
+
+; ── 7. 損壞 / 非 ZIP 資料的容錯 ──────────────────────────────────────
+t-garbage = () {
+    z = zip{}
+    z.data = mk-fill(64, 65)
+
+    runner.eq(z.find-eocd(), -1, '無 EOCD 時 find-eocd = -1')
+    runner.eq(z.count(), 0, '無 EOCD 時 count = 0')
+    runner.eq(z.get-cd-off(), 0, '無 EOCD 時 get-cd-off = 0')
+    runner.eq(z.get-total(), 0, '無 EOCD 時 get-total = 0')
+
+    tiny = zip{}
+    tiny.data = mk-fill(4, 0)
+    runner.eq(tiny.find-eocd(), -1, '資料短於 22 位元組時 find-eocd = -1')
+}
+
+p1 = runner.test('zip.u16le/u32le', t-bytes-helpers)
+p2 = runner.test('zip-writer primitives', t-primitives)
+p3 = runner.test('zip-writer.write-local-file', t-local)
+p4 = runner.test('zip-writer cd/eocd', t-cd-eocd)
+p5 = runner.test('zip round-trip', t-roundtrip)
+p6 = runner.test('zip deflate extract', t-deflate)
+p7 = runner.test('zip garbage tolerance', t-garbage)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

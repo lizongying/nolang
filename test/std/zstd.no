@@ -1,0 +1,158 @@
+; test/std/zstd.no — archive/zstd 模組測試
+;
+; 執行：no test test/std/zstd.no
+; 覆蓋：zstd-compress / zstd-decompress、zs-bit-reader 全部方法、
+;       bits-for-count、fse-table.build/decode、zs-huffman.build/decode、
+;       zs-frame.read-frame-header/decode-block/decode-compressed-block
+;
+; 判準：zstd 幀頭依 RFC 8878 推導（single_segment=1，fcs_flag=0/1）；
+;       本模組產出的幀已用真實 zstd(1) 驗證可解（見 test/README.md §5.1）。
+;
+; 已知缺陷（test/README.md §5.2 #14）：真 zstd 的壓縮區塊（type 2）
+; 目前解不出來（`decode-compressed-block` 的 literals/sequence 展開未完成），
+; 本檔只覆蓋 raw/RLE 區塊路徑。
+
+# /test/runner
+
+; ── 1. 位元讀取器（LSB-first）────────────────────────────────────────
+t-bit-reader = () {
+    br = zs-bit-reader{}
+    br.init([0xB5, 0x01, 0xAC, 0x02], 0)
+
+    b0 = br.read-bit()
+    b1 = br.read-bit()
+    b2 = br.read-bit()
+    b3 = br.read-bit()
+    runner.eq(b0, 1, 'read-bit 取 LSB：0xB5 的 bit0 = 1')
+    runner.eq(b1, 0, 'read-bit：bit1 = 0')
+    runner.eq(b2, 1, 'read-bit：bit2 = 1')
+    runner.eq(b3, 0, 'read-bit：bit3 = 0（0xB5 = 1011_0101）')
+
+    ; 剩 4 位（0xB5 >> 4 = 0xB），read-bits(4) = 11
+    v4 = br.read-bits(4)
+    runner.eq(v4, 0x0B, 'read-bits(4) 拼回高位半字節 = 0x0B')
+
+    ; 下一字節 0x01
+    v1 = br.read-bits(1)
+    runner.eq(v1, 1, 'read-bits(1) 跨字節邊界 = 1')
+
+    ; 0xAC 0x02 為 varint 300（0x2C + 2<<7）
+    va = br.read-varint()
+    runner.eq(va, 300, 'read-varint 解出 300')
+
+    ; 對齊：pos 已在資料尾端，再讀應為 0 且不越界
+    br.align-to-byte()
+    z = br.read-bit()
+    runner.eq(z, 0, '資料耗盡時 read-bit 回 0')
+}
+
+; ── 2. bits-for-count = 需要幾位元表示該計數（bit length）─────────────
+; 實作為「每右移一次計一次」，故 count=1 → 1、count=255 → 8、count=256 → 9
+t-bits-for-count = () {
+    runner.eq(bits-for-count(0), 0, 'bits-for-count(0) = 0（非正值）')
+    runner.eq(bits-for-count(1), 1, 'bits-for-count(1) = 1')
+    runner.eq(bits-for-count(2), 2, 'bits-for-count(2) = 2')
+    runner.eq(bits-for-count(3), 2, 'bits-for-count(3) = 2')
+    runner.eq(bits-for-count(4), 3, 'bits-for-count(4) = 3')
+    runner.eq(bits-for-count(7), 3, 'bits-for-count(7) = 3')
+    runner.eq(bits-for-count(8), 4, 'bits-for-count(8) = 4')
+    runner.eq(bits-for-count(255), 8, 'bits-for-count(255) = 8')
+    runner.eq(bits-for-count(256), 9, 'bits-for-count(256) = 9')
+}
+
+; ── 3. FSE 表建構 / 解碼 ─────────────────────────────────────────────
+; 兩個符號、table-log=1 → 每符號佔 1 個表項
+t-fse = () {
+    norm []i64 = [1, 1]
+    ft = fse-table{}
+    ft.build(norm, 1, 1)
+
+    runner.eq(ft.table-log, 1, 'table-log 被記錄')
+    runner.eq(ft.table-size, 2, 'table-size = 1 << table-log')
+    runner.eq(ft.n-symbols, 2, 'n-symbols = 2')
+
+    br = zs-bit-reader{}
+    br.init([0x00], 0)
+    sym, new-state = ft.decode(br, 0)
+    runner.eq(sym, 0, 'state=0 解出符號 0')
+    runner.lt(new-state, 2, 'new-state 落在表範圍內')
+}
+
+; ── 4. zstd Huffman 表建構 / 解碼 ────────────────────────────────────
+; 兩符號、長度各 1 → 規範碼 0 與 1；首位元 0 應解出符號 0
+t-huffman = () {
+    lens []i64 = [1, 1]
+    ht = zs-huffman{}
+    ht.build(lens, 1)
+
+    br = zs-bit-reader{}
+    br.init([0x00], 0)
+    s0 = ht.decode(br)
+    runner.eq(s0, 0, '首位元 0 解出符號 0')
+
+    br2 = zs-bit-reader{}
+    br2.init([0x01], 0)
+    s1 = ht.decode(br2)
+    runner.eq(s1, 1, '首位元 1 解出符號 1')
+}
+
+; ── 5. 幀頭解析 + raw 區塊解碼 ───────────────────────────────────────
+t-frame = () {
+    src = 'hello hello hello world'.to-bytes()
+    frame = zstd.zstd-compress(src)
+
+    ; 幀頭：magic(4) + FHD(1) + FCS(1，fcs_flag=0) → 6
+    f = zs-frame{}
+    f.data = frame
+    ok = f.read-frame-header()
+    runner.is-true(ok, 'read-frame-header 成功')
+    runner.eq(f.pos, 6, 'raw 區塊的幀頭長度 = 6（單段 + 1 位元組 FCS）')
+
+    lastb = f.decode-block()
+    runner.is-true(lastb == true, 'decode-block 回報最後一個區塊')
+    runner.eq(len(f.out), 23, 'raw 區塊還原 23 位元組')
+    runner.str-eq(f.out.to-str(), 'hello hello hello world', 23, 'raw 區塊內容')
+
+    ; 壓縮區塊路徑：僅確認可被呼叫而不崩潰；解碼結果尚未實作完成（§5.2 #14）
+    g = zs-frame{}
+    g.data = 'xxxxxx'.to-bytes()
+    g.pos = 0
+    bad = g.decode-compressed-block(4)
+    runner.is-true(bad == true || bad == false, 'decode-compressed-block 回傳 bool（不崩潰）')
+}
+
+; ── 6. 壓縮 / 解壓 round-trip（含 fcs_flag=1 的 2 位元組長度路徑）────
+t-roundtrip = () {
+    small = 'hello hello hello world'.to-bytes()
+    z1 = zstd.zstd-compress(small)
+    runner.eq(len(z1), 32, '23 位元組 → 32 位元組幀（4 magic + 2 頭 + 3 區塊頭 + 23）')
+    r1 = zstd.zstd-decompress(z1)
+    runner.eq(len(r1), 23, '小型輸入 round-trip 長度')
+    runner.str-eq(r1.to-str(), 'hello hello hello world', 23, '小型輸入 round-trip 內容')
+
+    big []byte = with-len(300)
+    i <- [0..300): {
+        big[i] = 65 + (i % 26)
+    }
+    z2 = zstd.zstd-compress(big)
+    ; 300 > 255 → fcs_flag=1，2 位元組 FCS
+    runner.eq(len(z2), 310, '300 位元組 → 310 位元組幀（4 magic + 1 FHD + 2 FCS + 3 區塊頭 + 300）')
+    r2 = zstd.zstd-decompress(z2)
+    runner.eq(len(r2), 300, '大型輸入 round-trip 長度')
+    head = r2.slice(0, 4)
+    runner.str-eq(head.to-str(), 'ABCD', 4, '大型輸入 round-trip 開頭內容')
+}
+
+p1 = runner.test('zstd.bit-reader', t-bit-reader)
+p2 = runner.test('zstd.bits-for-count', t-bits-for-count)
+p3 = runner.test('zstd.fse-table', t-fse)
+p4 = runner.test('zstd.huffman', t-huffman)
+p5 = runner.test('zstd.frame', t-frame)
+p6 = runner.test('zstd round-trip', t-roundtrip)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

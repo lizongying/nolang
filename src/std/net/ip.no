@@ -121,10 +121,12 @@ ip-addr.parse = (s str) (ok bool) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     dot-count-opt = dot-count + 1
                     dot-count-opt: {
                         ok -> dot-count = it
+
                         ->
                     }
                 }

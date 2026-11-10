@@ -88,12 +88,123 @@ t-inflate-stored = () {
     runner.eq(ixout52c23, 5, 'inflated[4] == 5')
 }
 
+; ── 位元讀取器（LSB-first，DEFLATE 用）──────────────────────────────
+t-bit-reader = () {
+    br = bit-reader{}
+    br.data = [0xB5, 0x01, 0x34, 0x12]
+    br.pos = 0
+    br.bit-buf = 0
+    br.bit-cnt = 0
+
+    ; 0xB5 = 1011_0101，LSB first：1,0,1,1,0,1,0,1
+    b0 = br.read-bit()
+    b1 = br.read-bit()
+    b2 = br.read-bit()
+    b3 = br.read-bit()
+    runner.eq(b0, 1, 'read-bit：0xB5 的 bit0 = 1')
+    runner.eq(b1, 0, 'read-bit：bit1 = 0')
+    runner.eq(b2, 1, 'read-bit：bit2 = 1')
+    runner.eq(b3, 0, 'read-bit：bit3 = 0（0xB5 = 1011_0101）')
+
+    v = br.read-bits(4)
+    runner.eq(v, 0x0B, 'read-bits(4) 續讀高位半字節 = 0x0B')
+
+    ; 下一字節 0x01 → 讀 1 位後剩 7 位；skip-to-byte 丟掉餘位
+    one = br.read-bits(1)
+    runner.eq(one, 1, 'read-bits(1) = 1')
+    br.skip-to-byte()
+    u = br.read-u16-le()
+    runner.eq(u, 0x1234, 'skip-to-byte 後 read-u16-le 讀到 0x1234')
+}
+
+; ── Huffman 固定碼表 + 解碼 KAT ──────────────────────────────────────
+; DEFLATE 固定表：字面量 0x41（65）的 8 位元碼為 0x71，位元流依 MSB→LSB
+; 逐位元填入，故位元組為 0b10001110 = 0x8E；其後 7 個 0 位元為 EOB(256)。
+t-huffman = () {
+    lc = huffman{}
+    dc = huffman{}
+    build-fixed(lc, dc)
+
+    br = bit-reader{}
+    br.data = [0x8E, 0x00]
+    br.pos = 0
+    br.bit-buf = 0
+    br.bit-cnt = 0
+
+    s1 = lc.decode(br)
+    runner.eq(s1, 65, '固定表解出字面量 0x41（"A"）')
+
+    s2 = lc.decode(br)
+    runner.eq(s2, 256, '固定表解出區塊結束符 256')
+
+    ; 直接以長度表建 canonical 表：兩符號各 1 位元 → 碼 0 與 1
+    lens []i64 = with-len(2)
+    lens[0] = 1
+    lens[1] = 1
+    h2 = huffman{}
+    h2.build(lens, 2)
+
+    br2 = bit-reader{}
+    br2.data = [0x00]
+    br2.pos = 0
+    br2.bit-buf = 0
+    br2.bit-cnt = 0
+    s3 = h2.decode(br2)
+    runner.eq(s3, 0, '自建表：位元 0 解出符號 0')
+}
+
+; ── inflate：fixed Huffman 區塊（btype=1）───────────────────────────
+; zlib（level 9, Z_FIXED）壓 'hello hello hello world hello' 的原始 deflate
+t-inflate-fixed = () {
+    hex = 'CB48CDC9C957C84022CBF38B7252206C00'
+    opt = hex.from-hex()
+    raw []byte = with-len(0)
+    raw = opt: {
+        ok -> it
+
+        -> raw
+    }
+    runner.eq(len(raw), 17, 'fixed 樣本 17 位元組')
+
+    out = inflate-decompress(raw, 29)
+    runner.eq(len(out), 29, 'fixed 區塊還原 29 位元組')
+    runner.str-eq(out.to-str(), 'hello hello hello world hello', 29, 'fixed 區塊內容')
+}
+
+; ── inflate：dynamic Huffman 區塊（btype=2）─────────────────────────
+; zlib（level 9）壓 2292 位元組「英文單詞串」的原始 deflate；
+; 期望值以長度 + Adler-32 校驗（避免在測試檔內複製 2KB 原文）
+t-inflate-dynamic = () {
+    hex = '7D955D6E03310884AFB257B3D5A8A9B46923354F9C3ECAE2846F00EDC37AFD070C3006BB3CC6F63D6EB7B1BD6663BF5FC7365FD363B0D8FCBAEC7AE1FD1D0B3FFDECE31AE57A6DCBFCFDFF67FFFBDD02906B5BDBD87259FBD89E59EDE3FAC6715CF2A58F469D7EDB35D381750C89A5711D84D5006B310DF30883E9404C502796E1971E3054C810F0225ABECBF06848D7DEFA60393BA3622D8EC80E00F894C6987CD79F28B0FE420F099FEF5143FEE07BF61F24A2F54C7884FFE442844F7DC8A99E09541D855DD9A21280EEE335705BB40928F015B2CC4CF8C435E8E526CEA809CD90B3AE5E507B0144F64291BEC09A4BBDA85428A464D8487ACE2D0B3104530D57926B549A18D5E2E782A6D02B80CA87EA59A9269996249242847FCCC44C79552192BAF338272AE52893242FEB33B1FAFCE879EA4D34CF62253D2391D1BA8E580A793439EBDB0590C8BB6C0BDE69B92DDC147DB9703687B3206C3A6049BCF5CDA054577581703489FDC3E87A82D566C82758DB3FE79AFB27'
+    opt = hex.from-hex()
+    raw []byte = with-len(0)
+    raw = opt: {
+        ok -> it
+
+        -> raw
+    }
+    runner.eq(len(raw), 376, 'dynamic 樣本 376 位元組')
+
+    out = inflate-decompress(raw, 2292)
+    runner.eq(len(out), 2292, 'dynamic 區塊還原 2292 位元組')
+
+    head = out.slice(0, 10)
+    runner.str-eq(head.to-str(), 'zeta gamma', 10, 'dynamic 區塊開頭內容')
+
+    a = zlib.adler-32(out, len(out))
+    runner.eq(a, 289291758, 'dynamic 區塊 Adler-32 與原文一致')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('gzip.compress', t-compress)
 p2, f2 = runner.test('gzip.compress/decompress roundtrip', t-compress-decompress)
 p3, f3 = runner.test('gzip.deflate-stored', t-deflate-stored)
 p4, f4 = runner.test('gzip.inflate stored', t-inflate-stored)
+p5, f5 = runner.test('gzip.bit-reader', t-bit-reader)
+p6, f6 = runner.test('gzip.huffman', t-huffman)
+p7, f7 = runner.test('gzip.inflate fixed', t-inflate-fixed)
+p8, f8 = runner.test('gzip.inflate dynamic', t-inflate-dynamic)
 
 total = runner.summary()
 f = runner.failed-count()

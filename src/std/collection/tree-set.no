@@ -64,6 +64,7 @@ tree-set.init = () {
     .size = 0
 
     {
+
         #{overflow=wrap}
         i <- [0..TS-CAP - 1): {
 
@@ -169,10 +170,12 @@ tree-set.bf = (idx i64) (b i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             b-opt = lh - rh
             b-opt: {
                 ok -> b = it
+
                 ->
             }
         }
@@ -389,8 +392,8 @@ tree-set.successor = (idx i64) (succ i64) {
 ; 返回 ok bool: true=新增, false=已存在或池已滿
 ; [add](#tree-set.tree-set.add)
 tree-set.add = (key i64) (ok bool) {
-
     {
+
         ; 空樹
         .root < 0 -> {
             idx = .alloc-node()
@@ -426,6 +429,7 @@ tree-set.add = (key i64) (ok bool) {
                         #{overflow=wrap}
                         .size = .size + 1: {
                             ok -> it
+
                             ->
                         }
                         ok = true
@@ -451,6 +455,7 @@ tree-set.add = (key i64) (ok bool) {
                         #{overflow=wrap}
                         .size = .size + 1: {
                             ok -> it
+
                             ->
                         }
                         ok = true
@@ -504,8 +509,8 @@ tree-set.contains = (key i64) (yes bool) {
 ; 返回 ok bool: true=已刪除, false=未找到
 ; [remove](#tree-set.tree-set.remove)
 tree-set.remove = (key i64) (ok bool) {
-
     {
+
         ; BST 搜尋
         idx = .root
         (idx >= 0) {
@@ -529,6 +534,7 @@ tree-set.remove = (key i64) (ok bool) {
         #{overflow=wrap}
         .size = .size - 1: {
             ok -> it
+
             ->
         }
 
@@ -716,6 +722,7 @@ tree-set.clear = () {
     .size = 0
 
     {
+
         #{overflow=wrap}
         i <- [0..TS-CAP - 1): {
 

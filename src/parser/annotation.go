@@ -654,6 +654,10 @@ func setStmtOverflowMode(s Statement, mode string) {
 		n.OverflowMode = mode
 	case *MultiAssignStatement:
 		n.OverflowMode = mode
+	case *UnwrapAssignStatement:
+		// `v ?= a + b`：模式要跟著節點走，降糖成 `__unwrap_N = a + b` 時由
+		// lowerUnwrapAssign 複製到那條合成 let（見 UnwrapAssignStatement.OverflowMode）。
+		n.OverflowMode = mode
 	}
 }
 

@@ -2292,6 +2292,9 @@ func substituteStmt(stmt parser.Statement, subst map[string]string) parser.State
 			Target:       substituteExpr(s.Target, subst),
 			Value:        substituteExpr(s.Value, subst),
 			DeprecatedOp: s.DeprecatedOp,
+			// 溢出模式必須隨克隆體走：漏帶 ⇒ 單態化後 `?=` 的算術退回預設 err，
+			// 即使模板方法體上寫著 #{overflow=wrap}（同時 ovfhndld 會誤報）。
+			OverflowMode: s.OverflowMode,
 		}
 	case *parser.BlockMatchStatement:
 		// 塊 match `{ ... }: { err -> ... }`：Body 是真正的陳述式主體，必須遞迴；

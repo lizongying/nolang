@@ -3697,6 +3697,10 @@ func overflowAnnotatedNode(sem *parser.SemanticContext, n parser.Node) bool {
 		return s.OverflowMode != ""
 	case *parser.MultiAssignStatement:
 		return s.OverflowMode != ""
+	case *parser.UnwrapAssignStatement:
+		// `v ?= a + b`：註解管轄的是右式的整數運算，parser 把它記在節點欄位上
+		// （見 parser.setStmtOverflowMode），HIR 重建後 side-table 已不可用。
+		return s.OverflowMode != ""
 	}
 	return false
 }
@@ -4370,6 +4374,17 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 			if exprHasIntOverflow(x.Value, declared, selfType) {
 				found = true
 			}
+		case *parser.UnwrapAssignStatement:
+			// 表達式位置的 `?=`（`y = a[i] ?= v` 這類把 `?=` 當值用的形態）。
+			// 目標的索引算式（`a[total + i]`）與右式都可能是整數運算，漏掉
+			// 任何一側都會讓管轄它的 #{overflow=...} 被判無效、由 `no fmt` 刪掉。
+			// 陳述位置的 `?=` 由 stmtHasIntOverflow 的同名分支負責。
+			if exprHasIntOverflow(x.Target, declared, selfType) {
+				found = true
+			}
+			if exprHasIntOverflow(x.Value, declared, selfType) {
+				found = true
+			}
 		case *parser.ArrayLiteral:
 			for _, el := range x.Elements {
 				if exprHasIntOverflow(el, declared, selfType) {
@@ -4459,6 +4474,11 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 				found = true
 			}
 		case *parser.UnwrapAssignStatement:
+			// `v ?= expr`：值與目標（`a[i] ?= v` 的下標算式）兩側都可能是
+			// 整數運算；只走 Value 會讓「目標裡有算術」的注解被判無效刪掉。
+			if exprHasIntOverflow(s.Target, declared, selfType) {
+				found = true
+			}
 			if exprHasIntOverflow(s.Value, declared, selfType) {
 				found = true
 			}
@@ -4973,6 +4993,9 @@ func stmtOverflowAnnotated(sem *parser.SemanticContext, stmt parser.Statement) b
 	case *parser.ReturnStatement:
 		return s.OverflowMode != ""
 	case *parser.MultiAssignStatement:
+		return s.OverflowMode != ""
+	case *parser.UnwrapAssignStatement:
+		// `v ?= a + b` 的 overflow 註解記在節點欄位（parser.setStmtOverflowMode）。
 		return s.OverflowMode != ""
 	}
 	return false

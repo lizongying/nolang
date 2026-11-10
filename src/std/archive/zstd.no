@@ -49,6 +49,7 @@ zs-bit-reader.read-bit = () (bit i64) {
                 #{overflow=wrap}
                 .pos = .pos + 1: {
                     ok -> it
+
                     ->
                 }
                 .bit-cnt = 8
@@ -62,6 +63,7 @@ zs-bit-reader.read-bit = () (bit i64) {
             #{overflow=wrap}
             .bit-cnt = .bit-cnt - 1: {
                 ok -> it
+
                 ->
             }
         }
@@ -92,6 +94,7 @@ zs-bit-reader.read-varint = () (v i64) {
         #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
+
             ->
         }
         v = v | ((b & 0x7f) << shift)
@@ -99,10 +102,12 @@ zs-bit-reader.read-varint = () (v i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             shift-opt = shift + 7
             shift-opt: {
                 ok -> shift = it
+
                 ->
             }
         }
@@ -153,6 +158,7 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     #{overflow=wrap}
     .n-symbols = max-symbol + 1: {
         ok -> it
+
         ->
     }
 
@@ -194,7 +200,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
     #{overflow=wrap}
     i <- [0..max-symbol + 1): {
-
         ixout179c19 = norm-count[i]: {
             ok -> it
 
@@ -207,10 +212,12 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     high-thresh-opt = high-thresh - 1
                     high-thresh-opt: {
                         ok -> high-thresh = it
+
                         ->
                     }
                 }
@@ -239,10 +246,12 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         #{overflow=wrap}
         nc > 0 -> {
             {
+
                 #{overflow=wrap}
                 pos-opt = pos + nc
                 pos-opt: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -263,7 +272,6 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         #{overflow=wrap}
         nc > 0 -> {
             j <- [0..nc): {
-
                 ixout214c25 = positions[i]: {
                     ok -> it
 
@@ -291,6 +299,7 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
         }
 
         {
+
             #{overflow=wrap}
             .nb-bits[i] ?= table-log - bits-for-count(nc)
 
@@ -326,13 +335,11 @@ bits-for-count = (count i64) (n i64) {
         r-count = r-count >> 1
 
         #{overflow=wrap}
-        {
-            #{overflow=wrap}
-            n-opt = n + 1
-            n-opt: {
-                ok -> n = it
-                ->
-            }
+        nt = n + 1
+        n = nt: {
+            ok -> it
+
+            -> n
         }
     }
 }
@@ -358,10 +365,12 @@ fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         new-state-opt = base + extra
         new-state-opt: {
             ok -> new-state = it
+
             ->
         }
     }
@@ -393,7 +402,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 
     ; 找最大碼長度
     i <- [0..max-symbol + 1): {
-
         ixout308c23 = lengths[i]: {
             ok -> it
 
@@ -412,7 +420,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         }
 
         ixout331c16 > .table-log -> {
-
             ixout312c26 = lengths[i]: {
                 ok -> it
 
@@ -465,10 +472,12 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pp-opt = pp + cnt-i
             pp-opt: {
                 ok -> pp = it
+
                 ->
             }
         }
@@ -494,7 +503,6 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 
         #{overflow=wrap}
         l > 0 -> {
-
             ixout364c21 = tmp-base[l]: {
                 ok -> it
 
@@ -559,10 +567,12 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             len-opt = len + 1
             len-opt: {
                 ok -> len = it
+
                 ->
             }
         }
@@ -604,6 +614,7 @@ zs-frame.read-frame-header = () (ok bool) {
     #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
+
         ->
     }
     m1 = .data[.pos]
@@ -614,6 +625,7 @@ zs-frame.read-frame-header = () (ok bool) {
     #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
+
         ->
     }
     m2 = .data[.pos]
@@ -624,6 +636,7 @@ zs-frame.read-frame-header = () (ok bool) {
     #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
+
         ->
     }
     m3 = .data[.pos]
@@ -634,6 +647,7 @@ zs-frame.read-frame-header = () (ok bool) {
     #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
+
         ->
     }
 
@@ -644,6 +658,7 @@ zs-frame.read-frame-header = () (ok bool) {
     #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
+
         ->
     }
 
@@ -661,6 +676,7 @@ zs-frame.read-frame-header = () (ok bool) {
         wd = .data[.pos]
         .pos = .pos + 1: {
             ok -> it
+
             ->
         }
 
@@ -677,6 +693,7 @@ zs-frame.read-frame-header = () (ok bool) {
         dict-id-size = 1 << (dict-id-flag - 1)
         .pos = .pos + dict-id-size: {
             ok -> it
+
             ->
         }
     }
@@ -689,6 +706,7 @@ zs-frame.read-frame-header = () (ok bool) {
                 fcs = .data[.pos]
                 .pos = .pos + 1: {
                     ok -> it
+
                     ->
                 }
             }
@@ -700,6 +718,7 @@ zs-frame.read-frame-header = () (ok bool) {
             fcs = lo | (hi << 8)
             .pos = .pos + 2: {
                 ok -> it
+
                 ->
             }
             fcs = fcs + 256
@@ -713,6 +732,7 @@ zs-frame.read-frame-header = () (ok bool) {
             fcs = e0 | (e1 << 8) | (e2 << 16) | (e3 << 24)
             .pos = .pos + 4: {
                 ok -> it
+
                 ->
             }
         }
@@ -737,6 +757,7 @@ zs-frame.read-frame-header = () (ok bool) {
             fcs = fcs | (g4 << 32)
             .pos = .pos + 5: {
                 ok -> it
+
                 ->
             }
         }
@@ -765,6 +786,7 @@ zs-frame.decode-block = () (last-block ?bool) {
     #{overflow=wrap}
     .pos = .pos + 3: {
         ok -> it
+
         ->
     }
 
@@ -780,6 +802,7 @@ zs-frame.decode-block = () (last-block ?bool) {
 
             ; 直接複製未壓縮資料
             i <- [0..block-size): {
+
                 #{overflow=wrap}
                 d ?= .data[.pos + i]
 
@@ -799,6 +822,7 @@ zs-frame.decode-block = () (last-block ?bool) {
             b = .data[.pos]
             .pos = .pos + 1: {
                 ok -> it
+
                 ->
             }
             i <- [0..block-size): {
@@ -860,6 +884,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         literals []byte
         i <- [0..lit-size): {
             {
+
                 #{overflow=wrap}
                 d ?= .data[br.pos + i]
 
@@ -872,6 +897,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         }
         br.pos = br.pos + lit-size: {
             ok -> it
+
             ->
         }
 
@@ -884,6 +910,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
             ok = true
             block-end: {
                 ok -> .pos = it
+
                 -> _
             }
             return
@@ -901,6 +928,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
         ok = true
         block-end: {
             ok -> .pos = it
+
             -> _
         }
         return
@@ -910,6 +938,7 @@ zs-frame.decode-compressed-block = (block-size i64) (ok bool) {
     ; 簡化處理：跳過
     block-end: {
         ok -> .pos = it
+
         -> _
     }
     ok = true
@@ -1014,15 +1043,21 @@ zstd-compress = (data []byte) (out []byte) {
     out.push(0xfd)
 
     ; Frame Header
-    ; Frame_Header_Descriptor: single_segment=1, fcs_flag=1
-    out.push(0xa0)
-
-    ; Frame Content Size (1 byte, size = value + 256)
-    ; 限制：data.len() <= 511 (256 + 255)
-    #{overflow=wrap}
-    fcs = data.len() - 256
-    fcs < 0 -> fcs = 0
-    out.push(fcs & 0xff)
+    ; Frame_Header_Descriptor：single_segment=1
+    ;   fcs_flag=0 → 1 位元組 FCS，直接存原始大小（0..255）
+    ;   fcs_flag=1 → 2 位元組 FCS，存 size-256（256..65791）
+    ; 舊實作寫 0xa0（fcs_flag=2，需 4 位元組 FCS）卻只寫 1 位元組，
+    ; 導致解壓端多吃 3 位元組（丟掉前 3 個字元）。
+    n = data.len()
+    n <= 255 -> {
+        out.push(0x20)
+        out.push(n & 0xff)
+    }
+    n > 255 -> {
+        out.push(0x60)
+        out.push((n - 256) & 0xff)
+        out.push(((n - 256) >> 8) & 0xff)
+    }
 
     ; Block Header: last_block=1, block_type=0 (raw), block_size=data.len()
     block-size = data.len()

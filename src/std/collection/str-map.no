@@ -102,10 +102,12 @@ str-map.put = (key str, val str) (is-new bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt = idx + 1
                 idx-opt: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -125,6 +127,7 @@ str-map.put = (key str, val str) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
     }: {
@@ -200,6 +203,7 @@ str-map.remove = (key str) (removed bool) {
                 #{overflow=wrap}
                 .size = .size - 1: {
                     ok -> it
+
                     ->
                 }
                 removed = true
@@ -208,10 +212,12 @@ str-map.remove = (key str) (removed bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt2 = idx + 1
                 idx-opt2: {
                     ok -> idx = it
+
                     ->
                 }
             }

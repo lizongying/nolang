@@ -70,20 +70,24 @@ encode = (data []byte, table str) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + 3
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             j-opt = j + 4
             j-opt: {
                 ok -> j = it
+
                 ->
             }
         }

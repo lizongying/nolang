@@ -238,7 +238,6 @@ put-u24 = (buf []byte, pos i64, val i64) {
 ; val i64: 解出的 16-bit 大端值（位元組越界時以零計）
 ; [get-u16](#tls.get-u16)
 get-u16 = (buf []byte, pos i64) (val i64) {
-
     ixout235c13 = buf[pos]: {
         ok -> it
 
@@ -260,7 +259,6 @@ get-u16 = (buf []byte, pos i64) (val i64) {
 ; val i64: 解出的 24-bit 大端值（位元組越界時以零計）
 ; [get-u24](#tls.get-u24)
 get-u24 = (buf []byte, pos i64) (val i64) {
-
     ixout246c13 = buf[pos]: {
         ok -> it
 
@@ -294,7 +292,6 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
     #{overflow=wrap}
     out = with-len(an + bn)
     i <- [0..an): {
-
         ixout263c18 = a[i]: {
             ok -> it
 
@@ -304,7 +301,6 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
         out[i] = ixout263c18
     }
     i <- [0..bn): {
-
         ixout268c23 = b[i]: {
             ok -> it
 
@@ -405,10 +401,12 @@ bn-to-bytes = (num []i64) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             out-n-opt = out-n - 1
             out-n-opt: {
                 ok -> out-n = it
+
                 ->
             }
         }
@@ -460,16 +458,17 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
         #{overflow=wrap}
         out-off + copy-n > out-len -> {
             {
+
                 #{overflow=wrap}
                 copy-n-opt = out-len - out-off
                 copy-n-opt: {
                     ok -> copy-n = it
+
                     ->
                 }
             }
         }
         i <- [0..copy-n): {
-
             ixout397c32 = p[i]: {
                 ok -> it
 
@@ -482,10 +481,12 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             out-off-opt = out-off + copy-n
             out-off-opt: {
                 ok -> out-off = it
+
                 ->
             }
         }
@@ -544,10 +545,12 @@ recv-n = (fd fd, buf []byte, n i64) (ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             total-opt = total + r
             total-opt: {
                 ok -> total = it
+
                 ->
             }
         }
@@ -571,10 +574,12 @@ net-recv-wait = (fd fd, buf str, n i64) (r i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             tries-opt = tries + 1
             tries-opt: {
                 ok -> tries = it
+
                 ->
             }
         }
@@ -650,10 +655,12 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             hdr-total-opt = hdr-total + r
             hdr-total-opt: {
                 ok -> hdr-total = it
+
                 ->
             }
         }
@@ -708,10 +715,12 @@ read-record = (fd fd, buf []byte) (ct i64, rlen i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             body-total-opt = body-total + r
             body-total-opt: {
                 ok -> body-total = it
+
                 ->
             }
         }
@@ -771,7 +780,6 @@ send-raw = (fd fd, ct i64, data []byte) {
 conn.append-hs = (data []byte) {
     n = data.len()
     i <- [0..n): {
-
         ixout660c36 = data[i]: {
             ok -> it
 
@@ -792,6 +800,7 @@ conn.append-hs = (data []byte) {
     #{overflow=wrap}
     .hs-buf-len = .hs-buf-len + n: {
         ok -> it
+
         ->
     }
     .hs-buf.len = .hs-buf-len
@@ -826,6 +835,7 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
     #{overflow=wrap}
     .hs-buf-len = .hs-buf-len + n: {
         ok -> it
+
         ->
     }
     .hs-buf.len = .hs-buf-len
@@ -850,7 +860,6 @@ tls-pad = (in []byte) (out []byte) {
     #{overflow=wrap}
     out = with-len(n + pad-count)
     i <- [0..n): {
-
         ixout706c18 = in[i]: {
             ok -> it
 
@@ -894,7 +903,6 @@ tls-unpad = (in []byte) (out-n i64) {
 
     ; 驗證被移除的每個位元組都等於 pad-val
     i <- [0..strip): {
-
         ixout745c10 = in[in.len() - 1 - i]: {
             ok -> it
 
@@ -929,6 +937,7 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     #{overflow=wrap}
     .rand-state = .rand-state + 8: {
         ok -> it
+
         ->
     }
 
@@ -942,7 +951,6 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
         }
     }
     i <- [0..8): {
-
         ixout786c24 = exp-nonce[i]: {
             ok -> it
 
@@ -997,7 +1005,6 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, frag-len)
     i <- [0..8): {
-
         ixout835c24 = exp-nonce[i]: {
             ok -> it
 
@@ -1012,7 +1019,6 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
         }
     }
     i <- [0..sealed.len()): {
-
         ixout844c24 = sealed[i]: {
             ok -> it
 
@@ -1149,6 +1155,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         #{overflow=wrap}
         .write-seq = .write-seq + 1: {
             ok -> it
+
             ->
         }
         ok = true
@@ -1181,7 +1188,6 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
-
         ixout991c24 = data[i]: {
             ok -> it
 
@@ -1204,7 +1210,6 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     #{overflow=wrap}
     plain []byte = with-len(n + 32)
     i <- [0..n): {
-
         ixout1008c24 = data[i]: {
             ok -> it
 
@@ -1239,7 +1244,6 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     iv [16]byte
     iv-bytes = rand-bytes(.rand-state, 16)
     i <- [0..16): {
-
         ixout1038c24 = iv-bytes[i]: {
             ok -> it
 
@@ -1284,7 +1288,6 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         }
     }
     i <- [0..padded.len()): {
-
         ixout1078c24 = cipher[i]: {
             ok -> it
 
@@ -1311,6 +1314,7 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     #{overflow=wrap}
     .write-seq = .write-seq + 1: {
         ok -> it
+
         ->
     }
     ok = true
@@ -1333,6 +1337,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
         #{overflow=wrap}
         .read-seq = .read-seq + 1: {
             ok -> it
+
             ->
         }
         return
@@ -1421,7 +1426,6 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, content-len)
     i <- [0..content-len): {
-
         ixout1191c24 = plain[i]: {
             ok -> it
 
@@ -1457,7 +1461,6 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ; 輸出明文
     out = with-cap(rlen)
     i <- [0..content-len): {
-
         ixout1220c18 = plain[i]: {
             ok -> it
 
@@ -1472,6 +1475,7 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     #{overflow=wrap}
     .read-seq = .read-seq + 1: {
         ok -> it
+
         ->
     }
 }
@@ -1534,7 +1538,6 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
     ; 複製訊息
     i <- [0..msg-n): {
-
         ixout1291c24 = msg[i]: {
             ok -> it
 
@@ -1590,7 +1593,6 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
                 out[i] = 0
             }
             i <- [0..raw.len()): {
-
                 ixout1340c34 = raw[i]: {
                     ok -> it
 
@@ -1636,6 +1638,7 @@ conn.gen-x25519-keypair = () {
     #{overflow=wrap}
     .rand-state = .rand-state + 1: {
         ok -> it
+
         ->
     }
 
@@ -1691,7 +1694,6 @@ conn.gen-x25519-keypair = () {
     }
     pub-slice = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
-
         ixout1400c26 = pub-slice[i]: {
             ok -> it
 
@@ -1717,6 +1719,7 @@ conn.gen-p256-keypair = () {
     #{overflow=wrap}
     .rand-state = .rand-state + 32: {
         ok -> it
+
         ->
     }
     i <- [0..32): {
@@ -1774,10 +1777,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt = pos + 2
         pos-opt: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1788,10 +1793,10 @@ conn.send-client-hello = () (ok bool) {
     #{overflow=wrap}
     .rand-state = .rand-state + 32: {
         ok -> it
+
         ->
     }
     i <- [0..32): {
-
         ixout1465c24 = rand-bytes-val[i]: {
             ok -> it
 
@@ -1822,10 +1827,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt2 = pos + 32
         pos-opt2: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1840,10 +1847,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt3 = pos + 1
         pos-opt3: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1853,10 +1862,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt4 = pos + 2
         pos-opt4: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1866,10 +1877,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt5 = pos + 2
         pos-opt5: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1877,10 +1890,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt6 = pos + 2
         pos-opt6: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1888,10 +1903,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt7 = pos + 2
         pos-opt7: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1899,10 +1916,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt8 = pos + 2
         pos-opt8: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1910,10 +1929,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt9 = pos + 2
         pos-opt9: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1928,10 +1949,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt10 = pos + 1
         pos-opt10: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1946,10 +1969,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt11 = pos + 1
         pos-opt11: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1959,10 +1984,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt12 = pos + 2
         pos-opt12: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1972,10 +1999,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt13 = pos + 2
         pos-opt13: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1989,10 +2018,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt14 = pos + 2
         pos-opt14: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2005,10 +2036,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt15 = pos + 2
         pos-opt15: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2023,10 +2056,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt16 = pos + 1
         pos-opt16: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2036,10 +2071,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt17 = pos + 2
         pos-opt17: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2065,10 +2102,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt18 = pos + 2
         pos-opt18: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2078,10 +2117,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt19 = pos + 2
         pos-opt19: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2091,10 +2132,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt20 = pos + 2
         pos-opt20: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2104,10 +2147,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt21 = pos + 2
         pos-opt21: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2117,10 +2162,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt22 = pos + 2
         pos-opt22: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2130,10 +2177,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt23 = pos + 2
         pos-opt23: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2143,10 +2192,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt24 = pos + 2
         pos-opt24: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2161,10 +2212,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt25 = pos + 1
         pos-opt25: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2179,10 +2232,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt26 = pos + 1
         pos-opt26: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2192,10 +2247,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt27 = pos + 2
         pos-opt27: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2205,10 +2262,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt28 = pos + 2
         pos-opt28: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2218,10 +2277,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt29 = pos + 2
         pos-opt29: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2231,10 +2292,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt30 = pos + 2
         pos-opt30: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2242,10 +2305,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt31 = pos + 2
         pos-opt31: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2253,10 +2318,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt32 = pos + 2
         pos-opt32: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2264,10 +2331,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt33 = pos + 2
         pos-opt33: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2275,10 +2344,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt34 = pos + 2
         pos-opt34: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2286,10 +2357,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt35 = pos + 2
         pos-opt35: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2297,10 +2370,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt36 = pos + 2
         pos-opt36: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2308,10 +2383,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt37 = pos + 2
         pos-opt37: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2319,10 +2396,12 @@ conn.send-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt38 = pos + 2
         pos-opt38: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2407,10 +2486,12 @@ conn.read-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt39 = pos + 2
         pos-opt39: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2436,10 +2517,12 @@ conn.read-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt40 = pos + 32
         pos-opt40: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2454,10 +2537,12 @@ conn.read-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt41 = pos + 1 + sid-len
         pos-opt41: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2467,10 +2552,12 @@ conn.read-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt42 = pos + 2
         pos-opt42: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2489,10 +2576,12 @@ conn.read-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt43 = pos + 1
         pos-opt43: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2524,10 +2613,12 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt44 = pos + 3
         pos-opt44: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2537,10 +2628,12 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt45 = pos + 3
         pos-opt45: {
             ok -> pos = it
+
             ->
         }
     }
@@ -2826,7 +2919,6 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
 
     ; encrypted premaster
     i <- [0..enc-premaster.len()): {
-
         ixout2115c24 = enc-premaster[i]: {
             ok -> it
 
@@ -2918,7 +3010,6 @@ conn.send-finished = () (ok bool) {
     }
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
-
         ixout2201c24 = verify[i]: {
             ok -> it
 
@@ -3072,7 +3163,6 @@ conn.derive-keys = (premaster []byte) {
         key-block []byte
         key-block = prf(.master-secret, 'key expansion', ks, 40)
         i <- [0..16): {
-
             ixout2343c34 = key-block[i]: {
                 ok -> it
 
@@ -3151,7 +3241,6 @@ conn.derive-keys = (premaster []byte) {
 
     ; client_write_MAC_key (32)
     i <- [0..32): {
-
         ixout2375c30 = key-block[i]: {
             ok -> it
 
@@ -3318,10 +3407,10 @@ conn.handshake-12-body = () (ok bool) {
         #{overflow=wrap}
         .rand-state = .rand-state + 46: {
             ok -> it
+
             ->
         }
         i <- [0..46): {
-
             ixout2496c28 = rand-bytes-val[i]: {
                 ok -> it
 
@@ -3387,10 +3476,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt46 = pos + 2
         pos-opt46: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3401,10 +3492,10 @@ conn.send-client-hello-13 = () (ok bool) {
     #{overflow=wrap}
     .rand-state = .rand-state + 32: {
         ok -> it
+
         ->
     }
     i <- [0..32): {
-
         ixout2564c24 = rand-bytes-val[i]: {
             ok -> it
 
@@ -3435,10 +3526,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt47 = pos + 32
         pos-opt47: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3453,10 +3546,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt48 = pos + 1
         pos-opt48: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3466,10 +3561,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt49 = pos + 2
         pos-opt49: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3479,10 +3576,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt50 = pos + 2
         pos-opt50: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3492,10 +3591,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt51 = pos + 2
         pos-opt51: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3505,10 +3606,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt52 = pos + 2
         pos-opt52: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3518,10 +3621,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt53 = pos + 2
         pos-opt53: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3531,10 +3636,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt54 = pos + 2
         pos-opt54: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3544,10 +3651,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt55 = pos + 2
         pos-opt55: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3562,10 +3671,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt56 = pos + 1
         pos-opt56: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3578,10 +3689,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt57 = pos + 1
         pos-opt57: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3592,10 +3705,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt58 = pos + 2
         pos-opt58: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3605,10 +3720,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt59 = pos + 2
         pos-opt59: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3618,10 +3735,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt60 = pos + 2
         pos-opt60: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3636,10 +3755,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt61 = pos + 1
         pos-opt61: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3649,10 +3770,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt62 = pos + 2
         pos-opt62: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3662,10 +3785,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt63 = pos + 2
         pos-opt63: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3675,10 +3800,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt64 = pos + 2
         pos-opt64: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3688,10 +3815,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt65 = pos + 2
         pos-opt65: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3701,10 +3830,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt66 = pos + 2
         pos-opt66: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3714,10 +3845,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt67 = pos + 2
         pos-opt67: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3727,10 +3860,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt68 = pos + 2
         pos-opt68: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3740,10 +3875,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt69 = pos + 2
         pos-opt69: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3758,10 +3895,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt70 = pos + 1
         pos-opt70: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3776,10 +3915,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt71 = pos + 1
         pos-opt71: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3789,10 +3930,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt72 = pos + 2
         pos-opt72: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3802,10 +3945,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt73 = pos + 2
         pos-opt73: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3815,10 +3960,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt74 = pos + 2
         pos-opt74: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3828,10 +3975,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt75 = pos + 2
         pos-opt75: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3839,10 +3988,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt76 = pos + 2
         pos-opt76: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3850,10 +4001,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt77 = pos + 2
         pos-opt77: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3861,10 +4014,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt78 = pos + 2
         pos-opt78: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3872,10 +4027,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt79 = pos + 2
         pos-opt79: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3883,10 +4040,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt80 = pos + 2
         pos-opt80: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3894,10 +4053,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt81 = pos + 2
         pos-opt81: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3905,10 +4066,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt82 = pos + 2
         pos-opt82: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3916,10 +4079,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt83 = pos + 2
         pos-opt83: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3929,10 +4094,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt84 = pos + 2
         pos-opt84: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3942,10 +4109,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt85 = pos + 2
         pos-opt85: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3955,10 +4124,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt86 = pos + 2
         pos-opt86: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3968,10 +4139,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt87 = pos + 2
         pos-opt87: {
             ok -> pos = it
+
             ->
         }
     }
@@ -3981,10 +4154,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt88 = pos + 2
         pos-opt88: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4000,10 +4175,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt89 = pos + 32
         pos-opt89: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4013,10 +4190,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt90 = pos + 2
         pos-opt90: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4029,10 +4208,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt91 = pos + 2
         pos-opt91: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4045,10 +4226,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt92 = pos + 2
         pos-opt92: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4063,10 +4246,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt93 = pos + 1
         pos-opt93: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4076,10 +4261,12 @@ conn.send-client-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt94 = pos + 2
         pos-opt94: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4169,10 +4356,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt95 = pos + 2
         pos-opt95: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4198,10 +4387,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt96 = pos + 32
         pos-opt96: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4216,10 +4407,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt97 = pos + 1 + sid-len
         pos-opt97: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4229,10 +4422,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt98 = pos + 2
         pos-opt98: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4241,10 +4436,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt99 = pos + 1
         pos-opt99: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4263,10 +4460,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt100 = pos + 2
         pos-opt100: {
             ok -> pos = it
+
             ->
         }
     }
@@ -4281,10 +4480,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt101 = pos + 2
             pos-opt101: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -4292,10 +4493,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt102 = pos + 2
             pos-opt102: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -4342,10 +4545,12 @@ conn.read-server-hello-13 = () (ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt103 = pos + ext-data-len
             pos-opt103: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -4385,7 +4590,6 @@ conn.compute-shared-secret-13 = () {
     }
     shared-slice = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
     i <- [0..32): {
-
         ixout3102c29 = shared-slice[i]: {
             ok -> it
 
@@ -4466,7 +4670,6 @@ conn.derive-handshake-keys-13 = () {
 
     ; 儲存 client handshake traffic secret 供 send-finished-13 使用
     i <- [0..32): {
-
         ixout3166c27 = c-hs-secret[i]: {
             ok -> it
 
@@ -4492,7 +4695,6 @@ conn.derive-handshake-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout3181c29 = key-tmp[i]: {
             ok -> it
 
@@ -4512,7 +4714,6 @@ conn.derive-handshake-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout3190c28 = iv-tmp[i]: {
             ok -> it
 
@@ -4531,7 +4732,6 @@ conn.derive-handshake-keys-13 = () {
     ; server handshake key
     key-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout3198c29 = key-tmp[i]: {
             ok -> it
 
@@ -4550,7 +4750,6 @@ conn.derive-handshake-keys-13 = () {
     ; server handshake IV
     iv-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout3206c28 = iv-tmp[i]: {
             ok -> it
 
@@ -4639,7 +4838,6 @@ conn.derive-application-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout3278c29 = key-tmp[i]: {
             ok -> it
 
@@ -4657,7 +4855,6 @@ conn.derive-application-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout3285c28 = iv-tmp[i]: {
             ok -> it
 
@@ -4674,7 +4871,6 @@ conn.derive-application-keys-13 = () {
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout3291c29 = key-tmp[i]: {
             ok -> it
 
@@ -4691,7 +4887,6 @@ conn.derive-application-keys-13 = () {
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout3297c28 = iv-tmp[i]: {
             ok -> it
 
@@ -4745,7 +4940,6 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     #{overflow=wrap}
     plain []byte = with-len(n + 1)
     i <- [0..n): {
-
         ixout3341c24 = data[i]: {
             ok -> it
 
@@ -4809,7 +5003,6 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
-
         ixout3400c24 = sealed[i]: {
             ok -> it
 
@@ -4950,16 +5143,17 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         plain-len-opt = plain-len - 1
         plain-len-opt: {
             ok -> plain-len = it
+
             ->
         }
     }
     out = with-len(plain-len)
     i <- [0..plain-len): {
-
         ixout3505c18 = plain[i]: {
             ok -> it
 
@@ -5015,6 +5209,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         ct, plain = .read-encrypted-record-13(.hs-server-key, .hs-server-iv, .hs-read-seq)
         .hs-read-seq = .hs-read-seq + 1: {
             ok -> it
+
             ->
         }
         ct < 0 -> return
@@ -5102,6 +5297,7 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     #{overflow=wrap}
     .hs-plain-pos = pos + 4 + msg-len: {
         ok -> it
+
         ->
     }
 }
@@ -5212,7 +5408,6 @@ conn.send-finished-13 = () (ok bool) {
     }
     put-u24(hs, 1, 32)
     i <- [0..32): {
-
         ixout3748c24 = verify[i]: {
             ok -> it
 
@@ -5237,6 +5432,7 @@ conn.send-finished-13 = () (ok bool) {
     #{overflow=wrap}
     .hs-write-seq = .hs-write-seq + 1: {
         ok -> it
+
         ->
     }
 }
@@ -5277,6 +5473,7 @@ conn.connect = (host str, port i64) (ok bool) {
     tcpfd < 0 -> return
     tcpfd: {
         ok -> .fd = it
+
         -> _
     }
     .connected = true
@@ -5335,6 +5532,7 @@ conn.connect-12 = (host str, port i64) (ok bool) {
     tcpfd < 0 -> return
     tcpfd: {
         ok -> .fd = it
+
         -> _
     }
     .connected = true
@@ -5398,6 +5596,7 @@ conn.send = (data str) (written ?i64) {
             #{overflow=wrap}
             .ap-write-seq = .ap-write-seq + 1: {
                 ok -> it
+
                 ->
             }
         }
@@ -5460,6 +5659,7 @@ conn.recv = (buf str, n i64) (read-n i64) {
                         #{overflow=wrap}
                         .ap-read-seq = .ap-read-seq + 1: {
                             ok -> it
+
                             ->
                         }
                         {
@@ -5497,7 +5697,6 @@ conn.recv = (buf str, n i64) (read-n i64) {
     copy-n = plain.len()
     copy-n > n -> copy-n = n
     i <- [0..copy-n): {
-
         ixout4012c24 = plain[i]: {
             ok -> it
 
@@ -5622,7 +5821,6 @@ server-conn {
 server-conn.append-hs = (data []byte) {
     n = data.len()
     i <- [0..n): {
-
         ixout4132c36 = data[i]: {
             ok -> it
 
@@ -5643,6 +5841,7 @@ server-conn.append-hs = (data []byte) {
     #{overflow=wrap}
     .hs-buf-len = .hs-buf-len + n: {
         ok -> it
+
         ->
     }
     .hs-buf.len = .hs-buf-len
@@ -5677,6 +5876,7 @@ server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
     #{overflow=wrap}
     .hs-buf-len = .hs-buf-len + n: {
         ok -> it
+
         ->
     }
     .hs-buf.len = .hs-buf-len
@@ -5723,10 +5923,12 @@ server-conn.read-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt104 = pos + 32
         pos-opt104: {
             ok -> pos = it
+
             ->
         }
     }
@@ -5741,10 +5943,12 @@ server-conn.read-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt105 = pos + 1 + sid-len
         pos-opt105: {
             ok -> pos = it
+
             ->
         }
     }
@@ -5754,10 +5958,12 @@ server-conn.read-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt106 = pos + 2
         pos-opt106: {
             ok -> pos = it
+
             ->
         }
     }
@@ -5787,6 +5993,7 @@ server-conn.read-client-hello = () (ok bool) {
                 j-opt = j + 2
                 j-opt: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -5796,10 +6003,12 @@ server-conn.read-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt107 = pos + cs-len
         pos-opt107: {
             ok -> pos = it
+
             ->
         }
     }
@@ -5814,10 +6023,12 @@ server-conn.read-client-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt108 = pos + 1 + comp-len
         pos-opt108: {
             ok -> pos = it
+
             ->
         }
     }
@@ -5834,6 +6045,7 @@ server-conn.read-client-hello = () (ok bool) {
             pos-opt109 = pos + 2
             pos-opt109: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -5856,6 +6068,7 @@ server-conn.read-client-hello = () (ok bool) {
                     pos-opt110 = pos + 4
                     pos-opt110: {
                         ok -> pos = it
+
                         ->
                     }
                 }
@@ -5893,6 +6106,7 @@ server-conn.read-client-hello = () (ok bool) {
                                 sv-pos-opt2 = sv-pos + 2
                                 sv-pos-opt2: {
                                     ok -> sv-pos = it
+
                                     ->
                                 }
                             }
@@ -5946,6 +6160,7 @@ server-conn.read-client-hello = () (ok bool) {
                                 ks-pos-opt2 = ks-pos + 4 + ks-key-len
                                 ks-pos-opt2: {
                                     ok -> ks-pos = it
+
                                     ->
                                 }
                             }
@@ -5956,6 +6171,7 @@ server-conn.read-client-hello = () (ok bool) {
                     pos-opt111 = pos + ext-data-len
                     pos-opt111: {
                         ok -> pos = it
+
                         ->
                     }
                 }
@@ -6009,10 +6225,12 @@ server-conn.send-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt112 = pos + 2
         pos-opt112: {
             ok -> pos = it
+
             ->
         }
     }
@@ -6023,10 +6241,10 @@ server-conn.send-server-hello = () (ok bool) {
     #{overflow=wrap}
     .rand-state = .rand-state + 32: {
         ok -> it
+
         ->
     }
     i <- [0..32): {
-
         ixout4408c24 = rand-bytes-val[i]: {
             ok -> it
 
@@ -6057,10 +6275,12 @@ server-conn.send-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt113 = pos + 32
         pos-opt113: {
             ok -> pos = it
+
             ->
         }
     }
@@ -6075,10 +6295,12 @@ server-conn.send-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt114 = pos + 1
         pos-opt114: {
             ok -> pos = it
+
             ->
         }
     }
@@ -6088,10 +6310,12 @@ server-conn.send-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt115 = pos + 2
         pos-opt115: {
             ok -> pos = it
+
             ->
         }
     }
@@ -6106,10 +6330,12 @@ server-conn.send-server-hello = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt116 = pos + 1
         pos-opt116: {
             ok -> pos = it
+
             ->
         }
     }
@@ -6239,7 +6465,6 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
                 }
             }
             i <- [0..raw.len()): {
-
                 ixout4578c32 = raw[i]: {
                     ok -> it
 
@@ -6317,6 +6542,7 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
                     sep-pos-opt = sep-pos + 1
                     sep-pos-opt: {
                         ok -> sep-pos = it
+
                         ->
                     }
                 }
@@ -6398,7 +6624,6 @@ server-conn.read-client-key-exchange = () (ok bool) {
     ; 確保 premaster 為 48 bytes
     fixed-premaster []byte = with-len(48)
     i <- [0..48): {
-
         ixout4687c24 = premaster[i]: {
             ok -> it
 
@@ -6469,7 +6694,6 @@ server-conn.derive-keys = (premaster []byte) {
     ; 分割 key_block
     ; client_write_MAC_key (32)
     i <- [0..32): {
-
         ixout4752c30 = key-block[i]: {
             ok -> it
 
@@ -6578,7 +6802,6 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
-
         ixout4815c24 = data[i]: {
             ok -> it
 
@@ -6601,7 +6824,6 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     #{overflow=wrap}
     plain []byte = with-len(n + 32)
     i <- [0..n): {
-
         ixout4832c24 = data[i]: {
             ok -> it
 
@@ -6638,10 +6860,10 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     #{overflow=wrap}
     .rand-state = .rand-state + 16: {
         ok -> it
+
         ->
     }
     i <- [0..16): {
-
         ixout4864c24 = iv-bytes[i]: {
             ok -> it
 
@@ -6685,7 +6907,6 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         }
     }
     i <- [0..padded.len()): {
-
         ixout4903c24 = cipher[i]: {
             ok -> it
 
@@ -6712,6 +6933,7 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     #{overflow=wrap}
     .write-seq = .write-seq + 1: {
         ok -> it
+
         ->
     }
     ok = true
@@ -6804,7 +7026,6 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, data-len)
     i <- [0..data-len): {
-
         ixout5001c24 = plain[i]: {
             ok -> it
 
@@ -6841,7 +7062,6 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ; 提取明文資料
     out = with-len(data-len)
     i <- [0..data-len): {
-
         ixout5031c18 = plain[i]: {
             ok -> it
 
@@ -6856,6 +7076,7 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     #{overflow=wrap}
     .read-seq = .read-seq + 1: {
         ok -> it
+
         ->
     }
 }
@@ -7007,7 +7228,6 @@ server-conn.send-finished = () (ok bool) {
     }
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
-
         ixout5184c24 = verify[i]: {
             ok -> it
 
@@ -7048,6 +7268,7 @@ server-conn.send-server-hello-13 = () (ok bool) {
     #{overflow=wrap}
     .rand-state = .rand-state + 1: {
         ok -> it
+
         ->
     }
     kp-state = seed
@@ -7101,7 +7322,6 @@ server-conn.send-server-hello-13 = () (ok bool) {
     }
     pub-slice = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
-
         ixout5242c26 = pub-slice[i]: {
             ok -> it
 
@@ -7134,10 +7354,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt117 = pos + 2
         pos-opt117: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7148,10 +7370,10 @@ server-conn.send-server-hello-13 = () (ok bool) {
     #{overflow=wrap}
     .rand-state = .rand-state + 32: {
         ok -> it
+
         ->
     }
     i <- [0..32): {
-
         ixout5272c24 = rand-bytes-val[i]: {
             ok -> it
 
@@ -7182,10 +7404,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt118 = pos + 32
         pos-opt118: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7200,10 +7424,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt119 = pos + 1
         pos-opt119: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7213,10 +7439,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt120 = pos + 2
         pos-opt120: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7231,10 +7459,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt121 = pos + 1
         pos-opt121: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7244,10 +7474,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt122 = pos + 2
         pos-opt122: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7257,10 +7489,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt123 = pos + 2
         pos-opt123: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7268,10 +7502,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt124 = pos + 2
         pos-opt124: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7279,10 +7515,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt125 = pos + 2
         pos-opt125: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7292,10 +7530,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt126 = pos + 2
         pos-opt126: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7305,10 +7545,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt127 = pos + 2
         pos-opt127: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7316,10 +7558,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt128 = pos + 2
         pos-opt128: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7327,10 +7571,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt129 = pos + 2
         pos-opt129: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7346,10 +7592,12 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt130 = pos + 32
         pos-opt130: {
             ok -> pos = it
+
             ->
         }
     }
@@ -7404,7 +7652,6 @@ server-conn.compute-shared-secret-13 = () {
     }
     shared-slice = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
     i <- [0..32): {
-
         ixout5420c29 = shared-slice[i]: {
             ok -> it
 
@@ -7479,7 +7726,6 @@ server-conn.derive-handshake-keys-13 = () {
 
     c-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 'c hs traffic', hs-hash, 32)
     i <- [0..32): {
-
         ixout5478c27 = c-hs-secret[i]: {
             ok -> it
 
@@ -7500,7 +7746,6 @@ server-conn.derive-handshake-keys-13 = () {
 
     s-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 's hs traffic', hs-hash, 32)
     i <- [0..32): {
-
         ixout5488c27 = s-hs-secret[i]: {
             ok -> it
 
@@ -7520,7 +7765,6 @@ server-conn.derive-handshake-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout5497c29 = key-tmp[i]: {
             ok -> it
 
@@ -7538,7 +7782,6 @@ server-conn.derive-handshake-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout5504c28 = iv-tmp[i]: {
             ok -> it
 
@@ -7555,7 +7798,6 @@ server-conn.derive-handshake-keys-13 = () {
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout5510c29 = key-tmp[i]: {
             ok -> it
 
@@ -7572,7 +7814,6 @@ server-conn.derive-handshake-keys-13 = () {
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout5516c28 = iv-tmp[i]: {
             ok -> it
 
@@ -7672,7 +7913,6 @@ server-conn.derive-application-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout5599c29 = key-tmp[i]: {
             ok -> it
 
@@ -7690,7 +7930,6 @@ server-conn.derive-application-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout5606c28 = iv-tmp[i]: {
             ok -> it
 
@@ -7707,7 +7946,6 @@ server-conn.derive-application-keys-13 = () {
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-
         ixout5612c29 = key-tmp[i]: {
             ok -> it
 
@@ -7724,7 +7962,6 @@ server-conn.derive-application-keys-13 = () {
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-
         ixout5618c28 = iv-tmp[i]: {
             ok -> it
 
@@ -7759,7 +7996,6 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     #{overflow=wrap}
     plain []byte = with-len(n + 1)
     i <- [0..n): {
-
         ixout5643c24 = data[i]: {
             ok -> it
 
@@ -7820,7 +8056,6 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
-
         ixout5699c24 = sealed[i]: {
             ok -> it
 
@@ -7961,16 +8196,17 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         plain-len-opt2 = plain-len - 1
         plain-len-opt2: {
             ok -> plain-len = it
+
             ->
         }
     }
     out = with-len(plain-len)
     i <- [0..plain-len): {
-
         ixout5804c18 = plain[i]: {
             ok -> it
 
@@ -8021,6 +8257,7 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
         ct, plain = .read-encrypted-record-13(.hs-client-key, .hs-client-iv, .hs-read-seq)
         .hs-read-seq = .hs-read-seq + 1: {
             ok -> it
+
             ->
         }
         ct < 0 -> return
@@ -8090,6 +8327,7 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     #{overflow=wrap}
     .hs-plain-pos = pos + 4 + msg-len: {
         ok -> it
+
         ->
     }
 }
@@ -8121,6 +8359,7 @@ server-conn.send-encrypted-extensions-13 = () (ok bool) {
     #{overflow=wrap}
     .hs-write-seq = .hs-write-seq + 1: {
         ok -> it
+
         ->
     }
 }
@@ -8189,6 +8428,7 @@ server-conn.send-certificate-13 = () (ok bool) {
     #{overflow=wrap}
     .hs-write-seq = .hs-write-seq + 1: {
         ok -> it
+
         ->
     }
 }
@@ -8230,7 +8470,6 @@ server-conn.send-finished-13 = () (ok bool) {
     }
     put-u24(hs, 1, 32)
     i <- [0..32): {
-
         ixout6048c24 = verify[i]: {
             ok -> it
 
@@ -8255,6 +8494,7 @@ server-conn.send-finished-13 = () (ok bool) {
     #{overflow=wrap}
     .hs-write-seq = .hs-write-seq + 1: {
         ok -> it
+
         ->
     }
 }
@@ -8427,6 +8667,7 @@ server-conn.send = (data str) (written ?i64) {
             #{overflow=wrap}
             .ap-write-seq = .ap-write-seq + 1: {
                 ok -> it
+
                 ->
             }
         }
@@ -8462,6 +8703,7 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
             #{overflow=wrap}
             .ap-read-seq = .ap-read-seq + 1: {
                 ok -> it
+
                 ->
             }
             {
@@ -8496,7 +8738,6 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
 
     ; 直接寫入 buf（避免 buf = tmp-str 不會傳播到呼叫端）
     i <- [0..copy-n): {
-
         ixout6299c24 = plain[i]: {
             ok -> it
 
@@ -8674,10 +8915,12 @@ https-serve-once = (listen-fd fd, status i64, body str) (ok bool) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     recv-len-opt = recv-len + rn
                     recv-len-opt: {
                         ok -> recv-len = it
+
                         ->
                     }
                 }

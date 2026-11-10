@@ -115,14 +115,10 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
                 first-tomb < 0 -> first-tomb = idx
             }
 
-            #{overflow=wrap}
-            {
-                #{overflow=wrap}
-                idx-opt = idx + 1
-                idx-opt: {
-                    ok -> idx = it
-                    ->
-                }
+            idx = idx + 1: {
+                ok -> it
+
+                ->
             }
             idx >= .cap -> idx = 0
         }
@@ -140,6 +136,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
         is-new = true
@@ -212,6 +209,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
                     .occ[idx] ?= 2
                     .size = .size - 1: {
                         ok -> it
+
                         ->
                     }
                     removed = true
@@ -219,14 +217,10 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
                 }
             }
 
-            #{overflow=wrap}
-            {
-                #{overflow=wrap}
-                idx-opt2 = idx + 1
-                idx-opt2: {
-                    ok -> idx = it
-                    ->
-                }
+            idx = idx + 1: {
+                ok -> it
+
+                ->
             }
             idx >= .cap -> idx = 0
         }
@@ -312,16 +306,12 @@ hashmap-str-tmpl.rehash = (new-cap i64) {
                 ; 找到第一個空槽插入
                 !! {
                     used ?= .occ[idx]
-                    used != 0 -> break
+                    used == 0 -> break
 
-                    #{overflow=wrap}
-                    {
-                        #{overflow=wrap}
-                        idx-opt3 = idx + 1
-                        idx-opt3: {
-                            ok -> idx = it
-                            ->
-                        }
+                    idx = idx + 1: {
+                        ok -> it
+
+                        ->
                     }
                     idx >= .cap -> idx = 0
                 }
@@ -410,14 +400,10 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
                 first-tomb < 0 -> first-tomb = idx
             }
 
-            #{overflow=wrap}
-            {
-                #{overflow=wrap}
-                idx-opt4 = idx + 1
-                idx-opt4: {
-                    ok -> idx = it
-                    ->
-                }
+            idx = idx + 1: {
+                ok -> it
+
+                ->
             }
             idx >= .cap -> idx = 0
         }
@@ -433,6 +419,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
         is-new = true
@@ -503,6 +490,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
                     .occ[idx] ?= 2
                     .size = .size - 1: {
                         ok -> it
+
                         ->
                     }
                     removed = true
@@ -510,14 +498,10 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
                 }
             }
 
-            #{overflow=wrap}
-            {
-                #{overflow=wrap}
-                idx-opt5 = idx + 1
-                idx-opt5: {
-                    ok -> idx = it
-                    ->
-                }
+            idx = idx + 1: {
+                ok -> it
+
+                ->
             }
             idx >= .cap -> idx = 0
         }
@@ -600,16 +584,12 @@ hashmap-int-tmpl.rehash = (new-cap i64) {
                 ; 找到第一個空槽插入
                 !! {
                     used ?= .occ[idx]
-                    used != 0 -> break
+                    used == 0 -> break
 
-                    #{overflow=wrap}
-                    {
-                        #{overflow=wrap}
-                        idx-opt6 = idx + 1
-                        idx-opt6: {
-                            ok -> idx = it
-                            ->
-                        }
+                    idx = idx + 1: {
+                        ok -> it
+
+                        ->
                     }
                     idx >= .cap -> idx = 0
                 }
@@ -693,6 +673,7 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
         is-new = true
@@ -749,6 +730,7 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
             #{overflow=wrap}
             .size = .size - 1: {
                 ok -> it
+
                 ->
             }
             removed = true

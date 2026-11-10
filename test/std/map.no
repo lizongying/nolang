@@ -1,0 +1,262 @@
+; std-map.no — collection/map 模块测试（hashmap-str/int/bool 三个泛型模板）
+;
+; 执行：no test test/std/map.no
+; 覆盖：map[k]v 背后的 hashmap-{str,int,bool}-tmpl
+;       init / hash / str-eq / put / get / contains / remove / rehash /
+;       clear / len / is-empty
+;
+; 未测：for-each（三个模板皆有）——它是**生成器形态**（输出参数在循环里逐个
+;   产出），目前没有用户态可写的调用语法：`m.for-each(k, v) { ... }` 报
+;   `'k' is not defined`，`k, v = m.for-each()` 也不行。同一状况存在于
+;   collection/ 下所有容器（str-map / str-set / hash-set / tree-map …），
+;   属系统性缺口而非本档遗漏。
+;
+; 说明：`map[k]v` 在语言层是内建型别，底层就是这三个模板；因此本档用
+;   `m [str]i64 = { }` 这类写法即可覆盖模板方法，无需直接实例化模板名。
+
+# /test/runner
+
+; init：新建后容量就绪，len 为 0、is-empty 为真
+t-str-init = () {
+    m [str]i64 = { }
+    m.init()
+    runner.eq(m.len(), 0, 'init: len == 0')
+    runner.is-true(m.is-empty(), 'init: is-empty == true')
+}
+
+; put：首次插入回 is-new=true，同键覆写回 false 且不涨 len
+t-str-put = () {
+    m [str]i64 = { }
+    n1 = m.put('a', 1)
+    runner.is-true(n1, 'put new key returns true')
+    n2 = m.put('b', 2)
+    runner.is-true(n2, 'put second new key returns true')
+    runner.eq(m.len(), 2, 'len == 2 after two puts')
+
+    n3 = m.put('a', 42)
+    runner.is-false(n3, 'overwrite returns false')
+    runner.eq(m.len(), 2, 'overwrite does not grow len')
+}
+
+; get：命中回 ok(值)，缺席回 nil（不是 err）
+t-str-get = () {
+    m [str]i64 = { }
+    m.put('a', 1)
+    m.put('a', 42)
+
+    g = m.get('a')
+    g: {
+        ok -> runner.eq(it, 42, 'get returns last written value')
+
+        nil -> runner.is-true(false, 'get existing key must not be nil')
+
+        err -> runner.is-true(false, 'get must not err')
+    }
+
+    g2 = m.get('missing')
+    g2: {
+        ok -> runner.is-true(false, 'get missing key must not be ok')
+
+        nil -> runner.is-true(true, 'get missing key returns nil')
+
+        err -> runner.is-true(false, 'get missing key must not err')
+    }
+}
+
+; contains：在场 true、缺席 false
+t-str-contains = () {
+    m [str]i64 = { }
+    m.put('a', 1)
+    runner.is-true(m.contains('a'), 'contains existing key')
+    runner.is-false(m.contains('zzz'), 'contains absent key')
+}
+
+; remove：在场回 true 并减 len；缺席回 false 且 len 不变
+t-str-remove = () {
+    m [str]i64 = { }
+    m.put('a', 1)
+    m.put('b', 2)
+
+    runner.is-true(m.remove('a'), 'remove existing returns true')
+    runner.eq(m.len(), 1, 'len drops to 1 after remove')
+    runner.is-false(m.contains('a'), 'removed key is gone')
+
+    runner.is-false(m.remove('zzz'), 'remove absent returns false')
+    runner.eq(m.len(), 1, 'len unchanged after removing absent key')
+}
+
+; clear：清空后 len 0、is-empty 真，旧键取不到
+t-str-clear = () {
+    m [str]i64 = { }
+    m.put('a', 1)
+    m.put('b', 2)
+    m.clear()
+    runner.eq(m.len(), 0, 'clear: len == 0')
+    runner.is-true(m.is-empty(), 'clear: is-empty == true')
+    runner.is-false(m.contains('a'), 'clear: old key gone')
+}
+
+; hash：同一键稳定、落在 [0, cap) 区间
+t-str-hash = () {
+    m [str]i64 = { }
+    h1 = m.hash('abc')
+    h2 = m.hash('abc')
+    runner.eq(h1, h2, 'hash is deterministic for the same key')
+    runner.is-true(h1 >= 0, 'hash idx >= 0')
+    runner.is-true(h1 < 16, 'hash idx < initial cap (16)')
+}
+
+; str-eq：同串为真、异串为假（底层按字节比）
+t-str-eq = () {
+    m [str]i64 = { }
+    runner.is-true(m.str-eq('abc', 'abc'), 'str-eq same string')
+    runner.is-false(m.str-eq('abc', 'abd'), 'str-eq different string')
+    runner.is-false(m.str-eq('abc', 'ab'), 'str-eq prefix-only is false')
+}
+
+; rehash：扩容后所有键值必须仍然可取，len 不变
+t-str-rehash = () {
+    m [str]i64 = { }
+    m.put('a', 1)
+    m.put('b', 2)
+    m.put('c', 3)
+
+    m.rehash(64)
+    runner.eq(m.len(), 3, 'rehash keeps len == 3')
+    runner.is-true(m.contains('a'), 'rehash keeps key a')
+    runner.is-true(m.contains('b'), 'rehash keeps key b')
+    runner.is-true(m.contains('c'), 'rehash keeps key c')
+
+    g = m.get('b')
+    g: {
+        ok -> runner.eq(it, 2, 'rehash keeps value of b')
+
+        nil -> runner.is-true(false, 'b lost after rehash')
+
+        err -> runner.is-true(false, 'get after rehash must not err')
+    }
+
+    ; 扩容后仍可继续插入
+    m.put('d', 4)
+    runner.eq(m.len(), 4, 'put after rehash grows len to 4')
+}
+
+; 自动扩容：连插 20 个键（超过初始 16 槽的 0.75 装载因子）后全部可取
+t-str-grow = () {
+    m [str]i64 = { }
+    keys []str = ['k0', 'k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7', 'k8', 'k9', 'k10', 'k11', 'k12', 'k13', 'k14', 'k15', 'k16', 'k17', 'k18', 'k19']
+    i <- keys: {
+        m.put(i, 1)
+    }
+    runner.eq(m.len(), 20, 'len == 20 after growth')
+
+    k <- keys: {
+        runner.is-true(m.contains(k), 'all keys survive auto rehash')
+    }
+}
+
+; ── int 键模板 ────────────────────────────────
+
+; init / hash / put / get / contains / remove / clear / len / is-empty（int 键）
+t-int-key = () {
+    m [i64]str = { }
+    m.init()
+    runner.eq(m.len(), 0, 'int key: init len == 0')
+
+    n1 = m.put(7, 'seven')
+    runner.is-true(n1, 'int key: put 7 is-new')
+    n2 = m.put(7, 'SEVEN')
+    runner.is-false(n2, 'int key: overwrite 7 not new')
+
+    g = m.get(7)
+    g: {
+        ok -> runner.str-eq(it, 'SEVEN', 5, 'int key: get returns overwritten value')
+
+        nil -> runner.is-true(false, 'int key: 7 must be present')
+
+        err -> runner.is-true(false, 'int key: get must not err')
+    }
+
+    runner.is-true(m.contains(7), 'int key: contains 7')
+    runner.is-false(m.contains(8), 'int key: not contains 8')
+
+    h1 = m.hash(7)
+    h2 = m.hash(7)
+    runner.eq(h1, h2, 'int key: hash deterministic')
+
+    runner.is-true(m.remove(7), 'int key: remove 7')
+    runner.eq(m.len(), 0, 'int key: len 0 after remove')
+    runner.is-true(m.is-empty(), 'int key: is-empty after remove')
+
+    m.put(1, 'one')
+    m.clear()
+    runner.eq(m.len(), 0, 'int key: clear resets len')
+}
+
+; ── bool 键模板（固定 2 槽，无 rehash）────────
+
+; put / get / contains / remove / len（bool 键）
+t-bool-key = () {
+    m [bool]i64 = { }
+    m.init()
+    runner.eq(m.len(), 0, 'bool key: init len == 0')
+
+    n1 = m.put(true, 1)
+    runner.is-true(n1, 'bool key: put true is-new')
+    n2 = m.put(false, 0)
+    runner.is-true(n2, 'bool key: put false is-new')
+    runner.eq(m.len(), 2, 'bool key: len == 2')
+
+    n3 = m.put(true, 11)
+    runner.is-false(n3, 'bool key: overwrite true not new')
+    runner.eq(m.len(), 2, 'bool key: overwrite keeps len 2')
+
+    gt = m.get(true)
+    gt: {
+        ok -> runner.eq(it, 11, 'bool key: get true == 11')
+
+        nil -> runner.is-true(false, 'bool key: true must be present')
+
+        err -> runner.is-true(false, 'bool key: get must not err')
+    }
+
+    gf = m.get(false)
+    gf: {
+        ok -> runner.eq(it, 0, 'bool key: get false == 0')
+
+        nil -> runner.is-true(false, 'bool key: false must be present')
+
+        err -> runner.is-true(false, 'bool key: get must not err')
+    }
+
+    runner.is-true(m.contains(false), 'bool key: contains false')
+    runner.is-true(m.remove(false), 'bool key: remove false')
+    runner.eq(m.len(), 1, 'bool key: len 1 after remove false')
+    runner.is-false(m.contains(false), 'bool key: false gone after remove')
+
+    m.clear()
+    runner.eq(m.len(), 0, 'bool key: clear resets len')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('map str init', t-str-init)
+p2, f2 = runner.test('map str put', t-str-put)
+p3, f3 = runner.test('map str get', t-str-get)
+p4, f4 = runner.test('map str contains', t-str-contains)
+p5, f5 = runner.test('map str remove', t-str-remove)
+p6, f6 = runner.test('map str clear', t-str-clear)
+p7, f7 = runner.test('map str hash', t-str-hash)
+p8, f8 = runner.test('map str eq', t-str-eq)
+p9, f9 = runner.test('map str rehash', t-str-rehash)
+p10, f10 = runner.test('map str auto grow', t-str-grow)
+p11, f11 = runner.test('map int key', t-int-key)
+p12, f12 = runner.test('map bool key', t-bool-key)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

@@ -424,9 +424,14 @@ func isScalarLiteral(e parser.Expression) bool {
 	return false
 }
 
+// formatStructLiteral 輸出結構體**實例化**：`{` 必須緊貼型別名（`zip{}`、
+// `net.conn{ ... }`），不插入空白。這與結構體**定義**（`zip { field i64 }`，
+// 由 typedef.go 輸出）刻意區分：`x { ... }` 在 parser 裡同時是舊式 match 區塊
+// 的候選形狀（W_DEPRECATED_BRACE），型別名後補空格會讓實例化看起來像定義或
+// 區塊；緊貼寫法是唯一的規範形態。
 func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {
 	f.write(e.Type)
-	f.write(" {")
+	f.write("{")
 	if len(e.Fields) == 0 {
 		f.write("}")
 		return

@@ -1,0 +1,38 @@
+; std-fnv-1a-32.no — crypto/fnv-1a-32 模块测试（带长度前缀的 32 位 FNV-1a）
+;
+; 执行：no test test/std/fnv-1a-32.no
+; 覆盖：fnv-1a-32（只扫描 s[0..n)）
+; 向量来源：与 crypto/fnv 模块、Python 独立实现交叉核对。
+;
+; 为什么断言都在**顶层**：
+;   预存 codegen bug（HEAD，bin/no 2026-11-10）——函数体内调用
+;   `fnv-1a-32.fnv-1a-32(...)` 会报
+;       EmitLLVM: unknown callee fnv-1a-32 in func <name>
+;   该函数名与本模块别名 `fnv-1a-32` 完全相同，函数体里模块前缀被跳过。
+;   顶层（main 合成体）调用正常，故本档全部断言写在顶层。
+;   同一 bug 也影响 `fnv.fnv-1a-32`，见 test/std/fnv.no 的档头。
+
+# /test/runner
+
+d = 'abcdef'.to-bytes()
+
+; n 是「实际参与计算的字节数」，不是缓冲区长度：只扫前 n 个字节
+runner.eq(fnv-1a-32.fnv-1a-32(d, 3), 440920331, 'fnv-1a-32("abcdef", 3) == fnv-1a-32("abc")')
+runner.eq(fnv-1a-32.fnv-1a-32(d, 6), 4282878506, 'fnv-1a-32("abcdef", 6)')
+runner.eq(fnv-1a-32.fnv-1a-32(d, 1), 3826002220, 'fnv-1a-32("abcdef", 1) == fnv-1a-32("a")')
+
+; n == 0：不进循环，直接是 offset basis
+runner.eq(fnv-1a-32.fnv-1a-32(d, 0), 2166136261, 'fnv-1a-32(_, 0) == offset basis')
+
+; 不同前缀必然不同哈希：n=1 与 n=3 不得相同
+h1 = fnv-1a-32.fnv-1a-32(d, 1)
+h3 = fnv-1a-32.fnv-1a-32(d, 3)
+runner.ne(h1, h3, 'n=1 and n=3 hash differ')
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

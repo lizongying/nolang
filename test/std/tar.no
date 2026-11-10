@@ -1,0 +1,265 @@
+; test/std/tar.no — archive/tar（POSIX ustar）模組測試
+;
+; 執行：no test test/std/tar.no
+; 覆蓋：tar 唯讀視圖（count/offset/entry/name/size/type/is-dir/is-file/
+;       read/mode/mtime）＋ tar-entry 全部方法 ＋ tar-builder 全部方法
+;       （pre-alloc/add-file/add-dir/add-bytes/write-header/write-octal/finish）
+;       ＋ tar-open-gz
+;
+; 判準：標頭各欄位的期望位元組由 ustar 規範獨立推導（Python 依規格生成，
+;       不拿本模組輸出當金標）；`chksum` 期望值＝標頭總和（chksum 槽視為 8 空格）。
+;       產出的歸檔另以真實 tar(1) 交叉驗證（見 test/README.md §5.1）。
+;
+; 語言坑：`[]byte.to-hex()` 輸出大寫；`write-octal` 會在 base+width 補 NUL，
+;         故相鄰欄位須間隔 width+1。
+
+# /test/runner
+
+; 產生 n 個指定值的內容
+; n: 位元組數
+; ch: 填入的位元組值（0~255）
+; out: 長度 n 的內容
+mk-fill = (n i64, ch i64) (out []byte) {
+    i <- [0..n): {
+        out.push(ch)
+    }
+}
+
+; ── 1. write-octal 單元（前導零填充 + 尾端 NUL）────────────────────────
+; 420 → "0000644\0"、0 → "00000000\0"、511 → "00000777\0"、11 → "00000000013\0"
+t-octal = () {
+    b = tar-builder{}
+    b.pre-alloc(64)
+    b.write-octal(0, 7, 420)
+    b.write-octal(8, 8, 0)
+    b.write-octal(17, 8, 511)
+    b.write-octal(26, 11, 11)
+
+    v = b.buf.slice(0, 38)
+    hx = v.to-hex()
+
+    want = '3030303036343400303030303030303000303030303037373700303030303030303030313300'
+    runner.str-eq(hx, want, 76, 'write-octal：前導零填充 + 尾端 NUL（420/0/511/11）')
+
+    c7 = b.buf[7]: {
+        ok -> it
+
+        -> 255
+    }
+    c16 = b.buf[16]: {
+        ok -> it
+
+        -> 255
+    }
+    c25 = b.buf[25]: {
+        ok -> it
+
+        -> 255
+    }
+    c37 = b.buf[37]: {
+        ok -> it
+
+        -> 255
+    }
+    runner.eq(c7, 0, 'write-octal：0+7 尾端補 NUL')
+    runner.eq(c16, 0, 'write-octal：8+8 尾端補 NUL')
+    runner.eq(c25, 0, 'write-octal：17+8 尾端補 NUL')
+    runner.eq(c37, 0, 'write-octal：26+11 尾端補 NUL')
+}
+
+; ── 2. write-header 單元（欄位配置 vs ustar 規範）──────────────────────
+; 情境：name='x.txt'、typeflag='0'、size=5、uid/gid/mtime 全 0
+t-header = () {
+    b = tar-builder{}
+    b.write-header('x.txt', 48, 5)
+
+    runner.eq(b.pos, 512, 'write-header 推進一個 TAR-BLOCK')
+    runner.eq(len(b.buf), 512, 'write-header 使緩衝區長度達 512')
+
+    h = b.buf.slice(0, 512)
+
+    nm = h.slice(0, 5)
+    runner.str-eq(nm.to-hex(), '782E747874', 10, 'name 欄（偏移 0）')
+
+    md = h.slice(100, 108)
+    runner.str-eq(md.to-hex(), '3030303036343400', 16, 'mode 欄（偏移 100，0000644 + NUL）')
+
+    uid = h.slice(108, 116)
+    runner.str-eq(uid.to-hex(), '3030303030303000', 16, 'uid 欄（偏移 108，7 個 0 + NUL）')
+
+    gid = h.slice(116, 124)
+    runner.str-eq(gid.to-hex(), '3030303030303000', 16, 'gid 欄（偏移 116）')
+
+    sz = h.slice(124, 136)
+    runner.str-eq(sz.to-hex(), '303030303030303030303500', 24, 'size 欄（偏移 124，00000000005 + NUL）')
+
+    mt = h.slice(136, 148)
+    runner.str-eq(mt.to-hex(), '303030303030303030303000', 24, 'mtime 欄（偏移 136，全 0）')
+
+    tf = h.slice(156, 157)
+    runner.str-eq(tf.to-hex(), '30', 2, 'typeflag 欄（偏移 156，"0" = 普通檔案）')
+
+    mg = h.slice(257, 263)
+    runner.str-eq(mg.to-hex(), '757374617200', 12, 'ustar magic（偏移 257，"ustar\\0"）')
+
+    gap = h.slice(5, 100)
+    gap-sum = 0
+    i <- [0..95): {
+        c = gap[i]: {
+            ok -> it
+
+            -> 0
+        }
+        gap-sum = gap-sum + c: {
+            ok -> it
+
+            -> 0
+        }
+    }
+    runner.eq(gap-sum, 0, 'name 之後的 95 位元組保持 0')
+}
+
+; ── 3. chksum 正確性（規範金標）──────────────────────────────────────
+; 情境：name='abc.txt'、typeflag='0'、size=3
+; 規範總和 = 0o7064 = 3636；欄位內容應為 "007064\0 "
+t-checksum = () {
+    b = tar-builder{}
+    b.write-header('abc.txt', 48, 3)
+    h = b.buf.slice(0, 512)
+
+    ck = h.slice(148, 156)
+    runner.str-eq(ck.to-hex(), '3030373036340020', 16, 'chksum 欄 = "007064\\0 "（規範總和 0o7064）')
+
+    n157 = h.slice(157, 158)
+    runner.str-eq(n157.to-hex(), '00', 2, 'chksum 之後的 linkname 區保持 0')
+}
+
+; ── 4. builder round-trip：讀回自身產出的歸檔 ──────────────────────────
+; 條目：0 a.txt(5B) / 1 dir/（目錄） / 2 raw.bin(3B, add-bytes) / 3 empty(0B)
+t-roundtrip = () {
+    b = tar-builder{}
+    b.pre-alloc(1024)
+    b.add-file('a.txt', 'hello'.to-bytes())
+    b.add-dir('dir/')
+    b.add-bytes('raw.bin', 'abc'.to-bytes(), 48)
+    b.add-file('empty', mk-fill(0, 65))
+    ar = b.finish()
+
+    runner.eq(ar.count(), 4, 'count = 4')
+
+    runner.eq(ar.offset(0), 0, 'offset(0)')
+    runner.eq(ar.offset(1), 1024, 'offset(1) = 標頭 + 內容區塊')
+    runner.eq(ar.offset(2), 1536, 'offset(2) = 目錄只有標頭')
+    runner.eq(ar.offset(3), 2560, 'offset(3)')
+
+    runner.str-eq(ar.name(0), 'a.txt', 5, 'name(0)')
+    runner.str-eq(ar.name(1), 'dir/', 4, 'name(1)')
+    runner.str-eq(ar.name(2), 'raw.bin', 7, 'name(2)')
+    runner.str-eq(ar.name(3), 'empty', 5, 'name(3)')
+
+    runner.eq(ar.size(0), 5, 'size(0) = 5')
+    runner.eq(ar.size(1), 0, 'size(1) 目錄 = 0')
+    runner.eq(ar.size(2), 3, 'size(2) = 3')
+    runner.eq(ar.size(3), 0, 'size(3) 空檔案 = 0')
+
+    runner.str-eq(ar.type(0), 'file', 4, 'type(0) = file')
+    runner.str-eq(ar.type(1), 'dir', 3, 'type(1) = dir')
+    runner.is-true(ar.is-file(0), 'is-file(0)')
+    runner.is-false(ar.is-dir(0), 'is-dir(0) = false')
+    runner.is-true(ar.is-dir(1), 'is-dir(1)')
+    runner.is-false(ar.is-file(1), 'is-file(1) = false')
+
+    runner.str-eq(ar.read(0).to-str(), 'hello', 5, 'read(0) 內容')
+    runner.eq(len(ar.read(1)), 0, 'read(1) 目錄內容為空')
+    runner.str-eq(ar.read(2).to-str(), 'abc', 3, 'read(2) 內容')
+    runner.eq(len(ar.read(3)), 0, 'read(3) 空檔案內容為空')
+
+    runner.eq(ar.mode(0), 420, 'mode(0) = 0o644')
+    runner.eq(ar.mtime(0), 0, 'mtime(0) = 0（builder 未寫時間戳）')
+
+    ; tar-entry 視圖必須與 tar.* 一致
+    e0 = ar.entry(0)
+    e1 = ar.entry(1)
+    e2 = ar.entry(2)
+
+    runner.str-eq(e0.name(), 'a.txt', 5, 'entry.name()')
+    runner.eq(e0.size(), 5, 'entry.size()')
+    runner.str-eq(e0.type(), 'file', 4, 'entry.type()')
+    runner.is-true(e0.is-file(), 'entry.is-file()')
+    runner.is-false(e0.is-dir(), 'entry.is-dir() = false')
+    runner.str-eq(e0.read().to-str(), 'hello', 5, 'entry.read()')
+    runner.eq(e0.mode(), 420, 'entry.mode()')
+    runner.eq(e0.mtime(), 0, 'entry.mtime()')
+
+    runner.is-true(e1.is-dir(), 'entry(1).is-dir()')
+    runner.str-eq(e1.type(), 'dir', 3, 'entry(1).type()')
+    runner.str-eq(e2.read().to-str(), 'abc', 3, 'entry(2).read()')
+}
+
+; ── 5. 跨區塊內容（>512 位元組）與 512 對齊邊界 ────────────────────────
+t-big = () {
+    big = mk-fill(1200, 90)
+
+    b = tar-builder{}
+    b.add-file('big.bin', big)
+    b.add-file('after.txt', 'tail'.to-bytes())
+    ar = b.finish()
+
+    runner.eq(ar.count(), 2, 'count = 2（1200B 內容橫跨三個區塊）')
+    runner.eq(ar.size(0), 1200, 'size(0) = 1200')
+    runner.eq(ar.offset(1), 2048, 'offset(1) 依 (size+511)/512 對齊')
+    runner.eq(len(ar.read(0)), 1200, 'read(0) 長度 = 1200')
+
+    head = ar.read(0).slice(0, 4)
+    runner.str-eq(head.to-str(), 'ZZZZ', 4, 'read(0) 內容為填充值')
+    runner.str-eq(ar.read(1).to-str(), 'tail', 4, 'read(1) 內容')
+}
+
+; ── 6. tar-open-gz：gzip 包裝的 tar ────────────────────────────────────
+t-open-gz = () {
+    b = tar-builder{}
+    b.add-file('gz.txt', 'gzipped tar'.to-bytes())
+    ar = b.finish()
+
+    gz = gzip.gzip-compress(ar.data)
+    runner.gt(len(gz), 0, 'gzip-compress 產出非空')
+
+    back = tar-open-gz(gz)
+    runner.eq(back.count(), 1, 'tar-open-gz：count = 1')
+    runner.str-eq(back.name(0), 'gz.txt', 6, 'tar-open-gz：name')
+    runner.str-eq(back.read(0).to-str(), 'gzipped tar', 11, 'tar-open-gz：內容還原')
+}
+
+; ── 7. 讀取器容忍 BSD/GNU tar 的空格填數字欄 ──────────────────────────
+; macOS bsdtar 寫出的是 "000644 \0"（末位空格）與 "00000000243 "（無 NUL），
+; 本模組的解析只取 48~57，故須照樣讀對。
+t-space-padded = () {
+    b = tar-builder{}
+    b.add-file('f.txt', 'hello'.to-bytes())
+    ar = b.finish()
+
+    raw = ar.data.slice(0, len(ar.data))
+    raw[124] = 32
+    raw[125] = 32
+    raw[135] = 32
+
+    ar2 = tar{}
+    ar2.data = raw
+    runner.eq(ar2.size(0), 5, 'size 欄帶空格填充仍解出 5')
+    runner.str-eq(ar2.read(0).to-str(), 'hello', 5, '內容照樣讀出')
+}
+
+p1 = runner.test('tar.write-octal', t-octal)
+p2 = runner.test('tar.write-header', t-header)
+p3 = runner.test('tar.checksum', t-checksum)
+p4 = runner.test('tar.builder round-trip', t-roundtrip)
+p5 = runner.test('tar.big content', t-big)
+p6 = runner.test('tar-open-gz', t-open-gz)
+p7 = runner.test('tar.space-padded fields', t-space-padded)
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

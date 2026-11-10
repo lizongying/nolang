@@ -57,7 +57,6 @@ rotr = (x u64, n i64) (r u64) {
 ; 無返回值：結果留在 v[a]/v[b]/v[c]/v[d]
 ; [blake-g](#argon2.blake-g)
 blake-g = (v []u64, a i64, b i64, c i64, d i64, x u64, y u64) {
-
     ixout60c21 = v[a]: {
         ok -> it
 
@@ -322,7 +321,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 -> _
             }
             i <- [0..input.len()): {
-
                 ixout190c32 = input[i]: {
                     ok -> it
 
@@ -378,7 +376,6 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 -> _
             }
             i <- [0..input.len()): {
-
                 ixout240c32 = input[i]: {
                     ok -> it
 
@@ -413,20 +410,24 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     pos-opt = pos + 32
                     pos-opt: {
                         ok -> pos = it
+
                         ->
                     }
                 }
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     remaining-opt = remaining - 32
                     remaining-opt: {
                         ok -> remaining = it
+
                         ->
                     }
                 }
@@ -462,7 +463,6 @@ compress = (x []byte, y []byte) (out []byte) {
     ; 直接 `r[i]: { ok -> it = … }` 是越界寫 → SIGSEGV（compress 崩潰根因）。
     r []byte = with-len(1024)
     i <- [0..1024): {
-
         ixout305c25 = x[i]: {
             ok -> it
 
@@ -723,10 +723,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     #{overflow=wrap}
     m < 8 * parallelism -> {
         {
+
             #{overflow=wrap}
             m-opt2 = 8 * parallelism
             m-opt2: {
                 ok -> m = it
+
                 ->
             }
         }
@@ -780,10 +782,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt2 = pos + 4
         pos-opt2: {
             ok -> pos = it
+
             ->
         }
     }
@@ -819,10 +823,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt3 = pos + 4
         pos-opt3: {
             ok -> pos = it
+
             ->
         }
     }
@@ -858,10 +864,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt4 = pos + 4
         pos-opt4: {
             ok -> pos = it
+
             ->
         }
     }
@@ -897,10 +905,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt5 = pos + 4
         pos-opt5: {
             ok -> pos = it
+
             ->
         }
     }
@@ -936,10 +946,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt6 = pos + 4
         pos-opt6: {
             ok -> pos = it
+
             ->
         }
     }
@@ -975,10 +987,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt7 = pos + 4
         pos-opt7: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1016,15 +1030,16 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt8 = pos + 4
         pos-opt8: {
             ok -> pos = it
+
             ->
         }
     }
     i <- [0..pw-len): {
-
         ixout702c24 = password[i]: {
             ok -> it
 
@@ -1041,10 +1056,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt9 = pos + pw-len
         pos-opt9: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1082,15 +1099,16 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt10 = pos + 4
         pos-opt10: {
             ok -> pos = it
+
             ->
         }
     }
     i <- [0..salt-len): {
-
         ixout748c24 = salt[i]: {
             ok -> it
 
@@ -1107,10 +1125,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt11 = pos + salt-len
         pos-opt11: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1146,10 +1166,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt12 = pos + 4
         pos-opt12: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1184,10 +1206,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt13 = pos + 4
         pos-opt13: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1287,7 +1311,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; 複製到記憶體
     i <- [0..1024): {
-
         ixout918c24 = block0[i]: {
             ok -> it
 
@@ -1332,7 +1355,6 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         new-block = compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
         i <- [0..1024): {
-
             ixout952c28 = new-block[i]: {
                 ok -> it
 
@@ -1349,10 +1371,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             curr-idx-opt = curr-idx + 1
             curr-idx-opt: {
                 ok -> curr-idx = it
+
                 ->
             }
         }
@@ -1365,10 +1389,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 prev-idx-opt = curr-idx - 1
                 prev-idx-opt: {
                     ok -> prev-idx = it
+
                     ->
                 }
             }
@@ -1376,10 +1402,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
             #{overflow=wrap}
             prev-idx < 0 -> {
                 {
+
                     #{overflow=wrap}
                     prev-idx-opt2 = blocks-per-lane - 1
                     prev-idx-opt2: {
                         ok -> prev-idx = it
+
                         ->
                     }
                 }
@@ -1415,10 +1443,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 curr-idx-opt2 = curr-idx + 1
                 curr-idx-opt2: {
                     ok -> curr-idx = it
+
                     ->
                 }
             }

@@ -146,7 +146,6 @@ set.contains = (val t) (yes bool) {
 #{overflow=wrap}
 set.union = (other []t, osize i64) (new-size i64) {
     j <- [0..osize): {
-
         ixout138c14 = other[j]: {
             ok -> it
 
@@ -197,7 +196,6 @@ set.intersection = (other []t, osize i64, out []t) (cnt i64) {
 
         found = false
         j <- [0..osize): {
-
             ixout178c18 = other[j]: {
                 ok -> it
 
@@ -239,7 +237,6 @@ set.difference = (other []t, osize i64, out []t) (cnt i64) {
         v = .data[i]
         found = false
         j <- [0..osize): {
-
             ixout215c18 = other[j]: {
                 ok -> it
 

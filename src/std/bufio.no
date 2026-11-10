@@ -62,6 +62,7 @@ reader.read-byte = () (b ?byte) {
     #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
+
         ->
     }
 }
@@ -93,6 +94,7 @@ reader.read-line = () (line ?str) {
             #{overflow=wrap}
             .pos = .pos + 1: {
                 ok -> it
+
                 ->
             }
             c == 10 -> {

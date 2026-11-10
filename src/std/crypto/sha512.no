@@ -3215,7 +3215,6 @@ sha512 = (data []byte) (hash [64]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-
         ixout3124c24 = data[i]: {
             ok -> it
 
@@ -3340,10 +3339,12 @@ sha512 = (data []byte) (hash [64]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             offset-opt = offset + 128
             offset-opt: {
                 ok -> offset = it
+
                 ->
             }
         }
@@ -3490,7 +3491,6 @@ sha512-hex = (data []byte) (hex str) {
     hex str = with-len(128)
 
     i <- [0..64): {
-
         ixout3488c39 = hash[i]: {
             ok -> it
 

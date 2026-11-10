@@ -203,7 +203,6 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
     r = 0
     i = 0
     (i < n) {
-
         ixout195c24 = tbl[i]: {
             ok -> it
 
@@ -218,10 +217,12 @@ permute = (input i64, tbl []byte, n i64, width i64) (r i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + 1
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -368,7 +369,6 @@ des-key-schedule = (key [8]byte) (ks [96]byte) {
 des-block = (in []byte, n i64, ks [96]byte, encrypt i64) (out []byte) {
     block = 0
     i <- [0..8): {
-
         ixout338c33 = in[i]: {
             ok -> it
 

@@ -66,10 +66,12 @@ hash-set.add = (key i64) (is-new bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt = idx + 1
                 idx-opt: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -83,6 +85,7 @@ hash-set.add = (key i64) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
     }: {
@@ -114,10 +117,12 @@ hash-set.contains = (key i64) (found bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt2 = idx + 1
                 idx-opt2: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -151,6 +156,7 @@ hash-set.remove = (key i64) (removed bool) {
                 #{overflow=wrap}
                 .size = .size - 1: {
                     ok -> it
+
                     ->
                 }
                 removed = true
@@ -159,10 +165,12 @@ hash-set.remove = (key i64) (removed bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt3 = idx + 1
                 idx-opt3: {
                     ok -> idx = it
+
                     ->
                 }
             }

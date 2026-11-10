@@ -134,10 +134,12 @@ parse-set = (set-cookie-str str) (c cookie) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 pos-opt = pos + 1
                 pos-opt: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -161,10 +163,12 @@ parse-set = (set-cookie-str str) (c cookie) {
                 attr-name = attr.slice(0, attr-eq)
                 attr-name = attr-name.trim()
                 attr-name-lower = attr-name.to-lower()
+
                 ; D6：`attr-eq + 1` 的型別是 ?i64，直接把 option 當 slice 實參會把
                 ; 回傳型別污染成 ?str。先解包成 plain 區域變數再取切片。
                 ofs = attr-eq + 1: {
                     ok -> it
+
                     -> 0
                 }
                 attr-val = attr.slice(ofs, attr.len-bytes())
@@ -236,10 +240,12 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 pos-opt2 = pos + 1
                 pos-opt2: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -264,6 +270,7 @@ parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
                 count-opt = count + 1
                 count-opt: {
                     ok -> count = it
+
                     ->
                 }
             }
@@ -372,6 +379,7 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
             #{overflow=wrap}
             .count = .count + 1: {
                 ok -> it
+
                 ->
             }
         }: {
@@ -462,6 +470,7 @@ jar.delete = (name str, domain str, path str) {
                 #{overflow=wrap}
                 .count = .count - 1: {
                     ok -> it
+
                     ->
                 }
                 return
@@ -535,7 +544,6 @@ jar.build-header = (domain str, path str) (out str) {
 ; path: 回應來源路徑（作為儲存 Cookie 的歸屬路徑）
 ; [parse-response](#cookie.jar.parse-response)
 jar.parse-response = (set-cookie-str str, domain str, path str) {
-    c cookie
     c = parse-set(set-cookie-str)
     c.valid == false -> return
 
@@ -605,7 +613,6 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
     hex-chars = '0123456789abcdef'
     hex-str str = with-len(64)
     i <- [0..32): {
-
         ixout544c38 = mac[i]: {
             ok -> it
 

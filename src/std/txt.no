@@ -570,10 +570,12 @@ txt.trim = () (val txt) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         end-opt = n - 1
         end-opt: {
             ok -> end = it
+
             ->
         }
     }
@@ -583,10 +585,12 @@ txt.trim = () (val txt) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             end-opt2 = end - 1
             end-opt2: {
                 ok -> end = it
+
                 ->
             }
         }
@@ -644,10 +648,12 @@ txt.trim-char = (ch char) (val txt) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             start-opt = start + clen
             start-opt: {
                 ok -> start = it
+
                 ->
             }
         }
@@ -687,10 +693,12 @@ txt.trim-char = (ch char) (val txt) {
         #{overflow=wrap}
         cp != ch -> {
             {
+
                 #{overflow=wrap}
                 end-opt3 = i + clen
                 end-opt3: {
                     ok -> end = it
+
                     ->
                 }
             }
@@ -698,10 +706,12 @@ txt.trim-char = (ch char) (val txt) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + clen
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -741,10 +751,12 @@ txt.repeat = (times i64) (val txt) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     pos-opt = pos + 1
                     pos-opt: {
                         ok -> pos = it
+
                         ->
                     }
                 }
@@ -774,6 +786,7 @@ txt.count = () (cnt i64) {
                     i-opt2 = i + 1
                     i-opt2: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -784,6 +797,7 @@ txt.count = () (cnt i64) {
                     i-opt3 = i + 2
                     i-opt3: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -794,6 +808,7 @@ txt.count = () (cnt i64) {
                     i-opt4 = i + 3
                     i-opt4: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -804,6 +819,7 @@ txt.count = () (cnt i64) {
                     i-opt5 = i + 4
                     i-opt5: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -812,10 +828,12 @@ txt.count = () (cnt i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             cnt-opt = cnt + 1
             cnt-opt: {
                 ok -> cnt = it
+
                 ->
             }
         }
@@ -858,6 +876,7 @@ txt.index-from = (target txt, from i64) (pos i64) {
                     k-opt = k + 1
                     k-opt: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -896,6 +915,7 @@ txt.rindex = (target txt) (pos i64) {
                     k-opt2 = k + 1
                     k-opt2: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -944,6 +964,7 @@ txt.rindex-from = (target txt, from i64) (pos i64) {
                     k-opt3 = k + 1
                     k-opt3: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1400,6 +1421,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                             pos-opt2 = pos + 1
                             pos-opt2: {
                                 ok -> pos = it
+
                                 ->
                             }
                         }
@@ -1417,6 +1439,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                             pos-opt3 = pos + 1
                             pos-opt3: {
                                 ok -> pos = it
+
                                 ->
                             }
                         }
@@ -1427,10 +1450,12 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt6 = i + clen
             i-opt6: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1474,10 +1499,12 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 j-opt = j + 1
                 j-opt: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -1493,6 +1520,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
                             pos-opt4 = pos + 1
                             pos-opt4: {
                                 ok -> pos = it
+
                                 ->
                             }
                         }
@@ -1512,6 +1540,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
                         pos-opt5 = pos + 1
                         pos-opt5: {
                             ok -> pos = it
+
                             ->
                         }
                     }
@@ -1519,10 +1548,12 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt7 = i + 1
                     i-opt7: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -1605,6 +1636,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
                         pos-opt6 = pos + 1
                         pos-opt6: {
                             ok -> pos = it
+
                             ->
                         }
                     }
@@ -1629,6 +1661,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
                     pos-opt7 = pos + 1
                     pos-opt7: {
                         ok -> pos = it
+
                         ->
                     }
                 }
@@ -1698,10 +1731,12 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             count-opt = count + 1
             count-opt: {
                 ok -> count = it
+
                 ->
             }
         }
@@ -1805,6 +1840,7 @@ txt.lines = () (out []txt) {
                         end-opt4 = i - 1
                         end-opt4: {
                             ok -> end = it
+
                             ->
                         }
                     }
@@ -1815,6 +1851,7 @@ txt.lines = () (out []txt) {
                 start-opt2 = i + 1
                 start-opt2: {
                     ok -> start = it
+
                     ->
                 }
             }
@@ -1822,10 +1859,12 @@ txt.lines = () (out []txt) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt8 = i + 1
             i-opt8: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1848,10 +1887,12 @@ txt-hex-val = (c i64) (v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 v-opt = c - 48
                 v-opt: {
                     ok -> v = it
+
                     ->
                 }
             }
@@ -1862,10 +1903,12 @@ txt-hex-val = (c i64) (v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 v-opt2 = c - 65 + 10
                 v-opt2: {
                     ok -> v = it
+
                     ->
                 }
             }
@@ -1876,10 +1919,12 @@ txt-hex-val = (c i64) (v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 v-opt3 = c - 97 + 10
                 v-opt3: {
                     ok -> v = it
+
                     ->
                 }
             }
@@ -1938,10 +1983,12 @@ _txt-dig-val = (c i64) (d i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 d-opt = c - 48
                 d-opt: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -1952,10 +1999,12 @@ _txt-dig-val = (c i64) (d i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 d-opt2 = c - 55
                 d-opt2: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -1966,10 +2015,12 @@ _txt-dig-val = (c i64) (d i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 d-opt3 = c - 87
                 d-opt3: {
                     ok -> d = it
+
                     ->
                 }
             }

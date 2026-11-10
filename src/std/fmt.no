@@ -120,10 +120,12 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt = i + 1
                 i-opt: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -137,10 +139,12 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt2 = i + 1
                 i-opt2: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -154,10 +158,12 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt3 = i + 1
                 i-opt3: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -190,10 +196,12 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt4 = i + 1
                 i-opt4: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -206,10 +214,12 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt5 = i + 1
                 i-opt5: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -357,10 +367,12 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 digits-opt = digits + 1
                 digits-opt: {
                     ok -> digits = it
+
                     ->
                 }
             }
@@ -403,10 +415,12 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 pos-opt = pos - 1
                 pos-opt: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -474,20 +488,24 @@ fmt-uint-base = (u u64, base i64, upper bool) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             m-opt = base - 1
             m-opt: {
                 ok -> m = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             avail-opt = 64 - sh
             avail-opt: {
                 ok -> avail = it
+
                 ->
             }
         }
@@ -549,10 +567,12 @@ fmt-group-digits = (digits str, sep i64) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt2 = pos + 1
             pos-opt2: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -562,10 +582,12 @@ fmt-group-digits = (digits str, sep i64) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt3 = pos + 1
             pos-opt3: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -576,10 +598,12 @@ fmt-group-digits = (digits str, sep i64) (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 pos-opt4 = pos + 1
                 pos-opt4: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -684,10 +708,12 @@ fmt-int = (n i64, spec str) (out str) {
     #{overflow=wrap}
     sign-char != 0 -> {
         {
+
             #{overflow=wrap}
             body-len-opt = body-len + 1
             body-len-opt: {
                 ok -> body-len = it
+
                 ->
             }
         }

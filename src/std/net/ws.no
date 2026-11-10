@@ -277,10 +277,12 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     #{overflow=wrap}
     mask -> {
         {
+
             #{overflow=wrap}
             header-len-opt = header-len + 4
             header-len-opt: {
                 ok -> header-len = it
+
                 ->
             }
         }
@@ -535,6 +537,7 @@ server-conn.handshake = () {
                 val-start-opt = val-start + 1
                 val-start-opt: {
                     ok -> val-start = it
+
                     ->
                 }
             }
@@ -568,6 +571,7 @@ server-conn.handshake = () {
                 up-val-start-opt = up-val-start + 1
                 up-val-start-opt: {
                     ok -> up-val-start = it
+
                     ->
                 }
             }
@@ -1115,10 +1119,12 @@ server-conn.recv-nb = () (msg ?message) {
     #{overflow=wrap}
     masked -> {
         {
+
             #{overflow=wrap}
             payload-start-opt = mask-start + 4
             payload-start-opt: {
                 ok -> payload-start = it
+
                 ->
             }
         }
@@ -1207,6 +1213,7 @@ client.send = (opcode i64, data str) (ok bool) {
     #{overflow=wrap}
     .send-counter = .send-counter + 1: {
         ok -> it
+
         ->
     }
 
@@ -1359,6 +1366,7 @@ client.recv = () (msg ?message) {
             }
             .recv-buf-len = .recv-buf-len + n: {
                 ok -> it
+
                 ->
             }
         }
@@ -1427,6 +1435,7 @@ client.recv = () (msg ?message) {
                 }
                 .recv-buf-len = .recv-buf-len + n: {
                     ok -> it
+
                     ->
                 }
             }
@@ -1471,6 +1480,7 @@ client.recv = () (msg ?message) {
                 }
                 .recv-buf-len = .recv-buf-len + n: {
                     ok -> it
+
                     ->
                 }
             }
@@ -1515,6 +1525,7 @@ client.recv = () (msg ?message) {
                 }
                 .recv-buf-len = .recv-buf-len + n: {
                     ok -> it
+
                     ->
                 }
                 need = frame-total - .recv-buf-len

@@ -111,7 +111,6 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         ; v = v >> 1
         j = 15
         (j > 0) {
-
             ixout95c29 = v[j]: {
                 ok -> it
 
@@ -132,10 +131,12 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 j-opt = j - 1
                 j-opt: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -238,10 +239,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt = pos + 16
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -339,10 +342,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt2 = pos + 16
             pos-opt2: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -597,10 +602,12 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt3 = pos + n
             pos-opt3: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -707,7 +714,6 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     #{overflow=wrap}
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
-
         ixout532c21 = cipher[i]: {
             ok -> it
 
@@ -747,7 +753,6 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ; 3. 拆出密文與 tag
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
-
         ixout568c24 = sealed[i]: {
             ok -> it
 

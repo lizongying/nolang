@@ -276,10 +276,12 @@ conn.recv-all = () (content str, total i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             total-opt = total + chunk-n
             total-opt: {
                 ok -> total = it
+
                 ->
             }
         }
@@ -642,6 +644,7 @@ enc-conn.gen-iv = () (iv [12]byte) {
     #{overflow=wrap}
     .send-seq = .send-seq + 1: {
         ok -> it
+
         ->
     }
     seq = .send-seq
@@ -1020,10 +1023,12 @@ icmp-checksum = (data []byte, len i64) (checksum i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + 2
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1068,6 +1073,7 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     #{overflow=wrap}
     .seq = .seq + 1: {
         ok -> it
+
         ->
     }
     .build-echo(pkt, .seq)
@@ -1493,10 +1499,12 @@ split-ws = (s str) (out []str) {
 
                         #{overflow=wrap}
                         {
+
                             #{overflow=wrap}
                             i-opt2 = i + 1
                             i-opt2: {
                                 ok -> i = it
+
                                 ->
                             }
                         }
@@ -1517,10 +1525,12 @@ split-ws = (s str) (out []str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt3 = i + 1
                     i-opt3: {
                         ok -> i = it
+
                         ->
                     }
                 }

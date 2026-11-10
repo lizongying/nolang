@@ -32,7 +32,6 @@ rc4 = (in []byte, key []byte) (out []byte) {
     key-len = key.len()
     j = 0
     i <- [0..256): {
-
         ixout36c19 = s[i]: {
             ok -> it
 
@@ -79,10 +78,12 @@ rc4 = (in []byte, key []byte) (out []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = (i + 1) % 256
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }

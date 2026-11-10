@@ -28,7 +28,6 @@ E = 2.718281828459045
 ; r num: 序列中的最大元素，型別與 a 的成員一致
 ; [max](#math.max)
 max = (a ..num) (r num) {
-
     ixout32c9 = a[0]: {
         ok -> it
 
@@ -45,7 +44,6 @@ max = (a ..num) (r num) {
         }
 
         ixout40c10 > r -> {
-
             ixout38c17 = a[i]: {
                 ok -> it
 
@@ -62,7 +60,6 @@ max = (a ..num) (r num) {
 ; r num: 序列中的最小元素，型別與 a 的成員一致
 ; [min](#math.min)
 min = (a ..num) (r num) {
-
     ixout50c9 = a[0]: {
         ok -> it
 
@@ -79,7 +76,6 @@ min = (a ..num) (r num) {
         }
 
         ixout68c10 < r -> {
-
             ixout56c17 = a[i]: {
                 ok -> it
 

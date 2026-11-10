@@ -547,6 +547,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             pos-opt = pos + 1
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -560,6 +561,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             pos-opt2 = pos + 1
             pos-opt2: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -573,6 +575,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
                 pos-opt3 = pos + 1
                 pos-opt3: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -587,6 +590,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             pos-opt4 = pos + 1
             pos-opt4: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -600,6 +604,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
                 pos-opt5 = pos + 1
                 pos-opt5: {
                     ok -> pos = it
+
                     ->
                 }
             }
@@ -639,10 +644,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt6 = pos + 1
         pos-opt6: {
             ok -> pos = it
+
             ->
         }
     }
@@ -655,10 +662,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt7 = pos + 1
         pos-opt7: {
             ok -> pos = it
+
             ->
         }
     }
@@ -671,10 +680,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt8 = pos + 1
         pos-opt8: {
             ok -> pos = it
+
             ->
         }
     }
@@ -688,10 +699,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt9 = pos + 1
         pos-opt9: {
             ok -> pos = it
+
             ->
         }
     }
@@ -704,10 +717,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt10 = pos + 1
         pos-opt10: {
             ok -> pos = it
+
             ->
         }
     }
@@ -720,10 +735,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt11 = pos + 1
             pos-opt11: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -737,10 +754,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt12 = pos + 1
         pos-opt12: {
             ok -> pos = it
+
             ->
         }
     }
@@ -753,10 +772,12 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt13 = pos + 1
         pos-opt13: {
             ok -> pos = it
+
             ->
         }
     }

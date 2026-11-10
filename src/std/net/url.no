@@ -87,10 +87,12 @@ url-parse = (url-str str) (u url-info) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt = scheme-end + 3
         pos-opt: {
             ok -> pos = it
+
             ->
         }
     }
@@ -154,6 +156,7 @@ url-parse = (url-str str) (u url-info) {
             u.host = authority.slice(0, colon-pos)
             ofs = colon-pos + 1: {
                 ok -> it
+
                 -> 0
             }
             port-str = authority.slice(ofs, authority.len-bytes())
@@ -479,6 +482,7 @@ url-decode = (s str) (out str) {
                             v1-opt = h1 - 48
                             v1-opt: {
                                 ok -> v1 = it
+
                                 ->
                             }
                         }
@@ -489,6 +493,7 @@ url-decode = (s str) (out str) {
                             v1-opt2 = h1 - 55
                             v1-opt2: {
                                 ok -> v1 = it
+
                                 ->
                             }
                         }
@@ -499,6 +504,7 @@ url-decode = (s str) (out str) {
                             v1-opt3 = h1 - 87
                             v1-opt3: {
                                 ok -> v1 = it
+
                                 ->
                             }
                         }
@@ -512,6 +518,7 @@ url-decode = (s str) (out str) {
                             v2-opt = h2 - 48
                             v2-opt: {
                                 ok -> v2 = it
+
                                 ->
                             }
                         }
@@ -522,6 +529,7 @@ url-decode = (s str) (out str) {
                             v2-opt2 = h2 - 55
                             v2-opt2: {
                                 ok -> v2 = it
+
                                 ->
                             }
                         }
@@ -532,6 +540,7 @@ url-decode = (s str) (out str) {
                             v2-opt3 = h2 - 87
                             v2-opt3: {
                                 ok -> v2 = it
+
                                 ->
                             }
                         }
@@ -545,10 +554,12 @@ url-decode = (s str) (out str) {
 
                         #{overflow=wrap}
                         {
+
                             #{overflow=wrap}
                             i-opt = i + 2
                             i-opt: {
                                 ok -> i = it
+
                                 ->
                             }
                         }
@@ -573,10 +584,12 @@ url-decode = (s str) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt2 = i + 1
             i-opt2: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -632,8 +645,7 @@ url-join = (base str, path-str str) (out str) {
 
     ; 如果以 / 開頭，替換基礎路徑
     path-str.len-bytes() > 0 && path-str[0] == 47 -> {
-        u url-info
-        u = url-parse(base)
+        u url-info = url-parse(base)
         u.ok -> {
             out = u.scheme - '://' - u.host
             u.port > 0 -> {
@@ -740,7 +752,6 @@ url-parse-basic-auth = (header str) (user str, password str) {
     ; 提取 user 和 password
     user-bytes []byte
     j <- [0..colon): {
-
         ixout670c24 = raw[j]: {
             ok -> it
 
@@ -757,6 +768,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
         user-opt = user-bytes.to-str()
         user-opt: {
             ok -> user = it
+
             ->
         }
     }
@@ -765,7 +777,6 @@ url-parse-basic-auth = (header str) (user str, password str) {
 
     #{overflow=wrap}
     j <- [colon + 1..raw.len()): {
-
         ixout684c24 = raw[j]: {
             ok -> it
 
@@ -780,10 +791,12 @@ url-parse-basic-auth = (header str) (user str, password str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             k-opt = k + 1
             k-opt: {
                 ok -> k = it
+
                 ->
             }
         }
@@ -792,6 +805,7 @@ url-parse-basic-auth = (header str) (user str, password str) {
         password-opt = pass-bytes.to-str()
         password-opt: {
             ok -> password = it
+
             ->
         }
     }

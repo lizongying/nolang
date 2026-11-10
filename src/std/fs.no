@@ -319,7 +319,6 @@ read-stdin = () (content ?[]byte) {
         n = read(STDIN-FD, tmp, 4096)
         n <= 0 -> break
         i <- [0..n): {
-
             ixout326c22 = tmp[i]: {
                 ok -> it
 

@@ -49,10 +49,12 @@ from-i64 = (v i64) (out bigint) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 r-v-opt = 0 - r-v
                 r-v-opt: {
                     ok -> r-v = it
+
                     ->
                 }
             }
@@ -159,6 +161,7 @@ bigint.cmp = (b bigint) (r i64) {
     #{overflow=wrap}
     r = result * .sign: {
         ok -> it
+
         ->
     }
 }
@@ -183,10 +186,12 @@ bigint.abs-cmp = (b bigint) (r i64) {
     i <- [.len - 1..0]: {
         av = .limbs[i]: {
             ok -> it
+
             -> 0
         }
         bv = b.limbs[i]: {
             ok -> it
+
             -> 0
         }
         av > bv -> {
@@ -207,6 +212,7 @@ bigint.abs-cmp = (b bigint) (r i64) {
 bigint.is-zero = () (r bool) {
     l0 = .limbs[0]: {
         ok -> it
+
         -> 0
     }
     r = .len == 1 && l0 == 0
@@ -238,10 +244,12 @@ bigint.eq = (b bigint) (r bool) {
     i <- [.len - 1..0]: {
         av = .limbs[i]: {
             ok -> it
+
             -> 0
         }
         bv = b.limbs[i]: {
             ok -> it
+
             -> 0
         }
         av & MASK != bv & MASK -> {
@@ -373,6 +381,7 @@ bigint.mul-bigint = (b bigint) (c bigint) {
     #{overflow=wrap}
     c.len = al + bl: {
         ok -> it
+
         ->
     }
 
@@ -388,6 +397,7 @@ bigint.mul-bigint = (b bigint) (c bigint) {
         carry u64 = 0
         av0 = .limbs[i]: {
             ok -> it
+
             -> 0
         }
         av u64 = (av0 & MASK)
@@ -398,6 +408,7 @@ bigint.mul-bigint = (b bigint) (c bigint) {
             ; [0, 2^32)。Nolang 的 u64 乘法是 mod 2^64 正確、>> 為邏輯移位、& 低位乾淨。
             bv0 = b.limbs[j]: {
                 ok -> it
+
                 -> 0
             }
             bv u64 = (bv0 & MASK)
@@ -415,6 +426,7 @@ bigint.mul-bigint = (b bigint) (c bigint) {
     #{overflow=wrap}
     c.sign = .sign * b.sign: {
         ok -> it
+
         ->
     }
     c.normalize()
@@ -478,6 +490,7 @@ bigint.abs-add = (b bigint) (c bigint) {
     #{overflow=wrap}
     c.len = cl + 1: {
         ok -> it
+
         ->
     }
     i <- [0..cl): {
@@ -554,6 +567,7 @@ bigint._mul-i64 = (v i64) (c bigint) {
             r-v-opt2 = 0 - r-v
             r-v-opt2: {
                 ok -> r-v = it
+
                 ->
             }
         }
@@ -592,6 +606,7 @@ bigint._mul-i64 = (v i64) (c bigint) {
 bigint.div-mod = (b bigint) (q bigint, r bigint) {
     b0 = b.limbs[0]: {
         ok -> it
+
         -> 0
     }
     b.len == 1 && b0 == 0 -> {
@@ -613,6 +628,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             q = one()
             q.sign = .sign * b.sign: {
                 ok -> it
+
                 ->
             }
             r = zero()
@@ -642,6 +658,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
         r.len = 1
         q.sign = .sign * b.sign: {
             ok -> it
+
             ->
         }
         r.sign = .sign
@@ -651,6 +668,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     #{overflow=wrap}
     q.len = .len - b.len + 1: {
         ok -> it
+
         ->
     }
     q.limbs = with-len(q.len)
@@ -667,6 +685,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     ; 用 u64 與 (bt >> 31 == 0) 判斷，避免 i64 有符號比較把 [2^31,2^32) 誤判為負數而過度位移。
     bt0 = b.limbs[bl - 1]: {
         ok -> it
+
         -> 0
     }
     bt u64 = (bt0 & MASK)
@@ -677,6 +696,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             shift-opt = shift + 1
             shift-opt: {
                 ok -> shift = it
+
                 ->
             }
         }
@@ -690,6 +710,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     nbi <- [0..bl): {
         nb0 = b.limbs[nbi]: {
             ok -> it
+
             -> 0
         }
         nbv = (nb0 & MASK) << shift | nb-carry
@@ -707,6 +728,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     norm-a.limbs = with-len(norm-a-len)
     norm-a-len: {
         ok -> norm-a.len = it
+
         -> _
     }
     norm-a.sign = 1
@@ -867,10 +889,12 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             qi-opt = qi - 1
             qi-opt: {
                 ok -> qi = it
+
                 ->
             }
         }
@@ -879,6 +903,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     #{overflow=wrap}
     q.sign = .sign * b.sign: {
         ok -> it
+
         ->
     }
     q.normalize()
@@ -902,6 +927,7 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
             ri-opt = ri - 1
             ri-opt: {
                 ok -> ri = it
+
                 ->
             }
         }
@@ -919,10 +945,12 @@ bigint._div-i64 = (v i64) (q bigint) {
     #{overflow=wrap}
     r-v < 0 -> {
         {
+
             #{overflow=wrap}
             r-v-opt3 = 0 - r-v
             r-v-opt3: {
                 ok -> r-v = it
+
                 ->
             }
         }
@@ -936,6 +964,7 @@ bigint._div-i64 = (v i64) (q bigint) {
     i <- [.len - 1..0]: {
         li = .limbs[i]: {
             ok -> it
+
             -> 0
         }
         cur = (rem << 32) | (li & MASK)
@@ -946,6 +975,7 @@ bigint._div-i64 = (v i64) (q bigint) {
             rem-opt = cur % r-v
             rem-opt: {
                 ok -> rem = it
+
                 ->
             }
         }
@@ -965,10 +995,12 @@ bigint._mod-i64 = (v i64) (r ?i64) {
     #{overflow=wrap}
     r-v < 0 -> {
         {
+
             #{overflow=wrap}
             r-v-opt4 = 0 - r-v
             r-v-opt4: {
                 ok -> r-v = it
+
                 ->
             }
         }
@@ -979,6 +1011,7 @@ bigint._mod-i64 = (v i64) (r ?i64) {
     i <- [.len - 1..0]: {
         li = .limbs[i]: {
             ok -> it
+
             -> 0
         }
         cur = (rem << 32) | (li & MASK)
@@ -1024,6 +1057,7 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
     ehi = (exp.len) - 1
     top0 = exp.limbs[ehi]: {
         ok -> it
+
         -> 0
     }
     top = top0 & MASK
@@ -1034,10 +1068,12 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             lead-opt = lead + 1
             lead-opt: {
                 ok -> lead = it
+
                 ->
             }
         }
@@ -1138,6 +1174,7 @@ bigint.shl1 = () {
         #{overflow=wrap}
         .len = .len + 1: {
             ok -> it
+
             ->
         }
     }
@@ -1202,6 +1239,7 @@ bigint.normalize = () {
         hi = .len - 1
         top = .limbs[hi]: {
             ok -> it
+
             -> 0
         }
         top != 0 -> break
@@ -1209,6 +1247,7 @@ bigint.normalize = () {
         #{overflow=wrap}
         .len = .len - 1: {
             ok -> it
+
             ->
         }
     }
@@ -1243,6 +1282,7 @@ bigint.to-str = () (out str) {
         ; 因此這裡用顯式欄位存取來判斷 tmp 是否為零。
         tl = tmp.limbs[0]: {
             ok -> it
+
             -> 0
         }
         tz = (tmp.len == 1) && tl == 0
@@ -1262,10 +1302,12 @@ bigint.to-str = () (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             bufn-opt = bufn + 1
             bufn-opt: {
                 ok -> bufn = it
+
                 ->
             }
         }
@@ -1276,7 +1318,6 @@ bigint.to-str = () (out str) {
     #{overflow=wrap}
     j = bufn - 1
     (j >= 0) {
-
         ixout1077c22 = buf[j]: {
             ok -> it
 
@@ -1287,20 +1328,24 @@ bigint.to-str = () (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             out-n-opt = out-n + 1
             out-n-opt: {
                 ok -> out-n = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             j-opt = j - 1
             j-opt: {
                 ok -> j = it
+
                 ->
             }
         }
@@ -1340,6 +1385,7 @@ bigint.to-i64 = () (v ?i64) {
 
     lo0 = .limbs[0]: {
         ok -> it
+
         -> 0
     }
     lo-m = lo0 & MASK
@@ -1347,6 +1393,7 @@ bigint.to-i64 = () (v ?i64) {
     (.len > 1) -> {
         hi0 = .limbs[1]: {
             ok -> it
+
             -> 0
         }
         hi-m = hi0 & MASK
@@ -1393,6 +1440,7 @@ bigint.to-hex = () (out str) {
     i <- [.len - 1..0]: {
         li0 = .limbs[i]: {
             ok -> it
+
             -> 0
         }
         limb = li0 & MASK
@@ -1412,6 +1460,7 @@ bigint.to-hex = () (out str) {
                             out-n-opt2 = out-n + 1
                             out-n-opt2: {
                                 ok -> out-n = it
+
                                 ->
                             }
                         }
@@ -1420,6 +1469,7 @@ bigint.to-hex = () (out str) {
                         shift-opt2 = shift - 4
                         shift-opt2: {
                             ok -> shift = it
+
                             ->
                         }
                     }
@@ -1433,20 +1483,24 @@ bigint.to-hex = () (out str) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 out-n-opt3 = out-n + 1
                 out-n-opt3: {
                     ok -> out-n = it
+
                     ->
                 }
             }
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 shift-opt3 = shift - 4
                 shift-opt3: {
                     ok -> shift = it
+
                     ->
                 }
             }

@@ -58,7 +58,6 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     {
         key-n <= 64 -> {
             i <- [0..key-n): {
-
                 ixout58c32 = key[i]: {
                     ok -> it
 
@@ -129,7 +128,6 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
         }
     }
     i <- [0..msg-n): {
-
         ixout112c24 = msg[i]: {
             ok -> it
 
@@ -209,7 +207,6 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     {
         key-n <= 64 -> {
             i <- [0..key-n): {
-
                 ixout183c32 = key[i]: {
                     ok -> it
 
@@ -272,7 +269,6 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
         }
     }
     i <- [0..msg-n): {
-
         ixout229c24 = msg[i]: {
             ok -> it
 
@@ -351,7 +347,6 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     {
         key-n <= 128 -> {
             i <- [0..key-n): {
-
                 ixout299c32 = key[i]: {
                     ok -> it
 
@@ -414,7 +409,6 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
         }
     }
     i <- [0..msg-n): {
-
         ixout345c24 = msg[i]: {
             ok -> it
 
@@ -484,7 +478,6 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     {
         key-n <= 128 -> {
             i <- [0..key-n): {
-
                 ixout408c32 = key[i]: {
                     ok -> it
 
@@ -547,7 +540,6 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
         }
     }
     i <- [0..msg-n): {
-
         ixout454c24 = msg[i]: {
             ok -> it
 
@@ -617,7 +609,6 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     {
         key-n <= 64 -> {
             i <- [0..key-n): {
-
                 ixout517c32 = key[i]: {
                     ok -> it
 
@@ -680,7 +671,6 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
         }
     }
     i <- [0..msg-n): {
-
         ixout563c24 = msg[i]: {
             ok -> it
 

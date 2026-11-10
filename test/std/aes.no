@@ -95,10 +95,229 @@ t-dec-256 = () {
     back = aes.dec-256(ct, key)
     runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 32, 'aes-256 dec round-trip')
 }
+; ── 低階 API（本輪補齊）────────────────────────
+;
+; 註：固定長度陣列要比較內容一律走上面的 hex16；可變 vec 直接用 .to-hex()
+;     （回大寫）。兩者不必混用。
+
+; GF(2^8) 乘法：FIPS-197 §4.2 的 xtime
+t-gf = () {
+    runner.eq(aes.gf-mul2(0x57), 0xae, 'gf-mul2(0x57) == 0xae')
+    runner.eq(aes.gf-mul2(0x00), 0, 'gf-mul2(0) == 0')
+    runner.eq(aes.gf-mul2(0x80), 0x1b, 'gf-mul2(0x80) == 0x1b (xtime wraps)')
+
+    runner.eq(aes.gf-mul3(0x57), 0xf9, 'gf-mul3(0x57) == 0xf9')
+    runner.eq(aes.gf-mul3(0x00), 0, 'gf-mul3(0) == 0')
+    runner.eq(aes.gf-mul3(0x01), 0x03, 'gf-mul3(1) == 0x03 (x*3 == xtime(x)^x)')
+}
+
+; rcon：在 GF(2^8) 里逐轮翻倍，第 8 次后回绕成 0x1b
+t-rcon = () {
+    runner.eq(aes.rcon-val(1), 0x01, 'rcon(1) == 0x01')
+    runner.eq(aes.rcon-val(2), 0x02, 'rcon(2) == 0x02')
+    runner.eq(aes.rcon-val(3), 0x04, 'rcon(3) == 0x04')
+    runner.eq(aes.rcon-val(4), 0x08, 'rcon(4) == 0x08')
+    runner.eq(aes.rcon-val(5), 0x10, 'rcon(5) == 0x10')
+    runner.eq(aes.rcon-val(6), 0x20, 'rcon(6) == 0x20')
+    runner.eq(aes.rcon-val(7), 0x40, 'rcon(7) == 0x40')
+    runner.eq(aes.rcon-val(8), 0x80, 'rcon(8) == 0x80')
+    runner.eq(aes.rcon-val(9), 0x1b, 'rcon(9) == 0x1b')
+    runner.eq(aes.rcon-val(10), 0x36, 'rcon(10) == 0x36')
+}
+
+; SubBytes：全零状态经 S-box 后每字节为 S[0] = 0x63；逆变换还原
+t-sub-bytes = () {
+    st []byte = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    before = st.to-hex()
+    aes.sub-bytes(st, 16)
+    v0 = st[0]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(v0.to-i64(), 0x63, 'sub-bytes(0) == 0x63 (S[0])')
+    v15 = st[15]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(v15.to-i64(), 0x63, 'sub-bytes covers byte 15 too')
+
+    aes.inv-sub-bytes(st, 16)
+    after = st.to-hex()
+    runner.str-eq(after, before, 32, 'inv-sub-bytes undoes sub-bytes')
+}
+
+; ShiftRows：state 为列主序（byte 索引 = 4*col + row），第 r 行左移 r 格
+t-shift-rows = () {
+    st []byte = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    before = st.to-hex()
+    aes.shift-rows(st)
+
+    ; 第 0 行不动；第 1 行取旧的第 5 字节；第 2 行取旧的 10；第 3 行取旧的 15
+    v0 = st[0]: {
+        ok -> it
+        -> 255
+    }
+    runner.eq(v0.to-i64(), 0, 'shift-rows: row0 stays')
+    v1 = st[1]: {
+        ok -> it
+        -> 255
+    }
+    runner.eq(v1.to-i64(), 5, 'shift-rows: row1 shifts by 1')
+    v2 = st[2]: {
+        ok -> it
+        -> 255
+    }
+    runner.eq(v2.to-i64(), 10, 'shift-rows: row2 shifts by 2')
+    v3 = st[3]: {
+        ok -> it
+        -> 255
+    }
+    runner.eq(v3.to-i64(), 15, 'shift-rows: row3 shifts by 3')
+
+    aes.inv-shift-rows(st)
+    after = st.to-hex()
+    runner.str-eq(after, before, 32, 'inv-shift-rows restores the state')
+}
+
+; MixColumns：FIPS-197 §5.1.3 的例子 [db,13,53,45] -> [8e,4d,a1,bc]
+t-mix-col = () {
+    d0, d1, d2, d3 = aes.mix-col(0xdb, 0x13, 0x53, 0x45)
+    runner.eq(d0, 0x8e, 'mix-col -> d0 == 0x8e')
+    runner.eq(d1, 0x4d, 'mix-col -> d1 == 0x4d')
+    runner.eq(d2, 0xa1, 'mix-col -> d2 == 0xa1')
+    runner.eq(d3, 0xbc, 'mix-col -> d3 == 0xbc')
+
+    e0, e1, e2, e3 = aes.inv-mix-col(0x8e, 0x4d, 0xa1, 0xbc)
+    runner.eq(e0, 0xdb, 'inv-mix-col -> 0xdb')
+    runner.eq(e1, 0x13, 'inv-mix-col -> 0x13')
+    runner.eq(e2, 0x53, 'inv-mix-col -> 0x53')
+    runner.eq(e3, 0x45, 'inv-mix-col -> 0x45')
+}
+
+; MixColumns 的整状态版本：第 0 列按上例变换，其余列为零列
+t-mix-columns = () {
+    st []byte = [0xdb, 0x13, 0x53, 0x45, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    before = st.to-hex()
+    aes.mix-columns(st)
+    v0 = st[0]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(v0.to-i64(), 0x8e, 'mix-columns col0[0] == 0x8e')
+    v3 = st[3]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(v3.to-i64(), 0xbc, 'mix-columns col0[3] == 0xbc')
+    ; 全零列必须保持全零（不是把别的列串进来）
+    z = st[4]: {
+        ok -> it
+        -> 255
+    }
+    runner.eq(z.to-i64(), 0, 'mix-columns leaves zero column untouched')
+
+    aes.inv-mix-columns(st)
+    after = st.to-hex()
+    runner.str-eq(after, before, 32, 'inv-mix-columns restores the state')
+}
+
+; AddRoundKey：逐字节异或；add-round-key-at 从轮密钥的任意偏移取 16 字节
+t-add-round-key = () {
+    st []byte = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    rk []byte = [0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f]
+    aes.add-round-key(st, rk)
+    v0 = st[0]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(v0.to-i64(), 0x0e, 'add-round-key: 0x01 ^ 0x0f == 0x0e')
+    v1 = st[1]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(v1.to-i64(), 0x0d, 'add-round-key: 0x02 ^ 0x0f == 0x0d')
+
+    st2 []byte = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    rk2 []byte = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0xaa]
+    aes.add-round-key-at(st2, rk2, 16)
+    a0 = st2[0]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(a0.to-i64(), 0x11, 'add-round-key-at reads from offset 16')
+    a15 = st2[15]: {
+        ok -> it
+        -> 0
+    }
+    runner.eq(a15.to-i64(), 0xaa, 'add-round-key-at last byte == rk[31] == 0xaa')
+}
+
+; rot-word / sub-word：4 次 rot-word 回到原值；sub-word(0) 非零（S[0] = 0x63）
+t-word = () {
+    w i64 = 0x11223344
+    r1 = aes.rot-word(w)
+    r2 = aes.rot-word(r1)
+    r3 = aes.rot-word(r2)
+    r4 = aes.rot-word(r3)
+    runner.eq(r4, w, 'rot-word applied 4 times == identity')
+    runner.ne(r1, w, 'rot-word actually rotates')
+
+    s = aes.sub-word(0)
+    runner.ne(s, 0, 'sub-word(0) != 0 (S[0] == 0x63)')
+}
+
+; key-expand / key-expand-256：176 / 240 字节（11 / 15 个轮密钥），开头即原始密钥
+t-key-expand = () {
+    key128 [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    ek = aes.key-expand(key128)
+    runner.eq(ek.len(), 176, 'key-expand(AES-128) is 176 bytes')
+    runner.str-eq(ek.to-hex(), '000102030405060708090A0B0C0D0E0FD6AA74FDD2AF72FADAA678F1D6AB76FE', 64, 'expanded key: round 0 == cipher key, round 1 == FIPS-197 w[4..7]')
+
+    key256 [32]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+    ]
+    ek2 = aes.key-expand-256(key256)
+    runner.eq(ek2.len(), 240, 'key-expand-256 is 240 bytes')
+}
+
+; enc-block / dec-block：与 enc-128 / dec-128 走同一路径（轮密钥由 key-expand 给出）
+t-block = () {
+    key [16]byte = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ]
+    pt [16]byte = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ]
+    ek = aes.key-expand(key)
+    ct = aes.enc-block(pt, ek)
+    runner.str-eq(hex16(ct), '69c4e0d86a7b0430d8cdb78070b4c55a', 32, 'enc-block KAT == enc-128')
+
+    back = aes.dec-block(ct, ek)
+    runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 32, 'dec-block round-trip')
+}
+
 p1 = runner.test('aes.enc128', t-enc-128)
 p2 = runner.test('aes.dec128', t-dec-128)
 p3 = runner.test('aes.enc256', t-enc-256)
 p4 = runner.test('aes.dec256', t-dec-256)
+p5 = runner.test('aes.gf-mul2/3', t-gf)
+p6 = runner.test('aes.rcon-val', t-rcon)
+p7 = runner.test('aes.sub-bytes', t-sub-bytes)
+p8 = runner.test('aes.shift-rows', t-shift-rows)
+p9 = runner.test('aes.mix-col', t-mix-col)
+p10 = runner.test('aes.mix-columns', t-mix-columns)
+p11 = runner.test('aes.add-round-key', t-add-round-key)
+p12 = runner.test('aes.rot-word/sub-word', t-word)
+p13 = runner.test('aes.key-expand', t-key-expand)
+p14 = runner.test('aes.enc-block/dec-block', t-block)
 total = runner.summary()
 f = runner.failed-count()
 {

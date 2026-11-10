@@ -316,7 +316,8 @@ out = result.join('\n')
       aliases: ['结构体', 'record']
       definition: `
 定义形如 name { field 型别 ... }，字段之间换行分隔（不是逗号）。
-用 name {} 构造，用 .field 访问；.method 形式定义方法。
+用 name{} 构造（左花括号必须紧贴型别名，no fmt 会把 name {} 归一为 name{}；
+定义形态 name { ... } 才保留空格），用 .field 访问；.method 形式定义方法。
 
 结构体按值传递。要跨函数共享可变状态，就把实例放模块级。
 注意：模块级 str 标量赋值会被同名局部遮蔽（见 traps 域），
@@ -328,7 +329,7 @@ point {
     y i64
 }
 
-p point {}
+p point = point{}
 p.x = 1
 `
       example: `

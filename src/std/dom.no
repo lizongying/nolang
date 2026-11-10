@@ -567,6 +567,7 @@ find-entity = (name str) (cp i64) {
                     v-opt = v * 10 + (b - 48)
                     v-opt: {
                         ok -> v = it
+
                         ->
                     }
                 }
@@ -730,10 +731,12 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 p-opt = p + 1
                 p-opt: {
                     ok -> p = it
+
                     ->
                 }
             }
@@ -748,6 +751,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 
             -> 0
         }
+
         ; b 是 `?byte` 的載荷，屬無號型別。D6 的有號整數算術才會產生 `?T`，
         ; 所以 `b - 48` 是 plain 整數 —— 後面的 `d-opt: { ok -> ... }` 永遠不命中，
         ; d 卡在 -1，`d < 0 -> return` 直接判「非法數字實體」，`&#65;` 全部解析失敗。
@@ -759,6 +763,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
                 d-opt = bi - 48
                 d-opt: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -768,6 +773,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
                 d-opt2 = bi - 55
                 d-opt2: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -777,6 +783,7 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
                 d-opt3 = bi - 87
                 d-opt3: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -788,10 +795,12 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     v-opt2 = v * 16 + d
                     v-opt2: {
                         ok -> v = it
+
                         ->
                     }
                 }
@@ -801,10 +810,12 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     v-opt3 = v * 10 + d
                     v-opt3: {
                         ok -> v = it
+
                         ->
                     }
                 }
@@ -813,10 +824,12 @@ parse-numeric-entity = (s str, pos i64, end i64) (cp i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             p-opt2 = p + 1
             p-opt2: {
                 ok -> p = it
+
                 ->
             }
         }
@@ -843,10 +856,12 @@ xml-skip-ws = (s str, p i64) (np i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             np-opt = np + 1
             np-opt: {
                 ok -> np = it
+
                 ->
             }
         }
@@ -1078,7 +1093,9 @@ dom-pool.parse-doctype-node = (parent i64, s str, p i64) (np ?i64) {
             ns = xml-skip-ws(s, kw)
             nopt = xml-read-name(s, ns)
             nopt: {
-                ok(nv) -> .names[idx] ?= s.slice-bytes(ns, nv)
+                ok(nv) -> {
+                    .names[idx] ?= s.slice-bytes(ns, nv)
+                }
 
                 -> _
             }
@@ -1579,10 +1596,12 @@ dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             j-opt = j + 1
             j-opt: {
                 ok -> j = it
+
                 ->
             }
         }
@@ -1606,6 +1625,7 @@ dom-pool.html-parse-comment = (parent i64, s str, p i64) (np i64) {
             np-opt2 = j + 3
             np-opt2: {
                 ok -> np = it
+
                 ->
             }
         }
@@ -1626,10 +1646,12 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             q-opt = q + 1
             q-opt: {
                 ok -> q = it
+
                 ->
             }
         }
@@ -1649,6 +1671,7 @@ dom-pool.html-bogus-comment = (parent i64, s str, p i64) (np i64) {
             np-opt3 = q + 1
             np-opt3: {
                 ok -> np = it
+
                 ->
             }
         }
@@ -1685,10 +1708,12 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             j-opt2 = j + 1
             j-opt2: {
                 ok -> j = it
+
                 ->
             }
         }
@@ -1710,6 +1735,7 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
                 dend-opt = j - 1
                 dend-opt: {
                     ok -> dend = it
+
                     ->
                 }
             }
@@ -1732,6 +1758,7 @@ dom-pool.html-parse-pi = (parent i64, s str, p i64) (np i64) {
             np-opt4 = j + 1
             np-opt4: {
                 ok -> np = it
+
                 ->
             }
         }
@@ -1871,10 +1898,12 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             np-opt5 = p + 1
             np-opt5: {
                 ok -> np = it
+
                 ->
             }
         }
@@ -1903,10 +1932,12 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     np-opt6 = np + 1
                     np-opt6: {
                         ok -> np = it
+
                         ->
                     }
                 }
@@ -1919,6 +1950,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
                         np-opt7 = np + 2
                         np-opt7: {
                             ok -> np = it
+
                             ->
                         }
                     }
@@ -1930,10 +1962,12 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
                 ; 孤立的 '/'：跳過繼續
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     np-opt8 = np + 1
                     np-opt8: {
                         ok -> np = it
+
                         ->
                     }
                 }
@@ -1949,10 +1983,12 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
                         ; 非法屬性起始字元：跳過避免死循環
                         #{overflow=wrap}
                         {
+
                             #{overflow=wrap}
                             np-opt9 = np + 1
                             np-opt9: {
                                 ok -> np = it
+
                                 ->
                             }
                         }
@@ -1987,10 +2023,12 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             j-opt3 = j + 1
             j-opt3: {
                 ok -> j = it
+
                 ->
             }
         }
@@ -2040,10 +2078,12 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 q-opt2 = q + 1
                 q-opt2: {
                     ok -> q = it
+
                     ->
                 }
             }
@@ -2054,6 +2094,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
                 np-opt10 = q + 1
                 np-opt10: {
                     ok -> np = it
+
                     ->
                 }
             }
@@ -2087,10 +2128,12 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     np-opt11 = np + 1
                     np-opt11: {
                         ok -> np = it
+
                         ->
                     }
                 }
@@ -2099,10 +2142,12 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     np-opt12 = np + 1
                     np-opt12: {
                         ok -> np = it
+
                         ->
                     }
                 }
@@ -2118,10 +2163,12 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             np-opt13 = np + 1
             np-opt13: {
                 ok -> np = it
+
                 ->
             }
         }
@@ -2130,10 +2177,12 @@ dom-pool.html-parse-close-name = (s str, p i64) (np i64, nm str, ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             np-opt14 = np + 1
             np-opt14: {
                 ok -> np = it
+
                 ->
             }
         }
@@ -2158,6 +2207,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
         c != 60 -> {
             te = p + 1: {
                 ok -> it
+
                 ->
             }
             (te < n) {
@@ -2165,10 +2215,12 @@ dom-pool.html-parse-doc = (s str) (root i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     te-opt = te + 1
                     te-opt: {
                         ok -> te = it
+
                         ->
                     }
                 }
@@ -2184,10 +2236,12 @@ dom-pool.html-parse-doc = (s str) (root i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 p-opt3 = p + 1
                 p-opt3: {
                     ok -> p = it
+
                     ->
                 }
             }
@@ -2240,6 +2294,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
             #{overflow=wrap}
             k = sl - 1: {
                 ok -> it
+
                 ->
             }
             (k >= 0) {
@@ -2258,10 +2313,12 @@ dom-pool.html-parse-doc = (s str) (root i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     k-opt = k - 1
                     k-opt: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -2275,7 +2332,6 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 #{overflow=wrap}
                 topi = .stk.len() - 1
                 topi >= 0 -> {
-
                     cur = .stk[topi]
                 }
             }
@@ -2288,10 +2344,12 @@ dom-pool.html-parse-doc = (s str) (root i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 p-opt4 = p + 1
                 p-opt4: {
                     ok -> p = it
+
                     ->
                 }
             }
@@ -2324,7 +2382,6 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 #{overflow=wrap}
                 topi = .stk.len() - 1
                 topi >= 0 -> {
-
                     cur = .stk[topi]
                 }
             }
@@ -2360,10 +2417,12 @@ esc-text = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     seg-opt = i + 1
                     seg-opt: {
                         ok -> seg = it
+
                         ->
                     }
                 }
@@ -2374,10 +2433,12 @@ esc-text = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     seg-opt2 = i + 1
                     seg-opt2: {
                         ok -> seg = it
+
                         ->
                     }
                 }
@@ -2388,10 +2449,12 @@ esc-text = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     seg-opt3 = i + 1
                     seg-opt3: {
                         ok -> seg = it
+
                         ->
                     }
                 }
@@ -2400,10 +2463,12 @@ esc-text = (s str) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + 1
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -2428,10 +2493,12 @@ esc-attr = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     seg-opt4 = i + 1
                     seg-opt4: {
                         ok -> seg = it
+
                         ->
                     }
                 }
@@ -2442,10 +2509,12 @@ esc-attr = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     seg-opt5 = i + 1
                     seg-opt5: {
                         ok -> seg = it
+
                         ->
                     }
                 }
@@ -2456,10 +2525,12 @@ esc-attr = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     seg-opt6 = i + 1
                     seg-opt6: {
                         ok -> seg = it
+
                         ->
                     }
                 }
@@ -2470,10 +2541,12 @@ esc-attr = (s str) (out str) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     seg-opt7 = i + 1
                     seg-opt7: {
                         ok -> seg = it
+
                         ->
                     }
                 }
@@ -2482,10 +2555,12 @@ esc-attr = (s str) (out str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt2 = i + 1
             i-opt2: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -2882,10 +2957,12 @@ class-has = (val str, cls str) (yes bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 seg-opt8 = i + 1
                 seg-opt8: {
                     ok -> seg = it
+
                     ->
                 }
             }
@@ -2893,10 +2970,12 @@ class-has = (val str, cls str) (yes bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt3 = i + 1
             i-opt3: {
                 ok -> i = it
+
                 ->
             }
         }

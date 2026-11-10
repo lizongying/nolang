@@ -256,6 +256,7 @@ link {
     ok = false
 
     {
+
         #{overflow=wrap}
         {
             pos < 0 || pos > l.size -> return
@@ -345,8 +346,8 @@ link {
 ; 返回 val ?t: ok=移除的值, nil=位置越界
 ; [link-remove-at](#arr.link-remove-at)
 [n]t.link-remove-at = (l link, pos i64) (val ?t) {
-
     {
+
         #{overflow=wrap}
         {
             pos < 0 || pos >= l.size -> {

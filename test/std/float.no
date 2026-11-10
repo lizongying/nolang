@@ -1,0 +1,100 @@
+; std-float.no — float 联合型别（f32 | f64）方法测试
+;
+; 执行：no test test/std/float.no
+; 覆盖：float.div / float.is-nan / float.is-inf
+; 未测：float.to-str（模块刻意不定义，见 src/std/float.no 尾注：union 方法
+;       codegen 在无法推断局部变量型别时会回退到非单态化名称，改由 f64.to-str 承担）
+
+# /test/runner
+
+; div：商数遵循 IEEE-754，f64 与 f32 各测一例
+t-div = () {
+    a f64 = 6.0
+    q f64 = a.div(3.0)
+    runner.f64-eq(q, 2.0, 0.000001, '6.0.div(3.0) == 2.0')
+
+    b f64 = 1.0
+    r f64 = b.div(4.0)
+    runner.f64-eq(r, 0.25, 0.000001, '1.0.div(4.0) == 0.25')
+
+    ; 负数除法：符号参与
+    n f64 = 0.0 - 9.0
+    m f64 = n.div(3.0)
+    runner.f64-eq(m, 0.0 - 3.0, 0.000001, '(-9.0).div(3.0) == -3.0')
+
+    ; f32 单态化：商数须跟接收者同型（f32），不得退化成 f64 位模式
+    c f32 = 9.0
+    two f32 = 2.0
+    s f32 = c.div(two)
+    sd f64 = s.to-f64()
+    runner.f64-eq(sd, 4.5, 0.000001, 'f32 9.0.div(2.0) == 4.5')
+}
+
+; div 除以 0.0：得 ±inf（不是 err、不是 0）
+t-div-by-zero = () {
+    one f64 = 1.0
+    zero f64 = 0.0
+    inf f64 = one.div(zero)
+    yes bool = inf.is-inf()
+    runner.is-true(yes, '1.0/0.0 is +inf')
+
+    nan f64 = zero.div(zero)
+    flag bool = nan.is-nan()
+    runner.is-true(flag, '0.0/0.0 is NaN')
+}
+
+; is-nan：仅 NaN 为 true；有限数、±inf 均为 false
+t-is-nan = () {
+    zero f64 = 0.0
+    nan f64 = zero.div(zero)
+    a bool = nan.is-nan()
+    runner.is-true(a, 'NaN.is-nan == true')
+
+    one f64 = 1.0
+    b bool = one.is-nan()
+    runner.is-false(b, '1.0.is-nan == false')
+
+    inf f64 = one.div(zero)
+    c bool = inf.is-nan()
+    runner.is-false(c, 'inf.is-nan == false')
+}
+
+; is-inf：±inf 为 true；0.0（含 -0.0）、有限数、NaN 均 false
+t-is-inf = () {
+    zero f64 = 0.0
+    one f64 = 1.0
+    inf f64 = one.div(zero)
+    a bool = inf.is-inf()
+    runner.is-true(a, '+inf.is-inf == true')
+
+    neg f64 = zero - one
+    ninf f64 = neg.div(zero)
+    b bool = ninf.is-inf()
+    runner.is-true(b, '-inf.is-inf == true')
+
+    ; 0.0 必须判 false：`. + . == .` 对零也成立，is-inf 需带非零条件
+    c bool = zero.is-inf()
+    runner.is-false(c, '0.0.is-inf == false')
+
+    d bool = one.is-inf()
+    runner.is-false(d, '1.0.is-inf == false')
+
+    nan f64 = zero.div(zero)
+    e bool = nan.is-inf()
+    runner.is-false(e, 'NaN.is-inf == false')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('float.div', t-div)
+p2, f2 = runner.test('float.div by zero', t-div-by-zero)
+p3, f3 = runner.test('float.is-nan', t-is-nan)
+p4, f4 = runner.test('float.is-inf', t-is-inf)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

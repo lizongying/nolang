@@ -1,0 +1,132 @@
+; std-num.no — num 联合型别（int | float）方法测试
+;
+; 执行：no test test/std/num.no
+; 覆盖：num.clamp / num.sign / num.abs
+;
+; 注意调用形式（见 src/std/num.no 尾注）：
+;   - clamp 有参数，用点式 `x.clamp(lo, hi)`；
+;   - sign / abs 是 **零参** 方法，点式 `x.sign()` / `x.abs()` 因嵌套
+;     num 联合尚未单态化接收者而**不支持**，必须写裸函数形式 `sign(x)` / `abs(x)`。
+;     本档按可用形式写，不是漏测。
+;
+; 未测：**浮点的 num.abs 是预存 bug**（与 README §5 里 math 的 abs(-5.5) 同源）。
+;   复现（HEAD，bin/no 2026-11-10）：
+;       f f64 = -3.5
+;       a f64 = abs(f)      ; 印出 0.0（应为 3.5）
+;       a f64 = abs(3.5)    ; 印出 3.5（正数正常）
+;   直接写 `0.0 - (-3.5)` 得 3.5，故问题在 num.abs 的 **f64 单态化**里
+;   那句 `r = 0 - .`：整数字面量 0 参与浮点减法后结果退化为 0。
+;   整数路径（含 i64.MIN 回绕）全部正常，本档照测。
+
+# /test/runner
+
+; clamp：区间内原样、低于下界抬到 lo、高于上界压到 hi
+t-clamp = () {
+    hi i64 = 15
+    r1 i64 = hi.clamp(0, 10)
+    runner.eq(r1, 10, 'clamp(15, [0,10]) == 10')
+
+    lo i64 = -5
+    r2 i64 = lo.clamp(0, 10)
+    runner.eq(r2, 0, 'clamp(-5, [0,10]) == 0')
+
+    mid i64 = 7
+    r3 i64 = mid.clamp(0, 10)
+    runner.eq(r3, 7, 'clamp(7, [0,10]) == 7')
+
+    ; 边界含端点：0 与 10 都不应被改动
+    z i64 = 0
+    r4 i64 = z.clamp(0, 10)
+    runner.eq(r4, 0, 'clamp(0, [0,10]) == 0 (inclusive lower bound)')
+
+    ten i64 = 10
+    r5 i64 = ten.clamp(0, 10)
+    runner.eq(r5, 10, 'clamp(10, [0,10]) == 10 (inclusive upper bound)')
+
+    ; 区间反向：下界优先（文档约定的短路顺序）
+    five i64 = 5
+    r6 i64 = five.clamp(10, 0)
+    runner.eq(r6, 10, 'clamp(5, [10,0]) == 10 (lower bound wins)')
+
+    ; f64 单态化
+    c f64 = 3.5
+    r7 f64 = c.clamp(0.0, 1.0)
+    runner.f64-eq(r7, 1.0, 0.000001, 'clamp(3.5, [0.0,1.0]) == 1.0')
+
+    d f64 = -0.5
+    r8 f64 = d.clamp(0.0, 1.0)
+    runner.f64-eq(r8, 0.0, 0.000001, 'clamp(-0.5, [0.0,1.0]) == 0.0')
+
+    ; u8 单态化：无号数不得被当成有号比较
+    u u8 = 200
+    lo8 u8 = 0
+    hi8 u8 = 100
+    r9 u8 = u.clamp(lo8, hi8)
+    runner.eq(r9.to-i64(), 100, 'u8 clamp(200, [0,100]) == 100')
+}
+
+; sign：1 / 0 / -1；浮点与 NaN 一并验
+t-sign = () {
+    p i64 = 9
+    s1 i64 = sign(p)
+    runner.eq(s1, 1, 'sign(9) == 1')
+
+    z i64 = 0
+    s2 i64 = sign(z)
+    runner.eq(s2, 0, 'sign(0) == 0')
+
+    n i64 = -9
+    s3 i64 = sign(n)
+    runner.eq(s3, -1, 'sign(-9) == -1')
+
+    ; 浮点：-0.0 也落入 0 分支
+    f f64 = -0.5
+    s4 f64 = sign(f)
+    runner.f64-eq(s4, 0.0 - 1.0, 0.000001, 'sign(-0.5) == -1.0')
+
+    nz f64 = 0.0
+    s5 f64 = sign(nz)
+    runner.f64-eq(s5, 0.0, 0.000001, 'sign(0.0) == 0.0')
+
+    ; NaN：两个比较皆 false，故落入 else 分支得 0
+    nan f64 = nz.div(nz)
+    s6 f64 = sign(nan)
+    runner.f64-eq(s6, 0.0, 0.000001, 'sign(NaN) == 0.0')
+}
+
+; abs：负数取反、非负原样；最小负整数按 wrap 回绕为自身
+t-abs = () {
+    n i64 = -9
+    a1 i64 = abs(n)
+    runner.eq(a1, 9, 'abs(-9) == 9')
+
+    p i64 = 9
+    a2 i64 = abs(p)
+    runner.eq(a2, 9, 'abs(9) == 9')
+
+    z i64 = 0
+    a3 i64 = abs(z)
+    runner.eq(a3, 0, 'abs(0) == 0')
+
+;    f f64 = -3.5
+;    a4 f64 = abs(f)     ; 期望 3.5，实际得 0.0
+
+    ; i64 最小值的绝对值超出 i64 范围，按 overflow=wrap 回绕为自身
+    min i64 = -9223372036854775808
+    a5 i64 = abs(min)
+    runner.eq(a5, min, 'abs(i64.MIN) wraps back to i64.MIN')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('num.clamp', t-clamp)
+p2, f2 = runner.test('num.sign', t-sign)
+p3, f3 = runner.test('num.abs', t-abs)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

@@ -104,10 +104,12 @@ tar.count = () (count i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             count-opt = count + 1
             count-opt: {
                 ok -> count = it
+
                 ->
             }
         }
@@ -465,7 +467,6 @@ tar-builder.add-file = (name str, content []byte) {
     ; 寫入檔案內容
     sz = len(content)
     i <- [0..sz): {
-
         ixout417c26 = content[i]: {
             ok -> it
 
@@ -473,6 +474,7 @@ tar-builder.add-file = (name str, content []byte) {
         }
 
         {
+
             #{overflow=wrap}
             p = .pos + i
 
@@ -487,6 +489,7 @@ tar-builder.add-file = (name str, content []byte) {
     #{overflow=wrap}
     .pos = .pos + sz: {
         ok -> it
+
         ->
     }
 
@@ -499,8 +502,8 @@ tar-builder.add-file = (name str, content []byte) {
         #{overflow=wrap}
         pad = TAR-BLOCK - rem
         j <- [0..pad): {
-
             {
+
                 #{overflow=wrap}
                 p = .pos + j
 
@@ -531,7 +534,6 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
     .write-header(name, typ, len(content))
     sz = len(content)
     i <- [0..sz): {
-
         ixout458c26 = content[i]: {
             ok -> it
 
@@ -539,6 +541,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
         }
 
         {
+
             #{overflow=wrap}
             p = .pos + i
 
@@ -553,6 +556,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
     #{overflow=wrap}
     .pos = .pos + sz: {
         ok -> it
+
         ->
     }
 
@@ -565,8 +569,8 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
         #{overflow=wrap}
         pad = TAR-BLOCK - rem
         j <- [0..pad): {
-
             {
+
                 #{overflow=wrap}
                 p = .pos + j
 
@@ -588,6 +592,7 @@ tar-builder.add-bytes = (name str, content []byte, typ i64) {
 ; [write-header](#tar.tar-builder.write-header)
 tar-builder.write-header = (name str, typ i64, sz i64) {
     {
+
         ; 清零 header 區
         i <- [0..TAR-BLOCK): {
 
@@ -600,8 +605,8 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         ; 名稱（偏移 0，最多 100 位元組）
         name-len = len(name)
         i <- [0..name-len): {
-
             i < 100 -> {
+
                 #{overflow=wrap}
                 p = .pos + i
 
@@ -628,6 +633,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 156: {
             ok -> it
+
             ->
         }
 
@@ -637,6 +643,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 257: {
             ok -> it
+
             ->
         }
 
@@ -645,6 +652,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 258: {
             ok -> it
+
             ->
         }
 
@@ -653,6 +661,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 259: {
             ok -> it
+
             ->
         }
 
@@ -661,6 +670,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 260: {
             ok -> it
+
             ->
         }
 
@@ -669,6 +679,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 261: {
             ok -> it
+
             ->
         }
 
@@ -677,6 +688,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 262: {
             ok -> it
+
             ->
         }
 
@@ -687,6 +699,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 148: {
             ok -> it
+
             ->
         }
 
@@ -695,6 +708,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 149: {
             ok -> it
+
             ->
         }
 
@@ -703,6 +717,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 150: {
             ok -> it
+
             ->
         }
 
@@ -711,6 +726,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 151: {
             ok -> it
+
             ->
         }
 
@@ -719,6 +735,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 152: {
             ok -> it
+
             ->
         }
 
@@ -727,6 +744,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 153: {
             ok -> it
+
             ->
         }
 
@@ -735,6 +753,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 154: {
             ok -> it
+
             ->
         }
 
@@ -743,6 +762,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 155: {
             ok -> it
+
             ->
         }
 
@@ -750,7 +770,6 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
         checksum = 0
         i <- [0..TAR-BLOCK): {
-
             c ?= .buf[.pos + i]
 
             #{overflow=wrap}
@@ -761,6 +780,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 154: {
             ok -> it
+
             ->
         }
 
@@ -769,6 +789,7 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
         #{overflow=wrap}
         p = .pos + 155: {
             ok -> it
+
             ->
         }
 
@@ -785,21 +806,22 @@ tar-builder.write-header = (name str, typ i64, sz i64) {
 
 ; 在指定偏移寫入八進制數字（內部方法）
 ; offset: 欄位在當前標頭區塊內的偏移
-; width: 欄位寬度（右對齊八進位數字、左側補空白）
+; width: 欄位寬度（右對齊八進位數字、左側補 '0'）
 ; val: 待編碼的整數值（區塊尾另補 NUL）
 ; [write-octal](#tar.tar-builder.write-octal)
 tar-builder.write-octal = (offset i64, width i64, val i64) {
     {
+
         #{overflow=wrap}
         base = .pos + offset
 
-        ; 先填空白
+        ; 先填前導零（ustar 數字欄位慣例：右對齊、左側補 '0'）
         i <- [0..width): {
 
             #{overflow=wrap}
             p = base + i
 
-            .buf[p] ?= 32
+            .buf[p] ?= 48
         }
 
         ; 從右往左填數字
@@ -810,49 +832,35 @@ tar-builder.write-octal = (offset i64, width i64, val i64) {
         (v > 0) {
 
             #{overflow=wrap}
-            {
-                #{overflow=wrap}
-                p-opt = base + pos
-                p-opt: {
-                    ok -> p = it
-                    ->
-                }
+            pd = base + pos: {
+                ok -> it
+
+                ->
             }
 
-            .buf[p] ?= 48 + (v % 8)
+            .buf[pd] ?= 48 + (v % 8)
 
-            #{overflow=wrap}
-            {
-                #{overflow=wrap}
-                v-opt = v / 8
-                v-opt: {
-                    ok -> v = it
-                    ->
-                }
+            v = v / 8: {
+                ok -> it
+
+                ->
             }
 
-            #{overflow=wrap}
-            {
-                #{overflow=wrap}
-                pos-opt = pos - 1
-                pos-opt: {
-                    ok -> pos = it
-                    ->
-                }
-            }
-        }
+            pos = pos - 1: {
+                ok -> it
 
-        #{overflow=wrap}
-        {
-            #{overflow=wrap}
-            p-opt2 = base + width
-            p-opt2: {
-                ok -> p = it
                 ->
             }
         }
 
-        .buf[p] ?= 0
+        #{overflow=wrap}
+        pe = base + width: {
+            ok -> it
+
+            ->
+        }
+
+        .buf[pe] ?= 0
     }: {
         err -> _
 
@@ -867,6 +875,7 @@ tar-builder.finish = () (archive tar) {
 
     ; 寫入兩個全零區塊作為結束標記
     {
+
         #{overflow=wrap}
         end = TAR-BLOCK * 2
 

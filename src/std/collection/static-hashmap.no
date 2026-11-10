@@ -127,10 +127,12 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt = idx + 1
                 idx-opt: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -150,6 +152,7 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
         is-new = true
@@ -222,6 +225,7 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
                     .occ[idx] ?= 2
                     .size = .size - 1: {
                         ok -> it
+
                         ->
                     }
                     removed = true
@@ -231,10 +235,12 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt2 = idx + 1
                 idx-opt2: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -385,10 +391,12 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt3 = idx + 1
                 idx-opt3: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -406,6 +414,7 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
         is-new = true
@@ -476,6 +485,7 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
                     .occ[idx] ?= 2
                     .size = .size - 1: {
                         ok -> it
+
                         ->
                     }
                     removed = true
@@ -485,10 +495,12 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 idx-opt4 = idx + 1
                 idx-opt4: {
                     ok -> idx = it
+
                     ->
                 }
             }
@@ -632,6 +644,7 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
         #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
+
             ->
         }
         is-new = true
@@ -688,6 +701,7 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
             #{overflow=wrap}
             .size = .size - 1: {
                 ok -> it
+
                 ->
             }
             removed = true

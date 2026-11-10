@@ -155,10 +155,12 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 next-pos-opt = pos + 1
                 next-pos-opt: {
                     ok -> next-pos = it
+
                     ->
                 }
             }
@@ -179,10 +181,12 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 next-pos-opt2 = pos + 2
                 next-pos-opt2: {
                     ok -> next-pos = it
+
                     ->
                 }
             }
@@ -220,10 +224,12 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 next-pos-opt3 = pos + 4
                 next-pos-opt3: {
                     ok -> next-pos = it
+
                     ->
                 }
             }
@@ -293,10 +299,12 @@ varint-decode = (buf []byte, pos i64) (val i64, next-pos i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 next-pos-opt4 = pos + 8
                 next-pos-opt4: {
                     ok -> next-pos = it
+
                     ->
                 }
             }
@@ -387,15 +395,18 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         #{overflow=wrap}
         r-pos = r-pos + frames[count].length: {
             ok -> it
+
             ->
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             count-opt = count + 1
             count-opt: {
                 ok -> count = it
+
                 ->
             }
         }
@@ -432,10 +443,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 r-pos-opt = rl-np + rl-val
                 r-pos-opt: {
                     ok -> r-pos = it
+
                     ->
                 }
             }
@@ -444,10 +457,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 count-opt2 = count + 1
                 count-opt2: {
                     ok -> count = it
+
                     ->
                 }
             }
@@ -475,10 +490,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 r-pos-opt2 = rl-np + rl-val
                 r-pos-opt2: {
                     ok -> r-pos = it
+
                     ->
                 }
             }
@@ -487,10 +504,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 count-opt3 = count + 1
                 count-opt3: {
                     ok -> count = it
+
                     ->
                 }
             }
@@ -504,10 +523,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 count-opt4 = count + 1
                 count-opt4: {
                     ok -> count = it
+
                     ->
                 }
             }
@@ -527,10 +548,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 r-pos-opt3 = tl-np + tl-val
                 r-pos-opt3: {
                     ok -> r-pos = it
+
                     ->
                 }
             }
@@ -539,10 +562,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 count-opt5 = count + 1
                 count-opt5: {
                     ok -> count = it
+
                     ->
                 }
             }
@@ -565,10 +590,12 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 count-opt6 = count + 1
                 count-opt6: {
                     ok -> count = it
+
                     ->
                 }
             }
@@ -614,7 +641,6 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic key', empty-ctx, QUIC-KEY-SIZE)
     i <- [0..QUIC-KEY-SIZE): {
-
         ixout457c18 = key-tmp[i]: {
             ok -> it
 
@@ -628,7 +654,6 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic iv', empty-ctx, QUIC-IV-SIZE)
     i <- [0..QUIC-IV-SIZE): {
-
         ixout466c17 = iv-tmp[i]: {
             ok -> it
 
@@ -642,7 +667,6 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     hp-tmp []byte
     hp-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic hp', empty-ctx, QUIC-HP-SIZE)
     i <- [0..QUIC-HP-SIZE): {
-
         ixout475c17 = hp-tmp[i]: {
             ok -> it
 
@@ -719,7 +743,6 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
 
         #{overflow=wrap}
         pn-offset + j < packet.len() -> {
-
             ixout532c28 = packet[pn-offset + j]: {
                 ok -> it
 
@@ -741,10 +764,12 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             j-opt = j + 1
             j-opt: {
                 ok -> j = it
+
                 ->
             }
         }
@@ -787,7 +812,6 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
     pn-offset + pn-len > packet.len() -> return
     truncated-pn = 0
     i <- [0..pn-len): {
-
         ixout581c47 = packet[pn-offset + i]: {
             ok -> it
 
@@ -845,6 +869,7 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
                 candidate-pn-opt = candidate-pn + pn-win
                 candidate-pn-opt: {
                     ok -> candidate-pn = it
+
                     ->
                 }
             }
@@ -855,6 +880,7 @@ decode-packet-number = (packet []byte, pn-offset i64, largest-pn i64) (pn i64, p
                 candidate-pn-opt2 = candidate-pn - pn-win
                 candidate-pn-opt2: {
                     ok -> candidate-pn = it
+
                     ->
                 }
             }
@@ -1023,7 +1049,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     len-n = 0
     len-buf, len-n = varint-encode(payload-len)
     i <- [0..len-n): {
-
         ixout796c27 = len-buf[i]: {
             ok -> it
 
@@ -1062,7 +1087,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     crypto-ft-n = 0
     crypto-ft, crypto-ft-n = varint-encode(QUIC-FRAME-CRYPTO)
     i <- [0..crypto-ft-n): {
-
         ixout829c27 = crypto-ft[i]: {
             ok -> it
 
@@ -1081,7 +1105,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     off-n = 0
     off-buf, off-n = varint-encode(0)
     i <- [0..off-n): {
-
         ixout842c27 = off-buf[i]: {
             ok -> it
 
@@ -1100,7 +1123,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     data-len-n = 0
     data-len-buf, data-len-n = varint-encode(crypto-data.len())
     i <- [0..data-len-n): {
-
         ixout855c27 = data-len-buf[i]: {
             ok -> it
 
@@ -1116,7 +1138,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
     ; Data
     i <- [0..crypto-data.len()): {
-
         ixout865c27 = crypto-data[i]: {
             ok -> it
 
@@ -1198,7 +1219,6 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; 組合: header + sealed
     final-pos = pn-offset
     i <- [0..sealed.len()): {
-
         ixout934c33 = sealed[i]: {
             ok -> it
 
@@ -1220,6 +1240,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     #{overflow=wrap}
     .initial-pn = .initial-pn + 1: {
         ok -> it
+
         ->
     }
     out = packet
@@ -1260,10 +1281,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; 跳過 Version (4 bytes)
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt = pos + 4
         pos-opt: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1279,10 +1302,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt2 = pos + 1 + dcid-len
         pos-opt2: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1298,10 +1323,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt3 = pos + 1 + scid-len
         pos-opt3: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1314,10 +1341,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt4 = token-np + token-len
         pos-opt4: {
             ok -> pos = it
+
             ->
         }
     }
@@ -1371,7 +1400,6 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; AAD = buf[0..pn_offset]
     aad []byte
     i <- [0..pn-offset): {
-
         ixout1065c24 = buf[i]: {
             ok -> it
 

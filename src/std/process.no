@@ -294,7 +294,6 @@ process.start-with-opts = (program str, args []str, dir str, input str, merge-er
     {
         program == 'sh' -> {
             args.len() >= 2 -> {
-
                 ixout301c27 = args[0]: {
                     ok -> it
 
@@ -798,7 +797,6 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     #{overflow=wrap}
     slash >= 0 -> base = program.slice-bytes(slash + 1, program.len-bytes())
     args.len() >= 2 -> {
-
         ixout808c9 = args[0]: {
             ok -> it
 
@@ -1033,10 +1031,12 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     elapsed-opt = elapsed + 10
                     elapsed-opt: {
                         ok -> elapsed = it
+
                         ->
                     }
                 }
@@ -1409,7 +1409,6 @@ proc-info {
 list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
     i <- [0..names.len()): {
-
         ixout1407c16 = names[i]: {
             ok -> it
 
@@ -1481,7 +1480,6 @@ find-match = (pname str, target str) (yes bool) {
 find-by-name = (name str) (pids []i64) {
     all = list-all()
     i <- [0..all.len()): {
-
         ixout1474c23 = all[i]: {
             ok -> it
 

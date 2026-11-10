@@ -123,6 +123,7 @@ hex-digit = (c i64) (d i64) {
                 d-opt = c - 48
                 d-opt: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -133,6 +134,7 @@ hex-digit = (c i64) (d i64) {
                 d-opt2 = c - 87
                 d-opt2: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -143,6 +145,7 @@ hex-digit = (c i64) (d i64) {
                 d-opt3 = c - 55
                 d-opt3: {
                     ok -> d = it
+
                     ->
                 }
             }
@@ -163,6 +166,7 @@ hex-char = (d i64) (c i64) {
             c-opt = 87 + d
             c-opt: {
                 ok -> c = it
+
                 ->
             }
         }
@@ -172,6 +176,7 @@ hex-char = (d i64) (c i64) {
             c-opt2 = 48 + d
             c-opt2: {
                 ok -> c = it
+
                 ->
             }
         }
@@ -244,6 +249,7 @@ noml-pool.add-child = (node-idx i64, child-idx i64, key str) {
         last = nd.last
     }: {
         err -> _
+
         -> _
     }
     last >= 0 -> {
@@ -251,6 +257,7 @@ noml-pool.add-child = (node-idx i64, child-idx i64, key str) {
             .en[last] ?= e
         }: {
             err -> _
+
             -> _
         }
     }
@@ -264,10 +271,12 @@ noml-pool.add-child = (node-idx i64, child-idx i64, key str) {
         c = nd.count
     }: {
         err -> _
+
         -> _
     }
     .nodes[node-idx].count = c + 1: {
         ok -> it
+
         ->
     }
 }
@@ -285,11 +294,13 @@ noml-pool.has-key = (obj-idx i64, key str) (found bool) {
         e = nd.first
     }: {
         err -> _
+
         -> _
     }
     (e >= 0) {
         ekv = .ek[e]: {
             ok -> it
+
             -> ''
         }
         ekv.eq-full(key) -> {
@@ -319,6 +330,7 @@ noml-pool.skip-trivia = (s str, pos i64) (p i64) {
                     p-opt = p + 1
                     p-opt: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -330,6 +342,7 @@ noml-pool.skip-trivia = (s str, pos i64) (p i64) {
                         p-opt2 = p + 1
                         p-opt2: {
                             ok -> p = it
+
                             ->
                         }
                     }
@@ -357,6 +370,7 @@ noml-pool.skip-blanks = (s str, pos i64) (p i64) {
                     p-opt3 = p + 1
                     p-opt3: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -385,6 +399,7 @@ noml-pool.at-line-start = (s str, pos i64) (yes bool) {
                     i-opt = i - 1
                     i-opt: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -415,6 +430,7 @@ noml-pool.line-of = (s str, pos i64) (line i64) {
                 line-opt = line + 1
                 line-opt: {
                     ok -> line = it
+
                     ->
                 }
             }
@@ -450,6 +466,7 @@ noml-pool.scan-quote = (s str, pos i64) (next i64) {
                     p-opt4 = p + 2
                     p-opt4: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -460,6 +477,7 @@ noml-pool.scan-quote = (s str, pos i64) (next i64) {
                     next-opt = p + 1
                     next-opt: {
                         ok -> next = it
+
                         ->
                     }
                 }
@@ -473,6 +491,7 @@ noml-pool.scan-quote = (s str, pos i64) (next i64) {
                     p-opt5 = p + 1
                     p-opt5: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -496,6 +515,7 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
         p-opt6 = p + 1
         p-opt6: {
             ok -> p = it
+
             ->
         }
     }
@@ -512,6 +532,7 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
                                 j-opt = j + 1
                                 j-opt: {
                                     ok -> j = it
+
                                     ->
                                 }
                             }
@@ -525,6 +546,7 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
                         next-opt2 = j + 1
                         next-opt2: {
                             ok -> next = it
+
                             ->
                         }
                     }
@@ -534,6 +556,7 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
                     p-opt7 = p + 1
                     p-opt7: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -544,6 +567,7 @@ noml-pool.scan-raw = (s str, pos i64) (next i64) {
                     p-opt8 = p + 1
                     p-opt8: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -583,6 +607,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                     depth-opt = depth + 1
                     depth-opt: {
                         ok -> depth = it
+
                         ->
                     }
                 }
@@ -590,6 +615,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                     p-opt9 = p + 1
                     p-opt9: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -601,6 +627,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                         depth-opt2 = depth - 1
                         depth-opt2: {
                             ok -> depth = it
+
                             ->
                         }
                     }
@@ -609,6 +636,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                     p-opt10 = p + 1
                     p-opt10: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -620,6 +648,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                         next-opt3 = p + 1
                         next-opt3: {
                             ok -> next = it
+
                             ->
                         }
                     }
@@ -629,6 +658,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                     depth-opt3 = depth - 1
                     depth-opt3: {
                         ok -> depth = it
+
                         ->
                     }
                 }
@@ -636,6 +666,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                     p-opt11 = p + 1
                     p-opt11: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -646,6 +677,7 @@ noml-pool.scan-ann = (s str, pos i64) (next i64) {
                     p-opt12 = p + 1
                     p-opt12: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -711,6 +743,7 @@ noml-pool.parse = (s str) (idx i64, ok bool) {
     }
     ann.len-bytes() > 0 -> .anns[idx]: {
         ok -> it = ann
+
         -> _
     }
     q = .skip-blanks(s, np)
@@ -725,6 +758,7 @@ noml-pool.parse = (s str) (idx i64, ok bool) {
             .anns[idx] ?= .join-ann(av, s.slice-bytes(q + 2, np2 - 1))
         }: {
             err -> _
+
             -> _
         }
         q = .skip-blanks(s, np2)
@@ -823,6 +857,7 @@ noml-pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
                 next-opt4 = p + 1
                 next-opt4: {
                     ok -> next = it
+
                     ->
                 }
             }
@@ -882,6 +917,7 @@ noml-pool.parse-object = (s str, pos i64) (idx i64, next i64, ok bool) {
         }
         ann.len-bytes() > 0 -> .anns[child]: {
             ok -> it = ann
+
             -> _
         }
         p, eok = .require-end(s, p, key)
@@ -921,6 +957,7 @@ noml-pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
                 next-opt5 = p + 1
                 next-opt5: {
                     ok -> next = it
+
                     ->
                 }
             }
@@ -942,6 +979,7 @@ noml-pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
                     p-opt13 = p + 1
                     p-opt13: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -952,6 +990,7 @@ noml-pool.parse-array = (s str, pos i64) (idx i64, next i64, ok bool) {
                     next-opt6 = p + 1
                     next-opt6: {
                         ok -> next = it
+
                         ->
                     }
                 }
@@ -988,6 +1027,7 @@ noml-pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
                     pos-opt = pos + 1
                     pos-opt: {
                         ok -> pos = it
+
                         ->
                     }
                 }
@@ -998,6 +1038,7 @@ noml-pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
                     next-opt7 = pos + 1
                     next-opt7: {
                         ok -> next = it
+
                         ->
                     }
                 }
@@ -1017,6 +1058,7 @@ noml-pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
                         pos-opt2 = pos + 1
                         pos-opt2: {
                             ok -> pos = it
+
                             ->
                         }
                     }
@@ -1026,6 +1068,7 @@ noml-pool.require-end = (s str, pos i64, key str) (next i64, ok bool) {
                         next-opt8 = pos + 1
                         next-opt8: {
                             ok -> next = it
+
                             ->
                         }
                     }
@@ -1075,6 +1118,7 @@ noml-pool.parse-key = (s str, pos i64) (key str, next i64, ok bool) {
             p-opt14 = p + 1
             p-opt14: {
                 ok -> p = it
+
                 ->
             }
         }
@@ -1114,6 +1158,7 @@ noml-pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
                     next-opt9 = p + 1
                     next-opt9: {
                         ok -> next = it
+
                         ->
                     }
                 }
@@ -1142,6 +1187,7 @@ noml-pool.parse-str = (s str, pos i64) (val str, next i64, ok bool) {
                     p-opt15 = p + 1
                     p-opt15: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -1172,6 +1218,7 @@ noml-pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
         next-opt10 = pos + 2
         next-opt10: {
             ok -> next = it
+
             ->
         }
     }
@@ -1200,6 +1247,7 @@ noml-pool.decode-escape = (s str, pos i64) (val str, next i64, ok bool) {
                 next-opt11 = pos + 6
                 next-opt11: {
                     ok -> next = it
+
                     ->
                 }
             }
@@ -1232,6 +1280,7 @@ noml-pool.hex4 = (s str, pos i64) (code i64) {
             v-opt = v * 16 + d
             v-opt: {
                 ok -> v = it
+
                 ->
             }
         }
@@ -1266,6 +1315,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                 p-opt16 = p + 2
                 p-opt16: {
                     ok -> p = it
+
                     ->
                 }
             }
@@ -1276,6 +1326,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                 p-opt17 = p + 1
                 p-opt17: {
                     ok -> p = it
+
                     ->
                 }
             }
@@ -1304,6 +1355,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                         j-opt2 = j + 1
                         j-opt2: {
                             ok -> j = it
+
                             ->
                         }
                     }
@@ -1313,6 +1365,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                         next-opt12 = j + 1
                         next-opt12: {
                             ok -> next = it
+
                             ->
                         }
                     }
@@ -1329,6 +1382,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                     k-opt = k + 1
                     k-opt: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1336,6 +1390,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                     p-opt18 = p + 1
                     p-opt18: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -1347,6 +1402,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                     p-opt19 = p + 1
                     p-opt19: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -1362,6 +1418,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                     k-opt2 = k + 1
                     k-opt2: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1369,6 +1426,7 @@ noml-pool.parse-raw = (s str, pos i64) (val str, next i64, ok bool) {
                     p-opt20 = p + 1
                     p-opt20: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -1401,6 +1459,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             i-opt2 = i + 1
             i-opt2: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1418,6 +1477,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             digits-opt = digits + 1
             digits-opt: {
                 ok -> digits = it
+
                 ->
             }
         }
@@ -1425,6 +1485,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             i-opt3 = i + 1
             i-opt3: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1438,6 +1499,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             i-opt4 = i + 1
             i-opt4: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1457,6 +1519,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
                 fd-opt = fd + 1
                 fd-opt: {
                     ok -> fd = it
+
                     ->
                 }
             }
@@ -1464,6 +1527,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
                 i-opt5 = i + 1
                 i-opt5: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1478,6 +1542,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
             i-opt6 = i + 1
             i-opt6: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1488,6 +1553,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
                 i-opt7 = i + 1
                 i-opt7: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1506,6 +1572,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
                 ev-opt = ev * 10 + (c - 48)
                 ev-opt: {
                     ok -> ev = it
+
                     ->
                 }
             }
@@ -1513,6 +1580,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
                 ed-opt = ed + 1
                 ed-opt: {
                     ok -> ed = it
+
                     ->
                 }
             }
@@ -1520,6 +1588,7 @@ noml-pool.parse-num = (s str, pos i64) (val f64, next i64, ok bool) {
                 i-opt8 = i + 1
                 i-opt8: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -1608,6 +1677,7 @@ noml-pool.parse-str-node = (s str, pos i64) (idx i64, next i64, ok bool) {
         .strs[idx] ?= v
     }: {
         err -> _
+
         -> _
     }
 }
@@ -1631,6 +1701,7 @@ noml-pool.parse-raw-node = (s str, pos i64) (idx i64, next i64, ok bool) {
         .strs[idx] ?= v
     }: {
         err -> _
+
         -> _
     }
 }
@@ -1747,6 +1818,7 @@ noml-pool.raw-safe = (s str) (yes bool) {
                             j-opt3 = j + 1
                             j-opt3: {
                                 ok -> j = it
+
                                 ->
                             }
                         }
@@ -1764,6 +1836,7 @@ noml-pool.raw-safe = (s str) (yes bool) {
             i-opt9 = i + 1
             i-opt9: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1789,6 +1862,7 @@ noml-pool.quote = (s str) (out str) {
         k-opt3 = k + 1
         k-opt3: {
             ok -> k = it
+
             ->
         }
     }
@@ -1810,6 +1884,7 @@ noml-pool.quote = (s str) (out str) {
                     k-opt4 = k + 2
                     k-opt4: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1830,6 +1905,7 @@ noml-pool.quote = (s str) (out str) {
                     k-opt5 = k + 2
                     k-opt5: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1850,6 +1926,7 @@ noml-pool.quote = (s str) (out str) {
                     k-opt6 = k + 2
                     k-opt6: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1870,6 +1947,7 @@ noml-pool.quote = (s str) (out str) {
                     k-opt7 = k + 2
                     k-opt7: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1890,6 +1968,7 @@ noml-pool.quote = (s str) (out str) {
                     k-opt8 = k + 2
                     k-opt8: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1936,6 +2015,7 @@ noml-pool.quote = (s str) (out str) {
                     k-opt9 = k + 6
                     k-opt9: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1951,6 +2031,7 @@ noml-pool.quote = (s str) (out str) {
                     k-opt10 = k + 1
                     k-opt10: {
                         ok -> k = it
+
                         ->
                     }
                 }
@@ -1966,6 +2047,7 @@ noml-pool.quote = (s str) (out str) {
         k-opt11 = k + 1
         k-opt11: {
             ok -> k = it
+
             ->
         }
     }
@@ -2024,6 +2106,7 @@ noml-pool.stringify = (idx i64, indent i64) (out str) {
         k = nd.kind
     }: {
         err -> _
+
         -> _
     }
     {
@@ -2043,6 +2126,7 @@ noml-pool.stringify = (idx i64, indent i64) (out str) {
         k == NOML-KIND-STR -> {
             sv = .strs[idx]: {
                 ok -> it
+
                 -> ''
             }
             out = .quote-value(sv)
@@ -2070,6 +2154,7 @@ noml-pool.stringify-obj = (idx i64, indent i64) (out str) {
         e = nd.first
     }: {
         err -> _
+
         -> _
     }
     e < 0 -> return
@@ -2078,20 +2163,24 @@ noml-pool.stringify-obj = (idx i64, indent i64) (out str) {
     (e >= 0) {
         c = .ec[e]: {
             ok -> it
+
             -> -1
         }
         a = .anns[c]: {
             ok -> it
+
             -> ''
         }
         a.len-bytes() > 0 -> out = out - pad - '#{' - a - '}\n'
         kk = .ek[e]: {
             ok -> it
+
             -> ''
         }
         out = out - pad - .fmt-key(kk) - ': ' - .stringify(c, indent + 1) - '\n'
         e = .en[e]: {
             ok -> it
+
             -> -1
         }
     }
@@ -2112,6 +2201,7 @@ noml-pool.stringify-arr = (idx i64, indent i64) (out str) {
         e = nd.first
     }: {
         err -> _
+
         -> _
     }
     e < 0 -> return
@@ -2120,11 +2210,13 @@ noml-pool.stringify-arr = (idx i64, indent i64) (out str) {
     (e >= 0) {
         c = .ec[e]: {
             ok -> it
+
             -> -1
         }
         out = out - pad - .stringify(c, indent + 1) - ',\n'
         e = .en[e]: {
             ok -> it
+
             -> -1
         }
     }
@@ -2148,6 +2240,7 @@ noml-pool.kind = (idx i64) (k i64) {
         k = nd.kind
     }: {
         err -> _
+
         -> _
     }
 }
@@ -2214,6 +2307,7 @@ noml-pool.len = (idx i64) (n i64) {
         n = nd.count
     }: {
         err -> _
+
         -> _
     }
 }
@@ -2232,6 +2326,7 @@ noml-pool.get = (idx i64, key str) (child ?i64) {
         nd ?= .nodes[idx]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-OBJ -> return
@@ -2239,6 +2334,7 @@ noml-pool.get = (idx i64, key str) (child ?i64) {
     (e >= 0) {
         ekv = .ek[e]: {
             ok -> it
+
             -> ''
         }
         ekv.eq-full(key) -> {
@@ -2264,6 +2360,7 @@ noml-pool.at = (idx i64, i i64) (child ?i64) {
         nd ?= .nodes[idx]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-ARR -> return
@@ -2294,6 +2391,7 @@ noml-pool.key = (idx i64, i i64) (key ?str) {
         nd ?= .nodes[idx]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-OBJ -> return
@@ -2322,6 +2420,7 @@ noml-pool.val-str = (idx i64) (v ?str) {
         nd ?= .nodes[idx]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-STR -> return
@@ -2341,6 +2440,7 @@ noml-pool.val-num = (idx i64) (v ?f64) {
         nd ?= .nodes[idx]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-NUM -> return
@@ -2374,6 +2474,7 @@ noml-pool.val-bool = (idx i64) (v ?bool) {
         nd ?= .nodes[idx]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-BOOL -> return
@@ -2479,6 +2580,7 @@ noml-pool.set-ann = (idx i64, text str) (ok bool) {
         .anns[idx] ?= text
     }: {
         err -> _
+
         -> _
     }
     ok = true
@@ -2588,6 +2690,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                     depth-opt4 = depth + 1
                     depth-opt4: {
                         ok -> depth = it
+
                         ->
                     }
                 }
@@ -2595,6 +2698,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                     p-opt21 = p + 1
                     p-opt21: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -2609,6 +2713,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                     depth-opt5 = depth - 1
                     depth-opt5: {
                         ok -> depth = it
+
                         ->
                     }
                 }
@@ -2616,6 +2721,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                     p-opt22 = p + 1
                     p-opt22: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -2627,6 +2733,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                         next-opt13 = p + 1
                         next-opt13: {
                             ok -> next = it
+
                             ->
                         }
                     }
@@ -2636,6 +2743,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                     p-opt23 = p + 1
                     p-opt23: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -2646,6 +2754,7 @@ noml-pool.skip-ann-value = (body str, pos i64) (next i64) {
                     p-opt24 = p + 1
                     p-opt24: {
                         ok -> p = it
+
                         ->
                     }
                 }
@@ -2687,7 +2796,6 @@ parse = (s str) (result ?noml-doc) {
         result = err('noml: empty input')
         return
     }
-    d noml-doc
     d = new()
     root, ok = d.pool.parse(s)
     ok == false -> {
@@ -2894,11 +3002,13 @@ noml-doc.stringify = () (out str) {
     {
         a = .pool.anns[r]: {
             ok -> it
+
             -> ''
         }
         a.len-bytes() > 0 -> out = '#{' - a - '}\n'
     }: {
         err -> _
+
         -> _
     }
     out = out - .pool.stringify(r, 0)
@@ -2942,6 +3052,7 @@ noml-doc.new-str = (v str) (idx i64) {
         .pool.strs[idx] ?= v
     }: {
         err -> _
+
         -> _
     }
 }
@@ -2988,6 +3099,7 @@ noml-doc.put = (obj i64, key str, child i64) (ok bool) {
         nd ?= .pool.nodes[obj]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-OBJ -> return
@@ -3009,6 +3121,7 @@ noml-doc.push = (arr i64, child i64) (ok bool) {
         nd ?= .pool.nodes[arr]
     }: {
         err -> _
+
         -> _
     }
     nd.kind != NOML-KIND-ARR -> return

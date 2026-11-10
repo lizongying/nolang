@@ -1,0 +1,128 @@
+; unwrap-value-match.no — `?=` 右值為值位 match 的語意
+;
+; 執行：no test test/std/unwrap-value-match.no
+;
+; 值位 match 的臂自己就處理了 nil/err（`-> 0` 兜底），整體產出一個裸 T，
+; `?=` 在右側找不到可解包的 option。此時 `?=` 只剩「把 match 的結果當 option
+; 值賦給目標」一層意思：目標維持 option 型別 `?T`，賦值點做隱式 ok() 包裝。
+;
+;   v ?= data[2]: { ok -> it  -> 0 }   ; == v ?byte = data[2]: { … }
+;
+; 修復前它落到通用解包路徑：合成的 `__unwrap_N` 沒有型別標註 ⇒ MIR 取不到
+; option payload ⇒ 目標恆 0。src/std/net/dns.no 的 `flags-hi` 正是此形態，
+; rcode 判定因此全走錯分支（同檔的 `flags-lo = data[3]: {…}` 普通賦值則正常）。
+;
+; 本檔同時釘住：① 目標確實是 option（三態 match 的 ok/nil/err 都能分辨）；
+; ② 取出的 payload 正確；③ 兜底臂的結果也被 ok() 包裝；④ 函式沒有 ?T 結果
+; 參數時同樣可用（值位 match 不傳播，故不需要上拋目標）。
+
+# /test/runner
+
+; 索引主語：[]byte 元素 → 目標型別 ?byte
+t-index-subject = () {
+    data []byte = [10, 20, 30]
+    v ?= data[1]: {
+        ok -> it
+
+        -> 0
+    }
+    v: {
+        ok -> runner.eq(it.to-i64(), 20, 'index subject payload is 20')
+
+        nil -> runner.is-true(false, 'index subject must be ok, not nil')
+
+        err -> runner.is-true(false, 'index subject must be ok, not err')
+    }
+}
+
+; 越界：match 的兜底臂接住（7），結果再被 ok() 包裝 —— 不是 0，也不是 err
+t-index-oob = () {
+    data []byte = [10, 20, 30]
+    v ?= data[9]: {
+        ok -> it
+
+        -> 7
+    }
+    v: {
+        ok -> runner.eq(it.to-i64(), 7, 'oob falls to the default arm, wrapped in ok')
+
+        nil -> runner.is-true(false, 'oob default arm must not be nil')
+
+        err -> runner.is-true(false, 'oob default arm must not be err')
+    }
+}
+
+; IDENT 主語：?i64 變數 → 目標型別 ?i64
+t-ident-subject = () {
+    o ?i64 = ok(42)
+    v ?= o: {
+        ok -> it
+
+        -> 0
+    }
+    v: {
+        ok -> runner.eq(it, 42, 'ident subject payload is 42')
+
+        nil -> runner.is-true(false, 'ident subject must be ok, not nil')
+
+        err -> runner.is-true(false, 'ident subject must be ok, not err')
+    }
+}
+
+; nil 主語：走兜底臂（3），仍被包成 ok —— `?=` 不因為主語是 nil 就把目標變 nil
+;
+; 這正是「值位 match 已經處理完失敗」的語意：要不要傳播由臂決定，不由 `?=` 決定。
+t-ident-nil = () {
+    o ?i64 = nil
+    v ?= o: {
+        ok -> it
+
+        -> 3
+    }
+    v: {
+        ok -> runner.eq(it, 3, 'nil subject falls to the default arm, wrapped in ok')
+
+        nil -> runner.is-true(false, 'nil subject default arm must not be nil')
+
+        err -> runner.is-true(false, 'nil subject default arm must not be err')
+    }
+}
+
+; 有 ?T 结果參數的函式（src/std/net/dns.no 的真實形態）：過去不會報錯，而是
+; 靜默把目標寫成 0 —— rcode 判定因此全走錯分支。本條釘住「不再靜默歸零」。
+with-result = (n i64) (r ?i64) {
+    data []i64 = [10, 20, 30]
+    v ?= data[n]: {
+        ok -> it
+
+        -> 0
+    }
+    r = v
+}
+
+t-with-result-param = () {
+    r = with-result(1)
+    r: {
+        ok -> runner.eq(it, 20, 'with ?T result param: payload is 20, not 0')
+
+        nil -> runner.is-true(false, 'with ?T result param must be ok, not nil')
+
+        err -> runner.is-true(false, 'with ?T result param must be ok, not err')
+    }
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('index-subject', t-index-subject)
+p2, f2 = runner.test('index-oob', t-index-oob)
+p3, f3 = runner.test('ident-subject', t-ident-subject)
+p4, f4 = runner.test('ident-nil', t-ident-nil)
+p5, f5 = runner.test('with-result-param', t-with-result-param)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

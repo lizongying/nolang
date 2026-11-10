@@ -174,10 +174,12 @@ bn-sub = (a []byte, b []byte) (diff [32]byte, borrow i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     val-opt = val + 256
                     val-opt: {
                         ok -> val = it
+
                         ->
                     }
                 }
@@ -200,7 +202,6 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
     work [32]byte
     diff [32]byte
     i <- [0..32): {
-
         ixout195c24 = a[i]: {
             ok -> it
 
@@ -304,10 +305,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 val-opt2 = pv2 + carry
                 val-opt2: {
                     ok -> val = it
+
                     ->
                 }
             }
@@ -371,10 +374,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             bit-opt = bit - 1
             bit-opt: {
                 ok -> bit = it
+
                 ->
             }
         }
@@ -457,10 +462,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                     #{overflow=wrap}
                     {
+
                         #{overflow=wrap}
                         val-opt3 = wv - pi - borrow
                         val-opt3: {
                             ok -> val = it
+
                             ->
                         }
                     }
@@ -469,10 +476,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                             #{overflow=wrap}
                             {
+
                                 #{overflow=wrap}
                                 val-opt4 = val + 256
                                 val-opt4: {
                                     ok -> val = it
+
                                     ->
                                 }
                             }
@@ -555,10 +564,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                             #{overflow=wrap}
                             {
+
                                 #{overflow=wrap}
                                 val-opt5 = val + 256
                                 val-opt5: {
                                     ok -> val = it
+
                                     ->
                                 }
                             }
@@ -578,6 +589,7 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                         idx-opt = pos + 32
                         idx-opt: {
                             ok -> idx = it
+
                             ->
                         }
                     }
@@ -590,10 +602,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                         #{overflow=wrap}
                         {
+
                             #{overflow=wrap}
                             val-opt6 = wv - borrow
                             val-opt6: {
                                 ok -> val = it
+
                                 ->
                             }
                         }
@@ -602,10 +616,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                                 #{overflow=wrap}
                                 {
+
                                     #{overflow=wrap}
                                     val-opt7 = val + 256
                                     val-opt7: {
                                         ok -> val = it
+
                                         ->
                                     }
                                 }
@@ -622,10 +638,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                         #{overflow=wrap}
                         {
+
                             #{overflow=wrap}
                             idx-opt2 = idx + 1
                             idx-opt2: {
                                 ok -> idx = it
+
                                 ->
                             }
                         }
@@ -638,10 +656,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 corr-opt = corr + 1
                 corr-opt: {
                     ok -> corr = it
+
                     ->
                 }
             }
@@ -649,10 +669,12 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt = pos - 1
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -706,10 +728,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             shift-byte-opt = shift-byte - 1
             shift-byte-opt: {
                 ok -> shift-byte = it
+
                 ->
             }
         }
@@ -782,10 +806,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                                 #{overflow=wrap}
                                 {
+
                                     #{overflow=wrap}
                                     val-opt8 = val + 256
                                     val-opt8: {
                                         ok -> val = it
+
                                         ->
                                     }
                                 }
@@ -812,10 +838,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                             #{overflow=wrap}
                             {
+
                                 #{overflow=wrap}
                                 val-opt9 = av - borrow
                                 val-opt9: {
                                     ok -> val = it
+
                                     ->
                                 }
                             }
@@ -824,10 +852,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                                     #{overflow=wrap}
                                     {
+
                                         #{overflow=wrap}
                                         val-opt10 = val + 256
                                         val-opt10: {
                                             ok -> val = it
+
                                             ->
                                         }
                                     }
@@ -855,6 +885,7 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
                     idx-opt3 = shift-byte + 32
                     idx-opt3: {
                         ok -> idx = it
+
                         ->
                     }
                 }
@@ -867,10 +898,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                     #{overflow=wrap}
                     {
+
                         #{overflow=wrap}
                         val-opt11 = av - borrow
                         val-opt11: {
                             ok -> val = it
+
                             ->
                         }
                     }
@@ -879,10 +912,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                             #{overflow=wrap}
                             {
+
                                 #{overflow=wrap}
                                 val-opt12 = val + 256
                                 val-opt12: {
                                     ok -> val = it
+
                                     ->
                                 }
                             }
@@ -899,10 +934,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
                     #{overflow=wrap}
                     {
+
                         #{overflow=wrap}
                         idx-opt4 = idx + 1
                         idx-opt4: {
                             ok -> idx = it
+
                             ->
                         }
                     }
@@ -911,10 +948,12 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 shift-byte-opt2 = shift-byte + 1
                 shift-byte-opt2: {
                     ok -> shift-byte = it
+
                     ->
                 }
             }
@@ -1031,7 +1070,6 @@ ec-point-double = (p []byte) (r []byte) {
     ; 如果 Y == 0，返回無窮遠點
     is-zero = 1
     i <- [0..32): {
-
         ixout858c10 = p[32 + i]: {
             ok -> it
 
@@ -1159,7 +1197,6 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     }
     p-inf == 1 -> {
         i <- [0..96): {
-
             ixout971c28 = q[i]: {
                 ok -> it
 
@@ -1190,7 +1227,6 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     }
     q-inf == 1 -> {
         i <- [0..96): {
-
             ixout991c28 = p[i]: {
                 ok -> it
 
@@ -1364,7 +1400,6 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         tmp []byte
         tmp = ec-point-double(r)
         i <- [0..96): {
-
             ixout1147c20 = tmp[i]: {
                 ok -> it
 
@@ -1387,7 +1422,6 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         (ixout1174c11 >> bit-idx) & 1 == 1 -> {
             tmp = ec-point-add(r, p)
             i <- [0..96): {
-
                 ixout1159c24 = tmp[i]: {
                     ok -> it
 
@@ -1400,10 +1434,12 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             bit-opt2 = bit - 1
             bit-opt2: {
                 ok -> bit = it
+
                 ->
             }
         }
@@ -1718,7 +1754,6 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     k [32]byte
     state = 0
     i <- [0..32): {
-
         ixout1493c44 = d[i]: {
             ok -> it
 

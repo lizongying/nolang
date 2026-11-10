@@ -87,7 +87,6 @@ ED-L [32]byte = [
 ; [set-coord](#ed25519.set-coord)
 set-coord = (p []i64, off i64, src []i64) {
     i <- [0..10): {
-
         ixout88c24 = src[i]: {
             ok -> it
 
@@ -109,7 +108,6 @@ set-coord = (p []i64, off i64, src []i64) {
 ; [pcopy](#ed25519.pcopy)
 pcopy = (dst []i64, src []i64) {
     i <- [0..40): {
-
         ixout104c24 = src[i]: {
             ok -> it
 
@@ -230,10 +228,12 @@ ge-scalar-mult = (r []i64, scalar []byte, p []i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             t-opt = t - 1
             t-opt: {
                 ok -> t = it
+
                 ->
             }
         }
@@ -299,10 +299,12 @@ fe-pow = (base []i64, e [32]byte) (out []i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             t-opt2 = t - 1
             t-opt2: {
                 ok -> t = it
+
                 ->
             }
         }
@@ -448,10 +450,12 @@ sc-ge-l = (acc []i64) (ge i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i - 1
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -472,7 +476,6 @@ sc-reduce = (s []byte) (out [32]byte) {
     #{overflow=wrap}
     i = nb - 1
     (i >= 0) {
-
         ixout404c16 = s[i / 8]: {
             ok -> it
 
@@ -537,10 +540,12 @@ sc-reduce = (s []byte) (out [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt2 = i - 1
             i-opt2: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -612,7 +617,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
         #{overflow=wrap}
         k = i + 32
         (k < 64 && carry != 0) {
-
             ixout500c17 = prod[k]: {
                 ok -> it
 
@@ -638,7 +642,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     ; 加上 c
     carry = 0
     i <- [0..32): {
-
         ixout520c13 = prod[i]: {
             ok -> it
 
@@ -667,7 +670,6 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     }
     i = 32
     (i < 64 && carry != 0) {
-
         ixout534c13 = prod[i]: {
             ok -> it
 
@@ -687,10 +689,12 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt3 = i + 1
             i-opt3: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -846,7 +850,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
         }
     }
     i <- [0..msg-len): {
-
         ixout666c24 = msg[i]: {
             ok -> it
 
@@ -900,7 +903,6 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
         }
     }
     i <- [0..msg-len): {
-
         ixout714c24 = msg[i]: {
             ok -> it
 
@@ -1007,10 +1009,12 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt4 = i - 1
             i-opt4: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1054,7 +1058,6 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         }
     }
     i <- [0..msg-len): {
-
         ixout837c24 = msg[i]: {
             ok -> it
 

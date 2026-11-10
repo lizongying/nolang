@@ -75,10 +75,84 @@ t-decompress-empty = () {
     runner.eq(out.len(), 0, 'empty input -> empty output')
 }
 
+; ── 位元讀取器（MSB-first）─────────────────────────────────────────
+; bzip2 的位元流是高位在前的
+t-bit-reader = () {
+    br = bz-bit-reader{}
+    br.data = [0xB5]
+    br.pos = 0
+    br.bit-buf = 0
+    br.bit-cnt = 0
+
+    b0 = br.read-bit()
+    b1 = br.read-bit()
+    b2 = br.read-bit()
+    b3 = br.read-bit()
+    runner.eq(b0, 1, '0xB5 = 1011_0101，MSB first：bit0 = 1')
+    runner.eq(b1, 0, 'bit1 = 0')
+    runner.eq(b2, 1, 'bit2 = 1')
+    runner.eq(b3, 1, 'bit3 = 1')
+
+    v = br.read-bits(4)
+    runner.eq(v, 5, 'read-bits(4) 續讀 0101 = 5')
+
+    z = br.read-bit()
+    runner.eq(z, 0, '資料耗盡時 read-bit 回 0')
+}
+
+; ── Huffman 碼表建構 / 解碼 ─────────────────────────────────────────
+; 兩符號、長度各 1 → 規範碼 0 與 1
+t-huffman = () {
+    lens []i64 = [1, 1]
+    h = bz-huffman{}
+    h.build(lens, 2)
+
+    runner.eq(h.min-len, 1, 'min-len = 1')
+    runner.eq(h.max-len, 1, 'max-len = 1')
+
+    r0 = bz-bit-reader{}
+    r0.data = [0x00]
+    r0.pos = 0
+    r0.bit-buf = 0
+    r0.bit-cnt = 0
+    s0 = h.decode(r0)
+    runner.eq(s0, 0, '首位元 0 解出符號 0')
+
+    r1 = bz-bit-reader{}
+    r1.data = [0x80]
+    r1.pos = 0
+    r1.bit-buf = 0
+    r1.bit-cnt = 0
+    s1 = h.decode(r1)
+    runner.eq(s1, 1, '首位元 1 解出符號 1')
+
+    r2 = bz-bit-reader{}
+    r2.data = [0x80]
+    r2.pos = 0
+    r2.bit-buf = 0
+    r2.bit-cnt = 0
+    s2 = h.decode-symbol(r2)
+    runner.eq(s2, 1, 'decode-symbol 首位元 1 解出符號 1')
+}
+
+; ── 壓縮端：目前只產出合法 BZh 前綴 ─────────────────────────────────
+; 已知缺陷（test/README.md §5.2 #14）：區塊資料（BWT/MTF/Huffman）尚未實作，
+; 產出僅 24 位元組且會讓本模組的解壓端卡住等資料；此處只驗魔數。
+t-compress-prefix = () {
+    src = 'hello hello hello world'.to-bytes()
+    z = bzip2.bzip2-compress(src)
+
+    head = z.slice(0, 4)
+    runner.str-eq(head.to-hex(), '425A6839', 8, 'BZh9 魔數（block-size 9 = 900k）')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('bzip2.decompress golden stream', t-decompress-golden)
 p2, f2 = runner.test('bzip2.decompress empty input', t-decompress-empty)
+p3, f3 = runner.test('bzip2.bit-reader', t-bit-reader)
+p4, f4 = runner.test('bzip2.huffman', t-huffman)
+p5, f5 = runner.test('bzip2.compress prefix', t-compress-prefix)
 
 total = runner.summary()
 f = runner.failed-count()

@@ -1426,7 +1426,21 @@ func (c *hirConv) lowerUnwrapAssignToHIR(uas *UnwrapAssignStatement, line, col i
 		curFuncName:        c.curFunc,
 		resultNameOverride: c.curResultName,
 	}
-	stmt := l.lowerUnwrapAssign(uas)
+	// C6（H0 不動 AST）：lowerUnwrapAssign 開頭就以
+	// `l.walk(reflect.ValueOf(&uas.Value))` 就地展開右值裡的 SurfaceMatch
+	// （walk 路徑本就以就地改寫為前提）。H0 只是「借」它產出 HIR，原樹必須
+	// 保持糖形態——否則 `?=` 右值的 match 會被換成降糖的 IfExpression，而
+	// no fmt 的 CLI 路徑（checker.BuildTHIRView → FormatProgramWithOverflow
+	// 共用同一棵樹）會把手臂條件印回主語位置：
+	//
+	//	flags-hi ?= data[2]: { ok -> it  -> 0 }        ← 原文
+	//	flags-hi ?= {: { __match_subj_512_26 == ok: … } }  ← 被寫壞
+	//
+	// 輸出不可再解析（`IDENT: { … }` 是標籤＋區塊，不是 match），
+	// src/std/net/dns.no 因此整檔 fmt 失敗。副本只需護住本節點自己的欄位，
+	// 而 Value 正是 walk 唯一寫入的那一格。
+	local := *uas
+	stmt := l.lowerUnwrapAssign(&local)
 	c.h0Diags = append(c.h0Diags, sp.diags...)
 	if stmt == nil {
 		return hir.NoID

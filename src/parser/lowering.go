@@ -551,6 +551,10 @@ func (l *lowerer) walk(v reflect.Value) {
 					// 位元／移位運算的結果是 plain 整數，但仍是後續算術的「型別來源」：
 					// `c = a & 255` 之後 `rem-opt = c % 10` 需要知道 c 是 i64。
 					l.inferBitwiseResult(ls)
+					// 純別名綁定（`label-len = len-byte`）也要登記型別：它是
+					// 型別鏈的一環，缺了會讓後續混合算術推不出 option（見
+					// inferAliasType 註解）。
+					l.inferAliasType(ls)
 				}
 				// 捕獲賦值：`a = b + c / d` 之類「普通 `=` 綁定含可錯源的運算式」
 				// 就地改寫為捕獲（a 推斷為 ?T，nil/err 存進 a，流程繼續）。
@@ -1224,6 +1228,21 @@ func (l *lowerer) inferOptionArith(s *LetStatement) bool {
 	lt, okLT := l.optionAwareOperandType(inf.Left)
 	rt, okRT := l.optionAwareOperandType(inf.Right)
 	if !okLT || !okRT {
+		// 混合型別：`pos i64 + len-byte byte`。無符號窄整數（byte / u8..u32）
+		// 單獨算術靜默回繞，但與有號整數混合時提升到有號側型別，溢出仍回 err
+		// ⇒ 整體是 option 算術。
+		//
+		// 缺這條時 `pos-opt14 = pos + label-len` 不發 ?i64 ⇒ 主語無型別 ⇒
+		// `pos-opt14: { ok -> pos = it  -> }` 的 ok 臂退化成 `slot == 0`、
+		// 永不命中 ⇒ pos 不前進，src/std/net/dns.no 的 parse-name 只解出
+		// 第一個標籤並以 next-pos=-1 結束（test/std/dns.no 的 parse-name 三條）。
+		if okLT && l.unsignedNarrowIntOperand(inf.Right) {
+			rt, okRT = lt, true
+		} else if okRT && l.unsignedNarrowIntOperand(inf.Left) {
+			lt, okLT = rt, true
+		}
+	}
+	if !okLT || !okRT {
 		return false
 	}
 	base := lt
@@ -1299,6 +1318,74 @@ func (l *lowerer) optionAwareOperandType(e Expression) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// inferAliasType 把「純別名綁定」的靜態型別複製給目標：`label-len = len-byte`。
+//
+// 這類 let 的 RHS 既不是算術（inferOptionArith 不認）、也不是值位 match
+// （inferValueMatchResult 不認）、更不是位元運算，於是語義副表裡沒有目標的型別。
+// 單看這條陳述不會出事，但它會**掐斷型別鏈**：後續 `pos + label-len` 的右運算元
+// 推不出型別 ⇒ inferOptionArith 放棄 ⇒ `pos-opt14` 不發 `?i64` ⇒ 主語無型別 ⇒
+// `pos-opt14: { ok -> pos = it  -> }` 的 ok 臂退化成 `slot == 0`、永不命中。
+//
+// src/std/net/dns.no 的 parse-name 正是這樣：`label-len = len-byte`（len-byte 是
+// `data[pos]` 解出的 byte）之後 pos 永不前進，只解出第一個標籤並以 next-pos=-1
+// 結束（test/std/dns.no 的 parse-name 三條断言）。
+//
+// 只處理別名形態（RHS 為識別字／欄位／呼叫），且不登記 option 型別：
+// option 別名會把 nil 傳播語意攪進來，那是 captureTargetAllowsOption 的職責。
+func (l *lowerer) inferAliasType(s *LetStatement) {
+	if s == nil || s.IsSynthetic || s.Name == nil || s.Value == nil || s.Type != nil {
+		return
+	}
+	switch unwrapLowerExpr(s.Value).(type) {
+	case *Identifier, *DotExpression, *CallExpression:
+	default:
+		return
+	}
+	typ := l.operandPlainType(s.Value)
+	if typ == "" || ty.IsOptionRaw(typ) {
+		return
+	}
+	l.publishInferredType(s, typ)
+}
+
+// operandPlainType 回報 e 的靜態型別名（可能帶 option 前綴，由呼叫方判定）；
+// 推不出時回 ""。與 signedIntOperandType 的分工：這支不篩有號整數，純粹是
+// 「這個運算元在語義副表／宣告裡登記成什麼型別」。
+func (l *lowerer) operandPlainType(e Expression) string {
+	switch x := unwrapLowerExpr(e).(type) {
+	case *IntegerLiteral:
+		return "i64"
+	case *FloatLiteral:
+		return "f64"
+	case *StringLiteral:
+		return "str"
+	case *BooleanLiteral:
+		return "bool"
+	case *CharLiteral:
+		return "char"
+	case *Identifier:
+		// `it` / `_` 不是真實變數：降糖後每個 match 臂的 `it` 共用同一個函式內
+		// 名字槽，副表裡存的是最後（或最先）寫進去的那個臂的載荷型別，跨臂
+		// 不可信。拿它當型別來源會把錯型別大幅傳播 —— `pos = it`（`?i64` 的載荷）
+		// 若抄到某個 byte 載荷的 `it`，`pos` 就變 byte，`end-pos = -1` 存進 u8
+		// 回繞成 255，`next-pos` 也是 byte ⇒ dns 的畸形封包回 255 而非 -1。
+		if x.Value == "self" || x.Value == "." || x.Value == "it" || x.Value == "_" {
+			return ""
+		}
+		if l.p.sem != nil {
+			if t, ok := l.p.sem.FuncVarType(l.curFuncName, x.Value); ok && t != "" {
+				return t
+			}
+		}
+		return l.p.astLocalVarType(l.curFuncName, x.Value)
+	case *DotExpression:
+		return l.p.astFieldAccessType(l.curFuncName, x)
+	case *CallExpression:
+		return l.p.returnTypeFromCallExpr(x)
+	}
+	return ""
 }
 
 // inferValueMatchResult 把「值位 option match 的結果」登記為 plain payload 型別。
@@ -2218,6 +2305,15 @@ func (l *lowerer) signedIntOperandType(e Expression) (string, bool) {
 		lt, okLT := l.signedIntOperandType(x.Left)
 		rt, okRT := l.signedIntOperandType(x.Right)
 		if !okLT || !okRT {
+			// 巢狀運算元裡的混合型別（`(base + off) * n` 其中 off 是 byte）：
+			// 與 inferOptionArith 同一口徑 —— 無符號窄整數提升到有號側。
+			if okLT && l.unsignedNarrowIntOperand(x.Right) {
+				rt, okRT = lt, true
+			} else if okRT && l.unsignedNarrowIntOperand(x.Left) {
+				lt, okLT = rt, true
+			}
+		}
+		if !okLT || !okRT {
 			return "", false
 		}
 		if len(rt) > len(lt) {
@@ -2322,6 +2418,53 @@ func lowerSignedIntName(typ string) (string, bool) {
 		return typ, true
 	}
 	return "", false
+}
+
+// unsignedNarrowIntType 回報型別名是否為「無符號窄整數」（byte / u8 / u16 / u32）。
+//
+// 這類型別**單獨**參與算術時靜默回繞 —— 語言約定 byte / char 沒有 option 機制、
+// 不受 `#{overflow=...}` 管轄。但與有號整數**混合**時（`pos i64 + len-byte byte`）
+// 會提升到有號側型別，結果是有號整數，溢出照樣回 err ⇒ 整體屬於 option 算術。
+//
+// u64 / u128 刻意不在列：它們比 i64 更寬，混合後的結果是無符號，溢出語意另有一套。
+func unsignedNarrowIntType(typ string) bool {
+	typ = ty.StripPtrAllRaw(strings.TrimSpace(typ))
+	if ty.IsOptionRaw(typ) {
+		typ = ty.StripOptionRaw(typ)
+	}
+	if i := strings.LastIndex(typ, "."); i >= 0 {
+		typ = typ[i+1:]
+	}
+	switch typ {
+	case "byte", "u8", "u16", "u32":
+		return true
+	}
+	return false
+}
+
+// unsignedNarrowIntOperand 回報運算元 e 的靜態型別是否為無符號窄整數。
+// 只認局部變數／參數：欄位與呼叫回傳走 signedIntOperandType 自己的分支，
+// 那裡若是有號就已是 option 算術，不需要這條回落。
+func (l *lowerer) unsignedNarrowIntOperand(e Expression) bool {
+	id, ok := unwrapLowerExpr(e).(*Identifier)
+	if !ok {
+		return false
+	}
+	name := id.Value
+	// 同 operandPlainType：`it` 的名字槽在函式內是共用的，跨臂型別不可信。
+	if name == "self" || name == "." || name == "it" || name == "_" {
+		return false
+	}
+	typ := ""
+	if l.p.sem != nil {
+		if t, has := l.p.sem.FuncVarType(l.curFuncName, name); has {
+			typ = t
+		}
+	}
+	if typ == "" {
+		typ = l.p.astLocalVarType(l.curFuncName, name)
+	}
+	return unsignedNarrowIntType(typ)
 }
 
 // carryOverflowAnnotation 把被安全索引 desugar 取代的原陳述之 `#{overflow = ...}`
@@ -5809,8 +5952,9 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		fmt.Fprintf(os.Stderr, "[debug-it] lowerUnwrapAssign: name=%q line=%d curFunc=%q\n", nm, tok.Line, l.curFuncName)
 	}
 
-	// First, walk into the Value expression to lower any nested SurfaceMatch.
-	l.walk(reflect.ValueOf(&uas.Value))
+	// 值位 match 的 `?=` 在 resultName 算出後短路（見下方），嵌套 SurfaceMatch
+	// 的 walk 推遲到短路之後 —— 短路一旦成立就不再需要展開右值，而 walk 必須在
+	// rhs 被真正使用（guards / tmpAssign）之前跑完。
 
 	// Find the option-typed result param name from the current function def.
 	// H0 直出（lowerUnwrapAssignToHIR）透過 resultNameOverride 傳入（funcLike
@@ -5832,6 +5976,38 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 	if l.blockMatchSubject != "" {
 		resultName = l.blockMatchSubject
 	}
+
+	// --- 值位 match 的 `?=`：`v ?= subj: { … }` ---
+	//
+	// RHS 是**值位 match**：它的臂自己就處理了 nil/err（`-> 0` 兜底），整體產出
+	// 裸 `T`，`?=` 因此在右側找不到可解包的 option。此時 `?=` 的語意只剩「把
+	// match 的結果當 option 值重新賦給目標」——目標維持 option 型別 `?T`，賦值點
+	// 做隱式 `ok()` 包裝：
+	//
+	//	flags-hi ?= data[2]: { ok -> it  -> 0 }
+	//	; 等價於
+	//	flags-hi ?byte = data[2]: { ok -> it  -> 0 }
+	//
+	// 不短路的話，下面會把裸 `T` 當 `?T` 去解包：合成的 `__unwrap_N` 沒有型別
+	// 標註 ⇒ MIR 取不到 option payload ⇒ 目標恆 undef/0（std/net/dns.no 的
+	// `flags-hi` 實測恆 0，rcode 判定因此全走錯分支）。
+	//
+	// T 取 match 主語的 option payload（`data[i]` → 元素型別、`o ?T` → T）。
+	// 推不出時不登記型別、仍退回普通 let（目標得裸 T）——那至少是 match 的真實
+	// 結果，不會像解包路徑讀出垃圾值。
+	if sm, ok := unwrapLowerExpr(uas.Value).(*SurfaceMatch); ok && uas.Name != nil && uas.Target == nil {
+		let := &LetStatement{Token: tok, Name: uas.Name, Value: uas.Value}
+		// 結果參數本身已是 `?T`：不改寫它的型別，賦值照既有 LetStatement 路徑。
+		if uas.Name.Value != resultName {
+			if inner := l.p.optionSubjectElemType(l.curFuncName, sm.Matched); inner != "" {
+				l.synthesizeNullableType(let, inner)
+			}
+		}
+		return let
+	}
+
+	// First, walk into the Value expression to lower any nested SurfaceMatch.
+	l.walk(reflect.ValueOf(&uas.Value))
 
 	// --- D9 寫入側 ?=：`a[i] ?= v` ---
 	// 寫入目標為安全索引時，option 性來自「下標讀取」（a[i] 越界回傳 nil），
@@ -6041,12 +6217,29 @@ func (l *lowerer) lowerUnwrapAssign(uas *UnwrapAssignStatement) Statement {
 		}
 	}
 
+	// 守衛語句（`__opt_N = <右式裡的 option 運算元>`）是右式的一部分，同樣受
+	// 本條 `?=` 的 #{overflow=...} 管轄。`a ?= a * 16 + b` 會被拆成
+	// `__opt_1 = a * 16` + 傳播守衛 + `__unwrap_N = __opt_1 + b`；只給後者標
+	// 模式的話，前後兩半的溢出語意會分叉（`a * 16` 回 err、`+ b` 回繞）。
+	if uas.OverflowMode != "" {
+		for _, g := range guards {
+			if ls, ok := g.(*LetStatement); ok && ls.OverflowMode == "" {
+				ls.OverflowMode = uas.OverflowMode
+			}
+		}
+	}
+
 	// Build the temporary variable assignment: __unwrap_N = expr
+	//
+	// OverflowMode 必須跟著右式搬到這條合成 let 上：`#{overflow=wrap}` 管轄的
+	// 就是右式裡的整數運算，而降糖後它們只在這條 let 裡求值。漏帶此欄位 ⇒
+	// HIR 的 KLet 旗標為空 ⇒ MIR 不設 Inst.OvfAnnotated ⇒ 標了 wrap 仍回 err。
 	tmpAssign := &LetStatement{
-		Token: tok,
-		Name:  tmpIdent,
-		Type:  tmpType,
-		Value: rhs,
+		Token:        tok,
+		Name:         tmpIdent,
+		Type:         tmpType,
+		Value:        rhs,
+		OverflowMode: uas.OverflowMode,
 	}
 
 	// Build match arms.
@@ -6353,9 +6546,10 @@ func (l *lowerer) lowerUnwrapAssignToIndex(uas *UnwrapAssignStatement, idx *Inde
 		valName := fmt.Sprintf("__place_val_%d_%d", tok.Line, tok.Column)
 		valIdent := &Identifier{Token: tok, Value: valName}
 		first := &UnwrapAssignStatement{
-			Token: tok,
-			Name:  valIdent,
-			Value: uas.Value,
+			Token:        tok,
+			Name:         valIdent,
+			Value:        uas.Value,
+			OverflowMode: uas.OverflowMode,
 		}
 		// 同一行可能已有別的 `?=` 用到 `__unwrap_<line>`，給讀側一個獨立暫存名。
 		savedOverride := l.unwrapTmpOverride

@@ -260,12 +260,19 @@ func stmtTokenLine(stmt parser.Statement) int {
 // attachedAnnotations returns annotations attached to a statement by the parser
 // (e.g. platform annotations #{mac-arm64}, #{linux-amd64} attached via attachAnnotations),
 // read from the semantic side-table.
+//
+// 這份型別白名單是「哪些陳述上方會印出一行註解」的開關：**少列一種型別，
+// 該型別上附加的所有註解都會被 `no fmt` 靜默刪掉**。`?=`（UnwrapAssignStatement）
+// 就曾因此整批消失：src/std 有 77 處 `#{overflow=wrap}` 寫在 `p ?= p + 1` 之上，
+// 每次 `no fmt` 都把它們刪掉、且刪掉後語意由「溢出回繞」變成「溢出回 err」
+// （見 fmt/overflow_unwrap_assign_test.go 的回歸釘）。新增可附加註解的陳述型別時，
+// 必須同步加進這裡。
 func (f *formatter) attachedAnnotations(stmt parser.Statement) []*parser.AnnotationEntry {
 	switch stmt.(type) {
 	case *parser.LetStatement, *parser.FunctionDefinition, *parser.StructDefinition, *parser.ExpressionStatement,
 		*parser.ForStatement, *parser.MultiAssignStatement, *parser.ReturnStatement,
 		*parser.TaggedEnumDefinition, *parser.EnumDefinition, *parser.InterfaceDefinition,
-		*parser.UseStatement:
+		*parser.UseStatement, *parser.UnwrapAssignStatement:
 		return f.sem.AnnotationsOf(stmt)
 	}
 	return nil

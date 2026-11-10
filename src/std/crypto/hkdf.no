@@ -36,7 +36,6 @@ hkdf-extract = (salt []byte, ikm []byte) (prk [32]byte) {
 
         -> {
             i <- [0..salt.len()): {
-
                 ixout42c32 = salt[i]: {
                     ok -> it
 
@@ -75,17 +74,18 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
     #{overflow=wrap}
     counter > 0 -> {
         {
+
             #{overflow=wrap}
             msg-len-opt = msg-len + 1
             msg-len-opt: {
                 ok -> msg-len = it
+
                 ->
             }
         }
     }
     msg []byte = with-len(msg-len)
     i <- [0..t-len): {
-
         ixout78c24 = t-data[i]: {
             ok -> it
 
@@ -99,7 +99,6 @@ hkdf-expand-hmac = (prk-vec []byte, t-data []byte, t-len i64, info []byte, count
         }
     }
     i <- [0..info.len()): {
-
         ixout87c24 = info[i]: {
             ok -> it
 
@@ -185,16 +184,17 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
                 #{overflow=wrap}
                 off + copy-n > out-len -> {
                     {
+
                         #{overflow=wrap}
                         copy-n-opt = out-len - off
                         copy-n-opt: {
                             ok -> copy-n = it
+
                             ->
                         }
                     }
                 }
                 i <- [0..copy-n): {
-
                     ixout166c36 = t[i]: {
                         ok -> it
 
@@ -207,20 +207,24 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     off-opt = off + copy-n
                     off-opt: {
                         ok -> off = it
+
                         ->
                     }
                 }
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     counter-opt = counter + 1
                     counter-opt: {
                         ok -> counter = it
+
                         ->
                     }
                 }
@@ -301,17 +305,18 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt = pos + 1
         pos-opt: {
             ok -> pos = it
+
             ->
         }
     }
 
     ; context bytes
     i <- [0..context.len()): {
-
         ixout258c24 = context[i]: {
             ok -> it
 
@@ -340,7 +345,6 @@ hkdf-expand-label = (prk [32]byte, label str, context []byte, out-len i64) (okm 
 hkdf-expand-label-vec = (prk []byte, label str, context []byte, out-len i64) (okm []byte) {
     prk-arr [32]byte
     i <- [0..32): {
-
         ixout281c24 = prk[i]: {
             ok -> it
 
