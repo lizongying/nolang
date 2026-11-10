@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['Wandelt ein f64 in einen String um', 'ts', 'wef6iesu']
   'number.f64.to-str-fixed': ['Festkomma-Umwandlung', 'tsf', 'fu']
   'number.f64.to-str-general': ['Allgemeines Format', 'tsg', 'af']
-  'number.f64.to-str-sci': ['Wissenschaftliche Notation', 'tss', 'wn']
   'number.f64.to-u32': ['to-u32', 'tu', 'tu3']
   'number.f64.to-u64': ['to-u64', 'tu', 'tu6']
   'number.i128.sqrt': ['── 128-bit ganzzahl method copies ──', 's', '1bgmc']

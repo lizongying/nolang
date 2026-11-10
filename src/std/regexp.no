@@ -63,6 +63,14 @@ _RE-QUANT-QUESTION = 3
 ; [RE-CLS-SIZE](#regexp.re-cls-size)
 RE-CLS-SIZE = 32
 
+; 字元類別容量（cls 總位元組數 / RE-CLS-SIZE = 可容納的類別數）
+; [RE-CLS-MAX](#regexp.re-cls-max)
+RE-CLS-MAX = 32
+
+; 指令陣列容量（op / arg1 / arg2 三支同長）
+; [RE-OP-MAX](#regexp.re-op-max)
+RE-OP-MAX = 256
+
 ; 結構體
 ...
 
@@ -76,6 +84,7 @@ RE-CLS-SIZE = 32
 ; cls: 字元類別 bitmap（每個 RE-CLS-SIZE bytes）
 ; ncls: 字元類別數量
 ; match-end: 匹配結束位置（find 使用）
+; overflowed: 編譯期是否撞到 RE-OP-MAX / RE-CLS-MAX 上限（true ⇒ 指令或類別被丟棄，匹配結果不可信）
 ; tmp-atom-type: 解析暫存 — atom 類型
 ; tmp-atom-char: 解析暫存 — atom 字元值
 ; tmp-atom-cls: 解析暫存 — atom 類別索引
@@ -84,12 +93,13 @@ regexp {
     pattern str
     compiled bool
     n i64
-    op [128]i64
-    arg1 [128]i64
-    arg2 [128]i64
-    cls [512]byte
+    op [256]i64
+    arg1 [256]i64
+    arg2 [256]i64
+    cls [1024]byte
     ncls i64
     match-end i64
+    overflowed bool
     tmp-atom-type i64
     tmp-atom-char i64
     tmp-atom-cls i64
@@ -101,11 +111,16 @@ regexp {
 ...
 
 ; 發射一條指令
+; 撞到 RE-OP-MAX 時丟棄該指令並置 .overflowed（不再靜默截斷而仍宣稱 compiled）
 ; op i64: 指令類型
 ; arg1 i64: 參數1
 ; arg2 i64: 參數2
 ; [emit](#regexp.emit)
 regexp.emit = (op i64, arg1 i64, arg2 i64) {
+    .n >= RE-OP-MAX -> {
+        .overflowed = true
+        return
+    }
     {
         .op[.n] ?= op
 
@@ -258,10 +273,17 @@ regexp.init-class-all = (cls-idx i64) {
 }
 
 ; 分配一個新的字元類別，返回索引
+; 撞到 RE-CLS-MAX 時返回 -1 並置 .overflowed（-1 讓後續 bitmap 操作統一走越界 err 分支，
+; 於是該類別恆不匹配任何字元，不會誤用相鄰類別的 bitmap）
 ; 返回 cls-idx i64: 類別索引
 ; [alloc-class](#regexp.alloc-class)
 regexp.alloc-class = () (cls-idx i64) {
     cls-idx = .ncls
+    .ncls >= RE-CLS-MAX -> {
+        .overflowed = true
+        cls-idx = -1
+        return
+    }
 
     #{overflow=wrap}
     .ncls = .ncls + 1: {
@@ -965,6 +987,7 @@ regexp.compile = () {
     .n = 0
     .ncls = 0
     .compiled = true
+    .overflowed = false
 
     ; 偵測量詞使用 bitmap 位元測試，避免與常量 42 直接比較
     ; 分配三個字元類別，分別只有一個位元被設定
@@ -1068,13 +1091,11 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
     result-ok = false
 
     pc < .n -> {
-        ixout1071c11 = .op[pc]: {
+        op = .op[pc]: {
             ok -> it
 
             -> _
         }
-
-        op = ixout1071c11
 
         {
             a1 ?= .arg1[pc]
@@ -1206,13 +1227,11 @@ regexp.find = (text str) (result str) {
             j <- [0..mlen): {
 
                 #{overflow=wrap}
-                ixout1203c21 = text[sp + j]: {
+                result[j] = text[sp + j]: {
                     ok -> it
 
                     -> _
                 }
-
-                result[j] = ixout1203c21
             }
             return
         }

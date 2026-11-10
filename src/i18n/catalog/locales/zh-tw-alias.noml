@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['轉字串', 'ts', 'zzc', '5j03y4tj04']
   'number.f64.to-str-fixed': ['定點格式轉換', 'tsf', 'ddgszh', '2u/42u03ek6g45j03cj04']
   'number.f64.to-str-general': ['通用格式', 'tsg', 'tygs', 'wj/m/4ek6g4']
-  'number.f64.to-str-sci': ['科學記號格式', 'tss', 'kxjhgs', 'dkvm,6ru4cl4ek6g4']
   'number.f64.to-u32': ['浮點轉 32 位無號整數', 'tu', 'fdz3wwhzs', 'zj62u035j0332jo4j6cl45/3gj4']
   'number.f64.to-u64': ['浮點轉 64 位無號整數', 'tu', 'fdz6wwhzs', 'zj62u035j0364jo4j6cl45/3gj4']
   'number.i128.sqrt': ['── 128 位整數方法副本──', 's', '1wzsfffb', '128jo45/3gj4z;z83zj41p3']

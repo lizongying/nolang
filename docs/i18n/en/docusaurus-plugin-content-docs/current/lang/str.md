@@ -299,14 +299,14 @@ s = s.slice-bytes(0, 5)      ; byte truncation
 
 ## Pre-allocation (Builtin Syntax)
 
-The three builtins `with-cap`, `with-len`, and `with-cap-len` pre-allocate heap memory, avoiding repeated reallocation on subsequent `push` / `s[i]=` operations:
+The three builtins `with-cap`, `with-len`, and `with-cap-len` pre-allocate heap memory, avoiding repeated reallocation on subsequent `push` operations:
 
 ```no
 #{fmt-skip}
 ; with-cap(cap): allocate cap capacity, len=0 (must push before indexing)
 s = with-cap(256)               ; str, len=0, cap=256
 
-; with-len(len): allocate len capacity, len=cap (direct indexing allowed)
+; with-len(len): allocate len capacity, len=cap (direct index READ allowed)
 s = with-len(128)               ; str, len=128, cap=128
 
 ; with-cap-len(cap, len): specify both capacity and length — ideal when you
@@ -317,7 +317,15 @@ s = with-cap-len(512, 64)       ; str, len=64, cap=512
 | Builtin | Args | len | cap | Use case |
 |---|---|---|---|---|
 | `with-cap(cap)` | 1 | 0 | cap | Only capacity known; length grows via push |
-| `with-len(len)` | 1 | len | len | Fixed length; direct index read/write |
+| `with-len(len)` | 1 | len | len | Fixed length; direct index read |
 | `with-cap-len(cap, len)` | 2 | len | cap | Known initial length + reserved growth space |
+
+> ⚠️ **Only a `with-cap` buffer may be written through a subscript.** `with-cap(n)` has
+> len=0, so byte-by-byte subscript stores (`buf[i] = b`) are the only way to grow it —
+> that is why `idxwrite` exempts it. `with-len(n)` / `with-cap-len(cap, len)` already
+> have their length in place, so **stores still require place-match
+> `buf[i]: { ok -> it = v / -> _ }` or `buf[i] ?= v`** — they are treated like any other
+> container, and a direct store is the compile error `idxwrite`.
+> (`with-len` stopped being exempt on 2026-11-10.)
 
 > **Type inference**: All three builtins infer the result type from the assignment LHS, usable for `str` or `[]T` slices.

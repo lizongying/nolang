@@ -35,15 +35,12 @@ foo = () {
     k <- [0..copy-rem): {
 
         ; 索引讀取返回 option，寫入必須走 place-match（見 [idxwrite] 規則）。
-        #{overflow=wrap}
-        ixout15c24 = data[off + base + k]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        buf[base + k]: {
-            ok -> it = ixout15c24
+            #{overflow=wrap}
+            buf[base + k] ?= data[off + base + k]
+        }: {
+            err -> _
 
             -> _
         }

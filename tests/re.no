@@ -164,7 +164,7 @@ print('find [0-9]+ in abc123def456: {f8}')
 ; case 9 沒有任何 drop，單獨釘住「寫入」這條守則。
 ...
 
-Holder {
+holder {
     f str
 }
 
@@ -194,7 +194,7 @@ rows[0] == 'Z' -> print('ok 3: single-def element receiver writes back')
 -> print('fail 3: element receiver got=[{rows[0]}]')
 
 ; (4) 對照組：單一定義的結構體欄位接收者
-h = Holder{
+h = holder{
     f: 'hello'
 }
 h.f.set-byte(0, 72)
@@ -203,7 +203,7 @@ h.f == 'Hello' -> print('ok 4: single-def struct field receiver writes back')
 -> print('fail 4: struct field receiver got=[{h.f}]')
 
 ; (5) 重綁定的**欄位**視圖：`g = h.f` 之後重綁定，長度必須是自己的
-h2 = Holder{
+h2 = holder{
     f: '  hi  '
 }
 g = h2.f
@@ -231,7 +231,7 @@ v.len() == 1 -> print('ok 6: rebind to another element')
 -> print('fail 6: rebind to another element got={v.len()}')
 
 ; (7) 對照組：單一定義的視圖仍必須投影（寫回元素）
-box = Holder{
+box = holder{
     f: 'xy'
 }
 w = box.f
@@ -254,7 +254,7 @@ ln2.len() == 4 -> print('ok 8: rebound container does not leak into the view')
 -> print('fail 8: rebound container got={ln2.len()}')
 
 ; (9) **欄位本身**被重新綁定：投影指向 &h.f，欄位換了它就不是 g2 了
-h4 = Holder{
+h4 = holder{
     f: '  hi  '
 }
 g2 = h4.f
@@ -284,14 +284,14 @@ print('re2.pattern = {re2-pattern}')
 ; # std/regexp
 ...
 
-matched__1 = regexp.regexp-match('hello.*world', 'hello nolang world')
+matched-1 = regexp.regexp-match('hello.*world', 'hello nolang world')
 print('regexp-match test 1: {matched}')
 
-not_matched = regexp.regexp-match('foo.*bar', 'hello world')
-print('regexp-match test 2: {not_matched}')
+not-matched = regexp.regexp-match('foo.*bar', 'hello world')
+print('regexp-match test 2: {not-matched}')
 
-match_str = regexp.regexp-find('[0-9]+', 'abc123def456')
-print('regexp-find test: {match_str}')
+match-str = regexp.regexp-find('[0-9]+', 'abc123def456')
+print('regexp-find test: {match-str}')
 
 ; merged from tests/replace.no
 ; test-replace: 验证 str.replace-str

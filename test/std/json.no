@@ -365,6 +365,492 @@ t-roundtrip = () {
     runner.str-eq(s, '{"x":1,"y":"abc","z":true}', 25, 'roundtrip')
 }
 
+; ── 取值助手 ──────────────────────────────────
+
+; ?i64 三態哨兵：9000001 = nil、9000002 = err
+i64-of = (v ?i64) (out i64) {
+    out = 9000002
+    v: {
+        ok -> out = it
+
+        nil -> out = 9000001
+
+        err -> out = 9000002
+    }
+}
+
+; ?str 三態哨兵：'nil' / 'err' / 實際內容
+str-of = (v ?str) (out str) {
+    out = 'err'
+    v: {
+        ok -> out = it
+
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+    }
+}
+
+; ?f64 三態：n 哨兵 -9000001.0 = nil、-9000002.0 = err
+f64-of = (v ?f64) (out f64) {
+    out = -9000002.0
+    v: {
+        ok -> out = it
+
+        nil -> out = -9000001.0
+
+        err -> out = -9000002.0
+    }
+}
+
+; ?bool 三態：2 = nil、3 = err，0/1 為實際值
+bool-of = (v ?bool) (out i64) {
+    out = 3
+    v: {
+        ok -> {
+            bs i64 = 0
+            {
+                it -> bs = 1
+
+                ! it -> bs = 0
+            }
+            out = bs
+        }
+
+        nil -> out = 2
+
+        err -> out = 3
+    }
+}
+
+; ?json 狀態碼：0 = nil、1 = ok、2 = err（取子句柄非標量，只能斷言取到與否）
+json-state = (v ?json) (out i64) {
+    out = 2
+    v: {
+        ok -> out = 1
+
+        nil -> out = 0
+
+        err -> out = 2
+    }
+}
+
+; ── 池級 API（低級） ─────────────────────────
+
+; 新建池為空；alloc 依序發號；init 可重置
+t-pool-init-alloc = () {
+    p = json.new-pool()
+    runner.eq(p.count, 0, 'new-pool count == 0')
+    runner.eq(p.nodes.len(), 0, 'new-pool nodes 為空')
+    runner.is-false(p.overflowed, 'new-pool 未溢出')
+
+    i0 = p.alloc()
+    i1 = p.alloc()
+    runner.eq(i0, 0, 'alloc 首個索引 == 0')
+    runner.eq(i1, 1, 'alloc 第二個索引 == 1')
+    runner.eq(p.count, 2, 'alloc 兩次後 count == 2')
+    runner.eq(p.get-kind(i0), json.JSON-KIND-NULL, '新節點 kind 為 NULL')
+
+    p.init()
+    runner.eq(p.count, 0, 'init 重置 count')
+    runner.eq(p.nodes.len(), 0, 'init 清空 nodes')
+}
+
+; skip-ws 跳過空格 / Tab / LF / CR
+t-pool-skip-ws = () {
+    p = json.new-pool()
+    runner.eq(p.skip-ws('   x', 0), 3, 'skip-ws 跳過三個空格')
+    runner.eq(p.skip-ws('\t\n\r x', 0), 4, 'skip-ws 跳過 Tab/LF/CR/空格')
+    runner.eq(p.skip-ws('abc', 0), 0, 'skip-ws 無空白時停在原地')
+}
+
+; parse-str：需先把節點 kind 標成 STR（低級 API 的分工），成功回閉引號後位置
+t-pool-parse-str = () {
+    p = json.new-pool()
+    si = p.alloc()
+    p.nodes[si].kind = json.JSON-KIND-STR
+    nxt = p.parse-str(si, '"plain"', 0)
+    runner.eq(i64-of(nxt), 7, 'parse-str 回閉引號後位置 7')
+    runner.str-eq(str-of(p.get-str(si)), 'plain', 5, 'parse-str 寫入字串值')
+
+    ; 引號未閉合 → nil
+    bi = p.alloc()
+    p.nodes[bi].kind = json.JSON-KIND-STR
+    bad = p.parse-str(bi, '"abc', 0)
+    runner.eq(i64-of(bad), 9000001, 'parse-str 引號未閉合回 nil')
+}
+
+; parse-num：寫入 num-val，回數字結束位置
+t-pool-parse-num = () {
+    p = json.new-pool()
+    ni = p.alloc()
+    p.nodes[ni].kind = json.JSON-KIND-NUM
+    nxt = p.parse-num(ni, '-12.25', 0)
+    runner.eq(i64-of(nxt), 6, 'parse-num 回結束位置 6')
+    eps = 0.0000001
+    runner.f64-eq(f64-of(p.get-num(ni)), -12.25, eps, 'parse-num 值 -12.25')
+
+    pos = p.alloc()
+    p.nodes[pos].kind = json.JSON-KIND-NUM
+    nxt2 = p.parse-num(pos, '7', 0)
+    runner.eq(i64-of(nxt2), 1, 'parse-num 單數字回位置 1')
+    runner.f64-eq(f64-of(p.get-num(pos)), 7.0, eps, 'parse-num 值 7')
+}
+
+; get-kind：越界索引回 NULL
+t-pool-get-kind = () {
+    p = json.new-pool()
+    i = p.alloc()
+    runner.eq(p.get-kind(i), json.JSON-KIND-NULL, 'alloc 節點 kind NULL')
+    p.nodes[i].kind = json.JSON-KIND-ARR
+    runner.eq(p.get-kind(i), json.JSON-KIND-ARR, '改寫後 kind ARR')
+    runner.eq(p.get-kind(9999), json.JSON-KIND-NULL, '越界索引回 NULL')
+    runner.eq(p.get-kind(-1), json.JSON-KIND-NULL, '負索引回 NULL')
+}
+
+; set-key / get-key / add-child：邊表掛子節點並按鍵取回
+t-pool-set-get-key = () {
+    p = json.new-pool()
+    ci = p.alloc()
+    p.nodes[ci].kind = json.JSON-KIND-NUM
+
+    oi = p.alloc()
+    p.nodes[oi].kind = json.JSON-KIND-OBJ
+    runner.is-true(p.set-key(oi, 'a', ci), 'pool.set-key 掛子節點')
+    runner.eq(p.get-key(oi, 'a'), ci, 'pool.get-key 取回子節點索引')
+    runner.eq(i64-of(p.get-key(oi, 'zz')), 9000001, 'pool.get-key 未命中回 nil')
+    runner.eq(p.nodes[oi].count, 1, 'set-key 後父節點 count == 1')
+
+    ; add-child 直呼：空鍵邊（陣列語義）
+    ai = p.alloc()
+    p.nodes[ai].kind = json.JSON-KIND-ARR
+    p.add-child(ai, ci, '')
+    runner.eq(p.arr-len(ai), 1, 'add-child 後 arr-len == 1')
+    runner.eq(p.nodes[ai].count, 1, 'add-child 更新父節點 count')
+}
+
+; copy-tree：把子樹深拷貝到另一池
+t-pool-copy-tree = () {
+    src = json.parse('{"a":1}')
+    gv = json.new()
+    src: {
+        ok -> gv = it
+
+        -> _
+    }
+    dst = json.new-pool()
+    cp = dst.copy-tree(gv.pool, gv.root)
+    runner.eq(cp, 0, 'copy-tree 在新池首次拷貝得根 0')
+    runner.eq(dst.get-kind(cp), json.JSON-KIND-OBJ, 'copy-tree 保留 OBJ 類型')
+    ci = i64-of(dst.get-key(cp, 'a'))
+    runner.eq(dst.get-kind(ci), json.JSON-KIND-NUM, 'copy-tree 保留鍵 a 的值節點')
+    runner.eq(dst.nodes.len(), 2, 'copy-tree 只拷貝可達節點（obj + num）')
+}
+
+; clone-json-tree：返回持有獨立池的新 json
+t-clone-json-tree = () {
+    g = json.parse('{"m":1,"n":[2,3]}')
+    gv = json.new()
+    g: {
+        ok -> gv = it
+
+        -> _
+    }
+    cl = json.clone-json-tree(gv.pool, gv.root)
+    runner.eq(cl.kind(), json.JSON-KIND-OBJ, 'clone 根為物件')
+    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3]}', 17, 'clone 內容一致')
+
+    ; 深拷貝獨立性：改 clone 不得影響來源
+    cl.set-str('extra', 'y')
+    runner.str-eq(cl.stringify(), '{"m":1,"n":[2,3],"extra":"y"}', 30, 'clone 可獨立擴充')
+    runner.str-eq(gv.stringify(), '{"m":1,"n":[2,3]}', 17, '來源未被 clone 改動')
+}
+
+; ── 高級 API：kind / overflowed / 取值 ────────
+
+; kind() 對五種型別回對應常量
+t-kind = () {
+    j0 = json.parse('null')
+    j0: {
+        ok -> runner.eq(it.kind(), json.JSON-KIND-NULL, 'kind null == 0')
+
+        -> runner.eq(-1, 0, 'parse null 失敗')
+    }
+    j1 = json.parse('true')
+    j1: {
+        ok -> runner.eq(it.kind(), json.JSON-KIND-BOOL, 'kind bool == 1')
+
+        -> runner.eq(-1, 0, 'parse true 失敗')
+    }
+    j2 = json.parse('1.5')
+    j2: {
+        ok -> runner.eq(it.kind(), json.JSON-KIND-NUM, 'kind num == 2')
+
+        -> runner.eq(-1, 0, 'parse num 失敗')
+    }
+    j3 = json.parse('"s"')
+    j3: {
+        ok -> runner.eq(it.kind(), json.JSON-KIND-STR, 'kind str == 3')
+
+        -> runner.eq(-1, 0, 'parse str 失敗')
+    }
+    j4 = json.parse('[]')
+    j4: {
+        ok -> runner.eq(it.kind(), json.JSON-KIND-ARR, 'kind arr == 4')
+
+        -> runner.eq(-1, 0, 'parse arr 失敗')
+    }
+    j5 = json.parse('{}')
+    j5: {
+        ok -> runner.eq(it.kind(), json.JSON-KIND-OBJ, 'kind obj == 5')
+
+        -> runner.eq(-1, 0, 'parse obj 失敗')
+    }
+}
+
+; overflowed()：堆 vec 版恆為 false（含多次 alloc 後）
+t-overflowed = () {
+    j = json.new()
+    runner.is-false(j.overflowed(), 'new 後未溢出')
+    i <- [0..8): {
+        n = j.alloc-node()
+        j.set-null('k')
+    }
+    runner.is-false(j.overflowed(), '多次 alloc 後仍未溢出')
+}
+
+; 標量取值：num / bool / i64 / str-val，型別不符一律 nil
+t-scalar-getters = () {
+    n = json.parse('42.9')
+    n: {
+        ok -> {
+            eps = 0.0001
+            runner.f64-eq(f64-of(it.num()), 42.9, eps, 'num() 取 42.9')
+            runner.eq(i64-of(it.i64()), 42, 'i64() 截斷取 42')
+            runner.eq(bool-of(it.bool()), 2, 'num 上 bool() 回 nil')
+            runner.str-eq(it.str-val(), '', 0, 'num 上 str-val 回空字串')
+        }
+
+        -> runner.eq(-1, 0, 'parse 42.9 失敗')
+    }
+    b = json.parse('false')
+    b: {
+        ok -> {
+            runner.eq(bool-of(it.bool()), 0, 'bool() 取 false')
+            runner.eq(i64-of(it.i64()), 9000001, 'bool 上 i64() 回 nil')
+        }
+
+        -> runner.eq(-1, 0, 'parse false 失敗')
+    }
+    s = json.parse('"hi"')
+    s: {
+        ok -> {
+            runner.str-eq(it.str-val(), 'hi', 2, 'str-val 取 hi')
+            runner.eq(i64-of(it.i64()), 9000001, 'str 上 i64() 回 nil')
+        }
+
+        -> runner.eq(-1, 0, 'parse "hi" 失敗')
+    }
+}
+
+; ── 高級 API：物件操作 ───────────────────────
+
+; get()：取子節點為獨立深拷貝句柄；未命中或非物件回 nil
+t-get = () {
+    g = json.parse('{"a":{"b":2},"c":[7,8]}')
+    g: {
+        ok -> {
+            c1 = it.get('a')
+            c1: {
+                ok -> {
+                    runner.eq(it.kind(), json.JSON-KIND-OBJ, 'get(a) 為物件')
+                    runner.str-eq(it.stringify(), '{"b":2}', 7, 'get(a) 內容')
+                }
+
+                -> runner.eq(-1, 0, 'get(a) 未命中')
+            }
+            runner.eq(json-state(it.get('zz')), 0, 'get 未命中回 nil')
+            c2 = it.get('c')
+            c2: {
+                ok -> runner.eq(it.arr-len(), 2, 'get(c) 陣列長 2')
+
+                -> runner.eq(-1, 0, 'get(c) 未命中')
+            }
+        }
+
+        -> runner.eq(-1, 0, 'parse 物件失敗')
+    }
+
+    ; 非物件上取鍵一律 nil
+    s = json.parse('"x"')
+    s: {
+        ok -> runner.eq(json-state(it.get('a')), 0, '非物件上 get 回 nil')
+
+        -> runner.eq(-1, 0, 'parse "x" 失敗')
+    }
+}
+
+; json.get-key（全域函式形式）
+t-get-key-fn = () {
+    g = json.parse('{"a":1}')
+    gv = json.new()
+    g: {
+        ok -> gv = it
+
+        -> _
+    }
+    runner.eq(json-state(json.get-key(gv, 'a')), 1, 'json.get-key 取到子句柄')
+    runner.eq(json-state(json.get-key(gv, 'zz')), 0, 'json.get-key 未命中回 nil')
+    runner.eq(json-state(json.get-key(json.new(), 'a')), 0, '空 json 上回 nil')
+}
+
+; obj-len / obj-key / obj-keys-str：依插入順序走訪鍵
+t-obj-iter = () {
+    j = json.parse('{"a":1,"b":2,"c":3}')
+    j: {
+        ok -> {
+            runner.eq(it.obj-len(), 3, 'obj-len == 3')
+            runner.str-eq(str-of(it.obj-key(0)), 'a', 1, 'obj-key(0) == a')
+            runner.str-eq(str-of(it.obj-key(2)), 'c', 1, 'obj-key(2) == c')
+            runner.eq(i64-of(it.obj-key(3)), 9000001, 'obj-key 越界回 nil')
+            runner.str-eq(it.obj-keys-str(), 'a\nb\nc\n', 6, 'obj-keys-str 依序拼接')
+        }
+
+        -> runner.eq(-1, 0, 'parse 物件失敗')
+    }
+
+    ; 非物件：len 0、keys 空
+    a = json.parse('[1]')
+    a: {
+        ok -> {
+            runner.eq(it.obj-len(), 0, '陣列上 obj-len == 0')
+            runner.str-eq(it.obj-keys-str(), '', 0, '陣列上 obj-keys-str 為空')
+        }
+
+        -> runner.eq(-1, 0, 'parse 陣列失敗')
+    }
+}
+
+; delete-key：命中則摘除邊並遞減 count；未命中或非物件回 false
+t-delete-key = () {
+    j = json.parse('{"a":1,"b":2}')
+    j: {
+        ok -> {
+            runner.is-true(it.delete-key('a'), 'delete-key 命中回 true')
+            runner.str-eq(it.stringify(), '{"b":2}', 7, '刪除後剩 b')
+            runner.eq(it.obj-len(), 1, '刪除後 obj-len == 1')
+            runner.is-false(it.delete-key('zz'), 'delete-key 未命中回 false')
+        }
+
+        -> runner.eq(-1, 0, 'parse 物件失敗')
+    }
+    s = json.parse('"x"')
+    s: {
+        ok -> runner.is-false(it.delete-key('a'), '非物件上 delete-key 回 false')
+
+        -> runner.eq(-1, 0, 'parse "x" 失敗')
+    }
+}
+
+; ── 高級 API：構建 ───────────────────────────
+
+; alloc-node + set(key, val-idx)：值為本池節點索引（此處為空節點 → null）
+t-set = () {
+    j = json.new()
+    idx = j.alloc-node()
+    runner.eq(idx, 0, 'alloc-node 首個索引 0')
+    runner.is-true(j.set('k', idx), 'set 寫入節點索引')
+    runner.str-eq(j.stringify(), '{"k":null}', 9, 'set 後序列化為 {"k":null}')
+
+    ; root 為字串時拒絕寫入
+    s = json.parse('"x"')
+    s: {
+        ok -> runner.is-false(it.set('k', idx), '非物件/非 null 上 set 回 false')
+
+        -> runner.eq(-1, 0, 'parse "x" 失敗')
+    }
+}
+
+; set-null：直接寫入 null 子節點
+t-set-null = () {
+    j = json.new()
+    runner.is-true(j.set-null('n'), 'set-null 成功')
+    runner.str-eq(j.stringify(), '{"n":null}', 9, 'set-null 序列化')
+    runner.is-true(j.set-null('m'), 'set-null 第二個鍵')
+    runner.eq(j.obj-len(), 2, '兩個 null 鍵 obj-len == 2')
+}
+
+; set-key(json)：跨池深拷貝後掛鍵，支援嵌套
+t-set-key = () {
+    outer = json.new()
+    outer.set-str('name', 'top')
+    inner = json.parse('[1,2]')
+    inner: {
+        ok -> runner.is-true(outer.set-key('list', it), 'set-key 掛入解析出的陣列')
+
+        -> runner.eq(-1, 0, 'parse [1,2] 失敗')
+    }
+    runner.str-eq(outer.stringify(), '{"name":"top","list":[1,2]}', 27, '嵌套序列化')
+
+    ; 無效來源（空 json，root < 0）→ false
+    empty = json.new()
+    runner.is-false(outer.set-key('bad', empty), 'set-key 對空 json 回 false')
+}
+
+; arr-push-idx：以本池節點索引向陣列追加
+t-arr-push-idx = () {
+    a = json.new()
+    idx = a.alloc-node()
+    runner.is-true(a.arr-push-idx(idx), 'arr-push-idx 成功')
+    runner.eq(a.arr-len(), 1, 'arr-push-idx 後 arr-len == 1')
+    runner.str-eq(a.stringify(), '[null]', 6, 'arr-push-idx 序列化')
+
+    ; root 為物件時拒絕追加
+    o = json.new()
+    o.set-str('k', 'v')
+    oi = o.alloc-node()
+    runner.is-false(o.arr-push-idx(oi), '物件上 arr-push-idx 回 false')
+}
+
+; arr-push(json)：跨池深拷貝後追加（回歸：舊實作把來源根索引當本池索引，
+; 在新池上撞號成自環 → stringify 無限遞迴 segfault）
+t-arr-push = () {
+    sub = json.parse('{"x":1}')
+    out = json.new()
+    sub: {
+        ok -> runner.is-true(out.arr-push(it), 'arr-push 追加物件元素')
+
+        -> runner.eq(-1, 0, 'parse {"x":1} 失敗')
+    }
+    runner.eq(out.arr-len(), 1, 'arr-push 後 arr-len == 1')
+    runner.str-eq(out.stringify(), '[{"x":1}]', 9, 'arr-push 深拷貝元素內容')
+    runner.eq(out.pool.count, 3, 'arr-push 把 2 個來源節點拷入本池')
+
+    ; 再追加一個陣列元素，驗證多次追加不串位
+    sub2 = json.parse('[7]')
+    sub2: {
+        ok -> runner.is-true(out.arr-push(it), 'arr-push 追加陣列元素')
+
+        -> runner.eq(-1, 0, 'parse [7] 失敗')
+    }
+    runner.eq(out.arr-len(), 2, '兩次 arr-push 後 arr-len == 2')
+    runner.str-eq(out.stringify(), '[{"x":1},[7]]', 14, '兩次 arr-push 序列化正確')
+}
+
+; arr-push-str / arr-push-num / arr-push-bool：標量元素
+t-arr-push-scalars = () {
+    a = json.new()
+    runner.is-true(a.arr-push-str('s'), 'arr-push-str 成功')
+    runner.is-true(a.arr-push-num(2.5), 'arr-push-num 成功')
+    runner.is-true(a.arr-push-bool(true), 'arr-push-bool 成功')
+    runner.eq(a.arr-len(), 3, '三個標量元素 arr-len == 3')
+    runner.str-eq(a.stringify(), '["s",2.5,true]', 15, '標量元素序列化')
+
+    a2 = json.new()
+    a2.arr-push-bool(false)
+    runner.str-eq(a2.stringify(), '[false]', 7, 'arr-push-bool false 序列化')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('json.parse-obj', t-parse-obj)
@@ -387,6 +873,27 @@ p17, f17 = runner.test('json.set-num', t-set-num)
 p18, f18 = runner.test('json.set-i64', t-set-i64)
 p19, f19 = runner.test('json.set-bool', t-set-bool)
 p20, f20 = runner.test('json.roundtrip', t-roundtrip)
+p21, f21 = runner.test('json.json-pool.init / alloc', t-pool-init-alloc)
+p22, f22 = runner.test('json.json-pool.skip-ws', t-pool-skip-ws)
+p23, f23 = runner.test('json.json-pool.parse-str', t-pool-parse-str)
+p24, f24 = runner.test('json.json-pool.parse-num', t-pool-parse-num)
+p25, f25 = runner.test('json.json-pool.get-kind', t-pool-get-kind)
+p26, f26 = runner.test('json.json-pool.set-key / get-key / add-child', t-pool-set-get-key)
+p27, f27 = runner.test('json.json-pool.copy-tree', t-pool-copy-tree)
+p28, f28 = runner.test('json.clone-json-tree', t-clone-json-tree)
+p29, f29 = runner.test('json.kind', t-kind)
+p30, f30 = runner.test('json.overflowed', t-overflowed)
+p31, f31 = runner.test('json.num / bool / i64 / str-val', t-scalar-getters)
+p32, f32 = runner.test('json.get', t-get)
+p33, f33 = runner.test('json.get-key', t-get-key-fn)
+p34, f34 = runner.test('json.obj-len / obj-key / obj-keys-str', t-obj-iter)
+p35, f35 = runner.test('json.delete-key', t-delete-key)
+p36, f36 = runner.test('json.alloc-node / set', t-set)
+p37, f37 = runner.test('json.set-null', t-set-null)
+p38, f38 = runner.test('json.set-key', t-set-key)
+p39, f39 = runner.test('json.arr-push-idx', t-arr-push-idx)
+p40, f40 = runner.test('json.arr-push', t-arr-push)
+p41, f41 = runner.test('json.arr-push-str / -num / -bool', t-arr-push-scalars)
 
 total = runner.summary()
 f = runner.failed-count()

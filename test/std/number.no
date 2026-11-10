@@ -233,6 +233,312 @@ t-int128-is-prime = () {
     runner.is-false(bc.is-prime(), 'u128.is-prime(1e18)')
 }
 
+; 取負值助手：Nolang 對「一元負號前綴 + 方法呼叫」（`-2.9.to-i64()`）會
+; 把 `sub void 0, x` emit 出來（IR 驗證失敗），故負運算元一律先經本函數成形。
+neg-f = (x f64) (out f64) {
+    out = 0.0 - x
+}
+
+; ── 浮點格式化 ────────────────────────────────
+; 三個格式化入口都以 Go 的 strconv.FormatFloat 對應格式為契約：
+;   to-str-fixed   ↔ 'f'（定點，小數點後 n 位）
+;   to-str-sci     ↔ 'e'（科學記數，指數至少兩位、帶正負號）
+;   to-str-general ↔ 'g'（有效位數 n，必要時退成指數形式並剝除尾隨零）
+; 覆蓋到三處曾修好的缺陷：進位到整數位（9.99@1 → 10.0）、負指數（e--04）、
+; 剝零後留下裸小數點（10.）。
+t-fmt-fixed = () {
+    f1 = 1.23456
+    runner.str-eq(f1.to-str-fixed(3), '1.235', 5, 'fixed 1.23456@3')
+
+    ; 進位跨越整數位：小數點後的 0 必須保留
+    f2 = 9.99
+    runner.str-eq(f2.to-str-fixed(1), '10.0', 4, 'fixed 9.99@1 = 10.0')
+    f3 = 9.999
+    runner.str-eq(f3.to-str-fixed(2), '10.00', 5, 'fixed 9.999@2 = 10.00')
+    f4 = 9.9
+    runner.str-eq(f4.to-str-fixed(0), '10', 2, 'fixed 9.9@0 = 10')
+
+    ; 負值與 .5 邊界（二進位無法精確表示 0.005 / 2.675，按實際 double 值捨入）
+    f5 = -0.005
+    runner.str-eq(f5.to-str-fixed(2), '-0.01', 5, 'fixed -0.005@2 = -0.01')
+    f6 = 1.005
+    runner.str-eq(f6.to-str-fixed(2), '1.00', 4, 'fixed 1.005@2 = 1.00')
+    f7 = 2.675
+    runner.str-eq(f7.to-str-fixed(2), '2.68', 4, 'fixed 2.675@2 = 2.68')
+    f8 = 2.5
+    runner.str-eq(f8.to-str-fixed(0), '3', 1, 'fixed 2.5@0 = 3')
+    f9 = 0.5
+    runner.str-eq(f9.to-str-fixed(0), '1', 1, 'fixed 0.5@0 = 1')
+
+    ; 負零：捨入結果為 -0 時保留符號（與 Go 一致）
+    fa = -0.4
+    runner.str-eq(fa.to-str-fixed(0), '-0', 2, 'fixed -0.4@0 = -0')
+    fb = 0.0
+    runner.str-eq(fb.to-str-fixed(2), '0.00', 4, 'fixed 0.0@2 = 0.00')
+    fc = -1.7
+    runner.str-eq(fc.to-str-fixed(1), '-1.7', 4, 'fixed -1.7@1 = -1.7')
+}
+
+; 驗證 f64.to-str-sci：指數形式 `d.ddde±NN`，指數恆帶符號且至少兩位
+t-fmt-sci = () {
+    s1 = 0.0001234
+    runner.str-eq(s1.to-str-sci(2), '1.23e-04', 8, 'sci 0.0001234@2')
+
+    ; 負指數不得渲染成 `e--04`（曾因區塊形式的取絕對值不生效而出錯）
+    s2 = -0.0001234
+    runner.str-eq(s2.to-str-sci(2), '-1.23e-04', 9, 'sci -0.0001234@2')
+
+    s3 = 1234.5
+    runner.str-eq(s3.to-str-sci(2), '1.23e+03', 8, 'sci 1234.5@2')
+
+    ; 進位跨越指數（9.99@1 → 1.0e+01，而非 10.0e+00）
+    s4 = 9.99
+    runner.str-eq(s4.to-str-sci(1), '1.0e+01', 7, 'sci 9.99@1 = 1.0e+01')
+    s5 = 9.9
+    runner.str-eq(s5.to-str-sci(0), '1e+01', 5, 'sci 9.9@0 = 1e+01')
+
+    ; 精度 0 與整數值
+    s6 = 1.0
+    runner.str-eq(s6.to-str-sci(3), '1.000e+00', 9, 'sci 1.0@3')
+    s7 = 0.0
+    runner.str-eq(s7.to-str-sci(0), '0e+00', 5, 'sci 0.0@0')
+
+    ; 非有限值：走 inf / nan 字面，不進桁架
+    s8 = 1.0 / 0.0
+    runner.str-eq(s8.to-str-sci(2), 'inf', 3, 'sci +Inf')
+    s9 = 0.0 / 0.0
+    runner.str-eq(s9.to-str-sci(2), 'nan', 3, 'sci NaN')
+}
+
+; 驗證 f64.to-str-general：有效位數 n，常規量級用定點、極端量級退指數並剝尾隨零
+t-fmt-general = () {
+    g1 = 9.99
+    runner.str-eq(g1.to-str-general(2), '10', 2, 'general 9.99@2 = 10')
+    g2 = 9.9
+    runner.str-eq(g2.to-str-general(1), '1e+01', 5, 'general 9.9@1 = 1e+01')
+    g3 = 999.9
+    runner.str-eq(g3.to-str-general(3), '1e+03', 5, 'general 999.9@3 = 1e+03')
+    g4 = 123456.789
+    runner.str-eq(g4.to-str-general(5), '1.2346e+05', 10, 'general 123456.789@5')
+    g5 = 0.000999
+    runner.str-eq(g5.to-str-general(3), '0.000999', 8, 'general 0.000999@3')
+    g6 = 1.0
+    runner.str-eq(g6.to-str-general(4), '1', 1, 'general 1.0@4 = 1')
+    g7 = 0.0
+    runner.str-eq(g7.to-str-general(3), '0', 1, 'general 0.0@3 = 0')
+    g8 = -1.5
+    runner.str-eq(g8.to-str-general(3), '-1.5', 4, 'general -1.5@3')
+}
+
+; ── 數值轉換 ──────────────────────────────────
+; f64 → 整數：向零截斷；無號目標對負值飽和為 0（llvm.fptoui.sat）。
+; 註：u64 沒有 `.to-i64`（拓寬矩陣只到 to-u64），故 u64 結果一律以 .to-str() 斷言。
+t-conv-f64-int = () {
+    runner.eq(2.9.to-i64(), 2, '2.9.to-i64 = 2')
+    runner.eq(neg-f(2.9).to-i64(), -2, '-2.9.to-i64 = -2')
+    runner.eq(300.0.to-u32().to-i64(), 300, '300.0.to-u32')
+    runner.eq(300.0.to-i32().to-i64(), 300, '300.0.to-i32')
+    runner.str-eq(1.5.to-u64().to-str(), '1', 1, '1.5.to-u64 = 1')
+    runner.str-eq(neg-f(1.5).to-u64().to-str(), '0', 1, '-1.5.to-u64 飽和為 0')
+    runner.eq(neg-f(1.5).to-u32().to-i64(), 0, '-1.5.to-u32 飽和為 0')
+    runner.eq(neg-f(1.5).to-i32().to-i64(), -1, '-1.5.to-i32 = -1')
+}
+
+; 整數 → 浮點 / 浮點寬度互轉 / 128 位轉浮點
+t-conv-int-f64 = () {
+    runner.f64-eq(42.to-f64(), 42.0, 0.000001, 'i64 42 -> f64')
+    u42 u64 = 42
+    runner.f64-eq(u42.to-f64(), 42.0, 0.000001, 'u64 42 -> f64')
+
+    ; f64 ↔ f32：1.5 / 2.5 皆為二進位精確值，往返無誤差
+    f32a f32 = 1.5.to-f32()
+    runner.f64-eq(f32a.to-f64(), 1.5, 0.000001, 'f64 1.5 -> f32 -> f64')
+    f32b = 2.5.to-f32()
+    runner.f64-eq(f32b.to-f64(), 2.5, 0.000001, 'f32 2.5 -> f64')
+
+    b128 i128 = 1234567890
+    runner.f64-eq(b128.to-f64(), 1234567890.0, 0.000001, 'i128 -> f64')
+    ub128 u128 = 1234567890
+    runner.f64-eq(ub128.to-f64(), 1234567890.0, 0.000001, 'u128 -> f64')
+
+    ; i64 → i32 截斷：低 32 位保留，高位丟棄
+    i32a = 300.to-i32()
+    runner.eq(i32a.to-i64(), 300, 'i64 300 -> i32')
+
+    #{overflow=wrap}
+    big = 4294967296 + 7
+    i32b = big.to-i32()
+    runner.eq(i32b.to-i64(), 7, 'i64 2^32+7 -> i32 = 7')
+}
+
+; 窄整數拓寬矩陣（byte/u8/i8/u16/i16/u32/i32 → i64 / u64）
+; 負值一律經帶型別參數的助手傳入：`v i8 = -100` 這種宣告會丟失標註型別
+; （見 test/README.md §5.2 的負字面量條目），參數入口不受影響。
+narrow-i8 = (x i8) (out i64) {
+    out = x.to-i64()
+}
+
+narrow-i16 = (x i16) (out i64) {
+    out = x.to-i64()
+}
+
+narrow-i32 = (x i32) (out i64) {
+    out = x.to-i64()
+}
+
+t-conv-width = () {
+    b byte = 200
+    runner.eq(b.to-i64(), 200, 'byte 200 -> i64')
+    runner.str-eq(b.to-u64().to-str(), '200', 3, 'byte 200 -> u64')
+
+    u8v u8 = 250
+    runner.eq(u8v.to-i64(), 250, 'u8 250 -> i64')
+    runner.str-eq(u8v.to-u64().to-str(), '250', 3, 'u8 250 -> u64')
+
+    ; 有號窄型別必須符號擴展：-100 / -30000 / -2e9 皆原樣帶出
+    runner.eq(narrow-i8(-100), -100, 'i8 -100 -> i64 符號擴展')
+    runner.eq(narrow-i16(-30000), -30000, 'i16 -30000 -> i64 符號擴展')
+    runner.eq(narrow-i32(-2000000000), -2000000000, 'i32 -2e9 -> i64 符號擴展')
+
+    u16v u16 = 60000
+    runner.eq(u16v.to-i64(), 60000, 'u16 60000 -> i64 零擴展')
+    runner.str-eq(u16v.to-u64().to-str(), '60000', 5, 'u16 60000 -> u64')
+
+    u32v u32 = 4000000000
+    runner.eq(u32v.to-i64(), 4000000000, 'u32 4e9 -> i64 零擴展')
+    runner.str-eq(u32v.to-u64().to-str(), '4000000000', 10, 'u32 4e9 -> u64')
+}
+
+; 取出 []byte 元素值必須經帶 byte 參數的助手：`v byte = be[i]` 這種宣告
+; 會丟失標註型別，`.to-i64()` 因而解析成不存在的 `i64.to-i64`（同 §5.2 負字面量條目）。
+byte-of = (b byte) (out i64) {
+    out = b.to-i64()
+}
+
+; f64 位模式互轉與 i64 大端/小端位元組序列
+t-bits = () {
+
+    ; 1.5 = 0x3FF8000000000000
+    bits = 1.5.to-bits()
+    runner.str-eq(bits.to-str(), '4609434218613702656', 19, '1.5.to-bits')
+
+    back = bits.from-bits()
+    runner.f64-eq(back, 1.5, 0.000001, 'to-bits/from-bits 往返')
+
+    ; 258 = 0x0102：大端在尾端、小端在首端
+    be = 258.to-bytes-be()
+    runner.eq(be.len(), 8, 'to-bytes-be 長度 8')
+    runner.eq(byte-of(be[6]), 1, 'be b6 = 0x01')
+    runner.eq(byte-of(be[7]), 2, 'be b7 = 0x02')
+
+    le = 258.to-bytes-le()
+    runner.eq(le.len(), 8, 'to-bytes-le 長度 8')
+    runner.eq(byte-of(le[0]), 2, 'le b0 = 0x02')
+    runner.eq(byte-of(le[1]), 1, 'le b1 = 0x01')
+}
+
+; ── f64 數學函式 ──────────────────────────────
+; 全部為手寫級數／牛頓迭代實作，容差取 1e-6（實測最大誤差 ~2e-9）
+t-math-f64 = () {
+    runner.f64-eq(2.0.sqrt(), 1.4142135623730951, 0.000001, 'sqrt(2)')
+    runner.f64-eq(8.0.cbrt(), 2.0, 0.000001, 'cbrt(8)')
+    runner.f64-eq(27.0.cbrt(), 3.0, 0.000001, 'cbrt(27)')
+    runner.f64-eq(neg-f(8.0).cbrt(), -2.0, 0.000001, 'cbrt(-8)')
+
+    runner.f64-eq(0.0.sin(), 0.0, 0.000001, 'sin(0)')
+    runner.f64-eq(1.5707963267948966.sin(), 1.0, 0.000001, 'sin(π/2)')
+    runner.f64-eq(0.0.cos(), 1.0, 0.000001, 'cos(0)')
+    runner.f64-eq(3.141592653589793.cos(), -1.0, 0.000001, 'cos(π)')
+    runner.f64-eq(0.0.tan(), 0.0, 0.000001, 'tan(0)')
+    runner.f64-eq(0.7853981633974483.tan(), 1.0, 0.000001, 'tan(π/4)')
+
+    runner.f64-eq(1.0.asin(), 1.5707963267948966, 0.000001, 'asin(1)')
+    runner.f64-eq(1.0.acos(), 0.0, 0.000001, 'acos(1)')
+    runner.f64-eq(1.0.atan(), 0.7853981633974483, 0.000001, 'atan(1)')
+
+    runner.f64-eq(0.0.sinh(), 0.0, 0.000001, 'sinh(0)')
+    runner.f64-eq(1.0.sinh(), 1.1752011936438014, 0.000001, 'sinh(1)')
+    runner.f64-eq(0.0.cosh(), 1.0, 0.000001, 'cosh(0)')
+    runner.f64-eq(1.0.cosh(), 1.5430806348152437, 0.000001, 'cosh(1)')
+    runner.f64-eq(0.0.tanh(), 0.0, 0.000001, 'tanh(0)')
+    runner.f64-eq(1.0.tanh(), 0.7615941559557649, 0.000001, 'tanh(1)')
+
+    runner.f64-eq(1.2.ceil(), 2.0, 0.000001, 'ceil(1.2)')
+    runner.f64-eq(neg-f(1.2).ceil(), -1.0, 0.000001, 'ceil(-1.2)')
+    runner.f64-eq(1.8.floor(), 1.0, 0.000001, 'floor(1.8)')
+    runner.f64-eq(neg-f(1.2).floor(), -2.0, 0.000001, 'floor(-1.2)')
+    runner.f64-eq(1.5.round(), 2.0, 0.000001, 'round(1.5)')
+    runner.f64-eq(2.5.round(), 3.0, 0.000001, 'round(2.5) 半進位')
+    runner.f64-eq(neg-f(2.5).round(), -3.0, 0.000001, 'round(-2.5) 對稱進位')
+    runner.f64-eq(1.7.trunc(), 1.0, 0.000001, 'trunc(1.7)')
+    runner.f64-eq(neg-f(1.7).trunc(), -1.0, 0.000001, 'trunc(-1.7) 向零截斷')
+
+    runner.f64-eq(0.0.exp(), 1.0, 0.000001, 'exp(0)')
+    runner.f64-eq(1.0.exp(), 2.718281828459045, 0.000001, 'exp(1)')
+    runner.f64-eq(neg-f(1.0).exp(), 0.36787944117144233, 0.000001, 'exp(-1)')
+
+    runner.f64-eq(1.0.log(), 0.0, 0.000001, 'log(1)')
+    runner.f64-eq(2.718281828459045.log(), 1.0, 0.000001, 'log(e)')
+    runner.f64-eq(100.0.log10(), 2.0, 0.000001, 'log10(100)')
+    runner.f64-eq(8.0.log2(), 3.0, 0.000001, 'log2(8)')
+
+    runner.f64-eq(3.141592653589793.degrees(), 180.0, 0.000001, 'degrees(π)')
+    runner.f64-eq(1.5707963267948966.degrees(), 90.0, 0.000001, 'degrees(π/2)')
+    runner.f64-eq(180.0.radians(), 3.141592653589793, 0.000001, 'radians(180)')
+    runner.f64-eq(90.0.radians(), 1.5707963267948966, 0.000001, 'radians(90)')
+}
+
+; 驗證 number.exp-f64 自由函數：範圍遞減 + 泰勒級數，x>709 溢出為 +Inf
+t-exp-f64-fn = () {
+    runner.f64-eq(number.exp-f64(0.0), 1.0, 0.000001, 'exp-f64(0)')
+    runner.f64-eq(number.exp-f64(1.0), 2.718281828459045, 0.000001, 'exp-f64(1)')
+    runner.f64-eq(number.exp-f64(-1.0), 0.36787944117144233, 0.000001, 'exp-f64(-1)')
+    runner.f64-eq(number.exp-f64(10.0), 22026.465794806718, 0.001, 'exp-f64(10)')
+
+    ; x > 709 直接返回 +Inf（1.0/0.0）—— Nolang 沒有科學記數字面量，
+    ; 故先比大小再比字串（Inf 的格式化走 inf 字面）
+    inf = number.exp-f64(1000.0)
+    runner.is-true(inf > 1000000000000000.0, 'exp-f64(1000) 遠大於有限值')
+    runner.str-eq(inf.to-str-sci(2), 'inf', 3, 'exp-f64(1000) = +Inf')
+}
+
+; f32 方法：全部拓寬至 f64 計算後收窄，容差放寬到 1e-5
+as-f32 = (x f64) (out f32) {
+    out = x.to-f32()
+}
+
+f32-near = (x f32, want f64, eps f64, msg str) {
+    d = x.to-f64()
+    runner.f64-eq(d, want, eps, msg)
+}
+
+t-math-f32 = () {
+    f32-near(as-f32(8.0).cbrt(), 2.0, 0.00001, 'f32 cbrt(8)')
+
+    f32-near(as-f32(1.5707963).sin(), 1.0, 0.00001, 'f32 sin(π/2)')
+    f32-near(as-f32(0.0).cos(), 1.0, 0.00001, 'f32 cos(0)')
+    f32-near(as-f32(0.7853982).tan(), 1.0, 0.00001, 'f32 tan(π/4)')
+    f32-near(as-f32(1.0).asin(), 1.5707964, 0.00001, 'f32 asin(1)')
+    f32-near(as-f32(1.0).acos(), 0.0, 0.00001, 'f32 acos(1)')
+    f32-near(as-f32(1.0).atan(), 0.7853982, 0.00001, 'f32 atan(1)')
+
+    f32-near(as-f32(1.0).sinh(), 1.1752012, 0.00001, 'f32 sinh(1)')
+    f32-near(as-f32(1.0).cosh(), 1.5430806, 0.00001, 'f32 cosh(1)')
+    f32-near(as-f32(1.0).tanh(), 0.7615942, 0.00001, 'f32 tanh(1)')
+
+    f32-near(as-f32(1.2).ceil(), 2.0, 0.00001, 'f32 ceil(1.2)')
+    f32-near(as-f32(1.8).floor(), 1.0, 0.00001, 'f32 floor(1.8)')
+    f32-near(as-f32(1.5).round(), 2.0, 0.00001, 'f32 round(1.5)')
+    f32-near(as-f32(1.7).trunc(), 1.0, 0.00001, 'f32 trunc(1.7)')
+
+    f32-near(as-f32(1.0).exp(), 2.7182817, 0.00001, 'f32 exp(1)')
+    f32-near(as-f32(1.0).log(), 0.0, 0.00001, 'f32 log(1)')
+    f32-near(as-f32(100.0).log10(), 2.0, 0.00001, 'f32 log10(100)')
+    f32-near(as-f32(8.0).log2(), 3.0, 0.00001, 'f32 log2(8)')
+    f32-near(as-f32(3.1415927).degrees(), 180.0, 0.00005, 'f32 degrees(π)')
+    f32-near(as-f32(180.0).radians(), 3.1415927, 0.00001, 'f32 radians(180)')
+}
+
 ; ── 執行 ──────────────────────────────────────
 p1, f1 = runner.test('math.max/min', t-max-min)
 p2, f2 = runner.test('num.abs', t-abs)
@@ -249,6 +555,16 @@ p12, f12 = runner.test('number.f64.to-str', t-f64-method-to-str)
 p13, f13 = runner.test('number.i128/u128 range const', t-int128-range-const)
 p14, f14 = runner.test('number.i128/u128 sqrt', t-int128-sqrt)
 p15, f15 = runner.test('number.i128/u128 is-prime', t-int128-is-prime)
+p16, f16 = runner.test('number.f64.to-str-fixed', t-fmt-fixed)
+p17, f17 = runner.test('number.f64.to-str-sci', t-fmt-sci)
+p18, f18 = runner.test('number.f64.to-str-general', t-fmt-general)
+p19, f19 = runner.test('number.f64 -> int', t-conv-f64-int)
+p20, f20 = runner.test('number.int -> f64 / 位宽互转', t-conv-int-f64)
+p21, f21 = runner.test('number 窄整数拓寬', t-conv-width)
+p22, f22 = runner.test('number 位模式 / to-bytes', t-bits)
+p23, f23 = runner.test('number f64 數學函式', t-math-f64)
+p24, f24 = runner.test('number.exp-f64', t-exp-f64-fn)
+p25, f25 = runner.test('number f32 數學函式', t-math-f32)
 total = runner.summary()
 f = runner.failed-count()
 {

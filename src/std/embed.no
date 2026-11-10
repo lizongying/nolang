@@ -39,21 +39,17 @@ embed.read = (path str) (data ?[]byte) {
     data = nil
     path-len = path.len()
     i <- [0..self.count): {
-        ixout42c1e = .pathStarts[i]: {
+        p-start = .pathStarts[i]: {
             ok -> it
 
             -> _
         }
 
-        p-start = ixout42c1e
-
-        ixout44c1a = .pathLens[i]: {
+        p-len = .pathLens[i]: {
             ok -> it
 
             -> _
         }
-
-        p-len = ixout44c1a
 
         ; 快速長度檢查
         p-len != path-len -> break
@@ -70,21 +66,17 @@ embed.read = (path str) (data ?[]byte) {
         }
 
         match -> {
-            ixout61c22 = .dataStarts[i]: {
+            d-start = .dataStarts[i]: {
                 ok -> it
 
                 -> _
             }
 
-            d-start = ixout61c22
-
-            ixout63c1e = .dataLens[i]: {
+            d-len = .dataLens[i]: {
                 ok -> it
 
                 -> _
             }
-
-            d-len = ixout63c1e
 
             ; 從 blob 中切片返回
             data = .blob[d-start..d-start + d-len)
@@ -101,21 +93,17 @@ embed.read = (path str) (data ?[]byte) {
 embed.exists = (path str) (yes bool) {
     path-len = path.len()
     i <- [0..self.count): {
-        ixout80c1e = .pathStarts[i]: {
+        p-start = .pathStarts[i]: {
             ok -> it
 
             -> _
         }
 
-        p-start = ixout80c1e
-
-        ixout82c1a = .pathLens[i]: {
+        p-len = .pathLens[i]: {
             ok -> it
 
             -> _
         }
-
-        p-len = ixout82c1a
         p-len != path-len -> break
         match = true
         j <- [0..p-len): {

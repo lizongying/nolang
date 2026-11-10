@@ -231,12 +231,29 @@ func walkSurfaceMatchChildren(
 	if sm == nil {
 		return
 	}
+	if sm.Matched != nil && onExpr != nil {
+		onExpr(sm.Matched)
+	}
+	walkSurfaceMatchArms(sm, varTypes, onExpr, onStmt)
+}
+
+// walkSurfaceMatchArms 只枚舉 arm（條件／多值模式／臂體），不碰主體。
+//
+// 主體需要被特判時（例如 option match 的安全索引主體：其下標算術已被 lowering
+// 提升成 option、由本 match 的失敗臂消費，該站點不該再被報告）由呼叫方自己走
+// 主體，其餘枚舉邏輯仍集中在這個檔案 —— 新增 arm 欄位時只改這裡。
+func walkSurfaceMatchArms(
+	sm *parser.SurfaceMatch,
+	varTypes map[string]string,
+	onExpr func(parser.Expression),
+	onStmt func(parser.Statement),
+) {
+	if sm == nil {
+		return
+	}
 	matchedType := ""
 	if id, ok := sm.Matched.(*parser.Identifier); ok && varTypes != nil {
 		matchedType = varTypes[id.Value]
-	}
-	if sm.Matched != nil && onExpr != nil {
-		onExpr(sm.Matched)
 	}
 	for i := range sm.Arms {
 		arm := &sm.Arms[i]

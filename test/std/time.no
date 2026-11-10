@@ -1,9 +1,14 @@
 ; std-time.no — time 模組測試
 ;
 ; 執行：no test test/std/time.no
-; 覆蓋：now-s / duration-between / is-leap / days-in-month-fn /
-;       unix-to-date / date-to-unix / format-date / format-time-str / format-duration / parse-date / timer /
-;       time 結構體（now-time / unix-to-time / duration-time / since-time / parse-time + .unix/.date/.format/.add-seconds/.sub）
+; 覆蓋：now-s / now-ms / now-us / now-ns / sleep-s / sleep-ms / sleep-us / sleep-ns /
+;       duration-between / duration-ms-between / duration-us-between /
+;       since-s / since-ms / since-us / since-time / now-date /
+;       is-leap / days-in-month-fn / unix-to-date / date-to-unix /
+;       format-date / format-time-str / format-duration / parse-date /
+;       timer（start / stop / elapsed-ms / elapsed-s / elapsed-us）/
+;       time 結構體（now-time / unix-to-time / duration-time / parse-time +
+;       .unix/.unix-ms/.date/.format/.add-seconds/.sub）
 
 # /test/runner
 
@@ -227,6 +232,201 @@ t-time-struct = () {
     runner.is-true(isnil, 'parse-time invalid == nil')
 }
 
+; ── 算術助手 ───────────────────────────────────
+;
+; Nolang 的算術結果一律是 `?i64`（見 §5.2 #61：`#{overflow=wrap}` 也不會讓型別變回
+; i64）。把 `?i64` 當運算元再用會**靜默取 0**，比較也會走錯臂，所以本檔所有
+; 「時間差 → 再換算/比較」的步驟一律經這幾個助手就地解包。
+
+; a - b（溢出回繞）
+sub-of = (a i64, b i64) (out i64) {
+
+    #{overflow=wrap}
+    out = a - b: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; a * b（溢出回繞）
+mul-of = (a i64, b i64) (out i64) {
+
+    #{overflow=wrap}
+    out = a * b: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; a / b（除零回 0）
+div-of = (a i64, b i64) (out i64) {
+
+    #{overflow=wrap}
+    out = a / b: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; |v|
+abs-of = (v i64) (out i64) {
+    out = v
+    v < 0 -> out = sub-of(0, v)
+}
+
+; ── 毫秒 / 微秒 / 納秒時鐘 ─────────────────────
+
+; 驗證 now-ms / now-us / now-ns 三個時鐘的量級與彼此自洽（單位不是秒）
+t-now-clocks = () {
+    ms = time.now-ms()
+    runner.gt(ms, 1600000000000, 'now-ms > 1.6e12（2020 之後，且單位是毫秒）')
+
+    us = time.now-us()
+    runner.gt(us, 1600000000000000, 'now-us > 1.6e15（單位是微秒）')
+
+    ns = time.now-ns()
+    runner.gt(ns, 1600000000000000000, 'now-ns > 1.6e18（單位是納秒）')
+
+    ; 三次呼叫有先後，換算回同一單位後容許 5 秒偏差
+    us-as-ms = div-of(us, 1000)
+    runner.lt(abs-of(sub-of(ms, us-as-ms)), 5000, 'now-ms 與 now-us/1000 相差 < 5s')
+
+    ns-as-us = div-of(ns, 1000)
+    runner.lt(abs-of(sub-of(us, ns-as-us)), 5000000, 'now-us 與 now-ns/1000 相差 < 5s')
+}
+
+; 驗證 sleep-s / sleep-ms / sleep-us / sleep-ns 真的會等（以時鐘差為證）
+t-sleep = () {
+    a1 = time.now-ms()
+    time.sleep-ms(30)
+    b1 = time.now-ms()
+    runner.gt(sub-of(b1, a1), 20, 'sleep-ms(30) 至少 20ms')
+
+    a2 = time.now-us()
+    time.sleep-us(30000)
+    b2 = time.now-us()
+    runner.gt(sub-of(b2, a2), 20000, 'sleep-us(30000) 至少 20000us')
+
+    a3 = time.now-ns()
+    time.sleep-ns(30000000)
+    b3 = time.now-ns()
+    runner.gt(div-of(sub-of(b3, a3), 1000000), 20, 'sleep-ns(30ms) 至少 20ms')
+
+    ; sleep-s(0) 必須立即返回（毫秒級），不得把 0 當成無限等待
+    a4 = time.now-ms()
+    time.sleep-s(0)
+    b4 = time.now-ms()
+    runner.lt(sub-of(b4, a4), 1000, 'sleep-s(0) 立即返回（< 1s）')
+}
+
+; 驗證 duration-ms-between / duration-us-between 的差值與負向結果
+t-duration-ms-us = () {
+    runner.eq(time.duration-ms-between(1000, 1500), 500, 'duration-ms-between 1000..1500 == 500')
+    runner.eq(time.duration-ms-between(1500, 1000), -500, 'duration-ms-between 反向 == -500')
+    runner.eq(time.duration-ms-between(7, 7), 0, 'duration-ms-between 相等 == 0')
+
+    runner.eq(time.duration-us-between(1000, 2500), 1500, 'duration-us-between 1000..2500 == 1500')
+    runner.eq(time.duration-us-between(2500, 1000), -1500, 'duration-us-between 反向 == -1500')
+    runner.eq(time.duration-us-between(0, 0), 0, 'duration-us-between 相等 == 0')
+}
+
+; 驗證 since-s / since-ms / since-us 以「過去時間戳」量出合理經過量
+t-since = () {
+    d-s = time.since-s(sub-of(time.now-s(), 5))
+    runner.gt(d-s, 3, 'since-s(現在-5s) > 3')
+    runner.lt(d-s, 30, 'since-s(現在-5s) < 30')
+
+    d-ms = time.since-ms(sub-of(time.now-ms(), 1000))
+    runner.gt(d-ms, 500, 'since-ms(現在-1000ms) > 500')
+    runner.lt(d-ms, 30000, 'since-ms(現在-1000ms) < 30000')
+
+    d-us = time.since-us(sub-of(time.now-us(), 1000000))
+    runner.gt(d-us, 500000, 'since-us(現在-1e6us) > 5e5')
+    runner.lt(d-us, 30000000, 'since-us(現在-1e6us) < 3e7')
+
+    ; 起點就是「現在」時不得回負值
+    runner.gt(time.since-ms(time.now-ms()), -1, 'since-ms(現在) >= 0')
+}
+
+; 驗證 timer.start / timer.stop / elapsed-us，並釘住修前恆 0 的迴歸
+t-timer-run = () {
+    tm = time.timer{}
+    runner.eq(tm.start-ts, 0, 'timer 新建 start-ts == 0')
+    runner.eq(tm.end-ts, 0, 'timer 新建 end-ts == 0')
+
+    tm.start()
+    runner.gt(tm.start-ts, 1600000000000, 'timer.start 寫入毫秒時間戳')
+
+    time.sleep-ms(30)
+    tm.stop()
+    runner.gt(tm.end-ts, tm.start-ts, 'timer.stop 後 end-ts > start-ts')
+
+    ms = tm.elapsed-ms()
+    runner.gt(ms, 20, 'elapsed-ms >= 20')
+    runner.lt(ms, 5000, 'elapsed-ms < 5s')
+    runner.eq(tm.elapsed-us(), mul-of(ms, 1000), 'elapsed-us == elapsed-ms * 1000')
+    runner.eq(tm.elapsed-s(), div-of(ms, 1000), 'elapsed-s == elapsed-ms / 1000')
+
+    ; 迴歸：修前 `ms` 靜默拿不到值，elapsed-s / elapsed-us 對任何非零差都回 0
+    ; （README §5.1o）
+    fixed = time.timer{
+        start-ts: 0
+        end-ts: 1500
+    }
+    runner.eq(fixed.elapsed-ms(), 1500, 'elapsed-ms(1500ms) == 1500')
+    runner.eq(fixed.elapsed-s(), 1, '迴歸：elapsed-s(1500ms) == 1（修前恆 0）')
+    runner.eq(fixed.elapsed-us(), 1500000, '迴歸：elapsed-us(1500ms) == 1500000（修前恆 0）')
+
+    neg = time.timer{
+        start-ts: 5000
+        end-ts: 1000
+    }
+    runner.eq(neg.elapsed-s(), -4, 'elapsed-s 負差 == -4（向下取整）')
+    runner.eq(neg.elapsed-us(), -4000000, 'elapsed-us 負差 == -4000000')
+}
+
+; 驗證 now-date 的欄位都在合法域內，且與 unix-to-date(now-s) 自洽
+t-now-date = () {
+    d = time.now-date()
+    runner.gt(d.year, 2024, 'now-date year > 2024')
+    runner.gt(d.month, 0, 'now-date month >= 1')
+    runner.lt(d.month, 13, 'now-date month <= 12')
+    runner.gt(d.day, 0, 'now-date day >= 1')
+    runner.lt(d.day, 32, 'now-date day <= 31')
+    runner.gt(d.hour, -1, 'now-date hour >= 0')
+    runner.lt(d.hour, 24, 'now-date hour <= 23')
+    runner.gt(d.min, -1, 'now-date min >= 0')
+    runner.lt(d.min, 60, 'now-date min <= 59')
+    runner.gt(d.sec, -1, 'now-date sec >= 0')
+    runner.lt(d.sec, 60, 'now-date sec <= 59')
+    runner.gt(d.wday, -1, 'now-date wday >= 0')
+    runner.lt(d.wday, 7, 'now-date wday <= 6')
+
+    ; 與 now-s 走同一條拆解路徑，年份必須一致
+    d2 = time.unix-to-date(time.now-s())
+    runner.eq(d2.year, d.year, 'now-date 與 unix-to-date(now-s) 同年')
+}
+
+; 驗證 since-time 對過去 / 現在 / 未來三種起點的行為
+t-since-time = () {
+    t-past = time.unix-to-time(sub-of(time.now-s(), 5))
+    d1 = time.since-time(t-past)
+    runner.gt(d1, 3, 'since-time(現在-5s) > 3')
+    runner.lt(d1, 30, 'since-time(現在-5s) < 30')
+
+    t-now = time.unix-to-time(time.now-s())
+    d2 = time.since-time(t-now)
+    runner.gt(d2, -1, 'since-time(現在) >= 0')
+    runner.lt(d2, 5, 'since-time(現在) < 5')
+
+    ; 未來 100 秒的起點 → 負差
+    t-future = time.unix-to-time(sub-of(time.now-s(), -100))
+    runner.lt(time.since-time(t-future), 0, 'since-time(未來 100s) < 0')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('time.now-s', t-now-s)
@@ -242,6 +442,13 @@ p10, f10 = runner.test('time.parse-date', t-parse-date)
 p11, f11 = runner.test('time.timer', t-timer)
 p12, f12 = runner.test('time.format-duration', t-format-duration)
 p13, f13 = runner.test('time.time-struct', t-time-struct)
+p14, f14 = runner.test('time.now-clocks', t-now-clocks)
+p15, f15 = runner.test('time.sleep', t-sleep)
+p16, f16 = runner.test('time.duration-ms-us', t-duration-ms-us)
+p17, f17 = runner.test('time.since', t-since)
+p18, f18 = runner.test('time.timer-run', t-timer-run)
+p19, f19 = runner.test('time.now-date', t-now-date)
+p20, f20 = runner.test('time.since-time', t-since-time)
 
 total = runner.summary()
 f = runner.failed-count()

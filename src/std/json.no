@@ -517,13 +517,11 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 val-ok == false -> return
 
                 ; 物件：以邊表附加子元素；鍵名取自解析出的 key 節點字串值
-                ixout520c20 = .strs[key-idx]: {
+                key-str = .strs[key-idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                key-str = ixout520c20
                 .add-child(node-idx, val-idx, key-str)
                 p = val-next
                 p = .skip-ws(s, p)
@@ -1739,10 +1737,23 @@ json.arr-push-idx = (child-idx i64) (ok bool) {
 ; 用法：
 ;   j.arr-push(item)
 ; val: 元素 json（其根子樹先深拷貝進本池，再以空鍵附加）
-; ok: true=已附加
+; ok: true=已附加；false=val 根索引無效
 ; [arr-push](#json.arr-push)
 json.arr-push = (val json) (ok bool) {
-    ok = .arr-push-idx(val.root)
+    ok = false
+    val.root < 0 || val.root >= val.pool.count -> return
+
+    ; ⚠ 必須深拷貝進本池。舊實作直接 `ok = .arr-push-idx(val.root)`，把來源池的
+    ;   節點索引當成本池索引使用：新陣列的 root 恆為 0，而來自 json.parse 的
+    ;   子樹 root 也恆為 0 ⇒ add-child(0, 0) 把節點掛成自己的子節點，形成自環，
+    ;   arr-len 報 1、stringify 無限遞迴 → segfault。本函式 doc 一直宣稱會深拷貝，
+    ;   實作卻沒有。
+    ;   與 set-key 相同，先經一個全新池中轉：兩次 copy-tree 的兩端必不同池，
+    ;   不依賴池身份判定，故 val 就是 . 自己（arr-push(j) 自引用）也安全。
+    tmp = clone-json-tree(val.pool, val.root)
+    v-idx = .pool.copy-tree(tmp.pool, tmp.root)
+    v-idx < 0 -> return
+    ok = .arr-push-idx(v-idx)
 }
 
 ; 向陣列末尾添加字串元素

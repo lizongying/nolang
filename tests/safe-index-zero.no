@@ -55,13 +55,11 @@ z-str = (arr []str, i i64) (res str) {
 ; i i64: 下標，允許越界
 ; res char: arr[i]，越界時為 '\0'
 z-char = (arr []char, i i64) (res char) {
-    ixout60c11 = arr[i]: {
+    res = arr[i]: {
         ok -> it
 
         -> _
     }
-
-    res = ixout60c11
 }
 
 ; 越界取 byte 元素零值：得 0

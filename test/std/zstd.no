@@ -132,7 +132,11 @@ t-roundtrip = () {
 
     big []byte = with-len(300)
     i <- [0..300): {
-        big[i] = 65 + (i % 26)
+        big[i]: {
+            ok -> it = 65 + (i % 26)
+
+            -> _
+        }
     }
     z2 = zstd.zstd-compress(big)
 

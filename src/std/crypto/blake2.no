@@ -233,14 +233,10 @@ b-compress = (h []u64, block []byte, t u64, last i64) {
     ; （2026-10-30：argon2「換 salt 輸出不變」的真正根因）。
     v []u64 = with-len(16)
     i <- [0..8): {
-        ixout150c24 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        v[i]: {
-            ok -> it = ixout150c24
+        {
+            v[i] ?= h[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -675,16 +671,12 @@ b = (data []byte) (hash [64]byte) {
     #{overflow=wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
+        {
 
-        #{overflow=wrap}
-        ixout319c24 = data[offset + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        last-block[i]: {
-            ok -> it = ixout319c24
+            #{overflow=wrap}
+            last-block[i] ?= data[offset + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -708,13 +700,11 @@ b = (data []byte) (hash [64]byte) {
         #{overflow=wrap}
         off = i * 8
 
-        ixout344c21 = h[i]: {
+        hash[off] = h[i]: {
             ok -> it
 
             -> _
         }
-
-        hash[off] = ixout344c21
 
         ixout347c26 = h[i]: {
             ok -> it
@@ -830,16 +820,12 @@ b-256 = (data []byte) (hash [32]byte) {
     #{overflow=wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
+        {
 
-        #{overflow=wrap}
-        ixout407c24 = data[offset + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        last-block[i]: {
-            ok -> it = ixout407c24
+            #{overflow=wrap}
+            last-block[i] ?= data[offset + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -861,13 +847,11 @@ b-256 = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         off = i * 8
 
-        ixout430c21 = h[i]: {
+        hash[off] = h[i]: {
             ok -> it
 
             -> _
         }
-
-        hash[off] = ixout430c21
 
         ixout433c26 = h[i]: {
             ok -> it
@@ -949,14 +933,15 @@ b-hex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout953c1f = hex-chars[(ixout933c37 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout933c37 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout953c1f
 
         ixout936c40 = hash[i]: {
             ok -> it
@@ -964,14 +949,15 @@ b-hex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout962c23 = hex-chars[ixout936c40 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout936c40 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout962c23
     }
 }
 
@@ -990,14 +976,15 @@ b-256-hex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout982c1f = hex-chars[(ixout951c37 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout951c37 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout982c1f
 
         ixout954c40 = hash[i]: {
             ok -> it
@@ -1005,14 +992,15 @@ b-256-hex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout991c23 = hex-chars[ixout954c40 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout954c40 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout991c23
     }
 }
 
@@ -1224,14 +1212,10 @@ s-g = (v []u32, a i64, b i64, c i64, d i64, x u32, y u32) {
 s-compress = (h []u32, block []byte, t u32, last i64) {
     v []u32 = with-len(16)
     i <- [0..8): {
-        ixout614c24 = h[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        v[i]: {
-            ok -> it = ixout614c24
+        {
+            v[i] ?= h[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1603,16 +1587,12 @@ s = (data []byte) (hash [32]byte) {
     #{overflow=wrap}
     remaining = dlen - offset
     i <- [0..remaining): {
+        {
 
-        #{overflow=wrap}
-        ixout743c24 = data[offset + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        last-block[i]: {
-            ok -> it = ixout743c24
+            #{overflow=wrap}
+            last-block[i] ?= data[offset + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1633,13 +1613,11 @@ s = (data []byte) (hash [32]byte) {
         #{overflow=wrap}
         off = i * 4
 
-        ixout765c21 = h[i]: {
+        hash[off] = h[i]: {
             ok -> it
 
             -> _
         }
-
-        hash[off] = ixout765c21
 
         ixout768c26 = h[i]: {
             ok -> it
@@ -1685,14 +1663,15 @@ s-hex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout1665c1f = hex-chars[(ixout1617c37 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout1617c37 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout1665c1f
 
         ixout1620c40 = hash[i]: {
             ok -> it
@@ -1700,13 +1679,14 @@ s-hex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout1674c23 = hex-chars[ixout1620c40 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout1620c40 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout1674c23
     }
 }

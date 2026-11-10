@@ -2282,14 +2282,10 @@ sha256 = (data []byte) (hash [32]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-        ixout2207c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        padded[i]: {
-            ok -> it = ixout2207c24
+        {
+            padded[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -2373,7 +2369,11 @@ sha256 = (data []byte) (hash [32]byte) {
                 -> _
             }
 
-            block[i] = (ixout2264c25 << 24) | (ixout2264c58 << 16) | (ixout2264c95 << 8) | ixout2264c130
+            block[i]: {
+                ok -> it = (ixout2264c25 << 24) | (ixout2264c58 << 16) | (ixout2264c95 << 8) | ixout2264c130
+
+                -> _
+            }
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha256-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 

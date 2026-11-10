@@ -39,13 +39,11 @@ bit-reader.read-bit = () (bit i64) {
 
     #{overflow=wrap}
     .bit-cnt == 0 -> .pos < .data.len() -> {
-        ixout42c19 = .data[.pos]: {
+        .bit-buf = .data[.pos]: {
             ok -> it
 
             -> _
         }
-
-        .bit-buf = ixout42c19
         .pos = .pos + 1: {
             ok -> it
 
@@ -87,13 +85,11 @@ bit-reader.skip-to-byte = () {
 ; v i64: 解出的 0..65535 整數
 ; [read-u16-le](#gzip.bit-reader.read-u16-le)
 bit-reader.read-u16-le = () (v i64) {
-    ixout84cf = .data[.pos]: {
+    lo = .data[.pos]: {
         ok -> it
 
         -> _
     }
-
-    lo = ixout84cf
 
     #{overflow=wrap}
     .pos = .pos + 1: {
@@ -102,13 +98,11 @@ bit-reader.read-u16-le = () (v i64) {
         ->
     }
 
-    ixout93cf = .data[.pos]: {
+    hi = .data[.pos]: {
         ok -> it
 
         -> _
     }
-
-    hi = ixout93cf
 
     #{overflow=wrap}
     .pos = .pos + 1: {
@@ -203,25 +197,21 @@ huffman.decode = (br bit-reader) (sym i64) {
         bit = br.read-bit()
         code = code | bit
 
-        ixout188c15 = .count[len]: {
+        cnt = .count[len]: {
             ok -> it
 
             -> _
         }
 
-        cnt = ixout188c15
-
         #{overflow=wrap}
         code - first < cnt -> {
 
             #{overflow=wrap}
-            ixout194c1a = .symbol[index + (code - first)]: {
+            sym = .symbol[index + (code - first)]: {
                 ok -> it
 
                 -> _
             }
-
-            sym = ixout194c1a
             return
         }
 
@@ -450,16 +440,12 @@ build-dynamic = (br bit-reader, lc huffman, dc huffman) {
         dlengths.push(0)
     }
     i <- [0..hdist): {
+        {
 
-        #{overflow=wrap}
-        ixout368c24 = lengths[hlit + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        dlengths[i]: {
-            ok -> it = ixout368c24
+            #{overflow=wrap}
+            dlengths[i] ?= lengths[hlit + i]
+        }: {
+            err -> _
 
             -> _
         }

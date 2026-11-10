@@ -17,6 +17,149 @@ eq-str = (got str, want str, msg str) {
     runner.str-eq(got, want, want.len-bytes(), msg)
 }
 
+; 取 ?i64 的值，非 ok 回哨兵 -999
+num-of = (o ?i64) (v i64) {
+    v = -999
+    o: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 ?str 的值，非 ok 回哨兵 <nil>
+s-of = (o ?str) (v str) {
+    v = '<nil>'
+    o: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 ?f64 的值，非 ok 回哨兵 -12345
+f-of = (o ?f64) (v f64) {
+    v = -12345.0
+    o: {
+        ok -> v = it
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 ?bool 的三態：1=ok(true) 2=ok(false) 0=非 ok
+tri-of = (o ?bool) (v i64) {
+    v = 0
+    o: {
+        ok -> {
+            v = 2
+
+            it -> v = 1
+        }
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的節點種類（找不到回 -1）
+kind-of = (d yaml, k str) (v i64) {
+    v = -1
+    o = d.find(k)
+    o: {
+        ok -> v = it.kind()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的節點風格（找不到回 -1）
+style-of = (d yaml, k str) (v i64) {
+    v = -1
+    o = d.find(k)
+    o: {
+        ok -> v = it.style()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的錨點名（找不到回 -）
+anchor-of = (d yaml, k str) (v str) {
+    v = '-'
+    o = d.find(k)
+    o: {
+        ok -> v = it.anchor()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的顯式標簽（找不到回 -）
+tag-of = (d yaml, k str) (v str) {
+    v = '-'
+    o = d.find(k)
+    o: {
+        ok -> v = it.tag()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 的起始行（找不到回 -1）
+line-of = (d yaml, k str) (v i64) {
+    v = -1
+    o = d.find(k)
+    o: {
+        ok -> v = it.line-of()
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 路徑 k 是否為指定型別：1=bool 2=int 3=float 4=nan 5=num 6=str 7=seq 8=map 9=null
+is-of = (d yaml, k str, what i64) (v bool) {
+    v = false
+    o = d.find(k)
+    o: {
+        ok -> {
+            nd = it
+            what == 1 -> v = nd.is-bool()
+            what == 2 -> v = nd.is-int()
+            what == 3 -> v = nd.is-float()
+            what == 4 -> v = nd.is-nan()
+            what == 5 -> v = nd.is-num()
+            what == 6 -> v = nd.is-str()
+            what == 7 -> v = nd.is-seq()
+            what == 8 -> v = nd.is-map()
+            what == 9 -> v = nd.is-null()
+        }
+
+        nil -> _
+
+        err -> _
+    }
+}
+
+; 取 yaml 句柄，失敗即斷言失敗並回 nil（讓呼叫端提早 return）
+
 ; 驗證 yaml.parse 標量取值：巢狀 map 根節點 kind 正確，find-str/i64/f64/bool 各按型別取到值
 t-scalars = () {
     r = yaml.parse('name: nolang
@@ -362,6 +505,374 @@ t-error-and-nohang = () {
         err -> runner.is-true(true, 'unterminated dq => err')
     }
 }
+; 多文檔：parse-all / doc-count / doc(i) / node-count / to-json-all / source-of / valid / error
+t-multidoc = () {
+    src = 'a: 1
+---
+b: 2'
+    r = yaml.parse-all(src)
+    r: {
+        ok -> {
+            d = it
+            runner.eq(d.doc-count(), 2, 'doc-count')
+            runner.is-true(d.valid(), 'valid')
+            eq-str(d.error(), '', 'error empty')
+            runner.eq(d.source-of().len-bytes(), src.len-bytes(), 'source-of len')
+            runner.is-true(d.node-count() >= 6, 'node-count at least 6')
+            eq-str(d.to-json-all(), '[{"a":1},{"b":2}]', 'to-json-all')
+            d0 = d.doc(0)
+            d0: {
+                ok -> {
+                    runner.eq(it.kind(), 6, 'doc0 map')
+                    runner.eq(num-of(it.find-i64('a')), 1, 'doc0 a')
+                }
+
+                nil -> runner.is-true(false, 'doc0 ok')
+
+                err -> runner.is-true(false, 'doc0 ok')
+            }
+            d1 = d.doc(1)
+            d1: {
+                ok -> runner.eq(num-of(it.find-i64('b')), 2, 'doc1 b')
+
+                nil -> runner.is-true(false, 'doc1 ok')
+
+                err -> runner.is-true(false, 'doc1 ok')
+            }
+            d9 = d.doc(9)
+            d9: {
+                ok -> runner.is-true(false, 'doc out of range')
+
+                nil -> runner.is-true(true, 'doc out of range nil')
+
+                err -> runner.is-true(false, 'doc out of range nil')
+            }
+        }
+
+        nil -> runner.is-true(false, 'parse-all ok')
+
+        err -> runner.is-true(false, 'parse-all ok')
+    }
+}
+
+; 型別判定與風格/標簽/錨點/行號：is-*、kind、style、tag、anchor、line-of、len
+t-flags = () {
+    r = yaml.parse('flag: true
+num: 42
+fl: 2.5
+nanv: .nan
+s: hello
+sq: [1, 2]
+mp: {k: v}
+anch: &an v1')
+    r: {
+        ok -> {
+            d = it
+            runner.eq(d.kind(), 6, 'root map')
+            runner.eq(d.style(), 6, 'root block style')
+            runner.eq(kind-of(d, 'flag'), 1, 'flag bool')
+            runner.eq(kind-of(d, 'num'), 2, 'num int')
+            runner.eq(kind-of(d, 'fl'), 3, 'fl float')
+            runner.eq(kind-of(d, 'nanv'), 3, 'nanv float')
+            runner.eq(kind-of(d, 's'), 4, 's str')
+            runner.eq(kind-of(d, 'sq'), 5, 'sq seq')
+            runner.eq(kind-of(d, 'mp'), 6, 'mp map')
+            runner.is-true(is-of(d, 'flag', 1), 'is-bool flag')
+            runner.is-false(is-of(d, 'flag', 5), 'flag not num')
+            runner.is-true(is-of(d, 'num', 2), 'is-int num')
+            runner.is-true(is-of(d, 'num', 5), 'num is-num')
+            runner.is-true(is-of(d, 'fl', 3), 'is-float fl')
+            runner.is-true(is-of(d, 'fl', 5), 'fl is-num')
+            runner.is-true(is-of(d, 'nanv', 4), 'is-nan nanv')
+            runner.is-true(is-of(d, 's', 6), 'is-str s')
+            runner.is-true(is-of(d, 'sq', 7), 'is-seq sq')
+            runner.is-true(is-of(d, 'mp', 8), 'is-map mp')
+            runner.is-false(is-of(d, 'num', 6), 'num not str')
+            runner.eq(style-of(d, 's'), 0, 's plain style')
+            runner.eq(style-of(d, 'sq'), 7, 'sq flow style')
+            runner.eq(style-of(d, 'mp'), 7, 'mp flow style')
+            eq-str(anchor-of(d, 'anch'), 'an', 'anchor name')
+            eq-str(anchor-of(d, 's'), '', 'no anchor')
+            eq-str(tag-of(d, 's'), '', 'no tag')
+            runner.eq(line-of(d, 's'), 6, 'block scalar line is scan end')
+        }
+
+        nil -> runner.is-true(false, 'flags parse ok')
+
+        err -> runner.is-true(false, 'flags parse ok')
+    }
+
+    ; 流式文檔不消耗行尾換行，起始行與實際行一致
+    r2 = yaml.parse('{a: 1}')
+    r2: {
+        ok -> runner.eq(it.line-of(), 1, 'flow doc line 1')
+
+        nil -> runner.is-true(false, 'flow parse ok')
+
+        err -> runner.is-true(false, 'flow parse ok')
+    }
+}
+
+; 存取器：get-* / key / key-node / value / at / scalar-text / str / i64 / f64 / bool / len / text
+t-accessors = () {
+    r = yaml.parse('a: 1
+b: hello
+c: true
+d: 2.5
+e: [1]
+n: null')
+    r: {
+        ok -> {
+            d = it
+            eq-str(s-of(d.get-str('b')), 'hello', 'get-str b')
+            eq-str(s-of(d.get-str('a')), '1', 'get-str of int returns text')
+            eq-str(s-of(d.get-str('missing')), '<nil>', 'get-str missing')
+            runner.eq(num-of(d.get-i64('a')), 1, 'get-i64 a')
+            runner.eq(num-of(d.get-i64('b')), -999, 'get-i64 of str nil')
+            runner.eq(num-of(d.get-i64('d')), 2, 'get-i64 truncates float')
+            runner.f64-eq(f-of(d.get-f64('d')), 2.5, 0.0001, 'get-f64 d')
+            runner.f64-eq(f-of(d.get-f64('a')), 1.0, 0.0001, 'get-f64 of int')
+            runner.eq(tri-of(d.get-bool('c')), 1, 'get-bool c true')
+            runner.eq(tri-of(d.get-bool('a')), 0, 'get-bool of int nil')
+            eq-str(s-of(d.key(0)), 'a', 'key 0')
+            eq-str(s-of(d.key(99)), '<nil>', 'key out of range')
+            runner.eq(num-of(d.value(0).i64()), 1, 'value 0 i64')
+            runner.eq(num-of(d.at(0).i64()), 1, 'at 0 i64')
+            d.at(-1): {
+                ok -> runner.is-true(false, 'at -1 nil')
+
+                nil -> runner.is-true(true, 'at -1 nil')
+
+                err -> runner.is-true(false, 'at -1 nil')
+            }
+            kn = d.key-node(0)
+            kn: {
+                ok -> {
+                    runner.eq(it.kind(), 4, 'key-node 0 is str')
+                    eq-str(s-of(it.scalar-text()), 'a', 'key-node scalar-text')
+                }
+
+                nil -> runner.is-true(false, 'key-node 0 ok')
+
+                err -> runner.is-true(false, 'key-node 0 ok')
+            }
+            a-node = d.find('a')
+            a-node: {
+                ok -> {
+                    eq-str(s-of(it.scalar-text()), '1', 'scalar-text of int')
+                    eq-str(s-of(it.str()), '1', 'str of int')
+                }
+
+                nil -> runner.is-true(false, 'find a ok')
+
+                err -> runner.is-true(false, 'find a ok')
+            }
+            e-node = d.find('e')
+            e-node: {
+                ok -> {
+                    eq-str(s-of(it.scalar-text()), '<nil>', 'scalar-text of seq nil')
+                    eq-str(s-of(it.str()), '<nil>', 'str of seq nil')
+                    runner.eq(it.len(), 1, 'seq len 1')
+                }
+
+                nil -> runner.is-true(false, 'find e ok')
+
+                err -> runner.is-true(false, 'find e ok')
+            }
+            n-node = d.get('n')
+            n-node: {
+                ok -> {
+                    runner.is-true(it.is-null(), 'n is-null')
+                    eq-str(s-of(it.str()), '<nil>', 'str of null nil')
+                    runner.eq(num-of(it.i64()), -999, 'i64 of null nil')
+                    runner.f64-eq(f-of(it.f64()), -12345.0, 0.0001, 'f64 of null nil')
+                    runner.eq(tri-of(it.bool()), 0, 'bool of null nil')
+                    eq-str(it.text(), 'null', 'null text')
+                }
+
+                nil -> runner.is-true(false, 'get n ok')
+
+                err -> runner.is-true(false, 'get n ok')
+            }
+        }
+
+        nil -> runner.is-true(false, 'accessors parse ok')
+
+        err -> runner.is-true(false, 'accessors parse ok')
+    }
+}
+
+; 顯式標簽：!!str / !!int / !!bool / !!float / !!null 必須改寫節點類型
+; 回歸：節點先按 core schema 推斷、標簽後補，舊實作只存標簽原文而不改 kind，
+;       導致 `!!str 123` 仍被當成 int、`!!int "42"` 仍被當成 str。
+t-tags = () {
+    r = yaml.parse('a: !!str 123
+b: !!int "42"
+c: !!bool "true"
+d: !!float "1.5"
+e: !!null "x"
+f: !!str true')
+    r: {
+        ok -> {
+            d = it
+            runner.is-true(is-of(d, 'a', 6), 'tag str on int')
+            runner.eq(num-of(d.get-i64('a')), -999, 'tag str not int')
+            eq-str(s-of(d.get-str('a')), '123', 'tag str text kept')
+            runner.is-true(is-of(d, 'b', 2), 'tag int on quoted')
+            runner.eq(num-of(d.get-i64('b')), 42, 'tag int value')
+            runner.is-true(is-of(d, 'c', 1), 'tag bool on quoted')
+            runner.eq(tri-of(d.get-bool('c')), 1, 'tag bool value')
+            runner.is-true(is-of(d, 'd', 3), 'tag float on quoted')
+            runner.f64-eq(f-of(d.get-f64('d')), 1.5, 0.0001, 'tag float value')
+            runner.is-true(is-of(d, 'e', 9), 'tag null on text')
+            runner.is-true(is-of(d, 'f', 6), 'tag str on bool text')
+            eq-str(tag-of(d, 'a'), '!!str', 'tag original text kept')
+            eq-str(d.to-json(), '{"a":"123","b":42,"c":true,"d":1.5,"e":null,"f":"true"}', 'tagged to-json')
+        }
+
+        nil -> runner.is-true(false, 'tags parse ok')
+
+        err -> runner.is-true(false, 'tags parse ok')
+    }
+}
+
+; 錯誤與 BOM：valid-of / error-of / parse 失敗回 nil / strip-bom
+t-errors = () {
+    runner.is-true(yaml.valid-of('a: 1'), 'valid-of good')
+    runner.is-false(yaml.valid-of('a: "x'), 'valid-of bad')
+    eq-str(yaml.error-of('a: 1'), '', 'error-of good empty')
+    emsg = yaml.error-of('a: "x')
+    runner.is-true(emsg.len-bytes() > 0, 'error-of bad non-empty')
+    runner.is-true(emsg.contains('unterminated'), 'error-of bad mentions unterminated')
+    bad = yaml.parse('a: "x')
+    bad: {
+        ok -> runner.is-true(false, 'bad doc must not parse')
+
+        nil -> runner.is-true(true, 'bad doc rejected')
+
+        err -> runner.is-true(true, 'bad doc rejected')
+    }
+
+    ; BOM 前綴必須剝掉（3 位元組 EF BB BF）
+    bom char = 65279
+    bs = bom.to-str() - 'a: 1'
+    r = yaml.parse('x: 1')
+    r: {
+        ok -> {
+            d = it
+            runner.eq(d.strip-bom(bs).len-bytes(), 4, 'strip-bom removes BOM')
+            runner.eq(d.strip-bom('a: 1').len-bytes(), 4, 'strip-bom keeps plain')
+        }
+
+        nil -> runner.is-true(false, 'bom parse ok')
+
+        err -> runner.is-true(false, 'bom parse ok')
+    }
+}
+
+; 內部輔助函式直測：索引/十六進制/數字掃描/型別推斷/轉義/引號
+t-helper-prims = () {
+    eq-str(yaml.yaml-str-at(['a', 'bb'], 1), 'bb', 'str-at 1')
+    eq-str(yaml.yaml-str-at(['a'], 5), '', 'str-at oob')
+    runner.eq(yaml.yaml-hex-digit(48), 0, 'hex-digit 0')
+    runner.eq(yaml.yaml-hex-digit(70), 15, 'hex-digit F')
+    runner.eq(yaml.yaml-hex-digit(97), 10, 'hex-digit a')
+    runner.eq(yaml.yaml-hex-digit(122), -1, 'hex-digit not hex')
+    eq-str(yaml.yaml-hex-char(0), '0', 'hex-char 0')
+    eq-str(yaml.yaml-hex-char(10), 'a', 'hex-char 10')
+    eq-str(yaml.yaml-hex-char(15), 'f', 'hex-char 15')
+    runner.eq(yaml.yaml-spaces(3).len-bytes(), 3, 'spaces 3')
+    eq-str(yaml.yaml-spaces(3), '   ', 'spaces content')
+    runner.eq(yaml.yaml-to-i64('123'), 123, 'to-i64 123')
+    runner.eq(yaml.yaml-to-i64('x'), -1, 'to-i64 bad')
+    runner.eq(yaml.yaml-to-i64(''), -1, 'to-i64 empty')
+    runner.f64-eq(f-of(yaml.yaml-to-f64('1.5')), 1.5, 0.0001, 'to-f64 ok')
+    eq-str(s-of(yaml.yaml-to-f64('abc')), '<nil>', 'to-f64 bad nil')
+    ue = yaml.yaml-unescape-double('a\\nb')
+    ue: {
+        ok -> runner.eq(it.len-bytes(), 3, 'unescape doubles nl')
+
+        nil -> runner.is-true(false, 'unescape ok')
+
+        err -> runner.is-true(false, 'unescape ok')
+    }
+    eq-str(yaml.yaml-json-escape('ab'), '"ab"', 'json-escape plain')
+    runner.eq(yaml.yaml-json-escape('a"b').len-bytes(), 6, 'json-escape quote len')
+    runner.eq(yaml.yaml-json-escape('a\nb').len-bytes(), 6, 'json-escape nl len')
+    eq-str(yaml.yaml-quote('ab'), '"ab"', 'quote plain')
+    runner.eq(yaml.yaml-quote('a\nb').len-bytes(), 6, 'quote nl len')
+    runner.is-true(yaml.yaml-plain-safe('abc'), 'plain-safe word')
+    runner.is-false(yaml.yaml-plain-safe('42'), 'plain-safe number')
+    runner.is-false(yaml.yaml-plain-safe('-x'), 'plain-safe dash')
+    runner.is-false(yaml.yaml-plain-safe(' a'), 'plain-safe leading space')
+    runner.is-false(yaml.yaml-plain-safe(''), 'plain-safe empty')
+    runner.is-true(yaml.yaml-f-is-nan(yaml.yaml-nan()), 'f-is-nan nan')
+    runner.is-false(yaml.yaml-f-is-nan(1.0), 'f-is-nan 1.0')
+    runner.is-true(yaml.yaml-f-is-inf(yaml.yaml-inf()), 'f-is-inf inf')
+    runner.is-false(yaml.yaml-f-is-inf(1.0), 'f-is-inf 1.0')
+    runner.is-false(yaml.yaml-f-is-inf(0.0), 'f-is-inf 0')
+    runner.is-true(yaml.yaml-f-is-inf(yaml.yaml-inf() * 0.5), 'inf halved stays inf')
+    sk, si, sf = yaml.yaml-scan-number('-3')
+    runner.eq(sk, 2, 'scan -3 kind int')
+    runner.eq(si, -3, 'scan -3 value')
+    sk2, si2, sf2 = yaml.yaml-scan-number('1.5')
+    runner.eq(sk2, 3, 'scan 1.5 kind float')
+    runner.f64-eq(sf2, 1.5, 0.0001, 'scan 1.5 value')
+    sk3, si3, sf3 = yaml.yaml-scan-number('abc')
+    runner.eq(sk3, 4, 'scan abc kind str')
+    rk, ri, rf, rb = yaml.yaml-resolve-plain('null')
+    runner.eq(rk, 0, 'resolve null kind')
+    rk2, ri2, rf2, rb2 = yaml.yaml-resolve-plain('true')
+    runner.eq(rk2, 1, 'resolve true kind')
+    runner.is-true(rb2, 'resolve true bval')
+    rk3, ri3, rf3, rb3 = yaml.yaml-resolve-plain('42')
+    runner.eq(rk3, 2, 'resolve 42 kind')
+    runner.eq(ri3, 42, 'resolve 42 value')
+    rk4, ri4, rf4, rb4 = yaml.yaml-resolve-plain('xyz')
+    runner.eq(rk4, 4, 'resolve xyz kind str')
+    eq-str(yaml.yaml-tag-name('!!str'), 'str', 'tag-name shorthand')
+    eq-str(yaml.yaml-tag-name('tag:yaml.org,2002:int'), 'int', 'tag-name uri')
+    eq-str(yaml.yaml-tag-name('!<tag:yaml.org,2002:bool>'), 'bool', 'tag-name verbatim')
+    runner.eq(yaml.yaml-apply-tag('!!str', 2), 4, 'apply-tag str')
+    runner.eq(yaml.yaml-apply-tag('!!int', 4), 2, 'apply-tag int')
+    runner.eq(yaml.yaml-apply-tag('!!bogus', 4), 4, 'apply-tag unknown keeps kind')
+    pk, pv = yaml.yaml-parse-radix('ff', 0, 16)
+    runner.eq(pk, 2, 'radix ff kind')
+    runner.eq(pv, 255, 'radix ff value')
+    pk2, pv2 = yaml.yaml-parse-radix('777', 0, 8)
+    runner.eq(pv2, 511, 'radix 777 octal')
+    pk3, pv3 = yaml.yaml-parse-radix('0x1f', 2, 16)
+    runner.eq(pv3, 31, 'radix with prefix offset')
+    pk4, pv4 = yaml.yaml-parse-radix('zz', 0, 16)
+    runner.eq(pk4, 4, 'radix bad stays str')
+}
+
+; 生成側：to-yaml / stringify / json-of / emit 走同一節點池，輸出必須一致
+t-emit = () {
+    src = 'a: 1
+list:
+  - x
+  - y'
+    r = yaml.parse(src)
+    r: {
+        ok -> {
+            d = it
+            eq-str(d.to-yaml(), src, 'to-yaml roundtrip')
+            eq-str(d.stringify(), src, 'stringify roundtrip')
+            pl = d.pool
+            eq-str(yaml.yaml-json-of(pl, d.root, 0), '{"a":1,"list":["x","y"]}', 'json-of root')
+            emit = yaml.yaml-emit(pl, d.root, 0, 0)
+            runner.eq(emit.len-bytes(), d.to-yaml().len-bytes(), 'emit == to-yaml')
+            runner.eq(yaml.yaml-emit(pl, -1, 0, 0).len-bytes(), 0, 'emit idx -1 empty')
+            eq-str(d.to-json(), '{"a":1,"list":["x","y"]}', 'to-json nested')
+        }
+
+        nil -> runner.is-true(false, 'emit parse ok')
+
+        err -> runner.is-true(false, 'emit parse ok')
+    }
+}
+
 p1 = runner.test('yaml.scalars', t-scalars)
 p2 = runner.test('yaml.seq', t-seq)
 p3 = runner.test('yaml.type-inference', t-type-inference)
@@ -370,6 +881,13 @@ p5 = runner.test('yaml.quoted-anchor', t-quoted-anchor)
 p6 = runner.test('yaml.stringify', t-stringify)
 p7 = runner.test('yaml.error-and-nohang', t-error-and-nohang)
 p8 = runner.test('yaml.to-json', t-to-json)
+p9 = runner.test('yaml.multidoc', t-multidoc)
+p10 = runner.test('yaml.flags', t-flags)
+p11 = runner.test('yaml.accessors', t-accessors)
+p12 = runner.test('yaml.tags', t-tags)
+p13 = runner.test('yaml.errors', t-errors)
+p14 = runner.test('yaml.helper-prims', t-helper-prims)
+p15 = runner.test('yaml.emit', t-emit)
 total = runner.summary()
 f = runner.failed-count()
 {

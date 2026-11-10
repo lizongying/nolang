@@ -31,14 +31,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout25c22 = hex-chars[(ixout25c33 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout25c33 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout25c22
 
         ixout28c36 = data[i]: {
             ok -> it
@@ -46,14 +47,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout28c26 = hex-chars[ixout28c36 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout28c36 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout28c26
     }
 }
 
@@ -106,16 +108,32 @@ w8hex = (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) (s str)
         base = wi * 4
 
         #{overflow=wrap}
-        buf[base + 0] = (w >> 24) & 255
+        buf[base + 0]: {
+            ok -> it = (w >> 24) & 255
+
+            -> _
+        }
 
         #{overflow=wrap}
-        buf[base + 1] = (w >> 16) & 255
+        buf[base + 1]: {
+            ok -> it = (w >> 16) & 255
+
+            -> _
+        }
 
         #{overflow=wrap}
-        buf[base + 2] = (w >> 8) & 255
+        buf[base + 2]: {
+            ok -> it = (w >> 8) & 255
+
+            -> _
+        }
 
         #{overflow=wrap}
-        buf[base + 3] = w & 255
+        buf[base + 3]: {
+            ok -> it = w & 255
+
+            -> _
+        }
     }
     s = bhex(buf)
 }
@@ -126,13 +144,11 @@ w8hex = (h0 i64, h1 i64, h2 i64, h3 i64, h4 i64, h5 i64, h6 i64, h7 i64) (s str)
 arr512 = (a [512]byte) (v []byte) {
     v = with-len(512)
     i <- [0..512): {
-        ixout40c16 = a[i]: {
+        v[i] = a[i]: {
             ok -> it
 
             -> _
         }
-
-        v[i] = ixout40c16
     }
 }
 
@@ -248,16 +264,32 @@ t-fingerprint = () {
         w = ws[wi]
 
         #{overflow=wrap}
-        buf[base + 0] = (w >> 24) & 255
+        buf[base + 0]: {
+            ok -> it = (w >> 24) & 255
+
+            -> _
+        }
 
         #{overflow=wrap}
-        buf[base + 1] = (w >> 16) & 255
+        buf[base + 1]: {
+            ok -> it = (w >> 16) & 255
+
+            -> _
+        }
 
         #{overflow=wrap}
-        buf[base + 2] = (w >> 8) & 255
+        buf[base + 2]: {
+            ok -> it = (w >> 8) & 255
+
+            -> _
+        }
 
         #{overflow=wrap}
-        buf[base + 3] = w & 255
+        buf[base + 3]: {
+            ok -> it = w & 255
+
+            -> _
+        }
     }
     runner.str-eq(bhex(buf), FP, 64, 'fingerprint matches OpenSSL sha256(tbs)')
 }
@@ -265,10 +297,26 @@ t-fingerprint = () {
 ; 非憑證輸入應安全回傳預設值（不外洬、不崩潰）
 t-invalid = () {
     junk []byte = with-len(4)
-    junk[0] = 0x01
-    junk[1] = 0x02
-    junk[2] = 0x03
-    junk[3] = 0x04
+    junk[0]: {
+        ok -> it = 0x01
+
+        -> _
+    }
+    junk[1]: {
+        ok -> it = 0x02
+
+        -> _
+    }
+    junk[2]: {
+        ok -> it = 0x03
+
+        -> _
+    }
+    junk[3]: {
+        ok -> it = 0x04
+
+        -> _
+    }
     runner.eq(x509.x509-serial(junk), 0, 'serial on non-cert = 0')
     runner.eq(x509.x509-rsa-e(junk), 0, 'rsa-e on non-cert = 0')
     start, end = x509.x509-tbs-range(junk)

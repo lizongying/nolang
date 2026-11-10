@@ -44,13 +44,11 @@ zs-bit-reader.read-bit = () (bit i64) {
     {
         .bit-cnt == 0 -> {
             .pos < .data.len() -> {
-                ixout47c21 = .data[.pos]: {
+                .bit-buf = .data[.pos]: {
                     ok -> it
 
                     -> _
                 }
-
-                .bit-buf = ixout47c21
 
                 #{overflow=wrap}
                 .pos = .pos + 1: {
@@ -95,13 +93,11 @@ zs-bit-reader.read-varint = () (v i64) {
     v = 0
     shift = 0
     !! {
-        ixout92c12 = .data[.pos]: {
+        b = .data[.pos]: {
             ok -> it
 
             -> _
         }
-
-        b = ixout92c12
 
         #{overflow=wrap}
         .pos = .pos + 1: {
@@ -302,13 +298,11 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
 
     ; 步驟 2: 建構狀態轉移表
     i <- [0..self.table-size): {
-        ixout293c16 = .symbol[i]: {
+        sym = .symbol[i]: {
             ok -> it
 
             -> _
         }
-
-        sym = ixout293c16
 
         nc = norm-count[sym]: {
             ok -> it
@@ -321,13 +315,11 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
             #{overflow=wrap}
             .nb-bits[i] ?= table-log - bits-for-count(nc)
 
-            ixout306c1a = .nb-bits[i]: {
+            nb = .nb-bits[i]: {
                 ok -> it
 
                 -> _
             }
-
-            nb = ixout306c1a
 
             ixout233c53 = positions[sym]: {
                 ok -> it
@@ -378,32 +370,26 @@ bits-for-count = (count i64) (n i64) {
 fse-table.decode = (br zs-bit-reader, state i64) (sym i64, new-state i64) {
 
     ; 從當前狀態讀取符號
-    ixout357c12 = .symbol[state]: {
+    sym = .symbol[state]: {
         ok -> it
 
         -> _
     }
-
-    sym = ixout357c12
 
     ; 讀取額外位元
-    ixout360c12 = .nb-bits[state]: {
+    nb = .nb-bits[state]: {
         ok -> it
 
         -> _
     }
-
-    nb = ixout360c12
     extra = br.read-bits(nb)
 
     ; 計算新狀態
-    ixout364c17 = .next-state[state]: {
+    base = .next-state[state]: {
         ok -> it
 
         -> _
     }
-
-    base = ixout364c17
 
     #{overflow=wrap}
     {
@@ -444,14 +430,10 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
 
     ; 找最大碼長度
     i <- [0..max-symbol + 1): {
-        ixout308c23 = lengths[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        .lengths[i]: {
-            ok -> it = ixout308c23
+        {
+            .lengths[i] ?= lengths[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -462,13 +444,11 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
         }
 
         ixout331c16 > .table-log -> {
-            ixout312c26 = lengths[i]: {
+            .table-log = lengths[i]: {
                 ok -> it
 
                 -> _
             }
-
-            .table-log = ixout312c26
         }
     }
 
@@ -510,13 +490,11 @@ zs-huffman.build = (lengths []i64, max-symbol i64) {
             -> _
         }
 
-        ixout471c17 = .count[i]: {
+        cnt-i = .count[i]: {
             ok -> it
 
             -> _
         }
-
-        cnt-i = ixout471c17
 
         #{overflow=wrap}
         {
@@ -597,13 +575,11 @@ zs-huffman.decode = (br zs-bit-reader) (sym i64) {
         bit = br.read-bit()
         code = (code << 1) | bit
 
-        ixout548c15 = .count[len]: {
+        cnt = .count[len]: {
             ok -> it
 
             -> _
         }
-
-        cnt = ixout548c15
 
         {
             b ?= .base[len]
@@ -675,13 +651,11 @@ zs-frame.read-frame-header = () (ok bool) {
 
         ->
     }
-    ixout620cf = .data[.pos]: {
+    m1 = .data[.pos]: {
         ok -> it
 
         -> _
     }
-
-    m1 = ixout620cf
     m1 != 0xb5 -> {
         break
     }
@@ -692,13 +666,11 @@ zs-frame.read-frame-header = () (ok bool) {
 
         ->
     }
-    ixout631cf = .data[.pos]: {
+    m2 = .data[.pos]: {
         ok -> it
 
         -> _
     }
-
-    m2 = ixout631cf
     m2 != 0x2f -> {
         break
     }
@@ -709,13 +681,11 @@ zs-frame.read-frame-header = () (ok bool) {
 
         ->
     }
-    ixout642cf = .data[.pos]: {
+    m3 = .data[.pos]: {
         ok -> it
 
         -> _
     }
-
-    m3 = ixout642cf
     m3 != 0xfd -> {
         break
     }
@@ -729,13 +699,11 @@ zs-frame.read-frame-header = () (ok bool) {
 
     ; Frame Header
     ; Frame_Header_Descriptor
-    ixout656c10 = .data[.pos]: {
+    fhd = .data[.pos]: {
         ok -> it
 
         -> _
     }
-
-    fhd = ixout656c10
 
     #{overflow=wrap}
     .pos = .pos + 1: {
@@ -755,13 +723,11 @@ zs-frame.read-frame-header = () (ok bool) {
 
     #{overflow=wrap}
     single-segment == false -> {
-        ixout676c13 = .data[.pos]: {
+        wd = .data[.pos]: {
             ok -> it
 
             -> _
         }
-
-        wd = ixout676c13
         .pos = .pos + 1: {
             ok -> it
 
@@ -791,13 +757,11 @@ zs-frame.read-frame-header = () (ok bool) {
     {
         fcs-flag == 0 -> {
             single-segment -> {
-                ixout706c1c = .data[.pos]: {
+                fcs = .data[.pos]: {
                     ok -> it
 
                     -> _
                 }
-
-                fcs = ixout706c1c
                 .pos = .pos + 1: {
                     ok -> it
 
@@ -807,20 +771,16 @@ zs-frame.read-frame-header = () (ok bool) {
         }
 
         fcs-flag == 1 -> {
-            ixout716c17 = .data[.pos]: {
+            lo = .data[.pos]: {
                 ok -> it
 
                 -> _
             }
-
-            lo = ixout716c17
-            ixout717c17 = .data[.pos + 1]: {
+            hi = .data[.pos + 1]: {
                 ok -> it
 
                 -> _
             }
-
-            hi = ixout717c17
             fcs = lo | (hi << 8)
             .pos = .pos + 2: {
                 ok -> it
@@ -831,34 +791,26 @@ zs-frame.read-frame-header = () (ok bool) {
         }
 
         fcs-flag == 2 -> {
-            ixout728c17 = .data[.pos]: {
+            e0 = .data[.pos]: {
                 ok -> it
 
                 -> _
             }
-
-            e0 = ixout728c17
-            ixout729c17 = .data[.pos + 1]: {
+            e1 = .data[.pos + 1]: {
                 ok -> it
 
                 -> _
             }
-
-            e1 = ixout729c17
-            ixout730c17 = .data[.pos + 2]: {
+            e2 = .data[.pos + 2]: {
                 ok -> it
 
                 -> _
             }
-
-            e2 = ixout730c17
-            ixout731c17 = .data[.pos + 3]: {
+            e3 = .data[.pos + 3]: {
                 ok -> it
 
                 -> _
             }
-
-            e3 = ixout731c17
             fcs = e0 | (e1 << 8) | (e2 << 16) | (e3 << 24)
             .pos = .pos + 4: {
                 ok -> it
@@ -868,51 +820,41 @@ zs-frame.read-frame-header = () (ok bool) {
         }
 
         fcs-flag == 3 -> {
-            ixout741c18 = .data[.pos]: {
+            fcs = .data[.pos]: {
                 ok -> it
 
                 -> _
             }
 
-            fcs = ixout741c18
-
-            ixout743c17 = .data[.pos + 1]: {
+            g1 = .data[.pos + 1]: {
                 ok -> it
 
                 -> _
             }
-
-            g1 = ixout743c17
 
             fcs = fcs | (g1 << 8)
 
-            ixout747c17 = .data[.pos + 2]: {
+            g2 = .data[.pos + 2]: {
                 ok -> it
 
                 -> _
             }
-
-            g2 = ixout747c17
 
             fcs = fcs | (g2 << 16)
 
-            ixout751c17 = .data[.pos + 3]: {
+            g3 = .data[.pos + 3]: {
                 ok -> it
 
                 -> _
             }
-
-            g3 = ixout751c17
 
             fcs = fcs | (g3 << 24)
 
-            ixout755c17 = .data[.pos + 4]: {
+            g4 = .data[.pos + 4]: {
                 ok -> it
 
                 -> _
             }
-
-            g4 = ixout755c17
 
             fcs = fcs | (g4 << 32)
             .pos = .pos + 5: {
@@ -935,31 +877,25 @@ zs-frame.decode-block = () (last-block ?bool) {
     #{overflow=wrap}
     .pos + 3 > .data.len() -> return
 
-    ixout778cf = .data[.pos]: {
+    b0 = .data[.pos]: {
         ok -> it
 
         -> _
     }
-
-    b0 = ixout778cf
 
     #{overflow=wrap}
-    ixout781cf = .data[.pos + 1]: {
+    b1 = .data[.pos + 1]: {
         ok -> it
 
         -> _
     }
-
-    b1 = ixout781cf
 
     #{overflow=wrap}
-    ixout784cf = .data[.pos + 2]: {
+    b2 = .data[.pos + 2]: {
         ok -> it
 
         -> _
     }
-
-    b2 = ixout784cf
 
     #{overflow=wrap}
     .pos = .pos + 3: {
@@ -997,13 +933,11 @@ zs-frame.decode-block = () (last-block ?bool) {
             ; RLE_Block (type 1)
 
             ; 重複單個字節
-            ixout822c16 = .data[.pos]: {
+            b = .data[.pos]: {
                 ok -> it
 
                 -> _
             }
-
-            b = ixout822c16
             .pos = .pos + 1: {
                 ok -> it
 

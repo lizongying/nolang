@@ -23,6 +23,13 @@ func TestValidateNamingTopLevel(t *testing.T) {
 		{"valid-plain", "tmp = 1\n", nil, true},
 		{"all-caps-const", "LEVEL-ERROR = 1\n", nil, true},
 		{"discard", "_ = 1\n", nil, true},
+		// 單一前導底線是 std 既有私有標記（_days-in-month / _RE-QUANT-NONE），
+		// 不是「中間底線」，不得報錯；但前導 + 中間底線仍要攔。
+		{"leading-underscore-private", "_days-in-month = 1\n", nil, true},
+		{"leading-underscore-all-caps", "_RE-QUANT-NONE = 1\n", nil, true},
+		{"leading-plus-middle-underscore", "_foo_bar = 1\n", []string{"_foo_bar"}, false},
+		{"leading-plus-uppercase", "_Foo = 1\n", []string{"_Foo"}, false},
+		{"leading-plus-trailing-underscore", "_foo_ = 1\n", []string{"_foo_"}, false},
 		{
 			"multi-assign-bad",
 			"get-pair = () (a i64, b i64) {\n    a = 1\n    b = 2\n}\n" +

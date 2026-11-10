@@ -58,14 +58,10 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
     {
         key-n <= 64 -> {
             i <- [0..key-n): {
-                ixout58c32 = key[i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                k[i]: {
-                    ok -> it = ixout58c32
+                {
+                    k[i] ?= key[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -136,15 +132,12 @@ hmac-sha256 = (key []byte, msg []byte) (out [32]byte) {
         }
     }
     i <- [0..msg-n): {
-        ixout112c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        inner-data[64 + i]: {
-            ok -> it = ixout112c24
+            #{overflow=wrap}
+            inner-data[64 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -223,14 +216,10 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
     {
         key-n <= 64 -> {
             i <- [0..key-n): {
-                ixout183c32 = key[i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                k[i]: {
-                    ok -> it = ixout183c32
+                {
+                    k[i] ?= key[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -293,15 +282,12 @@ hmac-sha1 = (key []byte, msg []byte) (out [20]byte) {
         }
     }
     i <- [0..msg-n): {
-        ixout229c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        inner-data[64 + i]: {
-            ok -> it = ixout229c24
+            #{overflow=wrap}
+            inner-data[64 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -379,14 +365,10 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
     {
         key-n <= 128 -> {
             i <- [0..key-n): {
-                ixout299c32 = key[i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                k[i]: {
-                    ok -> it = ixout299c32
+                {
+                    k[i] ?= key[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -449,15 +431,12 @@ hmac-sha512 = (key []byte, msg []byte) (out [64]byte) {
         }
     }
     i <- [0..msg-n): {
-        ixout345c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        inner-data[128 + i]: {
-            ok -> it = ixout345c24
+            #{overflow=wrap}
+            inner-data[128 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -526,14 +505,10 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
     {
         key-n <= 128 -> {
             i <- [0..key-n): {
-                ixout408c32 = key[i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                k[i]: {
-                    ok -> it = ixout408c32
+                {
+                    k[i] ?= key[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -596,15 +571,12 @@ hmac-sha384 = (key []byte, msg []byte) (out [48]byte) {
         }
     }
     i <- [0..msg-n): {
-        ixout454c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        inner-data[128 + i]: {
-            ok -> it = ixout454c24
+            #{overflow=wrap}
+            inner-data[128 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -673,14 +645,10 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
     {
         key-n <= 64 -> {
             i <- [0..key-n): {
-                ixout517c32 = key[i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                k[i]: {
-                    ok -> it = ixout517c32
+                {
+                    k[i] ?= key[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -743,15 +711,12 @@ hmac-md5 = (key []byte, msg []byte) (out [16]byte) {
         }
     }
     i <- [0..msg-n): {
-        ixout563c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        inner-data[64 + i]: {
-            ok -> it = ixout563c24
+            #{overflow=wrap}
+            inner-data[64 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }

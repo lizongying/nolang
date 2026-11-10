@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['strへ変換', 'ts', 'shh']
   'number.f64.to-str-fixed': ['str-fixedへ変換', 'tsf', 'shh']
   'number.f64.to-str-general': ['str-generalへ変換', 'tsg', 'shh']
-  'number.f64.to-str-sci': ['str-sciへ変換', 'tss', 'shh']
   'number.f64.to-u32': ['u32へ変換', 'tu', 'uhh']
   'number.f64.to-u64': ['u64へ変換', 'tu', 'uhh']
   'number.i128.sqrt': ['平方根', 's', 'h']

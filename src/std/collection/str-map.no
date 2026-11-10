@@ -153,13 +153,11 @@ str-map.get = (key str) (result ?str) {
         k ?= .keys[idx]
         eq = .str-eq(k, key)
         eq -> {
-            ixout156c1b = .vals[idx]: {
+            result = .vals[idx]: {
                 ok -> it
 
                 -> _
             }
-
-            result = ixout156c1b
             return
         }
 

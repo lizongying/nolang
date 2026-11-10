@@ -87,15 +87,12 @@ ED-L [32]byte = [
 ; [set-coord](#ed25519.set-coord)
 set-coord = (p []i64, off i64, src []i64) {
     i <- [0..10): {
-        ixout88c24 = src[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        p[off + i]: {
-            ok -> it = ixout88c24
+            #{overflow=wrap}
+            p[off + i] ?= src[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -108,14 +105,10 @@ set-coord = (p []i64, off i64, src []i64) {
 ; [pcopy](#ed25519.pcopy)
 pcopy = (dst []i64, src []i64) {
     i <- [0..40): {
-        ixout104c24 = src[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        dst[i]: {
-            ok -> it = ixout104c24
+        {
+            dst[i] ?= src[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -555,13 +548,11 @@ sc-reduce = (s []byte) (out [32]byte) {
         }
     }
     i <- [0..32): {
-        ixout554c15 = acc[i]: {
+        out[i] = acc[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout554c15
     }
 }
 
@@ -592,25 +583,21 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
                 -> _
             }
 
-            ixout484c29 = a[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            ixout484c36 = b[j]: {
-                ok -> it
-
-                -> _
-            }
-
             ; a[i]、b[j] 是 byte，`byte * byte` 在 256 域回绕（255*255 会得 1），
-            ; 必须显式升 i64 再相乘：声明类型决定绑定的存储与算术语域，故
-            ; `ai i64 = <单个 byte 值>` 与两段式等价。
+            ; 必须显式升 i64 再相乘：声明类型决定绑定的存储与算术语域，故值 match
+            ; 直接绑到 `i64` 宣告即可完成提升，不需要一次性暂存。
             ; 但初始化式**内部**的算术仍按操作数自身型别求值（`ai i64 = a[i] * b[j]`
             ; 是在 byte 域相乘、还会触发溢出检查），必须各自先落进 i64 绑定再乘。
-            ai i64 = ixout484c29
-            bi i64 = ixout484c36
+            ai i64 = a[i]: {
+                ok -> it
+
+                -> _
+            }
+            bi i64 = b[j]: {
+                ok -> it
+
+                -> _
+            }
 
             #{overflow=wrap}
             v = ixout484c17 + ai * bi + carry
@@ -658,14 +645,12 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
             -> _
         }
 
-        ixout520c23 = c[i]: {
+        ; c[i] 同样是 byte，进 64 位域后再加，避免 256 回绕吃掉进位
+        ci i64 = c[i]: {
             ok -> it
 
             -> _
         }
-
-        ; c[i] 同样是 byte，进 64 位域后再加，避免 256 回绕吃掉进位
-        ci i64 = ixout520c23
 
         #{overflow=wrap}
         v = ixout520c13 + ci + carry
@@ -880,15 +865,12 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
         }
     }
     i <- [0..msg-len): {
-        ixout666c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        rin[32 + i]: {
-            ok -> it = ixout666c24
+            #{overflow=wrap}
+            rin[32 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -945,15 +927,12 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
         }
     }
     i <- [0..msg-len): {
-        ixout714c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        kin[64 + i]: {
-            ok -> it = ixout714c24
+            #{overflow=wrap}
+            kin[64 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -992,22 +971,21 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 
     ; sig = R || S
     i <- [0..32): {
-        ixout945c13 = r[i]: {
+        sig[i] = r[i]: {
             ok -> it
 
             -> _
         }
 
-        sig[i] = ixout945c13
+        {
 
-        ixout948c18 = s[i]: {
-            ok -> it
+            #{overflow=wrap}
+            sig[32 + i] ?= s[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        sig[32 + i] = ixout948c18
     }
 }
 
@@ -1034,16 +1012,12 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     }
     s [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout774c24 = sig[32 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        s[i]: {
-            ok -> it = ixout774c24
+            #{overflow=wrap}
+            s[i] ?= sig[32 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1132,15 +1106,12 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
         }
     }
     i <- [0..msg-len): {
-        ixout837c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        kin[64 + i]: {
-            ok -> it = ixout837c24
+            #{overflow=wrap}
+            kin[64 + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }

@@ -9,15 +9,15 @@
 ;
 ...
 
-Holder {
+holder {
     name str
     data []i64
 }
 
 ; move 場景：直接構造並 move 到 out
-; out Holder: {name: 'test', data: [10, 20, 30]}，所有權交給呼叫端
-move-holder = () (out Holder) {
-    out = Holder{
+; out holder: {name: 'test', data: [10, 20, 30]}，所有權交給呼叫端
+move-holder = () (out holder) {
+    out = holder{
         name: 'test'
         data: [10, 20, 30]
     }

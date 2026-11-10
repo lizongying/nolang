@@ -371,6 +371,80 @@ yaml-parser.set-props = (idx i64, tag str, anchor str) {
 
     .nodes[idx].anchor = anchor
     anchor.len-bytes() > 0 -> .register-anchor(anchor, idx)
+
+    ; 標簽必須在這裡就作用到節點上：節點是先按 core schema 推斷出來的，
+    ; 顯式標簽（!!str / !!int …）讀到的時間比節點建立晚，若只存字串就會出現
+    ; `!!str 123` 仍被當成 int、`!!int "42"` 仍被當成 str（兩者都是 YAML 1.2
+    ; 明確要求標簽優先的情況）。
+    .apply-tag-at(idx)
+}
+
+; 把節點已有的顯式標簽作用到 kind 與解析後的標量值上
+;
+; 節點先由 core schema 推斷建立，標簽是後補的，所以需要一步「重算」：
+; 標簽改寫 kind 之後，ival/fval/bval 必須按標簽要求重新解析，否則
+; `!!int "42"` 會留下 kind=INT 而 ival=0（`yaml.i64` 取到 0 而非 42）。
+; 集合節點（seq/map）只保留標簽原文，不改 kind —— `!!seq` / `!!map` 不改變
+; 解析結構，而 `!!str` 套在集合上在 YAML 裡本就是非良構寫法。
+; idx: 節點池索引
+; [apply-tag-at](#yaml.yaml-parser.apply-tag-at)
+yaml-parser.apply-tag-at = (idx i64) {
+
+    ; 讀取走 `?=` 綁定：裸下標 `arr[i]` 回的是 `?T`，不能在這裡當普通值用
+    ; （idxbruse）。失敗（索引越界）就直接放棄，什麼也不改。
+    {
+        nd ?= .nodes[idx]
+        tag = nd.tag
+        tag.len-bytes() > 0 -> {
+            kind = nd.kind
+            is-coll = kind == YAML-KIND-SEQ || kind == YAML-KIND-MAP
+            is-coll == false -> {
+                k = yaml-apply-tag(tag, kind)
+                k != kind -> {
+                    text = nd.text
+                    .nodes[idx].kind = k
+                    k == YAML-KIND-STR || k == YAML-KIND-NULL -> {
+                        .nodes[idx].ival = 0
+                        .nodes[idx].fval = 0.0
+                        .nodes[idx].bval = false
+                    }
+                    k == YAML-KIND-INT -> {
+                        iv = 0
+                        iv2 = 0
+                        fv2 = 0.0
+                        iv2, iv, fv2 = yaml-scan-number(text)
+                        .nodes[idx].ival = iv
+                    }
+                    k == YAML-KIND-FLOAT -> {
+                        fv ?f64 = yaml-to-f64(text)
+                        {
+                            .nodes[idx].fval = 0.0
+                            fv: {
+                                nil -> _
+
+                                err -> _
+
+                                ok -> .nodes[idx].fval = it
+                            }
+                        }
+                    }
+                    k == YAML-KIND-BOOL -> {
+                        lower = text.to-lower()
+                        lower == 'true' -> .nodes[idx].bval = true
+                        lower == 'false' -> .nodes[idx].bval = false
+                        lower == 'yes' -> .nodes[idx].bval = true
+                        lower == 'no' -> .nodes[idx].bval = false
+                        lower == 'on' -> .nodes[idx].bval = true
+                        lower == 'off' -> .nodes[idx].bval = false
+                    }
+                }
+            }
+        }
+    }: {
+        err -> _
+
+        -> _
+    }
 }
 
 ; 登記锚點
@@ -392,7 +466,11 @@ yaml-parser.anchor-id = (name str) (idx i64) {
     i <- [0..total): {
         nm = yaml-str-at(.anchor-names, i)
         nm.eq-full(name) -> {
-            idx = .anchor-ids[i]
+            idx = .anchor-ids[i]: {
+                ok -> it
+
+                -> _
+            }
             return
         }
     }
@@ -1160,48 +1238,6 @@ yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
     style == YAML-STYLE-PLAIN -> {
         kind, ival, fval, bval = yaml-resolve-plain(text)
     }
-    tag.len-bytes() > 0 -> {
-        k = yaml-apply-tag(tag, kind)
-        k != kind -> {
-            kind = k
-            kind == YAML-KIND-STR -> {
-                ival = 0
-                fval = 0.0
-                bval = false
-            }
-            kind == YAML-KIND-NULL -> {
-                ival = 0
-                fval = 0.0
-                bval = false
-            }
-            kind == YAML-KIND-INT -> {
-                iv = 0
-                iv2 = 0
-                fv2 = 0.0
-                iv2, iv, fv2 = yaml-scan-number(text)
-                ival = iv
-            }
-            kind == YAML-KIND-FLOAT -> {
-                fv ?f64 = yaml-to-f64(text)
-                fv: {
-                    nil -> ival = 0
-
-                    err -> ival = 0
-
-                    ok -> fval = it
-                }
-            }
-            kind == YAML-KIND-BOOL -> {
-                lower = text.to-lower()
-                lower == 'true' -> bval = true
-                lower == 'false' -> bval = false
-                lower == 'yes' -> bval = true
-                lower == 'no' -> bval = false
-                lower == 'on' -> bval = true
-                lower == 'off' -> bval = false
-            }
-        }
-    }
     nd = yaml-node{
         kind: kind
         style: style
@@ -1215,6 +1251,10 @@ yaml-parser.push-scalar = (text str, style i64, tag str, anchor str) (idx i64) {
         col: 0
     }
     idx = .push-node(nd)
+
+    ; 顯式標簽可能來自本次呼叫，也可能稍後由 set-props 補上；兩條路徑共用
+    ; apply-tag-at，避免「推斷完就定案」的兩份實作漂移。
+    .apply-tag-at(idx)
 }
 
 ; 屬性（锚點 / 標簽）
@@ -1806,7 +1846,11 @@ yaml-parser.parse-alias = () (idx i64) {
         idx = .push-null()
         return
     }
-    src = .nodes[target]
+    src = .nodes[target]: {
+        ok -> it
+
+        -> _
+    }
     nd = yaml-node{
         kind: src.kind
         style: YAML-STYLE-ALIAS
@@ -2536,13 +2580,11 @@ yaml-parser.parse-block-map = (indent i64) (idx i64) {
             dup = -1
             total = keys.len()
             j <- [0..total): {
-                ixout2142c22 = keys[j]: {
+                kj = keys[j]: {
                     ok -> it
 
                     -> _
                 }
-
-                kj = ixout2142c22
                 {
                     nkj ?= .nodes[kj]
                     yaml-key-eq(nk, nkj) -> {
@@ -2911,7 +2953,11 @@ yaml.doc-count = () (n i64) {
 yaml.doc = (i i64) (out ?yaml) {
     i < 0 -> return
     i >= .roots.len() -> return
-    r = .roots[i]
+    r = .roots[i]: {
+        ok -> it
+
+        -> _
+    }
     out = yaml{
         pool: .pool
         root: r

@@ -1,13 +1,72 @@
 ; std-process.no — process 模組測試
 ;
 ; 執行：no test test/std/process.no
-; 覆蓋：process.new / process.start / process.wait /
-;       process.output / process.parent-pid / process.shell
-; 注意：fork/exec 測試需要 POSIX 環境
+; 覆蓋：process 全部 macOS/POSIX 可達 API（含 10 個底層內建 process-fork /
+;       process-pipe / process-waitpid / process-waitpid-nohang / process-exec /
+;       process-kill / process-dup2 / process-getppid / process-system /
+;       process-exec-shell）。
+;
+; 平台與刻意不測（詳見 scripts/std_test_coverage.py 的 UNREACHABLE）：
+;   * win-* 9 個內建（win-create-pipe/close-handle/write-pipe/read-pipe/
+;     create-process/wait-process/get-exit-code/terminate-process/get-std-handle）
+;     在非 Windows 宿主上連 codegen 都過不去，實測報錯原文：
+;       EmitLLVM: unsupported builtin process.win-create-pipe [2kqboupo]
+;     （其餘 8 個同形，僅符號名不同）→ 本機不可達，不計入覆蓋率分母。
+;   * process.start-with-opts / process.wait / process.wait-nohang / process.kill /
+;     process.cmd / process.spawn / process.wait(pid) / process.shell / process.list-all
+;     的 `#{win-*}` 與 `#{linux-*}` 變體同樣不計入分母（本機編不出來）。
+;
+; 已知限制（測試如實反映現狀，不視為缺陷）：
+;   1. process.write / close-stdin：process.start-with-opts 只在 input 非空時才建立
+;      stdin 管道，且寫完即關閉，故 .stdin-fd 恆為 -1 ⇒ write 恆回 0（本檔斷言此契約）。
+;   2. process.cmd 的 timeout 看門狗排在**阻塞式讀完 stdout 之後**，因此「持續持有
+;      stdout 的長命令」不受 timeout 約束（要真修需非阻塞讀 + poll/select）。
+;      本檔用 `exec 1>&- 2>&-` 關掉子進程標準流的形態驗證 -2 路徑確實可達。
+;   3. 被信號殺死的子進程經 process-waitpid 只取 WEXITSTATUS ⇒ 回 0，不能據此判斷
+;      「正常結束」（本檔把這條語義寫成斷言，避免日後誤改）。
+;
+; 子進程一律在 fork 後**立刻** exit/exec，絕不回到父進程的斷言序列。
 
 # /test/runner
 
-; ── process.new ───────────────────────────────
+; ── 便捷斷言輔助 ──────────────────────────────
+
+; 把 ?i64 壓成三態哨兵值：9000001 = nil、9000002 = err、其餘為實際值
+; 必須在呼叫端就地 match：帶 err 的 ?i64 跨函數傳遞會在 exit 崩
+opt-of = (v ?i64) (out i64) {
+    out = 9000002
+    v: {
+        ok -> out = it
+
+        nil -> out = 9000001
+
+        err -> out = 9000002
+    }
+}
+
+; 把 ?str 壓成哨兵字串：'nil' / 'err' / 實際內容
+line-of = (v ?str) (out str) {
+    out = 'err'
+    v: {
+        ok -> out = it
+
+        nil -> out = 'nil'
+
+        err -> out = 'err'
+    }
+}
+
+; 布林轉字串（避免用三元式，三元式與 .to-str 連用會觸發推斷異常）
+bool-str = (b bool) (out str) {
+    out = 'false'
+    {
+        b -> out = 'true'
+
+        ! b -> out = 'false'
+    }
+}
+
+; ── 基礎構造 ──────────────────────────────────
 
 ; 新建進程：初始 pid 為 0、running 為 false（尚未啟動）
 t-new = () {
@@ -17,7 +76,15 @@ t-new = () {
     runner.is-false(yes, 'new process not running')
 }
 
-; ── process.shell ────────────────────────────
+; 信號常量與 WNOHANG 取值（POSIX 標準值，供 kill 使用）
+t-signals = () {
+    runner.eq(process.SIG-TERM, 15, 'SIG-TERM == 15')
+    runner.eq(process.SIG-KILL, 9, 'SIG-KILL == 9')
+    runner.eq(process.SIG-INT, 2, 'SIG-INT == 2')
+    runner.eq(process.WNOHANG, 1, 'WNOHANG == 1')
+}
+
+; ── process.shell / spawn + wait ──────────────
 
 ; shell 直譯器：'true' 退出碼 0、'false' 退出碼非 0
 t-shell = () {
@@ -26,8 +93,6 @@ t-shell = () {
     code2 = process.shell('false')
     runner.ne(code2, 0, 'shell false exit != 0')
 }
-
-; ── process.spawn + wait ─────────────────────
 
 ; spawn + wait：子進程 pid 為正，'true' 的等待狀態為 0
 t-spawn-wait = () {
@@ -45,7 +110,7 @@ t-parent-pid = () {
     runner.gt(pid, 0, 'parent-pid > 0')
 }
 
-; ── process.cmd (替代 output，因 output 有 codegen bug) ──
+; ── process.cmd ──────────────────────────────
 
 ; cmd：執行 echo 退出碼 0，且擷取到的標準輸出非空
 t-cmd = () {
@@ -57,6 +122,457 @@ t-cmd = () {
     runner.gt(out.len(), 0, 'cmd echo out len > 0')
 }
 
+; cmd：timeout=0 時退出碼原樣透傳
+t-cmd-exit-code = () {
+    a = [
+        '-c',
+        'exit 3',
+    ]
+    out, stderr, code, err = process.cmd('sh', a, '', '', [], 0, false)
+    runner.eq(code, 3, 'cmd timeout=0 透傳真實退出碼 3')
+}
+
+; cmd：timeout>0 時**不得**誤報 -2（回歸：看門狗二次 waitpid 把已收割的 pid
+; 誤判為「仍在執行」，導致任何瞬間結束的命令都回報超時）
+t-cmd-timeout-fast = () {
+    a = [
+        '-c',
+        'exit 42',
+    ]
+    out, stderr, code, err = process.cmd('sh', a, '', '', [], 5000, false)
+    runner.eq(code, 42, 'cmd timeout=5000 對瞬間結束的命令仍得 42')
+    runner.eq(err.len(), 0, 'cmd 正常結束時 err 為空')
+}
+
+; cmd：真超時 → code=-2 且 err 有描述（子進程自行關閉標準流，避免阻塞讀拖住）
+t-cmd-timeout = () {
+    a = [
+        '-c',
+        'exec 1>&- 2>&-; sleep 5',
+    ]
+    out, stderr, code, err = process.cmd('sh', a, '', '', [], 200, false)
+    runner.eq(code, -2, 'cmd 超時回報 -2')
+    runner.gt(err.len(), 0, 'cmd 超時 err 非空')
+}
+
+; cmd：input 寫入子進程 stdin
+t-cmd-input = () {
+    a = [
+        '-c',
+        'cat',
+    ]
+    out, stderr, code, err = process.cmd('sh', a, '', 'piped', [], 0, false)
+    runner.eq(code, 0, 'cmd input code 0')
+    runner.str-eq(out, 'piped', 5, 'cmd input 經 stdin 送達子進程')
+}
+
+; cmd：env 前綴注入生效
+t-cmd-env = () {
+    a = [
+        '-c',
+        'printf %s $NOLANG_T',
+    ]
+    env = [
+        'NOLANG_T=envok',
+    ]
+    out, stderr, code, err = process.cmd('sh', a, '', '', env, 0, false)
+    runner.eq(code, 0, 'cmd env code 0')
+    runner.str-eq(out, 'envok', 5, 'cmd env 注入環境變數')
+}
+
+; cmd：不存在的命令歸一化為 code=-1 且 err 非空（而非 127）
+t-cmd-not-found = () {
+    out, stderr, code, err = process.cmd('no-such-cmd-zz', [], '', '', [], 0, false)
+    runner.eq(code, -1, 'cmd 命令不存在歸一化為 -1')
+    runner.gt(err.len(), 0, 'cmd 命令不存在 err 非空')
+}
+
+; ── process.start-with-opts ──────────────────
+
+; 啟動 + 讀輸出 + 等待 + 收尾：ok/pid/running 三態齊全
+t-start-opts = () {
+    p = process.new()
+    ok = p.start-with-opts('echo', [
+        'hi',
+    ], '', '', false)
+    runner.is-true(ok, 'start-with-opts ok')
+    runner.gt(p.pid-of(), 0, 'start-with-opts pid > 0')
+    runner.is-true(p.is-running(), 'start-with-opts 後 running')
+    content, n = p.read-all()
+    runner.str-eq(content, 'hi\n', 3, 'read-all 捕獲 echo 輸出')
+    runner.eq(n, 3, 'read-all 位元組數 3')
+    code = p.wait()
+    runner.eq(code, 0, 'wait 得 0')
+    runner.is-false(p.is-running(), 'wait 後 not running')
+    runner.eq(p.exit-code-of(), 0, 'wait 後 exit-code-of == 0')
+    p.close()
+}
+
+; 工作目錄參數生效（/tmp 在 macOS 是 /private/tmp 的軟鏈，故只斷言含 tmp）
+t-start-opts-dir = () {
+    p = process.new()
+    ok = p.start-with-opts('pwd', [], '/tmp', '', false)
+    runner.is-true(ok, 'start-with-opts(dir) ok')
+    content, n = p.read-all()
+    p.wait()
+    p.close()
+    runner.gt(n, 0, 'pwd 有輸出')
+    runner.is-true(content.contains('tmp'), '子進程工作目錄為 /tmp')
+}
+
+; input 參數寫入子進程 stdin
+t-start-opts-input = () {
+    p = process.new()
+    ok = p.start-with-opts('sh', [
+        '-c',
+        'cat',
+    ], '', 'abc', false)
+    runner.is-true(ok, 'start-with-opts(input) ok')
+    content, n = p.read-all()
+    p.wait()
+    p.close()
+    runner.str-eq(content, 'abc', 3, 'input 經 stdin 送達')
+}
+
+; merge-err=true：stderr 併入 out，實例不保留獨立 stderr 管道
+t-start-opts-merge-err = () {
+    p = process.new()
+    ok = p.start-with-opts('sh', [
+        '-c',
+        'echo out; echo err 1>&2',
+    ], '', '', true)
+    runner.is-true(ok, 'start-with-opts(merge-err) ok')
+    runner.eq(p.stderr-fd, -1, 'merge-err 時 stderr-fd == -1')
+    content, n = p.read-all()
+    p.wait()
+    p.close()
+    runner.is-true(content.contains('out'), 'merge-err 輸出含 stdout')
+    runner.is-true(content.contains('err'), 'merge-err 輸出含 stderr')
+}
+
+; merge-err=false：stdout / stderr 分離，read-all 只拿 stdout
+t-start-opts-split-err = () {
+    p = process.new()
+    ok = p.start-with-opts('sh', [
+        '-c',
+        'echo out; echo err 1>&2',
+    ], '', '', false)
+    runner.is-true(ok, 'start-with-opts(split) ok')
+    runner.gt(p.stderr-fd, 0, '非 merge-err 時 stderr-fd > 0')
+    content, n = p.read-all()
+    p.wait()
+    p.close()
+    runner.str-eq(content, 'out\n', 4, 'read-all 只讀 stdout')
+}
+
+; ── process.start（單參數便捷版） ─────────────
+
+t-start = () {
+    p = process.new()
+    ok = p.start('printf', 'xy')
+    runner.is-true(ok, 'start ok')
+    content, n = p.read-all()
+    code = p.wait()
+    p.close()
+    runner.eq(code, 0, 'start 後 wait 得 0')
+    runner.str-eq(content, 'xy', 2, 'start 傳遞單一參數')
+}
+
+; ── process.wait-nohang ──────────────────────
+
+; 執行中回 nil；wait 收割後回記錄的退出碼
+t-wait-nohang = () {
+    p = process.new()
+    ok = p.start-with-opts('sh', [
+        '-c',
+        'sleep 0.3; exit 5',
+    ], '', '', false)
+    runner.is-true(ok, 'wait-nohang 前置啟動 ok')
+    first = p.wait-nohang()
+    runner.eq(opt-of(first), 9000001, '執行中 wait-nohang 回 nil')
+    code = p.wait()
+    runner.eq(code, 5, 'wait 得 5')
+    second = p.wait-nohang()
+    runner.eq(opt-of(second), 5, '已收割後 wait-nohang 回記錄退出碼')
+    p.close()
+}
+
+; ── process.kill / terminate / force-kill ────
+
+; kill(0) 只做存在性檢查；terminate 發 SIG-TERM
+t-kill-terminate = () {
+    p = process.new()
+    ok = p.start-with-opts('sh', [
+        '-c',
+        'exec 1>&- 2>&-; sleep 5',
+    ], '', '', false)
+    runner.is-true(ok, 'terminate 前置啟動 ok')
+    runner.is-true(p.kill(0), 'kill(0) 存在性檢查成功')
+    runner.is-true(p.terminate(), 'terminate 發送 SIG-TERM 成功')
+    code = p.wait()
+    p.close()
+    runner.eq(code, 0, '信號致死只取 WEXITSTATUS ⇒ 回 0')
+}
+
+; force-kill 發 SIG-KILL
+t-force-kill = () {
+    p = process.new()
+    ok = p.start-with-opts('sh', [
+        '-c',
+        'exec 1>&- 2>&-; sleep 5',
+    ], '', '', false)
+    runner.is-true(ok, 'force-kill 前置啟動 ok')
+    runner.is-true(p.force-kill(), 'force-kill 發送 SIG-KILL 成功')
+    p.wait()
+    p.close()
+    runner.eq(p.exit-code-of(), 0, 'force-kill 後 exit-code-of 有記錄')
+}
+
+; ── 標準流操作 ───────────────────────────────
+
+; read：一次讀取到位元組緩衝區
+t-read = () {
+    p = process.new()
+    ok = p.start-with-opts('echo', [
+        'hi',
+    ], '', '', false)
+    buf []byte = with-len(16)
+    rn = p.read(buf, 16)
+    got = buf.slice(0, rn).to-bytes-str()
+    p.wait()
+    p.close()
+    runner.eq(rn, 3, 'read 讀到 3 位元組')
+    runner.str-eq(got, 'hi\n', 3, 'read 內容正確')
+}
+
+; read-line：取一行（含換行）
+t-read-line = () {
+    p = process.new()
+    ok = p.start-with-opts('echo', [
+        'hi',
+    ], '', '', false)
+    line = p.read-line()
+    p.wait()
+    p.close()
+    runner.str-eq(line-of(line), 'hi\n', 3, 'read-line 得到 hi\\n')
+}
+
+; read-all / close-stdout：關閉 stdout 後 read-all 讀不到資料
+t-close-streams = () {
+    p = process.new()
+    ok = p.start-with-opts('echo', [
+        'hi',
+    ], '', '', false)
+    runner.is-true(ok, 'close-streams 前置啟動 ok')
+    p.close-stdout()
+    content, n = p.read-all()
+    runner.eq(n, 0, 'close-stdout 後 read-all 得 0')
+    runner.str-eq(content, '', 0, 'close-stdout 後內容為空')
+    p.close-stdin()
+    p.close-stderr()
+    p.wait()
+    p.close()
+    runner.eq(p.stdin-fd, -1, 'close 後 stdin-fd == -1')
+}
+
+; write / close-stdin：未建立 stdin 管道時恆回 0（見檔頭限制 1）
+t-write = () {
+    p = process.new()
+    ok = p.start-with-opts('echo', [
+        'hi',
+    ], '', '', false)
+    runner.is-true(ok, 'write 前置啟動 ok')
+    runner.eq(p.stdin-fd, -1, 'input 為空時不建立 stdin 管道')
+    written = p.write('hello', 5)
+    runner.eq(written, 0, '未連接 stdin 時 write 回 0')
+    p.close-stdin()
+    p.close()
+}
+
+; ── 進程信息 ─────────────────────────────────
+
+; pid-of / exit-code-of 的時序：wait 前 exit-code 為 0，wait 後為實際值
+t-pid-exit-code = () {
+    p = process.new()
+    ok = p.start-with-opts('sh', [
+        '-c',
+        'exit 7',
+    ], '', '', false)
+    runner.is-true(ok, 'pid-exit-code 前置啟動 ok')
+    runner.gt(p.pid-of(), 0, 'pid-of > 0')
+    runner.eq(p.exit-code-of(), 0, 'wait 前 exit-code-of 為 0')
+    content, n = p.read-all()
+    code = p.wait()
+    runner.eq(code, 7, 'wait 得 7')
+    runner.eq(p.exit-code-of(), 7, 'wait 後 exit-code-of 為 7')
+    p.close()
+}
+
+; ── process.output ───────────────────────────
+
+t-output = () {
+    p = process.new()
+    content, code = p.output('echo', 'hi')
+    runner.eq(code, 0, 'output code 0')
+    runner.str-eq(content, 'hi\n', 3, 'output 捕獲 stdout')
+}
+
+; ── process-shell（已棄用，回原始 wait 狀態） ─
+
+t-process-shell = () {
+    r0 = process.process-shell('true')
+    runner.eq(r0, 0, 'process-shell true 原始狀態 0')
+    r1 = process.process-shell('false')
+    runner.eq(r1, 256, 'process-shell false 回原始狀態 256（非退出碼）')
+}
+
+; ── shell-quote ──────────────────────────────
+
+t-shell-quote = () {
+    q = '\''
+    esc = q - '\\' - q - q
+    want-plain = q - 'a b' - q
+    runner.str-eq(process.shell-quote('a b'), want-plain, 5, 'shell-quote 包裹普通字串')
+    want-sq = q - 'it' - esc - 's' - q
+    runner.str-eq(process.shell-quote('it\'s'), want-sq, 9, 'shell-quote 轉義內部單引號')
+    want-empty = q - q
+    runner.str-eq(process.shell-quote(''), want-empty, 2, 'shell-quote 空字串得兩個引號')
+}
+
+; ── process.exec（結構體選項） ────────────────
+
+t-exec = () {
+    o = process.cmdopts{
+        timeout: 5000
+    }
+    runner.eq(o.timeout, 5000, 'cmdopts 字面量 timeout')
+    res = process.exec('echo', [
+        'zz',
+    ], o)
+    runner.eq(res.code, 0, 'exec code 0')
+    runner.str-eq(res.stdout, 'zz\n', 3, 'exec 捕獲 stdout')
+    runner.eq(res.stderr.len(), 0, 'exec stderr 為空')
+}
+
+; exec 的 dir / stdin 選項經 cmdopts 透傳
+t-exec-opts = () {
+    o = process.cmdopts{
+        dir: '/tmp'
+        stdin: 'xyz'
+        env: []
+        timeout: 0
+        merge-err: false
+    }
+    res = process.exec('sh', [
+        '-c',
+        'cat',
+    ], o)
+    runner.eq(res.code, 0, 'exec(opts) code 0')
+    runner.str-eq(res.stdout, 'xyz', 3, 'exec(opts) stdin 透傳')
+}
+
+; ── 進程列表與查找 ───────────────────────────
+
+; list-all 在 macOS/Windows 為空實作、Linux 遍歷 /proc，故只斷言非負
+t-list-all = () {
+    all = process.list-all()
+    runner.gt(all.len(), -1, 'list-all 可呼叫且回傳列表')
+}
+
+; find-match：大小寫不敏感的子串匹配
+t-find-match = () {
+    runner.is-true(process.find-match('Echo', 'ec'), 'find-match 命中（忽略大小寫）')
+    runner.is-false(process.find-match('Echo', 'zz'), 'find-match 未命中')
+    runner.is-true(process.find-match('nginx', 'NGIN'), 'find-match 目標大寫亦命中')
+}
+
+; find-by-name：不存在的名字回空列表
+t-find-by-name = () {
+    pids = process.find-by-name('zz-no-such-proc-name')
+    runner.eq(pids.len(), 0, 'find-by-name 對不存在名稱回空列表')
+}
+
+; ── 底層內建 ─────────────────────────────────
+
+; process-getppid
+t-low-getppid = () {
+    runner.gt(process.process-getppid(), 0, 'process-getppid > 0')
+}
+
+; process-system：回 C system() 原始 wait 狀態（退出碼需 >>8）
+t-low-system = () {
+    runner.eq(process.process-system('true'), 0, 'process-system true 原始狀態 0')
+    runner.eq(process.process-system('false'), 256, 'process-system false 原始狀態 256')
+}
+
+; process-pipe + process-dup2
+t-low-pipe = () {
+    fds = process.process-pipe()
+    runner.gt(fds, 0, 'process-pipe 回打包 fd')
+    r = fds >> 32
+    w = fds & 0xffffffff
+    runner.gt(r, 0, 'pipe 讀端 fd > 0')
+    runner.gt(w, 0, 'pipe 寫端 fd > 0')
+    runner.ne(r, w, 'pipe 兩端 fd 不同')
+    runner.eq(process.process-dup2(w, 20), 20, 'process-dup2 複製到 fd 20')
+    fs.close(20)
+    fs.close(r)
+    fs.close(w)
+}
+
+; process-fork + process-waitpid：子進程立即退出，父進程收割
+t-low-fork = () {
+    pid = process.process-fork()
+    {
+        pid == 0 -> exit(0)
+    }
+    runner.gt(pid, 0, 'process-fork 在父進程回傳子 pid')
+    runner.eq(process.process-waitpid(pid, 0), 0, 'process-waitpid 收割得 0')
+}
+
+; process-waitpid-nohang 對執行中的子進程回 -1；process-kill 可殺死它
+t-low-kill = () {
+    pid = process.process-fork()
+    {
+        pid == 0 -> {
+            sleep-us(300000)
+            exit(7)
+        }
+    }
+    runner.gt(pid, 0, 'fork 出待殺子進程')
+    runner.eq(process.process-waitpid-nohang(pid), -1, '執行中 waitpid-nohang 回 -1')
+    runner.is-true(process.process-kill(pid, 9), 'process-kill SIG-KILL 成功')
+    runner.eq(process.process-waitpid(pid, 0), 0, '被殺子進程 WEXITSTATUS 為 0')
+}
+
+; process-exec：在子進程內以 true 替換自身（成功即永不返回）
+t-low-exec = () {
+    pid = process.process-fork()
+    {
+        pid == 0 -> {
+            rc = process.process-exec('true', '')
+
+            ; 只有 exec 失敗才會落到這裡（成功後進程映像已被替換）
+            exit(90 + rc)
+        }
+    }
+    runner.gt(pid, 0, 'fork 出待 exec 子進程')
+    runner.eq(process.process-waitpid(pid, 0), 0, 'process-exec 以 true 替換子進程')
+}
+
+; process-exec-shell：在子進程內以 sh -c 執行命令字串
+t-low-exec-shell = () {
+    pid = process.process-fork()
+    {
+        pid == 0 -> {
+            rc = process.process-exec-shell('exit 3')
+            exit(90 + rc)
+        }
+    }
+    runner.gt(pid, 0, 'fork 出待 exec-shell 子進程')
+    runner.eq(process.process-waitpid(pid, 0), 3, 'process-exec-shell 以 sh -c 執行並透傳退出碼')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('process.new', t-new)
@@ -64,6 +580,42 @@ p2, f2 = runner.test('process.shell', t-shell)
 p3, f3 = runner.test('process.spawn-wait', t-spawn-wait)
 p4, f4 = runner.test('process.parent-pid', t-parent-pid)
 p5, f5 = runner.test('process.cmd', t-cmd)
+p6, f6 = runner.test('process.cmd / 退出碼透傳 / timeout', t-cmd-exit-code)
+p7, f7 = runner.test('process.cmd / timeout>0 不誤報 -2', t-cmd-timeout-fast)
+p8, f8 = runner.test('process.cmd / 真超時 -2', t-cmd-timeout)
+p9, f9 = runner.test('process.cmd / input', t-cmd-input)
+p10, f10 = runner.test('process.cmd / env', t-cmd-env)
+p11, f11 = runner.test('process.cmd / 命令不存在', t-cmd-not-found)
+p12, f12 = runner.test('process.start-with-opts', t-start-opts)
+p13, f13 = runner.test('process.start-with-opts / dir', t-start-opts-dir)
+p14, f14 = runner.test('process.start-with-opts / input', t-start-opts-input)
+p15, f15 = runner.test('process.start-with-opts / merge-err', t-start-opts-merge-err)
+p16, f16 = runner.test('process.start-with-opts / 分離 stderr', t-start-opts-split-err)
+p17, f17 = runner.test('process.start', t-start)
+p18, f18 = runner.test('process.wait-nohang', t-wait-nohang)
+p19, f19 = runner.test('process.kill / terminate', t-kill-terminate)
+p20, f20 = runner.test('process.force-kill', t-force-kill)
+p21, f21 = runner.test('process.read', t-read)
+p22, f22 = runner.test('process.read-line', t-read-line)
+p23, f23 = runner.test('process.close-stdin/stderr', t-close-streams)
+p24, f24 = runner.test('process.write', t-write)
+p25, f25 = runner.test('process.pid-of / exit-code-of', t-pid-exit-code)
+p26, f26 = runner.test('process.output', t-output)
+p27, f27 = runner.test('shell-quote', t-shell-quote)
+p28, f28 = runner.test('process.exec', t-exec)
+p29, f29 = runner.test('process.exec / cmdopts 透傳', t-exec-opts)
+p30, f30 = runner.test('list-all / find-match / find-by-name', t-list-all)
+p31, f31 = runner.test('find-match', t-find-match)
+p32, f32 = runner.test('find-by-name', t-find-by-name)
+p33, f33 = runner.test('process-getppid / process-system', t-low-getppid)
+p34, f34 = runner.test('process-system', t-low-system)
+p35, f35 = runner.test('process-pipe / process-dup2', t-low-pipe)
+p36, f36 = runner.test('process-fork / process-waitpid', t-low-fork)
+p37, f37 = runner.test('process-waitpid-nohang / process-kill', t-low-kill)
+p38, f38 = runner.test('process-exec', t-low-exec)
+p39, f39 = runner.test('process-exec-shell', t-low-exec-shell)
+p40, f40 = runner.test('SIG-* / WNOHANG 常量', t-signals)
+p41, f41 = runner.test('process-shell（已棄用）', t-process-shell)
 
 total = runner.summary()
 f = runner.failed-count()

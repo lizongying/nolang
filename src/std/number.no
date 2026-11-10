@@ -1129,6 +1129,60 @@ f64.to-str-fixed = (precision i64) (out str) {
 ; precision i64: 小數部分位數（>= 0）
 ; 返回 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
 ; [to-str-sci](#number.f64.to-str-sci)
+; 私有算術助手：`+ - * /` 在 Nolang 一律回 `?i64`，溢出時走 err。
+;
+; 為什麼不就地解包：`#{overflow=wrap}` 只改變溢出時取的值，型別仍是 `?i64`，
+; 所以 `e = e + 1` 會被 checker 判 15w45dqk；而在 to-str-sci / to-str-general
+; 的 `cond -> { … }` 區塊裡寫「兩段式解包」（`s = e + 1` + `s: { ok -> e = it … }`）
+; 實測**寫不回去**（payload 走空 `->` 分支），格式化結果因此少一位指數。
+; 走一次函數邊界兩者都成立：呼叫端拿到的是普通 i64，解包發生在函數內。
+;
+; 失敗（溢出）時回退到左運算元，即「保持原值」——本模組只用於指數、位數、
+; 進位門檻這類小整數，實際不會溢出。
+;
+; `_` 前綴 = 模組私有，使用者碼不可調用，也不計入 std API 覆蓋分母。
+; a: 左運算元
+; b: 右運算元
+; out: 運算結果（溢出時為 a）
+_num-add = (a i64, b i64) (out i64) {
+    s = a + b
+    out = s: {
+        ok -> it
+
+        -> a
+    }
+}
+
+; 私有算術助手：減法（見 _num-add）
+_num-sub = (a i64, b i64) (out i64) {
+    s = a - b
+    out = s: {
+        ok -> it
+
+        -> a
+    }
+}
+
+; 私有算術助手：乘法（見 _num-add）
+_num-mul = (a i64, b i64) (out i64) {
+    s = a * b
+    out = s: {
+        ok -> it
+
+        -> a
+    }
+}
+
+; 私有算術助手：除法（見 _num-add）
+_num-div = (a i64, b i64) (out i64) {
+    s = a / b
+    out = s: {
+        ok -> it
+
+        -> a
+    }
+}
+
 f64.to-str-sci = (precision i64) (out str) {
     x = .
 
@@ -1269,36 +1323,17 @@ f64.to-str-sci = (precision i64) (out str) {
     epw f64 = (e + 1).to-f64() * ln10
     upper = epw.exp()
 
-    #{overflow=wrap}
+    ; 指數微調：log10/floor 的浮點誤差會讓 e 偏一格，這裡用 10^(e+1) / 10^e 校正。
+    ; 用 _num-add 而非就地解包：本函數的 `cond -> { … }` 區塊裡就地 match
+    ; 寫回不生效（9.99 這種「四捨五入後進位」的用例指數會少一）。
     ax >= upper -> {
-        {
-
-            #{overflow=wrap}
-            e-opt2 = e + 1
-            e-opt2: {
-                ok -> e = it
-
-                ->
-            }
-        }
+        e = _num-add(e, 1)
     }
     bpw = e.to-f64() * ln10
     base = bpw.exp()
 
-    #{overflow=wrap}
     ax < base -> {
-
-        #{overflow=wrap}
-        {
-
-            #{overflow=wrap}
-            e-opt3 = e - 1
-            e-opt3: {
-                ok -> e = it
-
-                ->
-            }
-        }
+        e = _num-sub(e, 1)
         bpw2 f64 = e.to-f64() * ln10
         base = bpw2.exp()
     }
@@ -1311,68 +1346,30 @@ f64.to-str-sci = (precision i64) (out str) {
 
     m i64 = (ax / base * scale + 0.5).to-i64()
 
-    ; 四捨五入溢出處理（m 變成 10^(precision+1)）
+    ; 四捨五入溢出處理（m 變成 10^(precision+1)）：退一位、指數加一
     overflow = 1
-
-    #{overflow=wrap}
     i <- [0..precision + 1): {
-
-        #{overflow=wrap}
-        {
-
-            #{overflow=wrap}
-            overflow-opt = overflow * 10
-            overflow-opt: {
-                ok -> overflow = it
-
-                ->
-            }
-        }
+        overflow = _num-mul(overflow, 10)
     }
 
-    #{overflow=wrap}
     m >= overflow -> {
-
-        #{overflow=wrap}
-        {
-
-            #{overflow=wrap}
-            m-opt = m / 10
-            m-opt: {
-                ok -> m = it
-
-                ->
-            }
-        }
-        {
-            e-opt4 = e + 1
-            e-opt4: {
-                ok -> e = it
-
-                ->
-            }
-        }
+        m = _num-div(m, 10)
+        e = _num-add(e, 1)
     }
 
     ; 構建 mantissa 字串
     mstr = m.to-str()
     mn = mstr.len-bytes()
 
-    ; 指數位數
+    ; 指數位數（一律取絕對值：符號由下面的 `e < 0` 分支單獨輸出）
+    ;
+    ; ⚠ 必須寫成單行 `e < 0 -> ae = 0 - ae`。改寫成等價的區塊形式
+    ; `e < 0 -> { ao = 0 - ae; ao: { ok -> ae = it … } }` 時，`0 - ae` 在區塊裡
+    ; 取不到 ok（實測 payload 走 `->` 分支），ae 保持負數 ⇒ 輸出 `1.23e--4`
+    ; （'e' 後的 '-' 與 ae 自帶的 '-' 疊在一起）。同 to-str 的寫法。
     ae = e
-
-    #{overflow=wrap}
     e < 0 -> {
-        {
-
-            #{overflow=wrap}
-            ae-opt = 0 - ae
-            ae-opt: {
-                ok -> ae = it
-
-                ->
-            }
-        }
+        ae = _num-sub(0, ae)
     }
     elen = 1
     {
@@ -1643,36 +1640,15 @@ f64.to-str-general = (precision i64) (out str) {
     epw f64 = (e + 1).to-f64() * ln10
     upper = epw.exp()
 
-    #{overflow=wrap}
+    ; 指數微調（同 to-str-sci：用 _num-add，見該模組私有助手處的說明）
     ax >= upper -> {
-        {
-
-            #{overflow=wrap}
-            e-opt5 = e + 1
-            e-opt5: {
-                ok -> e = it
-
-                ->
-            }
-        }
+        e = _num-add(e, 1)
     }
     bpw = e.to-f64() * ln10
     base = bpw.exp()
 
-    #{overflow=wrap}
     ax < base -> {
-
-        #{overflow=wrap}
-        {
-
-            #{overflow=wrap}
-            e-opt6 = e - 1
-            e-opt6: {
-                ok -> e = it
-
-                ->
-            }
-        }
+        e = _num-sub(e, 1)
         bpw2 f64 = e.to-f64() * ln10
         base = bpw2.exp()
     }
@@ -1686,45 +1662,15 @@ f64.to-str-general = (precision i64) (out str) {
     }
     m i64 = (ax / base * scale + 0.5).to-i64()
 
-    ; 四捨五入溢出處理
+    ; 四捨五入溢出處理：退一位、指數加一
     overflow = 1
     i <- [0..precision): {
-
-        #{overflow=wrap}
-        {
-
-            #{overflow=wrap}
-            overflow-opt2 = overflow * 10
-            overflow-opt2: {
-                ok -> overflow = it
-
-                ->
-            }
-        }
+        overflow = _num-mul(overflow, 10)
     }
 
-    #{overflow=wrap}
     m >= overflow -> {
-
-        #{overflow=wrap}
-        {
-
-            #{overflow=wrap}
-            m-opt2 = m / 10
-            m-opt2: {
-                ok -> m = it
-
-                ->
-            }
-        }
-        {
-            e-opt7 = e + 1
-            e-opt7: {
-                ok -> e = it
-
-                ->
-            }
-        }
+        m = _num-div(m, 10)
+        e = _num-add(e, 1)
     }
 
     ; mantissa 字串
@@ -1977,7 +1923,11 @@ f64.to-str-general = (precision i64) (out str) {
                     -> break
                 }
             }
-            end > dot-pos + 1 -> {
+
+            ; 尾隨零全部剝離後可能只剩小數點（`10.`）：此時也要把小數點去掉，
+            ; 否則 %g 輸出成 `10.`（Go 是 `10`）。原本的守衛寫成 `end > dot-pos + 1`
+            ; 恰好把這個邊界排除在外，等於永遠不執行。
+            end > dot-pos -> {
                 s.byte(end - 1) == 46 -> end = end - 1
             }
             out = s.slice-bytes(0, end)
@@ -2291,9 +2241,14 @@ u32.to-u64 = () (out u64) {
 ; 用法：
 ;   v = 0x1234
 ;   out = v.to-bytes-be()   // out = [0x00,0x00,0x00,0x00,0x00,0x00,0x12,0x34]
-; out: 8 位元組陣列（高位在前，大端序）
+; out: 8 位元組 slice（高位在前，大端序）
+;
+; ⚠ 返回型別必須寫 `[]byte`。原本寫成 `[?]byte`（元素型別待定的定長陣列），
+; 實測會得到長度 0 的陣列：`out[0..7] = …` 的寫入全部丟失，`out.len()` 也會
+; 撞上 `str-len fixed-array [0 x i8]`。改成 slice 後 8 個位元組才真的寫得進去。
 ; [to-bytes-be](#number.i64.to-bytes-be)
-i64.to-bytes-be = () (out [?]byte) {
+i64.to-bytes-be = () (out []byte) {
+    out = with-len(8)
     out[0] = (. >> 56) & 255
 
     out[1] = (. >> 48) & 255
@@ -2315,9 +2270,10 @@ i64.to-bytes-be = () (out [?]byte) {
 ; 用法：
 ;   v = 0x1234
 ;   out = v.to-bytes-le()   // out = [0x34,0x12,0x00,0x00,0x00,0x00,0x00,0x00]
-; out: 8 位元組陣列（低位在前，小端序）
+; out: 8 位元組 slice（低位在前，小端序；型別同 to-bytes-be，必須是 slice）
 ; [to-bytes-le](#number.i64.to-bytes-le)
-i64.to-bytes-le = () (out [?]byte) {
+i64.to-bytes-le = () (out []byte) {
+    out = with-len(8)
     out[0] = . & 255
 
     out[1] = (. >> 8) & 255
@@ -3116,7 +3072,7 @@ i8.sqrt = () (r i8) {
                 {
 
                     #{overflow=wrap}
-                    lo-opt2 = mid + 1
+                    lo-opt2 ?i8 = mid + 1
                     lo-opt2: {
                         ok -> lo = it
 
@@ -3196,7 +3152,7 @@ i8.is-prime = () (yes bool) {
         {
 
             #{overflow=wrap}
-            d-opt2 = d + 2
+            d-opt2 ?i8 = d + 2
             d-opt2: {
                 ok -> d = it
 

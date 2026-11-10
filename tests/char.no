@@ -119,10 +119,10 @@ ok = p.exists()
 ...
 print('=== path char test ===')
 
-p__1 = path{
+p-1 = path{
     p: '/usr/local/bin'
 }
-print(p__1.p)
+print(p-1.p)
 
 ; path.join() 會**原地修改 .p**，同時回傳拼接後的結果。
 ; 早期版本無回傳值，`joined = p2.join(...)` 只會拿到空字串。

@@ -123,7 +123,7 @@ func TestIndexWriteUnwrapAssignNotReported(t *testing.T) {
 // （`.keys[i] = v` / `s.keys[i] = v`）与直接变量基底同罪。
 //
 // 旧用例写的是 `node = struct { ... }` —— 那不是合法的 Nolang struct 定义
-//（真实形式是 `node { ... }`，无 `=`），解析不出 StructDefinition，字段型别
+// （真实形式是 `node { ... }`，无 `=`），解析不出 StructDefinition，字段型别
 // 永远查不到，于是「不报」被误读成「豁免」。改用真实定义后，隐式 self 字段
 // 写入必须报 idxwrite：D11 之后索引读一律是 option，写侧不得再有豁免区。
 func TestIndexWriteStructFieldBaseReported(t *testing.T) {
@@ -202,12 +202,16 @@ func TestIndexWriteWiredIntoLints(t *testing.T) {
 	}
 }
 
-// ── with-cap / with-len 緩衝增長豁免 ─────────────────────────────
+// ── with-cap / with-cap-len 緩衝增長豁免（with-len 已不在此列）──────
 //
-// with-cap(n) 建立 len=0 容量緩衝、with-len(n) 建立 len=n 預填充緩衝，两者的
-// 標準構造慣例都靠「逐位元組直接下標寫入」填充（见 fmt.no fmt-apply-spec、
-// str.no / txt.no UTF-8 解碼）。checker 建議的替代形體（place-match / set-byte）
-// 對 len=0 緩衝會靜默產空字串，故這類基底必須豁免，否則 src/std 大量誤報。
+// 只有**能構造 len=0 緩衝**的 with-cap(n) / with-cap-len(cap, len) 豁免：
+// len=0 時逐位元組直接下標寫入是唯一能把長度增長起來的寫法（见 fmt.no
+// fmt-apply-spec、number.no u64.to-str），checker 建議的替代形體
+// （place-match / set-byte）對 len=0 緩衝會靜默產空字串。
+//
+// with-len(n) 的 len 已就位：place-match 讀 i（i < len）落在 ok 臂、寫回同位，
+// 與直接下標寫完全等價 ⇒ **不豁免**。早期把它一起豁免是過寬，讓
+// `hex[i * 2 + 1] = b` 這類直寫在整個語料裡長期不受保護；2026-11-10 已全量收口。
 
 // TestIndexWriteWithCapExempt 負例：with-cap 建立的 str 緩衝逐位元組直寫不得報。
 func TestIndexWriteWithCapExempt(t *testing.T) {
@@ -222,9 +226,14 @@ func TestIndexWriteWithCapExempt(t *testing.T) {
 	}
 }
 
-// TestIndexWriteWithLenExempt 負例：with-len 建立的 str 緩衝逐位元組直寫不得報
-// （對應 str.no:1522 的 `val str = with-len(n); val[j] = ...` 解碼回填）。
-func TestIndexWriteWithLenExempt(t *testing.T) {
+// TestIndexWriteWithLenReported 正例：with-len 建立的緩衝**不再是豁免區**。
+// with-len(n) 的 len 已就位，place-match 讀 i（i < len）落在 ok 臂、寫回同位，
+// 與直接下標寫完全等價 ⇒ 直接寫入沒有理由放行，必須報並給出兩種正確寫法。
+//
+// 歷史上這條曾被豁免（註解理由是「with-len 是預填充緩衝的標準填充慣例」），
+// 但該理由只對 with-cap（len=0，直寫是唯一能增長長度的寫法）成立；豁免擴到
+// with-len 讓 `hex[i * 2 + 1] = b` 這類直寫在整個語料裡長期不受保護。
+func TestIndexWriteWithLenReported(t *testing.T) {
 	src := `copy2 = (self str, start i64, end i64) (val str) {
     n = end - start
     val str = with-len(n)
@@ -232,8 +241,50 @@ func TestIndexWriteWithLenExempt(t *testing.T) {
 }`
 	prog := parseProg(t, src)
 	res := ValidateIndexWrite(prog, "src/app.no")
+	if len(res) != 1 {
+		t.Fatalf("with-len buffer write must be reported, got %d: %+v", len(res), res)
+	}
+	if res[0].TraceID != indexWriteTraceID {
+		t.Fatalf("TraceID = %q, want %q", res[0].TraceID, indexWriteTraceID)
+	}
+	for _, want := range []string{"`val[0] = self.byte(start)`", "val[0]: {", "ok -> it = self.byte(start)", "`val[0] ?= self.byte(start)`"} {
+		if !strings.Contains(res[0].Message, want) {
+			t.Errorf("message missing %q:\n%s", want, res[0].Message)
+		}
+	}
+}
+
+// TestIndexWriteWithLenPlaceMatchNotReported 守門：with-len 基底改用 place-match
+// 後就必須放行（這正是使用者被要求改成的那種寫法）。若這裡誤報，使用者會被
+// 逼進「兩種寫法都報」的死角。
+func TestIndexWriteWithLenPlaceMatchNotReported(t *testing.T) {
+	src := `copy2 = (self str, start i64, end i64) (val str) {
+    n = end - start
+    val str = with-len(n)
+    val[0]: {
+        ok -> it = self.byte(start)
+
+        -> _
+    }
+}`
+	prog := parseProg(t, src)
+	res := ValidateIndexWrite(prog, "src/app.no")
 	if len(res) != 0 {
-		t.Fatalf("with-len buffer byte-fill write must NOT be reported, got %d: %+v", len(res), res)
+		t.Fatalf("place-match on a with-len buffer must NOT be reported, got %d: %+v", len(res), res)
+	}
+}
+
+// TestIndexWriteWithCapLenNotReported with-cap-len 也構造 len=0 的容量緩衝
+// （len 由第二個參數決定、語料裡從未使用），與 with-cap 同罪，豁免不放寬也不收緊。
+func TestIndexWriteWithCapLenNotReported(t *testing.T) {
+	src := `build = (n i64) (buf str) {
+    buf str = with-cap-len(n, 0)
+    buf[0] = 65
+}`
+	prog := parseProg(t, src)
+	res := ValidateIndexWrite(prog, "src/app.no")
+	if len(res) != 0 {
+		t.Fatalf("with-cap-len(_, 0) buffer write must NOT be reported, got %d: %+v", len(res), res)
 	}
 }
 

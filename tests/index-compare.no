@@ -142,11 +142,11 @@ reject(tbl[0][0] == 'c', 38)
 print('ok: nested subscript comparison')
 
 ; 14. 巢狀下標越界：兩層都帶界檢查，越界回傳 nil（絕不 abort）。
-; 修復前這裡是裸讀，`tbl[nest_oob][0]` 直接讀野內存。
-nest_oob = 5
-reject(tbl[nest_oob][0] == 'c', 39)
-expect(tbl[nest_oob][0] != 'c', 40)
-expect(tbl[n][nest_oob] != 'a', 41)
+; 修復前這裡是裸讀，`tbl[nest-oob][0]` 直接讀野內存。
+nest-oob = 5
+reject(tbl[nest-oob][0] == 'c', 39)
+expect(tbl[nest-oob][0] != 'c', 40)
+expect(tbl[n][nest-oob] != 'a', 41)
 print('ok: nested subscript out of range yields nil')
 
 ; 15. `?txt == txt`：txt 是 { [255 x i8], i8 } 聚合，payload 型別必須是 %txt，

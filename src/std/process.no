@@ -1020,33 +1020,41 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
     {
         timeout > 0 -> {
             elapsed i64 = 0
+            rc i64 = -1
             !! {
 
-                ; 子進程已結束則跳出
-                process-waitpid-nohang(pid) != -1 -> break
+                ; 子進程已結束則跳出。
+                ; ⚠ 必須把觀測到的退出碼留在 rc：`process-waitpid-nohang` 是**收割式**的
+                ;   （waitpid(pid, WNOHANG)），它一旦回傳真實退出碼，子進程已被回收；
+                ;   迴圈外若再對同一 pid 呼叫一次，只會拿到 -1（ECHILD），從而被誤判成
+                ;   「仍在執行」→ 走 kill 分支回報 -2。舊實作正是如此，導致 timeout>0 時
+                ;   **任何**命令（含瞬間結束的 echo）都回報 -2。
+                rc = process-waitpid-nohang(pid)
+                rc != -1 -> break
 
                 ; 已超時則跳出
                 elapsed >= timeout -> break
                 sleep-us(10000)
 
-                #{overflow=wrap}
-                {
+                ; ⚠ i64 加法結果是 `?i64`，必須用**語句位** match 回寫。
+                ;   舊寫法把值位 match 當表達式（`elapsed-opt: { ok -> elapsed = it … }`），
+                ;   在條件塊內**靜默不寫回** ⇒ elapsed 恆為 0 ⇒ 看門狗永不過期，
+                ;   真超時的命令會一路等到自然結束並回報其自然退出碼。
+                next = elapsed + 10
+                next: {
+                    ok -> elapsed = it
 
-                    #{overflow=wrap}
-                    elapsed-opt = elapsed + 10
-                    elapsed-opt: {
-                        ok -> elapsed = it
-
-                        ->
-                    }
+                    ; 溢出視為已超時（timeout 上限 9e18ms，實務到不了）
+                    -> elapsed = timeout
                 }
             }
 
             ; 超時：仍在執行 → 強制殺死並回報 -2
             {
-                process-waitpid-nohang(pid) == -1 -> {
+                rc == -1 -> {
                     process-kill(pid, 9)
                     code = -2
+                    err = 'process timed out'
 
                     ; 收割被殺死的子進程
                     process-waitpid(pid, 0)
@@ -1054,8 +1062,8 @@ cmd = (program str, args []str, dir str, input str, env []str, timeout i64, merg
 
                 -> {
 
-                    ; 自然結束：收割並取得退出碼
-                    code = process-waitpid(pid, 0)
+                    ; 自然結束：rc 已是 nohang 解碼過的退出碼，不可再 waitpid
+                    code = rc
                 }
             }
         }
@@ -1409,13 +1417,11 @@ proc-info {
 list-all = () (procs []proc-info) {
     names = fs.list-dir('/proc')
     i <- [0..names.len()): {
-        ixout1407c16 = names[i]: {
+        name = names[i]: {
             ok -> it
 
             -> _
         }
-
-        name = ixout1407c16
 
         ; 只處理全數字條目（PID 目錄）
         pid-val ?i64 = name.to-i64()
@@ -1480,13 +1486,11 @@ find-match = (pname str, target str) (yes bool) {
 find-by-name = (name str) (pids []i64) {
     all = list-all()
     i <- [0..all.len()): {
-        ixout1474c23 = all[i]: {
+        p proc-info = all[i]: {
             ok -> it
 
             -> _
         }
-
-        p proc-info = ixout1474c23
         yes = find-match(p.name, name)
         yes -> pids.push(p.pid)
     }

@@ -233,13 +233,11 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
                 j <- [0..label-len): {
 
                     #{overflow=wrap}
-                    ixout236c28 = domain[label-start + j]: {
+                    query[pos] = domain[label-start + j]: {
                         ok -> it
 
                         -> _
                     }
-
-                    query[pos] = ixout236c28
                     {
                         pos-opt8 = pos + 1
                         pos-opt8: {
@@ -418,16 +416,12 @@ parse-name = (data []byte, offset i64) (name str, next-pos i64) {
                     }
                 }
                 i <- [0..label-len): {
+                    {
 
-                    #{overflow=wrap}
-                    ixout268c36 = data[pos + i]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    buf[buf-pos]: {
-                        ok -> it = ixout268c36
+                        #{overflow=wrap}
+                        buf[buf-pos] ?= data[pos + i]
+                    }: {
+                        err -> _
 
                         -> _
                     }

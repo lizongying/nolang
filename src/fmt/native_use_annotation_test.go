@@ -31,16 +31,17 @@ func TestFormatUseNativeBindAnnotation(t *testing.T) {
 			expected: "#{bind=wasm, wasm='@sqlite.org/sqlite-wasm'}\n# /src/sqlite\n",
 		},
 		{
+			// 導入只允許出現在文件頂部：寫在代碼之後的導入（連同其
+			// `#{bind=...}` 註解）被搬到頂部區段，與其它陳述之間空一行。
 			name: "between code",
 			input: "x = 1\n" +
 				"#{bind = ffi}\n" +
 				"# /src/sqlite\n" +
 				"print(x)\n",
-			expected: "x = 1\n" +
-				"\n" +
-				"#{bind=ffi}\n" +
+			expected: "#{bind=ffi}\n" +
 				"# /src/sqlite\n" +
 				"\n" +
+				"x = 1\n" +
 				"print(x)\n",
 		},
 	}

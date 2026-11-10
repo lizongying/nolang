@@ -5786,11 +5786,6 @@ allgemeines Format (wählt automatisch Fixpunkt oder wissenschaftliche Schreibwe
 precision i64: maximale Anzahl signifikanter Ziffern (>= 1)
 Rückgabe out str: die Stringform (abschließende Nullen automatisch entfernt)
 `
-  'number.f64.to-str-sci': `
-wissenschaftliche Schreibweise
-precision i64: Anzahl der Nachkommastellen (>= 0)
-Rückgabe out str: die Stringform (z. B. "3.14e+2", "-5.0e-3")
-`
   'number.f64.to-u32': `
 Fließkommazahl zu 32-Bit-vorzeichenloser Ganzzahl (sättigend)
 out: der u32 Richtung Null gekürzt (Bereichsüberschreitung sättigt)

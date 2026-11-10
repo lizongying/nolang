@@ -162,122 +162,82 @@ fe-one = (h []i64) {
 ; f: 來源域元素
 ; [fe-copy](#x25519.fe-copy)
 fe-copy = (h []i64, f []i64) {
-    ixout167c20 = f[0]: {
-        ok -> it
+    {
+        h[0] ?= f[0]
+    }: {
+        err -> _
 
         -> _
     }
 
-    h[0]: {
-        ok -> it = ixout167c20
+    {
+        h[1] ?= f[1]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout174c20 = f[1]: {
-        ok -> it
+    {
+        h[2] ?= f[2]
+    }: {
+        err -> _
 
         -> _
     }
 
-    h[1]: {
-        ok -> it = ixout174c20
+    {
+        h[3] ?= f[3]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout181c20 = f[2]: {
-        ok -> it
+    {
+        h[4] ?= f[4]
+    }: {
+        err -> _
 
         -> _
     }
 
-    h[2]: {
-        ok -> it = ixout181c20
+    {
+        h[5] ?= f[5]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout188c20 = f[3]: {
-        ok -> it
+    {
+        h[6] ?= f[6]
+    }: {
+        err -> _
 
         -> _
     }
 
-    h[3]: {
-        ok -> it = ixout188c20
+    {
+        h[7] ?= f[7]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout195c20 = f[4]: {
-        ok -> it
+    {
+        h[8] ?= f[8]
+    }: {
+        err -> _
 
         -> _
     }
 
-    h[4]: {
-        ok -> it = ixout195c20
-
-        -> _
-    }
-
-    ixout202c20 = f[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    h[5]: {
-        ok -> it = ixout202c20
-
-        -> _
-    }
-
-    ixout209c20 = f[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    h[6]: {
-        ok -> it = ixout209c20
-
-        -> _
-    }
-
-    ixout216c20 = f[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    h[7]: {
-        ok -> it = ixout216c20
-
-        -> _
-    }
-
-    ixout223c20 = f[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    h[8]: {
-        ok -> it = ixout223c20
-
-        -> _
-    }
-
-    ixout230c20 = f[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    h[9]: {
-        ok -> it = ixout230c20
+    {
+        h[9] ?= f[9]
+    }: {
+        err -> _
 
         -> _
     }
@@ -3729,14 +3689,10 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     ; Clamping
     k []byte = with-len(32)
     i <- [0..32): {
-        ixout2709c24 = scalar[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        k[i]: {
-            ok -> it = ixout2709c24
+        {
+            k[i] ?= scalar[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -3781,14 +3737,10 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     ; 載入點座標 — 複製到 local [32]byte 再呼叫 fe-frombytes
     point-arr [32]byte
     i <- [0..32): {
-        ixout2739c24 = point[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        point-arr[i]: {
-            ok -> it = ixout2739c24
+        {
+            point-arr[i] ?= point[i]
+        }: {
+            err -> _
 
             -> _
         }

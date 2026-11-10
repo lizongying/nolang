@@ -24,14 +24,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout28c1f = hex-chars[(ixout23c37 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout23c37 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout28c1f
 
         ixout26c40 = data[i]: {
             ok -> it
@@ -39,14 +40,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout37c23 = hex-chars[ixout26c40 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout26c40 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout37c23
     }
 }
 

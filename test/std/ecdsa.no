@@ -26,14 +26,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout25c22 = hex-chars[(ixout25c33 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout25c33 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout25c22
 
         ixout28c36 = data[i]: {
             ok -> it
@@ -41,14 +42,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout28c26 = hex-chars[ixout28c36 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout28c36 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout28c26
     }
 }
 
@@ -58,13 +60,11 @@ bhex = (data []byte) (hex str) {
 arr65 = (a [65]byte) (v []byte) {
     v = with-len(65)
     i <- [0..65): {
-        ixout40c16 = a[i]: {
+        v[i] = a[i]: {
             ok -> it
 
             -> _
         }
-
-        v[i] = ixout40c16
     }
 }
 
@@ -74,13 +74,11 @@ arr65 = (a [65]byte) (v []byte) {
 arr64 = (a [64]byte) (v []byte) {
     v = with-len(64)
     i <- [0..64): {
-        ixout52c16 = a[i]: {
+        v[i] = a[i]: {
             ok -> it
 
             -> _
         }
-
-        v[i] = ixout52c16
     }
 }
 
@@ -109,13 +107,11 @@ MSG25 [25]byte = [
 arr25 = (a [25]byte) (v []byte) {
     v = with-len(25)
     i <- [0..25): {
-        ixout83c16 = a[i]: {
+        v[i] = a[i]: {
             ok -> it
 
             -> _
         }
-
-        v[i] = ixout83c16
     }
 }
 
@@ -317,7 +313,11 @@ h32 = (a [32]byte) (s str) {
 
             -> 0
         }
-        v[i] = x
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
     }
     s = bhex(v)
 }
@@ -359,20 +359,20 @@ t-bn-cmp = () {
     pa []byte = with-len(32)
     pb []byte = with-len(32)
     i <- [0..32): {
-        ixout362c12 = p[i]: {
-            ok -> it
+        {
+            pa[i] ?= p[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pa[i] = ixout362c12
-        ixout363c14 = pm1[i]: {
-            ok -> it
+        {
+            pb[i] ?= pm1[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pb[i] = ixout363c14
     }
     runner.eq(ecdsa.bn-cmp(pa, pa), 0, 'bn-cmp 相同 -> 0')
     runner.eq(ecdsa.bn-cmp(pa, pb), 1, 'bn-cmp p > p-1')
@@ -387,20 +387,20 @@ t-bn-add-sub = () {
     fa []byte = with-len(32)
     fb []byte = with-len(32)
     i <- [0..32): {
-        ixout378c13 = ff[i]: {
-            ok -> it
+        {
+            fa[i] ?= ff[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fa[i] = ixout378c13
-        ixout379c14 = one[i]: {
-            ok -> it
+        {
+            fb[i] ?= one[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fb[i] = ixout379c14
     }
     sum1 [32]byte
     c1 i64
@@ -411,20 +411,20 @@ t-bn-add-sub = () {
     ; (p-1) + 1 = p，carry 0
     pm1 [32]byte = le32(P_M1_HEX)
     i <- [0..32): {
-        ixout390c14 = pm1[i]: {
-            ok -> it
+        {
+            fa[i] ?= pm1[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fa[i] = ixout390c14
-        ixout391c14 = one[i]: {
-            ok -> it
+        {
+            fb[i] ?= one[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fb[i] = ixout391c14
     }
     sum2 [32]byte
     c2 i64
@@ -435,20 +435,20 @@ t-bn-add-sub = () {
     ; 0 - 1 → 全 0xff，borrow 1
     z [32]byte = zero32()
     i <- [0..32): {
-        ixout402c12 = z[i]: {
-            ok -> it
+        {
+            fa[i] ?= z[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fa[i] = ixout402c12
-        ixout403c14 = one[i]: {
-            ok -> it
+        {
+            fb[i] ?= one[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fb[i] = ixout403c14
     }
     diff1 [32]byte
     b1 i64
@@ -459,20 +459,20 @@ t-bn-add-sub = () {
     ; p - 1 = p-1，borrow 0
     p [32]byte = le32(P_HEX)
     i <- [0..32): {
-        ixout414c12 = p[i]: {
-            ok -> it
+        {
+            fa[i] ?= p[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fa[i] = ixout414c12
-        ixout415c14 = one[i]: {
-            ok -> it
+        {
+            fb[i] ?= one[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        fb[i] = ixout415c14
     }
     diff2 [32]byte
     b2 i64
@@ -489,20 +489,20 @@ t-bn-mod = () {
     a1000 [32]byte = le32(SMALL_1000)
     m7 [32]byte = le32(SMALL_7)
     i <- [0..32): {
-        ixout432c15 = a1000[i]: {
-            ok -> it
+        {
+            a[i] ?= a1000[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        a[i] = ixout432c15
-        ixout433c12 = m7[i]: {
-            ok -> it
+        {
+            m[i] ?= m7[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        m[i] = ixout433c12
     }
     r1 [32]byte
     r1 = ecdsa.bn-mod(a, m)
@@ -511,20 +511,20 @@ t-bn-mod = () {
     ; p mod p = 0
     pa [32]byte = le32(P_HEX)
     i <- [0..32): {
-        ixout442c12 = pa[i]: {
-            ok -> it
+        {
+            a[i] ?= pa[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        a[i] = ixout442c12
-        ixout443c12 = pa[i]: {
-            ok -> it
+        {
+            m[i] ?= pa[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        m[i] = ixout443c12
     }
     r2 [32]byte
     r2 = ecdsa.bn-mod(a, m)
@@ -533,13 +533,13 @@ t-bn-mod = () {
     ; (p-1) mod p = p-1
     pm1 [32]byte = le32(P_M1_HEX)
     i <- [0..32): {
-        ixout452c13 = pm1[i]: {
-            ok -> it
+        {
+            a[i] ?= pm1[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        a[i] = ixout452c13
     }
     r3 [32]byte
     r3 = ecdsa.bn-mod(a, m)
@@ -554,20 +554,20 @@ t-bn-mulmod = () {
     pa []byte = with-len(32)
     pm []byte = with-len(32)
     i <- [0..32): {
-        ixout467c14 = pm1[i]: {
-            ok -> it
+        {
+            pa[i] ?= pm1[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pa[i] = ixout467c14
-        ixout468c12 = p[i]: {
-            ok -> it
+        {
+            pm[i] ?= p[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pm[i] = ixout468c12
     }
     r1 [32]byte
     r1 = ecdsa.bn-mulmod(pa, pa, pm)
@@ -579,30 +579,30 @@ t-bn-mulmod = () {
     x [32]byte = le32(SMALL_123456789)
     y [32]byte = le32(SMALL_987654321)
     i <- [0..32): {
-        ixout480c12 = x[i]: {
-            ok -> it
+        {
+            pa[i] ?= x[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pa[i] = ixout480c12
-        ixout481c12 = p[i]: {
-            ok -> it
+        {
+            pm[i] ?= p[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pm[i] = ixout481c12
     }
     py []byte = with-len(32)
     i <- [0..32): {
-        ixout485c12 = y[i]: {
-            ok -> it
+        {
+            py[i] ?= y[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        py[i] = ixout485c12
     }
     r2 [32]byte
     r2 = ecdsa.bn-mulmod(pa, py, pm)
@@ -619,27 +619,27 @@ t-bn-addmod-submod = () {
 
     ; (p-1) + 2 mod p = 1
     i <- [0..32): {
-        ixout502c13 = pm1[i]: {
-            ok -> it
+        {
+            a[i] ?= pm1[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        a[i] = ixout502c13
-        ixout503c13 = two[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        b[i] = ixout503c13
-        ixout504c11 = p[i]: {
-            ok -> it
+        {
+            b[i] ?= two[i]
+        }: {
+            err -> _
 
             -> _
         }
+        {
+            m[i] ?= p[i]
+        }: {
+            err -> _
 
-        m[i] = ixout504c11
+            -> _
+        }
     }
     r1 [32]byte
     r1 = ecdsa.bn-addmod(a, b, m)
@@ -650,27 +650,27 @@ t-bn-addmod-submod = () {
     seven [32]byte = le32(SMALL_7)
     ten [32]byte = le32(SMALL_10)
     i <- [0..32): {
-        ixout515c14 = five[i]: {
-            ok -> it
+        {
+            a[i] ?= five[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        a[i] = ixout515c14
-        ixout516c15 = seven[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        b[i] = ixout516c15
-        ixout517c13 = ten[i]: {
-            ok -> it
+        {
+            b[i] ?= seven[i]
+        }: {
+            err -> _
 
             -> _
         }
+        {
+            m[i] ?= ten[i]
+        }: {
+            err -> _
 
-        m[i] = ixout517c13
+            -> _
+        }
     }
     r2 [32]byte
     r2 = ecdsa.bn-addmod(a, b, m)
@@ -679,27 +679,27 @@ t-bn-addmod-submod = () {
     ; 3 - 5 mod p = p-2
     three [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000003')
     i <- [0..32): {
-        ixout526c15 = three[i]: {
-            ok -> it
+        {
+            a[i] ?= three[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        a[i] = ixout526c15
-        ixout527c14 = five[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        b[i] = ixout527c14
-        ixout528c11 = p[i]: {
-            ok -> it
+        {
+            b[i] ?= five[i]
+        }: {
+            err -> _
 
             -> _
         }
+        {
+            m[i] ?= p[i]
+        }: {
+            err -> _
 
-        m[i] = ixout528c11
+            -> _
+        }
     }
     r3 [32]byte
     r3 = ecdsa.bn-submod(a, b, m)
@@ -707,13 +707,13 @@ t-bn-addmod-submod = () {
 
     ; 3 - 5 mod 10 = 8
     i <- [0..32): {
-        ixout536c13 = ten[i]: {
-            ok -> it
+        {
+            m[i] ?= ten[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        m[i] = ixout536c13
     }
     r4 [32]byte
     r4 = ecdsa.bn-submod(a, b, m)
@@ -725,25 +725,25 @@ t-bn-invmod = () {
     p [32]byte = le32(P_HEX)
     pm []byte = with-len(32)
     i <- [0..32): {
-        ixout548c12 = p[i]: {
-            ok -> it
+        {
+            pm[i] ?= p[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pm[i] = ixout548c12
     }
 
     two [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000002')
     pa []byte = with-len(32)
     i <- [0..32): {
-        ixout554c14 = two[i]: {
-            ok -> it
+        {
+            pa[i] ?= two[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pa[i] = ixout554c14
     }
     r1 [32]byte
     r1 = ecdsa.bn-invmod(pa, pm)
@@ -751,13 +751,13 @@ t-bn-invmod = () {
 
     three [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000003')
     i <- [0..32): {
-        ixout562c16 = three[i]: {
-            ok -> it
+        {
+            pa[i] ?= three[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pa[i] = ixout562c16
     }
     r3 [32]byte
     r3 = ecdsa.bn-invmod(pa, pm)
@@ -766,13 +766,13 @@ t-bn-invmod = () {
     ; inv(7) 再乘 7 必須回 1
     seven [32]byte = le32(SMALL_7)
     i <- [0..32): {
-        ixout571c16 = seven[i]: {
-            ok -> it
+        {
+            pa[i] ?= seven[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        pa[i] = ixout571c16
     }
     r7 [32]byte
     r7 = ecdsa.bn-invmod(pa, pm)
@@ -780,13 +780,13 @@ t-bn-invmod = () {
 
     inv7 []byte = with-len(32)
     i <- [0..32): {
-        ixout579c15 = r7[i]: {
-            ok -> it
+        {
+            inv7[i] ?= r7[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        inv7[i] = ixout579c15
     }
     prod [32]byte
     prod = ecdsa.bn-mulmod(inv7, pa, pm)

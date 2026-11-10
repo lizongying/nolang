@@ -1191,21 +1191,17 @@ h2m-sig-add = (s h2m-sigs, name str, ret i64, argt []i64, deft []i64) {
     s.fbase.push(b)
     i = 0
     (i < argt.len()) {
-        ixout633c14 = argt[i]: {
+        at = argt[i]: {
             ok -> it
 
             -> _
         }
-
-        at = ixout633c14
         s.farg.push(at)
-        ixout635c14 = deft[i]: {
+        dt = deft[i]: {
             ok -> it
 
             -> _
         }
-
-        dt = ixout635c14
         s.fdef.push(dt)
 
         #{overflow=wrap}
@@ -3583,13 +3579,11 @@ h2m-lower-func = (t ast, agg h2m-ctx, sg h2m-sigs, n i64) (r str) {
             pk = ast.kid-at(t, p)
             pd = ast.nd-at(t, pk)
             pnm = ast.str-at(t, pd.s0)
-            ixout2587c18 = fap[q]: {
+            pt = fap[q]: {
                 ok -> it
 
                 -> _
             }
-
-            pt = ixout2587c18
             vid = h2m-alloc(c, pt)
             h2m-var-bind(c, pnm, vid)
             h2m-lst-add(loc, pnm, pt)

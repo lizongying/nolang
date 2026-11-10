@@ -202,14 +202,10 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
     work [32]byte
     diff [32]byte
     i <- [0..32): {
-        ixout195c24 = a[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        work[i]: {
-            ok -> it = ixout195c24
+        {
+            work[i] ?= a[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -236,13 +232,11 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         }
     }
     i <- [0..32): {
-        ixout235c16 = work[i]: {
+        out[i] = work[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout235c16
     }
 }
 
@@ -697,13 +691,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
     }
     i <- [0..32): {
-        ixout686c16 = work[i]: {
+        out[i] = work[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout686c16
     }
 }
 
@@ -987,13 +979,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
     }
     i <- [0..32): {
-        ixout966c15 = acc[i]: {
+        out[i] = acc[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout966c15
     }
 }
 
@@ -1012,13 +1002,11 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             borrow = 0
             diff, borrow = bn-sub(a, b)
             i <- [0..32): {
-                ixout985c1e = diff[i]: {
+                out[i] = diff[i]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[i] = ixout985c1e
             }
         }
 
@@ -1091,13 +1079,11 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
         base = bn-mulmod(base, base, m)
     }
     i <- [0..32): {
-        ixout1058c18 = result[i]: {
+        out[i] = result[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout1058c18
     }
 }
 
@@ -1204,31 +1190,31 @@ ec-point-double = (p []byte) (r []byte) {
 
     ; 輸出
     i <- [0..32): {
-        ixout1165c12 = x3[i]: {
+        r[i] = x3[i]: {
             ok -> it
 
             -> _
         }
 
-        r[i] = ixout1165c12
+        {
 
-        ixout1168c17 = y3[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        r[32 + i] = ixout1168c17
-
-        ixout1171c17 = z3[i]: {
-            ok -> it
+            #{overflow=wrap}
+            r[32 + i] ?= y3[i]
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        r[64 + i] = ixout1171c17
+        {
+
+            #{overflow=wrap}
+            r[64 + i] ?= z3[i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -1260,14 +1246,10 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     }
     p-inf == 1 -> {
         i <- [0..96): {
-            ixout971c28 = q[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            r[i]: {
-                ok -> it = ixout971c28
+            {
+                r[i] ?= q[i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -1290,14 +1272,10 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     }
     q-inf == 1 -> {
         i <- [0..96): {
-            ixout991c28 = p[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            r[i]: {
-                ok -> it = ixout991c28
+            {
+                r[i] ?= p[i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -1475,13 +1453,11 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         tmp []byte
         tmp = ec-point-double(r)
         i <- [0..96): {
-            ixout1147c20 = tmp[i]: {
+            r[i] = tmp[i]: {
                 ok -> it
 
                 -> _
             }
-
-            r[i] = ixout1147c20
         }
 
         ; 如果 bit 為 1，R = R + P
@@ -1497,13 +1473,11 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
         (ixout1174c11 >> bit-idx) & 1 == 1 -> {
             tmp = ec-point-add(r, p)
             i <- [0..96): {
-                ixout1159c24 = tmp[i]: {
+                r[i] = tmp[i]: {
                     ok -> it
 
                     -> _
                 }
-
-                r[i] = ixout1159c24
             }
         }
 
@@ -1587,26 +1561,25 @@ ec-point-to-bytes = (p []byte) (out [65]byte) {
     ; 輸出: 04 || x || y（大端序）
     out[0] = 4
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1219c22 = x[31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[1 + i] = ixout1219c22
-
-        #{overflow=wrap}
-        ixout1222c23 = y[31 - i]: {
-            ok -> it
+            #{overflow=wrap}
+            out[1 + i] ?= x[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        out[33 + i] = ixout1222c23
+        {
+
+            #{overflow=wrap}
+            out[33 + i] ?= y[31 - i]
+        }: {
+            err -> _
+
+            -> _
+        }
     }
 }
 
@@ -1621,29 +1594,22 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
     x [32]byte
     y [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1240c24 = in[1 + 31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[i]: {
-            ok -> it = ixout1240c24
+            #{overflow=wrap}
+            x[i] ?= in[1 + 31 - i]
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        ixout1247c24 = in[33 + 31 - i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        y[i]: {
-            ok -> it = ixout1247c24
+            #{overflow=wrap}
+            y[i] ?= in[33 + 31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1651,22 +1617,21 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
 
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
-        ixout1582c13 = x[i]: {
+        out[i] = x[i]: {
             ok -> it
 
             -> _
         }
 
-        out[i] = ixout1582c13
+        {
 
-        ixout1585c18 = y[i]: {
-            ok -> it
+            #{overflow=wrap}
+            out[32 + i] ?= y[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        out[32 + i] = ixout1585c18
     }
     out[64] = 1
     i <- [1..32): {
@@ -1716,16 +1681,12 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     ; 將私鑰轉為小端序（內部點運算使用小端序純量）
     k [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1313c24 = priv[31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        k[i]: {
-            ok -> it = ixout1313c24
+            #{overflow=wrap}
+            k[i] ?= priv[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1755,13 +1716,11 @@ ecdh-p256 = (priv [32]byte, peer [65]byte) (shared []byte) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        ixout1337c21 = enc[1 + i]: {
+        shared[i] = enc[1 + i]: {
             ok -> it
 
             -> _
         }
-
-        shared[i] = ixout1337c21
     }
 }
 
@@ -1774,16 +1733,12 @@ ecdsa-publickey = (priv [32]byte) (pub [65]byte) {
     ; 將私鑰轉為小端序
     k [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1353c24 = priv[31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        k[i]: {
-            ok -> it = ixout1353c24
+            #{overflow=wrap}
+            k[i] ?= priv[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1815,16 +1770,12 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; 將哈希轉為小端序
     h-le [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1388c24 = h[31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        h-le[i]: {
-            ok -> it = ixout1388c24
+            #{overflow=wrap}
+            h-le[i] ?= h[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1833,16 +1784,12 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; 私鑰轉小端序
     d [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1400c24 = priv[31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        d[i]: {
-            ok -> it = ixout1400c24
+            #{overflow=wrap}
+            d[i] ?= priv[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1917,16 +1864,12 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     ; 提取 x（大端序 → 小端序）
     rx [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1455c24 = r-point-bytes[1 + 31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        rx[i]: {
-            ok -> it = ixout1455c24
+            #{overflow=wrap}
+            rx[i] ?= r-point-bytes[1 + 31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1948,23 +1891,21 @@ ecdsa-sign = (priv [32]byte, msg []byte) (sig [64]byte) {
     i <- [0..32): {
 
         #{overflow=wrap}
-        ixout1477c18 = r-val[31 - i]: {
+        sig[i] = r-val[31 - i]: {
             ok -> it
 
             -> _
         }
 
-        sig[i] = ixout1477c18
+        {
 
-        #{overflow=wrap}
-        ixout1480c23 = s-val[31 - i]: {
-            ok -> it
+            #{overflow=wrap}
+            sig[32 + i] ?= s-val[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        sig[32 + i] = ixout1480c23
     }
 }
 
@@ -1980,29 +1921,22 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     r-val [32]byte
     s-val [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1499c24 = sig[31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        r-val[i]: {
-            ok -> it = ixout1499c24
+            #{overflow=wrap}
+            r-val[i] ?= sig[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        ixout1506c24 = sig[32 + 31 - i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        s-val[i]: {
-            ok -> it = ixout1506c24
+            #{overflow=wrap}
+            s-val[i] ?= sig[32 + 31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -2060,16 +1994,12 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     h = sha256.sha256(msg)
     h-le [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1555c24 = h[31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        h-le[i]: {
-            ok -> it = ixout1555c24
+            #{overflow=wrap}
+            h-le[i] ?= h[31 - i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -2128,16 +2058,12 @@ ecdsa-verify = (pub [65]byte, msg []byte, sig [64]byte) (ok i64) {
     r-point-bytes = ec-point-to-bytes(r-point)
     rx [32]byte
     i <- [0..32): {
+        {
 
-        #{overflow=wrap}
-        ixout1611c24 = r-point-bytes[1 + 31 - i]: {
-            ok -> it
-
-            -> _
-        }
-
-        rx[i]: {
-            ok -> it = ixout1611c24
+            #{overflow=wrap}
+            rx[i] ?= r-point-bytes[1 + 31 - i]
+        }: {
+            err -> _
 
             -> _
         }

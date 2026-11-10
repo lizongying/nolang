@@ -1,35 +1,35 @@
-; 深層 free 測試 3：[]MyType（vec of struct with heap fields）
+; 深層 free 測試 3：[]my-type（vec of struct with heap fields）
 ...
 
 ;
 ; 驗證場景：
-;   - vec 的元素型別為用戶結構體 MyType（含 str 和 []i64 堆欄位）
-;   - 函數結束時應遍歷每個 MyType 元素，遞迴釋放其 name.data 和 items.data
-;   - 淺層 free 只會 free vec.data，導致每個 MyType 的堆欄位洩漏
+;   - vec 的元素型別為用戶結構體 my-type（含 str 和 []i64 堆欄位）
+;   - 函數結束時應遍歷每個 my-type 元素，遞迴釋放其 name.data 和 items.data
+;   - 淺層 free 只會 free vec.data，導致每個 my-type 的堆欄位洩漏
 ;
 ...
 
-MyType {
+my-type {
     name str
     items []i64
 }
 
-; 建立 []MyType：push 兩個各帶 name 與 items 的結構體，驗證釋放會進到每個欄位的堆資料
+; 建立 []my-type：push 兩個各帶 name 與 items 的結構體，驗證釋放會進到每個欄位的堆資料
 make-struct-vec = () {
-    v []MyType
-    m1 = MyType{
+    v []my-type
+    m1 = my-type{
         name: 'hello'
         items: [1, 2, 3]
     }
     v.push(m1)
-    m2 = MyType{
+    m2 = my-type{
         name: 'world'
         items: [4, 5, 6]
     }
     v.push(m2)
     print(v.len())
     ; v 離開作用域時：
-    ;   深層 free → 遍歷 2 個 MyType 元素，各遞迴釋放 name.data 和 items.data，再 free v.data ✓
+    ;   深層 free → 遍歷 2 個 my-type 元素，各遞迴釋放 name.data 和 items.data，再 free v.data ✓
 }
 make-struct-vec()
 print('done')

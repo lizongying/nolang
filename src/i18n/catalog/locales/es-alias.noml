@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['conversión a str', 'ts', 'cas']
   'number.f64.to-str-fixed': ['conversión a str-fixed', 'tsf', 'casf']
   'number.f64.to-str-general': ['conversión a str-general', 'tsg', 'casg']
-  'number.f64.to-str-sci': ['conversión a str-sci', 'tss', 'cass']
   'number.f64.to-u32': ['conversión a u32', 'tu', 'cau3']
   'number.f64.to-u64': ['conversión a u64', 'tu', 'cau6']
   'number.i128.sqrt': ['raíz', 's', 'r']

@@ -49,22 +49,16 @@ rc4 = (in []byte, key []byte) (out []byte) {
         j = (j + (ixout36c19) + (ixout36c28)) % 256
 
         ; Swap s[i] and s[j]
-        ixout52ce = s[i]: {
+        t = s[i]: {
             ok -> it
 
             -> _
         }
 
-        t = ixout52ce
-
-        ixout43c24 = s[j]: {
-            ok -> it
-
-            -> _
-        }
-
-        s[i]: {
-            ok -> it = ixout43c24
+        {
+            s[i] ?= s[j]
+        }: {
+            err -> _
 
             -> _
         }
@@ -110,14 +104,10 @@ rc4 = (in []byte, key []byte) (out []byte) {
             -> _
         }
 
-        ixout76c24 = s[j]: {
-            ok -> it
-
-            -> _
-        }
-
-        s[i]: {
-            ok -> it = ixout76c24
+        {
+            s[i] ?= s[j]
+        }: {
+            err -> _
 
             -> _
         }

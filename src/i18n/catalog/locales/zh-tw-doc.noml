@@ -4538,12 +4538,6 @@ precision i64: 最大有效數字位數（>= 1）
 回傳 out str: 字串表示（自動去掉尾隨零）
 
 `
-  'number.f64.to-str-sci': `
-科學記號格式
-precision i64: 小數部分位數（>= 0）
-回傳 out str: 字串表示（如 "3.14e+2"、"-5.0e-3"）
-
-`
   'number.f64.to-u32': '浮點轉 32 位無號整數（飽和）'
   'number.f64.to-u64': '浮點轉 64 位無號整數（飽和）'
   'number.i128.sqrt': `

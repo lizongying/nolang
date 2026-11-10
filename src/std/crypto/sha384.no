@@ -48,14 +48,10 @@ sha384 = (data []byte) (hash [48]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-        ixout53c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        padded[i]: {
-            ok -> it = ixout53c24
+        {
+            padded[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -162,7 +158,11 @@ sha384 = (data []byte) (hash [48]byte) {
                 -> _
             }
 
-            block[i] = (ixout105c25 << 56) | (ixout105c58 << 48) | (ixout105c95 << 40) | (ixout105c132 << 32) | (ixout105c169 << 24) | (ixout105c206 << 16) | (ixout105c243 << 8) | ixout105c278
+            block[i]: {
+                ok -> it = (ixout105c25 << 56) | (ixout105c58 << 48) | (ixout105c95 << 40) | (ixout105c132 << 32) | (ixout105c169 << 24) | (ixout105c206 << 16) | (ixout105c243 << 8) | ixout105c278
+
+                -> _
+            }
         }
 
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512.sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)

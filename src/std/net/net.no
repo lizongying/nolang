@@ -269,14 +269,15 @@ conn.recv-all = () (content str, total i64) {
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {
-            ixout274c25 = buf[i]: {
-                ok -> it
+            {
+
+                #{overflow=wrap}
+                content[total + i] ?= buf[i]
+            }: {
+                err -> _
 
                 -> _
             }
-
-            #{overflow=wrap}
-            content[total + i] = ixout274c25
         }
 
         #{overflow=wrap}
@@ -1405,45 +1406,35 @@ route-list = () (routes []route-info) {
         fields.len-bytes() >= 11 -> {
             r = route-info{}
 
-            ixout1395c1d = fields[0]: {
+            r.iface = fields[0]: {
                 ok -> it
 
                 -> _
             }
 
-            r.iface = ixout1395c1d
-
-            ixout1397c23 = fields[1]: {
+            r.destination = fields[1]: {
                 ok -> it
 
                 -> _
             }
 
-            r.destination = ixout1397c23
-
-            ixout1399c1f = fields[2]: {
+            r.gateway = fields[2]: {
                 ok -> it
 
                 -> _
             }
 
-            r.gateway = ixout1399c1f
-
-            ixout1401c1d = fields[3]: {
+            r.flags = fields[3]: {
                 ok -> it
 
                 -> _
             }
 
-            r.flags = ixout1401c1d
-
-            ixout1403c1c = fields[7]: {
+            r.mask = fields[7]: {
                 ok -> it
 
                 -> _
             }
-
-            r.mask = ixout1403c1c
             routes.push(r)
         }
     }
@@ -1490,45 +1481,35 @@ arp-list = () (arps []arp-info) {
         fields.len-bytes() >= 6 -> {
             a = arp-info{}
 
-            ixout1450c1a = fields[0]: {
+            a.ip = fields[0]: {
                 ok -> it
 
                 -> _
             }
 
-            a.ip = ixout1450c1a
-
-            ixout1452c1f = fields[1]: {
+            a.hw-type = fields[1]: {
                 ok -> it
 
                 -> _
             }
 
-            a.hw-type = ixout1452c1f
-
-            ixout1454c1d = fields[2]: {
+            a.flags = fields[2]: {
                 ok -> it
 
                 -> _
             }
 
-            a.flags = ixout1454c1d
-
-            ixout1456c1b = fields[3]: {
+            a.mac = fields[3]: {
                 ok -> it
 
                 -> _
             }
 
-            a.mac = ixout1456c1b
-
-            ixout1458c1d = fields[5]: {
+            a.iface = fields[5]: {
                 ok -> it
 
                 -> _
             }
-
-            a.iface = ixout1458c1d
             arps.push(a)
         }
     }

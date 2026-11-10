@@ -275,13 +275,11 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     combined [40]byte
     i = 0
     (i < 20) {
-        ixout235c14 = seed[i]: {
+        cb = seed[i]: {
             ok -> it
 
             -> _
         }
-
-        cb = ixout235c14
         combined[i]: {
             ok -> it = cb
 
@@ -302,13 +300,11 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     }
     i = 0
     (i < 20) {
-        ixout249c15 = stage2[i]: {
+        cb2 = stage2[i]: {
             ok -> it
 
             -> _
         }
-
-        cb2 = ixout249c15
 
         #{overflow=wrap}
         combined[20 + i]: {
@@ -336,7 +332,19 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     ; token = stage1 XOR stage3
     i = 0
     (i < 20) {
-        token[i] = stage1[i] ^ stage3[i]
+        ixout339c26 = stage1[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        ixout339c38 = stage3[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        token[i] = ixout339c26 ^ ixout339c38
 
         #{overflow=wrap}
         {
@@ -448,7 +456,8 @@ open = (dsn str) (d db-mysql) {
             host = host-port.slice(0, hp-colon)
 
             #{overflow=wrap}
-            port-str = host-port.slice(hp-colon + 1, host-port.len-bytes())
+            port-next = hp-colon + 1
+            port-str = host-port.slice(port-next, host-port.len-bytes())
             p = 0
             i = 0
             (i < port-str.len-bytes()) {
@@ -896,13 +905,11 @@ open = (dsn str) (d db-mysql) {
     }
     i = 0
     (i < 20) {
-        ixout632c22 = auth-token[i]: {
+        resp[wpos] = auth-token[i]: {
             ok -> it
 
             -> _
         }
-
-        resp[wpos] = ixout632c22
 
         #{overflow=wrap}
         {
@@ -976,7 +983,11 @@ open = (dsn str) (d db-mysql) {
     plugin-name = 'mysql_native_password'
     i = 0
     (i < plugin-name.len-bytes()) {
-        resp[wpos] = plugin-name[i]
+        resp[wpos] = plugin-name[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
         {
@@ -1376,7 +1387,11 @@ rows-mysql.scan-int = (col i64) (v i64) {
         }
     }
     (i < end) {
-        ch = .row-data[i]
+        ch = .row-data[i]: {
+            ok -> it
+
+            -> _
+        }
         {
             ch >= 48 && ch <= 57 -> {
 
@@ -1516,7 +1531,11 @@ rows-mysql.scan-float = (col i64) (v f64) {
     (i < field-len) {
 
         #{overflow=wrap}
-        ch = .row-data[base + i]
+        ch = .row-data[base + i]: {
+            ok -> it
+
+            -> _
+        }
         {
             ch >= 48 && ch <= 57 -> {
                 has-dot == 0 -> int-part = int-part * 10.0 + (ch - 48)
@@ -1663,9 +1682,15 @@ stmt-mysql.exec = () (r sql.result) {
     payload[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {
+        {
 
-        #{overflow=wrap}
-        payload[1 + i] = .bound[i]
+            #{overflow=wrap}
+            payload[1 + i] ?= .bound[i]
+        }: {
+            err -> _
+
+            -> _
+        }
 
         #{overflow=wrap}
         {
@@ -1723,9 +1748,15 @@ stmt-mysql.query = () (rs rows-mysql) {
     payload[0] = COM-QUERY
     i = 0
     (i < .bound.len-bytes()) {
+        {
 
-        #{overflow=wrap}
-        payload[1 + i] = .bound[i]
+            #{overflow=wrap}
+            payload[1 + i] ?= .bound[i]
+        }: {
+            err -> _
+
+            -> _
+        }
 
         #{overflow=wrap}
         {

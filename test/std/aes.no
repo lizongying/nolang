@@ -19,14 +19,15 @@ hex16 = (a [16]byte) (h str) {
             -> _
         }
 
-        ixout23c16 = hc[(ixout18c25 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            h[i * 2] ?= hc[(ixout18c25 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        h[i * 2] = ixout23c16
 
         ixout21c28 = a[i]: {
             ok -> it
@@ -34,14 +35,15 @@ hex16 = (a [16]byte) (h str) {
             -> _
         }
 
-        ixout32c1a = hc[ixout21c28 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            h[i * 2 + 1] ?= hc[ixout21c28 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        h[i * 2 + 1] = ixout32c1a
     }
 }
 

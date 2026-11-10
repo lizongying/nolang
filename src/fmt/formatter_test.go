@@ -2378,11 +2378,14 @@ int = i8 | i16`
 	}
 }
 
-// TestFormatMatchIdempotent verifies formatting match-test.no is idempotent.
+// TestFormatMatchIdempotent verifies formatting the merged match corpus is
+// idempotent. The old standalone tests/match-test.no was folded into
+// tests/match.no by the "merge similar cases into single files" change
+// (15618c3c), so the fixture path below must track that merge.
 func TestFormatMatchIdempotent(t *testing.T) {
-	data, err := os.ReadFile("../../tests/match-test.no")
+	data, err := os.ReadFile("../../tests/match.no")
 	if err != nil {
-		t.Fatalf("read match-test.no: %v", err)
+		t.Fatalf("read match.no: %v", err)
 	}
 	input := string(data)
 	result := Format(input)

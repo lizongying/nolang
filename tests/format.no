@@ -132,7 +132,7 @@ t = format('多字 純文字 無欄位')
 -> print('FAIL: 2 got=[{t}]')
 
 ; 3. 含欄位仍正常
-x__1 = 42
+x-1 = 42
 f = format('value={x}')
 (f == 'value=42') -> print('PASS: 3 field form still resolves')
 

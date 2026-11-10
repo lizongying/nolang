@@ -42,13 +42,11 @@ get-default-vec = (i i64) (res i64) {
     a [4] = [10, 20, 30, 40]
     av = a.to-vec()
 
-    ixout30c11 = av[i]: {
+    res = av[i]: {
         ok -> it
 
         -> _
     }
-
-    res = ixout30c11
 }
 
 ; 固定陣列 [N]i64：?=（結果參數直接承接）
@@ -129,18 +127,18 @@ safe-utl = (i i64) (res ?i64) {
 
         -> {
             io.out('untyped-local x = ')
-            io.out(it); 應印出 20（ib__1=1），證明 payload 正確推論為 i64 而非被污染成 str
+            io.out(it); 應印出 20（ib-1=1），證明 payload 正確推論為 i64 而非被污染成 str
             print('')
         }
     }
     res = x
 }
 
-ib__1 = 1
-oob__1 = 9
+ib-1 = 1
+oob-1 = 9
 
-safe-utl(ib__1)
+safe-utl(ib-1)
 
-safe-utl(oob__1)
+safe-utl(oob-1)
 io.out('utl OOB: no-crash')
 print('')

@@ -4,16 +4,16 @@
 
 ;
 ; 觸發條件：
-;   MyType {
+;   my-type {
 ;       name str
 ;       items []i64
 ;   }
-;   m = MyType{ name: "hello", items: [1, 2, 3] }
+;   m = my-type{ name: "hello", items: [1, 2, 3] }
 ;   ; m 離開作用域時，name.data 和 items.data 永不釋放
 ;
 ; 根本原因：
 ;   - stmt.go:159-167 的 emitHeapFree 只處理 %vec/%str-long/%arr
-;   - 用戶自定義結構體型別（如 %MyType）直接 continue 跳過
+;   - 用戶自定義結構體型別（如 %my-type）直接 continue 跳過
 ;   - heapVars 也只追蹤三種內建型別（stmt.go:3543-3546）
 ;   - emitHeapFree 是扁平設計，不遞迴遍歷結構體字段
 ;
@@ -35,15 +35,15 @@
 ;
 ...
 
-MyType {
+my-type {
     name str
     items []i64
 }
 
 ; 產生帶堆欄位的結構體（name 為 'hello'、items 為 [1,2,3]），驗證回傳結構體時欄位資料是否被釋放
-; out MyType: 新結構體，其 name 與 items 各自擁有堆資料
-make-struct = () (out MyType) {
-    out = MyType{
+; out my-type: 新結構體，其 name 與 items 各自擁有堆資料
+make-struct = () (out my-type) {
+    out = my-type{
         name: 'hello'
         items: [1, 2, 3]
     }

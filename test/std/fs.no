@@ -1,15 +1,35 @@
 ; std-fs.no — fs 模組測試
 ;
 ; 執行：no test test/std/fs.no
-; 覆蓋：open / file.write / file.read / file.close / file.is-open /
-;       is-file / is-dir / stat-size /
-;       open-read / open-write / read / write / close /
-;       copy-file / list-dir / dir-entries
+; 覆蓋：open / file.write / file.read / file.close / file.is-open / file.size /
+;       file.read-str / file.read-bytes / file.write-str / file.write-bytes /
+;       file.append / file.read-line / file.copy-to /
+;       is-file / is-dir / stat-size / fstat-size / file-size / exists / lstat /
+;       open-read / open-write / open-file / read / write / close / sync /
+;       read-file / write-file / read-str / write-str / read-bytes / write-bytes /
+;       truncate / utime / touch-file / realpath /
+;       symlink / readlink / link / rename / remove / rmdir / mkfifo / mknod /
+;       open-dir / read-dir / close-dir / dir-entries / walk / walk-collect /
+;       copy-file / list-dir
+;
+; ⚠ 未覆蓋（僅 3 個）：get-line / read-stdin / read-stdin-str —— 三者都讀 stdin，
+;   在 `no test` 下 stdin 連的是終端，呼叫會**阻塞**乃至吃掉跑測器的輸入，
+;   因此刻意不測（要測必須 `./bin/no test ... < 檔`，會破壞一鍵門禁的假設）。
+;
+; 臨時檔一律落在 /tmp/nolang_fs_test_dir 與 mkdtemp 隨機目錄，測完刪除。
 
 # /test/runner
 
 TMP-FILE = '/tmp/nolang_fs_test_file.txt'
 TMP-FILE2 = '/tmp/nolang_fs_test_file2.txt'
+DIR = '/tmp/nolang_fs_test_dir'
+F1 = '/tmp/nolang_fs_test_dir/a.txt'
+F1X = '/tmp/nolang_fs_test_dir/a2.txt'
+F2 = '/tmp/nolang_fs_test_dir/b.txt'
+LINK1 = '/tmp/nolang_fs_test_dir/link1'
+LINK2 = '/tmp/nolang_fs_test_dir/hard1'
+FIFO = '/tmp/nolang_fs_test_dir/fifo1'
+FIFO2 = '/tmp/nolang_fs_test_dir/node1'
 
 ; ── 檔案存在性檢查 ────────────────────────────
 
@@ -187,6 +207,326 @@ t-list-dir = () {
     runner.gt(entries.len(), 0, 'list-dir /tmp has entries')
 }
 
+; ── 擴充：目錄 / 連結 / fd / file 方法 ────────
+
+; ?str 解包：非 ok 回哨兵
+; o: 待解包的可選字串
+; v: 解包值
+str-of = (o ?str) (v str) {
+    v = '<nil>'
+    v = o: {
+        ok -> it
+
+        -> '<nil>'
+    }
+}
+
+; ?i64 解包：非 ok 回 -999
+; o: 待解包的可選整數
+; v: 解包值
+num-of = (o ?i64) (v i64) {
+    v = -999
+    v = o: {
+        ok -> it
+
+        -> -999
+    }
+}
+
+; ?bool 解包：ok 回 1，其餘回 0
+; o: 待解包的可選布林
+; v: 1=ok, 0=其他
+yes-of = (o ?bool) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+; ?[]byte 解包：ok 回 1，其餘回 0
+; o: 待解包的可選位元組串
+; v: 1=ok, 0=其他
+bytes-of = (o ?[]byte) (v i64) {
+    v = 0
+    v = o: {
+        ok -> 1
+
+        -> 0
+    }
+}
+
+; ?[]byte 長度：非 ok 回 -1
+; o: 待量長度的可選位元組串
+; v: 長度或 -1
+bytes-len = (o ?[]byte) (v i64) {
+    v = -1
+    v = o: {
+        ok -> it.len()
+
+        -> -1
+    }
+}
+
+; 以指定模式開啟檔案（測試用；失敗回 fd=-1）
+; p: 路徑
+; mode: file-mode 列舉值
+; f: ok=已開啟的檔案，其餘視為失敗
+open-mode = (p str, mode file-mode) (f ?fs.file) {
+    f = fs.open(p, {
+        mode: mode
+        perm: file-perm.perm-644
+        excl: false
+        truncate: false
+        append: false
+    })
+}
+
+t-mkdir-mkdtemp = () {
+    fs.rmdir(DIR)
+    runner.is-true(os.mkdir(DIR, 493), 'os.mkdir 建立測試目錄')
+    runner.is-true(fs.is-dir(DIR), 'is-dir 認得新建目錄')
+
+    ; mkdtemp 每次給唯一目錄，必須能無條件刪掉
+    d = fs.mkdtemp('/tmp/nolang_fs_tmp_XXXXXX')
+    dn = str-of(d)
+    runner.is-true(dn.eq-full('<nil>') == false, 'mkdtemp 成功回路徑')
+    runner.is-true(fs.is-dir(dn), 'mkdtemp 建出的目錄存在')
+    runner.is-true(fs.rmdir(dn), 'rmdir 刪空目錄')
+
+    ; 空路徑 / 不存在路徑
+    runner.is-false(fs.rmdir('/tmp/nolang_fs_no_such_dir'), 'rmdir 不存在路徑失敗')
+}
+
+t-file-bytes = () {
+    fs.remove(F1)
+    runner.is-true(fs.write-file(F1, 'hello fs'), 'write-file 寫入')
+    runner.eq(fs.read-file(F1).len(), 8, 'read-file 內容長度')
+    runner.is-true(fs.exists(F1), 'exists 認得檔案')
+    runner.is-false(fs.exists('/tmp/nolang_fs_no_such_file'), 'exists 不存在的回 false')
+    runner.is-true(fs.lstat(F1), 'lstat 成功的檔案')
+    runner.is-false(fs.lstat('/tmp/nolang_fs_no_such_file'), 'lstat 不存在的回 false')
+    runner.eq(num-of(fs.file-size(F1)), 8, 'file-size == 8')
+
+    runner.is-true(fs.truncate(F1, 3), 'truncate 縮短')
+    runner.eq(num-of(fs.file-size(F1)), 3, 'truncate 後大小 3')
+    runner.is-true(fs.utime(F1, 1000000000, 1000000000), 'utime 設定時間')
+    runner.is-true(fs.touch-file(F1), 'touch-file 刷新時間')
+    runner.is-true(fs.realpath(F1).len() > 0, 'realpath 非空')
+    fs.remove(F1)
+}
+
+t-str-bytes-io = () {
+    fs.remove(F2)
+    runner.eq(yes-of(fs.write-str(F2, 'abc')), 1, 'write-str 成功回 ok')
+    runner.is-true(str-of(fs.read-str(F2)).eq-full('abc'), 'read-str 讀回 abc')
+    runner.eq(yes-of(fs.write-bytes(F2, 'xy'.to-bytes())), 1, 'write-bytes 成功回 ok')
+    runner.eq(bytes-of(fs.read-bytes(F2)), 1, 'read-bytes 成功回 ok')
+    runner.eq(bytes-len(fs.read-bytes(F2)), 2, 'read-bytes 長度 2')
+
+    ; 不存在的檔案
+    runner.is-true(str-of(fs.read-str('/tmp/nolang_fs_no_such_file')).eq-full('<nil>'), 'read-str 不存在回 nil')
+
+    ; 空檔案：read-str 回 nil（不是空字串）
+    runner.is-true(fs.write-file(F2, ''), 'write-file 空內容')
+    runner.is-true(str-of(fs.read-str(F2)).eq-full('<nil>'), 'read-str 空檔案回 nil')
+    fs.remove(F2)
+}
+
+t-links-rename = () {
+    fs.remove(F1)
+    fs.remove(LINK1)
+    fs.remove(LINK2)
+    fs.write-file(F1, 'target')
+    runner.is-true(fs.symlink(F1, LINK1), 'symlink 建立符號連結')
+    runner.is-true(str-of(fs.readlink(LINK1)).eq-full(F1), 'readlink 讀回目標')
+    runner.is-true(str-of(fs.readlink('/tmp/nolang_fs_no_such_link')).eq-full('<nil>'), 'readlink 非連結回 nil')
+    runner.is-true(fs.link(F1, LINK2), 'link 建立硬連結')
+    runner.is-true(fs.is-file(LINK2), '硬連結是普通檔案')
+    runner.eq(num-of(fs.file-size(LINK2)), 6, '硬連結大小同來源')
+
+    runner.is-true(fs.rename(F1, F1X), 'rename 改名')
+    runner.is-true(fs.exists(F1X), 'rename 後新名存在')
+    runner.is-false(fs.exists(F1), 'rename 後舊名不存在')
+
+    fs.remove(LINK1)
+    fs.remove(LINK2)
+    fs.remove(F1X)
+}
+
+t-fd-io = () {
+    fs.remove(F2)
+    wfd = fs.open-write(F2)
+    runner.is-true(wfd >= 0, 'open-write 回有效 fd')
+    runner.eq(fs.write(wfd, 'hello', 5), 5, 'write 寫入 5 位元組')
+    runner.eq(num-of(fs.fstat-size(wfd)), 5, 'fstat-size == 5')
+    runner.eq(fs.close(wfd), 0, 'close 回 0')
+
+    rfd = fs.open-file(F2, 0, 420)
+    runner.is-true(rfd >= 0, 'open-file O_RDONLY 回有效 fd')
+    buf []byte = with-len(8)
+    runner.eq(fs.read(rfd, buf, 5), 5, 'read 讀到 5 位元組')
+    runner.is-true(buf.slice(0, 5).to-bytes-str().eq-full('hello'), 'read 內容正確')
+    fs.close(rfd)
+    fs.sync()
+
+    ; mkstemp：建立並以寫入模式開啟
+    nm, tmpfd = fs.mkstemp('/tmp/nolang_fs_tmp_XXXXXX')
+    runner.is-true(nm.eq-full('') == false, 'mkstemp 回檔名')
+    runner.is-true(tmpfd >= 0, 'mkstemp 回已開啟 fd')
+    tmpfd >= 0 -> fs.close(tmpfd)
+    nm.eq-full('') == false -> fs.remove(nm)
+}
+
+t-file-methods = () {
+    fs.remove(F1)
+    fs.remove(F2)
+    fs.write-file(F1, 'hello')
+    fo = open-mode(F1, file-mode.read)
+    fo: {
+        err -> runner.is-true(false, 'file 方法：開啟失敗')
+
+        nil -> runner.is-true(false, 'file 方法：開啟回 nil')
+
+        -> {
+            runner.is-true(it.is-open(), 'is-open 為真')
+            runner.eq(it.size(), 5, 'file.size == 5')
+            runner.is-true(str-of(it.read-str()).eq-full('hello'), 'file.read-str')
+
+            ; 讀到檔尾後再讀：read-bytes 因 size>0 但仍應回 ok 或 nil，不可崩
+            b = it.read-bytes()
+            runner.is-true(bytes-of(b) >= 0, '檔尾處 read-bytes 不崩')
+            it.close()
+            runner.is-false(it.is-open(), 'close 後 is-open 為假')
+        }
+    }
+
+    ; write-str / write-bytes / append / read-line / copy-to
+    fw = open-mode(F1, file-mode.write)
+    fw: {
+        err -> _
+
+        nil -> _
+
+        -> {
+            runner.eq(yes-of(it.write-str('l1\nl2\n')), 1, 'file.write-str')
+            runner.eq(yes-of(it.write-bytes('l3\n'.to-bytes())), 1, 'file.write-bytes')
+            it.close()
+        }
+    }
+    runner.eq(num-of(fs.file-size(F1)), 9, 'write-str + write-bytes 共 9 位元組')
+
+    fa = open-mode(F1, file-mode.append)
+    fa: {
+        err -> _
+
+        nil -> _
+
+        -> {
+            runner.is-true(it.append('l4\n', 3), 'file.append 回 true')
+            it.close()
+        }
+    }
+    runner.eq(num-of(fs.file-size(F1)), 12, 'append 保留既有內容（9 + 3）')
+
+    fl = open-mode(F1, file-mode.read)
+    fl: {
+        err -> _
+
+        nil -> _
+
+        -> {
+
+            ; read-line 實作為「讀至多 4096 位元組」，不做換行切分
+            runner.eq(str-of(it.read-line()).len(), 12, 'file.read-line 一次讀完整檔')
+            it.close()
+        }
+    }
+
+    fc = open-mode(F1, file-mode.read)
+    fc: {
+        err -> _
+
+        nil -> _
+
+        -> {
+            runner.is-true(it.copy-to(F2), 'file.copy-to 回 true')
+            it.close()
+        }
+    }
+    runner.eq(num-of(fs.file-size(F2)), 12, 'copy-to 目標大小相同')
+
+    fs.remove(F1)
+    fs.remove(F2)
+}
+
+t-dir-iter = () {
+    d = fs.mkdtemp('/tmp/nolang_fs_it_XXXXXX')
+    dn = str-of(d)
+    runner.is-true(dn.eq-full('<nil>') == false, 'dir-iter：mkdtemp 成功')
+    dn.eq-full('<nil>') -> return
+
+    fs.write-file(dn - '/a.txt', 'a')
+    fs.write-file(dn - '/b.txt', 'b')
+    os.mkdir(dn - '/sub', 493)
+    fs.write-file(dn - '/sub/c.txt', 'c')
+
+    ; open-dir / read-dir / close-dir：POSIX 會吐 '.' 與 '..'
+    dp = fs.open-dir(dn)
+    runner.is-true(dp >= 0, 'open-dir 回有效控制代碼')
+    seen []str = with-len(0)
+    !! {
+        o = fs.read-dir(dp)
+        n = str-of(o)
+        n.eq-full('<nil>') -> break
+        seen.push(n)
+    }
+    runner.is-true(fs.close-dir(dp), 'close-dir 回 true')
+    runner.eq(seen.len(), 5, 'read-dir 吐 5 個條目（3 子項 + . + ..）')
+    has-dot = false
+    has-dotdot = false
+    i <- [0..seen.len()): {
+        v = seen[i]: {
+            ok -> it
+
+            -> ''
+        }
+        v.eq-full('.') -> has-dot = true
+        v.eq-full('..') -> has-dotdot = true
+    }
+    runner.is-true(has-dot, 'read-dir 吐出 .')
+    runner.is-true(has-dotdot, 'read-dir 吐出 ..')
+
+    ; dir-entries 必須排除 . 與 ..
+    e = fs.dir-entries(dn)
+    runner.eq(e.len(), 3, 'dir-entries 排除 . 與 ..')
+
+    ; walk 遞迴（子目錄裡的 c.txt 也算）
+    w = fs.walk(dn)
+    runner.eq(w.len(), 3, 'walk 遞迴共 3 個檔案')
+    acc []str = with-len(0)
+    runner.eq(fs.walk-collect(dn, acc).len(), 3, 'walk-collect 與 walk 同數')
+    runner.is-true(fs.is-dir(dn - '/sub'), 'is-dir 認得子目錄')
+    runner.is-false(fs.is-file(dn - '/sub'), 'is-file 對目錄回 false')
+
+    ; 非空目錄不可 rmdir
+    runner.is-false(fs.rmdir(dn), 'rmdir 非空目錄失敗')
+
+    fs.remove(dn - '/a.txt')
+    fs.remove(dn - '/b.txt')
+    fs.remove(dn - '/sub/c.txt')
+    fs.rmdir(dn - '/sub')
+    runner.is-true(fs.rmdir(dn), '清空後 rmdir 成功')
+}
+
+t-special-files = () {
+    fs.remove(FIFO)
+    runner.is-true(fs.mkfifo(FIFO, 420), 'mkfifo 建立 FIFO')
+    runner.is-false(fs.mknod(FIFO2, 0, 0), 'mknod 非法 mode 失敗')
+    fs.remove(FIFO)
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('fs.is-file', t-is-file)
@@ -195,6 +535,14 @@ p3, f3 = runner.test('fs.open-write-read', t-open-write-read)
 p4, f4 = runner.test('fs.stat-size', t-stat-size)
 p5, f5 = runner.test('fs.copy-file', t-copy-file)
 p6, f6 = runner.test('fs.list-dir', t-list-dir)
+p7, f7 = runner.test('fs.mkdir-mkdtemp', t-mkdir-mkdtemp)
+p8, f8 = runner.test('fs.file-bytes', t-file-bytes)
+p9, f9 = runner.test('fs.str-bytes-io', t-str-bytes-io)
+p10, f10 = runner.test('fs.links-rename', t-links-rename)
+p11, f11 = runner.test('fs.fd-io', t-fd-io)
+p12, f12 = runner.test('fs.file-methods', t-file-methods)
+p13, f13 = runner.test('fs.dir-iter', t-dir-iter)
+p14, f14 = runner.test('fs.special-files', t-special-files)
 
 total = runner.summary()
 f = runner.failed-count()

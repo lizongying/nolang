@@ -25,13 +25,11 @@ test-push-struct-leaf-independent = () (ok bool) {
     ; 覆寫來源：這會 free 掉 v[0].name 正在讀的緩衝（修復前）
     p.name = 'Bob'
 
-    ixout29c9 = v[0]: {
+    e = v[0]: {
         ok -> it
 
         -> _
     }
-
-    e = ixout29c9
     e.name == 'Alice' -> ok = true
     e.age == 30 -> ok = true
     p.name == 'Bob' -> ok = true
@@ -50,21 +48,17 @@ test-push-two-structs = () (ok bool) {
     v.push(p)
     p.name = 'Zed'
 
-    ixout49c10 = v[0]: {
+    e0 = v[0]: {
         ok -> it
 
         -> _
     }
 
-    e0 = ixout49c10
-
-    ixout52c10 = v[1]: {
+    e1 = v[1]: {
         ok -> it
 
         -> _
     }
-
-    e1 = ixout52c10
     e0.name == 'Alice' -> ok = true
     e0.age == 30 -> ok = true
     e1.name == 'Bob' -> ok = true
@@ -101,21 +95,17 @@ test-insert-struct-leaf = () (ok bool) {
     v.insert(0, q)
     q.name = 'Gina'
 
-    ixout90c10 = v[0]: {
+    e0 = v[0]: {
         ok -> it
 
         -> _
     }
 
-    e0 = ixout90c10
-
-    ixout93c10 = v[1]: {
+    e1 = v[1]: {
         ok -> it
 
         -> _
     }
-
-    e1 = ixout93c10
     e0.name == 'Frank' -> ok = true
     e0.age == 60 -> ok = true
     e1.name == 'Eve' -> ok = true

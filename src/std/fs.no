@@ -646,9 +646,11 @@ file.read = (buf []byte, n i64) (read-n i64) {
     read-n = read(.fd, buf, n)
 }
 
-; 從檔案讀取一行（最多 4096 位元組）
+; 從檔案讀取至多 4096 位元組的內容
+; ⚠ 名為 read-line 但**不做換行切分**：一次 read 拿到什麼就回什麼（可含 '\n'）。
+;   真正的逐行讀取需要跨呼叫緩衝，file 結構體目前沒有該欄位。
 ; 返回 line ?str: ok=讀取內容, nil=EOF 或錯誤
-; line: ok=讀到的一行（不含換行符）, nil=EOF、逾 4096 位元組或錯誤
+; line: ok=本次讀到的內容（可能多行）, nil=EOF、逾 4096 位元組或錯誤
 ; [read-line](#fs.file.read-line)
 file.read-line = () (line ?str) {
     line = nil
@@ -945,37 +947,21 @@ write-bytes = (p str, data []byte) (ok ?bool) {
 }
 
 ; 追加資料到檔案末尾
-; 簡化實作：先讀取現有內容再合併寫入
+; 以 O_APPEND 重開同路徑（核心負責定位到檔尾），再寫入。
+; ⚠ 不可用「先讀全部內容再連同新資料重寫」：那條路徑既慢，且必須以
+;   O_WRONLY|O_CREAT|O_APPEND 開檔（不能帶 O_TRUNC），否則既有內容會被清空。
 ; data: 要追加的文字（僅取其前 n 個位元組）
 ; n: 要追加的位元組數
-; success: true=既有內容與新資料皆已寫回（追加靠「重寫整檔」達成）
+; success: true=新資料已寫入檔尾（written == n）
 ; [append](#fs.file.append)
 file.append = (data str, n i64) (success bool) {
     success = false
     .fd < 0 -> return
     save-path = .path
     .close()
-    rd-fd = open-read(save-path)
-    rd-fd < 0 -> return
-    existing []byte = with-len(4096)
-    exist-n = 0
-    size = stat-size(save-path)
-    size: {
-        ok(it1) -> {
-            it1 > 4096 -> exist-n = read(rd-fd, existing, 4096)
-
-            it1 > 0 -> exist-n = read(rd-fd, existing, it1)
-        }
-
-        ; stat 失敗：視為空檔案，不預讀既有內容
-        -> exist-n = 0
-    }
-
-    close(rd-fd)
-    wr-fd = open-file(save-path, 1537, 420)
+    wr-fd = open-file(save-path, O-WRONLY | O-CREAT | O-APPEND, 420)
     wr-fd < 0 -> return
     .fd = wr-fd
-    exist-n > 0 -> write(.fd, existing, exist-n)
     b = data.to-bytes()
     written = write(.fd, b, n)
     success = written == n
@@ -989,7 +975,7 @@ file.append = (data str, n i64) (success bool) {
 file.copy-to = (dst-path str) (ok bool) {
     ok = false
     .fd < 0 -> return
-    fd-w = open-file(dst-path, 1537, 420)
+    fd-w = open-file(dst-path, O-WRONLY | O-CREAT | O-TRUNC, 420)
     fd-w < 0 -> return
     buf []byte = with-len(4096)
     !! {

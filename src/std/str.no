@@ -2133,7 +2133,11 @@ str.trim-char = (ch char) (val str) {
     j <- [0..n): {
 
         #{overflow=wrap}
-        val[j] = .byte(start + j)
+        val[j]: {
+            ok -> it = .byte(start + j)
+
+            -> _
+        }
     }
 }
 
@@ -2300,7 +2304,11 @@ str.from-hex = () (out ?[]byte) {
 
         ; out 的回傳型別是 ?[]byte，不能直接在上面寫下標（option 沒有成員）；
         ; 寫進 plain 緩衝 buf，迴圈結束再統一包成 ok。
-        buf[i] = (hi << 4) | lo
+        buf[i]: {
+            ok -> it = (hi << 4) | lo
+
+            -> _
+        }
     }
     out = buf
 }
@@ -2439,9 +2447,12 @@ str.to-bigint = () (out ?bigint) {
     }
 
     ; 逐位解析數字
+    ; ⚠️ `d` 必須標註 i64：`d = <call>()` 這種「未標註的呼叫結果」在 `acc + d` 的
+    ;    運算符重載聯集臂派發裡會被誤判成 bigint 臂（i64 位元當 bigint 描述符用，
+    ;    實測整段回 0 或 abort trap）。標註後 `_add` 正確走 `_add-i64` 臂。
     started = 0
     (pos < n) {
-        d = _str-dig-val(.byte(pos))
+        d i64 = _str-dig-val(.byte(pos))
         d < 0 -> break
         d >= radix -> break
 
@@ -3021,23 +3032,25 @@ str.to-hex = () (out str) {
     i <- [0..self.len-bytes()): {
         b = .byte(i)
 
-        ixout3025c19 = hex[b >> 4]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            out[i * 2] ?= hex[b >> 4]
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        out[i * 2] = ixout3025c19
+        {
 
-        ixout3028c1d = hex[b & 15]: {
-            ok -> it
+            #{overflow=wrap}
+            out[i * 2 + 1] ?= hex[b & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        out[i * 2 + 1] = ixout3028c1d
     }
 }
 

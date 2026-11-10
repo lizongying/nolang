@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['Converts an f64 to a string', 'ts', 'caf6tas']
   'number.f64.to-str-fixed': ['Fixed-point conversion', 'tsf', 'fpc']
   'number.f64.to-str-general': ['General format', 'tsg', 'gf']
-  'number.f64.to-str-sci': ['Scientific notation', 'tss', 'sn']
   'number.f64.to-u32': ['to-u32', 'tu', 'tu3']
   'number.f64.to-u64': ['to-u64', 'tu', 'tu6']
   'number.i128.sqrt': ['── 128-bit integer method copies ──', 's', '1bimc']

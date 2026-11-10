@@ -67,15 +67,15 @@ multipart-gen-boundary = (seed i64) (boundary str) {
     i <- [0..16): {
         seed, r = rand.rand(seed)
 
-        #{overflow=wrap}
-        ixout71c29 = chars[r % 36]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            boundary[prefix-len + i] ?= chars[r % 36]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        boundary[prefix-len + i] = ixout71c29
     }
 }
 
@@ -590,7 +590,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     }
 
     #{overflow=wrap}
-    combined-n = 12 + sealed-n
+    _ = 12 + sealed-n
     enc-str = base64.encode-std(combined)
     cr = '\r'
     lf = '\n'
@@ -650,7 +650,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     }
 
     #{overflow=wrap}
-    combined-n = 12 + sealed-n
+    _ = 12 + sealed-n
     enc-str = base64.encode-std(combined)
     cr = '\r'
     lf = '\n'
@@ -688,17 +688,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     ; 提取 IV（前 12 位元組）
     iv [12]byte
     i <- [0..12): {
-        ixout663c24 = raw[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        iv[i]: {
-            ok -> it = ixout663c24
-
-            -> _
-        }
+        iv[i] ?= raw[i]
     }
 
     ; 提取密文+tag
@@ -709,17 +699,7 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
     i <- [0..sealed-n): {
 
         #{overflow=wrap}
-        ixout678c24 = raw[12 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        sealed[i]: {
-            ok -> it = ixout678c24
-
-            -> _
-        }
+        sealed[i] ?= raw[12 + i]
     }
 
     ; 解密

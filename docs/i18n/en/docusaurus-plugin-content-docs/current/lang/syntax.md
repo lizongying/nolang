@@ -2149,18 +2149,114 @@ handle = (x i64) {
 **Nested reads:** an inner match rebinds `it`, so use a named binding `ok(it1) -> it1` there.
 Since 2026-11-06 the exact shape with a value match directly on the right of `it = ...` **does**
 write back to the container: lowering hoists that value match into a synthetic temporary before
-rebinding `it` (regression: `tests/place-write-value-match.no`). Hoisting the read into your own
-named temporary is still equivalent, and handy when the value is reused elsewhere:
+rebinding `it` (regression: the `place-write-value-match` section of `tests/match.no`).
+**Prefer the direct form:** bind the value match straight to the name that will actually use it,
+instead of routing it through a one-shot temporary and copying it back.
 
 ```no
 #{fmt-skip}
-ixout1 = state[9]: {
+; Preferred: bind the target variable directly
+at = argt[i]: {
     ok -> it
 
     -> _
 }
-state[5]: {
-    ok -> it = ixout1
+s.farg.push(at)
+
+; Avoid: a one-shot temporary used exactly once
+ixout1 = argt[i]: { ok -> it  -> _ }
+at = ixout1
+s.farg.push(at)
+```
+
+Hoisting the value match into your own named temporary and then writing `it = ixout1` inside the
+arm is **not equivalent** to the direct form, and must not be treated as an interchangeable
+formatting choice:
+
+- **Evaluation timing.** The direct form evaluates the read only when the outer `ok` arm is taken;
+  hoisted outside, the read also happens on `nil` / `err` / catch-all paths.
+- **Binding and ownership.** `it` exists only inside match arms and denotes the element place, so
+  the copy-back must stay inside the arm. A named temporary is a new binding with its own move,
+  ownership and scope-exit destruction.
+- **Inner binding form.** A nested inner match needs a named binding (`ok(it1) -> it1`); the
+  statement-level `ok -> it` cannot be moved back into a nested position unchanged.
+
+Only hoist when the same value is genuinely reused in several places, and give it a meaningful
+name — do not leave `ixout…`-style placeholder names produced by the migration tool. For a single
+use, bind directly.
+
+#### Clearing the remaining one-shot temporaries with `?=` and block match
+
+The rule above is "bind directly when the value is used once". One step further: safe indexing
+returns `?T`, so **when the function already has an option-typed result parameter (`?T`), no value
+match is needed at all — `?=` propagates in a single line**:
+
+```no
+#{fmt-skip}
+; Preferred: the function has a ?T result param — no temporary, no match
+at ?= argt[i]
+s.farg.push(at)
+```
+
+**When the function's result is not option** (the common case: a helper with no return value, or
+one that just writes back into a container), wrap the statement in this **try-like** form:
+
+```no
+#{fmt-skip}
+handle = (x i64) {
+    {
+        y ?= x + 1
+        print(y)
+    }: {
+        err -> _
+
+        -> _
+    }
+    print('continues afterwards')
+}
+```
+
+⚠️ **This is not a new `try` syntax — the language has no `try` keyword.** It is an ordinary
+**statement-level block match** (`{ ... }: { ... }`) whose subject is a three-state `?T`; `?=`
+throws its failure up to the **nearest** block match (see *Error Propagation with `?=`* and
+*Block Match — the Third Match Subject Form*). On failure the rest of the block body — including
+later loop iterations — is skipped, the arms run once, and execution **continues after the block**;
+it is not a function `return`. `err -> _` discards the error, `-> _` is the catch-all that discards
+the success result; to handle the error, write `err -> print(it.msg())`.
+
+⚠️ **State the semantic difference precisely** (measured, not assumed): on failure `?=` **still
+writes the zero value to the target** — `i64` gets `0`, `str` gets `''`, `out[1]` gets `0` — exactly
+as the old catch-all `-> _` did. The only real difference is that `?=` **skips the statements after
+it in the block body** (an early `return` in a `?T` function, or a jump to the arms inside a block
+match).
+
+So: **when the block body holds only that one statement, the old and new forms behave identically**
+(which is exactly the shape this repository rewrote in bulk). They diverge only when other
+statements follow `?=` in the same block body (loop counters, later assignments) — do not replace
+those mechanically.
+
+One more trap: **the arms also run once on success**, with the catch-all receiving the success
+value (`-> print('x')` does print). Keep arms to discards or pure handling; the `err -> _` / `-> _`
+shape has no side effects.
+
+This gives the order of work for clearing `ixout…` one-shot temporaries:
+
+1. Value used exactly once → bind it straight to the final target name (see above).
+2. Function has a `?T` result param → `TARGET ?= EXPR`, no temporary.
+3. Otherwise → put the statement inside a block match and write `TARGET ?= EXPR`; a place-match
+   write-back (`SUBJ: { ok -> it = temp  -> _ }`) likewise collapses to `SUBJ ?= EXPR`.
+4. Keep a named temporary only when the same value is genuinely reused in several places, and
+   give it a meaningful name.
+
+Two boundaries: `?=` is a compile error (`l86f91me`) when there is neither a `?T` result param nor
+an enclosing block match; **a typed declaration cannot be the LHS of `?=`** (`ai i64 ?= a[i]` is
+a syntax error, `f5ikdmuc`). When an explicit `byte → i64` promotion is needed, use a typed
+direct value match instead:
+
+```no
+#{fmt-skip}
+ai i64 = a[i]: {
+    ok -> it
 
     -> _
 }

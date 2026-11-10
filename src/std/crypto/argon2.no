@@ -337,15 +337,12 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 -> _
             }
             i <- [0..input.len()): {
-                ixout190c32 = input[i]: {
-                    ok -> it
+                {
 
-                    -> _
-                }
-
-                #{overflow=wrap}
-                combined[4 + i]: {
-                    ok -> it = ixout190c32
+                    #{overflow=wrap}
+                    combined[4 + i] ?= input[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -356,13 +353,11 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             hash [64]byte
             hash = blake2.b(combined)
             i <- [0..out-len): {
-                ixout343c1e = hash[i]: {
+                out[i] = hash[i]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[i] = ixout343c1e
             }
         }
 
@@ -414,15 +409,12 @@ h-prime = (input []byte, out-len i64) (out []byte) {
                 -> _
             }
             i <- [0..input.len()): {
-                ixout240c32 = input[i]: {
-                    ok -> it
+                {
 
-                    -> _
-                }
-
-                #{overflow=wrap}
-                combined[4 + i]: {
-                    ok -> it = ixout240c32
+                    #{overflow=wrap}
+                    combined[4 + i] ?= input[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -432,13 +424,11 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 
             ; 輸出前 32 位元組
             i <- [0..32): {
-                ixout397c1b = v[i]: {
+                out[i] = v[i]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[i] = ixout397c1b
             }
 
             #{overflow=wrap}
@@ -447,14 +437,15 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             (remaining > 64) {
                 v = blake2.b(v)
                 i <- [0..32): {
-                    ixout408c25 = v[i]: {
-                        ok -> it
+                    {
+
+                        #{overflow=wrap}
+                        out[pos + i] ?= v[i]
+                    }: {
+                        err -> _
 
                         -> _
                     }
-
-                    #{overflow=wrap}
-                    out[pos + i] = ixout408c25
                 }
 
                 #{overflow=wrap}
@@ -486,14 +477,15 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             last-hash [64]byte
             last-hash = blake2.b(v)
             i <- [0..remaining): {
-                ixout442c29 = last-hash[i]: {
-                    ok -> it
+                {
+
+                    #{overflow=wrap}
+                    out[pos + i] ?= last-hash[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
-
-                #{overflow=wrap}
-                out[pos + i] = ixout442c29
             }
         }
     }
@@ -1094,15 +1086,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         }
     }
     i <- [0..pw-len): {
-        ixout702c24 = password[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        h0-input[pos + i]: {
-            ok -> it = ixout702c24
+            #{overflow=wrap}
+            h0-input[pos + i] ?= password[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1163,15 +1152,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         }
     }
     i <- [0..salt-len): {
-        ixout748c24 = salt[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        h0-input[pos + i]: {
-            ok -> it = ixout748c24
+            #{overflow=wrap}
+            h0-input[pos + i] ?= salt[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1369,27 +1355,20 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
 
     ; 複製到記憶體
     i <- [0..1024): {
-        ixout918c24 = block0[i]: {
-            ok -> it
+        {
+            mem[i] ?= block0[i]
+        }: {
+            err -> _
 
             -> _
         }
 
-        mem[i]: {
-            ok -> it = ixout918c24
+        {
 
-            -> _
-        }
-
-        ixout925c24 = block1[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        mem[1024 + i]: {
-            ok -> it = ixout925c24
+            #{overflow=wrap}
+            mem[1024 + i] ?= block1[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1413,15 +1392,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
         new-block = compress(mem[prev-idx * 1024..], mem[ref-idx * 1024..])
 
         i <- [0..1024): {
-            ixout952c28 = new-block[i]: {
-                ok -> it
+            {
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            mem[curr-idx * 1024 + i]: {
-                ok -> it = ixout952c28
+                #{overflow=wrap}
+                mem[curr-idx * 1024 + i] ?= new-block[i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -1520,16 +1496,12 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     #{overflow=wrap}
     last-idx = blocks-per-lane - 1
     i <- [0..1024): {
+        {
 
-        #{overflow=wrap}
-        ixout1003c24 = mem[last-idx * 1024 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        final-block[i]: {
-            ok -> it = ixout1003c24
+            #{overflow=wrap}
+            final-block[i] ?= mem[last-idx * 1024 + i]
+        }: {
+            err -> _
 
             -> _
         }

@@ -25,13 +25,11 @@ print(c)
 ;     讀取以 place-match 消費，越界由 nil 臂提供預設值 → 9。
 arr = [1, 2, 3]
 i = 5
-ixout28c9 = arr[i]: {
+trail = arr[i]: {
     ok -> it
 
     -> 9
 }
-
-trail = ixout28c9
 print(trail)
 
 ; (4) 結構體欄位註解：同一行尾隨（`p pt #{inline}`）

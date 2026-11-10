@@ -60,7 +60,11 @@ t-bit-tree = () {
 
     probs []i64 = with-len(16)
     i <- [0..16): {
-        probs[i] = 0x400
+        probs[i]: {
+            ok -> it = 0x400
+
+            -> _
+        }
     }
 
     s1 = rd.decode-bit-tree(probs, 4)
@@ -121,7 +125,11 @@ t-decoder-entries = () {
 
     lens []i64 = with-len(0x200)
     i <- [0..0x200): {
-        lens[i] = 0x400
+        lens[i]: {
+            ok -> it = 0x400
+
+            -> _
+        }
     }
     d2 = lzma-decoder{}
     d2.init-probs()

@@ -32,12 +32,12 @@ fs.remove(tmp)
 ; open-read.no — 驗證 open() 讀取
 ...
 
-tmp__1 = '/tmp/nolang-read-test.txt'
+tmp-1 = '/tmp/nolang-read-test.txt'
 payload = 'hello nolang'
-fs.remove(tmp__1)
+fs.remove(tmp-1)
 
 ; 先寫入
-f-w = fs.open(tmp__1, {
+f-w = fs.open(tmp-1, {
     mode: file-mode.write
     perm: file-perm.perm-600
     excl: false
@@ -57,7 +57,7 @@ f-w: {
 }
 
 ; 再讀取
-f-r = fs.open(tmp__1, {
+f-r = fs.open(tmp-1, {
     mode: file-mode.read
     perm: file-perm.perm-600
     excl: false
@@ -81,4 +81,4 @@ f-r: {
         it.close()
     }
 }
-fs.remove(tmp__1)
+fs.remove(tmp-1)

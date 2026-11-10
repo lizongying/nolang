@@ -57,40 +57,41 @@ encode = (data []byte, table str) (out str) {
             -> 0
         }
 
-        ixout60c17 = table[b0 >> 2]: {
+        out[j] = table[b0 >> 2]: {
             ok -> it
 
             -> _
         }
 
-        out[j] = ixout60c17
+        {
 
-        ixout63c1b = table[((b0 & 3) << 4) | (b1 >> 4)]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        out[j + 1] = ixout63c1b
-
-        ixout66c1b = table[((b1 & 15) << 2) | (b2 >> 6)]: {
-            ok -> it
+            #{overflow=wrap}
+            out[j + 1] ?= table[((b0 & 3) << 4) | (b1 >> 4)]
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        out[j + 2] = ixout66c1b
+        {
 
-        ixout69c1b = table[b2 & 63]: {
-            ok -> it
+            #{overflow=wrap}
+            out[j + 2] ?= table[((b1 & 15) << 2) | (b2 >> 6)]
+        }: {
+            err -> _
 
             -> _
         }
 
-        #{overflow=wrap}
-        out[j + 3] = ixout69c1b
+        {
+
+            #{overflow=wrap}
+            out[j + 3] ?= table[b2 & 63]
+        }: {
+            err -> _
+
+            -> _
+        }
 
         #{overflow=wrap}
         {
@@ -130,21 +131,17 @@ encode = (data []byte, table str) (out str) {
                 -> 0
             }
 
-            ixout109c1b = table[b0 >> 2]: {
+            out[j] = table[b0 >> 2]: {
                 ok -> it
 
                 -> _
             }
 
-            out[j] = ixout109c1b
-
-            ixout111c1f = table[(b0 & 3) << 4]: {
+            out[j + 1] = table[(b0 & 3) << 4]: {
                 ok -> it
 
                 -> _
             }
-
-            out[j + 1] = ixout111c1f
 
             out[j + 2] = PAD
 
@@ -164,29 +161,23 @@ encode = (data []byte, table str) (out str) {
                 -> 0
             }
 
-            ixout131c1b = table[b0 >> 2]: {
+            out[j] = table[b0 >> 2]: {
                 ok -> it
 
                 -> _
             }
 
-            out[j] = ixout131c1b
-
-            ixout133c1f = table[((b0 & 3) << 4) | (b1 >> 4)]: {
+            out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]: {
                 ok -> it
 
                 -> _
             }
 
-            out[j + 1] = ixout133c1f
-
-            ixout135c1f = table[(b1 & 15) << 2]: {
+            out[j + 2] = table[(b1 & 15) << 2]: {
                 ok -> it
 
                 -> _
             }
-
-            out[j + 2] = ixout135c1f
 
             out[j + 3] = PAD
         }

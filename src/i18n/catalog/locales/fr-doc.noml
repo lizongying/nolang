@@ -5812,12 +5812,6 @@ precision i64: nombre maximal de chiffres significatifs (>= 1)
 renvoie out str: la forme en chaîne (les zéros de fin sont supprimés automatiquement)
 
 `
-  'number.f64.to-str-sci': `
-notation scientifique
-precision i64: nombre de chiffres fractionnaires (>= 0)
-renvoie out str: la forme en chaîne (par ex. "3.14e+2", "-5.0e-3")
-
-`
   'number.f64.to-u32': `
 flottant vers entier non signé sur 32 bits (avec saturation)
 out: u32 tronqué vers zéro (hors plage : saturation)

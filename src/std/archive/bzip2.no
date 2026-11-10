@@ -39,13 +39,11 @@ bz-bit-reader.read-bit = () (bit i64) {
     {
         .bit-cnt == 0 -> {
             .pos < .data.len() -> {
-                ixout42c21 = .data[.pos]: {
+                .bit-buf = .data[.pos]: {
                     ok -> it
 
                     -> _
                 }
-
-                .bit-buf = ixout42c21
 
                 #{overflow=wrap}
                 .pos = .pos + 1: {
@@ -341,13 +339,11 @@ bz-huffman.decode = (br bz-bit-reader) (sym i64) {
         }
 
         #{overflow=wrap}
-        ixout334c14 = .perm[idx + b - b]: {
+        sym = .perm[idx + b - b]: {
             ok -> it
 
             -> _
         }
-
-        sym = ixout334c14
     }: {
         err -> _
 
@@ -398,13 +394,11 @@ bz-huffman.decode-symbol = (br bz-bit-reader) (sym i64) {
             idx >= BZ-MAX-ALPHA-SIZE -> return
         }
 
-        ixout385c14 = .perm[idx]: {
+        sym = .perm[idx]: {
             ok -> it
 
             -> _
         }
-
-        sym = ixout385c14
     }: {
         err -> _
 
@@ -649,17 +643,12 @@ bzip2-decompress = (data []byte) (out []byte) {
                     -> 0
                 }
                 m <- [0..j): {
+                    {
 
-                    #{overflow=wrap}
-                    ixout456c36 = mtf-list[j - m - 1]: {
-                        ok -> it
-
-                        -> _
-                    }
-
-                    #{overflow=wrap}
-                    mtf-list[j - m]: {
-                        ok -> it = ixout456c36
+                        #{overflow=wrap}
+                        mtf-list[j - m] ?= mtf-list[j - m - 1]
+                    }: {
+                        err -> _
 
                         -> _
                     }
@@ -773,14 +762,10 @@ bzip2-decompress = (data []byte) (out []byte) {
             ; mtf-pos[k] = 第 k 個 MTF 位置對應的原始字節值
             mtf-pos [258]i64
             i <- [0..n-in-use): {
-                ixout549c32 = seq-to-unseq[i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                mtf-pos[i]: {
-                    ok -> it = ixout549c32
+                {
+                    mtf-pos[i] ?= seq-to-unseq[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -927,17 +912,12 @@ bzip2-decompress = (data []byte) (out []byte) {
 
                     ; 將 val 移到前面
                     j <- [1..mtf-idx + 1): {
+                        {
 
-                        #{overflow=wrap}
-                        ixout647c40 = mtf-pos[mtf-idx - j]: {
-                            ok -> it
-
-                            -> _
-                        }
-
-                        #{overflow=wrap}
-                        mtf-pos[mtf-idx - j + 1]: {
-                            ok -> it = ixout647c40
+                            #{overflow=wrap}
+                            mtf-pos[mtf-idx - j + 1] ?= mtf-pos[mtf-idx - j]
+                        }: {
+                            err -> _
 
                             -> _
                         }

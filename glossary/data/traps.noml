@@ -3,6 +3,54 @@
   domain: 'traps'
   title: '已知坑'
   terms: {
+    'arith-index-operand-no-option': {
+      title: '下标里的算术要先落到 option 上才有溢出检查'
+      kind: 'trap'
+      status: 'stable'
+      summary: '下标算术缺 #{overflow = …} 注解就报 hint（注解逐语句生效）；原地写法是裸 add、静默回绕，写进 option match 或先绑 ?T 才有溢出检查。'
+      aliases: ['下标算术', '索引溢出', 'arr[i + 1]', 'ovfidxop', '下标 option 叠加']
+      definition: `
+下标位置（arr[EXPR] 的 EXPR）必须是纯整数，所以「用 ?T 接收 / match 解包 /
+_ = 丢弃」三种补救都写不出来 —— 那是值根的话题（见 arithmetic-option-assign）。
+
+事实一：原地写法（既无 match 也无 ?T 绑定）的算术在 MIR 是裸 add/sub/mul，
+没有 llvm.*.*.with.overflow ⇒ 溢位静默回绕，不进任何 err 臂（外层 match 的
+失败臂只接越界，不接溢出）。
+
+事实二：写进 option match 主体时，lowering 会把下标算术提升成 __idx_L_C ?T，
+再读 seed[__idx_L_C]；下标的 err 在越界检查之前短路，与越界共用同一个失败臂
+（常见的 -> _ 会把这一笔默默丢掉）。等价的手写形态是先自己绑一次：
+idx ?i64 = 8 + i，然后 seed[idx]。
+
+事实三：#{overflow = …} 逐语句生效。写在某条语句（或包住它的区块/函数）上
+只覆盖那一条；写在上一行 sb2 = handshake[pos + i] 上管不到下一行 seed[8 + i]。
+注解指定「溢位时取什么值」：wrap（无声回绕）/ clamp0（下溢归零）/ min / max /
+saturate（饱和箝位），或型别前缀形式如 u8-max。在提升形态下注解会被 __idx 继
+承、确实生效；在纯原地形态下算术根本没有检查点，注解只起「声明意图、消掉
+hint」的作用，溢位仍然静默回绕。
+
+checker 口径（2026-11-10 定稿）：下标位置缺注解就报（TraceID xmicjezl，消息
+key ovfidxop，**只教加注解**），不看是否已被 option match 消费 —— 被消费只
+代表不会算错，不代表使用者声明了这个行为。
+
+实测：i = 2^32 时 seed[i * i]（真积 2^64，回绕成 0）—— 原地写法取到 seed[0]
+（ok 臂照跑）；提升后走 llvm.smul.with.overflow，落到失败臂；提升 + 陈述上
+#{overflow = wrap} 则回绕成 0、写回 seed[0]（实跑读回 99）。
+`
+      syntax: `
+seed[8 + i]: {
+    ok -> it = 65
+
+    -> _
+}
+`
+      example: `
+idx ?i64 = 8 + k
+seed[idx]: { ok -> it = 65  -> _ }
+`
+      related: ['overflow', 'arithmetic-option-assign', 'index-read-err-vs-nil']
+      refs: ['src/parser/lowering.go', 'src/checker/checker.go', 'src/mir/codegen.go']
+    }
     'arithmetic-option-assign': {
       title: '算术结果不能直接赋给已有变量'
       kind: 'trap'
@@ -409,6 +457,72 @@ c: {
       related: ['option', 'nil', 'err']
       refs: ['docs/docs/lang/syntax.md', 'glossary/src/jsono.no']
     }
+    'idxbruse-both-sides': {
+      title: '双侧裸索引：赋值两边都要显式消费 option'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'out[i] = a[i] ^ b[i] 一次撞三处：RHS 两处 idxbruse、LHS 一处 idxwrite；只改写入侧没用。'
+      aliases: ['idxbruse', 'idxwrite', 'D11', '裸索引', '索引 XOR']
+      definition: `
+D11 之后 arr[i] 恒回传 ?T，不能当 plain 值参与中缀运算。
+out[i] = a[i] ^ b[i] 里 a[i] 与 b[i] 各报一次 idxbruse，LHS 的下标直写另犯
+idxwrite（错误讯息只给同一个行号，容易以为只有一处）。实测结论：
+- 每个索引读取都要各自一段值位 match 解包（ok -> it / -> _），match 结果才是
+  plain T；只把写入侧改成 place-match、RHS 保持 a[i] ^ b[i] 仍报两处 idxbruse。
+- 索引写按规范必须 place-match 或 ?=；?= 要求函数有 ?T 结果参数，而把数组结果
+  参数改成 ?[N]byte 会撞 qwl2idx4（option 不能当容器索引）。
+- place-match 直接写「结果参数」会新增 i3k422u3（result parameter never assigned）
+  警告；改用局部 buf [N]byte + 末尾整体赋值 out = buf 可消掉警告，vet/build 全绿。
+- 陷阱：结果参数基底的 out[i] = v 目前不报 idxwrite（indexBaseContainerType 查不到
+  结果参数型别），局部固定数组同样写法必报。这是漏检，不是许可。
+`
+      syntax: `
+s1 = a[i]: {
+    ok -> it
+
+    -> _
+}
+
+s3 = b[i]: {
+    ok -> it
+
+    -> _
+}
+
+buf[i]: {
+    ok -> it = s1 ^ s3
+
+    -> _
+}
+`
+      example: `
+xor = (a [20]byte, b [20]byte) (out [20]byte) {
+    buf [20]byte
+    i <- [0..20): {
+        s1 = a[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        s3 = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        buf[i]: {
+            ok -> it = s1 ^ s3
+
+            -> _
+        }
+    }
+    out = buf
+}
+`
+      related: ['option', 'it', 'index-read-err-vs-nil']
+      refs: ['src/checker/checker.go', 'example/mysql-driver/src/mysql.no']
+    }
     'stdlib-http-server-location': {
       title: 'HTTP 服务端在 net/server.no'
       kind: 'trap'
@@ -551,6 +665,106 @@ x = box {
 `
       related: ['slice', 'struct', 'bare-module-array']
       refs: ['src/parser/expr.go', 'src/parser/parser.go', 'compiler/src/h2m.no', 'src/parser/struct_literal_field_value_test.go']
+    }
+    'wrap-inline-arg-poisons-return': {
+      title: '#{overflow=wrap} 内联进实参会把调用结果变成 option'
+      kind: 'trap'
+      status: 'stable'
+      summary: '#{overflow=wrap} 只改溢出取值、不改静态型别；把 k + 1 直接内联进 s.slice(...) 实参，slice 的结果会变成 ?str，再取下标就报 qwl2idx4。'
+      aliases: ['qwl2idx4', 'wrap 内联实参', 'option 实参传染', 'slice 返回 ?str']
+      definition: `
+#{overflow=wrap} 的语义是「溢出时取回绕值」，**不消除 option 型别**（见
+arithmetic-option-assign）。当这个仍是 ?i64 的算术表达式被直接内联进调用实参，
+option 没有可捕获的位置，就沿表达式冒泡，把整个调用的返回值也包成 ?T。
+
+实测（src/std/str.no 的 slice 声明返回 plain str）：
+- kk = k + 1 在 wrap 下单独赋值，就地捕获成 plain i64；再 p = s.slice(kk, 4)，p 是 str。
+- 直接 p = s.slice(k + 1, 4)，p 变成 ?str；p.len() 报 qwl2enr7、p[0] 报 qwl2idx4。
+
+两个易误判点：
+- p.len-bytes() **不报** qwl2enr7（该检查只覆盖 .len() / .cap()），看起来像 plain，
+  其实是漏检，p 仍是 ?str。
+- q str = p 这类「显式 plain 型别标注」会把 option 静默拉回 str，
+  表面上编得过，但失败分支被丢弃 —— 不能拿它当「类型是 plain」的证据。
+
+修法二选一：
+1. 把算术先赋给独立变量，再作为实参传入（最小改动、语义等价）；
+2. 显式解包：p-opt = s.slice(...) 之后接值 match（ok -> it / -> 默认值）。
+`
+      syntax: `
+; 正解 A：算术先落地成变量
+#{overflow=wrap}
+nxt = k + 1
+p = s.slice(nxt, 4)
+
+; 正解 B：显式解包
+p-opt = s.slice(k + 1, 4)
+p = p-opt: {
+    ok -> it
+
+    -> ''
+}
+`
+      example: `
+; 错误：wrap 下内联算术实参 → port-str 被推断成 ?str
+#{overflow=wrap}
+port-str = host-port.slice(hp-colon + 1, host-port.len-bytes())
+c = port-str[i]        ; qwl2idx4：option 不能下标
+
+; 正解
+#{overflow=wrap}
+port-next = hp-colon + 1
+port-str = host-port.slice(port-next, host-port.len-bytes())
+c = port-str[i]
+`
+      related: ['arithmetic-option-assign', 'option', 'idxbruse-both-sides']
+      refs: ['src/checker/option_member_access.go', 'src/std/str.no', 'example/mysql-driver/src/mysql.no']
+    }
+    'with-len-write-not-exempt': {
+      title: 'with-len 缓冲的下标写入不豁免'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'idxwrite 只豁免 with-cap（len=0）；with-len / with-cap-len 的写入仍须 place-match 或 ?=。'
+      aliases: ['idxwrite', 'with-len', 'with-cap', 'with-cap-len', '下标直写', '预分配缓冲']
+      definition: `
+下標直寫 buf[i] = v 是編譯錯誤 idxwrite（裸 OOB 寫，無邊界檢查）。唯一的豁免是
+with-cap(n) / with-cap-len(cap, len) 構造的緩衝：它們能構造 len=0 的緩衝，逐位元組
+下標寫入是唯一能把長度增長起來的寫法，而 checker 建議的兩種正確形體對 len=0 緩衝
+都會靜默產空字串（place-match 讀 i 越界回 nil，ok 臂永不執行）。
+
+with-len(n) 曾一起被豁免，這是過寬（2026-11-10 全量收口移除）。理由：with-len 的
+len 已就位，place-match 讀 i（i < len）落在 ok 臂、寫回同位，行為與直寫完全等價，
+沒有任何理由給它留後門。因此 bhex 這類「with-len 緩衝逐位元組填充」現在必須寫成
+place-match 或 ?=。
+
+另一個易錯點：with-len 的緩衝是 str 時，讀取下標走碼點、寫入走原始位元組，
+非 ASCII 內容下兩者不對齊 —— 這也是要求顯式解包的動力之一。
+`
+      syntax: `
+buf str = with-len(n)
+buf[i]: {
+    ok -> it = v
+
+    -> _
+}
+`
+      example: `
+; 錯誤（idxwrite）：with-len 的 len 已就位，直寫不豁免
+buf str = with-len(n * 2)
+buf[i * 2 + 1] = ch
+
+; 正解一：place-match
+buf[i * 2 + 1]: {
+    ok -> it = ch
+
+    -> _
+}
+
+; 正解二：?= 上拋（所在函式需有 ?T 結果參數）
+buf[i * 2 + 1] ?= ch
+`
+      related: ['idxbruse-both-sides', 'arithmetic-option-assign']
+      refs: ['src/checker/checker.go', 'test/std/scrypt.no', 'src/std/str.no']
     }
   }
 }

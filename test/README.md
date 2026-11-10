@@ -334,22 +334,235 @@ segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（
 先通過官方/標準向量自檢 → 再取金標**。這一步是必要的：`scrypt` 的
 `salsa20-8-core` 金標就靠「Python 實作能重現 RFC 7914 A.1/A.2」才取得信任。
 
-### 5.0e 快照：2026-11-11 凌晨（`toml` + `dom` 收口輪，**當前**）
+### 5.0l 快照：2026-11-10 夜（`time` 輪，**當前**）
 
 | 項目 | 數值 |
 |---|---:|
 | std 源檔 / 模組別名 | 119 / 119 |
-| API 面（函數 + 方法） | 2118（797 + 1321） |
-| 已覆蓋 | **1057（49.9%）**（crypto 收口時 990 / 46.8%） |
+| API 面（函數 + 方法） | 2091（773 + 1318） |
+| 已覆蓋 | **1422（68.0%）**（`regexp` 輪結束時 1405 / 67.2%） |
 | 有專用測試檔的模組 | 103 / 119 |
-| 測試檔數 | 108 |
+| 測試檔數 / 全量 `TEST` 區塊 | 108 / **940** |
+| 全量斷言 | **4574**（4525 passed + 49 failed；49 條紅全屬他人未提交改動與預存 `multipart`，見 5.0k） |
 
-本輪補到 100% 的 2 個模組：
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---|---|
+| `time` | 17 → **39 / 39（100%）**（函數 28、方法 11） | 41 → **95** | 三個毫秒/微秒/納秒時鐘（`now-ms`/`now-us`/`now-ns`）、四個粒度睡眠（`sleep-s`/`sleep-ms`/`sleep-us`/`sleep-ns`，以時鐘差為證而非只看不崩）、`duration-ms-between`/`duration-us-between`、`since-s`/`since-ms`/`since-us`/`since-time`、`timer.start`/`stop`/`elapsed-us`、`now-date` |
+
+7 個新 `TEST`（p14–p20）。分母不變。
+
+**時間型斷言的做法**：一律「取時鐘 → 動作 → 再取時鐘 → 斷言差值落在寬鬆區間」，
+不假設排程精度（`sleep-ms(30)` 只斷 `>= 20ms`；`sleep-s(0)` 斷 `< 1s` 證明它不會
+把 0 當無限等待）。`elapsed-us` 則用 `elapsed-ms × 1000` 精確對齊（同一個
+`end-ts - start-ts` 派生，不涉真實時間）。
+
+**算術助手**：Nolang 的算術結果一律是 `?i64`（§5.2 #61），把 `?i64` 當運算元再用
+會**靜默取 0**。所以檔頭先定義 `sub-of` / `mul-of` / `div-of` / `abs-of` 四個
+`(a i64, b i64) (out i64)` 助手就地解包，測試主體只碰裸 `i64`。
+
+**門檻**：`no vet` 兩檔 0 error / 0 warning；`no fmt -d` 兩檔皆空。
+
+本輪缺陷修法見 **5.1o**，新挖到的編譯器缺口見 **§5.2 #61**。
+
+
+#### 上一輪（5.0k · `regexp` 輪，數字已被 5.0l 取代）
+
+### 5.0k 快照：2026-11-10 夜（`regexp` 輪）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2091（773 + 1318） |
+| 已覆蓋 | **1405（67.2%）**（`json` 輪結束時 1379 / 65.9%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 / 全量 `TEST` 區塊 | 108 / **933** |
+| 全量斷言 | **4520**（其中 49 條紅屬他人未提交改動，見下） |
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---|---|
+| `regexp` | 26 → **26 / 26（100%）**（函數 3、方法 23） | 35 → **240** | 頂層 3 個（`regexp-match` / `regexp-find` / `regexp-compile`，**點式**呼叫）+ 公開方法 3 個（`matches` / `find` / `compile`）+ 編譯流水線 20 個（`emit` / `emit-atom` / `emit-quantized` / `alloc-class` / `init-class-zero` / `init-class-all` / `set-class-bit` / `clear-class-bit` / `in-class` / `set-class-escape` / `make-class-{digits,nondigits,word,nonword,space,nonspace}` / `parse-atom` / `parse-class` / `parse-escape` / `match-at`） |
+
+15 個新 `TEST`（p15–p29）。分母不變（`RE-CLS-MAX` / `RE-OP-MAX` 是常量，不進分母）。
+
+**覆蓋判定要點**：`scripts/std_test_coverage.py` 對**頂層函數**用的是
+`<alias>.<name>`（點式）而非裸名，所以裸寫 `regexp-match(...)` 不算命中
+`regexp.regexp-match`。三種寫法在 checker 裡的表現實測不同：
+
+- `regexp-match(...)` / `regexp-find(...)` —— 裸名可用（歷史上就是這樣被測的）；
+- `regexp-compile(...)` —— 裸名報
+  `'regexp-compile' is not defined; call it as 'regexp.regexp-compile' [4bek3xc6]`；
+- 點式 `regexp.regexp-match(...)` / `regexp.regexp-find(...)` /
+  `regexp.regexp-compile(...)` —— 三者皆可。
+
+測試統一走點式，既點亮覆蓋率也順帶釘住這條跨模組限定名規則。
+
+**門檻**：`no vet` 兩檔 0 error / 0 warning；`no fmt -d` 兩檔皆空（`no fmt` 會把
+`regexp{ pattern: '' }` 展開成多行，已落盤）。
+
+**⚠️ 全量回歸的紅檔歸因（非本輪引入）**：`./bin/no test test/std/` 得 100 綠 / 8 紅
+（`base64` / `char` / `fmt` / `global` / `multipart` / `pem` / `str` / `url`）。
+`multipart` 是預存段錯誤；另 7 檔由**工作區裡另一 session 未提交的 `src/std` 改動**造成，
+證據三條：
+
+1. `git status src/std/` 有數十個 `.no` 被改（本輪只碰 `regexp.no`）。
+2. 那批改動把 `out[k] = v` 系統性換成 `out[k] ?= v` 包在 `{ … }: { err -> _ }` 裡。
+   `out` 是 `with-cap` 出來的緩衝（len 為 0）時，`?=` 的越界 store 走 err 臂 ⇒
+   **靜默丟棄，緩衝長度留在 0**。實測 `'abc'.to-hex()` 回 `len = 0`（應為 `616263`），
+   而同檔手寫的 `o[i] = 97` with-cap 形態 `len = 3` 正常。
+3. `char.no` / `global.no` 自身**無 diff**，是被改壞的 `str.to-hex` / `fmt` 拖紅的。
+
+`make gen no` 會把工作區 `src/std` 一起烤進 blob，所以這批在途改動在重建時被激活。
+按「不碰他人未提交改動」的規矩，本輪沒有改它們，只在此記錄。
+
+本輪缺陷修法見 **5.1n**。
+
+
+#### 上一輪（5.0j · `json` 輪，數字已被 5.0k 取代）
+
+### 5.0j 快照：2026-11-10 深夜（`json` 輪）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2091（773 + 1318） |
+| 已覆蓋 | **1379（65.9%）**（`process` 輪結束時 1346 / 64.4%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 / 全量 `TEST` 區塊 | 108 / **918** |
+| 全量斷言 | **4315** |
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---|---|
+| `json` | 33 → **61 / 61（100%）** | 28 → **129** | 池級 12 項（`json-pool.init`/`alloc`/`add-child`/`skip-ws`/`parse-str`/`parse-num`/`get-key`/`set-key`/`copy-tree`/`get-kind`、`new-pool`、`clone-json-tree`）+ 高級 21 項（`kind`/`overflowed`/`get`/`get-key`/`alloc-node`/`set`/`set-null`/`set-key`/`delete-key`/`arr-push`/`arr-push-idx`/`arr-push-str`/`-num`/`-bool`/`num`/`bool`/`i64`/`str-val`/`obj-len`/`obj-key`/`obj-keys-str`） |
+
+21 個新 `TEST`（p21–p41）。分母不變（本輪沒有新增/刪除公開符號）。
+
+全量 `./bin/no test test/std/`：**108 檔、107 綠、918 個 TEST / 4315 條斷言**，
+唯一紅檔仍是預存的 `multipart.no`；EXIT=1 僅由該檔造成。
+
+`no vet test/std/json.no` = 0 error / 0 warning / 1 hint；`no vet src/std/json.no`
+= 0 error / 0 warning / 1 hint；`no fmt -d` 兩個檔案皆空。
+`tests/json.no` 與 `tests/json-more.no` 兩個端到端腳本全綠（後者專測
+set-key / copy-tree 的自池與跨池行為）。
+
+
+#### 上一輪（5.0i · `process` 輪，數字已被 5.0j 取代）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | **2091**（773 + 1318） |
+| 已覆蓋 | **1346（64.4%）**（`str` 輪結束時 1320 / 62.3%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 / 全量 `TEST` 區塊 | 108 / **897** |
+| 全量斷言 | **4214** |
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---|---|
+| `process` | 47 → **41 / 41（100%）**（函數 21、方法 20） | 13 → **109** | 10 個底層內建（`process-fork`/`pipe`/`waitpid`/`waitpid-nohang`/`exec`/`kill`/`dup2`/`getppid`/`system`/`exec-shell`）、`start-with-opts`（含 `dir`/`input`/`merge-err`）、`start`、`wait-nohang`、`kill`/`terminate`/`force-kill`、`read`/`read-line`/`read-all`/`write`/`close-stdin`/`close-stdout`/`close-stderr`、`pid-of`/`exit-code-of`/`close`、`process-shell`、`shell-quote`、`cmd`（`input`/`env`/命令不存在/timeout 三態）、`exec`+`cmdopts`、`output`、`list-all`/`find-match`/`find-by-name`、`SIG-*`/`WNOHANG` 常量 |
+
+36 個新 `TEST`（p6–p41）。
+
+**分母 2118 → 2091**，兩個來源：
+
+1. **平台不適用（−18，全局）**：`scripts/std_test_coverage.py` 新增平台感知——
+   解析聲明前的 `#{mac-arm64, linux-amd64, …}` 標籤，與宿主標籤集合無交集者
+   **不計入分母**（`buildin` / `track-caller` / `overflow=…` 不算平台標籤）。
+   `--missing` 會單列 `platform N/A` 段。`process` 因此少 10 項（7 個 `#{win-*}`、
+   `list-all` 的 linux 與 win 變體）。
+2. **`UNREACHABLE`（−9）**：`process` 的 9 個 Win32 內建在 .no 裡只標 `#{buildin}`、
+   沒標平台，但 Go 側僅在 Windows 註冊實現。macOS 上逐個實測統一報
+   `EmitLLVM: unsupported builtin process.win-create-pipe [2kqboupo]`（僅符號名不同）。
+   沒有用「給 src/std 加 `#{win-*}` 標籤」來修：`genstdsig` 不解析 `#{...}`
+   （`stdsig_gen.go` 是跨平台共用的扁平表），加標籤既改變不了解析行為，
+   還會讓聲明與簽名表不一致。
+
+全量 `./bin/no test test/std/`：**108 檔、107 綠、897 個 TEST / 4214 條斷言**，
+唯一紅檔仍是預存的 `multipart.no`（`quoted boundary [len]` + segfault，段錯誤導致
+連 summary 都沒印，故只有 107 個 summary 區塊）；EXIT=1 僅由該檔造成。
+
+`no vet test/std/process.no` = 0 error / 0 warning / 4 hint；`no vet src/std/process.no`
+= 0 error / 0 warning / 47 hint；`no fmt -d` 兩個檔案皆空。
+`./bin/no run tests/process-run.no` = ALL PASS（其中 [6]/[10] 兩個 timeout 用例已
+改成子進程自關標準流的形態，原因見 5.1l）。
+
+
+#### 上一輪（5.0h · `str` 輪，數字已被 5.0i 取代）
+
+> 註：5.0c–5.0g 標題上的「2026-11-11」是前幾輪按錯時區推算的誤植，實際都發生在
+> **2026-11-10**（`git log` 的提交時間可證）。本節起一律用本地時間。
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2118（796 + 1322） |
+| 已覆蓋 | **1320（62.3%）**（`number` 輪結束時 1272 / 60.0%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 / 全量 `TEST` 區塊 | 108 / 861 |
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---:|---|
+| `str` | 48 → **63 / 63（100%）** | 78 → **179** | `byte`/`at`/`set-byte`/`eq-full`、`decode-cp`、`cp-index`/`byte-index`、`find-byte-from`/`rfind-byte-from`、`rindex`/`last-index`/`rindex-from`、`slice-bytes`/`to-str`/`reverse`/`compare`/`count`、`to-i8..i32`、`to-u8..u64`/`to-byte`、`to-f64`/`to-f32`/`str-to-f64`、`to-bool`、`replace-char`/`trim-char`、`empty`/`with-cap`/`with-len`/`with-len-cap`/`new`、`to-hex`/`str-hex-val`/`from-hex`、`to-bigint`/`bigint-bitlen`、`to-txt`、`split`/`split-n`/`fields`/`lines`、`replace-str`/`replace-n` |
+
+`str` 是本輪唯一收口的模組，24 個新 `TEST`（p15–p38）。
+
+**分母 2119 → 2118**：`str.eq-raw` 進 `scripts/std_test_coverage.py` 的
+`UNREACHABLE` 清單——它是 `src/builtin/str.go` 裡 `str.eq` 的**內部 forward 目標**
+（`ForwardFunc: "eq-raw"`），用戶碼兩種形態都調不到：`a.eq-raw(b, n)` 會被 checker
+當方法解析、但 MIR 報 `unknown callee str.eq-raw`；`str.eq-raw(a, b, n)` 報
+`module 'str' has no top-level function 'eq-raw'`。`str.eq` 本身已由 `t-eq` 覆蓋。
+
+全量 `./bin/no test test/std/`：**108 檔、107 綠、861 個 TEST / 4114 條斷言**，
+唯一紅檔仍是預存的 `multipart.no`（`quoted boundary [len]` + segfault，因段錯誤
+連 summary 都沒印出來，故只有 107 個 summary 區塊）；EXIT=1 僅由該檔造成。
+
+`no vet test/std/str.no` = 0 error / 3 warning / 27 hint；`no vet src/std/str.no`
+= 0 error / 46 hint；`no fmt -d` 兩個檔案皆空。
+
+
+#### 上一輪（`number` 輪，數字已被 5.0h 取代）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2119（797 + 1322） |
+| 已覆蓋 | **1272（60.0%）**（`yaml` 輪結束時 1202 / 56.7%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 / 全量 `TEST` 區塊 | 108 / 837 |
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---:|---|
+| `number` | 70 → **104 / 104（100%）** | 190 | `to-str-fixed`/`sci`/`general` 全套、`f64→整數`與`整數→f64`、窄整數拓寬矩陣、`to-bits`/`from-bits`/`to-bytes-be/le`、`sqrt/cbrt/sin…tanh/ceil/floor/round/trunc/exp/log/log10/log2/degrees/radians` 的 **f64 + f32 雙份**、`exp-f64` |
+
+`number` 是本輪唯一仍在缺口裡的模組；分母 2119 不變（新增的 4 個助手是 `_` 私有，
+不入分母）。全量 `./bin/no test test/std/`：**108 檔、107 綠、837 個 TEST**，
+唯一紅檔仍是預存的 `multipart.no`（`quoted boundary [len]` + segfault）。
+
+
+#### 上一輪（`yaml` 輪，數字已被 5.0g 取代）
+
+| 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
+|---|---|---:|---|
+| `yaml` | 104 → 72 / 123（58.5%） | 221 | 多文檔/`doc`/`to-json-all`、全部 `is-*`、`style`/`tag`/`anchor`/`line-of`、`get-*`/`key-node`/`value`/`scalar-text`、錯誤與 BOM、21 個內部輔助函式直測；**顯式 `!!` 標簽從不生效被修** |
+
+`yaml` 剩下的 51 個全部需要 `yaml-parser` 或 `yaml-node` 的實例（47 個解析器方法 +
+`yaml-{key-text-eq,key-eq,node-is-nan,scalar-repr}`）。**用戶碼構造不出這兩個型別**：
+`yaml.yaml-node{}` 能編譯，但型別 raw 是 `yaml.yaml-node` 而 `StructFields` 註冊的是裸名
+`yaml-node`，`StructKeyOf` 的「裸名 → 限定名」後備掃不到反向情形 ⇒ 欄位讀到垃圾、
+`setfield` 直接報 `3nktiaae`。這是語言層缺陷（見 §5.2 #39），不是該輪遺漏。
+
+
+#### 更早（`toml` + `dom` + `bigint` + `fs` + `os` 收口，數字已被 5.0f 取代）
 
 | 模組 | 缺口 → 覆蓋 | 測試檔斷言 | 內容 |
 |---|---|---:|---|
 | `toml` | 16 → 26 / 26 + 方法 3 / 3 | 97 | 條目/表名/`find-eq`/key 正規化/值規則/文檔模型/數字與布林 |
 | `dom` | 49 → 全綠 | 313 | 節點池原語、free 助手、裸池解析入口、**15 個單步解析原語** |
+| `bigint` | 15 → 29 / 29 | 112 | 絕對值加減、同型加減乘、`shl1`/`shr1`、`normalize`、`to-hex`、`mod-pow` |
+| `fs` | 46 → 43 / 46 | 83 | 目錄/連結/fd/`file.*` 方法；**`file.append` 截斷整檔被修** |
+| `os` | 40 → 33 / 40 | 61 | 身份/系統資訊/時間/stat 權限/目錄；**`now-ms`/`now-us` 量級錯被修** |
+
+`fs` 剩 3 個（`get-line`/`read-stdin`/`read-stdin-str`）與 `os` 剩 7 個
+（`chroot`/`set-sid`/`syslog` 與 4 個 Windows-only）都是**刻意不測**，理由寫在檔頭註解。
 
 `dom` 這一輪把 16 個「內部但公開」的掃描器全部直測（不必繞 `parse-xml`）：
 `xml-{add-text,parse-comment,parse-cdata,parse-pi,parse-attr,parse-close,parse-element}`、
@@ -378,7 +591,482 @@ segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（
 
 實測：`<r><a></r>` → 3；`<r/>x` → 4；成功 → -1。`no vet` 0 error。
 
-### 5.1d 本輪修好的 std bug（`src/std/crypto/tdes.no`、`src/std/crypto/aes-cbc.no`）
+### 5.1g 本輪修好的 std 缺陷（`src/std/bigint.no`：`to-hex` 死迴圈、`mod-pow` 不取模）
+
+兩個都是**真錯**，不是文件與實作不一致：
+
+**① `to-hex` 無限迴圈（OOM 被 SIGKILL，`no run` 直接 137 無任何輸出）**
+
+最高 limb 的「略去前導零」內層迴圈把 `shift` 遞減那一步寫在了**迴圈體外**：
+
+```
+(shift >= 0) {
+    ...
+    out[out-n] = hex[nibble]
+    { out-n-opt2 = out-n + 1  ... }
+}                      ← 迴圈體到此結束
+{ shift-opt2 = shift - 4  ... }   ← 每個 i 只跑一次
+```
+
+`shift` 永遠停在 28，於是每輪都往 `out` 尾部追加同一字節；`out` 是會自動增長的 vec
+⇒ 記憶體爆掉 ⇒ SIGKILL。另有兩處附帶錯誤：`done == 1 || nibble != 0` 是**無效果的裸表達式**
+（前導零根本沒被略過），第二個 limb 迴圈從 `shift = 28` 起跑（limb 只有 32 位，
+若最高 limb 用 28 起算會少 4 位元）。
+
+修法：最高 limb 用同一套 `started` 旗標（`nibble != 0 -> started = 1`，`started == 1 -> 寫入`），
+`shift` 從 28 起、遞減語句放回迴圈內，兩個 limb 共用同一個迴圈體（32 位 = 8 個 nibble）。
+
+驗證：`255 → ff`、`2^32-1 → ffffffff`、`2^32 → 100000000`、`16^20 → 1` + 20 個 `0`、`-16 → -10`、`0 → 0`。
+
+**② `mod-pow` 完全沒有取模**
+
+`mod-pow(exp, modulus)` 只做平方-乘，**從頭到尾沒碰 `modulus`**（`modulus=0` 的特例有處理）。
+`2^10 mod 1000` 回 1024 而不是 24；指數一大中間值就無界膨脹，文件卻寫它是
+「RSA 簽章/加解密核心運算」。
+
+修法：平方後、乘 `b` 後各做一次 `div-mod(modulus)` 取餘。
+
+驗證（與 Python `pow(a,e,m)` 對齊）：`2^10 mod 1000 = 24`、`3^5 mod 7 = 5`、`7^13 mod 11 = 2`、
+`5^117 mod 19 = 1`、`2^64 mod 1e9+7 = 582344008`、`exp=0 → 1`、`modulus=0 → 0`。
+
+### 5.1h 本輪修好的缺陷（`src/std/fs.no` 的 `file.append`、`src/mir/codegen.go` 的 `now-ms`/`now-us`）
+
+**① `file.append` 每次追加都先把整個檔案清空**
+
+實測：寫入 9 位元組 → `append('l4\n', 3)` → 檔案只剩 3 位元組。
+
+根因：追加的實作是「讀出既有內容 → 以 `open-file(path, 1537, 420)` 重開 → 先寫回既有內容再寫新資料」，
+但 **1537 這個魔術數字含 O_TRUNC**：
+
+| 平台 | O_WRONLY | O_CREAT | O_TRUNC | O_APPEND | 1537 實際含義 |
+|---|---:|---:|---:|---:|---|
+| Darwin | 1 | 512 | 1024 | 8 | WRONLY \| CREAT \| **TRUNC** |
+| Linux | 1 | 64 | 512 | 1024 | WRONLY \| **TRUNC** \| APPEND |
+
+兩個平台都帶 O_TRUNC ⇒ 一開就把檔案清空。而且模組裡本來就有平台無關常量
+`O-WRONLY`/`O-CREAT`/`O-APPEND`（`fs.no:404` 起，按 `darwin/linux/windows/...` 各給一份值）。
+
+修法：刪掉整個「先讀再重寫」的舞蹈（O_APPEND 由內核定位到檔尾，重寫反而會**重複內容**），改成
+
+```
+wr-fd = open-file(save-path, O-WRONLY | O-CREAT | O-APPEND, 420)
+```
+
+同時把 `file.copy-to` 的 `1537` 也換成 `O-WRONLY | O-CREAT | O-TRUNC`（語義相同但不再依賴平台數值）。
+驗證：9 位元組 → append 3 → **12 位元組且內容為 `l1\nl2\nl3\nl4\n`**。
+
+另外更正 `file.read-line` 的文件：它其實一次 `read` 至多 4096 位元組、**不做換行切分**
+（真正的逐行需要跨呼叫緩衝，`file` 結構體沒有該欄位）。
+
+**② `os.now-ms` / `os.now-us` 回的不是 epoch 時間（Darwin 上大 ~1e6 倍）**
+
+實測：`now` = 1794297750（正確），`now-ns` 正確，但 `now-ms` = 4124612157701034、
+`now-us` = 4124612157701034845 —— 比正確值大三個數量級。
+
+根因在 MIR 前言的 IR（`src/mir/codegen.go`）：`struct timeval` 的第二個欄位 `tv_usec` 在
+Darwin 是 **32 位**（`suseconds_t`），Linux 才是 64 位。前言卻用
+
+```
+%usec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
+%usec = load i64, i64* %usec.ptr      ; ← 連同 4 位元組尾部填充一起讀，高位是棧上垃圾
+```
+
+修法：改成讀低 32 位再 `zext`（`tv_usec < 1000000`，兩種平台都正確）：
+
+```
+%tv32 = bitcast [16 x i8]* %tv to i32*
+%usec.ptr = getelementptr i32, i32* %tv32, i64 2
+%usec.raw = load i32, i32* %usec.ptr
+%usec = zext i32 %usec.raw to i64
+```
+
+驗證：`now-ms/1000 == now`、`now-us/1000000 == now`、`now-ns/1000000000 == now`
+（已寫成 `test/std/os.no` 的 `t-clock` 斷言，修前必紅）。
+
+### 5.1i 本輪修好的缺陷（`src/std/yaml.no` 的顯式 `!!` 標簽、`src/std/crypto/aes.no` 的迴圈變數）
+
+**① 顯式 `!!` 標簽只被存成字串，從不改寫節點類型**
+
+實測（YAML 1.2 要求標簽優先於 core schema 推斷）：
+
+| 輸入 | 修前 kind / JSON | 修後 kind / JSON |
+|---|---|---|
+| `a: !!str 123` | INT(2) → `"a":123` | STR(4) → `"a":"123"` |
+| `b: !!int "42"` | STR(4) → `"b":"42"` | INT(2) → `"b":42` |
+| `c: !!bool "true"` | STR(4) → `"c":"true"` | BOOL(1) → `"c":true` |
+| `d: !!float "1.5"` | STR(4) → `"d":"1.5"` | FLOAT(3) → `"d":1.5` |
+| `e: !!null "x"` | STR(4) → `"e":"x"` | NULL(0) → `"e":null` |
+
+根因：節點由 `parse-plain`/`parse-double`/`parse-flow-*` 先按 core schema 建好，
+`yaml-parser.set-props` 之後才把標簽寫進節點 —— 但它只做 `.nodes[idx].tag = tag`，
+**沒有回頭套用標簽**。真正會套標簽的 `yaml-apply-tag` 只在 `push-scalar` 裡被呼叫，
+而所有呼叫端傳進去的 `tag` 都是空串（標簽是稍後才讀到的），所以那段邏輯是死路。
+
+修法（不動簽名、不重複實作）：
+
+1. 新增 `yaml-parser.apply-tag-at(idx)`：把節點身上已有的 `tag` 套回 `kind`，
+   並按新 kind 重算 `ival`/`fval`/`bval`（`!!int "42"` 若不重算，kind 對了但 `ival` 仍是 0，
+   `yaml.i64` 會取到 0）；集合節點（seq/map）只保留標簽原文。
+2. `set-props` 末尾呼叫它 —— 這是所有 scalar/collection 的必經之路；
+3. `push-scalar` 的內聯標簽區塊整段刪掉，改為 push 之後呼叫同一個 `apply-tag-at`，
+   避免兩份實作漂移。
+
+`apply-tag-at` 讀節點必須用 `?=` 綁定（裸下標 `arr[i]` 回 `?T`，直接當普通值用會被
+`no vet` 判 `idxbruse`）。
+
+**② `src/std/crypto/aes.no` 的 `enc-block` 在迴圈裡宣告 `rk-off`，迴圈後又用同一個名字**
+
+`make test` 的 `build` 包 3 個 `TestNomlImport*`（會編譯含 std 的 fixture）全紅：
+
+```
+line 1220: variable 'rk-off' is declared inside a loop body and may be uninitialized
+           when used here (loop might execute zero iterations) [sjuueqqo]
+```
+
+`enc-block` 裡「迴圈內算本輪輪金鑰偏移」與「迴圈後算最後一輪偏移」原本共用 `rk-off`，
+迴圈那一次宣告就成了函式級變數 ⇒ 零次迭代時未初始化。把迴圈內那個改名 `rk-off-i`
+即解（`dec-block` 用的 `rk-off-opt` 是同樣手法的既有寫法）。這條規則在 HEAD 就有，
+`src/std` 沒跟上，屬預存紅檔；修後 3 個測試全綠。
+
+### 5.1j 本輪修好的缺陷（`src/std/number.no` 的格式化與位元組序列）
+
+覆蓋 `number` 的 70 個缺口時，`to-str-*` 家族有 4 個真 bug、`to-bytes-*` 有 1 個。
+
+**① `f64.to-str-sci` 的負指數輸出成 `1.23e--4`**
+
+取絕對值那段寫成「區塊形式的值位 match」：
+
+```no
+ae = e
+#{overflow=wrap}
+e < 0 -> {
+    { ae-opt = 0 - ae
+      ae-opt: { ok -> ae = it  -> } }
+}
+```
+
+實測 `ae` 保持負數（payload 走空 `->` 分支），於是符號位與 `ae` 自帶的負號疊成 `--`。
+改成單行 `e < 0 -> ae = 0 - ae` 即正確（同 `f64.to-str` 的既有寫法）。
+
+**② `to-str-sci` / `to-str-general` 的「四捨五入進位」整段沒生效**
+
+`9.99.to-str-sci(1)` 修前得 `1.0e+00`、`9.9.to-str-general(1)` 得 `10`
+（Go 分別是 `1.0e+01` / `1e+01`）。根因同 ①：`e-opt = e + 1` + `e-opt: { ok -> e = it }`
+在**這些 `cond -> { … }` 區塊裡**寫不回去（§5.2 #43 記了這個形態本身）。
+
+**③ `f64.to-str-general` 剝完尾隨零留下裸小數點**
+
+`9.99.to-str-general(2)` 得 `10.`（Go 是 `10`）。守衛寫反成 `end > dot-pos + 1`，
+恰好把「只剩小數點」這個邊界排除在外：
+
+```no
+end > dot-pos -> {
+    s.byte(end - 1) == 46 -> end = end - 1
+}
+```
+
+**④ `i64.to-bytes-be` / `to-bytes-le` 返回型別是 `[?]byte`**
+
+元素型別待定的定長陣列 ⇒ 實測長度 0、8 次寫入全部丟失、讀回全 0，`len()` 還撞
+`str-len fixed-array [0 x i8] [stbjgjqz]`。改成 `[]byte` + 首行 `out = with-len(8)` 後
+`258.to-bytes-be()` 才是 `[0,0,0,0,0,0,1,2]`（`b6=1 b7=2`）、`to-bytes-le()` 才是 `c0=2 c1=1`。
+
+修後的取值全部寫進 `test/std/number.no`（`t-fmt-fixed` / `t-fmt-sci` / `t-fmt-general` /
+`t-bits`），並以 Go 的 `strconv.FormatFloat` 同格式為契約（含 `-0`、`inf`、`nan`、
+`1.2346e+05` 這些邊界）。
+
+**⑤ 為了同時滿足「執行正確」與「`no vet` 乾淨」而新增的 4 個私有助手**
+
+`e = e + 1`（`#{overflow=wrap}` 不改變 `?i64` 型別）在 `no vet` 是硬錯誤 `15w45dqk`，
+而就地兩段式解包在這些區塊裡寫不回去（見 §5.2 #43）。兩者都成立的最小寫法是**過一次
+函數邊界**：`_num-add` / `_num-sub` / `_num-mul` / `_num-div`（`_` 前綴私有，不入
+覆蓋率分母），函式內 `out = s: { ok -> it  -> a }` 解包，呼叫端拿到普通 `i64`。
+
+### 5.1k 本輪修好的 std 缺陷（`src/std/str.no` 的 `to-bigint` 與覆蓋率口徑）
+
+**① `str.to-bigint` 對任何輸入都回「0」（真的解析成功，但值是零）**
+
+`'255'.to-bigint()` / `'-255'` / `'0x1f'` / `'0b101'` / `'0o17'` 全部回 ok，`to-str()` 都是 `0`，
+`str.bigint-bitlen()` 因此恆為 0；`str-to-f64` 用它當精確 strtod 的底，跟著一起歪。
+
+**根因不在 `to-bigint` 的演算法，而在 `bigint` 的運算符重載臂派發**：
+
+```no
+    (pos < n) {
+        d = _str-dig-val(.byte(pos))   ; ← 未標註的「呼叫結果」
+        ...
+        acc = acc * radix
+        acc = acc + d                   ; ← 這裡選錯聯合臂
+    }
+```
+
+`bigint._add = (b big) (c ?bigint)` 用 `big { bigint | i64 }` 聯合形參 + 型別 match 靜態選臂。
+當右運算元的型別來自**未標註的函數呼叫結果**時，選臂退化成 `bigint` 臂 ⇒ `add-bigint`
+把 i64 位元當 bigint 描述符解讀。實測三態：
+`acc + 2`（字面量）正常、`x = 2; acc + x`（字面量指派）正常、`d = f(); acc + d`（呼叫結果）
+**回 0 或直接 `abort trap`**。
+
+**修法**：在 `src/std/str.no:2452` 給它顯式標註：
+
+```no
+        d i64 = _str-dig-val(.byte(pos))
+```
+
+修後 `'255'` → `255`、`'0x1f'` → `31`、`bigint-bitlen(from-i64(255))` → `8`。
+（編譯器側這個選臂缺陷本身**未修**，見 §5.2 #50。）
+
+**② `str.eq-raw` 從分母移除（不是漏測）**
+
+見 §5.0h 的說明與 `scripts/std_test_coverage.py` 的 `UNREACHABLE` 清單。
+順帶把該腳本兩處「私有符號」文案改成「私有 / 不可達」，避免把「調不到」混淆成「私有」。
+
+### 5.1l 本輪修好的 std 缺陷（`src/std/process.no` 的 `cmd` 超時看門狗）
+
+`process.cmd(..., timeout>0, ...)` / `process.exec` 在 `timeout > 0` 時**行為全錯**，
+而且是兩個獨立的缺陷疊在一起。
+
+**① 任何瞬間結束的命令都回報 `-2`（超時）—— 二次收割**
+
+看門狗用 `process-waitpid-nohang(pid)` 輪詢。這個內建是**收割式**的
+（`waitpid(pid, WNOHANG)`）：它一旦回傳真實退出碼，子進程已被回收。舊實作在迴圈
+`break` 之後又對同一 pid 呼叫一次，拿到 `-1`（ECHILD），於是走「仍在執行」分支：
+
+```no
+                process-waitpid-nohang(pid) != -1 -> break   ; 已收割
+            }
+            {
+                process-waitpid-nohang(pid) == -1 -> {        ; ← 誤判：其實是 ECHILD
+                    process-kill(pid, 9)
+                    code = -2
+```
+
+實測（修前）：`cmd('sh',['-c','exit 3'], …, 5000, false)` → `-2`；
+`cmd('sh',['-c','echo a'], …, 5000, false)` → `-2` 但 `out` 是 `a\n`；
+只有 `timeout = 0` 走另一條分支才是對的。
+
+**修法**：把觀測到的退出碼留在 `rc` 裡，迴圈外只判 `rc == -1`：
+
+```no
+                rc = process-waitpid-nohang(pid)
+                rc != -1 -> break
+                …
+            {
+                rc == -1 -> { process-kill(pid, 9); code = -2; err = 'process timed out' }
+                -> code = rc
+            }
+```
+
+**② `elapsed` 恆為 0，看門狗永不過期 —— 值位 match 靜默不寫回**
+
+累加寫成「先算出 `?i64`、再用**值位** match 回寫」：
+
+```no
+                elapsed-opt = elapsed + 10
+                elapsed-opt: { ok -> elapsed = it  -> }     ; ← 靜默不寫回
+```
+
+在 `timeout > 0 -> { … }` 這類條件塊裡，值位 match 的回寫不生效，`elapsed` 一直 0
+⇒ `elapsed >= timeout` 永不成立。改成**語句位** match 後正確（與 §5.2 #43 同源）：
+
+```no
+                next = elapsed + 10
+                next: {
+                    ok -> elapsed = it
+                    -> elapsed = timeout
+                }
+```
+
+> 註：`#{overflow=wrap}` + 直接 `elapsed = elapsed + 10` 在函數內是**硬錯誤**
+> `15w45dqk`（`no vet` 會報，`no run` 竟然放過——這也是為什麼這個 bug 能活下來）。
+
+**③ 文件承諾的 `err` 從未設定**
+
+`cmd` 的 doc 寫「`err`: 啟動失敗或超時的錯誤描述」，但超時分支只設 `code = -2`。
+已補 `err = 'process timed out'`。
+
+**④ 仍然存在的限制（本輪不修，需要新內建）**
+
+看門狗排在**阻塞式讀完 stdout 之後**：
+
+```no
+    !! { n = fs.read(out-read, buf, 4096)  … }        ; ← 子進程不關 stdout 就一直在這
+    fs.close(out-read)
+    { timeout > 0 -> { …看門狗… } }
+```
+
+所以 `cmd('sleep', ['5'], …, 200, false)` 仍會等滿 5 秒、回報自然退出碼 0。
+真要修必須有非阻塞讀 + `poll`/`select`，而 `src/std/fs.no` 目前沒有
+`poll` / `select` / `fcntl` / `O_NONBLOCK` 任何入口。測試與 `tests/process-run.no`
+因此統一用「子進程自關標準流」的形態（`sh -c 'exec 1>&- 2>&-; sleep 5'`）驗證 `-2`
+路徑確實可達——實測 200ms 級返回。
+
+> `tests/process-run.no` 的 [6]/[10] 兩個 timeout 用例原本用 `sleep 5` + `timeout=200`
+> 並期望 `-2`，它們過去是**靠缺陷①通過的**（任何命令都回 -2）。已改成自關標準流的
+> 形態，保留「超時會殺死子進程」的原意，而不是把錯誤行為釘進測試。
+
+### 5.1m 本輪修好的 std 缺陷（`src/std/json.no` 的 `arr-push` 自環）
+
+**症狀**：`json.new()` 之後 `j.arr-push(sub)`（`sub` 是任何 `json.parse` 出來的物件）
+再 `j.stringify()` → **segfault**；`j.arr-len()` 卻是正常的 1。
+
+**根因**：`arr-push` 把來源池的節點索引直接當成本池索引用，而 doc 一直宣稱會深拷貝：
+
+```no
+json.arr-push = (val json) (ok bool) {
+    ok = .arr-push-idx(val.root)      ; ← val.root 是 **來源池** 的索引
+}
+```
+
+`json.parse` 出來的子樹 root 恆為 `0`；`json.new()` 的池是空的，`arr-push-idx` 先
+`alloc` 出 root（也是 `0`）並標成 ARR，然後 `add-child(0, 0, '')` —— 把節點掛成
+**自己的子節點**。`stringify` 沿邊表遞迴 → 無限遞迴 → 爆棧。
+
+實測（修前）：
+
+```
+sub root> 0          sub pool count> 3
+b2 root> 0           b2 pool count> 1     ← 沒有拷貝任何節點
+b2 arr-len> 1
+Error: signal: segmentation fault
+```
+
+**修法**：照 `set-key` 已有的兩跳模式深拷貝（先 `clone-json-tree` 到全新池，再
+`copy-tree` 進本池）；兩次拷貝的兩端必不同池，因此不依賴池身份判定，
+`arr-push(j)` 這種自引用也安全：
+
+```no
+    val.root < 0 || val.root >= val.pool.count -> return
+    tmp = clone-json-tree(val.pool, val.root)
+    v-idx = .pool.copy-tree(tmp.pool, tmp.root)
+    v-idx < 0 -> return
+    ok = .arr-push-idx(v-idx)
+```
+
+修後同一段：`b2 root> 2`、`b2 pool count> 3`、`stringify` = `[{"x":1}]`。
+
+⚠️ 這個 bug 與 §5.2 #42 (`static-hashmap` 死代碼) 不同類：它是**公開 API 的崩潰**，
+而且只在新池上撞號時才觸發（既有 `tests/json.no` 的 `a.arr-push(json.parse('3'))`
+沒崩，是因為 `json.parse('3')` 的 `?json` 走的是另一條取值路徑）。
+`test/std/json.no` 的 `t-arr-push` 現在把它釘成回歸（含 `pool.count` 斷言與二次追加）。
+
+### 5.1n 本輪修好的 std 缺陷（`src/std/regexp.no` 的兩處靜默截斷）
+
+`regexp` 的編譯結果存在固定大小的結構體陣列裡：`op` / `arg1` / `arg2` 各
+`[128]i64`，`cls [512]byte`（每類 32 bytes ⇒ 只能放 16 個類別）。兩個上限都用
+「越界 store 回 err、err 臂 `-> _` 吞掉」的寫法落地，所以**超限時既不報錯也不標記**，
+`compile()` 照樣把 `compiled` 置真。
+
+修前實測：
+
+| 案例 | 期望 | 實測 |
+|---|---|---|
+| `[a][b]…[m]`（13 類，3 量詞類 + 13 = 16） | 匹配自身 | ✅ 命中 |
+| `[a][b]…[n]`（14 類，3 + 14 = 17） | 匹配自身 | ❌ `matches` 回 false，`ncls` 卻印 17 |
+| 127 個字面量字元（+ MATCH = 128 條指令） | 匹配自身 | ✅ 命中 |
+| 128 個字面量字元（+ MATCH = 129 條指令） | 匹配自身 | ❌ `n` 停在 128，`MATCH` 發不出去 ⇒ 恆不匹配 |
+
+根因不是「上限太小」而是**上限被靜默吞掉**：`emit` / `set-class-bit` 這類函數用
+`{ .op[.n] ?= op … }: { err -> _ }` 落地，位元組陣列的「越界 err」與「這次 store
+沒成功」在語意上是同一件事，但編譯器狀態上必須區分，否則呼叫方無從得知編出來的
+program 是截斷的。
+
+修法（三處，都在 `src/std/regexp.no`）：
+
+1. 引入常量 `RE-CLS-MAX = 32`、`RE-OP-MAX = 256`，陣列改成
+   `op/arg1/arg2 [256]i64`、`cls [1024]byte`。結構體從 ~3.5 KB 漲到 ~7 KB
+   （`regexp` 是堆疊值，可接受），實用上限翻倍。
+2. 新增 `overflowed bool` 欄位。`emit` 在 `.n >= RE-OP-MAX` 時
+   `.overflowed = true` 並 `return`；`alloc-class` 在 `.ncls >= RE-CLS-MAX` 時
+   同樣置位並**返回 -1**。
+3. `compile()` 開頭 `.overflowed = false`，讓重複編譯不殘留上一次的狀態。
+
+`alloc-class` 選 -1（而非「返回最後一個合法索引」）是刻意的：-1 讓後續
+`base = cls-idx * RE-CLS-SIZE`（`#{overflow=wrap}`，得 -32）統一落到所有 bitmap
+操作的越界 err 分支，於是該類別**恆不匹配任何字元**，不會誤用相鄰類別的 bitmap。
+
+修後實測：
+
+| 案例 | `n` / `ncls` | `overflowed` | `matches` 自身 |
+|---|---|---|---|
+| 13 類 | 14 / 16 | false | ✅ |
+| 29 類（3 + 29 = 32，剛好佔滿） | — / 32 | false | ✅ |
+| 30 類（3 + 30 = 33，溢出） | — / 32（飽和） | **true** | ❌（有旗標可判） |
+| 127 字元 | 128 | false | ✅ |
+| 255 字元（+ MATCH = 256，剛好佔滿） | 256 | false | ✅ |
+| 256 字元（+ MATCH = 257，溢出） | 256（飽和） | **true** | ❌（有旗標可判） |
+
+`t-capacity-class` / `t-capacity-op` 把上表釘成回歸。`alloc-class` 溢出後
+`ncls` 飽和、`in-class(31, 97)` 仍為 true、`in-class(-1, 97)` 為 false（同時證明
+溢出既不崩、也不會誤命中）也一併釘住。
+
+⚠️ 這仍是「有上限」的設計（無動態配置），`overflowed` 只是把「靜默錯」降級成
+「可判讀的錯」。超過 32 個字元類別或 256 條指令的 pattern 目前無法正確編譯。
+
+### 5.1o 本輪修好的 std 缺陷（`src/std/time.no` 的 `timer.elapsed-s` / `elapsed-us` 恆回 0）
+
+`timer.elapsed-s` 與 `timer.elapsed-us` 對**任何非零差都回 0**，只有 `elapsed-ms` 正常。
+修前實測（`time.timer{start-ts: 0, end-ts: 1500}`）：
+
+| 方法 | 期望 | 修前 | 修後 |
+|---|---:|---:|---:|
+| `elapsed-ms` | 1500 | 1500 ✅ | 1500 |
+| `elapsed-s` | 1 | **0** ❌ | 1 |
+| `elapsed-us` | 1500000 | **0** ❌ | 1500000 |
+
+根因不是算術，而是**算術結果沒拿到值**：
+
+```no
+; 修前
+#{overflow=wrap}
+ms = .end-ts - .start-ts        ; ← ms 的型別是 ?i64，內容是 nil
+#{overflow=wrap}
+{
+    #{overflow=wrap}
+    s-opt = ms / 1000           ; ← nil 當運算元 ⇒ 靜默 0，不報錯
+    s-opt: { ok -> s = it  -> }
+}
+```
+
+`elapsed-ms` 之所以正常，是它把算術寫成**值位 match 直接賦值**（`ms = .end-ts - .start-ts: { ok -> it  -> }`），
+賦值處就完成解包；`elapsed-s` / `elapsed-us` 少了這一步，
+而 `nil` 作運算元既不報錯也不進 `ok` 臂，於是恆 0。
+
+`no vet src/std/time.no` 修前後都是 **0 error** —— 這個形態完全不在 vet 的視野裡，
+只能靠行為測試抓（本輪就是靠「同一物件的三種粒度互相比對」抓到的：`elapsed-ms`
+有值而另兩個為 0，不可能是真實時間差）。
+
+修法是同一條：算術就地走值位 match。
+
+```no
+; 修後
+#{overflow=wrap}
+ms = .end-ts - .start-ts: {
+    ok -> it
+
+    -> 0
+}
+
+#{overflow=wrap}
+s = ms / 1000: {
+    ok -> it
+
+    -> 0
+}
+```
+
+`elapsed-us` 同形（`us = ms * 1000: { … }`）。修後含負差在內全對：
+`elapsed-s(5000→1000) == -4`、`elapsed-us(5000→1000) == -4000000`
+（與 C 的整數除法同向取整）。
+
+迴歸釘在 `test/std/time.no` 的 `t-timer-run`：`elapsed-ms == 1500`、
+`elapsed-s == 1`、`elapsed-us == 1500000`，外加負差兩條，並斷言
+`elapsed-us == elapsed-ms × 1000`、`elapsed-s == elapsed-ms / 1000`。
+
+⚠️ 這個形態不只出現在 `time`。全庫只要寫成「`#{overflow=wrap}` + 純賦值 +
+稍後拿該變數參與算術」都命中，`no vet` 一律不報。排查方式與完整六變體對照見
+**§5.2 #61**。
+
+### 5.1d 本輪修好的 std bug（CBC 模式殘塊越界寫）
 
 **症狀**：CBC 加密在輸入長度不是塊大小整數倍時，輸出長度 = **向上取整**到塊的倍數，
 尾端多出一個「用零填充的殘塊」加密結果。`tdes-cbc-enc(11 bytes)` 回 16 位元組，
@@ -547,6 +1235,37 @@ blk = 0
 | 28 | **單元測試檔名只允許小寫字母、數字、連字號**：`test/std/_tmp_salsa.no` 直接被拒（`[83xbz15x]`，底線禁用、連字號不可開頭/結尾/連寫） | 本輪抽離 `t-salsa` 單測時 |
 | 29 | **`in` 是保留字**：探針裡宣告 `in []byte` 會報 `'in' is not defined [4bek3xc6]`（不是「保留字」的友善訊息）。改用 `buf`。std 內部同名參數是特例 | 探針 `tmp/probe/ptdes.no` |
 | 30 | **私有符號（`_` 前綴）無法從測試呼叫**，checker 硬性禁止（`raqvyltn`）⇒ 已從覆蓋率分母剔除（2142 → 2117，共 25 個）。想知道某個 `_` 函式是否被覆蓋，只能靠它被公開函式間接命中 | `scripts/std_test_coverage.py` |
+| 31 | **名為 `len` 的結構體欄位無法用屬性讀取**：使用者碼寫 `n.len` 會報 `[gf3kb05g] recv.len property is removed; use recv.len()`。`bigint.len` 正好中招 ⇒ 測試裡只能 `${a,b}.limbs`/`.to-str()` 側面驗證，**無法斷言 limb 數**；`normalize` 的「裁前導零 limb」因此測不到（構造不出髒狀態）。std 內部同一行碼不受此檢查影響 | 本輪 `test/std/bigint.no` |
+| 32 | **`?i64` 算術在「賦值給已定型 i64 變數」時是硬錯誤**（`[15w45dqk]`），但**當函式實參、下標、range 邊界時會自動解包**。所以 `x = x + 1` 要寫兩步解包（`y = x + 1` 再 `y: { ok -> x = it  -> _ }`），而 `.slice-bytes(i, i + 1)`、`arr[n - 1 - k]`、`i <- [nl - 1..0]` 都可以直接寫 | 本輪 `src/std/bigint.no` 改寫 `to-hex` |
+| 33 | **斷言訊息字串裡不能出現 `'>'`**：`'… 回 '>' 之後位置'` 會被 lexer 當成「字串結束 + 裸 `>` + 新字串」，報 `relational operator on a multi-character string [go7p9knv]`。改成裸 `>` 或改寫措辭 | 本輪 `test/std/dom.no` |
+| 34 | **`no run` 單檔編譯約 14 秒**（stdlib + LLVM 全鏈路），`timeout 8/15` 會被誤判成「程式掛死」。查疑似死迴圈時一律 `no build` 後直接跑 `dist/<name>`，別用 `no run` 配短 timeout | 本輪排查 `bigint.to-hex` |
+| 35 | **把 `bool` 直接傳給 `?bool` 參數會靜默變成「非 ok」**：`file.copy-to` 回 `bool`，測試助手寫成 `u-b(o ?bool)` 後 `u-b(it.copy-to(p))` 恆回 0，害我一度以為 `copy-to` 壞了。斷言回傳 `bool` 的函式請直接 `runner.is-true(f())`，不要繞 `?bool` | 本輪 `test/std/fs.no` |
+| 36 | **`read-dir` 在 `close-dir` 之後呼叫會讓整個進程靜默結束**（rc=0、無任何輸出、後面的 `print` 全不執行）。目錄控制代碼用完即棄，不要在關閉後再讀 | 本輪 `tmp/probe/pfs3.no` |
+| 37 | **`no test` 的 stdin 連著終端**：測 `fs.get-line`/`read-stdin`/`read-stdin-str` 會阻塞並吃掉跑測器的輸入 ⇒ 這 3 個 API 刻意不測（要測得 `./bin/no test ... < 檔`，會破壞一鍵門禁） | 本輪 `test/std/fs.no` |
+| 38 | **`os.win-find-first-file` 等 4 個 Windows-only 內建在非 Windows 上連編譯都過不去**（`EmitLLVM: unsupported builtin`）⇒ 不能靠「呼叫一下拿個預設回傳值」來湊覆蓋率，只能列為刻意不測 | 本輪 `test/std/os.no` |
+| 39 | **用戶碼構造不出 std 內部的結構體**：`yaml.yaml-node{}` 能編譯，但拿到的型別 raw 是 `yaml.yaml-node`，而 `StructFields` 註冊的是裸名 `yaml-node`；`StructKeyOf` 只有「裸名 → 限定名」後備，反向掃不到。後果是**欄位讀到垃圾值、`setfield` 直接報 `[3nktiaae]`**（`setfield: field "kind" not found on "yaml.yaml-node"`），而且完全不報錯地編不過驗不過。同理 `yaml.yaml-parser{...}` 的初始化寫法也失敗 ⇒ 這兩型別的方法在測試裡**無法直呼**（`unknown callee yaml.yaml-parser.eof [4qhyyund]`） | 本輪 `tmp/probe/py4.no`–`py6.no` |
+| 40 | **`yaml.line-of()` 回的是「掃描結束行」而非文件寫的「起始行」**：`flag: true` 在第 1 行，`line-of()` 回 2（block 標量掃描時把行尾換行一起吃掉了）；流式文檔 `{a: 1}` 則回 1（不消耗換行）。同一個函式兩種偏移，故測試只斷言流式情形，block 情形標為已知偏差 | 本輪 `tmp/probe/py9.no` |
+| 41 | **值位 match 寫成單行 `x: { ok -> it  -> 0 }` 放進 `print(...)` 實參會觸發 `bug #85`（`consumer reads value 0 (NoVal)`）**：`print('f=', it.f64(): { ok -> it  -> 0.0 })` 直接編譯失敗。改成兩步（先 `o = it.f64()`，再 `o: { ok -> v = it  ... }`）即正常 ⇒ 測試裡所有取值都改寫成兩步 | 本輪 `tmp/probe/py7.no`/`py8.no` |
+| 42 | **`collection/static-hashmap` 的 31 個方法全部不可達**：`monomorphizeGenericStructs` 只挑 `tmplName := "hashmap-" + cat + "-tmpl"`，`static-hashmap-{str,int,bool}-tmpl` 沒有任何驅動路徑（`map[K]V` 字面量只特化 `hashmap-*`），整個模組是死代碼 ⇒ 覆蓋率分母裡這 31 項永遠填不滿，除非先讓編譯器能特化它 | 本輪 `src/build/generic_structs.go:419` |
+| 43 | **`s = x OP y` + `s: { ok -> v = it  -> … }` 在 `cond -> { … }` 區塊裡寫不回去**：`to-str-sci` 的「指數加一」用它就完全沒效果（`9.99@1` 的指數少一），而在函式頂層的同樣寫法正常（探針 `v3` 印 6）。本輪只能繞：把運算搬進私有助手 `_num-add/_num-sub/_num-mul/_num-div`，呼叫端拿普通 `i64` | 本輪 `src/std/number.no` 的 `_num-add` 註解、§5.1j ⑤ |
+| 44 | **窄整數宣告配負字面量會丟掉標註型別**：`v i8 = -100` 之後 `v.to-i64()` 報 `unknown callee i64.to-i64`（`i8.to-i64` 明明已註冊），`w i8 = v` 再呼叫也一樣；把 `-100` 改成 `100` 就正常。`no vet` 不報、`no build` 也不報，只有 codegen 撞 `4qhyyund`。繞法：負值經**帶型別參數的助手**傳入（`narrow-i8 = (x i8) (out i64)`），參數入口完全正常（`-100`/`-30000`/`-2e9` 符號擴展正確） | 本輪 `tmp/probe/pnum9.no`（pos 綠 / neg 紅）、`pnum10.no`、`test/std/number.no` 的 `narrow-i8` |
+| 45 | **`u64` 沒有 `.to-i64`**：拓寬矩陣只有 `{byte,u8,i8,u16,i16,u32,i32}.to-i64` 與 `{byte,u8,u16,u32}.to-u64`，`u64.to-i64` / `i64.to-u64` 都不存在 ⇒ `f64.to-u64()`、`f64.to-bits()` 的回傳值無法轉成 `i64` 給 `runner.eq`，只能改用 `.to-str()` 比字串 | `src/builtin/strconv.go` 的 `intWidenMethods`、本輪 `t-bits` |
+| 46 | **從下標取的元素同樣丟標註型別**：`be = 258.to-bytes-be()` 之後 `b6 byte = be[6]` 再 `.to-i64()` 一樣撞 `i64.to-i64`（顯式 `byte` 標註也救不了）。而先宣告 `be []byte = …` 會讓裸下標變成 `?byte`（`idxbruse`），`?=` 又只能在「有 option 結果參數」的函數裡用 ⇒ 唯一可行寫法是 `byte-of = (b byte) (out i64)` 這種參數助手 | 本輪 `tmp/probe/bits*.no`、`test/std/number.no` 的 `byte-of` |
+| 47 | **一元負號前綴 + 方法呼叫（`-2.9.to-i64()`、`-1.2.ceil()`）會 emit `sub void 0, %lv`**，opt 驗證失敗：`void type only allowed for function results`。繞法：先 `neg-f(x)`（`out = 0.0 - x`）成形再調方法 | 本輪 `t-math-f64` 首次編譯失敗 |
+| 48 | **Nolang 沒有科學記數字面量**：`1.0e308` 直接被 lexer 拒（`scientific notation literals (e.g. 1e40) are not supported [1gybkrrq]`）。斷言 `+Inf` 只能比大小（`inf > 1000000000000000.0`）或比 `to-str-sci` 的字串 | 本輪 `t-exp-f64-fn` |
+| 49 | **`run` 是保留字**：頂層寫 `run()` 呼叫自有函數會報 `expected right parenthesis, got NEWLINE [5qjs01mp]`（連 `no ast` 也一樣）。探針/測試的入口函數別叫 `run` | 本輪 `tmp/pnum/bits.no` |
+| 50 | **「未標註型別的呼叫結果」參與運算符重載的聯合臂派發會選錯臂**：`bigint._add = (b big)`（`big = bigint \| i64`）在 `d = f()` 之後寫 `acc + d` 時靜默走 `bigint` 臂，把 i64 位元當 bigint 描述符 ⇒ 算術得 0，有時直接 `abort trap`。同一個值改成字面量、字面量指派、或加 `d i64 =` 標註都正常。**`no vet` / `no build` 都不報** | 本輪 `tmp/probe/pa.no`（abort）、`pc.no`（標註後正確）；修法見 §5.1k ① |
+| 51 | **已帶 `err(...)` 的 `?T` 具名變數當實參跨函數傳遞會雙重釋放**：函數內 `v: { ok(x) -> …  -> … }` 讀完後，程式**結束時** `trace/BPT trap` 或 `segfault`（值本身印得對，崩在 exit）。`nil` 與 `ok` 載荷無事，只有 `err` 載荷會踩；把 option 的建立與 match 都收進同一個函數（helper 收 `str` 而不是 `?T`）即完全正常 | 本輪 `tmp/probe/pi8c.no`（err 崩）vs `pi8e.no`（全綠、EXIT=0） |
+| 52 | **用「值位 match」寫窄整數助手會把兩臂型別統一成 `byte`**：`out = v: { ok(x) -> x  -> d }`（`x: byte`、`d: i64`）之後哨兵 `-1` 被截成 `255`，越界斷言全失真（`s.byte(3)` 應回 nil 卻顯示 255）。改成語句位 match + `ok` 臂顯式 `.to-i64()` 才對 | 本輪 `t-byte-at` 首版假紅 |
+| 53 | **`?i8` / `?u8` 直接傳進 `(v ?i64)` 形參會 bus error**（`?i32`/`?u32` 同理）。每個寬度必須有獨立形參，靠隱式拓寬是不行的 | 本輪 `t-to-narrow` 首版 |
+| 54 | **把「值位 match」直接當實參**（`print('x', a: { … })`、`dig(s.byte(pos): { … })`）會撞 `EmitLLVM: … consumer reads value 0 (NoVal) … [zodppsnm]`（bug #85）；先落到區域變數再傳就正常 | 本輪 `tmp/probe/pstr4.no`、`pi8.no` |
+| 55 | **`str.reverse` 按「位元組」逆序**（doc 明寫），多字節 UTF-8 會產出非法串：`'中文'.reverse()` → 亂碼。它和同模組的 `count` / `cp-index` / `decode-cp` 的**碼點模型不一致**，用戶很容易誤用。本輪**未改行為**（要改得同時動 9 個 locale 的 doc），只在 `t-reverse` 釘住 ASCII 語義並記在這裡 | `src/std/str.no:1649` 的註解、本輪 `t-reverse` |
+| 56 | **`process.cmd` 的超時看門狗排在「阻塞式讀完 stdout」之後** ⇒ 只要子進程持有 stdout，`timeout` 形同虛設：`cmd('sleep',['5'], …, 200, false)` 會等滿 5 秒並回報自然退出碼 0。真修需要非阻塞讀 + `poll`/`select`，而 `src/std/fs.no` 沒有 `poll`/`select`/`fcntl`/`O_NONBLOCK` 任何入口。本輪只修好「`-2` 路徑可達 + 正常退出碼正確」，限制見 §5.1l ④ | `test/std/process.no` 檔頭限制 2 |
+| 57 | **`process.write` / `process.close-stdin` 在使用者碼裡恆為 no-op**：`start-with-opts` 只在 `input` 非空時才建 stdin 管道，且寫完立刻 `fs.close`，`.stdin-fd` 永遠是 `-1` ⇒ `write` 恆回 0。屬 API 設計缺口（要支援串流寫入得保留 fd 並定義 EOF 語義），本輪只在測試裡釘住現行契約，未改行為 | `test/std/process.no` 的 `t-write` |
+| 58 | **同一段程式「換個檔名 / 換幾條字串字面量」就從 `EmitLLVM: unknown callee i64.to_str` 變成正常編譯**（觸發行是 `w i64 = s.wait()` 之後的 `w.to-str()`）。已排除變數名、三元式、`read-all`、路徑長度等因素：**同內容不同檔名兩次都失敗**（`pp-mini2.no` / `pp-w.no`），而形狀相同、僅字串字面量不同的 `pp-v5-all.no` 一次通過。未定位，疑與 #50 同屬「未標註呼叫結果」的推斷狀態污染 | `tmp/probe/pp-{mini2,w,v5-all}.no` |
+| 59 | **`x ?i64 = <call>()` + 三分支 match 之後，同檔其它地方對 i64 用 `.to-str()` 會報 `unknown callee i64.to_str`**（`no vet` 不報，只有 codegen 撞 `4qhyyund`）。`tmp/probe/pj-e.no` 裡把 `ns ?i64 = p.parse-str(…)` 改成不帶標註的 `ns = …` 則改撞 `optunuse`（option 綁定未消費）⇒ 兩條路都堵。可行繞法：**用 `(v ?i64) (out i64)` 助手把三態壓成哨兵值，斷言走 `runner.eq`，全程不經 `.to-str()`**（`test/std/json.no` 的 `i64-of` / `str-of` / `f64-of` / `bool-of` / `json-state` 五個助手即此形） | `tmp/probe/pj-e.no`（紅）vs `pj-f.no` / `test/std/json.no`（綠） |
+| 60 | **`json-pool.parse-str` / `parse-num` 不設定節點 `kind`**：低級 API 的分工是「呼叫端自己標 kind」，doc 只寫「`node-idx`: 承接…值的節點索引」。漏標的後果是 `get-str` / `get-num` 一律回 nil（它們先檢查 `kind`），`parse` 本身正常（它在上游先設定）。不是 bug，但**第一次用低級 API 必定踩**，已在 `test/std/json.no` 的 `t-pool-parse-str` / `t-pool-parse-num` 用註解釘住寫法 | `src/std/json.no:584`、`:674` 的 doc vs `get-str` 的 kind 檢查 |
+| 61 | **`#{overflow=wrap}` 下的算術賦值得到的是 `?i64`；若操作數未標註，結果會變成 `nil`，而這個 `nil` 再當算術運算元時**靜默回 0**，`no vet` / `no build` 都不報**。方法內實測（`a=0, b=1500`，六變體）：`x = .b - .a` / `x = .b + .a` / `x = .b * 2` / `x = .b - 0` / `x = p - q`（`p`、`q` 由 `.b`、`.a` 未標註推出）⇒ 事後語句位 match **全部走非 `ok` 臂（nil）**；只有先把操作數標成 `i64`（`p i64 = .b`）才拿到 1500。**操作數是形參時正常**（`p * 1000` → `ok`），所以 `time.sleep-ms` 沒事。同一 `x` 拿去 `x / 1000` 不報錯、直接得 0 —— `time.timer.elapsed-s` / `elapsed-us` 就是這樣恆回 0（§5.1o）。繞法：算術就地走值位 match（`x = <expr>: { ok -> it  -> 0 }`），或抽成 `(a i64, b i64) (out i64)` 助手 | `tmp/probe/tm-h.no`（5 條 `15w45dqk` 靜態報錯）、`tm-j.no`（v1–v6）、`tm-i.no`；修法見 §5.1o |
 
 | 24 | **`tests/match-test.no` 已被 `ed7b5236`（「同類測試合併為單一檔案」）刪掉，但 `src/parser/dump/warnings_shape_test.go::TestUnreachableArmHintSurvivesBothShapes` 仍硬編該路徑** ⇒ `make test` 的 `parser/dump` 必紅（`match-test.no did not parse`）。與本次改動無關，屬預存缺陷 | `git log --oneline -- tests/match-test.no` |
 

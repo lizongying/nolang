@@ -30,14 +30,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout34c1f = hex-chars[(ixout29c37 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout29c37 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout34c1f
 
         ixout32c40 = data[i]: {
             ok -> it
@@ -45,14 +46,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout43c23 = hex-chars[ixout32c40 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout32c40 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout43c23
     }
 }
 
@@ -265,7 +267,11 @@ t-rotr32 = () {
 t-b-g = () {
     v []u64 = with-len(16)
     i <- [0..16): {
-        v[i] = i + 1
+        v[i]: {
+            ok -> it = i + 1
+
+            -> _
+        }
     }
     blake2.b-g(v, 0, 4, 8, 12, 0x0123456789abcdef, 0xfedcba9876543210)
 
@@ -283,7 +289,11 @@ t-b-g = () {
 t-s-g = () {
     v []u32 = with-len(16)
     i <- [0..16): {
-        v[i] = i + 1
+        v[i]: {
+            ok -> it = i + 1
+
+            -> _
+        }
     }
     blake2.s-g(v, 0, 4, 8, 12, 0x01234567, 0xfedcba98)
 

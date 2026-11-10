@@ -3215,14 +3215,10 @@ sha512 = (data []byte) (hash [64]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-        ixout3124c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        padded[i]: {
-            ok -> it = ixout3124c24
+        {
+            padded[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -3333,7 +3329,11 @@ sha512 = (data []byte) (hash [64]byte) {
                 -> _
             }
 
-            block[i] = (ixout3180c25 << 56) | (ixout3180c58 << 48) | (ixout3180c95 << 40) | (ixout3180c132 << 32) | (ixout3180c169 << 24) | (ixout3180c206 << 16) | (ixout3180c243 << 8) | ixout3180c278
+            block[i]: {
+                ok -> it = (ixout3180c25 << 56) | (ixout3180c58 << 48) | (ixout3180c95 << 40) | (ixout3180c132 << 32) | (ixout3180c169 << 24) | (ixout3180c206 << 16) | (ixout3180c243 << 8) | ixout3180c278
+
+                -> _
+            }
         }
         h0, h1, h2, h3, h4, h5, h6, h7 = sha512-block(block, h0, h1, h2, h3, h4, h5, h6, h7)
 

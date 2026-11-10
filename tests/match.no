@@ -408,24 +408,22 @@ check = (name str, got i64, want i64) {
 }
 
 ; 常數 RHS：既有 D9 行為，不能被本次改動破壞。
-pwConst = (i i64) (res i64) {
+pw-const = (i i64) (res i64) {
     a = [10, 20, 30]
     a[i]: {
         ok -> it = 0
 
         -> _
     }
-    ixout418cc = a[1]: {
+    res = a[1]: {
         ok -> it
 
         -> _
     }
-
-    res = ixout418cc
 }
 
 ; 值 match RHS（內層越界 → 0）：這是 D11 修復的目標形狀。
-pwValueMatch = (i i64) (res i64) {
+pw-value-match = (i i64) (res i64) {
     a = [10, 20, 30]
     a[i]: {
         ok -> it = a[9]: {
@@ -436,17 +434,15 @@ pwValueMatch = (i i64) (res i64) {
 
         -> _
     }
-    ixout433cc = a[1]: {
+    res = a[1]: {
         ok -> it
 
         -> _
     }
-
-    res = ixout433cc
 }
 
 ; 值 match RHS（內層在界內 → 30）：確認讀值正確，不是恆寫 0。
-pwValueMatchHit = (i i64) (res i64) {
+pw-value-match-hit = (i i64) (res i64) {
     a = [10, 20, 30]
     a[i]: {
         ok -> it = a[2]: {
@@ -457,18 +453,16 @@ pwValueMatchHit = (i i64) (res i64) {
 
         -> _
     }
-    ixout448cc = a[1]: {
+    res = a[1]: {
         ok -> it
 
         -> _
     }
-
-    res = ixout448cc
 }
 
-check('place-write constant', pwConst(1), 0)
-check('place-write value match OOB', pwValueMatch(1), 0)
-check('place-write value match in-bounds', pwValueMatchHit(1), 30)
+check('place-write constant', pw-const(1), 0)
+check('place-write value match OOB', pw-value-match(1), 0)
+check('place-write value match in-bounds', pw-value-match-hit(1), 30)
 print('place-write-value-match: all ok')
 
 ; merged from tests/simple-match.no
@@ -502,14 +496,14 @@ test1__1()
 ; merged from tests/type-match.no
 ; 類型解構 match（union / type-set 靜態單態化派發）端到端測試
 ...
-num__1 = i32 | i64 | f64
+num-1 = i32 | i64 | f64
 
 ; 用戶範例：按被匹配值的具體型別靜態選臂
 ; x num: 被匹配的值，i32 與 i64 走不同臂、其餘走 catch-all
 ; lo num: i32 臂要回傳的下界值
 ; hi num: i64 臂要回傳的上界值
 ; r num: 依 x 的具體型別選出的 lo / hi / x
-clamp0 = (x num__1, lo num__1, hi num__1) (r num__1) {
+clamp0 = (x num-1, lo num-1, hi num-1) (r num-1) {
     r = x: {
         i32 -> lo
 
@@ -521,7 +515,7 @@ clamp0 = (x num__1, lo num__1, hi num__1) (r num__1) {
 
 ; 帶綁定型別臂 + 預設臂
 ; x num: 被匹配的 union 值；i64 / i32 / f64 臂各自具名綁定 v 取載荷，其餘落 catch-all
-classify = (x num__1) {
+classify = (x num-1) {
     y = x: {
         v i64 -> v.to-str()
 
@@ -536,7 +530,7 @@ classify = (x num__1) {
 
 ; 各臂回傳不同值，驗證確實選對臂
 ; x num: 被匹配的 union 值；i64 臂 +1、i32 臂 +2、f64 臂 +3.0，其餘回 0
-add1 = (x num__1) {
+add1 = (x num-1) {
     r = x: {
         w i64 -> w + 1
 

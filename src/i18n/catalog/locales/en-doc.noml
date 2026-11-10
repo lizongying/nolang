@@ -5786,11 +5786,6 @@ general format (chooses fixed point or scientific notation automatically)
 precision i64: maximum number of significant digits (>= 1)
 returns out str: the string form (trailing zeros stripped automatically)
 `
-  'number.f64.to-str-sci': `
-scientific notation
-precision i64: number of fractional digits (>= 0)
-returns out str: the string form (e.g. "3.14e+2", "-5.0e-3")
-`
   'number.f64.to-u32': `
 float to 32-bit unsigned integer (saturating)
 out: the u32 truncated toward zero (out-of-range saturates)

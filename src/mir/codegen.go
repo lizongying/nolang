@@ -4741,8 +4741,14 @@ entry:
   call i32 @gettimeofday(i8* %tv.ptr, i8* null)
   %sec.ptr = bitcast [16 x i8]* %tv to i64*
   %sec = load i64, i64* %sec.ptr
-  %usec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
-  %usec = load i64, i64* %usec.ptr
+  ; struct timeval.tv_usec is suseconds_t: 32-bit on Darwin, 64-bit on Linux.
+  ; Loading the low 32 bits is correct on both (tv_usec < 1000000), while a
+  ; 64-bit load at offset 8 swallows the 4 bytes of tail padding on Darwin and
+  ; returns stack garbage in the high half (now-ms / now-us were ~1e6x too big).
+  %tv32 = bitcast [16 x i8]* %tv to i32*
+  %usec.ptr = getelementptr i32, i32* %tv32, i64 2
+  %usec.raw = load i32, i32* %usec.ptr
+  %usec = zext i32 %usec.raw to i64
   %sec.ms = mul i64 %sec, 1000
   %usec.ms = sdiv i64 %usec, 1000
   %result = add i64 %sec.ms, %usec.ms
@@ -4756,8 +4762,10 @@ entry:
   call i32 @gettimeofday(i8* %tv.ptr, i8* null)
   %sec.ptr = bitcast [16 x i8]* %tv to i64*
   %sec = load i64, i64* %sec.ptr
-  %usec.ptr = getelementptr i64, i64* %sec.ptr, i64 1
-  %usec = load i64, i64* %usec.ptr
+  %tv32 = bitcast [16 x i8]* %tv to i32*
+  %usec.ptr = getelementptr i32, i32* %tv32, i64 2
+  %usec.raw = load i32, i32* %usec.ptr
+  %usec = zext i32 %usec.raw to i64
   %sec.us = mul i64 %sec, 1000000
   %result = add i64 %sec.us, %usec
   ret i64 %result

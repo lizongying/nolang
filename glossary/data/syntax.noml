@@ -57,6 +57,33 @@ eprint-line = (msg str) {
       related: ['void', 'fn-type', 'syntax-return', 'reserved-run']
       refs: ['docs/docs/lang/syntax.md']
     }
+    'syntax-out-rebind': {
+      title: '输出槽直接绑回既有变量'
+      kind: 'concept'
+      status: 'stable'
+      summary: '多重输出直接写入已有变量；别为一次转存新增中间变量，未用的输出用 _ 丢弃。'
+      aliases: ['中间变量', '转存', 'output rebind']
+      definition: `
+调用端的输出槽可以直接绑定到已存在的变量，函数就地改写它的内存。
+所以 q, r = r.div-mod(modulus) 就够了，不必写 q, msq = ... 再 r = msq。
+接收者 r 是隐式只读 self，同时又绑到输出槽：别名规则允许输入只读引用
+与输出槽指向同一对象，编译器不做静态别名检查；单一输出同理（r = r._mul(r)）。
+商没用到时写 _, r = r.div-mod(modulus)，一个新名字都不引入。
+实测 no build / no vet / no fmt 全绿，100 除以 7 得 q = 14、r = 2，
+与转存写法完全一致；r 是外层函数的结果参数时也成立。
+这是新写代码的推荐写法，不是重构令；既有合法代码不要为风格改写。
+`
+      syntax: `
+q, r = r.div-mod(modulus)
+_, r = r.div-mod(modulus)
+`
+      example: `
+; src/std/bigint.no 的 mod-pow 循环里就地取模
+qsq, r = r.div-mod(modulus)
+`
+      related: ['syntax-binding', 'syntax-fn', 'syntax-method', 'syntax-underscore', 'code-style']
+      refs: ['docs/docs/lang/syntax.md', 'docs/docs/lang/code-style.md', 'AGENTS.md']
+    }
     'syntax-method': {
       title: '方法定义（T.method = ）'
       kind: 'concept'
@@ -579,6 +606,12 @@ print(sep)
 关键约束：模块的顶层绑定（常量、全局结构体实例）只有在**入口文件直接导入**
 该模块时才会被生成；只被间接依赖时，跨模块读到的常量会静默变成 0。
 所以入口文件要把它依赖的模块逐个列全。
+
+导入别名有两种拼法：旧的 # path.fn as alias 与推荐的裸别名 # path.fn alias。
+checker lint tgutu5g0 会对 as 写法报 HINT；no fmt 自 2026-11-10 起直接把
+别名正规化成裸别名（src/fmt/stmt.go 的 formatUseStatement），所以跑一次
+no fmt -w 就能消除该 HINT。两种拼法的解析结果只差 AsKeyword flag，语义相同；
+下划线占位别名、带连字号的别名也都是合法 path-ident，正规化后仍可解析。
 `
       syntax: `
 # /glossary/src/db

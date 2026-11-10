@@ -93,13 +93,11 @@ tree-map.alloc-node = () (idx i64) {
     idx = .free-head
     idx < 0 -> return
 
-    ixout96c17 = .left[idx]: {
+    .free-head = .left[idx]: {
         ok -> it
 
         -> _
     }
-
-    .free-head = ixout96c17
 
     {
         .left[idx] ?= -1
@@ -141,13 +139,11 @@ tree-map.ht = (idx i64) (h i64) {
     h = 0
     idx < 0 -> return
 
-    ixout138c10 = .height[idx]: {
+    h = .height[idx]: {
         ok -> it
 
         -> _
     }
-
-    h = ixout138c10
 }
 
 ; 重新計算節點高度
@@ -212,21 +208,17 @@ tree-map.bf = (idx i64) (b i64) {
 ; x i64: 旋轉軸節點
 ; [rot-left](#tree-map.tree-map.rot-left)
 tree-map.rot-left = (x i64) {
-    ixout203cf = .right[x]: {
+    y = .right[x]: {
         ok -> it
 
         -> _
     }
 
-    y = ixout203cf
-
-    ixout205ce = .left[y]: {
+    b = .left[y]: {
         ok -> it
 
         -> _
     }
-
-    b = ixout205ce
 
     {
         .right[x] ?= b
@@ -238,13 +230,11 @@ tree-map.rot-left = (x i64) {
 
         .parent[y] ?= .parent[x]
 
-        ixout217c14 = .parent[x]: {
+        p = .parent[x]: {
             ok -> it
 
             -> _
         }
-
-        p = ixout217c14
         {
             p < 0 -> .root = y
 
@@ -278,21 +268,17 @@ tree-map.rot-left = (x i64) {
 ; x i64: 旋轉軸節點
 ; [rot-right](#tree-map.tree-map.rot-right)
 tree-map.rot-right = (x i64) {
-    ixout251ce = .left[x]: {
+    y = .left[x]: {
         ok -> it
 
         -> _
     }
 
-    y = ixout251ce
-
-    ixout253cf = .right[y]: {
+    b = .right[y]: {
         ok -> it
 
         -> _
     }
-
-    b = ixout253cf
 
     {
         .left[x] ?= b
@@ -304,13 +290,11 @@ tree-map.rot-right = (x i64) {
 
         .parent[y] ?= .parent[x]
 
-        ixout265c14 = .parent[x]: {
+        p = .parent[x]: {
             ok -> it
 
             -> _
         }
-
-        p = ixout265c14
         {
             p < 0 -> .root = y
 
@@ -359,13 +343,11 @@ tree-map.rebalance = (idx i64) (nr i64) {
                 }
                 .rot-right(idx)
 
-                ixout314c1d = .parent[idx]: {
+                nr = .parent[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                nr = ixout314c1d
                 return
             }
 
@@ -379,13 +361,11 @@ tree-map.rebalance = (idx i64) (nr i64) {
                 }
                 .rot-left(idx)
 
-                ixout328c1d = .parent[idx]: {
+                nr = .parent[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                nr = ixout328c1d
                 return
             }
         }
@@ -405,13 +385,11 @@ tree-map.rebalance-up = (idx i64) {
     (r-idx >= 0) {
         nr = .rebalance(r-idx)
 
-        ixout348c18 = .parent[nr]: {
+        r-idx = .parent[nr]: {
             ok -> it
 
             -> _
         }
-
-        r-idx = ixout348c18
     }
 }
 
@@ -434,13 +412,11 @@ tree-map.successor = (idx i64) (succ i64) {
             return
         }
 
-        ixout371c14 = .parent[r-idx]: {
+        p = .parent[r-idx]: {
             ok -> it
 
             -> _
         }
-
-        p = ixout371c14
         (p >= 0) {
             rp ?= .right[p]
             r-idx != rp -> {
@@ -448,13 +424,11 @@ tree-map.successor = (idx i64) (succ i64) {
             }
             r-idx = p
 
-            ixout379c18 = .parent[p]: {
+            p = .parent[p]: {
                 ok -> it
 
                 -> _
             }
-
-            p = ixout379c18
         }
         succ = p
     }: {
@@ -573,34 +547,28 @@ tree-map.get = (key i64) (val ?i64) {
     (idx >= 0) {
         k ?= .keys[idx]
         key == k -> {
-            ixout498c18 = .vals[idx]: {
+            val = .vals[idx]: {
                 ok -> it
 
                 -> _
             }
-
-            val = ixout498c18
             return
         }
         {
             key < k -> {
-                ixout503c1c = .left[idx]: {
+                idx = .left[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                idx = ixout503c1c
             }
 
             -> {
-                ixout507c1d = .right[idx]: {
+                idx = .right[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                idx = ixout507c1d
             }
         }
     }
@@ -622,23 +590,19 @@ tree-map.contains = (key i64) (yes bool) {
             }
             {
                 key < k -> {
-                    ixout529c20 = .left[idx]: {
+                    idx = .left[idx]: {
                         ok -> it
 
                         -> _
                     }
-
-                    idx = ixout529c20
                 }
 
                 -> {
-                    ixout533c21 = .right[idx]: {
+                    idx = .right[idx]: {
                         ok -> it
 
                         -> _
                     }
-
-                    idx = ixout533c21
                 }
             }
         }
@@ -667,23 +631,19 @@ tree-map.remove = (key i64) (ok bool) {
             }
             {
                 key < k -> {
-                    ixout562c20 = .left[idx]: {
+                    idx = .left[idx]: {
                         ok -> it
 
                         -> _
                     }
-
-                    idx = ixout562c20
                 }
 
                 -> {
-                    ixout566c21 = .right[idx]: {
+                    idx = .right[idx]: {
                         ok -> it
 
                         -> _
                     }
-
-                    idx = ixout566c21
                 }
             }
         }
@@ -715,30 +675,24 @@ tree-map.remove = (key i64) (ok bool) {
         }
 
         ; 此時 idx 最多一個子節點
-        ixout598c16 = .left[idx]: {
+        child = .left[idx]: {
             ok -> it
 
             -> _
         }
-
-        child = ixout598c16
         child < 0 -> {
-            ixout600c1b = .right[idx]: {
+            child = .right[idx]: {
                 ok -> it
 
                 -> _
             }
-
-            child = ixout600c1b
         }
 
-        ixout603c14 = .parent[idx]: {
+        p = .parent[idx]: {
             ok -> it
 
             -> _
         }
-
-        p = ixout603c14
         child >= 0 -> {
             .parent[child] ?= p
         }
@@ -784,13 +738,11 @@ tree-map.first = () (key ?i64) {
         l ?= .left[idx]
     }
 
-    ixout649c10 = .keys[idx]: {
+    key = .keys[idx]: {
         ok -> it
 
         -> _
     }
-
-    key = ixout649c10
 }
 
 ; 取得最大鍵
@@ -808,13 +760,11 @@ tree-map.last = () (key ?i64) {
         r ?= .right[idx]
     }
 
-    ixout667c10 = .keys[idx]: {
+    key = .keys[idx]: {
         ok -> it
 
         -> _
     }
-
-    key = ixout667c10
 }
 
 ; 找第一個 ≥ target 的鍵
@@ -830,23 +780,19 @@ tree-map.lower-bound = (target i64) (key ?i64) {
             kv >= target -> {
                 result = idx
 
-                ixout683c1c = .left[idx]: {
+                idx = .left[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                idx = ixout683c1c
             }
 
             -> {
-                ixout687c1d = .right[idx]: {
+                idx = .right[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                idx = ixout687c1d
             }
         }
     }
@@ -855,13 +801,11 @@ tree-map.lower-bound = (target i64) (key ?i64) {
         return
     }
 
-    ixout696c10 = .keys[result]: {
+    key = .keys[result]: {
         ok -> it
 
         -> _
     }
-
-    key = ixout696c10
 }
 
 ; 找第一個 > target 的鍵
@@ -877,23 +821,19 @@ tree-map.upper-bound = (target i64) (key ?i64) {
             kv > target -> {
                 result = idx
 
-                ixout712c1c = .left[idx]: {
+                idx = .left[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                idx = ixout712c1c
             }
 
             -> {
-                ixout716c1d = .right[idx]: {
+                idx = .right[idx]: {
                     ok -> it
 
                     -> _
                 }
-
-                idx = ixout716c1d
             }
         }
     }
@@ -902,13 +842,11 @@ tree-map.upper-bound = (target i64) (key ?i64) {
         return
     }
 
-    ixout725c10 = .keys[result]: {
+    key = .keys[result]: {
         ok -> it
 
         -> _
     }
-
-    key = ixout725c10
 }
 
 ; 按鍵升序遍歷所有鍵值對
@@ -934,21 +872,17 @@ tree-map.for-each = () (k i64, v i64) {
 
     ; 逐個後繼遍歷
     (idx >= 0) {
-        ixout751c12 = .keys[idx]: {
+        k = .keys[idx]: {
             ok -> it
 
             -> _
         }
 
-        k = ixout751c12
-
-        ixout753c12 = .vals[idx]: {
+        v = .vals[idx]: {
             ok -> it
 
             -> _
         }
-
-        v = ixout753c12
         idx = .successor(idx)
     }
 }

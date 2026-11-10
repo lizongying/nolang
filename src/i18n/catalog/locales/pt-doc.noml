@@ -5786,11 +5786,6 @@ formato geral (escolhe ponto fixo ou notação científica automaticamente)
 precision i64: número máximo de dígitos significativos (>= 1)
 Retorno out str: a forma de string (zeros finais removidos automaticamente)
 `
-  'number.f64.to-str-sci': `
-notação científica
-precision i64: número de dígitos fracionários (>= 0)
-Retorno out str: a forma de string (por ex. "3.14e+2", "-5.0e-3")
-`
   'number.f64.to-u32': `
 ponto flutuante para inteiro sem sinal de 32 bits (saturante)
 out: o u32 truncado em direção a zero (fora do intervalo satura)

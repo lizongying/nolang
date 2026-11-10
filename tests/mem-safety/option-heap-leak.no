@@ -50,15 +50,15 @@ test-str-option()
 print('test-str-option: ok')
 
 ; 測試 2：用戶結構體 option 作用域結束釋放（涵蓋 copyToData struct 路徑）
-MyStruct {
+my-struct {
     name str
     count i64
 }
 
-; 產生帶堆欄位的結構體（name 指向 'world'、count 為 42），供 ?MyStruct 包裝測試
-; out MyStruct: 新結構體；裝進 option 後離開作用域需連 name.data 一起釋放
-make-struct = () (out MyStruct) {
-    out = MyStruct{
+; 產生帶堆欄位的結構體（name 指向 'world'、count 為 42），供 ?my-struct 包裝測試
+; out my-struct: 新結構體；裝進 option 後離開作用域需連 name.data 一起釋放
+make-struct = () (out my-struct) {
+    out = my-struct{
         name: 'world'
         count: 42
     }
@@ -66,7 +66,7 @@ make-struct = () (out MyStruct) {
 
 ; 測試 struct-option
 test-struct-option = () {
-    u ?MyStruct = make-struct()
+    u ?my-struct = make-struct()
 
     ; u 離開作用域時應釋放 box + struct fields 的堆數據（name.data）
     ; 不直接讀取 u.name/u.count（option-struct 字段讀取是另一個獨立問題）

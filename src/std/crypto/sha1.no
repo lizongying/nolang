@@ -1482,14 +1482,10 @@ sha1 = (data []byte) (hash [20]byte) {
 
     ; 複製原始資料
     i <- [0..dlen): {
-        ixout1177c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        padded[i]: {
-            ok -> it = ixout1177c24
+        {
+            padded[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1560,7 +1556,11 @@ sha1 = (data []byte) (hash [20]byte) {
                 -> _
             }
 
-            block[i] = (ixout1221c25 << 24) | (ixout1221c58 << 16) | (ixout1221c95 << 8) | ixout1221c130
+            block[i]: {
+                ok -> it = (ixout1221c25 << 24) | (ixout1221c58 << 16) | (ixout1221c95 << 8) | ixout1221c130
+
+                -> _
+            }
         }
         h0, h1, h2, h3, h4 = sha1-block(block, h0, h1, h2, h3, h4)
 

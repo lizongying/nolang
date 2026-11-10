@@ -276,10 +276,10 @@ print('=== done ===')
 ...
 
 ; 基础赋值
-t__1 txt = 'hello'
-n = t__1.len()
+t-1 txt = 'hello'
+n = t-1.len()
 print('len:', n)
-print('first:', t__1[0])
+print('first:', t-1[0])
 
 ; 空赋值
 t2 txt = ''
@@ -287,14 +287,14 @@ n2 = t2.len()
 print('empty len:', n2)
 
 ; 转换
-s = t__1.to-str()
+s = t-1.to-str()
 print('to-str:', s)
 
 ; 比较
 t3 txt = 'hello'
-ok = t__1.eq(t3)
+ok = t-1.eq(t3)
 print('eq:', ok)
 
 t4 txt = 'world'
-ok2 = t__1.eq(t4)
+ok2 = t-1.eq(t4)
 print('neq:', ok2)

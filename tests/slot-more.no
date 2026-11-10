@@ -60,10 +60,10 @@ c = db
 print(a2); 5
 print(c); 5
 
-ra_a = 10
-ra_b = ra_a; rebind ra_b->ra_a
-ra = ra_b; ra = 10
-ra_b = 5; 重新赋值目标，别名失效，ra 不受影响
+ra-a = 10
+ra-b = ra-a; rebind ra_b->ra-a
+ra = ra-b; ra = 10
+ra-b = 5; 重新赋值目标，别名失效，ra 不受影响
 print(ra); 10
 
 pm = pm_fn(100)

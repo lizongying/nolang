@@ -22,17 +22,17 @@
 ; case 1: 跨池 arr-push 應當讓目標數組增長
 ...
 a = json.parse('[1,2]')
-len_before = a.arr-len()
+len-before = a.arr-len()
 pushed = a.arr-push(json.parse('3'))
-len_after = a.arr-len()
-s_after = a.stringify()
+len-after = a.arr-len()
+s-after = a.stringify()
 
 print('case1 arr-push cross-pool:')
 print('  push returned ok =', pushed, '(expect 1)')
-print('  arr-len before/after =', len_before, '/', len_after, '(expect 2 / 3)')
-print('  stringify =', s_after, '(expect [1,2,3])')
+print('  arr-len before/after =', len-before, '/', len-after, '(expect 2 / 3)')
+print('  stringify =', s-after, '(expect [1,2,3])')
 {
-    len_after == 3 -> print('  => PASS')
+    len-after == 3 -> print('  => PASS')
 
     -> print('  => FAIL (KNOWN BUG §5.3: element lost, cross-pool index not copied)')
 }
@@ -40,17 +40,17 @@ print('  stringify =', s_after, '(expect [1,2,3])')
 ; case 2: set-key 對 parse 建的接收者應當新增键
 ...
 o = json.parse('{"x":1}')
-len_before2 = o.obj-len()
+len-before2 = o.obj-len()
 ok2 = o.set-key('y', json.parse('2'))
-len_after2 = o.obj-len()
+len-after2 = o.obj-len()
 s2 = o.stringify()
 
 print('case2 set-key on parse receiver:')
 print('  set-key returned ok =', ok2, '(expect 1)')
-print('  obj-len before/after =', len_before2, '/', len_after2, '(expect 1 / 2)')
+print('  obj-len before/after =', len-before2, '/', len-after2, '(expect 1 / 2)')
 print('  stringify =', s2, '(expect {"x":1,"y":2})')
 {
-    len_after2 == 2 -> print('  => PASS')
+    len-after2 == 2 -> print('  => PASS')
 
     -> print('  => FAIL (KNOWN BUG §5.3: key not visible on parse-built receiver)')
 }
@@ -58,15 +58,15 @@ print('  stringify =', s2, '(expect {"x":1,"y":2})')
 ; case 3: delete-key 對 parse 建的接收者應當移除键
 ...
 d = json.parse('{"a":1,"b":2}')
-len_before3 = d.obj-len()
+len-before3 = d.obj-len()
 ok3 = d.delete-key('a')
-len_after3 = d.obj-len()
+len-after3 = d.obj-len()
 
 print('case3 delete-key on parse receiver:')
 print('  delete-key returned ok =', ok3, '(expect 1)')
-print('  obj-len before/after =', len_before3, '/', len_after3, '(expect 2 / 1)')
+print('  obj-len before/after =', len-before3, '/', len-after3, '(expect 2 / 1)')
 {
-    len_after3 == 1 -> print('  => PASS')
+    len-after3 == 1 -> print('  => PASS')
 
     -> print('  => FAIL (KNOWN BUG §5.3: key not removed on parse-built receiver)')
 }

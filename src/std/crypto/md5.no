@@ -482,14 +482,10 @@ md5 = (data []byte) (out [16]byte) {
         base = num-copy-words * 4
 
         k <- [0..copy-rem): {
-            ixout486c28 = data[off + base + k]: {
-                ok -> it
-
-                -> _
-            }
-
-            buf[base + k]: {
-                ok -> it = ixout486c28
+            {
+                buf[base + k] ?= data[off + base + k]
+            }: {
+                err -> _
 
                 -> _
             }

@@ -2436,10 +2436,20 @@ func substituteExpr(expr parser.Expression, subst map[string]string) parser.Expr
 		}
 		return newIf
 	case *parser.AssignExpression:
+		// IsSynthetic 必须随泛型实例化一起复制：D9 place-write 的合成写回
+		// （`a[__idx] = it`）在模板里带这个标记，checker 靠它放行编译器自己的
+		// 产物。丢掉标记后，泛型容器被实例化时（如 std/heap 的 `?=` 写入）
+		// 那段写回会被 `no vet` 当成用户手写的直写下标报 idxwrite，
+		// 但 `no build` 走的是 THIR 路径（不重建该节点）因此不报 —— 两端口径
+		// 分裂，用户只看到 vet 红、build 绿。
 		return &parser.AssignExpression{
-			Token: e.Token,
-			Left:  substituteExpr(e.Left, subst),
-			Value: substituteExpr(e.Value, subst),
+			Token:       e.Token,
+			Left:        substituteExpr(e.Left, subst),
+			Value:       substituteExpr(e.Value, subst),
+			IsSynthetic: e.IsSynthetic,
+			AnnotatedNode: parser.AnnotatedNode{
+				Annotations: e.Annotations,
+			},
 		}
 	case *parser.DotExpression:
 		return &parser.DotExpression{

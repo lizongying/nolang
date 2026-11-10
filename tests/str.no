@@ -103,10 +103,10 @@ print('=== done ===')
 ; ── 來自 split2.no ──
 ; test-split2: test str.split without element access
 ...
-s__1 = 'hello world hello'
+s-1 = 'hello world hello'
 parts []str
-parts = s__1.split(' ')
-n__1 = parts.len()
+parts = s-1.split(' ')
+n-1 = parts.len()
 print('parts:{n.to-str()}')
 
 print('---')

@@ -151,13 +151,11 @@ linked-hash-map.get = (key i64) (result ?i64) {
 
         k ?= .keys[idx]
         k == key -> {
-            ixout154c1b = .vals[idx]: {
+            result = .vals[idx]: {
                 ok -> it
 
                 -> _
             }
-
-            result = ixout154c1b
             return
         }
 

@@ -36,7 +36,10 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		// 格式化時陳述 token 行號被這一行推後，會誤判「有空行」而插入空行、再被
 		// 偵測、再插入（非冪等）。hasBlankLineBetween 會略過 overflow 註解行，
 		// 正確反映「用戶究竟有無在 Doc 與陳述間留空行」。
-		if lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtLine) {
+		// 導入語句的 Doc 註釋一律緊貼導入行：`; 說明` 與 `# std/x` 之間的空行
+		// 會讓「導入區段內不留空行」失效，且把分組註釋與它註釋的導入拆開。
+		_, isUse := stmt.(*parser.UseStatement)
+		if !isUse && lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtLine) {
 			// Preserve blank line between last Doc comment and statement
 			f.write("\n") // bare blank line (no indent)
 		}
@@ -382,12 +385,11 @@ func (f *formatter) formatUseStatement(s *parser.UseStatement) {
 		f.write(s.Function)
 	}
 	if s.Alias != "" {
-		// `as` 寫法原樣保留（parser 兩種都收），否則往返會改變用戶寫下的形式。
-		if s.AsKeyword {
-			f.write(" as ")
-		} else {
-			f.write(" ")
-		}
+		// 一律輸出裸別名（`# path.fn alias`）。checker 的 tgutu5g0 HINT 建議
+		// 汰換 `as` 寫法；若 formatter 原樣保留，跑完 fmt 仍會被同一條 HINT
+		// 提醒。parser 兩種寫法等價（只差 AsKeyword flag，不進語意），故此
+		// 正規化是安全且可往返的（冪等由 imports_test.go 釘住）。
+		f.write(" ")
 		f.write(s.Alias)
 	}
 }

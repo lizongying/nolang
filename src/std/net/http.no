@@ -1433,13 +1433,11 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
     code-str = first-line.slice-bytes(sp1 + 1, sp1 + 4)
     code = 0
     ci <- [0..code-str.len-bytes()): {
-        ixout1371c13 = code-str[ci]: {
+        c = code-str[ci]: {
             ok -> it
 
             -> 0
         }
-
-        c = ixout1371c13
         c < 48 || c > 57 -> return
 
         #{overflow=wrap}

@@ -74,10 +74,10 @@ aset.add(2)
 aset.add(3)
 bbuf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
 bset = set.init(bbuf)
-bbuf_add = 0
-bbuf_add = bset.add(3)
-bbuf_add = bset.add(4)
-bbuf_add = bset.add(5)
+bbuf-add = 0
+bbuf-add = bset.add(3)
+bbuf-add = bset.add(4)
+bbuf-add = bset.add(5)
 
 ; v2.1 深拷貝賦值規則下，set.init(buf) 會取得 buf 的擁有權副本；外部陣列不再
 ; 別名集合內部 content。故 `other` 運算元必須取自集合自身的即時資料（to-vec），

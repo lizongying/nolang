@@ -435,13 +435,11 @@ vec-clear = () {
         #{overflow=wrap}
         .len = cur + 1
 
-        ixout431c18 = b[i]: {
+        .[cur] = b[i]: {
             ok -> it
 
             -> _
         }
-
-        .[cur] = ixout431c18
 
         #{overflow=wrap}
         i = i + 1

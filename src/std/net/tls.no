@@ -292,23 +292,22 @@ bytes-cat = (a []byte, b []byte) (out []byte) {
     #{overflow=wrap}
     out = with-len(an + bn)
     i <- [0..an): {
-        ixout263c18 = a[i]: {
+        out[i] = a[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout263c18
     }
     i <- [0..bn): {
-        ixout268c23 = b[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            out[an + i] ?= b[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        out[an + i] = ixout268c23
     }
 
     #{overflow=wrap}
@@ -469,14 +468,15 @@ prf = (secret []byte, label str, seed []byte, out-len i64) (out []byte) {
             }
         }
         i <- [0..copy-n): {
-            ixout397c32 = p[i]: {
-                ok -> it
+            {
+
+                #{overflow=wrap}
+                out[out-off + i] ?= p[i]
+            }: {
+                err -> _
 
                 -> _
             }
-
-            #{overflow=wrap}
-            out[out-off + i] = ixout397c32
         }
 
         #{overflow=wrap}
@@ -780,16 +780,11 @@ send-raw = (fd fd, ct i64, data []byte) {
 conn.append-hs = (data []byte) {
     n = data.len()
     i <- [0..n): {
-        ixout660c36 = data[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
         hs-wr-idx = .hs-buf-len + i
         {
-            .hs-buf[hs-wr-idx] ?= ixout660c36
+            .hs-buf[hs-wr-idx] ?= data[i]
         }: {
             err -> _
 
@@ -815,16 +810,11 @@ conn.append-hs-from = (buf []byte, offset i64, n i64) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        ixout677c36 = buf[offset + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
         hs-wr-idx = .hs-buf-len + i
         {
-            .hs-buf[hs-wr-idx] ?= ixout677c36
+
+            #{overflow=wrap}
+            .hs-buf[hs-wr-idx] ?= buf[offset + i]
         }: {
             err -> _
 
@@ -860,13 +850,11 @@ tls-pad = (in []byte) (out []byte) {
     #{overflow=wrap}
     out = with-len(n + pad-count)
     i <- [0..n): {
-        ixout706c18 = in[i]: {
+        out[i] = in[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout706c18
     }
     i <- [0..pad-count): {
 
@@ -955,15 +943,12 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
         }
     }
     i <- [0..8): {
-        ixout786c24 = exp-nonce[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        nonce[4 + i]: {
-            ok -> it = ixout786c24
+            #{overflow=wrap}
+            nonce[4 + i] ?= exp-nonce[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1009,29 +994,23 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, frag-len)
     i <- [0..8): {
-        ixout835c24 = exp-nonce[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        rec[5 + i]: {
-            ok -> it = ixout835c24
+            #{overflow=wrap}
+            rec[5 + i] ?= exp-nonce[i]
+        }: {
+            err -> _
 
             -> _
         }
     }
     i <- [0..sealed.len()): {
-        ixout844c24 = sealed[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        rec[13 + i]: {
-            ok -> it = ixout844c24
+            #{overflow=wrap}
+            rec[13 + i] ?= sealed[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1076,17 +1055,12 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
         }
     }
     i <- [0..8): {
+        {
 
-        #{overflow=wrap}
-        ixout888c24 = buf[5 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
-        nonce[4 + i]: {
-            ok -> it = ixout888c24
+            #{overflow=wrap}
+            nonce[4 + i] ?= buf[5 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1098,16 +1072,12 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     sealed-len = rlen - 8
     sealed []byte = with-len(sealed-len)
     i <- [0..sealed-len): {
+        {
 
-        #{overflow=wrap}
-        ixout903c24 = buf[13 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        sealed[i]: {
-            ok -> it = ixout903c24
+            #{overflow=wrap}
+            sealed[i] ?= buf[13 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1196,15 +1166,12 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
-        ixout991c24 = data[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[13 + i]: {
-            ok -> it = ixout991c24
+            #{overflow=wrap}
+            mac-input[13 + i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1218,14 +1185,10 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     #{overflow=wrap}
     plain []byte = with-len(n + 32)
     i <- [0..n): {
-        ixout1008c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        plain[i]: {
-            ok -> it = ixout1008c24
+        {
+            plain[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1256,14 +1219,10 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     iv [16]byte
     iv-bytes = rand-bytes(.rand-state, 16)
     i <- [0..16): {
-        ixout1038c24 = iv-bytes[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        iv[i]: {
-            ok -> it = ixout1038c24
+        {
+            iv[i] ?= iv-bytes[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1304,15 +1263,12 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         }
     }
     i <- [0..padded.len()): {
-        ixout1078c24 = cipher[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        rec[5 + 16 + i]: {
-            ok -> it = ixout1078c24
+            #{overflow=wrap}
+            rec[5 + 16 + i] ?= cipher[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1364,16 +1320,12 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ; 提取 IV
     iv [16]byte
     i <- [0..16): {
+        {
 
-        #{overflow=wrap}
-        ixout1125c24 = buf[5 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        iv[i]: {
-            ok -> it = ixout1125c24
+            #{overflow=wrap}
+            iv[i] ?= buf[5 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1385,16 +1337,12 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     cipher-len = rlen - 16
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
+        {
 
-        #{overflow=wrap}
-        ixout1140c24 = buf[5 + 16 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        cipher[i]: {
-            ok -> it = ixout1140c24
+            #{overflow=wrap}
+            cipher[i] ?= buf[5 + 16 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1442,15 +1390,12 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, content-len)
     i <- [0..content-len): {
-        ixout1191c24 = plain[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[13 + i]: {
-            ok -> it = ixout1191c24
+            #{overflow=wrap}
+            mac-input[13 + i] ?= plain[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1477,13 +1422,11 @@ conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) {
     ; 輸出明文
     out = with-cap(rlen)
     i <- [0..content-len): {
-        ixout1220c18 = plain[i]: {
+        out[i] = plain[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout1220c18
     }
     out.truncate(content-len)
     ct = expected-ct
@@ -1554,15 +1497,12 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
 
     ; 複製訊息
     i <- [0..msg-n): {
-        ixout1291c24 = msg[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        padded[3 + ps-len + i]: {
-            ok -> it = ixout1291c24
+            #{overflow=wrap}
+            padded[3 + ps-len + i] ?= msg[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1609,14 +1549,15 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
                 out[i] = 0
             }
             i <- [0..raw.len()): {
-                ixout1340c34 = raw[i]: {
-                    ok -> it
+                {
+
+                    #{overflow=wrap}
+                    out[shift + i] ?= raw[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
-
-                #{overflow=wrap}
-                out[shift + i] = ixout1340c34
             }
         }
 
@@ -1628,13 +1569,11 @@ rsa-pkcs1-encrypt = (msg []byte, mod-bytes []byte, exp i64) (out []byte) {
             i <- [0..mod-n): {
 
                 #{overflow=wrap}
-                ixout1352c26 = raw[off + i]: {
+                out[i] = raw[off + i]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[i] = ixout1352c26
             }
         }
     }
@@ -1714,14 +1653,8 @@ conn.gen-x25519-keypair = () {
     }
     pub-slice = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
-        ixout1400c26 = pub-slice[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .client-pub[i] ?= ixout1400c26
+            .client-pub[i] ?= pub-slice[i]
         }: {
             err -> _
 
@@ -1817,27 +1750,18 @@ conn.send-client-hello = () (ok bool) {
         ->
     }
     i <- [0..32): {
-        ixout1465c24 = rand-bytes-val[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[pos + i]: {
-            ok -> it = ixout1465c24
-
-            -> _
-        }
-
-        ixout1471c29 = rand-bytes-val[i]: {
-            ok -> it
+            #{overflow=wrap}
+            hs[pos + i] ?= rand-bytes-val[i]
+        }: {
+            err -> _
 
             -> _
         }
 
         {
-            .client-random[i] ?= ixout1471c29
+            .client-random[i] ?= rand-bytes-val[i]
         }: {
             err -> _
 
@@ -2518,16 +2442,10 @@ conn.read-server-hello = () (ok bool) {
 
     ; random (32 bytes)
     i <- [0..32): {
-
-        #{overflow=wrap}
-        ixout1811c29 = buf[pos + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .server-random[i] ?= ixout1811c29
+
+            #{overflow=wrap}
+            .server-random[i] ?= buf[pos + i]
         }: {
             err -> _
 
@@ -2660,16 +2578,12 @@ conn.read-certificate = (cert-out []byte) (ok bool) {
 
     ; 複製憑證
     i <- [0..cert-len): {
+        {
 
-        #{overflow=wrap}
-        ixout1888c24 = buf[pos + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        cert-out[i]: {
-            ok -> it = ixout1888c24
+            #{overflow=wrap}
+            cert-out[i] ?= buf[pos + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -2740,16 +2654,10 @@ conn.read-server-key-exchange = () (ok bool) {
 
         ixout1953c9 != 4 -> return
         i <- [0..65): {
-
-            #{overflow=wrap}
-            ixout1957c29 = buf[pos + 4 + i]: {
-                ok -> it
-
-                -> _
-            }
-
             {
-                .peer-p256[i] ?= ixout1957c29
+
+                #{overflow=wrap}
+                .peer-p256[i] ?= buf[pos + 4 + i]
             }: {
                 err -> _
 
@@ -2761,16 +2669,10 @@ conn.read-server-key-exchange = () (ok bool) {
     }
     plen == 32 -> {
         i <- [0..32): {
-
-            #{overflow=wrap}
-            ixout1966c30 = buf[pos + 4 + i]: {
-                ok -> it
-
-                -> _
-            }
-
             {
-                .server-pub[i] ?= ixout1966c30
+
+                #{overflow=wrap}
+                .server-pub[i] ?= buf[pos + 4 + i]
             }: {
                 err -> _
 
@@ -2793,16 +2695,10 @@ conn.read-server-key-exchange = () (ok bool) {
 
         ixout1976c9 != 4 -> return
         i <- [0..32): {
-
-            #{overflow=wrap}
-            ixout1980c30 = buf[pos + 5 + i]: {
-                ok -> it
-
-                -> _
-            }
-
             {
-                .server-pub[i] ?= ixout1980c30
+
+                #{overflow=wrap}
+                .server-pub[i] ?= buf[pos + 5 + i]
             }: {
                 err -> _
 
@@ -2947,15 +2843,12 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
 
     ; encrypted premaster
     i <- [0..enc-premaster.len()): {
-        ixout2115c24 = enc-premaster[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[6 + i]: {
-            ok -> it = ixout2115c24
+            #{overflow=wrap}
+            hs[6 + i] ?= enc-premaster[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -3038,15 +2931,12 @@ conn.send-finished = () (ok bool) {
     }
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
-        ixout2201c24 = verify[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[4 + i]: {
-            ok -> it = ixout2201c24
+            #{overflow=wrap}
+            hs[4 + i] ?= verify[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -3207,14 +3097,8 @@ conn.derive-keys = (premaster []byte) {
         key-block []byte
         key-block = prf(.master-secret, 'key expansion', ks, 40)
         i <- [0..16): {
-            ixout2343c34 = key-block[i]: {
-                ok -> it
-
-                -> _
-            }
-
             {
-                .client-enc-key[i] ?= ixout2343c34
+                .client-enc-key[i] ?= key-block[i]
             }: {
                 err -> _
 
@@ -3222,16 +3106,10 @@ conn.derive-keys = (premaster []byte) {
             }
         }
         i <- [0..16): {
-
-            #{overflow=wrap}
-            ixout2348c34 = key-block[16 + i]: {
-                ok -> it
-
-                -> _
-            }
-
             {
-                .server-enc-key[i] ?= ixout2348c34
+
+                #{overflow=wrap}
+                .server-enc-key[i] ?= key-block[16 + i]
             }: {
                 err -> _
 
@@ -3239,16 +3117,10 @@ conn.derive-keys = (premaster []byte) {
             }
         }
         i <- [0..4): {
-
-            #{overflow=wrap}
-            ixout2353c35 = key-block[32 + i]: {
-                ok -> it
-
-                -> _
-            }
-
             {
-                .client-gcm-salt[i] ?= ixout2353c35
+
+                #{overflow=wrap}
+                .client-gcm-salt[i] ?= key-block[32 + i]
             }: {
                 err -> _
 
@@ -3256,16 +3128,10 @@ conn.derive-keys = (premaster []byte) {
             }
         }
         i <- [0..4): {
-
-            #{overflow=wrap}
-            ixout2358c35 = key-block[36 + i]: {
-                ok -> it
-
-                -> _
-            }
-
             {
-                .server-gcm-salt[i] ?= ixout2358c35
+
+                #{overflow=wrap}
+                .server-gcm-salt[i] ?= key-block[36 + i]
             }: {
                 err -> _
 
@@ -3285,14 +3151,8 @@ conn.derive-keys = (premaster []byte) {
 
     ; client_write_MAC_key (32)
     i <- [0..32): {
-        ixout2375c30 = key-block[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .client-mac-key[i] ?= ixout2375c30
+            .client-mac-key[i] ?= key-block[i]
         }: {
             err -> _
 
@@ -3302,16 +3162,10 @@ conn.derive-keys = (premaster []byte) {
 
     ; server_write_MAC_key (32)
     i <- [0..32): {
-
-        #{overflow=wrap}
-        ixout2382c30 = key-block[32 + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .server-mac-key[i] ?= ixout2382c30
+
+            #{overflow=wrap}
+            .server-mac-key[i] ?= key-block[32 + i]
         }: {
             err -> _
 
@@ -3321,16 +3175,10 @@ conn.derive-keys = (premaster []byte) {
 
     ; client_write key (16)
     i <- [0..16): {
-
-        #{overflow=wrap}
-        ixout2389c30 = key-block[64 + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .client-enc-key[i] ?= ixout2389c30
+
+            #{overflow=wrap}
+            .client-enc-key[i] ?= key-block[64 + i]
         }: {
             err -> _
 
@@ -3340,16 +3188,10 @@ conn.derive-keys = (premaster []byte) {
 
     ; server_write key (16)
     i <- [0..16): {
-
-        #{overflow=wrap}
-        ixout2396c30 = key-block[80 + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .server-enc-key[i] ?= ixout2396c30
+
+            #{overflow=wrap}
+            .server-enc-key[i] ?= key-block[80 + i]
         }: {
             err -> _
 
@@ -3463,15 +3305,12 @@ conn.handshake-12-body = () (ok bool) {
             ->
         }
         i <- [0..46): {
-            ixout2496c28 = rand-bytes-val[i]: {
-                ok -> it
+            {
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            premaster[2 + i]: {
-                ok -> it = ixout2496c28
+                #{overflow=wrap}
+                premaster[2 + i] ?= rand-bytes-val[i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -3548,27 +3387,18 @@ conn.send-client-hello-13 = () (ok bool) {
         ->
     }
     i <- [0..32): {
-        ixout2564c24 = rand-bytes-val[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[pos + i]: {
-            ok -> it = ixout2564c24
-
-            -> _
-        }
-
-        ixout2570c29 = rand-bytes-val[i]: {
-            ok -> it
+            #{overflow=wrap}
+            hs[pos + i] ?= rand-bytes-val[i]
+        }: {
+            err -> _
 
             -> _
         }
 
         {
-            .client-random[i] ?= ixout2570c29
+            .client-random[i] ?= rand-bytes-val[i]
         }: {
             err -> _
 
@@ -4424,16 +4254,10 @@ conn.read-server-hello-13 = () (ok bool) {
 
     ; random (32 bytes)
     i <- [0..32): {
-
-        #{overflow=wrap}
-        ixout2976c29 = buf[pos + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .server-random[i] ?= ixout2976c29
+
+            #{overflow=wrap}
+            .server-random[i] ?= buf[pos + i]
         }: {
             err -> _
 
@@ -4579,16 +4403,10 @@ conn.read-server-hello-13 = () (ok bool) {
                 ks-len i64 = get-u16(buf, pos + 2)
                 ks-group == TLS-GROUP-X25519 && ks-len == 32 -> {
                     i <- [0..32): {
-
-                        #{overflow=wrap}
-                        ixout3056c42 = buf[pos + 4 + i]: {
-                            ok -> it
-
-                            -> _
-                        }
-
                         {
-                            .server-pub[i] ?= ixout3056c42
+
+                            #{overflow=wrap}
+                            .server-pub[i] ?= buf[pos + 4 + i]
                         }: {
                             err -> _
 
@@ -4654,14 +4472,8 @@ conn.compute-shared-secret-13 = () {
     }
     shared-slice = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
     i <- [0..32): {
-        ixout3102c29 = shared-slice[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .shared-secret[i] ?= ixout3102c29
+            .shared-secret[i] ?= shared-slice[i]
         }: {
             err -> _
 
@@ -4738,14 +4550,8 @@ conn.derive-handshake-keys-13 = () {
 
     ; 儲存 client handshake traffic secret 供 send-finished-13 使用
     i <- [0..32): {
-        ixout3166c27 = c-hs-secret[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-c-secret[i] ?= ixout3166c27
+            .hs-c-secret[i] ?= c-hs-secret[i]
         }: {
             err -> _
 
@@ -4763,14 +4569,8 @@ conn.derive-handshake-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout3181c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-client-key[i] ?= ixout3181c29
+            .hs-client-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -4782,14 +4582,8 @@ conn.derive-handshake-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout3190c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-client-iv[i] ?= ixout3190c28
+            .hs-client-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -4800,14 +4594,8 @@ conn.derive-handshake-keys-13 = () {
     ; server handshake key
     key-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout3198c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-server-key[i] ?= ixout3198c29
+            .hs-server-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -4818,14 +4606,8 @@ conn.derive-handshake-keys-13 = () {
     ; server handshake IV
     iv-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout3206c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-server-iv[i] ?= ixout3206c28
+            .hs-server-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -4914,14 +4696,8 @@ conn.derive-application-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout3278c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-client-key[i] ?= ixout3278c29
+            .ap-client-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -4931,14 +4707,8 @@ conn.derive-application-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout3285c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-client-iv[i] ?= ixout3285c28
+            .ap-client-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -4947,14 +4717,8 @@ conn.derive-application-keys-13 = () {
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout3291c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-server-key[i] ?= ixout3291c29
+            .ap-server-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -4963,14 +4727,8 @@ conn.derive-application-keys-13 = () {
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout3297c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-server-iv[i] ?= ixout3297c28
+            .ap-server-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -4988,13 +4746,11 @@ conn.derive-application-keys-13 = () {
 ; [build-nonce](#tls.build-nonce)
 build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
     i <- [0..12): {
-        ixout4915c16 = iv[i]: {
+        nonce[i] = iv[i]: {
             ok -> it
 
             -> _
         }
-
-        nonce[i] = ixout4915c16
     }
 
     ; XOR sequence number (right-aligned 8 bytes) with last 8 bytes of IV
@@ -5022,14 +4778,10 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     #{overflow=wrap}
     plain []byte = with-len(n + 1)
     i <- [0..n): {
-        ixout3341c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        plain[i]: {
-            ok -> it = ixout3341c24
+        {
+            plain[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -5085,15 +4837,12 @@ conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte, seq i6
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
-        ixout3400c24 = sealed[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        rec[5 + i]: {
-            ok -> it = ixout3400c24
+            #{overflow=wrap}
+            rec[5 + i] ?= sealed[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -5126,16 +4875,12 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     ; 提取密文+tag
     sealed []byte = with-len(rlen)
     i <- [0..rlen): {
+        {
 
-        #{overflow=wrap}
-        ixout3436c24 = rec[5 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        sealed[i]: {
-            ok -> it = ixout3436c24
+            #{overflow=wrap}
+            sealed[i] ?= rec[5 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -5148,62 +4893,42 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     ; 構建 AAD = record_header(5 bytes)
     aad []byte = with-len(5)
 
-    ixout3451c20 = rec[0]: {
-        ok -> it
+    {
+        aad[0] ?= rec[0]
+    }: {
+        err -> _
 
         -> _
     }
 
-    aad[0]: {
-        ok -> it = ixout3451c20
+    {
+        aad[1] ?= rec[1]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout3458c20 = rec[1]: {
-        ok -> it
+    {
+        aad[2] ?= rec[2]
+    }: {
+        err -> _
 
         -> _
     }
 
-    aad[1]: {
-        ok -> it = ixout3458c20
+    {
+        aad[3] ?= rec[3]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout3465c20 = rec[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    aad[2]: {
-        ok -> it = ixout3465c20
-
-        -> _
-    }
-
-    ixout3472c20 = rec[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    aad[3]: {
-        ok -> it = ixout3472c20
-
-        -> _
-    }
-
-    ixout3479c20 = rec[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    aad[4]: {
-        ok -> it = ixout3479c20
+    {
+        aad[4] ?= rec[4]
+    }: {
+        err -> _
 
         -> _
     }
@@ -5236,13 +4961,11 @@ conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64) (ct i6
     }
     out = with-len(plain-len)
     i <- [0..plain-len): {
-        ixout3505c18 = plain[i]: {
+        out[i] = plain[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout3505c18
     }
 }
 
@@ -5313,13 +5036,11 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     ; 但 read-encrypted-record-13 已經移除了 inner content type，plain 就是純 handshake 資料
     pos = .hs-plain-pos
 
-    ixout5234c1d = .hs-plain-buf[pos]: {
+    msg-type = .hs-plain-buf[pos]: {
         ok -> it
 
         -> _
     }
-
-    msg-type = ixout5234c1d
 
     #{overflow=wrap}
     msg-len = get-u24(.hs-plain-buf, pos + 1)
@@ -5332,13 +5053,11 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
 
         #{overflow=wrap}
-        ixout5247c24 = .hs-plain-buf[pos + 4 + i]: {
+        msg-data[i] = .hs-plain-buf[pos + 4 + i]: {
             ok -> it
 
             -> _
         }
-
-        msg-data[i] = ixout5247c24
     }
     msg-data.truncate(msg-len)
 
@@ -5506,15 +5225,12 @@ conn.send-finished-13 = () (ok bool) {
     }
     put-u24(hs, 1, 32)
     i <- [0..32): {
-        ixout3748c24 = verify[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[4 + i]: {
-            ok -> it = ixout3748c24
+            #{overflow=wrap}
+            hs[4 + i] ?= verify[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -5795,14 +5511,10 @@ conn.recv = (buf str, n i64) (read-n i64) {
     copy-n = plain.len()
     copy-n > n -> copy-n = n
     i <- [0..copy-n): {
-        ixout4012c24 = plain[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        buf[i]: {
-            ok -> it = ixout4012c24
+        {
+            buf[i] ?= plain[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -5919,16 +5631,11 @@ server-conn {
 server-conn.append-hs = (data []byte) {
     n = data.len()
     i <- [0..n): {
-        ixout4132c36 = data[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
         hs-wr-idx = .hs-buf-len + i
         {
-            .hs-buf[hs-wr-idx] ?= ixout4132c36
+            .hs-buf[hs-wr-idx] ?= data[i]
         }: {
             err -> _
 
@@ -5954,16 +5661,11 @@ server-conn.append-hs-from = (buf []byte, offset i64, n i64) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        ixout4149c36 = buf[offset + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        #{overflow=wrap}
         hs-wr-idx = .hs-buf-len + i
         {
-            .hs-buf[hs-wr-idx] ?= ixout4149c36
+
+            #{overflow=wrap}
+            .hs-buf[hs-wr-idx] ?= buf[offset + i]
         }: {
             err -> _
 
@@ -6002,16 +5704,10 @@ server-conn.read-client-hello = () (ok bool) {
 
     ; client random (32 bytes)
     i <- [0..32): {
-
-        #{overflow=wrap}
-        ixout4181c29 = buf[pos + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .client-random[i] ?= ixout4181c29
+
+            #{overflow=wrap}
+            .client-random[i] ?= buf[pos + i]
         }: {
             err -> _
 
@@ -6237,16 +5933,10 @@ server-conn.read-client-hello = () (ok bool) {
                             ks-key-len = get-u16(buf, kkl-pos)
                             ks-group == TLS-GROUP-X25519 && ks-key-len == 32 -> {
                                 i <- [0..32): {
-
-                                    #{overflow=wrap}
-                                    ixout4347c54 = buf[ks-pos + 4 + i]: {
-                                        ok -> it
-
-                                        -> _
-                                    }
-
                                     {
-                                        .client-pub[i] ?= ixout4347c54
+
+                                        #{overflow=wrap}
+                                        .client-pub[i] ?= buf[ks-pos + 4 + i]
                                     }: {
                                         err -> _
 
@@ -6343,27 +6033,18 @@ server-conn.send-server-hello = () (ok bool) {
         ->
     }
     i <- [0..32): {
-        ixout4408c24 = rand-bytes-val[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[pos + i]: {
-            ok -> it = ixout4408c24
-
-            -> _
-        }
-
-        ixout4414c29 = rand-bytes-val[i]: {
-            ok -> it
+            #{overflow=wrap}
+            hs[pos + i] ?= rand-bytes-val[i]
+        }: {
+            err -> _
 
             -> _
         }
 
         {
-            .server-random[i] ?= ixout4414c29
+            .server-random[i] ?= rand-bytes-val[i]
         }: {
             err -> _
 
@@ -6567,15 +6248,12 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
                 }
             }
             i <- [0..raw.len()): {
-                ixout4578c32 = raw[i]: {
-                    ok -> it
+                {
 
-                    -> _
-                }
-
-                #{overflow=wrap}
-                m-bytes[shift + i]: {
-                    ok -> it = ixout4578c32
+                    #{overflow=wrap}
+                    m-bytes[shift + i] ?= raw[i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -6586,16 +6264,12 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
             m-bytes = with-len(mod-len)
             off = raw.len() - mod-len
             i <- [0..mod-len): {
+                {
 
-                #{overflow=wrap}
-                ixout4592c32 = raw[off + i]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                m-bytes[i]: {
-                    ok -> it = ixout4592c32
+                    #{overflow=wrap}
+                    m-bytes[i] ?= raw[off + i]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -6661,13 +6335,11 @@ rsa-pkcs1-decrypt = (ciphertext []byte, n []byte, d []byte) (out []byte) {
     i <- [0..msg-len): {
 
         #{overflow=wrap}
-        ixout4631c18 = m-bytes[sep-pos + 1 + i]: {
+        out[i] = m-bytes[sep-pos + 1 + i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout4631c18
     }
     out.truncate(msg-len)
 }
@@ -6694,16 +6366,12 @@ server-conn.read-client-key-exchange = () (ok bool) {
     ; 提取加密的 premaster
     enc-premaster []byte = with-len(enc-len)
     i <- [0..enc-len): {
+        {
 
-        #{overflow=wrap}
-        ixout4661c24 = buf[11 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        enc-premaster[i]: {
-            ok -> it = ixout4661c24
+            #{overflow=wrap}
+            enc-premaster[i] ?= buf[11 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -6726,14 +6394,10 @@ server-conn.read-client-key-exchange = () (ok bool) {
     ; 確保 premaster 為 48 bytes
     fixed-premaster []byte = with-len(48)
     i <- [0..48): {
-        ixout4687c24 = premaster[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        fixed-premaster[i]: {
-            ok -> it = ixout4687c24
+        {
+            fixed-premaster[i] ?= premaster[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -6812,14 +6476,8 @@ server-conn.derive-keys = (premaster []byte) {
     ; 分割 key_block
     ; client_write_MAC_key (32)
     i <- [0..32): {
-        ixout4752c30 = key-block[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .client-mac-key[i] ?= ixout4752c30
+            .client-mac-key[i] ?= key-block[i]
         }: {
             err -> _
 
@@ -6829,16 +6487,10 @@ server-conn.derive-keys = (premaster []byte) {
 
     ; server_write_MAC_key (32)
     i <- [0..32): {
-
-        #{overflow=wrap}
-        ixout4759c30 = key-block[32 + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .server-mac-key[i] ?= ixout4759c30
+
+            #{overflow=wrap}
+            .server-mac-key[i] ?= key-block[32 + i]
         }: {
             err -> _
 
@@ -6848,16 +6500,10 @@ server-conn.derive-keys = (premaster []byte) {
 
     ; client_write key (16)
     i <- [0..16): {
-
-        #{overflow=wrap}
-        ixout4766c30 = key-block[64 + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .client-enc-key[i] ?= ixout4766c30
+
+            #{overflow=wrap}
+            .client-enc-key[i] ?= key-block[64 + i]
         }: {
             err -> _
 
@@ -6867,16 +6513,10 @@ server-conn.derive-keys = (premaster []byte) {
 
     ; server_write key (16)
     i <- [0..16): {
-
-        #{overflow=wrap}
-        ixout4773c30 = key-block[80 + i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .server-enc-key[i] ?= ixout4773c30
+
+            #{overflow=wrap}
+            .server-enc-key[i] ?= key-block[80 + i]
         }: {
             err -> _
 
@@ -6920,15 +6560,12 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, n)
     i <- [0..n): {
-        ixout4815c24 = data[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[13 + i]: {
-            ok -> it = ixout4815c24
+            #{overflow=wrap}
+            mac-input[13 + i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -6942,14 +6579,10 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
     #{overflow=wrap}
     plain []byte = with-len(n + 32)
     i <- [0..n): {
-        ixout4832c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        plain[i]: {
-            ok -> it = ixout4832c24
+        {
+            plain[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -6986,14 +6619,10 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         ->
     }
     i <- [0..16): {
-        ixout4864c24 = iv-bytes[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        iv[i]: {
-            ok -> it = ixout4864c24
+        {
+            iv[i] ?= iv-bytes[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -7033,15 +6662,12 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
         }
     }
     i <- [0..padded.len()): {
-        ixout4903c24 = cipher[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        rec[5 + 16 + i]: {
-            ok -> it = ixout4903c24
+            #{overflow=wrap}
+            rec[5 + 16 + i] ?= cipher[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -7079,16 +6705,12 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ; 提取 IV
     iv [16]byte
     i <- [0..16): {
+        {
 
-        #{overflow=wrap}
-        ixout4940c24 = buf[5 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        iv[i]: {
-            ok -> it = ixout4940c24
+            #{overflow=wrap}
+            iv[i] ?= buf[5 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -7099,16 +6721,12 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     cipher-len = rlen - 16
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
+        {
 
-        #{overflow=wrap}
-        ixout4954c24 = buf[5 + 16 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        cipher[i]: {
-            ok -> it = ixout4954c24
+            #{overflow=wrap}
+            cipher[i] ?= buf[5 + 16 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -7152,15 +6770,12 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     put-u16(mac-input, 9, TLS-VERSION)
     put-u16(mac-input, 11, data-len)
     i <- [0..data-len): {
-        ixout5001c24 = plain[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[13 + i]: {
-            ok -> it = ixout5001c24
+            #{overflow=wrap}
+            mac-input[13 + i] ?= plain[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -7188,13 +6803,11 @@ server-conn.decrypt-record = (buf []byte, expected-ct i64) (ct i64, out []byte) 
     ; 提取明文資料
     out = with-len(data-len)
     i <- [0..data-len): {
-        ixout5031c18 = plain[i]: {
+        out[i] = plain[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout5031c18
     }
     out.truncate(data-len)
     ct = expected-ct
@@ -7354,15 +6967,12 @@ server-conn.send-finished = () (ok bool) {
     }
     put-u24(hs, 1, TLS-FINISHED-SIZE)
     i <- [0..TLS-FINISHED-SIZE): {
-        ixout5184c24 = verify[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[4 + i]: {
-            ok -> it = ixout5184c24
+            #{overflow=wrap}
+            hs[4 + i] ?= verify[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -7452,14 +7062,8 @@ server-conn.send-server-hello-13 = () (ok bool) {
     }
     pub-slice = x25519.x25519-scalarmult-base-bytes(priv-slice)
     i <- [0..32): {
-        ixout5242c26 = pub-slice[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .server-pub[i] ?= ixout5242c26
+            .server-pub[i] ?= pub-slice[i]
         }: {
             err -> _
 
@@ -7504,27 +7108,18 @@ server-conn.send-server-hello-13 = () (ok bool) {
         ->
     }
     i <- [0..32): {
-        ixout5272c24 = rand-bytes-val[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[pos + i]: {
-            ok -> it = ixout5272c24
-
-            -> _
-        }
-
-        ixout5278c29 = rand-bytes-val[i]: {
-            ok -> it
+            #{overflow=wrap}
+            hs[pos + i] ?= rand-bytes-val[i]
+        }: {
+            err -> _
 
             -> _
         }
 
         {
-            .server-random[i] ?= ixout5278c29
+            .server-random[i] ?= rand-bytes-val[i]
         }: {
             err -> _
 
@@ -7794,14 +7389,8 @@ server-conn.compute-shared-secret-13 = () {
     }
     shared-slice = x25519.x25519-scalarmult-bytes(priv-slice, pub-slice)
     i <- [0..32): {
-        ixout5420c29 = shared-slice[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .shared-secret[i] ?= ixout5420c29
+            .shared-secret[i] ?= shared-slice[i]
         }: {
             err -> _
 
@@ -7872,14 +7461,8 @@ server-conn.derive-handshake-keys-13 = () {
 
     c-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 'c hs traffic', hs-hash, 32)
     i <- [0..32): {
-        ixout5478c27 = c-hs-secret[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-c-secret[i] ?= ixout5478c27
+            .hs-c-secret[i] ?= c-hs-secret[i]
         }: {
             err -> _
 
@@ -7892,14 +7475,8 @@ server-conn.derive-handshake-keys-13 = () {
 
     s-hs-secret = hkdf.hkdf-expand-label-vec(hs-prk[..], 's hs traffic', hs-hash, 32)
     i <- [0..32): {
-        ixout5488c27 = s-hs-secret[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-s-secret[i] ?= ixout5488c27
+            .hs-s-secret[i] ?= s-hs-secret[i]
         }: {
             err -> _
 
@@ -7911,14 +7488,8 @@ server-conn.derive-handshake-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout5497c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-client-key[i] ?= ixout5497c29
+            .hs-client-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -7928,14 +7499,8 @@ server-conn.derive-handshake-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout5504c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-client-iv[i] ?= ixout5504c28
+            .hs-client-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -7944,14 +7509,8 @@ server-conn.derive-handshake-keys-13 = () {
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout5510c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-server-key[i] ?= ixout5510c29
+            .hs-server-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -7960,14 +7519,8 @@ server-conn.derive-handshake-keys-13 = () {
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-hs-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout5516c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .hs-server-iv[i] ?= ixout5516c28
+            .hs-server-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -8071,14 +7624,8 @@ server-conn.derive-application-keys-13 = () {
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout5599c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-client-key[i] ?= ixout5599c29
+            .ap-client-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -8088,14 +7635,8 @@ server-conn.derive-application-keys-13 = () {
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(c-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout5606c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-client-iv[i] ?= ixout5606c28
+            .ap-client-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -8104,14 +7645,8 @@ server-conn.derive-application-keys-13 = () {
     }
     key-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'key', empty-ctx, TLS13-KEY-SIZE)
     i <- [0..16): {
-        ixout5612c29 = key-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-server-key[i] ?= ixout5612c29
+            .ap-server-key[i] ?= key-tmp[i]
         }: {
             err -> _
 
@@ -8120,14 +7655,8 @@ server-conn.derive-application-keys-13 = () {
     }
     iv-tmp = hkdf.hkdf-expand-label-vec(s-ap-secret, 'iv', empty-ctx, TLS13-IV-SIZE)
     i <- [0..12): {
-        ixout5618c28 = iv-tmp[i]: {
-            ok -> it
-
-            -> _
-        }
-
         {
-            .ap-server-iv[i] ?= ixout5618c28
+            .ap-server-iv[i] ?= iv-tmp[i]
         }: {
             err -> _
 
@@ -8154,14 +7683,10 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     #{overflow=wrap}
     plain []byte = with-len(n + 1)
     i <- [0..n): {
-        ixout5643c24 = data[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        plain[i]: {
-            ok -> it = ixout5643c24
+        {
+            plain[i] ?= data[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -8214,15 +7739,12 @@ server-conn.encrypt-record-13 = (ct i64, data []byte, key [16]byte, iv [12]byte,
     put-u16(rec, 1, TLS-VERSION)
     put-u16(rec, 3, rec-len)
     i <- [0..rec-len): {
-        ixout5699c24 = sealed[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        rec[5 + i]: {
-            ok -> it = ixout5699c24
+            #{overflow=wrap}
+            rec[5 + i] ?= sealed[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -8255,16 +7777,12 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     ; 提取密文+tag
     sealed []byte = with-len(rlen)
     i <- [0..rlen): {
+        {
 
-        #{overflow=wrap}
-        ixout5735c24 = rec[5 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        sealed[i]: {
-            ok -> it = ixout5735c24
+            #{overflow=wrap}
+            sealed[i] ?= rec[5 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -8277,62 +7795,42 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     ; 構建 AAD = record_header(5 bytes)
     aad []byte = with-len(5)
 
-    ixout5750c20 = rec[0]: {
-        ok -> it
+    {
+        aad[0] ?= rec[0]
+    }: {
+        err -> _
 
         -> _
     }
 
-    aad[0]: {
-        ok -> it = ixout5750c20
+    {
+        aad[1] ?= rec[1]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout5757c20 = rec[1]: {
-        ok -> it
+    {
+        aad[2] ?= rec[2]
+    }: {
+        err -> _
 
         -> _
     }
 
-    aad[1]: {
-        ok -> it = ixout5757c20
+    {
+        aad[3] ?= rec[3]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout5764c20 = rec[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    aad[2]: {
-        ok -> it = ixout5764c20
-
-        -> _
-    }
-
-    ixout5771c20 = rec[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    aad[3]: {
-        ok -> it = ixout5771c20
-
-        -> _
-    }
-
-    ixout5778c20 = rec[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    aad[4]: {
-        ok -> it = ixout5778c20
+    {
+        aad[4] ?= rec[4]
+    }: {
+        err -> _
 
         -> _
     }
@@ -8365,13 +7863,11 @@ server-conn.decrypt-record-13 = (rec []byte, key [16]byte, iv [12]byte, seq i64)
     }
     out = with-len(plain-len)
     i <- [0..plain-len): {
-        ixout5804c18 = plain[i]: {
+        out[i] = plain[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout5804c18
     }
 }
 
@@ -8426,13 +7922,11 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     }
     pos = .hs-plain-pos
 
-    ixout8271c1d = .hs-plain-buf[pos]: {
+    msg-type = .hs-plain-buf[pos]: {
         ok -> it
 
         -> _
     }
-
-    msg-type = ixout8271c1d
 
     #{overflow=wrap}
     msg-len = get-u24(.hs-plain-buf, pos + 1)
@@ -8443,13 +7937,11 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
 
         #{overflow=wrap}
-        ixout8282c24 = .hs-plain-buf[pos + 4 + i]: {
+        msg-data[i] = .hs-plain-buf[pos + 4 + i]: {
             ok -> it
 
             -> _
         }
-
-        msg-data[i] = ixout8282c24
     }
     msg-data.truncate(msg-len)
     full-msg []byte
@@ -8648,15 +8140,12 @@ server-conn.send-finished-13 = () (ok bool) {
     }
     put-u24(hs, 1, 32)
     i <- [0..32): {
-        ixout6048c24 = verify[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        hs[4 + i]: {
-            ok -> it = ixout6048c24
+            #{overflow=wrap}
+            hs[4 + i] ?= verify[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -8920,14 +8409,10 @@ server-conn.recv = (buf str, n i64) (read-n i64) {
 
     ; 直接寫入 buf（避免 buf = tmp-str 不會傳播到呼叫端）
     i <- [0..copy-n): {
-        ixout6299c24 = plain[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        buf[i]: {
-            ok -> it = ixout6299c24
+        {
+            buf[i] ?= plain[i]
+        }: {
+            err -> _
 
             -> _
         }

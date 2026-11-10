@@ -142,7 +142,11 @@ bigint.copy = () (out bigint) {
     out.sign = .sign
     out.len = .len
     i <- [0..self.len): {
-        out.limbs[i] = .limbs[i]
+        out.limbs[i] = .limbs[i]: {
+            ok -> it
+
+            -> _
+        }
     }
 }
 
@@ -496,11 +500,19 @@ bigint.abs-add = (b bigint) (c bigint) {
     i <- [0..cl): {
         av = 0
         i < al -> {
-            av = .limbs[i]
+            av = .limbs[i]: {
+                ok -> it
+
+                -> _
+            }
         }
         bv = 0
         i < bl -> {
-            bv = b.limbs[i]
+            bv = b.limbs[i]: {
+                ok -> it
+
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -525,10 +537,18 @@ bigint.abs-sub = (b bigint) (c bigint) {
     c.limbs = with-len(al)
     c.len = al
     i <- [0..al): {
-        av = .limbs[i]
+        av = .limbs[i]: {
+            ok -> it
+
+            -> _
+        }
         bv = 0
         i < bl -> {
-            bv = b.limbs[i]
+            bv = b.limbs[i]: {
+                ok -> it
+
+                -> _
+            }
         }
 
         #{overflow=wrap}
@@ -735,7 +755,11 @@ bigint.div-mod = (b bigint) (q bigint, r bigint) {
     i <- [0..norm-a-len): {
         av = 0
         i < .len -> {
-            av = .limbs[i]
+            av = .limbs[i]: {
+                ok -> it
+
+                -> _
+            }
         }
 
         norm-a.limbs[i] = av
@@ -1087,6 +1111,9 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
     i <- [bits - 1..0]: {
         r = r._mul(r)
 
+        ; 每步都取模：否則結果是全冪而非餘數（且中間值會無界膨脹）
+        _, r = r.div-mod(modulus)
+
         #{overflow=wrap}
         elimb = i / 32
         ebit = i % 32
@@ -1097,6 +1124,7 @@ bigint.mod-pow = (exp bigint, modulus bigint) (r bigint) {
         }
         (el0 >> ebit) & 1 == 1 -> {
             r = r._mul(b)
+            _, r = r.div-mod(modulus)
         }
     }
 }
@@ -1166,9 +1194,19 @@ bigint.shl1 = () {
         ; （實測 bigint.shl(one, 52) 曾因此得到 2^1074 而非 2^52）。
         grown []i64 = with-len(.len + 1)
         k <- [0..self.len): {
-            grown[k] = .limbs[k]
+            {
+                grown[k] ?= .limbs[k]
+            }: {
+                err -> _
+
+                -> _
+            }
         }
-        grown[.len] = carry
+        grown[.len]: {
+            ok -> it = carry
+
+            -> _
+        }
         .limbs = grown
 
         #{overflow=wrap}
@@ -1318,13 +1356,11 @@ bigint.to-str = () (out str) {
     #{overflow=wrap}
     j = bufn - 1
     (j >= 0) {
-        ixout1077c22 = buf[j]: {
+        out[out-n] = buf[j]: {
             ok -> it
 
             -> _
         }
-
-        out[out-n] = ixout1077c22
 
         #{overflow=wrap}
         {
@@ -1429,15 +1465,20 @@ bigint.to-i64 = () (v ?i64) {
 ; [to-hex](#bigint.to-hex)
 bigint.to-hex = () (out str) {
     out = with-cap(256)
+    z = .is-zero()
+    z -> {
+        out[0] = 48
+        return
+    }
     hex = '0123456789abcdef'
     out-n = 0
     .sign == -1 -> {
         out[0] = 45
         out-n = 1
     }
-
-    #{overflow=wrap}
-    i <- [.len - 1..0]: {
+    nl = .len
+    started = 0
+    i <- [nl - 1..0]: {
         li0 = .limbs[i]: {
             ok -> it
 
@@ -1445,63 +1486,34 @@ bigint.to-hex = () (out str) {
         }
         limb = li0 & MASK
 
-        #{overflow=wrap}
-        {
-            i == .len - 1 -> {
-                limb != 0 -> {
-                    done = 0
-                    shift = 28
-                    (shift >= 0) {
-                        nibble = (limb >> shift) & 15
-                        done == 1 || nibble != 0
-                        done = 1
-                        out[out-n] = hex[nibble]
-                        {
-                            out-n-opt2 = out-n + 1
-                            out-n-opt2: {
-                                ok -> out-n = it
-
-                                ->
-                            }
-                        }
-                    }
-                    {
-                        shift-opt2 = shift - 4
-                        shift-opt2: {
-                            ok -> shift = it
-
-                            ->
-                        }
-                    }
-                }
-            }
-        }
+        ; 每個 limb 為 32 位元 = 8 個 nibble；最高 limb 的前導零略去
         shift = 28
         (shift >= 0) {
             nibble = (limb >> shift) & 15
-            out[out-n] = hex[nibble]
-
-            #{overflow=wrap}
+            nibble != 0 -> started = 1
             {
+                started == 1 -> {
+                    out[out-n] = hex[nibble]: {
+                        ok -> it
 
-                #{overflow=wrap}
-                out-n-opt3 = out-n + 1
-                out-n-opt3: {
-                    ok -> out-n = it
+                        -> _
+                    }
+                    {
+                        out-n-f = out-n + 1
+                        out-n-f: {
+                            ok -> out-n = it
 
-                    ->
+                            -> _
+                        }
+                    }
                 }
             }
-
-            #{overflow=wrap}
             {
-
-                #{overflow=wrap}
-                shift-opt3 = shift - 4
-                shift-opt3: {
+                shift-f = shift - 4
+                shift-f: {
                     ok -> shift = it
 
-                    ->
+                    -> _
                 }
             }
         }

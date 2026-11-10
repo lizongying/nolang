@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['str 변환', 'ts', 'sbh']
   'number.f64.to-str-fixed': ['str-fixed 변환', 'tsf', 'sfbh']
   'number.f64.to-str-general': ['str-general 변환', 'tsg', 'sgbh']
-  'number.f64.to-str-sci': ['str-sci 변환', 'tss', 'ssbh']
   'number.f64.to-u32': ['u32 변환', 'tu', 'u3bh']
   'number.f64.to-u64': ['u64 변환', 'tu', 'u6bh']
   'number.i128.sqrt': ['제곱근', 's', 'jgg']

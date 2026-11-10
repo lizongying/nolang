@@ -498,9 +498,9 @@ val > 0 -> print('PASS: sysconf returns positive for nproc')
 ...
 ut-path = '/tmp/nolang-utime-test.txt'
 fs.remove(ut-path)
-fd-w__1 = fs.open-write(ut-path)
-fd-w__1 >= 0 -> {
-    fs.close(fd-w__1)
+fd-w-1 = fs.open-write(ut-path)
+fd-w-1 >= 0 -> {
+    fs.close(fd-w-1)
     ut-ok = fs.utime(ut-path, 1000, 2000)
     eprint('utime ok = ')
     print(ut-ok.to-str())

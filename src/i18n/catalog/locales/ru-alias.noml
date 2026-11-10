@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['Преобразует f64 в строку', 'ts', 'pf6vs']
   'number.f64.to-str-fixed': ['Преобразование с фиксированной точкой', 'tsf', 'psft']
   'number.f64.to-str-general': ['Общий формат', 'tsg', 'of']
-  'number.f64.to-str-sci': ['Научная нотация', 'tss', 'nn']
   'number.f64.to-u32': ['to-u32', 'tu', 'tu3']
   'number.f64.to-u64': ['to-u64', 'tu', 'tu6']
   'number.i128.sqrt': ['── 128-бит целое method copies ──', 's', '1btmc']

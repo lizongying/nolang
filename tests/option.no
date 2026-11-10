@@ -770,7 +770,7 @@ print(5)
 
 ; ✅ match 語句：分支是代碼塊
 
-x__1 = 3
+x-1 = 3
 x: {
     1 -> print(11)
 
@@ -778,7 +778,7 @@ x: {
 
     -> print(33)
 }
-x__1 = 4
+x-1 = 4
 x: {
     1 -> print(111)
 
@@ -788,7 +788,7 @@ x: {
 }
 
 ; ✅ match 表達式：分支體是單一表達式
-a__1 = 100
+a-1 = 100
 b = 101
 
 #{overflow=wrap}
@@ -798,21 +798,21 @@ result = x: {
 
     2 -> 2 + 1; 簡單表達式
 
-    -> a__1 + b
+    -> a-1 + b
 }
 print(result)
 
 ; todo 特殊match 現在有問題
 {
-    a__1 == 99 -> {
-        a__1 = 1
+    a-1 == 99 -> {
+        a-1 = 1
         b = 2
 
         ; todo      print(a+b)
         print(b)
     }
 
-    a__1 == 2 -> print('a')
+    a-1 == 2 -> print('a')
 
     -> print('b')
 }

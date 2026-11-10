@@ -317,10 +317,10 @@ keep = b0: {
 ck('txt-oob-untouched', keep)
 
 ; ── str：堆上長字串，容量取自 cap 欄位 ──
-s__1 = 'hello world this is a longer string that is definitely stored as a str-long buffer'
+s-1 = 'hello world this is a longer string that is definitely stored as a str-long buffer'
 
 sp = false
-r4 = s__1.set-byte(0, 72)
+r4 = s-1.set-byte(0, 72)
 sp = r4: {
     ok -> true
 
@@ -329,7 +329,7 @@ sp = r4: {
 ck('str-in-range-present', sp)
 
 so = false
-r5 = s__1.set-byte(99999, 71)
+r5 = s-1.set-byte(99999, 71)
 so = r5: {
     ok -> true
 
@@ -339,7 +339,7 @@ ck('str-oob-nil', ! so)
 
 ; str 寫入生效：首字元改為 'H'（72）
 se = false
-c0 = s__1.byte(0)
+c0 = s-1.byte(0)
 se = c0: {
     ok -> (it == 72)
 

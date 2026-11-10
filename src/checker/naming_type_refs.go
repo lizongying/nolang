@@ -28,7 +28,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/lizongying/nolang/i18n"
 	"github.com/lizongying/nolang/lexer"
 	"github.com/lizongying/nolang/parser"
 )
@@ -92,7 +91,7 @@ func validateTypeNameNaming(program *parser.Program) []ValidateResult {
 				File:    file,
 				Line:    tok.Line,
 				Column:  tok.Column,
-				Message: i18n.T("2dhoris2", "'%s' should use only lowercase letters and hyphens", seg),
+				Message: namingMessage(seg),
 			})
 		}
 	}

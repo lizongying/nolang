@@ -1485,8 +1485,14 @@ func ValidateNaming(program *parser.Program) []ValidateResult {
 
 // namingViolation 回報一個識別符違反命名規範的診斷訊息；合法則回 ""。
 // 豁免：顯式捨棄 `_`、編譯器合成 `__` 前綴、模組級 ALL-CAPS 常數（如
-// LEVEL-ERROR）。其餘走 isValidVarName：只允許小寫字母、數字與中劃線，
-// 故中間底線（如 `tmp__1`）會被判定違規。
+// LEVEL-ERROR）、以及單一前導底線的模組私有名（如 std 的
+// `_days-in-month` / `_RE-QUANT-NONE`）。
+//
+// 前導底線與「中間底線」是兩件事：使用者要求禁的是 `tmp__1` 這種把底線
+// 夾在名字中間的寫法；單一 `_` 前綴是 std 既有的私有標記，且函式名含底線
+// 在 checkNaming 早已整條豁免、合成變數也走 `__` 前綴豁免，頂層宣告比照
+// 辦理才不會對既有 std 產生假警報。去掉前導底線後仍要過同一套規則，所以
+// `_foo_bar`、`_Foo` 這類「前導 + 中間底線 / 大寫」依然違規。
 func namingViolation(name string) string {
 	if name == "" {
 		return ""
@@ -1497,8 +1503,13 @@ func namingViolation(name string) string {
 	if isAllCapsConst(name) {
 		return ""
 	}
+	if bare := strings.TrimPrefix(name, "_"); bare != name {
+		if isAllCapsConst(bare) || isValidVarName(bare) {
+			return ""
+		}
+	}
 	if !isValidVarName(name) {
-		return i18n.T("2dhoris2", "'%s' should use only lowercase letters and hyphens", name)
+		return namingMessage(name)
 	}
 	return ""
 }
@@ -1566,7 +1577,7 @@ func checkNaming(sem *parser.SemanticContext, stmt parser.Statement, file string
 				File:    file,
 				Line:    s.Name.Token.Line,
 				Column:  s.Name.Token.Column,
-				Message: i18n.T("2dhoris2", "'%s' should use only lowercase letters and hyphens", s.Name.Value),
+				Message: namingMessage(s.Name.Value),
 			})
 		}
 	case *parser.BlockStatement:
@@ -3845,15 +3856,47 @@ var overflowArithOps = map[string]bool{
 	"+": true, "-": true, "*": true, "/": true,
 }
 
+// overflowSite 標記「這個整數運算處在哪一類位置」，決定訊息裡哪幾種補救寫得出來。
+// 位置不同，可用的語法就不同——錯誤的建議會讓使用者去寫編不過或毫無作用的東西。
+type overflowSite int
+
+const (
+	// overflowSiteBound：運算式是陳述的「值根」（`x = a + b`、裸表達式陳述、
+	// `?=` 右式）。lowering 的 capture pass 會把整條右值鏈判成 `?T`，實測
+	// `x = (a + b) * c` 產生兩條 `llvm.sadd/smul.with.overflow`，加 `#{overflow=wrap}`
+	// 後歸零。三種補救（`?T` 接收 / match 解包 / `_ =` 丟棄）在此全部成立。
+	overflowSiteBound overflowSite = iota
+
+	// overflowSiteOperand：運算式是索引運算元（`arr[a + b]`）。值由外層 `[...]`
+	// 直接消費，型別必須是純整數，故 `?T` 接收 / match 解包 / `_ =` 丟棄三種
+	// 補救都與它無關（那是值根本身的話題，見 overflowSiteBound 的訊息）。此處
+	// 只剩一件事可講：**給這條陳述加 `#{overflow = …}` 註解聲明溢出行為**。
+	//
+	// 註解是**逐語句**生效的：`#{overflow=wrap}` 寫在上一行
+	// （`sb2 = handshake[pos + i]`）只覆蓋那一條，管不到下一條的 `arr[8 + i]`；
+	// 只有寫在 `arr[8 + i]` 所屬那條陳述（或其所在區塊／函式的註解位置）上才生
+	// 效。缺註解 ⇒ 報，且訊息只教註解。
+	//
+	// 與 option match 的關係：`arr[a + b]: { ok -> … -> _ }` 會被
+	// resolveSubjectMatch 提升成 `__idx_L_C ?T`，下標溢位短路進同一個失敗臂
+	// ——那是**已經被消費**、不會崩不會靜默算錯，但失敗臂（常見 `-> _`）會把
+	// 這筆資料默默丟掉，使用者從未聲明「我要這個行為」。所以本 lint 照樣報，
+	// 只是報的是「請加註解聲明」。
+	overflowSiteOperand
+)
+
 // walkExprForIntOverflow 遞迴收集表達式內所有「未標註且可能溢出的整數運算」InfixExpression。
 // 規則（與 codegen 預設 option-on-overflow 語意一致）：
 //   - + - *：左右運算元皆為整數（有號或無號，含未知型別）時提示；任一侧確定為
 //     非整數（str / float 等）則跳過（該運算非整數算術）。
 //   - /：僅當至少一側為有號整數時提示（無號除法永不溢出；有號除法 INT_MIN / -1 溢出）。
 //
+// site 沿子樹向下傳遞（索引運算元整棵子樹都算 operand 位置），由呼叫端決定
+// emit 該用哪一版訊息；理由見 overflowSite。
+//
 // line 為包容此表達式的「葉」語句所在行（插入註解的位置）；sem 用於遞迴進入 if
 // 分支區塊時對其中的子語句做註解感知掃描。
-func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int)) {
+func walkExprForIntOverflow(e parser.Expression, site overflowSite, file string, line int, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int, site overflowSite)) {
 	if e == nil {
 		return
 	}
@@ -3873,21 +3916,21 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 					prompt = true
 				}
 				if prompt {
-					emit(file, line, x.Token.Column)
+					emit(file, line, x.Token.Column, site)
 				}
 			}
 		}
-		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
-		walkExprForIntOverflow(x.Right, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Left, site, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Right, site, file, line, sem, declared, funcTypes, emit)
 	case *parser.PrefixExpression:
-		walkExprForIntOverflow(x.Right, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Right, site, file, line, sem, declared, funcTypes, emit)
 	case *parser.CallExpression:
-		walkExprForIntOverflow(x.Function, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Function, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
 		for _, a := range x.Arguments {
-			walkExprForIntOverflow(a, file, line, sem, declared, funcTypes, emit)
+			walkExprForIntOverflow(a, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
 		}
 	case *parser.IfExpression:
-		walkExprForIntOverflow(x.Condition, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Condition, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
 		if x.Consequence != nil {
 			for _, s := range x.Consequence.Statements {
 				walkStmtForOverflow(s, file, sem, declared, funcTypes, emit)
@@ -3899,25 +3942,31 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 			}
 		}
 	case *parser.IndexExpression:
-		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
-		walkExprForIntOverflow(x.Index, file, line, sem, declared, funcTypes, emit)
+		// 只有下標位置是「被 `[...]` 消費」的純整數上下文；容器本身照舊。
+		walkExprForIntOverflow(x.Left, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Index, overflowSiteOperand, file, line, sem, declared, funcTypes, emit)
 	case *parser.AssignExpression:
-		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
-		walkExprForIntOverflow(x.Value, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Left, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Value, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
 	case *parser.ArrayLiteral:
 		for _, el := range x.Elements {
-			walkExprForIntOverflow(el, file, line, sem, declared, funcTypes, emit)
+			walkExprForIntOverflow(el, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
 		}
 	case *parser.SurfaceMatch:
 		// S1：臂體與臂條件內的整數運算（`-> r = a - b`）在糖形態下否則不可見。
 		// 見 sugar_walk.go。
-		walkSurfaceMatchChildren(x, nil,
-			func(sub parser.Expression) {
-				walkExprForIntOverflow(sub, file, line, sem, declared, funcTypes, emit)
-			},
-			func(sub parser.Statement) {
-				walkStmtForOverflow(sub, file, sem, declared, funcTypes, emit)
-			})
+		exprFn := func(sub parser.Expression) {
+			walkExprForIntOverflow(sub, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+		}
+		stmtFn := func(sub parser.Statement) {
+			walkStmtForOverflow(sub, file, sem, declared, funcTypes, emit)
+		}
+		// 主體照常走查：`seed[8 + i]` 裡的 `8 + i` 仍然要報。下標算術即使被
+		// lowering 提升成 `__idx ?T`、由 match 的失敗臂消費，也**不代表**使用者
+		// 聲明了溢出行為——沒寫 `#{overflow = …}` 時溢位就落進失敗臂（`-> _` 靜默
+		// 丟棄），這正是本 lint 要提示的點。`#{overflow = …}` 是逐語句生效的，
+		// 上一行 `sb2 = handshake[pos + i]` 上的註解管不到 `8 + i`。
+		walkSurfaceMatchChildren(x, nil, exprFn, stmtFn)
 	}
 }
 
@@ -3929,7 +3978,7 @@ func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *par
 // 只有頂層語句被 SetSourceFile 標記，嵌套語句的 SourceFile 為空；若在此處取空值，
 // RunAllLints 的行號範圍回退歸因會把不同模組的同名行號張冠李戴（例如把 str.no 的
 // 整數運算算到 byte.no 頭上）。節點若確有自身 SourceFile，則以該值覆蓋。
-func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int)) {
+func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int, site overflowSite)) {
 	if stmt == nil {
 		return
 	}
@@ -3956,7 +4005,7 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 	}
 	emitSubs := func(e parser.Expression) {
 		if e != nil {
-			walkExprForIntOverflow(e, file, stmt.Pos().Line, sem, declared, funcTypes, emit)
+			walkExprForIntOverflow(e, overflowSiteBound, file, stmt.Pos().Line, sem, declared, funcTypes, emit)
 		}
 	}
 	switch s := stmt.(type) {
@@ -4275,12 +4324,23 @@ func runIntOverflowCore(program *parser.Program, view *THIRView) []ValidateResul
 	// 非函式語句重算，是 O(頂層語句 × 全部 let) 的 blowup）。
 	topLevelDeclared := collectTopLevelLets(program, funcTypes, view)
 	var results []ValidateResult
-	emit := func(file string, line, col int) {
+	emit := func(file string, line, col int, site overflowSite) {
+		msg := ""
+		if site == overflowSiteOperand {
+			// 索引運算元：值被外層 `[...]` 直接消費，型別必須是純整數，
+			// 所以 `?T` 接收 / match 解包 / `_ =` 丟棄三種補救跟它無關（那是
+			// 值根本身的話題）。此處只剩一件事可教：**加 `#{overflow = …}`
+			// 註解聲明溢出行為**。註解逐語句生效，寫在鄰近語句上管不到這裡
+			// （見 overflowSiteOperand 的型別註釋）。
+			msg = i18n.T("ovfidxop", "integer `a OP b` is the index of `[...]` here and carries no `#{overflow = ...}` annotation. The annotation is per statement, so one written on a neighbouring statement does not cover this one. Annotate the statement that owns it to state the value taken on overflow: `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`.")
+		} else {
+			msg = i18n.T("xmicjezl", "integer `a OP b` returns option<T> on overflow by default, so the result type is always `?T`. Pick one of three: (1) receive it as `?T` (`a ?i64 = x + y`, or just `a = x + y` and let the compiler infer an option), then propagate with `?=` or unwrap with a two-arm match (`v = a: {` newline `ok -> it` / `-> 0`); (2) annotate `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`, to choose the value taken on failure - note the annotation only changes that value, the result is still `?T` and still has to be unwrapped; (3) discard it explicitly with `_ = x + y`.")
+		}
 		results = append(results, ValidateResult{
 			File:    file,
 			Line:    line,
 			Column:  col,
-			Message: i18n.T("xmicjezl", "integer `a OP b` returns option<T> on overflow by default, so the result type is always `?T`. Pick one of three: (1) receive it as `?T` (`a ?i64 = x + y`, or just `a = x + y` and let the compiler infer an option), then propagate with `?=` or unwrap with a two-arm match (`v = a: {` newline `ok -> it` / `-> 0`); (2) annotate `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`, to choose the value taken on failure - note the annotation only changes that value, the result is still `?T` and still has to be unwrapped; (3) discard it explicitly with `_ = x + y`."),
+			Message: msg,
 			TraceID: "xmicjezl",
 		})
 	}
@@ -6597,9 +6657,18 @@ func ValidateIndexWrite(program *parser.Program, mainFile string) []ValidateResu
 	return runIndexWriteCore(program, mainFile, nil)
 }
 
-// isWithCapCall 判定 e 是否為裸緩衝構造器呼叫：`with-cap(...)`（len=0 容量緩衝）、
-// `with-len(...)`（len=n 預填充緩衝）或 `with-cap-len(...)`。這些構造器的唯一用途
-// 就是被逐位元組直接下標寫入填充，idxwrite 對其基底一律豁免。
+// isWithCapCall 判定 e 是否為「容量構造器」呼叫：`with-cap(n)` 或
+// `with-cap-len(cap, len)`。二者都能構造 len=0 的緩衝，故一起進入豁免集合。
+//
+// 這是唯一的一類例外，理由是 len=0 的緩衝：直接下標寫入是**唯一**能把長度增長起來
+// 的寫法，checker 建議的兩種正確形體對 len=0 緩衝都會靜默產出空字串
+// （實測：place-match `buf[i]: { ok -> it = v }` 讀 i 越界回 nil，ok 臂永不執行
+// ⇒ 結果是 `""`、len=0）。若把 with-cap-len 排除在豁免外，`with-cap-len(n, 0)`
+// 就會被要求改成一種必然靜默出錯的寫法。
+//
+// `with-len(n)` 構造的是 len 已就位的緩衝：place-match 讀 i（i < len）落在 ok 臂、
+// 寫回同位，行為與直接下標寫完全等價，因此**不豁免** —— 它與任何其他容器一樣
+// 必須顯式解包。
 func isWithCapCall(e parser.Expression) bool {
 	call, ok := e.(*parser.CallExpression)
 	if !ok {
@@ -6610,7 +6679,7 @@ func isWithCapCall(e parser.Expression) bool {
 		return false
 	}
 	switch id.Value {
-	case "with-cap", "with-len", "with-cap-len":
+	case "with-cap", "with-cap-len":
 		return true
 	}
 	return false
@@ -6627,8 +6696,9 @@ func isWithCapCall(e parser.Expression) bool {
 //
 // 因此「以 with-cap 建立、再用直接下標寫入增長」是這個慣例唯一能正確執行的寫法，
 // idxwrite 不得對其報錯。本集合讓 ValidateIndexWrite 精確豁免這類基底：只有确实
-// 由 with-cap 構造過的變數才豁免；以字面量陣列 / 固定陣列 / 切片建立的基底仍照報，
-// 保留「未經解包的越界寫」保護。
+// 由 with-cap 構造過的變數才豁免；以字面量陣列 / 固定陣列 / 切片 / **with-len**
+// 建立的基底仍照報——with-len 的 len 已就位，place-match 讀 i 落在 ok 臂、寫回同位，
+// 與直接下標寫完全等價（見 isWithCapCall），豁免它只是給直寫留一個無理由的後門。
 func collectWithCapBases(body *parser.BlockStatement) map[string]bool {
 	set := map[string]bool{}
 	if body == nil {
@@ -9310,25 +9380,25 @@ func checkUndefinedVarsInExpr(expr parser.Expression, definedVars, funcNames map
 					Column:  e.Token.Column,
 					Message: i18n.T("iyn3rgtm", "'self' (.) can only be used inside struct methods; if you meant the match value, use 'it'"),
 				})
-		} else {
-			msg := fmt.Sprintf("'%s' is not defined", e.Value)
-			var fixes []parser.DiagnosticFix
-			if mod := stdFuncModule(e.Value); mod != "" {
-				// global.no rule: cross-module calls must carry the module
-				// prefix. Suggest the qualified form.
-				msg = fmt.Sprintf("'%s' is not defined; call it as '%s.%s' (cross-module calls must be module-qualified)", e.Value, mod, e.Value)
-				qualified := mod + "." + e.Value
-				fixes = []parser.DiagnosticFix{fixSnippetSpan(qualified, "cross-module calls must be module-qualified",
-					e.Token.Line, e.Token.Column, e.Token.Line, e.Token.Column+len(e.Value))}
+			} else {
+				msg := fmt.Sprintf("'%s' is not defined", e.Value)
+				var fixes []parser.DiagnosticFix
+				if mod := stdFuncModule(e.Value); mod != "" {
+					// global.no rule: cross-module calls must carry the module
+					// prefix. Suggest the qualified form.
+					msg = fmt.Sprintf("'%s' is not defined; call it as '%s.%s' (cross-module calls must be module-qualified)", e.Value, mod, e.Value)
+					qualified := mod + "." + e.Value
+					fixes = []parser.DiagnosticFix{fixSnippetSpan(qualified, "cross-module calls must be module-qualified",
+						e.Token.Line, e.Token.Column, e.Token.Line, e.Token.Column+len(e.Value))}
+				}
+				results = append(results, ValidateResult{
+					TraceID: "4bek3xc6",
+					Line:    e.Token.Line,
+					Column:  e.Token.Column,
+					Message: msg,
+					Fixes:   fixes,
+				})
 			}
-			results = append(results, ValidateResult{
-				TraceID: "4bek3xc6",
-				Line:    e.Token.Line,
-				Column:  e.Token.Column,
-				Message: msg,
-				Fixes:   fixes,
-			})
-		}
 		}
 	case *parser.CallExpression:
 		// Function name: check as call target, not variable reference
@@ -10326,13 +10396,13 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 								if elemInferred != "" && elemInferred != elemType &&
 									!isArgTypeCompatible(elemType, elemInferred, elem) &&
 									!valuePromotesToOption(elemType, elemInferred) {
-							results = append(results, ValidateResult{
-								TraceID: "os0j8ix4",
-								Line:    s.Token.Line,
-								Column:  s.Token.Column,
-								Message: i18n.T("os0j8ix4", "cannot assign %s value to %s element in array '%s'", elemInferred, elemType, s.Name.Value),
-								Fixes:   narrowingFixes(elemInferred, elemType),
-							})
+									results = append(results, ValidateResult{
+										TraceID: "os0j8ix4",
+										Line:    s.Token.Line,
+										Column:  s.Token.Column,
+										Message: i18n.T("os0j8ix4", "cannot assign %s value to %s element in array '%s'", elemInferred, elemType, s.Name.Value),
+										Fixes:   narrowingFixes(elemInferred, elemType),
+									})
 								}
 							}
 						}
@@ -10401,18 +10471,18 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 						// 因為 MIR 不會在那些位置插入轉換（見 mir.intConvCallee）。
 						(IntConvMethodName(inferredType, existingType, funcNames) == "" ||
 							optionImplicitUnwrapRejected(existingType, inferredType)) {
-					valPos := s.Value.Pos()
-					msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, s.Name.Value)
-					if optionImplicitUnwrapRejected(existingType, inferredType) {
-						msg += optionUnwrapAssignHint(inferredType)
-					}
-					results = append(results, ValidateResult{
-						TraceID: "15w45dqk",
-						Line:    valPos.Line,
-						Column:  valPos.Column,
-						Message: msg,
-						Fixes:   narrowingFixes(inferredType, existingType),
-					})
+						valPos := s.Value.Pos()
+						msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", inferredType, existingType, s.Name.Value)
+						if optionImplicitUnwrapRejected(existingType, inferredType) {
+							msg += optionUnwrapAssignHint(inferredType)
+						}
+						results = append(results, ValidateResult{
+							TraceID: "15w45dqk",
+							Line:    valPos.Line,
+							Column:  valPos.Column,
+							Message: msg,
+							Fixes:   narrowingFixes(inferredType, existingType),
+						})
 					}
 					// B4: char 是 Unicode 碼點，合法視窗為 [0, 0x10FFFF]。
 					// intToCharAssignOK 放行「整數值 → char」是針對執行期值；
@@ -10634,19 +10704,19 @@ func validateStmtTypes(stmt parser.Statement, funcNames map[string]bool, funcTyp
 									}
 								}
 							} else {
-							msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", valType, existingType, ident.Value)
-							if subDefaultOpt && !ty.IsOptionRaw(existingType) {
-								msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", ty.StripOptionRaw(valType), ident.Value, existingType, ident.Value, ty.StripOptionRaw(valType))
-							} else if optionImplicitUnwrapRejected(existingType, valType) {
-								msg += optionUnwrapAssignHint(valType)
-							}
-							results = append(results, ValidateResult{
-								TraceID: "1mf3x79l",
-								Line:    assign.Token.Line,
-								Column:  assign.Token.Column,
-								Message: msg,
-								Fixes:   narrowingFixes(valType, existingType),
-							})
+								msg := fmt.Sprintf("cannot assign %s value to %s variable '%s'", valType, existingType, ident.Value)
+								if subDefaultOpt && !ty.IsOptionRaw(existingType) {
+									msg = fmt.Sprintf("signed subtraction may overflow: result is option<%s> but '%s' is declared %s. Add `#{overflow = wrap}` or `#{overflow = clamp0}` (e.g. above this statement), or declare '%s' as ?%s", ty.StripOptionRaw(valType), ident.Value, existingType, ident.Value, ty.StripOptionRaw(valType))
+								} else if optionImplicitUnwrapRejected(existingType, valType) {
+									msg += optionUnwrapAssignHint(valType)
+								}
+								results = append(results, ValidateResult{
+									TraceID: "1mf3x79l",
+									Line:    assign.Token.Line,
+									Column:  assign.Token.Column,
+									Message: msg,
+									Fixes:   narrowingFixes(valType, existingType),
+								})
 							}
 						}
 					} else if !exists {

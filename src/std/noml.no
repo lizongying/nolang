@@ -307,13 +307,11 @@ noml-pool.has-key = (obj-idx i64, key str) (found bool) {
             found = true
             return
         }
-        ixout310c10 = .en[e]: {
+        e = .en[e]: {
             ok -> it
 
             -> _
         }
-
-        e = ixout310c10
     }
 }
 
@@ -2344,22 +2342,18 @@ noml-pool.get = (idx i64, key str) (child ?i64) {
             -> ''
         }
         ekv.eq-full(key) -> {
-            ixout2341c18 = .ec[e]: {
+            child = .ec[e]: {
                 ok -> it
 
                 -> _
             }
-
-            child = ixout2341c18
             return
         }
-        ixout2344c10 = .en[e]: {
+        e = .en[e]: {
             ok -> it
 
             -> _
         }
-
-        e = ixout2344c10
     }
 }
 
@@ -2386,23 +2380,19 @@ noml-pool.at = (idx i64, i i64) (child ?i64) {
     k = 0
     (e >= 0) {
         k == i -> {
-            ixout2371c18 = .ec[e]: {
+            child = .ec[e]: {
                 ok -> it
 
                 -> _
             }
-
-            child = ixout2371c18
             return
         }
         k ?= k + 1
-        ixout2375c10 = .en[e]: {
+        e = .en[e]: {
             ok -> it
 
             -> _
         }
-
-        e = ixout2375c10
     }
 }
 
@@ -2429,23 +2419,19 @@ noml-pool.key = (idx i64, i i64) (key ?str) {
     k = 0
     (e >= 0) {
         k == i -> {
-            ixout2402c16 = .ek[e]: {
+            key = .ek[e]: {
                 ok -> it
 
                 -> _
             }
-
-            key = ixout2402c16
             return
         }
         k ?= k + 1
-        ixout2406c10 = .en[e]: {
+        e = .en[e]: {
             ok -> it
 
             -> _
         }
-
-        e = ixout2406c10
     }
 }
 
@@ -2466,13 +2452,11 @@ noml-pool.val-str = (idx i64) (v ?str) {
         -> _
     }
     nd.kind != NOML-KIND-STR -> return
-    ixout2427ce = .strs[idx]: {
+    v = .strs[idx]: {
         ok -> it
 
         -> _
     }
-
-    v = ixout2427ce
 }
 
 ; 取數值
@@ -2611,13 +2595,11 @@ noml-pool.ann = (idx i64) (v ?str) {
     v = nil
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    ixout2566ce = .anns[idx]: {
+    a = .anns[idx]: {
         ok -> it
 
         -> _
     }
-
-    a = ixout2566ce
     a.len-bytes() > 0 -> v = a
 }
 
@@ -2649,13 +2631,11 @@ noml-pool.ann-value = (idx i64, key str) (v ?str) {
     v = nil
     idx < 0 -> return
     idx >= .nodes.len() -> return
-    ixout2598c11 = .anns[idx]: {
+    body = .anns[idx]: {
         ok -> it
 
         -> _
     }
-
-    body = ixout2598c11
     n = body.len-bytes()
     kn = key.len-bytes()
     kn == 0 -> return

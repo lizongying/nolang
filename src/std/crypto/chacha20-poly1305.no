@@ -326,14 +326,10 @@ chacha20-block = (key [32]byte, counter u32, nonce [12]byte) (out [64]byte) {
     init []u32
     init = with-len(16)
     i <- [0..16): {
-        ixout189c24 = state[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        init[i]: {
-            ok -> it = ixout189c24
+        {
+            init[i] ?= state[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -581,13 +577,11 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
     block [64]byte
     block = chacha20-block(key, 0, nonce)
     i <- [0..32): {
-        ixout584c17 = block[i]: {
+        otk[i] = block[i]: {
             ok -> it
 
             -> _
         }
-
-        otk[i] = ixout584c17
     }
 }
 
@@ -622,15 +616,12 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 
     ; AAD
     i <- [0..aad.len()): {
-        ixout423c24 = aad[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[pos + i]: {
-            ok -> it = ixout423c24
+            #{overflow=wrap}
+            mac-input[pos + i] ?= aad[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -667,15 +658,12 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
 
     ; Cipher
     i <- [0..cipher.len()): {
-        ixout454c24 = cipher[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[pos + i]: {
-            ok -> it = ixout454c24
+            #{overflow=wrap}
+            mac-input[pos + i] ?= cipher[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -860,23 +848,22 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
     #{overflow=wrap}
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
-        ixout614c21 = cipher[i]: {
+        sealed[i] = cipher[i]: {
             ok -> it
 
             -> _
         }
-
-        sealed[i] = ixout614c21
     }
     i <- [0..16): {
-        ixout868c27 = tag[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            sealed[cipher.len() + i] ?= tag[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        sealed[cipher.len() + i] = ixout868c27
     }
 }
 
@@ -901,30 +888,22 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     cipher []byte
     cipher = with-len(cipher-len)
     i <- [0..cipher-len): {
-        ixout647c24 = sealed[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        cipher[i]: {
-            ok -> it = ixout647c24
+        {
+            cipher[i] ?= sealed[i]
+        }: {
+            err -> _
 
             -> _
         }
     }
     tag [16]byte
     i <- [0..16): {
+        {
 
-        #{overflow=wrap}
-        ixout657c24 = sealed[cipher-len + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        tag[i]: {
-            ok -> it = ixout657c24
+            #{overflow=wrap}
+            tag[i] ?= sealed[cipher-len + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -941,15 +920,12 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     mac-input = with-len(aad.len() + pad-aad + cipher.len() + pad-cipher + 16)
     pos = 0
     i <- [0..aad.len()): {
-        ixout677c24 = aad[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[pos + i]: {
-            ok -> it = ixout677c24
+            #{overflow=wrap}
+            mac-input[pos + i] ?= aad[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -984,15 +960,12 @@ chacha20-poly1305-open = (key [32]byte, nonce [12]byte, aad []byte, sealed []byt
     }
 
     i <- [0..cipher.len()): {
-        ixout706c24 = cipher[i]: {
-            ok -> it
+        {
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        mac-input[pos + i]: {
-            ok -> it = ixout706c24
+            #{overflow=wrap}
+            mac-input[pos + i] ?= cipher[i]
+        }: {
+            err -> _
 
             -> _
         }

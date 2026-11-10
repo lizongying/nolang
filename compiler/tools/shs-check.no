@@ -1303,13 +1303,11 @@ shs-collect = (p str, out []str) (r []str) {
     d -> {
         sub = fs.walk(p)
         i <- [0..sub.len()): {
-            ixout1330c17 = sub[i]: {
+            f = sub[i]: {
                 ok -> it
 
                 -> _
             }
-
-            f = ixout1330c17
             nf = shs-is-no-file(f)
             nf -> r.push(f)
         }
@@ -1600,13 +1598,11 @@ shs-main = () (code i64) {
         acc = shs-check-file(fp, acc)
     }
     k <- [0..acc.len()): {
-        ixout1626c13 = acc[k]: {
+        f = acc[k]: {
             ok -> it
 
             -> _
         }
-
-        f = ixout1626c13
         print(shs-render(f))
     }
     nf = acc.len()

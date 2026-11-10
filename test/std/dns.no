@@ -127,18 +127,46 @@ t-parse-name = () {
 
     ; 保留 label 型別（0x40）：不得掛死，回傳 -1（回归點）
     bad []byte = with-len(4)
-    bad[0] = 0x40
-    bad[1] = 65
-    bad[2] = 0
-    bad[3] = 0
+    bad[0]: {
+        ok -> it = 0x40
+
+        -> _
+    }
+    bad[1]: {
+        ok -> it = 65
+
+        -> _
+    }
+    bad[2]: {
+        ok -> it = 0
+
+        -> _
+    }
+    bad[3]: {
+        ok -> it = 0
+
+        -> _
+    }
     bn, bp = dns.parse-name(bad, 0)
     runner.eq(bp, -1, 'reserved label next-pos')
 
     ; 截斷：無終止零標籤 → -1
     tr []byte = with-len(3)
-    tr[0] = 3
-    tr[1] = 97
-    tr[2] = 98
+    tr[0]: {
+        ok -> it = 3
+
+        -> _
+    }
+    tr[1]: {
+        ok -> it = 97
+
+        -> _
+    }
+    tr[2]: {
+        ok -> it = 98
+
+        -> _
+    }
     tn, tp = dns.parse-name(tr, 0)
     runner.eq(tp, -1, 'truncated next-pos')
 }

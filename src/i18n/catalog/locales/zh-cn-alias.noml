@@ -1032,7 +1032,6 @@
   'number.f64.to-str': ['转字串', 'ts', 'zzc', 'zhuanzichuan']
   'number.f64.to-str-fixed': ['定点格式转换', 'tsf', 'ddgszh', 'dingdiangeshizhuanhuan']
   'number.f64.to-str-general': ['通用格式', 'tsg', 'tygs', 'tongyonggeshi']
-  'number.f64.to-str-sci': ['科学记号格式', 'tss', 'kxjhgs', 'kexuejihaogeshi']
   'number.f64.to-u32': ['浮点转 32 位无号整数', 'tu', 'fdz3wwhzs', 'fudianzhuan32weiwuhaozhengshu']
   'number.f64.to-u64': ['浮点转 64 位无号整数', 'tu', 'fdz6wwhzs', 'fudianzhuan64weiwuhaozhengshu']
   'number.i128.sqrt': ['── 128 位整数方法副本──', 's', '1wzsfffb', '128weizhengshufangfafuben']

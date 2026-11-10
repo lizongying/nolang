@@ -161,8 +161,16 @@ t-huffman = () {
 
     ; 直接以長度表建 canonical 表：兩符號各 1 位元 → 碼 0 與 1
     lens []i64 = with-len(2)
-    lens[0] = 1
-    lens[1] = 1
+    lens[0]: {
+        ok -> it = 1
+
+        -> _
+    }
+    lens[1]: {
+        ok -> it = 1
+
+        -> _
+    }
     h2 = huffman{}
     h2.build(lens, 2)
 

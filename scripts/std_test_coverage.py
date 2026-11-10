@@ -18,6 +18,23 @@ API 面（inventory）来源是 `src/std/**/*.no` 的**顶层声明**：
 只经公开 API 间接执行。强行计入会让分母含永远填不满的项，掩盖真实缺口。
 `--missing` 会把它们单独列在 "private (不可直接调用)" 段，便于确认没有漏掉公开包装。
 
+**平台不适用**的声明同样不计入分母（自动判定，无需手工登记）：
+`src/std` 用 `#{mac-arm64, linux-amd64, ...}` 标注平台变体。在某个宿主上，
+标签集合与该宿主标签集合**无交集**的声明根本编不进来（例如 macOS 上
+`#{win-amd64, win-arm64}` 的 `process.list-all`），计入分母等于要求
+"在 macOS 上测 Windows 代码"。判定规则：无平台标签 = 全平台适用；
+有标签但含非平台标记（`buildin` / `track-caller` / `overflow=...`）= 忽略该标记。
+`--missing` 会单列 "platform N/A" 段，`--verbose` 可看宿主标签。
+
+另有一条**显式**的"结构上不可达"清单 UNREACHABLE（同样不计入分母）：
+  - `str.eq-raw`：`src/builtin/str.go` 里 `BuiltinMethod{MethodName:"str.eq",
+    ForwardFunc:"eq-raw"}` 的**内部 forward 目标**。用户码只能写 `a.eq(b, n)`；
+    `a.eq-raw(b, n)` 会被 checker 解析成方法但 MIR 报 `unknown callee
+    str.eq-raw`（`src/mir/builtin_call.go` 只按 ForwardFunc 名内联，不注册
+    该方法），`str.eq-raw(a, b, n)` 则报 `module 'str' has no top-level
+    function`。两种形态都调不到，只能列在这里。
+    新增同类条目时**必须**附上实测的两条报错原文，避免把"懒得测"混进这个清单。
+
 用法：
   python3 scripts/std_test_coverage.py                # 汇总 + 缺口清单
   python3 scripts/std_test_coverage.py --missing      # 只列缺口符号
@@ -29,6 +46,7 @@ API 面（inventory）来源是 `src/std/**/*.no` 的**顶层声明**：
 
 import argparse
 import os
+import platform
 import re
 import sys
 
@@ -101,6 +119,53 @@ def strip_comment(line):
     return ''.join(out)
 
 
+# 结构上不可达的公开符号（不计入分母）。键是 (模块路径, 声明名)。
+# 见文件头 docstring 的说明：每一项都必须实测过两种调用形态都失败。
+UNREACHABLE = {
+    ('str', 'eq-raw'),  # str.eq 的内部 forward 目标，见 docstring
+    # process 的 9 个 Win32 内建：声明在 .no 里只标了 `#{buildin}`、没标平台，
+    # 但 Go 侧只在 Windows 注册实现。macOS 上实测（逐个跑过）统一报：
+    #   EmitLLVM: unsupported builtin process.win-create-pipe [2kqboupo]
+    # 换符号名报同一条，仅末段不同：
+    #   process.win-close-handle / win-write-pipe / win-read-pipe /
+    #   win-create-process / win-wait-process / win-get-exit-code /
+    #   win-terminate-process / win-get-std-handle
+    # 注意：不能靠给 src/std 加 `#{win-amd64, win-arm64}` 标签来修——
+    #   genstdsig 不解析 `#{...}`（stdsig_gen.go 是跨平台共用扁平表），
+    #   加了标签既改变不了解析行为，也让声明与实际签名表不一致。
+    ('process', 'win-create-pipe'),
+    ('process', 'win-close-handle'),
+    ('process', 'win-write-pipe'),
+    ('process', 'win-read-pipe'),
+    ('process', 'win-create-process'),
+    ('process', 'win-wait-process'),
+    ('process', 'win-get-exit-code'),
+    ('process', 'win-terminate-process'),
+    ('process', 'win-get-std-handle'),
+}
+
+# 平台标签：`#{mac-arm64, linux-amd64, wasi-wasm32}`。行内也可能混有
+# `buildin` / `track-caller` / `overflow=wrap` 这类非平台标记，只取平台形态。
+PLATFORM_TOK_RE = re.compile(r'\b(?:mac|linux|win|wasi)-[A-Za-z0-9]+\b')
+
+
+def host_tags():
+    """当前宿主的平台标签集合，与 src/std 的 `#{...}` 注解同词表。"""
+    sysname = platform.system()
+    machine = (platform.machine() or '').lower()
+    arch = 'arm64' if machine in ('arm64', 'aarch64') else 'amd64'
+    if sysname == 'Darwin':
+        return {'mac-' + arch}
+    if sysname == 'Windows':
+        return {'win-' + arch}
+    if sysname == 'Linux':
+        return {'linux-' + arch}
+    return set()
+
+
+HOST = host_tags()
+
+
 def collect_inventory():
     """返回 {(module_alias, kind, symbol, owner)} 与模块元信息。"""
     aliases = load_module_aliases()
@@ -122,12 +187,21 @@ def collect_inventory():
                     alias = aliases[cands[0]]
             modules[mp] = alias
             structs = set()
+            pending_tags = None  # None = 无平台标签（全平台适用）
             for line in read(full).splitlines():
+                stripped = line.strip()
+                if stripped.startswith('#{') and stripped.endswith('}'):
+                    toks = PLATFORM_TOK_RE.findall(stripped[2:-1])
+                    if toks:
+                        pending_tags = set(toks)
+                    continue
                 if line[:1] in (';', '#', '/', ' ', '\t') or not line:
                     continue
                 code = strip_comment(line)
                 if not code.strip():
                     continue
+                tags, pending_tags = pending_tags, None
+                on_host = tags is None or bool(tags & HOST)
                 m = STRUCT_RE.match(code)
                 if m:
                     structs.add(m.group(1))
@@ -136,18 +210,21 @@ def collect_inventory():
                 if not m:
                     continue
                 name = m.group(1)
+                unreachable = (mp, name.split('.', 1)[-1]) in UNREACHABLE
                 if '.' in name:
                     owner, meth = name.split('.', 1)
                     items.append({
                         'module': mp, 'alias': alias, 'kind': 'method',
                         'owner': owner, 'symbol': meth, 'decl': name,
-                        'private': meth.startswith('_'),
+                        'private': meth.startswith('_') or unreachable,
+                        'platform': on_host, 'tags': tags,
                     })
                 else:
                     items.append({
                         'module': mp, 'alias': alias, 'kind': 'func',
                         'owner': None, 'symbol': name, 'decl': name,
-                        'private': name.startswith('_'),
+                        'private': name.startswith('_') or unreachable,
+                        'platform': on_host, 'tags': tags,
                     })
     return items, modules
 
@@ -235,16 +312,21 @@ def main():
         if prefix and not mp.startswith(prefix):
             continue
         its = by_module[mp]
+        na = [i for i in its if not i['platform']]
+        its = [i for i in its if i['platform']]
         f = [i for i in its if i['kind'] == 'func' and not i['private']]
         m = [i for i in its if i['kind'] == 'method' and not i['private']]
         priv = [i for i in its if i['private']]
         rows.append({
             'module': mp,
-            'alias': its[0]['alias'],
-            'has_test': its[0]['alias'] in tests,
+            'alias': its[0]['alias'] if its else by_module[mp][0]['alias'],
+            'has_test': by_module[mp][0]['alias'] in tests,
             'funcs': len(f), 'funcs_cov': sum(1 for i in f if i['covered']),
             'methods': len(m), 'methods_cov': sum(1 for i in m if i['covered']),
             'priv': len(priv),
+            'na': len(na),
+            'na_names': ['%s [%s]' % (i['decl'], ', '.join(sorted(i['tags'] or ())))
+                         for i in na],
             'missing': [i['decl'] for i in its if not i['covered'] and not i['private']],
             'priv_missing': [i['decl'] for i in priv if not i['covered']],
             'items': its,
@@ -260,13 +342,22 @@ def main():
                 print('[%s] (%s) %d missing:' % (r['module'], r['alias'], len(r['missing'])))
                 for name in r['missing']:
                     print('    ' + name)
+        na = [(r['module'], r['alias'], r['na_names']) for r in rows if r['na']]
+        if na:
+            print()
+            print('platform N/A（宿主 %s，标签无交集，本机编不出来，不计入分母）共 %d 个：' %
+                  ('/'.join(sorted(HOST)) or '?', sum(len(p[2]) for p in na)))
+            for mod, alias, names in na:
+                print('[%s] (%s) %d platform-N/A:' % (mod, alias, len(names)))
+                for name in names:
+                    print('    ' + name)
         priv = [(r['module'], r['alias'], r['priv_missing']) for r in rows if r['priv_missing']]
         if priv:
             print()
-            print('private (_ 前缀，用户码不可直接调用，不计入分母) 共 %d 个：' %
+            print('private / unreachable（`_` 前缀或 UNREACHABLE，用户码不可调用，不计入分母）共 %d 个：' %
                   sum(len(p[2]) for p in priv))
             for mod, alias, names in priv:
-                print('[%s] (%s) %d private:' % (mod, alias, len(names)))
+                print('[%s] (%s) %d private/unreachable:' % (mod, alias, len(names)))
                 for name in names:
                     print('    ' + name)
         return 1 if (args.strict and tot != cov) else 0
@@ -289,7 +380,11 @@ def main():
         cov, 100.0 * cov / tot if tot else 0.0))
     priv_n = sum(r['priv'] for r in rows)
     if priv_n:
-        print('另有私有符号 %d 个（`_` 前缀，用户码不可调用，不计入分母）' % priv_n)
+        print('另有私有/不可达符号 %d 个（`_` 前缀或 UNREACHABLE，用户码不可调用，不计入分母）' % priv_n)
+    na_n = sum(r['na'] for r in rows)
+    if na_n:
+        print('另有平台不适用声明 %d 个（宿主 %s，`#{...}` 标签无交集，本机编不出来，不计入分母）' % (
+            na_n, '/'.join(sorted(HOST)) or '?'))
     print('无专用测试档的模块 %d 个：%s' % (
         len(no_test), ' '.join('`%s`' % r['module'] for r in no_test) or '（无）'))
     print()

@@ -79,10 +79,10 @@ print(a2); 5
 print(c); 5
 
 ; 8. 重绑定后目标被重新赋值（别名必须失效）
-ra_a = 10
-ra_b = ra_a; rebind ra_b->ra_a
-ra = ra_b; ra = 10
-ra_b = 5; 重新赋值目标，别名失效，ra 不受影响
+ra-a = 10
+ra-b = ra-a; rebind ra_b->ra-a
+ra = ra-b; ra = 10
+ra-b = 5; 重新赋值目标，别名失效，ra 不受影响
 print(ra); 10
 
 ; 9. 参数 move：源是参数 → 禁用重绑定 → 降级 copy

@@ -914,16 +914,12 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
     ; X = B[2r-1]（最後一個 64 位元組區塊）
     x []byte
     i <- [0..64): {
+        {
 
-        #{overflow=wrap}
-        ixout306c24 = b[(total - 1) * 64 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[i]: {
-            ok -> it = ixout306c24
+            #{overflow=wrap}
+            x[i] ?= b[(total - 1) * 64 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -961,15 +957,12 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
 
         ; Y[i] = X
         j <- [0..64): {
-            ixout337c28 = x[j]: {
-                ok -> it
+            {
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            y[i * 64 + j]: {
-                ok -> it = ixout337c28
+                #{overflow=wrap}
+                y[i * 64 + j] ?= x[j]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -979,30 +972,28 @@ scrypt-blockmix = (b []byte, r i64) (out []byte) {
     ; 輸出: (Y[0], Y[2], ..., Y[2r-2], Y[1], Y[3], ..., Y[2r-1])
     i <- [0..r): {
         j <- [0..64): {
+            {
 
-            #{overflow=wrap}
-            ixout349c31 = y[(2 * i) * 64 + j]: {
-                ok -> it
+                #{overflow=wrap}
+                out[i * 64 + j] ?= y[(2 * i) * 64 + j]
+            }: {
+                err -> _
 
                 -> _
             }
-
-            #{overflow=wrap}
-            out[i * 64 + j] = ixout349c31
         }
     }
     i <- [0..r): {
         j <- [0..64): {
+            {
 
-            #{overflow=wrap}
-            ixout356c37 = y[(2 * i + 1) * 64 + j]: {
-                ok -> it
+                #{overflow=wrap}
+                out[(r + i) * 64 + j] ?= y[(2 * i + 1) * 64 + j]
+            }: {
+                err -> _
 
                 -> _
             }
-
-            #{overflow=wrap}
-            out[(r + i) * 64 + j] = ixout356c37
         }
     }
 }
@@ -1031,14 +1022,10 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     ; X = B
     x []byte
     i <- [0..block-bytes): {
-        ixout389c24 = b[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        x[i]: {
-            ok -> it = ixout389c24
+        {
+            x[i] ?= b[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1048,14 +1035,10 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
     ; V[0] = X, V[i] = BlockMix(V[i-1])
     v []byte
     i <- [0..block-bytes): {
-        ixout402c24 = x[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        v[i]: {
-            ok -> it = ixout402c24
+        {
+            v[i] ?= x[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1066,27 +1049,20 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         ; X = BlockMix(X)
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
-            ixout416c28 = mixed[i]: {
-                ok -> it
+            {
+                x[i] ?= mixed[i]
+            }: {
+                err -> _
 
                 -> _
             }
 
-            x[i]: {
-                ok -> it = ixout416c28
+            {
 
-                -> _
-            }
-
-            ixout423c28 = mixed[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            #{overflow=wrap}
-            v[n-idx * block-bytes + i]: {
-                ok -> it = ixout423c28
+                #{overflow=wrap}
+                v[n-idx * block-bytes + i] ?= mixed[i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -1155,14 +1131,10 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
         ; X = BlockMix(X)
         mixed = scrypt-blockmix(x, r)
         i <- [0..block-bytes): {
-            ixout469c28 = mixed[i]: {
-                ok -> it
-
-                -> _
-            }
-
-            x[i]: {
-                ok -> it = ixout469c28
+            {
+                x[i] ?= mixed[i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -1183,13 +1155,11 @@ scrypt-romix = (b []byte, n i64, r i64) (out []byte) {
 
     ; 輸出 X
     i <- [0..block-bytes): {
-        ixout483c18 = x[i]: {
+        out[i] = x[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout483c18
     }
 }
 
@@ -1223,16 +1193,12 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
         ; 提取 B_i
         b-i []byte
         j <- [0..block-bytes): {
+            {
 
-            #{overflow=wrap}
-            ixout521c28 = b[i * block-bytes + j]: {
-                ok -> it
-
-                -> _
-            }
-
-            b-i[j]: {
-                ok -> it = ixout521c28
+                #{overflow=wrap}
+                b-i[j] ?= b[i * block-bytes + j]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -1243,15 +1209,12 @@ scrypt = (password []byte, salt []byte, n i64, r i64, p i64, key-len i64) (out [
 
         ; 寫回 B
         j <- [0..block-bytes): {
-            ixout535c28 = mixed[j]: {
-                ok -> it
+            {
 
-                -> _
-            }
-
-            #{overflow=wrap}
-            b[i * block-bytes + j]: {
-                ok -> it = ixout535c28
+                #{overflow=wrap}
+                b[i * block-bytes + j] ?= mixed[j]
+            }: {
+                err -> _
 
                 -> _
             }

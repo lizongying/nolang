@@ -1,9 +1,14 @@
 ; std-regexp.no — regexp 模組測試
 ;
 ; 執行：no test test/std/regexp.no
-; 覆蓋：regexp.matches / regexp.find /
-;       regexp-match / regexp-find /
-;       字元匹配 / 量詞 / 字元類別 / 錨點
+; 覆蓋：頂層 regexp-match / regexp-find / regexp-compile（點式）；
+;       方法 matches / find / compile / match-at；
+;       編譯流水線 emit / emit-atom / emit-quantized /
+;       alloc-class / init-class-zero / init-class-all /
+;       set-class-bit / clear-class-bit / in-class / set-class-escape /
+;       make-class-{digits,nondigits,word,nonword,space,nonspace} /
+;       parse-atom / parse-class / parse-escape；
+;       以及語法面：字元匹配 / 量詞 / 字元類別 / 錨點 / 容量上限
 
 # /test/runner
 
@@ -142,6 +147,560 @@ t-find-not-found = () {
     runner.eq(result.len(), 0, 'find not found len == 0')
 }
 
+; ── 內部編譯管線（逐層直調） ─────────────────
+;
+; 下面幾組直接驅動 regexp 的編譯流水線：emit → class bitmap → parse-* →
+; emit-quantized → compile → match-at。目的不只是點亮符號，而是釘住每一層的
+; 輸出形狀（指令序列、類別索引、new-i 前進量），否則上層 matches/find 出錯時
+; 完全無法定位是解析錯還是發射錯。
+
+; ?i64 三態哨兵：9000001 = nil、9000002 = err（數組越界讀回 err）
+i64-of = (v ?i64) (out i64) {
+    out = 9000002
+    v: {
+        ok -> out = it
+
+        nil -> out = 9000001
+
+        err -> out = 9000002
+    }
+}
+
+; 註：不要把純 bool 傳給 `?bool` 形參——實測 tag 是未初始化的，時而走 nil 臂、
+; 時而走 ok 臂，斷言會隨機全假。內部函數的回傳值直接走 runner.is-true/is-false。
+
+; 造 n 個 'a' 的字串（用來探指令數上限）
+mk-a = (n i64) (out str) {
+    out = with-cap(n)
+    j <- [0..n): {
+        out[j] = 97
+    }
+}
+
+; emit 逐欄位落盤，n 遞增
+t-emit = () {
+    r = regexp{
+        pattern: ''
+    }
+    runner.eq(r.n, 0, 'emit: 新建 n == 0')
+
+    r.emit(1, 97, 0)
+    r.emit(2, 0, 0)
+    runner.eq(r.n, 2, 'emit: 兩條後 n == 2')
+    runner.eq(i64-of(r.op[0]), 1, 'emit: op[0] == RE-OP-CHAR')
+    runner.eq(i64-of(r.arg1[0]), 97, 'emit: arg1[0] == 97')
+    runner.eq(i64-of(r.arg2[0]), 0, 'emit: arg2[0] == 0')
+    runner.eq(i64-of(r.op[1]), 2, 'emit: op[1] == RE-OP-ANY')
+    runner.eq(i64-of(r.arg1[1]), 0, 'emit: arg1[1] == 0')
+}
+
+; emit-atom 只認 CHAR/ANY/CLASS 三種 atom 類型
+t-emit-atom = () {
+    r = regexp{
+        pattern: ''
+    }
+    r.emit-atom(1, 98, 0)
+    r.emit-atom(2, 0, 0)
+    r.emit-atom(3, 0, 7)
+    runner.eq(r.n, 3, 'emit-atom: n == 3')
+    runner.eq(i64-of(r.op[0]), 1, 'emit-atom: CHAR 落 op')
+    runner.eq(i64-of(r.arg1[0]), 98, 'emit-atom: CHAR arg1 == 字元值')
+    runner.eq(i64-of(r.arg1[1]), 0, 'emit-atom: ANY arg1 恆 0')
+    runner.eq(i64-of(r.op[2]), 3, 'emit-atom: CLASS 落 op')
+    runner.eq(i64-of(r.arg1[2]), 7, 'emit-atom: CLASS arg1 == 類別索引')
+
+    ; 非 atom 類型不發射（既不落盤也不推進 n）
+    r.emit-atom(9, 0, 0)
+    runner.eq(r.n, 3, 'emit-atom: 未知類型不發射')
+}
+
+; 類別 bitmap：配置 / 清零 / 置滿 / 置位 / 清位 / 查詢
+t-class-bitmap = () {
+    r = regexp{
+        pattern: ''
+    }
+    runner.eq(r.alloc-class(), 0, 'alloc-class: 首個索引 0')
+    runner.eq(r.alloc-class(), 1, 'alloc-class: 次個索引 1')
+    runner.eq(r.ncls, 2, 'alloc-class: ncls == 2')
+
+    r.init-class-zero(0)
+    runner.is-false(r.in-class(0, 97), 'init-class-zero: 所有位元為 0')
+
+    r.init-class-all(1)
+    runner.is-true(r.in-class(1, 0), 'init-class-all: 位元 0 置滿')
+    runner.is-true(r.in-class(1, 200), 'init-class-all: 位元 200 置滿')
+    runner.is-true(r.in-class(1, 255), 'init-class-all: 位元 255 置滿')
+
+    r.set-class-bit(0, 97)
+    runner.is-true(r.in-class(0, 97), 'set-class-bit: 置位後命中')
+    runner.is-false(r.in-class(0, 98), 'set-class-bit: 鄰位不受影響')
+    r.set-class-bit(0, 97)
+    runner.is-true(r.in-class(0, 97), 'set-class-bit: 重複置位幂等')
+
+    r.clear-class-bit(0, 97)
+    runner.is-false(r.in-class(0, 97), 'clear-class-bit: 清除後不命中')
+    runner.is-true(r.in-class(1, 97), 'clear-class-bit: 不動其它類別')
+
+    ; 位元組邊界：byte-idx = c>>3、bit-idx = c&7
+    r.set-class-bit(0, 0)
+    r.set-class-bit(0, 7)
+    r.set-class-bit(0, 8)
+    runner.is-true(r.in-class(0, 0), 'set-class-bit: 位元 0')
+    runner.is-true(r.in-class(0, 7), 'set-class-bit: 位元 7（首個位元組最高位）')
+    runner.is-true(r.in-class(0, 8), 'set-class-bit: 位元 8（次個位元組最低位）')
+    runner.is-false(r.in-class(0, 1), 'set-class-bit: 位元 1 未動')
+    runner.is-false(r.in-class(0, 15), 'set-class-bit: 位元 15 未動')
+}
+
+; 六個預定義類別 \d \D \w \W \s \S 的成員邊界
+t-class-presets = () {
+    r = regexp{
+        pattern: ''
+    }
+
+    d = r.make-class-digits()
+    runner.is-true(r.in-class(d, 48), '\\d: 含 0')
+    runner.is-true(r.in-class(d, 57), '\\d: 含 9')
+    runner.is-false(r.in-class(d, 47), '\\d: 不含 /')
+    runner.is-false(r.in-class(d, 58), '\\d: 不含 :')
+
+    nd = r.make-class-nondigits()
+    runner.is-false(r.in-class(nd, 48), '\\D: 不含 0')
+    runner.is-false(r.in-class(nd, 57), '\\D: 不含 9')
+    runner.is-true(r.in-class(nd, 47), '\\D: 含 /')
+    runner.is-true(r.in-class(nd, 58), '\\D: 含 :')
+
+    w = r.make-class-word()
+    runner.is-true(r.in-class(w, 97), '\\w: 含 a')
+    runner.is-true(r.in-class(w, 90), '\\w: 含 Z')
+    runner.is-true(r.in-class(w, 57), '\\w: 含 9')
+    runner.is-true(r.in-class(w, 95), '\\w: 含 _')
+    runner.is-false(r.in-class(w, 45), '\\w: 不含 -')
+    runner.is-false(r.in-class(w, 32), '\\w: 不含空白')
+
+    nw = r.make-class-nonword()
+    runner.is-false(r.in-class(nw, 97), '\\W: 不含 a')
+    runner.is-false(r.in-class(nw, 90), '\\W: 不含 Z')
+    runner.is-false(r.in-class(nw, 95), '\\W: 不含 _')
+    runner.is-true(r.in-class(nw, 45), '\\W: 含 -')
+    runner.is-true(r.in-class(nw, 32), '\\W: 含空白')
+
+    s = r.make-class-space()
+    runner.is-true(r.in-class(s, 32), '\\s: 含空格')
+    runner.is-true(r.in-class(s, 9), '\\s: 含 TAB')
+    runner.is-true(r.in-class(s, 10), '\\s: 含 LF')
+    runner.is-true(r.in-class(s, 13), '\\s: 含 CR')
+    runner.is-true(r.in-class(s, 11), '\\s: 含 VT')
+    runner.is-true(r.in-class(s, 12), '\\s: 含 FF')
+    runner.is-false(r.in-class(s, 65), '\\s: 不含 A')
+
+    ns = r.make-class-nonspace()
+    runner.is-false(r.in-class(ns, 32), '\\S: 不含空格')
+    runner.is-false(r.in-class(ns, 10), '\\S: 不含 LF')
+    runner.is-true(r.in-class(ns, 65), '\\S: 含 A')
+}
+
+; [...] 內部的跳脫：八種轉義 + 普通字元原樣落入類別
+t-set-class-escape = () {
+    r = regexp{
+        pattern: ''
+    }
+
+    c1 = r.alloc-class()
+    r.init-class-zero(c1)
+    r.set-class-escape(c1, 100)
+    runner.is-true(r.in-class(c1, 48), 'set-class-escape \\d: 含 0')
+    runner.is-true(r.in-class(c1, 57), 'set-class-escape \\d: 含 9')
+    runner.is-false(r.in-class(c1, 65), 'set-class-escape \\d: 不含 A')
+
+    c2 = r.alloc-class()
+    r.init-class-zero(c2)
+    r.set-class-escape(c2, 68)
+    runner.is-false(r.in-class(c2, 48), 'set-class-escape \\D: 不含 0')
+    runner.is-true(r.in-class(c2, 65), 'set-class-escape \\D: 含 A')
+
+    c3 = r.alloc-class()
+    r.init-class-zero(c3)
+    r.set-class-escape(c3, 119)
+    runner.is-true(r.in-class(c3, 97), 'set-class-escape \\w: 含 a')
+    runner.is-false(r.in-class(c3, 45), 'set-class-escape \\w: 不含 -')
+
+    c4 = r.alloc-class()
+    r.init-class-zero(c4)
+    r.set-class-escape(c4, 87)
+    runner.is-false(r.in-class(c4, 97), 'set-class-escape \\W: 不含 a')
+    runner.is-true(r.in-class(c4, 45), 'set-class-escape \\W: 含 -')
+
+    c5 = r.alloc-class()
+    r.init-class-zero(c5)
+    r.set-class-escape(c5, 115)
+    runner.is-true(r.in-class(c5, 32), 'set-class-escape \\s: 含空格')
+    runner.is-false(r.in-class(c5, 65), 'set-class-escape \\s: 不含 A')
+
+    c6 = r.alloc-class()
+    r.init-class-zero(c6)
+    r.set-class-escape(c6, 83)
+    runner.is-false(r.in-class(c6, 32), 'set-class-escape \\S: 不含空格')
+    runner.is-true(r.in-class(c6, 65), 'set-class-escape \\S: 含 A')
+
+    c7 = r.alloc-class()
+    r.init-class-zero(c7)
+    r.set-class-escape(c7, 110)
+    runner.is-true(r.in-class(c7, 10), 'set-class-escape \\n: 含 LF')
+
+    c8 = r.alloc-class()
+    r.init-class-zero(c8)
+    r.set-class-escape(c8, 116)
+    runner.is-true(r.in-class(c8, 9), 'set-class-escape \\t: 含 TAB')
+
+    c9 = r.alloc-class()
+    r.init-class-zero(c9)
+    r.set-class-escape(c9, 114)
+    runner.is-true(r.in-class(c9, 13), 'set-class-escape \\r: 含 CR')
+
+    c10 = r.alloc-class()
+    r.init-class-zero(c10)
+    r.set-class-escape(c10, 46)
+    runner.is-true(r.in-class(c10, 46), 'set-class-escape 普通字元: 含 .')
+    runner.is-false(r.in-class(c10, 47), 'set-class-escape 普通字元: 不含 /')
+}
+
+; parse-atom 依首字元分派，並回報正確的 new-i
+t-parse-atom = () {
+    r = regexp{
+        pattern: ''
+    }
+
+    ni1 = r.parse-atom('abc', 0)
+    runner.eq(ni1, 1, 'parse-atom 常字元: new-i == 1')
+    runner.eq(r.tmp-atom-type, 1, 'parse-atom 常字元: type == RE-OP-CHAR')
+    runner.eq(r.tmp-atom-char, 97, 'parse-atom 常字元: char == a')
+
+    ni2 = r.parse-atom('.x', 0)
+    runner.eq(ni2, 1, 'parse-atom .: new-i == 1')
+    runner.eq(r.tmp-atom-type, 2, 'parse-atom .: type == RE-OP-ANY')
+
+    ni3 = r.parse-atom('[ab]z', 0)
+    runner.eq(ni3, 4, 'parse-atom [ab]: new-i 跳過右括號')
+    runner.eq(r.tmp-atom-type, 3, 'parse-atom [ab]: type == RE-OP-CLASS')
+    ci = r.tmp-atom-cls
+    runner.is-true(r.in-class(ci, 97), 'parse-atom [ab]: 類別含 a')
+    runner.is-true(r.in-class(ci, 98), 'parse-atom [ab]: 類別含 b')
+    runner.is-false(r.in-class(ci, 99), 'parse-atom [ab]: 類別不含 c')
+
+    ni4 = r.parse-atom('\\d9', 0)
+    runner.eq(ni4, 2, 'parse-atom \\d: new-i == 2')
+    runner.eq(r.tmp-atom-type, 3, 'parse-atom \\d: type == RE-OP-CLASS')
+    di = r.tmp-atom-cls
+    runner.is-true(r.in-class(di, 53), 'parse-atom \\d: 類別含 5')
+    runner.is-false(r.in-class(di, 65), 'parse-atom \\d: 類別不含 A')
+
+    ; 已到字串尾：不動 new-i，暫存欄位重置為預設
+    ni5 = r.parse-atom('abc', 3)
+    runner.eq(ni5, 3, 'parse-atom 越界: new-i 原地不動')
+    runner.eq(r.tmp-atom-type, 1, 'parse-atom 越界: type 重置為 CHAR')
+    runner.eq(r.tmp-atom-char, 0, 'parse-atom 越界: char 重置為 0')
+}
+
+; parse-class 處理範圍 / 反向 / 首字元 ] / 內嵌跳脫
+t-parse-class = () {
+    r = regexp{
+        pattern: ''
+    }
+
+    ni1 = r.parse-class('[a-c]x', 0)
+    runner.eq(ni1, 5, 'parse-class [a-c]: new-i == 5')
+    c1 = r.tmp-atom-cls
+    runner.is-true(r.in-class(c1, 97), 'parse-class 範圍: 含 a')
+    runner.is-true(r.in-class(c1, 98), 'parse-class 範圍: 含 b')
+    runner.is-true(r.in-class(c1, 99), 'parse-class 範圍: 含 c')
+    runner.is-false(r.in-class(c1, 100), 'parse-class 範圍: 不含 d')
+    runner.is-false(r.in-class(c1, 96), 'parse-class 範圍: 不含 a 前一碼')
+
+    ni2 = r.parse-class('[^ab]', 0)
+    runner.eq(ni2, 5, 'parse-class [^ab]: new-i == 5')
+    c2 = r.tmp-atom-cls
+    runner.is-false(r.in-class(c2, 97), 'parse-class 反向: 不含 a')
+    runner.is-false(r.in-class(c2, 98), 'parse-class 反向: 不含 b')
+    runner.is-true(r.in-class(c2, 99), 'parse-class 反向: 含 c')
+
+    ; 首字元 ']' 當常字元，第二個 ']' 才收尾
+    ni3 = r.parse-class('[]]', 0)
+    runner.eq(ni3, 3, 'parse-class 首字元 ]: new-i == 3')
+    c3 = r.tmp-atom-cls
+    runner.is-true(r.in-class(c3, 93), 'parse-class 首字元 ]: 類別含 ]')
+
+    ni4 = r.parse-class('[\\d]', 0)
+    runner.eq(ni4, 4, 'parse-class 內嵌 \\d: new-i == 4')
+    c4 = r.tmp-atom-cls
+    runner.is-true(r.in-class(c4, 53), 'parse-class 內嵌 \\d: 含 5')
+    runner.is-false(r.in-class(c4, 65), 'parse-class 內嵌 \\d: 不含 A')
+}
+
+; parse-escape 逐一驗證八種類別轉義與三個控制字元
+t-parse-escape = () {
+    r = regexp{
+        pattern: ''
+    }
+
+    ni1 = r.parse-escape('\\n', 0)
+    runner.eq(ni1, 2, 'parse-escape \\n: new-i == 2')
+    runner.eq(r.tmp-atom-type, 1, 'parse-escape \\n: type == RE-OP-CHAR')
+    runner.eq(r.tmp-atom-char, 10, 'parse-escape \\n: char == 10')
+
+    ni2 = r.parse-escape('\\t', 0)
+    runner.eq(ni2, 2, 'parse-escape \\t: new-i == 2')
+    runner.eq(r.tmp-atom-char, 9, 'parse-escape \\t: char == 9')
+
+    ni3 = r.parse-escape('\\r', 0)
+    runner.eq(ni3, 2, 'parse-escape \\r: new-i == 2')
+    runner.eq(r.tmp-atom-char, 13, 'parse-escape \\r: char == 13')
+
+    ni4 = r.parse-escape('\\.', 0)
+    runner.eq(ni4, 2, 'parse-escape \\.: new-i == 2')
+    runner.eq(r.tmp-atom-char, 46, 'parse-escape \\.: char == 46（脫糖為常字元）')
+
+    ni5 = r.parse-escape('\\d', 0)
+    runner.eq(ni5, 2, 'parse-escape \\d: new-i == 2')
+    runner.eq(r.tmp-atom-type, 3, 'parse-escape \\d: type == RE-OP-CLASS')
+    d = r.tmp-atom-cls
+    runner.is-true(r.in-class(d, 48), 'parse-escape \\d: 含 0')
+    runner.is-false(r.in-class(d, 65), 'parse-escape \\d: 不含 A')
+
+    ni6 = r.parse-escape('\\D', 0)
+    runner.eq(ni6, 2, 'parse-escape \\D: new-i == 2')
+    runner.is-false(r.in-class(r.tmp-atom-cls, 48), 'parse-escape \\D: 不含 0')
+
+    ni7 = r.parse-escape('\\w', 0)
+    runner.eq(ni7, 2, 'parse-escape \\w: new-i == 2')
+    runner.is-true(r.in-class(r.tmp-atom-cls, 95), 'parse-escape \\w: 含 _')
+
+    ni8 = r.parse-escape('\\W', 0)
+    runner.eq(ni8, 2, 'parse-escape \\W: new-i == 2')
+    runner.is-false(r.in-class(r.tmp-atom-cls, 95), 'parse-escape \\W: 不含 _')
+
+    ni9 = r.parse-escape('\\s', 0)
+    runner.eq(ni9, 2, 'parse-escape \\s: new-i == 2')
+    runner.is-true(r.in-class(r.tmp-atom-cls, 32), 'parse-escape \\s: 含空格')
+
+    ni10 = r.parse-escape('\\S', 0)
+    runner.eq(ni10, 2, 'parse-escape \\S: new-i == 2')
+    runner.is-false(r.in-class(r.tmp-atom-cls, 32), 'parse-escape \\S: 不含空格')
+
+    ; 尾部孤立反斜線：原樣返回，不越界
+    ni11 = r.parse-escape('\\', 0)
+    runner.eq(ni11, 0, 'parse-escape 尾部反斜線: new-i 原地不動')
+}
+
+; emit-quantized 的四條分支：指令序列與 next-i 前進量
+t-emit-quantized = () {
+
+    ; 無量詞：單條 atom
+    r0 = regexp{
+        pattern: ''
+    }
+    r0.tmp-quant = 0
+    r0.emit-quantized(1, 97, 0, 1)
+    runner.eq(r0.n, 1, 'emit-quantized 無量詞: n == 1')
+    runner.eq(i64-of(r0.op[0]), 1, 'emit-quantized 無量詞: 直接發 atom')
+    runner.eq(r0.tmp-next-i, 1, 'emit-quantized 無量詞: next-i == atom-i')
+
+    ; * ：SPLIT / atom / JUMP
+    r1 = regexp{
+        pattern: ''
+    }
+    r1.tmp-quant = 1
+    r1.emit-quantized(1, 97, 0, 1)
+    runner.eq(r1.n, 3, 'emit-quantized *: n == 3')
+    runner.eq(i64-of(r1.op[0]), 8, 'emit-quantized *: op[0] == SPLIT')
+    runner.eq(i64-of(r1.arg1[0]), 1, 'emit-quantized *: SPLIT 第一分支指向 atom')
+    runner.eq(i64-of(r1.arg2[0]), 3, 'emit-quantized *: SPLIT 第二分支跳過整個塊')
+    runner.eq(i64-of(r1.op[1]), 1, 'emit-quantized *: op[1] == CHAR')
+    runner.eq(i64-of(r1.op[2]), 7, 'emit-quantized *: op[2] == JUMP')
+    runner.eq(i64-of(r1.arg1[2]), 0, 'emit-quantized *: JUMP 回到 SPLIT')
+    runner.eq(r1.tmp-next-i, 2, 'emit-quantized *: next-i == atom-i + 1')
+
+    ; + ：atom / SPLIT
+    r2 = regexp{
+        pattern: ''
+    }
+    r2.tmp-quant = 2
+    r2.emit-quantized(1, 97, 0, 1)
+    runner.eq(r2.n, 2, 'emit-quantized +: n == 2')
+    runner.eq(i64-of(r2.op[0]), 1, 'emit-quantized +: op[0] == CHAR')
+    runner.eq(i64-of(r2.op[1]), 8, 'emit-quantized +: op[1] == SPLIT')
+    runner.eq(i64-of(r2.arg1[1]), 0, 'emit-quantized +: SPLIT 回跳 atom')
+    runner.eq(i64-of(r2.arg2[1]), 2, 'emit-quantized +: SPLIT 出口')
+    runner.eq(r2.tmp-next-i, 2, 'emit-quantized +: next-i == atom-i + 1')
+
+    ; ? ：SPLIT / atom
+    r3 = regexp{
+        pattern: ''
+    }
+    r3.tmp-quant = 3
+    r3.emit-quantized(1, 97, 0, 1)
+    runner.eq(r3.n, 2, 'emit-quantized ?: n == 2')
+    runner.eq(i64-of(r3.op[0]), 8, 'emit-quantized ?: op[0] == SPLIT')
+    runner.eq(i64-of(r3.arg1[0]), 1, 'emit-quantized ?: 第一分支指向 atom')
+    runner.eq(i64-of(r3.arg2[0]), 2, 'emit-quantized ?: 第二分支跳過 atom')
+    runner.eq(r3.tmp-next-i, 2, 'emit-quantized ?: next-i == atom-i + 1')
+}
+
+; compile 的整體形狀：計數、旗標、錨點編碼、可重複執行
+t-compile = () {
+    r = regexp{
+        pattern: 'a+b'
+    }
+    runner.is-false(r.compiled, 'compile: 建構後尚未編譯')
+    r.compile()
+    runner.is-true(r.compiled, 'compile: compiled 置真')
+    runner.is-false(r.overflowed, 'compile: 短 pattern 不溢出')
+    runner.eq(r.n, 4, 'compile a+b: 共 4 條指令')
+    runner.eq(r.ncls, 3, 'compile: 量詞偵測類固定佔 3 個')
+    runner.eq(i64-of(r.op[3]), 9, 'compile: 末條為 MATCH')
+
+    ra = regexp{
+        pattern: '^a$'
+    }
+    ra.compile()
+    runner.eq(ra.n, 4, 'compile ^a$: 共 4 條指令')
+    runner.eq(i64-of(ra.op[0]), 10, 'compile ^a$: op[0] == START')
+    runner.eq(i64-of(ra.op[1]), 1, 'compile ^a$: op[1] == CHAR')
+    runner.eq(i64-of(ra.op[2]), 11, 'compile ^a$: op[2] == END')
+    runner.eq(i64-of(ra.op[3]), 9, 'compile ^a$: op[3] == MATCH')
+
+    ; 重複編譯必須重置計數，不能在上次結果上累加
+    ra.compile()
+    runner.eq(ra.n, 4, 'compile 重跑: n 不累加')
+    runner.eq(ra.ncls, 3, 'compile 重跑: ncls 不累加')
+}
+
+; match-at 直接驅動 VM，並回報 match-end
+t-match-at = () {
+    r = regexp{
+        pattern: 'a+b'
+    }
+    r.compile()
+
+    runner.is-true(r.match-at(0, 0, 'aaab'), 'match-at: 從 0 開始命中')
+    runner.eq(r.match-end, 4, 'match-at: match-end == 4')
+    runner.is-true(r.match-at(0, 1, 'aab'), 'match-at: 從 1 開始命中')
+    runner.eq(r.match-end, 3, 'match-at: match-end == 3')
+    runner.is-false(r.match-at(0, 0, 'xaab'), 'match-at: 首字元不符則失敗')
+
+    ; 行首錨點只在 sp == 0 時成立
+    ra = regexp{
+        pattern: '^ab'
+    }
+    ra.compile()
+    runner.is-true(ra.match-at(0, 0, 'ab'), 'match-at ^ab: sp == 0 命中')
+    runner.is-false(ra.match-at(0, 1, 'xab'), 'match-at ^ab: sp == 1 失敗')
+}
+
+; matches / find 直調（不經 regexp-match 便捷函數），含自動編譯
+t-matches-find-direct = () {
+    r = regexp{
+        pattern: 'z+'
+    }
+    runner.is-false(r.compiled, 'matches: 建構後尚未編譯')
+    runner.is-true(r.matches('aazz'), 'matches: 中段命中')
+    runner.is-true(r.compiled, 'matches: 首呼自動編譯')
+
+    r2 = regexp{
+        pattern: 'a+b'
+    }
+    res = r2.find('xxaabzz')
+    runner.eq(res.len(), 3, 'find 直調: 長度 3')
+    runner.str-eq(res, 'aab', 3, 'find 直調: 內容 aab')
+
+    ; 量詞可全不取 ⇒ 空匹配，find 必須回空字串而不是死循環
+    r3 = regexp{
+        pattern: 'x*'
+    }
+    empty = r3.find('yyy')
+    runner.eq(empty.len(), 0, 'find 直調: 空匹配回空字串')
+}
+
+; 三個頂層函數的點式呼叫形式（跨模組限定名）
+t-top-funcs-dotted = () {
+    runner.is-true(regexp.regexp-match('h.llo', 'hello'), 'regexp.regexp-match: 命中')
+    runner.is-false(regexp.regexp-match('xyz', 'hello'), 'regexp.regexp-match: 不命中')
+
+    f = regexp.regexp-find('[0-9]+', 'abc123def')
+    runner.eq(f.len(), 3, 'regexp.regexp-find: 長度 3')
+    runner.str-eq(f, '123', 3, 'regexp.regexp-find: 內容 123')
+    empty = regexp.regexp-find('xyz', 'abc')
+    runner.eq(empty.len(), 0, 'regexp.regexp-find: 未命中回空字串')
+
+    re = regexp.regexp-compile('a+b')
+    runner.is-true(re.compiled, 'regexp.regexp-compile: 回傳已編譯實例')
+    runner.is-true(re.matches('aab'), 'regexp.regexp-compile: 可直接匹配')
+}
+
+; ── 容量上限（修前為靜默截斷，見 README §5.1n） ───
+
+; 類別 bitmap 容量：3 個量詞偵測類 + N 個 [...] 必須 <= RE-CLS-MAX(32)
+t-capacity-class = () {
+
+    ; 29 個 [...] ⇒ 3 + 29 = 32，剛好佔滿
+    p-ok = '[a][b][c][d][e][f][g][h][i][j][k][l][m][n][o][p][q][r][s][t][u][v][w][x][y][z][A][B][C]'
+    r-ok = regexp{
+        pattern: p-ok
+    }
+    r-ok.compile()
+    runner.eq(r-ok.ncls, 32, '容量: 29 個類別剛好佔滿')
+    runner.is-false(r-ok.overflowed, '容量: 29 個類別不溢出')
+    runner.is-true(r-ok.matches('abcdefghijklmnopqrstuvwxyzABC'), '容量: 29 個類別可匹配自己的串')
+
+    ; 再多一個就溢出：ncls 飽和、overflowed 置位、明確不匹配
+    p-over = '[a][b][c][d][e][f][g][h][i][j][k][l][m][n][o][p][q][r][s][t][u][v][w][x][y][z][A][B][C][D]'
+    r-over = regexp{
+        pattern: p-over
+    }
+    r-over.compile()
+    runner.eq(r-over.ncls, 32, '容量: 溢出時 ncls 停在 RE-CLS-MAX')
+    runner.is-true(r-over.overflowed, '容量: 30 個類別置 overflowed')
+    runner.is-false(r-over.matches('abcdefghijklmnopqrstuvwxyzABCD'), '容量: 溢出後不匹配且有旗標可判')
+
+    ; alloc-class 溢出後回 -1：位元操作統一走越界 err 分支，不得崩
+    q = regexp{
+        pattern: ''
+    }
+    k <- [0..33): {
+        ci = q.alloc-class()
+        q.init-class-zero(ci)
+        q.set-class-bit(ci, 97)
+    }
+    runner.eq(q.ncls, 32, 'alloc-class 溢出: ncls 飽和')
+    runner.is-true(q.overflowed, 'alloc-class 溢出: 置 overflowed')
+    runner.is-true(q.in-class(31, 97), 'alloc-class 溢出: 最後一個合法類別仍可用')
+    runner.is-false(q.in-class(-1, 97), 'alloc-class 溢出: -1 恆不命中')
+}
+
+; 指令陣列容量：字面量字元 + MATCH 必須 <= RE-OP-MAX(256)
+t-capacity-op = () {
+
+    ; 255 個字面量 + MATCH = 256，剛好佔滿
+    s-ok = mk-a(255)
+    r-ok = regexp{
+        pattern: s-ok
+    }
+    r-ok.compile()
+    runner.eq(r-ok.n, 256, '容量: 255 字元剛好佔滿指令陣列')
+    runner.is-false(r-ok.overflowed, '容量: 255 字元不溢出')
+    runner.is-true(r-ok.matches(s-ok), '容量: 255 字元可匹配自己')
+
+    ; 256 個字元需 257 條 ⇒ MATCH 發不出去
+    s-over = mk-a(256)
+    r-over = regexp{
+        pattern: s-over
+    }
+    r-over.compile()
+    runner.eq(r-over.n, 256, '容量: 溢出時 n 停在 RE-OP-MAX')
+    runner.is-true(r-over.overflowed, '容量: 256 字元置 overflowed')
+    runner.is-false(r-over.matches(s-over), '容量: 溢出後不匹配且有旗標可判')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('regexp.match-literal', t-match-literal)
@@ -158,6 +717,21 @@ p11, f11 = runner.test('regexp.start-anchor', t-start-anchor)
 p12, f12 = runner.test('regexp.end-anchor', t-end-anchor)
 p13, f13 = runner.test('regexp.find-digits', t-find-digits)
 p14, f14 = runner.test('regexp.find-not-found', t-find-not-found)
+p15, f15 = runner.test('regexp.emit', t-emit)
+p16, f16 = runner.test('regexp.emit-atom', t-emit-atom)
+p17, f17 = runner.test('regexp.class-bitmap', t-class-bitmap)
+p18, f18 = runner.test('regexp.class-presets', t-class-presets)
+p19, f19 = runner.test('regexp.set-class-escape', t-set-class-escape)
+p20, f20 = runner.test('regexp.parse-atom', t-parse-atom)
+p21, f21 = runner.test('regexp.parse-class', t-parse-class)
+p22, f22 = runner.test('regexp.parse-escape', t-parse-escape)
+p23, f23 = runner.test('regexp.emit-quantized', t-emit-quantized)
+p24, f24 = runner.test('regexp.compile', t-compile)
+p25, f25 = runner.test('regexp.match-at', t-match-at)
+p26, f26 = runner.test('regexp.matches-find-direct', t-matches-find-direct)
+p27, f27 = runner.test('regexp.top-funcs-dotted', t-top-funcs-dotted)
+p28, f28 = runner.test('regexp.capacity-class', t-capacity-class)
+p29, f29 = runner.test('regexp.capacity-op', t-capacity-op)
 
 total = runner.summary()
 f = runner.failed-count()

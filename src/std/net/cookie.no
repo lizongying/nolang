@@ -434,13 +434,11 @@ jar.get = (name str, domain str, path str) (val ?str) {
                 }
             }
             domain-match && path-match -> {
-                ixout437c1e = .values[i]: {
+                val = .values[i]: {
                     ok -> it
 
                     -> _
                 }
-
-                val = ixout437c1e
                 return
             }
         }

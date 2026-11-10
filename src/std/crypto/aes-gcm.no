@@ -174,13 +174,11 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         }
     }
     i <- [0..16): {
-        ixout173c13 = z[i]: {
+        out[i] = z[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout173c13
     }
 }
 
@@ -209,16 +207,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     #{overflow=wrap}
     (pos + 16 <= aad.len()) {
         i <- [0..16): {
+            {
 
-            #{overflow=wrap}
-            ixout152c28 = aad[pos + i]: {
-                ok -> it
-
-                -> _
-            }
-
-            blk[i]: {
-                ok -> it = ixout152c28
+                #{overflow=wrap}
+                blk[i] ?= aad[pos + i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -271,16 +265,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..aad.len() - pos): {
+            {
 
-            #{overflow=wrap}
-            ixout187c28 = aad[pos + i]: {
-                ok -> it
-
-                -> _
-            }
-
-            blk[i]: {
-                ok -> it = ixout187c28
+                #{overflow=wrap}
+                blk[i] ?= aad[pos + i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -314,16 +304,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     #{overflow=wrap}
     (pos + 16 <= cipher.len()) {
         i <- [0..16): {
+            {
 
-            #{overflow=wrap}
-            ixout212c28 = cipher[pos + i]: {
-                ok -> it
-
-                -> _
-            }
-
-            blk[i]: {
-                ok -> it = ixout212c28
+                #{overflow=wrap}
+                blk[i] ?= cipher[pos + i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -373,16 +359,12 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
             }
         }
         i <- [0..cipher.len() - pos): {
+            {
 
-            #{overflow=wrap}
-            ixout244c28 = cipher[pos + i]: {
-                ok -> it
-
-                -> _
-            }
-
-            blk[i]: {
-                ok -> it = ixout244c28
+                #{overflow=wrap}
+                blk[i] ?= cipher[pos + i]
+            }: {
+                err -> _
 
                 -> _
             }
@@ -546,13 +528,11 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     y = ghash-mul(y, h)
 
     i <- [0..16): {
-        ixout539c13 = y[i]: {
+        out[i] = y[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout539c13
     }
 }
 
@@ -647,13 +627,11 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
 ; [gcm-j0](#aes-gcm.gcm-j0)
 gcm-j0 = (iv [12]byte) (j0 [16]byte) {
     i <- [0..12): {
-        ixout626c13 = iv[i]: {
+        j0[i] = iv[i]: {
             ok -> it
 
             -> _
         }
-
-        j0[i] = ixout626c13
     }
 
     j0[12] = 0
@@ -748,23 +726,22 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     #{overflow=wrap}
     sealed = with-len(cipher.len() + 16)
     i <- [0..cipher.len()): {
-        ixout532c21 = cipher[i]: {
+        sealed[i] = cipher[i]: {
             ok -> it
 
             -> _
         }
-
-        sealed[i] = ixout532c21
     }
     i <- [0..16): {
-        ixout728c27 = tag[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            sealed[cipher.len() + i] ?= tag[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        sealed[cipher.len() + i] = ixout728c27
     }
 }
 
@@ -792,30 +769,22 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ; 3. 拆出密文與 tag
     cipher []byte = with-len(cipher-len)
     i <- [0..cipher-len): {
-        ixout568c24 = sealed[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        cipher[i]: {
-            ok -> it = ixout568c24
+        {
+            cipher[i] ?= sealed[i]
+        }: {
+            err -> _
 
             -> _
         }
     }
     tag [16]byte
     i <- [0..16): {
+        {
 
-        #{overflow=wrap}
-        ixout578c24 = sealed[cipher-len + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        tag[i]: {
-            ok -> it = ixout578c24
+            #{overflow=wrap}
+            tag[i] ?= sealed[cipher-len + i]
+        }: {
+            err -> _
 
             -> _
         }

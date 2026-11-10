@@ -159,38 +159,26 @@ shift-rows = (state []byte) {
         -> 0
     }
 
-    ixout159c20 = state[5]: {
-        ok -> it
+    {
+        state[1] ?= state[5]
+    }: {
+        err -> _
 
         -> _
     }
 
-    state[1]: {
-        ok -> it = ixout159c20
+    {
+        state[5] ?= state[9]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout166c20 = state[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[5]: {
-        ok -> it = ixout166c20
-
-        -> _
-    }
-
-    ixout173c20 = state[13]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[9]: {
-        ok -> it = ixout173c20
+    {
+        state[9] ?= state[13]
+    }: {
+        err -> _
 
         -> _
     }
@@ -213,26 +201,18 @@ shift-rows = (state []byte) {
         -> 0
     }
 
-    ixout198c20 = state[10]: {
-        ok -> it
+    {
+        state[2] ?= state[10]
+    }: {
+        err -> _
 
         -> _
     }
 
-    state[2]: {
-        ok -> it = ixout198c20
-
-        -> _
-    }
-
-    ixout205c20 = state[14]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[6]: {
-        ok -> it = ixout205c20
+    {
+        state[6] ?= state[14]
+    }: {
+        err -> _
 
         -> _
     }
@@ -255,38 +235,26 @@ shift-rows = (state []byte) {
         -> 0
     }
 
-    ixout230c20 = state[11]: {
-        ok -> it
+    {
+        state[15] ?= state[11]
+    }: {
+        err -> _
 
         -> _
     }
 
-    state[15]: {
-        ok -> it = ixout230c20
+    {
+        state[11] ?= state[7]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout237c20 = state[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[11]: {
-        ok -> it = ixout237c20
-
-        -> _
-    }
-
-    ixout244c20 = state[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[7]: {
-        ok -> it = ixout244c20
+    {
+        state[7] ?= state[3]
+    }: {
+        err -> _
 
         -> _
     }
@@ -308,38 +276,26 @@ inv-shift-rows = (state []byte) {
         -> 0
     }
 
-    ixout268c20 = state[9]: {
-        ok -> it
+    {
+        state[13] ?= state[9]
+    }: {
+        err -> _
 
         -> _
     }
 
-    state[13]: {
-        ok -> it = ixout268c20
+    {
+        state[9] ?= state[5]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout275c20 = state[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[9]: {
-        ok -> it = ixout275c20
-
-        -> _
-    }
-
-    ixout282c20 = state[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[5]: {
-        ok -> it = ixout282c20
+    {
+        state[5] ?= state[1]
+    }: {
+        err -> _
 
         -> _
     }
@@ -362,26 +318,18 @@ inv-shift-rows = (state []byte) {
         -> 0
     }
 
-    ixout307c20 = state[10]: {
-        ok -> it
+    {
+        state[2] ?= state[10]
+    }: {
+        err -> _
 
         -> _
     }
 
-    state[2]: {
-        ok -> it = ixout307c20
-
-        -> _
-    }
-
-    ixout314c20 = state[14]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[6]: {
-        ok -> it = ixout314c20
+    {
+        state[6] ?= state[14]
+    }: {
+        err -> _
 
         -> _
     }
@@ -404,38 +352,26 @@ inv-shift-rows = (state []byte) {
         -> 0
     }
 
-    ixout339c20 = state[7]: {
-        ok -> it
+    {
+        state[3] ?= state[7]
+    }: {
+        err -> _
 
         -> _
     }
 
-    state[3]: {
-        ok -> it = ixout339c20
+    {
+        state[7] ?= state[11]
+    }: {
+        err -> _
 
         -> _
     }
 
-    ixout346c20 = state[11]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[7]: {
-        ok -> it = ixout346c20
-
-        -> _
-    }
-
-    ixout353c20 = state[15]: {
-        ok -> it
-
-        -> _
-    }
-
-    state[11]: {
-        ok -> it = ixout353c20
+    {
+        state[11] ?= state[15]
+    }: {
+        err -> _
 
         -> _
     }
@@ -1036,7 +972,11 @@ sub-word = (w i64) (r i64) {
 key-expand = (key [16]byte) (ek []byte) {
     ek = with-len(176)
     i <- [0..16): {
-        ek[i] = key[i]
+        ek[i] = key[i]: {
+            ok -> it
+
+            -> _
+        }
     }
     i <- [4..44): {
 
@@ -1096,7 +1036,11 @@ gf-mul3 = (x i64) (r i64) {
 key-expand-256 = (key [32]byte) (ek []byte) {
     ek = with-len(240)
     i <- [0..32): {
-        ek[i] = key[i]
+        ek[i] = key[i]: {
+            ok -> it
+
+            -> _
+        }
     }
     i <- [8..60): {
 
@@ -1196,7 +1140,11 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
     st []byte = with-len(16)
     i <- [0..16): {
         st[i]: {
-            ok -> it = in[i]
+            ok -> it = in[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1208,9 +1156,11 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
         shift-rows(st)
         mix-columns(st)
 
+        ; 迴圈內的位移另取名字：`rk-off` 在迴圈外（1219 行）還要再用一次，
+        ; 若在此處宣告會因為「可能零次迭代」被判為未初始化（sjuueqqo）。
         #{overflow=wrap}
-        rk-off = round * 16
-        add-round-key-at(st, ek, rk-off)
+        rk-off-i = round * 16
+        add-round-key-at(st, ek, rk-off-i)
     }
     sub-bytes(st, 16)
     shift-rows(st)
@@ -1220,7 +1170,11 @@ enc-block = (in [16]byte, ek []byte) (out [16]byte) {
     add-round-key-at(st, ek, rk-off)
 
     i <- [0..16): {
-        out[i] = st[i]
+        out[i] = st[i]: {
+            ok -> it
+
+            -> _
+        }
     }
 }
 
@@ -1237,7 +1191,11 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
     st []byte = with-len(16)
     i <- [0..16): {
         st[i]: {
-            ok -> it = in[i]
+            ok -> it = in[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1284,7 +1242,11 @@ dec-block = (in [16]byte, ek []byte) (out [16]byte) {
     add-round-key-at(st, ek, 0)
 
     i <- [0..16): {
-        out[i] = st[i]
+        out[i] = st[i]: {
+            ok -> it
+
+            -> _
+        }
     }
 }
 

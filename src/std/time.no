@@ -268,19 +268,22 @@ timer.elapsed-ms = () (ms i64) {
 ; [elapsed-s](#time.timer.elapsed-s)
 timer.elapsed-s = () (s i64) {
 
+    ; ⚠ 算式的型別是 `?i64`，必須在賦值處就用值位 match 解包。
+    ;   舊碼寫 `ms = .end-ts - .start-ts`（純賦值、不 match），再在內層區塊算
+    ;   `ms / 1000`：`ms` 靜默拿不到值（恆 0），除完仍是 0 ⇒ elapsed-s 對任何
+    ;   非零差都回 0，而 `no vet` 不報。同一段錯誤形狀見 elapsed-us。
     #{overflow=wrap}
-    ms = .end-ts - .start-ts
+    ms = .end-ts - .start-ts: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
-    {
+    s = ms / 1000: {
+        ok -> it
 
-        #{overflow=wrap}
-        s-opt = ms / 1000
-        s-opt: {
-            ok -> s = it
-
-            ->
-        }
+        -> 0
     }
 }
 
@@ -289,19 +292,19 @@ timer.elapsed-s = () (s i64) {
 ; [elapsed-us](#time.timer.elapsed-us)
 timer.elapsed-us = () (us i64) {
 
+    ; 同 elapsed-s：算式必須就地解包，否則 `ms` 恆 0。
     #{overflow=wrap}
-    ms = .end-ts - .start-ts
+    ms = .end-ts - .start-ts: {
+        ok -> it
+
+        -> 0
+    }
 
     #{overflow=wrap}
-    {
+    us = ms * 1000: {
+        ok -> it
 
-        #{overflow=wrap}
-        us-opt = ms * 1000
-        us-opt: {
-            ok -> us = it
-
-            ->
-        }
+        -> 0
     }
 }
 

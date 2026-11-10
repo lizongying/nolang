@@ -135,14 +135,15 @@ encode-header = (name str, value str) (buf []byte, n i64) {
 
     ; 名稱資料
     i <- [0..name-bytes.len()): {
-        ixout107c24 = name-bytes[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            buf[pos + i] ?= name-bytes[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        buf[pos + i] = ixout107c24
     }
 
     #{overflow=wrap}
@@ -188,14 +189,15 @@ encode-header = (name str, value str) (buf []byte, n i64) {
 
     ; 值資料
     i <- [0..value-bytes.len()): {
-        ixout137c24 = value-bytes[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            buf[pos + i] ?= value-bytes[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        buf[pos + i] = ixout137c24
     }
 
     #{overflow=wrap}
@@ -238,14 +240,15 @@ encode-headers = (names [16]str, values [16]str, count i64) (buf []byte, n i64) 
 
         hdr-buf, hdr-n = encode-header(ixout167c40, ixout167c50)
         j <- [0..hdr-n): {
-            ixout171c28 = hdr-buf[j]: {
-                ok -> it
+            {
+
+                #{overflow=wrap}
+                buf[pos + j] ?= hdr-buf[j]
+            }: {
+                err -> _
 
                 -> _
             }
-
-            #{overflow=wrap}
-            buf[pos + j] = ixout171c28
         }
 
         #{overflow=wrap}
@@ -391,14 +394,15 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     ft-n = 0
     ft-buf, ft-n = quic.varint-encode(frame-type)
     i <- [0..ft-n): {
-        ixout276c24 = ft-buf[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            buf[pos + i] ?= ft-buf[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        buf[pos + i] = ixout276c24
     }
 
     #{overflow=wrap}
@@ -418,14 +422,15 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
     len-n = 0
     len-buf, len-n = quic.varint-encode(payload.len())
     i <- [0..len-n): {
-        ixout289c24 = len-buf[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            buf[pos + i] ?= len-buf[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        buf[pos + i] = ixout289c24
     }
 
     #{overflow=wrap}
@@ -442,14 +447,15 @@ encode-frame = (frame-type i64, payload []byte) (buf []byte, n i64) {
 
     ; 影格資料
     i <- [0..payload.len()): {
-        ixout299c24 = payload[i]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            buf[pos + i] ?= payload[i]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        buf[pos + i] = ixout299c24
     }
 
     #{overflow=wrap}
@@ -532,13 +538,11 @@ parse-frame = (buf []byte, pos i64) (frame-type i64, payload []byte, next-pos i6
     i <- [0..len-val): {
 
         #{overflow=wrap}
-        ixout382c22 = buf[r-pos + i]: {
+        payload[i] = buf[r-pos + i]: {
             ok -> it
 
             -> _
         }
-
-        payload[i] = ixout382c22
     }
 
     #{overflow=wrap}
@@ -582,13 +586,11 @@ response.get-header = (name str) (val ?str) {
     i <- [0..self.header-count): {
         h ?= .header-names[i].to-lower()
         h == target -> {
-            ixout585c21 = .header-values[i]: {
+            val = .header-values[i]: {
                 ok -> it
 
                 -> _
             }
-
-            val = ixout585c21
             return
         }
     }
@@ -789,35 +791,17 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     stream-data []byte
     stream-pos = 0
     i <- [0..hdr-n): {
-        ixout618c24 = hdr-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        stream-data[stream-pos + i]: {
-            ok -> it = ixout618c24
-
-            -> _
-        }
+        stream-data[stream-pos + i] ?= hdr-buf[i]
     }
 
     #{overflow=wrap}
     stream-pos ?= stream-pos + hdr-n
     i <- [0..data-n): {
-        ixout630c24 = data-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        stream-data[stream-pos + i]: {
-            ok -> it = ixout630c24
-
-            -> _
-        }
+        stream-data[stream-pos + i] ?= data-buf[i]
     }
 
     #{overflow=wrap}
@@ -837,18 +821,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     stream-ft-n = 0
     stream-ft, stream-ft-n = quic.varint-encode(0x0f)
     i <- [0..stream-ft-n): {
-        ixout656c24 = stream-ft[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        pkt[pkt-pos + i]: {
-            ok -> it = ixout656c24
-
-            -> _
-        }
+        pkt[pkt-pos + i] ?= stream-ft[i]
     }
 
     #{overflow=wrap}
@@ -859,18 +834,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     sid-n = 0
     sid-buf, sid-n = quic.varint-encode(stream-id)
     i <- [0..sid-n): {
-        ixout673c24 = sid-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        pkt[pkt-pos + i]: {
-            ok -> it = ixout673c24
-
-            -> _
-        }
+        pkt[pkt-pos + i] ?= sid-buf[i]
     }
 
     #{overflow=wrap}
@@ -881,18 +847,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     off-n = 0
     off-buf, off-n = quic.varint-encode(0)
     i <- [0..off-n): {
-        ixout690c24 = off-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        pkt[pkt-pos + i]: {
-            ok -> it = ixout690c24
-
-            -> _
-        }
+        pkt[pkt-pos + i] ?= off-buf[i]
     }
 
     #{overflow=wrap}
@@ -903,18 +860,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     len-n = 0
     len-buf, len-n = quic.varint-encode(stream-pos)
     i <- [0..len-n): {
-        ixout707c24 = len-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        pkt[pkt-pos + i]: {
-            ok -> it = ixout707c24
-
-            -> _
-        }
+        pkt[pkt-pos + i] ?= len-buf[i]
     }
 
     #{overflow=wrap}
@@ -922,18 +870,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
 
     ; 資料
     i <- [0..stream-pos): {
-        ixout721c24 = stream-data[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        pkt[pkt-pos + i]: {
-            ok -> it = ixout721c24
-
-            -> _
-        }
+        pkt[pkt-pos + i] ?= stream-data[i]
     }
 
     #{overflow=wrap}

@@ -299,13 +299,13 @@ s = s.slice-bytes(0, 5); 字節截斷
 
 ## 預分配（內建語法）
 
-透過 `with-cap`、`with-len`、`with-cap-len` 三個內建語法可預先分配堆記憶體，避免後續 `push` / `s[i]=` 觸發反覆擴容：
+透過 `with-cap`、`with-len`、`with-cap-len` 三個內建語法可預先分配堆記憶體，避免後續 `push` 觸發反覆擴容：
 
 ```no
 ; with-cap(cap)：配置 cap 容量，len=0（需 push 後才能索引）
 s = with-cap(256); str，len=0, cap=256
 
-; with-len(len)：配置 len 容量，len=cap（可直接索引讀寫）
+; with-len(len)：配置 len 容量，len=cap（可直接索引讀）
 s = with-len(128); str，len=128, cap=128
 
 ; with-cap-len(cap, len)：同時指定容量與長度，適合「預留成長空間」場景
@@ -315,8 +315,14 @@ s = with-cap-len(512, 64); str，len=64, cap=512
 | 內建語法 | 參數 | len | cap | 適用場景 |
 |---|---|---|---|---|
 | `with-cap(cap)` | 1 | 0 | cap | 只知道上限，長度由 push 增長 |
-| `with-len(len)` | 1 | len | len | 固定長度，直接索引讀寫 |
+| `with-len(len)` | 1 | len | len | 固定長度，可直接索引讀 |
 | `with-cap-len(cap, len)` | 2 | len | cap | 已知初始長度且需預留擴容空間 |
+
+> ⚠️ **只有 `with-cap` 的緩衝允許下標直寫**。`with-cap(n)` 的 len=0，逐位元組下標寫入
+> 是唯一能把長度增長起來的寫法（`buf[i] = b`），故 `idxwrite` 對它豁免。
+> `with-len(n)` / `with-cap-len(cap, len)` 的 len 已就位，**寫入仍須 place-match
+> `buf[i]: { ok -> it = v / -> _ }` 或 `buf[i] ?= v`**——它們與任何其他容器同罪，
+> 直寫是編譯錯誤 `idxwrite`。（2026-11-10 起 `with-len` 不再豁免。）
 
 > **型別推導**：三個內建語法的結果型別由賦值左側推導，可用於 `str` 或 `[]T` 切片。
 

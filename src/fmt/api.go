@@ -133,7 +133,10 @@ func (f *formatter) newline() {
 // docStartLine returns the first line of the Doc comment before a statement, or 0.
 
 func (f *formatter) formatProgram(p *parser.Program) {
-	// 導入區段規範化：去重、移除無別名的 `# std/fmt`、按字典序排序（imports.go）。
+	// 導入位置歸一化：非頂部的導入（代碼之後、塊/函式體內）先搬到頂部區段
+	// （import_hoist.go），再做區段規範化：去重、移除無別名的 `# std/fmt`、
+	// 按字典序排序（imports.go）。
+	hoistImports(p)
 	normalizeImportRun(p)
 	// 模組 doc（`; [arr](#arr)` 收尾的那段）先輸出：它在 AST 上掛在 Program
 	// 而非首個陳述，故不能交給 formatStatement。與陳述的 Doc 一樣保留它與下方
@@ -151,9 +154,12 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	for i, stmt := range p.Statements {
 		emits := f.statementEmitsSomething(stmt)
 		if emits && i == 0 && moduleDocEmitted {
-			// 首個陳述緊接在模組 doc 之後：空行與否看原始碼，收尾換行交出去。
+			// 首個陳述緊接在模組 doc 之後：一般陳述按源碼是否留空行決定，
+			// 但**導入區段**與模組註釋之間固定空一行（導入區段是獨立的排版
+			// 區塊，緊貼模組說明會讓 `; [mod](#mod)` 與 `# std/x` 黏成一體）。
 			lastDocLine := p.Doc.List[len(p.Doc.List)-1].Pos.Line
-			if lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtFirstLine(stmt)) {
+			_, firstIsUse := stmt.(*parser.UseStatement)
+			if firstIsUse || (lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtFirstLine(stmt))) {
 				f.write("\n") // bare blank line (no indent)
 			}
 			f.newline()
@@ -164,13 +170,23 @@ func (f *formatter) formatProgram(p *parser.Program) {
 			_, currIsFunc := stmt.(*parser.FunctionDefinition)
 			_, prevIsUse := p.Statements[i-1].(*parser.UseStatement)
 			_, currIsUse := stmt.(*parser.UseStatement)
-			// 導入語句（`# std/...`）：相鄰導入之間只換行、不留空行，但務必
-			// 換行 —— 否則第二個導入會接在第一個同行（`# a# b`）；導入與其他
-			// 語句之間固定留一個空行（依源碼空行與否皆補齊，使註解/函式前有
-			// 分隔）。
-			if prevIsUse && currIsUse {
-				f.newline()
-			} else if prevIsUse || currIsUse {
+			// 導入區段的排版契約（imports.go / import_hoist.go 保證導入只出現在
+			// 頂部連續區段）：
+			//   - 導入之間不留空行，但本條導入上方帶註釋/`#{...}` 註解時，註釋塊
+			//     與上一條導入之間留一個空行 —— 「註釋 + 導入」是一個 node，
+			//     node 之間才分隔。
+			//   - 導入區段與其它陳述之間固定一個空行（無論源碼有無）。
+			if currIsUse {
+				if prevIsUse {
+					if f.nodeHeadWillEmit(stmt) {
+						f.write("\n") // blank line before the comment group
+					}
+					f.newline()
+				} else {
+					f.write("\n") // blank line (no indent)
+					f.newline()
+				}
+			} else if prevIsUse {
 				f.write("\n") // blank line (no indent)
 				f.newline()
 			} else if prevEmitted {

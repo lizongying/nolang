@@ -39,12 +39,12 @@ events.on-click(btn, () {
 })
 
 ; === Canvas: draw filled rectangles and a triangle path ===
-canvasEl = dom.create-element('canvas')
-canvasEl.set-attr('width', '240')
-canvasEl.set-attr('height', '140')
-body.append-child(canvasEl)
+canvas-el = dom.create-element('canvas')
+canvas-el.set-attr('width', '240')
+canvas-el.set-attr('height', '140')
+body.append-child(canvas-el)
 
-ctx = canvas.get-context-2d(canvasEl)
+ctx = canvas.get-context-2d(canvas-el)
 ctx.set-fill('red')
 ctx.fill-rect(10, 10, 60, 60)
 ctx.set-fill('blue')

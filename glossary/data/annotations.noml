@@ -7,18 +7,24 @@
       title: '注解（#{...}）'
       kind: 'annotation'
       status: 'stable'
-      summary: '井号加花括号的元信息；有「直属注解」与「行注解」两种作用范围。'
+      summary: '井号加花括号的元信息；作用域由宿主决定，分模块 / 声明 / 块 / 单行四层。'
       aliases: ['注解', 'attribute', 'annotation']
       definition: `
-写法 #{key} 或 #{key=value}，可多个并列。作用范围取决于位置：
-- 直属注解：紧跟在一个定义之上（函数、结构体、标签枚举），作用于该定义。
-- 行注解：#{} 单独成行时只作用于**紧跟其后的下一条陈述**，
-  不向块内其余语句或嵌套块传播。
+写法 #{key} 或 #{key=value}，可多个并列。位置只有两种：独占一行置于目标上方，
+或写在目标同一行尾随；行首前缀（#{...} target）是编译错误。
 
-已确认的键：overflow / buildin / embed / inline。
+作用范围取决于「宿主节点的种类」，不是注解内容：
+- L0 模块：文件头注解 + 至少一个空行，作用于本文件全部声明与语句（尚未实现）。
+- L1 声明：常量/全局变量、结构体、接口、标签枚举、函数、方法 —— 整个声明。
+- L2 块：协程组、if 组、cond 分支、match、for 循环 —— 整个块体（尚未实现）。
+- L3 单行：单条陈述 —— 该陈述及其表达式。
+
+已确认的键：overflow / buildin / embed / inline / generic / track-caller / bind，
+加上平台键（mac-arm64 等）与 FFI 语言键（c / cpp / rust）。
 
 注解会被 formatter 原样保留；编译器在解析期把部分键写进节点字段，
 以便单态化副本与 HIR 重建后仍能还原（例如 overflow 模式）。
+细节与实现差距见 annotation-scope。
 `
       syntax: `
 #{overflow=wrap}
@@ -34,8 +40,57 @@ f = (x i64) (r i64) {
 net-udp-open = () (fd fd) {
 }
 `
-      related: ['overflow', 'buildin', 'embed', 'inline']
-      refs: ['src/parser/annotation.go', 'docs/docs/lang/syntax.md']
+      related: ['annotation-scope', 'overflow', 'buildin', 'embed', 'inline']
+      refs: ['src/parser/annotation.go', 'docs/docs/lang/syntax.md', 'docs/docs/lang/annotation-scope.md']
+    }
+    'annotation-scope': {
+      title: '注解作用域'
+      kind: 'concept'
+      status: 'stable'
+      summary: '作用域由宿主决定：模块 / 声明 / 块 / 单行四层，函数体是硬边界，就近覆盖。'
+      aliases: ['作用域', 'scope', 'annotation-scope', '注解范围']
+      definition: `
+注解能管多大范围，由它附着的节点种类决定，不由注解内容决定。
+
+四层：
+- L0 模块：文件头注解 + 至少一个空行，作用于本文件全部声明与语句（尚未实现）。
+- L1 声明：常量/全局变量、结构体、接口、标签枚举、函数、方法 —— 整个声明，
+  函数含函数体与全部嵌套块。
+- L2 块：协程组、if 组、cond 分支、match、for/计数/区间循环 —— 整个块体，
+  含嵌套块，止于内层 L1 边界（尚未实现）。
+- L3 单行：单条陈述 —— 该陈述及其表达式。
+
+继承与覆盖：由外向内继承（L0 到 L3），同一节点上同名键后者胜。
+硬边界：函数体 / 方法体 / 匿名函数体不继承外层 L2、L3 注解；
+L1 注解本来就写在函数头上，照常覆盖整个函数体。
+成员粒度：结构体字段、枚举变体上的注解只管该成员。
+
+失效必报：非法的「键乘层级」组合（如 buildin 写在 for 上方）应报编译错误，
+不得静默忽略。
+
+陷阱：overflow 目前只有 L3 在 codegen 生效。写在函数头或块头只会让 no vet 闭嘴，
+运行期照旧回 err —— 实测函数级 wrap 得 err，而 no vet 报 No issues found。
+平台键则在 L1 与 L3 生效，L2 与 L0 未实现。
+`
+      syntax: `
+; L1：整个函数
+#{overflow=wrap}
+sum = (xs []i64) (total i64) {
+    ; L3：只管下一陈述
+    #{overflow=wrap}
+    total = xs.len() - 1
+}
+`
+      example: `
+; L0：文件头注解 + 一个空行 → 作用于整档
+#{win-amd64}
+
+greet = () {
+    print('windows only')
+}
+`
+      related: ['annotation', 'overflow', 'inline']
+      refs: ['docs/docs/lang/annotation-scope.md', 'src/parser/annotation.go']
     }
     'overflow': {
       title: '#{overflow=...}'
@@ -50,8 +105,10 @@ net-udp-open = () (fd fd) {
 关键点：这两个模式**只改变溢出时的取值，不改变结果型别** —— 结果仍是 ?i64。
 因此「已存在的 i64 变量 = 算术表达式」依然是硬错误，仍需两段式解包。
 
-未标注的整型运算若可能溢出，会被检查器报「未处理溢出」；
-把注解写在行上或函数上都能消除该告警。
+未标注的整型运算若可能溢出，会被检查器报「未处理溢出」。
+注意区分两个消费者：写在行上（L3）会真正改变 codegen 的溢出行為；
+写在函数或区块上（L1、L2）目前只会让 no vet 跳过整段扫描，codegen 仍按默认模式，
+于是检查全绿而运行期照旧回 err。详见 annotation-scope。
 `
       syntax: `
 i <- [0..n): {

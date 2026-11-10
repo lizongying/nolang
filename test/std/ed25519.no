@@ -26,14 +26,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout25c22 = hex-chars[(ixout25c33 >> 4) & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2] ?= hex-chars[(ixout25c33 >> 4) & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2] = ixout25c22
 
         ixout28c36 = data[i]: {
             ok -> it
@@ -41,14 +42,15 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
-        ixout28c26 = hex-chars[ixout28c36 & 15]: {
-            ok -> it
+        {
+
+            #{overflow=wrap}
+            hex[i * 2 + 1] ?= hex-chars[ixout28c36 & 15]
+        }: {
+            err -> _
 
             -> _
         }
-
-        #{overflow=wrap}
-        hex[i * 2 + 1] = ixout28c26
     }
 }
 
@@ -58,13 +60,11 @@ bhex = (data []byte) (hex str) {
 arr64 = (a [64]byte) (v []byte) {
     v = with-len(64)
     i <- [0..64): {
-        ixout40c16 = a[i]: {
+        v[i] = a[i]: {
             ok -> it
 
             -> _
         }
-
-        v[i] = ixout40c16
     }
 }
 
@@ -74,13 +74,11 @@ arr64 = (a [64]byte) (v []byte) {
 arr32 = (a [32]byte) (v []byte) {
     v = with-len(32)
     i <- [0..32): {
-        ixout52c16 = a[i]: {
+        v[i] = a[i]: {
             ok -> it
 
             -> _
         }
-
-        v[i] = ixout52c16
     }
 }
 seed1 [32]byte = [
@@ -110,7 +108,11 @@ seed2 [32]byte = [
 ; TEST 2：訊息 = 0x72
 t-test2 = () {
     msg []byte = with-len(1)
-    msg[0] = 0x72
+    msg[0]: {
+        ok -> it = 0x72
+
+        -> _
+    }
     pub = ed25519.ed25519-publickey(seed2)
     runner.str-eq(bhex(arr32(pub)), '3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c', 64, 'T2 publickey')
     sig = ed25519.ed25519-sign(seed2, msg)
@@ -148,7 +150,11 @@ t-tamper = () {
 
     ; 改動訊息也必須導致驗證失敗
     msg2 []byte = with-len(1)
-    msg2[0] = 0x00
+    msg2[0]: {
+        ok -> it = 0x00
+
+        -> _
+    }
     ok2 = ed25519.ed25519-verify(pub, msg2, sig)
     runner.eq(ok2, 0, 'wrong message rejected')
 }
@@ -418,7 +424,11 @@ t-scalar = () {
 ; S >= L 的簽名必須被拒絕（RFC 8032 要求 S 在群階內）
 t-bad-s = () {
     msg []byte = with-len(1)
-    msg[0] = 0x72
+    msg[0]: {
+        ok -> it = 0x72
+
+        -> _
+    }
     pub = ed25519.ed25519-publickey(seed2)
     sig = ed25519.ed25519-sign(seed2, msg)
 

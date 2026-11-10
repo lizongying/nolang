@@ -197,7 +197,7 @@ dupf-test-func = () {
 }
 
 ; ── from tests/duplicate.no ──
-dupl-A = 0
+dupl-a = 0
 
 ; 'A' already declared in this scope
 ; A = 1

@@ -131,41 +131,43 @@ check('sha3-512(m200)', sha3.sha3-512-hex(m), '863a1b14ef2b001f1300443ad4fd0a780
 ...
 
 ; sha3-256('abc') 應等於 3a985da7...，確認 [32]byte 版本與 hex 版本一致
-h__1 = sha3.sha3-256('abc')
+h-1 = sha3.sha3-256('abc')
 hex-chars = '0123456789abcdef'
 
 ; #{ascii}：got 只會填入 hex-chars 的 ASCII 位元組，s[i] 退化為 O(1) 定址
 #{ascii}
 got str = with-len(64)
 i <- [0..32): {
-    ixout67c29 = h__1[i]: {
+    ixout67c29 = h-1[i]: {
         ok -> it
 
         -> _
     }
 
-    ixout67c18 = hex-chars[(ixout67c29 >> 4) & 15]: {
+    {
+
+        #{overflow=wrap}
+        got[i * 2] ?= hex-chars[(ixout67c29 >> 4) & 15]
+    }: {
+        err -> _
+
+        -> _
+    }
+
+    ixout70c32 = h-1[i]: {
         ok -> it
 
         -> _
     }
 
-    #{overflow=wrap}
-    got[i * 2] = ixout67c18
+    {
 
-    ixout70c32 = h__1[i]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout70c22 = hex-chars[ixout70c32 & 15]: {
-        ok -> it
+        #{overflow=wrap}
+        got[i * 2 + 1] ?= hex-chars[ixout70c32 & 15]
+    }: {
+        err -> _
 
         -> _
     }
-
-    #{overflow=wrap}
-    got[i * 2 + 1] = ixout70c22
 }
 check('sha3-256("abc") via [32]byte', got, '3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532')

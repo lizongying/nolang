@@ -1950,17 +1950,28 @@ func (c *hirConv) emitSubjectMatchWrappersHIR(prep *subjectMatchPrep, inner int3
 	// synthesised ?elem option variable. Mirrors emitSubjectMatchAST's subjName block.
 	if prep.subjName != "" && prep.subjElem != "" {
 		stmts := make([]int32, 0, 3)
-		if prep.placeWriteUsed && prep.origIdxExpr != nil {
+		// Mirrors emitSubjectMatchAST: the __idx temp is needed for place-write
+		// (read and write-back share one index evaluation) AND when the index
+		// arithmetic is promoted to an option binding (idxOptElem) so an
+		// overflowing index short-circuits before the bounds check.
+		needIdxTemp := prep.origIdxExpr != nil && (prep.placeWriteUsed || prep.idxOptElem != "")
+		if needIdxTemp {
 			idxLet := &LetStatement{
 				Token:       tok,
 				Name:        &Identifier{Token: tok, Value: prep.idxTempName},
 				IsSynthetic: true,
 				Value:       prep.origIdxExpr,
 			}
+			// The explicit `?T` node is what makes MIR emit
+			// `*.with.overflow` for the index arithmetic; without it the temp is
+			// plain and the arithmetic stays a bare add.
+			if prep.idxOptElem != "" {
+				idxLet.Type = buildType(prep.idxTypeRaw(), tok)
+			}
 			stmts = append(stmts, c.stmt(idxLet))
 		}
 		subjValue := prep.origMatched
-		if prep.placeWriteUsed && prep.origIdxExpr != nil {
+		if needIdxTemp {
 			// D9: rewrite the read index to the __idx temp so the bounds-check
 			// read and the ok-arm write-back share one index evaluation. Built
 			// fresh (never mutate prep.origMatched — H0 must not touch the AST).
@@ -1990,7 +2001,10 @@ func (c *hirConv) emitSubjectMatchWrappersHIR(prep *subjectMatchPrep, inner int3
 				// ONLY when the container is actually growable and not already
 				// provably in-bounds, so fixed arrays keep the read-style bounds
 				// check (mir/d9_write_bce_test.go regresses otherwise).
-				c.sem.SetGrowWrite(subjValue, true)
+				// A promotion-only temp is a READ: it must keep `0 <= i < len`.
+				if prep.placeWriteUsed {
+					c.sem.SetGrowWrite(subjValue, true)
+				}
 			}
 		}
 		subjAssign := &LetStatement{

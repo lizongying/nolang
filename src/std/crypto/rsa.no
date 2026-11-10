@@ -682,14 +682,10 @@ _rsa-bn-div-mod = (a []i64, an i64, b []i64, bn i64) (q []i64, qn i64, r []i64, 
 
             ; 複製 sub-r 回 local-r
             k <- [0..sub-rn): {
-                ixout480c32 = sub-r[k]: {
-                    ok -> it
-
-                    -> _
-                }
-
-                local-r[k]: {
-                    ok -> it = ixout480c32
+                {
+                    local-r[k] ?= sub-r[k]
+                }: {
+                    err -> _
 
                     -> _
                 }
@@ -962,13 +958,11 @@ _rsa-modpow-trimmed = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn 
     out = with-len(n)
     rn == 0 -> out[0] = 0
     i <- [0..rn): {
-        ixout965c15 = raw[i]: {
+        out[i] = raw[i]: {
             ok -> it
 
             -> _
         }
-
-        out[i] = ixout965c15
     }
 }
 

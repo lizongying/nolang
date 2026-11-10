@@ -387,20 +387,16 @@ url-encode = (s str) (out str) {
 
             -> {
                 out[out.len-bytes()] = 37
-                ixout390c31 = hex-chars[c >> 4]: {
+                out[out.len-bytes()] = hex-chars[c >> 4]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[out.len-bytes()] = ixout390c31
-                ixout391c31 = hex-chars[c & 15]: {
+                out[out.len-bytes()] = hex-chars[c & 15]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[out.len-bytes()] = ixout391c31
             }
         }
     }
@@ -444,20 +440,16 @@ url-encode-component = (s str) (out str) {
 
             -> {
                 out[out.len-bytes()] = 37
-                ixout435c31 = hex-chars[c >> 4]: {
+                out[out.len-bytes()] = hex-chars[c >> 4]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[out.len-bytes()] = ixout435c31
-                ixout436c31 = hex-chars[c & 15]: {
+                out[out.len-bytes()] = hex-chars[c & 15]: {
                     ok -> it
 
                     -> _
                 }
-
-                out[out.len-bytes()] = ixout436c31
             }
         }
     }
@@ -776,14 +768,10 @@ url-parse-basic-auth = (header str) (user str, password str) {
     ; 提取 user 和 password
     user-bytes []byte
     j <- [0..colon): {
-        ixout670c24 = raw[j]: {
-            ok -> it
-
-            -> _
-        }
-
-        user-bytes[j]: {
-            ok -> it = ixout670c24
+        {
+            user-bytes[j] ?= raw[j]
+        }: {
+            err -> _
 
             -> _
         }
@@ -801,14 +789,10 @@ url-parse-basic-auth = (header str) (user str, password str) {
 
     #{overflow=wrap}
     j <- [colon + 1..raw.len()): {
-        ixout684c24 = raw[j]: {
-            ok -> it
-
-            -> _
-        }
-
-        pass-bytes[k]: {
-            ok -> it = ixout684c24
+        {
+            pass-bytes[k] ?= raw[j]
+        }: {
+            err -> _
 
             -> _
         }

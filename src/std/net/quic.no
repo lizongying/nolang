@@ -383,13 +383,11 @@ parse-frames = (buf []byte, pos i64, end i64) (frames [32]frame, count i64) {
         i <- [0..data-len): {
 
             #{overflow=wrap}
-            ixout287c37 = buf[r-pos + i]: {
+            frames[count].data[i] = buf[r-pos + i]: {
                 ok -> it
 
                 -> _
             }
-
-            frames[count].data[i] = ixout287c37
         }
 
         #{overflow=wrap}
@@ -641,39 +639,33 @@ derive-initial-keys = (dst-cid []byte, is-client bool) (key [16]byte, iv [12]byt
     key-tmp []byte
     key-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic key', empty-ctx, QUIC-KEY-SIZE)
     i <- [0..QUIC-KEY-SIZE): {
-        ixout457c18 = key-tmp[i]: {
+        key[i] = key-tmp[i]: {
             ok -> it
 
             -> _
         }
-
-        key[i] = ixout457c18
     }
 
     ; 5. IV = HKDF-Expand-Label(Secret, "quic iv", "", 12)
     iv-tmp []byte
     iv-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic iv', empty-ctx, QUIC-IV-SIZE)
     i <- [0..QUIC-IV-SIZE): {
-        ixout466c17 = iv-tmp[i]: {
+        iv[i] = iv-tmp[i]: {
             ok -> it
 
             -> _
         }
-
-        iv[i] = ixout466c17
     }
 
     ; 6. HP = HKDF-Expand-Label(Secret, "quic hp", "", 16)
     hp-tmp []byte
     hp-tmp = hkdf.hkdf-expand-label-vec(secret, 'quic hp', empty-ctx, QUIC-HP-SIZE)
     i <- [0..QUIC-HP-SIZE): {
-        ixout475c17 = hp-tmp[i]: {
+        hp[i] = hp-tmp[i]: {
             ok -> it
 
             -> _
         }
-
-        hp[i] = ixout475c17
     }
 }
 
@@ -694,16 +686,12 @@ apply-header-protection = (packet []byte, pn-offset i64, hp [16]byte, is-long-he
     ; 取取 16 位元組樣本（從 pn-offset + 4 開始）
     sample [16]byte
     i <- [0..16): {
+        {
 
-        #{overflow=wrap}
-        ixout500c24 = packet[pn-offset + 4 + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        sample[i]: {
-            ok -> it = ixout500c24
+            #{overflow=wrap}
+            sample[i] ?= packet[pn-offset + 4 + i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1049,14 +1037,9 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     len-n = 0
     len-buf, len-n = varint-encode(payload-len)
     i <- [0..len-n): {
-        ixout796c27 = len-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        packet[pos + i] = ixout796c27
+        packet[pos + i] ?= len-buf[i]
     }
 
     #{overflow=wrap}
@@ -1087,14 +1070,9 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     crypto-ft-n = 0
     crypto-ft, crypto-ft-n = varint-encode(QUIC-FRAME-CRYPTO)
     i <- [0..crypto-ft-n): {
-        ixout829c27 = crypto-ft[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        packet[pos + i] = ixout829c27
+        packet[pos + i] ?= crypto-ft[i]
     }
 
     #{overflow=wrap}
@@ -1105,14 +1083,9 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     off-n = 0
     off-buf, off-n = varint-encode(0)
     i <- [0..off-n): {
-        ixout842c27 = off-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        packet[pos + i] = ixout842c27
+        packet[pos + i] ?= off-buf[i]
     }
 
     #{overflow=wrap}
@@ -1123,14 +1096,9 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     data-len-n = 0
     data-len-buf, data-len-n = varint-encode(crypto-data.len())
     i <- [0..data-len-n): {
-        ixout855c27 = data-len-buf[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        packet[pos + i] = ixout855c27
+        packet[pos + i] ?= data-len-buf[i]
     }
 
     #{overflow=wrap}
@@ -1138,14 +1106,9 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
     ; Data
     i <- [0..crypto-data.len()): {
-        ixout865c27 = crypto-data[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        packet[pos + i] = ixout865c27
+        packet[pos + i] ?= crypto-data[i]
     }
 
     #{overflow=wrap}
@@ -1231,14 +1194,9 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; 組合: header + sealed
     final-pos = pn-offset
     i <- [0..sealed.len()): {
-        ixout934c33 = sealed[i]: {
-            ok -> it
-
-            -> _
-        }
 
         #{overflow=wrap}
-        packet[final-pos + i] = ixout934c33
+        packet[final-pos + i] ?= sealed[i]
     }
 
     #{overflow=wrap}
@@ -1416,14 +1374,10 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; AAD = buf[0..pn_offset]
     aad []byte
     i <- [0..pn-offset): {
-        ixout1065c24 = buf[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        aad[i]: {
-            ok -> it = ixout1065c24
+        {
+            aad[i] ?= buf[i]
+        }: {
+            err -> _
 
             -> _
         }
@@ -1432,16 +1386,12 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     ; Ciphertext = buf[pn_offset..pn_offset+length_val]
     sealed []byte
     i <- [0..length-val): {
+        {
 
-        #{overflow=wrap}
-        ixout1077c24 = buf[pn-offset + i]: {
-            ok -> it
-
-            -> _
-        }
-
-        sealed[i]: {
-            ok -> it = ixout1077c24
+            #{overflow=wrap}
+            sealed[i] ?= buf[pn-offset + i]
+        }: {
+            err -> _
 
             -> _
         }

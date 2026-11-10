@@ -85,13 +85,11 @@ toml.new = () (doc toml-doc) {
 toml-entry-key = (e toml-entry) (s str) {
     s = with-len(e.key-len)
     i <- [0..e.key-len): {
-        ixout88c15 = e.key[i]: {
+        s[i] = e.key[i]: {
             ok -> it
 
             -> _
         }
-
-        s[i] = ixout88c15
     }
 }
 
@@ -102,13 +100,11 @@ toml-entry-key = (e toml-entry) (s str) {
 toml-entry-value = (e toml-entry) (s str) {
     s = with-len(e.value-len)
     i <- [0..e.value-len): {
-        ixout99c17 = e.value[i]: {
+        s[i] = e.value[i]: {
             ok -> it
 
             -> _
         }
-
-        s[i] = ixout99c17
     }
 }
 
@@ -156,13 +152,11 @@ toml-make-entry = (key str, value str) (e toml-entry) {
 toml-table-name = (t toml-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
-        ixout147c16 = t.name[i]: {
+        s[i] = t.name[i]: {
             ok -> it
 
             -> _
         }
-
-        s[i] = ixout147c16
     }
 }
 
@@ -173,13 +167,11 @@ toml-table-name = (t toml-table) (s str) {
 toml-array-name = (t toml-array-table) (s str) {
     s = with-len(t.name-len)
     i <- [0..t.name-len): {
-        ixout158c16 = t.name[i]: {
+        s[i] = t.name[i]: {
             ok -> it
 
             -> _
         }
-
-        s[i] = ixout158c16
     }
 }
 
@@ -818,13 +810,11 @@ toml.parse = (s str) (result ?toml-doc) {
         ; D11 起索引讀取 `lines[i]` 回傳 `?str`，需以值 match 顯式消費；此處以
         ; place-match 取出 ok 值、nil 臂以 `_` 丟棄（D11 起已移除註解折值），
         ; 再以純 str 傳給 toml-strip-comment（原本的寫法讓 option 直接流入 i64/str 形參）。
-        ixout631c20 = lines[i]: {
+        line-raw = lines[i]: {
             ok -> it
 
             -> _
         }
-
-        line-raw = ixout631c20
         line = toml-strip-comment(line-raw)
 
         #{overflow=wrap}
@@ -937,13 +927,11 @@ toml.parse = (s str) (result ?toml-doc) {
                     j >= lines.len() -> break
 
                     ; D11 起同上 —— 索引讀取回傳 `?str`，以值 match 顯式消費 ?T 再用。
-                    ixout747c37 = lines[j]: {
+                    next-line-raw = lines[j]: {
                         ok -> it
 
                         -> _
                     }
-
-                    next-line-raw = ixout747c37
                     next-line = toml-strip-comment(next-line-raw)
 
                     raw-value = raw-value - '\n' - next-line

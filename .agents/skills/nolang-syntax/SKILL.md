@@ -2352,6 +2352,35 @@ val: {
 }
 ```
 
+**Bind outputs straight back into existing variables; avoid one-shot temporaries.** When a
+call's result only continues to update an existing variable, bind that variable directly as the
+output target instead of introducing a temporary used exactly once for a copy-back:
+
+```no
+; Recommended: the remainder writes straight back into r (r is also the method receiver)
+q, r = r.div-mod(modulus)
+
+; If the quotient is unused, discard it and introduce no new name at all
+_, r = r.div-mod(modulus)
+```
+
+```no
+; Discouraged: msq exists only to be copied into r
+q, msq = r.div-mod(modulus)
+r = msq
+```
+
+The receiver of a method is the implicit read-only `self`; binding the same variable to an output
+slot is legal under the alias rule — inputs are only read, outputs are only written, and the
+compiler does no static alias checking. Verified with `no build` / `no vet` / `no fmt`:
+`q, a = a.div-mod(bigint.from-i64(7))` after `a = bigint.from-i64(100)` yields `q = 14` and
+`a = 2`, identical to the copy-back form, including when `a` is the enclosing function's result
+parameter (`src/std/bigint.no`'s `mod-pow` has exactly this shape). The same holds for a single
+output (`r = r._mul(r)`, `s = s.trim()`), which the stdlib already uses widely.
+
+This is a style recommendation for **new code**, not a refactoring order: do not rewrite
+already-valid code just to conform (see "Golden Rule: Do Not Modify Valid Code").
+
 ### Structs & Methods
 
 Struct definitions and literals must both use multi-line form, with each field on its own line, fields not separated by commas, and no trailing comma.
@@ -2886,9 +2915,108 @@ arr[i] ?= x; 上抛简写
 
 **嵌套读取**：内层 match 会重绑 `it`，所以内层要用具名绑定 `ok(it1) -> it1`。
 自 2026-11-06 起，把值 match 直接写在 place-match 的 `it = ...` 右侧**会正确写回容器**
-（lowering 会把该值 match 提升为合成暂存再重绑 `it`，回归：`tests/place-write-value-match.no`）。
-若该值还要在别处复用，也可自行提升到具名暂存（`ixout1 = arr[9]: { ok -> it  -> _ }`），
-臂内再 `it = ixout1`；两种写法等价。
+（lowering 会把该值 match 提升为合成暂存再重绑 `it`，回归：`tests/match.no` 的
+`place-write-value-match` 段）。**首选直接写法**：值 match 的结果直接绑到最终要用的那个名字，
+不要先塞进一次性暂存再拷一次。
+
+```no
+#{fmt-skip}
+; ✅ 直接绑定目标变量
+at = argt[i]: {
+    ok -> it
+
+    -> _
+}
+s.farg.push(at)
+
+; ❌ 不要为单次使用引入一次性暂存
+ixout1 = argt[i]: { ok -> it  -> _ }
+at = ixout1
+s.farg.push(at)
+```
+
+「把值 match 提到臂外的具名暂存、臂内再 `it = ixout1`」**与直接写法并不等价**，不能当成
+可自由互换的排版选择：
+
+- **求值时机**：直接写法只在外层 `ok` 臂命中时求值；提到臂外后，外层 `nil` / `err` /
+  catch-all 也会先读一次，下标表达式带副作用时行为不同。
+- **绑定与所有权**：`it` 只在 match 臂内有效且指向元素位置，拷回必须留在臂内；具名暂存是
+  一个新的绑定，有自己的 move / 所有权与作用域退出销毁，不只是换个名字。
+- **内层绑定形态**：嵌套时内层必须用 `ok(it1) -> it1`；臂外暂存用的 `ok -> it` 不能原样
+  搬回嵌套位置。
+
+只有确实要在多处复用同一个值时才提升，且要用有意义的变量名，不要留 `ixout…` 这类
+迁移工具生成的占位名；单次使用一律直接绑定。
+
+#### 用 `?=` 与块 match 收掉剩余的一次性暂存
+
+上面说的是「单次使用就直接绑定」。再往前一步：安全索引返回的是 `?T`，**所以当函式的
+结果参数本身就是 `?T` 时，连值 match 都不必写，`?=` 一行直接上抛**：
+
+```no
+#{fmt-skip}
+; ✅ 函式有 ?T 结果参数：无暂存、无 match
+at ?= argt[i]
+s.farg.push(at)
+```
+
+**函式结果不是 option 时**（最常见：无返回值的辅助函式，或只是往容器里写回），用这种
+「类似 try」的写法把该陈述包起来：
+
+```no
+#{fmt-skip}
+handle = (x i64) {
+    {
+        y ?= x + 1
+        print(y)
+    }: {
+        err -> _
+
+        -> _
+    }
+    print('continues afterwards')
+}
+```
+
+⚠️ **这不是新的 `try` 语法，语言里也没有 `try` 关键字。** 它就是一个**陈述层级的块
+match**（`{ ... }: { ... }`），主语是三态 `?T`；`?=` 把失败上抛给**最近的**块 match
+（详见 *Error Propagation with `?=`* 与 *Block Match*）。失败时块主体剩下的陈述——包括
+后续循环迭代——全部跳过，臂只执行一次，然后**继续执行块之后的代码**，不是函式
+`return`。`err -> _` 丢弃错误，`-> _` 兜底丢弃成功结果；要处理错误可写
+`err -> print(it.msg())`。
+
+⚠️ **语义差异要讲清楚**（实测，别凭直觉）：`?=` 失败时**目标照样被写成零值**——`i64` 得
+`0`、`str` 得 `''`、`out[1]` 得 `0`，这点和旧的 catch-all `-> _` 完全一致。真正的差异只有
+一处：`?=` 会**跳过块主体中它之后的陈述**（在 `?T` 函式里是提前 `return`，在块 match 里
+是直接转到臂）。
+
+所以：**块主体里只有这一条陈述时，新旧写法行为完全等价**（这也正是本仓库批量改写的
+形态）；只有当同一块主体里 `?=` 后面还有别的陈述（循环计数、后续赋值）时才会分岔，那些
+站点不能机械替换。
+
+另一个容易踩的点：**成功时臂也会执行一次**，catch-all 收到成功值（`-> print('x')` 会打印）。
+所以臂里只该放丢弃或纯处理；`err -> _` / `-> _` 这种形态没有副作用。
+
+由此得到清理 `ixout…` 一次性暂存的顺序：
+
+1. 值只在同一处用一次 → 直接绑到最终目标名（见上文）。
+2. 函式有 `?T` 结果参数 → `TARGET ?= EXPR`，无需暂存。
+3. 否则 → 把该陈述放进块 match 再写 `TARGET ?= EXPR`；place-match 写回
+   （`SUBJ: { ok -> it = temp  -> _ }`）也直接缩成 `SUBJ ?= EXPR`。
+4. 只有确实要在多处复用同一个值时才保留具名暂存，且用有意义的变量名。
+
+两个边界：`?=` 在既没有 `?T` 结果参数、也不在块 match 主体内时是编译错误
+（`l86f91me`）；**带型别宣告的 LHS 不能配 `?=`**（`ai i64 ?= a[i]` 是语法错误
+`f5ikdmuc`）。需要 `byte → i64` 这类显式提升时，改成带型别宣告的直接值 match：
+
+```no
+#{fmt-skip}
+ai i64 = a[i]: {
+    ok -> it
+
+    -> _
+}
+```
 
 > **Consume or fail:** 把 `?T` 当普通值用（例如 `crc = crc ^ s[i]`、`f(s[i])`、`v i64 = a[i]`）
 > 是**编译硬错误**，编译器会提示改用 match 或 `?=`（无 `?T` 结果参数时用块 match 包住）。

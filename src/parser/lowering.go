@@ -3881,14 +3881,19 @@ func (p *Parser) emitMatchIfPlain(tok lexer.Token, plan *matchIfPlan) Expression
 // through it) and then READ by the tail wrappers, so it lives on the prep rather
 // than being a local of either phase.
 type subjectMatchPrep struct {
-	tok                lexer.Token
-	matched            Expression
-	arms               []MatchArm
-	origMatched        Expression
-	subjName           string
-	subjElem           string
-	origIdxExpr        Expression
-	idxTempName        string
+	tok         lexer.Token
+	matched     Expression
+	arms        []MatchArm
+	origMatched Expression
+	subjName    string
+	subjElem    string
+	origIdxExpr Expression
+	idxTempName string
+	// idxOptElem 非空時，下標運算元是「可溢出的有號整數算術」，需先提升成
+	// option 綁定 `__idx_L_C ?idxOptElem = <arith>`，讀取／寫回都改走該暫存。
+	// 這個 option 與索引本身的 `?elem` 是**疊加**的：任何一步非 ok 都會短路，
+	// 由同一個 match 的失敗臂消費（見 resolveSubjectMatch 的提升判定）。
+	idxOptElem string
 	// baseLeft 是寫回的容器基底**表達式**（不是名字）：`a[i]` 的 `a`、`.limit[i]`
 	// 的 `.limit`、`a.b.f[i]` 的 `a.b.f`。早期只存 string 名字，欄位基底因此
 	// 拿不到、place-write 靜默不寫回（lowering.go 舊 baseName == "" 早退）。
@@ -3929,6 +3934,10 @@ func matchSubjectTypeRaw(elem string) string {
 // subjTypeRaw is the prep-level spelling of matchSubjectTypeRaw.
 func (p *subjectMatchPrep) subjTypeRaw() string { return matchSubjectTypeRaw(p.subjElem) }
 
+// idxTypeRaw 是 `__idx_L_C` 暫存的宣告型別（`?T`）。只在 idxOptElem 非空時使用：
+// 那時暫存要承接下標算術的 option（溢位即 err），由外層 match 的失敗臂消費。
+func (p *subjectMatchPrep) idxTypeRaw() string { return matchSubjectTypeRaw(p.idxOptElem) }
+
 // inferOptionArithSubjectElem 回報 option 算術主語（`a % b`、`x + y * z` …）
 // 的 payload 型別，供 resolveSubjectMatch 把它歸一化成
 // `__match_subj_L_C ?elem`。規則與 lowerer.inferOptionArith / D6 一致：
@@ -3950,40 +3959,88 @@ func (p *subjectMatchPrep) subjTypeRaw() string { return matchSubjectTypeRaw(p.s
 // 該運算就仍是整數算術，結果仍是 `?T`。故取已知側當 payload，詳見
 // operandAllowsIntFallback 的守衛。
 func (p *Parser) inferOptionArithSubjectElem(e Expression) string {
+	return optionArithElem(e, p.arithTypeLookup())
+}
+
+// arithTypeLookup 回報 name 在兩個型別來源裡的宣告型別：語義副表（semType）與
+// AST 回放（astType）。兩者語意不同 —— 副表可能撿到別處同名的殘值，AST 回放
+// 只認宣告式與呼叫簽名 —— 故下游一律按「先副表、再回放」的順序消費這一對，
+// 不合成單一字串。
+//
+// 抽成回調是為了讓 checker 能複用**完全相同**的判定（見 IndexOperandArithElem）：
+// 「這個下標算術會不會被 lowering 提升成 option」必須是同一段程式碼，否則
+// HINT 的抑制條件與實際提升條件遲早漂移。
+type arithTypeLookup func(name string) (semType, astType string)
+
+// arithTypeLookup 綁定 *Parser 的兩個型別來源。
+func (p *Parser) arithTypeLookup() arithTypeLookup {
+	return func(name string) (string, string) {
+		semType := ""
+		if p.sem != nil {
+			if t, has := p.sem.FuncVarType(p.curFuncName, name); has {
+				semType = t
+			}
+		}
+		return semType, p.astLocalVarType(p.curFuncName, name)
+	}
+}
+
+// optionArithElem 是 inferOptionArithSubjectElem 的型別來源參數化版本。
+func optionArithElem(e Expression, lookup arithTypeLookup) string {
 	inf, ok := unwrapLowerExpr(e).(*InfixExpression)
 	if !ok || !isOptionArithOperator(inf.Operator) {
 		return ""
 	}
-	lt, okL := p.optionArithSubjectOperandInt(inf.Left)
-	rt, okR := p.optionArithSubjectOperandInt(inf.Right)
+	lt, okL := optionArithOperandInt(inf.Left, lookup)
+	rt, okR := optionArithOperandInt(inf.Right, lookup)
 	if okL && okR {
 		if len(rt) > len(lt) {
 			return rt
 		}
 		return lt
 	}
-	if okL && !okR && p.operandAllowsIntFallback(inf.Right) {
+	if okL && !okR && operandAllowsIntFallbackWith(inf.Right, lookup) {
 		return lt
 	}
-	if okR && !okL && p.operandAllowsIntFallback(inf.Left) {
+	if okR && !okL && operandAllowsIntFallbackWith(inf.Left, lookup) {
 		return rt
 	}
 	// 兩側都查不到（std blob 載入後副表缺條目的典型形狀，如
 	// `start - i`、`days * 86400 + d.hour * 3600`）：整棵樹只要沒有明確的
 	// 非整數葉子，就按語言預設整數 i64 處理，讓使用者不必補 `?i64` 標註。
-	return p.partialArithElem(inf)
+	return partialArithElemWith(inf, lookup)
+}
+
+// IndexOperandArithElem 回報「這個索引運算元會被自動提升成 option 綁定」時
+// 該 option 的 payload 型別（`i64` …），不會被提升時回 ""。
+//
+// 提升發生在 resolveSubjectMatch：option match 的主體是安全索引
+// （`seed[8 + i]: { ok -> … -> _ }`）時，下標算術先綁成 `__idx_L_C ?T`，再由
+// 同一個 match 的失敗臂一次消費兩步 —— 下標的 err 會在越界檢查之前短路。
+// 因此該站點的溢出**是有人管的**，checker 的 ovf-int-default HINT 必須閉嘴；
+// 判定就靠本函式，與 lowering 共用同一段型別推斷。
+func IndexOperandArithElem(idx *IndexExpression, lookup arithTypeLookup) string {
+	if idx == nil {
+		return ""
+	}
+	return optionArithElem(idx.Index, lookup)
 }
 
 // partialArithElem 從整棵 option 算術樹收集整數證據：每個葉子要嘛能判定為
 // 有號整數，要嘛只是「查不到型別」（副表缺條目），明確的非整數葉子一律否決。
 // 回傳其中最寬的有號整數型別；查不到型別者記為語言預設 i64。
 func (p *Parser) partialArithElem(e Expression) string {
+	return partialArithElemWith(e, p.arithTypeLookup())
+}
+
+// partialArithElemWith 是 partialArithElem 的型別來源參數化版本。
+func partialArithElemWith(e Expression, lookup arithTypeLookup) string {
 	switch x := unwrapLowerExpr(e).(type) {
 	case *InfixExpression:
 		if !isOptionArithOperator(x.Operator) {
 			return ""
 		}
-		l, r := p.partialArithElem(x.Left), p.partialArithElem(x.Right)
+		l, r := partialArithElemWith(x.Left, lookup), partialArithElemWith(x.Right, lookup)
 		if l == "" || r == "" {
 			return ""
 		}
@@ -3999,12 +4056,12 @@ func (p *Parser) partialArithElem(e Expression) string {
 		if x.Operator != "-" && x.Operator != "+" {
 			return ""
 		}
-		return p.partialArithElem(x.Right)
+		return partialArithElemWith(x.Right, lookup)
 	default:
-		if t, ok := p.optionArithSubjectOperandInt(e); ok {
+		if t, ok := optionArithOperandInt(e, lookup); ok {
 			return t
 		}
-		if p.operandAllowsIntFallback(e) {
+		if operandAllowsIntFallbackWith(e, lookup) {
 			return "i64"
 		}
 		return ""
@@ -4019,6 +4076,11 @@ func (p *Parser) partialArithElem(e Expression) string {
 // 只認三種形狀：整數字面量、識別字、同類運算子的巢狀中綴式。其餘（呼叫、
 // 索引、欄位讀取）一律不放行，避免把 `str-fn() + 1` 誤當整數算術。
 func (p *Parser) operandAllowsIntFallback(e Expression) bool {
+	return operandAllowsIntFallbackWith(e, p.arithTypeLookup())
+}
+
+// operandAllowsIntFallbackWith 是 operandAllowsIntFallback 的型別來源參數化版本。
+func operandAllowsIntFallbackWith(e Expression, lookup arithTypeLookup) bool {
 	switch x := unwrapLowerExpr(e).(type) {
 	case *IntegerLiteral:
 		return true
@@ -4026,14 +4088,10 @@ func (p *Parser) operandAllowsIntFallback(e Expression) bool {
 		if x.Value == "self" || x.Value == "." {
 			return false
 		}
-		typ := ""
-		if p.sem != nil {
-			if t, has := p.sem.FuncVarType(p.curFuncName, x.Value); has {
-				typ = t
-			}
-		}
+		semType, astType := lookup(x.Value)
+		typ := semType
 		if typ == "" {
-			typ = p.astLocalVarType(p.curFuncName, x.Value)
+			typ = astType
 		}
 		if typ == "" {
 			// 副表與 AST 回放都沒有條目：無法證明它不是整數，放行回退。
@@ -4048,7 +4106,7 @@ func (p *Parser) operandAllowsIntFallback(e Expression) bool {
 		if !isOptionArithOperator(x.Operator) {
 			return false
 		}
-		return p.operandAllowsIntFallback(x.Left) && p.operandAllowsIntFallback(x.Right)
+		return operandAllowsIntFallbackWith(x.Left, lookup) && operandAllowsIntFallbackWith(x.Right, lookup)
 	case *DotExpression:
 		// 欄位讀取（`d.hour`）在 AST 回放／語義副表裡通常沒有條目，但欄位
 		// 參與整數算術時就是有號整數；視為「未知」而非「明確非整數」。
@@ -4060,7 +4118,7 @@ func (p *Parser) operandAllowsIntFallback(e Expression) bool {
 		if x.Operator != "-" && x.Operator != "+" {
 			return false
 		}
-		return p.operandAllowsIntFallback(x.Right)
+		return operandAllowsIntFallbackWith(x.Right, lookup)
 	default:
 		return false
 	}
@@ -4071,6 +4129,11 @@ func (p *Parser) operandAllowsIntFallback(e Expression) bool {
 // lowerer.signedIntOperandType 的差別只在型別表的取得方式（*Parser 版本），
 // 判定本身複用同一個 lowerSignedIntName。
 func (p *Parser) optionArithSubjectOperandInt(e Expression) (string, bool) {
+	return optionArithOperandInt(e, p.arithTypeLookup())
+}
+
+// optionArithOperandInt 是 optionArithSubjectOperandInt 的型別來源參數化版本。
+func optionArithOperandInt(e Expression, lookup arithTypeLookup) (string, bool) {
 	switch x := unwrapLowerExpr(e).(type) {
 	case *IntegerLiteral:
 		return "i64", true
@@ -4078,13 +4141,8 @@ func (p *Parser) optionArithSubjectOperandInt(e Expression) (string, bool) {
 		if x.Value == "self" || x.Value == "." {
 			return "", false
 		}
-		typ := ""
-		if p.sem != nil {
-			if t, has := p.sem.FuncVarType(p.curFuncName, x.Value); has {
-				typ = t
-			}
-		}
-		if name, ok := lowerSignedIntName(typ); ok {
+		semType, astType := lookup(x.Value)
+		if name, ok := lowerSignedIntName(semType); ok {
 			return name, true
 		}
 		// 語義副表的精確鍵落空時會退回全域 VarTypes，可能撿到別處同名變數的
@@ -4094,7 +4152,7 @@ func (p *Parser) optionArithSubjectOperandInt(e Expression) (string, bool) {
 		// 它不受全域同名殘值影響。少了這一步，`close + 1` 這類主語就推不出
 		// `?i64`，`ok -> it` 的 it 沒有綁定，觀測值恆為 0（markdown.inline
 		// 的迴圈索引因此永不推進）。
-		if name, ok := lowerSignedIntName(p.astLocalVarType(p.curFuncName, x.Value)); ok {
+		if name, ok := lowerSignedIntName(astType); ok {
 			return name, true
 		}
 		return "", false
@@ -4102,8 +4160,8 @@ func (p *Parser) optionArithSubjectOperandInt(e Expression) (string, bool) {
 		if !isOptionArithOperator(x.Operator) {
 			return "", false
 		}
-		lt, okL := p.optionArithSubjectOperandInt(x.Left)
-		rt, okR := p.optionArithSubjectOperandInt(x.Right)
+		lt, okL := optionArithOperandInt(x.Left, lookup)
+		rt, okR := optionArithOperandInt(x.Right, lookup)
 		if !okL || !okR {
 			return "", false
 		}
@@ -4117,7 +4175,7 @@ func (p *Parser) optionArithSubjectOperandInt(e Expression) (string, bool) {
 		if x.Operator != "-" && x.Operator != "+" {
 			return "", false
 		}
-		return p.optionArithSubjectOperandInt(x.Right)
+		return optionArithOperandInt(x.Right, lookup)
 	default:
 		return "", false
 	}
@@ -4254,6 +4312,25 @@ func (p *Parser) resolveSubjectMatch(sm *SurfaceMatch) *subjectMatchPrep {
 			// `a.b.f[i]` 的 DotExpression（含元素作接收者的 `a[i].f[j]`）。
 			// 深拷貝避免寫回節點與原下標共享同一棵子樹（同時被走訪兩次）。
 			baseLeft = cloneIndexBase(idx.Left)
+			// 下標運算元是可溢出的有號整數算術時，把它提升成 option 綁定
+			// `__idx_L_C ?T = <arith>`，讀取改寫成 `arr[__idx_L_C]`。
+			//
+			// 為什麼要提升：原地 `arr[8 + i]` 的算術在 MIR 是**裸** add（無
+			// `*.with.overflow`），溢位靜默回繞，既不報錯也不受 `#{overflow}`
+			// 影響（實測 `arr[i * i]`，i = 2^32 ⇒ 回繞成 0 ⇒ 取到 `arr[0]`）。
+			// 提升成 `?T` 綁定後，MIR 對該算術發 overflow 內建，而**下標本身
+			// 是 option** 時索引讀取會傳播失敗 tag（短路在越界檢查之前），
+			// 於是 `seed[8 + i]: { ok -> … -> _ }` 一個 match 就消費了
+			// 「下標算術溢位」與「越界」兩步 —— 使用者不必再寫兩段。
+			//
+			// 判定與 checker 的 HINT 抑制共用 IndexOperandArithElem（同一段
+			// 型別推斷），兩者不可能漂移。
+			if elem := IndexOperandArithElem(idx, p.arithTypeLookup()); elem != "" {
+				prep.idxOptElem = elem
+				idxType := matchSubjectTypeRaw(elem)
+				p.sem.SetFuncVarType(p.curFuncName, idxTempName, idxType)
+				p.setVarType(idxTempName, idxType)
+			}
 		}
 	}
 	placeWriteUsed := false
@@ -5053,13 +5130,26 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 	if subjName != "" && subjElem != "" && ifExpr != nil {
 		var preStmts []Statement
 		subjValue := origMatched
-		if placeWriteUsed && origIdxExpr != nil {
-			preStmts = append(preStmts, &LetStatement{
+		// 何時需要 `__idx_L_C` 暫存：
+		//   - place-write（`it = v` 要寫回同一個元素位置）—— 讀寫共用一次下標求值；
+		//   - 下標算術被提升成 option（idxOptElem 非空）—— 讀取改走該 option 暫存，
+		//     下標溢位才能在越界檢查之前短路。
+		needIdxTemp := origIdxExpr != nil && (placeWriteUsed || prep.idxOptElem != "")
+		if needIdxTemp {
+			idxLet := &LetStatement{
 				Token:       tok,
 				Name:        &Identifier{Token: tok, Value: idxTempName},
 				IsSynthetic: true,
 				Value:       origIdxExpr,
-			})
+			}
+			// 提升形態要**顯式** `?T` 型別節點：MIR 對「結果型別是 option」的
+			// 整數算術才發 `*.with.overflow`。少了這個節點，暫存退回 plain
+			// ⇒ 算術仍是裸 add，等於沒提升（實測 `arr[i * i]`，i = 2^32 靜默取到
+			// `arr[0]`）。型別字串與上方副表登記的同一個 idxTypeRaw。
+			if prep.idxOptElem != "" {
+				idxLet.Type = buildType(prep.idxTypeRaw(), tok)
+			}
+			preStmts = append(preStmts, idxLet)
 			// 讀取索引改寫成 __idx 暫存 —— **建新節點，絕不就地改寫
 			// origMatched**（與 tohir.go 的 emitSubjectMatchHIR 同口徑）。
 			//
@@ -5077,15 +5167,21 @@ func (p *Parser) emitSubjectMatchPlain(prep *subjectMatchPrep) Expression {
 					Left:  idx.Left,
 					Index: &Identifier{Token: tok, Value: idxTempName},
 				}
-				// 借用原節點（bounds 分析已證明）的 InBounds 事實，並標成寫入
-				// 主體：可增長容器要走 grow-write 下標（`i >= 0` 即擴容），而非
-				// 讀語義的 `0 <= i < len`。與 emitSubjectMatchHIR 逐條對應，
-				// 少了它兩軌在 MIR 上分叉（mir/d9_write_bce_test.go 會紅）。
+				// 借用原節點（bounds 分析已證明）的 InBounds 事實；寫入主體另
+				// 標 grow-write：可增長容器要走 `i >= 0`（寫時擴容）而非讀語義
+				// 的 `0 <= i < len`。與 emitSubjectMatchHIR 逐條對應，少了它
+				// 兩軌在 MIR 上分叉（mir/d9_write_bce_test.go 會紅）。
+				//
+				// 純提升（無 place-write）的讀取**不得**標 grow-write：那是寫
+				// 語義，讀取必須維持 `0 <= i < len`，否則未配置的 vec 讀取會
+				// 被當成寫入而定義。
 				if p.sem != nil {
 					if p.sem.IndexIsInBounds(origMatched) {
 						p.sem.SetIndexInBounds(fresh, true)
 					}
-					p.sem.SetGrowWrite(fresh, true)
+					if placeWriteUsed {
+						p.sem.SetGrowWrite(fresh, true)
+					}
 				}
 				subjValue = fresh
 			}
