@@ -1068,7 +1068,13 @@ regexp.match-at = (pc i64, sp i64, text str) (ok bool) {
     result-ok = false
 
     pc < .n -> {
-        op = .op[pc]
+        ixout1071c11 = .op[pc]: {
+            ok -> it
+
+            -> _
+        }
+
+        op = ixout1071c11
 
         {
             a1 ?= .arg1[pc]
@@ -1200,7 +1206,13 @@ regexp.find = (text str) (result str) {
             j <- [0..mlen): {
 
                 #{overflow=wrap}
-                result[j] = text[sp + j]
+                ixout1203c21 = text[sp + j]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                result[j] = ixout1203c21
             }
             return
         }

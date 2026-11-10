@@ -93,7 +93,13 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
         ; D6：`spec[k]` 的結果是 ?char；這裡要的是舊的 plain char 行為，故顯式標註 char。
         c2 char = spec[1]
         c2 == 60 || c2 == 62 || c2 == 61 || c2 == 94 -> {
-            fill-v = spec[0]
+            ixout96c1a = spec[0]: {
+                ok -> it
+
+                -> _
+            }
+
+            fill-v = ixout96c1a
             align-v = c2
             i = 2
         }
@@ -175,7 +181,13 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
     ; 改用 for-loop + break 模式
     last-wi = i
     wi <- [i..n): {
-        c = spec[wi]
+        ixout178c11 = spec[wi]: {
+            ok -> it
+
+            -> _
+        }
+
+        c = ixout178c11
         c < 48 || c > 57 -> break
 
         #{overflow=wrap}
@@ -226,7 +238,13 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
             precision-v = 0
             last-pi = i
             pi <- [i..n): {
-                c = spec[pi]
+                ixout229c19 = spec[pi]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                c = ixout229c19
                 c < 48 || c > 57 -> break
 
                 #{overflow=wrap}
@@ -241,7 +259,13 @@ fmt-parse-spec = (spec str) (fill i64, align i64, sign i64, alt i64, zero i64, w
 
     ; type: 剩餘單一字元
     i < n -> {
-        typ-v = spec[i]
+        ixout244c15 = spec[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        typ-v = ixout244c15
     }
 
     ; 最終指派（頂層，output param 指派在此生效）
@@ -657,7 +681,13 @@ fmt-int = (n i64, spec str) (out str) {
             i <- [0..dlen-v): {
 
                 #{overflow=wrap}
-                digits[i] = full[i + 1]
+                ixout660c21 = full[i + 1]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                digits[i] = ixout660c21
             }
         }
 
@@ -666,7 +696,13 @@ fmt-int = (n i64, spec str) (out str) {
             sign == 32 -> sign-char = 32
             dlen-v = flen
             i <- [0..dlen-v): {
-                digits[i] = full[i]
+                ixout669c21 = full[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                digits[i] = ixout669c21
             }
         }
     }
@@ -693,9 +729,14 @@ fmt-int = (n i64, spec str) (out str) {
                 new-digits[i] = 48
             }
             i <- [0..dlen-v): {
+                ixout698c2d = digits[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 #{overflow=wrap}
-                new-digits[pad + i] = digits[i]
+                new-digits[pad + i] = ixout698c2d
             }
             digits = new-digits
             dlen-v = target
@@ -725,9 +766,14 @@ fmt-int = (n i64, spec str) (out str) {
         pos = 1
     }
     i <- [0..dlen-v): {
+        ixout730c1f = digits[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        body[pos + i] = digits[i]
+        body[pos + i] = ixout730c1f
     }
 
     ; 套用寬度/對齊（零填充已填滿時為 no-op）
@@ -825,9 +871,14 @@ fmt-uint = (u u64, spec str) (out str) {
                 new-digits[i] = 48
             }
             i <- [0..dlen): {
+                ixout830c2d = digits[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 #{overflow=wrap}
-                new-digits[pad + i] = digits[i]
+                new-digits[pad + i] = ixout830c2d
             }
             digits = new-digits
             dlen = target
@@ -846,12 +897,23 @@ fmt-uint = (u u64, spec str) (out str) {
     body-len = dlen + prefix-len
     body str = with-cap(body-len)
     i <- [0..prefix-len): {
-        body[i] = prefix[i]
+        ixout849c19 = prefix[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        body[i] = ixout849c19
     }
     i <- [0..dlen): {
+        ixout854c26 = digits[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        body[prefix-len + i] = digits[i]
+        body[prefix-len + i] = ixout854c26
     }
 
     ; 套用寬度/對齊
@@ -902,9 +964,14 @@ fmt-f64 = (x f64, spec str) (out str) {
 
                 new-digits[0] = 43
                 i <- [0..dlen): {
+                    ixout907c2f = digits[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     #{overflow=wrap}
-                    new-digits[1 + i] = digits[i]
+                    new-digits[1 + i] = ixout907c2f
                 }
                 digits = new-digits
             }
@@ -919,9 +986,14 @@ fmt-f64 = (x f64, spec str) (out str) {
 
                 new-digits[0] = 32
                 i <- [0..dlen): {
+                    ixout924c2f = digits[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     #{overflow=wrap}
-                    new-digits[1 + i] = digits[i]
+                    new-digits[1 + i] = ixout924c2f
                 }
                 digits = new-digits
             }
@@ -948,7 +1020,13 @@ fmt-f64 = (x f64, spec str) (out str) {
             pad = target - need
             new-digits str = with-cap(width)
             i <- [0..sign-len): {
-                new-digits[i] = digits[i]
+                ixout951c27 = digits[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                new-digits[i] = ixout951c27
             }
             i <- [0..pad): {
 
@@ -958,7 +1036,14 @@ fmt-f64 = (x f64, spec str) (out str) {
             i <- [0..need): {
 
                 #{overflow=wrap}
-                new-digits[sign-len + pad + i] = digits[sign-len + i]
+                ixout961c38 = digits[sign-len + i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                #{overflow=wrap}
+                new-digits[sign-len + pad + i] = ixout961c38
             }
             digits = new-digits
         }

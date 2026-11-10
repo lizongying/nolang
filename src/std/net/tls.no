@@ -945,7 +945,11 @@ conn.encrypt-record-gcm = (ct i64, data []byte, key [16]byte, salt [4]byte, seq 
     nonce [12]byte
     i <- [0..4): {
         nonce[i]: {
-            ok -> it = salt[i]
+            ok -> it = salt[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1062,7 +1066,11 @@ conn.decrypt-record-gcm = (buf []byte, expected-ct i64, key [16]byte, salt [4]by
     nonce [12]byte
     i <- [0..4): {
         nonce[i]: {
-            ok -> it = salt[i]
+            ok -> it = salt[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1226,7 +1234,11 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
         #{overflow=wrap}
         plain[n + i]: {
-            ok -> it = mac[i]
+            ok -> it = mac[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1282,7 +1294,11 @@ conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
         #{overflow=wrap}
         rec[5 + i]: {
-            ok -> it = iv[i]
+            ok -> it = iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1687,7 +1703,11 @@ conn.gen-x25519-keypair = () {
     priv-slice []byte = with-len(32)
     i <- [0..32): {
         priv-slice[i]: {
-            ok -> it = .client-priv[i]
+            ok -> it = .client-priv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -2842,7 +2862,11 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
 
                 #{overflow=wrap}
                 hs[5 + i]: {
-                    ok -> it = .pub-p256[i]
+                    ok -> it = .pub-p256[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     -> _
                 }
@@ -2872,7 +2896,11 @@ conn.send-client-key-exchange = (premaster []byte, cert []byte) (ok bool) {
 
             #{overflow=wrap}
             hs[5 + i]: {
-                ok -> it = .client-pub[i]
+                ok -> it = .client-pub[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
@@ -3120,7 +3148,11 @@ conn.derive-keys = (premaster []byte) {
     seed []byte = with-len(64)
     i <- [0..32): {
         seed[i]: {
-            ok -> it = .client-random[i]
+            ok -> it = .client-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3129,7 +3161,11 @@ conn.derive-keys = (premaster []byte) {
 
         #{overflow=wrap}
         seed[32 + i]: {
-            ok -> it = .server-random[i]
+            ok -> it = .server-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3141,7 +3177,11 @@ conn.derive-keys = (premaster []byte) {
     ks []byte = with-len(64)
     i <- [0..32): {
         ks[i]: {
-            ok -> it = .server-random[i]
+            ok -> it = .server-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3150,7 +3190,11 @@ conn.derive-keys = (premaster []byte) {
 
         #{overflow=wrap}
         ks[32 + i]: {
-            ok -> it = .client-random[i]
+            ok -> it = .client-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3354,13 +3398,21 @@ conn.handshake-12-body = () (ok bool) {
             pub-slice []byte = with-len(32)
             i <- [0..32): {
                 priv-slice[i]: {
-                    ok -> it = .client-priv[i]
+                    ok -> it = .client-priv[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     -> _
                 }
 
                 pub-slice[i]: {
-                    ok -> it = .server-pub[i]
+                    ok -> it = .server-pub[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     -> _
                 }
@@ -4167,7 +4219,11 @@ conn.send-client-hello-13 = () (ok bool) {
 
         #{overflow=wrap}
         hs[pos + i]: {
-            ok -> it = .client-pub[i]
+            ok -> it = .client-pub[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -4577,13 +4633,21 @@ conn.compute-shared-secret-13 = () {
     pub-slice []byte = with-len(32)
     i <- [0..32): {
         priv-slice[i]: {
-            ok -> it = .client-priv[i]
+            ok -> it = .client-priv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
 
         pub-slice[i]: {
-            ok -> it = .server-pub[i]
+            ok -> it = .server-pub[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -4631,7 +4695,11 @@ conn.derive-handshake-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
         empty-hash[i]: {
-            ok -> it = empty-hash-arr[i]
+            ok -> it = empty-hash-arr[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -4788,7 +4856,11 @@ conn.derive-application-keys-13 = () {
     hs-prk []byte = with-len(32)
     i <- [0..32): {
         hs-prk[i]: {
-            ok -> it = .hs-prk-field[i]
+            ok -> it = .hs-prk-field[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -4799,7 +4871,11 @@ conn.derive-application-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
         empty-hash[i]: {
-            ok -> it = empty-hash-arr[i]
+            ok -> it = empty-hash-arr[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -4912,7 +4988,13 @@ conn.derive-application-keys-13 = () {
 ; [build-nonce](#tls.build-nonce)
 build-nonce = (iv [12]byte, seq i64) (nonce [12]byte) {
     i <- [0..12): {
-        nonce[i] = iv[i]
+        ixout4915c16 = iv[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        nonce[i] = ixout4915c16
     }
 
     ; XOR sequence number (right-aligned 8 bytes) with last 8 bytes of IV
@@ -5231,7 +5313,13 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     ; 但 read-encrypted-record-13 已經移除了 inner content type，plain 就是純 handshake 資料
     pos = .hs-plain-pos
 
-    msg-type = .hs-plain-buf[pos]
+    ixout5234c1d = .hs-plain-buf[pos]: {
+        ok -> it
+
+        -> _
+    }
+
+    msg-type = ixout5234c1d
 
     #{overflow=wrap}
     msg-len = get-u24(.hs-plain-buf, pos + 1)
@@ -5244,7 +5332,13 @@ conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
 
         #{overflow=wrap}
-        msg-data[i] = .hs-plain-buf[pos + 4 + i]
+        ixout5247c24 = .hs-plain-buf[pos + 4 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        msg-data[i] = ixout5247c24
     }
     msg-data.truncate(msg-len)
 
@@ -5381,7 +5475,11 @@ conn.send-finished-13 = () (ok bool) {
     c-hs-secret []byte = with-len(32)
     i <- [0..32): {
         c-hs-secret[i]: {
-            ok -> it = .hs-c-secret[i]
+            ok -> it = .hs-c-secret[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -6391,7 +6489,11 @@ server-conn.send-certificate = () (ok bool) {
 
         #{overflow=wrap}
         hs[10 + i]: {
-            ok -> it = .cert[i]
+            ok -> it = .cert[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -6652,7 +6754,11 @@ server-conn.derive-keys = (premaster []byte) {
     seed []byte = with-len(64)
     i <- [0..32): {
         seed[i]: {
-            ok -> it = .client-random[i]
+            ok -> it = .client-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -6661,7 +6767,11 @@ server-conn.derive-keys = (premaster []byte) {
 
         #{overflow=wrap}
         seed[32 + i]: {
-            ok -> it = .server-random[i]
+            ok -> it = .server-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -6673,7 +6783,11 @@ server-conn.derive-keys = (premaster []byte) {
     ks []byte = with-len(64)
     i <- [0..32): {
         ks[i]: {
-            ok -> it = .server-random[i]
+            ok -> it = .server-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -6682,7 +6796,11 @@ server-conn.derive-keys = (premaster []byte) {
 
         #{overflow=wrap}
         ks[32 + i]: {
-            ok -> it = .client-random[i]
+            ok -> it = .client-random[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -6840,7 +6958,11 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
         #{overflow=wrap}
         plain[n + i]: {
-            ok -> it = mac[i]
+            ok -> it = mac[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -6901,7 +7023,11 @@ server-conn.encrypt-record = (ct i64, data []byte) (ok bool) {
 
         #{overflow=wrap}
         rec[5 + i]: {
-            ok -> it = iv[i]
+            ok -> it = iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -7315,7 +7441,11 @@ server-conn.send-server-hello-13 = () (ok bool) {
     priv-slice []byte = with-len(32)
     i <- [0..32): {
         priv-slice[i]: {
-            ok -> it = .server-priv[i]
+            ok -> it = .server-priv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -7584,7 +7714,11 @@ server-conn.send-server-hello-13 = () (ok bool) {
 
         #{overflow=wrap}
         hs[pos + i]: {
-            ok -> it = .server-pub[i]
+            ok -> it = .server-pub[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -7639,13 +7773,21 @@ server-conn.compute-shared-secret-13 = () {
     pub-slice []byte = with-len(32)
     i <- [0..32): {
         priv-slice[i]: {
-            ok -> it = .server-priv[i]
+            ok -> it = .server-priv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
 
         pub-slice[i]: {
-            ok -> it = .client-pub[i]
+            ok -> it = .client-pub[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -7690,7 +7832,11 @@ server-conn.derive-handshake-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
         empty-hash[i]: {
-            ok -> it = empty-hash-arr[i]
+            ok -> it = empty-hash-arr[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -7849,7 +7995,11 @@ server-conn.derive-application-keys-13 = () {
     hs-prk []byte = with-len(32)
     i <- [0..32): {
         hs-prk[i]: {
-            ok -> it = .hs-prk-field[i]
+            ok -> it = .hs-prk-field[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -7860,7 +8010,11 @@ server-conn.derive-application-keys-13 = () {
     empty-hash []byte = with-len(32)
     i <- [0..32): {
         empty-hash[i]: {
-            ok -> it = empty-hash-arr[i]
+            ok -> it = empty-hash-arr[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -7891,7 +8045,11 @@ server-conn.derive-application-keys-13 = () {
     pre-cf-buf []byte = with-len(pre-cf-len)
     i <- [0..pre-cf-len): {
         pre-cf-buf[i]: {
-            ok -> it = .hs-buf[i]
+            ok -> it = .hs-buf[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -8268,7 +8426,13 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     }
     pos = .hs-plain-pos
 
-    msg-type = .hs-plain-buf[pos]
+    ixout8271c1d = .hs-plain-buf[pos]: {
+        ok -> it
+
+        -> _
+    }
+
+    msg-type = ixout8271c1d
 
     #{overflow=wrap}
     msg-len = get-u24(.hs-plain-buf, pos + 1)
@@ -8279,7 +8443,13 @@ server-conn.read-encrypted-handshake-13 = () (msg-type i64, msg-data []byte) {
     i <- [0..msg-len): {
 
         #{overflow=wrap}
-        msg-data[i] = .hs-plain-buf[pos + 4 + i]
+        ixout8282c24 = .hs-plain-buf[pos + 4 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        msg-data[i] = ixout8282c24
     }
     msg-data.truncate(msg-len)
     full-msg []byte
@@ -8408,7 +8578,11 @@ server-conn.send-certificate-13 = () (ok bool) {
 
         #{overflow=wrap}
         hs[11 + i]: {
-            ok -> it = .cert[i]
+            ok -> it = .cert[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -8443,7 +8617,11 @@ server-conn.send-finished-13 = () (ok bool) {
     s-hs-secret []byte = with-len(32)
     i <- [0..32): {
         s-hs-secret[i]: {
-            ok -> it = .hs-s-secret[i]
+            ok -> it = .hs-s-secret[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -8513,7 +8691,11 @@ server-conn.read-client-finished-13 = () (ok bool) {
     c-hs-secret []byte = with-len(32)
     i <- [0..32): {
         c-hs-secret[i]: {
-            ok -> it = .hs-c-secret[i]
+            ok -> it = .hs-c-secret[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

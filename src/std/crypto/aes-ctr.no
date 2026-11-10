@@ -132,7 +132,11 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
     i <- [0..16): {
         cb[i]: {
-            ok -> it = iv[i]
+            ok -> it = iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -145,7 +149,11 @@ ctr-crypt = (in []byte, iv [16]byte, ek []byte) (out []byte) {
         blk [16]byte
         i <- [0..16): {
             blk[i]: {
-                ok -> it = cb[i]
+                ok -> it = cb[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }

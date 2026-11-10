@@ -582,7 +582,13 @@ response.get-header = (name str) (val ?str) {
     i <- [0..self.header-count): {
         h ?= .header-names[i].to-lower()
         h == target -> {
-            val = .header-values[i]
+            ixout585c21 = .header-values[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            val = ixout585c21
             return
         }
     }

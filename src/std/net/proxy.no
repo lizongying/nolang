@@ -280,7 +280,11 @@ proxy-tls-dial = (proxy-host str, proxy-port i64, target-host str, target-port i
 
                 #{overflow=wrap}
                 premaster[2 + i]: {
-                    ok -> it = rand-bytes[i]
+                    ok -> it = rand-bytes[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     -> _
                 }
@@ -388,7 +392,11 @@ config.tls-connect = (target-host str, target-port i64) (tc ?tls.conn) {
 
                 #{overflow=wrap}
                 premaster[2 + i]: {
-                    ok -> it = rand-bytes[i]
+                    ok -> it = rand-bytes[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     -> _
                 }

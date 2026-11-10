@@ -546,7 +546,11 @@ sha3-224-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(ixout532c39 >> 4) & 15]
+            ok -> it = hex-chars[(ixout532c39 >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -559,7 +563,11 @@ sha3-224-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout539c38 & 15]
+            ok -> it = hex-chars[ixout539c38 & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -583,7 +591,11 @@ sha3-256-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(ixout558c39 >> 4) & 15]
+            ok -> it = hex-chars[(ixout558c39 >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -596,7 +608,11 @@ sha3-256-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout565c38 & 15]
+            ok -> it = hex-chars[ixout565c38 & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -620,7 +636,11 @@ sha3-384-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(ixout584c39 >> 4) & 15]
+            ok -> it = hex-chars[(ixout584c39 >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -633,7 +653,11 @@ sha3-384-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout591c38 & 15]
+            ok -> it = hex-chars[ixout591c38 & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -657,7 +681,11 @@ sha3-512-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(ixout610c39 >> 4) & 15]
+            ok -> it = hex-chars[(ixout610c39 >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -670,7 +698,11 @@ sha3-512-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout617c38 & 15]
+            ok -> it = hex-chars[ixout617c38 & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

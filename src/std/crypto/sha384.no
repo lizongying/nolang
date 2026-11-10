@@ -297,7 +297,11 @@ sha384-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(ixout286c39 >> 4) & 15]
+            ok -> it = hex-chars[(ixout286c39 >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -310,7 +314,11 @@ sha384-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout293c38 & 15]
+            ok -> it = hex-chars[ixout293c38 & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

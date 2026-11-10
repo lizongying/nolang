@@ -415,7 +415,13 @@ pwConst = (i i64) (res i64) {
 
         -> _
     }
-    res = a[1]
+    ixout418cc = a[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    res = ixout418cc
 }
 
 ; 值 match RHS（內層越界 → 0）：這是 D11 修復的目標形狀。
@@ -430,7 +436,13 @@ pwValueMatch = (i i64) (res i64) {
 
         -> _
     }
-    res = a[1]
+    ixout433cc = a[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    res = ixout433cc
 }
 
 ; 值 match RHS（內層在界內 → 30）：確認讀值正確，不是恆寫 0。
@@ -445,7 +457,13 @@ pwValueMatchHit = (i i64) (res i64) {
 
         -> _
     }
-    res = a[1]
+    ixout448cc = a[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    res = ixout448cc
 }
 
 check('place-write constant', pwConst(1), 0)

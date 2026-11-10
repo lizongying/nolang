@@ -225,14 +225,24 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
         diff, borrow = bn-sub(work, m)
         i <- [0..32): {
             work[i]: {
-                ok -> it = diff[i]
+                ok -> it = diff[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
         }
     }
     i <- [0..32): {
-        out[i] = work[i]
+        ixout235c16 = work[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout235c16
     }
 }
 
@@ -336,7 +346,11 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     work [64]byte
     i <- [0..64): {
         work[i]: {
-            ok -> it = product[i]
+            ok -> it = product[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -683,7 +697,13 @@ bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
     }
     i <- [0..32): {
-        out[i] = work[i]
+        ixout686c16 = work[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout686c16
     }
 }
 
@@ -706,7 +726,11 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
     acc [64]byte
     i <- [0..32): {
         acc[i]: {
-            ok -> it = s[i]
+            ok -> it = s[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -963,7 +987,13 @@ bn-addmod = (a []byte, b []byte, m []byte) (out [32]byte) {
         }
     }
     i <- [0..32): {
-        out[i] = acc[i]
+        ixout966c15 = acc[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout966c15
     }
 }
 
@@ -982,7 +1012,13 @@ bn-submod = (a []byte, b []byte, m []byte) (out [32]byte) {
             borrow = 0
             diff, borrow = bn-sub(a, b)
             i <- [0..32): {
-                out[i] = diff[i]
+                ixout985c1e = diff[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                out[i] = ixout985c1e
             }
         }
 
@@ -1055,7 +1091,13 @@ bn-invmod = (a []byte, m []byte) (out [32]byte) {
         base = bn-mulmod(base, base, m)
     }
     i <- [0..32): {
-        out[i] = result[i]
+        ixout1058c18 = result[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout1058c18
     }
 }
 
@@ -1162,13 +1204,31 @@ ec-point-double = (p []byte) (r []byte) {
 
     ; 輸出
     i <- [0..32): {
-        r[i] = x3[i]
+        ixout1165c12 = x3[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        r[i] = ixout1165c12
+
+        ixout1168c17 = y3[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        r[32 + i] = y3[i]
+        r[32 + i] = ixout1168c17
+
+        ixout1171c17 = z3[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        r[64 + i] = z3[i]
+        r[64 + i] = ixout1171c17
     }
 }
 
@@ -1362,21 +1422,33 @@ ec-point-add = (p []byte, q []byte) (r []byte) {
     z3 = bn-mulmod(z3, z2, P256-P)
     i <- [0..32): {
         r[i]: {
-            ok -> it = x3[i]
+            ok -> it = x3[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
 
         #{overflow=wrap}
         r[32 + i]: {
-            ok -> it = y3[i]
+            ok -> it = y3[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
 
         #{overflow=wrap}
         r[64 + i]: {
-            ok -> it = z3[i]
+            ok -> it = z3[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1579,10 +1651,22 @@ ec-bytes-to-point = (in [65]byte) (out []byte) {
 
     ; Jacobian: (X, Y, Z) = (x, y, 1)
     i <- [0..32): {
-        out[i] = x[i]
+        ixout1582c13 = x[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout1582c13
+
+        ixout1585c18 = y[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        out[32 + i] = y[i]
+        out[32 + i] = ixout1585c18
     }
     out[64] = 1
     i <- [1..32): {

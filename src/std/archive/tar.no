@@ -119,7 +119,13 @@ tar.count = () (count i64) {
         j <- [0..12): {
 
             #{overflow=wrap}
-            c = .data[off + 124 + j]
+            ixout122c16 = .data[off + 124 + j]: {
+                ok -> it
+
+                -> _
+            }
+
+            c = ixout122c16
 
             #{overflow=wrap}
             c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
@@ -145,7 +151,13 @@ tar.offset = (idx i64) (off i64) {
         j <- [0..12): {
 
             #{overflow=wrap}
-            c = .data[off + 124 + j]
+            ixout148c16 = .data[off + 124 + j]: {
+                ok -> it
+
+                -> _
+            }
+
+            c = ixout148c16
 
             #{overflow=wrap}
             c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
@@ -203,7 +215,13 @@ tar.size = (idx i64) (sz i64) {
     i <- [0..12): {
 
         #{overflow=wrap}
-        c = .data[hdr + 124 + i]
+        ixout206c12 = .data[hdr + 124 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        c = ixout206c12
 
         #{overflow=wrap}
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
@@ -219,7 +237,13 @@ tar.type = (idx i64) (typ str) {
     hdr = .offset(idx)
 
     #{overflow=wrap}
-    c = .data[hdr + 156]
+    ixout222ce = .data[hdr + 156]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout222ce
     typ = 'unknown'
     {
         c == 48 || c == 0 -> typ = 'file'
@@ -236,7 +260,13 @@ tar.is-dir = (idx i64) (yes bool) {
     hdr = .offset(idx)
 
     #{overflow=wrap}
-    c = .data[hdr + 156]
+    ixout239ce = .data[hdr + 156]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout239ce
     yes = (c == 53)
 }
 
@@ -248,7 +278,13 @@ tar.is-file = (idx i64) (yes bool) {
     hdr = .offset(idx)
 
     #{overflow=wrap}
-    c = .data[hdr + 156]
+    ixout251ce = .data[hdr + 156]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout251ce
     yes = (c == 48 || c == 0)
 }
 
@@ -285,7 +321,13 @@ tar.mode = (idx i64) (mode i64) {
     i <- [0..8): {
 
         #{overflow=wrap}
-        c = .data[hdr + 100 + i]
+        ixout288c12 = .data[hdr + 100 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        c = ixout288c12
 
         #{overflow=wrap}
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
@@ -302,7 +344,13 @@ tar.mtime = (idx i64) (ts i64) {
     i <- [0..12): {
 
         #{overflow=wrap}
-        c = .data[hdr + 136 + i]
+        ixout305c12 = .data[hdr + 136 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        c = ixout305c12
 
         #{overflow=wrap}
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)
@@ -344,7 +392,13 @@ tar-entry.size = () (sz i64) {
     i <- [0..12): {
 
         #{overflow=wrap}
-        c = .data[hdr + 124 + i]
+        ixout347c12 = .data[hdr + 124 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        c = ixout347c12
 
         #{overflow=wrap}
         c >= 48 && c <= 57 -> sz = sz * 8 + (c - 48)
@@ -358,7 +412,13 @@ tar-entry.type = () (typ str) {
     hdr = .idx
 
     #{overflow=wrap}
-    c = .data[hdr + 156]
+    ixout361ce = .data[hdr + 156]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout361ce
     typ = 'unknown'
     {
         c == 48 || c == 0 -> typ = 'file'
@@ -374,7 +434,13 @@ tar-entry.is-dir = () (yes bool) {
     hdr = .idx
 
     #{overflow=wrap}
-    c = .data[hdr + 156]
+    ixout377ce = .data[hdr + 156]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout377ce
     yes = (c == 53)
 }
 
@@ -385,7 +451,13 @@ tar-entry.is-file = () (yes bool) {
     hdr = .idx
 
     #{overflow=wrap}
-    c = .data[hdr + 156]
+    ixout388ce = .data[hdr + 156]: {
+        ok -> it
+
+        -> _
+    }
+
+    c = ixout388ce
     yes = (c == 48 || c == 0)
 }
 
@@ -420,7 +492,13 @@ tar-entry.mode = () (mode i64) {
     i <- [0..8): {
 
         #{overflow=wrap}
-        c = .data[hdr + 100 + i]
+        ixout423c12 = .data[hdr + 100 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        c = ixout423c12
 
         #{overflow=wrap}
         c >= 48 && c <= 55 -> mode = mode * 8 + (c - 48)
@@ -436,7 +514,13 @@ tar-entry.mtime = () (ts i64) {
     i <- [0..12): {
 
         #{overflow=wrap}
-        c = .data[hdr + 136 + i]
+        ixout439c12 = .data[hdr + 136 + i]: {
+            ok -> it
+
+            -> _
+        }
+
+        c = ixout439c12
 
         #{overflow=wrap}
         c >= 48 && c <= 57 -> ts = ts * 8 + (c - 48)

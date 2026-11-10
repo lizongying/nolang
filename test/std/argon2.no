@@ -38,8 +38,14 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout42c1f = hex-chars[(ixout37c37 >> 4) & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(ixout37c37 >> 4) & 15]
+        hex[i * 2] = ixout42c1f
 
         ixout40c40 = data[i]: {
             ok -> it
@@ -47,8 +53,14 @@ bhex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout51c23 = hex-chars[ixout40c40 & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[ixout40c40 & 15]
+        hex[i * 2 + 1] = ixout51c23
     }
 }
 

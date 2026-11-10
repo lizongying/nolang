@@ -5860,7 +5860,7 @@ i i64: 字符（码点）索引
 返回「字节」下标 i 处的原始字节值（raw byte 读取）
 与 s[i] 不同：s[i] 按码点索引，本方法按底层 UTF-8 缓冲区的字节偏移取值
 返回 ?byte：越界（i < 0 或 i >= len-bytes()）时返回 nil，与 arr[i] 的
-安全索引语义一致；调用方必须处理 option（match / ?= / #{index-out = DEF}）
+安全索引语义一致；调用方必须处理 option（match / ?=）
 由编译器内建处理（#{buildin}）：codegen 拦截后展开为「边界检查 + GEP+load」，
 不存在 std 函数体；签名同时注册于 src/builtin/str.go 的 BuiltinMethodList
 （MethodName "byte"，Intercepted，经 bare-name 回落同时覆盖 str 与 txt）

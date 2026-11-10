@@ -525,6 +525,37 @@ func TestEveryLocaleCoversEn(t *testing.T) {
 	}
 }
 
+// TestIndexOutAdviceRemovedFromAllLocales pins the D11 wording of ddvc98n2,
+// the unhandled-index diagnostic. The English source text was updated when
+// `#{index-out=DEF}` was removed, but nine translations kept advertising the
+// annotation as a fix — advice that now makes the parser fail with idxourmv.
+// The key-coverage gates above cannot catch a semantic drift like this: the
+// key exists in every locale, only its meaning is stale.
+func TestIndexOutAdviceRemovedFromAllLocales(t *testing.T) {
+	const id = "ddvc98n2"
+	for _, tag := range catalog.Locales() {
+		t.Run(tag, func(t *testing.T) {
+			cat, err := catalog.Load(nil, tag)
+			if err != nil {
+				t.Fatalf("load %s: %v", tag, err)
+			}
+			msg, ok := cat[id]
+			if !ok {
+				t.Fatalf("%s.noml is missing %s", tag, id)
+			}
+			// The stale advice spelled the annotation with spaces and offered
+			// it as a remedy; D11's replacement spells it without spaces and
+			// states that it was removed.
+			if strings.Contains(msg, "#{index-out = DEF}") {
+				t.Errorf("%s.noml %s still recommends the removed annotation: %q", tag, id, msg)
+			}
+			if !strings.Contains(msg, "D11") {
+				t.Errorf("%s.noml %s must state that D11 removed the annotation, got %q", tag, id, msg)
+			}
+		})
+	}
+}
+
 // usageLineRe matches a help-text example line: two spaces of indent, then the
 // thing the user types. The `echo 'x=1' | no fmt` pipeline counts as well.
 var usageLineRe = regexp.MustCompile(`^  (no |echo )`)

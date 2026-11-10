@@ -387,8 +387,20 @@ url-encode = (s str) (out str) {
 
             -> {
                 out[out.len-bytes()] = 37
-                out[out.len-bytes()] = hex-chars[c >> 4]
-                out[out.len-bytes()] = hex-chars[c & 15]
+                ixout390c31 = hex-chars[c >> 4]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                out[out.len-bytes()] = ixout390c31
+                ixout391c31 = hex-chars[c & 15]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                out[out.len-bytes()] = ixout391c31
             }
         }
     }
@@ -432,8 +444,20 @@ url-encode-component = (s str) (out str) {
 
             -> {
                 out[out.len-bytes()] = 37
-                out[out.len-bytes()] = hex-chars[c >> 4]
-                out[out.len-bytes()] = hex-chars[c & 15]
+                ixout435c31 = hex-chars[c >> 4]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                out[out.len-bytes()] = ixout435c31
+                ixout436c31 = hex-chars[c & 15]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                out[out.len-bytes()] = ixout436c31
             }
         }
     }

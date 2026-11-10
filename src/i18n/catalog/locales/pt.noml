@@ -440,7 +440,7 @@ Erro ao escrever o arquivo principal: %v
   'd8en6a9j': 'MIR IR falhou na verificação LLVM: %v: %s'
   'ddljrny8': 'esperado nome de campo no literal de struct, obtido %s em vez disso'
   'ddutfwr8': 'Erro em %s: %w'
-  'ddvc98n2': 'o índice de array/fatia `arr[i]` retorna option<elem> num acesso fora dos limites por padrão. Este option nunca é tratado: propague com `a ?= arr[i]` (dentro de uma função que retorna ?T você também pode capturá-lo no local com `a = arr[i]`), ou anote `#{index-out = DEF}` para tomar o padrão DEF fora dos limites, ou declare o alvo como option (por exemplo `a ?elem = arr[i]`) para capturar o erro no local, ou descarte explicitamente com `_ = arr[i]`.'
+  'ddvc98n2': 'o índice de array/fatia `arr[i]` (e o mapa `m[k]`) retorna option<elem> num acesso fora dos limites por padrão. A anotação `#{index-out=DEF}` foi removida no D11. Consuma a option explicitamente: propague com `a ?= arr[i]`, use um match de valor ou um match de lugar/bloco sobre a leitura do índice, vincule a um destino option `?T` (por exemplo `a ?elem = arr[i]`) ou descarte explicitamente com `_ = arr[i]`.'
   'deuvryn0': 'Runtime JS usado por --js: node (padrão), bun, deno, ... (argumentos extras permitidos, ex. "deno run --allow-read")'
   'dh249i0x': 'esperado \':\' no literal de map, obtido %s em vez disso'
   'dhae25dd': `

@@ -517,7 +517,13 @@ json-pool.parse = (s str, pos i64) (node-idx i64, next-pos i64, ok bool) {
                 val-ok == false -> return
 
                 ; 物件：以邊表附加子元素；鍵名取自解析出的 key 節點字串值
-                key-str = .strs[key-idx]
+                ixout520c20 = .strs[key-idx]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                key-str = ixout520c20
                 .add-child(node-idx, val-idx, key-str)
                 p = val-next
                 p = .skip-ws(s, p)

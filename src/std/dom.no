@@ -2346,7 +2346,13 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 #{overflow=wrap}
                 topi = .stk.len() - 1
                 topi >= 0 -> {
-                    cur = .stk[topi]
+                    ixout2349c1f = .stk[topi]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    cur = ixout2349c1f
                 }
             }
             continue
@@ -2396,7 +2402,13 @@ dom-pool.html-parse-doc = (s str) (root i64) {
                 #{overflow=wrap}
                 topi = .stk.len() - 1
                 topi >= 0 -> {
-                    cur = .stk[topi]
+                    ixout2399c1f = .stk[topi]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    cur = ixout2399c1f
                 }
             }
         }
@@ -2781,7 +2793,13 @@ dom-pool.text-of = (idx i64) (out str) {
     }
     {
         k == DOM-KIND-TEXT || k == DOM-KIND-CDATA -> {
-            out = .vals[idx]
+            ixout2784c18 = .vals[idx]: {
+                ok -> it
+
+                -> _
+            }
+
+            out = ixout2784c18
             return
         }
     }
@@ -3072,7 +3090,13 @@ dom.kind = (idx i64) (k i64) {
 dom.name = (idx i64) (nm str) {
     nm = ''
     .pool.valid(idx) == false -> return
-    nm = .pool.names[idx]
+    ixout3075c15 = .pool.names[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    nm = ixout3075c15
 }
 
 ; 節點值（text/cdata/comment 內容、PI 數據、DOCTYPE 原始內容）
@@ -3082,7 +3106,13 @@ dom.name = (idx i64) (nm str) {
 dom.value = (idx i64) (v str) {
     v = ''
     .pool.valid(idx) == false -> return
-    v = .pool.vals[idx]
+    ixout3085c13 = .pool.vals[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    v = ixout3085c13
 }
 
 ; 設定節點值

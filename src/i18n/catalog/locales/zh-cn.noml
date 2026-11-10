@@ -440,7 +440,7 @@ Parser ASTVersion: %s
   'd8en6a9j': 'MIR IR 未通过 LLVM 校验: %v: %s'
   'ddljrny8': '结构体字面量中期望字段名，实际得到 %s'
   'ddutfwr8': '%s 中出错: %w'
-  'ddvc98n2': '数组/切片索引 `arr[i]` 默认在越界时返回 option<elem>。此 option 未被处理：请用 `a ?= arr[i]` 上抛（在返回 ?T 的函数中可直接 `a = arr[i]` 就地捕获错误），或加 `#{index-out = DEF}` 注解以越界时取默认值 DEF，或显式声明为 option 类型（如 `a ?elem = arr[i]`）以就地捕获错误，或用 `_ = arr[i]` 显式丢弃。'
+  'ddvc98n2': '数组/切片索引 `arr[i]`（以及 map `m[k]`）在越界访问时默认返回 option<elem>。D11 已移除 `#{index-out=DEF}` 注解。必须显式消费该 option：用 `a ?= arr[i]` 上抛、对索引读取做值 match 或 place/block match、绑定到 `?T` option 目标（如 `a ?elem = arr[i]`），或用 `_ = arr[i]` 显式丢弃。'
   'deuvryn0': '--js 运行时使用的 JS 运行时：node（默认）、bun、deno……（可带额外参数，如 "deno run --allow-read"）'
   'dh249i0x': 'map 字面量中应为 \':\'，实际得到 %s'
   'dhae25dd': `

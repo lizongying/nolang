@@ -76,7 +76,11 @@ salsa20-8-core = (block []byte) {
     init [16]u32
     i <- [0..16): {
         init[i]: {
-            ok -> it = x[i]
+            ok -> it = x[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

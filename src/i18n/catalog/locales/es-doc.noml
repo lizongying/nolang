@@ -7895,7 +7895,7 @@ out: longitud en bits (floor(log2)+1)
 Devuelve el valor de byte crudo en el índice «de bytes» i (lectura raw byte)
 Distinto de s[i]: s[i] indexa por punto de código; este método toma el valor por desplazamiento de bytes en el búfer UTF-8 subyacente
 Devuelve ?byte: fuera de rango (i < 0 o i >= len-bytes()) devuelve nil, coherente con el de arr[i]
-Coherente con la semántica de indexado seguro; el llamador debe manejar la option (match / ?= / #{index-out = DEF})
+Coherente con la semántica de indexado seguro; el llamador debe manejar la option (match / ?=)
 Lo maneja el integrado del compilador (#{buildin}): codegen lo intercepta y lo despliega en «comprobación de límites + GEP+load»,
 No existe cuerpo de función std; la firma se registra también en BuiltinMethodList de src/builtin/str.go
 (MethodName "byte", Intercepted, la vía de respaldo por bare-name cubre a la vez str y txt)

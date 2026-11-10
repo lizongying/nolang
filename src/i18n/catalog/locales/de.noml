@@ -440,7 +440,7 @@ Fehler beim Schreiben der Hauptdatei: %v
   'd8en6a9j': 'MIR-IR hat die LLVM-Verifikation nicht bestanden: %v: %s'
   'ddljrny8': 'Feldname im struct-Literal erwartet, stattdessen %s erhalten'
   'ddutfwr8': 'Fehler in %s: %w'
-  'ddvc98n2': 'der Array-/Slice-Index `arr[i]` gibt bei einem Zugriff außerhalb des Bereichs standardmäßig option<elem> zurück. Diese option wird niemals behandelt: propagieren Sie sie mit `a ?= arr[i]` (innerhalb einer Funktion, die ?T zurückgibt, können Sie sie auch vor Ort mit `a = arr[i]` fangen), oder annotieren Sie `#{index-out = DEF}`, um außerhalb des Bereichs den Standardwert DEF anzunehmen, oder deklarieren Sie das Ziel als option (z. B. `a ?elem = arr[i]`), um den Fehler vor Ort zu fangen, oder verwerfen Sie sie explizit mit `_ = arr[i]`.'
+  'ddvc98n2': 'der Array-/Slice-Index `arr[i]` (und die Map `m[k]`) gibt bei einem Zugriff außerhalb des Bereichs standardmäßig option<elem> zurück. Die Annotation `#{index-out=DEF}` wurde in D11 entfernt. Behandle die Option explizit: mit `a ?= arr[i]` propagieren, die Indexlesung mit einem Wert-match oder einem Platz-/Block-match auspacken, an ein `?T`-Option-Ziel binden (z. B. `a ?elem = arr[i]`) oder mit `_ = arr[i]` explizit verwerfen.'
   'deuvryn0': 'JS-Laufzeit für --js-Läufe: node (Standard), bun, deno, ... (Zusatzargumente erlaubt, z. B. "deno run --allow-read")'
   'dh249i0x': '\':\' im map-Literal erwartet, stattdessen %s erhalten'
   'dhae25dd': `

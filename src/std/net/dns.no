@@ -233,7 +233,13 @@ build-query = (domain str, qtype i64) (query []byte, qlen i64) {
                 j <- [0..label-len): {
 
                     #{overflow=wrap}
-                    query[pos] = domain[label-start + j]
+                    ixout236c28 = domain[label-start + j]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    query[pos] = ixout236c28
                     {
                         pos-opt8 = pos + 1
                         pos-opt8: {

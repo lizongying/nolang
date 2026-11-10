@@ -10,6 +10,13 @@
 > `?=` 简写在**两种情形之一**下即可使用：函式有 `?T` 结果参数，或陈述位于陈述层级块 match
 > `{ ... }: { err -> _  /  -> _ }` 主体内（D10）。返回值不是 option 的函式用块 match 包住即可。
 
+> ⛔ **D2 修订（2026-11-10）**：`idxhndld` 由 **HINT 升为 ERROR**（`no vet` 报 `[ERROR]`、退出码非 0）。
+> 理由：D11 移除 `#{index-out=DEF}` 后，索引 option 已没有「加注解取默认值」这条出口，产生处未显式消费
+> 不再是风格提示。`ovfhndld` / `ovf-int-default` 仍为 HINT，`optunuse` / `idxbruse` 仍为 ERROR。
+> `no build` 的硬错误子集（`build/transpiler_validate.go`）维持只依 `BareIndexUseTraceID` 拦截，
+> 避免 std 既有语料收口前让所有程序无法编译；**语料收口以 `no vet` 为准**。下文 §3.4 表格为 D2
+> 原始定案（历史记录）。实作见 `src/checker/lint.go` 的 `runLintUnhandledIndex`。
+
 > 状态：**已实施（见 §11）**——主体 M1–M5 与 M4(str/txt→?char) 已落地；D7 定案为「用户侧恒 option + 内部消除」（§8.1(a) 最终修订，2026-10-15）。**D9「下标写入必须显式解包」于 2026-10-15 定案，见 §12（编译器实现与全仓迁移进行中）**。本文件曾长期停留「待实施」草稿，§11 为 2026-10-13 实测复核结论。  
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移  
 > 相关既有文档：`docs/docs/lang/syntax.md`〈整数运算溢出〉〈可空类型(option)〉、`NOLANG-OWNERSHIP-MODEL.md`
@@ -21,7 +28,7 @@
 | #  | 决策                                    | 结论                                                                                                                                        |
 | -- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | D1 | `#{overflow=…}` / `#{index-out=…}` 注解 | **保留，但只影响行为、不解包**。仍可写、仍生效（overflow 决定 wrap/clamp0/min/max/saturate；index-out 决定越界取值），但**结果类型恒为 `?T`**。注解**不是**消费路径 —— 仍须 `?=` 或 match 解包。 |
-| D2 | 诊断分级                                  | 产生 option 处（`ovfhndld` / `idxhndld` / `ovf-int-default`）由 **ERROR → HINT**；"既没上抛、也没解包"另立 **ERROR**（新 trace `optunuse`）。                   |
+| D2 | 诊断分级                                  | 产生 option 处（`ovfhndld` / `idxhndld` / `ovf-int-default`）由 **ERROR → HINT**；"既没上抛、也没解包"另立 **ERROR**（新 trace `optunuse`）。**⚠️ 2026-11-10 已修订：`idxhndld` 升回 ERROR，见文首。** |
 | D3 | `no fmt --fix=<新类>` 修复形态              | **能上抛就上抛，否则 match 解包**：所在函数已有 `?T` 结果参数 → `x ?= <expr>`；否则 → `__o = <expr>` + `x = __o: { ok -> it, -> <默认零值> }`。                         |
 | D4 | 空 `->` 臂语义                            | **默认零值**（0 / 0.0 / false / '' / 空容器 / 零值结构体）。                                                                                             |
 | D5 | `-> return`                           | **新增**：值-match 的臂体为 `return` 时直接从当前函数返回，该臂不参与"各臂值类型一致"检查。                                                                                 |

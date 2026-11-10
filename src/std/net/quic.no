@@ -1165,7 +1165,11 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     nonce [12]byte
     i <- [0..12): {
         nonce[i]: {
-            ok -> it = .client-initial-iv[i]
+            ok -> it = .client-initial-iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1191,7 +1195,11 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     aad []byte
     i <- [0..pn-offset): {
         aad[i]: {
-            ok -> it = packet[i]
+            ok -> it = packet[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1206,7 +1214,11 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
 
         #{overflow=wrap}
         plain[i]: {
-            ok -> it = packet[pn-offset + i]
+            ok -> it = packet[pn-offset + i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1375,7 +1387,11 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     nonce [12]byte
     i <- [0..12): {
         nonce[i]: {
-            ok -> it = .server-initial-iv[i]
+            ok -> it = .server-initial-iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

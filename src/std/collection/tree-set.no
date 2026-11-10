@@ -91,7 +91,13 @@ tree-set.alloc-node = () (idx i64) {
     idx = .free-head
     idx < 0 -> return
 
-    .free-head = .left[idx]
+    ixout94c17 = .left[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    .free-head = ixout94c17
 
     {
         .left[idx] ?= -1
@@ -133,7 +139,13 @@ tree-set.ht = (idx i64) (h i64) {
     h = 0
     idx < 0 -> return
 
-    h = .height[idx]
+    ixout136c10 = .height[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    h = ixout136c10
 }
 
 ; 重新計算節點高度
@@ -198,9 +210,21 @@ tree-set.bf = (idx i64) (b i64) {
 ; x i64: 旋轉軸節點
 ; [rot-left](#tree-set.tree-set.rot-left)
 tree-set.rot-left = (x i64) {
-    y = .right[x]
+    ixout201cf = .right[x]: {
+        ok -> it
 
-    b = .left[y]
+        -> _
+    }
+
+    y = ixout201cf
+
+    ixout203ce = .left[y]: {
+        ok -> it
+
+        -> _
+    }
+
+    b = ixout203ce
 
     {
         .right[x] ?= b
@@ -212,7 +236,13 @@ tree-set.rot-left = (x i64) {
 
         .parent[y] ?= .parent[x]
 
-        p = .parent[x]
+        ixout215c14 = .parent[x]: {
+            ok -> it
+
+            -> _
+        }
+
+        p = ixout215c14
         {
             p < 0 -> .root = y
 
@@ -246,9 +276,21 @@ tree-set.rot-left = (x i64) {
 ; x i64: 旋轉軸節點
 ; [rot-right](#tree-set.tree-set.rot-right)
 tree-set.rot-right = (x i64) {
-    y = .left[x]
+    ixout249ce = .left[x]: {
+        ok -> it
 
-    b = .right[y]
+        -> _
+    }
+
+    y = ixout249ce
+
+    ixout251cf = .right[y]: {
+        ok -> it
+
+        -> _
+    }
+
+    b = ixout251cf
 
     {
         .left[x] ?= b
@@ -260,7 +302,13 @@ tree-set.rot-right = (x i64) {
 
         .parent[y] ?= .parent[x]
 
-        p = .parent[x]
+        ixout263c14 = .parent[x]: {
+            ok -> it
+
+            -> _
+        }
+
+        p = ixout263c14
         {
             p < 0 -> .root = y
 
@@ -309,7 +357,13 @@ tree-set.rebalance = (idx i64) (nr i64) {
                 }
                 .rot-right(idx)
 
-                nr = .parent[idx]
+                ixout312c1d = .parent[idx]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                nr = ixout312c1d
                 return
             }
 
@@ -323,7 +377,13 @@ tree-set.rebalance = (idx i64) (nr i64) {
                 }
                 .rot-left(idx)
 
-                nr = .parent[idx]
+                ixout326c1d = .parent[idx]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                nr = ixout326c1d
                 return
             }
         }
@@ -343,7 +403,13 @@ tree-set.rebalance-up = (idx i64) {
     (r-idx >= 0) {
         nr = .rebalance(r-idx)
 
-        r-idx = .parent[nr]
+        ixout346c18 = .parent[nr]: {
+            ok -> it
+
+            -> _
+        }
+
+        r-idx = ixout346c18
     }
 }
 
@@ -366,7 +432,13 @@ tree-set.successor = (idx i64) (succ i64) {
             return
         }
 
-        p = .parent[r-idx]
+        ixout369c14 = .parent[r-idx]: {
+            ok -> it
+
+            -> _
+        }
+
+        p = ixout369c14
         (p >= 0) {
             rp ?= .right[p]
             r-idx != rp -> {
@@ -374,7 +446,13 @@ tree-set.successor = (idx i64) (succ i64) {
             }
             r-idx = p
 
-            p = .parent[p]
+            ixout377c18 = .parent[p]: {
+                ok -> it
+
+                -> _
+            }
+
+            p = ixout377c18
         }
         succ = p
     }: {
@@ -489,11 +567,23 @@ tree-set.contains = (key i64) (yes bool) {
             }
             {
                 key < k -> {
-                    idx = .left[idx]
+                    ixout492c20 = .left[idx]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    idx = ixout492c20
                 }
 
                 -> {
-                    idx = .right[idx]
+                    ixout496c21 = .right[idx]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    idx = ixout496c21
                 }
             }
         }
@@ -520,11 +610,23 @@ tree-set.remove = (key i64) (ok bool) {
             }
             {
                 key < k -> {
-                    idx = .left[idx]
+                    ixout523c20 = .left[idx]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    idx = ixout523c20
                 }
 
                 -> {
-                    idx = .right[idx]
+                    ixout527c21 = .right[idx]: {
+                        ok -> it
+
+                        -> _
+                    }
+
+                    idx = ixout527c21
                 }
             }
         }
@@ -554,12 +656,30 @@ tree-set.remove = (key i64) (ok bool) {
         }
 
         ; 此時 idx 最多一個子節點
-        child = .left[idx]
-        child < 0 -> {
-            child = .right[idx]
+        ixout557c16 = .left[idx]: {
+            ok -> it
+
+            -> _
         }
 
-        p = .parent[idx]
+        child = ixout557c16
+        child < 0 -> {
+            ixout559c1b = .right[idx]: {
+                ok -> it
+
+                -> _
+            }
+
+            child = ixout559c1b
+        }
+
+        ixout562c14 = .parent[idx]: {
+            ok -> it
+
+            -> _
+        }
+
+        p = ixout562c14
         child >= 0 -> {
             .parent[child] ?= p
         }
@@ -605,7 +725,13 @@ tree-set.first = () (val ?i64) {
         l ?= .left[idx]
     }
 
-    val = .keys[idx]
+    ixout608c10 = .keys[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout608c10
 }
 
 ; 取得最大值
@@ -623,7 +749,13 @@ tree-set.last = () (val ?i64) {
         r ?= .right[idx]
     }
 
-    val = .keys[idx]
+    ixout626c10 = .keys[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout626c10
 }
 
 ; 找第一個 ≥ target 的元素
@@ -639,11 +771,23 @@ tree-set.lower-bound = (target i64) (val ?i64) {
             kv >= target -> {
                 result = idx
 
-                idx = .left[idx]
+                ixout642c1c = .left[idx]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                idx = ixout642c1c
             }
 
             -> {
-                idx = .right[idx]
+                ixout646c1d = .right[idx]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                idx = ixout646c1d
             }
         }
     }
@@ -652,7 +796,13 @@ tree-set.lower-bound = (target i64) (val ?i64) {
         return
     }
 
-    val = .keys[result]
+    ixout655c10 = .keys[result]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout655c10
 }
 
 ; 找第一個 > target 的元素
@@ -668,11 +818,23 @@ tree-set.upper-bound = (target i64) (val ?i64) {
             kv > target -> {
                 result = idx
 
-                idx = .left[idx]
+                ixout671c1c = .left[idx]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                idx = ixout671c1c
             }
 
             -> {
-                idx = .right[idx]
+                ixout675c1d = .right[idx]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                idx = ixout675c1d
             }
         }
     }
@@ -681,7 +843,13 @@ tree-set.upper-bound = (target i64) (val ?i64) {
         return
     }
 
-    val = .keys[result]
+    ixout684c10 = .keys[result]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout684c10
 }
 
 ; 按升序遍歷所有元素
@@ -706,7 +874,13 @@ tree-set.for-each = () (val i64) {
 
     ; 逐個後繼遍歷
     (idx >= 0) {
-        val = .keys[idx]
+        ixout709c14 = .keys[idx]: {
+            ok -> it
+
+            -> _
+        }
+
+        val = ixout709c14
         idx = .successor(idx)
     }
 }

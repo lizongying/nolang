@@ -124,7 +124,13 @@ pem-encode = (label str, data []byte) (out str) {
         j <- [0..line-len): {
 
             #{overflow=wrap}
-            out[pos] = b64[src + j]
+            ixout127c1b = b64[src + j]: {
+                ok -> it
+
+                -> _
+            }
+
+            out[pos] = ixout127c1b
 
             #{overflow=wrap}
             {

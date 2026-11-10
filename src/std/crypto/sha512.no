@@ -3499,7 +3499,11 @@ sha512-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2]: {
-            ok -> it = hex-chars[(ixout3488c39 >> 4) & 15]
+            ok -> it = hex-chars[(ixout3488c39 >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3512,7 +3516,11 @@ sha512-hex = (data []byte) (hex str) {
 
         #{overflow=wrap}
         hex[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout3495c38 & 15]
+            ok -> it = hex-chars[ixout3495c38 & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

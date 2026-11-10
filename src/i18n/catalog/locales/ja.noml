@@ -443,7 +443,7 @@ tests ディレクトリ作成エラー: %v
   'd8en6a9j': 'MIR IR の LLVM 検証に失敗しました: %v: %s'
   'ddljrny8': 'struct リテラル内にフィールド名を期待しましたが %s でした'
   'ddutfwr8': '%s でのエラー: %w'
-  'ddvc98n2': '配列/スライスのインデックス `arr[i]` は範囲外アクセス時に既定で option<elem> を返します。この option は一度も処理されていません: `a ?= arr[i]` で伝播させる（?T を返す関数内では `a = arr[i]` でその場で受け取ることもできます）、範囲外時に既定値 DEF を取るよう `#{index-out = DEF}` で注釈する、対象を option として宣言する（例: `a ?elem = arr[i]`）、または `_ = arr[i]` で明示的に破棄してください。'
+  'ddvc98n2': '配列/スライスのインデックス `arr[i]`（および map `m[k]`）は範囲外アクセス時に既定で option<elem> を返します。`#{index-out=DEF}` 注釈は D11 で削除されました。この option は明示的に消費してください: `a ?= arr[i]` で伝播させる、インデックス読み取りに値 match または place/block match を使う、`?T` option の束縛先にバインドする（例: `a ?elem = arr[i]`）、または `_ = arr[i]` で明示的に破棄する。'
   'deuvryn0': '--js 実行で使う JS ランタイム: node（既定）、bun、deno など（追加引数も可、例 "deno run --allow-read"）'
   'dh249i0x': 'map リテラル内に \':\' を期待しましたが %s でした'
   'dhae25dd': `

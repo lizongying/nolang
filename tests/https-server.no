@@ -154,7 +154,11 @@ run-https-e2e-client = (host str, port i64) (ok bool) {
 
                     #{overflow=wrap}
                     recv-buf[recv-total + i]: {
-                        ok -> it = tmp[i]
+                        ok -> it = tmp[i]: {
+                            ok -> it
+
+                            -> _
+                        }
 
                         -> _
                     }
@@ -298,7 +302,11 @@ run-https-e2e-client-12 = (host str, port i64) (ok bool) {
 
                     #{overflow=wrap}
                     recv-buf[recv-total + i]: {
-                        ok -> it = tmp[i]
+                        ok -> it = tmp[i]: {
+                            ok -> it
+
+                            -> _
+                        }
 
                         -> _
                     }

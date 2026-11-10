@@ -298,25 +298,41 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             combined []byte = with-len(4 + input.len())
 
             combined[0]: {
-                ok -> it = len-bytes[0]
+                ok -> it = len-bytes[0]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
 
             combined[1]: {
-                ok -> it = len-bytes[1]
+                ok -> it = len-bytes[1]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
 
             combined[2]: {
-                ok -> it = len-bytes[2]
+                ok -> it = len-bytes[2]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
 
             combined[3]: {
-                ok -> it = len-bytes[3]
+                ok -> it = len-bytes[3]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
@@ -340,7 +356,13 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             hash [64]byte
             hash = blake2.b(combined)
             i <- [0..out-len): {
-                out[i] = hash[i]
+                ixout343c1e = hash[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                out[i] = ixout343c1e
             }
         }
 
@@ -353,25 +375,41 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             combined []byte = with-len(4 + input.len())
 
             combined[0]: {
-                ok -> it = len-bytes[0]
+                ok -> it = len-bytes[0]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
 
             combined[1]: {
-                ok -> it = len-bytes[1]
+                ok -> it = len-bytes[1]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
 
             combined[2]: {
-                ok -> it = len-bytes[2]
+                ok -> it = len-bytes[2]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
 
             combined[3]: {
-                ok -> it = len-bytes[3]
+                ok -> it = len-bytes[3]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
@@ -394,7 +432,13 @@ h-prime = (input []byte, out-len i64) (out []byte) {
 
             ; 輸出前 32 位元組
             i <- [0..32): {
-                out[i] = v[i]
+                ixout397c1b = v[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                out[i] = ixout397c1b
             }
 
             #{overflow=wrap}
@@ -403,9 +447,14 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             (remaining > 64) {
                 v = blake2.b(v)
                 i <- [0..32): {
+                    ixout408c25 = v[i]: {
+                        ok -> it
+
+                        -> _
+                    }
 
                     #{overflow=wrap}
-                    out[pos + i] = v[i]
+                    out[pos + i] = ixout408c25
                 }
 
                 #{overflow=wrap}
@@ -437,9 +486,14 @@ h-prime = (input []byte, out-len i64) (out []byte) {
             last-hash [64]byte
             last-hash = blake2.b(v)
             i <- [0..remaining): {
+                ixout442c29 = last-hash[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 #{overflow=wrap}
-                out[pos + i] = last-hash[i]
+                out[pos + i] = ixout442c29
             }
         }
     }
@@ -1242,7 +1296,11 @@ id = (password []byte, salt []byte, time-cost i64, memory-cost i64, parallelism 
     init-input []byte = with-len(72)
     i <- [0..64): {
         init-input[i]: {
-            ok -> it = h0[i]
+            ok -> it = h0[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

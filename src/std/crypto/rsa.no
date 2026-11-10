@@ -962,7 +962,13 @@ _rsa-modpow-trimmed = (base []i64, bn i64, exp []i64, en i64, modulus []i64, mn 
     out = with-len(n)
     rn == 0 -> out[0] = 0
     i <- [0..rn): {
-        out[i] = raw[i]
+        ixout965c15 = raw[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout965c15
     }
 }
 

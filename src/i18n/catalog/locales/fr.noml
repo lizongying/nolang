@@ -444,7 +444,7 @@ Erreur d'écriture du fichier principal : %v
   'd8en6a9j': 'l’IR MIR a échoué à la vérification LLVM : %v : %s'
   'ddljrny8': 'nom de champ attendu dans le littéral de struct, %s obtenu'
   'ddutfwr8': 'Erreur dans %s : %w'
-  'ddvc98n2': 'l’index de tableau/slice `arr[i]` renvoie un option<elem> en cas d’accès hors limites par défaut. Cette option n’est jamais gérée : propagez-la avec `a ?= arr[i]` (dans une fonction retournant ?T vous pouvez aussi la capturer sur place avec `a = arr[i]`), ou annotez `#{index-out = DEF}` pour prendre la valeur DEF par défaut hors limites, ou déclarez la cible comme option (par ex. `a ?elem = arr[i]`) pour capturer l’erreur sur place, ou rejetez-la explicitement avec `_ = arr[i]`.'
+  'ddvc98n2': 'l’index de tableau/slice `arr[i]` (et la map `m[k]`) renvoie un option<elem> lors d’un accès hors limites par défaut. L’annotation `#{index-out=DEF}` a été supprimée en D11. Traitez l’option explicitement : propagez avec `a ?= arr[i]`, utilisez un match de valeur ou un match de place/bloc sur la lecture d’index, liez à une cible option `?T` (par ex. `a ?elem = arr[i]`) ou rejetez-la explicitement avec `_ = arr[i]`.'
   'deuvryn0': 'Runtime JS utilisé par --js : node (défaut), bun, deno, ... (arguments supplémentaires autorisés, ex. "deno run --allow-read")'
   'dh249i0x': '« : » attendu dans le littéral de map, %s obtenu'
   'dhae25dd': `

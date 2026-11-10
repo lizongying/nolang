@@ -329,7 +329,11 @@ ge-unpack = (s [32]byte) (ok i64, p []i64) {
     sc [32]byte
     i <- [0..32): {
         sc[i]: {
-            ok -> it = s[i]
+            ok -> it = s[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -551,7 +555,13 @@ sc-reduce = (s []byte) (out [32]byte) {
         }
     }
     i <- [0..32): {
-        out[i] = acc[i]
+        ixout554c15 = acc[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout554c15
     }
 }
 
@@ -704,7 +714,11 @@ sc-muladd = (a [32]byte, b [32]byte, c [32]byte) (s [32]byte) {
     pb []byte = with-len(64)
     i <- [0..64): {
         pb[i]: {
-            ok -> it = prod[i]
+            ok -> it = prod[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -726,7 +740,11 @@ ed25519-publickey = (seed [32]byte) (pub [32]byte) {
     a []byte = with-len(32)
     i <- [0..32): {
         a[i]: {
-            ok -> it = h[i]
+            ok -> it = h[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -782,7 +800,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     a []byte = with-len(32)
     i <- [0..32): {
         a[i]: {
-            ok -> it = h[i]
+            ok -> it = h[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -827,7 +849,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 
         #{overflow=wrap}
         prefix[i]: {
-            ok -> it = h[32 + i]
+            ok -> it = h[32 + i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -844,7 +870,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     rin []byte = with-len(32 + msg-len)
     i <- [0..32): {
         rin[i]: {
-            ok -> it = prefix[i]
+            ok -> it = prefix[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -867,7 +897,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     rhb []byte = with-len(64)
     i <- [0..64): {
         rhb[i]: {
-            ok -> it = rh[i]
+            ok -> it = rh[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -888,7 +922,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     kin []byte = with-len(64 + msg-len)
     i <- [0..32): {
         kin[i]: {
-            ok -> it = r[i]
+            ok -> it = r[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -897,7 +935,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 
         #{overflow=wrap}
         kin[32 + i]: {
-            ok -> it = pub[i]
+            ok -> it = pub[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -920,7 +962,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     khb []byte = with-len(64)
     i <- [0..64): {
         khb[i]: {
-            ok -> it = kh[i]
+            ok -> it = kh[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -932,7 +978,11 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
     aarr [32]byte
     i <- [0..32): {
         aarr[i]: {
-            ok -> it = a[i]
+            ok -> it = a[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -942,10 +992,22 @@ ed25519-sign = (seed [32]byte, msg []byte) (sig [64]byte) {
 
     ; sig = R || S
     i <- [0..32): {
-        sig[i] = r[i]
+        ixout945c13 = r[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        sig[i] = ixout945c13
+
+        ixout948c18 = s[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        sig[32 + i] = s[i]
+        sig[32 + i] = ixout948c18
     }
 }
 
@@ -961,7 +1023,11 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     r [32]byte
     i <- [0..32): {
         r[i]: {
-            ok -> it = sig[i]
+            ok -> it = sig[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1043,7 +1109,11 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     kin []byte = with-len(64 + msg-len)
     i <- [0..32): {
         kin[i]: {
-            ok -> it = r[i]
+            ok -> it = r[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1052,7 +1122,11 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
 
         #{overflow=wrap}
         kin[32 + i]: {
-            ok -> it = pub[i]
+            ok -> it = pub[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1075,7 +1149,11 @@ ed25519-verify = (pub [32]byte, msg []byte, sig [64]byte) (ok i64) {
     khb []byte = with-len(64)
     i <- [0..64): {
         khb[i]: {
-            ok -> it = kh[i]
+            ok -> it = kh[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

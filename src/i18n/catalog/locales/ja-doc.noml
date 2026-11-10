@@ -7870,7 +7870,7 @@ out: ビット長（floor(log2)+1）
 BYTE オフセット i の生のバイト値を返す（生のバイト読み込み）
 s[i] との違い: s[i] はコードポイント単位で添字アクセスするが、このメソッドは下位の UTF-8 バッファへのバイトオフセットを取る。
 戻り値 ?byte: 範囲外なら nil（i < 0 または i >= len-bytes()）。arr[i] の安全な添字アクセスのセマンティクスに合わせる;
-呼び出し側は option を処理する必要がある（match / ?= / #{index-out = DEF}）。
+呼び出し側は option を処理する必要がある（match / ?=）。
 コンパイラが builtin として扱う（#{buildin}）: codegen が捕捉して境界チェックと GEP+load を展開するので std の関数本体はない。
 シグネチャは src/builtin/str.go の BuiltinMethodList にも登録されており（MethodName "byte", Intercepted）、
 裸の名前によるフォールバックが str と txt の両方をカバーする。

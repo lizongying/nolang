@@ -581,7 +581,13 @@ poly1305-key-gen = (key [32]byte, nonce [12]byte) (otk [32]byte) {
     block [64]byte
     block = chacha20-block(key, 0, nonce)
     i <- [0..32): {
-        otk[i] = block[i]
+        ixout584c17 = block[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        otk[i] = ixout584c17
     }
 }
 
@@ -863,9 +869,14 @@ chacha20-poly1305-seal = (key [32]byte, nonce [12]byte, aad []byte, plain []byte
         sealed[i] = ixout614c21
     }
     i <- [0..16): {
+        ixout868c27 = tag[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        sealed[cipher.len() + i] = tag[i]
+        sealed[cipher.len() + i] = ixout868c27
     }
 }
 

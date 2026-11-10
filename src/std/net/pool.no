@@ -89,7 +89,13 @@ pool.get = () (c ?net.conn) {
         in-use-val == false -> {
             .in-use[i] ?= true
 
-            c = .conns[i]
+            ixout92c17 = .conns[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            c = ixout92c17
             return
         }
     }

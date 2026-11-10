@@ -434,7 +434,13 @@ jar.get = (name str, domain str, path str) (val ?str) {
                 }
             }
             domain-match && path-match -> {
-                val = .values[i]
+                ixout437c1e = .values[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                val = ixout437c1e
                 return
             }
         }
@@ -621,7 +627,11 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
 
         #{overflow=wrap}
         hex-str[i * 2]: {
-            ok -> it = hex-chars[(ixout544c38 >> 4) & 15]
+            ok -> it = hex-chars[(ixout544c38 >> 4) & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -634,7 +644,11 @@ cookie-sign = (name str, value str, key []byte) (signed str) {
 
         #{overflow=wrap}
         hex-str[i * 2 + 1]: {
-            ok -> it = hex-chars[ixout551c37 & 15]
+            ok -> it = hex-chars[ixout551c37 & 15]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

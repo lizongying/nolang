@@ -139,7 +139,13 @@ deque.pop-front = () (val ?i64) {
         }
     }
 
-    val = .buf[idx]
+    ixout142cf = .buf[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout142cf
 
     #{overflow=wrap}
     .head = .head + 1: {
@@ -188,7 +194,13 @@ deque.pop-back = () (val ?i64) {
         }
     }
 
-    val = .buf[idx]
+    ixout191cf = .buf[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout191cf
     .tail = new-tail
 }
 
@@ -224,7 +236,13 @@ deque.peek-front = () (val ?i64) {
         }
     }
 
-    val = .buf[idx]
+    ixout227cf = .buf[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout227cf
 }
 
 ; 查看後端元素（不移除）
@@ -261,7 +279,13 @@ deque.peek-back = () (val ?i64) {
         }
     }
 
-    val = .buf[idx]
+    ixout264cf = .buf[idx]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout264cf
 }
 
 ; 返回雙端佇列目前元素數量

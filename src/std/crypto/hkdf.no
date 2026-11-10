@@ -136,7 +136,11 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
     prk-vec []byte = with-len(32)
     i <- [0..32): {
         prk-vec[i]: {
-            ok -> it = prk[i]
+            ok -> it = prk[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -159,7 +163,13 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
             copy-n = out-len
             i <- [0..copy-n): {
-                okm[i] = t-tmp[i]
+                ixout162c1f = t-tmp[i]: {
+                    ok -> it
+
+                    -> _
+                }
+
+                okm[i] = ixout162c1f
             }
         }
 
@@ -172,7 +182,11 @@ hkdf-expand = (prk [32]byte, info []byte, out-len i64) (okm []byte) {
 
                 i <- [0..32): {
                     t[i]: {
-                        ok -> it = t-tmp[i]
+                        ok -> it = t-tmp[i]: {
+                            ok -> it
+
+                            -> _
+                        }
 
                         -> _
                     }

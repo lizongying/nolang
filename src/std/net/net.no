@@ -269,9 +269,14 @@ conn.recv-all = () (content str, total i64) {
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> break
         i <- [0..chunk-n): {
+            ixout274c25 = buf[i]: {
+                ok -> it
+
+                -> _
+            }
 
             #{overflow=wrap}
-            content[total + i] = buf[i]
+            content[total + i] = ixout274c25
         }
 
         #{overflow=wrap}
@@ -720,7 +725,11 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 
         #{overflow=wrap}
         packet[4 + i]: {
-            ok -> it = iv[i]
+            ok -> it = iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -731,7 +740,11 @@ enc-conn.send-encrypted = (data str) (ok bool) {
 
         #{overflow=wrap}
         packet[16 + i]: {
-            ok -> it = sealed[i]
+            ok -> it = sealed[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1392,15 +1405,45 @@ route-list = () (routes []route-info) {
         fields.len-bytes() >= 11 -> {
             r = route-info{}
 
-            r.iface = fields[0]
+            ixout1395c1d = fields[0]: {
+                ok -> it
 
-            r.destination = fields[1]
+                -> _
+            }
 
-            r.gateway = fields[2]
+            r.iface = ixout1395c1d
 
-            r.flags = fields[3]
+            ixout1397c23 = fields[1]: {
+                ok -> it
 
-            r.mask = fields[7]
+                -> _
+            }
+
+            r.destination = ixout1397c23
+
+            ixout1399c1f = fields[2]: {
+                ok -> it
+
+                -> _
+            }
+
+            r.gateway = ixout1399c1f
+
+            ixout1401c1d = fields[3]: {
+                ok -> it
+
+                -> _
+            }
+
+            r.flags = ixout1401c1d
+
+            ixout1403c1c = fields[7]: {
+                ok -> it
+
+                -> _
+            }
+
+            r.mask = ixout1403c1c
             routes.push(r)
         }
     }
@@ -1447,15 +1490,45 @@ arp-list = () (arps []arp-info) {
         fields.len-bytes() >= 6 -> {
             a = arp-info{}
 
-            a.ip = fields[0]
+            ixout1450c1a = fields[0]: {
+                ok -> it
 
-            a.hw-type = fields[1]
+                -> _
+            }
 
-            a.flags = fields[2]
+            a.ip = ixout1450c1a
 
-            a.mac = fields[3]
+            ixout1452c1f = fields[1]: {
+                ok -> it
 
-            a.iface = fields[5]
+                -> _
+            }
+
+            a.hw-type = ixout1452c1f
+
+            ixout1454c1d = fields[2]: {
+                ok -> it
+
+                -> _
+            }
+
+            a.flags = ixout1454c1d
+
+            ixout1456c1b = fields[3]: {
+                ok -> it
+
+                -> _
+            }
+
+            a.mac = ixout1456c1b
+
+            ixout1458c1d = fields[5]: {
+                ok -> it
+
+                -> _
+            }
+
+            a.iface = ixout1458c1d
             arps.push(a)
         }
     }

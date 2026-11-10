@@ -601,7 +601,13 @@ zip-writer.finalize = () (out []byte) {
     dlen = .data.len()
     out = with-cap(.data.len())
     i <- [0..dlen): {
-        out[i] = .data[i]
+        ixout604c17 = .data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout604c17
     }
 }
 

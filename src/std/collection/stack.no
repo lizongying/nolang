@@ -61,7 +61,13 @@ stack.pop = () (val ?i64) {
         ->
     }
 
-    val = .data[.n]
+    ixout64c10 = .data[.n]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout64c10
 }
 
 ; 查看堆疊頂端元素（不移除）
@@ -74,7 +80,13 @@ stack.peek = () (val ?i64) {
     }
 
     #{overflow=wrap}
-    val = .data[.n - 1]
+    ixout77c10 = .data[.n - 1]: {
+        ok -> it
+
+        -> _
+    }
+
+    val = ixout77c10
 }
 
 ; 返回堆疊目前元素數量

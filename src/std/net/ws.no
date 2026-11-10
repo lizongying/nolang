@@ -177,7 +177,11 @@ compute-accept = (key str) (accept str) {
 
     i <- [0..20): {
         hash-vec[i]: {
-            ok -> it = hash[i]
+            ok -> it = hash[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -1962,7 +1966,11 @@ connect = (url str) (c ?client) {
         remaining = raw.slice(body-start, total)
         i <- [0..remaining-len): {
             rb[i]: {
-                ok -> it = remaining[i]
+                ok -> it = remaining[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }

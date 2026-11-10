@@ -7834,7 +7834,7 @@ out: Bitlänge (floor(log2)+1)
 gibt den Roh-Byte-Wert am Byte-Index i (Roh-Byte-Lesung)
 anders als s[i]: s[i] indiziert nach Codepunkt, diese Methode liest nach Byte-Versatz in den zugrundeliegenden UTF-8-Puffer
 Rückgabe ?byte: außerhalb des Bereichs (i < 0 oder i >= len-bytes()) gibt nil zurück, konsistent mit arr[i]
-die Semantik des sicheren Indexierens ist konsistent; Aufrufer müssen die Option behandeln (match / ?= / #{index-out = DEF})
+die Semantik des sicheren Indexierens ist konsistent; Aufrufer müssen die Option behandeln (match / ?=)
 Vom Compiler-Builtin behandelt (#{buildin}): codegen fängt sie ab und expandiert sie in "bounds check + GEP+load",
 Es gibt keinen std-Funktionskörper; die Signatur ist auch in BuiltinMethodList in src/builtin/str.go registriert
 (MethodName "byte", Intercepted, der Bare-Name-Fallback deckt sowohl str als auch txt ab)

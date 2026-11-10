@@ -58,7 +58,13 @@ set.add = (val t) (new-size i64) {
     ; 已存在則不重複加入
     found = false
     i <- [0..sz): {
-        e = .data[i]
+        ixout61c12 = .data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        e = ixout61c12
         e == val -> {
             found = true
             break
@@ -96,7 +102,13 @@ set.remove = (val t) (new-size i64) {
     sz = .size
     idx = -1
     i <- [0..sz): {
-        e = .data[i]
+        ixout99c12 = .data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        e = ixout99c12
         e == val -> {
             idx = i
             break
@@ -130,7 +142,13 @@ set.remove = (val t) (new-size i64) {
 set.contains = (val t) (yes bool) {
     sz = .size
     i <- [0..sz): {
-        e = .data[i]
+        ixout133c12 = .data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        e = ixout133c12
         e == val -> {
             yes = true
             break
@@ -157,7 +175,13 @@ set.union = (other []t, osize i64) (new-size i64) {
         found = false
         sz = .size
         i <- [0..sz): {
-            e = .data[i]
+            ixout160c16 = .data[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            e = ixout160c16
             e == ov -> {
                 found = true
                 break
@@ -192,7 +216,13 @@ set.intersection = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
     sz = .size
     i <- [0..sz): {
-        v = .data[i]
+        ixout195c12 = .data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        v = ixout195c12
 
         found = false
         j <- [0..osize): {
@@ -234,7 +264,13 @@ set.difference = (other []t, osize i64, out []t) (cnt i64) {
     cnt = 0
     sz = .size
     i <- [0..sz): {
-        v = .data[i]
+        ixout237c12 = .data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        v = ixout237c12
         found = false
         j <- [0..osize): {
             ixout215c18 = other[j]: {
@@ -269,7 +305,13 @@ set.to-vec = () (out []t) {
     sz = .size
     out = with-len(sz)
     i <- [0..sz): {
-        e = .data[i]
+        ixout272c12 = .data[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        e = ixout272c12
         out[i] = e
     }
 }

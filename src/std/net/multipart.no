@@ -68,7 +68,14 @@ multipart-gen-boundary = (seed i64) (boundary str) {
         seed, r = rand.rand(seed)
 
         #{overflow=wrap}
-        boundary[prefix-len + i] = chars[r % 36]
+        ixout71c29 = chars[r % 36]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        boundary[prefix-len + i] = ixout71c29
     }
 }
 
@@ -558,7 +565,11 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     combined []byte
     i <- [0..12): {
         combined[i]: {
-            ok -> it = iv[i]
+            ok -> it = iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -568,7 +579,11 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
 
         #{overflow=wrap}
         combined[12 + i]: {
-            ok -> it = sealed[i]
+            ok -> it = sealed[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -610,7 +625,11 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     combined []byte
     i <- [0..12): {
         combined[i]: {
-            ok -> it = iv[i]
+            ok -> it = iv[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -620,7 +639,11 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
 
         #{overflow=wrap}
         combined[12 + i]: {
-            ok -> it = sealed[i]
+            ok -> it = sealed[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

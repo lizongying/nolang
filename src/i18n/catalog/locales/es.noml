@@ -441,7 +441,7 @@ Error al escribir el archivo principal: %v
   'd8en6a9j': 'el IR de MIR no pasó la verificación LLVM: %v: %s'
   'ddljrny8': 'se esperaba el nombre del campo en el literal de struct, se obtuvo %s'
   'ddutfwr8': 'Error en %s: %w'
-  'ddvc98n2': 'el índice de array/slice `arr[i]` devuelve option<elem> en caso de acceso fuera de rango por defecto. Esta option nunca se maneja: propágala con `a ?= arr[i]` (dentro de una función que devuelve ?T también puedes capturarla en el sitio con `a = arr[i]`), o anota `#{index-out = DEF}` para tomar el valor DEF por defecto fuera de rango, o declara el destino como option (p. ej. `a ?elem = arr[i]`) para capturar el error en el sitio, o descártala explícitamente con `_ = arr[i]`.'
+  'ddvc98n2': 'el índice de array/slice `arr[i]` (y el mapa `m[k]`) devuelve option<elem> en un acceso fuera de rango por defecto. La anotación `#{index-out=DEF}` se eliminó en D11. Consume la opción explícitamente: propágala con `a ?= arr[i]`, usa un match de valor o un match de lugar/bloque sobre la lectura del índice, enlázala a un destino option `?T` (p. ej. `a ?elem = arr[i]`) o descártala explícitamente con `_ = arr[i]`.'
   'deuvryn0': 'Runtime JS usado por --js: node (por defecto), bun, deno, ... (se permiten argumentos extra, p. ej. "deno run --allow-read")'
   'dh249i0x': 'se esperaba \':\' en el literal de map, se obtuvo %s'
   'dhae25dd': `

@@ -39,6 +39,12 @@ rand-str = (state i64, n i64) (s str) {
     i <- [0..n): {
         r = 0
         state, r = rand(state)
-        s[i] = chars[r % 62]
+        ixout42c15 = chars[r % 62]: {
+            ok -> it
+
+            -> _
+        }
+
+        s[i] = ixout42c15
     }
 }

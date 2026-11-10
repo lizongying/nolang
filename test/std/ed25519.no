@@ -129,7 +129,11 @@ t-tamper = () {
     bad [64]byte
     i <- [0..64): {
         bad[i]: {
-            ok -> it = sig[i]
+            ok -> it = sig[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -421,7 +425,11 @@ t-bad-s = () {
     bad [64]byte
     i <- [0..64): {
         bad[i]: {
-            ok -> it = sig[i]
+            ok -> it = sig[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

@@ -1464,61 +1464,101 @@ fe-mul = (h []i64, f []i64, g []i64) {
 
     ; 寫回結果
     h[0]: {
-        ok -> it = t[0]
+        ok -> it = t[0]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[1]: {
-        ok -> it = t[1]
+        ok -> it = t[1]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[2]: {
-        ok -> it = t[2]
+        ok -> it = t[2]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[3]: {
-        ok -> it = t[3]
+        ok -> it = t[3]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[4]: {
-        ok -> it = t[4]
+        ok -> it = t[4]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[5]: {
-        ok -> it = t[5]
+        ok -> it = t[5]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[6]: {
-        ok -> it = t[6]
+        ok -> it = t[6]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[7]: {
-        ok -> it = t[7]
+        ok -> it = t[7]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[8]: {
-        ok -> it = t[8]
+        ok -> it = t[8]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[9]: {
-        ok -> it = t[9]
+        ok -> it = t[9]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
@@ -2131,61 +2171,101 @@ fe-mul121665 = (h []i64, f []i64) {
     }
 
     h[0]: {
-        ok -> it = t[0]
+        ok -> it = t[0]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[1]: {
-        ok -> it = t[1]
+        ok -> it = t[1]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[2]: {
-        ok -> it = t[2]
+        ok -> it = t[2]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[3]: {
-        ok -> it = t[3]
+        ok -> it = t[3]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[4]: {
-        ok -> it = t[4]
+        ok -> it = t[4]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[5]: {
-        ok -> it = t[5]
+        ok -> it = t[5]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[6]: {
-        ok -> it = t[6]
+        ok -> it = t[6]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[7]: {
-        ok -> it = t[7]
+        ok -> it = t[7]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[8]: {
-        ok -> it = t[8]
+        ok -> it = t[8]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     h[9]: {
-        ok -> it = t[9]
+        ok -> it = t[9]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
@@ -3421,7 +3501,11 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     k []byte = with-len(32)
     i <- [0..32): {
         k[i]: {
-            ok -> it = scalar[i]
+            ok -> it = scalar[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3471,7 +3555,11 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     x1 []i64 = with-len(10)
     i <- [0..10): {
         x1[i]: {
-            ok -> it = u[i]
+            ok -> it = u[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3485,7 +3573,11 @@ x25519-scalarmult = (scalar [32]byte, point [32]byte) (out [32]byte) {
     x3 []i64 = with-len(10)
     i <- [0..10): {
         x3[i]: {
-            ok -> it = u[i]
+            ok -> it = u[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3708,7 +3800,11 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     x1 []i64 = with-len(10)
     i <- [0..10): {
         x1[i]: {
-            ok -> it = u[i]
+            ok -> it = u[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -3722,7 +3818,11 @@ x25519-scalarmult-bytes = (scalar []byte, point []byte) (out []byte) {
     x3 []i64 = with-len(10)
     i <- [0..10): {
         x3[i]: {
-            ok -> it = u[i]
+            ok -> it = u[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

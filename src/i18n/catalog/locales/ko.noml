@@ -443,7 +443,7 @@ tests 디렉터리 생성 오류: %v
   'd8en6a9j': 'MIR IR의 LLVM 검증에 실패했습니다: %v: %s'
   'ddljrny8': 'struct 리터럴 안에 필드 이름을 기대했지만 %s을(를) 받았습니다'
   'ddutfwr8': '%s 에러: %w'
-  'ddvc98n2': '배열/슬라이스 인덱스 `arr[i]`는 범위를 벗어난 접근 시 기본적으로 option<elem>을 반환합니다. 이 option은 한 번도 처리되지 않았습니다: `a ?= arr[i]`로 전파하거나(?T를 반환하는 함수 안에서는 `a = arr[i]`로 그 자리에서 받을 수도 있습니다), 범위를 벗어날 때 기본값 DEF를 취하도록 `#{index-out = DEF}`로 주석하거나, 대상을 option으로 선언하거나(예: `a ?elem = arr[i]`), `_ = arr[i]`로 명시적으로 버리세요.'
+  'ddvc98n2': '배열/슬라이스 인덱스 `arr[i]`(및 map `m[k]`)는 범위를 벗어난 접근 시 기본적으로 option<elem>을 반환합니다. `#{index-out=DEF}` 주석은 D11에서 제거되었습니다. option을 명시적으로 소비하세요: `a ?= arr[i]`로 전파하거나, 인덱스 읽기에 값 match 또는 place/block match를 사용하거나, `?T` option 대상에 바인딩하거나(예: `a ?elem = arr[i]`), `_ = arr[i]`로 명시적으로 버리세요.'
   'deuvryn0': '--js 실행에 쓸 JS 런타임: node(기본), bun, deno 등 (추가 인자 허용, 예 "deno run --allow-read")'
   'dh249i0x': 'map 리터럴에 \':\'를 기대했지만 %s을(를) 받았습니다'
   'dhae25dd': `

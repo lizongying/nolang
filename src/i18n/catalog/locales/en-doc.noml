@@ -7834,7 +7834,7 @@ out: bit length (floor(log2)+1)
 returns the raw byte value at byte index i (raw byte read)
 unlike s[i]: s[i] indexes by code point, this method reads by byte offset into the underlying UTF-8 buffer
 Returns ?byte: out of range (i < 0 or i >= len-bytes()) returns nil, consistent with arr[i]'s
-Safe-indexing semantics are consistent; callers must handle the option (match / ?= / #{index-out = DEF})
+Safe-indexing semantics are consistent; callers must handle the option (match / ?=)
 Handled by the compiler builtin (#{buildin}): codegen intercepts and expands it into "bounds check + GEP+load",
 There is no std function body; the signature is also registered in BuiltinMethodList in src/builtin/str.go
 (MethodName "byte", Intercepted, the bare-name fallback covers both str and txt)

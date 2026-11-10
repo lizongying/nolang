@@ -691,7 +691,13 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                         #{overflow=wrap}
                         src-pos = .out.len() - .rep0 - 1
                         src-pos >= 0 -> {
-                            b = .out[src-pos]
+                            ixout694c25 = .out[src-pos]: {
+                                ok -> it
+
+                                -> _
+                            }
+
+                            b = ixout694c25
                             .out.push(b)
                             .prev-byte = b
                         }
@@ -741,7 +747,13 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                             #{overflow=wrap}
                             src-pos = .out.len() - .rep0 - 1
                             src-pos >= 0 -> {
-                                b = .out[src-pos]
+                                ixout744c29 = .out[src-pos]: {
+                                    ok -> it
+
+                                    -> _
+                                }
+
+                                b = ixout744c29
                                 .out.push(b)
                                 .prev-byte = b
                             }
@@ -756,7 +768,13 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                                 #{overflow=wrap}
                                 src-pos = .out.len() - .rep0 - 1
                                 src-pos >= 0 -> {
-                                    b = .out[src-pos]
+                                    ixout759c2d = .out[src-pos]: {
+                                        ok -> it
+
+                                        -> _
+                                    }
+
+                                    b = ixout759c2d
                                     .out.push(b)
                                     .prev-byte = b
                                 }
@@ -783,7 +801,13 @@ lzma-decoder.decode = (data []byte, start-pos i64, unpacked-size i64) {
                             #{overflow=wrap}
                             src-pos = .out.len() - .rep0 - 1
                             src-pos >= 0 -> {
-                                b = .out[src-pos]
+                                ixout786c29 = .out[src-pos]: {
+                                    ok -> it
+
+                                    -> _
+                                }
+
+                                b = ixout786c29
                                 .out.push(b)
                                 .prev-byte = b
                             }

@@ -7897,7 +7897,7 @@ out: longueur en bits (floor(log2)+1)
 Renvoie la valeur d'octet brut à l'indice « d'octets » i (lecture raw byte)
 Différent de s[i] : s[i] indexe par point de code, cette méthode lit par décalage d'octets dans le tampon UTF-8 sous-jacent
 Renvoie ?byte : hors plage (i < 0 ou i >= len-bytes()) renvoie nil, cohérent avec celui de arr[i]
-Cohérent avec la sémantique d'indexation sûre ; l'appelant doit traiter l'option (match / ?= / #{index-out = DEF})
+Cohérent avec la sémantique d'indexation sûre ; l'appelant doit traiter l'option (match / ?=)
 Traité par l'intégré du compilateur (#{buildin}) : codegen l'intercepte puis le déploie en « vérification de bornes + GEP+load »,
 Pas de corps de fonction std ; la signature est aussi enregistrée dans BuiltinMethodList de src/builtin/str.go
 (MethodName "byte", Intercepted, le repli par nom brut couvre à la fois str et txt)

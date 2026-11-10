@@ -3021,11 +3021,23 @@ str.to-hex = () (out str) {
     i <- [0..self.len-bytes()): {
         b = .byte(i)
 
-        #{overflow=wrap}
-        out[i * 2] = hex[b >> 4]
+        ixout3025c19 = hex[b >> 4]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        out[i * 2 + 1] = hex[b & 15]
+        out[i * 2] = ixout3025c19
+
+        ixout3028c1d = hex[b & 15]: {
+            ok -> it
+
+            -> _
+        }
+
+        #{overflow=wrap}
+        out[i * 2 + 1] = ixout3028c1d
     }
 }
 

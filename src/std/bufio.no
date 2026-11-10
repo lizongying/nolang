@@ -57,7 +57,13 @@ reader.read-byte = () (b ?byte) {
         return
     }
 
-    b = .buf[.pos]
+    ixout60cd = .buf[.pos]: {
+        ok -> it
+
+        -> _
+    }
+
+    b = ixout60cd
 
     #{overflow=wrap}
     .pos = .pos + 1: {
@@ -89,7 +95,13 @@ reader.read-line = () (line ?str) {
             }
         }
         (.pos < .avail) {
-            c = .buf[.pos]
+            ixout92c15 = .buf[.pos]: {
+                ok -> it
+
+                -> _
+            }
+
+            c = ixout92c15
 
             #{overflow=wrap}
             .pos = .pos + 1: {

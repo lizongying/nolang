@@ -256,14 +256,22 @@ uuid.to-str-upper = () (out str) {
 ; [hex-byte-upper](#uuid.hex-byte-upper)
 hex-byte-upper = (b byte, pos i64, out str, table str) {
     out[pos]: {
-        ok -> it = table[(b >> 4) & 15]
+        ok -> it = table[(b >> 4) & 15]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }
 
     #{overflow=wrap}
     out[pos + 1]: {
-        ok -> it = table[b & 15]
+        ok -> it = table[b & 15]: {
+            ok -> it
+
+            -> _
+        }
 
         -> _
     }

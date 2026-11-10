@@ -949,8 +949,14 @@ b-hex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout953c1f = hex-chars[(ixout933c37 >> 4) & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(ixout933c37 >> 4) & 15]
+        hex[i * 2] = ixout953c1f
 
         ixout936c40 = hash[i]: {
             ok -> it
@@ -958,8 +964,14 @@ b-hex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout962c23 = hex-chars[ixout936c40 & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[ixout936c40 & 15]
+        hex[i * 2 + 1] = ixout962c23
     }
 }
 
@@ -978,8 +990,14 @@ b-256-hex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout982c1f = hex-chars[(ixout951c37 >> 4) & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(ixout951c37 >> 4) & 15]
+        hex[i * 2] = ixout982c1f
 
         ixout954c40 = hash[i]: {
             ok -> it
@@ -987,8 +1005,14 @@ b-256-hex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout991c23 = hex-chars[ixout954c40 & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[ixout954c40 & 15]
+        hex[i * 2 + 1] = ixout991c23
     }
 }
 
@@ -1661,8 +1685,14 @@ s-hex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout1665c1f = hex-chars[(ixout1617c37 >> 4) & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2] = hex-chars[(ixout1617c37 >> 4) & 15]
+        hex[i * 2] = ixout1665c1f
 
         ixout1620c40 = hash[i]: {
             ok -> it
@@ -1670,7 +1700,13 @@ s-hex = (data []byte) (hex str) {
             -> _
         }
 
+        ixout1674c23 = hex-chars[ixout1620c40 & 15]: {
+            ok -> it
+
+            -> _
+        }
+
         #{overflow=wrap}
-        hex[i * 2 + 1] = hex-chars[ixout1620c40 & 15]
+        hex[i * 2 + 1] = ixout1674c23
     }
 }

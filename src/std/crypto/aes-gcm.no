@@ -52,7 +52,11 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
     v [16]byte
     i <- [0..16): {
         v[i]: {
-            ok -> it = h[i]
+            ok -> it = h[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -170,7 +174,13 @@ ghash-mul = (x [16]byte, h [16]byte) (out [16]byte) {
         }
     }
     i <- [0..16): {
-        out[i] = z[i]
+        ixout173c13 = z[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout173c13
     }
 }
 
@@ -536,7 +546,13 @@ ghash = (h [16]byte, aad []byte, cipher []byte) (out [16]byte) {
     y = ghash-mul(y, h)
 
     i <- [0..16): {
-        out[i] = y[i]
+        ixout539c13 = y[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out[i] = ixout539c13
     }
 }
 
@@ -553,7 +569,11 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
     cb []byte = with-len(16)
     i <- [0..16): {
         cb[i]: {
-            ok -> it = icb[i]
+            ok -> it = icb[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -566,7 +586,11 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
         blk [16]byte
         i <- [0..16): {
             blk[i]: {
-                ok -> it = cb[i]
+                ok -> it = cb[i]: {
+                    ok -> it
+
+                    -> _
+                }
 
                 -> _
             }
@@ -623,7 +647,13 @@ ctr-xor = (icb [16]byte, data []byte, ek []byte) (out []byte) {
 ; [gcm-j0](#aes-gcm.gcm-j0)
 gcm-j0 = (iv [12]byte) (j0 [16]byte) {
     i <- [0..12): {
-        j0[i] = iv[i]
+        ixout626c13 = iv[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        j0[i] = ixout626c13
     }
 
     j0[12] = 0
@@ -674,7 +704,11 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
     ctr0 [16]byte
     i <- [0..16): {
         ctr0[i]: {
-            ok -> it = ctr[i]
+            ok -> it = ctr[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }
@@ -723,9 +757,14 @@ gcm-seal = (iv [12]byte, aad []byte, plain []byte, ek []byte) (sealed []byte) {
         sealed[i] = ixout532c21
     }
     i <- [0..16): {
+        ixout728c27 = tag[i]: {
+            ok -> it
+
+            -> _
+        }
 
         #{overflow=wrap}
-        sealed[cipher.len() + i] = tag[i]
+        sealed[cipher.len() + i] = ixout728c27
     }
 }
 
@@ -837,7 +876,11 @@ gcm-open = (iv [12]byte, aad []byte, sealed []byte, ek []byte) (plain []byte) {
     ctr0 [16]byte
     i <- [0..16): {
         ctr0[i]: {
-            ok -> it = ctr[i]
+            ok -> it = ctr[i]: {
+                ok -> it
+
+                -> _
+            }
 
             -> _
         }

@@ -588,11 +588,17 @@ func runLintUnhandledOverflow(program *parser.Program, opts LintOptions) []LintR
 	return results
 }
 
-// runLintUnhandledIndex — 20e. 未處理的越界索引。D11 起同一趟
-// ValidateUnhandledIndexTHIR 產出兩種 TraceID，逐條分流嚴重度：
-//   - idxhndld（產生處）：HINT，不阻斷建置（含 std 的 223 處 place-match 臂）；
-//   - idxbruse（裸索引 option 當值用、巢狀值位置未顯式消費）：LintError，
-//     由 build/transpiler_validate.go 依此 TraceID 攔截建置。
+// runLintUnhandledIndex — 20e. 未處理的越界索引。
+//
+// D2 反轉（2026-11-10）：D11 移除 `#{index-out=DEF}` 註解後，索引 option 已沒有
+// 「加註解取預設值」這條出口，「未顯式消費」不再是風格提示，一律是硬錯誤。
+// ValidateUnhandledIndexTHIR 同一趟產出的兩種 TraceID 現在同為 LintError：
+//   - idxhndld（產生處：直接指派值索引讀取）；
+//   - idxbruse（裸索引 option 當值用、巢狀值位置未顯式消費）。
+//
+// build 路徑（build/transpiler_validate.go）仍只依 BareIndexUseTraceID 攔截
+// 建置：那裡是記憶體安全子集，整批接入會讓 std 既有語料在收口前無法編譯。
+// vet 層則如實把所有未處理的索引 option 回報為 error；語料收口以 vet 為準。
 func runLintUnhandledIndex(program *parser.Program, opts LintOptions) []LintResult {
 	var results []LintResult
 	for _, u := range ValidateUnhandledIndexTHIR(program, opts.SourcePath, opts.thirView) {
@@ -600,13 +606,9 @@ func runLintUnhandledIndex(program *parser.Program, opts LintOptions) []LintResu
 		if file == "" {
 			file = opts.SourcePath
 		}
-		sev := LintHint
-		if u.TraceID == bareIndexUseTraceID {
-			sev = LintError
-		}
 		results = append(results, LintResult{
 			Line: u.Line, Column: u.Column,
-			Severity: sev, Source: "nolang-index",
+			Severity: LintError, Source: "nolang-index",
 			File:    file,
 			Message: u.Message, TraceID: u.TraceID,
 		})
