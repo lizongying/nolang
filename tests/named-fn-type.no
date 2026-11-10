@@ -43,10 +43,12 @@ my-compute = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = n + 1
         r-opt: {
             ok -> r = it
+
             ->
         }
     }

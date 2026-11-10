@@ -120,3 +120,78 @@ func TestFixStringConcatUnannotatedOperandStays(t *testing.T) {
 		t.Errorf("flips = %d, want 0", n)
 	}
 }
+
+// TestFixStringConcatMixedChain 回歸 2026-11-10：鏈式拼接裡摻了非字面量運算元
+// （欄位存取、方法呼叫）時，`(… + 'b') + y` 這種中間節點兩側都不是字面量，
+// THIR 又因外層 `+` 給不出 str 型別 ⇒ 舊口徑只翻一半，`no fmt` 產出
+// `'a' - x - 'b' + y - 'c'` 的混合 +/- 壞碼。現在整條鏈必須一致翻成 '-'。
+func TestFixStringConcatMixedChain(t *testing.T) {
+	src := "f = () (r str) {\n\tr = 'line ' + a + ', column ' + b + ': ' + c + ' [' + d + ']'\n}\n"
+	prog, view := fixParseSugar(t, src)
+	const want = 8
+	if got := len(ValidateStringConcat(prog, view)); got != want {
+		t.Fatalf("reports before fix = %d, want %d", got, want)
+	}
+	if n := FixStringConcatOperators(prog, view); n != want {
+		t.Fatalf("flips = %d, want %d", n, want)
+	}
+	if got := len(ValidateStringConcat(prog, view)); got != 0 {
+		t.Errorf("reports after fix = %d, want 0: %v", got, ValidateStringConcat(prog, view))
+	}
+	if n := FixStringConcatOperators(prog, view); n != 0 {
+		t.Errorf("second fix flips = %d, want 0", n)
+	}
+	if got := concatFixCountInfixOp(prog, "+"); got != 0 {
+		t.Errorf("remaining '+' infix count = %d, want 0", got)
+	}
+	if got := concatFixCountInfixOp(prog, "-"); got != want {
+		t.Errorf("'-' infix count = %d, want %d", got, want)
+	}
+}
+
+// TestFixStringConcatChainGuards 守住「鏈式補報」的三條邊界：純數值加法鏈、
+// 數值減法（'-' 不必然是拼接）、括號包裹的拼接鏈。
+func TestFixStringConcatChainGuards(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		wantFix  int
+		wantPlus int
+	}{
+		{
+			name:     "pure numeric chain stays untouched",
+			src:      "f = (a i64, b i64) (n i64) {\n\tn = a + b + 1\n}\n",
+			wantFix:  0,
+			wantPlus: 2,
+		},
+		{
+			name:     "numeric minus is not a concat chain",
+			src:      "f = (a i64, b i64) (n i64) {\n\tn = (a - 1) + b\n}\n",
+			wantFix:  0,
+			wantPlus: 1,
+		},
+		{
+			name:     "grouped concat chain flips both nodes",
+			src:      "f = (a str, b str) (r str) {\n\tr = ('x' + a) + b\n}\n",
+			wantFix:  2,
+			wantPlus: 0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prog, view := fixParseSugar(t, c.src)
+			if got := len(ValidateStringConcat(prog, view)); got != c.wantFix {
+				t.Fatalf("reports = %d, want %d", got, c.wantFix)
+			}
+			if n := FixStringConcatOperators(prog, view); n != c.wantFix {
+				t.Fatalf("flips = %d, want %d", n, c.wantFix)
+			}
+			if got := concatFixCountInfixOp(prog, "+"); got != c.wantPlus {
+				t.Errorf("remaining '+' infix count = %d, want %d", got, c.wantPlus)
+			}
+			if got := len(ValidateStringConcat(prog, view)); got != 0 {
+				t.Errorf("reports after fix = %d, want 0", got)
+			}
+		})
+	}
+}

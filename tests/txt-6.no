@@ -2,7 +2,9 @@
 ; sources: jp13.no, jp16.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/jp13.no =====================
+; merged from tests/jp13.no
+...
+
 # /test/runner
 
 t-join = () {
@@ -13,7 +15,9 @@ t-join = () {
 }
 t-join()
 
-; ===================== merged from tests/jp16.no =====================
+; merged from tests/jp16.no
+...
+
 # /test/runner
 
 s txt = 'a-b-c-d'

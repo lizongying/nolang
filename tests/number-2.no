@@ -2,12 +2,15 @@
 ; sources: cmp.no, test-div-mod-option.no, f64-str.no, bigint-operator-overload.no, bigint-uuid-byte-indexing.no, quant-all.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/cmp.no =====================
+; merged from tests/cmp.no
 ; merged category 'cmp' -- members: cmp-more.no, icmp-test.no
 ; (originals backed up under tests/_archive/cmp/)
-; ===================== merged from tests/cmp-more.no =====================
+...
+
+; merged from tests/cmp-more.no
 ; tests/cmp-more.no — consolidated byte-comparison fragments
 ; from: tests/cmp.no, tests/cmp2.no
+...
 
 ; # std/str
 fstr = '  hello   world  nolang  '
@@ -53,8 +56,10 @@ i2 <- [0..n2): {
     }
 }
 
-; ===================== merged from tests/icmp-test.no =====================
+; merged from tests/icmp-test.no
 ; 測試 fn
+...
+
 ; fd i64: net.net-icmp-open() 回傳的 socket 描述符；成功為非負、失敗為負值
 test-fn = () (fd i64) {
     fd = net.net-icmp-open()
@@ -62,9 +67,10 @@ test-fn = () (fd i64) {
 r = test-fn()
 print(r)
 
-; ===================== merged from tests/test-div-mod-option.no =====================
+; merged from tests/test-div-mod-option.no
 ; Division and remainder are option-producing integer operations.
 ; A zero divisor must become err instead of reaching LLVM sdiv/srem UB.
+...
 
 ; 運算元用具體型別 i64：union 別名（int）的方法派發是編譯期按成員進行的，
 ; `a int = 10` 這種寫法在 `a / b`、`a.mod(b)` 上既選不出成員、也無法在 MIR 裡
@@ -118,11 +124,12 @@ d: {
     -> print(it)
 }
 
-; ===================== merged from tests/f64-str.no =====================
+; merged from tests/f64-str.no
 ; f64-str.no — 測試 f64.to-str-fixed/-sci/-general 方法
 ; 注意：因編譯器 bug（print 直接接收函數返回值時 @print 未宣告），
 ; 所有用例先將結果賦值給變數再 print。
 ; 注意：Nolang 中 ';' 是註解符號，不可用作語句分隔。
+...
 
 ; 特殊值（使用顯式 f64 型別，繞過編譯器對直接除法表達式的型別推導 bug）
 nan-val = 0.0
@@ -257,7 +264,7 @@ print(s)
 s = neg-inf-val.to-str-general(p)
 print(s)
 
-; ===================== merged from tests/bigint-operator-overload.no =====================
+; merged from tests/bigint-operator-overload.no
 ; bigint-operator-overload.no — 回归测试：bigint 算术运算符重载 `+ - * / %`
 ;
 ; 验证「通用语言特性」：任意用户类型只要定义 `_op` 方法，编译器即把 `a op b`
@@ -269,12 +276,12 @@ print(s)
 ;
 ; 判定形式用块 `{ cond -> print(PASS)  -> print(FAIL) }`：裸 `->` else 分支
 ; 必须与 then 分支同处一个 match 块，写成两条独立语句会被解析成两个单向 if。
+...
 
 print('=== bigint-operator-overload ===')
 
-; ─────────────────────────────────────────────
 ; 1. 加法 _add：同号 / 异号 / 进位
-; ─────────────────────────────────────────────
+...
 two = bigint.from-i64(2)
 three = bigint.from-i64(3)
 neg2 = bigint.from-i64(-2)
@@ -308,9 +315,8 @@ c4 = big + big
     -> print('FAIL: 1d big+big={c4.to-str()}')
 }
 
-; ─────────────────────────────────────────────
 ; 2. 减法 _sub
-; ─────────────────────────────────────────────
+...
 c5 = three - two
 {
     c5.to-str() == '1' -> print('PASS: 2a 3 - 2 = 1')
@@ -332,9 +338,8 @@ c7 = neg2 - two
     -> print('FAIL: 2c -2-2={c7.to-str()}')
 }
 
-; ─────────────────────────────────────────────
 ; 3. 乘法 _mul
-; ─────────────────────────────────────────────
+...
 c8 = two * three
 {
     c8.to-str() == '6' -> print('PASS: 3a 2 * 3 = 6')
@@ -356,9 +361,8 @@ c10 = big * two
     -> print('FAIL: 3c big*2={c10.to-str()}')
 }
 
-; ─────────────────────────────────────────────
 ; 4. 除法 _div（整数截断）
-; ─────────────────────────────────────────────
+...
 seven = bigint.from-i64(7)
 c11 = seven / two
 {
@@ -374,9 +378,8 @@ c12 = neg2 / two
     -> print('FAIL: 4b -2/2={c12.to-str()}')
 }
 
-; ─────────────────────────────────────────────
 ; 5. 取模 _mod
-; ─────────────────────────────────────────────
+...
 c13 = seven % two
 {
     c13.to-str() == '1' -> print('PASS: 5a 7 % 2 = 1')
@@ -392,9 +395,8 @@ c14 = big % three
     -> print('FAIL: 5b big%3={c14.to-str()}')
 }
 
-; ─────────────────────────────────────────────
 ; 6. 运算符形式与显式方法调用形式等价（同一条派发路径）
-; ─────────────────────────────────────────────
+...
 c15 = two + three
 c16 = two._add(three)
 {
@@ -411,9 +413,9 @@ c18 = two._mul(three)
     -> print('FAIL: 6b {c17.to-str()} != {c18.to-str()}')
 }
 
-; ─────────────────────────────────────────────
 ; 7. 混合表达式：运算符链接（post-order 降级：(a+b)*c → (a._add(b))._mul(c)）
-; ─────────────────────────────────────────────
+...
+
 ; two / three / big 皆為前面定義的 bigint 變數；(2+3) * 2^32 = 21474836480
 c19 = (two + three) * big
 {
@@ -431,10 +433,9 @@ c19b = two + three + neg2
     -> print('FAIL: 7b 2+3+-2={c19b.to-str()}')
 }
 
-; ─────────────────────────────────────────────
 ; 8. 结果类型是纯 payload bigint（无 option 包装）：可直接再参与运算、
 ;    可直接调用 bigint 方法，无需 ?= 解包。
-; ─────────────────────────────────────────────
+...
 c20 = two + three; 显式标注 bigint 必须被 checker 接受（不是 ?bigint）
 {
     c20.is-zero() == false -> print('PASS: 8a a+b 结果是 bigint（直接方法调用）')
@@ -453,7 +454,7 @@ c21 = (two + three) - (big + big)
 
 print('=== bigint-operator-overload done ===')
 
-; ===================== merged from tests/bigint-uuid-byte-indexing.no =====================
+; merged from tests/bigint-uuid-byte-indexing.no
 ; bigint-uuid-byte-indexing.no — 回歸測試：bigint / uuid 解析的字串讀取必須用 byte 游標
 ;
 ; 背景：bigint.from-str / bigint.from-hex / uuid.from-str 都以「位元組游標」（`pos <- [0..s.len-bytes())`
@@ -478,13 +479,13 @@ print('=== bigint-operator-overload done ===')
 ;   故 bigint 不進回歸守衛（與 path.join / url.url-encode 的處置一致：標記既有、不釘斷言）。
 ;
 ; 註：`\t` 在 Nolang 字串字面量中不解析成 tab，所以「跳空白」用例用真實空格即可，不測 tab 跳過。
+...
 
 print('=== bigint-uuid-byte-indexing ===')
 
-; ─────────────────────────────────────────────
 ; 1. uuid：帶連字號格式解析 + 回寫 round trip
-; ─────────────────────────────────────────────
-u1 = uuid {}
+...
+u1 = uuid{}
 ok1 = uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u1)
 ok1 == true -> print('PASS: 1a uuid dash-format parse ok=true')
 
@@ -494,10 +495,9 @@ u1.to-str() == '550e8400-e29b-41d4-a716-446655440000' -> print('PASS: 1b uuid da
 
 -> print('FAIL: 1b uuid dash to-str=[{u1.to-str()}]')
 
-; ─────────────────────────────────────────────
 ; 2. uuid：不帶連字號格式解析（parse-no-dashes 的 byte 游標）
-; ─────────────────────────────────────────────
-u2 = uuid {}
+...
+u2 = uuid{}
 ok2 = uuid.from-str('550e8400e29b41d4a716446655440000', u2)
 ok2 == true -> print('PASS: 2a uuid no-dash parse ok=true')
 
@@ -507,10 +507,9 @@ u2.to-str() == '550e8400-e29b-41d4-a716-446655440000' -> print('PASS: 2b uuid no
 
 -> print('FAIL: 2b uuid no-dash to-str=[{u2.to-str()}]')
 
-; ─────────────────────────────────────────────
 ; 3. uuid：大寫輸入（parse-hex-byte 的 byte 游標讀取）
-; ─────────────────────────────────────────────
-u3 = uuid {}
+...
+u3 = uuid{}
 ok3 = uuid.from-str('550E8400-E29B-41D4-A716-446655440000', u3)
 ok3 == true -> print('PASS: 3a uuid uppercase parse ok=true')
 
@@ -520,27 +519,26 @@ u3.to-str() == '550e8400-e29b-41d4-a716-446655440000' -> print('PASS: 3b uuid up
 
 -> print('FAIL: 3b uuid uppercase to-str=[{u3.to-str()}]')
 
-; ─────────────────────────────────────────────
 ; 4. uuid：to-str-upper 變體（hex-byte-upper 的 byte 游標寫入）
-; ─────────────────────────────────────────────
-u4 = uuid {}
+...
+u4 = uuid{}
 uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u4)
 u4.to-str-upper() == '550E8400-E29B-41D4-A716-446655440000' -> print('PASS: 4a uuid to-str-upper')
 
 -> print('FAIL: 4a uuid to-str-upper=[{u4.to-str-upper()}]')
 
-; ─────────────────────────────────────────────
 ; 5. uuid：非法輸入應回傳 ok=false（byte 游標越界/格式檢查不崩潰）
-; ─────────────────────────────────────────────
-u5 = uuid {}
+...
+u5 = uuid{}
 ok5 = uuid.from-str('not-a-uuid', u5)
 ok5 == false -> print('PASS: 5a uuid invalid input rejected')
 
 -> print('FAIL: 5a uuid invalid input ok={ok5.to-str()}')
 
-; ===================== merged from tests/quant-all.no =====================
+; merged from tests/quant-all.no
 ; 測試所有量詞
 ; # std/regexp
+...
 print('=== quantifier tests ===')
 
 ; * 測試
@@ -575,7 +573,7 @@ print('.* vs abc: {m5}')
 ; dump a? 的指令
 print('')
 print('=== a? compiled ===')
-re3 = regexp {
+re3 = regexp{
     pattern: 'a?'
 }
 re3.compile()
@@ -600,7 +598,7 @@ i <- [0..re3.n): {
 }
 print('')
 print('=== .* compiled ===')
-re5 = regexp {
+re5 = regexp{
     pattern: '.*'
 }
 re5.compile()

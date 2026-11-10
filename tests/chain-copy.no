@@ -53,6 +53,7 @@ json-pool.alloc = () (idx i64) {
     #{overflow=wrap}
     .count = .count + 1: {
         ok -> it
+
         ->
     }
     .nodes[idx].count = 0
@@ -60,7 +61,7 @@ json-pool.alloc = () (idx i64) {
     .nodes[idx].str-val = ''
 }
 print('start')
-p = json-pool {}
+p = json-pool{}
 p.init()
 
 node-idx = 0

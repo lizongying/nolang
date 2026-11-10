@@ -1,6 +1,6 @@
 ; merged category 'option' -- members: match-index-option.no, option-elem-container.no, option-index.no, option-more.no, option-test.no, option.no
 ; (originals backed up under tests/_archive/option/)
-; ===================== merged from tests/match-index-option.no =====================
+; merged from tests/match-index-option.no
 ; match-index-option.no — 索引主体 option-match 回归（[]txt.join / txt.replace-n 旧崩点）
 ;
 ; 执行：no test tests/match-index-option.no
@@ -11,6 +11,7 @@
 ;       matchedVarType，退化为 streq(parts[i],'') 字串比较，使 `it` 绑定阙如、
 ;       `s = it` 变 void，codegen 报 "receiver has no slot"。现归一化为合成 ?elem
 ;       变量（安全索引 → %option）后走识别符 option-match 路径。
+...
 
 # /test/runner
 
@@ -113,7 +114,7 @@ f = runner.failed-count()
     -> exit(0)
 }
 
-; ===================== merged from tests/option-elem-container.no =====================
+; merged from tests/option-elem-container.no
 ; option-elem-container — `[]?T`：元素本身是 option 的容器
 ;
 ; `[]?T` 這條路徑過去整體不可用，而且失敗方式是「靜默改型別」：
@@ -129,6 +130,7 @@ f = runner.failed-count()
 ;
 ; 斷言口徑：`a[i]` 恆為 `?T`，故一律在 match 的 ok 臂裡以「顯式 plain 型別」
 ; 拉回值再比較。
+...
 
 ; 1. 字面量初始化 + 逐元素讀取：nil 必須讀成 nil，不能折成 0
 oa []?i64 = [ok(1), nil, ok(3)]
@@ -431,12 +433,13 @@ ws[1]: {
 
 print('option-elem-container OK')
 
-; ===================== merged from tests/option-index.no =====================
+; merged from tests/option-index.no
 ; 回歸測試：%option（可空型別）作為陣列索引值。
 ; Bug：a[off + 1] 的結果 res 為 ?i64（%option），
 ;      codegen 取 a[res] 時未對 %option 索引解包，
 ;      導致 "defined with type '%option' but expected 'i64'"。
 ; 修復後應輸出 x=3。
+...
 a = [1, 2, 3, 4]
 off = 0
 res ?i64 = a[off + 1]
@@ -450,7 +453,7 @@ io.out('x=')
 io.out(x)
 print('')
 
-; ===================== merged from tests/option-more.no =====================
+; merged from tests/option-more.no
 ; option-more — 合併自同簇 option/opt 小件（heavy dedup）
 ;
 ; 每個原件逐字搬入並將頂層符號加前綴避免衝突；main 依序呼叫，stdout 逐段可對拍。
@@ -458,6 +461,7 @@ print('')
 ; opt-container-len、opt-struct-field、byte-option-index、slice-option-write、
 ; option-match-silent-wrong(綁 src/mir/option_match_three_bugs_test.go)、
 ; option-elem-container(大面積 place-match 擁有權探針)。
+...
 
 ; from opt-match-all.no — option match 的所有分支
 oma-test-err = () {
@@ -471,6 +475,7 @@ oma-test-err = () {
     }
     print(r)
 }
+
 oma-test-nil = () {
     n ?i64 = nil
     r = n: {
@@ -482,6 +487,7 @@ oma-test-nil = () {
     }
     print(r)
 }
+
 oma-test-val = () {
     n ?i64 = 42
     r = n: {
@@ -493,6 +499,7 @@ oma-test-val = () {
     }
     print(r)
 }
+
 oma-test-err-only = () {
     n ?i64 = err('oops')
     r = n: {
@@ -557,6 +564,7 @@ osm-simple = () {
         }
     }
 }
+
 osm-simple2 = () {
     n ?i64 = nil
     {
@@ -570,6 +578,7 @@ osm-simple2 = () {
         }
     }
 }
+
 osm-simple3 = () {
     n ?i64 = err('oops')
     {
@@ -679,7 +688,9 @@ onp-s: {
     err -> print('s=err')
 }
 
-; ===================== merged from tests/option-test.no =====================
+; merged from tests/option-test.no
+...
+
 ; Test 1: Declare and set nil
 test-option-1 = () {
     x1 ?str
@@ -752,9 +763,10 @@ print(4)
 test-option-6()
 print(5)
 
-; ===================== merged from tests/option.no =====================
+; merged from tests/option.no
 ; cd src && go run ./cmd/cli/. build ../tests/match.no
 ; ../dist/match
+...
 
 ; ✅ match 語句：分支是代碼塊
 

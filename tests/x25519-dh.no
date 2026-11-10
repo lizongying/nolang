@@ -62,12 +62,12 @@ test-dh = () (pass bool) {
     pass = false
 
     ; Alice
-    alice = key-holder {}
+    alice = key-holder{}
     alice.priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
     alice.pub = x25519.x25519-scalarmult-base(alice.priv)
 
     ; Bob
-    bob = key-holder {}
+    bob = key-holder{}
     bob.priv = hex-to-bytes('5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
     bob.pub = x25519.x25519-scalarmult-base(bob.priv)
 

@@ -55,7 +55,7 @@ test-vec-readonly = () {
 
 ; 5. struct：寫別名不得影響源（struct 本來就走 OpMove，這條是防止它退化）
 test-struct-independence = () {
-    d = MyData {
+    d = MyData{
         name: 'test'
         value: 42
     }

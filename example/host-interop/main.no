@@ -20,6 +20,7 @@ nl-add = (a i64, b i64) (r i64) {
         r-opt = a + b
         r-opt: {
             ok -> r = it
+
             ->
         }
     }
@@ -36,6 +37,7 @@ nl-sum3 = (a i64, b i64, c i64) (r i64) {
         r-opt2 = a + b + c
         r-opt2: {
             ok -> r = it
+
             ->
         }
     }

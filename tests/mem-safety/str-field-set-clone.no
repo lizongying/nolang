@@ -1,9 +1,8 @@
-; ═════════════════════════════════════════════════════════════════
 ; str 字段「寫」必須 deep-clone：emitSetField 的懸垂測試
-; ═════════════════════════════════════════════════════════════════
+...
+
 ;
 ; 問題描述
-; --------
 ; emitGetField（讀一個 owned str 字段）早就會 @str_clone，但 emitSetField（寫）
 ; 是裸 `store %str-long` —— 只複製 {len,cap,data} 描述符，於是字段與源**共享**
 ; 同一塊堆緩衝。源被重新賦值或被 drop 時 @str_free 一跑，字段就懸垂。
@@ -13,7 +12,6 @@
 ;   str 參數 -> 字段 -> `?person` 返回：調用方先 str_free 實參，`it.name` 整個丟掉。
 ;
 ; 修復內容
-; --------
 ; emitSetField 在 fieldLT == valLT == "%str-long" 時插入
 ;   %cl = call %str-long @str_clone(%str-long %v)
 ; 再 store。
@@ -25,9 +23,8 @@
 ; 打成 A//B）。free 那半要等「整結構拷貝深拷貝 owned 葉子」這個前置項。
 ;
 ; 預期行為
-; --------
 ; 四個子測試全部 ok=true。
-; ═════════════════════════════════════════════════════════════════
+...
 
 person {
     name str

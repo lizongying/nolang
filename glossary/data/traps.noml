@@ -507,5 +507,50 @@ ac: {
       related: ['move', 'assignment-semantics', 'single-owner']
       refs: ['docs/docs/lang/memory.md', 'glossary/src/mcph.no']
     }
+    'struct-literal-ghost-field': {
+      title: '结构体字面量里的独立型别名是幽灵字段'
+      kind: 'trap'
+      status: 'stable'
+      summary: '在 struct literal 中把 i64 / str 写在 [] 的下一行不是型别标注，而是被解析成无值的幽灵栏位（nu59u6hp 硬错误）。'
+      aliases: ['幽灵字段', '空 vec 型别标注', 'ghost field', 'nu59u6hp']
+      definition: `
+在结构体字面量里，把 i64 / str 另起一行写在 [] 后面并不是型别标注：
+parseSliceLiteral 见到 [] 就回传空 SliceLiteral，parseStructLiteral 跳过
+换行后把 i64 当成新栏位名，产生「名为 i64、Value 为 nil」的幽灵栏位。
+no ast 会看到 fields 数比 StructDefinition 多。Go 编译器目前静默略过
+（vet / build 都不报错），但自举前端与其它后端未必容忍。空 vec 的元素
+型别由栏位宣告推导，无需另行标注。核验：no ast 的 StructLiteral fields
+数应等于 StructDefinition 的 fields 数。
+2026-11-10 起 parser 遇「字面量内有 name: value、却夹着无值栏位」即报
+nu59u6hp 硬错误（vet / build 皆拦）并从 AST 剔除幽灵栏位；原本会绕过
+parseStructLiteral 的首栏位幽灵行也由 classifyBlockAtCurrent 补上。
+例外：全部栏位都无值的 'point = { x i64  s str }' 是合法的匿名结构体
+定义形，不报错。
+`
+      syntax: `
+box {
+    a []i64
+    b []str
+}
+
+new = () (x box) {
+    x = box {
+        a: []
+        b: []
+    }
+}
+`
+      example: `
+; 错误：AST 里 fields: 4（a、i64、b、str），后两个是幽灵栏位
+x = box {
+    a: []
+    i64
+    b: []
+    str
+}
+`
+      related: ['slice', 'struct', 'bare-module-array']
+      refs: ['src/parser/expr.go', 'src/parser/parser.go', 'compiler/src/h2m.no', 'src/parser/struct_literal_field_value_test.go']
+    }
   }
 }

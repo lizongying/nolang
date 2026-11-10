@@ -14,10 +14,12 @@ keep = true
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         count-opt = count + 1
         count-opt: {
             ok -> count = it
+
             ->
         }
     }
@@ -40,20 +42,24 @@ iter = 0
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         n-opt = n - 1
         n-opt: {
             ok -> n = it
+
             ->
         }
     }
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         iter-opt = iter + 1
         iter-opt: {
             ok -> iter = it
+
             ->
         }
     }
@@ -82,10 +88,12 @@ keep-trimming = true
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     cn-opt = cn - 1
                     cn-opt: {
                         ok -> cn = it
+
                         ->
                     }
                 }
@@ -113,10 +121,12 @@ goon = true
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         hits-opt = hits + 1
         hits-opt: {
             ok -> hits = it
+
             ->
         }
     }

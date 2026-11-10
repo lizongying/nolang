@@ -27,7 +27,7 @@ _ = ip.ip-parse('0.0.0.0')
 
 ; 解析：192.168.1.1 應拆成 4 個位元組；>255、段數不足/過多、空字串均應視為無效
 t-parse = () {
-    a = ip.ip-addr {}
+    a = ip.ip-addr{}
     ok = a.parse('192.168.1.1')
     runner.is-true(ok, 'parse valid')
     runner.eq(a.a, 192, 'octet a')
@@ -35,13 +35,13 @@ t-parse = () {
     runner.eq(a.c, 1, 'octet c')
     runner.eq(a.d, 1, 'octet d')
     eq-str(a.to-str(), '192.168.1.1', 'to-str')
-    b = ip.ip-addr {}
+    b = ip.ip-addr{}
     runner.is-false(b.parse('256.1.1.1'), 'octet>255 rejected')
-    c = ip.ip-addr {}
+    c = ip.ip-addr{}
     runner.is-false(c.parse('1.2.3'), '3 segments rejected')
-    d = ip.ip-addr {}
+    d = ip.ip-addr{}
     runner.is-false(d.parse(''), 'empty rejected')
-    e = ip.ip-addr {}
+    e = ip.ip-addr{}
     runner.is-false(e.parse('1.2.3.4.5'), '5 segments rejected')
     runner.is-true(e.is-valid(), 'zero addr is-valid')
 }
@@ -49,32 +49,32 @@ t-parse = () {
 ; 位址分類：私有段（10/8、172.16–172.31、192.168）、回環、零位址、廣播、
 ; 多播（224–239）、鏈路本地（169.254）與 A/B/C 類判定
 t-classify = () {
-    priv = ip.ip-addr {
+    priv = ip.ip-addr{
         a: 192
         b: 168
         c: 1
         d: 1
     }
     runner.is-true(priv.is-private(), '192.168 is private (regression)')
-    s16 = ip.ip-addr {
+    s16 = ip.ip-addr{
         a: 172
         b: 16
         c: 0
         d: 1
     }
-    s31 = ip.ip-addr {
+    s31 = ip.ip-addr{
         a: 172
         b: 31
         c: 255
         d: 255
     }
-    s15 = ip.ip-addr {
+    s15 = ip.ip-addr{
         a: 172
         b: 15
         c: 0
         d: 0
     }
-    s32 = ip.ip-addr {
+    s32 = ip.ip-addr{
         a: 172
         b: 32
         c: 0
@@ -84,21 +84,21 @@ t-classify = () {
     runner.is-true(s31.is-private(), '172.31 is private')
     runner.is-false(s15.is-private(), '172.15 not private')
     runner.is-false(s32.is-private(), '172.32 not private')
-    ten = ip.ip-addr {
+    ten = ip.ip-addr{
         a: 10
         b: 255
         c: 0
         d: 0
     }
     runner.is-true(ten.is-private(), '10/8 is private')
-    pub = ip.ip-addr {
+    pub = ip.ip-addr{
         a: 8
         b: 8
         c: 8
         d: 8
     }
     runner.is-false(pub.is-private(), '8.8.8.8 not private (regression)')
-    lb = ip.ip-addr {
+    lb = ip.ip-addr{
         a: 127
         b: 0
         c: 0
@@ -106,25 +106,25 @@ t-classify = () {
     }
     runner.is-true(lb.is-loopback(), '127 is loopback')
     runner.is-false(priv.is-loopback(), '192.168 not loopback')
-    zz = ip.ip-addr {
+    zz = ip.ip-addr{
         a: 0
         b: 0
         c: 0
         d: 0
     }
-    bc = ip.ip-addr {
+    bc = ip.ip-addr{
         a: 255
         b: 255
         c: 255
         d: 255
     }
-    mc = ip.ip-addr {
+    mc = ip.ip-addr{
         a: 224
         b: 0
         c: 0
         d: 1
     }
-    ll = ip.ip-addr {
+    ll = ip.ip-addr{
         a: 169
         b: 254
         c: 1
@@ -133,7 +133,7 @@ t-classify = () {
     runner.is-true(zz.is-zero(), 'is-zero')
     runner.is-true(bc.is-broadcast(), 'is-broadcast')
     runner.is-true(mc.is-multicast(), '224 is multicast')
-    non-mc = ip.ip-addr {
+    non-mc = ip.ip-addr{
         a: 240
         b: 0
         c: 0
@@ -143,7 +143,7 @@ t-classify = () {
     runner.is-true(ll.is-link-local(), '169.254 link-local')
     runner.is-true(pub.is-class-a(), '8 is class A')
     runner.is-true(priv.is-class-c(), '192 is class C')
-    b128 = ip.ip-addr {
+    b128 = ip.ip-addr{
         a: 128
         b: 0
         c: 0
@@ -154,18 +154,18 @@ t-classify = () {
 
 ; 轉換與相等：192.168.1.1 的大端 u32 為 3232235777，u32 往返後仍相等
 t-convert = () {
-    t = ip.ip-addr {
+    t = ip.ip-addr{
         a: 192
         b: 168
         c: 1
         d: 1
     }
     runner.eq(t.to-u32(), 3232235777, 'to-u32 big-endian')
-    f = ip.ip-addr {}
+    f = ip.ip-addr{}
     f.from-u32(t.to-u32())
     eq-str(f.to-str(), '192.168.1.1', 'from-u32 roundtrip')
     runner.is-true(f.equal(t), 'equal after roundtrip')
-    o = ip.ip-addr {
+    o = ip.ip-addr{
         a: 192
         b: 168
         c: 1
@@ -176,13 +176,13 @@ t-convert = () {
 
 ; 子網判定：前綴 0 / 8 / 16 / 24 / 25 / 31 / 32 的邊界（含主機位不足的負例）
 t-subnet = () {
-    sub = ip.ip-addr {
+    sub = ip.ip-addr{
         a: 10
         b: 1
         c: 2
         d: 3
     }
-    base = ip.ip-addr {
+    base = ip.ip-addr{
         a: 10
         b: 1
         c: 0
@@ -194,20 +194,20 @@ t-subnet = () {
     runner.is-false(sub.in-subnet(base, 24), 'p24 NOT in 10.1.0/24 (regression)')
     runner.is-false(sub.in-subnet(base, 25), 'p25 not in')
     runner.is-false(sub.in-subnet(base, 32), 'p32 not equal')
-    same = ip.ip-addr {
+    same = ip.ip-addr{
         a: 10
         b: 1
         c: 0
         d: 0
     }
     runner.is-true(same.in-subnet(base, 32), 'p32 equal')
-    a1 = ip.ip-addr {
+    a1 = ip.ip-addr{
         a: 192
         b: 168
         c: 5
         d: 6
     }
-    a2 = ip.ip-addr {
+    a2 = ip.ip-addr{
         a: 192
         b: 168
         c: 5
@@ -216,7 +216,7 @@ t-subnet = () {
     runner.is-true(a1.in-subnet(a2, 24), '192.168.5.6 in 192.168.5.0/24')
     runner.is-true(a1.in-subnet(a2, 25), 'in /25 (host<128)')
     runner.is-false(a1.in-subnet(a2, 31), 'not in /31')
-    a4 = ip.ip-addr {
+    a4 = ip.ip-addr{
         a: 10
         b: 0
         c: 0

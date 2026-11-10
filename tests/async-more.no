@@ -11,10 +11,12 @@ ac-worker = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
             ok -> r = it
+
             ->
         }
     }
@@ -71,10 +73,12 @@ ay-yielder = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt2 = n + 1
         r-opt2: {
             ok -> r = it
+
             ->
         }
     }

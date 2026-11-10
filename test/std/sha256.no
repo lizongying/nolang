@@ -78,11 +78,52 @@ t-hash-bytes-match-hex = () {
 
     runner.eq(ixout49c16, 0xad, 'sha256 byte[31] == 0xad')
 }
+; 低階單區塊壓縮：直接餵 "abc" 的填充區塊，輸出必須等於標準摘要字
+; s []u32: 16 個 32-bit 大端訊息字；h0..h7 u32: 進入本區塊前的狀態
+; 期望：sha256("abc") = ba7816bf 8f01cfea 414140de 5dae2223 b00361a3 96177a9c b410ff61 f20015ad
+t-block-abc = () {
+    s []u32 = with-len(16)
+    s[0]: {
+        ok -> it = 1633837952
+
+        -> _
+    }
+    k <- [1..15): {
+        s[k]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    s[15]: {
+        ok -> it = 24
+
+        -> _
+    }
+    r0, r1, r2, r3, r4, r5, r6, r7 = sha256.sha256-block(
+        s, 1779033703, 3144134277, 1013904242, 2773480762,
+        1359893119, 2600822924, 528734635, 1541459225)
+    runner.eq(u32i(r0), 3128432319, 'block r0')
+    runner.eq(u32i(r1), 2399260650, 'block r1')
+    runner.eq(u32i(r2), 1094795486, 'block r2')
+    runner.eq(u32i(r3), 1571693091, 'block r3')
+    runner.eq(u32i(r4), 2953011619, 'block r4')
+    runner.eq(u32i(r5), 2518121116, 'block r5')
+    runner.eq(u32i(r6), 3021012833, 'block r6')
+    runner.eq(u32i(r7), 4060091821, 'block r7')
+}
+
+; u32 -> i64（runner.eq 只吃 i64）
+u32i = (x u32) (v i64) {
+    v = x
+}
+
 p1 = runner.test('sha256.digest-len', t-hash-len)
 p2 = runner.test('sha256.hex.empty', t-hex-empty)
 p3 = runner.test('sha256.hex.abc', t-hex-abc)
 p4 = runner.test('sha256.hex.two-block', t-hex-twoblock)
 p5 = runner.test('sha256.bytes-match-hex', t-hash-bytes-match-hex)
+p6 = runner.test('sha256.block.abc', t-block-abc)
 total = runner.summary()
 f = runner.failed-count()
 {

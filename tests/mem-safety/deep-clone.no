@@ -43,7 +43,7 @@ MyData {
 ; 測試 clone-struct
 ; ok bool: 來源與副本的 value 都是 42、name 都是 'test' 才為 true
 test-clone-struct = () (ok bool) {
-    d = MyData {
+    d = MyData{
         name: 'test'
         value: 42
     }

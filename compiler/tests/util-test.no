@@ -99,7 +99,7 @@ test-intern-many = () {
 
     keys []str = []
     k <- [0..100): {
-        s = 'key-' + k.to-str()
+        s = 'key-' - k.to-str()
         keys.push(s)
         intern.put(t, s)
     }

@@ -9,6 +9,7 @@ square = (x i64) (r i64) {
         r-opt = x * x
         r-opt: {
             ok -> r = it
+
             ->
         }
     }
@@ -23,6 +24,7 @@ add = (a i64, b i64) (r i64) {
         r-opt2 = a + b
         r-opt2: {
             ok -> r = it
+
             ->
         }
     }
@@ -45,6 +47,7 @@ propagate = () (r i64) {
         r-opt3 = k * 2 + 1
         r-opt3: {
             ok -> r = it
+
             ->
         }
     }
@@ -92,12 +95,13 @@ point.dist = () (r i64) {
         r-opt4 = .x * .x + .y * .y
         r-opt4: {
             ok -> r = it
+
             ->
         }
     }
 }
 
-p = point {
+p = point{
     x: 3
     y: 4
 }

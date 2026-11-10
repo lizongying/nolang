@@ -2,7 +2,9 @@
 ; sources: jp14.no, txt.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/jp14.no =====================
+; merged from tests/jp14.no
+...
+
 # /test/runner
 
 t-join = () {
@@ -26,10 +28,12 @@ t-join = () {
 }
 t-join()
 
-; ===================== merged from tests/txt.no =====================
+; merged from tests/txt.no
 ; merged category 'txt' -- members: txt-methods.no, txt.no
 ; (originals backed up under tests/_archive/txt/)
-; ===================== merged from tests/txt-methods.no =====================
+...
+
+; merged from tests/txt-methods.no
 ; test-txt-methods — txt 型別的「以 txt 為 receiver」的方法呼叫
 ; # std/txt
 ;
@@ -49,6 +53,7 @@ t-join()
 ;
 ; 注意：str 也有同名的 replace-n，走的是另一條特化（str_replace_n），
 ; 一直是好的 —— 這個測試刻意只用 txt receiver。
+...
 
 ; bug 6：txt 當**結構體欄位**。emitSetField 的 fieldLT 是從**右值**推出來的
 ; （c.ptype(inst.Args[1])），不是欄位宣告型別，所以 txt 欄位拿到 %str-long：
@@ -152,7 +157,7 @@ print(va[0])
 print(va[1])
 print(va[1].len())
 
-pt = point {
+pt = point{
     s: 'a-b-c'
 }
 print(pt.s)
@@ -165,8 +170,8 @@ print(pt.s.len())
 pt.s = pt.s.replace-n('-', '+', 2)
 print(pt.s)
 
-o = outer {
-    i: inner {
+o = outer{
+    i: inner{
         t: 'deep'
     }
     name: 'outer'
@@ -266,8 +271,9 @@ print(w13)
 
 print('=== done ===')
 
-; ===================== merged from tests/txt.no =====================
+; merged from tests/txt.no
 ; test-txt: txt 类型测试
+...
 
 ; 基础赋值
 t__1 txt = 'hello'

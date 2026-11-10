@@ -4,9 +4,8 @@
 ; # std/net/http3
 ; # std/net/quic
 
-; ═══════════════════════════════════════════════
 ; QUIC 變長整數測試
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 1 位元組變長整數
 test-quic-varint-1byte = () {
@@ -112,9 +111,8 @@ test-quic-varint-8byte = () {
     print('PASS: quic-varint-8byte')
 }
 
-; ═══════════════════════════════════════════════
 ; QUIC 金鑰推導測試
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 Initial 金鑰推導
 test-quic-derive-initial-keys = () {
@@ -283,9 +281,8 @@ test-quic-derive-initial-keys = () {
     print('PASS: quic-derive-initial-keys')
 }
 
-; ═══════════════════════════════════════════════
 ; QUIC CID 生成測試
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 Connection ID 生成
 test-quic-gen-cid = () {
@@ -308,9 +305,8 @@ test-quic-gen-cid = () {
     print('PASS: quic-gen-cid')
 }
 
-; ═══════════════════════════════════════════════
 ; HTTP/3 影格編解碼測試
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 HTTP/3 影格編解碼
 test-http3-frame-encode-decode = () {
@@ -355,9 +351,8 @@ test-http3-frame-encode-decode = () {
     print('PASS: http3-frame-encode-decode')
 }
 
-; ═══════════════════════════════════════════════
 ; QPACK 編解碼測試
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 QPACK 標頭編解碼
 test-qpack-encode-decode = () {
@@ -407,9 +402,8 @@ test-qpack-encode-decode = () {
     print('PASS: qpack-encode-decode')
 }
 
-; ═══════════════════════════════════════════════
 ; UDP 連接測試
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 UDP socket 建立和關閉
 test-udp-open-close = () {
@@ -423,9 +417,8 @@ test-udp-open-close = () {
     print('PASS: udp-open-close')
 }
 
-; ═══════════════════════════════════════════════
 ; URL 解析測試
-; ═══════════════════════════════════════════════
+...
 
 ; 測試 URL 解析
 test-http3-parse-url = () {
@@ -474,9 +467,8 @@ test-http3-parse-url = () {
     print('PASS: http3-parse-url')
 }
 
-; ═══════════════════════════════════════════════
 ; 主函數
-; ═══════════════════════════════════════════════
+...
 
 print('=== HTTP/3 Test Suite ===')
 print('')

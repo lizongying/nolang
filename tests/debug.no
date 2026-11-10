@@ -1,7 +1,8 @@
 ; merged category 'debug' -- members: debug-method.no, nbody-debug.no
 ; (originals backed up under tests/_archive/debug/)
-; ===================== merged from tests/debug-method.no =====================
+; merged from tests/debug-method.no
 ; debug-method.no — 調試方法調用
+...
 test-m1 = () {
     s = 'hello'
     s2 = s.to-upper()
@@ -9,7 +10,8 @@ test-m1 = () {
 }
 test-m1()
 
-; ===================== merged from tests/nbody-debug.no =====================
+; merged from tests/nbody-debug.no
+...
 sm = 39.478417604357432
 px []f64 = with-cap(5)
 py []f64 = with-cap(5)

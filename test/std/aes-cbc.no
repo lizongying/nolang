@@ -1,12 +1,94 @@
 ; test/std/aes-cbc.no — crypto/aes-cbc 模組測試
 ;
 ; 執行：no test test/std/aes-cbc.no
-; 覆蓋：aes-cbc.enc-128 / dec-128（PKCS#7）
-; 向量來源：NIST SP800-38A 區塊，並與 pycryptodome CBC 交叉核對
-; key=000102..0f, iv=000102..0f, pt=00112233445566778899aabbccddeeff
-;   首個密文區塊 = 76d0627da1d290436e21a4af7fca94b7
+; 覆蓋：enc-128 / dec-128 / enc-256 / dec-256，以及核心 cbc-enc / cbc-dec、
+;       PKCS#7 的 pkcs7-pad / pkcs7-unpad
+; 向量來源：NIST SP 800-38A §F.2.1（AES-128-CBC）與 §F.2.5（AES-256-CBC）四區塊向量，
+;   另以獨立 Python AES 實作交叉核對（該實作先通過 FIPS-197 C.1/C.3 自檢）
 
 # /test/runner
+
+; ---- 助手 ----
+
+; hex → []byte
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 長度 n 的全零 []byte
+zeros = (n i64) (v []byte) {
+    v = with-len(n)
+    i <- [0..n): {
+        v[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+; hex → [16]byte
+mk16 = (h str) (a [16]byte) {
+    raw = mkb(h)
+    i <- [0..16): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    m = raw.len()
+    m > 16 -> m = 16
+    i <- [0..m): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; hex → [32]byte
+mk32 = (h str) (a [32]byte) {
+    raw = mkb(h)
+    i <- [0..32): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    m = raw.len()
+    m > 32 -> m = 32
+    i <- [0..m): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; SP 800-38A 的 4 區塊明文（兩組金鑰長度共用）
+PT-64 = '6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710'
+IV-16 = '000102030405060708090a0b0c0d0e0f'
 
 ; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
 ; data []byte: 待格式化的位元組，可為空
@@ -78,6 +160,103 @@ t-roundtrip = () {
     runner.str-eq(bhex(back), '00112233445566778899aabbccddeeff', 32, 'aes-128-cbc round-trip (pkcs7 stripped)')
 }
 
+; ---- 核心 cbc-enc / cbc-dec（輪鑰由呼叫端展開）----
+
+t-cbc-core = () {
+    key [16]byte = mk16('2b7e151628aed2a6abf7158809cf4f3c')
+    iv [16]byte = mk16(IV-16)
+    ek = aes.key-expand(key)
+    pt = mkb(PT-64)
+
+    ct = aes-cbc.cbc-enc(pt, iv, ek)
+    runner.eq(ct.len(), 64, 'cbc-enc 長度 = 輸入長度')
+    runner.str-eq(bhex(ct), '7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b273bed6b8e3c1743b7116e69e222295163ff1caa1681fac09120eca307586e1a7', 128, 'NIST F.2.1 AES-128-CBC 4 塊')
+
+    back = aes-cbc.cbc-dec(ct, iv, ek)
+    runner.eq(back.len(), 64, 'cbc-dec 長度 = 輸入長度')
+    runner.str-eq(bhex(back), bhex(pt), 128, 'cbc-dec 還原明文')
+
+    ; 空輸入 ⇒ 空輸出（不產生 IV 塊）
+    none = zeros(0)
+    e = aes-cbc.cbc-enc(none, iv, ek)
+    runner.eq(e.len(), 0, 'cbc-enc 空輸入 → 空輸出')
+    d = aes-cbc.cbc-dec(none, iv, ek)
+    runner.eq(d.len(), 0, 'cbc-dec 空輸入 → 空輸出')
+
+    ; 換 IV 必須換首塊密文，但第二塊之後差異會被鏈式擴散
+    iv2 [16]byte = mk16('0f0e0d0c0b0a09080706050403020100')
+    ct2 = aes-cbc.cbc-enc(pt, iv2, ek)
+    s1 = bhex(ct)
+    s2 = bhex(ct2)
+    runner.is-false(s1.eq(s2, 128), 'cbc-enc IV 有生效')
+}
+
+; ---- enc-256 / dec-256 ----
+
+t-cbc-256 = () {
+    key [32]byte = mk32('603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4')
+    iv [16]byte = mk16(IV-16)
+    pt = mkb(PT-64)
+
+    ct = aes-cbc.enc-256(pt, key, iv)
+    runner.eq(ct.len(), 64, 'enc-256 長度 = 輸入長度')
+    runner.str-eq(bhex(ct), 'f58c4c04d6e5f1ba779eabfb5f7bfbd69cfc4e967edb808d679f777bc6702c7d39f23369a9d9bacfa530e26304231461b2eb05e2c39be9fcda6c19078c6a9d1b', 128, 'NIST F.2.5 AES-256-CBC 4 塊')
+
+    back = aes-cbc.dec-256(ct, key, iv)
+    runner.str-eq(bhex(back), bhex(pt), 128, 'dec-256 還原明文')
+
+    ; 同一把金鑰的前 16 位元組走 AES-128 ⇒ 密文必須不同
+    k128 [16]byte = mk16('603deb1015ca71be2b73aef0857d7781')
+    ct128 = aes-cbc.enc-128(pt, k128, iv)
+    s256 = bhex(ct)
+    s128 = bhex(ct128)
+    runner.is-false(s256.eq(s128, 128), 'enc-256 與 enc-128 結果不同')
+
+    ; 16 位元組單塊（NIST 首塊，驗證不需要多塊也能運作）
+    ct1 = aes-cbc.enc-256(mkb('6bc1bee22e409f96e93d7e117393172a'), key, iv)
+    runner.eq(ct1.len(), 16, 'enc-256 單塊長度')
+    runner.str-eq(bhex(ct1), 'f58c4c04d6e5f1ba779eabfb5f7bfbd6', 32, 'enc-256 單塊 = NIST 首塊')
+}
+
+; ---- PKCS#7 填充 ----
+
+t-pkcs7 = () {
+    ; 空輸入 ⇒ 一整塊 16 個 0x10
+    p0 = aes-cbc.pkcs7-pad(zeros(0))
+    runner.eq(p0.len(), 16, 'pad(空) 長度 16')
+    runner.str-eq(bhex(p0), '10101010101010101010101010101010', 32, 'pad(空) = 16×0x10')
+    runner.eq(aes-cbc.pkcs7-unpad(p0), 0, 'unpad(pad(空)) = 0')
+
+    ; 3 位元組 ⇒ 尾 13 個 0x0d
+    p3 = aes-cbc.pkcs7-pad('abc'.to-bytes())
+    runner.eq(p3.len(), 16, 'pad(abc) 長度 16')
+    runner.str-eq(bhex(p3), '6162630d0d0d0d0d0d0d0d0d0d0d0d0d', 32, 'pad(abc) = abc + 13×0x0d')
+    runner.eq(aes-cbc.pkcs7-unpad(p3), 3, 'unpad(pad(abc)) = 3')
+
+    ; 15 位元組 ⇒ 尾 1 個 0x01
+    p15 = aes-cbc.pkcs7-pad(mkb('414141414141414141414141414141'))
+    runner.eq(p15.len(), 16, 'pad(15B) 長度 16')
+    runner.str-eq(bhex(p15), '41414141414141414141414141414101', 32, 'pad(15B) 尾 = 0x01')
+    runner.eq(aes-cbc.pkcs7-unpad(p15), 15, 'unpad(pad(15B)) = 15')
+
+    ; 恰好 16 位元組 ⇒ 追加一整塊 16 個 0x10
+    p16 = aes-cbc.pkcs7-pad(mkb('41414141414141414141414141414141'))
+    runner.eq(p16.len(), 32, 'pad(16B) 長度 32（整塊填充）')
+    runner.str-eq(bhex(p16), '4141414141414141414141414141414110101010101010101010101010101010', 64, 'pad(16B) 尾 = 16×0x10')
+    runner.eq(aes-cbc.pkcs7-unpad(p16), 16, 'unpad(pad(16B)) = 16')
+
+    ; 非法填充一律 -1
+    runner.eq(aes-cbc.pkcs7-unpad(zeros(0)), -1, 'unpad(空) = -1')
+    runner.eq(aes-cbc.pkcs7-unpad(mkb('00')), -1, 'unpad(pad-len 0) = -1')
+    runner.eq(aes-cbc.pkcs7-unpad(mkb('11')), -1, 'unpad(pad-len 17) = -1')
+    runner.eq(aes-cbc.pkcs7-unpad(mkb('ff')), -1, 'unpad(pad-len 255) = -1')
+    runner.eq(aes-cbc.pkcs7-unpad(mkb('0002')), -1, 'unpad(填充位元組不符) = -1')
+    runner.eq(aes-cbc.pkcs7-unpad(mkb('01')), 0, 'unpad(pad-len 1) = 0')
+}
+
+p3 = runner.test('aescbc.cbc-core', t-cbc-core)
+p4 = runner.test('aescbc.cbc-256', t-cbc-256)
+p5 = runner.test('aescbc.pkcs7', t-pkcs7)
 p1 = runner.test('aescbc.first-block', t-first-block)
 p2 = runner.test('aescbc.roundtrip', t-roundtrip)
 total = runner.summary()

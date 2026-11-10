@@ -1,6 +1,6 @@
 ; merged category 'json' -- members: json-crosspool-mutate.no, json.no
 ; (originals backed up under tests/_archive/json/)
-; ===================== merged from tests/json-crosspool-mutate.no =====================
+; merged from tests/json-crosspool-mutate.no
 ; json-crosspool-mutate.no — KNOWN-BUG 最小複現（審計 §5.3）
 ;
 ; 状態：预期失败（expected-fail）。**故意不接入 CI**（CI 的 corpus-smoke 只 `build`
@@ -17,8 +17,10 @@
 ;      故本檔不複現崩溃路径，只锁死「靜默 no-op」這條可穩定觀測的路径。
 ;
 ; 執行：no run tests/json-crosspool-mutate.no
+...
 
-; ── case 1: 跨池 arr-push 應當讓目標數組增長 ──────────────────
+; case 1: 跨池 arr-push 應當讓目標數組增長
+...
 a = json.parse('[1,2]')
 len_before = a.arr-len()
 pushed = a.arr-push(json.parse('3'))
@@ -35,7 +37,8 @@ print('  stringify =', s_after, '(expect [1,2,3])')
     -> print('  => FAIL (KNOWN BUG §5.3: element lost, cross-pool index not copied)')
 }
 
-; ── case 2: set-key 對 parse 建的接收者應當新增键 ──────────────
+; case 2: set-key 對 parse 建的接收者應當新增键
+...
 o = json.parse('{"x":1}')
 len_before2 = o.obj-len()
 ok2 = o.set-key('y', json.parse('2'))
@@ -52,7 +55,8 @@ print('  stringify =', s2, '(expect {"x":1,"y":2})')
     -> print('  => FAIL (KNOWN BUG §5.3: key not visible on parse-built receiver)')
 }
 
-; ── case 3: delete-key 對 parse 建的接收者應當移除键 ────────────
+; case 3: delete-key 對 parse 建的接收者應當移除键
+...
 d = json.parse('{"a":1,"b":2}')
 len_before3 = d.obj-len()
 ok3 = d.delete-key('a')
@@ -69,11 +73,12 @@ print('  obj-len before/after =', len_before3, '/', len_after3, '(expect 2 / 1)'
 
 print('DONE — any FAIL above is the tracked §5.3 defect, not a new regression.')
 
-; ===================== merged from tests/json.no =====================
+; merged from tests/json.no
 ; json.no — JSON 模組測試
 ;
 ; 測試 json-pool 的剖析、存取、序列化功能。
 ; 本測試為純計算，不需網路，可實際執行。
+...
 
 print('start')
 
@@ -95,7 +100,7 @@ out-n = 0
 result = ''
 
 ; ── 測試 1: 剖析物件 ──
-p = json-pool {}
+p = json-pool{}
 p.init()
 root, next, ok = p.parse(json-str, 0)
 {

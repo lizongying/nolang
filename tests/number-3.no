@@ -2,10 +2,14 @@
 ; sources: test-div-zero.no, test-num.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/test-div-zero.no =====================
+; merged from tests/test-div-zero.no
 ; test-div-zero.no — 除零（division by zero）行為探針
 ;
-; ═══ 現行語意（2026-10-12 起，MIR 後端）═══
+...
+
+; 現行語意（2026-10-12 起，MIR 後端）
+...
+
 ;
 ; 整數 `/` 與 `%` 的除數為 0 是 UB，編譯器在**兩條路徑都插零檢查**，差別只在怎麼報告：
 ;   ?int（未標註）           → option tag = err，用 ?= / match 處理
@@ -105,11 +109,14 @@ print('── 10. 字面 0 除數：編譯期硬錯誤，故無法收錄於本�
 
 print('── done（rc=0；第 2/3/4/7 條各另有一行 stderr 診斷）')
 
-; ===================== merged from tests/test-num.no =====================
+; merged from tests/test-num.no
 ; merged category 'test-num' -- members: 1-test.no, 2-test.no
 ; (originals backed up under tests/_archive/test-num/)
-; ===================== merged from tests/1-test.no =====================
+...
+
+; merged from tests/1-test.no
 ; Nolang 综合测试
+...
 
 ; 变量声明（隐式类型推断）
 x = 1; i64
@@ -155,7 +162,8 @@ add2 = (a i64, b i64) (c i64, d i64) {
     print('result: {result}')
 }
 
-; ===================== merged from tests/2-test.no =====================
+; merged from tests/2-test.no
+...
 i <- [0..5): {
     print(i)
 }

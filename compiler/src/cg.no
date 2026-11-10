@@ -54,7 +54,7 @@
 ; id: 數值
 ; s: 結果字串
 cg-label = (id i64) (s str) {
-    s = 'bb' + id.to-str()
+    s = 'bb' - id.to-str()
     id == 0 -> s = 'entry'
 }
 
@@ -2221,6 +2221,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
                 j + 1 == nf -> nm = '%st' - d.to-str()
                 fvx = args[x + j]: {
                     ok -> it
+
                     -> _
                 }
                 fv = fvx

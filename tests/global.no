@@ -1,6 +1,6 @@
 ; merged category 'global' -- members: global-owner-same-module.no, global-owner-scope.no
 ; (originals backed up under tests/_archive/global/)
-; ===================== merged from tests/global-owner-same-module.no =====================
+; merged from tests/global-owner-same-module.no
 ; global-owner-same-module.no — 模組綁定對「本模組」仍須可見（2026-09-26）
 ;
 ; 對照組（不得改變）：std/log.no 的 `level` 是小寫的模組級共享變數，由同模組的
@@ -11,12 +11,13 @@
 ;   [INFO] a          級別 1（預設）允許 info
 ;   [DEBUG] b         set-level(0) 之後允許 debug
 ;   不出現 WARN / ERROR
+...
 
 log.info('a')
 log.set-level(0)
 log.debug('b')
 
-; ===================== merged from tests/global-owner-scope.no =====================
+; merged from tests/global-owner-scope.no
 ; global-owner-scope.no — 裸名解析按「模組歸屬」限定（2026-09-26）
 ;
 ; 規則：模組綁定只對「宣告它的那個模組」的可見。一個函式裡的裸名 `name = expr`
@@ -37,6 +38,7 @@ log.debug('b')
 ;
 ; 反向對照（不得改變）：`log.level` 這種「模組自己的小寫共享變數」由同模組的
 ; set-level / info 讀寫，仍須正常運作 —— 見 tests/global-owner-same-module.no。
+...
 
 n = 7
 i = 9

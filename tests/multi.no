@@ -1,6 +1,7 @@
 ; merged category 'multi' -- members: multi-print.no, rand-multiassign.no
 ; (originals backed up under tests/_archive/multi/)
-; ===================== merged from tests/multi-print.no =====================
+; merged from tests/multi-print.no
+...
 a = 'hello'
 b = 'world'
 n = 123
@@ -22,7 +23,6 @@ print()
 ; eprint 多參數
 eprint('err:', a, b)
 
-; ─────────────────────────────────────────────
 ; 多參數 + 具名字面量：**每個字符串字面量各自是一個模板**
 ;
 ; 這是語言契約（使用者 2026-09-26 指定）：
@@ -30,7 +30,7 @@ eprint('err:', a, b)
 ;   即 'result={val}' 里的 {val} 從**調用點作用域**取值，
 ;   而不是去描述/消費同一調用里的其它參數。
 ;   非字面量的參數（變量、表達式）按普通可變參數處理：空格分隔。
-; ─────────────────────────────────────────────
+...
 val = 42
 print('result={val}', 42, 'result={val}')
 
@@ -54,9 +54,10 @@ print('lit {{val}} field {val}')
 ; eprint 多參數 + 模板（stderr）
 eprint('e={val}', val)
 
-; ===================== merged from tests/rand-multiassign.no =====================
+; merged from tests/rand-multiassign.no
 ; test-rand-multiassign — 驗證 rand 的多返回值是否正確
 ; # std/crypto/rand
+...
 
 ; 測試 1: 相同 seed 應產生相同序列
 s1 = 12345

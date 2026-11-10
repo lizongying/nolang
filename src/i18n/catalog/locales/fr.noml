@@ -806,6 +806,7 @@ Erreur d'écriture de utils.no : %v
   'nmxs8sop': 'syslog : %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': 'impossible de déduire le type de « %s » : %s() exige une annotation de type explicite à gauche (par ex. `name []byte = %s(n)`)'
+  'nu59u6hp': 'le champ \'%s\' du littéral de structure n\'a pas de valeur ; écrivez \'name: value\' ou supprimez cette ligne (un nom de type nu après \'field: []\' n\'est pas une annotation de type - le type des éléments d\'un vec vide vient de la déclaration du champ)'
   'nwtpvei9': 'embed : fs.embed exige un répertoire, fichier obtenu : %s (résolu : %s)'
   'nx1476j3': '  no pack nogit.no                 empaqueter un seul fichier source'
   'nz3ol1c4': 'le module ESM %q n’est pas déclaré dans les dépendances de package.noml ; ajoutez dependencies: [\'%s:^latest\'] (ou dev-dependencies) puis exécutez npm install'

@@ -1,8 +1,11 @@
 ; test/std/chacha20-poly1305.no — crypto/chacha20-poly1305 模組測試
 ;
 ; 執行：no test test/std/chacha20-poly1305.no
-; 覆蓋：chacha20-poly1305-seal / -open（sealed = ciphertext || 16-byte tag）
-; 向量來源：pycryptodome ChaCha20-Poly1305（key/nonce/aad 採 RFC 8439，明文改純 ASCII 以避開 raw-string 解析）
+; 覆蓋：chacha20-poly1305-seal / -open，以及內部構成 rotl32 / qr /
+;       chacha20-block / chacha20-xor / poly1305 / poly1305-key-gen / poly1305-reduce
+; 向量來源：RFC 8439（§2.3.2 block、§2.4.2 加密、§2.5.2 Poly1305、§2.6.2 AEAD），
+;   其餘自訂 ASCII 向量由獨立 Python ChaCha20/Poly1305 實作算出
+;   （該實作先通過上述 RFC 四組自檢）
 
 # /test/runner
 
@@ -35,6 +38,166 @@ bhex = (data []byte) (hex str) {
         hex[i * 2 + 1] = hex-chars[ixout24c40 & 15]
     }
 }
+
+; ---- 助手 ----
+
+; hex → []byte
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 長度 n 的全零 []byte
+zeros = (n i64) (v []byte) {
+    v = with-len(n)
+    i <- [0..n): {
+        v[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+; hex → [32]byte（原樣拷貝，不足補 0）
+mk32 = (h str) (a [32]byte) {
+    raw = mkb(h)
+    i <- [0..32): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    m = raw.len()
+    m > 32 -> m = 32
+    i <- [0..m): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; hex → [12]byte
+mk12 = (h str) (a [12]byte) {
+    raw = mkb(h)
+    i <- [0..12): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    m = raw.len()
+    m > 12 -> m = 12
+    i <- [0..m): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; [N]byte → []byte
+arr = (a [64]byte) (v []byte) {
+    v = with-len(64)
+    i <- [0..64): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+}
+
+; [16]byte → []byte
+arr16 = (a [16]byte) (v []byte) {
+    v = with-len(16)
+    i <- [0..16): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+}
+
+; [32]byte → []byte
+arr32 = (a [32]byte) (v []byte) {
+    v = with-len(32)
+    i <- [0..32): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+}
+
+; u32 → 8 字元大端 hex
+u32-hex = (x u32) (s str) {
+    b []byte = with-len(4)
+    j <- [0..4): {
+        v = (x >> ((3 - j) * 8)) & 255
+        b[j]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+    s = bhex(b)
+}
+
+; []u32 的第 i 項（裸下標讀是 option，這裡收斂成純量）
+at32 = (v []u32, i i64) (x u32) {
+    x = v[i]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 0..15 的 u32 序列（qr 的測試起態）
+qr-in [16]u32 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+; ---- AEAD 入口 ----
 
 ; 密封輸出佈局：45 位元組明文 → 密文 45 + Poly1305 標籤 16 = 61 位元組
 t-seal = () {
@@ -82,8 +245,188 @@ t-open = () {
     blen = back.len() * 2
     runner.str-eq(bhex(back), bhex(plain), blen, 'ccpoly open round-trip')
 }
+; ---- 內部構成 ----
+
+; 32-bit 循環左移
+t-rotl32 = () {
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(1, 1)), '00000002', 8, 'rotl32 1,1')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x80000000, 1)), '00000001', 8, 'rotl32 最高位回捲')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x01234567, 8)), '23456701', 8, 'rotl32 8')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0xdeadbeef, 16)), 'beefdead', 8, 'rotl32 16')
+    runner.str-eq(u32-hex(chacha20-poly1305.rotl32(0x01234567, 31)), '8091a2b3', 8, 'rotl32 31')
+}
+
+; quarter-round：state = 0..15，作用於 (0,4,8,12)。
+; 金標由 python 依 RFC 8439 §2.1 的 16/12/8/7 順序算出。
+t-qr = () {
+    st []u32 = qr-in[..16)
+    chacha20-poly1305.qr(st, 0, 4, 8, 12)
+
+    runner.str-eq(u32-hex(at32(st, 0)), '8000c004', 8, 'qr state[a]')
+    runner.str-eq(u32-hex(at32(st, 4)), '64624444', 8, 'qr state[b]')
+    runner.str-eq(u32-hex(at32(st, 8)), '08c80488', 8, 'qr state[c]')
+    runner.str-eq(u32-hex(at32(st, 12)), '08c00480', 8, 'qr state[d]')
+
+    ; 未參與的四字必須原封不動
+    runner.str-eq(u32-hex(at32(st, 1)), '00000001', 8, 'qr 不動 state[1]')
+    runner.str-eq(u32-hex(at32(st, 5)), '00000005', 8, 'qr 不動 state[5]')
+
+    ; 不同 (a,b,c,d) 應給出不同結果 —— 驗證索引確實被使用
+    st2 []u32 = qr-in[..16)
+    chacha20-poly1305.qr(st2, 1, 5, 9, 13)
+    runner.str-eq(u32-hex(at32(st2, 1)), 'b000c006', 8, 'qr 換索引起點 state[1]')
+    runner.str-eq(u32-hex(at32(st2, 5)), 'e5e35cdd', 8, 'qr 換索引起點 state[5]')
+    runner.str-eq(u32-hex(at32(st2, 9)), '0bcb06b9', 8, 'qr 換索引起點 state[9]')
+    runner.str-eq(u32-hex(at32(st2, 13)), '0bc006b0', 8, 'qr 換索引起點 state[13]')
+    runner.str-eq(u32-hex(at32(st2, 0)), '00000000', 8, 'qr 換索引不動 state[0]')
+}
+
+; ChaCha20 區塊函式：RFC 8439 §2.3.2（key 00..1f、counter 1、
+; nonce 00:00:00:09:00:00:00:4a:00:00:00:00）
+t-block = () {
+    key [32]byte = mk32('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f')
+    nonce [12]byte = mk12('000000090000004a00000000')
+
+    blk [64]byte = chacha20-poly1305.chacha20-block(key, 1, nonce)
+    v = arr(blk)
+    runner.str-eq(bhex(v), '10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e', 128, 'RFC 8439 §2.3.2 block ctr=1')
+
+    ; counter 參與初始狀態 ⇒ 換 counter 換金鑰流
+    b0 [64]byte = chacha20-poly1305.chacha20-block(key, 0, nonce)
+    v0 = arr(b0)
+    s0 = bhex(v0)
+    s1 = bhex(v)
+    runner.is-false(s0.eq(s1, 128), 'chacha20-block counter 有生效')
+
+    ; 全零 key / nonce / counter 的標準金鑰流前 16 位元組
+    z32 [32]byte = mk32('0000000000000000000000000000000000000000000000000000000000000000')
+    z12 [12]byte = mk12('000000000000000000000000')
+    bz [64]byte = chacha20-poly1305.chacha20-block(z32, 0, z12)
+    vz = arr(bz)
+    runner.str-eq(bhex(vz), '76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586', 128, 'chacha20-block 全零向量')
+}
+
+; ChaCha20 串流加密：45 位元組（單塊內）與 134 位元組（跨三塊）
+t-xor = () {
+    key [32]byte = mk32('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f')
+    nonce [12]byte = mk12('000000000000004a00000000')
+
+    p1 = 'ChaCha20 stream cipher test vector for nolang'.to-bytes()
+    c1 = chacha20-poly1305.chacha20-xor(key, 1, nonce, p1)
+    runner.eq(c1.len(), 45, 'chacha20-xor 長度 = 資料長度')
+    runner.str-eq(bhex(c1), '612730b0287aebd10fad531ddd0270cdef7a6fea585e26961b3cbecce896ac0ce5492ac51d122afcda1515a38a', 90, 'chacha20-xor 45B 單塊')
+
+    ; 跨塊：第二、三塊的 counter 必須自動遞增
+    p2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz0123456789'.to-bytes()
+    c2 = chacha20-poly1305.chacha20-xor(key, 1, nonce, p2)
+    runner.eq(c2.len(), 134, 'chacha20-xor 跨塊長度')
+    runner.str-eq(bhex(c2), '630d12b7055d9ea966946c23f52d52bddd414cd6687a51ba2715faddacc0fb4dbc0c329a130269f6d01f13a58441f8581422d530b74c47b99f575b34890700f52ae231d9782b460b6986b366a31d952c7580613b27e1d529c3d8f709f0396f7201b20fb879e749efa60f83a7fb7113459c13057100546fd7ff83c59209a0f6defcd8307b56aa', 268, 'chacha20-xor 134B 跨三塊')
+
+    ; 對合：再加密一次還原
+    back = chacha20-poly1305.chacha20-xor(key, 1, nonce, c2)
+    runner.str-eq(bhex(back), bhex(p2), 268, 'chacha20-xor 為對合')
+
+    ; 空資料
+    none = zeros(0)
+    e = chacha20-poly1305.chacha20-xor(key, 1, nonce, none)
+    runner.eq(e.len(), 0, 'chacha20-xor 空資料 → 空輸出')
+}
+
+; Poly1305 MAC：RFC 8439 §2.5.2
+t-poly1305 = () {
+    k [32]byte = mk32('85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b')
+    msg = 'Cryptographic Forum Research Group'.to-bytes()
+    tag [16]byte = chacha20-poly1305.poly1305(k, msg)
+    tv = arr16(tag)
+    runner.str-eq(bhex(tv), 'a8061dc1305136c6c22b8baf0c0127a9', 32, 'poly1305 RFC 8439 §2.5.2')
+
+    ; 空訊息 ⇒ h=0，tag 就是 s（key 的後 16 位元組）
+    k0 [32]byte = mk32('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f')
+    none = zeros(0)
+    t2 [16]byte = chacha20-poly1305.poly1305(k0, none)
+    v2 = arr16(t2)
+    runner.str-eq(bhex(v2), '101112131415161718191a1b1c1d1e1f', 32, 'poly1305 空訊息 = s')
+
+    ; 不足一個區塊（3 位元組，走「補 2^(8n)」的短區塊路徑）
+    t3 [16]byte = chacha20-poly1305.poly1305(k0, 'abc'.to-bytes())
+    v3 = arr16(t3)
+    runner.str-eq(bhex(v3), 'e591505e87b0d9022c557ea7d0f9224c', 32, 'poly1305 abc（不完整區塊）')
+
+    ; r 的 clamp 生效：兩把只差在 clamp 位元的金鑰應得同一標籤
+    ka [32]byte = mk32('ffffffffffffffffffffffffffffffff101112131415161718191a1b1c1d1e1f')
+    ; clamp 後的小端位元組序列 = ffffff0f fcffff0f fcffff0f fcffff0f
+    kb [32]byte = mk32('ffffff0ffcffff0ffcffff0ffcffff0f101112131415161718191a1b1c1d1e1f')
+    ta [16]byte = chacha20-poly1305.poly1305(ka, msg)
+    tb [16]byte = chacha20-poly1305.poly1305(kb, msg)
+    va = arr16(ta)
+    vb = arr16(tb)
+    runner.str-eq(bhex(va), bhex(vb), 32, 'poly1305 r clamp 生效')
+    runner.str-eq(bhex(va), 'e673beea6a9a6dd3e1c80885ab1ac591', 32, 'poly1305 clamp 後標籤')
+}
+
+; 一次性金鑰：ChaCha20 block0 的前 32 位元組（RFC 8439 §2.6.2 的 poly key）
+t-keygen = () {
+    k [32]byte = mk32('808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f')
+    nonce [12]byte = mk12('070000004041424344454647')
+    otk [32]byte = chacha20-poly1305.poly1305-key-gen(k, nonce)
+    v = arr32(otk)
+    runner.str-eq(bhex(v), '7bac2b252db447af09b67a55a4e955840ae1d6731075d9eb2a9375783ed553ff', 64, 'poly1305-key-gen RFC 8439 §2.6.2')
+
+    ; 換 nonce 換金鑰
+    nonce2 [12]byte = mk12('070000004041424344454648')
+    o2 [32]byte = chacha20-poly1305.poly1305-key-gen(k, nonce2)
+    v2 = arr32(o2)
+    s1 = bhex(v)
+    s2 = bhex(v2)
+    runner.is-false(s1.eq(s2, 64), 'poly1305-key-gen nonce 有生效')
+}
+
+; Poly1305 約簡：把任意大整數折到 [0, 2^130-5)
+t-reduce = () {
+    one = bigint.one()
+    p = bigint.shl(one, 130)._sub(bigint.from-i64(5))
+
+    ; p 本身 → 0
+    r0 = chacha20-poly1305.poly1305-reduce(p)
+    runner.is-true(r0.is-zero(), 'reduce(2^130-5) = 0')
+
+    ; p-1 已在範圍內，原樣保留
+    pm1 = p._sub(bigint.from-i64(1))
+    r1 = chacha20-poly1305.poly1305-reduce(pm1)
+    runner.eq(r1.cmp(pm1), 0, 'reduce(p-1) = p-1')
+
+    ; 2^130 ≡ 5
+    x130 = bigint.shl(one, 130)
+    r2 = chacha20-poly1305.poly1305-reduce(x130)
+    runner.eq(r2.cmp(bigint.from-i64(5)), 0, 'reduce(2^130) = 5')
+
+    ; 2^130 + 3 ≡ 8
+    x = x130._add(bigint.from-i64(3))
+    r3 = chacha20-poly1305.poly1305-reduce(x)
+    runner.eq(r3.cmp(bigint.from-i64(8)), 0, 'reduce(2^130+3) = 8')
+
+    ; 7·2^130 + 2 ≡ 35 + 2 = 37
+    x7 = bigint.shl(one, 130)._mul(bigint.from-i64(7))._add(bigint.from-i64(2))
+    r4 = chacha20-poly1305.poly1305-reduce(x7)
+    runner.eq(r4.cmp(bigint.from-i64(37)), 0, 'reduce(7·2^130+2) = 37')
+
+    ; 2^260 ≡ 25 —— 需要摺疊兩輪才收斂
+    x260 = bigint.shl(one, 260)
+    r5 = chacha20-poly1305.poly1305-reduce(x260)
+    runner.eq(r5.cmp(bigint.from-i64(25)), 0, 'reduce(2^260) = 25（摺疊兩輪）')
+
+    ; 結果必定 < p
+    runner.is-true(r5.cmp(p) < 0, 'reduce 結果 < p')
+}
 p1 = runner.test('ccpoly.seal', t-seal)
 p2 = runner.test('ccpoly.open', t-open)
+p3 = runner.test('ccpoly.rotl32', t-rotl32)
+p4 = runner.test('ccpoly.qr', t-qr)
+p5 = runner.test('ccpoly.block', t-block)
+p6 = runner.test('ccpoly.xor', t-xor)
+p7 = runner.test('ccpoly.poly1305', t-poly1305)
+p8 = runner.test('ccpoly.keygen', t-keygen)
+p9 = runner.test('ccpoly.reduce', t-reduce)
 total = runner.summary()
 f = runner.failed-count()
 {

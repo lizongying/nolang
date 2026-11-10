@@ -2156,6 +2156,19 @@ func (p *Parser) parseStructLiteral(typeExpr Expression) Expression {
 		Type:   typeName,
 		Fields: []*StructField{},
 	}
+	// 無值欄位先暫存：要等整個字面量看完才能判定它是幽靈欄位，還是
+	// `Point = { x i64  s str }` 這種合法的匿名結構體定義形（全欄位皆無值）。
+	var valueless []*StructField
+	valued := 0
+
+	// 欄位上方的獨立 `;` 註解是「該欄位的 Doc」，必須在解析欄位時就地取走。
+	// 過去 parseStructLiteral 完全不碰註解緩衝，註解會一路留到區塊結束後的
+	// 第一條陳述才被 collectDocComments 收走 ⇒ formatter 把欄位說明印到 `}`
+	// 之後（compiler/src/h2m.no 的 s99j 釋放清單從 `rls: []` 漂到
+	// `c.vty.push(...)` 上方）。結構體**定義**早在 decl.go 就這麼做了。
+	// prevFieldEndLine 用來只取「上一個欄位之後、本欄位之前」的獨立註解行；
+	// 與上一個欄位同一行的行尾註解留在緩衝，行為不變。
+	prevFieldEndLine := sl.Token.Line
 
 	p.nextToken() // 跳过 LBRACE
 
@@ -2173,10 +2186,13 @@ func (p *Parser) parseStructLiteral(typeExpr Expression) Expression {
 			return nil
 		}
 
+		fieldComments := p.takeCommentsBetween(prevFieldEndLine, p.currentToken.Line)
+
 		field := &StructField{
 			Token: p.currentToken,
 			Name:  p.currentToken.Literal,
 		}
+		field.Doc = commentGroupFromTokens(fieldComments)
 
 		p.nextToken() // 跳过 field name
 
@@ -2185,12 +2201,38 @@ func (p *Parser) parseStructLiteral(typeExpr Expression) Expression {
 			field.Value = p.parseExpression(LOWEST)
 		}
 
-		sl.Fields = append(sl.Fields, field)
+		if field.Value == nil {
+			valueless = append(valueless, field)
+		} else {
+			sl.Fields = append(sl.Fields, field)
+			valued++
+		}
+		prevFieldEndLine = field.EndPos().Line
 
 		// 跳过逗号分隔符
 		if p.currentToken.Type == lexer.COMMA {
 			p.nextToken()
 		}
+	}
+
+	// 只有「同一個字面量裡確實有 `name: value`」時，無值欄位才是幽靈欄位：
+	// 最常見的來源是想在空 vec 後另起一行標註元素型別（`ops: []` 換行 `i64`），
+	// 但 parseSliceLiteral 見 `[]` 就已回傳，那個 `i64` 會被當成下一個欄位名、
+	// 且沒有值。過去它被靜默收進 StructField{Value:nil}；現在報錯並剔除，讓
+	// AST 的欄位數等於真實欄位數。空 vec 元素型別由 struct 欄位宣告推導。
+	//
+	// 反之，全部欄位都無值的 `{ x i64  s str }` 是合法的匿名結構體定義形
+	// （`Point = { ... }`，checker 的 operator_overload / overflow_relevance
+	// fixture 就靠它），必須維持原本不報錯、欄位全保留的行為。
+	if valued > 0 {
+		for _, f := range valueless {
+			p.saveErrorfFix("nu59u6hp", []DiagnosticFix{{
+				Description: "delete this line, or write 'name: value'",
+			}}, "line %d, column %d: struct literal field '%s' has no value; write 'name: value' or delete this line (a bare type name after 'field: []' is not a type annotation - the empty vec element type comes from the struct field declaration)",
+				f.Token.Line, f.Token.Column, f.Name)
+		}
+	} else {
+		sl.Fields = append(sl.Fields, valueless...)
 	}
 
 	p.nextToken() // 跳过 RBRACE

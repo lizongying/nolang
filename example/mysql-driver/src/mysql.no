@@ -91,10 +91,12 @@ mysql-read-exact = (fd fd, n i64) (data str, ok bool) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt = i + 1
                 i-opt: {
                     ok -> i = it
+
                     ->
                 }
             }
@@ -183,10 +185,12 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         new-pos-opt = pos + 1
         new-pos-opt: {
             ok -> new-pos = it
+
             ->
         }
     }
@@ -201,10 +205,12 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 new-pos-opt2 = pos + 3
                 new-pos-opt2: {
                     ok -> new-pos = it
+
                     ->
                 }
             }
@@ -217,10 +223,12 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 new-pos-opt3 = pos + 4
                 new-pos-opt3: {
                     ok -> new-pos = it
+
                     ->
                 }
             }
@@ -233,10 +241,12 @@ mysql-read-lenenc = (data str, pos i64) (val i64, is-null bool, new-pos i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 new-pos-opt4 = pos + 9
                 new-pos-opt4: {
                     ok -> new-pos = it
+
                     ->
                 }
             }
@@ -265,7 +275,6 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
     combined [40]byte
     i = 0
     (i < 20) {
-
         ixout235c14 = seed[i]: {
             ok -> it
 
@@ -281,17 +290,18 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt2 = i + 1
             i-opt2: {
                 ok -> i = it
+
                 ->
             }
         }
     }
     i = 0
     (i < 20) {
-
         ixout249c15 = stage2[i]: {
             ok -> it
 
@@ -309,10 +319,12 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt3 = i + 1
             i-opt3: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -328,10 +340,12 @@ mysql-native-password = (password str, seed [20]byte) (token [20]byte) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt4 = i + 1
             i-opt4: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -448,10 +462,12 @@ open = (dsn str) (d db-mysql) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt5 = i + 1
                     i-opt5: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -527,10 +543,12 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             pos-opt = pos + 1
             pos-opt: {
                 ok -> pos = it
+
                 ->
             }
         }
@@ -538,10 +556,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt2 = pos + 1; skip null terminator
         pos-opt2: {
             ok -> pos = it
+
             ->
         }
     }
@@ -550,10 +570,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt3 = pos + 4
         pos-opt3: {
             ok -> pos = it
+
             ->
         }
     }
@@ -573,10 +595,12 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt6 = i + 1
             i-opt6: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -584,10 +608,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt4 = pos + 8
         pos-opt4: {
             ok -> pos = it
+
             ->
         }
     }
@@ -596,10 +622,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt5 = pos + 1
         pos-opt5: {
             ok -> pos = it
+
             ->
         }
     }
@@ -608,10 +636,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt6 = pos + 2
         pos-opt6: {
             ok -> pos = it
+
             ->
         }
     }
@@ -620,10 +650,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt7 = pos + 1
         pos-opt7: {
             ok -> pos = it
+
             ->
         }
     }
@@ -632,10 +664,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt8 = pos + 2
         pos-opt8: {
             ok -> pos = it
+
             ->
         }
     }
@@ -644,10 +678,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt9 = pos + 2
         pos-opt9: {
             ok -> pos = it
+
             ->
         }
     }
@@ -657,10 +693,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt10 = pos + 1
         pos-opt10: {
             ok -> pos = it
+
             ->
         }
     }
@@ -669,10 +707,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt11 = pos + 10
         pos-opt11: {
             ok -> pos = it
+
             ->
         }
     }
@@ -699,10 +739,12 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt7 = i + 1
             i-opt7: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -710,10 +752,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         pos-opt12 = pos + seed2-len
         pos-opt12: {
             ok -> pos = it
+
             ->
         }
     }
@@ -725,10 +769,12 @@ open = (dsn str) (d db-mysql) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     pos-opt13 = pos + 1
                     pos-opt13: {
                         ok -> pos = it
+
                         ->
                     }
                 }
@@ -779,10 +825,12 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt8 = i + 1
             i-opt8: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -796,20 +844,24 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             wpos-opt = wpos + 1
             wpos-opt: {
                 ok -> wpos = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt9 = i + 1
             i-opt9: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -818,10 +870,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         wpos-opt2 = wpos + 1
         wpos-opt2: {
             ok -> wpos = it
+
             ->
         }
     }
@@ -831,16 +885,17 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         wpos-opt3 = wpos + 1
         wpos-opt3: {
             ok -> wpos = it
+
             ->
         }
     }
     i = 0
     (i < 20) {
-
         ixout632c22 = auth-token[i]: {
             ok -> it
 
@@ -851,20 +906,24 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             wpos-opt4 = wpos + 1
             wpos-opt4: {
                 ok -> wpos = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt10 = i + 1
             i-opt10: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -877,20 +936,24 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             wpos-opt5 = wpos + 1
             wpos-opt5: {
                 ok -> wpos = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt11 = i + 1
             i-opt11: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -899,10 +962,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         wpos-opt6 = wpos + 1
         wpos-opt6: {
             ok -> wpos = it
+
             ->
         }
     }
@@ -915,20 +980,24 @@ open = (dsn str) (d db-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             wpos-opt7 = wpos + 1
             wpos-opt7: {
                 ok -> wpos = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt12 = i + 1
             i-opt12: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -937,10 +1006,12 @@ open = (dsn str) (d db-mysql) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         wpos-opt8 = wpos + 1
         wpos-opt8: {
             ok -> wpos = it
+
             ->
         }
     }
@@ -1026,10 +1097,12 @@ db-mysql.exec = (sql str) (r sql.result) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt13 = i + 1
             i-opt13: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1092,10 +1165,12 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt14 = i + 1
             i-opt14: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1153,10 +1228,12 @@ db-mysql.query = (sql str) (rs rows-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt15 = i + 1
             i-opt15: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1257,10 +1334,12 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             c-opt = c + 1
             c-opt: {
                 ok -> c = it
+
                 ->
             }
         }
@@ -1284,10 +1363,12 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt16 = i + 1
                     i-opt16: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -1306,10 +1387,12 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt17 = i + 1
             i-opt17: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1319,10 +1402,12 @@ rows-mysql.scan-int = (col i64) (v i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 v-opt = 0 - v
                 v-opt: {
                     ok -> v = it
+
                     ->
                 }
             }
@@ -1351,10 +1436,12 @@ rows-mysql.scan-str = (col i64) (v str) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             c-opt2 = c + 1
             c-opt2: {
                 ok -> c = it
+
                 ->
             }
         }
@@ -1394,10 +1481,12 @@ rows-mysql.scan-float = (col i64) (v f64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             c-opt3 = c + 1
             c-opt3: {
                 ok -> c = it
+
                 ->
             }
         }
@@ -1443,10 +1532,12 @@ rows-mysql.scan-float = (col i64) (v f64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt18 = i + 1
             i-opt18: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1578,10 +1669,12 @@ stmt-mysql.exec = () (r sql.result) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt19 = i + 1
             i-opt19: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1636,10 +1729,12 @@ stmt-mysql.query = () (rs rows-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt20 = i + 1
             i-opt20: {
                 ok -> i = it
+
                 ->
             }
         }
@@ -1687,10 +1782,12 @@ stmt-mysql.query = () (rs rows-mysql) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt21 = i + 1
             i-opt21: {
                 ok -> i = it
+
                 ->
             }
         }

@@ -7,7 +7,7 @@
 
 ; 初始狀態：init() 後 len 為 0 且 is-empty() 為真
 t-init = () {
-    m = str-map {}
+    m = str-map{}
     m.init()
     runner.eq(m.len(), 0, 'init len == 0')
     e bool = m.is-empty()
@@ -17,7 +17,7 @@ t-init = () {
 ; 插入兩個字串鍵（name / age）：put 均回報新鍵，len 計為 2；
 ; contains 對存在的鍵回 true、對缺失鍵回 false
 t-put-contains = () {
-    m = str-map {}
+    m = str-map{}
     m.init()
     n1 bool = m.put('name', 'Alice')
     runner.is-true(n1, 'put name is-new')
@@ -32,7 +32,7 @@ t-put-contains = () {
 
 ; 同鍵覆寫：第二次 put 回 false、len 仍為 1，且 to-str() 反映新值 '{k: v2}'
 t-overwrite = () {
-    m = str-map {}
+    m = str-map{}
     m.init()
     m.put('k', 'v1')
     n bool = m.put('k', 'v2')
@@ -43,7 +43,7 @@ t-overwrite = () {
 
 ; get 命中時以 ok 回傳原值 'Tokyo'，查無此鍵時回 nil（不是空字串）
 t-get = () {
-    m = str-map {}
+    m = str-map{}
     m.init()
     m.put('city', 'Tokyo')
     r = m.get('city')
@@ -77,7 +77,7 @@ t-get = () {
 ; remove 既有鍵回 true 且該鍵不再被 contains，其餘兩鍵保留；
 ; remove 不存在的鍵回 false
 t-remove = () {
-    m = str-map {}
+    m = str-map{}
     m.init()
     m.put('a', '1')
     m.put('b', '2')
@@ -93,7 +93,7 @@ t-remove = () {
 
 ; clear() 清空全部鍵值：len 歸零、is-empty() 為真
 t-clear = () {
-    m = str-map {}
+    m = str-map{}
     m.init()
     m.put('x', '1')
     m.put('y', '2')

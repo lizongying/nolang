@@ -6,10 +6,12 @@ add = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = a + b
         r-opt: {
             ok -> r = it
+
             ->
         }
     }
@@ -23,10 +25,12 @@ sub = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt2 = a - b
         r-opt2: {
             ok -> r = it
+
             ->
         }
     }
@@ -40,10 +44,12 @@ mul = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt3 = a * b
         r-opt3: {
             ok -> r = it
+
             ->
         }
     }

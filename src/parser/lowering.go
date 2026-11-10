@@ -1338,16 +1338,47 @@ func (l *lowerer) inferAliasType(s *LetStatement) {
 	if s == nil || s.IsSynthetic || s.Name == nil || s.Value == nil || s.Type != nil {
 		return
 	}
+	// 只認識別字／欄位這兩種**純別名**。呼叫回傳刻意排除：`a = g(b / c)` 的目標
+	// 會不會變 option 取決於引數裡的捕獲，先給它登記一個 plain T 會讓後續的
+	// 捕獲判定（captureTargetAllowsOption）把它當成「已確定非 option」而拒絕捕獲
+	// ——TestCaptureCallArgDivMod / TestCaptureIdempotent 就是這樣斷的。
 	switch unwrapLowerExpr(s.Value).(type) {
-	case *Identifier, *DotExpression, *CallExpression:
+	case *Identifier, *DotExpression:
 	default:
 		return
 	}
+	// 目標已經有型別登記（簽名結果參數的 `?T`、parse 期推斷、先前的宣告）時不覆寫：
+	// 別名只是型別鏈的一環，沒有資格改寫既定型別。少了這條，
+	// `bigint._add = (b bigint) (c ?bigint) { c = b }` 會把 c 登記成 bigint。
+	if l.p.sem != nil && s.Name.Value != "" {
+		if t, ok := l.p.sem.FuncVarType(l.curFuncName, s.Name.Value); ok && t != "" {
+			return
+		}
+		if l.p.curFuncName != l.curFuncName {
+			if t, ok := l.p.sem.FuncVarType(l.p.curFuncName, s.Name.Value); ok && t != "" {
+				return
+			}
+		}
+	}
 	typ := l.operandPlainType(s.Value)
-	if typ == "" || ty.IsOptionRaw(typ) {
+	if !IsScalarAliasTypeRaw(typ) {
 		return
 	}
-	l.publishInferredType(s, typ)
+	l.publishPlainType(s, typ)
+}
+
+// publishPlainType 只把「純別名型別」登記進變數型別副表，**不寫 InferredType**。
+//
+// InferredType 的合約是「lowering 推斷出的 `?T`」（見 resolver.go SetInferredType
+// 的註解），而 checker 直接拿 `HasInferredType` 當「這個綁定的型別是推斷出來的
+// option」判據（checker.go 的 declaredOption / inferredOption）。把 plain 型別
+// 寫進去，一個從未被讀取的 `i64` 別名（`n = count`）就會被當成「option 綁定後
+// 從未消費」而報 ERROR optunuse —— 型別對、診斷錯。
+func (l *lowerer) publishPlainType(s *LetStatement, typ string) {
+	if s == nil || s.Name == nil || typ == "" || l == nil || l.p == nil {
+		return
+	}
+	l.p.setVarType(s.Name.Value, typ)
 }
 
 // operandPlainType 回報 e 的靜態型別名（可能帶 option 前綴，由呼叫方判定）；

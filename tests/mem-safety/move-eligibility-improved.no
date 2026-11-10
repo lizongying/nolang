@@ -1,12 +1,13 @@
-; ═════════════════════════════════════════════════════════════════
 ; 改进版 moveEligible liveness 分析测试
 ; 验证三项改进：
 ;   1. 读写区分：纯赋值目标（a = [1,2,3]）不阻止 move
 ;   2. 分支感知：互斥分支中的读引用不阻止 move
 ;   3. 循环体引用阻止 move（保守，正确）
-; ═════════════════════════════════════════════════════════════════
+...
 
-; ---- 改进 1：读写区分 ----
+; 改进 1：读写区分
+...
+
 ; b = a 后 a 被重赋值（纯写），move 应被允许。
 ; 旧版分析：a = [1,2,3] 被视为引用 → clone（性能损失）
 ; 新版分析：a = [1,2,3] 是纯写 → move（安全，freeOldHeapValue 跳过 moved 变量）
@@ -23,7 +24,9 @@ r1 = reassign-after-move()
 r1[0] == 1 -> print('test1 pass: reassign-after-move')
 r1.len() == 3 -> print('test1 pass: len=3')
 
-; ---- 改进 1b：读写区分，RHS 引用源变量仍然阻止 move ----
+; 改进 1b：读写区分，RHS 引用源变量仍然阻止 move
+...
+
 ; a = a.len() 这种 RHS 引用 a 的情况，move 应被拒绝。
 
 ; 改進 1b：a 在後續 RHS（a.len()）中被讀，move 必須被拒絕，b 應拿到獨立副本
@@ -38,7 +41,9 @@ r1b = rhs-read-source()
 r1b[0] == 1 -> print('test1b pass: rhs-read-source')
 r1b.len() == 3 -> print('test1b pass: len=3')
 
-; ---- 改进 2：分支感知 — 互斥分支中的读引用不阻止 move ----
+; 改进 2：分支感知 — 互斥分支中的读引用不阻止 move
+...
+
 ; out = a 在 then 分支内，a 在 else 分支被读取。
 ; 旧版分析：展平后 a 的读引用在 out=a 之后 → clone
 ; 新版分析：then 和 else 互斥 → move（then 分支的 out=a 运行时，else 不执行）
@@ -67,7 +72,9 @@ r2b = mutual-exclusive-branch(false)
 r2b[0] == 10 -> print('test2b pass: mutual-exclusive else')
 r2b.len() == 3 -> print('test2b pass: len=3')
 
-; ---- 改进 3：循环体引用阻止 move ----
+; 改进 3：循环体引用阻止 move
+...
+
 ; b = a 后 a 在循环体内被读取，move 应被拒绝。
 ; 保守策略：循环体可能多次执行，move 后 a 不再拥有 data → use-after-free
 
@@ -89,7 +96,9 @@ loop-body-read = () (out i64) {
 r3 = loop-body-read()
 r3 == 1 -> print('test3 pass: loop-body-read')
 
-; ---- 回归测试：非互斥分支中的读引用仍阻止 move ----
+; 回归测试：非互斥分支中的读引用仍阻止 move
+...
+
 ; b = a 在顶层（不在分支内），if 分支内读 a → 阻止 move
 ; 因为 if 分支在运行时可能执行
 
@@ -110,7 +119,9 @@ r4 = non-exclusive-branch(true)
 r4[0] == 1 -> print('test4 pass: non-exclusive-branch')
 r4.len() == 3 -> print('test4 pass: len=3')
 
-; ---- 回归测试：move-clone-liveness 场景 ----
+; 回归测试：move-clone-liveness 场景
+...
+
 ; 同一源变量先 clone 再 move
 
 ; 複製 then-move

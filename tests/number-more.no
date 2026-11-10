@@ -6,7 +6,8 @@
 ; strconv(hir2mir)、push-narrow(funcargs/std_method_arg_test)。
 ;
 ; ── from tests/edge-i64.no ──
-; ===== 边界: i64 极值 =====
+; 边界: i64 极值
+...
 edge-test-edge-i64 = () {
     n = 9223372036854775807
     s = n.to-str()
@@ -16,6 +17,7 @@ edge-test-edge-i64 = () {
         n-opt = -9223372036854775807 - 1
         n-opt: {
             ok -> n = it
+
             ->
         }
     }
@@ -23,7 +25,8 @@ edge-test-edge-i64 = () {
     print(s); 期望: -9223372036854775808
 }
 
-; ===== 运行测试 =====
+; 运行测试
+...
 edge-test-edge-i64()
 
 ; ── from tests/i64-max.no ──
@@ -174,4 +177,3 @@ t64s-test-simple = () {
     print(n); 期望 12345
 }
 t64s-test-simple()
-

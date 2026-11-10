@@ -1,6 +1,6 @@
 ; merged category 'err' -- members: err-structured.no, err.no, fs-error-complete.no, fs-error-simple.no
 ; (originals backed up under tests/_archive/err/)
-; ===================== merged from tests/err-structured.no =====================
+; merged from tests/err-structured.no
 ; err-structured.no — option 的 err 載荷是結構化的 err.err
 ;
 ; 回歸：err 載荷從「訊息字串」換成 std 的 err.err（code / msg / file / line / col）
@@ -11,6 +11,7 @@
 ;   - 拷貝：option → option 必須重新裝箱，否則兩側釋放同一塊（雙重釋放）。
 ;
 ; 只改其中任一處的症狀：讀到指標（亂碼）、漏釋放、或 trace/BPT trap。
+...
 
 ; 檢查
 ; name str: 這項檢查的名稱，輸出時原樣印出
@@ -104,12 +105,13 @@ got6 = d: {
 check('copy-src', got5, 'boom')
 check('copy-dst', got6, 'boom')
 
-; ===================== merged from tests/err.no =====================
+; merged from tests/err.no
 ; err.no — err 模組測試
 ;
 ; 測試 new, error.is, error.msg, error.code, from-errno, error.format
 ; 注意：str-long value type 跨函式邊界傳遞時長度不一致，
 ; 故 msg 相關測試只驗證呼叫完成，不檢查字串長度。
+...
 
 ; # std/err
 
@@ -177,9 +179,10 @@ ns = tc.to-name()
     -> print('fail: code.to-name')
 }
 
-; ===================== merged from tests/fs-error-complete.no =====================
+; merged from tests/fs-error-complete.no
 ; 测试文件操作错误信息细分
 ; 验证 fs.open 失败时返回详细的错误信息
+...
 
 print('--- 测试 fs.open 错误信息 ---')
 print('')
@@ -187,7 +190,7 @@ print('')
 ; 测试 1: 文件不存在 (ENOENT = 2)
 print('测试 1: 文件不存在')
 print('  路径: /nonexistent/file-12345.txt')
-f1 ?fs.file = fs.open('/nonexistent/file-12345.txt',  {
+f1 ?fs.file = fs.open('/nonexistent/file-12345.txt', {
     mode: file-mode.read
 })
 f1: {
@@ -202,7 +205,7 @@ print('')
 ; 测试 2: 尝试打开目录作为文件
 print('测试 2: 尝试打开目录')
 print('  路径: /tmp')
-f2 ?fs.file = fs.open('/tmp',  {
+f2 ?fs.file = fs.open('/tmp', {
     mode: file-mode.read
 })
 f2: {
@@ -217,7 +220,7 @@ print('')
 ; 测试 3: 成功创建并打开文件
 print('测试 3: 成功打开文件')
 print('  路径: /tmp/nolang-test-err.txt')
-f3 ?fs.file = fs.open('/tmp/nolang-test-err.txt',  {
+f3 ?fs.file = fs.open('/tmp/nolang-test-err.txt', {
     mode: file-mode.write
     perm: file-perm.perm-644
 })
@@ -240,10 +243,11 @@ print('--- 测试完成 ---')
 i <- [12..3): {
 }
 
-; ===================== merged from tests/fs-error-simple.no =====================
+; merged from tests/fs-error-simple.no
 ; 简单测试文件操作错误信息
+...
 print('测试: 打开不存在的文件')
-f ?fs.file = fs.open('/nonexistent/file.txt',  {
+f ?fs.file = fs.open('/nonexistent/file.txt', {
     mode: 0
 })
 

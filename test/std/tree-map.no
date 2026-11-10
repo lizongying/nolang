@@ -26,7 +26,7 @@ unwrap = (v ?i64) (found bool, x i64) {
 
 ; 空 AVL 樹：init() 後 size() 回 0、empty() 為真
 t-init = () {
-    m = tree-map {}
+    m = tree-map{}
     m.init()
     runner.eq(m.size(), 0, 'init size 0')
     e bool = m.empty()
@@ -36,7 +36,7 @@ t-init = () {
 ; put 回報是否新鍵且 size 隨插入成長；get 命中回 300、缺失回 nil，
 ; contains 與 get 結果一致
 t-put-get = () {
-    m = tree-map {}
+    m = tree-map{}
     m.init()
     p1 bool = m.put(30, 100)
     runner.is-true(p1, 'put 30 is-new')
@@ -62,7 +62,7 @@ t-put-get = () {
 
 ; 同鍵重覆 put 只更新值：不新增節點（回 false、size 仍為 1），get 讀回新值 2
 t-overwrite = () {
-    m = tree-map {}
+    m = tree-map{}
     m.init()
     m.put(5, 1)
     dup bool = m.put(5, 2)
@@ -77,7 +77,7 @@ t-overwrite = () {
 
 ; 有序性：亂序插入 30/10/40/5 後，first() 必為最小鍵 5、last() 為最大鍵 40
 t-order = () {
-    m = tree-map {}
+    m = tree-map{}
     m.init()
     m.put(30, 1)
     m.put(10, 2)
@@ -96,7 +96,7 @@ t-order = () {
 ; lower-bound 取 >= 目標的最小鍵（15→20），upper-bound 取 > 目標的最小鍵（20→30）；
 ; 超出範圍（100）回 nil
 t-bound = () {
-    m = tree-map {}
+    m = tree-map{}
     m.init()
     m.put(10, 1)
     m.put(20, 2)
@@ -119,7 +119,7 @@ t-bound = () {
 ; remove 分別覆蓋葉子（25）與內部節點（30，刪 25 後只剩右子 35），需由 AVL 旋轉保持平衡；
 ; 不存在的鍵回 false，其餘鍵仍可查且 size 正確
 t-remove = () {
-    m = tree-map {}
+    m = tree-map{}
     m.init()
     m.put(20, 1)
     m.put(10, 2)
@@ -144,7 +144,7 @@ t-remove = () {
 
 ; clear() 清空整棵樹：size 歸零、empty 為真、原鍵不再 contains
 t-clear = () {
-    m = tree-map {}
+    m = tree-map{}
     m.init()
     m.put(1, 1)
     m.put(2, 2)

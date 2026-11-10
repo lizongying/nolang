@@ -1,10 +1,11 @@
 ; merged category 'get' -- members: get-pw-gr-name.no, getgrouplist.no, getline.no
 ; (originals backed up under tests/_archive/get/)
-; ===================== merged from tests/get-pw-gr-name.no =====================
+; merged from tests/get-pw-gr-name.no
 ; Regression for os.getpwuid-name / os.getgrgid-name (cRetFieldStr: deref the
 ; struct pointer returned by getpwuid(3)/getgrgid(3) and copy pw_name/gr_name,
 ; both at offset 0). The current uid/gid always resolve to a non-empty name; an
 ; out-of-range id must resolve to the empty string (NULL struct pointer guarded).
+...
 uid = os.geteuid()
 gid = os.getegid()
 uname = os.getpwuid-name(uid)
@@ -25,11 +26,12 @@ nobody.len() != 0 -> {
 }
 print('get-pw-gr-name passed')
 
-; ===================== merged from tests/getgrouplist.no =====================
+; merged from tests/getgrouplist.no
 ; Regression for os.getgrouplist(user str, basegid i64) -> (gids []i64, n i64).
 ; getgrouplist(3) resolves the FULL directory membership (getgroups caps at 16 on
 ; macOS). The current user's real gid must appear in the list, and the returned
 ; count must equal the slice length.
+...
 ruid = os.getuid()
 rgid = os.getgid()
 user = os.getpwuid-name(ruid)
@@ -52,7 +54,8 @@ found == false -> {
 }
 print('getgrouplist passed')
 
-; ===================== merged from tests/getline.no =====================
+; merged from tests/getline.no
+...
 line = ''
 ok = false
 line, ok = fs.get-line()

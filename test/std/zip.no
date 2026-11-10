@@ -27,20 +27,20 @@ mk-fill = (n i64, ch i64) (out []byte) {
 
 ; ── 1. u16le / u32le 位元組輔助 ──────────────────────────────────────
 t-bytes-helpers = () {
-    raw [8]byte = [0x34, 0x12, 0xEF, 0xCD, 0xAB, 0x89, 0x01, 0x00]
+    raw [8]byte = [0x34, 0x12, 0xef, 0xcd, 0xab, 0x89, 0x01, 0x00]
     v = raw.slice(0, 8)
 
-    runner.eq(u16le(v, 0), 0x1234, 'u16le 偏移 0 = 0x1234')
-    runner.eq(u16le(v, 3), 0xABCD, 'u16le 跨位元組偏移 3 = 0xABCD')
-    runner.eq(u32le(v, 2), 0x89ABCDEF, 'u32le 偏移 2 = 0x89ABCDEF')
-    runner.eq(u32le(v, 4), 0x000189AB, 'u32le 偏移 4 = 0x000189AB')
+    runner.eq(zip.u16le(v, 0), 0x1234, 'u16le 偏移 0 = 0x1234')
+    runner.eq(zip.u16le(v, 3), 0xabcd, 'u16le 跨位元組偏移 3 = 0xABCD')
+    runner.eq(zip.u32le(v, 2), 0x89abcdef, 'u32le 偏移 2 = 0x89ABCDEF')
+    runner.eq(zip.u32le(v, 4), 0x000189ab, 'u32le 偏移 4 = 0x000189AB')
 }
 
 ; ── 2. writer 基本寫入單元 ───────────────────────────────────────────
 t-primitives = () {
     w = zip-writer{}
     w.write-u16(0x1234)
-    w.write-u32(0x89ABCDEF)
+    w.write-u32(0x89abcdef)
     w.put(7)
 
     d = w.data.slice(0, len(w.data))

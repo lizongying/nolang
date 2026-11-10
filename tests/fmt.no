@@ -1,7 +1,8 @@
 ; merged category 'fmt' -- members: fmt-heuristic.no, fmt-more.no
 ; (originals backed up under tests/_archive/fmt/)
-; ===================== merged from tests/fmt-heuristic.no =====================
+; merged from tests/fmt-heuristic.no
 ; test-fmt-heuristic: verify formatter no longer relies on heuristics
+...
 
 ; # std/str
 
@@ -37,7 +38,7 @@ sign = fixed: {
     -> 'zero'
 }
 
-; ===================== merged from tests/fmt-more.no =====================
+; merged from tests/fmt-more.no
 ; fmt-more — 合併自同簇 fmt/to-str/format 小件（heavy dedup）
 ;
 ; 每個原件整段包成函式（頂層語義在函式內等價，格式插值讀區域變數照舊），末尾依序呼叫。
@@ -47,7 +48,9 @@ sign = fixed: {
 ;   format-concat-fold / format-plain(頂層未加括號的 `cond -> / -> else`，包進函式會破解析)。
 ;
 ; ── from tests/fmt-helpers.no ──
+...
 fmh-run = () {
+
     ; fmt-helpers.no — 測試 fmt-parse-spec/fmt-apply-spec/fmt-int/fmt-uint/fmt-f64/fmt-str/fmt-bool/fmt-uint-base
     ; 注意：因編譯器 bug（print 直接接收函數返回值時 @print 未宣告），
     ; 所有用例先將結果賦值給變數再 print。
@@ -200,6 +203,7 @@ fspec-run = () {
 
 ; ── from tests/named-format.no ──
 nf-run = () {
+
     ; named-format.no — 測試具名字串格式 {name:spec}
     ;
     ; 驗證 print/eprint/format 支援 {name:spec} 語法，

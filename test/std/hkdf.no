@@ -1,8 +1,11 @@
 ; test/std/hkdf.no — crypto/hkdf 模組測試
 ;
 ; 執行：no test test/std/hkdf.no
-; 覆蓋：hkdf-extract、hkdf-expand
-; 向量來源：RFC 5869 Test Case 1，並與 python hmac 手動 HKDF 交叉核對
+; 覆蓋：hkdf-extract、hkdf-expand、hkdf-expand-hmac、hkdf-expand-label、
+;       hkdf-expand-label-vec、hkdf-derive-secret
+; 向量來源：RFC 5869 Test Case 1；HKDF-Expand-Label / Derive-Secret 依 RFC 8446 §7.1
+;   的 HkdfLabel 佈局（uint16 length || opaque label<7..255> || opaque context<0..255>）
+;   用 python hmac 獨立算出金標交叉核對
 
 # /test/runner
 
@@ -36,7 +39,95 @@ bhex = (data []byte) (hex str) {
     }
 }
 
+; ---- 助手 ----
+
+; hex 字串 → []byte（'0777…' → 32 位元組）；空字串回空切片
+; h str: 偶數長度的十六進位字串
+; b []byte: 解出的位元組序列
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 全零 [32]byte
+zero32 = () (a [32]byte) {
+    i <- [0..32): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+; hex → [32]byte（原樣拷貝，不做數值轉換）
+mk32 = (h str) (a [32]byte) {
+    raw = mkb(h)
+    a = zero32()
+    n = raw.len()
+    i <- [0..n): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; [32]byte → 同內容的動態位元組切片
+arr32 = (a [32]byte) (v []byte) {
+    v = with-len(32)
+    i <- [0..32): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+}
+
+; [32]byte → hex（供 expand-hmac 這類回傳固定陣列的函式比對）
+h32 = (a [32]byte) (s str) {
+    v = arr32(a)
+    s = bhex(v)
+}
+
+; 長度 n 的全零 []byte（with-len 已保證初始化為 0，這裡再顯式寫一次以免依賴該保證）
+; n i64: 想要的長度
+; v []byte: 長度為 n 的零填充切片
+zeros = (n i64) (v []byte) {
+    v = with-len(n)
+    i <- [0..n): {
+        v[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+prk-hex = '077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5'
+
+; ---- extract / expand ----
+
 ; RFC 5869 TC1: IKM = 0x0b*22, salt = 00..0c, info = f0..f9, L = 42
+
 t-extract = () {
     salt []byte = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -127,6 +218,117 @@ t-expand-len = () {
 p1 = runner.test('hkdf.extract', t-extract)
 p2 = runner.test('hkdf.expand', t-expand)
 p3 = runner.test('hkdf.expand-len', t-expand-len)
+
+; ---- expand-hmac（單輪 HMAC，計數字節可控）----
+
+; 直接驗證單輪：HMAC-SHA256(prk, T(i-1) || info || i)，counter=0 時不加計數字節。
+; 金標 = python hmac.new(prk, msg, sha256)。
+t-expand-hmac = () {
+    prk = mkb(prk-hex)
+    t-data = mkb('616263')
+    info = mkb('0020')
+    none = zeros(0)
+
+    m1 [32]byte = hkdf.hkdf-expand-hmac(prk, t-data, 3, info, 1)
+    runner.str-eq(h32(m1), '0cf125bb13b2ab7c8a48ab70459f0469660e6e21051f439503bc1d179376dc2f', 64, 'expand-hmac T=abc info=0020 ctr=1')
+
+    m2 [32]byte = hkdf.hkdf-expand-hmac(prk, t-data, 3, info, 2)
+    runner.str-eq(h32(m2), 'a172a040d59c811bcd6428c8c03a18ce63686ab8dcf8636ff1a6a23cbd6a2970', 64, 'expand-hmac ctr=2 只用低 8 位')
+
+    ; counter = 0 ⇒ 不附加計數字節（內部輔助語意，非 RFC 用法）
+    m0 [32]byte = hkdf.hkdf-expand-hmac(prk, t-data, 3, info, 0)
+    runner.str-eq(h32(m0), '41a4d162b394bb5910247dccb760757e449b1415d2a4572c732c8a0bd7393181', 64, 'expand-hmac ctr=0 不加計數字節')
+
+    ; t-len=0 且 info 空 ⇒ 訊息只有計數字節 0x01
+    m3 [32]byte = hkdf.hkdf-expand-hmac(prk, none, 0, none, 1)
+    runner.str-eq(h32(m3), 'b2a3d45126d31fb6828ef00d76c6d54e9c2bd4785e49c6ad86e327d89d0de940', 64, 'expand-hmac 空 t-data/空 info')
+
+    ; counter 只有低 8 位進訊息：1 與 257 應同值，與 2 不同
+    m257 [32]byte = hkdf.hkdf-expand-hmac(prk, t-data, 3, info, 257)
+    s1 = h32(m1)
+    s257 = h32(m257)
+    s2 = h32(m2)
+    runner.str-eq(s257, s1, 64, 'expand-hmac ctr 取 counter & 255')
+    runner.is-false(s257.eq(s2, 64), 'expand-hmac ctr=257 != ctr=2')
+}
+
+; ---- expand-label（TLS 1.3 HkdfLabel 佈局）----
+
+; info = uint16(out-len) || uint8(len('tls13 '+label)) || 'tls13 '+label
+;        || uint8(len(ctx)) || ctx
+t-expand-label = () {
+    prk [32]byte = mk32(prk-hex)
+    none = zeros(0)
+    z32 = zeros(32)
+
+    ; 空 context、42 位元組輸出（跨兩輪：32 + 10）
+    o42 = hkdf.hkdf-expand-label(prk, 'key', none, 42)
+    runner.eq(o42.len(), 42, 'expand-label 回傳長度 = out-len 42')
+    runner.str-eq(bhex(o42), '18c880ec16a8d0f3da258f22187fac027c2e3f83ec16e58378b79aeb1f4b3fba1f50ad6f5e9dfd4249f3', 84, 'expand-label key/空ctx/42')
+
+    ; 32 位元組零 context、16 位元組輸出（單輪）
+    o16 = hkdf.hkdf-expand-label(prk, 'key', z32, 16)
+    runner.eq(o16.len(), 16, 'expand-label 回傳長度 = out-len 16')
+    runner.str-eq(bhex(o16), '3e8cea5b15cdc24049629a241aaff7f9', 32, 'expand-label key/32×0x00/16')
+
+    ; 恰好 32 位元組輸出（TLS 金鑰/IV 常見長度）
+    o32 = hkdf.hkdf-expand-label(prk, 'key', z32, 32)
+    runner.str-eq(bhex(o32), 'f4d9d49027e10c74ecb219ddeec6004ca28e67ded95a2881abdefc4e66acee7f', 64, 'expand-label key/32×0x00/32')
+
+    ; 標籤長度不同 ⇒ info 不同 ⇒ 輸出不同
+    other = hkdf.hkdf-expand-label(prk, 'iv', z32, 32)
+    so = bhex(other)
+    s32 = bhex(o32)
+    runner.is-false(so.eq(s32, 64), 'expand-label 不同標籤得到不同 okm')
+}
+
+; ---- expand-label-vec（prk 以 []byte 接收）----
+
+t-expand-label-vec = () {
+    prk = mkb(prk-hex)
+    z32 = zeros(32)
+
+    v64 = hkdf.hkdf-expand-label-vec(prk, 'key', z32, 64)
+    runner.eq(v64.len(), 64, 'expand-label-vec 回傳長度 = out-len 64')
+    runner.str-eq(bhex(v64), '212f2fe07518560b4184d0e2fe2e4ceefea7bd163895e8d6f0eed98d213faf9995a15422376c41eae1091ea5c7a73cff83c49d8017b97fe1c24a49090dcf4a90', 128, 'expand-label-vec key/32×0x00/64')
+
+    ; 與 [32]byte 版結果必須一致
+    arr [32]byte = mk32(prk-hex)
+    a64 = hkdf.hkdf-expand-label(arr, 'key', z32, 64)
+    runner.str-eq(bhex(a64), bhex(v64), 128, 'vec 版與 [32]byte 版同值')
+
+    ; 長度不足 32 的 prk：尾巴補 0（這裡 prk 只有 16 位元組，補到 32）
+    short = mkb('00112233445566778899aabbccddeeff')
+    s64 = hkdf.hkdf-expand-label-vec(short, 'key', z32, 64)
+    ss64 = bhex(s64)
+    sv64 = bhex(v64)
+    runner.is-false(ss64.eq(sv64, 64), '短 prk padding 後結果與完整 prk 不同')
+    runner.eq(s64.len(), 64, '短 prk 輸出長度仍為 out-len')
+}
+
+; ---- derive-secret（= expand-label-vec(…, 32)）----
+
+t-derive-secret = () {
+    secret = mkb(prk-hex)
+    z32 = zeros(32)
+
+    o = hkdf.hkdf-derive-secret(secret, 'c hs traffic', z32)
+    runner.eq(o.len(), 32, 'derive-secret 固定回傳 32 位元組')
+    runner.str-eq(bhex(o), '9840d666757e22c9a5ea36ffb2f9adbf446ef0ce6ff4956b3387058f6e2e7053', 64, 'derive-secret c hs traffic/32×0x00')
+
+    ; context = SHA-256("")（TLS 1.3 首次 Derive-Secret 的 Messages 值）
+    h0 = mkb('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+    o2 = hkdf.hkdf-derive-secret(secret, 's hs traffic', h0)
+    runner.str-eq(bhex(o2), '25eda46355183f95586435bf8bea6e53f7b33c3ecc7e660ed80a5819ea88e425', 64, 'derive-secret s hs traffic/SHA-256("")')
+
+    ; derive-secret 就是 32 位元組的 expand-label-vec
+    same = hkdf.hkdf-expand-label-vec(secret, 'c hs traffic', z32, 32)
+    runner.str-eq(bhex(same), bhex(o), 64, 'derive-secret == expand-label-vec(…, 32)')
+}
+p4 = runner.test('hkdf.expand-hmac', t-expand-hmac)
+p5 = runner.test('hkdf.expand-label', t-expand-label)
+p6 = runner.test('hkdf.expand-label-vec', t-expand-label-vec)
+p7 = runner.test('hkdf.derive-secret', t-derive-secret)
 total = runner.summary()
 f = runner.failed-count()
 {

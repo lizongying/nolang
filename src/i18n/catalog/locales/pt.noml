@@ -801,6 +801,7 @@ Abra manualmente: %s
   'nmxs8sop': 'syslog: %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': 'não é possível inferir o tipo de \'%s\': %s() requer uma anotação de tipo explícita do lado esquerdo (por exemplo `name []byte = %s(n)`)'
+  'nu59u6hp': 'o campo \'%s\' do literal de struct não tem valor; escreva \'name: value\' ou remova esta linha (um nome de tipo isolado após \'field: []\' não é uma anotação de tipo - o tipo do elemento de um vec vem da declaração do campo)'
   'nwtpvei9': 'embed: fs.embed requer um diretório, obtido arquivo: %s (resolvido: %s)'
   'nx1476j3': '  no pack nogit.no                 empacotar um único arquivo-fonte'
   'nz3ol1c4': 'o módulo ESM %q não está declarado nas dependências de package.noml; adicione dependencies: [\'%s:^latest\'] (ou dev-dependencies) e execute npm install'

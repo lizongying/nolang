@@ -56,10 +56,12 @@ t-decompress-golden = () {
             }
 
             -> {
+
                 #{overflow=wrap}
                 m-opt = m + 1
                 m-opt: {
                     ok -> m = it
+
                     -> _
                 }
             }
@@ -79,7 +81,7 @@ t-decompress-empty = () {
 ; bzip2 的位元流是高位在前的
 t-bit-reader = () {
     br = bz-bit-reader{}
-    br.data = [0xB5]
+    br.data = [0xb5]
     br.pos = 0
     br.bit-buf = 0
     br.bit-cnt = 0
@@ -103,7 +105,7 @@ t-bit-reader = () {
 ; ── Huffman 碼表建構 / 解碼 ─────────────────────────────────────────
 ; 兩符號、長度各 1 → 規範碼 0 與 1
 t-huffman = () {
-    lens []i64 = [1, 1]
+    lens = [1, 1]
     h = bz-huffman{}
     h.build(lens, 2)
 

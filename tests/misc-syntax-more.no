@@ -47,10 +47,12 @@ b-abs-i64 = (a i64) (r i64) {
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 r-opt = 0 - a
                 r-opt: {
                     ok -> r = it
+
                     ->
                 }
             }
@@ -71,10 +73,12 @@ b-gcd = (a i64, b i64) (r i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             ra-opt = 0 - ra
             ra-opt: {
                 ok -> ra = it
+
                 ->
             }
         }
@@ -83,10 +87,12 @@ b-gcd = (a i64, b i64) (r i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             rb-opt = 0 - rb
             rb-opt: {
                 ok -> rb = it
+
                 ->
             }
         }
@@ -97,6 +103,7 @@ b-gcd = (a i64, b i64) (r i64) {
             rb-opt2 = ra % rb
             rb-opt2: {
                 ok -> rb = it
+
                 ->
             }
         }
@@ -191,6 +198,7 @@ dupf-test-func = () {
 
 ; ── from tests/duplicate.no ──
 dupl-A = 0
+
 ; 'A' already declared in this scope
 ; A = 1
 ;;
@@ -571,10 +579,12 @@ zsi-test-str-index-lint = () {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             sum-b-opt = sum-b + 1
             sum-b-opt: {
                 ok -> sum-b = it
+
                 ->
             }
         }
@@ -588,10 +598,12 @@ zsi-test-str-index-lint = () {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             sum-a-opt = sum-a + 1
             sum-a-opt: {
                 ok -> sum-a = it
+
                 ->
             }
         }
@@ -604,10 +616,12 @@ zsi-test-str-index-lint = () {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             sum-c-opt = sum-c + 1
             sum-c-opt: {
                 ok -> sum-c = it
+
                 ->
             }
         }
@@ -623,4 +637,3 @@ zsi-test-str-index-lint = () {
     print(w)
 }
 zsi-test-str-index-lint()
-

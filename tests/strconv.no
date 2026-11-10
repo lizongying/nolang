@@ -13,7 +13,8 @@
 ;   byte → str
 ;   往返轉換 (str ↔ int, str ↔ float)
 
-; ===== str → i64 =====
+; str → i64
+...
 test-str-to-i64 = () {
     n = '12345'.to-i64()
     {
@@ -41,7 +42,8 @@ test-str-to-i64 = () {
     }
 }
 
-; ===== str → i32 =====
+; str → i32
+...
 test-str-to-i32 = () {
     n = '32767'.to-i32()
     {
@@ -61,7 +63,8 @@ test-str-to-i32 = () {
     }
 }
 
-; ===== str → i16 =====
+; str → i16
+...
 test-str-to-i16 = () {
     n = '100'.to-i16()
     {
@@ -81,7 +84,8 @@ test-str-to-i16 = () {
     }
 }
 
-; ===== str → i8 =====
+; str → i8
+...
 test-str-to-i8 = () {
     n = '127'.to-i8()
     {
@@ -101,7 +105,8 @@ test-str-to-i8 = () {
     }
 }
 
-; ===== str → u64 =====
+; str → u64
+...
 test-str-to-u64 = () {
     n = '99999'.to-u64()
     {
@@ -113,7 +118,8 @@ test-str-to-u64 = () {
     }
 }
 
-; ===== str → f64 =====
+; str → f64
+...
 test-str-to-f64 = () {
     f = '3.14'.to-f64()
     {
@@ -141,7 +147,8 @@ test-str-to-f64 = () {
     }
 }
 
-; ===== str → bool =====
+; str → bool
+...
 test-str-to-bool = () {
     b = 'true'.to-bool()
     {
@@ -161,7 +168,8 @@ test-str-to-bool = () {
     }
 }
 
-; ===== str → byte =====
+; str → byte
+...
 test-str-to-byte = () {
     b = '65'.to-byte()
     {
@@ -173,7 +181,8 @@ test-str-to-byte = () {
     }
 }
 
-; ===== i64 → str =====
+; i64 → str
+...
 test-i64-to-str = () {
     n = 42
     s = n.to-str()
@@ -188,21 +197,24 @@ test-i64-to-str = () {
     print(s); 期望: 0
 }
 
-; ===== i32 → str =====
+; i32 → str
+...
 test-i32-to-str = () {
     n i32 = 999
     s = n.to-str()
     print(s); 期望: 999
 }
 
-; ===== u64 → str =====
+; u64 → str
+...
 test-u64-to-str = () {
     n u64 = 12345
     s = n.to-str()
     print(s); 期望: 12345
 }
 
-; ===== f64 → str =====
+; f64 → str
+...
 test-f64-to-str = () {
     f = 3.14
     s = f.to-str()
@@ -213,7 +225,8 @@ test-f64-to-str = () {
     print(s); 期望: 0
 }
 
-; ===== f32 → str =====
+; f32 → str
+...
 test-f32-to-str = () {
     f f32 = 3.14
     s = f.to-str()
@@ -224,7 +237,8 @@ test-f32-to-str = () {
     print(s); 期望: 0
 }
 
-; ===== bool → str =====
+; bool → str
+...
 test-bool-to-str = () {
     b = true
     s = b.to-str()
@@ -235,7 +249,8 @@ test-bool-to-str = () {
     print(s); 期望: false
 }
 
-; ===== byte → str =====
+; byte → str
+...
 test-byte-to-str = () {
     b byte = 65
     s = b.to-str()
@@ -246,7 +261,8 @@ test-byte-to-str = () {
     print(s); 期望: 0
 }
 
-; ===== 往返: i64 → str → i64 =====
+; 往返: i64 → str → i64
+...
 test-roundtrip-i64 = () {
     n0 = 12345
     s = n0.to-str()
@@ -260,7 +276,8 @@ test-roundtrip-i64 = () {
     }
 }
 
-; ===== 往返: f64 → str → f64 =====
+; 往返: f64 → str → f64
+...
 test-roundtrip-f64 = () {
     f = '3.14'.to-f64()
     {
@@ -272,7 +289,8 @@ test-roundtrip-f64 = () {
     }
 }
 
-; ===== 邊界: i64 極值 =====
+; 邊界: i64 極值
+...
 test-edge-i64 = () {
     n = 9223372036854775807
     s = n.to-str()
@@ -282,7 +300,8 @@ test-edge-i64 = () {
     print(s); 期望: -9223372036854775808
 }
 
-; ===== str → []byte (from-hex) =====
+; str → []byte (from-hex)
+...
 test-from-hex-odd = () {
     b = 'abc'.from-hex()
     {
@@ -311,7 +330,8 @@ test-from-hex-even = () {
     }
 }
 
-; ===== str → f32 =====
+; str → f32
+...
 test-to-f32-valid = () {
     f = '3.14'.to-f32()
     {
@@ -335,7 +355,8 @@ test-to-f32-invalid = () {
     }
 }
 
-; ===== 運行測試 =====
+; 運行測試
+...
 test-str-to-i64()
 test-str-to-i32()
 test-str-to-i16()

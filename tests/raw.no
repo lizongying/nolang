@@ -2,11 +2,14 @@
 ; sources: raw.no, empty-dquote.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/raw.no =====================
+; merged from tests/raw.no
 ; merged category 'raw' -- members: raw-string.no, raw-vet.no
 ; (originals backed up under tests/_archive/raw/)
-; ===================== merged from tests/raw-string.no =====================
+...
+
+; merged from tests/raw-string.no
 ; test_raw_string — 原始字符串測試
+...
 print('=== raw string test ===')
 
 sql = 'SELECT id,name
@@ -33,15 +36,17 @@ print(multi.len-bytes())
 
 print('=== done ===')
 
-; ===================== merged from tests/raw-vet.no =====================
+; merged from tests/raw-vet.no
+...
 sql__1 = 'SELECT id,name
 FROM user
 WHERE id > 100'
 print(sql__1.len())
 
-; ===================== merged from tests/empty-dquote.no =====================
+; merged from tests/empty-dquote.no
 ; 测试空双引号字面量报错
 ; 双引号只能用于单字符 char，空字符串应使用单引号 ''
 ; 预期：LSP/vet 报错 "empty double-quoted literal"
+...
 
 s = ' '

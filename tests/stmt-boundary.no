@@ -27,16 +27,19 @@ dbl-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
             ok -> r = it
+
             ->
         }
     }
 }
 
-; ── 缺陷 1：裸 { } 區塊不吞後續語句 ─────────────────────────────────
+; 缺陷 1：裸 { } 區塊不吞後續語句
+...
 
 ; 測試 bare-block
 test-bare-block = () {
@@ -64,7 +67,8 @@ x-top = 1
 }
 print(x-top); expect: 2
 
-; ── 缺陷 2：非首條語句的 run / awy ───────────────────────────────────
+; 缺陷 2：非首條語句的 run / awy
+...
 
 ; 原始回報形式：if 鏈臂體尾巴是 `awy t`，臂值必須是結果而非 task handle
 test-awy-tail-in-ifchain = () {

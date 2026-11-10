@@ -2,7 +2,8 @@
 ; sources: jp6.no, jp11.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/jp6.no =====================
+; merged from tests/jp6.no
+...
 []txt.myjoin = (sep txt) (out txt) {
     parts = .
     n = parts.len()
@@ -43,7 +44,9 @@ parts = s.split('-')
 print('real :', parts.join('.').to-str())
 print('mine :', parts.myjoin('.').to-str())
 
-; ===================== merged from tests/jp11.no =====================
+; merged from tests/jp11.no
+...
+
 # /test/runner
 
 t-join = () {

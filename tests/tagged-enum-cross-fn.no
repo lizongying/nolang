@@ -116,7 +116,7 @@ n e-res = ok('four')
 outer(n)
 
 ; (5) method receiver
-bx = box {
+bx = box{
     n: 5
 }
 m e-res = ok('five')

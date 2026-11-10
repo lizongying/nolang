@@ -149,7 +149,7 @@ PS-SURFACE-MATCH = 1
 ; src: 來源
 ; r: 返回結果
 new = (src []byte) (r psst) {
-    r = psst {
+    r = psst{
         toks: lx.scan-all(src)
         pos: 0
         warn: 0
@@ -212,7 +212,6 @@ ps-enum-row = (p psst, en str, v str) (r i64) {
     r = -1
     i = 0
     (i < p.ev-n.len() && r < 0) {
-
         p.en-n[i].copy() == en && p.ev-n[i].copy() == v -> r = i
 
         #{overflow=wrap}
@@ -224,7 +223,6 @@ ps-enum-row = (p psst, en str, v str) (r i64) {
         d = -1
         j = en.len-bytes() - 1
         (j >= 0 && d < 0) {
-
             eb-opt = en.byte(j)
             eb = eb-opt: {
                 ok -> it
@@ -240,7 +238,6 @@ ps-enum-row = (p psst, en str, v str) (r i64) {
             tail = en.slice-bytes(d + 1, en.len-bytes())
             k = 0
             (k < p.ev-n.len() && r < 0) {
-
                 p.en-n[k].copy() == tail && p.ev-n[k].copy() == v -> r = k
 
                 #{overflow=wrap}
@@ -259,7 +256,6 @@ ps-enum-has = (p psst, en str) (r i64) {
     r = 0
     i = 0
     (i < p.en-n.len() && r == 0) {
-
         p.en-n[i].copy() == en -> r = 1
 
         #{overflow=wrap}
@@ -269,7 +265,6 @@ ps-enum-has = (p psst, en str) (r i64) {
         d = -1
         j = en.len-bytes() - 1
         (j >= 0 && d < 0) {
-
             eb-opt = en.byte(j)
             eb = eb-opt: {
                 ok -> it
@@ -285,7 +280,6 @@ ps-enum-has = (p psst, en str) (r i64) {
             tail = en.slice-bytes(d + 1, en.len-bytes())
             k = 0
             (k < p.en-n.len() && r == 0) {
-
                 p.en-n[k].copy() == tail -> r = 1
 
                 #{overflow=wrap}
@@ -305,7 +299,6 @@ ps-enum-payload = (p psst, en str, v str) (s str) {
     s = ''
     r = ps-enum-row(p, en, v)
     r >= 0 -> {
-
         s = p.ev-p[r].copy()
     }
 }
@@ -319,7 +312,6 @@ ps-enum-ncols = (p psst, en str, v str) (n i64) {
     n = 0
     r = ps-enum-row(p, en, v)
     r >= 0 -> {
-
         n = p.ev-c[r]
     }
 }
@@ -337,7 +329,6 @@ ps-enum-ftype = (p psst, en str, v str, j i64) (s str) {
         cnt = 0
         k = 0
         (k < p.ef-t.len() && s == '') {
-
             p.ef-e[k].copy() == p.en-n[r] && p.ef-v[k].copy() == p.ev-n[r] -> {
                 cnt == j -> s = p.ef-t[k].copy()
 
@@ -358,7 +349,6 @@ ps-enum-ftype = (p psst, en str, v str, j i64) (s str) {
 ps-enum-variants = (p psst, en str, out []str) {
     i = 0
     (i < p.ev-n.len()) {
-
         p.en-n[i].copy() == en -> out.push(p.ev-n[i].copy())
 
         #{overflow=wrap}
@@ -385,7 +375,7 @@ ps-peek = (p psst) (typ i64) {
 ; p: 輸入
 ; t: 返回結果
 ps-peek-token = (p psst) (t tk) {
-    t = tk {
+    t = tk{
         ln: 0
         cl: 0
         typ: 0
@@ -519,7 +509,6 @@ ps-skip-trivia = (p psst) {
 ps-cur-lit = (p psst) (s str) {
     s = ''
     p.pos < p.toks.len() -> {
-
         s = p.toks[p.pos].lit.copy()
     }
 }
@@ -535,7 +524,6 @@ ps-lit-at = (p psst, k i64) (s str) {
     #{overflow=wrap}
     i = p.pos + k
     i < p.toks.len() -> {
-
         s = p.toks[i].lit.copy()
     }
 }
@@ -708,7 +696,6 @@ ps-premerge-trailing = (t ast, blk i64, head i64) {
             ps-attach-trailing(t, blk, tr)
         }
         d.ntrail >= 0 -> {
-
             nt = d.ntrail
             c0 = d.ct0
             ast.aux-begin(t, blk)
@@ -732,7 +719,8 @@ ps-expect = (p psst, want i64) {
     {
         ps-peek(p) == want -> ps-bump(p)
 
-        -> {}
+        -> {
+        }
     }
 }
 
@@ -809,14 +797,11 @@ ps-semi-eat-count = (p psst) (n i64) {
     last = -1
     i = 0
     (i < p.toks.len()) {
-
         typ = p.toks[i].typ
         typ != tok.COMMENT -> last = i
         typ == tok.COMMENT -> {
-
             mk = p.toks[i].mk.copy()
             mk == ';' -> {
-
                 lit = p.toks[i].lit.copy()
                 has = 0
                 j = 0
@@ -834,7 +819,6 @@ ps-semi-eat-count = (p psst) (n i64) {
                     j = j + 1
                 }
                 has == 1 && last >= 0 -> {
-
                     pt = p.toks[last].typ
 
                     ln-p = p.toks[last].ln
@@ -1006,7 +990,7 @@ ps-parse-use = (t ast, p psst) (idx i64) {
         ps-bump(p)
     }
     (ps-peek(p) == tok.IDENT) {
-        path = path + ps-cur-lit(p)
+        path = path - ps-cur-lit(p)
         ps-bump(p)
 
         ; 段間分隔符：`/` 或 `.`（github.com 類）——兩個獨立 standalone-if，至多一個觸發
@@ -1107,7 +1091,6 @@ ps-is-op-overload-name = (nm str) (r i64) {
     d = -1
     j = nm.len-bytes() - 1
     (j >= 0 && d < 0) {
-
         nb-opt = nm.byte(j)
         nb = nb-opt: {
             ok -> it
@@ -2187,6 +2170,7 @@ ps-q-esc = (b []byte) (r str) {
     (i < b.len()) {
         c = b[i]: {
             ok -> it
+
             -> 0
         }
         cc = lx.lx-ch-str(c)
@@ -2895,7 +2879,6 @@ ps-parse-expr-prec = (t ast, p psst, prec i64) (idx i64) {
         k0 == asp.K-DOT-EXPRESSION -> is-lval = 1
         k0 == asp.K-INDEX-EXPRESSION -> is-lval = 1
         is-lval == 1 -> {
-
             ps-bump(p); 消費 =
             val = ps-parse-expr(t, p)
             ae = ast.add(t, asp.K-ASSIGN-EXPRESSION)
@@ -4618,7 +4601,6 @@ ps-is-struct-lit = (p psst) (r i64) {
         i = p.pos + 1
         go = true
         (go && i < p.toks.len()) {
-
             tt = p.toks[i].typ
             {
                 tt == tok.NEWLINE -> {
@@ -4626,6 +4608,7 @@ ps-is-struct-lit = (p psst) (r i64) {
                     #{overflow=wrap}
                     i = i + 1
                 }
+
                 tt == tok.COMMENT -> {
 
                     #{overflow=wrap}
@@ -4645,7 +4628,6 @@ ps-is-struct-lit = (p psst) (r i64) {
             j = i + 1
             go2 = true
             (go2 && j < p.toks.len()) {
-
                 tj = p.toks[j].typ
                 {
                     tj == tok.NEWLINE -> {
@@ -4653,6 +4635,7 @@ ps-is-struct-lit = (p psst) (r i64) {
                         #{overflow=wrap}
                         j = j + 1
                     }
+
                     tj == tok.COMMENT -> {
 
                         #{overflow=wrap}
@@ -5198,6 +5181,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         ; 迴圈守衛 rp < params.len() 已保證不越界，zero 僅為型別層面的逃生艙。
         pni = params[rp]: {
             ok -> it
+
             -> 0
         }
         pd = ast.nd-at(t, pni)
@@ -5214,6 +5198,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         ; 索引讀會被 option 捕獲改寫 ⇒ 後續欄位讀 NoVal）；迴圈守衛保證不越界。
         oni = outs[rr]: {
             ok -> it
+
             -> 0
         }
         od = ast.nd-at(t, oni)
@@ -5251,6 +5236,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         ; 索引讀提取獨立成句並以值 match 顯式消費 ?T（理由同 params/outs 型別登記循環）
         gni = params[gp]: {
             ok -> it
+
             -> 0
         }
         gpd = ast.nd-at(t, gni)
@@ -5265,6 +5251,7 @@ ps-parse-func = (t ast, p psst, name str) (idx i64) {
         ; 索引讀提取獨立成句並以值 match 顯式消費 ?T（理由同上）
         goi = outs[gr]: {
             ok -> it
+
             -> 0
         }
         grd = ast.nd-at(t, goi)
@@ -5400,6 +5387,7 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
         ; 迴圈守衛 rp < params.len() 已保證不越界，zero 僅為型別層面的逃生艙。
         pni = params[rp]: {
             ok -> it
+
             -> 0
         }
         pd = ast.nd-at(t, pni)
@@ -5419,6 +5407,7 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
         ; 索引讀會被 option 捕獲改寫 ⇒ 後續欄位讀 NoVal）；迴圈守衛保證不越界。
         oni = outs[rr]: {
             ok -> it
+
             -> 0
         }
         od = ast.nd-at(t, oni)
@@ -5473,6 +5462,7 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
         ; 索引讀提取獨立成句並以值 match 顯式消費 ?T（理由同 params/outs 型別登記循環）
         gni = params[gp]: {
             ok -> it
+
             -> 0
         }
         gpd = ast.nd-at(t, gni)
@@ -5492,6 +5482,7 @@ ps-parse-method-func = (t ast, p psst, full-name str, recv-type str, recv-node i
         ; 索引讀提取獨立成句並以值 match 顯式消費 ?T（理由同上）
         goi = outs[gr]: {
             ok -> it
+
             -> 0
         }
         grd = ast.nd-at(t, goi)
@@ -5843,12 +5834,10 @@ s57-count-prefix-p = (p psst) (r i64) {
 
     t1 = p.toks[p.pos + 1].typ
     cur == tok.INT -> {
-
         t2 = p.toks[p.pos + 2].typ
         t1 == tok.MUL && t2 == tok.LBRACE -> r = 1
     }
     cur == tok.SUB && t1 == tok.INT -> {
-
         t2 = p.toks[p.pos + 2].typ
 
         t3 = p.toks[p.pos + 3].typ
@@ -5870,7 +5859,6 @@ s57-count-blockfirst-p = (p psst) (r i64) {
     i = 1
     go = true
     (go) {
-
         t = p.toks[p.pos + i].typ
         t == tok.EOF -> go = false
         t == tok.HASH-LBRACE -> {
@@ -5879,7 +5867,6 @@ s57-count-blockfirst-p = (p psst) (r i64) {
             i = i + 1; 消費 #{
             inner = true
             (inner) {
-
                 tt = p.toks[p.pos + i].typ
                 tt == tok.EOF -> {
                     inner = false
@@ -5908,7 +5895,6 @@ s57-count-blockfirst-p = (p psst) (r i64) {
 
                     mt = p.toks[p.pos + i + 1].typ
                     mt == tok.MUL -> {
-
                         st = p.toks[p.pos + i + 2].typ
                         j = i + 2
                         st == tok.SUB -> {
@@ -5919,7 +5905,6 @@ s57-count-blockfirst-p = (p psst) (r i64) {
 
                         it = p.toks[p.pos + j].typ
                         it == tok.INT -> {
-
                             at = p.toks[p.pos + j + 1].typ
                             at == tok.NEWLINE || at == tok.EOF || at == tok.SEMICOLON || at == tok.RBRACE -> r = 1
                         }
@@ -6453,7 +6438,6 @@ ps-arrow-scan0 = (p psst) (yes i64) {
     #{overflow=wrap}
     i = p.pos + 1
     (done == false && i < p.toks.len()) {
-
         tt = p.toks[i].typ
         tt == tok.NEWLINE || tt == tok.SEMICOLON || tt == tok.RBRACE || tt == tok.EOF -> done = true
         tt == tok.LPAREN || tt == tok.LBRACKET -> {
@@ -6493,7 +6477,6 @@ ps-arrow-scan-line = (p psst, from i64) (yes i64) {
     i = from
     stop = from + 40
     (done == false && i < p.toks.len() && i < stop) {
-
         tt = p.toks[i].typ
         tt == tok.EOF || tt == tok.NEWLINE -> depth == 0 -> done = true
         tt == tok.LPAREN || tt == tok.LBRACE || tt == tok.LBRACKET -> {
@@ -6575,7 +6558,6 @@ ps-la-sep = (p psst) (yes i64) {
     #{overflow=wrap}
     i = p.pos + 1
     (done == false && i < p.toks.len()) {
-
         tt = p.toks[i].typ
         tt == tok.NEWLINE || tt == tok.SEMICOLON || tt == tok.EOF -> done = true
         tt == tok.LPAREN || tt == tok.LBRACKET || tt == tok.LBRACE -> {
@@ -6623,7 +6605,6 @@ ps-bm-scan = (p psst) (yes i64) {
         excl = false
         lbl = false
         (i < p.toks.len() && j < p.toks.len() && k < p.toks.len()) -> {
-
             i-i-d = p.toks[i].typ == tok.IDENT
 
             j-c-l = p.toks[j].typ == tok.COLON
@@ -6666,7 +6647,6 @@ ps-bm-scan = (p psst) (yes i64) {
             done = false
             m = i
             (done == false && m < p.toks.len()) {
-
                 tt = p.toks[m].typ
 
                 ; s7 續 H4：箭頭掃描【同行】內止步（NEWLINE/SEMICOLON 即停）——鏡像
@@ -6723,16 +6703,13 @@ ps-arm-blk-match = (p psst) (yes i64) {
         i = ps-scan-nont(p, p.pos + 1)
         excl = 0
         i < p.toks.len() -> {
-
             t0 = p.toks[i].typ
             t1 = tok.EOF
             t2 = tok.EOF
             i + 1 < p.toks.len() -> {
-
                 t1 = p.toks[i + 1].typ
             }
             i + 2 < p.toks.len() -> {
-
                 t2 = p.toks[i + 2].typ
             }
             t0 == tok.DOT && t1 == tok.IDENT && (t2 == tok.LPAREN || t2 == tok.ASSIGN) -> excl = 1
@@ -6768,11 +6745,9 @@ ps-bm-block-shape = (p psst) (yes i64) {
         t1 == tok.INT || t1 == tok.FLOAT || t1 == tok.STRING || t1 == tok.CHAR || t1 == tok.REGEX || t1 == tok.TRUE || t1 == tok.FALSE -> yes = 1
     }
     t1 == tok.DOT -> {
-
         t2 = p.toks[i + 1].typ
         t3 = tok.EOF
         i + 2 < p.toks.len() -> {
-
             t3 = p.toks[i + 2].typ
         }
 
@@ -6780,26 +6755,21 @@ ps-bm-block-shape = (p psst) (yes i64) {
         t2 != tok.IDENT || (t3 != tok.ASSIGN && t3 != tok.LPAREN) -> yes = 1
     }
     t1 == tok.IDENT || t1 == tok.NIL || t1 == tok.IN -> {
-
         t2 = p.toks[i + 1].typ
         t3 = tok.EOF
         t4 = tok.EOF
         t5 = tok.EOF
         t6 = tok.EOF
         i + 2 < p.toks.len() -> {
-
             t3 = p.toks[i + 2].typ
         }
         i + 3 < p.toks.len() -> {
-
             t4 = p.toks[i + 3].typ
         }
         i + 4 < p.toks.len() -> {
-
             t5 = p.toks[i + 4].typ
         }
         i + 5 < p.toks.len() -> {
-
             t6 = p.toks[i + 5].typ
         }
 
@@ -7047,7 +7017,6 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
     wc = 0
     z = 0
     (z < wild-a.len()) {
-
         ixout7158c9 = wild-a[z]: {
             ok -> it
 
@@ -7104,14 +7073,15 @@ ps-parse-bare-match = (t ast, p psst) (res i64) {
         #{overflow=wrap}
         i = n - 1
         (i >= 0 && bail == 0) {
-
             w = wild-a[i]: {
                 ok -> it
+
                 -> 0
             }
 
             b = body-a[i]: {
                 ok -> it
+
                 -> 0
             }
             hdw = 0
@@ -8294,7 +8264,6 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
     ast.helper-begin(t, idx, nm)
     j = 0
     (j < nm) {
-
         ast.aux-add(t, ast.put-str(t, mn[j]))
 
         ast.aux-add(t, ast.put-str(t, mr[j]))
@@ -8310,7 +8279,6 @@ ps-parse-iface-def = (t ast, p psst, name str) (idx i64) {
     }
     k = 0
     (k < mp.len()) {
-
         ast.aux-add(t, mp[k])
 
         #{overflow=wrap}
@@ -8650,9 +8618,9 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 ast.set-slot(t, v, 2, ast.put-str(t, fns.len().to-str()))
                 ty0 = 0
                 fns.len() > 0 -> {
-
                     ty0 = fty[0]: {
                         ok -> it
+
                         -> 0
                     }
                 }
@@ -8660,7 +8628,6 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 ast.helper-begin(t, v, fns.len())
                 j = 0
                 (j < fns.len()) {
-
                     ixout8741c51 = fns[j]: {
                         ok -> it
 
@@ -8701,7 +8668,6 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
                 p.ev-n.push(vname)
                 pay = ''
                 fns.len() == 1 -> {
-
                     ixout8772c46 = fty[0]: {
                         ok -> it
 
@@ -8761,7 +8727,6 @@ ps-parse-enum-def = (t ast, p psst, name str, kind i64) (idx i64) {
     ast.set-count(t, idx, 0, mems.len())
     m2 = 0
     (m2 < mems.len()) {
-
         ixout8816c29 = mems[m2]: {
             ok -> it
 
@@ -8953,7 +8918,6 @@ ps-parse-if = (t ast, p psst) (idx i64) {
     k = p.pos
     kscan = true
     (kscan) {
-
         kt = p.toks[k].typ
         kt == tok.NEWLINE || kt == tok.COMMENT -> k = k + 1
         kt != tok.NEWLINE && kt != tok.COMMENT -> kscan = false
@@ -9051,7 +9015,7 @@ ps-mk-it-let-t = (t ast, subj-node i64, bt str, bname str) (idx i64) {
 ps-mk-ext-let = (t ast, fname str, recv str, j i64) (idx i64) {
     rid = ps-mk-ident(t, recv)
     dot = ast.add(t, asp.K-DOT-EXPRESSION)
-    ast.set-slot(t, dot, 0, ast.put-str(t, 'f' + j.to-str()))
+    ast.set-slot(t, dot, 0, ast.put-str(t, 'f' - j.to-str()))
     ast.kid-add(t, dot, rid)
     idx = ast.add(t, asp.K-LET-STATEMENT)
     ast.set-slot(t, idx, 0, ast.put-str(t, fname))
@@ -9258,7 +9222,6 @@ ps-to-vec-elem = (t ast, p psst, val i64) (r str) {
     }
 }
 
-
 ; 解析 `subj: { pat -> body … }` 的**臂區**（已消費 `:` 與 `{`），
 ;   停在閉合 `}` 前（呼叫端 ps-expect(RBRACE)）。desugar 為 if/else 鏈：
 ;   • 非 wildcard 臂：cond = subj==pat，consequence = 臂區塊（先塞 it 合成綁定）
@@ -9440,9 +9403,9 @@ ps-peek-at(p, 2) == tok.IDENT && ps-peek-at(p, 3) == tok.RPAREN -> {
                             pat = ps-mk-ident(t, tk0.lit)
                             kvar-e = tk0.lit.copy()
                             bcnt == 1 -> {
-
                                 bname = bns2[0]: {
                                     ok -> it
+
                                     -> ''
                                 }
                             }
@@ -9494,19 +9457,21 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             sopt == 1 && kvar == 'nil' -> bt = 'nil'
             sopt == 1 && kvar == 'ok' -> bt = elem
             sopt == 1 && wild == 1 -> {
-
                 ol = listed[0]: {
                     ok -> it
+
                     -> 0
                 }
 
                 oe = listed[1]: {
                     ok -> it
+
                     -> 0
                 }
 
                 onil = listed[2]: {
                     ok -> it
+
                     -> 0
                 }
 
@@ -9549,7 +9514,6 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                     hit2 = 0
                     q2 = 0
                     (q2 < c-n.len() && hit2 == 0) {
-
                         ixout10099c25 = c-n[q2]: {
                             ok -> it
 
@@ -9637,7 +9601,6 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             bmulti == 1 && hd5 == 1 -> {
                 q3 = 0
                 (q3 < bns2.len()) {
-
                     ixout10158c27 = bns2[q3]: {
                         ok -> it
 
@@ -9655,7 +9618,6 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                 }
                 q4 = 0
                 (q4 < bns2.len()) {
-
                     ixout10171c48 = bns2[q4]: {
                         ok -> it
 
@@ -9802,7 +9764,6 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
                     j = j + 1
                 }
                 arm-doc != 0 && sl.len() > 0 -> {
-
                     ixout10313c36 = sl[0]: {
                         ok -> it
 
@@ -9887,7 +9848,6 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             reg != '' -> ps-set-var-type(p, bname, oldb)
             q5 = 0
             (q5 < fxv.len()) {
-
                 ixout10393c36 = fxv[q5]: {
                     ok -> it
 
@@ -9958,14 +9918,15 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
     #{overflow=wrap}
     i = blk-a.len() - 1
     (i >= 0) {
-
         w = wild-a[i]: {
             ok -> it
+
             -> 0
         }
 
         b = blk-a[i]: {
             ok -> it
+
             -> 0
         }
         hd3 = 0
@@ -9976,7 +9937,6 @@ tk0.lit != 'ok' && tk0.lit != 'err' && tk0.lit != 'nil' && ps-enum-row(p, st0, t
             hd3 = 1
         }
         hd3 == 0 -> {
-
             ixout10468c13 = raw-a[i]: {
                 ok -> it
 

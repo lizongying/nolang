@@ -411,6 +411,12 @@ str 的拼接运算符是减号 -：'a' - b - 'c'。
 用 + 拼接字符串不成立（+ 是数值加法，结果型别是 ?T）。
 这条设计让「字符串拼接」与「数值相加」在视觉上分得开，
 代价是从别处过来的人几乎都会写错一次。
+
+no fmt 会把 StringConcat lint（a3yrogp1）报的 + 站点自动翻成 -。
+链式拼接 'a' + x + 'b' + y 的中间节点两侧都不是字面量、THIR 也给不出
+str 型别，旧判定会漏翻，产出 'a' - x - 'b' + y 这种混合 +/- 的坏码；
+现在「某一侧本身是拼接链」也算命中，整条 + 链一致翻成 -。
+纯数值加法链、数值减法（a - 1）不会被误翻。
 `
       syntax: `
 msg = 'prefix: ' - name - ' (' - n.to-str() - ')'
@@ -418,8 +424,8 @@ msg = 'prefix: ' - name - ' (' - n.to-str() - ')'
       example: `
 out = 'ERROR  ' - dom - ' [ ' - id - ' ]：缺少 ' - field
 `
-      related: ['syntax-arithmetic', 'str']
-      refs: ['glossary/src/schema.no']
+      related: ['syntax-arithmetic', 'str', 'no-fmt']
+      refs: ['glossary/src/schema.no', 'src/checker/checker.go', 'src/cmd/no/main.go']
     }
     'syntax-arithmetic': {
       title: '算术运算（结果 ?T）'

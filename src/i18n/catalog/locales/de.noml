@@ -801,6 +801,7 @@ Bitte manuell öffnen: %s
   'nmxs8sop': 'syslog: %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': 'Typ für \'%s\' kann nicht abgeleitet werden: %s() erfordert eine explizite Typ-Anmerkung auf der linken Seite (z. B. `name []byte = %s(n)`)'
+  'nu59u6hp': 'Feld \'%s\' des struct-Literals hat keinen Wert; schreibe \'name: value\' oder lösche diese Zeile (ein bloßer Typname nach \'field: []\' ist keine Typangabe - der Elementtyp eines leeren vec kommt aus der struct-Felddeklaration)'
   'nwtpvei9': 'embed: fs.embed erfordert ein Verzeichnis, Datei erhalten: %s (aufgelöst: %s)'
   'nx1476j3': '  no pack nogit.no                 eine einzelne Quelldatei packen'
   'nz3ol1c4': 'ESM-Modul %q ist nicht in den package.noml-Abhängigkeiten deklariert; fügen Sie dependencies: [\'%s:^latest\'] (oder dev-dependencies) hinzu und führen Sie npm install aus'

@@ -160,7 +160,7 @@ tk {
 ; 建立一個空 token（避免每個呼叫端各寫一次七行字面量）
 ; r: 返回結果
 tk.new = () (r tk) {
-    r = tk {
+    r = tk{
         ln: 0
         cl: 0
         typ: 0
@@ -394,7 +394,7 @@ lx-esc = (s []byte) (r str) {
 ; src: 來源
 ; r: 返回結果
 lx-new = (src []byte) (r lxst) {
-    r = lxst {
+    r = lxst{
         input: src
         pos: 0
         rpos: 0
@@ -652,6 +652,7 @@ lx-read-raw = (lx lxst) (r str) {
             stop = true
         }
         (lx.ch == 0) == false -> {
+
             ; CR 丟棄：CRLF 與 LF 得到相同的字串值
             lx.ch == B-CR -> lx-read-char(lx)
 
@@ -864,7 +865,6 @@ lx-regex-start = (lx lxst) (yes bool) {
     p == tok.COMMENT -> return
 
     p == tok.IDENT -> {
-
         yes = false
 
         return
@@ -943,7 +943,6 @@ lx-regex-start = (lx lxst) (yes bool) {
     }
 
     p == tok.USE -> {
-
         yes = false
 
         return

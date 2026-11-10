@@ -33,6 +33,7 @@ f-byte = (all str, k i64) (out i64) {
             s-opt = s + b #{overflow=wrap}
             s-opt: {
                 ok -> s = it
+
                 ->
             }
         }
@@ -57,6 +58,7 @@ f-idx = (all str, k i64) (out i64) {
             s-opt2 = s + b #{overflow=wrap}
             s-opt2: {
                 ok -> s = it
+
                 ->
             }
         }

@@ -77,6 +77,7 @@ func TestStatementWalkingLintsCarrySourceFile(t *testing.T) {
 		validate func(*parser.Program) []ValidateResult
 	}{
 		{"naming", "BadName = () {\n    bad-thing i64 = 1\n    x = bad-thing\n}\n", ValidateNaming},
+		{"naming-global", "tmp__1 = 1\n", ValidateNaming},
 		{"hex-case", "f = () {\n    x = 0xFF\n    x = x\n}\n", ValidateHexCase},
 		{"unassigned-returns", "f = () (res i64) {\n    x = 1\n}\n", ValidateUnassignedReturns},
 		{"duplicate-vars", "x i64 = 1\nx i64 = 2\n", ValidateDuplicateVars},

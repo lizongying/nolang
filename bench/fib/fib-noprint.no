@@ -21,10 +21,12 @@ fib = (n i64) (o i64) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + 1
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }

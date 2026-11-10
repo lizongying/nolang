@@ -77,10 +77,12 @@ test-infinite-break = () (ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             count-opt = count + 1
             count-opt: {
                 ok -> count = it
+
                 ->
             }
         }
@@ -101,20 +103,24 @@ test-pretest-loop = () (ok bool) {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             sum-opt = sum + n
             sum-opt: {
                 ok -> sum = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             n-opt = n - 1
             n-opt: {
                 ok -> n = it
+
                 ->
             }
         }

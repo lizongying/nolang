@@ -25,7 +25,9 @@ check = (name str, got str, want str) {
     }
 }
 
-; ── 1. 零個 `?=`：arms 看到 nil ────────────────────────────────────
+; 1. 零個 `?=`：arms 看到 nil
+...
+
 ; out str: 塊 match 最終觀察到的變體
 zero = () (out str) {
     out = ''
@@ -40,7 +42,9 @@ zero = () (out str) {
     }
 }
 
-; ── 2. 一個成功的 `?=`：arms 仍是 nil，主體繼續跑完 ──────────────
+; 2. 一個成功的 `?=`：arms 仍是 nil，主體繼續跑完
+...
+
 ; out str: 塊 match 最終觀察到的變體 + 主體是否跑完
 success = (d i64) (out str) {
     ran = false
@@ -59,7 +63,9 @@ success = (d i64) (out str) {
     ran -> out = out - '+ran'
 }
 
-; ── 3. `?=` 失敗為 err：整個主體停住，arms 只跑一次 ───────────────
+; 3. `?=` 失敗為 err：整個主體停住，arms 只跑一次
+...
+
 ; d i64: 除數（0 時 6/d 得 err）
 ; out str: 觀察到的變體 + 主體是否被停住
 fail-err = (d i64) (out str) {
@@ -79,7 +85,9 @@ fail-err = (d i64) (out str) {
     ran -> out = out - '+ran'
 }
 
-; ── 4. `?=` 失敗為 nil（安全索引越界）：同樣停住主體 ──────────────
+; 4. `?=` 失敗為 nil（安全索引越界）：同樣停住主體
+...
+
 ; out str: 觀察到的變體 + 主體是否被停住
 fail-nil = () (out str) {
     arr = [10, 20, 30]
@@ -99,7 +107,9 @@ fail-nil = () (out str) {
     ran -> out = out - '+ran'
 }
 
-; ── 5. 巢狀塊 match：最內層捕捉，外層只看到 nil ────────────────────
+; 5. 巢狀塊 match：最內層捕捉，外層只看到 nil
+...
+
 ; out str: 內外兩層觀察到的變體
 nested = (z i64) (out str) {
     out = ''
@@ -123,7 +133,9 @@ nested = (z i64) (out str) {
     }
 }
 
-; ── 6. 函式本身有 ?T 結果參數時，仍是「最近的塊 match」捕捉 ──────
+; 6. 函式本身有 ?T 結果參數時，仍是「最近的塊 match」捕捉
+...
+
 ; res ?i64: 刻意留著，證明它不會把 `?=` 吸走
 ; out str: 塊 match 觀察到的變體
 shadow = (z i64) (res ?i64, out str) {
@@ -141,7 +153,9 @@ shadow = (z i64) (res ?i64, out str) {
     }
 }
 
-; ── 7. 迴圈內失敗：後續 iteration 全部停住 ─────────────────────────
+; 7. 迴圈內失敗：後續 iteration 全部停住
+...
+
 ; out str: 觀察到的變體 + 迴圈累計次數（應停在 0）
 loop-stop = (z i64) (out str) {
     n = 0
@@ -154,6 +168,7 @@ loop-stop = (z i64) (out str) {
                 n-opt = n + 1
                 n-opt: {
                     ok -> n = it
+
                     ->
                 }
             }
@@ -168,7 +183,9 @@ loop-stop = (z i64) (out str) {
     out = out - '+n=' - n.to-str()
 }
 
-; ── 8. `-> _` 丟棄：語法合法、不產生值 ─────────────────────────────
+; 8. `-> _` 丟棄：語法合法、不產生值
+...
+
 ; out str: 固定回 'discarded'
 discard = (z i64) (out str) {
     out = 'discarded'
@@ -182,7 +199,9 @@ discard = (z i64) (out str) {
     }
 }
 
-; ── 9. 三種主語形態（值 / 表達式 / 塊）在同一函式裡並存 ───────────
+; 9. 三種主語形態（值 / 表達式 / 塊）在同一函式裡並存
+...
+
 ; out str: 三種主語的匹配結果
 subjects = () (out str) {
     x = 1
@@ -209,7 +228,9 @@ subjects = () (out str) {
     }
 }
 
-; ── 10. err 載荷保真：err 臂的 it 是結構化 err.err ────────────────
+; 10. err 載荷保真：err 臂的 it 是結構化 err.err
+...
+
 ; d i64: 除數，0 時 6/d 得 err
 ; out str: err 的訊息（whole-option 拷貝必須保留 msg/code/file/line/col）
 err-msg = (d i64) (out str) {

@@ -16,10 +16,12 @@ gen-add-i64 = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = a + b
         r-opt: {
             ok -> r = it
+
             ->
         }
     }
@@ -33,10 +35,12 @@ gen-sub-i64 = (a i64, b i64) (d i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         d-opt = a - b
         d-opt: {
             ok -> d = it
+
             ->
         }
     }
@@ -50,10 +54,12 @@ gen-mul-i64 = (a i64, b i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt2 = a * b
         r-opt2: {
             ok -> r = it
+
             ->
         }
     }
@@ -69,10 +75,12 @@ gen-add-i32 = (a i32, b i32) (r i32) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt3 = a + b
         r-opt3: {
             ok -> r = it
+
             ->
         }
     }
@@ -86,10 +94,12 @@ gen-sub-i32 = (a i32, b i32) (d i32) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         d-opt2 = a - b
         d-opt2: {
             ok -> d = it
+
             ->
         }
     }

@@ -17,7 +17,7 @@ view-node.find = (want i64) (v ?&view-node) {
     }
 }
 
-n = view-node {
+n = view-node{
     v: 5
 }
 

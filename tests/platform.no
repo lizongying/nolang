@@ -2,10 +2,12 @@
 ; sources: platform.no, wasi-hello.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/platform.no =====================
+; merged from tests/platform.no
 ; merged category 'platform' -- members: platform-const.no, platform.no
 ; (originals backed up under tests/_archive/platform/)
-; ===================== merged from tests/platform-const.no =====================
+...
+
+; merged from tests/platform-const.no
 ; Platform-variant constants in a SCRIPT (no explicit `fn main`): the variant
 ; matching the host must win, and only that variant may contribute a value.
 ;
@@ -32,6 +34,7 @@
 ; src/mir/platform_test.go. The std sources could not catch the original bug:
 ; std/fs.no's mac-amd64 and mac-arm64 constants happen to hold equal values
 ; (O-CREAT 512/512, O-TRUNC 1024/1024), which made the wrong pick invisible.
+...
 
 #{mac-arm64}
 PV = 100
@@ -53,8 +56,9 @@ PV = 600
 
 print(PV)
 
-; ===================== merged from tests/platform.no =====================
+; merged from tests/platform.no
 ; test-platform: flattened keys #{linux-amd64}, #{linux-arm64}, #{win-amd64}, #{win-arm64}, #{mac-amd64}, #{mac-arm64}
+...
 
 print('running on macOS ARM64')
 
@@ -118,7 +122,8 @@ print('arm64 unix (mac or linux)')
 arch = os.get-arch()
 print('arch: {arch}')
 
-; ===================== merged from tests/wasi-hello.no =====================
+; merged from tests/wasi-hello.no
 ; wasi-hello.no — wasm32-wasi 端對端驗證
 ; 預期輸出：Hello, WASI!
+...
 print('Hello, WASI!')

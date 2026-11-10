@@ -14,7 +14,7 @@ t-reader-init = () {
 
     ; 先建立臨時檔案
     fs.remove(TMP-FILE)
-    f = fs.open(TMP-FILE,  {
+    f = fs.open(TMP-FILE, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -50,7 +50,7 @@ t-reader-init = () {
 ; 逐位元組讀取：先 fill 載入緩衝，再依序取 'X'(88)、'Y'(89)，兩次都應成功
 t-reader-read-byte = () {
     fs.remove(TMP-FILE)
-    f = fs.open(TMP-FILE,  {
+    f = fs.open(TMP-FILE, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -79,20 +79,20 @@ t-reader-read-byte = () {
     ; 讀取第一個位元組
     ok1 = false
     b1 = r.read-byte()
-    b1: {
-        nil -> ok1 = false
+    ok1 = b1: {
+        nil -> false
 
-        -> ok1 = b1 == 88
+        -> b1 == 88
     }
     runner.is-true(ok1, 'read-byte 1st == X (88)')
 
     ; 讀取第二個位元組
     ok2 = false
     b2 = r.read-byte()
-    b2: {
-        nil -> ok2 = false
+    ok2 = b2: {
+        nil -> false
 
-        -> ok2 = b2 == 89
+        -> b2 == 89
     }
     runner.is-true(ok2, 'read-byte 2nd == Y (89)')
 
@@ -105,7 +105,7 @@ t-reader-read-byte = () {
 ; 按行讀取：'Hello\nWorld\n' 應依序得到兩行，讀到 EOF 時回傳 nil
 t-reader-read-line = () {
     fs.remove(TMP-FILE)
-    f = fs.open(TMP-FILE,  {
+    f = fs.open(TMP-FILE, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -151,10 +151,10 @@ t-reader-read-line = () {
     ; EOF 回傳 nil
     eof = false
     opt3 = r.read-line()
-    opt3: {
-        nil -> eof = true
+    eof = opt3: {
+        nil -> true
 
-        -> eof = false
+        -> false
     }
     runner.is-true(eof, 'read-line at EOF == nil')
 

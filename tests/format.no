@@ -2,10 +2,12 @@
 ; sources: format.no, print-int-named-format.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/format.no =====================
+; merged from tests/format.no
 ; merged category 'format' -- members: format-concat-fold.no, format-plain.no
 ; (originals backed up under tests/_archive/format/)
-; ===================== merged from tests/format-concat-fold.no =====================
+...
+
+; merged from tests/format-concat-fold.no
 ; format('a=' - '{x}') —— 具名格式字串的編譯期折疊
 ;
 ; 具名格式（`print('{x}')` / `format('{x}')`）的攔截只認**單一字串字面量**，
@@ -22,93 +24,84 @@
 ;    （`print('a=' - '{x}' - name)`）不是常數，無法在編譯期替換欄位，
 ;    仍然必須保留「interpolation not lowered」這個錯誤——直接把大括號印出去
 ;    是靜默的錯。反向保護見 src/mir/str_concat_fold_test.go。
+...
 
 x = 42
 
-; ─────────────────────────────────────────────
 ; 1. 兩段字面量折疊後替換
-; ─────────────────────────────────────────────
+...
 a = format('a=' - '{x}')
 (a == 'a=42') -> print('PASS: 1a format literal concat folds')
 
 -> print('FAIL: 1a a=[' - a - ']')
 
-; ─────────────────────────────────────────────
 ; 2. 三段鏈（`-` 左結合，整條鏈都是常數）
-; ─────────────────────────────────────────────
+...
 b = format('a=' - '{x}' - '!')
 (b == 'a=42!') -> print('PASS: 2 format literal chain folds')
 
 -> print('FAIL: 2 b=[' - b - ']')
 
-; ─────────────────────────────────────────────
 ; 3. `+` 也是字串串接，必須一樣折疊
-; ─────────────────────────────────────────────
+...
 c = format('a=' - '{x}')
 (c == 'a=42') -> print('PASS: 3 plus concat folds')
 
 -> print('FAIL: 3 c=[' - c - ']')
 
-; ─────────────────────────────────────────────
 ; 4. 括號子運算式（KGrouped）也要穿透
-; ─────────────────────────────────────────────
+...
 d = format('[' - ('a=' - '{x}') - ']')
 (d == '[a=42]') -> print('PASS: 4 grouped concat folds')
 
 -> print('FAIL: 4 d=[' - d - ']')
 
-; ─────────────────────────────────────────────
 ; 5. 折疊後的 {{ }} 轉義仍然保留字面大括號
-; ─────────────────────────────────────────────
+...
 e = format('{{' - '{x}' - '}}')
 (e == '{42}') -> print('PASS: 5 brace escaping survives the fold')
 
 -> print('FAIL: 5 e=[' - e - ']')
 
-; ─────────────────────────────────────────────
 ; 6. print 家族共用同一個攔截點：折疊後直接輸出
 ;    （golden 指紋把關：這一行必須是 `p=42`）
-; ─────────────────────────────────────────────
+...
 print('p=' - '{x}')
 
-; ─────────────────────────────────────────────
 ; 7. 對照組：純字面量串接本來就能用，折疊不能改變結果
-; ─────────────────────────────────────────────
+...
 g = 'ab' - 'cd'
 (g == 'abcd') -> print('PASS: 7 plain literal concat unchanged')
 
 -> print('FAIL: 7 g=[' - g - ']')
 
-; ─────────────────────────────────────────────
 ; 8. 對照組：含執行期值的串接不是常數，不能折疊
-; ─────────────────────────────────────────────
+...
 name = 'bob'
 h = 'hi ' - name
 (h == 'hi bob') -> print('PASS: 8 runtime concat unchanged')
 
 -> print('FAIL: 8 h=[' - h - ']')
 
-; ─────────────────────────────────────────────
 ; 9. 反向保護：兩段「普通文字」拼起來剛好長得像格式串時，不可被當成插值。
 ;    `'{' - 'x}'` 合併後是 `{x}`，但作者寫的是兩段字面文字，
 ;    必須照字面印出（這是拼 JSON 常見的寫法）。
 ;    golden 指紋把關：這一行必須是 `{x}`。
-; ─────────────────────────────────────────────
+...
 print('{' - 'x}')
 j = '{' - '"k": 1}'
 (j == '{"k": 1}') -> print('PASS: 9 brace-shaped join stays verbatim')
 
 -> print('FAIL: 9 j=[' - j - ']')
 
-; ─────────────────────────────────────────────
 ; 10. `str * n` 是重複，不是串接 —— 不可折疊
-; ─────────────────────────────────────────────
+...
 k = 'ab' * 3
 (k == 'ababab') -> print('PASS: 10 repeat not folded')
 
 -> print('FAIL: 9 k=[' - k - ']')
 
-; ===================== merged from tests/format-plain.no =====================
+; merged from tests/format-plain.no
 ; format('plain') 必須合法 —— 回歸測試
 ;
 ; 使用者 2026-09-26 指定：`format` 接一個「不含 {field} 的純字面量」時，
@@ -124,6 +117,7 @@ k = 'ab' * 3
 ; 實作位於 src/mir/hir2mir.go 的 lowerNamedFormat：retStr 分支在
 ; formatTemplateOf 失敗時，若引數仍能折疊成常數字串字面量，直接 emit 該字面量，
 ; 而非落到 generic builtin emit（其 format 實作為 unsupported）。
+...
 
 ; 1. 純字面量，無欄位
 s = format('plain')
@@ -147,7 +141,7 @@ f = format('value={x}')
 ; 4. 非字面量仍報錯（此分支由 `no vet` / 編譯期把關，程式內不捕捉）
 ;    `format(format('{x}'))` 應報 `unsupported builtin format`，不應靜默輸出。
 
-; ===================== merged from tests/print-int-named-format.no =====================
+; merged from tests/print-int-named-format.no
 ; print(1) 與 print('{x}') —— 回歸測試
 ;
 ; 使用者 2026-09-25 指定的契約（兩點都必須成立）：
@@ -167,32 +161,30 @@ f = format('value={x}')
 ;
 ; ⚠️ format/print 的具名欄位在**呼叫點**解析，被引用的變數必須先宣告，
 ;    否則編譯期報 `interp: unresolved format field x`。故每段都先宣告再格式化。
+...
 
-; ─────────────────────────────────────────────
 ; 1. 整數字面量：直接 print（不經 format）
-; ─────────────────────────────────────────────
+...
 print(1)
 
-; ─────────────────────────────────────────────
 ; 2. 整數變數：直接 print
-; ─────────────────────────────────────────────
+...
 x = 42
 print(x)
 
-; ─────────────────────────────────────────────
 ; 3. 整數運算式：直接 print
 ;    `print(1 + 2)` 編譯與執行都正常（編譯器把呼叫引數位置視為「已處理」該
 ;    option）。此處的 #{overflow = wrap} 只是為了讓 `no vet` 乾淨：vet 的
 ;    ovf-int-default lint 未模型化這個豁免，會對這一行誤報 ERROR
 ;    （實測 `no build` rc=0、`no run` 輸出 3，但 `no vet` 報 1 個 ERROR）。
-; ─────────────────────────────────────────────
+...
+
 #{overflow=wrap}
 print(1 + 2)
 
-; ─────────────────────────────────────────────
 ; 4. 具名欄位：短寫法與長寫法必須等價
 ;    下面兩行在 golden 指紋中必須是兩個相同的 42。
-; ─────────────────────────────────────────────
+...
 print('{x}')
 print(format('{x}'))
 
@@ -213,31 +205,28 @@ inlined = format('value={x}')
 
 -> print('FAIL: 4b inlined=[' - inlined - ']')
 
-; ─────────────────────────────────────────────
 ; 5. 欄位解析結果 == 該值的直接字串化
 ;    ⚠️ print 的輸出無法在程式內捕捉，且 format 的參數**必須是字面量**
 ;       （`format(format(...))` 會報 `unsupported builtin format`），
 ;       所以「兩種 print 寫法輸出相同」這一半由 golden 指紋把關：
 ;       上面第 4 段的兩行 print 必須是兩個相同的 42。
-; ─────────────────────────────────────────────
+...
 short = format('{x}')
 plain = x.to-str()
 (short == plain) -> print('PASS: 5 named field == x.to-str()')
 
 -> print('FAIL: 5 short=[' - short - '] plain=[' - plain - ']')
 
-; ─────────────────────────────────────────────
 ; 6. {{ }} 轉義仍能印出字面大括號（不可被欄位解析吃掉）
-; ─────────────────────────────────────────────
+...
 literal = format('literal {{x}} and field {x}')
 (literal == 'literal {x} and field 42') -> print('PASS: 6 brace escaping preserved')
 
 -> print('FAIL: 6 literal=[' - literal - ']')
 
-; ─────────────────────────────────────────────
 ; 7. 方法欄位 {x.to-str()}（回歸：method 分支曾把呼叫結果型別硬編為 i64，
 ;    導致 str 回傳被按整數渲染，印出 1 而非 42）
-; ─────────────────────────────────────────────
+...
 method-field = format('m={x.to-str()}')
 (method-field == 'm=42') -> print('PASS: 7 method field == m=42')
 

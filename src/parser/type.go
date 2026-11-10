@@ -1734,3 +1734,25 @@ func typeToString(t Type) string {
 		return ""
 	}
 }
+
+// IsScalarAliasTypeRaw 回報 raw 型別名是不是「純量」（Int / Float / Bool / Char）。
+//
+// 用途：lowering 的純別名推斷（`label-len = len-byte`）只願意把純量登記進型別
+// 副表。它服務的是型別鏈的**算術**需求（`pos + label-len` 要推得出 `?i64`），
+// 而 str / 容器 / 指標 / struct 都帶所有權語意 —— 把那些登記成「已知 plain T」
+// 會改動 MIR 的 retain/release 配對（`b = a` 之後 `b0 = b[0]` 的 retain 不再
+// 配對，TestBorrowReadEmitsPairedRelease 紅）。
+//
+// 判斷走結構（Kind），不做字串前綴／切分 —— `?T` 自然落到 Option、`[]T` 落到
+// Slice、`bigint` 落到 Named，都不會被誤判。
+func IsScalarAliasTypeRaw(raw string) bool {
+	t := tyPool.Parse(raw)
+	if t == nil {
+		return false
+	}
+	switch t.Kind {
+	case ty.Int, ty.Float, ty.Bool, ty.Char:
+		return true
+	}
+	return false
+}

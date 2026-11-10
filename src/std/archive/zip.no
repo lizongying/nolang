@@ -112,16 +112,18 @@ zip.find-eocd = () (off i64) {
     n = len(.data)
     n < 22 -> return
 
-    ; 由後往前找 EOCD 簽名（PK\x05\x06）。
-    ; 注意：`len()` 保證非負，故 `n - 22` 被型別檢查視為非 option 的 i64，
-    ; 不可再套 `x = expr: { ok -> it ; -> 預設 }`（對非 option 會靜默取預設臂）。
+    ; 由前往後掃 `PK\x05\x06`，每命中一次就覆寫 off，故留下的是**最後一個**
+    ; 簽名位置 —— 也就是真正的 EOCD（它在檔尾，任何早先的假命中都會被後續覆寫）。
+    ;
+    ; 這裡刻意**不在迴圈內做減法**：`start - i` 在包上下文（`no vet`）被推成
+    ; ?i64、在單檔上下文（`no test`）卻是純 i64，兩種口徑不一致，寫成
+    ; `idx = (start - i): { ok -> it ; -> 0 }` 會在單檔模式下靜默取 0，
+    ; find-eocd 直接失效。用正向掃描就完全避開這個分歧。
     start = n - 22
     i <- [0..start + 1): {
-        idx = start - i
-        sig = u32le(.data, idx)
+        sig = u32le(.data, i)
         sig != 101010256 -> continue
-        off = idx
-        break
+        off = i
     }
 }
 

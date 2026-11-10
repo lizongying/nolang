@@ -14,12 +14,15 @@ rr_fn = () (ret i64) {
 }
 
 consume = (x i64) (ret i64) {
+
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         ret-opt = x + 42
         ret-opt: {
             ok -> ret = it
+
             ->
         }
     }
@@ -93,12 +96,15 @@ print('---')
 
 ; slot-rebind-unsafe
 double-async = (n i64) (r i64) {
+
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
             ok -> r = it
+
             ->
         }
     }

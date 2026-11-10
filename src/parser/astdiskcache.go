@@ -380,7 +380,13 @@ import (
 // 合成的 `__unwrap_N = <rhs>`（及 option 運算元守衛 `__opt_N = ...`）。舊 blob
 // 沒有這個欄位，重用會讓 `?=` 上方 #{overflow=wrap} 重新退回預設「溢出回 err」
 // ——正是 `no fmt` 把該註解判成無效刪掉的同一批位置。故必 bump。
-const ASTVersion = "2026-11-10.1"
+// 2026-11-10.2：parseStructLiteral 把無值欄位（`ops: []` 後另起一行的 `i64`
+// 這類幽靈欄位）從「靜默收成 StructField{Value:nil}」改成硬錯誤並跳過。舊 blob
+// 是解析成功的 AST，重用會連 parse 都跳過 ⇒ 新診斷完全不觸發。故必 bump。
+// 2026-11-10.3：parseStructLiteral 現在把欄位上方的獨立 `;` 註解收進
+// StructField.Doc（過去留在 p.comments，被字面量後第一條陳述收走）。舊 blob 的
+// 欄位 Doc 是 nil，重用會讓 formatter 繼續把欄位說明印到 `}` 之後。故必 bump。
+const ASTVersion = "2026-11-10.3"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

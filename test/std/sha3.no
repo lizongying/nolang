@@ -16,48 +16,59 @@
 
 EMPTY = ''
 ABC = 'abc'
+
 ; 56 字节：跨两个 136 字节 rate 块之前，仍属单块，但与空串/abc 走不同填充分支
 LONG = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
 
 ; rotl64：循环左移，移位量按 64 取模
 t-rotl = () {
     one u64 = 1
-    r1 u64 = sha3.rotl64(one, 1)
+    r1 = sha3.rotl64(one, 1)
     runner.str-eq(r1.to-str(), '2', 1, 'rotl64(1,1) == 2')
 
-    r0 u64 = sha3.rotl64(one, 0)
+    r0 = sha3.rotl64(one, 0)
     runner.str-eq(r0.to-str(), '1', 1, 'rotl64(1,0) == 1 (no shift)')
 
     ; 最高位左移一位必须回绕到最低位
     top u64 = 9223372036854775808
-    r2 u64 = sha3.rotl64(top, 1)
+    r2 = sha3.rotl64(top, 1)
     runner.str-eq(r2.to-str(), '1', 1, 'rotl64(0x8000000000000000,1) == 1')
 
     ; 移位 64 等价于不移位
-    r64 u64 = sha3.rotl64(one, 64)
+    r64 = sha3.rotl64(one, 64)
     runner.str-eq(r64.to-str(), '1', 1, 'rotl64(1,64) == 1 (mod 64)')
 }
 
 ; keccak-f1600：全零状态经 24 轮后的输出
 t-keccak-f = () {
-    st []u64 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    st []u64 = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0,
+    ]
     sha3.keccak-f1600(st)
+
     ; 裸下标回 ?T，必须显式消费（D11）
     a0 u64 = st[0]: {
         ok -> it
+
         -> 0
     }
     runner.str-eq(a0.to-str(), '17376452488221285863', 20, 'keccak-f1600 zero state[0] == 0xf1258f7940e1dde7')
     a1 u64 = st[1]: {
         ok -> it
+
         -> 0
     }
     runner.str-eq(a1.to-str(), '9571781953733019530', 19, 'keccak-f1600 zero state[1] == 0x84d5ccf933c0478a')
     a24 u64 = st[24]: {
         ok -> it
+
         -> 0
     }
     runner.str-eq(a24.to-str(), '16929593379567477321', 20, 'keccak-f1600 zero state[24] == 0xeaf1ff7b5ceca249')
+
     ; 全零状态经置换后不得再是全零（否则等于没做）
     runner.is-true(a0 != 0, 'keccak-f1600 changes a zero state')
 }
@@ -79,6 +90,7 @@ t-sponge = () {
 t-256 = () {
     h = sha3.sha3-256(ABC.to-bytes())
     runner.eq(h.len(), 32, 'sha3-256 digest is 32 bytes')
+
     ; 固定数组切片得视图，to-hex 一律大写。
     ; 必须先落到局部变量：表达式里直接 h.slice(..).to-hex() 会退化成
     ; 未特化的 []t.slice（EmitLLVM: unknown callee）—— 预存 codegen bug。

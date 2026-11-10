@@ -803,6 +803,7 @@ Open manually: %s
   'nmxs8sop': 'syslog: %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': 'cannot infer type for \'%s\': %s() requires an explicit type annotation on the left side (e.g. `name []byte = %s(n)`)'
+  'nu59u6hp': 'struct literal field \'%s\' has no value; write \'name: value\' or delete this line (a bare type name after \'field: []\' is not a type annotation - the empty vec element type comes from the struct field declaration)'
   'nwtpvei9': 'embed: fs.embed requires a directory, got file: %s (resolved: %s)'
   'nx1476j3': '  no pack nogit.no                 pack a single source file'
   'nz3ol1c4': 'ESM module %q is not declared in package.noml dependencies; add dependencies: [\'%s:^latest\'] (or dev-dependencies) and run npm install'

@@ -1,3 +1,6 @@
 nums = [1, 2, 3]
-strs = ['a', 'b']
+strs = [
+    'a',
+    'b',
+]
 empty = []

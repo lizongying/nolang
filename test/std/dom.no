@@ -12,10 +12,10 @@
 ; v: 解包值（非 ok 時為 -999）
 u-i64 = (o ?i64) (v i64) {
     v = -999
-    o: {
-        ok -> v = it
+    v = o: {
+        ok -> it
 
-        -> v = -999
+        -> -999
     }
 }
 
@@ -24,10 +24,10 @@ u-i64 = (o ?i64) (v i64) {
 ; v: 解包值（非 ok 時為空串）
 u-str = (o ?str) (v str) {
     v = ''
-    o: {
-        ok -> v = it
+    v = o: {
+        ok -> it
 
-        -> v = ''
+        -> ''
     }
 }
 
@@ -36,10 +36,10 @@ u-str = (o ?str) (v str) {
 ; yes: 1=err（解析失敗）, 0=ok 或 nil
 err-of = (o ?dom) (yes i64) {
     yes = 0
-    o: {
-        err -> yes = 1
+    yes = o: {
+        err -> 1
 
-        -> yes = 0
+        -> 0
     }
 }
 
@@ -563,10 +563,10 @@ t-misc = () {
             bad = doc.kind(-5)
             oob = u-i64(doc.child-at(de, 0))
             ga = doc.get-attribute(de, 'zz')
-            ga: {
-                nil -> missnil = 1
+            missnil = ga: {
+                nil -> 1
 
-                -> missnil = 0
+                -> 0
             }
             ihb = doc.is-html()
             parent = doc.parent(de)

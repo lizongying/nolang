@@ -23,17 +23,18 @@
 ; ── 1. 範圍解碼器（range coder）初始狀態 ─────────────────────────────
 t-range-init = () {
     rd = lzma-rd{}
+
     ; 首位元組為標記（跳過），其後 4 位元組進 code
     rd.init([0x00, 0x12, 0x34, 0x56, 0x78], 0)
 
     runner.eq(rd.pos, 5, 'init 後 pos = start-pos + 1 + 4')
-    runner.eq(rd.range, 0xFFFFFFFF, 'range 初始化為 0xFFFFFFFF')
+    runner.eq(rd.range, 0xffffffff, 'range 初始化為 0xFFFFFFFF')
     runner.eq(rd.code, 0x12345678, 'code 由 4 位元組大端序拼成')
 
     ; range 已足夠大，normalize 不應推進 pos
     rd.normalize()
     runner.eq(rd.pos, 5, 'range 足夠時 normalize 不消耗位元組')
-    runner.eq(rd.range, 0xFFFFFFFF, 'range 不變')
+    runner.eq(rd.range, 0xffffffff, 'range 不變')
 }
 
 ; ── 2. decode-bit / decode-direct-bits ───────────────────────────────
@@ -45,7 +46,7 @@ t-range-bits = () {
 
     bit, npro = rd.decode-bit(0x400)
     runner.eq(bit, 0, 'code=0 時 decode-bit 解出 0')
-    runner.lt(rd.range, 0xFFFFFFFF, 'decode-bit 後 range 收窄')
+    runner.lt(rd.range, 0xffffffff, 'decode-bit 後 range 收窄')
 
     ; 直接位元：code=0 → 全 0
     res = rd.decode-direct-bits(3)
@@ -159,6 +160,58 @@ t-roundtrip = () {
     runner.eq(len(s3), 0, 'lzma-decompress 對短輸入回空')
 }
 
+; ── 8. lzma-decoder.decode 主迴圈（形狀驗證；語意見 §5.2 #14）─────────
+; 樣本為真 LZMA1 位元流：Python `lzma.compress(b'hello lzma world',
+; FORMAT_RAW, filters=[{LZMA1, lc=3, lp=0, pb=2, dict=4096}])` = 26 位元組。
+; 目前主迴圈能跑完、能產出位元組，但內容不是原文（解碼器尚未完成，見 §5.2），
+; 故此處只鎖定「會前進、不會掛死」與「unpacked-size = 0 立刻收工」兩件事，
+; 不把錯誤內容寫成期望值。
+t-lzma-decode = () {
+    hex = '00341949EE8DE9148A6AA5D6B6A5F327582B2F6428FFFEFD4000'
+    opt = hex.from-hex()
+    payload []byte = with-len(0)
+    payload = opt: {
+        ok -> it
+
+        -> payload
+    }
+    runner.eq(len(payload), 26, 'LZMA1 樣本 26 位元組')
+
+    ; unpacked-size = 0 → 迴圈第一個判斷就 break，不消耗任何位元
+    d0 = lzma-decoder{}
+    d0.lc = 3
+    d0.lp = 0
+    d0.pb = 2
+    d0.state = 0
+    d0.rep0 = 0
+    d0.rep1 = 0
+    d0.rep2 = 0
+    d0.rep3 = 0
+    d0.prev-byte = 0
+    d0.decode(payload, 0, 0)
+    runner.eq(len(d0.out), 0, 'unpacked-size = 0 → 輸出為空')
+
+    ; unpacked-size = 16 → 迴圈會實際解碼，產出非空但內容不正確（已知缺陷）
+    d1 = lzma-decoder{}
+    d1.lc = 3
+    d1.lp = 0
+    d1.pb = 2
+    d1.state = 0
+    d1.rep0 = 0
+    d1.rep1 = 0
+    d1.rep2 = 0
+    d1.rep3 = 0
+    d1.prev-byte = 0
+    d1.decode(payload, 0, 16)
+    runner.gt(len(d1.out), 0, '主迴圈有實際產出（不會掛死）')
+    first = d1.out[0]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.ne(first, 104, '首位元組不是 "h"（內容不正確，已知缺陷；修好後此斷言應翻轉）')
+}
+
 p1 = runner.test('xz.range-init', t-range-init)
 p2 = runner.test('xz.range-bits', t-range-bits)
 p3 = runner.test('xz.bit-tree', t-bit-tree)
@@ -166,6 +219,7 @@ p4 = runner.test('xz.init-probs', t-init-probs)
 p5 = runner.test('xz.state', t-state)
 p6 = runner.test('xz.decoder-entries', t-decoder-entries)
 p7 = runner.test('xz round-trip', t-roundtrip)
+p8 = runner.test('xz.lzma-decoder.decode', t-lzma-decode)
 total = runner.summary()
 f = runner.failed-count()
 {

@@ -132,7 +132,7 @@ probe-pool = () {
 ; 前提 2：[]T（全 i64 字段）+ push + 索引读解包
 probe-vec = () {
     ts []probe-term = []
-    x = probe-term {
+    x = probe-term{
         a: 11
         b: 22
     }

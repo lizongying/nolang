@@ -141,6 +141,7 @@ t-declared-conv = () {
     b byte = 200
     w i64 = b
     runner.eq(w, 200, 'byte → i64 宣告加宽')
+
     #{overflow=wrap}
     sq = w * w
     runner.eq(sq, 40000, 'byte → i64 宣告后按 64 位域运算')

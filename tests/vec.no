@@ -2,8 +2,9 @@
 ; sources: vec.no, with-cap-more.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/vec.no =====================
+; merged from tests/vec.no
 ; cd src && go run ./cmd/cli/. build ../tests/vec.no
+...
 a = [1]
 
 ; a.len() is the element count; the bare `.len` property form is removed
@@ -27,9 +28,10 @@ b []byte = with-len(4)
 ; correct: use truncate instead
 b.truncate(2)
 
-; ===================== merged from tests/with-cap-more.no =====================
+; merged from tests/with-cap-more.no
 ; tests/with-cap-more.no — consolidated with-cap / with-cap-len fragments
 ; from: tests/with-cap.no, tests/with-cap-len.no
+...
 
 ; with-cap
 s str = with-cap(256)

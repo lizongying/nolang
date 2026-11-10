@@ -73,27 +73,27 @@ t-first-last = () {
     v = [5, 6, 7]
     ok1 = false
     f = v.first()
-    f: {
-        nil -> ok1 = false
+    ok1 = f: {
+        nil -> false
 
-        -> ok1 = f == 5
+        -> f == 5
     }
     runner.is-true(ok1, 'first == 5')
     ok2 = false
     l = v.last()
-    l: {
-        nil -> ok2 = false
+    ok2 = l: {
+        nil -> false
 
-        -> ok2 = l == 7
+        -> l == 7
     }
     runner.is-true(ok2, 'last == 7')
     e []i64 = with-cap(0)
     is-nil1 = false
     f2 = e.first()
-    f2: {
-        nil -> is-nil1 = true
+    is-nil1 = f2: {
+        nil -> true
 
-        -> is-nil1 = false
+        -> false
     }
     runner.is-true(is-nil1, 'first empty == nil')
 }
@@ -103,18 +103,18 @@ t-at = () {
     v = [1, 2, 3]
     ok1 = false
     a = v.at(1)
-    a: {
-        nil -> ok1 = false
+    ok1 = a: {
+        nil -> false
 
-        -> ok1 = a == 2
+        -> a == 2
     }
     runner.is-true(ok1, 'at(1) == 2')
     is-nil = false
     a2 = v.at(10)
-    a2: {
-        nil -> is-nil = true
+    is-nil = a2: {
+        nil -> true
 
-        -> is-nil = false
+        -> false
     }
     runner.is-true(is-nil, 'at(10) OOB == nil')
 }
@@ -149,10 +149,10 @@ t-remove = () {
     v = [1, 2, 3]
     ok = false
     r = v.remove(1)
-    r: {
-        nil -> ok = false
+    ok = r: {
+        nil -> false
 
-        -> ok = r == 2
+        -> r == 2
     }
     runner.is-true(ok, 'remove(1) returns 2')
     runner.eq(v.len(), 2, 'remove len == 2')

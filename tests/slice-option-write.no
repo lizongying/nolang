@@ -39,7 +39,6 @@ t-slice-write-loop = () {
 t-slice-write-self-rmw = () {
     h = IV[..8)
     i <- [0..8): {
-
         ixout45c24 = h[i]: {
             ok -> it
 

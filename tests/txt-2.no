@@ -2,7 +2,9 @@
 ; sources: jp7.no, jp15.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/jp7.no =====================
+; merged from tests/jp7.no
+...
+
 # /test/runner
 
 t-in-bounds = () {
@@ -56,7 +58,8 @@ p3, f3 = runner.test('replace-n', t-replace-n)
 p4, f4 = runner.test('join', t-join)
 total = runner.summary()
 
-; ===================== merged from tests/jp15.no =====================
+; merged from tests/jp15.no
+...
 f = () {
     s txt = 'a-b-c-d'
     parts = s.split('-')

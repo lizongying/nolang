@@ -187,9 +187,9 @@ test-nested-clone-str = () (ok bool) {
     c.len() == 2 -> ok = true
 }
 
-; ============================================================
 ; 測試 6：struct 含 []str 欄位的深拷貝
-; ============================================================
+...
+
 ; 定義一個包含 str 欄位的結構體
 person {
     name str
@@ -215,9 +215,9 @@ test-struct-clone-str = () (ok bool) {
     p1.name == 'Alice' -> ok = true
 }
 
-; ============================================================
 ; 測試 7：struct 含 []vec 欄位（嵌套容器欄位）的深拷貝
-; ============================================================
+...
+
 ; 定義一個包含切片欄位的結構體
 group {
     name str
@@ -253,9 +253,8 @@ test-struct-clone-vec-field = () (ok bool) {
     g1.name == 'team-a' -> ok = true
 }
 
-; ============================================================
 ; 測試 8：struct 含嵌套 struct 欄位的深拷貝
-; ============================================================
+...
 address {
     street str
     city str
@@ -289,9 +288,9 @@ test-nested-struct-clone = () (ok bool) {
     e2.addr.city == 'LA' -> ok = true
 }
 
-; ============================================================
 ; 測試 9：map[str, i64] 的深拷貝
-; ============================================================
+...
+
 ; ok: map[str,i64] 深拷貝後副本增刪不影響原表、既有键值一致時為 true
 test-map-clone = () (ok bool) {
     m1 [str]i64
@@ -352,9 +351,9 @@ test-map-clone = () (ok bool) {
     m2.len() == 3 -> ok = true
 }
 
-; ============================================================
 ; 測試 10：map[str, []str]（map 值為切片）的深拷貝
-; ============================================================
+...
+
 ; ok: map[str,[]str] 深拷貝後副本的切片值獨立、原表切片不悬垂時為 true
 test-map-vec-value-clone = () (ok bool) {
     m1 [str][]str
@@ -390,9 +389,8 @@ test-map-vec-value-clone = () (ok bool) {
     }
 }
 
-; ============================================================
 ; 測試 11：struct 含 [][]str 欄位（嵌套容器欄位）的深拷貝
-; ============================================================
+...
 matrix {
     rows [][]str
     name str
@@ -428,9 +426,9 @@ test-struct-nested-vec-clone = () (ok bool) {
     r0[1] == 'b' -> ok = true
 }
 
-; ============================================================
 ; 測試 12：person struct 數組 — []person 的深拷貝
-; ============================================================
+...
+
 ; ok: []person 結構體數組深拷貝後改副本元素不影響原數組時為 true
 test-struct-array-clone = () (ok bool) {
     people []person
@@ -467,12 +465,12 @@ test-struct-array-clone = () (ok bool) {
     c0b.name == 'Charlie' -> ok = true
 }
 
-; ============================================================
 ; 測試 13：[][]i64 透過 insert 深層 clone — 插入後來源重新賦值不導致 UAF
 ; 這是「%vec 缺 clone」三個 by-value 元素寫入（push / 賦值 / insert）中最後一個
 ; 漏掉 clone 的：insert 只 clone %str-long 元素，對 %vec（嵌套切片）元素共享
 ; 來源緩衝區，來源 drop 後容器元素懸垂（UAF / double-free）。
-; ============================================================
+...
+
 ; ok: 嵌套切片經 insert 插入後來源重新賦值不產生 UAF/double-free 時為 true
 test-insert-nested-clone = () (ok bool) {
     outer [][]i64
@@ -508,9 +506,9 @@ test-insert-nested-clone = () (ok bool) {
     got2.len() == 2 -> ok = true
 }
 
-; ============================================================
 ; 測試 14：[][]str 透過 insert 深層 clone — 字串元素 insert 同樣須獨立拷貝
-; ============================================================
+...
+
 ; ok: [][]str 經 insert 插入後元素為獨立拷貝、來源释放後仍可讀時為 true
 test-insert-nested-str-clone = () (ok bool) {
     outer [][]str
@@ -529,13 +527,13 @@ test-insert-nested-str-clone = () (ok bool) {
     got.len() == 3 -> ok = true
 }
 
-; ============================================================
 ; 測試 15：固定陣列 [N]str → []str 透過 vecFromArraySink 深層 clone
 ; build-from-fixed 把固定陣列 arr 賦給結果參數 s 後返回 —— arr 的框退出時
 ; 其堆上的字串緩衝區被 drop 釋放。若 vecFromArraySink 回傳 cap==0 的借用視圖
 ; （指向 arr 的堆疊儲存），s 會在讀取前懸垂（UAF）；deep-clone 讓 s 持有
 ; 自己的拷貝。這是 vecFromArraySink 懸垂記憶體安全項的釘子測試。
-; ============================================================
+...
+
 ; s: 固定數組轉成的向量（deep-clone 持有自己的字符串緩衝，不悬垂於已退出的數組框）
 build-from-fixed = () (s []str) {
     arr [3]str = ['p', 'q', 'r']

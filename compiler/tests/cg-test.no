@@ -157,7 +157,6 @@ test-alu = () {
 ; ── 無符號 ALU 家族（s36）：SHRU/DIVU/MODU + CMP*U ────────────
 ;   同時驗證 TY-U64 走 cg-ty-name/cg-val-prefix 默認臂 ⇒ i64/%v（形參/返回值都是 i64 %v1）。
 test-alu-unsigned = () {
-
     ops []i64 = []
     dsts []i64 = []
     xa []i64 = []
@@ -1054,6 +1053,7 @@ test-struct-nested = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+
     ; args 側池（②MK 非連續 id 修復）：k1 欄位 [v1=1]、k3 欄位 [st2=2, v3=3]，依 op 序 push
     args []i64 = []
 
@@ -3449,6 +3449,7 @@ test-struct-mk-get = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+
     ; args 側池：k2 欄位 [v1=1, v2=2]
     args []i64 = []
 
@@ -3573,6 +3574,7 @@ test-struct-set = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+
     ; args 側池：k2 欄位 [v1=1, v2=2]
     args []i64 = []
 
@@ -3728,6 +3730,7 @@ test-struct-wide = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+
     ; args 側池：k3 欄位 [v1=1, v2=2, v3=3]
     args []i64 = []
     ops.push(OP-CONST)
@@ -3809,6 +3812,7 @@ test-struct-str-field = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+
     ; args 側池：k2 欄位 [sv1=1, v2=2]
     args []i64 = []
 
@@ -3894,6 +3898,7 @@ test-struct-field-rc = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+
     ; args 側池：k1 欄位 [sv1=1]
     args []i64 = []
 
@@ -3999,6 +4004,7 @@ test-struct-field-rc = () {
 ;   ⇒ Outer 欄位值 id = [1, 3]（1→3 不連續，中間隔了 v2=2 的 id）。舊契約（xa[k]+j 讀 1,2）會把
 ;     v2 當成 Outer.x 插入（field0 型別錯：scalar 當 i64 仍拼得起，但值錯）；新契約（args 側池）讀 [1,3] ⇒ 對。
 test-struct-mk-noncontig = () {
+
     ; 型別聲明：Inner=#0{2 欄 i64}、Outer=#1{x:i64, y:Inner}
     sfc = [2, 2]
     sft []i64 = [TY-I64, TY-I64, TY-I64, TY-STRUCT-BASE]
@@ -4011,6 +4017,7 @@ test-struct-mk-noncontig = () {
     xa []i64 = []
     bs []i64 = []
     syms []str = []
+
     ; args 側池：k4 欄位 [va=4, vb=5]（基址 0）、k6 欄位 [v1=1, st3=3]（基址 2）——非連續 [1,3]
     args []i64 = []
 
@@ -4083,30 +4090,31 @@ test-struct-mk-noncontig = () {
 
     ptyps []i64 = []
     vty []i64 = []
-    vty.push(TY-I64)              ; id0 啞元
-    vty.push(TY-I64)             ; id1 v1
-    vty.push(TY-I64)             ; id2 v2
-    vty.push(TY-STRUCT-BASE)     ; id3 st3 (Inner)
-    vty.push(TY-I64)             ; id4 va
-    vty.push(TY-I64)             ; id5 vb
-    vty.push(TY-I64)             ; id6 v6
-    vty.push(TY-STRUCT-BASE + 1) ; id7 st7 (Outer)
-    vty.push(TY-STRUCT-BASE)     ; id8 st8 (Inner)
+    vty.push(TY-I64); id0 啞元
+    vty.push(TY-I64); id1 v1
+    vty.push(TY-I64); id2 v2
+    vty.push(TY-STRUCT-BASE); id3 st3 (Inner)
+    vty.push(TY-I64); id4 va
+    vty.push(TY-I64); id5 vb
+    vty.push(TY-I64); id6 v6
+    vty.push(TY-STRUCT-BASE + 1); id7 st7 (Outer)
+    vty.push(TY-STRUCT-BASE); id8 st8 (Inner)
     cty []i64 = []
-    cty.push(TY-I64)             ; k0
-    cty.push(TY-I64)             ; k1
-    cty.push(TY-I64)             ; k2
-    cty.push(TY-I64)             ; k3
-    cty.push(TY-STRUCT-BASE)     ; k4 st3
-    cty.push(TY-I64)             ; k5
-    cty.push(TY-STRUCT-BASE + 1) ; k6 st7
-    cty.push(TY-STRUCT-BASE)     ; k7 st8
-    cty.push(TY-STRUCT-BASE)     ; k8 ret
+    cty.push(TY-I64); k0
+    cty.push(TY-I64); k1
+    cty.push(TY-I64); k2
+    cty.push(TY-I64); k3
+    cty.push(TY-STRUCT-BASE); k4 st3
+    cty.push(TY-I64); k5
+    cty.push(TY-STRUCT-BASE + 1); k6 st7
+    cty.push(TY-STRUCT-BASE); k7 st8
+    cty.push(TY-STRUCT-BASE); k8 ret
     blks []i64 = []
     j = 0
     n = ops.len()
     (j < n) {
         blks.push(0)
+
         #{overflow=wrap}
         j = j + 1
     }
@@ -4119,6 +4127,7 @@ test-struct-mk-noncontig = () {
     ; 外層 MK：field0 必須是 %v1（id1），field1 必須是 %st3（Inner 值）
     runner.eq(s.contains('%sm6_0 = insertvalue %struct.s1 zeroinitializer, i64 %v1, 0'), 1, 'outer field0 is v1')
     runner.eq(s.contains('%st7 = insertvalue %struct.s1 %sm6_0, %struct.s0 %st3, 1'), 1, 'outer nested field is struct value')
+
     ; 關鍵判別：舊契約（xa[k]+j 讀 1,2）會把 v2 當 Outer.x 插入 field0 ⇒ 此串絕不能出現
     runner.eq(s.contains('insertvalue %struct.s1 zeroinitializer, i64 %v2, 0'), 0, 'OLD contiguous bug must NOT appear (field0)')
 }

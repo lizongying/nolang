@@ -2,10 +2,12 @@
 ; sources: char.no, char-more.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/char.no =====================
+; merged from tests/char.no
 ; merged category 'char' -- members: char-render.no, multi-char-dquote.no, path-char.no, path-char2.no
 ; (originals backed up under tests/_archive/char/)
-; ===================== merged from tests/char-render.no =====================
+...
+
+; merged from tests/char-render.no
 ; char is an i32 code point and renders as its DECIMAL value, consistently
 ; across every path that turns it into text.
 ;
@@ -22,6 +24,7 @@
 ; through to zext. char arithmetic is signed (`"x" - "y"` is -1), so sext is
 ; correct. Every VALID code point is 0..=0x10FFFF, where the two agree, so this
 ; only affects out-of-range char arithmetic results.
+...
 
 ; Char arithmetic is signed i32.
 "x" - "y" != -1 -> exit(1)
@@ -68,19 +71,21 @@ sx != 'xy' -> exit(12)
 ; quirk; without it this file fails to link with "unknown callee fmt-int").
 print('char-render: ok')
 
-; ===================== merged from tests/multi-char-dquote.no =====================
+; merged from tests/multi-char-dquote.no
 ; 测试多字符双引号字面量报错
 ; 双引号只能用于单字符 char，多字符应使用单引号
 ; 预期：LSP/vet 报错 "multi-character literal in double quotes"
+...
 
 print('done')
 
-; ===================== merged from tests/path-char.no =====================
+; merged from tests/path-char.no
 ; test_path_char — 驗證 path.no 使用 char 字面量常量後正常工作
 ; # std/path
+...
 print('=== path char test ===')
 
-p = path {
+p = path{
     p: '/usr/local/bin'
 }
 print(p.p)
@@ -89,13 +94,13 @@ print(p.p)
 ; 早期版本只有原地修改、沒有回傳值，`dir = p.dir()` 會拿到空字串，
 ; 而且 .p 被改成 '/usr/local' 之後，下面 base() 會印出 'local' 而不是 'bin'。
 ; 現在兩種用法都可用，這裡用回傳值（並各自用獨立物件，避免互相干擾）。
-d = path {
+d = path{
     p: '/usr/local/bin'
 }
 dir = d.dir()
 print(dir)
 
-b = path {
+b = path{
     p: '/usr/local/bin'
 }
 base = b.base()
@@ -108,19 +113,20 @@ ok = p.exists()
     -> print('not exists: ok')
 }
 
-; ===================== merged from tests/path-char2.no =====================
+; merged from tests/path-char2.no
 ; test_path_char2 — 驗證 path.no 使用 char 字面量常量後正常工作
 ; # std/path
+...
 print('=== path char test ===')
 
-p__1 = path {
+p__1 = path{
     p: '/usr/local/bin'
 }
 print(p__1.p)
 
 ; path.join() 會**原地修改 .p**，同時回傳拼接後的結果。
 ; 早期版本無回傳值，`joined = p2.join(...)` 只會拿到空字串。
-p2 = path {
+p2 = path{
     p: '/usr'
 }
 joined = p2.join('local/bin')
@@ -128,12 +134,13 @@ print(joined)
 
 print('=== done ===')
 
-; ===================== merged from tests/char-more.no =====================
+; merged from tests/char-more.no
 ; char-more — 合併自同簇 char-*.no（heavy dedup）
 ;
 ; 每個原件對映為下方一個带來源註解的函式；main 依序呼叫，stdout 可逐段對拍。
 ; 引號規則："" = char (rune, i32 code point)，'' = str。
 ; 保護件 char-render.no（char 渲染符號擴展回歸）維持獨立，不併入。
+...
 
 ; from char-new-syntax.no — 雙引號 char 字面量 + 算術 + 方法全集
 cm-literal-methods = () {

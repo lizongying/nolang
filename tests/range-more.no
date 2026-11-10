@@ -6,6 +6,7 @@
 ;
 ; ── from tests/range-open.no ──
 ro-run = () {
+
     ; Regression: all 16 for-range interval notations must parse and lower.
     ; Bounded forms iterate fully; open forms run "to the type extreme", so a break
     ; guard keeps them terminating while still pinning the FIRST value (which proves
@@ -15,7 +16,8 @@ ro-run = () {
     cnt = 0
     first = 0
 
-    ; --- bounded (both ends present): exact inclusive sums ---
+    ; bounded (both ends present): exact inclusive sums
+    ...
     sum = 0
 
     #{overflow=wrap}
@@ -45,7 +47,8 @@ ro-run = () {
     }
     print('(1..4)', sum); 2+3     = 5
 
-    ; --- open upper: iterate from a, "up to type max" (break-guarded) ---
+    ; open upper: iterate from a, "up to type max" (break-guarded)
+    ...
     cnt = 0
     first = 0
 
@@ -58,6 +61,7 @@ ro-run = () {
             cnt-opt = cnt + 1
             cnt-opt: {
                 ok -> cnt = it
+
                 ->
             }
         }
@@ -78,6 +82,7 @@ ro-run = () {
             cnt-opt2 = cnt + 1
             cnt-opt2: {
                 ok -> cnt = it
+
                 ->
             }
         }
@@ -87,7 +92,8 @@ ro-run = () {
     }
     print('(7..]', first, cnt); first=8 (left exclusive)
 
-    ; --- open lower: "from type min", break-guarded; first pins the default ---
+    ; open lower: "from type min", break-guarded; first pins the default
+    ...
     cnt = 0
     first = 0
 
@@ -100,6 +106,7 @@ ro-run = () {
             cnt-opt3 = cnt + 1
             cnt-opt3: {
                 ok -> cnt = it
+
                 ->
             }
         }
@@ -120,6 +127,7 @@ ro-run = () {
             cnt-opt4 = cnt + 1
             cnt-opt4: {
                 ok -> cnt = it
+
                 ->
             }
         }
@@ -129,7 +137,8 @@ ro-run = () {
     }
     print('(..3]', first, cnt); first=i64.MIN+1 (left exclusive)
 
-    ; --- fully unbounded: whole i64 space, break-guarded ---
+    ; fully unbounded: whole i64 space, break-guarded
+    ...
     cnt = 0
     first = 0
 
@@ -142,6 +151,7 @@ ro-run = () {
             cnt-opt5 = cnt + 1
             cnt-opt5: {
                 ok -> cnt = it
+
                 ->
             }
         }
@@ -162,6 +172,7 @@ ro-run = () {
             cnt-opt6 = cnt + 1
             cnt-opt6: {
                 ok -> cnt = it
+
                 ->
             }
         }
@@ -171,7 +182,8 @@ ro-run = () {
     }
     print('(..)', first, cnt); (MIN,MAX) 开区间：first=i64.MIN+1（不含最小，也不含最大）
 
-    ; --- descending still works (bounded, reverse) ---
+    ; descending still works (bounded, reverse)
+    ...
     sum = 0
 
     #{overflow=wrap}
@@ -180,7 +192,9 @@ ro-run = () {
     }
     print('[4..1)', sum); 4+3+2 = 9
 
-    ; --- endpoint inclusivity proven on a REACHABLE (descending) bound ---
+    ; endpoint inclusivity proven on a REACHABLE (descending) bound
+    ...
+
     ; The right bracket governs the END bound in every direction; `(..` defaults the
     ; end to i64.MAX, so `)` excludes that maximum exactly as it excludes 1 here.
     ; Together with the `(..)`/`[..]` first-values above this locks "(..) 不含最大最小".
@@ -202,6 +216,7 @@ ro-run = () {
 
 ; ── from tests/split-loop.no ──
 sp-run = () {
+
     ; Test str.index-from in a loop
     s = 'hello,world'
     sep = ','
@@ -225,6 +240,7 @@ sp-run = () {
 
 ; ── from tests/for-recv.no ──
 fr-run = () {
+
     ; test-for-recv — 測試 for 循環中的 str 變數
     n = 5
     i <- [0..n): {
@@ -236,6 +252,7 @@ fr-run = () {
 
 ; ── from tests/forloop.no ──
 fl-run = () {
+
     ; test-forloop — 測試 for 循環變數
     print('start')
     i <- [0..3): {
@@ -247,6 +264,7 @@ fl-run = () {
 
 ; ── from tests/forloop2.no ──
 fl2-run = () {
+
     ; test-forloop2 — 測試 for 循環變數 (顯式型別)
     print('start')
     n <- [0..3): {
@@ -258,6 +276,7 @@ fl2-run = () {
 
 ; ── from tests/forloop3.no ──
 fl3-run = () {
+
     ; test-forloop3 — 測試 for 循環變數 (不同名稱)
     print('start')
     cnt <- [0..3): {
@@ -269,6 +288,7 @@ fl3-run = () {
 
 ; ── from tests/repeat3.no ──
 r3-run = () {
+
     ; test-repeat3 — str.repeat 測試
     print('start')
     space = ' '
@@ -280,6 +300,7 @@ r3-run = () {
 
 ; ── from tests/repeat4.no ──
 r4-run = () {
+
     ; test-repeat4 — str.repeat 簡化測試
     print('start')
     space = ' '
@@ -416,5 +437,6 @@ print(rt-e)
 
 rt-f = rt-test-break()
 print(rt-f)
-; 0+1+2+3+4 = 10
 
+; 0+1+2+3+4 = 10
+...

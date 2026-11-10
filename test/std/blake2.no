@@ -60,6 +60,121 @@ empty-bytes = () (out []byte) {
     out = with-len(0)
 }
 
+; ---- 內部構成（狀態 / G / 旋轉 / 壓縮）的助手 ----
+
+; u64 → 16 字元大端 hex（供 rotr64 / b-g 之類回傳純量者比對）
+; x u64: 待輸出的值
+; s str: 16 字元 hex
+u64-hex = (x u64) (s str) {
+    b []byte = with-len(8)
+    j <- [0..8): {
+        v = (x >> ((7 - j) * 8)) & 255
+        b[j]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+    s = bhex(b)
+}
+
+; u32 → 8 字元大端 hex
+; x u32: 待輸出的值
+; s str: 8 字元 hex
+u32-hex = (x u32) (s str) {
+    b []byte = with-len(4)
+    j <- [0..4): {
+        v = (x >> ((3 - j) * 8)) & 255
+        b[j]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+    s = bhex(b)
+}
+
+; []u64 的第 i 項（裸下標讀是 option，這裡收斂成純量）
+; v []u64: 來源
+; i i64: 索引
+; x u64: 該項的值（越界時 0）
+at64 = (v []u64, i i64) (x u64) {
+    x = v[i]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; []u32 的第 i 項
+; v []u32: 來源
+; i i64: 索引
+; x u32: 該項的值（越界時 0）
+at32 = (v []u32, i i64) (x u32) {
+    x = v[i]: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; []u64 狀態 → 小端序列化 hex（BLAKE2 的輸出慣例：每個字低位在前）
+; h []u64: 狀態
+; n i64: 取前 n 個字
+; s str: n*16 字元 hex
+state64-hex = (h []u64, n i64) (s str) {
+    b []byte = with-len(n * 8)
+    i <- [0..n): {
+        w = at64(h, i)
+        j <- [0..8): {
+            v = (w >> (j * 8)) & 255
+            b[i * 8 + j]: {
+                ok -> it = v
+
+                -> _
+            }
+        }
+    }
+    s = bhex(b)
+}
+
+; []u32 狀態 → 小端序列化 hex
+; h []u32: 狀態
+; n i64: 取前 n 個字
+; s str: n*8 字元 hex
+state32-hex = (h []u32, n i64) (s str) {
+    b []byte = with-len(n * 4)
+    i <- [0..n): {
+        w = at32(h, i)
+        j <- [0..4): {
+            v = (w >> (j * 8)) & 255
+            b[i * 4 + j]: {
+                ok -> it = v
+
+                -> _
+            }
+        }
+    }
+    s = bhex(b)
+}
+
+; 長度 n 的全零位元組切片
+blk = (n i64) (out []byte) {
+    out = with-len(n)
+    i <- [0..n): {
+        out[i] = 0
+    }
+}
+
+; 把 b[i] 設成 v（直接對下標賦值被 checker 擋，統一走 place-match）
+setb = (b []byte, i i64, v i64) {
+    b[i]: {
+        ok -> it = v
+
+        -> _
+    }
+}
+
 ; 空輸入向量：BLAKE2b-512 對空字串的標準雜湊
 ; [RFC 7693 附錄 A]
 t-b-empty = () {
@@ -105,6 +220,176 @@ t-hex-api = () {
     runner.str-eq(blake2.b-hex('abc'.to-bytes()), 'ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923', 128, 'blake2.b-hex abc')
     runner.str-eq(blake2.s-hex('abc'.to-bytes()), '508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982', 64, 'blake2.s-hex abc')
 }
+; ---- 內部構成 ----
+
+; 64-bit / 32-bit 循環右移：BLAKE2b 用 32/24/16/63，BLAKE2s 用 16/12/8/7
+t-rotr64 = () {
+    runner.str-eq(u64-hex(blake2.rotr64(0x0123456789abcdef, 8)), 'ef0123456789abcd', 16, 'rotr64 8')
+    runner.str-eq(u64-hex(blake2.rotr64(0x0123456789abcdef, 32)), '89abcdef01234567', 16, 'rotr64 32')
+    runner.str-eq(u64-hex(blake2.rotr64(0x0123456789abcdef, 63)), '02468acf13579bde', 16, 'rotr64 63 = 左轉 1')
+    runner.str-eq(u64-hex(blake2.rotr64(0xffffffffffffffff, 63)), 'ffffffffffffffff', 16, 'rotr64 63 全 1')
+
+    ; ⚠️ 已知語言陷阱（2026-11-10 實測）：把 > i64.MAX 的字面量**直接**當 u64 實參傳，
+    ; 位元樣式雖然正確，但移位/比較仍按 i64 求值 ⇒ `x >> 1` 變成算術右移
+    ; （rotr64(0x8000000000000000, 1) 得 c000000000000000 而非 4000000000000000），
+    ; `0x8000000000000000 > 0` 也回 false。先落 `u64` 區域變數即恢復正確語意。
+    top u64 = 0x8000000000000000
+    runner.str-eq(u64-hex(top), '8000000000000000', 16, 'u64 高位字面量')
+    runner.str-eq(u64-hex(blake2.rotr64(top, 1)), '4000000000000000', 16, 'rotr64 1 最高位')
+    runner.str-eq(u64-hex(blake2.rotr64(0x0000000000000001, 1)), '8000000000000000', 16, 'rotr64 1 最低位回捲')
+}
+
+t-rotr32 = () {
+    runner.str-eq(u32-hex(blake2.rotr32(0x01234567, 16)), '45670123', 8, 'rotr32 16')
+    runner.str-eq(u32-hex(blake2.rotr32(0x01234567, 12)), '56701234', 8, 'rotr32 12')
+    runner.str-eq(u32-hex(blake2.rotr32(0x01234567, 8)), '67012345', 8, 'rotr32 8')
+    runner.str-eq(u32-hex(blake2.rotr32(0x00000001, 1)), '80000000', 8, 'rotr32 1 最低位回捲')
+    runner.str-eq(u32-hex(blake2.rotr32(0x80000000, 1)), '40000000', 8, 'rotr32 1 最高位')
+}
+
+; G 混合函數：v = 1..16，對 (0,4,8,12) 做一次 b-g。
+; 金標由 python 依 RFC 7693 G 定義（加法 mod 2^64 + 右轉 32/24/16/63）算出。
+t-b-g = () {
+    v []u64 = with-len(16)
+    i <- [0..16): {
+        v[i] = i + 1
+    }
+    blake2.b-g(v, 0, 4, 8, 12, 0x0123456789abcdef, 0xfedcba9876543210)
+
+    runner.str-eq(u64-hex(at64(v, 0)), '23457589abcdf806', 16, 'b-g v[a]')
+    runner.str-eq(u64-hex(at64(v, 4)), 'c8901ade24b210be', 16, 'b-g v[b]')
+    runner.str-eq(u64-hex(at64(v, 8)), '470d78e6b994f05e', 16, 'b-g v[c]')
+    runner.str-eq(u64-hex(at64(v, 12)), 'bd61aaeeb871aaee', 16, 'b-g v[d]')
+
+    ; 未參與的槽必須原封不動
+    runner.str-eq(u64-hex(at64(v, 1)), '0000000000000002', 16, 'b-g 不動 v[1]')
+    runner.str-eq(u64-hex(at64(v, 15)), '0000000000000010', 16, 'b-g 不動 v[15]')
+}
+
+; G 混合函數（32 位元版）：右轉 16/12/8/7
+t-s-g = () {
+    v []u32 = with-len(16)
+    i <- [0..16): {
+        v[i] = i + 1
+    }
+    blake2.s-g(v, 0, 4, 8, 12, 0x01234567, 0xfedcba98)
+
+    runner.str-eq(u32-hex(at32(v, 0)), '12945605', 8, 's-g v[a]')
+    runner.str-eq(u32-hex(at32(v, 4)), '06f24747', 8, 's-g v[b]')
+    runner.str-eq(u32-hex(at32(v, 8)), '6bb7f583', 8, 's-g v[c]')
+    runner.str-eq(u32-hex(at32(v, 12)), '2657f457', 8, 's-g v[d]')
+
+    runner.str-eq(u32-hex(at32(v, 1)), '00000002', 8, 's-g 不動 v[1]')
+    runner.str-eq(u32-hex(at32(v, 15)), '00000010', 8, 's-g 不動 v[15]')
+}
+
+; 初始狀態：必須是 IV 的**獨立拷貝**（改動回傳值不得污染常數表）
+t-b-state = () {
+    h = blake2.b-state()
+    runner.eq(h.len(), 8, 'b-state 長度 8')
+    runner.str-eq(u64-hex(at64(h, 0)), '6a09e667f3bcc908', 16, 'b-state[0] = IV[0]')
+    runner.str-eq(u64-hex(at64(h, 7)), '5be0cd19137e2179', 16, 'b-state[7] = IV[7]')
+
+    h[0]: {
+        ok -> it = 0
+
+        -> _
+    }
+    h2 = blake2.b-state()
+    runner.str-eq(u64-hex(at64(h2, 0)), '6a09e667f3bcc908', 16, 'b-state 每次回新拷貝')
+}
+
+t-s-state = () {
+    h = blake2.s-state()
+    runner.eq(h.len(), 8, 's-state 長度 8')
+    runner.str-eq(u32-hex(at32(h, 0)), '6a09e667', 8, 's-state[0] = IV[0]')
+    runner.str-eq(u32-hex(at32(h, 7)), '5be0cd19', 8, 's-state[7] = IV[7]')
+
+    h[0]: {
+        ok -> it = 0
+
+        -> _
+    }
+    h2 = blake2.s-state()
+    runner.str-eq(u32-hex(at32(h2, 0)), '6a09e667', 8, 's-state 每次回新拷貝')
+}
+
+; 壓縮函數：手動複製 b() 的序言（h[0] ^= 0x01010040），壓一個 'abc' 尾塊。
+; 終態按小端序列化後應等於 BLAKE2b-512("abc") 的雜湊值。
+t-b-compress = () {
+    h = blake2.b-state()
+    w = at64(h, 0)
+    h[0]: {
+        ok -> it = w ^ 16842816
+
+        -> _
+    }
+    b = blk(128)
+    setb(b, 0, 97)
+    setb(b, 1, 98)
+    setb(b, 2, 99)
+    blake2.b-compress(h, b, 3, 1)
+    runner.str-eq(state64-hex(h, 8), 'ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923', 128, 'b-compress abc 終態 = blake2b-512')
+
+    ; last 旗標（v[14] ^= ~0）必須真的改變結果
+    h2 = blake2.b-state()
+    w2 = at64(h2, 0)
+    h2[0]: {
+        ok -> it = w2 ^ 16842816
+
+        -> _
+    }
+    blake2.b-compress(h2, b, 3, 0)
+    s-notlast = state64-hex(h2, 8)
+    s-last = state64-hex(h, 8)
+    runner.is-false(s-notlast.eq(s-last, 128), 'b-compress last 旗標有生效')
+
+    ; 計數器 t 進入 v[12]，改變它必須改變結果
+    h3 = blake2.b-state()
+    w3 = at64(h3, 0)
+    h3[0]: {
+        ok -> it = w3 ^ 16842816
+
+        -> _
+    }
+    blake2.b-compress(h3, b, 4, 1)
+    s-t4 = state64-hex(h3, 8)
+    runner.is-false(s-t4.eq(s-last, 128), 'b-compress 計數器 t 有生效')
+}
+
+t-s-compress = () {
+    h = blake2.s-state()
+    w = at32(h, 0)
+    h[0]: {
+        ok -> it = w ^ 16842784
+
+        -> _
+    }
+    b = blk(64)
+    setb(b, 0, 97)
+    setb(b, 1, 98)
+    setb(b, 2, 99)
+    blake2.s-compress(h, b, 3, 1)
+    runner.str-eq(state32-hex(h, 8), '508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982', 64, 's-compress abc 終態 = blake2s-256')
+
+    h2 = blake2.s-state()
+    w2 = at32(h2, 0)
+    h2[0]: {
+        ok -> it = w2 ^ 16842784
+
+        -> _
+    }
+    blake2.s-compress(h2, b, 3, 0)
+    s-notlast = state32-hex(h2, 8)
+    s-last = state32-hex(h, 8)
+    runner.is-false(s-notlast.eq(s-last, 64), 's-compress last 旗標有生效')
+}
+
+; b-256-hex：BLAKE2b 參數化輸出 32 位元組的 hex 便利函式
+t-b-256-hex = () {
+    runner.str-eq(blake2.b-256-hex('abc'.to-bytes()), 'bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319', 64, 'b-256-hex abc')
+    runner.str-eq(blake2.b-256-hex(empty-bytes()), '0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8', 64, 'b-256-hex empty')
+}
 p1 = runner.test('blake2.b-empty', t-b-empty)
 p2 = runner.test('blake2.b-abc', t-b-abc)
 p3 = runner.test('blake2.b-multiblock', t-b-multiblock)
@@ -113,6 +398,15 @@ p5 = runner.test('blake2.s-abc', t-s-abc)
 p6 = runner.test('blake2.s-empty', t-s-empty)
 p7 = runner.test('blake2.input-sensitive', t-input-sensitive)
 p8 = runner.test('blake2.hex-api', t-hex-api)
+p9 = runner.test('blake2.rotr64', t-rotr64)
+p10 = runner.test('blake2.rotr32', t-rotr32)
+p11 = runner.test('blake2.b-g', t-b-g)
+p12 = runner.test('blake2.s-g', t-s-g)
+p13 = runner.test('blake2.b-state', t-b-state)
+p14 = runner.test('blake2.s-state', t-s-state)
+p15 = runner.test('blake2.b-compress', t-b-compress)
+p16 = runner.test('blake2.s-compress', t-s-compress)
+p17 = runner.test('blake2.b-256-hex', t-b-256-hex)
 total = runner.summary()
 f = runner.failed-count()
 {

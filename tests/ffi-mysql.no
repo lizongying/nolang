@@ -67,10 +67,12 @@ count = 0
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         count-opt = count + 1
         count-opt: {
             ok -> count = it
+
             ->
         }
     }
@@ -118,10 +120,12 @@ rs3.n-cols != 0 -> {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             total-opt = total + 1
             total-opt: {
                 ok -> total = it
+
                 ->
             }
         }

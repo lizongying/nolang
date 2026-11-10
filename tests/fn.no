@@ -1,6 +1,6 @@
 ; merged category 'fn' -- members: fn-type-return.no, modfn-builtin-collision.no
 ; (originals backed up under tests/_archive/fn/)
-; ===================== merged from tests/fn-type-return.no =====================
+; merged from tests/fn-type-return.no
 ; fn-type-return.no — 驗證函式型别帶返回值語法
 ;
 ; 測試具名函式型别帶返回值：cb ()(i64) 形式（透過具名型别定義）
@@ -8,6 +8,7 @@
 ; 注意：匿名函式型別語法 `cb ()(i64)` 需在 package.jsonc 設定
 ; `"anonymous-fn-type": true` 才能使用。此測試改用具名函式型別定義，
 ; 在預設開關關閉下亦可運作。
+...
 
 ; 具名函式型別：無參，返回 i64
 ret-cb = () (i64)
@@ -32,7 +33,7 @@ result = apply-ret(get-42)
     -> print('fail: fn-type-return')
 }
 
-; ===================== merged from tests/modfn-builtin-collision.no =====================
+; merged from tests/modfn-builtin-collision.no
 ; Regression: a user function sharing a std builtin's BARE name must not
 ; hijack qualified std calls. Before the fix, checker.resolveModuleCalls /
 ; mir.resolveModuleCallName flattened `fs.is-file()` to the bare name without
@@ -41,6 +42,8 @@ result = apply-ret(get-42)
 ; self-recursion: a stack-overflow SIGSEGV at runtime (no compile error).
 ; The std builtin stub (#{buildin}) is never merged, so no `fs`-owned
 ; definition exists and the qualified call must route to the builtin.
+...
+
 ; p str: 要檢查的路徑
 ; ok bool: fs.is-file(p) 的結果；本函式名故意與 builtin 同名以驗證解析不串錯
 is-file = (p str) (ok bool) {

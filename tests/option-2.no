@@ -2,7 +2,7 @@
 ; sources: opt-box-drop.no, option-capture.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/opt-box-drop.no =====================
+; merged from tests/opt-box-drop.no
 ; test-opt-box-drop — ?T 的裝箱載荷（以及載荷內容）必須被释放
 ;
 ; 為什麼需要這個測試：統一 32 字節 %option 布局下，放不進 slot 的載荷由 codegen
@@ -28,6 +28,7 @@
 ; 注意：每個小節刻意用自己的一套變量。同一 option 上再叠一次 option->option
 ; 拷貝會触發一個**既有的** match 讀取異常（與本次改動無關：HEAD 與修後输出
 ; 完全一致，見 §4.1.2 末注），所以不把它寫進本回歸測試的期望里。
+...
 
 print('=== opt box drop ===')
 
@@ -215,14 +216,17 @@ j2: {
 
 print('=== done ===')
 
-; ===================== merged from tests/option-capture.no =====================
+; merged from tests/option-capture.no
 ; 回歸測試：「Option 捕獲賦值」（`=` 就地捕獲錯誤，見 docs/docs/lang/syntax.md）。
 ;
 ; 語意：`a = expr` 中 expr 含可錯源（`/` `%`、安全索引、option 運算元）時，a 自動
 ; 推斷為 `?T`，nil/err 就地存進 a、流程繼續，之後用 `a: { ok -> ... }` 消費。
 ; 純算術（`+ - * <<` 取負）本身不是可錯源，但在 option 路徑上帶運行期溢出檢查。
+...
 
-; ── 1. 內部除零捕獲：`a = b + c / d` ────────────────────────────────
+; 1. 內部除零捕獲：`a = b + c / d`
+...
+
 ; 缺陷修正：以前 `a ?i64 = b + c / d` 會把 c/d 的 payload 無條件解包再包 ok，
 ; 除零得到錯誤數值、錯誤完全遺失。現在 c/d 被就地捕獲成 __cap_N。
 ; b i64: 加法左運算元
@@ -241,7 +245,9 @@ div-capture = (b i64, c i64, d i64) {
     }
 }
 
-; ── 2. 越界捕獲：`a = v[100]` → nil ─────────────────────────────────
+; 2. 越界捕獲：`a = v[100]` → nil
+...
+
 ; 安全索引的捕獲以「所在函式有 option 結果參數」為閘門（鏡像被取代的
 ; maybeAutoPropagateIndex 的既有範圍）。
 ; i i64: 下標（容器只有 3 個元素，100 越界得到 nil）
@@ -259,7 +265,9 @@ oob-capture = (i i64) (res ?i64) {
     res = x
 }
 
-; ── 3. 溢出捕獲：option 包裝路徑上的 sadd/ssub/smul/neg ─────────────
+; 3. 溢出捕獲：option 包裝路徑上的 sadd/ssub/smul/neg
+...
+
 ; 顯式 `?T` 標註讓算術結果落在 option 包裝路徑，溢出 → err（而非靜默回繞）。
 ; x i64: 要加 1 的數值（i64.MAX 觸發溢出）
 overflow-add = (x i64) {
@@ -299,7 +307,9 @@ overflow-neg = (x i64) {
     }
 }
 
-; ── 4. option 函式內 `?=` 仍上拋；plain 函式內捕獲；`_ =` 捨棄 ────────
+; 4. option 函式內 `?=` 仍上拋；plain 函式內捕獲；`_ =` 捨棄
+...
+
 ; `out ?= c / d`：上拋語義（要求函式有 option 結果參數），nil/err 提前 return。
 ; c i64: 被除數
 ; d i64: 除數（0 時產生除零 err 並提前 return）

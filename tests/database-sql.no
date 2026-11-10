@@ -74,10 +74,12 @@ bob-ok = 0
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         n-opt = n + 1
         n-opt: {
             ok -> n = it
+
             ->
         }
     }
@@ -156,10 +158,12 @@ ok-bind = 0
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             ok-bind-opt = ok-bind + 1
             ok-bind-opt: {
                 ok -> ok-bind = it
+
                 ->
             }
         }
@@ -172,10 +176,12 @@ ok-bind = 0
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             ok-bind-opt2 = ok-bind + 1
             ok-bind-opt2: {
                 ok -> ok-bind = it
+
                 ->
             }
         }
@@ -188,10 +194,12 @@ ok-bind = 0
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             ok-bind-opt3 = ok-bind + 1
             ok-bind-opt3: {
                 ok -> ok-bind = it
+
                 ->
             }
         }
@@ -282,10 +290,12 @@ total = 0
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         total-opt = total + 1
         total-opt: {
             ok -> total = it
+
             ->
         }
     }

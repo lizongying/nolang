@@ -19,9 +19,8 @@
 ;   4. 父接口方法（to-json 來自 json、to-noml 來自 noml）都能經子接口變數調用，
 ;      且三層傳遞（roundtrip → serialize → json/noml）同樣生效。
 
-; ─────────────────────────────────────────────
 ; 父接口
-; ─────────────────────────────────────────────
+...
 json {
     t.to-json() (s str)
 }
@@ -30,9 +29,8 @@ noml {
     t.to-noml() (s str)
 }
 
-; ─────────────────────────────────────────────
 ; 子接口：只有合併項，沒有自身方法
-; ─────────────────────────────────────────────
+...
 serialize {
     json
     noml
@@ -44,9 +42,8 @@ roundtrip {
     t.roundtrip() (s str)
 }
 
-; ─────────────────────────────────────────────
 ; 實作：user 宣告實作 serialize 與 roundtrip（父接口方法一併繼承）
-; ─────────────────────────────────────────────
+...
 user serialize, roundtrip {
     name str
     age i64
@@ -70,7 +67,7 @@ user.roundtrip = () (s str) {
     s = .to-json() - '/' - .to-noml()
 }
 
-u = user {
+u = user{
     name: 'Alice'
     age: 30
 }

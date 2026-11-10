@@ -10,10 +10,12 @@ double-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
             ok -> r = it
+
             ->
         }
     }

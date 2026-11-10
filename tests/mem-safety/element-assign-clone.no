@@ -85,7 +85,7 @@ DataHolder {
 ; 測試 struct-str-field
 ; ok bool: 把來源改成 'changed' 後 d.name 仍是 'field value'，且 items[0] 為 1 才為 true
 test-struct-str-field = () (ok bool) {
-    d = DataHolder {
+    d = DataHolder{
         name: 'old'
         items: [1, 2, 3]
     }

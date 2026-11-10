@@ -62,4 +62,6 @@ print('test-repeat: {ok3}')
 
 ok4 = test-pass-str()
 print('test-pass-str: {ok4}')
+
 ; 四項都應印 true；重點是 C 回傳的指標被包成新 str 後，跨函式傳遞與多次呼叫都不懸空、不累積
+...

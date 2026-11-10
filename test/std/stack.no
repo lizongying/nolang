@@ -8,7 +8,7 @@
 ; 空棧初始狀態：預先配置 data 但 n=0，size() 回 0、empty() 回 true
 t-init-empty = () {
     buf []i64 = with-len(32)
-    s = stack {
+    s = stack{
         data: buf
         n: 0
     }
@@ -22,7 +22,7 @@ t-init-empty = () {
 ; 全部彈完後 empty() 回 true
 t-push-pop = () {
     buf []i64 = with-len(32)
-    s = stack {
+    s = stack{
         data: buf
         n: 0
     }
@@ -35,28 +35,28 @@ t-push-pop = () {
     ; LIFO: pop 順序應為 30, 20, 10
     ok1 = false
     v1 = s.pop()
-    v1: {
-        nil -> ok1 = false
+    ok1 = v1: {
+        nil -> false
 
-        -> ok1 = v1 == 30
+        -> v1 == 30
     }
     runner.is-true(ok1, 'pop 1st == 30')
 
     ok2 = false
     v2 = s.pop()
-    v2: {
-        nil -> ok2 = false
+    ok2 = v2: {
+        nil -> false
 
-        -> ok2 = v2 == 20
+        -> v2 == 20
     }
     runner.is-true(ok2, 'pop 2nd == 20')
 
     ok3 = false
     v3 = s.pop()
-    v3: {
-        nil -> ok3 = false
+    ok3 = v3: {
+        nil -> false
 
-        -> ok3 = v3 == 10
+        -> v3 == 10
     }
     runner.is-true(ok3, 'pop 3rd == 10')
 
@@ -67,7 +67,7 @@ t-push-pop = () {
 ; peek 只看棧頂（後進的 20）且不彈出，size 保持 2
 t-peek = () {
     buf []i64 = with-len(32)
-    s = stack {
+    s = stack{
         data: buf
         n: 0
     }
@@ -76,10 +76,10 @@ t-peek = () {
 
     ok = false
     p = s.peek()
-    p: {
-        nil -> ok = false
+    ok = p: {
+        nil -> false
 
-        -> ok = p == 20
+        -> p == 20
     }
     runner.is-true(ok, 'peek == 20 (top)')
 
@@ -90,25 +90,25 @@ t-peek = () {
 ; 空棧邊界：pop 與 peek 均以 nil 表示無值，不報錯也不改狀態
 t-pop-empty = () {
     buf []i64 = with-len(32)
-    s = stack {
+    s = stack{
         data: buf
         n: 0
     }
     is-nil = false
     v = s.pop()
-    v: {
-        nil -> is-nil = true
+    is-nil = v: {
+        nil -> true
 
-        -> is-nil = false
+        -> false
     }
     runner.is-true(is-nil, 'pop empty == nil')
 
     is-nil2 = false
     p = s.peek()
-    p: {
-        nil -> is-nil2 = true
+    is-nil2 = p: {
+        nil -> true
 
-        -> is-nil2 = false
+        -> false
     }
     runner.is-true(is-nil2, 'peek empty == nil')
 }
@@ -116,7 +116,7 @@ t-pop-empty = () {
 ; clear() 丟掉全部元素（僅重設 n，不動底層緩衝）：size 歸零、empty 為真
 t-clear = () {
     buf []i64 = with-len(32)
-    s = stack {
+    s = stack{
         data: buf
         n: 0
     }

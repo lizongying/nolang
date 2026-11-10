@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/lizongying/nolang/lexer"
@@ -175,5 +177,131 @@ func TestStructDefinitionFirstFieldUnaffected(t *testing.T) {
 	}
 	if len(sd.Fields) != 2 {
 		t.Fatalf("expected 2 fields, got %d", len(sd.Fields))
+	}
+}
+
+// TestStructLiteralRejectsValuelessField guards the parser-side hard error for
+// "ghost fields". A bare identifier on its own line inside a struct literal
+// used to be silently accepted as a StructField with Value == nil. The usual
+// source is someone writing the element type under an empty vec field:
+//
+//	box {
+//	    a: []
+//	    i64        ; NOT a type annotation - becomes a ghost field
+//	}
+//
+// parseSliceLiteral returns as soon as it sees `[]`, so the type name is read
+// as the NEXT field name. Empty vec element types come from the struct field
+// declaration, so that extra line is always a mistake: it must be reported,
+// and it must not end up in the AST as a phantom field.
+func TestStructLiteralRejectsValuelessField(t *testing.T) {
+	const errID = "nu59u6hp"
+	cases := []struct {
+		name       string
+		src        string
+		wantLines  []int
+		wantFields []string
+	}{
+		{
+			name: "bare type names after empty vecs",
+			src: `box {
+    a []i64
+    b []str
+}
+p = box {
+    a: []
+    i64
+    b: []
+    str
+}
+`,
+			wantLines:  []int{7, 9},
+			wantFields: []string{"a", "b"},
+		},
+		{
+			name: "ghost field first",
+			src: `box {
+    a []i64
+}
+p = box {
+    i64
+    a: []
+}
+`,
+			wantLines:  []int{5},
+			wantFields: []string{"a"},
+		},
+		{
+			name: "control - every field has a value",
+			src: `box {
+    a []i64
+    b []str
+}
+p = box {
+    a: []
+    b: []
+}
+`,
+			wantLines:  nil,
+			wantFields: []string{"a", "b"},
+		},
+		{
+			// `Point = { x i64  s str }` is the anonymous struct DEFINITION
+			// form: every field is a bare `name type` pair with no value. It is
+			// legitimate (checker's operator-overload / overflow fixtures use
+			// it), so the ghost-field diagnostic must stay silent here.
+			name: "control - anonymous struct definition form",
+			src: `Point = {
+    x i64
+    s str
+}
+`,
+			wantLines:  nil,
+			wantFields: []string{"x", "i64", "s", "str"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := New(lexer.New(tc.src))
+			prog := p.ParseProgram()
+
+			var got []Diagnostic
+			for _, d := range p.Diagnostics() {
+				if d.Severity == SeverityError && d.ID == errID {
+					got = append(got, d)
+				}
+			}
+			if len(got) != len(tc.wantLines) {
+				t.Fatalf("got %d valueless-field errors, want %d; all errors: %v",
+					len(got), len(tc.wantLines), p.Errors())
+			}
+			for i, d := range got {
+				if d.Pos.Line != tc.wantLines[i] {
+					t.Errorf("error %d: line %d, want %d", i, d.Pos.Line, tc.wantLines[i])
+				}
+				if !strings.Contains(d.Message, "has no value") {
+					t.Errorf("message should explain the missing value, got %q", d.Message)
+				}
+			}
+
+			if len(prog.Statements) == 0 {
+				t.Fatal("no statements parsed")
+			}
+			let, ok := prog.Statements[len(prog.Statements)-1].(*LetStatement)
+			if !ok {
+				t.Fatalf("last statement is %T, want *LetStatement", prog.Statements[len(prog.Statements)-1])
+			}
+			sl, ok := let.Value.(*StructLiteral)
+			if !ok {
+				t.Fatalf("RHS is %T, want *StructLiteral", let.Value)
+			}
+			names := make([]string, 0, len(sl.Fields))
+			for _, f := range sl.Fields {
+				names = append(names, f.Name)
+			}
+			if !reflect.DeepEqual(names, tc.wantFields) {
+				t.Errorf("struct literal fields = %v, want %v (ghost fields must be dropped)", names, tc.wantFields)
+			}
+		})
 	}
 }

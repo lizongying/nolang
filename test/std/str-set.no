@@ -7,7 +7,7 @@
 
 ; 初始狀態：init() 後 len 為 0 且 is-empty() 為真
 t-init = () {
-    s = str-set {}
+    s = str-set{}
     s.init()
     runner.eq(s.len(), 0, 'init len == 0')
     e = s.is-empty()
@@ -17,7 +17,7 @@ t-init = () {
 ; add 回報是否新成員：hello / world 為 true、重複加入 hello 為 false，
 ; len 只計唯一字串，contains 對未加入的 zzz 回 false
 t-add-contains = () {
-    s = str-set {}
+    s = str-set{}
     s.init()
     n1 = s.add('hello')
     runner.is-true(n1, 'add hello is-new')
@@ -35,7 +35,7 @@ t-add-contains = () {
 ; remove 既有成員回 true 且該成員不再被 contains，其餘成員保留；
 ; remove 不存在的成員回 false
 t-remove = () {
-    s = str-set {}
+    s = str-set{}
     s.init()
     s.add('a')
     s.add('bb')
@@ -51,7 +51,7 @@ t-remove = () {
 
 ; clear() 清空集合：len 歸零、is-empty() 為真
 t-clear = () {
-    s = str-set {}
+    s = str-set{}
     s.init()
     s.add('x')
     s.add('y')

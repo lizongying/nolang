@@ -6,6 +6,10 @@
 
 # /test/runner
 
+; 動態 Huffman 樣本：zlib（level 9）壓 2292 位元組「英文單詞串」的原始 deflate。
+; 首 3 位元為 BFINAL=1 / BTYPE=10，其後為動態表頭；兩處測試共用同一份資料。
+dynhex = '7D955D6E03310884AFB257B3D5A8A9B46923354F9C3ECAE2846F00EDC37AFD070C3006BB3CC6F63D6EB7B1BD6663BF5FC7365FD363B0D8FCBAEC7AE1FD1D0B3FFDECE31AE57A6DCBFCFDFF67FFFBDD02906B5BDBD87259FBD89E59EDE3FAC6715CF2A58F469D7EDB35D381750C89A5711D84D5006B310DF30883E9404C502796E1971E3054C810F0225ABECBF06848D7DEFA60393BA3622D8EC80E00F894C6987CD79F28B0FE420F099FEF5143FEE07BF61F24A2F54C7884FFE442844F7DC8A99E09541D855DD9A21280EEE335705BB40928F015B2CC4CF8C435E8E526CEA809CD90B3AE5E507B0144F64291BEC09A4BBDA85428A464D8487ACE2D0B3104530D57926B549A18D5E2E782A6D02B80CA87EA59A9269996249242847FCCC44C79552192BAF338272AE52893242FEB33B1FAFCE879EA4D34CF62253D2391D1BA8E580A793439EBDB0590C8BB6C0BDE69B92DDC147DB9703687B3206C3A6049BCF5CDA054577581703489FDC3E87A82D566C82758DB3FE79AFB27'
+
 ; 壓縮：'Hello' 應產生非空的 gzip 串流（含標頭與尾部 CRC/ISIZE）
 t-compress = () {
     data []byte = [1, 2, 3, 4, 5]
@@ -60,6 +64,24 @@ t-deflate-stored = () {
     runner.eq(ixout36c23, 50, 'deflated data[4] == 50')
 }
 
+; ── 空輸入：仍須產生合法的 DEFLATE 主體 ─────────────────────────────
+; 修復前 deflate-stored(空) 回 0 位元組，zlib/gzip 串流缺 DEFLATE 主體，
+; 真實解壓端一律報 "incomplete or truncated stream"。此處同時以
+; CPython gzip/zlib 交叉驗證（見 test/README.md §5.1）。
+t-empty = () {
+    none []byte = with-cap(0)
+
+    d = gzip.deflate-stored(none)
+    runner.eq(len(d), 5, '空輸入 deflate-stored = 5 位元組（1+2+2）')
+    runner.str-eq(d.to-hex(), '010000FFFF', 10, '空輸入 = BFINAL=1 / LEN=0 / NLEN=0xFFFF')
+
+    g = gzip.gzip-compress(none)
+    runner.eq(len(g), 23, 'gzip 空串流 = 10(header) + 5(body) + 8(trailer)')
+
+    back = gzip.gzip-decompress(g)
+    runner.eq(len(back), 0, 'gzip 空串流可還原為 0 位元組')
+}
+
 ; 手工構造的 DEFLATE stored 區塊（BFINAL=1、BTYPE=00）應解出 1..5 五個位元組
 t-inflate-stored = () {
 
@@ -91,7 +113,7 @@ t-inflate-stored = () {
 ; ── 位元讀取器（LSB-first，DEFLATE 用）──────────────────────────────
 t-bit-reader = () {
     br = bit-reader{}
-    br.data = [0xB5, 0x01, 0x34, 0x12]
+    br.data = [0xb5, 0x01, 0x34, 0x12]
     br.pos = 0
     br.bit-buf = 0
     br.bit-cnt = 0
@@ -107,7 +129,7 @@ t-bit-reader = () {
     runner.eq(b3, 0, 'read-bit：bit3 = 0（0xB5 = 1011_0101）')
 
     v = br.read-bits(4)
-    runner.eq(v, 0x0B, 'read-bits(4) 續讀高位半字節 = 0x0B')
+    runner.eq(v, 0x0b, 'read-bits(4) 續讀高位半字節 = 0x0B')
 
     ; 下一字節 0x01 → 讀 1 位後剩 7 位；skip-to-byte 丟掉餘位
     one = br.read-bits(1)
@@ -123,10 +145,10 @@ t-bit-reader = () {
 t-huffman = () {
     lc = huffman{}
     dc = huffman{}
-    build-fixed(lc, dc)
+    gzip.build-fixed(lc, dc)
 
     br = bit-reader{}
-    br.data = [0x8E, 0x00]
+    br.data = [0x8e, 0x00]
     br.pos = 0
     br.bit-buf = 0
     br.bit-cnt = 0
@@ -153,6 +175,39 @@ t-huffman = () {
     runner.eq(s3, 0, '自建表：位元 0 解出符號 0')
 }
 
+; ── 動態 Huffman 表建構（直接呼叫 build-dynamic）────────────────────
+; 同一份 dynamic 樣本，前 3 位元為 BFINAL=1 / BTYPE=10；表建好後連續解出
+; 'z','e','t','a' 四個字面量，即證明字面/長度表正確。
+t-build-dynamic = () {
+    opt = dynhex.from-hex()
+    raw []byte = with-len(0)
+    raw = opt: {
+        ok -> it
+
+        -> raw
+    }
+
+    br = bit-reader{}
+    br.data = raw
+    br.pos = 0
+    br.bit-buf = 0
+    br.bit-cnt = 0
+
+    fin = br.read-bit()
+    bt = br.read-bits(2)
+    runner.eq(fin, 1, 'BFINAL = 1')
+    runner.eq(bt, 2, 'BTYPE = 2（動態 Huffman）')
+
+    lc = huffman{}
+    dc = huffman{}
+    gzip.build-dynamic(br, lc, dc)
+
+    runner.eq(lc.decode(br), 122, '動態表解出 "z"')
+    runner.eq(lc.decode(br), 101, '動態表解出 "e"')
+    runner.eq(lc.decode(br), 116, '動態表解出 "t"')
+    runner.eq(lc.decode(br), 97, '動態表解出 "a"')
+}
+
 ; ── inflate：fixed Huffman 區塊（btype=1）───────────────────────────
 ; zlib（level 9, Z_FIXED）壓 'hello hello hello world hello' 的原始 deflate
 t-inflate-fixed = () {
@@ -175,8 +230,7 @@ t-inflate-fixed = () {
 ; zlib（level 9）壓 2292 位元組「英文單詞串」的原始 deflate；
 ; 期望值以長度 + Adler-32 校驗（避免在測試檔內複製 2KB 原文）
 t-inflate-dynamic = () {
-    hex = '7D955D6E03310884AFB257B3D5A8A9B46923354F9C3ECAE2846F00EDC37AFD070C3006BB3CC6F63D6EB7B1BD6663BF5FC7365FD363B0D8FCBAEC7AE1FD1D0B3FFDECE31AE57A6DCBFCFDFF67FFFBDD02906B5BDBD87259FBD89E59EDE3FAC6715CF2A58F469D7EDB35D381750C89A5711D84D5006B310DF30883E9404C502796E1971E3054C810F0225ABECBF06848D7DEFA60393BA3622D8EC80E00F894C6987CD79F28B0FE420F099FEF5143FEE07BF61F24A2F54C7884FFE442844F7DC8A99E09541D855DD9A21280EEE335705BB40928F015B2CC4CF8C435E8E526CEA809CD90B3AE5E507B0144F64291BEC09A4BBDA85428A464D8487ACE2D0B3104530D57926B549A18D5E2E782A6D02B80CA87EA59A9269996249242847FCCC44C79552192BAF338272AE52893242FEB33B1FAFCE879EA4D34CF62253D2391D1BA8E580A793439EBDB0590C8BB6C0BDE69B92DDC147DB9703687B3206C3A6049BCF5CDA054577581703489FDC3E87A82D566C82758DB3FE79AFB27'
-    opt = hex.from-hex()
+    opt = dynhex.from-hex()
     raw []byte = with-len(0)
     raw = opt: {
         ok -> it
@@ -200,11 +254,13 @@ t-inflate-dynamic = () {
 p1, f1 = runner.test('gzip.compress', t-compress)
 p2, f2 = runner.test('gzip.compress/decompress roundtrip', t-compress-decompress)
 p3, f3 = runner.test('gzip.deflate-stored', t-deflate-stored)
-p4, f4 = runner.test('gzip.inflate stored', t-inflate-stored)
-p5, f5 = runner.test('gzip.bit-reader', t-bit-reader)
-p6, f6 = runner.test('gzip.huffman', t-huffman)
-p7, f7 = runner.test('gzip.inflate fixed', t-inflate-fixed)
-p8, f8 = runner.test('gzip.inflate dynamic', t-inflate-dynamic)
+p4, f4 = runner.test('gzip.empty input', t-empty)
+p5, f5 = runner.test('gzip.inflate stored', t-inflate-stored)
+p6, f6 = runner.test('gzip.bit-reader', t-bit-reader)
+p7, f7 = runner.test('gzip.huffman', t-huffman)
+p8, f8 = runner.test('gzip.build-dynamic', t-build-dynamic)
+p9, f9 = runner.test('gzip.inflate fixed', t-inflate-fixed)
+p10, f10 = runner.test('gzip.inflate dynamic', t-inflate-dynamic)
 
 total = runner.summary()
 f = runner.failed-count()

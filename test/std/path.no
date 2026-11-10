@@ -11,7 +11,7 @@
 
 ; base：取最後一段，/a/b/c.txt → c.txt
 t-base = () {
-    p = path {
+    p = path{
         p: '/a/b/c.txt'
     }
     b = p.base()
@@ -20,7 +20,7 @@ t-base = () {
 
 ; 不含 '/' 的路徑應原樣回傳
 t-base-no-slash = () {
-    p = path {
+    p = path{
         p: 'file.txt'
     }
     b = p.base()
@@ -29,7 +29,7 @@ t-base-no-slash = () {
 
 ; 根目錄 '/' 的 base 應為空字串
 t-base-root = () {
-    p = path {
+    p = path{
         p: '/'
     }
     b = p.base()
@@ -40,7 +40,7 @@ t-base-root = () {
 
 ; ext 回含點的副檔名：/a/b/c.txt → .txt
 t-ext = () {
-    p = path {
+    p = path{
         p: '/a/b/c.txt'
     }
     e = p.ext()
@@ -49,7 +49,7 @@ t-ext = () {
 
 ; 無副檔名時回空字串（不把目錄分隔點當副檔名）
 t-ext-no-ext = () {
-    p = path {
+    p = path{
         p: '/a/b/c'
     }
     e = p.ext()
@@ -60,7 +60,7 @@ t-ext-no-ext = () {
 
 ; is-abs：以 '/' 開頭的路徑為絕對路徑
 t-is-abs = () {
-    p = path {
+    p = path{
         p: '/a/b'
     }
     yes = p.is-abs()
@@ -69,7 +69,7 @@ t-is-abs = () {
 
 ; 相對路徑 'a/b' 應回 false
 t-is-abs-relative = () {
-    p = path {
+    p = path{
         p: 'a/b'
     }
     yes = p.is-abs()
@@ -78,7 +78,7 @@ t-is-abs-relative = () {
 
 ; 空字串應回 false
 t-is-abs-empty = () {
-    p = path {
+    p = path{
         p: ''
     }
     yes = p.is-abs()

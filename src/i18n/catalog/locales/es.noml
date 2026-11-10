@@ -803,6 +803,7 @@ Error al escribir utils.no: %v
   'nmxs8sop': 'syslog: %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': 'no se puede inferir el tipo de \'%s\': %s() requiere una anotación de tipo explícita en el lado izquierdo (p. ej. `name []byte = %s(n)`)'
+  'nu59u6hp': 'el campo \'%s\' del literal de struct no tiene valor; escribe \'name: value\' o elimina esta línea (un nombre de tipo suelto tras \'field: []\' no es una anotación de tipo - el tipo de elemento de un vec vacío viene de la declaración del campo)'
   'nwtpvei9': 'embed: fs.embed requiere un directorio, se obtuvo un archivo: %s (resuelto: %s)'
   'nx1476j3': '  no pack nogit.no                 empaquetar un único archivo fuente'
   'nz3ol1c4': 'el módulo ESM %q no está declarado en las dependencias de package.noml; añade dependencies: [\'%s:^latest\'] (o dev-dependencies) y ejecuta npm install'

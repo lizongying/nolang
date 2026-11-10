@@ -10,7 +10,7 @@ point {
     y i64
 }
 
-p = point {
+p = point{
     x: 1
     y: 2
 }

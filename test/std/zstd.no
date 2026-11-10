@@ -17,7 +17,7 @@
 ; ── 1. 位元讀取器（LSB-first）────────────────────────────────────────
 t-bit-reader = () {
     br = zs-bit-reader{}
-    br.init([0xB5, 0x01, 0xAC, 0x02], 0)
+    br.init([0xb5, 0x01, 0xac, 0x02], 0)
 
     b0 = br.read-bit()
     b1 = br.read-bit()
@@ -30,7 +30,7 @@ t-bit-reader = () {
 
     ; 剩 4 位（0xB5 >> 4 = 0xB），read-bits(4) = 11
     v4 = br.read-bits(4)
-    runner.eq(v4, 0x0B, 'read-bits(4) 拼回高位半字節 = 0x0B')
+    runner.eq(v4, 0x0b, 'read-bits(4) 拼回高位半字節 = 0x0B')
 
     ; 下一字節 0x01
     v1 = br.read-bits(1)
@@ -49,21 +49,21 @@ t-bit-reader = () {
 ; ── 2. bits-for-count = 需要幾位元表示該計數（bit length）─────────────
 ; 實作為「每右移一次計一次」，故 count=1 → 1、count=255 → 8、count=256 → 9
 t-bits-for-count = () {
-    runner.eq(bits-for-count(0), 0, 'bits-for-count(0) = 0（非正值）')
-    runner.eq(bits-for-count(1), 1, 'bits-for-count(1) = 1')
-    runner.eq(bits-for-count(2), 2, 'bits-for-count(2) = 2')
-    runner.eq(bits-for-count(3), 2, 'bits-for-count(3) = 2')
-    runner.eq(bits-for-count(4), 3, 'bits-for-count(4) = 3')
-    runner.eq(bits-for-count(7), 3, 'bits-for-count(7) = 3')
-    runner.eq(bits-for-count(8), 4, 'bits-for-count(8) = 4')
-    runner.eq(bits-for-count(255), 8, 'bits-for-count(255) = 8')
-    runner.eq(bits-for-count(256), 9, 'bits-for-count(256) = 9')
+    runner.eq(zstd.bits-for-count(0), 0, 'zstd.bits-for-count(0) = 0（非正值）')
+    runner.eq(zstd.bits-for-count(1), 1, 'zstd.bits-for-count(1) = 1')
+    runner.eq(zstd.bits-for-count(2), 2, 'zstd.bits-for-count(2) = 2')
+    runner.eq(zstd.bits-for-count(3), 2, 'zstd.bits-for-count(3) = 2')
+    runner.eq(zstd.bits-for-count(4), 3, 'zstd.bits-for-count(4) = 3')
+    runner.eq(zstd.bits-for-count(7), 3, 'zstd.bits-for-count(7) = 3')
+    runner.eq(zstd.bits-for-count(8), 4, 'zstd.bits-for-count(8) = 4')
+    runner.eq(zstd.bits-for-count(255), 8, 'zstd.bits-for-count(255) = 8')
+    runner.eq(zstd.bits-for-count(256), 9, 'zstd.bits-for-count(256) = 9')
 }
 
 ; ── 3. FSE 表建構 / 解碼 ─────────────────────────────────────────────
 ; 兩個符號、table-log=1 → 每符號佔 1 個表項
 t-fse = () {
-    norm []i64 = [1, 1]
+    norm = [1, 1]
     ft = fse-table{}
     ft.build(norm, 1, 1)
 
@@ -81,7 +81,7 @@ t-fse = () {
 ; ── 4. zstd Huffman 表建構 / 解碼 ────────────────────────────────────
 ; 兩符號、長度各 1 → 規範碼 0 與 1；首位元 0 應解出符號 0
 t-huffman = () {
-    lens []i64 = [1, 1]
+    lens = [1, 1]
     ht = zs-huffman{}
     ht.build(lens, 1)
 
@@ -135,6 +135,7 @@ t-roundtrip = () {
         big[i] = 65 + (i % 26)
     }
     z2 = zstd.zstd-compress(big)
+
     ; 300 > 255 → fcs_flag=1，2 位元組 FCS
     runner.eq(len(z2), 310, '300 位元組 → 310 位元組幀（4 magic + 1 FHD + 2 FCS + 3 區塊頭 + 300）')
     r2 = zstd.zstd-decompress(z2)

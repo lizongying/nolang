@@ -32,7 +32,6 @@ bhex = (data []byte) (hex str) {
     #{overflow=wrap}
     hex str = with-len(n * 2)
     i <- [0..n): {
-
         ixout37c37 = data[i]: {
             ok -> it
 
@@ -84,7 +83,6 @@ t-salt-sensitive = () {
     ; 不同 salt 應產生不同 tag
     diff = 0
     i <- [0..32): {
-
         ixout77c10 = a[i]: {
             ok -> it
 
@@ -98,10 +96,12 @@ t-salt-sensitive = () {
         }
 
         (ixout77c10 != ixout77c18) -> {
+
             #{overflow=wrap}
             diff-opt = diff + 1
             diff-opt: {
                 ok -> diff = it
+
                 -> _
             }
         }

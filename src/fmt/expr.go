@@ -328,42 +328,65 @@ func (f *formatter) formatArrayLiteral(e *parser.ArrayLiteral) {
 }
 
 func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
-	// Use multi-line formatting for arrays with many elements
-	if len(e.Elements) > 8 {
-		// 純量字面量（num/byte/char/bool 等）一律每行 8 個，避免過長
-		if allScalarLiterals(e.Elements) {
-			f.write("[")
-			f.indent++
-			for i, el := range e.Elements {
-				if i > 0 && i%8 != 0 {
-					f.write(", ")
-				}
-				if i%8 == 0 {
-					f.newline()
-				}
-				f.formatExpression(el)
-				if i%8 == 7 || i == len(e.Elements)-1 {
-					f.write(",")
-				}
+	scalar := allScalarLiterals(e.Elements)
+
+	// 純量字面量（num/byte/char/bool 等）一律每行 8 個，避免過長
+	if len(e.Elements) > 8 && scalar {
+		f.write("[")
+		f.indent++
+		for i, el := range e.Elements {
+			if i > 0 && i%8 != 0 {
+				f.write(", ")
 			}
-			f.indent--
+			if i%8 == 0 {
+				f.newline()
+			}
+			f.formatExpression(el)
+			if i%8 == 7 || i == len(e.Elements)-1 {
+				f.write(",")
+			}
+		}
+		f.indent--
+		f.newline()
+		f.write("]")
+		return
+	}
+
+	// 字串陣列一律每行一個元素（2026-11-10 定案）：不看元素個數，也不看原始碼
+	// 是單行還是同行塞了好幾個，全部拆開。字串不是純量、長度差異大，又常拿來
+	// 當查找表，擠在同一行既難讀也難 diff。此規則優先於下面「保留原分行」的路徑；
+	// 空陣列沒有元素，維持 []。
+	if allStringLiterals(e.Elements) {
+		f.write("[")
+		f.indent++
+		for _, el := range e.Elements {
 			f.newline()
-			f.write("]")
-			return
+			f.formatExpression(el)
+			f.write(",")
 		}
+		f.indent--
+		f.newline()
+		f.write("]")
+		return
+	}
 
-		// 偵測源碼是否已跨多行；若是，保留原始分行結構（例如 SHAPES 每行 8 個值）
-		sourceMultiLine := false
-		if len(e.Elements) >= 2 {
-			firstLine := e.Elements[0].Pos().Line
-			for i := 1; i < len(e.Elements); i++ {
-				if e.Elements[i].Pos().Line != firstLine {
-					sourceMultiLine = true
-					break
-				}
+	// 偵測源碼是否已跨多行；若是，保留原始分行結構（例如 SHAPES 每行 8 個值）
+	sourceMultiLine := false
+	if len(e.Elements) >= 2 {
+		firstLine := e.Elements[0].Pos().Line
+		for i := 1; i < len(e.Elements); i++ {
+			if e.Elements[i].Pos().Line != firstLine {
+				sourceMultiLine = true
+				break
 			}
 		}
+	}
 
+	// 過去只有 >8 個元素才會保留分行：像 `t.evk = [\n 'code',\n 'file-mode',\n
+	// 'file-perm'\n]` 這種 3 個字串的表格會被壓成單行，evt 那種長字串甚至
+	// 會擠成 200+ 字元的一行。非純量元素（字串 / 複合式）一個就是一個邏輯項，
+	// 作者刻意分行時不該合併；純量仍走既有的 ≤8 單行規則，不受影響。
+	if len(e.Elements) > 8 || (!scalar && sourceMultiLine) {
 		f.write("[")
 		f.indent++
 		prevLine := 0
@@ -405,6 +428,21 @@ func (f *formatter) formatSliceLiteral(e *parser.SliceLiteral) {
 // allScalarLiterals 判斷所有元素是否為純量字面量（num/byte/char/bool 等），
 // 包含整數、浮點數、字元、布林字面量，以及其前綴運算（如負號）。
 // 用於決定是否套用每行 8 個的緊湊格式。
+// allStringLiterals 判斷是否為「字串陣列」：至少一個元素，且每一個都是字串
+// 字面量（'...' 或反引號原始串）。混合型別、含運算式或註解的陣列不算，
+// 仍走「原始碼跨多行才保留分行」的規則。
+func allStringLiterals(elements []parser.Expression) bool {
+	if len(elements) == 0 {
+		return false
+	}
+	for _, el := range elements {
+		if _, ok := el.(*parser.StringLiteral); !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func allScalarLiterals(elements []parser.Expression) bool {
 	for _, el := range elements {
 		if !isScalarLiteral(el) {
@@ -438,6 +476,19 @@ func (f *formatter) formatStructLiteral(e *parser.StructLiteral) {
 	}
 	f.indent++
 	for _, field := range e.Fields {
+		// 欄位的 Doc 必須印在該欄位正上方。以前 formatStructLiteral 只輸出
+		// `name: value`，欄位註解因而被排到字面量 `}` 之後、變成下一條陳述的
+		// Doc（compiler/src/h2m.no 的 s99j 釋放清單本該依附 `rls: []`）。
+		// 這裡比照 formatStructDefinition 的寫法保留註解與欄位間的空行。
+		if doc := field.GetDoc(); doc != nil && len(doc.List) > 0 {
+			f.newline()
+			f.formatDocComments(doc)
+			lastDocLine := doc.List[len(doc.List)-1].Pos.Line
+			if lastDocLine > 0 && field.Token.Line > 0 &&
+				f.hasBlankLineBetween(lastDocLine, field.Token.Line) {
+				f.write("\n") // blank line (no indent)
+			}
+		}
 		f.newline()
 		f.write(field.Name)
 		if field.Value != nil {

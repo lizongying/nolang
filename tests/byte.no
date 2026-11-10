@@ -1,6 +1,6 @@
 ; merged category 'byte' -- members: bytes-more.no, bytes-test.no, bytes.no, net-byte-fidelity.no, set-byte-receiver-writeback.no, setbyte-fallible.no
 ; (originals backed up under tests/_archive/byte/)
-; ===================== merged from tests/bytes-more.no =====================
+; merged from tests/bytes-more.no
 ; bytes-more.no — 合併自 bytes/str→bytes 轉換碎片（頂層拼接，非函數包裹）
 ;
 ; 來源：to-bytes.no, to-bytes2.no, to-bytes3.no（str.to-bytes 三種變體）
@@ -9,6 +9,7 @@
 ;
 ; 採頂層拼接：各碎片原樣串接，衝突變數加後綴重新命名（s→s1/s2/s3, b→b1/b2/b3, n→n1）；
 ; 片段間以 print('---') 分隔以保全 stdout 指紋確定性（golden 比對用）。
+...
 
 ; ── 來自 to-bytes.no：str.to-bytes 基本 + 首字節斷言 ──
 print('start')
@@ -47,7 +48,8 @@ print('after method call')
 print(b3[0])
 print('done')
 
-; ===================== merged from tests/bytes-test.no =====================
+; merged from tests/bytes-test.no
+...
 line = ''
 ok = false
 line, ok = fs.get-line()
@@ -66,8 +68,9 @@ j <- [0..bs.len()): {
     print('byte[{j}] = {c}')
 }
 
-; ===================== merged from tests/bytes.no =====================
+; merged from tests/bytes.no
 ; bytes.no — 簡單的字節轉換測試
+...
 
 ; 測試 str-bytes
 test-str-bytes = () {
@@ -84,7 +87,7 @@ test-str-bytes = () {
 test-str-bytes()
 print(1)
 
-; ===================== merged from tests/net-byte-fidelity.no =====================
+; merged from tests/net-byte-fidelity.no
 ; 回歸測試：`str` 當「原始位元組緩衝區」時，讀取**必須**用 `.byte(i)`，不能用 `s[i]`。
 ;
 ; 背景：`s[i]` 是**碼點索引**且回傳 `char`（見 docs/docs/lang/str.md:55），
@@ -98,6 +101,7 @@ print(1)
 ; 修法：src/std/net/*.no 內所有「str 緩衝區的讀取」改成 .byte(i)。
 ;
 ; 本檔以「無 socket」的確定性方式把語義釘住。
+...
 
 ; 1) []byte -> str 的原始位元組往返（0..255 全值），用 .byte(i) 讀回必須完全一致
 src []byte = with-len(256)
@@ -108,7 +112,6 @@ s = src.to-bytes-str()
 
 bad1 = false
 i2 <- [0..256): {
-
     ixout26c19 = src[i2]: {
         ok -> it
 
@@ -149,7 +152,6 @@ rlen != 148 -> print('FAIL: 3 tls record rlen=' + rlen.to-str() + ' (expect 148)
 ; 4) 對照：[]byte 的元素存取本來就是位元組（x[i]），應與 str 的 .byte(i) 一致
 bad4 = false
 i3 <- [0..5): {
-
     ixout62c5 = hdr[i3]: {
         ok -> it
 
@@ -162,7 +164,7 @@ i3 <- [0..5): {
 bad4 -> print('FAIL: 4 []byte[i] vs str.byte(i) differ')
 bad4 == false -> print('PASS: 4 []byte[i] == str.byte(i)')
 
-; ===================== merged from tests/set-byte-receiver-writeback.no =====================
+; merged from tests/set-byte-receiver-writeback.no
 ; set-byte-receiver-writeback.no — 接收者寫回：`set-byte` 必須寫進真正的欄位/元素
 ;
 ; `txt.set-byte(i, b)` / `str.set-byte(i, b)` 是 raw-byte 寫入器（與 `.byte(i)` 配對），
@@ -175,6 +177,7 @@ bad4 == false -> print('PASS: 4 []byte[i] == str.byte(i)')
 ; 兩者不可互換）。
 ;
 ; 對照組（必須始終正確）：純區域變數接收者。
+...
 
 box {
     s str
@@ -193,7 +196,7 @@ a == 'Hello' -> print('ok 1: local str receiver')
 -> print('fail 1: local str receiver got={a}')
 
 ; (2) 結構體 str 欄位接收者：寫回必須到達欄位本身
-b = box {
+b = box{
     s: 'hello'
     t: 'hi'
 }
@@ -216,8 +219,8 @@ rows[0] == 'Z' -> print('ok 4: slice element receiver')
 -> print('fail 4: slice element receiver got={rows[0]}')
 
 ; (5) 巢狀結構體欄位接收者（兩層投影）
-w = wrap {
-    b: box {
+w = wrap{
+    b: box{
         s: 'aa'
         t: 'bb'
     }
@@ -237,7 +240,7 @@ b.s.len-bytes() == 5 -> print('ok 7: set-byte keeps the length')
 
 -> print('fail 7: set-byte length got=' - b.s.len-bytes().to-str())
 
-; ===================== merged from tests/setbyte-fallible.no =====================
+; merged from tests/setbyte-fallible.no
 ; test-setbyte-fallible: set-byte 的可失敗語意（MIR 後端）
 ;
 ; txt.set-byte / str.set-byte 簽名為 (i i64, b byte) (ok ?bool)：
@@ -245,6 +248,7 @@ b.s.len-bytes() == 5 -> print('ok 7: set-byte keeps the length')
 ;   - 索引越界（>= 容量，或負數）→ 回傳 nil 且「跳過寫入」（緩衝區不變、不野寫）
 ; 邊界以實體容量為準（txt 固定 255、%str-long 用 cap），而非 len。
 ; 每次 `no run` 輸出應為純 ok 行；任何 FAIL 行都代表回歸。
+...
 
 ; 斷言小工具：條件成立印 'ok'，不成立印 'FAIL'，方便逐行看出哪一項回歸
 ; label str: 該項檢查的名稱，輸出時原樣印出

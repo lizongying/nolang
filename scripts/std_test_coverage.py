@@ -13,10 +13,16 @@ API 面（inventory）来源是 `src/std/**/*.no` 的**顶层声明**：
     不在别模块的测试里找，避免 `.len(` / `.init(` 这种通用名把上千个方法一起点亮。
     这是近似：同一模块内有多个结构体共用同名方法时可能高估（`--verbose` 会标 `~`）。
 
+私有符号（`_` 前缀）**不计入分母**：checker 的 private_std 守卫（诊断码 `raqvyltn`）
+禁止测试档（用户码）调用 `<alias>._foo(...)`，它们在设计上就无法被直接调用，
+只经公开 API 间接执行。强行计入会让分母含永远填不满的项，掩盖真实缺口。
+`--missing` 会把它们单独列在 "private (不可直接调用)" 段，便于确认没有漏掉公开包装。
+
 用法：
   python3 scripts/std_test_coverage.py                # 汇总 + 缺口清单
   python3 scripts/std_test_coverage.py --missing      # 只列缺口符号
   python3 scripts/std_test_coverage.py --module sha256
+  python3 scripts/std_test_coverage.py --module archive     # 也吃目录前缀：archive/*
   python3 scripts/std_test_coverage.py --markdown     # 输出 markdown 表
   python3 scripts/std_test_coverage.py --strict       # 有缺口则 rc=1
 """
@@ -66,16 +72,23 @@ def load_module_aliases():
 
 
 def strip_comment(line):
-    """去掉行尾注释（`;` 起），保留字符串字面量内的内容。"""
+    """去掉行尾注释（`;` 起）与字符串字面量的内容。
+
+    字符串内容必须一并抹掉：测试档常把符号名写进断言说明
+    （如 `runner.test('zip.u16le/u32le', …)`），若保留就会被当成调用而虚报覆盖。
+    引号本身保留，仅把引号内的字符换成空格，行号与列位置不受影响。
+    """
     out = []
     i = 0
     quote = None
     while i < len(line):
         c = line[i]
         if quote:
-            out.append(c)
             if c == quote:
+                out.append(c)
                 quote = None
+            else:
+                out.append(' ')
         else:
             if c in '\'"`':
                 quote = c
@@ -128,17 +141,20 @@ def collect_inventory():
                     items.append({
                         'module': mp, 'alias': alias, 'kind': 'method',
                         'owner': owner, 'symbol': meth, 'decl': name,
+                        'private': meth.startswith('_'),
                     })
                 else:
                     items.append({
                         'module': mp, 'alias': alias, 'kind': 'func',
                         'owner': None, 'symbol': name, 'decl': name,
+                        'private': name.startswith('_'),
                     })
     return items, modules
 
 
 def load_tests():
-    """{basename_without_ext: text}（注释已剥离，避免档头说明里的名字被算成覆盖）"""
+    """{basename_without_ext: text}（注释与字符串字面量内容已剥离，
+    避免档头说明或断言说明里的名字被算成覆盖）"""
     out = {}
     if not os.path.isdir(TEST):
         return out
@@ -196,28 +212,41 @@ def main():
         by_module.setdefault(it['module'], []).append(it)
 
     only = None
+    prefix = None
     if args.module:
         only = args.module.strip('/')
         if only not in by_module:
             cands = [m for m in by_module if modules[m] == args.module]
-            only = cands[0] if cands else None
-        if only is None:
+            if cands:
+                only = cands[0]
+            else:
+                # 目录前缀：`--module archive` 等同 archive/*
+                pre = only + '/'
+                if any(m.startswith(pre) for m in by_module):
+                    prefix = pre
+                    only = None
+        if only is None and prefix is None:
             sys.exit('unknown module: %s' % args.module)
 
     rows = []
     for mp in sorted(by_module):
         if only and mp != only:
             continue
+        if prefix and not mp.startswith(prefix):
+            continue
         its = by_module[mp]
-        f = [i for i in its if i['kind'] == 'func']
-        m = [i for i in its if i['kind'] == 'method']
+        f = [i for i in its if i['kind'] == 'func' and not i['private']]
+        m = [i for i in its if i['kind'] == 'method' and not i['private']]
+        priv = [i for i in its if i['private']]
         rows.append({
             'module': mp,
             'alias': its[0]['alias'],
             'has_test': its[0]['alias'] in tests,
             'funcs': len(f), 'funcs_cov': sum(1 for i in f if i['covered']),
             'methods': len(m), 'methods_cov': sum(1 for i in m if i['covered']),
-            'missing': [i['decl'] for i in its if not i['covered']],
+            'priv': len(priv),
+            'missing': [i['decl'] for i in its if not i['covered'] and not i['private']],
+            'priv_missing': [i['decl'] for i in priv if not i['covered']],
             'items': its,
         })
 
@@ -230,6 +259,15 @@ def main():
             if r['missing']:
                 print('[%s] (%s) %d missing:' % (r['module'], r['alias'], len(r['missing'])))
                 for name in r['missing']:
+                    print('    ' + name)
+        priv = [(r['module'], r['alias'], r['priv_missing']) for r in rows if r['priv_missing']]
+        if priv:
+            print()
+            print('private (_ 前缀，用户码不可直接调用，不计入分母) 共 %d 个：' %
+                  sum(len(p[2]) for p in priv))
+            for mod, alias, names in priv:
+                print('[%s] (%s) %d private:' % (mod, alias, len(names)))
+                for name in names:
                     print('    ' + name)
         return 1 if (args.strict and tot != cov) else 0
 
@@ -249,6 +287,9 @@ def main():
     print('API 面 %d（函数 %d，方法 %d），已覆盖 %d（%.1f%%）' % (
         tot, sum(r['funcs'] for r in rows), sum(r['methods'] for r in rows),
         cov, 100.0 * cov / tot if tot else 0.0))
+    priv_n = sum(r['priv'] for r in rows)
+    if priv_n:
+        print('另有私有符号 %d 个（`_` 前缀，用户码不可调用，不计入分母）' % priv_n)
     print('无专用测试档的模块 %d 个：%s' % (
         len(no_test), ' '.join('`%s`' % r['module'] for r in no_test) or '（无）'))
     print()

@@ -61,11 +61,45 @@ t-bytes-match-hex = () {
 }
 
 p1 = runner.test('sha1.digest-len', t-len)
+; 低階單區塊壓縮："abc" 填充區塊 → a9993e36 4706816a ba3e2571 7850c26c 9cd0d89d
+t-block-abc = () {
+    s []u32 = with-len(16)
+    s[0]: {
+        ok -> it = 1633837952
+
+        -> _
+    }
+    k <- [1..15): {
+        s[k]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    s[15]: {
+        ok -> it = 24
+
+        -> _
+    }
+    r0, r1, r2, r3, r4 = sha1.sha1-block(s, 1732584193, 4023233417, 2562383102, 271733878, 3285377520)
+    runner.eq(u32i(r0), 2845392438, 'sha1 block r0')
+    runner.eq(u32i(r1), 1191608682, 'sha1 block r1')
+    runner.eq(u32i(r2), 3124634993, 'sha1 block r2')
+    runner.eq(u32i(r3), 2018558572, 'sha1 block r3')
+    runner.eq(u32i(r4), 2630932637, 'sha1 block r4')
+}
+
+; u32 -> i64
+u32i = (x u32) (v i64) {
+    v = x
+}
+
 p2 = runner.test('sha1.hex.empty', t-hex-empty)
 p3 = runner.test('sha1.hex.abc', t-hex-abc)
 p4 = runner.test('sha1.hex.two-block', t-hex-twoblock)
 p5 = runner.test('sha1.bytes-match-hex', t-bytes-match-hex)
 
+p6 = runner.test('sha1.block.abc', t-block-abc)
 total = runner.summary()
 f = runner.failed-count()
 {

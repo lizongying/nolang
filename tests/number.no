@@ -2,10 +2,12 @@
 ; sources: number.no, number-div-mod-clamp.no, zero.no, unsigned-lit.no, bnot.no, i.no, i-more.no, boundary-minimal.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/number.no =====================
+; merged from tests/number.no
 ; merged category 'number' -- members: number-generic.no, number-int-more.no, number.no
 ; (originals backed up under tests/_archive/number/)
-; ===================== merged from tests/number-generic.no =====================
+...
+
+; merged from tests/number-generic.no
 ; test/number-generic.no — 測試 std/math、std/num 與 std/number 中泛型函數的運行結果
 ;
 ; 覆蓋以下函數：
@@ -18,6 +20,7 @@
 ;   - pow  (a int, n int) (r int) — 整型泛型
 ;   - gcd  (a int, b int) (r int) — 整型泛型
 ;   - lcm  (a int, b int) (r int) — 整型泛型
+...
 
 ; ── max：變參泛型，回傳最大值 ──
 test-max = () {
@@ -134,13 +137,14 @@ test-lcm = () {
 test-lcm()
 print(7)
 
-; ===================== merged from tests/number-int-more.no =====================
+; merged from tests/number-int-more.no
 ; number-int-more.no — 合併自 number/int 邊角碎片（頂層拼接，非函數包裹）
 ; 來源：mod.no, u8-direct-minimal.no, u128.no
 ; 保留錨點：number.no（基名）；unsigned-lit.no（無符號字面量獨立）；
 ;           number-more.no（既有合併檔，另行保留）
 ; ── 來自 mod.no ──
 ; mod.no — 測試取模運算
+...
 test = () {
     a = 12
     b = 18
@@ -180,8 +184,9 @@ r
 i64 i64
 r = test-u128-basic()
 
-; ===================== merged from tests/number.no =====================
+; merged from tests/number.no
 ; number.no — 數字操作測試（max/min 已移至 math 模組）
+...
 
 ; 示範 math.max / math.min：結果經輸出參數回寫，不做斷言
 ; （max → 20， min → 10，依序印出）
@@ -195,7 +200,7 @@ demo-number = () {
 }
 demo-number()
 
-; ===================== merged from tests/number-div-mod-clamp.no =====================
+; merged from tests/number-div-mod-clamp.no
 ; math.div-mod-clamp.no — 測試 div, mod, clamp（現行 API）
 ;
 ; 覆蓋以下函數 / 運算：
@@ -206,6 +211,7 @@ demo-number()
 ; 註：原測試使用已移除的舊 API `math.div(a, b, r)` / `math.mod(a, b, r)`
 ; （以 r 作為第 3 個 out-argument）。現行 std 為 `int.div=(b int)(q ?int)`、
 ; `int.mod=(b int)(r ?int)`，且 clamp 以結果參數接收，故改寫如下。
+...
 
 ; ── div：整數除法 ──
 test-div = () {
@@ -288,15 +294,16 @@ test-clamp = () {
 test-clamp()
 print(333)
 
-; ===================== merged from tests/zero.no =====================
+; merged from tests/zero.no
 ; test_zero — 測試 .zero() 方法
+...
 
 data = [1, 2, 3, 4]
 data.zero()
 print(data[0])
 print(data[3])
 
-; ===================== merged from tests/unsigned-lit.no =====================
+; merged from tests/unsigned-lit.no
 ; test-unsigned-lit — 負整數字面量指派給無號整數型別，必須讀回無號值
 ;
 ; Regression（src/std/archive/xz.no:649 的 `unpacked-size = -1`，unpacked-size 為 byte）：
@@ -313,6 +320,7 @@ print(data[3])
 ;
 ; 注意：本檔刻意把斷言放進 main() —— 腳本頂層的綁定會被降成 global（拿到真實
 ; i8 槽位），走的不是這條路徑。
+...
 
 b byte = -1
 print('byte -1 = ')
@@ -353,14 +361,16 @@ print('vec elem -1 = ')
 print(v[0])
 print('\n')
 
-; ===================== merged from tests/bnot.no =====================
+; merged from tests/bnot.no
+...
 x u32 = 100
 y = ~x
 print(y)
 
-; ===================== merged from tests/i.no =====================
+; merged from tests/i.no
 ; cd src && go run ./cmd/cli/. build ../tests/i.no
 ; a = 1
+...
 
 a = 'abc'
 
@@ -377,12 +387,14 @@ i8 i8
 ; print(a.len())
 
 print(a.len())
+
 ; compilation error: cannot modify read-only field 'len' of string 'a'
 ; a.len = 2
 
-; ===================== merged from tests/i-more.no =====================
+; merged from tests/i-more.no
 ; tests/i-more.no — consolidated `i` loop-variable pollution fragments
 ; from: tests/i-pollution.no, tests/i-sha256.no
+...
 
 print('start')
 i <- [0..5): {
@@ -398,8 +410,9 @@ j <- [0..5): {
 }
 print('done')
 
-; ===================== merged from tests/boundary-minimal.no =====================
+; merged from tests/boundary-minimal.no
 ; 邊界值測試
+...
 test-u8-100 = () {
     n = '100'.to-u8()
     {

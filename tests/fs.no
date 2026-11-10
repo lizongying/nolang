@@ -1,6 +1,6 @@
 ; merged category 'fs' -- members: fs-more.no, fs-struct.no, std-unix-fs-os-2.no, std-unix-fs-os.no
 ; (originals backed up under tests/_archive/fs/)
-; ===================== merged from tests/fs-more.no =====================
+; merged from tests/fs-more.no
 ; fs-more — 合併自同簇 fs/os 小件（heavy dedup）
 ;
 ; 保護/重件保留獨立：fs-error-complete(hir2mir)、fs-error-simple(codegen)、fs-struct(hir2mir)、
@@ -9,6 +9,7 @@
 ; stat-fields(exit-code 整合斷言測，獨立保留)。
 ; 併入：fs-error-final / fs-error-info / fs-open-err / open-write（皆 fs.open 探針）
 ;      + mkdtemp/mkstemp/realpath/remove-debug（原檔只定義不成呼叫＝編譯探針，原樣保留）。
+...
 
 ; ── from mkdtemp-debug.no — fs.mkdtemp multi-assign 編譯探針（原檔未呼叫）──
 fsm-test-mkdtemp = () {
@@ -45,7 +46,7 @@ fsm-test-remove = () {
 ; ── from fs-error-info.no — 打開不存在檔案後丟棄 option ──
 fe-info-run = () {
     print('测试: 打开不存在的文件')
-    f ?fs.file = fs.open('/nonexistent/file-12345.txt',  {
+    f ?fs.file = fs.open('/nonexistent/file-12345.txt', {
         mode: file-mode.read
     })
     _ = f
@@ -59,7 +60,7 @@ fe-open-err-run = () {
     print('')
 
     print('测试: 打开不存在的文件')
-    f ?fs.file = fs.open('/nonexistent/file-test-123.txt',  {
+    f ?fs.file = fs.open('/nonexistent/file-test-123.txt', {
         mode: file-mode.read
     })
     _ = f
@@ -74,7 +75,7 @@ ow-run = () {
     tmp = '/tmp/nolang-write-test.txt'
     fs.remove(tmp)
 
-    f = fs.open(tmp,  {
+    f = fs.open(tmp, {
         mode: file-mode.write
         perm: file-perm.perm-600
         excl: false
@@ -106,7 +107,7 @@ fe-final-run = () {
     print('测试 1: 文件不存在')
     print('  路径: /nonexistent/file-xyz-12345.txt')
     print('  模式: 只读')
-    f1 ?fs.file = fs.open('/nonexistent/file-xyz-12345.txt',  {
+    f1 ?fs.file = fs.open('/nonexistent/file-xyz-12345.txt', {
         mode: file-mode.read
     })
     _ = f1
@@ -116,7 +117,7 @@ fe-final-run = () {
     print('测试 2: 打开目录')
     print('  路径: /tmp')
     print('  模式: 只读')
-    f2 ?fs.file = fs.open('/tmp',  {
+    f2 ?fs.file = fs.open('/tmp', {
         mode: file-mode.read
     })
     _ = f2
@@ -126,7 +127,7 @@ fe-final-run = () {
     print('测试 3: 尝试访问受保护的文件')
     print('  路径: /root/test.txt')
     print('  模式: 写入')
-    f3 ?fs.file = fs.open('/root/test.txt',  {
+    f3 ?fs.file = fs.open('/root/test.txt', {
         mode: file-mode.write
     })
     _ = f3
@@ -136,7 +137,7 @@ fe-final-run = () {
     print('测试 4: 成功创建并写入文件')
     print('  路径: /tmp/nolang-err-test.txt')
     print('  模式: 写入')
-    f4 ?fs.file = fs.open('/tmp/nolang-err-test.txt',  {
+    f4 ?fs.file = fs.open('/tmp/nolang-err-test.txt', {
         mode: file-mode.write
         perm: file-perm.perm-644
     })
@@ -161,17 +162,18 @@ fe-open-err-run()
 ow-run()
 fe-final-run()
 
-; ===================== merged from tests/fs-struct.no =====================
+; merged from tests/fs-struct.no
 ; fs-struct.no — 驗證 file-opts 結構體 + open() 自由組合旗標
 ;
 ; 目標語法：
 ;   open('test.dat', { mode: write, perm: perm-644, excl: true })
+...
 
 tmp = '/tmp/nolang-fs-test.txt'
 payload = 'hello nolang file struct'
 fs.remove(tmp)
 
-f-w = fs.open(tmp,  {
+f-w = fs.open(tmp, {
     mode: file-mode.write
     perm: file-perm.perm-644
     excl: false
@@ -189,7 +191,7 @@ f-w: {
         print('ok: open write')
     }
 }
-f-e = fs.open(tmp,  {
+f-e = fs.open(tmp, {
     mode: file-mode.write
     perm: file-perm.perm-644
     excl: true
@@ -207,7 +209,7 @@ f-e: {
 
     -> print('fail: excl did not block')
 }
-f-r = fs.open(tmp,  {
+f-r = fs.open(tmp, {
     mode: file-mode.read
     perm: file-perm.perm-644
     excl: false
@@ -245,15 +247,15 @@ f-r: {
 }
 fs.remove(tmp)
 
-; ===================== merged from tests/std-unix-fs-os-2.no =====================
+; merged from tests/std-unix-fs-os-2.no
 ; std-unix-fs-os-2.no — 驗證 Task 1 擴展的 fs/os/process 底層函數
 ; 覆蓋：fs.link / fs.truncate / fs.rmdir / os.getlogin / os.gethostid
 ;        os.setpriority / os.getpriority / os.flock / os.sysctl / process.spawn
 ; 說明：本測試為最小行為驗證，僅檢查函數可呼叫且返回值合理
+...
 
-; ═══════════════════════════════════════════════
 ; 1. fs.link — 建立硬連結
-; ═══════════════════════════════════════════════
+...
 link-src = '/tmp/nolang-link-src.txt'
 link-dst = '/tmp/nolang-link-dst.txt'
 fs.remove(link-src)
@@ -273,9 +275,8 @@ fd-w >= 0 -> {
     fs.remove(link-dst)
 }
 
-; ═══════════════════════════════════════════════
 ; 2. fs.truncate — 截斷檔案
-; ═══════════════════════════════════════════════
+...
 trunc-path = '/tmp/nolang-trunc-test.txt'
 fs.remove(trunc-path)
 fd-w2 = fs.open-write(trunc-path)
@@ -292,9 +293,8 @@ fd-w2 >= 0 -> {
     fs.remove(trunc-path)
 }
 
-; ═══════════════════════════════════════════════
 ; 3. fs.rmdir — 刪除空目錄
-; ═══════════════════════════════════════════════
+...
 rmdir-path = '/tmp/nolang-rmdir-test'
 fs.remove(rmdir-path)
 os.mkdir(rmdir-path, 493)
@@ -304,26 +304,24 @@ print(rmdir-ok.to-str())
 rmdir-ok -> print('PASS: rmdir succeeded')
 rmdir-ok == false -> print('FAIL: rmdir failed')
 
-; ═══════════════════════════════════════════════
 ; 4. os.get-login — 取得登入使用者名稱
-; ═══════════════════════════════════════════════
+...
 login-name = os.get-login()
 eprint('get-login = ')
 print(login-name)
 login-name.len() > 0 -> print('PASS: get-login returns non-empty')
 login-name.len() == 0 -> print('WARN: get-login returns empty (may be expected in some environments)')
 
-; ═══════════════════════════════════════════════
 ; 5. os.get-host-id — 取得主機識別碼
-; ═══════════════════════════════════════════════
+...
 host-id = os.get-host-id()
 eprint('get-host-id = ')
 print(host-id.to-str())
 host-id >= 0 -> print('PASS: get-host-id returns non-negative')
 
-; ═══════════════════════════════════════════════
 ; 6. os.set-priority / os.get-priority — 設定/取得優先級
-; ═══════════════════════════════════════════════
+...
+
 ; PRIO_PROCESS=0, who=0 (current process)
 prio-opt = os.get-priority(0, 0)
 eprint('get-priority = ')
@@ -345,9 +343,8 @@ set-ok -> print('PASS: set-priority succeeded')
 ; 恢復預設優先級（0）
 os.set-priority(0, 0, 0)
 
-; ═══════════════════════════════════════════════
 ; 7. os.flock — 檔案鎖定
-; ═══════════════════════════════════════════════
+...
 flock-path = '/tmp/nolang-flock-test.txt'
 fs.remove(flock-path)
 fd-w3 = fs.open-write(flock-path)
@@ -369,9 +366,8 @@ fd-w3 >= 0 -> {
     fs.remove(flock-path)
 }
 
-; ═══════════════════════════════════════════════
 ; 8. os.sysctl — 查詢系統控制參數（macOS）
-; ═══════════════════════════════════════════════
+...
 sc-opt = os.sysctl('kern.ostype')
 eprint('sysctl(kern.ostype) = ')
 sc-opt: {
@@ -383,9 +379,9 @@ sc-opt: {
     -> print('WARN: sysctl failed (may not be available on this platform)')
 }
 
-; ═══════════════════════════════════════════════
 ; 9. os.get-domain-name — 取得 NIS 網域名稱
-; ═══════════════════════════════════════════════
+...
+
 ; domain = os.get-domain-name()
 ; eprint('get-domain-name = [')
 ; io.out(domain)
@@ -393,9 +389,8 @@ sc-opt: {
 ; print('')
 print('SKIP: get-domain-name test')
 
-; ═══════════════════════════════════════════════
 ; 10. process.spawn / wait — 創建子進程並等待
-; ═══════════════════════════════════════════════
+...
 spawn-pid = process.spawn('echo hello_spawn')
 eprint('spawn pid = ')
 eprint(spawn-pid.to-str())
@@ -408,23 +403,22 @@ spawn-pid > 0 -> {
 spawn-pid < 0 -> print('FAIL: spawn returned negative pid')
 print('--- All tests done ---')
 
-; ===================== merged from tests/std-unix-fs-os.no =====================
+; merged from tests/std-unix-fs-os.no
 ; std-unix-fs-os.no — 驗證 Task 1 新增的 fs/os 底層函數
 ; 覆蓋：fs.realpath / fs.mkstemp / os.uname / os.geteuid / os.num-cpu
 ; 說明：本測試為最小行為驗證，僅檢查函數可呼叫且返回值合理
+...
 
-; ═══════════════════════════════════════════════
 ; 1. fs.realpath — 解析絕對路徑
-; ═══════════════════════════════════════════════
+...
 abs = fs.realpath('./src')
 eprint('realpath(./src) = ')
 print(abs)
 abs.len() > 0 -> print('PASS: realpath returns non-empty')
 abs.len() == 0 -> print('FAIL: realpath returns empty')
 
-; ═══════════════════════════════════════════════
 ; 2. fs.mkstemp — 建立臨時檔案（多返回值 name, fd）
-; ═══════════════════════════════════════════════
+...
 tmp-name, tmp-fd = fs.mkstemp('/tmp/nolang-test-XXXXXX')
 eprint('mkstemp name = ')
 eprint(tmp-name)
@@ -438,9 +432,8 @@ tmp-fd >= 0 -> {
 }
 tmp-fd < 0 -> print('FAIL: mkstemp returned invalid fd')
 
-; ═══════════════════════════════════════════════
 ; 3. fs.mkdtemp — 建立臨時目錄（返回 ?str option）
-; ═══════════════════════════════════════════════
+...
 dir-name-opt = fs.mkdtemp('/tmp/nolang-dir-XXXXXX')
 dir-name-opt: {
     ok -> {
@@ -454,34 +447,30 @@ dir-name-opt: {
     -> print('FAIL: mkdtemp failed')
 }
 
-; ═══════════════════════════════════════════════
 ; 4. os.geteuid — 取得有效使用者 ID
-; ═══════════════════════════════════════════════
+...
 euid = os.geteuid()
 eprint('geteuid = ')
 print(euid.to-str())
 euid >= 0 -> print('PASS: geteuid returns non-negative')
 
-; ═══════════════════════════════════════════════
 ; 5. os.getegid — 取得有效群組 ID
-; ═══════════════════════════════════════════════
+...
 egid = os.getegid()
 eprint('getegid = ')
 print(egid.to-str())
 egid >= 0 -> print('PASS: getegid returns non-negative')
 
-; ═══════════════════════════════════════════════
 ; 6. os.num-cpu — 取得在線 CPU 核數
-; ═══════════════════════════════════════════════
+...
 n = os.num-cpu()
 eprint('num-cpu = ')
 print(n.to-str())
 n > 0 -> print('PASS: num-cpu returns positive')
 n <= 0 -> print('FAIL: num-cpu returns non-positive')
 
-; ═══════════════════════════════════════════════
 ; 7. os.uname — 取得核心與架構資訊（結構體返回）
-; ═══════════════════════════════════════════════
+...
 uts = os.uname()
 eprint('uname.sysname = ')
 print(uts.sysname)
@@ -494,21 +483,19 @@ print(uts.machine)
 uts.sysname.len() > 0 -> print('PASS: uname.sysname non-empty')
 uts.sysname.len() == 0 -> print('FAIL: uname.sysname empty')
 
-; ═══════════════════════════════════════════════
 ; 8. os.sysconf — 查詢系統配置（_SC_NPROCESSORS_ONLN）
 ;    注意：_SC_* 常數值各平台不同！
 ;      macOS _SC_NPROCESSORS_ONLN = 58
 ;      Linux _SC_NPROCESSORS_ONLN = 84
 ;    本測試在 macOS 上執行，故使用 58；可移植做法是使用 os.num-cpu()
-; ═══════════════════════════════════════════════
+...
 val = os.sysconf(58)
 eprint('sysconf(58) = ')
 print(val.to-str())
 val > 0 -> print('PASS: sysconf returns positive for nproc')
 
-; ═══════════════════════════════════════════════
 ; 9. fs.utime — 設定檔案時間（用剛才的 src 目錄測試會失敗，改用臨時檔）
-; ═══════════════════════════════════════════════
+...
 ut-path = '/tmp/nolang-utime-test.txt'
 fs.remove(ut-path)
 fd-w__1 = fs.open-write(ut-path)

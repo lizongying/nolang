@@ -12,7 +12,7 @@ data {
 ; raw str: 原始記錄字串 '100644 file1.txt\0<20 bytes>'
 ; s str: 空格之後、NUL 之前的子串，預期 'file1.txt'
 pass-struct = (raw str) (s str) {
-    t = data {
+    t = data{
         raw: raw
         n: 5
     }

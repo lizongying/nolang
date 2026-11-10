@@ -20,7 +20,6 @@ bhex = (data []byte) (hex str) {
     #{overflow=wrap}
     hex = with-len(n * 2)
     i <- [0..n): {
-
         ixout25c33 = data[i]: {
             ok -> it
 
@@ -59,7 +58,6 @@ bhex = (data []byte) (hex str) {
 arr65 = (a [65]byte) (v []byte) {
     v = with-len(65)
     i <- [0..65): {
-
         ixout40c16 = a[i]: {
             ok -> it
 
@@ -76,7 +74,6 @@ arr65 = (a [65]byte) (v []byte) {
 arr64 = (a [64]byte) (v []byte) {
     v = with-len(64)
     i <- [0..64): {
-
         ixout52c16 = a[i]: {
             ok -> it
 
@@ -112,7 +109,6 @@ MSG25 [25]byte = [
 arr25 = (a [25]byte) (v []byte) {
     v = with-len(25)
     i <- [0..25): {
-
         ixout83c16 = a[i]: {
             ok -> it
 
@@ -245,12 +241,423 @@ t-tamper = () {
     ok2 = ecdsa.ecdsa-verify(pub, arr25(mb2), sig)
     runner.eq(ok2, 0, 'wrong message rejected')
 }
+
+; ---- 低階介面助手 ----
+
+; hex → []byte
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 全零 [32]byte
+zero32 = () (a [32]byte) {
+    i <- [0..32): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+; hex（大端書寫）→ [32]byte 原樣拷貝（priv、純量等大端輸入用）
+mk32 = (h str) (a [32]byte) {
+    raw = mkb(h)
+    a = zero32()
+    n = raw.len()
+    n > 32 -> n = 32
+    i <- [0..n): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; hex（大端書寫）→ [32]byte 反轉成內部小端序（bn-* 引擎的位元組約定）
+le32 = (h str) (a [32]byte) {
+    raw = mkb(h)
+    a = zero32()
+    n = raw.len()
+    n > 32 -> n = 32
+    i <- [0..n): {
+        j = n - 1 - i
+        v = raw[j]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; 內部小端序 [32]byte → 大端 hex（與 bn-* 的數值語義對齊，便於斷言）
+h32 = (a [32]byte) (s str) {
+    v []byte = with-len(32)
+    i <- [0..32): {
+        x = a[31 - i]: {
+            ok -> it
+
+            -> 0
+        }
+        v[i] = x
+    }
+    s = bhex(v)
+}
+
+; 96 位元組 Jacobian 點是否全零（無窮遠點）
+is-zero96 = (p []byte) (z i64) {
+    z = 1
+    i <- [0..96): {
+        x = p[i]: {
+            ok -> it
+
+            -> 0
+        }
+        x != 0 -> z = 0
+    }
+}
+
+; 32 位元組純量（大端 hex）→ [32]byte
+P_HEX = 'ffffffff00000001000000000000000000000000ffffffffffffffffffffffff'
+P_M1_HEX = 'ffffffff00000001000000000000000000000000fffffffffffffffffffffffe'
+P_M2_HEX = 'ffffffff00000001000000000000000000000000fffffffffffffffffffffffd'
+INV2_HEX = '7fffffff80000000800000000000000000000000800000000000000000000000'
+INV3_HEX = 'aaaaaaaa00000000aaaaaaaaaaaaaaaaaaaaaaab555555555555555555555555'
+INV7_HEX = '249249246db6db6ddb6db6db6db6db6db6db6db7000000000000000000000000'
+
+; 小整數的 32 位元組大端 hex
+SMALL_1000 = '00000000000000000000000000000000000000000000000000000000000003e8'
+SMALL_7 = '0000000000000000000000000000000000000000000000000000000000000007'
+SMALL_10 = '000000000000000000000000000000000000000000000000000000000000000a'
+SMALL_M1E9P7 = '000000000000000000000000000000000000000000000000000000003b9aca07'
+SMALL_123456789 = '00000000000000000000000000000000000000000000000000000000075bcd15'
+SMALL_987654321 = '000000000000000000000000000000000000000000000000000000003ade68b1'
+
+; ---- 256-bit 大整數（bn-*）----
+
+t-bn-cmp = () {
+    p [32]byte = le32(P_HEX)
+    pm1 [32]byte = le32(P_M1_HEX)
+    pa []byte = with-len(32)
+    pb []byte = with-len(32)
+    i <- [0..32): {
+        pa[i] = p[i]
+        pb[i] = pm1[i]
+    }
+    runner.eq(ecdsa.bn-cmp(pa, pa), 0, 'bn-cmp 相同 -> 0')
+    runner.eq(ecdsa.bn-cmp(pa, pb), 1, 'bn-cmp p > p-1')
+    runner.eq(ecdsa.bn-cmp(pb, pa), -1, 'bn-cmp p-1 < p')
+}
+
+t-bn-add-sub = () {
+
+    ; 全 0xff + 1 → 0，carry 1
+    ff [32]byte = le32('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    one [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000001')
+    fa []byte = with-len(32)
+    fb []byte = with-len(32)
+    i <- [0..32): {
+        fa[i] = ff[i]
+        fb[i] = one[i]
+    }
+    sum1 [32]byte
+    c1 i64
+    sum1, c1 = ecdsa.bn-add(fa, fb)
+    runner.eq(c1, 1, 'bn-add 溢出 carry')
+    runner.str-eq(h32(sum1), '0000000000000000000000000000000000000000000000000000000000000000', 64, 'bn-add 0xff..+1 回繞為 0')
+
+    ; (p-1) + 1 = p，carry 0
+    pm1 [32]byte = le32(P_M1_HEX)
+    i <- [0..32): {
+        fa[i] = pm1[i]
+        fb[i] = one[i]
+    }
+    sum2 [32]byte
+    c2 i64
+    sum2, c2 = ecdsa.bn-add(fa, fb)
+    runner.eq(c2, 0, 'bn-add (p-1)+1 不進位')
+    runner.str-eq(h32(sum2), P_HEX, 64, 'bn-add (p-1)+1 = p')
+
+    ; 0 - 1 → 全 0xff，borrow 1
+    z [32]byte = zero32()
+    i <- [0..32): {
+        fa[i] = z[i]
+        fb[i] = one[i]
+    }
+    diff1 [32]byte
+    b1 i64
+    diff1, b1 = ecdsa.bn-sub(fa, fb)
+    runner.eq(b1, 1, 'bn-sub 借位')
+    runner.str-eq(h32(diff1), 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 64, 'bn-sub 0-1 回繞為全 0xff')
+
+    ; p - 1 = p-1，borrow 0
+    p [32]byte = le32(P_HEX)
+    i <- [0..32): {
+        fa[i] = p[i]
+        fb[i] = one[i]
+    }
+    diff2 [32]byte
+    b2 i64
+    diff2, b2 = ecdsa.bn-sub(fa, fb)
+    runner.eq(b2, 0, 'bn-sub p-1 不借位')
+    runner.str-eq(h32(diff2), P_M1_HEX, 64, 'bn-sub p-1 = p-1')
+}
+
+t-bn-mod = () {
+
+    ; 1000 mod 7 = 6
+    a []byte = with-len(32)
+    m []byte = with-len(32)
+    a1000 [32]byte = le32(SMALL_1000)
+    m7 [32]byte = le32(SMALL_7)
+    i <- [0..32): {
+        a[i] = a1000[i]
+        m[i] = m7[i]
+    }
+    r1 [32]byte
+    r1 = ecdsa.bn-mod(a, m)
+    runner.str-eq(h32(r1), '0000000000000000000000000000000000000000000000000000000000000006', 64, '1000 mod 7 = 6')
+
+    ; p mod p = 0
+    pa [32]byte = le32(P_HEX)
+    i <- [0..32): {
+        a[i] = pa[i]
+        m[i] = pa[i]
+    }
+    r2 [32]byte
+    r2 = ecdsa.bn-mod(a, m)
+    runner.str-eq(h32(r2), '0000000000000000000000000000000000000000000000000000000000000000', 64, 'p mod p = 0')
+
+    ; (p-1) mod p = p-1
+    pm1 [32]byte = le32(P_M1_HEX)
+    i <- [0..32): {
+        a[i] = pm1[i]
+    }
+    r3 [32]byte
+    r3 = ecdsa.bn-mod(a, m)
+    runner.str-eq(h32(r3), P_M1_HEX, 64, '(p-1) mod p = p-1')
+}
+
+t-bn-mulmod = () {
+
+    ; (p-1)^2 mod p = 1
+    pm1 [32]byte = le32(P_M1_HEX)
+    p [32]byte = le32(P_HEX)
+    pa []byte = with-len(32)
+    pm []byte = with-len(32)
+    i <- [0..32): {
+        pa[i] = pm1[i]
+        pm[i] = p[i]
+    }
+    r1 [32]byte
+    r1 = ecdsa.bn-mulmod(pa, pa, pm)
+    runner.str-eq(h32(r1), '0000000000000000000000000000000000000000000000000000000000000001', 64, '(p-1)^2 mod p = 1')
+
+    ; 123456789 * 987654321 mod p = 0x01b13114fbff5385
+    ; （bn-mulmod 的約簡以「每位置一次 q*m 乘減 + ≤4 次單減」實作，僅對
+    ;   m ≳ 2^255 保證收斂；小模數要用 bn-mod 反覆減，見模組註解）
+    x [32]byte = le32(SMALL_123456789)
+    y [32]byte = le32(SMALL_987654321)
+    i <- [0..32): {
+        pa[i] = x[i]
+        pm[i] = p[i]
+    }
+    py []byte = with-len(32)
+    i <- [0..32): {
+        py[i] = y[i]
+    }
+    r2 [32]byte
+    r2 = ecdsa.bn-mulmod(pa, py, pm)
+    runner.str-eq(h32(r2), '00000000000000000000000000000000000000000000000001b13114fbff5385', 64, '123456789*987654321 mod p')
+}
+
+t-bn-addmod-submod = () {
+    pm1 [32]byte = le32(P_M1_HEX)
+    p [32]byte = le32(P_HEX)
+    two [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000002')
+    a []byte = with-len(32)
+    b []byte = with-len(32)
+    m []byte = with-len(32)
+
+    ; (p-1) + 2 mod p = 1
+    i <- [0..32): {
+        a[i] = pm1[i]
+        b[i] = two[i]
+        m[i] = p[i]
+    }
+    r1 [32]byte
+    r1 = ecdsa.bn-addmod(a, b, m)
+    runner.str-eq(h32(r1), '0000000000000000000000000000000000000000000000000000000000000001', 64, '(p-1)+2 mod p = 1')
+
+    ; 5 + 7 mod 10 = 2
+    five [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000005')
+    seven [32]byte = le32(SMALL_7)
+    ten [32]byte = le32(SMALL_10)
+    i <- [0..32): {
+        a[i] = five[i]
+        b[i] = seven[i]
+        m[i] = ten[i]
+    }
+    r2 [32]byte
+    r2 = ecdsa.bn-addmod(a, b, m)
+    runner.str-eq(h32(r2), '0000000000000000000000000000000000000000000000000000000000000002', 64, '5+7 mod 10 = 2')
+
+    ; 3 - 5 mod p = p-2
+    three [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000003')
+    i <- [0..32): {
+        a[i] = three[i]
+        b[i] = five[i]
+        m[i] = p[i]
+    }
+    r3 [32]byte
+    r3 = ecdsa.bn-submod(a, b, m)
+    runner.str-eq(h32(r3), P_M2_HEX, 64, '3-5 mod p = p-2')
+
+    ; 3 - 5 mod 10 = 8
+    i <- [0..32): {
+        m[i] = ten[i]
+    }
+    r4 [32]byte
+    r4 = ecdsa.bn-submod(a, b, m)
+    ex8 [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000008')
+    runner.str-eq(h32(r4), h32(ex8), 64, '3-5 mod 10 = 8')
+}
+
+t-bn-invmod = () {
+    p [32]byte = le32(P_HEX)
+    pm []byte = with-len(32)
+    i <- [0..32): {
+        pm[i] = p[i]
+    }
+
+    two [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000002')
+    pa []byte = with-len(32)
+    i <- [0..32): {
+        pa[i] = two[i]
+    }
+    r1 [32]byte
+    r1 = ecdsa.bn-invmod(pa, pm)
+    runner.str-eq(h32(r1), INV2_HEX, 64, 'inv(2) mod p')
+
+    three [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000003')
+    i <- [0..32): {
+        pa[i] = three[i]
+    }
+    r3 [32]byte
+    r3 = ecdsa.bn-invmod(pa, pm)
+    runner.str-eq(h32(r3), INV3_HEX, 64, 'inv(3) mod p')
+
+    ; inv(7) 再乘 7 必須回 1
+    seven [32]byte = le32(SMALL_7)
+    i <- [0..32): {
+        pa[i] = seven[i]
+    }
+    r7 [32]byte
+    r7 = ecdsa.bn-invmod(pa, pm)
+    runner.str-eq(h32(r7), INV7_HEX, 64, 'inv(7) mod p')
+
+    inv7 []byte = with-len(32)
+    i <- [0..32): {
+        inv7[i] = r7[i]
+    }
+    prod [32]byte
+    prod = ecdsa.bn-mulmod(inv7, pa, pm)
+    runner.str-eq(h32(prod), '0000000000000000000000000000000000000000000000000000000000000001', 64, 'inv(7)*7 mod p = 1')
+}
+
+; ---- Jacobian 點運算 ----
+
+G_HEX = '046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5'
+G2_HEX = '047cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc4766997807775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1'
+G3_HEX = '045ecbe4d1a6330a44c8f7ef951d4bf165e6c6b721efada985fb41661bc6e7fd6c8734640c4998ff7e374b06ce1a64a2ecd82ab036384fb83d9a79b127a27d5032'
+GN1_HEX = '046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296b01cbd1c01e58065711814b583f061e9d431cca994cea1313449bf97c840ae0a'
+ZERO65 = '0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+
+t-point = () {
+    g = ecdsa.ec-get-basepoint()
+    runner.eq(g.len(), 96, '基點 Jacobian 96 位元組')
+    enc [65]byte = ecdsa.ec-point-to-bytes(g)
+    runner.str-eq(bhex(arr65(enc)), G_HEX, 130, '基點編碼 == G')
+
+    ; 未壓縮編碼 → Jacobian → 再編碼，必須回到同一字串
+    back = ecdsa.ec-bytes-to-point(enc)
+    runner.eq(back.len(), 96, '解碼回 96 位元組')
+    enc2 [65]byte = ecdsa.ec-point-to-bytes(back)
+    runner.str-eq(bhex(arr65(enc2)), G_HEX, 130, '解碼再編碼一致')
+
+    ; 2G：點倍乘
+    dbl = ecdsa.ec-point-double(g)
+    enc2g [65]byte = ecdsa.ec-point-to-bytes(dbl)
+    runner.str-eq(bhex(arr65(enc2g)), G2_HEX, 130, '2*G')
+
+    ; 3G = G + 2G，也等於 scalar-mult(3)
+    sum3 = ecdsa.ec-point-add(g, dbl)
+    enc3a [65]byte = ecdsa.ec-point-to-bytes(sum3)
+    runner.str-eq(bhex(arr65(enc3a)), G3_HEX, 130, 'G + 2G = 3G')
+
+    k3 [32]byte = le32('0000000000000000000000000000000000000000000000000000000000000003')
+    m3 = ecdsa.ec-scalar-mult(k3, g)
+    enc3b [65]byte = ecdsa.ec-point-to-bytes(m3)
+    runner.str-eq(bhex(arr65(enc3b)), G3_HEX, 130, 'scalar-mult 3*G')
+
+    ; (n-1)*G = -G
+    kn1 [32]byte = le32('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550')
+    mn1 = ecdsa.ec-scalar-mult(kn1, g)
+    encn1 [65]byte = ecdsa.ec-point-to-bytes(mn1)
+    runner.str-eq(bhex(arr65(encn1)), GN1_HEX, 130, '(n-1)*G = -G')
+
+    ; 0*G = 無窮遠點（Z=0 → 編碼全零）
+    k0 [32]byte = zero32()
+    m0 = ecdsa.ec-scalar-mult(k0, g)
+    runner.eq(is-zero96(m0), 1, '0*G 為無窮遠點（Jacobian 全零）')
+    enc0 [65]byte = ecdsa.ec-point-to-bytes(m0)
+    runner.str-eq(bhex(arr65(enc0)), ZERO65, 130, '無窮遠點編碼全零')
+
+    ; 無窮遠點加倍仍是無窮遠點
+    inf = ecdsa.ec-bytes-to-point(enc0)
+    d-inf = ecdsa.ec-point-double(inf)
+    runner.eq(is-zero96(d-inf), 1, '無窮遠點加倍仍為無窮遠點')
+}
+
+; RFC 6979 §A.2.5 P-256 私鑰 → 公鑰（獨立於既有 OpenSSL 向量）
+t-point-rfc6979 = () {
+    priv6979 [32]byte = mk32('c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721')
+    pub [65]byte = ecdsa.ecdsa-publickey(priv6979)
+    runner.str-eq(bhex(arr65(pub)), '0460fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299', 130, 'RFC 6979 P-256 公鑰')
+}
+
 p1 = runner.test('ecdsa.publickey', t-publickey)
 p2 = runner.test('ecdsa.verify-golden', t-verify-golden)
 p3 = runner.test('ecdsa.roundtrip', t-roundtrip)
 p4 = runner.test('ecdsa.tamper', t-tamper)
 p5 = runner.test('ecdsa.ecdh-a', t-ecdh-a)
 p6 = runner.test('ecdsa.ecdh-b', t-ecdh-b)
+p7 = runner.test('ecdsa.bn-cmp', t-bn-cmp)
+p8 = runner.test('ecdsa.bn-add-sub', t-bn-add-sub)
+p9 = runner.test('ecdsa.bn-mod', t-bn-mod)
+p10 = runner.test('ecdsa.bn-mulmod', t-bn-mulmod)
+p11 = runner.test('ecdsa.bn-addmod-submod', t-bn-addmod-submod)
+p12 = runner.test('ecdsa.bn-invmod', t-bn-invmod)
+p13 = runner.test('ecdsa.point', t-point)
+p14 = runner.test('ecdsa.point-rfc6979', t-point-rfc6979)
 total = runner.summary()
 f = runner.failed-count()
 {

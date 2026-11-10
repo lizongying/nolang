@@ -15,7 +15,9 @@ num = (k i64) (r i64) {
 }
 
 list = (k i64) (r []str) {
-    r = ['a']
+    r = [
+        'a',
+    ]
     return
 }
 

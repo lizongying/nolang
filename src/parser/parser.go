@@ -1022,6 +1022,35 @@ func (p *Parser) classifyBlockAtCurrent() blockType {
 			}
 		}
 		return blockUnknown
+	case lexer.NEWLINE:
+		// 首成員是「裸名獨佔一行」：在表達式位置它不是合法的 match 臂，也不是
+		// struct 欄位宣告。最常見的誤寫是 struct literal 的**第一個**欄位就漏了
+		// `: value`（例如 `box { i64` 換行 `a: [] }`）——那個 `i64` 是幽靈欄位，
+		// 過去會被當成一個無值的 let 宣告靜默吞掉，連 parseStructLiteral 都進不來。
+		// 向後掃到 `name :` 就按 struct literal 解析，讓 parseStructLiteral 以
+		// nu59u6hp 報錯；其餘形狀維持原本的 blockUnknown / match 判定。
+		if tok1.Type == lexer.IDENT || tok1.Type == lexer.IN {
+			prevIdent := false
+			for i := base + 2; i < base+40; i++ {
+				t := p.look(i)
+				switch t.Type {
+				case lexer.IDENT:
+					prevIdent = true
+				case lexer.COLON:
+					if prevIdent {
+						return blockStruct
+					}
+					return blockUnknown
+				case lexer.RARROW:
+					return blockMatch
+				case lexer.RBRACE, lexer.EOF:
+					return blockUnknown
+				case lexer.NEWLINE:
+					prevIdent = false
+				}
+			}
+		}
+		return blockUnknown
 	case lexer.EQUALS, lexer.NOT_EQUALS, lexer.LESS, lexer.GREATER,
 		lexer.LESS_EQUALS, lexer.GREATER_EQUALS, lexer.LAND, lexer.LOR:
 		return blockMatch

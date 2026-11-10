@@ -85,8 +85,241 @@ t-multilimb = () {
     }
 }
 
+; ---- 助手 ----
+
+hex-chars = '0123456789abcdef'
+
+; []byte → 小寫 hex 字串（供長位元組串比對）
+bhex = (data []byte) (hex str) {
+    n = data.len()
+
+    #{overflow=wrap}
+    hex = with-len(n * 2)
+    i <- [0..n): {
+        b = data[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        hi = hex-chars[(b >> 4) & 15]: {
+            ok -> it
+
+            -> '?'
+
+        }
+        lo = hex-chars[b & 15]: {
+            ok -> it
+
+            -> '?'
+        }
+
+        #{overflow=wrap}
+        hex[i * 2] = hi
+
+        #{overflow=wrap}
+        hex[i * 2 + 1] = lo
+    }
+}
+
+; hex → []byte（失敗時回空 vec，讓後續斷言以長度先失敗）
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 大端 []byte → base 2^32 little-endian []i64（空輸入回 [0]）
+b2l = (b []byte) (v []i64) {
+    n = b.len()
+    ln = (n + 3) / 4
+    ln == 0 -> ln = 1
+    v = with-len(ln)
+    k <- [0..ln): {
+        v[k] = 0
+    }
+    i <- [0..n): {
+        pos = n - 1 - i
+        li = pos / 4
+        sh = (pos % 4) * 8
+        cur = v[li]: {
+            ok -> it
+
+            -> 0
+        }
+        bv = b[i]: {
+            ok -> it
+
+            -> 0
+        }
+        v[li] = cur | (bv << sh)
+    }
+}
+
+; 讀 []i64 第 i 個元素（越界回 -999999 讓斷言失敗）
+limb = (v []i64, i i64) (x i64) {
+    x = v[i]: {
+        ok -> it
+
+        -> -999999
+    }
+}
+
+; 逐 limb 比對前 want.len() 個 limb（rsa-modpow 回傳的是寬緩衝，長度不等於有效 limb 數）
+eq-limbs = (got []i64, want []i64, msg str) {
+    i <- [0..want.len()): {
+        a = got[i]: {
+            ok -> it
+
+            -> -1
+        }
+        b = want[i]: {
+            ok -> it
+
+            -> -2
+        }
+        runner.eq(a, b, msg)
+    }
+}
+
+; rn 之後的 limb 是否全為 0（寬緩衝契約：尾端是填充零，呼叫端只讀前 rn 個）
+tail-zero = (v []i64, rn i64) (ok bool) {
+    ok = true
+    i <- [rn..v.len()): {
+        x = v[i]: {
+            got -> it
+
+            -> 1
+        }
+        x != 0 -> ok = false
+    }
+}
+
+; ---- 低階數值介面：rsa.rsa-modpow ----
+
+t-modpow-small = () {
+    b1 []i64 = [65]
+    e1 []i64 = [17]
+    n1 []i64 = [3233]
+    r1, rn1 = rsa.rsa-modpow(b1, 1, e1, 1, n1, 1)
+    runner.eq(rn1, 1, 'modpow 65^17 mod 3233 limb 數')
+    runner.eq(limb(r1, 0), 2790, 'modpow 65^17 mod 3233 = 2790')
+
+    ; 指數 0 → bits=0，平方乘迴圈一次都不跑，結果留在初值 1
+    e0 []i64 = [0]
+    r2, rn2 = rsa.rsa-modpow(b1, 1, e0, 1, n1, 1)
+    runner.eq(rn2, 1, 'modpow exp=0 limb 數')
+    runner.eq(limb(r2, 0), 1, 'modpow exp=0 -> 1')
+
+    ; 50^2 mod 97 = 2500 - 25*97 = 75
+    b3 []i64 = [50]
+    e3 []i64 = [2]
+    n3 []i64 = [97]
+    r3, rn3 = rsa.rsa-modpow(b3, 1, e3, 1, n3, 1)
+    runner.eq(rn3, 1, 'modpow 50^2 mod 97 limb 數')
+    runner.eq(limb(r3, 0), 75, 'modpow 50^2 mod 97 = 75')
+
+    ; 模數跨兩個 limb（2^32）：3^100 mod 2^32 = 3476558801（Python 算）
+    b4 []i64 = [3]
+    e4 []i64 = [100]
+    n4 []i64 = [0, 1]
+    r4, rn4 = rsa.rsa-modpow(b4, 1, e4, 1, n4, 2)
+    runner.eq(rn4, 1, 'modpow 3^100 mod 2^32 limb 數（已修剪）')
+    runner.eq(limb(r4, 0), 3476558801, 'modpow 3^100 mod 2^32')
+}
+
+; 256-bit 金鑰：Python 生成 p,q（128-bit）、e=65537、d=e^-1 mod φ
+t-modpow-256 = () {
+    n []byte = mkb('7a07d00849abb39182a4c7298b80afa45c4df968212dd77e1845de6ef861a061')
+    d []byte = mkb('72dd91c38b5d14fcfe058ef71b3a399961c4da071296fae52c4d56f30d9c9101')
+    m []byte = mkb('1234567890abcdef1122334455667788990011223344556677')
+    c []byte = mkb('2cdfe6e6b30dd7d06630b18ff774614dfebe9e0f31680113a0a91ce346fed20a')
+
+    nl []i64 = b2l(n)
+    ml []i64 = b2l(m)
+    cl []i64 = b2l(c)
+    dl []i64 = b2l(d)
+    el []i64 = [65537]
+    runner.eq(nl.len(), 8, '256-bit 模數 8 個 limb')
+    runner.eq(ml.len(), 7, '197-bit 明文 7 個 limb')
+
+    got, gn = rsa.rsa-modpow(ml, ml.len(), el, 1, nl, nl.len())
+    runner.eq(gn, 8, 'modpow m^e limb 數')
+    runner.is-true(got.len() >= gn, 'modpow 回傳寬緩衝（len ≥ rn）')
+    runner.is-true(tail-zero(got, gn), 'modpow 寬緩衝尾端全零')
+    eq-limbs(got, cl, 'modpow m^65537 mod n == Python c')
+
+    back, bn2 = rsa.rsa-modpow(cl, cl.len(), dl, dl.len(), nl, nl.len())
+    runner.eq(bn2, 7, 'modpow c^d limb 數')
+    runner.is-true(tail-zero(back, bn2), 'modpow 解密寬緩衝尾端全零')
+    eq-limbs(back, ml, 'modpow c^d mod n == m')
+}
+
+; ---- 位元組介面邊界 ----
+
+t-bytes-edge = () {
+    e []byte = [17]
+    n []byte = [12, 161]
+    zero []byte = [0]
+
+    ; 明文 0 → 密文 0（_limbs-to-bytes 對 0 回單位元組 [0]）
+    c0 = rsa.rsa-encrypt-bytes(zero, e, n)
+    runner.eq(c0.len(), 1, '加密 0 回單位元組')
+    runner.str-eq(bhex(c0), '00', 2, '加密 0 -> 0')
+
+    ; 空明文視同 0
+    empty []byte = with-len(0)
+    c-empty = rsa.rsa-encrypt-bytes(empty, e, n)
+    runner.str-eq(bhex(c-empty), '00', 2, '加密空明文 -> 0')
+
+    ; 前導零位元組無害：0x0041 與 0x41 同值
+    lead []byte = [0, 65]
+    one []byte = [65]
+    ca = rsa.rsa-encrypt-bytes(one, e, n)
+    cb = rsa.rsa-encrypt-bytes(lead, e, n)
+    runner.str-eq(bhex(ca), '0ae6', 4, '65^17 mod 3233 = 2790')
+    runner.str-eq(bhex(cb), '0ae6', 4, '帶前導零的 0x0041 同值')
+
+    ; 密文帶前導零也能解回 65
+    ct-zero []byte = [0, 10, 230]
+    dv []byte = [10, 193]
+    pt = rsa.rsa-decrypt-bytes(ct-zero, dv, n)
+    runner.str-eq(bhex(pt), '41', 2, '帶前導零的密文解回 65')
+
+    ; m = n-1 → c = n-1（(-1)^奇數 ≡ -1）
+    nm1 []byte = [12, 160]
+    c1 = rsa.rsa-encrypt-bytes(nm1, e, n)
+    runner.str-eq(bhex(c1), '0ca0', 4, '(n-1)^17 mod n = n-1')
+
+    ; 模數 1：任何明文都同餘 0
+    one-mod []byte = [1]
+    c-mod1 = rsa.rsa-encrypt-bytes(one, e, one-mod)
+    runner.str-eq(bhex(c-mod1), '00', 2, 'mod 1 -> 0')
+}
+
+; 256-bit 金鑰的位元組往返
+t-bytes-256 = () {
+    n []byte = mkb('7a07d00849abb39182a4c7298b80afa45c4df968212dd77e1845de6ef861a061')
+    d []byte = mkb('72dd91c38b5d14fcfe058ef71b3a399961c4da071296fae52c4d56f30d9c9101')
+    m []byte = mkb('1234567890abcdef1122334455667788990011223344556677')
+    e []byte = [1, 0, 1]
+
+    c = rsa.rsa-encrypt-bytes(m, e, n)
+    runner.str-eq(bhex(c), '2cdfe6e6b30dd7d06630b18ff774614dfebe9e0f31680113a0a91ce346fed20a', 64, 'bytes 加密 == Python c')
+
+    pt = rsa.rsa-decrypt-bytes(c, d, n)
+    runner.str-eq(bhex(pt), bhex(m), 42, 'bytes 解密回 m')
+}
+
 p1 = runner.test('rsa.textbook', t-textbook)
 p2 = runner.test('rsa.multilimb', t-multilimb)
+p3 = runner.test('rsa.modpow-small', t-modpow-small)
+p4 = runner.test('rsa.modpow-256', t-modpow-256)
+p5 = runner.test('rsa.bytes-edge', t-bytes-edge)
+p6 = runner.test('rsa.bytes-256', t-bytes-256)
 total = runner.summary()
 f = runner.failed-count()
 {

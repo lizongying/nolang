@@ -249,6 +249,7 @@ xm-min = () (pass bool) {
     }
     alice-pub[0] == 133 -> pass = true
 }
+
 x-main-minimal = () {
     p = xm-min()
     {
@@ -261,7 +262,7 @@ x-main-minimal = () {
 ; from x25519-struct.no — 結構體欄位 / 函數輸出 作為 scalarmult-base 參數
 xs-struct-field = () (pass bool) {
     pass = false
-    kh = key-holder {}
+    kh = key-holder{}
     hex-str = '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a'
     i <- [0..32): {
 
@@ -327,6 +328,7 @@ xs-struct-field = () (pass bool) {
     }
     pass = true
 }
+
 xs-func-output = () (pass bool) {
     pass = false
     alice-priv = hex-to-bytes('77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
@@ -362,6 +364,7 @@ xs-func-output = () (pass bool) {
     }
     pass = true
 }
+
 x-main-struct = () {
     p1 = xs-struct-field()
     {
@@ -415,6 +418,7 @@ xv-1 = () (pass bool) {
     print('PASS: shared secret matches expected value')
     pass = true
 }
+
 x-main-vec = () {
     p1 = xv-1()
     {

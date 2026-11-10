@@ -10,7 +10,7 @@
 
 ; 初始化：size == 0、empty 為 true、full 為 false
 t-init-empty = () {
-    s = arr-stack {
+    s = arr-stack{
         cap: 16
         top: 0
     }
@@ -26,7 +26,7 @@ t-init-empty = () {
 t-size-after-push = () {
 
     ; 模擬 push 3 個元素：top = 3
-    s = arr-stack {
+    s = arr-stack{
         cap: 16
         top: 3
     }
@@ -38,7 +38,7 @@ t-size-after-push = () {
 
 ; full 判定：top 達到 cap 時為 true，但此時仍不算 empty
 t-full = () {
-    s = arr-stack {
+    s = arr-stack{
         cap: 4
         top: 4
     }
@@ -50,7 +50,7 @@ t-full = () {
 
 ; clear 後 size 歸零並回到 empty
 t-clear = () {
-    s = arr-stack {
+    s = arr-stack{
         cap: 16
         top: 5
     }

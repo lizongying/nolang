@@ -1439,12 +1439,68 @@ func ValidateNaming(program *parser.Program) []ValidateResult {
 	}
 
 	for _, stmt := range program.Statements {
-		if _, ok := stmt.(*parser.LetStatement); ok {
+		switch s := stmt.(type) {
+		case *parser.LetStatement:
+			// 頂層全域宣告本身也要守命名規範（含「中間不得出現底線」）。
+			// 過去這裡直接 `continue` 跳過，導致 `tmp__1 = ...` 這類頂層
+			// 變數名逃過檢查（checkNaming 只下鑽區域變數，且對全域重賦值
+			// 整條豁免）。現在就地檢查宣告名，與區域變數同級（TraceID 2dhoris2）。
+			if s.Name != nil {
+				if msg := namingViolation(s.Name.Value); msg != "" {
+					results = append(results, ValidateResult{
+						TraceID: "2dhoris2",
+						File:    program.Sem.SourceFileOf(stmt),
+						Line:    s.Name.Token.Line,
+						Column:  s.Name.Token.Column,
+						Message: msg,
+					})
+				}
+			}
 			continue
+		case *parser.MultiAssignStatement:
+			// 頂層多指派目標（如 `a, b = f()`）同樣要守命名規範。
+			for _, target := range s.Targets {
+				if ident, ok := target.(*parser.Identifier); ok {
+					if msg := namingViolation(ident.Value); msg != "" {
+						results = append(results, ValidateResult{
+							TraceID: "2dhoris2",
+							File:    program.Sem.SourceFileOf(stmt),
+							Line:    ident.Token.Line,
+							Column:  ident.Token.Column,
+							Message: msg,
+						})
+					}
+				}
+			}
+			continue
+		default:
+			results = append(results, checkNaming(program.Sem, stmt, program.Sem.SourceFileOf(stmt), globalVars)...)
 		}
-		results = append(results, checkNaming(program.Sem, stmt, program.Sem.SourceFileOf(stmt), globalVars)...)
 	}
+	// 宣告名之外，型別名也要守同一條規則：struct 定義名、顯式型別標註、
+	// struct 字面量的點分型別名（net.Conn / pkg.Sub.K）；見 naming_type_refs.go。
+	results = append(results, validateTypeNameNaming(program)...)
 	return results
+}
+
+// namingViolation 回報一個識別符違反命名規範的診斷訊息；合法則回 ""。
+// 豁免：顯式捨棄 `_`、編譯器合成 `__` 前綴、模組級 ALL-CAPS 常數（如
+// LEVEL-ERROR）。其餘走 isValidVarName：只允許小寫字母、數字與中劃線，
+// 故中間底線（如 `tmp__1`）會被判定違規。
+func namingViolation(name string) string {
+	if name == "" {
+		return ""
+	}
+	if name == "_" || strings.HasPrefix(name, "__") {
+		return ""
+	}
+	if isAllCapsConst(name) {
+		return ""
+	}
+	if !isValidVarName(name) {
+		return i18n.T("2dhoris2", "'%s' should use only lowercase letters and hyphens", name)
+	}
+	return ""
 }
 
 // checkNaming 遞迴檢查命名規範。file 由外層頂層語句傳入（合併模式只有頂層語句被
@@ -6989,26 +7045,53 @@ func checkStringConcatInStmt(view *THIRView, sem *parser.SemanticContext, stmt p
 	return results
 }
 
-// isStringConcatSite 是 StringConcat 規則的單一判定口徑：`+` 且任一側為 str
-// 字面量，或兩側都確定為字串型別（THIR 精化）。ValidateStringConcat 的報告
-// 與 FixStringConcatOperators 的改寫共用它——「lint 報什麼，fmt 就修什麼」，
-// 不出現第二套口徑。
+// isStringConcatSite 是 StringConcat 規則的單一判定口徑：`+` 且任一側為
+// 字串拼接鏈的結果（見 isStringConcatChain），或兩側都確定為字串型別
+// （THIR 精化）。ValidateStringConcat 的報告與 FixStringConcatOperators 的
+// 改寫共用它——「lint 報什麼，fmt 就修什麼」，不出現第二套口徑。
+//
+// 2026-11-10 修：`'a' + x + 'b' + y + 'c'` 的 AST 是左結合的 InfixExpression
+// 鏈，中間節點（如 `(... + 'b') + y`）兩側都不是字面量；THIR 又把外層 `+`
+// 當成數值加法，給不出 str 型別 ⇒ 舊口徑漏報漏修，`no fmt` 只翻一半，
+// 輸出 `'a' - x - 'b' + y - 'c'` 這種混合 `+`/`-` 的壞碼。現在「某一側
+// 本身是拼接鏈」也算命中，整條鏈一致翻成 `-`。
 func isStringConcatSite(view *THIRView, e *parser.InfixExpression) bool {
 	if e.Operator != "+" {
 		return false
 	}
-	// Check if either operand is a string literal
-	if _, ok := e.Left.(*parser.StringLiteral); ok {
-		return true
-	}
-	if _, ok := e.Right.(*parser.StringLiteral); ok {
+	if isStringConcatChain(view, e.Left) || isStringConcatChain(view, e.Right) {
 		return true
 	}
 	// 6C-optional 第四批補報：`str_var + str_var`（兩側都確定為字串
-	// 型別）也是字串拼接，先前只認 StringLiteral 一侧而漏報。
-	// 保守口徑：兩側**都**確定為字串才報，任一側型別未知即不報
-	//（與 DivByZero 的「確定為浮點才跳過」同屬保守方向）。
+	// 型別）也是字串拼接。保守口徑：兩側**都**確定為字串才報，
+	// 任一側型別未知即不報（避免把數值 `+` 誤改成拼接 `-`）。
 	return isStrConcatOperand(view, e.Left) && isStrConcatOperand(view, e.Right)
+}
+
+// isStringConcatChain 判斷運算元是否為「字串拼接鏈的結果」：
+//
+//   - 字串字面量（舊口徑的「任一側為 str 字面量」）
+//   - '-' 中綴且鏈上確有字串（避免把數值減法 a - 1 誤當拼接）
+//   - '+' 中綴且本身命中 isStringConcatSite（左結合鏈的上一節）
+//   - 括號包裹時往內看一層
+//
+// 遞迴只沿運算元子樹向下，AST 無環；e 為 nil 或非上述節點時返回 false，
+// 其餘型別（呼叫結果、欄位存取）仍交給 isStrConcatOperand 的保守精化。
+func isStringConcatChain(view *THIRView, e parser.Expression) bool {
+	switch x := e.(type) {
+	case *parser.StringLiteral:
+		return true
+	case *parser.GroupedExpression:
+		return isStringConcatChain(view, x.Expression)
+	case *parser.InfixExpression:
+		switch x.Operator {
+		case "-":
+			return isStringConcatChain(view, x.Left) || isStringConcatChain(view, x.Right)
+		case "+":
+			return isStringConcatSite(view, x)
+		}
+	}
+	return false
 }
 
 func checkStringConcatInExpr(view *THIRView, expr parser.Expression, file string) []ValidateResult {

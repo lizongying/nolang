@@ -42,8 +42,8 @@ holder {
     p pt #{inline}
     q i64
 }
-h = holder {
-    p: pt {
+h = holder{
+    p: pt{
         x: 4
     }
     q: 2

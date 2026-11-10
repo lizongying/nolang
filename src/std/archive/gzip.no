@@ -678,6 +678,18 @@ deflate-stored = (data []byte) (out []byte) {
     pos = 0
     n = data.len()
 
+    ; 空輸入也必須輸出一個 BFINAL=1 的空 stored block。
+    ; 否則串流裡完全沒有 DEFLATE 主體，解壓端（含 CPython zlib / gunzip）會判
+    ; 「incomplete or truncated stream」。參考值 zlib.compress(b'', 0)
+    ; = 01 00 00 FF FF（BFINAL=1, LEN=0, NLEN=0xFFFF）。
+    n == 0 -> {
+        result.push(1)
+        result.push(0)
+        result.push(0)
+        result.push(0xFF)
+        result.push(0xFF)
+    }
+
     (pos < n) {
 
         ; 區塊大小（最大 65535）

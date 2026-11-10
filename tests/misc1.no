@@ -1,6 +1,7 @@
 ; merged category 'misc1' -- members: 1.no, 2.no
 ; (originals backed up under tests/_archive/misc1/)
-; ===================== merged from tests/1.no =====================
+; merged from tests/1.no
+...
 input []byte = ["a", "b", "c"]
 print(len(input))
 print(input[0])
@@ -9,7 +10,8 @@ print(input[2])
 input[2] = 99
 print(input[2])
 
-; ===================== merged from tests/2.no =====================
+; merged from tests/2.no
+...
 probs = [1, 2, 3]
 m = 1
 

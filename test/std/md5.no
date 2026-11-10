@@ -204,10 +204,24 @@ t-twoblock-ends = () {
 
     runner.eq(ixout61c16, 0x4a, 'md5 two-block b15')
 }
+; 低階循環左移：rotl(x, n) = (x << n) | (x >> (32-n))
+t-rotl = () {
+    runner.eq(u32i(md5.md5-rotl(1, 1)), 2, 'rotl(1,1) = 2')
+    runner.eq(u32i(md5.md5-rotl(2147483648, 1)), 1, 'rotl(0x80000000,1) 回繞為 1')
+    runner.eq(u32i(md5.md5-rotl(1, 16)), 65536, 'rotl(1,16) = 0x10000')
+    runner.eq(u32i(md5.md5-rotl(255, 4)), 4080, 'rotl(0xff,4) = 0xff0')
+}
+
+; u32 -> i64
+u32i = (x u32) (v i64) {
+    v = x
+}
+
 p1 = runner.test('md5.digest-len', t-len)
 p2 = runner.test('md5.abc.full', t-abc-full)
 p3 = runner.test('md5.empty.ends', t-empty-ends)
 p4 = runner.test('md5.two-block.ends', t-twoblock-ends)
+p5 = runner.test('md5.rotl', t-rotl)
 total = runner.summary()
 f = runner.failed-count()
 {

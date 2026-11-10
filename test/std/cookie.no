@@ -85,7 +85,7 @@ t-sign-verify = () {
 
 ; Cookie Jar 整合：建立/覆寫/依域名與路徑取用、刪除、清空、簽名往返、Set-Cookie 回應存入
 t-jar = () {
-    j = cookie.jar {}
+    j = cookie.jar{}
     runner.eq(j.count-of(), 0, 'empty jar')
     j.set('s1', 'x', 'example.com', '/api', 0)
     j.set('s2', 'y', 'example.com', '/', 0)

@@ -2568,24 +2568,40 @@ fe-frombytes = (h []i64, s [32]byte) {
         -> _
     }
 
-    ; 進位傳播 (ref10 風格 + floor division)
-    ; Nolang 的 >> 對 i64 是邏輯右移，需用 floor division 公式處理負數
-    ; 26-bit: carry = floor((h + (1<<25)) / 2^26)
-    ; 25-bit: carry = floor((h + (1<<24)) / 2^25)
-
-    ixout1588c11 = h[0]: {
+    ; ⚠️ 進位順序必須照 ref10：先 25-bit 的奇數 limb（9,1,3,5,7），再 26-bit 的
+    ; 偶數 limb（0,2,4,6,8）。跨界載入會產生 loose limb（t[9] 可為負、t[0] 遠離
+    ; [0,2^26)），若照 0..9 的順序做，這些殘留直到最後才 wrap 回 t[0]、收不到後續
+    ; 進位，輸出的就不是規範形；fe-tobytes 假設輸入已規範（只做兩輪進位），
+    ; 直連時會丟掉幾乎整個高位。
+    ; 例：inv(2) 用 0..9 順序載入得 [10, 0…0, -16777216]，tobytes 印出
+    ; f7ffffff00…0040，正確值為 f7ffff…ff3f。
+    ixout1768c11 = h[9]: {
         ok -> it
 
         -> _
     }
 
     #{overflow=wrap}
-    sum = ixout1588c11 + 33554432
+    sum = ixout1768c11 + 16777216
 
     #{overflow=wrap}
-    c = (sum >> 26) - ((sum >> 63) << 38)
+    c = (sum >> 25) - ((sum >> 63) << 39)
 
-    ixout1595c20 = h[0]: {
+    ixout1775c20 = h[9]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[9]: {
+        ok -> it = ixout1775c20 - (c << 25)
+
+        -> _
+    }
+
+    ; wrap-around: 2^255 ≡ 19
+    ixout1783c20 = h[0]: {
         ok -> it
 
         -> _
@@ -2593,20 +2609,7 @@ fe-frombytes = (h []i64, s [32]byte) {
 
     #{overflow=wrap}
     h[0]: {
-        ok -> it = ixout1595c20 - (c << 26)
-
-        -> _
-    }
-
-    ixout1602c20 = h[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[1]: {
-        ok -> it = ixout1602c20 + c
+        ok -> it = ixout1783c20 + c * 19
 
         -> _
     }
@@ -2649,44 +2652,6 @@ fe-frombytes = (h []i64, s [32]byte) {
         -> _
     }
 
-    ixout1628c11 = h[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    sum = ixout1628c11 + 33554432
-
-    #{overflow=wrap}
-    c = (sum >> 26) - ((sum >> 63) << 38)
-
-    ixout1635c20 = h[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[2]: {
-        ok -> it = ixout1635c20 - (c << 26)
-
-        -> _
-    }
-
-    ixout1642c20 = h[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[3]: {
-        ok -> it = ixout1642c20 + c
-
-        -> _
-    }
-
     ixout1648c11 = h[3]: {
         ok -> it
 
@@ -2721,44 +2686,6 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{overflow=wrap}
     h[4]: {
         ok -> it = ixout1662c20 + c
-
-        -> _
-    }
-
-    ixout1668c11 = h[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    sum = ixout1668c11 + 33554432
-
-    #{overflow=wrap}
-    c = (sum >> 26) - ((sum >> 63) << 38)
-
-    ixout1675c20 = h[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[4]: {
-        ok -> it = ixout1675c20 - (c << 26)
-
-        -> _
-    }
-
-    ixout1682c20 = h[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[5]: {
-        ok -> it = ixout1682c20 + c
 
         -> _
     }
@@ -2801,44 +2728,6 @@ fe-frombytes = (h []i64, s [32]byte) {
         -> _
     }
 
-    ixout1708c11 = h[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    sum = ixout1708c11 + 33554432
-
-    #{overflow=wrap}
-    c = (sum >> 26) - ((sum >> 63) << 38)
-
-    ixout1715c20 = h[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[6]: {
-        ok -> it = ixout1715c20 - (c << 26)
-
-        -> _
-    }
-
-    ixout1722c20 = h[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[7]: {
-        ok -> it = ixout1722c20 + c
-
-        -> _
-    }
-
     ixout1728c11 = h[7]: {
         ok -> it
 
@@ -2877,6 +2766,158 @@ fe-frombytes = (h []i64, s [32]byte) {
         -> _
     }
 
+    ixout1588c11 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1588c11 + 33554432
+
+    #{overflow=wrap}
+    c = (sum >> 26) - ((sum >> 63) << 38)
+
+    ixout1595c20 = h[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[0]: {
+        ok -> it = ixout1595c20 - (c << 26)
+
+        -> _
+    }
+
+    ixout1602c20 = h[1]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[1]: {
+        ok -> it = ixout1602c20 + c
+
+        -> _
+    }
+
+    ixout1628c11 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1628c11 + 33554432
+
+    #{overflow=wrap}
+    c = (sum >> 26) - ((sum >> 63) << 38)
+
+    ixout1635c20 = h[2]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[2]: {
+        ok -> it = ixout1635c20 - (c << 26)
+
+        -> _
+    }
+
+    ixout1642c20 = h[3]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[3]: {
+        ok -> it = ixout1642c20 + c
+
+        -> _
+    }
+
+    ixout1668c11 = h[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1668c11 + 33554432
+
+    #{overflow=wrap}
+    c = (sum >> 26) - ((sum >> 63) << 38)
+
+    ixout1675c20 = h[4]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[4]: {
+        ok -> it = ixout1675c20 - (c << 26)
+
+        -> _
+    }
+
+    ixout1682c20 = h[5]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[5]: {
+        ok -> it = ixout1682c20 + c
+
+        -> _
+    }
+
+    ixout1708c11 = h[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    sum = ixout1708c11 + 33554432
+
+    #{overflow=wrap}
+    c = (sum >> 26) - ((sum >> 63) << 38)
+
+    ixout1715c20 = h[6]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[6]: {
+        ok -> it = ixout1715c20 - (c << 26)
+
+        -> _
+    }
+
+    ixout1722c20 = h[7]: {
+        ok -> it
+
+        -> _
+    }
+
+    #{overflow=wrap}
+    h[7]: {
+        ok -> it = ixout1722c20 + c
+
+        -> _
+    }
+
     ixout1748c11 = h[8]: {
         ok -> it
 
@@ -2911,45 +2952,6 @@ fe-frombytes = (h []i64, s [32]byte) {
     #{overflow=wrap}
     h[9]: {
         ok -> it = ixout1762c20 + c
-
-        -> _
-    }
-
-    ixout1768c11 = h[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    sum = ixout1768c11 + 16777216
-
-    #{overflow=wrap}
-    c = (sum >> 25) - ((sum >> 63) << 39)
-
-    ixout1775c20 = h[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[9]: {
-        ok -> it = ixout1775c20 - (c << 25)
-
-        -> _
-    }
-
-    ; wrap-around: 2^255 ≡ 19
-    ixout1783c20 = h[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    h[0]: {
-        ok -> it = ixout1783c20 + c * 19
 
         -> _
     }
@@ -3032,1499 +3034,373 @@ fe-frombytes = (h []i64, s [32]byte) {
     }
 }
 
+; fe-tobytes 的純量算術輔助
+; nolang 的 i64 算術是「檢查式」的：i64 op i64 會回傳 ?i64，只有含字面量的
+; 表達式才維持 i64。把運算收進這幾個 i64→i64 的輔助函式後，呼叫端拿到的
+; 一律是純量 i64，可以直接賦值給區域變數。overflow=wrap 讓溢位回繞而非回 0。
+...
+
+; i64 相加
+; a: 左操作數
+; b: 右操作數
+; [num-add](#x25519.num-add)
+num-add = (a i64, b i64) (v i64) {
+
+    #{overflow=wrap}
+    o = a + b
+
+    v = o: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; i64 相減
+; a: 左操作數
+; b: 右操作數
+; [num-sub](#x25519.num-sub)
+num-sub = (a i64, b i64) (v i64) {
+
+    #{overflow=wrap}
+    o = a - b
+
+    v = o: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; floor(x / 2^bits)，對負數亦正確
+; 先加 2^40 把被除數抬到非負再右移——這樣不論 >> 是邏輯或算術右移結果都一樣
+; （limb 絕對值遠小於 2^40），最後扣回 (2^40 >> bits)。
+; x: 被除數
+; bits: 位移量（本檔只會用 25 或 26）
+; [num-floor](#x25519.num-floor)
+num-floor = (x i64, bits i64) (q i64) {
+    big = 1099511627776; 2^40
+    base = big >> bits
+
+    q = num-sub(num-add(x, big) >> bits, base)
+}
+
 ; 將域元素序列化為 32 位元組（小端序）
-; 使用無捨入常數的 floor division 進位傳播
-; 先將 limbs 規約到 [0, 2^bits-1]，再用 +19 測試是否 >= p
+; 依 ref10 fe_tobytes：先用 q 條件約減把值規約到 [0,p)，再逐級進位、遮罩、打包。
+;
+; ⚠️ 舊版把中間結果寫進區域 vec 再讀回，實測讀到的仍是原值（整條進位鏈等於沒跑）；
+;    本版只用純量區域變數，完全避開該路徑。
 ; s: 寫入序列化結果的 32 位元組緩衝區
-; h: 待序列化的域元素（先規約到 [0,p) 再輸出）
+; h: 待序列化的域元素（limb 可為小負數）
 ; [fe-tobytes](#x25519.fe-tobytes)
 fe-tobytes = (s [32]byte, h []i64) {
-
-    ; 複製到局部陣列
-    t []i64 = with-len(10)
-
-    ixout1843c20 = h[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[0]: {
-        ok -> it = ixout1843c20
-
-        -> _
-    }
-
-    ixout1850c20 = h[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[1]: {
-        ok -> it = ixout1850c20
-
-        -> _
-    }
-
-    ixout1857c20 = h[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[2]: {
-        ok -> it = ixout1857c20
-
-        -> _
-    }
-
-    ixout1864c20 = h[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[3]: {
-        ok -> it = ixout1864c20
-
-        -> _
-    }
-
-    ixout1871c20 = h[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[4]: {
-        ok -> it = ixout1871c20
-
-        -> _
-    }
-
-    ixout1878c20 = h[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[5]: {
-        ok -> it = ixout1878c20
-
-        -> _
-    }
-
-    ixout1885c20 = h[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[6]: {
-        ok -> it = ixout1885c20
-
-        -> _
-    }
-
-    ixout1892c20 = h[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[7]: {
-        ok -> it = ixout1892c20
-
-        -> _
-    }
-
-    ixout1899c20 = h[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[8]: {
-        ok -> it = ixout1899c20
-
-        -> _
-    }
-
-    ixout1906c20 = h[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    t[9]: {
-        ok -> it = ixout1906c20
-
-        -> _
-    }
-
-    ; 第一輪進位傳播（無捨入常數，使用 floor division）
-    ; 將 loose/semi-reduced limbs 規約到 [0, 2^bits-1]
-    ; Nolang 的 >> 對 i64 是邏輯右移，需用 floor division 公式處理負數
-    ; floor(x / 2^b) = (x >> b) - ((x >> 63) << (64 - b))
-    ixout2553c11 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2553c27 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2553c11 >> 26) - ((ixout2553c27 >> 63) << 38)
-
-    ixout2557c21 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[0]: {
-        ok -> it = ixout2557c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2564c21 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[1]: {
-        ok -> it = ixout2564c21 + c
-
-        -> _
-    }
-
-    ixout2570c11 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2570c27 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2570c11 >> 25) - ((ixout2570c27 >> 63) << 39)
-
-    ixout2574c21 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[1]: {
-        ok -> it = ixout2574c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2581c21 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[2]: {
-        ok -> it = ixout2581c21 + c
-
-        -> _
-    }
-
-    ixout2587c11 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2587c27 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2587c11 >> 26) - ((ixout2587c27 >> 63) << 38)
-
-    ixout2591c21 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[2]: {
-        ok -> it = ixout2591c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2598c21 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[3]: {
-        ok -> it = ixout2598c21 + c
-
-        -> _
-    }
-
-    ixout2604c11 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2604c27 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2604c11 >> 25) - ((ixout2604c27 >> 63) << 39)
-
-    ixout2608c21 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[3]: {
-        ok -> it = ixout2608c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2615c21 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[4]: {
-        ok -> it = ixout2615c21 + c
-
-        -> _
-    }
-
-    ixout2621c11 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2621c27 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2621c11 >> 26) - ((ixout2621c27 >> 63) << 38)
-
-    ixout2625c21 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[4]: {
-        ok -> it = ixout2625c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2632c21 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[5]: {
-        ok -> it = ixout2632c21 + c
-
-        -> _
-    }
-
-    ixout2638c11 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2638c27 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2638c11 >> 25) - ((ixout2638c27 >> 63) << 39)
-
-    ixout2642c21 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[5]: {
-        ok -> it = ixout2642c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2649c21 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[6]: {
-        ok -> it = ixout2649c21 + c
-
-        -> _
-    }
-
-    ixout2655c11 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2655c27 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2655c11 >> 26) - ((ixout2655c27 >> 63) << 38)
-
-    ixout2659c21 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[6]: {
-        ok -> it = ixout2659c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2666c21 = t[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[7]: {
-        ok -> it = ixout2666c21 + c
-
-        -> _
-    }
-
-    ixout2672c11 = t[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2672c27 = t[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2672c11 >> 25) - ((ixout2672c27 >> 63) << 39)
-
-    ixout2676c21 = t[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[7]: {
-        ok -> it = ixout2676c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2683c21 = t[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[8]: {
-        ok -> it = ixout2683c21 + c
-
-        -> _
-    }
-
-    ixout2689c11 = t[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2689c27 = t[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2689c11 >> 26) - ((ixout2689c27 >> 63) << 38)
-
-    ixout2693c21 = t[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[8]: {
-        ok -> it = ixout2693c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2700c21 = t[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[9]: {
-        ok -> it = ixout2700c21 + c
-
-        -> _
-    }
-
-    ixout2706c11 = t[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2706c27 = t[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2706c11 >> 25) - ((ixout2706c27 >> 63) << 39)
-
-    ixout2710c21 = t[9]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[9]: {
-        ok -> it = ixout2710c21 - (c << 25)
-
-        -> _
-    }
-
-    ; wrap-around: 2^255 ≡ 19
-    ixout2718c21 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[0]: {
-        ok -> it = ixout2718c21 + c * 19
-
-        -> _
-    }
-
-    ; 第二輪進位（處理 wrap-around 進位）
-    ixout2725c11 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2725c27 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2725c11 >> 26) - ((ixout2725c27 >> 63) << 38)
-
-    ixout2729c21 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[0]: {
-        ok -> it = ixout2729c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2736c21 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[1]: {
-        ok -> it = ixout2736c21 + c
-
-        -> _
-    }
-
-    ixout2742c11 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2742c27 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2742c11 >> 25) - ((ixout2742c27 >> 63) << 39)
-
-    ixout2746c21 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[1]: {
-        ok -> it = ixout2746c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2753c21 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[2]: {
-        ok -> it = ixout2753c21 + c
-
-        -> _
-    }
-
-    ; 此時所有 limb 在 [0, 2^bits-1] 範圍內
-    ; 但值可能 >= p，需條件減去 p
-    ; 測試: 加 19 看是否溢出 bit 255
-    ixout2763c21 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[0]: {
-        ok -> it = ixout2763c21 + 19
-
-        -> _
-    }
-
-    ; 第三輪進位（+19 測試，無捨入常數）
-    ixout2770c11 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2770c27 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2770c11 >> 26) - ((ixout2770c27 >> 63) << 38)
-
-    ixout2774c21 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[0]: {
-        ok -> it = ixout2774c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2781c21 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[1]: {
-        ok -> it = ixout2781c21 + c
-
-        -> _
-    }
-
-    ixout2787c11 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2787c27 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2787c11 >> 25) - ((ixout2787c27 >> 63) << 39)
-
-    ixout2791c21 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[1]: {
-        ok -> it = ixout2791c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2798c21 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[2]: {
-        ok -> it = ixout2798c21 + c
-
-        -> _
-    }
-
-    ixout2804c11 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2804c27 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2804c11 >> 26) - ((ixout2804c27 >> 63) << 38)
-
-    ixout2808c21 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[2]: {
-        ok -> it = ixout2808c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2815c21 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[3]: {
-        ok -> it = ixout2815c21 + c
-
-        -> _
-    }
-
-    ixout2821c11 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2821c27 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2821c11 >> 25) - ((ixout2821c27 >> 63) << 39)
-
-    ixout2825c21 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[3]: {
-        ok -> it = ixout2825c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2832c21 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[4]: {
-        ok -> it = ixout2832c21 + c
-
-        -> _
-    }
-
-    ixout2838c11 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2838c27 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2838c11 >> 26) - ((ixout2838c27 >> 63) << 38)
-
-    ixout2842c21 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[4]: {
-        ok -> it = ixout2842c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2849c21 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[5]: {
-        ok -> it = ixout2849c21 + c
-
-        -> _
-    }
-
-    ixout2855c11 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2855c27 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2855c11 >> 25) - ((ixout2855c27 >> 63) << 39)
-
-    ixout2859c21 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[5]: {
-        ok -> it = ixout2859c21 - (c << 25)
-
-        -> _
-    }
-
-    ixout2866c21 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[6]: {
-        ok -> it = ixout2866c21 + c
-
-        -> _
-    }
-
-    ixout2872c11 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2872c27 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    c = (ixout2872c11 >> 26) - ((ixout2872c27 >> 63) << 38)
-
-    ixout2876c21 = t[6]: {
+    h0 = h[0]: {
         ok -> it
-
-        -> _
-    }
 
-    #{overflow=wrap}
-    t[6]: {
-        ok -> it = ixout2876c21 - (c << 26)
-
-        -> _
+        -> 0
     }
 
-    ixout2883c21 = t[7]: {
+    h1 = h[1]: {
         ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[7]: {
-        ok -> it = ixout2883c21 + c
 
-        -> _
+        -> 0
     }
 
-    ixout2889c11 = t[7]: {
+    h2 = h[2]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    ixout2889c27 = t[7]: {
+    h3 = h[3]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    #{overflow=wrap}
-    c = (ixout2889c11 >> 25) - ((ixout2889c27 >> 63) << 39)
-
-    ixout2893c21 = t[7]: {
+    h4 = h[4]: {
         ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[7]: {
-        ok -> it = ixout2893c21 - (c << 25)
 
-        -> _
+        -> 0
     }
 
-    ixout2900c21 = t[8]: {
+    h5 = h[5]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    #{overflow=wrap}
-    t[8]: {
-        ok -> it = ixout2900c21 + c
-
-        -> _
-    }
-
-    ixout2906c11 = t[8]: {
+    h6 = h[6]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    ixout2906c27 = t[8]: {
+    h7 = h[7]: {
         ok -> it
 
-        -> _
+        -> 0
     }
-
-    #{overflow=wrap}
-    c = (ixout2906c11 >> 26) - ((ixout2906c27 >> 63) << 38)
 
-    ixout2910c21 = t[8]: {
+    h8 = h[8]: {
         ok -> it
 
-        -> _
+        -> 0
     }
 
-    #{overflow=wrap}
-    t[8]: {
-        ok -> it = ixout2910c21 - (c << 26)
-
-        -> _
-    }
-
-    ixout2917c21 = t[9]: {
+    h9 = h[9]: {
         ok -> it
-
-        -> _
-    }
-
-    #{overflow=wrap}
-    t[9]: {
-        ok -> it = ixout2917c21 + c
 
-        -> _
+        -> 0
     }
-
-    ixout2923c11 = t[9]: {
-        ok -> it
 
-        -> _
-    }
+    ; ---- 條件約減：算出需減去的 p 的倍數 q ----
+    q = num-floor(num-add(19 * h9, 16777216), 25)
+    q = num-floor(num-add(h0, q), 26)
+    q = num-floor(num-add(h1, q), 25)
+    q = num-floor(num-add(h2, q), 26)
+    q = num-floor(num-add(h3, q), 25)
+    q = num-floor(num-add(h4, q), 26)
+    q = num-floor(num-add(h5, q), 25)
+    q = num-floor(num-add(h6, q), 26)
+    q = num-floor(num-add(h7, q), 25)
+    q = num-floor(num-add(h8, q), 26)
+    q = num-floor(num-add(h9, q), 25)
 
-    ixout2923c27 = t[9]: {
-        ok -> it
+    h0 = num-add(h0, 19 * q)
 
-        -> _
-    }
+    ; ---- 逐級進位，把每個 limb 規約到 [0, 2^bits) ----
+    c = num-floor(h0, 26)
+    h0 = num-sub(h0, c << 26)
+    h1 = num-add(h1, c)
 
-    #{overflow=wrap}
-    c = (ixout2923c11 >> 25) - ((ixout2923c27 >> 63) << 39)
+    c = num-floor(h1, 25)
+    h1 = num-sub(h1, c << 25)
+    h2 = num-add(h2, c)
 
-    ixout2927c21 = t[9]: {
-        ok -> it
+    c = num-floor(h2, 26)
+    h2 = num-sub(h2, c << 26)
+    h3 = num-add(h3, c)
 
-        -> _
-    }
+    c = num-floor(h3, 25)
+    h3 = num-sub(h3, c << 25)
+    h4 = num-add(h4, c)
 
-    #{overflow=wrap}
-    t[9]: {
-        ok -> it = ixout2927c21 - (c << 25)
+    c = num-floor(h4, 26)
+    h4 = num-sub(h4, c << 26)
+    h5 = num-add(h5, c)
 
-        -> _
-    }
+    c = num-floor(h5, 25)
+    h5 = num-sub(h5, c << 25)
+    h6 = num-add(h6, c)
 
-    ; c = 1 表示 t + 19 >= 2^255，即原值 >= p，當前 t = 原值 - p（正確）
-    ; c = 0 表示原值 < p，需撤銷 +19
-    ; mask = 0 - (1 - c): c=0 → mask=-1（全1），c=1 → mask=0
-    #{overflow=wrap}
-    mask = 0 - (1 - c)
+    c = num-floor(h6, 26)
+    h6 = num-sub(h6, c << 26)
+    h7 = num-add(h7, c)
 
-    ixout2940c21 = t[0]: {
-        ok -> it
+    c = num-floor(h7, 25)
+    h7 = num-sub(h7, c << 25)
+    h8 = num-add(h8, c)
 
-        -> _
-    }
+    c = num-floor(h8, 26)
+    h8 = num-sub(h8, c << 26)
+    h9 = num-add(h9, c)
 
-    #{overflow=wrap}
-    t[0]: {
-        ok -> it = ixout2940c21 - (19 & mask)
+    c = num-floor(h9, 25)
+    h9 = num-sub(h9, c << 25)
 
-        -> _
-    }
+    ; 到此值已在 [0,p)，最後一級進位 c 必為 0
 
-    ; 打包為 32 位元組（小端序）
-    ; limb 布局：t[0](26) t[1](25) t[2](26) t[3](25) t[4](26) t[5](25) t[6](26) t[7](25) t[8](26) t[9](25)
-    ; 各 limb 起始位元：0, 26, 51, 77, 102, 128, 153, 179, 204, 230
+    ; ---- 打包為 32 位元組（小端序） ----
+    ; limb 起始位元：0, 26, 51, 77, 102, 128, 153, 179, 204, 230
     s[0]: {
-        ok -> it = t[0]
-
-        -> _
-    }
-
-    ixout2955c22 = t[0]: {
-        ok -> it
+        ok -> it = (h0 >> 0) & 255
 
         -> _
     }
 
     s[1]: {
-        ok -> it = (ixout2955c22 >> 8) & 255
-
-        -> _
-    }
-
-    ixout2961c22 = t[0]: {
-        ok -> it
+        ok -> it = (h0 >> 8) & 255
 
         -> _
     }
 
     s[2]: {
-        ok -> it = (ixout2961c22 >> 16) & 255
-
-        -> _
-    }
-
-    ixout2967c23 = t[0]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2967c38 = t[1]: {
-        ok -> it
+        ok -> it = (h0 >> 16) & 255
 
         -> _
     }
 
     s[3]: {
-        ok -> it = ((ixout2967c23 >> 24) | (ixout2967c38 << 2)) & 255
-
-        -> _
-    }
-
-    ixout2973c22 = t[1]: {
-        ok -> it
+        ok -> it = ((h0 >> 24) | (h1 << 2)) & 255
 
         -> _
     }
 
     s[4]: {
-        ok -> it = (ixout2973c22 >> 6) & 255
-
-        -> _
-    }
-
-    ixout2979c22 = t[1]: {
-        ok -> it
+        ok -> it = (h1 >> 6) & 255
 
         -> _
     }
 
     s[5]: {
-        ok -> it = (ixout2979c22 >> 14) & 255
-
-        -> _
-    }
-
-    ixout2985c23 = t[1]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout2985c38 = t[2]: {
-        ok -> it
+        ok -> it = (h1 >> 14) & 255
 
         -> _
     }
 
     s[6]: {
-        ok -> it = ((ixout2985c23 >> 22) | (ixout2985c38 << 3)) & 255
-
-        -> _
-    }
-
-    ixout2991c22 = t[2]: {
-        ok -> it
+        ok -> it = ((h1 >> 22) | (h2 << 3)) & 255
 
         -> _
     }
 
     s[7]: {
-        ok -> it = (ixout2991c22 >> 5) & 255
-
-        -> _
-    }
-
-    ixout2997c22 = t[2]: {
-        ok -> it
+        ok -> it = (h2 >> 5) & 255
 
         -> _
     }
 
     s[8]: {
-        ok -> it = (ixout2997c22 >> 13) & 255
-
-        -> _
-    }
-
-    ixout3003c23 = t[2]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout3003c38 = t[3]: {
-        ok -> it
+        ok -> it = (h2 >> 13) & 255
 
         -> _
     }
 
     s[9]: {
-        ok -> it = ((ixout3003c23 >> 21) | (ixout3003c38 << 5)) & 255
-
-        -> _
-    }
-
-    ixout3009c22 = t[3]: {
-        ok -> it
+        ok -> it = ((h2 >> 21) | (h3 << 5)) & 255
 
         -> _
     }
 
     s[10]: {
-        ok -> it = (ixout3009c22 >> 3) & 255
-
-        -> _
-    }
-
-    ixout3015c22 = t[3]: {
-        ok -> it
+        ok -> it = (h3 >> 3) & 255
 
         -> _
     }
 
     s[11]: {
-        ok -> it = (ixout3015c22 >> 11) & 255
-
-        -> _
-    }
-
-    ixout3021c23 = t[3]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout3021c38 = t[4]: {
-        ok -> it
+        ok -> it = (h3 >> 11) & 255
 
         -> _
     }
 
     s[12]: {
-        ok -> it = ((ixout3021c23 >> 19) | (ixout3021c38 << 6)) & 255
-
-        -> _
-    }
-
-    ixout3027c22 = t[4]: {
-        ok -> it
+        ok -> it = ((h3 >> 19) | (h4 << 6)) & 255
 
         -> _
     }
 
     s[13]: {
-        ok -> it = (ixout3027c22 >> 2) & 255
-
-        -> _
-    }
-
-    ixout3033c22 = t[4]: {
-        ok -> it
+        ok -> it = (h4 >> 2) & 255
 
         -> _
     }
 
     s[14]: {
-        ok -> it = (ixout3033c22 >> 10) & 255
-
-        -> _
-    }
-
-    ixout3039c22 = t[4]: {
-        ok -> it
+        ok -> it = (h4 >> 10) & 255
 
         -> _
     }
 
     s[15]: {
-        ok -> it = (ixout3039c22 >> 18) & 255
-
-        -> _
-    }
-
-    ixout3045c23 = t[4]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout3045c38 = t[5]: {
-        ok -> it
+        ok -> it = (h4 >> 18) & 255
 
         -> _
     }
 
     s[16]: {
-        ok -> it = ((ixout3045c23 >> 26) | (ixout3045c38 << 0)) & 255
-
-        -> _
-    }
-
-    ixout3051c22 = t[5]: {
-        ok -> it
+        ok -> it = (h5 >> 0) & 255
 
         -> _
     }
 
     s[17]: {
-        ok -> it = (ixout3051c22 >> 8) & 255
-
-        -> _
-    }
-
-    ixout3057c22 = t[5]: {
-        ok -> it
+        ok -> it = (h5 >> 8) & 255
 
         -> _
     }
 
     s[18]: {
-        ok -> it = (ixout3057c22 >> 16) & 255
-
-        -> _
-    }
-
-    ixout3063c23 = t[5]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout3063c38 = t[6]: {
-        ok -> it
+        ok -> it = (h5 >> 16) & 255
 
         -> _
     }
 
     s[19]: {
-        ok -> it = ((ixout3063c23 >> 24) | (ixout3063c38 << 1)) & 255
-
-        -> _
-    }
-
-    ixout3069c22 = t[6]: {
-        ok -> it
+        ok -> it = ((h5 >> 24) | (h6 << 1)) & 255
 
         -> _
     }
 
     s[20]: {
-        ok -> it = (ixout3069c22 >> 7) & 255
-
-        -> _
-    }
-
-    ixout3075c22 = t[6]: {
-        ok -> it
+        ok -> it = (h6 >> 7) & 255
 
         -> _
     }
 
     s[21]: {
-        ok -> it = (ixout3075c22 >> 15) & 255
-
-        -> _
-    }
-
-    ixout3081c23 = t[6]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout3081c38 = t[7]: {
-        ok -> it
+        ok -> it = (h6 >> 15) & 255
 
         -> _
     }
 
     s[22]: {
-        ok -> it = ((ixout3081c23 >> 23) | (ixout3081c38 << 3)) & 255
-
-        -> _
-    }
-
-    ixout3087c22 = t[7]: {
-        ok -> it
+        ok -> it = ((h6 >> 23) | (h7 << 3)) & 255
 
         -> _
     }
 
     s[23]: {
-        ok -> it = (ixout3087c22 >> 5) & 255
-
-        -> _
-    }
-
-    ixout3093c22 = t[7]: {
-        ok -> it
+        ok -> it = (h7 >> 5) & 255
 
         -> _
     }
 
     s[24]: {
-        ok -> it = (ixout3093c22 >> 13) & 255
-
-        -> _
-    }
-
-    ixout3099c23 = t[7]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout3099c38 = t[8]: {
-        ok -> it
+        ok -> it = (h7 >> 13) & 255
 
         -> _
     }
 
     s[25]: {
-        ok -> it = ((ixout3099c23 >> 21) | (ixout3099c38 << 4)) & 255
-
-        -> _
-    }
-
-    ixout3105c22 = t[8]: {
-        ok -> it
+        ok -> it = ((h7 >> 21) | (h8 << 4)) & 255
 
         -> _
     }
 
     s[26]: {
-        ok -> it = (ixout3105c22 >> 4) & 255
-
-        -> _
-    }
-
-    ixout3111c22 = t[8]: {
-        ok -> it
+        ok -> it = (h8 >> 4) & 255
 
         -> _
     }
 
     s[27]: {
-        ok -> it = (ixout3111c22 >> 12) & 255
-
-        -> _
-    }
-
-    ixout3117c23 = t[8]: {
-        ok -> it
-
-        -> _
-    }
-
-    ixout3117c38 = t[9]: {
-        ok -> it
+        ok -> it = (h8 >> 12) & 255
 
         -> _
     }
 
     s[28]: {
-        ok -> it = ((ixout3117c23 >> 20) | (ixout3117c38 << 6)) & 255
-
-        -> _
-    }
-
-    ixout3123c22 = t[9]: {
-        ok -> it
+        ok -> it = ((h8 >> 20) | (h9 << 6)) & 255
 
         -> _
     }
 
     s[29]: {
-        ok -> it = (ixout3123c22 >> 2) & 255
-
-        -> _
-    }
-
-    ixout3129c22 = t[9]: {
-        ok -> it
+        ok -> it = (h9 >> 2) & 255
 
         -> _
     }
 
     s[30]: {
-        ok -> it = (ixout3129c22 >> 10) & 255
-
-        -> _
-    }
-
-    ixout3135c22 = t[9]: {
-        ok -> it
+        ok -> it = (h9 >> 10) & 255
 
         -> _
     }
 
     s[31]: {
-        ok -> it = (ixout3135c22 >> 18) & 255
+        ok -> it = (h9 >> 18) & 255
 
         -> _
     }

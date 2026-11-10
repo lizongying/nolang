@@ -21,7 +21,7 @@ sb {
 ; cap: 容量
 ; r: 返回結果
 sb.init = (cap i64) (r sb) {
-    r = sb {
+    r = sb{
         buf: with-cap(cap)
     }
 }

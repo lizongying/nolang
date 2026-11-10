@@ -197,27 +197,16 @@ h2m-ctx {
 h2m-new = () (c h2m-ctx) {
     c = h2m-ctx {
         ops: []
-        i64
         dsts: []
-        i64
         xa: []
-        i64
         bs: []
-        i64
         syms: []
-        str
         blks: []
-        i64
         vty: []
-        i64
         cty: []
-        i64
         names: []
-        str
         vids: []
-        i64
         tys: []
-        i64
         nid: 1
         blk: 0
         bnext: 1
@@ -225,59 +214,39 @@ h2m-new = () (c h2m-ctx) {
         unsup: 0
         ret: 0
         stk: []
-        i64
         stk-n: 0
         rnms: []
-        str
         rnms-n: 0
         epl: []
-        str
         epl-n: 0
         args: []
-        i64
         itv: []
-        i64
         itv-n: 0
         aln: []
-        str
         alv: []
-        i64
         alidx: []
-        i64
         stn: []
-        str
         stid: []
-        i64
         stfc: []
-        i64
         stft: []
-        i64
         stfldn: []
-        str
-    stftn: []
-    i64
-    ; s99j：scope-exit 释放清单——函数退出时为仍持有堆的活变量发 OP-RELEASE / OP-STRUCT-RELEASE。
-    ;   与 s99g 的「取得所有权」半边配对（s99g 在 MK 后发 OP-STRUCT-RETAIN，本件在退出时发 RELEASE）。
-    ;   rls = 待释放值 id（%st / %sv）；rlsm = 字段掩码（>0 ⇒ OP-STRUCT-RELEASE，bit j 置位 ⇔ 欄位 j 是 str；
-    ;     0 ⇒ TY-STR 纯 str ⇒ OP-RELEASE）；rlst = 值型别码（TY-STR 或 TY-STRUCT-BASE+sid），用于选 OP 码。
-    ;   按 vid 去重（同一值只释放一次）。⚠️ 仅 mem==0 放行（见 h2m-emit-releases）。
-    rls: []
-    i64
-    rlsm: []
-    i64
-    rlst: []
-    i64
-    outn: ''
-    outsv: 0
-    ownn: []
-    str
-    ownv: []
-    i64
-    rdval: 0
-    rdown: 0
-    retset: []
-    i64
-}
+        stftn: []
+        ; s99j：scope-exit 释放清单——函数退出时为仍持有堆的活变量发 OP-RELEASE / OP-STRUCT-RELEASE。
+        ;   与 s99g 的「取得所有权」半边配对（s99g 在 MK 后发 OP-STRUCT-RETAIN，本件在退出时发 RELEASE）。
+        ;   rls = 待释放值 id（%st / %sv）；rlsm = 字段掩码（>0 ⇒ OP-STRUCT-RELEASE，bit j 置位 ⇔ 欄位 j 是 str；
+        ;     0 ⇒ TY-STR 纯 str ⇒ OP-RELEASE）；rlst = 值型别码（TY-STR 或 TY-STRUCT-BASE+sid），用于选 OP 码。
+        ;   按 vid 去重（同一值只释放一次）。⚠️ 仅 mem==0 放行（见 h2m-emit-releases）。
+        rls: []
+        rlsm: []
+        rlst: []
+        outn: ''
+        outsv: 0
+        ownn: []
+        ownv: []
+        rdval: 0
+        rdown: 0
+        retset: []
+    }
     c.vty.push(TY-I64)
 }
 
@@ -1175,17 +1144,11 @@ h2m-sigs {
 h2m-sigs-new = () (s h2m-sigs) {
     s = h2m-sigs {
         fname: []
-        str
         fret: []
-        i64
         fnarg: []
-        i64
         fbase: []
-        i64
         farg: []
-        i64
         fdef: []
-        i64
     }
 }
 
@@ -1282,9 +1245,7 @@ h2m-lst {
 h2m-lst-new = () (l h2m-lst) {
     l = h2m-lst {
         lname: []
-        str
         lty: []
-        i64
     }
 }
 

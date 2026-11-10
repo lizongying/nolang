@@ -1,7 +1,7 @@
-; ═════════════════════════════════════════════════════════════════
 ; 問題 2：異步 args/result 用 alloca，未 awy 即返回 → use-after-free
 ; 嚴重等級：嚴重（Use-After-Free 讀寫，會崩潰）
-; ═════════════════════════════════════════════════════════════════
+...
+
 ;
 ; 觸發條件：
 ;   task = run some-async(args)   ; 啟動線程，args/result 在棧上
@@ -28,7 +28,7 @@
 ;   - args/result 改用 heap 分配（malloc）
 ;   - awy 時 free；未 awy 則 pthread_detach 自動回收
 ;
-; ═════════════════════════════════════════════════════════════════
+...
 
 ; 被協程衍生的函式：把輸入乘 2（overflow 採 wrap）
 ; n i64: 輸入值，本測試傳 42
@@ -37,10 +37,12 @@ work-async = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = n * 2
         r-opt: {
             ok -> r = it
+
             ->
         }
     }

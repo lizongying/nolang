@@ -2,12 +2,15 @@
 ; sources: str.no, trim-isolate.no, std-str-map.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/str.no =====================
+; merged from tests/str.no
 ; merged category 'str' -- members: self-write-str.no, str-order.no, str-split-replace-more.no, str-test-tmp.no, str-to-option.no, str.no, string-union.no
 ; (originals backed up under tests/_archive/str/)
-; ===================== merged from tests/self-write-str.no =====================
+...
+
+; merged from tests/self-write-str.no
 ; self-write-str.no — 最小化成：match arm 中 `it.to-str()`（it = 匹配值）
 ; 驗證 ?i64.to-str stripping 的正確 codegen（self 解析的配套）。
+...
 
 ; 測試 val
 test-val = () {
@@ -26,7 +29,7 @@ test-val = () {
 
 test-val()
 
-; ===================== merged from tests/str-order.no =====================
+; merged from tests/str-order.no
 ; test-str-order — ordering comparisons (< <= > >=) on one-character strings
 ; and chars.
 ;
@@ -41,6 +44,7 @@ test-val()
 ;     is rejected at compile time (checker.ValidateStrOrdering), and codegen
 ;     fails loudly if one ever slips through
 ;   - equality (== / !=) is unaffected: it is a real string comparison
+...
 
 print('=== one-char string literals ===')
 print('e' >= 'a'); 1
@@ -92,12 +96,13 @@ c: {
 
 print('=== done ===')
 
-; ===================== merged from tests/str-split-replace-more.no =====================
+; merged from tests/str-split-replace-more.no
 ; str-split-replace-more.no — 合併自 str split / replace 碎片（頂層拼接，非函數包裹）
 ; 來源：split2.no, replace2.no
 ; 保留錨點：split.no（基名）；replace.no（基名）；str.no / str-more.no（str 標準庫測試，另行保留）
 ; ── 來自 split2.no ──
 ; test-split2: test str.split without element access
+...
 s__1 = 'hello world hello'
 parts []str
 parts = s__1.split(' ')
@@ -114,7 +119,8 @@ r str
 r = s2.replace-str('b', 'X')
 print('result: {r}')
 
-; ===================== merged from tests/str-test-tmp.no =====================
+; merged from tests/str-test-tmp.no
+...
 word [64]byte
 word[0] = 104
 word[1] = 101
@@ -133,12 +139,14 @@ k <- [0..wlen): {
 print('after assign')
 print(tmp-word)
 
-; ===================== merged from tests/str-to-option.no =====================
+; merged from tests/str-to-option.no
 ; str-to-option.no — 驗證 str.to-i8/i16/i32/u8/u16/u32/u64/byte/bool 返回 Option
 ;
 ; 使用 if n == err / if n == nil 模式處理 Option（不依賴 match 語法）
+...
 
-; ===== str.to-i64 =====
+; str.to-i64
+...
 test-to-i64-ok = () {
     n = '12345'.to-i64()
     {
@@ -198,7 +206,8 @@ test-to-i64-invalid = () {
     }
 }
 
-; ===== str.to-i8 =====
+; str.to-i8
+...
 test-to-i8-ok = () {
     n = '127'.to-i8()
     {
@@ -258,7 +267,8 @@ test-to-i8-invalid = () {
     }
 }
 
-; ===== str.to-i16 =====
+; str.to-i16
+...
 test-to-i16-ok = () {
     n = '32767'.to-i16()
     {
@@ -288,7 +298,8 @@ test-to-i16-overflow = () {
     }
 }
 
-; ===== str.to-i32 =====
+; str.to-i32
+...
 test-to-i32-ok = () {
     n = '2147483647'.to-i32()
     {
@@ -318,7 +329,8 @@ test-to-i32-overflow = () {
     }
 }
 
-; ===== str.to-u8 =====
+; str.to-u8
+...
 test-to-u8-ok = () {
     n = '255'.to-u8()
     {
@@ -363,7 +375,8 @@ test-to-u8-negative = () {
     }
 }
 
-; ===== str.to-u16 =====
+; str.to-u16
+...
 test-to-u16-ok = () {
     n = '65535'.to-u16()
     {
@@ -393,7 +406,8 @@ test-to-u16-overflow = () {
     }
 }
 
-; ===== str.to-u32 =====
+; str.to-u32
+...
 test-to-u32-ok = () {
     n = '4294967295'.to-u32()
     {
@@ -423,7 +437,8 @@ test-to-u32-overflow = () {
     }
 }
 
-; ===== str.to-u64 =====
+; str.to-u64
+...
 test-to-u64-ok = () {
     n = '99999'.to-u64()
     {
@@ -453,7 +468,8 @@ test-to-u64-negative = () {
     }
 }
 
-; ===== str.to-bool =====
+; str.to-bool
+...
 test-to-bool-true = () {
     b = 'true'.to-bool()
     {
@@ -540,8 +556,9 @@ test-to-bool-false()
 test-to-bool-empty()
 test-to-bool-invalid()
 
-; ===================== merged from tests/str.no =====================
+; merged from tests/str.no
 ; cd src && go run ./cmd/cli/. build ../tests/str.no
+...
 a = 'abc'
 
 a = 'cabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc'
@@ -563,9 +580,10 @@ a = 'cabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcab
 
 ; compilation error: cannot assign non-string value to string variable 'a'
 a = '2'
+
 ; a.full(8)
 
-; ===================== merged from tests/string-union.no =====================
+; merged from tests/string-union.no
 ; test/string-union.no — 測試 std/str 中 string = str | txt 聯合類型別名
 ;
 ; 覆蓋能力（與 number.no 的 num = int | float 同構）：
@@ -573,6 +591,7 @@ a = '2'
 ;   - union 返回值單態化：pick(a string, b string) (r string)
 ;   - 檢查器相容性：具體成員實參傳給 union 別名形參不報 6fgg3htw
 ;   - 成員方法（str.*/txt.* 原版）不受別名影響
+...
 
 ; ── union 參數：str 實參單態化 ──
 ; s string: 要量長度的字串；本檔用 'hello' 與 txt 各呼叫一次
@@ -647,8 +666,9 @@ test-member-methods = () {
 test-member-methods()
 print(3)
 
-; ===================== merged from tests/trim-isolate.no =====================
+; merged from tests/trim-isolate.no
 ; 測試 trim
+...
 test-trim = () {
     s1 = '  hello  '
     print(s1.len())
@@ -675,7 +695,7 @@ test-trim()
 print('=== test-upper ===')
 test-upper()
 
-; ===================== merged from tests/std-str-map.no =====================
+; merged from tests/std-str-map.no
 ; std-str-map.no — src/std/collection/str-map.no 回歸測試
 ;
 ; str-map 長期沒有任何測試覆蓋（tests/mem-safety/test-minimal-str-map*.no 用的是
@@ -686,8 +706,9 @@ test-upper()
 ;      每次呼叫都不同 —— `h = FNV-OFFSET` 把 h 綁成了全域 FNV-OFFSET 的別名，
 ;      寫回時污染了常數本身。put 與 get 因此落在不同槽位。
 ;   3. 承上，get / remove / contains 全部失靈。
+...
 
-m = str-map {}
+m = str-map{}
 m.init()
 
 m.put('name', 'Alice')

@@ -2,8 +2,9 @@
 ; sources: split.no, str-ops.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/split.no =====================
+; merged from tests/split.no
 ; test-split: test str.split
+...
 
 ; # std/str
 
@@ -16,11 +17,12 @@ i <- [0..n): {
     print('  [{i.to-str()}] {parts[i]}')
 }
 
-; ===================== merged from tests/str-ops.no =====================
+; merged from tests/str-ops.no
 ; test-str-ops — verify str repeat (*) and char+str concat IR fixes
 ; Covers:
 ;   1. generateStrRepeat label bug (repeat inside loop body)
 ;   2. char literal + str concat bug (%str-long* 65)
+...
 
 print('=== str repeat (*) basic ===')
 s = 'ab' * 3

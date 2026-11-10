@@ -73,7 +73,7 @@ test-vec-move = () {
 ; 4. struct 參數已死 -> 轉移。struct 的深拷貝是「ptr 欄位遞迴 + 內聯葉子」
 ;    兩段走訪，轉移則整段省掉，改由 wrapper 的遞迴解構子釋放。
 test-struct-move = () {
-    h = holder {
+    h = holder{
         s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     }
     v = co echo-holder(h)
@@ -111,7 +111,7 @@ test-arg-reassign = () {
 
 ; 8. 反向：struct 參數在 spawn 之後仍被讀取 -> 必須維持深拷貝。
 test-struct-live-copy = () {
-    h = holder {
+    h = holder{
         s: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     }
     v = co echo-holder(h)

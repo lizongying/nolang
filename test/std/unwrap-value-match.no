@@ -91,7 +91,7 @@ t-ident-nil = () {
 ; 有 ?T 结果參數的函式（src/std/net/dns.no 的真實形態）：過去不會報錯，而是
 ; 靜默把目標寫成 0 —— rcode 判定因此全走錯分支。本條釘住「不再靜默歸零」。
 with-result = (n i64) (r ?i64) {
-    data []i64 = [10, 20, 30]
+    data = [10, 20, 30]
     v ?= data[n]: {
         ok -> it
 

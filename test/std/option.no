@@ -87,7 +87,7 @@ t-ok-payloads = () {
     }
 
     ; 結構體載荷
-    d ?pt = pt {
+    d ?pt = pt{
         x: 1
         y: 2
     }
@@ -310,7 +310,7 @@ t-ret-and-field = () {
     ; 選項當結構體欄位（讀取正常）
     ; 注意：match 的主體只能是**裸名**，`b.q: { … }` 會被 parser 拒絕
     ;       （expected left parenthesis, got LBRACE），必須先落到區域變數。
-    b = box {
+    b = box{
         q: mk-ok()
     }
     fq ?i64 = b.q
@@ -321,7 +321,7 @@ t-ret-and-field = () {
 
         err -> runner.is-true(false, 'struct field must be ok')
     }
-    b2 = box {
+    b2 = box{
         q: mk-nil()
     }
     fq2 ?i64 = b2.q

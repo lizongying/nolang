@@ -805,6 +805,7 @@ utils.no の書き込みエラー: %v
   'nmxs8sop': 'syslog: %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': '\'%s\' の型を推論できません: %s() には左辺の明示的な型注釈が必要です（例: `name []byte = %s(n)`）'
+  'nu59u6hp': '構造体リテラルのフィールド \'%s\' に値がありません。\'name: value\' と書くか、この行を削除してください（\'field: []\' の次の行に書いた型名は型注釈ではありません。空 vec の要素型は構造体フィールドの宣言から決まります）'
   'nwtpvei9': 'embed: fs.embed にはディレクトリが必要ですがファイルでした: %s（解決後: %s）'
   'nx1476j3': '  no pack nogit.no                 単一のソースファイルを梱包'
   'nz3ol1c4': 'ESM モジュール %q が package.noml の依存に宣言されていません。dependencies: [\'%s:^latest\']（または dev-dependencies）を追加して npm install を実行してください'

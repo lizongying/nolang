@@ -13,7 +13,7 @@ pt {
     tags [2]i64
 }
 
-p = pt {
+p = pt{
     name: 'abcd'
     tags: [10, 20]
 }

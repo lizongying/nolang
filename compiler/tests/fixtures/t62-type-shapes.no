@@ -28,7 +28,7 @@ view-pt.maybe = (k i64) (v ?&view-pt) {
     }
 }
 
-p = view-pt {
+p = view-pt{
     x: 7
 }
 

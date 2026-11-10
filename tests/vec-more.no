@@ -292,7 +292,9 @@ test-vec-extend()
 print('---')
 test-vec-to-str()
 
-; ── 吸收變體：合併自同簇 vec-*.no（heavy dedup）──────────────────
+; 吸收變體：合併自同簇 vec-*.no（heavy dedup）
+...
+
 ; 每個原件對映為下方的函式或頂層片段，stdout 逐段可對拍。
 
 ; from vec-elem-ownership.no — 容器「元素賦值」擁有權：元素必須深拷貝
@@ -304,6 +306,7 @@ test-vec-elem = () {
     inner = [9, 9, 9]
     print(outer[0][0]); 1
 }
+
 ; 來源「原位寫入」（不是重綁）—— 深拷貝下容器應看到舊值
 test-vec-elem-inplace = () {
     outer [][]i64 = with-len(1)
@@ -316,6 +319,7 @@ test-vec-elem-inplace = () {
     }
     print(outer[0][0]); 1
 }
+
 ; 兩層巢狀：外層元素是 []i64，內層元素是 i64
 test-vec-nested = () {
     a = [7, 8]
@@ -328,6 +332,7 @@ test-vec-nested = () {
     print(outer[0][0]); 7
     print(outer[1][1]); 2
 }
+
 ; map 的值 + 來源重綁（同一元素寫入路徑）
 test-map-value = () {
     list1 = [1, 2, 3]
@@ -343,6 +348,7 @@ test-map-value = () {
         err(e) -> print('err')
     }
 }
+
 ; 對照組：vec.push 本來就深拷貝
 test-push-control = () {
     outer [][]i64 = []

@@ -2,7 +2,7 @@
 ; sources: heap.no, malloc.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/heap.no =====================
+; merged from tests/heap.no
 ; heap.no — 泛型 heap 模組測試（run-based，使用 use std/heap）
 ;
 ; 執行：no run tests/heap.no
@@ -12,6 +12,7 @@
 ; （src/build/slice_structs.go）單態化出 heap-E 具現型別與其所有方法。
 ; 覆蓋：heap.init / push / pop / peek / size / empty
 ;       並以 i64 與 f64 兩種元素型別驗證泛型單態化推斷。
+...
 
 # std/heap
 
@@ -136,8 +137,9 @@ allok = allok && t-f64()
     }
 }
 
-; ===================== merged from tests/malloc.no =====================
+; merged from tests/malloc.no
 ; test malloc
+...
 
 print('start')
 p = 256

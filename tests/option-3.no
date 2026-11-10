@@ -2,7 +2,7 @@
 ; sources: opt-container-len.no, view-basic.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/opt-container-len.no =====================
+; merged from tests/opt-container-len.no
 ; opt-container-len.no — option 承載容器時，容器 method 的 self 必須剝殼
 ;
 ; `?[]i64` / `?str` 這類「option 包住容器」的值呼叫 `v.len()` 時，method 的 self
@@ -16,6 +16,7 @@
 ;
 ; 修法：receiver 是 option 而 self 是內層型別時，改傳 payload 地址
 ; （optPayloadTypedAddr，與 emitGetField 處理 `?T.field` 的剝殼一致）。
+...
 
 ; 填充 slice
 ; out ?[]i64: ok([10, 20, 30])，用來驗證 v.len() 能剝殼取得 3
@@ -86,11 +87,12 @@ scalar-opt = () (out ?i64) {
 empty-slice = () (out ?[]i64) {
 }
 
-; ===================== merged from tests/view-basic.no =====================
+; merged from tests/view-basic.no
 ; view-basic — view（`&T`）基礎測試
 ;
 ; `&T` 是方法返回裡的**借用**：不拷貝、不分配、不用 free。
 ; 生命週期自動綁定 `self`，因此只能綁 self。
+...
 
 view-point {
     x i64
@@ -109,16 +111,18 @@ view-point.sum = () (s i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         s-opt = .x + .y
         s-opt: {
             ok -> s = it
+
             ->
         }
     }
 }
 
-p = view-point {
+p = view-point{
     x: 7
     y: 9
 }

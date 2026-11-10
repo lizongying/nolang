@@ -20,10 +20,12 @@ fib = () {
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             i-opt = i + 1
             i-opt: {
                 ok -> i = it
+
                 ->
             }
         }

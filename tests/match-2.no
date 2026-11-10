@@ -2,7 +2,7 @@
 ; sources: match-arm-binding-scope.no, match-raw-cond.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/match-arm-binding-scope.no =====================
+; merged from tests/match-arm-binding-scope.no
 ; match-arm-binding-scope.no — match 臂的析構綁定必須**只在其臂內**有效
 ;
 ; `ok(v) ->` / `err(e) ->` 的綁定是 parser 合成的 `let v = <matched>`。它原本會沿用
@@ -23,6 +23,7 @@
 ; drop ⇒ **同一個 enum match 兩次**會讀到已釋放的緩衝（修前 double free，修後靜默空字串）。
 ;
 ; 本檔的每個 case 都印 ok/fail，方便肉眼與 golden 比對。
+...
 
 box {
     full(v i64),
@@ -121,7 +122,7 @@ z: {
     err -> print('fail 5: err')
 }
 
-; ===================== merged from tests/match-raw-cond.no =====================
+; merged from tests/match-raw-cond.no
 ; match-raw-cond.no — raw-cond 臂（ok(cond) 條件值臂）強化 fixture，S1 設計稿 §3 P4。
 ;
 ; minimal-ok.no 已有「單條 ok(cond) + 預設臂」的最小形態；本檔補強：
@@ -133,6 +134,7 @@ z: {
 ;      （SkipItBinding）在 lowering 內被 buildMatchDesugar 立即消費、
 ;      從不存活於任何樹形，只能在原始碼層釘住——分類器注釋見
 ;      src/parser/dump/hir_subform_coverage_test.go。
+...
 
 ; (1)(2)(3) 多條 raw-cond + 複合條件，值回傳
 ; score ?i64: 待評分的選項；ok 時以 it 參與條件判斷
@@ -200,7 +202,8 @@ drive = () (r ?i64) {
     r = sum-two(a, b)
 }
 
-; ---- grade ----
+; grade
+...
 snil ?i64 = nil
 s95 ?i64 = 95
 s85 ?i64 = 85
@@ -217,7 +220,8 @@ print(grade(s65)); -> C
 io.out('grade 10 -> ')
 print(grade(s10)); -> F
 
-; ---- classify ----
+; classify
+...
 c-neg ?i64 = -5
 c-vneg ?i64 = -500
 c-pos ?i64 = 7
@@ -228,7 +232,9 @@ print(classify(c-vneg)); -> very-negative
 io.out('classify 7 -> ')
 print(classify(c-pos)); -> non-negative
 
-; ---- ?= 傳播：double(-1) 回傳 nil，x ?= a 向上傳播，sum-two 落到 nil ----
+; ?= 傳播：double(-1) 回傳 nil，x ?= a 向上傳播，sum-two 落到 nil
+...
+
 ; 注：臂內插值用裸 {it} 而非 {it.to-str()}——後者撞上既有 MIR 缺陷
 ; （i64-to-str: no result slot，HEAD 同形態亦壞，見 unknown callee fmt-str），
 ; 与本档主题无关，故不觸發。

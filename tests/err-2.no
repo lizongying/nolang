@@ -2,7 +2,7 @@
 ; sources: err-binding.no, errno-basic.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/err-binding.no =====================
+; merged from tests/err-binding.no
 ; err-binding.no — err 臂的 `it` / `err(e)` 析構綁定端到端驗證
 ;
 ; err 臂綁定的是 **err 結構**（`option { ok(v t), nil, err(e err.err) }`），
@@ -14,6 +14,7 @@
 ; 1) 基本：推薦形態 `err ->` + `it`
 ; 2) 嵌套：內層 match 的 err(m) 綁定不得覆蓋外層綁定名
 ; 3) err 的 msg 欄位可當 str 用（方法呼叫）
+...
 
 ; (1) 基本 err 臂：it 就是 err 結構
 a ?i64 = err('boom')
@@ -61,9 +62,10 @@ c: {
     nil -> print('fail 3: nil\n')
 }
 
-; ===================== merged from tests/errno-basic.no =====================
+; merged from tests/errno-basic.no
 ; 测试文件操作错误信息 - 简化版
 ; 验证基本错误获取功能
+...
 
 print('--- 测试 get-errno ---')
 print('')

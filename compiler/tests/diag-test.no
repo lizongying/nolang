@@ -31,7 +31,7 @@
 
 ; 測試 level-name
 test-level-name = () {
-    d = diag {
+    d = diag{
         file: 'x.no'
         line: 1
         col: 1
@@ -53,7 +53,7 @@ test-level-name = () {
 
 ; 測試 render
 test-render = () {
-    d = diag {
+    d = diag{
         file: 'x.no'
         line: 231
         col: 17
@@ -85,7 +85,7 @@ test-render = () {
 
 ; 測試 render-mid
 test-render-mid = () {
-    d = diag {
+    d = diag{
         file: 'x.no'
         line: 4
         col: 0

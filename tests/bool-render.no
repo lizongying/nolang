@@ -64,7 +64,7 @@ pt {
     flag bool
     n i64
 }
-p = pt {
+p = pt{
     flag: true
     n: 1
 }

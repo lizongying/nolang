@@ -77,7 +77,7 @@ ok7 -> print('[7] start failure ................ PASS')
 ok7 == false -> print('[7] start failure ................ FAIL code={code.to-str()} err={err}')
 
 ; 8) struct-options form: process.cmdopts forwarded across module boundary
-opts8 = process.cmdopts {
+opts8 = process.cmdopts{
     dir: ''
     stdin: ''
     env: noArgs
@@ -90,7 +90,7 @@ ok8 -> print('[8] struct opts .................. PASS')
 ok8 == false -> print('[8] struct opts .................. FAIL out=' - res8.stdout.trim() - ' code=' - res8.code.to-str())
 
 ; 9) struct-options with stdin
-opts9 = process.cmdopts {
+opts9 = process.cmdopts{
     dir: ''
     stdin: 'piped-stdin-data'
     env: noArgs
@@ -103,7 +103,7 @@ ok9 -> print('[9] struct opts + stdin .......... PASS')
 ok9 == false -> print('[9] struct opts + stdin .......... FAIL out={res9.stdout}')
 
 ; 10) struct-options with timeout (status == -2)
-opts10 = process.cmdopts {
+opts10 = process.cmdopts{
     dir: ''
     stdin: ''
     env: noArgs

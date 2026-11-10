@@ -20,7 +20,6 @@ bhex = (data []byte) (hex str) {
     #{overflow=wrap}
     hex = with-len(n * 2)
     i <- [0..n): {
-
         ixout25c33 = data[i]: {
             ok -> it
 
@@ -59,7 +58,6 @@ bhex = (data []byte) (hex str) {
 arr64 = (a [64]byte) (v []byte) {
     v = with-len(64)
     i <- [0..64): {
-
         ixout40c16 = a[i]: {
             ok -> it
 
@@ -76,7 +74,6 @@ arr64 = (a [64]byte) (v []byte) {
 arr32 = (a [32]byte) (v []byte) {
     v = with-len(32)
     i <- [0..32): {
-
         ixout52c16 = a[i]: {
             ok -> it
 
@@ -152,9 +149,313 @@ t-tamper = () {
     runner.eq(ok2, 0, 'wrong message rejected')
 }
 
+; ---- 低階介面助手 ----
+
+; hex → []byte
+; h str: 偶數長度 hex
+; b []byte: 解出的位元組（失敗時為空）
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 全零 [32]byte
+zero32 = () (a [32]byte) {
+    i <- [0..32): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+; hex → [32]byte（原樣拷貝，不做數值轉換）
+mk32 = (h str) (a [32]byte) {
+    raw = mkb(h)
+    a = zero32()
+    n = raw.len()
+    i <- [0..n): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; i64 → 32 位元組小端純量（ge-scalar-mult 要求 >= 32 位元組）
+sc32 = (k i64) (s []byte) {
+    s = with-len(32)
+    i <- [0..32): {
+        s[i] = 0
+    }
+    s[0] = k & 255
+
+    s[1] = (k >> 8) & 255
+
+    s[2] = (k >> 16) & 255
+
+    s[3] = (k >> 24) & 255
+}
+
+; []byte（32 位元組）→ []i64（每元素一個 byte，供 sc-ge-l 使用）
+b2bytes = (b []byte) (v []i64) {
+    v = with-len(32)
+    i <- [0..32): {
+        v[i] = 0
+    }
+    n = b.len()
+    n > 32 -> n = 32
+    i <- [0..n): {
+        x = b[i]: {
+            ok -> it
+
+            -> 0
+        }
+        v[i] = x
+    }
+}
+
+; 單位元 (0,1,1,0) 寫進 p（同時驗證 set-coord）
+mk-identity = (p []i64) {
+    ed25519.set-coord(p, 0, x25519.fe-zero-v())
+    ed25519.set-coord(p, 10, x25519.fe-one-v())
+    ed25519.set-coord(p, 20, x25519.fe-one-v())
+    ed25519.set-coord(p, 30, x25519.fe-zero-v())
+}
+
+; 點壓縮結果的 hex
+pack-hex = (p []i64) (s str) {
+    a [32]byte = ed25519.ge-pack(p)
+    v = arr32(a)
+    s = bhex(v)
+}
+
+; 32 位元組 hex 的域元素 → hex（驗證 ed-d / ed-sqm1 / fe-pow 這類回傳域元素）
+fe-hex = (h []i64) (s str) {
+    a [32]byte = x25519.fe-tobytes-v(h)
+    v = arr32(a)
+    s = bhex(v)
+}
+
+; ---- 曲線常數與輔助 ----
+
+; ed-d / ed-sqm1 / is-zero-arr
+t-const = () {
+    runner.str-eq(fe-hex(ed25519.ed-d()), 'a3785913ca4deb75abd841414d0a700098e879777940c78c73fe6f2bee6c0352', 64, 'ed-d == -121665/121666')
+    runner.str-eq(fe-hex(ed25519.ed-sqm1()), 'b0a00e4a271beec478e42fad0618432fa7d7fb3d99004d2b0bdfc14f8024832b', 64, 'ed-sqm1 == sqrt(-1)')
+
+    z [32]byte = zero32()
+    runner.eq(ed25519.is-zero-arr(z), 1, 'is-zero-arr 全零 -> 1')
+
+    o [32]byte = zero32()
+    o[31]: {
+        ok -> it = 1
+
+        -> _
+    }
+    runner.eq(ed25519.is-zero-arr(o), 0, 'is-zero-arr 末位非零 -> 0')
+}
+
+; 基點壓縮 / 解壓往返
+t-point = () {
+    bp = ed25519.ge-basepoint()
+    runner.eq(bp.len(), 40, '基點緩衝 40 limb')
+    runner.str-eq(pack-hex(bp), '5866666666666666666666666666666666666666666666666666666666666666', 64, '壓縮基點 == 4/5')
+
+    ; pack -> unpack -> pack 必須回到同一編碼
+    enc [32]byte = ed25519.ge-pack(bp)
+    ok, q = ed25519.ge-unpack(enc)
+    runner.eq(ok, 1, '解壓基點成功')
+    runner.str-eq(pack-hex(q), '5866666666666666666666666666666666666666666666666666666666666666', 64, '解壓後重新壓縮一致')
+
+    ; y=2 不是曲線點的 y（x 無解）→ 必須拒絕
+    bad [32]byte = mk32('0200000000000000000000000000000000000000000000000000000000000000')
+    ok2, q2 = ed25519.ge-unpack(bad)
+    runner.eq(ok2, 0, 'y=2 無對應 x，解壓失敗')
+
+    ; y=0 有解（x^2 = -1，sqrt(-1) 存在）→ 應成功
+    zer [32]byte = mk32('0000000000000000000000000000000000000000000000000000000000000000')
+    ok3, q3 = ed25519.ge-unpack(zer)
+    runner.eq(ok3, 1, 'y=0 可解壓（x = sqrt(-1)）')
+    runner.str-eq(pack-hex(q3), '0000000000000000000000000000000000000000000000000000000000000000', 64, 'y=0 重新壓縮一致')
+}
+
+; ge-add / pcopy / set-coord / ge-scalar-mult 一致性
+t-add = () {
+    bp = ed25519.ge-basepoint()
+
+    ; 2B：加法 P+P 與純量乘法 2*B 必須一致
+    dbl []i64 = with-len(40)
+    ed25519.ge-add(dbl, bp, bp)
+    runner.str-eq(pack-hex(dbl), 'c9a3f86aae465f0e56513864510f3997561fa2c9e85ea21dc2292309f3cd6022', 64, '2B 座標加法')
+
+    s2 = sc32(2)
+    via-mul []i64 = with-len(40)
+    ed25519.ge-scalar-mult(via-mul, s2, bp)
+    runner.str-eq(pack-hex(via-mul), 'c9a3f86aae465f0e56513864510f3997561fa2c9e85ea21dc2292309f3cd6022', 64, '純量乘法 2*B 與加法一致')
+
+    ; 3B = 2B + B
+    d3 []i64 = with-len(40)
+    ed25519.ge-add(d3, dbl, bp)
+    runner.str-eq(pack-hex(d3), 'd4b4f5784868c3020403246717ec169ff79e26608ea126a1ab69ee77d1b16712', 64, '3B')
+
+    s3 = sc32(3)
+    m3 []i64 = with-len(40)
+    ed25519.ge-scalar-mult(m3, s3, bp)
+    runner.str-eq(pack-hex(m3), 'd4b4f5784868c3020403246717ec169ff79e26608ea126a1ab69ee77d1b16712', 64, '純量乘法 3*B')
+
+    ; 單位元：P + O = P（O 由 set-coord 組成，再經 pcopy 複製）
+    idt []i64 = with-len(40)
+    mk-identity(idt)
+    runner.str-eq(pack-hex(idt), '0100000000000000000000000000000000000000000000000000000000000000', 64, '單位元壓縮')
+
+    cpy []i64 = with-len(40)
+    ed25519.pcopy(cpy, bp)
+    runner.str-eq(pack-hex(cpy), '5866666666666666666666666666666666666666666666666666666666666666', 64, 'pcopy 複製基點')
+
+    sum1 []i64 = with-len(40)
+    ed25519.ge-add(sum1, bp, idt)
+    runner.str-eq(pack-hex(sum1), '5866666666666666666666666666666666666666666666666666666666666666', 64, 'B + O = B')
+
+    ; 純量 0 → 單位元；純量 255 → 255B
+    s0 = sc32(0)
+    m0 []i64 = with-len(40)
+    ed25519.ge-scalar-mult(m0, s0, bp)
+    runner.str-eq(pack-hex(m0), '0100000000000000000000000000000000000000000000000000000000000000', 64, '0*B = O')
+
+    s255 = sc32(255)
+    m255 []i64 = with-len(40)
+    ed25519.ge-scalar-mult(m255, s255, bp)
+    runner.str-eq(pack-hex(m255), 'cc613540cd8c99fa4647e6e83e969761b17515dbe1896fd0a3e4358ebca65c31', 64, '255*B')
+
+    ; 多位元組純量（0x1234567890abcdef）
+    k32 [32]byte = mk32('efcdab9078563412000000000000000000000000000000000000000000000000')
+    sk = arr32(k32)
+    mk []i64 = with-len(40)
+    ed25519.ge-scalar-mult(mk, sk, bp)
+    runner.str-eq(pack-hex(mk), 'c4c1227d7fff941a976049ecefad7b663fa5121d769cbbd79a53d344e4773e98', 64, '0x1234567890abcdef * B')
+}
+
+; fe-pow：x^((p-5)/8) 與小指數
+t-fe-pow = () {
+    one = x25519.fe-one-v()
+    runner.str-eq(fe-hex(ed25519.fe-pow(one, ed25519.ED-EXP-BYTES)), '0100000000000000000000000000000000000000000000000000000000000000', 64, '1^((p-5)/8) = 1')
+
+    two [32]byte = mk32('0200000000000000000000000000000000000000000000000000000000000000')
+    fe2 = x25519.fe-frombytes-v(two)
+    e2 [32]byte = mk32('0200000000000000000000000000000000000000000000000000000000000000')
+    runner.str-eq(fe-hex(ed25519.fe-pow(fe2, e2)), '0400000000000000000000000000000000000000000000000000000000000000', 64, '2^2 = 4')
+    runner.str-eq(fe-hex(ed25519.fe-pow(fe2, ed25519.ED-EXP-BYTES)), '4f5007a5930d77623cf29756038ca197d3ebfd9e4c80a69585efe0274092c155', 64, '2^((p-5)/8)')
+}
+
+; sc-ge-l / sc-reduce / sc-muladd
+t-scalar = () {
+
+    ; sc-ge-l：acc 是「一 limb 一 byte」的 []i64
+    lv = mkb('edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')
+    acc-l = b2bytes(lv)
+    runner.eq(ed25519.sc-ge-l(acc-l), 1, 'acc == L -> ge')
+
+    lm1 = mkb('ecd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')
+    acc-lm1 = b2bytes(lm1)
+    runner.eq(ed25519.sc-ge-l(acc-lm1), 0, 'acc == L-1 -> lt')
+
+    ff = mkb('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    acc-ff = b2bytes(ff)
+    runner.eq(ed25519.sc-ge-l(acc-ff), 1, 'acc == 0xff..ff -> ge')
+
+    ; sc-reduce
+    red-l [32]byte = ed25519.sc-reduce(lv)
+    runner.str-eq(bhex(arr32(red-l)), '0000000000000000000000000000000000000000000000000000000000000000', 64, 'L mod L = 0')
+
+    lp1 = mkb('eed3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')
+    red-lp1 [32]byte = ed25519.sc-reduce(lp1)
+    runner.str-eq(bhex(arr32(red-lp1)), '0100000000000000000000000000000000000000000000000000000000000000', 64, '(L+1) mod L = 1')
+
+    l2 = mkb('daa7ebb934c624b0ac39ef45bdf3bd2900000000000000000000000000000020')
+    red-l2 [32]byte = ed25519.sc-reduce(l2)
+    runner.str-eq(bhex(arr32(red-l2)), '0000000000000000000000000000000000000000000000000000000000000000', 64, '2L mod L = 0')
+
+    ; 短輸入：單 byte 0xff = 255 < L
+    short []byte = [255]
+    red-short [32]byte = ed25519.sc-reduce(short)
+    runner.str-eq(bhex(arr32(red-short)), 'ff00000000000000000000000000000000000000000000000000000000000000', 64, '255 mod L = 255')
+
+    ; 64 位元組全 0xff → (2^512-1) mod L（Python 算）
+    big = mkb('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    red-big [32]byte = ed25519.sc-reduce(big)
+    runner.str-eq(bhex(arr32(red-big)), '000f9c44e31106a447938568a71b0ed065bef517d273ecce3d9a307c1b419903', 64, '(2^512-1) mod L')
+
+    ; sc-muladd：(a*b + c) mod L
+    a32 [32]byte = mk32('f0e1d2c3b4a5968778695a4b3c2d1e0f00000000000000000000000000000000')
+    b32 [32]byte = mk32('132bf980b2589841b2da6eb2653943fcfffeeeddccbbaa998877665544332201')
+    c32 [32]byte = mk32('efcdab9078563412bebafecaefbeadde00000000000000000000000000000000')
+    s32 [32]byte = ed25519.sc-muladd(a32, b32, c32)
+    runner.str-eq(bhex(arr32(s32)), 'e1f49f12649436b6ce2abbaf4a73d51dee3c139c33a9a251dcc36da7ea660607', 64, 'sc-muladd (a*b+c) mod L')
+
+    ; (0*b + c) = c
+    z32 [32]byte = mk32('0000000000000000000000000000000000000000000000000000000000000000')
+    s-c [32]byte = ed25519.sc-muladd(z32, b32, c32)
+    runner.str-eq(bhex(arr32(s-c)), 'efcdab9078563412bebafecaefbeadde00000000000000000000000000000000', 64, 'sc-muladd 0*b+c = c')
+}
+
+; S >= L 的簽名必須被拒絕（RFC 8032 要求 S 在群階內）
+t-bad-s = () {
+    msg []byte = with-len(1)
+    msg[0] = 0x72
+    pub = ed25519.ed25519-publickey(seed2)
+    sig = ed25519.ed25519-sign(seed2, msg)
+
+    bad [64]byte
+    i <- [0..64): {
+        bad[i]: {
+            ok -> it = sig[i]
+
+            -> _
+        }
+    }
+
+    ; 把 S（後 32 位元組）換成群階 L
+    lv = mkb('edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')
+    i <- [0..32): {
+        x = lv[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        #{overflow=wrap}
+        bad[32 + i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+    ok = ed25519.ed25519-verify(pub, msg, bad)
+    runner.eq(ok, 0, 'S == L 被拒絕')
+}
+
 p1 = runner.test('ed25519.rfc8032.test1', t-test1)
 p2 = runner.test('ed25519.rfc8032.test2', t-test2)
 p3 = runner.test('ed25519.tamper', t-tamper)
+p4 = runner.test('ed25519.const', t-const)
+p5 = runner.test('ed25519.point', t-point)
+p6 = runner.test('ed25519.add', t-add)
+p7 = runner.test('ed25519.fe-pow', t-fe-pow)
+p8 = runner.test('ed25519.scalar', t-scalar)
+p9 = runner.test('ed25519.bad-s', t-bad-s)
 total = runner.summary()
 f = runner.failed-count()
 {

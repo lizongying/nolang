@@ -2,7 +2,7 @@
 ; sources: txt-more.no, jp8.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/txt-more.no =====================
+; merged from tests/txt-more.no
 ; txt-more.no — 合併自 txt 碎片（頂層拼接，非函數包裹）
 ;
 ; 來源：txt-slice.no, txt-codepoint.no
@@ -10,6 +10,7 @@
 ;
 ; 採頂層拼接：txt-slice 的頂層變數 t/t2/m 加 _sl 後綴避免與 txt-codepoint 的 t 衝突；
 ; 片段間以 print('---') 分隔以保全 stdout 指紋確定性（golden 比對用）。
+...
 
 ; ── 來自 txt-slice.no ──
 ; txt 原始切片語法 t[a..b]。txt 索引是「碼點」語義（與 str 一致），
@@ -115,7 +116,9 @@ ck('setbyte-cp', r[0] == 90)
 ck('setbyte-len', r.len-bytes() == 3)
 print('done')
 
-; ===================== merged from tests/jp8.no =====================
+; merged from tests/jp8.no
+...
+
 # /test/runner
 
 t-join = () {

@@ -1,11 +1,12 @@
 ; merged category 'fd' -- members: fd-newtype-negative.no, fd-newtype.no
 ; (originals backed up under tests/_archive/fd/)
-; ===================== merged from tests/fd-newtype-negative.no =====================
+; merged from tests/fd-newtype-negative.no
 ; fd-newtype-negative.no — 驗證 fd newtype 互斥語義（應報錯）
 ;
 ; 測試所有 newtype 互斥場景：
 ;   1. i64 變量不能賦值給 fd 變量
 ;   2. fd 變量不能作為 i64 參數傳遞
+...
 
 ; 1. i64 變量賦值給 fd 變量（應報錯）
 x = 10
@@ -23,7 +24,7 @@ my-fd fd = 0
 
 print('should not reach here')
 
-; ===================== merged from tests/fd-newtype.no =====================
+; merged from tests/fd-newtype.no
 ; fd-newtype.no — 驗證 fd newtype 語義
 ;
 ; 測試項目：
@@ -32,6 +33,7 @@ print('should not reach here')
 ;   3. fd 可作為 fd 參數傳遞（write 內建函數）
 ;   4. fd 變量之間賦值（同類型賦值）
 ;   5. STDOUT-FD 標準常量使用
+...
 
 ; ── 1. 整數字面量賦值給 fd（含負值） ──
 my-stdin fd = 0

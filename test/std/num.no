@@ -22,38 +22,38 @@
 
 ; clamp：区间内原样、低于下界抬到 lo、高于上界压到 hi
 t-clamp = () {
-    hi i64 = 15
+    hi = 15
     r1 i64 = hi.clamp(0, 10)
     runner.eq(r1, 10, 'clamp(15, [0,10]) == 10')
 
-    lo i64 = -5
+    lo = -5
     r2 i64 = lo.clamp(0, 10)
     runner.eq(r2, 0, 'clamp(-5, [0,10]) == 0')
 
-    mid i64 = 7
+    mid = 7
     r3 i64 = mid.clamp(0, 10)
     runner.eq(r3, 7, 'clamp(7, [0,10]) == 7')
 
     ; 边界含端点：0 与 10 都不应被改动
-    z i64 = 0
+    z = 0
     r4 i64 = z.clamp(0, 10)
     runner.eq(r4, 0, 'clamp(0, [0,10]) == 0 (inclusive lower bound)')
 
-    ten i64 = 10
+    ten = 10
     r5 i64 = ten.clamp(0, 10)
     runner.eq(r5, 10, 'clamp(10, [0,10]) == 10 (inclusive upper bound)')
 
     ; 区间反向：下界优先（文档约定的短路顺序）
-    five i64 = 5
+    five = 5
     r6 i64 = five.clamp(10, 0)
     runner.eq(r6, 10, 'clamp(5, [10,0]) == 10 (lower bound wins)')
 
     ; f64 单态化
-    c f64 = 3.5
+    c = 3.5
     r7 f64 = c.clamp(0.0, 1.0)
     runner.f64-eq(r7, 1.0, 0.000001, 'clamp(3.5, [0.0,1.0]) == 1.0')
 
-    d f64 = -0.5
+    d = -0.5
     r8 f64 = d.clamp(0.0, 1.0)
     runner.f64-eq(r8, 0.0, 0.000001, 'clamp(-0.5, [0.0,1.0]) == 0.0')
 
@@ -67,24 +67,24 @@ t-clamp = () {
 
 ; sign：1 / 0 / -1；浮点与 NaN 一并验
 t-sign = () {
-    p i64 = 9
+    p = 9
     s1 i64 = sign(p)
     runner.eq(s1, 1, 'sign(9) == 1')
 
-    z i64 = 0
+    z = 0
     s2 i64 = sign(z)
     runner.eq(s2, 0, 'sign(0) == 0')
 
-    n i64 = -9
+    n = -9
     s3 i64 = sign(n)
     runner.eq(s3, -1, 'sign(-9) == -1')
 
     ; 浮点：-0.0 也落入 0 分支
-    f f64 = -0.5
+    f = -0.5
     s4 f64 = sign(f)
     runner.f64-eq(s4, 0.0 - 1.0, 0.000001, 'sign(-0.5) == -1.0')
 
-    nz f64 = 0.0
+    nz = 0.0
     s5 f64 = sign(nz)
     runner.f64-eq(s5, 0.0, 0.000001, 'sign(0.0) == 0.0')
 
@@ -96,23 +96,23 @@ t-sign = () {
 
 ; abs：负数取反、非负原样；最小负整数按 wrap 回绕为自身
 t-abs = () {
-    n i64 = -9
+    n = -9
     a1 i64 = abs(n)
     runner.eq(a1, 9, 'abs(-9) == 9')
 
-    p i64 = 9
+    p = 9
     a2 i64 = abs(p)
     runner.eq(a2, 9, 'abs(9) == 9')
 
-    z i64 = 0
+    z = 0
     a3 i64 = abs(z)
     runner.eq(a3, 0, 'abs(0) == 0')
 
-;    f f64 = -3.5
-;    a4 f64 = abs(f)     ; 期望 3.5，实际得 0.0
+    ;    f f64 = -3.5
+    ;    a4 f64 = abs(f)     ; 期望 3.5，实际得 0.0
 
     ; i64 最小值的绝对值超出 i64 范围，按 overflow=wrap 回绕为自身
-    min i64 = -9223372036854775808
+    min = -9223372036854775808
     a5 i64 = abs(min)
     runner.eq(a5, min, 'abs(i64.MIN) wraps back to i64.MIN')
 }

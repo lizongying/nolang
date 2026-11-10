@@ -224,7 +224,7 @@ t-open-gz = () {
     gz = gzip.gzip-compress(ar.data)
     runner.gt(len(gz), 0, 'gzip-compress 產出非空')
 
-    back = tar-open-gz(gz)
+    back = tar.tar-open-gz(gz)
     runner.eq(back.count(), 1, 'tar-open-gz：count = 1')
     runner.str-eq(back.name(0), 'gz.txt', 6, 'tar-open-gz：name')
     runner.str-eq(back.read(0).to-str(), 'gzipped tar', 11, 'tar-open-gz：內容還原')

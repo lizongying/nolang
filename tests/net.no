@@ -2,21 +2,24 @@
 ; sources: net.no, http2.no, tcp-fork.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/net.no =====================
+; merged from tests/net.no
 ; merged category 'net' -- members: net-client.no, std-net-ext.no
 ; (originals backed up under tests/_archive/net/)
-; ===================== merged from tests/net-client.no =====================
+...
+
+; merged from tests/net-client.no
 ; net-client.no — 高階 TCP client 測試
 ;
 ; 測試 client 結構體的 connect/send/recv/request/send-line/reconnect/is-connected/close。
 ; 需 live TCP echo server 才能執行（vet-only，不執行）。
 ;
 ; 可用 nc -l 8080 作為 echo server 手動測試。
+...
 
 ; # std/net/client
 
 ; 測試 1: connect
-c client.client =  {}
+c client.client = {}
 ok = c.connect('127.0.0.1', 8080)
 {
     ok -> print('ok: connect')
@@ -94,41 +97,40 @@ c2: {
 }
 print('ok: all tests done')
 
-; ===================== merged from tests/std-net-ext.no =====================
+; merged from tests/std-net-ext.no
 ; std-net-ext.no — 驗證 Task 1.6 net 擴展函數
 ; 覆蓋：ifconfig-list / route-list / arp-list
 ; 說明：macOS 上這些函數返回空列表，僅驗證可呼叫且不崩潰
+...
 
 ; # std/net/net
 
-; ═══════════════════════════════════════════════
 ; 1. ifconfig-list — 列出網路介面
-; ═══════════════════════════════════════════════
+...
 ifs = net.ifconfig-list()
 eprint('ifconfig-list returned ')
 print(ifs.len().to-str() - ' interfaces')
 ifs.len() >= 0 -> print('PASS: ifconfig-list returned non-negative count')
 
-; ═══════════════════════════════════════════════
 ; 2. route-list — 列出路由表
-; ═══════════════════════════════════════════════
+...
 routes = net.route-list()
 eprint('route-list returned ')
 print(routes.len().to-str() - ' routes')
 routes.len() >= 0 -> print('PASS: route-list returned non-negative count')
 
-; ═══════════════════════════════════════════════
 ; 3. arp-list — 列出 ARP 表
-; ═══════════════════════════════════════════════
+...
 arps = net.arp-list()
 eprint('arp-list returned ')
 print(arps.len().to-str() - ' entries')
 arps.len() >= 0 -> print('PASS: arp-list returned non-negative count')
 print('--- All tests done ---')
 
-; ===================== merged from tests/http2.no =====================
+; merged from tests/http2.no
 ; test-http2 — HTTP/2 影格與連線測試（vet-only，需伺服器才能執行）
 ; # std/net/http2
+...
 
 ; 影格標頭解析
 test-frame-parse = () {
@@ -321,10 +323,11 @@ test-run-all = () {
     print('=== HTTP/2 Tests Done ===')
 }
 
-; ===================== merged from tests/tcp-fork.no =====================
+; merged from tests/tcp-fork.no
 ; test-tcp-fork — 測試 TCP listen/accept/dial with fork
 ; # std/net
 ; # std/process
+...
 
 ; 基本 TCP fork 測試：父進程 fork 出子進程做 server，父進程當 client 連上並互發訊息
 ; pass bool: true=父進程從 socket 收到位元組（子進程回的 'hello from server'）；
@@ -352,7 +355,8 @@ test-tcp-fork-basic = () (pass bool) {
 
         pid == 0 -> {
 
-            ; === 子進程: 伺服器 ===
+            ; 子進程: 伺服器
+            ...
 
             io.errln('[TEST] tcp: child accepting')
             client-fd = net.net-accept(listen-fd)
@@ -375,7 +379,8 @@ test-tcp-fork-basic = () (pass bool) {
         }
     }
 
-    ; === 父進程: 客戶端 ===
+    ; 父進程: 客戶端
+    ...
     time.sleep-ns(100000000)
 
     io.errln('[TEST] tcp: parent dialing')

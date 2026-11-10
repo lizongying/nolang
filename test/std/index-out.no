@@ -59,7 +59,7 @@ t-arr-oob-msg = () {
 
 ; ── 切片 []T ────────────────────────────────────────────────────
 t-slice = () {
-    v []i64 = [7, 8, 9]
+    v = [7, 8, 9]
     in1 = v[2]: {
         ok -> 'ok'
 
@@ -160,7 +160,7 @@ t-opt-elem-slice = () {
 
 ; ── map 缺鍵仍是 nil（值確實不存在，不是越界）───────────────────
 t-map-nil = () {
-    m [str]i64 = {}
+    m [str]i64 = { }
     r = m['nope']: {
         ok -> 'ok'
 
@@ -189,7 +189,7 @@ t-promote-decl = () {
     }
     runner.eq(v, 5, '宣告 x ?i64 = 5 → ok(5)')
 
-    n i64 = 9
+    n = 9
     x = n
     v2 = x: {
         ok -> it
@@ -200,7 +200,7 @@ t-promote-decl = () {
 }
 
 t-promote-field = () {
-    p = t-promote {}
+    p = t-promote{}
     p.set()
     v = p.i: {
         ok -> it

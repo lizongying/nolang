@@ -108,7 +108,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
     (i < na || j < nb) {
         i < na && j < nb -> {
             a[i].compare(b[j]) == 0 -> {
-                op = diff-op {}
+                op = diff-op{}
                 op.kind = 0
 
                 tmp-line = a[i]: {
@@ -121,32 +121,38 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 #{overflow=wrap}
                 op.a-no = i + 1: {
                     ok -> it
+
                     ->
                 }
 
                 #{overflow=wrap}
                 op.b-no = j + 1: {
                     ok -> it
+
                     ->
                 }
                 ops.push(op)
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt = i + 1
                     i-opt: {
                         ok -> i = it
+
                         ->
                     }
                 }
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     j-opt = j + 1
                     j-opt: {
                         ok -> j = it
+
                         ->
                     }
                 }
@@ -154,7 +160,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
 
             #{overflow=wrap}
             dp[(i + 1) * cols + j] >= dp[i * cols + (j + 1)] -> {
-                op = diff-op {}
+                op = diff-op{}
                 op.kind = 1
 
                 tmp-line = a[i]: {
@@ -167,16 +173,19 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 #{overflow=wrap}
                 op.a-no = i + 1: {
                     ok -> it
+
                     ->
                 }
                 ops.push(op)
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     i-opt2 = i + 1
                     i-opt2: {
                         ok -> i = it
+
                         ->
                     }
                 }
@@ -184,7 +193,7 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
 
             #{overflow=wrap}
             dp[(i + 1) * cols + j] < dp[i * cols + (j + 1)] -> {
-                op = diff-op {}
+                op = diff-op{}
                 op.kind = 2
 
                 tmp-line = b[j]: {
@@ -197,23 +206,26 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
                 #{overflow=wrap}
                 op.b-no = j + 1: {
                     ok -> it
+
                     ->
                 }
                 ops.push(op)
 
                 #{overflow=wrap}
                 {
+
                     #{overflow=wrap}
                     j-opt2 = j + 1
                     j-opt2: {
                         ok -> j = it
+
                         ->
                     }
                 }
             }
         }
         i < na -> {
-            op = diff-op {}
+            op = diff-op{}
             op.kind = 1
 
             tmp-line = a[i]: {
@@ -226,22 +238,25 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             #{overflow=wrap}
             op.a-no = i + 1: {
                 ok -> it
+
                 ->
             }
             ops.push(op)
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 i-opt3 = i + 1
                 i-opt3: {
                     ok -> i = it
+
                     ->
                 }
             }
         }
         j < nb -> {
-            op = diff-op {}
+            op = diff-op{}
             op.kind = 2
 
             tmp-line = b[j]: {
@@ -254,16 +269,19 @@ diff-engine-lcs = (a []str, b []str) (ops []diff-op) {
             #{overflow=wrap}
             op.b-no = j + 1: {
                 ok -> it
+
                 ->
             }
             ops.push(op)
 
             #{overflow=wrap}
             {
+
                 #{overflow=wrap}
                 j-opt3 = j + 1
                 j-opt3: {
                     ok -> j = it
+
                     ->
                 }
             }
@@ -315,7 +333,6 @@ ops = diff-engine-lcs(lines1, lines2)
 on = ops.len()
 eprint('ops.len={on}')
 i <- [0..on): {
-
     ixout260c10 = ops[i]: {
         ok -> it
 

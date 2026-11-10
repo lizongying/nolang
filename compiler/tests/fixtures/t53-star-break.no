@@ -2,54 +2,46 @@
 ;   鏡像 Go parseStarContinueOrExpr（stmt.go）與 parseStarStarBreak（stmt.go）。
 
 test-star-block = () {
-
     i <- [0..10): {
+        i >= 5 -> continue
 
-        i >= 5 -> *
-
-        **
+        break
 
         print(i)
     }
 }
 
 test-star-in-brace = () {
-
     !! {
-
         x = 1
 
         x == 1 -> {
-            *
+            continue
         }
-        *
+        continue
     }
 }
 
 test-star-labels = () {
-
     #1 j <- [0..5): {
-
         k <- [0..5): {
+            k == 2 -> continue #1
 
-            k == 2 -> * #1
-
-            ** #1
+            break #1
         }
-        j == 4 -> *
+        j == 4 -> continue
     }
 }
 
 test-standalone-chain = () {
-
     m <- [0..3): {
 
         #{overflow=wrap}
         a = m * 2
 
-        a > 4 -> *
+        a > 4 -> continue
 
-        a == 0 -> **
+        a == 0 -> break
 
         print(a)
     }

@@ -63,8 +63,132 @@ t-dec = () {
     back = tdes.tdes-dec(ct, 8, key)
     runner.str-eq(bhex(back), '0123456789abcdef', 16, '3des dec round-trip')
 }
+
+; ---- 助手 ----
+
+; hex → []byte
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 長度 n 的全零 []byte
+zeros = (n i64) (v []byte) {
+    v = with-len(n)
+    i <- [0..n): {
+        v[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+; hex → [8]byte
+mk8 = (h str) (a [8]byte) {
+    raw = mkb(h)
+    i <- [0..8): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    m = raw.len()
+    m > 8 -> m = 8
+    i <- [0..m): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; hex → [24]byte
+mk24 = (h str) (a [24]byte) {
+    raw = mkb(h)
+    i <- [0..24): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    m = raw.len()
+    m > 24 -> m = 24
+    i <- [0..m): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; ---- CBC 模式 ----
+
+t-cbc = () {
+    key [24]byte = mk24('0123456789abcdef23456789abcdef01456789abcdef0123')
+    iv [8]byte = mk8('0000000000000000')
+    pt = mkb('4e6f77206973207468652074696d6520666f7220616c6c20')
+
+    ct = tdes.tdes-cbc-enc(pt, key, iv)
+    runner.eq(ct.len(), 24, 'tdes-cbc-enc 長度 = 24（3 塊）')
+    runner.str-eq(bhex(ct), '314f8327fa7a09a8fd9b21da8f3732775351c9f385748c81', 48, '3DES-CBC 3 塊')
+
+    back = tdes.tdes-cbc-dec(ct, key, iv)
+    runner.eq(back.len(), 24, 'tdes-cbc-dec 長度')
+    runner.str-eq(bhex(back), bhex(pt), 48, '3DES-CBC 往返還原')
+
+    ; 不足一塊的尾部被丟棄（11 位元組 → 8 位元組輸出）
+    c11 = tdes.tdes-cbc-enc(mkb('4e6f772069732074686520'), key, iv)
+    runner.eq(c11.len(), 8, 'tdes-cbc-enc 丟棄不足一塊的尾部')
+    runner.str-eq(bhex(c11), '314f8327fa7a09a8', 16, 'tdes-cbc-enc 11B → 1 塊')
+
+    ; 空輸入 ⇒ 空輸出
+    e = tdes.tdes-cbc-enc(zeros(0), key, iv)
+    runner.eq(e.len(), 0, 'tdes-cbc-enc 空輸入 → 空')
+    d = tdes.tdes-cbc-dec(zeros(0), key, iv)
+    runner.eq(d.len(), 0, 'tdes-cbc-dec 空輸入 → 空')
+
+    ; 非零 IV 會改變首塊密文
+    iv3 [8]byte = mk8('0123456789abcdef')
+    c8 = tdes.tdes-cbc-enc(mkb('4e6f772069732074'), key, iv3)
+    runner.str-eq(bhex(c8), '81ffbcbe6280ae10', 16, '3DES-CBC 非零 IV')
+
+    ; K1=K2=K3 ⇒ EDE 退化成單 DES，CBC 結果應等於 DES-CBC
+    kk [24]byte = mk24('0123456789abcdef0123456789abcdef0123456789abcdef')
+    ct2 = tdes.tdes-cbc-enc(pt, kk, iv)
+    runner.str-eq(bhex(ct2), '3fa40e8a984d48150b2e73f88dc5856a70a30640cc76dd8b', 48, 'K1=K2=K3 退化為單 DES-CBC')
+    back2 = tdes.tdes-cbc-dec(ct2, kk, iv)
+    runner.str-eq(bhex(back2), bhex(pt), 48, '退化金鑰也能正確解密')
+
+    ; IV 只影響第一塊的「輸入異或」，故第二塊起不同 IV 仍會分岔（鏈式擴散）
+    s1 = bhex(ct)
+    s2 = bhex(tdes.tdes-cbc-enc(pt, key, iv3))
+    runner.is-false(s1.eq(s2, 48), 'tdes-cbc-enc IV 有生效')
+}
+
 p1 = runner.test('tdes.enc', t-enc)
 p2 = runner.test('tdes.dec', t-dec)
+p3 = runner.test('tdes.cbc', t-cbc)
 total = runner.summary()
 f = runner.failed-count()
 {

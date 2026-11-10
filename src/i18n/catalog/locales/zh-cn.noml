@@ -801,6 +801,7 @@ range-index loop: '%s[%s]' 在 `%s <- [a..b):` 里手动按下标读取；若不
   'nmxs8sop': 'syslog: %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': '无法推断 “%s” 的类型: %s() 要求左侧有显式类型标注（例如 `name []byte = %s(n)`）'
+  'nu59u6hp': '结构体字面量字段 \'%s\' 没有值；请写 \'name: value\' 或删除这一行（\'field: []\' 后另起一行的型别名不是型别标注 —— 空 vec 的元素型别来自结构体字段宣告）'
   'nwtpvei9': 'embed: fs.embed 需要一个目录，得到的是文件: %s（解析为: %s）'
   'nx1476j3': '  no pack nogit.no                 打包单个源文件'
   'nz3ol1c4': 'ESM 模块 %q 未在 package.noml 的 dependencies 中声明；请添加 dependencies: [\'%s:^latest\']（或 dev-dependencies）并运行 npm install'

@@ -1,7 +1,8 @@
 ; merged category 'arr' -- members: arr-at-minimal.no, arr-test-tmp.no, arr.no, push-narrow.no
 ; (originals backed up under tests/_archive/arr/)
-; ===================== merged from tests/arr-at-minimal.no =====================
+; merged from tests/arr-at-minimal.no
 ; minimal test for [n]t.at method
+...
 a = [1, 2, 3]
 v = a.at(0)
 v: {
@@ -10,7 +11,8 @@ v: {
     -> print('ok')
 }
 
-; ===================== merged from tests/arr-test-tmp.no =====================
+; merged from tests/arr-test-tmp.no
+...
 arr []f64 = with-cap(3)
 arr.push(1.5)
 arr.push(2.5)
@@ -35,9 +37,10 @@ sum = 0.0
 sum = sum + a__1 * b
 print('sum = {sum:.17g}')
 
-; ===================== merged from tests/arr.no =====================
+; merged from tests/arr.no
 ; cd src && go run ./cmd/cli/. build ../tests/arr.no
 ; ../dist/arr
+...
 
 a__2 [1] = [1]
 
@@ -50,11 +53,12 @@ print(a__2.len())
 ; a.len = 2
 
 a__2[0] = 2
+
 ; compilation error: index 1 out of bounds for array 'a' of size 1
 ; a[1] = 3
 ; a.full(8)
 
-; ===================== merged from tests/push-narrow.no =====================
+; merged from tests/push-narrow.no
 ; test-push-narrow — vec.push element stride must be sizeof(element type)
 ;
 ; Regression (found while fixing the i3k422u3 false positive on src/std/net/net.no):
@@ -68,8 +72,10 @@ a__2[0] = 2
 ; byte/u8/i8. A "more precise" mapping there (i16/i32/float) makes push and index
 ; disagree, which is worse than both being wrong: []i16 then reads 0x02030102
 ; (two adjacent elements glued together) out of a 2-byte-strided buffer.
+...
 
-; ── []byte: the case that was actually broken ────────────
+; []byte: the case that was actually broken
+...
 by []byte
 by.push(1)
 by.push(2)
@@ -94,7 +100,8 @@ print(d.len()); 2
 print(d[0]); 16909060
 print(d[1]); 84281096
 
-; ── []i64 / []str: must not regress (stride 8 / 24) ──────
+; []i64 / []str: must not regress (stride 8 / 24)
+...
 a []i64
 a.push(10)
 a.push(20)
@@ -109,7 +116,8 @@ print(s.len()); 2
 print(s[0]); ab
 print(s[1]); cd
 
-; ── nested []vec: element stride is 24, not 8 ────────────
+; nested []vec: element stride is 24, not 8
+...
 n [][]i64
 r []i64
 r.push(7)

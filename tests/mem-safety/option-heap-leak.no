@@ -1,7 +1,7 @@
-; ═════════════════════════════════════════════════════════════════
 ; 問題 13：option 類型堆數據永不釋放
 ; 嚴重等級：嚴重（系統性內存洩漏）
-; ═════════════════════════════════════════════════════════════════
+...
+
 ;
 ; 觸發條件：
 ;   v ?str = "hello"          ; copyStrToData malloc box 存 %str-long
@@ -38,7 +38,7 @@
 ;   - generateOptionAssign 入口呼叫 freeOldHeapValue（覆蓋釋放）
 ;   - option-to-option Identifier 分支：out 走 move，局部走 emitOptionDeepClone
 ;
-; ═════════════════════════════════════════════════════════════════
+...
 
 ; 測試 1：?str option 作用域結束釋放（涵蓋 copyStrToData 路徑）
 test-str-option = () {
@@ -58,7 +58,7 @@ MyStruct {
 ; 產生帶堆欄位的結構體（name 指向 'world'、count 為 42），供 ?MyStruct 包裝測試
 ; out MyStruct: 新結構體；裝進 option 後離開作用域需連 name.data 一起釋放
 make-struct = () (out MyStruct) {
-    out = MyStruct {
+    out = MyStruct{
         name: 'world'
         count: 42
     }

@@ -24,7 +24,6 @@ print('done')
 ; ── from tests/hmac2.no ──
 ; test-hmac2 — 測試 hmac-sha256 輸出參數形式
 
-
 print('start')
 hmac2-key []byte
 hmac2-key[0] = 1
@@ -467,4 +466,3 @@ feo-p5 = feo-test-scalarmult-base()
 
     feo-p5 == false -> print('FAIL: scalarmult-base')
 }
-

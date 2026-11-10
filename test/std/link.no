@@ -12,14 +12,14 @@
 
 ; size：3 個節點回 3，空表回 0
 t-size = () {
-    l = link {
+    l = link{
         head: 0
         tail: 2
         free-head: 3
         size: 3
     }
     runner.eq(l.size(), 3, 'size == 3')
-    l0 = link {
+    l0 = link{
         head: -1
         tail: -1
         free-head: 0
@@ -30,7 +30,7 @@ t-size = () {
 
 ; empty：size 為 0 時 true，有 3 個節點時 false
 t-empty = () {
-    le = link {
+    le = link{
         head: -1
         tail: -1
         free-head: 0
@@ -38,7 +38,7 @@ t-empty = () {
     }
     e1 = le.empty()
     runner.is-true(e1, 'size 0 => empty')
-    lz = link {
+    lz = link{
         head: -1
         tail: -1
         free-head: 0
@@ -46,7 +46,7 @@ t-empty = () {
     }
     e2 = lz.empty()
     runner.is-true(e2, 'empty is size<=0')
-    lfull = link {
+    lfull = link{
         head: 0
         tail: 2
         free-head: -1
@@ -60,7 +60,7 @@ t-empty = () {
 t-full = () {
 
     ; free-head < 0 表示節點池已耗盡
-    l1 = link {
+    l1 = link{
         head: 0
         tail: 5
         free-head: -1
@@ -68,7 +68,7 @@ t-full = () {
     }
     f1 = l1.full()
     runner.is-true(f1, 'free-head -1 => full')
-    l2 = link {
+    l2 = link{
         head: 0
         tail: 2
         free-head: 3
@@ -76,7 +76,7 @@ t-full = () {
     }
     f2 = l2.full()
     runner.is-false(f2, 'free-head >=0 => not full')
-    l3 = link {
+    l3 = link{
         head: -1
         tail: -1
         free-head: 0
@@ -90,7 +90,7 @@ t-full = () {
 t-state-consistency = () {
 
     ; 模擬 push-back 3 次後的狀態：size=3, free-head 前進到 3, tail=2
-    l = link {
+    l = link{
         head: 0
         tail: 2
         free-head: 3
@@ -103,7 +103,7 @@ t-state-consistency = () {
     runner.is-false(f, 'not full yet (cap 8)')
 
     ; 模擬填滿至 cap=3：free-head=-1
-    lfull = link {
+    lfull = link{
         head: 0
         tail: 2
         free-head: -1

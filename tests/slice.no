@@ -1,13 +1,15 @@
 ; merged category 'slice' -- members: oob-slice-assign.no, slice-heavy.no, slice.no, str-slice.no
 ; (originals backed up under tests/_archive/slice/)
-; ===================== merged from tests/oob-slice-assign.no =====================
+; merged from tests/oob-slice-assign.no
 ; oob-slice-assign.no — 測試切片越界賦值
 ; 原始測試: v[3] = 99 with v of size 3 (out of bounds)
 ; vet 模式下編譯期邊界檢查會攔截，故擴展切片大小使 vet 通過
+...
 v = [10, 20, 30, 0]
 v[3] = 99
 
-; ===================== merged from tests/slice-heavy.no =====================
+; merged from tests/slice-heavy.no
+...
 s = 'Hello, World'
 print(s[1..3])
 print(s[..5])
@@ -21,16 +23,18 @@ b = s[2..5]
 print(b[0])
 print(b[2])
 
-; ===================== merged from tests/slice.no =====================
+; merged from tests/slice.no
 ; test standalone slice
+...
 print('test')
 x = [1, 2, 3]
 print('ok')
 
-; ===================== merged from tests/str-slice.no =====================
+; merged from tests/str-slice.no
 ; str-slice test
 ; cd src && go run ./cmd/cli/. build ../tests/str-slice.no
 ; ../dist/str-slice
+...
 
 ; Short string (%str-short type)
 s__1 = 'HelloWorld'

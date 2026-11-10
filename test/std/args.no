@@ -60,13 +60,13 @@ t-get-program = () {
 ; type 'i64' but expected '%str-long'"）——整個測試 binary 編譯失敗。
 ; 修正前（本案例加入時）就是這個形狀會炸。
 t-arg-arith-index = () {
-    i i64 = 0
-    opt-a ?str = os.arg(i + 1)
+    i = 0
+    opt-a = os.arg(i + 1)
     is-nil = false
-    opt-a: {
-        nil -> is-nil = true
+    is-nil = opt-a: {
+        nil -> true
 
-        -> is-nil = false
+        -> false
     }
     runner.is-true(is-nil, 'os.arg(i + 1) out of range => nil')
 }
@@ -83,10 +83,10 @@ t-has-flag-absent = () {
 t-get-option-absent = () {
     ov = args.get-option('--absent')
     is-nil = false
-    ov: {
-        nil -> is-nil = true
+    is-nil = ov: {
+        nil -> true
 
-        -> is-nil = false
+        -> false
     }
     runner.is-true(is-nil, 'absent option => nil')
 }
@@ -95,10 +95,10 @@ t-get-option-absent = () {
 t-get-positional-absent = () {
     pv = args.get-positional(0)
     is-nil = false
-    pv: {
-        nil -> is-nil = true
+    is-nil = pv: {
+        nil -> true
 
-        -> is-nil = false
+        -> false
     }
     runner.is-true(is-nil, 'no positional => nil')
 }

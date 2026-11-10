@@ -2,16 +2,18 @@
 ; sources: tls-import.no, tls-more.no, tls-part1.no, tls-part2.no, tls-part3.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/tls-import.no =====================
+; merged from tests/tls-import.no
+...
 print('tls import ok')
 
-; ===================== merged from tests/tls-more.no =====================
+; merged from tests/tls-more.no
 ; tls-more — 合併自同簇 tls 除錯殘片（heavy dedup）
 ; # std/net/tls
 ;
 ; 保護件 tls.no / tls-partial.no / tls-prf-only.no / tls13-crypto.no /
 ; tls-part1~3.no / tls-import.no 均維持獨立（原始碼註解或計畫指定）。此檔只吸收
 ; 四個最小除錯殘片：tls-minimal / tls-simple / tls-import-repeat / tls-debug。
+...
 
 ; from tls-minimal.no — 隔離 TLS 測試崩潰
 tm-minimal = () {
@@ -73,9 +75,10 @@ print('=== Done ===')
 tm-minimal()
 ts-simple()
 
-; ===================== merged from tests/tls-part1.no =====================
+; merged from tests/tls-part1.no
 ; test-tls-part1 — 前四個測試
 ; # std/net/tls
+...
 
 print('=== TLS Part 1 ===')
 
@@ -115,9 +118,10 @@ print('PASS: get-u24')
 
 print('=== Done ===')
 
-; ===================== merged from tests/tls-part2.no =====================
+; merged from tests/tls-part2.no
 ; test-tls-part2 — bytes 相關測試
 ; # std/net/tls
+...
 
 print('=== TLS Part 2 ===')
 
@@ -186,9 +190,10 @@ print('PASS: rand-bytes')
 
 print('=== Done ===')
 
-; ===================== merged from tests/tls-part3.no =====================
+; merged from tests/tls-part3.no
 ; test-tls-part3 — prf 和 conn-init
 ; # std/net/tls
+...
 
 print('=== TLS Part 3 ===')
 

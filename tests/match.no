@@ -2,11 +2,14 @@
 ; sources: match.no, match-it-scope.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/match.no =====================
+; merged from tests/match.no
 ; merged category 'match' -- members: match-2.no, match-range-pattern.no, match-test.no, match-type-arm.no, option-match-silent-wrong.no, option-match.no, place-write-value-match.no, simple-match.no, simple-match2.no, type-match.no
 ; (originals backed up under tests/_archive/match/)
-; ===================== merged from tests/match-2.no =====================
+...
+
+; merged from tests/match-2.no
 ; 測試 match
+...
 test-match = () {
     n = 42
     result = n: {
@@ -18,7 +21,7 @@ test-match = () {
 }
 test-match()
 
-; ===================== merged from tests/match-range-pattern.no =====================
+; merged from tests/match-range-pattern.no
 ; match-range-pattern.no — P3: match 臂 range 模式（[a..b)）端到端
 ;
 ; 覆蓋说明：range 模式 match 在語料中早有 fixture（tests/fmt-heuristic.no 的
@@ -26,6 +29,7 @@ test-match()
 ; 本文件是補強而非補洞——它把 range 模式放進「帶回傳值的函式」並用 4 個臂
 ; （含默認臂）覆蓋，與上述兩文件的用法不同。
 ; 由 src/parser/dump/hir_subform_coverage_test.go 的 TestS1RangePatternFixtureIsExercised 钉住。
+...
 
 ; 用區間模式分級：驗證帶回傳值的函式體內 4 個臂（含默認臂）都走對
 ; score i64: 分數；[0..60)→low、[60..70)→pass、[70..100)→high，其餘為 invalid
@@ -47,7 +51,8 @@ score-of(65)
 score-of(85)
 score-of(120)
 
-; ===================== merged from tests/match-test.no =====================
+; merged from tests/match-test.no
+...
 status {
     status1,
     status2,
@@ -139,7 +144,7 @@ test-match__1 = () {
     a == 2 -> log('2')
 }
 
-; ===================== merged from tests/match-type-arm.no =====================
+; merged from tests/match-type-arm.no
 ; match-type-arm.no — 型別解構 match（union 靜態派發）強化 fixture，S1 設計稿 §3 P5。
 ;
 ; type-match.no 已有 i32|i64|f64 全數值 union 的最小形態；本檔補強：
@@ -164,6 +169,7 @@ test-match__1 = () {
 ;
 ; 注意：普查分類器只把帶綁定的型別臂（IsTypeArm，即 `v T ->` 形）計入 P5，
 ; 裸型別臂（`i64 ->`）算 P1——故本檔兩種形態都寫，覆蓋才不會有盲區。
+...
 
 num = i32 | i64 | f64
 mixed = num | bool
@@ -213,7 +219,8 @@ nested = (a mixed) (r str) {
     }
 }
 
-; ---- 驅動：每個 concrete 成員各跑一次 ----
+; 驅動：每個 concrete 成員各跑一次
+...
 ba = true
 b1 = 7
 b2 i32 = 3
@@ -223,7 +230,7 @@ print(nested(b1)); -> bare-i64（裸型別臂）
 print(nested(b2)); -> bare-i32
 print(nested(b3)); -> bare-f64
 
-; ===================== merged from tests/option-match-silent-wrong.no =====================
+; merged from tests/option-match-silent-wrong.no
 ; option-match-silent-wrong.no — option / match 的三個靜默錯答（2026-09-26 修）
 ;
 ; 三條都是「重解釋」型 bug：程式能編、rc=0，但值是錯的（或錯誤訊息指到錯的型別），
@@ -247,6 +254,7 @@ print(nested(b3)); -> bare-f64
 ; 修復後：參數是 option 時跳過「借用參數 clone」閘門，改走剝殼 ⇒ 印 hello。
 ;
 ; 期望輸出（依序）：7 / 1 / 0 / hello
+...
 
 V ?i64 = 7
 
@@ -308,7 +316,7 @@ bf: {
 s = mk-str()
 g-str(s)
 
-; ===================== merged from tests/option-match.no =====================
+; merged from tests/option-match.no
 ; option-match.no — 測試 option 變數的 match 語法
 ;
 ; match 語法（每個臂獨立一行）：
@@ -316,6 +324,7 @@ g-str(s)
 ;          nil -> body
 ;          -> body }
 ; 其中 err/nil 為 option 分支，-> 為預設（ok/val）分支
+...
 
 ; 測試 err
 test-err = () {
@@ -379,12 +388,13 @@ test-nil()
 test-val()
 test-err-only()
 
-; ===================== merged from tests/place-write-value-match.no =====================
+; merged from tests/place-write-value-match.no
 ; D11 回歸：place-match ok 臂裡 `it = <值 match>` 必須真的寫回元素位置。
 ;
 ; 修復前 a[i] 會保持原值：合成指派 `it = <SurfaceMatch>` 在 H0 降成空的
 ; KIf 後整條消失，寫回 store 讀到的是 match 之前綁定的原始元素值。
 ; lowering 改為先把值 match 提升成合成 let（`__place_val_L_C`），再重綁 it。
+...
 
 check = (name str, got i64, want i64) {
     {
@@ -443,8 +453,9 @@ check('place-write value match OOB', pwValueMatch(1), 0)
 check('place-write value match in-bounds', pwValueMatchHit(1), 30)
 print('place-write-value-match: all ok')
 
-; ===================== merged from tests/simple-match.no =====================
+; merged from tests/simple-match.no
 ; 簡化測試 - 用空格
+...
 test1 = () {
     n = 42
     r = n: {
@@ -456,8 +467,9 @@ test1 = () {
 }
 test1()
 
-; ===================== merged from tests/simple-match2.no =====================
+; merged from tests/simple-match2.no
 ; 簡化測試
+...
 test1__1 = () {
     n = 42
     r = n: {
@@ -469,8 +481,9 @@ test1__1 = () {
 }
 test1__1()
 
-; ===================== merged from tests/type-match.no =====================
+; merged from tests/type-match.no
 ; 類型解構 match（union / type-set 靜態單態化派發）端到端測試
+...
 num__1 = i32 | i64 | f64
 
 ; 用戶範例：按被匹配值的具體型別靜態選臂
@@ -518,7 +531,8 @@ add1 = (x num__1) {
     print(r)
 }
 
-; ---- clamp0 ----
+; clamp0
+...
 ai64 = 5
 hi64 = 10
 a = clamp0(ai64, 0, hi64); -> i64 臂 -> hi = 10
@@ -532,18 +546,20 @@ hf64 = 9.0
 c = clamp0(bf64, bf64, hf64); -> 無 f64 臂 -> 預設臂 -> r = x = 2.5
 print(c)
 
-; ---- classify ----
+; classify
+...
 bi64 = 7
 classify(bi64); -> "7"
 classify(bi32); -> "7"
 classify(bf64); -> "7.5"
 
-; ---- add1 ----
+; add1
+...
 add1(bi64); -> 11
 add1(bi32); -> 12
 add1(bf64); -> 13
 
-; ===================== merged from tests/match-it-scope.no =====================
+; merged from tests/match-it-scope.no
 ; match-it-scope.no — 巢狀 match 結束後 `it` 必須還原成外層臂的主體
 ;
 ; 回歸：`it` 是單一的函式全域綁定。內層 match 的臂會把它重新綁到自己的主體
@@ -558,6 +574,7 @@ add1(bf64); -> 13
 ;       } }
 ;
 ; 修復前「again」那幾條印出內層值（7 / child），修復後印出外層值（42 / root）。
+...
 
 ; 檢查 str
 ; name str: 這項檢查的名稱，輸出時原樣印出

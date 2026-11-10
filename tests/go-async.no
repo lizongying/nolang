@@ -12,10 +12,12 @@ worker = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt = n + 1
         r-opt: {
             ok -> r = it
+
             ->
         }
     }
@@ -28,10 +30,12 @@ child = (n i64) (r i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt2 = n * 10
         r-opt2: {
             ok -> r = it
+
             ->
         }
     }
@@ -41,15 +45,16 @@ child = (n i64) (r i64) {
 ; n i64: 來源數值
 ; r i64: n + child(n) = n + n*10
 worker-with-child = (n i64) (r i64) {
-    c i64
     c = co child(n)
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         r-opt3 = n + c
         r-opt3: {
             ok -> r = it
+
             ->
         }
     }

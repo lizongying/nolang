@@ -170,6 +170,7 @@ test-vec-helpers = () {
     runner.eq(u.contains('phi i64 [ %cap, %entry ], [ %ncap, %grow ], [ %ncap, %copy ]'), 1, 'push cap phi')
     runner.eq(u.contains('br i1 %empty, label %store, label %copy'), 1, 'push skips memcpy when empty')
     runner.eq(u.contains('call void @free(i8* %old)'), 1, 'push frees old buffer')
+
     ; s99n：vec 释放 helper——缓冲无 RC 头（§11 B5）⇒ 一次性 free，dat==0 短路
     q = cg-runtime-vec-free()
     runner.eq(q.contains('define void @vec_free(%vec %v)'), 1, 'vec_free signature')

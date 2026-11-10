@@ -197,8 +197,16 @@ summary = () (total i64) {
     print('passed:', count-passed)
     print('failed:', count-failed)
 
+    ; 整數加法一律回 ?i64（`#{overflow=wrap}` 只決定溢位時取什麼值，型別仍是 ?i64），
+    ; 直接寫 `total = a + b` 會讓 summary 的回傳型別退化成 ?i64，
+    ; 呼叫端 `total = runner.summary()` 便會撞上 optunuse。故先收成 option 再顯式解包。
     #{overflow=wrap}
-    total = count-passed + count-failed
+    total-opt = count-passed + count-failed
+    total = total-opt: {
+        ok -> it
+
+        -> 0
+    }
     print('total:', total)
     {
         count-failed == 0 -> print('ALL TESTS PASSED')
@@ -233,10 +241,12 @@ pass = (passed i64) (new-passed i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         new-passed-opt = passed + 1
         new-passed-opt: {
             ok -> new-passed = it
+
             ->
         }
     }
@@ -249,10 +259,12 @@ fail = (failed i64) (new-failed i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         new-failed-opt = failed + 1
         new-failed-opt: {
             ok -> new-failed = it
+
             ->
         }
     }

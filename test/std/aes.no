@@ -95,6 +95,7 @@ t-dec-256 = () {
     back = aes.dec-256(ct, key)
     runner.str-eq(hex16(back), '00112233445566778899aabbccddeeff', 32, 'aes-256 dec round-trip')
 }
+
 ; ── 低階 API（本輪補齊）────────────────────────
 ;
 ; 註：固定長度陣列要比較內容一律走上面的 hex16；可變 vec 直接用 .to-hex()
@@ -127,16 +128,21 @@ t-rcon = () {
 
 ; SubBytes：全零状态经 S-box 后每字节为 S[0] = 0x63；逆变换还原
 t-sub-bytes = () {
-    st []byte = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    st []byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
     before = st.to-hex()
     aes.sub-bytes(st, 16)
     v0 = st[0]: {
         ok -> it
+
         -> 0
     }
     runner.eq(v0.to-i64(), 0x63, 'sub-bytes(0) == 0x63 (S[0])')
     v15 = st[15]: {
         ok -> it
+
         -> 0
     }
     runner.eq(v15.to-i64(), 0x63, 'sub-bytes covers byte 15 too')
@@ -148,28 +154,35 @@ t-sub-bytes = () {
 
 ; ShiftRows：state 为列主序（byte 索引 = 4*col + row），第 r 行左移 r 格
 t-shift-rows = () {
-    st []byte = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    st []byte = [
+        0, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 12, 13, 14, 15,
+    ]
     before = st.to-hex()
     aes.shift-rows(st)
 
     ; 第 0 行不动；第 1 行取旧的第 5 字节；第 2 行取旧的 10；第 3 行取旧的 15
     v0 = st[0]: {
         ok -> it
+
         -> 255
     }
     runner.eq(v0.to-i64(), 0, 'shift-rows: row0 stays')
     v1 = st[1]: {
         ok -> it
+
         -> 255
     }
     runner.eq(v1.to-i64(), 5, 'shift-rows: row1 shifts by 1')
     v2 = st[2]: {
         ok -> it
+
         -> 255
     }
     runner.eq(v2.to-i64(), 10, 'shift-rows: row2 shifts by 2')
     v3 = st[3]: {
         ok -> it
+
         -> 255
     }
     runner.eq(v3.to-i64(), 15, 'shift-rows: row3 shifts by 3')
@@ -196,22 +209,29 @@ t-mix-col = () {
 
 ; MixColumns 的整状态版本：第 0 列按上例变换，其余列为零列
 t-mix-columns = () {
-    st []byte = [0xdb, 0x13, 0x53, 0x45, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    st []byte = [
+        0xdb, 0x13, 0x53, 0x45, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
     before = st.to-hex()
     aes.mix-columns(st)
     v0 = st[0]: {
         ok -> it
+
         -> 0
     }
     runner.eq(v0.to-i64(), 0x8e, 'mix-columns col0[0] == 0x8e')
     v3 = st[3]: {
         ok -> it
+
         -> 0
     }
     runner.eq(v3.to-i64(), 0xbc, 'mix-columns col0[3] == 0xbc')
+
     ; 全零列必须保持全零（不是把别的列串进来）
     z = st[4]: {
         ok -> it
+
         -> 255
     }
     runner.eq(z.to-i64(), 0, 'mix-columns leaves zero column untouched')
@@ -223,30 +243,48 @@ t-mix-columns = () {
 
 ; AddRoundKey：逐字节异或；add-round-key-at 从轮密钥的任意偏移取 16 字节
 t-add-round-key = () {
-    st []byte = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-    rk []byte = [0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f]
+    st []byte = [
+        1, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16,
+    ]
+    rk []byte = [
+        0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+        0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+    ]
     aes.add-round-key(st, rk)
     v0 = st[0]: {
         ok -> it
+
         -> 0
     }
     runner.eq(v0.to-i64(), 0x0e, 'add-round-key: 0x01 ^ 0x0f == 0x0e')
     v1 = st[1]: {
         ok -> it
+
         -> 0
     }
     runner.eq(v1.to-i64(), 0x0d, 'add-round-key: 0x02 ^ 0x0f == 0x0d')
 
-    st2 []byte = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    rk2 []byte = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0xaa]
+    st2 []byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    rk2 []byte = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+        0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0xaa,
+    ]
     aes.add-round-key-at(st2, rk2, 16)
     a0 = st2[0]: {
         ok -> it
+
         -> 0
     }
     runner.eq(a0.to-i64(), 0x11, 'add-round-key-at reads from offset 16')
     a15 = st2[15]: {
         ok -> it
+
         -> 0
     }
     runner.eq(a15.to-i64(), 0xaa, 'add-round-key-at last byte == rk[31] == 0xaa')

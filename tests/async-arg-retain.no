@@ -86,16 +86,19 @@ test-share-loop = () {
             }
             m-opt: {
                 ok -> m = it
+
                 ->
             }
         }
 
         #{overflow=wrap}
         {
+
             #{overflow=wrap}
             total-opt = total + n
             total-opt: {
                 ok -> total = it
+
                 ->
             }
         }

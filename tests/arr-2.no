@@ -2,8 +2,9 @@
 ; sources: arr-at1.no, arr-slice.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/arr-at1.no =====================
+; merged from tests/arr-at1.no
 ; 測試 arr-at
+...
 test-arr-at = () {
     a [3] = [1, 2, 3]
     print(a.at(0))
@@ -12,10 +13,11 @@ test-arr-at = () {
 }
 test-arr-at()
 
-; ===================== merged from tests/arr-slice.no =====================
+; merged from tests/arr-slice.no
 ; arr-slice test
 ; cd src && go run ./cmd/cli/. build ../tests/arr-slice.no
 ; ../dist/arr-slice
+...
 
 a [5] = [10, 20, 30, 40, 50]
 

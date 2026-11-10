@@ -1,12 +1,16 @@
 ; test/std/aes-gcm.no — crypto/aes-gcm 模組測試
 ;
 ; 執行：no test test/std/aes-gcm.no
-; 覆蓋：aes-gcm.seal-128 / open-128（sealed = ciphertext || 16-byte tag）
-; 向量來源：GCM 標準測試（key=0,iv=0,pt=16×0,無 aad），pycryptodome 交叉核對
-;   ct = 0388dace60b6a392f328c2b971b2fe78
-;   tag = ab6e47d42cec13bdf53a67b21257bddf
+; 覆蓋：seal-128 / open-128 / seal-256 / open-256，以及內部構成
+;       ghash-mul / ghash / ctr-xor / gcm-j0 / gcm-h / gcm-seal / gcm-open
+; 向量來源：NIST SP 800-38D（McGrew-Viega GCM spec）Test Case 1–6、13–16
+;   金標另以純 Python AES+GHASH 實作交叉核對（該實作先通過 FIPS-197 C.1/C.3
+;   與 NIST TC1/TC3/TC5 自檢）
 
 # /test/runner
+
+H128 = '66e94bd4ef8a2c3b884cfa59ca342b2e'
+H256 = 'dc95c078a2408989ad48a21492842087'
 
 ; 把位元組序列格式化成小寫十六進位字串（供 runner.str-eq 逐字元比對）
 ; data []byte: 待格式化的位元組，可為空
@@ -37,6 +41,150 @@ bhex = (data []byte) (hex str) {
         hex[i * 2 + 1] = hex-chars[ixout26c40 & 15]
     }
 }
+
+; ---- 助手 ----
+
+; hex → []byte
+mkb = (h str) (b []byte) {
+    opt = h.from-hex()
+    b = opt: {
+        ok -> it
+
+        -> b
+    }
+}
+
+; 長度 n 的全零 []byte
+zeros = (n i64) (v []byte) {
+    v = with-len(n)
+    i <- [0..n): {
+        v[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+}
+
+; hex → [16]byte（原樣拷貝，不足補 0）
+mk16 = (h str) (a [16]byte) {
+    raw = mkb(h)
+    i <- [0..16): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    n = raw.len()
+    n > 16 -> n = 16
+    i <- [0..n): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; hex → [12]byte
+mk12 = (h str) (a [12]byte) {
+    raw = mkb(h)
+    i <- [0..12): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    n = raw.len()
+    n > 12 -> n = 12
+    i <- [0..n): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; hex → [32]byte
+mk32 = (h str) (a [32]byte) {
+    raw = mkb(h)
+    i <- [0..32): {
+        a[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+    n = raw.len()
+    n > 32 -> n = 32
+    i <- [0..n): {
+        v = raw[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        a[i]: {
+            ok -> it = v
+
+            -> _
+        }
+    }
+}
+
+; [16]byte → []byte
+b16 = (a [16]byte) (v []byte) {
+    v = with-len(16)
+    i <- [0..16): {
+        x = a[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        v[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+}
+
+; []byte 拷貝（避免篡改測試污染原 sealed 緩衝）
+dup = (b []byte) (c []byte) {
+    n = b.len()
+    c = with-len(n)
+    i <- [0..n): {
+        x = b[i]: {
+            ok -> it
+
+            -> 0
+        }
+
+        c[i]: {
+            ok -> it = x
+
+            -> _
+        }
+    }
+}
+
+; ---- seal-128 / open-128 ----
 
 ; 驗證 seal-128 的輸出佈局與 NIST 向量
 ; 輸出為 密文(16 位元組) || 認證標籤(16 位元組)，共 32 位元組、64 個 hex 字元。
@@ -102,9 +250,293 @@ t-tamper = () {
     ; 認證失敗時 open 返回長度 0
     runner.eq(back.len(), 0, 'aes-128-gcm rejects tampered ciphertext')
 }
+
+; ---- ghash-mul（GF(2^128) 乘法）----
+
+; H = AES-128(0^128) 在 key=0 時的雜湊子金鑰；所有金標見註解。
+t-ghash-mul = () {
+    h [16]byte = mk16(H128)
+    z [16]byte = mk16('00000000000000000000000000000000')
+    msb [16]byte = mk16('80000000000000000000000000000000')
+    one [16]byte = mk16('00000000000000000000000000000001')
+    ff [16]byte = mk16('ffffffffffffffffffffffffffffffff')
+    ct1 [16]byte = mk16('0388dace60b6a392f328c2b971b2fe78')
+
+    ; 0 * H = 0
+    r0 [16]byte = aes-gcm.ghash-mul(z, h)
+    v0 = b16(r0)
+    runner.str-eq(bhex(v0), '00000000000000000000000000000000', 32, 'ghash-mul 0*H = 0')
+
+    ; 最高位為 1 的 x 在第一次迴圈就把 V(=H) 併入，故結果就是 H
+    r1 [16]byte = aes-gcm.ghash-mul(msb, h)
+    v1 = b16(r1)
+    runner.str-eq(bhex(v1), H128, 32, 'ghash-mul 0x80..0 * H = H')
+
+    ; H * H
+    r2 [16]byte = aes-gcm.ghash-mul(h, h)
+    v2 = b16(r2)
+    runner.str-eq(bhex(v2), 'a569901bb4b18906f5059d24465c904d', 32, 'ghash-mul H*H')
+
+    ; x = 1（最低位）⇒ 只取 H 右移 127 次的結果
+    r3 [16]byte = aes-gcm.ghash-mul(one, h)
+    v3 = b16(r3)
+    runner.str-eq(bhex(v3), '52a4dcb814e54ae1b2d2402fdc6eb849', 32, 'ghash-mul 0x..01 * H')
+
+    ; 全 1 的乘數
+    r4 [16]byte = aes-gcm.ghash-mul(ff, h)
+    v4 = b16(r4)
+    runner.str-eq(bhex(v4), 'cb2dc6f0b950f18d9e396c7438025a0c', 32, 'ghash-mul 0xff..ff * H')
+
+    ; GCM TC1 的密文區塊乘上 H（ghash 的中間步）
+    r5 [16]byte = aes-gcm.ghash-mul(ct1, h)
+    v5 = b16(r5)
+    runner.str-eq(bhex(v5), '5e2ec746917062882c85b0685353deb7', 32, 'ghash-mul ciph-block * H')
+
+    ; 交換律：GF(2^128) 乘法可交換，X*H 與 H*X 應同值
+    r6 [16]byte = aes-gcm.ghash-mul(h, ct1)
+    v6 = b16(r6)
+    runner.str-eq(bhex(v6), bhex(v5), 32, 'ghash-mul 交換律 H*c = c*H')
+}
+
+; ---- ghash（含 AAD 與長度區塊）----
+
+t-ghash = () {
+    h [16]byte = mk16(H128)
+    none = zeros(0)
+    z16 = zeros(16)
+    ct1 = mkb('0388dace60b6a392f328c2b971b2fe78')
+
+    ; 兩個輸入都空 ⇒ 只剩長度區塊（0,0），Y = 0*H = 0
+    g0 [16]byte = aes-gcm.ghash(h, none, none)
+    v0 = b16(g0)
+    runner.str-eq(bhex(v0), '00000000000000000000000000000000', 32, 'ghash 空 aad/空密文 = 0')
+
+    ; 單一密文區塊（NIST TC1 的 GHASH 中間值）
+    g1 [16]byte = aes-gcm.ghash(h, none, ct1)
+    v1 = b16(g1)
+    runner.str-eq(bhex(v1), 'f38cbb1ad69223dcc3457ae5b6b0f885', 32, 'ghash 單一密文區塊')
+
+    ; AAD 與密文各一個全零區塊
+    g2 [16]byte = aes-gcm.ghash(h, z16, z16)
+    v2 = b16(g2)
+    runner.str-eq(bhex(v2), 'df4e4be445f95463806bc301bd701f32', 32, 'ghash aad16+ct16 全零')
+
+    ; 20 位元組 AAD（含不完整尾塊）+ 60 位元組密文（NIST TC4）
+    h3 [16]byte = mk16('b83b533708bf535d0aa6e52980d53b78')
+    aad3 = mkb('feedfacedeadbeeffeedfacedeadbeefabaddad2')
+    ct3 = mkb('42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091')
+    g3 [16]byte = aes-gcm.ghash(h3, aad3, ct3)
+    v3 = b16(g3)
+    runner.str-eq(bhex(v3), '698e57f70e6ecc7fd9463b7260a9ae5f', 32, 'ghash 部分尾塊 AAD + 60B 密文')
+}
+
+; ---- ctr-xor（AES-CTR 密鑰流）----
+
+t-ctr-xor = () {
+    k [16]byte = mk16('00000000000000000000000000000000')
+    ek = aes.key-expand(k)
+    none = zeros(0)
+    z16 = zeros(16)
+    icb1 [16]byte = mk16('00000000000000000000000000000001')
+    icb2 [16]byte = mk16('00000000000000000000000000000002')
+
+    ; 全零資料 ⇒ 輸出即密鑰流 = AES-enc(計數器區塊)
+    o1 = aes-gcm.ctr-xor(icb1, z16, ek)
+    runner.eq(o1.len(), 16, 'ctr-xor 輸出長度 = 資料長度')
+    runner.str-eq(bhex(o1), '58e2fccefa7e3061367f1d57a4e7455a', 32, 'ctr-xor keystream blk1')
+
+    o2 = aes-gcm.ctr-xor(icb2, z16, ek)
+    runner.str-eq(bhex(o2), '0388dace60b6a392f328c2b971b2fe78', 32, 'ctr-xor keystream blk2')
+
+    ; 不完整尾塊：只取前 5 位元組的密鑰流
+    d5 = mkb('0001020304')
+    o5 = aes-gcm.ctr-xor(icb1, d5, ek)
+    runner.eq(o5.len(), 5, 'ctr-xor 不完整尾塊長度')
+    runner.str-eq(bhex(o5), '58e3fecdfe', 10, 'ctr-xor 5 位元組 = ks[0..5] xor data')
+
+    ; 17 位元組：跨兩個計數器區塊，密鑰流必須連續
+    d17 = zeros(17)
+    o17 = aes-gcm.ctr-xor(icb1, d17, ek)
+    runner.eq(o17.len(), 17, 'ctr-xor 跨塊長度')
+    runner.str-eq(bhex(o17), '58e2fccefa7e3061367f1d57a4e7455a03', 34, 'ctr-xor 跨塊密鑰流連續')
+
+    ; XOR 是對合：再一次就還原
+    back = aes-gcm.ctr-xor(icb1, o17, ek)
+    runner.str-eq(bhex(back), '0000000000000000000000000000000000', 34, 'ctr-xor 為對合')
+
+    ; 空資料
+    o0 = aes-gcm.ctr-xor(icb1, none, ek)
+    runner.eq(o0.len(), 0, 'ctr-xor 空資料 → 空輸出')
+}
+
+; ---- gcm-j0 / gcm-h ----
+
+t-gcm-j0 = () {
+    iv [12]byte = mk12('000102030405060708090a0b')
+    j0 [16]byte = aes-gcm.gcm-j0(iv)
+    v = b16(j0)
+    runner.str-eq(bhex(v), '000102030405060708090a0b00000001', 32, 'gcm-j0 = iv || 00000001')
+
+    iv2 [12]byte = mk12('ffffffffffffffffffffffff')
+    j2 [16]byte = aes-gcm.gcm-j0(iv2)
+    v2 = b16(j2)
+    runner.str-eq(bhex(v2), 'ffffffffffffffffffffffff00000001', 32, 'gcm-j0 全 ff iv')
+}
+
+t-gcm-h = () {
+    k128 [16]byte = mk16('00000000000000000000000000000000')
+    ek = aes.key-expand(k128)
+    h [16]byte = aes-gcm.gcm-h(ek)
+    v = b16(h)
+    runner.str-eq(bhex(v), H128, 32, 'gcm-h(AES-128, key=0) = AES-enc(0)')
+
+    k256 [32]byte = mk32('0000000000000000000000000000000000000000000000000000000000000000')
+    ek2 = aes.key-expand-256(k256)
+    h2 [16]byte = aes-gcm.gcm-h(ek2)
+    v2 = b16(h2)
+    runner.str-eq(bhex(v2), H256, 32, 'gcm-h(AES-256, key=0) = AES-enc(0)')
+}
+
+; ---- gcm-seal / gcm-open（核心，輪鑰由呼叫端展開）----
+
+t-gcm-seal = () {
+    k [16]byte = mk16('feffe9928665731c6d6a8f9467308308')
+    ek = aes.key-expand(k)
+    iv [12]byte = mk12('cafebabefacedbaddecaf888')
+    none = zeros(0)
+    aad = mkb('feedfacedeadbeeffeedfacedeadbeefabaddad2')
+    pt = mkb('d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39')
+
+    ; NIST TC4：60 位元組明文 + 20 位元組 AAD
+    s4 = aes-gcm.gcm-seal(iv, aad, pt, ek)
+    runner.eq(s4.len(), 76, 'gcm-seal 長度 = 明文 + 16')
+    runner.str-eq(bhex(s4), '42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e0915bc94fbc3221a5db94fae95ae7121a47', 152, 'NIST GCM TC4 含 AAD')
+
+    ; NIST TC3：64 位元組明文，無 AAD
+    pt3 = mkb('d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255')
+    s3 = aes-gcm.gcm-seal(iv, none, pt3, ek)
+    runner.eq(s3.len(), 80, 'gcm-seal 長度 = 64 + 16')
+    runner.str-eq(bhex(s3), '42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f59854d5c2af327cd64a62cf35abd2ba6fab4', 160, 'NIST GCM TC3 無 AAD')
+
+    ; 空明文 ⇒ 只有 16 位元組 tag（NIST TC1）
+    s1 = aes-gcm.gcm-seal(iv, none, none, ek)
+    runner.eq(s1.len(), 16, 'gcm-seal 空明文只有 tag')
+}
+
+t-gcm-open = () {
+    k [16]byte = mk16('feffe9928665731c6d6a8f9467308308')
+    ek = aes.key-expand(k)
+    iv [12]byte = mk12('cafebabefacedbaddecaf888')
+    none = zeros(0)
+    aad = mkb('feedfacedeadbeeffeedfacedeadbeefabaddad2')
+    aad2 = mkb('feedfacedeadbeeffeedfacedeadbeefabaddad3')
+    pt = mkb('d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39')
+    sealed = aes-gcm.gcm-seal(iv, aad, pt, ek)
+
+    ; 正常解封
+    back = aes-gcm.gcm-open(iv, aad, sealed, ek)
+    runner.eq(back.len(), 60, 'gcm-open 還原明文長度')
+    runner.str-eq(bhex(back), bhex(pt), 120, 'gcm-open 還原明文內容')
+
+    ; 篡改 tag 最後一位元
+    s2 = dup(sealed)
+    s2[75]: {
+        ok -> it = it ^ 1
+
+        -> _
+    }
+    b2 = aes-gcm.gcm-open(iv, aad, s2, ek)
+    runner.eq(b2.len(), 0, 'gcm-open tag 篡改 → 空輸出')
+
+    ; 篡改 AAD
+    b3 = aes-gcm.gcm-open(iv, aad2, sealed, ek)
+    runner.eq(b3.len(), 0, 'gcm-open AAD 篡改 → 空輸出')
+
+    ; sealed 短於 tag 長度
+    short = zeros(15)
+    b4 = aes-gcm.gcm-open(iv, aad, short, ek)
+    runner.eq(b4.len(), 0, 'gcm-open sealed 短於 16 位元組 → 空輸出')
+
+    ; 空明文：sealed 恰為 16 位元組 tag，解出長度 0 但認證通過（不得當成失敗）
+    e = aes-gcm.gcm-seal(iv, aad, none, ek)
+    runner.eq(e.len(), 16, '空明文 sealed 長度 16')
+    b5 = aes-gcm.gcm-open(iv, aad, e, ek)
+    runner.eq(b5.len(), 0, '空明文解出長度 0')
+}
+
+; ---- seal-256 / open-256 ----
+
+t-seal-256 = () {
+    k [32]byte = mk32('0000000000000000000000000000000000000000000000000000000000000000')
+    iv [12]byte = mk12('000000000000000000000000')
+    none = zeros(0)
+    z16 = zeros(16)
+
+    ; NIST TC14
+    s = aes-gcm.seal-256(k, iv, none, z16)
+    runner.eq(s.len(), 32, 'aes-256-gcm 長度 = 明文 + 16')
+    runner.str-eq(bhex(s), 'cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919', 64, 'NIST TC14 AES-256-GCM')
+
+    ; NIST TC13：空明文
+    s13 = aes-gcm.seal-256(k, iv, none, none)
+    runner.str-eq(bhex(s13), '530f8afbc74536b9a963b4f1c4cb738b', 32, 'NIST TC13 AES-256-GCM 空明文')
+
+    ; NIST TC16：AES-256 + AAD，60 位元組明文
+    k2 [32]byte = mk32('feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308')
+    iv2 [12]byte = mk12('cafebabefacedbaddecaf888')
+    aad = mkb('feedfacedeadbeeffeedfacedeadbeefabaddad2')
+    pt = mkb('d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39')
+    s16 = aes-gcm.seal-256(k2, iv2, aad, pt)
+    runner.eq(s16.len(), 76, 'AES-256-GCM 長度 = 明文 + 16')
+    runner.str-eq(bhex(s16), '522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f66276fc6ece0f4e1768cddf8853bb2d551b', 152, 'NIST TC16 AES-256-GCM 含 AAD')
+}
+
+t-open-256 = () {
+    k [32]byte = mk32('feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308')
+    iv [12]byte = mk12('cafebabefacedbaddecaf888')
+    none = zeros(0)
+    aad = mkb('feedfacedeadbeeffeedfacedeadbeefabaddad2')
+    pt = mkb('d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39')
+    sealed = aes-gcm.seal-256(k, iv, aad, pt)
+
+    ; 還原
+    back = aes-gcm.open-256(k, iv, aad, sealed)
+    runner.eq(back.len(), 60, 'aes-256-gcm open 明文長度')
+    runner.str-eq(bhex(back), bhex(pt), 120, 'aes-256-gcm open 明文內容')
+
+    ; 篡改密文首位元
+    s2 = dup(sealed)
+    s2[0]: {
+        ok -> it = it ^ 1
+
+        -> _
+    }
+    b2 = aes-gcm.open-256(k, iv, aad, s2)
+    runner.eq(b2.len(), 0, 'aes-256-gcm 拒絕篡改密文')
+
+    ; 用 AES-128 的金鑰（截斷）解 AES-256 密文必失敗
+    k128 [16]byte = mk16('feffe9928665731c6d6a8f9467308308')
+    b3 = aes-gcm.open-128(k128, iv, aad, sealed)
+    runner.eq(b3.len(), 0, 'aes-256 密文用 aes-128 解 → 失敗')
+
+    ; 空明文往返（sealed 恰為 tag）
+    e = aes-gcm.seal-256(k, iv, none, none)
+    runner.eq(e.len(), 16, 'aes-256-gcm 空明文長度 16')
+    b4 = aes-gcm.open-256(k, iv, none, e)
+    runner.eq(b4.len(), 0, 'aes-256-gcm 空明文解出長度 0')
+}
 p1 = runner.test('aesgcm.seal', t-seal)
 p2 = runner.test('aesgcm.open', t-open)
 p3 = runner.test('aesgcm.tamper', t-tamper)
+p4 = runner.test('aesgcm.ghash-mul', t-ghash-mul)
+p5 = runner.test('aesgcm.ghash', t-ghash)
+p6 = runner.test('aesgcm.ctr-xor', t-ctr-xor)
+p7 = runner.test('aesgcm.gcm-j0', t-gcm-j0)
+p8 = runner.test('aesgcm.gcm-h', t-gcm-h)
+p9 = runner.test('aesgcm.gcm-seal', t-gcm-seal)
+p10 = runner.test('aesgcm.gcm-open', t-gcm-open)
+p11 = runner.test('aesgcm.seal-256', t-seal-256)
+p12 = runner.test('aesgcm.open-256', t-open-256)
 total = runner.summary()
 f = runner.failed-count()
 {

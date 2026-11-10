@@ -189,7 +189,7 @@ f = runner.failed-count()
 
 ## 5. 目前覆蓋狀況
 
-### 5.0 快照：2026-11-10（本輪新增盤點工具）
+### 5.0a 快照：2026-11-10 上午（地圖輪，保留供對照；數字已過期）
 
 盤點工具：`python3 scripts/std_test_coverage.py`（`--missing` 列缺口、
 `--module <名>` 看單一模組、`--markdown` 出表、`--strict` 有缺口回 rc=1）。
@@ -231,7 +231,77 @@ static-hashmap-str-tmpl.init`，泛型參數 v 無從特化），且全 repo 沒
 全量執行（`./bin/no test test/std/`，103 檔）：**100 檔全綠、3 檔失敗**，
 失敗檔全部與本輪改動無關（見 §5.2）。
 
-### 5.1 本輪修好的 std bug（`src/std/collection/map.no`）
+### 5.0b 快照：2026-11-10 下午（archive 輪，數字已被 5.0c 取代）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2139（810 + 1329） |
+| 已覆蓋 | **844（39.5%）**（archive 輪前 739 / 34.5%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 | 108 |
+| `archive/*` | **115 / 115 = 100%** |
+
+`archive/*` 逐模組（API 面 / 已覆蓋）：
+
+| 模組 | 覆蓋 | 測試檔斷言 |
+|---|---|---:|
+| `archive/bzip2` | 7 / 7 | 15（原 2，擴充） |
+| `archive/gzip` | 12 / 12 | 38（原 28，擴充） |
+| `archive/tar` | 27 / 27 | 66（新） |
+| `archive/xz` | 19 / 19 | 36（新） |
+| `archive/zip` | 30 / 30 | 55（新） |
+| `archive/zlib` | 5 / 5 | 35（原 4，擴充） |
+| `archive/zstd` | 15 / 15 | 36（新） |
+
+本輪測試斷言合計 **281 條**。全量執行（`./bin/no test test/std/`，108 檔）：
+**107 檔綠 / 1 檔紅（`multipart.no` segmentation fault，預存問題，與本輪無關）**，
+**2613 條斷言通過、0 條失敗**。`./bin/no vet src/std/archive/` = **0 error / 90 hint**。
+
+> `make test`（Go 單測）在 2026-11-10 這版工作區**是紅的**：14 個失敗全在
+> `parser` / `parser/dump` / `mir`（`tests/match-range-pattern.no` 等 fixture 檔不存在、
+> `TestAnnotationsLiveOnAST` / `TestBuildSemViewsMatchesFreshParse` …），是另一 session
+> 正在改 `src/parser/{annotation,ast,lowering}.go` 的副產物。本輪只動
+> `src/std/archive/*.no`、`test/`、`scripts/`，與那批失敗無關；改動落地後需複跑。
+
+⚠️ 本輪同時收緊了盤點工具的口徑：`strip_comment()` 現在**連字符串字面量的內容一起抹掉**。
+之前 `runner.test('zip.u16le/u32le', …)` 這種**斷言說明**會被當成真的調用，
+把 `zip.u16le` 虛報成已覆蓋（`zip.u32le` 卻沒有，才露了餡）。
+所以舊快照裡的百分比含少量虛報，本輪起的數字才是可信的。
+
+### 5.0c 快照：2026-11-10 傍晚（crypto/x25519 輪，**當前**）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 | 119 / 119 |
+| API 面（函數 + 方法） | 2142（813 + 1329） |
+| 已覆蓋 | **872（40.7%）**（archive 輪後 844 / 39.5%） |
+| 有專用測試檔的模組 | 103 / 119 |
+| 測試檔數 | 108 |
+| `crypto/x25519` | **30 / 30 = 100%**（本輪 5 → 30） |
+
+本輪測試斷言合計 **87 條**（`test/std/x25519.no`，原 6 條）。全量
+`./bin/no test test/std/`（108 檔）：**107 檔綠 / 1 檔紅**（`multipart.no`
+segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（archive 輪為 2613，
+差額 81 正好是本輪 x25519 的增量）。`./bin/no vet src/std/crypto/` = **0 error**；
+`no fmt -d src/std/crypto/x25519.no` = 空 diff（fixed point）。
+
+`crypto` 家族現況（`python3 scripts/std_test_coverage.py --module crypto`）：
+
+| 模組 | 覆蓋 | 備註 |
+|---|---:|---|
+| `crypto/x25519` | 30 / 30 | 本輪補齊，含 3 個新增純量輔助 |
+| `crypto/ed25519` | 全綠 | 待盤點缺口 |
+| `crypto/ecdsa` | 全綠 | 待盤點缺口 |
+| `crypto/rsa` | 全綠 | 待盤點缺口 |
+| `crypto/x509` | 全綠 | 待盤點缺口 |
+| `crypto/aes-gcm` / `blake2` / `chacha20-poly1305` | 仍有缺口 | 下一批 |
+
+⚠️ 本輪新增了 3 個**公開**輔助函式（`x25519.num-add` / `num-sub` / `num-floor`），
+所以 API 面分母從 2139 長到 2142。這是為了繞開「`i64 op i64` 回傳 `?i64`」的型別規則
+（詳見 §5.1c），不是純粹的測試基建。
+
+### 5.1 (a) 地圖輪修好的 std bug（`src/std/collection/map.no`）
 
 寫 `map.no` 時撞出來的，兩處都已修並被 `test/std/map.no` 釘住：
 
@@ -247,6 +317,65 @@ static-hashmap-str-tmpl.init`，泛型參數 v 無從特化），且全 repo 沒
    改完 20 鍵自動擴容、`rehash` 後續插全部正常。
    ⚠️ 這是 std 端的繞道，**編譯器「裸塊內 match 臂賦值丟寫」的根因還沒修**。
 
+### 5.1b 本輪修好的 std bug（`src/std/archive/*`）
+
+把 `archive/{gzip,zip,tar,zstd,xz,zlib}` 的每個公開符號都寫成 round-trip 測試時，
+一共挖出並修好 8 個缺陷。每個都以真實工具（`tar` / `unzip` / `zstd` / CPython
+`zlib`・`gzip`・`zipfile`）交叉驗證，並在 `test/std/<alias>.no` 釘住。
+
+| # | 位置 | 症狀 | 修法 |
+|---|---|---|---|
+| A1 | `gzip.deflate-stored` | 空輸入回 **0 位元組** ⇒ zlib/gzip 串流沒有 DEFLATE 主體，任何解壓端都報 `incomplete or truncated stream` | `n == 0` 時輸出單一 BFINAL 空 block `01 00 00 FF FF` |
+| A2 | `gzip.huffman.decode` | 「裸塊 + 臨時變數 + match 臂賦值」丟寫 ⇒ `index`/`len` 不前進，deflate（method=8）條目解不出 | 3 處改成兩步解包 `x = x + cnt: { ok -> it; -> x }` |
+| A3 | `tar.write-octal` | 填充位元組寫成空格（32）而非 `'0'`；同時踩到同一個丟寫 ⇒ 整個 header 的校驗和欄位全錯 | 重寫：先鋪 `'0'`，再從右往左寫八進位，`?=` 直寫 |
+| A4 | `zip.find-eocd` | `! n >= 22 -> return`（恆真，直接返回）＋ 裸塊雙重賦值，兩缺陷疊加 ⇒ **永遠回 -1**，所有 zip 都讀不到中央目錄 | 重寫成「正向掃 `PK\x05\x06`，每命中就覆寫 `off`」⇒ 留下最後一個命中，即真 EOCD（**刻意避開迴圈內減法**：`start - i` 在 `no vet` 是 `?i64`、在 `no test` 是純 i64，套 match 會在單檔模式靜默取 0） |
+| A5 | `zip.entry-off` | 裸塊 match 臂賦值丟寫 ⇒ 偏移不前進，回錯條目 | `cur = ct: { ok -> it; -> cur }` |
+| A6 | `zstd-compress` | 幀頭寫 `0xA0`（聲稱帶 4-byte FCS）卻只寫 1 位元組 ⇒ 解壓端多吃 3 位元組 | 依 `n <= 255` / `n > 255` 分別寫 `0x20`(+1 byte) / `0x60`(+2 bytes) |
+| A7 | `zstd.bits-for-count` | 裸塊丟寫 ⇒ 回傳值恆為初值 | 兩步解包 |
+| A8 | `xz` 的 4 個 `update-state-{literal,match,rep,shortrep}` | **裸塊內多個條件臂會依序全部執行**（不是 if/else-if）⇒ 狀態機一次跳好幾格 | 改成 `cond -> { … ; return }` early return |
+
+交叉驗證結果：
+
+| 模組 | 驗證方式 | 結果 |
+|---|---|---|
+| `tar` | `tar -tvf` / `tar -xOf` | `-rw-r--r-- 0 0 11 …hello.txt`、`drw-r--r-- … subdir/`，內容正確 |
+| `zip` | `unzip -t` | `No errors detected in compressed data` |
+| `gzip` / `zlib` | CPython `gzip.decompress` / `zlib.decompress` | 含空輸入在內全部可解 |
+| `bzip2` | 反向：真實 `bzip2 -c` 的流由本模組解出 | 23 位元組原文正確 |
+| `zstd` | `zstd -d -c` | `hello hello hello world` 正確 |
+| `xz` | `xz -d -c` | ❌ `Compressed data is corrupt`（見 §5.2 #14） |
+
+另外 `test/runner.no` 的 `summary()` 也修了一處 **測試基建** bug：
+`#{overflow=wrap}` 只決定溢位時取什麼值，加法結果仍是 `?i64`；`total = count-passed + count-failed`
+直接把 `?i64` 落進 i64 回傳槽，會讓 `summary` 的回傳型別退化成 `?i64`，
+於是**每個測試檔尾**的 `total = runner.summary()` 都撞上 `optunuse`
+（`no test` / `no vet` 全紅，`no run` 不報，所以很容易誤判成「測試檔寫壞了」）。
+改成先收 `total-opt` 再顯式解包。
+
+> A2 / A3 / A5 / A7 是同一個**編譯器根因**（裸塊 + 臨時變數 + match 臂賦值會靜默丟寫，
+> 見 §5.2 #15）；A8 是第二個根因（裸塊內多條件臂不互斥，見 §5.2 #16）。
+> 本輪只在 std 端繞過，根因仍在。
+
+### 5.1c 本輪修好的 std bug（`src/std/crypto/x25519.no`）
+
+`x25519` 的 RFC 7748 向量一直是綠的，但**域元素的位元組往返是壞的**：
+`fe-tobytes(fe-frombytes(x))` 對 `inv(2)`（`f7ff…ff3f`）會回
+`f7 ff ff ff 00 … 00 40`，跟輸入差了一整段高位。兩個缺陷疊在一起：
+
+| # | 位置 | 症狀 | 修法 |
+|---|---|---|---|
+| C1 | `fe-frombytes` 的進位順序 | 載入時是「跨界」的 loose limb（`h[0]` 含 bits 24–31、`h[9]` 含 bits 248–254），原碼照 `h[0] → h[1] → … → h[9]` 順序做進位。`h[9]` 的 wrap-to-`h[0]` 發生在**同一輪的最後**，之後沒有再進位，於是 `h[0]` 停在非規範值（`inv(2)` 得到 `[10, 0…0, -16777216]`）。值在模 p 下「對」，但**形狀**不對，而 `fe-tobytes` 依賴形狀 | 改成 ref10 順序：**先 25-bit 奇數 limb（9,1,3,5,7），再 26-bit 偶數 limb（0,2,4,6,8）**。修完 `inv(2)` 得到 `[-9, 0…0, 2^24]`（半規約，與 ref10 一致） |
+| C2 | `fe-tobytes` 的進位鏈 | 中間結果寫進區域 `[]i64` 暫存陣列再讀回，**讀到的仍是原值** ⇒ 整條進位鏈等於沒跑（`t` 從頭到尾就是輸入 limb）。表現為「負 limb 原樣被遮罩進位元組」 | 整支改寫成純量區域變數（`h0..h9`），並照 ref10 做 q 條件約減 + 逐級進位 |
+| C3 | `fe-tobytes` 的 floor 除法 | 原碼假設「`>>` 對 i64 是邏輯右移」（檔內註解就這麼寫），用 `-(x >> 63) << (64-b)` 補償成 floor。實測 `>>` 對 i64 是**算術**右移（`-9 >> 26 == -1`，見 §5.2 #22），補償項反而把結果弄壞 | 一律寫成 `((x + 2^40) >> b) - (2^40 >> b)`：先把被除數抬到非負，邏輯/算術右移結果就一致了 |
+
+修完 `test/std/x25519.no` 由 6 條斷言擴到 **87 條**，`crypto/x25519` 從 5/30 到 **30/30**。
+三條缺陷各有斷言釘住：`fe-frombytes inv(2) limb0 = -9`（釘 C1 的進位順序）、
+往返恆等 `f7ff…ff3f`（釘 C2/C3）、`fe-frombytes p-1 limb0 = -1`。
+
+> C2 與 §5.2 #15（裸塊 + 臨時變數 + match 臂賦值丟寫）**不是同一個根因**：
+> C2 是「區域 vec 寫入後讀回拿到舊值」，在最小重現（複製參數 vec → 改寫 → 讀回）裡
+> 是**正常**的，只有把整條 200 段的進位鏈串起來才復現。尚未縮到最小。
+
 ### 5.2 本輪新挖到、**尚未修**的問題
 
 | # | 症狀 | 復現 |
@@ -256,13 +385,29 @@ static-hashmap-str-tmpl.init`，泛型參數 v 無從特化），且全 repo 沒
 | 11 | **模組函數名與另一模組別名撞名 ⇒ 函數體內無法調用**：函數體內寫 `fnv.fnv-1a-32(...)` 報 `EmitLLVM: unknown callee fnv-1a-32`（函數名 = 模組別名 `fnv-1a-32`）；同一調用在**頂層**正常 | `test/std/fnv.no`、`test/std/fnv-1a-32.no` 檔頭 |
 | 12 | **固定長度陣列的切片若直接接在表達式裡**（`h.slice(0,4).to-hex()`）會退化成未特化的 `[]t.slice` → `unknown callee []t.slice`；先落到局部變數就正常 | `test/std/sha3.no` 註解 |
 | 13 | **浮點的 `num.abs` 回 0**（`abs(-3.5)` → `0.0`，`abs(3.5)` → `3.5`）；`0.0 - x` 直接算正常 ⇒ 問題在 `num.abs` 的 f64 單態化裡那句 `r = 0 - .` | `test/std/num.no` 檔頭 |
+| 14 | **LZMA 解碼器未完成**：`lzma-decoder.decode` 對真 LZMA1 位元流（Python `lzma` FORMAT_RAW 產生）產出的不是原文；`xz.lzma-decompress` 對合法 `.lzma` 回 0 位元組；`xz-compress` 產出的流缺正確 CRC32（真 `xz -d` 判 corrupt）；真 `.xz`（LZMA2 壓縮塊）解不出 | `test/std/xz.no` 檔頭、`t-lzma-decode` |
+| 15 | **編譯器根因：裸塊 + 臨時變數 + match 臂賦值會靜默丟寫**。`{ p-opt = p + 1; p-opt: { ok -> p = it; -> } }` 裡 `p` 不變；同樣形態在 `!!` 循環內、`while` 內、函式內都會踩 | §5.1b A2/A3/A5/A7 |
+| 16 | **編譯器根因：裸塊內多個條件臂會依序全部執行**（不是 if/else-if），只有最後成立的臂結果留下 | §5.1b A8 的 `xz` 狀態機 |
+| 17 | **`x = <非 option 表達式>: { ok -> it; -> 預設 }` 會靜默走「預設」臂**。最易踩的是資料依賴 `len()` 的減法：`len()` 保證非負 ⇒ `n - 22` 被推成純 i64，套 match 只會拿到預設值 | `zip.find-eocd` 修復過程 |
+| 18 | `zlib-decompress` **不驗證 Adler-32**（尾端 4 位元組只當邊界，數值錯照樣回資料）；FDICT 只跳過 4-byte DICTID，不套用字典 | `test/std/zlib.no` 檔頭 |
+| 19 | `bzip2-compress` 只寫 24 位元組檔頭，**不產生任何真實區塊** ⇒ 輸出無法被 `bzip2 -d` 解開（反向可用：真實 `bzip2` 的流本模組解得開） | `test/std/bzip2.no` |
+| 20 | **真 zstd 壓縮塊（block type 2）解不出**：解壓端只實作了 raw/RLE 與自產的 stored 幀 | `test/std/zstd.no` |
+| 21 | **同一段程式在 `no vet`（包上下文）與 `no test`（單檔）對 `x - i` 的型別推論相反**：包上下文判 `?i64`（於是 `off = idx` 報 `15w45dqk`），單檔判純 i64（於是套 `{ ok -> it; -> 0 }` **靜默取 0**）。任何一種寫法都無法同時通過兩者，只能繞開（避免在迴圈裡做減法） | `src/std/archive/zip.no` 的 `find-eocd` 註解 |
+| 22 | **`>>` 對 i64 的語意不固定且與註解相反**：`x = -9` 這種字面量來源的 i64 是**算術**右移（`-9 >> 26 == -1`），但從 `arr[i]: { ok -> it; -> 0 }` 取出、或帶 `i64` 註解的值卻是**邏輯**右移（`== 274877906943`）。`src/std/crypto/x25519.no` 的註解因此寫錯了兩年（「`>>` 對 i64 是邏輯右移」），並據此加了 `- ((x >> 63) << (64-b))` 的 floor 補償項 ⇒ 對負數反而算錯。**寫 floor 除法請一律先加 2^40 抬正** | §5.1c C3、探針 `/tmp/x5.no` vs `/tmp/x9.no` |
+| 23 | **`i64 op i64` 回傳 `?i64`（檢查式算術），但 `i64 op 字面量` 回傳 `i64`** ⇒ 純量累加式程式碼（進位鏈）每一行都撞 `15w45dqk`，只能寫成 `#{overflow=wrap}` + 兩步解包，或整段包進 i64→i64 的輔助函式。本案的繞法見 `x25519.num-add` / `num-sub` / `num-floor`（同時也是 API 面分母 +3 的原因） | §5.0c 註記、`src/std/crypto/x25519.no` 檔尾 |
+| 24 | **`tests/match-test.no` 已被 `ed7b5236`（「同類測試合併為單一檔案」）刪掉，但 `src/parser/dump/warnings_shape_test.go::TestUnreachableArmHintSurvivesBothShapes` 仍硬編該路徑** ⇒ `make test` 的 `parser/dump` 必紅（`match-test.no did not parse`）。與本次改動無關，屬預存缺陷 | `git log --oneline -- tests/match-test.no` |
 
-> 以上都在 `bin/no`（v0.4.19-39-g72e157cb-dirty，2026-11-10）上複現。
+> 以上都在 `bin/no`（v0.4.19-40-g72e157cb-dirty，2026-11-10）上複現。
 > 注意：該 binary 由**共享工作區**建出，含其它 session 未提交的
 > `src/parser/*`、`src/checker/checker.go` 改動；那批改動落地後應重測一遍。
 
-全量執行的 3 個紅檔（**與本輪改動無關**：三檔都不含 `map`，而本輪只動過
-`src/std/collection/map.no` 與新增測試檔）：
+archive 輪全量執行（108 檔）只剩 **1 個紅檔**（`dns.no`、`ecdsa.no` 已轉綠）：
+
+| 檔 | 現象 |
+|---|---|
+| `multipart.no` | `quoted boundary [len]` 失敗，然後 **segmentation fault** |
+
+（下表是上一輪的紀錄，保留供對照：當時 `dns.no` / `ecdsa.no` 也是紅的。）
 
 | 檔 | 現象 |
 |---|---|

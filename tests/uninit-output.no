@@ -13,7 +13,7 @@ uninit-struct {
 ; Case 7: 先賦值再用 → 允許
 ; out ?uninit-struct: ok({val: 42, data: [1, 2, 3]})，供呼叫端讀 out.val
 case7-assign-then-read = () (out ?uninit-struct) {
-    out =  {
+    out = {
         val: 42
         data: [1, 2, 3]
     }

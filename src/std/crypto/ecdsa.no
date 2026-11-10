@@ -239,7 +239,10 @@ bn-mod = (a []byte, m []byte) (out [32]byte) {
 ; 模乘 (a * b) mod m，使用 schoolbook 乘法
 ; a: 被乘數（小端序 32 位元組）
 ; b: 乘數（小端序 32 位元組）
-; m: 模（小端序 32 位元組）
+; m: 模（小端序 32 位元組）。**限制：m 需 ≳ 2^255**（實際只用 P256-P）。
+;    約簡是「每個位置一次 q*m 乘減 + ≤4 次單減」的定額校正，殘量必須落在
+;    m 的數個倍數之內才會收斂；對 1e9 等級的小模數結果不正確（會留下遠大
+;    於 m 的殘量）。小模數請改用 bn-mod 的反覆減法。
 ; out: (a * b) mod m 結果（32 位元組）
 ; [bn-mulmod](#ecdsa.bn-mulmod)
 bn-mulmod = (a []byte, b []byte, m []byte) (out [32]byte) {
@@ -1451,6 +1454,17 @@ ec-scalar-mult = (k [32]byte, p []byte) (r []byte) {
 ; 返回 out [65]byte: 04 || x || y
 ; [ec-point-to-bytes](#ecdsa.ec-point-to-bytes)
 ec-point-to-bytes = (p []byte) (out [65]byte) {
+
+    ; 先把輸出清零：無窮遠點（Z=0）走下面的提前 return，若不預清就會把
+    ; 未初始化的固定陣列內容當成編碼回傳（曾觀測到 `0421 0000…` 這類殘留）。
+    i <- [0..65): {
+        out[i]: {
+            ok -> it = 0
+
+            -> _
+        }
+    }
+
     px = p[0..32]
     py = p[32..64]
     pz = p[64..96]

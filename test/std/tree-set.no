@@ -26,7 +26,7 @@ unwrap = (v ?i64) (found bool, x i64) {
 
 ; 空 AVL 集合：init() 後 size() 回 0、empty() 為真
 t-init = () {
-    s = tree-set {}
+    s = tree-set{}
     s.init()
     runner.eq(s.size(), 0, 'init size == 0')
     e bool = s.empty()
@@ -36,7 +36,7 @@ t-init = () {
 ; add 回報是否新元素：重複加入 30 回 false 且 size 不變（5），
 ; contains 對未加入的 99 回 false 且不新增
 t-add-contains = () {
-    s = tree-set {}
+    s = tree-set{}
     s.init()
     a1 bool = s.add(30)
     runner.is-true(a1, 'add 30')
@@ -56,7 +56,7 @@ t-add-contains = () {
 
 ; 有序性：亂序插入 30/10/20/5/40 後，first() 為最小 5、last() 為最大 40
 t-order = () {
-    s = tree-set {}
+    s = tree-set{}
     s.init()
     s.add(30)
     s.add(10)
@@ -78,7 +78,7 @@ t-order = () {
 ; lower-bound 含等號（20→20、15→20），upper-bound 嚴格大於（20→30）；
 ; 越過所有元素時（100 或上界 40 之後）回 nil
 t-bound = () {
-    s = tree-set {}
+    s = tree-set{}
     s.init()
     s.add(10)
     s.add(20)
@@ -111,7 +111,7 @@ t-bound = () {
 ; remove 分別覆蓋葉子（25）與內部節點（30，刪 25 後只剩右子 35），
 ; 不存在的值回 false；其餘元素仍可查、size 正確
 t-remove = () {
-    s = tree-set {}
+    s = tree-set{}
     s.init()
     s.add(20)
     s.add(10)
@@ -144,7 +144,7 @@ t-remove = () {
 ; 亂序插入 10 個值後用 first + upper-bound 逐一走訪，必須得到 10 步嚴格升序，
 ; 最後一個節點為最大值 50
 t-stress-order = () {
-    s = tree-set {}
+    s = tree-set{}
     s.init()
 
     ; 插入亂序，逐一後繼走訪應為嚴格升序
@@ -177,6 +177,7 @@ t-stress-order = () {
             steps-opt = steps + 1
             steps-opt: {
                 ok -> steps = it
+
                 -> _
             }
         }
@@ -192,7 +193,7 @@ t-stress-order = () {
 
 ; clear() 清空集合：size 歸零、empty 為真、原成員不再 contains
 t-clear = () {
-    s = tree-set {}
+    s = tree-set{}
     s.init()
     s.add(1)
     s.add(2)

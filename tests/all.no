@@ -74,20 +74,24 @@ f(a, 10)
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         sum-opt = sum + i
         sum-opt: {
             ok -> sum = it
+
             ->
         }
     }
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         i-opt = i + 1
         i-opt: {
             ok -> i = it
+
             ->
         }
     }

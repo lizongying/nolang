@@ -8,7 +8,7 @@
 
 ; 初始化：size 為 0 且 is-empty 為 true
 t-init = () {
-    s = hash-set {}
+    s = hash-set{}
     s.init()
     runner.eq(s.size, 0, 'init size == 0')
     yes = s.is-empty()
@@ -17,7 +17,7 @@ t-init = () {
 
 ; add / contains：前兩次加入為新元素（回 true），重複加入回 false；size 只計唯一鍵
 t-add-contains = () {
-    s = hash-set {}
+    s = hash-set{}
     s.init()
     is-new1 = s.add(42)
     runner.is-true(is-new1, 'add 42 is-new')
@@ -38,7 +38,7 @@ t-add-contains = () {
 
 ; remove：刪除存在元素回 true 且 size 減一，再查為 false；刪除不存在元素回 false
 t-remove = () {
-    s = hash-set {}
+    s = hash-set{}
     s.init()
     s.add(10)
     s.add(20)

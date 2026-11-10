@@ -2,11 +2,14 @@
 ; sources: std.no, std-new.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/std.no =====================
+; merged from tests/std.no
 ; merged category 'std' -- members: std-lib.no, win-env-stdin.no
 ; (originals backed up under tests/_archive/std/)
-; ===================== merged from tests/std-lib.no =====================
+...
+
+; merged from tests/std-lib.no
 ; std-lib.no — 方法調用測試
+...
 
 ; [n]t.fill: 全部填充為 val
 [n]t.fill = (val t) {
@@ -57,20 +60,22 @@ print(-1)
 test-reverse()
 print(0)
 
-; ===================== merged from tests/win-env-stdin.no =====================
+; merged from tests/win-env-stdin.no
 ; probe for windows cross-compile: set-env + get-line must lower without
 ; referencing POSIX-only symbols (setenv/__stdinp)
+...
 ok = os.set-env('PROBE', '1')
 print('set-env ok: ', ok)
 line, rok = fs.get-line()
 print('get-line rok: ', rok)
 
-; ===================== merged from tests/std-new.no =====================
+; merged from tests/std-new.no
 ; test-std-new: 验证新增标准库功能
 ;   - str.replace-str + str.fields
 ;   - time 日期解析/格式化
 ;   - encoding/pem
 ;   - fs.read-dir + fs.walk
+...
 
 ; # std/str
 ; # std/time
@@ -78,9 +83,8 @@ print('get-line rok: ', rok)
 ; # std/encoding/base64
 ; # std/fs
 
-; ═══════════════════════════════════════════════
 ; 1. str.replace-str
-; ═══════════════════════════════════════════════
+...
 print('=== str.replace-str ===')
 
 s = 'hello world, hello nolang'
@@ -100,9 +104,8 @@ print(replaced)
 replaced = s.replace-str('', 'X')
 print(replaced)
 
-; ═══════════════════════════════════════════════
 ; 2. str.fields
-; ═══════════════════════════════════════════════
+...
 print('=== str.fields ===')
 
 fstr = '  hello   world  nolang  '
@@ -124,9 +127,8 @@ fstr = '   '
 fields = fstr.fields()
 print('whitespace fields:{fields.len()}')
 
-; ═══════════════════════════════════════════════
 ; 3. time 日期解析/格式化
-; ═══════════════════════════════════════════════
+...
 print('=== time ===')
 
 ; 已知時間戳：2000-01-01 00:00:00 UTC = 946684800
@@ -172,9 +174,8 @@ ts3: {
     err -> print('FAIL: date-only parse error')
 }
 
-; ═══════════════════════════════════════════════
 ; 4. encoding/pem
-; ═══════════════════════════════════════════════
+...
 print('=== encoding/pem ===')
 
 ; 準備測試資料
@@ -213,9 +214,8 @@ decoded: {
     err -> print('PEM decode: ERROR')
 }
 
-; ═══════════════════════════════════════════════
 ; 5. fs.list-dir
-; ═══════════════════════════════════════════════
+...
 print('=== fs.list-dir ===')
 
 entries = fs.list-dir('.')

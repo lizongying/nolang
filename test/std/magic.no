@@ -43,7 +43,7 @@ t-detect-type-txt = () {
     ; 使用 open/write 建立臨時檔案
     tmp = '/tmp/nolang_magic_test.txt'
     fs.remove(tmp)
-    f = fs.open(tmp,  {
+    f = fs.open(tmp, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false

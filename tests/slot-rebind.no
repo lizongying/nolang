@@ -29,10 +29,12 @@ consume = (x i64) (ret i64) {
 
     #{overflow=wrap}
     {
+
         #{overflow=wrap}
         ret-opt = x + 42
         ret-opt: {
             ok -> ret = it
+
             ->
         }
     }

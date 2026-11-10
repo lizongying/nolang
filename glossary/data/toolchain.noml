@@ -84,6 +84,13 @@ no test test/std/
 结构体实例化的左花括号一律紧贴型别名：zip{}、net.conn{...}；
 写成 zip {} 会被 fmt 归一成 zip{}。结构体定义仍是 zip { ... }（带空格），
 两者不要再混。规则落在 src/fmt/expr.go 的 formatStructLiteral。
+
+数组/切片字面量的分行按元素性质分流：
+- 字串阵列无条件每行一个元素，不看元素个数、也不看原始码是单行还是
+  同行塞了好几个；空阵列 [] 例外。多行输出统一带尾逗号。
+- 纯量（num/byte/char/bool）>8 个才每行 8 个、≤8 个维持单行。
+- 混合型别 / 含运算式且原始码跨多行者，保留原分行。
+规则落在 src/fmt/expr.go 的 formatSliceLiteral。
 `
       syntax: `
 no fmt path/to/file.no

@@ -805,6 +805,7 @@ utils.no 쓰기 오류: %v
   'nmxs8sop': 'syslog: %v'
   'nmxsz1go': '  no build -target wasm32-wasi main.no'
   'nnqq67ko': '\'%s\'의 타입을 추론할 수 없습니다: %s()에는 왼쪽의 명시적 타입 주석이 필요합니다(예: `name []byte = %s(n)`)'
+  'nu59u6hp': '구조체 리터럴 필드 \'%s\'에 값이 없습니다. \'name: value\'로 쓰거나 이 줄을 삭제하세요 (\'field: []\' 다음 줄의 타입 이름은 타입 주석이 아닙니다. 빈 vec의 요소 타입은 구조체 필드 선언에서 옵니다)'
   'nwtpvei9': 'embed: fs.embed에는 디렉터리가 필요한데 파일입니다: %s (해석 경로: %s)'
   'nx1476j3': '  no pack nogit.no                 단일 소스 파일 묶기'
   'nz3ol1c4': 'ESM 모듈 %q이(가) package.noml의 dependencies에 선언되지 않았습니다. dependencies: [\'%s:^latest\'](또는 dev-dependencies)를 추가하고 npm install을 실행하세요'

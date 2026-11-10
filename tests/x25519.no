@@ -1,6 +1,6 @@
 ; merged category 'x25519' -- members: diag-x25519.no, x25519-fe-diag.no
 ; (originals backed up under tests/_archive/x25519/)
-; ===================== merged from tests/diag-x25519.no =====================
+; merged from tests/diag-x25519.no
 ; test-diag-x25519 — 診斷 x25519 對特定純量 [1..32] 是否輸出全零
 ; 用 hex-to-bytes 建構純量（與 RFC 測試相同路徑），排除純量建構的編譯器問題。
 ; 預期值由正確的 Python 參考實作（X25519, a24=121665, RFC 7748 §6.1 驗證）計算：
@@ -13,6 +13,7 @@
 ;   * std 的 x25519 實作對 RFC 官方向量（priv 77076d0a...）算出
 ;     8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a，與 RFC 完全一致
 ; 所以壞的是這個測試的期望常數，不是 std 的 x25519 實作。
+...
 
 ; 把 64 字元的十六進位字串解成 32 位元組（小寫 a-f 與大寫 A-F 都接受）
 ; hex-str str: 長度至少 64 的 ASCII hex 字串
@@ -117,10 +118,11 @@ i <- [0..32): {
     }
 }
 
-; ===================== merged from tests/x25519-fe-diag.no =====================
+; merged from tests/x25519-fe-diag.no
 ; test-x25519-fe-diag — 隔離診斷每個 fe-* 原語（無 for 循環版本，避開 codegen 迴歸）
 ; 直接餵 []i64 / [32]byte，打印輸出 limb，供 Python 以「域值 mod p」獨立對照。
 ; # std/crypto/x25519
+...
 
 A []i64 = with-len(10)
 A[0] = 11111

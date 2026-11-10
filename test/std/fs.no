@@ -38,7 +38,7 @@ t-open-write-read = () {
     fs.remove(TMP-FILE)
 
     ; 開啟檔案寫入
-    f = fs.open(TMP-FILE,  {
+    f = fs.open(TMP-FILE, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -64,7 +64,7 @@ t-open-write-read = () {
     runner.is-true(yes, 'written file exists')
 
     ; 讀取檔案
-    f-r = fs.open(TMP-FILE,  {
+    f-r = fs.open(TMP-FILE, {
         mode: file-mode.read
         perm: file-perm.perm-644
         excl: false
@@ -99,7 +99,7 @@ t-stat-size = () {
 
     ; 建立檔案並檢查大小
     fs.remove(TMP-FILE)
-    f = fs.open(TMP-FILE,  {
+    f = fs.open(TMP-FILE, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false
@@ -138,7 +138,7 @@ t-copy-file = () {
     fs.remove(TMP-FILE2)
 
     ; 建立來源檔案
-    f = fs.open(TMP-FILE,  {
+    f = fs.open(TMP-FILE, {
         mode: file-mode.write
         perm: file-perm.perm-644
         excl: false

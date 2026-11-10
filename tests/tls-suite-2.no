@@ -2,9 +2,10 @@
 ; sources: tls-partial.no, tls-prf-only.no
 ; originals recoverable from git HEAD (ed7b5236)
 
-; ===================== merged from tests/tls-partial.no =====================
+; merged from tests/tls-partial.no
 ; test-tls-partial — 部分 TLS 測試
 ; # std/net/tls
+...
 
 print('=== TLS Partial Tests ===')
 
@@ -54,9 +55,10 @@ print('PASS: tls-get-u24')
 
 print('=== Done ===')
 
-; ===================== merged from tests/tls-prf-only.no =====================
+; merged from tests/tls-prf-only.no
 ; test-tls-prf-only — 只測試 prf
 ; # std/net/tls
+...
 
 print('before prf')
 secret []byte = with-cap(4)
