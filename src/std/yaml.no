@@ -2689,6 +2689,15 @@ yaml-parser.skip-doc-preamble = () {
         c = .cur()
         c == 35 || c == 37 -> {
             .skip-to-eol()
+
+            ; `%` 指令行必須自己推到行尾：`skip-to-eol` 只認 `#` 註釋，
+            ; 對 `%YAML` / `%TAG` 一個字節都不前進，cur 仍停在 `%` 上，
+            ; 下面的 newline() 於是回 false，`continue` 就成死循環
+            ; （2026-11-11 修：`yaml.parse('%YAML 1.2\n---\na: 1')` 曾永久卡死）。
+            !! {
+                .at-eol() -> break
+                .advance()
+            }
             .newline()
             continue
         }

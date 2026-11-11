@@ -8,6 +8,7 @@ This page collects Nolang release records for each version, kept consistent with
 
 ## Unreleased
 
+- feat(mir): shrink the `str` descriptor from 24B to 16B — `%str-long = { i32 len, i32 cap, i8* data }` with `u32` len/cap internally while every public API (`len-bytes()` / `len()` / `cap()` / `_len` / `_cap` / `_set-len` / `_set-cap`) stays `i64`; the `[]str` stride, `os.args()`, `?str`/enum payload slots, global string constants and runtime helpers follow the new layout; `txt` keeps its 256B layout. Docs updated for lang/str, lang/memory, std/basic-types, std/core-library and their English i18n copies
 - feat(parser): add the block form of match subject `{ body }: { arms }` — captures `?=` failures inside the body so functions without a `?T` result param can handle errors locally; nearest (innermost) block match wins, one failure stops the whole body, standard three-state exhaustiveness applies
 - feat(fmt): round-trip `}: {` verbatim and keep the sugar AST pristine across H0 expansion
 - docs(lang): document the three match subject forms (value / expression / block) in the syntax guide, AGENTS.md and the nolang-syntax skill

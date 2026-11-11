@@ -2,8 +2,10 @@
 ;
 ; 執行：no test test/std/markdown.no
 ; 覆蓋：escape-html / prefix-count / heading / setext-level / thematic-break /
-;       list-item / blockquote / fence / table-separator / inline / to-html
-;       （段落、標題、無序/有序列表、圍欄代碼、引用、連結、強調、表格）
+;       list-item / blockquote / fence / table-separator / inline / to-html /
+;       is-word-byte / list-content / code-close / table-row / join-paragraph /
+;       render-code / read-line / render（2026-11-11 補齊，覆蓋率 21/21）
+;       （段落、標題、無序/有序列表、圍欄代碼、引用、連結、強調、表格、任務列表）
 
 # /test/runner
 
@@ -136,6 +138,97 @@ t-to-html-table = () {
 </tbody>
 </table>\n', 'to-html table')
 }
+
+; 驗證 markdown.is-word-byte：只有 0-9 / A-Z / a-z 算單詞字節，標點與非 ASCII 都不算
+t-is-word-byte = () {
+    runner.is-true(markdown.is-word-byte(48), 'is-word-byte 0 -> true')
+    runner.is-true(markdown.is-word-byte(57), 'is-word-byte 9 -> true')
+    runner.is-true(markdown.is-word-byte(65), 'is-word-byte A -> true')
+    runner.is-true(markdown.is-word-byte(90), 'is-word-byte Z -> true')
+    runner.is-true(markdown.is-word-byte(97), 'is-word-byte a -> true')
+    runner.is-true(markdown.is-word-byte(122), 'is-word-byte z -> true')
+    runner.is-false(markdown.is-word-byte(47), 'is-word-byte / -> false')
+    runner.is-false(markdown.is-word-byte(58), 'is-word-byte : -> false')
+    runner.is-false(markdown.is-word-byte(32), 'is-word-byte space -> false')
+    runner.is-false(markdown.is-word-byte(200), 'is-word-byte 200 -> false')
+}
+
+; 驗證 markdown.list-content：GFM 任務列表 [ ] / [x] / [X] 產出 disabled checkbox，其餘走行內渲染
+t-list-content = () {
+    eq-str(markdown.list-content('[ ] todo'), '<input type="checkbox" disabled> todo', 'list-content unchecked')
+    eq-str(markdown.list-content('[x] done'), '<input type="checkbox" checked disabled> done', 'list-content checked x')
+    eq-str(markdown.list-content('[X] done'), '<input type="checkbox" checked disabled> done', 'list-content checked X')
+    eq-str(markdown.list-content('plain **b**'), 'plain <strong>b</strong>', 'list-content inline')
+    eq-str(markdown.list-content('  [ ] pad  '), '<input type="checkbox" disabled> pad', 'list-content trims')
+}
+
+; 驗證 markdown.code-close：同種 marker 且長度不小於開柵寬度（且至少 3）才算關閉
+t-code-close = () {
+    runner.is-true(markdown.code-close('```', 96, 3), 'close ``` == open 3')
+    runner.is-true(markdown.code-close('`````', 96, 3), 'close 5 >= open 3')
+    runner.is-true(markdown.code-close('  ~~~  ', 126, 3), 'close tilde trimmed')
+    runner.is-false(markdown.code-close('``', 96, 3), 'close 2 < 3 -> false')
+    runner.is-false(markdown.code-close('```', 126, 3), 'close backtick vs tilde -> false')
+    runner.is-false(markdown.code-close('````', 96, 5), 'close 4 < open 5 -> false')
+}
+
+; 驗證 markdown.table-row：去首尾 | 後按 | 切格，逐格行內渲染並包成 <tag>
+t-table-row = () {
+    eq-str(markdown.table-row('a | b', 'th'), '<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n', 'table-row th')
+    eq-str(markdown.table-row('| 1 | 2 |', 'td'), '<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n', 'table-row td trims pipes')
+    eq-str(markdown.table-row('**x**', 'td'), '<tr>\n<td><strong>x</strong></td>\n</tr>\n', 'table-row inline')
+}
+
+; 驗證 markdown.join-paragraph：普通行以 \n 連接；hard-break 時去掉行尾兩空格並改接 <br>
+t-join-paragraph = () {
+    eq-str(markdown.join-paragraph('p1', 'p2', false), 'p1\np2', 'join-paragraph soft')
+    eq-str(markdown.join-paragraph('p1', 'p2  ', true), 'p1<br>\np2', 'join-paragraph hard')
+    eq-str(markdown.join-paragraph('a', '  b  ', false), 'a\nb', 'join-paragraph trims line')
+
+    ; 空段落時會留下一個前導 \n（to-html 只在 paragraph 非空時才呼叫，故實際不可達）
+    eq-str(markdown.join-paragraph('', 'x', false), '\nx', 'join-paragraph empty paragraph')
+}
+
+; 驗證 markdown.render-code：info 非空時掛 class="language-<info>"，內容與 info 都做 HTML 轉義
+t-render-code = () {
+    eq-str(markdown.render-code('a < b', ''), '<pre><code>a &lt; b</code></pre>\n', 'render-code no info')
+    eq-str(markdown.render-code('x = 1', 'js'), '<pre><code class="language-js">x = 1</code></pre>\n', 'render-code js')
+    eq-str(markdown.render-code('y', '<b>'), '<pre><code class="language-&lt;b&gt;">y</code></pre>\n', 'render-code escapes info')
+}
+
+; 驗證 markdown.read-line：按 \n 切行並回傳下一行偏移；pos 越界時 valid 為 false
+t-read-line = () {
+    l0 = markdown.read-line('ab\ncd', 0)
+    eq-str(l0.text, 'ab', 'read-line first text')
+    runner.eq(l0.next-pos, 3, 'read-line first next-pos == 3')
+    runner.is-true(l0.valid, 'read-line first valid')
+
+    l1 = markdown.read-line('ab\ncd', 3)
+    eq-str(l1.text, 'cd', 'read-line second text')
+    runner.eq(l1.next-pos, 5, 'read-line second next-pos == 5 (no trailing newline)')
+    runner.is-true(l1.valid, 'read-line second valid')
+
+    ; 結尾有換行時，下一行偏移指向字串末端
+    l2 = markdown.read-line('ab\ncd\n', 3)
+    eq-str(l2.text, 'cd', 'read-line trailing newline text')
+    runner.eq(l2.next-pos, 6, 'read-line trailing newline next-pos == 6')
+
+    l3 = markdown.read-line('ab\ncd', 9)
+    runner.is-false(l3.valid, 'read-line pos >= len -> invalid')
+    eq-str(l3.text, '', 'read-line invalid text empty')
+
+    l4 = markdown.read-line('', 0)
+    runner.is-false(l4.valid, 'read-line empty source -> invalid')
+}
+
+; 驗證 markdown.render：to-html 的語義別名，輸出逐字節相同
+t-render = () {
+    eq-str(markdown.render('# T'), '<h1>T</h1>\n', 'render h1')
+    eq-str(markdown.render(''), '', 'render empty')
+    eq-str(markdown.render('- a\n- b'), markdown.to-html('- a\n- b'), 'render == to-html list')
+    eq-str(markdown.render('> q'), markdown.to-html('> q'), 'render == to-html quote')
+}
+
 p1 = runner.test('markdown.escape-html', t-escape)
 p2 = runner.test('markdown.prefix-count', t-prefix)
 p3 = runner.test('markdown.heading', t-heading)
@@ -145,6 +238,14 @@ p6 = runner.test('markdown.inline', t-inline)
 p7 = runner.test('markdown.to-html', t-to-html)
 p8 = runner.test('markdown.to-html-code', t-to-html-code)
 p9 = runner.test('markdown.to-html-table', t-to-html-table)
+p10 = runner.test('markdown.is-word-byte', t-is-word-byte)
+p11 = runner.test('markdown.list-content', t-list-content)
+p12 = runner.test('markdown.code-close', t-code-close)
+p13 = runner.test('markdown.table-row', t-table-row)
+p14 = runner.test('markdown.join-paragraph', t-join-paragraph)
+p15 = runner.test('markdown.render-code', t-render-code)
+p16 = runner.test('markdown.read-line', t-read-line)
+p17 = runner.test('markdown.render', t-render)
 total = runner.summary()
 f = runner.failed-count()
 {

@@ -461,7 +461,7 @@ func buildForwardCSpecs() map[string]cCallSpec {
 		},
 		"getpwuid": getpwuidSpec(),
 		"getgrgid": getgrgidSpec(),
-		"ttyname": ttynameSpec(),
+		"ttyname":  ttynameSpec(),
 		"mkdtemp": {
 			// mkdtemp(tmpl) -> (name, ok). Like mkstemp it rewrites the template
 			// buffer in place and returns the same pointer (NULL on failure), so
@@ -985,7 +985,7 @@ func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
 // storeOptionFromPairStr collapses a (str-value, ok-flag) pair into a `?str`
 // option written to result 0. okFlag (i1) selects the tag (0 = ok, 1 = nil);
 // strLongReg is a fully materialised %str-long aggregate ({ len, cap, data* }).
-// The %str-long is 24 bytes and fits the default inline option slot; if the
+// The %str-long is 16 bytes and fits the default inline option slot; if the
 // configured inline threshold were ever lowered below that, a boxed layout would
 // be needed but no runtime-tag boxed helper exists, so fail loudly instead of
 // silently producing a wrong layout (matches the RetCStrToStr ?str path).
@@ -1013,13 +1013,7 @@ func (c *codegen) storeOptionFromPairStr(inst *Inst, strLongReg, okFlag string) 
 // value (no copy). Used to feed storeOptionFromPairStr when the backing bytes
 // are produced as a (len, cap, ptr) triple (e.g. sysctl's malloc'd buffer).
 func (c *codegen) buildStrLongReg(lenReg, capReg, dataReg string) string {
-	s0 := c.treg("slr0")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long zeroinitializer, i64 %s, 0\n", s0, lenReg))
-	s1 := c.treg("slr1")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, capReg))
-	s2 := c.treg("slr2")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, dataReg))
-	return s2
+	return c.strLongFromParts(lenReg, capReg, dataReg)
 }
 
 // storePairResult fills result index 1 when the C return register carries it.
@@ -1299,11 +1293,5 @@ func (c *codegen) strLongFromBuffer(src, lenR string) string {
 	buf := c.treg("bsb")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", buf, sz))
 	c.sb.WriteString(fmt.Sprintf("  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 0)\n", buf, src, sz))
-	r0 := c.treg("bs0")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, lenR))
-	r1 := c.treg("bs1")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, lenR))
-	r2 := c.treg("bs2")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, buf))
-	return r2
+	return c.strLongFromParts(lenR, lenR, buf)
 }

@@ -43,10 +43,40 @@ type LowerDiag struct {
 
 // ovfFlagMask is the union of the five `#{overflow = ...}` HIR flag bits (see
 // hir.FlagOverflowWrap). A node with ANY of these bits carries an explicit
-// overflow annotation, which lowers to Inst.OvfAnnotated on its arithmetic
-// instructions so codegen skips the option-wrapping runtime overflow check.
+// overflow annotation. lowerStmt decodes the bits with overflowModeFromFlags
+// into a mode string; arithmetic Emits copy BOTH the resulting OvfAnnotated
+// bool (which makes codegen skip the default option-wrapping runtime check)
+// and the OvfMode string (which lets codegen pick wrap/clamp0/min/max/saturate).
+// Do NOT collapse the mask to a bool here — that was the bug that made all
+// five modes behave like wrap.
 const ovfFlagMask = hir.FlagOverflowWrap | hir.FlagOverflowClamp0 | hir.FlagOverflowMin |
 	hir.FlagOverflowMax | hir.FlagOverflowSaturate
+
+// overflowModeFromFlags decodes the five mutually exclusive HIR overflow bits
+// back into the normalized `#{overflow = ...}` mode. The flags are the ONLY
+// representation that survives HIR rebuild / AST disk cache (the mode string
+// itself lives on parser AST nodes, which HIR regeneration reconstructs from
+// flags), so this is the canonical decode point on the way to MIR.
+//
+// Before this existed, hir2mir OR-ed ovfFlagMask into a single bool and every
+// annotated arithmetic instruction degraded to `wrap`; clamp0/min/max/
+// saturate were accepted by the parser, offered by LSP quickfix and documented,
+// but codegen never distinguished them.
+func overflowModeFromFlags(flags uint32) string {
+	switch {
+	case flags&hir.FlagOverflowWrap != 0:
+		return "wrap"
+	case flags&hir.FlagOverflowClamp0 != 0:
+		return "clamp0"
+	case flags&hir.FlagOverflowMin != 0:
+		return "min"
+	case flags&hir.FlagOverflowMax != 0:
+		return "max"
+	case flags&hir.FlagOverflowSaturate != 0:
+		return "saturate"
+	}
+	return ""
+}
 
 type loopCtx struct {
 	exit   BlockID
@@ -295,6 +325,13 @@ type lowerer struct {
 	// exit. Arithmetic Emits check it to set Inst.OvfAnnotated, which codegen
 	// consults to SKIP the runtime overflow check on the option-wrapping path.
 	stmtOvfAnnotated bool
+	// stmtOvfMode is the normalized mode of the innermost `#{overflow = ...}`
+	// annotation in scope. lowerStmt inherits it into nested statements exactly
+	// like stmtOvfAnnotated; arithmetic emits copy it onto Inst.OvfMode so
+	// codegen can pick the value taken on overflow instead of always wrapping.
+	// Function-level annotations are NOT merged here: `#{overflow}` is an L3
+	// (single-statement) key — see docs/docs/lang/annotation-scope.md §4.1.
+	stmtOvfMode string
 
 	// exprSink is the value slot that a control-flow expression (a `match`/`if`
 	// used as a value, e.g. `r = n: { ok(v) -> v+1 }`) must write its RESULT
@@ -618,8 +655,10 @@ func enumFieldIndex(v *VariantInfo, name string) int {
 // every variant, hence the enum's slot width is the max over variants.
 func (l *lowerer) enumFieldSlots(raw string) int64 {
 	switch raw {
-	case "str", "vec":
-		return 3 // %str-long / %vec = 24 bytes
+	case "str":
+		return 2 // %str-long = { i32, i32, i8* } = 16 bytes
+	case "vec":
+		return 3 // %vec = 24 bytes
 	}
 	if strings.HasPrefix(raw, "[]") {
 		return 3
@@ -1286,9 +1325,12 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 	// itself owns: the tag is Inline (the field slot owns no SEPARATE heap
 	// object) precisely so a drop walk stops here instead of freeing the buffer
 	// twice — the descriptor's own drop already freed it.
+	// The physical %str-long header is { i32 len, i32 cap, i8* data }: both
+	// counters are u32 in storage, while every Nolang-facing API is i64
+	// (str.len-bytes()/str.cap() and the private _len/_cap builtins widen).
 	l.mod.StructFields["str"] = []FieldInfo{
-		{Name: "len", TypeRaw: "i64", Tag: FieldTagInline},
-		{Name: "cap", TypeRaw: "i64", Tag: FieldTagInline},
+		{Name: "len", TypeRaw: "u32", Tag: FieldTagInline},
+		{Name: "cap", TypeRaw: "u32", Tag: FieldTagInline},
 		{Name: "data", TypeRaw: "str", Tag: FieldTagInline},
 	}
 	l.mod.StructFields["vec"] = []FieldInfo{
@@ -2488,6 +2530,7 @@ func (l *lowerer) lowerFunction(name string, hirID int32) {
 	// annotations OR on top of it in lowerStmt.
 	l.funcOvfAnnotated = false
 	l.stmtOvfAnnotated = false
+	l.stmtOvfMode = ""
 	n := l.pkg.Node(hirID)
 	if n != nil && n.Flags&ovfFlagMask != 0 {
 		l.funcOvfAnnotated = true
@@ -2996,15 +3039,21 @@ func (l *lowerer) tryUnsignedLitFold(nodeID int32, raw string) (ValueID, bool) {
 // annotation — or one nested inside an annotated statement, or any statement
 // of an annotated function — makes every arithmetic instruction it lowers
 // carry Inst.OvfAnnotated, which codegen consults to skip the option-wrapping
-// runtime overflow check (the annotation opts into wrap/clamp/... semantics
-// instead of the default err-on-overflow capture).
+// runtime overflow check. The accompanying Inst.OvfMode records WHICH value
+// the annotation asks for on overflow; without it codegen would still emit a
+// bare add and every mode would degrade to wrap.
 func (l *lowerer) lowerStmt(id int32) {
 	saved := l.stmtOvfAnnotated
+	savedMode := l.stmtOvfMode
 	if n := l.pkg.Node(id); n != nil && n.Flags&ovfFlagMask != 0 {
 		l.stmtOvfAnnotated = true
+		if mode := overflowModeFromFlags(n.Flags); mode != "" {
+			l.stmtOvfMode = mode
+		}
 	}
 	l.lowerStmtInner(id)
 	l.stmtOvfAnnotated = saved
+	l.stmtOvfMode = savedMode
 }
 
 func (l *lowerer) lowerStmtInner(id int32) {
@@ -6618,14 +6667,14 @@ func (l *lowerer) foldStrLitConst(initNode *hir.Node, name string) string {
 		Type:      l.b.Type("str"),
 		ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
 	})
-	return fmt.Sprintf("%%str-long { i64 %d, i64 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
+	return fmt.Sprintf("%%str-long { i32 %d, i32 %d, i8* bitcast ([%d x i8]* @%s to i8*) }", nb, nb, nb, backing)
 }
 
 // foldOptionGlobalConst folds a top-level option-typed `let` (e.g. `v ?i64 = 7`)
 // into a `%option { i64 tag, [N x i64] slot }` LLVM constant. It mirrors the
 // runtime layout produced by emitOptionWrap: tag 0 (ok) plus the payload stored
 // inline in the slot's first i64 (scalars) or laid out word-by-word for
-// aggregates (%str-long / %vec are exactly 24 bytes = 3 i64s). Returns "" when
+// aggregates (%str-long is 16 bytes = 2 i64s, %vec 24 bytes = 3 i64s). Returns "" when
 // the element cannot be folded, leaving the global zero-initialized rather than
 // emitting malformed IR.
 func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name string) string {
@@ -6635,9 +6684,9 @@ func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name st
 		n = 1
 	}
 	// String option (`v ?str = 'hello'`): the element is a %str-long
-	// {i64 len, i64 cap, ptr data} — exactly 24 bytes = 3 i64s. We cannot
+	// {u32 len, u32 cap, i8* data} — exactly 16 bytes = 2 i64s. We cannot
 	// `bitcast` an aggregate literal (the LLVM assembler rejects it), so lay the
-	// three words out explicitly into the payload slot.
+	// two words out explicitly into the payload slot (word 0 packs len+cap).
 	if initNode.Kind == hir.KStrLit {
 		text := l.pkg.Str(initNode.S)
 		nb := len([]byte(text))
@@ -6647,11 +6696,17 @@ func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name st
 			Type:      l.b.Type("str"),
 			ConstText: fmt.Sprintf("[%d x i8] c\"%s\"", nb, dataStr(text)),
 		})
+		if n < 2 {
+			return "" // a 16-byte %str-long cannot fit a smaller payload slot
+		}
 		parts := make([]string, n)
-		parts[0] = fmt.Sprintf("i64 %d", nb)
-		parts[1] = fmt.Sprintf("i64 %d", nb)
-		parts[2] = fmt.Sprintf("i64 ptrtoint([%d x i8]* @%s to i64)", nb, backing)
-		for i := 3; i < n; i++ {
+		// The 16-byte descriptor is { i32 len, i32 cap, i8* data }: the first
+		// i64 word packs len in the low 32 bits and cap in the high 32 bits
+		// (little-endian), the second word is the data pointer.
+		packed := uint64(uint32(nb)) | (uint64(uint32(nb)) << 32)
+		parts[0] = fmt.Sprintf("i64 %d", packed)
+		parts[1] = fmt.Sprintf("i64 ptrtoint([%d x i8]* @%s to i64)", nb, backing)
+		for i := 2; i < n; i++ {
 			parts[i] = "i64 0"
 		}
 		slot := fmt.Sprintf("[%d x i64] [%s]", n, strings.Join(parts, ", "))
@@ -7499,6 +7554,15 @@ func (l *lowerer) evalConst(id int32, env map[string]comptimeVal, stack []string
 	case hir.KStrLit:
 		res, ok = comptimeVal{kind: cvStr, s: l.pkg.Str(n.S)}, true
 	case hir.KPrefix:
+		// A `-` under a non-wrap `#{overflow = ...}` must not be folded by the
+		// plain two's-complement rule: -MIN is exactly the case where the
+		// annotation picks a different value. Defer to the runtime path so the
+		// emitted OpNeg carries Inst.OvfMode and codegen applies the clamp.
+		if l.pkg.Str(n.S) == "-" &&
+			((n.Flags&ovfFlagMask != 0 && overflowModeFromFlags(n.Flags) != "wrap") ||
+				(l.stmtOvfAnnotated && l.stmtOvfMode != "" && l.stmtOvfMode != "wrap")) {
+			return comptimeVal{}, false
+		}
 		var operand int32
 		for _, c := range l.pkg.Children(id) {
 			operand = c
@@ -9327,7 +9391,9 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		}
 		v := l.b.Emit(op, rt, []ValueID{ov}, "")
 		if l.stmtOvfAnnotated && op == OpNeg && v != NoVal {
-			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].OvfAnnotated = true
+			last := &l.b.Mod.Insts[len(l.b.Mod.Insts)-1]
+			last.OvfAnnotated = true
+			last.OvfMode = l.stmtOvfMode
 		}
 		return v
 	case hir.KInfix:
@@ -9922,7 +9988,9 @@ func (l *lowerer) lowerExpr(id int32) ValueID {
 		// the arithmetic instruction so codegen's option-wrapping path skips the
 		// runtime overflow check (the annotation chooses wrap/clamp/... instead).
 		if l.stmtOvfAnnotated && isArithOrBitwiseOp(op) && v != NoVal {
-			l.b.Mod.Insts[len(l.b.Mod.Insts)-1].OvfAnnotated = true
+			last := &l.b.Mod.Insts[len(l.b.Mod.Insts)-1]
+			last.OvfAnnotated = true
+			last.OvfMode = l.stmtOvfMode
 		}
 		return v
 	case hir.KCall:
@@ -12712,9 +12780,9 @@ func (l *lowerer) lowerCall(n *hir.Node) ValueID {
 	// receiver. Without a receiver value, lowerCallArgs does not prepend one,
 	// so inst.Args[0] is the first REAL argument (e.g. `s str`), which
 	// emitCallBody's `cf.IsMethod && i == 0` branch then mistakes for the
-	// receiver — passing a %str-long alloca (24 bytes) where the callee
+	// receiver — passing a %str-long alloca (16 bytes) where the callee
 	// expects a %json_json struct (22KB), causing a SIGSEGV when the callee
-	// reads self fields past the 24-byte boundary.
+	// reads self fields past the 16-byte boundary.
 	//
 	// Fix: synthesize a zero-initialized receiver of the callee's declared
 	// receiver type and set recvV to it, so lowerCallArgs prepends it as the
@@ -15272,7 +15340,7 @@ func (l *lowerer) lowerAssignNode(assignID int32) ValueID {
 
 // optionPayloadCoerced converts v to the option element's raw type when the two
 // differ inside the str/txt family. That is the one implicit coercion nolang
-// allows which also changes the LAYOUT: `str` is a heap-backed 24-byte
+// allows which also changes the LAYOUT: `str` is a heap-backed 16-byte
 // %str-long, while `txt` is a 256-byte stack buffer `{ [255 x i8], i8 }`.
 //
 // Wrapping without converting put a %str-long into a slot that the read side

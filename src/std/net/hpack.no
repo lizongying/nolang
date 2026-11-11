@@ -383,13 +383,21 @@ tables.dyn-add = (name str, value str) {
     {
         dn0-tmp = ''.with-len(name.len-bytes())
         j <- [0..name.len-bytes()): {
-            dn0-tmp[j] = name.byte(j)
+            dn0-tmp[j]: {
+                ok -> it = name.byte(j)
+
+                -> _
+            }
         }
 
         .dyn-names[0] ?= dn0-tmp
         dv0-tmp = ''.with-len(value.len-bytes())
         j <- [0..value.len-bytes()): {
-            dv0-tmp[j] = value.byte(j)
+            dv0-tmp[j]: {
+                ok -> it = value.byte(j)
+
+                -> _
+            }
         }
 
         .dyn-values[0] ?= dv0-tmp
@@ -989,11 +997,12 @@ tables.decode-headers = (data str) (names [128]str, values [128]str, count i64, 
     count = 0
 
     ; 初始化輸出陣列
-    i <- [0..128): {
-        names[i] = ''
-
-        values[i] = ''
-    }
+    ; ⚠️ 不能寫成 `i <- [0..128): { names[i] = '' }`——`[N]str` 型別的**結果
+    ; 參數**在編譯器裡沒有零值填充，第一次下標寫就會把未初始化記憶體當成既有的
+    ; `str` 去釋放，實測 SIGSEGV（見 MEMORY-RISKS）。`zero()` 是
+    ; `math.arr-zero` 的接收者形態，對 `[N]str` 就是整塊 memset。
+    names.zero()
+    values.zero()
     n = data.len-bytes()
     n == 0 -> {
         ok = true

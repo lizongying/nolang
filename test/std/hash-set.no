@@ -1,8 +1,8 @@
 ; std-hash-set.no — collection/hash-set 模組測試
 ;
 ; 執行：no test test/std/hash-set.no
-; 覆蓋：init / add / contains / remove / size / is-empty
-; 注意：hash-set.len() 和 hash-set.is-empty 可能存在跨模組解析問題
+; 覆蓋：init / add / contains / remove / size / is-empty / hash / len / clear / for-each
+; 註：`hash-set.len()` 早期懷疑有跨模組解析問題，實測正常（t-len-clear 直接斷言）。
 
 # /test/runner
 
@@ -57,11 +57,54 @@ t-remove = () {
     runner.is-false(not-removed, 'remove non-existent returns false')
 }
 
+; hash：槽位 = key & (cap-1)，cap 固定 64，因此 64 的倍數全落到 0
+t-hash = () {
+    s = hash-set{}
+    s.init()
+    runner.eq(s.hash(0), 0, 'hash 0 -> slot 0')
+    runner.eq(s.hash(42), 42, 'hash 42 -> slot 42')
+    runner.eq(s.hash(63), 63, 'hash 63 -> slot 63')
+    runner.eq(s.hash(64), 0, 'hash 64 wraps to slot 0')
+    runner.eq(s.hash(65), 1, 'hash 65 -> slot 1')
+}
+
+; len / clear：len 鏡射 size；clear 把 occ 全部歸零且 size 復位
+t-len-clear = () {
+    s = hash-set{}
+    s.init()
+    s.add(1)
+    s.add(2)
+    runner.eq(s.len(), 2, 'len == 2')
+    s.clear()
+    runner.eq(s.len(), 0, 'len == 0 after clear')
+    runner.is-true(s.is-empty(), 'is-empty after clear')
+    runner.is-false(s.contains(1), 'cleared element gone')
+    is-new = s.add(1)
+    runner.is-true(is-new, 're-add after clear is new')
+}
+
+; for-each：本語言無回呼，方法只回傳「槽位下標最大的已佔用元素」
+t-for-each = () {
+    s = hash-set{}
+    s.init()
+    s.add(7)
+    s.add(42)
+    runner.eq(s.for-each(), 42, 'last occupied slot (42) wins')
+
+    s2 = hash-set{}
+    s2.init()
+    s2.add(3)
+    runner.eq(s2.for-each(), 3, 'single element returned as-is')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('hash-set.init', t-init)
 p2, f2 = runner.test('hash-set.add/contains', t-add-contains)
 p3, f3 = runner.test('hash-set.remove', t-remove)
+p4, f4 = runner.test('hash-set.hash', t-hash)
+p5, f5 = runner.test('hash-set.len/clear', t-len-clear)
+p6, f6 = runner.test('hash-set.for-each', t-for-each)
 
 total = runner.summary()
 f = runner.failed-count()

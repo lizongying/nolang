@@ -63,32 +63,24 @@ encode = (data []byte, table str) (out str) {
             -> _
         }
 
-        {
-
-            #{overflow=wrap}
-            out[j + 1] ?= table[((b0 & 3) << 4) | (b1 >> 4)]
-        }: {
-            err -> _
+        ; 下標算術（j + 1）與移位折疊都要宣告溢位取值，否則 checker 發 xmicjezl
+        #{overflow=wrap}
+        out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]: {
+            ok -> it
 
             -> _
         }
 
-        {
-
-            #{overflow=wrap}
-            out[j + 2] ?= table[((b1 & 15) << 2) | (b2 >> 6)]
-        }: {
-            err -> _
+        #{overflow=wrap}
+        out[j + 2] = table[((b1 & 15) << 2) | (b2 >> 6)]: {
+            ok -> it
 
             -> _
         }
 
-        {
-
-            #{overflow=wrap}
-            out[j + 3] ?= table[b2 & 63]
-        }: {
-            err -> _
+        #{overflow=wrap}
+        out[j + 3] = table[b2 & 63]: {
+            ok -> it
 
             -> _
         }
@@ -137,14 +129,17 @@ encode = (data []byte, table str) (out str) {
                 -> _
             }
 
+            #{overflow=wrap}
             out[j + 1] = table[(b0 & 3) << 4]: {
                 ok -> it
 
                 -> _
             }
 
+            #{overflow=wrap}
             out[j + 2] = PAD
 
+            #{overflow=wrap}
             out[j + 3] = PAD
         }
 
@@ -155,6 +150,7 @@ encode = (data []byte, table str) (out str) {
                 -> 0
             }
 
+            #{overflow=wrap}
             b1 = data[i + 1]: {
                 ok -> it
 
@@ -167,18 +163,21 @@ encode = (data []byte, table str) (out str) {
                 -> _
             }
 
+            #{overflow=wrap}
             out[j + 1] = table[((b0 & 3) << 4) | (b1 >> 4)]: {
                 ok -> it
 
                 -> _
             }
 
+            #{overflow=wrap}
             out[j + 2] = table[(b1 & 15) << 2]: {
                 ok -> it
 
                 -> _
             }
 
+            #{overflow=wrap}
             out[j + 3] = PAD
         }
     }

@@ -1,88 +1,433 @@
 ; std-path.no — path 模組測試
 ;
 ; 執行：no test test/std/path.no
-; 覆蓋：path.base / path.dir / path.ext / path.is-abs / path.split
-; 未測：path.join / path.clean（原地修改字串導致 BPT trap，預存 codegen bug）
-;       path.current / path.exists / path.is-dir / path.is-file（依賴檔案系統）
+;
+; 覆蓋：base / ext / is-abs / join / dir / split / clean（純字串運算）；
+;       exists / is-dir / is-file / size / make-dir / remove / rename /
+;       change-dir / current（觸及檔案系統）。
+;
+; 檔案系統部分全部落在 /tmp/nolang_path_test_dir 內，開場先清掉上次殘留、收場再清一次；
+; change-dir 無論成敗都會切回原 wd。
+;
+; 本檔釘住的迴歸（詳見 test/README.md §5.0m）：
+;   1. join 舊版用 `.p[out-n] ?= v` 追加 —— `?=` 越界走 err 臂，而追加的第一個位元組
+;      恰好永遠越界，於是整條拼接被靜默丟棄（'/a/b'.join('c.txt') 回 '/a/b'）。
+;   2. clean 對單獨的 '.' / '..' / 空路徑回空字串（路徑不可能為空）。
+;   3. dir / split 對空路徑先 `.p[0] ?= DOT`（越界失敗）再 `.p.len = 1`，
+;      等於把未初始化位元組當內容，回傳 len=1 的垃圾字元。
 
 # /test/runner
 
-; ── path.base ─────────────────────────────────
+; /tmp 下的固定測試路徑（跑完自行清除）
+P-DIR = '/tmp/nolang_path_test_dir'
+P-SUB = '/tmp/nolang_path_test_dir/sub'
+P-FILE = '/tmp/nolang_path_test_dir/a.txt'
+P-RENAMED = '/tmp/nolang_path_test_dir/b.txt'
+P-ABSENT = '/tmp/nolang_path_test_dir/absent.txt'
+
+; ── 助手 ──────────────────────────────────────
+
+; 字串相等斷言（走 eq-full，免手算位元組長度）
+se = (a str, b str, msg str) {
+    runner.is-true(a.eq-full(b), msg)
+}
+
+; ?i64 → i64：9000001 = nil，9000002 = err
+i64-of = (v ?i64) (out i64) {
+    out = 9000002
+    v: {
+        ok -> out = it
+
+        nil -> out = 9000001
+
+        err -> out = 9000002
+    }
+}
+
+; 造一個 .p 為 s 的 path
+mk = (s str) (out path) {
+    out.p = s
+}
+
+; ── base ──────────────────────────────────────
 
 ; base：取最後一段，/a/b/c.txt → c.txt
 t-base = () {
-    p = path{
-        p: '/a/b/c.txt'
-    }
-    b = p.base()
-    runner.str-eq(b, 'c.txt', 5, 'base /a/b/c.txt == c.txt')
+    p = mk('/a/b/c.txt')
+    se(p.base(), 'c.txt', 'base /a/b/c.txt == c.txt')
 }
 
 ; 不含 '/' 的路徑應原樣回傳
 t-base-no-slash = () {
-    p = path{
-        p: 'file.txt'
-    }
-    b = p.base()
-    runner.str-eq(b, 'file.txt', 8, 'base file.txt == file.txt')
+    p = mk('file.txt')
+    se(p.base(), 'file.txt', 'base file.txt == file.txt')
 }
 
 ; 根目錄 '/' 的 base 應為空字串
 t-base-root = () {
-    p = path{
-        p: '/'
-    }
-    b = p.base()
-    runner.eq(b.len(), 0, 'base / len == 0')
+    p = mk('/')
+    runner.eq(p.base().len-bytes(), 0, 'base / len == 0')
 }
 
-; ── path.ext ──────────────────────────────────
+; ── ext ───────────────────────────────────────
 
 ; ext 回含點的副檔名：/a/b/c.txt → .txt
 t-ext = () {
-    p = path{
-        p: '/a/b/c.txt'
-    }
-    e = p.ext()
-    runner.str-eq(e, '.txt', 4, 'ext /a/b/c.txt == .txt')
+    p = mk('/a/b/c.txt')
+    se(p.ext(), '.txt', 'ext /a/b/c.txt == .txt')
 }
 
 ; 無副檔名時回空字串（不把目錄分隔點當副檔名）
 t-ext-no-ext = () {
-    p = path{
-        p: '/a/b/c'
-    }
-    e = p.ext()
-    runner.eq(e.len(), 0, 'ext /a/b/c len == 0')
+    p = mk('/a/b/c')
+    runner.eq(p.ext().len-bytes(), 0, 'ext /a/b/c len == 0')
 }
 
-; ── path.is-abs ───────────────────────────────
+; 點在末位不算副檔名（排除 '.'/'..'）
+t-ext-trailing-dot = () {
+    p = mk('/a/b/abc.')
+    runner.eq(p.ext().len-bytes(), 0, 'ext abc. len == 0')
+}
+
+t-ext-dotdot = () {
+    p = mk('/a/b/..')
+    runner.eq(p.ext().len-bytes(), 0, 'ext .. len == 0')
+}
+
+; ── is-abs ────────────────────────────────────
 
 ; is-abs：以 '/' 開頭的路徑為絕對路徑
 t-is-abs = () {
-    p = path{
-        p: '/a/b'
-    }
-    yes = p.is-abs()
-    runner.is-true(yes, 'is-abs /a/b == true')
+    p = mk('/a/b')
+    runner.is-true(p.is-abs(), 'is-abs /a/b == true')
 }
 
 ; 相對路徑 'a/b' 應回 false
 t-is-abs-relative = () {
-    p = path{
-        p: 'a/b'
-    }
-    yes = p.is-abs()
-    runner.is-false(yes, 'is-abs a/b == false')
+    p = mk('a/b')
+    runner.is-false(p.is-abs(), 'is-abs a/b == false')
 }
 
 ; 空字串應回 false
 t-is-abs-empty = () {
-    p = path{
-        p: ''
+    p = mk('')
+    runner.is-false(p.is-abs(), 'is-abs empty == false')
+}
+
+; ── join ──────────────────────────────────────
+
+; 基本拼接：'/a/b' + 'c.txt' → '/a/b/c.txt'，且 .p 原地更新
+t-join-basic = () {
+    p = mk('/a/b')
+    j = p.join('c.txt')
+    se(j, '/a/b/c.txt', 'join /a/b + c.txt')
+    se(p.p, '/a/b/c.txt', 'join 原地更新 .p')
+}
+
+; a 已帶尾綴 '/' 時不重複補
+t-join-trailing-sep = () {
+    p = mk('/a/b/')
+    se(p.join('c.txt'), '/a/b/c.txt', 'join /a/b/ + c.txt')
+}
+
+; b 帶前綴 '/' 時吃掉它、仍補一個分隔符
+; （舊版把 b 的前導 '/' 當成「已分隔」而跳過，得 '/a/bc.txt'）
+t-join-leading-sep = () {
+    a = mk('/a/b')
+    se(a.join('/c.txt'), '/a/b/c.txt', 'join /a/b + /c.txt')
+
+    b = mk('/a/b/')
+    se(b.join('/c.txt'), '/a/b/c.txt', 'join /a/b/ + /c.txt')
+}
+
+; 空 a：接 b 本體；b 為絕對路徑時不得降級成相對路徑
+t-join-empty = () {
+    a = mk('')
+    se(a.join('x'), 'x', 'join "" + x == x')
+    se(a.p, 'x', 'join "" 原地 .p == x')
+
+    b = mk('')
+    se(b.join('/c.txt'), '/c.txt', 'join "" + /c.txt 保留絕對性')
+}
+
+; 多段相對路徑與連續呼叫
+t-join-depth = () {
+    p = mk('a/b')
+    se(p.join('c/d/e.txt'), 'a/b/c/d/e.txt', 'join 多段相對路徑')
+
+    q = mk('/tmp')
+    q.join('a')
+    q.join('b')
+    q.join('c')
+    se(q.p, '/tmp/a/b/c', 'join 連續呼叫累積')
+}
+
+t-join-root = () {
+    p = mk('/')
+    se(p.join('x'), '/x', 'join / + x == /x')
+}
+
+t-join-non-ascii = () {
+    p = mk('日本語')
+    se(p.join('ファイル.txt'), '日本語/ファイル.txt', 'join 非 ASCII')
+}
+
+; 迴歸：601 位元組長後綴。舊實作直接在 .p 上逐位元組成長，需要擴容時內容變垃圾
+; 並 segfault（tests/std-byte-indexing.no 有記載），故必須留一個強迫擴容的斷言。
+t-join-long = () {
+    long str = with-cap(601)
+    i <- [0..601): {
+        long[i] = 97
     }
-    yes = p.is-abs()
-    runner.is-false(yes, 'is-abs empty == false')
+    p = mk('/tmp/aaa')
+    j = p.join(long)
+    runner.eq(j.len-bytes(), 610, 'join 長後綴總長 == 9 + 601')
+    se(j.slice-bytes(0, 9), '/tmp/aaa/', 'join 長後綴前綴正確')
+    se(j.slice-bytes(9, 610), long, 'join 長後綴內容完整')
+}
+
+; ── dir ───────────────────────────────────────
+
+t-dir = () {
+    p = mk('/a/b/c.txt')
+    d = p.dir()
+    se(d, '/a/b', 'dir /a/b/c.txt == /a/b')
+    se(p.p, '/a/b', 'dir 原地更新 .p')
+}
+
+t-dir-relative = () {
+    p = mk('file.txt')
+    se(p.dir(), '.', 'dir 無斜線 == .')
+}
+
+t-dir-root = () {
+    p = mk('/file.txt')
+    se(p.dir(), '/', 'dir /file.txt == /')
+}
+
+; 迴歸：舊版對空路徑回的是一個 len=1 的未初始化位元組
+t-dir-empty = () {
+    p = mk('')
+    d = p.dir()
+    se(d, '.', 'dir 空路徑 == .')
+    runner.eq(d.len-bytes(), 1, 'dir 空路徑長度 == 1')
+}
+
+t-dir-non-ascii = () {
+    p = mk('/tmp/日本語/ファイル.txt')
+    se(p.dir(), '/tmp/日本語', 'dir 非 ASCII')
+}
+
+; ── split ─────────────────────────────────────
+
+t-split = () {
+    p = mk('/a/b/c.txt')
+    f = p.split()
+    se(f, 'c.txt', 'split 檔名 == c.txt')
+    se(p.p, '/a/b', 'split 原地 .p == /a/b')
+}
+
+t-split-plain = () {
+    p = mk('plain.txt')
+    f = p.split()
+    se(f, 'plain.txt', 'split 無斜線檔名')
+    se(p.p, '.', 'split 無斜線 .p == .')
+}
+
+t-split-root = () {
+    p = mk('/root.txt')
+    f = p.split()
+    se(f, 'root.txt', 'split 根下檔名')
+    se(p.p, '/', 'split 根下 .p == /')
+}
+
+t-split-empty = () {
+    p = mk('')
+    f = p.split()
+    runner.eq(f.len-bytes(), 0, 'split 空路徑檔名長度 0')
+    se(p.p, '.', 'split 空路徑 .p == .')
+}
+
+t-split-non-ascii = () {
+    p = mk('/tmp/日本語/ファイル.txt')
+    se(p.split(), 'ファイル.txt', 'split 非 ASCII 檔名')
+}
+
+; ── clean ─────────────────────────────────────
+
+t-clean-basic = () {
+    p = mk('/a/./b/../c//d/')
+    p.clean()
+    se(p.p, '/a/c/d', 'clean /a/./b/../c//d/')
+}
+
+; '..' 必須真的把前一段丟掉（曾退化成只往後找 '/' 而不改 out-n）
+t-clean-dotdot = () {
+    a = mk('/tmp/aaa/bbb/../a.txt')
+    a.clean()
+    se(a.p, '/tmp/aaa/a.txt', 'clean 中間 .. 丟掉前一段')
+
+    b = mk('a/b/../c')
+    b.clean()
+    se(b.p, 'a/c', 'clean 相對 a/b/../c')
+
+    c = mk('a/../b')
+    c.clean()
+    se(c.p, 'b', 'clean a/../b')
+
+    d = mk('x/y/../z/../w')
+    d.clean()
+    se(d.p, 'x/w', 'clean 連續回退')
+}
+
+t-clean-root = () {
+    a = mk('/a/..')
+    a.clean()
+    se(a.p, '/', 'clean /a/.. 收斂到根')
+
+    b = mk('/a/b/../..')
+    b.clean()
+    se(b.p, '/', 'clean /a/b/../.. 收斂到根')
+
+    c = mk('/../b')
+    c.clean()
+    se(c.p, '/b', 'clean /../b 不可越過根')
+
+    d = mk('/..')
+    d.clean()
+    se(d.p, '/', 'clean /.. == /')
+}
+
+t-clean-dot = () {
+    a = mk('a/./b')
+    a.clean()
+    se(a.p, 'a/b', 'clean 移除 . 段')
+
+    b = mk('/tmp/a/./b/../c.txt')
+    b.clean()
+    se(b.p, '/tmp/a/c.txt', 'clean . 與 .. 混合')
+}
+
+; 迴歸：舊版對這些輸入回空字串
+t-clean-empty-result = () {
+    a = mk('')
+    a.clean()
+    se(a.p, '.', 'clean 空路徑 == .')
+
+    b = mk('.')
+    b.clean()
+    se(b.p, '.', 'clean . == .')
+
+    c = mk('..')
+    c.clean()
+    se(c.p, '..', 'clean .. == ..')
+
+    d = mk('a/..')
+    d.clean()
+    se(d.p, '.', 'clean a/.. == .')
+}
+
+; 相對路徑開頭無法回退的 '..' 必須保留：丟掉會指向完全不同的目錄
+t-clean-leading-dotdot = () {
+    a = mk('../a')
+    a.clean()
+    se(a.p, '../a', 'clean ../a 保持')
+
+    b = mk('a/../../b')
+    b.clean()
+    se(b.p, '../b', 'clean a/../../b == ../b')
+
+    c = mk('x/../../y')
+    c.clean()
+    se(c.p, '../y', 'clean x/../../y == ../y')
+}
+
+t-clean-sep-only = () {
+    a = mk('/')
+    a.clean()
+    se(a.p, '/', 'clean / == /')
+
+    b = mk('//a///b')
+    b.clean()
+    se(b.p, '/a/b', 'clean 折疊重複斜線')
+}
+
+t-clean-non-ascii = () {
+    p = mk('日本語//ファイル.txt')
+    p.clean()
+    se(p.p, '日本語/ファイル.txt', 'clean 非 ASCII 折疊 //')
+}
+
+; ── 檔案系統 ──────────────────────────────────
+
+; 建立測試目錄（可重複執行：開場先清掉上次殘留）
+t-fs-make-dir = () {
+    fs.remove(P-FILE)
+    fs.remove(P-RENAMED)
+    fs.rmdir(P-SUB)
+    fs.rmdir(P-DIR)
+
+    d = mk(P-DIR)
+    runner.is-true(d.make-dir(), 'make-dir 建立目錄')
+    runner.is-false(d.make-dir(), 'make-dir 已存在回 false')
+    runner.is-true(d.exists(), 'exists 目錄存在')
+    runner.is-true(d.is-dir(), 'is-dir 目錄為真')
+    runner.is-false(d.is-file(), 'is-file 目錄為假')
+
+    s = mk(P-SUB)
+    runner.is-true(s.make-dir(), 'make-dir 建子目錄')
+}
+
+; exists / is-file / size：寫入 5 位元組後核對
+t-fs-file = () {
+    runner.is-true(fs.write-file(P-FILE, 'hello'), 'write-file 準備檔案')
+
+    f = mk(P-FILE)
+    runner.is-true(f.exists(), 'exists 檔案存在')
+    runner.is-true(f.is-file(), 'is-file 檔案為真')
+    runner.is-false(f.is-dir(), 'is-dir 檔案為假')
+    runner.eq(i64-of(f.size()), 5, 'size == 5')
+
+    absent = mk(P-ABSENT)
+    runner.is-false(absent.exists(), 'exists 不存在路徑為假')
+    runner.is-false(absent.is-file(), 'is-file 不存在為假')
+    runner.is-false(absent.is-dir(), 'is-dir 不存在為假')
+    runner.eq(i64-of(absent.size()), 9000001, 'size 不存在回 nil')
+}
+
+; rename / remove
+t-fs-rename = () {
+    runner.is-true(fs.write-file(P-FILE, 'xyz'), 'write-file 準備改名檔案')
+
+    old = mk(P-FILE)
+    runner.is-true(old.rename(P-RENAMED), 'rename 成功')
+
+    gone = mk(P-FILE)
+    runner.is-false(gone.exists(), 'rename 後舊路徑不存在')
+
+    fresh = mk(P-RENAMED)
+    runner.is-true(fresh.exists(), 'rename 後新路徑存在')
+    runner.is-true(fresh.remove(), 'remove 刪除檔案')
+    runner.is-false(fresh.exists(), 'remove 後不存在')
+    runner.is-false(fresh.remove(), 'remove 重複刪除回 false')
+}
+
+; change-dir / current：一定要切回原 wd
+t-fs-change-dir = () {
+    start = path.current()
+    runner.is-true(start.p.len-bytes() > 0, 'current 取得到 wd')
+    runner.is-true(start.is-abs(), 'current 回絕對路徑')
+
+    target = mk(P-SUB)
+    runner.is-true(target.change-dir(), 'change-dir 切換到子目錄')
+
+    now = path.current()
+    runner.is-true(now.p.eq-full(fs.realpath(P-SUB)), 'change-dir 後 current 是目標')
+
+    runner.is-true(start.change-dir(), 'change-dir 切回原 wd')
+
+    back = path.current()
+    runner.is-true(back.p.eq-full(start.p), '切回後 current 還原')
 }
 
 ; ── 執行 ──────────────────────────────────────
@@ -92,9 +437,47 @@ p2, f2 = runner.test('path.base-no-slash', t-base-no-slash)
 p3, f3 = runner.test('path.base-root', t-base-root)
 p4, f4 = runner.test('path.ext', t-ext)
 p5, f5 = runner.test('path.ext-no-ext', t-ext-no-ext)
-p6, f6 = runner.test('path.is-abs', t-is-abs)
-p7, f7 = runner.test('path.is-abs-relative', t-is-abs-relative)
-p8, f8 = runner.test('path.is-abs-empty', t-is-abs-empty)
+p6, f6 = runner.test('path.ext-trailing-dot', t-ext-trailing-dot)
+p7, f7 = runner.test('path.ext-dotdot', t-ext-dotdot)
+p8, f8 = runner.test('path.is-abs', t-is-abs)
+p9, f9 = runner.test('path.is-abs-relative', t-is-abs-relative)
+p10, f10 = runner.test('path.is-abs-empty', t-is-abs-empty)
+p11, f11 = runner.test('path.join-basic', t-join-basic)
+p12, f12 = runner.test('path.join-trailing-sep', t-join-trailing-sep)
+p13, f13 = runner.test('path.join-leading-sep', t-join-leading-sep)
+p14, f14 = runner.test('path.join-empty', t-join-empty)
+p15, f15 = runner.test('path.join-depth', t-join-depth)
+p16, f16 = runner.test('path.join-root', t-join-root)
+p17, f17 = runner.test('path.join-non-ascii', t-join-non-ascii)
+p18, f18 = runner.test('path.join-long', t-join-long)
+p19, f19 = runner.test('path.dir', t-dir)
+p20, f20 = runner.test('path.dir-relative', t-dir-relative)
+p21, f21 = runner.test('path.dir-root', t-dir-root)
+p22, f22 = runner.test('path.dir-empty', t-dir-empty)
+p23, f23 = runner.test('path.dir-non-ascii', t-dir-non-ascii)
+p24, f24 = runner.test('path.split', t-split)
+p25, f25 = runner.test('path.split-plain', t-split-plain)
+p26, f26 = runner.test('path.split-root', t-split-root)
+p27, f27 = runner.test('path.split-empty', t-split-empty)
+p28, f28 = runner.test('path.split-non-ascii', t-split-non-ascii)
+p29, f29 = runner.test('path.clean-basic', t-clean-basic)
+p30, f30 = runner.test('path.clean-dotdot', t-clean-dotdot)
+p31, f31 = runner.test('path.clean-root', t-clean-root)
+p32, f32 = runner.test('path.clean-dot', t-clean-dot)
+p33, f33 = runner.test('path.clean-empty-result', t-clean-empty-result)
+p34, f34 = runner.test('path.clean-leading-dotdot', t-clean-leading-dotdot)
+p35, f35 = runner.test('path.clean-sep-only', t-clean-sep-only)
+p36, f36 = runner.test('path.clean-non-ascii', t-clean-non-ascii)
+p37, f37 = runner.test('path.fs-make-dir', t-fs-make-dir)
+p38, f38 = runner.test('path.fs-file', t-fs-file)
+p39, f39 = runner.test('path.fs-rename', t-fs-rename)
+p40, f40 = runner.test('path.fs-change-dir', t-fs-change-dir)
+
+; 收場清理
+fs.remove(P-FILE)
+fs.remove(P-RENAMED)
+fs.rmdir(P-SUB)
+fs.rmdir(P-DIR)
 
 total = runner.summary()
 f = runner.failed-count()

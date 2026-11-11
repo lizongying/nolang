@@ -142,6 +142,13 @@ is-false = (val bool, msg str) {
 ; b: 第二條字串
 ; n: 參與比較的頭部位元組數
 ; msg: 斷言失敗時列印的說明
+;
+; ⚠️ 本函式直接把 n 交給 `a.eq(b, n)`（`str.eq` → `eq-raw`），**不檢查長度**：
+; n 大於任一字串的實際長度時，內部的 memcmp 會讀到邊界外（實測 `multipart` 檔
+; 整片 SIGSEGV 就是這條路徑）。目前不改語義，因為一旦改成「n 超過長度即判失敗」，
+; 有 5 個檔（`json`/`noml`/`rc4`/`str-map`/`time`）的呼叫端把 n 寫大了幾個位元組
+; （例如 `str-eq(h, 'bbf316e8d940af0ad3', 20, …)` —— 那條字面量其實是 18 位元組）
+; 會立刻翻紅。要收緊得先逐檔修 n。詳見 `test/README.md §5.2 #84`。
 str-eq = (a str, b str, n i64, msg str) {
     {
         a.eq(b, n) == false -> {

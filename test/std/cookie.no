@@ -6,8 +6,11 @@
 ;       build-header/parse-response/set-signed/get-verified）
 ; 註：回归點——原函數名 sign 與 num.sign 方法符號衝突，跨模組呼叫被靜默
 ;     解析為 signum（返回 1），已更名為 cookie-sign / cookie-verify。
-;     parse-header / build-header(names...) 未測：[16]str 陣列 out-param 的
-;     多指派回傳在呼叫端段錯誤（MIR codegen bug，最小重現與 cookie 無關）。
+; 註：parse-header 曾在本檔長期無法測——`[16]str` 型**結果參數**在編譯器裡
+;     沒有零值填充，函式內第一次 `names[i] = ...` 會把未初始化記憶體當既有
+;     `str` 釋放，實測 SIGSEGV / `trace/BPT trap`。2026-11-11 在 std 側加了
+;     「整體賦初值 + place-match 寫入」的規避（見 src/std/net/cookie.no），
+;     現在 parse-header / build-header 都能測（t-header-roundtrip）。
 
 # /test/runner
 
@@ -154,10 +157,50 @@ t-jar = () {
         err -> runner.is-true(false, 'parse-response get err')
     }
 }
+
+; parse-header / build-header：'a=1; b=2' 解析成两对，再原样串回
+t-header-roundtrip = () {
+    on, ov, cnt = cookie.parse-header('a=1; b=2')
+    runner.eq(cnt, 2, 'parse-header count == 2')
+
+    n0 = 'x'
+    on[0]: {
+        ok -> n0 = it
+
+        -> _
+    }
+    runner.str-eq(n0, 'a', 1, 'first name')
+
+    v0 = 'x'
+    ov[0]: {
+        ok -> v0 = it
+
+        -> _
+    }
+    runner.str-eq(v0, '1', 1, 'first value')
+
+    n1 = 'x'
+    on[1]: {
+        ok -> n1 = it
+
+        -> _
+    }
+    runner.str-eq(n1, 'b', 1, 'second name')
+
+    built = cookie.build-header(on, ov, cnt)
+    exp = 'a=1; b=2'
+    runner.str-eq(built, exp, exp.len(), 'build-header roundtrip')
+
+    ; 空標頭：count 0，build-header 回空串
+    en2, ev2, cnt2 = cookie.parse-header('')
+    runner.eq(cnt2, 0, 'empty header -> 0 pairs')
+    runner.str-eq(cookie.build-header(en2, ev2, 0), '', 0, 'build-header empty')
+}
 runner.test('parse-set', t-parse-set)
 runner.test('build-set full', t-build-set-full)
 runner.test('sign/verify', t-sign-verify)
 runner.test('jar', t-jar)
+runner.test('parse-header/build-header', t-header-roundtrip)
 runner.summary()
 f = runner.failed-count()
 f > 0 -> exit(1)

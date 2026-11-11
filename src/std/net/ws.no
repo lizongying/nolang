@@ -195,18 +195,17 @@ compute-accept = (key str) (accept str) {
 ; [next-rand](#ws.next-rand)
 next-rand = () (r i64) {
 
-    ; D1：RAND-COUNTER 是全域，註解式重綁不會把結果折回 plain；
-    ; `+ 0` 讓它落回一般的 `?i64` 算術，再以兩段式解包取回 plain i64。
+    ; D1：RAND-COUNTER 是模組級標量全域，型別是 plain i64（不是 ?i64）。
+    ; 兩個坑：① `RAND-COUNTER = RAND-COUNTER + 1` 的右值是 ?i64，寫進 plain
+    ; 全域會留下壞值（讀回恆為 1，計數器卡死）；② `RAND-COUNTER: { ok -> … }`
+    ; 對 plain 值做選項匹配會靜默走 fallback 臂，永遠拿到 0。
+    ; 故先用 `#{overflow=wrap}` 讓加法落在 plain 域，再寫回全域。
     #{overflow=wrap}
-    RAND-COUNTER = RAND-COUNTER + 1
-    c = RAND-COUNTER + 0: {
-        ok -> it
+    nxt = RAND-COUNTER + 1
+    RAND-COUNTER = nxt
 
-        -> 0
-    }
-
-    ; LCG: r = (c * 1103515245 + 12345) & 0x7fffffff
-    r = (c * 1103515245 + 12345) & 2147483647
+    ; LCG: r = (nxt * 1103515245 + 12345) & 0x7fffffff
+    r = (nxt * 1103515245 + 12345) & 2147483647
 }
 
 ; 產生 4-byte mask key 字串
@@ -295,10 +294,18 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
     #{overflow=wrap}
     total = header-len + dlen
 
-    frame str = with-len(total)
+    ; ⚠️ 二進位訊框建在 []byte 上（不要建在 str 上）：
+    ;   舊版建在 str 上時，masked 訊框的末位元組會被吞成 0（實測 payload 第二位元組
+    ;   讀回 0、期望 114），真因至今未定位 —— 注意「str 下標寫會按碼點重編碼」這個
+    ;   猜測已被推翻：實測 s[k]: { ok -> it = v } 寫 0/1/23/31/127/128/195/255 全部
+    ;   讀回原值（見 test/README.md §5.2 #92）。
+    ;   []byte 的元素是 byte，位值 match 的 `it` 就是位元組本身；最後必須用
+    ;   to-bytes-str() 1:1 轉回（`to-str()` 會按碼點重編碼，≥0x80 的位元組會膨脹）。
+    ;   另記：char 字面量是 "x"，`'x'` 是字串 —— 寫進緩衝只會留下 1。
+    buf []byte = with-len(total)
 
     ; byte 0: FIN(1) | opcode
-    frame[0]: {
+    buf[0]: {
         ok -> it = 128 | (opcode & 15)
 
         -> _
@@ -310,26 +317,26 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
     #{overflow=wrap}
     {
-        dlen <= 125 -> frame[1]: {
+        dlen <= 125 -> buf[1]: {
             ok -> it = mask-bit | dlen
 
             -> _
         }
 
         dlen > 125 && dlen <= 65535 -> {
-            frame[1]: {
+            buf[1]: {
                 ok -> it = mask-bit | 126
 
                 -> _
             }
-
-            frame[2]: {
-                ok -> it = (dlen >> 8) & 255
+            hi-oct = dlen >> 8
+            buf[2]: {
+                ok -> it = hi-oct & 255
 
                 -> _
             }
 
-            frame[3]: {
+            buf[3]: {
                 ok -> it = dlen & 255
 
                 -> _
@@ -337,7 +344,7 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
         }
 
         dlen > 65535 -> {
-            frame[1]: {
+            buf[1]: {
                 ok -> it = mask-bit | 127
 
                 -> _
@@ -345,8 +352,11 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
             i <- [0..8): {
 
                 #{overflow=wrap}
-                frame[2 + i]: {
-                    ok -> it = (dlen >> (56 - i * 8)) & 255
+                sh = 56 - i * 8
+                oct = dlen >> sh
+                idx = 2 + i
+                buf[idx]: {
+                    ok -> it = oct & 255
 
                     -> _
                 }
@@ -368,8 +378,14 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
             i <- [0..4): {
 
                 #{overflow=wrap}
-                frame[mk-start + i]: {
-                    ok -> it = mask-key.byte(i)
+                mk-idx = mk-start + i
+                mb = mask-key.byte(i): {
+                    ok -> it
+
+                    -> 0
+                }
+                buf[mk-idx]: {
+                    ok -> it = mb
 
                     -> _
                 }
@@ -379,8 +395,23 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
             i <- [0..dlen): {
 
                 #{overflow=wrap}
-                frame[header-len + i]: {
-                    ok -> it = (data.byte(i) ^ mask-key.byte(i % 4)) & 255
+                mbi = i % 4
+                pb = data.byte(i): {
+                    ok -> it
+
+                    -> 0
+                }
+                mb = mask-key.byte(mbi): {
+                    ok -> it
+
+                    -> 0
+                }
+                xb = pb ^ mb
+
+                #{overflow=wrap}
+                p-idx = header-len + i
+                buf[p-idx]: {
+                    ok -> it = xb
 
                     -> _
                 }
@@ -391,16 +422,24 @@ build-frame = (opcode i64, data str, mask bool, mask-key str) (frame str) {
 
             ; unmasked payload
             i <- [0..dlen): {
+                pb = data.byte(i): {
+                    ok -> it
+
+                    -> 0
+                }
 
                 #{overflow=wrap}
-                frame[header-len + i]: {
-                    ok -> it = data.byte(i)
+                p-idx = header-len + i
+                buf[p-idx]: {
+                    ok -> it = pb
 
                     -> _
                 }
             }
         }
     }
+    buf.truncate(total)
+    frame = buf.to-bytes-str()
 }
 
 ; server 方法
@@ -533,25 +572,16 @@ server-conn.handshake = () {
     #{overflow=wrap}
     val-start = key-pos + key-marker.len-bytes()
 
-    ; 跳過空白
-    #{overflow=wrap}
-    {
-        val-start < head.len-bytes() && head[val-start] == 32 -> {
-            {
-                val-start-opt = val-start + 1
-                val-start-opt: {
-                    ok -> val-start = it
-
-                    ->
-                }
-            }
-        }
-
-        ->
-    }
+    ; 跳過空白：舊版寫成「在 `cond -> { … }` 塊裡賦值 val-start = it」，實測
+    ; val-start 停在空格上（client-key 帶前導空格、accept 算錯、`Upgrade` 值變成
+    ; `' websocket'`），整段交握靜默失敗。
+    ; ⚠️ 真因未定位：一度歸咎「條件塊內賦值不寫回」，但 wzs/wzu/wzv 三個探針
+    ;   復刻同樣形狀都正常寫回（見 test/README.md §5.2 #92 ③）。
+    ;   這裡改成「切完再 trim」，不依賴那條語意，行為確定。
     val-end = head.index-from(crlf, val-start)
     val-end < 0 -> val-end = head.len-bytes()
     client-key = head.slice(val-start, val-end)
+    client-key = client-key.trim()
 
     ; 驗證 Upgrade: websocket
     up-marker = 'Upgrade:'
@@ -568,24 +598,11 @@ server-conn.handshake = () {
     #{overflow=wrap}
     up-val-start = up-pos + up-marker.len-bytes()
 
-    #{overflow=wrap}
-    {
-        up-val-start < head.len-bytes() && head[up-val-start] == 32 -> {
-            {
-                up-val-start-opt = up-val-start + 1
-                up-val-start-opt: {
-                    ok -> up-val-start = it
-
-                    ->
-                }
-            }
-        }
-
-        ->
-    }
+    ; 同上：切完再 trim，不在條件塊裡改寫游標
     up-val-end = head.index-from(crlf, up-val-start)
     up-val-end < 0 -> up-val-end = head.len-bytes()
     up-val = head.slice(up-val-start, up-val-end)
+    up-val = up-val.trim()
     up-low = up-val.to-lower()
     up-low != 'websocket' -> return
 
@@ -736,11 +753,7 @@ server-conn.recv = () (msg ?message) {
 
     !! {
 
-        ; 確保 recv-buf 至少有 2 bytes（frame header）
-        .recv-buf-len: {
-            -> return
-        }
-
+        ; 1) 補到至少 2 bytes（frame header 最小值）
         #{overflow=wrap}
         .recv-buf-len < 2 -> {
             tmp str = with-len(WS-RECV-SIZE)
@@ -755,168 +768,135 @@ server-conn.recv = () (msg ?message) {
                 #{overflow=wrap}
                 .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
             }
+
+            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
-        ; 解析 frame header
+        ; 2) 解析 header 前 2 bytes
         b0 = .recv-buf.byte(0): {
             ok -> it
 
-            -> _
+            -> 0
         }
 
         b1 = .recv-buf.byte(1): {
             ok -> it
 
-            -> _
+            -> 0
         }
         fin = (b0 & 128) != 0
         opcode = b0 & 15
         masked = (b1 & 128) != 0
-        payload-len = b1 & 127
+        plen = b1 & 127
 
-        ; 計算剩餘 header 長度
+        ; 3) header 總長 = 2 + 擴展長度欄(0/2/8) + mask key(4 if masked)
         extra-len = 0
         {
-            payload-len == 126 -> extra-len = 2
+            plen == 126 -> extra-len = 2
 
-            payload-len == 127 -> extra-len = 8
-
-            ->
+            plen == 127 -> extra-len = 8
         }
-        masked -> extra-len
+        mask-bytes = 0
+        masked -> mask-bytes = 4
 
         #{overflow=wrap}
-        extra-len + 4
+        header-total = 2 + extra-len + mask-bytes
 
-        #{overflow=wrap}
-        header-total = 2 + extra-len
-
-        ; 若 payload-len == 127，讀取 8-byte 長度
-        #{overflow=wrap}
-        {
-            payload-len == 127 -> {
-
-                ; 確保 recv-buf 有足夠資料
-                .recv-buf-len < header-total -> {
-
-                    #{overflow=wrap}
-                    need = header-total - .recv-buf-len
-                    tmp str = with-len(WS-RECV-SIZE)
-                    n = net.net-recv(.fd, tmp, need)
-                    n <= 0 -> {
-                        .connected = false
-                        msg = err('incomplete frame')
-                        return
-                    }
-                    i <- [0..n): {
-
-                        #{overflow=wrap}
-                        .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
-                    }
-                    .recv-buf-len = .recv-buf-len + n
-                }
-
-                ; 讀取 8-byte big-endian（僅使用低 56-bit，假設 < 2^56）
-                payload-len = 0
-                i <- [0..8): {
-
-                    #{overflow=wrap}
-                    payload-len = (payload-len << 8) | .recv-buf.byte(2 + i)
-                }
-            }
-
-            payload-len == 126 -> {
-
-                ; 確保 recv-buf 有足夠資料
-                .recv-buf-len < header-total -> {
-
-                    #{overflow=wrap}
-                    need = header-total - .recv-buf-len
-                    tmp str = with-len(WS-RECV-SIZE)
-                    n = net.net-recv(.fd, tmp, need)
-                    n <= 0 -> {
-                        .connected = false
-                        msg = err('incomplete frame')
-                        return
-                    }
-                    i <- [0..n): {
-
-                        #{overflow=wrap}
-                        .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
-                    }
-                    .recv-buf-len = .recv-buf-len + n
-                }
-
-                payload-len = (.recv-buf.byte(2) << 8) | .recv-buf.byte(3)
-            }
-        }
-
-        ; 確保 recv-buf 有完整 frame
-        #{overflow=wrap}
-        frame-total = header-total + payload-len
-
-        #{overflow=wrap}
-        .recv-buf-len < frame-total -> {
+        ; 4) 補齊 header（擴展長度欄與 mask key 都要先到齊才解析）
+        !! {
 
             #{overflow=wrap}
-            need = frame-total - .recv-buf-len
-            tmp str = with-len(WS-RECV-SIZE)
-            !! {
-                need <= 0 -> break
-                n = net.net-recv(.fd, tmp, need)
-                n <= 0 -> {
-                    .connected = false
-                    msg = err('incomplete frame')
-                    return
-                }
-                i <- [0..n): {
-
-                    #{overflow=wrap}
-                    .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
-                }
-                .recv-buf-len = .recv-buf-len + n
-                need = frame-total - .recv-buf-len
+            header-total - .recv-buf-len <= 0 -> break
+            tmp2 str = with-len(WS-RECV-SIZE)
+            n = net.net-recv(.fd, tmp2, WS-RECV-SIZE)
+            n <= 0 -> {
+                .connected = false
+                msg = err('incomplete frame')
+                return
             }
-        }
-
-        ; 提取 mask key（如有）
-        actual-extra = 0
-        (b1 & 127) == 126 -> actual-extra = 2
-        (b1 & 127) == 127 -> actual-extra = 8
-
-        #{overflow=wrap}
-        mask-start = 2 + actual-extra
-        mask-key = ''
-
-        #{overflow=wrap}
-        masked -> {
-            mask-key str = with-len(4)
-            i <- [0..4): {
+            i <- [0..n): {
 
                 #{overflow=wrap}
-                mask-key[i] ?= .recv-buf.byte(mask-start + i)
+                .recv-buf[.recv-buf-len + i] ?= tmp2.byte(i)
+            }
+
+            #{overflow=wrap}
+            .recv-buf-len = .recv-buf-len + n
+        }
+
+        ; 5) 擴展長度（126 ⇒ 2 bytes，127 ⇒ 8 bytes big-endian）
+        payload-len = plen
+        {
+            plen == 126 -> payload-len = ((.recv-buf.byte(2) << 8) | .recv-buf.byte(3)) & 65535
+
+            plen == 127 -> {
+                payload-len = 0
+                j <- [0..8): {
+
+                    #{overflow=wrap}
+                    payload-len = (payload-len << 8) | .recv-buf.byte(2 + j)
+                }
             }
         }
 
-        ; 提取 payload 並 demask
+        ; 6) 補齊整個 frame
         #{overflow=wrap}
-        payload-start = 2 + actual-extra
-        masked -> payload-start
-
-        #{overflow=wrap}
-        2 + actual-extra + 4
-        payload str = with-len(payload-len)
-        i <- [0..payload-len): {
+        frame-total = header-total + payload-len
+        !! {
 
             #{overflow=wrap}
-            b = .recv-buf.byte(payload-start + i)
-            masked -> b
+            frame-total - .recv-buf-len <= 0 -> break
+            tmp3 str = with-len(WS-RECV-SIZE)
+            n = net.net-recv(.fd, tmp3, WS-RECV-SIZE)
+            n <= 0 -> {
+                .connected = false
+                msg = err('incomplete frame')
+                return
+            }
+            i <- [0..n): {
 
-            b ^ mask-key.byte(i % 4)
+                #{overflow=wrap}
+                .recv-buf[.recv-buf-len + i] ?= tmp3.byte(i)
+            }
 
-            payload[i]: {
-                ok -> it = b & 255
+            #{overflow=wrap}
+            .recv-buf-len = .recv-buf-len + n
+        }
+
+        ; 7) 取 mask key 與 payload（mask-start 只是位元組位址，未必真的 masked）
+        #{overflow=wrap}
+        mask-start = 2 + extra-len
+        mask-key str = with-len(4)
+        i <- [0..4): {
+
+            #{overflow=wrap}
+            mask-key[i] ?= .recv-buf.byte(mask-start + i)
+        }
+        payload-start = mask-start
+
+        #{overflow=wrap}
+        masked -> payload-start = mask-start + 4
+        payload str = with-len(payload-len)
+        k <- [0..payload-len): {
+
+            #{overflow=wrap}
+            pb = .recv-buf.byte(payload-start + k): {
+                ok -> it
+
+                -> 0
+            }
+
+            #{overflow=wrap}
+            mb = mask-key.byte(k % 4): {
+                ok -> it
+
+                -> 0
+            }
+            v = pb
+            masked -> v = pb ^ mb
+            payload[k]: {
+                ok -> it = v & 255
 
                 -> _
             }
@@ -945,11 +925,6 @@ server-conn.recv = () (msg ?message) {
             opcode == WS-OP-PING -> .send-pong(payload)
 
             opcode == WS-OP-TEXT || opcode == WS-OP-BINARY -> {
-
-                ; pong 和其他控制 opcode 忽略，繼續讀取
-
-                ; 處理資料訊框（text/binary/continuation）
-
                 acc-data = payload
                 acc-opcode = opcode
                 has-acc = true
@@ -964,8 +939,7 @@ server-conn.recv = () (msg ?message) {
             }
         }
 
-        ; 未知 opcode，忽略
-
+        ; 分片收齊（或單 frame）即回傳
         has-acc && fin -> {
             msg = message{
                 opcode: acc-opcode
@@ -1003,10 +977,13 @@ server-conn.recv-nb = () (msg ?message) {
     crlf = cr - lf
 
     ; 1) 非阻塞填充 recv-buf，直到 would-block（-2）或緩衝區不足以再收一輪
-    ;    注意（nolang 語意坑）：cond -> stmt 是「順序 guard」，不是 if-else 鏈；
-    ;    裸 -> 是無條件執行。所以 would-block（-2）與 closed（<=0）必須互斥：
-    ;    would-block 直接 return（recv-buf 不變，呼叫方解析階段回傳 nil），
-    ;    這樣才不會落入下方的 n<=0（err）與 append 程式碼。
+    ;    注意（nolang 語意坑）：cond -> stmt 是「順序 guard」，不是 if-else 鏈。
+    ;    所以 -2（would-block）不能靠 `return` 處理 —— 那會把「已經緩衝在
+    ;    recv-buf 裡的完整 frame」一起丟掉，recv-nb 永遠回 nil（本輪實測：
+    ;    recv-buf-len 已到 8、frame 完整，呼叫端仍拿不到訊息）。正確做法是
+    ;    把 -2 當「停止填充」：設 fill=false 後落到下方解析階段，資料不足才回 nil。
+    ;    同時 -2 也滿足 `n <= 0`，故 closed 臂必須顯式排除 -2（n != -2），
+    ;    append 臂必須限 n > 0，三者互斥。
     ;    ⚠️ 迴圈條件是單一 IDENT `(fill)`。2026-09-24 之前 parser 的
     ;    isCondLoopPrefix 把「括號內只有單一 IDENT」誤判成匿名函式字面量，
     ;    所以 `(fill) { ... }` 是死碼 —— recv-buf 永不填充，recv-nb 永遠回 nil。
@@ -1022,26 +999,26 @@ server-conn.recv-nb = () (msg ?message) {
         .recv-buf-len + WS-RECV-SIZE > WS-BUF-SIZE -> fill = false
 
         #{overflow=wrap}
-        .recv-buf-len + WS-RECV-SIZE <= WS-BUF-SIZE -> {
+        .recv-buf-len + WS-RECV-SIZE <= WS-BUF-SIZE && fill -> {
             tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv-nb(.fd, tmp, WS-RECV-SIZE)
-            {
-                n == -2 -> return
+            n == -2 -> fill = false
 
-                n <= 0 -> {
-                    .connected = false
-                    msg = err('closed')
-                    return
-                }
+            n <= 0 && n != -2 -> {
+                .connected = false
+                msg = err('closed')
+                return
             }
-            i <- [0..n): {
+            n > 0 -> {
+                i <- [0..n): {
+
+                    #{overflow=wrap}
+                    .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
+                }
 
                 #{overflow=wrap}
-                .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
+                .recv-buf-len = .recv-buf-len + n
             }
-
-            #{overflow=wrap}
-            .recv-buf-len = .recv-buf-len + n
         }
     }
 
@@ -1702,12 +1679,26 @@ connect = (url str) (c ?client) {
         port-str = host.slice(colon-pos + 1, host.len-bytes())
         p = 0
         i <- [0..port-str.len-bytes()): {
-            ch = port-str[i]
-            ch < 48 || ch > 57 -> {
+
+            ; ⚠️ `port-str[i]` 是 `?char`，直接拿去比较/算术都不可靠；用 .byte(i)
+            ; 兩段式解包成 plain i64（常見坑：裸下標是 option）。
+            dg = port-str.byte(i): {
+                ok -> it
+
+                -> 0
+            }
+            dv = dg
+            dv < 48 || dv > 57 -> {
                 c = err('invalid port')
                 return
             }
-            p = p * 10 + ch - 48
+
+            np = p * 10 + dv - 48: {
+                ok -> it
+
+                -> p
+            }
+            p = np
         }
         port = p
         host = host-only
@@ -1852,8 +1843,12 @@ connect = (url str) (c ?client) {
             raw[total + i] ?= tmp.byte(i)
         }
 
-        #{overflow=wrap}
-        total ?= total + n
+        ntotal = total + n: {
+            ok -> it
+
+            -> total
+        }
+        total = ntotal
         data = raw.slice(0, total)
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
@@ -1882,8 +1877,13 @@ connect = (url str) (c ?client) {
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
     status-code = 0
     i <- [0..code-str.len-bytes()): {
-        ch = code-str[i]
-        ch < 48 || ch > 57 -> {
+        dg = code-str.byte(i): {
+            ok -> it
+
+            -> 0
+        }
+        dv = dg
+        dv < 48 || dv > 57 -> {
             {
                 use-tls -> tc.close()
 
@@ -1893,8 +1893,12 @@ connect = (url str) (c ?client) {
             return
         }
 
-        #{overflow=wrap}
-        status-code = status-code * 10 + ch - 48
+        nsc = status-code * 10 + dv - 48: {
+            ok -> it
+
+            -> 0
+        }
+        status-code = nsc
     }
 
     status-code != 101 -> {
@@ -1931,17 +1935,11 @@ connect = (url str) (c ?client) {
     #{overflow=wrap}
     val-start = accept-pos + accept-marker.len-bytes()
 
-    #{overflow=wrap}
-    {
-        val-start < head.len-bytes() && head[val-start] == 32 -> {
-            val-start ?= val-start + 1
-        }
-
-        ->
-    }
+    ; 同上：切完再 trim，不依賴「條件塊內改游標是否寫回」那條語意（見 §5.2 #92 ③）
     val-end = head.index-from(crlf, val-start)
     val-end < 0 -> val-end = head.len-bytes()
     server-accept = head.slice(val-start, val-end)
+    server-accept = server-accept.trim()
     expected-accept = compute-accept(client-key)
     server-accept != expected-accept -> {
         {

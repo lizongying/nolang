@@ -102,15 +102,14 @@ request.init = (method str, url str, body str) {
     .url = url
     .body = body
     .header-count = 0
+
+    ; ⚠️ 這裡**不能**用 `?=`：`[N]str` 的空槽讀出來是 nil（data 為 null），
+    ; `?=` 的語義是「先讀目標元素、讀不到就上抛」⇒ 恒走 err 臂被吞掉，
+    ; 槽位一直是空的，於是後面的 add-header 也全部失敗（實測 add-header 恒回 false、
+    ; header-count 停在 0，整個標頭功能形同虛設）。改成直寫。
     i <- [0..HTTP-MAX-REQ-HEADERS): {
-
-        ; 用空格字串初始化 headers[i]，使 data buffer 非 null
-        {
-            .headers[i] ?= ' '
-
-            .headers[i].len = 0
-        }: {
-            err -> _
+        .headers[i]: {
+            ok -> it = ''
 
             -> _
         }
@@ -128,22 +127,23 @@ request.add-header = (name str, value str) (ok bool) {
     .header-count >= HTTP-MAX-REQ-HEADERS -> return
     idx = .header-count
 
-    ; 用字串串接組裝 'Name: Value'（建立獨立緩衝區，避免逐位元組寫入溢出）
-    {
-        .headers[idx] ?= name - ': ' - value
-
-        #{overflow=wrap}
-        .header-count = idx + 1: {
-            ok -> it
-
-            ->
-        }
-        ok = true
-    }: {
-        err -> _
+    ; 用字串串接組裝 'Name: Value'（建立獨立緩衝區，避免逐位元組寫入溢出）。
+    ; ⚠️ 這裡原本是 `.headers[idx] ?= name - ': ' - value` 包在
+    ; `{ … }: { err -> _  -> _ }` 裡 —— 那寫法在空槽上恒失敗、錯誤還被吞掉，
+    ; 於是 ok 恒為 false 且 header-count 不動。改直寫（與 net/cookie 的 names[i] 一致）。
+    .headers[idx]: {
+        ok -> it = name - ': ' - value
 
         -> _
     }
+
+    #{overflow=wrap}
+    .header-count = idx + 1: {
+        ok -> it
+
+        -> .header-count
+    }
+    ok = true
 }
 
 ; response 方法
@@ -937,11 +937,6 @@ download = (url str, dest str) (ok bool) {
         -> fs.close(fd)
     }
 
-    ; DBG
-    total = all-str.len-bytes()
-    print('DBG download total=' - total.to-str())
-    print('DBG download head=' - all-str.slice(0, 32))
-
     ; 基本檢查 + 狀態碼必須為 2xx（'HTTP/1.x 2xx' 在第 9 位元組）
     total = all-str.len-bytes()
     total < 12 -> {
@@ -1368,18 +1363,21 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
             -> 0
         }
 
+        #{overflow=wrap}
         ixout1333c29 = acc[scan + 1]: {
             ok -> it
 
             -> 0
         }
 
+        #{overflow=wrap}
         ixout1333c52 = acc[scan + 2]: {
             ok -> it
 
             -> 0
         }
 
+        #{overflow=wrap}
         ixout1333c75 = acc[scan + 3]: {
             ok -> it
 
@@ -1546,6 +1544,42 @@ http-dl-resolve = (use-tls bool, host str, port i64, loc str) (out str) {
     out = prefix - '/' - loc
 }
 
+; 私有算術助手：迴圈內的累加器若直接寫 option 算術，第二輪起寫回會被靜默
+; 丟棄（見 test/README.md §5.2 #87）。所有加減乘一律過一次函式邊界，呼叫端
+; 拿到的永遠是普通 i64；寫法同 number.no 的 _num-* 家族。
+_dl-add = (a i64, b i64) (out i64) {
+    s = a + b
+    out = s: {
+        ok -> it
+
+        -> a
+    }
+}
+
+_dl-sub = (a i64, b i64) (out i64) {
+    s = a - b
+    out = s: {
+        ok -> it
+
+        -> a
+    }
+}
+
+_dl-mul = (a i64, b i64) (out i64) {
+    s = a * b
+    out = s: {
+        ok -> it
+
+        -> a
+    }
+}
+
+; 十六進位長度行累加：size = size * 16 + digit
+_dl-hex-acc = (size i64, d i64) (out i64) {
+    p = _dl-mul(size, 16)
+    out = _dl-add(p, d)
+}
+
 ; 將 chunked 編碼的 body 解框為原始位元組
 ; b: chunked 編碼的響應體（每塊為十六進制長度行 + 資料 + CRLF，以 0 長度塊結束）
 ; out: 去掉分塊框架後的原始位元組（長度行非法時提前返回已解出部分）
@@ -1555,30 +1589,23 @@ http-dl-dechunk = (b []byte) (out []byte) {
     blen = b.len()
     pos = 0
     !! {
-        ixout1488c25 = b[pos]: {
-            ok -> it
 
-            -> 0
-        }
+        ; 跳過上一塊結尾的 CRLF。每一輪都必須重新讀 b[pos]：若把 b[pos] 讀到
+        ; 迴圈外的變數再拿去當 (cond) 的條件，該值永遠不更新，遇到 '\r' 就會
+        ; 一路把 pos 推到 blen，接著 `pos >= blen -> break` 直接結束整個解框
+        ; ⇒ 多塊 body 只解出第一塊（§5.2 #87 的真正根因）。
+        (pos < blen) {
+            lead = b[pos]: {
+                ok -> it
 
-        ixout1488c41 = b[pos]: {
-            ok -> it
-
-            -> 0
-        }
-
-        (pos < blen && (ixout1488c25 == 13 || ixout1488c41 == 10)) {
-
-            #{overflow=wrap}
+                -> 0
+            }
             {
-
-                #{overflow=wrap}
-                pos-opt = pos + 1
-                pos-opt: {
-                    ok -> pos = it
-
-                    ->
+                lead == 13 || lead == 10 -> {
+                    pos = _dl-add(pos, 1)
                 }
+
+                -> break
             }
         }
         pos >= blen -> break
@@ -1594,83 +1621,25 @@ http-dl-dechunk = (b []byte) (out []byte) {
             {
                 c >= 48 && c <= 57 -> {
 
+                    ; 用 wrap 而不是 clamp0：c < 48 时 clamp0 会得到 0，等于凭空伪造一个
+                    ; 合法数字位；wrap 的负数/垃圾值会在后面的大小检查里被抓到。
                     #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        size-opt = size * 16 + c - 48
-                        size-opt: {
-                            ok -> size = it
-
-                            ->
-                        }
-                    }
-
-                    #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        pos-opt2 = pos + 1
-                        pos-opt2: {
-                            ok -> pos = it
-
-                            ->
-                        }
-                    }
+                    size = _dl-hex-acc(size, c - 48)
+                    pos = _dl-add(pos, 1)
                 }
 
                 c >= 97 && c <= 102 -> {
 
                     #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        size-opt2 = size * 16 + c - 87
-                        size-opt2: {
-                            ok -> size = it
-
-                            ->
-                        }
-                    }
-
-                    #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        pos-opt3 = pos + 1
-                        pos-opt3: {
-                            ok -> pos = it
-
-                            ->
-                        }
-                    }
+                    size = _dl-hex-acc(size, c - 87)
+                    pos = _dl-add(pos, 1)
                 }
 
                 c >= 65 && c <= 70 -> {
 
                     #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        size-opt3 = size * 16 + c - 55
-                        size-opt3: {
-                            ok -> size = it
-
-                            ->
-                        }
-                    }
-
-                    #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        pos-opt4 = pos + 1
-                        pos-opt4: {
-                            ok -> pos = it
-
-                            ->
-                        }
-                    }
+                    size = _dl-hex-acc(size, c - 55)
+                    pos = _dl-add(pos, 1)
                 }
 
                 -> size-done = true
@@ -1686,34 +1655,12 @@ http-dl-dechunk = (b []byte) (out []byte) {
             }
             {
                 c == 10 -> {
-
-                    #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        pos-opt5 = pos + 1
-                        pos-opt5: {
-                            ok -> pos = it
-
-                            ->
-                        }
-                    }
+                    pos = _dl-add(pos, 1)
                     line-done = true
                 }
 
                 c == 13 -> {
-
-                    #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        pos-opt6 = pos + 1
-                        pos-opt6: {
-                            ok -> pos = it
-
-                            ->
-                        }
-                    }
+                    pos = _dl-add(pos, 1)
 
                     ixout1558c36 = b[pos]: {
                         ok -> it
@@ -1722,35 +1669,13 @@ http-dl-dechunk = (b []byte) (out []byte) {
                     }
 
                     (pos < blen && ixout1558c36 == 10) -> {
-
-                        #{overflow=wrap}
-                        {
-
-                            #{overflow=wrap}
-                            pos-opt7 = pos + 1
-                            pos-opt7: {
-                                ok -> pos = it
-
-                                ->
-                            }
-                        }
+                        pos = _dl-add(pos, 1)
                     }
                     line-done = true
                 }
 
                 -> {
-
-                    #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        pos-opt8 = pos + 1
-                        pos-opt8: {
-                            ok -> pos = it
-
-                            ->
-                        }
-                    }
+                    pos = _dl-add(pos, 1)
                 }
             }
         }
@@ -1764,30 +1689,8 @@ http-dl-dechunk = (b []byte) (out []byte) {
             }
 
             out.push(ixout1579c22)
-
-            #{overflow=wrap}
-            {
-
-                #{overflow=wrap}
-                pos-opt9 = pos + 1
-                pos-opt9: {
-                    ok -> pos = it
-
-                    ->
-                }
-            }
-
-            #{overflow=wrap}
-            {
-
-                #{overflow=wrap}
-                size-opt4 = size - 1
-                size-opt4: {
-                    ok -> size = it
-
-                    ->
-                }
-            }
+            pos = _dl-add(pos, 1)
+            size = _dl-sub(size, 1)
         }
     }
 }

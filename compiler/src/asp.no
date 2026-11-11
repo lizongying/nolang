@@ -79,9 +79,9 @@ P-COUNT = 4
 ; ── 槽位上限（由生成器實測，供 ast.no 宣告 arena 用）──
 MAX-STR-SLOTS = 8
 MAX-COUNT-SLOTS = 2
-KIND-COUNT = 73
-STR-COUNT = 190
-INSTR-COUNT = 313
+KIND-COUNT = 74
+STR-COUNT = 191
+INSTR-COUNT = 315
 
 ; strs: 字串池（id 0 = 空字串，不在此列）
 strs = () (r []str) {
@@ -154,6 +154,7 @@ strs = () (r []str) {
         'receiver',
         'property',
         'Receiver',
+        'EmptyStatement',
         'EnumDefinition',
         'name',
         'values',
@@ -335,149 +336,150 @@ tape = () (r []i64) {
         2, 0, 0, 0, 0, 0, 64, 1,
         0, 2, 1, 0, 5, 3, 65, 1,
         0, 0, 0, 66, 3, 67, 0, 0,
-        0, 0, 68, 1, 0, 2, 1, 0,
-        0, 0, 69, 1, 4, 1, 1, 16777286,
-        2, 0, 0, 0, 0, 4, 71, 1,
-        0, 0, 0, 72, 1, 0, 2, 1,
-        0, 0, 0, 69, 1, 0, 1, 5,
-        16777271, 1, 2, 3, 0, 33554505, 0, 74,
-        1, 0, 2, 1, 0, 0, 0, 75,
-        1, 0, 0, 0, 16777292, 1, 0, 0,
-        0, 33554509, 1, 2, 3, 0, 50331726, 2,
-        0, 0, 0, 0, 0, 79, 1, 1,
-        80, 3, 81, 1, 0, 0, 2, 0,
-        0, 0, 0, 0, 82, 1, 0, 2,
-        1, 0, 0, 0, 83, 1, 0, 0,
-        7, 16777285, 1, 4, 1, 1, 33554516, 1,
-        4, 1, 1, 50331733, 2, 0, 0, 0,
-        0, 4, 86, 1, 0, 0, 4, 87,
-        1, 0, 0, 0, 88, 1, 0, 2,
-        1, 0, 2, 5, 55, 1, 1, 0,
-        0, 16777272, 0, 89, 1, 0, 2, 1,
-        0, 0, 0, 44, 1, 2, 3, 0,
-        16777306, 1, 1, 0, 0, 33554523, 2, 0,
-        0, 0, 0, 3, 92, 1, 0, 0,
-        3, 60, 1, 0, 0, 3, 93, 1,
-        0, 0, 3, 94, 1, 0, 0, 3,
-        95, 1, 0, 0, 3, 37, 1, 0,
-        0, 0, 96, 1, 0, 2, 1, 0,
-        0, 0, 69, 1, 2, 3, 0, 16777313,
-        1, 2, 3, 0, 33554530, 1, 2, 3,
-        0, 50331747, 1, 1, 0, 0, 67108955, 1,
-        2, 3, 0, 83886180, 1, 1, 0, 0,
-        100663397, 1, 2, 3, 0, 117440614, 2, 0,
-        0, 0, 0, 6, 0, 0, 0, 0,
-        3, 37, 1, 0, 0, 0, 103, 0,
-        0, 2, 2, 0, 0, 0, 0, 6,
-        0, 0, 0, 0, 3, 37, 1, 0,
-        0, 0, 104, 1, 0, 2, 1, 4,
-        1, 1, 84, 1, 4, 1, 1, 16777301,
-        4, 105, 1, 0, 0, 4, 87, 1,
-        0, 0, 0, 106, 0, 0, 2, 3,
-        81, 0, 0, 0, 0, 107, 1, 0,
-        2, 1, 0, 0, 0, 69, 1, 2,
-        3, 0, 16777324, 0, 109, 0, 0, 2,
-        3, 60, 0, 0, 0, 3, 61, 1,
-        0, 0, 3, 62, 1, 0, 0, 0,
-        110, 0, 0, 2, 3, 31, 0, 0,
-        0, 3, 111, 0, 0, 0, 0, 112,
-        1, 0, 2, 1, 0, 0, 0, 113,
-        3, 31, 0, 0, 0, 3, 34, 0,
-        0, 0, 0, 114, 1, 0, 2, 1,
-        0, 1, 5, 55, 1, 1, 0, 0,
-        16777272, 0, 115, 1, 0, 2, 1, 0,
-        0, 0, 69, 1, 4, 1, 1, 16777332,
-        12, 0, 0, 0, 0, 2, 0, 0,
-        0, 0, 5, 117, 0, 118, 0, 0,
-        119, 1, 0, 2, 1, 1, 0, 0,
-        120, 1, 1, 0, 0, 16777337, 3, 122,
-        1, 0, 0, 3, 123, 1, 0, 0,
-        0, 124, 1, 0, 2, 1, 0, 0,
-        0, 69, 1, 1, 4, 2, 19, 1,
-        0, 5, 7, 16777271, 1, 2, 3, 0,
-        16777341, 1, 2, 3, 0, 33554558, 1, 2,
-        3, 0, 50331775, 1, 2, 3, 0, 67108992,
-        1, 1, 0, 0, 83886209, 1, 1, 0,
-        0, 100663387, 2, 0, 0, 0, 0, 3,
-        53, 1, 0, 0, 3, 32, 1, 0,
-        0, 0, 130, 1, 0, 2, 1, 4,
-        1, 1, 131, 4, 132, 0, 1, 0,
-        3, 133, 1, 0, 0, 0, 134, 0,
-        0, 2, 3, 135, 1, 0, 0, 3,
-        32, 1, 0, 0, 0, 133, 1, 0,
-        2, 1, 2, 3, 0, 28, 3, 135,
-        1, 0, 0, 3, 32, 1, 0, 0,
-        0, 136, 1, 0, 2, 1, 4, 1,
-        1, 137, 1, 1, 0, 0, 16777307, 2,
-        0, 0, 0, 0, 4, 138, 0, 0,
-        0, 3, 32, 1, 0, 0, 0, 139,
-        1, 0, 2, 1, 0, 0, 0, 69,
-        1, 2, 3, 0, 16777244, 0, 140, 0,
-        0, 2, 0, 141, 0, 0, 2, 3,
-        53, 1, 0, 0, 0, 142, 1, 0,
-        2, 1, 0, 0, 0, 69, 1, 1,
-        4, 2, 19, 3, 53, 1, 0, 0,
-        3, 143, 1, 0, 0, 0, 144, 0,
-        0, 2, 3, 53, 1, 0, 0, 0,
-        145, 1, 0, 2, 1, 0, 0, 0,
-        113, 3, 34, 0, 0, 0, 0, 146,
-        1, 0, 2, 1, 4, 1, 1, 147,
-        4, 41, 0, 0, 0, 8, 0, 0,
-        0, 0, 10, 0, 0, 0, 0, 0,
-        148, 1, 0, 2, 1, 0, 5, 3,
-        149, 1, 0, 5, 3, 16777366, 1, 2,
-        3, 0, 11, 1, 2, 3, 0, 16777228,
-        3, 13, 1, 0, 0, 3, 14, 1,
-        0, 0, 0, 151, 1, 0, 2, 1,
-        0, 0, 0, 152, 1, 1, 0, 0,
-        16777369, 0, 154, 1, 1, 2, 3, 155,
-        1, 0, 0, 2, 0, 0, 0, 0,
-        0, 156, 0, 0, 2, 3, 58, 1,
+        0, 0, 68, 0, 0, 2, 2, 0,
+        0, 0, 0, 0, 69, 1, 0, 2,
+        1, 0, 0, 0, 70, 1, 4, 1,
+        1, 16777287, 2, 0, 0, 0, 0, 4,
+        72, 1, 0, 0, 0, 73, 1, 0,
+        2, 1, 0, 0, 0, 70, 1, 0,
+        1, 5, 16777271, 1, 2, 3, 0, 33554506,
+        0, 75, 1, 0, 2, 1, 0, 0,
+        0, 76, 1, 0, 0, 0, 16777293, 1,
+        0, 0, 0, 33554510, 1, 2, 3, 0,
+        50331727, 2, 0, 0, 0, 0, 0, 80,
+        1, 1, 81, 3, 82, 1, 0, 0,
+        2, 0, 0, 0, 0, 0, 83, 1,
+        0, 2, 1, 0, 0, 0, 84, 1,
+        0, 0, 7, 16777286, 1, 4, 1, 1,
+        33554517, 1, 4, 1, 1, 50331734, 2, 0,
+        0, 0, 0, 4, 87, 1, 0, 0,
+        4, 88, 1, 0, 0, 0, 89, 1,
+        0, 2, 1, 0, 2, 5, 55, 1,
+        1, 0, 0, 16777272, 0, 90, 1, 0,
+        2, 1, 0, 0, 0, 44, 1, 2,
+        3, 0, 16777307, 1, 1, 0, 0, 33554524,
+        2, 0, 0, 0, 0, 3, 93, 1,
+        0, 0, 3, 60, 1, 0, 0, 3,
+        94, 1, 0, 0, 3, 95, 1, 0,
+        0, 3, 96, 1, 0, 0, 3, 37,
+        1, 0, 0, 0, 97, 1, 0, 2,
+        1, 0, 0, 0, 70, 1, 2, 3,
+        0, 16777314, 1, 2, 3, 0, 33554531, 1,
+        2, 3, 0, 50331748, 1, 1, 0, 0,
+        67108956, 1, 2, 3, 0, 83886181, 1, 1,
+        0, 0, 100663398, 1, 2, 3, 0, 117440615,
+        2, 0, 0, 0, 0, 6, 0, 0,
+        0, 0, 3, 37, 1, 0, 0, 0,
+        104, 0, 0, 2, 2, 0, 0, 0,
+        0, 6, 0, 0, 0, 0, 3, 37,
+        1, 0, 0, 0, 105, 1, 0, 2,
+        1, 4, 1, 1, 85, 1, 4, 1,
+        1, 16777302, 4, 106, 1, 0, 0, 4,
+        88, 1, 0, 0, 0, 107, 0, 0,
+        2, 3, 82, 0, 0, 0, 0, 108,
+        1, 0, 2, 1, 0, 0, 0, 70,
+        1, 2, 3, 0, 16777325, 0, 110, 0,
+        0, 2, 3, 60, 0, 0, 0, 3,
+        61, 1, 0, 0, 3, 62, 1, 0,
+        0, 0, 111, 0, 0, 2, 3, 31,
+        0, 0, 0, 3, 112, 0, 0, 0,
+        0, 113, 1, 0, 2, 1, 0, 0,
+        0, 114, 3, 31, 0, 0, 0, 3,
+        34, 0, 0, 0, 0, 115, 1, 0,
+        2, 1, 0, 1, 5, 55, 1, 1,
+        0, 0, 16777272, 0, 116, 1, 0, 2,
+        1, 0, 0, 0, 70, 1, 4, 1,
+        1, 16777333, 12, 0, 0, 0, 0, 2,
+        0, 0, 0, 0, 5, 118, 0, 119,
+        0, 0, 120, 1, 0, 2, 1, 1,
+        0, 0, 121, 1, 1, 0, 0, 16777338,
+        3, 123, 1, 0, 0, 3, 124, 1,
+        0, 0, 0, 125, 1, 0, 2, 1,
+        0, 0, 0, 70, 1, 1, 4, 2,
+        19, 1, 0, 5, 7, 16777271, 1, 2,
+        3, 0, 16777342, 1, 2, 3, 0, 33554559,
+        1, 2, 3, 0, 50331776, 1, 2, 3,
+        0, 67108993, 1, 1, 0, 0, 83886210, 1,
+        1, 0, 0, 100663388, 2, 0, 0, 0,
+        0, 3, 53, 1, 0, 0, 3, 32,
+        1, 0, 0, 0, 131, 1, 0, 2,
+        1, 4, 1, 1, 132, 4, 133, 0,
+        1, 0, 3, 134, 1, 0, 0, 0,
+        135, 0, 0, 2, 3, 136, 1, 0,
+        0, 3, 32, 1, 0, 0, 0, 134,
+        1, 0, 2, 1, 2, 3, 0, 28,
+        3, 136, 1, 0, 0, 3, 32, 1,
+        0, 0, 0, 137, 1, 0, 2, 1,
+        4, 1, 1, 138, 1, 1, 0, 0,
+        16777308, 2, 0, 0, 0, 0, 4, 139,
+        0, 0, 0, 3, 32, 1, 0, 0,
+        0, 140, 1, 0, 2, 1, 0, 0,
+        0, 70, 1, 2, 3, 0, 16777244, 0,
+        141, 0, 0, 2, 0, 142, 0, 0,
+        2, 3, 53, 1, 0, 0, 0, 143,
+        1, 0, 2, 1, 0, 0, 0, 70,
+        1, 1, 4, 2, 19, 3, 53, 1,
+        0, 0, 3, 144, 1, 0, 0, 0,
+        145, 0, 0, 2, 3, 53, 1, 0,
+        0, 0, 146, 1, 0, 2, 1, 0,
+        0, 0, 114, 3, 34, 0, 0, 0,
+        0, 147, 1, 0, 2, 1, 4, 1,
+        1, 148, 4, 41, 0, 0, 0, 8,
+        0, 0, 0, 0, 10, 0, 0, 0,
+        0, 0, 149, 1, 0, 2, 1, 0,
+        5, 3, 150, 1, 0, 5, 3, 16777367,
+        1, 2, 3, 0, 11, 1, 2, 3,
+        0, 16777228, 3, 13, 1, 0, 0, 3,
+        14, 1, 0, 0, 0, 152, 1, 0,
+        2, 1, 0, 0, 0, 153, 1, 1,
+        0, 0, 16777370, 0, 155, 1, 1, 2,
+        3, 156, 1, 0, 0, 2, 0, 0,
         0, 0, 0, 157, 0, 0, 2, 3,
-        31, 0, 0, 0, 3, 122, 1, 0,
-        0, 0, 158, 1, 0, 2, 1, 4,
-        1, 1, 3, 4, 4, 0, 0, 0,
-        0, 159, 1, 0, 2, 1, 2, 3,
-        0, 28, 3, 29, 1, 0, 0, 0,
-        160, 1, 0, 2, 1, 0, 0, 0,
-        55, 1, 1, 0, 0, 16777272, 0, 161,
-        1, 0, 2, 1, 0, 0, 0, 69,
-        1, 4, 1, 1, 16777378, 1, 4, 1,
-        1, 33554452, 2, 0, 0, 0, 0, 4,
-        21, 1, 0, 0, 0, 163, 1, 0,
-        2, 1, 0, 0, 0, 69, 1, 1,
-        4, 2, 19, 1, 3, 1, 0, 16777380,
-        1, 2, 3, 0, 33554597, 1, 2, 3,
-        0, 50331814, 1, 2, 3, 0, 67109031, 3,
-        53, 1, 0, 0, 3, 32, 1, 0,
-        0, 0, 168, 1, 0, 2, 1, 0,
-        0, 0, 19, 1, 4, 1, 1, 16777236,
-        4, 21, 1, 0, 0, 0, 169, 1,
-        0, 2, 1, 4, 1, 1, 170, 2,
-        0, 0, 0, 0, 3, 171, 1, 0,
-        0, 5, 172, 0, 173, 0, 0, 174,
-        1, 0, 2, 1, 0, 0, 0, 69,
-        1, 2, 3, 0, 16777391, 1, 4, 1,
-        1, 33554608, 2, 0, 0, 0, 0, 4,
-        177, 1, 0, 0, 0, 178, 1, 0,
-        2, 1, 0, 0, 0, 69, 1, 1,
-        4, 2, 19, 1, 3, 1, 0, 16777395,
-        1, 4, 1, 1, 33554452, 3, 53, 1,
-        0, 0, 5, 21, 0, 180, 0, 0,
-        181, 1, 0, 2, 1, 0, 0, 0,
-        69, 1, 1, 4, 2, 19, 2, 0,
-        0, 0, 0, 3, 53, 1, 0, 0,
-        3, 182, 1, 0, 0, 0, 183, 1,
-        0, 2, 1, 4, 1, 1, 184, 4,
-        185, 0, 0, 0, 0, 186, 1, 0,
-        2, 1, 0, 0, 7, 69, 2, 0,
-        0, 0, 0, 3, 187, 1, 0, 0,
-        3, 32, 1, 0, 0, 0, 188, 1,
-        0, 2, 1, 0, 0, 0, 75, 1,
-        0, 0, 0, 16777292, 1, 0, 0, 0,
-        33554509, 1, 2, 3, 0, 50331726, 2, 0,
-        0, 0, 0, 0, 189, 0, 0, 2,
-        3, 53, 1, 0, 0,
+        58, 1, 0, 0, 0, 158, 0, 0,
+        2, 3, 31, 0, 0, 0, 3, 123,
+        1, 0, 0, 0, 159, 1, 0, 2,
+        1, 4, 1, 1, 3, 4, 4, 0,
+        0, 0, 0, 160, 1, 0, 2, 1,
+        2, 3, 0, 28, 3, 29, 1, 0,
+        0, 0, 161, 1, 0, 2, 1, 0,
+        0, 0, 55, 1, 1, 0, 0, 16777272,
+        0, 162, 1, 0, 2, 1, 0, 0,
+        0, 70, 1, 4, 1, 1, 16777379, 1,
+        4, 1, 1, 33554452, 2, 0, 0, 0,
+        0, 4, 21, 1, 0, 0, 0, 164,
+        1, 0, 2, 1, 0, 0, 0, 70,
+        1, 1, 4, 2, 19, 1, 3, 1,
+        0, 16777381, 1, 2, 3, 0, 33554598, 1,
+        2, 3, 0, 50331815, 1, 2, 3, 0,
+        67109032, 3, 53, 1, 0, 0, 3, 32,
+        1, 0, 0, 0, 169, 1, 0, 2,
+        1, 0, 0, 0, 19, 1, 4, 1,
+        1, 16777236, 4, 21, 1, 0, 0, 0,
+        170, 1, 0, 2, 1, 4, 1, 1,
+        171, 2, 0, 0, 0, 0, 3, 172,
+        1, 0, 0, 5, 173, 0, 174, 0,
+        0, 175, 1, 0, 2, 1, 0, 0,
+        0, 70, 1, 2, 3, 0, 16777392, 1,
+        4, 1, 1, 33554609, 2, 0, 0, 0,
+        0, 4, 178, 1, 0, 0, 0, 179,
+        1, 0, 2, 1, 0, 0, 0, 70,
+        1, 1, 4, 2, 19, 1, 3, 1,
+        0, 16777396, 1, 4, 1, 1, 33554452, 3,
+        53, 1, 0, 0, 5, 21, 0, 181,
+        0, 0, 182, 1, 0, 2, 1, 0,
+        0, 0, 70, 1, 1, 4, 2, 19,
+        2, 0, 0, 0, 0, 3, 53, 1,
+        0, 0, 3, 183, 1, 0, 0, 0,
+        184, 1, 0, 2, 1, 4, 1, 1,
+        185, 4, 186, 0, 0, 0, 0, 187,
+        1, 0, 2, 1, 0, 0, 7, 70,
+        2, 0, 0, 0, 0, 3, 188, 1,
+        0, 0, 3, 32, 1, 0, 0, 0,
+        189, 1, 0, 2, 1, 0, 0, 0,
+        76, 1, 0, 0, 0, 16777293, 1, 0,
+        0, 0, 33554510, 1, 2, 3, 0, 50331727,
+        2, 0, 0, 0, 0, 0, 190, 0,
+        0, 2, 3, 53, 1, 0, 0,
     ]
 }
 
@@ -496,31 +498,32 @@ kinds = () (r []i64) {
         46, 59, 5, 0, 51, 64, 4, 0,
         54, 68, 3, 0, 57, 71, 2, 0,
         59, 73, 4, 0, 63, 77, 4, 0,
-        64, 81, 4, 0, 68, 85, 5, 0,
-        72, 90, 4, 0, 74, 94, 6, 0,
-        79, 100, 3, 0, 82, 103, 8, 0,
-        88, 111, 3, 0, 89, 114, 11, 0,
-        96, 125, 12, 0, 103, 137, 4, 0,
-        104, 141, 5, 0, 106, 146, 2, 0,
-        107, 148, 3, 0, 109, 151, 4, 0,
-        110, 155, 3, 0, 112, 158, 4, 0,
-        114, 162, 3, 0, 115, 165, 6, 0,
-        119, 171, 5, 0, 124, 176, 13, 0,
-        130, 189, 4, 0, 134, 193, 3, 0,
-        133, 196, 4, 0, 136, 200, 6, 0,
-        139, 206, 3, 0, 140, 209, 1, 0,
-        141, 210, 2, 0, 142, 212, 5, 0,
-        144, 217, 2, 0, 145, 219, 3, 0,
-        146, 222, 5, 0, 148, 227, 7, 0,
-        151, 234, 3, 0, 154, 237, 3, 0,
-        156, 240, 2, 0, 157, 242, 3, 0,
-        158, 245, 3, 0, 159, 248, 3, 0,
-        160, 251, 3, 0, 161, 254, 6, 0,
-        163, 260, 9, 0, 168, 269, 4, 0,
-        169, 273, 5, 0, 174, 278, 6, 0,
-        178, 284, 7, 0, 181, 291, 6, 0,
-        183, 297, 3, 0, 186, 300, 5, 0,
-        188, 305, 6, 0, 189, 311, 2, 0,
+        64, 81, 4, 0, 68, 85, 2, 0,
+        69, 87, 5, 0, 73, 92, 4, 0,
+        75, 96, 6, 0, 80, 102, 3, 0,
+        83, 105, 8, 0, 89, 113, 3, 0,
+        90, 116, 11, 0, 97, 127, 12, 0,
+        104, 139, 4, 0, 105, 143, 5, 0,
+        107, 148, 2, 0, 108, 150, 3, 0,
+        110, 153, 4, 0, 111, 157, 3, 0,
+        113, 160, 4, 0, 115, 164, 3, 0,
+        116, 167, 6, 0, 120, 173, 5, 0,
+        125, 178, 13, 0, 131, 191, 4, 0,
+        135, 195, 3, 0, 134, 198, 4, 0,
+        137, 202, 6, 0, 140, 208, 3, 0,
+        141, 211, 1, 0, 142, 212, 2, 0,
+        143, 214, 5, 0, 145, 219, 2, 0,
+        146, 221, 3, 0, 147, 224, 5, 0,
+        149, 229, 7, 0, 152, 236, 3, 0,
+        155, 239, 3, 0, 157, 242, 2, 0,
+        158, 244, 3, 0, 159, 247, 3, 0,
+        160, 250, 3, 0, 161, 253, 3, 0,
+        162, 256, 6, 0, 164, 262, 9, 0,
+        169, 271, 4, 0, 170, 275, 5, 0,
+        175, 280, 6, 0, 179, 286, 7, 0,
+        182, 293, 6, 0, 184, 299, 3, 0,
+        187, 302, 5, 0, 189, 307, 6, 0,
+        190, 313, 2, 0,
     ]
 }
 
@@ -550,55 +553,56 @@ K-CO-EXPRESSION = 21
 K-CONDITIONAL-EXPRESSION = 22
 K-CONTINUE-STATEMENT = 23
 K-DOT-EXPRESSION = 24
-K-ENUM-DEFINITION = 25
-K-ENUM-VALUE = 26
-K-EXPORT-STATEMENT = 27
-K-EXPRESSION-STATEMENT = 28
-K-EXTERN-STATEMENT = 29
-K-FLOAT-LITERAL = 30
-K-FOR-STATEMENT = 31
-K-FUNCTION-DEFINITION = 32
-K-FUNCTION-LITERAL = 33
-K-FUNCTION-TYPE = 34
-K-GROUPED-EXPRESSION = 35
-K-IDENTIFIER = 36
-K-IF-EXPRESSION = 37
-K-INDEX-EXPRESSION = 38
-K-INFIX-EXPRESSION = 39
-K-INTEGER-LITERAL = 40
-K-INTERFACE-DEFINITION = 41
-K-ITERATION-EXPR = 42
-K-LET-STATEMENT = 43
-K-MAP-LITERAL = 44
-K-MAP-PAIR = 45
-K-MAP-TYPE = 46
-K-MULTI-ASSIGN-STATEMENT = 47
-K-NAMED-TYPE = 48
-K-NIL-LITERAL = 49
-K-NULLABLE-TYPE = 50
-K-PARAMETER = 51
-K-POINTER-TYPE = 52
-K-PREFIX-EXPRESSION = 53
-K-PROGRAM = 54
-K-RANGE-EXPRESSION = 55
-K-REGEX-LITERAL = 56
-K-RETURN-STATEMENT = 57
-K-RUN-EXPRESSION = 58
-K-SLICE-EXPRESSION = 59
-K-SLICE-LITERAL = 60
-K-SLICE-TYPE = 61
-K-STRING-LITERAL = 62
-K-STRUCT-DEFINITION = 63
-K-STRUCT-FIELD = 64
-K-STRUCT-LITERAL = 65
-K-SURFACE-MATCH = 66
-K-TAGGED-ENUM-DEFINITION = 67
-K-TAGGED-ENUM-VARIANT = 68
-K-TYPE-ALIAS = 69
-K-UNION-TYPE = 70
-K-UNWRAP-ASSIGN-STATEMENT = 71
-K-USE-STATEMENT = 72
-K-VIEW-TYPE = 73
+K-EMPTY-STATEMENT = 25
+K-ENUM-DEFINITION = 26
+K-ENUM-VALUE = 27
+K-EXPORT-STATEMENT = 28
+K-EXPRESSION-STATEMENT = 29
+K-EXTERN-STATEMENT = 30
+K-FLOAT-LITERAL = 31
+K-FOR-STATEMENT = 32
+K-FUNCTION-DEFINITION = 33
+K-FUNCTION-LITERAL = 34
+K-FUNCTION-TYPE = 35
+K-GROUPED-EXPRESSION = 36
+K-IDENTIFIER = 37
+K-IF-EXPRESSION = 38
+K-INDEX-EXPRESSION = 39
+K-INFIX-EXPRESSION = 40
+K-INTEGER-LITERAL = 41
+K-INTERFACE-DEFINITION = 42
+K-ITERATION-EXPR = 43
+K-LET-STATEMENT = 44
+K-MAP-LITERAL = 45
+K-MAP-PAIR = 46
+K-MAP-TYPE = 47
+K-MULTI-ASSIGN-STATEMENT = 48
+K-NAMED-TYPE = 49
+K-NIL-LITERAL = 50
+K-NULLABLE-TYPE = 51
+K-PARAMETER = 52
+K-POINTER-TYPE = 53
+K-PREFIX-EXPRESSION = 54
+K-PROGRAM = 55
+K-RANGE-EXPRESSION = 56
+K-REGEX-LITERAL = 57
+K-RETURN-STATEMENT = 58
+K-RUN-EXPRESSION = 59
+K-SLICE-EXPRESSION = 60
+K-SLICE-LITERAL = 61
+K-SLICE-TYPE = 62
+K-STRING-LITERAL = 63
+K-STRUCT-DEFINITION = 64
+K-STRUCT-FIELD = 65
+K-STRUCT-LITERAL = 66
+K-SURFACE-MATCH = 67
+K-TAGGED-ENUM-DEFINITION = 68
+K-TAGGED-ENUM-VARIANT = 69
+K-TYPE-ALIAS = 70
+K-UNION-TYPE = 71
+K-UNWRAP-ASSIGN-STATEMENT = 72
+K-USE-STATEMENT = 73
+K-VIEW-TYPE = 74
 
 ; kind-name: 節點種類 id → 型別名（供 <unknown> 與除錯用）
 kind-name = (id i64) (r str) {
@@ -651,103 +655,105 @@ kind-name = (id i64) (r str) {
 
         24 -> 'DotExpression'
 
-        25 -> 'EnumDefinition'
+        25 -> 'EmptyStatement'
 
-        26 -> 'EnumValue'
+        26 -> 'EnumDefinition'
 
-        27 -> 'ExportStatement'
+        27 -> 'EnumValue'
 
-        28 -> 'ExpressionStatement'
+        28 -> 'ExportStatement'
 
-        29 -> 'ExternStatement'
+        29 -> 'ExpressionStatement'
 
-        30 -> 'FloatLiteral'
+        30 -> 'ExternStatement'
 
-        31 -> 'ForStatement'
+        31 -> 'FloatLiteral'
 
-        32 -> 'FunctionDefinition'
+        32 -> 'ForStatement'
 
-        33 -> 'FunctionLiteral'
+        33 -> 'FunctionDefinition'
 
-        34 -> 'FunctionType'
+        34 -> 'FunctionLiteral'
 
-        35 -> 'GroupedExpression'
+        35 -> 'FunctionType'
 
-        36 -> 'Identifier'
+        36 -> 'GroupedExpression'
 
-        37 -> 'IfExpression'
+        37 -> 'Identifier'
 
-        38 -> 'IndexExpression'
+        38 -> 'IfExpression'
 
-        39 -> 'InfixExpression'
+        39 -> 'IndexExpression'
 
-        40 -> 'IntegerLiteral'
+        40 -> 'InfixExpression'
 
-        41 -> 'InterfaceDefinition'
+        41 -> 'IntegerLiteral'
 
-        42 -> 'IterationExpr'
+        42 -> 'InterfaceDefinition'
 
-        43 -> 'LetStatement'
+        43 -> 'IterationExpr'
 
-        44 -> 'MapLiteral'
+        44 -> 'LetStatement'
 
-        45 -> 'MapPair'
+        45 -> 'MapLiteral'
 
-        46 -> 'MapType'
+        46 -> 'MapPair'
 
-        47 -> 'MultiAssignStatement'
+        47 -> 'MapType'
 
-        48 -> 'NamedType'
+        48 -> 'MultiAssignStatement'
 
-        49 -> 'NilLiteral'
+        49 -> 'NamedType'
 
-        50 -> 'NullableType'
+        50 -> 'NilLiteral'
 
-        51 -> 'Parameter'
+        51 -> 'NullableType'
 
-        52 -> 'PointerType'
+        52 -> 'Parameter'
 
-        53 -> 'PrefixExpression'
+        53 -> 'PointerType'
 
-        54 -> 'Program'
+        54 -> 'PrefixExpression'
 
-        55 -> 'RangeExpression'
+        55 -> 'Program'
 
-        56 -> 'RegexLiteral'
+        56 -> 'RangeExpression'
 
-        57 -> 'ReturnStatement'
+        57 -> 'RegexLiteral'
 
-        58 -> 'RunExpression'
+        58 -> 'ReturnStatement'
 
-        59 -> 'SliceExpression'
+        59 -> 'RunExpression'
 
-        60 -> 'SliceLiteral'
+        60 -> 'SliceExpression'
 
-        61 -> 'SliceType'
+        61 -> 'SliceLiteral'
 
-        62 -> 'StringLiteral'
+        62 -> 'SliceType'
 
-        63 -> 'StructDefinition'
+        63 -> 'StringLiteral'
 
-        64 -> 'StructField'
+        64 -> 'StructDefinition'
 
-        65 -> 'StructLiteral'
+        65 -> 'StructField'
 
-        66 -> 'SurfaceMatch'
+        66 -> 'StructLiteral'
 
-        67 -> 'TaggedEnumDefinition'
+        67 -> 'SurfaceMatch'
 
-        68 -> 'TaggedEnumVariant'
+        68 -> 'TaggedEnumDefinition'
 
-        69 -> 'TypeAlias'
+        69 -> 'TaggedEnumVariant'
 
-        70 -> 'UnionType'
+        70 -> 'TypeAlias'
 
-        71 -> 'UnwrapAssignStatement'
+        71 -> 'UnionType'
 
-        72 -> 'UseStatement'
+        72 -> 'UnwrapAssignStatement'
 
-        73 -> 'ViewType'
+        73 -> 'UseStatement'
+
+        74 -> 'ViewType'
 
         -> 'UNKNOWN-KIND'
     }
@@ -804,103 +810,105 @@ kind-id = (name str) (r i64) {
 
         'DotExpression' -> 24
 
-        'EnumDefinition' -> 25
+        'EmptyStatement' -> 25
 
-        'EnumValue' -> 26
+        'EnumDefinition' -> 26
 
-        'ExportStatement' -> 27
+        'EnumValue' -> 27
 
-        'ExpressionStatement' -> 28
+        'ExportStatement' -> 28
 
-        'ExternStatement' -> 29
+        'ExpressionStatement' -> 29
 
-        'FloatLiteral' -> 30
+        'ExternStatement' -> 30
 
-        'ForStatement' -> 31
+        'FloatLiteral' -> 31
 
-        'FunctionDefinition' -> 32
+        'ForStatement' -> 32
 
-        'FunctionLiteral' -> 33
+        'FunctionDefinition' -> 33
 
-        'FunctionType' -> 34
+        'FunctionLiteral' -> 34
 
-        'GroupedExpression' -> 35
+        'FunctionType' -> 35
 
-        'Identifier' -> 36
+        'GroupedExpression' -> 36
 
-        'IfExpression' -> 37
+        'Identifier' -> 37
 
-        'IndexExpression' -> 38
+        'IfExpression' -> 38
 
-        'InfixExpression' -> 39
+        'IndexExpression' -> 39
 
-        'IntegerLiteral' -> 40
+        'InfixExpression' -> 40
 
-        'InterfaceDefinition' -> 41
+        'IntegerLiteral' -> 41
 
-        'IterationExpr' -> 42
+        'InterfaceDefinition' -> 42
 
-        'LetStatement' -> 43
+        'IterationExpr' -> 43
 
-        'MapLiteral' -> 44
+        'LetStatement' -> 44
 
-        'MapPair' -> 45
+        'MapLiteral' -> 45
 
-        'MapType' -> 46
+        'MapPair' -> 46
 
-        'MultiAssignStatement' -> 47
+        'MapType' -> 47
 
-        'NamedType' -> 48
+        'MultiAssignStatement' -> 48
 
-        'NilLiteral' -> 49
+        'NamedType' -> 49
 
-        'NullableType' -> 50
+        'NilLiteral' -> 50
 
-        'Parameter' -> 51
+        'NullableType' -> 51
 
-        'PointerType' -> 52
+        'Parameter' -> 52
 
-        'PrefixExpression' -> 53
+        'PointerType' -> 53
 
-        'Program' -> 54
+        'PrefixExpression' -> 54
 
-        'RangeExpression' -> 55
+        'Program' -> 55
 
-        'RegexLiteral' -> 56
+        'RangeExpression' -> 56
 
-        'ReturnStatement' -> 57
+        'RegexLiteral' -> 57
 
-        'RunExpression' -> 58
+        'ReturnStatement' -> 58
 
-        'SliceExpression' -> 59
+        'RunExpression' -> 59
 
-        'SliceLiteral' -> 60
+        'SliceExpression' -> 60
 
-        'SliceType' -> 61
+        'SliceLiteral' -> 61
 
-        'StringLiteral' -> 62
+        'SliceType' -> 62
 
-        'StructDefinition' -> 63
+        'StringLiteral' -> 63
 
-        'StructField' -> 64
+        'StructDefinition' -> 64
 
-        'StructLiteral' -> 65
+        'StructField' -> 65
 
-        'SurfaceMatch' -> 66
+        'StructLiteral' -> 66
 
-        'TaggedEnumDefinition' -> 67
+        'SurfaceMatch' -> 67
 
-        'TaggedEnumVariant' -> 68
+        'TaggedEnumDefinition' -> 68
 
-        'TypeAlias' -> 69
+        'TaggedEnumVariant' -> 69
 
-        'UnionType' -> 70
+        'TypeAlias' -> 70
 
-        'UnwrapAssignStatement' -> 71
+        'UnionType' -> 71
 
-        'UseStatement' -> 72
+        'UnwrapAssignStatement' -> 72
 
-        'ViewType' -> 73
+        'UseStatement' -> 73
+
+        'ViewType' -> 74
 
         -> 0
     }

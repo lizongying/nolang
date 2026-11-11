@@ -9,12 +9,16 @@
 ;       fill / clear / copy / reverse / split / split-n / fields / lines /
 ;       replace-char / replace-str / replace-n / from-hex / eq-full /
 ;       from-str / from-bytes / from-chars /
-;       to-i64 / to-i8 / to-i16 / to-i32 / to-u8 / to-f64 / to-bool
+;       to-i64 / to-i8 / to-i16 / to-i32 / to-u8 / to-f64
 ;
 ; 注意：txt 是 { [255 x i8], i8 } 的**另一種字串佈局**（str 是 {len,cap,data}），
 ;       任何把兩者混用的 codegen 路徑都是高風險區。本檔刻意只用 txt receiver。
-;       已知未測：to-i128 / to-u16 / to-u32 / to-u64 / to-byte（同族，取樣足夠即可）、
-;       to-f32（見下 bug 3）、to-bool（被 bug 4 的 `?bool` 問題擋住）。
+;       set-byte / new / to-u16 / to-u32 / to-u64 / to-byte / to-f32 / to-bool /
+;       to-bigint / txt-hex-val
+;
+; 2026-11-11 補齊：原本列為「已知未測」的 to-u16 / to-u32 / to-u64 / to-byte /
+;   to-f32 / to-bool 全部補上（`?bool` 的 match 取值問題已不復現），並修好
+;   `to-bigint` 對任何有效數字都回 0 的缺陷（見 §5.1r）。只剩 `to-i128` 不存在。
 ;
 ; ── 2026-09-26 已修（本檔這幾條斷言就是它們的迴歸釘）──────────────
 ;   1. `txt.to-bytes()` 原本**無法編譯**：實作是 `out.set-byte(i, .byte(i))`，
@@ -44,15 +48,17 @@
 ;      （宣告 [N x i64]、元素 i32）→ opt-verify 失敗；在函式內區域變數則報
 ;      `unsupported builtin []t.set-byte`。改用 `.push("a")` 建構即可，
 ;      `[N]char` 固定陣列也正常。重現：/tmp/p_char2.no。
-;   5. `txt.to-f32` 回傳的是 f64 的位元（42.0 印成 4631107791820423168）。
-;      重現：/tmp/p_allnum.no。疑為 math.f64-to-f32 或 f32 的列印路徑。
+;   5. ~~`txt.to-f32` 回傳的是 f64 的位元~~ ✅ **2026-11-11 實測已不再復現**：
+;      42 ⇒ 42.0、3.5 ⇒ 3.5、x+x ⇒ 84，見 t-to-f32。
 ;   6. **`?bool` 的 match 取值恆為 false**（不是 to-bool 的錯）——
 ;          f = () (v ?bool) { v = true }
 ;          x ?bool = f()
 ;          print('whole option =', x)   ; → true   ✅ 包裝是對的
 ;          x: { ok(b) -> print(b) … }   ; → 0      ❌ 取值是錯的
 ;      `?i64` / `?str` / `?f64` 全部正常，只有 **bool** 的載荷取不出來。
-;      連帶讓 `txt.to-bool` 全滅。重現：/tmp/p_b1.no（?bool）、/tmp/p_b11.no（包裝正常）。
+;      連帶讓 `txt.to-bool` 全滅。✅ **2026-11-11 實測已不復現**：`x: { ok(b) -> … }`
+;      取得到 true/false，故 to-bool（以及 to-u16/u32/u64/byte）本輪全部補齊，
+;      見 t-to-bool / t-to-unsigned / t-to-u64-byte。
 ;   7. `rindex-from` 的語意與 Python `rfind` 不同（見 t-search 註解），
 ;      但**與原始碼註解一致**，故視為設計選擇而非 bug —— 測試按文件語意寫。
 
@@ -769,6 +775,322 @@ passed = passed + p15
 
 #{overflow=wrap}
 failed = failed + f15
+
+; ── 補齊的轉換 / 內建位元組寫入 ────────────────
+;
+; 這一組原本被列在檔頭「已知未測」裡。其中 to-bool 當年是因為「`?bool` 的 match
+; 取值恆為 false」而整族放棄，本輪實測該問題已不存在（`x: { ok(b) -> … }` 取得
+; 真值），故全部補上。
+
+; set-byte：內建位元組寫入。邊界以**實體容量 255** 為準（不是 len），
+; 越界回 nil 並跳過寫入；成功回 some(true)
+t-set-byte = () {
+    s txt = 'abc'
+
+    ; 正常寫入：內容改變、長度不變
+    r = s.set-byte(0, 88)
+    r: {
+        ok(v) -> runner.is-true(v, 'set-byte 原位寫入回 ok(true)')
+
+        -> runner.is-true(false, 'set-byte 原位寫入不該失敗')
+    }
+    runner.str-eq(s.to-str(), 'Xbc', 3, 'set-byte(0, 88) ⇒ Xbc')
+    runner.eq(s.len(), 3, '原位寫入不改長度')
+
+    ; 邊界內但超出 len：寫進緩衝，長度仍是 3（給 fill/from-str 這類「先填後設 len」用）
+    r2 = s.set-byte(254, 89)
+    r2: {
+        ok(v2) -> runner.is-true(v2, 'set-byte(254) 在實體容量內 ⇒ ok')
+
+        -> runner.is-true(false, 'set-byte(254) 不該越界')
+    }
+    runner.eq(s.len(), 3, '寫到 254 不改 len')
+
+    ; 越界：i >= 255 或 i < 0 都回 nil
+    r3 = s.set-byte(255, 89)
+    r3: {
+        ok -> runner.is-true(false, 'set-byte(255) 應回 nil')
+
+        nil -> runner.is-true(true, 'set-byte(255) ⇒ nil')
+
+        err -> runner.is-true(false, 'set-byte(255) 應回 nil 而非 err')
+    }
+    r4 = s.set-byte(0 - 1, 89)
+    r4: {
+        ok -> runner.is-true(false, 'set-byte(-1) 應回 nil')
+
+        nil -> runner.is-true(true, 'set-byte(-1) ⇒ nil')
+
+        err -> runner.is-true(false, 'set-byte(-1) 應回 nil 而非 err')
+    }
+}
+
+; new：編譯期內建，[]char 逐位元組轉成 txt（超過 255 位元組自動截斷）
+t-new = () {
+    cs []char
+    cs.push("a")
+    cs.push("b")
+    cs.push("c")
+    v = txt.new(cs)
+    runner.eq(v.len(), 3, 'txt.new([]char) len == 3')
+    runner.str-eq(v.to-str(), 'abc', 3, 'txt.new([]char) 內容')
+
+    ; ⚠️ 現狀（本輪釘住，未修）：非 ASCII 碼點只取**低 8 位元**，不做 UTF-8 編碼。
+    ;    '中' (U+4E2D) ⇒ 1 位元組 0x2D（'-'），而不是 3 位元組 E4 B8 AD。
+    ;    同一條 codegen 路徑（builtin chars-new）也承載 str.new / txt.from-chars，
+    ;    三者行為一致 ⇒ 屬 codegen 缺陷，見 test/README.md §5.2 #64。
+    one []char
+    one.push("中")
+    w = txt.new(one)
+    runner.eq(w.len(), 1, 'txt.new 對非 ASCII 碼點只取低 8 位元（現狀，非 UTF-8）')
+    runner.str-eq(w.to-str(), '-', 1, 'txt.new(中) 得到 0x2D ⇒ 連字符')
+}
+
+; to-u16 / to-u32：範圍檢查 + 負號/非數字/空字串分流
+t-to-unsigned = () {
+    a txt = '65535'
+    v = a.to-u16()
+    v: {
+        ok(x) -> runner.eq(x, 65535, 'to-u16 65535 命中上界')
+
+        -> runner.is-true(false, 'to-u16 65535 不該失敗')
+    }
+
+    b txt = '65536'
+    w = b.to-u16()
+    w: {
+        ok -> runner.is-true(false, 'to-u16 65536 應越界')
+
+        err -> runner.is-true(true, 'to-u16 65536 ⇒ err(out of range)')
+
+        nil -> runner.is-true(false, 'to-u16 65536 應回 err 而非 nil')
+    }
+
+    c txt = '+7'
+    y = c.to-u16()
+    y: {
+        ok(z) -> runner.eq(z, 7, 'to-u16 +7 ⇒ 7（允許前導加號）')
+
+        -> runner.is-true(false, 'to-u16 +7 不該失敗')
+    }
+
+    d txt = '0'
+    d0 = d.to-u16()
+    d0: {
+        ok(z0) -> runner.eq(z0, 0, 'to-u16 0 ⇒ 0')
+
+        -> runner.is-true(false, 'to-u16 0 不該失敗')
+    }
+
+    e txt = '4294967295'
+    u32 = e.to-u32()
+    u32: {
+        ok(x32) -> runner.eq(x32, 4294967295, 'to-u32 命中上界')
+
+        -> runner.is-true(false, 'to-u32 上界不該失敗')
+    }
+
+    f txt = '4294967296'
+    over = f.to-u32()
+    over: {
+        ok -> runner.is-true(false, 'to-u32 越界應報錯')
+
+        err -> runner.is-true(true, 'to-u32 越界 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-u32 越界應回 err 而非 nil')
+    }
+}
+
+; to-u64 / to-byte：u64 不做範圍檢查（負號/非數字才報錯），byte 走 0~255
+t-to-u64-byte = () {
+    max-t txt = '18446744073709551615'
+    want u64 = 18446744073709551615
+    v = max-t.to-u64()
+    v: {
+        ok(x) -> runner.is-true(x == want, 'to-u64 命中 2^64-1')
+
+        -> runner.is-true(false, 'to-u64 上界不該失敗')
+    }
+
+    neg txt = '-1'
+    n = neg.to-u64()
+    n: {
+        ok -> runner.is-true(false, 'to-u64 負號應報錯')
+
+        err -> runner.is-true(true, 'to-u64 負號 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-u64 負號應回 err 而非 nil')
+    }
+
+    bad txt = '12x'
+    b = bad.to-u64()
+    b: {
+        ok -> runner.is-true(false, 'to-u64 非數字應報錯')
+
+        err -> runner.is-true(true, 'to-u64 非數字 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-u64 非數字應回 err 而非 nil')
+    }
+
+    bmax txt = '255'
+    bv = bmax.to-byte()
+    bv: {
+        ok(xb) -> runner.eq(xb, 255, 'to-byte 255 命中上界')
+
+        -> runner.is-true(false, 'to-byte 255 不該失敗')
+    }
+
+    bover txt = '256'
+    ov = bover.to-byte()
+    ov: {
+        ok -> runner.is-true(false, 'to-byte 256 應越界')
+
+        err -> runner.is-true(true, 'to-byte 256 ⇒ err')
+
+        nil -> runner.is-true(false, 'to-byte 256 應回 err 而非 nil')
+    }
+}
+
+; to-f32：回 f32（不是 f64 位元 — 檔頭舊 bug 5 已不再復現）
+t-to-f32 = () {
+    t txt = '42'
+    v = t.to-f32()
+    v: {
+        ok(x) -> {
+            runner.f64-eq(x, 42.0, 0.0001, 'to-f32 42 ⇒ 42.0')
+            runner.f64-eq(x + x, 84.0, 0.0001, 'to-f32 的值可參與 f32 算術')
+        }
+
+        nil -> runner.is-true(false, 'to-f32 42 == nil')
+
+        err -> runner.is-true(false, 'to-f32 42 == err')
+    }
+
+    h txt = '3.5'
+    hf = h.to-f32()
+    hf: {
+        ok(y) -> runner.f64-eq(y, 3.5, 0.0001, 'to-f32 3.5 ⇒ 3.5')
+
+        -> runner.is-true(false, 'to-f32 3.5 失敗')
+    }
+
+    bad txt = 'abc'
+    bf = bad.to-f32()
+    bf: {
+        ok -> runner.is-true(false, 'to-f32 abc 應報錯')
+
+        err -> runner.is-true(true, 'to-f32 abc ⇒ err')
+
+        nil -> runner.is-true(false, 'to-f32 abc 應回 err 而非 nil')
+    }
+}
+
+; to-bool：只認「true」/「false」，其餘 err，空字串 nil
+t-to-bool = () {
+    t txt = 'true'
+    v = t.to-bool()
+    v: {
+        ok(x) -> runner.is-true(x, 'to-bool true ⇒ true')
+
+        -> runner.is-true(false, 'to-bool true 失敗')
+    }
+
+    f txt = 'false'
+    fv = f.to-bool()
+    fv: {
+        ok(y) -> runner.is-false(y, 'to-bool false ⇒ false')
+
+        -> runner.is-true(false, 'to-bool false 失敗')
+    }
+
+    ; 大小寫敏感：'TRUE' 不是合法輸入
+    up txt = 'TRUE'
+    uv = up.to-bool()
+    uv: {
+        ok -> runner.is-true(false, 'to-bool 對 TRUE 應報錯')
+
+        err -> runner.is-true(true, 'to-bool TRUE ⇒ err(大小寫敏感)')
+
+        nil -> runner.is-true(false, 'to-bool TRUE 應回 err 而非 nil')
+    }
+
+    ; 長度對但內容不對（'truf'）也走 err
+    near txt = 'truf'
+    nv = near.to-bool()
+    nv: {
+        ok -> runner.is-true(false, 'to-bool truf 應報錯')
+
+        err -> runner.is-true(true, 'to-bool truf ⇒ err')
+
+        nil -> runner.is-true(false, 'to-bool truf 應回 err 而非 nil')
+    }
+
+    e txt = ''
+    ev = e.to-bool()
+    ev: {
+        ok -> runner.is-true(false, 'to-bool 空字串應回 nil')
+
+        nil -> runner.is-true(true, 'to-bool 空字串 ⇒ nil')
+
+        err -> runner.is-true(false, 'to-bool 空字串應回 nil 而非 err')
+    }
+}
+
+; txt-hex-val：十六進位字元的數值（A-F / a-f / 0-9）
+t-hex-val = () {
+    runner.eq(txt.txt-hex-val(48), 0, 'hex-val(0) == 0')
+    runner.eq(txt.txt-hex-val(57), 9, 'hex-val(9) == 9')
+    runner.eq(txt.txt-hex-val(65), 10, 'hex-val(A) == 10')
+    runner.eq(txt.txt-hex-val(70), 15, 'hex-val(F) == 15')
+    runner.eq(txt.txt-hex-val(97), 10, 'hex-val(a) == 10（大小寫等價）')
+    runner.eq(txt.txt-hex-val(102), 15, 'hex-val(f) == 15')
+}
+
+; to-bigint 的攤平助手：?bigint → 十進位字串（nil / err 各給哨兵字串）
+; ⚠️ 不能在函數體內定義函數（`'dig' is not defined`），必須提到頂層。
+bigint-str = (t txt) (out str) {
+    out = 'nil'
+    v = t.to-bigint()
+    v: {
+        ok(b) -> out = b.to-str()
+
+        err -> out = 'err'
+
+        nil -> out = 'nil'
+    }
+}
+
+; to-bigint：十進位/帶前綴/帶符號/前導空白，以及 nil（空）與 err（無有效數字）
+;
+; ⚠️ 本函數原本對**任何有效數字都回 0**：累加器那行 `d = _txt-dig-val(...)` 沒標註
+;    i64，於是 `acc + d` 的運算符重載被派到 bigint 臂。str.to-bigint 早就標註過，
+;    txt 這份漏了（本輪補上，見 src/std/txt.no 的註解）。
+t-to-bigint = () {
+    a txt = '42'
+    runner.str-eq(bigint-str(a), '42', 2, 'to-bigint 42')
+
+    b txt = '0x10'
+    runner.str-eq(bigint-str(b), '16', 2, 'to-bigint 0x10 ⇒ 16')
+
+    c txt = '0b1010'
+    runner.str-eq(bigint-str(c), '10', 2, 'to-bigint 0b1010 ⇒ 10')
+
+    d txt = '-5'
+    runner.str-eq(bigint-str(d), '-5', 2, 'to-bigint -5')
+
+    e txt = '  7'
+    runner.str-eq(bigint-str(e), '7', 1, 'to-bigint 跳過前導空白')
+
+    f txt = '123456789012345678901234567890'
+    runner.str-eq(bigint-str(f), '123456789012345678901234567890', 30, 'to-bigint 30 位數不被截斷')
+
+    g txt = 'abc'
+    runner.str-eq(bigint-str(g), 'err', 3, 'to-bigint 無有效數字 ⇒ err')
+
+    h txt = ''
+    runner.str-eq(bigint-str(h), 'nil', 3, 'to-bigint 空字串 ⇒ nil')
+}
+
 p16, f16 = runner.test('txt.hex/eq-full', t-hex-and-eq)
 
 #{overflow=wrap}
@@ -776,6 +1098,70 @@ passed = passed + p16
 
 #{overflow=wrap}
 failed = failed + f16
+
+p17, f17 = runner.test('txt.set-byte', t-set-byte)
+
+#{overflow=wrap}
+passed = passed + p17
+
+#{overflow=wrap}
+failed = failed + f17
+
+p18, f18 = runner.test('txt.new', t-new)
+
+#{overflow=wrap}
+passed = passed + p18
+
+#{overflow=wrap}
+failed = failed + f18
+
+p19, f19 = runner.test('txt.to-u16/to-u32', t-to-unsigned)
+
+#{overflow=wrap}
+passed = passed + p19
+
+#{overflow=wrap}
+failed = failed + f19
+
+p20, f20 = runner.test('txt.to-u64/to-byte', t-to-u64-byte)
+
+#{overflow=wrap}
+passed = passed + p20
+
+#{overflow=wrap}
+failed = failed + f20
+
+p21, f21 = runner.test('txt.to-f32', t-to-f32)
+
+#{overflow=wrap}
+passed = passed + p21
+
+#{overflow=wrap}
+failed = failed + f21
+
+p22, f22 = runner.test('txt.to-bool', t-to-bool)
+
+#{overflow=wrap}
+passed = passed + p22
+
+#{overflow=wrap}
+failed = failed + f22
+
+p23, f23 = runner.test('txt.txt-hex-val', t-hex-val)
+
+#{overflow=wrap}
+passed = passed + p23
+
+#{overflow=wrap}
+failed = failed + f23
+
+p24, f24 = runner.test('txt.to-bigint', t-to-bigint)
+
+#{overflow=wrap}
+passed = passed + p24
+
+#{overflow=wrap}
+failed = failed + f24
 
 total = runner.summary()
 f = runner.failed-count()

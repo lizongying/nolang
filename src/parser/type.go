@@ -203,6 +203,21 @@ func (p *Parser) resolveReceiverType(receiver Expression) string {
 		// 分支 155 行同形）。運算符重載方法本身回傳書寫的 `?T`。
 		return strings.TrimPrefix(p.OperatorOverloadReturnType(innerInf), "?")
 	}
+	// StringLiteral receiver（`'12'.to-i64()`）：字面量的型別就是 str。
+	//
+	// 缺這條時 receiverType 恆為空 ⇒ 方法回傳型別推不出 ⇒ 值位 match 的主語無法
+	// 歸一化成 `__match_subj` ⇒ 臂內 `it` 沒有綁定，觀測為 0／空字串：
+	//   n = '12'.to-i64(): { ok -> it  -> -1 }   ⇒ n == 0（兩臂都不命中）
+	// 補上後 n == 12。同理可推 `'1.5'.to-f64()`。
+	//
+	// ⚠️ 切片接收者（`buf[a..b).to-str()`）刻意**不**在這裡補：那種寫法在值位
+	// match 裡目前解不出標頭內容（`it` 未綁定 ⇒ 空字串），但若把切片型別推出
+	// 來，`src/std/net/http3.no::decode-header` 會從「靜默回空」變成 **SIGSEGV**
+	// ——切片視圖傳進 builtin（`vecFromArraySink` 視圖）踩的是另一條已知的
+	// 記憶體安全缺口。修法要等視圖生命週期修好，std 側先用「先落變數再兩步解包」。
+	if _, ok := receiver.(*StringLiteral); ok {
+		return "str"
+	}
 	return ""
 }
 

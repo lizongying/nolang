@@ -81,7 +81,12 @@ reader.read-byte = () (b ?i64) {
 reader.read-line = () (line ?str) {
     line = nil
     .fd < 0 -> return
-    buf []byte = with-cap(4096)
+
+    ; ⚠️ 必須是 with-len 而不是 with-cap：`fs.read` 是直接往緩衝寫的內建，
+    ;    它不會更新 vec 的 len。with-cap(4096) 的 len 恆為 0，於是
+    ;    `buf.slice(0, n)` 取到的永遠是空切片 ⇒ 本函式在有資料時也回 ok('')。
+    ;    （2026-11-11 修；with-len 讓 len=cap，slice 才拿得到剛讀進來的位元組。）
+    buf []byte = with-len(4096)
     n = fs.read(.fd, buf, 4096)
     n > 0 -> line = buf.slice(0, n).to-str()
 }

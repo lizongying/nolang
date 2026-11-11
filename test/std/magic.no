@@ -81,6 +81,33 @@ t-detect-type-nonexistent = () {
     runner.str-eq(kind, 'unknown (not found)', 19, 'detect-type nonexistent')
 }
 
+; ── detect-by-magic ─────────────────────────
+
+; detect-by-magic 只看前 64 字節的魔數：PNG 檔頭應判為 'PNG image'，
+; 純文字內容不命中任何魔數回空串，檔案不存在也回空串
+t-detect-by-magic = () {
+    tmp = '/tmp/nolang_magic_magic.bin'
+    fs.remove(tmp)
+    data []byte = [137, 80, 78, 71, 13, 10, 26, 10]
+    ok = fs.write-file(tmp, data)
+    runner.is-true(ok, 'write png header file')
+    kind = magic.detect-by-magic(tmp)
+    runner.str-eq(kind, 'PNG image', 9, 'png magic -> PNG image')
+    fs.remove(tmp)
+
+    plain = '/tmp/nolang_magic_plain.txt'
+    fs.remove(plain)
+    txt []byte = [104, 101, 108, 108, 111]
+    ok2 = fs.write-file(plain, txt)
+    runner.is-true(ok2, 'write plain file')
+    kind2 = magic.detect-by-magic(plain)
+    runner.eq(kind2.len(), 0, 'no magic match -> empty')
+    fs.remove(plain)
+
+    kind3 = magic.detect-by-magic('/nonexistent/path/xyz123')
+    runner.eq(kind3.len(), 0, 'missing file -> empty')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('magic.get-extension', t-get-extension)
@@ -88,6 +115,7 @@ p2, f2 = runner.test('magic.detect-by-extension', t-detect-by-extension)
 p3, f3 = runner.test('magic.detect-type-txt', t-detect-type-txt)
 p4, f4 = runner.test('magic.detect-type-dir', t-detect-type-dir)
 p5, f5 = runner.test('magic.detect-type-nonexistent', t-detect-type-nonexistent)
+p6, f6 = runner.test('magic.detect-by-magic', t-detect-by-magic)
 
 total = runner.summary()
 f = runner.failed-count()

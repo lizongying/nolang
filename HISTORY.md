@@ -2,6 +2,7 @@
 
 ## 未發布
 
+- feat(mir): `str` 描述符从 24B 改为 16B —— `%str-long = { i32 len, i32 cap, i8* data }`，内部 len/cap 为 `u32`，对外 API（`len-bytes()` / `len()` / `cap()` / `_len` / `_cap` / `_set-len` / `_set-cap`）仍为 `i64`；同步 `[]str` stride、`os.args()`、`?str`/enum payload slots、全局字符串常量与运行时 helper；`txt` 保持 256B 不变。docs 同步 lang/str、lang/memory、std/basic-types、std/core-library 及英文 i18n 副本
 - **BREAKING(D11)**: 废弃并移除 `#{index-out=DEF}` 注解 —— `a[i]` 恒返回 `?T`，只能以 match 或 `?=` 显式消费；残留注解报专用错误；显式 plain 型别逃生口 `v i64 = a[i]` 同时废除，把 `?T` 当普通值用（`crc ^ s[i]`）升级为阻断 `no build` 的硬错误。全仓 90 个被跟踪 `.no` 文件 / 1029 行注解站点一次性迁移；`no fmt --fix=index-out` 作为迁移工具随 D11 退役
 - feat(lang): `?=` 简写在「函式有 `?T` 结果参数」**或**「陈述位于陈述层级块 match 主体内」两种情形之一即可使用；`err -> _` / `-> _` 两臂是无 `?T` 结果参数函式的标准兜底，AGENTS.md / syntax 指南 / nolang-syntax skill 已同步
 - docs(design): `option-unified.md` 加 D11 取代横幅，D4 / D7 / D9 / D10 与 map 规则继续有效

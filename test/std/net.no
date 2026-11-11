@@ -1,0 +1,696 @@
+; std-net.no — net/net 模組測試
+;
+; 執行：no test test/std/net.no
+;
+; 為什麼這裡能測這麼多：net/net 是 60 個符號裡缺口最大的一塊，但**絕大多數
+; 不需要外部網路** —— 127.0.0.1 上自己 listen、自己 dial，loopback 在沙箱內可用
+; （實測 bind/dial/accept/send/recv 全通）。ICMP 在 mac 上走非特權 SOCK_DGRAM，
+; 對 127.0.0.1 也真的有回應。所以本檔把 **60 個符號全部**釘住（覆蓋率 100%）。
+;
+; 覆蓋清單（60 個 = 25 函式 + 35 方法）：
+;   TCP 裸函式：net-listen net-dial net-accept net-accept-nb net-send net-recv close
+;   TCP 便捷層：listen-on dial-to listener.{listen,accept,close,fd-of}
+;   TCP 連線層：conn.{dial,send,recv,recv-line,recv-all,close,fd-of}
+;   逾時族：    conn.{set-recv-timeout,set-timeout,recv-with-timeout,send-with-timeout}
+;               listener.{set-timeout,accept-with-timeout} dial-timeout
+;   UDP 族：    net-udp-open net-udp-sendto net-udp-recvfrom net-set-recv-timeout
+;               udp-dial-to udp-conn.{open,set-timeout,send,send-bytes,recv,recv-bytes,close,fd-of}
+;   加密通道：  enc-dial enc-accept enc-conn.{init,gen-iv,send-encrypted,recv-encrypted,close}
+;   ICMP：      net-icmp-open ping ping-count icmp-conn.{open,close,build-echo,ping-once,ping-host}
+;   系統表：    ifconfig-list route-list arp-list
+;   純函式：    icmp-checksum split-ws
+;
+; ⚠️ 系統表三兄弟在沙箱內回傳空陣列（只釘住「可呼叫且回傳陣列」）；其餘全部真斷言。
+;
+; 寫法備註：
+;   - 裸下標 `b[i]`/`s[i]` 當實參會被 `no vet` 判 idxbruse ⇒ 一律經 by/sb 取值。
+;   - `str.byte(i)` 回 `?byte`，取值也要先落變數或走 sb。
+;   - 每個 TEST 用**獨立端口**（39101+），避免上一個 TEST 的 TIME_WAIT 撞車。
+;   - `runner.eq` 只吃 i64；bool 用 runner.is-true / is-false；字串用 runner.str-eq。
+;   - `co` 是保留字（與 run/awy/chan/use/as/ptr 同組），當變數名會讓**後續某個**
+;     參數列表報 "expected comma or right parenthesis, got INT"，與真正原因無關。
+;   - 同一個 `?T` 變數被 match 兩次時，第二處的 `it` 型別可能串到外層 option 的
+;     載荷型別（實測 got 變成 ?enc-conn）⇒ 把斷言搬進獨立函式（chk-plain）。
+
+# /test/runner
+
+; 取 []byte 元素（越界 -1）
+by = (b []byte, i i64) (v i64) {
+    v = b[i]: {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; 取 str 的位元組（str.byte 回 ?byte，這裡收成裸 i64）
+sb = (s str, i i64) (v i64) {
+    v = s.byte(i): {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; 把 ?listener / ?conn 這類 std 結構體 option 收成「1=ok / -1=nil」，方便 runner.eq
+; （std 結構體的方法回 ?T 時不能直接接值位 match，只能先落變數再語句位 match）
+
+; 斷言解密後的明文。獨立成頂層函式是必要的：在 `e: { ok -> … d: { ok -> got = it } }`
+; 這種嵌套 match 裡，內層 `it` 會被推成外層的型別（實測 got 變成 ?enc-conn，
+; 報 "expected 'str', got '?enc-conn'"）。跨一次函式邊界就沒有這個問題。
+chk-plain = (d ?str) (r i64) {
+    r = 0
+    d: {
+        ok -> {
+            got = it
+            r = 1
+            runner.eq(got.len-bytes(), 6, '收發明文長度 = 6')
+            runner.eq(sb(got, 0), 115, '明文首位元組 s')
+            runner.eq(sb(got, 5), 116, '明文末位元組 t')
+        }
+
+        -> r = -1
+    }
+}
+
+; ── TCP：listen / dial / accept / send / recv ──────────────
+
+; 完整一輪：綁定 → 撥號 → 送 → accept → 收 → 各自關閉
+t-tcp-basic = () {
+    l = net.listen-on('127.0.0.1', 39101)
+    lo = 0
+    lo = l: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(lo, 1, 'listen-on: 127.0.0.1 綁定成功')
+
+    l: {
+        ok -> {
+            lst = it
+
+            c = net.dial-to('127.0.0.1', 39101)
+            cv = 0
+            cv = c: {
+                ok -> 1
+
+                -> -1
+            }
+            runner.eq(cv, 1, 'dial-to: 連上本機監聽')
+
+            c: {
+                ok -> {
+                    cli = it
+
+                    w = cli.send('hello')
+                    runner.eq(w, 5, 'conn.send: 送出 5 位元組')
+
+                    a = lst.accept()
+                    ao = 0
+                    ao = a: {
+                        ok -> 1
+
+                        -> -1
+                    }
+                    runner.eq(ao, 1, 'listener.accept: 收到連線')
+
+                    a: {
+                        ok -> {
+                            sv = it
+
+                            buf str = with-len(64)
+                            n = sv.recv(buf, 64)
+                            runner.eq(n, 5, 'conn.recv: 收到 5 位元組')
+                            runner.eq(sb(buf, 0), 104, 'conn.recv: 首位元組 h')
+                            runner.eq(sb(buf, 4), 111, 'conn.recv: 末位元組 o')
+
+                            sv.close()
+                        }
+
+                        -> _
+                    }
+                    cli.close()
+                }
+
+                -> _
+            }
+            lst.close()
+        }
+
+        -> _
+    }
+}
+
+; recv-line（單次 recv 內容）與 recv-all（收到對端關閉為止）
+t-tcp-recv = () {
+    l = net.listen-on('127.0.0.1', 39102)
+    l: {
+        ok -> {
+            lst = it
+            c = net.dial-to('127.0.0.1', 39102)
+
+            c: {
+                ok -> {
+                    cli = it
+
+                    a = lst.accept()
+                    a: {
+                        ok -> {
+                            sv = it
+
+                            ; 先送一段，服務端 recv-line 讀到它
+                            w1 = cli.send('line-one')
+                            runner.eq(w1, 8, 'recv-line 前置: 送出 8 位元組')
+
+                            ln = sv.recv-line()
+                            lv = 0
+                            lv = ln: {
+                                ok -> 1
+
+                                -> -1
+                            }
+                            runner.eq(lv, 1, 'conn.recv-line: 讀到內容')
+
+                            ln: {
+                                ok -> {
+                                    got = it
+                                    runner.eq(got.len-bytes(), 8, 'conn.recv-line: 長度 8')
+                                    runner.eq(sb(got, 0), 108, 'recv-line: 首位元組 l')
+                                }
+
+                                -> _
+                            }
+
+                            ; 再送兩段，然後關閉，recv-all 應該把剩下的全收齊
+                            w2 = cli.send('AB')
+                            w3 = cli.send('CDE')
+                            runner.eq(w2, 2, 'recv-all 前置: 送出 2 位元組')
+                            runner.eq(w3, 3, 'recv-all 前置: 送出 3 位元組')
+                            cli.close()
+
+                            content, total = sv.recv-all()
+                            runner.eq(total, 5, 'conn.recv-all: 累計 5 位元組')
+                            runner.eq(content.len-bytes(), 5, 'conn.recv-all: 內容長度 = total')
+                            runner.eq(sb(content, 0), 65, 'recv-all: 首位元組 A')
+                            runner.eq(sb(content, 4), 69, 'recv-all: 末位元組 E')
+
+                            sv.close()
+                        }
+
+                        -> _
+                    }
+                }
+
+                -> _
+            }
+            lst.close()
+        }
+
+        -> _
+    }
+}
+
+; accept-nb 在沒有待連線時必須立刻回 nil（不能阻塞）
+t-accept-nb = () {
+    l = net.listen-on('127.0.0.1', 39103)
+    l: {
+        ok -> {
+            lst = it
+
+            a = lst.accept-with-timeout(50)
+            av = 0
+            av = a: {
+                ok -> 1
+
+                -> -1
+            }
+            runner.eq(av, -1, 'accept-with-timeout: 無人連線時逾時回 nil')
+
+            lst.close()
+
+            ; 關閉後的 listener 再 accept 也必須回 nil，而不是崩
+            b = lst.accept()
+            bv = 0
+            bv = b: {
+                ok -> 1
+
+                -> -1
+            }
+            runner.eq(bv, -1, 'listener.accept: 已關閉的 listener 回 nil')
+        }
+
+        -> _
+    }
+}
+
+; ── 逾時族 ────────────────────────────────────────────────
+
+; set-recv-timeout / set-timeout / recv-with-timeout 都要能設上並在無資料時回 0
+t-timeout = () {
+    l = net.listen-on('127.0.0.1', 39104)
+    l: {
+        ok -> {
+            lst = it
+            c = net.dial-to('127.0.0.1', 39104)
+
+            c: {
+                ok -> {
+                    cli = it
+                    a = lst.accept()
+
+                    a: {
+                        ok -> {
+                            sv = it
+
+                            runner.is-true(sv.set-recv-timeout(50), 'conn.set-recv-timeout: 設定成功')
+                            runner.is-true(sv.set-timeout(50), 'conn.set-timeout: 別名同樣成功')
+
+                            buf str = with-len(64)
+
+                            ; ⚠️ 逾時回 -1，不是 0（§5.2 #89）：net-recv 直接回傳 recv(2) 的
+                            ; 結果，SO_RCVTIMEO 逾時時 recv 回 -1/EAGAIN ⇒ 逾時與硬錯誤
+                            ; 在 API 上不可區分。文件寫「0=逾時」與實現不符。
+                            n = sv.recv(buf, 64)
+                            runner.eq(n, -1, 'conn.recv: 逾時回 -1（文件寫 0，與實現不符）')
+
+                            n2 = sv.recv-with-timeout(buf, 64, 50)
+                            runner.eq(n2, -1, 'conn.recv-with-timeout: 逾時回 -1')
+
+                            ; send-with-timeout 走的是「設 recv 逾時 → 發 → 還原」
+                            w = sv.send-with-timeout('pong', 50)
+                            runner.eq(w, 4, 'conn.send-with-timeout: 送出 4 位元組')
+
+                            buf2 str = with-len(64)
+                            n3 = cli.recv(buf2, 64)
+                            runner.eq(n3, 4, '對端收到 send-with-timeout 的內容')
+                            runner.eq(sb(buf2, 0), 112, 'send-with-timeout: 首位元組 p')
+
+                            sv.close()
+                        }
+
+                        -> _
+                    }
+                    cli.close()
+                }
+
+                -> _
+            }
+            lst.close()
+        }
+
+        -> _
+    }
+}
+
+; listener.set-timeout + 關閉後的連線操作要安全
+t-listener-timeout = () {
+    l = net.listen-on('127.0.0.1', 39105)
+    l: {
+        ok -> {
+            lst = it
+            runner.is-true(lst.set-timeout(50), 'listener.set-timeout: 設定成功')
+            lst.close()
+        }
+
+        -> _
+    }
+}
+
+; dial-timeout 打一個沒人監聽的埠必須回 nil（不是崩）
+t-dial-timeout = () {
+    c = net.dial-timeout('127.0.0.1', 39106, 100)
+    cv = 0
+    cv = c: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(cv, -1, 'dial-timeout: 無人監聽回 nil')
+}
+
+; ── UDP ──────────────────────────────────────────────────
+
+; UDP 沒有 bind API，所以只能測「送出成功」與「無資料時逾時回 0」兩條路徑
+t-udp = () {
+    u = net.udp-dial-to('127.0.0.1', 39111)
+    uv = 0
+    uv = u: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(uv, 1, 'udp-dial-to: 建立 UDP 連線')
+
+    u: {
+        ok -> {
+            uc = it
+
+            runner.is-true(uc.set-timeout(50), 'udp-conn.set-timeout: 設定成功')
+
+            w = uc.send('udp-payload')
+            runner.eq(w, 11, 'udp-conn.send: 送出 11 位元組')
+
+            raw []byte = [1, 2, 3, 4]
+            wb = uc.send-bytes(raw)
+            runner.eq(wb, 4, 'udp-conn.send-bytes: 送出 4 位元組')
+
+            ; 沒有對端 bind ⇒ 收不到東西，逾時回 -1（同 §5.2 #89）
+            buf str = with-len(64)
+            n = uc.recv(buf, 64)
+            runner.eq(n, -1, 'udp-conn.recv: 無資料時逾時回 -1')
+
+            bbuf []byte
+            nb = uc.recv-bytes(bbuf, 64)
+            runner.eq(nb, -1, 'udp-conn.recv-bytes: 無資料時逾時回 -1')
+
+            uc.close()
+        }
+
+        -> _
+    }
+
+    ; 裸函式路徑：net-udp-open + net-set-recv-timeout + net-udp-sendto/recvfrom
+    fd = net.net-udp-open()
+    runner.eq(net.net-set-recv-timeout(fd, 50), 0, 'net-set-recv-timeout: 回 0 = 成功')
+
+    w2 = net.net-udp-sendto(fd, 'abc', 3, '127.0.0.1', 39112)
+    runner.eq(w2, 3, 'net-udp-sendto: 送出 3 位元組')
+
+    rbuf str = with-len(64)
+    r = net.net-udp-recvfrom(fd, rbuf, 64)
+    runner.eq(r, -1, 'net-udp-recvfrom: 無資料時逾時回 -1')
+
+    runner.eq(net.close(fd), 0, 'net close: 關閉 UDP fd 回 0')
+}
+
+; ── 加密通道（AES-256-GCM）────────────────────────────────
+
+; 同一把 key 的兩端能雙向傳明文；這條同時鎖住 2026-11-11 修的 to-bytes-str 缺陷
+t-enc = () {
+    key [32]byte = [
+        1, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16,
+        17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31, 32,
+    ]
+
+    l = net.listen-on('127.0.0.1', 39121)
+    l: {
+        ok -> {
+            lst = it
+
+            e = net.enc-dial('127.0.0.1', 39121, key)
+            ev = 0
+            ev = e: {
+                ok -> 1
+
+                -> -1
+            }
+            runner.eq(ev, 1, 'enc-dial: 建立加密連線')
+
+            a = lst.accept()
+            a: {
+                ok -> {
+                    srv = it
+                    se = net.enc-accept(srv, key)
+
+                    e: {
+                        ok -> {
+                            cli = it
+
+                            ok1 = cli.send-encrypted('secret')
+                            runner.is-true(ok1, 'enc-conn.send-encrypted: 回 true')
+
+                            d = se.recv-encrypted()
+                            dv = chk-plain(d)
+                            runner.eq(dv, 1, 'enc-conn.recv-encrypted: 解出明文')
+
+                            ; 反向：服務端發、客戶端收
+                            ok2 = se.send-encrypted('reply')
+                            runner.is-true(ok2, 'enc-conn.send-encrypted: 反向送出')
+
+                            d2 = cli.recv-encrypted()
+                            d2v = 0
+                            d2v = d2: {
+                                ok -> 1
+
+                                -> -1
+                            }
+                            runner.eq(d2v, 1, 'enc-conn.recv-encrypted: 反向解出')
+
+                            cli.close()
+                        }
+
+                        -> _
+                    }
+                    se.close()
+                }
+
+                -> _
+            }
+            lst.close()
+        }
+
+        -> _
+    }
+}
+
+; gen-iv 的 seq 語義：seq 是**大端序寫在前 4 位元組**（iv[0..3]），後 8 位元組才是隨機數
+t-gen-iv = () {
+    key [32]byte = [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    ec = net.enc-conn{}
+    ec.init(net.conn{}, key)
+
+    iv1 [12]byte = ec.gen-iv()
+    iv2 [12]byte = ec.gen-iv()
+
+    a = iv1[3]: {
+        ok -> it
+
+        -> -1
+    }
+    b = iv2[3]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(a, 1, 'enc-conn.gen-iv: 首個 IV 的 seq 低字节 = 1（寫在 iv[3]）')
+    runner.eq(b, 2, 'enc-conn.gen-iv: 第二個 IV 的 seq 低字节 = 2')
+
+    ; 前 3 位元組是 seq 的高位，seq 小時必為 0
+    z0 = iv1[0]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(z0, 0, 'enc-conn.gen-iv: seq 高位在 iv[0]，小 seq 時為 0')
+}
+
+; ── 裸 socket 函式（不經 conn/listener 包裝）────────────────
+
+; net-listen / net-dial / net-accept / net-send / net-recv / net-accept-nb / close
+t-raw-sock = () {
+    lfd = net.net-listen('127.0.0.1', 39131)
+
+    cfd = net.net-dial('127.0.0.1', 39131)
+    w = net.net-send(cfd, 'raw', 3)
+    runner.eq(w, 3, 'net-send: 送出 3 位元組')
+
+    afd = net.net-accept(lfd)
+    buf str = with-len(16)
+    n = net.net-recv(afd, buf, 16)
+    runner.eq(n, 3, 'net-recv: 收到 3 位元組')
+    runner.eq(sb(buf, 0), 114, 'net-recv: 首位元組 r')
+
+    ; 非阻塞 accept 只能放在最後：它會把監聽 fd 永久設成 non-blocking，
+    ; 之後的阻塞版 net-accept 在沒有待連線時會立刻回 -1。
+    nb = net.net-accept-nb(lfd)
+    runner.eq(nb, -2, 'net-accept-nb: 無待連線時回 -2')
+
+    runner.eq(net.close(afd), 0, 'close: 關閉已接受的 fd')
+    runner.eq(net.close(cfd), 0, 'close: 關閉撥號 fd')
+    runner.eq(net.close(lfd), 0, 'close: 關閉監聽 fd')
+}
+
+; listener.listen / conn.dial / udp-conn.open 這幾個「在裸結構體上直接調」的入口
+t-ctors = () {
+    lst = net.listener{}
+    ok1 = lst.listen('127.0.0.1', 39132)
+    runner.is-true(ok1, 'listener.listen: 綁定成功')
+    runner.is-true(lst.fd-of() >= 0, 'listener.fd-of: 回有效 fd')
+
+    cn = net.conn{}
+    ok2 = cn.dial('127.0.0.1', 39132)
+    runner.is-true(ok2, 'conn.dial: 撥號成功')
+    runner.is-true(cn.fd-of() >= 0, 'conn.fd-of: 回有效 fd')
+
+    a = lst.accept()
+    av = 0
+    av = a: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(av, 1, 'listener.accept: 接到 conn.dial 的連線')
+
+    a: {
+        ok -> {
+            sv = it
+            sv.close()
+        }
+
+        -> _
+    }
+    cn.close()
+    lst.close()
+
+    uc = net.udp-conn{}
+    ok3 = uc.open()
+    runner.is-true(ok3, 'udp-conn.open: 建立 socket')
+    runner.is-true(uc.fd-of() >= 0, 'udp-conn.fd-of: 回有效 fd')
+    uc.close()
+}
+
+; ── ICMP ──────────────────────────────────────────────────
+
+; mac 上 net-icmp-open 走非特權 SOCK_DGRAM（Linux 要 root/CAP_NET_RAW）
+t-icmp = () {
+    fd = net.net-icmp-open()
+    runner.is-true(fd >= 0, 'net-icmp-open: 取得 ICMP socket')
+    runner.eq(net.close(fd), 0, 'net-icmp-open: 可正常關閉')
+
+    ic = net.icmp-conn{}
+    ok = ic.open()
+    runner.is-true(ok, 'icmp-conn.open: 建立 ICMP 連線')
+
+    pkt []byte = with-len(64)
+    ic.build-echo(pkt, 0x1234)
+    runner.eq(by(pkt, 0), 8, 'build-echo: Type = 8 (Echo Request)')
+    runner.eq(by(pkt, 1), 0, 'build-echo: Code = 0')
+    runner.eq(by(pkt, 6), 18, 'build-echo: seq 高位 = 0x12')
+    runner.eq(by(pkt, 7), 52, 'build-echo: seq 低位 = 0x34')
+
+    ; 校驗和欄位必須已被填成非零值（先填 0 再算）
+    cs = by(pkt, 2)
+    runner.is-true(cs > 0 || by(pkt, 3) > 0, 'build-echo: 已寫入校驗和')
+
+    r2 = ic.ping-once('127.0.0.1', 500)
+    r2v = 0
+    r2v = r2: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(r2v, 1, 'icmp-conn.ping-once: loopback 有回應')
+
+    ic.ping-host('127.0.0.1', 1, 500)
+
+    ic.close()
+
+    ; loopback 一定有回應（本機核心自己回 ICMP echo）
+    r = net.ping('127.0.0.1')
+    rv = 0
+    rv = r: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(rv, 1, 'ping: 127.0.0.1 有回應')
+
+    net.ping-count('127.0.0.1', 1)
+}
+
+; ── 系統表（沙箱內可能為空，這裡只釘住「可呼叫且回傳陣列」）──
+
+t-sysinfo = () {
+    ifs = net.ifconfig-list()
+    runner.is-true(ifs.len() >= 0, 'ifconfig-list: 可呼叫並回傳陣列')
+
+    routes = net.route-list()
+    runner.is-true(routes.len() >= 0, 'route-list: 可呼叫並回傳陣列')
+
+    arps = net.arp-list()
+    runner.is-true(arps.len() >= 0, 'arp-list: 可呼叫並回傳陣列')
+}
+
+; ── 純函式 ────────────────────────────────────────────────
+
+; ICMP 16 位一補數校驗和的三個邊界
+t-checksum = () {
+    z []byte = [0, 0, 0, 0]
+    runner.eq(net.icmp-checksum(z, 4), 65535, 'icmp-checksum: 全零 ⇒ 0xffff')
+
+    one []byte = [0, 1]
+    runner.eq(net.icmp-checksum(one, 2), 65534, 'icmp-checksum: 0x0001 ⇒ 0xfffe')
+
+    odd []byte = [1]
+    runner.eq(net.icmp-checksum(odd, 1), 65279, 'icmp-checksum: 奇數長度補零 ⇒ 0xfeff')
+
+    hdr []byte = [8, 0, 0, 0, 0, 1, 0, 10]
+    runner.eq(net.icmp-checksum(hdr, 8), 63476, 'icmp-checksum: echo 標頭 ⇒ 0xf7f4')
+}
+
+; 按空白／Tab 切分欄位
+t-split-ws = () {
+    r = net.split-ws('  a  b\tc  ')
+    runner.eq(r.len(), 3, 'split-ws: 3 個欄位')
+
+    f0 = r[0]: {
+        ok -> it
+
+        -> ''
+    }
+    runner.str-eq(f0, 'a', 1, 'split-ws: 第 1 欄 a')
+
+    f1 = r[1]: {
+        ok -> it
+
+        -> ''
+    }
+    runner.str-eq(f1, 'b', 1, 'split-ws: 第 2 欄 b')
+
+    f2 = r[2]: {
+        ok -> it
+
+        -> ''
+    }
+    runner.str-eq(f2, 'c', 1, 'split-ws: 第 3 欄 c')
+
+    e = net.split-ws('')
+    runner.eq(e.len(), 0, 'split-ws: 空串 ⇒ 0 欄')
+
+    w = net.split-ws('   ')
+    runner.eq(w.len(), 0, 'split-ws: 全空白 ⇒ 0 欄')
+}
+
+; ── 執行 ──────────────────────────────────────────────────
+
+p1, f1 = runner.test('net.tcp-basic', t-tcp-basic)
+p2, f2 = runner.test('net.tcp-recv', t-tcp-recv)
+p3, f3 = runner.test('net.accept-nb', t-accept-nb)
+p4, f4 = runner.test('net.timeout', t-timeout)
+p5, f5 = runner.test('net.listener-timeout', t-listener-timeout)
+p6, f6 = runner.test('net.dial-timeout', t-dial-timeout)
+p7, f7 = runner.test('net.udp', t-udp)
+p8, f8 = runner.test('net.enc', t-enc)
+p9, f9 = runner.test('net.gen-iv', t-gen-iv)
+p10, f10 = runner.test('net.checksum', t-checksum)
+p11, f11 = runner.test('net.split-ws', t-split-ws)
+p12, f12 = runner.test('net.raw-sock', t-raw-sock)
+p13, f13 = runner.test('net.ctors', t-ctors)
+p14, f14 = runner.test('net.icmp', t-icmp)
+p15, f15 = runner.test('net.sysinfo', t-sysinfo)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

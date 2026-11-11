@@ -687,7 +687,9 @@ resolve-from = (server str, domain str) (ip ?str) {
     net.net-set-recv-timeout(fd, DNS-TIMEOUT)
 
     ; 發送查詢
-    query-str = query.to-str()
+    ; DNS 封包是二進位位元組流（transaction ID 可能 >= 0x80），必須 1:1 拷貝，
+    ; 不能用按碼點重編碼的 to-str()，否則送出長度與內容都錯。見 §5.2 #88。
+    query-str = query.to-bytes-str()
     written = net.net-udp-sendto(fd, query-str, qlen, server, DNS-PORT)
     written < 0 -> {
         fs.close(fd)
@@ -742,7 +744,9 @@ resolve-all = (domain str) (ip ?str) {
     fd < 0 -> return
     net.net-set-recv-timeout(fd, DNS-TIMEOUT)
 
-    query-str = query.to-str()
+    ; DNS 封包是二進位位元組流（transaction ID 可能 >= 0x80），必須 1:1 拷貝，
+    ; 不能用按碼點重編碼的 to-str()，否則送出長度與內容都錯。見 §5.2 #88。
+    query-str = query.to-bytes-str()
     written = net.net-udp-sendto(fd, query-str, qlen, DNS-DEFAULT-SERVER, DNS-PORT)
     written < 0 -> {
         fs.close(fd)

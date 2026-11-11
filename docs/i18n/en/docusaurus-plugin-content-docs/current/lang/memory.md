@@ -69,10 +69,27 @@ Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a
 
 | Nolang Type | Memory Layout | Fields | Allocation |
 |------------|---------------|--------|-----------|
-| `[]T` (slice) | 24 bytes | len, cap, data | malloc (heap) |
+| `[]T` (slice) | 24 bytes | i64 len, i64 cap, i64 data | malloc (heap) |
 | `[N]T` (fixed array) | 16 bytes | len, data | alloca (stack) or malloc |
-| `str` (long string) | 24 bytes | len, cap, data | malloc (heap) |
+| `str` (long string) | **16 bytes** | **u32 len, u32 cap, i8\* data** | malloc (heap) |
+| `txt` (fixed string) | 256 bytes | `[255 x i8]` data, i8 len | alloca (stack) |
 | struct | sum of fields | each field | alloca (stack) |
+
+**`str`'s u32 header**: `%str-long = type { i32, i32, i8* }` (16 bytes on 64-bit targets).
+`len` / `cap` are `u32` (LLVM `i32`) internally, while **every public API stays `i64`**: reads
+`zext i32 -> i64`, writes `trunc i64 -> i32`. The signatures of `s.len-bytes()`, `s.len()`,
+`s.cap()`, `s._len()` / `s._cap()` / `s._set-len()` / `s._set-cap()` and `len(s)` are unchanged.
+The boundary is centralised in the codegen helpers `strLenI64` / `strCapI64` /
+`strHeaderLoadI64` / `strHeaderStoreI64` / `strLongFromParts`: **never** emit a raw
+`load i64` / `store i64` against descriptor fields 0/1 — with opaque pointers the LLVM
+verifier will not stop it, but the 8-byte access silently clobbers the adjacent header field
+(measured: `s.len-bytes()` once returned `len | cap<<32`).
+
+Every size constant follows the 16-byte descriptor: the `[]str` element stride, the argv
+backing store of `os.args()`, the `?str` / enum payload slot count (2 i64 words — the first
+packs len and cap), and global string constants spelled `{ i32 len, i32 cap, i8* data }`.
+`%vec` (24 bytes) and the option's default 24-byte inline payload slot are **unchanged**.
+`txt` keeps its fixed 256-byte layout and does not adopt u32.
 
 ## Shallow Free vs Deep Free
 
@@ -227,8 +244,9 @@ b[0] = 99
 | `?str` | Yes | inline-payload option: clone the option and its string data |
 | `?[]T` | Yes | inline-payload option: clone the option and the inner slice's data (per-element clone; recurses when the element owns heap, e.g. `?[]str`) |
 
-> **`?str` / `?[]T` are inline-payload but heap-owning.** Their 24-byte payload lives directly in the option
-> slot, but the `str` data / slice backing store inside it is heap-allocated ⇒ **the clone must deep-copy the
+> **`?str` / `?[]T` are inline-payload but heap-owning.** Their payload lives directly in the option's
+> default 24-byte slot (`?str` uses only the first 16 bytes for `{ u32 len, u32 cap, i8* data }`),
+> but the `str` data / slice backing store inside it is heap-allocated ⇒ **the clone must deep-copy the
 > payload, and the free must release it**, and the two sides must stay paired. Freeing `?[]T` goes through the
 > same deep-free helper as `[]T` (recursing by element type), so "deep clone pairs with deep free" holds here
 > too. ⚠️ An ordinary (non-`?str`/`?[]T`) option's payload is a borrow or a plain value and **does not own**

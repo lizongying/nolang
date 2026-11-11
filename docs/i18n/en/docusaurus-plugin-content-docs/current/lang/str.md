@@ -4,7 +4,35 @@ sidebar_position: 3
 
 # Strings
 
-Nolang strings (`str`) are a heap-allocated byte sequence `{*byte, i64, i64}` (data, len, cap), supporting various operators and methods.
+Nolang strings (`str`) are a heap-allocated byte sequence supporting various operators and methods.
+
+## Internal Layout and Public API
+
+The `str` descriptor (`%str-long`) is **16 bytes** on 64-bit targets:
+
+```llvm
+%str-long = type { i32, i32, i8* }   ; u32 len, u32 cap, data
+```
+
+| Field | Internal type | Public type | Meaning |
+|---|---|---|---|
+| `len` | `u32` (LLVM `i32`) | `i64` | logical byte length; `s.len-bytes()`, `len(s)`, `s._len()` |
+| `cap` | `u32` (LLVM `i32`) | `i64` | physical capacity (str-long only); `s.cap()`, `s._cap()` |
+| `data` | `i8*` | `[]byte` / `*byte` | heap buffer pointer |
+
+Narrowing the counters to `u32` shrinks the descriptor from 24 to 16 bytes
+(`i32` + `i32` + an 8-byte-aligned pointer). **Every public API stays `i64`**: reads
+`zext i32 -> i64`, writes `trunc i64 -> i32` at the descriptor boundary. The signatures of
+`s.len-bytes()`, `s.len()`, `s.cap()`, `s._len()` / `s._cap()` / `s._set-len()` /
+`s._set-cap()` are unchanged, and std/user code never performs the conversion itself.
+
+> ⚠️ Because the internal counters are `u32`, a single `str` is bounded at 4 GiB
+> (`4294967295`) for both length and capacity. An `i64` larger than that is truncated at
+> the boundary; normal string handling is unaffected, but check before preallocating
+> giant buffers.
+>
+> `txt` is **unchanged**: it remains the fixed 256-byte `{ [255 x i8] data, i8 len }`,
+> has no `cap` field, and stores its length in one byte.
 
 ## String Operators
 

@@ -50,10 +50,13 @@ c: {
       title: 'str'
       kind: 'type'
       status: 'stable'
-      summary: 'UTF-8 字符串，堆分配 {*byte, i64, i64}；切片仍是 str 视图。'
+      summary: 'UTF-8 字符串，堆分配 {i8*, u32, u32}（data, len, cap）；切片仍是 str 视图。'
       aliases: ['字符串', 'string']
       definition: `
-UTF-8 编码的字节序列，底层是堆分配的 {p, len, cap}。
+UTF-8 编码的字节序列，底层是堆分配的 {data, len, cap}。
+描述符（LLVM %str-long）是 16 字节：{ i32 len, i32 cap, i8* data }。len/cap
+内部是 u32，对外 API 一律是 i64（读时 zext i32→i64、写时 trunc i64→i32），
+所以 len-bytes() / cap() / _len() / _cap() 的签名仍然是 i64；单串上限 4 GiB。
 长度有两种口径：len() 是码点数，len-bytes() 是字节数；按字节寻址必须用
 byte(i) / slice-bytes(a,b) / to-bytes() 视图，混用口径会错位。
 
@@ -571,6 +574,10 @@ twice = (x i64) (r i64) {
 把 str 看作字节序列、以及把 []byte 还原成 str 的两个方法：
 s.to-bytes() 得到 []byte 视图，b.to-bytes-str() 得到 str。
 写文件时必须走 read-bytes + to-bytes-str —— 用 read-str 会二次编码。
+
+反向也要小心：[]byte.to-str() 不是 1:1 逐字节拷贝，而是把每个 byte 当 0~255 的
+码点重新 UTF-8 编码。>= 0x80 的字节会膨胀成 2 字节，二进制协议打包后会整段错位
+（net.enc-conn 曾因此永远解不开）。要原样拷字节，只能用 to-bytes-str()。
 `
       syntax: `
 b = s.to-bytes()

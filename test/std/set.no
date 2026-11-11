@@ -51,11 +51,97 @@ t-is-empty = () {
     runner.eq(sz, 0, 'empty size == 0')
 }
 
+; union：把 other 裡自身沒有的元素追加進來（無序），size 遞增；重複呼叫不變
+t-union = () {
+    buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+    s = set.init(buf)
+    s.add(1)
+    s.add(2)
+    other [3]i64 = [2, 9, 5]
+    n = s.union(other, 3)
+    runner.eq(n, 4, 'union size == 4')
+    runner.is-true(s.contains(9), 'union picked up 9')
+    runner.is-true(s.contains(5), 'union picked up 5')
+    runner.eq(s.size(), 4, 'size matches union result')
+    n2 = s.union(other, 3)
+    runner.eq(n2, 4, 'union of same set is idempotent')
+}
+
+; intersection：命中元素寫進呼叫者提供的 out 緩衝區，回傳命中數
+t-intersection = () {
+    buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+    s = set.init(buf)
+    s.add(1)
+    s.add(2)
+    s.add(3)
+    other [3]i64 = [2, 3, 7]
+    out [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+    n = s.intersection(other, 3, out)
+    runner.eq(n, 2, 'intersection count == 2')
+    o0 = out[0]: {
+        ok -> it
+
+        -> -1
+    }
+    o1 = out[1]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(o0 + o1, 5, 'intersection elements are 2 and 3')
+    runner.eq(s.size(), 3, 'intersection does not mutate self')
+}
+
+; difference：在自身但不在 other 的元素寫進 out
+t-difference = () {
+    buf [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+    s = set.init(buf)
+    s.add(1)
+    s.add(2)
+    s.add(3)
+    other [2]i64 = [2, 9]
+    out [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+    n = s.difference(other, 2, out)
+    runner.eq(n, 2, 'difference count == 2')
+    d0 = out[0]: {
+        ok -> it
+
+        -> -1
+    }
+    d1 = out[1]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(d0 + d1, 4, 'difference elements are 1 and 3')
+}
+
+; to-vec：回傳長度 = size 的新切片，內容與集合一致
+t-to-vec = () {
+    buf [4]i64 = [0, 0, 0, 0]
+    s = set.init(buf)
+    s.add(4)
+    s.add(6)
+    v = s.to-vec()
+    runner.eq(v.len(), 2, 'to-vec len == size')
+    runner.is-true(v.contains(4), 'to-vec has 4')
+    runner.is-true(v.contains(6), 'to-vec has 6')
+
+    buf2 [2]i64 = [0, 0]
+    empty = set.init(buf2)
+    v2 = empty.to-vec()
+    runner.eq(v2.len(), 0, 'empty set -> empty slice')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('set.add/contains', t-add-contains)
 p2, f2 = runner.test('set.remove/size', t-remove-size)
 p3, f3 = runner.test('set.is-empty', t-is-empty)
+p4, f4 = runner.test('set.union', t-union)
+p5, f5 = runner.test('set.intersection', t-intersection)
+p6, f6 = runner.test('set.difference', t-difference)
+p7, f7 = runner.test('set.to-vec', t-to-vec)
 
 total = runner.summary()
 f = runner.failed-count()

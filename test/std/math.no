@@ -1,7 +1,8 @@
 ; std-math.no — math 模組測試
 ;
 ; 執行：no test test/std/math.no
-; 覆蓋：pow / hypot / fmod / clamp
+; 覆蓋：pow / hypot / fmod / clamp / pow-int / atan-kernel / atan2 /
+;       char-to-str / rotate-left / rotate-right / store-le-u32 / arr-zero
 ;       sqrt / cbrt —— 已改為 f64 方法形式（x.sqrt()）
 ;       f32.* —— 所有 f64 方法均有同名 f32 拓寬委託版本（t-f32-math）
 ;       i64.sqrt / i64.is-prime —— 整數方法（t-i64-math）
@@ -13,6 +14,11 @@
 ; 不測：max / min —— 為 math 模組的 num 泛型 .no 函數（變參泛型
 ;       math.max / math.min，見 test/std/number.no 的 t-max-min），
 ;       math 不再提供 f64 內建同名樁；abs 已改為 num 模組方法（num.abs）。
+; 不測：swap —— 簽名 `() (a t, b t)` 兩個都是結果參數，泛型 t 無從推斷，沒有任何
+;       可工作的調用形式（`math.swap()` 能編過但不交換；`math.swap(a, b)` 報
+;       `unknown callee math.swap [4qhyyund]`）⇒ 已列入覆蓋率腳本的 UNREACHABLE，
+;       見 test/README.md §5.2 #65。arr-zero 也列在該清單（只存在 `arr.zero()`
+;       接收者形式，沒有 `math.arr-zero(...)`），但它的行為**有測**（t-arr-zero）。
 
 # /test/runner
 
@@ -280,6 +286,186 @@ t-int-methods = () {
     runner.is-false(q64.is-prime(), 'u64: 4.is-prime() == false')
 }
 
+; ?i64 → i64：9000001 = nil，9000002 = err（裸下标读取是 ?T，断言前摊平）
+i64-of = (v ?i64) (out i64) {
+    out = 9000002
+    v: {
+        ok -> out = it
+
+        nil -> out = 9000001
+
+        err -> out = 9000002
+    }
+}
+
+; u16 / u32 → i64（runner.eq 只吃 i64）
+u16-of = (v u16) (out i64) {
+    out = v
+}
+
+u32-of = (v u32) (out i64) {
+    out = v
+}
+
+; ── 整數快速冪 / 反正切 / 可變參數工具 / 位元操作 ─────────────
+;
+; 這幾個是 math 模組裡「不掛在型別上」的函數形式 API。pow-int 因為與 f64 的
+; math.pow 同名衝突，是唯一保留函數形式的求冪（見 src/std/math.no 檔頭說明）。
+
+; pow-int：快速冪，n <= 0 時迴圈不執行 ⇒ 固定回 1（不是錯誤）
+t-pow-int = () {
+    runner.eq(math.pow-int(2, 10), 1024, '2^10 == 1024')
+    runner.eq(math.pow-int(3, 5), 243, '3^5 == 243')
+    runner.eq(math.pow-int(7, 0), 1, 'n == 0 ⇒ 1')
+    runner.eq(math.pow-int(7, -3), 1, 'n < 0 ⇒ 1（迴圈不執行，不是錯誤）')
+    runner.eq(math.pow-int(0, 5), 0, '0^5 == 0')
+    runner.eq(math.pow-int(-2, 3), -8, '(-2)^3 == -8（奇數次保留符號）')
+    runner.eq(math.pow-int(-2, 4), 16, '(-2)^4 == 16')
+    runner.eq(math.pow-int(1, 62), 1, '1^62 == 1')
+}
+
+; atan-kernel：|t| <= tan(pi/8) 時直接泰勒級數，否則先歸約到該區間再加減 pi/4
+t-atan-kernel = () {
+
+    ; atan(0.5) = 0.4636476090008061
+    runner.f64-eq(math.atan-kernel(0.5), 0.4636476090008061, 0.000001, 'atan-kernel(0.5)')
+    runner.f64-eq(math.atan-kernel(0.0), 0.0, 0.000001, 'atan-kernel(0)')
+
+    ; atan(1) = pi/4：1 > tan(pi/8) ⇒ 走 t = (t-1)/(t+1) 的歸約臂
+    runner.f64-eq(math.atan-kernel(1.0), 0.7853981633974483, 0.000001, 'atan-kernel(1) == pi/4')
+    runner.f64-eq(math.atan-kernel(-1.0), 0.0 - 0.7853981633974483, 0.000001, 'atan-kernel(-1) == -pi/4')
+
+    ; atan(2) = 1.1071487177940904：歸約後級數仍需正確
+    runner.f64-eq(math.atan-kernel(2.0), 1.1071487177940904, 0.00001, 'atan-kernel(2)')
+}
+
+; atan2(y, x)：值域 (-pi, pi]，按象限修正
+t-atan2 = () {
+    pi = 3.141592653589793
+
+    ; x > 0：直接 atan(y/x)
+    runner.f64-eq(math.atan2(1.0, 1.0), pi / 4.0, 0.000001, 'atan2(1,1) == pi/4')
+    runner.f64-eq(math.atan2(0.0, 1.0), 0.0, 0.000001, 'atan2(0,1) == 0')
+
+    ; x < 0：y >= 0 加 pi、y < 0 減 pi
+    runner.f64-eq(math.atan2(1.0, -1.0), pi * 3.0 / 4.0, 0.000001, 'atan2(1,-1) == 3pi/4')
+    runner.f64-eq(math.atan2(-1.0, -1.0), 0.0 - pi * 3.0 / 4.0, 0.000001, 'atan2(-1,-1) == -3pi/4')
+
+    ; x == 0：±pi/2
+    runner.f64-eq(math.atan2(1.0, 0.0), pi / 2.0, 0.000001, 'atan2(1,0) == pi/2')
+    runner.f64-eq(math.atan2(-1.0, 0.0), 0.0 - pi / 2.0, 0.000001, 'atan2(-1,0) == -pi/2')
+
+    ; 原點：0
+    runner.f64-eq(math.atan2(0.0, 0.0), 0.0, 0.000001, 'atan2(0,0) == 0')
+}
+
+; char-to-str：Unicode 碼點 → 1~4 位元組 UTF-8（已棄用，僅舊調用點兼容）
+;
+; ⚠️ 一律用「字面量整數 + char 標註」而不是 `c char = 'A'`：`no fmt` 會把
+;    `c char = 'A'` 當**冗餘標註**刪成 `c = 'A'`（'A' 是 str），刪完就編不過
+;    （`arg 1 of char_to_str expects scalar i32, got %str-long [zodppsnm]`）。
+;    `c char = 65` 的右值是 i64，標註不冗餘，fmt 不會動它。
+t-char-to-str = () {
+    a char = 65
+    s = math.char-to-str(a)
+    runner.eq(s.len-bytes(), 1, 'U+0041 ⇒ 1 位元組')
+    runner.str-eq(s, 'A', 1, 'char-to-str(U+0041)')
+
+    ; U+4E2D 中 ⇒ 3 位元組 E4 B8 AD
+    b char = 0x4e2d
+    s2 = math.char-to-str(b)
+    runner.eq(s2.len-bytes(), 3, 'U+4E2D ⇒ 3 位元組')
+    runner.str-eq(s2, '中', 3, 'char-to-str(U+4E2D)')
+
+    ; U+1F600 😀 ⇒ 4 位元組 F0 9F 98 80
+    c char = 0x1f600
+    s3 = math.char-to-str(c)
+    runner.eq(s3.len-bytes(), 4, 'U+1F600 ⇒ 4 位元組')
+    runner.str-eq(s3, '😀', 4, 'char-to-str(U+1F600)')
+}
+
+; rotate-left / rotate-right：映射到 LLVM fshl / fshr，位數對 64 取模
+t-rotate = () {
+    runner.eq(math.rotate-left(1, 0), 1, 'rotl(1,0) == 1')
+    runner.eq(math.rotate-left(1, 8), 256, 'rotl(1,8) == 256')
+    runner.eq(math.rotate-left(1, 64), 1, 'rotl(1,64) == 1（對 64 取模）')
+    runner.eq(math.rotate-left(1, -8), 72057594037927936, 'rotl(1,-8) == 2^56（等於右旋 8）')
+
+    runner.eq(math.rotate-right(1, 0), 1, 'rotr(1,0) == 1')
+    runner.eq(math.rotate-right(256, 8), 1, 'rotr(256,8) == 1')
+    runner.eq(math.rotate-right(1, 1), -9223372036854775808, 'rotr(1,1) == i64.MIN（符號位）')
+    runner.eq(math.rotate-right(1, -8), 256, 'rotr(1,-8) == 256（等於左旋 8）')
+
+    ; 左旋 8 再右旋 8 回到原值（互逆）
+    x = 123456789
+    y = math.rotate-left(x, 8)
+    z = math.rotate-right(y, 8)
+    runner.eq(z, x, 'rotr(rotl(x,8),8) == x')
+}
+
+; arr-zero：定長陣列與堆切片的 llvm.memset 置零（接收者形式，無參數）
+;
+; ⚠️ 局部定長陣列/切片的裸下標讀 `arr[0]` 在**斷言場合**編不過：參數檢查說它給純 i64，
+;    同時 checker 又報 `idxbruse`（「?T 當純值用」）—— 兩條判定互相矛盾。
+;    改用錯誤訊息本身建議的 place match（`arr[0]: { ok -> … }`）即可。
+t-arr-zero = () {
+    arr [4]i64 = [1, 2, 3, 4]
+    arr.zero()
+    arr[0]: {
+        ok -> runner.eq(it, 0, '定長陣列 [0] == 0')
+
+        -> runner.is-true(false, '定長陣列 [0] 越界')
+    }
+    arr[3]: {
+        ok -> runner.eq(it, 0, '定長陣列 [3] == 0')
+
+        -> runner.is-true(false, '定長陣列 [3] 越界')
+    }
+
+    sl []i64
+    sl.push(7)
+    sl.push(8)
+    sl.zero()
+    sl[0]: {
+        ok -> runner.eq(it, 0, '切片 [0] == 0')
+
+        -> runner.is-true(false, '切片 [0] 越界')
+    }
+    sl[1]: {
+        ok -> runner.eq(it, 0, '切片 [1] == 0')
+
+        -> runner.is-true(false, '切片 [1] 越界')
+    }
+    runner.eq(sl.len(), 2, '切片 zero 不改 len')
+}
+
+; store-le-u32：小端序寫入 32 位元值（[]byte 接收者形式與全域函數形式）
+;
+; ⚠️ `[]byte` 的裸下標讀 `b[0]` 在斷言場合編不過：checker 一邊說它給純 `byte`、
+;    一邊又報 `idxbruse`（「?T 當純值用」），兩種判定的結果互相矛盾。
+;    改走 load-le-u16/u32 往返讀（有 u16/u32/u64 三檔，沒有 u8）。
+t-store-le-u32 = () {
+    b []byte = with-len(8)
+
+    ; 16909060 == 0x01020304 ⇒ 小端序 04 03 02 01
+    ; 低半字 0x0304 = 772，高半字 0x0102 = 258
+    b.store-le-u32(0, 16909060)
+    runner.eq(u16-of(b.load-le-u16(0)), 772, '0x01020304 → 低 16 位元 == 0x0304')
+    runner.eq(u16-of(b.load-le-u16(2)), 258, '0x01020304 → 高 16 位元 == 0x0102')
+    runner.eq(u32-of(b.load-le-u32(0)), 16909060, '往返讀回 0x01020304')
+
+    ; 全域函數形式：store-le-u32(arr, offset, value)，從第 5 個位元組起
+    ; 287454020 == 0x11223344
+    math.store-le-u32(b, 4, 287454020)
+    runner.eq(u16-of(b.load-le-u16(4)), 13124, '函數形式 offset=4 → 低 16 位元 == 0x3344')
+    runner.eq(u32-of(b.load-le-u32(4)), 287454020, '函數形式往返讀回 0x11223344')
+    runner.eq(u32-of(b.load-le-u32(0)), 16909060, 'offset=4 的寫入不影響 offset=0')
+
+    ; u32 上限
+    b.store-le-u32(0, 4294967295)
+    runner.eq(u32-of(b.load-le-u32(0)), 4294967295, 'u32 上限 0xffffffff 往返正確')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p2, f2 = runner.test('f64.sqrt', t-sqrt)
@@ -296,6 +482,13 @@ p13, f13 = runner.test('f64.exp/log/log10/log2', t-exp-log)
 p14, f14 = runner.test('f32.math', t-f32-math)
 p15, f15 = runner.test('i64.sqrt/is-prime', t-i64-math)
 p16, f16 = runner.test('int-width methods', t-int-methods)
+p17, f17 = runner.test('math.pow-int', t-pow-int)
+p18, f18 = runner.test('math.atan-kernel', t-atan-kernel)
+p19, f19 = runner.test('math.atan2', t-atan2)
+p20, f20 = runner.test('math.char-to-str', t-char-to-str)
+p21, f21 = runner.test('math.rotate-left/right', t-rotate)
+p22, f22 = runner.test('math.arr-zero', t-arr-zero)
+p23, f23 = runner.test('math.store-le-u32', t-store-le-u32)
 
 total = runner.summary()
 f = runner.failed-count()

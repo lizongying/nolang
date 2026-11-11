@@ -9,8 +9,9 @@
 ; （[[fill]align][sign][#][0][width][grouping][.precision][type]）
 ; 是一個相當大的介面，光是「哪幾個欄位真的實作了」就值得一份清單。
 ;
-; ⚠️ print / eprint 不在此檔測：它們寫 stdout/stderr，會污染 runner 的輸出。
-;    它們的欄位解析與 format 共用同一套程式碼，format 測過即可。
+; ⚠️ print / eprint 不測「輸出內容」：它們寫 stdout/stderr，斷言無從下手。
+;    eprint 只驗「呼叫不致命」（t-eprint）——它走 stderr，不會污染 runner 的
+;    stdout 斷言流。欄位解析與 format 共用同一套程式碼，format 測過即可。
 ;
 ; 已知未實作（原始碼註解有寫、但實際行為不符；都在 HEAD 上重現）：
 ;   :t   → 文件說印「型別名」（{x:t} → i64），實際印出**值**（42）
@@ -219,6 +220,13 @@ t-format-misc = () {
     runner.str-eq(format('{t:>6}|'), '  true|', 7, 'bool honours the format spec')
 }
 
+; eprint：寫 stderr（自動換行），只驗呼叫不致命——它不進 runner 的 stdout 流
+t-eprint = () {
+    eprint('global.eprint probe')
+    ok = true
+    runner.is-true(ok, 'eprint does not abort the run')
+}
+
 ; ── 執行 ───────────────────────────────────────
 
 p1, f1 = runner.test('global.with-len', t-with-len)
@@ -229,6 +237,7 @@ p5, f5 = runner.test('format.layout', t-format-layout)
 p6, f6 = runner.test('format.float', t-format-float)
 p7, f7 = runner.test('format.str', t-format-str)
 p8, f8 = runner.test('format.misc', t-format-misc)
+p9, f9 = runner.test('global.eprint', t-eprint)
 
 total = runner.summary()
 f = runner.failed-count()

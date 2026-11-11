@@ -167,30 +167,35 @@ tree-set.update-ht = (idx i64) {
 ; 取得平衡因子（左高 - 右高）
 ; idx i64: 節點索引
 ; 返回 b i64: 平衡因子
+;
+; ⚠️ 原實作把 `b = it` 寫在「裸塊 + 值位 match」裡（`b-opt: { ok -> b = it  ->  }`），
+; 這個形態對外層變數的寫入會被**靜默丟棄**（test/README.md §5.2 #15 / §5.1a）——
+; 於是 bf 恒回 0 ⇒ rebalance 永遠判定「已平衡」⇒ 整棵樹從不自平衡。
+; 實測（修前）：升序插入 1..10 得到**高度 10 的右鏈**，複雜度退化成 O(n)。
+; 修法：先接值位 match 的結果到局部，再直接賦值給結果參數。
 ; [bf](#tree-set.tree-set.bf)
 tree-set.bf = (idx i64) (b i64) {
-    {
-        l ?= .left[idx]
-        lh = .ht(l)
+    b = 0
+    idx < 0 -> return
+    l = .left[idx]: {
+        ok -> it
 
-        r ?= .right[idx]
-        rh = .ht(r)
+        -> -1
+    }
+    r = .right[idx]: {
+        ok -> it
 
-        #{overflow=wrap}
-        {
+        -> -1
+    }
+    lh = .ht(l)
+    rh = .ht(r)
 
-            #{overflow=wrap}
-            b-opt = lh - rh
-            b-opt: {
-                ok -> b = it
+    ; 正解：match 直接掛在表達式上（見 tree-map.bf 的註解與 test/README.md §5.1q）
+    #{overflow=wrap}
+    b = lh - rh: {
+        ok -> it
 
-                ->
-            }
-        }
-    }: {
-        err -> _
-
-        -> _
+        -> 0
     }
 }
 

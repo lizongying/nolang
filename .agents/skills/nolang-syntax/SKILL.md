@@ -4003,6 +4003,40 @@ Struct fields and enum members (C-style enum values, tagged-enum variants) follo
 and the trailing spelling is the conventional one: `p pt #{inline}`, `green #{deprecated}`,
 `ok(v i64) #{inline}`.
 
+#### Scope: four levels, decided by the host
+
+An annotation does not carry its own reach — the **kind of node it attaches to** decides it.
+
+| Level | Host | Governs |
+| --- | --- | --- |
+| **L0 module** | file head, followed by at least one blank line | every declaration and statement in the file (not implemented yet) |
+| **L1 declaration** | const/global, struct, interface, tagged enum, function, method | the whole declaration (function body and all nested blocks included) |
+| **L2 block** | coroutine group (`{ }`), if group, `cond -> body`, match, `for`/count/range loop | the whole block body, nested blocks included, stopping at inner L1 boundaries (not implemented yet) |
+| **L3 single statement** | one statement (let / assign / `?=` / return / call / `cond ->` arm) | that statement and its expressions |
+
+- Inheritance flows inward: L0 → L1 → L2 → L3. On a single node, the **last** same-key entry wins.
+- Function / method / anonymous-function bodies are a **hard boundary**: an L2 block's scope stops
+  at the syntactic subtree and never follows a call. A function body's mode comes only from its own
+  annotations.
+- Illegal key×level combinations must be a **compile error**, never a silent no-op (e.g. `#{buildin}`
+  above a `for` loop).
+
+**Not every key spans all four levels.** A key declares which levels it supports; using it elsewhere
+is a compile error, not harmless redundancy. `#{overflow}` is the one restricted key today:
+
+> ⛔ **`#{overflow}` is L3-only (line scope) by design — this is anti-abuse, not a gap.**
+> It is a per-operation semantic switch. Letting it sit on a function or block head turns one line
+> into a vague region-wide setting: to know which mode a given `a + b` actually uses you must walk
+> upward through enclosing blocks, and `no fmt` / `no vet` / codegen rarely agree (they already
+> diverge today). It also does **not** change the type — the result stays `?T` — so a block-level
+> `wrap` merely turns "overflow → `err`" into a silent wrong value.
+> One line, one annotation; `no fmt --fix=overflow` and the LSP quick fixes emit exactly that form.
+> Writing it on a function head / block head is illegal. ⚠️ Current hole: a function-head annotation
+> still makes `no vet` skip the whole function (codegen keeps `err`), and a block-head one silences
+> `no vet` by downward inheritance.
+
+Full rules, the key×level matrix and the measured gaps: `docs/docs/lang/annotation-scope.md`.
+
 The FFI annotation `#{c}` is a special form of the annotation system. When an annotation contains an FFI language key (`c`, `cpp`, `rust`, etc.) and is followed by a function declaration, the compiler identifies it as an FFI binding:
 
 ```no

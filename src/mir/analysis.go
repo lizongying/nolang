@@ -1390,8 +1390,9 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	}
 	// An INLINE payload. The clone helper must also duplicate the err message,
 	// and it only implements the inline layout; a slot small enough to box the
-	// 24-byte message would box every owned payload too (a `%str-long` and a
-	// `%vec` are both 24 bytes), so the branch above would have taken it.
+	// 16-byte message would box every owned payload too (a `%str-long` is 16
+	// bytes and a `%vec` 24 bytes; both fit the default 24-byte slot), so the
+	// branch above would have taken it.
 	if !c.optionPayloadInline("%str-long") {
 		return false
 	}
@@ -1413,7 +1414,7 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 // moveStrSharesHeap reports whether an OpMove copies an owned `str` BITWISE,
 // which leaves the source and the destination pointing at the SAME heap buffer.
 //
-// %str-long = { i64 len, i64 cap, i8* data } and `data` is malloc'd, so a
+// %str-long = { u32 len, u32 cap, i8* data } and `data` is malloc'd, so a
 // load+store (what emitMove emits) duplicates the TRIPLE, not the bytes. That is
 // only safe when the source dies right there and hands its drop responsibility to
 // the destination; if the source is read again, both values' drops free the same

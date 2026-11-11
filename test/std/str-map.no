@@ -1,7 +1,8 @@
 ; test/std/str-map.no — collection/str-map 模組測試
 ;
 ; 執行：no test test/std/str-map.no
-; 覆蓋：init / put / get / contains / remove / len / is-empty / clear / to-str
+; 覆蓋：init / put / get / contains / remove / len / is-empty / clear / to-str /
+;       hash / for-each
 
 # /test/runner
 
@@ -109,6 +110,39 @@ p3 = runner.test('str-map.overwrite', t-overwrite)
 p4 = runner.test('str-map.get', t-get)
 p5 = runner.test('str-map.remove', t-remove)
 p6 = runner.test('str-map.clear', t-clear)
+p7 = runner.test('str-map.hash', t-hash)
+p8 = runner.test('str-map.for-each', t-for-each)
+
+; hash：FNV-1a 之後 & (cap-1)，cap 固定 256；下表是實測出的槽位
+t-hash = () {
+    m = str-map{}
+    m.init()
+    runner.eq(m.hash(''), 37, 'hash empty -> 37')
+    runner.eq(m.hash('a'), 140, 'hash a -> 140')
+    runner.eq(m.hash('abc'), 75, 'hash abc -> 75')
+    runner.eq(m.hash('name'), 134, 'hash name -> 134')
+    runner.eq(m.hash('abc'), m.hash('abc'), 'same key -> same slot')
+    runner.is-true(m.hash('a') != m.hash('b'), 'hash a != hash b')
+}
+
+; for-each：回傳「槽位下標最大的已佔用條目」的 (k, v)（無回呼，只能取最後一個）
+; 'k1' -> 槽 193、'k2' -> 槽 168，因此最後停在 'k1'
+t-for-each = () {
+    m = str-map{}
+    m.init()
+    m.put('only', 'solo')
+    k, v = m.for-each()
+    runner.str-eq(k, 'only', 4, 'single entry: for-each k')
+    runner.str-eq(v, 'solo', 4, 'single entry: for-each v')
+
+    m2 = str-map{}
+    m2.init()
+    m2.put('k2', 'v2')
+    m2.put('k1', 'v1')
+    k2, v2 = m2.for-each()
+    runner.str-eq(k2, 'k1', 2, 'two entries: higher slot (k1) wins')
+    runner.str-eq(v2, 'v1', 2, 'two entries: value stays paired')
+}
 
 total = runner.summary()
 f = runner.failed-count()

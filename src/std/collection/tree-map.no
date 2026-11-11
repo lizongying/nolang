@@ -169,30 +169,38 @@ tree-map.update-ht = (idx i64) {
 ; 取得平衡因子（左高 - 右高）
 ; idx i64: 節點索引
 ; 返回 b i64: 平衡因子
+;
+; ⚠️ 這裡有三個踩過的坑（test/README.md §5.1q）：
+; 1. 原本寫成「裸塊 + 值位 match 且臂內 `b = it`」——臂內對**結果參數**的寫入會被
+;    靜默丟棄，bf 恒回 0 ⇒ rebalance 永遠判定「已平衡」⇒ 整棵樹從不自平衡
+;    （升序 1..10 得到高度 10 的右鏈）。臂內寫**局部變數**同樣丟（實測留在初值）。
+; 2. 把 selected 值先落局部 `d = lh - rh` 再 `b = d: { … }` 也不行：值位 match 吃的是
+;    **option 變數**時同樣不生效（`ht` 能吃 `.height[idx]` 是因為那是表達式）。
+; 3. 正解：把 match 直接掛在**表達式**上——`b = lh - rh: { ok -> it  -> 0 }`。
+;    與 `ht` 的 `h = .height[idx]: { … }` 同形，`no fmt` 也不改。
+; 註：減法是受檢運算、結果恆為 `?i64`；`#{overflow=wrap}` 只改溢出取值，仍要 unwrap。
 ; [bf](#tree-map.tree-map.bf)
 tree-map.bf = (idx i64) (b i64) {
-    {
-        l ?= .left[idx]
-        lh = .ht(l)
+    b = 0
+    idx < 0 -> return
+    l = .left[idx]: {
+        ok -> it
 
-        r ?= .right[idx]
-        rh = .ht(r)
+        -> -1
+    }
+    r = .right[idx]: {
+        ok -> it
 
-        #{overflow=wrap}
-        {
+        -> -1
+    }
+    lh = .ht(l)
+    rh = .ht(r)
 
-            #{overflow=wrap}
-            b-opt = lh - rh
-            b-opt: {
-                ok -> b = it
+    #{overflow=wrap}
+    b = lh - rh: {
+        ok -> it
 
-                ->
-            }
-        }
-    }: {
-        err -> _
-
-        -> _
+        -> 0
     }
 }
 

@@ -8,6 +8,7 @@ sidebar_position: 2
 
 ## 未發布
 
+- feat(mir)：`str` 描述符從 24B 改為 16B —— `%str-long = { i32 len, i32 cap, i8* data }`，內部 len/cap 為 `u32`，對外 API（`len-bytes()` / `len()` / `cap()` / `_len` / `_cap` / `_set-len` / `_set-cap`）仍為 `i64`；同步 `[]str` stride、`os.args()`、`?str` / enum payload slots、全域字串常量與 runtime helper；`txt` 維持 256B 不變。docs 同步 lang/str、lang/memory、std/basic-types、std/core-library 與英文 i18n 副本
 - feat(parser): 新增 match 主語的塊形態 `{ body }: { arms }`，捕捉主體內 `?=` 的失敗，讓沒有 `?T` 結果參數的函式也能就地處理錯誤；最近的（最內層）塊 match 優先，一次失敗停住整個主體，窮盡性沿用標準三態 `?T` 規則
 - feat(fmt): `}: {` 逐位元往返；H0 展開不再改寫糖 AST
 - docs(lang): 於語法指南、AGENTS.md 與 nolang-syntax skill 補上 match 主語三種形態（值 / 表達式 / 塊）

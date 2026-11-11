@@ -1,10 +1,127 @@
 ; std-uuid.no — uuid 模組測試
 ;
 ; 執行：no test test/std/uuid.no
-; 覆蓋：new-v4 / to-str / from-str / validate / version / variant /
-;       is-nil / eq / cmp / nil-uuid
+; 覆蓋：new-v4 / to-str / to-str-upper / from-str / validate / version / variant /
+;       is-nil / eq / cmp / nil-uuid，以及內部輔助的公開形體
+;       hex-byte / hex-byte-upper / hex-val / parse-with-dashes /
+;       parse-no-dashes / parse-hex-byte（2026-11-11 補，覆蓋率 15/15）
 
 # /test/runner
+
+; ── 助手 ──────────────────────────────────────
+
+; 字串相等斷言（走 eq-full，免手算位元組長度）
+se = (a str, b str, msg str) {
+    runner.is-true(a.eq-full(b), msg)
+}
+
+; 驗證 uuid.hex-byte：把一個位元組寫成兩個小寫 hex 字元到緩衝的指定位置；
+; 目標緩衝長度不足時越界的那一格被安全索引略過（不崩、不改長度）
+t-hex-byte = () {
+    buf str = with-len(4)
+    uuid.hex-byte(171, 0, buf)
+    uuid.hex-byte(15, 2, buf)
+    se(buf, 'ab0f', 'hex-byte -> ab0f')
+
+    ; 只有 1 格時第二個字元寫不進去（pos+1 越界），第一個仍正常
+    one str = with-len(1)
+    uuid.hex-byte(171, 0, one)
+    se(one, 'a', 'hex-byte 1-slot -> a')
+
+    ; 完全越界的 pos：長度不變
+    small str = with-len(2)
+    uuid.hex-byte(255, 5, small)
+    runner.eq(small.len(), 2, 'hex-byte oob keeps len')
+}
+
+; 驗證 uuid.to-str-upper：36 字元、連字號位置與 to-str 相同、hex 字元為大寫
+t-to-str-upper = () {
+    u uuid
+    ok = uuid.from-str('550e8400-e29b-41d4-a716-446655440000', u)
+    runner.is-true(ok, 'from-str for upper')
+    s = u.to-str-upper()
+    runner.eq(s.len(), 36, 'to-str-upper len == 36')
+    se(s, '550E8400-E29B-41D4-A716-446655440000', 'to-str-upper bytes')
+    d0 i64 = s[8]
+    runner.eq(d0, 45, 'upper [8] == dash')
+    d3 i64 = s[23]
+    runner.eq(d3, 45, 'upper [23] == dash')
+}
+
+; 驗證 uuid.hex-byte-upper：字母表由呼叫端傳入，只按 table 取字元
+t-hex-byte-upper = () {
+    buf str = with-len(4)
+    table = '0123456789ABCDEF'
+    uuid.hex-byte-upper(171, 0, buf, table)
+    uuid.hex-byte-upper(15, 2, buf, table)
+    se(buf, 'AB0F', 'hex-byte-upper -> AB0F')
+
+    ; 自訂字母表：b=3 的高半字節 0 取 table[0]='a'，低半字節 3 取 table[3]='d'
+    alt = 'abcdefghijklmnop'
+    b2 str = with-len(2)
+    uuid.hex-byte-upper(3, 0, b2, alt)
+    se(b2, 'ad', 'hex-byte-upper alt table 3 -> ad')
+}
+
+; 驗證 uuid.parse-with-dashes：36 字元帶連字號格式；字元非法或連字號位置錯都回 false，
+; 且支援非零起始位置（前置空白／前綴）
+t-parse-with-dashes = () {
+    u uuid
+    ok = uuid.parse-with-dashes('550e8400-e29b-41d4-a716-446655440000', 0, u)
+    runner.is-true(ok, 'parse-with-dashes ok')
+    se(u.to-str(), '550e8400-e29b-41d4-a716-446655440000', 'dashes roundtrip')
+
+    u2 uuid
+    bad = uuid.parse-with-dashes('550e8400-e29b-41d4-a716-44665544000z', 0, u2)
+    runner.is-false(bad, 'dashes bad hex char -> false')
+
+    u3 uuid
+    bad2 = uuid.parse-with-dashes('550e8400xe29b-41d4-a716-446655440000', 0, u3)
+    runner.is-false(bad2, 'dashes wrong dash pos -> false')
+
+    ; 起始位置偏移：前置兩個字元，pos = 2
+    u4 uuid
+    ok4 = uuid.parse-with-dashes('xx550e8400-e29b-41d4-a716-446655440000', 2, u4)
+    runner.is-true(ok4, 'dashes offset pos 2 ok')
+    se(u4.to-str(), '550e8400-e29b-41d4-a716-446655440000', 'dashes offset roundtrip')
+}
+
+; 驗證 uuid.parse-no-dashes：32 字元無連字號格式，成功後轉出的正規形式與帶連字號一致
+t-parse-no-dashes = () {
+    u uuid
+    ok = uuid.parse-no-dashes('550e8400e29b41d4a716446655440000', 0, u)
+    runner.is-true(ok, 'parse-no-dashes ok')
+    se(u.to-str(), '550e8400-e29b-41d4-a716-446655440000', 'no-dashes -> canonical')
+
+    u2 uuid
+    bad = uuid.parse-no-dashes('550e8400e29b41d4a71644665544000g', 0, u2)
+    runner.is-false(bad, 'no-dashes bad hex char -> false')
+}
+
+; 驗證 uuid.parse-hex-byte：兩個 hex 字元 → 0~255；非法字元或不足兩位回 -1
+t-parse-hex-byte = () {
+    runner.eq(uuid.parse-hex-byte('2a', 0), 42, '2a == 42')
+    runner.eq(uuid.parse-hex-byte('FF', 0), 255, 'FF == 255')
+    runner.eq(uuid.parse-hex-byte('0f', 0), 15, '0f == 15')
+    runner.eq(uuid.parse-hex-byte('00', 0), 0, '00 == 0')
+    runner.eq(uuid.parse-hex-byte('zz', 0), -1, 'zz == -1')
+    runner.eq(uuid.parse-hex-byte('a', 0), -1, 'single char == -1')
+    runner.eq(uuid.parse-hex-byte('xx2a', 2), 42, 'offset pos 2 == 42')
+}
+
+; 驗證 uuid.hex-val：單個字元的碼點 → 0~15；非 hex 字元一律 -1
+t-hex-val = () {
+    runner.eq(uuid.hex-val(48), 0, '0x30 -> 0')
+    runner.eq(uuid.hex-val(57), 9, '0x39 -> 9')
+    runner.eq(uuid.hex-val(97), 10, 'a -> 10')
+    runner.eq(uuid.hex-val(102), 15, 'f -> 15')
+    runner.eq(uuid.hex-val(65), 10, 'A -> 10')
+    runner.eq(uuid.hex-val(70), 15, 'F -> 15')
+    runner.eq(uuid.hex-val(103), -1, 'g -> -1')
+    runner.eq(uuid.hex-val(47), -1, '/ -> -1')
+    runner.eq(uuid.hex-val(58), -1, ': -> -1')
+    runner.eq(uuid.hex-val(0), -1, 'NUL -> -1')
+}
 
 ; 驗證 uuid.new-v4(seed)：以指定種子生成 v4 UUID，version 欄位為 4、variant 為 2（RFC 4122）
 t-new-v4 = () {
@@ -100,6 +217,13 @@ p5, f5 = runner.test('uuid.from-str-dashes', t-from-str-dashes)
 p6, f6 = runner.test('uuid.is-nil', t-is-nil)
 p7, f7 = runner.test('uuid.eq', t-eq)
 p8, f8 = runner.test('uuid.cmp', t-cmp)
+p9, f9 = runner.test('uuid.hex-byte', t-hex-byte)
+p10, f10 = runner.test('uuid.to-str-upper', t-to-str-upper)
+p11, f11 = runner.test('uuid.hex-byte-upper', t-hex-byte-upper)
+p12, f12 = runner.test('uuid.parse-with-dashes', t-parse-with-dashes)
+p13, f13 = runner.test('uuid.parse-no-dashes', t-parse-no-dashes)
+p14, f14 = runner.test('uuid.parse-hex-byte', t-parse-hex-byte)
+p15, f15 = runner.test('uuid.hex-val', t-hex-val)
 
 total = runner.summary()
 f = runner.failed-count()

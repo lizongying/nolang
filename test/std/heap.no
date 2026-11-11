@@ -32,10 +32,85 @@ t-size-empty = () {
     runner.is-true(yes, 'empty == true')
 }
 
+; pop / peek：都回傳 `?t`。這裡必須把實例標成 `heap-i64`——
+; 只寫 `h = heap.init(data)` 時 checker 把元素型別留在泛型 `t` 上，
+; `got i64 = it` 會報 `cannot assign t value to i64 variable [15w45dqk]`
+t-pop-peek = () {
+    data [8]i64 = [0, 0, 0, 0, 0, 0, 0, 0]
+    h heap-i64 = heap.init(data)
+    h.push(5)
+    h.push(3)
+    h.push(7)
+
+    pv = h.peek()
+    top = -1
+    pv: {
+        ok -> top = it
+
+        nil -> top = -1
+
+        err -> top = -1
+    }
+    runner.eq(top, 3, 'peek returns min without removing')
+    runner.eq(h.size(), 3, 'peek keeps size')
+
+    popped = h.pop()
+    first = -1
+    popped: {
+        ok -> first = it
+
+        nil -> first = -1
+
+        err -> first = -1
+    }
+    runner.eq(first, 3, 'pop returns min first')
+    runner.eq(h.size(), 2, 'pop shrinks size')
+
+    second = h.pop()
+    got = -1
+    second: {
+        ok -> got = it
+
+        nil -> got = -1
+
+        err -> got = -1
+    }
+    runner.eq(got, 5, 'second pop returns next min')
+}
+
+; 空堆：pop / peek 都回 nil（用 -99 當哨兵，區別於被映射成 -1 的 nil 臂）
+t-pop-peek-empty = () {
+    data [4]i64 = [0, 0, 0, 0]
+    h heap-i64 = heap.init(data)
+    p = h.pop()
+    got = -99
+    p: {
+        ok -> got = it
+
+        nil -> got = -1
+
+        err -> got = -2
+    }
+    runner.eq(got, -1, 'pop on empty -> nil')
+    k = h.peek()
+    got2 = -99
+    k: {
+        ok -> got2 = it
+
+        nil -> got2 = -1
+
+        err -> got2 = -2
+    }
+    runner.eq(got2, -1, 'peek on empty -> nil')
+    runner.eq(h.size(), 0, 'empty stays empty')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('heap.push/pop', t-push-pop)
 p2, f2 = runner.test('heap.size/empty', t-size-empty)
+p3, f3 = runner.test('heap.pop/peek', t-pop-peek)
+p4, f4 = runner.test('heap.pop/peek empty', t-pop-peek-empty)
 
 total = runner.summary()
 f = runner.failed-count()

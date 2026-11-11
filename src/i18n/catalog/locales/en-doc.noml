@@ -3141,11 +3141,6 @@ user str: user name
 password str: password
 returns resp ?response: ok = response, nil = failure
 `
-  'http.http-dl-dechunk': `
-De-frame a chunked-encoded body into raw bytes
-b: chunked-encoded response body (each chunk is a hex length line + data + CRLF, terminated by a zero-length chunk)
-out: raw bytes with the chunk framing removed (returns the part decoded so far early when a length line is illegal)
-`
   'http.http-dl-location': `
 Find the Location value in header text (case-insensitive)
 head-str: response header text (all header lines)

@@ -1,0 +1,393 @@
+; test/std/http3.no — net/http3 模組測試（QPACK 簡化編解碼／影格／URL 解析）
+;
+; 執行：no test test/std/http3.no
+; 覆蓋：encode-header / decode-header（往返、非字面前綴、越界、長名稱/長值
+;       兩位元組長度、>=256 高位元組、64 邊界）、
+;       encode-headers（2 位元組前綴 + 逐條往返）、encode-frame / parse-frame
+;       （DATA / HEADERS / SETTINGS）、encode-headers-frame、encode-data-frame、
+;       encode-settings-frame、parse-url（埠號、預設埠、非法前綴、非數字埠）
+;
+; 迴歸點：decode-header 原本把讀取寫成
+;   name = buf[a..b).to-str(): { ok -> it -> '' }
+; 切片接收者的方法回傳型別推不出來 ⇒ 值位 match 主語不歸一化 ⇒ 兩臂都不命中，
+; name/value 恆為空字串（`it` 未綁定）。改成「先落變數再兩步解包」後才正確。
+; 見 test/README §5.2 #82。
+; ② >=64 位元組的長度：編碼側寫 `0x40 | 高6位` + 低8位 兩個位元組，舊解碼側
+; 只讀 1 位元組 ⇒ 長標頭必定解錯。補兩位元組分支時還踩到 §5.2 #83 的坑：
+; byte 直接參與加法會讓結果不是 ?i64，值位 match 靜默走兜底臂 ⇒ 必須先轉 i64。
+;
+; 模組裡需要真實 UDP/TLS 連線的部分（connect / send-request / get / post /
+; http3-do）不在本檔範圍。
+
+# /test/runner
+
+; 斷言兩個字串等長且等內容，失敗訊息附帶 [len] 標記
+eq-str = (got str, want str, msg str) {
+    runner.eq(got.len-bytes(), want.len-bytes(), msg - ' [len]')
+    runner.str-eq(got, want, want.len-bytes(), msg)
+}
+
+; 造兩組標頭陣列（[16]str 結果參數進來是未初始化記憶體，先 zero）
+mk-nv = () (ns [16]str, vs [16]str) {
+    ns.zero()
+    vs.zero()
+    ns[0]: {
+        ok -> it = 'accept'
+
+        -> _
+    }
+    vs[0]: {
+        ok -> it = '*/*'
+
+        -> _
+    }
+    ns[1]: {
+        ok -> it = 'user-agent'
+
+        -> _
+    }
+    vs[1]: {
+        ok -> it = 'nolang'
+
+        -> _
+    }
+}
+
+; 單條標頭：往返 + 錯誤路徑
+t-header = () {
+    buf []byte
+    n = 0
+    buf, n = http3.encode-header('accept', '*/*')
+    runner.eq(n, 12, 'encode-header n = 1 + 1 + 6 + 1 + 3')
+    b0 = buf[0]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(b0, 0x20, 'encode-header literal prefix 0x20')
+
+    nm = ''
+    vl = ''
+    nx = 0
+    nm, vl, nx = http3.decode-header(buf, 0)
+    eq-str(nm, 'accept', 'decode-header name')
+    eq-str(vl, '*/*', 'decode-header value')
+    runner.eq(nx, 12, 'decode-header next-pos')
+
+    ; 空緩衝：直接回 -1
+    empty []byte
+    nm2 = ''
+    vl2 = ''
+    nx2 = 0
+    nm2, vl2, nx2 = http3.decode-header(empty, 0)
+    runner.eq(nx2, -1, 'decode-header empty -> -1')
+
+    ; 非字面前綴（0x00）必須被拒
+    bad []byte = [0, 0]
+    nm3 = ''
+    vl3 = ''
+    nx3 = 0
+    nm3, vl3, nx3 = http3.decode-header(bad, 0)
+    runner.eq(nx3, -1, 'decode-header non-literal prefix -> -1')
+
+    ; 越界：聲稱名稱 6 位元組但緩衝只有 3
+    trunc []byte = [0x20, 6, 65]
+    nm4 = ''
+    vl4 = ''
+    nx4 = 0
+    nm4, vl4, nx4 = http3.decode-header(trunc, 0)
+    runner.eq(nx4, -1, 'decode-header truncated -> -1')
+
+    ; >=64 位元組的長名稱/長值：編解碼現在都走兩位元組長度形態。
+    ; 回歸 §5.2 #83：舊解碼側只讀 1 位元組 ⇒ 長標頭必定解錯。
+    long-name = 'n'.repeat(70)
+    runner.eq(long-name.len-bytes(), 70, 'long name len')
+    lbuf []byte
+    lcount = 0
+    lbuf, lcount = http3.encode-header(long-name, '*/*')
+    runner.eq(lcount, 77, 'encode-header long name n = 1+2+70+1+3')
+    lnm = ''
+    lvl = ''
+    lnx = 0
+    lnm, lvl, lnx = http3.decode-header(lbuf, 0)
+    eq-str(lnm, long-name, 'decode-header long name')
+    eq-str(lvl, '*/*', 'decode-header long name value')
+    runner.eq(lnx, lcount, 'decode-header long name next-pos')
+
+    ; 長值（82）：值長度欄位同樣是兩位元組
+    long-value = 'v'.repeat(82)
+    vbuf []byte
+    vcount = 0
+    vbuf, vcount = http3.encode-header('accept', long-value)
+    runner.eq(vcount, 92, 'encode-header long value n = 1+1+6+2+82')
+    vnm = ''
+    vvl = ''
+    vnx = 0
+    vnm, vvl, vnx = http3.decode-header(vbuf, 0)
+    eq-str(vnm, 'accept', 'decode-header long value name')
+    eq-str(vvl, long-value, 'decode-header long value')
+    runner.eq(vnx, vcount, 'decode-header long value next-pos')
+
+    ; 兩者都長且 >=256：驗證首字节的「高 6 位」非 0（300 = 0x012c）
+    big-name = 'k'.repeat(300)
+    big-value = 'w'.repeat(300)
+    bbuf []byte
+    bcount = 0
+    bbuf, bcount = http3.encode-header(big-name, big-value)
+    runner.eq(bcount, 605, 'encode-header big n = 1+2+300+2+300')
+    bnm = ''
+    bvl = ''
+    bnx = 0
+    bnm, bvl, bnx = http3.decode-header(bbuf, 0)
+    eq-str(bnm, big-name, 'decode-header big name')
+    eq-str(bvl, big-value, 'decode-header big value')
+    runner.eq(bnx, bcount, 'decode-header big next-pos')
+
+    ; 邊界：64 正好走兩位元組長度形態
+    edge64 = 'e'.repeat(64)
+    ebuf []byte
+    ecount = 0
+    ebuf, ecount = http3.encode-header(edge64, '')
+    enm = ''
+    evl = ''
+    enx = 0
+    enm, evl, enx = http3.decode-header(ebuf, 0)
+    eq-str(enm, edge64, 'decode-header edge 64 name')
+    runner.eq(enx, ecount, 'decode-header edge 64 next-pos')
+}
+
+; 多條標頭：2 位元組前綴 + 逐條解碼
+t-headers = () {
+    ns [16]str
+    vs [16]str
+    ns, vs = mk-nv()
+    buf []byte
+    n = 0
+    buf, n = http3.encode-headers(ns, vs, 2)
+    runner.eq(n, 33, 'encode-headers n (2 pairs)')
+    p0 = buf[0]: {
+        ok -> it
+
+        -> -1
+    }
+    p1 = buf[1]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(p0, 0, 'encode-headers prefix[0] = 0')
+    runner.eq(p1, 0, 'encode-headers prefix[1] = 0')
+
+    nm = ''
+    vl = ''
+    pos = 2
+    nm, vl, pos = http3.decode-header(buf, pos)
+    eq-str(nm, 'accept', 'pair 1 name')
+    eq-str(vl, '*/*', 'pair 1 value')
+
+    nm, vl, pos = http3.decode-header(buf, pos)
+    eq-str(nm, 'user-agent', 'pair 2 name')
+    eq-str(vl, 'nolang', 'pair 2 value')
+    runner.eq(pos, n, 'both pairs consumed')
+
+    ; count = 0 只剩前綴
+    b2 []byte
+    n2 = 0
+    b2, n2 = http3.encode-headers(ns, vs, 0)
+    runner.eq(n2, 2, 'encode-headers count 0 -> 2 bytes')
+}
+
+; 影格：DATA / SETTINGS / HEADERS 的編碼與解析往返
+t-frames = () {
+    fbuf []byte
+    fn = 0
+    fbuf, fn = http3.encode-data-frame('hello')
+    runner.eq(fn, 7, 'data frame n (type+len+5)')
+    ft = 0
+    payload []byte
+    nx = 0
+    ft, payload, nx = http3.parse-frame(fbuf, 0)
+    runner.eq(ft, 0, 'data frame type 0')
+    runner.eq(payload.len(), 5, 'data frame payload len')
+    runner.eq(nx, 7, 'data frame next-pos')
+    txt = payload.to-str(): {
+        ok -> it
+
+        -> 'ERR'
+    }
+    eq-str(txt, 'hello', 'data frame payload roundtrip')
+
+    sbuf []byte
+    sn = 0
+    sbuf, sn = http3.encode-settings-frame()
+    runner.eq(sn, 2, 'settings frame n')
+    s0 = sbuf[0]: {
+        ok -> it
+
+        -> -1
+    }
+    s1 = sbuf[1]: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(s0, 0x04, 'settings frame type')
+    runner.eq(s1, 0, 'settings frame payload len 0')
+
+    ; encode-frame 直接呼叫（DATA 幀的結果必須與上面的 encode-data-frame 一致）
+    pbuf []byte = [104, 105]
+    xbuf []byte
+    xn = 0
+    xbuf, xn = http3.encode-frame(0x00, pbuf)
+    runner.eq(xn, 4, 'encode-frame n (type+len+2)')
+    xt = 0
+    xpayload []byte
+    xnx = 0
+    xt, xpayload, xnx = http3.parse-frame(xbuf, 0)
+    runner.eq(xt, 0, 'encode-frame type preserved')
+    runner.eq(xpayload.len(), 2, 'encode-frame payload len')
+    runner.eq(xnx, 4, 'encode-frame next-pos')
+
+    ; HEADERS 影格：負載必須等於 encode-headers 的輸出
+    ns [16]str
+    vs [16]str
+    ns, vs = mk-nv()
+    qbuf []byte
+    qn = 0
+    qbuf, qn = http3.encode-headers(ns, vs, 1)
+    hbuf []byte
+    hn = 0
+    hbuf, hn = http3.encode-headers-frame(ns, vs, 1)
+    runner.eq(hn, qn + 2, 'headers frame n = qpack + type/len')
+    ht = 0
+    hpayload []byte
+    hnx = 0
+    ht, hpayload, hnx = http3.parse-frame(hbuf, 0)
+    runner.eq(ht, 1, 'headers frame type 1')
+    runner.eq(hpayload.len(), qn, 'headers frame payload = qpack block')
+    runner.eq(hnx, hn, 'headers frame next-pos')
+
+    ; 影格資料本體必須是同一份 QPACK 區塊
+    nm = ''
+    vl = ''
+    hp = 2
+    nm, vl, hp = http3.decode-header(hpayload, 2)
+    eq-str(nm, 'accept', 'headers frame payload decodes')
+    eq-str(vl, '*/*', 'headers frame payload decodes value')
+}
+
+; URL 解析：預設埠 / 指定埠 / 無路徑 / 非法前綴 / 非數字埠
+t-parse-url = () {
+    host = ''
+    port = 0
+    path = ''
+    ok = false
+    host, port, path, ok = http3.parse-url('https://example.com/a/b')
+    runner.is-true(ok, 'parse-url ok')
+    eq-str(host, 'example.com', 'parse-url host')
+    runner.eq(port, 443, 'parse-url default port')
+    eq-str(path, '/a/b', 'parse-url path')
+
+    host, port, path, ok = http3.parse-url('https://example.com:8443/x')
+    runner.is-true(ok, 'parse-url with port ok')
+    eq-str(host, 'example.com', 'parse-url host (port stripped)')
+    runner.eq(port, 8443, 'parse-url explicit port')
+    eq-str(path, '/x', 'parse-url path with port')
+
+    host, port, path, ok = http3.parse-url('https://example.com')
+    runner.is-true(ok, 'parse-url no path ok')
+    eq-str(path, '/', 'parse-url default path')
+
+    host, port, path, ok = http3.parse-url('http://example.com/')
+    runner.is-false(ok, 'parse-url rejects http://')
+    host2 = ''
+    host2, port, path, ok = http3.parse-url('https://example.com:abc/x')
+    runner.is-false(ok, 'parse-url rejects non-numeric port')
+}
+
+; 造一個空的 response（結果參數是未初始化記憶體，先 zero）
+mk-resp = () (r http3.response) {
+    r.zero()
+}
+
+; response.get-header：不分大小寫、未命中回 nil
+t-response = () {
+    r = mk-resp()
+    r.status-code = 200
+    r.header-count = 2
+    r.header-names[0]: {
+        ok -> it = 'Content-Type'
+
+        -> _
+    }
+    r.header-values[0]: {
+        ok -> it = 'text/plain'
+
+        -> _
+    }
+    r.header-names[1]: {
+        ok -> it = 'x-trace'
+
+        -> _
+    }
+    r.header-values[1]: {
+        ok -> it = 'abc'
+
+        -> _
+    }
+
+    runner.eq(r.status-code, 200, 'response status-code')
+
+    hit1 = false
+    val1 = ''
+    v1 = r.get-header('content-type')
+    v1: {
+        ok -> {
+            hit1 = true
+            val1 = it
+        }
+
+        nil -> hit1 = false
+
+        err -> hit1 = false
+    }
+    runner.is-true(hit1, 'get-header case-insensitive hit')
+    eq-str(val1, 'text/plain', 'get-header value')
+
+    hit2 = false
+    val2 = ''
+    v2 = r.get-header('X-TRACE')
+    v2: {
+        ok -> {
+            hit2 = true
+            val2 = it
+        }
+
+        nil -> hit2 = false
+
+        err -> hit2 = false
+    }
+    runner.is-true(hit2, 'get-header upper-case query hit')
+    eq-str(val2, 'abc', 'get-header second value')
+
+    missed = false
+    v3 = r.get-header('nope')
+    v3: {
+        ok -> missed = false
+
+        nil -> missed = true
+
+        err -> missed = false
+    }
+    runner.is-true(missed, 'get-header miss -> nil')
+}
+
+runner.test('header', t-header)
+runner.test('headers', t-headers)
+runner.test('frames', t-frames)
+runner.test('parse-url', t-parse-url)
+runner.test('response', t-response)
+runner.summary()
+f = runner.failed-count()
+f > 0 -> exit(1)
+-> exit(0)

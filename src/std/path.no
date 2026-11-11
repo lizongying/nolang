@@ -115,59 +115,71 @@ path.current = () (out path) {
 ; ⚠️ API 一致性：早期 join()/dir() 只做原地修改、沒有回傳值，而 base()/ext()
 ; 是回傳 str，導致 `x = p.join(...)` 拿到空字串這種陷阱。現在四個方法**都回傳**
 ; str（join/dir 仍會一併更新 .p，保留既有的原地用法）。
+; ⚠️ 實作約束（2026-11-11 修）：**不要**在 .p 上逐位元組成長。
+; 舊版用 `.p[out-n] ?= v` 追加 —— `?=` 是「越界就抛 err」，而追加的第一個位元組
+; 恰好永遠越界（out-n == len），於是**整條拼接被靜默丟棄**：`path{p:'/a/b'}.join('c.txt')`
+; 回傳 `/a/b`。改成 `.p[out-n] = v`（普通下標寫）又會踩另一個既有缺陷：需要擴容時
+; 這個路徑不可靠（實測長後綴寫出垃圾並 segfault，見 tests/std-byte-indexing.no）。
+; 唯一可靠的形態是「先 with-cap(N) 配置足量緩衝，再從索引 0 起**順序**寫入」——
+; base()/ext() 即此形態。故本方法建新緩衝，最後整體指派回 .p。
 ; b: 拼接到 .p 末尾的路徑元素
 ; out: 處理首尾斜線後拼接完成的完整路徑字串（同時原地更新 .p）
 ; [join](#path.join)
 path.join = (b str) (out str) {
+    an = .p.len-bytes()
     bn = b.len-bytes()
-    out-n = .p.len-bytes()
 
-    ; 如果 a 不以 '/' 結尾且 b 不以 '/' 開頭，加入 '/'
+    ; 需不需要補一個分隔符？只看 a 是否有尾綴 '/'：
+    ; b 的前導 '/' 一律吃掉並由這裡補回，否則 '/a/b'.join('/c.txt') 會得到
+    ; '/a/bc.txt'（舊版就是這個 bug）。
     need-sep = 1
-    out-n > 0 -> {
+    an > 0 -> {
 
         #{overflow=wrap}
-        last-a = .p.byte(out-n - 1)
+        last-a = .p.byte(an - 1)
         last-a == SEP-BYTE -> need-sep = 0
     }
-    bn > 0 -> {
-        first-b = b.byte(0)
-        first-b == SEP-BYTE -> need-sep = 0
-    }
-    out-n == 0 -> need-sep = 0
-    need-sep == 1 -> {
-        {
-            .p[out-n] ?= SEP
-        }: {
-            err -> _
+    an == 0 -> need-sep = 0
 
-            -> _
-        }
-
-        #{overflow=wrap}
-        out-n = out-n + 1
-    }
-
-    ; 如果 b 以 '/' 開頭，跳過
+    ; b 的前導 '/'：a 非空時跳過（由 need-sep 補回）；a 為空時保留，
+    ; 否則 join('', '/c.txt') 會把絕對路徑降級成相對路徑。
     start-b = 0
-    bn > 0 -> {
-        first-b = b.byte(0)
-        first-b == SEP-BYTE -> start-b = 1
+    an > 0 -> {
+        bn > 0 -> {
+            b.byte(0) == SEP-BYTE -> start-b = 1
+        }
     }
 
-    ; 複製 b
-    j <- [start-b..bn): {
-        {
-            .p[out-n] ?= b.byte(j)
-        }: {
-            err -> _
+    ; 輸出上界：a + '/' + b。
+    ; 用 clamp0 而不是 wrap：這是**容量**，溢出時寧可拿到 0（空緩衝，後續寫入
+    ; 失敗走各自的失敗臂）也不要拿到負數（會被當成巨大容量去配置）。
+    #{overflow=clamp0}
+    o str = with-cap(.p.len-bytes() + b.len-bytes() + 2)
 
-            -> _
-        }
+    ; 1) 複製 a
+    i <- [0..an): {
+        o[i] = .p.byte(i)
+    }
+    off = an
+
+    ; 2) 需要時插入分隔符
+    need-sep == 1 -> {
+        o[an] = SEP-BYTE
 
         #{overflow=wrap}
-        out-n = out-n + 1
+        off = an + 1
     }
+
+    ; 3) 複製 b（跳過前導 '/'）
+    #{overflow=wrap}
+    bs = bn - start-b
+    j <- [0..bs): {
+
+        #{overflow=wrap}
+        o[off + j] = b.byte(start-b + j)
+    }
+
+    .p = o
     out = .p
 }
 
@@ -215,15 +227,11 @@ path.dir = () (out str) {
     {
         last-sep < 0 -> {
 
-            ; 無 '/'，變為 '.'
-            {
-                .p[0] ?= DOT
-            }: {
-                err -> _
-
-                -> _
-            }
-            .p.len = 1
+            ; 無 '/'，變為 '.'（含空路徑）
+            ; ⚠ 不可寫成 `.p[0] ?= DOT` + `.p.len = 1`：空串時 `?=` 越界走 err 臂
+            ; 一個位元組都沒寫進去，接著把 len 設成 1 就等於把**未初始化位元組**當內容
+            ; （實測 `path{p:''}.dir()` 回傳 len=1 的垃圾字元）。整體指派字面量最安全。
+            .p = '.'
             out = .p
             return
         }
@@ -233,14 +241,7 @@ path.dir = () (out str) {
             out-n == 0 -> {
 
                 ; 根目錄 '/'
-                {
-                    .p[0] ?= SEP
-                }: {
-                    err -> _
-
-                    -> _
-                }
-                .p.len = 1
+                .p = '/'
                 out = .p
                 return
             }
@@ -310,267 +311,185 @@ path.is-abs = () (yes bool) {
 ; 路徑清理
 ...
 
-; 清理路徑（移除 . 和 .. 與重複分隔符）
+; 清理路徑（移除 . 與 .. 段、折疊重複分隔符）
 ; 原地修改 .p
+;
+; 語義（對齊 POSIX normpath / Go filepath.Clean）：
+;   - 純 '.' 段一律移除；重複 '/' 折疊；末尾 '/' 移除（根 '/' 保留）
+;   - '..' 吃掉前一段；前一段是開頭無法回退的 '..' 時不再吃掉
+;   - 絕對路徑的 '..' 不可越過根：'/../a' → '/a'、'/a/..' → '/'
+;   - 相對路徑開頭無法回退的 '..' **保留**：'../a' 仍是 '../a'，
+;     把它丟成 'a' 會指向完全不同的目錄
+;   - 結果為空時回 '.'（相對）或 '/'（絕對）—— 空路徑不是合法路徑
+;
+; ⚠️ 實作約束：不得用 `o[o.len-bytes()] = v` 逐位元組成長（需擴容時不可靠，
+; 見 tests/std-byte-indexing.no），必須先 with-cap 再從索引 0 起**順序**寫入，
+; 最後整體指派回 .p。輸出永遠不比輸入長，故 len-bytes() 就是安全上界。
 ; [clean](#path.clean)
 path.clean = () {
-    out-n = 0
-    dot-count = 0
-    i <- [0..self.p.len-bytes()): {
-        c = .p.byte(i)
-        {
-            c == SEP-BYTE -> {
+    n = .p.len-bytes()
 
-                ; 處理上一段
-                {
-                    dot-count == 1 ->
-
-                    dot-count == 2 -> {
-
-                        ; 回退 '..'：丟掉前一段，連同它前面的 '/'
-                        ; 從 out-n-2 往回找（out-n-1 是剛結束的那個 '/'）
-                        #{overflow=wrap}
-                        j = out-n - 2
-                        (j >= 0) {
-
-                            #{overflow=wrap}
-                            .p.byte(j) == SEP-BYTE -> {
-
-                                ; 保留該 '/' 本身 ⇒ 後續內容從它後面接上
-                                #{overflow=wrap}
-                                out-n = j + 1: {
-                                    ok -> it
-
-                                    -> 0
-                                }
-
-                                break
-                            }
-
-                            #{overflow=wrap}
-                            {
-
-                                #{overflow=wrap}
-                                j-opt = j - 1
-                                j-opt: {
-                                    ok -> j = it
-
-                                    ->
-                                }
-                            }
-                        }
-                        {
-                            j < 0 -> {
-                                .p.byte(0) == SEP-BYTE -> out-n = 1
-
-                                -> out-n = 0
-                            }
-                        }
-                    }
-
-                    out-n > 0 -> {
-
-                        #{overflow=wrap}
-                        prev = .p.byte(out-n - 1)
-                        prev != SEP-BYTE -> {
-                            {
-                                .p[out-n] ?= SEP
-                            }: {
-                                err -> _
-
-                                -> _
-                            }
-
-                            #{overflow=wrap}
-                            {
-
-                                #{overflow=wrap}
-                                out-n-opt2 = out-n + 1
-                                out-n-opt2: {
-                                    ok -> out-n = it
-
-                                    ->
-                                }
-                            }
-                        }
-                    }
-
-                    -> {
-                        {
-                            .p[out-n] ?= SEP
-                        }: {
-                            err -> _
-
-                            -> _
-                        }
-
-                        #{overflow=wrap}
-                        {
-
-                            #{overflow=wrap}
-                            out-n-opt3 = out-n + 1
-                            out-n-opt3: {
-                                ok -> out-n = it
-
-                                ->
-                            }
-                        }
-                    }
-                }
-                dot-count = 0
-            }
-
-            c == DOT-BYTE -> {
-
-                #{overflow=wrap}
-                {
-
-                    #{overflow=wrap}
-                    dot-count-opt = dot-count + 1
-                    dot-count-opt: {
-                        ok -> dot-count = it
-
-                        ->
-                    }
-                }
-            }
-
-            -> {
-
-                ; 寫入之前積累的 '.' 字元
-                j <- [0..dot-count): {
-                    {
-                        .p[out-n] ?= DOT
-                    }: {
-                        err -> _
-
-                        -> _
-                    }
-
-                    #{overflow=wrap}
-                    {
-
-                        #{overflow=wrap}
-                        out-n-opt4 = out-n + 1
-                        out-n-opt4: {
-                            ok -> out-n = it
-
-                            ->
-                        }
-                    }
-                }
-
-                dot-count = 0
-
-                {
-                    .p[out-n] ?= c
-                }: {
-                    err -> _
-
-                    -> _
-                }
-
-                #{overflow=wrap}
-                {
-
-                    #{overflow=wrap}
-                    out-n-opt5 = out-n + 1
-                    out-n-opt5: {
-                        ok -> out-n = it
-
-                        ->
-                    }
-                }
-            }
-        }
+    ; 絕對路徑：保留根部 '/'
+    rooted = false
+    n > 0 -> {
+        .p.byte(0) == SEP-BYTE -> rooted = true
     }
 
-    ; 處理末尾段
-    {
-        dot-count == 1 ->
+    o str = with-cap(n)
+    on = 0
+    rooted -> {
+        o[0] = SEP-BYTE
+        on = 1
+    }
 
-        dot-count == 2 -> {
+    ; 可回退的段數（開頭無法回退的 '..' 不計入）
+    nseg = 0
 
-            #{overflow=wrap}
-            {
+    ; 當前段在**輸入**中的起點
+    seg-start = 0
+    in-seg = false
 
+    ; 掃到 n 為止，並把 i == n 當作一個虛擬分隔符，好收掉最後一段
+    #{overflow=wrap}
+    lim = n + 1
+    i <- [0..lim): {
+
+        ; is-sep：i 是分隔符（或掃描終點）
+        is-sep = true
+        i < n -> {
+            .p.byte(i) != SEP-BYTE -> is-sep = false
+        }
+
+        is-sep -> {
+            in-seg -> {
+
+                ; 段 = [seg-start, i)
                 #{overflow=wrap}
-                j-opt2 = out-n - 2
-                j-opt2: {
-                    ok -> j = it
+                seg-n = i - seg-start
 
-                    ->
+                ; 分類：0=普通段, 1='.', 2='..'
+                kind = 0
+                seg-n == 1 -> {
+                    .p.byte(seg-start) == DOT-BYTE -> kind = 1
                 }
-            }
-            (j >= 0) {
-
-                #{overflow=wrap}
-                .p.byte(j) == SEP-BYTE -> {
-
-                    #{overflow=wrap}
-                    {
+                seg-n == 2 -> {
+                    .p.byte(seg-start) == DOT-BYTE -> {
 
                         #{overflow=wrap}
-                        out-n-opt-opt = j + 1
-                        out-n-opt-opt: {
-                            ok -> out-n-opt = it
+                        .p.byte(seg-start + 1) == DOT-BYTE -> kind = 2
+                    }
+                }
 
-                            ->
+                ; 動作：0=略過, 1=追加, 2=回退
+                act = 0
+                kind == 0 -> act = 1
+                kind == 2 -> {
+                    nseg > 0 -> act = 2
+                    nseg == 0 -> {
+                        rooted -> act = 0
+                        rooted == false -> act = 1
+                    }
+                }
+
+                act == 2 -> {
+
+                    ; 回退：把 on 收回到上一個 '/' 之前
+                    found = false
+                    p = on
+                    (p > 1) {
+
+                        ; 算式的型別是 ?i64，必須就地解包（見 test/README.md §5.2 #61）
+                        #{overflow=wrap}
+                        p = p - 1: {
+                            ok -> it
+
+                            -> p
+                        }
+                        o.byte(p) == SEP-BYTE -> {
+                            on = p
+                            found = true
+                            p = 1
                         }
                     }
-                    out-n = 0
-                    out-n = out-n-opt: {
+                    found == false -> {
+                        rooted -> on = 1
+                        rooted == false -> on = 0
+                    }
+
+                    #{overflow=wrap}
+                    nseg = nseg - 1: {
                         ok -> it
 
                         -> 0
                     }
-
-                    break
                 }
 
-                #{overflow=wrap}
-                {
+                act == 1 -> {
+
+                    ; 需要分隔符嗎？（根 '/' 已帶，或前一段已帶則不加）
+                    on > 0 -> {
+
+                        #{overflow=wrap}
+                        prev-idx = on - 1
+                        o.byte(prev-idx) != SEP-BYTE -> {
+                            o[on] = SEP-BYTE
+
+                            #{overflow=wrap}
+                            on = on + 1: {
+                                ok -> it
+
+                                -> on
+                            }
+                        }
+                    }
+
+                    t <- [0..seg-n): {
+
+                        #{overflow=wrap}
+                        o[on + t] = .p.byte(seg-start + t)
+                    }
 
                     #{overflow=wrap}
-                    j-opt3 = j - 1
-                    j-opt3: {
-                        ok -> j = it
+                    on = on + seg-n
 
-                        ->
+                    ; 開頭無法回退的 '..' 不算可回退段
+                    kind == 0 -> {
+
+                        #{overflow=wrap}
+                        nseg = nseg + 1: {
+                            ok -> it
+
+                            -> nseg
+                        }
                     }
                 }
             }
-            {
-                j < 0 -> {
-                    .p.byte(0) == SEP-BYTE -> out-n = 1
+            in-seg = false
+        }
 
-                    -> out-n = 0
-                }
+        is-sep == false -> {
+            in-seg == false -> {
+                seg-start = i
+                in-seg = true
             }
         }
     }
 
-    ; 移除末尾 '/'
-    out-n > 1 -> {
+    {
+        on == 0 -> {
+            rooted -> .p = '/'
 
-        #{overflow=wrap}
-        prev = .p.byte(out-n - 1)
+            rooted == false -> .p = '.'
+        }
 
-        #{overflow=wrap}
-        prev == SEP-BYTE -> {
-            {
+        on > 0 -> {
 
-                #{overflow=wrap}
-                out-n-opt6 = out-n - 1
-                out-n-opt6: {
-                    ok -> out-n = it
-
-                    ->
-                }
-            }
+            ; ⚠ 必須按 on 重新取一次：with-cap 緩衝的 len 只隨寫入**增長**，回退段之後
+            ; 不會自己變短（且 .len 是只讀欄位，不能直接改），整塊指派 `.p = o` 會把
+            ; 歷史尾巴一起帶出去（實測 'abc/../de' → 'dec'）。
+            .p = o.slice-bytes(0, on)
         }
     }
-    .p.len = out-n
 }
 
 ; 路徑分割
@@ -608,29 +527,15 @@ path.split = () (f str) {
     {
         last-sep < 0 -> {
 
-            ; 無 '/'，.p 變為 '.'
-            {
-                .p[0] ?= DOT
-            }: {
-                err -> _
-
-                -> _
-            }
-            .p.len = 1
+            ; 無 '/'，.p 變為 '.'（含空路徑；見 dir() 上的說明）
+            .p = '.'
             return
         }
 
         last-sep == 0 -> {
 
             ; 根目錄 '/'
-            {
-                .p[0] ?= SEP
-            }: {
-                err -> _
-
-                -> _
-            }
-            .p.len = 1
+            .p = '/'
             return
         }
 

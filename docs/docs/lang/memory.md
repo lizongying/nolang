@@ -69,10 +69,25 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 
 | Nolang 型別 | 記憶體結構 | 欄位 | 分配策略 |
 |------------|-----------|------|---------|
-| `[]T`（切片） | 24 字節 | len, cap, data | malloc（堆） |
+| `[]T`（切片） | 24 字節 | i64 len, i64 cap, i64 data | malloc（堆） |
 | `[N]T`（固定陣列） | 16 字節 | len, data | alloca（棧）或 malloc |
-| `str`（長字串） | 24 字節 | len, cap, data | malloc（堆） |
+| `str`（長字串） | **16 字節** | **u32 len, u32 cap, i8\* data** | malloc（堆） |
+| `txt`（固定字串） | 256 字節 | `[255 x i8]` data, i8 len | alloca（棧） |
 | 結構體 | 各欄位總和 | 各欄位 | alloca（棧） |
+
+**`str` 的 u32 header**：`%str-long = type { i32, i32, i8* }`（64 位元平台 16 字節）。
+`len` / `cap` 內部是 `u32`（LLVM `i32`），**所有對外 API 仍是 `i64`**：讀取時 `zext i32 -> i64`，
+寫入時 `trunc i64 -> i32`。`s.len-bytes()`、`s.len()`、`s.cap()`、`s._len()` / `s._cap()` /
+`s._set-len()` / `s._set-cap()`、`len(s)` 的簽名都沒有改變。這層邊界由 codegen 的
+`strLenI64` / `strCapI64` / `strHeaderLoadI64` / `strHeaderStoreI64` / `strLongFromParts` 統一處理：
+**不可**對 descriptor 的第 0 / 1 欄位直接發 `load i64` / `store i64`，在 opaque pointer 下
+LLVM verifier 不會攔截，但會一次讀／寫 8 字節而把相鄰的 header 欄位一起改掉（實測
+`s.len-bytes()` 曾回傳 `len | cap<<32`）。
+
+連帶的尺寸常數也必須跟著 16 字節：`[]str` 的 element stride、`os.args()` 的 argv backing
+store、`?str` / enum payload 的 slot 數（2 個 i64 words，第一個 word 打包 len 與 cap）、
+以及全域字串常量的 `{ i32 len, i32 cap, i8* data }` 字面量。`%vec`（24 字節）與 option
+預設的 24 字節 inline payload 槽位**沒有**改變。`txt` 維持原樣，不隨 `str` 改成 u32。
 
 ## 淺層 free 與深層 free
 
@@ -230,7 +245,8 @@ b[0] = 99
 | `?str` | ✅ | inline payload 的 option：clone 選項本身與其字串 data |
 | `?[]T` | ✅ | inline payload 的 option：clone 選項本身與內層切片的 data（逐元素 clone，`?[]str` 等元素擁有堆者遞迴） |
 
-> **`?str` / `?[]T` 是 inline payload，但擁有堆。** 它們的 24 位元組 payload 直接存在 option 槽裡，
+> **`?str` / `?[]T` 是 inline payload，但擁有堆。** 它們的 payload 直接存在 option 預設的
+> 24 位元組槽裡（`?str` 只用了前 16 字節放 `{ u32 len, u32 cap, i8* data }`），
 > 但其中的 `str` data／slice backing store 是堆配置 ⇒ **clone 時要連 payload 一起深拷貝，
 > free 時要連 payload 一起釋放**，兩側必須成對。`?[]T` 的釋放走與 `[]T` 相同的深層 free helper
 > （依元素型別決定是否遞迴），所以「深層 clone 配深層 free」這條對偶在這裡同樣成立。

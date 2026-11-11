@@ -61,22 +61,24 @@ MULTIPART-BOUNDARY-LEN = 32
 ; 返回 boundary str: 邊界字串
 ; [multipart-gen-boundary](#multipart.multipart-gen-boundary)
 multipart-gen-boundary = (seed i64) (boundary str) {
-    boundary = MULTIPART-BOUNDARY-PREFIX
     chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    prefix-len = boundary.len-bytes()
+
+    ; ⚠️ 尾碼必須先寫進 `with-cap` 緩衝再拼接。舊碼是
+    ; `boundary = MULTIPART-BOUNDARY-PREFIX` 之後直接 `boundary[prefix-len + i] ?= c`：
+    ; 那是「固定內容的字串」而非 with-cap 緩衝，len=18 已滿，`?=` 先按 len 判越界 ⇒
+    ; 恆走 err 臂 ⇒ 被 `err -> _` 吞掉，尾碼一個字都沒進去，邊界恆為 18 字元前綴
+    ; （見 test/README §5.1s 與詞條 `with-cap-str-unwrap-write-dropped`）。
+    suffix str = with-cap(16)
     i <- [0..16): {
         seed, r = rand.rand(seed)
 
-        {
-
-            #{overflow=wrap}
-            boundary[prefix-len + i] ?= chars[r % 36]
-        }: {
-            err -> _
+        suffix[i] = chars[r % 36]: {
+            ok -> it
 
             -> _
         }
     }
+    boundary = MULTIPART-BOUNDARY-PREFIX - suffix
 }
 
 ; multipart-writer 結構體
@@ -514,13 +516,16 @@ multipart-extract-boundary = (content-type str) (boundary str) {
     {
         bstart < content-type.len-bytes() -> {
             content-type[bstart] == 34 -> {
-                {
-                    bstart-opt = bstart + 1
-                    bstart-opt: {
-                        ok -> bstart = it
 
-                        ->
-                    }
+                ; 跳過開引號。**不能**寫成「先落臨時變數再 match」：
+                ; 值位 match 的主語若是「已存的 ?i64 變數」，臂內對外層變數的寫入會被
+                ; 靜默丟棄（見 test/README §5.2 #29 / MEMORY-LANG 值位 match 條），
+                ; 於是 bstart 不前進、index-from 又找到同一顆引號，邊界恆為空字串。
+                ; 把 match 直接掛在運算式上才有寫回。
+                bstart = bstart + 1: {
+                    ok -> it
+
+                    -> bstart
                 }
                 bend = content-type.index-from('"', bstart)
                 bend < 0 -> return
@@ -708,5 +713,8 @@ multipart-decrypt-field = (encrypted-data str, key [32]byte, aad []byte) (plain 
         plain = err('decryption failed')
         return
     }
-    plain = opened.to-str()
+
+    ; 明文是任意位元組（可能含 >= 0x80），必須 1:1 拷貝；to-str() 會把每個 byte
+    ; 當碼點重新 UTF-8 編碼而膨脹。見 test/README.md §5.2 #88。
+    plain = opened.to-bytes-str()
 }

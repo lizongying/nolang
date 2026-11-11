@@ -256,11 +256,48 @@ t-fast = () {
     runner.is-true(ip.ip-is-private('192.168.0.1'), 'fast private 192.168 (regression)')
     runner.is-false(ip.ip-is-private('8.8.8.8'), 'fast public (regression)')
 }
+
+; ip-addr.from-str：靜態構造，成功回 ok(addr)、格式非法或段值越界回 nil
+t-from-str = () {
+    a = ip.ip-addr.from-str('192.168.1.1')
+    got = 'none'
+    a: {
+        ok -> got = it.to-str()
+
+        nil -> got = 'nil'
+
+        err -> got = 'err'
+    }
+    runner.str-eq(got, '192.168.1.1', 11, 'from-str parses dotted quad')
+
+    b = ip.ip-addr.from-str('256.1.1.1')
+    bad = 'none'
+    b: {
+        ok -> bad = 'ok'
+
+        nil -> bad = 'nil'
+
+        err -> bad = 'err'
+    }
+    runner.str-eq(bad, 'nil', 3, 'out-of-range octet -> nil')
+
+    c = ip.ip-addr.from-str('not-an-ip')
+    bad2 = 'none'
+    c: {
+        ok -> bad2 = 'ok'
+
+        nil -> bad2 = 'nil'
+
+        err -> bad2 = 'err'
+    }
+    runner.str-eq(bad2, 'nil', 3, 'garbage -> nil')
+}
 runner.test('parse', t-parse)
 runner.test('classify', t-classify)
 runner.test('convert', t-convert)
 runner.test('in-subnet', t-subnet)
 runner.test('fast helpers', t-fast)
+runner.test('from-str', t-from-str)
 runner.summary()
 f = runner.failed-count()
 f > 0 -> exit(1)

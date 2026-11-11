@@ -6,6 +6,7 @@
 ;       i64.gt / str.gt
 
 # /test/runner
+
 ; sort 模組的 i64.gt / str.gt 是 std 裡的一般函式（不是內建），
 ; 必須顯式導入才會被 MIR 拉進來，否則 codegen 報 unknown callee。
 # std/sort

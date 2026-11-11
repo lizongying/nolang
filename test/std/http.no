@@ -1,0 +1,275 @@
+; std-http.no — net/http 模組測試
+;
+; 執行：no test test/std/http.no
+;
+; 覆蓋（12 / 25，全部是**不需要真連線**的部分）：
+;   request.init / request.add-header / response.parse-headers / response.get-header /
+;   set-basic-auth / set-bearer-auth / set-api-key /
+;   http-dl-location / http-dl-resolve / http-write-ok / ping
+;
+; 未覆蓋（13 / 25，都需要真 socket，留給後續有網路的檔次）：
+;   do / do-req / get / post / put / delete / patch / download / upload-put /
+;   get-auth / post-auth / download-to-file / http-dl-open
+;
+; ✅ `http-dl-dechunk` 已修（2026-11-11）：原本多塊 chunked body 只解出第一塊
+;   （迴圈內累加器的 option 寫回從第二輪起被靜默丟棄，見 test/README §5.2 #87）。
+;   現在所有加減乘都過 `_dl-add` / `_dl-sub` / `_dl-mul` / `_dl-hex-acc`
+;   這層函式邊界，下面的 `t-dechunk` 是回歸門檻。
+;
+; 歷史 bug（本輪修好）：
+;   request.add-header 原本對 `.headers[idx]` 用 `?=`，而那在空槽上恆失敗、錯誤又被
+;   `{ … }: { err -> _ }` 吞掉 ⇒ **恆回 false、header-count 永遠 0**，連帶
+;   set-basic-auth / set-bearer-auth / set-api-key 全部失效。改成 place-match
+;   （`self.headers[idx]: { ok -> it = … }`）後正常，本檔的斷言即為回歸門檻。
+;
+; 寫法約定（三條都踩過）：
+;   1. std 結構體的變數**必須**有型別標註，但 `no fmt` 會把區域標註當多餘的刪掉 ⇒
+;      把標註挪進**函式簽名**（`mk-req = (…) (r http.request)`），並在函式內先
+;      `r.zero()`（結構體結果參數進來是未初始化記憶體，見 MEMORY-RISKS）。
+;   2. 裸下標 `r.headers[i]` 是 `?T`，當實參用會被 `no vet` 判 `idxbruse` ⇒
+;      一律經取值 helper（值位 match 掛在**表達式**上，別經中間變數）。
+
+# /test/runner
+
+; http-write-ok 的落盤目標
+HT = '/tmp/nolang_http_test.bin'
+
+; ── 構造器（型別標註放在簽名裡，見檔頭第 1 條）────
+
+mk-req = (method str, url str, body str) (r http.request) {
+    r.zero()
+    r.init(method, url, body)
+}
+
+mk-resp = () (r http.response) {
+    r.zero()
+}
+
+; 取值 helper：裸下標是 ?T，這裡用值位 match 收成裸 str
+req-hdr = (r http.request, i i64) (s str) {
+    s = r.headers[i]: {
+        ok -> it
+
+        -> ''
+    }
+}
+
+res-name = (r http.response, i i64) (s str) {
+    s = r.header-names[i]: {
+        ok -> it
+
+        -> ''
+    }
+}
+
+res-val = (r http.response, i i64) (s str) {
+    s = r.header-values[i]: {
+        ok -> it
+
+        -> ''
+    }
+}
+
+; ── request.init ─────────────────────────────
+
+; init 只寫 method/url/body 並把 header-count 歸零
+t-request-init = () {
+    r = mk-req('POST', 'http://example.com/a', 'body')
+
+    runner.str-eq(r.method, 'POST', 4, 'init: method 入庫')
+    runner.str-eq(r.url, 'http://example.com/a', 20, 'init: url 入庫')
+    runner.str-eq(r.body, 'body', 4, 'init: body 入庫')
+    runner.eq(r.header-count, 0, 'init: header-count 歸零')
+}
+
+; ── request.add-header ───────────────────────
+
+; 追加 'Name: Value'、推進 header-count，滿 16 條後回 false 且不再推進
+t-request-headers = () {
+    r = mk-req('GET', 'http://x/', '')
+
+    ok1 = r.add-header('X-A', '1')
+    runner.is-true(ok1, 'add-header: 第一條回 true')
+    runner.eq(r.header-count, 1, 'add-header: count 1')
+    runner.str-eq(req-hdr(r, 0), 'X-A: 1', 6, 'add-header: 組出 Name: Value')
+
+    ok2 = r.add-header('Accept', 'application/json')
+    runner.is-true(ok2, 'add-header: 第二條回 true')
+    runner.eq(r.header-count, 2, 'add-header: count 2')
+    runner.str-eq(req-hdr(r, 1), 'Accept: application/json', 24, 'add-header: 第二條內容')
+
+    ; 補到上限（16）：2 + 14 = 16
+    i <- [0..14): {
+        filled = r.add-header('X', 'y')
+    }
+    runner.eq(r.header-count, 16, 'add-header: 填滿 16 條')
+
+    over = r.add-header('X-Last', 'z')
+    runner.is-false(over, 'add-header: 第 17 條回 false')
+    runner.eq(r.header-count, 16, 'add-header: 超限後 count 不動')
+    runner.str-eq(req-hdr(r, 15), 'X: y', 4, 'add-header: 最後一格是第 16 條')
+}
+
+; ── 認證標頭 ─────────────────────────────────
+
+; basic = Authorization: Basic base64(user:pass)；bearer / api-key 各走自己的前綴
+t-auth = () {
+    p = mk-req('GET', 'http://x/', '')
+    b-ok = http.set-basic-auth(p, 'user', 'pass')
+    runner.is-true(b-ok, 'set-basic-auth: 回 true')
+    runner.str-eq(req-hdr(p, 0), 'Authorization: Basic dXNlcjpwYXNz', 33, 'set-basic-auth: base64(user:pass)')
+
+    q = mk-req('GET', 'http://x/', '')
+    t-ok = http.set-bearer-auth(q, 'tok')
+    runner.is-true(t-ok, 'set-bearer-auth: 回 true')
+    runner.str-eq(req-hdr(q, 0), 'Authorization: Bearer tok', 25, 'set-bearer-auth: 前綴 Bearer')
+
+    k = mk-req('GET', 'http://x/', '')
+    a-ok = http.set-api-key(k, 'X-API-Key', 'k1')
+    runner.is-true(a-ok, 'set-api-key: 回 true')
+    runner.str-eq(req-hdr(k, 0), 'X-API-Key: k1', 13, 'set-api-key: 自訂標頭名')
+}
+
+; ── response.parse-headers / get-header ──────
+
+; 逐行拆 'Name: Value'；get-header 是**大小寫敏感**的線性搜尋
+t-response = () {
+    res = mk-resp()
+    res.headers = 'Content-Type: text/plain\r\nX-A: 1\r\n'
+    res.parse-headers()
+
+    runner.eq(res.header-count, 2, 'parse-headers: 拆出 2 條')
+    runner.str-eq(res-name(res, 0), 'Content-Type', 12, 'parse-headers: 第一條名')
+    runner.str-eq(res-val(res, 0), 'text/plain', 10, 'parse-headers: 第一條值')
+    runner.str-eq(res-name(res, 1), 'X-A', 3, 'parse-headers: 第二條名')
+    runner.str-eq(res-val(res, 1), '1', 1, 'parse-headers: 第二條值')
+
+    hit = res.get-header('Content-Type')
+    hit: {
+        ok -> runner.str-eq(it, 'text/plain', 10, 'get-header: 精確大小寫命中')
+
+        -> runner.is-true(false, 'get-header: 精確大小寫應命中')
+    }
+
+    miss = res.get-header('X-Missing')
+    miss: {
+        ok -> runner.is-true(false, 'get-header: 不存在的標頭必須 nil')
+
+        -> runner.is-true(true, 'get-header: 不存在的標頭回 nil')
+    }
+
+    ; ⚠️ 與 net/http3 的 get-header（不分大小寫）不同，這裡是大小寫敏感的；
+    ; 目前行為如此，先斷言現狀，是否統一另議。
+    lower = res.get-header('content-type')
+    lower: {
+        ok -> runner.is-true(false, 'get-header: 小寫查詢目前應為 nil（大小寫敏感）')
+
+        -> runner.is-true(true, 'get-header: 小寫查詢回 nil（大小寫敏感）')
+    }
+
+    ; 空 headers：parse 後 count 必須是 0
+    e = mk-resp()
+    e.parse-headers()
+    runner.eq(e.header-count, 0, 'parse-headers: 空 headers 得 count 0')
+}
+
+; ── http-dl-location ─────────────────────────
+
+; 從標頭文字撈 Location（大小寫不敏感），沒有就 nil
+t-dl-location = () {
+    h1 = 'HTTP/1.1 302 Found\r\nLocation: /next\r\n'
+    l1 = http.http-dl-location(h1)
+    l1: {
+        ok -> runner.str-eq(it, '/next', 5, 'dl-location: 撈到 /next')
+
+        -> runner.is-true(false, 'dl-location: 應撈到 /next')
+    }
+
+    h2 = 'HTTP/1.1 301 Moved\r\nlocation: https://x/y\r\n'
+    l2 = http.http-dl-location(h2)
+    l2: {
+        ok -> runner.str-eq(it, 'https://x/y', 11, 'dl-location: 小寫 location 也認')
+
+        -> runner.is-true(false, 'dl-location: 小寫 location 應命中')
+    }
+
+    h3 = 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n'
+    l3 = http.http-dl-location(h3)
+    l3: {
+        ok -> runner.is-true(false, 'dl-location: 沒有 Location 必須 nil')
+
+        -> runner.is-true(true, 'dl-location: 沒有 Location 回 nil')
+    }
+}
+
+; ── http-dl-resolve ──────────────────────────
+
+; 絕對 URL 直接沿用；根相對接在 scheme+host(+port) 後；一般相對多補一個 '/'
+t-dl-resolve = () {
+    a = http.http-dl-resolve(false, 'example.com', 80, '/next')
+    runner.str-eq(a, 'http://example.com/next', 22, 'dl-resolve: 根相對 + 預設埠省 :80')
+
+    b = http.http-dl-resolve(false, 'example.com', 8080, '/next')
+    runner.str-eq(b, 'http://example.com:8080/next', 27, 'dl-resolve: 非預設埠帶上 :8080')
+
+    c = http.http-dl-resolve(true, 'example.com', 443, 'sub/x')
+    runner.str-eq(c, 'https://example.com/sub/x', 25, 'dl-resolve: tls + 一般相對補 /')
+
+    d = http.http-dl-resolve(false, 'example.com', 80, 'https://other/y')
+    runner.str-eq(d, 'https://other/y', 15, 'dl-resolve: 絕對 URL 原樣返回')
+}
+
+; ── http-write-ok ────────────────────────────
+
+; 把 ?bool 折成 bool，並真的落盤
+t-write-ok = () {
+    data = 'abc'.to-bytes()
+    ok = http.http-write-ok(HT, data)
+    runner.is-true(ok, 'http-write-ok: 回 true')
+
+    back = fs.read-file(HT)
+    runner.eq(back.len(), 3, 'http-write-ok: 落盤 3 位元組')
+    runner.str-eq(back.to-bytes-str(), 'abc', 3, 'http-write-ok: 內容一致')
+
+    fs.remove(HT)
+}
+
+; ── ping ─────────────────────────────────────
+
+; 固定回 'pong'（原始碼註解稱它是辨識「載入來源檔還是內嵌 std」的探針，
+;  但它被公開成 API，理應有測試釘住；若日後刪除，這裡會一起變紅）
+t-ping = () {
+    p = http.ping()
+    runner.str-eq(p, 'pong', 4, 'ping: 固定回 pong')
+}
+
+; 回歸 §5.2 #87：兩塊 chunked body 必須完整解出 'wikipedia'（9 位元組）。
+; 修復前只回 'wiki'（4 位元組），因為第二塊的 size 累加寫回被靜默丟棄。
+t-dechunk = () {
+    body = '4\r\nwiki\r\n5\r\npedia\r\n0\r\n\r\n'
+    b = body.to-bytes()
+    o = http.http-dl-dechunk(b)
+    runner.eq(o.len(), 9, 'dechunk: 兩塊共 9 位元組')
+    s = o.to-bytes-str()
+    runner.str-eq(s, 'wikipedia', 9, 'dechunk: 內容還原')
+}
+
+; ── 執行 ──────────────────────────────────────
+
+p1, f1 = runner.test('http.request-init', t-request-init)
+p2, f2 = runner.test('http.request-headers', t-request-headers)
+p3, f3 = runner.test('http.auth', t-auth)
+p4, f4 = runner.test('http.response', t-response)
+p5, f5 = runner.test('http.dl-location', t-dl-location)
+p6, f6 = runner.test('http.dl-resolve', t-dl-resolve)
+p7, f7 = runner.test('http.write-ok', t-write-ok)
+p8, f8 = runner.test('http.ping', t-ping)
+p9, f9 = runner.test('http.dechunk', t-dechunk)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

@@ -126,13 +126,19 @@
 ; []byte.to-bytes-str: 1:1 逐字節拷貝（保留原 []byte.to-str 語義）。
 ; 用於 buf 已經是合法 UTF-8 字節流的場景（讀取文件 / 子進程输出），不需要按碼點重編碼。
 ; 該函數等價於舊版 []byte.to-str。
+;
+; 實現：走 str.from-chars —— 把每個字節當成 0~255 的碼點塞進 []char，再由內建
+; 一次建成 len=cap=n 的 str（每 char 只取低 8 位，正好是 1:1 位元組拷貝）。
+; 2026-11-11 前這裡是 `out = with-len(n)` + `out[i] = .[i]`；str 的下標寫入被禁用後，
+; 這是唯一既能表達 1:1 拷貝、又不碰 `_set-byte`（私有）的公開路徑。
 ; [to-bytes-str](#bytes.to-bytes-str)
 []byte.to-bytes-str = () (out str) {
     n = .len()
-    out = with-len(n)
+    cs []char
     i <- [0..n): {
-        out[i] = .[i]
+        cs.push(.[i] & 0xff)
     }
+    out = str.from-chars(cs)
 }
 
 ; []byte.index: 在 []byte 中查找 target 子串
@@ -290,10 +296,11 @@ HEX-LOWER = '0123456789abcdef'
 ; 返回 out txt: 固定 256 字節的 txt 結構
 ; [to-txt](#bytes.to-txt)
 []byte.to-txt = () (out txt) {
-    n = .len()
-    n > 255 -> n = 255
-    i <- [0..n): {
-        out.set-byte(i, .[i])
-    }
-    out.len = n
+    ; 委派 txt.from-bytes：clamp 到 255 + 逐位元組拷入內聯緩衝 + 設 len，
+    ; 與原本手寫的迴圈等價。txt._set-byte 已私有（raqvyltn 擋跨模組），
+    ; 這裡走公開構造器即可。
+    ; ⚠️ 必須先綁到區域變數再傳，不能寫 `txt.from-bytes(.)` / `(self)`：
+    ;   把 self 直接當實參會讓 codegen 段錯誤（2026-11-11 實測，見 str.to-txt）。
+    b = self
+    out = txt.from-bytes(b)
 }

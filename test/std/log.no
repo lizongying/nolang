@@ -1,10 +1,25 @@
 ; std-log.no — log 模組測試
 ;
 ; 執行：no test test/std/log.no
-; 覆蓋：set-level / debug / info / warn / error
-; 注意：fatal 會呼叫 exit，不在此測試
+; 覆蓋：set-level / debug / info / warn / error / set-format / set-output-fd /
+;       get-output-fd / set-writer / get-writer / open-file / log-stamp /
+;       log-emit / fatal（2026-11-11 補齊，覆蓋率 14/14）
+;
+; 輸出導向的斷言全部落在 /tmp/nolang_log_test_*.log（開場先刪、收場再刪），
+; 每個測試結束都把 OUT-FD 還原成 fs.STDERR-FD 並把格式還原成預設 F-LEVEL，
+; 否則後面測試的日誌會串進檔案、或把時間戳帶進測試輸出。
+; fatal 會 exit，故放進 process.process-fork 的子進程裡跑，父進程收割退出碼。
 
 # /test/runner
+
+LOG-A = '/tmp/nolang_log_test_a.log'
+LOG-B = '/tmp/nolang_log_test_b.log'
+LOG-BAD = '/tmp/nolang_log_test_no_such_dir/x.log'
+
+; 把整個檔案讀成字串（讀不到時回空串）
+slurp = (p str) (out str) {
+    out = fs.read-file(p).to-str()
+}
 
 ; ── 級別常量 ──────────────────────────────────
 
@@ -61,6 +76,111 @@ t-set-level-debug = () {
     runner.eq(0, 0, 'set-level debug + all levels completed')
 }
 
+; ── 輸出目標 / 格式 / 寫入 ─────────────────────
+
+; 驗證 open-file + set-output-fd + get-output-fd + set-writer + get-writer + log-emit：
+; 導向檔案後，emit 出來的行確實落在檔案裡；writer 抽象與 fd 狀態一致
+t-output-redirect = () {
+    fs.remove(LOG-A)
+    res = log.open-file(LOG-A)
+    opened = res: {
+        ok -> it
+
+        -> false
+    }
+    runner.is-true(opened, 'open-file returns ok')
+    fd-a = log.get-output-fd()
+    runner.is-true(fd-a > 2, 'get-output-fd > 2 after open-file')
+
+    ; 格式 = 時間戳 + 級別標籤 + 呼叫點
+    log.set-format(log.F-TIME | log.F-LEVEL | log.F-LOC)
+    runner.eq(log.FMT-FLAGS, 7, 'set-format stores 7')
+
+    log.log-emit('TAG', 'body', 'a.no:1:2')
+    body = slurp(LOG-A)
+
+    ; 19 位元時間戳 + 空格 + '[TAG] ' + '[a.no:1:2] ' + 'body' + 換行
+    runner.eq(body.len-bytes(), 19 + 1 + 6 + 11 + 4 + 1, 'log-emit line length')
+    runner.is-true(body.ends-with('[TAG] [a.no:1:2] body\n'), 'log-emit tail has tag+loc+body')
+
+    ; LOC 為空時不輸出空的 [] 前綴
+    log.log-emit('TAG', 'no-loc', '')
+    body2 = slurp(LOG-A)
+    runner.is-true(body2.ends-with(' [TAG] no-loc\n'), 'log-emit skips empty loc')
+
+    ; writer 抽象只是 fd 的包裝
+    w = log.get-writer()
+    runner.is-true(w.fd == fd-a, 'get-writer fd == OUT-FD')
+
+    ; 換到第二個檔案：set-writer 存的就是 writer 的 fd
+    fs.remove(LOG-B)
+    f2 = fs.open-file(LOG-B, fs.O-WRONLY | fs.O-CREAT | fs.O-TRUNC, 420)
+    log.set-writer(io.writer.from-fd(f2))
+    runner.is-true(log.get-output-fd() == f2, 'set-writer stores writer fd')
+    log.set-format(log.F-LEVEL)
+    log.log-emit('W', 'second', '')
+    fs.close(f2)
+    b-line = slurp(LOG-B)
+    runner.is-true(b-line.ends-with('[W] second\n'), 'set-writer target receives line')
+
+    ; set-output-fd 直接切 fd
+    log.set-output-fd(fd-a)
+    runner.is-true(log.get-output-fd() == fd-a, 'set-output-fd switches back')
+
+    ; 收場：還原預設狀態
+    log.set-format(log.F-LEVEL)
+    log.set-output-fd(fs.STDERR-FD)
+    fs.remove(LOG-A)
+    fs.remove(LOG-B)
+}
+
+; 驗證 open-file 的失敗路徑：路徑不存在時回 err（不是 ok，也不是 nil），且不改動 OUT-FD
+t-open-file-error = () {
+    log.set-output-fd(fs.STDERR-FD)
+    res = log.open-file(LOG-BAD)
+    is-err = res: {
+        err -> true
+
+        -> false
+    }
+    runner.is-true(is-err, 'open-file bad path -> err')
+    runner.is-true(log.get-output-fd() == fs.STDERR-FD, 'failed open leaves OUT-FD alone')
+}
+
+; 驗證 log-stamp：19 位元 YYYY-MM-DD HH:MM:SS（UTC），分隔符位置固定
+t-stamp = () {
+    s = log.log-stamp()
+    runner.eq(s.len-bytes(), 19, 'stamp len == 19')
+    d4 i64 = s[4]
+    runner.eq(d4, 45, 'stamp [4] == -')
+    d7 i64 = s[7]
+    runner.eq(d7, 45, 'stamp [7] == -')
+    d10 i64 = s[10]
+    runner.eq(d10, 32, 'stamp [10] == space')
+    d13 i64 = s[13]
+    runner.eq(d13, 58, 'stamp [13] == :')
+    d16 i64 = s[16]
+    runner.eq(d16, 58, 'stamp [16] == :')
+}
+
+; 驗證 fatal：先 emit FATAL 行再以指定碼退出 —— 放進 fork 的子進程，父進程收割退出碼
+t-fatal = () {
+    log.set-format(log.F-LEVEL)
+    log.set-output-fd(fs.STDERR-FD)
+    pid = process.process-fork()
+    {
+        pid == 0 -> {
+            log.fatal('boom', 42)
+
+            ; fatal 正常不會回來
+            exit(99)
+        }
+    }
+    runner.is-true(pid > 0, 'fatal fork parent pid > 0')
+    code = process.process-waitpid(pid, 0)
+    runner.eq(code, 42, 'fatal exits with the given code')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('log.level-constants', t-level-constants)
@@ -68,6 +188,10 @@ p2, f2 = runner.test('log.set-level-info', t-set-level-info)
 p3, f3 = runner.test('log.set-level-warn', t-set-level-warn)
 p4, f4 = runner.test('log.set-level-error', t-set-level-error)
 p5, f5 = runner.test('log.set-level-debug', t-set-level-debug)
+p6, f6 = runner.test('log.output-redirect', t-output-redirect)
+p7, f7 = runner.test('log.open-file-error', t-open-file-error)
+p8, f8 = runner.test('log.log-stamp', t-stamp)
+p9, f9 = runner.test('log.fatal', t-fatal)
 
 total = runner.summary()
 f = runner.failed-count()

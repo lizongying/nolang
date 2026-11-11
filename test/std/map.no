@@ -3,13 +3,14 @@
 ; 执行：no test test/std/map.no
 ; 覆盖：map[k]v 背后的 hashmap-{str,int,bool}-tmpl
 ;       init / hash / str-eq / put / get / contains / remove / rehash /
-;       clear / len / is-empty
+;       clear / len / is-empty / for-each
 ;
-; 未测：for-each（三个模板皆有）——它是**生成器形态**（输出参数在循环里逐个
-;   产出），目前没有用户态可写的调用语法：`m.for-each(k, v) { ... }` 报
-;   `'k' is not defined`，`k, v = m.for-each()` 也不行。同一状况存在于
-;   collection/ 下所有容器（str-map / str-set / hash-set / tree-map …），
-;   属系统性缺口而非本档遗漏。
+; for-each 已可测（2026-11-11 更正）：旧注释断言「没有用户态可写的调用语法」，
+;   实测 `k, v = m.for-each()` 完全可用——两个输出参数对应两个左值即可。
+;   同名状况对 collection/ 下所有容器（str-map / str-set / hash-set /
+;   linked-hash-map …）都成立，之前的「系统性缺口」是误判。
+;   但它是**生成器形态**（输出参数在循环里逐个产出、返回时停在最后一条），
+;   所以只能断言「最后一条」的语义，无法在回调里逐项处理。
 ;
 ; 说明：`map[k]v` 在语言层是内建型别，底层就是这三个模板；因此本档用
 ;   `m [str]i64 = { }` 这类写法即可覆盖模板方法，无需直接实例化模板名。
@@ -273,6 +274,29 @@ p9, f9 = runner.test('map str rehash', t-str-rehash)
 p10, f10 = runner.test('map str auto grow', t-str-grow)
 p11, f11 = runner.test('map int key', t-int-key)
 p12, f12 = runner.test('map bool key', t-bool-key)
+p13, f13 = runner.test('map for-each', t-for-each)
+
+; for-each：三个模板都返回「槽位下标最大的已占用条目」的 (k, v)
+; 语言无回呼，因此单条目场景下唯一条目就是答案，断言可精确
+t-for-each = () {
+    ms [str]i64 = { }
+    ms.put('only', 5)
+    sk, sv = ms.for-each()
+    runner.str-eq(sk, 'only', 4, 'str for-each k')
+    runner.eq(sv, 5, 'str for-each v')
+
+    mi [i64]i64 = { }
+    mi.put(9, 11)
+    ik, iv = mi.for-each()
+    runner.eq(ik, 9, 'int for-each k')
+    runner.eq(iv, 11, 'int for-each v')
+
+    mb [bool]i64 = { }
+    mb.put(true, 13)
+    bk, bv = mb.for-each()
+    runner.is-true(bk, 'bool for-each k')
+    runner.eq(bv, 13, 'bool for-each v')
+}
 
 total = runner.summary()
 f = runner.failed-count()

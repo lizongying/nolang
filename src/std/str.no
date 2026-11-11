@@ -1,5 +1,5 @@
 ; str — 字串操作標準庫
-;
+
 ; str 是對外統一的字串類型
 ; 內部實現：str-long（堆分配）
 ;
@@ -7,13 +7,13 @@
 ; 共享 str 的底層記憶體，不複製資料。
 ; 因此 str 的所有方法（to-upper、to-lower、index、contains、slice、copy、fill 等）
 ; 均適用於 str 的切片視圖。通過切片修改元素會影響原始 str。
-;
-; str {
-;     len i64 read-only       // 對外：i64 長度
-;     cap i64 read-only       // 對外：i64 容量（僅 str-long 有效）
-;     data *byte sealed       // 對外：數據指標
-; }
 ; [str](#str)
+#{buildin}
+str {
+    len u32; 對外：i64 長度
+    cap u32; 對外：i64 容量（僅 str-long 有效）
+    data []byte; 對外：數據指標
+}
 
 ; 基础操作
 ...
@@ -34,10 +34,12 @@ string = str | txt
 
 ; str.len-bytes(): 返回字串的「字節數量」（底層 UTF-8 緩衝區長度）
 ; 由編譯器內建處理（build-in，等同舊 .len 結構體字段）；標準庫內部位元組級迴圈/切片請用本方法
-; build-in
-; str.len-bytes = () (n i64) {
-;    n = .len
-; }
+; [len-bytes](#str.len-bytes)
+#{buildin}
+str.len-bytes = () (n i64) {
+   n = .len.to-i64()
+}
+
 ; 返回字串的「字符（碼點）數量」
 ; 與 s[i] 的碼點索引語義一致；要字節數請用 s.len-bytes()
 ; n: 碼點（字符）數量（與 s[i] 索引語義一致）
@@ -48,10 +50,11 @@ str.len = () (n i64) {
 
 ; str.cap: 返回字串容量（內置字段訪問，s.cap 直接可用）
 ; 返回堆緩衝區容量
-; build-in
-; str.cap = () (n int64) {
-;    n = .cap
-; }
+#{buildin}
+str.cap = () (n int64) {
+   n = .cap
+}
+
 ; 返回「位元組」下標 i 處的原始位元組值（raw byte 讀取）
 ; 與 s[i] 不同：s[i] 按碼點索引，本方法按底層 UTF-8 緩衝區的位元組偏移取值
 ; 回傳 ?byte：越界（i < 0 或 i >= len-bytes()）時回傳 nil，與 arr[i] 的
@@ -67,13 +70,19 @@ str.byte = (i i64) (c ?byte) {
 }
 
 ;
-; 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，長度不變）
-; str.byte 的配對寫者；緩衝區逐位元組構建專用（注意 s[i] = v 是位元組級寫入、
-; txt[i] = v 是按碼點重新編碼，語意都不同）
+; str._set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，長度不變）
+; 🔒 私有（`_` 前綴，2026-11-11 由公開的 `set-byte` 收歸模組內）：跨模組呼叫會被
+; checker 以 raqvyltn 拒絕。**用戶碼請用 str.from-chars** —— 一次把整串位元組建成
+; 新 str，而不是逐位元組改一個既有的 str。
+;
+; 為什麼私有化：`s[i] = v`（位元組級寫入）與 `s[i]`（碼點級讀取）在 str 上語意分叉，
+; 是明確的陷阱；配套的 `set-byte` 逃生艙一旦公開，等於給這個陷阱留了後門。現在
+; `s[i] = v` 也在編譯期被禁用（見 checker 的 str 下標寫入規則），str 的位元組級
+; 構建只有兩條合法路徑：公開的 from-chars，或本模組內部的 _set-byte。
 ;
 ; b 宣告為 byte：表層實參若是 option（.byte(i) 等）由內建參數檢查直接放過
 ; （funcargs.go 的 `?` 跳過）；若為純 i64/char 則在呼叫端以遮罩 `& 255` 窄化。
-; 這與 src/builtin/str.go 的 BuiltinMethodList 條目一致。
+; 這與 src/builtin/str.go 的 BuiltinMethodList 條目一致（裸名註冊，故同時覆蓋 str/txt）。
 ;
 ; 回傳 ?bool（可失敗）：越界（i < 0 或 i >= 實體容量 cap）時回傳 nil 並**跳過寫入**，
 ; 成功回傳 some(true)。邊界以 %str-long 的 cap（實體容量）為準而非 len，故「先填緩衝
@@ -81,19 +90,46 @@ str.byte = (i i64) (c ?byte) {
 ; i: 位元組下標
 ; b: 寫入的位元組值
 ; ok: ok=true=寫入成功, nil=i 越界（跳過寫入）
-; [set-byte](#str.set-byte)
+; [_set-byte](#str._set-byte)
 #{buildin}
-str.set-byte = (i i64, b byte) (ok ?bool) {
+str._set-byte = (i i64, b byte) (ok ?bool) {
 }
 
-; str.eq: 比較兩個字串的前 n 個位元組是否相等
-; 返回 true=相等, false=不相等
-; b: 比較的目標字串
-; n: 比較位元組數
-; eq: true=接收者與 b 的前 n 位元組全等
-; [eq-raw](#str.eq-raw)
+; 註：`str.eq(b, n)` 不在本檔案宣告 —— 它是 src/builtin/str.go 註冊的編譯器內建
+; （MethodName "str.eq", ForwardFunc "eq-raw" → emitBuiltinEqRaw，比較前 n 位元組）。
+; 此處曾有一個 `#{buildin} eq-raw = (b str, n i64) (eq bool) {}` 的空殼宣告，但那只是
+; 個死符號（全域零呼叫點，用戶碼 `a.eq-raw(...)` / `str.eq-raw(...)` 兩種形態都調不到），
+; 已移除，見 test/README.md §5.0h。
+
+; str._from-bytes: 私有構造器 —— 以「接管緩衝」語義把 []byte 包裝成 str（零拷貝）
+; 🔒 私有（`_` 前綴）：只有 src/std/str.no 自己可調用，使用者碼調用會被 checker
+;    拒絕（raqvyltn）。公開路徑請用 from-chars() —— 它由編譯器分配新緩衝，
+;    不涉及所有權移轉，不會 double free。
+; 直接用 bs 的底層 data 指標組出 str，不複製；n 是字串長度，會被夾到
+; [0, bs.len()]（負數或超長都不會越界），cap 也取夾後的值。
+; 結果 str 與 bs 共享緩衝（codegen 已 vec_retain），兩者各釋放一次；原 bs
+; 不得再當作獨立緩衝使用。
+; 由編譯器內建處理（#{buildin}）：codegen 攔截後由 %vec 的 data 指標 + n
+; 組出 %str-long；簽名同時註冊於 src/builtin/str.go（ForwardFunc "str-from-bytes"）。
+; bs: 位元組切片（與結果共享緩衝）
+; n: 字串長度（字節數，夾到 [0, bs.len()]）
+; s: 共享 bs 緩衝的 str（零拷貝）
+; [_from-bytes](#str._from-bytes)
 #{buildin}
-eq-raw = (b str, n i64) (eq bool) {
+_from-bytes = (bs []byte, n i64) (s str) {
+}
+
+; str.from-chars: 從 []char 安全構造 str（公開構造器，每個 char 寫成一個原始位元組）
+; 由編譯器內建處理（#{buildin}，ForwardFunc "chars-new"，與 new() 同一實作）：
+; 一次性分配新緩衝、逐位元組寫入並設定長度（len = cap = cs.len()），不借用
+; 呼叫方記憶體，故對使用者完全安全（不會 double free / 越界）。
+; 注意：每個 char 只取低 8 位寫成 1 個位元組（trunc i32→i8），不做 UTF-8 重編碼；
+; 需要 UTF-8 位元組請用 char.to-bytes() 逐個拼，或先 to-str() 再 to-bytes()。
+; cs: 碼點切片（[]char）
+; s: 由 cs 逐位元組構造的 str（新緩衝，擁有所有權）
+; [from-chars](#str.from-chars)
+#{buildin}
+from-chars = (cs []char) (s str) {
 }
 
 ; 將 src 複製到 dst（整個字串）
@@ -102,18 +138,18 @@ eq-raw = (b str, n i64) (eq bool) {
 ; dst: 副本（已棄用：直接賦值即深拷貝語義）
 ; [copy](#str.copy)
 str.copy = () (dst str) {
-    dst = with-cap(.len-bytes())
-    i <- [0..self.len-bytes()): {
-        dst[i] = .byte(i)
-    }
+    ; 已棄用：賦值即深拷貝，`dst = .` 走的就是所有權分析的 OpClone。
+    dst = .
 }
 
 ; 用 byte 值填充整個字串
 ; val: 用於填充整個字串的位元組值
 ; [fill](#str.fill)
 str.fill = (val byte) {
+    ; 原地改寫既有位元組，長度不變 —— 這是 _set-byte 真正必要的場景
+    ; （若要換內容請建新 str，見 from-chars）。
     i <- [0..self.len-bytes()): {
-        .[i] = val
+        ._set-byte(i, val)
     }
 }
 
@@ -465,21 +501,23 @@ str.ends-with = (target str) (yes bool) {
 ; val: 英文小寫轉大寫後的副本（其餘碼點原樣保留）
 ; [to-upper](#str.to-upper)
 str.to-upper = () (val str) {
-    val = with-cap(.len-bytes())
-    i <- [0..self.len-bytes()): {
+    n = .len-bytes()
+    buf []byte = with-cap-len(n, n)
+    i <- [0..n): {
         c = .byte(i)
         {
             c >= 97 && c <= 122 -> {
 
                 #{overflow=wrap}
-                val[i] = c - 32
+                buf[i] = c - 32
             }
 
             -> {
-                val[i] = c
+                buf[i] = c
             }
         }
     }
+    val = buf.to-bytes-str()
 }
 
 ; 將字串轉為小寫
@@ -487,21 +525,23 @@ str.to-upper = () (val str) {
 ; val: 英文大寫轉小寫後的副本（其餘碼點原樣保留）
 ; [to-lower](#str.to-lower)
 str.to-lower = () (val str) {
-    val = with-cap(.len-bytes())
-    i <- [0..self.len-bytes()): {
+    n = .len-bytes()
+    buf []byte = with-cap-len(n, n)
+    i <- [0..n): {
         c = .byte(i)
         {
             c >= 65 && c <= 90 -> {
 
                 #{overflow=wrap}
-                val[i] = c + 32
+                buf[i] = c + 32
             }
 
             -> {
-                val[i] = c
+                buf[i] = c
             }
         }
     }
+    val = buf.to-bytes-str()
 }
 
 ; 去除字串首尾空白字符
@@ -527,12 +567,13 @@ str.trim = () (val str) {
     #{overflow=wrap}
     n = end - start + 1
     n < 0 -> return
-    val = with-cap(n)
+    buf []byte = with-cap-len(n, n)
     i <- [0..n): {
 
         #{overflow=wrap}
-        val[i] = .byte(start + i)
+        buf[i] = .byte(start + i)
     }
+    val = buf.to-bytes-str()
 }
 
 ; 重複與切片
@@ -546,14 +587,16 @@ str.trim = () (val str) {
 str.repeat = (times i64) (val str) {
 
     #{overflow=wrap}
-    val = with-cap(.len-bytes() * times)
+    m = .len-bytes() * times
+    buf []byte = with-cap-len(m, m)
     i <- [0..times): {
         j <- [0..self.len-bytes()): {
 
             #{overflow=wrap}
-            val[i * .len-bytes() + j] = .byte(j)
+            buf[i * .len-bytes() + j] = .byte(j)
         }
     }
+    val = buf.to-bytes-str()
 }
 
 ; 截取子串 [start, end)，下標為「字符（碼點）位置」
@@ -575,12 +618,13 @@ str.slice = (start i64, end i64) (val str) {
 
     #{overflow=wrap}
     n = eb - sb
-    val = with-cap(n)
+    buf []byte = with-cap-len(n, n)
     i <- [0..n): {
 
         #{overflow=wrap}
-        val[i] = .byte(sb + i)
+        buf[i] = .byte(sb + i)
     }
+    val = buf.to-bytes-str()
 }
 
 ; 按「字節偏移」截取子串 [start, end)（內部位元組級使用）
@@ -599,12 +643,13 @@ str.slice-bytes = (start i64, end i64) (val str) {
 
     #{overflow=wrap}
     n = r-end - r-start
-    val = with-cap(n)
+    buf []byte = with-cap-len(n, n)
     i <- [0..n): {
 
         #{overflow=wrap}
-        val[i] = .byte(r-start + i)
+        buf[i] = .byte(r-start + i)
     }
+    val = buf.to-bytes-str()
 }
 
 ; 類型轉換
@@ -622,12 +667,31 @@ str.to-str = () (out str) {
     out = .
 }
 
+; str.bytes(): 返回底層 UTF-8 位元組的「零拷貝視圖」（實際就是 .data）
+; 與 to-bytes() 不同：不分配新緩衝、不逐位元組複製。回傳的 []byte 共享 str 的
+; data 緩衝，寫入元素會反映到原字串；視圖的 cap 為 0（借用標記），作用域結束時
+; vec_free 會跳過釋放，所有權仍屬原 str。呼叫端須保證 str 活得比視圖久。
+; 由編譯器內建處理（#{buildin}）：codegen 攔截後直接由 %str-long 的
+; len/data 組出 %vec{len, cap=0, data}，不存在 std 函式體；簽名同時註冊於
+; src/builtin/str.go 的 BuiltinMethodList（ForwardFunc "str-bytes"）。
+; 注意：直接寫 `val []byte = s.data` 目前是壞的（codegen 會把 data 指標當整個
+; 聚合來 load），必須走本方法。
+; val: 底層 UTF-8 位元組的借用視圖（長度等於 len-bytes()）
+; [bytes](#str.bytes)
+#{buildin}
+str.bytes = () (val []byte) {
+}
+
 ; 將字串轉為位元組陣列
 ; val: 底層 UTF-8 位元組副本
 ; [to-bytes](#str.to-bytes)
 str.to-bytes = () (val []byte) {
-    val = with-len(.len-bytes())
-    i <- [0..self.len-bytes()): {
+    n = .len-bytes()
+    ; with-cap-len（而非 with-len）讓下面的下標寫入落在 idxwrite 的 with-cap 豁免內；
+    ; 也不能改成 with-cap + push：實測（2026-11-11）`val.push(b)` 寫進 out 參數形態的
+    ; []byte 會無限成長（`no run` 被 kill），下標寫入版本正確。
+    val = with-cap-len(n, n)
+    i <- [0..n): {
         val[i] = .byte(i)
     }
 }
@@ -1647,12 +1711,15 @@ str.to-bool = () (val ?bool) {
 ; val: 反轉後的副本（按位元組逆序寫入）
 ; [reverse](#str.reverse)
 str.reverse = () (val str) {
-    val = with-cap(.len-bytes())
-    i <- [0..self.len-bytes()): {
+    n = .len-bytes()
+    buf []byte = with-cap-len(n, n)
+    i <- [0..n): {
 
         #{overflow=wrap}
-        val[i] = .byte(.len-bytes() - 1 - i)
+        j = n - 1 - i
+        buf[i] = .byte(j)
     }
+    val = buf.to-bytes-str()
 }
 
 ; 字典序比較兩個字串
@@ -1885,7 +1952,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
     }
 
     ; 第二遍：寫入输出
-    val str = with-cap(out-n)
+    buf []byte = with-cap(out-n)
     j = 0
     i = 0
     (i < .len-bytes()) {
@@ -1922,7 +1989,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
         {
             cp == old-ch -> {
                 new-ch < 0x80 -> {
-                    val[j] = new-ch
+                    buf[j] = new-ch
                     {
                         j-opt2 = j + 1
                         j-opt2: {
@@ -1934,8 +2001,8 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 }
 
                 new-ch < 0x800 -> {
-                    val[j] = 0xc0 | ((new-ch >> 6) & 0x1f)
-                    val[j + 1] = 0x80 | (new-ch & 0x3f)
+                    buf[j] = 0xc0 | ((new-ch >> 6) & 0x1f)
+                    buf[j + 1] = 0x80 | (new-ch & 0x3f)
                     {
                         j-opt3 = j + 2
                         j-opt3: {
@@ -1947,9 +2014,9 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 }
 
                 new-ch < 0x10000 -> {
-                    val[j] = 0xe0 | ((new-ch >> 12) & 0x0f)
-                    val[j + 1] = 0x80 | ((new-ch >> 6) & 0x3f)
-                    val[j + 2] = 0x80 | (new-ch & 0x3f)
+                    buf[j] = 0xe0 | ((new-ch >> 12) & 0x0f)
+                    buf[j + 1] = 0x80 | ((new-ch >> 6) & 0x3f)
+                    buf[j + 2] = 0x80 | (new-ch & 0x3f)
                     {
                         j-opt4 = j + 3
                         j-opt4: {
@@ -1961,10 +2028,10 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 }
 
                 -> {
-                    val[j] = 0xf0 | ((new-ch >> 18) & 0x07)
-                    val[j + 1] = 0x80 | ((new-ch >> 12) & 0x3f)
-                    val[j + 2] = 0x80 | ((new-ch >> 6) & 0x3f)
-                    val[j + 3] = 0x80 | (new-ch & 0x3f)
+                    buf[j] = 0xf0 | ((new-ch >> 18) & 0x07)
+                    buf[j + 1] = 0x80 | ((new-ch >> 12) & 0x3f)
+                    buf[j + 2] = 0x80 | ((new-ch >> 6) & 0x3f)
+                    buf[j + 3] = 0x80 | (new-ch & 0x3f)
                     {
                         j-opt5 = j + 4
                         j-opt5: {
@@ -1980,7 +2047,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
                 k <- [0..clen): {
 
                     #{overflow=wrap}
-                    val[j + k] = .byte(i + k)
+                    buf[j + k] = .byte(i + k)
                 }
 
                 #{overflow=wrap}
@@ -2009,6 +2076,7 @@ str.replace-char = (old-ch char, new-ch char) (val str) {
             }
         }
     }
+    val = buf.to-bytes-str()
 }
 
 ; 裁剪（指定字符）
@@ -2129,16 +2197,13 @@ str.trim-char = (ch char) (val str) {
     #{overflow=wrap}
     n = end - start
     n < 0 -> return
-    val str = with-len(n)
+    buf []byte = with-cap-len(n, n)
     j <- [0..n): {
 
         #{overflow=wrap}
-        val[j]: {
-            ok -> it = .byte(start + j)
-
-            -> _
-        }
+        buf[j] = .byte(start + j)
     }
+    val = buf.to-bytes-str()
 }
 
 ; 判空
@@ -2520,12 +2585,12 @@ str.split = (sep str) (out []str) {
         #{overflow=wrap}
         total = total + .[i].len-bytes()
     }
-    out = with-cap(total)
+    buf []byte = with-cap-len(total, total)
     pos = 0
     i <- [0..n): {
         i > 0 -> {
             j <- [0..sep.len-bytes()): {
-                out[pos] = sep.byte(j)
+                buf[pos] = sep.byte(j)
 
                 #{overflow=wrap}
                 pos = pos + 1
@@ -2533,12 +2598,13 @@ str.split = (sep str) (out []str) {
         }
         s = .[i]
         j <- [0..s.len-bytes()): {
-            out[pos] = s.byte(j)
+            buf[pos] = s.byte(j)
 
             #{overflow=wrap}
             pos = pos + 1
         }
     }
+    out = buf.to-bytes-str()
 }
 
 ; 子串替換
@@ -2633,7 +2699,7 @@ str.replace-str = (old str, new str) (val str) {
     }
 
     ; 第二遍：寫入結果
-    val str = with-cap(out-len)
+    buf []byte = with-cap-len(out-len, out-len)
     pos = 0
     i = 0
     (i < n) {
@@ -2670,7 +2736,7 @@ str.replace-str = (old str, new str) (val str) {
         {
             match -> {
                 k <- [0..new-len): {
-                    val[pos] = new.byte(k)
+                    buf[pos] = new.byte(k)
 
                     #{overflow=wrap}
                     {
@@ -2690,7 +2756,7 @@ str.replace-str = (old str, new str) (val str) {
             }
 
             -> {
-                val[pos] = .byte(i)
+                buf[pos] = .byte(i)
 
                 #{overflow=wrap}
                 {
@@ -2718,6 +2784,7 @@ str.replace-str = (old str, new str) (val str) {
             }
         }
     }
+    val = buf.to-bytes-str()
 }
 
 ; 按空白分割
@@ -2862,7 +2929,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
         #{overflow=wrap}
         total = total + ixout2352c25.len-bytes()
     }
-    val = with-cap(total)
+    buf []byte = with-cap-len(total, total)
     pos = 0
     i <- [0..np): {
 
@@ -2871,7 +2938,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
             sep = new
             i > repl -> sep = old
             j <- [0..sep.len-bytes()): {
-                val[pos] = sep.byte(j)
+                buf[pos] = sep.byte(j)
                 {
                     pos-opt3 = pos + 1
                     pos-opt3: {
@@ -2889,7 +2956,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
             -> ''
         }
         j <- [0..s.len-bytes()): {
-            val[pos] = s.byte(j)
+            buf[pos] = s.byte(j)
 
             #{overflow=wrap}
             {
@@ -2904,6 +2971,7 @@ str.replace-n = (old str, new str, n i64) (val str) {
             }
         }
     }
+    val = buf.to-bytes-str()
 }
 
 ; 限定次數分割
@@ -3024,34 +3092,31 @@ str.lines = () (out []str) {
 ; 返回 out str: 十六進制字串
 ; [to-hex](#str.to-hex)
 str.to-hex = () (out str) {
-    .len-bytes() == 0 -> return
+    nb = .len-bytes()
+    nb == 0 -> return
 
     #{overflow=wrap}
-    out = with-cap(.len-bytes() * 2)
+    m = nb * 2
+    buf []byte = with-cap-len(m, m)
     hex = '0123456789abcdef'
-    i <- [0..self.len-bytes()): {
+    i <- [0..nb): {
         b = .byte(i)
 
-        {
-
-            #{overflow=wrap}
-            out[i * 2] ?= hex[b >> 4]
-        }: {
-            err -> _
+        #{overflow=wrap}
+        buf[i * 2] = hex[b >> 4]: {
+            ok -> it
 
             -> _
         }
 
-        {
-
-            #{overflow=wrap}
-            out[i * 2 + 1] ?= hex[b & 15]
-        }: {
-            err -> _
+        #{overflow=wrap}
+        buf[i * 2 + 1] = hex[b & 15]: {
+            ok -> it
 
             -> _
         }
     }
+    out = buf.to-bytes-str()
 }
 
 ; 安全索引
@@ -3089,10 +3154,14 @@ str.to-txt = () (out ?txt) {
         out = nil
         return
     }
-    t txt
-    i <- [0..n): {
-        t.set-byte(i, .byte(i))
-    }
-    t.len = n
+
+    ; 委派 txt.from-str：它就是「逐位元組拷入內聯緩衝 + 設 len」，語義完全等價。
+    ; 舊寫法是 t._set-byte(i, .byte(i)) 逐位元組灌，但 txt._set-byte 已私有
+    ; （raqvyltn 會擋跨模組呼叫），且這裡本來就有現成的公開構造器。
+    ; ⚠️ 必須先綁到區域變數再傳，不能寫 `txt.from-str(.)` 或 `txt.from-str(self)`：
+    ; 把 self（本身就是一個 out 參數指針）直接當實參傳會讓 codegen 段錯誤
+    ; （2026-11-11 實測：`(.)` 與 `(self)` 都 SIGSEGV，`s = self` 後傳 `s` 正常）。
+    s = self
+    t = txt.from-str(s)
     out = t
 }

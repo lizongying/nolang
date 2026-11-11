@@ -38,6 +38,23 @@ func init() {
 		ForwardFunc:  "str-len-bytes",
 	})
 
+	// str.bytes: zero-copy []byte VIEW over the string's underlying UTF-8
+	// buffer ("it is just .data"). Unlike str.to-bytes() — a real std function
+	// doing an O(N) byte-by-byte copy — this is intercepted by the MIR codegen
+	// (emitBuiltinStrBytes) and assembled directly from %str-long's len/data
+	// fields as %vec { len, cap=0, data }. cap=0 is the borrowed-view marker:
+	// @vec_free skips it, so the view never frees the string's buffer twice.
+	// The std declaration lives in src/std/str.no; without this registry entry
+	// a bare `#{buildin}` stub would lower to "unknown callee str.bytes".
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverStr,
+		MethodName:   "bytes",
+		Params:       []parser.Type{},
+		Return:       []parser.Type{&parser.SliceType{Elem: parser.TypeByte}},
+		Doc:          "Return a zero-copy []byte borrow view of the underlying UTF-8 bytes",
+		ForwardFunc:  "str-bytes",
+	})
+
 	// str.byte / txt.byte: raw-byte accessors (`s.byte(i)` / `t.byte(i)`).
 	// NOT real functions — intercepted by the codegen (MIR emitBuiltinRawByteAt)
 	// and expanded inline to a BOUNDS-CHECKED GEP+load+zext on the underlying
@@ -73,21 +90,28 @@ func init() {
 		Intercepted:  true,
 	})
 
-	// txt.set-byte / str.set-byte: raw-byte WRITER, the paired escape hatch of
+	// txt._set-byte / str._set-byte: raw-byte WRITER, the paired escape hatch of
 	// the `.byte` reader. NOT a real function — intercepted by the MIR codegen
 	// (emitBuiltinRawBytePut) and expanded inline to a GEP+store on the
-	// receiver's underlying byte buffer, leaving the length untouched. Needed
-	// once txt[i]/txt[i]= became CODE-POINT indexed: std routines that fill a
-	// txt byte by byte must no longer go through `out[i] = b` (which would
-	// re-encode and shift), they write raw bytes with set-byte instead.
+	// receiver's underlying byte buffer, leaving the length untouched.
+	//
+	// 🔒 PRIVATE (`_` prefix, 2026-11-11): previously registered as the public
+	// `set-byte`. It was retired from the public surface because writing a str
+	// one raw byte at a time is exactly the trap that `idxwrite` exists to
+	// prevent — user code must build strings with `str.from-chars` and assign
+	// the whole value. The checker's private_std guard (raqvyltn) rejects
+	// cross-module calls, so only src/std/str.no and src/std/txt.no can use it.
+	//
 	// ReceiverType is ReceiverStr only for table-matching purposes: like the
 	// "byte" entry above, lookupBuiltin's bare-name fallback resolves both
-	// "txt.set-byte" and "str.set-byte".
+	// "txt._set-byte" and "str._set-byte". Keep the name BARE: registering it
+	// qualified ("str._set-byte") would send it through hir2mir's qualified
+	// branch, which mis-lowers this `?bool` return to i64.
 	//
 	// Params are `(i64, byte)` — the value is a real `byte`, mirroring src/std/
 	// str.no / txt.no. Option-typed arguments are accepted by the builtin checker
 	// (see the `ty.IsOptionRaw(argType)` skip in stdMethodParamTypes,
-	// funcargs.go), so the many `out.set-byte(i, s.byte(i))` sites (a `?byte`)
+	// funcargs.go), so the many `out._set-byte(i, s.byte(i))` sites (a `?byte`)
 	// pass unchanged. Only genuinely-plain i64/char call-site args (a `HEX[..]`
 	// char, an `bv` i64) would trip `stdargtyp`; those are narrowed at the call
 	// site with a bitwise mask (`& 255`), which the checker recognises as safe
@@ -102,10 +126,10 @@ func init() {
 	// as a bare statement are legal: optunuse only fires on bound names.
 	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
 		ReceiverType: ReceiverStr,
-		MethodName:   "set-byte",
+		MethodName:   "_set-byte",
 		Params:       []parser.Type{parser.TypeI64, parser.TypeByte},
 		Return:       []parser.Type{&parser.NullableType{Type: parser.TypeBool}},
-		Doc:          "Write raw byte b at BYTE index i of the underlying UTF-8 buffer, returns ?bool (nil when i is out of capacity, store skipped)",
+		Doc:          "PRIVATE: write raw byte b at BYTE index i of the underlying UTF-8 buffer, returns ?bool (nil when i is out of capacity, store skipped)",
 		Intercepted:  true,
 	})
 
@@ -174,6 +198,38 @@ func init() {
 		ForwardFunc:  "with-cap-len",
 	})
 
+	// str._from-bytes: PRIVATE constructor — wrap a []byte's backing buffer in
+	// a str WITHOUT copying. The underscore prefix is the compiler-wide
+	// "module-internal" marker: checkPrivateStdCall rejects any call from
+	// outside src/std/str.no (TraceID raqvyltn), so user code cannot reach it.
+	// The public, safe path is str.from-chars, which allocates its own buffer.
+	// Intercepted by the MIR codegen (emitBuiltinStrFromBytes), which builds
+	// %str-long { len=n, cap=n, data=vec.data }, clamps n to [0, len(bs)] and
+	// retains the vec buffer so both owners release exactly once.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "_from-bytes",
+		Params:       []parser.Type{&parser.SliceType{Elem: parser.TypeByte}, parser.TypeI64},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "PRIVATE: wrap a []byte's buffer as a str without copying (module-internal only)",
+		ForwardFunc:  "str-from-bytes",
+	})
+
+	// str.from-chars: the PUBLIC, safe constructor — build a str from a []char
+	// by allocating a FRESH buffer and writing one raw byte per char (low 8
+	// bits via trunc i32->i8; no UTF-8 re-encode). Shares the "chars-new"
+	// lowering with str.new, so there is no second implementation to drift.
+	// Unlike _from-bytes it never borrows the caller's memory, so it cannot
+	// double-free or address past a buffer — this is what user code should use.
+	BuiltinMethodList = append(BuiltinMethodList, BuiltinMethod{
+		ReceiverType: ReceiverGlobal,
+		MethodName:   "from-chars",
+		Params:       []parser.Type{&parser.SliceType{Elem: parser.TypeChar}},
+		Return:       []parser.Type{parser.TypeStr},
+		Doc:          "Build a str from a []char, one raw byte per char (fresh buffer; public safe constructor)",
+		ForwardFunc:  "chars-new",
+	})
+
 	// new: build a str or txt directly from a []char (module-level constructor).
 	// Builtin syntax: txt.new(cs) / str.new(cs) — result type inferred from LHS.
 	// Each char (i32 code point) is written as ONE raw byte and the length is set
@@ -197,7 +253,7 @@ func init() {
 	// std code to touch them, because str/txt bytes+length are opaque to user
 	// code:
 	//
-	//   str (%str-long = { i64 len, i64 cap, i8* data }):
+	//   str (%str-long = { u32 len, u32 cap, i8* data }):
 	//     _len()  -> i64      read field 0 (logical byte length)
 	//     _cap()  -> i64      read field 1 (capacity)
 	//     _data() -> *byte    read field 2 (i8* data pointer)

@@ -78,11 +78,11 @@ func TestFormatImportsConservativeGate(t *testing.T) {
 	fmtCheck(t, "annotation-attached run keeps source order",
 		"#{bind=ffi}\n# /src/sqlite\n# aaa/lib",
 		"#{bind=ffi}\n# /src/sqlite\n# aaa/lib")
-	// Doc 註釋在導入上方：保守不動排序，但「註釋 + 導入」作為一個 node
-	// 與上一條導入之間空一行（導入之間本身不留空行）。
+	// Doc 註釋在導入上方：保守不動排序。首條導入的文件頭註釋段與導入之間
+	// 固定空一行，區段內其它分組註釋則緊貼它所註釋的導入。
 	fmtCheck(t, "doc-commented run keeps source order",
 		"; second\n# zzz/b\n; first\n# aaa/a",
-		"; second\n# zzz/b\n\n; first\n# aaa/a")
+		"; second\n\n# zzz/b\n\n; first\n# aaa/a")
 	// 同行註釋：不動（格式化为既有的 `;` 緊跟形式）。
 	fmtCheck(t, "inline-commented run keeps source order",
 		"# zzz/b ; note\n# aaa/a",
@@ -157,8 +157,8 @@ func TestFormatHoistsMidFileImports(t *testing.T) {
 	fmtCheck(t, "hoisted imports merge into the existing top run",
 		"# std/vec\n\nx = 1\n# std/io\n",
 		"# std/io\n# std/vec\n\nx = 1")
-	// 註釋隨導入一起搬。
+	// 註釋隨導入一起搬；搬到頂部後它成為文件頭說明段，與導入之間空一行。
 	fmtCheck(t, "hoisted import carries its doc comment",
 		"x = 1\n\n; io\n# std/io\n",
-		"; io\n# std/io\n\nx = 1")
+		"; io\n\n# std/io\n\nx = 1")
 }

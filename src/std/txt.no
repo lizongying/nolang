@@ -16,7 +16,7 @@
 ;   - txt[i] = v 寫入：把 v 作為碼點重新 UTF-8 編碼寫回，後移尾部字節；
 ;     i == 碼點數時等價追加；總字節長超過 255 的部分丟棄
 ;     （注意：str 的 s[i] = v 仍是字節級寫入，兩者在此有意分叉）
-;   - 字節級原始讀寫用 .byte(i) / .set-byte(i, b) 成對方法（緩衝區構建代碼專用）
+;   - 字節級原始讀寫用 .byte(i) / ._set-byte(i, b) 成對方法（緩衝區構建代碼專用）
 ;
 ; 用法（必須類型標注）：
 ;   t txt = 'hello'
@@ -26,8 +26,8 @@
 ;   b = t.byte(0)        ; 首個字節（byte）
 ;
 ; txt {
-;     data [255]byte read-only   // 數據區域
-;     len byte read-only          // 字節長度（0-255）
+;     data [255]byte; 數據區域
+;     len byte; 字節長度（0-255）
 ; }
 ;
 ; 與 str 的區别：
@@ -49,7 +49,7 @@ txt.len = () (n i64) {
 
 ; txt[i]: 按碼點索引讀取，返回 char（UTF-8 解碼，越界返回 -1）；
 ; txt[i] = v 按碼點索引寫入（重新 UTF-8 編碼並移動尾部字節，超 255 字節部分丟棄）。
-; 字節級原始訪問請用 .byte(i) / .set-byte(i, b)。
+; 字節級原始訪問請用 .byte(i) / ._set-byte(i, b)。
 ; build-in
 ; txt[i] = (i i64) (c byte) {
 ;     c = .[i]
@@ -69,12 +69,14 @@ txt.byte = (i i64) (c ?byte) {
 }
 
 ;
-; 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
-; txt.byte 的配對寫者；取代 txt[i] = b（後者按碼點重新編碼並移動尾部位元組）
+; txt._set-byte: 在「位元組」下標 i 處寫入原始位元組 b（raw byte 寫入，len 不變）
+; 🔒 私有（`_` 前綴，2026-11-11 由公開的 `set-byte` 收歸模組內）：跨模組呼叫會被
+; checker 以 raqvyltn 拒絕。與 str 不同，txt **沒有**禁用 `t[i] = v` —— 那是按碼點的
+; 重新編碼寫入，語意自洽；只有需要「逐位元組填緩衝」時才用本方法。
 ;
 ; b 宣告為 byte：表層實參若是 option（.byte(i)、hex-table[..] 等）由內建參數檢查直接
 ; 放過（funcargs.go 的 `?` 跳過）；若為純 i64/char（如 bv、hex-table[..] 的 char）則在
-; 呼叫端以位元運算遮罩 `& 255` 窄化。與 src/builtin/str.go 條目一致。
+; 呼叫端以位元運算遮罩 `& 255` 窄化。與 src/builtin/str.go 條目一致（裸名註冊）。
 ;
 ; 回傳 ?bool（可失敗）：越界（i < 0 或 i >= 255 實體容量）時回傳 nil 並**跳過寫入**，
 ; 成功回傳 some(true)。邊界以「實體容量」（txt 為固定 255 位元組緩衝區）為準，而非
@@ -83,9 +85,9 @@ txt.byte = (i i64) (c ?byte) {
 ; i: 位元組下標
 ; b: 寫入的位元組值
 ; ok: ok=true=寫入成功, nil=i 越界（跳過寫入）
-; [set-byte](#txt.set-byte)
+; [_set-byte](#txt._set-byte)
 #{buildin}
-txt.set-byte = (i i64, b byte) (ok ?bool) {
+txt._set-byte = (i i64, b byte) (ok ?bool) {
 }
 
 ; 比較兩個 txt 是否相等
@@ -109,7 +111,7 @@ txt.eq = (b txt) (eq bool) {
 txt.copy = () (dst txt) {
     n i64 = .len-bytes()
     i <- [0..n): {
-        dst.set-byte(i, .byte(i))
+        dst._set-byte(i, .byte(i))
     }
     dst.len = .len-bytes()
 }
@@ -119,7 +121,7 @@ txt.copy = () (dst txt) {
 ; [fill](#txt.fill)
 txt.fill = (val byte) {
     i <- [0..255): {
-        .set-byte(i, val)
+        ._set-byte(i, val)
     }
 }
 
@@ -144,11 +146,11 @@ txt.empty = () (yes bool) {
 ; out: 等內容的 str（按實際位元組長度新建堆緩衝）
 ; [to-str](#txt.to-str)
 txt.to-str = () (out str) {
-    n i64 = .len-bytes()
-    out = with-len(n)
-    i <- [0..n): {
-        out.set-byte(i, .byte(i))
-    }
+    ; 兩跳：txt → []byte（本模組內的逐位元組拷貝，用 txt._set-byte 合法）→ str
+    ; （[]byte.to-bytes-str 是公開的 1:1 拷貝）。舊寫法直接往 str 上 _set-byte，
+    ; 那是跨模組呼叫 str 的私有符號（8w3q93g2），2026-11-11 起一律拒絕。
+    b = .to-bytes()
+    out = b.to-bytes-str()
 }
 
 ; 將 txt 轉換為 []byte
@@ -156,9 +158,9 @@ txt.to-str = () (out str) {
 ; [to-bytes](#txt.to-bytes)
 txt.to-bytes = () (out []byte) {
 
-    ; ⚠️ 不能用 out.set-byte(i, …)：set-byte 內建只認 str / txt receiver
+    ; ⚠️ 不能用 out._set-byte(i, …)：該內建只認 str / txt receiver
     ;    （GEP 是按 %txt 內聯緩衝 / %str-long data 指標算的），餵 []byte 會
-    ;    報 `EmitLLVM: unsupported builtin []t.set-byte`。改用切片元素寫入。
+    ;    報 `EmitLLVM: unsupported builtin []t.set-byte`（舊名；現為 []t._set-byte）。改用切片元素寫入。
     n i64 = .len-bytes()
     b []byte = with-len(n)
     i <- [0..n): {
@@ -175,20 +177,11 @@ txt.to-bytes = () (out []byte) {
 ; out: 每位元組轉兩個小寫十六進位字元的 str
 ; [to-hex](#txt.to-hex)
 txt.to-hex = () (out str) {
-    hex-table = '0123456789ABCDEF'
-    n i64 = .len-bytes()
-
-    #{overflow=wrap}
-    out = with-len(n * 2)
-    i <- [0..n): {
-        b = .byte(i)
-
-        #{overflow=wrap}
-        out.set-byte(i * 2, hex-table[b >> 4] & 255)
-
-        #{overflow=wrap}
-        out.set-byte(i * 2 + 1, hex-table[b & 15] & 255)
-    }
+    ; 委派 []byte.to-hex（大寫，與原 hex-table 的 '0123456789ABCDEF' 一致）。
+    ; 舊寫法 out._set-byte(i*2, hex-table[…]) 是跨模組呼叫 str 的私有符號
+    ; （8w3q93g2），2026-11-11 起一律拒絕。
+    b = .to-bytes()
+    out = b.to-hex()
 }
 
 ; 從 str 創建 txt（截斷至 255 字節）
@@ -200,9 +193,43 @@ txt.from-str = (s str) (out txt) {
     n = s.len-bytes()
     n > 255 -> n = 255
     i <- [0..n): {
-        out.set-byte(i, s.byte(i))
+        out._set-byte(i, s.byte(i))
     }
     out.len = n
+}
+
+; txt._from-bytes: 私有低階構造器 —— 取 []byte 的前 n 個位元組拷入 txt
+; 🔒 私有（`_` 前綴）：只有 src/std/txt.no 自己可調用（跨模組調用會被 checker
+;    以 raqvyltn 拒絕）；公開路徑請用 from-bytes() / from-str()。
+;
+; ⚠️ 與 str._from-bytes 的關鍵差異：str 是堆分配（%str-long 有獨立 data 指標），
+;    所以 str 版可以「接管緩衝」零拷貝；txt 是固定 256 位元組的**內聯**結構
+;    （data [255]byte; len byte），記憶體長在 txt 自己身上，無外部緩衝可接管，
+;    因此本函式**必然逐位元組拷貝** —— 名字對齊 str，語義不對齊（不需要
+;    vec_retain，也不可能 double free）。
+;
+; n 的夾取：負數 → 0；超過 b.len() → b.len()；再截到 txt 的硬上限 255 位元組。
+; 不做 UTF-8 校驗（純位元組搬運），可能切斷多位元組字元的中間 —— 呼叫端自負。
+; b: 來源位元組
+; n: 期望拷入的位元組數（夾到 [0, min(b.len(), 255)]）
+; out: 前 n 個位元組的副本（len = 夾取後的 n；txt 無 cap 概念）
+; [_from-bytes](#txt._from-bytes)
+txt._from-bytes = (b []byte, n i64) (out txt) {
+    m = b.len()
+    want = n
+    want < 0 -> want = 0
+    want > m -> want = m
+    want > 255 -> want = 255
+    i <- [0..want): {
+        bx = b[i]: {
+            ok -> it
+
+            -> _
+        }
+
+        out._set-byte(i, bx)
+    }
+    out.len = want
 }
 
 ; 從 []byte 創建 txt（截斷至 255 字節）
@@ -211,18 +238,7 @@ txt.from-str = (s str) (out txt) {
 ; out: 拷入 txt 的內容（超過 255 位元組部分截斷）
 ; [from-bytes](#txt.from-bytes)
 txt.from-bytes = (b []byte) (out txt) {
-    n = b.len()
-    n > 255 -> n = 255
-    i <- [0..n): {
-        ixout218c26 = b[i]: {
-            ok -> it
-
-            -> _
-        }
-
-        out.set-byte(i, ixout218c26)
-    }
-    out.len = n
+    out = txt._from-bytes(b, b.len())
 }
 
 ; 查找操作
@@ -278,7 +294,7 @@ txt.ends-with = (sub txt) (yes bool) {
 txt.append = (b byte) {
     n i64 = .len-bytes()
     n >= 255 -> return
-    .set-byte(n, b)
+    ._set-byte(n, b)
 
     #{overflow=wrap}
     .len = n + 1
@@ -302,7 +318,7 @@ txt.append-str = (s str) {
     i <- [0..sn): {
 
         #{overflow=wrap}
-        .set-byte(n + i, s.byte(i))
+        ._set-byte(n + i, s.byte(i))
     }
 
     #{overflow=wrap}
@@ -322,7 +338,7 @@ txt.append-txt = (t txt) {
     i <- [0..tn): {
 
         #{overflow=wrap}
-        .set-byte(n + i, t.byte(i))
+        ._set-byte(n + i, t.byte(i))
     }
 
     #{overflow=wrap}
@@ -387,7 +403,7 @@ txt.reverse = () (out txt) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        out.set-byte(i, .byte(n - 1 - i))
+        out._set-byte(i, .byte(n - 1 - i))
     }
     out.len = n
 }
@@ -418,7 +434,7 @@ txt.slice = (start i64, end i64) (out txt) {
     i <- [0..n): {
 
         #{overflow=wrap}
-        out.set-byte(i, .byte(r-start + i))
+        out._set-byte(i, .byte(r-start + i))
     }
     out.len = n
 }
@@ -488,11 +504,11 @@ txt.to-upper = () (val txt) {
             c >= 97 && c <= 122 -> {
 
                 #{overflow=wrap}
-                val.set-byte(i, c - 32)
+                val._set-byte(i, c - 32)
             }
 
             -> {
-                val.set-byte(i, c)
+                val._set-byte(i, c)
             }
         }
     }
@@ -511,11 +527,11 @@ txt.to-lower = () (val txt) {
             c >= 65 && c <= 90 -> {
 
                 #{overflow=wrap}
-                val.set-byte(i, c + 32)
+                val._set-byte(i, c + 32)
             }
 
             -> {
-                val.set-byte(i, c)
+                val._set-byte(i, c)
             }
         }
     }
@@ -529,7 +545,8 @@ txt.to-lower = () (val txt) {
 ; 整個函式因此回傳空字串（`txt.from-chars` 曾因此靜默失真）。
 ; txt.new（ForwardFunc: chars-new）正是為此存在的內建：一次寫入全部碼點並設定字節長度。
 ; cs: 碼點切片（[]char）
-; t: ok=逐碼點 UTF-8 編碼後的新 txt, nil=編碼結果超過 255 位元組（超出部分丟棄）
+; t: 逐碼點 UTF-8 編碼後的新 txt（超過 255 位元組的部分丟棄 —— 注意：**永遠是 some**，
+;    不會回 nil；回傳 ?txt 只是歷史簽名，呼叫端可直接 `?=` 解包或用 match 的 ok 臂）
 ; [from-chars](#txt.from-chars)
 txt.from-chars = (cs []char) (t ?txt) {
     v = txt.new(cs)
@@ -602,7 +619,7 @@ txt.trim = () (val txt) {
     i <- [0..m): {
 
         #{overflow=wrap}
-        val.set-byte(i, .byte(start + i))
+        val._set-byte(i, .byte(start + i))
     }
     val.len = m
 }
@@ -727,7 +744,7 @@ txt.trim-char = (ch char) (val txt) {
     j <- [0..m): {
 
         #{overflow=wrap}
-        val.set-byte(j, .byte(start + j))
+        val._set-byte(j, .byte(start + j))
     }
     val.len = m
 }
@@ -747,7 +764,7 @@ txt.repeat = (times i64) (val txt) {
     i <- [0..times): {
         j <- [0..n): {
             pos < cap -> {
-                val.set-byte(pos, .byte(j))
+                val._set-byte(pos, .byte(j))
 
                 #{overflow=wrap}
                 {
@@ -1374,7 +1391,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
         {
             cp == old-ch -> {
 
-                ; 先把 new-ch 依 UTF-8 編成 1~4 個位元組，用**迴圈**逐位元組 set-byte 寫入
+                ; 先把 new-ch 依 UTF-8 編成 1~4 個位元組，用**迴圈**逐位元組 _set-byte 寫入
                 ; （不可用多個相鄰 `pos < cap -> { }` 短路易式陳述——實測只有第一個會執行，
                 ;  與 replace-str 相同的迴圈寫法才可靠。）
                 encw i64 = 1
@@ -1382,7 +1399,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
 
                 ; 預先宣告 shift/bv 為 plain i64：統一 option 規則（D6）下，迴圈內
                 ; 的裸賦值若為首現宣告（shift = (encw-1-enc)*6）會被推斷成 ?i64，
-                ; 之後 set-byte 的值參數拿到 option 即報 bad value type。先宣告再賦值
+                ; 之後 _set-byte 的值參數拿到 option 即報 bad value type。先宣告再賦值
                 ; 可讓讀迴圈內的算術保持 plain（與 pos = pos + 1 同一機制）。
                 shift i64 = 0
                 bv i64 = 0
@@ -1416,7 +1433,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                         bv = lead | (new-ch >> shift)
                     }
                     pos < cap -> {
-                        val.set-byte(pos, bv & 255)
+                        val._set-byte(pos, bv & 255)
                         {
                             pos-opt2 = pos + 1
                             pos-opt2: {
@@ -1434,7 +1451,7 @@ txt.replace-char = (old-ch char, new-ch char) (val txt) {
                     pos < cap -> {
 
                         #{overflow=wrap}
-                        val.set-byte(pos, .byte(i + k))
+                        val._set-byte(pos, .byte(i + k))
                         {
                             pos-opt3 = pos + 1
                             pos-opt3: {
@@ -1515,7 +1532,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
                     #{overflow=wrap}
                     pos < cap -> {
-                        val.set-byte(pos, new.byte(k))
+                        val._set-byte(pos, new.byte(k))
                         {
                             pos-opt4 = pos + 1
                             pos-opt4: {
@@ -1535,7 +1552,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
 
                 #{overflow=wrap}
                 pos < cap -> {
-                    val.set-byte(pos, .byte(i))
+                    val._set-byte(pos, .byte(i))
                     {
                         pos-opt5 = pos + 1
                         pos-opt5: {
@@ -1631,7 +1648,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
             i > repl -> sep = old
             j <- [0..sep.len-bytes()): {
                 pos < cap -> {
-                    val.set-byte(pos, sep.byte(j))
+                    val._set-byte(pos, sep.byte(j))
                     {
                         pos-opt6 = pos + 1
                         pos-opt6: {
@@ -1656,7 +1673,7 @@ txt.replace-n = (old txt, new txt, n i64) (val txt) {
 
             #{overflow=wrap}
             pos < cap -> {
-                val.set-byte(pos, s.byte(j))
+                val._set-byte(pos, s.byte(j))
                 {
                     pos-opt7 = pos + 1
                     pos-opt7: {
@@ -1760,7 +1777,7 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
         i > 0 -> {
             sj <- [0..sep.len-bytes()): {
                 pos < cap -> {
-                    out.set-byte(pos, sep.byte(sj))
+                    out._set-byte(pos, sep.byte(sj))
 
                     #{overflow=wrap}
                     pos = pos + 1
@@ -1779,7 +1796,7 @@ txt.split-n = (sep txt, maxsplit i64) (out []txt) {
         sl i64 = s.len-bytes()
         sj <- [0..sl): {
             pos < cap -> {
-                out.set-byte(pos, s.byte(sj))
+                out._set-byte(pos, s.byte(sj))
 
                 #{overflow=wrap}
                 pos = pos + 1
@@ -1963,7 +1980,7 @@ txt.from-hex = () (out ?txt) {
             out = err('invalid hex character')
             return
         }
-        out2.set-byte(i, (hi << 4) | lo)
+        out2._set-byte(i, (hi << 4) | lo)
     }
     out2.len = n
     out = out2
@@ -2073,6 +2090,8 @@ txt.to-bigint = () (out ?bigint) {
 
     ; 進位制前綴
     radix = 10
+
+    #{overflow=wrap}
     pos + 1 < n -> {
         c0 = .byte(pos)
         c0 == 48 -> {
@@ -2103,9 +2122,12 @@ txt.to-bigint = () (out ?bigint) {
     }
 
     ; 逐位解析數字
+    ; ⚠️ `d` 必須標註 i64：`d = <call>()` 這種「未標註的呼叫結果」在 `acc + d` 的
+    ;    運算符重載聯集臂派發裡會被誤判成 bigint 臂（i64 位元當 bigint 描述符用，
+    ;    實測整段回 0）。str.to-bigint 早已這樣修，txt 這份漏了（2026-11-11 補）。
     started = 0
     (pos < n) {
-        d = _txt-dig-val(.byte(pos))
+        d i64 = _txt-dig-val(.byte(pos))
         d < 0 -> break
         d >= radix -> break
 

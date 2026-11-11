@@ -2111,9 +2111,14 @@ func checkPrivateBuiltinMethodCall(e *parser.CallExpression, dot *parser.DotExpr
 		return nil
 	}
 	// Only enforce for a builtin actually registered under this
-	// receiver.method (str._len, txt._data, ...). Bare-name matches are
-	// impossible here because the key is always receiver-qualified.
-	if builtin.FindBuiltinMethod(recvType+"."+dot.Property) == nil {
+	// receiver.method (str._len, txt._data, ...), or under the BARE method name
+	// (a single entry serving both str and txt — e.g. `_set-byte`, whose
+	// registration must stay bare so the `?bool` return is typed via the std
+	// declaration instead of hir2mir's qualified-builtin branch, which only
+	// knows str/f64). For a bare entry the owner IS the receiver type's module,
+	// so the `curModule == recvType` test below is exactly right.
+	if builtin.FindBuiltinMethod(recvType+"."+dot.Property) == nil &&
+		builtin.FindBuiltinMethod(dot.Property) == nil {
 		return nil
 	}
 	if curModule == recvType {

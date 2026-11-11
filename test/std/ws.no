@@ -1,0 +1,477 @@
+; std-ws.no — net/ws 模組測試
+;
+; 執行：no test test/std/ws.no
+;
+; 為什麼能測滿：WebSocket 的 30 個符號只有 `connect` 真正需要「另一側同時在跑」
+; （它會阻塞等 101 回應）。其餘都能在單執行緒內拆開測：
+;   ① 5 個純函式（accept 摘要 / 偽隨機 / mask key / client key / 組幀）完全無依賴；
+;   ② `server-conn` / `client` 是**公開結構體** ⇒ 用 loopback 上的一對 socket 白盒
+;      構造實例（`fd` + `recv-buf` + `connected: true`），就能逐個呼叫方法；
+;      交握（`handshake`）也只要「先把手寫的 HTTP 升級請求塞進 socket 緩衝」再調它；
+;   ③ `connect` / `listen-on` / `server.accept` 需要服務端同時在等 ⇒ 放 fork 出的
+;      子進程裡跑服務端，父進程當客戶端。
+;
+; 覆蓋清單（30 個 = 5 函式 + 25 方法）：
+;   純函式：compute-accept next-rand gen-mask-key gen-client-key build-frame
+;   server：server.{listen,accept,close} listen-on
+;   server-conn：{handshake,send,send-text,send-binary,send-ping,send-pong,send-close,
+;                recv,recv-nb,is-connected,close}
+;   client：connect client.{send,send-text,send-binary,send-ping,send-pong,send-close,
+;                recv,is-connected,close}
+;
+; 寫法備註：
+;   - 裸下標 `s[i]` 當實參會被 `no vet` 判 idxbruse ⇒ 經 sb() 取值。
+;   - `s.byte(i)` 回 `?byte`；`runner.eq` 只吃 i64；字串用 runner.str-eq(a,b,n,msg)。
+;   - std 結構體 option（`?message` 等）取值一律「先落變數 + 獨立函式內 match」。
+;   - 每個 TEST 用獨立端口（39151+）。
+
+# /test/runner
+
+; 取 str 的位元組（str.byte 回 ?byte，這裡收成裸 i64）
+sb = (s str, i i64) (v i64) {
+    v = s.byte(i): {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; 從 socket 讀 n 位元組，回傳收到的內容（空串 = 失敗）
+rd = (fd fd, n i64) (out str) {
+    out = ''
+    buf str = with-len(n)
+    got = net.net-recv(fd, buf, n)
+    got > 0 -> out = buf.slice(0, got)
+}
+
+; 斷言一個 WebSocket 訊框的頭：byte0 = FIN|opcode，byte1 = mask 位 + len
+chk-frame = (f str, want-b0 i64, want-b1 i64, tag str) {
+    runner.eq(f.len-bytes() > 0, 1, tag - ': 有內容')
+    runner.eq(sb(f, 0), want-b0, tag - ': byte0 = FIN|opcode')
+    runner.eq(sb(f, 1), want-b1, tag - ': byte1 = mask|len')
+}
+
+; ?ws.message 不能當形參型別：模組內宣告的是裸名 `?message`，外部寫 `?ws.message`
+; 會被當成另一個名義型別（`expected '?ws.message', got '?message'`）⇒ 取值只能在
+; 呼叫點就地 match（這幾處都在函式體頂層，不涉及嵌套 match 的 it 串型別）。
+
+; ── 純函式 ────────────────────────────────────────────────
+
+; RFC 6455 §1.3 的金標準向量：key ⇒ accept
+t-pure = () {
+    a = ws.compute-accept('dGhlIHNhbXBsZSBub25jZQ==')
+    runner.str-eq(a, 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=', 28, 'compute-accept: RFC 6455 標準向量')
+
+    ; 換 key 必須換結果
+    b = ws.compute-accept('AAAAAAAAAAAAAAAAAAAAAA==')
+    runner.is-true(a != b, 'compute-accept: 換 key 結果不同')
+
+    ; next-rand：落在 31-bit 非負範圍，且連續兩次不同（LCG 遞增）
+    r1 = ws.next-rand()
+    r2 = ws.next-rand()
+    runner.eq(r1 >= 0, 1, 'next-rand: 非負')
+    runner.eq(r1 <= 2147483647, 1, 'next-rand: <= 2^31-1')
+    runner.is-true(r1 != r2, 'next-rand: 連續兩次不同')
+
+    ; gen-mask-key：4 位元組小端
+    mk = ws.gen-mask-key(0x12345678)
+    runner.eq(mk.len-bytes(), 4, 'gen-mask-key: 4 位元組')
+    runner.eq(sb(mk, 0), 120, 'gen-mask-key: 最低位元組在前')
+    runner.eq(sb(mk, 1), 86, 'gen-mask-key: byte1')
+    runner.eq(sb(mk, 2), 52, 'gen-mask-key: byte2')
+    runner.eq(sb(mk, 3), 18, 'gen-mask-key: 最高位元組在後')
+
+    ; gen-client-key：16 位元組的 base64 ⇒ 24 字元含 padding
+    ck = ws.gen-client-key(42)
+    runner.eq(ck.len-bytes(), 24, 'gen-client-key: base64 長度 24')
+    runner.str-eq(ck.slice(22, 24), '==', 2, 'gen-client-key: 以 == 結尾')
+
+    ; build-frame：不 mask 的文字幀 'hi'
+    f1 = ws.build-frame(1, 'hi', false, '')
+    runner.eq(f1.len-bytes(), 4, 'build-frame: 2 header + 2 payload')
+    chk-frame(f1, 129, 2, 'build-frame(unmasked)')
+    runner.eq(sb(f1, 2), 104, 'build-frame: payload 首位元組 h')
+    runner.eq(sb(f1, 3), 105, 'build-frame: payload 末位元組 i')
+
+    ; build-frame：mask 過的同一幀（key = 'abcd'）
+    f2 = ws.build-frame(1, 'hi', true, 'abcd')
+    runner.eq(f2.len-bytes(), 8, 'build-frame(masked): 2 + 4 mask + 2 payload')
+    chk-frame(f2, 129, 130, 'build-frame(masked)')
+    runner.eq(sb(f2, 2), 97, 'build-frame: mask key byte0 = a')
+    runner.eq(sb(f2, 6), 9, 'build-frame: h(104) ^ a(97) = 9')
+    runner.eq(sb(f2, 7), 11, 'build-frame: i(105) ^ b(98) = 11')
+
+    ; 126 ~ 65535 的長度用 2 位元組擴展長度
+    big str = with-len(200)
+    f3 = ws.build-frame(2, big, false, '')
+    runner.eq(f3.len-bytes(), 204, 'build-frame: 200 位元組 ⇒ 4 header + 200')
+    runner.eq(sb(f3, 0), 130, 'build-frame: opcode 2 = binary')
+    runner.eq(sb(f3, 1), 126, 'build-frame: 長度標記 126')
+    runner.eq(sb(f3, 2), 0, 'build-frame: 擴展長度高位 = 0')
+    runner.eq(sb(f3, 3), 200, 'build-frame: 擴展長度低位 = 200')
+}
+
+; ── server-conn：白盒交握 + 收發 ──────────────────────────
+
+; 交握請求（RFC 6455 的標準 key，方便對照 accept 值）
+handshake-req = () (req str) {
+    cr = '\r'
+    lf = '\n'
+    crlf = cr - lf
+    req = 'GET /chat HTTP/1.1' - crlf
+    req = req - 'Host: 127.0.0.1' - crlf
+    req = req - 'Upgrade: websocket' - crlf
+    req = req - 'Connection: Upgrade' - crlf
+    req = req - 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' - crlf
+    req = req - 'Sec-WebSocket-Version: 13' - crlf
+    req = req - crlf
+}
+
+t-server-conn = () {
+    lst = net.listener{}
+    ok-l = lst.listen('127.0.0.1', 39151)
+    runner.is-true(ok-l, 'listener: 綁定 39151')
+    cfd = net.net-dial('127.0.0.1', 39151)
+    afd = net.net-accept(lst.fd-of())
+
+    ; 先把升級請求塞進 socket 緩衝，再讓 handshake 去讀
+    req = handshake-req()
+    sent = net.net-send(cfd, req, req.len-bytes())
+    runner.eq(sent, req.len-bytes(), 'handshake: 前置請求已送出')
+
+    rbuf str = with-len(4096)
+    sc = ws.server-conn{
+        fd: afd
+        connected: false
+        recv-buf: rbuf
+        recv-buf-len: 0
+    }
+    sc.handshake()
+    runner.is-true(sc.is-connected(), 'server-conn.handshake: 交握成功')
+
+    ; 客戶端這一側必須收到 101
+    resp = rd(cfd, 512)
+    runner.eq(resp.len-bytes() > 12, 1, 'handshake: 收到 101 回應')
+    runner.str-eq(resp.slice(0, 12), 'HTTP/1.1 101', 12, 'handshake: 狀態行是 101')
+    runner.eq(resp.index('Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=') > 0, 1, 'handshake: Accept 值正確')
+
+    ; send-text：server 不加 mask
+    ok1 = sc.send-text('hello')
+    runner.is-true(ok1, 'server-conn.send-text: 回 true')
+    f1 = rd(cfd, 64)
+    chk-frame(f1, 129, 5, 'server-conn.send-text')
+    runner.eq(sb(f1, 2), 104, 'send-text: payload h')
+
+    ; send-binary / send-ping / send-pong 各自的 opcode
+    sc.send-binary('XY')
+    f2 = rd(cfd, 64)
+    chk-frame(f2, 130, 2, 'server-conn.send-binary')
+
+    sc.send-ping('p')
+    f3 = rd(cfd, 64)
+    chk-frame(f3, 137, 1, 'server-conn.send-ping')
+
+    sc.send-pong('q')
+    f4 = rd(cfd, 64)
+    chk-frame(f4, 138, 1, 'server-conn.send-pong')
+
+    ; 通用 send：opcode 由調用方給
+    sc.send(1, 'gen')
+    f5 = rd(cfd, 64)
+    chk-frame(f5, 129, 3, 'server-conn.send')
+
+    ; recv：客戶端送一個 mask 過的文字幀，服務端解出明文
+    mkey = 'abcd'
+    frame = ws.build-frame(1, 'back', true, mkey)
+    net.net-send(cfd, frame, frame.len-bytes())
+    m = sc.recv()
+    mv = 0
+    m: {
+        ok -> {
+            mm = it
+            mv = 1
+            runner.eq(mm.opcode, 1, 'server-conn.recv: opcode 1')
+            runner.eq(mm.data.len-bytes(), 4, 'server-conn.recv: 內容長度 4')
+            runner.eq(sb(mm.data, 0), 98, 'server-conn.recv: 首字母 b')
+        }
+
+        -> mv = -1
+    }
+    runner.eq(mv, 1, 'server-conn.recv: 收到文字幀')
+
+    ; 收到 close 幀 ⇒ connected 轉 false
+    fc = ws.build-frame(8, '', true, mkey)
+    net.net-send(cfd, fc, fc.len-bytes())
+    mc = sc.recv()
+    mcv = 0
+    mcv = mc: {
+        ok -> 1
+
+        -> -1
+    }
+    runner.eq(mcv, -1, 'server-conn.recv: close 幀回 nil')
+    runner.is-false(sc.is-connected(), 'server-conn.recv: 收到 close 後斷線')
+
+    sc.close()
+    net.close(cfd)
+    lst.close()
+}
+
+; send-close 單獨測（要一對新連線，因為 close 會終止連線）
+t-send-close = () {
+    lst = net.listener{}
+    ok-l = lst.listen('127.0.0.1', 39152)
+    runner.is-true(ok-l, 'listener: 綁定 39152')
+    cfd = net.net-dial('127.0.0.1', 39152)
+    afd = net.net-accept(lst.fd-of())
+
+    req = handshake-req()
+    net.net-send(cfd, req, req.len-bytes())
+
+    rbuf str = with-len(4096)
+    sc = ws.server-conn{
+        fd: afd
+        connected: false
+        recv-buf: rbuf
+        recv-buf-len: 0
+    }
+    sc.handshake()
+    rd(cfd, 512)
+
+    okc = sc.send-close(1000, 'bye')
+    runner.is-true(okc, 'server-conn.send-close: 回 true')
+    f = rd(cfd, 64)
+    chk-frame(f, 136, 5, 'server-conn.send-close: opcode 8 + 5 位元組 payload')
+    runner.eq(sb(f, 2), 3, 'send-close: 狀態碼高位 0x03')
+    runner.eq(sb(f, 3), 232, 'send-close: 狀態碼低位 0xe8 (=1000)')
+
+    sc.close()
+    net.close(cfd)
+    lst.close()
+}
+
+; recv-nb：非阻塞收
+t-recv-nb = () {
+    lst = net.listener{}
+    ok-l = lst.listen('127.0.0.1', 39153)
+    runner.is-true(ok-l, 'listener: 綁定 39153')
+    cfd = net.net-dial('127.0.0.1', 39153)
+    afd = net.net-accept(lst.fd-of())
+
+    req = handshake-req()
+    net.net-send(cfd, req, req.len-bytes())
+
+    rbuf str = with-len(4096)
+    sc = ws.server-conn{
+        fd: afd
+        connected: false
+        recv-buf: rbuf
+        recv-buf-len: 0
+    }
+    sc.handshake()
+    rd(cfd, 512)
+
+    ; 先確認合約：沒有資料時必須立刻回 nil（would-block），不能阻塞
+    m0 = sc.recv-nb()
+    m0v = 0
+    m0v = m0: {
+        nil -> 1
+
+        -> -1
+    }
+    runner.eq(m0v, 1, 'server-conn.recv-nb: 無資料時回 nil 不阻塞')
+
+    mkey = 'wxyz'
+    frame = ws.build-frame(1, 'nb', true, mkey)
+    net.net-send(cfd, frame, frame.len-bytes())
+
+    ; loopback 上 send 之後資料未必立刻可見（實測同一進程內偶爾會先撞 would-block）
+    time.sleep-ms(20)
+
+    mn = sc.recv-nb()
+    mnv = 0
+    mn: {
+        ok -> {
+            mm = it
+            mnv = 1
+            runner.eq(mm.opcode, 1, 'server-conn.recv-nb: opcode 1')
+            runner.eq(mm.data.len-bytes(), 2, 'server-conn.recv-nb: 內容長度 2')
+        }
+
+        -> mnv = -1
+    }
+    runner.eq(mnv, 1, 'server-conn.recv-nb: 收到文字幀')
+
+    sc.close()
+    net.close(cfd)
+    lst.close()
+}
+
+; ── client：白盒方法 ──────────────────────────────────────
+
+t-client = () {
+    lst = net.listener{}
+    ok-l = lst.listen('127.0.0.1', 39154)
+    runner.is-true(ok-l, 'listener: 綁定 39154')
+    cfd = net.net-dial('127.0.0.1', 39154)
+    afd = net.net-accept(lst.fd-of())
+
+    rbuf str = with-len(4096)
+    cl = ws.client{
+        fd: cfd
+        use-tls: false
+        tls-c: tls.conn{}
+        connected: true
+        host: '127.0.0.1'
+        port: 39154
+        path: '/'
+        recv-buf: rbuf
+        recv-buf-len: 0
+        send-counter: 0
+    }
+    runner.is-true(cl.is-connected(), 'client.is-connected: 初始為 true')
+
+    ; client 發的幀必須帶 mask 位（byte1 的 0x80）
+    ok1 = cl.send-text('hi')
+    runner.is-true(ok1, 'client.send-text: 回 true')
+    f1 = rd(afd, 64)
+    runner.eq(sb(f1, 0), 129, 'client.send-text: byte0 = 0x81')
+    runner.eq(sb(f1, 1), 130, 'client.send-text: byte1 帶 mask 位 (0x80|2)')
+
+    ; 用同一個 mask key 解回去，必須得到原字串
+    mk0 = sb(f1, 2)
+    mk1 = sb(f1, 3)
+    runner.eq(sb(f1, 6) ^ mk0, 104, 'client.send-text: 解 mask 後首位元組 h')
+    runner.eq(sb(f1, 7) ^ mk1, 105, 'client.send-text: 解 mask 後末位元組 i')
+
+    cl.send-binary('bn')
+    f2 = rd(afd, 64)
+    runner.eq(sb(f2, 0), 130, 'client.send-binary: opcode 2')
+
+    cl.send-ping('p')
+    f3 = rd(afd, 64)
+    runner.eq(sb(f3, 0), 137, 'client.send-ping: opcode 9')
+
+    cl.send-pong('q')
+    f4 = rd(afd, 64)
+    runner.eq(sb(f4, 0), 138, 'client.send-pong: opcode 10')
+
+    ; 通用 send
+    cl.send(1, 'g')
+    f5 = rd(afd, 64)
+    runner.eq(sb(f5, 0), 129, 'client.send: opcode 1')
+
+    ; recv：服務端這一側送一個不帶 mask 的幀
+    frame = ws.build-frame(1, 'srv', false, '')
+    net.net-send(afd, frame, frame.len-bytes())
+    m = cl.recv()
+    mv = 0
+    m: {
+        ok -> {
+            mm = it
+            mv = 1
+            runner.eq(mm.opcode, 1, 'client.recv: opcode 1')
+            runner.eq(mm.data.len-bytes(), 3, 'client.recv: 內容長度 3')
+            runner.eq(sb(mm.data, 0), 115, 'client.recv: 首字母 s')
+        }
+
+        -> mv = -1
+    }
+    runner.eq(mv, 1, 'client.recv: 收到訊框')
+
+    ; send-close 之後仍在連線（send-close 只發幀，不改 connected）
+    okc = cl.send-close(1000, '')
+    runner.is-true(okc, 'client.send-close: 回 true')
+    f6 = rd(afd, 64)
+    runner.eq(sb(f6, 0), 136, 'client.send-close: opcode 8')
+
+    cl.close()
+    net.close(afd)
+    lst.close()
+}
+
+; ── 便捷函數：listen-on / server.accept / connect ──────────
+
+; listen-on 回 ok 即可拿到 server；accept 需要先有 pending 連線（loopback 打進去），
+; 交握會阻塞讀 HTTP 請求，所以請求必須在 accept 之前就送進 socket 緩衝。
+t-listen-accept = () {
+    srv = ws.server{}
+    srv-opt = ws.listen-on('127.0.0.1', 39155)
+    bound = 0
+    srv-opt: {
+        ok -> {
+            srv = it
+            bound = 1
+        }
+
+        -> bound = -1
+    }
+    runner.eq(bound, 1, 'ws.listen-on: 綁定 39155 回 ok')
+
+    cfd = net.net-dial('127.0.0.1', 39155)
+    req = handshake-req()
+    net.net-send(cfd, req, req.len-bytes())
+
+    sc-opt = srv.accept()
+    acc = 0
+    sc-opt: {
+        ok -> {
+            c1 = it
+            acc = 1
+            runner.is-true(c1.is-connected(), 'ws.server.accept: 交握後 connected')
+            resp = rd(cfd, 256)
+            runner.eq(resp.index('HTTP/1.1 101') >= 0, 1, 'ws.server.accept: 回應 101')
+            c1.close()
+        }
+
+        -> acc = -1
+    }
+    runner.eq(acc, 1, 'ws.server.accept: 回 ok')
+
+    net.close(cfd)
+    srv.close()
+}
+
+; connect 的成功路徑需要對端同時扮演服務端，單進程內做不到（阻塞讀），
+; 這裡覆蓋兩個失敗分支：非法 scheme、以及連不上。
+t-connect = () {
+    r1 = ws.connect('http://127.0.0.1:1/x')
+    v1 = 0
+    v1 = r1: {
+        err -> 1
+
+        nil -> 2
+
+        -> 3
+    }
+    runner.eq(v1, 1, 'ws.connect: 非法 scheme 回 err')
+
+    r2 = ws.connect('ws://127.0.0.1:1/x')
+    v2 = 0
+    v2 = r2: {
+        err -> 1
+
+        nil -> 2
+
+        -> 3
+    }
+    runner.is-true(v2 != 3, 'ws.connect: 連不上時不謊報成功')
+}
+
+; ── 執行 ──────────────────────────────────────────────────
+
+p1, f1 = runner.test('ws.pure', t-pure)
+p2, f2 = runner.test('ws.server-conn', t-server-conn)
+p3, f3 = runner.test('ws.send-close', t-send-close)
+p4, f4 = runner.test('ws.recv-nb', t-recv-nb)
+p5, f5 = runner.test('ws.client', t-client)
+p6, f6 = runner.test('ws.listen-accept', t-listen-accept)
+p7, f7 = runner.test('ws.connect', t-connect)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

@@ -12,6 +12,12 @@ API 面（inventory）来源是 `src/std/**/*.no` 的**顶层声明**：
   - 方法：**该模块自己的** `test/std/<alias>.no` 出现 `.<method>(` 即算覆盖。
     不在别模块的测试里找，避免 `.len(` / `.init(` 这种通用名把上千个方法一起点亮。
     这是近似：同一模块内有多个结构体共用同名方法时可能高估（`--verbose` 会标 `~`）。
+  - **例外：全局内建模块**（见 UNQUALIFIED_CALL_MODULES）。`global` 里的
+    `print` / `eprint` / `format` / `with-cap` / `with-len` / `with-cap-len` / `exit`
+    是语言级内建，文档规定的调用形态**不带模块前缀**，带前缀反而不通
+    （`global.print(...)` ⇒ `unsupported builtin`；`global.with-cap(...)` ⇒ LLVM
+    校验失败）。故这些模块的顶层函数按「裸调用 `name(`」判定。
+    `async` 不在此列——`async.cancel(h)` / `async.cancelled()` 是通的。
 
 私有符号（`_` 前缀）**不计入分母**：checker 的 private_std 守卫（诊断码 `raqvyltn`）
 禁止测试档（用户码）调用 `<alias>._foo(...)`，它们在设计上就无法被直接调用，
@@ -27,13 +33,18 @@ API 面（inventory）来源是 `src/std/**/*.no` 的**顶层声明**：
 `--missing` 会单列 "platform N/A" 段，`--verbose` 可看宿主标签。
 
 另有一条**显式**的"结构上不可达"清单 UNREACHABLE（同样不计入分母）：
-  - `str.eq-raw`：`src/builtin/str.go` 里 `BuiltinMethod{MethodName:"str.eq",
-    ForwardFunc:"eq-raw"}` 的**内部 forward 目标**。用户码只能写 `a.eq(b, n)`；
-    `a.eq-raw(b, n)` 会被 checker 解析成方法但 MIR 报 `unknown callee
-    str.eq-raw`（`src/mir/builtin_call.go` 只按 ForwardFunc 名内联，不注册
-    该方法），`str.eq-raw(a, b, n)` 则报 `module 'str' has no top-level
-    function`。两种形态都调不到，只能列在这里。
+  - （已清空）曾经唯一的条目 `str.eq-raw` 于 2026-11-11 **从 `src/std/str.no`
+    直接删除**了，不再是"不可达"而是"不存在"，故此处不再登记。
+    历史背景：它是 `src/builtin/str.go` 里 `BuiltinMethod{MethodName:"str.eq",
+    ForwardFunc:"eq-raw"}` 的**内部 forward 目标**；用户码只能写 `a.eq(b, n)`，
+    `a.eq-raw(b, n)` 被 checker 解析成方法但 MIR 报 `unknown callee str.eq-raw`，
+    `str.eq-raw(a, b, n)` 报 `module 'str' has no top-level function`。
+    那个 `#{buildin}` 空壳声明全仓零调用点，属于死符号。
     新增同类条目时**必须**附上实测的两条报错原文，避免把"懒得测"混进这个清单。
+
+模块级例外 DEAD_MODULES（整个模块的符号都不计入分母）：判定标准与 UNREACHABLE 一样严，
+必须同时满足「转译器/构建链里确实没有通往它的路径」与「实测报错原文」两条。
+目前只有一个：`collection/static-hashmap`（详见该常量上的注释）。
 
 用法：
   python3 scripts/std_test_coverage.py                # 汇总 + 缺口清单
@@ -122,7 +133,7 @@ def strip_comment(line):
 # 结构上不可达的公开符号（不计入分母）。键是 (模块路径, 声明名)。
 # 见文件头 docstring 的说明：每一项都必须实测过两种调用形态都失败。
 UNREACHABLE = {
-    ('str', 'eq-raw'),  # str.eq 的内部 forward 目标，见 docstring
+    # str.eq-raw 曾在此，已于 2026-11-11 从 src/std/str.no 删除（死符号），见 docstring。
     # process 的 9 个 Win32 内建：声明在 .no 里只标了 `#{buildin}`、没标平台，
     # 但 Go 侧只在 Windows 注册实现。macOS 上实测（逐个跑过）统一报：
     #   EmitLLVM: unsupported builtin process.win-create-pipe [2kqboupo]
@@ -142,7 +153,100 @@ UNREACHABLE = {
     ('process', 'win-get-exit-code'),
     ('process', 'win-terminate-process'),
     ('process', 'win-get-std-handle'),
+    # math.arr-zero：`#{buildin}` 的 ForwardFunc，只以**接收者形式**存在
+    # （`[N]num.zero()` / `[]num.zero()`），签名 `() {}` 没有任何形参，
+    # 因此不存在 `math.arr-zero(...)` 这种全限定调用。实测 `arr.zero()` /
+    # `sl.zero()` 正常（test/std/math.no 的 t-arr-zero 盖的就是它），
+    # 覆盖率工具按「函数名 + 别名」匹配，看不见方法形式 ⇒ 与 str.eq-raw 同类。
+    ('math', 'arr-zero'),
+    # math.swap：签名 `() (a t, b t)`——两个都是**结果参数**，泛型 t 只能由
+    # 实参推断，而实参不存在。两种调用形态实测：
+    #   a, b = math.swap()      ⇒ 能编过但不交换（a=11/b=0、a=0/b=0 非确定）
+    #   a, b = math.swap(a, b)  ⇒ EmitLLVM: unknown callee math.swap in func main [4qhyyund]
+    # 全仓库也没有可工作的调用点（`vec.swap` / `arr.swap` 是数组方法，与它无关）。
+    ('math', 'swap'),
+    # fmt.printf / fmt.eprintf：源码里明确标注「已移除（名称保留供解析）」，
+    # 调用即编译错误，两种形态都过不去：
+    #   fmt.printf('x')   ⇒ [ERROR] deprecated: printf() is removed; use print(...)
+    #                        for stdout with a newline, or io.out(...) ... [oflgmsef]
+    #   fmt.eprintf('x')  ⇒ [ERROR] deprecated: eprintf() is removed; use eprint(...)
+    #                        for stderr with a newline, or io.err(...) ... [oflgmsef]
+    # （fmt.sprintf 是例外：它真的还能用，已在 test/std/fmt.no 覆盖。）
+    ('fmt', 'printf'),
+    ('fmt', 'eprintf'),
+    # vec.vec-push / vec.vec-clear：`#{buildin}` 声明，是 `[]t.push` / `[]t.clear`
+    # 内建方法的**实现名**，没有模块级函数。实测：
+    #   vec.vec-push(v, 1)  ⇒ unknown function 'vec.vec-push': module 'vec' has no
+    #                         top-level function 'vec-push' [trdj5rp8]
+    #   vec.vec-clear()     ⇒ unknown function 'vec.vec-clear': module 'vec' has no
+    #                         top-level function 'vec-clear' [trdj5rp8]
+    # 对应的用户形态 `.push(` / `.clear(` 已在 test/std/vec.no 覆盖。
+    ('vec', 'vec-push'),
+    ('vec', 'vec-clear'),
+    # err.code.to-name：枚举 `code` 上的方法，用户码取不到。
+    #   code.io.to-name()            ⇒ EmitLLVM: unknown callee code.io.to-name [4qhyyund]
+    #   c code = code.io; c.to-name() ⇒ EmitLLVM: unknown callee i64.to-name [4qhyyund]
+    # 枚举在 MIR 里是 i64，方法表按 i64 查不到 `to-name`；std 内部
+    # （err.format → `.code.to-name()`）能编过，因为它走的是同一函数体内的
+    # 静态解析路径。是真实缺陷，已记进 MEMORY-RISKS。
+    ('err', 'to-name'),
+    # embed.read / embed.exists：`fs.embed` 上的方法被**同名全局内建**顶掉——
+    # `read` / `exists` 都在 src/builtin/os.go 注册为内置 MethodName，
+    # 调用点优先命中内建，接收者 `fs.embed` 被当成普通实参处理。实测：
+    #   D.exists('a.txt')  ⇒ EmitLLVM: builtin fs.embed.exists: cannot marshal
+    #                         arg 0 as C string [z68vr2e2]
+    #   D.read('a.txt')    ⇒ 能编过，但返回的 ?[]byte 标签非法：三分支 ok/nil/err
+    #                         一个都不匹配（hit 计数停在 0），内容永远取不到。
+    #   全限定写法 fs.embed.read(D, 'a.txt') 同样命中内建，报同一条。
+    # 这是真实缺陷（embed 模块实际不可用），已记进 MEMORY-RISKS。
+    ('embed', 'read'),
+    ('embed', 'exists'),
+    # os.syslog：src/builtin/os.go 只注册了 ForwardFunc:"syslog"，没有 CLibCall，
+    # 等于「声明了但没实现」。两种形态实测：
+    #   syslog(6, 'x')        ⇒ [ERROR] 'syslog' is not defined; call it as
+    #                            'os.syslog' ... [4bek3xc6]
+    #   os.syslog(6, 'x')     ⇒ 编过，运行期直接 SIGSEGV（无输出、rc=139）
+    # 是真实缺陷（不是环境问题），已记进 MEMORY-RISKS。
+    ('os', 'syslog'),
+    # os 的 3 个 Win32 目录查找内建：与 process 的 win-* 同一类，Go 侧只在
+    # Windows 注册实现，macOS 上统一报：
+    #   EmitLLVM: unsupported builtin os.win-find-first-file [2kqboupo]
+    # （win-find-next-file / win-find-close 同一条，仅末段符号不同。）
+    ('os', 'win-find-first-file'),
+    ('os', 'win-find-next-file'),
+    ('os', 'win-find-close'),
 }
+
+# 模块级「结构性不可调用」清单：源码被刻意保留、但构建链里没有任何路径能特化/调用它。
+# 与 UNREACHABLE 的区别只是**粒度**（整模块 vs 单符号），判定标准一样严 ——
+# 必须指出构建链断点 + 附实测报错，否则不收。
+#
+# collection/static-hashmap（31 个符号）：SPEC
+#   `.trae/specs/split-map-to-static-and-vec-generics` 的产物 ——
+#   "将旧实现搬移至 static-hashmap.no…**BREAKING**：static-hashmap.no 的模板不会被
+#    转译器自动特化（转译器仅寻找 hashmap-{cat}-tmpl）；静态版本暂为『保留原始码』"。
+# 断点在 `src/build/generic_structs.go:403`：特化入口写死
+#   `tmplName := "hashmap-" + cat + "-tmpl"`，从不查 `static-hashmap-*`
+#   ⇒ 三个模板永远不生成具体结构与方法。实测（macOS，2026-11-11）：
+#   `m static-hashmap.static-hashmap-str-tmpl = static-hashmap.static-hashmap-str-tmpl{}`
+#     ⇒ `no vet` 只给 tcpoxtfd（"型别标注可省略"）hint，0 error / 0 warning；
+#        `no run` ⇒ EmitLLVM: unknown callee
+#        static-hashmap.static-hashmap-str-tmpl.init in func main [4qhyyund]
+#   `-int-tmpl` / `-bool-tmpl` 一字不差（仅末段符号名不同）。
+#   改写特化名 `static-hashmap-str-i64{}` ⇒ 同一条报错（没有特化器认识这个名字）。
+# 用户真正在用的 `[str]i64` 走的是 `hashmap-*-tmpl`（`collection/map.no`），已 100% 覆盖；
+# 本模块是**死代码**，等后续 Spec 给它一条显式特化路径后再回来测（届时删掉这条登记）。
+DEAD_MODULES = {'collection/static-hashmap'}
+
+# 少数模块的顶层声明是**全局内建**：文档规定的调用形态不带模块前缀
+# （`print(...)` / `with-cap(n)` / `format(...)` / `exit(n)`），带前缀反而过不去：
+#   global.print('x')    ⇒ EmitLLVM: unsupported builtin global.print [2kqboupo]
+#   global.eprint('x')   ⇒ 同上（eprint 走同一条 unsupported 分支）
+#   global.with-cap(8)   ⇒ LLVM 校验失败：'%tenum_global_option' 与 i64 不符，
+#                          build error: linking failed [wjju8z98]
+# （global.exit 是唯一两个形态都通的，但它会终止进程，不适合当断言。）
+# 因此这些模块的顶层函数按「裸调用文本」判定覆盖。
+UNQUALIFIED_CALL_MODULES = {'global'}
 
 # 平台标签：`#{mac-arm64, linux-amd64, wasi-wasm32}`。行内也可能混有
 # `buildin` / `track-caller` / `overflow=wrap` 这类非平台标记，只取平台形态。
@@ -210,7 +314,8 @@ def collect_inventory():
                 if not m:
                     continue
                 name = m.group(1)
-                unreachable = (mp, name.split('.', 1)[-1]) in UNREACHABLE
+                unreachable = (mp in DEAD_MODULES
+                               or (mp, name.split('.', 1)[-1]) in UNREACHABLE)
                 if '.' in name:
                     owner, meth = name.split('.', 1)
                     items.append({
@@ -245,6 +350,11 @@ def load_tests():
 def func_covered(tests, alias, symbol):
     pat = re.compile(re.escape('%s.%s' % (alias, symbol)) + ID_TAIL)
     hits = [name for name, text in tests.items() if pat.search(text)]
+    if not hits and alias in UNQUALIFIED_CALL_MODULES:
+        # 全局内建只能裸调用（带前缀编不过），按裸调用文本判定
+        bare = re.compile(r'(?<![A-Za-z0-9_.\-])' + re.escape(symbol) + r'\s*\(')
+        hits = [name for name, text in tests.items() if bare.search(text)]
+        hits = [h + '(bare)' for h in hits[:1]]
     return hits
 
 

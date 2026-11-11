@@ -280,15 +280,8 @@ char.to-txt = () (out txt) {
             }
         }
     }
-    m = tmp.len()
-    out = with-len(m)
-    j <- [0..m): {
-        ixout293c25 = tmp[j]: {
-            ok -> it
-
-            -> _
-        }
-
-        out.set-byte(j, ixout293c25)
-    }
+    ; tmp 已按 UTF-8 逐位元組填好，直接 1:1 拷成 str 即可。
+    ; 舊寫法是 with-len(m) + out._set-byte(j, …) 逐位元組搬 —— str._set-byte
+    ; 已私有（raqvyltn 擋跨模組），而 to-bytes-str 正是同一語意的公開構造器。
+    out = tmp.to-bytes-str()
 }

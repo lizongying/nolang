@@ -2029,6 +2029,17 @@ export ZIG_GLOBAL_CACHE_DIR=/tmp/zig-cache ZIG_LOCAL_CACHE_DIR=/tmp/zig-cache  #
 
 ### 5.3.4.ax s18——M4-c 第三件：字符串（首个非 i64 型別 `%str-long`）（2026-10-30 本轮）
 
+> ⚠️ **2026-11-11 後端佈局變更（本節以下為歷史紀錄）**：Go 後端 `emitPrelude` 的
+> `%str-long` 已從 `{ i64, i64, i8* }`（24B）改為 **`{ i32, i32, i8* }`**（u32 len / u32 cap，
+> 16B），對外 API 仍為 `i64`（讀取 `zext i32 -> i64`、寫入 `trunc i64 -> i32`）。本節描述的
+> 「與 Go `emitPrelude` 逐字相同」、`insertvalue ..., i64 ..., 0/1`、`extractvalue ..., 0` 直接取
+> i64 len 等 IR 文本**只適用於 2026-11-11 之前的版本**。**selfhost 的
+> `compiler/src/cg-runtime.no` / `cg.no` 尚未同步**，若要把本節的照抄做法重新啟用，必須同時：
+> ① 把 prelude 改成 `{ i32, i32, i8* }`；② `OP-STRCONST` 的三步 `insertvalue` 先把 i64
+> 長度 `trunc` 成 i32（或用常數直接給 `i32`）；③ `OP-STRLEN` 的 `extractvalue` 後補 `zext i32 -> i64`；
+> ④ `OP-STRCAT` 等 helper 的 `%str-long` 聚合常量改為 `{ i32 0, i32 0, i8* null }`。
+> 詳見 `docs/docs/lang/memory.md`〈型別佈局〉與 `docs/docs/lang/str.md`〈內部佈局與對外 API〉。
+
 **背景**：§5.3.4.av/aw 全程假設所有值都是 i64——`%v<id>` 一個命名空間`define i64``ret i64`這在真實程序裡立刻破產：任何 `.len`/字面量/輸出都要 `str`本件引入**第一個非 i64 型別**，並定下多型別值命名空間的規矩**零新增檔**，改 3 檔（`cg-runtime.no`/`mir.no`/`cg.no`）+ 擴測試
 
 **落地**：

@@ -2,7 +2,8 @@
 ;
 ; 執行：no test test/std/fmt.no
 ; 覆蓋：fmt-parse-spec / fmt-apply-spec / fmt-int / fmt-uint /
-;       fmt-uint-base / fmt-f64 / fmt-str / fmt-bool
+;       fmt-uint-base / fmt-f64 / fmt-str / fmt-bool / sprintf / fmt-group-digits
+; 未測：printf / eprintf —— 已移除，呼叫即編譯錯誤 [oflgmsef]，登記在 UNREACHABLE
 
 # /test/runner
 
@@ -131,6 +132,27 @@ p5, f5 = runner.test('fmt.fmt-uint-base', t-uint-base)
 p6, f6 = runner.test('fmt.fmt-f64', t-f64)
 p7, f7 = runner.test('fmt.fmt-str', t-str)
 p8, f8 = runner.test('fmt.fmt-bool', t-bool)
+p9, f9 = runner.test('fmt.sprintf', t-sprintf)
+p10, f10 = runner.test('fmt.fmt-group-digits', t-group-digits)
+
+; sprintf：已廢棄但仍可用 —— 單一格式串，{name} 從呼叫點作用域取值
+t-sprintf = () {
+    x = 41
+    o = fmt.sprintf('{x}')
+    runner.str-eq(o, '41', 2, 'sprintf interpolates named field')
+}
+
+; fmt-group-digits：每 3 位插一個分隔符；不足 4 位原樣返回
+t-group-digits = () {
+    g = fmt.fmt-group-digits('123456789', 44)
+    runner.str-eq(g, '123,456,789', 11, 'comma grouping')
+    g2 = fmt.fmt-group-digits('1234', 95)
+    runner.str-eq(g2, '1_234', 5, 'underscore grouping')
+    g3 = fmt.fmt-group-digits('123', 44)
+    runner.str-eq(g3, '123', 3, 'exactly 3 digits unchanged')
+    g4 = fmt.fmt-group-digits('12', 44)
+    runner.str-eq(g4, '12', 2, 'short input unchanged')
+}
 
 total = runner.summary()
 f = runner.failed-count()

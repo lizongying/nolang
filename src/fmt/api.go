@@ -84,6 +84,14 @@ type formatter struct {
 	// `cond -> <值>`。以臂指標為鍵 ⇒ 嵌套的 match（臂內值本身又是 match）不會
 	// 命中，天然不外溢。見 match_assign_fold.go。
 	foldArmValues map[*parser.MatchArm]parser.Expression
+
+	// firstStmt 是導入位置歸一化之後的 Program.Statements[0]。formatStatement
+	// 用它判定「文件頭說明段」：首條陳述的 Doc 註釋是模組說明，與其後的導入
+	// 行之間固定留一個空行；區段內其它導入的分組註釋則緊貼導入。
+	firstStmt parser.Statement
+	// programDocEmitted：Program.Doc（帶錨點的模組說明）已經輸出，且它自身的
+	// 空行由 formatProgram 補齊——避免首條導入的 Doc 分支再補一次空行。
+	programDocEmitted bool
 }
 
 // hasRT 查詢 IfExpression 的 fmt 往返標誌：查 trivia 表（f.trivia 為 nil 時安全）。
@@ -138,6 +146,9 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	// 按字典序排序（imports.go）。
 	hoistImports(p)
 	normalizeImportRun(p)
+	if len(p.Statements) > 0 {
+		f.firstStmt = p.Statements[0]
+	}
 	// 模組 doc（`; [arr](#arr)` 收尾的那段）先輸出：它在 AST 上掛在 Program
 	// 而非首個陳述，故不能交給 formatStatement。與陳述的 Doc 一樣保留它與下方
 	// 程式碼之間的空行（由 formatStatement 的同一套 hasBlankLineBetween 判定），
@@ -146,6 +157,7 @@ func (f *formatter) formatProgram(p *parser.Program) {
 	if p.Doc != nil && len(p.Doc.List) > 0 {
 		f.formatDocComments(p.Doc)
 		moduleDocEmitted = true
+		f.programDocEmitted = true
 	}
 	// 追蹤上一個「有輸出」的頂層陳述，使無輸出的陳述不會產生空白行，且空白行
 	// 保留以最後一個有輸出的陳述為基準（見 formatBlockInner 的同名邏輯）。

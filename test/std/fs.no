@@ -10,11 +10,20 @@
 ;       truncate / utime / touch-file / realpath /
 ;       symlink / readlink / link / rename / remove / rmdir / mkfifo / mknod /
 ;       open-dir / read-dir / close-dir / dir-entries / walk / walk-collect /
-;       copy-file / list-dir
+;       copy-file / list-dir / get-line / read-stdin / read-stdin-str
 ;
-; ⚠ 未覆蓋（僅 3 個）：get-line / read-stdin / read-stdin-str —— 三者都讀 stdin，
-;   在 `no test` 下 stdin 連的是終端，呼叫會**阻塞**乃至吃掉跑測器的輸入，
-;   因此刻意不測（要測必須 `./bin/no test ... < 檔`，會破壞一鍵門禁的假設）。
+; stdin 三兄弟（get-line / read-stdin / read-stdin-str）已於 2026-11-11 補齊（7/7）：
+;   三者在 `no test` 下直接呼叫會**阻塞**（fd 0 是終端），所以統一放進 fork 出來的
+;   子進程，並利用「關掉 fd 0 之後 open() 拿到最小的空閒描述符」這條 POSIX 規則，
+;   把內容已知的臨時檔頂成新的 stdin：fs.close(0) → g = fs.open-read(P)，g 必為 0。
+;   ok 分支與 nil 分支因此都能確定性測到，且完全不碰父進程的 stdin。
+;
+; ⚠ `fs.get-line()` 的**單值**形態（`l ?str = fs.get-line()`）是壞的：內建表
+;   （src/builtin/os.go）把 get-line 的 Return 定成 `(str, bool)`，與 src/std/fs.no 寫的
+;   `(line ?str)` 不一致 ⇒ 單值取值時 ok 位被丟掉、option tag 恆 0，EOF 會偽裝成
+;   `ok('')`（實測連讀三次：'abc' / '' / ''，永遠不回 nil）。本檔因此改用與
+;   src/std/io.no 的 read-line 相同的**雙值**形態 `s, ok = fs.get-line()` 測真實語義。
+;   詳見 test/README §5.2 #85。
 ;
 ; 臨時檔一律落在 /tmp/nolang_fs_test_dir 與 mkdtemp 隨機目錄，測完刪除。
 
@@ -30,6 +39,10 @@ LINK1 = '/tmp/nolang_fs_test_dir/link1'
 LINK2 = '/tmp/nolang_fs_test_dir/hard1'
 FIFO = '/tmp/nolang_fs_test_dir/fifo1'
 FIFO2 = '/tmp/nolang_fs_test_dir/node1'
+
+; stdin 測試用的兩個內容已知的檔（會被頂成子進程的 fd 0）
+S1 = '/tmp/nolang_fs_stdin_one.txt'
+S2 = '/tmp/nolang_fs_stdin_two.txt'
 
 ; ── 檔案存在性檢查 ────────────────────────────
 
@@ -527,6 +540,157 @@ t-special-files = () {
     fs.remove(FIFO)
 }
 
+; ── 標準輸入三兄弟（get-line / read-stdin / read-stdin-str）────
+;
+; 全部跑在 fork 出來的子進程裡，並先把 fd 0 換成內容已知的臨時檔（見檔頭說明）。
+; 子進程只回傳一個整數碼：0 = 全部符合預期，其餘是失敗步驟號 —— 這樣即使斷言
+; 寫錯也不會把子進程的 runner 計數混進父進程。
+
+; 0=符合預期；1=fd0 沒換成功；2=首行內容不符；3=EOF 沒有回 ok=false；91=檔案沒開起來
+chk-get-line = () (code i64) {
+    code = 91
+    fs.close(0)
+    g = fs.open-read(S1)
+    g == 0 -> {
+        code = 1
+        s, ok = fs.get-line()
+        ok -> {
+            code = 2
+            hit = s.eq('abc', 3)
+            hit -> {
+
+                ; 第二行必須是 EOF：雙值形態的 ok 為 false
+                s2, ok2 = fs.get-line()
+                code = 3
+                ok2 == false -> code = 0
+            }
+        }
+    }
+}
+
+; 0=符合預期；1=fd0 沒換成功；2=長度不符；3=內容不符；4=nil；5=err
+chk-read-stdin = () (code i64) {
+    code = 91
+    fs.close(0)
+    g = fs.open-read(S2)
+    g == 0 -> {
+        code = 1
+        c = fs.read-stdin()
+        c: {
+            ok -> {
+                code = 2
+                v []byte = it
+                v.len() == 7 -> {
+                    t = v.to-bytes-str()
+                    code = 3
+                    t.eq('abc\ndef', 7) -> code = 0
+                }
+            }
+
+            nil -> code = 4
+
+            err -> code = 5
+        }
+    }
+}
+
+; 同上，但走 read-stdin-str
+chk-read-stdin-str = () (code i64) {
+    code = 91
+    fs.close(0)
+    g = fs.open-read(S2)
+    g == 0 -> {
+        code = 1
+        c = fs.read-stdin-str()
+        c: {
+            ok -> {
+                code = 2
+                t str = it
+                t.eq('abc\ndef', 7) -> code = 0
+            }
+
+            nil -> code = 3
+
+            err -> code = 4
+        }
+    }
+}
+
+; fd 0 直接關掉、不重開 ⇒ 兩者都必須回 nil（不是 ok('')、也不是 err）
+chk-stdin-nil = () (code i64) {
+    code = 91
+    fs.close(0)
+    a = fs.read-stdin()
+    a: {
+        ok -> code = 1
+
+        nil -> {
+            b = fs.read-stdin-str()
+            code = 2
+            b: {
+                ok -> code = 3
+
+                nil -> code = 0
+
+                err -> code = 4
+            }
+        }
+
+        err -> code = 5
+    }
+}
+
+; 把 chk-* 丟進子進程跑，回傳它的退出碼（父進程再做 runner.eq）
+in-child = (which i64) (code i64) {
+    code = 99
+    pid = process.process-fork()
+    {
+        pid == 0 -> {
+            c = 98
+            which == 1 -> {
+                c = chk-get-line()
+            }
+            which == 2 -> {
+                c = chk-read-stdin()
+            }
+            which == 3 -> {
+                c = chk-read-stdin-str()
+            }
+            which == 4 -> {
+                c = chk-stdin-nil()
+            }
+            exit(c)
+        }
+    }
+    code = process.process-waitpid(pid, 0)
+}
+
+; get-line：首行 ok + 內容正確，第二行是 EOF（ok=false）
+t-get-line = () {
+    runner.is-true(fs.write-file(S1, 'abc\n'), 'get-line 前置：寫入 abc\\n')
+    runner.eq(in-child(1), 0, 'get-line：首行 ok（內容 abc）+ 次行 EOF ok=false')
+    fs.remove(S1)
+}
+
+; read-stdin：把整段 stdin 讀成 []byte（7 位元組）
+t-read-stdin = () {
+    runner.is-true(fs.write-file(S2, 'abc\ndef'), 'read-stdin 前置：寫入 abc\\ndef')
+    runner.eq(in-child(2), 0, 'read-stdin：ok + 長度 7 + 內容 abc\\ndef')
+    fs.remove(S2)
+}
+
+; read-stdin-str：同上但轉成 str
+t-read-stdin-str = () {
+    runner.is-true(fs.write-file(S2, 'abc\ndef'), 'read-stdin-str 前置：寫入 abc\\ndef')
+    runner.eq(in-child(3), 0, 'read-stdin-str：ok + 內容 abc\\ndef')
+    fs.remove(S2)
+}
+
+; 空 / 已關閉的 stdin：兩者都要回 nil（read-stdin 的 nil 分支 + read-stdin-str 的 nil 分支）
+t-stdin-nil = () {
+    runner.eq(in-child(4), 0, 'read-stdin / read-stdin-str 在 fd 0 關閉時都回 nil')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('fs.is-file', t-is-file)
@@ -543,6 +707,10 @@ p11, f11 = runner.test('fs.fd-io', t-fd-io)
 p12, f12 = runner.test('fs.file-methods', t-file-methods)
 p13, f13 = runner.test('fs.dir-iter', t-dir-iter)
 p14, f14 = runner.test('fs.special-files', t-special-files)
+p15, f15 = runner.test('fs.get-line', t-get-line)
+p16, f16 = runner.test('fs.read-stdin', t-read-stdin)
+p17, f17 = runner.test('fs.read-stdin-str', t-read-stdin-str)
+p18, f18 = runner.test('fs.stdin-nil', t-stdin-nil)
 
 total = runner.summary()
 f = runner.failed-count()

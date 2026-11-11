@@ -1005,6 +1005,10 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinArch(inst)
 	case "str-len", "vec-len", "str-len-bytes":
 		return c.emitBuiltinLen(inst, bm.ForwardFunc)
+	case "str-bytes":
+		return c.emitBuiltinStrBytes(inst)
+	case "str-from-bytes":
+		return c.emitBuiltinStrFromBytes(inst)
 	case "str-_len", "str-_cap", "str-_data", "str-_set-len", "str-_set-cap", "str-_set-data", "txt-_len", "txt-_data", "txt-_set-len":
 		return c.emitBuiltinPrivateField(inst, bm.ForwardFunc)
 	case "str-clear":
@@ -1790,7 +1794,13 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 	g := c.treg("lg")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g, lt, lt, slot))
 	l := c.treg("ll")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", l, g))
+	if lt == "%str-long" {
+		// field 0/1 are u32; an opaque-pointer `load i64` would silently read
+		// len+cap as one word. Widen the 4-byte field at the API boundary.
+		l = c.strHeaderLoadI64(g)
+	} else {
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", l, g))
+	}
 	v := c.coerce("i64", l, dstLT)
 	if v == "" {
 		return i18n.Errorf("4ccv952m", "builtin %s: cannot store i64 into %s", ff, dstLT)
@@ -1853,9 +1863,8 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = call i1 @str_eq(%s %s, %%str-long %s)\n", eqTrue, rcvTy, rcvV, c.strConst("true")))
 	eqFalse := c.treg("stbf")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i1 @str_eq(%s %s, %%str-long %s)\n", eqFalse, rcvTy, rcvV, c.strConst("false")))
-	// Receiver length is the first i64 field of %str-long; empty string -> nil.
-	rcvLen := c.treg("stbl")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %s %s, 0\n", rcvLen, rcvTy, rcvV))
+	// Receiver length is the u32 len field of %str-long, widened to i64.
+	rcvLen := c.strLenI64(rcvV)
 	isEmpty := c.treg("stbe")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp eq i64 %s, 0\n", isEmpty, rcvLen))
 	// tag: 0=some/ok, 1=nil/none, 2=err.
@@ -2090,7 +2099,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	// `[]txt` element: the element is a 256-byte %txt ({ [255 x i8] buf, i8 len }),
 	// but a str literal/value lowers to %str-long. There is NO coerce() between
 	// those two layouts, so the fallback below (`elemLL = elemTy`) silently kept
-	// the ARGUMENT's %str-long type: push wrote with a 24-byte stride and stored
+	// the ARGUMENT's %str-long type: push wrote with a 16-byte stride and stored
 	// a %str-long, while emitIndex reads with a 256-byte stride as %txt. Every
 	// pushed element therefore read back empty:
 	//   r []txt
@@ -2106,8 +2115,8 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	// str literal/value lowers to %str-long. This is the push mirror of
 	// emitIndexStore's `strIntoByteElem` branch (`b[0] = 'a'` -> 97): take byte 0
 	// of the str. Without it the fallback below kept the ARGUMENT's %str-long as
-	// the element type, so push allocated a 24-byte stride for i8 elements and
-	// stored a 24-byte %str-long into it — heap corruption, not merely a wrong
+	// the element type, so push allocated a 16-byte stride for i8 elements and
+	// stored a 16-byte %str-long into it — heap corruption, not merely a wrong
 	// value. The guard further down then reported it as an error instead, but
 	// `b.push('a')` is a natural operation and has to work.
 	if elemLL == "i8" && elemTy == "%str-long" {
@@ -2126,11 +2135,11 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 			isScalarLLVM(elemLL) != isScalarLLVM(elemTy) {
 			// 純量 <-> 聚合且無轉換路徑（例如 `[]i64.push('x')`：引數是
 			// %str-long，元素是 i64）。此處**不能**沿用引數型別：那會讓 push
-			// 以 24 位元組步長寫入 8 位元組的元素，而索引路徑
+			// 以 16 位元組步長寫入 8 位元組的元素，而索引路徑
 			// （emitIndex/emitIndexStore 用 elemTypeOfReceiver）仍以 8 位元組
 			// 讀 —— 正是本函式開頭警告的「寫讀寬度不一致」，且是堆溢位：
 			//   a []i64 = [1, 2, 3]
-			//   a.push('x')        ; 24 位元組寫進 8 位元組的 slot
+			//   a.push('x')        ; 16 位元組寫進 8 位元組的 slot
 			// 實測 `signal: abort trap`（malloc 偵測到堆損壞）。舊行為下
 			// `no vet` 也是 0 error（內建方法引數不做型別檢查），所以這是
 			// 「vet 過、run 炸」的靜默記憶體錯誤。寧可在此明確拒絕。
@@ -2358,7 +2367,7 @@ func (c *codegen) elemInfoOfVec(recv ValueID) (elemLL string, stride int64) {
 	case elem == "f64":
 		return "double", 8
 	case elem == "str":
-		return "%str-long", 24
+		return "%str-long", 16
 	// A nested-slice element: `outer [][]i64`'s element is `[]i64`, which
 	// lowers to `%vec` (24 bytes), NOT i64. Without this case the in-place
 	// slice mutators (insert/reverse/remove/sort) used an 8-byte stride and an
@@ -2431,7 +2440,7 @@ func (c *codegen) emitBuiltinStrClear(inst *Inst) error {
 	vv := c.treg("clv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%str-long, %%str-long* %s\n", vv, slot))
 	z := c.treg("clz")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i64 0, 0\n", z, vv))
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%str-long %s, i32 0, 0\n", z, vv))
 	c.sb.WriteString(fmt.Sprintf("  store %%str-long %s, %%str-long* %s\n", z, slot))
 	return nil
 }
@@ -3599,8 +3608,11 @@ func (c *codegen) emitBuiltinNetAcceptNb(inst *Inst) error {
 }
 
 // emitBuiltinNetRecvNb lowers `net.net-recv-nb(fd, buf, n)` -> read-n i64:
-// recv(2) with MSG_DONTWAIT so the call never blocks. MSG_DONTWAIT is 0x40 on
-// macOS and 0x40 (MSG_DONTWAIT) on Linux as well.
+// recv(2) with MSG_DONTWAIT so the call never blocks. The flag value is
+// platform-specific: Linux MSG_DONTWAIT = 0x40, Darwin MSG_DONTWAIT = 0x80.
+// (Darwin's 0x40 is MSG_WAITALL, so passing 64 there makes recv block until
+// the whole buffer is filled — which silently turns this builtin into a
+// blocking receive and hangs non-blocking pollers.)
 func (c *codegen) emitBuiltinNetRecvNb(inst *Inst) error {
 	if len(inst.Args) < 3 {
 		return i18n.Errorf("xsstot9b", "net-recv-nb: needs (fd, buf, n)")
@@ -3617,10 +3629,14 @@ func (c *codegen) emitBuiltinNetRecvNb(inst *Inst) error {
 	if bufPtr == "" {
 		return i18n.Errorf("0z120eni", "net-recv-nb: cannot take data pointer of arg 1")
 	}
+	msgDontWait := "64"
+	if targetGOOS() == "darwin" {
+		msgDontWait = "128"
+	}
 	_, nReg := c.loadVal(inst.Args[2])
 	c.decl("declare i64 @recv(i32, i8*, i64, i32)")
 	ret := c.treg("netrnb")
-	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 64)\n", ret, fdReg, bufPtr, nReg))
+	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @recv(i32 %s, i8* %s, i64 %s, i32 %s)\n", ret, fdReg, bufPtr, nReg, msgDontWait))
 	// Under MSG_DONTWAIT a temporarily-empty socket returns -1 with
 	// errno=EAGAIN/EWOULDBLOCK.  Net-recv-nb's contract promises -2 for
 	// "would block" and -1 only for a hard error, so fold the transient
@@ -3931,15 +3947,15 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 		return nil
 	}
 	// New API: fs.read-file returns a str. Reinterpret the malloc'd buffer as a
-	// %str-long { i64 len, i64 cap, i8* data } (the data field is a real pointer,
+	// %str-long { u32 len, u32 cap, i8* data } (the data field is a real pointer,
 	// not a ptrtoint'd i64 like %vec). The buffer is heap-owned via @malloc and
 	// must NOT be freed here; it becomes the string's owned storage.
 	strLenGEP := c.treg("rf.sl")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", strLenGEP, dstSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, strLenGEP))
+	c.strHeaderStoreI64(strLenGEP, ln)
 	strCapGEP := c.treg("rf.sc")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", strCapGEP, dstSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, strCapGEP))
+	c.strHeaderStoreI64(strCapGEP, ln)
 	strDataGEP := c.treg("rf.sd")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", strDataGEP, dstSlot))
 	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", buf, strDataGEP))
@@ -3966,22 +3982,38 @@ func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 		return i18n.Errorf("66ybjsus", "write-file: cannot marshal path as C string")
 	}
 
-	// Extract len and data pointer from the []byte (%vec) argument.
+	// Extract len and data pointer from the data argument. Historically this
+	// assumed the argument is always a %vec and relied on %vec/%str-long being
+	// layout-identical 24-byte triples. With the 16-byte %str-long
+	// { u32 len, u32 cap, i8* data } that pun is invalid: a %vec GEP reads
+	// field 0 as i64 (len+cap packed) and field 2 at byte offset 16 (past the
+	// descriptor). Branch on the real argument type instead.
 	dataSlot := c.valSlot[inst.Args[1]]
+	dlt, _ := c.ptype(inst.Args[1])
 	if dataSlot == "" {
-		dlt, _ := c.ptype(inst.Args[1])
 		return i18n.Errorf("gx02j37c", "write-file: data arg has no slot (func %s, arg type %s)", c.curFuncNameForFail(), dlt)
 	}
-	lenGEP := c.treg("wf.lgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dataSlot))
-	wfLen := c.treg("wf.len")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", wfLen, lenGEP))
-	dataGEP := c.treg("wf.dgep")
-	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dataSlot))
-	dataPtr := c.treg("wf.data")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", dataPtr, dataGEP))
-	dataPtrCast := c.treg("wf.dp")
-	c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dataPtrCast, dataPtr))
+	var wfLen, dataPtrCast string
+	if dlt == "%str-long" {
+		lenGEP := c.treg("wf.slg")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, dataSlot))
+		wfLen = c.strHeaderLoadI64(lenGEP)
+		dataGEP := c.treg("wf.sdg")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dataGEP, dataSlot))
+		dataPtrCast = c.treg("wf.sdp")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i8*, i8** %s\n", dataPtrCast, dataGEP))
+	} else {
+		lenGEP := c.treg("wf.lgep")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dataSlot))
+		wfLen = c.treg("wf.len")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", wfLen, lenGEP))
+		dataGEP := c.treg("wf.dgep")
+		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dataSlot))
+		dataPtr := c.treg("wf.data")
+		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", dataPtr, dataGEP))
+		dataPtrCast = c.treg("wf.dp")
+		c.sb.WriteString(fmt.Sprintf("  %s = inttoptr i64 %s to i8*\n", dataPtrCast, dataPtr))
+	}
 
 	c.decl("declare i32 @open(i8*, i32, i32)")
 	c.decl("declare i64 @write(i32, i8*, i64)")
@@ -4109,8 +4141,7 @@ func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
 	// Load current len
 	lenGEP := c.treg("st.lgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, recvSlot))
-	curLen := c.treg("st.cl")
-	c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", curLen, lenGEP))
+	curLen := c.strHeaderLoadI64(lenGEP)
 
 	// newLen = min(curLen, max(0, n))
 	// clamp n to >= 0
@@ -4125,7 +4156,7 @@ func (c *codegen) emitBuiltinStrTruncate(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, ltCmp, curLen, clampedN))
 
 	// Store new len
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", newLen, lenGEP))
+	c.strHeaderStoreI64(lenGEP, newLen)
 	return nil
 }
 
@@ -4268,8 +4299,8 @@ func (c *codegen) emitBuiltinGetErrno(inst *Inst) error {
 // @nolang_argc / @nolang_argv globals captured in the C entry prologue (see
 // emitEntry), adopts each NUL-terminated argv[i] as an owned %str-long
 // (strLongFromBuffer semantics: malloc strlen+1 then memcpy), and stores the
-// %vec { len, cap, data } into the result slot. Element stride is 24 bytes —
-// sizeof(%str-long) — matching the `str -> %str-long, 24` invariant used by the
+// %vec { len, cap, data } into the result slot. Element stride is 16 bytes —
+// sizeof(%str-long) — matching the `str -> %str-long, 16` invariant used by the
 // vec mutators. The vec owns the element buffers; MIR's deep-container drop
 // frees them with the same stride.
 func (c *codegen) emitBuiltinArgsList(inst *Inst) error {
@@ -4296,9 +4327,9 @@ func (c *codegen) emitBuiltinArgsList(inst *Inst) error {
 	n := c.treg("al.n2")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", n, isNil, nRaw))
 
-	// Backing store: argc * 24 bytes of %str-long elements.
+	// Backing store: argc * 16 bytes of %str-long elements.
 	bytes := c.treg("al.bytes")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 24\n", bytes, n))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 16\n", bytes, n))
 	heap := c.treg("al.heap")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i8* @nolang_rc_alloc(i64 %s)\n", heap, bytes))
 
@@ -4347,9 +4378,9 @@ func (c *codegen) emitBuiltinArgsList(inst *Inst) error {
 	lenR := c.treg("al.len")
 	c.sb.WriteString(fmt.Sprintf("  %s = call i64 @strlen(i8* %s)\n", lenR, safeP))
 	strV := c.strLongFromBuffer(safeP, lenR)
-	// Store the %str-long element at heap + i*24.
+	// Store the %str-long element at heap + i*16.
 	elemOff := c.treg("al.eo")
-	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 24\n", elemOff, i))
+	c.sb.WriteString(fmt.Sprintf("  %s = mul i64 %s, 16\n", elemOff, i))
 	elemPtr := c.treg("al.ep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr i8, i8* %s, i64 %s\n", elemPtr, heap, elemOff))
 	elemSL := c.treg("al.esl")
@@ -5045,10 +5076,10 @@ func (c *codegen) storeRawStr(inst *Inst, i int, lenReg, capReg, dataReg string)
 	}
 	lg := c.treg("rsl")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 0\n", lg, slot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", lenReg, lg))
+	c.strHeaderStoreI64(lg, lenReg)
 	cg := c.treg("rsc")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 1\n", cg, slot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", capReg, cg))
+	c.strHeaderStoreI64(cg, capReg)
 	dg := c.treg("rsd")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr %%str-long, %%str-long* %s, i32 0, i32 2\n", dg, slot))
 	c.sb.WriteString(fmt.Sprintf("  store i8* %s, i8** %s\n", dataReg, dg))

@@ -78,6 +78,11 @@ c.to-str(); Unicode → 字串（UTF-8，方法）
 
 ### str — 字串操作
 
+`str` 描述符是 `{ u32 len, u32 cap, i8* data }`（64 位元下 16 字節），但
+`s.len()` / `s.len-bytes()` / `s.cap()` 及 `with-cap` / `with-len` / `with-cap-len`
+的參數與回傳值**全部仍是 `i64`**：u32 ↔ i64 的轉換由編譯器在描述符邊界完成。
+詳見 [字串：內部佈局與對外 API](../lang/str.md)。`txt` 不受此變更影響。
+
 ```no
 #{fmt-skip}
 ok = a.eq(b, n)               ; 相等比較（方法）

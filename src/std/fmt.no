@@ -717,12 +717,10 @@ fmt-int = (n i64, spec str) (out str) {
                 new-digits[i] = 48
             }
             i <- [0..dlen-v): {
-                {
 
-                    #{overflow=wrap}
-                    new-digits[pad + i] ?= digits[i]
-                }: {
-                    err -> _
+                #{overflow=wrap}
+                new-digits[pad + i] = digits[i]: {
+                    ok -> it
 
                     -> _
                 }
@@ -755,12 +753,10 @@ fmt-int = (n i64, spec str) (out str) {
         pos = 1
     }
     i <- [0..dlen-v): {
-        {
 
-            #{overflow=wrap}
-            body[pos + i] ?= digits[i]
-        }: {
-            err -> _
+        #{overflow=wrap}
+        body[pos + i] = digits[i]: {
+            ok -> it
 
             -> _
         }
@@ -861,12 +857,10 @@ fmt-uint = (u u64, spec str) (out str) {
                 new-digits[i] = 48
             }
             i <- [0..dlen): {
-                {
 
-                    #{overflow=wrap}
-                    new-digits[pad + i] ?= digits[i]
-                }: {
-                    err -> _
+                #{overflow=wrap}
+                new-digits[pad + i] = digits[i]: {
+                    ok -> it
 
                     -> _
                 }
@@ -895,12 +889,10 @@ fmt-uint = (u u64, spec str) (out str) {
         }
     }
     i <- [0..dlen): {
-        {
 
-            #{overflow=wrap}
-            body[prefix-len + i] ?= digits[i]
-        }: {
-            err -> _
+        #{overflow=wrap}
+        body[prefix-len + i] = digits[i]: {
+            ok -> it
 
             -> _
         }
@@ -954,12 +946,10 @@ fmt-f64 = (x f64, spec str) (out str) {
 
                 new-digits[0] = 43
                 i <- [0..dlen): {
-                    {
 
-                        #{overflow=wrap}
-                        new-digits[1 + i] ?= digits[i]
-                    }: {
-                        err -> _
+                    #{overflow=wrap}
+                    new-digits[1 + i] = digits[i]: {
+                        ok -> it
 
                         -> _
                     }
@@ -977,12 +967,10 @@ fmt-f64 = (x f64, spec str) (out str) {
 
                 new-digits[0] = 32
                 i <- [0..dlen): {
-                    {
 
-                        #{overflow=wrap}
-                        new-digits[1 + i] ?= digits[i]
-                    }: {
-                        err -> _
+                    #{overflow=wrap}
+                    new-digits[1 + i] = digits[i]: {
+                        ok -> it
 
                         -> _
                     }
@@ -1024,12 +1012,10 @@ fmt-f64 = (x f64, spec str) (out str) {
                 new-digits[sign-len + i] = 48
             }
             i <- [0..need): {
-                {
 
-                    #{overflow=wrap}
-                    new-digits[sign-len + pad + i] ?= digits[sign-len + i]
-                }: {
-                    err -> _
+                #{overflow=wrap}
+                new-digits[sign-len + pad + i] = digits[sign-len + i]: {
+                    ok -> it
 
                     -> _
                 }

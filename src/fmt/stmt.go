@@ -36,10 +36,19 @@ func (f *formatter) formatStatement(stmt parser.Statement) bool {
 		// 格式化時陳述 token 行號被這一行推後，會誤判「有空行」而插入空行、再被
 		// 偵測、再插入（非冪等）。hasBlankLineBetween 會略過 overflow 註解行，
 		// 正確反映「用戶究竟有無在 Doc 與陳述間留空行」。
-		// 導入語句的 Doc 註釋一律緊貼導入行：`; 說明` 與 `# std/x` 之間的空行
-		// 會讓「導入區段內不留空行」失效，且把分組註釋與它註釋的導入拆開。
+		// 導入語句的 Doc 註釋分兩種，排版不同：
+		//   - 文件頭說明段（首條語句的 Doc，例如模組說明）與導入之間固定留
+		//     一個空行（規則：導入與頂部模組註釋間距一行）；
+		//   - 導入區段內的**分組註釋**緊貼它所註釋的導入，與上一條導入之間
+		//     的空行由 formatProgram 的間隙邏輯負責——否則「導入之間不留空行」
+		//     會失效。
 		_, isUse := stmt.(*parser.UseStatement)
-		if !isUse && lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtLine) {
+		switch {
+		case isUse && !f.programDocEmitted && stmt == f.firstStmt:
+			f.write("\n") // 文件頭說明段與首條導入之間固定一空行
+		case isUse:
+			// 分組註釋：緊貼導入，不保留源碼空行。
+		case lastDocLine > 0 && f.hasBlankLineBetween(lastDocLine, stmtLine):
 			// Preserve blank line between last Doc comment and statement
 			f.write("\n") // bare blank line (no indent)
 		}

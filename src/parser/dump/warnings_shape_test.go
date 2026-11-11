@@ -90,35 +90,63 @@ func TestParserWarningsAreShapeIndependent(t *testing.T) {
 // be produced as a side effect of lowering, so "not produced at all" is the
 // natural failure mode, and it is shape-symmetric.
 //
-// The test below pins existence directly, on the corpus program that carries
-// the only two instances of this hint in 532 files (tests/match-test.no 19:9
-// and 79:9 — one option-variant case, one enum-variant case).
+// The test below pins existence directly. It used to read one corpus program
+// (tests/match-test.no, the only file carrying both hint flavours, at 19:9 and
+// 79:9). Commit ed7b5236 merged that file into tests/match.no, so the hardcoded
+// path started failing with "match-test.no did not parse" without exercising the
+// hint at all. Scan the whole corpus instead: the invariant worth pinning is that
+// BOTH halves of the diagnostic family exist and agree across parse shapes,
+// whichever file happens to host them after the next corpus reorganisation.
 
 // TestUnreachableArmHintSurvivesBothShapes pins that the `'->' arm is
 // unreachable` hint is still produced, in both parse shapes, with identical
 // text and position.
 func TestUnreachableArmHintSurvivesBothShapes(t *testing.T) {
-	const want = 2
-	perShape := map[string][]string{}
-	for _, sh := range []struct {
-		name  string
-		sugar bool
-	}{{"lowered", false}, {"sugar", true}} {
-		prog := parseCorpusFile(t, filepath.Join(corpusRoot, "match-test.no"), sh.sugar)
-		if prog == nil {
-			t.Fatalf("%s: match-test.no did not parse", sh.name)
+	if _, err := os.Stat(corpusRoot); err != nil {
+		t.Skipf("corpus not found at %s: %v", corpusRoot, err)
+	}
+
+	var paths []string
+	err := filepath.WalkDir(corpusRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".no") {
+			return nil
 		}
-		var got []string
-		for _, w := range prog.Warnings {
+		paths = append(paths, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", corpusRoot, err)
+	}
+	sort.Strings(paths)
+	if len(paths) < 200 {
+		t.Fatalf("only %d corpus files; the scan would be vacuous", len(paths))
+	}
+
+	// Compare file by file: a program that fails to parse in either shape is
+	// skipped in BOTH, so a parse failure cannot masquerade as a diagnostic
+	// missing on just one side.
+	perShape := map[string][]string{}
+	for _, path := range paths {
+		lowered := parseCorpusFile(t, path, false)
+		sugar := parseCorpusFile(t, path, true)
+		if lowered == nil || sugar == nil {
+			continue
+		}
+		for _, w := range lowered.Warnings {
 			if strings.Contains(w, "arm is unreachable") {
-				got = append(got, w)
+				perShape["lowered"] = append(perShape["lowered"], w)
 			}
 		}
-		if len(got) != want {
-			t.Errorf("%s: expected %d 'arm is unreachable' hints, got %d (all warnings: %v)",
-				sh.name, want, len(got), prog.Warnings)
+		for _, w := range sugar.Warnings {
+			if strings.Contains(w, "arm is unreachable") {
+				perShape["sugar"] = append(perShape["sugar"], w)
+			}
 		}
-		perShape[sh.name] = got
+	}
+
+	if len(perShape["lowered"]) < 2 {
+		t.Errorf("expected at least 2 'arm is unreachable' hints in the corpus, got %d (%v)",
+			len(perShape["lowered"]), perShape["lowered"])
 	}
 	// Both halves of the message family must be present: the option-variant
 	// case (ok/err/nil listed) and the enum-variant case.
@@ -135,6 +163,8 @@ func TestUnreachableArmHintSurvivesBothShapes(t *testing.T) {
 		t.Errorf("the hint differs between shapes:\n  lowered: %v\n  sugar:   %v",
 			perShape["lowered"], perShape["sugar"])
 	}
+	t.Logf("found %d 'arm is unreachable' hints across %d corpus programs, identical under both shapes",
+		len(perShape["lowered"]), len(paths))
 }
 
 func parseCorpusFile(t *testing.T, path string, sugar bool) *parser.Program {

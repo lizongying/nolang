@@ -512,7 +512,9 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             }
         }
     }
-    req-str = req.to-str()
+
+    ; SOCKS5 握手是二進位位元組流，必須 1:1 拷貝（見 §5.2 #88）。
+    req-str = req.to-bytes-str()
 
     #{overflow=wrap}
     written = net.net-send(fd, req-str, req.len() + 1)
@@ -617,7 +619,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
                 }
             }
         }
-        auth-str = auth-req.to-str()
+        auth-str = auth-req.to-bytes-str()
         written = net.net-send(fd, auth-str, pos)
         written < 0 -> {
             fs.close(fd)
@@ -789,7 +791,7 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
             ->
         }
     }
-    conn-str = conn-req.to-str()
+    conn-str = conn-req.to-bytes-str()
     written = net.net-send(fd, conn-str, pos)
     written < 0 -> {
         fs.close(fd)

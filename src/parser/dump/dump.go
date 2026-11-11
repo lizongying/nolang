@@ -182,6 +182,16 @@ func (d *dumper) node(node parser.Node, depth int) {
 
 	// ── statements ───────────────────────────────────────────────────────────
 
+	case *parser.EmptyStatement:
+		// `...` placeholder statement. ASTToHIR deliberately drops it, but the
+		// dump walker must still show it: every node that reaches the corpus has
+		// to be dumped, even a no-op, or the completeness gates see
+		// `<unknown *parser.EmptyStatement>`.  Keep the header field-free:
+		// Token.Literal is always "..." (no information), and the selfhost
+		// tape has no string slot for a lexer.Token field.
+		fmt.Fprintf(&d.buf, "%sEmptyStatement\n", indent(depth))
+		d.comments(n, depth+1)
+
 	case *parser.UseStatement:
 		fmt.Fprintf(&d.buf, "%sUseStatement{%s}\n", indent(depth),
 			fields(kv("path", n.Path), kv("function", n.Function), kv("alias", n.Alias),

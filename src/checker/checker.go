@@ -3856,34 +3856,19 @@ var overflowArithOps = map[string]bool{
 	"+": true, "-": true, "*": true, "/": true,
 }
 
-// overflowSite 標記「這個整數運算處在哪一類位置」，決定訊息裡哪幾種補救寫得出來。
-// 位置不同，可用的語法就不同——錯誤的建議會讓使用者去寫編不過或毫無作用的東西。
-type overflowSite int
-
-const (
-	// overflowSiteBound：運算式是陳述的「值根」（`x = a + b`、裸表達式陳述、
-	// `?=` 右式）。lowering 的 capture pass 會把整條右值鏈判成 `?T`，實測
-	// `x = (a + b) * c` 產生兩條 `llvm.sadd/smul.with.overflow`，加 `#{overflow=wrap}`
-	// 後歸零。三種補救（`?T` 接收 / match 解包 / `_ =` 丟棄）在此全部成立。
-	overflowSiteBound overflowSite = iota
-
-	// overflowSiteOperand：運算式是索引運算元（`arr[a + b]`）。值由外層 `[...]`
-	// 直接消費，型別必須是純整數，故 `?T` 接收 / match 解包 / `_ =` 丟棄三種
-	// 補救都與它無關（那是值根本身的話題，見 overflowSiteBound 的訊息）。此處
-	// 只剩一件事可講：**給這條陳述加 `#{overflow = …}` 註解聲明溢出行為**。
-	//
-	// 註解是**逐語句**生效的：`#{overflow=wrap}` 寫在上一行
-	// （`sb2 = handshake[pos + i]`）只覆蓋那一條，管不到下一條的 `arr[8 + i]`；
-	// 只有寫在 `arr[8 + i]` 所屬那條陳述（或其所在區塊／函式的註解位置）上才生
-	// 效。缺註解 ⇒ 報，且訊息只教註解。
-	//
-	// 與 option match 的關係：`arr[a + b]: { ok -> … -> _ }` 會被
-	// resolveSubjectMatch 提升成 `__idx_L_C ?T`，下標溢位短路進同一個失敗臂
-	// ——那是**已經被消費**、不會崩不會靜默算錯，但失敗臂（常見 `-> _`）會把
-	// 這筆資料默默丟掉，使用者從未聲明「我要這個行為」。所以本 lint 照樣報，
-	// 只是報的是「請加註解聲明」。
-	overflowSiteOperand
-)
+// 整數算術在**任何**位置都可能溢出：值根（`x = a + b`）、呼叫實參（`f(a + 1)`）、
+// match 臂、索引運算元（`arr[a + b]`）都一樣。所以 ovf-int-default 只發**一條**
+// 訊息：給擁有它的那條陳述加 `#{overflow = …}` 註解，指定溢出時的取值。
+// option 的疊加 / 短路 / 解包是另一條軸，不該由這條 hint 教；按語法位置切成
+// 「值根版三選一 / 索引版只教註解」是錯的口徑（2026-11-11 已統一）。
+//
+// 註解**逐語句**生效：`#{overflow=wrap}` 寫在上一行 `sb2 = handshake[pos + i]`
+// 只覆蓋那一條，管不到下一條的 `seed[8 + i]`。
+//
+// 與 option match 的關係：`arr[a + b]: { ok -> … -> _ }` 會被 resolveSubjectMatch
+// 提升成 `__idx_L_C ?T`，下標溢位短路進同一個失敗臂 —— 那是**已經被消費**，
+// 但失敗臂（常見 `-> _`）會把資料默默丟掉，使用者從未聲明要這個行為，
+// 所以本 lint 照樣報、照樣只教加註解。
 
 // walkExprForIntOverflow 遞迴收集表達式內所有「未標註且可能溢出的整數運算」InfixExpression。
 // 規則（與 codegen 預設 option-on-overflow 語意一致）：
@@ -3891,12 +3876,9 @@ const (
 //     非整數（str / float 等）則跳過（該運算非整數算術）。
 //   - /：僅當至少一側為有號整數時提示（無號除法永不溢出；有號除法 INT_MIN / -1 溢出）。
 //
-// site 沿子樹向下傳遞（索引運算元整棵子樹都算 operand 位置），由呼叫端決定
-// emit 該用哪一版訊息；理由見 overflowSite。
-//
 // line 為包容此表達式的「葉」語句所在行（插入註解的位置）；sem 用於遞迴進入 if
 // 分支區塊時對其中的子語句做註解感知掃描。
-func walkExprForIntOverflow(e parser.Expression, site overflowSite, file string, line int, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int, site overflowSite)) {
+func walkExprForIntOverflow(e parser.Expression, file string, line int, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int)) {
 	if e == nil {
 		return
 	}
@@ -3916,21 +3898,21 @@ func walkExprForIntOverflow(e parser.Expression, site overflowSite, file string,
 					prompt = true
 				}
 				if prompt {
-					emit(file, line, x.Token.Column, site)
+					emit(file, line, x.Token.Column)
 				}
 			}
 		}
-		walkExprForIntOverflow(x.Left, site, file, line, sem, declared, funcTypes, emit)
-		walkExprForIntOverflow(x.Right, site, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Right, file, line, sem, declared, funcTypes, emit)
 	case *parser.PrefixExpression:
-		walkExprForIntOverflow(x.Right, site, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Right, file, line, sem, declared, funcTypes, emit)
 	case *parser.CallExpression:
-		walkExprForIntOverflow(x.Function, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Function, file, line, sem, declared, funcTypes, emit)
 		for _, a := range x.Arguments {
-			walkExprForIntOverflow(a, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+			walkExprForIntOverflow(a, file, line, sem, declared, funcTypes, emit)
 		}
 	case *parser.IfExpression:
-		walkExprForIntOverflow(x.Condition, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Condition, file, line, sem, declared, funcTypes, emit)
 		if x.Consequence != nil {
 			for _, s := range x.Consequence.Statements {
 				walkStmtForOverflow(s, file, sem, declared, funcTypes, emit)
@@ -3943,20 +3925,20 @@ func walkExprForIntOverflow(e parser.Expression, site overflowSite, file string,
 		}
 	case *parser.IndexExpression:
 		// 只有下標位置是「被 `[...]` 消費」的純整數上下文；容器本身照舊。
-		walkExprForIntOverflow(x.Left, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
-		walkExprForIntOverflow(x.Index, overflowSiteOperand, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Index, file, line, sem, declared, funcTypes, emit)
 	case *parser.AssignExpression:
-		walkExprForIntOverflow(x.Left, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
-		walkExprForIntOverflow(x.Value, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Left, file, line, sem, declared, funcTypes, emit)
+		walkExprForIntOverflow(x.Value, file, line, sem, declared, funcTypes, emit)
 	case *parser.ArrayLiteral:
 		for _, el := range x.Elements {
-			walkExprForIntOverflow(el, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+			walkExprForIntOverflow(el, file, line, sem, declared, funcTypes, emit)
 		}
 	case *parser.SurfaceMatch:
 		// S1：臂體與臂條件內的整數運算（`-> r = a - b`）在糖形態下否則不可見。
 		// 見 sugar_walk.go。
 		exprFn := func(sub parser.Expression) {
-			walkExprForIntOverflow(sub, overflowSiteBound, file, line, sem, declared, funcTypes, emit)
+			walkExprForIntOverflow(sub, file, line, sem, declared, funcTypes, emit)
 		}
 		stmtFn := func(sub parser.Statement) {
 			walkStmtForOverflow(sub, file, sem, declared, funcTypes, emit)
@@ -3978,7 +3960,7 @@ func walkExprForIntOverflow(e parser.Expression, site overflowSite, file string,
 // 只有頂層語句被 SetSourceFile 標記，嵌套語句的 SourceFile 為空；若在此處取空值，
 // RunAllLints 的行號範圍回退歸因會把不同模組的同名行號張冠李戴（例如把 str.no 的
 // 整數運算算到 byte.no 頭上）。節點若確有自身 SourceFile，則以該值覆蓋。
-func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int, site overflowSite)) {
+func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.SemanticContext, declared, funcTypes map[string]string, emit func(file string, line, col int)) {
 	if stmt == nil {
 		return
 	}
@@ -4005,7 +3987,7 @@ func walkStmtForOverflow(stmt parser.Statement, file string, sem *parser.Semanti
 	}
 	emitSubs := func(e parser.Expression) {
 		if e != nil {
-			walkExprForIntOverflow(e, overflowSiteBound, file, stmt.Pos().Line, sem, declared, funcTypes, emit)
+			walkExprForIntOverflow(e, file, stmt.Pos().Line, sem, declared, funcTypes, emit)
 		}
 	}
 	switch s := stmt.(type) {
@@ -4271,12 +4253,24 @@ func iterElemType(ie *parser.IterationExpr, varTypes map[string]string, selfType
 // 非 let 的頂層陳述（for / 區塊）另行遞迴收集其內部型別，使頂層 `for ch <- s`
 // 的迭代變數也能帶上 char 型別（見 iterElemType），避免字元算術被誤報。
 // view 語意與 collectFuncDeclared 相同：nil=legacy、非 nil 經 declTypeOf 讀 THIR。
-func collectTopLevelLets(program *parser.Program, funcTypes map[string]string, view *THIRView) map[string]string {
+//
+// includeFuncBodies=false 時略過 FunctionDefinition：函式體的 let 由
+// collectFuncDeclared 在**各自函式作用域**收集，本來就不該進頂層表。`no vet`
+// 會把 std 合併進同一 program，若把它們也收進來，使用者頂層語句
+// `c = f(a + 1)` 會撞上 std 函式裡的 `c ?= ...`（合成 `c ?T`），被
+// walkStmtForOverflow 的「option 重綁」豁免整條語句 ⇒ 漏報 xmicjezl
+// （2026-11-11 實測：只有 `c` 不報，`b/d/e/i/n/s/t/x` 全報）。
+// 這是 runIntOverflowCore 傳入的作用域限定；其它消費方（fmt 的
+// StatementsWithIntOverflow / THIR 的 collectExprTypes）沿用原扁平表。
+func collectTopLevelLets(program *parser.Program, funcTypes map[string]string, view *THIRView, includeFuncBodies bool) map[string]string {
 	types := map[string]string{}
 	if program == nil {
 		return types
 	}
 	for _, stmt := range program.Statements {
+		if _, isFn := stmt.(*parser.FunctionDefinition); isFn && !includeFuncBodies {
+			continue
+		}
 		if ls, ok := stmt.(*parser.LetStatement); ok {
 			if ls.Name != nil && ls.Type != nil {
 				if nt, ok := ls.Type.(*parser.NamedType); ok {
@@ -4322,20 +4316,13 @@ func runIntOverflowCore(program *parser.Program, view *THIRView) []ValidateResul
 	funcTypes := snapshotValidationFuncTypes()
 	// 頂層 let 型別表對整棵 program 不變，提到迴圈外算一次即可（原本逐個頂層
 	// 非函式語句重算，是 O(頂層語句 × 全部 let) 的 blowup）。
-	topLevelDeclared := collectTopLevelLets(program, funcTypes, view)
+	topLevelDeclared := collectTopLevelLets(program, funcTypes, view, false)
 	var results []ValidateResult
-	emit := func(file string, line, col int, site overflowSite) {
-		msg := ""
-		if site == overflowSiteOperand {
-			// 索引運算元：值被外層 `[...]` 直接消費，型別必須是純整數，
-			// 所以 `?T` 接收 / match 解包 / `_ =` 丟棄三種補救跟它無關（那是
-			// 值根本身的話題）。此處只剩一件事可教：**加 `#{overflow = …}`
-			// 註解聲明溢出行為**。註解逐語句生效，寫在鄰近語句上管不到這裡
-			// （見 overflowSiteOperand 的型別註釋）。
-			msg = i18n.T("ovfidxop", "integer `a OP b` is the index of `[...]` here and carries no `#{overflow = ...}` annotation. The annotation is per statement, so one written on a neighbouring statement does not cover this one. Annotate the statement that owns it to state the value taken on overflow: `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`.")
-		} else {
-			msg = i18n.T("xmicjezl", "integer `a OP b` returns option<T> on overflow by default, so the result type is always `?T`. Pick one of three: (1) receive it as `?T` (`a ?i64 = x + y`, or just `a = x + y` and let the compiler infer an option), then propagate with `?=` or unwrap with a two-arm match (`v = a: {` newline `ok -> it` / `-> 0`); (2) annotate `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`, to choose the value taken on failure - note the annotation only changes that value, the result is still `?T` and still has to be unwrapped; (3) discard it explicitly with `_ = x + y`.")
-		}
+	emit := func(file string, line, col int) {
+		// 所有站點共用同一條訊息：整數算術缺 `#{overflow = …}` 註解就報，
+		// 只教「加註解指定溢位取值」。option 的接收 / 上拋 / match 解包是
+		// 另一條軸，即便該站點已被 option match 消費也不影響這條 hint。
+		msg := i18n.T("xmicjezl", "integer `a OP b` has no `#{overflow = ...}` annotation, so its overflow behaviour is undeclared. Annotate the statement that owns it to state the value taken on overflow: `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`. The annotation is per statement, so one written on a neighbouring statement does not cover this one.")
 		results = append(results, ValidateResult{
 			File:    file,
 			Line:    line,
@@ -4395,7 +4382,7 @@ func StatementsWithIntOverflow(program *parser.Program) map[parser.Statement]boo
 	relevant := map[parser.Statement]bool{}
 	// 快照一次供闭包内 collectFuncDeclared 与主迴圈共用（同 ValidateIntOverflow）。
 	funcTypes := snapshotValidationFuncTypes()
-	topLevelDeclared := collectTopLevelLets(program, funcTypes, nil) // StatementsWithIntOverflow 非影子對拍入口：沿用 legacy 收集
+	topLevelDeclared := collectTopLevelLets(program, funcTypes, nil, true) // StatementsWithIntOverflow 非影子對拍入口：沿用 legacy 扁平表
 
 	// 先宣告兩個遞迴閉包變數（互相參考），再於下方指派，避免前向參考未定義。
 	var exprHasIntOverflow func(e parser.Expression, declared map[string]string, selfType string) bool
@@ -5945,7 +5932,10 @@ func runUnhandledOverflowCore(program *parser.Program, mainFile string, view *TH
 				// 對 nil sem 回 nil ⇒ sem==nil 時條件為真、照舊判定，不改變無副表情形。AST
 				// 軌下被捕獲語句已被替換，護欄恆不觸發 ⇒ AST 軌零變化。
 				if !explicitOption && !discarded && sem.CaptureFactOf(s) == nil && isDirectOverflowValue(s.Value, varTypes, selfType) {
-					report(s, i18n.T("8t1jaj02", "integer `a OP b` returns option<T> on overflow by default, so this binds `%s` to a `?T`. %s If you would rather wrap around on overflow than report an error, add `#{overflow = wrap}` - note the annotation only changes the value taken on overflow, the result is still `?T`.", s.Name.Value, optionUnwrapRecipe(s.Name.Value)), curFile)
+					// 與 ovf-int-default 同一口徑：缺註解就只教加註解。option 的
+					// 接收 / 上拋 / match 解包屬另一條軸，由 optunuse 負責攔截，
+					// 不在這條 nolang-overflow HINT 裡做解包教學。
+					report(s, i18n.T("8t1jaj02", "integer `a OP b` has no `#{overflow = ...}` annotation, so `%s` is bound to a `?T` with undeclared overflow behaviour. Annotate the statement that owns it to state the value taken on overflow: `#{overflow = wrap}` (silent wraparound) / `clamp0` (underflow to zero) / `min` / `max` / `saturate` (saturating clamp), or a type-prefixed form such as `#{overflow = u8-max}`. The annotation is per statement; consuming the option is a separate concern.", s.Name.Value), curFile)
 				}
 			}
 			if s.Value != nil {

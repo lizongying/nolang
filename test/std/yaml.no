@@ -505,6 +505,7 @@ t-error-and-nohang = () {
         err -> runner.is-true(true, 'unterminated dq => err')
     }
 }
+
 ; 多文檔：parse-all / doc-count / doc(i) / node-count / to-json-all / source-of / valid / error
 t-multidoc = () {
     src = 'a: 1
@@ -772,8 +773,13 @@ t-errors = () {
 
 ; 內部輔助函式直測：索引/十六進制/數字掃描/型別推斷/轉義/引號
 t-helper-prims = () {
-    eq-str(yaml.yaml-str-at(['a', 'bb'], 1), 'bb', 'str-at 1')
-    eq-str(yaml.yaml-str-at(['a'], 5), '', 'str-at oob')
+    eq-str(yaml.yaml-str-at([
+        'a',
+        'bb',
+    ], 1), 'bb', 'str-at 1')
+    eq-str(yaml.yaml-str-at([
+        'a',
+    ], 5), '', 'str-at oob')
     runner.eq(yaml.yaml-hex-digit(48), 0, 'hex-digit 0')
     runner.eq(yaml.yaml-hex-digit(70), 15, 'hex-digit F')
     runner.eq(yaml.yaml-hex-digit(97), 10, 'hex-digit a')
@@ -873,6 +879,671 @@ list:
     }
 }
 
+; ══ 解析器內部（yaml-parser，白盒） ═══════════════════════════════════
+;
+; yaml-parser 是 std 的公開結構體（`yaml.yaml-parser`），用戶碼可以直接造出一個
+; 解析器並逐個方法驅動它，因此這 47 個方法屬於**可測 API 面**，而不是只能靠
+; `yaml.parse` 間接執行的實作細節。實測有兩個必須遵守的坑：
+;
+;   1) 變數必須寫型別標註：`p yaml.yaml-parser = yaml.yaml-parser{…}`。
+;      寫成 `p = yaml.yaml-parser{…}` 時推斷出的不是名義型別，調方法會在 MIR
+;      報 `unknown callee yaml.yaml-parser.cur [4qhyyund]`，而 `no vet` 不報。
+;   2) 結構體字面量的欄位分隔符是**冒號**：`src: 'x'`。寫成 `=` 時 checker
+;      照收，MIR 卻對使用者結構體崩 `NoVal`、對 std 結構體靜默給零值。
+
+; 造一個已裝載 src 的解析器（pos=0 / line=1）
+mk-p = (src str) (p yaml.yaml-parser) {
+    p = yaml.yaml-parser{
+        src: src
+        n: src.len-bytes()
+        pos: 0
+        line: 1
+        nodes: []
+        anchor-names: []
+        anchor-ids: []
+        err: ''
+        failed: false
+    }
+}
+
+; 取 []i64 的第 i 個元素（越界回 -1）
+i-at = (a []i64, i i64) (v i64) {
+    v = a[i]: {
+        ok -> it
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 用給定的 kind/keys/kids 造一個節點並追加進池，返回池索引
+mk-node = (p yaml.yaml-parser, kind i64, keys []i64, kids []i64) (idx i64) {
+    nd = yaml.yaml-node{
+        kind: kind
+        style: 6
+        tag: ''
+        anchor: ''
+        text: ''
+        ival: 0
+        fval: 0.0
+        bval: false
+        keys: keys
+        kids: kids
+        line: 1
+        col: 0
+    }
+    idx = p.push-node(nd)
+}
+
+; 池中第 i 個節點的 kind（越界回 -1）
+ndk = (p yaml.yaml-parser, i i64) (k i64) {
+    k = p.nodes[i]: {
+        ok -> it.kind
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的標量文本（越界回 '<oob>'）
+ndt = (p yaml.yaml-parser, i i64) (t str) {
+    t = p.nodes[i]: {
+        ok -> it.text
+
+        nil -> '<oob>'
+
+        err -> '<oob>'
+    }
+}
+
+; 池中第 i 個節點的 style（越界回 -1）
+nds = (p yaml.yaml-parser, i i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> it.style
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 ival（越界回 -1）
+ndi = (p yaml.yaml-parser, i i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> it.ival
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 bval 三態（1=true / 0=false / -1=越界）
+ndb = (p yaml.yaml-parser, i i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> {
+            it.bval -> 1
+
+            -> 0
+        }
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 kids 長度（越界回 -1）
+ndkn = (p yaml.yaml-parser, i i64) (n i64) {
+    n = p.nodes[i]: {
+        ok -> it.kids.len()
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的 keys 長度（越界回 -1）
+ndkm = (p yaml.yaml-parser, i i64) (n i64) {
+    n = p.nodes[i]: {
+        ok -> it.keys.len()
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 池中第 i 個節點的第 j 個 kids 索引（越界回 -1）
+ndkid = (p yaml.yaml-parser, i i64, j i64) (v i64) {
+    v = p.nodes[i]: {
+        ok -> {
+            sub = it.kids[j]: {
+                ok -> it
+
+                nil -> -1
+
+                err -> -1
+            }
+            sub
+        }
+
+        nil -> -1
+
+        err -> -1
+    }
+}
+
+; 字符級原語：byte-at / cur / at / eof / advance / newline / at-eol /
+;             skip-spaces / skip-to-eol / line-end-of / line-start-of / indent-at
+t-p-char = () {
+
+    ; 'ab  cd\n  ef'：0a 1b 2sp 3sp 4c 5d 6\n 7sp 8sp 9e 10f（n=11）
+    p = mk-p('ab  cd
+  ef')
+    runner.eq(p.byte-at(0), 97, 'byte-at 0')
+    runner.eq(p.byte-at(1), 98, 'byte-at 1')
+    runner.eq(p.byte-at(-1), 0, 'byte-at 负数越界')
+    runner.eq(p.byte-at(11), 0, 'byte-at 尾部越界')
+    runner.eq(p.cur(), 97, 'cur 在 a')
+    runner.eq(p.at(1), 98, 'at 1 是 b')
+    runner.eq(p.at(2), 32, 'at 2 是空格')
+    runner.eq(p.at(-1), 0, 'at 负偏移越界')
+    runner.is-false(p.eof(), '未到 eof')
+    p.advance()
+    runner.eq(p.pos, 1, 'advance 前进一字节')
+    runner.eq(p.cur(), 98, 'advance 后 cur 是 b')
+    runner.is-false(p.at-eol(), 'b 不在行尾')
+
+    ; skip-spaces 只从当前位置往后吃空格：b 不是空格时原地不动
+    p.skip-spaces()
+    runner.eq(p.pos, 1, 'skip-spaces 在非空格处不动')
+    p.pos = 2
+    p.skip-spaces()
+    runner.eq(p.pos, 4, 'skip-spaces 停在 c')
+    runner.eq(p.cur(), 99, 'skip-spaces 后 cur 是 c')
+    runner.eq(p.line-end-of(0), 6, 'line-end-of 0 指向换行')
+    runner.eq(p.line-start-of(9), 7, 'line-start-of 9 指向第二行首')
+    runner.eq(p.line-start-of(0), 0, 'line-start-of 0 仍是 0')
+    runner.eq(p.line, 1, '尚未换行时 line=1')
+    p.pos = 6
+    runner.is-true(p.at-eol(), '\\n 处 at-eol')
+    yes = p.newline()
+    runner.is-true(yes, 'newline 消费了 \\n')
+    runner.eq(p.pos, 7, 'newline 后 pos=7')
+    runner.eq(p.line, 2, 'newline 后 line=2')
+    runner.is-false(p.newline(), '行首不是换行')
+    runner.eq(p.pos, 7, '未消费换行时 pos 不变')
+    runner.eq(p.indent-at(), 2, 'indent-at 第二行缩进 2')
+    runner.eq(p.pos, 9, 'indent-at 停在行首非空字节')
+    p.pos = 11
+    runner.is-true(p.eof(), 'pos==n 即 eof')
+    runner.is-true(p.at-eol(), 'eof 也算行尾')
+
+    ; \r\n 也要吃两个字节，单独一个 \r 也算一次换行
+    cr = mk-p('a\r
+b')
+    cr.pos = 1
+    runner.is-true(cr.newline(), 'CRLF newline 成立')
+    runner.eq(cr.pos, 3, 'CRLF 吃掉两个字节')
+    runner.eq(cr.line, 2, 'CRLF 后 line=2')
+
+    ; skip-to-eol：跳过行尾空格并吞掉整段 # 注释
+    c = mk-p('ab # c
+x')
+    c.pos = 2
+    c.skip-to-eol()
+    runner.eq(c.pos, 6, 'skip-to-eol 停在换行前')
+    runner.eq(c.cur(), 10, 'skip-to-eol 停在 \\n')
+
+    ; 非注释行：skip-to-eol 只跳空格
+    d = mk-p('ab   
+x')
+    d.pos = 2
+    d.skip-to-eol()
+    runner.eq(d.pos, 5, '无注释时只吃空格')
+}
+
+; 失败记录：fail / fail-at
+t-p-fail = () {
+    p = mk-p('abc')
+    runner.is-false(p.failed, '初始未失败')
+    p.fail('boom')
+    runner.is-true(p.failed, 'fail 置位')
+    eq-str(p.err, 'boom', 'fail 记录消息')
+    p.fail('again')
+    eq-str(p.err, 'boom', 'fail 只保留第一条')
+
+    q = mk-p('ab
+ cd')
+    q.pos = 4
+    q.line = 2
+    q.fail-at('bad')
+    eq-str(q.err, 'line 2, column 2: bad', 'fail-at 附加行列')
+    runner.is-true(q.failed, 'fail-at 置位')
+}
+
+; 节点池：push-node / push-null / push-scalar / set-props / apply-tag-at /
+;         register-anchor / anchor-id
+t-p-nodes = () {
+    p = mk-p('')
+    i0 = p.push-null()
+    runner.eq(i0, 0, 'push-null 返回 0')
+    runner.eq(p.nodes.len(), 1, 'push-null 追加一个节点')
+    runner.eq(ndk(p, 0), 0, 'push-null 的 kind 是 NULL')
+
+    i1 = p.push-scalar('42', 0, '', '')
+    runner.eq(i1, 1, 'push-scalar 返回 1')
+    runner.eq(ndk(p, 1), 2, 'plain 42 推断为 INT')
+    runner.eq(ndi(p, 1), 42, 'plain 42 的 ival=42')
+
+    i2 = p.push-scalar('true', 0, '', '')
+    runner.eq(ndk(p, 2), 1, 'plain true 推断为 BOOL')
+    runner.eq(ndb(p, 2), 1, 'plain true 的 bval=true')
+
+    i3 = p.push-scalar('hi', 1, '', '')
+    runner.eq(ndk(p, 3), 4, '单引号标量恒为 STR')
+    runner.eq(nds(p, 3), 1, 'style=SINGLE')
+
+    ; 显式标签优先于 core schema 推断：'123' 加 !!str 后必须变成 STR 且 ival 归零
+    i4 = p.push-scalar('123', 0, '!!str', '')
+    runner.eq(ndk(p, 4), 4, '!!str 123 改判为 STR')
+    runner.eq(ndi(p, 4), 0, '!!str 123 的 ival 归零')
+
+    ks []i64 = with-len(0)
+    vs []i64 = with-len(0)
+    nd = yaml.yaml-node{
+        kind: 4
+        style: 0
+        tag: ''
+        anchor: ''
+        text: 'zz'
+        ival: 0
+        fval: 0.0
+        bval: false
+        keys: ks
+        kids: vs
+        line: 2
+        col: 0
+    }
+    i5 = p.push-node(nd)
+    runner.eq(i5, 5, 'push-node 返回 5')
+    eq-str(ndt(p, 5), 'zz', 'push-node 保留文本')
+
+    ; set-props：写 tag/anchor、登记锚点，并把标签作用到 kind 上
+    p.set-props(i1, '!!str', 'anc')
+    eq-str(ndt(p, 1), '42', 'set-props 不改文本')
+    runner.eq(ndk(p, 1), 4, 'set-props 的 !!str 生效')
+    runner.eq(p.anchor-id('anc'), 1, 'set-props 登记了锚点')
+    runner.eq(p.anchor-names.len(), 1, '锚点表长度 1')
+
+    p.register-anchor('b', 7)
+    runner.eq(p.anchor-id('b'), 7, 'register-anchor 直接登记')
+    runner.eq(p.anchor-id('nope'), -1, '未登记锚点回 -1')
+
+    ; apply-tag-at 越界不崩、不增节点
+    before = p.nodes.len()
+    p.apply-tag-at(999)
+    runner.eq(p.nodes.len(), before, 'apply-tag-at 越界无副作用')
+}
+
+; 裸 token / 标签 / 属性前缀 / 结构探测 / 空行与行内容
+t-p-tokens = () {
+    t1 = mk-p('bold rest')
+    eq-str(t1.read-token(), 'bold', 'read-token 停在空格')
+    runner.eq(t1.pos, 4, 'read-token 消费到空格')
+
+    t2 = mk-p(',x')
+    eq-str(t2.read-token(), '', '以指示符开头读到空串')
+
+    t3 = mk-p('a]b')
+    eq-str(t3.read-token(), 'a', 'read-token 停在 ]')
+
+    g1 = mk-p('!!str x')
+    eq-str(g1.read-tag(), '!!str', 'read-tag 读 !!str')
+
+    g2 = mk-p('! x')
+    eq-str(g2.read-tag(), '!', 'read-tag 裸 !')
+
+    g3 = mk-p('!<tag:yaml.org,2002:int> 7')
+    eq-str(g3.read-tag(), '!<tag:yaml.org,2002:int>', 'read-tag verbatim')
+
+    pr = mk-p('&a1 !!str rest')
+    tg, an = pr.parse-props()
+    eq-str(an, 'a1', 'parse-props 读到锚点')
+    eq-str(tg, '!!str', 'parse-props 读到标签')
+    eq-str(pr.src.slice-bytes(pr.pos, pr.n), 'rest', 'parse-props 停在值前')
+
+    pr2 = mk-p('!!str &a2 rest')
+    tg2, an2 = pr2.parse-props()
+    eq-str(tg2, '!!str', 'parse-props 顺序无关（标签在前）')
+    eq-str(an2, 'a2', 'parse-props 顺序无关（锚点在后）')
+
+    d1 = mk-p('- x')
+    runner.is-true(d1.is-seq-dash(), '- 加空格是序列项')
+    d2 = mk-p('-')
+    runner.is-true(d2.is-seq-dash(), '行尾孤 - 也是序列项')
+    d3 = mk-p('-x')
+    runner.is-false(d3.is-seq-dash(), '-x 不是序列项')
+    d4 = mk-p('x')
+    runner.is-false(d4.is-seq-dash(), '普通字符不是序列项')
+
+    m1 = mk-p('a: b')
+    runner.is-true(m1.looks-like-map-entry(), 'a: b 是映射条目')
+    m2 = mk-p('a:b')
+    runner.is-false(m2.looks-like-map-entry(), 'a:b 不是映射条目')
+    m3 = mk-p('? k')
+    runner.is-true(m3.looks-like-map-entry(), '显式键 ? 是映射条目')
+    m4 = mk-p('abc')
+    runner.is-false(m4.looks-like-map-entry(), '纯标量不是映射条目')
+
+    ; '\n\n  # c\nx'：跳过两个空行与一整行注释，停在 x
+    s1 = mk-p('
+
+  # c
+x')
+
+    s1.skip-blank-lines()
+    runner.eq(s1.pos, 8, 'skip-blank-lines 停在 x')
+    runner.eq(s1.line, 4, 'skip-blank-lines 推进到第 4 行')
+
+    ; 'abc  # c\nx'：行内容去尾空白与注释，并跳到行尾
+    r1 = mk-p('abc  # c
+x')
+    eq-str(r1.read-line-content(), 'abc', 'read-line-content 去注释')
+    runner.eq(r1.pos, 8, 'read-line-content 停在换行')
+
+    r2 = mk-p('  pad  ')
+    eq-str(r2.read-line-content(), 'pad', 'read-line-content 双向 trim')
+}
+
+; 标量解析：parse-plain / parse-single / parse-double / parse-alias / parse-block-scalar
+t-p-scalars = () {
+    p = mk-p('hello world')
+    i = p.parse-plain(0, false, false)
+    eq-str(ndt(p, i), 'hello world', 'plain 整行')
+    runner.eq(ndk(p, i), 4, 'plain 文本推断为 STR')
+    runner.eq(p.pos, 11, 'plain 消费到行尾')
+
+    k = mk-p('k: v')
+    ik = k.parse-plain(0, true, false)
+    eq-str(ndt(k, ik), 'k', 'key-mode 在 : 处终止')
+    runner.eq(k.pos, 1, 'key-mode 停在冒号')
+
+    f = mk-p('abc,def')
+    iff = f.parse-plain(0, false, true)
+    eq-str(ndt(f, iff), 'abc', 'flow 上下文在 , 处终止')
+
+    s = mk-p('\'a\'\'b\'')
+    is = s.parse-single()
+    eq-str(ndt(s, is), 'a\'b', '单引号内的两个引号解成一个')
+    runner.eq(nds(s, is), 1, '单引号节点 style=SINGLE')
+    runner.eq(ndk(s, is), 4, '单引号节点恒为 STR')
+
+    su = mk-p('\'abc')
+    iu = su.parse-single()
+    runner.is-true(su.failed, '未闭合单引号报错')
+    eq-str(ndt(su, iu), 'abc', '未闭合时仍保留已读内容')
+
+    ; 双引号里直接换行会被折成一个空格（YAML 折叠规则）
+    d = mk-p('"a
+b"')
+    id = d.parse-double()
+    eq-str(ndt(d, id), 'a b', '双引号内的裸换行折成空格')
+    runner.eq(nds(d, id), 2, '双引号节点 style=DOUBLE')
+
+    ; 转义 \\n 才产出真正的换行
+    de2 = mk-p('"a\\nb"')
+    ide2 = de2.parse-double()
+    eq-str(ndt(de2, ide2), 'a
+b', '转义 \\n 解成换行')
+
+    du = mk-p('"abc')
+    idu = d.push-null()
+    du.parse-double()
+    runner.is-true(du.failed, '未闭合双引号报错')
+
+    de = mk-p('"a\\qb"')
+    de.parse-double()
+    runner.is-true(de.failed, '非法转义报错')
+
+    ; 别名：*name 复制锚点节点的内容，style 标成 ALIAS
+    a = mk-p('*a1')
+    ai = a.push-scalar('42', 0, '', '')
+    a.register-anchor('a1', ai)
+    aj = a.parse-alias()
+    runner.eq(aj, 1, 'parse-alias 追加新节点')
+    eq-str(ndt(a, aj), '42', '别名复制原文本')
+    runner.eq(nds(a, aj), 5, '别名节点 style=ALIAS')
+    runner.eq(ndk(a, aj), 2, '别名复制 kind')
+
+    au = mk-p('*zz')
+    aug = au.parse-alias()
+    runner.is-true(au.failed, '未知锚点报错')
+    runner.eq(ndk(au, aug), 0, '未知锚点产出 null 节点')
+
+    ; 块标量 | 与 >：clip 保留单个尾换行
+    b = mk-p('|
+  l1
+  l2
+')
+    ib = b.parse-block-scalar(0)
+    eq-str(ndt(b, ib), 'l1
+l2
+', 'literal 保留换行')
+    runner.eq(nds(b, ib), 3, 'literal style=LITERAL')
+
+    bf = mk-p('>
+  l1
+  l2
+')
+    ibf = bf.parse-block-scalar(0)
+    eq-str(ndt(bf, ibf), 'l1 l2
+', 'folded 把换行折成空格')
+    runner.eq(nds(bf, ibf), 4, 'folded style=FOLDED')
+
+    bs = mk-p('|-
+  l1
+')
+    ibs = bs.parse-block-scalar(0)
+    eq-str(ndt(bs, ibs), 'l1', '|- strip 去掉尾换行')
+}
+
+; 流式集合：skip-flow-ws / parse-flow-node / parse-flow-seq / parse-flow-map
+t-p-flow = () {
+    w = mk-p('
+  # c
+  1')
+    w.skip-flow-ws()
+    runner.eq(w.cur(), 49, 'skip-flow-ws 跳过换行与注释')
+
+    n = mk-p('42')
+    inn = n.parse-flow-node(0, false, true)
+    runner.eq(ndk(n, inn), 2, 'flow-node 解析整数')
+
+    s = mk-p('[1, two, [3]]')
+    is = s.parse-flow-seq()
+    runner.eq(ndk(s, is), 5, 'flow-seq kind=SEQ')
+    runner.eq(ndkn(s, is), 3, 'flow-seq 有 3 个元素')
+    eq-str(ndt(s, ndkid(s, is, 1)), 'two', 'flow-seq 第 2 个元素是 two')
+    runner.eq(ndk(s, ndkid(s, is, 2)), 5, 'flow-seq 第 3 个元素是嵌套 SEQ')
+    runner.is-false(s.failed, 'flow-seq 无错误')
+
+    m = mk-p('{a: 1, b: [2]}')
+    im = m.parse-flow-map()
+    runner.eq(ndk(m, im), 6, 'flow-map kind=MAP')
+    runner.eq(ndkm(m, im), 2, 'flow-map 有 2 个键')
+    runner.eq(ndk(m, ndkid(m, im, 1)), 5, 'flow-map 值可为集合节点')
+
+    e = mk-p('[]')
+    ie = e.parse-flow-seq()
+    runner.eq(ndkn(e, ie), 0, '空流式序列 0 元素')
+
+    em = mk-p('{}')
+    iem = em.parse-flow-map()
+    runner.eq(ndkm(em, iem), 0, '空流式映射 0 键')
+}
+
+; 块结构：parse-block-indented / parse-block-seq / parse-block-map / parse-block
+;         merge-one / merge-into
+t-p-block = () {
+    s = mk-p('- a
+- b
+')
+    is = s.parse-block-seq(0)
+    runner.eq(ndk(s, is), 5, 'block-seq kind=SEQ')
+    runner.eq(ndkn(s, is), 2, 'block-seq 两个元素')
+    eq-str(ndt(s, ndkid(s, is, 0)), 'a', 'block-seq 第 1 项')
+    eq-str(ndt(s, ndkid(s, is, 1)), 'b', 'block-seq 第 2 项')
+
+    m = mk-p('a: 1
+b: 2
+')
+    im = m.parse-block-map(0)
+    runner.eq(ndk(m, im), 6, 'block-map kind=MAP')
+    runner.eq(ndkm(m, im), 2, 'block-map 两个键')
+
+    b = mk-p('a: 1')
+    ib = b.parse-block(0, 0)
+    runner.eq(ndk(b, ib), 6, 'parse-block 识别映射')
+
+    b2 = mk-p('- x')
+    ib2 = b2.parse-block(0, 0)
+    runner.eq(ndk(b2, ib2), 5, 'parse-block 识别序列')
+
+    b3 = mk-p('plain')
+    ib3 = b3.parse-block(0, 0)
+    eq-str(ndt(b3, ib3), 'plain', 'parse-block 识别标量')
+
+    ; parse-block-indented：缩进更深才当值，否则产 null
+    i1 = mk-p('  deep: 1
+')
+    ii1 = i1.parse-block-indented(0)
+    runner.eq(ndk(i1, ii1), 6, '缩进更深时解析为映射')
+
+    i2 = mk-p('flat: 1
+')
+    ii2 = i2.parse-block-indented(4)
+    runner.eq(ndk(i2, ii2), 0, '缩进不够时产 null')
+
+    i3 = mk-p('')
+    ii3 = i3.parse-block-indented(0)
+    runner.eq(ndk(i3, ii3), 0, '空输入产 null')
+
+    i4 = mk-p('---
+x')
+    ii4 = i4.parse-block-indented(0)
+    runner.eq(ndk(i4, ii4), 0, '文档标记处产 null')
+
+    ; merge-one：把源映射的非重复键并进目标
+    p = mk-p('')
+    ka = p.push-scalar('a', yaml.YAML-STYLE-PLAIN, '', '')
+    va = p.push-scalar('1', yaml.YAML-STYLE-PLAIN, '', '')
+    kb = p.push-scalar('b', yaml.YAML-STYLE-PLAIN, '', '')
+    vb = p.push-scalar('2', yaml.YAML-STYLE-PLAIN, '', '')
+    sk []i64 = with-len(0)
+    sv []i64 = with-len(0)
+    sk.push(kb)
+    sv.push(vb)
+    smap = mk-node(p, 6, sk, sv)
+    runner.eq(ndk(p, smap), 6, 'mk-node 造出映射节点')
+
+    tk []i64 = with-len(0)
+    tv []i64 = with-len(0)
+    tk.push(ka)
+    tv.push(va)
+    ok1, ov1 = p.merge-one(tk, tv, smap)
+    runner.eq(ok1.len(), 2, 'merge-one 合并后 2 键')
+    runner.eq(i-at(ok1, 0), ka, 'merge-one 保留目标原有键')
+    runner.eq(i-at(ok1, 1), kb, 'merge-one 追加源侧键')
+    runner.eq(i-at(ov1, 1), vb, 'merge-one 追加源侧值')
+
+    ; 源里出现同名键时不覆盖目标已有值
+    sk2 []i64 = with-len(0)
+    sv2 []i64 = with-len(0)
+    ka2 = p.push-scalar('a', yaml.YAML-STYLE-PLAIN, '', '')
+    va2 = p.push-scalar('9', yaml.YAML-STYLE-PLAIN, '', '')
+    sk2.push(ka2)
+    sv2.push(va2)
+    smap2 = mk-node(p, 6, sk2, sv2)
+    ok2, ov2 = p.merge-one(tk, tv, smap2)
+    runner.eq(ok2.len(), 1, '重复键不追加')
+    runner.eq(i-at(ov2, 0), va, '已有键优先')
+
+    ; src 不是映射时原样返回（只做拷贝）
+    ok3, ov3 = p.merge-one(tk, tv, va2)
+    runner.eq(ok3.len(), 1, '非映射 src 不合并')
+    runner.eq(ov3.len(), 1, '非映射 src 值仍拷贝')
+
+    ; merge-into：src 是映射序列时逐个合并
+    sq []i64 = with-len(0)
+    sq.push(smap)
+    ek []i64 = with-len(0)
+    sseq = mk-node(p, 5, ek, sq)
+    ok4, ov4 = p.merge-into(tk, tv, sseq)
+    runner.eq(ok4.len(), 2, 'merge-into 合并序列里的映射')
+    runner.eq(i-at(ok4, 1), kb, 'merge-into 追加序列侧键')
+
+    ; src 直接是映射时等价于 merge-one
+    ok5, ov5 = p.merge-into(tk, tv, smap)
+    runner.eq(ok5.len(), 2, 'merge-into 接受单个映射')
+}
+
+; 文檔級：skip-doc-preamble / at-doc-marker / skip-to-doc-boundary /
+;         parse-document / parse-docs
+t-p-docs = () {
+    m1 = mk-p('---')
+    runner.eq(m1.at-doc-marker(), 1, '--- 識別為 1')
+    m2 = mk-p('...')
+    runner.eq(m2.at-doc-marker(), 2, '... 識別為 2')
+    m3 = mk-p('abc')
+    runner.eq(m3.at-doc-marker(), 0, '普通內容不是文檔標記')
+
+    pre = mk-p('%YAML 1.2
+# c
+---
+a: 1')
+    pre.skip-doc-preamble()
+    runner.eq(pre.at-doc-marker(), 1, 'skip-doc-preamble 停在 ---')
+
+    ; 调用前提：当前位置已在文档内容里（句柄停在第一个换行处）
+    bd = mk-p('a: 1
+---
+b: 2')
+    bd.pos = 4
+    bd.skip-to-doc-boundary()
+    runner.eq(bd.at-doc-marker(), 1, 'skip-to-doc-boundary 停在下一个 ---')
+    runner.eq(bd.pos, 5, 'skip-to-doc-boundary 停在 --- 起点')
+
+    ; 文档尾出现无法归属的内容时记录错误而不是继续抠
+    bad = mk-p('a: 1
+b: 2')
+    bad.pos = 4
+    bad.skip-to-doc-boundary()
+    runner.is-true(bad.failed, '文档后多余内容报错')
+
+    d = mk-p('a: 1')
+    i1 = d.parse-document()
+    runner.eq(ndk(d, i1), 6, 'parse-document 返回映射根')
+
+    ds = mk-p('---
+a: 1
+---
+b: 2')
+    roots = ds.parse-docs()
+    runner.eq(roots.len(), 2, 'parse-docs 兩份文檔')
+    runner.eq(ndk(ds, i-at(roots, 0)), 6, '第一份文檔是映射')
+    runner.eq(ndk(ds, i-at(roots, 1)), 6, '第二份文檔是映射')
+
+    ; 空輸入：parse-block 會造一個 null 根節點（doc 寫的 -1 實際不會出現）
+    de = mk-p('')
+    ie = de.parse-document()
+    runner.eq(ndk(de, ie), 0, '空輸入得到 null 根節點')
+}
+
 p1 = runner.test('yaml.scalars', t-scalars)
 p2 = runner.test('yaml.seq', t-seq)
 p3 = runner.test('yaml.type-inference', t-type-inference)
@@ -888,10 +1559,111 @@ p12 = runner.test('yaml.tags', t-tags)
 p13 = runner.test('yaml.errors', t-errors)
 p14 = runner.test('yaml.helper-prims', t-helper-prims)
 p15 = runner.test('yaml.emit', t-emit)
+p16 = runner.test('yaml.p-char', t-p-char)
+p17 = runner.test('yaml.p-fail', t-p-fail)
+p18 = runner.test('yaml.p-nodes', t-p-nodes)
+p19 = runner.test('yaml.p-tokens', t-p-tokens)
+p20 = runner.test('yaml.p-scalars', t-p-scalars)
+p21 = runner.test('yaml.p-flow', t-p-flow)
+p22 = runner.test('yaml.p-block', t-p-block)
+p23 = runner.test('yaml.p-docs', t-p-docs)
+p24 = runner.test('yaml.node-helpers', t-node-helpers)
 total = runner.summary()
 f = runner.failed-count()
 {
     f > 0 -> exit(1)
 
     -> exit(0)
+}
+
+; 節點級輔助函式：yaml-scalar-repr / yaml-node-is-nan / yaml-key-text-eq / yaml-key-eq
+;
+; 這四個函式吃 `yaml-node`（不可命名的型別），但節點可以從公開欄位
+; `doc.pool.nodes[i]` 取到，因此仍然可測；全限定呼叫形如
+; `yaml.yaml-scalar-repr(pl.nodes[i])`。
+t-node-helpers = () {
+    src = 'i: 42
+f: 1.5
+x: .nan
+pi: .inf
+ni: -.inf
+b: true
+n: ~
+s: plain
+q: "x: y"
+k1: 7'
+    r = yaml.parse(src)
+    r: {
+        ok -> {
+            d = it
+            pl = d.pool
+            nn = pl.nodes.len()
+            i-int = -1
+            i-flt = -1
+            i-nan = -1
+            i-inf = -1
+            i-ninf = -1
+            i-bool = -1
+            i-null = -1
+            i-str = -1
+            i-quoted = -1
+            i-key = -1
+            i <- [0..nn): {
+                nd = pl.nodes[i]
+                {
+                    nd.text == '42' -> i-int = i
+
+                    nd.text == '1.5' -> i-flt = i
+
+                    nd.text == '.nan' -> i-nan = i
+
+                    nd.text == '.inf' -> i-inf = i
+
+                    nd.text == '-.inf' -> i-ninf = i
+
+                    nd.text == 'true' -> i-bool = i
+
+                    nd.text == '~' -> i-null = i
+
+                    nd.text == 'plain' -> i-str = i
+
+                    nd.text == 'x: y' -> i-quoted = i
+
+                    nd.text == 'k1' -> i-key = i
+
+                    -> _
+                }
+            }
+            runner.eq(i-int >= 0, true, '找到整數節點')
+            runner.eq(i-key >= 0, true, '找到 k1 鍵節點')
+
+            ; 標量表示：按種類選擇，字符串按需加引號
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-int]), '42', 'repr int')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-flt]), '1.5', 'repr float')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-nan]), '.nan', 'repr nan')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-inf]), '.inf', 'repr inf')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-ninf]), '-.inf', 'repr -inf')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-bool]), 'true', 'repr bool')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-null]), 'null', 'repr null')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-str]), 'plain', 'repr 安全 plain')
+            eq-str(yaml.yaml-scalar-repr(pl.nodes[i-quoted]), '"x: y"', 'repr 需加引號')
+
+            ; NaN 判定：只有 FLOAT 且值/原文命中才為真
+            runner.is-true(yaml.yaml-node-is-nan(pl.nodes[i-nan]), 'is-nan .nan')
+            runner.is-false(yaml.yaml-node-is-nan(pl.nodes[i-flt]), 'is-nan 1.5 為假')
+            runner.is-false(yaml.yaml-node-is-nan(pl.nodes[i-null]), 'is-nan 對 null 為假')
+
+            ; 鍵比較：集合節點一律不相等
+            runner.is-true(yaml.yaml-key-text-eq(pl.nodes[i-key], 'k1'), 'key-text-eq 命中')
+            runner.is-false(yaml.yaml-key-text-eq(pl.nodes[i-key], 'zz'), 'key-text-eq 不命中')
+            runner.is-false(yaml.yaml-key-text-eq(pl.nodes[d.root], 'k1'), 'map 節點不參與鍵比較')
+            runner.is-true(yaml.yaml-key-eq(pl.nodes[i-key], pl.nodes[i-key]), 'key-eq 自反')
+            runner.is-false(yaml.yaml-key-eq(pl.nodes[i-key], pl.nodes[i-str]), 'key-eq 不同文本')
+            runner.is-false(yaml.yaml-key-eq(pl.nodes[d.root], pl.nodes[i-key]), 'key-eq 集合側為假')
+        }
+
+        nil -> runner.is-true(false, 'node-helpers 解析成功')
+
+        err -> runner.is-true(false, 'node-helpers 解析成功')
+    }
 }

@@ -2996,15 +2996,20 @@ Nolang 不支援 panic——任何可能溢出的操作都必須以 `option` 或
 
 此外，所有模式都支援**型別前綴形式**，精確指定某個窄型別的飽和界限，例如 `#{overflow = u8-max}`、`#{overflow = i8-min}`、`#{overflow = u16-saturate}`。
 
-> **註解粒度**：`#{overflow = ...}` 是**行注解**——只作用於**緊接其後的下一條陳述**。這是唯一完整受支援的形式：執行語意（codegen）與 `ovfhndld` 硬錯誤都只認它。
+> **註解粒度**：`#{overflow = ...}` 是**行注解**——只作用於**緊接其後的下一條陳述**。
+> 這是**設計上唯一允許**的形式（防止濫用）：執行語意（codegen）與 `ovfhndld` 硬錯誤都只認它，
+> 而且它只改「溢出時的取值」、不改型別，放寬到塊級或函式級會讓整片運算的語義由一行遠處
+> 註解決定。理由詳見 [〈註解與註釋的作用域〉](annotation-scope.md) §4.1。
 >
-> ⚠️ **放在函數定義上方不再涵蓋整個函數體**。它只會讓 `ovf-int-default` lint 跳過整個函式（清單層面看起來「乾淨」），但函式體內的未標註運算**仍會觸發 `ovfhndld` 硬錯誤**，實測與完全不寫註解無異。請逐陳述標註；`no fmt --fix=overflow` 產生的正是這種逐陳述形式。
+> ⛔ **放在函數定義上方、塊頭或檔案頭都不合法**。目前唯一的漏洞是：函式級註解會讓
+> `ovf-int-default` lint 跳過整個函式（清單看起來「乾淨」），函式體內的未標註運算照舊
+> 觸發 `ovfhndld`；塊級註解則讓 lint 向下繼承而閉嘴，codegen 一律不認。請逐陳述標註；
+> `no fmt --fix=overflow` 產生的正是這種逐陳述形式。
 >
-> 註解作用域的完整模型（L0 模組 / L1 宣告 / L2 區塊 / L3 單行）見
-> [〈註解與註釋的作用域〉](annotation-scope.md)。本段描述的是**當前 codegen 實際認可**
-> 的粒度；該頁 §7 列出實作差距與 §8 的落地順序。
+> 完整模型（L0 模組 / L1 宣告 / L2 區塊 / L3 單行，以及哪些鍵支援哪幾層）見
+> [〈註解與註釋的作用域〉](annotation-scope.md)；該頁 §7 列存量與漏洞，§8 是收緊順序。
 
-> **LSP 快速修復**：編輯器（nolang-lsp）會對未標註的整數運算報出**提示**（`nolang-overflow`，trace id `ovfhndld`），並提供五個 quickfix——**Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`**——自動在該運算所在語句上方、以與該行一致的縮排插入對應註解，指定溢出行為（結果仍是 `?T`，需另用 match / `?=` / 顯式 plain 型別消費）。命令列等價物為 `no fmt --fix=overflow`（見下文）。
+> **LSP 快速修復**：編輯器（nolang-lsp）會對未標註的整數運算報出**提示**（`nolang-overflow`，trace id `ovfhndld`），並提供五個 quickfix——**Add `#{overflow = wrap}`** / **`clamp0`** / **`min`** / **`max`** / **`saturate`**——自動在該運算所在語句上方、以與該行一致的縮排插入對應註解，指定溢出行為（結果仍是 `?T`，需另用 match / `?=` 消費）。命令列等價物為 `no fmt --fix=overflow`（見下文）。
 
 ### 默認：返回 `option<int>`
 

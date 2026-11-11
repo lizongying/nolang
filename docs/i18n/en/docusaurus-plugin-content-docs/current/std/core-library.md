@@ -80,6 +80,12 @@ c.to-str()         ; Unicode -> string (UTF-8, method)
 
 ### str — String Operations
 
+The `str` descriptor is `{ u32 len, u32 cap, i8* data }` (16 bytes on 64-bit), but
+`s.len()` / `s.len-bytes()` / `s.cap()` and the `with-cap` / `with-len` / `with-cap-len`
+arguments and results **all remain `i64`**: the compiler performs the u32 ↔ i64 conversion
+at the descriptor boundary. See [Strings: internal layout and public API](../lang/str.md).
+`txt` is unaffected by this change.
+
 ```no
 #{fmt-skip}
 ok = a.eq(b, n)               ; Equality comparison (method)

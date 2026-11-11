@@ -178,6 +178,68 @@ passed = passed + p8
 #{overflow=wrap}
 failed = failed + f8
 
+; ── 顯式字母表入口 ─────────────────────────────
+; `encode` / `b64-val` 吃顯式字母表，`encode-std` / `encode-url` 只是兩個包裝；
+; 直接測底層才能覆蓋自訂字母表與無效字元兩條分支。
+
+; 同一份輸入分別用標準表與 URL 表編碼
+t-encode-table = () {
+    data []byte = [65, 66]
+    runner.str-eq(base64.encode(data, base64.BASE64-STD), 'QUI=', 4, 'encode 標準表')
+    runner.str-eq(base64.encode(data, base64.BASE64-URL), 'QUI=', 4, 'encode URL 表（本例同形）')
+
+    ; 產生 +/ 的輸入：0xFB 0xFF 0xBF 在標準表出 '+/+/'，URL 表出 '-_-_'
+    hi []byte = [251, 255, 191]
+    runner.str-eq(base64.encode(hi, base64.BASE64-STD), '+/+/', 4, 'encode 標準表出 +/')
+    runner.str-eq(base64.encode(hi, base64.BASE64-URL), '-_-_', 4, 'encode URL 表出 -_')
+
+    ; 空輸入（結果必須先落區域變數：多實參 std 函式的回傳直接當方法接收者
+    ; 時 MIR 會報 `unknown callee` / `NoVal`，見 test/README §5.2）
+    e []byte = with-len(0)
+    empty = base64.encode(e, base64.BASE64-STD)
+    runner.eq(empty.len-bytes(), 0, 'encode 空輸入得空串')
+
+    ; 自訂字母表：64 個 'A' 時所有輸出位都是 'A'（長度不變）
+    flat = base64.encode(data, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    runner.eq(flat.len-bytes(), 4, '自訂字母表輸出長度仍為 4')
+    runner.str-eq(flat, 'AAA=', 4, '自訂字母表輸出全 A（末位仍是填充）')
+}
+
+; 單字元查表：'=' 回 0，字母表外回 -1
+t-b64-val = () {
+    tab = base64.BASE64-STD
+    runner.eq(base64.b64-val(65, tab), 0, 'b64-val A')
+    runner.eq(base64.b64-val(90, tab), 25, 'b64-val Z')
+    runner.eq(base64.b64-val(97, tab), 26, 'b64-val a')
+    runner.eq(base64.b64-val(122, tab), 51, 'b64-val z')
+    runner.eq(base64.b64-val(48, tab), 52, 'b64-val 0')
+    runner.eq(base64.b64-val(57, tab), 61, 'b64-val 9')
+    runner.eq(base64.b64-val(43, tab), 62, 'b64-val +')
+    runner.eq(base64.b64-val(47, tab), 63, 'b64-val /')
+    runner.eq(base64.b64-val(61, tab), 0, 'b64-val = 回 0')
+    runner.eq(base64.b64-val(32, tab), -1, 'b64-val 空格無效')
+
+    urlt = base64.BASE64-URL
+    runner.eq(base64.b64-val(45, urlt), 62, 'b64-val URL -')
+    runner.eq(base64.b64-val(95, urlt), 63, 'b64-val URL _')
+    runner.eq(base64.b64-val(43, urlt), -1, 'b64-val URL 表不認 +')
+}
+
+p9, f9 = runner.test('base64.encode-table', t-encode-table)
+
+#{overflow=wrap}
+passed = passed + p9
+
+#{overflow=wrap}
+failed = failed + f9
+p10, f10 = runner.test('base64.b64-val', t-b64-val)
+
+#{overflow=wrap}
+passed = passed + p10
+
+#{overflow=wrap}
+failed = failed + f10
+
 total = runner.summary()
 f = runner.failed-count()
 {

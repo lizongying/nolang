@@ -4,10 +4,23 @@
 ; 覆蓋：io.out / io.outln / io.err / io.errln /
 ;       writer.from-stdout / writer.write-str /
 ;       writer.write-byte / writer.write-line /
-;       reader.from-stdin (僅驗證建構)
-; 注意：io.read-line 依賴 stdin，不在此測試
+;       reader.from-stdin / reader.from-fd / reader.read / reader.read-byte /
+;       reader.read-line / reader.read-all / writer.from-fd / writer.write /
+;       io.read-line（2026-11-11 補齊，覆蓋率 12/12）
+;
+; 檔案型斷言全部落在 /tmp/nolang_io_test_*.txt（開場先清、收場再清）。
+; io.read-line 依賴 stdin，測試跑在 fork 出來的子進程裡並先關掉 fd 0，
+; 這樣它立刻拿到 nil 而不會阻塞、也不會吃掉跑測器的輸入。
 
 # /test/runner
+
+IO-R = '/tmp/nolang_io_test_r.txt'
+IO-W = '/tmp/nolang_io_test_w.txt'
+
+; 字串相等斷言（走 eq-full，免手算位元組長度）
+se = (a str, b str, msg str) {
+    runner.is-true(a.eq-full(b), msg)
+}
 
 ; ── 標準輸出 ──────────────────────────────────
 
@@ -80,6 +93,131 @@ t-reader-stdin = () {
     runner.eq(r.fd, 0, 'reader.from-stdin fd == 0')
 }
 
+; ── 檔案 reader ───────────────────────────────
+
+; 驗證 reader.from-fd / read / read-byte / read-line / read-all：
+; 對同一個檔案依序做「讀 2 位元組 → 讀 1 位元組 → 讀一行 → 到 EOF」，
+; 再驗 read-all 與無效 fd 的行為
+t-reader-file = () {
+    fs.write-file(IO-R, 'ab
+cd'.to-bytes())
+
+    ; read：取前 2 位元組
+    f = fs.open-read(IO-R)
+    r = io.reader.from-fd(f)
+    runner.eq(r.fd, f, 'reader.from-fd stores fd')
+    buf []byte = with-len(2)
+    n = r.read(buf, 2)
+    runner.eq(n, 2, 'read returns 2')
+    se(buf.slice(0, 2).to-str(), 'ab', 'read bytes ab')
+
+    ; read-byte：換行符
+    b-opt = r.read-byte()
+    b = b-opt: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(b, 10, 'read-byte gets newline')
+
+    ; read-line：剩下的 'cd'
+    l-opt = r.read-line()
+    l = l-opt: {
+        ok -> it
+
+        -> ''
+    }
+    se(l, 'cd', 'read-line gets cd')
+
+    ; 到 EOF：三個讀取介面都要安全回 0 / nil
+    runner.eq(r.read(buf, 2), 0, 'read at EOF returns 0')
+    e-opt = r.read-byte()
+    e = e-opt: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(e, -1, 'read-byte at EOF returns nil')
+    el-opt = r.read-line()
+    el = el-opt: {
+        ok -> it
+
+        -> ''
+    }
+    se(el, '', 'read-line at EOF returns nil')
+    fs.close(f)
+
+    ; read-all：一次讀進指定上限
+    f2 = fs.open-read(IO-R)
+    r2 = io.reader.from-fd(f2)
+    buf4 []byte = with-len(4)
+    total = r2.read-all(buf4, 4)
+    runner.eq(total, 4, 'read-all returns 4')
+    se(buf4.slice(0, total).to-str(), 'ab
+c', 'read-all bytes')
+    fs.close(f2)
+
+    ; 無效 fd：一律安全回 0 / nil
+    r3 = io.reader.from-fd(-1)
+    runner.eq(r3.read(buf, 2), 0, 'invalid fd read returns 0')
+    ib-opt = r3.read-byte()
+    ib = ib-opt: {
+        ok -> it
+
+        -> -1
+    }
+    runner.eq(ib, -1, 'invalid fd read-byte returns nil')
+    il-opt = r3.read-line()
+    il = il-opt: {
+        ok -> it
+
+        -> ''
+    }
+    se(il, '', 'invalid fd read-line returns nil')
+    runner.eq(r3.read-all(buf, 2), 0, 'invalid fd read-all returns 0')
+}
+
+; ── 檔案 writer ───────────────────────────────
+
+; 驗證 writer.from-fd / write：寫入檔案後可原樣讀回；無效 fd 回 0
+t-writer-file = () {
+    fs.remove(IO-W)
+    f = fs.open-file(IO-W, fs.O-WRONLY | fs.O-CREAT | fs.O-TRUNC, 420)
+    w = io.writer.from-fd(f)
+    runner.eq(w.fd, f, 'writer.from-fd stores fd')
+    n = w.write('xy'.to-bytes(), 2)
+    runner.eq(n, 2, 'write returns 2')
+    fs.close(f)
+    se(fs.read-file(IO-W).to-str(), 'xy', 'write bytes xy')
+
+    wf = io.writer.from-fd(-1)
+    runner.eq(wf.write('xy'.to-bytes(), 2), 0, 'invalid fd write returns 0')
+    fs.remove(IO-W)
+}
+
+; ── 標準輸入 read-line ────────────────────────
+
+; 驗證 io.read-line：在子進程裡關掉 fd 0 後呼叫，應立刻回 nil（不阻塞、不吃測器輸入）
+t-read-line-stdin = () {
+    pid = process.process-fork()
+    {
+        pid == 0 -> {
+            fs.close(0)
+            l = io.read-line()
+
+            ; nil（fd 已關）⇒ 1；意外拿到 ok ⇒ 0
+            code = l: {
+                ok -> 0
+
+                -> 1
+            }
+            exit(code)
+        }
+    }
+    runner.is-true(pid > 0, 'read-line fork parent pid > 0')
+    runner.eq(process.process-waitpid(pid, 0), 1, 'io.read-line on closed stdin returns nil')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('io.out', t-out)
@@ -91,6 +229,9 @@ p6, f6 = runner.test('io.writer-write-byte', t-writer-write-byte)
 p7, f7 = runner.test('io.writer-write-line', t-writer-write-line)
 p8, f8 = runner.test('io.writer-stderr', t-writer-stderr)
 p9, f9 = runner.test('io.reader-stdin', t-reader-stdin)
+p10, f10 = runner.test('io.reader-file', t-reader-file)
+p11, f11 = runner.test('io.writer-file', t-writer-file)
+p12, f12 = runner.test('io.read-line', t-read-line-stdin)
 
 total = runner.summary()
 f = runner.failed-count()

@@ -311,6 +311,10 @@ from-str = (s str, out uuid) (ok bool) {
 ; pos: s 中本段 36 字符的起始下標
 ; out: 输出參數，成功時寫入解析出的 16 字節
 ; ok: true=該段解析成功（連字符位置與 hex 字符均合法）
+;
+; ⚠️ 2026-11-11 修：原本只檢查連字號位置，hex 字元非法時 parse-hex-byte 回 -1 被直接
+;    寫進 bytes（成 255）且 ok 仍為 true —— 與本行 doc 及 from-str 的「字符非法 ⇒ false」
+;    矛盾，也與同族的 parse-no-dashes（有 v < 0 檢查）不一致。現在四組各補一次越界值檢查。
 ; [parse-with-dashes](#uuid.parse-with-dashes)
 parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     ok = true
@@ -357,6 +361,11 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
         }
     }
     v3 = parse-hex-byte(s, ppos6)
+
+    v0 < 0 || v1 < 0 || v2 < 0 || v3 < 0 -> {
+        ok = false
+        return
+    }
 
     out.bytes[0]: {
         ok -> it = v0
@@ -417,6 +426,11 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
     v5 = parse-hex-byte(s, ppos11)
 
+    v4 < 0 || v5 < 0 -> {
+        ok = false
+        return
+    }
+
     out.bytes[4]: {
         ok -> it = v4
 
@@ -463,6 +477,11 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
     }
     v7 = parse-hex-byte(s, ppos16)
 
+    v6 < 0 || v7 < 0 -> {
+        ok = false
+        return
+    }
+
     out.bytes[6]: {
         ok -> it = v6
 
@@ -508,6 +527,11 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
         }
     }
     v9 = parse-hex-byte(s, ppos21)
+
+    v8 < 0 || v9 < 0 -> {
+        ok = false
+        return
+    }
 
     out.bytes[8]: {
         ok -> it = v8
@@ -610,6 +634,11 @@ parse-with-dashes = (s str, pos i64, out uuid) (ok bool) {
         }
     }
     v15 = parse-hex-byte(s, ppos34)
+
+    v10 < 0 || v11 < 0 || v12 < 0 || v13 < 0 || v14 < 0 || v15 < 0 -> {
+        ok = false
+        return
+    }
 
     out.bytes[10]: {
         ok -> it = v10

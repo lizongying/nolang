@@ -8,10 +8,13 @@
 ;     零寫入不推進 str 長度，丟失 0x00 延續 byte，回環解碼失敗，已改為預先
 ;     with-len(n)；(2) encode-str 原用 with-cap + 逐 byte 寫入，空字串時長度
 ;     byte 0x00 同樣不推進長度，輸出 0 byte，已改為 with-len 預設總長。
-;     tables.* 方法（init/find/lookup/encode-header/decode-headers）未測：
-;     跨模組對 hpack.tables 方法無法實例化（EmitLLVM unknown callee，工具鏈
-;     限制，且模組內無可觸發實例化的便捷函數）；decode-headers 的 [128]str
-;     陣列 out-param 多指派亦屬已知呼叫端段錯誤家族。
+; 註：早期註記「tables.* 跨模組無法實例化（EmitLLVM unknown callee）」已被
+;     2026-11-11 實測推翻——用户码可以白盒驱动 std 内部结构体，只要写
+;     **全限定型别名标注**：`t hpack.tables = hpack.tables{}`。少写标注才是
+;     `unknown callee [4qhyyund]`。同一形状也解掉了 cookie.parse-header。
+; 註：decode-headers 原實作在讀 `[128]str` 結果參數的第一個槽位時 SIGSEGV
+;     （該型別的結果參數在編譯器裡沒有零值填充），已改為先 `names.zero()` /
+;     `values.zero()` 再下標寫，詳見 src/std/net/hpack.no 的註解。
 
 # /test/runner
 
@@ -147,6 +150,85 @@ t-str-long = () {
     v, p = hpack.decode-str(bad, 0)
     runner.eq(p, -1, 'declared len overrun pos')
 }
+
+; new-tables：造一个初始化好的 HPACK 表（静态表 61 条 + 空动态表）。
+;
+; 两处都不能省：
+;   (1) 结果参数的型别标注必须写全限定 `t hpack.tables`。写成 `t = hpack.tables{}`
+;       再调方法会报 `unknown callee hpack.tables.init [4qhyyund]`——但 fmt 又会
+;       建议删掉这个"多余"标注，所以把它挪进函数签名里，测试体只写 `t = new-tables()`。
+;   (2) 进来先 `t.zero()`。结构体结果参数进来时是**未初始化内存**，直接 `t.init()`
+;       会把字段里的 `[128]str` 当成既有的 `str` 去释放，实测 bus error。
+new-tables = () (t hpack.tables) {
+    t.zero()
+    t.init()
+}
+
+; ── tables：静态表 / 动态表 ───────────────────
+
+; 静态表（RFC 7541 附录 A）：全匹配 2 号是 :method GET，只比名字 accept 是 19
+t-tables-static = () {
+    t = new-tables()
+    runner.eq(t.find(':method', 'GET'), 2, 'find :method GET -> 2')
+    runner.eq(t.find-name('accept'), 19, 'find-name accept -> 19')
+    runner.eq(t.find-name(':authority'), 1, 'find-name :authority -> 1')
+    runner.eq(t.find('x-nope', 'v'), 0, 'find miss -> 0')
+    runner.eq(t.find-name('x-nope'), 0, 'find-name miss -> 0')
+
+    n, v, ok = t.lookup(2)
+    runner.is-true(ok, 'lookup 2 ok')
+    runner.str-eq(n, ':method', 7, 'lookup 2 name')
+    runner.str-eq(v, 'GET', 3, 'lookup 2 value')
+
+    n0, v0, ok0 = t.lookup(0)
+    runner.is-false(ok0, 'lookup 0 -> not ok')
+    n9, v9, ok9 = t.lookup(999)
+    runner.is-false(ok9, 'lookup 999 -> not ok')
+}
+
+; 动态表：dyn-add 的条目从 62 起（61 条静态表之后），find / find-name / lookup 都看得到
+t-tables-dynamic = () {
+    t = new-tables()
+    t.dyn-add('x-custom', 'abc')
+    runner.eq(t.find('x-custom', 'abc'), 62, 'dyn entry gets index 62')
+    runner.eq(t.find-name('x-custom'), 62, 'find-name sees dyn entry')
+    n, v, ok = t.lookup(62)
+    runner.is-true(ok, 'lookup 62 ok')
+    runner.str-eq(n, 'x-custom', 8, 'dyn lookup name')
+    runner.str-eq(v, 'abc', 3, 'dyn lookup value')
+}
+
+; encode-header / decode-headers：往返一致；空块解出 0 条且 ok
+t-encode-decode = () {
+    t = new-tables()
+    e = t.encode-header('accept', '*/*')
+    runner.is-true(e.len() > 0, 'encode-header produces bytes')
+
+    names, values, cnt, ok = t.decode-headers(e)
+    runner.is-true(ok, 'decode-headers ok')
+    runner.eq(cnt, 1, 'roundtrip count == 1')
+
+    n0 = 'x'
+    names[0]: {
+        ok -> n0 = it
+
+        -> _
+    }
+    runner.str-eq(n0, 'accept', 6, 'roundtrip name')
+
+    v0 = 'x'
+    values[0]: {
+        ok -> v0 = it
+
+        -> _
+    }
+    runner.str-eq(v0, '*/*', 3, 'roundtrip value')
+
+    names2, values2, cnt2, ok2 = t.decode-headers('')
+    runner.is-true(ok2, 'empty block decodes ok')
+    runner.eq(cnt2, 0, 'empty block -> 0 headers')
+}
+
 runner.test('int prefix', t-int-prefix)
 runner.test('int boundary', t-int-boundary)
 runner.test('int multi-byte', t-int-multi)
@@ -154,6 +236,9 @@ runner.test('int errors', t-int-err)
 runner.test('str codec', t-str-codec)
 runner.test('str empty', t-str-empty)
 runner.test('str long', t-str-long)
+runner.test('tables static', t-tables-static)
+runner.test('tables dynamic', t-tables-dynamic)
+runner.test('encode/decode headers', t-encode-decode)
 runner.summary()
 f = runner.failed-count()
 f > 0 -> exit(1)

@@ -9,11 +9,25 @@
 ;       get-domain-name / now / now-ms / now-us / now-ns / sleep / sleep-us / sleep-ns
 ;
 ; ⚠ 刻意不測（環境/安全性理由，非遺漏）：
-;   chroot   —— 非 root 必失敗；若哪天以 root 跑測試會真的改根目錄，太危險。
-;   set-sid  —— setsid() 會讓測試進程脫離終端與原 session，影響跑測器的終端。
-;   syslog   —— 每次跑測試都往系統日誌寫垃圾。
-;   win-find-first-file / win-find-next-file / win-find-close / win-wsa-startup
-;            —— 非 Windows 平台連編譯都過不了（`EmitLLVM: unsupported builtin`）。
+;   （其餘原本排除的項目已於 2026-11-11 逐一實測後改為可測或不可達，見下）
+;
+; 已補測（原本寫「刻意不測」，實測後確認安全）：
+;   chroot   —— 傳**保證不存在**的路徑（/nonexistent/...），非 root 與 root 都
+;               必失敗，回 false，不存在「以 root 跑就真的改根目錄」的風險。
+;   set-sid  —— 實測在 `no run` / `no test` 這層子進程裡呼叫只會回新 session 的
+;               pid，父進程與跑測器的終端不受影響（本檔連跑三次結果一致）。
+;               POSIX 下若呼叫方已是 session leader 會回 -1，故斷言放寬為「非 0」。
+;   win-wsa-startup —— 非 Windows 上回 false（不報錯、不崩），照樣是行為契約。
+;
+; 不可達（已登記 scripts/std_test_coverage.py 的 UNREACHABLE）：
+;   syslog   —— 裸呼叫被 checker 拒絕（`'syslog' is not defined; call it as
+;               'os.syslog' [4bek3xc6]`），帶前綴 `os.syslog(6, 'x')` 直接
+;               **SIGSEGV**：src/builtin/os.go 只給了 ForwardFunc:"syslog"、
+;               沒有 CLibCall，等於宣告了卻沒有實作。是真实缺陷，已记进
+;               MEMORY-RISKS。
+;   win-find-first-file / win-find-next-file / win-find-close
+;            —— 非 Windows 平台連編譯都過不了：
+;               `EmitLLVM: unsupported builtin os.win-find-first-file [2kqboupo]`
 ;
 ; 只有 sleep 系與 ch-dir 會動到進程狀態：sleep 用毫秒級，ch-dir 測完立刻切回原 wd。
 
@@ -287,6 +301,20 @@ p13, f13 = runner.test('os.clock', t-clock)
 p14, f14 = runner.test('os.sleep', t-sleep)
 p15, f15 = runner.test('os.stat', t-stat)
 p16, f16 = runner.test('os.dir-ops', t-dir-ops)
+p17, f17 = runner.test('os.chroot/set-sid/wsa', t-privileged)
+
+; chroot / set-sid / win-wsa-startup：三个「只在特定平台/权限下才有意义」的原语
+; chroot 用保证不存在的路径，任何权限下都必失败
+t-privileged = () {
+    ok = os.chroot('/nonexistent/nolang/chroot/probe')
+    runner.is-false(ok, 'chroot on missing path returns false')
+
+    p = os.set-sid()
+    runner.is-true(p != 0, 'set-sid returns a pid (or -1 if already leader)')
+
+    wsa = os.win-wsa-startup()
+    runner.is-false(wsa, 'win-wsa-startup is false off Windows')
+}
 
 total = runner.summary()
 f = runner.failed-count()

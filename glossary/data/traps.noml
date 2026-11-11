@@ -4,38 +4,55 @@
   title: '已知坑'
   terms: {
     'arith-index-operand-no-option': {
-      title: '下标里的算术要先落到 option 上才有溢出检查'
+      title: '下标算术的 option 提升与逐语句注解'
       kind: 'trap'
       status: 'stable'
-      summary: '下标算术缺 #{overflow = …} 注解就报 hint（注解逐语句生效）；原地写法是裸 add、静默回绕，写进 option match 或先绑 ?T 才有溢出检查。'
-      aliases: ['下标算术', '索引溢出', 'arr[i + 1]', 'ovfidxop', '下标 option 叠加']
+      summary: '整数算术在任何位置都可能溢出，缺 #{overflow = …} 注解一律只报「加注解」；下标算术另有 option 提升形态。注解逐语句生效，2026-11-11 起在原地与提升两种形态下都真正改变溢位取值。'
+      aliases: ['下标算术', '索引溢出', 'arr[i + 1]', 'ovf-int-default', 'xmicjezl', '下标 option 叠加', 'OvfMode']
       definition: `
-下标位置（arr[EXPR] 的 EXPR）必须是纯整数，所以「用 ?T 接收 / match 解包 /
-_ = 丢弃」三种补救都写不出来 —— 那是值根的话题（见 arithmetic-option-assign）。
+🔴 口径更正（2026-11-11）：整数算术在**任何**位置都会溢出 —— 值根、呼叫实参、
+match 臂、索引运算元都一样。曾经把 nolang-overflow hint 按语法位置切成
+「值根版三选一（option 接收 / match 解包 / `_ =` 丢弃）+ 索引版只教注解」
+是错的：option 的叠加、短路与解包是另一条轴，不该由这条 hint 教。现在
+ValidateIntOverflow 只剩**一条** xmicjezl 訊息，所有站点共用；D2 的
+ovfhndld（8t1jaj02）也同步改成注解优先。ovfidxop key 已从 10 个语系移除。
+option 消费仍由 optunuse（ERROR）负责，两者不要混为一谈。
 
-事实一：原地写法（既无 match 也无 ?T 绑定）的算术在 MIR 是裸 add/sub/mul，
-没有 llvm.*.*.with.overflow ⇒ 溢位静默回绕，不进任何 err 臂（外层 match 的
-失败臂只接越界，不接溢出）。
+事实一：**无注解**的原地写法（既无 match 也无 ?T 绑定）其算术在 MIR 是裸
+add/sub/mul，没有 llvm.*.*.with.overflow ⇒ 溢位静默回绕，不进任何 err 臂
+（外层 match 的失败臂只接越界，不接溢出）。
 
 事实二：写进 option match 主体时，lowering 会把下标算术提升成 __idx_L_C ?T，
 再读 seed[__idx_L_C]；下标的 err 在越界检查之前短路，与越界共用同一个失败臂
 （常见的 -> _ 会把这一笔默默丢掉）。等价的手写形态是先自己绑一次：
 idx ?i64 = 8 + i，然后 seed[idx]。
 
-事实三：#{overflow = …} 逐语句生效。写在某条语句（或包住它的区块/函数）上
-只覆盖那一条；写在上一行 sb2 = handshake[pos + i] 上管不到下一行 seed[8 + i]。
-注解指定「溢位时取什么值」：wrap（无声回绕）/ clamp0（下溢归零）/ min / max /
-saturate（饱和箝位），或型别前缀形式如 u8-max。在提升形态下注解会被 __idx 继
-承、确实生效；在纯原地形态下算术根本没有检查点，注解只起「声明意图、消掉
-hint」的作用，溢位仍然静默回绕。
+事实三：#{overflow = …} 逐语句生效。写在某条语句上只覆盖那一条；写在上一行
+sb2 = handshake[pos + i] 上管不到下一行 seed[8 + i]（mysql.no:743 报障形状）。
+2026-11-11 起注解在**两种形态下都真正生效**：Inst.OvfMode 把模式带到 codegen，
+非 wrap 模式在 i256 宽域算真值并按方向 select（见 annotations.noml 的 overflow
+真值表）。不再有「原地写法注解无效」这回事。
 
-checker 口径（2026-11-10 定稿）：下标位置缺注解就报（TraceID xmicjezl，消息
-key ovfidxop，**只教加注解**），不看是否已被 option match 消费 —— 被消费只
-代表不会算错，不代表使用者声明了这个行为。
+checker 口径（2026-11-11 定稿）：所有整数算術站点缺注解就报同一条
+xmicjezl（**只教加注解**，列出 wrap/clamp0/min/max/saturate/u8-max），
+不看是否已被 option match 消费 —— 被消费只代表不会算错，不代表使用者
+声明了溢出行為。`overflowSite` 站点分类与 ovfidxop 分支已删除。
+像 b = a + 1 这类值根还会多一条 ovfhndld（D2 产生处 HINT），文案同样改成
+注解优先，不再给两段式解包教学。
 
-实测：i = 2^32 时 seed[i * i]（真积 2^64，回绕成 0）—— 原地写法取到 seed[0]
-（ok 臂照跑）；提升后走 llvm.smul.with.overflow，落到失败臂；提升 + 陈述上
-#{overflow = wrap} 则回绕成 0、写回 seed[0]（实跑读回 99）。
+事实四（2026-11-11 复测推翻旧猜测）：**呼叫实参里的算术有被检查**。
+walkExprForIntOverflow 的 CallExpression 分支会走查 Arguments，所以
+像 b = f(a + 1) 会报 xmicjezl，把注解写在拥有它的那条陈述上即可消除。
+之前记的「呼叫实参里的算术仍不检查」不成立。钉在
+src/checker/overflow_message_test.go 的 TestOverflowHintAtEverySite
+（13 个站点：索引读写 / option match / 相邻注解 / 值根 / 混合 / 呼叫实参 /
+match 臂）与 TestOverflowHintIsAnnotationOnly、
+TestOverflowUnhandledHintIsAnnotationFirst。
+
+实测（2026-11-11，k = 2^32、k * k 真积 2^64）：
+- 无注解：原地写 seed[k*k] = 99 回绕到索引 0（读回 99）；提升形态落失败臂（0）。
+- #{overflow = wrap}：两种形态都回绕到索引 0（读回 99 / 65）。
+- #{overflow = max}：真值箝到 i64max ⇒ 索引越界 ⇒ 写入/读取被丢掉（读回 0）。
 `
       syntax: `
 seed[8 + i]: {
@@ -728,14 +745,15 @@ c = port-str[i]
       aliases: ['idxwrite', 'with-len', 'with-cap', 'with-cap-len', '下标直写', '预分配缓冲']
       definition: `
 下標直寫 buf[i] = v 是編譯錯誤 idxwrite（裸 OOB 寫，無邊界檢查）。唯一的豁免是
-with-cap(n) / with-cap-len(cap, len) 構造的緩衝：它們能構造 len=0 的緩衝，逐位元組
-下標寫入是唯一能把長度增長起來的寫法，而 checker 建議的兩種正確形體對 len=0 緩衝
-都會靜默產空字串（place-match 讀 i 越界回 nil，ok 臂永不執行）。
+with-cap(n) 構造的緩衝：它構造 len=0 的緩衝，逐位元組下標寫入是唯一能把長度增長
+起來的寫法，而 checker 建議的兩種正確形體（place-match、?=）對 len=0 緩衝都會
+靜默產空字串（place-match 讀 i 越界回 nil，ok 臂永不執行）。這一點在 str 緩衝上
+尤其致命，見 with-cap-str-unwrap-write-dropped。
 
-with-len(n) 曾一起被豁免，這是過寬（2026-11-10 全量收口移除）。理由：with-len 的
-len 已就位，place-match 讀 i（i < len）落在 ok 臂、寫回同位，行為與直寫完全等價，
-沒有任何理由給它留後門。因此 bhex 這類「with-len 緩衝逐位元組填充」現在必須寫成
-place-match 或 ?=。
+with-len(n) 與 with-cap-len(cap, len) 沒有豁免（2026-11-10 全量收口移除 with-len；
+with-cap-len 的 len 也由參數給定，同罪）。理由：len 已就位時，place-match 讀 i
+（i < len）落在 ok 臂、寫回同位，行為與直寫完全等價，沒有任何理由給它留後門。
+因此 bhex 這類「with-len 緩衝逐位元組填充」現在必須寫成 place-match 或 ?=。
 
 另一個易錯點：with-len 的緩衝是 str 時，讀取下標走碼點、寫入走原始位元組，
 非 ASCII 內容下兩者不對齊 —— 這也是要求顯式解包的動力之一。
@@ -765,6 +783,1171 @@ buf[i * 2 + 1] ?= ch
 `
       related: ['idxbruse-both-sides', 'arithmetic-option-assign']
       refs: ['src/checker/checker.go', 'test/std/scrypt.no', 'src/std/str.no']
+    }
+    'with-cap-str-unwrap-write-dropped': {
+      title: 'str 的 with-cap 缓冲上写 ?= 会被静默丢弃（[]byte 不会）'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'str + with-cap（len=0）+ 下标 ?= 恒走 err 臂，一个字节都不写；同一写法在 []byte 上正常增长。'
+      aliases: ['with-cap ?=', 'to-hex 回空串', 'base64 encode 只写第一个字节', 'fmt 零填充失效', 'str 缓冲丢写']
+      definition: `
+?= 的语义是「先按 len 做越界检查读出元素，再写回位置」。with-cap(n) 的 len == 0，
+所以任何下标都越界 ⇒ 恒上抛 ⇒ 外层 { … }: { err -> _ } 吞掉 ⇒ 静默丢写，长度停在 0。
+no vet / no build 都不报。
+
+关键区别：这件事只发生在 str 上。[]byte / vec 的下标写本来就会把长度长到 idx+1，
+所以 nil 或 with-cap 的 []byte 用 ?= 完全正常 —— scrypt / argon2 / x509 / tls /
+quic / http3 里三十多处 x[i] ?= v 都是对的，不要照语法形状批量改。
+
+str 的唯一正确写法就是直写（docs lang/str.md 明写 idxwrite 对 with-cap 豁免，
+因为那是唯一能把 len 长起来的写法）；右值本身是 ?char 读取时，用值位 match 挂在
+右值上解包。正确形态在每个出问题的文件里本来就有（base64.encode 的尾段、
+fmt 的 new-digits[i] = 48），只是被机械替换成了 ?=。
+
+std 侧受影响面 12 站点 / 3 档：encoding/base64.encode 3（每组只写进第 0 个字符）、
+str.to-hex 2（整个函数回空串）、fmt 7（零填充 / 对齐 / 分组全失效）。
+2026-11-11 已全部改回直写，7 个红档转绿，全量 4919 条断言 0 失败。
+
+残留风险：编译器仍允许这个必然失败的组合通过静态检查，复制粘贴就会再犯；
+建议 checker 对「str + with-cap + 下标 ?=」直接报错。
+`
+      syntax: `
+out[j + 1] = table[x]: {
+    ok -> it
+
+    -> _
+}
+`
+      example: `
+; 三段对照（实测输出：2 / str err 0 / byte other 1）
+
+a str = with-cap(8)
+a[0] = 65
+a[1] = 66                              ; len 2，直写会增长
+
+b str = with-cap(8)
+b[0] ?= 65                             ; 走 err 臂，len 仍 0
+
+d []byte = with-cap(8)
+d[0] ?= 65                             ; 正常，len 1
+`
+      related: ['with-len-write-not-exempt', 'idxbruse-both-sides', 'index-read-err-vs-nil']
+      refs: ['src/std/str.no', 'src/std/fmt.no', 'src/std/encoding/base64.no', 'test/README.md']
+    }
+    'builtin-read-does-not-grow-len': {
+      title: '内建读写不更新 len：with-cap 缓冲接 fs.read 后 slice 恒为空'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'fs.read / fs.write 只写内存不动 vec 的 len；with-cap（len=0）接读后 slice(0, n) 永远是空切片。'
+      aliases: ['fs.read 不增长', 'read-line 回空串', 'with-cap 读缓冲', 'slice 空', 'io.reader.read-line']
+      definition: `
+fs.read / fs.write 这类内建直接操作内存，不会像下标写那样把 vec 的 len 长起来。
+于是「with-cap(n) 建缓冲 → 内建读入 n 字节 → buf.slice(0, n)」这条最自然的写法
+拿到的永远是空切片：len 还是 0，slice 被夹到 0。
+
+实测（同一份 2 字节文件）：
+  with-cap(4096) ⇒ read 回 2、buf.len() 0、slice(0,2) 长度 0
+  with-len(4096) ⇒ read 回 2、buf.len() 4096、slice(0,2) = 'cd'
+
+判别法：缓冲区之后要用 slice / to-str 取内容 ⇒ 必须 with-len（或自己把 len 设好）；
+只有「之后用下标直写逐字节填」的场合才用 with-cap。
+
+真实案例：io.reader.read-line 原来写 with-cap(4096)，于是对任何有数据的文件都
+回 ok('')（EOF 时回 nil 倒是对的，所以肉眼很难发现）。2026-11-11 改成 with-len 并
+在函数里留了注释。
+`
+      syntax: `
+buf []byte = with-len(4096)
+n = fs.read(fd, buf, 4096)
+line = buf.slice(0, n).to-str()
+`
+      example: `
+; 错误：len 恒 0，slice 恒空
+bad []byte = with-cap(4096)
+n1 = fs.read(fd, bad, 4096)          ; n1 = 2
+bad.slice(0, n1).len-bytes()         ; 0
+
+; 正解
+ok []byte = with-len(4096)
+n2 = fs.read(fd, ok, 4096)           ; n2 = 2
+ok.slice(0, n2).to-str()             ; 'cd'
+`
+      related: ['with-len-write-not-exempt', 'with-cap-str-unwrap-write-dropped']
+      refs: ['src/std/io.no', 'test/std/io.no', 'test/README.md']
+    }
+    'value-match-var-subject-dropped': {
+      title: '值位 match 的主语是「已存的 ?T 变量」时臂内写入被静默丢弃'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'match 主语是表达式才正常解包；主语是已存的 ?T 变量时，臂内对结果参数或局部变量的写入全部丢失。'
+      aliases: ['bf 恒回 0', 'match 主语', '值位 match 丢写', 'AVL 不自平衡', 'tree-map.bf', 'd: { ok -> b = it }']
+      definition: `
+本语言的 match 有两种主语，语义不同：
+
+主语是表达式（x = EXPR: { ok -> it  -> d }）—— 正常解包。std 的
+tree-map.ht 一直写成 h = .height[idx]: { … }，所以它从没坏过。
+
+主语是已存的 ?T 变量（d = EXPR 之后写 d: { … } 或 b = d: { … }）—— 臂内
+的写入被静默丢弃：语句位连写都没写（目标停在 match 前的值），值位一律
+拿到预设臂的值。目标无论是结果参数还是局部变量都一样，先落变量再转赋值
+也救不回来。no vet / no build 都不报。
+
+触发条件很常见：i64 op i64 的结果恒为 ?i64（#{overflow=wrap} 只改溢出取值，
+不改这个事实），所以「先算到 d，再解包」是最自然的写法，而它正好踩雷。
+
+真实案例：src/std/collection/tree-map.no 与 tree-set.no 的 bf（平衡因子 =
+左高 - 右高）原写成裸块 + 值位 match 且臂内 b = it，于是 bf 恒回 0，
+rebalance 的 b > 1 / b < -1 永不可达 ⇒ AVL 从不旋转。实测升序插入 1..64
+得到高度 64 的右链（root = 0），get/put/remove 全退化成 O(n)。
+
+正解：把 match 直接挂在表达式上，不经中间变量（与 ht 同形），
+no fmt 不会改写、no vet 0 error 0 hint。
+
+附带一条：别想着用类型标注救（lh i64 = .ht(l) 实测对行为无影响，反而会被
+no fmt 当冗余标注删掉）。
+`
+      syntax: `
+b = lh - rh: {
+    ok -> it
+
+    -> 0
+}
+`
+      example: `
+; 六个写法同一棵左重三节点树的 bf(0) bf(1) bf(2)，期望 2 1 0
+
+; 失效一：裸块 + 臂内写结果参数
+{ b-opt: { ok -> b = it  -> } }              ; 0 0 0
+
+; 失效二：主语是变量（语句位）
+d = lh - rh
+d: { ok -> b = it  nil -> b = 900  err -> b = 901 }   ; 100 100 0（三臂全没写）
+
+; 失效三、四：主语是变量（值位）／先落局部再赋值
+b = d: { ok -> it  -> 0 }                    ; 0 0 0
+v = d: { ok -> it  -> 0 }
+b = v                                        ; 0 0 0
+
+; 正解：match 吃表达式
+#{overflow=wrap}
+b = lh - rh: { ok -> it  -> 0 }              ; 2 1 0
+`
+      related: ['arithmetic-option-assign', 'bare-arrow-else', 'index-read-err-vs-nil']
+      refs: ['src/std/collection/tree-map.no', 'src/std/collection/tree-set.no', 'test/README.md']
+    }
+    'unannotated-call-result-union-arm': {
+      title: '未标注的「调用结果」当重载运算操作数会选错联合臂'
+      kind: 'trap'
+      status: 'stable'
+      summary: '把 d = f() 的结果直接喂给联合类型（如 big = bigint | i64）的重载运算，会静默派到错误分支：结果是 0 或直接 abort，vet/build 都不报。'
+      aliases: ['bigint 得 0', 'acc + d', 'd i64', '联合臂派发', 'to-bigint 回 0']
+      definition: `
+联合类型（如 bigint 模块的 big = bigint | i64）上的 + - * / 是靠运行时
+「描述符」区分的。当操作数是一个**未标注型别的调用结果**时：
+
+    d = _dig-val(c)        ; d 的实际型别靠推断，可能是宽松的联合
+    acc = acc + d          ; 派发时把 i64 位元当成 bigint 描述符
+
+结果是整段静默算成 0，有时直接 abort trap。no vet 与 no build 都不报，
+只有值不对 —— 所以只能靠断言抓。
+
+同一个 i64 值，换成下面任一种形态都正常：
+    - 字面量直接参与运算
+    - d i64 = _dig-val(c)        ← 最省事的修法
+    - 先经过一个 i64 形参（把运算搬进 (a i64, b i64) 的助手）
+
+两次真实事故：
+  1. bigint._add 的参数是 big（联合），调用端 d = f() 之后 acc + d ⇒ 算得 0 /
+     abort。见 src/std/bigint.no。
+  2. txt.to-bigint 的累加循环 d = _txt-dig-val(...) 没标注 ⇒ 对任何有效数字
+     都回 0（'42' / '0x10' / 30 位大数全中）。str.to-bigint 早就在同一行标注过
+     i64 并写了注释，txt 这份复制时漏了。2026-11-11 补上。
+
+推论：凡是「联合类型 + 重载运算 + 调用结果当操作数」三者同时出现的循环，
+一律显式标注操作数的具体型别。
+`
+      syntax: `
+acc = bigint.zero()
+(pos < n) {
+    d i64 = _txt-dig-val(.byte(pos))
+    d < 0 -> break
+    acc = acc * radix
+    acc = acc + d
+}
+`
+      example: `
+; 错误：对任何有效数字都回 0（vet/build 都不报）
+d = _txt-dig-val(.byte(pos))
+acc = acc + d
+
+; 正解：给操作数标注具体型别
+d i64 = _txt-dig-val(.byte(pos))
+acc = acc + d
+
+; 另一条正解：把运算搬进 i64 参数的助手
+add-i64 = (acc bigint, v i64) (out bigint) {
+    out = acc + v
+}
+`
+      related: ['arithmetic-option-assign', 'value-match-var-subject-dropped', 'it-to-i64-toplevel']
+      refs: ['src/std/txt.no', 'src/std/str.no', 'src/std/bigint.no', 'test/README.md']
+    }
+    'struct-literal-colon': {
+      title: '结构体字面量的字段分隔符是冒号，不是等号'
+      kind: 'trap'
+      status: 'stable'
+      summary: '写 x = 3 时 checker 静默接受：用户结构体在 MIR 崩 NoVal，std 结构体则把所有字段静默留在零值。正确写法是 x: 3。'
+      aliases: ['结构体字面量', 'NoVal', 'zodppsnm', '字段初始化不生效', 'src: value']
+      definition: `
+结构体定义与字面量都必须多行、每字段一行、不加逗号。字段分隔符是**冒号**：
+
+    user {
+        name str
+        age i64
+    }
+    u = user {
+        name: 'Alice'
+        age: 30
+    }
+
+写成等号（name = 'Alice'）时，错得很有欺骗性：
+
+  - 用户定义的结构体：no vet 回 No issues found，no run 才撞
+    MIR codegen could not handle ... consumer reads value 0 (NoVal) ... (zodppsnm)。
+  - std 结构体（如 yaml.yaml-parser）：连 MIR 都不崩，**所有字段静默保持零值**
+    —— p.src 是空串、p.n 是 0，后续所有判断都基于空文档，且没有任何诊断。
+
+判別法：字段「写了没生效」或「结构体内容全是零值」，第一件事看分隔符是不是写成了等号。
+2026-11-11 就是因为这个把 yaml-parser 误判成「用户码构造不出 std 结构体」，白丢了一轮。
+`
+      syntax: `
+p yaml.yaml-parser = yaml.yaml-parser{
+    src: 'a: 1'
+    n: 4
+    pos: 0
+    line: 1
+}
+`
+      example: `
+; 错误：字段全留在零值，且无任何诊断
+p = yaml.yaml-parser { src: 'a: 1' }
+
+; 正解：冒号 + 型别标注
+p yaml.yaml-parser = yaml.yaml-parser {
+    src: 'a: 1'
+    n: 4
+}
+`
+      related: ['named-type-annotation-for-method', 'multi-arg-call-not-receiver']
+      refs: ['docs/docs/lang/syntax.md', 'test/README.md', 'test/std/yaml.no']
+    }
+    'named-type-annotation-for-method': {
+      title: '字面量赋值不写型别标注就调不动方法；std 结构体名还要全限定'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'p = T{...} 推出的是宽松型别，p.m() 在 MIR 报 unknown callee（vet 不报）；std 结构体名必须写 module.type，裸名 not defined。'
+      aliases: ['unknown callee', '4qhyyund', 'ol0l3ova', 'yaml-parser', 'yaml-node', '名义型别']
+      definition: `
+两条独立规则，常同时踩：
+
+一、变量必须写型别标注，方法才找得到。
+
+    p = yaml.yaml-parser { ... }      ; 推断出的不是名义型别
+    p.cur()                           ; EmitLLVM: unknown callee yaml.yaml-parser.cur (4qhyyund)
+    ; no vet 说 No issues found，只有 codegen 才炸
+
+    p yaml.yaml-parser = yaml.yaml-parser { ... }   ; 加上标注立刻正常
+
+二、std 结构体的型别名必须带模块前缀。
+
+    probe = (v yaml-node) {}          ; type 'yaml-node' not found;
+                                      ; did you mean 'yaml.yaml-node'? (ol0l3ova)
+    x yaml-node = ...                 ; 'yaml-node' is not defined (4bek3xc6)
+
+    probe = (v yaml.yaml-node) {}     ; 正解
+
+能不能裸用取决于该型别是否被公开签名暴露过：yaml 型别裸名可用（d yaml = it 正常），
+err 必须写 err.err。不要凭印象，先写一行编译看报错。
+
+实测结论（2026-11-11）：std 的内部结构体（yaml-parser / yaml-node 之类）**是**可以
+在用户码里构造并逐方法驱动的，只要守这两条。凡是以「内部结构体不可测」为由跳过的
+模块，都可能只是没找到入口。
+`
+      syntax: `
+mk-p = (src str) (p yaml.yaml-parser) {
+    p = yaml.yaml-parser {
+        src: src
+        n: src.len-bytes()
+        pos: 0
+        line: 1
+    }
+}
+`
+      example: `
+; 错误一：没有标注 -> unknown callee
+p = yaml.yaml-parser { src: 'ab' }
+print(p.cur())
+
+; 错误二：裸型别名 -> not defined / not found
+probe = (v yaml-parser) {}
+
+; 正解：标注 + 全限定
+p yaml.yaml-parser = yaml.yaml-parser { src: 'ab' }
+print(p.cur())
+`
+      related: ['struct-literal-colon', 'multi-arg-call-not-receiver']
+      refs: ['src/checker/checker.go', 'test/README.md', 'test/std/yaml.no']
+    }
+    'multi-arg-call-not-receiver': {
+      title: '多实参 std 函数的回传不能直接当方法接收者'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'f(a, b).m() 这种链式接收者会撞 unknown callee 或 NoVal；先把回传落到局部变量再调方法。'
+      aliases: ['链式调用', 'chained receiver', 'NoVal', 'unknown callee', 'len-bytes 链式']
+      definition: `
+同一个「方法接收者是调用结果」的形态，能不能编过取决于被调函数有几个实参：
+
+  base64.encode-std(e).len-bytes()            ; 单实参：正常
+  'ab'.trim().len-bytes()                     ; 零实参方法：正常
+  'ab'.to-upper().len-bytes()                 ; 内建方法：正常
+
+  base64.encode(e, base64.BASE64-STD).len-bytes()
+      ; NoVal (zodppsnm)：consumer reads value 0, which no instruction produced
+  path.join('a', 'b').len-bytes()
+  'abc'.replace('b', 'x').len-bytes()
+      ; EmitLLVM: unknown callee path.join / str.replace (4qhyyund)
+
+两者 no vet 都不报，只有 no run / no build 才炸。绕法只有一条：先落局部变量。
+
+    empty = base64.encode(e, base64.BASE64-STD)
+    runner.eq(empty.len-bytes(), 0, 'encode 空输入得空串')
+
+写测试时最容易撞——断言往往就写成「调用 + .len-bytes()」一行。
+`
+      syntax: `
+s = base64.encode(data, base64.BASE64-STD)
+runner.eq(s.len-bytes(), 4, 'encode 长度')
+`
+      example: `
+; 错误：NoVal / unknown callee
+print(base64.encode(e, base64.BASE64-STD).len-bytes())
+
+; 正解：先落变量
+s = base64.encode(e, base64.BASE64-STD)
+print(s.len-bytes())
+`
+      related: ['named-type-annotation-for-method', 'struct-literal-colon']
+      refs: ['test/README.md', 'test/std/base64.no']
+    }
+    'skip-to-eol-only-comment': {
+      title: '跳行助手只认注释符，遇到别的标记就行内死循环'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'yaml 的 skip-to-eol 只在当前字节是 # 时前进；拿它跳 %YAML 指令行则原地不动，外层 continue 变成永久卡死。'
+      aliases: ['yaml.parse 卡死', '%YAML', 'skip-to-eol', 'skip-doc-preamble', '死循环']
+      definition: `
+yaml-parser.skip-to-eol 的语义是「跳过行尾空白与行注释」，实现上只在
+当前字节是 35（#）时才 advance：
+
+    skip-to-eol = () {
+        .skip-spaces()
+        c = .cur()
+        c == 35 -> { advance 到行尾 }
+    }
+
+而 skip-doc-preamble 把注释行和指令行并成一条分支：
+
+    c == 35 || c == 37 -> {      ; 35='#'  37='%'
+        .skip-to-eol()           ; 对 %YAML 一个字节都不前进
+        .newline()               ; cur 不是换行 -> false，位置不变
+        continue                 ; 状态完全相同 -> 死循环
+    }
+
+后果：yaml.parse('%YAML 1.2' + 换行 + '---' + 换行 + 'a: 1') 永久卡死，一个值都不印。
+yaml.valid-of / error-of / parse-all 全部中招（都走 parse-docs -> skip-doc-preamble）。
+
+2026-11-11 修法：% 行自己推到行尾，不依赖这个助手。
+
+通用教训两条：
+  1. 「跳一段」的助手若对某些输入是 no-op，调用点必须自己保证前进；
+     while / !! 循环里的 continue 之前，务必确认 pos 一定会变。
+  2. 循环外的防滞守卫（yaml.parse-docs 里就有 pos == prev -> break）救不了
+     发生在**单次迭代内部**的死循环。
+`
+      syntax: `
+c == 35 || c == 37 -> {
+    .skip-to-eol()
+    !! {
+        .at-eol() -> break
+        .advance()
+    }
+    .newline()
+    continue
+}
+`
+      example: `
+; 修复前：永久卡死（编译成功，运行不返回）
+r = yaml.parse('%YAML 1.2
+---
+a: 1')
+
+; 修复后：正常解析
+`
+      related: ['struct-literal-colon', 'named-type-annotation-for-method']
+      refs: ['src/std/yaml.no', 'test/README.md', 'test/std/yaml.no']
+    }
+    'std-field-vec-read-breaks': {
+      title: '从模块外按下标读 std 结构体的 []str 字段会静默给 nil，甚至段错误'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'd.pool.strs[0] 在 strs.len() 确实是 3 的情况下回 nil；换到有内容的那格直接 SIGSEGV。同一个结构体的 []noml-value 却读得对。'
+      aliases: ['白盒', '白盒测试', 'std 结构体字段', 'strs 读到 nil', '段错误', 'white box']
+      definition: `
+想给 std 模块的内部结构体写白盒测试（直接驱动它的方法）时，**只能呼方法，
+不能读字段**：
+
+    d = noml.new()
+    root, ok = d.pool.parse('{\ns: \'hi\'\n}')
+    d.pool.strs.len()          ; 3  —— 对
+    d.pool.strs[0]             ; nil —— 错（不是越界，越界也是 nil）
+    d.pool.strs[2]             ; SIGSEGV —— 这格有内容，直接把进程打死
+
+    d.pool.nodes.len()         ; 对
+    d.pool.nodes[2].kind       ; 3   —— 对（元素型别两侧一致时正常）
+
+所以坏的不是下标越界判定，而是**元素跨模块取用**（stride / 所有权不一致，
+Go 侧尚未定位）。判別法：同一个数组的 .len() 对、[i] 不对，就是这条。
+
+安全做法：一切通过方法取值 —— kind / len / key / at / get / val-str / val-num /
+val-bool / stringify。noml 的 49 个 noml-pool 方法全靠这组 API 就达到 100% 覆盖，
+一个字段都不用碰。
+
+附带的第二条坑：别用结构体字面量自己拼一个 std 结构体当池子。 
+p noml.noml-pool = noml.noml-pool{ nodes: [] ... } 能编译、能解析，但解析出来的
+字符串会在同一个 frame 之后变成空串（stringify 印 b: ''）。改用 noml.new().pool
+才稳。
+`
+      syntax: `
+d = noml.new()
+root, ok = d.pool.parse('{\ns: \'hi\'\n}')
+si-op = d.pool.get(root, 's')
+si = -1
+si-op: {
+    ok -> si = it
+
+    nil -> si = -1
+
+    err -> si = -1
+}
+v = d.pool.val-str(si)
+`
+      example: `
+; 会段错误（或有内容时静默给 nil）
+e = d.pool.strs[2]
+
+; 正解：用方法取值
+v = d.pool.val-str(2)
+`
+      related: ['std-method-value-match-it-unbound', 'named-type-annotation-for-method']
+      refs: ['src/std/noml.no', 'test/std/noml.no', 'test/README.md']
+    }
+    'std-method-value-match-it-unbound': {
+      title: 'std 结构体方法回 ?T 时，调用直接接值位 match 拿不到载荷'
+      kind: 'trap'
+      status: 'unstable'
+      summary: '方法调用后面直接接值位 match（si = d.pool.get(...): { ok -> it -> -1 }）时 it 拿不到载荷，get 实际回 1 也得 0，且不报错；先落 ?T 变量再写语句位 match 就正常。'
+      aliases: ['it 不绑定', '值位 match', 'value-position match', '静默 0', 'noml-doc.to-i64']
+      definition: `
+**触发面**：主语是「std 模块编出来的方法调用」，尾巴是值位 match。
+
+    si = d.pool.get(root, 's'): { ok -> it  -> -1 }     ; 得 0（get 实际回 1）
+    c  = d.pool.val-num(2): { ok -> it  -> 0.0 }        ; 得 0
+    x i64 = d.pool.get(...): { ok -> it.len()  -> -1 }  ; it 被推成 noml-doc，
+                                                        ; 撞 unknown callee noml.noml-doc.to-i64
+
+**对照组的全部正常**：
+  - 用户自订方法     b.opt(): { ok -> it }                  -> 5
+  - std 顶层函数     noml.parse('{a: 1}'): { ok -> it.len() } -> 1
+  - 结构体字段下标   bb.items[0]: { ok -> it }              -> 5
+
+形态不稳定：同一形状换一份 doc 有时对有时错，所以别赌。
+
+**正解**：先落 ?T 变量，再写语句位 match（臂内赋值一定写回）：
+
+    op = d.pool.get(root, 's')
+    si = -1
+    op: {
+        ok -> si = it
+
+        nil -> si = -1
+
+        err -> si = -1
+    }
+
+这条和 ['value-match-var-subject-dropped'] 是**两个不同的坑**：那条说「主语是
+已存的 ?T 变量时，值位 match 的臂内写入全丢」；这条说的是「主语是方法调用时，
+连 it 都读不到」。两者共同的结论只有一个：**取值一律两步走**。
+`
+      syntax: `
+op = d.pool.get(root, 's')
+si = -1
+op: {
+    ok -> si = it
+
+    nil -> si = -1
+
+    err -> si = -1
+}
+`
+      example: `
+; 错：静默得 0
+si = d.pool.get(root, 's'): {
+    ok -> it
+
+    -> -1
+}
+
+; 对：两步
+op = d.pool.get(root, 's')
+si = -1
+op: {
+    ok -> si = it
+
+    nil -> si = -1
+
+    err -> si = -1
+}
+`
+      related: ['std-field-vec-read-breaks', 'value-match-var-subject-dropped', 'it-to-i64-toplevel']
+      refs: ['src/std/noml.no', 'test/std/noml.no', 'test/README.md']
+    }
+    'noml-metadata-escaped-quote-crash': {
+      title: '词条的元数据字符串里写转义单引号会让 glossary 崩 SIGBUS'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'summary / aliases / title 这类单行字符串里出现「反斜线 + 单引号」，glossary check 与 get 会直接 SIGBUS（rc=138、零输出），而不是报语法错。'
+      aliases: ['SIGBUS', 'rc=138', 'glossary 崩溃', '转义单引号', '词库载入失败']
+      definition: `
+.noml 的单行字符串（summary / title / aliases / refs 这些）里不能写「反斜线 + 单引号」：
+
+    反斜线 + 单引号  ->  glossary check 直接 SIGBUS（rc=138，stdout 一个字都没有）
+    同样的字符写在反引号块里  ->  完全正常
+
+症状极具误导性：check 不报错、不给行号，只有退出码 138；连 glossary get 其它正常
+id 也一起崩（因为整个词库都载入失败）。
+
+2026-11-11 加词条时踩了一次，一开始误判成「单个域文件太大」（把文件拆成两个域、
+把词条挪到别的域都照样崩，只有把那个转义引号去掉才恢复）。真正的判別法是：
+新加或改动词条之后 check 突然 SIGBUS，就把本次新增的单行字符串里的反斜线全部
+找出来，改成不含引号的措辞。
+
+代价提醒：这个坑会让整轮校验失效，而 SIGBUS 在 shell 里只表现为 rc=138；
+不检查退出码的脚本很容易把「零输出」当成「通过」。
+`
+      syntax: `
+; 会崩：单行元数据里带「反斜线 + 单引号」
+summary: '调用 d.pool.get(root, 转义引号 s 转义引号) 时拿不到载荷'
+
+; 正常：同样的字符放进反引号块
+definition: 见下方 example
+`
+      example: `
+# 崩溃现场（无任何报错输出）
+$ ./glossary/dist/glossary check
+$ echo $?
+138
+
+# 定位：在新增的元数据行里找出所有反斜线
+$ grep -n 反斜线 glossary/data/*.noml
+`
+      related: ['std-method-value-match-it-unbound', 'std-field-vec-read-breaks']
+      refs: ['glossary/data/traps.noml', 'glossary/src/db.no']
+    }
+
+    'array-str-result-param-uninit': {
+      title: '固定长度 str 数组的结果参数没有零值填充'
+      kind: 'trap'
+      status: 'stable'
+      summary: '[N]str 型结果参数进来是未初始化内存，第一次下标写会把垃圾指针当既有 str 释放，SIGSEGV / BPT trap；先 names.zero() 再写。'
+      aliases: ['结果参数零值', '[16]str out param', 'out param 段错误', 'names.zero', '数组 out 参数崩']
+      definition: `
+固定长数组作为**结果参数**（out param）时，编译器没有把它的槽位零初始化：
+进来就是一块栈上的垃圾内存。
+
+后果：函数里第一次写元素 —— 哪怕只是 names[0] = ''（空串）—— 都会把槽位里
+原有的那份指针当成「既有的 str」去释放，于是 free(垃圾) 直接崩。实测三种信号
+都出现过：SIGSEGV、trace/BPT trap、bus error（取决于垃圾值像什么）。
+
+关键区分：只有**含堆载荷的元素型别**会踩。[N]i64 / []byte 完全无事，因为写进去
+不涉及释放旧值。
+
+两种绕法（都在 std 里落地过）：
+  1) names.zero() —— math.arr-zero 的接收者形态，对 [N]str 一样是整块 memset。
+     推荐：一行、不动后面的写入形态（结果参数仍保有 idxwrite 豁免，可以直接
+     names[i] = ...）。
+  2) names = ['', '', ...] —— 整体赋初值也行，但整体赋值会让 names 不再是
+     「结果参数」，idxwrite 的豁免随之失效，后面每次元素写都得改写成
+     place-match（names[i]: { ok -> it = v  -> _ }），脚本更长。
+
+同一个坑也适用于**结构体**结果参数：结构体字段里若有 [N]str，t = hpack.tables{}
+之后直接 t.init() 会 bus error，要先 t.zero()。
+
+已修的受害者：net/cookie.parse-header（[16]str）、net/hpack.tables.decode-headers
+（[128]str，连它自己的 for i <- [0..128) 初始化循环都崩）。缺陷本身未修，属
+编译器侧（结果参数缺零值填充），见 test/README §5.2 #75。
+`
+      syntax: `
+fill = () (o [16]str, n i64) {
+    o[0] = ''; 第一次下标写就崩（BPT trap）
+    n = 1
+}
+`
+      example: `
+fill = () (o [16]str, n i64) {
+    o.zero()
+    o[0] = ''
+    n = 1
+}
+r, c = fill()
+`
+      related: ['std-field-vec-read-breaks', 'with-len-write-not-exempt']
+      refs: ['src/std/net/cookie.no', 'src/std/net/hpack.no', 'scripts/std_test_coverage.py']
+    }
+    'container-foreach-multi-output': {
+      title: '容器的 for-each 用多输出参数直接接多个左值就能调用'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'collection/ 的 for-each 不是「无调用语法」：k, v = m.for-each() 完全可用，返回时停在最后一条迭代。'
+      aliases: ['for-each 调用', '容器遍历', 'k v = m.for-each()', '生成器形态']
+      definition: `
+曾经流传一个错误结论（还写进了 test/std/map.no 的档头并推广到 collection/ 全体）：
+「for-each 是生成器形态，没有用户态可写的调用语法，m.for-each(k, v) { ... } 与
+k, v = m.for-each() 都不行」。
+
+实测（2026-11-11）后半句是错的：多输出参数直接接多个左值就可以：
+
+    v = s.for-each()        单输出（hash-set / str-set）
+    k, v = m.for-each()     双输出（str-map / linked-hash-map / map 三模板）
+
+真正要注意的是**语义**：它是「输出参数在循环里逐个产出、函数返回时停在最后一条」，
+所以只能断言/使用最后一条，不能当回呼用。最后的「一条」是什么由实现决定：
+  · hash-set / str-map / str-set —— 槽位下标最大的那条
+  · linked-hash-map —— 插入序的尾节点（最后插入的那对）
+
+另一个可能踩的点：for-each 有两个输出参数时，**不要**把结果接给单个变量
+（cnt = m.for-each()）—— 那会只绑到第一个输出，且型别推断可能落到奇怪的
+[]t 上（撞 unknown callee []t.to-str）。
+`
+      syntax: `
+m.for-each(k, v) { ... }; 不行：'k' is not defined
+`
+      example: `
+m = str-map{}
+m.init()
+m.put('only', 'solo')
+k, v = m.for-each()
+; k == 'only'、v == 'solo'
+`
+      related: ['array-str-result-param-uninit', 'std-field-vec-read-breaks']
+      refs: ['test/std/map.no', 'test/std/hash-set.no', 'src/std/collection/str-map.no']
+    }
+    'embed-methods-shadowed-by-builtin': {
+      title: 'embed 的 read / exists 被同名全局内建顶掉，模块实际不可用'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'fs.embed 的 .read / .exists 命中 os 内建方法：exists 编不过（cannot marshal arg 0 as C string），read 返回非法 option 标签、内容永远取不到。'
+      aliases: ['embed 不可用', 'fs.embed.read', 'embed.exists 崩', 'z68vr2e2']
+      definition: `
+#\{embed='dir'} 编译期嵌入文件后，D.read(path) / D.exists(path) 看起来是
+fs.embed 的接收者方法，但 read / exists 这两个名字都在 src/builtin/os.go 里
+注册成了**全局内建方法**（MethodName: "read" / "exists"），调用点优先命中内建，
+于是 D 被当成普通实参处理：
+
+    D.exists('a.txt')
+      -> EmitLLVM: builtin fs.embed.exists: cannot marshal arg 0 as C string
+         [z68vr2e2]                       （接收者被当路径，struct 塞不进 C 串）
+
+    D.read('a.txt')
+      -> 编译通过，但返回的 ?[]byte 标签非法：ok / nil / err 三个臂一个都不匹配，
+         内容永远是空。静默失败，比报错更难查。
+
+全限定写法 fs.embed.read(D, 'a.txt') 同样命中内建，报同一条。
+结论：embed 模块目前在用户码里**没有可用入口**，单二进制分发那条路走不通。
+已在覆盖率脚本里登记 embed.read / embed.exists 为 UNREACHABLE（附上述实测）。
+`
+      syntax: `
+#{embed='assets'}
+D fs.embed
+ok = D.exists('index.html'); 编不过
+r = D.read('index.html')    能编过但拿不到内容
+`
+      example: `
+#{embed='assets'}
+D fs.embed
+r = D.read('index.html')
+hit = 0
+r: {
+    ok -> hit = 1
+    nil -> hit = 2
+    err -> hit = 3
+}
+; hit 仍然是 0：标签非法，三个臂都不进
+`
+      related: ['std-method-value-match-it-unbound', 'array-str-result-param-uninit']
+      refs: ['src/std/embed.no', 'src/builtin/os.go', 'scripts/std_test_coverage.py']
+    }
+    'os-syslog-unimplemented': {
+      title: 'os.syslog 只有声明没有实现，带前缀调用即 SIGSEGV'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'os.syslog 在 builtin 里只填了 ForwardFunc、没有 CLibCall：裸调用被 checker 拒绝，os.syslog(...) 编得过但运行期段错误。'
+      aliases: ['os.syslog', 'syslog 崩', 'syslog 未实现']
+      definition: `
+src/builtin/os.go 里的注册只给了 ForwardFunc: "syslog"，**没有 CLibCall**，
+等于「声明了但没接线」。两种调用形态都不可用：
+
+    syslog(6, 'x')        -> [ERROR] 'syslog' is not defined; call it as
+                             'os.syslog' (cross-module calls must be
+                             module-qualified) [4bek3xc6]
+    os.syslog(6, 'x')     -> 编得过，运行期直接 SIGSEGV（无输出、rc=139）
+
+注意这与 Windows-only 的 win-* 不是一类：那批报的是
+"EmitLLVM: unsupported builtin ... [2kqboupo]"（明确的编译期拒绝）；
+syslog 是悄悄放过去、到运行期才炸。
+
+已在覆盖率脚本里登记为 UNREACHABLE（附上述两条实测）。
+`
+      syntax: `
+os.syslog(6, 'hello'); 运行期 SIGSEGV
+`
+      example: `
+; 目前唯一安全的用法：不调用。
+; 需要写日志请用 fs.write-file / io 模块自己落盘。
+`
+      related: ['embed-methods-shadowed-by-builtin']
+      refs: ['src/builtin/os.go', 'src/std/os.no', 'scripts/std_test_coverage.py']
+    }
+    'enum-method-unreachable': {
+      title: '枚舉上的方法在用户码取不到'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'code.io.to-name() 报 unknown callee code.io.to-name；先落变量再调报 unknown callee i64.to-name。std 内部却正常。'
+      aliases: ['枚举方法', 'code.to-name', 'i64.to-name', '枚举方法不可达']
+      definition: `
+std 里可以给枚举写方法（err.no 的 code.to-name），std 内部调用也正常
+（err.format 里就是 .code.to-name()），但**用户码调不到**：
+
+    code.io.to-name()
+      -> EmitLLVM: unknown callee code.io.to-name in func main [4qhyyund]
+
+    c code = code.io
+    c.to-name()
+      -> EmitLLVM: unknown callee i64.to-name in func main [4qhyyund]
+
+原因是枚举在 MIR 里就是 i64，方法表按 i64 去查，查不到 to-name 这个名字；
+而 std 内部是在同一个函数体里做静态解析，走的是另一条路。
+
+同理适用于其它枚举方法。要在用户码取到变体名，目前只能自己写一个
+「i64 -> 字符串」的映射函数。已登记 err.to-name 为 UNREACHABLE。
+`
+      syntax: `
+n = code.io.to-name(); unknown callee code.io.to-name
+`
+      example: `
+; 绕法：自己映射
+name-of = (c i64) (s str) {
+    (c == 3) -> s = 'io'
+    (c == 4) -> s = 'timeout'
+}
+`
+      related: ['std-method-value-match-it-unbound']
+      refs: ['src/std/err.no', 'src/mir/codegen.go', 'scripts/std_test_coverage.py']
+    }
+    'slice-receiver-optional-method-unbound': {
+      title: '切片接收者的方法回傳型別推不出，值位 match 兩臂都不命中'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'buf[a..b).to-str() 的 ?str 推不出來 ⇒ it 未綁定，ok/err 兩臂都不進，結果恆空（且兩步式正常）。'
+      aliases: ['切片接收者', 'to-str 回空', 'decode-header 解不出', 'SliceExpression receiver', 'it 未綁定']
+      definition: `
+形式：把「切片結果」直接當方法接收者，再接值位 match。
+
+    name = buf[a..b).to-str(): { ok -> it  -> '' }
+
+症状：buf 明明是 []byte、切片内容非空，name 恒为 ''（既不是 ok 的内容，
+也不是 err 臂的 ''）—— 两个臂都没进，it 没有绑定。
+
+原因：parser 的 resolveReceiverType 只认 Identifier / Dot / Call /
+Grouped / Infix 五种接收者，没有 SliceExpression 分支 ⇒ receiverType 为空
+⇒ 查不到 []byte.to-str 的回传 ?str ⇒ 值位 match 的主语不归一化成
+__match_subj ⇒ 臂内 it 未绑定。受害：net/http3.no 的 decode-header
+（整支解不出任何标头，静默）。
+
+std 侧的绕法（已落地）：先落变量，再两步解包。
+
+    name-seg = buf[a..b)
+    name-opt = name-seg.to-str()
+    name-opt: { ok -> name = it  -> name = '' }
+
+不要急着在 parser 里补 SliceExpression 分支：实测补上之后 decode-header
+从「静默回空」变成 SIGSEGV——切片视图传进 builtin 撞的是
+vecFromArraySink 视图悬垂那条内存安全缺口，得先修视图生命周期。
+
+同族的另一条已经修好：字符串字面量接收者（'12'.to-i64() 的 it 原本恒为 0），
+resolveReceiverType 补 StringLiteral -> str 后正常（ASTVersion 2026-11-11.1）。
+`
+      syntax: `
+name = buf[a..b).to-str(): { ok -> it  -> '' }   ; 恒得空串
+name-seg = buf[a..b)                             ; 正确写法
+name-opt = name-seg.to-str()
+`
+      example: `
+; http3.decode-header 修复后的形状
+name-seg = buf[r-pos..r-pos + name-len)
+name-opt = name-seg.to-str()
+name-opt: {
+    ok -> name = it
+    -> name = ''
+}
+`
+      related: ['std-method-value-match-it-unbound', 'bitwise-option-tag-unreliable']
+      refs: ['src/std/net/http3.no', 'test/std/http3.no', 'src/parser/type.go', 'test/README.md']
+    }
+    'bitwise-option-tag-unreliable': {
+      title: '位运算的 option 选择子不可信：值对但 match 恒走 err 臂'
+      kind: 'trap'
+      status: 'stable'
+      summary: '| / << / >> 的裸值正确，但接值位 match 必进 err 臂（payload 落在 tag 栏位）；& 只是结果常为 0 才看着对。'
+      aliases: ['位运算 err 臂', 'bitwise option tag', 'or 走 err', 'shl 走 err', '12 | 3 得 -1']
+      definition: `
+实测（2026-11-11）：
+
+    raw = 12 | 3              ; 15   正确
+    m   = 12 | 3: { ok -> it  -> -1 }   ; -1   ← err 臂
+    raw2 = 3 << 8             ; 768  正确
+    m2   = 3 << 8: { ok -> it -> -1 }   ; -1   ← err 臂
+    m3   = 12 & 3: { ok -> it -> -1 }   ; 0    ← 也是 err 臂，只是兜底值恰好 0
+
+两步式（先落变量再语句位 match）同样走 err 臂；裸比较不受影响
+（(a & b) != 0 正常）。根因方向：bitwise 指令的 Dst 型别是纯量 i64，
+emitBitwise 于是走 store i64 -> %option* 的类型双关分支，payload 落在
+tag 栏位、tag 从未写入 ⇒ 消费端读到「tag = 值」。
+
+绕法：需要 ?T 时避开位运算，改用乘加两段解包：
+
+    hi = x * 256: { ok -> it  -> 0 }
+    y  = hi + lo: { ok -> it  -> hi }
+
+同区的两条小坑：
+  (1) buf[r-pos + 1]（用 option 算术当下标）读到的不是下一个字节，
+      要先把游标移过去再按下标读。
+  (2) net/http3 的 >=64 长度形态编解码不对称（编码写两位元组、解码只读
+      一位元组）⇒ 长名称/长值必定解错，未修，源码里留了 TODO。
+`
+      syntax: `
+m = 12 | 3: { ok -> it  -> -1 }    ; -1（应为 15）
+m = 3 << 8: { ok -> it  -> -1 }    ; -1（应为 768）
+`
+      example: `
+; 需要高位合并时用乘加，不要用位移或按位或
+hi = x * 256: {
+    ok -> it
+    -> 0
+}
+y = hi + lo: {
+    ok -> it
+    -> hi
+}
+`
+      related: ['slice-receiver-optional-method-unbound', 'unannotated-call-result-union-arm']
+      refs: ['src/mir/codegen.go', 'src/std/net/http3.no', 'test/README.md']
+    }
+    'str-array-unwrap-assign-silently-fails': {
+      title: '[N]str 空槽上的 ?= 恒失败，错误还会被 { … }: { err -> _ } 吞掉'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'arr[i] ?= v 的语义是先读目标元素，而空槽（data 指针为 null）读出来是 nil ⇒ 恒走 err 臂；外面再套一个吞错的 { … }: { err -> _ } 就变成「什么都不发生、也没有任何诊断」。net/http 的 request.add-header 因此彻底失效。'
+      aliases: ['?= 空槽', '?= 恒失败', '数组元素赋值', 'add-header 失效', 'str 数组初始化']
+      definition: `
+arr[i] ?= v 不是「往数组元素里写」的糖，它先按 i 读一次目标元素：读得到才写。
+而 [N]str 的空槽（data 为 null、len 为 0）读出来是 nil ⇒ 恒走 err 臂。
+
+单独看只是「写不进去」，真正致命的是外面那层吞错写法：
+
+    {
+        .headers[i] ?= ' '      ; 恒失败，被吞掉
+        .headers[i].len = 0
+    }: {
+        err -> _
+        -> _
+    }
+
+没有任何诊断（no vet / no build 都不报），于是 net/http 的 request.add-header
+恒回 false、header-count 永远是 0，连带的 set-basic-auth / set-bearer-auth /
+set-api-key 全部白做 —— 整个标头功能形同虚设，而调用方只看到 ok == false。
+
+正确写法（no vet 指定两种）：place-match 或直写（直写要先过 idxwrite 那道门）：
+
+    .headers[idx]: {
+        ok -> it = name - ': ' - value
+        -> _
+    }
+
+同一家族的坑：str 的 with-cap 缓冲上 ?= 也是恒失败（见
+with-cap-str-unwrap-write-dropped），现象是「长度停在 0」。
+`
+      syntax: `
+; 错误：恒失败且被吞掉
+{
+    arr[i] ?= 'x'
+}: {
+    err -> _
+    -> _
+}
+
+; 正确：place-match
+arr[i]: {
+    ok -> it = 'x'
+    -> _
+}
+`
+      example: `
+; net/http request.add-header 修好后的形状
+.headers[idx]: {
+    ok -> it = name - ': ' - value
+    -> _
+}
+ok = true
+`
+      related: ['with-cap-str-unwrap-write-dropped', 'array-str-result-param-uninit', 'loop-accumulator-value-match-dropped']
+      refs: ['src/std/net/http.no', 'test/std/http.no', 'test/README.md']
+    }
+    'loop-accumulator-value-match-dropped': {
+      title: '循环里的累加器写成值位 match，第二次进同一块时写回被静默丢弃'
+      kind: 'trap'
+      status: 'stable'
+      summary: 'size = size * 16 + d: { ok -> it  -> … } 这类「在循环体内重复执行的累加器」只在第一轮写回，之后静默丢弃 ⇒ 计数器/游标停在错误值。要么改成语句位 match，要么把累加器搬进独立函数（跨函数边界是安全的）。'
+      aliases: ['累加器丢写', '循环计数器', 'size = it', 'pos = it', '第二块丢失']
+      definition: `
+事实：把累加器写成值位 match（x = x + 1: { ok -> it  -> x }）在「循环体内」重复
+执行时，只有第一轮真正写回；从第二轮起写回消失，x 停住。语句位 match
+（d: { ok -> x = it  -> … }）与「过一次函数边界」两种写法都正常。
+
+实测受害者：net/http 的 http-dl-dechunk。解 '4\r\nwiki\r\n5\r\npedia\r\n0\r\n\r\n'
+只得到 'wiki' —— 第二块的十六进制长度解析里 size = it 没写回，size 停在 0，
+下一轮 size <= 0 -> break 立刻命中，'pedia' 被整块丢掉。同一个函数里
+pos = it 也是同一形态，位置游标一起失准。
+
+同族记录：process.cmd 的超时看门狗（计数器不写回 ⇒ 看门狗永不过期）也是这条。
+判据：循环内的累加器/游标，一律别用值位 match。
+
+另注：#{overflow=wrap} + 直接 x = x + 10 会被 no vet 判硬错误 15w45dqk
+（no run 却放过），所以「改直写」不是逃法，必须改 match 形状或搬函数。
+`
+      syntax: `
+; 错误（第二轮起丢写）
+!! {
+    x = x + d: {
+        ok -> it
+        -> x
+    }
+}
+
+; 正确（语句位 match）
+!! {
+    next = x + d
+    next: {
+        ok -> x = it
+        -> x = 上限
+    }
+}
+`
+      example: `
+; 更稳的写法：把累加搬进独立函数，让写回跨过一次函数边界
+sum-hex = (acc i64, digit i64) (v i64) {
+    t = acc * 16 + digit
+    v = t: {
+        ok -> it
+        -> acc
+    }
+}
+`
+      related: ['str-array-unwrap-assign-silently-fails', 'bitwise-option-tag-unreliable']
+      refs: ['src/std/net/http.no', 'src/std/process.no', 'test/README.md']
+    }
+    'byte-vec-to-str-reencodes-utf8': {
+      title: '[]byte.to-str() 按码点重新编码，不是逐字节拷贝'
+      kind: 'trap'
+      status: 'stable'
+      summary: '打包二进制协议必须用 to-bytes-str()；to-str() 会把 >= 0x80 的字节膨胀成 2 字节，边界与偏移全错。'
+      aliases: ['to-str 二次编码', '二进制打包错位', 'to-bytes-str', '字节向量转字符串', 'byte-vec-to-str']
+      definition: `
+[]byte 上有两个「转成 str」的方法，语义完全不同：
+
+  to-str()        —— 每个 byte 当作 0~255 的 Unicode 码点，再 UTF-8 编码成 1~4 字节。
+                     等价于 b.to-chars().to-str()。0x80 以上的字节必然膨胀成 2 字节。
+  to-bytes-str()  —— 1:1 逐字节拷贝（旧版 to-str 的语义）。
+
+因此凡是「把二进制缓冲区当字节流」的场景（协议封包、加解密、文件内容），都必须用
+to-bytes-str()。用错 to-str() 不会报错，只会静默改变长度：
+
+  packet []byte              ; 38 字节的封包
+  s = packet.to-str()        ; 变长（>= 0x80 的字节各 +1）
+  net-send(fd, s, 38)        ; 按 38 截断 ⇒ 从第一个膨胀字节起整段错位
+
+真实案例：net.enc-conn.send-encrypted 这么写，IV 是随机的、必然含 >= 0x80 的字节，
+于是对端拿到的 IV 与密文全部错位，aes-gcm.open-256 恒失败 —— 加密通道 100% 不可用，
+而 send 侧还返回 true（因为它只比较 net-send 的返回值与预期总长）。
+
+判据：写完之后 str 的 len-bytes() 应该等于原 []byte 的 len()。不等就是选错了方法。
+注意 to-str() 的返回型别是 ?str，to-bytes-str() 的返回型别是裸 str —— 这个差异本身
+也是个提示：要 option 说明它可能「转换失败」，那正是重编码路径。
+`
+      syntax: `
+; 错：按码点重编码
+s = packet.to-str()
+
+; 对：1:1 逐字节
+s = packet.to-bytes-str()
+`
+      example: `
+; 正确的收发形状
+packet-str = packet.to-bytes-str()
+written = net-send(fd, packet-str, packet.len())
+
+; 接收侧同理：解出来的明文要原样取出
+opened = aes-gcm.open-256(key, iv, aad, sealed)
+data = opened.to-bytes-str()
+`
+      related: ['bstr']
+      refs: ['src/std/byte.no', 'src/std/net/net.no', 'test/README.md']
+    }
+    'nested-match-it-type-bleed': {
+      title: '嵌套 match 的 it 会串到外层 option 的载荷型别'
+      kind: 'trap'
+      status: 'stable'
+      summary: '内层 match 的 it 被推成外层 option 的载荷型别；同一 ?T 变量 match 两次时第二处也会退化。绕法是跨一次函数边界。'
+      aliases: ['it 类型串味', '嵌套 match', '二次 match', 'option 载荷型别', 'it-type-bleed']
+      definition: `
+当 match 嵌套在另一个 match 的 ok 臂里、且外层主语是 option 时，内层臂里的 it 可能
+不会被推成内层 option 的载荷型别，而是沿用外层那个：
+
+  d = se.recv-encrypted()      ; ?str
+  e: {                          ; ?enc-conn
+      ok -> {
+          cli = it              ; ?enc-conn 的载荷（正确）
+          d: {
+              ok -> {
+                  got = it      ; 期望 str，实测被推成 ?enc-conn
+                  sb(got, 0)    ; ⇒ expected 'str', got '?enc-conn' [6fgg3htw]
+              }
+              -> _
+          }
+      }
+  }
+
+同一个 ?T 变量被 match 两次时，第二处也有同样问题 —— 尤其在 no fmt 把第一处改写成
+值位 match（x = v: { ok -> it  -> 默认 }）之后，第二处就读不到载荷了。
+
+绕法：把内层那段断言/取值搬进独立顶层函数，参数写清楚型别：
+
+  chk-plain = (d ?str) (r i64) { … d: { ok -> { got = it … } } }
+  dv = chk-plain(d)
+
+跨一次函数边界之后，it 就正常推成 str。这也是「函数边界能切断类型串味」的第二个
+用途（第一个是累加器写回的 loop-accumulator-value-match-dropped）。
+`
+      syntax: `
+; 会串型别
+outer: {
+    ok -> {
+        d: {
+            ok -> got = it
+            -> _
+        }
+    }
+    -> _
+}
+
+; 拆成独立函数就正常
+chk = (d ?str) (r i64) {
+    r = 0
+    d: {
+        ok -> {
+            got = it
+            r = 1
+        }
+        -> r = -1
+    }
+}
+`
+      example: `
+; 多个 assert 一起搬，注意函数体内不能再定义嵌套函数
+chk-plain = (d ?str) (r i64) {
+    r = 0
+    d: {
+        ok -> {
+            got = it
+            r = 1
+            runner.eq(got.len-bytes(), 6, '明文长度')
+        }
+
+        -> r = -1
+    }
+}
+`
+      related: ['loop-accumulator-value-match-dropped', 'byte-vec-to-str-reencodes-utf8']
+      refs: ['test/std/net.no', 'test/README.md']
+    }
+    'paren-cond-loop-misused-as-if': {
+      title: '把 (cond) { } 当条件块用会无限循环'
+      kind: 'trap'
+      status: 'stable'
+      summary: '(cond) { } 是条件循环（while）不是 if；(true) { } 等价 !! { }，永远不返回，表现为测试挂死、no run 无输出、exit 137。'
+      aliases: ['(true) { }', '条件块', 'while 当 if', '测试挂死', 'exit 137', '无限循环误用']
+      definition: `
+Nolang 只有三种循环形态，没有 C 式 for(;;)：
+
+  (cond) { 体 }   条件循环（while）：每轮重新求条件
+  !! { 体 }       无条件循环，靠 break 退出（写成 true { 体 } 同义）
+  ! { 体 }        体不执行（写成 false { 体 } 同义）
+
+所以 (true) { ... } 不是「恒真条件块」，而是死循环。把它当 if 用，
+no run / 测试就永远不返回；在 runner 或沙箱里表现为 exit 137、
+零输出，看起来像崩溃，其实是没结束。
+
+要「跑一次」用裸块 { 体 } 或 cond -> { 体 }；要真 if 就用 cond -> { 体 }。
+
+对照：(z == 0) { z = 5 } 之所以看起来像 if，是因为循环体把 z 改成 5
+后条件转假，第二轮就退出了 —— 仍是 while，只是碰巧只跑一次。
+条件写成永真表达式（z == z、1 == 1）同样会挂死。
+
+排查含义：探针「无输出 + exit 137」先怀疑这一条，再怀疑崩溃。
+`
+      syntax: `
+; 对：跑一次
+{
+    z = 5
+}
+
+; 对：条件块
+z > 0 -> z = 5
+
+; 错：无限循环
+(true) { z = 5 }
+`
+      example: `
+; 本仓库踩过的形状（tmp/sh/wz9.no）：想探「块内赋值是否写回」，
+; 写成 (true) { z = 5 } 后每次都以 exit 137 静默收场，
+; 被误读成「块内新建局部不可靠」。换成裸块立刻正常。
+f = () {
+    z i64 = 0
+    { z = 5 }
+    print('z =', z)
+}
+`
+      related: ['value-match-var-subject-dropped', 'loop-accumulator-value-match-dropped']
+      refs: ['test/README.md', 'tmp/sh/wz9.no', 'tmp/sh/wza.no']
     }
   }
 }

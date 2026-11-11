@@ -375,18 +375,20 @@ func TestS1SubformsAreCovered(t *testing.T) {
 	}
 }
 
-// TestS1RangePatternFixtureIsExercised pins P3 coverage from BOTH directions:
-// the pre-existing fixtures the census found (fmt-heuristic.no / str-order.no)
-// and the reinforcement fixture added with this gate. Deleting any one of them
-// fails here, so P3 cannot silently regress to zero coverage.
+// TestS1RangePatternFixtureIsExercised pins P3 coverage from BOTH directions.
+// The three original fixtures were merged into category files by ed7b5236 /
+// 15618c3c ("同類測試合併為單一檔案"), so the gate names the merged files now:
+// fmt-heuristic.no -> fmt.no, str-order.no -> str.no,
+// match-range-pattern.no -> match.no. Deleting any one of them (or defanging
+// its range arms) fails here, so P3 cannot silently regress to zero coverage.
 func TestS1RangePatternFixtureIsExercised(t *testing.T) {
 	if _, err := os.Stat(corpusRoot); err != nil {
 		t.Skipf("no corpus at %s: %v", corpusRoot, err)
 	}
 	for _, rel := range []string{
-		"fmt-heuristic.no",       // [0..60) / [60..80) / [80..90) -> char grades
-		"str-order.no",           // [1..10) and ["a".."z") -> string ranges
-		"match-range-pattern.no", // reinforcement: range match in a value-returning fn
+		"fmt.no",   // [0..60) / [60..80) / [80..90) -> char grades
+		"str.no",   // [1..10) and ["a".."z") -> string ranges
+		"match.no", // range match in a value-returning fn
 	} {
 		path := filepath.Join(corpusRoot, rel)
 		raw, err := os.ReadFile(path)
@@ -430,21 +432,21 @@ func keysOfBool(m map[string]bool) []string {
 	return out
 }
 
-// TestS1RawCondFixturesAreExercised pins P4 from BOTH directions: the
-// pre-existing minimal fixture (minimal-ok.no — one ok(cond) arm plus a
-// default) and the reinforcement fixture added with this gate
-// (match-raw-cond.no — a raw-cond chain, compound boolean conditions, a
-// raw-cond match nested inside another match's arm, and the ?= propagation
-// source shape whose synthetic SkipItBinding arm never survives lowering).
-// Deleting or defanging any one of them fails here, so P4 cannot silently
+// TestS1RawCondFixturesAreExercised pins P4 from BOTH directions. The corpus
+// reorganisation merged the two original fixtures into category files:
+// minimal-ok.no -> minimal.no (one ok(cond) arm plus a default) and
+// match-raw-cond.no -> match-2.no (a raw-cond chain, compound boolean
+// conditions, a raw-cond match nested inside another match's arm, and the ?=
+// propagation source shape whose synthetic SkipItBinding arm never survives
+// lowering). Deleting or defanging either one fails here, so P4 cannot silently
 // regress to zero coverage.
 func TestS1RawCondFixturesAreExercised(t *testing.T) {
 	if _, err := os.Stat(corpusRoot); err != nil {
 		t.Skipf("no corpus at %s: %v", corpusRoot, err)
 	}
 	for _, rel := range []string{
-		"minimal-ok.no",     // single ok(it > 127) + default arm
-		"match-raw-cond.no", // ok(cond) chain / compound cond / nested / ?= source shape
+		"minimal.no", // single ok(it > 127) + default arm
+		"match-2.no", // ok(cond) chain / compound cond / nested / ?= source shape
 	} {
 		path := filepath.Join(corpusRoot, rel)
 		raw, err := os.ReadFile(path)
@@ -482,12 +484,14 @@ func TestS1RawCondFixturesAreExercised(t *testing.T) {
 	}
 }
 
-// TestS1TypeArmFixturesAreExercised pins P5 from BOTH directions:
-// type-match.no (the pre-existing fixture: bound arms over the flat union
-// num = i32|i64|f64 plus bare arms and a default) and match-type-arm.no
-// (the reinforcement added with this gate: the CHAINED union mixed = num|bool,
-// a bound arm over the non-numeric member, bare arms, a type match nested
-// inside a type arm, and a cross-function value match on bool).
+// TestS1TypeArmFixturesAreExercised pins P5 from BOTH directions. Both original
+// fixtures were merged into match.no by ed7b5236: type-match.no (the
+// pre-existing fixture: bound arms over the flat union num = i32|i64|f64 plus
+// bare arms and a default) and match-type-arm.no (the reinforcement: the
+// CHAINED union mixed = num|bool, a bound arm over the non-numeric member,
+// bare arms, a type match nested inside a type arm, and a cross-function value
+// match on bool). The two table entries therefore point at the same file, each
+// pinning one union alias and its own structural expectations.
 //
 // Beyond the sub-form tally it asserts the structural properties the file
 // headers claim, because those are exactly what a careless edit would drop:
@@ -497,8 +501,8 @@ func TestS1RawCondFixturesAreExercised(t *testing.T) {
 //     this assertion the bare shape could vanish with no census signal;
 //   - the union alias itself is still declared (drop it and every arm stops
 //     dispatching statically, yet the file would still parse);
-//   - match-type-arm.no still nests a match inside a type arm (P6), the
-//     P5×P6 interaction the fixture was written for.
+//   - the chained-union section still nests a match inside a type arm (P6),
+//     the P5×P6 interaction the fixture was written for.
 func TestS1TypeArmFixturesAreExercised(t *testing.T) {
 	if _, err := os.Stat(corpusRoot); err != nil {
 		t.Skipf("no corpus at %s: %v", corpusRoot, err)
@@ -508,8 +512,8 @@ func TestS1TypeArmFixturesAreExercised(t *testing.T) {
 		wantUnion string // union alias the fixture must still declare
 		wantP6    bool   // fixture must nest a match inside a type arm
 	}{
-		{"type-match.no", "num", false},
-		{"match-type-arm.no", "mixed", true},
+		{"match.no", "num", false},
+		{"match.no", "mixed", true},
 	} {
 		path := filepath.Join(corpusRoot, tc.rel)
 		raw, err := os.ReadFile(path)

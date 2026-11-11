@@ -22,6 +22,9 @@
 已确认的键：overflow / buildin / embed / inline / generic / track-caller / bind，
 加上平台键（mac-arm64 等）与 FFI 语言键（c / cpp / rust）。
 
+其中 overflow 是唯一受限的键：只支持 L3 行作用域（防滥用），写在函数头 / 块头 /
+文件头不合法，见 annotation-scope。
+
 注解会被 formatter 原样保留；编译器在解析期把部分键写进节点字段，
 以便单态化副本与 HIR 重建后仍能还原（例如 overflow 模式）。
 细节与实现差距见 annotation-scope。
@@ -61,16 +64,19 @@ net-udp-open = () (fd fd) {
 - L3 单行：单条陈述 —— 该陈述及其表达式。
 
 继承与覆盖：由外向内继承（L0 到 L3），同一节点上同名键后者胜。
-硬边界：函数体 / 方法体 / 匿名函数体不继承外层 L2、L3 注解；
-L1 注解本来就写在函数头上，照常覆盖整个函数体。
+硬边界：L2 块的作用域止于语法子树，不沿调用关系扩散，也不进入任何函数定义体；
+一个函数体用什么模式只由它自己的注解决定。
 成员粒度：结构体字段、枚举变体上的注解只管该成员。
+
+不是每个键都吃满四层。键可以只支持其中几层，写到不支持的层是编译错误。
+目前唯一的受限键是 overflow：只支持 L3 行作用域（设计限制，防滥用）。
 
 失效必报：非法的「键乘层级」组合（如 buildin 写在 for 上方）应报编译错误，
 不得静默忽略。
 
-陷阱：overflow 目前只有 L3 在 codegen 生效。写在函数头或块头只会让 no vet 闭嘴，
-运行期照旧回 err —— 实测函数级 wrap 得 err，而 no vet 报 No issues found。
-平台键则在 L1 与 L3 生效，L2 与 L0 未实现。
+陷阱：overflow 写在函数头或块头不合法，但当前 no vet 会误认（函数级整函跳过、
+块级向下继承），codegen 则一律不认 —— 实测函数级 wrap 得 err，而 no vet 报
+No issues found。平台键在 L1 与 L3 生效，L2 与 L0 未实现。
 `
       syntax: `
 ; L1：整个函数
@@ -96,19 +102,63 @@ greet = () {
       title: '#{overflow=...}'
       kind: 'attr'
       status: 'stable'
-      summary: '整型溢出策略：默认检查（溢出即 err），wrap 环绕，clamp0 夹到 0。'
-      aliases: ['溢出', 'overflow', 'wrap', 'clamp0']
+      summary: '整型溢出策略：默认检查（溢出即 err）；wrap 回绕，clamp0/min/max/saturate 各自取值（2026-11-11 起 codegen 真正实作）。'
+      aliases: ['溢出', 'overflow', 'wrap', 'clamp0', 'min', 'max', 'saturate', 'u8-max', 'OvfMode', 'overflowStorageRaw', '窄型别回绕']
       definition: `
 整型算术 + - * / % 默认走溢出检查：溢出得到 err，正常得到 ok(v)。
-#{overflow=wrap} 改为按位环绕；#{overflow=clamp0} 改为夹到 0（负向不夹）。
+注解**只改变溢出时取什么值**，不解除 option 包装（结果仍是 ?T，仍需解包）。
+逐模式语义（与 src/lsp/hover.go 的 overflowModeDoc、xmicjezl / 8t1jaj02 提示文案一致）：
 
-关键点：这两个模式**只改变溢出时的取值，不改变结果型别** —— 结果仍是 ?i64。
-因此「已存在的 i64 变量 = 算术表达式」依然是硬错误，仍需两段式解包。
+| 模式 | 上溢 | 下溢 |
+| --- | --- | --- |
+| 无注解 | err | err |
+| wrap | 2's 补数回绕 | 2's 补数回绕 |
+| clamp0 | 回绕 | 0 |
+| min | 回绕 | 型别最小值 |
+| max | 型别最大值 | 回绕 |
+| saturate | 型别最大值 | 型别最小值 |
 
-未标注的整型运算若可能溢出，会被检查器报「未处理溢出」。
-注意区分两个消费者：写在行上（L3）会真正改变 codegen 的溢出行為；
-写在函数或区块上（L1、L2）目前只会让 no vet 跳过整段扫描，codegen 仍按默认模式，
-于是检查全绿而运行期照旧回 err。详见 annotation-scope。
+未箝位的那个方向保留「注解跳过检查后」的回绕结果。边界按运算结果的**实际
+型别**（i8/u8/.../i64/u64）计算；byte / char 是文件明定的特例，注解不管辖。
+型别前缀形式（u8-max / i8-min / u16-saturate）由 parser.NormalizeOverflowMode
+归一为方向，前缀只写方向、**边界仍按实际型别**（LSP hover 亦如此说明）。
+
+🔴 历史坑（2026-11-11 已修）：src/mir/hir2mir.go 的 ovfFlagMask 曾把五个
+HIR 旗标压成单一 bool OvfAnnotated，codegen 只用它跳过 *.with.overflow，
+之后发裸 add/sub/mul ⇒ **五种注解全部等价于 wrap**。实测 i64max + 1：
+五种注解都给 i64 min。修复方式：解回模式字串存进 Inst.OvfMode，codegen
+在 i256 宽域算真值后按方向 select + trunc（emitAnnotatedOverflowValue）。
+wrap 仍走历史裸 add，IR 逐位元不变（std 全量测试依赖它）。
+
+✅ 窄型别 option payload 的回绕已统一到宣告宽度（2026-11-11 12:30 修）：
+?i8/?u8/... 的 payload 一律以 i64 存放（optionPayloadLLVMType），而 emitArith /
+emitNeg 的 option 写回只把 **dstRaw** 交给 wrapIntToStorage；option 的宣告宽度
+其实在 **elemRaw**，dstRaw 常常为空 ⇒ 不做窄化。旧行为：`i8 -120 - 20` 存进
+-140，而 u8 的 plain 路径是 `add i8`、250+10 自然回绕成 4，两条路径矛盾。
+修法：新增 `overflowStorageRaw`，在「已注解 + option 结果」时改传 elemRaw，
+wrapIntToStorage 便发 `trunc i64 → i8` + `sext/zext i8 → i64`。裸 `sub i64`
+仍保留（wrap 的 IR 形状不变）；i64/u64 与 byte/char 排除在外，不受影响。
+
+修后实测（no run，bin/no 12:30 重建）：
+- `i8 -120 - 20`（下溢）：wrap / max **116**（真 8-bit 回绕）、clamp0 **0**、
+  min / saturate **-128**。
+- `i8 120 + 20`（上溢）：wrap / clamp0 / min **-116**、max / saturate **127**。
+- `u16 65530 + 10`：wrap **4**、max **65535**。
+- i64 上下溢、u8 250+10、索引站点、原地写、OpNeg 的真值全部不变。
+
+钉在 src/mir/overflow_mode_test.go 的 TestOverflowNarrowSignedWrapDirection
+（临时把 overflowStorageRaw 短路回 dstRaw 可让两个子测试全红，已验证判别力）。
+
+作用域只有一种：行作用域（L3）。注解必须独占一行紧贴它管辖的那条陈述（或同行尾随），
+一行一注解。这是刻意的限制（防滥用）：overflow 是逐运算的语义开关，放宽到块级或函数级
+会让「某条运算用哪个模式」需要向上追溯，且 fmt / vet / codegen 三方极易漂移。
+
+写在函数头、块头、文件头都不合法。当前漏洞：函数头注解会让 no vet 跳过整个函数、
+块头注解会让 no vet 向下继承，而 codegen 一律不认 —— 检查全绿而运行期照旧回 err。
+详见 annotation-scope。
+
+⚠️ docs/docs/lang/syntax.md 的溢出表格把 clamp0/min/max 写成「上溢或下溢都取
+同一值」，与上面 LSP hover 的单向语义冲突；实现以本条（单向）为准。
 `
       syntax: `
 i <- [0..n): {

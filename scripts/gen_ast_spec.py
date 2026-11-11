@@ -558,6 +558,37 @@ def interpret(stmts, ftype, owner, locals_, sink, problems, prelude_texts):
             # `if` arm prints the header AND recurses into the child, so every
             # statement in the arm must be classified, not just the Fprintf.
             if body and body[0]["t"] == "s" and body[0]["text"].startswith("fmt.Fprintf"):
+                # `if n.X != nil { Fprintf("%s<Name>\n", indent(depth+1));
+                #                  d.commentGroup(n.X, depth+2) }`
+                # is a *conditional comment-group header* whose header text is
+                # NOT one of EXTRA_FORMS.  The four fixed groups (Free /
+                # Between / Trailing / Closing) are safe to emit unconditionally
+                # because their opcodes guard themselves in the interpreter;
+                # an arbitrary name (e.g. Program.ModuleDoc) has no such
+                # opcode, and the Nolang side only models `nd.doc` (the first
+                # comment's text), not a whole group.  Emitting it as a plain
+                # HDR makes specDump print the header for EVERY node of that
+                # kind, so regeneration disagrees with dump.go on the whole
+                # corpus.  Skip the shape explicitly (and report it) to keep
+                # the table regenerable; if a corpus file ever carries such a
+                # group, TestSpecMatchesDump fails loudly instead of silently
+                # drifting.  See test/README.md §5.2b.
+                if gm and not els and len(body) == 2 and all(
+                        b["t"] == "s" for b in body):
+                    fp = parse_fprintf(body[0]["text"])
+                    cg = re.match(
+                        r"^d\.commentGroup\(\s*n\.([A-Za-z][A-Za-z0-9_]*)\s*,\s*depth\+2\s*\)$",
+                        body[1]["text"])
+                    hdr = None
+                    if fp:
+                        hdr = re.match(
+                            r'^"%s([A-Za-z][A-Za-z0-9_]*)\\n"$', fp[0])
+                    if fp and hdr and cg and cg.group(1) == gm.group(1) \
+                       and hdr.group(1) not in EXTRA_FORMS:
+                        problems.append(
+                            f"{owner}: skipped conditional comment-group header "
+                            f"`{hdr.group(1)}` (guarded by n.{gm.group(1)} != nil)")
+                        continue
                 sub = []
                 for b in body:
                     if b["t"] == "s":
@@ -1625,13 +1656,19 @@ def emit_nolang(spec, path):
     A(f"STR-COUNT = {len(strs) + 1}")
     A(f"INSTR-COUNT = {len(tape)}")
     A("")
+    # Array layout must match `no fmt`'s fixed point, otherwise every
+    # regeneration leaves asp.no dirty (a ~950-line pure-whitespace diff).
+    # `no fmt` packs numeric array elements 8 per line, keeps string arrays
+    # one element per line, and requires a trailing comma on the last item.
+    # NOTE: the tape is *logically* 5 i64 per instruction, but the printer
+    # deliberately reflows it 8 per line; the comment in the generated file
+    # describes the encoding, not the line breaks.
     A("; strs: 字串池（id 0 = 空字串，不在此列）")
     A("strs = () (r []str) {")
     str_items = ["''"] + [no_q(st) for st in strs]
     A("    r = [")
-    for j, s in enumerate(str_items):
-        tail = "," if j + 1 < len(str_items) else ""
-        A(f"        {s}{tail}")
+    for s in str_items:
+        A(f"        {s},")
     A("    ]")
     A("}")
     A("")
@@ -1639,9 +1676,8 @@ def emit_nolang(spec, path):
     A("tape = () (r []i64) {")
     flat = [v for (op, a, b, c, d) in tape for v in (op, a, b, c, d)]
     A("    r = [")
-    for j in range(0, len(flat), 5):
-        tail = "," if j + 5 < len(flat) else ""
-        A("        " + ", ".join(str(x) for x in flat[j:j + 5]) + tail)
+    for j in range(0, len(flat), 8):
+        A("        " + ", ".join(str(x) for x in flat[j:j + 8]) + ",")
     A("    ]")
     A("}")
     A("")
@@ -1651,9 +1687,8 @@ def emit_nolang(spec, path):
     for (k, sid_, first, num) in kind_rows:
         kflat += [sid_, first, num, 0]
     A("    r = [")
-    for j in range(0, len(kflat), 4):
-        tail = "," if j + 4 < len(kflat) else ""
-        A("        " + ", ".join(str(x) for x in kflat[j:j + 4]) + tail)
+    for j in range(0, len(kflat), 8):
+        A("        " + ", ".join(str(x) for x in kflat[j:j + 8]) + ",")
     A("    ]")
     A("}")
     A("")
@@ -1663,11 +1698,15 @@ def emit_nolang(spec, path):
         kebab = re.sub(r"(?<!^)(?=[A-Z])", "-", k).upper()
         A(f"K-{kebab} = {i + 1}")
     A("")
+    # `no fmt` separates match arms with a blank line (including before the
+    # default arm).  Emitting them back-to-back makes the generated file a
+    # formatting outlier, so the blank line belongs in the generator.
     A("; kind-name: 節點種類 id → 型別名（供 <unknown> 與除錯用）")
     A("kind-name = (id i64) (r str) {")
     A("    r = id: {")
     for i, (k, sid_, first, num) in enumerate(kind_rows):
         A(f"        {i + 1} -> {no_q(k)}")
+        A("")
     A("        -> 'UNKNOWN-KIND'")
     A("    }")
     A("}")
@@ -1677,6 +1716,7 @@ def emit_nolang(spec, path):
     A("    r = name: {")
     for i, (k, sid_, first, num) in enumerate(kind_rows):
         A(f"        {no_q(k)} -> {i + 1}")
+        A("")
     A("        -> 0")
     A("    }")
     A("}")

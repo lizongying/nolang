@@ -144,8 +144,17 @@ func checkPrivateStdCall(e *parser.CallExpression, dot *parser.DotExpression, re
 		return nil
 	}
 	// 豁免 2：str/txt 已註冊的私有 builtin 由 privbuiltin 報，避免同位重複。
+	// 兩種註冊形態都要認：
+	//   - qualified（`str._set-len` / `txt._data` …）：鍵本身就是 receiver 限定名；
+	//   - bare（`_set-byte`）：**一條條目同時服務 str 與 txt**（lookupBuiltin 的裸名
+	//     回落），此時 `FindBuiltinMethod("txt._set-byte")` 查不到，必須再試裸名。
+	//     歸屬交給 privbuiltin 判——它會把裸名私有內建的 owner 認作 receiver 型別
+	//     對應的模組，正好是 `str._set-byte` / `txt._set-byte` 的真實歸屬。
+	// 漏了裸名這條，`txt.no` 自己的 `out._set-byte(...)` 會被下面 stdPrivateOwners
+	// 誤判成「跨模組呼叫 str 的私有符號」（2026-11-11 實測）。
 	if recvType == "str" || recvType == "txt" {
-		if builtin.FindBuiltinMethod(recvType+"."+dot.Property) != nil {
+		if builtin.FindBuiltinMethod(recvType+"."+dot.Property) != nil ||
+			builtin.FindBuiltinMethod(dot.Property) != nil {
 			return nil
 		}
 	}

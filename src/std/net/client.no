@@ -48,7 +48,6 @@ client.connect = (host str, port i64) (ok bool) {
     .port = port
     .connected = false
     ok = .c.dial(host, port)
-    print('DBG client.connect .c.fd=', .c.fd, ' ok=', ok)
     ok -> .connected = true
 }
 
@@ -73,10 +72,8 @@ client.reconnect = () (ok bool) {
 ; [send](#client.client.send)
 client.send = (data str) (written i64) {
     written = -1
-    print('DBG client.send connected=', .connected)
     .connected == false -> return
     written = .c.send(data)
-    print('DBG client.send done written=', written)
 }
 
 ; 接收資料到緩衝區

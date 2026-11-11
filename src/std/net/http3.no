@@ -93,7 +93,9 @@ encode-header = (name str, value str) (buf []byte, n i64) {
         }
     }
 
-    ; 名稱長度（varint，高位=0 表示 Huffman 關閉）
+    ; 名稱長度：<64 寫單位元組；>=64 寫兩位元組（0x40 標記 + 高 6 位、低 8 位）。
+    ; 這不是標準 HPACK varint，也沒有 Huffman 位；可表示的長度上限是 16383。
+    ; decode-header 必須用同一套兩位元組規則還原，見 §5.2 #83。
     {
         name-bytes.len() < 64 -> {
             buf[pos] = name-bytes.len() & 255
@@ -304,24 +306,50 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
         return
     }
 
-    ; 名稱長度
-    ixout211c16 = buf[r-pos]: {
+    ; 名稱長度：<64 用單一位元組（低 6 位）；>=64 用兩位元組
+    ; （0x40 | 高 6 位，接著低 8 位；見 encode-header）。
+    ; ⚠️ 兩個坑（§5.2 #83）：① 位運算的 option tag 不可信 ⇒ 只拿來做條件判斷，
+    ;    不要套值位 match；② byte 直接參與加法會讓結果不是 ?i64 ⇒ 必須先轉 i64，
+    ;    否則 `high + lo: { ok -> it  -> 0 }` 靜默走兜底臂（探針 tmp/sh/h3len.no）。
+    ;    第二位元組要用「已推進的 plain r-pos」讀，不能用 option 算術當下標。
+    nb0 = buf[r-pos]: {
         ok -> it
 
-        -> _
+        -> 0
     }
-
-    name-len = ixout211c16 & 63
+    name-len i64 = nb0.to-i64() & 63
 
     #{overflow=wrap}
-    {
+    r-pos = r-pos + 1: {
+        ok -> it
+
+        -> r-pos
+    }
+
+    (nb0 & 64) != 0 -> {
+        r-pos >= buf.len() -> return
+
+        nb1 = buf[r-pos]: {
+            ok -> it
+
+            -> 0
+        }
+        hi i64 = nb0.to-i64() & 63
+        lo i64 = nb1.to-i64()
+        high = hi * 256
 
         #{overflow=wrap}
-        r-pos-opt2 = r-pos + 1
-        r-pos-opt2: {
-            ok -> r-pos = it
+        name-len = high + lo: {
+            ok -> it
 
-            ->
+            -> 0
+        }
+
+        #{overflow=wrap}
+        r-pos = r-pos + 1: {
+            ok -> it
+
+            -> r-pos
         }
     }
 
@@ -329,50 +357,89 @@ decode-header = (buf []byte, pos i64) (name str, value str, next-pos i64) {
     r-pos + name-len > buf.len() -> return
 
     ; 讀取名稱
-    name = buf[r-pos..r-pos + name-len).to-str(): {
+    ; ⚠️ 不能寫成 `name = buf[a..b).to-str(): { ok -> it  -> '' }`：切片接收者的
+    ; 方法回傳型別推不出來 ⇒ 值位 match 的主語不歸一化 ⇒ 臂內 `it` 未綁定，
+    ; 兩臂都不命中、name 恆為空（且若把切片型別硬推出來，這個呼叫會變成 SIGSEGV，
+    ; 因為切片視圖傳進 builtin 踩到 vecFromArraySink 視圖懸垂）。先落變數再兩步解包。
+    name-seg = buf[r-pos..r-pos + name-len)
+    name-opt = name-seg.to-str()
+    name = name-opt: {
         ok -> it
 
         -> ''
     }
 
     #{overflow=wrap}
-    r-pos = r-pos + name-len
+    r-pos = r-pos + name-len: {
+        ok -> it
+
+        -> r-pos
+    }
 
     ; 值長度
     r-pos >= buf.len() -> return
 
-    ixout234c17 = buf[r-pos]: {
+    ; 值長度：與名稱長度同構（<64 單位元組、>=64 兩位元組），
+    ; 兩個坑與上方註解相同，特別是 lo 必須顯式轉 i64。
+    vb0 = buf[r-pos]: {
         ok -> it
 
-        -> _
+        -> 0
     }
-
-    value-len = ixout234c17 & 63
+    value-len i64 = vb0.to-i64() & 63
 
     #{overflow=wrap}
-    {
+    r-pos = r-pos + 1: {
+        ok -> it
+
+        -> r-pos
+    }
+
+    (vb0 & 64) != 0 -> {
+        r-pos >= buf.len() -> return
+
+        vb1 = buf[r-pos]: {
+            ok -> it
+
+            -> 0
+        }
+        vhi i64 = vb0.to-i64() & 63
+        vlo i64 = vb1.to-i64()
+        vhigh = vhi * 256
 
         #{overflow=wrap}
-        r-pos-opt3 = r-pos + 1
-        r-pos-opt3: {
-            ok -> r-pos = it
+        value-len = vhigh + vlo: {
+            ok -> it
 
-            ->
+            -> 0
+        }
+
+        #{overflow=wrap}
+        r-pos = r-pos + 1: {
+            ok -> it
+
+            -> r-pos
         }
     }
 
     #{overflow=wrap}
     r-pos + value-len > buf.len() -> return
 
-    ; 讀取值
-    value = buf[r-pos..r-pos + value-len).to-str(): {
+    ; 讀取值（同樣必須兩步解包，見上方「讀取名稱」的說明）
+    value-seg = buf[r-pos..r-pos + value-len)
+    value-opt = value-seg.to-str()
+    value = value-opt: {
         ok -> it
 
         -> ''
     }
 
     #{overflow=wrap}
-    r-pos = r-pos + value-len
+    r-pos = r-pos + value-len: {
+        ok -> it
+
+        -> r-pos
+    }
 
     next-pos = r-pos
 }

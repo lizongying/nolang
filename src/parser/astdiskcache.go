@@ -386,7 +386,7 @@ import (
 // 2026-11-10.3：parseStructLiteral 現在把欄位上方的獨立 `;` 註解收進
 // StructField.Doc（過去留在 p.comments，被字面量後第一條陳述收走）。舊 blob 的
 // 欄位 Doc 是 nil，重用會讓 formatter 繼續把欄位說明印到 `}` 之後。故必 bump。
-const ASTVersion = "2026-11-10.3"
+const ASTVersion = "2026-11-11.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

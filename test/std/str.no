@@ -12,8 +12,8 @@
 ;       to-bigint/bigint-bitlen、to-txt、split/split-n/fields/lines、
 ;       replace-str/replace-n、rindex/last-index/rindex-from
 ;
-; 未覆蓋且結構上不可測：str.eq-raw（str.eq 的內部 forward 目標，見
-; scripts/std_test_coverage.py 的 UNREACHABLE 說明）
+; 未覆蓋且結構上不可測：str.eq-raw —— 該宣告已於 2026-11-11 從 src/std/str.no 刪除
+; （死符號），現連符號都不存在；str.eq 本身由 t-eq 覆蓋，見 test/README.md §5.0h
 
 # /test/runner
 

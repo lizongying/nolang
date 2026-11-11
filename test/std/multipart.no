@@ -32,6 +32,16 @@ crlf-of = () (crlf str) {
     crlf = '\r' - '\n'
 }
 
+; 造一個空的 multipart-part（結果參數是未初始化記憶體，[N]str 型欄位要先 zero）
+mk-part = () (p multipart.multipart-part) {
+    p.zero()
+}
+
+; 造一個空的 multipart-reader（同上，欄位裡有 str 與巢狀 part）
+mk-reader = () (r multipart.multipart-reader) {
+    r.zero()
+}
+
 ; boundary 擷取：未加引號與加引號（'Q-B'）兩種形式都要取對；無 boundary 參數時回空字串；
 ; 另驗證 multipart-create 生成的 boundary 前綴與長度
 t-boundary = () {
@@ -230,10 +240,179 @@ t-encrypted = () {
         err -> runner.is-true(false, 'truncated err arm')
     }
 }
+
+; 內部入口白盒：writer.init / init-boundary、reader.init / parse-headers /
+; parse-header-line。這幾支原本只被 create/next 間接走到，缺陷（例如引號分支的
+; 丟寫）正是藏在這裡，所以要直接驅動。
+t-internals = () {
+    w = multipart.multipart-create-boundary('BD')
+    eq-str(w.boundary-of(), 'BD', 'pre-init boundary')
+    ok = w.init()
+    runner.is-true(ok, 'writer.init ok')
+    nb = w.boundary-of()
+    runner.eq(nb.len-bytes(), 34, 'writer.init regenerated boundary len')
+    runner.is-true(nb.starts-with('----NolangBoundary'), 'writer.init prefix')
+    nbody = w.body-of()
+    runner.eq(nbody.len-bytes(), 0, 'writer.init clears body')
+
+    w.init-boundary('XY')
+    eq-str(w.boundary-of(), 'XY', 'init-boundary sets boundary')
+    bb = w.body-of()
+    runner.eq(bb.len-bytes(), 0, 'init-boundary clears body')
+
+    ; parse-headers：多行標頭區塊（無結尾 CRLF）
+    p = mk-part()
+    rd = mk-reader()
+    rd.init('BD', 'x')
+    crlf = crlf-of()
+    hdr = 'Content-Disposition: form-data; name="title"' - crlf - 'Content-Type: text/plain'
+    rd.parse-headers(hdr, p)
+    eq-str(p.name, 'title', 'parse-headers name')
+    eq-str(p.content-type, 'text/plain', 'parse-headers content-type')
+    eq-str(p.filename, '', 'parse-headers no filename')
+
+    ; parse-header-line：name 與 filename 同一行
+    p2 = mk-part()
+    rd.parse-header-line('Content-Disposition: form-data; name="doc"; filename="a.txt"', p2)
+    eq-str(p2.name, 'doc', 'parse-header-line name')
+    eq-str(p2.filename, 'a.txt', 'parse-header-line filename')
+
+    ; 無關標頭行不得改動 part
+    p3 = mk-part()
+    rd.parse-header-line('X-Ignored: 1', p3)
+    eq-str(p3.name, '', 'ignored line keeps name empty')
+    eq-str(p3.content-type, '', 'ignored line keeps ct empty')
+}
+
+; 加密檔案欄位：與加密文字欄位同格式（base64(iv || sealed)，AAD 為空），
+; 因此可用 multipart-decrypt-field 加空 AAD 解回原文
+t-encrypted-file = () {
+    key [32]byte
+    iv [12]byte
+    i <- [0..32): {
+        key[i]: {
+            ok -> it = 65 + (i % 26)
+
+            -> _
+        }
+    }
+    i <- [0..12): {
+        iv[i]: {
+            ok -> it = 48 + i
+
+            -> _
+        }
+    }
+    w = multipart.multipart-create-boundary('EF')
+    okw = w.write-encrypted-file('doc', 'a.txt', 'text/plain', 'FILEDATA', key, iv)
+    runner.is-true(okw, 'enc file write ok')
+    w.close-form()
+    body = w.body-of()
+    runner.is-true(body.index('X-Encryption: aes-256-gcm') >= 0, 'enc file has X-Encryption')
+    r = multipart.multipart-parse('multipart/form-data; boundary=EF', body)
+    rd multipart-reader
+    got = false
+    d = ''
+    r: {
+        ok -> {
+            rd = it
+            got = rd.next()
+            d = rd.field-data()
+        }
+
+        nil -> got = false
+
+        err -> got = false
+    }
+    runner.is-true(got, 'enc file part found')
+    eq-str(rd.field-filename(), 'a.txt', 'enc file filename')
+    eq-str(rd.field-content-type(), 'text/plain', 'enc file content-type')
+    runner.is-true(rd.is-file(), 'enc file is-file')
+    runner.gt(d.len-bytes(), 8, 'enc file data looks like base64')
+
+    empty []byte
+    pt = multipart.multipart-decrypt-field(d, key, empty)
+    hit = false
+    hv = ''
+    pt: {
+        ok -> {
+            hit = true
+            hv = it
+        }
+
+        nil -> hit = false
+
+        err -> hit = false
+    }
+    runner.is-true(hit, 'enc file decrypt ok')
+    eq-str(hv, 'FILEDATA', 'enc file decrypt golden')
+}
+
+; 回歸 §5.2 #88：明文含 >= 0x80 位元組時，解密必須 1:1 還原。
+; 舊實作 opened.to-str() 把每個 byte 當碼點重新 UTF-8 編碼，3 位元組的
+; UTF-8 中文字會膨脹成 6 位元組，長度與內容都錯。
+t-enc-non-ascii = () {
+    key [32]byte
+    iv [12]byte
+    i <- [0..32): {
+        key[i]: {
+            ok -> it = 65 + (i % 26)
+
+            -> _
+        }
+    }
+    i <- [0..12): {
+        iv[i]: {
+            ok -> it = 48 + i
+
+            -> _
+        }
+    }
+    want = 'pw' - '中文'
+    w = multipart.multipart-create-boundary('ENC8')
+    okw = w.write-encrypted-field('secret', want, key, iv)
+    runner.is-true(okw, 'non-ascii enc write ok')
+    w.close-form()
+    r = multipart.multipart-parse('multipart/form-data; boundary=ENC8', w.body-of())
+    rd multipart-reader
+    got = false
+    d = ''
+    r: {
+        ok -> {
+            rd = it
+            got = rd.next()
+            d = rd.field-data()
+        }
+
+        nil -> got = false
+
+        err -> got = false
+    }
+    runner.is-true(got, 'non-ascii part found')
+    pt = multipart.multipart-decrypt-field(d, key, 'secret'.to-bytes())
+    hit = false
+    hv = ''
+    pt: {
+        ok -> {
+            hit = true
+            hv = it
+        }
+
+        nil -> hit = false
+
+        err -> hit = false
+    }
+    runner.is-true(hit, 'non-ascii decrypt ok')
+    eq-str(hv, want, 'non-ascii decrypt 1:1')
+}
+
 runner.test('boundary', t-boundary)
 runner.test('writer', t-writer)
 runner.test('reader', t-reader)
+runner.test('internals', t-internals)
 runner.test('encrypted field', t-encrypted)
+runner.test('encrypted file', t-encrypted-file)
+runner.test('encrypted non-ascii', t-enc-non-ascii)
 runner.summary()
 f = runner.failed-count()
 f > 0 -> exit(1)

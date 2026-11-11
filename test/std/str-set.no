@@ -1,7 +1,8 @@
 ; test/std/str-set.no — collection/str-set 模組測試
 ;
 ; 執行：no test test/std/str-set.no
-; 覆蓋：init / add / contains / remove / len / is-empty / clear
+; 覆蓋：init / add / contains / remove / len / is-empty / clear /
+;       hash / str-eq / for-each
 
 # /test/runner
 
@@ -65,6 +66,46 @@ p1 = runner.test('str-set.init', t-init)
 p2 = runner.test('str-set.add/contains', t-add-contains)
 p3 = runner.test('str-set.remove', t-remove)
 p4 = runner.test('str-set.clear', t-clear)
+p5 = runner.test('str-set.hash', t-hash)
+p6 = runner.test('str-set.str-eq', t-str-eq)
+p7 = runner.test('str-set.for-each', t-for-each)
+
+; hash：FNV-1a 之後 & (cap-1)，cap 固定 256；下表是實測出的槽位
+t-hash = () {
+    s = str-set{}
+    s.init()
+    runner.eq(s.hash('hello'), 11, 'hash hello -> 11')
+    runner.eq(s.hash('world'), 243, 'hash world -> 243')
+    runner.eq(s.hash('abc'), 75, 'hash abc -> 75')
+    runner.eq(s.hash(''), 37, 'hash empty -> 37')
+    runner.is-true(s.hash('hello') != s.hash('world'), 'hello != world slot')
+}
+
+; str-eq：逐位元組比較，長度不同直接不等
+t-str-eq = () {
+    s = str-set{}
+    s.init()
+    runner.is-true(s.str-eq('abc', 'abc'), 'abc == abc')
+    runner.is-false(s.str-eq('abc', 'abd'), 'abc != abd')
+    runner.is-false(s.str-eq('a', 'ab'), 'length mismatch')
+    runner.is-true(s.str-eq('', ''), 'empty == empty')
+}
+
+; for-each：回傳「槽位下標最大的已佔用元素」
+; 'hello' -> 槽 11、'world' -> 槽 243，因此最後停在 'world'
+t-for-each = () {
+    s = str-set{}
+    s.init()
+    s.add('hello')
+    s.add('world')
+    v = s.for-each()
+    runner.str-eq(v, 'world', 5, 'higher slot (world) wins')
+
+    s2 = str-set{}
+    s2.init()
+    s2.add('solo')
+    runner.str-eq(s2.for-each(), 'solo', 4, 'single element returned as-is')
+}
 
 total = runner.summary()
 f = runner.failed-count()

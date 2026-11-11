@@ -230,6 +230,14 @@ parse-set = (set-cookie-str str) (c cookie) {
 ; 返回 count i64: 實際解析出的 Cookie 對數量（≤16）
 ; [parse-header](#cookie.parse-header)
 parse-header = (cookie-header str) (names [16]str, values [16]str, count i64) {
+
+    ; ⚠️ 先 `zero()` 再寫單一元素。`[N]str` 型別的**結果參數**在編譯器裡沒有
+    ; 做零值填充，直接 `names[i] = ...` 會把未初始化的記憶體當成既有的 `str`
+    ; 去釋放，實測 SIGSEGV / `trace/BPT trap`（見 MEMORY-RISKS
+    ; 「固定長度的 str 陣列結果參數沒有零值填充」）。`zero()` 就是
+    ; `math.arr-zero` 的接收者形態，對 `[N]str` 一樣是整塊 memset。
+    names.zero()
+    values.zero()
     count = 0
     cookie-header.len-bytes() == 0 -> return
     pos = 0

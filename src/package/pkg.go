@@ -19,7 +19,8 @@ type CompilerOptions struct {
 	LinkLibs []string `json:"link-libs,omitempty"`
 	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值（见 MIR codegen 的
 	// `%option = { i64 tag, [N x i64] slot }`）。默认 24 —— err 的载荷本质是
-	// 一个字符串（%str-long，24 字节），24 是“任何 err 消息都能原样内联”的
+	// 一个字符串（%str-long，16 字节：u32 len + u32 cap + i8* data），而 24 同时
+	// 覆盖 `%vec`（24 字节），是“任何 err 消息与 i64 切片都能原样内联”的
 	// 最小值。调大可让更大的结构体也内联；调小（最低 8）会让 err 消息也走
 	// 堆指针。小于 8 是编译错误。
 	OptionInlineThreshold int `json:"option-inline-threshold,omitempty"`

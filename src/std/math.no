@@ -401,6 +401,15 @@ char-to-str = (c char) (out str) {
 LN10 = 2.302585092994046
 
 ; 交換兩個值：以暫存變數完成 a 與 b 的互換，泛型 t
+;
+; ⚠️ 目前**沒有任何可工作的調用形式**（2026-11-11 實測）：
+;    - `a, b = math.swap()`   能編過，但 a 與 b 都不會換成對方的值
+;      （實測 `a=11 b=22` 之後得到 `11 0`；換一組變數得到 `0 0`，非決定性）；
+;    - `a, b = math.swap(a, b)` 直接報 `EmitLLVM: unknown callee math.swap [4qhyyund]`。
+;    根因是兩個形參都是**結果參數**，泛型 t 沒有任何實參可供推斷。要修得先讓
+;    結果參數支援 in-out 語義（編譯器特性），或改成 `(x t, y t) (a t, b t)` 的四形參
+;    版本。在修好之前請直接寫三行暫存變數交換。
+;    本函數已列入 `scripts/std_test_coverage.py` 的 UNREACHABLE，見 test/README.md §5.2 #65。
 ; a t: 輸出參數一（呼叫前提供原值，返回時持有 b 的原值）
 ; b t: 輸出參數二（呼叫前提供原值，返回時持有 a 的原值）
 ; [swap](#math.swap)

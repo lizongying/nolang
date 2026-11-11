@@ -85,11 +85,13 @@ net-send = (fd fd, data str, n i64) (written i64) {
 }
 
 ; 接收資料
-; 返回實際接收位元組數（-1=錯誤, 0=連接關閉）
+; 返回實際接收位元組數（-1=錯誤或逾時, 0=對端關閉）
+; ⚠️ 設定 SO_RCVTIMEO 後逾時由 recv(2) 回 -1（EAGAIN），與硬錯誤在 API 上不可區分；
+;    0 只代表對端關閉，從不代表逾時。見 test/README.md §5.2 #89。
 ; fd: 已連接的 socket 檔案描述符
 ; buf: 接收緩衝區（str，須預先分配到至少 n 位元組）
 ; n: 單次最多接收的位元組數
-; read-n: 實際接收位元組數（-1=錯誤, 0=對端關閉）
+; read-n: 實際接收位元組數（-1=錯誤或逾時, 0=對端關閉）
 ; [net-recv](#net.net-recv)
 #{buildin}
 net-recv = (fd fd, buf str, n i64) (read-n i64) {
@@ -226,17 +228,15 @@ conn.dial = (host str, port i64) (ok bool) {
 ; [send](#net.conn.send)
 conn.send = (data str) (written i64) {
     written = -1
-    print('DBG conn.send fd=', .fd, ' len=', data.len-bytes())
     .fd < 0 -> return
     written = net-send(.fd, data, data.len-bytes())
-    print('DBG conn.send net-send written=', written)
 }
 
 ; 接收資料到緩衝區
 ; buf: 接收緩衝區（str）
 ; n: 最多接收的位元組數
-; 返回 read-n=實際接收位元組數（-1=錯誤, 0=連接關閉）
-; read-n: 實際接收位元組數（-1=錯誤, 0=對端關閉）
+; 返回 read-n=實際接收位元組數（-1=錯誤或逾時, 0=對端關閉）
+; read-n: 實際接收位元組數（-1=錯誤或逾時, 0=對端關閉）
 ; [recv](#net.conn.recv)
 conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
@@ -253,7 +253,10 @@ conn.recv-line = () (line ?str) {
     .fd < 0 -> return
     buf str = with-len(NET-BUF-SIZE)
     n = net-recv(.fd, buf, NET-BUF-SIZE)
-    n > 0 -> line = buf
+
+    ; 必須按實際收到的位元組數切片：`buf` 是 with-len(NET-BUF-SIZE) 的緩衝，
+    ; 直接 `line = buf` 會把整個 4KB 緩衝（尾部全是零）當成內容回傳。
+    n > 0 -> line = buf.slice(0, n)
 }
 
 ; 接收全部資料直到連接關閉
@@ -262,23 +265,18 @@ conn.recv-line = () (line ?str) {
 ; total: 累計收到的總位元組數
 ; [recv-all](#net.conn.recv-all)
 conn.recv-all = () (content str, total i64) {
+    content = ''
     total = 0
     .fd < 0 -> return
     buf str = with-len(NET-BUF-SIZE)
     !! {
         chunk-n = net-recv(.fd, buf, NET-BUF-SIZE)
         chunk-n <= 0 -> break
-        i <- [0..chunk-n): {
-            {
 
-                #{overflow=wrap}
-                content[total + i] ?= buf[i]
-            }: {
-                err -> _
-
-                -> _
-            }
-        }
+        ; 逐塊拼接。不要寫回 content[total + i] ?= buf[i]：`?=` 在 str 上按 len 判越界，
+        ; 而 content 是結果參數、起手 len=0 ⇒ 每個位元組都走 err 臂、整段靜默丟棄
+        ; （實測 total 對、content 卻恆空）。見 test/README.md §5.2 #66。
+        content = content - buf.slice(0, chunk-n)
 
         #{overflow=wrap}
         {
@@ -366,11 +364,13 @@ net-udp-sendto = (fd fd, data str, n i64, host str, port i64) (written i64) {
 }
 
 ; 接收 UDP 資料
-; 返回實際接收位元組數（-1=錯誤, 0=逾時）
+; 返回實際接收位元組數（-1=錯誤或逾時, 0=收到 0 位元組資料報）
+; ⚠️ SO_RCVTIMEO 到期也是 -1（EAGAIN），與硬錯誤不可區分；UDP 的 0 不代表逾時。
+;    見 test/README.md §5.2 #89。
 ; fd: UDP socket 的檔案描述符
 ; buf: 接收緩衝區（str，須預先分配到至少 n 位元組）
 ; n: 單次最多接收的位元組數
-; read-n: 實際接收位元組數（-1=錯誤, 0=逾時；不回報來源位址）
+; read-n: 實際接收位元組數（-1=錯誤或逾時, 0=空資料報；不回報來源位址）
 ; [net-udp-recvfrom](#net.net-udp-recvfrom)
 #{buildin}
 net-udp-recvfrom = (fd fd, buf str, n i64) (read-n i64) {
@@ -450,7 +450,7 @@ udp-conn.send-bytes = (data []byte) (written i64) {
 ; 接收 UDP 資料到緩衝區
 ; buf str: 接收緩衝區
 ; n i64: 最多接收的位元組數
-; read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
+; read-n i64: 實際接收位元組數（-1=錯誤或逾時, 0=空資料報）
 ; [recv](#net.udp-conn.recv)
 udp-conn.recv = (buf str, n i64) (read-n i64) {
     read-n = -1
@@ -461,7 +461,7 @@ udp-conn.recv = (buf str, n i64) (read-n i64) {
 ; 接收 UDP 資料到位元組陣列
 ; buf []byte: 接收緩衝區
 ; n i64: 最多接收的位元組數
-; read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或未收到資料）
+; read-n i64: 實際接收位元組數（-1=錯誤或逾時, 0=空資料報）
 ; [recv-bytes](#net.udp-conn.recv-bytes)
 udp-conn.recv-bytes = (buf []byte, n i64) (read-n i64) {
     read-n = -1
@@ -531,7 +531,7 @@ conn.set-timeout = (timeout-ms i64) (ok bool) {
 ; buf str: 接收緩衝區
 ; n i64: 最多接收的位元組數
 ; timeout-ms i64: 逾時毫秒數
-; 返回 read-n i64: 實際接收位元組數（-1=錯誤, 0=逾時或連接關閉）
+; 返回 read-n i64: 實際接收位元組數（-1=錯誤或逾時, 0=對端關閉）
 ; [recv-with-timeout](#net.conn.recv-with-timeout)
 conn.recv-with-timeout = (buf str, n i64, timeout-ms i64) (read-n i64) {
     read-n = -1
@@ -577,13 +577,33 @@ listener.set-timeout = (timeout-ms i64) (ok bool) {
 listener.accept-with-timeout = (timeout-ms i64) (c ?conn) {
     c = nil
     .fd < 0 -> return
-    ret = net-set-recv-timeout(.fd, timeout-ms)
-    ret != 0 -> return
-    fd = net-accept(.fd)
-    net-set-recv-timeout(.fd, 0)
-    fd < 0 -> return
-    c = conn{
-        fd: fd
+
+    ; 🔴 SO_RCVTIMEO 對 accept() 無效（macOS 與 Linux 都不支援），原實現「設 recv 逾時
+    ; 再 accept」在無人連線時會**永久阻塞**，timeout-ms 形同虛設。改為非阻塞 accept
+    ; 輪詢 + 小睡：net-accept-nb 順帶把 listen fd 置為非阻塞（冪等）。
+    waited = 0
+    !! {
+        fd = net-accept-nb(.fd)
+        fd >= 0 -> {
+            c = conn{
+                fd: fd
+            }
+            break
+        }
+
+        ; -1 = 硬錯誤（含 fd 已關閉），沒必要再等
+        fd == -1 -> break
+        waited >= timeout-ms -> break
+        time.sleep-ms(5)
+
+        ; 累加器必須兩步解包：`waited = waited + 5` 直接賦值是 trace 15w45dqk
+        ; （加法結果是 ?i64，隱式解包會丟掉溢出臂）。
+        nxt = waited + 5
+        waited = nxt: {
+            ok -> it
+
+            -> timeout-ms
+        }
     }
 }
 
@@ -750,7 +770,12 @@ enc-conn.send-encrypted = (data str) (ok bool) {
             -> _
         }
     }
-    packet-str = packet.to-str()
+
+    ; 🔴 必須用 to-bytes-str()（1:1 逐位元組拷貝），不能用 to-str()：後者把每個 byte
+    ; 當 0~255 的碼點重新做一次 UTF-8 編碼，>= 0x80 的位元組會膨脹成 2 位元組，
+    ; 於是 net-send 按 packet-total 截斷時整段錯位 —— IV 與密文全部搬錯位置，
+    ; 對端解密必然失敗（實測 iv[11] 從 76 變成 80）。見 test/README.md §5.2 #88。
+    packet-str = packet.to-bytes-str()
 
     #{overflow=wrap}
     packet-total = 4 + payload-len
@@ -809,7 +834,9 @@ enc-conn.recv-encrypted = () (data ?str) {
         data = err('decryption failed')
         return
     }
-    data = opened.to-str()
+
+    ; 同上：明文的每個位元組都要原樣取出，不能走按碼點重編碼的 to-str()。
+    data = opened.to-bytes-str()
 }
 
 ; 關閉加密連接（同時關閉底層 TCP 連接）
@@ -1296,7 +1323,7 @@ arp-info {
 ; [ifconfig-list](#net.ifconfig-list)
 #{linux-amd64, linux-arm64}
 ifconfig-list = () (ifs []if-info) {
-    content = fs.read-file('/proc/net/dev').to-str()
+    content = fs.read-file('/proc/net/dev').to-bytes-str()
     content.len-bytes() == 0 -> return
 
     ; /proc/net/dev 格式（前兩行為標題，第三行起為資料）：
@@ -1393,7 +1420,7 @@ ifconfig-list = () (ifs []if-info) {
 ; [route-list](#net.route-list)
 #{linux-amd64, linux-arm64}
 route-list = () (routes []route-info) {
-    content = fs.read-file('/proc/net/route').to-str()
+    content = fs.read-file('/proc/net/route').to-bytes-str()
     content.len-bytes() == 0 -> return
 
     ; /proc/net/route 格式（首行為標題）：
@@ -1468,7 +1495,7 @@ route-list = () (routes []route-info) {
 ; [arp-list](#net.arp-list)
 #{linux-amd64, linux-arm64}
 arp-list = () (arps []arp-info) {
-    content = fs.read-file('/proc/net/arp').to-str()
+    content = fs.read-file('/proc/net/arp').to-bytes-str()
     content.len-bytes() == 0 -> return
 
     ; /proc/net/arp 格式（首行為標題）：

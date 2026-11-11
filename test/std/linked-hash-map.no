@@ -1,7 +1,8 @@
 ; test/std/linked-hash-map.no — collection/linked-hash-map 模組測試
 ;
 ; 執行：no test test/std/linked-hash-map.no
-; 覆蓋：init / put / get / contains / remove / len / is-empty / clear
+; 覆蓋：init / put / get / contains / remove / len / is-empty / clear /
+;       hash / for-each
 
 # /test/runner
 
@@ -105,6 +106,36 @@ p2 = runner.test('linked-hash-map.put/get', t-put-get)
 p3 = runner.test('linked-hash-map.overwrite', t-overwrite)
 p4 = runner.test('linked-hash-map.remove', t-remove)
 p5 = runner.test('linked-hash-map.clear', t-clear)
+p6 = runner.test('linked-hash-map.hash', t-hash)
+p7 = runner.test('linked-hash-map.for-each', t-for-each)
+
+; hash：槽位 = key & (cap-1)，cap 固定 64
+t-hash = () {
+    m = linked-hash-map{}
+    m.init()
+    runner.eq(m.hash(0), 0, 'hash 0 -> slot 0')
+    runner.eq(m.hash(9), 9, 'hash 9 -> slot 9')
+    runner.eq(m.hash(63), 63, 'hash 63 -> slot 63')
+    runner.eq(m.hash(64), 0, 'hash 64 wraps to slot 0')
+    runner.eq(m.hash(70), 6, 'hash 70 -> slot 6')
+}
+
+; for-each：順 head -> tail 走鏈表，回傳最後插入的那對（插入序，非槽位序）
+t-for-each = () {
+    m = linked-hash-map{}
+    m.init()
+    m.put(1, 100)
+    m.put(2, 200)
+    k, v = m.for-each()
+    runner.eq(k, 2, 'tail key == last inserted')
+    runner.eq(v, 200, 'tail value == last inserted')
+
+    ; 覆寫既有鍵不改變鏈表位置，尾節點仍是 2
+    m.put(1, 111)
+    k2, v2 = m.for-each()
+    runner.eq(k2, 2, 'overwrite keeps tail at 2')
+    runner.eq(v2, 200, 'tail value unchanged')
+}
 
 total = runner.summary()
 f = runner.failed-count()

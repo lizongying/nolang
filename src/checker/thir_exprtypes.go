@@ -95,7 +95,7 @@ func collectExprTypes(program *parser.Program, view *THIRView) map[parser.Node]*
 	}
 	funcTypes := localFuncTypes(program)
 	top := &exprTypeCtx{
-		varTypes:  collectTopLevelLets(program, funcTypes, view),
+		varTypes:  collectTopLevelLets(program, funcTypes, view, true),
 		funcTypes: funcTypes,
 		visited:   make(map[parser.Expression]bool),
 	}

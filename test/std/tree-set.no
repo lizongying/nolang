@@ -205,6 +205,365 @@ t-clear = () {
     no bool = s.contains(1)
     runner.is-false(no, 'after clear, 1 gone')
 }
+
+; ── 內部機制（節點池 / 高度 / 平衡因子 / 旋轉 / 再平衡 / 後繼）──
+;
+; 這些方法作用在**節點索引**上，最可靠的斷言方式是**手工構樹**：
+; 直接寫 keys/left/right/parent/height 與 root，完全不依賴 add 的插入順序。
+
+; ?i64 → i64：9000001 = nil，9000002 = err
+i64-of = (v ?i64) (out i64) {
+    out = 9000002
+    v: {
+        ok -> out = it
+
+        nil -> out = 9000001
+
+        err -> out = 9000002
+    }
+}
+
+; 半數助手（循環內 x = x / 2 會撞 15w45dqk）
+half-of = (v i64) (out i64) {
+
+    #{overflow=wrap}
+    d = v / 2
+    out = d: {
+        ok -> it
+
+        -> 0
+    }
+}
+
+; 左重三節點樹：root=0(20)，左子 1(10)，1 的左子 2(5)；高度 3/2/1
+mk-left2 = () (out tree-set) {
+    out = tree-set{}
+    out.root = 0
+    out.size = 3
+    out.free-head = 3
+    out.keys[0] = 20
+    out.left[0] = 1
+    out.right[0] = -1
+    out.parent[0] = -1
+    out.height[0] = 3
+    out.keys[1] = 10
+    out.left[1] = 2
+    out.right[1] = -1
+    out.parent[1] = 0
+    out.height[1] = 2
+    out.keys[2] = 5
+    out.left[2] = -1
+    out.right[2] = -1
+    out.parent[2] = 1
+    out.height[2] = 1
+}
+
+; 右重三節點樹：root=0(10)，右子 1(20)，1 的右子 2(30)；高度 3/2/1
+mk-right2 = () (out tree-set) {
+    out = tree-set{}
+    out.root = 0
+    out.size = 3
+    out.free-head = 3
+    out.keys[0] = 10
+    out.left[0] = -1
+    out.right[0] = 1
+    out.parent[0] = -1
+    out.height[0] = 3
+    out.keys[1] = 20
+    out.left[1] = -1
+    out.right[1] = 2
+    out.parent[1] = 0
+    out.height[1] = 2
+    out.keys[2] = 30
+    out.left[2] = -1
+    out.right[2] = -1
+    out.parent[2] = 1
+    out.height[2] = 1
+}
+
+; LR 情形：root=0(30)，左子 1(10)，1 的**右**子 2(20)；高度 3/2/1
+mk-lr = () (out tree-set) {
+    out = tree-set{}
+    out.root = 0
+    out.size = 3
+    out.free-head = 3
+    out.keys[0] = 30
+    out.left[0] = 1
+    out.right[0] = -1
+    out.parent[0] = -1
+    out.height[0] = 3
+    out.keys[1] = 10
+    out.left[1] = -1
+    out.right[1] = 2
+    out.parent[1] = 0
+    out.height[1] = 2
+    out.keys[2] = 20
+    out.left[2] = -1
+    out.right[2] = -1
+    out.parent[2] = 1
+    out.height[2] = 1
+}
+
+; RL 情形：root=0(10)，右子 1(30)，1 的**左**子 2(20)；高度 3/2/1
+mk-rl = () (out tree-set) {
+    out = tree-set{}
+    out.root = 0
+    out.size = 3
+    out.free-head = 3
+    out.keys[0] = 10
+    out.left[0] = -1
+    out.right[0] = 1
+    out.parent[0] = -1
+    out.height[0] = 3
+    out.keys[1] = 30
+    out.left[1] = 2
+    out.right[1] = -1
+    out.parent[1] = 0
+    out.height[1] = 2
+    out.keys[2] = 20
+    out.left[2] = -1
+    out.right[2] = -1
+    out.parent[2] = 1
+    out.height[2] = 1
+}
+
+; 中序 10,15,20,30 的 BST：root 0(20) → L 1(10) → R 3(15)；R 2(30)
+mk-bst = () (out tree-set) {
+    out = tree-set{}
+    out.root = 0
+    out.size = 4
+    out.free-head = 4
+    out.keys[0] = 20
+    out.left[0] = 1
+    out.right[0] = 2
+    out.parent[0] = -1
+    out.height[0] = 3
+    out.keys[1] = 10
+    out.left[1] = -1
+    out.right[1] = 3
+    out.parent[1] = 0
+    out.height[1] = 2
+    out.keys[2] = 30
+    out.left[2] = -1
+    out.right[2] = -1
+    out.parent[2] = 0
+    out.height[2] = 1
+    out.keys[3] = 15
+    out.left[3] = -1
+    out.right[3] = -1
+    out.parent[3] = 1
+    out.height[3] = 1
+}
+
+; 節點池：起點 0，LIFO 回收
+t-alloc-free = () {
+    s = tree-set{}
+    s.init()
+    runner.eq(s.alloc-node(), 0, 'first alloc-node == 0')
+    runner.eq(s.alloc-node(), 1, 'second == 1')
+    runner.eq(s.alloc-node(), 2, 'third == 2')
+    runner.eq(s.free-head, 3, 'free-head 前進到 3')
+    s.free-node(1)
+    runner.eq(s.free-head, 1, 'free-node(1) 後 free-head == 1（LIFO）')
+    runner.eq(s.alloc-node(), 1, '再 alloc 取回 1')
+    runner.eq(s.free-head, 3, '取回後 free-head 回到 3')
+}
+
+; 池容量 64：第 64 次拿到 63，第 65 次回 -1
+t-alloc-exhaust = () {
+    s = tree-set{}
+    s.init()
+    last = -2
+    i <- [0..64): {
+        last = s.alloc-node()
+    }
+    runner.eq(last, 63, '第 64 次 alloc 拿到 63')
+    runner.eq(s.alloc-node(), -1, '池空後 alloc-node 回 -1')
+}
+
+; ht：NIL 回 0，葉 1，內部節點依 height 欄位
+t-ht = () {
+    s = mk-left2()
+    runner.eq(s.ht(-1), 0, 'ht(NIL) == 0')
+    runner.eq(s.ht(2), 1, 'ht(葉 2) == 1')
+    runner.eq(s.ht(1), 2, 'ht(1) == 2')
+    runner.eq(s.ht(0), 3, 'ht(根 0) == 3')
+}
+
+; update-ht：把高度改壞後能被重算回正確值
+t-update-ht = () {
+    s = mk-left2()
+    s.height[0] = 99
+    s.update-ht(0)
+    runner.eq(s.ht(0), 3, 'update-ht 把 99 修回 3')
+    s.height[1] = 0
+    s.update-ht(1)
+    runner.eq(s.ht(1), 2, 'update-ht 把 0 修回 2')
+}
+
+; bf = 左高 - 右高；修前（裸塊 + 值位 match 丟寫）恆回 0 ⇒ AVL 完全失效
+t-bf = () {
+    l = mk-left2()
+    runner.eq(l.bf(0), 2, '左重根 bf == 2（修前 = 0）')
+    runner.eq(l.bf(1), 1, '左重內部 bf == 1')
+    runner.eq(l.bf(2), 0, '葉 bf == 0')
+    runner.eq(l.bf(-1), 0, 'bf(NIL) == 0')
+    r = mk-right2()
+    runner.eq(r.bf(0), -2, '右重根 bf == -2')
+    runner.eq(r.bf(1), -1, '右重內部 bf == -1')
+}
+
+; 右旋：y 升為子樹根，x 變成 y 的右子
+t-rot-right = () {
+    s = mk-left2()
+    s.rot-right(0)
+    runner.eq(s.root, 1, '右旋後 root == 1')
+    runner.eq(i64-of(s.left[1]), 2, 'node1.left == 2（原左子保留）')
+    runner.eq(i64-of(s.right[1]), 0, 'node1.right == 0')
+    runner.eq(i64-of(s.left[0]), -1, 'node0.left == NIL')
+    runner.eq(i64-of(s.parent[0]), 1, 'node0.parent == 1')
+    runner.eq(i64-of(s.parent[1]), -1, 'node1.parent == NIL（成為根）')
+    runner.eq(s.ht(1), 2, '右旋後 node1 高度 2')
+    runner.eq(s.ht(0), 1, '右旋後 node0 高度 1')
+
+    ; b 非 NIL：30 → 左 10 → 右 20；rot-right(0) 後 10 → 右 30 → 左 20
+    k = mk-lr()
+    k.rot-right(0)
+    runner.eq(k.root, 1, 'b≠NIL：root == 1')
+    runner.eq(i64-of(k.left[0]), 2, 'b≠NIL：node0.left == 2（b 改掛過來）')
+    runner.eq(i64-of(k.parent[2]), 0, 'b≠NIL：b 的 parent == 0')
+    runner.eq(i64-of(k.right[1]), 0, 'b≠NIL：node1.right == 0')
+    runner.eq(k.ht(0), 2, 'b≠NIL：node0 高度 2')
+    runner.eq(k.ht(1), 3, 'b≠NIL：node1 高度 3（單旋不做平衡）')
+}
+
+; 左旋：右重的鏡像
+t-rot-left = () {
+    s = mk-right2()
+    s.rot-left(0)
+    runner.eq(s.root, 1, '左旋後 root == 1')
+    runner.eq(i64-of(s.right[0]), -1, 'node0.right == NIL')
+    runner.eq(i64-of(s.left[1]), 0, 'node1.left == 0')
+    runner.eq(i64-of(s.right[1]), 2, 'node1.right == 2（原右子保留）')
+    runner.eq(i64-of(s.parent[0]), 1, 'node0.parent == 1')
+    runner.eq(i64-of(s.parent[1]), -1, 'node1.parent == NIL（成為根）')
+    runner.eq(s.ht(1), 2, '左旋後 node1 高度 2')
+    runner.eq(s.ht(0), 1, '左旋後 node0 高度 1')
+
+    ; b 非 NIL：10 → 右 30 → 左 20；rot-left(0) 後 30 → 左 10 → 右 20
+    k = mk-rl()
+    k.rot-left(0)
+    runner.eq(k.root, 1, 'b≠NIL：root == 1')
+    runner.eq(i64-of(k.right[0]), 2, 'b≠NIL：node0.right == 2（b 改掛過來）')
+    runner.eq(i64-of(k.parent[2]), 0, 'b≠NIL：b 的 parent == 0')
+    runner.eq(i64-of(k.left[1]), 0, 'b≠NIL：node1.left == 0')
+    runner.eq(k.ht(0), 2, 'b≠NIL：node0 高度 2')
+    runner.eq(k.ht(1), 3, 'b≠NIL：node1 高度 3（單旋不做平衡）')
+}
+
+; rebalance：LL 走單次右旋，回傳新的子樹根
+t-rebalance-ll = () {
+    s = mk-left2()
+    runner.eq(s.rebalance(0), 1, 'LL 再平衡回傳新根 1')
+    runner.eq(s.root, 1, 'LL 再平衡後 root == 1')
+    runner.eq(s.bf(1), 0, 'LL 再平衡後 root 平衡因子 0')
+}
+
+; rebalance：LR 先對左子左旋、再對自己右旋
+t-rebalance-lr = () {
+    s = mk-lr()
+    runner.eq(s.bf(0), 2, 'LR 起始 bf(root) == 2')
+    runner.eq(s.bf(1), -1, 'LR 起始 bf(左子) == -1')
+    runner.eq(s.rebalance(0), 2, 'LR 再平衡回傳新根 2')
+    runner.eq(s.root, 2, 'LR 再平衡後 root == 2')
+    runner.eq(i64-of(s.keys[2]), 20, 'LR 再平衡後根的鍵 == 20')
+    runner.eq(s.bf(2), 0, 'LR 再平衡後 root 平衡因子 0')
+}
+
+; rebalance：RL 先對右子右旋、再對自己左旋
+t-rebalance-rl = () {
+    s = mk-rl()
+    runner.eq(s.bf(0), -2, 'RL 起始 bf(root) == -2')
+    runner.eq(s.bf(1), 1, 'RL 起始 bf(右子) == 1')
+    runner.eq(s.rebalance(0), 2, 'RL 再平衡回傳新根 2')
+    runner.eq(s.root, 2, 'RL 再平衡後 root == 2')
+    runner.eq(i64-of(s.keys[2]), 20, 'RL 再平衡後根的鍵 == 20')
+    runner.eq(s.bf(2), 0, 'RL 再平衡後 root 平衡因子 0')
+}
+
+; rebalance-up：從最深葉子往上逐層修
+t-rebalance-up = () {
+    s = mk-left2()
+    s.rebalance-up(2)
+    runner.eq(s.root, 1, 'rebalance-up 後 root == 1')
+    runner.eq(s.ht(s.root), 2, 'rebalance-up 後高度 2')
+    runner.eq(s.bf(s.root), 0, 'rebalance-up 後 root 平衡')
+}
+
+; successor：有右子取右子樹最左；否則向上找「自己是左子」的祖先；最大鍵回 -1
+t-successor = () {
+    s = mk-bst()
+    runner.eq(s.successor(1), 3, 'successor(10) == 3（15，右子）')
+    runner.eq(s.successor(3), 0, 'successor(15) == 0（20，向上）')
+    runner.eq(s.successor(0), 2, 'successor(20) == 2（30，右子）')
+    runner.eq(s.successor(2), -1, 'successor(30) == -1（最大鍵）')
+}
+
+; for-each 只回最後一個值（API 沒有回呼、沒有游標，見 test/README.md §5.1o）
+t-for-each = () {
+    s = tree-set{}
+    s.init()
+    s.add(10)
+    s.add(20)
+    s.add(30)
+    v = s.for-each()
+    runner.eq(v, 30, 'for-each 回最後一個（最大鍵 30）')
+}
+
+; 池滿：64 個元素後 full 為真，add 回 false
+t-full = () {
+    s = tree-set{}
+    s.init()
+    i <- [0..64): {
+        s.add(i)
+    }
+    f bool = s.full()
+    runner.is-true(f, '64 個元素後 full == true')
+    runner.eq(s.size, 64, 'size == 64')
+    a bool = s.add(99)
+    runner.is-false(a, '池滿後 add 回 false')
+}
+
+; 迴歸（最重要的一條）：升序插入必須保持 AVL 高度界。
+; 修前 bf 恆 0 ⇒ 升序 64 個元素得到**高度 64 的右鏈**。
+t-avl-balance = () {
+    s = tree-set{}
+    s.init()
+    i <- [0..64): {
+        s.add(i)
+    }
+    h = s.ht(s.root)
+    runner.is-true(h <= 8, '升序 64 個元素後 root 高度 <= 8（修前 = 64）')
+    runner.eq(s.size, 64, 'size == 64')
+    runner.eq(i64-of(s.first()), 0, 'first == 0')
+    runner.eq(i64-of(s.last()), 63, 'last == 63')
+    runner.is-true(s.contains(37), 'contains 37 命中')
+
+    ; 刪掉所有偶數後仍平衡（remove 也走 rebalance-up）
+    i <- [0..64): {
+        d = half-of(i)
+        d * 2 == i -> {
+            s.remove(i)
+        }
+    }
+    h2 = s.ht(s.root)
+    runner.is-true(h2 <= 7, '刪一半後高度 <= 7')
+    runner.eq(s.size, 32, 'size == 32')
+    runner.eq(i64-of(s.first()), 1, 'first == 1（最小奇數）')
+    runner.eq(i64-of(s.last()), 63, 'last == 63')
+    runner.is-false(s.contains(10), '偶數 10 已被刪除')
+}
+
 p1 = runner.test('tree-set.init', t-init)
 p2 = runner.test('tree-set.add/contains', t-add-contains)
 p3 = runner.test('tree-set.order', t-order)
@@ -212,6 +571,21 @@ p4 = runner.test('tree-set.bound', t-bound)
 p5 = runner.test('tree-set.remove', t-remove)
 p6 = runner.test('tree-set.stress-order', t-stress-order)
 p7 = runner.test('tree-set.clear', t-clear)
+p8 = runner.test('tree-set.alloc/free-node', t-alloc-free)
+p9 = runner.test('tree-set.alloc-node exhaust', t-alloc-exhaust)
+p10 = runner.test('tree-set.ht', t-ht)
+p11 = runner.test('tree-set.update-ht', t-update-ht)
+p12 = runner.test('tree-set.bf', t-bf)
+p13 = runner.test('tree-set.rot-right', t-rot-right)
+p14 = runner.test('tree-set.rot-left', t-rot-left)
+p15 = runner.test('tree-set.rebalance LL', t-rebalance-ll)
+p16 = runner.test('tree-set.rebalance LR', t-rebalance-lr)
+p16b = runner.test('tree-set.rebalance RL', t-rebalance-rl)
+p17 = runner.test('tree-set.rebalance-up', t-rebalance-up)
+p18 = runner.test('tree-set.successor', t-successor)
+p19 = runner.test('tree-set.for-each', t-for-each)
+p20 = runner.test('tree-set.full', t-full)
+p21 = runner.test('tree-set.avl-balance', t-avl-balance)
 total = runner.summary()
 f = runner.failed-count()
 {

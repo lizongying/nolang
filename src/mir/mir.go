@@ -1373,6 +1373,15 @@ type Inst struct {
 	// captures overflow as err; an annotated `a = #{overflow=wrap} x + y`
 	// wraps instead of erroring, per the annotation's chosen semantics).
 	OvfAnnotated bool
+	// OvfMode is the normalized `#{overflow = ...}` mode in scope for this
+	// instruction: wrap / clamp0 / min / max / saturate. It is the string
+	// counterpart of OvfAnnotated: the bool tells codegen to skip the default
+	// err-on-overflow check, this field tells it WHICH value to take instead.
+	// Empty with OvfAnnotated=true means the historical behaviour (wrap), which
+	// is also what hand-built Insts in tests get. HIR carries the mode as five
+	// mutually exclusive flag bits (hir.FlagOverflow*); hir2mir decodes them
+	// back into this field so the choice survives HIR rebuilds.
+	OvfMode string
 	// TagOnly marks an OpEq/OpNe whose two operands are OPTIONS and whose
 	// meaning is a VARIANT TEST (`o == nil`, `o == err`, `o == ok`) rather than
 	// a comparison of two option VALUES. Set by hir2mir when either operand is
@@ -1462,7 +1471,8 @@ type Module struct {
 	Name string
 	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值：载荷 sizeof 小于等于
 	// 它则内联进 option 的 slot，大于它则堆装箱、slot[0] 存指针。默认 24
-	// （err 载荷是 24 字节的 %str-long，24 是它能原样内联的最小值）；可配置
+	// （err 载荷是 16 字节的 %str-long，而 %vec 是 24 字节，24 是两者都能原样
+	// 内联的最小值）；可配置
 	// 更大，最小 8；小于 8 是编译错误。由 build 从 package.noml 的
 	// compiler.option-inline-threshold（或 NOLANG_OPTION_INLINE_THRESHOLD）
 	// 填入，0 表示取默认值。

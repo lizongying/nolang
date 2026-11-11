@@ -567,7 +567,6 @@
   'http.download': ['download', 'd', 'd']
   'http.get': ['get', 'g', 'g']
   'http.get-auth': ['get-auth', 'ga', 'ga']
-  'http.http-dl-dechunk': ['http-dl-dechunk', 'hdd', 'hdd']
   'http.http-dl-location': ['http-dl-location', 'hdl', 'hdl']
   'http.http-dl-open': ['http-dl-open', 'hdo', 'hdo']
   'http.http-dl-resolve': ['http-dl-resolve', 'hdr', 'hdr']

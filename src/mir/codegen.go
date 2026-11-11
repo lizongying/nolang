@@ -3,6 +3,7 @@ package mir
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"regexp"
 	"sort"
@@ -1398,6 +1399,31 @@ func (c *codegen) wrapIntForStore(lt, raw, v string) string {
 	return c.wrapIntToStorage(raw, v)
 }
 
+// overflowStorageRaw picks the declared raw type whose width must normalize an
+// `#{overflow = ...}` result before it is written into an option payload.
+//
+// Option payloads are ALL i64 (optionPayloadLLVMType), so on the option path it
+// is the option's ELEMENT declaration — `?i8` → elemRaw "i8" — and not the
+// destination's raw type that carries the declared width. Passing dstRaw here
+// used to leave narrow option results un-normalized: `i8 -120 - 20` stored -140
+// in the i64 payload, while the plain `u8` path wrapped mod 2^8 via `add i8`.
+// That made wrap (and every mode's un-clamped direction) disagree with the
+// documented "2's-complement wraparound" and with the plain path.
+//
+// Only annotated option results take the element width: an unannotated result
+// has already been checked by `*.with.overflow` + the narrow range check, so its
+// value is in range and the historical IR must stay byte-identical. byte/char/
+// i128/u128 are excluded to preserve their documented special cases.
+func overflowStorageRaw(annotated bool, elemRaw, dstRaw string, wrapResult bool) string {
+	if annotated && wrapResult {
+		switch elemRaw {
+		case "i8", "u8", "i16", "u16", "i32", "u32":
+			return elemRaw
+		}
+	}
+	return dstRaw
+}
+
 // coerceIndex widens an array/slice index operand to i64. Indices are always
 // non-negative, so unsigned integer types (i8/i16/i32/i1) are ZERO-extended —
 // not sign-extended — so a byte index like 200 stays 200 instead of wrapping to a
@@ -1550,7 +1576,7 @@ func (c *codegen) optionPayloadLLVMType(elemRaw string) string {
 //     into a heap block and slot[0] holds that pointer (as i64).
 //
 // Boxing is ONLY used for the ok tag (0). nil (1) and err (2) always keep
-// their payload inline, because an err message is a 24-byte str and a nil has
+// their payload inline, because an err message is a 16-byte str and a nil has
 // no payload — allocating a 36 KB box for `err('bad json')` would be absurd.
 // Consequently every read of a payload that *may* be boxed goes through
 // optPayloadAddr, which selects between the box and a payload-sized zero
@@ -1581,7 +1607,7 @@ const optSlotMinBytes = 8
 //	unset / 0   -> optSlotDefaultBytes (24)
 //	< 8         -> compile error, clamped to 8 so the rest of the emitter
 //	               still produces verifiable IR
-//	8 .. 23     -> accepted, but WARN: the err message (a 24-byte %str-long)
+//	8 .. 23     -> accepted, but WARN: the err message (a 16-byte %str-long)
 //	               no longer fits, so err payloads are heap-boxed
 //	>= 24       -> accepted
 func (c *codegen) initOptionSlot() {
@@ -1642,7 +1668,7 @@ func (c *codegen) optionPayloadInline(payloadLT string) bool {
 // ---- the option's err payload ---------------------------------------------
 //
 // The builtin option is `option { ok(v t), nil, err(e <errPayloadRaw>) }`. The
-// err payload used to be a `str` — a 24-byte %str-long, exactly the width of
+// err payload used to be a `str` — a 16-byte %str-long, exactly the width of
 // the default payload slot, which is WHY the slot is 24 bytes (see the
 // "unified option layout" comment above) and why every err path in this file
 // used to be able to assume "the err payload is inline, and it is a %str-long".
@@ -1759,7 +1785,7 @@ func (c *codegen) emitErrMsgGlobal(name, text string) string {
 	bytesName := name + "_b"
 	c.extraGlobals = append(c.extraGlobals,
 		fmt.Sprintf("@%s = private unnamed_addr constant [%d x i8] c\"%s\"\n", bytesName, len(text), lit.String()),
-		fmt.Sprintf("@%s = private unnamed_addr constant %%str-long { i64 %d, i64 0, ptr @%s }\n", name, len(text), bytesName))
+		fmt.Sprintf("@%s = private unnamed_addr constant %%str-long { i32 %d, i32 0, ptr @%s }\n", name, len(text), bytesName))
 	c.errMsgGlobals[name] = true
 	return "@" + name
 }
@@ -1968,7 +1994,7 @@ func (c *codegen) optSlotOfValue(v ValueID) string {
 // That is a compile-time fact here: `payloadLT` is the type the caller wants to
 // read, and it is exactly the type that was stored, so the size test decides
 // the storage class with no tag check. This matters because err payloads are
-// NOT always inline any more: an err message is a 24-byte %str-long, so once
+// NOT always inline any more: an err message is a 16-byte %str-long, so once
 // the slot is configured below 24 ("option-inline-threshold 8..23") err uses a
 // pointer too.
 //
@@ -2767,13 +2793,13 @@ func (c *codegen) addrOfValue(v ValueID, lt, val string) string {
 //     so a shorter source leaves zero padding (which is what made a bare
 //     `err()` read back as an empty string).
 //   - does NOT fit   -> heap-boxed, exactly like an oversized ok payload. That
-//     is the option-inline-threshold < 24 case: the message is a 24-byte
+//     is the option-inline-threshold < 16 case: the message is a 16-byte
 //     %str-long and no longer fits, so err goes through a pointer.
 //
 // A source of UNKNOWN size still goes through the inline path with a
 // zero-length copy rather than a bitcast+load pun — that pun read past the
 // source's alloca and SIGSEGV'd when the payload was much larger
-// (%str-long 24 B -> %json_json 36 KB).
+// (%str-long 16 B -> %json_json 36 KB).
 func (c *codegen) optStoreRawBytes(optSlot string, tag int64, srcLT string, src ValueID, sv string) {
 	srcAddr := c.addrOfValue(src, srcLT, sv)
 	if srcAddr == "" {
@@ -2920,7 +2946,7 @@ func (c *codegen) emitOptionBoxHelpers(payloadLT string) {
 	c.sb.WriteString("  %t = load i64, i64* %tp\n")
 	// Both tags that can own a box need re-boxing, and they own boxes of
 	// DIFFERENT sizes: tag 0 holds sizeof(payloadLT), tag 2 holds the err
-	// payload — a 24-byte %str-long message historically, std's structured
+	// payload — a 16-byte %str-long message historically, std's structured
 	// err.err now — but only when the err payload is boxed at all. With the
 	// default slot a %str-long message is inline, so its first 8 bytes — the
 	// string LENGTH — sit in slot[0] and must not be mistaken for a box
@@ -2943,7 +2969,7 @@ func (c *codegen) emitOptionBoxHelpers(payloadLT string) {
 	c.sb.WriteString("  %oldp = inttoptr i64 %old to i8*\n")
 	errLT := c.errPayloadLT()
 	// How many bytes to copy, and WHICH TYPE was boxed, depends on the tag: tag 0
-	// holds sizeof(payloadLT), tag 2 holds the err payload — a 24-byte %str-long
+	// holds sizeof(payloadLT), tag 2 holds the err payload — a 16-byte %str-long
 	// message historically, and std's structured err.err now. Copying
 	// sizeof(payloadLT) (824 for ?sse_client) out of an err box is a heap
 	// over-read that aborts under malloc's guard pages, and cloning the err box
@@ -3154,6 +3180,170 @@ func (c *codegen) emitOverflowIntrinsic(unsigned bool, kind, lt, aV, bV string) 
 	return val, ovf
 }
 
+// overflowIntBounds returns the inclusive [lo, hi] decimal bounds of the
+// integer type an `#{overflow = ...}` annotation applies to, plus whether its
+// operands must be ZERO-extended into the wide domain (unsigned types).
+//
+// elemRaw is the option's declared element (the payload is stored as an i64,
+// so the declared width — not resLT — is what decides overflow). dstRaw is the
+// destination's declared type on the plain-int path. resLT is only a fallback
+// for destinations that declare no width (e.g. `?i64` spelled with a prefix).
+// `byte` and `char` are deliberately excluded: their arithmetic is a documented
+// special case that the overflow annotation does not govern.
+func overflowIntBounds(elemRaw, dstRaw, resLT string) (lo, hi string, unsigned, ok bool) {
+	raw := elemRaw
+	if raw == "" {
+		raw = dstRaw
+	}
+	bits := 0
+	switch raw {
+	case "u8":
+		bits, unsigned = 8, true
+	case "i8":
+		bits = 8
+	case "u16":
+		bits, unsigned = 16, true
+	case "i16":
+		bits = 16
+	case "u32":
+		bits, unsigned = 32, true
+	case "i32":
+		bits = 32
+	case "u64":
+		bits, unsigned = 64, true
+	case "i64":
+		bits = 64
+	case "byte", "char", "bool", "usize", "i128", "u128":
+		return "", "", false, false
+	}
+	if bits == 0 {
+		switch resLT {
+		case "i8":
+			bits = 8
+		case "i16":
+			bits = 16
+		case "i32":
+			bits = 32
+		case "i64":
+			bits = 64
+		}
+	}
+	if bits == 0 {
+		return "", "", false, false
+	}
+	one := big.NewInt(1)
+	if unsigned {
+		hiBig := new(big.Int).Lsh(one, uint(bits))
+		hiBig.Sub(hiBig, one)
+		return "0", hiBig.String(), true, true
+	}
+	half := new(big.Int).Lsh(one, uint(bits-1))
+	hiBig := new(big.Int).Sub(half, one)
+	loBig := new(big.Int).Neg(half)
+	return loBig.String(), hiBig.String(), false, true
+}
+
+// emitAnnotatedOverflowValue implements the value-taking half of
+// `#{overflow = ...}` for add/sub/mul. Before this, OvfAnnotated only skipped
+// the runtime check, so every mode produced the bare two's-complement result.
+//
+// The true result is computed in an i256 domain: the widest product we can see
+// here is (2^64-1)^2 < 2^128, so an i256 add/sub/mul never wraps and signed
+// comparisons against the declared bounds are exact for BOTH signed and
+// unsigned operands (a negative i256 bit pattern is interpreted as negative by
+// icmp slt, which is what unsigned underflow looks like). Truncating the
+// selected value back to resLT then yields the wrapped value on the direction
+// the mode does not clamp.
+//
+// Modes follow the per-mode LSP hover contract and the unified nolang-overflow
+// hint wording (checker `xmicjezl` / `8t1jaj02`). The hint no longer branches by
+// syntactic site: every integer arithmetic site advertises the same six modes.
+//
+//	wrap      - no clamping at all (historical bare add, handled by the caller)
+//	clamp0    - underflow -> 0
+//	min       - underflow -> type minimum
+//	max       - overflow  -> type maximum
+//	saturate  - overflow -> max, underflow -> min
+//
+// The result stays a `?T` with tag ok: the annotation declares that this value
+// is acceptable, it does not unwrap the option (docs/docs/lang/syntax.md,
+// "註解不解包").
+func (c *codegen) emitAnnotatedOverflowValue(mode string, op Op, resLT, elemRaw, dstRaw, aV, bV string) (string, bool) {
+	kind := ""
+	switch op {
+	case OpAdd:
+		kind = "add"
+	case OpSub:
+		kind = "sub"
+	case OpMul:
+		kind = "mul"
+	}
+	if kind == "" {
+		return "", false
+	}
+	switch mode {
+	case "clamp0", "min", "max", "saturate":
+	default:
+		return "", false
+	}
+	loLit, hiLit, unsigned, ok := overflowIntBounds(elemRaw, dstRaw, resLT)
+	if !ok {
+		return "", false
+	}
+	ext := "sext"
+	if unsigned {
+		ext = "zext"
+	}
+	c.loadSeq++
+	wa := fmt.Sprintf("%%owa.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = %s %s %s to i256\n", wa, ext, resLT, aV)
+	c.loadSeq++
+	wb := fmt.Sprintf("%%owb.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = %s %s %s to i256\n", wb, ext, resLT, bV)
+	c.loadSeq++
+	tv := fmt.Sprintf("%%owt.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = %s i256 %s, %s\n", tv, kind, wa, wb)
+	c.loadSeq++
+	hiF := fmt.Sprintf("%%owh.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = icmp sgt i256 %s, %s\n", hiF, tv, hiLit)
+	c.loadSeq++
+	loF := fmt.Sprintf("%%owl.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = icmp slt i256 %s, %s\n", loF, tv, loLit)
+	// sel builds outward from the true value. Each select is a pure SSA value,
+	// so the un-clamped direction keeps the two's-complement low bits.
+	sel := tv
+	switch mode {
+	case "clamp0":
+		c.loadSeq++
+		s := fmt.Sprintf("%%ows.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = select i1 %s, i256 0, i256 %s\n", s, loF, sel)
+		sel = s
+	case "min":
+		c.loadSeq++
+		s := fmt.Sprintf("%%ows.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = select i1 %s, i256 %s, i256 %s\n", s, loF, loLit, sel)
+		sel = s
+	case "max":
+		c.loadSeq++
+		s := fmt.Sprintf("%%ows.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = select i1 %s, i256 %s, i256 %s\n", s, hiF, hiLit, sel)
+		sel = s
+	case "saturate":
+		c.loadSeq++
+		loSel := fmt.Sprintf("%%ows.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = select i1 %s, i256 %s, i256 %s\n", loSel, loF, loLit, sel)
+		sel = loSel
+		c.loadSeq++
+		hiSel := fmt.Sprintf("%%ows.%d", c.loadSeq)
+		fmt.Fprintf(c.sb, "  %s = select i1 %s, i256 %s, i256 %s\n", hiSel, hiF, hiLit, sel)
+		sel = hiSel
+	}
+	c.loadSeq++
+	r := fmt.Sprintf("%%owr.%d", c.loadSeq)
+	fmt.Fprintf(c.sb, "  %s = trunc i256 %s to %s\n", r, sel, resLT)
+	return r, true
+}
+
 // ---- prelude / runtime ----
 
 // emitPrelude writes `target triple = "<canonical>"` when the build driver
@@ -3185,11 +3375,82 @@ func (c *codegen) emitOverflowIntrinsic(unsigned bool, kind, lt, aV, bV string) 
 // datalayout string is risky across LLVM releases (LLVM 20 expanded
 // x86_64-linux to `e-m:e-p270:32:32-p271:32:32-p272:64:64-...` while
 // earlier releases used the short `e-m:e-i64:64-f80:128-n8:16:32:64-S128`).
+// ---- %str-long u32 header -------------------------------------------------
+//
+// %str-long is `{ i32 len, i32 cap, i8* data }`: the two header counters are
+// u32 in storage (16-byte descriptor) but EVERY Nolang-facing API stays i64.
+// These helpers are the single narrowing/widening boundary; call sites keep
+// passing and receiving i64 and never spell the storage width themselves.
+//
+// Do NOT emit `load i64, i64* <gep to field 0/1>` or `store i64 ...` directly:
+// with u32 fields that is an LLVM verifier error. Use strHeaderLoadI64 /
+// strHeaderStoreI64 for GEP access, strLenI64 / strCapI64 for aggregates and
+// strLongFromParts to assemble a descriptor.
+
+// strU32Trunc narrows an i64 SSA value to the u32 field width. Numeric literals
+// pass through unchanged so constants stay `i32 0` instead of a trunc on a
+// constant.
+func (c *codegen) strU32Trunc(v string) string {
+	if _, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return v
+	}
+	r := c.treg("su32")
+	fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i32\n", r, v)
+	return r
+}
+
+// strU32Widen widens a u32 field value to the i64 Nolang API type.
+func (c *codegen) strU32Widen(v string) string {
+	r := c.treg("su64")
+	fmt.Fprintf(c.sb, "  %s = zext i32 %s to i64\n", r, v)
+	return r
+}
+
+// strLongFromParts assembles a %str-long from i64 len/cap and an i8* data ptr.
+// dataV must already be an owned buffer (or a borrowed cap=0 view pointer).
+func (c *codegen) strLongFromParts(lenV, capV, dataV string) string {
+	l := c.strU32Trunc(lenV)
+	cp := c.strU32Trunc(capV)
+	s0 := c.treg("slh0")
+	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i32 0, i32 0, i8* null }, i32 %s, 0\n", s0, l)
+	s1 := c.treg("slh1")
+	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i32 %s, 1\n", s1, s0, cp)
+	s2 := c.treg("slh2")
+	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, dataV)
+	return s2
+}
+
+// strLenI64 / strCapI64 read the u32 header fields of a %str-long VALUE as i64.
+func (c *codegen) strLenI64(v string) string {
+	raw := c.treg("sln")
+	fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", raw, v)
+	return c.strU32Widen(raw)
+}
+
+func (c *codegen) strCapI64(v string) string {
+	raw := c.treg("scn")
+	fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 1\n", raw, v)
+	return c.strU32Widen(raw)
+}
+
+// strHeaderLoadI64 / strHeaderStoreI64 access a u32 header field through a GEP
+// to field 0 (len) or 1 (cap), widening/narrowing at the storage boundary.
+func (c *codegen) strHeaderLoadI64(gep string) string {
+	raw := c.treg("shl")
+	fmt.Fprintf(c.sb, "  %s = load i32, i32* %s\n", raw, gep)
+	return c.strU32Widen(raw)
+}
+
+func (c *codegen) strHeaderStoreI64(gep, v string) {
+	n := c.strU32Trunc(v)
+	fmt.Fprintf(c.sb, "  store i32 %s, i32* %s\n", n, gep)
+}
+
 func (c *codegen) emitPrelude() {
 	if t := emitTargetTripleValue(); t != "" {
 		fmt.Fprintf(c.sb, "target triple = %q\n\n", t)
 	}
-	c.sb.WriteString(`%str-long = type { i64, i64, i8* }   ; len, cap, data
+	c.sb.WriteString(`%str-long = type { i32, i32, i8* }   ; u32 len, u32 cap, data (16B); external API stays i64
 %vec = type { i64, i64, i64 }
 `)
 	fmt.Fprintf(c.sb, "%%option = type { i64, %s }    ; tag, %d-byte payload slot (%d bytes total)\n",
@@ -3250,7 +3511,8 @@ entry:
   ; Borrowed slice VIEWS carry cap=0: their data pointer aliases another
   ; string's buffer and must NOT be freed. Only real heap strings (cap>0) own
   ; their buffer. Mirrors the @vec_free cap==0 skip below.
-  %scap = extractvalue %str-long %s, 1
+  %scap.i32 = extractvalue %str-long %s, 1
+  %scap = zext i32 %scap.i32 to i64
   %scap0 = icmp eq i64 %scap, 0
   br i1 %scap0, label %done, label %check
 check:
@@ -3269,8 +3531,10 @@ done:
 ; on the struct itself (that is illegal); the MIR OpStrEq op lowers to this call.
 define i1 @str_eq(%str-long %a, %str-long %b) {
 entry:
-  %la = extractvalue %str-long %a, 0
-  %lb = extractvalue %str-long %b, 0
+  %la.i32 = extractvalue %str-long %a, 0
+  %la = zext i32 %la.i32 to i64
+  %lb.i32 = extractvalue %str-long %b, 0
+  %lb = zext i32 %lb.i32 to i64
   %lenEq = icmp eq i64 %la, %lb
   br i1 %lenEq, label %cmpto, label %noteq
 cmpto:
@@ -3336,7 +3600,8 @@ done:
 ; (cap>0, data!=null) are retained.
 define void @str_retain(%str-long %s) {
 entry:
-  %scap = extractvalue %str-long %s, 1
+  %scap.i32 = extractvalue %str-long %s, 1
+  %scap = zext i32 %scap.i32 to i64
   %scap0 = icmp eq i64 %scap, 0
   br i1 %scap0, label %done, label %check
 check:
@@ -3383,20 +3648,24 @@ entry:
   %zero = icmp eq i64 %len, 0
   br i1 %zero, label %none, label %alloc
 none:
-  ret %str-long { i64 0, i64 0, i8* null }
+  ret %str-long { i32 0, i32 0, i8* null }
 alloc:
   %buf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %ptr, i64 %len, i1 0)
-  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
-  %r1 = insertvalue %str-long %r0, i64 %len, 1
+  %r0.i32 = trunc i64 %len to i32
+  %r0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %r0.i32, 0
+  %r1.i32 = trunc i64 %len to i32
+  %r1 = insertvalue %str-long %r0, i32 %r1.i32, 1
   %r2 = insertvalue %str-long %r1, i8* %buf, 2
   ret %str-long %r2
 }
 
 define %str-long @str_concat(%str-long %a, %str-long %b) {
 entry:
-  %la = extractvalue %str-long %a, 0
-  %lb = extractvalue %str-long %b, 0
+  %la.i32 = extractvalue %str-long %a, 0
+  %la = zext i32 %la.i32 to i64
+  %lb.i32 = extractvalue %str-long %b, 0
+  %lb = zext i32 %lb.i32 to i64
   %total = add i64 %la, %lb
   %buf = call i8* @nolang_rc_alloc(i64 %total)
   %da = extractvalue %str-long %a, 2
@@ -3404,8 +3673,10 @@ entry:
   %db = extractvalue %str-long %b, 2
   %dst2 = getelementptr i8, i8* %buf, i64 %la
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst2, i8* %db, i64 %lb, i1 0)
-  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %total, 0
-  %r1 = insertvalue %str-long %r0, i64 %total, 1
+  %r0.i32 = trunc i64 %total to i32
+  %r0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %r0.i32, 0
+  %r1.i32 = trunc i64 %total to i32
+  %r1 = insertvalue %str-long %r0, i32 %r1.i32, 1
   %r2 = insertvalue %str-long %r1, i8* %buf, 2
   ret %str-long %r2
 }
@@ -3418,7 +3689,8 @@ entry:
 ; trips LLVM verification ("invalid redefinition of function 'str_repeat'").
 define %str-long @_mir_str_repeat(%str-long %s, i64 %count) {
 entry:
-  %len = extractvalue %str-long %s, 0
+  %len.i32 = extractvalue %str-long %s, 0
+  %len = zext i32 %len.i32 to i64
   %total = mul i64 %len, %count
   %buf = call i8* @nolang_rc_alloc(i64 %total)
   %data = extractvalue %str-long %s, 2
@@ -3432,8 +3704,10 @@ loop:
   %cont = icmp slt i64 %i.next, %count
   br i1 %cont, label %loop, label %end
 end:
-  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %total, 0
-  %r1 = insertvalue %str-long %r0, i64 %total, 1
+  %r0.i32 = trunc i64 %total to i32
+  %r0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %r0.i32, 0
+  %r1.i32 = trunc i64 %total to i32
+  %r1 = insertvalue %str-long %r0, i32 %r1.i32, 1
   %r2 = insertvalue %str-long %r1, i8* %buf, 2
   ret %str-long %r2
 }
@@ -3459,8 +3733,10 @@ loop:
   %cont = icmp slt i64 %i.next, %n
   br i1 %cont, label %loop, label %end
 end:
-  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %n, 0
-  %r1 = insertvalue %str-long %r0, i64 %n, 1
+  %r0.i32 = trunc i64 %n to i32
+  %r0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %r0.i32, 0
+  %r1.i32 = trunc i64 %n to i32
+  %r1 = insertvalue %str-long %r0, i32 %r1.i32, 1
   %r2 = insertvalue %str-long %r1, i8* %buf, 2
   ret %str-long %r2
 }
@@ -3518,7 +3794,8 @@ done:
 ; print(a, b, c) -> "a b\n" semantics (space-separated, one newline).
 define void @print_str(%str-long %s) {
 entry:
-  %len = extractvalue %str-long %s, 0
+  %len.i32 = extractvalue %str-long %s, 0
+  %len = zext i32 %len.i32 to i64
   %data = extractvalue %str-long %s, 2
   call i64 @write(i32 1, i8* %data, i64 %len)
   ret void
@@ -4044,7 +4321,8 @@ entry:
 ; at the end — mirroring legacy callNamedFormat's io.err-per-segment behavior.
 define void @eprint_str(%str-long %s) {
 entry:
-  %len = extractvalue %str-long %s, 0
+  %len.i32 = extractvalue %str-long %s, 0
+  %len = zext i32 %len.i32 to i64
   %data = extractvalue %str-long %s, 2
   call i64 @write(i32 2, i8* %data, i64 %len)
   ret void
@@ -4057,8 +4335,10 @@ entry:
 ; same-named definition would trip LLVM verification ("invalid redefinition").
 define %str-long @_mir_str_concat(%str-long %a, %str-long %b) {
 entry:
-  %alen = extractvalue %str-long %a, 0
-  %blen = extractvalue %str-long %b, 0
+  %alen.i32 = extractvalue %str-long %a, 0
+  %alen = zext i32 %alen.i32 to i64
+  %blen.i32 = extractvalue %str-long %b, 0
+  %blen = zext i32 %blen.i32 to i64
   %total = add i64 %alen, %blen
   %size = add i64 %total, 1
   %buf = call i8* @nolang_rc_alloc(i64 %size)
@@ -4069,8 +4349,10 @@ entry:
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %bdst, i8* %bdata, i64 %blen, i1 false)
   %nul = getelementptr i8, i8* %buf, i64 %total
   store i8 0, i8* %nul
-  %r0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %total, 0
-  %r1 = insertvalue %str-long %r0, i64 %total, 1
+  %r0.i32 = trunc i64 %total to i32
+  %r0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %r0.i32, 0
+  %r1.i32 = trunc i64 %total to i32
+  %r1 = insertvalue %str-long %r0, i32 %r1.i32, 1
   %r2 = insertvalue %str-long %r1, i8* %buf, 2
   ret %str-long %r2
 }
@@ -4086,7 +4368,8 @@ declare i64 @strlen(i8*)
 ; that take a char*. The caller frees the result.
 define i8* @str_cstr(%str-long %s) {
 entry:
-  %len = extractvalue %str-long %s, 0
+  %len.i32 = extractvalue %str-long %s, 0
+  %len = zext i32 %len.i32 to i64
   %data = extractvalue %str-long %s, 2
   %sz = add i64 %len, 1
   %buf = call i8* @nolang_rc_alloc(i64 %sz)
@@ -4103,15 +4386,17 @@ entry:
   %isnull = icmp eq i8* %p, null
   br i1 %isnull, label %nil, label %copy
 nil:
-  %z = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 0, 0
+  %z = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 0, 0
   ret %str-long %z
 copy:
   %len = call i64 @strlen(i8* %p)
   %sz = add i64 %len, 1
   %buf = call i8* @nolang_rc_alloc(i64 %sz)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %p, i64 %len, i1 0)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
-  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s0.i32 = trunc i64 %len to i32
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0
+  %s1.i32 = trunc i64 %len to i32
+  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1
   %s2 = insertvalue %str-long %s1, i8* %buf, 2
   ret %str-long %s2
 }
@@ -4141,21 +4426,24 @@ copy:
 ; @nolang_rc_alloc(0) and @nolang_rc_alloc(1)).
 define %str-long @str_clone(%str-long %s) {
 entry:
-  %len = extractvalue %str-long %s, 0
+  %len.i32 = extractvalue %str-long %s, 0
+  %len = zext i32 %len.i32 to i64
   %data = extractvalue %str-long %s, 2
   %isnull = icmp eq i8* %data, null
   %isempty = icmp eq i64 %len, 0
   %skip = or i1 %isnull, %isempty
   br i1 %skip, label %nil, label %copy
 nil:
-  %z = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 0, 0
+  %z = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 0, 0
   ret %str-long %z
 copy:
   %sz = add i64 %len, 1
   %buf = call i8* @nolang_rc_alloc(i64 %sz)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %buf, i8* %data, i64 %len, i1 0)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
-  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s0.i32 = trunc i64 %len to i32
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0
+  %s1.i32 = trunc i64 %len to i32
+  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1
   %s2 = insertvalue %str-long %s1, i8* %buf, 2
   ret %str-long %s2
 }
@@ -4185,8 +4473,10 @@ emit:
   %len = sub i64 %epp, %startp
   %nbuf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %start, i64 %len, i1 0)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
-  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s0.i32 = trunc i64 %len to i32
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0
+  %s1.i32 = trunc i64 %len to i32
+  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
   ret %str-long %s2
 }
@@ -4242,8 +4532,10 @@ emit:
   %len = sub i64 %epp, %startp
   %nbuf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %start, i64 %len, i1 0)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
-  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s0.i32 = trunc i64 %len to i32
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0
+  %s1.i32 = trunc i64 %len to i32
+  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
   ret %str-long %s2
 }
@@ -4275,8 +4567,10 @@ emit:
   %len = sub i64 %epp, %startp
   %nbuf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %pp, i64 %len, i1 0)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
-  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s0.i32 = trunc i64 %len to i32
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0
+  %s1.i32 = trunc i64 %len to i32
+  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
   ret %str-long %s2
 }
@@ -4288,8 +4582,8 @@ define %str-long @str_from_char(i8 %c) {
 entry:
   %nbuf = call i8* @nolang_rc_alloc(i64 1)
   store i8 %c, i8* %nbuf
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 1, 0
-  %s1 = insertvalue %str-long %s0, i64 1, 1
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 1, 0
+  %s1 = insertvalue %str-long %s0, i32 1, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
   ret %str-long %s2
 }
@@ -4687,8 +4981,10 @@ alloc:
   %n = phi i64 [ 1, %w1 ], [ 2, %w2 ], [ 3, %w3 ], [ 4, %w4 ]
   %nbuf = call i8* @nolang_rc_alloc(i64 %n)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %buf, i64 %n, i1 false)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %n, 0
-  %s1 = insertvalue %str-long %s0, i64 %n, 1
+  %s0.i32 = trunc i64 %n to i32
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0
+  %s1.i32 = trunc i64 %n to i32
+  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
   ret %str-long %s2
 }
@@ -4704,8 +5000,10 @@ entry:
   %len = call i64 @f64_render(double %v, i8* %p)
   %nbuf = call i8* @nolang_rc_alloc(i64 %len)
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %nbuf, i8* %p, i64 %len, i1 0)
-  %s0 = insertvalue %str-long { i64 0, i64 0, i8* null }, i64 %len, 0
-  %s1 = insertvalue %str-long %s0, i64 %len, 1
+  %s0.i32 = trunc i64 %len to i32
+  %s0 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %s0.i32, 0
+  %s1.i32 = trunc i64 %len to i32
+  %s1 = insertvalue %str-long %s0, i32 %s1.i32, 1
   %s2 = insertvalue %str-long %s1, i8* %nbuf, 2
   ret %str-long %s2
 }
@@ -5901,13 +6199,13 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	}
 	// Type-pun: the wrapped value's type differs from the declared payload.
 	// `err(msg)` into ?i64 / ?file / ?json is the canonical case — the message
-	// is a 24-byte %str-long that fits the slot exactly, so it is stored as
+	// is a 16-byte %str-long that fits the slot exactly, so it is stored as
 	// raw bytes and read back as raw bytes by the err arm. This replaces the
 	// old `str_clone` + ptrtoint hack, which threw away len/cap (the err arm
 	// printed a raw heap address) and leaked the clone.
 	// A tag-2 (err) payload whose type differs from the declared OK payload
 	// used to be type-punned into the slot (optStoreRawBytes below). That only
-	// works while the err payload is a 24-byte %str-long — exactly the slot
+	// works while the err payload is a 16-byte %str-long — exactly the slot
 	// width. A structured err (err.err, far larger) would overrun the slot, so
 	// box it and record the pointer instead.
 	//
@@ -5915,7 +6213,7 @@ func (c *codegen) emitOptionWrap(inst *Inst) error {
 	// only when tag==2, so it unboxes unconditionally there, and emitOptionDrop
 	// must free the box under the same tag test. Until the builtin err(...)
 	// constructor actually builds an err.err value this branch never fires
-	// (the err payload is still a 24-byte str, which is inline), so it is
+	// (the err payload is still a 16-byte str, which is inline), so it is
 	// inert — added first so it can be verified not to regress anything.
 	if tag == 2 && svType != "" && svType != payloadLT && !c.optionPayloadInline(svType) {
 		if srcAddr := c.addrOfValue(src, svType, sv); srcAddr != "" {
@@ -6194,6 +6492,21 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	// so every existing (annotated or non-option) program is bit-identical.
 	resVal := fmt.Sprintf("%%c%d", inst.Dst)
 	useIntrinsic := false
+	// An explicit non-wrap `#{overflow = ...}` must actually PICK the value
+	// taken on overflow. OvfAnnotated alone only suppresses the check below,
+	// which used to leave a bare add/sub/mul and made clamp0/min/max/saturate
+	// indistinguishable from wrap. Decode the mode from MIR and emit the
+	// wide-domain clamp; the option tag stays ok (annotations do not unwrap).
+	ovfMode := inst.OvfMode
+	if inst.OvfAnnotated && ovfMode == "" {
+		ovfMode = "wrap" // hand-built Insts / legacy lowering paths
+	}
+	if !isFloat && inst.OvfAnnotated && ovfMode != "wrap" && overflowCheckable(resLT) {
+		if v, ok := c.emitAnnotatedOverflowValue(ovfMode, inst.Op, resLT, elemRaw, dstRaw, aV, bV); ok {
+			resVal = v
+			useIntrinsic = true
+		}
+	}
 	if wrapResult && !isFloat && !inst.OvfAnnotated && overflowCheckable(resLT) {
 		var kind string
 		switch inst.Op {
@@ -6251,6 +6564,7 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 	if !useIntrinsic {
 		fmt.Fprintf(c.sb, "  %%c%d = %s %s %s, %s\n", inst.Dst, op, resLT, aV, bV)
 	}
+	storageRaw := overflowStorageRaw(inst.OvfAnnotated, elemRaw, dstRaw, wrapResult)
 	if wrapResult {
 		if errCond != "" {
 			// Conditional error: on the danger flag build a real structured
@@ -6274,12 +6588,12 @@ func (c *codegen) emitArith(f *Function, inst *Inst) error {
 			fmt.Fprintf(c.sb, "  br label %%%s\n", adone)
 			fmt.Fprintf(c.sb, "%s:\n", aok)
 			c.optStoreTag(slot, 0)
-			c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(dstRaw, resVal))
+			c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(storageRaw, resVal))
 			fmt.Fprintf(c.sb, "  br label %%%s\n", adone)
 			fmt.Fprintf(c.sb, "%s:\n", adone)
 		} else {
 			c.optStoreTag(slot, 0)
-			c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(dstRaw, resVal))
+			c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(storageRaw, resVal))
 		}
 	} else {
 		// Plain-int path (the statement carries an #{overflow=...} annotation, or
@@ -6327,6 +6641,7 @@ func (c *codegen) emitNeg(inst *Inst) error {
 	slot := c.valSlot[inst.Dst]
 	vT, v := c.loadVal(inst.Args[0])
 	resLT := lt
+	elemRaw := ""
 	wrapResult := false
 	if strings.HasPrefix(lt, "%option") {
 		if val := c.mod.Value(inst.Dst); val != nil {
@@ -6334,6 +6649,7 @@ func (c *codegen) emitNeg(inst *Inst) error {
 				if elem := optionElemRaw(t); elem != "" {
 					_, payloadLT := c.optionType(elem)
 					resLT = payloadLT
+					elemRaw = elem
 					wrapResult = true
 					vT, v = c.unwrapOptionOperand(inst.Args[0], vT, v, resLT)
 				}
@@ -6348,15 +6664,31 @@ func (c *codegen) emitNeg(inst *Inst) error {
 	// a bare `sub`, which would silently produce MIN again.
 	resVal := fmt.Sprintf("%%c%d", inst.Dst)
 	errCond := ""
-	if wrapResult && resLT != "double" && !inst.OvfAnnotated && overflowCheckable(resLT) {
+	// `-MIN` is the one overflowing negation. An annotated non-wrap mode must
+	// pick its value there too, via the same wide-domain 0 - x clamp used by
+	// emitArith; otherwise `-x` would be the sole arithmetic site where
+	// clamp0/min/max/saturate still degenerate to wrap.
+	ovfMode := inst.OvfMode
+	if inst.OvfAnnotated && ovfMode == "" {
+		ovfMode = "wrap"
+	}
+	negHandled := false
+	if inst.OvfAnnotated && ovfMode != "wrap" && resLT != "double" && overflowCheckable(resLT) {
+		if val, ok := c.emitAnnotatedOverflowValue(ovfMode, OpSub, resLT, elemRaw, dstRaw, "0", v); ok {
+			resVal = val
+			negHandled = true
+		}
+	}
+	if !negHandled && wrapResult && resLT != "double" && !inst.OvfAnnotated && overflowCheckable(resLT) {
 		val, ovf := c.emitOverflowIntrinsic(false, "sub", resLT, "0", v)
 		resVal = val
 		errCond = ovf
-	} else if resLT == "double" {
+	} else if !negHandled && resLT == "double" {
 		fmt.Fprintf(c.sb, "  %%c%d = fneg double %s\n", inst.Dst, v)
-	} else {
+	} else if !negHandled {
 		fmt.Fprintf(c.sb, "  %%c%d = sub %s 0, %s\n", inst.Dst, resLT, v)
 	}
+	storageRaw := overflowStorageRaw(inst.OvfAnnotated, elemRaw, dstRaw, wrapResult)
 	if wrapResult {
 		c.optStoreTag(slot, 0)
 		if errCond != "" {
@@ -6365,7 +6697,7 @@ func (c *codegen) emitNeg(inst *Inst) error {
 			fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 2, i64 0\n", errTag, errCond)
 			c.optStoreTagValue(slot, errTag)
 		}
-		c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(dstRaw, resVal))
+		c.optStoreInlinePayload(slot, resLT, c.wrapIntToStorage(storageRaw, resVal))
 	} else {
 		outV := resVal
 		// char sentinel: negating a non-zero char always yields a negative
@@ -7102,7 +7434,7 @@ func (c *codegen) rawTypeOfValue(v ValueID) string {
 // so the result is an ordinary OWNED str that the option can free.
 //
 // Needed by emitOptionWrap for `?str = <txt>`: without it the buffer was
-// stored raw into a %str-long payload slot, so the ok arm read the first 24
+// stored raw into a %str-long payload slot, so the ok arm read the first 16
 // bytes of the TEXT as {len, cap, data} and printed the empty string.
 func (c *codegen) strFromTxtValue(txtV string) string {
 	c.loadSeq++
@@ -7534,7 +7866,7 @@ func (c *codegen) emitOptionDrop(inst *Inst, v, optLT string) {
 	default:
 		// INLINE payload that still owns heap: a small struct whose owned `str`
 		// leaves live inside the payload slot (e.g. `?person` with
-		// `person { name str }`, 24 bytes) or whose POINTEES do (e.g. `?json`,
+		// `person { name str }`, 16 bytes) or whose POINTEES do (e.g. `?json`,
 		// 16 bytes with `pool json-pool #{inline=false}`). Its destructor is the
 		// same recursive one a plain struct local gets, called on the payload
 		// address — but tag-guarded, so a nil (tag 1) or an err message
@@ -7631,7 +7963,7 @@ func (c *codegen) optionHelperSplit(elemRaw, payloadLT string) bool {
 //	              when the payload is boxed;
 //	tag 2 (err) : the err-variant payload — std's err.err, boxed (it never fits
 //	              the 24-byte slot); historically a %str-long message, inline in
-//	              the slot or in its own 24-byte box when the slot was < 24;
+//	              the slot or in its own 16-byte box when the slot was < 16;
 //	tag 1 (nil) : nothing (the slot is fully zeroed).
 //
 // See emitOptionDrop for why the tag test must exist and why this is a
@@ -7648,7 +7980,7 @@ func (c *codegen) emitOptionDropHelper(elemRaw, payloadLT string) string {
 	boxed := !c.optionPayloadInline(payloadLT)
 	// Whether the ERR payload is boxed is a separate question from whether the
 	// ok payload is: the err payload's type is a property of the option itself,
-	// not of its element. It used to be a 24-byte %str-long — inline in the
+	// not of its element. It used to be a 16-byte %str-long — inline in the
 	// default slot even when the declared payload was not — and is now std's
 	// structured err.err, which never fits and always goes through a box.
 	errBoxed := c.errPayloadBoxed()
@@ -8355,7 +8687,7 @@ func (c *codegen) emitMove(inst *Inst) error {
 	// %txt <-> %str-long move. The tail of this function types the copy by the
 	// DESTINATION (`load %T, %T* srcSlot`), which is harmless while both sides
 	// share a layout but reads out of bounds the moment one side is a %txt:
-	//   - str -> txt: `load %txt, %txt* <24-byte str slot>` reads 256 bytes off
+	//   - str -> txt: `load %txt, %txt* <16-byte str slot>` reads 256 bytes off
 	//     the stack and bit-copies them, so the txt's i8 len byte keeps its STALE
 	//     value while the buffer holds a {len,cap,data} triple -> the value
 	//     prints empty and reports the previous length.
@@ -8625,7 +8957,7 @@ func (c *codegen) cloneStructElemLeaves(eptr, elemLL string) {
 	// Built-in container descriptors are NOT user structs, but they ARE in
 	// StructFields and %vec's `data` field is registered as an owned `str`.
 	// Letting the lookup below see them "deep clones" a vec element's data
-	// pointer as if it were a string: `store %str-long` (24 bytes) into an
+	// pointer as if it were a string: `store %str-long` (16 bytes) into an
 	// 8-byte field. Verified: tests/mem-safety/nested-container-clone.no
 	// aborts with trace/BPT trap before printing its first line, because
 	// `a.push(make-vec3(1,2,3))` on a `[][]i64` hits exactly this.
@@ -9106,7 +9438,7 @@ func (c *codegen) emitClone(inst *Inst) error {
 
 // elemAddr computes the address of element `idx` of a container value held in
 // arrSlot. The container layout depends on arrT:
-//   - %str-long {i64, i64, i8*} : data is field 2 (i8*); index a byte.
+//   - %str-long {i32, i32, i8*} : data is field 2 (i8*); index a byte.
 //   - %vec      {i64, i64, i64} : data is field 2 (pointer stored as i64);
 //     inttoptr to the element-type pointer, then index.
 //   - fixed array [N x T]      : the array type is its own element type; a
@@ -9203,8 +9535,10 @@ func mirStaticTypeSize(lt string) (int64, bool) {
 		return n, true
 	}
 	switch lt {
-	case "%str-long", "%vec":
-		return 24, true // {i64,i64,i8*} / {i64,i64,i64}
+	case "%str-long":
+		return 16, true // {i32 len, i32 cap, i8* data} — u32 header + 8-byte-aligned pointer
+	case "%vec":
+		return 24, true // {i64,i64,i64}
 	case "%option":
 		return 8 + optSlotDefaultBytes, true // { i64 tag, [N x i64] slot } at the default threshold
 	}
@@ -9593,7 +9927,7 @@ func (c *codegen) emitMemcpy(dst, src, size string) {
 // byte count of a slice/string backing store with `cap` slots.
 //
 // A slice's backing store holds ELEMENT-sized slots: []str is an array of
-// 24-byte %str-long, []?i64 of 32-byte %option. Sizing it with a constant 8
+// 16-byte %str-long, []?i64 of 32-byte %option. Sizing it with a constant 8
 // under-allocates, and a later `a[i] = v` then loads a whole element out of the
 // end of the block, so the element's `data` field is heap garbage and
 // @str_free aborts with "pointer being freed was not allocated"
@@ -9887,9 +10221,7 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	c.loadSeq++
 	cg := fmt.Sprintf("%%slbcg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", cg, arrSlot)
-	c.loadSeq++
-	ci := fmt.Sprintf("%%slbci.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", ci, cg)
+	ci := c.strHeaderLoadI64(cg)
 
 	// null data -> allocate (case 1); non-null -> check for growth (case 2).
 	c.loadSeq++
@@ -9919,7 +10251,7 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	c.decl("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)")
 	fmt.Fprintf(c.sb, "  call void @llvm.memset.p0i8.i64(i8* %s, i8 0, i64 %s, i1 false)\n", buf, sizeReg)
 	fmt.Fprintf(c.sb, "  store i8* %s, i8** %s\n", buf, dg)
-	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", sizeReg, cg)
+	c.strHeaderStoreI64(cg, sizeReg)
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
 
 	// check block (case 2): an owned buffer (cap > 0) that is too small for
@@ -9974,9 +10306,7 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	c.loadSeq++
 	lg := fmt.Sprintf("%%slblg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lg, arrSlot)
-	c.loadSeq++
-	li := fmt.Sprintf("%%slbli.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", li, lg)
+	li := c.strHeaderLoadI64(lg)
 	c.loadSeq++
 	lenOver := fmt.Sprintf("%%slblo.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", lenOver, li, ci)
@@ -9991,7 +10321,7 @@ func (c *codegen) ensureStrLongBuffer(arrSlot string, v ValueID, idxV, elemT str
 	// refcount check passes; a borrowed view (cap==0) never reaches here.
 	fmt.Fprintf(c.sb, "  call void @nolang_free(i8* %s)\n", di)
 	fmt.Fprintf(c.sb, "  store i8* %s, i8** %s\n", gbuf, dg)
-	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", newCap, cg)
+	c.strHeaderStoreI64(cg, newCap)
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
 
 	// done block: merge point; the caller's subsequent store lands here.
@@ -10117,8 +10447,7 @@ func (c *codegen) strHeaderOf(v ValueID) (data, byteLen string) {
 	}
 	rv := c.treg("srx")
 	fmt.Fprintf(c.sb, "  %s = load %%str-long, %%str-long* %s\n", rv, slot)
-	l := c.treg("srl")
-	fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", l, rv)
+	l := c.strLenI64(rv)
 	d := c.treg("srd")
 	fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", d, rv)
 	return d, l
@@ -10435,7 +10764,8 @@ func (c *codegen) emitIndexStore(inst *Inst) error {
 	// Same family as the argument-marshalling guards: `no vet` reports 0 errors
 	// (element assignment types are not checked) and only `no run` fails, with an
 	// internal opt-verify dump. `%vec`/`%str-long` are excluded on both sides —
-	// layout-identical 24-byte triples the codebase deliberately puns — and
+	// they USED to be layout-identical 24-byte triples, but %str-long is now
+	// 16 bytes, so any GEP-based reinterpretation between the two is invalid — and
 	// `%option` is excluded because a store into a `[]?T` element is auto-wrapped
 	// during lowering.
 	// The ONE legitimate cross-type pair is a `str` value written into a BYTE
@@ -10700,7 +11030,13 @@ func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", lenGep, arrT, arrT, arrSlot)
 	c.loadSeq++
 	curLen := fmt.Sprintf("%%slc.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", curLen, lenGep)
+	if arrT == "%str-long" {
+		// field 0 is u32; an opaque-pointer `load i64` would silently read
+		// len+cap as one word. Widen at the storage boundary.
+		curLen = c.strHeaderLoadI64(lenGep)
+	} else {
+		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", curLen, lenGep)
+	}
 	c.loadSeq++
 	idx1 := fmt.Sprintf("%%sli.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = add i64 %s, 1\n", idx1, idxV)
@@ -10710,7 +11046,11 @@ func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
 	c.loadSeq++
 	newLen := fmt.Sprintf("%%sln.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", newLen, cmp, idx1, curLen)
-	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", newLen, lenGep)
+	if arrT == "%str-long" {
+		c.strHeaderStoreI64(lenGep, newLen)
+	} else {
+		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", newLen, lenGep)
+	}
 }
 
 // localTypeOf resolves the MIR type of a value, preferring the enclosing
@@ -11301,6 +11641,27 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		recvRaw = ty.StripViewRaw(recvRaw)
 		recvSlot = pv
 	}
+	// %str-long len/cap are u32 in storage but i64 in the Nolang API. The
+	// generic path derives the load type from the destination (i64), which would
+	// load 8 bytes out of a 4-byte field. Widen at the boundary instead.
+	if recvLT == "%str-long" && (inst.Str == "len" || inst.Str == "cap") {
+		idx := 0
+		if inst.Str == "cap" {
+			idx = 1
+		}
+		gep := c.treg("sfh")
+		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 %d\n", gep, recvSlot, idx)
+		v := c.strHeaderLoadI64(gep)
+		dstLT, _ := c.ptype(inst.Dst)
+		if dstLT == "" {
+			dstLT = "i64"
+		}
+		if cv := c.coerce("i64", v, dstLT); cv != "" {
+			v = cv
+		}
+		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstLT, v, dstLT, c.valSlot[inst.Dst])
+		return nil
+	}
 	if isOptionType(recvLT) {
 		// `?T.field`: peel the option (field 1 holds the inline payload of type
 		// payloadLT), then GEP into the inner struct's field.
@@ -11464,7 +11825,7 @@ func containerFieldIndex(name string) (int, bool) {
 // of every std slice/string write at once; this only removes the null-buffer
 // crash, which no correct program can depend on.
 //
-// Layouts: %str-long = { i64 len, i64 cap, i8* data } (a real pointer);
+// Layouts: %str-long = { u32 len, u32 cap, i8* data } (a real pointer);
 // %vec = { i64 len, i64 cap, i64 data } (ptrtoint-encoded).
 func (c *codegen) ensureContainerStorageForLen(slot, recvLT string, ty *Type, nV string) {
 	// Element size: a str's backing store is bytes; a slice's is its element.
@@ -11524,7 +11885,11 @@ func (c *codegen) ensureContainerStorageForLen(slot, recvLT string, ty *Type, nV
 	// cap = n: the buffer is exactly big enough for the length being written,
 	// and cap > 0 marks the container as owning its buffer (cap == 0 means
 	// "borrowed view" and must never be freed).
-	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", nV, cg)
+	if recvLT == "%str-long" {
+		c.strHeaderStoreI64(cg, nV)
+	} else {
+		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", nV, cg)
+	}
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
 
 	fmt.Fprintf(c.sb, "%s:\n", lDone)
@@ -11587,6 +11952,13 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	// (txt.slice / txt.split / txt.replace-n / ...) therefore returned an EMPTY
 	// value, which is also why txt.split produced the right number of empty
 	// parts. Truncate to i8 and clamp into 0..255 so the write stays in bounds.
+	// NOTE: do NOT short-circuit `%str-long` len/cap writes here. The generic
+	// container pseudo-field path below calls ensureContainerStorageForLen
+	// first (`X.len = n` on a zero-initialised str must back the length with a
+	// real buffer), and derives the store type from StructFields["str"], which
+	// is now u32/i32 — so it already emits the correct 4-byte store. An early
+	// return here silently skipped the allocation and made `path.dir()` on an
+	// empty path lose its length (measured: 1 -> 0).
 	if recvLT == "%txt" && inst.Str == "len" {
 		_, valV := c.loadVal(inst.Args[1])
 		valLT, _ := c.ptype(inst.Args[1])
@@ -11754,7 +12126,21 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			c.loadSeq++
 			gep := fmt.Sprintf("%%gp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, recvLT, recvLT, recvSlot, idx)
-			fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep)
+			if recvLT == "%str-long" && idx <= 1 {
+				// len/cap are u32 fields. The generic `store i64` would write
+				// 8 bytes through an opaque pointer and clobber the adjacent
+				// header field (len write zeroing cap turns the string into a
+				// "borrowed view" and leaks its buffer). Narrow at the boundary.
+				v := valV
+				if valLT != "i64" {
+					if cv := c.coerce(valLT, v, "i64"); cv != "" {
+						v = cv
+					}
+				}
+				c.strHeaderStoreI64(gep, v)
+			} else {
+				fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep)
+			}
 			return nil
 		}
 	}
@@ -11788,8 +12174,9 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	//    for this — struct field assignment types are not checked — and the
 	//    old behaviour wrote the RHS's bytes into the field, leaving the `%txt`
 	//    length byte at 0 so every read came back empty. Refuse instead.
-	//    `%vec`/`%str-long` are excluded on both sides: they are layout-identical
-	//    24-byte triples and the codebase relies on that pun (a fixed-array RHS
+	//    `%vec`/`%str-long` are excluded on both sides: historically they were
+	//    layout-identical 24-byte triples, but %str-long is 16 bytes now, so the
+	//    exclusion is type-based only (a fixed-array RHS
 	//    reaching a slice field is converted just below, and a slice RHS
 	//    reaching a fixed-array field is accepted).
 	//
@@ -11949,7 +12336,7 @@ func (c *codegen) emitSetField(inst *Inst) error {
 	//
 	// fieldLT above is derived from the RHS (`c.ptype(inst.Args[1])`), not from
 	// the field's declaration, so a `txt` field was handed `%str-long`. The
-	// clone block below then loaded/cloned/stored a 24-byte %str-long descriptor
+	// clone block below then loaded/cloned/stored a 16-byte %str-long descriptor
 	// into a 256-byte %txt field: the i8 length byte (field 1, offset 255) kept
 	// its zeroinitializer value 0, so EVERY read of the field came back empty.
 	//   point { s txt }
@@ -12023,7 +12410,7 @@ func (c *codegen) sliceFieldStoreMismatch(declared *Type, val ValueID, valLT str
 		// (vecFromArraySink) copies with the ARRAY's element width while every
 		// later read uses the FIELD's stride, so only the UNSAFE directions are
 		// refused:
-		//   - an AGGREGATE field element — a %str-long/%txt read at a 24/256
+		//   - an AGGREGATE field element — a %str-long/%txt read at a 16/256
 		//     byte stride over a buffer sized for the array's element. This is
 		//     the `[3]i64 -> []str` trace/BPT trap.
 		//   - a field element WIDER than the array's — an 8-byte read at
@@ -12272,8 +12659,8 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	case recvLT == "%str-long":
 		rv := c.treg("sor")
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", rv, recvLT, recvLT, recvSlot)
-		rlen = c.treg("sol")
-		fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", rlen, recvLT, rv)
+		// field 0 is u32 now: widen it to the i64 used by the slice arithmetic.
+		rlen = c.strLenI64(rv)
 		rdata := c.treg("sod")
 		fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 2\n", rdata, recvLT, rv)
 		srcPtr = rdata
@@ -12480,12 +12867,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 	}
 
 	if dstLT == "%str-long" {
-		s0 := c.treg("sos0")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", s0, newLen)
-		s1 := c.treg("sos1")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, capV)
-		s2 := c.treg("sos2")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, newBuf)
+		s2 := c.strLongFromParts(newLen, capV, newBuf)
 		fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", s2, dstSlot)
 	} else if strings.HasPrefix(dstLT, "[") {
 		// Fixed-array destination [M x E]: dstSlot is already a pointer to a
@@ -13348,7 +13730,7 @@ func (c *codegen) emitOptionPrintHelper(payloadLT string) {
 	c.sb.WriteString("  ret void\n")
 	c.sb.WriteString("osome:\n")
 	// optPayloadAddr, not a raw GEP to field 1: when the slot is configured
-	// below 24 even a %str-long payload is heap-boxed, and field 1 then holds
+	// below 16 even a %str-long payload is heap-boxed, and field 1 then holds
 	// the box POINTER rather than the string.
 	raw := c.optPayloadAddr("%os", payloadLT)
 	fmt.Fprintf(c.sb, "  %%pp = bitcast i8* %s to %s*\n", raw, payloadLT)
@@ -13362,9 +13744,10 @@ func (c *codegen) emitOptionPrintHelper(payloadLT string) {
 // an i8. The destination %txt slot is pre-allocated by the prologue. This is
 // the MIR analogue of the legacy str->txt conversion in build/llvm/stmt.go.
 // emitStrFromVec lowers `OpStrFromVec`: reinterpret a []byte (%vec) as a str
-// (%str-long). Both layouts are { i64 len, i64 cap, <data> }; only the data
-// field differs (i64 vs i8*), so the conversion copies len/cap verbatim and
-// inttoptr's the pointer. Legacy stores the read-file %vec straight into the
+// (%str-long). %vec = { i64 len, i64 cap, i64 data }, while the destination
+// %str-long = { i32 len, i32 cap, i8* data }: len/cap must be truncated to u32
+// (strLongFromParts) and the data integer inttoptr'd. The result is still a
+// zero-copy alias of the slice's buffer. Legacy stored the read-file %vec into the
 // %str-long slot, so nolang sees the file's bytes as text — `data str =
 // fs.read-file(path)` (tests/mem-safety/bug12-builtin-slice-to-str.no).
 //
@@ -13399,14 +13782,7 @@ func (c *codegen) emitStrFromVec(inst *Inst) error {
 	pv := fmt.Sprintf("%%svp.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = inttoptr i64 %s to i8*\n", pv, dv)
 	c.loadSeq++
-	s0 := fmt.Sprintf("%%svs.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", s0, lv)
-	c.loadSeq++
-	s1 := fmt.Sprintf("%%svs.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, cv)
-	c.loadSeq++
-	s2 := fmt.Sprintf("%%svs.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, pv)
+	s2 := c.strLongFromParts(lv, cv, pv)
 	fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", s2, dstSlot)
 	return nil
 }
@@ -13430,9 +13806,8 @@ func (c *codegen) emitTxtFromStr(inst *Inst) error {
 	if srcT == "%txt" {
 		return c.emitTxtFromTxt(inst.Args[0], srcV, dstSlot)
 	}
-	c.loadSeq++
-	sl := fmt.Sprintf("%%tls.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", sl, srcT, srcV)
+	// %str-long.len is u32; widen before the i64 clamp/select/memcpy below.
+	sl := c.strLenI64(srcV)
 	// clamp to 255 (txt is bounded at 255 bytes)
 	c.loadSeq++
 	tgt := fmt.Sprintf("%%tgt.%d", c.loadSeq)
@@ -13512,15 +13887,14 @@ func (c *codegen) emitTxtFromTxt(a ValueID, srcV, dstSlot string) error {
 // txtValueFromStr materializes a %str-long VALUE as a %txt value.
 //
 // %txt = { [255 x i8] buf, i8 len } is not layout-compatible with
-// %str-long = { i64 len, i64 cap, i8* data }, and there is no coerce() between
+// %str-long = { u32 len, u32 cap, i8* data }, and there is no coerce() between
 // them, so every site that must put a str into a `txt` slot has to build the
 // inline representation explicitly. Returns the register holding the %txt.
 //
 // The value is staged through a fresh stack slot because a 255-byte inline
 // buffer cannot be assembled as an SSA aggregate in practice.
 func (c *codegen) txtValueFromStr(strV string) string {
-	sl := c.treg("tfsl")
-	fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", sl, strV)
+	sl := c.strLenI64(strV)
 	gt := c.treg("tfsg")
 	fmt.Fprintf(c.sb, "  %s = icmp ugt i64 %s, 255\n", gt, sl)
 	cl := c.treg("tfsc")
@@ -13545,7 +13919,7 @@ func (c *codegen) txtValueFromStr(strV string) string {
 // strValueFromTxt materializes a %txt SLOT as an OWNED %str-long value.
 //
 // This is the mirror of txtValueFromStr, and the reason it cannot just borrow
-// the txt's inline buffer: %str-long = { i64 len, i64 cap, i8* data } is owned,
+// the txt's inline buffer: %str-long = { u32 len, u32 cap, i8* data } is owned,
 // so its drop frees `data`. Handing out a pointer into the txt's own storage
 // would make the string's lifetime the txt's lifetime — and for a txt living on
 // the stack the string would outlive it. @str_from_const mallocs and memcpy's,
@@ -13737,14 +14111,7 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				dPtr := fmt.Sprintf("%%ptdp.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", dPtr, dGEP)
 				c.loadSeq++
-				r0 := fmt.Sprintf("%%ptr0.%d", c.loadSeq)
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, l64)
-				c.loadSeq++
-				r1 := fmt.Sprintf("%%ptr1.%d", c.loadSeq)
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, l64)
-				c.loadSeq++
-				r2 := fmt.Sprintf("%%ptr2.%d", c.loadSeq)
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, dPtr)
+				r2 := c.strLongFromParts(l64, l64, dPtr)
 				fmt.Fprintf(c.sb, "  call void @print_str(%%str-long %s)\n", r2)
 			case "i64":
 				fmt.Fprintf(c.sb, "  call void @print_i64(%s %s)\n", argT, argV)
@@ -13858,10 +14225,13 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 	if callee == "str.byte" || callee == "txt.byte" {
 		return c.emitBuiltinRawByteAt(f, inst)
 	}
-	// set-byte is the raw-byte WRITER paired with the .byte reader above —
+	// _set-byte is the raw-byte WRITER paired with the .byte reader above —
 	// same interception shape (qualified callee kept by the lowerer, expanded
 	// inline as GEP+store), so it is dispatched right beside it.
-	if callee == "str.set-byte" || callee == "txt.set-byte" {
+	// 2026-11-11: renamed from the public `set-byte` to the module-private
+	// `_set-byte`; user code is steered to `str.from-chars` instead, and
+	// `s[i] = v` (emitIndexStore on %str-long) is being retired entirely.
+	if callee == "str._set-byte" || callee == "txt._set-byte" {
 		return c.emitBuiltinRawBytePut(f, inst)
 	}
 	// `.zero()` is a receiver-mutating method (`data.zero()` / `buf.zero()`)
@@ -13978,9 +14348,8 @@ func (c *codegen) emitCall(f *Function, inst *Inst) error {
 				// %str-long struct is passed to @i64_to_str (which expects a bare
 				// i64) -> opt-verify type mismatch -> MIR build failure (bug #2b).
 				if argT == "%str-long" {
-					c.loadSeq++
-					lenR := fmt.Sprintf("%%istr.%d", c.loadSeq)
-					fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, 0\n", lenR, argT, argV)
+					// field 0 is u32; @i64_to_str takes an i64 length.
+					lenR := c.strLenI64(argV)
 					c.loadSeq++
 					cres := fmt.Sprintf("%%icr.%d", c.loadSeq)
 					fmt.Fprintf(c.sb, "  %s = alloca %%str-long\n", cres)
@@ -14939,8 +15308,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				// the string's bytes. len is field 0; data (i8*) is field 2 and
 				// must be cast to the %vec's i64 intptr. Mirrors the legacy
 				// str->vec coercion in genForwardFunc / call args.
-				strLen := c.treg("csv.l")
-				fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", strLen, av)
+				strLen := c.strLenI64(av)
 				strData := c.treg("csv.d")
 				fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", strData, av)
 				strPt := c.treg("csv.p")
@@ -15058,10 +15426,10 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			//
 			// `txt` is a BOUNDED INLINE string: %txt = { [255 x i8] buf, i8 len }.
 			// It is NOT layout-compatible with %str-long
-			// ({ i64 len, i64 cap, i8* data }), and this backend had no
+			// ({ u32 len, u32 cap, i8* data }), and this backend had no
 			// conversion for it, so the caller handed its %str-long slot
 			// straight to a `%txt*` parameter (the byPointerLLVM branch below).
-			// The callee then read a 255-byte buffer out of a 24-byte object:
+			// The callee then read a 255-byte buffer out of a 16-byte object:
 			// `txt.replace-n` saw a garbage separator length and returned an
 			// empty string. Repro:
 			//   t txt = 'a-b-c'
@@ -15070,8 +15438,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// Build a fresh %txt: memcpy at most 255 bytes of the string's data
 			// into the inline buffer, then store the (clamped) length as i8.
 			c.loadSeq++
-			sl := fmt.Sprintf("%%atxl.%d", c.loadSeq)
-			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", sl, av)
+			sl := c.strLenI64(av)
 			c.loadSeq++
 			gt := fmt.Sprintf("%%atxg.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = icmp ugt i64 %s, 255\n", gt, sl)
@@ -15111,8 +15478,8 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 			// it returned a stable-but-wrong `false` — a silent stack OOB read).
 			//
 			// `%vec` and `%str-long` are deliberately EXCLUDED on both sides:
-			// they are layout-identical 24-byte triples and the codebase relies
-			// on that pun (e.g. a `[]byte` parameter receiving a `str`, and a
+			// they used to be layout-identical 24-byte triples and the exclusion
+			// is kept for type-based reasons (e.g. a `[]byte` parameter receiving a `str`, and a
 			// fixed array argument reaching a slice parameter).
 			//
 			// The exclusion is only safe BETWEEN the two triples, though. A
@@ -15861,8 +16228,7 @@ func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string, bool) 
 	if plt == "%vec" && alt == "%str-long" {
 		// string -> []byte view: %vec{ len, 0, data-as-intptr }. cap is 0 so the
 		// borrowed constant data is never freed.
-		l := c.treg("asv.l")
-		fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", l, areg)
+		l := c.strLenI64(areg)
 		d := c.treg("asv.d")
 		fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", d, areg)
 		p := c.treg("asv.p")
@@ -16668,7 +17034,7 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 	idxV = c.coerceIndex(inst.Args[1], idxVT, idxV)
 
 	// --- length of the receiver, for the bounds check ---
-	// %str-long = { i64 len, i64 cap, i8* data } — field 0.
+	// %str-long = { u32 len, u32 cap, i8* data } — field 0.
 	// %txt       = { [255 x i8] buf, i8 len }    — field 1, an i8.
 	c.loadSeq++
 	lenGEP := fmt.Sprintf("%%rblg.%d", c.loadSeq)
@@ -16683,9 +17049,7 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 		fmt.Fprintf(c.sb, "  %s = zext i8 %s to i64\n", lenVal, lenLoad)
 	} else {
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 0\n", lenGEP, rslot)
-		c.loadSeq++
-		lenVal = fmt.Sprintf("%%rbll.%d", c.loadSeq)
-		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", lenVal, lenGEP)
+		lenVal = c.strHeaderLoadI64(lenGEP)
 	}
 	c.loadSeq++
 	inb := fmt.Sprintf("%%rbi.%d", c.loadSeq)
@@ -16704,7 +17068,7 @@ func (c *codegen) emitBuiltinRawByteAt(f *Function, inst *Inst) error {
 		dataPtr = fmt.Sprintf("%%rbdp.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", dataPtr, dGEP)
 	} else {
-		// %str-long = { i64 len, i64 cap, i8* data } — field 2 is the data ptr.
+		// %str-long = { u32 len, u32 cap, i8* data } — field 2 is the data ptr.
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dGEP, rslot)
 		c.loadSeq++
 		dataPtr = fmt.Sprintf("%%rbdp.%d", c.loadSeq)
@@ -16860,7 +17224,7 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%txt, %%txt* %s, i32 0, i32 0, i64 0\n", dGEP, rslot)
 		dataPtr = dGEP
 	} else {
-		// %str-long = { i64 len, i64 cap, i8* data } — field 2 is the data ptr.
+		// %str-long = { u32 len, u32 cap, i8* data } — field 2 is the data ptr.
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 2\n", dGEP, rslot)
 		c.loadSeq++
 		dataPtr = fmt.Sprintf("%%bpd.%d", c.loadSeq)
@@ -16877,9 +17241,7 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 		c.loadSeq++
 		capGEP := fmt.Sprintf("%%bpkg.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 1\n", capGEP, rslot)
-		c.loadSeq++
-		capVal := fmt.Sprintf("%%bpk.%d", c.loadSeq)
-		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", capVal, capGEP)
+		capVal := c.strHeaderLoadI64(capGEP)
 		// unsigned compare covers the negative-index case: a negative i64 is a
 		// huge unsigned value, so `ult` rejects it.
 		fmt.Fprintf(c.sb, "  %s = icmp ult i64 %s, %s\n", inb, idxV, capVal)
@@ -16941,7 +17303,7 @@ func (c *codegen) emitBuiltinRawBytePut(f *Function, inst *Inst) error {
 //
 // Layouts:
 //
-//	%str-long = { i64 len, i64 cap, i8* data }   field 0/1/2
+//	%str-long = { u32 len, u32 cap, i8* data }   field 0/1/2
 //	%txt       = { [255 x i8] data, i8 len }      field 0/1
 func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 	if len(inst.Args) < 1 {
@@ -17035,7 +17397,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 				fmt.Fprintf(c.sb, "  %s = trunc i64 %s to i8\n", tr, v)
 				fmt.Fprintf(c.sb, "  store i8 %s, i8* %s\n", tr, g)
 			} else {
-				fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", v, g)
+				c.strHeaderStoreI64(g, v)
 			}
 		}
 		return nil
@@ -17088,8 +17450,9 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 		}
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot)
 	} else {
-		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", l, g)
-		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", l, dstSlot)
+		fmt.Fprintf(c.sb, "  %s = load i32, i32* %s\n", l, g)
+		wide := c.strU32Widen(l)
+		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", wide, dstSlot)
 	}
 	return nil
 }
@@ -17243,7 +17606,7 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 	// Overflow-default arithmetic yields ?T, and parse-time inference now types
 	// such a binding `?i64` at the declaration — so a size expression like
 	// `n * 2` reaches here as an %option value. The alloc size, memset size and
-	// the vec/str-long {len,cap} fields are all raw i64; passing the %option
+	// the %vec {len,cap} fields are i64 while %str-long uses u32; passing the %option
 	// struct through emitted `call i8* @nolang_rc_alloc(i64 %lvN)` with %lvN
 	// defined as `%option`, which opt-verify rejects ("defined with type
 	// '%option' but expected 'i64'"). Peel the scalar payload first, mirroring
@@ -17265,7 +17628,7 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 		}
 	}
 	// The backing store holds ELEMENT-sized slots, so the stride comes from the
-	// destination's own element type ([]str -> 24-byte %str-long, []?i64 ->
+	// destination's own element type ([]str -> 16-byte %str-long, []?i64 ->
 	// 32-byte %option), not from a constant 8. elemTypeOfReceiver returns "i8"
 	// for a str destination, which is exactly the 1-byte-per-slot string case.
 	var szStr string
@@ -17302,15 +17665,7 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp)
 		fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, slot)
 	} else {
-		s0 := fmt.Sprintf("%%ba.%d", c.loadSeq)
-		c.loadSeq++
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", s0, lenV)
-		s1 := fmt.Sprintf("%%ba.%d", c.loadSeq)
-		c.loadSeq++
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", s1, s0, capV)
-		s2 := fmt.Sprintf("%%ba.%d", c.loadSeq)
-		c.loadSeq++
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", s2, s1, mp)
+		s2 := c.strLongFromParts(lenV, capV, mp)
 		fmt.Fprintf(c.sb, "  store %%str-long %s, %%str-long* %s\n", s2, slot)
 	}
 	return nil
@@ -17344,9 +17699,7 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 		}
 		switch lt {
 		case "%str-long":
-			lReg := fmt.Sprintf("%%be.%d", c.loadSeq)
-			c.loadSeq++
-			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", lReg, v)
+			lReg := c.strLenI64(v)
 			dReg := fmt.Sprintf("%%be.%d", c.loadSeq)
 			c.loadSeq++
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dReg, v)
@@ -17393,17 +17746,8 @@ func (c *codegen) emitBuiltinEprint(inst *Inst) error {
 			dPtr := fmt.Sprintf("%%etdp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = bitcast [255 x i8]* %s to i8*\n", dPtr, dGEP)
 			c.loadSeq++
-			r0 := fmt.Sprintf("%%etr0.%d", c.loadSeq)
-			fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i64 0, i64 0, i8* null }, i64 %s, 0\n", r0, l64)
-			c.loadSeq++
-			r1 := fmt.Sprintf("%%etr1.%d", c.loadSeq)
-			fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i64 %s, 1\n", r1, r0, l64)
-			c.loadSeq++
-			r2 := fmt.Sprintf("%%etr2.%d", c.loadSeq)
-			fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long %s, i8* %s, 2\n", r2, r1, dPtr)
-			lReg := fmt.Sprintf("%%be.%d", c.loadSeq)
-			c.loadSeq++
-			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", lReg, r2)
+			r2 := c.strLongFromParts(l64, l64, dPtr)
+			lReg := c.strLenI64(r2)
 			dReg := fmt.Sprintf("%%be.%d", c.loadSeq)
 			c.loadSeq++
 			fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", dReg, r2)
