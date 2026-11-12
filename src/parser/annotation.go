@@ -242,10 +242,21 @@ func (p *Parser) parseAnnotationStatement() Statement {
 	// 格式化輸出變成 `.len() == 0 -> ...`（語意破壞、非冪等）。
 	// USE 亦為可附加對象：`#{bind = ffi}` ⏎ `# /src/sqlite` 需把策略掛到
 	// import 行本身（原生包調用方式由 import 行宣告，而非包內宣告）。
+	// DOT 同理：`.n = .n + 1: { … }` / `.bit-cnt == 0 -> { … }` 這種以接收者
+	// 起首的陳述與 `x = …` 同一類（單條陳述），不把 `.` 當可附加目標時註解會
+	// 退化成獨立 AnnotationStatement（死行）：`src/std` 實測有 152 處
+	// `#{overflow=wrap}` 因此完全沒生效，`no fmt --fix=overflow` 也永遠插不進去
+	// （插了就被自檢撤回）。
+	// 形態上的把握：`{`（語句位置裸塊 / 帶括號 match）與 `(`（`(cond) { }` 迴圈頭）
+	// **刻意不列入**——它們是 L2 區塊宿主，而 `#{overflow}` 的設計是只認 L3
+	// （見 docs/docs/lang/annotation-scope.md §2.3/§4.1）。放它們進來會讓
+	// `overflowAnnotatedNode` 對整個塊提前返回，等於把 L2 語義合法化，與 §8 先
+	// 收緊再放寬的順序衝突。
 	if p.currentToken.Type == lexer.IDENT ||
 		p.currentToken.Type == lexer.USE ||
 		p.currentToken.Type == lexer.IN ||
 		p.currentToken.Type == lexer.RARROW ||
+		p.currentToken.Type == lexer.DOT ||
 		(p.currentToken.Type == lexer.LBRACKET && p.isArrayTypeMethodDefinition()) {
 		// RARROW 分支處理 wildcard 裸配對臂（`-> body`）：
 		// 形如 `#{overflow = wrap}\n -> out[pos] = d - 10 + 97` 的註解

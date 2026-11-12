@@ -293,6 +293,7 @@ client.next-event = () (ev ?event) {
 
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
+                #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
                     ok -> it
 

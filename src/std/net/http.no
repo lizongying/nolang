@@ -137,6 +137,7 @@ request.add-header = (name str, value str) (ok bool) {
         -> _
     }
 
+    #{overflow=wrap}
     .header-count = idx + 1: {
         ok -> it
 
@@ -202,6 +203,7 @@ response.parse-headers = () {
                 {
                     .header-names[cnt] ?= name-str
                     .header-values[cnt] ?= val-str
+                    #{overflow=wrap}
                     .header-count = cnt + 1: {
                         ok -> it
 

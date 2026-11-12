@@ -149,6 +149,7 @@ hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
             -> _
         }
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -226,6 +227,7 @@ hashmap-str-tmpl.remove = (key str) (removed bool) {
 
                         -> _
                     }
+                    #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it
 
@@ -471,6 +473,7 @@ hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
             -> _
         }
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -546,6 +549,7 @@ hashmap-int-tmpl.remove = (key k) (removed bool) {
 
                         -> _
                     }
+                    #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it
 
@@ -758,6 +762,7 @@ hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
             -> _
         }
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -818,6 +823,7 @@ hashmap-bool-tmpl.remove = (key bool) (removed bool) {
                 -> _
             }
 
+            #{overflow=wrap}
             .size = .size - 1: {
                 ok -> it
 

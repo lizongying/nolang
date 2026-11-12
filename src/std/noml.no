@@ -274,6 +274,7 @@ pool.add-child = (node-idx i64, child-idx i64, key str) {
 
         -> _
     }
+    #{overflow=wrap}
     .nodes[node-idx].count = c + 1: {
         ok -> it
 

@@ -128,6 +128,7 @@ regexp.emit = (op i64, arg1 i64, arg2 i64) {
 
         .arg2[.n] ?= arg2
 
+        #{overflow=wrap}
         .n = .n + 1: {
             ok -> it
 
@@ -284,6 +285,7 @@ regexp.alloc-class = () (cls-idx i64) {
         return
     }
 
+    #{overflow=wrap}
     .ncls = .ncls + 1: {
         ok -> it
 
@@ -897,6 +899,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
 
             .arg2[split-pc] ?= .n
 
+            #{overflow=wrap}
             .tmp-next-i = atom-i + 1: {
                 ok -> it
 
@@ -915,8 +918,10 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
         l1 = .n
         .emit-atom(atom-type, atom-char, atom-cls)
 
+        #{overflow=wrap}
         .emit(RE-OP-SPLIT, l1, .n + 1)
 
+        #{overflow=wrap}
         .tmp-next-i = atom-i + 1: {
             ok -> it
 
@@ -937,6 +942,7 @@ regexp.emit-quantized = (atom-type i64, atom-char i64, atom-cls i64, atom-i i64)
 
             .arg2[split-pc] ?= .n
 
+            #{overflow=wrap}
             .tmp-next-i = atom-i + 1: {
                 ok -> it
 
@@ -989,6 +995,7 @@ regexp.compile = () {
         c char = pat[i]
 
         ; 預設前進 1
+        #{overflow=wrap}
         .tmp-next-i = i + 1: {
             ok -> it
 
@@ -998,6 +1005,7 @@ regexp.compile = () {
         ; ^ — 行首錨點
         c == 94 -> {
             .emit(RE-OP-START, 0, 0)
+            #{overflow=wrap}
             .tmp-next-i = i + 1: {
                 ok -> it
 
@@ -1008,6 +1016,7 @@ regexp.compile = () {
         ; $ — 行尾錨點
         c == 36 -> {
             .emit(RE-OP-END, 0, 0)
+            #{overflow=wrap}
             .tmp-next-i = i + 1: {
                 ok -> it
 

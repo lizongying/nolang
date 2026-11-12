@@ -148,6 +148,7 @@ pool.init = () {
     .count = 0
     .overflowed = false
 
+    #{overflow=wrap}
     .id = JSON-POOL-NEXT-ID + 1
 }
 
@@ -166,6 +167,7 @@ pool.alloc = () (idx i64) {
     .nodes.push(v)
     .strs.push('')
 
+    #{overflow=wrap}
     .count = .count + 1: {
         ok -> it
 
@@ -210,6 +212,7 @@ pool.add-child = (node-idx i64, child-idx i64, key str) {
         -> 0
     }
 
+    #{overflow=wrap}
     .nodes[node-idx].count = cd + 1: {
         ok -> it
 
@@ -1959,6 +1962,7 @@ json.delete-key = (key str) (ok bool) {
                 -> 0
             }
 
+            #{overflow=wrap}
             .pool.nodes[.root].count = cnt - 1: {
                 ok -> it
 

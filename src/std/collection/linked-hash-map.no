@@ -122,6 +122,7 @@ linked-hash-map.put = (key i64, val i64) (is-new bool) {
             }
         }
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -196,6 +197,7 @@ linked-hash-map.remove = (key i64) (removed bool) {
             k == key -> {
                 .occ[idx] ?= 0
 
+                #{overflow=wrap}
                 .size = .size - 1: {
                     ok -> it
 

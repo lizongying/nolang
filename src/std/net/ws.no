@@ -765,6 +765,7 @@ server-conn.recv = () (msg ?message) {
                 .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
             }
 
+            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
@@ -815,6 +816,7 @@ server-conn.recv = () (msg ?message) {
                 .recv-buf[.recv-buf-len + i] ?= tmp2.byte(i)
             }
 
+            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
@@ -852,6 +854,7 @@ server-conn.recv = () (msg ?message) {
                 .recv-buf[.recv-buf-len + i] ?= tmp3.byte(i)
             }
 
+            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n
         }
 
@@ -985,8 +988,10 @@ server-conn.recv-nb = () (msg ?message) {
     (fill) {
 
         ; 空間不足以再收一輪 → 停止填充，直接進入下方解析階段
+        #{overflow=wrap}
         .recv-buf-len + WS-RECV-SIZE > WS-BUF-SIZE -> fill = false
 
+        #{overflow=wrap}
         .recv-buf-len + WS-RECV-SIZE <= WS-BUF-SIZE && fill -> {
             tmp str = with-len(WS-RECV-SIZE)
             n = net.net-recv-nb(.fd, tmp, WS-RECV-SIZE)
@@ -1003,6 +1008,7 @@ server-conn.recv-nb = () (msg ?message) {
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
 
+                #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n
             }
         }
@@ -1173,6 +1179,7 @@ client.send = (opcode i64, data str) (ok bool) {
     ok = false
     .connected == false -> return
 
+    #{overflow=wrap}
     .send-counter = .send-counter + 1: {
         ok -> it
 
@@ -1324,6 +1331,7 @@ client.recv = () (msg ?message) {
 
                 .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
             }
+            #{overflow=wrap}
             .recv-buf-len = .recv-buf-len + n: {
                 ok -> it
 
@@ -1391,6 +1399,7 @@ client.recv = () (msg ?message) {
 
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
+                #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
                     ok -> it
 
@@ -1434,6 +1443,7 @@ client.recv = () (msg ?message) {
 
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
+                #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
                     ok -> it
 
@@ -1477,6 +1487,7 @@ client.recv = () (msg ?message) {
 
                     .recv-buf[.recv-buf-len + i] ?= tmp.byte(i)
                 }
+                #{overflow=wrap}
                 .recv-buf-len = .recv-buf-len + n: {
                     ok -> it
 

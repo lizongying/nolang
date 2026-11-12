@@ -1964,12 +1964,11 @@ func insertLineOverflowAnnotations(src string) (string, bool) {
 	out, lineOf := build(inserts)
 	// 自驗證：插完再解析一次，把「插了但沒附著上」的注解撤回。
 	//
-	// parser 只接受 IDENT / USE / IN / RARROW / 陣列型別方法起首的陳述為附加目標；
+	// parser 只接受 IDENT / USE / IN / RARROW / DOT / 陣列型別方法起首的陳述為附加目標；
 	// findFixTargetNode 給回的目標可能起首是 `{`（語句位置裸塊、帶括號 match 的
-	// 臂組）或 `.`（接收者方法調用）。這兩種插了就是死行：實測把它放在
-	// `{` / `.n = .n + 1` 上方，站點照樣被 checker 報告。與其留死行，不如撤回——
-	// 該站點留給語言層放寬附加目標後再處理（見 docs/docs/lang/annotation-scope.md §7）。
-	// 撤回後不再重試，故第二趟 `--fix` 拿到的源碼不動，保持冪等。
+	// 臂組）或 `(`（`(cond) { }` 迴圈頭）。這兩種插了就是死行，而且它們本來就是
+	// L2 區塊宿主——`#{overflow}` 只認 L3，不該為了插得進去就把 L2 語義合法化
+	// （見 docs/docs/lang/annotation-scope.md §8 第 4b 步）。
 	if len(inserts) > 0 && out != src {
 		vp := parser.New(lexer.New(out))
 		vp.SkipLowering = true
@@ -2103,9 +2102,9 @@ func isSoleOverflowAnnotationLine(line string) bool {
 // `*parser.AnnotationStatement`，沒有附著到任何節點。
 //
 // 判據是**結構**而非位置猜測：parser 的 parseAnnotationStatement 只認
-// IDENT / USE / IN / RARROW / 陣列型別方法起首的陳述為附加目標。起首 token 不在
-// 其中時（實測確認的兩種：語句位置裸塊 `{` 與帶括號 match 的 `{`、接收者方法調用
-// `.`），注解既沒掛到那條陳述上、也沒被丟棄，而是自成一條 AnnotationStatement。
+// IDENT / USE / IN / RARROW / DOT / 陣列型別方法起首的陳述為附加目標。起首 token
+// 不在其中時（實測確認的兩種：語句位置裸塊 `{` 與帶括號 match 的 `{`、`(cond) { }`
+// 的 `(`），注解既沒掛到那條陳述上、也沒被丟棄，而是自成一條 AnnotationStatement。
 // 這種注解對 codegen、編譯期檢查、`no vet` 三者都是純死行：
 //
 //	#{overflow=wrap}      ; ← 死行（`{` 不在附加目標之列）
@@ -2113,9 +2112,14 @@ func isSoleOverflowAnnotationLine(line string) bool {
 //	    .n = .n + 1
 //	}
 //
+// 反例（DOT 加入附加目標後已不再是死行，2026-11-12.1 起）：
+//
+//	#{overflow=wrap}      ; ← 掛得上 `.n = .n + 1`
+//	.n = .n + 1
+//
 // 驗證方式：把 `#{overflow=wrap}` 放在 `i + 1 >= n -> {` 上方（IDENT 起首，能掛）時
-// 站點閉嘴；同一個注解放在 `{` 或 `.n = .n + 1` 上方時站點照報。故「獨立
-// AnnotationStatement + 整行只有 overflow」⇒ 摘掉它不改變任何編譯/檢查結果。
+// 站點閉嘴；同一個注解放在 `{` 上方時站點照報。故「獨立 AnnotationStatement +
+// 整行只有 overflow」⇒ 摘掉它不改變任何編譯/檢查結果。
 //
 // p 必須是解析出 program 的那個 parser（沿用其註解索引）；lines 是 src 的行切分。
 func overflowAnnotationDeadLines(p *parser.Parser, program *parser.Program, lines []string) map[int]bool {

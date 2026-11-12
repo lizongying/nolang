@@ -383,6 +383,7 @@ jar.set = (name str, value str, domain str, path str, max-age i64) {
 
             .paths[.count] ?= path
 
+            #{overflow=wrap}
             .count = .count + 1: {
                 ok -> it
 
@@ -477,6 +478,7 @@ jar.delete = (name str, domain str, path str) {
                     .paths[i] ?= .paths[last]
                 }
 
+                #{overflow=wrap}
                 .count = .count - 1: {
                     ok -> it
 

@@ -666,6 +666,7 @@ enc-conn.init = (c conn, key [32]byte) {
 ; [gen-iv](#net.enc-conn.gen-iv)
 enc-conn.gen-iv = () (iv [12]byte) {
 
+    #{overflow=wrap}
     .send-seq = .send-seq + 1: {
         ok -> it
 
@@ -1111,6 +1112,7 @@ icmp-conn.ping-once = (host str, timeout-ms i64) (rtt ?i64) {
     ; 建構 ICMP Echo Request
     pkt []byte = with-len(ICMP-PACKET-SIZE)
 
+    #{overflow=wrap}
     .seq = .seq + 1: {
         ok -> it
 

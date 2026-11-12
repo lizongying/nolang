@@ -86,8 +86,10 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     #{overflow=wrap}
     pos + HTTP2-FRAME-HEADER-SIZE > data.len-bytes() -> return; 24-bit length（big-endian）
 
+    #{overflow=wrap}
     .length = (data.byte(pos) << 16) | (data.byte(pos + 1) << 8) | data.byte(pos + 2)
 
+    #{overflow=wrap}
     .frame-type = data.byte(pos + 3): {
         ok -> it
 
@@ -95,12 +97,14 @@ frame.parse = (data str, pos i64) (next-pos ?i64) {
     }
 
     ; 31-bit stream-id（big-endian，高位保留）
+    #{overflow=wrap}
     .flags = data.byte(pos + 4): {
         ok -> it
 
         ->
     }
 
+    #{overflow=wrap}
     .stream-id = ((data.byte(pos + 5) & 127) << 24) | (data.byte(pos + 6) << 16) | (data.byte(pos + 7) << 8) | data.byte(pos + 8)
 
     #{overflow=wrap}
@@ -584,6 +588,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     .fd < 0 -> return
     stream-id = .next-stream-id
 
+    #{overflow=wrap}
     .next-stream-id = .next-stream-id + 2: {
         ok -> it
 

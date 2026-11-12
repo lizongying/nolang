@@ -1223,6 +1223,7 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     ; ── 標頭保護 ──
     apply-header-protection(packet, pn-offset, .client-initial-hp, true)
 
+    #{overflow=wrap}
     .initial-pn = .initial-pn + 1: {
         ok -> it
 

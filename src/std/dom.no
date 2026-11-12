@@ -215,6 +215,7 @@ dom-pool.append = (parent i64, child i64) {
         -> _
     }
 
+    #{overflow=wrap}
     .nodes[parent].count = cnt + 1
 }
 
@@ -256,6 +257,7 @@ dom-pool.detach = (child i64) {
         -> _
     }
 
+    #{overflow=wrap}
     .nodes[p].count = cnt - 1
 }
 
@@ -299,6 +301,7 @@ dom-pool.insert-before = (parent i64, node i64, ref i64) {
         .nodes[parent].first = node
     }
 
+    #{overflow=wrap}
     .nodes[parent].count = cnt + 1
 }
 
@@ -392,6 +395,7 @@ dom-pool.set-attr = (node i64, name str, val str) {
         -> _
     }
 
+    #{overflow=wrap}
     .nodes[node].attr-count = cnt + 1
 }
 
@@ -453,6 +457,7 @@ dom-pool.remove-attr = (node i64, name str) (yes bool) {
                 -> _
             }
 
+            #{overflow=wrap}
             .nodes[node].attr-count = cnt - 1
             yes = true
             return
@@ -1922,6 +1927,7 @@ dom-pool.html-parse-open = (s str, p i64, cur i64) (np i64, el i64, mode i64) {
     n = s.len-bytes()
     nm = html-peek-name(s, p)
     nm == '' -> {
+        #{overflow=wrap}
         .html-add-text(cur, s, p, p + 1)
         el = -1
         mode = 0
@@ -2255,6 +2261,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
         ; 標籤開始
         #{overflow=wrap}
         p + 1 >= n -> {
+            #{overflow=wrap}
             .html-add-text(cur, s, p, p + 1)
 
             {
@@ -2369,6 +2376,7 @@ dom-pool.html-parse-doc = (s str) (root i64) {
         is-name-byte(m1) == false -> {
 
             ; 孤立的 '<'：作普通文字
+            #{overflow=wrap}
             .html-add-text(cur, s, p, p + 1)
 
             {

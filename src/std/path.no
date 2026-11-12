@@ -386,6 +386,7 @@ path.clean = () {
                 seg-n == 2 -> {
                     .p.byte(seg-start) == DOT-BYTE -> {
 
+                        #{overflow=wrap}
                         .p.byte(seg-start + 1) == DOT-BYTE -> kind = 2
                     }
                 }

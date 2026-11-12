@@ -120,6 +120,7 @@ str-set.add = (key str) (is-new bool) {
 
         .occ[idx] ?= 1
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -193,6 +194,7 @@ str-set.remove = (key str) (removed bool) {
 
                 .keys[idx] ?= ''
 
+                #{overflow=wrap}
                 .size = .size - 1: {
                     ok -> it
 

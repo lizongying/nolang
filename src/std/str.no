@@ -248,6 +248,7 @@ str.find-byte-from = (target str, from-byte i64) (pos i64) {
         j <- [0..m): {
 
 
+            #{overflow=wrap}
             .byte(i + j) != target.byte(j) -> {
                 matched = 0
                 break
@@ -289,6 +290,7 @@ str.rfind-byte-from = (target str, from-byte i64) (pos i64) {
         j <- [0..target.len-bytes()): {
 
 
+            #{overflow=wrap}
             .byte(i + j) != target.byte(j) -> {
                 matched = 0
                 break
@@ -2655,6 +2657,7 @@ str.replace-str = (old str, new str) (val str) {
                 break
             }
 
+            #{overflow=wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = false
                 break
@@ -2725,6 +2728,7 @@ str.replace-str = (old str, new str) (val str) {
                 break
             }
 
+            #{overflow=wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = false
                 break

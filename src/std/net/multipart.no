@@ -342,6 +342,7 @@ multipart-reader.next = () (has-part bool) {
 
     #{overflow=wrap}
     after-marker + 1 < .end -> {
+        #{overflow=wrap}
         .data[after-marker] == 45 && .data[after-marker + 1] == 45 -> {
 
             ; '--' = 結束邊界
@@ -355,6 +356,7 @@ multipart-reader.next = () (has-part bool) {
 
     #{overflow=wrap}
     header-start + 1 < .end -> {
+        #{overflow=wrap}
         .data[header-start] == 13 && .data[header-start + 1] == 10 -> {
             #{overflow=wrap}
             header-start = header-start + 2
@@ -606,6 +608,7 @@ multipart-writer.write-encrypted-file = (name str, filename str, content-type st
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
 
     .body = .body - crlf
+    #{overflow=wrap}
     .body = .body - enc-str - crlf
     ok = true
 }
@@ -664,6 +667,7 @@ multipart-writer.write-encrypted-field = (name str, value str, key [32]byte, iv 
     .body = .body - 'X-Encryption: aes-256-gcm' - crlf
 
     .body = .body - crlf
+    #{overflow=wrap}
     .body = .body - enc-str - crlf
     ok = true
 }

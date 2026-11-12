@@ -386,7 +386,13 @@ import (
 // 2026-11-10.3：parseStructLiteral 現在把欄位上方的獨立 `;` 註解收進
 // StructField.Doc（過去留在 p.comments，被字面量後第一條陳述收走）。舊 blob 的
 // 欄位 Doc 是 nil，重用會讓 formatter 繼續把欄位說明印到 `}` 之後。故必 bump。
-const ASTVersion = "2026-11-11.1"
+// 2026-11-12.1：parseAnnotationStatement 的可附加目標新增 DOT。`.n = .n + 1` /
+// `.cnt == 0 -> …` 這類以接收者起首的陳述，過去拿到的是「獨立 AnnotationStatement
+// + 目標陳述」兩條節點（註解等於死行）；現在註解掛到目標陳述本身並寫入
+// OverflowMode。同一份原始碼的 AST 形狀因此改變（少一條 AnnotationStatement、
+// 目標陳述多一條 side-table 記錄與 OverflowMode），舊 blob 重用會維持死行語義
+// ——`src/std` 有 152 處 `#{overflow=wrap}` 因此從未生效。故必 bump。
+const ASTVersion = "2026-11-12.1"
 
 // UserASTCache is Tier 1 of the incremental-build AST cache: an on-disk,
 // content-addressed store of parsed user-module Programs. It is independent

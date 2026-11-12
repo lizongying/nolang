@@ -148,6 +148,7 @@ static-hashmap-str-tmpl.put = (key str, val v) (is-new bool) {
 
         .occ[insert-idx] ?= 1
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -221,6 +222,7 @@ static-hashmap-str-tmpl.remove = (key str) (removed bool) {
                 eq = .str-eq(k, key)
                 eq -> {
                     .occ[idx] ?= 2
+                    #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it
 
@@ -413,6 +415,7 @@ static-hashmap-int-tmpl.put = (key k, val v) (is-new bool) {
 
         .occ[insert-idx] ?= 1
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -484,6 +487,7 @@ static-hashmap-int-tmpl.remove = (key k) (removed bool) {
                 kk ?= .keys[idx]
                 kk == key -> {
                     .occ[idx] ?= 2
+                    #{overflow=wrap}
                     .size = .size - 1: {
                         ok -> it
 
@@ -641,6 +645,7 @@ static-hashmap-bool-tmpl.put = (key bool, val v) (is-new bool) {
 
         .occ[idx] ?= 1
 
+        #{overflow=wrap}
         .size = .size + 1: {
             ok -> it
 
@@ -697,6 +702,7 @@ static-hashmap-bool-tmpl.remove = (key bool) (removed bool) {
         used == 1 -> {
             .occ[idx] ?= 2
 
+            #{overflow=wrap}
             .size = .size - 1: {
                 ok -> it
 

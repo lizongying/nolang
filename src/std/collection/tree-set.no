@@ -479,6 +479,7 @@ tree-set.add = (key i64) (ok bool) {
 
                         .parent[idx] ?= cur
 
+                        #{overflow=wrap}
                         .size = .size + 1: {
                             ok -> it
 
@@ -504,6 +505,7 @@ tree-set.add = (key i64) (ok bool) {
 
                         .parent[idx] ?= cur
 
+                        #{overflow=wrap}
                         .size = .size + 1: {
                             ok -> it
 
@@ -598,6 +600,7 @@ tree-set.remove = (key i64) (ok bool) {
         idx < 0 -> return
         ok = true
 
+        #{overflow=wrap}
         .size = .size - 1: {
             ok -> it
 

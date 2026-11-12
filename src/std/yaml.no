@@ -164,6 +164,7 @@ parser.eof = () (yes bool) {
 ; [advance](#yaml.parser.advance)
 parser.advance = () {
 
+    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -182,6 +183,7 @@ parser.newline = () (yes bool) {
         .cur() == 10 -> .advance()
         yes = true
 
+        #{overflow=wrap}
         .line = .line + 1: {
             ok -> it
 
@@ -193,6 +195,7 @@ parser.newline = () (yes bool) {
         .advance()
         yes = true
 
+        #{overflow=wrap}
         .line = .line + 1: {
             ok -> it
 

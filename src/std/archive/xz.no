@@ -36,6 +36,7 @@ lzma-rd.init = (data []byte, start-pos i64) {
     .data = data
 
     ; 跳過第一個位元組（必須為 0）
+    #{overflow=wrap}
     .pos = start-pos + 1: {
         ok -> it
 
@@ -53,6 +54,7 @@ lzma-rd.init = (data []byte, start-pos i64) {
             -> _
         }
 
+        #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
 
@@ -74,6 +76,7 @@ lzma-rd.normalize = () {
             -> _
         }
 
+        #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
 
@@ -106,11 +109,13 @@ lzma-rd.decode-bit = (prob i64) (bit i64, new-prob i64) {
 
         .code >= bound -> {
 
+            #{overflow=wrap}
             .range = .range - bound: {
                 ok -> it
 
                 ->
             }
+            #{overflow=wrap}
             .code = .code - bound: {
                 ok -> it
 

@@ -50,6 +50,7 @@ zs-bit-reader.read-bit = () (bit i64) {
                     -> _
                 }
 
+                #{overflow=wrap}
                 .pos = .pos + 1: {
                     ok -> it
 
@@ -63,6 +64,7 @@ zs-bit-reader.read-bit = () (bit i64) {
             bit = .bit-buf & 1
             .bit-buf = .bit-buf >> 1
 
+            #{overflow=wrap}
             .bit-cnt = .bit-cnt - 1: {
                 ok -> it
 
@@ -97,6 +99,7 @@ zs-bit-reader.read-varint = () (v i64) {
             -> _
         }
 
+        #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
 
@@ -159,6 +162,7 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
     .table-log = table-log
     .table-size = 1 << table-log
 
+    #{overflow=wrap}
     .n-symbols = max-symbol + 1: {
         ok -> it
 
@@ -275,6 +279,7 @@ fse-table.build = (norm-count []i64, max-symbol i64, table-log i64) {
                     -> _
                 }
 
+                #{overflow=wrap}
                 .symbol[ixout214c25 + j]: {
                     ok -> it = i
 
@@ -625,6 +630,7 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
+    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -639,6 +645,7 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
+    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -653,6 +660,7 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
+    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -667,6 +675,7 @@ zs-frame.read-frame-header = () (ok bool) {
         break
     }
 
+    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -681,6 +690,7 @@ zs-frame.read-frame-header = () (ok bool) {
         -> _
     }
 
+    #{overflow=wrap}
     .pos = .pos + 1: {
         ok -> it
 
@@ -702,6 +712,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
             -> _
         }
+        #{overflow=wrap}
         .pos = .pos + 1: {
             ok -> it
 
@@ -712,12 +723,14 @@ zs-frame.read-frame-header = () (ok bool) {
         exponent = wd >> 3
         mantissa = wd & 7
         base = 1 << (10 + exponent)
+        #{overflow=wrap}
         .window-size = base + mantissa * base
     }
 
     ; Dictionary ID（如果存在）
     dict-id-flag > 0 -> {
         dict-id-size = 1 << (dict-id-flag - 1)
+        #{overflow=wrap}
         .pos = .pos + dict-id-size: {
             ok -> it
 
@@ -734,6 +747,7 @@ zs-frame.read-frame-header = () (ok bool) {
 
                     -> _
                 }
+                #{overflow=wrap}
                 .pos = .pos + 1: {
                     ok -> it
 
@@ -755,6 +769,7 @@ zs-frame.read-frame-header = () (ok bool) {
                 -> _
             }
             fcs = lo | (hi << 8)
+            #{overflow=wrap}
             .pos = .pos + 2: {
                 ok -> it
 
@@ -789,6 +804,7 @@ zs-frame.read-frame-header = () (ok bool) {
                 -> _
             }
             fcs = e0 | (e1 << 8) | (e2 << 16) | (e3 << 24)
+            #{overflow=wrap}
             .pos = .pos + 4: {
                 ok -> it
 
@@ -838,6 +854,7 @@ zs-frame.read-frame-header = () (ok bool) {
             }
 
             fcs = fcs | (g4 << 32)
+            #{overflow=wrap}
             .pos = .pos + 5: {
                 ok -> it
 
@@ -855,6 +872,7 @@ zs-frame.decode-block = () (last-block ?bool) {
     last-block = nil
 
     ; 讀取 Block_Header (3 bytes)
+    #{overflow=wrap}
     .pos + 3 > .data.len() -> return
 
     b0 = .data[.pos]: {
@@ -877,6 +895,7 @@ zs-frame.decode-block = () (last-block ?bool) {
         -> _
     }
 
+    #{overflow=wrap}
     .pos = .pos + 3: {
         ok -> it
 
@@ -901,6 +920,7 @@ zs-frame.decode-block = () (last-block ?bool) {
                 .out.push(d)
             }
 
+            #{overflow=wrap}
             .pos = .pos + block-size
             return
         }
@@ -915,6 +935,7 @@ zs-frame.decode-block = () (last-block ?bool) {
 
                 -> _
             }
+            #{overflow=wrap}
             .pos = .pos + 1: {
                 ok -> it
 

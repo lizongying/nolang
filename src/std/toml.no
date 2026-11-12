@@ -1076,6 +1076,7 @@ toml.put = (key str, value str) (ok bool) {
     {
         .entries[.count] ?= make-entry(key, value)
 
+        #{overflow=wrap}
         .count = .count + 1: {
             ok -> it
 

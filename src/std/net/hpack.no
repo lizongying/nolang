@@ -406,12 +406,14 @@ tables.dyn-add = (name str, value str) {
         -> _
     }
 
+    #{overflow=wrap}
     .dyn-count = .dyn-count + 1: {
         ok -> it
 
         ->
     }
 
+    #{overflow=wrap}
     .dyn-size = .dyn-size + name.len-bytes() + value.len-bytes() + 32
 }
 

@@ -534,6 +534,7 @@ builder.add-file = (name str, content []byte) {
         }
     }
 
+    #{overflow=wrap}
     .pos = .pos + sz: {
         ok -> it
 
@@ -560,6 +561,7 @@ builder.add-file = (name str, content []byte) {
                 -> _
             }
         }
+        #{overflow=wrap}
         .pos = .pos + pad
     }
 }
@@ -593,6 +595,7 @@ builder.add-bytes = (name str, content []byte, typ i64) {
         }
     }
 
+    #{overflow=wrap}
     .pos = .pos + sz: {
         ok -> it
 
@@ -619,6 +622,7 @@ builder.add-bytes = (name str, content []byte, typ i64) {
                 -> _
             }
         }
+        #{overflow=wrap}
         .pos = .pos + pad
     }
 }
@@ -833,6 +837,7 @@ builder.write-header = (name str, typ i64, sz i64) {
 
         .buf[p] ?= 32
 
+        #{overflow=wrap}
         .pos = .pos + TAR-BLOCK
     }: {
         err -> _

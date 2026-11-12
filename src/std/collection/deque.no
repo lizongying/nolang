@@ -93,6 +93,7 @@ deque.push-back = (val i64) {
     {
         .buf[idx] ?= val
 
+        #{overflow=wrap}
         .tail = .tail + 1: {
             ok -> it
 
@@ -142,6 +143,7 @@ deque.pop-front = () (val ?i64) {
         -> _
     }
 
+    #{overflow=wrap}
     .head = .head + 1: {
         ok -> it
 

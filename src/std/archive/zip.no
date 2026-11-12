@@ -532,6 +532,7 @@ writer.add-file = (name str, content []byte) {
     .write-local-file(name, content, crc)
     .write-cd-entry(name, off, content.len(), content.len(), crc)
 
+    #{overflow=wrap}
     .count = .count + 1: {
         ok -> it
 
@@ -551,6 +552,7 @@ writer.add-dir = (name str) {
     .write-local-file(dname, empty, 0)
     .write-cd-entry(dname, off, 0, 0, 0)
 
+    #{overflow=wrap}
     .count = .count + 1: {
         ok -> it
 

@@ -208,6 +208,7 @@ server-conn.recv-more = () (n i64) {
             -> _
         }
 
+        #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {
             ok -> it
 
@@ -240,6 +241,7 @@ server-conn.parse = () (ok bool) {
         sep-pos >= 0 -> break
 
         ; 緩衝區已滿但未找到分隔符
+        #{overflow=wrap}
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
 
         ; 接收更多資料
@@ -269,6 +271,7 @@ server-conn.parse = () (ok bool) {
     sp2 < 0 -> return
     full-path = after-method.slice(0, sp2)
 
+    #{overflow=wrap}
     .version = after-method.slice(sp2 + 1, after-method.len-bytes())
 
     ; 分離 path 和 query
@@ -277,6 +280,7 @@ server-conn.parse = () (ok bool) {
     {
         q-pos >= 0 -> {
             .path = full-path.slice(0, q-pos)
+            #{overflow=wrap}
             .query = full-path.slice(q-pos + 1, full-path.len-bytes())
         }
 
@@ -287,6 +291,7 @@ server-conn.parse = () (ok bool) {
     }
 
     ; 標頭
+    #{overflow=wrap}
     .headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
 
     ; 解析標頭到 header-names / header-values
@@ -325,6 +330,7 @@ server-conn.parse = () (ok bool) {
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
 
+                        #{overflow=wrap}
                         .header-names[cnt][j] = hs[pos + j]
                     }
 
@@ -335,10 +341,12 @@ server-conn.parse = () (ok bool) {
                     val-len = line-end - val-start
                     j <- [0..val-len): {
 
+                        #{overflow=wrap}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
 
                     .header-values[cnt].len = val-len
+                    #{overflow=wrap}
                     .header-count = cnt + 1: {
                         ok -> it
 
@@ -396,6 +404,7 @@ server-conn.parse = () (ok bool) {
                     #{overflow=wrap}
                     available = .recv-buf-len - body-start
                 }
+                #{overflow=wrap}
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }
@@ -922,6 +931,7 @@ https-server-conn.recv-more = () (n i64) {
             -> _
         }
 
+        #{overflow=wrap}
         .recv-buf-len = .recv-buf-len + n: {
             ok -> it
 
@@ -949,6 +959,7 @@ https-server-conn.parse = () (ok bool) {
         sep-pos = data.index(separator)
         sep-pos >= 0 -> break
 
+        #{overflow=wrap}
         .recv-buf-len + HTTP-SRV-RECV-SIZE > HTTP-SRV-BUF-SIZE -> return
         n = .recv-more()
         n <= 0 -> return
@@ -977,6 +988,7 @@ https-server-conn.parse = () (ok bool) {
     sp2 < 0 -> return
     full-path = after-method.slice(0, sp2)
 
+    #{overflow=wrap}
     .version = after-method.slice(sp2 + 1, after-method.len-bytes())
 
     ; 分離 path 和 query
@@ -986,6 +998,7 @@ https-server-conn.parse = () (ok bool) {
     {
         q-pos >= 0 -> {
             .path = full-path.slice(0, q-pos)
+            #{overflow=wrap}
             .query = full-path.slice(q-pos + 1, full-path.len-bytes())
         }
 
@@ -996,6 +1009,7 @@ https-server-conn.parse = () (ok bool) {
     }
 
     ; 標頭
+    #{overflow=wrap}
     .headers = head.slice(first-line-end + crlf.len-bytes(), head.len-bytes())
 
     ; 解析標頭
@@ -1034,6 +1048,7 @@ https-server-conn.parse = () (ok bool) {
                     name-len = colon-pos - pos
                     j <- [0..name-len): {
 
+                        #{overflow=wrap}
                         .header-names[cnt][j] = hs[pos + j]
                     }
 
@@ -1044,10 +1059,12 @@ https-server-conn.parse = () (ok bool) {
                     val-len = line-end - val-start
                     j <- [0..val-len): {
 
+                        #{overflow=wrap}
                         .header-values[cnt][j] = hs[val-start + j]
                     }
 
                     .header-values[cnt].len = val-len
+                    #{overflow=wrap}
                     .header-count = cnt + 1: {
                         ok -> it
 
@@ -1102,6 +1119,7 @@ https-server-conn.parse = () (ok bool) {
                     #{overflow=wrap}
                     available = .recv-buf-len - body-start
                 }
+                #{overflow=wrap}
                 .body = .recv-buf.slice(body-start, body-start + content-len)
             }
         }

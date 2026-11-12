@@ -1232,6 +1232,7 @@ bigint.shl1 = () {
         }
         .limbs = grown
 
+        #{overflow=wrap}
         .len = .len + 1: {
             ok -> it
 
@@ -1304,6 +1305,7 @@ bigint.normalize = () {
         }
         top != 0 -> break
 
+        #{overflow=wrap}
         .len = .len - 1: {
             ok -> it
 

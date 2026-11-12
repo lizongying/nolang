@@ -45,6 +45,7 @@ bz-bit-reader.read-bit = () (bit i64) {
                     -> _
                 }
 
+                #{overflow=wrap}
                 .pos = .pos + 1: {
                     ok -> it
 
@@ -58,6 +59,7 @@ bz-bit-reader.read-bit = () (bit i64) {
             bit = .bit-buf >> 7
             .bit-buf = (.bit-buf << 1) & 0xff
 
+            #{overflow=wrap}
             .bit-cnt = .bit-cnt - 1: {
                 ok -> it
 
