@@ -1053,6 +1053,16 @@ type VariantInfo struct {
 	// (`ok(v i64)` -> KVariant.Type) has no KStructField child and therefore
 	// no name; such an entry is "" and matches any binding name by position.
 	FieldNames []string
+
+	// FieldOffsets is the BYTE offset of each payload field within the union
+	// payload area, parallel to Fields (computed with natural alignment).
+	// VariantSize / VariantAlign are the variant's own rounded size/alignment.
+	// Rounded is true when some field's exact size could not be proven and an
+	// 8-byte upper bound was used (conservative; never an underestimate).
+	FieldOffsets []int64
+	VariantSize  int64
+	VariantAlign int64
+	Rounded      bool
 }
 
 // TaggedEnumInfo is the variant table of one tagged enum. PayloadSlots is the
@@ -1085,6 +1095,17 @@ type TaggedEnumInfo struct {
 	Variants     []VariantInfo
 	PayloadSlots int64
 	Inline       bool
+
+	// TagBits / TagLT are the discriminant width chosen from len(Variants)
+	// (i8 / i16 / i32 / i64). UnionBytes / UnionAlign describe the tight union
+	// payload (max over variants of the natural-aligned variant size/align);
+	// UnitOnly is true when every variant is payload-less, in which case the
+	// payload field is omitted entirely and the enum is `{ iT }`.
+	TagBits    int64
+	TagLT      string
+	UnionBytes int64
+	UnionAlign int64
+	UnitOnly   bool
 }
 
 type Type struct {

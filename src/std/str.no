@@ -704,9 +704,11 @@ str.bytes = () (val []byte) {
 str.to-bytes = () (val []byte) {
     n = .len-bytes()
 
-    ; with-cap-len（而非 with-len）讓下面的下標寫入落在 idxwrite 的 with-cap 豁免內；
-    ; 也不能改成 with-cap + push：實測（2026-11-11）`val.push(b)` 寫進 out 參數形態的
-    ; []byte 會無限成長（`no run` 被 kill），下標寫入版本正確。
+    ; with-cap-len 一次給出 len=cap=n，下面逐位元組原位寫入，全程不觸發成長路徑。
+    ; 曾記「with-cap + push 寫進 out 參數形態的 []byte 會無限成長（no run 被 kill）」，
+    ; 2026-11-12 復核推翻：真因是**出參槽未清零**（MIR allocaFor 現已對出參一律存零值），
+    ; 與 push 無關——push 版本實測 1e6 元素長度無誤。此處保留下標寫入只是為了省掉每次
+    ; push 的成長檢查。
     val = with-cap-len(n, n)
     i <- [0..n): {
         val[i] = .byte(i)

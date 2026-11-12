@@ -20,7 +20,7 @@
 ;
 ; ⚠️ 定義順序：str-eq 必須在 keyword **之前**（本 repo 的呼叫一律向後引用）。
 
-; ── 常量（ILLEGAL=0 … TILDE=91）──
+; ── 常量（ILLEGAL=0 … ELLIPSIS3=92）──
 ILLEGAL = 0
 EOF = 1
 NEWLINE = 2
@@ -113,6 +113,11 @@ UNDERSCORE = 88
 AT = 89
 QUESTION = 90
 TILDE = 91
+
+; s101：`...` 佔位陳述（Go lexer.ELLIPSIS3）。**必須與 ELLIPSIS(65) 分開**：
+;   ELLIPSIS 在本專案是範圍運算符 `..`（`[0..n)`），而 `...` 是 no-op 陳述。
+;   混用會讓 `[0...count)` 這種誤寫靜默變成合法範圍（Go 側刻意收成單 token 就是為了擋它）。
+ELLIPSIS3 = 92
 
 ; ── str-eq：逐位元組比較 ──
 ; ⚠️ 必須先比 len-bytes()，否則前綴相同的短字串會誤判相等。
@@ -337,6 +342,8 @@ name = (c i64) (r str) {
         QUESTION -> 'QUESTION'
 
         TILDE -> 'TILDE'
+
+        ELLIPSIS3 -> 'ELLIPSIS3'
 
         -> 'UNKNOWN'
     }

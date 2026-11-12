@@ -1,0 +1,292 @@
+; drv-build-test.no — M4-d 閘：drv.build-ll 自產完整 .ll + 合成 @main（§11 後 ⑧）
+;
+; 執行：
+;   ./bin/no run compiler/tests/drv-build-test.no           # L0 文字斷言閘
+;   ./bin/no run compiler/tests/drv-build-test.no dump > /tmp/m4d.ll
+;   opt -passes=verify -disable-output /tmp/m4d.ll          # LLVM 驗證
+;   clang -x ir -O2 -o /tmp/m4d /tmp/m4d.ll && /tmp/m4d     # exit 42
+;
+; ⚠️ runner 斷言失敗不改退出碼，本檔結尾必須自己 exit(1)。
+; ⚠️ 訊息一律用單引號字串；nolang 的 "..." 是 char 字面量，不是字串。
+; ⚠️ 直接導入所有傳遞依賴：模組頂層常量只有在入口檔直接 import 時才會生成（bug #85）。
+; ⚠️ `drv.build-ll` 是含點自由函式 ⇒ 導入寫完整符號路徑 `# /compiler/src/drv.build-ll`。
+
+# /test/runner.eq
+# /test/runner.failed-count
+# /test/runner.summary
+# /compiler/src/drv.build-ll
+# /compiler/src/asp
+# /compiler/src/ast
+# /compiler/src/lx
+# /compiler/src/ps
+# /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
+
+; 有 exit(E)：E 應變成合成 main 的回值；無 exit：合成字面量 0；
+; 不支援的構造 ⇒ 誠實回空字串，不靜默產碼。
+;   ⚠️ s100 起 print / eprint 已支援（§11 後 ⑨）；s102 起**无 spec 的 `{ident}` 插值**
+;      也已支援（§11 後 ⑩）⇒ S-BAD 改用**带格式规范**的插值 `{x:>5}`：宽度/对齐要
+;      fmt-parse-spec / fmt-apply-spec 整条流水线，自举尚未实现，必须诚实门禁。
+S-EXIT = 'f = (x i64) (r i64) {\n    r = x\n}\n\nexit(f(42))\n'
+S-PLAIN = 'f = (x i64) (r i64) {\n    r = x\n}\n'
+S-BAD = 'x = 1\nprint(\'{x:>5}\')\n'
+S-PRINT = 'print(42)\nprint(\'hi\')\neprint(9)\n'
+S-PRINT-MULTI = 'print(1, 2)\nprint(\'a\', 3)\nprint()\n'
+
+; s102：插值形——字面段原样写、`{x}` 按型别直发 print_i64 / print_str
+S-INTERP = 'x = 7\ns = \'hi\'\nprint(\'a={x} b={s} c={x}\')\n'
+
+; s102：无字段的花括号字面量（`a{b` / `{}`）⇒ 权威侧也原样印出，不得当成格式串
+S-BRACE = 'print(\'a{b\')\nprint(\'{}\')\n'
+
+; s101：`...` 占位陈述——解析成 K-EMPTY-STATEMENT，h2m 当 no-op 消费（Go ASTToHIR 整条丢弃）
+S-ELLIPSIS = '...\nprint(1)\n...\nprint(2)\n...\n'
+
+; s103：值位 SurfaceMatch（`r = { c -> v  -> d }`）——逐臂 STORE 进 entry 合成结果槽、汇聚块 LOAD。
+;   ⚠️ 这里刻意带**兜底臂**：无兜底臂且多臂时，Go 权威把链降成「独立 if（每条命中的臂都跑）」，
+;      与 syntax.md rule 1「{} 包裹即短路」以及 noc 的 s58 都不一致（本轮实测：同一份
+;      `{ x == 0 -> A  x == x -> B }` 权威印 A,B / 得 2，noc 印 A / 得 1）⇒ 该分歧**先于 s103
+;      存在**、与本件无关，属待裁决的独立议题。带兜底臂时两侧语义一致，故端到端闸只钉带兜底臂的形。
+S-SMV = 'x = 5\nr = {\n    x == 0 -> 1\n    -> 7\n}\nprint(r)\n'
+S-SMV2 = 'x = 0\nr = {\n    x == 0 -> 11\n    -> 7\n}\nprint(r)\n'
+
+; s103：臂值不是 i64 ⇒ 结果槽按 i64 铺，str 臂值无处可落 ⇒ 诚实回空串
+S-SMV-GATE = 'x = 1\nr = {\n    x == 0 -> \'a\'\n    -> 0\n}\n'
+
+dump-mode = () (yes bool) {
+    yes = false
+    a = os.arg(1)
+    a: {
+        ok(v) -> {
+            v == 'dump' -> yes = true
+
+            ->
+        }
+
+        ->
+    }
+}
+
+; `dump-print`：印 print 版模組（供 opt / clang 驗證 s100 新增的 print 助手）
+dump-print-mode = () (yes bool) {
+    yes = false
+    a = os.arg(1)
+    a: {
+        ok(v) -> {
+            v == 'dump-print' -> yes = true
+
+            ->
+        }
+
+        ->
+    }
+}
+
+; `dump-interp`：印插值版模組（供 opt / clang 端到端驗證 s102 的逐段 OP-PRINT）
+dump-interp-mode = () (yes bool) {
+    yes = false
+    a = os.arg(1)
+    a: {
+        ok(v) -> {
+            v == 'dump-interp' -> yes = true
+
+            ->
+        }
+
+        -> _
+    }
+}
+
+; s102：子串出现次数。⚠️ std 的 `str.count()` 回的是**码点数**，不是子串出现次数
+;   （str.no:1792 `str.count = () (cnt i64)`），拿它数 'print_i64' 只会得到 9。
+; ⚠️ 这里刻意**不做** `n = n + 1` / `p = p + step` 这类「对已存在的 i64 变量重赋值
+;   算術」——本檔走 checker（`no run`），而 `#{overflow=wrap}` 只豁免**声明**位，
+;   重赋值位仍是 `?i64 → i64` 硬错 [15w45dqk]（實測 o2/p1/p2 三形全红）。
+;   改成「区间遍历 + 命中下标入 vec」，累加交给 .len()，索引运算只出现在**实参位**。
+; hay: 被搜索的字串
+; needle: 要找的子串（非空）
+; n: 出现次数（允许重叠，与 str.find-byte-from 的逐位前移同口径）
+occ = (hay str, needle str) (n i64) {
+    hits []i64 = with-cap(4)
+    ln = hay.len-bytes()
+    step = needle.len-bytes()
+    i <- [0..ln): {
+        i + step <= ln && hay.slice-bytes(i, i + step) == needle -> hits.push(i)
+    }
+    n = hits.len()
+}
+
+test-prelude-and-main = () {
+    ll = drv.build-ll(S-EXIT.to-bytes())
+    runner.eq(ll.contains('%str-long = type { i32, i32, i8* }'), 1, 'prelude: 16B str-long')
+
+    ; ⚠️ %vec 的欄位佈局由 B28b 那條線擁有（Go 端 `%vec = { i32, i32, i64 }` 16B），
+    ;    本測試（M4-d）只關心「prelude 被完整前置」，不釘死欄位型別——
+    ;    否則並行 session 改 %vec 時這裡會假紅（2026-11-12 實測踩過一次）。
+    runner.eq(ll.contains('%vec = type {'), 1, 'prelude: vec type present')
+    runner.eq(ll.contains('%option = type { i64, [3 x i64] }'), 1, 'prelude: 24B option slot')
+    runner.eq(ll.contains('define i64 @f(i64 %v1)'), 1, 'user function f lowered')
+    runner.eq(ll.contains('define i64 @main()'), 1, 'synthesized i64 @main')
+    runner.eq(ll.contains('define i32 @main()'), 0, 'no C-style i32 @main')
+}
+
+test-exit-value = () {
+    ll = drv.build-ll(S-EXIT.to-bytes())
+    runner.eq(ll.contains('%v1 = add i64 0, 42'), 1, 'exit argument 42 materialized')
+    runner.eq(ll.contains('%v2 = call i64 @f(i64 %v1)'), 1, 'exit calls f(42)')
+    runner.eq(ll.contains('ret i64 %v2'), 1, 'main returns f(42)')
+    a = ll.index('define i64 @main()')
+    b = ll.index('%v1 = add i64 0, 42')
+    runner.eq(a >= 0 && b > a, 1, 'main body follows main signature')
+}
+
+test-no-exit-default = () {
+    ll = drv.build-ll(S-PLAIN.to-bytes())
+    runner.eq(ll.contains('define i64 @main()'), 1, 'default main still synthesized')
+    runner.eq(ll.contains('%v1 = add i64 0, 0'), 1, 'synthetic literal 0')
+    runner.eq(ll.contains('ret i64 %v1'), 1, 'default main returns 0')
+    runner.eq(ll.contains('call i64 @f('), 0, 'no spurious call in default main')
+}
+
+test-unsupported-honest = () {
+    ll = drv.build-ll(S-BAD.to-bytes())
+    runner.eq(ll.len-bytes(), 0, 'format-spec interp => empty ll (honest failure)')
+    e = drv.build-ll('exit(7)\n'.to-bytes())
+    runner.eq(e.contains('define i64 @main()'), 1, 'literal exit without user functions')
+}
+
+; s102：字面量插值降级（§11 後 ⑩）。权威 = Go lowerNamedFormatStream：
+;   字面段原样写、`{name}` 由 fmt-* 渲染（无 spec 时与 print_i64 / print_str 同串），
+;   末尾一个换行。本件用 OP-PRINT 逐段直发，故断言的形状是「三条 print_str + 两条
+;   print_i64 + 一条 print_nl」。
+test-interp-forms = () {
+    ll = drv.build-ll(S-INTERP.to-bytes())
+    runner.eq(ll.len-bytes() > 0, 1, 'interp: non-empty ll')
+
+    ; 字段按型别分派：x 是 i64 ⇒ print_i64；s 是 str ⇒ print_str
+    runner.eq(ll.contains('call void @print_i64(i64 %'), 1, 'interp: i64 field -> print_i64')
+    runner.eq(ll.contains('call void @print_str(%str-long %'), 1, 'interp: str field -> print_str')
+
+    ; 字面段 'a=' / ' b=' / ' c=' 各一条 print_str（共 3 条），加上 str 字段 1 条 = 4 条
+    runner.eq(occ(ll, 'call void @print_str(%str-long'), 4, 'interp: 3 literal segs + 1 str field')
+
+    ; 字段出现两次 ⇒ 两条 print_i64
+    runner.eq(occ(ll, 'call void @print_i64(i64'), 2, 'interp: i64 field twice')
+
+    ; 整条 print 只补一个换行（不是每段一个）
+    runner.eq(occ(ll, 'call void @print_nl()'), 1, 'interp: single trailing newline')
+
+    ; 无字段的花括号字面量 ⇒ 原样印（class 0），不得计 unsup
+    br = drv.build-ll(S-BRACE.to-bytes())
+    runner.eq(br.len-bytes() > 0, 1, 'brace literal: still lowered')
+    runner.eq(occ(br, 'call void @print_nl()'), 2, 'brace literal: two prints')
+}
+
+; s101：`...` 占位陈述（§11 後 ⑩）。Go 侧解析成 EmptyStatement、ASTToHIR 整条丢弃；
+;   自举侧 ps 建 K-EMPTY-STATEMENT、h2m 的 no-op 臂消费 ⇒ 既不产码也不计 unsup。
+;   ⚠️ 修复前每条 `...` 都算一条 unsup（语料 74 檔含它），L4 因此整批红。
+test-empty-stmt = () {
+    ll = drv.build-ll(S-ELLIPSIS.to-bytes())
+    runner.eq(ll.len-bytes() > 0, 1, 'ellipsis: non-empty ll')
+    runner.eq(occ(ll, 'call void @print_nl()'), 2, 'ellipsis: two prints survive')
+    runner.eq(occ(ll, 'call void @print_i64(i64'), 2, 'ellipsis: both int prints survive')
+}
+
+; s103：值位 SurfaceMatch 端到端（§11 後 ⑪）。
+;   槽位实测：%s1 = x、%s3 = 合成结果槽 @smv<let-id>、%s5 = 目标变量 r、%s7 = 合成 main 的回值槽。
+;   结果槽必须独立于目标变量槽——两者合一的话，无兜底臂全不命中时会读到 r 的旧值而非零初始化 0。
+test-smv-value = () {
+    ll = drv.build-ll(S-SMV.to-bytes())
+    runner.eq(ll.len-bytes() > 0, 1, 'smv: non-empty ll')
+    runner.eq(ll.contains('%s3 = alloca i64'), 1, 'smv: result slot')
+    runner.eq(ll.contains('%s5 = alloca i64'), 1, 'smv: target slot')
+    runner.eq(ll.contains('bb2:\n\t%v13 = add i64 0, 1\n\tstore i64 %v13, i64* %s3\n\tbr label %bb1'), 1, 'smv: arm1 store')
+    runner.eq(ll.contains('bb3:\n\t%v14 = add i64 0, 7\n\tstore i64 %v14, i64* %s3\n\tbr label %bb1'), 1, 'smv: wildcard store')
+    runner.eq(ll.contains('bb1:\n\t%v15 = load i64, i64* %s3\n\tstore i64 %v15, i64* %s5'), 1, 'smv: merge load')
+    runner.eq(ll.contains('call void @print_i64(i64 %v16)'), 1, 'smv: result printed')
+    runner.eq(ll.contains('ret i64 %v18'), 1, 'smv: main returns 0')
+
+    ; 命中第一臂的形（同一份槽与块骨架，只有常量不同）⇒ 钉住「臂值才是结果」而不是恒定兜底值
+    l2 = drv.build-ll(S-SMV2.to-bytes())
+    runner.eq(l2.contains('%v13 = add i64 0, 11'), 1, 'smv2: arm1 const 11')
+    runner.eq(l2.contains('call void @print_i64(i64 %v16)'), 1, 'smv2: result printed')
+
+    ; 臂值不是 i64 ⇒ 诚实门禁
+    g = drv.build-ll(S-SMV-GATE.to-bytes())
+    runner.eq(g.len-bytes(), 0, 'smv: str arm value => empty ll')
+}
+
+; s100：print / eprint 降级（§11 後 ⑨）。权威 = Go emitPrint 的 "a b\n" 拼法。
+test-print-forms = () {
+    ll = drv.build-ll(S-PRINT.to-bytes())
+
+    ; prelude 侧助手必须齐（少一个就是 link 期 undefined symbol）
+    runner.eq(ll.contains('define i8* @digits(i64 %abs, i8* %end)'), 1, 'prelude: @digits')
+    runner.eq(ll.contains('define void @print_i64(i64 %v)'), 1, 'prelude: @print_i64')
+    runner.eq(ll.contains('define void @print_str(%str-long %s)'), 1, 'prelude: @print_str')
+    runner.eq(ll.contains('define void @eprint_i64(i64 %v)'), 1, 'prelude: @eprint_i64')
+    runner.eq(ll.contains('define void @eprint_str(%str-long %s)'), 1, 'prelude: @eprint_str')
+    runner.eq(ll.contains('@.nl = private constant [2 x i8] c"'), 1, 'prelude: @.nl global')
+    runner.eq(ll.contains('@.sp = private constant [2 x i8] c"'), 1, 'prelude: @.sp global')
+
+    ; 调用点：i64 → @print_i64，str → @print_str，末尾 @print_nl
+    runner.eq(ll.contains('call void @print_i64(i64 %v1)'), 1, 'print(42) -> print_i64')
+    runner.eq(ll.contains('call void @print_str(%str-long %sv2)'), 1, 'print(str) -> print_str')
+    runner.eq(ll.contains('call void @print_nl()'), 1, 'print emits trailing newline')
+    runner.eq(ll.contains('call void @eprint_i64(i64 %v3)'), 1, 'eprint(9) -> eprint_i64')
+    runner.eq(ll.contains('call void @eprint_nl()'), 1, 'eprint emits trailing newline')
+
+    ; 空实参 print() 只补一个换行（Go 同形）
+    m = drv.build-ll(S-PRINT-MULTI.to-bytes())
+    runner.eq(m.contains('call void @print_space()'), 1, 'multi-arg emits space separator')
+
+    ; ⚠️ 值 id 在多实参形态会随分隔空格插位而漂移 ⇒ 这里只钉「形状」不钉 id
+    ;    （钉 id 的断言在本文件别处保留，用于固定形态的精确回归）
+    runner.eq(m.contains('call void @print_str(%str-long %sv'), 1, 'multi-arg str operand')
+    a = m.index('call void @print_nl()')
+    runner.eq(a >= 0, 1, 'print_nl present in multi form')
+}
+
+{
+    dump-mode() -> {
+        print(drv.build-ll(S-EXIT.to-bytes()))
+        exit(0)
+    }
+
+    dump-print-mode() -> {
+        print(drv.build-ll(S-PRINT.to-bytes()))
+        exit(0)
+    }
+
+    dump-interp-mode() -> {
+        print(drv.build-ll(S-INTERP.to-bytes()))
+        exit(0)
+    }
+
+    -> {
+        test-prelude-and-main()
+        test-exit-value()
+        test-no-exit-default()
+        test-unsupported-honest()
+        test-print-forms()
+        test-interp-forms()
+        test-empty-stmt()
+        test-smv-value()
+        runner.summary()
+        f = runner.failed-count()
+        {
+            f > 0 -> exit(1)
+
+            -> exit(0)
+        }
+    }
+}

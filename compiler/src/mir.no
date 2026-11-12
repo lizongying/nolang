@@ -463,3 +463,19 @@ OP-RELEASE = 28
 ;         外流后 scope-exit 仍 free 就是悬垂指针（UAF），宁缺勿错。
 ;   ⚠️ op 码接在既有最大码 OP-OPTGESCF=93 之后（取 94），不重排既有码以免影响 arena 数据。
 OP-VEC-FREE = 94
+
+; OP-PRINT：语句位内建输出（print / eprint）。**无结果值**（dst 恒 0）。
+;   bs[k] = kind 码，决定发射哪个 prelude 助手：
+;     0 = i64 → fd 1   （@print_i64）      1 = str → fd 1（@print_str）
+;     2 = 换行 → fd 1  （@print_nl）       3 = 空格 → fd 1（@print_space）
+;     4 = i64 → fd 2   （@eprint_i64）     5 = str → fd 2（@eprint_str）
+;     6 = 换行 → fd 2  （@eprint_nl）      7 = 空格 → fd 2（@eprint_space）
+;   x = 值 id（kind 0/1/4/5 用；kind 2/3/6/7 恒 0）；y = 0。
+;   ⚠️ 为什么单立一个 op 而不复用 OP-CALL：Go 的 print 助手是 `define void`，
+;      而 OP-CALL 的契约是「产出一个值 id」（dst 非 0、retty 取签名表）。
+;      为 void 调用扩 OP-CALL 会牵动 dst/retty 全链，收益不抵风险；输出是**语句**不是值，
+;      单立 op 与 Go 的 IR 结果一致（同样是 `call void @print_*`），只是 MIR 层形制不同。
+;   ⚠️ 语义对齐 Go：print(a, b) ⇒ "a b\n"（实参间一个空格、末尾一个换行），空格/换行
+;      由 h2m 显式发 kind 3/2 序列，不在助手内隐式处理（同 Go emitPrint 的拼法）。
+;   ⚠️ op 码取 95，接在 OP-VEC-FREE=94 之后，不重排既有码。
+OP-PRINT = 95

@@ -2,8 +2,17 @@
 ;
 ; 型別提供 `T.enter = () { … }` 後，編譯器會在該型別的變數宣告（進入作用域）
 ; 之後自動插入 `變數.enter()`：注入由 src/build/transpiler_inject.go 的
-; injectEnterLeave 按**方法名**完成，與本聲明無耦合。本檔只登記介面本身，
-; 供文檔與 LSP 導航；std 語料目前沒有型別實作它。
+; injectEnterLeave 按**方法名**完成，與本聲明無耦合。
+;
+; 判定依據是「解析出來的有效型別」而非源碼有沒有寫標註 —— `no fmt` 會移除
+; 「標註型別 == 推斷型別」的冗餘標註，若只認標註，`a T = T{…}` 進過 fmt 就
+; 不再進入生命週期，排版會靜默改變語義。故 `a = T{…}` 與 `a = make-t()` 同樣觸發。
+;
+; 注意 enter 緊接在宣告之後執行，**先於**任何欄位賦值 —— 需要用到已填好的
+; 欄位時不要依賴 enter，請改用顯式初始化方法。
+;
+; 本檔只登記介面本身，供文檔與 LSP 導航；std 語料目前沒有型別實作它
+; （example/sqlite-driver、example/mysql-driver 有實作）。
 ; [enter](#enter)
 
 enter {

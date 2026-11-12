@@ -2,6 +2,9 @@
 ;
 ; M0 範圍：version / help 可用；tokens / ast / build 是明確的「未實作」骨架，
 ; 以 rc=EXIT-NOTIMPL(3) 退出——讓差分 harness 能把「未實作」與「失敗」分開。
+; ⚠️ 上述是 M0 歷史記述：tokens / ast / vet 早已落地；2026-11-12（M4-d，§11 後 ⑧）
+;    build / run 亦已接線——自產 `.ll` → link.compile 調 clang（DR-2）。
+;    EXIT-NOTIMPL 目前只剩給未列出的子命令骨架用，build 不再走 drv.not-implemented。
 ;
 ; 退出碼約定：
 ;   0  EXIT-OK          成功
@@ -14,6 +17,7 @@
 ; ⚠️ 導入寫 `# /compiler/src/lx`（**模組**形式），呼叫寫 lx.dump(...)。
 ;    `# /path/mod.Type` 是【型別】導入形式（配 `<Type>.<method>` 呼叫）；
 ;    lx.no 沒有宣告結構體，用型別形式會得到 `unknown callee lx.dump`。
+
 # /compiler/src/lx
 # /compiler/src/ast
 # /compiler/src/ps
@@ -21,6 +25,13 @@
 # /compiler/src/diag
 # /compiler/src/ck
 # /compiler/src/ck-sig
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
+# /compiler/src/util/sb.sb
 
 ; ⚠️ 本檔的 drv.* 是**含點的自由函式**（沒有宣告 struct drv），因此受 SHS S6
 ;    約束：每個定義的 out-param 至多 1 個，否則執行期 SIGSEGV。見 docs 附錄 A.6。
@@ -57,7 +68,8 @@ drv.usage = () {
     print('  tokens <file>      dump token stream (not implemented in M0)')
     print('  ast <file>         dump AST (not implemented in M0)')
     print('  vet <file>         run diagnostics (M3-c skeleton: syntax errors + not-defined family)')
-    print('  build <file|dir>   compile to executable (not implemented in M0)')
+    print('  build [-o OUT] <file>   compile to executable via clang (M4-d: self-produced .ll)')
+    print('  run [-o OUT] <file>     build, then execute the produced binary (M4-d)')
 }
 
 ; 功能待補充
@@ -337,6 +349,210 @@ drv.cmd-vet = () (code i64) {
     }
 }
 
+; ═══════════════════════════════════════════════════════════════════
+; M4-d（2026-11-12，§11 後 ⑧）：build / run 接線
+; ═══════════════════════════════════════════════════════════════════
+; 鏈路：read-bytes → ast.make/ps.new/ps.parse → h2m-lower-module（合成 @main）
+;       → cg-runtime-prelude-full() + body = 完整 .ll → link.compile（clang -x ir）
+; ⚠️ 與 §5.7 M5 的界線：本件**不做** workspace / package / `#` 導入合併／target 解析／快取；
+;    只處理「單一 .no 檔、SHS 子集」。頂層內建呼叫（print 等）、模組導入、
+;    跨函式讀頂層 let 全局都計 unsup ⇒ 誠實 rc=1，不靜默產出錯碼。
+; ⚠️ SHS S6：以下 drv.* 皆含點自由函式 ⇒ 每個 out-param 至多 1 個。
+
+; 純函式：原始位元組 → 完整 LLVM IR 模組文字（L0 可直接斷言，不碰檔案／行程）
+; src: 原始碼位元組（**不得**用 fs.read-str，見 §8 P0-⑥ 的二次編碼陷阱）
+; r: 完整 .ll；'' = 降級不支援（已 eprint 診斷）
+drv.build-ll = (src []byte) (r str) {
+    r = ''
+    t = ast.make()
+    p = ps.new(src)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    body = h2m-lower-module(t, agg, root)
+    agg.unsup > 0 -> {
+        eprint(NOC-NAME - ': unsupported constructs: ' - agg.unsup.to-str() - ' (M4-d SHS subset)')
+        return
+    }
+    body == '' -> {
+        eprint(NOC-NAME - ': no code generated')
+        return
+    }
+    b = sb.init(32768)
+    b.push(cg-runtime-prelude-full())
+    b.push('\n')
+    b.push(body)
+    b.push('\n')
+    r = b.str()
+}
+
+; 取 argv 第 i 項（越界／nil ⇒ ''）
+; i: 下標
+; r: 引數文字
+drv.arg-at = (i i64) (r str) {
+    r = ''
+    oa = args.get(i)
+    oa: {
+        ok(v) -> r = v
+
+        -> _
+    }
+}
+
+; 來源檔路徑：argv[2..] 中**第一個不是** `-o` 也不是 `-o` 值的項。
+;   ⚠️ 兩種順序都吃（與 Go oracle 對齊、又容錯）：
+;      `noc build -o OUT FILE`（Go `no build` 的硬性順序，見 §11 後 ⑧）
+;      `noc build FILE -o OUT`（早期 M4-d 草案寫法）
+;   故不能直接取 argv[2]——那會把 `-o` 當檔名（實測 `noc: cannot read -o`）。
+; r: 來源路徑；'' = 沒給
+drv.src-arg = () (r str) {
+    r = ''
+    n = args.count()
+    i = 2
+    (i < n) {
+        a = drv.arg-at(i)
+        a == '-o' -> {
+
+            #{overflow=wrap}
+            i = i + 2
+            continue
+        }
+        r = a
+        break
+    }
+}
+
+; `-o <out>` 的值；未给 ⇒ ''
+; r: 目的路径（'' = 没给）
+drv.out-arg = () (r str) {
+    r = ''
+    n = args.count()
+    i = 2
+    (i < n) {
+        a = drv.arg-at(i)
+        a == '-o' -> {
+
+            #{overflow=wrap}
+            j = i + 1
+            j < n -> {
+                r = drv.arg-at(j)
+            }
+            break
+        }
+
+        #{overflow=wrap}
+        i = i + 1
+    }
+}
+
+; run 的临时产物路径：`<tmp>/noc-run-<pid>.out`
+;   ⚠️ `run` **不**默认写 <src>.out——否则拿它跑 `tests/` 全语料会往语料目录里
+;      拉一坨 *.no.out（L4 差分时是污染源）。用 pid 区分并发进程。
+; r: 路径
+drv.run-temp = () (r str) {
+    td = '/tmp'
+    e = os.get-env('TMPDIR')
+    e: {
+        ok(v) -> {
+            v != '' -> td = v
+        }
+
+        -> _
+    }
+    r = td - 'noc-run-' - os.get-pid().to-str() - '.out'
+}
+
+; 目的檔路徑：`-o <out>` 優先；未給 ⇒ <path>.out（刻意**不**去尾 .no，
+;   免得為湊 Go 預設輸出名而做 len-3 算術／後綴切片，見 §11 後 ⑧）
+; path: 來源檔路徑
+; r: 可執行檔路徑
+drv.build-out = (path str) (r str) {
+    r = drv.out-arg()
+    r == '' -> r = path - '.out'
+}
+
+; 建置主体：读档 → 自产 .ll → clang 链出 out
+; path: 来源档路径
+; out: 目的可执行档路径
+; ok: 是否成功（false 时已 eprint 诊断）
+drv.build-to = (path str, out str) (ok bool) {
+    ok = false
+    c = fs.read-bytes(path)
+    src []byte = with-cap(0)
+    got = false
+    c: {
+        ok(v) -> {
+            src = v
+            got = true
+        }
+
+        nil -> {
+            got = true
+        }
+
+        err(e) -> {
+        }
+    }
+    got == false -> {
+        eprint(NOC-NAME - ': cannot read ' - path)
+        return
+    }
+    ll = drv.build-ll(src)
+    ll == '' -> return
+    ok = link.compile(ll, out)
+}
+
+; build：自產 .ll → clang 組譯＋鏈接
+; ⚠️ 檔案不存在與空檔的區分沿用 cmd-tokens 的三臂，但 `fs.read-bytes` 對不存在
+;    回 err、對空檔回 nil；本件對 err 直接 eprint + rc=1（見 drv.build-to）
+; code: 狀態碼
+drv.cmd-build = () (code i64) {
+    code = EXIT-OK
+    n = args.count()
+    n < 3 -> {
+        eprint(NOC-NAME - ': build requires a file argument')
+        code = EXIT-USAGE
+        return
+    }
+    path = drv.src-arg()
+    path == '' -> {
+        eprint(NOC-NAME - ': build requires a file argument')
+        code = EXIT-USAGE
+        return
+    }
+    ok = drv.build-to(path, drv.build-out(path))
+    ok == false -> code = EXIT-FAIL
+}
+
+; run：build 後同步執行產物，把子行程結束碼當 noc 的結束碼（L4 行為差分用）
+; ⚠️ 未给 -o ⇒ 产物落 <tmp>/noc-run-<pid>.out（不污染语料目录，见 drv.run-temp）
+; ⚠️ process.process-system 回 C system() 的 raw wait status ⇒ 必須 >> 8 才是結束碼；
+;    process.shell-quote 會把含空白的路徑包好，避免 shell 拆詞。
+; code: 子行程結束碼（build 失敗時為 EXIT-FAIL / EXIT-USAGE）
+drv.cmd-run = () (code i64) {
+    code = EXIT-OK
+    n = args.count()
+    n < 3 -> {
+        eprint(NOC-NAME - ': run requires a file argument')
+        code = EXIT-USAGE
+        return
+    }
+    path = drv.src-arg()
+    path == '' -> {
+        eprint(NOC-NAME - ': run requires a file argument')
+        code = EXIT-USAGE
+        return
+    }
+    out = drv.out-arg()
+    out == '' -> out = drv.run-temp()
+    ok = drv.build-to(path, out)
+    ok == false -> {
+        code = EXIT-FAIL
+        return
+    }
+    st = process.process-system(process.shell-quote(out))
+    code = st >> 8
+}
+
 ; 依 argv[1] 分派；回傳行程退出碼
 ; code: 狀態碼
 drv.dispatch = () (code i64) {
@@ -371,7 +587,9 @@ drv.dispatch = () (code i64) {
 
                 'vet' -> code = drv.cmd-vet()
 
-                'build' -> code = drv.not-implemented('build')
+                'build' -> code = drv.cmd-build()
+
+                'run' -> code = drv.cmd-run()
 
                 -> {
                     eprint(NOC-NAME - ': unknown command "' - cmd - '"')

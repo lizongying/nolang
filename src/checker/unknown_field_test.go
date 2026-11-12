@@ -110,3 +110,64 @@ probe = (b box) {
 		t.Fatalf("expected 1 report through the parameter, got %d: %+v", len(res), res)
 	}
 }
+
+// TestUnknownMethodCallReported 正例：**方法呼叫位置的 callee 也要判定**。
+// `b.nope()` 打錯方法名以前完全不查（怕與欄位讀取混淆），代價是同一個錯誤
+// 靜默到 MIR 才以 bug #85 / str-len missing receiver 之類的面具炸開。
+func TestUnknownMethodCallReported(t *testing.T) {
+	src := `box {
+    xs []i64
+}
+
+box.get = () (r i64) {
+    r = .xs.len()
+}
+
+probe = () {
+    b box = box{}
+    io.outln(b.nope())
+}`
+	prog := parseProg(t, src)
+	res := ValidateUnknownFields(prog)
+	if len(res) != 1 {
+		t.Fatalf("expected exactly 1 report for the wrong method name, got %d: %+v", len(res), res)
+	}
+	r := res[0]
+	if !strings.Contains(r.Message, "nope") || !strings.Contains(r.Message, "box") {
+		t.Errorf("message must name both the struct and the method, got %q", r.Message)
+	}
+	if r.Line != 11 {
+		t.Errorf("line = %d, want 11 (the `b.nope()` call)", r.Line)
+	}
+}
+
+// TestUnknownMethodCallAllowsRealAndBuiltinMethods 負例：這一條的價值全在此。
+// 方法呼叫位置一旦開火，合法的三類寫法都必須放行：
+//   - 真方法（`b.get()`，同一檔案宣告）
+//   - 限定名形式的內建方法（`s.eq(x, n)` / `s.clear()`，BuiltinMethodList 裡
+//     記的是 `str.eq` / `str.clear`，成員名只有 `eq` / `clear`）
+//   - `.zero()`（沒有 BuiltinMethod 條目，codegen 直接發 memset 到接收者）
+func TestUnknownMethodCallAllowsRealAndBuiltinMethods(t *testing.T) {
+	src := `box {
+    xs []i64
+}
+
+box.get = () (r i64) {
+    r = .xs.len()
+}
+
+probe = () {
+    b box = box{}
+    b.zero()
+    n = b.get()
+    s = 'abc'
+    ok = s.eq('abc', 3)
+    s.clear()
+    io.outln(n)
+    io.outln(ok)
+}`
+	prog := parseProg(t, src)
+	if res := ValidateUnknownFields(prog); len(res) != 0 {
+		t.Fatalf("real methods / qualified builtin names / .zero() must not be reported, got %+v", res)
+	}
+}

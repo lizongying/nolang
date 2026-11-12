@@ -1,0 +1,274 @@
+; tls-server-keys — 內嵌 2048-bit RSA 金鑰對（純資料模組）
+;
+; 只有三個公開符號，全部是常量：
+;   TLS-SERVER-RSA-N [256]byte  模數 n（big-endian，無 DER 前導 0x00）
+;   TLS-SERVER-RSA-E            公鑰指數 e = 65537
+;   TLS-SERVER-RSA-D [256]byte  私鑰指數 d（big-endian）
+;
+; 純資料沒有「行為」，所以除了形狀與分佈檢查，本檔還做兩件有份量的事：
+;
+;   1. RSA 往返 —— 用 crypto/rsa 的 raw 介面跑 m → m^e mod n → (…)^d mod n，
+;      還原結果必須逐位元組等於 m。這是「n、e、d 三者互相匹配」唯一不靠猜的證據；
+;      光看位元組長度、奇偶、分佈都無法排除「n 和 d 被人各自改過」。
+;   2. x509 端到端 —— 用這三份常量簽一張自簽憑證，再把 n/e 從 DER 讀回來比對，
+;      並釘住 TBSCertificate 的 SHA-256 指紋。指紋常量是 openssl 獨立算出來的
+;      （`openssl verify -CAfile self.pem self.pem` 回 OK），因此任何一個位元組
+;      被改動、或簽章流程退化，都會在這裡翻紅。
+;
+; 成本：兩段都真的在算 2048-bit 模冪，執行約 8 秒（d 那半邊本來就要滿 2048 bit，
+; 換小指數省不掉）。這是本模組唯一能證明金鑰可用的方式，值得這個代價。
+;
+; 覆蓋：TLS-SERVER-RSA-N / TLS-SERVER-RSA-E / TLS-SERVER-RSA-D —— 全模組 3/3。
+
+# /test/runner
+
+; ── helpers ──
+
+; [256]byte → []byte（逐元素 push，避開 `arr[i] = v` 的 idxwrite 禁令）
+b256 = (a [256]byte) (b []byte) {
+    v <- a: {
+        b.push(v)
+    }
+}
+
+; [256]byte 的 a[i] → i64（越界回 -1，以區別「值為 0」與「沒有這一格」）
+;
+; 用它同時當「陣列恰有 256 格」的證據：第 255 格取得到、第 256 格取不到。
+bat = (a [256]byte, i i64) (v i64) {
+    v = -1
+    a[i]: {
+        ok -> v = it
+
+        -> _
+    }
+}
+
+; []byte 的 b[i] → i64（同上）
+bb = (b []byte, i i64) (v i64) {
+    v = -1
+    b[i]: {
+        ok -> v = it
+
+        -> _
+    }
+}
+
+; 整數加法在本語言默認溢出回 err，結果是 ?i64，必須顯式接住。
+; `#{overflow=wrap}` 只改「溢出時取什麼值」，型別仍是 ?i64，寫在獨立語句前
+; 一樣編不過（tmp/sh/h57.no）。唯一可用形態是表達式-match：
+;   x = x + 1: { ok -> it
+;
+;                -> x }
+; 尾臂在 wrap 下永遠走不到，但空臂會報 s8gh6opt，所以必須補一個值。
+
+; [256]byte 的統計：最小 / 最大位元組值、零位元組個數
+stats = (a [256]byte) (minimum i64, maximum i64, zeros i64) {
+    minimum = 255
+    maximum = 0
+    zeros = 0
+    v <- a: {
+        v < minimum -> minimum = v
+        v > maximum -> maximum = v
+        v == 0 -> zeros = zeros + 1: {
+            ok -> it
+
+            -> zeros
+        }
+    }
+}
+
+; [256]byte 所有位元組之和（用來釘住整份常量）
+sum-of = (a [256]byte) (s i64) {
+    s = 0
+    v <- a: {
+        s = s + v: {
+            ok -> it
+
+            -> s
+        }
+    }
+}
+
+; 兩份 []byte 的差異位元組數（長度不同就記 1 個差異）
+mismatch = (a []byte, b []byte) (n i64) {
+    n = 0
+    {
+        a.len() != b.len() -> n = 1
+
+        -> {
+            k = 0
+            v <- a: {
+                w = bb(b, k)
+                v != w -> n = n + 1: {
+                    ok -> it
+
+                    -> n
+                }
+                k = k + 1: {
+                    ok -> it
+
+                    -> k
+                }
+            }
+        }
+    }
+}
+
+; ── 1. 形狀：常量存在、寬度正確 ──
+
+t-shape = () {
+
+    ; 恰為 256 格：第 255 格取得到、第 256 格越界 ⇒ 寬度正好 2048 bit 的模數容器
+    runner.is-true(bat(tls-server-keys.TLS-SERVER-RSA-N, 255) >= 0, 'N: 有第 255 格')
+    runner.eq(bat(tls-server-keys.TLS-SERVER-RSA-N, 256), -1, 'N: 沒有第 256 格 ⇒ 恰為 256 位元組')
+    runner.is-true(bat(tls-server-keys.TLS-SERVER-RSA-D, 255) >= 0, 'D: 有第 255 格')
+    runner.eq(bat(tls-server-keys.TLS-SERVER-RSA-D, 256), -1, 'D: 沒有第 256 格 ⇒ 恰為 256 位元組')
+
+    runner.eq(tls-server-keys.TLS-SERVER-RSA-E, 65537, 'E: 65537（= 0x10001，Fermat 數 F4）')
+    runner.is-true(tls-server-keys.TLS-SERVER-RSA-E > 2, 'E: 大於 2（RSA 硬性要求）')
+    runner.is-true(tls-server-keys.TLS-SERVER-RSA-E != 0, 'E: 非零')
+}
+
+; ── 2. 模數 n：2048 bit、奇數、無前導零、非退化 ──
+
+t-modulus = () {
+    n0 = bat(tls-server-keys.TLS-SERVER-RSA-N, 0)
+    n255 = bat(tls-server-keys.TLS-SERVER-RSA-N, 255)
+
+    ; 首字節最高位為 1 ⇒ 真值是 2048 bit，而不是被截短的「256 位元組容器」
+    runner.is-true(n0 >= 128, 'N: 首字節高位為 1 ⇒ 2048-bit 模數')
+    runner.eq(n0, 190, 'N: 首字節 = 0xbe')
+
+    ; 首字節非 0 ⇒ 沒有 DER 前導 0x00 混進常量
+    runner.is-true(n0 != 0, 'N: 首字節非 0（無前導零填充）')
+
+    ; 0x6f 是奇數；模數必為奇，否則 p、q 之一為 2，2048 bit 立刻洩底
+    runner.eq(n255, 111, 'N: 末字節 = 0x6f（奇數）')
+
+    s-min, s-max, s-zero = stats(tls-server-keys.TLS-SERVER-RSA-N)
+    runner.eq(s-zero, 0, 'N: 256 個位元組中沒有 0（不是稀疏填充的佔位值）')
+    runner.eq(s-min, 3, 'N: 最小位元組值 = 3')
+    runner.eq(s-max, 255, 'N: 最大位元組值 = 255 ⇒ 高位元組真的有被用到')
+    runner.is-true(s-min != s-max, 'N: 位元組不完全相同（非退化常量）')
+    runner.eq(sum-of(tls-server-keys.TLS-SERVER-RSA-N), 30877, 'N: 位元組總和 = 30877（整份常量的指紋）')
+}
+
+; ── 3. 私鑰指數 d：同寬但嚴格小於 n、奇數、非退化 ──
+
+t-private = () {
+    d0 = bat(tls-server-keys.TLS-SERVER-RSA-D, 0)
+    d255 = bat(tls-server-keys.TLS-SERVER-RSA-D, 255)
+    n0 = bat(tls-server-keys.TLS-SERVER-RSA-N, 0)
+
+    runner.eq(d0, 29, 'D: 首字節 = 0x1d')
+    runner.eq(d255, 93, 'D: 末字節 = 0x5d（奇數，與 e 同奇偶）')
+
+    ; 兩者同為 256 位元組大端，故首字節大小即整體大小關係 ⇒ d < n
+    runner.is-true(d0 < n0, 'D: 首字節小於 N 首字節 ⇒ d < n')
+    runner.is-true(d0 != 0, 'D: 首字節非 0')
+
+    s-min, s-max, s-zero = stats(tls-server-keys.TLS-SERVER-RSA-D)
+    runner.eq(s-zero, 0, 'D: 沒有 0 位元組')
+    runner.eq(s-min, 1, 'D: 最小位元組值 = 1')
+    runner.eq(s-max, 254, 'D: 最大位元組值 = 254')
+    runner.eq(sum-of(tls-server-keys.TLS-SERVER-RSA-D), 31502, 'D: 位元組總和 = 31502（整份常量的指紋）')
+
+    ; d 與 n 不可能相同（否則公鑰即私鑰）。兩份獨立隨機的 256 位元組常量，
+    ; 期望恰好有 1 個位置偶然相等 —— 實測是第 70 格（n = d = 0xec）。
+    nb = b256(tls-server-keys.TLS-SERVER-RSA-N)
+    runner.eq(mismatch(nb, nb), 0, 'helper 對照：同一份常量零差異')
+    runner.eq(mismatch(nb, b256(tls-server-keys.TLS-SERVER-RSA-D)), 255, 'D 與 N 有 255 位元組不同（第 70 格偶然相同）')
+}
+
+; ── 4. RSA 往返：n / e / d 互相匹配的硬證據 ──
+
+; 明文取 32 位元組、首字節 66（0x42）：
+;   - 首字節非 0，解密回來不會被剝掉前導零，可以逐位元組比對；
+;   - 0x42 < 0xbe ⇒ 明文數值必然小於模數 n。
+t-rsa-roundtrip = () {
+    nb = b256(tls-server-keys.TLS-SERVER-RSA-N)
+    db = b256(tls-server-keys.TLS-SERVER-RSA-D)
+
+    ; e = 65537 = 0x010001
+    eb []byte
+    eb.push(1)
+    eb.push(0)
+    eb.push(1)
+    runner.eq(eb.len(), 3, 'rsa: e 的大端表示為 3 位元組')
+
+    msg []byte
+    j <- [0..32): {
+        m-b = 66 + j: {
+            ok -> it
+
+            -> 0
+        }
+        msg.push(m-b)
+    }
+    runner.eq(msg.len(), 32, 'rsa: 明文 32 位元組')
+
+    ct = rsa.rsa-encrypt-bytes(msg, eb, nb)
+    runner.eq(ct.len(), 256, 'rsa: 密文 256 位元組（模數寬度）')
+    runner.is-true(bb(ct, 0) != 66, 'rsa: 加密確實改變了內容（首字節不再等於明文首字節）')
+
+    pt = rsa.rsa-decrypt-bytes(ct, db, nb)
+    runner.eq(pt.len(), 32, 'rsa: 解密還原 32 位元組（前導零未被誤剝）')
+
+    k = 0
+    v <- pt: {
+        want = 66 + k: {
+            ok -> it
+
+            -> -1
+        }
+        runner.eq(v, want, 'rsa: 還原位元組')
+        k = k + 1: {
+            ok -> it
+
+            -> k
+        }
+    }
+    runner.eq(k, 32, 'rsa: 逐位元組比對走完 32 個')
+    runner.eq(mismatch(pt, msg), 0, 'rsa: 明文與還原結果完全一致 ⇒ n/e/d 是同一對金鑰')
+}
+
+; ── 5. x509 端到端：常量能被真實的憑證簽章流程消費 ──
+
+t-x509 = () {
+    nb = b256(tls-server-keys.TLS-SERVER-RSA-N)
+    db = b256(tls-server-keys.TLS-SERVER-RSA-D)
+
+    cert = x509.x509-build-self-signed-cert(nb, tls-server-keys.TLS-SERVER-RSA-E, db, 'nolang-test')
+    runner.eq(cert.len(), 681, 'x509: 自簽憑證 681 位元組')
+    runner.eq(bb(cert, 0), 48, 'x509: 首字節 0x30（DER SEQUENCE）')
+
+    ; 從 DER 讀回公鑰，必須與常量逐位元組一致（含指數量值）
+    runner.eq(x509.x509-rsa-e(cert), 65537, 'x509: 憑證中的 e = 65537')
+    rn = x509.x509-rsa-n(cert)
+    runner.eq(rn.len(), 256, 'x509: 憑證中的 n 為 256 位元組（無多餘 0x00 前綴）')
+    runner.eq(bb(rn, 0), 190, 'x509: 讀回的 n 首字節 = 0xbe')
+    runner.eq(bb(rn, 1), 75, 'x509: 讀回的 n 第 2 字節 = 0x4b')
+    runner.eq(mismatch(rn, nb), 0, 'x509: 讀回的 n 與常量完全一致')
+    runner.eq(x509.x509-serial(cert), 1, 'x509: 序號 = 1')
+
+    ; TBSCertificate 的 SHA-256 —— 由 openssl 獨立驗證過
+    ; （`openssl verify -CAfile self.pem self.pem` ⇒ OK）：
+    ;   28bdbe7d b57ce8b7 226a6646 e1603fdf 62cc16f8 8f9abdb0 c3602aa0 a6c7da01
+    h0, h1, h2, h3, h4, h5, h6, h7 = x509.x509-fingerprint(cert)
+    runner.eq(h0, 683523709, 'x509: TBS 指紋 [0] = 0x28bdbe7d')
+    runner.eq(h1, 3044862135, 'x509: TBS 指紋 [1] = 0xb57ce8b7')
+    runner.eq(h2, 577398342, 'x509: TBS 指紋 [2] = 0x226a6646')
+    runner.eq(h3, 3781181407, 'x509: TBS 指紋 [3] = 0xe1603fdf')
+    runner.eq(h4, 1657542392, 'x509: TBS 指紋 [4] = 0x62cc16f8')
+    runner.eq(h5, 2409282992, 'x509: TBS 指紋 [5] = 0x8f9abdb0')
+    runner.eq(h6, 3277859488, 'x509: TBS 指紋 [6] = 0xc3602aa0')
+    runner.eq(h7, 2798115329, 'x509: TBS 指紋 [7] = 0xa6c7da01')
+}
+
+runner.test('shape', t-shape)
+runner.test('modulus', t-modulus)
+runner.test('private exponent', t-private)
+runner.test('rsa roundtrip', t-rsa-roundtrip)
+runner.test('x509 self-signed', t-x509)
+
+total = runner.summary()

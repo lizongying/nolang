@@ -1,0 +1,633 @@
+; test/std/proxy.no — net/proxy 模組測試
+;
+; 執行：no test test/std/proxy.no
+;
+; 為什麼這個檔存在：`net/proxy` 整模組沒有任何測試，而且**實際不可調用** ——
+; 只要程式裡出現 `proxy.connect(...)` 的呼叫，codegen 就報
+;   lencap kind: len/cap unsupported on ?str (option) [t5qq2leo]
+; 根因與 net/sse 同一條：`status-line.slice(sp1 + 1, ..)` 的起點是算術式 ⇒
+; 該 slice 被推斷成 `?str` ⇒ 後續 `x[i]` / `x.len-bytes()` 全崩。
+; 已修（起點先收成局部 `code-start`），最小復現 tmp/sh/h54.no。
+;
+; 測試策略：模組全是「dial → 送請求 → 阻塞等回應」的阻塞式協定，單執行緒
+; 無法在等待時從對端寫回應，所以每個成功臂都用 **fork 一個假伺服器**：
+;   - 父行程：net-listen → fork → 呼叫被測函式；
+;   - 子行程：accept → 讀請求（順手寫到 /tmp 供父行程斷言）→ 寫回應 → exit(0)。
+; 子行程只做 I/O，不碰 runner 計數（fork 後計數是各自獨立的副本）。
+;
+; 覆蓋清單（8 函式 + 1 結構體 + 8 常數）：
+;   常數：PROXY-BUF-SIZE SOCKS5-VERSION SOCKS5-METHOD-{NO-AUTH,USER-PASS,NONE-ACCEPTABLE}
+;         SOCKS5-CMD-CONNECT SOCKS5-ATYP-{IPV4,DOMAIN}
+;   結構體：config（host / port / username / password）
+;   HTTP CONNECT：connect（成功 / 200 無 reason / 407 / 非數字碼 / 無空格 / 空回應 /
+;                  超長無分隔符 / 認證頭）、dial、dial-auth
+;   TLS：proxy-tls-dial（隧道不通 ⇒ nil）、config.tls-connect（同上）
+;   SOCKS5：socks5-connect（無認證 / 用戶密碼認證 / 方法不可接受 / 版本不符 /
+;                        rep != 0）、socks5-dial、config.connect
+;
+; 寫法備註：
+;   - `x T{}`（顯式標註 + 緊貼結構體字面量、無等號）之後調方法會報
+;     unknown callee（tmp/sh/h55.no）⇒ 一律寫 `x = T{}`。
+;   - `?T` 收成 1 / 0 用兩步賦值。
+;   - 單字元 str 用 `s.push(v)`（v 為 i64 位元組值）。
+;   - 位元組流比較一律用 bytes-eq()（先比長度再逐位元組）。
+
+# /test/runner
+
+; ── helpers ──────────────────────────────────────────────────────
+
+seq = (a str, b str, msg str) {
+    la = a.len-bytes()
+    lb = b.len-bytes()
+    runner.eq(la, lb, msg - ' / 長度')
+    la == lb -> runner.is-true(a.eq(b, la), msg)
+}
+
+sb = (s str, i i64) (v i64) {
+    v = -1
+    v = s.byte(i): {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; 把子行程收到的請求落到檔案（父行程 fork 後再讀回斷言）
+; 把子行程收到的請求落到檔案（父行程 fork 後再讀回斷言）
+;
+; ⚠️ 必須用 `[]byte` + `push`，**不能**用 `str.push(v)`：後者追加的是字元
+; （按碼點做 UTF-8 編碼），187 會變成 0xC2 0xBB 兩個位元組，把 SOCKS5 的
+; 埠號低位寫壞。最小復現 tmp/sh/h56.no。
+save-req = (path str, buf str, n i64) {
+    out []byte
+    i <- [0..n): {
+        c = buf.byte(i)
+        c: {
+            ok -> out.push(it)
+
+            -> _
+        }
+    }
+    fs.write-file(path, out)
+}
+
+read-req = (path str) (s str) {
+    b = fs.read-file(path)
+    s = b.to-bytes-str()
+}
+
+; ── 子行程：HTTP 假代理 ───────────────────────────────────────────
+;
+; accept 一次 → 讀走 CONNECT 請求（存檔）→ 回 `reply` → 結束。
+; reply 為空字串時什麼都不送，用於測「對端立刻 EOF」。
+http-child = (lf fd, reply str, path str) {
+    af = net.net-accept(lf)
+    net.net-set-recv-timeout(af, 3000)
+    req str = with-len(1024)
+    n = net.net-recv(af, req, 1024)
+    save-req(path, req, n)
+    rn = reply.len-bytes()
+    rn > 0 -> net.net-send(af, reply, rn)
+    exit(0)
+}
+
+; ── 子行程：SOCKS5 假代理（無認證）─────────────────────────────────
+;
+; 1. 讀方法協商 → 回 [5, 0]（選中「無認證」）
+; 2. 讀 CONNECT 請求（存檔）→ 回 [5, 0, 0, 1, 0,0,0,0, 0,0]
+s5-child = (lf fd, path str) {
+    af = net.net-accept(lf)
+    net.net-set-recv-timeout(af, 3000)
+    b1 str = with-len(64)
+    n1 = net.net-recv(af, b1, 64)
+    save-req(path, b1, n1)
+    r1 = ''
+    r1.push(proxy.SOCKS5-VERSION)
+    r1.push(proxy.SOCKS5-METHOD-NO-AUTH)
+    net.net-send(af, r1, 2)
+
+    b2 str = with-len(256)
+    n2 = net.net-recv(af, b2, 256)
+    save-req(path - '.2', b2, n2)
+    r2 = ''
+    r2.push(proxy.SOCKS5-VERSION)
+    r2.push(0)
+    r2.push(0)
+    r2.push(proxy.SOCKS5-ATYP-IPV4)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    net.net-send(af, r2, 10)
+    exit(0)
+}
+
+; ── 子行程：SOCKS5 假代理（用戶名/密碼認證）───────────────────────
+;
+; 1. 讀方法協商 → 回 [5, 2]（選中「用戶名密碼」）
+; 2. 讀認證請求（存檔）→ 回 [1, 0]
+; 3. 讀 CONNECT 請求（存檔）→ 回成功
+s5-child-auth = (lf fd, path str) {
+    af = net.net-accept(lf)
+    net.net-set-recv-timeout(af, 3000)
+    b1 str = with-len(64)
+    n1 = net.net-recv(af, b1, 64)
+    save-req(path, b1, n1)
+    r1 = ''
+    r1.push(proxy.SOCKS5-VERSION)
+    r1.push(proxy.SOCKS5-METHOD-USER-PASS)
+    net.net-send(af, r1, 2)
+
+    b2 str = with-len(128)
+    n2 = net.net-recv(af, b2, 128)
+    save-req(path - '.2', b2, n2)
+    r2 = ''
+    r2.push(1)
+    r2.push(0)
+    net.net-send(af, r2, 2)
+
+    b3 str = with-len(256)
+    n3 = net.net-recv(af, b3, 256)
+    save-req(path - '.3', b3, n3)
+    r3 = ''
+    r3.push(proxy.SOCKS5-VERSION)
+    r3.push(0)
+    r3.push(0)
+    r3.push(proxy.SOCKS5-ATYP-IPV4)
+    r3.push(0)
+    r3.push(0)
+    r3.push(0)
+    r3.push(0)
+    r3.push(0)
+    r3.push(0)
+    net.net-send(af, r3, 10)
+    exit(0)
+}
+
+; ── 子行程：SOCKS5 假代理（可設定「第一步回應」的錯誤）────────────
+;
+; mode: 1=版本不符（回 4,0）2=方法不可接受（回 5,255）3=rep != 0（回 5,5,..）
+;       4=回應不足 2 位元組（只回 1 位元組就 EOF）
+s5-child-bad = (lf fd, mode i64, path str) {
+    af = net.net-accept(lf)
+    net.net-set-recv-timeout(af, 3000)
+    b1 str = with-len(64)
+    n1 = net.net-recv(af, b1, 64)
+    save-req(path, b1, n1)
+
+    {
+        mode == 1 -> {
+            r = ''
+            r.push(4)
+            r.push(0)
+            net.net-send(af, r, 2)
+        }
+
+        mode == 2 -> {
+            r = ''
+            r.push(proxy.SOCKS5-VERSION)
+            r.push(proxy.SOCKS5-METHOD-NONE-ACCEPTABLE)
+            net.net-send(af, r, 2)
+        }
+
+        -> {
+            r = ''
+            r.push(proxy.SOCKS5-VERSION)
+            net.net-send(af, r, 1)
+        }
+    }
+    exit(0)
+}
+
+; ── 子行程：SOCKS5 假代理（協商成功但 CONNECT 回應 rep != 0）─────
+s5-child-rep = (lf fd, path str) {
+    af = net.net-accept(lf)
+    net.net-set-recv-timeout(af, 3000)
+    b1 str = with-len(64)
+    n1 = net.net-recv(af, b1, 64)
+    save-req(path, b1, n1)
+    r1 = ''
+    r1.push(proxy.SOCKS5-VERSION)
+    r1.push(proxy.SOCKS5-METHOD-NO-AUTH)
+    net.net-send(af, r1, 2)
+
+    b2 str = with-len(256)
+    n2 = net.net-recv(af, b2, 256)
+    save-req(path - '.2', b2, n2)
+    r2 = ''
+    r2.push(proxy.SOCKS5-VERSION)
+    r2.push(5)
+    r2.push(0)
+    r2.push(proxy.SOCKS5-ATYP-IPV4)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    r2.push(0)
+    net.net-send(af, r2, 10)
+    exit(0)
+}
+
+; ── 子行程：HTTP 假代理，回一大段沒有 \r\n\r\n 的垃圾 ──────────────
+;
+; 觸發 connect 的「累積緩衝超限 ⇒ 放棄」保護（total > 3 * PROXY-BUF-SIZE）。
+http-child-flood = (lf fd, path str) {
+    af = net.net-accept(lf)
+    net.net-set-recv-timeout(af, 3000)
+    req str = with-len(1024)
+    n = net.net-recv(af, req, 1024)
+    save-req(path, req, n)
+    row = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+    blob = ''
+    i <- [0..460): {
+        blob = blob - row
+    }
+    net.net-send(af, blob, blob.len-bytes())
+    exit(0)
+}
+
+; ── 1. 常數 ──────────────────────────────────────────────────────
+
+t-const = () {
+    runner.eq(proxy.PROXY-BUF-SIZE, 4096, 'PROXY-BUF-SIZE = 4096')
+    runner.eq(proxy.SOCKS5-VERSION, 5, 'SOCKS5-VERSION = 5')
+    runner.eq(proxy.SOCKS5-METHOD-NO-AUTH, 0, 'SOCKS5-METHOD-NO-AUTH = 0')
+    runner.eq(proxy.SOCKS5-METHOD-USER-PASS, 2, 'SOCKS5-METHOD-USER-PASS = 2')
+    runner.eq(proxy.SOCKS5-METHOD-NONE-ACCEPTABLE, 255, 'SOCKS5-METHOD-NONE-ACCEPTABLE = 255')
+    runner.eq(proxy.SOCKS5-CMD-CONNECT, 1, 'SOCKS5-CMD-CONNECT = 1')
+    runner.eq(proxy.SOCKS5-ATYP-IPV4, 1, 'SOCKS5-ATYP-IPV4 = 1')
+    runner.eq(proxy.SOCKS5-ATYP-DOMAIN, 3, 'SOCKS5-ATYP-DOMAIN = 3')
+}
+
+; ── 2. config 結構體 ──────────────────────────────────────────────
+
+t-config = () {
+    cfg = proxy.config{}
+    seq(cfg.host, '', 'config{}: host 零值')
+    runner.eq(cfg.port, 0, 'config{}: port 零值')
+    seq(cfg.username, '', 'config{}: username 零值')
+    seq(cfg.password, '', 'config{}: password 零值')
+
+    ; host 為空 ⇒ net-dial 失敗 ⇒ -1（不撥號到任何地方）
+    runner.eq(cfg.connect('example.com', 80), -1, 'config.connect: host 空 ⇒ -1')
+
+    tc = cfg.tls-connect('example.com', 443)
+    runner.is-true(tc == nil, 'config.tls-connect: 隧道失敗 ⇒ nil')
+}
+
+; ── 3. HTTP CONNECT 成功臂 ────────────────────────────────────────
+
+t-http-ok = () {
+    P = 39341
+    path = '/tmp/no-proxy-req.txt'
+    fs.write-file(path, ''.to-bytes())
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 39341 已起')
+    reply = 'HTTP/1.1 200 Connection Established' - '\r\n' - '\r\n'
+    pid = process.process-fork()
+    pid == 0 -> http-child(lf, reply, path)
+    runner.is-true(pid > 0, '前置：fork 出假代理')
+
+    f = proxy.connect('127.0.0.1', P, 'target.example.com', 443, '', '')
+    runner.is-true(f >= 0, 'connect: 200 ⇒ 回隧道 fd')
+    process.process-waitpid(pid, 0)
+
+    req = read-req(path)
+    runner.is-true(req.index('CONNECT target.example.com:443 HTTP/1.1') >= 0, 'connect: 請求行 = CONNECT host:port HTTP/1.1')
+    runner.is-true(req.index('Host: target.example.com:443') >= 0, 'connect: 帶 Host 頭')
+    runner.is-false(req.index('Proxy-Authorization') >= 0, 'connect: 無帳密 ⇒ 不帶認證頭')
+    runner.is-true(req.index('\r\n\r\n') >= 0, 'connect: 請求以空行結尾')
+
+    f >= 0 -> net.close(f)
+    net.close(lf)
+}
+
+; ── 4. HTTP CONNECT 帶 Basic 認證 ─────────────────────────────────
+
+t-http-auth = () {
+    P = 39342
+    path = '/tmp/no-proxy-req-auth.txt'
+    fs.write-file(path, ''.to-bytes())
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 39342 已起')
+    reply = 'HTTP/1.1 200 OK' - '\r\n' - '\r\n'
+    pid = process.process-fork()
+    pid == 0 -> http-child(lf, reply, path)
+    runner.is-true(pid > 0, '前置：fork 出假代理')
+
+    f = proxy.connect('127.0.0.1', P, 'example.org', 8443, 'user', 'pass')
+    runner.is-true(f >= 0, 'connect: 帶帳密 ⇒ 仍回隧道 fd')
+    process.process-waitpid(pid, 0)
+
+    req = read-req(path)
+
+    ; base64('user:pass') = 'dXNlcjpwYXNz'
+    runner.is-true(req.index('Proxy-Authorization: Basic dXNlcjpwYXNz') >= 0, 'connect: Basic 認證頭正確')
+    runner.is-true(req.index('CONNECT example.org:8443 HTTP/1.1') >= 0, 'connect: 自訂埠號進請求行')
+
+    f >= 0 -> net.close(f)
+    net.close(lf)
+}
+
+; ── 5. HTTP CONNECT：200 但不帶 reason 短語 ───────────────────────
+
+t-http-no-reason = () {
+    P = 39343
+    path = '/tmp/no-proxy-req-nr.txt'
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 39343 已起')
+    reply = 'HTTP/1.1 200' - '\r\n' - '\r\n'
+    pid = process.process-fork()
+    pid == 0 -> http-child(lf, reply, path)
+    runner.is-true(pid > 0, '前置：fork 出假代理')
+
+    f = proxy.connect('127.0.0.1', P, 't.example', 443, '', '')
+    runner.is-true(f >= 0, 'connect: 只有碼沒有 reason ⇒ 仍成功（sp2 < 0 分支）')
+    process.process-waitpid(pid, 0)
+    f >= 0 -> net.close(f)
+    net.close(lf)
+}
+
+; ── 6. HTTP CONNECT 失敗臂 ───────────────────────────────────────
+
+t-http-fail = () {
+
+    ; 6a 407 認證要求
+    P1 = 39344
+    lf1 = net.net-listen('127.0.0.1', P1)
+    reply1 = 'HTTP/1.1 407 Proxy Authentication Required' - '\r\n' - '\r\n'
+    pid1 = process.process-fork()
+    pid1 == 0 -> http-child(lf1, reply1, '/tmp/no-proxy-f1.txt')
+    runner.eq(proxy.connect('127.0.0.1', P1, 't.example', 443, '', ''), -1, 'connect: 407 ⇒ -1')
+    process.process-waitpid(pid1, 0)
+    net.close(lf1)
+
+    ; 6b 狀態碼不是數字
+    P2 = 39345
+    lf2 = net.net-listen('127.0.0.1', P2)
+    reply2 = 'HTTP/1.1 abc OK' - '\r\n' - '\r\n'
+    pid2 = process.process-fork()
+    pid2 == 0 -> http-child(lf2, reply2, '/tmp/no-proxy-f2.txt')
+    runner.eq(proxy.connect('127.0.0.1', P2, 't.example', 443, '', ''), -1, 'connect: 非數字狀態碼 ⇒ -1')
+    process.process-waitpid(pid2, 0)
+    net.close(lf2)
+
+    ; 6c 狀態行沒有空白（sp1 < 0）
+    P3 = 39346
+    lf3 = net.net-listen('127.0.0.1', P3)
+    reply3 = 'garbage' - '\r\n' - '\r\n'
+    pid3 = process.process-fork()
+    pid3 == 0 -> http-child(lf3, reply3, '/tmp/no-proxy-f3.txt')
+    runner.eq(proxy.connect('127.0.0.1', P3, 't.example', 443, '', ''), -1, 'connect: 狀態行無空白 ⇒ -1')
+    process.process-waitpid(pid3, 0)
+    net.close(lf3)
+
+    ; 6d 對端立刻 EOF（recv <= 0）
+    P4 = 39347
+    lf4 = net.net-listen('127.0.0.1', P4)
+    pid4 = process.process-fork()
+    pid4 == 0 -> http-child(lf4, '', '/tmp/no-proxy-f4.txt')
+    runner.eq(proxy.connect('127.0.0.1', P4, 't.example', 443, '', ''), -1, 'connect: 對端立刻關閉 ⇒ -1')
+    process.process-waitpid(pid4, 0)
+    net.close(lf4)
+
+    ; 6e 累積緩衝超限（永遠等不到 \r\n\r\n）
+    P5 = 39348
+    lf5 = net.net-listen('127.0.0.1', P5)
+    pid5 = process.process-fork()
+    pid5 == 0 -> http-child-flood(lf5, '/tmp/no-proxy-f5.txt')
+    runner.eq(proxy.connect('127.0.0.1', P5, 't.example', 443, '', ''), -1, 'connect: 回應超過緩衝上限 ⇒ -1')
+    process.process-waitpid(pid5, 0)
+    net.close(lf5)
+
+    ; 6f 代理根本沒開
+    runner.eq(proxy.connect('127.0.0.1', 39349, 't.example', 443, '', ''), -1, 'connect: 代理埠不通 ⇒ -1')
+}
+
+; ── 7. dial / dial-auth 轉發 ────────────────────────────────────
+
+t-dial = () {
+
+    ; dial 等價 connect(..., '', '')
+    P1 = 39350
+    lf1 = net.net-listen('127.0.0.1', P1)
+    reply = 'HTTP/1.1 200 OK' - '\r\n' - '\r\n'
+    pid1 = process.process-fork()
+    pid1 == 0 -> http-child(lf1, reply, '/tmp/no-proxy-d1.txt')
+    f1 = proxy.dial('127.0.0.1', P1, 'dial.example', 80)
+    runner.is-true(f1 >= 0, 'dial: 成功 ⇒ 隧道 fd')
+    process.process-waitpid(pid1, 0)
+    req1 = read-req('/tmp/no-proxy-d1.txt')
+    runner.is-false(req1.index('Proxy-Authorization') >= 0, 'dial: 不帶認證頭')
+    f1 >= 0 -> net.close(f1)
+    net.close(lf1)
+
+    ; dial-auth 等價 connect(..., user, pass)
+    P2 = 39351
+    lf2 = net.net-listen('127.0.0.1', P2)
+    pid2 = process.process-fork()
+    pid2 == 0 -> http-child(lf2, reply, '/tmp/no-proxy-d2.txt')
+    f2 = proxy.dial-auth('127.0.0.1', P2, 'dial.example', 80, 'u', 'p')
+    runner.is-true(f2 >= 0, 'dial-auth: 成功 ⇒ 隧道 fd')
+    process.process-waitpid(pid2, 0)
+    req2 = read-req('/tmp/no-proxy-d2.txt')
+    runner.is-true(req2.index('Proxy-Authorization: Basic ') >= 0, 'dial-auth: 帶認證頭')
+    f2 >= 0 -> net.close(f2)
+    net.close(lf2)
+}
+
+; ── 8. proxy-tls-dial 失敗臂 ────────────────────────────────────
+
+t-tls-dial-fail = () {
+
+    ; 代理不通 ⇒ nil（連隧道都沒有，不會進 TLS）
+    tc = proxy.proxy-tls-dial('127.0.0.1', 39352, 'tls.example', 443)
+    runner.is-true(tc == nil, 'proxy-tls-dial: 代理不通 ⇒ nil')
+
+    ; 代理回 500 ⇒ 隧道失敗 ⇒ nil
+    P = 39353
+    path = '/tmp/no-proxy-t1.txt'
+    lf = net.net-listen('127.0.0.1', P)
+    reply = 'HTTP/1.1 500 Internal Server Error' - '\r\n' - '\r\n'
+    pid = process.process-fork()
+    pid == 0 -> http-child(lf, reply, path)
+    tc2 = proxy.proxy-tls-dial('127.0.0.1', P, 'tls.example', 443)
+    runner.is-true(tc2 == nil, 'proxy-tls-dial: CONNECT 被拒 ⇒ nil')
+    process.process-waitpid(pid, 0)
+    net.close(lf)
+}
+
+; ── 9. SOCKS5 成功臂（無認證）───────────────────────────────────
+
+t-s5-ok = () {
+    P = 39354
+    path = '/tmp/no-s5-1.txt'
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 39354 已起')
+    pid = process.process-fork()
+    pid == 0 -> s5-child(lf, path)
+    runner.is-true(pid > 0, '前置：fork 出假 SOCKS5')
+
+    f = proxy.socks5-connect('127.0.0.1', P, 'target.example.com', 443, '', '')
+    runner.is-true(f >= 0, 'socks5-connect: 無認證 ⇒ 隧道 fd')
+    process.process-waitpid(pid, 0)
+
+    greeting = read-req(path)
+    runner.eq(greeting.len-bytes(), 3, 'socks5: 方法協商 3 位元組')
+    runner.eq(sb(greeting, 0), 5, 'socks5: 版本 = 5')
+    runner.eq(sb(greeting, 1), 1, 'socks5: 只宣告 1 種方法')
+    runner.eq(sb(greeting, 2), 0, 'socks5: 方法 = 無認證')
+
+    creq = read-req(path - '.2')
+    runner.eq(sb(creq, 0), 5, 'socks5: 請求版本 = 5')
+    runner.eq(sb(creq, 1), 1, 'socks5: 命令 = CONNECT')
+    runner.eq(sb(creq, 2), 0, 'socks5: RSV = 0')
+    runner.eq(sb(creq, 3), 3, 'socks5: ATYP = 域名')
+    runner.eq(sb(creq, 4), 18, 'socks5: 域名長度 = 18')
+    runner.eq(creq.len-bytes(), 5 + 18 + 2, 'socks5: 總長 = 5 + 域名 + 埠')
+    runner.eq(sb(creq, 23), 1, 'socks5: 埠高位 = 443 >> 8')
+    runner.eq(sb(creq, 24), 187, 'socks5: 埠低位 = 443 & 255')
+
+    f >= 0 -> net.close(f)
+    net.close(lf)
+}
+
+; ── 10. SOCKS5 成功臂（用戶名/密碼認證）──────────────────────────
+
+t-s5-auth = () {
+    P = 39355
+    path = '/tmp/no-s5-2.txt'
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 39355 已起')
+    pid = process.process-fork()
+    pid == 0 -> s5-child-auth(lf, path)
+    runner.is-true(pid > 0, '前置：fork 出假 SOCKS5（認證）')
+
+    f = proxy.socks5-connect('127.0.0.1', P, 'h.example', 80, 'alice', 's3cret')
+    runner.is-true(f >= 0, 'socks5-connect: 帳密認證 ⇒ 隧道 fd')
+    process.process-waitpid(pid, 0)
+
+    greeting = read-req(path)
+    runner.eq(greeting.len-bytes(), 4, 'socks5-auth: 方法協商 4 位元組')
+    runner.eq(sb(greeting, 1), 2, 'socks5-auth: 宣告 2 種方法')
+    runner.eq(sb(greeting, 2), 0, 'socks5-auth: 方法 1 = 無認證')
+    runner.eq(sb(greeting, 3), 2, 'socks5-auth: 方法 2 = 用戶名密碼')
+
+    areq = read-req(path - '.2')
+    runner.eq(sb(areq, 0), 1, 'socks5-auth: 認證子版本 = 1')
+    runner.eq(sb(areq, 1), 5, 'socks5-auth: 用戶名長度 = 5')
+    runner.eq(sb(areq, 2), 97, 'socks5-auth: 用戶名首字元 a')
+    runner.eq(sb(areq, 7), 6, 'socks5-auth: 密碼長度 = 6')
+    runner.eq(sb(areq, 8), 115, 'socks5-auth: 密碼首字元 s')
+    runner.eq(areq.len-bytes(), 1 + 1 + 5 + 1 + 6, 'socks5-auth: 認證包總長')
+
+    creq = read-req(path - '.3')
+    runner.eq(sb(creq, 1), 1, 'socks5-auth: 之後照常發 CONNECT')
+    runner.eq(sb(creq, 4), 9, 'socks5-auth: 域名長度 = 9')
+
+    f >= 0 -> net.close(f)
+    net.close(lf)
+}
+
+; ── 11. SOCKS5 失敗臂 ───────────────────────────────────────────
+
+t-s5-fail = () {
+
+    ; 11a 版本不符（回 4,0）
+    PA = 39356
+    lfA = net.net-listen('127.0.0.1', PA)
+    pidA = process.process-fork()
+    pidA == 0 -> s5-child-bad(lfA, 1, '/tmp/no-s5-f1.txt')
+    runner.eq(proxy.socks5-connect('127.0.0.1', PA, 'h', 80, '', ''), -1, 'socks5: 版本不符 ⇒ -1')
+    process.process-waitpid(pidA, 0)
+    net.close(lfA)
+
+    ; 11b 方法不可接受（回 5,255）
+    PB = 39357
+    lfB = net.net-listen('127.0.0.1', PB)
+    pidB = process.process-fork()
+    pidB == 0 -> s5-child-bad(lfB, 2, '/tmp/no-s5-f2.txt')
+    runner.eq(proxy.socks5-connect('127.0.0.1', PB, 'h', 80, '', ''), -1, 'socks5: 255 無可接受方法 ⇒ -1')
+    process.process-waitpid(pidB, 0)
+    net.close(lfB)
+
+    ; 11c 回應不足 2 位元組
+    PC = 39358
+    lfC = net.net-listen('127.0.0.1', PC)
+    pidC = process.process-fork()
+    pidC == 0 -> s5-child-bad(lfC, 3, '/tmp/no-s5-f3.txt')
+    runner.eq(proxy.socks5-connect('127.0.0.1', PC, 'h', 80, '', ''), -1, 'socks5: 只回 1 位元組 ⇒ -1')
+    process.process-waitpid(pidC, 0)
+    net.close(lfC)
+
+    ; 11d CONNECT 回應 rep != 0
+    PD = 39359
+    lfD = net.net-listen('127.0.0.1', PD)
+    pidD = process.process-fork()
+    pidD == 0 -> s5-child-rep(lfD, '/tmp/no-s5-f4.txt')
+    runner.eq(proxy.socks5-connect('127.0.0.1', PD, 'h', 80, '', ''), -1, 'socks5: rep = 5 ⇒ -1')
+    process.process-waitpid(pidD, 0)
+    net.close(lfD)
+
+    ; 11e 代理沒開
+    runner.eq(proxy.socks5-connect('127.0.0.1', 39360, 'h', 80, '', ''), -1, 'socks5: 代理埠不通 ⇒ -1')
+    runner.eq(proxy.socks5-dial('127.0.0.1', 39360, 'h', 80), -1, 'socks5-dial: 代理埠不通 ⇒ -1')
+}
+
+; ── 12. config.connect 成功臂 ───────────────────────────────────
+
+t-config-connect = () {
+    P = 39361
+    path = '/tmp/no-cfg-1.txt'
+    lf = net.net-listen('127.0.0.1', P)
+    runner.is-true(lf >= 0, '前置：listener 39361 已起')
+    reply = 'HTTP/1.1 200 OK' - '\r\n' - '\r\n'
+    pid = process.process-fork()
+    pid == 0 -> http-child(lf, reply, path)
+    runner.is-true(pid > 0, '前置：fork 出假代理')
+
+    cfg = proxy.config{
+        host: '127.0.0.1'
+        port: P
+        username: 'cfguser'
+        password: 'cfgpass'
+    }
+    f = cfg.connect('cfg.example', 8080)
+    runner.is-true(f >= 0, 'config.connect: 成功 ⇒ 隧道 fd')
+    process.process-waitpid(pid, 0)
+
+    req = read-req(path)
+    runner.is-true(req.index('CONNECT cfg.example:8080 HTTP/1.1') >= 0, 'config.connect: 用接收者的目標參數組請求行')
+
+    ; base64('cfguser:cfgpass') = 'Y2ZndXNlcjpjZmdwYXNz'
+    runner.is-true(req.index('Proxy-Authorization: Basic Y2ZndXNlcjpjZmdwYXNz') >= 0, 'config.connect: 用接收者的帳密')
+
+    f >= 0 -> net.close(f)
+    net.close(lf)
+}
+
+; ── 執行 ─────────────────────────────────────────────────────────
+
+p1, f1 = runner.test('proxy.const', t-const)
+p2, f2 = runner.test('proxy.config', t-config)
+p3, f3 = runner.test('proxy.http-ok', t-http-ok)
+p4, f4 = runner.test('proxy.http-auth', t-http-auth)
+p5, f5 = runner.test('proxy.http-no-reason', t-http-no-reason)
+p6, f6 = runner.test('proxy.http-fail', t-http-fail)
+p7, f7 = runner.test('proxy.dial', t-dial)
+p8, f8 = runner.test('proxy.tls-dial-fail', t-tls-dial-fail)
+p9, f9 = runner.test('proxy.socks5-ok', t-s5-ok)
+p10, f10 = runner.test('proxy.socks5-auth', t-s5-auth)
+p11, f11 = runner.test('proxy.socks5-fail', t-s5-fail)
+p12, f12 = runner.test('proxy.config-connect', t-config-connect)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

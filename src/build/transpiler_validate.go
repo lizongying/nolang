@@ -10,22 +10,6 @@ import (
 	"github.com/lizongying/nolang/i18n"
 )
 
-// findTypeForVar 從區塊語句中查找變數的類型（簡化版）
-func findTypeForVar(varName string, block *parser.BlockStatement, lifecycleTypes map[string]bool) string {
-	for _, stmt := range block.Statements {
-		if ls, ok := stmt.(*parser.LetStatement); ok && ls.Name.Value == varName {
-			if ls.Type != nil {
-				return ls.Type.String()
-			}
-		}
-	}
-	// 默認返回空
-	for t := range lifecycleTypes {
-		return t
-	}
-	return ""
-}
-
 // buildVarTypes 從程式的頂層陳述句中收集變數型別映射。
 // 用於在模組合併後重新建構 varTypes，使 validateArrayBounds 等檢查能應用於 merged 程式。
 func buildVarTypes(program *parser.Program) map[string]string {

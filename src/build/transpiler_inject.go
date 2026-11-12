@@ -128,6 +128,48 @@ func stripBuiltinStubs(prog *parser.Program) {
 	prog.Statements = kept
 }
 
+// declTypeName 解析一條變數宣告的**有效型別名**，供 enter/leave 注入判定。
+//
+// 只看源碼寫下的標註（LetStatement.Type）是不夠的：`no fmt` 會主動移除「標註
+// 型別 == 推斷型別」的冗餘標註（src/cmd/no 的 fixRedundantTypeSource，與
+// `--fix=redundant` 同源），於是
+//
+//	d db-sqlite = db-sqlite{handle: h}   →   d = db-sqlite{handle: h}
+//
+// 這兩者在型別上等價（標註本來就是冗餘的），但注入器若只認 LetStatement.Type，
+// 改寫後 `d.enter()` / `d.leave()` 整段消失——連線不再自動關閉，而且是**靜默**的：
+// 編譯通過、行為錯誤。排版不得改變語義，所以這裡必須把推斷得到的型別一起納入。
+//
+// 解析順序：
+//  1. s.Type —— 顯式標註，以及 parser 為多數推斷形態寫入的 inferred 型別
+//     （IntegerLiteral / StringLiteral / IndexExpression / CallExpression …
+//     都會寫，只是 IsInferred=true；String() 仍是正確的型別名，故
+//     `d = open()` 這種「呼叫推斷」在去掉標註後行為不變）；
+//  2. 結構體字面量 —— `d = db-sqlite{…}` 是 parser **不**寫 s.Type 的常見形態
+//     （StructLiteral 分支只登記 VarTypes 供方法解析），得從字面量自帶的型別名取；
+//     漏掉它正是「`{ }` 圈起來的資源不關閉」那類靜默洩漏的來源；
+//  3. 語義表 —— 兜底（如 `x = y` 的型別傳播），按**函式作用域**查，避免不同函式
+//     的同名變數互撞。
+func declTypeName(program *parser.Program, funcName string, s *parser.LetStatement) string {
+	if s == nil || s.Name == nil {
+		return ""
+	}
+	if s.Type != nil {
+		if n := s.Type.String(); n != "" {
+			return n
+		}
+	}
+	if sl, ok := s.Value.(*parser.StructLiteral); ok && sl != nil && sl.Type != "" {
+		return sl.Type
+	}
+	if program != nil && program.Sem != nil && funcName != "" {
+		if t, ok := program.Sem.FuncVarType(funcName, s.Name.Value); ok && t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 // injectEnterLeave 為實現了 enter()/leave() 的類型自動插入作用域調用
 func injectEnterLeave(program *parser.Program) {
 	// 1. 收集實現了 enter/leave 的類型
@@ -169,51 +211,80 @@ func injectEnterLeave(program *parser.Program) {
 		lifecycleTypes[t] = true
 	}
 	// 2. 遍歷所有函數體，注入 enter/leave
-	var walkBlock func(block *parser.BlockStatement, inScope []string)
-	walkBlock = func(block *parser.BlockStatement, inScope []string) {
+	//
+	// scopeVars 與 scopeTypes 平行成長：宣告當下就把「解析出來的有效型別名」記進
+	// scopeTypes，塊尾倒序插入 leave 時直接查它。舊版靠 findTypeForVar 回頭掃
+	// block 裡的 LetStatement，而該函式在「宣告沒有 Type」時會落到「集合裡隨便挑
+	// 一個 lifecycle 型別」的保底分支——那正是下面 declTypeName 要修的根源。
+	var walkBlock func(funcName string, block *parser.BlockStatement, inScope []string, inScopeTypes []string)
+	walkBlock = func(funcName string, block *parser.BlockStatement, inScope []string, inScopeTypes []string) {
 		var newStmts []parser.Statement
 		scopeVars := make([]string, len(inScope))
 		copy(scopeVars, inScope)
+		scopeTypes := make([]string, len(inScopeTypes))
+		copy(scopeTypes, inScopeTypes)
+		depth := len(inScope)
 		for _, stmt := range block.Statements {
 			newStmts = append(newStmts, stmt)
 			switch s := stmt.(type) {
 			case *parser.LetStatement:
-				typeName := ""
-				if s.Type != nil {
-					typeName = s.Type.String()
-				}
+				typeName := declTypeName(program, funcName, s)
 				if lifecycleTypes[typeName] {
 					varName := s.Name.Value
-					// 插入 varName.enter()
-					newStmts = append(newStmts, makeMethodCall(varName, "enter"))
+					// 只有**真的實作了 enter** 才插 enter()。lifecycleTypes 是
+					// hasEnter ∪ hasLeave 的聯集，若拿它直接當條件，只實作 leave
+					// 的型別會被插入一個不存在的 enter() 呼叫，整個檔案在 codegen
+					// 階段直接失敗（EmitLLVM: unknown callee T.enter）——
+					// 而 `src/std/leave.no` 的說明正是「提供 T.leave 即可」。
+					// 2026-11-12 修；迴歸：test/std/leave.no 的 'leave only type'。
+					if hasEnter[typeName] {
+						newStmts = append(newStmts, makeMethodCall(varName, "enter"))
+					}
+					// leave 需要的登記不能省：scopeVars 是塊尾反向插入的依據。
 					scopeVars = append(scopeVars, varName)
+					scopeTypes = append(scopeTypes, typeName)
 				}
 			case *parser.ReturnStatement:
-				// 在 return 前插入 leave()
-				for i := len(scopeVars) - 1; i >= 0; i-- {
-					if hasLeave[findTypeForVar(scopeVars[i], block, lifecycleTypes)] {
-						newStmts = append(newStmts, makeMethodCall(scopeVars[i], "leave"))
-					}
-				}
+				// 不在 return 前插 leave()：本語言的作用域退出清理由各層區塊尾部的
+				// leave() 承擔，`return` 跳出時它們照樣會被執行（含函式最外層區塊）。
+				// 原本這裡再插一遍，實測造成同一變數 leave 兩次、甚至三次：
+				//   普通 return            ⇒ LhLh
+				//   巢狀區塊裡 return      ⇒ LiLoLiLo（全部兩遍）
+				//   迴圈體內 return        ⇒ LiLoLi
+				// 對 `fs.close()` 這類 leave 來說，重複關閉就是真 bug。
+				// 2026-11-12 移除；迴歸：test/std/leave.no 的 'leave before return'。
 			case *parser.ForStatement:
 				if s.Body != nil {
-					walkBlock(s.Body, scopeVars)
+					walkBlock(funcName, s.Body, scopeVars, scopeTypes)
+				}
+			case *parser.BlockStatement:
+				// 裸塊 `{ ... }` 是本語言最常用的「顯式作用域」寫法
+				// （`sql.db` 這類合併 enter/leave 的型別就靠它限定生命週期）。
+				// 漏掉這一支時，塊內的宣告完全不會被注入 enter/leave，
+				// 也就是說「用 `{ }` 圈起來的資源不會自動關閉」——
+				// 症狀完全靜默（編譯通過、行為錯誤），2026-11-12 修。
+				// 迴歸：test/std/enter.no 的 'enter nested blocks'。
+				walkBlock(funcName, s, scopeVars, scopeTypes)
+			case *parser.BlockMatchStatement:
+				// `{ body }: { arms }` 的 body 同樣是一個作用域。
+				if s.Body != nil {
+					walkBlock(funcName, s.Body, scopeVars, scopeTypes)
 				}
 			case *parser.ExpressionStatement:
 				if ifExpr, ok := s.Expression.(*parser.IfExpression); ok {
 					if ifExpr.Consequence != nil {
-						walkBlock(ifExpr.Consequence, scopeVars)
+						walkBlock(funcName, ifExpr.Consequence, scopeVars, scopeTypes)
 					}
 					if ifExpr.Alternative != nil {
-						walkBlock(ifExpr.Alternative, scopeVars)
+						walkBlock(funcName, ifExpr.Alternative, scopeVars, scopeTypes)
 					}
 				}
 			}
 		}
 		// 區塊結尾插入 leave()（反向）
-		if len(scopeVars) > len(inScope) {
-			for i := len(scopeVars) - 1; i >= len(inScope); i-- {
-				if hasLeave[findTypeForVar(scopeVars[i], block, lifecycleTypes)] {
+		if len(scopeVars) > depth {
+			for i := len(scopeVars) - 1; i >= depth; i-- {
+				if hasLeave[scopeTypes[i]] {
 					newStmts = append(newStmts, makeMethodCall(scopeVars[i], "leave"))
 				}
 			}
@@ -225,7 +296,7 @@ func injectEnterLeave(program *parser.Program) {
 		switch s := stmt.(type) {
 		case *parser.FunctionDefinition:
 			if s.Body != nil {
-				walkBlock(s.Body, nil)
+				walkBlock(s.Name, s.Body, nil, nil)
 			}
 		}
 	}

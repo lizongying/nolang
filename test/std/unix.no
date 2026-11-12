@@ -1,0 +1,388 @@
+; test/std/unix.no — net/unix 模組測試
+;
+; 執行：no test test/std/unix.no
+;
+; 為什麼這個檔存在：`net/unix` 在本輪之前**整模組不可編譯** —— `unix-listen` /
+; `unix-dial` 兩個 `#{buildin}` 在 `src/builtin/net.go` 有登記（ForwardFunc），
+; 但唯一的 lowering 在 `src/build/llvm/call_stdlib.go`，隨提交 c7febdb1
+; （"test(llvm): remove obsolete LLVM IR code generation tests"）一起被刪掉，
+; 之後沒有任何東西補上 ⇒ 呼叫一律 `unsupported builtin unix-listen [2kqboupo]`，
+; 全倉也沒有任何呼叫點（所以沒人發現）。本輪在 `src/mir/builtin_unix.go` 補了
+; 兩個 bespoke emitter（sockaddr_un 得自己拼，走不了通用 C 呼叫表），模組才活過來。
+;
+; 覆蓋清單（21 個 = 5 函式 + 16 方法）：
+;   函式：unix-listen unix-dial unix-listen-on unix-dial-to unix-dial-timeout
+;   監聽器：listener.{listen accept set-timeout accept-with-timeout close fd-of path-of}
+;   連線：  conn.{dial send recv recv-all set-recv-timeout set-timeout
+;                recv-with-timeout close fd-of}
+;   常數（順帶釘住）：UNIX-MAX-PATH / UNIX-BUF-SIZE / UNIX-BACKLOG
+;
+; ⚠️ 兩個實測得到的坑（寫進斷言裡）：
+;   1) AF_UNIX fd 的 `set-recv-timeout` 只在**對端還活著**時成功；對端 close 之後
+;      setsockopt(SO_RCVTIMEO) 在 macOS 回 EINVAL（raw ret = -1，errno 22）。
+;      所以逾時相關斷言一律排在「對端未關」的時間窗內，關閉後只斷言 false。
+;   2) `accept-with-timeout` 不能靠 SO_RCVTIMEO —— 對 accept(2) 無效，原實現會
+;      永久阻塞（net.no 早就為同一個坑改成非阻塞輪詢，unix.no 漏改，本輪一併修）。
+;      本檔用「無待連線時必須在 ~數百 ms 內回 nil」把它釘住。
+;
+; 寫法備註（與 net.no 相同）：
+;   - `?T` 收成 1 / -1 用兩步賦值（先 `v = 0` 再 `v = x: { ok -> 1 -> -1 }`），
+;     單行 `v = x: { … }` 的 `it` 型別會串到外層。
+;   - 跨模組的 std 結構體變數要顯式標型別，否則方法呼叫報 unknown callee。
+;   - `str.byte(i)` 回 `?byte`，一律經 sb 取值。
+
+# /test/runner
+
+; 取 str 的位元組（str.byte(i) 回 ?byte，這裡收成裸 i64）
+sb = (s str, i i64) (v i64) {
+    v = s.byte(i): {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; ?unix-listener / ?unix-conn → 1=ok / -1=nil
+lv = (o ?unix-listener) (v i64) {
+    v = o: {
+        ok -> 1
+
+        -> -1
+    }
+}
+
+cv = (o ?unix-conn) (v i64) {
+    v = o: {
+        ok -> 1
+
+        -> -1
+    }
+}
+
+; 造一條已連線的 unix socket 對（回 4 個 fd：listen / client / accepted / -1 失敗）
+pair = (p str) (lf i64, cf i64, af i64) {
+    lf = unix.unix-listen(p)
+    cf = unix.unix-dial(p)
+    af = net.net-accept(lf)
+}
+
+; ── 裸 builtin：unix-listen / unix-dial ──────────────────────────
+
+t-raw = () {
+    p = '/tmp/no-unix-t1.sock'
+    fs.remove(p)
+
+    lf, cf, af = pair(p)
+    runner.is-true(lf >= 0, 'unix-listen: 回有效 fd')
+    runner.is-true(cf >= 0, 'unix-dial: 回有效 fd')
+    runner.is-true(af >= 0, 'unix-listen 的 fd 能被 net-accept 接住')
+
+    w = net.net-send(cf, 'raw', 3)
+    runner.eq(w, 3, 'unix fd 可用 net-send 送出 3 位元組')
+
+    buf str = with-len(16)
+    n = net.net-recv(af, buf, 16)
+    runner.eq(n, 3, 'unix fd 可用 net-recv 收回 3 位元組')
+    runner.eq(sb(buf, 0), 114, '收回首位元組 r')
+
+    fs.close(af)
+    fs.close(cf)
+    fs.close(lf)
+
+    ; 同一個路徑再 listen 一次必須成功：lowering 會先 unlink 舊 socket 檔
+    lf2 = unix.unix-listen(p)
+    runner.is-true(lf2 >= 0, 'unix-listen: 同路徑重複 listen 成功（先 unlink 舊檔）')
+    fs.close(lf2)
+    fs.remove(p)
+
+    ; 失敗路徑
+    bad = unix.unix-listen('/tmp/no-such-dir-xyz/a.sock')
+    runner.eq(bad, -1, 'unix-listen: 目錄不存在 ⇒ -1')
+
+    bad2 = unix.unix-dial('/tmp/no-such-socket-xyz.sock')
+    runner.eq(bad2, -1, 'unix-dial: 目標不存在 ⇒ -1')
+
+    ; 超過 UNIX-MAX-PATH（103）的路徑必須直接 -1，且不能去 unlink / bind。
+    ; 這裡刻意用單一字面量（130 位元組）而不是拼字串：迴圈拼接會讓 fmt 把 `+`
+    ; 改寫成 `-`（本語言 `-` 在字串上同樣是連接），讀起來太容易誤會。
+    bad3 = unix.unix-listen('/tmp/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.sock')
+    runner.eq(bad3, -1, 'unix-listen: 路徑 130 位元組 > UNIX-MAX-PATH ⇒ -1')
+
+    ; 常數
+    runner.eq(unix.UNIX-MAX-PATH, 103, 'UNIX-MAX-PATH = 103')
+    runner.eq(unix.UNIX-BUF-SIZE, 4096, 'UNIX-BUF-SIZE = 4096')
+    runner.eq(unix.UNIX-BACKLOG, 128, 'UNIX-BACKLOG = 128')
+}
+
+; ── unix-listen-on / listener.{listen,fd-of,path-of,close} ────────
+
+t-listen-on = () {
+    p = '/tmp/no-unix-t2.sock'
+    fs.remove(p)
+
+    l = unix.unix-listen-on(p)
+    runner.eq(lv(l), 1, 'unix-listen-on: 回 ok')
+
+    lst = l: {
+        ok -> it
+
+        -> unix.unix-listener{}
+    }
+    runner.is-true(lst.fd-of() >= 0, 'listener.fd-of: 回有效 fd')
+    runner.str-eq(lst.path-of(), p, p.len-bytes(), 'listener.path-of: 原樣返回路徑')
+
+    ; 直接在上游結構體上調 listen（unix-listen-on 的內部路徑）
+    lst2 = unix.unix-listener{}
+    ok = lst2.listen(p)
+    runner.is-true(ok, 'listener.listen: 直接調用成功')
+    runner.is-true(lst2.fd-of() >= 0, 'listener.listen 後 fd 有效')
+
+    lst2.close()
+    runner.eq(lst2.fd-of(), -1, 'listener.close: 之後 fd-of = -1')
+
+    lst.close()
+    runner.eq(lst.fd-of(), -1, 'listener.close: 便捷層同樣把 fd 歸 -1')
+    fs.remove(p)
+}
+
+; ── unix-dial-to / conn.{dial,send,recv,recv-all,fd-of} ───────────
+
+t-conn-io = () {
+    p = '/tmp/no-unix-t3.sock'
+    fs.remove(p)
+
+    lst = unix.unix-listener{}
+    lst.listen(p)
+
+    ; 便捷層撥號（先驗它撥得通，再把這條連線關掉，免得和下一個 accept 撞隊）
+    c = unix.unix-dial-to(p)
+    runner.eq(cv(c), 1, 'unix-dial-to: 回 ok')
+    c1 = c: {
+        ok -> it
+
+        -> unix.unix-conn{}
+    }
+    a0 = lst.accept()
+    runner.eq(cv(a0), 1, 'unix-dial-to 的連線能被 accept 接住')
+    a0v = a0: {
+        ok -> it
+
+        -> unix.unix-conn{}
+    }
+    c1.close()
+    a0v.close()
+
+    ; 裸結構體撥號
+    cn = unix.unix-conn{}
+    okd = cn.dial(p)
+    runner.is-true(okd, 'conn.dial: 成功')
+    runner.is-true(cn.fd-of() >= 0, 'conn.fd-of: 回有效 fd')
+
+    a = lst.accept()
+    runner.eq(cv(a), 1, 'listener.accept: 接到待連線')
+    av = a: {
+        ok -> it
+
+        -> unix.unix-conn{}
+    }
+    runner.is-true(av.fd-of() >= 0, 'accept 出的 conn.fd-of 有效')
+
+    w = cn.send('hello')
+    runner.eq(w, 5, 'conn.send: 送出 5 位元組')
+
+    buf str = with-len(64)
+    n = av.recv(buf, 64)
+    runner.eq(n, 5, 'conn.recv: 收到 5 位元組')
+    runner.eq(sb(buf, 0), 104, 'conn.recv: 首位元組 h')
+    runner.eq(sb(buf, 4), 111, 'conn.recv: 末位元組 o')
+
+    ; recv-all：對端再送 2 位元組後關閉，總量應剛好 2（前 5 位元組已被 recv 吃掉）
+    w2 = cn.send('AB')
+    runner.eq(w2, 2, 'conn.send: 再送 2 位元組')
+    fs.close(cn.fd-of())
+
+    content, total = av.recv-all()
+    runner.eq(total, 2, 'conn.recv-all: 累計 2 位元組')
+    runner.eq(content.len-bytes(), 2, 'conn.recv-all: 內容長度 = total')
+    runner.eq(sb(content, 0), 65, 'conn.recv-all: 首位元組 A')
+
+    av.close()
+    lst.close()
+    fs.remove(p)
+}
+
+; ── conn.{set-recv-timeout,set-timeout,recv-with-timeout} ────────
+
+t-conn-timeout = () {
+    p = '/tmp/no-unix-t4.sock'
+    fs.remove(p)
+
+    lf, cf, af = pair(p)
+    cn = unix.unix-conn{
+        fd: cf
+    }
+    av = unix.unix-conn{
+        fd: af
+    }
+
+    ; 對端仍在線時 setsockopt 成功
+    runner.is-true(av.set-recv-timeout(50), 'conn.set-recv-timeout: 對端在線時設定成功')
+    runner.is-true(av.set-timeout(50), 'conn.set-timeout: 別名同樣成功')
+
+    ; 無資料時逾時 ⇒ recv 回 -1（§5.2 #89：逾時與硬錯誤不可區分）
+    buf str = with-len(16)
+    n = av.recv(buf, 16)
+    runner.eq(n, -1, 'conn.recv: SO_RCVTIMEO 逾時回 -1（不是 0）')
+
+    n2 = av.recv-with-timeout(buf, 16, 50)
+    runner.eq(n2, -1, 'conn.recv-with-timeout: 逾時回 -1')
+
+    ; 有資料時 recv-with-timeout 正常取值
+    w = cn.send('PING')
+    runner.eq(w, 4, '前置: 對端送出 4 位元組')
+    n3 = av.recv-with-timeout(buf, 16, 200)
+    runner.eq(n3, 4, 'conn.recv-with-timeout: 有資料時收到 4 位元組')
+    runner.eq(sb(buf, 0), 80, 'conn.recv-with-timeout: 首位元組 P')
+
+    ; 還原阻塞模式後再收（阻塞路徑已在 t-conn-io 釘過，這裡只驗恢復成功）
+    runner.is-true(av.set-recv-timeout(0), 'conn.set-recv-timeout(0): 還原成功')
+
+    ; 對端關閉後 setsockopt 在 macOS 回 EINVAL ⇒ 斷言 false 而不是 is-true
+    fs.close(cn.fd-of())
+    runner.is-false(av.set-recv-timeout(30), 'conn.set-recv-timeout: 對端已關閉時回 false（EINVAL）')
+
+    av.close()
+    fs.close(lf)
+    fs.remove(p)
+}
+
+; ── listener.{set-timeout,accept-with-timeout} ───────────────────
+
+t-accept-timeout = () {
+    p = '/tmp/no-unix-t5.sock'
+    fs.remove(p)
+
+    lst = unix.unix-listener{}
+    lst.listen(p)
+
+    ; set-timeout 只是對監聽 fd 設 SO_RCVTIMEO，對 accept(2) 無效
+    runner.is-true(lst.set-timeout(50), 'listener.set-timeout: 設定成功')
+
+    ; 無待連線 ⇒ 必須在有限時間內回 nil（原實現會永久阻塞）
+    t0 = time.now-ms()
+    a = lst.accept-with-timeout(60)
+
+    #{overflow=wrap}
+    dt = time.now-ms() - t0
+
+    runner.eq(cv(a), -1, 'listener.accept-with-timeout: 無待連線時回 nil')
+    runner.lt(dt, 5000, 'listener.accept-with-timeout: 有真的逾時（< 5s 就返回）')
+
+    ; 有待連線 ⇒ 拿到連線
+    cf = unix.unix-dial(p)
+    runner.is-true(cf >= 0, '前置: 撥號成功')
+    a2 = lst.accept-with-timeout(800)
+    runner.eq(cv(a2), 1, 'listener.accept-with-timeout: 有待連線時回 ok')
+
+    fs.close(cf)
+    lst.close()
+    fs.remove(p)
+}
+
+; ── unix-dial-timeout ────────────────────────────────────────────
+
+t-dial-timeout = () {
+    p = '/tmp/no-unix-t6.sock'
+    fs.remove(p)
+
+    lst = unix.unix-listener{}
+    lst.listen(p)
+
+    c = unix.unix-dial-timeout(p, 40)
+    runner.eq(cv(c), 1, 'unix-dial-timeout: 回 ok')
+
+    cn = c: {
+        ok -> it
+
+        -> unix.unix-conn{}
+    }
+    runner.is-true(cn.fd-of() >= 0, 'unix-dial-timeout: fd 有效')
+
+    ; 撥號時帶的逾時真的生效（對端不送資料 ⇒ recv 回 -1）
+    buf str = with-len(8)
+    n = cn.recv(buf, 8)
+    runner.eq(n, -1, 'unix-dial-timeout: 逾時已套用到連線（recv 回 -1）')
+
+    a = lst.accept()
+    runner.eq(cv(a), 1, 'unix-dial-timeout 的連線能被 accept 接住')
+
+    ; 無人監聽 ⇒ nil
+    bad = unix.unix-dial-timeout('/tmp/no-unix-nobody.sock', 40)
+    runner.eq(cv(bad), -1, 'unix-dial-timeout: 無人監聽回 nil')
+
+    cn.close()
+    lst.close()
+    fs.remove(p)
+}
+
+; ── close 之後的所有入口都要安全 ─────────────────────────────────
+
+t-closed = () {
+    p = '/tmp/no-unix-t7.sock'
+    fs.remove(p)
+
+    lf, cf, af = pair(p)
+    av = unix.unix-conn{
+        fd: af
+    }
+    av.close()
+    runner.eq(av.fd-of(), -1, 'conn.close: fd-of 歸 -1')
+
+    ; 重複 close 不崩
+    av.close()
+    runner.eq(av.fd-of(), -1, 'conn.close: 重複呼叫仍是 -1')
+
+    w = av.send('x')
+    runner.eq(w, -1, 'conn.send: 已關閉回 -1')
+    buf str = with-len(8)
+    n = av.recv(buf, 8)
+    runner.eq(n, -1, 'conn.recv: 已關閉回 -1')
+    _, total = av.recv-all()
+    runner.eq(total, 0, 'conn.recv-all: 已關閉回 0 位元組')
+    runner.is-false(av.set-recv-timeout(10), 'conn.set-recv-timeout: 已關閉回 false')
+    runner.is-false(av.set-timeout(10), 'conn.set-timeout: 已關閉回 false')
+    n2 = av.recv-with-timeout(buf, 8, 10)
+    runner.eq(n2, -1, 'conn.recv-with-timeout: 已關閉回 -1')
+
+    lst = unix.unix-listener{}
+    lst.listen(p)
+    lst.close()
+    runner.eq(lst.fd-of(), -1, 'listener.close: fd-of 歸 -1')
+    a = lst.accept()
+    runner.eq(cv(a), -1, 'listener.accept: 已關閉回 nil')
+    a2 = lst.accept-with-timeout(10)
+    runner.eq(cv(a2), -1, 'listener.accept-with-timeout: 已關閉回 nil')
+    runner.is-false(lst.set-timeout(10), 'listener.set-timeout: 已關閉回 false')
+
+    fs.close(cf)
+    fs.close(lf)
+    fs.remove(p)
+}
+
+; ── 執行 ─────────────────────────────────────────────────────────
+
+p1, f1 = runner.test('unix.raw', t-raw)
+p2, f2 = runner.test('unix.listen-on', t-listen-on)
+p3, f3 = runner.test('unix.conn-io', t-conn-io)
+p4, f4 = runner.test('unix.conn-timeout', t-conn-timeout)
+p5, f5 = runner.test('unix.accept-timeout', t-accept-timeout)
+p6, f6 = runner.test('unix.dial-timeout', t-dial-timeout)
+p7, f7 = runner.test('unix.closed', t-closed)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

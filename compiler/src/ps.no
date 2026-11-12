@@ -1133,6 +1133,19 @@ ps-parse-stmt = (t ast, p psst) (idx i64) {
     p.ao-doc = 0; s8d：同上，註解／目標之間的註釋每條陳述重算
     ps-skip-trivia(p)
 
+    ; s101：`...` 佔位陳述（Go stmt.go parseEmptyStatement / ast.EmptyStatement）。
+    ;   語義只有一個：**什麼都不做**（Go 在 ASTToHIR 整條丟棄，不產生 HIR 節點）。
+    ;   ⚠️ 仍照 Go 產生 K-EMPTY-STATEMENT 節點（而非回 0 讓陳述消失）——L2 語法門禁比
+    ;   `no ast` 的節點樹，節點少一顆就是差異；h2m 側另設 no-op 臂消費它。
+    ;   ⚠️ 刻意**不**實作 Go 的兩條硬錯（elps0ln0「前面不能有程式碼」／elps1ln1
+    ;   「後面不能有程式碼」）：自舉 psst 沒有 prev-token 行號可比，硬造會誤判。
+    ;   放寬方向是「多接受」，不會把合法程式判錯；差異記在 §11 後 ⑩。
+    ps-peek(p) == tok.ELLIPSIS3 -> {
+        ps-bump(p); 消費 ...
+        idx = ast.add(t, asp.K-EMPTY-STATEMENT)
+        return
+    }
+
     ; s67：每條陳述起始重置值語境（僅賦值 RHS 期間為 1）
     ;   ⚠️ 但【match 臂體內不重置】：Go 的 CTX_EXPR 在整個 match 表達式（含巢狀
     ;   match）解析期間恆定，臂體陳述不會把它清掉。若在此重置，巢狀 match 讀到

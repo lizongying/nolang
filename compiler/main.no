@@ -17,7 +17,16 @@
 # /compiler/src/lx
 # /compiler/src/ps
 # /compiler/src/tok
+# /compiler/src/mir
+# /compiler/src/cg
+# /compiler/src/cg-runtime
+# /compiler/src/cg-rc
+# /compiler/src/h2m
+# /compiler/src/link
 # /compiler/src/util/sb.sb
+# /compiler/src/diag
+# /compiler/src/ck
+# /compiler/src/ck-sig
 
 code = drv.dispatch()
 exit(code)

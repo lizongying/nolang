@@ -1043,6 +1043,10 @@ func (c *codegen) emitBuiltinForward(f *Function, inst *Inst, bm *builtin.Builti
 		return c.emitBuiltinUname(inst)
 	case "net-icmp-open":
 		return c.emitBuiltinNetIcmpOpen(inst)
+	case "unix-listen":
+		return c.emitBuiltinUnixListen(inst)
+	case "unix-dial":
+		return c.emitBuiltinUnixDial(inst)
 	case "win-wsa-startup":
 		return c.emitBuiltinWinWsaStartup(inst)
 	case "net-dial":

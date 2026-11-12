@@ -352,6 +352,67 @@ test-sci-notation = () {
 }
 
 ; ═══════════════════════════════════════════════
+; 8. `..` vs `...`（s101）
+;    `..` = 範圍運算符（tok.ELLIPSIS，歷史命名）；`...` = 佔位陳述（tok.ELLIPSIS3）。
+;    兩者必須是**不同** token：混用會讓 `[0...n)` 這種誤寫靜默成為合法範圍，
+;    而 Go lexer.go:906 刻意把它收成單一 token 正是為了擋這條。
+; ═══════════════════════════════════════════════
+
+; 測試 ellipsis-vs-ellipsis3
+test-ellipsis = () {
+    t2 = lx.scan-all('a..b')
+    runner.eq(t2.len(), 4, 'a..b -> 4 tokens')
+
+    d2 = t2[1]: {
+        ok -> it
+
+        -> _
+    }
+    runner.eq(d2.typ, tok.ELLIPSIS, 'a..b middle token is ELLIPSIS (..)')
+    runner.str-eq(d2.lit, '..', 2, '.. literal is two dots')
+
+    t3 = lx.scan-all('...')
+    runner.eq(t3.len(), 2, '... -> 2 tokens (ELLIPSIS3 + EOF)')
+
+    d3 = t3[0]: {
+        ok -> it
+
+        -> _
+    }
+    runner.eq(d3.typ, tok.ELLIPSIS3, '... is ELLIPSIS3, not ELLIPSIS')
+    runner.str-eq(d3.lit, '...', 3, '... literal is three dots')
+
+    ; 三個點後面接識別符也必須整體成一個 ELLIPSIS3（不得切成 .. + .ident）
+    t4 = lx.scan-all('[0...n)')
+    runner.eq(t4.len(), 6, '[0...n) -> 6 tokens')
+
+    d4 = t4[2]: {
+        ok -> it
+
+        -> _
+    }
+    runner.eq(d4.typ, tok.ELLIPSIS3, '[0...n) has ELLIPSIS3 at slot 2')
+
+    ; 四個點：`...` 吃掉前三，剩下一個 `.`
+    t5 = lx.scan-all('....')
+    runner.eq(t5.len(), 3, '.... -> ELLIPSIS3 + DOT + EOF')
+
+    d5 = t5[0]: {
+        ok -> it
+
+        -> _
+    }
+
+    d6 = t5[1]: {
+        ok -> it
+
+        -> _
+    }
+    runner.eq(d5.typ, tok.ELLIPSIS3, '.... first is ELLIPSIS3')
+    runner.eq(d6.typ, tok.DOT, '.... second is DOT')
+}
+
+; ═══════════════════════════════════════════════
 
 test-empty()
 test-no-alias()
@@ -360,6 +421,7 @@ test-newline()
 test-char-vs-string()
 test-comment-marker()
 test-sci-notation()
+test-ellipsis()
 
 runner.summary()
 f = runner.failed-count()

@@ -1297,18 +1297,105 @@ test-flow-chain-nest = () {
     runner.eq(ir.contains('ret i64 %v19'), 1, 'nest exit ret')
 }
 
+; ── s103：值位 SurfaceMatch（`r = { c -> 1  -> 0 }`）——逐臂 STORE 进 entry 结果槽、汇聚块 LOAD ──
+; 槽位实测：%s2 = 形参 n、%s4 = 合成结果槽 @smv<let-id>、%s6 = 输出参 r 的槽。
+;   结果槽必须【独立于】目标变量槽：两者合一的话，无兜底臂且全不命中时会读到 r 的旧值
+;   而不是 Go 权威的零初始化 0。
+test-smv-wild3 = () {
+    src = 'v = (n i64) (r i64) {\n    r = {\n        n > 3 -> 1\n        n > 1 -> 2\n        -> 3\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'smv-wild3 unsup')
+    runner.eq(ir.contains('define i64 @v(i64 %v1)'), 1, 'smv-wild3 define')
+
+    ; 三颗槽：形参 / 合成结果槽 / 输出参——结果槽是中间那颗
+    runner.eq(ir.contains('%s4 = alloca i64'), 1, 'smv-wild3 result slot')
+    runner.eq(ir.contains('%s6 = alloca i64'), 1, 'smv-wild3 out slot')
+
+    ; 逐臂：先算臂值，再 STORE 进结果槽，再无条 BR 回汇聚块
+    runner.eq(ir.contains('bb2:\n\t%v11 = add i64 0, 1\n\tstore i64 %v11, i64* %s4\n\tbr label %bb1'), 1, 'smv-wild3 arm1 block')
+    runner.eq(ir.contains('bb4:\n\t%v15 = add i64 0, 2\n\tstore i64 %v15, i64* %s4\n\tbr label %bb1'), 1, 'smv-wild3 arm2 block')
+    runner.eq(ir.contains('bb5:\n\t%v16 = add i64 0, 3\n\tstore i64 %v16, i64* %s4\n\tbr label %bb1'), 1, 'smv-wild3 wildcard block')
+
+    ; 汇聚块只读一次槽，再写进目标变量槽；RET 取的是目标变量槽的读值
+    runner.eq(ir.contains('bb1:\n\t%v17 = load i64, i64* %s4\n\tstore i64 %v17, i64* %s6'), 1, 'smv-wild3 merge block')
+    runner.eq(ir.contains('ret i64 %v18'), 1, 'smv-wild3 ret loaded')
+
+    ; 鉴别力：臂内 SSA 值不得被 RET 直接引用（那说明结果槽被绕过）；块数恰为 entry + bb1..bb5
+    runner.eq(ir.contains('ret i64 %v11'), 0, 'smv-wild3 no direct arm ret')
+    runner.eq(ir.contains('bb6:'), 0, 'smv-wild3 no spare block')
+}
+
+; ── s103：无兜底臂的两臂值链——最后一臂的假路直接落汇聚块，不留空判定块 ──
+test-smv-nowild2 = () {
+    src = 'w = (n i64) (r i64) {\n    r = {\n        n > 3 -> 1\n        n > 1 -> 2\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'smv-nowild2 unsup')
+    runner.eq(ir.contains('br i1 %c20, label %bb4, label %bb1'), 1, 'smv-nowild2 last arm false to merge')
+    runner.eq(ir.contains('bb5:'), 0, 'smv-nowild2 no empty test block')
+    runner.eq(ir.contains('store i64 %v11, i64* %s4'), 1, 'smv-nowild2 arm1 store')
+    runner.eq(ir.contains('store i64 %v15, i64* %s4'), 1, 'smv-nowild2 arm2 store')
+    runner.eq(ir.contains('ret i64 %v17'), 1, 'smv-nowild2 ret loaded')
+
+    ; 全不命中时结果槽保留 entry 的零初始化 0（与 Go 权威同口径）
+    runner.eq(ir.contains('%v5 = add i64 0, 0\n\tstore i64 %v5, i64* %s4'), 1, 'smv-nowild2 zero init')
+}
+
+; ── s103：值位 + i64 主体（`r = n: { 1 -> 10  -> 0 }`）——逐臂「本臂判定块内 LOAD 主体 + CMPEQ」 ──
+test-smv-subj = () {
+    src = 'u = (n i64) (r i64) {\n    r = n: {\n        1 -> 10\n        3 -> 30\n        -> 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup, 0, 'smv-subj unsup')
+    runner.eq(ir.contains('%v8 = add i64 0, 1'), 1, 'smv-subj pattern 1')
+    runner.eq(ir.contains('%c12 = icmp eq i64 %v9, %v8'), 1, 'smv-subj cmpeq arm1')
+    runner.eq(ir.contains('%c19 = icmp eq i64 %v13, %v12'), 1, 'smv-subj cmpeq arm2')
+    runner.eq(ir.contains('store i64 %v11, i64* %s4'), 1, 'smv-subj arm1 store')
+    runner.eq(ir.contains('store i64 %v15, i64* %s4'), 1, 'smv-subj arm2 store')
+    runner.eq(ir.contains('store i64 %v16, i64* %s4'), 1, 'smv-subj wildcard store')
+    runner.eq(ir.contains('bb1:\n\t%v17 = load i64, i64* %s4'), 1, 'smv-subj merge load')
+    runner.eq(ir.contains('ret i64 %v18'), 1, 'smv-subj ret loaded')
+}
+
+; ── s103 负例：臂体不是「inline 块包单表达式陈述」⇒ 计 unsup 整函数不产码 ──
+test-smv-gate = () {
+    src = 'p2 = (n i64) (r i64) {\n    r = {\n        n > 3 -> {\n            x = 1\n            x\n        }\n        -> 0\n    }\n}\n'
+    t = ast.make()
+    p = ps.new(src.to-bytes())
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+
+    runner.eq(agg.unsup > 0, 1, 'smv-multistmt counted')
+    runner.eq(ir.contains('define'), 0, 'smv-multistmt no code')
+}
+
 ; ── 控制流侧门禁：surface match 链 / 计数循环 / 区间遍历 / 无槽型别都计 unsup 且不产码 ──
 test-flow-gate = () {
 
-    ; 表达式位的链 `r = { c -> a -> b }`：须各臂汇成同一个结果值，s58 只收语句位 ⇒ 仍计 unsup
-    src-sm = 'a = (n i64) (r i64) {\n    r = { n > 0 -> n -> 0 }\n}\n'
+    ; s103 转正：值位链 `r = { c -> v  -> d }` 已放行（逐臂 STORE 进 entry 结果槽、汇聚块 LOAD）；
+    ;   负例换成【臂值不是 i64】——结果槽按 i64 铺，str 臂值无处可落 ⇒ 计 unsup 整函数不产码
+    src-sm = 'a = (n i64) (r i64) {\n    r = {\n        n > 0 -> \'x\'\n        -> 0\n    }\n}\n'
     t1 = ast.make()
     p1 = ps.new(src-sm.to-bytes())
     r1 = ps.parse(t1, p1)
     agg1 = h2m-new()
     ir1 = h2m-lower-program(t1, agg1, r1)
-    runner.eq(agg1.unsup > 0, 1, 'expr-surface counted')
-    runner.eq(ir1.contains('define'), 0, 'expr-surface no code')
+    runner.eq(agg1.unsup > 0, 1, 'str-arm-value counted')
+    runner.eq(ir1.contains('define'), 0, 'str-arm-value no code')
 
     ; 计数循环的【标识符计数位】`n * { }`：实测 ps.no 不把它建成 ForStatement（退化成
     ;   EXPR-STATEMENT{n} + LET 块），h2m 不认识该形状 ⇒ 计 unsup 整函数不产码。
@@ -4095,6 +4182,10 @@ test-flow-chain3()
 test-flow-chain-nowild()
 test-flow-chain-wild1()
 test-flow-chain-nest()
+test-smv-wild3()
+test-smv-nowild2()
+test-smv-subj()
+test-smv-gate()
 test-flow-gate()
 test-term-ret()
 test-term-cont()

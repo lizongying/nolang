@@ -317,59 +317,53 @@ tables.init = () {
 tables.dyn-add = (name str, value str) {
     .dyn-count >= HPACK-DYN-MAX -> return
 
-    ; 向後移動（從尾部開始避免覆蓋）
-    i = .dyn-count
-    (i > 0) {
+    ; ⚠️ 2026-11-12 重寫：舊版是「從尾部向後移位 + (i > 0) 手動遞減」，實測會**死循環**。
+    ; 根因是編譯器缺陷（最小復現 tmp/sh/h43.no）：區域變數若由**接收者欄位**初始化
+    ; （`i = .dyn-count`），其後在 match 臂內 `ok -> i = it` 的賦值**不落地**，
+    ; i 永遠停在初值 ⇒ while 空轉（用字面量初始化則正常，見同檔 B 臂）。
+    ; 這裡改成：① 用遞減區間 `[cnt-1..0]` 取代手動遞減；
+    ; ② 計數器一律先落到**字面量初始化的局部**（nc / ns）再賦回欄位。
+    cnt = .dyn-count
+
+    ; ⚠️ 注意：`(cond) { }` 是**條件迴圈（while）**，不是 if。原版用
+    ; `(i > 0) { ... }` + 手動遞減，就是靠這個語義退出；這裡只想「有舊項才移位」，
+    ; 必須寫守衛塊 `cond -> { }`，否則 cnt 不變就永遠循環。
+    cnt > 0 -> {
         {
 
-            ; 用 slice 複製（CallExpression 正確載入 str-long value）
-            #{overflow=wrap}
-            prev-name ?= .dyn-names[i - 1]
-            prev-name-len = prev-name.len-bytes()
+            ; 從尾部往前搬，dst = src + 1，故高位先寫、低位後寫不會互相覆蓋
+            i <- [cnt - 1..0]: {
+                prev-name ?= .dyn-names[i]
+                prev-name-len = prev-name.len-bytes()
 
-            #{overflow=wrap}
-            prev-val ?= .dyn-values[i - 1]
-            prev-val-len = prev-val.len-bytes()
+                prev-val ?= .dyn-values[i]
+                prev-val-len = prev-val.len-bytes()
 
-            ; 逐 byte 複製 name
-            dn-tmp str = ''.with-len(prev-name-len)
-            j <- [0..prev-name-len): {
+                ; 逐 byte 複製 name（str-long 值需重建，不能只搬 handle）
+                dn-tmp str = ''.with-len(prev-name-len)
+                j <- [0..prev-name-len): {
+                    pn ?= .dyn-names[i]
+                    dn-tmp[j]: {
+                        ok -> it = pn[j]
 
-                #{overflow=wrap}
-                pn ?= .dyn-names[i - 1]
-                dn-tmp[j]: {
-                    ok -> it = pn[j]
-
-                    -> _
+                        -> _
+                    }
                 }
-            }
 
-            .dyn-names[i] ?= dn-tmp
+                .dyn-names[i + 1] ?= dn-tmp
 
-            ; 逐 byte 複製 value
-            dv-tmp str = ''.with-len(prev-val-len)
-            j <- [0..prev-val-len): {
+                ; 逐 byte 複製 value
+                dv-tmp str = ''.with-len(prev-val-len)
+                j <- [0..prev-val-len): {
+                    pv ?= .dyn-values[i]
+                    dv-tmp[j]: {
+                        ok -> it = pv[j]
 
-                #{overflow=wrap}
-                pv ?= .dyn-values[i - 1]
-                dv-tmp[j]: {
-                    ok -> it = pv[j]
-
-                    -> _
+                        -> _
+                    }
                 }
-            }
 
-            .dyn-values[i] ?= dv-tmp
-
-            {
-
-                #{overflow=wrap}
-                i-opt = i - 1
-                i-opt: {
-                    ok -> i = it
-
-                    ->
-                }
+                .dyn-values[i + 1] ?= dv-tmp
             }
         }: {
             err -> _
@@ -406,6 +400,9 @@ tables.dyn-add = (name str, value str) {
         -> _
     }
 
+    ; 計數 / 尺寸：沿用「運算式-match 直接掛在欄位賦值上」的寫法
+    ; （這條路徑原版就是好的；改寫成「先算到局部再賦回」反而會被同一個
+    ;   編譯器缺陷吃掉 —— 實測 dyn-count 恒 0，見 tmp/sh/h53.no）
     #{overflow=wrap}
     .dyn-count = .dyn-count + 1: {
         ok -> it

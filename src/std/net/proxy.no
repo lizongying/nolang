@@ -148,8 +148,14 @@ connect = (proxy-host str, proxy-port i64, target-host str, target-port i64, use
         return
     }
 
+    ; ⚠️ 2026-11-12：起點**必須**先收成局部再傳。寫成
+    ; `status-line.slice(sp1 + 1, ..)`（起點是算術式）時，這個 slice 的推斷型別
+    ; 會變成 `?str`，接著 `after-code.index(..)` / `code-str[i]` 就讓整個模組
+    ; 不可調用：codegen 報 `lencap kind: len/cap unsupported on ?str (option)`
+    ; （t5qq2leo）。最小復現 tmp/sh/h54.no（同 net/sse 的兩處）。
     #{overflow=wrap}
-    after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
+    code-start = sp1 + 1
+    after-code = status-line.slice(code-start, status-line.len-bytes())
     sp2 = after-code.index(' ')
     code-str = after-code
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
@@ -514,10 +520,13 @@ socks5-connect = (proxy-host str, proxy-port i64, target-host str, target-port i
     }
 
     ; SOCKS5 握手是二進位位元組流，必須 1:1 拷貝（見 §5.2 #88）。
+    ; `[]byte` 的 `len` 在寫入索引 i 之後就是 i+1（實測：寫 0..2 ⇒ len = 3），
+    ; 所以這裡**不能**再 `+ 1`：舊寫法 `req.len() + 1` 會多送一個 0x00
+    ; （無認證時送 4 位元組、認證時送 5 位元組），對端若嚴格按 RFC1928 讀
+    ; 第 3 / 4 位元組就會讀到垃圾。test/std/proxy.no 的 §9 §10 釘住這條。
     req-str = req.to-bytes-str()
 
-    #{overflow=wrap}
-    written = net.net-send(fd, req-str, req.len() + 1)
+    written = net.net-send(fd, req-str, req.len())
     written < 0 -> {
         fs.close(fd)
         fd = -1

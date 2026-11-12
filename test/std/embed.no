@@ -1,0 +1,159 @@
+; embed — 編譯期嵌入檔系統的查詢層（read / exists）
+;
+; 模組本身只是一個資料結構（count / paths / pathStarts / pathLens / blob /
+; dataStarts / dataLens），由 `#{embed='dir'}` 在編譯期填好。查詢層是純函式，
+; 所以本檔不需要真的用 `#{embed=}` —— 手工把結構體填成「三個檔案」即可，
+; 這樣反而能精確造出各種邊界（空表、前綴、長度相同/不同）。
+;
+; 覆蓋：embed 結構體 7 個欄位、embed.read、embed.exists —— 全模組 3/3。
+;
+; 三份測試資料刻意讓「長度互不相同」，因為 read/exists 的線性搜尋在長度不符時
+; 走的是 `break`（跳出整個迴圈）而不是 continue —— 只要前面有一筆長度不同的
+; 檔案，後面的檔案就永遠找不到。本檔第一組斷言就是針對這一點。
+
+# /test/runner
+
+; ?[]byte → str（非 ok 回 ''）
+rs = (o ?[]byte) (s str) {
+    s = ''
+    o: {
+        ok -> s = it.to-bytes-str()
+
+        -> _
+    }
+}
+
+; ?[]byte → 長度（非 ok 回 -1）
+rl = (o ?[]byte) (n i64) {
+    n = -1
+    o: {
+        ok -> n = it.len()
+
+        -> _
+    }
+}
+
+; 三檔案的嵌入表：
+;   a.txt        內容 'A'           (1 位元組)
+;   index.html   內容 '<h1>hi</h1>' (11 位元組)
+;   css/app.css  內容 'body{}'      (6 位元組)
+; paths 拼接 = 'a.txt' + 'index.html' + 'css/app.css'（長度 5 / 10 / 11）
+; blob       = 'A' + '<h1>hi</h1>' + 'body{}'（18 位元組）
+mk3 = () (e embed.embed) {
+    e.count = 3
+    e.paths = 'a.txt' - 'index.html' - 'css/app.css'
+
+    ps []i64
+    ps.push(0)
+    ps.push(5)
+    ps.push(15)
+    e.pathStarts = ps
+
+    pl []i64
+    pl.push(5)
+    pl.push(10)
+    pl.push(11)
+    e.pathLens = pl
+
+    e.blob = ('A' - '<h1>hi</h1>' - 'body{}').to-bytes()
+
+    ds []i64
+    ds.push(0)
+    ds.push(1)
+    ds.push(12)
+    e.dataStarts = ds
+
+    dl []i64
+    dl.push(1)
+    dl.push(11)
+    dl.push(6)
+    e.dataLens = dl
+}
+
+; 空表：count = 0
+mk0 = () (e embed.embed) {
+    e.count = 0
+    e.paths = ''
+    e.blob = ''.to-bytes()
+}
+
+; ── 1. 第一個檔案（迴圈第 0 筆就命中）──
+
+t-first = () {
+    e = mk3()
+    r = e.read('a.txt')
+    runner.eq(rl(r), 1, 'read: 第 0 筆命中，內容 1 位元組')
+    runner.is-true(rs(r) == 'A', 'read: 第 0 筆內容 = A')
+    runner.is-true(e.exists('a.txt'), 'exists: 第 0 筆存在')
+}
+
+; ── 2. 後面的檔案：前面有長度不同的條目 ──
+;
+; 這是本模組的關鍵行為：搜尋必須逐筆比對，不能因為某一筆長度不同就整輪放棄。
+
+t-later = () {
+    e = mk3()
+
+    r1 = e.read('index.html')
+    runner.eq(rl(r1), 11, 'read: 第 1 筆（前面有長度 5 的條目）仍能找到')
+    runner.is-true(rs(r1) == '<h1>hi</h1>', 'read: 第 1 筆內容正確')
+    runner.is-true(e.exists('index.html'), 'exists: 第 1 筆存在')
+
+    r2 = e.read('css/app.css')
+    runner.eq(rl(r2), 6, 'read: 第 2 筆仍能找到')
+    runner.is-true(rs(r2) == 'body{}', 'read: 第 2 筆內容正確')
+    runner.is-true(e.exists('css/app.css'), 'exists: 第 2 筆存在')
+}
+
+; ── 3. 不存在：長度相同但內容不同 / 長度不同 / 前綴 / 空字串 ──
+
+t-miss = () {
+    e = mk3()
+
+    ; 長度 5 與第 0 筆相同，但逐位元組不同
+    runner.eq(rl(e.read('a.txt')), 1, 'read: 對照 —— 正確路徑仍可取')
+    runner.eq(rl(e.read('b.txt')), -1, 'read: 同長度不同內容 ⇒ nil')
+    runner.is-false(e.exists('b.txt'), 'exists: 同長度不同內容 ⇒ false')
+
+    ; 長度 10 與第 1 筆相同，前 9 位元組也相同，只有最後一個字元不同
+    runner.eq(rl(e.read('index.htmx')), -1, 'read: 前綴相同僅末字元不同 ⇒ nil')
+    runner.is-false(e.exists('index.htmx'), 'exists: 同上')
+
+    ; 真前綴（長度不同）
+    runner.eq(rl(e.read('index.htm')), -1, 'read: 真前綴 ⇒ nil')
+    runner.is-false(e.exists('index.htm'), 'exists: 真前綴 ⇒ false')
+
+    ; 空路徑
+    runner.eq(rl(e.read('')), -1, 'read: 空路徑 ⇒ nil')
+    runner.is-false(e.exists(''), 'exists: 空路徑 ⇒ false')
+}
+
+; ── 4. 空表：任何查詢都應安全回 nil / false ──
+
+t-empty = () {
+    e = mk0()
+    runner.eq(rl(e.read('a.txt')), -1, 'read: 空表 ⇒ nil（不越界）')
+    runner.is-false(e.exists('a.txt'), 'exists: 空表 ⇒ false')
+    runner.eq(e.count, 0, '空表: count == 0')
+}
+
+; ── 5. 結構體欄位本身：手工填好後可讀回 ──
+
+t-fields = () {
+    e = mk3()
+    runner.eq(e.count, 3, '欄位: count')
+    runner.is-true(e.paths.len() == 26, '欄位: paths 拼接長度 = 5 + 10 + 11')
+    runner.eq(e.blob.len(), 18, '欄位: blob 長度 = 1 + 11 + 6')
+    runner.eq(e.pathStarts.len(), 3, '欄位: pathStarts 有 3 筆')
+    runner.eq(e.pathLens.len(), 3, '欄位: pathLens 有 3 筆')
+    runner.eq(e.dataStarts.len(), 3, '欄位: dataStarts 有 3 筆')
+    runner.eq(e.dataLens.len(), 3, '欄位: dataLens 有 3 筆')
+}
+
+runner.test('first entry', t-first)
+runner.test('later entries', t-later)
+runner.test('misses', t-miss)
+runner.test('empty table', t-empty)
+runner.test('struct fields', t-fields)
+
+total = runner.summary()

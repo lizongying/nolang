@@ -198,6 +198,75 @@ t-tables-dynamic = () {
     runner.str-eq(v, 'abc', 3, 'dyn lookup value')
 }
 
+; 动态表移位：连续插入 3 条（index 62..64），旧条目必须整体后移且内容不丢
+;
+; 回归点（2026-11-12）：`tables.dyn-add` 原实现是「从尾部向後移位 + (i > 0) 手动递减」，
+; 结果**死循环**——区域变量若由接收者字段初始化（`i = .dyn-count`），其後在 match 臂内
+; `ok -> i = it` 的赋值不落地（编译器缺陷，最小复现 tmp/sh/h43.no），i 永远停在初值。
+; 表现：只有第 1 条 dyn-add 能过（i==1 时循环体只跑一次就自然退出），第 3 条起永久挂死，
+; 于是 http2 的 `conn.request` 对真实服务器必然失败。已改为递减区间遍历。
+; 下面这个用例「连插 3 条」就能把它钉住：旧实现会卡在这里而不是断言失败。
+t-dyn-add-shift = () {
+    t = new-tables()
+    t.dyn-add('x-a', 'aaa')
+    runner.eq(t.dyn-count, 1, 'dyn-add: 第 1 条后 count = 1')
+    t.dyn-add('x-b', 'bbb')
+    runner.eq(t.dyn-count, 2, 'dyn-add: 第 2 条后 count = 2（走移位路径）')
+    t.dyn-add('x-c', 'ccc')
+    runner.eq(t.dyn-count, 3, 'dyn-add: 第 3 条后 count = 3（连续移位不死循环）')
+
+    ; 最新一条在 62，最旧一条在 64
+    n0, v0, ok0 = t.lookup(62)
+    runner.is-true(ok0, 'dyn-add: lookup(62) 命中')
+    runner.str-eq(n0, 'x-c', 3, 'dyn-add: 62 = 最新加入的 x-c')
+    runner.str-eq(v0, 'ccc', 3, 'dyn-add: 62 的值完整（移位未截断）')
+
+    n1, v1, ok1 = t.lookup(63)
+    runner.is-true(ok1, 'dyn-add: lookup(63) 命中')
+    runner.str-eq(n1, 'x-b', 3, 'dyn-add: 63 = 次新的 x-b')
+    runner.str-eq(v1, 'bbb', 3, 'dyn-add: 63 的值完整')
+
+    n2, v2, ok2 = t.lookup(64)
+    runner.is-true(ok2, 'dyn-add: lookup(64) 命中')
+    runner.str-eq(n2, 'x-a', 3, 'dyn-add: 64 = 最旧的 x-a（被移到位）')
+    runner.str-eq(v2, 'aaa', 3, 'dyn-add: 64 的值完整')
+
+    ; 动态表封顶：第 65 条起被丢弃，不得崩
+    k <- [0..70): {
+        t.dyn-add('x-fill-' - k.to-str(), 'v')
+    }
+    runner.eq(t.dyn-count, hpack.HPACK-DYN-MAX, 'dyn-add: count 封顶在 HPACK-DYN-MAX')
+}
+
+; 多条 header 的整块解码：4 条会触发连续 dyn-add（真实服务器的最小场景）
+t-decode-multi = () {
+    t = new-tables()
+    block = ''
+    block = block - t.encode-header(':method', 'GET')
+    block = block - t.encode-header(':path', '/abc')
+    block = block - t.encode-header(':scheme', 'http')
+    block = block - t.encode-header('x-trace', 'abc-123')
+
+    names, values, cnt, ok = t.decode-headers(block)
+    runner.is-true(ok, 'multi: 4 条整块解码成功（不会卡在 dyn-add）')
+    runner.eq(cnt, 4, 'multi: count = 4')
+
+    n3 = ''
+    names[3]: {
+        ok -> n3 = it
+
+        -> _
+    }
+    v3 = ''
+    values[3]: {
+        ok -> v3 = it
+
+        -> _
+    }
+    runner.str-eq(n3, 'x-trace', 7, 'multi: names[3] = x-trace')
+    runner.str-eq(v3, 'abc-123', 7, 'multi: values[3] = abc-123')
+}
+
 ; encode-header / decode-headers：往返一致；空块解出 0 条且 ok
 t-encode-decode = () {
     t = new-tables()
@@ -238,6 +307,8 @@ runner.test('str empty', t-str-empty)
 runner.test('str long', t-str-long)
 runner.test('tables static', t-tables-static)
 runner.test('tables dynamic', t-tables-dynamic)
+runner.test('dyn-add shift', t-dyn-add-shift)
+runner.test('decode multi', t-decode-multi)
 runner.test('encode/decode headers', t-encode-decode)
 runner.summary()
 f = runner.failed-count()

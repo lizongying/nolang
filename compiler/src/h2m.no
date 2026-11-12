@@ -60,8 +60,9 @@
 ;         ⚠️ vec 缓冲无 RC 头（§11 B5）⇒ 无 retain、只有一次性 free ⇒ 所有权必须唯一：中间 push 值
 ;            不入清单（@vec_push_i64 已自 free 旧缓冲），且所有权外流（结构体字面量字段 / 字段写 /
 ;            返回值）一律计 unsup——外流后 scope-exit 仍 free 就是 UAF。元素非 i64 的切片仍计 unsup
-;   不支持（一律计入 unsup，绝不静默略过）：表达式位的 K-SURFACE-MATCH（`r = { c -> a -> b }`——须要
-;         各臂汇成同一个结果值，本件只收语句位）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
+;   不支持（一律计入 unsup，绝不静默略过）：值位 K-SURFACE-MATCH 的【非 i64 臂值 / 非单表达式臂体】
+;         （s103：`r = { c -> 1  -> 0 }` 已放行——逐臂 STORE 进 entry 结果槽、汇聚块 LOAD；str/vec
+;         臂值与多陈述臂体仍计 unsup）、i64 除与余（`/` `%`——Go 侧 `?i64` 除零→err，i64 子集未建模 option；f64 `/` 已于 s71 放行），位清除 `&^`（无对应 op）、
 ;         多输出参数、泛型（c3 > 0）（s92：带默认值的参数已放行——调用点尾部回填，见上 CallExpression；带默认值的输出参与无默认值而被缺的形参仍入门禁）、
 ;         非具名型别（map / *t / 别名／[]非 i64／s62 起只 []i64 形参入形）、vec 形参作返回值（s62）、
 ;         复合赋值、非函数定义语句、方法调用（点号）、
@@ -1051,6 +1052,65 @@ h2m-cnt-name = (n i64) (s str) {
     s = '@cnt' - n.to-str()
 }
 
+; 值位 SurfaceMatch 结果槽的合成名（s103）：带上 LetStatement 节点 id ⇒ 同函数内多个值位 match
+;   各占一槽；'@' 不是合法标识符首字符 ⇒ 永不与源码里的变量名相撞，前扫描与降级侧共用本式子。
+;   ⚠️ 槽必须在前扫描登记、在 entry 块铺：降级时逐臂 STORE 进槽、汇聚块再 LOAD 交回，
+;      而 h2m 离开 entry 就回不去（块为指令序连续段），半路 OP-ALLOC 会让循环体内每次迭代
+;      都新摊一份栈（长循环栈溢出）。Go 权威同样把结果槽摊在 entry（实测 build-mo.ll 的 %v11.s）。
+; n: LetStatement 节点 id
+; s: 合成名
+h2m-smv-name = (n i64) (s str) {
+    s = '@smv' - n.to-str()
+}
+
+; 值位 SurfaceMatch 臂体的值表达式节点 id（s103）
+; 实测形制（compiler/tests/probe-smv.no，钉于本轮日志）：
+;   臂体 = K-BLOCK-STATEMENT(15, inline, nkid=1) 包 K-EXPRESSION-STATEMENT(29, nkid=1) 包值表达式；
+;   每臂 aux[hb+9]（valueCtx）非零——ps.no 在值语境下写 ast.put-str(t,'true')，故只能比非零不能比 1
+; 不合格形（多陈述块／裸块／空体／非表达式陈述）⇒ 回 0，调用方计 unsup（宁缺勿错）
+; t: AST arena
+; bn: 臂体节点 id
+; ex: 值表达式节点 id（0 = 不在覆盖面）
+h2m-smv-arm-val = (t ast, bn i64) (ex i64) {
+    ex = 0
+    bn > 0 -> {
+        bd = ast.nd-at(t, bn)
+        bd.kind == asp.K-BLOCK-STATEMENT && bd.nkid == 1 -> {
+            k0 = h2m-kid-i(t, bn, 0)
+            k0 > 0 -> {
+                ed = ast.nd-at(t, k0)
+                ed.kind == asp.K-EXPRESSION-STATEMENT && ed.nkid == 1 -> ex = h2m-kid-i(t, k0, 0)
+            }
+        }
+    }
+}
+
+; 臂体降级分派（s103）：陈述位走 h2m-lower-branch（原有路），值位降臂值表达式再 STORE 进结果槽
+;   ⚠️ 臂值型别必须是 TY-I64：结果槽按 i64 铺（h2m-slot-decl），str/vec 值无处可落 ⇒ 计 unsup
+;   ⚠️ h2m-smv-arm-val 回的是【AST 节点 id】，不是值 id——必须先 h2m-lower-expr 才拿到值 id；
+;      直接把节点 id 当值 id 用会发 `store i64 %v7` 这种引用未定义值的 IR（实测 build-mo 首版即此坑）
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; bn: 臂体节点 id
+; vctx: 1 = 值位
+; sslot: 值位结果槽的槽 id（vctx==0 时不用）
+h2m-smv-body = (t ast, c h2m-ctx, sg h2m-sigs, bn i64, vctx i64, sslot i64) {
+    vctx == 0 -> h2m-lower-branch(t, c, sg, bn)
+    vctx == 1 -> {
+        ex = h2m-smv-arm-val(t, bn)
+        ex > 0 -> {
+            xv = h2m-lower-expr(t, c, sg, ex)
+            xv > 0 -> {
+                h2m-vty-at(c, xv) == TY-I64 -> h2m-emit(c, OP-STORE, 0, xv, sslot, '', 0)
+                h2m-vty-at(c, xv) != TY-I64 -> h2m-mark(c)
+            }
+            xv <= 0 -> h2m-mark(c)
+        }
+        ex <= 0 -> h2m-mark(c)
+    }
+}
+
 ; 区间遍历的循环变量名（s61）：非 K-ITERATION-EXPR 或名字缺位 ⇒ 回空串（呼叫方不铺槽／计 unsup）
 ; 实测形制（tmp/probe-s61-ast.no，钉于 tmp/s61-ast-out.txt）：
 ;   K-ITERATION-EXPR(41)：nkid=2，s0 = 循环变量名，kid[0] = 区间源（K-RANGE-EXPRESSION），kid[1] = 容器源
@@ -1514,9 +1574,25 @@ h2m-scan = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (flow i64) {
                     vsid < 0 -> ty = -1
                 }
                 vkd.kind != asp.K-STRUCT-LITERAL -> ty = h2m-ty-of(t, sg, l, agg, vk)
+
+                ; s103：值位 SurfaceMatch 右值（`r = { c -> v  -> d }`）——h2m-ty-of 不认 K-SURFACE-MATCH，
+                ;   故就地定型 TY-I64（本件只收 i64 臂值，str/vec 值仍由降级侧门禁计 unsup）；
+                ;   同时登记结果槽合成名，让 entry 把 alloca 铺出来（降级侧逐臂 STORE、汇聚块 LOAD）
+                vkd.kind == asp.K-SURFACE-MATCH -> {
+                    ty = TY-I64
+                    h2m-lst-add(l, h2m-smv-name(n), TY-I64)
+                }
                 h2m-lst-add(l, nm, ty)
                 f0 = h2m-scan-kids(t, sg, l, agg, vk)
                 f0 > flow -> flow = f0
+
+                ; s103：臂群不在 kid 阵（在 helper/aux 区）⇒ 必须走 h2m-scan-arms 才扫得到臂体局部量；
+                ;   值位 match 本身也是控制流（逐臂切块），故直接置 flow
+                vkd.kind == asp.K-SURFACE-MATCH -> {
+                    fa0 = h2m-scan-arms(t, sg, l, agg, vk)
+                    fa0 > flow -> flow = fa0
+                    flow = 1
+                }
             }
 
             d.kind == asp.K-IF-EXPRESSION || d.kind == asp.K-FOR-STATEMENT || d.kind == asp.K-SURFACE-MATCH -> {
@@ -1976,11 +2052,25 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
             ck = ast.kid-at(t, d.kid0)
             cd = ast.nd-at(t, ck)
             ok-call = 1
+            ok-print = 0
             cd.kind != asp.K-IDENTIFIER -> ok-call = 0
             cn = ''
             si = -1
-            ok-call == 1 -> {
-                cn = ast.str-at(t, cd.s0)
+            ok-call == 1 -> cn = ast.str-at(t, cd.s0)
+
+            ; s100：print / eprint 是内建（自举无 builtin 签名表）⇒ 在签名查找前单点认领。
+            ;   语句位由 s93 路径丢弃结果值（hd=1，不查 v）；表达式位若被当值用，
+            ;   v 留 0 会让外层调用 / 赋值入门禁，退化成 unsup（诚实门禁不绕）。
+            ok-call == 1 && (cn == 'print' || cn == 'eprint') -> {
+                h2m-lower-print(t, c, sg, n, cn)
+                ok-print = 1
+
+                ; ⚠️ 必须同时清 ok-call：否则下面「ok-call == 1 ⇒ want-n = sg.fnarg[si]」
+                ;   会用 si = -1 索引签名表 ⇒ 越界（实测 SIGBUS 138）。
+                ;   清掉后靠 ok-print 抑制末尾的 h2m-mark。
+                ok-call = 0
+            }
+            ok-call == 1 && cn != 'print' && cn != 'eprint' -> {
                 si = h2m-sig-find(sg, cn)
                 si < 0 -> ok-call = 0
             }
@@ -2052,7 +2142,7 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 h2m-emit(c, OP-CALL, cid, base, want-n, cn, rt)
                 v = cid
             }
-            ok-call == 0 -> h2m-mark(c)
+            ok-call == 0 && ok-print == 0 -> h2m-mark(c)
         }
 
         ; s66：前缀表达式 -x / !x（镜像 Go emitNeg/emitNot hir2mir.go:5503/5505）
@@ -2335,7 +2425,14 @@ h2m-lower-let = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
         #{overflow=wrap}
         vp = vp + vc
         vk = ast.kid-at(t, vp)
-        vv = h2m-lower-expr(t, c, sg, vk)
+        vv = 0
+
+        ; s103：值位 SurfaceMatch 右值（`r = { c -> v  -> d }`）——不走 h2m-lower-expr（其 switch 不认
+        ;   K-SURFACE-MATCH，会直接计 unsup），改走 h2m-lower-surface 的值位分支：逐臂把臂值 STORE 进
+        ;   前扫描铺好的结果槽，汇聚块 LOAD 交回。结果槽名按本 LetStatement 节点 id 合成。
+        vkd = ast.nd-at(t, vk)
+        vkd.kind == asp.K-SURFACE-MATCH -> vv = h2m-lower-surface(t, c, sg, vk, h2m-smv-name(n))
+        vkd.kind != asp.K-SURFACE-MATCH -> vv = h2m-lower-expr(t, c, sg, vk)
         vv > 0 -> h2m-var-write(c, nm, vv)
 
         ; 型别标注侧：走 h2m-tynode-code 共用判据且码与右值相符（不符 ⇒ 计 unsup，整函数不产码）
@@ -2399,9 +2496,13 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
             hd = 1
         }
         kk.kind == asp.K-SURFACE-MATCH -> {
-            h2m-lower-surface(t, c, sg, kid)
+            h2m-lower-surface(t, c, sg, kid, '')
             hd = 1
         }
+
+        ; s101：`...` 占位陈述——什么都不做（镜像 Go ASTToHIR 对 EmptyStatement 的整条丢弃）。
+        ;   hd = 1 表示「本陈述已被消费」，避免落进下方 hd == 0 的诚实门禁。
+        kk.kind == asp.K-EMPTY-STATEMENT -> hd = 1
 
         ; 述层的单行 `cond -> stmt`：ExpressionStatement 包一个 IfExpression（实测 kid 序 [expr]）
         kk.kind == asp.K-EXPRESSION-STATEMENT -> {
@@ -2413,7 +2514,7 @@ h2m-lower-block = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                     hd = 1
                 }
                 sd.kind == asp.K-SURFACE-MATCH -> {
-                    h2m-lower-surface(t, c, sg, sub)
+                    h2m-lower-surface(t, c, sg, sub, '')
                     hd = 1
                 }
 
@@ -2510,7 +2611,7 @@ h2m-lower-branch = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
 
             d.kind == asp.K-IF-EXPRESSION -> h2m-lower-if(t, c, sg, n)
 
-            d.kind == asp.K-SURFACE-MATCH -> h2m-lower-surface(t, c, sg, n)
+            d.kind == asp.K-SURFACE-MATCH -> h2m-lower-surface(t, c, sg, n, '')
 
             d.kind == asp.K-FOR-STATEMENT -> h2m-lower-for(t, c, sg, n)
 
@@ -3080,15 +3181,32 @@ h2m-subtree-uses-it = (t ast, n i64) (u i64) {
 ; n: SurfaceMatch 节点 id
 ; ⚠️ 兜底臂只认末位：兜底臂吃掉全部余下路径，其后的臂恒不可达；若照发则臂体里的不支持构造
 ;   会被 stop 静默吞掉（产码 ≠ 产对码），故形状校验直接把 兜底臂不在末位 判成不覆盖面
-h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
+; s103 值位：`snm` 非空 ⇒ 本链在【表达式位】（`r = { c -> v  -> d }`），臂体交出值而不是陈述：
+;   前扫描已按 snm 在 entry 铺好 i64 结果槽，本函数逐臂「降臂值表达式 → STORE 进槽」，
+;   汇聚块末再 LOAD 交回 r。门禁比陈述位多两条：① 每臂 aux[hb+9]（valueCtx）必须非零
+;   （ps.no 在值语境写 ast.put-str(t,'true')，是非零下标不是 1，故只比非零）；
+;   ② 臂体必须是「inline 块包单表达式陈述」（h2m-smv-arm-val），且臂值型别必须是 TY-I64。
+;   ⚠️ 无兜底臂且全部不命中时，结果槽读出前扫描铺槽时的零初始化 0——与 Go 权威同口径
+;      （Go 同样把结果槽摊在 entry 并零初始化）。
+; t: AST arena
+; c: 上下文
+; sg: 模块级签名表
+; n: SurfaceMatch 节点 id
+; snm: 值位结果槽的合成名（'' = 陈述位，不发值）
+; r: 交出的值 id（0 = 陈述位或降级失败）
+h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64, snm str) (r i64) {
     d = ast.nd-at(t, n)
     arms = d.hcount
     sname = ''
     vmode = 0
     omode = 0
+    vctx = 0
+    r = 0
+    snm != '' -> vctx = 1
     arms <= 0 -> h2m-mark(c)
     arms > 0 -> {
         bad = 0
+        sslot = 0
 
         ; 主体判定——裸链 kid[0] = 0（占位），显式 match kid[0] = 主体节点
         ;   主体只认【已在槽表登记且槽型 i64 或 option 的裸标识符】：查表在发指令之前完成，校验期不发 LOAD
@@ -3108,6 +3226,15 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                     sty != TY-I64 && sty != TY-OPT -> bad = 1
                 }
             }
+        }
+
+        ; s103：值位结果槽的槽 id（查表在发指令之前完成，校验期不发指令）
+        ;   ⚠️ c.vids[si] 在 mem 模式下就是 entry 那颗 alloca 的 dest id（h2m-slot-decl 绑的），
+        ;      不能改用 h2m-var-read——那会在当前块多插一条 LOAD，我们要的是槽本身
+        vctx == 1 -> {
+            si = h2m-name-find(c, snm)
+            si < 0 -> bad = 1
+            si >= 0 -> sslot = c.vids[si]
         }
 
         j = 0
@@ -3166,6 +3293,16 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 }
             }
 
+            ; s103 值位门禁：valueCtx 必须置位（否则本链其实在陈述位，按值降会读错语境），
+            ;   且臂体必须恰好是「inline 块包单表达式陈述」——解不出值表达式即出局
+            vctx == 1 -> {
+                ast.aux-at(t, hb + 9) == 0 -> bad = 1
+                ast.aux-at(t, hb + 9) != 0 -> {
+                    ex0 = h2m-smv-arm-val(t, bn)
+                    ex0 <= 0 -> bad = 1
+                }
+            }
+
             #{overflow=wrap}
             j = j + 1
         }
@@ -3207,7 +3344,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                             c.itv-n = c.itv-n + 1
                         }
                     }
-                    h2m-lower-branch(t, c, sg, bn)
+                    h2m-smv-body(t, c, sg, bn, vctx, sslot)
                     h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
                     bound == 1 -> {
                         c.itv.pop()
@@ -3267,7 +3404,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                                 }
 
                                 ; err(e)：err 结构暂不可绑（无 TY-ERR），体引用 e → h2m-var-read 查不到 → unsup（安全）
-                                h2m-lower-branch(t, c, sg, bn)
+                                h2m-smv-body(t, c, sg, bn, vctx, sslot)
                                 h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
                                 bvar == 'ok' -> {
                                     c.alidx.pop()
@@ -3315,7 +3452,7 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                                 #{overflow=wrap}
                                 c.itv-n = c.itv-n + 1
                             }
-                            h2m-lower-branch(t, c, sg, bn)
+                            h2m-smv-body(t, c, sg, bn, vctx, sslot)
                             h2m-emit(c, OP-BR, 0, merge-id, 0, '', 0)
                             ab == 1 -> {
                                 c.itv.pop()
@@ -3332,6 +3469,13 @@ h2m-lower-surface = (t ast, c h2m-ctx, sg h2m-sigs, n i64) {
                 j = j + 1
             }
             h2m-set-block(c, merge-id)
+
+            ; s103：值位——汇聚块从结果槽 LOAD 出整链的值交回呼叫方（h2m-lower-let 再写进目标变量）
+            vctx == 1 -> {
+                lv = h2m-alloc(c, TY-I64)
+                h2m-emit(c, OP-LOAD, lv, sslot, 0, '', TY-I64)
+                r = lv
+            }
         }
     }
 }
@@ -3846,4 +3990,419 @@ h2m-lower-program = (t ast, agg h2m-ctx, root i64) (r str) {
     decls.len() > 0 -> {
         r = decls - '\n' - r
     }
+}
+
+; ═══════════════════════════════════════════════════════════════════
+; M4-d（2026-11-12，§11 後 ⑧）：模块级降级入口——合成 @main
+; ═══════════════════════════════════════════════════════════════════
+; Go 後端把 `main` 保留為關鍵字（實測 `'main' is a reserved name ... [xgs17cqx]`），
+;   entry 由**頂層陳述**自動合成。既有 h2m-lower-program 只認 FunctionDefinition /
+;   StructDefinition，任何頂層陳述一律計 unsup ⇒ 無法直接給 drv.cmd-build 用。
+; 本件做一次「AST 手術」，把原 Program 改寫成一棵**只含定義**的合成 Program：
+;   ① 頂層 FunctionDefinition / StructDefinition 原樣搬過去（簽名表／結構體表照舊）；
+;   ② 其餘頂層陳述收進一個合成 `K-BLOCK-STATEMENT`；
+;   ③ 末位 `exit(E)`（述層 ExpressionStatement → CallExpression{fn:exit, args:1}）
+;      改寫成合成函式的輸出參綁定：`__noc_r = E`。無 exit ⇒ 合成整數字面量 0，
+;      對齊 Go 合成 main 的「自然終了回 0」；
+;   ④ 合成 `main = () (__noc_r i64) { <頂層陳述…>; __noc_r = E }`，
+;      h2m-lower-func 會發出 `define i64 @main()`；LLVM 允許 i64 @main，
+;      C runtime 取低 32 位元當行程結束碼（實測 clang + 執行 exit=42）。
+; ⚠️ 與 h2m-lower-program 的界線：本件**不改**既有函式，舊呼叫點（s62 探針、
+;    h2m-test 等）逐字節不變；新入口只由 drv.build-ll 消費。
+; ⚠️ ast.add 會把 kid0 凍結在「當下的 kids.len()」⇒ 每個合成節點建立後必須
+;    **立刻**加完 kids 才建立下一個節點，否則 kid 段會互相覆蓋（探針實釘）。
+; ⚠️ 誠實門禁：頂層內建模組導入／`print` 等非簽名表呼叫、跨函式讀頂層 let
+;    全局，仍由既有 h2m 路徑計 unsup，呼叫方以 agg.unsup > 0 直接失敗，不靜默產碼。
+; ═══ s102：字面量插值（`print('a={x}')`）═══════════════════════════════════
+; 权威侧的判定在 Go hir2mir.go formatSegmentsOf：字面量必须
+;   ① parser.ParseFormatString 解析成功，**且** ② 至少有一个 Field，
+; 才走「命名格式」降级；否则整串**原样输出**（连 {{ / }} 都不反转义——
+; 实测 `print('a{{b')` 印 `a{{b`，`print('a{b')` 印 `a{b`）。
+; 字段渲染在 std/fmt.no 的 fmt-int / fmt-str 族（spec 解析 + 宽度/对齐/千分位）。
+;
+; 自举没有 fmt 线，故按「能否逐字节复现」分三档：
+;   · 无 spec 的 `{ident}` ⇒ 直接按型别发 OP-PRINT（i64/u64 → print_i64、
+;     str → print_str）。**这与权威逐字节同结果**：fmt-int(n, '') 的正文就是
+;     n.to-str()（fmt.no 的 `full = n.to-str()`，width=0/grouping=0 时不改写），
+;     而 print_i64 印的也是同一串十进制。
+;   · `{ident:spec}` ⇒ 计 unsup（宽度/对齐/进制/千分位无法用 print_i64 复现）。
+;   · 表达式字段 `{a[i] & 255}` ⇒ 计 unsup（权威侧要求值，本件只认裸标识符）。
+;   · 含 `{{` / `}}` 转义 ⇒ 计 unsup（本件不反转义，原样印会错码）。
+
+; s102：i + 1（索引运算的溢出在本文件不可能发生，回绕即可）
+; i: 下标
+; r: i + 1
+h2m-inc = (i i64) (r i64) {
+
+    #{overflow=wrap}
+    r = i + 1
+}
+
+; s102：取 s[i] 的字节值；越界回 -1（哨兵；合法字节值域是 0..255）
+; s: 来源字串
+; i: 下标（字节）
+; b: 字节值；-1 = 越界
+h2m-byte-at = (s str, i i64) (b i64) {
+    b = -1
+    i >= 0 && i < s.len-bytes() -> {
+        bo = s.byte(i)
+        bo: {
+            ok(bv) -> b = bv
+
+            -> _
+        }
+    }
+}
+
+; s102：找 s 中 from 起第一个 '}' 的下标；无则 -1
+; s: 来源字串
+; from: 起始下标
+; e: '}' 下标；-1 = 没有
+h2m-fmt-find-close = (s str, from i64) (e i64) {
+    e = -1
+    n = s.len-bytes()
+    i = from
+    (i < n && e < 0) {
+        b = h2m-byte-at(s, i)
+        b == 125 -> e = i
+        b != 125 -> i = h2m-inc(i)
+    }
+}
+
+; s102：在花括号内文 [a, e) 里找规格分隔符 ':' 的下标；无则 -1
+; s: 来源字串
+; a: '{' 之后的下标
+; e: 配对 '}' 的下标
+; col: ':' 下标；-1 = 无规格
+h2m-fmt-colon = (s str, a i64, e i64) (col i64) {
+    col = -1
+    i = a
+    (i < e && col < 0) {
+        b = h2m-byte-at(s, i)
+        b == 58 -> col = i
+        b != 58 -> i = h2m-inc(i)
+    }
+}
+
+; s102：判定 `{...}` 内部属于哪一类
+; s: 来源字串
+; a: '{' 之后的下标
+; e: 配对 '}' 的下标
+; r: 0 = 空字段（权威侧不产生 Field ⇒ 整串原样）；1 = 裸标识符（可带 spec，由调用方另判）；
+;    2 = 其它（表达式字段等，必须计 unsup）
+h2m-fmt-field-class = (s str, a i64, e i64) (r i64) {
+    r = 2
+    e <= a -> r = 0
+    e > a -> {
+        col = h2m-fmt-colon(s, a, e)
+        ne = e
+        col >= 0 -> ne = col
+
+        ; 名字必须是裸标识符：首字符 ∈ {_ A-Z a-z -}，其余再加 0-9
+        ok-id = 1
+        ne <= a -> ok-id = 0
+        i = a
+        (i < ne && ok-id == 1) {
+            b = h2m-byte-at(s, i)
+            ok-c = 0
+            b == 95 -> ok-c = 1
+            b == 45 -> ok-c = 1
+            b >= 65 && b <= 90 -> ok-c = 1
+            b >= 97 && b <= 122 -> ok-c = 1
+            i > a && b >= 48 && b <= 57 -> ok-c = 1
+            ok-c == 0 -> ok-id = 0
+            i = h2m-inc(i)
+        }
+        ok-id == 1 -> r = 1
+    }
+}
+
+; s102：判定一个字面量是否是「可降级的命名格式串」
+; s: 字面量内文
+; r: 0 = 没有任何替换字段 ⇒ 原样印出；1 = 有字段且全为裸标识符形 ⇒ 可降级；
+;    2 = 有字段但形制超出本件能力 ⇒ 必须计 unsup
+h2m-fmt-class = (s str) (r i64) {
+    r = 0
+    n = s.len-bytes()
+    i = 0
+    (i < n) {
+        b = h2m-byte-at(s, i)
+        b == 123 -> {
+            nx = h2m-byte-at(s, h2m-inc(i))
+            nx == 123 -> {
+                r = 2
+                i = h2m-inc(h2m-inc(i))
+            }
+            nx != 123 -> {
+                e = h2m-fmt-find-close(s, h2m-inc(i))
+                e < 0 -> i = h2m-inc(i)
+                e >= 0 -> {
+                    fc = h2m-fmt-field-class(s, h2m-inc(i), e)
+                    fc == 1 -> {
+                        r == 0 -> r = 1
+                    }
+                    fc == 2 -> r = 2
+                    i = h2m-inc(e)
+                }
+            }
+        }
+        b == 125 -> {
+            nx = h2m-byte-at(s, h2m-inc(i))
+            nx == 125 -> {
+                r = 2
+                i = h2m-inc(h2m-inc(i))
+            }
+            nx != 125 -> i = h2m-inc(i)
+        }
+        b != 123 && b != 125 -> i = h2m-inc(i)
+    }
+}
+
+; s102：把一段字面文字原样写到 print/eprint 流（OP-PRINT kind base+1）
+; c: 上下文
+; lit: 要写的文字（空段不发，省一条 @print_str）
+; base: 0 = stdout，4 = stderr
+h2m-print-lit = (c h2m-ctx, lit str, base i64) {
+    lit.len-bytes() > 0 -> {
+        cid = h2m-alloc(c, TY-STR)
+        h2m-emit(c, OP-STRCONST, cid, 0, 0, lit, TY-STR)
+        h2m-emit(c, OP-PRINT, 0, cid, base + 1, '', 0)
+    }
+}
+
+; s102：把一个 `{name}` 字段发成对应型别的 print
+; c: 上下文
+; name: 字段名（裸标识符）
+; base: 0 = stdout，4 = stderr
+; r: 1 = 已发；0 = 不支持（已 mark，或 h2m-var-read 已 mark）
+h2m-print-field = (c h2m-ctx, name str, base i64) (r i64) {
+    r = 0
+    v = h2m-var-read(c, name)
+    v > 0 -> {
+        ty = h2m-vty-at(c, v)
+        ty == TY-I64 || ty == TY-U64 -> {
+            h2m-emit(c, OP-PRINT, 0, v, base, '', 0)
+            r = 1
+        }
+        ty == TY-STR -> {
+            h2m-emit(c, OP-PRINT, 0, v, base + 1, '', 0)
+            r = 1
+        }
+        ty != TY-I64 && ty != TY-U64 && ty != TY-STR -> h2m-mark(c)
+    }
+}
+
+; s102：按 class == 1 的字面量逐段发出 print
+; t: AST arena
+; c: 上下文
+; s: 字面量内文
+; base: 0 = stdout，4 = stderr
+; r: 1 = 全部发出；0 = 有不支持段（已 mark）
+h2m-fmt-emit = (t ast, c h2m-ctx, s str, base i64) (r i64) {
+    r = 1
+    n = s.len-bytes()
+    i = 0
+    seg = 0
+    (i < n && r == 1) {
+        b = h2m-byte-at(s, i)
+        b == 123 -> {
+            e = h2m-fmt-find-close(s, h2m-inc(i))
+            e < 0 -> {
+
+                ; class == 1 保证每个 '{' 都有配对 '}'，此臂不可达；保守计错
+                r = 0
+                i = n
+            }
+            e >= 0 -> {
+
+                ; 先把 '{' 之前的字面段写出
+                i > seg -> h2m-print-lit(c, s.slice-bytes(seg, i), base)
+                col = h2m-fmt-colon(s, h2m-inc(i), e)
+                ne = e
+                col >= 0 -> ne = col
+
+                ; spec 存在 ⇒ 宽度/对齐/进制/千分位无法复现 ⇒ 计 unsup（先判再发）
+                col >= 0 -> r = 0
+                r == 1 -> {
+                    nm = s.slice-bytes(h2m-inc(i), ne)
+                    r = h2m-print-field(c, nm, base)
+                }
+                i = h2m-inc(e)
+                seg = i
+            }
+        }
+        b != 123 -> i = h2m-inc(i)
+    }
+    r == 1 && seg < n -> h2m-print-lit(c, s.slice-bytes(seg, n), base)
+}
+
+; s100：print / eprint 内建降级（自举无 builtin 签名表 ⇒ 在 h2m 单点认领）。
+;   语义对齐 Go emitPrint：实参逐个输出、**相邻之间**一个空格、末尾一个换行
+;   （print(a, b) ⇒ "a b\n"；print() ⇒ "\n"）。eprint 同形但走 fd 2。
+;   ⚠️ 只收 i64 / u64（共用 i64 宽）与 str 两种值型别；f64 / char / vec / option /
+;      结构体一律计 unsup —— 宁可诚实门禁，也不发半对的码。
+;   ⚠️ **已知分歧**：自举无 bool 型别码（bool 与 i64 共用 TY-I64），故 print(b) 会印
+;      "1"/"0" 而权威印 "true"/"false"。这条留给 L4 差分显性暴露（DIFF 而非静默），
+;      待自举补 TY-BOOL 或字面量侧识别后再收（§11 後 ⑨）。
+;   ⚠️ 插值形 print('{x}') 见 s102（h2m-fmt-class / h2m-fmt-emit）：无 spec 的
+;      裸标识符字段按型别直发 OP-PRINT，与权威逐字节同结果；带 spec 或表达式字段计 unsup。
+; t: AST arena
+; c: 上下文（发码目标）
+; sg: 模块级签名表（实参里的嵌套调用要用）
+; n: K-CALL-EXPRESSION 节点 id
+; name: 'print' 或 'eprint'
+; r: 1 = 已降级；0 = 计了 unsup（已 mark）
+h2m-lower-print = (t ast, c h2m-ctx, sg h2m-sigs, n i64, name str) (r i64) {
+    r = 1
+    d = ast.nd-at(t, n)
+    na = d.c0
+
+    ; kind 基址：stdout = 0，stderr = 4（见 mir.no 的 OP-PRINT kind 表）
+    base = 0
+    name == 'eprint' -> base = 4
+
+    j = 0
+    (j < na && r == 1) {
+        ap = d.kid0
+
+        #{overflow=wrap}
+        ap = ap + 1
+
+        #{overflow=wrap}
+        ap = ap + j
+        ak = ast.kid-at(t, ap)
+        ad = ast.nd-at(t, ak)
+
+        ; s102：插值形判定。class 0 = 没有替换字段（原样印，含 {{ }} 不反转义）；
+        ;   1 = 全为裸标识符字段（可降级，见 h2m-fmt-emit）；2 = 形制超出本件 ⇒ unsup。
+        fcl = 0
+        ad.kind == asp.K-STRING-LITERAL -> fcl = h2m-fmt-class(ast.str-at(t, ad.s0))
+        fcl == 2 -> r = 0
+        fcl == 1 -> {
+
+            ; 权威侧的多实参形（模板 + 其它实参）走 lowerNamedFormatMulti：模板字段
+            ;   就地替换、非模板实参照普通 variadic 打印。自举只收「整条 print 只有
+            ;   这一个模板实参」的形；多实参计 unsup（宁可诚实门禁）。
+            na == 1 -> r = h2m-fmt-emit(t, c, ast.str-at(t, ad.s0), base)
+            na != 1 -> r = 0
+        }
+        r == 1 && fcl == 0 -> {
+            av = h2m-lower-expr(t, c, sg, ak)
+            av == 0 -> r = 0
+            r == 1 -> {
+
+                ; 实参之间的分隔空格：只在第 2 个及以后发（第一个之前不发）
+                j > 0 -> h2m-emit(c, OP-PRINT, 0, 0, base + 3, '', 0)
+                aty = h2m-vty-at(c, av)
+                aty == TY-STR -> h2m-emit(c, OP-PRINT, 0, av, base + 1, '', 0)
+                aty == TY-I64 || aty == TY-U64 -> h2m-emit(c, OP-PRINT, 0, av, base, '', 0)
+                aty != TY-STR && aty != TY-I64 && aty != TY-U64 -> r = 0
+            }
+        }
+
+        #{overflow=wrap}
+        j = j + 1
+    }
+
+    ; 末尾换行（print() 空实参也走这条 ⇒ 只印一个 "\n"，与 Go 同形）
+    r == 1 -> h2m-emit(c, OP-PRINT, 0, 0, base + 2, '', 0)
+    r == 0 -> h2m-mark(c)
+}
+
+; t: AST arena（會被**就地追加**合成節點，不毀損原有節點／kid 段）
+; agg: 模块级计数器（呼叫方以 agg.unsup == 0 判定產碼可信）
+; root: 原始 Program 節點 id
+; r: 模組函式文本（含 define i64 @main()，**不含** prelude；unsup>0 ⇒ ''）
+h2m-lower-module = (t ast, agg h2m-ctx, root i64) (r str) {
+    r = ''
+    d = ast.nd-at(t, root)
+    n = d.nkid
+
+    ; ① 找末位 exit(E)：記下引數表達式節點 id 與該陳述在 Program 的位次
+    ex = 0
+    nex = -1
+    q <- [0..n): {
+        kp = d.kid0
+
+        #{overflow=wrap}
+        kp = kp + q
+        kid = ast.kid-at(t, kp)
+        kd = ast.nd-at(t, kid)
+        kd.kind == asp.K-EXPRESSION-STATEMENT -> {
+            sub = ast.kid-at(t, kd.kid0)
+            sd = ast.nd-at(t, sub)
+            sd.kind == asp.K-CALL-EXPRESSION && sd.c0 == 1 -> {
+                ck = ast.kid-at(t, sd.kid0)
+                cd = ast.nd-at(t, ck)
+                cd.kind == asp.K-IDENTIFIER && ast.str-at(t, cd.s0) == 'exit' -> {
+                    ap = sd.kid0
+
+                    #{overflow=wrap}
+                    ap = ap + 1
+                    ex = ast.kid-at(t, ap)
+                    nex = q
+                }
+            }
+        }
+    }
+
+    ; 無 exit ⇒ 合成 `0` 字面量，讓 main 恆有明確回值（同 Go 合成 main 的 ret 0）
+    ex == 0 -> {
+        zl = ast.add(t, asp.K-INTEGER-LITERAL)
+        ast.set-slot(t, zl, 0, ast.put-str(t, '0'))
+        ex = zl
+    }
+
+    ; ② 合成輸出參 `__noc_r i64`
+    tn = ast.add(t, asp.K-NAMED-TYPE)
+    ast.set-slot(t, tn, 0, ast.put-str(t, 'i64'))
+    pn = ast.add(t, asp.K-PARAMETER)
+    ast.set-slot(t, pn, 0, ast.put-str(t, '__noc_r'))
+    ast.kid-add(t, pn, tn)
+    ast.kid-add(t, pn, 0)
+
+    ; ③ 末位 let：把 exit(E) 的 E 綁到輸出參名（h2m-lower-func 尾部據此取回值 id）
+    ln = ast.add(t, asp.K-LET-STATEMENT)
+    ast.set-slot(t, ln, 0, ast.put-str(t, '__noc_r'))
+    ast.kid-add(t, ln, ex)
+
+    ; ④ 合成 main body：所有非定義、非 exit 的頂層陳述 + 末位 let
+    blk = ast.add(t, asp.K-BLOCK-STATEMENT)
+    q <- [0..n): {
+        kp = d.kid0
+
+        #{overflow=wrap}
+        kp = kp + q
+        kid = ast.kid-at(t, kp)
+        kd = ast.nd-at(t, kid)
+        q != nex && kd.kind != asp.K-FUNCTION-DEFINITION && kd.kind != asp.K-STRUCT-DEFINITION -> {
+            ast.kid-add(t, blk, kid)
+        }
+    }
+    ast.kid-add(t, blk, ln)
+
+    ; ⑤ 合成 `main = () (__noc_r i64) { ... }`
+    fn = ast.add(t, asp.K-FUNCTION-DEFINITION)
+    ast.set-slot(t, fn, 0, ast.put-str(t, 'main'))
+    ast.set-sig(t, fn, 0, 0, 1)
+    ast.kid-add(t, fn, pn)
+    ast.kid-add(t, fn, blk)
+
+    ; ⑥ 合成 Program：只放定義 + main ⇒ h2m-lower-program 的「非定義計 unsup」不再觸發
+    prog = ast.add(t, asp.K-PROGRAM)
+    q <- [0..n): {
+        kp = d.kid0
+
+        #{overflow=wrap}
+        kp = kp + q
+        kid = ast.kid-at(t, kp)
+        kd = ast.nd-at(t, kid)
+        kd.kind == asp.K-FUNCTION-DEFINITION || kd.kind == asp.K-STRUCT-DEFINITION -> {
+            ast.kid-add(t, prog, kid)
+        }
+    }
+    ast.kid-add(t, prog, fn)
+
+    r = h2m-lower-program(t, agg, prog)
+    agg.unsup > 0 -> r = ''
 }

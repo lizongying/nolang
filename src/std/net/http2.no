@@ -302,9 +302,14 @@ conn.recv-frame = () (frame ?frame) {
     }
 
     ; 讀取 payload
+    ; ⚠️ 2026-11-12：原本直接寫 `f.payload[payload-total + i] ?= f.payload.byte(i)`，
+    ; 但「**結構體欄位（str）的下標寫入**」在目前 codegen 下是**靜默丟棄**的
+    ; （place-match 與 `?=` 兩種寫法都不落地，實測見 tmp/sh/h18.no：
+    ; 局部 str 寫入正常、結構體欄位寫入恆為 0）。所以 payload 先收到**局部** str，
+    ; 全部讀完再整條賦回 f.payload（len 也隨之帶過去）。
     f.length > 0 -> {
         f.length > HTTP2-MAX-PAYLOAD -> return
-        f.payload = with-len(f.length)
+        pl str = with-len(f.length)
         payload-total = 0
         !! {
             payload-total >= f.length -> break
@@ -312,25 +317,30 @@ conn.recv-frame = () (frame ?frame) {
                 .use-tls -> {
 
                     #{overflow=wrap}
-                    recv-n = .tls-c.recv(f.payload, f.length - payload-total)
+                    recv-n = .tls-c.recv(pl, f.length - payload-total)
                 }
 
                 -> {
 
                     #{overflow=wrap}
-                    recv-n = net.net-recv(.fd, f.payload, f.length - payload-total)
+                    recv-n = net.net-recv(.fd, pl, f.length - payload-total)
                 }
             }
             recv-n <= 0 -> return
             i <- [0..recv-n): {
 
                 #{overflow=wrap}
-                f.payload[payload-total + i] ?= f.payload.byte(i)
+                pl[payload-total + i]: {
+                    ok -> it = pl.byte(i)
+
+                    -> _
+                }
             }
 
             #{overflow=wrap}
             payload-total ?= payload-total + recv-n
         }
+        f.payload = pl
     }
     frame = f
 }
@@ -490,11 +500,34 @@ connect = (host str, port i64) (conn ?conn) {
     }
 
     ; 3. 接收伺服器 SETTINGS 並 ACK
+    ; ⚠️ 2026-11-12：舊寫法是 `recv-f = c.recv-frame()` 後只留一句殘餘的
+    ; `send-ok == false -> { ... }`，既沒檢查 nil（連線壞了也當成功），
+    ; 也沒真的送出 ACK（註釋寫了 ACK 但沒有對應動作）。改為三分支檢查 +
+    ; 收到非 ACK 的 SETTINGS 就回 ACK。
     recv-f = c.recv-frame()
-    recv-f
-    send-ok == false -> {
-        fs.close(fd)
-        return
+    recv-f: {
+        nil -> {
+            fs.close(fd)
+            return
+        }
+
+        err -> {
+            fs.close(fd)
+            return
+        }
+
+        ok -> {
+            f0 frame = it
+            f0.frame-type == FRAME-SETTINGS -> {
+                (f0.flags & FLAG-ACK) == 0 -> {
+                    ack-ok = c.send-settings(true)
+                    ack-ok == false -> {
+                        fs.close(fd)
+                        return
+                    }
+                }
+            }
+        }
     }
     conn = c
 }
@@ -548,10 +581,16 @@ connect-tls = (host str, port i64) (conn ?conn) {
 
     ; 4. 接收伺服器 SETTINGS 並 ACK
     recv-f ?= c.recv-frame()
-    recv-f
-    send-ok == false -> {
-        tls-c.close()
-        return
+    {
+        recv-f.frame-type == FRAME-SETTINGS -> {
+            (recv-f.flags & FLAG-ACK) == 0 -> {
+                ack-ok = c.send-settings(true)
+                ack-ok == false -> {
+                    tls-c.close()
+                    return
+                }
+            }
+        }
     }
     conn = c
 }
@@ -658,7 +697,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
 
     ; body 長度
     has-body = false
-    body-len i64 = body.len-bytes()
+    body-len = body.len-bytes()
     body-len > 0 -> {
         has-body = true
 
@@ -692,7 +731,20 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
     }
 
     ; 接收回應影格
-    !! {
+    ; ⚠️ 2026-11-12：原本迴圈末尾是 `-> return`（未知影格類型一律當失敗返回）。
+    ; 實測（tmp/sh/h27.no 對真 Node h2c 伺服器）送完 HEADERS 後收到的**第一個**
+    ; 影格是 `type=4 flags=1`（SETTINGS+ACK，伺服器對我們 SETTINGS 的回應），
+    ; 之後才依序是 HEADERS(flags=4)、DATA(flags=1)。所以舊寫法第一個影格就
+    ; `return` ⇒ ok 永远 false。改為：控制類影格（SETTINGS/PING/WINDOW-UPDATE/
+    ; 未知）一律跳過並繼續讀，只有 RST-STREAM/GOAWAY 才算失敗。
+    ; 另兩個同批修掉的坑：
+    ;   1. 外層迴圈變數原用 `i`，與下面 HPACK 複製的內層 `i <- [0..dec-count)`
+    ;      同名遮蔽，外層迭代被覆寫後會反覆重讀 ⇒ 對端不再發影格時掛死；
+    ;      外層改名 `fi`。
+    ;   2. `break` 埋在兩層 match 內不會真的跳出外層迴圈，改用 `done` 旗標。
+    done = false
+    fi <- [0..64): {
+        done -> break
         f frame
         recv-f = .recv-frame()
         recv-f: {
@@ -758,7 +810,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 ; 檢查 END_STREAM
                 (f.flags & FLAG-END-STREAM) != 0 -> {
                     ok = true
-                    break
+                    done = true
                 }
             }
 
@@ -779,7 +831,7 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 resp-n = resp-n + f.payload.len-bytes()
                 (f.flags & FLAG-END-STREAM) != 0 -> {
                     ok = true
-                    break
+                    done = true
                 }
             }
 
@@ -795,9 +847,30 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
                 return
             }
 
-            -> return
+            f.frame-type == FRAME-SETTINGS -> {
+
+                ; 對端 SETTINGS：非 ACK 就回一個 ACK，然後繼續等真正的回應
+                (f.flags & FLAG-ACK) == 0 -> .send-settings(true)
+            }
+
+            f.frame-type == FRAME-PING -> {
+
+                ; 對端 PING：非 ACK 就原樣回 8 位元組載荷的 ACK
+                (f.flags & FLAG-ACK) == 0 -> {
+                    pf frame
+                    pf.length = 8
+                    pf.frame-type = FRAME-PING
+                    pf.flags = FLAG-ACK
+                    pf.stream-id = 0
+                    pf.payload = f.payload
+                    pf.payload.len = 8
+                    .send-frame(pf)
+                }
+            }
+
+            ; WINDOW-UPDATE 與未知類型：忽略，繼續讀下一個影格
+            -> _
         }
-        ; 忽略其他影格類型（SETTINGS, PING, WINDOW-UPDATE 等）
     }
 }
 
@@ -813,95 +886,75 @@ conn.request = (method str, path str, host str, body str) (names [32]str, values
 ; resp-n: 回應主體的位元組長度
 ; ok: true=請求順利完成, false=連線/解析失敗
 ; [do](#http2.do)
-do = (method str, url str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
+do = (method str, url-str str, body str) (names [32]str, values [32]str, header-count i64, resp-body str, resp-n i64, ok bool) {
     ok = false
     header-count = 0
     resp-n = 0
 
-    ; 回應標頭／本文尚未回填（連線流程未完成）：先給零值
-    names [32]str
-    values [32]str
+    ; ⚠️ 2026-11-12：舊版在函數開頭又宣告了一次 `names [32]str` / `values [32]str`，
+    ; 把**結果參數**遮蔽成區域陣列；結尾只 `connect` 之後 `conn: { -> }` 就返回，
+    ; **從未呼叫 conn.request** ⇒ do/do-req/get/post/put/delete/patch 全部恒為失敗。
+    ; 這裡改為：連線成功後真正發請求、把六個輸出整體接過來，再關閉連線。
     resp-body = ''
 
     ; 解析 URL
-    host = ''
-    port = HTTP2-DEFAULT-PORT
-    path = '/'
-    use-tls = false
-    u = url
+    ; ⚠️ 2026-11-12：舊版手寫 scheme/port 解析，用 `u[i] != prefix[i]` 逐字比對。
+    ; `str[i]`（IndexExpression）拿到的是 **?char**，兩個 option 直接 `!=` 的語義
+    ; 不可靠（實測永遠朝「前綴匹配」方向走），於是 'https://' 的判斷在先、
+    ; 把 http URL 誤判成 https ⇒ 去掉 8 個字元、host 變空、connect 失敗。
+    ; 改用 net/url 的 url-parse（已有測試覆蓋），只做 scheme→use-tls/port 的映射。
+    ui url.url-info = url.url-parse(url-str)
+    ui.ok == false -> return
 
-    ; 偵測 scheme 並去掉前綴
-    u.len-bytes() >= 8 -> {
-        prefix-https = 'https://'
-        matched-https = 1
-        i <- [0..8): {
-            u[i] != prefix-https[i] -> {
-                matched-https = 0
-                break
-            }
-        }
-        matched-https == 1 -> {
-            use-tls = true
-            port = HTTP2-DEFAULT-TLS-PORT
-            u = u.slice(8, u.len-bytes())
+    host = ui.host
+    path = ui.path
+    ui.query.len-bytes() > 0 -> path = path - '?' - ui.query
+    use-tls = ui.scheme == 'https'
+    port = ui.port
+    port <= 0 -> {
+        {
+            use-tls -> port = HTTP2-DEFAULT-TLS-PORT
+
+            -> port = HTTP2-DEFAULT-PORT
         }
     }
-    use-tls == false -> u.len-bytes() >= 7 -> {
-        prefix = 'http://'
-        matched = 1
-        i <- [0..7): {
-            u[i] != prefix[i] -> {
-                matched = 0
-                break
-            }
-        }
-        matched == 1 -> u = u.slice(7, u.len-bytes())
-    }
 
-    ; 分離 host:port 和 path
-    slash-idx = u.index('/')
+    ; 建立連線並發請求
+    ; ⚠️ 2026-11-12：不要寫成 `co ?conn = nil` 再在條件塊裡賦值——這種「先宣告
+    ; option 變數、後有條件賦值」的寫法在本版 MIR 會把 conn 的全套方法
+    ; （含 tls.conn.recv 的分支）都拖進 codegen，觸發
+    ; `EmitLLVM: unknown callee tls.conn.recv`（見 tmp/sh/h51.no）。
+    ; 所以兩條連線路徑各自就地推斷型別並匹配。
     {
-        slash-idx < 0 -> {
-            host = u
-            path = '/'
+        use-tls -> {
+            cs = connect-tls(host, port)
+            cs: {
+                nil -> return
+
+                err -> return
+
+                ok -> {
+                    cn conn = it
+                    names, values, header-count, resp-body, resp-n, ok = cn.request(method, path, host, body)
+                    cn.close()
+                }
+            }
         }
 
         -> {
-            host = u.slice(0, slash-idx)
-            path = u.slice(slash-idx, u.len-bytes())
+            cs = connect(host, port)
+            cs: {
+                nil -> return
+
+                err -> return
+
+                ok -> {
+                    cn conn = it
+                    names, values, header-count, resp-body, resp-n, ok = cn.request(method, path, host, body)
+                    cn.close()
+                }
+            }
         }
-    }
-
-    ; 解析 port
-    colon-idx = host.index(':')
-    colon-idx >= 0 -> {
-        host-only = host.slice(0, colon-idx)
-
-        #{overflow=wrap}
-        ofs = colon-idx + 1: {
-            ok -> it
-
-            -> 0
-        }
-        port-str = host.slice(ofs, host.len-bytes())
-        port = 0
-        i <- [0..port-str.len-bytes()): {
-
-            #{overflow=wrap}
-            port = port * 10 + (port-str[i] - 48)
-        }
-        host = host-only
-    }
-
-    ; 建立連線
-    conn ?conn = nil
-    {
-        use-tls -> conn = connect-tls(host, port)
-
-        -> conn = connect(host, port)
-    }
-    conn: {
-        ->
     }
 }
 

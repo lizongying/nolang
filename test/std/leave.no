@@ -1,0 +1,158 @@
+; leave — 作用域離開掛鉤的注入行為
+;
+; leave.no 本身只是介面宣告（`leave { leave() }`），真正有用的是編譯器側注入器
+; （src/build/transpiler_inject.go 的 injectEnterLeave）：型別提供 `T.leave = ()` 後，
+; **每個該型別的變數宣告**都會在所在區塊結束時按**宣告逆序**補上 `變數.leave()`
+; （`return` 跳出的情形由各層區塊尾部的清理承擔，不重複插入）。
+;
+; 判定用的是「解析出來的有效型別」而非源碼標註 —— `no fmt` 會移除冗餘標註
+; （`a fin = fin{…}` → `a = fin{…}`），若注入器只認 LetStatement.Type，
+; 排版就會讓資源關閉整段消失。故推斷宣告同樣注入。
+;
+; 本檔測的是那條規則：
+;   1. 區塊結束時觸發；
+;   2. 同一區塊多個變數 ⇒ 逆序（後宣告的先 leave）；
+;   3. `return` 之前觸發（且只觸發一次，不能與塊尾重複）；
+;   4. 型別**只實作 leave**、沒有 enter 時仍可編譯並生效
+;      （注入器曾無條件插 enter()，導致這種型別整個檔案 codegen 失敗）；
+;   5. 不帶標註（推斷）的宣告同樣注入。
+;
+; 觀察手段同 test/std/enter.no：leave 沒有參數也沒有回傳，只能靠檔案日誌。
+; 注意 leave 是在**離開作用域時**才執行，所以觀察點必須在區塊之後（欄位讀不到，
+; 因為變數已經出作用域）。
+;
+; 覆蓋：leave 介面宣告 + 注入器對 leave 的所有觸發路徑。
+
+# /test/runner
+
+; 往檔案追加字串（讀回舊內容再整檔覆寫；檔案不存在時從空字串開始）
+log-add = (path str, s str) {
+    old = fs.read-file(path).to-bytes-str()
+    fs.write-file(path, (old - s).to-bytes())
+}
+
+; 只實作 leave 的型別（刻意不提供 enter）
+fin {
+    tag str
+}
+
+fin.leave = () {
+    log-add('/tmp/no-life-leave.txt', 'L' - .tag)
+}
+
+; ── 1. 區塊結束時觸發 ──
+
+t-leave-block-end = () {
+    fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
+
+    {
+        a = fin{
+            tag: 'a'
+        }
+
+        ; 區塊內還沒離開作用域 ⇒ 日誌仍空
+        runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == '', 'leave: 區塊內尚未觸發')
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'La', 'leave: 區塊結束時觸發')
+}
+
+; ── 2. 多個變數：宣告逆序 ──
+
+t-leave-reverse = () {
+    fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
+
+    {
+        p = fin{
+            tag: '1'
+        }
+        q = fin{
+            tag: '2'
+        }
+        r = fin{
+            tag: '3'
+        }
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'L3L2L1', 'leave: 按宣告逆序觸發（L3 L2 L1）')
+}
+
+; ── 3. return 之前觸發，且只一次 ──
+
+; 在函式裡宣告後立刻 return：leave 應在 return 之前跑完，呼叫方回到這裡時日誌已就位。
+ret-helper = () {
+    h = fin{
+        tag: 'h'
+    }
+    return
+}
+
+t-leave-before-return = () {
+    fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
+    ret-helper()
+
+    ; 精確比對 'Lh' 而不是「包含 Lh」：塊尾若又補一次就成了 'LhLh'
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lh', 'leave: return 前觸發，且不重複')
+}
+
+; ── 4. 只實作 leave 的型別本身（回歸：注入器曾強插 enter）──
+
+t-leave-only = () {
+    fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
+
+    {
+
+        ; 若注入器無條件插 a.enter()，這一行會讓整個檔在 codegen 階段失敗：
+        ;   EmitLLVM: unknown callee fin.enter
+        a = fin{
+            tag: 'x'
+        }
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lx', 'leave: 只實作 leave 的型別可編譯且生效')
+}
+
+; ── 5. 不帶標註（推斷）的宣告同樣注入 ──
+;
+; 這是 `no fmt` 之後的形態（標註被當成冗餘移除）。行為必須與帶標註時一致。
+
+t-leave-inferred = () {
+    fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
+
+    {
+        b = fin{
+            tag: 'b'
+        }
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'Lb', 'leave: 不帶標註的宣告也注入')
+}
+
+; ── 6. 巢狀區塊：內層先 leave，外層後 leave ──
+
+t-leave-nested = () {
+    fs.write-file('/tmp/no-life-leave.txt', ''.to-bytes())
+
+    {
+        o = fin{
+            tag: 'o'
+        }
+
+        {
+            i = fin{
+                tag: 'i'
+            }
+        }
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-leave.txt').to-bytes-str() == 'LiLo', 'leave: 內層先於外層（Li Lo）')
+}
+
+runner.test('leave at block end', t-leave-block-end)
+runner.test('leave reverse order', t-leave-reverse)
+runner.test('leave before return', t-leave-before-return)
+runner.test('leave-only type', t-leave-only)
+runner.test('leave injected for inferred', t-leave-inferred)
+runner.test('leave nested blocks', t-leave-nested)
+
+total = runner.summary()

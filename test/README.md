@@ -2224,6 +2224,68 @@ yaml-parser.skip-to-eol = () {
 **一次迭代內部**，守衛救不了 —— 這也說明「有防滯守衛」不等於「不會卡死」。
 
 
+### 5.1w 本輪修好的缺陷（`net/unix` 的 `accept-with-timeout` 永久阻塞 + 兩個 builtin 的 MIR lowering 缺失）
+
+**背景**：`net/unix` 整模組在當前 HEAD **不可編譯**，不是 std 的錯，是編譯器缺 lowering
+（`c7febdb1` 刪掉 `src/build/llvm/call_stdlib.go` 時連帶刪掉，`src/builtin/net.go` 仍
+登記 `ForwardFunc`）。修完 compiler 才輪得到 std 的缺陷，所以兩件事記在一起。
+
+**① 編譯器：`unix-listen` / `unix-dial` 補 lowering**（`src/mir/builtin_unix.go`，新增）
+
+```no
+; 修前：任何呼叫都停在這裡
+Error: EmitLLVM: unsupported builtin unix-listen [2kqboupo]
+```
+
+兩個 emitter 的骨架（以 listen 為例，dial 只差 `socket` 之後接 `connect`）：
+
+```llvm
+; sockaddr_un：sun_path 在 offset 2（linux / darwin 相同）
+%addr   = alloca [112 x i8]            ; linux 110 / darwin 106，取大者
+          call void @llvm.memset.p0i8.i64(i8* %addrp, i8 0, i64 112, i1 0)
+%plen   = call i64 @strlen(i8* %path)
+%toolong= icmp ugt i64 %plen, 103       ; → 超長就跳 fail 臂，回 -1
+          call void @llvm.memcpy.p0i8.p0i8.i64(i8* %pathp, i8* %path, i64 %plen, i1 0)
+          store i8 1, i8* %famp         ; AF_UNIX（darwin 在 offset 1，且 offset 0 存 sun_len）
+%alen   = add i64 %plen, 3              ; 2 + path + NUL
+          call i32 @unlink(i8* %path)   ; 先清舊 socket 檔
+%sock   = call i32 @socket(i32 1, i32 1, i32 0)   ; AF_UNIX, SOCK_STREAM
+          call i32 @setsockopt(... SO_REUSEADDR ...)
+          call i32 @bind(i32 %sock, i8* %addrp, i32 %alen32)
+          call i32 @listen(i32 %sock, i32 128)
+```
+
+三條不可省：**超長路徑守衛要在 `memcpy` 之前**（103 是 `sun_path` 能容納的極限，
+寫爆就是堆疊破壞）；**darwin 的 `sun_len` 必須回填成 `plen + 3`**；**dial 的 `connect`
+失敗臂要 `close` socket**（`net-dial` 的 failure 臂是漏 fd 的，這裡不跟）。
+
+**② std：`accept-with-timeout` 靠 `SO_RCVTIMEO` ⇒ 永久阻塞**
+
+```no
+; 修前（src/std/net/unix.no）：SO_RCVTIMEO 對 accept(2) 無效
+ret = net.net-set-recv-timeout(.fd, timeout-ms)
+ret != 0 -> return
+fd = net.net-accept(.fd)               ; ← 無人連線時永遠卡在這裡
+; 修後：非阻塞輪詢 + 小睡（與 net.listener.accept-with-timeout 同一套）
+!! {
+    fd = net.net-accept-nb(.fd)
+    fd >= 0 -> { c = unix-conn{ fd: fd }  break }
+    fd == -1 -> break                  ; 硬錯誤（含 fd 已關閉）
+    waited >= timeout-ms -> break
+    time.sleep-ms(5)
+}
+```
+
+`net.no` 的 `listener.accept-with-timeout` 在之前的輪次已經為同一個坑改過並留了
+🔴 註解，`unix.no` 是它的複製品卻沒跟上。順帶把 `unix-listener.set-timeout` 的文件
+改正：它只是對監聽 fd 設 `SO_RCVTIMEO`，**不會**讓 `accept(2)` 逾時（保留函式是為了
+與 `net.listener.set-timeout` 的介面一致）。
+
+**驗證**：`test/std/unix.no` 7 TEST / **65 斷言**全綠，21 個符號（5 函式 + 16 方法）
+逐個釘住；三個常數 `UNIX-MAX-PATH` / `UNIX-BUF-SIZE` / `UNIX-BACKLOG` 一併斷言。
+「逾時真的生效」用 `time.now-ms()` 前後差 `< 5000` 釘住（不這樣寫，退回阻塞版也能
+靠 `nil` 斷言假綠 —— 它只是永遠回不來）。
+
 ### 5.1v 本輪修好的 std 缺陷（`src/std/net/quic.no` 的標頭保護與封包號碼解碼）
 
 五處，全部是「doc 註解照 RFC 寫、實作卻錯位」。發現方式是先把 `net/quic` 的純函式
@@ -3248,7 +3310,144 @@ MIR 那一條是**必需的**而不是防禦性的：`hir2mir.go` 先手寫
 3. 誰在覆蓋誰要實測：`StructFields` 有**手寫**與 **HIR 收集**兩個寫入者，且無條件後者
    勝。只看「手寫那一段存在」就判定安全，是這次幾乎踩空的坑。
 
-### 5.3 歷史快照（2026-09-26，保留供對照）
+### 5.2l 2026-11-12：`net/sse` 整模組不可調用 —— `slice()` 起點是算術式 ⇒ 結果型別退化成 `?str`
+
+**現象**。`net/sse` 在本輪之前**整模組沒有任何測試**。寫測試時發現：只要程式裡
+**調用** `sse.sse-connect(...)`（哪怕只是拿去 match 再丟掉），編譯就在 codegen 階段死：
+
+```
+MIR codegen could not handle test/std/sse.no:
+  EmitLLVM: lencap kind: len/cap unsupported on ?str (option) in func N [t5qq2leo]
+```
+
+`?sse.client` / `?sse.server` / `?event` 自造的 option 都能正常 match，
+`tls.conn` 的 `init/connect/send/recv` 單獨調也都正常 ⇒ 問題在 `sse-connect` 自己體內。
+
+**根因**（二分到單行，最小復現 `tmp/sh/h54.no`）：
+
+```no
+lo = 9
+ac = st.slice(lo + 1, st.len-bytes())     ; ← 起點是「算術式」
+ac[i]                                     ; an index is taken on `ac`, whose type is ?str
+```
+
+`str.slice(lo, hi)` 的**起點**若寫成運算式（`sp1 + 1`、`lo + 1`），這個 slice 的推斷
+型別會退化成 `?str`；之後對它取 `[i]` 或 `.len-bytes()` 就報上面的錯。對照組（全部正常）：
+
+| 寫法 | 結果 |
+|---|---|
+| `st.slice(sp, ..)`（index 結果直接當起點） | OK |
+| `lo = sp + 1` 之後 `st.slice(lo, ..)` | OK |
+| `st.slice(lo, ..)`（`lo` 是普通字面量變數） | OK |
+| `st.slice(0, sp)`（常量起點 + index 當上界） | OK |
+| `st.slice(lo + 1, ..)`（**起點是算術式**） | **`?str`** |
+
+也就是說觸發條件只有一條：**起點位置出現的是算術運算式**，與「上界是不是變數」無關。
+`src/std/net/sse.no` 的 `sse-connect` 與 `client.reconnect` 各有一次
+`status-line.slice(sp1 + 1, status-line.len-bytes())`，兩處同時中招，整個模組因此
+**連編譯都過不了**（所以此前沒人寫測試、也沒人發現）。
+
+**修法**（`src/std/net/sse.no`，兩處同改）：把起點先收成局部。
+
+```no
+    #{overflow=wrap}
+    code-start = sp1 + 1
+    after-code = status-line.slice(code-start, status-line.len-bytes())
+```
+
+**驗證**：
+
+| 檢查 | 結果 |
+|---|---|
+| `test/std/sse.no`（新建，131 斷言） | **131/131**（修前整檔編不過） |
+| `test/std/{hpack,unix,net,http,tls}.no` 回歸 | 88 / 65 / 86 / 42 / 156 全綠 |
+| `./bin/no fmt -d test/std/sse.no` | 0 diff |
+| `./bin/no fmt -d src/std/net/sse.no` | 只剩 9 處**預存**的「`#{overflow=wrap}` 前空行」偏差，未動 |
+
+**教訓**：
+
+1. **「整模組不可調用」常常只要一行。** 這裡 1059 行裡有兩行長得完全正常的 `slice`
+   把模組焊死；特徵是錯誤訊息指向**調用方**的 codegen，而根因在**被調方**體內。
+   排查手法：把被疑函式原樣複製進測試檔（改成 `?sse.client` 等全限定型別），然後
+   按段落「替換成等價常量」二分——比改 `src/std` + `make gen` 快一個數量級
+   （每輪 ~20s vs ~60s，且不動別人的檔案）。
+2. 二分時**不能靠註釋掉程式碼**：會立刻引出一堆 `'xxx' is not defined`。要把可疑段
+   **替換成等價的常量賦值**（保留後面用到的變數），才能真正定位。
+3. 這類「型別退化成 option」的 bug 在 checker 裡是**無聲**的（`?str` 本身合法），
+   一直到 codegen 才炸；`no vet` 也看不到。看到 `lencap kind ... ?str` 或
+   `an index is taken on ..., whose type is ?str` 就該直接找上游那個 slice 的實參。
+
+---
+
+### 5.2m 2026-11-12：`net/proxy` 同樣整模組不可調用 ＋ SOCKS5 握手多送一個 `0x00`
+
+**現象 1（與 §5.2l 同一條編譯器缺陷的第四、五個受害者）**。
+`proxy.no` 的 `connect` 也有 `status-line.slice(sp1 + 1, status-line.len-bytes())`，
+所以**只要程式裡出現 `proxy.connect/dial/dial-auth/proxy-tls-dial` 的任何一次調用**，
+codegen 就死：
+
+```
+EmitLLVM: lencap kind: len/cap unsupported on ?str (option) in func 6 [t5qq2leo]
+```
+
+修法同 §5.2l：起點先收成局部 `code-start = sp1 + 1`。至此 `src/std` 裡這種寫法
+已全部清掉（`sse.no` 兩處、`proxy.no` 一處）。
+
+**現象 2（真 bug，握手多發 1 位元組）**。`socks5-connect` 的方法協商包用
+
+```no
+written = net.net-send(fd, req-str, req.len() + 1)     ; ← 錯
+```
+
+`[]byte` 的 `len` 在寫入索引 `i` 之後就是 `i+1`（實測：寫 0..2 ⇒ `len = 3`），
+所以 `+ 1` 會**多送一個 `0x00`**：無認證時送 4 位元組（`05 01 00 00`）、
+帶帳密時送 5 位元組（`05 02 00 02 00`）。RFC1928 的協商包固定是「版本 + 方法數 +
+N 個方法」，嚴格實作會把多出來的 `0x00` 當成第 N+1 個方法（或直接判格式錯）。
+同檔另一處 `conn-req` 用的是 `pos`，是對的 —— 只有這一處例外。
+
+修法：`net.net-send(fd, req-str, req.len())`（並移除上方那條已無意義的
+`#{overflow=wrap}`，否則 vet 報 `nolang-overflow-ineffective`）。
+
+**現象 3（語言事實，不是 bug）**：`str.push(v)` 追加的是**字元**，按碼點做 UTF-8
+編碼 —— `s.push(187)` 得 2 位元組 `0xC2 0xBB`。二進位協定要拼原始位元組必須用
+`[]byte` + `push`（`[]byte.push(187)` 就是 1 位元組 `0xBB`）。最小復現
+`tmp/sh/h56.no`（11 斷言）。本輪寫測試時一時用 `str.push` 拼 SOCKS5 埠號低位，
+直接把 25 位元組的 CONNECT 請求寫成 27 位元組。
+
+**新建 `test/std/proxy.no`（85 斷言，12 個 TEST）**，覆蓋 8 函式 + `config` +
+8 常數。模組全是「dial → 送請求 → 阻塞等回應」，單執行緒無法在等待時從對端寫回應，
+所以每個成功臂都 **fork 一個假伺服器**（`process.process-fork()`）：
+
+| 角色 | 動作 |
+|---|---|
+| 父行程 | `net-listen` → `fork` → 呼叫被測函式 |
+| 子行程 | `net-accept` → 讀請求（順手落檔供父行程斷言）→ 寫回應 → `exit(0)` |
+
+子行程只做 I/O，**不碰 runner 計數**（`fork` 後計數是各自獨立的副本，子行程的斷言
+不會計進父行程）。七個子行程 helper：`http-child`（固定應答）、
+`http-child-flood`（16 KB 無分隔符垃圾）、`s5-child`、`s5-child-auth`、
+`s5-child-bad`（版本／方法／位元組數三種錯）、`s5-child-rep`。
+
+覆蓋到的分支（含失敗臂）：200 成功、200 無 reason 短語、407、非數字狀態碼、
+狀態行無空白、對端立刻 EOF、累積緩衝超限、Basic 認證頭內容、`dial`/`dial-auth`
+轉發、`proxy-tls-dial`/`config.tls-connect` 隧道失敗、SOCKS5 無認證全流程
+（含逐位元組校驗 `ATYP=3`／域名長度／埠 `443 = 01 BB`）、SOCKS5 帳密認證全流程
+（認證包 `01 <ulen> user <plen> pass` 逐位元組校驗）、SOCKS5 版本不符／方法 255／
+回應不足 2 位元組／`rep != 0`。
+
+**驗證**
+
+| 檢查 | 結果 |
+|---|---|
+| `test/std/proxy.no`（新建，85 斷言） | **85/85**（修前整檔編不過） |
+| `test/std/{hpack,http2,unix,sse}.no` 回歸 | 88 / 100 / 65 / 131 全綠 |
+| `test/std/{net,http,tls,ws,server,pool,url,base64,aes,ip,path}.no` 回歸 | 86 / 42 / 156 / 94 / 122 / 51 / 80 / 33 / 52 / 57 / 90 全綠 |
+| `./bin/no vet src/std/net/proxy.no` | 0 error（2 warning 為預存 `overflow-ineffective`；5 hint 為 `pos-opt` 缺註解，預存） |
+| `./bin/no fmt -d test/std/proxy.no` / `src/std/net/proxy.no` | 0 diff / 0 diff |
+
+---
+
+
 
 最後一次全量執行（本輪修復後，`./bin/no`）：**41 檔、906 個斷言通過、14 個失敗**
 （6 個檔失敗，**全部是預存問題**，見下節）。
@@ -3291,6 +3490,106 @@ MIR 那一條是**必需的**而不是防禦性的：`hir2mir.go` 先手寫
   特化問題」。該說明**已過時**：`char` 方法現在全部正常，故 2026-09-26 改寫成
   74 個斷言的真正測試，本輪再補 `[]char` 字面量回歸 → **80 個斷言全過**。
 
+### 5.2n 2026-11-12：覆蓋收尾（6 個模組）+ 注入器改判「有效型別」
+
+本輪把 `src/std` 剩下 6 個沒有同名測試的模組一次補齊，並在寫測試的過程中修掉
+`src/std/embed.no` 兩處真 bug、`src/build/transpiler_inject.go` 四處缺陷。
+
+#### ① 補齊的 6 個模組
+
+| 模組 | 測試檔 | 斷言 | 測什麼 |
+| --- | --- | --- | --- |
+| `net/tls-server-keys` | `test/std/tls-server-keys.no` | 81 | 常數形狀 + **RSA 往返** + x509 自簽 + TBS 指紋錨點 |
+| `embed` | `test/std/embed.no` | 28 | `embed.embed` 手構三檔表：命中 / 未命中 / 空表 / 欄位 |
+| `enter` | `test/std/enter.no` | 7 | 注入器觸發點（標註 / 推斷 / 呼叫推斷 / 多變數順序 / 巢狀） |
+| `leave` | `test/std/leave.no` | 7 | 塊尾 / 逆序 / return / 只實作 leave 的型別 / 巢狀 |
+| `database/sql` | `test/std/sql.no` | 28 | 3 個假驅動實作全部方法（db 6 / rows 6 / stmt 9）+ 契約行為 |
+| `collection/static-hashmap` | `test/std/static-hashmap.no` | 13 | 常量 + FNV-1a 已知答案（python 獨立算） |
+
+`tls-server-keys` 不只是「查常數有沒有被改」：它用 `crypto/rsa` 做 32 位元組明文
+往返（`rsa-encrypt-bytes` → `rsa-decrypt-bytes`），再拿 `x509-build-self-signed-cert`
+簽一張憑證，釘住 TBS 的 SHA-256 前 8 個字（`683523709 / … / 2798115329`）。該指紋
+用 `openssl x509 -fingerprint -sha256` 與 `openssl verify -CAfile` 獨立驗過（OK），
+所以任何一位元組改動都會被抓到。跑一次約 9 秒（2048-bit 模冪，不可省）。
+
+`static-hashmap` 有一個必須說清楚的事實：三個 `static-hashmap-*-tmpl` 泛型模板
+**目前無法從使用者程式碼實例化**（`v` 沒有綁定入口，`init` 一律 `unknown callee`），
+770 行是死碼；`map[k]v` 走的是 `collection/map.no`（已由 `test/std/map.no` 覆蓋）。
+因此本檔只釘住「常量與 FNV-1a 的已知答案」，並在檔頭寫明這個限制，避免後人誤以為
+模板已被覆蓋。
+
+#### ② `src/std/embed.no` 兩處真 bug
+
+1. **切片終點是算式 ⇒ codegen 產生非法 IR**：
+
+   ```no
+   ; ✗ 原寫法
+   data = .blob[d-start..d-start + d-len)
+   ; ✓ 改 .slice 方法形態
+   data = .blob.slice(d-start, d-start + d-len)
+   ```
+
+   原寫法讓 `%c = add %vec %lv, %lv`（`'i64' but expected '%vec'`），整個 `test/std/embed.no`
+   連結失敗。觸發條件是「結果參數是 `?[]byte` **且** 切片終點含算術式」；同樣的
+   運算式若結果是 `[]byte` 就正常。最小復現 `tmp/sh/h58p.no`（對照 `h58q.no`）。
+
+2. **長度快速檢查用 `break` ⇒ 清單裡第 0 筆之後全部查不到**：兩處
+   `p-len != path-len -> break` 改成 `continue`。這個 bug 完全靜默（回 `nil` 而非報錯），
+   只有「查的目標不是第一筆」才會現形——測試檔的三個條目長度刻意互不相同就是為了逼它出來。
+
+#### ③ 注入器四修（`src/build/transpiler_inject.go`）
+
+| # | 症狀 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| 1 | 裸塊 `{ … }` 內的宣告完全不注入 | `walkBlock` 只遞迴 `For` / `If`，漏 `BlockStatement` / `BlockMatchStatement` | 補兩支 |
+| 2 | 只實作 `leave` 的型別整檔 codegen 失敗（`unknown callee T.enter`） | 用 `hasEnter ∪ hasLeave` 當 enter 條件 | 改判 `hasEnter[typeName]` |
+| 3 | `return` 路徑 leave 跑兩次（`LhLh` / `LiLoLiLo` / `LiLoLi`） | `ReturnStatement` 分支重複插入，塊尾清理本就會跑 | 刪除該分支 |
+| 4 | **`no fmt` 之後生命週期行為整段消失** | 只認 `LetStatement.Type`（見下節） | 改判「有效型別」 |
+
+#### ④ `no fmt` 會剝離冗餘標註 ⇒ 排版改變語義（本輪最有價值的發現）
+
+`no fmt` 預設會做「移除冗餘型別標註」（`src/cmd/no` 的 `fixRedundantTypeSource`，
+與 `--fix=redundant` 同源），於是
+
+```no
+d db-sqlite = db-sqlite{handle: h}      →      d = db-sqlite{handle: h}
+```
+
+型別上完全等價，但注入器只認源碼寫下的標註 ⇒ 改寫後 `d.enter()` / `d.leave()`
+**整段消失**：連線不再自動關閉，且是靜默的（編譯通過、行為錯誤）。三個測試檔
+被 `fmt -w` 之後合計壞掉 10 條斷言，就是這樣來的。
+
+修法選了「讓注入器不再依賴排版」這條，而不是「讓 fmt 認得生命週期型別」：
+
+```go
+// declTypeName：① s.Type（顯式標註，或 parser 寫入的 inferred 型別）
+//              ② StructLiteral.Type（parser 對 `x = T{…}` 不寫 s.Type）
+//              ③ program.Sem.FuncVarType（按函式作用域兜底）
+```
+
+這一併修掉一個原本就不對稱的現象：`d = open()`（呼叫推斷）能注入，
+`d = db-sqlite{…}`（字面量）卻不能——同樣是「該型別的變數」，行為不該取決於
+用哪種語法初始化。順帶刪掉了 `transpiler_validate.go` 的 `findTypeForVar`：
+它在「找不到宣告」時會 `for t := range lifecycleTypes { return t }`
+（回傳一個**隨機的**生命週期型別），是塊尾 leave 判定上的地雷。
+
+> 實測：`example/sqlite-driver`、`example/mysql-driver` 的 `db-* / rows-* / stmt-*`
+> 都是靠這條路徑自動 `close()`，是這輪修復的直接受益者。
+
+#### ⑤ 未修（新挖到，皆預存於 HEAD）
+
+1. **裸塊內「無初始化式的宣告」直接編不過**：
+
+   ```no
+   { a i64 }          ; ⇒ expected field name in struct literal, got ASSIGN/RBRACE…
+   ```
+
+   同樣的寫法放在函式體（非裸塊）裡正常。屬 parser 側，最小復現 `tmp/sh/h65.no`–`h67.no`。
+2. **在巢狀塊（if / 迴圈）裡 `return`，外層作用域的 leave 被跳過**：
+   `if-ret` / `loop-ret` 都只看到 `Li`，缺外層的 `Lo`（`tmp/sh/h68.no`）。塊尾清理
+   掛在外層 block 末端，`return` 從內層跳出時走不到；屬 codegen 層，超出本輪
+   安全改動範圍，已在 `test/std/leave.no` 只測「同層 return」以避開誤導。
+
 ### 6 個失敗檔（全部預存，與 `no fmt` 無關）
 
 | 檔 | 失敗斷言 | 說明 |
@@ -3315,7 +3614,7 @@ MIR 那一條是**必需的**而不是防禦性的：`hir2mir.go` 先手寫
 | `collection/` | `link` `linked-hash-map` `map` `str-map` `str-set` `tree-map` `tree-set` |
 | `crypto/` | `aes` `aes-cbc` `aes-ctr` `aes-gcm` `argon2` `base32` `blake2` `chacha20-poly1305` `crc-16` `crc-32` `crc-64` `des` `ecdsa` `ed25519` `fnv` `fnv-1a-32` `hkdf` `hmac` `md5` `pbkdf2` `rand` `rc4` `rsa` `scrypt` `sha1` `sha224` `sha256` `sha3` `sha384` `sha512` `tdes` `x25519` `x509` |
 | `database/` | `sql` |
-| `net/` | `client` `cookie` `dns` `hpack` `http` `http2` `http3` `ip` `multipart` `net` `pool` `proxy` `quic` `server` `sse` `tls` `tls-server-keys` `unix` `url` `ws` |
+| `net/` | `cookie` `multipart` `tls-server-keys` |
 
 > `types.no` 是**純註解檔**（只有型別對映表），沒有可測的函式，不需要補測試。
 

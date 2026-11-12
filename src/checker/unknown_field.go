@@ -30,6 +30,15 @@ import (
 // 診斷指出來。`glossary/data/traps.noml` 的 std-field-vec-read-breaks 就是這樣
 // 被誤記成「[]str codegen 缺陷」的。
 //
+// 方法名寫錯（`recv.no-such-method(...)`）是同一個洞的另一半：callee 位置原本
+// 刻意不看，於是打錯方法名同樣靜默到 MIR 才炸。2026-11-12 把 callee 也納入
+// 判定，語料普查（src/std + test + tests + example，484 檔）逼出兩類必須放行的
+// 成員，兩類都寫在 builtinMethodNames 裡：
+//   - 內建方法表裡有些條目寫的是**限定名**（`str.eq` / `str.clear` / `[]i64.zero`），
+//     使用者寫 `s.eq(b)` 時成員名只有 `eq` ⇒ 限定名要一併登記成裸名；
+//   - `.zero()` 沒有 BuiltinMethod 條目，它是 codegen 的 memset intrinsic
+//     （callee 以 `.zero` 結尾且不是真函式），任意 struct / 切片都合法。
+//
 // 口徑（保守優先，寧可漏報也不誤報）：
 //   - 只在**確知欄位集**時判定，且該 struct 至少登記到一個欄位；
 //   - 型別名解析與 parser 的 structFieldsOf 同口徑：精確鍵 → 本模組限定 →
@@ -37,7 +46,8 @@ import (
 //     都叫 writer，猜錯就是把合法欄位報成不存在）；
 //   - 成員名命中欄位、命中方法（本程式或內嵌 std 方法表）、或命中任何內建方法
 //     名（`len` / `cap` / `push` …）一律放行；
-//   - 方法呼叫位置（`recv.m(...)` 的 callee）不看欄位，只下鑽接收者；
+//   - 方法呼叫位置（`recv.m(...)` 的 callee）與欄位讀取同一口徑：`m` 也要在
+//     欄位 / 方法 / 內建方法名裡命中，否則報錯（2026-11-12 擴充，原本刻意不看）；
 //   - 接收者型別推不出來就放行。
 func ValidateUnknownFields(program *parser.Program) []ValidateResult {
 	if program == nil {
@@ -179,13 +189,28 @@ func sourceModuleShort(file string) string {
 }
 
 // builtinMethodNames 收集所有內建方法名（見 fieldAccessWalk.builtinSet）。
+//
+// 表裡有兩種寫法：裸名（`len` / `push` / `byte`）與**限定名**（`str.eq` /
+// `str.clear` / `[]i64.zero`）。使用者寫的是 `s.eq(b)`，成員名只有 `eq`，所以
+// 限定名要一併登記成裸名 —— 少了這一步，`s.eq()` / `s.clear()` 這種寫法會被
+// 方法呼叫位置的新判定誤報成「str 沒有成員 eq」。
+//
+// `.zero()` 額外補一條：它根本沒有 BuiltinMethod 條目，codegen 是對「callee
+// 以 .zero 結尾且不是真函式」直接發 memset 到接收者（src/mir/codegen.go 的
+// strings.HasSuffix(callee, ".zero")），因此任意 struct / 切片都能 `.zero()`。
 func builtinMethodNames() map[string]bool {
-	set := make(map[string]bool, len(builtin.BuiltinMethodList))
+	set := make(map[string]bool, len(builtin.BuiltinMethodList)+1)
 	for _, m := range builtin.BuiltinMethodList {
-		if m.MethodName != "" {
-			set[m.MethodName] = true
+		name := m.MethodName
+		if name == "" {
+			continue
+		}
+		set[name] = true
+		if i := strings.LastIndex(name, "."); i >= 0 && i+1 < len(name) {
+			set[name[i+1:]] = true
 		}
 	}
+	set["zero"] = true
 	return set
 }
 
@@ -407,9 +432,14 @@ func (c *fieldAccessWalk) walkExpr(expr parser.Expression, varTypes map[string]s
 		c.checkDot(e, varTypes, selfType)
 		c.walkExpr(e.Receiver, varTypes, selfType)
 	case *parser.CallExpression:
-		// 方法呼叫位置：`recv.m(args)` 的 `m` 是方法名，不是欄位讀取。
-		// 只下鑽接收者與實參（walkExprForLen 同口徑）。
+		// 方法呼叫位置：`recv.m(args)` 的 `m` 是方法名。這裡的 `m` 以前刻意
+		// 不看（怕與欄位讀取混淆），代價是**方法名寫錯完全不報**：`x.no-such()`
+		// 一路靜默到 MIR 才以 bug #85 / str-len missing receiver 之類的面具炸開。
+		// 現在方法名也走同一條判定（欄位 → 方法 → 內建方法名），文案本來就是
+		// 「has no field or method」；`Type.m(recv, args)` 靜態形也在覆蓋內
+		//（接收者是型別名，查的是該型別的方法表，同樣命中）。
 		if dot, ok := e.Function.(*parser.DotExpression); ok {
+			c.checkDot(dot, varTypes, selfType)
 			c.walkExpr(dot.Receiver, varTypes, selfType)
 		} else {
 			c.walkExpr(e.Function, varTypes, selfType)

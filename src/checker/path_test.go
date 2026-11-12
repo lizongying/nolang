@@ -18,7 +18,13 @@ import (
 //	ext   -> path.ext
 //	is-abs -> path.is-abs
 //	clean -> path.clean
-//	split -> str.path-split
+//	split -> path.split
+//
+// 2026-11-12：split 这一条以前写成 `p.path-split(d, f)`（接收者是 str，还带两个
+// 出参缓冲）—— `str.path-split` 早已被 `path.split() (f str)` 取代，这段调用在
+// 今天的 std 里**根本没有对应成员**。它能一直"通过"，只是因为方法调用位置当时
+// 没有任何诊断（ValidateUnknownFields 只管字段读）。callee 纳入判定后这条立刻
+// 报 o4x247ya，属于真错，按现行 API 改写。
 func TestPathMethods(t *testing.T) {
 	src := `
 test-base = () {
@@ -58,11 +64,9 @@ test-join = () {
 }
 
 test-split = () {
-	p = 'a/b/c.txt'
-	d = '(16)'
-	f = '(16)'
-	dn = p.path-split(d, f)
-	fn = p.path-split(d, f)
+	p = path{}
+	p.p = 'a/b/c.txt'
+	f = p.split()
 }
 `
 	l := lexer.New(src)

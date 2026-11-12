@@ -83,6 +83,20 @@ cg-lit-name = (fname str, k i64) (r str) {
 ; 单块便捷入口（全部指令属块 0）。保留 M4-b 的 7 参数 API，
 ;   ⚠️ s64 起多一个【必填】的实参侧池 args——宁可让呼叫点编译不过，也不给隐式空池：
 ;   空池碰上 CALL 会发未 define 的 %v0（旧口径「空即默认」的静默退化教训见本档 s20 纪律）。
+; 造一個「長度 n、全 0」的 i64 容器（型別表 / 基本塊表的零初始化）。
+;   ⚠️ `[] .with-len(n)` **只保留容量、不設長度**（實測 `.len()` 仍為 0、`.at(0)` 為 nil），
+;   底層緩衝未初始化；而發射器按下標直接讀 `ptyps[q]`／`blks[k]`／`cty[k]` ⇒
+;   讀到亂數 → `cg-ty-name` 把它當 struct 型別碼，產出 `%struct.s<亂數>` 這種非法署名
+;   （2026-11-12 修，詳 §11 後 ⑦）。一律走本函式明確 push 0。
+; n: 數值
+; r: 結果容器
+cg-zeros = (n i64) (r []i64) {
+    r = []
+    i <- [0..n): {
+        r.push(0)
+    }
+}
+
 ; name: 名稱
 ; nargs: 數值
 ; ops: 容器
@@ -94,7 +108,7 @@ cg-lit-name = (fname str, k i64) (r str) {
 ; r: 結果字串
 cg-emit-func = (name str, nargs i64, ops []i64, dsts []i64, xa []i64, bs []i64, syms []str, args []i64) (r str) {
     n = ops.len()
-    z []i64 = [].with-len(n)
+    z = cg-zeros(n)
     r = cg-emit-cfg(name, nargs, z, ops, dsts, xa, bs, syms, args)
 }
 
@@ -229,9 +243,9 @@ cg-emit-cfg = (name str, nargs i64, blks []i64, ops []i64, dsts []i64, xa []i64,
 
     #{overflow=wrap}
     m = n + 1
-    ty []i64 = [].with-len(nargs)
-    vt []i64 = [].with-len(m)
-    ct []i64 = [].with-len(n)
+    ty = cg-zeros(nargs)
+    vt = cg-zeros(m)
+    ct = cg-zeros(n)
     r = cg-emit-cfg-t(name, TY-I64, nargs, ty, vt, ct, blks, ops, dsts, xa, bs, syms, args)
 }
 
@@ -1942,6 +1956,37 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push('\tcall void @vec_free(%vec %vc')
             b.push(x.to-str())
             b.push(')\n')
+        }
+        op == OP-PRINT -> {
+
+            ; s100：语句位内建输出。dst 恒 0（无结果值）；y = kind 码；x = 值 id（kind 2/3/6/7 为 0）。
+            ;   kind → 助手：0 @print_i64 / 1 @print_str / 2 @print_nl / 3 @print_space
+            ;               4 @eprint_i64 / 5 @eprint_str / 6 @eprint_nl / 7 @eprint_space
+            ;   ⚠️ 实参型别按 vty[x] 取前缀（%v / %sv），不硬编码——与 Go 的 argT 分派同义。
+            y == 0 -> {
+                b.push('\tcall void @print_i64(i64 %v')
+                b.push(x.to-str())
+                b.push(')\n')
+            }
+            y == 1 -> {
+                b.push('\tcall void @print_str(%str-long %sv')
+                b.push(x.to-str())
+                b.push(')\n')
+            }
+            y == 2 -> b.push('\tcall void @print_nl()\n')
+            y == 3 -> b.push('\tcall void @print_space()\n')
+            y == 4 -> {
+                b.push('\tcall void @eprint_i64(i64 %v')
+                b.push(x.to-str())
+                b.push(')\n')
+            }
+            y == 5 -> {
+                b.push('\tcall void @eprint_str(%str-long %sv')
+                b.push(x.to-str())
+                b.push(')\n')
+            }
+            y == 6 -> b.push('\tcall void @eprint_nl()\n')
+            y == 7 -> b.push('\tcall void @eprint_space()\n')
         }
         op == OP-STRFROMVEC -> {
 

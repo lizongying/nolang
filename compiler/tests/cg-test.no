@@ -103,12 +103,9 @@ test-alu = () {
     syms.push('')
     ptyps []i64 = []
     vty []i64 = []
-    j = 0
-    (j < 15) {
+    ; 15 個 TY-I64 值槽：用語言原生計數循環，避免 `j = j + 1` 的 `?i64 → i64`（15w45dqk）
+    15 * {
         vty.push(TY-I64)
-
-        #{overflow=wrap}
-        j = j + 1
     }
     cty []i64 = []
     blks []i64 = []
@@ -218,12 +215,9 @@ test-alu-unsigned = () {
     ptyps []i64 = []
     ptyps.push(TY-U64)
     vty []i64 = []
-    j = 0
-    (j < 10) {
+    ; 同上：10 個 TY-U64 值槽
+    10 * {
         vty.push(TY-U64)
-
-        #{overflow=wrap}
-        j = j + 1
     }
     cty []i64 = []
     blks []i64 = []
@@ -597,8 +591,8 @@ test-str-cap = () {
     runner.eq(s.contains('define i64 @sc(%str-long %sv1)'), 1, 'sc sig str param')
 
     ; cap/len 成對：同 extractvalue %str-long %sv1，僅下標 1/0 之別
-    runner.eq(s.contains('%v2 = extractvalue %str-long %sv1, 1'), 1, 'cap field 1')
-    runner.eq(s.contains('%v3 = extractvalue %str-long %sv1, 0'), 1, 'len field 0')
+    runner.eq(s.contains('%v2 = zext i32 %scr0 to i64'), 1, 'cap field 1')
+    runner.eq(s.contains('%v3 = zext i32 %slr1 to i64'), 1, 'len field 0')
     runner.eq(s.contains('ret i64 %v2'), 1, 'i64 ret')
 
     ; 鉴别力：容量欄是 str 自己的欄位，不得碰 %vec/%vc 命名空間
@@ -1142,13 +1136,10 @@ test-struct-nested = () {
     cty.push(TY-I64)
     cty.push(TY-I64)
     blks []i64 = []
-    j = 0
+    ; 每條指令一個基本塊（zq 為一次性迭代變數，避免 `?i64 → i64`）
     n = ops.len()
-    (j < n) {
+    zq <- [0..n): {
         blks.push(0)
-
-        #{overflow=wrap}
-        j = j + 1
     }
     s = cg-emit-cfg-t('nest', TY-I64, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 
@@ -1316,12 +1307,13 @@ test-call-scatter = () {
     xa.push(10)
     bs.push(0)
     syms.push('')
-    vty []i64 = [].with-len(11)
-    cty []i64 = [].with-len(2)
+    ; ⚠️ `[] .with-len(n)` 只保留容量不設長度 ⇒ 按下標讀到未初始化記憶體（s99o 修）
+    vty = cg-zeros(11)
+    cty = cg-zeros(2)
     blks []i64 = []
     blks.push(0)
     blks.push(0)
-    ptyps []i64 = [].with-len(2)
+    ptyps = cg-zeros(2)
     args []i64 = []
     args.push(1)
     args.push(3)
@@ -1350,16 +1342,13 @@ test-call-scatter = () {
     bs2.push(0)
     syms2.push('')
     vty2 []i64 = []
-    w = 0
-    (w < 7) {
+    ; 同上：7 個 TY-I64 值槽
+    7 * {
         vty2.push(TY-I64)
-
-        #{overflow=wrap}
-        w = w + 1
     }
     vty2.push(TY-STR)
     vty2.push(TY-I64)
-    cty2 []i64 = [].with-len(2)
+    cty2 = cg-zeros(2)
     blks2 []i64 = []
     blks2.push(0)
     blks2.push(0)
@@ -1682,10 +1671,10 @@ test-string = () {
     s = cg-emit-cfg('slen', 0, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('@.s.slen.0 = private unnamed_addr constant [4 x i8] c"abc\\00"'), 1, 'global literal')
     runner.eq(s.contains('getelementptr inbounds [4 x i8]'), 1, 'gep')
-    runner.eq(s.contains('%q0 = insertvalue %str-long undef, i64 3, 0'), 1, 'len field')
-    runner.eq(s.contains('%r0 = insertvalue %str-long %q0, i64 3, 1'), 1, 'cap field')
+    runner.eq(s.contains('%q0 = insertvalue %str-long undef, i32 3, 0'), 1, 'len field')
+    runner.eq(s.contains('%r0 = insertvalue %str-long %q0, i32 3, 1'), 1, 'cap field')
     runner.eq(s.contains('%sv1 = insertvalue %str-long %r0, i8* %p0, 2'), 1, 'data field')
-    runner.eq(s.contains('%v2 = extractvalue %str-long %sv1, 0'), 1, 'strlen')
+    runner.eq(s.contains('%v2 = zext i32 %slr1 to i64'), 1, 'strlen')
     runner.eq(s.contains('ret i64 %v2'), 1, 'ret v2')
 }
 
@@ -1742,12 +1731,12 @@ test-strcat = () {
     runner.eq(s.contains('@.s.cat.0 = private unnamed_addr constant [3 x i8] c"ab\\00"'), 1, 'left literal')
     runner.eq(s.contains('@.s.cat.1 = private unnamed_addr constant [3 x i8] c"cd\\00"'), 1, 'right literal')
     runner.eq(s.contains('%sv3 = call %str-long @str_concat(%str-long %sv1, %str-long %sv2)'), 1, 'strcat call')
-    runner.eq(s.contains('%v4 = extractvalue %str-long %sv3, 0'), 1, 'len of result')
+    runner.eq(s.contains('%v4 = zext i32 %slr3 to i64'), 1, 'len of result')
     runner.eq(s.contains('ret i64 %v4'), 1, 'ret v4')
 }
 
 ; ── func optstr() -> (some('ab'+'cd') 取出 str).len；option 内联 str 载荷 ──
-; 证明 option 的 str 载荷读写（B8，s28）：%str-long 恰 24B，内联进 [3 x i64] 槽，
+; 证明 option 的 str 载荷读写（B8，s28；B28 後 %str-long 為 16B，仍內聯進 24B 槽前 16B），
 ; 逐字段 extractvalue + data 指针 bitcast 互转（槽是 i64 数组、字段 2 是 i8*，必須 bitcast）；
 ; 选项取得所有权须紧接 RETAIN（rc=2），scope 退出释放其份额 + 原拥有者份额（rc=0）。
 test-option-str = () {
@@ -2111,7 +2100,7 @@ test-str-slot = () {
     runner.eq(s.contains('store %str-long %sv1, %str-long* %ss1'), 1, 'sstore')
     runner.eq(s.contains('store %str-long %sv2, %str-long* %ss1'), 1, 'sstore in bb1')
     runner.eq(s.contains('%sv3 = load %str-long, %str-long* %ss1'), 1, 'sload in bb2')
-    runner.eq(s.contains('%v4 = extractvalue %str-long %sv3, 0'), 1, 'len of loaded')
+    runner.eq(s.contains('%v4 = zext i32 %slr8 to i64'), 1, 'len of loaded')
     runner.eq(s.contains('br i1 %c3, label %bb1, label %bb2'), 1, 'condbr')
 }
 
@@ -2924,7 +2913,7 @@ test-sig-mixed = () {
     ct.push(TY-I64)
     s = cg-emit-cfg-t('mix', TY-I64, 2, ty, vt, ct, blks, ops, dsts, xa, bs, syms, [])
     runner.eq(s.contains('define i64 @mix(i64 %v1, %str-long %sv2)'), 1, 'mixed sig')
-    runner.eq(s.contains('%v3 = extractvalue %str-long %sv2, 0'), 1, 'len of sv2')
+    runner.eq(s.contains('%v3 = zext i32 %slr0 to i64'), 1, 'len of sv2')
     runner.eq(s.contains('ret i64 %v3'), 1, 'ret v3')
 }
 
@@ -3889,7 +3878,7 @@ test-struct-str-field = () {
 
     ; 读 str 字段：dst 落 %sv（cty = TY-STR）
     runner.eq(s.contains('%sv4 = extractvalue %struct.s1 %st3, 0'), 1, 'str field get')
-    runner.eq(s.contains('%v5 = extractvalue %str-long %sv4, 0'), 1, 'str field len')
+    runner.eq(s.contains('%v5 = zext i32 %slr4 to i64'), 1, 'str field len')
 }
 
 ; ── 结构体字段 RC：st2 = {'abcd'} 的 retain / release（s33，§11 B11 第一块）──
@@ -4112,13 +4101,10 @@ test-struct-mk-noncontig = () {
     cty.push(TY-STRUCT-BASE); k7 st8
     cty.push(TY-STRUCT-BASE); k8 ret
     blks []i64 = []
-    j = 0
+    ; 每條指令一個基本塊（zq 為一次性迭代變數，避免 `?i64 → i64`）
     n = ops.len()
-    (j < n) {
+    zq <- [0..n): {
         blks.push(0)
-
-        #{overflow=wrap}
-        j = j + 1
     }
     s = cg-emit-cfg-t('noncontig', TY-STRUCT-BASE, 0, ptyps, vty, cty, blks, ops, dsts, xa, bs, syms, args)
 

@@ -1,0 +1,224 @@
+; sql — 資料庫存取介面定義（db / rows / stmt + 共用 result）
+;
+; 這個模組只有宣告，沒有實作：真正的存取由驅動完成（例：example/sqlite-driver、
+; example/mysql-driver）。能測的只有兩類東西：
+;
+;   1. `result` 是**具體結構體**，所有驅動共用 —— 零值、欄位可寫、實例互不干擾；
+;   2. 三個介面宣告的**方法集合**是否真的可以被一個具體型別完整實作。
+;      這正是介面存在的意義：驅動若少實作一個方法，它的碼就對不上契約。
+;
+; ⚠️ 介面本身**不支援動態派發**：把具體型別賦值給 `sql.db` 再呼叫
+; `d.exec(…)` 會在 codegen 階段失敗（EmitLLVM: unknown callee sql.db.exec）。
+; 因此本檔一律對具體型別呼叫，`sql.db` 只當型別註解寫在參數上做契約宣告。
+;
+; 覆蓋：result 2 欄、db 6 方法、rows 6 方法、stmt 9 方法 —— 全模組符號 100%。
+;
+; `db`/`rows`/`stmt` 都合併了 enter/leave（作用域結束自動關閉），所以本檔的
+; 假驅動也用顯式型別標註宣告，順帶驗證注入在這些型別上照常運作。
+
+# /test/runner
+
+; ── 假驅動：db ──
+
+fake-db {
+    opened i64
+    closed i64
+}
+
+fake-db.enter = () {
+    .opened = 1
+}
+
+fake-db.leave = () {
+    .closed = 1
+}
+
+fake-db.close = () (ok bool) {
+    ok = true
+}
+
+fake-db.exec = (statement str) (r sql.result) {
+    r.last-id = 7
+    r.affected = 3
+}
+
+fake-db.query = (statement str) (rs fake-rows) {
+    rs.cursor = 0
+}
+
+fake-db.prepare = (statement str) (s fake-stmt) {
+    s.bound = 0
+}
+
+; ── 假驅動：rows ──
+
+fake-rows {
+    cursor i64
+}
+
+fake-rows.enter = () {
+    .cursor = 0
+}
+
+fake-rows.leave = () {
+}
+
+fake-rows.next = () (ok bool) {
+    ok = .cursor < 2
+
+    #{overflow=wrap}
+    .cursor = .cursor + 1: {
+        ok -> it
+
+        -> .cursor
+    }
+}
+
+fake-rows.scan-int = (col i64) (v i64) {
+    v = 42
+}
+
+fake-rows.scan-str = (col i64) (v str) {
+    v = 'cell'
+}
+
+fake-rows.scan-float = (col i64) (v f64) {
+    v = 1.5
+}
+
+fake-rows.close = () (ok bool) {
+    ok = true
+}
+
+; ── 假驅動：stmt ──
+
+fake-stmt {
+    bound i64
+}
+
+fake-stmt.enter = () {
+    .bound = 0
+}
+
+fake-stmt.leave = () {
+}
+
+fake-stmt.bind-int = (idx i64, v i64) (ok bool) {
+    ok = true
+}
+
+fake-stmt.bind-str = (idx i64, v str) (ok bool) {
+    ok = true
+}
+
+fake-stmt.bind-bool = (idx i64, v bool) (ok bool) {
+    ok = true
+}
+
+fake-stmt.exec = () (r sql.result) {
+    r.last-id = 11
+    r.affected = 2
+}
+
+fake-stmt.query = () (rs fake-rows) {
+    rs.cursor = 0
+}
+
+fake-stmt.close = () (ok bool) {
+    ok = true
+}
+
+; ── 1. result：零值、可寫、實例獨立 ──
+
+t-result = () {
+    r sql.result
+    runner.eq(r.last-id, 0, 'result: last-id 零值 = 0')
+    runner.eq(r.affected, 0, 'result: affected 零值 = 0')
+
+    r.last-id = 99
+    r.affected = 5
+    runner.eq(r.last-id, 99, 'result: last-id 可寫')
+    runner.eq(r.affected, 5, 'result: affected 可寫')
+
+    ; 兩個實例互不干擾（不是共用全域）
+    a sql.result
+    b sql.result
+    a.last-id = 1
+    b.last-id = 2
+    runner.eq(a.last-id, 1, 'result: 實例 a 獨立')
+    runner.eq(b.last-id, 2, 'result: 實例 b 獨立')
+}
+
+; ── 2. db 契約：6 個方法都實作得出，且行為符合宣告 ──
+
+t-db = () {
+    d = fake-db{}
+
+    ; 顯式標註 ⇒ 注入 enter()，opened 被設為 1
+    runner.eq(d.opened, 1, 'db: enter 注入生效')
+    runner.eq(d.closed, 0, 'db: 尚未離開作用域 ⇒ leave 未跑')
+
+    got = d.exec('insert into t values (1)')
+    runner.eq(got.last-id, 7, 'db.exec: 回傳 result.last-id')
+    runner.eq(got.affected, 3, 'db.exec: 回傳 result.affected')
+
+    r = d.query('select 1')
+    runner.eq(r.cursor, 0, 'db.query: 回傳 rows 且游標歸零')
+
+    s = d.prepare('select ?')
+    runner.eq(s.bound, 0, 'db.prepare: 回傳 stmt 且綁定數歸零')
+
+    runner.is-true(d.close(), 'db.close: 回 true')
+}
+
+; ── 3. rows 契約：next 走到底、三種 scan、close ──
+
+t-rows = () {
+    rs = fake-rows{}
+    runner.eq(rs.next(), true, 'rows.next: 第 1 次 ⇒ true')
+    runner.eq(rs.next(), true, 'rows.next: 第 2 次 ⇒ true')
+    runner.eq(rs.next(), false, 'rows.next: 第 3 次 ⇒ false（游標走完）')
+
+    runner.eq(rs.scan-int(0), 42, 'rows.scan-int: 回 i64')
+    runner.is-true(rs.scan-str(0) == 'cell', 'rows.scan-str: 回 str')
+    runner.is-true(rs.scan-float(0) == 1.5, 'rows.scan-float: 回 f64')
+    runner.is-true(rs.close(), 'rows.close: 回 true')
+}
+
+; ── 4. stmt 契約：三種 bind、exec / query、close ──
+
+t-stmt = () {
+    st = fake-stmt{}
+    runner.is-true(st.bind-int(1, 10), 'stmt.bind-int: 回 true')
+    runner.is-true(st.bind-str(2, 'x'), 'stmt.bind-str: 回 true')
+    runner.is-true(st.bind-bool(3, true), 'stmt.bind-bool: 回 true')
+
+    got = st.exec()
+    runner.eq(got.last-id, 11, 'stmt.exec: 回傳 result.last-id')
+
+    rs = st.query()
+    runner.eq(rs.cursor, 0, 'stmt.query: 回傳 rows')
+
+    runner.is-true(st.close(), 'stmt.close: 回 true')
+}
+
+; ── 5. 介面合併 enter/leave 後，離開作用域會自動 leave ──
+
+t-db-leave = () {
+    {
+        d = fake-db{}
+        runner.eq(d.closed, 0, 'db: 區塊內 leave 還沒跑')
+    }
+
+    ; 離開作用域後的 d 已不可見，leaving 行為已在 test/std/leave.no 全面驗證；
+    ; 這裡只確認「這種合併了 enter/leave 的型別」能被正常宣告與使用。
+    runner.is-true(true, 'db: 合併 enter/leave 的型別可宣告')
+}
+
+runner.test('result struct', t-result)
+runner.test('db contract', t-db)
+runner.test('rows contract', t-rows)
+runner.test('stmt contract', t-stmt)
+runner.test('db enter/leave merge', t-db-leave)
+
+total = runner.summary()

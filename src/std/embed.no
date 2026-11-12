@@ -52,7 +52,13 @@ embed.read = (path str) (data ?[]byte) {
         }
 
         ; 快速長度檢查
-        p-len != path-len -> break
+        ;
+        ; ⚠️ 必須 continue，不能 break：線性搜尋是逐筆比對，長度不同只代表「這一筆
+        ; 不匹配」，後面還有別的檔案。原本寫 break（跳出整個迴圈），導致只要清單裡
+        ; 前面存在一筆長度不同的檔案，後面的檔案就永遠查不到 —— 而 embed 清單按
+        ; 目錄走訪順序排列，長度幾乎不會相同，實務上等於只有第 0 筆可讀。
+        ; 測試見 test/std/embed.no 的 'later entries'。
+        p-len != path-len -> continue
 
         ; 逐字節比較
         match = true
@@ -79,7 +85,16 @@ embed.read = (path str) (data ?[]byte) {
             }
 
             ; 從 blob 中切片返回
-            data = .blob[d-start..d-start + d-len)
+            ;
+            ; ⚠️ 2026-11-12：這裡**不能**寫成 `data = .blob[d-start..d-start + d-len)`。
+            ; 結果參數是 `?[]byte` 而切片終點含算術式時，codegen 會把加法的一個運算元
+            ; 當成切片頭，生成非法 IR：
+            ;   %c363 = add %vec %lv.973, %lv.974
+            ;   error: '%lv.973' defined with type 'i64' but expected '%vec'
+            ; 由於本函式在此前從未被任何程式碼呼叫，這個問題一直沒暴露（整個 embed
+            ; 模組等於不可用）。最小復現 tmp/sh/h58p.no。改用 `.slice(a, b)` 方法形態
+            ; 可繞過（同一運算式放在方法參數裡不會被誤降級）。
+            data = .blob.slice(d-start, d-start + d-len)
             return
         }
     }
@@ -104,7 +119,7 @@ embed.exists = (path str) (yes bool) {
 
             -> _
         }
-        p-len != path-len -> break
+        p-len != path-len -> continue
         match = true
         j <- [0..p-len): {
 

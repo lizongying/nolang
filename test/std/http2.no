@@ -1,0 +1,427 @@
+; test/std/http2.no — net/http2 模組測試
+;
+; 執行：no test test/std/http2.no
+;
+; 為什麼這個檔存在：`net/http2` 之前**整模組沒有測試**，而且實際上是壞的。本輪
+; 對真 Node `http2.createServer()`（h2c）端到端排查出三處缺陷，全部修掉後用本檔釘住：
+;
+;   1) `conn.recv-frame` 用「結構體欄位（str）下標寫入」收 payload
+;      （`f.payload[..] ?= ..`），在目前 codegen 下**靜默丟棄** ⇒ payload 全 0
+;      ⇒ decode-headers 失敗 ⇒ request 恒 false。改為先收局部 str 再整條賦回。
+;   2) `conn.request` 的收幀迴圈末尾原本是 `-> return`，把「未知影格類型」當失敗。
+;      而伺服器在回應前**先送 SETTINGS(ACK)**（實測 type=4 flags=1），於是第一個
+;      影格就 return ⇒ ok 恒 false。改為：控制類影格（SETTINGS/PING/WINDOW-UPDATE/
+;      未知）跳過並繼續、只認 RST-STREAM/GOAWAY 為失敗，並用 [0..64) 封住上限。
+;   3) `do`（以及依賴它的 do-req/get/post/put/delete/patch）**根本沒發請求**：
+;      開頭把結果參數 `names`/`values` 遮蔽成局部陣列，結尾 connect 完就 `conn: { -> }`
+;      返回。且 scheme 判定用 `u[i] != prefix[i]` 比對 `?char`，把 http 誤判成 https。
+;      改為用 net/url 的 url-parse + 真的呼叫 conn.request。
+;
+; 覆蓋清單（33 個公開符號）：
+;   常數：HTTP2-FRAME-HEADER-SIZE / HTTP2-MAX-PAYLOAD / HTTP2-DEFAULT-WINDOW
+;         HTTP2-INITIAL-STREAM-ID / HTTP2-DEFAULT-PORT / HTTP2-DEFAULT-TLS-PORT
+;         FRAME-{DATA,HEADERS,PRIORITY,RST-STREAM,SETTINGS,PUSH-PROMISE,PING,
+;                GOAWAY,WINDOW-UPDATE,CONTINUATION}
+;         FLAG-{END-STREAM,ACK,END-HEADERS,PADDED,PRIORITY}
+;   frame：parse serialize
+;   conn： init send-frame recv-frame send-settings send-headers send-data close request
+;   函式：connect connect-tls do do-req get post put delete patch
+;
+; 寫法備註：
+;   - `str.byte(i)` 回 `?byte`，一律經 sb() 取值。
+;   - `?T` 收成 1 / -1 用兩步賦值，單行 `v = x: { … }` 的 it 型別會串到外層。
+;   - 跨模組 std 結構體必須顯式標型別（`c http2.conn`），否則 unknown callee。
+;   - 連到 127.0.0.1:1（未監聽）用來取「連線失敗」分支，不碰外網。
+
+# /test/runner
+
+; 取 str 的位元組（str.byte(i) 回 ?byte）
+sb = (s str, i i64) (v i64) {
+    v = s.byte(i): {
+        ok -> it
+
+        -> -1
+    }
+}
+
+; ?conn → 1=ok / -1=nil-or-err
+cv = (o ?conn) (v i64) {
+    v = o: {
+        ok -> 1
+
+        -> -1
+    }
+}
+
+; ?frame → 1=ok / -1=nil-or-err
+fv = (o ?http2.frame) (v i64) {
+    v = o: {
+        ok -> 1
+
+        -> -1
+    }
+}
+
+; ?http.response → 1=ok / -1
+rv = (o ?http.response) (v i64) {
+    v = o: {
+        ok -> 1
+
+        -> -1
+    }
+}
+
+; ?i64 → 裸值（-999 = 失敗手臂）
+oi = (o ?i64) (v i64) {
+    v = o: {
+        ok -> it
+
+        -> -999
+    }
+}
+
+; 造一個 init 過的 conn（不含 socket）
+new-conn = () (c http2.conn) {
+    c.zero()
+    c.init()
+}
+
+; ── 常數 ─────────────────────────────────────────────────────────
+
+t-const = () {
+    runner.eq(http2.HTTP2-FRAME-HEADER-SIZE, 9, 'HTTP2-FRAME-HEADER-SIZE = 9')
+    runner.eq(http2.HTTP2-MAX-PAYLOAD, 16384, 'HTTP2-MAX-PAYLOAD = 16384')
+    runner.eq(http2.HTTP2-DEFAULT-WINDOW, 65535, 'HTTP2-DEFAULT-WINDOW = 65535')
+    runner.eq(http2.HTTP2-INITIAL-STREAM-ID, 1, 'HTTP2-INITIAL-STREAM-ID = 1')
+    runner.eq(http2.HTTP2-DEFAULT-PORT, 80, 'HTTP2-DEFAULT-PORT = 80')
+    runner.eq(http2.HTTP2-DEFAULT-TLS-PORT, 443, 'HTTP2-DEFAULT-TLS-PORT = 443')
+
+    runner.eq(http2.FRAME-DATA, 0, 'FRAME-DATA = 0')
+    runner.eq(http2.FRAME-HEADERS, 1, 'FRAME-HEADERS = 1')
+    runner.eq(http2.FRAME-PRIORITY, 2, 'FRAME-PRIORITY = 2')
+    runner.eq(http2.FRAME-RST-STREAM, 3, 'FRAME-RST-STREAM = 3')
+    runner.eq(http2.FRAME-SETTINGS, 4, 'FRAME-SETTINGS = 4')
+    runner.eq(http2.FRAME-PUSH-PROMISE, 5, 'FRAME-PUSH-PROMISE = 5')
+    runner.eq(http2.FRAME-PING, 6, 'FRAME-PING = 6')
+    runner.eq(http2.FRAME-GOAWAY, 7, 'FRAME-GOAWAY = 7')
+    runner.eq(http2.FRAME-WINDOW-UPDATE, 8, 'FRAME-WINDOW-UPDATE = 8')
+    runner.eq(http2.FRAME-CONTINUATION, 9, 'FRAME-CONTINUATION = 9')
+
+    runner.eq(http2.FLAG-END-STREAM, 1, 'FLAG-END-STREAM = 1')
+    runner.eq(http2.FLAG-ACK, 1, 'FLAG-ACK = 1')
+    runner.eq(http2.FLAG-END-HEADERS, 4, 'FLAG-END-HEADERS = 4')
+    runner.eq(http2.FLAG-PADDED, 8, 'FLAG-PADDED = 8')
+    runner.eq(http2.FLAG-PRIORITY, 32, 'FLAG-PRIORITY = 32')
+}
+
+; ── frame.serialize / frame.parse ────────────────────────────────
+
+t-frame-codec = () {
+    f http2.frame
+    f.length = 5
+    f.frame-type = http2.FRAME-HEADERS
+    f.flags = http2.FLAG-END-HEADERS
+    f.stream-id = 3
+    f.payload = 'hello'
+
+    buf str = with-len(9)
+    np = 0
+    np = f.serialize(buf, 0)
+    runner.eq(np, 9, 'frame.serialize: next-pos = 9')
+
+    runner.eq(sb(buf, 0), 0, 'serialize: length 高位 byte')
+    runner.eq(sb(buf, 1), 0, 'serialize: length 中位 byte')
+    runner.eq(sb(buf, 2), 5, 'serialize: length 低位 byte = 5')
+    runner.eq(sb(buf, 3), 1, 'serialize: type = 1 (HEADERS)')
+    runner.eq(sb(buf, 4), 4, 'serialize: flags = 4 (END_HEADERS)')
+    runner.eq(sb(buf, 5), 0, 'serialize: stream-id 最高位被遮罩')
+    runner.eq(sb(buf, 8), 3, 'serialize: stream-id 低位 = 3')
+
+    ; 解析回來
+    g http2.frame
+    g.length = 0
+    g.frame-type = -1
+    g.flags = -1
+    g.stream-id = -1
+    p = g.parse(buf, 0)
+    runner.eq(oi(p), 9, 'frame.parse: next-pos = 9')
+    runner.eq(g.length, 5, 'parse: length = 5')
+    runner.eq(g.frame-type, 1, 'parse: type = 1')
+    runner.eq(g.flags, 4, 'parse: flags = 4')
+    runner.eq(g.stream-id, 3, 'parse: stream-id = 3')
+
+    ; 資料不足 9 byte ⇒ nil
+    h http2.frame
+    short str = with-len(4)
+    p2 = h.parse(short, 0)
+    runner.eq(oi(p2), -999, 'frame.parse: 只有 4 byte ⇒ nil')
+
+    ; 起點越界 ⇒ nil
+    p3 = h.parse(buf, 5)
+    runner.eq(oi(p3), -999, 'frame.parse: pos 越界 ⇒ nil')
+
+    ; 24-bit 長度上限：0x00FFFF 應完整還原
+    big http2.frame
+    big.length = 65535
+    big.frame-type = http2.FRAME-DATA
+    big.flags = 0
+    big.stream-id = 1
+    bbuf str = with-len(9)
+    bnp = 0
+    bnp = big.serialize(bbuf, 0)
+    runner.eq(sb(bbuf, 1), 255, 'serialize: length=65535 的第二 byte = 0xFF')
+    runner.eq(sb(bbuf, 2), 255, 'serialize: length=65535 的第三 byte = 0xFF')
+    big2 http2.frame
+    bp = big2.parse(bbuf, 0)
+    runner.eq(oi(bp), 9, 'parse: 65535 長度標頭可回環')
+    runner.eq(big2.length, 65535, 'parse: length = 65535')
+}
+
+; ── conn 狀態機：未連線時所有 I/O 都必須安全失敗 ─────────────────
+
+t-conn-idle = () {
+    c = new-conn()
+    runner.eq(c.fd, -1, 'conn.init: fd = -1')
+    runner.eq(c.next-stream-id, http2.HTTP2-INITIAL-STREAM-ID, 'conn.init: next-stream-id = 1')
+    runner.eq(c.send-window, http2.HTTP2-DEFAULT-WINDOW, 'conn.init: send-window = 65535')
+    runner.eq(c.recv-window, http2.HTTP2-DEFAULT-WINDOW, 'conn.init: recv-window = 65535')
+    runner.is-true(c.initialized, 'conn.init: initialized = true')
+    runner.is-false(c.use-tls, 'conn.init: use-tls = false')
+    runner.eq(c.hpack.dyn-count, 0, 'conn.init: 內嵌 hpack 動態表歸 0')
+
+    f http2.frame
+    f.length = 0
+    f.frame-type = http2.FRAME-SETTINGS
+    f.flags = 0
+    f.stream-id = 0
+
+    runner.is-false(c.send-frame(f), 'send-frame: fd < 0 ⇒ false')
+    runner.is-false(c.send-settings(false), 'send-settings: fd < 0 ⇒ false')
+    runner.is-false(c.send-settings(true), 'send-settings(ack): fd < 0 ⇒ false')
+    runner.is-false(c.send-data(1, 'x', true), 'send-data: fd < 0 ⇒ false')
+
+    names [64]str
+    values [64]str
+    runner.is-false(c.send-headers(1, names, values, 0, true), 'send-headers: fd < 0 ⇒ false')
+
+    runner.eq(fv(c.recv-frame()), -1, 'recv-frame: fd < 0 ⇒ nil')
+
+    rn [32]str
+    rv2 [32]str
+    hc = 0
+    body str = with-len(64)
+    bn = 0
+    ok = true
+    rn, rv2, hc, body, bn, ok = c.request('GET', '/', 'h', '')
+    runner.is-false(ok, 'request: fd < 0 ⇒ ok = false')
+    runner.eq(hc, 0, 'request: fd < 0 ⇒ header-count = 0')
+    runner.eq(bn, 0, 'request: fd < 0 ⇒ resp-n = 0')
+
+    ; close 對未連線 conn 是 no-op
+    c.close()
+    runner.eq(c.fd, -1, 'close: 未連線仍為 -1')
+}
+
+; ── 真實 socket 上的 send-frame / recv-frame 回環 ────────────────
+;
+; 用 127.0.0.1 上的一對 TCP fd 當「自己對自己」的通道：A 端 send-* 寫出的位元組，
+; 由 B 端 recv-frame 解析回來。不需要真伺服器，也不碰外網。
+
+t-frame-io = () {
+    port = 39123
+    lf = net.net-listen('127.0.0.1', port)
+    lf < 0 -> {
+
+        ; 埠被佔用時跳過（本機偶發），但不算失敗
+        runner.is-true(true, 'frame-io: 埠 ' + port.to-str() + ' 不可用，跳過')
+        return
+    }
+    cf = net.net-dial('127.0.0.1', port)
+    sf = net.net-accept(lf)
+    runner.is-true(cf >= 0, 'frame-io: client fd 有效')
+    runner.is-true(sf >= 0, 'frame-io: accept fd 有效')
+
+    a = new-conn()
+    b = new-conn()
+    a.fd = cf
+    b.fd = sf
+    runner.eq(a.fd, cf, 'frame-io: 直接把 fd 灌進 conn 可用')
+
+    ; ① SETTINGS（空載荷）
+    runner.is-true(a.send-settings(false), 'send-settings: 寫入成功')
+    f1 = b.recv-frame()
+    runner.eq(fv(f1), 1, 'recv-frame: 收到 SETTINGS')
+    s1 = f1: {
+        ok -> it
+
+        -> http2.frame{}
+    }
+    runner.eq(s1.frame-type, http2.FRAME-SETTINGS, 'recv-frame: type = SETTINGS(4)')
+    runner.eq(s1.flags, 0, 'recv-frame: SETTINGS flags = 0')
+    runner.eq(s1.length, 0, 'recv-frame: SETTINGS length = 0')
+    runner.eq(s1.stream-id, 0, 'recv-frame: SETTINGS stream-id = 0')
+
+    ; ② SETTINGS + ACK
+    runner.is-true(a.send-settings(true), 'send-settings(ack): 寫入成功')
+    f2 = b.recv-frame()
+    s2 = f2: {
+        ok -> it
+
+        -> http2.frame{}
+    }
+    runner.eq(s2.flags, http2.FLAG-ACK, 'recv-frame: ACK 旗標 = 1')
+
+    ; ③ HEADERS（4 條全靜態標頭，end-stream）
+    names [64]str
+    values [64]str
+    names[0]: {
+        ok -> it = ':method'
+
+        -> _
+    }
+    values[0]: {
+        ok -> it = 'GET'
+
+        -> _
+    }
+    names[1]: {
+        ok -> it = ':path'
+
+        -> _
+    }
+    values[1]: {
+        ok -> it = '/'
+
+        -> _
+    }
+    names[2]: {
+        ok -> it = ':scheme'
+
+        -> _
+    }
+    values[2]: {
+        ok -> it = 'http'
+
+        -> _
+    }
+    names[3]: {
+        ok -> it = ':authority'
+
+        -> _
+    }
+    values[3]: {
+        ok -> it = 'example.test'
+
+        -> _
+    }
+    runner.is-true(a.send-headers(1, names, values, 4, true), 'send-headers: 寫入成功')
+    f3 = b.recv-frame()
+    s3 = f3: {
+        ok -> it
+
+        -> http2.frame{}
+    }
+    runner.eq(s3.frame-type, http2.FRAME-HEADERS, 'recv-frame: type = HEADERS(1)')
+    runner.eq(s3.flags, 5, 'recv-frame: flags = END_HEADERS|END_STREAM = 5')
+    runner.eq(s3.stream-id, 1, 'recv-frame: stream-id = 1')
+    runner.gt(s3.length, 0, 'recv-frame: HEADERS 載荷非空')
+
+    ; ④ DATA（帶 4 byte 載荷；這條會走到「payload 落地」那段，原版會全 0）
+    runner.is-true(a.send-data(1, 'body', true), 'send-data: 寫入成功')
+    f4 = b.recv-frame()
+    s4 = f4: {
+        ok -> it
+
+        -> http2.frame{}
+    }
+    runner.eq(s4.frame-type, http2.FRAME-DATA, 'recv-frame: type = DATA(0)')
+    runner.eq(s4.flags, http2.FLAG-END-STREAM, 'recv-frame: DATA flags = END_STREAM(1)')
+    runner.eq(s4.length, 4, 'recv-frame: DATA length = 4')
+    runner.eq(s4.payload.len-bytes(), 4, 'recv-frame: payload 長度 = 4（不是 0）')
+    runner.eq(sb(s4.payload, 0), 98, 'recv-frame: payload[0] = b (98)')
+    runner.eq(sb(s4.payload, 1), 111, 'recv-frame: payload[1] = o (111)')
+    runner.eq(sb(s4.payload, 2), 100, 'recv-frame: payload[2] = d (100)')
+    runner.eq(sb(s4.payload, 3), 121, 'recv-frame: payload[3] = y (121)')
+
+    ; ⑤ 對端關閉後 recv-frame 必須回 nil，不能卡死
+    a.close()
+    a.close()
+    b.close()
+    fs.close(lf)
+    runner.eq(b.fd, -1, 'close: fd 歸 -1')
+}
+
+; ── 連線失敗分支：connect / connect-tls ──────────────────────────
+
+t-connect-fail = () {
+
+    ; 127.0.0.1:1 沒有任何東西在聽
+    runner.eq(cv(http2.connect('127.0.0.1', 1)), -1, 'connect: 連線被拒 ⇒ nil')
+    runner.eq(cv(http2.connect('', 1)), -1, 'connect: 空主機 ⇒ nil')
+    runner.eq(cv(http2.connect-tls('127.0.0.1', 1)), -1, 'connect-tls: 連線被拒 ⇒ nil')
+    runner.eq(cv(http2.connect-tls('', 1)), -1, 'connect-tls: 空主機 ⇒ nil')
+}
+
+; ── 高層便捷函數：失敗臂 + URL 解析 ──────────────────────────────
+;
+; 註：成功臂需要一台真的 h2c 伺服器，屬於端到端驗證，不進單元測試。
+; 這裡用「一定連不上」的位址，確認 ok / ?response 的失敗語義與 URL 解析。
+
+t-do-fail = () {
+    names [32]str
+    values [32]str
+    hc = 0
+    body str = with-len(64)
+    bn = 0
+    ok = true
+    names, values, hc, body, bn, ok = http2.do('GET', 'http://127.0.0.1:1/', '')
+    runner.is-false(ok, 'do: 連不上 ⇒ ok = false')
+    runner.eq(hc, 0, 'do: 失敗時 header-count = 0')
+    runner.eq(bn, 0, 'do: 失敗時 resp-n = 0')
+
+    ; 空 URL：url-parse 判失敗，直接回 false（不崩）
+    names2 [32]str
+    values2 [32]str
+    hc2 = 0
+    body2 str = with-len(64)
+    bn2 = 0
+    ok2 = true
+    names2, values2, hc2, body2, bn2, ok2 = http2.do('GET', '', '')
+    runner.is-false(ok2, 'do: 空 URL ⇒ ok = false')
+
+    ; 只有 scheme、沒有 host
+    names3 [32]str
+    values3 [32]str
+    hc3 = 0
+    body3 str = with-len(64)
+    bn3 = 0
+    ok3 = true
+    names3, values3, hc3, body3, bn3, ok3 = http2.do('GET', 'http://', '')
+    runner.is-false(ok3, 'do: 只有 scheme ⇒ ok = false')
+
+    runner.eq(rv(http2.do-req('GET', 'http://127.0.0.1:1/', '')), -1, 'do-req: 連不上 ⇒ nil')
+    runner.eq(rv(http2.get('http://127.0.0.1:1/')), -1, 'get: 連不上 ⇒ nil')
+    runner.eq(rv(http2.post('http://127.0.0.1:1/', 'x')), -1, 'post: 連不上 ⇒ nil')
+    runner.eq(rv(http2.put('http://127.0.0.1:1/', 'x')), -1, 'put: 連不上 ⇒ nil')
+    runner.eq(rv(http2.delete('http://127.0.0.1:1/')), -1, 'delete: 連不上 ⇒ nil')
+    runner.eq(rv(http2.patch('http://127.0.0.1:1/', 'x')), -1, 'patch: 連不上 ⇒ nil')
+    runner.eq(rv(http2.get('')), -1, 'get: 空 URL ⇒ nil')
+    runner.eq(rv(http2.get('https://127.0.0.1:1/')), -1, 'get: https 分支連不上 ⇒ nil')
+}
+
+; ── 執行 ─────────────────────────────────────────────────────────
+
+p1, f1 = runner.test('http2.const', t-const)
+p2, f2 = runner.test('http2.frame-codec', t-frame-codec)
+p3, f3 = runner.test('http2.conn-idle', t-conn-idle)
+p4, f4 = runner.test('http2.frame-io', t-frame-io)
+p5, f5 = runner.test('http2.connect-fail', t-connect-fail)
+p6, f6 = runner.test('http2.do-fail', t-do-fail)
+
+total = runner.summary()
+f = runner.failed-count()
+{
+    f > 0 -> exit(1)
+
+    -> exit(0)
+}

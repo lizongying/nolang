@@ -141,9 +141,18 @@ type codegen struct {
 
 	// optSlotBytes / optSlotLT are the payload slot's size and its LLVM spelling
 	// (`[N x i64]`), resolved per module by initOptionSlot from the configured
-	// option-inline-threshold (default 24, minimum 8).
+	// option-inline-threshold (default 24, minimum 8). Legacy single-`%option`
+	// fields; the per-payload rewrite replaces them with optLayouts below.
 	optSlotBytes int64
 	optSlotLT    string
+
+	// optInlineLimit is the per-module `option-inline-threshold` in bytes of the
+	// whole option struct (default 264). optLayouts is keyed by ElemRaw and
+	// optByLLVM by the emitted `%option_<key>` name; both are populated by
+	// collectOptionLayouts before the prelude is emitted.
+	optInlineLimit int64
+	optLayouts     map[string]*OptionLayout
+	optByLLVM      map[string]*OptionLayout
 
 	// optBoxZero maps a BOXED option payload LLVM type to a private zero-filled
 	// global of that type, `@__nolang_opt_zero_<key>`. It is what

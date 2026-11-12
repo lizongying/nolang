@@ -1,0 +1,104 @@
+; static-hashmap — 固定容量泛型雜湊映射表（常量与可用性）
+;
+; ⚠️ 先說結論：本模組的三個模板（static-hashmap-{str,int,bool}-tmpl）**目前無法從
+; 使用者程式碼實例化**，因此 770 行的方法體是死碼。原因不是語法問題，而是這三個
+; 結構體的值型別是自由型別變數 `v`（`vals [256]v`），而本語言的泛型特化只支援
+; 「接收者泛型」——型別變數要由接收者型別推出來。`map[k]v` 能特化是因為編譯器
+; 認識那個內建型別；`static-hashmap-str-tmpl{}` 沒有對應語法能綁定 `v`：
+;
+;   m = static-hashmap-str-tmpl{}
+;   m.init()
+;   ⇒ EmitLLVM: unknown callee static-hashmap-str-tmpl.init in func t1
+;
+; 真正被 `map[k]v` 使用的是 collection/map.no（hashmap-{str,int,bool}-tmpl），
+; 已由 test/std/map.no 完整覆蓋。本模組與它是「同邏輯、固定容量、無 rehash」的
+; 平行版本，只在編譯器簽名白名單（compiler/src/ck-sig.no）裡出現。
+;
+; 既然如此，本檔能測的就是模組裡**真正可達**的部分：五個常量。其中 FNV 的兩個
+; 參數用「重寫一遍 FNV-1a 再對已知答案」來驗 —— 這樣常量寫錯、型別截斷、或
+; 有號/無號處理錯都會被抓住。
+;
+; 覆蓋：FNV-OFFSET / FNV-PRIME / HASHMAP-STR-I64-CAP / HASHMAP-I64-I64-CAP /
+;       HASHMAP-STR-STR-CAP（5 個常量）。模板方法無法觸及，理由見上。
+
+# /test/runner
+
+; s.byte(i) 的 ?byte → i64（越界回 -1）
+sb = (s str, i i64) (v i64) {
+    v = -1
+    s.byte(i): {
+        ok -> v = it
+
+        -> _
+    }
+}
+
+; FNV-1a 64-bit：h = OFFSET；每個位元組 h ^= b; h *= PRIME（mod 2^64）
+;
+; 兩處刻意寫成字面量而不是 static-hashmap.FNV-OFFSET / FNV-PRIME：
+; 把**跨模組常量**放進「循環累加」的函式會觸發 MIR 降級缺陷 ——
+;   EmitLLVM: MIR->LLVM: func fnv1a: consumer reads value 0 (NoVal),
+;   which no instruction produced … [zodppsnm]（bug #85 同族）
+; 常量與字面量是否相等由 t-consts 斷言，所以覆蓋不打折。
+;
+; 乘法必定溢出（64-bit 迴繞），必須 `#{overflow=wrap}` 且接住 option；
+; 只寫注解不接 option 會編不過（tmp/sh/h57.no）。
+fnv1a = (s str) (h i64) {
+    h = -3750763034362895579
+    n = s.len-bytes()
+    i <- [0..n): {
+        b = sb(s, i)
+        h = h ^ b
+
+        #{overflow=wrap}
+        h = h * 1099511628211: {
+            ok -> it
+
+            -> h
+        }
+    }
+}
+
+; ── 1. 常量本體 ──
+
+t-consts = () {
+
+    ; 0xcbf29ce484222325 的有號 i64 表示
+    runner.eq(static-hashmap.FNV-OFFSET, -3750763034362895579, 'FNV-OFFSET = 0xcbf29ce484222325')
+
+    ; 0x100000001b3
+    runner.eq(static-hashmap.FNV-PRIME, 1099511628211, 'FNV-PRIME = 0x100000001b3')
+
+    runner.eq(static-hashmap.HASHMAP-STR-I64-CAP, 256, 'str→i64 容量 = 256')
+    runner.eq(static-hashmap.HASHMAP-I64-I64-CAP, 256, 'i64→i64 容量 = 256')
+    runner.eq(static-hashmap.HASHMAP-STR-STR-CAP, 256, 'str→str 容量 = 256')
+
+    ; 建議裝載因子 ≤ 0.75 ⇒ 256 槽最多放 192 條（模組檔頭的說法）
+    runner.is-true(static-hashmap.HASHMAP-STR-I64-CAP > 192, '容量 256 > 建議上限 192')
+}
+
+; ── 2. 用已知答案驗 FNV 參數 ──
+
+t-fnv = () {
+
+    ; 空字串：結果就是 OFFSET 本身（不改動任何位元組）
+    runner.eq(fnv1a(''), static-hashmap.FNV-OFFSET, 'fnv1a("") = OFFSET')
+
+    ; 以下期望值由獨立的 FNV-1a 實作算出（python：h=0xcbf29ce484222325;
+    ; for b in s: h^=b; h=h*0x100000001b3 & 0xffffffffffffffff）
+    runner.eq(fnv1a('a'), -5808556873153909620, 'fnv1a("a") = 0xaf63dc4c8601ec8c')
+    runner.eq(fnv1a('abc'), -1792535898324117685, 'fnv1a("abc") = 0xe71fa2190541574b')
+    runner.eq(fnv1a('hello'), -6615550055289275125, 'fnv1a("hello") = 0xa430d84680aabd0b')
+
+    ; 不同鍵必須給不同值（雜湊表的最低要求）
+    runner.is-true(fnv1a('a') != fnv1a('b'), 'fnv1a: "a" 與 "b" 不同')
+    runner.is-true(fnv1a('abc') != fnv1a('abd'), 'fnv1a: 只差一個位元組也不同')
+
+    ; 長度不同的鍵，前綴相同也必須不同（避免前綴碰撞）
+    runner.is-true(fnv1a('ab') != fnv1a('abc'), 'fnv1a: "ab" 與 "abc" 不同')
+}
+
+runner.test('constants', t-consts)
+runner.test('fnv1a known answers', t-fnv)
+
+total = runner.summary()

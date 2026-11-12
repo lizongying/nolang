@@ -1,0 +1,144 @@
+; enter — 作用域進入掛鉤的注入行為
+;
+; enter.no 本身只是介面宣告（`enter { enter() }`），沒有任何可執行邏輯；
+; 真正有用的是編譯器側的注入器（src/build/transpiler_inject.go 的 injectEnterLeave）：
+; 型別一旦提供 `T.enter = ()`，**每個該型別的變數宣告**之後都會被插入一次
+; `變數.enter()`。
+;
+; 判定用的是「解析出來的有效型別」，不是源碼有沒有寫標註 —— 這一條很要緊：
+; `no fmt` 會移除「標註型別 == 推斷型別」的冗餘標註（cmd/no 的
+; fixRedundantTypeSource），所以 `a life = life{…}` 進過 fmt 就變成
+; `a = life{…}`。若注入器只認 LetStatement.Type，同一份程式的生命週期行為
+; 會因為排版而**靜默**消失（編譯通過、資源不關閉）。故本檔測的是：
+;   1. 帶標註的宣告 ⇒ 注入，且緊接在宣告之後（先於我們自己的下一句）；
+;   2. 不帶標註（推斷）的宣告 ⇒ **同樣注入**，且只注一次；
+;   3. 由呼叫結果推斷的宣告（`c = mk()`）⇒ 同樣注入；
+;   4. 同一區塊多個變數 ⇒ 各自注入一次，按宣告順序；
+;   5. 巢狀區塊 ⇒ 內層變數也會被注入。
+;
+; 觀察手段：enter/leave 沒有參數、也不回傳，只能靠副作用。這裡讓它們往檔案追加
+; 一個字母（E/L）加標籤，測試再讀檔案比對 —— 這是唯一能在同一執行緒內看到
+; 「已發生 / 未發生 / 順序」的方式。
+;
+; 覆蓋：enter 介面宣告 + 注入器對 enter 的所有觸發路徑。
+; leave 那一半見 test/std/leave.no。
+
+# /test/runner
+
+; 往檔案追加字串（讀回舊內容再整檔覆寫；檔案不存在時從空字串開始）
+log-add = (path str, s str) {
+    old = fs.read-file(path).to-bytes-str()
+    fs.write-file(path, (old - s).to-bytes())
+}
+
+; 觀察物件：enter 記 'E' + tag
+life {
+    tag str
+}
+
+life.enter = () {
+    log-add('/tmp/no-life-enter.txt', 'E' - .tag)
+}
+
+; ── 1. 顯式標註型別 ⇒ 注入，且發生在宣告之後、下一句之前 ──
+
+t-enter-fires = () {
+    fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())
+
+    {
+        a = life{
+            tag: 'a'
+        }
+
+        ; 走到這裡時，注入的 a.enter() 已經執行完
+        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Ea', 'enter: 宣告後立刻被呼叫')
+    }
+
+    ; 區塊結束只會補 leave（本型別沒實作 leave，故日誌不變）
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Ea', 'enter: 不會被重複呼叫')
+}
+
+; ── 2. 不帶標註（推斷）的宣告同樣注入 ──
+;
+; 這正是 `no fmt` 之後的形態：`b life = life{…}` 的標註被當成冗餘移除，
+; 剩下的就是這一行。行為必須與帶標註時一致，否則排版改變語義。
+
+t-enter-inferred = () {
+    fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())
+
+    {
+        b = life{
+            tag: 'b'
+        }
+        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Eb', 'enter: 不帶標註的宣告也注入')
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Eb', 'enter: 不帶標註的宣告只注入一次')
+}
+
+; ── 3. 由呼叫結果推斷的宣告同樣注入 ──
+;
+; 與第 2 點不同的一條路徑：`mk()` 的返回型別由 parser 寫進 inferred Type，
+; 注入器從 s.Type 就讀得到，不需要看初始化式形態。
+
+mk-life = (tag str) (r life) {
+    r.tag = tag
+}
+
+t-enter-from-call = () {
+    fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())
+
+    {
+        c = mk-life('c')
+        runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'Ec', 'enter: 呼叫推斷的宣告也注入')
+    }
+}
+
+; ── 4. 同區塊多個變數：各注入一次，按宣告順序 ──
+
+t-enter-order = () {
+    fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())
+
+    {
+        p = life{
+            tag: '1'
+        }
+        q = life{
+            tag: '2'
+        }
+
+        r = life{
+            tag: '3'
+        }
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'E1E2E3', 'enter: 三個變數按宣告順序各注入一次')
+}
+
+; ── 5. 巢狀區塊：內層宣告同樣被注入 ──
+
+t-enter-nested = () {
+    fs.write-file('/tmp/no-life-enter.txt', ''.to-bytes())
+
+    {
+        o = life{
+            tag: 'o'
+        }
+
+        {
+            i = life{
+                tag: 'i'
+            }
+        }
+    }
+
+    runner.is-true(fs.read-file('/tmp/no-life-enter.txt').to-bytes-str() == 'EoEi', 'enter: 巢狀區塊的宣告也被注入')
+}
+
+runner.test('enter fires after annotated decl', t-enter-fires)
+runner.test('enter injected for inferred decl', t-enter-inferred)
+runner.test('enter injected for call-inferred decl', t-enter-from-call)
+runner.test('enter order', t-enter-order)
+runner.test('enter nested blocks', t-enter-nested)
+
+total = runner.summary()

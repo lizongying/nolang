@@ -1416,6 +1416,17 @@ lx-scan-token = (lx lxst, t tk) {
                 lx-read-char(lx)
                 typ = tok.ELLIPSIS
                 lit = '..'
+
+                ; s101：第三个点 ⇒ `...` 佔位陳述（Go lexer.ELLIPSIS3）。必须在
+                ;   `..` 之后立刻判，否则 `...` 被切成 `..` + `.`，`. ` 落进
+                ;   「隐式 self」路径 ⇒ 每个含 `...` 的档案都多一条 unsup，
+                ;   且 `[0...n)` 这种误写会静默成为合法范围。
+                pk2 = lx-peek(lx)
+                pk2 == B-DOT -> {
+                    lx-read-char(lx)
+                    typ = tok.ELLIPSIS3
+                    lit = '...'
+                }
             }
             pk != B-DOT -> {
                 typ = tok.DOT

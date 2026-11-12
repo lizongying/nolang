@@ -5730,6 +5730,13 @@ server-conn.read-client-hello = () (ok bool) {
 
             #{overflow=wrap}
             pos + 4 <= ext-end -> {
+                ; 擴展型別（2 bytes）——2026-11-12 修：此處原本漏了賦值。
+                ; 未定義識別符在**運算式**位置會被檢查器靜默降級成 undef
+                ; （不報 4bek3xc6，只在 LLVM 端出現 `add void undef`），
+                ; 於是下面兩個 `ext-type == …` 永遠不成立：伺服器從不解析
+                ; supported_versions / key_share，is-tls13 恆為 false，
+                ; 之後的 1.3 記錄必然解密失敗。迴歸 test/std/tls.no。
+                ext-type = get-u16(buf, pos)
                 #{overflow=wrap}
                 edl-pos = pos + 2: {
                     ok -> it
@@ -5797,6 +5804,8 @@ server-conn.read-client-hello = () (ok bool) {
 
                         -> 0
                     }
+                    ; group（2 bytes）——同樣漏了賦值，與上面的 ext-type 同源
+                    ks-group = get-u16(buf, ks-pos)
                     #{overflow=wrap}
                     ks-end = ks-pos + ks-list-len: {
                         ok -> it

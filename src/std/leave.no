@@ -1,9 +1,15 @@
 ; leave — 作用域離開掛鉤（介面聲明）
 ;
-; 型別提供 `T.leave = () { … }` 後，編譯器會在 `return` 之前按作用域逆序自動插入
-; `變數.leave()`：注入由 src/build/transpiler_inject.go 的 injectEnterLeave
-; 按**方法名**完成，與本聲明無耦合。本檔只登記介面本身，供文檔與 LSP 導航；
-; std 語料目前沒有型別實作它。
+; 型別提供 `T.leave = () { … }` 後，編譯器會在**作用域退出**時按宣告逆序自動
+; 插入 `變數.leave()`（`return` 跳出同樣會跑，且只跑一次 —— 清理掛在各層區塊
+; 尾端，不在 return 前重複插入）：注入由 src/build/transpiler_inject.go 的
+; injectEnterLeave 按**方法名**完成，與本聲明無耦合。
+;
+; 判定依據是「解析出來的有效型別」而非源碼有沒有寫標註 —— `no fmt` 會移除
+; 冗餘標註，`a T = T{…}` 進過 fmt 之後仍必須照樣 leave，否則資源不再釋放。
+;
+; 本檔只登記介面本身，供文檔與 LSP 導航；std 語料目前沒有型別實作它
+; （example/sqlite-driver、example/mysql-driver 有實作，leave 裡關連線）。
 ; [leave](#leave)
 
 leave {

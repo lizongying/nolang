@@ -101,6 +101,9 @@ unix-listener.accept = () (c ?unix-conn) {
 }
 
 ; 設定 accept 逾時
+; ⚠️ 這是對**監聽 fd** 設 SO_RCVTIMEO，它只影響 recv(2)，**不會**讓 accept(2) 逾時
+; （macOS 實測：設了照樣永久阻塞）。要帶逾時的 accept 請用 accept-with-timeout，
+; 它走非阻塞輪詢。保留本函式是為了與 net.listener.set-timeout 的介面一致。
 ; timeout-ms i64: 逾時毫秒數
 ; 返回 ok bool: true=成功
 ; [set-timeout](#unix.unix-listener.set-timeout)
@@ -118,13 +121,35 @@ unix-listener.set-timeout = (timeout-ms i64) (ok bool) {
 unix-listener.accept-with-timeout = (timeout-ms i64) (c ?unix-conn) {
     c = nil
     .fd < 0 -> return
-    ret = net.net-set-recv-timeout(.fd, timeout-ms)
-    ret != 0 -> return
-    fd = net.net-accept(.fd)
-    net.net-set-recv-timeout(.fd, 0)
-    fd < 0 -> return
-    c = unix-conn{
-        fd: fd
+
+    ; 🔴 原實現是「設 SO_RCVTIMEO → 阻塞 accept」，但 SO_RCVTIMEO 對 accept() 無效
+    ; （macOS 實測：無人連線時永久阻塞，timeout-ms 形同虛設）。net.no 的
+    ; listener.accept-with-timeout 早就為同一個坑改成了非阻塞輪詢，這裡漏改。
+    ; 現改為 net-accept-nb 輪詢 + 小睡；net-accept-nb 會順帶把 listen fd 置為
+    ; non-blocking（冪等），所以之後的 net-accept 也是非阻塞的。
+    waited = 0
+    !! {
+        fd = net.net-accept-nb(.fd)
+        fd >= 0 -> {
+            c = unix-conn{
+                fd: fd
+            }
+            break
+        }
+
+        ; -1 = 硬錯誤（含 fd 已關閉），沒必要再等
+        fd == -1 -> break
+        waited >= timeout-ms -> break
+        time.sleep-ms(5)
+
+        ; 累加器必須兩步解包：`waited = waited + 5` 直接賦值是 trace 15w45dqk
+        ; （加法結果是 ?i64，隱式解包會丟掉溢出臂）。
+        nxt = waited + 5
+        waited = nxt: {
+            ok -> it
+
+            -> timeout-ms
+        }
     }
 }
 

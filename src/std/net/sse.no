@@ -482,8 +482,16 @@ client.reconnect = () (ok bool) {
         return
     }
 
+    ; ⚠️ 2026-11-12：起點**必須**先收成局部再傳。寫成
+    ; `status-line.slice(sp1 + 1, ..)`（起點是算術式）時，這個 slice 的推斷型別會
+    ; 變成 `?str`，接著 `code-str[i]` / `code-str.len-bytes()` 直接失敗：
+    ;   nolang-compile: an index is taken on `after-code`, whose type is ?str
+    ; 或 codegen 的 `lencap kind: len/cap unsupported on ?str (option)`（t5qq2leo）。
+    ; 最小復現 tmp/sh/h54.no。整個模組不可調用時就是這裡（連 `?client` 的 match
+    ; 都過不了 codegen 階段）。
     #{overflow=wrap}
-    after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
+    code-start = sp1 + 1
+    after-code = status-line.slice(code-start, status-line.len-bytes())
     sp2 = after-code.index(' ')
     code-str = after-code
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)
@@ -741,8 +749,16 @@ sse-connect = (url str) (client ?client) {
         return
     }
 
+    ; ⚠️ 2026-11-12：起點**必須**先收成局部再傳。寫成
+    ; `status-line.slice(sp1 + 1, ..)`（起點是算術式）時，這個 slice 的推斷型別會
+    ; 變成 `?str`，接著 `code-str[i]` / `code-str.len-bytes()` 直接失敗：
+    ;   nolang-compile: an index is taken on `after-code`, whose type is ?str
+    ; 或 codegen 的 `lencap kind: len/cap unsupported on ?str (option)`（t5qq2leo）。
+    ; 最小復現 tmp/sh/h54.no。整個模組不可調用時就是這裡（連 `?client` 的 match
+    ; 都過不了 codegen 階段）。
     #{overflow=wrap}
-    after-code = status-line.slice(sp1 + 1, status-line.len-bytes())
+    code-start = sp1 + 1
+    after-code = status-line.slice(code-start, status-line.len-bytes())
     sp2 = after-code.index(' ')
     code-str = after-code
     sp2 >= 0 -> code-str = after-code.slice(0, sp2)

@@ -1,0 +1,53 @@
+; link — M4-d 外部工具鏈接口（DR-2：只調 clang，不靠 opt / llc）
+;
+; ⚠️ 附錄 B.6 的 `process.start-with-opts('clang', ...)` **自由函式**寫法已過期：
+;    std/process.no 裡 `start-with-opts` 是 struct `process` 的實例方法，
+;    且其 `ok` 只代表「子行程已 fork」，必須再 `.wait()` 才拿得到結束碼
+;    （2026-11-12 實測三寫法：實例方法 + wait、process.cmd、process.process-system
+;     三者都能同步跑 clang；唯有「呼叫後不 wait」會讓 cmd-build 提前返回）。
+;    本件改用同模組的 `process.cmd`（底層同樣走 start-with-opts，扁平 7 參），
+;    一次同步拿到 (stdout, stderr, code, err)，並把合併輸出當失敗診斷印出。
+;    DR-2 口徑不變：唯一外部呼叫是 clang，IR 文本餵 `-x ir -O2`，
+;    不實作 ISel / obj writer / linker，`opt -passes=verify` 只作離線門禁不進驅動。
+;
+; ⚠️ `fs.write-bytes` 回 `?bool`，必須三臂顯式處理（§2.2.6）；
+;    `ok` 是 out-param，函式開頭必須先寫 false（Nolang 不保證零初始化）。
+; ⚠️ 名稱紀律（§2.2.8／drv.no 檔頭）：本函式在模組內用**裸名** `compile`，
+;    呼叫端寫 `link.compile(...)`（模組形式導入 `# /compiler/src/link`）。
+;    若定義成含點的 `link.compile`，`no build` 會報
+;    `unknown callee link.compile ... [4qhyyund]`——含點自由函式只在**同模組內**
+;    可解析（drv.no 自己的 drv.* 即如此），跨模組必須裸名＋模組前綴。
+; ⚠️ SHS S6：本檔 out-param 至多 1 個（ok）。
+; ll: 完整 LLVM IR 模組文字（prelude + 函式 + define i64 @main()）
+; out: 目的可執行檔路徑；IR 會另存成 out + '.ll'
+; ok: clang 是否正常結束（code == 0）
+compile = (ll str, out str) (ok bool) {
+    ok = false
+    llpath = out - '.ll'
+    w = fs.write-bytes(llpath, ll.to-bytes())
+    good = false
+    w: {
+        ok(y) -> good = true
+
+        nil -> eprint('noc: cannot write ' - llpath)
+
+        err(e) -> eprint('noc: cannot write ' - llpath - ': ' - e)
+    }
+    good == false -> return
+
+    a []str = []
+    a.push('-x')
+    a.push('ir')
+    a.push('-O2')
+    a.push('-o')
+    a.push(out)
+    a.push(llpath)
+    env []str = []
+    so, se, code, errs = process.cmd('clang', a, '', '', env, 0, true)
+    code == 0 -> ok = true
+    code != 0 -> {
+        eprint('noc: clang failed with code ' - code.to-str())
+        so.len-bytes() > 0 -> eprint(so)
+        errs.len-bytes() > 0 -> eprint(errs)
+    }
+}

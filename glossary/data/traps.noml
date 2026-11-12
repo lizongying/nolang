@@ -1450,6 +1450,22 @@ no test test/std/noml.no 346 条断言全绿。
 而不是变成 bus error 或静默 0。落地前对 src/std + test + tests + example
 （约 600 档）做过普查，零误报。
 
+方法名写错是同一条路的另一半（2026-11-12 同一轮补上）：recv.no-such-method(...)
+在 callee 位置以前刻意不查，打错方法名同样静默到 MIR 才炸。现在 callee 也走
+同一条判定（栏位 → 方法 → 内建方法名），文案与 trace 完全沿用 o4x247ya。
+普查（src/std + test + tests + example，484 档）逼出两类必须放行的成员，都已
+写进 checker 的 builtinMethodNames：
+
+1. 内建方法表里有些条目记的是**限定名**（str.eq / str.clear / 数组的 zero），
+   使用者写 s.eq(b) 时成员名只有 eq，所以限定名要一并登记成裸名 —— 少了这步，
+   s.eq() / s.clear() 会被误报成「str 没有成员 eq」。
+2. .zero() 根本没有 BuiltinMethod 条目：codegen 对「callee 以 .zero 结尾且不是
+   真函数」直接发 memset 到接收者，因此任意 struct / 切片都能 .zero()。
+
+放行后真实二进制对语料 no vet 全量普查 0 命中。纯 AST 普查（不经真实管线）会
+在 test/std/zip.no 误报 writer 的 data / cd-data —— 那是「模块名未知」时同名
+结构体（io.writer 与 zip.writer）歧义的老问题，真实管线带上模块名后不出现。
+
 结论要再改一次：**白盒测试只呼方法、不读字段**这条建议仍然可用，但它已经不
 是「读字段会崩」，而是「读字段会把错误从编译期推迟到运行期」；成员名写错现在
 有诊断兜底了。
