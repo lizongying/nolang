@@ -722,11 +722,14 @@ digits = digits + 1
 ; #{overflow=wrap} digits = digits + 1   ; 前缀写法 → 编译错误
 ```
 
-存量已用 `no fmt --fix=overflow` 下推过一轮：它先摘掉写在函数头（L1）/ 块头（L2）上的注解，
-再按 checker 的报告逐条补 L3，只动注解行。**判据是「摘掉会不会改变编译结果」——不会**：
+存量已用 `no fmt --fix=overflow` 下推过两轮：它先摘掉写在函数头（L1）/ 块头（L2）上的注解
+与「挂不上任何节点」的死行，再按 checker 的报告逐条补 L3，只动注解行（两轮 `diff` 逐行核对：
+改动全部是 `#{...}` 行，0 行代码）。**判据是「摘掉会不会改变编译结果」——不会**：
 L1/L2 的 `#{overflow}` 对 codegen 与编译期检查都无效（`for` 头加与不加，`15w45dqk` 逐字
-相同），只让 `no vet` 少报 hint。残留 166 处（裸块 `{` / `.` 起首陈述 / `cond -> {` 头）
-的成因与待办见 `docs/docs/lang/annotation-scope.md` §7。
+相同），只让 `no vet` 少报 hint。现状：`overflow` 注解行 4580 → 3861，作用域级 982 → 76，
+死行 0；剩 270 处被 `no vet` 报告但当前语言标不了（`.` / `{` / `(` 起首的陈述挂不上注解），
+要清零得放宽 parser 的附加目标——成因、实测证据与待办见
+`docs/docs/lang/annotation-scope.md` §7 与 §8 第 4 步。
 
 ### 6.5 不要定义会遮蔽成员方法的 union 别名方法
 为 `string = str | txt` 定义 `string.len` 之类的别名方法，会接管 `s.len()` 调用并递归分发回自身 → 段错误。
