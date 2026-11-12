@@ -389,9 +389,10 @@ func (p *Parser) attachAnnotations(stmt Statement, entries []*AnnotationEntry) {
 			}
 		}
 	}
-	// #{buildin} 標註 struct：這份聲明只是編譯器內建型別的**佈局文檔 / 連結
-	// 載體**（LSP hover、docs 用），語義上不存在。真實佈局由 MIR 手寫描述符
-	// （str / vec / txt）或編譯期常量（arr 的 .len）提供。
+	// #{buildin} 標註 struct：這份聲明只是編譯器內建型別的**欄位型別來源 /
+	// 佈局說明**，語義上不存在。真實佈局由 MIR 手寫描述符（str / vec / txt）
+	// 或編譯期常量（arr 的 .len）提供；LSP 的 hover / 跳轉 / 補全走
+	// parser.BuiltinTypes()，不讀這份聲明。
 	//
 	// 消費方（必須一致）：build 的模組前綴收集（不能把它當本模組型別改名）、
 	// MIR 的 collectStructFields（不能覆蓋手寫描述符）、checker 的

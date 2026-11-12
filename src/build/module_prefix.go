@@ -119,8 +119,9 @@ func prefixModuleStatements(stmts []parser.Statement, moduleShortName string, ty
 	moduleTypes := make(map[string]bool)
 	for _, stmt := range stmts {
 		// `#{buildin}` 佈局聲明（`str` / `vec` / `txt` / `arr`）不屬於「本模組
-		// 定義的型別」：它只是編譯器內建佈局的文檔 / 連結載體（LSP hover、
-		// docs 用），語義實體在 MIR 手寫描述符裡。
+		// 定義的型別」：它只是編譯器內建佈局的欄位型別來源 / 佈局說明，
+		// 語義實體在 MIR 手寫描述符裡（LSP 的 hover / F12 走
+		// parser.BuiltinTypes()，與這份聲明無關）。
 		//
 		// 一旦收進 moduleTypes，後面三個階段會連鎖出錯：
 		//   Phase 2 生成影子結構體 `txt.txt`
