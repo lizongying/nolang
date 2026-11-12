@@ -3038,6 +3038,23 @@ done 裡有 `@str_free`」的結構斷言。這道門的另一半作用是防「
 > 之後測試轉綠」的結論，都必須先 `make gen no` 重烤，並且**同時**用
 > `no vet src/std` 對磁碟原文驗一遍 —— 只信 `no test` 會得到本文這種假修。
 
+**全量 `test/std` 復測（118 檔，逐檔 60s 超時，用當輪 binary 快照跑）**：
+
+```text
+SUMMARY pass=117 fail=1 timeout=0
+```
+
+唯一紅檔是 `test/std/zip.no`，**預存**且在別人的在建改動裡：
+
+| 樹 | 錯誤 |
+|---|---|
+| 乾淨 HEAD（`/tmp/no-head2`） | `unknown callee zip-writer.write-u16 in func t-primitives` |
+| 本輪工作區 | `EmitLLVM: getfield field [k9270vd6]`（錯誤形態隨重烤改變，但同樣不過） |
+
+`src/std/archive/zip.no` 的 mtime 是 08:54，正在做與 `json` / `pem` / `xz` /
+`bzip2` / `tar` 同批的「去掉模組內冗餘前綴」rename，屬該檔 owner 的收尾範圍，
+本輪不動。
+
 ### 5.3 歷史快照（2026-09-26，保留供對照）
 
 最後一次全量執行（本輪修復後，`./bin/no`）：**41 檔、906 個斷言通過、14 個失敗**
