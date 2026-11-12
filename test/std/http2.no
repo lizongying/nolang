@@ -45,7 +45,7 @@ sb = (s str, i i64) (v i64) {
 }
 
 ; ?conn → 1=ok / -1=nil-or-err
-cv = (o ?conn) (v i64) {
+cv = (o ?http2.conn) (v i64) {
     v = o: {
         ok -> 1
 

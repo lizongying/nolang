@@ -334,7 +334,150 @@ segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（
 先通過官方/標準向量自檢 → 再取金標**。這一步是必要的：`scrypt` 的
 `salsa20-8-core` 金標就靠「Python 實作能重現 RFC 7914 A.1/A.2」才取得信任。
 
-### 5.0zd 快照：2026-11-12（`%vec` 收 16B / u32 header，**當前**）
+### 5.0ze 快照：2026-11-12 深夜（**API 面覆蓋率 100%**，當前）
+
+`python3 scripts/std_test_coverage.py`：
+
+```
+std 文件 119 / 模組別名 119 / 測試檔 129
+API 面 2050（函數 762，方法 1288），已覆蓋 2050（100.0%）
+另有私有/不可達符號 91 個（`_` 前綴或 UNREACHABLE，使用者碼不可調用，不計入分母）
+另有平台不適用聲明 18 個（宿主 mac-arm64，`#{...}` 標籤無交集，本機編不出來，不計入分母）
+無專用測試檔的模組 0 個：（無）
+```
+
+測試檔 129 而不是 135：中途為了二分定位 `net/tls` 的問題複製過 6 份
+`test/std/_tls*.no`（各 41KB，整檔拷貝），收尾時刪掉了。那些副本本身會被
+`no test test/std` 當成真的測試檔跑一遍，留著只會讓全量時間與檔數虚胖。
+
+本輪（收尾輪）把剩下的 13 項全部收掉，缺口從 **96.2%（1973 / 2051）** →
+**99.4%（2037 / 2050）** → **100.0%（2050 / 2050）**。分母從 2051 降到 2050 是因為
+`str.cap` 被認定為**結構性不可達**（見下），移入 `UNREACHABLE`。
+
+| 模組 | 全檔斷言 | API 面 / 覆蓋 |
+|---|---:|---|
+| `net/quic` | 176 | 14 / 14 |
+| `net/http3` | 104 | 15 / 15 |
+| `net/http` | 85 | 25 / 25 |
+| `net/dns` | 56 | 7 / 7 |
+
+#### `str.cap` 為什麼不算缺口
+
+`src/std/str.no` 裡的 `cap` 是 `#{buildin}` 的**文檔殼**（給 LSP hover / F12 用），
+`src/builtin/*.go` 的 `BuiltinMethodList` 裡沒有對應條目。兩種方法呼叫形態實測都是
+一字不差的硬錯：
+
+```
+u str = with-cap(16); u.cap()      ⇒ EmitLLVM: unknown callee str.cap in func main [4qhyyund]
+u str = with-cap(16); str.cap(u)   ⇒ 同上
+```
+
+使用者真正可用的形態是**屬性** `u.cap`，已在 `test/std/str.no` 的 `t-cap` 覆蓋。
+`scripts/std_test_coverage.py` 的 `UNREACHABLE` 裡登記了這一條（含上面兩條報錯原文）。
+
+#### 本輪修掉的 9 個 std 真 bug
+
+① **`quic.build-initial-packet` 漏了 Fixed Bit**。首位元組只寫了
+`QUIC-LONG-HEADER-FIXED-BIT`（0x80），真正的 Fixed Bit 是 **0x40**，於是發出去的是
+0x83 而不是 0xC3 —— RFC 9000 §17.2 要求 Fixed Bit 恆為 1，任何合規伺服器都會直接
+丟棄這種 Initial 封包。新增 `QUIC-FIXED-BIT = 0x40` 參與或運算。
+
+② **`build-initial-packet` 的 Length 在 PAD 之前就算死**。原實作把 length 寫成
+`pn + crypto + tag = 31`，之後才把明文補零到 1184，於是真正送出的 1171 位元組密文
+有 1140 位元組落在 Length 之外，對端整包丟棄。改成先預留 2 位元組、PAD 完再回填
+（實測 31 → **1174**）。
+
+③ / ④ **AAD 與明文/密文的邊界把封包號碼本身的位元組算成了密文**。按 RFC 9001 §5.3，
+AAD 應到「未保護的 PN 結尾」為止；原實作 AAD 止於 `pn-offset`、明文從 `pn-offset`
+起算，等於把 PN 欄位當成密文送去 seal/open。`build-initial-packet` 與 `recv-initial`
+各有一處，統一改成 `pn-end = pn-offset + pn-len`（`recv-initial` 的密文長度同時要
+扣掉 `pn-len`，因為 Length 含 PN 欄位）。
+
+⑤ **`recv-initial` 傳空 vec 給 `recvfrom`**。`buf []byte` 是空 vec ⇒ `data` 指標是
+`NULL` ⇒ `recvfrom` 必回 **-1（EFAULT）**，函式永遠在第一步就放棄。改成
+`buf []byte = with-len(QUIC-MAX-PACKET-SIZE)`。
+
+⑥ **`quic.dial` 的接收逾時守衛寫反**：`c.fd < 0 -> net.net-set-recv-timeout(...)`
+—— 只有 socket **建立失敗**時才去設逾時，真正可用的 fd 反而沒有，之後每個 recv
+都阻塞到對端或程式結束。改成 `c.fd >= 0 ->`。
+
+⑦ **`http3.send-request` 同樣的空 vec 給 `recvfrom`**（同上，`recv-buf` 改成
+`with-len(HTTP3-MAX-RESPONSE)`），這正是 `http3.get` / `post` 恆回 `nil` 的根因。
+
+⑧ **`http3.get` / `post` / `http3-do` 每次呼叫洩漏一個 UDP fd**：`send-request`
+之後函式就結束，`conn` 的 fd 從未關閉。改成用完即 `c.close()`。
+
+⑨ **`push(s.byte(i))` 靜默寫 0** —— 一整族，三個站點。`str.byte(i)` 回的是 `?byte`，
+直接當普通實參傳給 `push` 會被當成「有值但內容不是那個位元組」⇒ **每個元素都寫成 0**
+（len 照樣增長，只看長度看不出來）。受害的是 `src/std/net/http.no` 的
+`http-dl-open`（掃不到 `CRLFCRLF` ⇒ `sep = -1` ⇒ 恆回 false）與
+`src/std/net/dns.no` 的 `resolve-from` / `resolve-all`（`resp` 全是 0 ⇒ 永遠找不到
+A 記錄）。三處全部改成先解包：`bv = s.byte(i): { ok -> it  -> 0 }` 再 `push`。
+
+#### 測試基建：fork 出來的極簡 HTTP 伺服器
+
+`net/http` 的 13 個入口（`do` / `do-req` / `get` / `post` / `put` / `delete` /
+`patch` / `get-auth` / `post-auth` / `download` / `download-to-file` /
+`http-dl-open` / `upload-put`）必須有真 socket 才走得完，而本語言的協程是**協作式**
+的 —— 客戶端 recv 阻塞時不讓出線程 ⇒ 同一個進程裡「先 dial 再 accept」必然互鎖。
+所以 `test/std/http.no` 用 `process.process-fork()` 起一個子進程當伺服器：
+
+1. `listen` 必須在 fork **之前**做，子進程直接繼承 fd，父進程才不會搶在 accept 之前
+   connect（否則 `ECONNREFUSED`）。
+2. 父進程 fork 完**立刻** `fs.close(lfd)`，讓子進程獨占。否則子進程服務完退出後，
+   父進程手上的那份 fd 仍讓核心監聽並把新連線收進 backlog —— 沒人 accept，客戶端就
+   卡在 recv 等不到應答。**症狀只有「測試逾時」，看不到任何連線錯誤**（本檔就這麼
+   卡過兩次）。
+3. 子進程的迴圈必須 `break`（`served >= want -> break`、`now >= deadline -> break`），
+   不能只把退出條件寫在 while 條件裡：那樣 served 滿了之後仍會在
+   `i <- [0..20000)` 裡空轉約 10 秒，waitpid 也跟著等。
+4. `want` 就是父進程**真正發出**的請求數（本檔 **14**）。少 1 個，那一個請求連得上
+   卻沒有應答；多 1 個，子進程要等逾時才退出。數錯的表現同樣是「測試逾時」。
+5. 埠用三個候選 + `port-busy()` 探測：上一次執行若崩在子進程之前，它會占著埠直到
+   5 秒硬截止。父進程最後還會斷言「子進程退出後埠已釋放」。
+
+`net/dns` 的解析入口則**只能測失敗臂**：`resolve` / `resolve-from` / `resolve-all`
+都把 `DNS-PORT(53)` 寫死，本機跑測試的使用者沒有 root，綁不上 53 埠，造不出假伺服器。
+可測的契約是三條：空域名（`build-query` 先回 `qlen = 0`，開 socket 之前就返回）、
+伺服器位址非法（`net-udp-sendto` 失敗 ⇒ 走 `written < 0` 分支並關 fd）、以及位址合法
+但沒有服務（收滿 `DNS-TIMEOUT` 後回 `nil`）。
+
+#### 全量回歸與四檔紅燈的分診
+
+`./bin/no test test/std` 首跑有 4 檔紅：`http2` / `json` / `yaml` / `zip`。
+用 **HEAD 基線 binary**（`/tmp/no-base/bin/no`，同一批測試檔）逐檔對照，把「預存缺陷」
+和「並行 session 在飛的改動」分開：
+
+| 檔 | HEAD 基線 | 當前 binary | 結論 |
+|---|---|---|---|
+| `http2` | 紅（`no zero-initializer global for boxed option payload %net_udp_conn`） | 紅（多 4 條 `@cv` 佈局錯） | **預存**，已修（§5.2m ②） |
+| `zip` | 紅（`unknown callee d.to-hex`） | 紅（同） | **預存**，已修（§5.2m ①） |
+| `json` | **綠**（129 條） | 紅（`@i64_of` 收到 `?str`） | 並行 session 的 `?T` 逐載荷佈局改動**回歸**，非本檔問題 |
+| `yaml` | **綠**（446 條） | 紅（link: `%option_double` 存進 `%option__x25str_x2dlong` 槽） | 同上 |
+
+後兩者在 `src/std/yaml.no` 自己的程式碼裡就崩，與測試檔無關：`json` 停在
+`t_obj_iter` 的 `@i64_of`（`?i64` 形參與 `?str` 實參），`yaml` 停在模組內部
+`store %option__x25str_x2dlong %lv.4519`（該 `%lv` 的型別是 `%option_double`）。
+兩條都是 §5.2l 那批改動的**在飛狀態**，等它落地後複跑即可，本輪不動。
+
+修完 `zip` / `http2` 後複跑（`./bin/no test test/std`，129 檔）：
+**127 檔綠 / 2 檔紅**，**6905 條斷言通過、0 條失敗**；兩檔紅就是上表的 `json` / `yaml`。
+
+#### 已知未修（沿用 §5.2，本輪新增兩條，其中一條已於當日修掉）
+
+- 裸名跨模組結構體的兩個解析缺陷，見 **§5.2m**：
+  ① `v = T{}` 推導形態下模組沒被按需載入（**已修**，`collectReferencedStdModules`
+  對 struct literal 的類型名補拆模組前綴，回歸鎖在
+  `src/build/struct_lit_module_type_test.go`）；
+  ② 裸 `?conn` 參數對每個同名 `conn` 生成特化（仍未修，參數寫全限定即可）。
+
+- `quic.parse-frames` 只認**無載荷影格**：`CRYPTO` / `STREAM` 的 `offset` / `length`
+  從未被解出（`frames[count].length` 恆 0），`0x1c` / `0x1d` / `0x1e` 的分派寫在迴圈
+  外會重複計數。所以 `t-build-initial-packet` 是**繞過 `parse-frames`、直接核對明文
+  位元組**（先 `remove-header-protection` → `decode-packet-number` →
+  `aes-gcm.open-128` 反向解回明文）。
+
+### 5.0zd 快照：2026-11-12（`%vec` 收 16B / u32 header，數字已被 5.0ze 取代）
 
 `[]T` 描述符從 `{ i64 len, i64 cap, i64 data }`（24B）改為 `{ i32 len, i32 cap, i64 data }`（16B）。
 內部 len / cap 是 `u32`，**對外 `v.len()` 仍是 `i64`**（讀 `zext i32→i64`、寫 `trunc i64→i32`）。
@@ -3684,6 +3827,313 @@ d db-sqlite = db-sqlite{handle: h}      →      d = db-sqlite{handle: h}
    要比對字串得先 `.to-str()`。
 3. **match 的主體只能是裸名。** `b.q: { … }` 會被 parser 拒絕
    （`expected left parenthesis, got LBRACE`），要先落到區域變數。
+
+### 5.2l 2026-11-12：`?T` 逐載荷佈局（264 門檻）+ 標籤列舉緊湊 union
+
+**改動**：`?T` 不再共用單一 `%option`，改為按載荷定型的 `%option_<key> = { i8 tag, [K x i64] }`
+（標籤 1 位元組、載荷固定在**位元組偏移 8**、`K = roundUp8(sizeof(T))/8`；超過
+`option-inline-threshold`（預設 **264** = 1 + 7 + 256，最小 16）改存堆指標；`err` 的載荷
+**恆裝箱**）。標籤列舉同時改為 `%tenum_X = { iN tag, [K x i64] }`：`iN` 隨變體個數
+（`<=256` → `i8`）、`K` 取**最寬變體**（不是所有變體相加）、欄位按自然對齊以**位元組偏移**
+尋址、全變體無載荷時退化成 `{ iN }`。唯一來源 `src/mir/layout.go`；`hir2mir.fillEnumLayout`
+建表時把偏移記進 `TaggedEnumInfo`，emitter 只讀不算。
+
+| 型別 | 舊 | 新 |
+| --- | ---: | ---: |
+| `?i64` | 32 | **16** |
+| `?str` | 32 | **24** |
+| `?txt` | 32（裝箱） | **264（內聯）** |
+| `box { full(v i64), empty }` | 24 | **16** |
+| `res { good(v str), bad(msg str), nothing }` | 24 | **16** |
+| 全無載荷的標籤列舉 | 16 | **1** |
+
+**新增測試**
+
+- `src/mir/layout_test.go` —— `tagWidth` 邊界、`optTypeKey` 單射、`?T` 尺寸表（按**載荷型別**
+  鍵，`?i32`/`?i64` 共用一份）、`enumUnionLayout`（`pair` / `nm` / `flag` / `i128` / 合成
+  unit-only）。
+- `src/mir/option_layout_ir_test.go` —— 直接斷言 prelude 的型別宣告：per-payload 名字、標籤
+  1 位元組、264 / 16 / 24 三檔門檻、超限裝箱、`?txt` 內聯，並斷言全模組**不再出現** `%option`。
+- `src/mir/enum_layout_test.go` —— 緊湊 union：`triple(a char, b char, c char)` 偏移 0/4/8、
+  `wide(str)` 把 union 撐到 16、unit 變體不撐大、`%tenum = { i8, [2 x i64] }`；unit-only 的
+  `{ i8 }`；標籤寬度隨變體數；`enumPayloadFieldPtr` 必須發 `i8*` + 位元組位移，而不是
+  `[K x i64]` 下標。
+- `src/mir/option_inline_clone_test.go` —— 內聯載荷的自持，IR 級：`ok(x)`（`outer` 含 `str` +
+  `[]i64`，48 位元組 ⇒ 內聯）必須在裝載點發 `%oic.<n>` + `@str_clone`，而 `?i64` 一個都不發。
+  夾具自帶「`?outer` 不再內聯就 fail」的守衛，免得門檻一改測試變成空轉。
+- `tests/option-sizes.no` —— 端到端：`?i64` / `?str` / 4×i64 結構 / 超大結構 / 容器 / 混合，
+  13 條 `ok`。
+- `tests/option-propagation.no` —— `?=` 的**跨載荷** seed（`?node -> ?i64` 的 ok / err、
+  `?i64 -> ?str` 的 nil），6 條 `ok`。舊佈局下這個 seed 是「免費」的位元組複製，per-payload
+  之後是真正的 ABI 邊界（見下面第 4 條）。
+- `tests/option-inline-clone.no` —— 內聯載荷的**自持**：從 `pool.nodes[i]`（安全下標 ⇒ `?node`，
+  104 位元組、內聯）反覆取節點，中間夾一段分配壓力，再回頭遍歷池；12 條 `ok`。這個檔案
+  是本輪第 5 條缺陷的守門測試（用修復前的 binary 跑會在 `after-drop` 斷言失敗並 SIGTRAP）。
+- `tests/enum-tight-union.no` —— `char` 欄位的位元組偏移（0/4/8）與 12 位元組變體。
+- `tests/enum-owning-str.no` —— 擁有 `str` 載荷的列舉：`load i8` + `icmp eq i8` 切分支、
+  載荷在偏移 8 釋放。
+
+**本輪自身引入、當場修掉的六個缺陷（`tests/option-sizes.no` 與全量 A/B 抓到的）**
+
+1. **寫側仍按「能不能塞進一個新 option」判斷 err 要不要裝箱**：`emitOptionWrap` 的型別
+   pun 分支條件是 `!optionPayloadInline(svType)`，而 `%err_err` 只有 16 位元組、對 264 的
+   門檻當然「塞得下」⇒ `cked ?i64 = err('bad')` 走內聯，把 16 位元組截成 `?i64` 的 8 位元組
+   載荷區（實際只留下 `str-long.data` 那個指針），drop / rebox 卻在 tag 2 下無條件解箱 ⇒
+   把該指針當箱子 `nolang_free`，**SIGSEGV**（症狀是印完前 4 條 `ok` 就 139）。
+   修法：寫側改問 `errPayloadBoxed()`，與讀／放／拷三側同一個答案。
+2. **讀側的內聯快捷分支沒排除「已裝箱的 err 載荷」**：`optPayloadAddrAs` 先看
+   `optionPayloadInline(readLT)`，`%err_err` 判為 true 就直接把載荷區當地起點返回 ⇒
+   `e.msg` 讀到的是箱子指針的位元（結構體第 0 欄位變成垃圾）。修法：`readLT == errLT &&
+   errPayloadBoxed()` 時不允許走內聯快捷分支，必須按 tag 選箱子。
+
+兩者都只在「`?T` 的載荷區比 err 載荷窄」之後才可能發生，這正是本輪 per-payload 佈局帶來的
+新組合——舊的 24 位元組固定槽剛好能容下 16 位元組的 `%err_err`，所以一直沒暴露。
+
+3. **`?bool` 的打印 helper 被 `?i64` 搶走**：prelude 的「每個載荷型別一個 option 打印
+   helper」迴圈把 `seenOpt[payloadLT]` 的 `continue` 放在 bool 變體之前，於是型別表裡先
+   出現 `?i64` 時 `@print_option_bool_i64` 根本沒發射，`print(ok(true))` 退回 i64 打印器
+   ⇒ 全語料裡 `true`/`false` 變成 `1`/`0`（`tests/misc-syntax-more.no` 抓到）。修法：bool
+   變體提到 `seenOpt` 守衛之前。`?bool` 與 `?i64` 共用 `%option_i64` 是 per-payload 佈局的
+   直接後果——佈局可以共用，**渲染不能**。
+
+順帶把 `errPayloadBoxed()` 收窄成「真正的 `err.err` 才裝箱」：`errPayloadRaw()` 在 std 的
+err 模組不參與編譯時回落 `"str"`（單元測試夾具），那個世界裡沒有 `err()` 可呼叫，保留歷史
+的內聯佈局才是對的——否則 `?str` 會出現「同一型別 tag 0 內聯、tag 2 裝箱」的歧義。
+
+4. **跨載荷 `?=` 的 seed 仍在按舊佈局做位元組複製 ⇒ 寫穿目標槽**（`tests/yaml.no` 抓到）。
+   `?=` 會先把「右值鏈**根**的 option」複製進 option 結果參數，讓 nil / err 直接上拋：
+
+   ```
+   pick = (p pool) (out ?i64) { out ?= p.nodes[0].kind }   ; 根 ?node，結果槽 ?i64
+   ```
+
+   舊佈局下每個 option 都是 32 位元組、tag 在 0，所以 `parser/lowering.go` 的
+   `targetIsResult` 分支敢直接 `out = __unwrap_N`，`LetStatement.IsPropagation` 也把理由
+   寫成「every option is `{i64 tag, i64 data}` regardless of the inner type」。per-payload
+   之後這句話的兩半都不成立：兩個 option **寬度不同**（`%node` 112 位元組、`?i64` 16），
+   而且載荷的位元組影像本來就與型別綁定。實測 `emitClone` 用**來源**的載荷選 helper，
+   把 112 位元組寫進 16 位元組的槽：`tests/yaml.no` 第 3 項後 SIGSEGV，`pc=0`、`lr=0`
+   （`.ips` 是 Instruction Abort / Translation fault，即跳到空指標，實際是幀裡的返回
+   地址被複製進去的零字節清零）。
+
+   修法：新增 `codegen.optPropagateState` → `@__nolang_opt_prop_<dstKey>__<srcKey>`，只搬
+   「跨型別也有意義」的兩樣東西——`tag`（第 0 位元組）與 `err`（err 變體是 option 的屬性、
+   恆堆裝箱，所以兩側在載荷區第 0 個字都是 8 位元組箱指標；箱體**複製**不共享，因為兩側
+   都會 drop）；目標載荷區先整體清零，ok 載荷**刻意不搬**（它一定被 ok 臂重寫，這也正是
+   檢查器豁免這類編譯器生成賦值的原因）。`emitClone` 在 `dstPayloadLT != srcPayloadLT`
+   時走這條；`IsPropagation` 的註解同步改寫，不再宣稱「表示法相容」。
+
+   註：`emitMove`（所有權**轉移**、來源豁免 drop）不必改——通用尾聲按**目標**型別發
+   `load/store`，正好只搬 tag + 第 0 個字，單一 free 點仍然成立。
+
+5. **內聯載荷裝進槽時不做深拷貝 ⇒ option 與來源共享堆（`tests/yaml.no` 第二個症狀）**。
+   第 4 條修好之後 yaml 不再 SIGSEGV，但改成第 56 項 `fail: to-json-all 含三份文檔`；
+   縮到 13 行就能穩定重現：
+
+   ```
+   d = yaml.parse('name: first')
+   d: { -> { print('a =', it.to-json())  print('b =', it.to-json()) } }
+   ```
+
+   第一行正確，第二行吐出混著 `b =` 的垃圾；ASan 報 **heap-use-after-free in `str_clone`**，
+   讀的是 `free` 過的 22 位元組區塊裡的第 16 個位元組（即一個 `str-long.data`），
+   大小 5 位元組 ⇒ 正好是節點的 `text`（`"first"`）。
+
+   根因：裝箱路徑 `optStoreBoxedPayload` 在 box 裡**順手深拷貝**（ptr 欄位遞歸、owned leaf
+   克隆），而內聯路徑 `optStoreInlinePayload` 只是一條 `store <T>` 的逐位元組搬運。載荷
+   ≤ 264 位元組之後，`?node`（136 B）、`?yaml`（56 B）全走內聯 ⇒ `nd = npool.nodes[idx]`
+   把節點存進 option 槽、**與池共用 text / keys 緩衝**；那個 `?node` 臨時 drop 時按內聯
+   佈局原地釋放載荷的葉子，池的節點就指向已釋放記憶體。`yaml.to-json()` 連呼叫兩次必掛，
+   一次正常只是因為還沒人覆蓋那塊 freed 區。
+
+   修法：新增 `codegen.optCloneInlinePayloadInto(optSlot, payloadLT)`——把裝箱路徑裡那段
+   `emitPtrFieldsClone` + `emitLeafFieldsClone` 原樣搬到內聯載荷區（就地自拷貝），在
+   `emitOptionWrap` 的內聯裝載點呼叫；同時**刪掉** `emitClone` 裡 `emitOptionWrap` 之後
+   那段手寫的內聯克隆（現在兩條載荷形態都在裝載點自持，留著會克隆兩次、洩漏第一次的結果）。
+
+   `emitMove` 的同名分支**刻意不克隆**：那是所有權移轉（來源豁免 drop），克隆只會把來源的
+   緩衝永久漏掉。實測 `o = n`（`n node` 拷進 `?node`）在 `@keep` 裡走的是 `emitOptionWrap`
+   而不是 `emitMove`，兩邊 IR 的 `%oic.<n>` 逐位元組相同——這個分支對結構體根本沒被走到。
+
+   驗收：`tests/yaml.no` 輸出與基線**逐位元組相同**（100 行全過）；新檔
+   `tests/option-inline-clone.no` 在修復前的 binary 上 `FAIL inline-clone:after-drop` +
+   `SIGTRAP(133)`，修復後 12 條 `ok`、`EXIT=0`，且與基線輸出相同。
+
+   門檻不變性（本輪的全局驗收口徑）——修復前後對照：
+
+   | 門檻 | 修復前 `yaml.no` | 修復後 `yaml.no` | `option-inline-clone.no` |
+   | ---: | --- | --- | --- |
+   | 24 / 96 / 128 | 100 行 | 100 行 | 12 `ok` |
+   | 160 | SIGSEGV 138 | 100 行 | 12 `ok` |
+   | 264 | SIGABRT 134（第 56 項） | 100 行 | 12 `ok` |
+
+   四檔輸出**逐位元組相同**，`?yaml`（56 B）與 `?node`（136 B）分別從 160 / 264 起改成
+   內聯也不再改變行為——這正是「佈局只是佈局」該有的樣子。
+
+6. **內聯載荷的「自拷貝」把指標欄位寫成未初始化**（`tests/std-byte-indexing.no` 抓到）。
+   第 5 條第一版寫成 `emitPtrFieldsClone(typed, typed, ...)`（dst 與 src 是同一個槽）。
+   那個函式是為「dst ≠ src」設計的：它先把**新** pointee 指標 `store` 進 dst 的欄位，之後
+   才用 `@__nolang_get_<T>` 讀 src 的指標——同一個槽時讀到的就是剛裝上的新指標，於是
+   `memcpy(dp, dp)` 變成自拷貝，新配置的 pointee 留下未初始化的零。症狀很隱蔽：
+
+   ```
+   j = json.parse('{"name":"Alice"}')      ; 新 binary：set-str 回 false、get-str 找不到
+   j: { -> { it.set-str('日本語', 'にほんご') } }
+   ```
+
+   `json` 的節點結構有指標欄位，`?node` 內聯之後走這條路 ⇒ 非 ASCII 鍵值全崩，而同一個
+   最小復現（去掉前 4 節）在兩個 binary 上都正常，只有整檔跑才暴露。
+
+   修法：裝載後先把載荷位元組快照進臨時 `alloca`，再 `emitPtrFieldsClone(payload, snapshot)`
+   讓兩側真正分離（多一次 ≤256 位元組的 memcpy，可以接受）；並給 `%vec` / `%str-long` /
+   `%txt` 加顯式早退——它們是內建描述符，`structKeyOfLLVM` 不該把它們反查成同名結構體鍵
+   （`%vec` 一度被當成 `vec` 結構體去做 pointee 克隆）。
+
+   驗收：`tests/std-byte-indexing.no` 在修復後與基線**逐位元組相同**（第 5 節 4 條全 PASS）。
+
+**本輪順手發現的既有缺陷（HEAD 同樣重現，未修）**
+
+1. **`?T` wrap 與來源共用載荷緩衝**：`so ?str = ok(s0)` 之後再 `s0 = '…'` ⇒ SIGTRAP
+   （`ok(s0)` 沒有 clone，`s0` 重新賦值釋放舊緩衝後 option 指向已釋放記憶體）。
+2. **`[]?str` 元素所有權**：`list.push(ok(tmp))` 之後 `tmp = '…'` ⇒ SIGTRAP，同上。
+3. **同一作用域裡多個 `?T` 局部變數 + 在陳述位 match 解包**：函式尾端同時 drop 時整支程式
+   被 SIGTERM（rc=137）、一個字都不印；`/tmp/no-base/bin/no`（HEAD）與新 binary 行為完全
+   相同，故非本輪回歸。`tests/option-sizes.no` 因此按小節拆成多個函式。**與上面第 1 條的
+   SIGSEGV 不是同一件事**：那條已隨 `errPayloadBoxed()` 修正消失，這條仍在。
+4. **`x tight = unit`（無載荷變體在陳述位構造）不產生任何 IR**：整條陳述被靜默丟掉，
+   match 不到、也不印東西。`tests/enum-tight-union.no` 因此只讓 `unit` 參與佈局，不做值斷言。
+5. **使用者列舉用 `ok` / `nil` / `err` 當變體名 ⇒ match 臂退化成 option tag 比較**：
+   發成 `icmp eq i64 %ot.<n>, <整個 %tenum_X>` ⇒ LLVM 報
+   「defined with type %tenum_X but expected i64」，建構期失敗。`tests/tagged-enum-alias.no`、
+   `tagged-enum-cross-fn.no`、`tagged-enum-payload-ownership.no`、`tagged-enum-zero-match.no`
+   四檔在 HEAD 上就是這個錯，本輪未動（`tests/enum-owning-str.no` 改用
+   `good`/`bad`/`nothing` 繞開）。
+6. **`?txt` 前端型別錯**：`s.to-txt()` 搭配 `t: { ok -> txt.len(it) }` ⇒
+   `%lv.<n> defined with type 'i64' but expected '%str-long'`，HEAD 同樣失敗。
+7. **`?=` 的鏈根是「呼叫回傳的 err option」時，結果變成 ok(空值)**：`out ?= bad-node().text`
+   （`bad-node` 以 `out = err('boom')` 收尾）既不回 err，也不回 ok 的正常值，而是 ok(空串)；
+   把 err 直接賦給 `?node` 本身是對的（tag 讀回 2），所以缺陷在「鏈根是 err 參數 / 呼叫結果」
+   這條路上。基線 binary 與本輪 binary **逐位元組相同**，故非本輪回歸；索引越界那種 err 反而
+   能正常上拋（`tests/option-propagation.no` 的 `chain-err` / `err-msg-survives` 釘住）。
+
+### 5.2m 2026-11-12：裸名跨模組結構體 —— 字面量推導時模組沒被載入（已修）、`?T` 參數被當成「所有同名結構體」
+
+收覆蓋率時踩到兩個**裸名解析**缺陷，都與 `no fmt` 互動，HEAD 同樣復現（非本輪引入）。
+② 仍未修（有繞法），① 已定位到真因並修掉。
+
+#### ① `v = T{}`（跨模組結構體字面量）之後 `len(w.data)` 報 `str-len` —— **已修**
+
+最小復現（`writer` 是 `archive/zip` 的結構體，`data []byte`）：
+
+```no
+w = zip.writer{}
+d = w.data
+print('len=' - len(d))
+; ⇒ EmitLLVM: builtin str-len: receiver has no slot [j8e31b1f]
+
+w zip.writer = zip.writer{}   ; 加顯式標註就好了
+```
+
+`d = w.data.slice(0, len(w.data))` 之後再 `d.to-hex()` 則是
+`EmitLLVM: unknown callee d.to-hex in func … [4qhyyund]`（`[]byte.to-hex` 在
+`src/std/byte.no`，模組本身是好的 —— 單獨寫 `b []byte` 再用 `.to-hex()` 完全正常）。
+
+**更正先前的錯誤診斷。** 這裡一度被寫成「MIR 推導出來的 `w` 型別沒帶全欄位型別，
+`w.data` 撞上 `%vec.data`（註冊成 owned `str`）」。方向是錯的：在
+`lowerFieldReadOn` 打上 `recvRaw` 就立刻看到
+
+```
+[DBG-DOT] field=data recvT=1 recvRaw="void"
+```
+
+`w` 的 MIR 型別根本不是 `writer`，是 **void** —— 連結構體型別都沒建立，談不上欄位撞名；
+`len()` 之所以落到 `str-len`，是「未綁定名字 ⇒ 當成模組命名空間 ⇒ `d.len`」。
+
+真因在**模組按需載入**（`src/build/transpiler_stdload.go` 的
+`collectReferencedStdModules`）：
+
+```go
+case *parser.StructLiteral:
+    addRef(ex.Type)      // ex.Type = "zip.writer"，而 lookup 的鍵是 ShortName "zip"
+```
+
+`addRef` 只認 `lookup[path]`（鍵是模組 ShortName），`zip.writer` 因此永遠匹配不上 ⇒
+zip 模組體不進 `merged` ⇒ `StructDefinition` 不進 HIR ⇒ MIR 的 `StructFields` 沒有
+`zip.writer` ⇒ 頂層 `let` 走 `synthesizeMainForTopLevel` 的「非內聯」分支時
+（`isInlineableLetType` 對含點的 raw 一律 `false`）查 `StructFields` 落空、整個
+`continue` 掉，綁定從未 materialize。
+
+顯式標註之所以正常，是 `walkType` 的 `NamedType` 分支早就把前綴拆出來 `addRef` 了。
+**兩條路徑（型別註解 / 字面量的類型名）必須同口徑**，補上同樣的拆點前綴即可：
+
+```go
+addRef(ex.Type)
+if idx := strings.IndexByte(ex.Type, '.'); idx > 0 {
+    addRef(ex.Type[:idx])
+}
+```
+
+回歸鎖點：`src/build/struct_lit_module_type_test.go` 三個子用例
+（`inferred` / `annotated` / `field-is-real-vec`）。把上面那行臨時改成 `false &&` 後
+`inferred` 與 `field-is-real-vec` 紅、`annotated` 仍綠 —— 正是「只在有標註時才成立」
+這個巧合的特徵。
+
+`test/std/zip.no` 因此回到最自然的 `w = zip.writer{}`（先前為繞開而寫的
+`mk-writer = () (out zip.writer) {}` 已刪）。附帶說明：那個時期「`no fmt` 會把
+`w zip.writer = zip.writer{}` 的標註當冗餘剝掉」的觀察是對的，但既然推導形態本來就該
+能編譯，正確的收尾是修編譯器而不是找一個 fmt 不碰的寫法。
+
+#### ② 函式參數寫裸 `?conn` ⇒ 對**每個同名** `conn` 都生成一份特化
+
+```no
+cv = (o ?conn) (v i64) { v = o: { ok -> 1  -> -1 } }
+runner.eq(cv(http2.connect('127.0.0.1', 1)), -1, '…')
+```
+
+`http2.connect` 回的確實是 `?http2.conn`，但參數寫成裸 `?conn` 之後，MIR 對
+`tls.conn` / `net.udp.conn` / `net.enc.conn` / `server.https.server.conn` 全都生成了一份
+`@cv`，然後逐份報「aggregate layouts 不同、不能按指標傳」：
+
+```
+argument 1 of '@cv': parameter '?conn' expects '%option__x25tls__server__conn'
+but the argument is '%option__x25http2__conn'
+— different aggregate layouts cannot be passed by pointer
+```
+
+其中 `net.udp.conn` 那份還額外炸 `internal: no zero-initializer global for boxed
+option payload %net_udp_conn [zodppsnm]`。修法：參數寫全限定 `?http2.conn`
+（`test/std/http2.no` 的 `cv`），只剩一份特化。`?T` 逐載荷佈局（§5.2l）之後
+這個缺陷從「靜默選錯」升級成「硬錯」，所以更容易撞上。
+
+#### ③ `#{overflow=wrap}` + `?i64` match 的結果**不穩定**（未定位，先繞開）
+
+`test/std/http.no` 的子進程原本用「算截止時刻再比大小」當退出條件：
+
+```no
+start = os.now-us()
+deadline = 0
+{
+    #{overflow=wrap}
+    dl-opt = start + HLIVE-TTL-US
+    dl-opt: { ok -> deadline = it  -> }
+}
+…
+now >= deadline -> break
+```
+
+同一個 binary、同一份來源，跑起來時好時壞：有時子進程正常服務完 14 個請求，
+有時 `deadline` 停在 **0**（探針 `start=1794483807769597` 但 `deadline=0`），於是
+`now >= deadline` 第一輪就成立 ⇒ 子進程一個請求都不接就退出 ⇒ 父進程 11 條
+「回 ok」全紅、最後 SIGSEGV。而把同樣的加法換成普通賦值（`x = a + 5000000: { ok -> it }`）
+單獨探針又是對的，`x` 與 `a + 5000000` 逐位元組相同。
+
+修法先繞開：子進程的硬上限改用**固定輪次**（`i <- [0..HLIVE-SPIN)`，每輪 500µs），
+正常退出走 `served >= want -> break`，全程沒有算術、沒有 match。改完連跑 8 次
+（新舊 binary 各若干次）全綠。
+
+⚠️ 同一個坑還在 `served = served + 1` 上（原本也包了 `#{overflow=wrap}` + match），
+一併改成裸 `+` 的 match。踩到這類「match 的 `ok` 臂不命中」時，先懷疑
+`#{overflow=wrap}` 與 `?T` 的組合，別懷疑自己的算術。
 
 ---
 

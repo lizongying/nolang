@@ -152,6 +152,32 @@ The `-cc` parameter specifies the C compiler backend:
 - `clang` (default) — requires LLVM installed
 - `zig` — requires Zig installed, suitable for cross-compilation
 
+### Built-in Type Layout (`?T` inline threshold)
+
+A `?T` is laid out **per payload type**: each payload type `T` gets its own
+`%option_<key> = { i8 tag, [K x i64] }` (one-byte tag, payload at byte offset 8,
+`K = roundUp8(sizeof(T))/8`). A payload that does not fit the threshold is
+heap-boxed and word 0 of the payload area holds the pointer.
+
+`--option-inline-threshold=N` sets that threshold, measured over the **whole
+option struct** (`1 + 7 + sizeof(T)`):
+
+```bash
+no build --option-inline-threshold=1032 main.no   # inline larger payloads
+no build --option-inline-threshold=16 main.no     # smallest configurable value
+```
+
+| Value | Effect |
+| --- | --- |
+| default **264** (= 1 + 7 + 256) | `?i64` 16 B, `?str` 24 B, `?txt` (256 B) 264 B inline; anything larger is boxed |
+| minimum **16** | only `?i64`-sized payloads stay inline; `?str` (24 B) and up are boxed |
+| < 16 | compile error |
+
+Precedence: command line > `NOLANG_OPTION_INLINE_THRESHOLD` > `package.noml`'s
+`compiler.option-inline-threshold` > the default. The layout's single source of
+truth is `src/mir/layout.go`; semantics (which values count as `ok` / `nil` /
+`err`) never change — only size and whether the payload is boxed.
+
 ## JavaScript Backend
 
 The JS backend (`no build --js` / `no run --js`) compiles `.no` source to

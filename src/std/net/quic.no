@@ -35,13 +35,19 @@ QUIC-PACKET-ZERO-RTT i64 = 0x10
 QUIC-PACKET-HANDSHAKE i64 = 0x20
 QUIC-PACKET-RETRY i64 = 0x30
 
-; Long Header 固定位元
+; Long Header 固定位元（⚠️ 名稱沿用已久，但值 0x80 其實是 RFC 9000 §17.2 的
+; **Header Form** 位元，不是 Fixed Bit；Fixed Bit 見 QUIC-FIXED-BIT）
 ; [QUIC-LONG-HEADER-FIXED-BIT](#quic.quic-long-header-fixed-bit)
 QUIC-LONG-HEADER-FIXED-BIT i64 = 0x80
 
 ; Short Header 固定位元
 ; [QUIC-SHORT-HEADER-FIXED-BIT](#quic.quic-short-header-fixed-bit)
 QUIC-SHORT-HEADER-FIXED-BIT i64 = 0x40
+
+; Fixed Bit（RFC 9000 §17.2）：長短標頭**共用**同一個位元 0x40，恆須為 1，
+; 否則對端必須丟棄該封包。
+; [QUIC-FIXED-BIT](#quic.quic-fixed-bit)
+QUIC-FIXED-BIT i64 = 0x40
 
 ; 影格類型
 ; [QUIC-FRAME-PADDING](#quic.quic-frame-padding)
@@ -984,8 +990,13 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     pos = 0
     packet []byte = with-cap(QUIC-MAX-PACKET-SIZE)
 
-    ; 1. 第一位元組: Fixed bit + Long header + Initial type
-    packet[0] = QUIC-LONG-HEADER-FIXED-BIT | QUIC-PACKET-INITIAL | (pn-len - 1)
+    ; 1. 第一位元組: Header Form + Fixed Bit + Initial type + pn-len-1
+    ; ⚠️ 2026-11-12 修：原實作只寫 QUIC-LONG-HEADER-FIXED-BIT(0x80)，漏了
+    ; 真正的 Fixed Bit(0x40)，首位元組於是是 0x83 而非 0xC3。RFC 9000 §17.2
+    ; 要求 Fixed Bit 恆為 1，任何合規伺服器都會直接丟棄這種 Initial 封包 ——
+    ; 也就是說客戶端握手在第一個位元組就注定失敗（本檔 t-build-initial-packet
+    ; 逐位元組斷言 (first & 0xc0) == 0xc0 即為此回歸門檻）。
+    packet[0] = QUIC-LONG-HEADER-FIXED-BIT | QUIC-FIXED-BIT | QUIC-PACKET-INITIAL | (pn-len - 1)
     pos = 1
 
     ; 2. Version (4 bytes, big-endian)
@@ -1041,26 +1052,17 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     #{overflow=wrap}
     pos ?= pos + 1
 
-    ; 6. Length (varint) — 預留位置，稍後填入
+    ; 6. Length (varint) — 先預留 2 位元組，等 PAD 完再回填
+    ; ⚠️ 2026-11-12 修：原實作在 **PAD 之前**就算好 length（pn + crypto + tag
+    ; = 31），之後卻把明文一路補零到 1184，於是真正送出的 1171 位元組密文
+    ; 有 1140 位元組落在 Length 之外 —— 對端會直接丟棄該封包
+    ; （RFC 9000 §17.2：Length 覆蓋 PN 欄位到封包結尾）。
+    ; Initial 封包一律補到 1200（§14.1），於是 length 恆 >= 1173 ⇒ 必然是
+    ; 2 位元組 varint（64..16383），這裡固定預留 2 位元組即可。
     length-pos = pos
 
-    ; 加密後的 payload 長度 = pn_len + crypto_frame + 16(tag)
     #{overflow=wrap}
-    crypto-frame-len = 1 + 2 + crypto-data.len()
-
-    #{overflow=wrap}
-    payload-len = pn-len + crypto-frame-len + 16
-    len-buf []byte
-    len-n = 0
-    len-buf, len-n = varint-encode(payload-len)
-    i <- [0..len-n): {
-
-        #{overflow=wrap}
-        packet[pos + i] ?= len-buf[i]
-    }
-
-    #{overflow=wrap}
-    pos ?= pos + len-n
+    pos ?= pos + 2
 
     ; 7. Packet Number (4 bytes, big-endian)
     pn-offset = pos
@@ -1139,6 +1141,29 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
         pos ?= pos + 1
     }
 
+    ; ── 回填 Length：覆蓋 PN 欄位到封包結尾 ──
+    ; QUIC-MAX-PACKET-SIZE - 16 是明文結束位置，加上 16 位元組 tag 就是封包尾，
+    ; 再減掉 length 欄位之後（含 2 位元組 varint 自身）的起點。
+    length-val = 0
+    {
+
+        #{overflow=wrap}
+        lv-opt = QUIC-MAX-PACKET-SIZE - length-pos - 2
+        lv-opt: {
+            ok -> length-val = it
+
+            ->
+        }
+    }
+    len-buf []byte
+    len-n = 0
+    len-buf, len-n = varint-encode(length-val)
+    i <- [0..len-n): {
+
+        #{overflow=wrap}
+        packet[length-pos + i] ?= len-buf[i]
+    }
+
     ; ── AEAD 加密 ──
     ; Nonce = IV XOR packet_number (right-aligned)
     nonce [12]byte
@@ -1170,9 +1195,25 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
         }
     }
 
-    ; AAD = packet[0..pn-offset]（標頭部分）
+    ; AAD = 標頭直到「未保護的封包號碼」結尾（RFC 9001 §5.3）
+    ; ⚠️ 2026-11-12 修：原實作讓 aad 不含 PN、明文從 pn-offset 起算，於是
+    ; 密文寫回時從 pn-offset 開始覆蓋，**把封包號碼欄位本身變成了密文**。
+    ; 接收端移除標頭保護後讀到的「PN」其實是密文前 4 位元組 ⇒ nonce 與
+    ; 傳送端不一致 ⇒ tag 驗證必失敗 —— 同一個實作的 build / recv 兩端互相
+    ; 聽不懂，更不可能與真實伺服器互通。
+    pn-end = 0
+    {
+
+        #{overflow=wrap}
+        pn-end-opt = pn-offset + pn-len
+        pn-end-opt: {
+            ok -> pn-end = it
+
+            ->
+        }
+    }
     aad []byte
-    i <- [0..pn-offset): {
+    i <- [0..pn-end): {
         aad[i]: {
             ok -> it = packet[i]: {
                 ok -> it
@@ -1184,16 +1225,23 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
         }
     }
 
-    ; Plaintext = packet[pn_offset..pos]
+    ; Plaintext = packet[pn_end..pos]（PN 之後的影格資料）
     plain []byte
 
-    #{overflow=wrap}
-    plain-len = pos - pn-offset
-    i <- [0..plain-len): {
+    plain-len = 0
+    {
 
         #{overflow=wrap}
+        plain-len-opt = pos - pn-end
+        plain-len-opt: {
+            ok -> plain-len = it
+
+            ->
+        }
+    }
+    i <- [0..plain-len): {
         plain[i]: {
-            ok -> it = packet[pn-offset + i]: {
+            ok -> it = packet[pn-end + i]: {
                 ok -> it
 
                 -> _
@@ -1207,8 +1255,8 @@ conn.build-initial-packet = (crypto-data []byte) (out ?[]byte) {
     sealed []byte
     sealed = aes-gcm.seal-128(.client-initial-key, nonce, aad, plain)
 
-    ; 組合: header + sealed
-    final-pos = pn-offset
+    ; 組合: 標頭（含明文 PN）+ sealed
+    final-pos = pn-end
     i <- [0..sealed.len()): {
 
         #{overflow=wrap}
@@ -1245,7 +1293,10 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
     count = -1
 
     ; 接收 UDP 封包
-    buf []byte
+    ; ⚠️ 2026-11-12 修：原本是 `buf []byte`（空 vec ⇒ data 指標 NULL），
+    ; recvfrom 第二參數拿到 NULL 指標必回 -1(EFAULT)，於是 recv-initial
+    ; **永遠**在第一步就放棄（count = -1）。這裡必須先配置長度。
+    buf []byte = with-len(QUIC-MAX-PACKET-SIZE)
     n = net.net-udp-recvfrom(.fd, buf, QUIC-MAX-PACKET-SIZE)
     n <= 0 -> return
     end = n
@@ -1387,9 +1438,23 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         }
     }
 
-    ; AAD = buf[0..pn_offset]
+    ; AAD = buf[0..pn_end]（含明確的封包號碼欄位，RFC 9001 §5.3）
+    ; ⚠️ 2026-11-12 修：原實作 aad 止於 pn-offset、密文也從 pn-offset 起算，
+    ; 與傳送端（build-initial-packet）同樣把 PN 當成了密文的一部分；兩端
+    ; 對「PN 在哪」的假設不一致，nonce 就對不上，tag 永遠驗不過。
+    pn-end = 0
+    {
+
+        #{overflow=wrap}
+        pn-end-opt = pn-offset + pn-len
+        pn-end-opt: {
+            ok -> pn-end = it
+
+            ->
+        }
+    }
     aad []byte
-    i <- [0..pn-offset): {
+    i <- [0..pn-end): {
         {
             aad[i] ?= buf[i]
         }: {
@@ -1399,13 +1464,22 @@ conn.recv-initial = () (frames [32]frame, count i64, ok bool) {
         }
     }
 
-    ; Ciphertext = buf[pn_offset..pn_offset+length_val]
-    sealed []byte
-    i <- [0..length-val): {
-        {
+    ; Ciphertext = buf[pn_end..pn_offset+length_val]（length 含 PN 欄位）
+    payload-len = 0
+    {
 
-            #{overflow=wrap}
-            sealed[i] ?= buf[pn-offset + i]
+        #{overflow=wrap}
+        payload-len-opt = length-val - pn-len
+        payload-len-opt: {
+            ok -> payload-len = it
+
+            ->
+        }
+    }
+    sealed []byte
+    i <- [0..payload-len): {
+        {
+            sealed[i] ?= buf[pn-end + i]
         }: {
             err -> _
 
@@ -1448,9 +1522,13 @@ dial = (host str, port i64) (conn ?conn) {
 
     ; 1. 建立 UDP socket
     c.fd = net.net-udp-open()
-    c.fd < 0 -> net.net-set-recv-timeout(c.fd, 5000)
 
     ; 設定接收逾時（5 秒）
+    ; ⚠️ 2026-11-12 修：原本寫成 `c.fd < 0 -> net.net-set-recv-timeout(…)`，
+    ; 條件寫反了 —— 只有在 socket **建立失敗**時才去設定逾時（對 -1 設定必然
+    ; 失敗），真正可用的 fd 反而沒有逾時 ⇒ 之後每個 recv 都阻塞到對端或程式
+    ; 結束，http3.get 之類的上層呼叫會永久掛住。
+    c.fd >= 0 -> net.net-set-recv-timeout(c.fd, 5000)
 
     ; 2. 生成 Connection IDs
     c.local-cid = gen-cid(8)

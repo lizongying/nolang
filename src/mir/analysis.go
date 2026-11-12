@@ -1361,9 +1361,9 @@ func (m *Module) optionCopySharesHeap(f *Function, inst *Inst) bool {
 //
 // `?str` / `?[]T` are the cases this exists for: ClassifyOwnership(elem) is
 // true, so the option owns its payload and emitOptionDrop's "str" / "vec"
-// branches free it — while OptionPayloadBoxed is FALSE for them (24 bytes fits
-// the default 24-byte slot), which is why the copy used to be exempted from the
-// liveness rule and silently aliased.
+// branches free it — while OptionPayloadBoxed is FALSE for them (a 16-byte
+// payload fits the default 264-byte option), which is why the copy used to be
+// exempted from the liveness rule and silently aliased.
 func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	if elemRaw == "" {
 		return false
@@ -1371,7 +1371,7 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	// Size questions go through the emitter's own code, exactly as
 	// OptionPayloadBoxed does, so the analysis and codegen can never disagree
 	// about which layout a payload gets.
-	c := &codegen{mod: m, sb: &strings.Builder{}, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
+	c := newLayoutCodegen(m)
 	_, payloadLT := c.optionType(elemRaw)
 	if payloadLT == "" {
 		return false
@@ -1388,11 +1388,11 @@ func (m *Module) optionCopyOwnsPayload(elemRaw string) bool {
 	if m.ErrPayloadOwnsHeap() {
 		return true
 	}
-	// An INLINE payload. The clone helper must also duplicate the err message,
-	// and it only implements the inline layout; a slot small enough to box the
-	// 16-byte message would box every owned payload too (a `%str-long` is 16
-	// bytes and a `%vec` 24 bytes; both fit the default 24-byte slot), so the
-	// branch above would have taken it.
+	// An INLINE payload. The clone helper must also duplicate the err payload,
+	// and its inline shape only applies when this option HAS an inline payload
+	// area at all: an option whose own payload is boxed was taken by the branch
+	// above, so asking about %str-long here is asking about the smallest case
+	// that still has a slot to put it in.
 	if !c.optionPayloadInline("%str-long") {
 		return false
 	}

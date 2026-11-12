@@ -1,0 +1,50 @@
+; enum-tight-union.no — 緊湊 union 佈局
+; 載荷區按「最寬變體」的自然對齊大小分配（不是各變體相加，也不按 8 位元組整槽），
+; 標籤寬度隨變體數量變化（<= 256 個變體 → i8，只佔 1 位元組）。
+;
+; triple 是關鍵案例：三個 char（各 4 位元組）佔 12 位元組，欄位落在位元組偏移
+; 0/4/8 —— 不是 8 的倍數，所以只有「按位元組偏移尋址」才能讀對。
+; 舊的整槽佈局會給它 3 個槽（24 位元組）且偏移 0/8/16。
+;
+; 用 char 而不是 i32：MIR 只有一種整數寄存器寬度，i32 會降為 8 位元組的 i64
+; 載荷，整數變體本來就剛好整槽；char 降為 i32，才能壓出非整槽的欄位偏移。
+
+tight {
+    triple(a char, b char, c char),
+    pair(a char, b char),
+    wide(s str),
+    unit,
+}
+
+; 依變體印出標籤與各欄位內容
+show = (v tight) {
+    v: {
+        triple(a, b, c) -> {
+            print('triple')
+            print(a)
+            print(b)
+            print(c)
+        }
+
+        pair(a, b) -> {
+            print('pair')
+            print(a)
+            print(b)
+        }
+
+        wide(s) -> print('wide={s}')
+
+        unit -> print('unit')
+    }
+}
+
+t tight = triple("a", "b", "c")
+show(t)
+
+p tight = pair("x", "y")
+show(p)
+
+w tight = wide('hi')
+show(w)
+
+print('enum-tight-union done')

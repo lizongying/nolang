@@ -1,0 +1,45 @@
+; enum-owning-str.no — 擁有 str 載荷的標籤列舉：tag-switched 析構 + 逐位元組偏移釋放
+;
+; 同一個列舉值被 match 兩次時，列舉自己擁有載荷並在作用域結束時釋放
+; （Module.enumOwnsPayload ⇒ emitEnumDropHelper）。這條路徑會
+;   ① 讀 1 位元組的 tag（`load i8` / `icmp eq i8`）切分支；
+;   ② 把每個 owned 欄位按**自然對齊的位元組偏移**取址再釋放
+;      （`bitcast %tenum_X* to i8*` + `getelementptr i64 8+off`）。
+; 兩者都是本輪佈局改動的落點，所以這裡逐條印出來守門。
+;
+; 變體名刻意避開 ok / nil / err：與內建 option 的變體同名時，match 臂會被降級成
+; option 的 tag 比較（`icmp eq i64 %ot.*` vs 整個 %tenum_*）⇒ 建構期 LLVM 報型別不符。
+; 這是既有缺陷（§5.2 #107），與本檔要守的佈局無關。
+
+res {
+    good(v str),
+    bad(msg str),
+    nothing,
+}
+
+pick = (a bool) (r res) {
+    {
+        a -> r = good('hello')
+        -> r = bad('boom')
+    }
+}
+
+; 每個臂都印一次，方便肉眼與 golden 比對
+show = (x res) {
+    x: {
+        good(v) -> print('good={v}')
+
+        bad(m) -> print('bad={m}')
+
+        nothing -> print('nothing')
+    }
+}
+
+one = pick(true)
+show(one)
+show(one)
+
+two = pick(false)
+show(two)
+
+print('enum-owning-str done')

@@ -2698,27 +2698,43 @@ A tagged enum is stored using the **inline stack form** — a small by-value obj
 not scattered on the heap:
 
 ```llvm
-%tenum_<name> = type { i64 tag, [N x i64] payload }
+%tenum_<name> = type { iN tag, [K x i64] payload }   ; the usual shape
+%tenum_<name> = type { iN tag }                      ; every variant is payload-less
 ```
 
-- `tag` is the discriminant (`i64`), `0, 1, 2...` in declaration order;
-- `payload` is a slot array **shared by every variant** (union semantics: each variant writes its
-  fields into the same storage);
-- `N` is the number of 8-byte slots the **widest** variant needs, **at least 1** (never zero-width).
+- `tag`'s width follows the **variant count** and is a complete `u8/u16/u32/u64`:
+  `<= 256` → `i8`, `<= 65536` → `i16`, `< 2^32` → `i32`, otherwise `i64`. Discriminants are
+  `0, 1, 2...` in declaration order.
+- `payload` is a union **shared by every variant** (each variant writes its fields into the same
+  storage); `K` is the number of 8-byte words the **widest** variant needs — **not** the sum of all
+  variants — and is at least 1.
+- Fields inside a variant are placed with **natural alignment**, so a field offset is not
+  necessarily a multiple of 8 (`(a char, b char, c char)` puts them at 0 / 4 / 8). Reads and writes
+  address them by **byte offset** (`bitcast` to `i8*`, then `getelementptr`), so the offset written
+  and the offset read come from the same layout table.
 
-Sizes therefore work out as:
+The size is `8 + 8K` (the tag is padded to a whole word by the array's 8-byte alignment); only an
+enum with no payloads anywhere is tag-sized:
 
-| Case | `N` | Size |
+| Case | `K` | Size |
 | --- | --- | --- |
-| Every variant is payload-less (a pure tag enum such as `color { red, green, blue }`) | 1 | **16 bytes** |
-| Widest variant is `i64` / `f64` / a pointer | 1 | 16 bytes |
-| Widest variant is `?T` | 2 | 24 bytes |
-| Widest variant is `str` / `vec` / `[]T` | 3 | 32 bytes |
-| Widest variant is a struct `T` | sum of `T`'s fields' slots (expanded recursively) | depends on `T` |
+| Every variant is payload-less | — (no payload field) | **1 byte** (`{ i8 }`; 2 / 4 / 8 once past 256 variants) |
+| Widest variant is `i64` / `i32` / `f64` / a pointer | 1 | 16 bytes |
+| Widest variant is `char` (4 bytes) / `bool` (1 byte) | 1 | 16 bytes |
+| Widest variant is `(a char, b char, c char)` (12 bytes) | 2 | 24 bytes |
+| Widest variant is `str` / `vec` / `[]T` (16-byte descriptor) | 2 | 24 bytes |
+| Widest variant is a struct `T` | `ceil(sizeof(T) / 8)` | `8 + 8K` |
 
 In other words the layout **starts at 16 bytes by default** and only grows when some variant's
 payload really is wider — "fixed 16 bytes by default" and "size varies per variant" are two sides of
-the same rule.
+the same rule. Small payloads such as `char` / `bool` only affect alignment, they do not enlarge the
+union: its width is the **single widest variant**, never the sum.
+
+> The single source of truth is `src/mir/layout.go`: `tagWidth` picks `iN`,
+> `enumVariantLayout` computes each variant's field offsets and own size, and `enumUnionLayout`
+> takes the maximum to get `K`. `hir2mir.fillEnumLayout` records those numbers in
+> `TaggedEnumInfo` when the table is built and the emitter only reads them — the two cannot
+> disagree.
 
 #### The Three Spellings of `#{inline}`
 
@@ -2920,9 +2936,84 @@ The `err` variant's payload is **not a `str`** — it is the `err` struct from `
 `err.new('msg')` and defaults to `code.unknown`; write `err('msg', code.io)` to set an error
 code. The position fields are injected by the compiler at the `err(...)` construction site.
 
-`#{buildin}` means the underlying representation and construction are provided by the built-in runtime (the `%option`
-type, and the `ok(...)`/`nil`/`err(...)` constructors); the `option` enum declaration exists only for matching and
-exhaustiveness checking. See "Tagged Enums" and "Built-in Tagged Enums".
+`#{buildin}` means the underlying representation and construction are provided by the built-in runtime (the
+`%option_<key>` type, and the `ok(...)`/`nil`/`err(...)` constructors); the `option` enum declaration exists only for
+matching and exhaustiveness checking. See "Tagged Enums" and "Built-in Tagged Enums".
+
+#### Memory Layout
+
+`?T` is **typed by its payload**: every payload type gets its own LLVM type, named after the
+payload type through an injective mapping, so "same payload type ⇒ same layout" — `?i32` / `?i64` /
+`?bool` share one type:
+
+```llvm
+%option_<key> = type { i8 tag, [K x i64] payload }   ; inline
+%option_<key> = type { i8 tag, [1 x i64] payload }   ; boxed (the word holds an i8*)
+```
+
+- The tag is always **one byte**: an option has three variants (`0=ok`, `1=nil`, `2=err`), which
+  falls in the "`<= 256` variants → `i8`" bracket. The enum tag-width rule is described in
+  "Memory Layout (the Stack Form)".
+- After the tag comes **alignment padding** (a 1-byte tag pads out to 7 bytes), and only then the
+  payload.
+- `K` follows the **actual** size of `T`, rounded up to a multiple of 8 — it is not a fixed slot:
+  `?i64` is 16 bytes (8 + 8), `?str` is 24 (8 + 16), `?txt` is 264 (8 + 256).
+- A payload above the threshold is **heap-boxed** instead: the payload field holds a single 8-byte
+  pointer and the whole option is 16 bytes.
+
+The `option-inline-threshold` counts the **whole option struct** in bytes (default **264** = 1-byte
+tag + 7 bytes padding + 256-byte payload, minimum **16**): a payload is inline iff
+`8 + roundUp8(sizeof(T)) <= threshold`. So by default "a payload of at most 256 bytes stays inline",
+and `?txt` (a 256-byte inline buffer) lands exactly on that boundary.
+
+| `T` of `?T` | Inline? | `%option_<key>` size |
+| --- | --- | --- |
+| `i64` / `i32` / `bool` / `char` / `f64` / a pointer | yes | 16 bytes |
+| `str` / `[]T` / `vec` (16-byte descriptor) | yes | 24 bytes |
+| `txt` (256-byte inline buffer) | yes | 264 bytes (exactly at the default cap) |
+| a struct / array larger than 256 bytes | no | 16 bytes (payload on the heap) |
+| a self-referential payload (`node { next ?node }`) | no | 16 bytes (only a pointer can break the cycle) |
+
+> **The `err` payload is always boxed**: the `err` variant stores a pointer to std's `err.err`
+> struct and never competes for the payload budget. So a `?str` is a 24-byte inline string in its
+> `ok` state and the same 24-byte struct in its `err` state — the payload word just holds the error
+> object's pointer. That is what lets one `?T` type carry two very different variant payloads
+> without extra space.
+
+> **Inlining and boxing change WHERE the payload lives, never its ownership.** Both paths give a
+> struct payload its own heap whenever a **copy** is made (pointer fields recurse, inline-owned
+> `str` / `[]T` buffers are cloned), so `?T` keeps value semantics regardless of the layout: the same
+> program must produce identical output under any `option-inline-threshold`. A difference across
+> thresholds is a compiler bug, not a feature. (A pure transfer does not clone — the option takes
+> over the source's heap.)
+
+> The single source of truth is `src/mir/layout.go`: `optLayoutOfPayload` decides `K` and whether to
+> box, and `optionPayloadOffset` (8) is the payload's fixed byte offset. `hir2mir` folds module-level
+> `?T` constants and codegen emits the reads/writes — both ask the same function.
+
+#### Cross-payload propagation in `?=`
+
+`?=` first copies the option at the **root** of the right-hand chain into the option result parameter
+so that `nil` / `err` propagate straight out; the success path is then overwritten by the `ok` arm:
+
+```no
+pick = (p pool) (out ?i64) {
+    out ?= p.nodes[0].kind   ; root is ?node, the result slot is ?i64
+}
+```
+
+The two payload types may therefore **differ**, and that is a real ABI boundary (`?node` is 112
+bytes, `?i64` is 16), not two spellings of one layout. Only two things survive the type change:
+
+- `tag` — byte 0 of every option;
+- `err` — the `err` variant belongs to the option, not to its payload, and it is always boxed, so
+  both sides hold an 8-byte box pointer in word 0 of the payload area (the box is **copied**, not
+  shared, because both options are dropped).
+
+The `ok` payload is **not** carried across types: the destination payload is zeroed first and a
+success value is always rewritten by the `ok` arm. The code lives in
+`@__nolang_opt_prop_<dst>__<src>` (`optPropagateState` in `src/mir/codegen.go`) and only appears
+for this compiler-generated propagation assignment.
 
 ```no
 #{fmt-skip}

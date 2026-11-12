@@ -153,6 +153,30 @@ no build -target aarch64-linux-gnu   # 需要交叉編譯時才顯式指定
 - `clang`（預設）— 需要安裝 LLVM
 - `zig` — 需要安裝 Zig，適合交叉編譯
 
+### 內建型別佈局（`?T` 內聯閾值）
+
+`?T` 的記憶體佈局**按載荷定型**：每個載荷型別 `T` 各自一個
+`%option_<key> = { i8 tag, [K x i64] }`（1 位元組標籤、載荷固定在位元組偏移 8、
+`K = roundUp8(sizeof(T))/8`）。載荷放不進閾值就改成堆裝箱、載荷區首字存指標。
+
+`--option-inline-threshold=N` 指定這個閾值（按**整個 option 結構**的位元組計，
+即 `1 + 7 + sizeof(T)`）：
+
+```bash
+no build --option-inline-threshold=1032 main.no   # 讓更大的載荷內聯
+no build --option-inline-threshold=16 main.no     # 最小可配置值
+```
+
+| 值 | 效果 |
+| --- | --- |
+| 預設 **264**（= 1 + 7 + 256） | `?i64` 16 B、`?str` 24 B、`?txt`（256 B）264 B 內聯；更大的載荷裝箱 |
+| 最小 **16** | 只有 `?i64` 一類還內聯；`?str`（24 B）起全部裝箱 |
+| < 16 | 編譯錯誤 |
+
+優先序：命令行 > 環境變量 `NOLANG_OPTION_INLINE_THRESHOLD` > `package.noml` 的
+`compiler.option-inline-threshold` > 預設值。佈局的唯一來源是 `src/mir/layout.go`，
+語義層面（哪些值算 `ok`／`nil`／`err`）**不受影響**，只有記憶體佔用與是否裝箱會變。
+
 ### 編譯器內置優化器（MIR opt）
 
 編譯器自帶一個作用在 **MIR 層**（HIR 降級之後、LLVM 代碼生成之前）的優化器。它與後端已有的 LLVM `opt` 是兩件事：前者改寫 MIR，後者改寫已生成的 LLVM IR。

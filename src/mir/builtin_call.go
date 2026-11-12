@@ -607,7 +607,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			// truncated builtin arg can arrive as %option. Peel the scalar payload
 			// before coercing — `coerce("%option", …, iN)` has no widening rule and
 			// would fail the build. Mirrors emitArith's operand unwrap.
-			if tl := clibLLVMType(cl.TruncArgs[i]); srcTy == "%option" && isIntType(tl) {
+			if tl := clibLLVMType(cl.TruncArgs[i]); isOptionType(srcTy) && isIntType(tl) {
 				srcTy, srcVal = c.unwrapOptionOperand(av, srcTy, srcVal, tl)
 			}
 			v := c.coerce(srcTy, srcVal, clibLLVMType(cl.TruncArgs[i]))
@@ -645,7 +645,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		srcTy, srcVal := c.loadVal(av)
 		// %option into a scalar C argument: peel the payload (see the TruncArgs
 		// note above — same D6 unified-option-rule rationale).
-		if srcTy == "%option" && isIntType(lt) {
+		if isOptionType(srcTy) && isIntType(lt) {
 			srcTy, srcVal = c.unwrapOptionOperand(av, srcTy, srcVal, lt)
 		}
 		v := c.coerce(srcTy, srcVal, lt)
@@ -698,7 +698,7 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 		// (libc static storage must never end up inside a %str-long.)
 		p := c.treg("cp")
 		c.sb.WriteString(fmt.Sprintf("  %s = call i8* @%s(%s)\n", p, fn, argList))
-		if dstLT == "%option" && dstSlot != "" {
+		if isOptionType(dstLT) && dstSlot != "" {
 			// std declares the builtin as `?str` (e.g. os.get-env): NULL (unset)
 			// -> nil (tag 1), non-NULL -> ok(str) (tag 0). str_from_cstr maps NULL
 			// to a zeroed, un-owned %str-long, so storing the payload unconditionally
@@ -714,10 +714,9 @@ func (c *codegen) emitBuiltinCLib(f *Function, inst *Inst, bm *builtin.BuiltinMe
 			c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 0\n", tag, isNil))
 			sr := c.treg("c2s")
 			c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cstr(i8* %s)\n", sr, p))
-			s0 := c.treg("c2o")
-			c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", s0, c.optSlotLT, tag))
-			c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", s0, dstSlot))
-			c.optStoreInlinePayload(dstSlot, "%str-long", sr)
+			c.optStoreTag(dstSlot, "%str-long", 0)
+			c.optStoreTagValue(dstSlot, "%str-long", tag)
+			c.optStoreInlinePayload(dstSlot, "%str-long", "%str-long", sr)
 		} else if dstLT == "%str-long" && dstSlot != "" {
 			r := c.treg("c2s")
 			c.sb.WriteString(fmt.Sprintf("  %s = call %%str-long @str_from_cstr(i8* %s)\n", r, p))
@@ -1884,16 +1883,15 @@ func (c *codegen) emitBuiltinStrToBool(inst *Inst) error {
 	// payload: 1 for "true", 0 otherwise (ok(false)/nil/err all use 0).
 	payload := c.treg("stbp")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 1, i64 0\n", payload, eqTrue))
-	// Unified `%option = { i64 tag, [N x i64] slot }`: write the discriminant
+	// Per-payload `%option_<key> = { i8 tag, [K x i64] slot }`: write the discriminant
 	// (a runtime value here, hence insertvalue on a zeroed literal rather than
 	// the constant-tag optStoreTag) and then the i64 payload into slot[0].
 	optStore := func(lt string) {
-		s0 := c.treg("stbs0")
-		c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", s0, c.optSlotLT, tag))
-		c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", s0, dstSlot))
-		c.optStoreInlinePayload(dstSlot, "i64", payload)
+		c.optStoreTag(dstSlot, "i64", 0)
+		c.optStoreTagValue(dstSlot, "i64", tag)
+		c.optStoreInlinePayload(dstSlot, "i64", "i64", payload)
 	}
-	if dstLT == "%option" {
+	if isOptionType(dstLT) {
 		optStore(dstLT)
 		return nil
 	}
@@ -2138,7 +2136,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	if elemTy != elemLL {
 		if conv := c.coerce(elemTy, elemV, elemLL); conv != "" {
 			elemV = conv
-		} else if elemLL != "" && elemTy != "%option" && elemLL != "%option" &&
+		} else if elemLL != "" && !isOptionType(elemTy) && !isOptionType(elemLL) &&
 			isScalarLLVM(elemLL) != isScalarLLVM(elemTy) {
 			// 純量 <-> 聚合且無轉換路徑（例如 `[]i64.push('x')`：引數是
 			// %str-long，元素是 i64）。此處**不能**沿用引數型別：那會讓 push
@@ -2297,24 +2295,24 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	}
 	eptr := c.treg("vpep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i64 %s\n", eptr, elemTy, elemTy, ebase, lenG))
-	// Owned `%option` element (`[]?T` / `[N]?T`): the third instance of the same
+	// Owned option element (`[]?T` / `[N]?T`): the third instance of the same
 	// bug, and the reason `b []?str` built by push read back garbage. The
-	// 32-byte {tag, payload} struct is stored by value, so an owned payload
+	// {tag, payload} aggregate is stored by value, so an owned payload
 	// (`?str`, `?[]T`) stays SHARED with the pushed temporary — whose drop then
 	// frees the container's element buffer (`first=firs`: the freed block had
 	// been reused by the format string). Give the element its own heap with the
 	// option clone helper, exactly as emitIndexStore now does.
 	optStored := false
-	if elemTy == "%option" {
+	if isOptionType(elemTy) {
 		if raw := c.optionElemRawOfContainer(recv); raw != "" {
 			if _, payloadLT := c.optionType(raw); payloadLT != "" {
 				if !c.optionPayloadInline(payloadLT) {
 					// A boxed payload: the copy would share the box itself.
-					c.optBoxClone(c.optSpill(elemV), eptr, payloadLT)
+					c.optBoxClone(c.optSpill(elemV, payloadLT), eptr, payloadLT)
 					optStored = true
 				} else if c.mod.optionCopyOwnsPayload(raw) {
-					c.sb.WriteString(fmt.Sprintf("  call void %s(%%option* %s, %%option* %s)\n",
-						c.emitOptionCloneHelper(raw, payloadLT), eptr, c.optSpill(elemV)))
+					c.sb.WriteString(fmt.Sprintf("  call void %s(%s* %s, %s* %s)\n",
+						c.emitOptionCloneHelper(raw, payloadLT), elemTy, eptr, elemTy, c.optSpill(elemV, payloadLT)))
 					optStored = true
 				}
 			}
@@ -4401,7 +4399,7 @@ func (c *codegen) emitBuiltinArgsGet(inst *Inst) error {
 	if !ok {
 		return nil
 	}
-	if lt != "%option" {
+	if !isOptionType(lt) {
 		return i18n.Errorf("vgljm585", "builtin %s: ?str result expected %%option slot, got %s", inst.Sym, lt)
 	}
 	slot := c.valSlot[inst.Results[0]]
@@ -4447,11 +4445,11 @@ func (c *codegen) emitBuiltinArgsGet(inst *Inst) error {
 
 	// Build the option: zero + tag 0, store the inline str payload, then
 	// overwrite the discriminant with nil (tag 1) when out of range.
-	c.optStoreTag(slot, 0)
-	c.optStoreInlinePayload(slot, "%str-long", strV)
+	c.optStoreTag(slot, "%str-long", 0)
+	c.optStoreInlinePayload(slot, "%str-long", "%str-long", strV)
 	tagR := c.treg("agtag")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tagR, inr))
-	c.optStoreTagValue(slot, tagR)
+	c.optStoreTagValue(slot, "%str-long", tagR)
 	return nil
 }
 

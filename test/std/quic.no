@@ -14,8 +14,18 @@
 ;   `conn` 是公開結構體 ⇒ init / close 白盒；`dial` 走 UDP，對任意本機埠都會成功，
 ;   因此測「回 ok + fd >= 0 + close 後歸 -1」。
 ;
-;   未覆蓋（需要真 QUIC 握手，本檔造不出來）：
-;     conn.build-initial-packet / conn.recv-initial / conn.recv-raw
+;   2026-11-12 補上最後三個方法：
+;     build-initial-packet —— 不碰 socket，純計算 ⇒ 建封包後**反向解回明文**
+;       （remove-header-protection → decode-packet-number → aes-gcm.open-128），
+;       逐位元組核對標頭佈局、PN、Length 與 CRYPTO 載荷。
+;     recv-raw / recv-initial —— 用一個從未收到資料的本機 UDP socket + 200ms
+;       接收逾時，覆蓋「收不到」的失敗臂（收得到的那條路需要真實 QUIC 對端，
+;       本語言的協程是協作式、且兩個 UDP socket 都拿不到自己的臨時埠號，
+;       無法在本檔內自造對端）。
+;
+;   已知未修（見 test/README §5.2）：parse-frames 只認無載荷影格，CRYPTO/STREAM
+;   的 offset/length 從未被解出，且 0x1c/0x1d/0x1e 的分派寫在迴圈**外面**、
+;   會重複 count。因此 t-build-initial-packet 直接核對明文字節而不走 parse-frames。
 ;
 ; 寫法備註：
 ;   - `varint-encode` 的 buf 是**輸出參數**，必須先備好夠長的緩衝再綁定：
@@ -571,6 +581,197 @@ t-dial = () {
     runner.eq(got, 1, 'quic.dial: UDP 到本機埠 ⇒ 回 ok')
 }
 
+; ── build-initial-packet（純計算；需先備妥 CIDs 與 client Initial 金鑰）──
+;
+; 這個方法不只斷言「有東西出來」，而是把封包**反向解回明文**：
+;   remove-header-protection → decode-packet-number → aes-gcm.open-128 → parse-frames
+; 因此標頭佈局、PN 編碼、AEAD 的 key/iv/aad 任一寫錯都會紅。
+t-build-initial-packet = () {
+    c = quic.conn{}
+    c.init()
+    c.local-cid = quic.gen-cid(8)
+    c.remote-cid = quic.gen-cid(8)
+    ck, civ, chp = quic.derive-initial-keys(c.local-cid, true)
+    c.client-initial-key = ck
+    c.client-initial-iv = civ
+    c.client-initial-hp = chp
+
+    ; 8 位元組假 ClientHello 載荷（'A'..'H'）
+    cd []byte = with-len(8)
+    i <- [0..8): {
+        cd[i]: {
+            ok -> it = 65 + i
+
+            -> _
+        }
+    }
+
+    p []byte
+    got = 0
+    o = c.build-initial-packet(cd)
+    o: {
+        ok -> {
+            p = it
+            got = 1
+        }
+
+        -> _
+    }
+    runner.eq(got, 1, 'build-initial-packet: 回 ok')
+    runner.eq(p.len(), 1200, 'build-initial-packet: 長度 = QUIC-MAX-PACKET-SIZE')
+    runner.eq(c.initial-pn, 1, 'build-initial-packet: initial-pn 前進 1')
+
+    ; ── 標頭佈局：先量出各欄位偏移（version 與 CID 不受標頭保護影響）──
+    dcl = at(p, 5)
+    scl-pos = 6 + dcl
+    scl = at(p, scl-pos)
+    tok-pos = scl-pos + 1 + scl
+    len-pos = tok-pos + 1
+    runner.eq(dcl, 8, 'dcid-len = 8')
+    runner.eq(scl, 8, 'scid-len = 8')
+    runner.eq(at(p, tok-pos), 0, 'token-len = 0（客戶端 Initial 無 token）')
+
+    lv = 0
+    pn-offset = 0
+    lv, pn-offset = quic.varint-decode(p, len-pos)
+    runner.eq(lv, 1174, 'length 覆蓋 PN 到封包結尾 = 1200 - 26 = 1174')
+    runner.eq(pn-offset, 26, 'pn 偏移 = 1+4+1+8+1+8+1+2 = 26')
+
+    runner.eq(at(p, 1), 0, 'version[0] = 0')
+    runner.eq(at(p, 2), 0, 'version[1] = 0')
+    runner.eq(at(p, 3), 0, 'version[2] = 0')
+    runner.eq(at(p, 4), 1, 'version = 1')
+    i <- [0..8): {
+        runner.eq(at(p, 6 + i), at(c.remote-cid, i), 'dcid 逐位元組 = remote-cid')
+        runner.eq(at(p, scl-pos + 1 + i), at(c.local-cid, i), 'scid 逐位元組 = local-cid')
+    }
+
+    ; ── 移除標頭保護後才能讀首位元組與 PN ──
+    quic.remove-header-protection(p, pn-offset, chp, true)
+    first = at(p, 0)
+    runner.eq(first & 0xc0, 0xc0, '首位元組: Header Form(0x80) | Fixed Bit(0x40)')
+    runner.eq(first & 0x30, 0x00, '首位元組: Initial 型別')
+    runner.eq(first & 0x03, 3, '首位元組: pn-len = 4')
+
+    pn = 0
+    pn-len = 0
+    pn, pn-len = quic.decode-packet-number(p, pn-offset, -1)
+    runner.eq(pn, 0, 'PN = 0（首個封包）')
+    runner.eq(pn-len, 4, 'pn-len = 4')
+
+    ; ── AEAD 解密：pn == 0 ⇒ nonce 就等於 client Initial IV ──
+    nonce [12]byte
+    i <- [0..12): {
+        nonce[i]: {
+            ok -> it = civ[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            -> _
+        }
+    }
+
+    ; AAD 必須**含** PN 欄位（RFC 9001 §5.3），密文從 PN 之後開始
+    pn-end = 0
+    {
+
+        #{overflow=wrap}
+        pn-end-opt = pn-offset + pn-len
+        pn-end-opt: {
+            ok -> pn-end = it
+
+            ->
+        }
+    }
+    aad []byte
+    i <- [0..pn-end): {
+        aad[i]: {
+            ok -> it = p[i]: {
+                ok -> it
+
+                -> _
+            }
+
+            -> _
+        }
+    }
+
+    sealed []byte
+    sealed-len = 0
+    {
+
+        #{overflow=wrap}
+        sl-opt = p.len() - pn-end
+        sl-opt: {
+            ok -> sealed-len = it
+
+            ->
+        }
+    }
+    i <- [0..sealed-len): {
+        sealed[i]: {
+            ok -> it = p[pn-end + i]: {
+                ok -> it
+
+                -> _
+            }
+
+            -> _
+        }
+    }
+
+    plain []byte
+    plain = aes-gcm.open-128(ck, nonce, aad, sealed)
+    runner.is-true(plain.len() > 0, 'AEAD 解密成功（key / iv / aad 全匹配）')
+
+    ; 明文 = CRYPTO(0x06) + offset(0) + length(8) + 'A'..'H' + 補零到 1154
+    ; 註：這裡直接核對明文字節，刻意不經 parse-frames —— 後者目前只認無載荷
+    ; 影格（CRYPTO/STREAM 的 offset/length 從未被解出，見 test/README §5.2）。
+    runner.eq(plain.len(), 1154, '明文長度 = 1200 - 30(標頭+PN) - 16(tag)')
+    runner.eq(at(plain, 0), 6, '明文[0] = CRYPTO 影格型別 0x06')
+    runner.eq(at(plain, 1), 0, '明文[1] = CRYPTO offset = 0')
+    runner.eq(at(plain, 2), 8, '明文[2] = CRYPTO length = 8')
+    i <- [0..8): {
+        runner.eq(at(plain, 3 + i), 65 + i, 'CRYPTO 載荷逐位元組等於輸入')
+    }
+    runner.eq(at(plain, 11), 0, 'CRYPTO 之後是 PADDING 補零')
+    runner.eq(at(plain, 1153), 0, '補零延伸到明文結尾')
+}
+
+; ── recv-raw / recv-initial（UDP 收包；無對端 ⇒ 走逾時／錯誤臂）──
+;
+; 兩者都需要一個 fd。這裡開一個從未綁定、也收不到任何資料的 UDP socket，
+; 並把接收逾時壓到 200ms，於是都走「收不到」的失敗臂 —— 正是呼叫方依賴
+; 的契約：recv-raw 回固定長度緩衝 + n <= 0；recv-initial 回 count = -1 /
+; ok = false。
+t-recv-empty = () {
+    c = quic.conn{}
+    c.init()
+    c.fd = net.net-udp-open()
+    opened = 0
+    c.fd >= 0 -> opened = 1
+    runner.eq(opened, 1, 'recv: 本機 UDP socket 開啟成功')
+
+    net.net-set-recv-timeout(c.fd, 200)
+
+    buf []byte
+    n = 0
+    buf, n = c.recv-raw()
+    runner.eq(buf.len(), 1200, 'recv-raw: 緩衝長度 = QUIC-MAX-PACKET-SIZE')
+    runner.eq(n <= 0, 1, 'recv-raw: 無對端 ⇒ n <= 0')
+
+    ; 回归點（2026-11-12）：recv-initial 原本傳入空 vec，data 指標是 NULL，
+    ; recvfrom 必回 -1(EFAULT)，函式連「收不到」與「收錯」都分不出來。
+    frames, count, ok = c.recv-initial()
+    runner.eq(count, -1, 'recv-initial: 無封包 ⇒ count = -1')
+    runner.is-false(ok, 'recv-initial: 無封包 ⇒ ok = false')
+
+    c.close()
+    runner.eq(c.fd, -1, 'recv: close 後 fd = -1')
+}
+
 ; ── 執行 ──────────────────────────────────────────────────
 
 p1, f1 = runner.test('quic.varint-encode', t-varint-encode)
@@ -584,6 +785,8 @@ p8, f8 = runner.test('quic.decode-pn', t-decode-pn)
 p9, f9 = runner.test('quic.conn-init', t-conn-init)
 p10, f10 = runner.test('quic.conn-close', t-conn-close)
 p11, f11 = runner.test('quic.dial', t-dial)
+p12, f12 = runner.test('quic.build-initial-packet', t-build-initial-packet)
+p13, f13 = runner.test('quic.recv-empty', t-recv-empty)
 
 total = runner.summary()
 f = runner.failed-count()

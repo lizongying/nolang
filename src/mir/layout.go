@@ -8,16 +8,31 @@ import (
 // This file is the single source of truth for the byte-level layout of the two
 // tagged aggregates: `?T` (option) and tagged enums.
 //
-// Target layout (see docs/docs/lang/syntax.md and AGENTS.md):
+// Layout (see docs/docs/lang/syntax.md §option / §enum and AGENTS.md §3.3):
 //
-//	%option_<key> = type { i8 tag, [K x i64] payload }   ; 8 + 8K bytes
-//	%tenum_X      = type { iN tag, [K x iW] payload }    ; unit-only: { iN }
+//	%option_<key> = type { i8 tag, [K x i64] payload }      ; 8 + 8K bytes
+//	%tenum_X      = type { iN tag, [K x i64] payload }      ; 8 + 8K bytes
+//	%tenum_X      = type { iN tag }                         ; unit-only variants
 //
-// The tag width is chosen from the variant count (<=256 -> i8, <=65536 -> i16,
-// <2^32 -> i32, else i64). The payload is a tight union: each variant's fields
-// are laid out with their natural alignment, and the union is the max over
-// variants. Option payloads are 8-byte normalised because the err variant is
-// ALWAYS a heap-boxed pointer (8 bytes), so W == 8 for every option.
+// Three properties this file exists to guarantee:
+//
+//  1. The tag width follows the VARIANT COUNT, not a fixed i64:
+//     <=256 -> i8, <=65536 -> i16, < 2^32 -> i32, else i64. A `?T` has three
+//     variants so its tag is always one byte.
+//
+//  2. The payload is sized to the ACTUAL payload, not to a module-wide
+//     worst case. `?i64` is 16 bytes, `?str` is 24, `?txt` (256 bytes) is 264,
+//     and anything above the limit degrades to a heap pointer (16 bytes).
+//
+//  3. The layout is a PURE FUNCTION of (payload LLVM type, option-inline
+//     threshold, module struct table). hir2mir folds module-level `?T`
+//     globals and sizes enum payload slots; codegen emits the accesses. Both
+//     call the same functions here, so they cannot drift.
+//
+// LIMITATION (documented, not silently wrong): a payload whose alignment
+// exceeds 8 bytes (i128 / u128) is HEAP-BOXED as an option payload, and inside
+// a tagged enum it is laid out at 8-byte alignment. Nothing in the std corpus
+// puts an i128 in a tagged enum.
 
 // SizeAlign is the byte size and alignment of a type.
 type SizeAlign struct {
@@ -42,20 +57,37 @@ func lasMax(a, b int64) int64 {
 
 // optionInlineLimitDefault is the default `option-inline-threshold` in BYTES of
 // the whole option struct: 264 = 1 tag + 7 padding + 256 payload. A payload is
-// stored inline iff `8 + roundUp8(sizeof(T)) <= limit`.
+// stored inline iff `8 + roundUp8(sizeof(T)) <= limit`, i.e. iff
+// sizeof(T) <= 256 at the default.
 const optionInlineLimitDefault = 264
 
 // optionInlineLimitMin is the smallest meaningful limit: the 8-byte tag area
-// plus the 8-byte err pointer. Anything smaller could not even hold an i64.
+// plus one 8-byte payload word. Anything smaller could not even hold an i64.
 const optionInlineLimitMin = 16
 
-// optionPayloadCapBytes is the largest ok payload that can be inline at the
-// default limit (264 - 8 = 256). `?txt` (256 bytes) sits exactly on it.
-const optionPayloadCapBytes = optionInlineLimitDefault - 8
+// optionTagOffset / optionPayloadOffset are the fixed byte offsets inside
+// every option struct. The payload always starts at 8: the struct is
+// `{ i8, [K x i64] }` and LLVM pads the tag to the array's alignment.
+const (
+	optionTagOffset     = 0
+	optionPayloadOffset = 8
+)
+
+// optionInlineLimit resolves the configured threshold, clamping/reporting.
+func optionInlineLimit(threshold int) int64 {
+	t := int64(threshold)
+	if t <= 0 {
+		return optionInlineLimitDefault
+	}
+	if t < optionInlineLimitMin {
+		return optionInlineLimitMin
+	}
+	return t
+}
 
 // tagWidth returns the discriminant width for an enum with n variants and the
-// LLVM integer type that spells it. Tags are 0-based, so we need to represent
-// n-1 and the bound is inclusive of n values.
+// LLVM integer type that spells it. Tags are 0-based, so the bound is inclusive
+// of n values.
 func tagWidth(nVariants int) (bits int64, lt string) {
 	switch {
 	case nVariants <= 256:
@@ -69,7 +101,7 @@ func tagWidth(nVariants int) (bits int64, lt string) {
 	}
 }
 
-// optTypeKey maps a raw element type to a single-injective LLVM-name fragment.
+// optTypeKey maps a type spelling to a single-injective LLVM-name fragment.
 // It is deliberately NOT `sanitize`: sanitize collapses different spellings
 // (`[]i64` and `__i64`), which is fine for a debug-only struct name but fatal
 // for an ABI type name. Every non-alphanumeric byte is escaped.
@@ -90,67 +122,172 @@ func optTypeKey(raw string) string {
 	return b.String()
 }
 
-// OptionLayout describes one `?T`'s LLVM representation.
+// OptionLayout describes one `?T`'s LLVM representation, keyed by the payload
+// LLVM type (two options with the same payload type are the same type: they
+// have identical layout by construction).
 type OptionLayout struct {
-	Key       string // raw element type, e.g. "i64"
-	LLVM      string // "%option_i64"
-	ElemRaw   string
+	Key       string // optTypeKey(PayloadLT)
+	LLVM      string // "%option_<Key>"
 	PayloadLT string // payload view type, e.g. "i64", "%str-long", "%txt"
+	SlotLT    string // "[K x i64]"
 	K         int64  // payload slot count (8-byte units)
-	Boxed     bool   // ok payload lives behind a heap pointer in word0
+	Boxed     bool   // payload lives behind a heap pointer in word 0
 	Recursive bool   // payload is/contains this same option (forces boxing)
 	Size      int64  // 8 + 8*K
+	done      bool   // fully computed (false == recursion placeholder)
 }
 
-// optionLayoutFor computes the layout of `?elemRaw`. `seen` carries the elem
-// raws already on the evaluation stack so a recursive payload (`node { next
-// ?node }`) is forced to box instead of looping.
-func (c *codegen) optionLayoutFor(elemRaw string, limit int64, seen map[string]bool) OptionLayout {
-	key := optTypeKey(elemRaw)
-	lay := OptionLayout{
-		Key:     key,
-		LLVM:    "%option_" + key,
-		ElemRaw: elemRaw,
-		K:       1,
+// optLayoutOfPayload returns (memoising) the layout of an option whose payload
+// is payloadLT.
+//
+// RECURSION: the map entry is installed BEFORE the size is computed, so a
+// payload that mentions its own option (`node { next ?node }`) re-enters here,
+// finds the placeholder, and marks it Recursive. The outer computation then
+// keeps the payload boxed — which is the only self-consistent answer: a boxed
+// payload is one word, so `%node` has a size that does not depend on sizeof
+// `%option_node`.
+func (c *codegen) optLayoutOfPayload(payloadLT string) *OptionLayout {
+	if c.optLayouts == nil {
+		c.optLayouts = map[string]*OptionLayout{}
+		c.optByLLVM = map[string]*OptionLayout{}
 	}
-	lay.PayloadLT = c.optionPayloadLLVMType(elemRaw)
-
-	recursive := seen[elemRaw]
-	if limit <= 0 {
-		limit = optionInlineLimitDefault
-	}
-	if limit < optionInlineLimitMin {
-		limit = optionInlineLimitMin
-	}
-
-	if lay.PayloadLT == "" || recursive {
-		lay.Boxed = true
-		lay.Recursive = recursive
-		lay.Size = 8 + 8*lay.K
-		return lay
-	}
-
-	sa, ok := c.llvmSizeAlign(lay.PayloadLT, seen)
-	if !ok {
-		lay.Boxed = true
-		lay.Size = 8 + 8*lay.K
-		return lay
-	}
-	// 8-byte normalisation: the err variant always occupies an 8-byte pointer,
-	// so the payload's effective width is at least one slot.
-	need := lasRoundUp(lasMax(sa.Size, 8), 8)
-	if 8+need <= limit {
-		lay.Boxed = false
-		lay.K = need / 8
-		if lay.K < 1 {
-			lay.K = 1
+	if lay := c.optLayouts[payloadLT]; lay != nil {
+		if !lay.done {
+			// Re-entered while computing: this option is part of its own
+			// payload. Force boxing and say so.
+			lay.Recursive = true
 		}
-	} else {
-		lay.Boxed = true
-		lay.K = 1
+		return lay
 	}
-	lay.Size = 8 + 8*lay.K
+	// An unresolvable payload still needs a name; it is boxed (see the `!= ""`
+	// guard below), so the spelling is all that matters.
+	keySrc := payloadLT
+	if keySrc == "" {
+		keySrc = "unknown"
+	}
+	key := optTypeKey(keySrc)
+	lay := &OptionLayout{
+		Key:       key,
+		LLVM:      "%option_" + key,
+		PayloadLT: payloadLT,
+		SlotLT:    "[1 x i64]",
+		K:         1,
+		Boxed:     true,
+		Size:      optionPayloadOffset + 8,
+	}
+	c.optLayouts[payloadLT] = lay
+	c.optByLLVM[lay.LLVM] = lay
+
+	if payloadLT != "" && !lay.Recursive {
+		// NOTE: the ERR variant does not participate here. It is always
+		// heap-boxed (errPayloadBoxed), so it never needs room in the payload
+		// area and must not constrain an OK payload that happens to share its
+		// type — `?str` stays a 24-byte inline option even though a tag-2
+		// `?str` keeps its message in a box.
+		if sa, ok := c.llvmSizeAlign(payloadLT, map[string]bool{}); ok && sa.Align <= 8 && !lay.Recursive {
+			limit := c.optInlineLimit
+			if limit <= 0 {
+				limit = optionInlineLimitDefault
+			}
+			// The payload occupies at least one word (an empty struct still
+			// needs an address), and the slot is a whole number of i64s.
+			need := lasRoundUp(lasMax(sa.Size, 8), 8)
+			if optionPayloadOffset+need <= limit {
+				lay.Boxed = false
+				lay.K = need / 8
+				lay.SlotLT = fmt.Sprintf("[%d x i64]", lay.K)
+				lay.Size = optionPayloadOffset + need
+			}
+		}
+	}
+	lay.done = true
 	return lay
+}
+
+// optLayoutOfElem is optLayoutOfPayload for a nolang element spelling.
+func (c *codegen) optLayoutOfElem(elemRaw string) *OptionLayout {
+	return c.optLayoutOfPayload(c.optionPayloadLLVMType(elemRaw))
+}
+
+// optLayoutOfLLVM finds the layout whose emitted LLVM name is lt.
+func (c *codegen) optLayoutOfLLVM(lt string) *OptionLayout {
+	if c.optByLLVM == nil {
+		return nil
+	}
+	return c.optByLLVM[lt]
+}
+
+// optionPayloadInline reports whether a payload of LLVM type payloadLT is
+// stored inline in its option. Anything larger, over-aligned, of unknown size,
+// or recursive is heap-boxed. The decision must be CONSERVATIVE: claiming a
+// payload fits when it does not corrupts the bytes after it, while boxing a
+// payload that would have fitted only costs a malloc.
+func (c *codegen) optionPayloadInline(payloadLT string) bool {
+	return !c.optLayoutOfPayload(payloadLT).Boxed
+}
+
+// collectOptionLayouts populates the per-module option layout tables before the
+// prelude is emitted. Every `?T` in the module is interned as a Type, so
+// scanning mod.Types is complete; the tables are also filled lazily by
+// optLayoutOfElem, which keeps a late-discovered option (one that only appears
+// inside a function body) declared.
+func (c *codegen) collectOptionLayouts() {
+	limit := optionInlineLimit(c.mod.OptionInlineThreshold)
+	if t := int64(c.mod.OptionInlineThreshold); t != 0 && t < optionInlineLimitMin {
+		c.fail("option-inline-threshold %d is below the minimum %d (tag + one 8-byte payload word)", t, optionInlineLimitMin)
+	}
+	c.optInlineLimit = limit
+	if c.optLayouts == nil {
+		c.optLayouts = map[string]*OptionLayout{}
+		c.optByLLVM = map[string]*OptionLayout{}
+	}
+	// Snapshot the length: resolution may intern more types (views /
+	// containers), which appends to mod.Types.
+	n := len(c.mod.Types)
+	var elems []string
+	for i := 0; i < n; i++ {
+		t := c.mod.Type(TypeID(i))
+		if t == nil || t.Kind != KindOption || t.T == nil || !t.T.IsOption() || t.T.Elem == nil {
+			continue
+		}
+		elems = append(elems, t.T.ElemRaw())
+	}
+	for _, e := range elems {
+		c.optLayoutOfElem(e)
+	}
+}
+
+// sortedOptionLayouts returns every registered option layout ordered by LLVM
+// name, for deterministic prelude emission.
+func (c *codegen) sortedOptionLayouts() []*OptionLayout {
+	out := make([]*OptionLayout, 0, len(c.optByLLVM))
+	for _, lay := range c.optByLLVM {
+		out = append(out, lay)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1].LLVM > out[j].LLVM; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
+}
+
+// newLayoutCodegen builds a codegen carrying ONLY the module, so the layout
+// engine can run outside emitFunc. hir2mir needs the identical numbers for
+// module-level `?T` constants and enum payload slots, and re-deriving them
+// there is exactly the kind of drift this file exists to prevent.
+//
+// The threshold must be resolved HERE too: `c.optInlineLimit == 0` means "unset",
+// and optLayoutOfPayload would then fall back to the DEFAULT rather than to the
+// module's configured value. Analysis and emitter would then disagree about what
+// is boxed, which is a double free, not a leak.
+func newLayoutCodegen(mod *Module) *codegen {
+	return &codegen{
+		mod:            mod,
+		optLayouts:     map[string]*OptionLayout{},
+		optByLLVM:      map[string]*OptionLayout{},
+		optInlineLimit: optionInlineLimit(mod.OptionInlineThreshold),
+	}
 }
 
 // llvmSizeAlign computes sizeof/alignof for an LLVM type string, or ok=false
@@ -176,8 +313,6 @@ func (c *codegen) llvmSizeAlign(lt string, seen map[string]bool) (SizeAlign, boo
 		return SizeAlign{Size: 16, Align: 8}, true // { i32 len, i32 cap, i64 data }
 	case "%txt":
 		return SizeAlign{Size: 256, Align: 1}, true
-	case "%option": // legacy singleton, only reachable before P1 lands
-		return SizeAlign{Size: 32, Align: 8}, true
 	}
 	// Fixed array: [N x T].
 	if strings.HasPrefix(lt, "[") {
@@ -200,13 +335,11 @@ func (c *codegen) llvmSizeAlign(lt string, seen map[string]bool) (SizeAlign, boo
 		}
 		return SizeAlign{Size: lasRoundUp(n*sa.Size, sa.Align), Align: sa.Align}, true
 	}
-	// %option_<key>: consult the per-module layout table if it exists. During
-	// P0 the table is not populated, so this returns false and callers box.
+	// %option_<key>: resolve through the option layout table, creating the
+	// entry if this is the first mention.
 	if strings.HasPrefix(lt, "%option_") {
-		if c.optByLLVM != nil {
-			if lay := c.optByLLVM[lt]; lay != nil {
-				return SizeAlign{Size: lay.Size, Align: 8}, true
-			}
+		if lay := c.optLayoutOfLLVM(lt); lay != nil && lay.done {
+			return SizeAlign{Size: lay.Size, Align: 8}, true
 		}
 		return SizeAlign{}, false
 	}
@@ -243,8 +376,7 @@ func (c *codegen) rawSizeAlign(raw string, seen map[string]bool) (SizeAlign, boo
 	if t == nil {
 		return SizeAlign{}, false
 	}
-	lt := c.llvmTypeOf(t)
-	return c.llvmSizeAlign(lt, seen)
+	return c.llvmSizeAlign(c.llvmTypeOf(t), seen)
 }
 
 // structSizeAlign lays out a registered struct by its fields, honouring the
@@ -300,25 +432,138 @@ func (c *codegen) structKeyByLLVM(lt string) string {
 	return ""
 }
 
-// enumLLVMSizeAlign computes the struct size of `{ tag_t, [K x iW] }`.
-func (c *codegen) enumLLVMSizeAlign(ei *TaggedEnumInfo, seen map[string]bool) SizeAlign {
-	unionBytes, unionAlign, _, unitOnly := c.enumUnionLayout(ei, seen)
-	tagBits, _ := tagWidth(len(ei.Variants))
-	tagBytes := tagBits / 8
-	if unitOnly {
-		return SizeAlign{Size: tagBytes, Align: tagBytes}
-	}
-	w := unionAlign
-	if w < 1 {
-		w = 1
-	}
-	k := (unionBytes + w - 1) / w
+// enumPayloadLT spells the enum payload array type `[K x i64]`.
+func enumPayloadLT(k int64) string {
 	if k < 1 {
 		k = 1
 	}
-	// { tag_t, [K x iW] }: tag padded to w, then K*w bytes.
-	base := lasRoundUp(tagBytes, w)
-	return SizeAlign{Size: base + k*w, Align: lasMax(w, tagBytes)}
+	return fmt.Sprintf("[%d x i64]", k)
+}
+
+// enumPayloadOffset is the byte offset of the payload union inside a tagged
+// enum struct. It equals optionPayloadOffset for the same reason: the array's
+// 8-byte alignment pads the tag out to a full word.
+const enumPayloadOffset = optionPayloadOffset
+
+// enumTagLT is the discriminant's LLVM type. The fallback only fires for an
+// enum whose variant table is unknown (an unresolved type), where the old
+// fixed-i64 spelling is the least surprising answer.
+func (c *codegen) enumTagLT(ei *TaggedEnumInfo) string {
+	if ei != nil && ei.TagLT != "" {
+		return ei.TagLT
+	}
+	return "i64"
+}
+
+// enumWords is the payload's word count (the K of `[K x i64]`), never zero:
+// even a one-byte payload occupies a whole word so the union stays 8-aligned.
+func enumWords(ei *TaggedEnumInfo) int64 {
+	if ei == nil || ei.PayloadSlots < 1 {
+		return 1
+	}
+	return ei.PayloadSlots
+}
+
+// enumHasPayload reports whether the struct carries a payload union at all.
+// A unit-only enum is `{ iN }` — one or four bytes, not sixteen.
+func enumHasPayload(ei *TaggedEnumInfo) bool {
+	return ei != nil && !ei.UnitOnly
+}
+
+// enumStructBody spells the LLVM body of a tagged enum, for the prelude
+// declaration and for the zeroed-initializer stores that build a value.
+func (c *codegen) enumStructBody(ei *TaggedEnumInfo) string {
+	if !enumHasPayload(ei) {
+		return fmt.Sprintf("{ %s }", c.enumTagLT(ei))
+	}
+	return fmt.Sprintf("{ %s, %s }", c.enumTagLT(ei), enumPayloadLT(enumWords(ei)))
+}
+
+// enumTagLit spells `iN <tag>` for a store/subscript position.
+func (c *codegen) enumTagLit(ei *TaggedEnumInfo, tag int64) string {
+	return fmt.Sprintf("%s %d", c.enumTagLT(ei), tag)
+}
+
+// enumWidenTag appends the zext that lifts a tag register to the i64 the rest of
+// the compiler works in (OpEnumTag results, comparisons against arm tags), and
+// returns the widened SSA name. Tags are 0-based so the extension is unsigned.
+func (c *codegen) enumWidenTag(b *strings.Builder, reg string, ei *TaggedEnumInfo) string {
+	lt := c.enumTagLT(ei)
+	if lt == "i64" {
+		return reg
+	}
+	c.loadSeq++
+	w := fmt.Sprintf("%%ez.%d", c.loadSeq)
+	b.WriteString(fmt.Sprintf("  %s = zext %s %s to i64\n", w, lt, reg))
+	return w
+}
+
+// enumFieldOffset returns the BYTE offset of field idx inside variant v's
+// payload union. The variant table records the offsets at registration
+// (hir2mir.registerTaggedEnum); recomputing here is the fallback for a variant
+// that was never registered, and it is the SAME function the registration used,
+// so the two cannot disagree.
+//
+// Byte offsets — not 8-byte slots — are what makes the union compact: a variant
+// `(a i32)(b i32)` occupies 8 bytes, not 16. Every offset is naturally aligned
+// relative to the (8-byte aligned) union base, so each field access is
+// correctly aligned for its own type.
+func (c *codegen) enumFieldOffset(v *VariantInfo, idx int) int64 {
+	if v == nil || idx < 0 || idx >= len(v.Fields) {
+		return 0
+	}
+	if len(v.FieldOffsets) == len(v.Fields) {
+		return v.FieldOffsets[idx]
+	}
+	offs, _, _, _ := c.enumVariantLayout(v, map[string]bool{})
+	if idx < len(offs) {
+		return offs[idx]
+	}
+	return 0
+}
+
+// enumPayloadFieldPtr appends the address computation for field idx of the
+// variant stored at `base` (a `<enumLT>*`) and returns the SSA name holding a
+// `<fieldLT>*`.
+//
+// The struct pointer is bitcast to i8* and advanced by the field's BYTE offset
+// rather than by an index into `[K x i64]`: the union is packed with natural
+// alignment, so a field is not necessarily on a word boundary (a `u8` followed
+// by `u32` sits at offsets 0 and 4). Both the read and the write side go
+// through here, so a store and its matching load always agree.
+func (c *codegen) enumPayloadFieldPtr(b *strings.Builder, enumLT, base string, off int64, fieldLT string) string {
+	if fieldLT == "" || fieldLT == "void" {
+		fieldLT = "i64"
+	}
+	c.loadSeq++
+	ap := fmt.Sprintf("%%ep.%d", c.loadSeq)
+	b.WriteString(fmt.Sprintf("  %s = bitcast %s* %s to i8*\n", ap, enumLT, base))
+	c.loadSeq++
+	fp := fmt.Sprintf("%%ep.%d", c.loadSeq)
+	b.WriteString(fmt.Sprintf("  %s = getelementptr inbounds i8, i8* %s, i64 %d\n",
+		fp, ap, enumPayloadOffset+off))
+	c.loadSeq++
+	rp := fmt.Sprintf("%%ep.%d", c.loadSeq)
+	b.WriteString(fmt.Sprintf("  %s = bitcast i8* %s to %s*\n", rp, fp, fieldLT))
+	return rp
+}
+
+// enumLLVMSizeAlign computes the struct size of `{ tag_t, [K x i64] }`.
+func (c *codegen) enumLLVMSizeAlign(ei *TaggedEnumInfo, seen map[string]bool) SizeAlign {
+	unionBytes, _, _, unitOnly := c.enumUnionLayout(ei, seen)
+	tagBits, _ := tagWidth(len(ei.Variants))
+	tagBytes := tagBits / 8
+	if tagBytes < 1 {
+		tagBytes = 1
+	}
+	if unitOnly {
+		return SizeAlign{Size: tagBytes, Align: tagBytes}
+	}
+	k := (unionBytes + 7) / 8
+	if k < 1 {
+		k = 1
+	}
+	return SizeAlign{Size: optionPayloadOffset + 8*k, Align: 8}
 }
 
 // enumVariantLayout lays out one variant's payload fields with their natural
@@ -346,30 +591,25 @@ func (c *codegen) enumVariantLayout(v *VariantInfo, seen map[string]bool) (offse
 }
 
 // enumUnionLayout computes the tight union over all variants: the max variant
-// size, the max field alignment (the payload unit width W), and the number of
-// W-sized array elements K.
+// size (byte-precise), the max field alignment, and unitOnly.
+//
+// This is what makes a tagged enum save memory: the payload is ONE buffer sized
+// to the largest variant, not the SUM of every variant's fields.
 func (c *codegen) enumUnionLayout(ei *TaggedEnumInfo, seen map[string]bool) (unionBytes, unionAlign, k int64, unitOnly bool) {
 	unionAlign = 1
 	for i := range ei.Variants {
 		_, sz, al, _ := c.enumVariantLayout(&ei.Variants[i], seen)
-		unionBytes = lasMax(unionBytes, sz)
+		if sz > unionBytes {
+			unionBytes = sz
+		}
 		unionAlign = lasMax(unionAlign, al)
 	}
 	if unionBytes == 0 {
 		return 0, 1, 0, true
 	}
-	w := unionAlign
-	k = (unionBytes + w - 1) / w
+	k = (unionBytes + 7) / 8
 	if k < 1 {
 		k = 1
 	}
 	return unionBytes, unionAlign, k, false
-}
-
-// enumPayloadLT spells the payload array type `[K x iW]`.
-func enumPayloadLT(k, w int64) string {
-	if w < 1 {
-		w = 1
-	}
-	return fmt.Sprintf("[%d x i%d]", k, w*8)
 }

@@ -18,6 +18,14 @@
 > 原始定案（历史记录）。实作见 `src/checker/lint.go` 的 `runLintUnhandledIndex`。
 
 > 状态：**已实施（见 §11）**——主体 M1–M5 与 M4(str/txt→?char) 已落地；D7 定案为「用户侧恒 option + 内部消除」（§8.1(a) 最终修订，2026-10-15）。**D9「下标写入必须显式解包」于 2026-10-15 定案，见 §12（编译器实现与全仓迁移进行中）**。本文件曾长期停留「待实施」草稿，§11 为 2026-10-13 实测复核结论。  
+> ⛔ **佈局已改（2026-11-12）：`?T` 逐載荷定型**。本文件下文凡提到「共用單一 `%option`」「32 位元組
+> 固定槽」「24 位元組內聯載荷」的敘述均為**歷史記錄**。現行佈局是每個載荷型別各自一個
+> `%option_<key> = { i8 tag, [K x i64] }`：1 位元組標籤、載荷固定在**位元組偏移 8**、
+> `K = roundUp8(sizeof(T))/8`；`1 + 7 + sizeof(T)` 超過 `option-inline-threshold`（預設 **264**、
+> 最小 16）的載荷改存堆指標，**err 載荷恆裝箱**。唯一來源 `src/mir/layout.go`；敘述見
+> `docs/docs/lang/syntax.md`〈可空類型(option)・內存佈局〉與 `memory.md`。下方 D1–D10 的
+> **語義決策全部繼續有效**——佈局變動不改變任何 match / `?=` / 診斷行為。
+
 > 涉及层：parser / checker / mir / lsp / fmt / build / 语料迁移  
 > 相关既有文档：`docs/docs/lang/syntax.md`〈整数运算溢出〉〈可空类型(option)〉、`NOLANG-OWNERSHIP-MODEL.md`
 

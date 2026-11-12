@@ -62,6 +62,16 @@ S-SMV2 = 'x = 0\nr = {\n    x == 0 -> 11\n    -> 7\n}\nprint(r)\n'
 ; s103：臂值不是 i64 ⇒ 结果槽按 i64 铺，str 臂值无处可落 ⇒ 诚实回空串
 S-SMV-GATE = 'x = 1\nr = {\n    x == 0 -> \'a\'\n    -> 0\n}\n'
 
+; s104：str 相等/不等（'==' ⇒ OP-STEREQ / '!=' ⇒ OP-STNEQ，降运行时 @str_eq）。
+;   ⚠️ 结果在权威侧是 bool（print 印 true/false），noc 无 TY-BOOL ⇒ 印 0/1——这是**先于 s104
+;      存在**的 print(bool) 缺口（i64 比较同病，实测 `x=1; print(x==1)` 权威 true / noc 1），
+;      与本件无关 ⇒ 端到端闸只钉 IR 形，不钉 stdout。
+S-STREQ = 'a = \'x\'\nb = \'y\'\nprint(a == b)\n'
+S-STRNE = 'a = \'x\'\nb = \'y\'\nprint(a != b)\n'
+
+; 混合形（str == i64）：权威靠 checker 先转标量，自举无 checker ⇒ 诚实回空串
+S-STREQ-GATE = 'a = \'x\'\nprint(a == 1)\n'
+
 dump-mode = () (yes bool) {
     yes = false
     a = os.arg(1)
@@ -225,6 +235,30 @@ test-smv-value = () {
     runner.eq(g.len-bytes(), 0, 'smv: str arm value => empty ll')
 }
 
+; s104：str 相等/不等降级（'==' ⇒ OP-STEREQ / '!=' ⇒ OP-STNEQ）。
+;   槽位实测：%sv1 = a、%sv2 = b、%se2 = @str_eq 的 i1 结果、%v3 = zext 后的 i64（落 %v 命名空间）。
+;   cg 侧早已就位（cg.no:695/710），@str_eq 由 cg-runtime-prelude-full 每模块发一次
+;   ⇒ 本件零改 cg / 零改 mir，只在 h2m 补这条降级臂。
+test-streq = () {
+    ll = drv.build-ll(S-STREQ.to-bytes())
+    runner.eq(ll.len-bytes() > 0, 1, 'streq: non-empty ll')
+    runner.eq(ll.contains('define i1 @str_eq(%str-long %a, %str-long %b)'), 1, 'streq: prelude helper')
+    runner.eq(ll.contains('%se2 = call i1 @str_eq(%str-long %sv1, %str-long %sv2)'), 1, 'streq: call @str_eq')
+    runner.eq(ll.contains('%v3 = zext i1 %se2 to i64'), 1, 'streq: zext to i64')
+    runner.eq(ll.contains('call void @print_i64(i64 %v3)'), 1, 'streq: result printed')
+    runner.eq(ll.contains('icmp eq %str-long'), 0, 'streq: no illegal aggregate icmp')
+
+    ; '!=' 走同一条 @str_eq，i1 结果先 xor true 再 zext（cg OP-STNEQ 臂）
+    n = drv.build-ll(S-STRNE.to-bytes())
+    runner.eq(n.contains('%se2 = call i1 @str_eq(%str-long %sv1, %str-long %sv2)'), 1, 'strne: call @str_eq')
+    runner.eq(n.contains('%sn2 = xor i1 %se2, true'), 1, 'strne: xor true')
+    runner.eq(n.contains('%v3 = zext i1 %sn2 to i64'), 1, 'strne: zext to i64')
+
+    ; 混合形 str == i64 ⇒ 诚实门禁
+    g = drv.build-ll(S-STREQ-GATE.to-bytes())
+    runner.eq(g.len-bytes(), 0, 'streq gate: mixed str+i64 => empty ll')
+}
+
 ; s100：print / eprint 降级（§11 後 ⑨）。权威 = Go emitPrint 的 "a b\n" 拼法。
 test-print-forms = () {
     ll = drv.build-ll(S-PRINT.to-bytes())
@@ -281,6 +315,7 @@ test-print-forms = () {
         test-interp-forms()
         test-empty-stmt()
         test-smv-value()
+        test-streq()
         runner.summary()
         f = runner.failed-count()
         {

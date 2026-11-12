@@ -1339,7 +1339,18 @@ http-dl-open = (url str, dest str, depth i64) (ok bool) {
         }
         n <= 0 -> break
         bi <- [0..n): {
-            acc.push(buf.byte(bi))
+
+            ; ⚠️ 2026-11-12 修：`.byte(i)` 回的是 `?byte`，直接當實參傳給
+            ; `push` 會被當成「有值但內容不是那個位元組」→ 每個元素都寫成 0
+            ; （len 照樣增長，所以只看長度看不出來）。必須先解包。
+            ; 這也是本檔 http-dl-open 一直回 false 的根因：acc 全是 0，
+            ; 掃不到 CRLFCRLF ⇒ sep = -1 ⇒ 早退。
+            bv = buf.byte(bi): {
+                ok -> it
+
+                -> 0
+            }
+            acc.push(bv)
         }
     }
     {

@@ -1,0 +1,169 @@
+; option-propagation.no — `?=` 的**跨载荷**传播
+;
+; 背景：`?=` 会把「整条右值链的**根** option」先复制进 option 结果参数（`out`），
+; 好让 nil / err 直接上抛；ok 情况随后由 match 的 ok 臂覆盖。所以 seed 两侧的
+; 载荷型别**可以不同**：
+;
+;     pick = (p pool) (out ?i64) { out ?= p.nodes[0].kind }   ; ?node -> ?i64
+;
+; 旧的统一布局 `%option = { i64 tag, [3 x i64] }` 让这件事「免费」成立——每个
+; option 都是 32 字节、tag 在 0，按字节复制即可。按载荷定型之后两个 option 的
+; **宽度不同**（`?node` 112 字节、`?i64` 16 字节），旧复制把 112 字节写进 16
+; 字节的槽，栈被写穿：tests/yaml.no 停在 SIGSEGV，pc=0、帧里的返回地址被清零。
+;
+; 现在跨载荷 seed 由 `@__nolang_opt_prop_<dst>__<src>` 承担，只搬「跨型别也
+; 有意义」的两样东西：
+;
+;     tag  — 每个 option 的第 0 字节
+;     err  — err 变体是 option 的属性、不是载荷的属性，且恒堆装箱，
+;            所以两侧在载荷区第 0 个字都放 8 字节箱指针
+;
+; ok 载荷**刻意不搬**（目标载荷区被清零），因为它一定会被 ok 臂重写；这也正
+; 是检查器豁免这类编译器生成赋值的原因（见 parser LetStatement.IsPropagation）。
+;
+; 运行：no run tests/option-propagation.no < /dev/null
+;
+; ⚠️ 与 option-sizes.no 同样的注意：各节放进独立函数，避免顶层连排 option 变量
+; 踩到与本轮无关的既有作用域缺陷（test/README §5.2）。
+;
+; ⚠️ 已知既有缺陷（与本轮无关，改造前后逐字节一致，见 test/README §5.2）：
+; 当 `?=` 的链根是一个**由调用返回的 err option**（如 `out ?= bad-node().text`）
+; 时，结果既不是 ok 也不是 err 传播，而是 ok(空值)。索引越界那种 err 能正常
+; 上抛（下面 t-oob 钉住了这一点），所以缺陷在「链根是 err 参数」这条路上。
+
+ck = (label str, cond bool) {
+    ! cond -> print('FAIL', label)
+
+    cond -> print('ok', label)
+}
+
+; 112 字节：远大于目标槽的 16 字节，旧复制会越界而不是仅仅「重叠」。
+node {
+    kind i64
+    text str
+    keys []i64
+    kids []i64
+    bval bool
+    pad [5]i64
+}
+
+pool {
+    nodes []node
+}
+
+; ── 1) ?node -> ?i64：ok 路径 ────────────────────────────────────────
+; 链根 `p.nodes[0]` 是 `?node`，结果槽是 `?i64`。
+pick = (p pool) (out ?i64) {
+    out ?= p.nodes[0].kind
+}
+
+read-i64 = (o ?i64) (r i64) {
+    r = o: {
+        ok -> it
+        nil -> -1000
+        err -> -2000
+    }
+}
+
+t-ok = () {
+    p pool
+    nd node
+    nd.kind = 7
+    nd.text = 'seven'
+    nd.bval = true
+    p.nodes.push(nd)
+    ck('chain-ok', read-i64(pick(p)) == 7)
+}
+
+; ── 2) ?node -> ?i64：err 路径 ──────────────────────────────────────
+; 空容器上的索引越界是 **err**（不是 nil），err 变体要跨型别搬过去：
+; seed 只带 tag + 装箱的 err，不带 ok 载荷。
+; 顺带钉住「不准静默变成 ok」——旧复制越界时会读到相邻栈内容。
+t-oob = () {
+    empty pool
+    ck('chain-err', read-i64(pick(empty)) == -2000)
+}
+
+; ── 3) err 的消息文本要活下来（箱体是**克隆**而不是共享）──────────────
+; 目标载荷 `?str`：与 `?node` 不同宽，同样走跨载荷传播；err 箱里拥有 msg
+; 缓冲，若两侧共享同一箱，源 option 的 drop 会把 msg 一起释放掉。
+pick-text = (p pool) (out ?str) {
+    out ?= p.nodes[0].text
+}
+
+err-msg-len = (o ?str) (r i64) {
+    r = o: {
+        ok -> 0
+        nil -> -1
+        err -> it.msg.len-bytes()
+    }
+}
+
+t-err-msg = () {
+    empty pool
+    m ?str = pick-text(empty)
+    ck('err-msg-survives', err-msg-len(m) > 0)
+}
+
+; ── 4) 非链式跨载荷 seed（std 里 `size ?= fstat-size(.fd)` 的形状）────
+; RHS 是裸 option：nil/err 臂里才做传播，ok 路径完全由用户代码写。
+probe = (o ?i64) (out ?str) {
+    out = 'start'
+    n ?= o
+    n: {
+        ok -> out = 'got'
+        nil -> out = 'nil'
+        err -> out = 'err'
+    }
+}
+
+str-of = (o ?str) (r str) {
+    r = o: {
+        ok -> it
+        nil -> '<nil>'
+        err -> '<err>'
+    }
+}
+
+t-non-chain = () {
+    some ?i64 = ok(1)
+    none ?i64 = nil
+    a ?str = probe(some)
+    b ?str = probe(none)
+    ck('non-chain-ok', str-of(a) == 'got')
+    ; nil 臂里的传播是 `out = <裸 option>`，目标直接变成 nil（不是保留 'start'）。
+    ; 这一步正是**跨载荷**传播的 nil 方向：`?i64` 的 tag 落进 `?str` 的槽。
+    ck('non-chain-nil', str-of(b) == '<nil>')
+}
+
+; ── 5) 同载荷对照：跨载荷只有 tag/err 可搬，但同载荷必须是**整值**传播 ──
+; 若把「只搬 tag + err」错误地套到同载荷上，这里会退化成空消息。
+mk-err = (k i64) (out ?str) {
+    out = err('boom')
+}
+
+fwd = (k i64) (out ?str) {
+    out ?= mk-err(k)
+}
+
+msg-of = (o ?str) (r str) {
+    r = o: {
+        ok -> 'ok:' + it
+        nil -> '<nil>'
+        err -> 'E:' + it.msg
+    }
+}
+
+t-same-payload = () {
+    m ?str = fwd(1)
+    ck('same-payload-err', msg-of(m) == 'E:boom')
+}
+
+t-ok()
+t-oob()
+t-err-msg()
+t-non-chain()
+t-same-payload()
+
+print('---')
+print('option-propagation done')

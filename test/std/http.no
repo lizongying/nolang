@@ -254,6 +254,222 @@ t-dechunk = () {
     runner.str-eq(s, 'wikipedia', 9, 'dechunk: 內容還原')
 }
 
+; ── 需要真 socket 的 13 個入口 ─────────────────────────
+;
+; 為什麼要 fork：本語言的協程是**協作式**的，客戶端 recv 阻塞時不會讓出線程
+; ⇒ 同一個進程裡「先 dial 再 accept」必然互鎖。fork 出子進程當伺服器，父子
+; 各自阻塞互不影響。
+; listen socket 必須在 fork **之前**建立：子進程直接繼承 fd，父進程不會搶在
+; 子進程 accept 之前 connect（否則 ECONNREFUSED）。
+; 伺服器是「極簡 HTTP/1.1」：讀一次請求（本檔的請求都很小，單次 net-send 就
+; 一個 TCP 段），回固定的 200 + 12 位元組內文，然後 close（客戶端靠 EOF 收尾，
+; download / http-dl-open 都是「讀到 EOF 為止」）。
+
+; 候選埠：上一個進程若異常崩掉，子進程可能還占著埠（它要等 13 次 accept），
+; 所以 listen 失敗時往下一個試。
+HLIVE-PORTS-1 = 39361
+HLIVE-PORTS-2 = 39362
+HLIVE-PORTS-3 = 39363
+
+; 子進程每一輪 sleep 500µs，HLIVE-SPIN 輪 ⇒ 約 10 秒的硬上限。
+; 這是「父進程中途崩掉時，子進程不會把埠永久占住」的保底，正常情況走
+; `served >= want` 立刻退出，根本到不了這裡。
+HLIVE-SPIN = 20000
+
+; 子進程要服務的連線數 = 下面父進程真正發起的 HTTP 請求數，逐條數：
+;   do GET / do POST / do-req / get / post / put / delete / patch /
+;   get-auth / post-auth / download / download-to-file / http-dl-open(depth 0) /
+;   upload-put                                        ⇒ 14
+; 另外三條「不占連線」的斷言（http-dl-open 的 depth 6、upload-put 的檔案不存在、
+; port-busy 的探測）都在開 socket 之前就返回，所以不計入。
+; ⚠️ 這個數少 1 就會有一個請求連得上卻沒有應答，整檔卡到 60 秒逾時。
+HLIVE-REQS = 14
+
+HLIVE-CR = '\r'
+HLIVE-LF = '\n'
+
+; 固定的 200 應答（內文 hello-nolang 共 12 位元組）
+hlive-resp = () (s str) {
+    body = 'hello-nolang'
+    s = 'HTTP/1.1 200 OK' - HLIVE-CR - HLIVE-LF - 'Content-Type: text/plain' - HLIVE-CR - HLIVE-LF - 'Content-Length: 12' - HLIVE-CR - HLIVE-LF - 'Connection: close' - HLIVE-CR - HLIVE-LF - HLIVE-CR - HLIVE-LF - body
+}
+
+; 子進程主迴圈：非阻塞 accept。
+;
+; 兩個退出條件：
+;  ① `served >= want`：父進程的請求全服務完了，馬上 break，waitpid 才不會等；
+;  ② 迴圈上限 HLIVE-SPIN 輪（每輪 sleep 500µs ⇒ 約 10 秒）：父進程若中途崩掉，
+;     子進程最多空轉 10 秒就自己退出，不會把埠永久占住。
+;
+; ⚠️ 不要用「算一個截止時刻再比大小」的寫法。原實作是
+;     #{overflow=wrap}
+;     dl-opt = start + HLIVE-TTL-US
+;     dl-opt: { ok -> deadline = it  -> }
+;     …
+;     now >= deadline -> break
+; 這個 `?i64` 的 match **時好時壞**：某些編譯下 `ok` 臂不命中，`deadline` 停在 0，
+; 於是 `now >= deadline` 第一輪就成立 ⇒ 子進程一個請求都不服務就退出，
+; 父進程那 11 條「回 ok」全紅，之後還 SIGSEGV。症狀看起來像「伺服器沒起來」，
+; 其實是截止時刻算成了 0。用固定輪次當硬上限就沒有這個問題（沒有算術、沒有 match）。
+;
+; ⚠️ 也不能只把退出念頭放進 while 條件：那樣 served 滿了之後迴圈仍在
+; `i <- [0..HLIVE-SPIN)` 裡空轉，而且 listen socket 還開著 —— 對端此時 connect
+; 會被核心收進 backlog，但沒人去 accept，客戶端 recv 永遠等不到應答。
+hlive-serve = (lfd fd, want i64) {
+    served = 0
+    i <- [0..HLIVE-SPIN): {
+        served >= want -> break
+        c = net.net-accept-nb(lfd)
+        c >= 0 -> {
+            net.net-set-recv-timeout(c, 3000)
+            buf str = with-len(4096)
+            n = net.net-recv(c, buf, 4096)
+            s = hlive-resp()
+            net.net-send(c, s, s.len-bytes())
+            fs.close(c)
+            {
+                sn = served + 1
+                sn: {
+                    ok -> served = it
+
+                    ->
+                }
+            }
+        }
+        os.sleep-us(500)
+    }
+}
+
+; 埠是否已被占用（能 dial 上就代表有人在聽）
+port-busy = (p i64) (busy bool) {
+    busy = false
+    f = net.net-dial('127.0.0.1', p)
+    f >= 0 -> {
+        busy = true
+        fs.close(f)
+    }
+}
+
+; 檢查 ?response：必須 ok、狀態 200、內文 hello-nolang
+check-live = (v ?http.response, what str) {
+    hit = false
+    v: {
+        ok -> {
+            r = it
+            runner.eq(r.status-code, 200, what - ': 狀態碼 200')
+            runner.str-eq(r.body, 'hello-nolang', 12, what - ': 內文')
+            hit = true
+        }
+
+        nil -> _
+
+        err -> _
+    }
+    runner.is-true(hit, what - ': 回 ok')
+}
+
+t-live = () {
+
+    ; 選一個沒人聽的埠（上一次執行的子進程可能還在 5 秒的收尾窗口內）
+    live-port = HLIVE-PORTS-1
+    b1 = port-busy(HLIVE-PORTS-1)
+    b1 -> live-port = HLIVE-PORTS-2
+    b2 = port-busy(live-port)
+    b2 -> live-port = HLIVE-PORTS-3
+    b3 = port-busy(live-port)
+    b3 -> live-port = -1
+    runner.eq(b3, false, 'live: 找到空閒埠')
+    live-port < 0 -> return
+
+    lfd = net.net-listen('127.0.0.1', live-port)
+    opened = 0
+    lfd >= 0 -> opened = 1
+    runner.eq(opened, 1, 'live: 本機 listen 成功')
+    lfd < 0 -> return
+
+    pid = process.process-fork()
+    pid == 0 -> {
+        hlive-serve(lfd, HLIVE-REQS)
+        exit(0)
+    }
+
+    ; ⚠️ 父進程必須**立刻**關掉自己那份 listen fd，讓子進程獨占。
+    ; 否則子進程服務完退出後，父進程手上的 fd 仍讓核心監聽並把新連線收進
+    ; backlog —— 收到的請求沒人 accept，客戶端就卡在 recv 等不到應答
+    ; （只會看到「測試逾時」，看不到任何連線錯誤）。
+    fs.close(lfd)
+    port-str = live-port.to-str()
+    url-ok = 'http://127.0.0.1:' - port-str - '/ok'
+
+    ; ① do（method + url + body 三參數形態）
+    check-live(http.do('GET', url-ok, ''), 'do GET')
+    check-live(http.do('POST', url-ok, 'abc'), 'do POST 帶 body')
+
+    ; ② do-req（走 request 結構體，含自訂標頭）
+    rq = mk-req('GET', url-ok, '')
+    h-ok = rq.add-header('X-Test', 'v')
+    runner.is-true(h-ok, 'do-req: 自訂標頭入庫')
+    check-live(http.do-req(rq), 'do-req')
+
+    ; ③ 四個動詞門面
+    check-live(http.get(url-ok), 'get')
+    check-live(http.post(url-ok, 'abc'), 'post')
+    check-live(http.put(url-ok, 'abc'), 'put')
+    check-live(http.delete(url-ok), 'delete')
+    check-live(http.patch(url-ok, 'abc'), 'patch')
+
+    ; ④ 兩個帶 Basic 認證的門面（伺服器不驗，但授權標頭必須送出去）
+    check-live(http.get-auth(url-ok, 'u', 'p'), 'get-auth')
+    check-live(http.post-auth(url-ok, 'abc', 'u', 'p'), 'post-auth')
+
+    ; ⑤ 三種「存到檔案」的下載路徑
+    dl = http.download(url-ok, '/tmp/no_http_live_dl.txt')
+    runner.is-true(dl, 'download: 回 true')
+    dl-txt = ''
+    dl-opt = fs.read-str('/tmp/no_http_live_dl.txt')
+    dl-opt: {
+        ok -> dl-txt = it
+
+        -> _
+    }
+    runner.str-eq(dl-txt, 'hello-nolang', 12, 'download: 檔案內容正確')
+
+    dtf = http.download-to-file(url-ok, '/tmp/no_http_live_dtf.txt')
+    runner.is-true(dtf, 'download-to-file: 回 true')
+    dtf-txt = ''
+    dtf-opt = fs.read-str('/tmp/no_http_live_dtf.txt')
+    dtf-opt: {
+        ok -> dtf-txt = it
+
+        -> _
+    }
+    runner.str-eq(dtf-txt, 'hello-nolang', 12, 'download-to-file: 檔案內容正確')
+
+    dlo = http.http-dl-open(url-ok, '/tmp/no_http_live_dlo.txt', 0)
+    runner.is-true(dlo, 'http-dl-open: depth 0 回 true')
+
+    ; 重定向次數超限：depth 6 必須直接失敗（不打網路，故不占連線數）
+    runner.is-false(http.http-dl-open(url-ok, '/tmp/no_http_live_dlo2.txt', 6), 'http-dl-open: depth > 5 直接失敗')
+
+    ; ⑥ upload-put（PUT 原始二進位）
+    _ = fs.write-str('/tmp/no_http_live_up.txt', 'upload-body')
+    up = http.upload-put(url-ok, 'tok', '/tmp/no_http_live_up.txt')
+    runner.is-true(up, 'upload-put: 回 true')
+
+    ; 讀不到的檔案 → false（不占連線數）
+    runner.is-false(http.upload-put(url-ok, 'tok', '/tmp/no_http_live_missing.txt'), 'upload-put: 檔案不存在 ⇒ false')
+
+    ; 這裡**不能**再碰 lfd：父進程那份早在 fork 之後就關掉了，fd 號可能已被
+    ; 後面的 socket 重用，再 close 一次會關掉別人的連線。
+    code = process.process-waitpid(pid, 0)
+    runner.eq(code, 0, 'live: 子進程正常退出')
+    runner.is-false(port-busy(live-port), 'live: 子進程退出後埠已釋放')
+    fs.remove('/tmp/no_http_live_dl.txt')
+    fs.remove('/tmp/no_http_live_dtf.txt')
+    fs.remove('/tmp/no_http_live_dlo.txt')
+    fs.remove('/tmp/no_http_live_up.txt')
+}
+
 ; ── 執行 ──────────────────────────────────────
 
 p1, f1 = runner.test('http.request-init', t-request-init)
@@ -265,6 +481,7 @@ p6, f6 = runner.test('http.dl-resolve', t-dl-resolve)
 p7, f7 = runner.test('http.write-ok', t-write-ok)
 p8, f8 = runner.test('http.ping', t-ping)
 p9, f9 = runner.test('http.dechunk', t-dechunk)
+p10, f10 = runner.test('http.live', t-live)
 
 total = runner.summary()
 f = runner.failed-count()

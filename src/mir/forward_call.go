@@ -965,7 +965,7 @@ func (c *codegen) emitCCall(inst *Inst, spec *cCallSpec) error {
 }
 
 // storeOptionFromPair stores a (value, okFlag) pair into a `?T` result as
-// `%option { tag, [N x i64] slot }`: tag 0 (ok/some) when the flag is set, tag 1
+// `%option_<key> { i8 tag, [K x i64] slot }`: tag 0 (ok/some) when the flag is set, tag 1
 // (nil/none) otherwise; data is the value. This mirrors legacy's
 // generateOptionAssign for option-returning builtins.
 func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
@@ -975,11 +975,16 @@ func (c *codegen) storeOptionFromPair(inst *Inst, val, okFlag string) error {
 	} else {
 		c.sb.WriteString(fmt.Sprintf("  %s = select i1 true, i64 0, i64 1\n", tag))
 	}
+	// The tag is one byte on disk, so the runtime i64 is truncated once here.
+	declLT := c.optDeclLTOfValue(inst.Results[0])
+	lay := c.optLayoutOfPayload(declLT)
+	tag8 := c.treg("optg8")
+	c.sb.WriteString(fmt.Sprintf("  %s = trunc i64 %s to i8\n", tag8, tag))
 	w1 := c.treg("optw")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", w1, c.optSlotLT, tag))
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s { i8 0, %s zeroinitializer }, i8 %s, 0\n", w1, lay.LLVM, lay.SlotLT, tag8))
 	w2 := c.treg("optw")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option %s, i64 %s, 1, 0\n", w2, w1, val))
-	return c.storeResult(inst, 0, w2, "%option")
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %s %s, i64 %s, 1, 0\n", w2, lay.LLVM, w1, val))
+	return c.storeResult(inst, 0, w2, lay.LLVM)
 }
 
 // storeOptionFromPairStr collapses a (str-value, ok-flag) pair into a `?str`
@@ -1000,10 +1005,9 @@ func (c *codegen) storeOptionFromPairStr(inst *Inst, strLongReg, okFlag string) 
 	}
 	tag := c.treg("opsg")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 1\n", tag, okFlag))
-	w := c.treg("opsw")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%option { i64 0, %s zeroinitializer }, i64 %s, 0\n", w, c.optSlotLT, tag))
-	c.sb.WriteString(fmt.Sprintf("  store %%option %s, %%option* %s\n", w, slot))
-	c.optStoreInlinePayload(slot, "%str-long", strLongReg)
+	c.optStoreTag(slot, "%str-long", 0)
+	c.optStoreTagValue(slot, "%str-long", tag)
+	c.optStoreInlinePayload(slot, "%str-long", "%str-long", strLongReg)
 	return nil
 }
 

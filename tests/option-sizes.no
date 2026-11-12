@@ -1,0 +1,180 @@
+; option-sizes.no — `?T` 的**按载荷定型**布局，端到端断言
+;
+; 背景：`?T` 以前全体降成同一个 `%option = { i64 tag, [N x i64] slot }`，
+; 每个 option 都是 32 字节，于是 `?txt`（256 字节内联缓冲）必须堆装箱。
+; 现在每个 `?T` 有自己的类型：
+;
+;     %option_<key> = type { i8 tag, [K x i64] payload }     8 + 8K 字节
+;
+;     ?i64  16 B    ?str  24 B    ?txt 264 B    ?Huge 16 B（装箱）
+;
+; 阈值是 `option-inline-threshold`（默认 264 = 1 字节 tag + 7 padding + 256）。
+;
+; 本文件钉的是**语义**（stdout + 计数），布局形状由 src/mir/layout_test.go 与
+; src/mir/option_layout_ir_test.go 钉。两边都要有：IR 测试防「类型对了但访问
+; 偏移错」，这里防「布局对了但值搬错」。
+;
+; 运行：no run tests/option-sizes.no < /dev/null
+;
+; ⚠️ 刻意不维护 passed/failed 计数器：函数体里的 `passed = passed + 1` 会声明一个
+; 局部同名变量，顶层计数永远不动（同一陷阱见 AGENTS 的顶层脚本说明）。断言结果
+; 直接进 stdout，由 golden 指纹比对。
+;
+; ⚠️ 每一节都放在独立函数里。顶层连排十几个 option 变量时，HEAD 上就会在作用域
+; 结束时 SIGTRAP（见 §5 的说明）；把各节的存活区间切开，既让断言互不干扰，也不让
+; 本文件去踩那个与本轮无关的既有缺陷。
+ck = (label str, cond bool) {
+    ! cond -> print('FAIL', label)
+
+    cond -> print('ok', label)
+}
+
+quad {
+    a i64
+    b i64
+    c i64
+    d i64
+}
+
+huge {
+    pad [40]i64
+}
+
+; ── 1) ?i64：单字载荷 ────────────────────────────────────────────────
+i64-ok = (o ?i64) (r i64) {
+    r = o: {
+        ok -> it
+        nil -> -1000
+        err -> -2000
+    }
+}
+
+t-i64 = () {
+    one ?i64 = ok(41)
+    ck('i64-ok-payload', i64-ok(one) == 41)
+    zero ?i64 = ok(0)
+    ck('i64-ok-zero', i64-ok(zero) == 0)
+    ; 负值不能被 payload 的位宽/符号处理弄坏
+    neg ?i64 = ok(-7)
+    ck('i64-negative', i64-ok(neg) == -7)
+    none ?i64 = nil
+    ck('i64-nil', i64-ok(none) == -1000)
+    cked ?i64 = err('bad')
+    ck('i64-err', i64-ok(cked) == -2000)
+}
+
+; ── 2) ?str：两个字的载荷，且拥有堆 ──────────────────────────────────
+str-len-of = (o ?str) (r i64) {
+    r = o: {
+        ok -> it.len-bytes()
+        nil -> -1
+        err -> -2
+    }
+}
+
+t-str = () {
+    s0 str = 'hello'
+    so ?str = ok(s0)
+    ck('str-ok-len', str-len-of(so) == 5)
+    sn ?str = nil
+    ck('str-nil', str-len-of(sn) == -1)
+}
+
+; ⚠️ 未覆盖：`so ?str = ok(s0)` 之后**重绑** `s0 = '...'`，在 HEAD 上 SIGTRAP。
+; 也就是说 wrap 目前是**共享**载荷缓冲而不是取走/复制，两侧都以为自己拥有它，
+; 作用域结束双重释放。既有缺陷，与本轮容量化无关（HEAD 与改造后表现一致），
+; 已记入 test/README §5.2；修好后本节的 t-str 应补回重绑断言。
+
+; ── 3) ?quad：32 字节结构体载荷（内联 4 个字）────────────────────────
+quad-sum = (o ?quad) (r i64) {
+    r = o: {
+        ok -> it.a + it.b + it.c + it.d
+        nil -> -1
+        err -> -2
+    }
+}
+
+t-quad = () {
+    q quad
+    q.a = 1
+    q.b = 2
+    q.c = 3
+    q.d = 4
+    qo ?quad = ok(q)
+    ; 改掉源值：32 字节是**按值**搬进 payload 区的，option 里必须是旧值
+    q.a = 100
+    ck('quad-inline-sum', quad-sum(qo) == 10)
+}
+
+; ── 4) ?huge：超过阈值 → 装箱（payload 区只剩 1 个字）────────────────
+; 320 字节 > 256，所以走堆：类型仍是 16 字节，wrap 时 malloc 一次。
+huge-first = (o ?huge) (r i64) {
+    r = o: {
+        ok -> it.pad[0]
+        nil -> -1
+        err -> -2
+    }
+}
+
+t-huge = () {
+    h huge
+    h.pad[0]: {
+        ok -> it = 77
+
+        -> _
+    }
+    ho ?huge = ok(h)
+    ck('huge-boxed-first', huge-first(ho) == 77)
+}
+
+; ── 5) 容器里的 option：元素按 `%option_<key>` 存储 ────────────────
+; `[]?str` 的元素是按值存储的 {tag,payload}。⚠️ **本段刻意不重绑源串**：
+; `list.push(ok(tmp))` 之后 `tmp = '...'` 会在 HEAD 上 SIGTRAP（元素没有拿到
+; 自己那份堆，容器 drop 时双重释放）——这是**既有缺陷**，与本轮容量化无关。
+; 等它修好后这里应补上「重绑源串后元素仍读到旧值」。
+; 注：`[]?T` 目前不能出现在参数列表里（parser 在 `[]` 之后不接受 `?`），
+; 所以这里用索引 match（与 tests/option.no 的写法一致）。
+t-container = () {
+    list []?str = with-cap(2)
+    a str = 'abc'
+    list.push(ok(a))
+    nul ?str = nil
+    list.push(nul)
+    ck('vec-len', list.len() == 2)
+
+    list[0]: {
+        ok -> ck('vec-elem-len', it.len-bytes() == 3)
+
+        -> ck('vec-elem-len', false)
+    }
+
+    list[1]: {
+        ok -> ck('vec-elem-nil', false)
+
+        -> ck('vec-elem-nil', true)
+    }
+}
+
+; ── 6) 不同载荷的 option 在同一函数里共存（没有共享类型可串味）────────
+t-mixed = () {
+    q quad
+    q.a = 1
+    q.b = 2
+    q.c = 3
+    q.d = 4
+    a ?i64 = ok(1)
+    b ?str = ok('two')
+    c ?quad = ok(q)
+    n = i64-ok(a) + str-len-of(b)
+    ck('mixed-payloads', n + quad-sum(c) == 14)
+}
+
+t-i64()
+t-str()
+t-quad()
+t-huge()
+t-container()
+t-mixed()
+
+print('---')
+print('option-sizes done')

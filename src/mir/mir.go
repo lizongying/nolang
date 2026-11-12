@@ -554,13 +554,10 @@ func (m *Module) OptionPayloadBoxed(elemRaw string) bool {
 	if v, ok := m.optBoxed[elemRaw]; ok {
 		return v
 	}
-	c := &codegen{mod: m, sb: &strings.Builder{}, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
-	lt := c.optionPayloadLLVMType(elemRaw)
+	c := newLayoutCodegen(m)
 	boxed := true
-	if lt != "" {
-		if sz, ok := c.llvmTypeSizeUpper(lt, map[string]bool{}); ok {
-			boxed = sz > c.optSlotBytes
-		}
+	if lt := c.optionPayloadLLVMType(elemRaw); lt != "" {
+		boxed = c.optLayoutOfPayload(lt).Boxed
 	}
 	if m.optBoxed == nil {
 		m.optBoxed = map[string]bool{}
@@ -583,8 +580,7 @@ func (m *Module) ErrPayloadOwnsHeap() bool {
 	if m.OptionErrRaw == "" || m.OptionErrRaw == "str" {
 		return false
 	}
-	c := &codegen{mod: m, sb: &strings.Builder{}, optSlotBytes: optionSlotBytesFor(m.OptionInlineThreshold)}
-	return c.errPayloadOwnsHeap()
+	return newLayoutCodegen(m).errPayloadOwnsHeap()
 }
 
 // ---------------------------------------------------------------------------
@@ -664,8 +660,9 @@ const (
 	OpGetField  // struct field read
 	OpSetField  // struct field write
 	OpStructLit // struct literal: allocate the struct; fields stored by OpSetField
-	// OpOptionWrap builds an inline ?T option value { i64 tag, payload } from a
-	// single payload value. It is the codegen primitive behind the nolang ?T
+	// OpOptionWrap builds an inline ?T option value (a per-payload
+	// `%option_<key>`: `{ i8 tag, [K x i64] payload }`) from a single payload
+	// value. It is the codegen primitive behind the nolang ?T
 	// constructors val/ok/some (tag 0) and err (tag 2). Routing those
 	// constructors through the generic call path mis-resolves `err` to the std
 	// io.err stderr-writer (returns i64) and corrupts the option's payload slot;
@@ -689,12 +686,14 @@ const (
 	OpUtf8At
 
 	// Tagged-enum primitives (§13.3.18). An enum value is
-	// `{ i64 tag, [N x i64] payload }`; the payload is a union shared by every
-	// variant, so field access is a bitcast at a slot offset rather than a
-	// struct GEP.
+	// `{ iN tag, [K x i64] payload }` — see layout.go — where iN follows the
+	// variant count (i8 for <= 256 variants) and K is the widest VARIANT rather
+	// than the sum of all of them. The payload is a union shared by every
+	// variant, so field access is a bitcast at a BYTE offset off the union base
+	// rather than a struct GEP.
 	OpEnumNew   // build a variant value: args = payload fields, Int = tag, Name = enum raw
-	OpEnumTag   // read the discriminant (i64) of an enum value
-	OpEnumField // read payload field at slot Int, typed by inst.Type
+	OpEnumTag   // read the discriminant and widen it to i64
+	OpEnumField // read payload field at BYTE offset Int, typed by inst.Type
 
 	// arithmetic / logic
 	OpAdd
@@ -1065,14 +1064,23 @@ type VariantInfo struct {
 	Rounded      bool
 }
 
-// TaggedEnumInfo is the variant table of one tagged enum. PayloadSlots is the
-// width of the shared payload area in 8-byte slots, which is the max over all
-// variants of the sum of their fields' slot widths.
+// TaggedEnumInfo is the variant table of one tagged enum, together with the
+// byte-level layout facts every consumer reads.
 //
-// Layout: the enum is represented as `{ i64 tag, [PayloadSlots x i64] payload }`.
-// The payload is a UNION — every variant writes its fields into the same
-// storage — so all field reads/writes go through a bitcast to the field's real
-// type at its slot offset, never through a per-variant struct type.
+// Layout: the enum is represented as `{ iN tag, [K x i64] payload }`, where iN
+// follows the VARIANT COUNT (<=256 -> i8, <=65536 -> i16, <2^32 -> i32, else
+// i64) and K is the widest VARIANT in 8-byte words — never the sum of all
+// variants. The payload is a UNION: every variant writes its fields into the
+// same storage, so a field read/write is a bitcast to the field's real type at
+// that field's naturally-aligned BYTE offset inside the union, never a
+// per-variant struct GEP. A `{ i8, [2 x i64] }` enum is 24 bytes; a
+// payload-less one is `{ iN }` and as small as one byte.
+//
+// PayloadSlots is the K of `[K x i64]` (0 when UnitOnly). UnionBytes /
+// UnionAlign are the tight union's size/alignment, and each VariantInfo carries
+// its own FieldOffsets / VariantSize / VariantAlign. All of it is filled by
+// hir2mir.fillEnumLayout from the same enumVariantLayout the emitter uses, so a
+// field written at one offset cannot be read at another.
 //
 // Inline records the boolean value of the enum definition's `#{inline}`
 // annotation (the enum-level annotation written on its own line above the whole
@@ -1083,13 +1091,12 @@ type VariantInfo struct {
 //	#{inline=true}   -> true
 //	#{inline=false}  -> false  (explicitly not inline)
 //
-// The stack form above is a small object already: 16 bytes when every variant
-// is payload-less (PayloadSlots == 1) and growing only as far as the widest
-// variant needs. The annotation is the opt-in marker for that form, so an enum
-// declared with `#{inline=true}` is guaranteed to keep it. `#{inline=false}`
-// spells out the default instead of leaving it implicit; today both values
-// produce the same layout, because the stack form is what the default already
-// is.
+// The stack form above is a small object already: `{ iN }` when every variant is
+// payload-less and growing only as far as the widest variant needs. The
+// annotation is the opt-in marker for that form, so an enum declared with
+// `#{inline=true}` is guaranteed to keep it. `#{inline=false}` spells out the
+// default instead of leaving it implicit; today both values produce the same
+// layout, because the stack form is what the default already is.
 type TaggedEnumInfo struct {
 	Name         string
 	Variants     []VariantInfo
@@ -1490,11 +1497,13 @@ const errPayloadRawStd = "err.err"
 
 type Module struct {
 	Name string
-	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值：载荷 sizeof 小于等于
-	// 它则内联进 option 的 slot，大于它则堆装箱、slot[0] 存指针。默认 24
-	// （err 载荷是 16 字节的 %str-long，而 %vec 是 24 字节，24 是两者都能原样
-	// 内联的最小值）；可配置
-	// 更大，最小 8；小于 8 是编译错误。由 build 从 package.noml 的
+	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值：`8 + roundUp8(sizeof(T))`
+	// 小于等于它则载荷内联进 option 自己那 8+pad 的载荷区，大于它则堆装箱、
+	// 载荷区首字存指针。默认 264（= 1 + 7 + 256：1 字节 tag + 补到 8 的 padding
+	// + 256 字节载荷）；可配置更大，最小 16；小于 16 是编译错误。
+	//
+	// 布局（含 K = roundUp8(sizeof(T))/8、tag 恒 1 字节）的唯一来源是
+	// src/mir/layout.go；这里只存配置。由 build 从 package.noml 的
 	// compiler.option-inline-threshold（或 NOLANG_OPTION_INLINE_THRESHOLD）
 	// 填入，0 表示取默认值。
 	OptionInlineThreshold int
@@ -1503,8 +1512,9 @@ type Module struct {
 	//
 	// `option { ok(v t), nil, err(e <OptionErrRaw>) }` 的 err 载荷曾经恒为
 	// `str`（旧的结构化错误之前的形态）。改成 std 的 `err.err` 之后它是一颗
-	// ~72 字节的 struct（code / msg / file / line / col），装不进 24 字节的
-	// 载荷槽，因此 tag 2 走堆装箱、slot[0] 存指针。
+	// ~72 字节的 struct（code / msg / file / line / col），比任何逐载荷定位的
+	// 载荷区都宽，因此 tag 2 一律走堆装箱、载荷区首字存指针；回落成 "str" 时
+	// （std 的 err 模块没有参与编译）保留历史的内联布局。
 	//
 	// 读侧（optPayloadAddrAs 的 tag 判定）、释放侧（emitOptionDropHelper 的
 	// err 分支）、拷贝侧（rebox / clone 的 err 分支）都必须用同一个答案来
@@ -1608,7 +1618,7 @@ type Module struct {
 	// enumOwnsPayload marks the individual tagged-enum VALUES that own their
 	// payload, and therefore get a tag-switched destructor (plus a cloned
 	// extraction). It is a VALUE-level set, not a type-level one, and that is
-	// the whole point: a tagged enum is a `{ i64 tag, [N x i64] payload }` union
+	// the whole point: a tagged enum is a `{ iN tag, [K x i64] payload }` union
 	// whose payload is moved OUT by extraction (OpEnumField). For the common
 	// single-use enum that move is the one and only owner, so also freeing the
 	// payload from the enum would double-free. Only when the SAME value is

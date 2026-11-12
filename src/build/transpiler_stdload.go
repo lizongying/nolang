@@ -769,6 +769,22 @@ func (t *Transpiler) collectReferencedStdModules(prog *parser.Program) map[strin
 			// 被自動載入。否則結構體類型定義缺失，LLVM alloca 報
 			// "Cannot allocate unsized type" 錯誤。
 			addRef(ex.Type)
+			// 帶模組前綴的結構體字面量（`w = zip.writer{}`）：`ex.Type` 是
+			// "zip.writer"，而 lookup 的鍵是模組 ShortName（"zip"）。不把
+			// 前綴拆出來的話模組體永遠不會被載入 ⇒ 該結構體定義不進 merged ⇒
+			// MIR 的 StructFields 裡沒有 "zip.writer"，於是頂層 `let` 在
+			// synthesizeMainForTopLevel 的「非內聯」分支（isInlineableLetType
+			// 對含點的 raw 一律 false）查 StructFields 落空、`continue` 掉，
+			// 綁定從未 materialize：`w.data` 讀到 void，`len(d)` 落到
+			// str-len 報 "receiver has no slot"。
+			//
+			// 顯式標註 `w zip.writer = zip.writer{}` 之所以正常，正是因為
+			// walkType 的 NamedType 分支已經做了這個拆前綴——兩條路徑
+			// （型別註解 / 字面量的類型名）必須同口徑，否則推導形態就是一個
+			// 只在「有標註」時才成立的巧合。
+			if idx := strings.IndexByte(ex.Type, '.'); idx > 0 {
+				addRef(ex.Type[:idx])
+			}
 			// 若結構體名本身不是模組名（如 json-pool 不是任何 std 模組的
 			// ShortName），嘗試用連字符前綴匹配 std 模組。例如 json-pool
 			// 的前綴 "json" 對應 std/json.no，json-value 的前綴 "json"

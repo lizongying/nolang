@@ -7728,6 +7728,24 @@ ps-is-struct-def = (p psst) (r i64) {
                             nfield = nfield + 1
                         }
 
+                        ; s105：欄位尾 `;` 註釋。Go 的 parser.nextToken() 會自行跳過 COMMENT
+                        ;   （src/lexer/lexer.go:562），故其 look()/peekToken 從不看見 COMMENT；
+                        ;   本檔的 ps-peek-at 忠實回傳 COMMENT ⇒ 此處必須自行跳過，否則
+                        ;   `x i64; 說明` 的 et 落在 COMMENT、判為「不是欄位」而整塊退回
+                        ;   blockUnknown ⇒ 該結構體從未登記（實測：ast.no 的 `ast` 12 個欄位
+                        ;   裡有 3 個帶尾註釋，導致 `ast` 未入表、155 個函式簽名被 h2m 判 bad）。
+                        et == tok.COMMENT -> {
+
+                            #{overflow=wrap}
+                            i = i + 1
+
+                            ; 尾註釋即欄位終結符：此處就要計數——若留給下一輪的 NEWLINE，
+                            ;   而 NEWLINE 臂不計數，則「每個欄位都帶尾註釋」的結構體會得
+                            ;   nfield == 0 ⇒ 仍判非結構體。同行 `}` 收尾（`x i64; c }`）亦然。
+                            #{overflow=wrap}
+                            nfield = nfield + 1
+                        }
+
                         -> {
                             go = false
                             r = 0

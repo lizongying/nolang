@@ -795,6 +795,7 @@ t-push = () {
 
     s.push-str('de')
     runner.eq(s.len-bytes(), 8, 'push-str len-bytes == 8')
+
     ; ⚠️ 不要用 runner.str-eq(s.slice(6, 8), 'de', 2, …) 驗尾端：s 現在是 6 個碼點
     ; 8 個位元組，slice(6, 8) 的 start >= end 走 str.slice 的提前 return，回的是
     ; **零值 str（data == NULL）**；把這種串連同 n=2 交給 eq ⇒ 對 NULL 做 memcmp
@@ -1113,6 +1114,89 @@ passed = passed + p39
 
 #{overflow=wrap}
 failed = failed + f39
+
+p40, f40 = runner.test('str.cap（属性）', t-cap)
+
+#{overflow=wrap}
+passed = passed + p40
+
+#{overflow=wrap}
+failed = failed + f40
+
+p41, f41 = runner.test('str.bytes 零拷贝视图', t-bytes)
+
+#{overflow=wrap}
+passed = passed + p41
+
+#{overflow=wrap}
+failed = failed + f41
+
+; ── str.cap：容量（属性形态）／str.bytes：零拷贝视图 ──
+;
+; ⚠️ `str.cap` 只有**属性**形态可用；方法形态在用户码里调不出来：
+;     s.cap()    ⇒ EmitLLVM: unknown callee str.cap in func ... [4qhyyund]
+;     str.cap(s) ⇒ 同上（同一诊断，无 checker 层错误）
+; 这是 `#{buildin}` 只作「字段型别来源 + 文档」的既定用法（src/builtin/str.go
+; 没有 "cap" 条目），所以覆盖率脚本把 str.cap 计入 UNREACHABLE，本档测属性行为。
+; `.cap` 对 `[]T` 视图 **不可用**（`v.cap` ⇒ unknown callee []t.cap），故 bytes
+; 视图的容量语义不在这里断言。
+
+t-cap = () {
+    lit = 'abc'
+    runner.eq(lit.cap, 3, 'cap: 字面量容量 == 位元长度')
+    runner.eq(lit.cap, lit.len-bytes(), 'cap: 字面量 cap 与 len-bytes 一致')
+
+    h str = with-cap(16)
+    h.push-str('héllo')
+    runner.eq(h.cap, 16, 'cap: with-cap(16) 容量保持 16')
+    runner.eq(h.len(), 5, 'cap: 码点数 5')
+    runner.eq(h.len-bytes(), 6, 'cap: UTF-8 位元 6')
+    runner.is-true(h.cap >= h.len-bytes(), 'cap: 容量不小于位元长度')
+}
+
+t-bytes = () {
+    s = 'héllo'
+    v = s.bytes()
+    runner.eq(v.len(), 6, 'bytes: 视图长度 = UTF-8 位元数')
+    runner.eq(v.len(), s.len-bytes(), 'bytes: 与 len-bytes 一致')
+
+    ; ⚠️ 字节值必须取自**堆上**字符串：字面量派生的视图，其下标读会被
+    ; comptime 折叠，恒落失败臂返回 0（§5.2 #105 同族）。同理 `byte` 是有号
+    ; 窄类型，0xC3 直接当 i64 用会变成 -61 ⇒ 必须 `.to-i64()`；且只能写语句
+    ; 形态「先落变量」，表达式-match 同样会被折叠。
+    h str = with-cap(16)
+    h.push-str('héllo')
+    hv = h.bytes()
+    runner.eq(hv.len(), 6, 'bytes: 堆串视图长度 6')
+    b1 = 0
+    hv[1]: {
+        ok -> b1 = it.to-i64()
+
+        -> _
+    }
+    b2 = 0
+    hv[2]: {
+        ok -> b2 = it.to-i64()
+
+        -> _
+    }
+    runner.eq(b1, 195, 'bytes: é 的高字节 0xC3')
+    runner.eq(b2, 169, 'bytes: é 的低字节 0xA9')
+
+    ; 零拷贝：写视图会反映回原字符串
+    w = h.bytes()
+    w[0]: {
+        ok -> it = 88
+
+        -> _
+    }
+    runner.is-true(h == 'Xéllo', 'bytes: 视图写入反映回原字符串')
+
+    ; 空串视图
+    e = ''
+    ev = e.bytes()
+    runner.eq(ev.len(), 0, 'bytes: 空串视图长度 0')
+}
 
 total = runner.summary()
 f = runner.failed-count()

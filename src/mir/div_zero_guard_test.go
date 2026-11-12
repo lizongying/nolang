@@ -118,7 +118,7 @@ main = () () {
 	// block that heap-boxes an err.err payload — a select cannot build that. The
 	// pinned semantic is unchanged: the zero divisor must still materialize the
 	// err tag (2), so assert on the STORED tag rather than the select shape.
-	if !regexp.MustCompile(`store %option \{ i64 2,`).MatchString(optdiv) {
+	if !regexp.MustCompile(`store %option[\w_]* \{ i8 2,`).MatchString(optdiv) {
 		t.Errorf("@optdiv must still turn a zero divisor into the err tag (2):\n%s", optdiv)
 	}
 

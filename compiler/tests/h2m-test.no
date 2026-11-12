@@ -4395,6 +4395,10 @@ test-s99l-strcat-release()
 test-s99l-strcat-return-no-release()
 test-s99l-strcat-nested-release()
 test-s99l-strcat-mixed-gate()
+test-s104-streq()
+test-s104-strne()
+test-s104-streq-gate()
+test-s104-streq-mem()
 test-s99n-vec-literal-release()
 test-s99n-vec-empty-literal()
 test-s99n-vec-elem-type-gate()
@@ -4555,6 +4559,103 @@ test-s99l-strcat-mixed-gate = () {
     ir = h2m-lower-program(t, agg, root)
     runner.eq(agg.unsup > 0, 1, 's99l mixed str+i64 counted unsup')
     runner.eq(ir.contains('call %str-long @str_concat('), 0, 's99l mixed no strcat')
+}
+
+; ── s104：str 相等/不等（'==' ⇒ OP-STEREQ / '!=' ⇒ OP-STNEQ）──
+; 镜像 Go 专用 OpStrEq：icmp %str-long 非法 ⇒ 降运行时 helper @str_eq（cg-runtime-str-eq）。
+; 本件零改 cg / 零改 mir——OP-STEREQ=63 / OP-STNEQ=64 早已就位，缺的只是 h2m 这条降级臂。
+; 结果恒 TY-I64（0/1）：与 s72 f64 比较、s77 u64 比较同口径——比较结果不是 str，
+; 故落 %v 命名空间（`zext i1 → i64`）而非 %sv。
+test-s104-streq = () {
+
+    ; 两侧皆 str ⇒ 一条 @str_eq 调用 + zext 到 i64；实参走 %sv 命名空间
+    src = 'f = () (r i64) {\n    a = \'x\'\n    b = \'y\'\n    c = a == b\n    r = c\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's104 streq unsup')
+    runner.eq(ir.contains('%se2 = call i1 @str_eq(%str-long %sv1, %str-long %sv2)'), 1, 's104 streq call')
+    runner.eq(ir.contains('%v3 = zext i1 %se2 to i64'), 1, 's104 streq zext')
+    runner.eq(ir.contains('icmp eq %str-long'), 0, 's104 streq no illegal icmp')
+}
+
+test-s104-strne = () {
+
+    ; '!=' ⇒ 同一 @str_eq 调用，i1 结果先 xor true 再 zext（cg OP-STNEQ 臂）
+    src = 'f = () (r i64) {\n    a = \'x\'\n    b = \'y\'\n    c = a != b\n    r = c\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's104 strne unsup')
+    runner.eq(ir.contains('%se2 = call i1 @str_eq(%str-long %sv1, %str-long %sv2)'), 1, 's104 strne call')
+    runner.eq(ir.contains('%sn2 = xor i1 %se2, true'), 1, 's104 strne xor true')
+    runner.eq(ir.contains('%v3 = zext i1 %sn2 to i64'), 1, 's104 strne zext')
+}
+
+test-s104-streq-gate = () {
+
+    ; 混合形（str == i64）：权威靠 checker 先转标量再比，自举无 checker ⇒ 计 unsup、不产码
+    src = 'f = () (r i64) {\n    a = \'x\'\n    c = a == 1\n    r = 1\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup > 0, 1, 's104 mixed str+i64 counted')
+    runner.eq(ir.contains('@str_eq(%str-long %sv'), 0, 's104 mixed no str_eq call')
+
+    ; 排序（str < str）：@str_eq 只判等，Go 侧无对应降级 ⇒ 不放行
+    src2 = 'f = () (r i64) {\n    a = \'x\'\n    b = \'y\'\n    c = a < b\n    r = 1\n}\n'
+    t2 = ast.make()
+    b2 = src2.to-bytes()
+    p2 = ps.new(b2)
+    root2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, root2)
+    runner.eq(agg2.unsup > 0, 1, 's104 str lt counted')
+    runner.eq(ir2.contains('@str_eq(%str-long %sv'), 0, 's104 str lt no str_eq call')
+}
+
+; s104 续：h2m-ty-of 的 str 双侧分支（与降级侧 dest 型别同步）。
+;   🔴 缺这一支时 str 比较/拼接落在【含控制流（mem==1）】的函数里必挂：槽宽推不出（留 -1）
+;      ⇒ h2m-slot-decl 计 unsup、整函数不产码；同一份代码在直线式（mem==0）下不铺槽 ⇒ 正常产码。
+;      两种 mem 模式行为分岔，只有走控制流的那支暴露——故本测试必须带 `cond -> stmt` 造出 mem==1。
+test-s104-streq-mem = () {
+
+    ; 比较结果绑到变量、再在条件里读 ⇒ 变量必须落 i64 槽（不是 str 槽、也不能推不出）
+    ;   实测：%ss1/%ss3 = a/b 的 %str-long 槽、%s5 = c 的 i64 槽、%se18 = @str_eq 的 i1
+    src = 'f = () (r i64) {\n    a = \'x\'\n    b = \'y\'\n    c = a == b\n    c == 1 -> r = 1\n    r = 0\n}\n'
+    t = ast.make()
+    b = src.to-bytes()
+    p = ps.new(b)
+    root = ps.parse(t, p)
+    agg = h2m-new()
+    ir = h2m-lower-program(t, agg, root)
+    runner.eq(agg.unsup, 0, 's104 streq mem unsup')
+    runner.eq(ir.split('call i1 @str_eq(%str-long %sv').len(), 2, 's104 streq mem one str_eq')
+    runner.eq(ir.contains('%s5 = alloca i64'), 1, 's104 streq mem i64 slot for result var')
+    runner.eq(ir.contains('zext i1 %se'), 1, 's104 streq mem zext')
+
+    ; 拼接结果绑到变量、再在条件里用 ⇒ 变量必须落 %str-long 槽（不是 i64 槽）
+    ;   实测：%ss4 = s 的 %str-long 槽、%sv10 = @str_concat 的结果
+    src2 = 'f = (n i64) (r i64) {\n    s = \'a\' + \'b\'\n    n > 0 -> print(s)\n    r = 0\n}\n'
+    t2 = ast.make()
+    b2 = src2.to-bytes()
+    p2 = ps.new(b2)
+    root2 = ps.parse(t2, p2)
+    agg2 = h2m-new()
+    ir2 = h2m-lower-program(t2, agg2, root2)
+    runner.eq(agg2.unsup, 0, 's104 strcat mem unsup')
+    runner.eq(ir2.split('call %str-long @str_concat(').len(), 2, 's104 strcat mem one concat')
+    runner.eq(ir2.contains('%ss4 = alloca %str-long'), 1, 's104 strcat mem str slot')
+    runner.eq(ir2.contains('store %str-long %sv10, %str-long* %ss4'), 1, 's104 strcat mem store to str slot')
 }
 
 ; ── s99n：vec 的取得所有權站點 + scope-exit 釋放（M4-e 最後一件）──

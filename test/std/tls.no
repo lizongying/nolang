@@ -674,6 +674,554 @@ t-server-conn = () {
     runner.eq(by(sc2.hs-buf, k4), 22, 'server-conn.append-hs-from: 内容[4] = src[3] = 22')
 }
 
+; ══════════════════════════════════════════════════════════════════════
+; 握手層
+;
+; 手法：在同一個線程裡把 loopback 的**兩端**都拿到手 ——
+;   lfd = net.net-listen('127.0.0.1', PORT)
+;   cfd = net.net-dial(...)      ; TCP 三次握手由內核 backlog 完成，不必先 accept
+;   sfd = net.net-accept(lfd)
+; 然後「客戶端發一則 → 服務端讀一則」交替呼叫。握手訊息都在幾 KB 內，內核
+; socket buffer 直接吸收，所以全程不會阻塞。
+;
+; 為何不用協程：本語言的協程是**協作式**的，阻塞 recv 不會讓出線程，兩端放在
+; 同一線程裡用 run/awy 必然死鎖。
+;
+; 為何還要 fork：`conn.connect-13` / `conn.handshake-12-body` / `server-conn.handshake`
+; 這些**聚合函式**內部同時有發與收，必須有一個真對端並行跑。子進程跑服務端、
+; 父進程跑客戶端，兩邊都是真代碼、真收發。
+; ⚠️ 子進程要用的 `server-init`（自簽證書 = RSA 簽名，約 4 秒）必須在 fork **之前**
+; 完成，否則父進程的接收輪詢（10 秒上限）會先逾時。
+; ⚠️ 不要在子進程裡 print：會污染測試輸出。
+; ⚠️ 這裡每個 TEST 都用自己的埠（39311–39316），跑完把 fd 全關掉。
+
+; []byte 的 b[i] → i64，並**零擴展**（byte 是有號窄類型，0xC3 直接當 i64 會變 -61）
+byu = (b []byte, i i64) (v i64) {
+    v = -1
+    b[i]: {
+        ok -> v = it.to-i64()
+
+        -> _
+    }
+}
+
+; []byte 的 b[i] = v（越界靜默忽略）
+setb = (b []byte, i i64, v i64) {
+    b[i]: {
+        ok -> it = v
+
+        -> _
+    }
+}
+
+; 兩段位元組是否相等（長度不同即 false）
+bytes-eq = (a []byte, b []byte) (same bool) {
+    same = a.len() == b.len()
+    same -> {
+        n = a.len()
+        i <- [0..n): {
+            byu(a, i) != byu(b, i) -> same = false
+        }
+    }
+}
+
+; 手工装配一个 server-conn（等价于 tls.server-init，但用**512-bit** 自备密钥）。
+;
+; 为什么不用 server-init：它用内嵌的 2048-bit 密钥签自签证书，一次约 4 秒；
+; 而 static-RSA 握手里服务端的私钥幂同样是 2048-bit，约 4.2 秒。握手测试要跑
+; 好几轮，光这两项就能把整档推到 60 秒的单档上限之上。
+;
+; 512-bit 的 n/d 是 openssl 之外用 Python 独立生成的（p、q 各 256 bit，
+; e = 65537，d = e⁻¹ mod lcm(p-1,q-1)），并验证过 m → m^e → …^d 还原 m。
+; PKCS#1 v1.5 要求模数 ≥ 明文长度 + 11 = 59 字节，64 字节刚好够放 48 字节
+; premaster。实测：证书 76ms、服务端私钥幂 79ms，与 2048-bit 行为完全一致。
+mk-server = (f fd) (srv tls.server-conn) {
+    nb []byte = [
+        226, 92, 226, 57, 79, 205, 80, 101,
+        95, 122, 245, 56, 120, 225, 141, 68,
+        181, 254, 214, 4, 134, 119, 116, 67,
+        235, 156, 130, 215, 154, 149, 161, 67,
+        128, 199, 107, 104, 24, 161, 142, 117,
+        9, 15, 52, 50, 114, 221, 222, 100,
+        38, 242, 131, 214, 124, 87, 17, 154,
+        92, 185, 177, 102, 97, 0, 56, 91,
+    ]
+    db []byte = [
+        69, 199, 97, 59, 78, 148, 217, 124,
+        46, 119, 62, 97, 150, 173, 220, 248,
+        249, 235, 97, 57, 10, 228, 134, 244,
+        43, 12, 215, 174, 179, 233, 253, 72,
+        55, 192, 89, 194, 49, 175, 105, 156,
+        130, 190, 75, 127, 245, 225, 54, 197,
+        205, 75, 7, 144, 126, 191, 74, 61,
+        166, 60, 197, 85, 155, 29, 109, 45,
+    ]
+    srv.fd = f
+    srv.rand-state = 7919
+    srv.encrypted = false
+    srv.hs-buf = with-len(65536)
+    srv.hs-buf-len = 0
+    srv.write-seq = 0
+    srv.read-seq = 0
+    srv.version = tls.TLS-VERSION
+    srv.is-tls13 = false
+    srv.hs-write-seq = 0
+    srv.hs-read-seq = 0
+    srv.ap-write-seq = 0
+    srv.ap-read-seq = 0
+    srv.hs-plain-pos = 0
+    srv.hs-plain-len = 0
+    srv.hs-plain-buf = with-len(16400)
+    srv.n-bytes = nb
+    srv.d-bytes = db
+    srv.e-val = 65537
+    srv.cert = x509.x509-build-self-signed-cert(srv.n-bytes, srv.e-val, srv.d-bytes, 'no-test')
+}
+
+; ── TLS 1.3 手工交錯握手（客戶端 + 服務端同線程）──
+
+t-hs13 = () {
+    lfd = net.net-listen('127.0.0.1', 39311)
+    cfd = net.net-dial('127.0.0.1', 39311)
+    sfd = net.net-accept(lfd)
+
+    c = tls.conn{}
+    c.init()
+    c.fd = cfd
+    c.connected = true
+    c.host = '127.0.0.1'
+
+    srv = mk-server(sfd)
+
+    ok = c.send-client-hello-13()
+    runner.is-true(ok, '1.3: 客户端发出 ClientHello')
+
+    ok = srv.read-client-hello()
+    runner.is-true(ok, '1.3: 服务端解析 ClientHello')
+    runner.is-true(srv.is-tls13, '1.3: supported_versions 解析出 1.3（服务端不再恒 false）')
+    runner.eq(srv.version, 772, '1.3: 协商版本 = 0x0304')
+
+    ok = srv.send-server-hello-13()
+    runner.is-true(ok, '1.3: 服务端发出 ServerHello')
+    ok = c.read-server-hello-13()
+    runner.is-true(ok, '1.3: 客户端解析 ServerHello')
+
+    c.compute-shared-secret-13()
+    c.derive-handshake-keys-13()
+    srv.compute-shared-secret-13()
+    srv.derive-handshake-keys-13()
+    runner.is-true(bytes-eq(c.shared-secret[..], srv.shared-secret[..]), '1.3: 双端 ECDHE 共享密钥一致')
+    runner.is-true(bytes-eq(c.hs-server-key[..], srv.hs-server-key[..]), '1.3: 双端派生出的交握密钥一致')
+
+    srv.send-change-cipher-spec()
+    ok = srv.send-encrypted-extensions-13()
+    runner.is-true(ok, '1.3: 服务端发出 EncryptedExtensions')
+    ok = srv.send-certificate-13()
+    runner.is-true(ok, '1.3: 服务端发出 Certificate')
+    ok = srv.send-finished-13()
+    runner.is-true(ok, '1.3: 服务端发出 Finished')
+
+    t1 = 0
+    d1 []byte
+    t1, d1 = c.read-encrypted-handshake-13()
+    runner.eq(t1, 8, '1.3: 客户端读到 EncryptedExtensions(8)')
+    t2 = 0
+    d2 []byte
+    t2, d2 = c.read-encrypted-handshake-13()
+    runner.eq(t2, 11, '1.3: 客户端读到 Certificate(11)')
+    t3 = 0
+    d3 []byte
+    t3, d3 = c.read-encrypted-handshake-13()
+    runner.eq(t3, 20, '1.3: 客户端读到 Finished(20)')
+
+    c.derive-application-keys-13()
+    ok = c.send-finished-13()
+    runner.is-true(ok, '1.3: 客户端发出 Finished')
+
+    ok = srv.read-client-finished-13()
+    runner.is-true(ok, '1.3: 服务端验过客户端 Finished')
+    srv.derive-application-keys-13()
+    srv.encrypted = true
+    c.encrypted = true
+
+    ; 应用数据：客户端 → 服务端（显式读一条记录，不用 recv 包装）
+    w = c.send('ping-13')
+    got = 0
+    w: {
+        ok -> got = it
+
+        -> _
+    }
+    runner.eq(got, 7, '1.3: 客户端写出 7 字节应用数据')
+
+    ct1 = 0
+    p1 []byte
+    ct1, p1 = srv.read-encrypted-record-13(srv.ap-client-key, srv.ap-client-iv, 0)
+    runner.eq(ct1, 23, '1.3: 服务端读到 application_data(23)')
+    runner.is-true(bytes-eq(p1, 'ping-13'.to-bytes()), '1.3: 服务端解出的明文正确')
+
+    ; 应用数据：服务端 → 客户端
+    w2 = srv.send('pong-13')
+    got2 = 0
+    w2: {
+        ok -> got2 = it
+
+        -> _
+    }
+    runner.eq(got2, 7, '1.3: 服务端写出 7 字节应用数据')
+
+    ct2 = 0
+    p2 []byte
+    ct2, p2 = c.read-encrypted-record-13(c.ap-server-key, c.ap-server-iv, 0)
+    runner.eq(ct2, 23, '1.3: 客户端读到 application_data(23)')
+    runner.is-true(bytes-eq(p2, 'pong-13'.to-bytes()), '1.3: 客户端解出的明文正确')
+
+    c.close()
+    srv.close()
+    fs.close(lfd)
+}
+
+; ── TLS 1.2 手工交錯握手（static-RSA：真跑 rsa-pkcs1-*）──
+
+t-hs12 = () {
+    lfd = net.net-listen('127.0.0.1', 39312)
+    cfd = net.net-dial('127.0.0.1', 39312)
+    sfd = net.net-accept(lfd)
+
+    c = tls.conn{}
+    c.init()
+    c.fd = cfd
+    c.connected = true
+    c.host = '127.0.0.1'
+
+    ; 显式再造一次 X25519 密钥对（send-client-hello 内部还会再生成一次，
+    ; 这里只为覆盖 + 确认公钥不是全零）
+    c.gen-x25519-keypair()
+    nz = false
+    i <- [0..32): {
+        byu(c.client-pub[..], i) != 0 -> nz = true
+    }
+    runner.is-true(nz, 'x25519: 生成的公钥非全零')
+
+    ; P-256 密钥对：未压缩点必须以 0x04 开头，且 65 字节
+    c.gen-p256-keypair()
+    runner.eq(c.pub-p256[..].len(), 65, 'p256: 公钥 65 字节（未压缩点）')
+    runner.eq(byu(c.pub-p256[..], 0), 4, 'p256: 首字节 0x04')
+
+    srv = mk-server(sfd)
+
+    ok = c.send-client-hello()
+    runner.is-true(ok, '1.2: 客户端发出 ClientHello')
+    ok = srv.read-client-hello()
+    runner.is-true(ok, '1.2: 服务端解析 ClientHello')
+    runner.is-false(srv.is-tls13, '1.2: 服务端判定为 TLS 1.2')
+
+    ok = srv.send-server-hello()
+    runner.is-true(ok, '1.2: 服务端发出 ServerHello')
+    ok = c.read-server-hello()
+    runner.is-true(ok, '1.2: 客户端解析 ServerHello')
+    runner.eq(c.cipher-id, 60, '1.2: 协商出 static-RSA AES128-CBC-SHA256(0x003C)')
+
+    ok = srv.send-certificate()
+    runner.is-true(ok, '1.2: 服务端发出 Certificate')
+    ok = srv.send-server-hello-done()
+    runner.is-true(ok, '1.2: 服务端发出 ServerHelloDone')
+
+    cert []byte = with-len(16400)
+    ok = c.read-certificate(cert)
+    runner.is-true(ok, '1.2: 客户端解析 Certificate')
+
+    ; static-RSA 不发 ServerKeyExchange；read-server-key-exchange 单独用喂价测（t-hs-ske）
+    ok = c.read-server-hello-done()
+    runner.is-true(ok, '1.2: 客户端读到 ServerHelloDone')
+
+    ; premaster = 版本(2) + 46 字节随机
+    premaster []byte = with-len(48)
+    setb(premaster, 0, 3)
+    setb(premaster, 1, 3)
+    i <- [2..48): {
+        setb(premaster, i, (i * 7 + 11) & 255)
+    }
+    c.derive-keys(premaster)
+    runner.eq(c.master-secret.len(), 48, '1.2: 派生出 48 字节 master secret')
+
+    ok = c.send-client-key-exchange(premaster, cert)
+    runner.is-true(ok, '1.2: 客户端发出 ClientKeyExchange（RSA 加密 premaster）')
+
+    c.send-change-cipher-spec()
+    c.encrypted = true
+    ok = c.send-finished()
+    runner.is-true(ok, '1.2: 客户端发出 Finished')
+
+    ok = srv.read-client-key-exchange()
+    runner.is-true(ok, '1.2: 服务端解出 premaster（RSA 私钥解密）')
+    runner.is-true(bytes-eq(c.master-secret, srv.master-secret), '1.2: 双端 master secret 一致')
+
+    ok = srv.read-change-cipher-spec()
+    runner.is-true(ok, '1.2: 服务端读到 ChangeCipherSpec')
+    srv.encrypted = true
+    ok = srv.read-finished()
+    runner.is-true(ok, '1.2: 服务端验过客户端 Finished')
+
+    srv.send-change-cipher-spec()
+    ok = srv.send-finished()
+    runner.is-true(ok, '1.2: 服务端发出 Finished')
+
+    ok = c.read-change-cipher-spec()
+    runner.is-true(ok, '1.2: 客户端读到 ChangeCipherSpec')
+    ok = c.read-finished()
+    runner.is-true(ok, '1.2: 客户端验过服务端 Finished（MAC 对得上）')
+
+    c.close()
+    srv.close()
+    fs.close(lfd)
+}
+
+; ── ServerKeyExchange 解析（static-RSA 不触发，单独喂一条记录）──
+
+t-hs-ske = () {
+    lfd = net.net-listen('127.0.0.1', 39313)
+    cfd = net.net-dial('127.0.0.1', 39313)
+    sfd = net.net-accept(lfd)
+
+    c = tls.conn{}
+    c.init()
+    c.fd = cfd
+
+    ; handshake body = curve_type(3) + named_curve(0x001D) + 长度(32) + 公钥(32)
+    body []byte = with-len(36)
+    setb(body, 0, 3)
+    setb(body, 1, 0)
+    setb(body, 2, 29)
+    setb(body, 3, 32)
+    i <- [0..32): {
+        setb(body, 4 + i, (i * 13 + 5) & 255)
+    }
+
+    ; 记录层：类型 22 + 握手消息头 12/长度36
+    hs []byte = with-len(40)
+    setb(hs, 0, 12)
+    setb(hs, 1, 0)
+    setb(hs, 2, 0)
+    setb(hs, 3, 36)
+    i <- [0..36): {
+        setb(hs, 4 + i, byu(body, i))
+    }
+    tls.send-raw(sfd, 22, hs)
+
+    ok = c.read-server-key-exchange()
+    runner.is-true(ok, '1.2: 解析 ServerKeyExchange')
+    runner.eq(c.kx-group, 29, '1.2: 曲线组 = x25519(29)')
+    runner.eq(byu(c.server-pub[..], 0), 5, '1.2: 服务端临时公钥首字节正确')
+
+    c.close()
+    fs.close(lfd)
+}
+
+; ── 记录层 CBC+HMAC（conn / server-conn 各一对）──
+
+t-hs-record-cbc = () {
+    lfd = net.net-listen('127.0.0.1', 39314)
+    cfd = net.net-dial('127.0.0.1', 39314)
+    sfd = net.net-accept(lfd)
+
+    k16 [16]byte = [
+        1, 2, 3, 4, 5, 6, 7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16,
+    ]
+    m32 [32]byte = [
+        21, 22, 23, 24, 25, 26, 27, 28,
+        29, 30, 31, 32, 33, 34, 35, 36,
+        37, 38, 39, 40, 41, 42, 43, 44,
+        45, 46, 47, 48, 49, 50, 51, 52,
+    ]
+    plain []byte = [72, 101, 108, 108, 111]
+
+    ; 客户端侧：encrypt 用 client-*-key，decrypt 用 server-*-key，
+    ; 两边填同一组密钥即可在本进程内完成往返。
+    c = tls.conn{}
+    c.init()
+    c.fd = cfd
+    c.cipher-id = 60
+    c.client-enc-key = k16
+    c.client-mac-key = m32
+    c.server-enc-key = k16
+    c.server-mac-key = m32
+
+    ok = c.encrypt-record(23, plain)
+    runner.is-true(ok, '1.2/CBC: encrypt-record 成功')
+
+    rbuf []byte = with-len(4096)
+    ct = 0
+    rlen = 0
+    ct, rlen = tls.read-record(sfd, rbuf)
+    runner.eq(ct, 23, '1.2/CBC: 对端读到 content type 23')
+    runner.eq(byu(rbuf, 0), 23, '1.2/CBC: 记录头[0] = 23')
+    runner.eq(byu(rbuf, 1), 3, '1.2/CBC: 记录头[1] = 版本高字节 3')
+
+    dct = 0
+    out []byte
+    dct, out = c.decrypt-record(rbuf, 23)
+    runner.eq(dct, 23, '1.2/CBC: decrypt-record 还原 content type')
+    runner.is-true(bytes-eq(out, plain), '1.2/CBC: 还原出的明文一致')
+
+    ; expected-ct 不符 ⇒ MAC 校验失败
+    bct = 0
+    bout []byte
+    bct, bout = c.decrypt-record(rbuf, 22)
+    runner.eq(bct, -1, '1.2/CBC: expected-ct 不符 ⇒ 拒绝')
+
+    ; 服务端侧：server-conn 的 CBC 记录函数（无 GCM 分支）
+    srv = mk-server(-1)
+    srv.fd = sfd
+    srv.server-enc-key = k16
+    srv.server-mac-key = m32
+    srv.client-enc-key = k16
+    srv.client-mac-key = m32
+
+    ok = srv.encrypt-record(23, plain)
+    runner.is-true(ok, '1.2/CBC: server-conn.encrypt-record 成功')
+
+    rbuf2 []byte = with-len(4096)
+    ct2 = 0
+    rlen2 = 0
+    ct2, rlen2 = tls.read-record(cfd, rbuf2)
+    runner.eq(ct2, 23, '1.2/CBC: 客户端读到 server-conn 的记录')
+
+    sct = 0
+    sout []byte
+    sct, sout = srv.decrypt-record(rbuf2, 23)
+    runner.eq(sct, 23, '1.2/CBC: server-conn.decrypt-record 还原 content type')
+    runner.is-true(bytes-eq(sout, plain), '1.2/CBC: server-conn 还原出的明文一致')
+
+    c.close()
+    srv.close()
+    fs.close(lfd)
+}
+
+; ── RSA PKCS#1 v1.5：直接用内嵌服务端密钥做往返 ──
+;
+; 握手里的 rsa-pkcs1-* 是间接调用的（客户端加密 premaster、服务端解密），
+; 这里直测是为了把「填充格式 + 大数幂」这两段行为单独钉住。
+; 代价：一次 2048-bit 私钥幂在本机约 4 秒，省不掉。
+
+t-hs-rsa = () {
+
+    ; 用 mk-server 里的 512-bit 密钥（2048-bit 私钥幂要约 4.2 秒，这里只要 80ms）
+    tmp = mk-server(-1)
+    n = tmp.n-bytes
+    d = tmp.d-bytes
+    e = tmp.e-val
+
+    msg []byte = with-len(48)
+    setb(msg, 0, 3)
+    setb(msg, 1, 3)
+    i <- [2..48): {
+        setb(msg, i, (i * 5 + 1) & 255)
+    }
+
+    enc = tls.rsa-pkcs1-encrypt(msg, n, e)
+    runner.eq(enc.len(), 64, 'rsa: 密文长度 = 模数长度 64')
+    runner.is-true(bytes-eq(enc, msg) == false, 'rsa: 密文与明文不同')
+
+    dec = tls.rsa-pkcs1-decrypt(enc, n, d)
+    runner.is-true(bytes-eq(dec, msg), 'rsa: 公私钥往返还原明文')
+}
+
+; ── fork 真對端：跑聚合函式（connect / connect-13 / handshake / handshake-13）──
+
+t-hs-fork = () {
+
+    ; ── 1.2：父 connect-12（内部走 handshake-12-body），子 server-conn.handshake ──
+    srv = mk-server(-1)
+
+    lfd = net.net-listen('127.0.0.1', 39315)
+    pid = process.process-fork()
+    pid == 0 -> {
+        sfd = net.net-accept(lfd)
+        srv.fd = sfd
+        ok = srv.handshake()
+        ok == false -> exit(1)
+        srv.close()
+        exit(0)
+    }
+
+    c = tls.conn{}
+    c.init()
+    c.host = '127.0.0.1'
+    f = dns.dial('127.0.0.1', 39315)
+    c.fd = f
+    c.connected = true
+    ok = c.send-client-hello()
+    runner.is-true(ok, 'fork/1.2: 客户端发出 ClientHello')
+    ok = c.read-server-hello()
+    runner.is-true(ok, 'fork/1.2: 客户端解析 ServerHello')
+    ok = c.handshake-12-body()
+    runner.is-true(ok, 'fork/1.2: handshake-12-body 全流程成功')
+    runner.is-true(c.encrypted, 'fork/1.2: 客户端已进入加密态')
+
+    ; 真发一笔应用数据，证明会话语义可用
+    w = c.send('hello-12')
+    got = 0
+    w: {
+        ok -> got = it
+
+        -> _
+    }
+    runner.eq(got, 8, 'fork/1.2: 加密通道写出 8 字节')
+    c.close()
+    fs.close(lfd)
+    code = process.process-waitpid(pid, 0)
+    runner.eq(code, 0, 'fork/1.2: 子进程正常退出（服务端握手成功）')
+
+    ; ── 1.3：父 connect-13，子 read-client-hello + handshake-13 ──
+    srv2 = mk-server(-1)
+
+    lfd2 = net.net-listen('127.0.0.1', 39316)
+    pid2 = process.process-fork()
+    pid2 == 0 -> {
+        sfd2 = net.net-accept(lfd2)
+        srv2.fd = sfd2
+        ok = srv2.read-client-hello()
+        ok == false -> exit(1)
+        tls13 = srv2.is-tls13
+        tls13 == false -> exit(1)
+        ok = srv2.handshake-13()
+        ok == false -> exit(1)
+        buf str = with-len(64)
+        n = srv2.recv(buf, 64)
+        n == 4 -> exit(0)
+        exit(1)
+    }
+
+    c2 = tls.conn{}
+    c2.init()
+    c2.host = '127.0.0.1'
+    f2 = dns.dial('127.0.0.1', 39316)
+    c2.fd = f2
+    c2.connected = true
+    ok = c2.send-client-hello-13()
+    runner.is-true(ok, 'fork/1.3: 客户端发出 ClientHello')
+    ok = c2.read-server-hello-13()
+    runner.is-true(ok, 'fork/1.3: 客户端解析 ServerHello')
+    ok = c2.connect-13()
+    runner.is-true(ok, 'fork/1.3: connect-13 全流程成功')
+    runner.is-true(c2.encrypted, 'fork/1.3: 客户端已进入加密态')
+
+    w2 = c2.send('hi13')
+    got2 = 0
+    w2: {
+        ok -> got2 = it
+
+        -> _
+    }
+    runner.eq(got2, 4, 'fork/1.3: 加密通道写出 4 字节')
+    c2.close()
+    fs.close(lfd2)
+    code2 = process.process-waitpid(pid2, 0)
+    runner.eq(code2, 0, 'fork/1.3: 子进程正常退出（服务端握手 + 收数据）')
+}
+
 ; ── 执行 ──────────────────────────────────────
 
 p1, f1 = runner.test('tls.rand-bytes', t-rand-bytes)
@@ -695,6 +1243,12 @@ p16, f16 = runner.test('tls.server-listen', t-server-listen)
 p17, f17 = runner.test('tls.server-accept-fail', t-server-accept-fail)
 p18, f18 = runner.test('tls.dial-refused', t-dial-refused)
 p19, f19 = runner.test('tls.server-conn', t-server-conn)
+p20, f20 = runner.test('tls.handshake-13 手工交错', t-hs13)
+p21, f21 = runner.test('tls.handshake-12 手工交错', t-hs12)
+p22, f22 = runner.test('tls.server-key-exchange', t-hs-ske)
+p23, f23 = runner.test('tls.record CBC+HMAC', t-hs-record-cbc)
+p24, f24 = runner.test('tls.rsa-pkcs1 往返', t-hs-rsa)
+p25, f25 = runner.test('tls.handshake fork 对端', t-hs-fork)
 
 total = runner.summary()
 f = runner.failed-count()

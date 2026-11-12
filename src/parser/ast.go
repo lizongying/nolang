@@ -748,12 +748,19 @@ type LetStatement struct {
 	// the whole option value is copied into an option-typed result parameter so
 	// that a nil/err outcome propagates out of the function.
 	//
-	// At runtime every option is `{i64 tag, i64 data}` regardless of the inner
-	// type, so the copy is representation-compatible even when the source and
-	// target inner types differ (e.g. `size ?= fstat-size(.fd)` inside a
-	// function returning `?[]byte`). The type checker must therefore not flag
-	// it as a type mismatch. This is a checker-only hint: codegen ignores it
-	// (unlike IsSynthetic, which changes ownership/option-assign behaviour).
+	// The source's inner type may differ from the target's (e.g.
+	// `size ?= fstat-size(.fd)` inside a function returning `?[]byte`, or
+	// `out ?= p.nodes[0].kind` where the chain root is `?node`), so the type
+	// checker must not flag it as a type mismatch. Only nil and err can cross
+	// such a boundary — an ok payload is always rewritten by the arm the seed
+	// belongs to — and codegen implements exactly that: emitClone/
+	// optPropagateState copies the tag plus a cloned (always boxed) err variant
+	// and zeroes the rest. It USED to be a plain bit copy because every option
+	// was `{i64 tag, i64 data}`; since options are sized per payload
+	// (docs/docs/lang/syntax.md §可空類型) that shortcut is gone, and a
+	// mismatch is a real ABI boundary, not two spellings of one layout.
+	// This is still a checker-only hint: codegen ignores the flag itself and
+	// decides from the two options' payload types.
 	IsPropagation bool
 	// OverflowMode 攜帶 #{overflow = wrap|clamp0|...} 行注解指定的溢出處理模式；
 	// "" 表示未標註（預設回傳 option<int>）。由 applyLineOverflowAnnotations 在
@@ -899,7 +906,7 @@ func (bs *BlockStatement) EndPos() lexer.Position {
 // identical across the H0, js/wasm, checker and formatter paths, which the HIR
 // equivalence seam tests rely on.
 type BlockMatchStatement struct {
-	Token   lexer.Token    // the body's opening `{`
+	Token   lexer.Token // the body's opening `{`
 	Body    *BlockStatement
 	Match   *SurfaceMatch  // bare match: Matched == nil, real RBracePos
 	Subject string         // unique synthetic subject, e.g. `__bm_7`

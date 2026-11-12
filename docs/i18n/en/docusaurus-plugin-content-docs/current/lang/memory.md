@@ -73,7 +73,21 @@ Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a
 | `[N]T` (fixed array) | N x sizeof(T) | elements inline, **no len/cap descriptor** | alloca (stack) or malloc |
 | `str` (long string) | **16 bytes** | **u32 len, u32 cap, i8\* data** | malloc (heap) |
 | `txt` (fixed string) | 256 bytes | `[255 x i8]` data, i8 len | alloca (stack) |
+| `?T` (nullable) | **typed by its payload**: `{ i8 tag, [K x i64] }` | 1-byte tag + 7 bytes padding + payload (multiple of 8) | alloca (stack); heap pointer once the payload exceeds the threshold |
+| tagged enum | `{ iN tag, [K x i64] }` | tag width follows the variant count (`i8` upward); the payload is the widest variant's union | alloca (stack) |
 | struct | sum of fields | each field | alloca (stack) |
+
+**`?T`'s size is computed, not fixed**: `?i64` = 16 bytes, `?str` = 24, `?txt` = 264, and a payload
+above `option-inline-threshold` (default 264 = 1 + 7 + 256, minimum 16) is heap-boxed, taking the
+whole option back to 16 bytes. Each payload type gets its own `%option_<key>` type
+(`src/mir/layout.go`), so "same type ⇔ same layout". The `err` payload is always boxed and never
+competes for the payload budget. See `docs/docs/lang/syntax.md` "Nullable Types (option) · Memory
+Layout".
+
+A **tagged enum**'s tag width follows the variant count (`<=256` → `i8`, `<=65536` → `i16`, `<2^32` →
+`i32`, otherwise `i64`); the payload union is as wide as the **single widest variant**, not the sum of
+all of them, and its fields are laid out with natural alignment and addressed by **byte offset**.
+When every variant is payload-less the layout degenerates to `{ iN }` (one byte upward).
 
 **`str`'s u32 header**: `%str-long = type { i32, i32, i8* }` (16 bytes on 64-bit targets).
 `len` / `cap` are `u32` (LLVM `i32`) internally, while **every public API stays `i64`**: reads
@@ -86,10 +100,10 @@ verifier will not stop it, but the 8-byte access silently clobbers the adjacent 
 (measured: `s.len-bytes()` once returned `len | cap<<32`).
 
 Every size constant follows the 16-byte descriptor: the `[]str` element stride, the argv
-backing store of `os.args()`, the `?str` / enum payload slot count (2 i64 words — the first
-packs len and cap), and global string constants spelled `{ i32 len, i32 cap, i8* data }`.
-The option's default 24-byte inline payload slot is **unchanged** (both 16-byte
-`%str-long` and `%vec` still fit). `txt` keeps its fixed 256-byte layout and does not adopt u32.
+backing store of `os.args()`, and global string constants spelled `{ i32 len, i32 cap, i8* data }`.
+`?str`'s payload is exactly those 16 bytes (two i64 words, the first packing len and cap), so
+`?str` is a 24-byte inline option and a `str` variant in a tagged enum occupies two words.
+`txt` keeps its fixed 256-byte layout and does not adopt u32.
 
 **`[]T`'s u32 header**: `%vec = type { i32, i32, i64 }` (16 bytes). `len` / `cap` mirror `str`
 (u32 inside, `i64` in every public API); the difference is that **the data field stays `i64`**
@@ -261,7 +275,8 @@ b[0] = 99
 | `?[]T` | Yes | inline-payload option: clone the option and the inner slice's data (per-element clone; recurses when the element owns heap, e.g. `?[]str`) |
 
 > **`?str` / `?[]T` are inline-payload but heap-owning.** Their payload lives directly in the option's
-> default 24-byte slot (`?str` uses only the first 16 bytes for `{ u32 len, u32 cap, i8* data }`),
+> own `%option_<key>` (`?str` is `{ i8 tag, [2 x i64] }`, the 16-byte payload holding
+> `{ u32 len, u32 cap, i8* data }`),
 > but the `str` data / slice backing store inside it is heap-allocated ⇒ **the clone must deep-copy the
 > payload, and the free must release it**, and the two sides must stay paired. Freeing `?[]T` goes through the
 > same deep-free helper as `[]T` (recursing by element type), so "deep clone pairs with deep free" holds here

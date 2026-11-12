@@ -244,9 +244,43 @@ t-parse-response = () {
     }
 }
 
+; 解析入口的失敗路徑（resolve-from / resolve / resolve-all）
+;
+; 為什麼只能測失敗臂：這三支都硬編碼 DNS-PORT(53)，本機跑測試的使用者沒有
+; root，綁不上 53 埠，也就造不出假的 DNS 伺服器。可測的契約是：
+;   ① 空域名 —— build-query 直接回 qlen = 0，函式在開 socket 之前就返回 nil，
+;      完全不碰網路（resolve 的兩次嘗試都走這條）；
+;   ② 伺服器位址非法 —— net-udp-sendto 失敗 ⇒ 走 `written < 0` 分支並關閉 fd；
+;   ③ 伺服器位址合法但沒有服務 —— 收滿 DNS-TIMEOUT(3s) 後回 nil。
+; 三條都必須回 nil、不得崩、不得掛死。
+nil-str = (v ?str, msg str) {
+    v: {
+        ok -> runner.is-true(false, msg - ' [got value]')
+
+        nil -> runner.is-true(true, msg)
+
+        err -> runner.is-true(false, msg - ' [err]')
+    }
+}
+
+t-resolve-miss = () {
+
+    ; ① 空域名：不打網路，立即 nil
+    nil-str(dns.resolve(''), 'resolve: 空域名 ⇒ nil')
+    nil-str(dns.resolve-all(''), 'resolve-all: 空域名 ⇒ nil')
+    nil-str(dns.resolve-from('8.8.8.8', ''), 'resolve-from: 空域名 ⇒ nil')
+
+    ; ② 非法伺服器位址：sendto 失敗，走 early return（並需正確關閉 fd）
+    nil-str(dns.resolve-from('not-an-ip', 'example.com'), 'resolve-from: 非法伺服器 ⇒ nil')
+
+    ; ③ 合法但無服務的伺服器：loopback 的 53 埠沒有監聽者
+    nil-str(dns.resolve-from('127.0.0.1', 'example.com'), 'resolve-from: 無回應 ⇒ nil（逾時）')
+}
+
 runner.test('build-query', t-build-query)
 runner.test('parse-name', t-parse-name)
 runner.test('parse-response', t-parse-response)
+runner.test('resolve-miss', t-resolve-miss)
 runner.summary()
 f = runner.failed-count()
 f > 0 -> exit(1)

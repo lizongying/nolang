@@ -40,6 +40,14 @@ TLS-CT-ALERT = 21
 TLS-CT-HANDSHAKE = 22
 TLS-CT-APP-DATA = 23
 
+; 單次 TLS 讀取的輪詢上限（每次 500us）。舊值 4000 = 2 秒，實測不夠：
+; 純 Nolang 的 RSA-2048 解密在本機要 ~4.2 秒，跨進程的 TLS 1.2
+; static-RSA 握手（客戶端要等伺服器算完 premaster 才回 CCS/Finished）
+; 一定超時，表現為 read-change-cipher-spec / read-finished 回 false。
+; 20000 = 10 秒留足餘量；只有對端真的死掉時才會多等這段時間。
+; 迴歸：test/std/tls.no 的 'handshake fork 1.2'。
+RECV-WAIT-TRIES i64 = 20000
+
 ; Handshake message types
 ; [TLS-HS-CLIENT-HELLO](#tls.tls-hs-client-hello)
 TLS-HS-CLIENT-HELLO = 1
@@ -581,7 +589,7 @@ net-recv-wait = (fd fd, buf str, n i64) (r i64) {
                 ->
             }
         }
-        tries > 4000 -> {
+        tries > RECV-WAIT-TRIES -> {
             ; ⚠️ 這裡**不能** print 任何東西：std 往 stdout 寫會污染使用者程式的輸出
             ; （原先是 `print('RECVWAIT giveup tries=')` + `print(tries)` 的除錯殘留，
             ; 任何 TLS 讀取逾時都會在用戶輸出裡插一行，2026-11-11 移除）。
@@ -5170,11 +5178,12 @@ conn.connect = (host str, port i64) (ok bool) {
     ; 1. TCP 連線（使用 dns-dial 支援 hostname 解析）
     tcpfd = dns.dial(host, port)
     tcpfd < 0 -> return
-    tcpfd: {
-        ok -> .fd = it
-
-        -> _
-    }
+    ; ⚠️ 2026-11-12 修：此處原本寫成 `tcpfd: { ok -> .fd = it  -> _ }`。
+    ; dns.dial 回的是**普通 `fd`**（非 `?fd`），普通值不會匹配 `ok` 臂
+    ; （實測 `f: { ok -> … }` 對 fd 恆走 `->` 臂），所以 `.fd` 一直是 -1，
+    ; 之後所有 send/recv 都打在 -1 上 ⇒ connect() 對任何真實對端都失敗。
+    ; 迴歸：test/std/tls.no 的 'handshake fork 1.3'。
+    .fd = tcpfd
     .connected = true
 
     ; 2. 送出 TLS 1.3 ClientHello（同時支援 1.2 fallback）
@@ -5229,11 +5238,8 @@ conn.connect-12 = (host str, port i64) (ok bool) {
     ; 1. TCP 連線
     tcpfd = dns.dial(host, port)
     tcpfd < 0 -> return
-    tcpfd: {
-        ok -> .fd = it
-
-        -> _
-    }
+    ; 同 conn.connect：dns.dial 回普通 fd，不能用 `ok` 臂接（否則 .fd = -1）
+    .fd = tcpfd
     .connected = true
 
     ; 2. 送出 TLS 1.2 ClientHello
@@ -5758,10 +5764,14 @@ server-conn.read-client-hello = () (ok bool) {
 
                     ; client 端: 1 byte list length + versions
 
-                    sv-list-len = buf[pos]: {
-                        ok -> it
+                    ; ⚠️ 必須先落進 i64 再相加：`x = buf[pos]: { ok -> it }` 的型別是
+                    ; **byte**，`i64 + byte` 會靜默失敗並走 `-> 0` 臂 ⇒ sv-end 恆為 0、
+                    ; 內層 while 永不進入 ⇒ is-tls13 恆 false（2026-11-12 修）。
+                    sv-list-len = 0
+                    buf[pos]: {
+                        ok -> sv-list-len = it
 
-                        -> 0
+                        -> _
                     }
                     #{overflow=wrap}
                     sv-pos = pos + 1: {

@@ -88,6 +88,11 @@ type lowerer struct {
 	mod       *Module
 	b         *Builder
 	funcNames map[string]int32 // nolang function name -> HIR node id
+	// layMod is a module-only codegen used purely for BYTE LAYOUT: option and
+	// enum payload sizes. It exists so hir2mir asks the emitter's own layout
+	// engine (layout.go) instead of re-deriving sizes — the two must agree to
+	// the byte or the folded constant and the runtime store disagree.
+	layMod *codegen
 	// aliases maps a bare name declared with `@ <path>.<fn> <alias>` (see
 	// hir.AliasDecl) to its target. Only names declared by a module in THIS
 	// program are present; an alias never shadows a real definition.
@@ -584,14 +589,12 @@ func (l *lowerer) collectTaggedEnum(pkg *hir.Package, id int32) {
 	}
 	_, inlineVal := l.inlineAnnotation(id)
 	info := &TaggedEnumInfo{Name: name, Inline: inlineVal}
-	slots := int64(1) // never zero-width: a unit-only enum still needs a payload array
 	for _, c := range pkg.Children(id) {
 		vn := pkg.Node(c)
 		if vn == nil || vn.Kind != hir.KVariant {
 			continue
 		}
 		v := VariantInfo{Name: pkg.Str(vn.S), Tag: int64(len(info.Variants))}
-		var total int64
 		for _, fc := range pkg.Children(c) {
 			fn := pkg.Node(fc)
 			if fn == nil || fn.Kind != hir.KStructField {
@@ -603,7 +606,6 @@ func (l *lowerer) collectTaggedEnum(pkg *hir.Package, id int32) {
 			}
 			v.Fields = append(v.Fields, raw)
 			v.FieldNames = append(v.FieldNames, pkg.Str(fn.S))
-			total += l.enumFieldSlots(raw)
 		}
 		if len(v.Fields) == 0 {
 			// Single-field payloads are carried on the variant's own Type in
@@ -612,16 +614,53 @@ func (l *lowerer) collectTaggedEnum(pkg *hir.Package, id int32) {
 			if raw := pkg.Type(vn.Type); raw != "" && raw != "void" {
 				v.Fields = append(v.Fields, raw)
 				v.FieldNames = append(v.FieldNames, "")
-				total += l.enumFieldSlots(raw)
 			}
 		}
 		info.Variants = append(info.Variants, v)
-		if total > slots {
-			slots = total
+	}
+	l.fillEnumLayout(info)
+	l.mod.TaggedEnums[name] = info
+}
+
+// fillEnumLayout records the byte-level facts every consumer of the enum needs:
+// the discriminant width, each variant's natural-aligned field offsets and own
+// size, and the tight union (max variant size, NOT the sum).
+//
+// This is the ONLY place a tagged enum's layout is decided. codegen reads these
+// numbers through layout.go's accessors (enumFieldOffset / enumStructBody), so a
+// field written at hir2mir's offset is read at exactly the same offset — the
+// drift between the slot-counting and the emitter that used to exist here is
+// what produced out-of-bounds payload writes.
+func (l *lowerer) fillEnumLayout(info *TaggedEnumInfo) {
+	bits, lt := tagWidth(len(info.Variants))
+	info.TagBits, info.TagLT = bits, lt
+	lb := l.layoutCg()
+	var unionBytes, unionAlign int64 = 0, 1
+	for i := range info.Variants {
+		v := &info.Variants[i]
+		offs, size, align, rounded := lb.enumVariantLayout(v, map[string]bool{})
+		v.FieldOffsets = offs
+		v.VariantSize = size
+		v.VariantAlign = align
+		v.Rounded = rounded
+		if size > unionBytes {
+			unionBytes = size
+		}
+		if align > unionAlign {
+			unionAlign = align
 		}
 	}
-	info.PayloadSlots = slots
-	l.mod.TaggedEnums[name] = info
+	info.UnionBytes, info.UnionAlign = unionBytes, unionAlign
+	info.UnitOnly = unionBytes == 0
+	if info.UnitOnly {
+		info.PayloadSlots = 0
+		return
+	}
+	words := (unionBytes + 7) / 8
+	if words < 1 {
+		words = 1
+	}
+	info.PayloadSlots = words
 }
 
 // inlineAnnotation returns the `#{inline}` annotation's boolean value on a
@@ -660,30 +699,12 @@ func enumFieldIndex(v *VariantInfo, name string) int {
 	return -1
 }
 
-// enumFieldSlots returns how many 8-byte payload slots one field occupies.
-// The payload is a union, so a field only has to fit — but it must fit for
-// every variant, hence the enum's slot width is the max over variants.
-func (l *lowerer) enumFieldSlots(raw string) int64 {
-	switch raw {
-	case "str", "vec":
-		return 2 // %str-long = { i32, i32, i8* } / %vec = { i32, i32, i64 } = 16 bytes
+// layoutCg returns the module-only codegen used for byte-layout queries.
+func (l *lowerer) layoutCg() *codegen {
+	if l.layMod == nil {
+		l.layMod = newLayoutCodegen(l.mod)
 	}
-	if strings.HasPrefix(raw, "[]") {
-		return 2
-	}
-	if ty.IsOptionRaw(raw) {
-		return 4 // %option = 32 bytes (i64 tag + 24-byte payload slot)
-	}
-	if fields, ok := l.mod.StructFields[raw]; ok {
-		var n int64
-		for _, f := range fields {
-			n += l.enumFieldSlots(f.TypeRaw)
-		}
-		if n > 0 {
-			return n
-		}
-	}
-	return 1
+	return l.layMod
 }
 
 // typeHintRaw returns the nolang type string of the type expected at the
@@ -2199,12 +2220,8 @@ func (l *lowerer) enumArmFieldValue(name string) (ValueID, bool) {
 	if ft == NoType || ft == l.voidType {
 		return NoVal, false
 	}
-	var slot int64
-	for k := 0; k < fi; k++ {
-		slot += l.enumFieldSlots(l.armVariant.Fields[k])
-	}
 	fv := l.b.Emit(OpEnumField, ft, []ValueID{subj}, "")
-	l.mod.Insts[len(l.mod.Insts)-1].Int = slot
+	l.mod.Insts[len(l.mod.Insts)-1].Int = l.layoutCg().enumFieldOffset(l.armVariant, fi)
 	return fv, true
 }
 
@@ -3332,12 +3349,8 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						}
 						if fi >= 0 && fi < len(l.armVariant.Fields) {
 							if ft := l.b.Type(l.armVariant.Fields[fi]); ft != NoType && ft != l.voidType {
-								var slot int64
-								for k := 0; k < fi; k++ {
-									slot += l.enumFieldSlots(l.armVariant.Fields[k])
-								}
 								fv := l.b.Emit(OpEnumField, ft, []ValueID{val}, "")
-								l.mod.Insts[len(l.mod.Insts)-1].Int = slot
+								l.mod.Insts[len(l.mod.Insts)-1].Int = l.layoutCg().enumFieldOffset(l.armVariant, fi)
 								val = fv
 								// This arm now BINDS the field to `name`. Record
 								// it so a read of `name` in the arm body reuses
@@ -3365,12 +3378,9 @@ func (l *lowerer) lowerStmtInner(id int32) {
 		// (fs.file / []byte) instead of the err message (str) — tripping
 		// opt-verify with a type mismatch (tests/fs-error-complete.no,
 		// opt-struct-field.no).
-		// Clone the peeled payload: the option ALSO owns the err-payload buffer,
-		// so sharing it would double-free on drop — the same trap as the ?str
-		// receiver unwrap (resolveCallee). The err payload is bitcast-compatible
-		// with the option slot's declared OK-payload type (both 24-byte
-		// {len,cap,data} / {a,b,c} structs), so emitMove's peel+bitcast path
-		// yields a correct %str-long.
+		// Clone the peeled payload: the option ALSO owns the err payload (and
+		// its box), so sharing it would double-free on drop — the same trap as
+		// the ?str receiver unwrap (resolveCallee).
 		if val != NoVal {
 			if raw := l.pkg.Type(n.Type); raw == "err" {
 				if vt := l.valueTypeOf(val); vt != NoType && vt != l.voidType {
@@ -3378,25 +3388,16 @@ func (l *lowerer) lowerStmtInner(id int32) {
 						// The err payload is the option's declared err-variant
 						// type (option { ..., err(e err.err) }), whatever the
 						// OK element is, so peel + clone it into `it` as an
-						// independently-owned value for BOTH shapes:
-						//   - non-scalar (?str / ?fs.file / ...): the err str
-						//     fits in the payload slot, so emitMove re-puns
-						//     the slot (test_fs_error_complete,
-						//     test-opt-struct-field).
-						//   - scalar (?i64 / ?u8 / ?bool / ...): with the OLD
-						//     flat `%option = { i64, i64 }` the payload was 8
-						//     bytes, far too small for a %str-long, so the
-						//     peel was deliberately skipped and `it` stayed
-						//     the whole option — every str use of it then
-						//     emitted IR opt rejected ("defined with type
-						//     'i1' but expected '%str-long'"). The unified
-						//     layout (`%option = { i64 tag, [N x i64] slot }`,
-						//     see the "unified option layout" comment in
-						//     codegen.go) gives EVERY option a 24-byte slot,
-						//     so the err message fits and the same peel is
-						//     correct for scalars too.
-						// DEPENDS ON the unified %option slot in codegen.go —
-						// scalar err arms cannot be validated until it lands.
+						// independently-owned value. The err payload is ALWAYS
+						// heap-boxed (codegen.errPayloadBoxed), so the peel is
+						// the same shape for every element kind: resolve the box
+						// under `tag == 2`, dereference it, clone. Nothing here
+						// depends on the OK payload's width any more — the old
+						// `%option = { i64, i64 }` skipped the peel for scalar
+						// options because an 8-byte slot could not hold a
+						// %str-long message, and every str use of `it` then
+						// emitted IR opt rejected ("defined with type 'i1' but
+						// expected '%str-long'").
 						// EVERY element kind peels the same way now. The old
 						// code peeled only str / struct / scalar elements and
 						// left a `?[]byte` err arm holding the OK payload
@@ -3417,13 +3418,14 @@ func (l *lowerer) lowerStmtInner(id int32) {
 							// (and, when it is boxed, the box), so
 							// sharing would double-free on drop.
 							//
-							// A structured err.err is ~72 bytes, far
-							// past the 24-byte slot, so it lives in a
-							// heap box: optPayloadAddrAs resolves the
-							// box under `tag == 2` and emitMove
-							// dereferences it, which is why the read
-							// works for a scalar option too (?i64 /
-							// ?bool / ...).
+							// A structured err.err is ~72 bytes and
+							// the historical 16-byte message does not
+							// fit a one-word `?i64` payload either, so
+							// the err payload ALWAYS lives in a heap
+							// box: optPayloadAddrAs resolves the box
+							// under `tag == 2` and emitMove dereferences
+							// it, which is why the read works for a
+							// scalar option too (?i64 / ?bool / ...).
 							errT := l.b.Type(l.mod.OptionErrRaw)
 							if errT == NoType || errT == l.voidType {
 								errT = l.b.Type("str")
@@ -5049,9 +5051,9 @@ func (l *lowerer) lowerSafeIndexAt(arrV, idxV ValueID, elemT, optT TypeID, inBou
 
 // indexOutOfRangeErr builds the `?T` value an out-of-range subscript yields:
 // `err('index out of range', code.index-out)` carrying the subscript's own
-// file:line:col. Returns NoVal when the option cannot carry a structured err
-// (the historical 24-byte str payload build), in which case the caller leaves
-// the slot at nil and the old behaviour stands.
+// file:line:col. Returns NoVal when std's structured err is not linked (the
+// historical %str-long message build), in which case the caller leaves the slot
+// at nil and the old behaviour stands.
 func (l *lowerer) indexOutOfRangeErr(optT TypeID, site int32) ValueID {
 	if optT == NoType || optT == l.voidType {
 		return NoVal
@@ -6653,10 +6655,10 @@ func (l *lowerer) lowerGlobalRef(name string) ValueID {
 			if ot := l.mod.tyOf(gtype); ot.IsOption() && ot.Elem != nil {
 				elemRaw := ot.ElemRaw()
 				// Option-typed module constant (`v ?i64 = 7`): fold the wrapped
-				// element into a proper `%option { i64 tag, [N x i64] slot }`
+				// element into a proper `%option_<key> { i8 tag, [K x i64] }`
 				// initializer. The generic foldConstText only yields the bare
 				// inner scalar ("i64 7"), which made the global declare as `i64`
-				// while every read expected `%option` — so the match-arm
+				// while every read expected the option type — so the match-arm
 				// comparison silently never matched (bug #1).
 				if ct := l.foldOptionGlobalConst(nn, initNode, elemRaw, name); ct != "" {
 					l.setGlobalConstText(gv, ct)
@@ -6709,15 +6711,23 @@ func (l *lowerer) foldStrLitConst(initNode *hir.Node, name string) string {
 }
 
 // foldOptionGlobalConst folds a top-level option-typed `let` (e.g. `v ?i64 = 7`)
-// into a `%option { i64 tag, [N x i64] slot }` LLVM constant. It mirrors the
+// into a `%option_<key> { i8 tag, [K x i64] }` LLVM constant. It mirrors the
 // runtime layout produced by emitOptionWrap: tag 0 (ok) plus the payload stored
 // inline in the slot's first i64 (scalars) or laid out word-by-word for
-// aggregates (%str-long is 16 bytes = 2 i64s, %vec 24 bytes = 3 i64s). Returns "" when
+// aggregates (%str-long is 16 bytes = 2 words, %vec is 16 bytes = 2 words).
+// Returns "" when
 // the element cannot be folded, leaving the global zero-initialized rather than
 // emitting malformed IR.
 func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name string) string {
-	slotBytes := optionSlotBytesFor(l.mod.OptionInlineThreshold)
-	n := int(slotBytes / 8)
+	// The option type and its payload width come from the emitter's layout
+	// engine, so the constant is spelled exactly like the runtime struct.
+	lay := l.layoutCg().optLayoutOfElem(elemRaw)
+	if lay.Boxed {
+		// A heap-boxed payload is a pointer that only exists at run time; a
+		// static global cannot hold one, so leave it zero-initialised.
+		return ""
+	}
+	n := int(lay.K)
 	if n < 1 {
 		n = 1
 	}
@@ -6748,7 +6758,7 @@ func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name st
 			parts[i] = "i64 0"
 		}
 		slot := fmt.Sprintf("[%d x i64] [%s]", n, strings.Join(parts, ", "))
-		return fmt.Sprintf("%%option { i64 0, %s }", slot)
+		return fmt.Sprintf("%s { i8 0, %s }", lay.LLVM, slot)
 	}
 	// Scalar element: fold and store into the slot's first i64.
 	elemCT := l.foldConstText(nn, elemRaw)
@@ -6770,7 +6780,7 @@ func (l *lowerer) foldOptionGlobalConst(nn, initNode *hir.Node, elemRaw, name st
 		// globals): emit a zeroed option rather than malformed IR.
 		slot = fmt.Sprintf("[%d x i64] zeroinitializer", n)
 	}
-	return fmt.Sprintf("%%option { i64 0, %s }", slot)
+	return fmt.Sprintf("%s { i8 0, %s }", lay.LLVM, slot)
 }
 
 // isScalarConst reports whether ct is a scalar LLVM constant (i1/i8/i16/i32/i64/

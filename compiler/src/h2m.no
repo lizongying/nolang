@@ -50,6 +50,12 @@
 ;         时非 '*' 一律 @str_concat；'*' 是重复 @_mir_str_repeat，h2m 无对应 op 故不放行）。@str_concat
 ;         造 rc=1 自拥有（两操作数各 memcpy 一份、不消耗）⇒ 结果登记 scope-exit 释放（与 s99j/s99k 同一
 ;         释放清单）；操作数按只读不释放（字面量指向静态常量）。混合 str/i64、str/txt（Go 先转标量再拼）未建模 ⇒ 计 unsup
+;   s104：str 相等/不等——'==' / '!=' 于两侧皆 TY-STR 时降 OP-STEREQ / OP-STNEQ（镜像 Go 专用 OpStrEq：
+;         icmp %str-long 非法，故降运行时 helper @str_eq，两串等 iff 长度相同且 memcmp==0）。结果恒 TY-I64（0/1），
+;         与 s72 f64 比较、s77 u64 比较同口径——比较结果不是 str，故落 %v 命名空间而非 %sv。
+;         **零改 cg / 零改 mir**：OP-STEREQ=63 / OP-STNEQ=64 早已在 mir.no 定义、cg.no 已实现，
+;         @str_eq 由 cg-runtime-prelude-full 每模块发一次；缺的只是本层这条降级臂。
+;         混合形（str == i64、str == ?str）与排序（str < str，Go 侧无对应降级）仍计 unsup
 ;   s99m：scope-exit 释放的放行/跳过（move 分析小型化）——撤除 s99k 的「含 OP-CALL 即整函数不放行」闸门：§5.6.1
 ;         铁律（传参不 retain／callee 不 release 参数／caller 在最后使用后 release）证明 call 是借用而非 move，含 call
 ;         亦释放；双释放改由 owner provenance 兜住——按「变量→owner」追踪 + retset（may-return）跳过「间接回传 r = u」
@@ -1416,6 +1422,19 @@ h2m-ty-of = (t ast, sg h2m-sigs, l h2m-lst, agg h2m-ctx, n i64) (code i64) {
                 os == '+' || os == '-' || os == '*' || os == '/' -> code = TY-F64
                 os == '<' || os == '>' || os == '<=' || os == '>=' || os == '==' || os == '!=' -> code = TY-I64
             }
+
+            ; s104：str 双侧——与降级侧 str 两臂同步（同 s74/s77「ty-of 与 dest 型别必须一起改」纪律）：
+            ;   比较族 == != ⇒ TY-I64（OP-STEREQ/STNEQ 的 dst 是 zext 后的 i64，不是 str）；
+            ;   拼接族 + - ⇒ TY-STR（s99l OP-STRCAT 的 dest）。
+            ;   🔴 缺这一支时 str 比较/拼接落在【含控制流（mem==1）】的函数里必挂：槽宽推不出（留 -1）
+            ;      ⇒ h2m-slot-decl 计 unsup、整函数不产码。实测 `a='x' b='y' c=a==b  if c==1 { … }`
+            ;      记 5 条 unsup，而同一份代码在直线式（mem==0）下不铺槽 ⇒ 正常产码——
+            ;      两种 mem 模式行为分岔，只有走控制流的那支才暴露。
+            a == TY-STR && b == TY-STR -> {
+                os2 = ast.str-at(t, d.s0)
+                os2 == '==' || os2 == '!=' -> code = TY-I64
+                os2 == '+' || os2 == '-' -> code = TY-STR
+            }
         }
         d.kind == asp.K-IDENTIFIER -> {
             nm = ast.str-at(t, d.s0)
@@ -2041,7 +2060,27 @@ h2m-lower-expr = (t ast, c h2m-ctx, sg h2m-sigs, n i64) (v i64) {
                 v = scid
                 ok-s = 1
             }
-            bop == 0 || lv == 0 || rv == 0 || (ok-i == 0 && ok-f == 0 && ok-u == 0 && ok-s == 0) -> h2m-mark(c)
+
+            ; s104：str 相等/不等——两侧皆 TY-STR 时 '==' ⇒ OP-STEREQ、'!=' ⇒ OP-STNEQ。
+            ;   镜像 Go 专用 OpStrEq：icmp %str-long 非法（LLVM 不许对聚合型发 icmp），故降运行时
+            ;   helper @str_eq（两串等 iff 长度相同且 memcmp==0）。**零改 cg / 零改 mir**：
+            ;   OP-STEREQ=63 / OP-STNEQ=64 早已在 mir.no 定义、cg.no:695/710 已实现，
+            ;   @str_eq 定义由 cg-runtime-prelude-full 每模块发一次（cg-runtime-str-eq）——
+            ;   缺的只是 h2m 这条降级臂（此前落默认 mark ⇒ 整函数不产码）。
+            ;   结果恒 TY-I64（0/1）：与 s72 f64 比较、s77 u64 比较同口径——比较结果不是 str，
+            ;   故 dest 记 TY-I64（cg 侧发 `zext i1 → i64` 落 %v 命名空间，非 %sv）。
+            ;   ⚠️ 只收「两侧同型 TY-STR」：str == ?str、str == i64 等混合形仍落 mark（宁缺勿错，
+            ;      权威侧由 checker 先转标量再比，自举无 checker 不臆造该转换）。
+            ;   ⚠️ 不放行 str 的 < > <= >=：Go 侧无对应降级（@str_eq 只判等），无权威可镜像。
+            ok-e = 0
+            bop > 0 && lv > 0 && rv > 0 && (bop == OP-CMPEQ || bop == OP-CMPNE) && h2m-vty-at(c, lv) == TY-STR && h2m-vty-at(c, rv) == TY-STR -> {
+                seid = h2m-alloc(c, TY-I64)
+                bop == OP-CMPEQ -> h2m-emit(c, OP-STEREQ, seid, lv, rv, '', TY-I64)
+                bop == OP-CMPNE -> h2m-emit(c, OP-STNEQ, seid, lv, rv, '', TY-I64)
+                v = seid
+                ok-e = 1
+            }
+            bop == 0 || lv == 0 || rv == 0 || (ok-i == 0 && ok-f == 0 && ok-u == 0 && ok-s == 0 && ok-e == 0) -> h2m-mark(c)
         }
 
         ; 调用降级：kid 序 = [被调用者][实参…]，c0 = 实参个数；

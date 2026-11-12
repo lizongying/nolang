@@ -266,7 +266,7 @@ func (b *Builder) Terminate(op Op, args []ValueID, targets []BlockID, sym string
 	b.Mod.Blocks[b.CurBlock].Term = &Term{Op: op, Args: args, Targets: targets, Sym: sym}
 }
 
-// EmitOptionWrap builds an inline ?T option value { i64 tag, payload } from a
+// EmitOptionWrap builds an inline ?T option value (`{ i8 tag, [K x i64] }`) from a
 // single payload value. It is the codegen primitive behind the nolang ?T
 // constructors val/ok/some (tag 0) and err (tag 2). The generic call path would
 // mis-resolve `err` to the std io.err stderr-writer (i64 result) and corrupt the

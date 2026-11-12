@@ -73,7 +73,19 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 | `[N]T`（固定陣列） | N × sizeof(T) | 元素內聯，**無 len/cap 描述符** | alloca（棧）或 malloc |
 | `str`（長字串） | **16 字節** | **u32 len, u32 cap, i8\* data** | malloc（堆） |
 | `txt`（固定字串） | 256 字節 | `[255 x i8]` data, i8 len | alloca（棧） |
+| `?T`（可空） | **按載荷定型**：`{ i8 tag, [K x i64] }` | 1 位元組標籤 + 7 位元組填充 + 載荷（8 的倍數） | alloca（棧）；載荷超門檻時改存堆指標 |
+| 標籤列舉 | `{ iN tag, [K x i64] }` | tag 寬度隨變體數（`i8` 起），載荷是最寬變體的 union | alloca（棧） |
 | 結構體 | 各欄位總和 | 各欄位 | alloca（棧） |
+
+**`?T` 的大小是算出來的，不是固定的**：`?i64` = 16 字節、`?str` = 24、`?txt` = 264，超過
+`option-inline-threshold`（預設 264 = 1 + 7 + 256，最小 16）的載荷改為堆裝箱、整個 option
+回到 16 字節。每個載荷型別各有自己的 `%option_<key>` 型別（`src/mir/layout.go`），因此
+「型別相同 ⇔ 佈局相同」。`err` 的載荷恆裝箱，不佔用載荷預算。詳見
+`docs/docs/lang/syntax.md`〈可空類型(option)・內存佈局〉。
+
+**標籤列舉**的 tag 寬度隨變體個數變化（`<=256` → `i8`、`<=65536` → `i16`、`<2^32` → `i32`、
+否則 `i64`），載荷 union 的寬度是「最寬的那一個變體」而不是全部相加，欄位按自然對齊擺放、
+以**位元組偏移**尋址。所有變體皆無載荷時佈局退化成 `{ iN }`（1 字節起）。
 
 **`str` 的 u32 header**：`%str-long = type { i32, i32, i8* }`（64 位元平台 16 字節）。
 `len` / `cap` 內部是 `u32`（LLVM `i32`），**所有對外 API 仍是 `i64`**：讀取時 `zext i32 -> i64`，
@@ -85,10 +97,9 @@ LLVM verifier 不會攔截，但會一次讀／寫 8 字節而把相鄰的 heade
 `s.len-bytes()` 曾回傳 `len | cap<<32`）。
 
 連帶的尺寸常數也必須跟著 16 字節：`[]str` 的 element stride、`os.args()` 的 argv backing
-store、`?str` / enum payload 的 slot 數（2 個 i64 words，第一個 word 打包 len 與 cap）、
-以及全域字串常量的 `{ i32 len, i32 cap, i8* data }` 字面量。option 預設的 24 字節 inline
-payload 槽位**沒有**改變（16 字節的 `%str-long` / `%vec` 都裝得下）。`txt` 維持原樣，
-不隨 `str` 改成 u32。
+store、以及全域字串常量的 `{ i32 len, i32 cap, i8* data }` 字面量。`?str` 的載荷正好是 16
+字節（2 個 i64 word，第一個 word 打包 len 與 cap），所以 `?str` 是 24 字節的內聯 option；
+標籤列舉裡 `str` 變體的載荷同樣是 2 個 word。`txt` 維持原樣，不隨 `str` 改成 u32。
 
 **`[]T` 的 u32 header**：`%vec = type { i32, i32, i64 }`（16 字節）。`len` / `cap` 與 `str`
 同構，內部是 `u32`、對外 API 仍是 `i64`；差異在 **data 欄位仍是 `i64`**（`ptrtoint` 編碼的
@@ -260,12 +271,15 @@ b[0] = 99
 | `?str` | ✅ | inline payload 的 option：clone 選項本身與其字串 data |
 | `?[]T` | ✅ | inline payload 的 option：clone 選項本身與內層切片的 data（逐元素 clone，`?[]str` 等元素擁有堆者遞迴） |
 
-> **`?str` / `?[]T` 是 inline payload，但擁有堆。** 它們的 payload 直接存在 option 預設的
-> 24 位元組槽裡（`?str` 只用了前 16 字節放 `{ u32 len, u32 cap, i8* data }`），
-> 但其中的 `str` data／slice backing store 是堆配置 ⇒ **clone 時要連 payload 一起深拷貝，
-> free 時要連 payload 一起釋放**，兩側必須成對。`?[]T` 的釋放走與 `[]T` 相同的深層 free helper
-> （依元素型別決定是否遞迴），所以「深層 clone 配深層 free」這條對偶在這裡同樣成立。
+> **`?str` / `?[]T` 是 inline payload，但擁有堆。** 它們的 payload 直接存在 option 自己的
+> `%option_<key>` 裡（`?str` 的結構是 `{ i8 tag, [2 x i64] }`，載荷 16 字節放
+> `{ u32 len, u32 cap, i8* data }`），但其中的 `str` data／slice backing store 是堆配置
+> ⇒ **clone 時要連 payload 一起深拷貝，free 時要連 payload 一起釋放**，兩側必須成對。
+> `?[]T` 的釋放走與 `[]T` 相同的深層 free helper（依元素型別決定是否遞迴），所以
+> 「深層 clone 配深層 free」這條對偶在這裡同樣成立。
 > ⚠️ 一般（非 `?str`/`?[]T`）的 option，payload 是借用或純值，**不擁有**堆，clone／free 都不碰它。
+> 載荷大到超過 `option-inline-threshold` 時 option 改存堆指標，那時 free 要連箱子一起釋放
+> （由 `Boxed` 決定，見 `src/mir/layout.go`）。
 
 ### 與 move 的區別
 - **深層 clone**：源和目標各自獨立擁有 data，函數結束各自 free

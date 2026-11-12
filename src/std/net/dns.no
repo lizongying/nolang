@@ -696,7 +696,15 @@ resolve-from = (server str, domain str) (ip ?str) {
     resp []byte = with-len(n)
     i <- [0..n): {
         resp[i]: {
-            ok -> it = resp-str.byte(i)
+
+            ; ⚠️ 2026-11-12 修：`.byte(i)` 回 `?byte`，直接寫進 byte 槽位會被
+            ; 存成 0（option 的標籤被當成值），於是 resp 全是 0、parse-response
+            ; 永遠找不到 A 記錄 —— resolve-from / resolve-all 從來沒成功過。
+            ok -> it = resp-str.byte(i): {
+                ok -> it
+
+                -> 0
+            }
 
             -> _
         }
@@ -749,7 +757,15 @@ resolve-all = (domain str) (ip ?str) {
     resp []byte = with-len(n)
     i <- [0..n): {
         resp[i]: {
-            ok -> it = resp-str.byte(i)
+
+            ; ⚠️ 2026-11-12 修：`.byte(i)` 回 `?byte`，直接寫進 byte 槽位會被
+            ; 存成 0（option 的標籤被當成值），於是 resp 全是 0、parse-response
+            ; 永遠找不到 A 記錄 —— resolve-from / resolve-all 從來沒成功過。
+            ok -> it = resp-str.byte(i): {
+                ok -> it
+
+                -> 0
+            }
 
             -> _
         }

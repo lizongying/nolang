@@ -189,6 +189,31 @@ val: {
 `err.err`，由 `err('msg')` / `err('msg', code.io)` 构造，位置在构造点自动注入）。
 解包优先用 `?t` 而非 `(val, ok bool)` 双返回。
 
+**内存布局（`?T` 与标签枚举，唯一来源 `src/mir/layout.go`）**：
+
+- `?T` **按载荷定型**：`%option_<key> = type { i8 tag, [K x i64] }`，载荷固定在字节偏移 8，
+  `K = roundUp8(sizeof(T))/8`。超过 `option-inline-threshold`（默认 **264** = 1 字节标签 +
+  7 字节填充 + 256 字节载荷，最小 16）的载荷改存堆指针，整个 option 回到 16 字节。
+  `err` 的载荷**恒装箱**，不占载荷预算。⇒ `?i64` = 16、`?str` = 24、`?txt` = 264。
+- 标签枚举：`%tenum_X = type { iN tag, [K x i64] }`。`iN` 随**变体个数**：`<=256` → `i8`、
+  `<=65536` → `i16`、`<2^32` → `i32`、否则 `i64`；`K` 取**最宽变体**（不是所有变体相加），
+  字段按自然对齐摆放在 union 里、以**字节偏移**寻址（偏移不一定是 8 的倍数）；全变体无载荷时
+  退化成 `{ iN }`（1 字节起）。
+- 🔴 **不要在别处重新推导尺寸 / 偏移**：`tagWidth` / `enumVariantLayout` / `enumUnionLayout` /
+  `optLayoutOfPayload` 是仅有的入口，`hir2mir.fillEnumLayout` 与 emitter 都读同一份结果。
+- 🔴 **option 不再是「统一表示法」**：任何「两个 option 按字节互拷」的旧假设都已作废（旧布局
+  每个 option 都是 `{i64, [3 x i64]}`，所以按字节复制天然成立）。典型陷阱是 `?=` 的 seed：
+  `out ?= p.nodes[0].kind`（根 `?node` → 结果槽 `?i64`）两侧**型别不同、宽度不同**，只能搬
+  `tag` + 恒装箱的 `err`，走 `@__nolang_opt_prop_<dst>__<src>`（`optPropagateState`）。
+  新增 option 互拷路径前先问：两侧载荷型别相同吗？不同就必须走传播而不是复制。
+- 🔴 **内联与装箱只改「放在哪」，不改所有权**：装载点必须给结构体载荷另起一份堆
+  （`optCloneInlinePayloadInto` 在 `emitOptionWrap` 的内联分支里就地对载荷做 ptr/leaf 深拷贝；
+  装箱路径由 `optStoreBoxedPayload` 在 box 里做同一件事）。漏掉这一步，option 与来源共享
+  str / vec 缓冲，两边各自 drop ⇒ 先 drop 的一方把另一方要读的内存还掉（`tests/yaml.no`
+  的 `to-json()` 连调两次、`tests/option-inline-clone.no`）。注意 `emitMove` 的同名分支是
+  **所有权移转**（来源豁免 drop），那里**不能**克隆，否则漏掉来源的缓冲。**验收口径：
+  同一个程序在任意 `--option-inline-threshold` 下输出必须逐字节一致**，差一档就是 bug。
+
 **联合类型别名**：`name = t1 | t2 | ...`，编译期按实参单态化（每个成员生成一份具体函数）。
 `int` / `float` / `num` / `string` 都是 std 用此语法定义的普通代码，**不是关键字**。
 

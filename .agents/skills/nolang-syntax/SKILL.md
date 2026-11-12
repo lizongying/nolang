@@ -4290,7 +4290,7 @@ The `compiler` block in `package.noml` controls compiler behavior:
 - `emit` (string): Output target backend. `"js"` = use JS backend (type erasure, no LLVM toolchain). Default empty = LLVM native backend. Command-line `--js` flag takes precedence.
 - `anonymous-fn-type` (bool): Whether anonymous function type syntax is permitted. Default false.
 - `link-libs` ([]string): C libraries to link.
-- `option-inline-threshold` (int): Byte threshold for inlining a `?T` payload into the option struct. Default **24**, minimum **8** (below 8 is a compile error, 8..23 warns). Command-line `--option-inline-threshold=N` and env `NOLANG_OPTION_INLINE_THRESHOLD=N` take precedence over this file. See the dedicated section below.
+- `option-inline-threshold` (int): Byte threshold for inlining a `?T` payload into the option struct, measured over the WHOLE struct (tag + padding + payload). Default **264** (= 1-byte tag + 7 bytes padding + 256-byte payload), minimum **16** (below 16 is a compile error; 16..23 keeps compiling but breaks `?str`-returning builtins). Command-line `--option-inline-threshold=N` and env `NOLANG_OPTION_INLINE_THRESHOLD=N` take precedence over this file. See the dedicated section below.
 
 The `range` annotation is particularly useful for `num` type (`num = int | float`) to mark valid value ranges. Range bounds can be integers or identifiers (e.g. constants):
 
@@ -4306,14 +4306,14 @@ If an annotation is not followed by a declaration, it remains a standalone `Anno
 `?T` (Option/Result) stores its payload either **inline** in the option struct or **behind a heap pointer**. Which one it is depends on one global compiler setting: the payload-inline threshold.
 
 ```bash
-# default: payload <= 24 bytes is inline, bigger is heap-boxed
+# default: payload <= 256 bytes is inline, bigger is heap-boxed
 no build main.no
 
-# more types inline, fewer heap allocations — handy when hunting a leak
-no build --option-inline-threshold=128 main.no
+# raise it: a 1 KiB struct payload stays inline, no box per value
+no build --option-inline-threshold=1032 main.no
 
-# tiny-stack / embedded: option is only 16 bytes, almost everything is boxed
-no build --option-inline-threshold=8 main.no
+# tiny-stack / embedded: every option is 16 bytes, almost everything is boxed
+no build --option-inline-threshold=16 main.no
 ```
 
 | | Scope | Controls |
@@ -4323,6 +4323,17 @@ no build --option-inline-threshold=8 main.no
 
 The two are independent and do not conflict: the annotation shapes a struct, the flag shapes Option/Result return values.
 
+**Layout it controls** — each payload type gets its own LLVM struct (see `src/mir/layout.go`):
+
+```llvm
+%option_<key> = type { i8 tag, [K x i64] payload }   ; inline, K = roundUp8(sizeof(T))/8
+%option_<key> = type { i8 tag, [1 x i64] payload }   ; boxed, the word holds an i8*
+```
+
+The tag is always **one byte** (an option has three variants) and the payload always starts at
+**byte offset 8** — the 1-byte tag plus 7 bytes of padding. So the threshold counts the **whole
+struct**, not just the payload: inline iff `8 + roundUp8(sizeof(T)) <= threshold`.
+
 **Configuration precedence (highest first)**
 
 1. command line `--option-inline-threshold=N` (`no build` and `no run`)
@@ -4331,13 +4342,28 @@ The two are independent and do not conflict: the annotation shapes a struct, the
 
 **Rules**
 
-- Default **24**: a `?str` ok payload is a 24-byte `%str-long`, so 24 is the smallest threshold at which it stays inline — builtins returning `?str` hard-fail below it (`?str option result needs an inline option slot (option-inline-threshold >= 24)`). The **err** payload is std's structured `err.err` (~72 bytes: code / msg / file / line / col), so tag 2 is heap-boxed at **every** threshold.
-- Minimum **8**: a payload must at least hold an `i64`. Values below 8 are a **compile error**.
-- **8..23** compiles but **warns**: `err payloads (a 24-byte str) no longer fit the slot and are heap-boxed`. The warning text predates the structured-error payload: what actually starts going through a pointer in this range are `?str` ok payloads (`err.err` was already boxed).
-- The threshold is rounded up to a whole number of `i64`s, so the option struct is `8 + 8*ceil(N/8)` bytes.
+- Default **264** = 1-byte tag + 7 bytes padding + 256-byte payload, i.e. "a payload of at most 256 bytes stays inline". `?txt` (a 256-byte inline buffer) lands exactly on that boundary and is the largest thing that inlines by default; `?i64` is 16 bytes and `?str` / `?[]T` / `?vec` are 24 bytes (16-byte descriptor).
+- The **err** payload is heap-boxed at **every** threshold: it is a pointer to std's structured `err.err`, so it never competes for the inline area. `?str` therefore stays a 24-byte inline value even at its `err` state.
+- Minimum **16** = the 8-byte tag area plus one payload word; anything smaller could not even hold an `i64`. Values below 16 are a **compile error**.
+- **16..23** compiles but breaks builtins that return `?str`: their `%str-long` payload (16 bytes → 24-byte option) no longer fits, so they hard-fail with `?str option result needs an inline option slot (option-inline-threshold >= 24)`.
+- `K` is rounded up to whole `i64` words, so an inline option is `8 + 8*K` bytes and a boxed one is 16.
+- **Two options of different payload types are different types.** `?=`'s propagation seed copies the
+  option at the ROOT of the right-hand chain into the result slot, and those payloads can differ
+  (`out ?= p.nodes[0].kind` seeds a `?i64` from a `?node`). Only the `tag` and the always-boxed `err`
+  cross that boundary — the `ok` payload is rewritten by the `ok` arm — so a plain byte copy between
+  two option shapes is never correct. This is a compiler-internal rule, but it is the one that makes
+  options safe to resize: under the old fixed-width layout a cross-payload copy "worked" by accident.
 - **Semantics never change.** This is a codegen/layout switch only: source stays `?T`, program output stays identical, only performance and allocation behaviour move. Do not use it to "fix" a behaviour difference — a difference across thresholds is a compiler bug.
+- **Where it lives never changes ownership.** At every *copy* store site a struct payload gets its
+  own heap either way — `optStoreBoxedPayload` deep-copies into the box, `optCloneInlinePayloadInto`
+  deep-copies in place inside the inline slot (called from `emitOptionWrap`). Without the inline half,
+  an option and its source share the same `str` / `vec` buffers and whichever drops first pulls the
+  memory out from under the other (`yaml.to-json()` called twice was the report). The *move* branch
+  in `emitMove` deliberately does NOT clone: there the option takes over the source's heap and the
+  source is exempt from drop, so cloning would leak it. This is the practical meaning of the rule
+  above: the same program must produce byte-identical output at any threshold.
 
-> Tuning it down is not free: `?str` is 24 bytes, so below 24 it becomes heap-boxed and every Option copy allocates another box. Only go below 24 when the target really is short on stack.
+> Tuning it down is not free: below 24 every `?str` result becomes heap-boxed and every Option copy allocates another box. Only go below that when the target really is short on stack.
 
 ## String Operations
 
@@ -4522,7 +4548,7 @@ sub-safe = (a i64, b i64) (result ?i64) {
 ```
 
 Notes:
-- `%option`'s `data` field is `i64`; narrow results (`i8`/`i16`/`i32`) are sign-extended before storage and truncated back on unwrap.
+- The option payload word is `i64`; narrow results (`i8`/`i16`/`i32`) are sign-extended before storage and truncated back on unwrap.
 - Unsigned arithmetic (`u8`/`u16`/`u32`/`u64`/`u128`) follows the **same rule** as signed: unannotated `+ - *` default to `option<int>` (overflow → `err`), not plain wrap.
 - `i128` operations do not support the `option` path (data field is only `i64`); they always degrade to silent wrap.
 - **`byte` / `char` are special cases** (2026-11-03 decision): their arithmetic has **no option mechanism** and ignores `#{overflow}` — `byte` overflow silently wraps with two's complement; `char` code-point arithmetic yielding a value outside the valid code-point range (`< 0` or `> 0x10FFFF`) produces **`-1`** (invalid-code-point sentinel). Rationale: `i8`–`i128` / `u8`–`u128` serve real business values (default `err` forces an explicit choice), while `byte` / `char` typical uses (byte streams, code-point iteration) naturally tolerate wraparound. To detect byte/char overflow, convert to a wider type first (e.g. `b.to-i64()`). (⚠️ not yet implemented — byte overflow currently stores a wide-domain value, char sentinel missing; tracked in `docs/design/option-unified.md` §3.1.)

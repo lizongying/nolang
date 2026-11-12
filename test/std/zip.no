@@ -25,6 +25,20 @@ mk-fill = (n i64, ch i64) (out []byte) {
     }
 }
 
+; 空的 writer（data / cd-data 都是空 vec，count = 0）
+;
+; ⚠️ 2026-11-12 修（編譯器缺陷，見 test/README §5.2m ①）：這裡原本被迫寫成
+; 「結果參數構造器」`mk-writer = () (out zip.writer) {}`，因為
+;     w = writer{}          ; 推導型別
+;     len(w.data)           ⇒ EmitLLVM: builtin str-len: receiver has no slot
+;     d = w.data.slice(...) ⇒ EmitLLVM: unknown callee d.to-hex
+; 根因不在 MIR 的欄位解析，而在**模組載入**：collectReferencedStdModules 掃
+; 結構體字面量時只認 `addRef(ex.Type)`（鍵是模組 ShortName），`zip.writer`
+; 這種帶點的名字因此永遠匹配不上，zip 模組體不進 merged ⇒ 結構體定義不進
+; HIR ⇒ MIR 的 StructFields 沒有 "zip.writer" ⇒ 頂層 let 被判為不可內聯而
+; 整條丟棄，綁定從未 materialize（w 是 void）。顯式標註之所以正常，是因為
+; walkType 的 NamedType 分支早就把前綴拆出來了。已改成兩條路徑同口徑，
+; 所以這裡回到最自然的 `zip.writer{}` 推導形態。
 ; ── 1. u16le / u32le 位元組輔助 ──────────────────────────────────────
 t-bytes-helpers = () {
     raw [8]byte = [0x34, 0x12, 0xef, 0xcd, 0xab, 0x89, 0x01, 0x00]
@@ -38,7 +52,7 @@ t-bytes-helpers = () {
 
 ; ── 2. writer 基本寫入單元 ───────────────────────────────────────────
 t-primitives = () {
-    w = writer{}
+    w = zip.writer{}
     w.write-u16(0x1234)
     w.write-u32(0x89abcdef)
     w.put(7)
@@ -58,7 +72,7 @@ t-primitives = () {
 
 ; ── 3. write-local-file 標頭布局（PK\x03\x04）────────────────────────
 t-local = () {
-    w = writer{}
+    w = zip.writer{}
     w.write-local-file('m.txt', 'xy'.to-bytes(), 0x12345678)
 
     runner.eq(len(w.data), 37, 'local header = 30 + 名稱 5 + 內容 2')
@@ -76,7 +90,7 @@ t-local = () {
 
 ; ── 4. write-cd-entry（PK\x01\x02）與 write-eocd（PK\x05\x06）────────
 t-cd-eocd = () {
-    w = writer{}
+    w = zip.writer{}
     w.write-cd-entry('m.txt', 0, 2, 2, 0x12345678)
     runner.eq(len(w.cd-data), 51, 'central directory entry = 46 + 名稱 5')
 
@@ -86,7 +100,7 @@ t-cd-eocd = () {
     nl = w.cd-data.slice(28, 30)
     runner.str-eq(nl.to-hex(), '0500', 4, '中央目錄名稱長度欄 = 5')
 
-    e = writer{}
+    e = zip.writer{}
     e.write-eocd(0, 0)
     runner.eq(len(e.data), 22, 'EOCD 固定 22 位元組')
     eh = e.data.slice(0, 22)
@@ -95,7 +109,7 @@ t-cd-eocd = () {
 
 ; ── 5. writer round-trip：add-file ×2 + add-dir + finalize ────────────
 t-roundtrip = () {
-    w = writer{}
+    w = zip.writer{}
     w.add-file('a.txt', 'hello'.to-bytes())
     w.add-file('b.txt', 'second entry'.to-bytes())
     w.add-dir('sub')

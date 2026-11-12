@@ -685,6 +685,43 @@ test-tilde-grouped-contrast = () {
 
 test-tilde-grouped-contrast()
 
+; ═══════════════════════════════════════════════════════════════════
+; s105（欄位尾 `;` 註釋）：`ps-is-struct-def` 的「型別後終結符」只認
+;   NEWLINE / COMMA / RBRACE / EOF，COMMENT 落進 fallback ⇒ 整個 `{ … }`
+;   退回 blockUnknown，該結構體**從未登記**。
+;
+;   為什麼以前沒被抓到：Go 的 `parser.nextToken()` 會自行跳過 COMMENT
+;   （src/lexer/lexer.go:562「parser 的 nextToken() 會自行跳過 COMMENT」），
+;   所以 Go 的 look()/peekToken 看不見 COMMENT；而本檔的 ps-peek-at 忠實
+;   回傳 COMMENT ⇒ 兩側對「型別後面那個 token 是什麼」判斷分歧。
+;
+;   後果不是「dump 差一個字」，是**整塊被當成語句塊**：實測 ast.no 的
+;   `ast` 結構體 12 個欄位裡有 3 個帶尾註釋 ⇒ `ast` 未入表 ⇒ h2m 的
+;   h2m-struct-find('ast') 回 -1 ⇒ 該模組 155 個函式簽名被判 bad（不入形、
+;   整支不產碼）。修好後自舉模組的簽名 bad 數 250 → 166（唯一行）。
+;
+;   ⚠️ 單行 `zz { x i64; c }` 在**權威側也是語法錯誤**（`;` 註釋吃掉 `}`），
+;      故本節只釘多行形；want 由 L2 oracle（`no ast`）實測取得。
+; ═══════════════════════════════════════════════════════════════════
+
+; 測試 struct-field-trailing-comment
+test-struct-field-trailing-comment = () {
+    got = parse-dump('zz {\n    x i64; 說明\n}\n')
+    want = 'Program{}\n    StructDefinition{name: zz, fields: 1}\n        StructField{name: x, type: i64}\n            NamedType{name: i64}'
+    runner.is-true(got.eq-full(want), '欄位尾 `;` 註釋 ⇒ 仍判 StructDefinition（s105）')
+}
+
+test-struct-field-trailing-comment()
+
+; 測試 struct-field-all-commented
+test-struct-field-all-commented = () {
+    got = parse-dump('zz {\n    x i64; a\n    y str; b\n}\n')
+    want = 'Program{}\n    StructDefinition{name: zz, fields: 2}\n        StructField{name: x, type: i64}\n            NamedType{name: i64}\n        StructField{name: y, type: str}\n            NamedType{name: str}'
+    runner.is-true(got.eq-full(want), '每個欄位都帶尾註釋 ⇒ fields: 2（註釋即欄位終結符）')
+}
+
+test-struct-field-all-commented()
+
 runner.summary()
 f = runner.failed-count()
 {

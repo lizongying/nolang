@@ -943,7 +943,9 @@ send-request = (conn quic.conn, method str, path str, host str, body str) (resp 
     written < 0 -> return
 
     ; ── 接收回應 ──
-    recv-buf []byte
+    ; ⚠️ 2026-11-12 修：原本是 `recv-buf []byte`（空 vec ⇒ data 指標 NULL），
+    ; recvfrom 拿到 NULL 必回 -1(EFAULT) ⇒ 回應**永遠**收不到，get/post 恆 nil。
+    recv-buf []byte = with-len(HTTP3-MAX-RESPONSE)
     n = net.net-udp-recvfrom(conn.fd, recv-buf, HTTP3-MAX-RESPONSE)
     n <= 0 -> return
 
@@ -1035,7 +1037,14 @@ get = (url str) (resp ?response) {
 
         err -> return
 
-        ok -> resp = send-request(it, HTTP3-METHOD-GET, path, host, '')
+        ok -> {
+
+            ; ⚠️ 2026-11-12 修：原本 send-request 之後就結束，conn 的 UDP fd
+            ; 從未關閉 —— 每次 get 都洩漏一個 socket。這裡用完即關。
+            c = it
+            resp = send-request(c, HTTP3-METHOD-GET, path, host, '')
+            c.close()
+        }
     }
 }
 
@@ -1058,7 +1067,11 @@ post = (url str, body str) (resp ?response) {
 
         err -> return
 
-        ok -> resp = send-request(it, HTTP3-METHOD-POST, path, host, body)
+        ok -> {
+            c = it
+            resp = send-request(c, HTTP3-METHOD-POST, path, host, body)
+            c.close()
+        }
     }
 }
 
@@ -1082,6 +1095,10 @@ http3-do = (method str, url str, body str) (resp ?response) {
 
         err -> return
 
-        ok -> resp = send-request(it, method, path, host, body)
+        ok -> {
+            c = it
+            resp = send-request(c, method, path, host, body)
+            c.close()
+        }
     }
 }

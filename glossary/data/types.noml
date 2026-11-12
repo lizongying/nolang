@@ -19,6 +19,17 @@ map 缺键返回 nil（值不存在）。两者语义不同，不要混用。
 
 option 本身是 #{buildin} 标签枚举：底层表示与构造由 runtime 的 %option 承载，
 不产生用户可见的 struct / union。
+
+內存佈局按載荷定型：每個載荷型別一個 %option_<key> = { i8 tag, [K x i64] }，
+標籤 1 位元組、載荷從位元組偏移 8 開始，K = roundUp8(sizeof(T))/8。
+?i64 = 16 位元組、?str = 24、?txt = 264；載荷超過 option-inline-threshold
+（預設 264 = 1 + 7 + 256，最小 16）改存堆積指標，整個 option 回到 16 位元組。
+err 的載荷恆裝箱，不佔載荷預算。權威實作：src/mir/layout.go。
+
+內聯與裝箱只改變「放在哪裡」，不改變所有權：拷貝時兩條路徑都給結構體載荷
+另起一份堆積（指標欄位遞歸、內聯擁有的 str / []T 緩衝克隆）；純移轉的賦值
+不克隆，由 option 接手來源的堆積。所以同一支程式在任意 option-inline-threshold
+下輸出必須完全一致 —— 差一檔就是編譯器 bug。
 `
       syntax: `
 name = (input i64) (result ?str) {

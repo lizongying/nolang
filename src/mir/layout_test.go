@@ -28,11 +28,11 @@ func TestLayoutTagWidth(t *testing.T) {
 
 func TestLayoutOptTypeKeyIsInjective(t *testing.T) {
 	cases := map[string]string{
-		"i64":   "i64",
-		"str":   "str",
-		"[]i64": "_x5b_x5di64",
+		"i64":     "i64",
+		"str":     "str",
+		"[]i64":   "_x5b_x5di64",
 		"fs.file": "fs_x2efile",
-		"a_b":   "a__b",
+		"a_b":     "a__b",
 	}
 	for raw, want := range cases {
 		if got := optTypeKey(raw); got != want {
@@ -87,33 +87,51 @@ func layoutCodegen(t *testing.T) *codegen {
 }
 
 func TestLayoutOptionSizes(t *testing.T) {
-	c := layoutCodegen(t)
+	mod := lowerForTest(t, layoutSrc)
+	c := newLayoutCodegen(mod)
+	c.optInlineLimit = optionInlineLimitDefault
+	// Size/K are keyed by the PAYLOAD LLVM TYPE, not the element spelling:
+	// `?i32`, `?bool` and `?i64` all lower their payload to i64 (MIR has one
+	// integer register width), so they are genuinely the same ABI type and
+	// share one `%option_*`.
 	cases := []struct {
-		raw   string
-		size  int64
-		k     int64
-		boxed bool
+		raw       string
+		payloadLT string
+		size      int64
+		k         int64
+		boxed     bool
 	}{
-		{"i64", 16, 1, false},
-		{"bool", 16, 1, false}, // narrow scalars normalise to i64 payloads
-		{"i32", 16, 1, false},
-		{"f64", 16, 1, false},
-		{"str", 24, 2, false},
-		{"[]i64", 24, 2, false},
-		{"txt", 264, 32, false},
-		{"small", 24, 2, false},  // 16-byte struct payload
-		{"big", 264, 32, false},  // 256-byte payload, exactly at the cap
-		{"huge", 16, 1, true},    // 264-byte payload, over the cap -> boxed
+		{"i64", "i64", 16, 1, false},
+		{"bool", "i64", 16, 1, false}, // bool normalises to the i64 payload
+		{"i32", "i64", 16, 1, false},
+		{"f64", "double", 16, 1, false},
+		{"str", "%str-long", 24, 2, false},
+		{"[]i64", "%vec", 24, 2, false},
+		{"txt", "%txt", 264, 32, false},
+		{"small", "%small", 24, 2, false}, // 16-byte struct payload
+		{"big", "%big", 264, 32, false},   // 256-byte payload, exactly at the cap
+		{"huge", "%huge", 16, 1, true},    // 264-byte payload, over the cap -> boxed
 	}
 	for _, tc := range cases {
-		lay := c.optionLayoutFor(tc.raw, optionInlineLimitDefault, nil)
+		lay := c.optLayoutOfElem(tc.raw)
 		if lay.Size != tc.size || lay.K != tc.k || lay.Boxed != tc.boxed {
 			t.Errorf("?%s: size=%d K=%d boxed=%v, want size=%d K=%d boxed=%v",
 				tc.raw, lay.Size, lay.K, lay.Boxed, tc.size, tc.k, tc.boxed)
 		}
-		if lay.LLVM != "%option_"+optTypeKey(tc.raw) {
-			t.Errorf("?%s: LLVM=%q", tc.raw, lay.LLVM)
+		if lay.PayloadLT != tc.payloadLT {
+			t.Errorf("?%s: payloadLT=%q, want %q", tc.raw, lay.PayloadLT, tc.payloadLT)
 		}
+		// The type name is derived from the payload, so it is injective in the
+		// payload by construction; checking the derivation keeps the two in
+		// step if the naming scheme ever changes.
+		if want := "%option_" + optTypeKey(tc.payloadLT); lay.LLVM != want {
+			t.Errorf("?%s: LLVM=%q, want %q", tc.raw, lay.LLVM, want)
+		}
+	}
+	// Two element spellings with the same payload must share one type — this is
+	// what makes the payload key the right identity for the ABI.
+	if a, b := c.optLayoutOfElem("i32"), c.optLayoutOfElem("i64"); a != b {
+		t.Errorf("?i32 and ?i64 must share a layout, got %q vs %q", a.LLVM, b.LLVM)
 	}
 }
 
@@ -202,8 +220,10 @@ func TestLayoutEnumUnion(t *testing.T) {
 			t.Fatal("enum wide not found")
 		}
 		ub, ua, k, _ := c.enumUnionLayout(ei, nil)
-		if ub != 16 || ua != 16 || k != 1 {
-			t.Fatalf("wide union = (%d,%d,%d), want (16,16,1)", ub, ua, k)
+		// 16 bytes needs two 8-byte payload words (alignment > 8 is the
+		// documented limitation: the payload array is [K x i64], align 8).
+		if ub != 16 || ua != 16 || k != 2 {
+			t.Fatalf("wide union = (%d,%d,%d), want (16,16,2)", ub, ua, k)
 		}
 	})
 }

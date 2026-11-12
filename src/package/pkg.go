@@ -17,12 +17,13 @@ type CompilerOptions struct {
 	// 空字串（預設）表示使用 LLVM 後端生成原生可執行檔。
 	Emit     string   `json:"emit,omitempty"`
 	LinkLibs []string `json:"link-libs,omitempty"`
-	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值（见 MIR codegen 的
-	// `%option = { i64 tag, [N x i64] slot }`）。默认 24 —— err 的载荷本质是
-	// 一个字符串（%str-long，16 字节：u32 len + u32 cap + i8* data），而 24 同时
-	// 覆盖 `%vec`（24 字节），是“任何 err 消息与 i64 切片都能原样内联”的
-	// 最小值。调大可让更大的结构体也内联；调小（最低 8）会让 err 消息也走
-	// 堆指针。小于 8 是编译错误。
+	// OptionInlineThreshold 是 `?T` 载荷内联的字节阈值，按**整个** option
+	// 结构计（见 src/mir/layout.go：`%option_<key> = { i8 tag, [K x i64] }`）。
+	// 默认 264 = 1 字节标签 + 7 字节填充 + 256 字节载荷，也就是“载荷不超过
+	// 256 字节就内联”；`?txt`（256 字节内联缓冲）正好落在默认边界内，`?str`
+	// （16 字节描述符）与 `?vec`（16 字节）更不在话下。调小（最低 16，即
+	// 8 字节标签区 + 一个载荷字）会让描述符类载荷也走堆指针；小于 16 是
+	// 编译错误。err 载荷恒装箱，不参与这个预算。
 	OptionInlineThreshold int `json:"option-inline-threshold,omitempty"`
 	// ESMCDN 是 browser 模式下第三方 ESM 導入（# npm/…）的 import map CDN
 	// 前綴；空字串表示使用內建預設 https://esm.sh。

@@ -382,11 +382,141 @@ t-response = () {
     runner.is-true(missed, 'get-header miss -> nil')
 }
 
+; ── 連線入口（connect / send-request / get / post / http3-do）──
+;
+; 要走完 happy path 需要一台真的 HTTP/3 伺服器。這裡契約化的是**失敗臂**，
+; 也正是使用者最容易踩到的部分：URL 不合法或位址不可達時必須快速回 nil，
+; 不能掛死。回歸點（2026-11-12）：quic.dial 曾把「設定接收逾時」的守衛寫反
+; （`fd < 0` 才設定），可用的 fd 反而沒有逾時 ⇒ http3.get 會永久阻塞；
+; 同輪還修掉 send-request 傳空 vec 給 recvfrom（data=NULL ⇒ 恆 EFAULT，
+; 回應永遠收不到）與 get/post/http3-do 每次請求洩漏一個 UDP fd。
+
+t-connect = () {
+    o = http3.connect('127.0.0.1', 39347)
+    got = 0
+    o: {
+        ok -> {
+            c = it
+            got = 1
+            runner.eq(c.fd >= 0, 1, 'connect: 回 ok 且 QUIC fd >= 0')
+            c.close()
+            runner.eq(c.fd, -1, 'connect: 回傳的 conn 可正常關閉')
+        }
+
+        -> got = -1
+    }
+    runner.eq(got, 1, 'connect: UDP 到本機埠 ⇒ 回 ok')
+}
+
+; send-request 靠 conn.fd 收發。這裡自己開本機 UDP socket（不經 quic.dial，
+; 才能把接收逾時壓到 200ms），送給必然無回應的位址，走完
+; 「編標頭 → 編影格 → sendto → recv 逾時 → 回 nil」整條路徑。
+t-send-request = () {
+    c = quic.conn{}
+    c.init()
+    c.fd = net.net-udp-open()
+    opened = 0
+    c.fd >= 0 -> opened = 1
+    runner.eq(opened, 1, 'send-request: 本機 UDP socket 開啟成功')
+    net.net-set-recv-timeout(c.fd, 200)
+
+    ; net-udp-sendto 不做域名解析 ⇒ host 必須是點分 IPv4
+    c.host = '127.0.0.1'
+    c.port = 39347
+
+    hit = false
+    r = http3.send-request(c, 'GET', '/x', '127.0.0.1', '')
+    r: {
+        ok -> hit = true
+
+        nil -> hit = false
+
+        err -> hit = false
+    }
+    runner.is-false(hit, 'send-request: 無對端 ⇒ nil')
+
+    ; 帶 body 的 POST：多走 encode-data-frame 與 DATA 影格拼接
+    r2 = http3.send-request(c, 'POST', '/y', '127.0.0.1', 'hello')
+    hit2 = r2: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(hit2, 'send-request: 帶 body 的 POST 亦回 nil')
+
+    ; fd 已關閉的連線：直接在最前面 `conn.fd < 0 -> return`
+    c.close()
+    r3 = http3.send-request(c, 'GET', '/z', '127.0.0.1', '')
+    hit3 = r3: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(hit3, 'send-request: fd < 0 ⇒ 立即 nil')
+}
+
+; 三個門面的失敗臂：URL 不合法（parse-url 失敗）與主機不可達（sendto 失敗）
+t-facade-miss = () {
+
+    ; ① 不含 "://"：parse-url 回 false，連線都不建立
+    r1 = http3.get('no-scheme-here')
+    h1 = r1: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(h1, 'get: 非法 URL ⇒ nil')
+
+    r2 = http3.post('no-scheme-here', 'body')
+    h2 = r2: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(h2, 'post: 非法 URL ⇒ nil')
+
+    r3 = http3.http3-do('PUT', 'no-scheme-here', 'body')
+    h3 = r3: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(h3, 'http3-do: 非法 URL ⇒ nil')
+
+    ; ② URL 合法但主機是不可解析的位址：sendto 立即失敗 ⇒ 不打 recv
+    r4 = http3.get('https://256.256.256.256:81/x')
+    h4 = r4: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(h4, 'get: 主機不可達 ⇒ nil')
+
+    r5 = http3.post('https://256.256.256.256:81/x', 'body')
+    h5 = r5: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(h5, 'post: 主機不可達 ⇒ nil')
+
+    r6 = http3.http3-do('DELETE', 'https://256.256.256.256:81/x', '')
+    h6 = r6: {
+        ok -> true
+
+        -> false
+    }
+    runner.is-false(h6, 'http3-do: 主機不可達 ⇒ nil')
+}
+
 runner.test('header', t-header)
 runner.test('headers', t-headers)
 runner.test('frames', t-frames)
 runner.test('parse-url', t-parse-url)
 runner.test('response', t-response)
+runner.test('connect', t-connect)
+runner.test('send-request', t-send-request)
+runner.test('facade-miss', t-facade-miss)
 runner.summary()
 f = runner.failed-count()
 f > 0 -> exit(1)

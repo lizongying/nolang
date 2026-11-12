@@ -215,6 +215,13 @@ UNREACHABLE = {
     ('os', 'win-find-first-file'),
     ('os', 'win-find-next-file'),
     ('os', 'win-find-close'),
+    # str.cap：只有**属性**形态可用（`s.cap`），方法形态是 `#{buildin}` 文档壳，
+    # src/builtin 里没有对应 BuiltinMethodList 条目。两种调用形态实测：
+    #   u str = with-cap(16); u.cap()     ⇒ EmitLLVM: unknown callee str.cap
+    #                                       in func main [4qhyyund]
+    #   u str = with-cap(16); str.cap(u)  ⇒ 同上，一字不差
+    # 用户形态 `s.cap`（属性）已在 test/std/str.no 的 t-cap 覆盖。
+    ('str', 'cap'),
 }
 
 # 模块级「结构性不可调用」清单：源码被刻意保留、但构建链里没有任何路径能特化/调用它。

@@ -1,0 +1,147 @@
+; option-inline-clone.no — 内联载荷必须**自己拥有**堆内存，端到端断言
+;
+; 背景：`?T` 的载荷在 `8 + roundUp8(sizeof(T)) <= option-inline-threshold`（默认 264）
+; 时直接放进 option 槽（`%option_<key> = { i8 tag, [K x i64] }`），否则堆装箱。
+; 装载走 `optStoreInlinePayload`——一条 `store <T>` 的**逐字节**拷贝。于是
+; option 的载荷与来源共享同一批 str 缓冲／vec 块／嵌套指针；两边各自 drop 时，
+; 后 drop 的一方走的是已释放内存。
+;
+; 装箱路径从来不会这样：`optStoreBoxedPayload` 在 box 里顺手做深拷贝（ptr 字段
+; 递归、owned leaf 克隆）。内联路径原先缺这一步，于是 `?yaml`（56 B）/
+; `?yaml.node`（136 B）这类载荷在阈值 264 下依次踩中：`json_of` 里
+; `nd = npool.nodes[idx]`（安全下标产出的 `?node`）内联存一份节点，option drop
+; 时把节点的 text / keys 释放掉，而池自己还持有这些缓冲 —— 下一次走池就读到
+; 已释放内存（ASan: heap-use-after-free in str_clone，读的是 5 字节的 "first"）。
+;
+; 本文件钉的就是这条：**从容器里取出一个大结构，用完之后容器仍然完好**。
+; 断言刻意分三轮，并在两轮之间制造分配压力（新串 + 新节点），让被释放的缓冲
+; 有实际机会被复用；否则 free 之后内容没被覆盖，测试会假绿。
+;
+; 运行：no run tests/option-inline-clone.no < /dev/null
+;
+; ⚠️ `pad [5]i64` 不是为了业务，是为了把 node 撑到 104 B —— 小到足以内联
+; （< 264），又大到不会退化成“指针大小的标量”，从而真正走结构体内联装载。
+
+ck = (label str, cond bool) {
+    ! cond -> print('FAIL', label)
+
+    cond -> print('ok', label)
+}
+
+node {
+    kind i64
+    text str
+    keys []i64
+    pad [5]i64
+}
+
+pool {
+    nodes []node
+}
+
+; 安全下标 → `?node`（内联）→ 绑定出 `it` → 读它的 text
+; 每个 `?node` 临时在语句结束时 drop，若载荷不归自己，池里的 text 就被连带释放。
+pick-text = (p pool, i i64) (out str) {
+    out = ''
+    nd = p.nodes[i]
+    nd: {
+        nil -> out = '<nil>'
+
+        err -> out = '<err>'
+
+        -> {
+            n = it
+            out = n.text
+        }
+    }
+}
+
+; 取 `?node` 后立刻丢弃（不复用），单独验证 drop 不动池
+take-and-drop = (p pool, i i64) (gone bool) {
+    gone = false
+    nd = p.nodes[i]
+    nd: {
+        ok -> gone = true
+
+        -> gone = false
+    }
+}
+
+; 取 kind（读一份结构副本的标量字段）
+pick-kind = (p pool, i i64) (out i64) {
+    out = -1
+    nd = p.nodes[i]
+    nd: {
+        ok -> {
+            n = it
+            out = n.kind
+        }
+
+        -> _
+    }
+}
+
+; 取 keys 的个数（读一份结构副本的 vec 字段 —— 描述符是否还被池持有）
+pick-keys = (p pool, i i64) (out i64) {
+    out = -1
+    nd = p.nodes[i]
+    nd: {
+        ok -> {
+            n = it
+            out = n.keys.len()
+        }
+
+        -> _
+    }
+}
+
+t-inline-clone = () {
+    p pool
+    a node
+    a.kind = 1
+    a.text = 'alpha'
+    a.keys = [7]
+    p.nodes.push(a)
+    b node
+    b.kind = 2
+    b.text = 'beta'
+    p.nodes.push(b)
+    c node
+    c.kind = 3
+    c.text = 'gamma'
+    p.nodes.push(c)
+
+    ck('inline-clone:first', pick-text(p, 0) == 'alpha')
+
+    ; 制造分配压力：这些串会复用上面被（错误地）释放掉的缓冲
+    filler = ''
+    j <- [0..12): filler = filler - 'xxxxxxxxxxxxxxxx'
+    ck('inline-clone:filler', filler.len-bytes() == 192)
+
+    ck('inline-clone:second', pick-text(p, 1) == 'beta')
+    ck('inline-clone:third', pick-text(p, 2) == 'gamma')
+
+    ; 单次取出后立即丢弃，池仍可读
+    ck('inline-clone:dropped', take-and-drop(p, 0))
+    ck('inline-clone:after-drop', pick-text(p, 0) == 'alpha')
+
+    ; 池自身的形状没被 option 的 drop 破坏
+    ck('inline-clone:len', p.nodes.len() == 3)
+    ck('inline-clone:field', pick-kind(p, 2) == 3)
+    ck('inline-clone:keys', pick-keys(p, 0) == 1)
+
+    ; 再把整池走一遍，全部字段仍在（不复用任何计数变量，避免 `+` 的 ?i64）
+    ck('inline-clone:walk-0', pick-text(p, 0) == 'alpha')
+    ck('inline-clone:walk-1', pick-text(p, 1) == 'beta')
+    ck('inline-clone:walk-2', pick-text(p, 2) == 'gamma')
+}
+
+; 曾经想在这里再加一条 `?str` 的版本（`o ?str = ok(s)` 后把 s 换成新串，再看 o
+; 是否仍读到旧串）。实测**基线 HEAD 也是 SIGTRAP(133)**、断言 FAIL —— 这是
+; `?str` 移动语义的既有缺陷（§5.2 已登记），不是本轮布局改动的回归，所以不往
+; 这份 golden 里钉一个失败的预期。
+
+t-inline-clone()
+
+print('---')
+print('option-inline-clone done')

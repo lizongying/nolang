@@ -8,17 +8,16 @@ import "testing"
 // MIR used to bind every discard to ONE local named `_`, typed by the FIRST
 // discard. Later heterogeneous discards were lowered as EmitMoveInto rebinds
 // into that same slot, so the end-of-scope drop helper was chosen by the FIRST
-// payload's type. `?box` (32 B > the 24 B option slot) is heap-BOXED, so slot 0
-// is a pointer and its drop calls free(); `?[]i64` stores the %vec INLINE, so
-// slot 0 is a length. Dropping the latter with `__nolang_opt_drop_box` calls
-// free(len) -> SIGSEGV after the program has already printed everything.
-const blankDiscardSrc = `box {
-    a i64
-    b i64
-    c i64
-    d i64
-}
-fb = () (r ?box) {
+// payload's type — a `?str` drop called on a `?[]i64` value, whose payload is a
+// %vec header rather than a %str-long, frees the wrong field and SIGSEGVs after
+// the program has already printed everything.
+//
+// The two discards carry DIFFERENT payload TYPES (`%str-long` vs `%vec`), which
+// is what makes them need two different drop helpers. That, not the boxing
+// threshold, is the property under test: an option is dropped because its
+// payload OWNS heap, and both of these do at any threshold.
+const blankDiscardSrc = `fb = () (r ?str) {
+    r = 'x'
 }
 fv = () (r ?[]i64) {
     r = [10, 20, 30]
@@ -34,16 +33,11 @@ print('done')
 // nothing to type-pun, so exactly one option drop may be emitted. Without this
 // the "two option drops" assertion could pass on an implementation that drops
 // every value unconditionally.
-const blankDiscardOneSrc = `box {
-    a i64
-    b i64
-    c i64
-    d i64
+const blankDiscardOneSrc = `fv = () (r ?[]i64) {
+    r = [10, 20, 30]
 }
-fb = () (r ?box) {
-}
-a = fb()
-_ = a
+b = fv()
+_ = b
 print('done')
 `
 

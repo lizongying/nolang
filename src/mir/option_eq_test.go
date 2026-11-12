@@ -35,9 +35,10 @@ import (
 //
 // Distinguishing the two comparisons in the IR is the subtle part: for a scalar
 // payload BOTH are `icmp eq i64`, so the test cannot key on the instruction. It
-// keys on the OPERANDS instead — a tag comparison compares two `extractvalue
-// %option <v>, 0` results, a payload comparison compares two values loaded from
-// the payload slot. That difference is the semantics, not a naming convention.
+// keys on the OPERANDS instead — a tag comparison compares two discriminants
+// (an `extractvalue %option_<key> <v>, 0`, widened by `zext i8 … to i64`), a
+// payload comparison compares two values loaded from the payload slot. That
+// difference is the semantics, not a naming convention.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const optionEqSrc = `val-eq = (a ?i64, b ?i64) (out bool) {
@@ -73,16 +74,20 @@ u = arm(x)
 
 var (
 	andRE    = regexp.MustCompile(`(%[\w.]+) = and i1 (%[\w.]+), (%[\w.]+)`)
-	tagSrcRE = regexp.MustCompile(`(%[\w.]+) = extractvalue %option %[\w.]+, 0`)
-	icmpRE   = regexp.MustCompile(`(%[\w.]+) = icmp eq (?:i64|i32|i16|i8|i1) (%[\w.]+), (%[\w.]+)`)
-	fcmpRE   = regexp.MustCompile(`(%[\w.]+) = fcmp oeq`)
-	strEqRE  = regexp.MustCompile(`(%[\w.]+) = call i1 @str_eq`)
+	tagSrcRE = regexp.MustCompile(`(%[\w.]+) = extractvalue %option[\w_]* %[\w.]+, 0`)
+	// The tag is one byte; the comparisons in this file are all against i64, so
+	// every tag read is followed by a widening. The widening's result is the
+	// operand the icmp actually sees, so it must be a tag SOURCE too.
+	zextTagRE = regexp.MustCompile(`(%[\w.]+) = zext i8 (%[\w.]+) to i64`)
+	icmpRE    = regexp.MustCompile(`(%[\w.]+) = icmp eq (?:i64|i32|i16|i8|i1) (%[\w.]+), (%[\w.]+)`)
+	fcmpRE    = regexp.MustCompile(`(%[\w.]+) = fcmp oeq`)
+	strEqRE   = regexp.MustCompile(`(%[\w.]+) = call i1 @str_eq`)
 )
 
 // cmpShape classifies every comparison in one emitted function body.
 type cmpShape struct {
 	// tagCmp holds the comparisons of two discriminants (both operands come
-	// from `extractvalue %option <v>, 0`).
+	// from `extractvalue %option_<key> <v>, 0`).
 	tagCmp map[string]bool
 	// payloadCmp holds the comparisons that are NOT discriminant tests.
 	payloadCmp map[string]bool
@@ -92,6 +97,11 @@ func classifyComparisons(fn string) cmpShape {
 	tagSrcs := map[string]bool{}
 	for _, m := range tagSrcRE.FindAllStringSubmatch(fn, -1) {
 		tagSrcs[m[1]] = true
+	}
+	for _, m := range zextTagRE.FindAllStringSubmatch(fn, -1) {
+		if tagSrcs[m[2]] {
+			tagSrcs[m[1]] = true
+		}
 	}
 	s := cmpShape{tagCmp: map[string]bool{}, payloadCmp: map[string]bool{}}
 	for _, m := range icmpRE.FindAllStringSubmatch(fn, -1) {

@@ -82,22 +82,28 @@ print(plain())
 		// the data pointer is selected between the real buffer and a
 		// fallback, so the nil path never dereferences.
 		{"guarded pointer (select i8*)", regexp.MustCompile(`select i1 %[\w.]+, i8\* %[\w.]+, i8\* %[\w.]+`)},
-		{"fallback slot bitcast", regexp.MustCompile(`bitcast %option\* %[\w.]+ to i8\*`)},
+		{"fallback slot bitcast", regexp.MustCompile(`bitcast %option[\w_]*\* %[\w.]+ to i8\*`)},
 		{"byte payload widened", regexp.MustCompile(`zext i8 %[\w.]+ to i64`)},
 		{"tag select (ok/nil)", regexp.MustCompile(`select i1 %[\w.]+, i64 0, i64 1`)},
 		{"payload select", regexp.MustCompile(`select i1 %[\w.]+, i64 %[\w.]+, i64 0`)},
-		{"option result store", regexp.MustCompile(`store %option`)},
+		{"option result store", regexp.MustCompile(`store %option[\w_]* `)},
 	}
 	for _, c := range checks {
 		if !c.re.MatchString(sp) {
 			t.Errorf("@sprobe: missing %s\n%s", c.name, indented(sp))
 		}
 	}
-	// The option store must write the tag AND the payload: the tag field
-	// gep (i32 0, i32 0) and the payload slot gep (i32 0, i32 1) are what
-	// distinguish a real option construction from a bare scalar store.
-	if !strings.Contains(sp, "getelementptr inbounds %option, %option* %") {
-		t.Errorf("@sprobe: no option field gep — the result is not an option\n%s", indented(sp))
+	// The option store must write the tag AND the payload. With a per-payload
+	// option type the two halves are no longer named fields but fixed BYTE
+	// offsets: the tag is written with a full-struct store (`{ i8 n, [K x i64]
+	// zeroinitializer }`) and the payload through `gep i8, …, i64 8`. Asserting
+	// both is what distinguishes a real option construction from a bare scalar
+	// store.
+	if !regexp.MustCompile(`store %option[\w_]* \{ i8 \d+, \[`).MatchString(sp) {
+		t.Errorf("@sprobe: no zeroed option struct store — the result is not an option\n%s", indented(sp))
+	}
+	if !regexp.MustCompile(`getelementptr inbounds i8, i8\* %[\w.]+, i64 8`).MatchString(sp) {
+		t.Errorf("@sprobe: no payload byte-offset gep (i8, i64 8) — the result is not an option\n%s", indented(sp))
 	}
 
 	// --- txt receiver: len is the i8 field 1, so it must be zext'd ---
