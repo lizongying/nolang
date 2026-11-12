@@ -12,7 +12,8 @@
 ;   - ASCII 內容下三者相等；含多字節 UTF-8 時 len() < len-bytes()
 ;
 ; 索引語義（按碼點，與 str 的讀取行為對齊）：
-;   - txt[i] 讀取：返回碼點索引 i 處的 char（UTF-8 解碼），越界返回 -1
+;   - txt[i] 讀取：返回碼點索引 i 處的 char（UTF-8 解碼）；越界是**帶檢查**的讀取，回
+;     err('index out of range')（idxhndld 收口之後不再有 -1 哨兵；str 的 s[i] 同樣回 err）
 ;   - txt[i] = v 寫入：**已全域禁用**（checker 的 idxwrite，2026-11-12）。舊寫入會把
 ;     v 重新 UTF-8 編碼後移動尾部字節，i == 碼點數時隱式追加、超出 255 的部分靜默丟棄
 ;     —— 長度被寫入操作偷偷改變，正是這條禁令的理由。要改內容請用 place-match
@@ -26,18 +27,18 @@
 ;   b = t.len-bytes()    ; 字節數
 ;   c = t[0]             ; 首個碼點（char）
 ;   b = t.byte(0)        ; 首個字節（byte）
-;
-; txt {
-;     data [255]byte; 數據區域
-;     len byte; 字節長度（0-255）
-; }
-;
+
 ; 與 str 的區别：
 ;   - str 是堆分配的可變長度字符串
 ;   - txt 是棧分配的固定大小字符串（256 字節）
 ;   - txt 不需要堆分配，适合短文本場景
 ;   - txt 必須類型標注（t txt = 'abc'）
 ; [txt](#txt)
+#{buildin}
+txt {
+    data [255]byte; 數據區域
+    len u8; 字節長度（0-255）
+}
 
 ; 基础操作
 ...
@@ -49,7 +50,8 @@ txt.len = () (n i64) {
     n = .count()
 }
 
-; txt[i]: 按碼點索引讀取，返回 char（UTF-8 解碼，越界返回 -1）。
+; txt[i]: 按碼點索引讀取，返回 char（UTF-8 解碼；越界回 err('index out of range')，
+; 不再是 -1 哨兵 —— 寫測試請斷言 tag，不要把兜底值當期望值）。
 ; txt[i] = v 寫入**已全域禁用**（idxwrite，2026-11-12）：它會隱式改變長度（i 等於碼點數
 ; 即追加、超 255 靜默丟棄）。改內容用 place-match，變長用 .push / .push-str / .push-txt。
 ; 字節級原始訪問請用 .byte(i) / ._set-byte(i, b)。
@@ -315,10 +317,19 @@ txt.push = (c char) {
     en > room -> return
     i <- [0..en): {
 
+        #{overflow=wrap}
         ._set-byte(n + i, e.byte(i))
     }
 
-    .len = n + en
+    ; `n + en` 的型別是 ?i64（D1），而 `.len` 是 u8 字段 ⇒ 必須先兩段式解包成
+    ; plain i64 再賦值（直接寫 `.len = n + en` 會被 vet 判 15w45dqk）。
+    #{overflow=wrap}
+    sum = n + en: {
+        ok -> it
+
+        -> 255
+    }
+    .len = sum
 }
 
 ; 追加 str（位元組拷貝，不超出 255 限制；超過則**按位元組截斷**）
@@ -340,10 +351,18 @@ txt.push-str = (s str) {
     sn > remain -> sn = remain
     i <- [0..sn): {
 
+        #{overflow=wrap}
         ._set-byte(n + i, s.byte(i))
     }
 
-    .len = n + sn
+    ; 同 push：`n + sn` 是 ?i64，u8 字段要先解包（vet 的 15w45dqk 就是這條）。
+    #{overflow=wrap}
+    sum = n + sn: {
+        ok -> it
+
+        -> 255
+    }
+    .len = sum
 }
 
 ; 追加 txt（位元組拷貝，不超出 255 限制；超過則按位元組截斷）
@@ -353,15 +372,27 @@ txt.push-txt = (t txt) {
     tn = t.len-bytes()
     n i64 = .len-bytes()
 
+    ; 與 push / push-str 對齊：`-` 與 `+` 的結果都是 ?i64，兩段式解包。
     #{overflow=wrap}
-    remain = 255 - n
+    remain = 255 - n: {
+        ok -> it
+
+        -> 0
+    }
     tn > remain -> tn = remain
     i <- [0..tn): {
 
+        #{overflow=wrap}
         ._set-byte(n + i, t.byte(i))
     }
 
-    .len = n + tn
+    #{overflow=wrap}
+    sum = n + tn: {
+        ok -> it
+
+        -> 255
+    }
+    .len = sum
 }
 
 ; 截斷到指定長度
@@ -1514,6 +1545,7 @@ txt.replace-str = (old txt, new txt) (val txt) {
                 break
             }
 
+            #{overflow=wrap}
             .byte(i + j) != old.byte(j) -> {
                 match = 0
                 break

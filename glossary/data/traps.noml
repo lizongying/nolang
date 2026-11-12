@@ -966,6 +966,58 @@ s = b.to-bytes-str()
       related: ['with-cap-str-unwrap-write-dropped', 'with-len-write-not-exempt']
       refs: ['src/checker/checker.go', 'src/mir/codegen.go', 'docs/docs/lang/str.md', 'test/README.md']
     }
+    'str-null-data-eq-crash': {
+      title: '空 str 的 data 是 NULL：eq(x, n) 在 n > 0 时必崩'
+      kind: 'trap'
+      status: 'stable'
+      summary: '空 str（空串字面量与 str.slice 的提前 return 都是这种零值）data == NULL，任何按调用方给的 n 读它的接口（str.eq / runner.str-eq）在 n > 0 时直接 SIGSEGV；空串断言一律写 n = 0。'
+      aliases: ['空串 segfault', 'eq 崩溃', 'data == NULL', 'slice 越界回零值', 'runner.str-eq 崩', 'trace/BPT trap']
+      definition: `
+str 的零值就是「空串」：len = 0、cap = 0、data = NULL。它和正常的空串看起来
+一模一样 —— len-bytes() 回 0、byte(0) 回 nil、print 印空 —— 所以肉眼分不出来。
+
+陷阱在 str.eq：它是 #{buildin} eq-raw，MIR 端 src/mir/builtin_call.go 的
+emitBuiltinEqRaw 直接
+  call i32 @memcmp(i8* dataA, i8* dataB, i64 n)
+不检查指针是否为 NULL。n == 0 时 memcmp(NULL, …, 0) 合法（回 true），
+n > 0 时就是拿 NULL 去读 n 个字节 ⇒ 必崩（看到的信号可能是
+segmentation fault，也可能是 trace/BPT trap，取决於 n 与调用形态）。
+
+两种最常见的来源：
+  ① 空串字面量 e = ''（零值 str）；
+  ② str.slice 的提前 return：src/std/str.no 里 r-start >= r-end -> return 时
+     val str 停在零值 ⇒ s.slice(3, 3)、s.slice(6, 8)、任何越界切片拿回来的
+     都是 NULL-data 空串，不是''。想验「尾端内容」却写
+     s.slice(len, len + 2) 就一定踩这个坑。
+
+测试侧规矩：断言空串一律 runner.str-eq(x, '', 0, …)；要验非空内容就别用
+越界切片（那本来就取不到内容，只拿回一个假空串）。真要修，是在
+emitBuiltinEqRaw 开头加一支「任一 data 为 NULL ⇒ 结果 = n == 0」，
+别对 NULL 做有长度的 memcmp（见 test/README 的 §5.2 #106）。
+
+同族但不同罪：eq 本身也不检查自身长度，n 大于实际字节数时靠 memcmp 读越界
+（可能静默、也可能崩），所以 n 永远是调用方的责任。
+`
+      syntax: `
+e = ''
+e.eq('de', 0); true（n = 0 合法）
+
+e.eq('de', 1); ✗ 直接崩
+
+s = 'abcdef'
+v = s.slice(3, 3);  零值 str（data == NULL），不是 'def'
+`
+      example: `
+; 错误：拿越界切片 + n > 0 去验内容
+runner.str-eq(s.slice(6, 8), 'de', 2, 'tail'); ✗ SIGSEGV
+
+; 正确：空串只断言 n = 0，内容另找非越界的切片
+runner.str-eq(e, '', 0, 'empty')
+tail = s.slice(4, 6);  'ef'（start < end，真的拿得到内容）
+`
+      related: ['index-read-err-vs-nil', 'str-index-write-banned']
+      refs: ['src/mir/builtin_call.go', 'src/std/str.no', 'test/std/str.no', 'test/README.md']
+    }
     'builtin-read-does-not-grow-len': {
       title: '内建读写不更新 len：with-cap 缓冲接 fs.read 后 slice 恒为空'
       kind: 'trap'

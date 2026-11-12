@@ -61,12 +61,22 @@ ck = (label str, cond bool) {
     cond -> print('ok', label)
 }
 
+; 越界读现在是**带检查**的（idxhndld 收口之后）：回 err('index out of range')，
+; 不再是 -1 哨兵。用三臂 match 断言 tag，避免把某一路径的兜底值写成期望值。
+oob-is-err = (t txt, i i64) (bad bool) {
+    t[i]: {
+        ok -> bad = false
+        nil -> bad = false
+        err -> bad = true
+    }
+}
+
 ; ── 读取：码点索引 → char（UTF-8 解码）──
 t txt = 'A中B'
 ck('read-ascii-0', t[0] == 65)
 ck('read-cjk-1', t[1] == 20013)
 ck('read-ascii-2', t[2] == 66)
-ck('read-oob-neg1', t[3] == -1)
+ck('read-oob-err', oob-is-err(t, 3))
 
 ; 4 字节码点（🌍 = U+1F30D）
 e txt = '🌍x'

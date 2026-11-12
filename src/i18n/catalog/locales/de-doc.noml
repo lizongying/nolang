@@ -7894,13 +7894,6 @@ vergleicht zwei Zeichenketten auf exakte Gleichheit
 b str: die andere Zeichenkette
 Rückgabe yes bool: true = gleich, false = nicht gleich
 `
-  'str.eq-raw': `
-str.eq: vergleicht, ob die ersten n Bytes zweier Zeichenketten gleich sind
-gibt true = gleich, false = nicht gleich zurück
-b: die Ziel-Zeichenkette, gegen die verglichen wird
-n: Anzahl der zu vergleichenden Bytes
-eq: true=Empfänger und b sind über die ersten n Bytes byte-identisch
-`
   'str.fields': `
 teilt die Zeichenkette an einem oder mehreren aufeinanderfolgenden Leerzeichen
 Leerzeichen: Leerzeichen (32), Tabulator (9), Zeilenvorschub (10), Wagenrücklauf (13)
@@ -8016,14 +8009,6 @@ Gleiche Semantik wie Python rfind(target, from): durchsucht [from, .len) nach de
 target str: der zu suchende Teilstring
 from i64: die Startposition (inklusive untere Grenze, in Codepunkten)
 Rückgabe pos i64: die gefundene Codepunkt-(Zeichen-)Position, oder -1
-`
-  'str.set-byte': `
-Rückgabe ?bool (kann fehlschlagen): außerhalb des Bereichs (i < 0 oder i >= die Kapazität cap des Objekts) gibt nil zurück und **überspringt das Schreiben**;
-bei Erfolg gibt es some(true) zurück. Die Grenze nutzt cap (Objektkapazität) von %str-long statt len, sodass das Bauprogramm "erst den Puffer füllen,
-dann len setzen" weiterhin wie bisher funktioniert. Aufrufer dürfen das ?bool legal mit einer nackten Anweisung verwerfen (optunuse verfolgt nur Bindungsnamen).
-i: Byte-Index
-b: der zu schreibende Byte-Wert
-ok: ok=true=Schreiben gelungen, nil=i außerhalb des Bereichs (Schreiben übersprungen)
 `
   'str.slice': `
 nimmt den Teilstring [start, end), wobei die Indizes Zeichen-(Codepunkt-)Positionen sind
@@ -9439,18 +9424,6 @@ wandelt ein einzelnes Ziffernzeichen (0-15) in seinen Wert um; ein ungültiges Z
 c: der Codepunkt eines Ziffernzeichens
 d: 0~15; ungültige Zeichen geben -1 zurück
 `
-  'txt.append': `
-hängt ein Byte an (überschreitet nie die 255-Grenze)
-b: das anzuhängende Byte (wird ignoriert, wenn es die 255-Grenze überschreitet)
-`
-  'txt.append-str': `
-hängt ein str an (ohne die 255-Grenze zu überschreiten)
-s: das anzuhängende str (wird abgeschnitten, wenn die 255-Grenze überschritten würde)
-`
-  'txt.append-txt': `
-hängt ein txt an (ohne die 255-Grenze zu überschreiten)
-t: das anzuhängende txt (wird abgeschnitten, wenn die 255-Grenze überschritten würde)
-`
   'txt.at': `
 [veraltet] txt.at: Zeichen-(Codepunkt-)Indexlesen — verwende stattdessen t[idx] (native Indizierung, gibt ?char zurück)
 txt.at: ermittelt den Codepunktwert an einer Zeichenposition (für einen Byte-Versatz verwende t.byte(i))
@@ -9636,15 +9609,6 @@ Rückwärtssuche nach einem Teilstring beginnend bei from (gibt das letzte Vorko
 target: der zu suchende sub-txt
 from: die untere Grenze der Rückwärtssuche (inklusive, in Codepunkten)
 pos: Codepunkt-Position des letzten Vorkommens (>= from), -1 wenn nicht gefunden
-`
-  'txt.set-byte': `
-Gibt ?bool zurück (kann fehlschlagen): nil außerhalb des Bereichs (i < 0 oder i >= die 255-Byte-physikalische Kapazität), und das Schreiben wird ÜBERSPRUNGEN;
-some(true) bei Erfolg. Die Grenze ist die physikalische Kapazität (ein txt ist ein fester 255-Byte-Puffer) statt
-len, sodass Bauprogramme, die «erst den Puffer füllen, dann len setzen» (fill / from-str / to-hex / join), weiterhin wie bisher funktionieren.
-Ein Aufrufer darf das ?bool als nackte Anweisung verwerfen (optunuse deckt nur Bindungsnamen ab).
-i: Byte-Index
-b: der zu schreibende Byte-Wert
-ok: ok=true=Schreiben gelungen, nil=i außerhalb des Bereichs (Schreiben übersprungen)
 `
   'txt.slice': `
 nimmt den Teilstring [start, end) und gibt ein neues txt zurück

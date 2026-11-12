@@ -7894,13 +7894,6 @@ compara duas strings quanto à igualdade exata
 b str: a outra string
 Retorno yes bool: true = igual, false = não igual
 `
-  'str.eq-raw': `
-str.eq: compara se os primeiros n bytes de duas strings são iguais
-Retorna true = igual, false = não igual
-b: a string alvo a comparar
-n: número de bytes a comparar
-eq: true=o receptor e b são byte-idênticos nos primeiros n bytes
-`
   'str.fields': `
 divide a string em um ou mais caracteres de espaço em branco consecutivos
 Espaço em branco: espaço (32), tab (9), nova linha (10), retorno de carro (13)
@@ -8016,14 +8009,6 @@ Mesma semântica do rfind(target, from) do Python: procura [from, .len) pela úl
 target str: a substring a procurar
 from i64: a posição inicial (limite inferior inclusivo, em pontos de código)
 Retorno pos i64: a posição de ponto de código (caractere) encontrada, ou -1
-`
-  'str.set-byte': `
-Retorna ?bool (pode falhar): fora do intervalo (i < 0 ou i >= a capacidade cap da entidade) retorna nil e **pula a escrita**,
-Em caso de sucesso retorna some(true). O limite usa o cap (capacidade de entidade) de %str-long em vez de len, então "preencha o buffer primeiro,
-então defina len" o programa de construção ainda funciona como antes. O chamador pode legitimamente descartar o ?bool com uma statement nua (optunuse só rastreia nomes de vinculação).
-i: índice de byte
-b: o valor de byte a escrever
-ok: ok=true=escrita bem-sucedida, nil=i fora do intervalo (escrita pulada)
 `
   'str.slice': `
 toma a substring [start, end), com índices como posições de CARACTERE (ponto de código)
@@ -9439,18 +9424,6 @@ Converte um único dígito (0-15) no seu valor; um caractere inválido retorna -
 c: o ponto de código de um caractere dígito
 d: 0~15; caracteres inválidos retornam -1
 `
-  'txt.append': `
-Anexa um byte (nunca excedendo o limite de 255)
-b: o byte a anexar (ignorado quando excede o limite de 255)
-`
-  'txt.append-str': `
-Anexa um str (sem exceder o limite de 255)
-s: o str a anexar (truncado quando o limite de 255 seria excedido)
-`
-  'txt.append-txt': `
-Anexa um txt (sem exceder o limite de 255)
-t: o txt a anexar (truncado quando o limite de 255 seria excedido)
-`
   'txt.at': `
 [obsoleto] txt.at: leitura por índice de caractere (ponto de código) — use t[idx] em vez disso (indexação nativa, retorna ?char)
 txt.at: obtém o valor do ponto de código em uma posição de caractere (para deslocamento de byte use t.byte(i))
@@ -9635,15 +9608,6 @@ Busca reversa por uma subcadeia começando em from (retorna a última ocorrênci
 target: o sub-txt a procurar
 from: o limite inferior da busca reversa (inclusivo, pontos de código)
 pos: posição de ponto de código da última ocorrência (>= from), -1 quando não encontrada
-`
-  'txt.set-byte': `
-Retorna ?bool (pode falhar): nil quando fora do intervalo (i < 0 ou i >= a capacidade física de 255 bytes), e a escrita é IGNORADA;
-some(true) em caso de sucesso. O limite é a capacidade física (um txt é um buffer fixo de 255 bytes) em vez de
-len, então construtores que "preenchem o buffer primeiro, depois definem len" (fill / from-str / to-hex / join) continuam funcionando como antes.
-Um chamador pode descartar o ?bool como uma declaração nua (optunuse só cobre nomes de vínculo).
-i: índice de byte
-b: o valor de byte a escrever
-ok: ok=true=escrita bem-sucedida, nil=i fora do intervalo (escrita ignorada)
 `
   'txt.slice': `
 Pega a subcadeia [start, end) e retorna um novo txt

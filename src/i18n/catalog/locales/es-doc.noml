@@ -7955,13 +7955,6 @@ b str: la otra cadena
 devuelve yes bool: true = iguales, false = distintas
 
 `
-  'str.eq-raw': `
-str.eq: compara si los primeros n bytes de dos cadenas son iguales
-devuelve true = iguales, false = distintas
-b: cadena objetivo de la comparación
-n: número de bytes a comparar
-eq: true=el receptor y b coinciden en los primeros n bytes
-`
   'str.fields': `
 divide la cadena por uno o más caracteres de espacio en blanco consecutivos
 Espacio en blanco: espacio (32), tabulador (9), salto de línea (10), retorno de carro (13)
@@ -8084,14 +8077,6 @@ target str: la subcadena a buscar
 from i64: la posición inicial (límite inferior inclusive, en puntos de código)
 devuelve pos i64: la posición del punto de código (carácter) encontrada, o -1
 
-`
-  'str.set-byte': `
-Devuelve ?bool (puede fallar): fuera de rango (i < 0 o i >= la capacidad cap de la entidad) devuelve nil y **omite la escritura**,
-Devuelve some(true) al tener éxito. El límite usa el cap de %str-long (capacidad de la entidad) y no len, así que «llenar antes el búfer,
-el programa de construcción «luego set len» sigue funcionando igual. Es legal que el llamador descarte el ?bool con una sentencia desnuda (optunuse solo sigue nombres de vínculo).
-i: índice en bytes
-b: valor de byte a escribir
-ok: ok=true=escritura exitosa, nil=i fuera de rango (se omite la escritura)
 `
   'str.slice': `
 toma la subcadena [start, end), con índices como posiciones de CARÁCTER (punto de código)
@@ -9551,18 +9536,6 @@ convierte un carácter de dígito (0-15) en su valor; un carácter inválido dev
 c: punto de código de un carácter dígito
 d: 0~15; los caracteres inválidos devuelven -1
 `
-  'txt.append': `
-Añade un byte (sin superar el límite de 255)
-b: byte a añadir (ignorado si excede el límite de 255)
-`
-  'txt.append-str': `
-añade un str (sin superar el límite de 255)
-s: el str a añadir (se trunca si excede el límite de 255)
-`
-  'txt.append-txt': `
-añade un txt (sin superar el límite de 255)
-t: el txt a añadir (se trunca si excede el límite de 255)
-`
   'txt.at': `
 [obsoleto] txt.at: lectura por índice de carácter (punto de código) — usa t[idx] en su lugar (indexación nativa, devuelve ?char)
 txt.at: obtiene el valor del punto de código en una posición de carácter (para un desplazamiento en bytes usa t.byte(i))
@@ -9749,15 +9722,6 @@ búsqueda inversa de una subcadena a partir de from (devuelve la última aparici
 target: el sub-txt a buscar
 from: límite inferior de la búsqueda inversa (inclusive, puntos de código)
 pos: posición de punto de código de la última aparición (>= from), -1 si no se encuentra
-`
-  'txt.set-byte': `
-Devuelve ?bool (puede fallar): nil cuando está fuera de rango (i < 0 o i >= la capacidad física de 255 bytes), y en ese caso la escritura se OMITE;
-some(true) si tuvo éxito. El límite es la capacidad física (un txt es un búfer fijo de 255 bytes) y no len, así que
-len, por lo que los constructores que "rellenan el búfer y luego fijan len" (fill / from-str / to-hex / join) siguen funcionando igual.
-Un llamador puede descartar el ?bool como sentencia desnuda (optunuse solo cubre nombres enlazados).
-i: índice en bytes
-b: valor de byte a escribir
-ok: ok=true=escritura exitosa, nil=i fuera de rango (se omite la escritura)
 `
   'txt.slice': `
 toma la subcadena [start, end) y devuelve un txt nuevo

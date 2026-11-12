@@ -7957,13 +7957,6 @@ b str: l'autre chaîne
 renvoie yes bool: true = égales, false = différentes
 
 `
-  'str.eq-raw': `
-str.eq: comparer si les n premiers octets de deux chaînes sont égaux
-renvoie true = égales, false = différentes
-b : chaîne cible de la comparaison
-n: nombre d'octets à comparer
-eq : true=le récepteur et b coïncident sur les n premiers octets
-`
   'str.fields': `
 découpe la chaîne sur une ou plusieurs espaces blanches consécutives
 Espaces blanches: espace (32), tabulation (9), saut de ligne (10), retour chariot (13)
@@ -8086,14 +8079,6 @@ target str: la sous-chaîne à chercher
 from i64: la position de départ (borne inférieure incluse, en points de code)
 renvoie pos i64: la position en point de code (caractère) trouvée, ou -1
 
-`
-  'str.set-byte': `
-Renvoie ?bool (peut échouer) : hors plage (i < 0 ou i >= la capacité cap de l'entité) renvoie nil et **saute l'écriture**,
-Renvoie some(true) en cas de succès. La borne se base sur le cap de %str-long (capacité réelle) et non len, donc « remplir d'abord le tampon,
-le programme de construction « puis set len » fonctionne toujours. L'appelant peut légitimement jeter le ?bool par une instruction nue (optunuse ne suit que les noms de liaison).
-i: index octet
-b : valeur d'octet à écrire
-ok: ok=true=écriture réussie, nil=i hors plage (écriture sautée)
 `
   'str.slice': `
 prend la sous-chaîne [start, end), avec des indices exprimés en positions de CARACTÈRE (point de code)
@@ -9553,18 +9538,6 @@ convertit un caractère de chiffre unique (0-15) en sa valeur; un caractère inv
 c : point de code d'un caractère chiffre
 d : 0~15 ; les caractères invalides renvoient -1
 `
-  'txt.append': `
-Ajoute un octet (sans jamais dépasser la limite de 255)
-b : octet à ajouter (ignoré s'il dépasse la limite de 255)
-`
-  'txt.append-str': `
-ajoute un str (sans dépasser la limite de 255)
-s: le str à ajouter (tronqué si la limite de 255 est dépassée)
-`
-  'txt.append-txt': `
-ajoute un txt (sans dépasser la limite de 255)
-t: le txt à ajouter (tronqué si la limite de 255 est dépassée)
-`
   'txt.at': `
 [obsolète] txt.at: lecture indexée par caractère (point de code) — utilisez plutôt t[idx] (indexation native, renvoie ?char)
 txt.at: obtient la valeur du point de code à une position de caractère (pour un décalage d'octet, utilisez t.byte(i))
@@ -9751,15 +9724,6 @@ recherche inverse d'une sous-chaîne à partir de from (renvoie la dernière occ
 target: le sous-txt à trouver
 from: borne inférieure de recherche inverse (inclusive, points de code)
 pos: position du point de code de la dernière apparition (>= from), -1 si non trouvé
-`
-  'txt.set-byte': `
-Renvoie ?bool (peut échouer): nil hors bornes (i < 0 ou i >= la capacité physique de 255 octets), et l'écriture est IGNORÉE;
-some(true) en cas de succès. La borne est la capacité physique (un txt est un tampon fixe de 255 octets) plutôt que
-len, donc les constructeurs qui « remplissent le tampon puis règlent len » (fill / from-str / to-hex / join) restent utilisables tels quels.
-Un appelant peut ignorer le ?bool en instruction nue (optunuse ne couvre que les noms liés).
-i: index octet
-b : valeur d'octet à écrire
-ok: ok=true=écriture réussie, nil=i hors plage (écriture sautée)
 `
   'txt.slice': `
 prend la sous-chaîne [start, end) et renvoie un nouveau txt

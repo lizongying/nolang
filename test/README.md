@@ -3084,7 +3084,7 @@ done 裡有 `@str_free`」的結構斷言。這道門的另一半作用是防「
 - `test/std/str.no`：新增 `p39`（該檔尾部的 `p1..p38` 統計是**手工維護**的，
   加測試必須同時加 `p39` 與 `passed = passed + p39`）→ 188/188。
 
-#### 這輪順帶量到的兩件事
+#### 這輪順帶量到的三件事
 
 1. **`txt.append` 家族的呼叫點很少**，全語料只有 6 處：`tests/txt.no:132`、
    `tests/txt-3.no:103`、`test/std/txt.no:262 / 265 / 269 / 823`。改名成本低正是
@@ -3097,6 +3097,14 @@ done 裡有 `@str_free`」的結構斷言。這道門的另一半作用是防「
    是**提前 return**，`val` 停在零值（`data == NULL`）。根因是
    `src/mir/builtin_call.go:1207 emitBuiltinEqRaw` 直接 `memcmp(dataA, dataB, n)`。
    ⇒ 測試裡對空串一律 `n = 0`，尾端內容改由 `tests/str-push.no` 釘住。
+3. **`t[i]` / `s[i]` 越界讀早就不是 `-1` 哨兵了（doc 與斷言都過期）**：`idxhndld` 收口後
+   越界讀是**帶檢查**的，回 `err('index out of range')`。`tests/txt-3.no` 原本寫
+   `ck('read-oob-neg1', t[3] == -1)` ⇒ 本輪複跑是 **1 條 FAIL**（不是這輪改出來的：
+   那條斷言只讀不寫，與 txt 禁令無關）。處置：改成三臂 match 的 `oob-is-err(t, 3)`
+   （`ok`/`nil` 記 false、`err` 記 true），`src/std/txt.no` 檔頭與 `txt[i]` 註解裡
+   「越界返回 -1」兩處也一併改正。⚠️ 同一個 tag 在不同路徑上還不統一（`test/std/txt.no`
+   檔內另有「`len=0` 的新 txt 上讀 `val[0]` 越界回 **nil**」的註記），所以**斷言 tag、
+   不要斷言兜底值**。
 
 **⚠️ 假修紀錄：`?=` → `=` 是錯的，正解是 place-match（本節收尾時自我更正）**
 

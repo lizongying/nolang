@@ -5902,10 +5902,6 @@ i i64: 字符（码点）索引
 b str: 比较目标
 返回 yes bool: true=相等 false=不相等
 `
-  'str.eq-raw': `
-str.eq: 比较两个字符串的前 n 个字节是否相等
-返回 true=相等, false=不相等
-`
   'str.fields': `
 按一个或多个连续空白字符分割字符串
 空白字符：空格(32)、制表(9)、换行(10)、回车(13)
@@ -5997,11 +5993,6 @@ target str: 要查找的子串
 target str: 要查找的子串
 from i64: 起始位置（含，下界，码点）
 返回 pos i64: 找到的码点（字符）位置，未找到 -1
-`
-  'str.set-byte': `
-返回 ?bool（可失败）：越界（i < 0 或 i >= 实体容量 cap）时返回 nil 并**跳过写入**，
-成功返回 some(true)。边界以 %str-long 的 cap（实体容量）为准而非 len，故「先填缓冲
-再 set len」的构建程序照旧可用。调用方以裸语句丢弃 ?bool 合法（optunuse 只管绑定名）。
 `
   'str.slice': `
 截取子串 [start, end)，下标为「字符（码点）位置」
@@ -7134,9 +7125,6 @@ target i64: 目标值
 返回 val ?i64: ok=找到, nil=无此元素
 `
   'txt._txt-dig-val': '单个数字字符转数值（0-15），无效字符返回 -1'
-  'txt.append': '追加字节（不超出 255 限制）'
-  'txt.append-str': '追加 str（不超出 255 限制）'
-  'txt.append-txt': '追加 txt（不超出 255 限制）'
   'txt.at': `
 [deprecated] txt.at: 字符（码点）索引读取——请改用 t[idx]（原生索引，返回 ?char）
 txt.at: 获取指定字符位置的码点值（字节偏移请用 t.byte(i)）
@@ -7239,12 +7227,6 @@ old txt, new txt, n i64: 最大替换次数（n<=0 不替换）
 返回位置，未找到 -1
 `
   'txt.rindex-from': '从 from 位置反向查找子串（返回位置 >= from 的最后一次出现）'
-  'txt.set-byte': `
-返回 ?bool（可失败）：越界（i < 0 或 i >= 255 实体容量）时返回 nil 并**跳过写入**，
-成功返回 some(true)。边界以「实体容量」（txt 为固定 255 字节缓冲区）为准，而非
-len，因此「先填缓冲再 set len」的构建程序（fill / from-str / to-hex / join）照旧可用。
-调用方以裸语句丢弃 ?bool 是合法的（optunuse 只针对已绑定的名称）。
-`
   'txt.slice': '截取子串 [start, end) 返回新的 txt'
   'txt.split': '用分隔符分割为 []txt'
   'txt.split-n': `

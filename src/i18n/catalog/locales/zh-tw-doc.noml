@@ -6274,11 +6274,6 @@ b str: 比對目標
 回傳 yes bool: true=相等 false=不相等
 
 `
-  'str.eq-raw': `
-str.eq: 比較兩個字串的前 n 個位元組是否相等
-回傳 true=相等, false=不相等
-
-`
   'str.fields': `
 按一個或多個連續空白字元分割字串
 空白字元：空格(32)、製表(9)、換行(10)、回車(13)
@@ -6386,12 +6381,6 @@ target str: 要尋找的子字串
 target str: 要尋找的子字串
 from i64: 起始位置（含，下界，碼點）
 回傳 pos i64: 找到的碼點（字元）位置，未找到 -1
-
-`
-  'str.set-byte': `
-回傳 ?bool（可失敗）：越界（i < 0 或 i >= 實體容量 cap）時回傳 nil 並**跳過寫入**，
-成功回傳 some(true)。邊界以 %str-long 的 cap（實體容量）為準而非 len，故「先填緩衝
-再 set len」的建構程序照舊可用。呼叫方以裸語句丟棄 ?bool 合法（optunuse 只管綁定名）。
 
 `
   'str.slice': `
@@ -7611,9 +7600,6 @@ target i64: 目標值
 
 `
   'txt._txt-dig-val': '單一數字字元轉數值（0-15），無效字元回傳 -1'
-  'txt.append': '追加位元組（不超出 255 限制）'
-  'txt.append-str': '追加 str（不超出 255 限制）'
-  'txt.append-txt': '追加 txt（不超出 255 限制）'
   'txt.at': `
 [deprecated] txt.at: 字元（碼點）索引讀取——請改用 t[idx]（原生索引，回傳 ?char）
 txt.at: 取得指定字元位置的碼點值（位元組偏移請用 t.byte(i)）
@@ -7734,13 +7720,6 @@ old txt, new txt, n i64: 最大替換次數（n<=0 不替換）
 
 `
   'txt.rindex-from': '從 from 位置反向尋找子字串（回傳位置 >= from 的最後一次出現）'
-  'txt.set-byte': `
-回傳 ?bool（可失敗）：越界（i < 0 或 i >= 255 實體容量）時回傳 nil 並**跳過寫入**，
-成功回傳 some(true)。邊界以「實體容量」（txt 為固定 255 位元組緩衝區）為準，而非
-len，因此「先填緩衝再 set len」的建構程序（fill / from-str / to-hex / join）照舊可用。
-呼叫方以裸語句丟棄 ?bool 是合法的（optunuse 只針對已綁定的名稱）。
-
-`
   'txt.slice': '截取子字串 [start, end) 回傳新的 txt'
   'txt.split': '用分隔符分割為 []txt'
   'txt.split-n': `
