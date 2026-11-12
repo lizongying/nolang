@@ -1861,8 +1861,10 @@ func (c *codegen) llvmTypeSizeUpper(lt string, visited map[string]bool) (int64, 
 		return 8, true
 	}
 	switch lt {
-	case "%str-long", "%vec":
-		return 24, true
+	case "%str-long":
+		return 16, true // { i32 len, i32 cap, i8* data }
+	case "%vec":
+		return 16, true // { i32 len, i32 cap, i64 data(ptrtoint) }
 	case "%option":
 		return 32, true
 	case "%txt":
@@ -2242,7 +2244,8 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define %%vec @%s(%%vec %%v) {\n", fn)
 	b.WriteString("entry:\n")
-	b.WriteString("  %len = extractvalue %vec %v, 0\n")
+	b.WriteString("  %len32 = extractvalue %vec %v, 0\n")
+	b.WriteString("  %len = zext i32 %len32 to i64\n")
 	b.WriteString("  %data = extractvalue %vec %v, 2\n")
 	// A slice that was never pushed to has data == 0; cloning it must not
 	// malloc(0) and must not hand back the source's (null) pointer.
@@ -2251,7 +2254,7 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	b.WriteString("  %do = and i1 %hasdata, %nonempty\n")
 	b.WriteString("  br i1 %do, label %cp, label %none\n")
 	b.WriteString("none:\n")
-	b.WriteString("  ret %vec { i64 0, i64 0, i64 0 }\n")
+	b.WriteString("  ret %vec { i32 0, i32 0, i64 0 }\n")
 	b.WriteString("cp:\n")
 	fmt.Fprintf(b, "  %%es = ptrtoint ptr getelementptr (%s, ptr null, i64 1) to i64\n", elemLT)
 	b.WriteString("  %bytes = mul i64 %len, %es\n")
@@ -2288,8 +2291,8 @@ func (c *codegen) vecDeepClone(elemType TypeID, depth int) string {
 	}
 	b.WriteString("fin:\n")
 	b.WriteString("  %newi = ptrtoint i8* %newp to i64\n")
-	b.WriteString("  %r0 = insertvalue %vec undef, i64 %len, 0\n")
-	b.WriteString("  %r1 = insertvalue %vec %r0, i64 %len, 1\n")
+	b.WriteString("  %r0 = insertvalue %vec undef, i32 %len32, 0\n")
+	b.WriteString("  %r1 = insertvalue %vec %r0, i32 %len32, 1\n")
 	b.WriteString("  %r2 = insertvalue %vec %r1, i64 %newi, 2\n")
 	b.WriteString("  ret %vec %r2\n}\n")
 	c.extraFuncsBody.WriteString(b.String())
@@ -2351,8 +2354,10 @@ func (c *codegen) vecDeepEq(elemType TypeID, depth int) string {
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define i1 @%s(%%vec %%a, %%vec %%b) {\n", fn)
 	b.WriteString("entry:\n")
-	b.WriteString("  %la = extractvalue %vec %a, 0\n")
-	b.WriteString("  %lb = extractvalue %vec %b, 0\n")
+	b.WriteString("  %la32 = extractvalue %vec %a, 0\n")
+	b.WriteString("  %la = zext i32 %la32 to i64\n")
+	b.WriteString("  %lb32 = extractvalue %vec %b, 0\n")
+	b.WriteString("  %lb = zext i32 %lb32 to i64\n")
 	b.WriteString("  %leneq = icmp eq i64 %la, %lb\n")
 	b.WriteString("  br i1 %leneq, label %cmp, label %no\n")
 	b.WriteString("cmp:\n")
@@ -2426,8 +2431,10 @@ func (c *codegen) vecBufClone(elemType TypeID, depth int) string {
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define %%vec @%s(%%vec %%v) {\n", fn)
 	b.WriteString("entry:\n")
-	b.WriteString("  %len = extractvalue %vec %v, 0\n")
-	b.WriteString("  %cap = extractvalue %vec %v, 1\n")
+	b.WriteString("  %len32 = extractvalue %vec %v, 0\n")
+	b.WriteString("  %len = zext i32 %len32 to i64\n")
+	b.WriteString("  %cap32 = extractvalue %vec %v, 1\n")
+	b.WriteString("  %cap = zext i32 %cap32 to i64\n")
 	b.WriteString("  %data = extractvalue %vec %v, 2\n")
 	// An ARRAY-BACKED VIEW (`buf [128]i64` passed as `[]t`, set.init's buffer)
 	// carries cap == 0 with all 128 elements live behind data. Allocating on
@@ -2467,8 +2474,8 @@ func (c *codegen) vecBufClone(elemType TypeID, depth int) string {
 	}
 	b.WriteString("fin:\n")
 	b.WriteString("  %newi = ptrtoint i8* %newp to i64\n")
-	b.WriteString("  %r0 = insertvalue %vec undef, i64 %len, 0\n")
-	b.WriteString("  %r1 = insertvalue %vec %r0, i64 %cap, 1\n")
+	b.WriteString("  %r0 = insertvalue %vec undef, i32 %len32, 0\n")
+	b.WriteString("  %r1 = insertvalue %vec %r0, i32 %cap32, 1\n")
 	b.WriteString("  %r2 = insertvalue %vec %r1, i64 %newi, 2\n")
 	b.WriteString("  ret %vec %r2\n}\n")
 	c.extraFuncsBody.WriteString(b.String())
@@ -2540,7 +2547,8 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "define void @%s(%%vec %%v) {\n", fn)
 	b.WriteString("entry:\n")
-	b.WriteString("  %cap = extractvalue %vec %v, 1\n")
+	b.WriteString("  %cap32 = extractvalue %vec %v, 1\n")
+	b.WriteString("  %cap = zext i32 %cap32 to i64\n")
 	b.WriteString("  %cap0 = icmp eq i64 %cap, 0\n")
 	b.WriteString("  br i1 %cap0, label %done, label %check\n")
 	b.WriteString("check:\n")
@@ -2591,7 +2599,8 @@ func (c *codegen) vecDeepFree(elemType TypeID, depth int) string {
 		b.WriteString("  call void @nolang_free(ptr %ptr)\n")
 		b.WriteString("  br label %done\n")
 		b.WriteString("deep:\n")
-		b.WriteString("  %len = extractvalue %vec %v, 0\n")
+		b.WriteString("  %len32 = extractvalue %vec %v, 0\n")
+		b.WriteString("  %len = zext i32 %len32 to i64\n")
 		b.WriteString("  br label %lp\n")
 		b.WriteString("lp:\n")
 		b.WriteString("  %i = phi i64 [ 0, %deep ], [ %inext, %body ]\n")
@@ -3375,22 +3384,25 @@ func (c *codegen) emitAnnotatedOverflowValue(mode string, op Op, resLT, elemRaw,
 // datalayout string is risky across LLVM releases (LLVM 20 expanded
 // x86_64-linux to `e-m:e-p270:32:32-p271:32:32-p272:64:64-...` while
 // earlier releases used the short `e-m:e-i64:64-f80:128-n8:16:32:64-S128`).
-// ---- %str-long u32 header -------------------------------------------------
+// ---- u32 container headers (%str-long / %vec) -----------------------------
 //
-// %str-long is `{ i32 len, i32 cap, i8* data }`: the two header counters are
-// u32 in storage (16-byte descriptor) but EVERY Nolang-facing API stays i64.
-// These helpers are the single narrowing/widening boundary; call sites keep
-// passing and receiving i64 and never spell the storage width themselves.
+// %str-long is `{ i32 len, i32 cap, i8* data }` and %vec is
+// `{ i32 len, i32 cap, i64 data }` (data stays a ptrtoint-encoded i64). Both
+// headers are u32 in storage (16-byte descriptors) while EVERY Nolang-facing
+// API stays i64. These helpers are the single narrowing/widening boundary;
+// call sites keep passing and receiving i64 and never spell the storage width
+// themselves.
 //
 // Do NOT emit `load i64, i64* <gep to field 0/1>` or `store i64 ...` directly:
-// with u32 fields that is an LLVM verifier error. Use strHeaderLoadI64 /
-// strHeaderStoreI64 for GEP access, strLenI64 / strCapI64 for aggregates and
-// strLongFromParts to assemble a descriptor.
+// with u32 fields and opaque pointers the verifier stays silent and the load
+// silently reads 8 bytes (len+cap packed). Use the *HeaderLoadI64 /
+// *HeaderStoreI64 helpers for GEP access, the *LenI64 / *CapI64 pair for
+// aggregate values, and *FromParts to assemble a descriptor.
 
-// strU32Trunc narrows an i64 SSA value to the u32 field width. Numeric literals
-// pass through unchanged so constants stay `i32 0` instead of a trunc on a
-// constant.
-func (c *codegen) strU32Trunc(v string) string {
+// hdrTrunc narrows an i64 SSA value to the u32 field width shared by the
+// %str-long and %vec headers. Numeric literals pass through unchanged so
+// constants stay `i32 0` instead of a trunc on a constant.
+func (c *codegen) hdrTrunc(v string) string {
 	if _, err := strconv.ParseInt(v, 10, 64); err == nil {
 		return v
 	}
@@ -3399,8 +3411,8 @@ func (c *codegen) strU32Trunc(v string) string {
 	return r
 }
 
-// strU32Widen widens a u32 field value to the i64 Nolang API type.
-func (c *codegen) strU32Widen(v string) string {
+// hdrWiden widens a u32 header field value to the i64 Nolang API type.
+func (c *codegen) hdrWiden(v string) string {
 	r := c.treg("su64")
 	fmt.Fprintf(c.sb, "  %s = zext i32 %s to i64\n", r, v)
 	return r
@@ -3409,8 +3421,8 @@ func (c *codegen) strU32Widen(v string) string {
 // strLongFromParts assembles a %str-long from i64 len/cap and an i8* data ptr.
 // dataV must already be an owned buffer (or a borrowed cap=0 view pointer).
 func (c *codegen) strLongFromParts(lenV, capV, dataV string) string {
-	l := c.strU32Trunc(lenV)
-	cp := c.strU32Trunc(capV)
+	l := c.hdrTrunc(lenV)
+	cp := c.hdrTrunc(capV)
 	s0 := c.treg("slh0")
 	fmt.Fprintf(c.sb, "  %s = insertvalue %%str-long { i32 0, i32 0, i8* null }, i32 %s, 0\n", s0, l)
 	s1 := c.treg("slh1")
@@ -3420,29 +3432,59 @@ func (c *codegen) strLongFromParts(lenV, capV, dataV string) string {
 	return s2
 }
 
-// strLenI64 / strCapI64 read the u32 header fields of a %str-long VALUE as i64.
-func (c *codegen) strLenI64(v string) string {
-	raw := c.treg("sln")
-	fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 0\n", raw, v)
-	return c.strU32Widen(raw)
+// hdrFieldI64 reads a u32 header field (0 = len, 1 = cap) out of a %str-long OR
+// %vec aggregate VALUE and widens it to the i64 Nolang API type.
+func (c *codegen) hdrFieldI64(lt, v string, idx int) string {
+	raw := c.treg("hln")
+	fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, %d\n", raw, lt, v, idx)
+	return c.hdrWiden(raw)
 }
 
-func (c *codegen) strCapI64(v string) string {
-	raw := c.treg("scn")
-	fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 1\n", raw, v)
-	return c.strU32Widen(raw)
-}
+// strLenI64 / strCapI64 read the u32 header fields of a %str-long VALUE as i64.
+func (c *codegen) strLenI64(v string) string { return c.hdrFieldI64("%str-long", v, 0) }
+func (c *codegen) strCapI64(v string) string { return c.hdrFieldI64("%str-long", v, 1) }
 
 // strHeaderLoadI64 / strHeaderStoreI64 access a u32 header field through a GEP
 // to field 0 (len) or 1 (cap), widening/narrowing at the storage boundary.
 func (c *codegen) strHeaderLoadI64(gep string) string {
 	raw := c.treg("shl")
 	fmt.Fprintf(c.sb, "  %s = load i32, i32* %s\n", raw, gep)
-	return c.strU32Widen(raw)
+	return c.hdrWiden(raw)
 }
 
 func (c *codegen) strHeaderStoreI64(gep, v string) {
-	n := c.strU32Trunc(v)
+	n := c.hdrTrunc(v)
+	fmt.Fprintf(c.sb, "  store i32 %s, i32* %s\n", n, gep)
+}
+
+// vecFromParts assembles a %vec from i64 len/cap and an i64 ptrtoint-encoded
+// data pointer (the %vec data field deliberately stays i64, unlike %str-long).
+func (c *codegen) vecFromParts(lenV, capV, dataV string) string {
+	l := c.hdrTrunc(lenV)
+	cp := c.hdrTrunc(capV)
+	s0 := c.treg("vlh0")
+	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i32 0, i32 0, i64 0 }, i32 %s, 0\n", s0, l)
+	s1 := c.treg("vlh1")
+	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i32 %s, 1\n", s1, s0, cp)
+	s2 := c.treg("vlh2")
+	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataV)
+	return s2
+}
+
+// vecLenI64 / vecCapI64 read the u32 header fields of a %vec VALUE as i64.
+func (c *codegen) vecLenI64(v string) string { return c.hdrFieldI64("%vec", v, 0) }
+func (c *codegen) vecCapI64(v string) string { return c.hdrFieldI64("%vec", v, 1) }
+
+// vecHeaderLoadI64 / vecHeaderStoreI64 access a u32 header field through a GEP
+// to field 0 (len) or 1 (cap), widening/narrowing at the storage boundary.
+func (c *codegen) vecHeaderLoadI64(gep string) string {
+	raw := c.treg("vhl")
+	fmt.Fprintf(c.sb, "  %s = load i32, i32* %s\n", raw, gep)
+	return c.hdrWiden(raw)
+}
+
+func (c *codegen) vecHeaderStoreI64(gep, v string) {
+	n := c.hdrTrunc(v)
 	fmt.Fprintf(c.sb, "  store i32 %s, i32* %s\n", n, gep)
 }
 
@@ -3451,7 +3493,7 @@ func (c *codegen) emitPrelude() {
 		fmt.Fprintf(c.sb, "target triple = %q\n\n", t)
 	}
 	c.sb.WriteString(`%str-long = type { i32, i32, i8* }   ; u32 len, u32 cap, data (16B); external API stays i64
-%vec = type { i64, i64, i64 }
+%vec = type { i32, i32, i64 }   ; u32 len, u32 cap, data (ptrtoint, 16B); external API stays i64
 `)
 	fmt.Fprintf(c.sb, "%%option = type { i64, %s }    ; tag, %d-byte payload slot (%d bytes total)\n",
 		c.optSlotLT, c.optSlotBytes, 8+c.optSlotBytes)
@@ -3556,7 +3598,7 @@ done:
 ; (opt-verify: "invalid type for function argument"). txt equality is therefore
 ; lowered INLINE at the comparison site -- see txtEqInline.
 
-; vec_free: free a %vec's backing store. %vec = { i64 len, i64 cap, i64 data }
+; vec_free: free a %vec's backing store. %vec = { i32 len, i32 cap, i64 data }
 ; (data is a heap pointer stored as an integer). The 3rd field is the malloc'd
 ; buffer; free it unless null. The %vec struct itself is by-value (stack/inline)
 ; and needs no free.
@@ -3565,7 +3607,8 @@ entry:
   ; Borrowed slice views (over string constants or stack arrays) carry cap=0 and
   ; must NOT be freed: their backing store is not heap-owned. Only real heap vecs
   ; (cap>0) own their buffer. Mirrors the legacy @vec_free cap==0 skip.
-  %cap = extractvalue %vec %v, 1
+  %cap32 = extractvalue %vec %v, 1
+  %cap = zext i32 %cap32 to i64
   %cap0 = icmp eq i64 %cap, 0
   br i1 %cap0, label %done, label %check
 check:
@@ -3617,7 +3660,8 @@ done:
 
 define void @vec_retain(%vec %v) {
 entry:
-  %cap = extractvalue %vec %v, 1
+  %cap32 = extractvalue %vec %v, 1
+  %cap = zext i32 %cap32 to i64
   %cap0 = icmp eq i64 %cap, 0
   br i1 %cap0, label %done, label %check
 check:
@@ -9555,7 +9599,7 @@ func mirStaticTypeSize(lt string) (int64, bool) {
 	case "%str-long":
 		return 16, true // {i32 len, i32 cap, i8* data} — u32 header + 8-byte-aligned pointer
 	case "%vec":
-		return 24, true // {i64,i64,i64}
+		return 16, true // {i32 len, i32 cap, i64 data(ptrtoint)}
 	case "%option":
 		return 8 + optSlotDefaultBytes, true // { i64 tag, [N x i64] slot } at the default threshold
 	}
@@ -10048,9 +10092,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.loadSeq++
 	cg := fmt.Sprintf("%%vbcg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", cg, arrSlot)
-	c.loadSeq++
-	ci := fmt.Sprintf("%%vbci.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", ci, cg)
+	ci := c.vecHeaderLoadI64(cg)
 
 	c.loadSeq++
 	isnull := fmt.Sprintf("%%vbnull.%d", c.loadSeq)
@@ -10077,7 +10119,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	ptri := fmt.Sprintf("%%vbptri.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", ptri, buf)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ptri, dg)
-	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", allocElems, cg)
+	c.vecHeaderStoreI64(cg, allocElems)
 	// Make the freshly-allocated buffer's written element READABLE: a vec declared
 	// with no capacity (nil data) has len=0, so an index write would store into the
 	// new buffer but every subsequent read would still see len=0 → out of bounds →
@@ -10086,16 +10128,14 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.loadSeq++
 	llg := fmt.Sprintf("%%vbllg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", llg, arrSlot)
-	c.loadSeq++
-	cl := fmt.Sprintf("%%vbcl.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", cl, llg)
+	cl := c.vecHeaderLoadI64(llg)
 	c.loadSeq++
 	lge := fmt.Sprintf("%%vblge.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", lge, needReg, cl)
 	c.loadSeq++
 	lmx := fmt.Sprintf("%%vblmx.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = select i1 %s, i64 %s, i64 %s\n", lmx, lge, needReg, cl)
-	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", lmx, llg)
+	c.vecHeaderStoreI64(llg, lmx)
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
 
 	// check block (case 2): a buffer exists — is there room for element idxV?
@@ -10159,9 +10199,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	c.loadSeq++
 	lg := fmt.Sprintf("%%vblg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lg, arrSlot)
-	c.loadSeq++
-	li := fmt.Sprintf("%%vbli.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", li, lg)
+	li := c.vecHeaderLoadI64(lg)
 	c.loadSeq++
 	lenOver := fmt.Sprintf("%%vblo.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = icmp sgt i64 %s, %s\n", lenOver, li, ci)
@@ -10187,7 +10225,7 @@ func (c *codegen) ensureVecBuffer(arrSlot string, v ValueID, idxV, elemT string)
 	ptri2 := fmt.Sprintf("%%vbpti.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", ptri2, gbuf)
 	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ptri2, dg)
-	fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", newCap, cg)
+	c.vecHeaderStoreI64(cg, newCap)
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
 
 	// done block: merge point; the caller's subsequent store lands here.
@@ -11045,14 +11083,13 @@ func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
 	c.loadSeq++
 	lenGep := fmt.Sprintf("%%slg.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", lenGep, arrT, arrT, arrSlot)
-	c.loadSeq++
-	curLen := fmt.Sprintf("%%slc.%d", c.loadSeq)
+	// Both headers store field 0 as u32; an opaque-pointer `load i64` would
+	// silently read len+cap as one word. Widen/narrow at the storage boundary.
+	curLen := ""
 	if arrT == "%str-long" {
-		// field 0 is u32; an opaque-pointer `load i64` would silently read
-		// len+cap as one word. Widen at the storage boundary.
 		curLen = c.strHeaderLoadI64(lenGep)
 	} else {
-		fmt.Fprintf(c.sb, "  %s = load i64, i64* %s\n", curLen, lenGep)
+		curLen = c.vecHeaderLoadI64(lenGep)
 	}
 	c.loadSeq++
 	idx1 := fmt.Sprintf("%%sli.%d", c.loadSeq)
@@ -11066,7 +11103,7 @@ func (c *codegen) emitExtendLen(arrT, arrSlot, idxV string) {
 	if arrT == "%str-long" {
 		c.strHeaderStoreI64(lenGep, newLen)
 	} else {
-		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", newLen, lenGep)
+		c.vecHeaderStoreI64(lenGep, newLen)
 	}
 }
 
@@ -11658,17 +11695,24 @@ func (c *codegen) emitGetField(inst *Inst) error {
 		recvRaw = ty.StripViewRaw(recvRaw)
 		recvSlot = pv
 	}
-	// %str-long len/cap are u32 in storage but i64 in the Nolang API. The
-	// generic path derives the load type from the destination (i64), which would
-	// load 8 bytes out of a 4-byte field. Widen at the boundary instead.
-	if recvLT == "%str-long" && (inst.Str == "len" || inst.Str == "cap") {
+	// %str-long and %vec keep len/cap as u32 in storage but expose i64 through
+	// the Nolang API. The generic path derives the load type from the
+	// destination (i64), which would read 8 bytes out of a 4-byte field; with
+	// opaque pointers LLVM accepts that silently and returns len|cap<<32, so
+	// widen at the boundary instead.
+	if (recvLT == "%str-long" || recvLT == "%vec") && (inst.Str == "len" || inst.Str == "cap") {
 		idx := 0
 		if inst.Str == "cap" {
 			idx = 1
 		}
 		gep := c.treg("sfh")
-		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %%str-long, %%str-long* %s, i32 0, i32 %d\n", gep, recvSlot, idx)
-		v := c.strHeaderLoadI64(gep)
+		fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, recvLT, recvLT, recvSlot, idx)
+		var v string
+		if recvLT == "%vec" {
+			v = c.vecHeaderLoadI64(gep)
+		} else {
+			v = c.strHeaderLoadI64(gep)
+		}
 		dstLT, _ := c.ptype(inst.Dst)
 		if dstLT == "" {
 			dstLT = "i64"
@@ -11905,7 +11949,7 @@ func (c *codegen) ensureContainerStorageForLen(slot, recvLT string, ty *Type, nV
 	if recvLT == "%str-long" {
 		c.strHeaderStoreI64(cg, nV)
 	} else {
-		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", nV, cg)
+		c.vecHeaderStoreI64(cg, nV)
 	}
 	fmt.Fprintf(c.sb, "  br label %%%s\n", lDone)
 
@@ -12143,18 +12187,23 @@ func (c *codegen) emitSetField(inst *Inst) error {
 			c.loadSeq++
 			gep := fmt.Sprintf("%%gp.%d", c.loadSeq)
 			fmt.Fprintf(c.sb, "  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 %d\n", gep, recvLT, recvLT, recvSlot, idx)
-			if recvLT == "%str-long" && idx <= 1 {
-				// len/cap are u32 fields. The generic `store i64` would write
-				// 8 bytes through an opaque pointer and clobber the adjacent
-				// header field (len write zeroing cap turns the string into a
-				// "borrowed view" and leaks its buffer). Narrow at the boundary.
+			if (recvLT == "%str-long" || recvLT == "%vec") && idx <= 1 {
+				// len/cap are u32 fields in BOTH headers. The generic
+				// `store i64` would write 8 bytes through an opaque pointer and
+				// clobber the adjacent header field (a len write zeroing cap
+				// turns the container into a "borrowed view" and leaks its
+				// buffer). Narrow at the boundary.
 				v := valV
 				if valLT != "i64" {
 					if cv := c.coerce(valLT, v, "i64"); cv != "" {
 						v = cv
 					}
 				}
-				c.strHeaderStoreI64(gep, v)
+				if recvLT == "%str-long" {
+					c.strHeaderStoreI64(gep, v)
+				} else {
+					c.vecHeaderStoreI64(gep, v)
+				}
 			} else {
 				fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", fieldLT, valV, fieldLT, gep)
 			}
@@ -12567,9 +12616,9 @@ func (c *codegen) emitLenCap(inst *Inst) error {
 		c.loadSeq++
 		lv := fmt.Sprintf("%%lc.%d", c.loadSeq)
 		fmt.Fprintf(c.sb, "  %s = load %s, %s* %s\n", lv, recvLT, recvLT, recvSlot)
-		c.loadSeq++
-		ev := fmt.Sprintf("%%le.%d", c.loadSeq)
-		fmt.Fprintf(c.sb, "  %s = extractvalue %s %s, %d\n", ev, recvLT, lv, fieldIdx)
+		// Both headers keep len/cap as u32; the Nolang-facing `.len()` /
+		// `.cap()` results are i64, so widen at the aggregate boundary.
+		ev := c.hdrFieldI64(recvLT, lv, fieldIdx)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", ev, dstSlot)
 		return nil
 	case KindStruct:
@@ -12897,12 +12946,7 @@ func (c *codegen) emitSliceOp(inst *Inst) error {
 		// %vec (default): data stored as i64 intptr.
 		dp := c.treg("sodp")
 		fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", dp, newBuf)
-		s0 := c.treg("sos0")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen)
-		s1 := c.treg("sos1")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, capV)
-		s2 := c.treg("sos2")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp)
+		s2 := c.vecFromParts(newLen, capV, dp)
 		fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, dstSlot)
 	}
 	return nil
@@ -12960,8 +13004,8 @@ func elemStride(lt string) int64 {
 		return 1
 	case "i64", "double":
 		return 8
-	case "%str-long":
-		return 24
+	case "%str-long", "%vec":
+		return 16
 	default:
 		return 8
 	}
@@ -13208,10 +13252,10 @@ func (c *codegen) enumFieldSlot(v *VariantInfo, idx int) (int64, int64) {
 func (c *codegen) enumRawSlots(raw string) int64 {
 	switch raw {
 	case "str", "vec":
-		return 3
+		return 2 // both descriptors are 16 bytes = 2 slots
 	}
 	if strings.HasPrefix(raw, "[]") {
-		return 3
+		return 2
 	}
 	if ty.IsOptionRaw(raw) {
 		return 2
@@ -13786,12 +13830,8 @@ func (c *codegen) emitStrFromVec(inst *Inst) error {
 		c.fail("str-from-vec: cannot convert %s to %s in func %d", srcT, dstLT, c.cf)
 		return i18n.Errorf("l1ypawem", "str-from-vec: bad types %s -> %s", srcT, dstLT)
 	}
-	c.loadSeq++
-	lv := fmt.Sprintf("%%svl.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 0\n", lv, srcV)
-	c.loadSeq++
-	cv := fmt.Sprintf("%%svc.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 1\n", cv, srcV)
+	lv := c.hdrFieldI64("%vec", srcV, 0)
+	cv := c.hdrFieldI64("%vec", srcV, 1)
 	c.loadSeq++
 	dv := fmt.Sprintf("%%svd.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 2\n", dv, srcV)
@@ -14794,15 +14834,7 @@ func (c *codegen) vecViewValue(argT, arrSlot string) string {
 	c.loadSeq++
 	pt := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", pt, dataPtr)
-	c.loadSeq++
-	s0 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n)
-	c.loadSeq++
-	s1 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
-	c.loadSeq++
-	s2 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt)
+	s2 := c.vecFromParts(fmt.Sprintf("%d", n), "0", pt)
 	return s2
 }
 
@@ -14853,12 +14885,7 @@ func (c *codegen) vecOwnedFromArray(argT, arrSlot string) string {
 	fmt.Fprintf(c.sb, "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %s, i8* %s, i64 %s, i1 false)\n", buf, src, total)
 	dp := c.treg("bva")
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", dp, buf)
-	s0 := c.treg("bva")
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n)
-	s1 := c.treg("bva")
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %d, 1\n", s1, s0, n)
-	s2 := c.treg("bva")
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp)
+	s2 := c.vecFromParts(fmt.Sprintf("%d", n), fmt.Sprintf("%d", n), dp)
 	return s2
 }
 
@@ -14929,15 +14956,7 @@ func (c *codegen) buildVecViewFromValues(elemLLT string, argLLVMs []string) stri
 	c.loadSeq++
 	pt := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", pt, dataPtr)
-	c.loadSeq++
-	s0 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n)
-	c.loadSeq++
-	s1 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
-	c.loadSeq++
-	s2 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt)
+	s2 := c.vecFromParts(fmt.Sprintf("%d", n), "0", pt)
 	c.loadSeq++
 	slot := fmt.Sprintf("%%cav.%d", c.loadSeq)
 	fmt.Fprintf(c.sb, "  %s = alloca %%vec\n", slot)
@@ -15304,14 +15323,7 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				pt := fmt.Sprintf("%%cav.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", pt, dataPtr)
 				c.loadSeq++
-				s0 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %d, 0\n", s0, n)
-				c.loadSeq++
-				s1 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
-				c.loadSeq++
-				s2 := fmt.Sprintf("%%cav.%d", c.loadSeq)
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, pt)
+				s2 := c.vecFromParts(fmt.Sprintf("%d", n), "0", pt)
 				c.loadSeq++
 				slot := fmt.Sprintf("%%carg.%d", c.loadSeq)
 				fmt.Fprintf(c.sb, "  %s = alloca %%vec\n", slot)
@@ -15330,15 +15342,10 @@ func (c *codegen) emitCallBody(f *Function, cf *Function, inst *Inst, calleeName
 				fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", strData, av)
 				strPt := c.treg("csv.p")
 				fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", strPt, strData)
-				s0 := c.treg("csv0")
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, strLen)
-				s1 := c.treg("csv1")
 				// cap is 0: this is a borrowed view over the string constant's data,
 				// not a heap allocation. Its drop must NOT free the constant memory
 				// (legacy @vec_free skips cap==0). len is still correct for reads.
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
-				s2 := c.treg("csv2")
-				fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, strPt)
+				s2 := c.vecFromParts(strLen, "0", strPt)
 				slot := c.treg("carg")
 				fmt.Fprintf(c.sb, "  %s = alloca %%vec\n", slot)
 				fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, slot)
@@ -15676,7 +15683,7 @@ func (c *codegen) mallocBytesFor(lt string) int64 {
 	case "i1", "i8":
 		return 1
 	case "%str-long", "%vec":
-		return 24
+		return 16
 	case "%option":
 		return 8 + c.optSlotBytes // i64 tag + payload slot (configured width)
 	}
@@ -16250,12 +16257,7 @@ func (c *codegen) coerceAsyncArg(av ValueID, plt string) (string, string, bool) 
 		fmt.Fprintf(c.sb, "  %s = extractvalue %%str-long %s, 2\n", d, areg)
 		p := c.treg("asv.p")
 		fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", p, d)
-		s0 := c.treg("asv0")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, l)
-		s1 := c.treg("asv1")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", s1, s0)
-		s2 := c.treg("asv2")
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, p)
+		s2 := c.vecFromParts(l, "0", p)
 		return "%vec", s2, false
 	}
 	return alt, areg, false
@@ -17469,7 +17471,7 @@ func (c *codegen) emitBuiltinPrivateField(inst *Inst, ff string) error {
 		fmt.Fprintf(c.sb, "  store %s %s, %s* %s\n", dstLT, v, dstLT, dstSlot)
 	} else {
 		fmt.Fprintf(c.sb, "  %s = load i32, i32* %s\n", l, g)
-		wide := c.strU32Widen(l)
+		wide := c.hdrWiden(l)
 		fmt.Fprintf(c.sb, "  store i64 %s, i64* %s\n", wide, dstSlot)
 	}
 	return nil
@@ -17672,15 +17674,7 @@ func (c *codegen) emitBuiltinAlloc(inst *Inst, ff string) error {
 		dp := fmt.Sprintf("%%ba.%d", c.loadSeq)
 		c.loadSeq++
 		fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", dp, mp)
-		s0 := fmt.Sprintf("%%ba.%d", c.loadSeq)
-		c.loadSeq++
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, lenV)
-		s1 := fmt.Sprintf("%%ba.%d", c.loadSeq)
-		c.loadSeq++
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, capV)
-		s2 := fmt.Sprintf("%%ba.%d", c.loadSeq)
-		c.loadSeq++
-		fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dp)
+		s2 := c.vecFromParts(lenV, capV, dp)
 		fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", s2, slot)
 	} else {
 		s2 := c.strLongFromParts(lenV, capV, mp)

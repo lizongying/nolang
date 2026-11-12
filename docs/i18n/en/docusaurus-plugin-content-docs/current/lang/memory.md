@@ -69,8 +69,8 @@ Stack-slot rebind only affects the **value copy** semantics of stack-type `b = a
 
 | Nolang Type | Memory Layout | Fields | Allocation |
 |------------|---------------|--------|-----------|
-| `[]T` (slice) | 24 bytes | i64 len, i64 cap, i64 data | malloc (heap) |
-| `[N]T` (fixed array) | 16 bytes | len, data | alloca (stack) or malloc |
+| `[]T` (slice) | **16 bytes** | **u32 len, u32 cap, i64 data (ptrtoint)** | malloc (heap) |
+| `[N]T` (fixed array) | N x sizeof(T) | elements inline, **no len/cap descriptor** | alloca (stack) or malloc |
 | `str` (long string) | **16 bytes** | **u32 len, u32 cap, i8\* data** | malloc (heap) |
 | `txt` (fixed string) | 256 bytes | `[255 x i8]` data, i8 len | alloca (stack) |
 | struct | sum of fields | each field | alloca (stack) |
@@ -88,8 +88,24 @@ verifier will not stop it, but the 8-byte access silently clobbers the adjacent 
 Every size constant follows the 16-byte descriptor: the `[]str` element stride, the argv
 backing store of `os.args()`, the `?str` / enum payload slot count (2 i64 words — the first
 packs len and cap), and global string constants spelled `{ i32 len, i32 cap, i8* data }`.
-`%vec` (24 bytes) and the option's default 24-byte inline payload slot are **unchanged**.
-`txt` keeps its fixed 256-byte layout and does not adopt u32.
+The option's default 24-byte inline payload slot is **unchanged** (both 16-byte
+`%str-long` and `%vec` still fit). `txt` keeps its fixed 256-byte layout and does not adopt u32.
+
+**`[]T`'s u32 header**: `%vec = type { i32, i32, i64 }` (16 bytes). `len` / `cap` mirror `str`
+(u32 inside, `i64` in every public API); the difference is that **the data field stays `i64`**
+(a `ptrtoint`-encoded pointer rather than `i8*`), which keeps the existing `inttoptr` /
+`ptrtoint` call sites unchanged. The boundary lives in `vecLenI64` / `vecCapI64` /
+`vecHeaderLoadI64` / `vecHeaderStoreI64` / `vecFromParts` (plus the generic `hdrFieldI64` /
+`hdrTrunc` / `hdrWiden`), and `emitLenCap` / `emitGetField` / `emitSetField` /
+`ensureVecBuffer` all go through them. The same prohibition as `str` applies: **never** emit a
+raw `load i64` / `store i64` against `%vec` fields 0/1.
+
+For `%vec`, `cap == 0` is the **borrowed view** marker (`s.bytes()`, `[N]T` -> `[]T` borrows,
+str -> `[]byte` coercions): it owns no heap and `@vec_free` / `@vec_retain` skip it; only
+`cap > 0` owns the block behind `data`.
+
+`[N]T` has no runtime descriptor at all: at the LLVM level it is the bare aggregate `[N x T]`,
+`.len` is replaced by the compile-time constant `N`, and there is no `cap`.
 
 ## Shallow Free vs Deep Free
 
@@ -386,7 +402,7 @@ When freeing a struct, all fields are traversed; heap-owning type fields are rec
 ```no
 #{fmt-skip}
 local [4]i64 = [100, 200, 300, 400]   ; local is fixed array (16 bytes)
-local = [100, 200, 300]                ; reassigned as slice (24 bytes)
+local = [100, 200, 300]                ; reassigned as slice (16 bytes)
 ```
 
 Fixed arrays (`%arr`, 2 fields) and slices (`%vec`, 3 fields) have different memory layouts. On reassignment the compiler automatically allocates a new `%vec` variable and redirects all subsequent accesses to avoid buffer overflow.

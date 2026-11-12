@@ -301,6 +301,11 @@ fn init = (c conn, key [32]byte) {
 push 在容量不足时扩容，可能使已有视图悬垂 —— 持有旧视图又 push 时要当心。
 
 [](空格)T 是切片；[N]T 是定长数组。
+
+内部布局：编译器描述符是 %vec = { u32 len, u32 cap, i64 data }（16 字节，data 是
+ptrtoint 编码的指针）。len / cap 内部是 u32、对外 .len() 仍是 i64；cap == 0 表示
+「借用视图」（如 s.bytes()、[N]T → []T），不拥有缓冲、不会被释放。
+[N]T 没有运行时描述符：LLVM 层就是裸聚合 [N x T]，.len 是编译期常量 N，没有 cap。
 `
       syntax: `
 xs []i64 = []

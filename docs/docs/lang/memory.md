@@ -69,8 +69,8 @@ Nolang 是**無 GC** 語言，記憶體安全由編譯器自動插入 `free` 保
 
 | Nolang 型別 | 記憶體結構 | 欄位 | 分配策略 |
 |------------|-----------|------|---------|
-| `[]T`（切片） | 24 字節 | i64 len, i64 cap, i64 data | malloc（堆） |
-| `[N]T`（固定陣列） | 16 字節 | len, data | alloca（棧）或 malloc |
+| `[]T`（切片） | **16 字節** | **u32 len, u32 cap, i64 data（ptrtoint）** | malloc（堆） |
+| `[N]T`（固定陣列） | N × sizeof(T) | 元素內聯，**無 len/cap 描述符** | alloca（棧）或 malloc |
 | `str`（長字串） | **16 字節** | **u32 len, u32 cap, i8\* data** | malloc（堆） |
 | `txt`（固定字串） | 256 字節 | `[255 x i8]` data, i8 len | alloca（棧） |
 | 結構體 | 各欄位總和 | 各欄位 | alloca（棧） |
@@ -86,8 +86,23 @@ LLVM verifier 不會攔截，但會一次讀／寫 8 字節而把相鄰的 heade
 
 連帶的尺寸常數也必須跟著 16 字節：`[]str` 的 element stride、`os.args()` 的 argv backing
 store、`?str` / enum payload 的 slot 數（2 個 i64 words，第一個 word 打包 len 與 cap）、
-以及全域字串常量的 `{ i32 len, i32 cap, i8* data }` 字面量。`%vec`（24 字節）與 option
-預設的 24 字節 inline payload 槽位**沒有**改變。`txt` 維持原樣，不隨 `str` 改成 u32。
+以及全域字串常量的 `{ i32 len, i32 cap, i8* data }` 字面量。option 預設的 24 字節 inline
+payload 槽位**沒有**改變（16 字節的 `%str-long` / `%vec` 都裝得下）。`txt` 維持原樣，
+不隨 `str` 改成 u32。
+
+**`[]T` 的 u32 header**：`%vec = type { i32, i32, i64 }`（16 字節）。`len` / `cap` 與 `str`
+同構，內部是 `u32`、對外 API 仍是 `i64`；差異在 **data 欄位仍是 `i64`**（`ptrtoint` 編碼的
+指標，而非 `i8*`），以保持 `inttoptr` / `ptrtoint` 的既有呼叫點不變。這層邊界由
+`vecLenI64` / `vecCapI64` / `vecHeaderLoadI64` / `vecHeaderStoreI64` / `vecFromParts`
+（以及通用的 `hdrFieldI64` / `hdrTrunc` / `hdrWiden`）統一處理，`emitLenCap` / `emitGetField` /
+`emitSetField` / `ensureVecBuffer` 全部走它們。與 `str` 相同的禁令也適用：**不可**對
+`%vec` 的第 0 / 1 欄位直接發 `load i64` / `store i64`。
+
+`cap == 0` 對 `%vec` 是**借用視圖**標記（`s.bytes()`、`[N]T` → `[]T` 借用、str → `[]byte`
+強制轉換）：不擁有堆、`@vec_free` / `@vec_retain` 會跳過；`cap > 0` 才擁有 `data` 指向的塊。
+
+`[N]T` 沒有任何運行時描述符：它在 LLVM 層就是裸聚合 `[N x T]`，`.len` 由編譯器直接換成
+編譯期常量 `N`，沒有 `cap`。
 
 ## 淺層 free 與深層 free
 
@@ -384,7 +399,7 @@ n = Node {
 
 ```no
 local [4]i64 = [100, 200, 300, 400]; local 是固定陣列（16 字節）
-local = [100, 200, 300]; 重新賦值為切片（24 字節）
+local = [100, 200, 300]; 重新賦值為切片（16 字節）
 ```
 
 固定陣列（`%arr`，2 欄位）與切片（`%vec`，3 欄位）記憶體佈局不同。重新賦值時編譯器自動分配新的 `%vec` 變數並重定向所有後續存取，避免緩衝區越界。

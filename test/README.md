@@ -334,7 +334,114 @@ segmentation fault，預存問題），**2694 條斷言通過、0 條失敗**（
 先通過官方/標準向量自檢 → 再取金標**。這一步是必要的：`scrypt` 的
 `salsa20-8-core` 金標就靠「Python 實作能重現 RFC 7914 A.1/A.2」才取得信任。
 
-### 5.0zb 快照：2026-11-12 上午（`net/tls` 记录层 + 服务器端，**當前**）
+### 5.0zd 快照：2026-11-12（`%vec` 收 16B / u32 header，**當前**）
+
+`[]T` 描述符從 `{ i64 len, i64 cap, i64 data }`（24B）改為 `{ i32 len, i32 cap, i64 data }`（16B）。
+內部 len / cap 是 `u32`，**對外 `v.len()` 仍是 `i64`**（讀 `zext i32→i64`、寫 `trunc i64→i32`）。
+`data` 欄位**刻意保持 `i64`**（`ptrtoint` 編碼），不同於 `%str-long` 的 `i8*`：這樣約 45 處
+`inttoptr` / `ptrtoint` 都不用改，但**兩者佈局自此不同**，過去的三元組 pun 徹底失效。
+`[N]T` 仍是裸聚合 `[N x T]`（無運行時描述符，`.len` 是編譯期常量 `N`，無 `cap`），
+option 的 24B inline slot 不動（`?str` / `?[]T` 只佔前 16B）。
+
+收口到的位置：
+
+| 檔案 | 改動 |
+|---|---|
+| `src/mir/codegen.go` | `%vec` 型別宣告；`hdrTrunc` / `hdrWiden` / `hdrFieldI64` 通用 helper，`strLenI64` / `strCapI64` / `vecLenI64` / `vecCapI64` 各一行委託；`vecFromParts` / `vecHeaderLoadI64` / `vecHeaderStoreI64`；prelude 內 raw IR（`@vec_free` / `@vec_retain` / `vecDeepClone` / `vecDeepEq` / `vecBufClone` / `vecDeepFree`）；四張尺寸表（`llvmTypeSizeUpper` / `mirStaticTypeSize` / `mallocBytesFor` / `elemStride`）；`emitLenCap` / `emitGetField` / `emitSetField` / `ensureVecBuffer` / `ensureContainerStorageForLen` / `emitExtendLen`；九處 `%vec` 構造點改走 `vecFromParts`；`enumRawSlots("str"/"vec")` 3→2 |
+| `src/mir/builtin_call.go` | `elemInfoOfVec` 的 `%vec` stride 24→16；len/push/pop/clear/truncate/insert/remove/reverse/sort/`arr.zero`/`chars-new`/read-file/write-file/`args`/`getgroups`/`getgrouplist` 全部改走 vec header helper |
+| `src/mir/builtin_str_bytes.go` | `str.bytes()` 借用視圖改走 `vecFromParts`；`str.from-bytes` 的 len 改走 `vecLenI64` |
+| `src/mir/hir2mir.go` | `StructFields["vec"]` 的 len/cap `i64`→`u32`；`enumFieldSlots("str"/"vec")` 3→2；`lowerEmbedBinding` 的 `%vec` 字面量改 `i32` |
+| `src/std/vec.no` / `arr.no` | 新增 `#{buildin}` 佈局聲明（供 LSP 查看欄位）；`arr` 只聲明 `len` 並註明「編譯期常量、無運行時描述符」 |
+| `compiler/src/cg-runtime.no` / `cg.no` | 自舉鏡像：`%vec` 型別、`@vec_new` / `@vec_len` / `@vec_push_i64` / `@__nolang_vec_eq_i64`、`OPT-MKVEC`/`OPT-GETVEC`（slot 仍是 24B `[3 x i64]` ⇒ `zext`/`trunc`）、`OP-STRFROMVEC`（f0/f1 已是 i32，不再 `trunc`） |
+
+**順帶修掉的既有 latent bug**：`codegen.go` 的 `enumRawSlots` 對 `str` 返回 3，而 `hir2mir.go`
+的 `enumFieldSlots` 對 `str` 返回 2 —— 含 `str` 欄位的列舉按 3 槽算偏移但只分配 2 槽 ⇒
+越界寫。兩處一併改成 2。
+
+**驗證**：`go build ./...` / `gofmt` / `go test ./mir/... ./builtin/... ./package/...` 全 `ok`；
+`test/std/` 抽樣 `vec`(46) / `arr`(11) / `arr-stack`(9) / `args`(10) / `fs`(90) / `path`(90) /
+`option`(25) / `err`(14) / `fmt`(40) / `io`(29) / `json`(129) / `global`(63) / `map`(82) /
+`str-map`(29) / `deque`(16) / `heap`(12) / `hash-set`(26) / `index-chain`(8) 全綠；
+自舉 `cg-runtime-test`(86) / `cg-str16-test`(41) / `cg-test`(359) / `ck-sig`(50) / `ck`(20) /
+`diag`(7) / `lx`(70) 全綠。另用四支探針覆蓋 `[]i64` 全方法、`[]str` / `[][]i64` / `[3]str` 視圖、
+`?[]i64`、含 `vec`/`str` 載荷的 enum、`#{embed}`、`a[i] = v`（vec 下標寫）、str 切片與字元讀取，
+輸出全部正確。
+
+⚠️ **踩到的坑（同一類，靜默）**：opaque pointer 下對 `%vec` 第 0/1 欄位的
+`load i64` / `store i64` 一樣不被 verifier 攔，因此**不能只改型別宣告**；本輪用 IR 掃描器
+（「`%vec` field 0/1 的 GEP 上是否出現 i64 load/store」）驗證 0 命中。
+
+⚠️ **本輪與並行 session 的紅燈無關**：`test/std/str.no`、`test/std/txt.no` 目前因
+`src/std/txt.no:489` 的 `?i64` → `u8` 賦值而整模組編不過（另一條線在改）；`compiler/tests/`
+的 `ast-test`（bug #85 `NoVal`）、`h2m-test`（s98 optmatch）、`ps-test` / `tok-test` /
+`util-test` / `ps-err-test` / `verify-struct-elem`（D11 `a[i]` 返回 `?T`）同樣是別條線在飛的改動。
+已用「把 `std/vec.no` / `arr.no` 的新增聲明暫時移除再重建」對照驗證：上述紅燈與本輪**無關**。
+
+### 5.0zc 快照：2026-11-12 上午（`net/unix` 從「整模組不可編譯」到 21/21，數字已被 5.0zd 取代）
+
+| 項目 | 數值 |
+|---|---:|
+| std 源檔 / 模組別名 / `test/std/*.no` | 119 / 119 / **119**（`ls` 實測，本輪新增 `unix.no`） |
+| API 面（函數 + 方法） | 2049（分母沿用 §5.0z） |
+| 已覆蓋 | 1895 + 21 = **1916 ≈ 93.5%** |
+| `net/unix` 自身 | **0/21 → 21/21**（`test/std/unix.no` 7 TEST / **65 斷言**） |
+
+**這一輪的主體不是測試，是先把模組救活。** `unix-listen` / `unix-dial` 兩個
+`#{buildin}` 在 `src/builtin/net.go:151/164` 有完整登記（`ForwardFunc`），但唯一的
+lowering 寫在 `src/build/llvm/call_stdlib.go`，隨提交 **`c7febdb1`**
+（"test(llvm): remove obsolete LLVM IR code generation tests"，2026-09-16）整檔刪除，
+之後沒有任何等價實作補上。後果：`unix-listen-on` / `unix-dial-to` / `unix-dial-timeout` /
+`unix-listener.listen` / `unix-conn.dial` **全部**在同一行炸掉 ——
+
+```
+Error: compilation error: MIR codegen could not handle …:
+       EmitLLVM: unsupported builtin unix-listen [2kqboupo]
+```
+
+而且全倉（`tests/` / `example/` / `test/` / `glossary/`）**沒有任何真實呼叫點**，只有
+`src/std/net/unix.no` 自己檔頭註解裡的示例，所以 `make test` 一直是綠的，缺口藏了很久。
+
+補法是 `src/mir/builtin_unix.go` 兩個 bespoke emitter（`emitBuiltinUnixListen` /
+`emitBuiltinUnixDial`）—— 它們進不了通用 C 呼叫表 `forward_call.go`，因為都不是
+「一個 libc 函式」的量級，得先在堆疊上拼出 `struct sockaddr_un`：
+
+| 平台 | 佈局 | 大小 |
+|---|---|---:|
+| linux | `sa_family_t sun_family` (2) ; `char sun_path[108]` | 110 |
+| darwin | `uint8_t sun_len` (1) ; `sa_family_t sun_family` (1) ; `char sun_path[104]` | 106 |
+
+兩邊 `sun_path` 都在 offset **2**，所以一段程式碼可以同時服務兩者（差別只在 darwin
+要回填 `sun_len` 且 family 在 offset 1）。關鍵細節：`AF_UNIX = 1`、路徑長度上限取
+**103**（darwin `104 - 1` 留 NUL，與 std 的 `UNIX-MAX-PATH` 一致）、**超長路徑直接回
+-1 且不碰檔案系統**（否則 `memcpy` 會衝出 `sun_path` 把堆疊寫壞）；`unix-listen` 會先
+`unlink` 舊 socket 檔（std 文件明寫「先 unlink 以便重複使用舊路徑」），`unix-dial` 在
+`connect` 失敗時把 socket `close` 掉（`net-dial` 是漏的，這裡沒跟著漏）。
+
+🔧 **本輪修掉 1 處 std 缺陷：`unix-listener.accept-with-timeout` 會永久阻塞**
+（`src/std/net/unix.no`，詳見 §5.1w）。`net.no` 的 `listener.accept-with-timeout`
+早就為這個坑改成了「非阻塞輪詢 + 小睡」，`unix.no` 是同一份程式碼的複製品卻漏改，
+`timeout-ms` 形同虛設。**這一處是測出來的**：探針在「無人連線」時直接掛死（exit 137
+零輸出），換成 TCP 版的同一支探針會在 100 ms 內回 nil，一比就知道。
+
+⚠️ **兩個實測結論（不是 std 缺陷，但決定了斷言怎麼寫）**
+
+1. **對端 close 之後 `setsockopt(SO_RCVTIMEO)` 在 macOS 回 EINVAL**（raw ret = -1，
+   errno 22）。所以 `conn.set-recv-timeout` / `set-timeout` 的「成功」斷言只能排在
+   **對端還在線**的時間窗內；對端關閉後同一行必然回 false，測試裡就照這個斷言。
+   同一支探針也確認 `unix-conn.recv-with-timeout` 的逾時語義與 `net` 一致（回 **-1**
+   而不是文件寫的 0，§5.2 #89）。
+2. **`#{buildin} txt` 目前在 HEAD 就缺 MIR 支援**：`test/std/char.no` /
+   `str.no` / `txt.no` 在 `2f3a4e06` 上直接紅 ——
+   `EmitLLVM: unknown callee txt.to-str`。已在**隔離 worktree**（`git worktree add
+   /tmp/… HEAD` + `make no`）用 HEAD 版原始碼與 HEAD 版編譯器複現，**與本輪改動無關**，
+   也不是工作區那份未提交的 `src/std/txt.no` 造成的。這三個檔待那個 session 補完
+   builtin 登記後才會回綠。
+
+**回歸（重建 `bin/no` 後實跑）**：`unix` 65、`net` 86、`tls` 156、`quic` 122、`ws` 94、
+`server` 122、`pool` 51、`http` 42、`http3` 91、`path` 90、`base64` 33、`aes` 52、
+`ip` 57、`url` 80 —— 全綠。`char` / `str` / `txt` 見上面第 2 點（非本輪）。
+
+### 5.0zb 快照：2026-11-12 上午（`net/tls` 记录层 + 服务器端，數字已被 5.0zc 取代）
 
 | 項目 | 數值 |
 |---|---:|

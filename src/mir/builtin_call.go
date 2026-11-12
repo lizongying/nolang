@@ -1687,9 +1687,9 @@ func (c *codegen) emitBuiltinCharsNew(inst *Inst) error {
 		c.fail("builtin chars-new: expected []char slice, got %s", ct)
 		return i18n.Errorf("u3g4qexx", "builtin %s: bad arg type %s", "chars-new", ct)
 	}
-	// n = vec field 0 (element count); data = vec field 2 (i64-held pointer).
-	nReg := c.treg("cn")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", nReg, cv))
+	// n = vec field 0 (element count, u32 in storage); data = vec field 2
+	// (i64-held pointer).
+	nReg := c.hdrFieldI64("%vec", cv, 0)
 	dReg := c.treg("cd")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dReg, cv))
 	cReg := c.treg("cp")
@@ -1795,13 +1795,14 @@ func (c *codegen) emitBuiltinLen(inst *Inst, ff string) error {
 	}
 	g := c.treg("lg")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %s, %s* %s, i32 0, i32 0\n", g, lt, lt, slot))
-	l := c.treg("ll")
+	// field 0 is u32 in both headers; an opaque-pointer `load i64` would
+	// silently read len+cap as one word. Widen the 4-byte field at the API
+	// boundary.
+	l := ""
 	if lt == "%str-long" {
-		// field 0/1 are u32; an opaque-pointer `load i64` would silently read
-		// len+cap as one word. Widen the 4-byte field at the API boundary.
 		l = c.strHeaderLoadI64(g)
 	} else {
-		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", l, g))
+		l = c.vecHeaderLoadI64(g)
 	}
 	v := c.coerce("i64", l, dstLT)
 	if v == "" {
@@ -2176,10 +2177,8 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	elemTy = elemLL
 	vv := c.treg("vpv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
-	lenG := c.treg("vpl")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
-	capG := c.treg("vpc")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 1\n", capG, vv))
+	lenG := c.hdrFieldI64("%vec", vv, 0)
+	capG := c.hdrFieldI64("%vec", vv, 1)
 	dataG := c.treg("vpd")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
 	// newCap = len==cap ? (cap==0 ? 1 : cap*2) : cap
@@ -2329,12 +2328,7 @@ func (c *codegen) emitBuiltinVecPush(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = add i64 %s, 1\n", newLen, lenG))
 	dataI64 := c.treg("vpdi")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
-	s0 := c.treg("vps0")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen))
-	s1 := c.treg("vps1")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, newCap))
-	s2 := c.treg("vps2")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataI64))
+	s2 := c.vecFromParts(newLen, newCap, dataI64)
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
 	return nil
 }
@@ -2378,7 +2372,7 @@ func (c *codegen) elemInfoOfVec(recv ValueID) (elemLL string, stride int64) {
 	// last of the three by-value element writes that must deep-clone a nested
 	// %vec) could never fire.
 	case strings.HasPrefix(elem, "[]"):
-		return "%vec", 24
+		return "%vec", 16
 	default:
 		return "i64", 8
 	}
@@ -2421,7 +2415,7 @@ func (c *codegen) emitBuiltinVecClear(inst *Inst) error {
 	vv := c.treg("clv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
 	z := c.treg("clz")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 0, 0\n", z, vv))
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i32 0, 0\n", z, vv))
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", z, slot))
 	return nil
 }
@@ -2471,9 +2465,7 @@ func (c *codegen) emitBuiltinArrZero(inst *Inst) error {
 		c.loadSeq++
 		lg := fmt.Sprintf("%%azlg.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lg, slot))
-		c.loadSeq++
-		lv := fmt.Sprintf("%%azlv.%d", c.loadSeq)
-		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", lv, lg))
+		lv := c.vecHeaderLoadI64(lg)
 		c.loadSeq++
 		dg := fmt.Sprintf("%%azdg.%d", c.loadSeq)
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dg, slot))
@@ -2530,14 +2522,13 @@ func (c *codegen) emitBuiltinVecTruncate(inst *Inst) error {
 	}
 	vv := c.treg("tgv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
-	lenG := c.treg("tgl")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	lenG := c.hdrFieldI64("%vec", vv, 0)
 	cmp := c.treg("tgc")
 	c.sb.WriteString(fmt.Sprintf("  %s = icmp ult i64 %s, %s\n", cmp, n, lenG))
 	newLen := c.treg("tgn")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 %s\n", newLen, cmp, n, lenG))
 	s0 := c.treg("tgs")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 0\n", s0, vv, newLen))
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i32 %s, 0\n", s0, vv, c.hdrTrunc(newLen)))
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s0, slot))
 	return nil
 }
@@ -2556,8 +2547,7 @@ func (c *codegen) emitBuiltinVecPop(inst *Inst) error {
 	elemLL, _ := c.elemInfoOfVec(recv)
 	vv := c.treg("ppv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
-	lenG := c.treg("ppl")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	lenG := c.hdrFieldI64("%vec", vv, 0)
 	dataG := c.treg("ppd")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
 	base := c.treg("ppb")
@@ -2582,7 +2572,7 @@ func (c *codegen) emitBuiltinVecPop(inst *Inst) error {
 	newLen := c.treg("ppnl")
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 0, i64 %s\n", newLen, z, last))
 	s0 := c.treg("pps")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 0\n", s0, vv, newLen))
+	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i32 %s, 0\n", s0, vv, c.hdrTrunc(newLen)))
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s0, slot))
 	return nil
 }
@@ -2602,8 +2592,7 @@ func (c *codegen) emitBuiltinVecReverse(inst *Inst) error {
 	elemLL, _ := c.elemInfoOfVec(recv)
 	vv := c.treg("rvv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
-	lenG := c.treg("rvl")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	lenG := c.hdrFieldI64("%vec", vv, 0)
 	dataG := c.treg("rvd")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
 	base := c.treg("rvb")
@@ -2676,10 +2665,8 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 	_, elemV := c.loadVal(inst.Args[2])
 	vv := c.treg("ivv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
-	lenG := c.treg("ivl")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
-	capG := c.treg("ivc")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 1\n", capG, vv))
+	lenG := c.hdrFieldI64("%vec", vv, 0)
+	capG := c.hdrFieldI64("%vec", vv, 1)
 	dataG := c.treg("ivd")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
 	capZero := c.treg("ivcz")
@@ -2838,12 +2825,7 @@ func (c *codegen) emitBuiltinVecInsert(inst *Inst) error {
 		newCap, growCap, lGrow, capG, lFast))
 	dataI64 := c.treg("ivdi")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
-	s0 := c.treg("ivs0")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen))
-	s1 := c.treg("ivs1")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, newCap))
-	s2 := c.treg("ivs2")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataI64))
+	s2 := c.vecFromParts(newLen, newCap, dataI64)
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
 	return nil
 }
@@ -2868,8 +2850,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	}
 	vv := c.treg("rmv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
-	lenG := c.treg("rml")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	lenG := c.hdrFieldI64("%vec", vv, 0)
 	dataG := c.treg("rmd")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
 	base := c.treg("rmb")
@@ -2930,12 +2911,7 @@ func (c *codegen) emitBuiltinVecRemove(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  call void @nolang_free(i8* %s)\n", srcPtr))
 	dataI64 := c.treg("rmdi")
 	c.sb.WriteString(fmt.Sprintf("  %s = ptrtoint i8* %s to i64\n", dataI64, newBuf))
-	s0 := c.treg("rms0")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec { i64 0, i64 0, i64 0 }, i64 %s, 0\n", s0, newLen))
-	s1 := c.treg("rms1")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 1\n", s1, s0, newLen))
-	s2 := c.treg("rms2")
-	c.sb.WriteString(fmt.Sprintf("  %s = insertvalue %%vec %s, i64 %s, 2\n", s2, s1, dataI64))
+	s2 := c.vecFromParts(newLen, newLen, dataI64)
 	c.sb.WriteString(fmt.Sprintf("  store %%vec %s, %%vec* %s\n", s2, slot))
 	return nil
 }
@@ -2958,8 +2934,7 @@ func (c *codegen) emitBuiltinVecSort(inst *Inst, asc bool) error {
 	elemLL, stride := c.elemInfoOfVec(recv)
 	vv := c.treg("stv")
 	c.sb.WriteString(fmt.Sprintf("  %s = load %%vec, %%vec* %s\n", vv, slot))
-	lenG := c.treg("stl")
-	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 0\n", lenG, vv))
+	lenG := c.hdrFieldI64("%vec", vv, 0)
 	dataG := c.treg("std")
 	c.sb.WriteString(fmt.Sprintf("  %s = extractvalue %%vec %s, 2\n", dataG, vv))
 	base := c.treg("stb")
@@ -3934,13 +3909,14 @@ func (c *codegen) emitBuiltinReadFile(inst *Inst) error {
 	c.sb.WriteString(fmt.Sprintf("  %s = select i1 %s, i64 %s, i64 0\n", ln, allOk, nr))
 
 	if dstLT == "%vec" {
-		// Legacy API: fs.read-file returns a []byte (a %vec { len, cap, data-as-i64 }).
+		// Legacy API: fs.read-file returns a []byte (a %vec
+		// { u32 len, u32 cap, i64 data-as-i64 }).
 		lenGEP := c.treg("rf.lgep")
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dstSlot))
-		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, lenGEP))
+		c.vecHeaderStoreI64(lenGEP, ln)
 		capGEP := c.treg("rf.cgep")
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, dstSlot))
-		c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", ln, capGEP))
+		c.vecHeaderStoreI64(capGEP, ln)
 		dataGEP := c.treg("rf.dgep")
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dstSlot))
 		dataInt := c.treg("rf.data")
@@ -4007,8 +3983,7 @@ func (c *codegen) emitBuiltinWriteFile(inst *Inst) error {
 	} else {
 		lenGEP := c.treg("wf.lgep")
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, dataSlot))
-		wfLen = c.treg("wf.len")
-		c.sb.WriteString(fmt.Sprintf("  %s = load i64, i64* %s\n", wfLen, lenGEP))
+		wfLen = c.vecHeaderLoadI64(lenGEP)
 		dataGEP := c.treg("wf.dgep")
 		c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, dataSlot))
 		dataPtr := c.treg("wf.data")
@@ -4397,10 +4372,10 @@ func (c *codegen) emitBuiltinArgsList(inst *Inst) error {
 	// %vec { len, cap, data }
 	lenGEP := c.treg("al.lgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, slot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", n, lenGEP))
+	c.vecHeaderStoreI64(lenGEP, n)
 	capGEP := c.treg("al.cgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, slot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", n, capGEP))
+	c.vecHeaderStoreI64(capGEP, n)
 	dataGEP := c.treg("al.dgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, slot))
 	dataInt := c.treg("al.data")
@@ -4591,10 +4566,10 @@ func (c *codegen) emitBuiltinGetGroups(inst *Inst) error {
 	// --- build the %vec { len, cap, data } ---------------------------------
 	lenGEP := c.treg("gg.lgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, gidsSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, lenGEP))
+	c.vecHeaderStoreI64(lenGEP, cnt)
 	capGEP := c.treg("gg.cgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, gidsSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, capGEP))
+	c.vecHeaderStoreI64(capGEP, cnt)
 	dataGEP := c.treg("gg.dgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, gidsSlot))
 	dataInt := c.treg("gg.data")
@@ -4726,10 +4701,10 @@ func (c *codegen) emitBuiltinGetGrouplist(inst *Inst) error {
 	// --- build the %vec { len, cap, data } -------------------------------
 	lenGEP := c.treg("gl.lgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 0\n", lenGEP, gidsSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, lenGEP))
+	c.vecHeaderStoreI64(lenGEP, cnt)
 	capGEP := c.treg("gl.cgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 1\n", capGEP, gidsSlot))
-	c.sb.WriteString(fmt.Sprintf("  store i64 %s, i64* %s\n", cnt, capGEP))
+	c.vecHeaderStoreI64(capGEP, cnt)
 	dataGEP := c.treg("gl.dgep")
 	c.sb.WriteString(fmt.Sprintf("  %s = getelementptr inbounds %%vec, %%vec* %s, i32 0, i32 2\n", dataGEP, gidsSlot))
 	dataInt := c.treg("gl.data")

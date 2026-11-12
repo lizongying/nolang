@@ -97,16 +97,19 @@ cg-runtime-str-eq = () (r str) {
 }
 
 ; vec-eq：@__nolang_vec_eq_i64 —— 两个 %vec（元素 i64）按内容深度相等（Go vecDeepEq 的 i64 分支逐字）。
-; %vec = { i64 len, i64 cap, i64 data }；data 存为整数地址，故先 inttoptr 还原为 i8*。
+; %vec = { u32 len, u32 cap, i64 data }（16B）；data 存为整数地址，故先 inttoptr 还原为 i8*。
 ; 先比 len，len 相等才 memcmp(data,data,len*8)（空向量 bytes=0，memcmp 不解引用，null 也安全）。
+; len 是 u32 ⇒ 取用前 zext 到 i64（比较与字节数都以 i64 为准）。
 ; 依赖 @memcmp（cg-runtime-memcmp-decl，s42 已声明）。
 ; r: 結果字串
 cg-runtime-vec-eq = () (r str) {
     b = sb.init(768)
     b.push('define i1 @__nolang_vec_eq_i64(%vec %a, %vec %b) {\n')
     b.push('entry:\n')
-    b.push('  %la = extractvalue %vec %a, 0\n')
-    b.push('  %lb = extractvalue %vec %b, 0\n')
+    b.push('  %la32 = extractvalue %vec %a, 0\n')
+    b.push('  %lb32 = extractvalue %vec %b, 0\n')
+    b.push('  %la = zext i32 %la32 to i64\n')
+    b.push('  %lb = zext i32 %lb32 to i64\n')
     b.push('  %leneq = icmp eq i64 %la, %lb\n')
     b.push('  br i1 %leneq, label %cmp, label %no\n')
     b.push('cmp:\n')
@@ -179,10 +182,12 @@ cg-runtime-str-concat = () (r str) {
     r = b.str()
 }
 
-; vec-type：向量（Go codegen.go:2936 逐字）。len, cap, data（data 存成 i64 裸指针）。
+; vec-type：向量（Go codegen.go 逐字）。16B = u32 len + u32 cap + i64 data（data 存成 i64 裸指针）。
+; 對外 API（.len()）仍是 i64 ⇒ 讀寫該兩欄一律 zext/trunc 在邊界做，
+; 不可用 i64 直接 load/store（opaque pointer 下 LLVM 不會攔，會靜默讀到 len+cap 打包值）。
 ; r: 結果字串
 cg-runtime-vec-type = () (r str) {
-    r = '%vec = type { i64, i64, i64 }'
+    r = '%vec = type { i32, i32, i64 }   ; u32 len, u32 cap, data (ptrtoint, 16B); external API stays i64'
 }
 
 ; option-type：`?T` 的唯一表示（Go emitPrelude 的 %option 逐字）。
@@ -265,17 +270,18 @@ cg-runtime-vec-new = () (r str) {
     b = sb.init(256)
     b.push('define %vec @vec_new() {\n')
     b.push('entry:\n')
-    b.push('\tret %vec { i64 0, i64 0, i64 0 }\n}\n')
+    b.push('\tret %vec { i32 0, i32 0, i64 0 }\n}\n')
     r = b.str()
 }
 
-; 功能待補充
+; vec_len：对外仍是 i64（Nolang API），描述符里的 len 是 u32 ⇒ 边界处 zext。
 ; r: 結果字串
 cg-runtime-vec-len = () (r str) {
     b = sb.init(256)
     b.push('define i64 @vec_len(%vec %v) {\n')
     b.push('entry:\n')
-    b.push('\t%l = extractvalue %vec %v, 0\n')
+    b.push('\t%l32 = extractvalue %vec %v, 0\n')
+    b.push('\t%l = zext i32 %l32 to i64\n')
     b.push('\tret i64 %l\n}\n')
     r = b.str()
 }
@@ -302,9 +308,11 @@ cg-runtime-vec-push = () (r str) {
     b = sb.init(1024)
     b.push('define %vec @vec_push_i64(%vec %v, i64 %x) {\n')
     b.push('entry:\n')
-    b.push('\t%len = extractvalue %vec %v, 0\n')
-    b.push('\t%cap = extractvalue %vec %v, 1\n')
+    b.push('\t%len32 = extractvalue %vec %v, 0\n')
+    b.push('\t%cap32 = extractvalue %vec %v, 1\n')
     b.push('\t%dat = extractvalue %vec %v, 2\n')
+    b.push('\t%len = zext i32 %len32 to i64\n')
+    b.push('\t%cap = zext i32 %cap32 to i64\n')
     b.push('\t%full = icmp eq i64 %len, %cap\n')
     b.push('\tbr i1 %full, label %grow, label %store\n')
     b.push('grow:\n')
@@ -331,8 +339,10 @@ cg-runtime-vec-push = () (r str) {
     b.push('\t%sp = bitcast i8* %slot to i64*\n')
     b.push('\tstore i64 %x, i64* %sp\n')
     b.push('\t%len1 = add i64 %len, 1\n')
-    b.push('\t%r0 = insertvalue %vec { i64 0, i64 0, i64 0 }, i64 %len1, 0\n')
-    b.push('\t%r1 = insertvalue %vec %r0, i64 %cap2, 1\n')
+    b.push('\t%len1t = trunc i64 %len1 to i32\n')
+    b.push('\t%cap2t = trunc i64 %cap2 to i32\n')
+    b.push('\t%r0 = insertvalue %vec { i32 0, i32 0, i64 0 }, i32 %len1t, 0\n')
+    b.push('\t%r1 = insertvalue %vec %r0, i32 %cap2t, 1\n')
     b.push('\t%r2 = insertvalue %vec %r1, i64 %dat2, 2\n')
     b.push('\tret %vec %r2\n}\n')
     r = b.str()

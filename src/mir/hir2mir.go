@@ -665,13 +665,11 @@ func enumFieldIndex(v *VariantInfo, name string) int {
 // every variant, hence the enum's slot width is the max over variants.
 func (l *lowerer) enumFieldSlots(raw string) int64 {
 	switch raw {
-	case "str":
-		return 2 // %str-long = { i32, i32, i8* } = 16 bytes
-	case "vec":
-		return 3 // %vec = 24 bytes
+	case "str", "vec":
+		return 2 // %str-long = { i32, i32, i8* } / %vec = { i32, i32, i64 } = 16 bytes
 	}
 	if strings.HasPrefix(raw, "[]") {
-		return 3
+		return 2
 	}
 	if ty.IsOptionRaw(raw) {
 		return 4 // %option = 32 bytes (i64 tag + 24-byte payload slot)
@@ -1343,9 +1341,13 @@ func LowerHIR(pkg *hir.Package, enumVariants map[string][]string) (*Module, *Rep
 		{Name: "cap", TypeRaw: "u32", Tag: FieldTagInline},
 		{Name: "data", TypeRaw: "str", Tag: FieldTagInline},
 	}
+	// The physical %vec header is { i32 len, i32 cap, i64 data(ptrtoint) }: both
+	// counters are u32 in storage (16-byte descriptor), while every
+	// Nolang-facing API is i64 (vec.len()/cap() and the private _len/_cap
+	// builtins widen at the boundary).
 	l.mod.StructFields["vec"] = []FieldInfo{
-		{Name: "len", TypeRaw: "i64", Tag: FieldTagInline},
-		{Name: "cap", TypeRaw: "i64", Tag: FieldTagInline},
+		{Name: "len", TypeRaw: "u32", Tag: FieldTagInline},
+		{Name: "cap", TypeRaw: "u32", Tag: FieldTagInline},
 		{Name: "data", TypeRaw: "vec", Tag: FieldTagInline},
 	}
 	// txt: fixed 256-byte stack buffer { [255 x i8] data, i8 len } (capped at
@@ -6577,7 +6579,7 @@ func (l *lowerer) lowerEmbedBinding(name string, data []byte) {
 	for i := range l.mod.Globals {
 		if l.mod.Globals[i].Init == gv {
 			l.mod.Globals[i].ConstText = fmt.Sprintf(
-				"%%vec { i64 %d, i64 %d, i64 ptrtoint ([%d x i8]* @.embed.%s to i64) }",
+				"%%vec { i32 %d, i32 %d, i64 ptrtoint ([%d x i8]* @.embed.%s to i64) }",
 				n, n, n, name)
 			l.mod.Globals[i].EmbedBytes = data
 			break

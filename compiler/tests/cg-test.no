@@ -2020,12 +2020,14 @@ test-option-vec = () {
     runner.eq(s.contains('%vu04 = extractvalue %vec %vc4, 0'), 1, 'optmkvec extract len field')
     runner.eq(s.contains('%op5 = insertvalue %option %mv24, i64 %vu24, 1, 2'), 1, 'optmkvec store dat field')
 
-    ; ⚠️ vec 载荷无需 ptrtoint（%vec 三字段全 i64）：函数体内不得出现 ptrtoint/inttoptr
-    runner.eq(s.contains('ptrtoint'), 0, 'optmkvec no ptrtoint (all-i64 payload)')
+    ; ⚠️ vec 载荷的 dat 已是整数指针，无需 ptrtoint/inttoptr；
+    ;    len/cap 是 u32（%vec 16B）⇒ 存进 [3 x i64] 槽前必须 zext
+    runner.eq(s.contains('ptrtoint'), 0, 'optmkvec no ptrtoint (dat already i64)')
+    runner.eq(s.contains('%vu0w4 = zext i32 %vu04 to i64'), 1, 'optmkvec widens len to i64')
 
     ; OPTGETVEC：从 slot 取 3 字段 + insertvalue 重建 %vec（k=5，zeroinitializer 起）
     runner.eq(s.contains('%vo05 = extractvalue %option %op5, 1, 0'), 1, 'optgetvec extract slot[0]')
-    runner.eq(s.contains('%vb05 = insertvalue %vec zeroinitializer, i64 %vo05, 0'), 1, 'optgetvec rebuild len')
+    runner.eq(s.contains('%vb05 = insertvalue %vec zeroinitializer, i32 %vo0i5, 0'), 1, 'optgetvec rebuild len (trunc to u32)')
     runner.eq(s.contains('%vc6 = insertvalue %vec %vb15, i64 %vo25, 2'), 1, 'optgetvec rebuild dat field')
 }
 

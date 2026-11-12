@@ -178,7 +178,7 @@ test-str16-prelude = () {
     m = cg-str16-module()
     runner.eq(m.contains('%str-long = type { i32, i32, i8* }'), 1, 'str-long is 16B u32 header')
     runner.eq(m.contains('%str-long = type { i64, i64, i8* }'), 0, 'no legacy 24B str-long')
-    runner.eq(m.contains('%vec = type { i64, i64, i64 }'), 1, 'vec unchanged')
+    runner.eq(m.contains('%vec = type { i32, i32, i64 }'), 1, 'vec also 16B (u32 header)')
     runner.eq(m.contains('%option = type { i64, [3 x i64] }'), 1, 'option 24B slot unchanged')
     runner.eq(m.contains('%la = zext i32 %la.i32 to i64'), 1, 'str_eq widens len')
     runner.eq(m.contains('%r0.i32 = trunc i64 %total to i32'), 1, 'str_concat truncs total')
@@ -237,10 +237,10 @@ test-str16-opt = () {
 
 test-str16-vec = () {
     s = str16-vec()
-    runner.eq(s.contains('%sfli1 = trunc i64 %sfl1 to i32'), 1, 'STRFROMVEC truncs len')
-    runner.eq(s.contains('%sfci1 = trunc i64 %sfc1 to i32'), 1, 'STRFROMVEC truncs cap')
-    runner.eq(s.contains('%sfs01 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %sfli1, 0'), 1, 'STRFROMVEC i32 len field')
-    runner.eq(s.contains('%sfs11 = insertvalue %str-long %sfs01, i32 %sfci1, 1'), 1, 'STRFROMVEC i32 cap field')
+    runner.eq(s.contains('%sfl1 = extractvalue %vec %vc1, 0'), 1, 'STRFROMVEC reads i32 len field 0')
+    runner.eq(s.contains('%sfc1 = extractvalue %vec %vc1, 1'), 1, 'STRFROMVEC reads i32 cap field 1')
+    runner.eq(s.contains('%sfs01 = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %sfl1, 0'), 1, 'STRFROMVEC i32 len field')
+    runner.eq(s.contains('%sfs11 = insertvalue %str-long %sfs01, i32 %sfc1, 1'), 1, 'STRFROMVEC i32 cap field')
     runner.eq(s.contains('%sfp1 = inttoptr i64 %sfd1 to i8*'), 1, 'STRFROMVEC data still inttoptr')
 }
 

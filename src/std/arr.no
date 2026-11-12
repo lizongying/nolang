@@ -7,13 +7,17 @@
 ; 共享 arr 的底層記憶體，不複製資料。
 ; 因此 vec 的所有方法（len、push、pop、contains、reverse、clone、fill、to-arr 等）
 ; 均適用於 arr 的切片視圖。通過切片修改元素會影響原始 arr。
-; 只存固定大小
-; <=8 字节存值指針（i8..i64/u8..u64/f32/f64/bool），
-; >8 字节存指针指針
-; arr {
-;     len i64 read-only
-;     data i64 sealed
-; }
+; arr — 固定大小陣列的「偽佈局」聲明（只供 LSP/文檔查看，**無運行時描述符**）
+;
+; `[n]t` 在 LLVM 層就是裸聚合 `[N x T]`：元素內聯、無 len/cap 欄位、無堆指標。
+; `.len` 不讀記憶體，由編譯器直接替換成編譯期常量 n（見下方 [n]t.len）。
+; 因此這裡只聲明 len 一個偽欄位；沒有 cap，也沒有 data。
+; 需要運行時長度/容量的場景請改用切片 `[]t`（見 std/vec.no 的 vec 聲明）。
+; [arr](#arr.arr)
+#{buildin}
+arr {
+    len i64; 對外：編譯期常量 n（不佔記憶體，非運行時欄位）
+}
 ; 注意：[n]t 方法中不能用 .len，因為 [n]t 的 self 是原始陣列 [N x T]*，
 ; 沒有 len 欄位。改用泛型參數 n（substitution 後替換為具體大小）。
 ; 範圍用 [0..n)（兩點 + 裸標識符 n）。

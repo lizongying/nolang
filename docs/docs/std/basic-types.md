@@ -18,17 +18,22 @@ Nolang 型別到 LLVM 的對映關係：
 | `f32`            | `float`                                            |
 | `f64`            | `double`                                           |
 | `str`            | `%str-long = { i32, i32, i8* }`（u32 len, u32 cap, data；64 位元下 16 字節，堆分配） |
+| `[]t`            | `%vec = { i32, i32, i64 }`（u32 len, u32 cap, ptrtoint data；64 位元下 16 字節，堆分配） |
+| `[n]t`           | `[n x t]`（裸聚合，元素內聯；**無 len / cap 描述符**） |
 | `txt`            | `{ [255 x i8], i8 }`（固定 256 字節） |
 
-> **`str` 的 len / cap 內部是 `u32`，對外一律 `i64`。** 描述符讀取時 `zext i32 -> i64`、寫入時
-> `trunc i64 -> i32`；`s.len-bytes()`、`s.len()`、`s.cap()` 與私有 `_len` / `_cap` / `_set-len` /
-> `_set-cap` 的簽名都維持 `i64`。詳見 [字串：內部佈局與對外 API](../lang/str.md)。
+> **`str` 與 `[]t` 的 len / cap 內部都是 `u32`，對外一律 `i64`。** 描述符讀取時 `zext i32 -> i64`、
+> 寫入時 `trunc i64 -> i32`；`s.len-bytes()`、`s.len()`、`s.cap()` 與私有 `_len` / `_cap` / `_set-len` /
+> `_set-cap` 的簽名都維持 `i64`，`v.len()` 亦然。詳見 [字串：內部佈局與對外 API](../lang/str.md)
+> 與 [記憶體模型：型別佈局](../lang/memory.md#型別佈局)。
+> `%vec` 的 `data` 欄位刻意保持 `i64`（`ptrtoint` 編碼），與 `%str-long` 的 `i8*` 不同，因此兩者
+> **佈局不再相同**，不可再互相 `getelementptr` 當成同一種描述符。
 > `txt` 沒有 `cap` 欄位，長度是 1 個 `i8`（0-255），**不隨 `str` 改成 u32**。
 
 **複合型別：**
 
-- **變長數組 `[]t`**：底層 `{ t*, i64 }`（data, len）
-- **定長數組 `[n]t`**：LLVM 固定大小陣列
+- **變長數組 `[]t`**：底層 `%vec = { u32 len, u32 cap, i64 data }`（16 字節；`cap == 0` 表示借用視圖，不擁有緩衝）
+- **定長數組 `[n]t`**：LLVM 固定大小陣列 `[n x t]`，元素內聯、無運行時描述符；`.len` 是編譯期常量 `n`，沒有 `cap`
 - **字串 `str`**：堆分配的位元組序列，描述符 `{ u32 len, u32 cap, i8* data }`（64 位元下 16 字節）；支援 `s[i]`、`s[i..j]`、`s + t`。長度／容量對外以 `i64` 呈現（`s.len-bytes()` / `s.cap()`），內部以 `u32` 存放
 - **固定字串 `txt`**：固定 256 字節結構 `{ [255]byte data, byte len }`，前 255 字節存儲數據，最後 1 字節存儲**字節**長度（0-255），無需堆分配，必須類型標註（`t txt = 'abc'`）；`t.len()` 回傳 code point 數量（與 `str` 對齊，等價 `t.count()`），`t.len-bytes()` 回傳字節數量；索引 `t[i]` **讀取**以**碼點**為單位（讀回該碼點的 `char`，越界回傳 `-1`）；**寫入 `t[i] = c` 自 2026-11-12 起全域禁用**（編譯錯誤 `idxwrite`）—— 它會把 `c` 重新 UTF-8 編碼並後移尾部字節，長度隨寫入隱式改變（`i` 等於碼點數時為追加、超過 255 的部分靜默丟棄）；要變長請用 `t.push(c char)` / `t.push-str(s)` / `t.push-txt(u)`，要就地改值請用 place-match `t[i]: { ok -> it = c }`；字節級讀取用 `t.byte(i)`（回傳 `?byte`，越界回傳 nil）；要按字節拼裝就直接攢 `[]byte`，再 `txt.from-bytes(b)` 一次拷入（超過 255 字節截斷，長度按實際字節數設定）。字節級寫入器 `txt._set-byte` 自 2026-11-11 起是 **std 私有**，用戶代碼不可調用。`str` 的 `s[i] = v` 已於 2026-11-11 **全域禁用**（編譯錯誤 `idxwrite`，`with-cap` 基底也不再豁免），`str` 側只剩 `s.fill(val byte)`、place-match `s[i]: { ok -> it = v }` 與增長用的 `s.push(c)` / `s.push-str(s)`
 - **列舉/Union**：`option` tagged enum（`ok t` / `nil` / `err str`）

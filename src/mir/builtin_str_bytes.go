@@ -61,14 +61,10 @@ func (c *codegen) emitBuiltinStrBytes(inst *Inst) error {
 	}
 
 	// %vec stores its data pointer as an i64 (see vec_free: inttoptr i64).
+	// vecFromParts owns the u32/i64 len-cap narrowing boundary.
 	dataI := c.treg("sbd")
 	fmt.Fprintf(c.sb, "  %s = ptrtoint i8* %s to i64\n", dataI, dataPtr)
-	v0 := c.treg("sbv")
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec zeroinitializer, i64 %s, 0\n", v0, lenV)
-	v1 := c.treg("sbv")
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 0, 1\n", v1, v0)
-	v2 := c.treg("sbv")
-	fmt.Fprintf(c.sb, "  %s = insertvalue %%vec %s, i64 %s, 2\n", v2, v1, dataI)
+	v2 := c.vecFromParts(lenV, "0", dataI)
 	fmt.Fprintf(c.sb, "  store %%vec %s, %%vec* %s\n", v2, dstSlot)
 	return nil
 }
@@ -101,9 +97,9 @@ func (c *codegen) emitBuiltinStrFromBytes(inst *Inst) error {
 		c.fail("builtin %s: expected []byte argument, got %s", ff, vt)
 		return i18n.Errorf("u3g4qexx", "builtin %s: bad arg type %s", ff, vt)
 	}
-	// %vec = { i64 len, i64 cap, i64 data }; data is a ptrtoint-encoded pointer.
-	vecLen := c.treg("fbl")
-	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 0\n", vecLen, vv)
+	// %vec = { u32 len, u32 cap, i64 data }; data is a ptrtoint-encoded pointer.
+	// vecLenI64 owns the u32/i64 header widening boundary.
+	vecLen := c.vecLenI64(vv)
 	vecData := c.treg("fbd")
 	fmt.Fprintf(c.sb, "  %s = extractvalue %%vec %s, 2\n", vecData, vv)
 	dataPtr := c.treg("fbp")

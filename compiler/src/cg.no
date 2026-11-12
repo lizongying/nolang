@@ -10,7 +10,7 @@
 ;   VECNEW / VECPUSH / VECLEN / VECGET（%vec，元素仅 i64）
 ;   OPTNONE / OPTSOME / OPTTAG / OPTISOK / OPTGET（%option，i64 载荷）
 ;   OPTMKSTR / OPTGETSTR（%option，str 载荷内联；B28：16B %str-long 只占 24B [3 x i64] 槽前 16B，len/cap 走 zext/trunc）
-;   OPTMKVEC / OPTGETVEC（%option，vec 载荷内联 s40；%vec 三字段全 i64 恰 24B，无需 ptrtoint）
+;   OPTMKVEC / OPTGETVEC（%option，vec 载荷内联 s40；B28b：%vec 是 16B { u32, u32, i64 }，只占 24B [3 x i64] 槽前 16B，len/cap 走 zext/trunc）
 ;   OPTMKF64 / OPTGETF64（%option，f64/double 载荷内联 s46；f64 与 [3 x i64] 槽元素等宽，bitcast double<->i64 落/取 slot[0]，无需 ptrtoint/helper）
 ;   OPTALLOC / OPTSTORE / OPTLOAD（%option 跨基本块走 alloca %option，第八命名空间 %os，无 PHI s41）
 ;   STRUCT-MK / STRUCT-GET / STRUCT-SET（%struct.point，值语义；SET 是「读旧出新值」）
@@ -35,7 +35,7 @@
 ;     但 fdiv/frem 无護栏）。TY-F64 是真独立型别，须进两张映射
 ;   一元 ALU（s48）：NEG / NOT——NEG 复用 s37 的值型别分派（vty[d]==TY-F64⇒fneg double %fd…，否则⇒sub i64 0, %v…），
 ;     NOT⇒xor i64 1, %v…（翻转 0/1 布尔）。均单块降级、无 helper；忠实 Go emitNeg（非 option 路不插溢出护栏）／emitNot
-;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec。B28：len/cap 須先 trunc i64→i32（Go strLongFromParts）
+;   vec→str 重interpret（s49）：OP-STRFROMVEC——%vec 三欄位（len/cap/dat）逐欄位拷进 %str-long，dat（i64 整数指针）走 inttoptr→i8*（同 s28 OPTGETSTR 纪律）；单块降级、无 helper；忠实 Go emitStrFromVec。B28b：len/cap 本就是 i32（%vec 16B），直接 insertvalue，无需 trunc
 ;   str 容量欄（s50）：OP-STRCAP——extractvalue %str-long field 1（与 OP-STRLEN 的 field 0 成对，Go 原以 fieldIdx 分派）；单块降级、无 helper；忠实 Go emitLenCap 的 OpCap/KindStr 分支。B28：讀出後 zext i32→i64
 ; 签名（M4-c 第七件）：cg-emit-cfg-t 接受 retty + ptyps[]，形参与返回值可按型别
 ;   取 i64 / %str-long / %vec / %option；cg-emit-cfg 是「全 i64」的便捷壳（旧 API 零改动）。
@@ -1946,7 +1946,7 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         op == OP-STRFROMVEC -> {
 
             ; s49（鏡像 Go emitStrFromVec, codegen.go:13069）：dst = 字符串值 id；x = 向量值 id（TY-VEC）。
-            ; %vec→%str-long 逐欄位重interpret：f0/f1 是 i64 的 len/cap ⇒ B28 須先 trunc i64→i32；f2=dat 是整數指針（i64）⇒ inttoptr i64→i8*。
+            ; %vec→%str-long 逐欄位重interpret：f0/f1 已是 i32 的 len/cap（16B 佈局，無需 trunc）；f2=dat 是整數指針（i64）⇒ inttoptr i64→i8*。
             ; ⚠️ 同 OPTGETSTR：bitcast 不能指針⇄整數，故 f2 必須 inttoptr；中間步 %sfl/%sfc/%sfd/%sfp/%sfs0/%sfs1 按下標 k，最後一步才落規範 %sv<d>（規避 multiple definition）。
             ; ⚠️ 純單块降級、無需 helper；僅存欄位，dat 與原 vec 共享同一緩冲（不拷貝、不 retain）。
             b.push('\t%sfl')
@@ -1965,23 +1965,15 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(' = inttoptr i64 %sfd')
             b.push(k.to-str())
-            b.push(' to i8*\n\t%sfli')
+            b.push(' to i8*\n\t%sfs0')
             b.push(k.to-str())
-            b.push(' = trunc i64 %sfl')
-            b.push(k.to-str())
-            b.push(' to i32\n\t%sfci')
-            b.push(k.to-str())
-            b.push(' = trunc i64 %sfc')
-            b.push(k.to-str())
-            b.push(' to i32\n\t%sfs0')
-            b.push(k.to-str())
-            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %sfli')
+            b.push(' = insertvalue %str-long { i32 0, i32 0, i8* null }, i32 %sfl')
             b.push(k.to-str())
             b.push(', 0\n\t%sfs1')
             b.push(k.to-str())
             b.push(' = insertvalue %str-long %sfs0')
             b.push(k.to-str())
-            b.push(', i32 %sfci')
+            b.push(', i32 %sfc')
             b.push(k.to-str())
             b.push(', 1\n\t%sv')
             b.push(d.to-str())
@@ -2139,9 +2131,9 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         op == OP-OPTMKVEC -> {
 
             ; s40（§11 B8「option 的 vec 载荷」）：dst = option 值 id；x = 向量值 id（TY-VEC）。
-            ;   tag=0 + 把 %vec 的 3 个 i64 字段（len/cap/dat）逐字段 insertvalue 进 slot[0..2]。
-            ;   %vec 三字段全 i64（dat 已是整数指针），与 [3 x i64] 槽 1:1 ⇒ 无需 ptrtoint/inttoptr（较 OPTMKSTR 简单）。
-            ; ⚠️ 中间步 %mv0..%mv2 落规范 %op<d>（同 OPTMKSTR 规避 multiple definition）；命名空间按指令下标 k。
+            ;   %vec 是 16B { i32 len, i32 cap, i64 data }，但 slot 仍是 24B [3 x i64] ⇒ 不再 1:1：
+            ;   field 0/1 是 i32，須 zext i32→i64 才存得進 slot；field 2（dat 已是整数指针）直接落 i64。
+            ; ⚠️ 中间步 %vu0w/%vu1w 与 %mv0..%mv2 落规范 %op<d>（同 OPTMKSTR 规避 multiple definition）；命名空间按指令下标 k。
             ; ⚠️ 本 op 只【存储】不自动 retain；取得所有权须调用方紧接 OP-RETAIN（s28/s40 规矩）。
             b.push('\t%mv0')
             b.push(k.to-str())
@@ -2150,27 +2142,35 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(' = extractvalue %vec %vc')
             b.push(x.to-str())
-            b.push(', 0\n\t%mv1')
+            b.push(', 0\n\t%vu1')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 1\n\t%vu2')
+            b.push(k.to-str())
+            b.push(' = extractvalue %vec %vc')
+            b.push(x.to-str())
+            b.push(', 2\n\t%vu0w')
+            b.push(k.to-str())
+            b.push(' = zext i32 %vu0')
+            b.push(k.to-str())
+            b.push(' to i64\n\t%vu1w')
+            b.push(k.to-str())
+            b.push(' = zext i32 %vu1')
+            b.push(k.to-str())
+            b.push(' to i64\n\t%mv1')
             b.push(k.to-str())
             b.push(' = insertvalue %option %mv0')
             b.push(k.to-str())
-            b.push(', i64 %vu0')
+            b.push(', i64 %vu0w')
             b.push(k.to-str())
-            b.push(', 1, 0\n\t%vu1')
-            b.push(k.to-str())
-            b.push(' = extractvalue %vec %vc')
-            b.push(x.to-str())
-            b.push(', 1\n\t%mv2')
+            b.push(', 1, 0\n\t%mv2')
             b.push(k.to-str())
             b.push(' = insertvalue %option %mv1')
             b.push(k.to-str())
-            b.push(', i64 %vu1')
+            b.push(', i64 %vu1w')
             b.push(k.to-str())
-            b.push(', 1, 1\n\t%vu2')
-            b.push(k.to-str())
-            b.push(' = extractvalue %vec %vc')
-            b.push(x.to-str())
-            b.push(', 2\n\t%op')
+            b.push(', 1, 1\n\t%op')
             b.push(d.to-str())
             b.push(' = insertvalue %option %mv2')
             b.push(k.to-str())
@@ -2180,8 +2180,8 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
         }
         op == OP-OPTGETVEC -> {
 
-            ; s40：dst = 向量值 id（TY-VEC）；x = option 值 id。从 slot[0..2] 取 3 个 i64 字段，
-            ;   逐字段 insertvalue 重建 %vec（zeroinitializer 起）。三字段全 i64 ⇒ 无 inttoptr。
+            ; s40：dst = 向量值 id（TY-VEC）；x = option 值 id。从 slot[0..2] 取 3 个 i64，
+            ;   slot[0..1] 存的是 zext 過的 i64 ⇒ 重建 %vec 前須 trunc i64→i32；field 2 直接落 i64。
             ;   中间步 %vb0/%vb1 落规范 %vc<d>（同 OPTMKVEC 的 multiple-definition 规避）。
             b.push('\t%vo0')
             b.push(k.to-str())
@@ -2195,15 +2195,23 @@ cg-emit-cfg-t = (name str, retty i64, nargs i64, ptyps []i64, vty []i64, cty []i
             b.push(k.to-str())
             b.push(' = extractvalue %option %op')
             b.push(x.to-str())
-            b.push(', 1, 2\n\t%vb0')
+            b.push(', 1, 2\n\t%vo0i')
             b.push(k.to-str())
-            b.push(' = insertvalue %vec zeroinitializer, i64 %vo0')
+            b.push(' = trunc i64 %vo0')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%vo1i')
+            b.push(k.to-str())
+            b.push(' = trunc i64 %vo1')
+            b.push(k.to-str())
+            b.push(' to i32\n\t%vb0')
+            b.push(k.to-str())
+            b.push(' = insertvalue %vec zeroinitializer, i32 %vo0i')
             b.push(k.to-str())
             b.push(', 0\n\t%vb1')
             b.push(k.to-str())
             b.push(' = insertvalue %vec %vb0')
             b.push(k.to-str())
-            b.push(', i64 %vo1')
+            b.push(', i32 %vo1i')
             b.push(k.to-str())
             b.push(', 1\n\t%vc')
             b.push(d.to-str())

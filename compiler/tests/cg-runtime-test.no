@@ -22,8 +22,10 @@ test-runtime-types = () {
     ; B28（2026-11-11 後端變更）：%str-long 是 16B { i32, i32, i8* }，外部 API 仍是 i64。
     runner.eq(p.contains('%str-long = type { i32, i32, i8* }'), 1, 'str type present (16B u32 header)')
     runner.eq(p.contains('%str-long = type { i64, i64, i8* }'), 0, 'no legacy 24B str type')
-    runner.eq(p.contains('%vec = type { i64, i64, i64 }'), 1, 'vec type present')
-    ; ⚠️ %vec 與 option 的 24B inline payload 槽【未變】（Go optSlotDefaultBytes = 24）。
+    runner.eq(p.contains('%vec = type { i32, i32, i64 }'), 1, 'vec type present (16B u32 header)')
+    runner.eq(p.contains('%vec = type { i64, i64, i64 }'), 0, 'no legacy 24B vec type')
+    ; ⚠️ option 的 24B inline payload 槽【未變】（Go optSlotDefaultBytes = 24）；
+    ;    16B 的 %vec / %str-long 都裝得下，只是不再是 [3 x i64] 的 1:1 對應。
     runner.eq(p.contains('%option = type { i64, [3 x i64] }'), 1, 'option type present (24B slot unchanged)')
 
     ; 结构体型别**不在** prelude：由 cg-runtime-struct-decls(sfc) 按描述符唯一发射
@@ -155,10 +157,10 @@ test-str16-layout = () {
     f = cg-runtime-prelude-full()
     c = cg-runtime-str-concat()
 
-    ; 型別：16B { i32, i32, i8* }；24B slot 與 %vec 維持原樣
+    ; 型別：%str-long 與 %vec 都是 16B { u32, u32, ... }；24B option slot 維持原樣
     runner.eq(f.contains('%str-long = type { i32, i32, i8* }'), 1, 'B28 str type is 16B')
     runner.eq(f.contains('%option = type { i64, [3 x i64] }'), 1, 'B28 option slot still 24B')
-    runner.eq(f.contains('%vec = type { i64, i64, i64 }'), 1, 'B28 vec still 24B')
+    runner.eq(f.contains('%vec = type { i32, i32, i64 }'), 1, 'B28b vec is 16B')
 
     ; @str_eq：len 讀出後 zext i32→i64
     runner.eq(f.contains('%la = zext i32 %la.i32 to i64'), 1, 'B28 str_eq widens len')
@@ -181,7 +183,8 @@ test-str16-layout = () {
 test-vec-eq-helper = () {
     e = cg-runtime-vec-eq()
     runner.eq(e.contains('define i1 @__nolang_vec_eq_i64(%vec %a, %vec %b)'), 1, 'vec_eq signature')
-    runner.eq(e.contains('%la = extractvalue %vec %a, 0'), 1, 'len a field 0')
+    runner.eq(e.contains('%la32 = extractvalue %vec %a, 0'), 1, 'len a field 0 (u32)')
+    runner.eq(e.contains('%la = zext i32 %la32 to i64'), 1, 'len a widened to i64')
     runner.eq(e.contains('%leneq = icmp eq i64 %la, %lb'), 1, 'len eq branch')
     runner.eq(e.contains('%pa = inttoptr i64 %da to i8*'), 1, 'data a inttoptr')
     runner.eq(e.contains('%bytes = mul i64 %la, 8'), 1, 'bytes = len*8')
@@ -196,7 +199,7 @@ test-vec-eq-helper = () {
 ; ── 向量 helper IR 文本 ───────────────────────────────────
 test-vec-helpers = () {
     p = cg-runtime-prelude()
-    runner.eq(p.contains('%vec = type { i64, i64, i64 }'), 1, 'vec type')
+    runner.eq(p.contains('%vec = type { i32, i32, i64 }'), 1, 'vec type')
     n = cg-runtime-vec-new()
     runner.eq(n.contains('define %vec @vec_new()'), 1, 'vec_new')
     l = cg-runtime-vec-len()
