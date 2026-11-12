@@ -3991,6 +3991,24 @@ err 模組不參與編譯時回落 `"str"`（單元測試夾具），那個世�
 
    驗收：`tests/std-byte-indexing.no` 在修復後與基線**逐位元組相同**（第 5 節 4 條全 PASS）。
 
+**全量 A/B 收官（`tests/*.no` 172 檔，基線 binary vs 本輪最終 binary）**
+
+```
+same=169  diff=5
+```
+
+五個 diff 全部有據：
+
+| 測試 | 差異 | 判定 |
+| --- | --- | --- |
+| `fs` | `spawn pid = 73703` / `/tmp/nolang-test-XXXX` / 檔案大小 | 每次執行都不同（PID、mktemp 名），非佈局相關 |
+| `number` / `str` | 各一行指標位址（`4381565760` vs `4372128560`） | 同一 binary 連跑也會變，非確定性 |
+| `wasi-fib` | 基線 `fib-rec(20) = 0`，本輪 `6765` | **基線本身是錯的**，本輪輸出才是對的（既有缺陷被佈局改動順手修好） |
+| `option-inline-clone` | 新增測試，基線沒有對照目錄 | 預期 |
+
+`std-byte-indexing` 從「第 5 節 4 條全 FAIL」回到全 PASS（第 6 條），`yaml` 從第 56 項
+SIGABRT/SIGSEGV 回到 100 行全綠（第 4、5 條）。
+
 **本輪順手發現的既有缺陷（HEAD 同樣重現，未修）**
 
 1. **`?T` wrap 與來源共用載荷緩衝**：`so ?str = ok(s0)` 之後再 `s0 = '…'` ⇒ SIGTRAP
