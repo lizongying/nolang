@@ -1,9 +1,12 @@
 package lsp
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/lizongying/nolang/checker"
+	"github.com/lizongying/nolang/parser"
 )
 
 type DefinitionProvider struct {
@@ -68,15 +71,29 @@ func (dp *DefinitionProvider) GetDefinition(position Position) (Location, bool) 
 	return entry.Location, true
 }
 
-// stdTypeDefinition 為「內建型別名」提供 go-to-definition：若 word 是 LSP 已知的
-// 內建型別（見 hover.go 的 builtinTypeDoc），且存在同名 std 模組檔，則回傳指向該
-// 模組檔開首（型別方法實作處）的 Location。數值型別（i64/u8/f64…）沒有對應 std 檔，
-// 回傳 false（其 hover 已由 builtinTypeDoc 覆蓋，无需跳檔）。
+// stdTypeDefinition 為「內建型別名」提供 go-to-definition。
+//
+// 兩類走法：
+//   - 佈局型別（str / txt / vec / arr）：模組與文檔錨點取自 parser.BuiltinTypes()，
+//     落點是該模組的模組級文檔錨點行（`; [txt](#txt)`）—— 使用者想讀的是型別文檔，
+//     不是檔案第 0 行；
+//   - 其餘內建型別（char / byte / bool…）：名字即模組名，落點退回文件開首。
+//
+// 數值型別（i64/u8/f64…）沒有對應 std 檔（ResolveStdModulePath 回空），回傳 false。
 func stdTypeDefinition(word string) (Location, bool) {
+	if info, ok := parser.LookupBuiltinType(word); ok {
+		return stdModuleLocation(info.Module, info.Anchor)
+	}
 	if _, ok := builtinTypeDoc[word]; !ok {
 		return Location{}, false
 	}
-	stdFile := checker.ResolveStdModulePath(word)
+	return stdModuleLocation(word, "")
+}
+
+// stdModuleLocation 把「std 模組短名 + 可選的模組文檔錨點」解析成 Location。
+// 錨點命中時落在 `; [anchor](#anchor)` 那一行；否則退回文件開首。
+func stdModuleLocation(module, anchor string) (Location, bool) {
+	stdFile := checker.ResolveStdModulePath(module)
 	if stdFile == "" {
 		return Location{}, false
 	}
@@ -84,12 +101,33 @@ func stdTypeDefinition(word string) (Location, bool) {
 	if a, err := filepath.Abs(stdFile); err == nil {
 		abs = a
 	}
-	// 定位到模組頂部標頭（第 0 行），即該型別方法實作的檔案開首。
+	line, width := docAnchorLine(stdFile, anchor)
 	return Location{
 		URI: "file://" + abs,
 		Range: Range{
-			Start: Position{Line: 0, Character: 0},
-			End:   Position{Line: 0, Character: uint32(len(word))},
+			Start: Position{Line: line, Character: 0},
+			End:   Position{Line: line, Character: width},
 		},
 	}, true
+}
+
+// docAnchorLine 在 std 模組檔裡找模組級文檔錨點 `; [anchor](#anchor)`，回傳
+// 該行行號（0 起算）與行寬；找不到（或 anchor 為空）回 (0, 0)，即退回文件開首。
+func docAnchorLine(path, anchor string) (uint32, uint32) {
+	if anchor == "" {
+		return 0, 0
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0
+	}
+	want := "[" + anchor + "](#" + anchor + ")"
+	for i, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		line = strings.TrimSpace(strings.TrimPrefix(line, ";"))
+		if line == want {
+			return uint32(i), uint32(len(strings.TrimRight(raw, " \t\r")))
+		}
+	}
+	return 0, 0
 }

@@ -762,16 +762,19 @@ func (l *lowerer) enumVariantOf(prefer, variant string) (*TaggedEnumInfo, *Varia
 }
 
 // builtinLayoutStructs 是「佈局由編譯器持有、不來自 HIR」的內建型別名。
+// 資料來源是 parser.BuiltinTypes()（見 src/parser/builtintype.go），不在此處
+// 另立複本 —— 新增第五個佈局型別時只改一張表。
 //
 // std 裡這幾個名字各有一份 `#{buildin}` 佈局聲明（`str { len cap data }`、
-// `vec { … }`、`txt { data len }`、`arr { len }`）。它們**只是佈局文檔**：
-// LSP hover / docs 需要一份「這個型別長什麼樣」的宣告，但真實佈局由本檔的
-// 手寫描述符（str / vec / txt）或編譯期常量（arr 的 .len）提供。
+// `vec { … }`、`txt { data len }`、`arr { len }`）。它們的職責只剩「給 checker
+// 一份欄位型別」，真實佈局由本檔的手寫描述符（str / vec / txt）或編譯期常量
+// （arr 的 .len）提供；LSP 的 hover / F12 走 parser.BuiltinTypes() + 模組文檔錨點，
+// 與這些聲明無關。
 //
 // 因此這裡必須把它們從 collectStructFields 裡排除，否則 Pass 2 會用 HIR 的
 // 欄位（型別字串是 Nolang 面向使用者的那一套）覆蓋手寫描述符：
-//   - `str.data` 的手寫描述符刻意標 Inline，HIR 版本沒有 tag ⇒ drop 走訪會
-//     把同一塊緩衝釋放兩次；
+//   - `str.data` 的手寫描述符刻意標 Inline（`FieldTagInline` 保證該欄位永不
+//     被指標化），HIR 版本沒有 tag；
 //   - `vec.data` 的真實型別是 i64（ptrtoint 編碼），HIR 宣告成 `i64` 也對，
 //     但 `txt` 的 `[255]byte` 會讓 GEP 索引與 %txt 的實際佈局錯開。
 //
@@ -781,11 +784,7 @@ func (l *lowerer) enumVariantOf(prefer, variant string) (*TaggedEnumInfo, *Varia
 // ValidateBuiltinStructDecls 也會拒絕使用者用這些名字宣告 struct。所以到達
 // MIR 的同名 KStructDef 只可能是那份佈局聲明。
 func isBuiltinLayoutStruct(name string) bool {
-	switch name {
-	case "str", "vec", "txt", "arr":
-		return true
-	}
-	return false
+	return parser.IsBuiltinLayoutStructName(name)
 }
 
 // collectStructFields scans the HIR package for struct definitions and records

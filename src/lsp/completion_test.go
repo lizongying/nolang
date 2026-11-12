@@ -484,7 +484,8 @@ func TestGetTypeCompletions(t *testing.T) {
 	items := cp.getTypeCompletions()
 
 	expectedTypes := []string{"i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
-		"f32", "f64", "byte", "char", "str", "bool", "ptr", "err", "bigint", "void"}
+		"f32", "f64", "byte", "char", "str", "bool", "ptr", "err", "bigint", "void",
+		"txt", "vec", "arr"}
 	found := make(map[string]bool)
 	for _, item := range items {
 		found[item.Label] = true

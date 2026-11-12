@@ -7,8 +7,10 @@ package checker
 //	#{buildin}
 //	txt { data [255]byte; len u8 }
 //
-// 形式的 struct 聲明。它的用途只有一個：**給 LSP hover / docs 一份佈局文檔**，
-// 讓讀者與編輯器都知道「這個型別長什麼樣、欄位叫什麼」。真實佈局不在這裡 ——
+// 形式的 struct 聲明。它的用途只剩一個：**給 checker 一份欄位型別**（讓
+// `t.len` 被推成 `u8`、`15w45dqk` 那道「?i64 不能直接寫 u8 欄位」的閘門有效）。
+// LSP 的 hover / 跳轉定義 / 補全**不讀它** —— 那些走 parser.BuiltinTypes()
+// 登記表（名字 → std 模組 → 模組文檔錨點 → 佈局）。真實佈局也不在這裡 ——
 // str / vec / txt 由 MIR 手寫描述符提供（hir2mir.go 的
 // `mod.StructFields["str"|"vec"|"txt"]`），arr 的 `.len` 是編譯期常量。
 //
@@ -96,13 +98,13 @@ func ValidateBuiltinStructDecls(program *parser.Program) []ValidateResult {
 			// so that severity mapping and docs keep referring to the same code.
 			results = append(results, ValidateResult{
 				Line: pos.Line, Column: pos.Column, File: file,
-				Message: i18n.T("3lu6n4np", "'#{buildin}' on struct '%s' does nothing: only the compiler-owned layout declarations (str / vec / txt / arr) may carry it, because only their layout is supplied by the compiler. A user struct's layout always comes from its own fields, so the annotation would make the compiler skip this declaration and leave every field unbindable. Remove '#{buildin}'.", bare),
+				Message: i18n.T("3lu6n4np", "'#{buildin}' only applies to the compiler-owned layout types (str / vec / txt / arr); it does nothing on '%s'. Remove it.", bare),
 				TraceID: builtinStructAnnotTraceID,
 			})
 		case !sd.Builtin && reservedStructName(bare):
 			results = append(results, ValidateResult{
 				Line: pos.Line, Column: pos.Column, File: file,
-				Message: i18n.T("1a8m445h", "'%s' is a compiler-owned builtin type and cannot be declared as a struct: its layout is fixed by the compiler (the #{buildin} declaration in src/std documents it for the LSP only). A user declaration would silently disagree with the real layout. Rename the type.", bare),
+				Message: i18n.T("1a8m445h", "'%s' is a compiler-owned builtin type and cannot be declared as a struct: its layout is fixed by the compiler. Rename the type.", bare),
 				TraceID: builtinStructRedeclTraceID,
 			})
 		}

@@ -40,6 +40,7 @@ Atualizado %s
   '170bewkb': 'não é possível inferir tipo a partir de nil para a variável \'%s\''
   '17mbz8cw': 'esperado \'}\' para fechar a anotação, obtido %s'
   '18uic4sz': 'Com -v, escrever também arquivos LLVM IR (.ll) para análise durante a compilação.'
+  '1a8m445h': '\'%s\' é um tipo embutido do compilador e não pode ser declarado como struct: seu layout é fixado pelo compilador. Renomeie o tipo.'
   '1b3u924y': 'read-file: não é possível marshalar o caminho como string C'
   '1cg8g9ic': 'Validar arquivos-fonte Nolang sem produzir saída.'
   '1ea3hwsu': '  ligar os módulos JS. Nenhuma flag é necessária; o manifesto decide.'
@@ -135,6 +136,7 @@ não é possível atribuir diretamente por índice: `%s = %s`. Uma leitura por �
      }
   2) propague o erro (a função envolvente precisa de um parâmetro de resultado option): `%s ?= %s`
 `
+  '3lu6n4np': '\'#{buildin}\' só se aplica aos tipos de layout do compilador (str / vec / txt / arr); em \'%s\' não faz nada. Remova-o.'
   '3nktiaae': 'setfield: campo %q não encontrado em %q (chave struct %q)'
   '3owkeirf': 'analisando informações de release de %s/%s: %w'
   '3pry7fmd': 'esperada vírgula ou parêntese de fechamento, obtido %s em vez disso'
@@ -706,6 +708,7 @@ Workspace inicializado em %s
   'ldfvpa0x': '; um option não pode ser desencapsulado implicitamente (isto é apenas uma cópia, então o ramo de falha é descartado). %s Se quisera dar a volta (wrap) ou limitar (clamp), `#{overflow = wrap` só altera o valor tomado no transbordamento; o resultado ainda é `?%s` e ainda precisa ser desencapsulado.'
   'lehy8lls': '  no fmt main.no              formatar e enviar para a saída padrão'
   'let8mtmo': 'Uso: no build [flags] <file|directory>'
+  'lgxbfk9a': 'A exportação precisa de um símbolo: \'@ %s\' sozinho não declara nada (escreva \'@ %s.<símbolo>\')'
   'ljfz84ro': 'esperado \'(\' para iniciar o tipo de função, obtido %s em vez disso'
   'lkiy53ow': 'o literal hexadecimal \'%s\' usa maiúsculas; a formatação converterá para minúsculas (por exemplo 0xff)'
   'lqcz5x45': 'lendo dados do arquivo de %s: %w'

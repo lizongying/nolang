@@ -2243,7 +2243,7 @@ s str = 'yo'
 v []i64 = [1, 2, 3]
 print(t.to-str(), s.len-bytes(), v.len())
 `
-      related: ['hashmap-method-prefix-mismatch', 'self-receiver-and-module-prefix']
+      related: ['str-null-data-eq-crash', 'named-type-annotation-for-method', 'cross-module-field-access']
       refs: ['src/build/module_prefix.go', 'src/mir/hir2mir.go', 'src/checker/builtin_struct_decl.go', 'docs/docs/lang/annotation-scope.md', 'test/README.md']
     }
   }

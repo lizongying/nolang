@@ -480,6 +480,8 @@ func (sp *SemanticTokensProvider) mapTokenModifiers(tok lexer.Token, identMods m
 }
 
 // isTypeName returns true if the literal is a known Nolang built-in type.
+// 佈局型別（txt / vec / arr）由 parser.BuiltinTypes() 補上：這份清單先前漏了
+// txt，`t txt = 'x'` 的型別詞因此不上色。
 func isTypeName(s string) bool {
 	switch s {
 	case "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
@@ -487,5 +489,5 @@ func isTypeName(s string) bool {
 		"void":
 		return true
 	}
-	return false
+	return parser.IsBuiltinLayoutStructName(s)
 }

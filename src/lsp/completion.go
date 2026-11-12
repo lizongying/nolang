@@ -354,6 +354,24 @@ var builtinTypes = []struct {
 	{"void", "void type"},
 }
 
+// 佈局型別（txt / vec / arr）由 parser.BuiltinTypes() 補齊：「有哪些內建型別」
+// 這件事已經有唯一出處，不在此處再維護一份。str 已在上面（"string"），跳過。
+func init() {
+	have := make(map[string]bool, len(builtinTypes))
+	for _, t := range builtinTypes {
+		have[t.name] = true
+	}
+	for _, t := range parser.BuiltinTypes() {
+		if have[t.Name] {
+			continue
+		}
+		builtinTypes = append(builtinTypes, struct {
+			name   string
+			detail string
+		}{t.Name, t.Summary})
+	}
+}
+
 func (cp *CompletionProvider) getTypeCompletions() []CompletionItem {
 	var items []CompletionItem
 	for _, t := range builtinTypes {

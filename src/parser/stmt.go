@@ -826,6 +826,20 @@ func (p *Parser) parseExportStatement() Statement {
 	}
 
 	stmt.Path = joinPathParts(parts)
+
+	// `@ path` 既無符號也無別名：什麼都沒宣告。
+	//
+	// 所有消費方（hir 的 registerAliasSigs、mir 的 collectAliases、checker 的
+	// ValidateExportSymbols / filterByExports）都以「有符號名」為前提，這種寫法
+	// 過去既不改行為也不報錯 —— 作者會以為「把型別綁到模組」成功了（
+	// `@ std/txt` 就屬此列）。與 annotation-scope.md「非法與無意義都必須報錯」
+	// 一致：直接報錯。`@ path as alias`（有別名、無符號）不在此列。
+	if stmt.Function == "" && stmt.Alias == "" {
+		p.saveErrorf("lgxbfk9a", "line %d, column %d: export needs a symbol: '@ %s' alone declares nothing (write '@ %s.<symbol>')",
+			stmt.Token.Line, stmt.Token.Column, stmt.Path, stmt.Path)
+		return nil
+	}
+
 	return stmt
 }
 

@@ -38,10 +38,38 @@ var builtinTypeDoc = map[string]string{
 	"f32":  "**型別**: `f32` (32-bit float)\n\n- **Range(dec)**: `-3.4028234663852886e+38` .. `3.4028234663852886e+38`",
 	"f64":  "**型別**: `f64` (64-bit float)\n\n- **Range(dec)**: `-1.7976931348623157e+308` .. `1.7976931348623157e+308`",
 	"bool": "**型別**: `bool` (boolean)\n\n- **Values**: `true` | `false`",
-	"str":  "**型別**: `str` (string, immutable byte sequence)",
-	"txt":  "**型別**: `txt` (fixed 256-byte string, max 255 bytes data)\n\n- **Layout**: `{ [255]byte data, byte len }`\n- **Total size**: 256 bytes\n- **Max content**: 255 bytes\n- **Usage**: `t txt = 'hello'`",
 	"char": "**型別**: `char` (single Unicode code point, stored as i64)",
 	"fd":   "**型別**: `fd` (file descriptor, stored as i64)",
+}
+
+// builtinTypeProse 是佈局型別 hover 的補充說明，渲染在結構化資訊之後。
+// 佈局型別的事實（名字 / 佈局 / 大小 / 模組）一律取自 parser.BuiltinTypes()，
+// 這裡只放「怎麼用」這類文案，避免又出現第二份佈局描述。
+var builtinTypeProse = map[string]string{
+	"str": "不可變的位元組序列。`s.len-bytes()` 取位元組數，`s.len()` 取碼點數。",
+	"txt": "固定 256 位元組，內容最多 255 位元組。宣告須顯式標註型別：`t txt = 'hello'`。",
+	"vec": "可變長切片 `[]T`。`v.push(x)` 追加元素並自動增長。",
+	"arr": "固定大小陣列 `[N]T`。`.len` 是編譯期常量，元素內聯存放、沒有堆指標。",
+}
+
+// renderBuiltinType 把登記項渲染成 hover 用的 markdown。
+func renderBuiltinType(info parser.BuiltinType) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "**型別**: `%s` — %s", info.Name, info.Summary)
+	b.WriteString("\n\n- **Layout**: `" + info.Layout + "`")
+	if info.Size > 0 {
+		fmt.Fprintf(&b, "\n- **Size**: %d bytes", info.Size)
+	}
+	if info.Runtime {
+		b.WriteString("\n- **Ownership**: 佈局描述符由編譯器持有，使用者不可宣告同名 struct")
+	} else {
+		b.WriteString("\n- **Runtime layout**: 無描述符（編譯期展開）")
+	}
+	fmt.Fprintf(&b, "\n- **Docs**: `src/std/%s.no`", info.Module)
+	if prose := builtinTypeProse[info.Name]; prose != "" {
+		b.WriteString("\n\n" + prose)
+	}
+	return b.String()
 }
 
 // overflowKeyDoc 為 LSP hover 提供 `#{overflow = ...}` 註解鍵（overflow）的文檔，
@@ -268,6 +296,18 @@ func (hp *HoverProvider) GetHover(position Position) (*Hover, bool) {
 			Contents: MarkupContent{
 				Kind:  MarkupKindMarkdown,
 				Value: doc,
+			},
+		}, true
+	}
+
+	// 佈局型別（str / txt / vec / arr）的 hover：資料來自 parser.BuiltinTypes()，
+	// 這裡只負責排版。先前是 builtinTypeDoc 裡的兩條硬編碼（只有 str/txt），
+	// vec/arr 因此完全沒有 hover。
+	if info, ok := parser.LookupBuiltinType(word); ok {
+		return &Hover{
+			Contents: MarkupContent{
+				Kind:  MarkupKindMarkdown,
+				Value: renderBuiltinType(info),
 			},
 		}, true
 	}

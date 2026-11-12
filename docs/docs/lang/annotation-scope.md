@@ -237,18 +237,23 @@ always = () {
 | --- | --- | --- |
 | 函式 | 空體樁：編譯器 / FFI 提供實現，Nolang 側不生成函式體 | `#{buildin}`<br>`fs.remove = (p str) (ok bool) { }` |
 | 標籤列舉 | 變體供匹配與窮盡性檢查，底層表示與構造由內建 runtime 提供 | `#{buildin}`<br>`option { ok(v t), nil, err(e err.err), }` |
-| **佈局結構體** | **只是佈局文檔**：這份 `struct` 在語義上不存在 | `#{buildin}`<br>`txt { data [255]byte; len u8 }` |
+| **佈局結構體** | **只是佈局文檔**：這份 `struct` 在語義上不存在，唯一產出是欄位型別（`t.len` 是 `u8`） | `#{buildin}`<br>`txt { data [255]byte; len u8 }` |
 
 第三種要單獨說清楚，因為它與前兩種的方向相反：函式樁與標籤列舉都是「編譯器真的
-要用這份聲明」，而佈局結構體是「編譯器**不用**這份聲明，它只給 LSP hover 與
-docs 一個可引用的形狀」。真實佈局在別處：
+要用這份聲明」，而佈局結構體是「編譯器**不用**這份聲明，它只是欄位型別的來源與
+一份可讀的佈局說明」。真實佈局與文檔鏈接都在別處：
 
-| 型別 | 真實佈局的來源 |
-| --- | --- |
-| `str` | MIR 手寫描述符 `%str-long = { i32 len, i32 cap, i8* data }` |
-| `vec` | MIR 手寫描述符 `%vec = { i32 len, i32 cap, i64 data }` |
-| `txt` | MIR 手寫描述符 `%txt = { [255 x i8] data, i8 len }` |
-| `arr` | 沒有描述符：`[n]t` 就是裸聚合 `[N x T]`，`.len` 是編譯期常量 `n` |
+| 型別 | 真實佈局的來源 | 文檔 / 鏈接的來源 |
+| --- | --- | --- |
+| `str` | MIR 手寫描述符 `%str-long = { i32 len, i32 cap, i8* data }` | `parser.BuiltinTypes()` |
+| `vec` | MIR 手寫描述符 `%vec = { i32 len, i32 cap, i64 data }` | `parser.BuiltinTypes()` |
+| `txt` | MIR 手寫描述符 `%txt = { [255 x i8] data, i8 len }` | `parser.BuiltinTypes()` |
+| `arr` | 沒有描述符：`[n]t` 就是裸聚合 `[N x T]`，`.len` 是編譯期常量 `n` | `parser.BuiltinTypes()` |
+
+`parser.BuiltinTypes()`（`src/parser/builtintype.go`）是「名字 → std 模組 → 模組文檔
+錨點 → 佈局」的唯一登記表，LSP 的 hover / 跳轉定義 / 補全與 `IsBuiltinLayoutStructName`
+都讀它。這正是為什麼佈局結構體**不再承擔鏈接**：把它刪掉，hover 與 F12 依然可用；
+只是 checker 會失去 `t.len` 的欄位型別，所以目前保留。
 
 由此得出兩條硬性規則，任一被破壞都會立刻產生一份與真實佈局矛盾的「影子結構體」：
 
